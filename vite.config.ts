@@ -1,3 +1,4 @@
+import {localOperationsToken,operationsDev} from './scripts/operations-dev-plugin';
 import vinext from "vinext";
 import { defineConfig } from "vite";
 import hostingConfig from "./.openai/hosting.json";
@@ -51,6 +52,7 @@ export default defineConfig(async ({ command }) => {
   // Wrangler snapshots its log path while the Cloudflare plugin is imported.
   const { cloudflare } = await import("@cloudflare/vite-plugin");
 
+  const operationsToken=command==='serve'?localOperationsToken():'';
   return {
     server: {
       ...(managedLinux
@@ -62,6 +64,7 @@ export default defineConfig(async ({ command }) => {
     },
     plugins: [
       vinext(),
+      ...(command==='serve'?[operationsDev(operationsToken)]:[]),
       sites({ mockAuth: !managedLinux }),
       connectorPreview(),
       cloudflare({
@@ -69,6 +72,7 @@ export default defineConfig(async ({ command }) => {
         inspectorPort: false,
         config: {
           ...localBindingConfig,
+          ...(command==='serve'?{vars:{OPERATIONS_TOKEN:operationsToken}}:{}),
           ...(command === "serve"
             ? {
                 services: [

@@ -10,7 +10,7 @@ export const properties = sqliteTable('properties', {
   id: text('id').primaryKey(), ownerId: text('owner_id').notNull(), demoOwner: text('demo_owner'),
   title: text('title').notNull(), city: text('city').notNull(), district: text('district').notNull(),
   address: text('address').notNull(), description: text('description').notNull(),
-  price: integer('price').notNull(), rooms: integer('rooms').notNull(), capacity: integer('capacity').notNull(),
+  price: integer('price').notNull(), propertyType:text('property_type').notNull().default('apartment'), rateUnit:text('rate_unit').notNull().default('day'), rooms: integer('rooms').notNull(), capacity: integer('capacity').notNull(),
   cleaningMinutes: integer('cleaning_minutes').notNull().default(90),
   published: integer('published').notNull().default(1), createdAt: integer('created_at').notNull(),
 });
@@ -18,7 +18,7 @@ export const bookings = sqliteTable('bookings', {
   id: text('id').primaryKey(), propertyId: text('property_id').notNull().references(() => properties.id),
   guestId: text('guest_id').notNull(), start: integer('start').notNull(), end: integer('end').notNull(),
   occupiedUntil: integer('occupied_until').notNull(), guests: integer('guests').notNull(),
-  amount: integer('amount').notNull(), status: text('status').notNull().default('requested'),
+  amount: integer('amount').notNull(), rateUnit:text('rate_unit').notNull().default('day'), status: text('status').notNull().default('requested'),
   expiresAt: integer('expires_at').notNull(), paymentStatus: text('payment_status').notNull().default('unpaid'),
   requestKey: text('request_key').notNull(), createdAt: integer('created_at').notNull(),
 }, t => [uniqueIndex('booking_request_key').on(t.guestId, t.requestKey)]);
@@ -46,3 +46,8 @@ export const auditEvents = sqliteTable('audit_events', {
   id: text('id').primaryKey(), actorId: text('actor_id').notNull(), entityId: text('entity_id').notNull(),
   action: text('action').notNull(), createdAt: integer('created_at').notNull(),
 });
+
+export const accounts=sqliteTable('accounts',{id:text('id').primaryKey(),email:text('email').notNull().unique(),passwordHash:text('password_hash').notNull(),salt:text('salt').notNull(),createdAt:integer('created_at').notNull()});
+export const sessions=sqliteTable('sessions',{tokenHash:text('token_hash').primaryKey(),userId:text('user_id').notNull().references(()=>accounts.id),expiresAt:integer('expires_at').notNull()});
+export const accountSettings=sqliteTable('account_settings',{userId:text('user_id').primaryKey(),activeRole:text('active_role').notNull().default('guest'),autoConfirm:integer('auto_confirm').notNull().default(0),autoAssign:integer('auto_assign').notNull().default(0),cleaningFee:integer('cleaning_fee').notNull().default(4000)});
+export const authLimits=sqliteTable('auth_limits',{key:text('key').primaryKey(),attempts:integer('attempts').notNull(),resetAt:integer('reset_at').notNull()});

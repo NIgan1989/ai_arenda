@@ -7,15 +7,15 @@ import ts from 'typescript';
 
 // Exercise the real SQL and service against SQLite with D1-compatible batches.
 mkdirSync('outputs/test-lib',{recursive:true});
-for(const name of ['domain','ai','service']){
+for(const name of ['domain','ai','service','auth','operations']){
   const source=readFileSync(`lib/${name}.ts`,'utf8');
-  const compiled=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.ES2022,target:ts.ScriptTarget.ES2022}}).outputText.replace("from './domain'","from './domain.js'").replace("from './ai'","from './ai.js'");
+  const compiled=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.ES2022,target:ts.ScriptTarget.ES2022}}).outputText.replace("from './domain'","from './domain.js'").replace("from './ai'","from './ai.js'").replace("from './service'","from './service.js'");
   writeFileSync(`outputs/test-lib/${name}.js`,compiled);
 }
 const {RentalService}=await import(pathToFileURL(process.cwd()+'/outputs/test-lib/service.js'));
 const {interval,quote}=await import(pathToFileURL(process.cwd()+'/outputs/test-lib/domain.js'));
 class D1 {
-  constructor(){this.db=new DatabaseSync(':memory:');this.db.exec('PRAGMA foreign_keys=ON');this.db.exec(readFileSync('drizzle/0000_boring_unus.sql','utf8'));}
+  constructor(){this.db=new DatabaseSync(':memory:');this.db.exec('PRAGMA foreign_keys=ON');this.db.exec(readFileSync('drizzle/0000_boring_unus.sql','utf8'));this.db.exec(readFileSync('drizzle/0001_accounts_and_operations.sql','utf8'));}
   prepare(sql){const db=this.db;let args=[];return {bind(...values){args=values;return this;},async first(){return db.prepare(sql).get(...args)||null;},async all(){return {results:db.prepare(sql).all(...args)};},async run(){const r=db.prepare(sql).run(...args);return {meta:{changes:Number(r.changes)}};}};}
   async batch(statements){this.db.exec('BEGIN');try{const result=[];for(const q of statements)result.push(await q.run());this.db.exec('COMMIT');return result;}catch(e){this.db.exec('ROLLBACK');throw e;}}
 }
@@ -105,7 +105,110 @@ test('expired holds stop blocking the calendar and cannot be confirmed',async()=
   const r=await guest.createBooking({propertyId:property,start:iso(t),end:iso(t+86400000),guests:1,requestKey:'after-expiry'});assert.ok(r.id);
 });
 test('demo data is isolated and seeding is idempotent',async()=>{
-  const d=new RentalService(db,'demo-user');await d.demo();await d.demo();
+  const d=new RentalService(db,'demo-user');await d.demo();await d.demo();await d.saveSettings({activeRole:'owner'});
   assert.equal((await d.state()).ownProperties.length,2);
   assert.equal((await guest.state()).properties.filter(p=>p.demo_owner).length,0);
+});
+
+test('property editing and catalog visibility enforce ownership and preserve reservations',async()=>{
+  const body={title:'Editable apartment',city:'Павлодар',district:'Центр',address:'PRIVATE EDIT ADDRESS',description:'Rules',price:12000,rooms:2,capacity:3,cleaningMinutes:60};
+  const editable=(await owner.createProperty(body)).id;
+  const reservation=(await guest.createBooking({propertyId:editable,start:iso(start+10*86400000),end:iso(start+11*86400000),guests:2,requestKey:'editing-booking'})).id;
+  await assert.rejects(guest.updateProperty(editable,{...body,action:'update'}),/роль/);
+  await other.saveProfile({name:'Other',contact:'test',city:'Павлодар',roles:['owner']});
+  await assert.rejects(other.updateProperty(editable,{action:'visibility',published:false}),/недоступна/);
+  await assert.rejects(owner.updateProperty(editable,{...body,price:0,action:'update'}));
+  await assert.rejects(owner.updateProperty(editable,{...body,cleaningMinutes:120,action:'update'}),/активных бронях/);
+  await owner.updateProperty(editable,{...body,title:'Updated apartment',price:15000,action:'update'});
+  assert.equal((await owner.one('SELECT * FROM properties WHERE id=?',editable)).title,'Updated apartment');
+  assert.equal((await owner.one('SELECT * FROM bookings WHERE id=?',reservation)).amount,12000);
+  await owner.updateProperty(editable,{action:'visibility',published:false});
+  assert.equal((await guest.state()).properties.some(p=>p.id===editable),false);
+  assert.equal((await owner.state()).ownProperties.find(p=>p.id===editable).published,0);
+  assert.ok(await owner.one('SELECT * FROM bookings WHERE id=?',reservation));
+  await owner.updateProperty(editable,{action:'visibility',published:true});
+  assert.equal((await guest.state()).properties.some(p=>p.id===editable),true);
+});
+
+test('independent accounts persist roles, passwords are hashed, sessions expire and logout revokes access',async()=>{
+ const {authenticate,sessionUser,logout,sessionCookie}=await import(pathToFileURL(process.cwd()+'/outputs/test-lib/auth.js'));
+ const isolated=new D1();const credentials={name:'Independent guest',email:'guest@example.test',password:'Strong-test-password-2026',contact:'Test contact',city:'Павлодар',role:'guest'};
+ const registration=await authenticate(isolated,credentials,true,'test-ip-1');
+ const account=isolated.db.prepare('SELECT * FROM accounts WHERE id=?').get(registration.userId);
+ assert.notEqual(account.password_hash,credentials.password);assert.match(account.password_hash,/^scrypt-v1\$/);
+ assert.equal(JSON.parse(isolated.db.prepare('SELECT roles FROM profiles WHERE id=?').get(registration.userId).roles)[0],'guest');
+ const request=new Request('http://localhost/api/state',{headers:{cookie:'arenda_session='+registration.token}});
+ assert.equal((await sessionUser(isolated,request)).userId,registration.userId);
+ assert.match(sessionCookie(registration.token,request),/HttpOnly/);assert.match(sessionCookie(registration.token,new Request('https://app.test/')),/Secure/);
+ await assert.rejects(authenticate(isolated,{...credentials,password:'wrong-password'},false,'test-ip-1'),/Неверный/);
+ const login=await authenticate(isolated,{...credentials,email:'GUEST@example.test'},false,'test-ip-1');
+ assert.notEqual(login.token,registration.token);assert.equal(login.userId,registration.userId);
+ await logout(isolated,request);assert.equal(await sessionUser(isolated,request),null);
+ isolated.db.prepare('UPDATE sessions SET expires_at=0').run();assert.equal(await sessionUser(isolated,new Request('http://localhost/',{headers:{cookie:'arenda_session='+login.token}})),null);
+ await assert.rejects(authenticate(isolated,{...credentials,role:'admin',email:'admin@example.test'},true,'test-ip-2'),/роль/);
+});
+
+test('hourly housing and owner rules coordinate guest booking and cleaner assignment',async()=>{
+ const isolated=new D1(),host=new RentalService(isolated,'host'),client=new RentalService(isolated,'client'),cleaner=new RentalService(isolated,'cleaner');
+ await host.saveProfile({name:'Host',contact:'host',city:'Павлодар',roles:['owner']});
+ await client.saveProfile({name:'Client',contact:'client',city:'Павлодар',roles:['guest']});
+ await cleaner.saveProfile({name:'Cleaner',contact:'cleaner',city:'Павлодар',roles:['cleaner'],districts:'Центр',experience:'Опыт',availability:'Днём'});
+ await assert.rejects(client.saveSettings({activeRole:'owner'}),/не подключена/);
+ await assert.rejects(client.saveSettings({autoConfirm:true,autoAssign:true,cleaningFee:5000}),/роль/);
+ await host.saveSettings({autoConfirm:true,autoAssign:true,cleaningFee:5000});
+ const property=(await host.createProperty({title:'Hotel unit',city:'Павлодар',district:'Центр',address:'PRIVATE',description:'Rules',price:2000,rooms:1,capacity:2,cleaningMinutes:60,propertyType:'hotel',rateUnit:'hour'})).id;
+ const booking=await client.createBooking({propertyId:property,start:iso(start),end:iso(start+90*60000),guests:1,requestKey:'hourly'});
+ assert.equal(booking.amount,4000);assert.equal((await client.state()).bookings[0].status,'confirmed');
+ const job=(await host.state()).jobs[0];assert.equal(job.fee,5000);
+ const result=await cleaner.jobAction(job.id,{action:'apply'});assert.match(result.message,/назначены/);
+ const assigned=(await cleaner.state()).jobs.find(j=>j.id===job.id);assert.equal(assigned.assigned_to,'cleaner');assert.equal(assigned.address,'PRIVATE');
+ assert.ok((await client.state()).notifications.some(n=>n.dedupe.startsWith('confirmed:')));
+ assert.ok((await host.state()).activity.some(n=>n.action==='assistant.cleaner_assigned'));
+ assert.equal((await client.state()).ownProperties.length,0);
+ assert.equal((await cleaner.state()).bookings.length,0);
+});
+
+test('background operator expires reservations and reminders are deduplicated',async()=>{
+ const {runOperations}=await import(pathToFileURL(process.cwd()+'/outputs/test-lib/operations.js'));
+ const isolated=new D1(),host=new RentalService(isolated,'host'),client=new RentalService(isolated,'client');
+ await host.saveProfile({name:'Host',contact:'host',city:'Павлодар',roles:['owner']});await client.saveProfile({name:'Client',contact:'client',city:'Павлодар',roles:['guest']});
+ const property=(await host.createProperty({title:'Unit',city:'Павлодар',district:'Центр',address:'PRIVATE',description:'Rules',price:10000,rooms:1,capacity:2,cleaningMinutes:60})).id;
+ const reservation=await client.createBooking({propertyId:property,start:iso(start),end:iso(start+86400000),guests:1,requestKey:'expiry-tick'});
+ isolated.db.prepare('UPDATE bookings SET expires_at=0 WHERE id=?').run(reservation.id);
+ await runOperations(isolated);const first=isolated.db.prepare('SELECT count(*) count FROM notifications').get().count;await runOperations(isolated);
+ assert.equal(isolated.db.prepare('SELECT status FROM bookings WHERE id=?').get(reservation.id).status,'expired');
+ assert.equal(isolated.db.prepare('SELECT count(*) count FROM notifications').get().count,first);
+ assert.ok((await host.state()).notifications.some(n=>n.dedupe.startsWith('expired:owner:')));
+ assert.ok((await client.state()).notifications.some(n=>n.dedupe.startsWith('expired:guest:')));
+});
+
+test('operator dispatches existing pending work after owner enables rules',async()=>{
+ const {runOperations}=await import(pathToFileURL(process.cwd()+'/outputs/test-lib/operations.js'));
+ const d=new D1(),host=new RentalService(d,'h'),client=new RentalService(d,'g'),cleaner=new RentalService(d,'c');
+ await host.saveProfile({name:'H',contact:'h',city:'Павлодар',roles:['owner']});await client.saveProfile({name:'G',contact:'g',city:'Павлодар',roles:['guest']});await cleaner.saveProfile({name:'C',contact:'c',city:'Павлодар',roles:['cleaner'],districts:'Центр',experience:'опыт',availability:'день'});
+ const property=(await host.createProperty({title:'Test',city:'Павлодар',district:'Центр',address:'Private',description:'Test',price:10000,rooms:1,capacity:2,cleaningMinutes:60})).id;
+ const job=(await host.createJob({propertyId:property,start:iso(start+86400000),end:iso(start+90000000),fee:3000,description:'Test cleaning'})).id;
+ await cleaner.jobAction(job,{action:'apply'});
+ await host.saveSettings({autoConfirm:true,autoAssign:true,cleaningFee:4000});
+ await runOperations(d);
+ assert.equal((await host.one('SELECT status FROM cleaning_jobs WHERE id=?',job)).status,'assigned');
+ assert.ok((await cleaner.state()).notifications.some(n=>n.dedupe.startsWith('assigned:')));
+});
+
+test('cleaner can decline before work and owner can request rework before acceptance',async()=>{
+ const d=new D1(),host=new RentalService(d,'h'),cleaner=new RentalService(d,'c');
+ await host.saveProfile({name:'H',contact:'h',city:'Павлодар',roles:['owner']});await cleaner.saveProfile({name:'C',contact:'c',city:'Павлодар',roles:['cleaner'],districts:'Центр',experience:'опыт',availability:'день'});await host.saveSettings({autoConfirm:false,autoAssign:true,cleaningFee:4000});
+ const property=(await host.createProperty({title:'Unit',city:'Павлодар',district:'Центр',address:'Private',description:'Test',price:10000,rooms:1,capacity:2,cleaningMinutes:60})).id;
+ const job=(await host.createJob({propertyId:property,start:new Date(Date.now()+600000).toISOString(),end:new Date(Date.now()+4200000).toISOString(),fee:3000,description:'Test cleaning'})).id;
+ await cleaner.jobAction(job,{action:'apply'});await cleaner.jobAction(job,{action:'decline'});
+ assert.equal((await host.one('SELECT status FROM cleaning_jobs WHERE id=?',job)).status,'open');
+ assert.equal((await cleaner.state()).jobs.find(j=>j.id===job).address,null);
+ await cleaner.jobAction(job,{action:'apply'});await cleaner.jobAction(job,{action:'start'});
+ await assert.rejects(cleaner.jobAction(job,{action:'decline'}),/до начала/);
+ await cleaner.jobAction(job,{action:'submit',checklist:[true,true,true,true],report:'Первый отчёт'});
+ await host.jobAction(job,{action:'revise',issue:'Проверьте санузел'});
+ assert.equal((await host.one('SELECT status FROM cleaning_jobs WHERE id=?',job)).status,'in_progress');
+ await assert.rejects(host.jobAction(job,{action:'approve'}),/Нет отчёта/);
+ await cleaner.jobAction(job,{action:'submit',checklist:[true,true,true,true],report:'Доработано'});await host.jobAction(job,{action:'approve'});
+ assert.equal((await host.one('SELECT status FROM cleaning_jobs WHERE id=?',job)).status,'completed');
 });
