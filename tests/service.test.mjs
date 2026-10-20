@@ -7,16 +7,16 @@ import ts from 'typescript';
 
 // Exercise the real SQL and service against SQLite with D1-compatible batches.
 mkdirSync('outputs/test-lib',{recursive:true});
-for(const name of ['domain','ai','service','auth','operations']){
+for(const name of ['domain','ai','service','auth','operations','photos']){
   const source=readFileSync(`lib/${name}.ts`,'utf8');
-  const compiled=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.ES2022,target:ts.ScriptTarget.ES2022}}).outputText.replace("from './domain'","from './domain.js'").replace("from './ai'","from './ai.js'").replace("from './service'","from './service.js'");
+  const compiled=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.ES2022,target:ts.ScriptTarget.ES2022}}).outputText.replace("from './domain'","from './domain.js'").replace("from './ai'","from './ai.js'").replace("from './service'","from './service.js'").replace("from './photos'","from './photos.js'");
   writeFileSync(`outputs/test-lib/${name}.js`,compiled);
 }
 const {RentalService}=await import(pathToFileURL(process.cwd()+'/outputs/test-lib/service.js'));
 const {interval,quote}=await import(pathToFileURL(process.cwd()+'/outputs/test-lib/domain.js'));
 class D1 {
-  constructor(){this.db=new DatabaseSync(':memory:');this.db.exec('PRAGMA foreign_keys=ON');this.db.exec(readFileSync('drizzle/0000_boring_unus.sql','utf8'));this.db.exec(readFileSync('drizzle/0001_accounts_and_operations.sql','utf8'));}
-  prepare(sql){const db=this.db;let args=[];return {bind(...values){args=values;return this;},async first(){return db.prepare(sql).get(...args)||null;},async all(){return {results:db.prepare(sql).all(...args)};},async run(){const r=db.prepare(sql).run(...args);return {meta:{changes:Number(r.changes)}};}};}
+  constructor(){this.db=new DatabaseSync(':memory:');this.db.exec('PRAGMA foreign_keys=ON');this.db.exec(readFileSync('drizzle/0000_boring_unus.sql','utf8'));this.db.exec(readFileSync('drizzle/0001_accounts_and_operations.sql','utf8'));this.db.exec(readFileSync('drizzle/0002_property_photos.sql','utf8'));}
+  prepare(sql){const db=this.db;let args=[];return {bind(...values){args=values.map(v=>v instanceof ArrayBuffer?new Uint8Array(v):v);return this;},async first(){const row=db.prepare(sql).get(...args);return row?Object.fromEntries(Object.entries(row).map(([key,value])=>[key,value instanceof Uint8Array?Array.from(value):value])):null;},async all(){return {results:db.prepare(sql).all(...args)};},async run(){const r=db.prepare(sql).run(...args);return {meta:{changes:Number(r.changes)}};}};}
   async batch(statements){this.db.exec('BEGIN');try{const result=[];for(const q of statements)result.push(await q.run());this.db.exec('COMMIT');return result;}catch(e){this.db.exec('ROLLBACK');throw e;}}
 }
 const db=new D1(),owner=new RentalService(db,'owner'),guest=new RentalService(db,'guest'),worker=new RentalService(db,'worker'),other=new RentalService(db,'other');
@@ -211,4 +211,44 @@ test('cleaner can decline before work and owner can request rework before accept
  await assert.rejects(host.jobAction(job,{action:'approve'}),/Нет отчёта/);
  await cleaner.jobAction(job,{action:'submit',checklist:[true,true,true,true],report:'Доработано'});await host.jobAction(job,{action:'approve'});
  assert.equal((await host.one('SELECT status FROM cleaning_jobs WHERE id=?',job)).status,'completed');
+});
+
+test('property photos persist with ownership, visibility, order and file validation',async()=>{
+ const {storePhoto,fetchPhoto,validatePhoto}=await import(pathToFileURL(process.cwd()+'/outputs/test-lib/photos.js'));
+ const d=new D1(),host=new RentalService(d,'host'),client=new RentalService(d,'client'),otherHost=new RentalService(d,'other-host');
+ await host.saveProfile({name:'H',contact:'h',city:'Павлодар',roles:['owner']});await client.saveProfile({name:'C',contact:'c',city:'Павлодар',roles:['guest']});await otherHost.saveProfile({name:'O',contact:'o',city:'Павлодар',roles:['owner']});
+ const bytes=Uint8Array.from(Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aZl8AAAAASUVORK5CYII=','base64'));
+ assert.throws(()=>validatePhoto(new Uint8Array([60,115,118,103]),'image/png'));
+ assert.throws(()=>validatePhoto(new Uint8Array(501*1024),'image/png'),/500/);
+ await assert.rejects(storePhoto(d,'client',bytes,'image/png'),/владелец/);
+ const a=await storePhoto(d,'host',bytes,'image/png'),b=await storePhoto(d,'host',bytes,'image/png');
+ await assert.rejects(fetchPhoto(d,'client',a.id),/не найдено/);
+ const body={title:'Photo property',city:'Павлодар',district:'Центр',address:'Private',description:'Test',price:10000,rooms:1,capacity:2,cleaningMinutes:60,photoIds:[b.id,a.id]};
+ await assert.rejects(otherHost.createProperty(body),/недоступно/);
+ assert.equal((await otherHost.state()).ownProperties.length,0);
+ const property=(await host.createProperty(body)).id;
+ assert.deepEqual((await host.state()).ownProperties.find(p=>p.id===property).photos.map(p=>p.id),[b.id,a.id]);
+ const response=await fetchPhoto(d,'client',a.id);assert.equal(response.headers.get('content-type'),'image/png');assert.deepEqual(new Uint8Array(await response.arrayBuffer()),bytes);
+ await host.updateProperty(property,{...body,action:'update',photoIds:[a.id]});
+ assert.deepEqual((await client.state()).properties.find(p=>p.id===property).photos.map(p=>p.id),[a.id]);
+ await assert.rejects(fetchPhoto(d,'client',b.id),/не найдено/);
+ await host.updateProperty(property,{action:'visibility',published:false});
+ await assert.rejects(fetchPhoto(d,'client',a.id),/не найдено/);
+ assert.equal((await fetchPhoto(d,'host',a.id)).status,200);
+ await assert.rejects(host.updateProperty(property,{...body,action:'update',photoIds:[a.id,a.id]}),/8 разных/);
+});
+
+
+test('local AI uses Ollama without paid API and retains deterministic fallback',async()=>{
+  const {generateAnswer}=await import(pathToFileURL(process.cwd()+'/outputs/test-lib/ai.js'));
+  const original=globalThis.fetch;const calls=[];
+  try{
+    globalThis.fetch=async(url,init)=>{calls.push(String(url));const body=JSON.parse(init.body);assert.equal(body.think,false);assert.equal(body.stream,false);assert.equal(body.messages[0].role,'system');assert.ok(!init.headers.Authorization);return Response.json({message:{content:'Локальный ответ'}});};
+    const cfg={AI_PROVIDER:'ollama',OLLAMA_BASE_URL:'http://127.0.0.1:11434',OLLAMA_MODEL:'qwen3:1.7b',OPENAI_API_KEY:'must-not-be-used',OPENAI_MODEL:'unused'};
+    const result=await generateAnswer(cfg,'Вопрос','owner',[],'Сценарий');assert.equal(result.mode,'local-model');assert.equal(result.text,'Локальный ответ');assert.deepEqual(calls,['http://127.0.0.1:11434/api/chat']);
+    globalThis.fetch=async()=>{throw Error('offline');};
+    const fallback=await generateAnswer(cfg,'Вопрос','guest',[],'Сценарий');assert.equal(fallback.mode,'fallback');assert.match(fallback.text,/Сценарий/);
+    globalThis.fetch=async()=>{throw Error('must not call any API');};
+    assert.equal((await generateAnswer({OPENAI_API_KEY:'unused',OPENAI_MODEL:'unused'},'Вопрос','guest',[],'Сценарий')).mode,'scenario');
+  }finally{globalThis.fetch=original;}
 });

@@ -1,3 +1,5 @@
+import {localAI} from '../../../lib/ai';
+import {readPhoto,storePhoto,fetchPhoto} from '../../../lib/photos';
 import { env } from 'cloudflare:workers';
 import { getChatGPTUser } from '../../chatgpt-auth';
 import { RentalService } from '../../../lib/service';
@@ -31,7 +33,11 @@ async function handle(request:Request, context:{params:Promise<{path:string[]}>}
     const user=native||(platform?.userId!=='local_seedy'?platform:null);
     if(!user)return json({error:'Войдите в свой аккаунт.'},401);
     const service=new RentalService(env.DB,user.userId);
-    if(request.method==='GET'&&route[0]==='state') { const state=await service.state();return json({...state,integrations:{...state.integrations,ai:!!(env.OPENAI_API_KEY&&env.OPENAI_MODEL)},user:{id:user.userId,name:user.fullName||'',email:user.email}}); }
+    if(route[0]==='photos'&&route.length===2&&request.method==='GET')return await fetchPhoto(env.DB,user.userId,route[1]);
+    if(route[0]==='photos'&&route.length===2&&request.method==='DELETE'){await service.query('DELETE FROM property_photos WHERE id=? AND owner_id=? AND property_id IS NULL',route[1],user.userId).run();return json({message:'Фото убрано из черновика.'});}
+    if(route[0]==='photos'&&route.length===1&&request.method==='POST'){const {bytes,type}=await readPhoto(request);return json(await storePhoto(env.DB,user.userId,bytes,type));}
+
+    if(request.method==='GET'&&route[0]==='state') { const state=await service.state();return json({...state,integrations:{...state.integrations,ai:localAI(env),aiProvider:localAI(env)?'ollama':'scenario',aiModel:localAI(env)?env.OLLAMA_MODEL:null},user:{id:user.userId,name:user.fullName||'',email:user.email}}); }
     if(request.method!=='POST') return json({error:'Маршрут не найден.'},404);
     const origin=request.headers.get('origin');
     if(origin && origin!==new URL(request.url).origin) return json({error:'Источник запроса не разрешён.'},403);
@@ -46,7 +52,7 @@ async function handle(request:Request, context:{params:Promise<{path:string[]}>}
         case 'properties':return json(await service.createProperty(body));
         case 'bookings':return json(await service.createBooking(body));
         case 'jobs':return json(await service.createJob(body));
-        case 'chat':return json(await service.chat(body,{OPENAI_API_KEY:env.OPENAI_API_KEY,OPENAI_MODEL:env.OPENAI_MODEL}));
+        case 'chat':return json(await service.chat(body,{AI_PROVIDER:env.AI_PROVIDER,OLLAMA_BASE_URL:env.OLLAMA_BASE_URL,OLLAMA_MODEL:env.OLLAMA_MODEL,OPENAI_API_KEY:env.OPENAI_API_KEY,OPENAI_MODEL:env.OPENAI_MODEL}));
         case 'demo':return json(await service.demo());
         case 'maintenance':return json(await service.maintenance());
         case 'notifications':await service.query('UPDATE notifications SET read=1 WHERE user_id=?',user.userId).run();return json({message:'Уведомления прочитаны.'});

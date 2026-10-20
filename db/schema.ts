@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer, uniqueIndex } from 'drizzle-orm/sqlite-core';
+import { sqliteTable, text, integer, uniqueIndex, blob, index } from 'drizzle-orm/sqlite-core';
 
 export const profiles = sqliteTable('profiles', {
   id: text('id').primaryKey(), name: text('name').notNull(), contact: text('contact').notNull().default(''),
@@ -51,3 +51,5 @@ export const accounts=sqliteTable('accounts',{id:text('id').primaryKey(),email:t
 export const sessions=sqliteTable('sessions',{tokenHash:text('token_hash').primaryKey(),userId:text('user_id').notNull().references(()=>accounts.id),expiresAt:integer('expires_at').notNull()});
 export const accountSettings=sqliteTable('account_settings',{userId:text('user_id').primaryKey(),activeRole:text('active_role').notNull().default('guest'),autoConfirm:integer('auto_confirm').notNull().default(0),autoAssign:integer('auto_assign').notNull().default(0),cleaningFee:integer('cleaning_fee').notNull().default(4000)});
 export const authLimits=sqliteTable('auth_limits',{key:text('key').primaryKey(),attempts:integer('attempts').notNull(),resetAt:integer('reset_at').notNull()});
+
+export const propertyPhotos=sqliteTable('property_photos',{id:text('id').primaryKey(),ownerId:text('owner_id').notNull(),propertyId:text('property_id').references(()=>properties.id),contentType:text('content_type').notNull(),data:blob('data',{mode:'buffer'}).notNull(),sortOrder:integer('sort_order').notNull().default(0),createdAt:integer('created_at').notNull()},t=>[index('photos_property').on(t.propertyId,t.sortOrder),index('photos_owner').on(t.ownerId,t.createdAt)]);

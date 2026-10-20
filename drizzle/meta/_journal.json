@@ -15,6 +15,13 @@
       "when": 1792512352476,
       "tag": "0001_accounts_and_operations",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1792513523940,
+      "tag": "0002_property_photos",
+      "breakpoints": true
     }
   ]
 }

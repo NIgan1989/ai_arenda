@@ -1,5 +1,6 @@
+import {MAX_PHOTOS} from './photos';
 import { DomainError, required, number, interval, quote, roles, assistantReply, type Role } from './domain';
-import { generateAnswer, type AIConfig } from './ai';
+import { generateAnswer, localAI, type AIConfig } from './ai';
 
 type Row = Record<string, any>;
 const now = () => Math.floor(Date.now() / 1000);
@@ -41,8 +42,10 @@ export class RentalService {
       this.one('SELECT * FROM account_settings WHERE user_id=?',this.userId),
       this.all(`SELECT DISTINCT a.id,a.action,a.entity_id,a.created_at FROM audit_events a WHERE a.actor_id=? OR a.entity_id IN (SELECT b.id FROM bookings b JOIN properties p ON p.id=b.property_id WHERE b.guest_id=? OR p.owner_id=?) OR a.entity_id IN (SELECT id FROM cleaning_jobs WHERE owner_id=? OR assigned_to=?) ORDER BY a.created_at DESC LIMIT 30`,...Array(5).fill(this.userId)),
     ]);
+    const photoRows=await this.all('SELECT id,property_id FROM property_photos WHERE property_id IS NOT NULL ORDER BY sort_order,id');
+    const withPhotos=(items:Row[])=>items.map(p=>({...p,photos:photoRows.filter(f=>f.property_id===p.id).map(f=>({id:f.id,url:'/api/photos/'+f.id}))}));
     const activeRole=settings?.active_role||(profile?JSON.parse(profile.roles)[0]:'guest');
-    return { profile, settings:settings||{active_role:profile?JSON.parse(profile.roles)[0]:'guest',auto_confirm:0,auto_assign:0,cleaning_fee:4000}, activity, properties:activeRole==='guest'?properties:[], ownProperties:activeRole==='owner'?ownProperties:[], bookings:bookings.filter(b=>activeRole==='owner'?b.owner_id===this.userId:activeRole==='guest'?b.guest_id===this.userId:false).map(b => ({...b,status:b.status==='requested' && b.expires_at<=now()?'expired':b.status})), jobs:activeRole==='cleaner'?jobs.filter(j=>j.assigned_to===this.userId||(j.status==='open'&&j.city.toLowerCase()===profile?.city.toLowerCase())):jobs.filter(j=>j.owner_id===this.userId), applications:activeRole==='cleaner'?applications.filter(a=>a.user_id===this.userId):activeRole==='owner'?applications:[], notifications, messages:messages.filter(m=>m.scope===activeRole), serverTime:now(), integrations:{ai:false,telegram:false,whatsapp:false,payments:false} };
+    return { profile, settings:settings||{active_role:profile?JSON.parse(profile.roles)[0]:'guest',auto_confirm:0,auto_assign:0,cleaning_fee:4000}, activity, properties:activeRole==='guest'?withPhotos(properties):[], ownProperties:activeRole==='owner'?withPhotos(ownProperties):[], bookings:bookings.filter(b=>activeRole==='owner'?b.owner_id===this.userId:activeRole==='guest'?b.guest_id===this.userId:false).map(b => ({...b,status:b.status==='requested' && b.expires_at<=now()?'expired':b.status})), jobs:activeRole==='cleaner'?jobs.filter(j=>j.assigned_to===this.userId||(j.status==='open'&&j.city.toLowerCase()===profile?.city.toLowerCase())):jobs.filter(j=>j.owner_id===this.userId), applications:activeRole==='cleaner'?applications.filter(a=>a.user_id===this.userId):activeRole==='owner'?applications:[], notifications, messages:messages.filter(m=>m.scope===activeRole), serverTime:now(), integrations:{ai:false,telegram:false,whatsapp:false,payments:false} };
   }
   async saveProfile(body: Row) {
     const name=required(body.name,'Имя',100), contact=required(body.contact,'Контакт',120), city=required(body.city,'Город',80);
@@ -53,11 +56,19 @@ export class RentalService {
     await this.db.batch([this.query(`INSERT INTO profiles VALUES (?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name,contact=excluded.contact,city=excluded.city,roles=excluded.roles,districts=excluded.districts,experience=excluded.experience,availability=excluded.availability`,this.userId,name,contact,city,JSON.stringify(selected),districts,experience,availability,now()),this.audit(this.userId,'profile.updated')]);
     return {message:'Профиль сохранён. Роли подключены.'};
   }
+  async photoStatements(propertyId:string,photoIds:unknown){
+    if(photoIds===undefined)return [];
+    if(!Array.isArray(photoIds)||photoIds.length>MAX_PHOTOS||photoIds.some(v=>typeof v!=='string')||new Set(photoIds).size!==photoIds.length)throw new DomainError('Можно добавить до 8 разных фотографий.');
+    for(const photoId of photoIds){const photo=await this.one('SELECT owner_id,property_id FROM property_photos WHERE id=?',photoId);if(!photo||photo.owner_id!==this.userId||(photo.property_id&&photo.property_id!==propertyId))throw new DomainError('Фото недоступно. Загрузите его заново.',403);}
+    const statements=[this.query('UPDATE property_photos SET property_id=NULL WHERE property_id=? AND owner_id=?',propertyId,this.userId)];
+    photoIds.forEach((photoId,index)=>statements.push(this.query('UPDATE property_photos SET property_id=?,sort_order=? WHERE id=? AND owner_id=?',propertyId,index,photoId,this.userId)));
+    return statements;
+  }
   async createProperty(body:Row) {
     await this.requireRole('owner');
     const propertyId=id(),propertyType=body.propertyType||'apartment',rateUnit=body.rateUnit||'day';
     if(!['apartment','hostel','hotel','house','other'].includes(propertyType)||!['hour','day'].includes(rateUnit))throw new DomainError('Проверьте тип объекта и тариф.');
-    await this.db.batch([this.query('INSERT INTO properties (id,owner_id,demo_owner,title,city,district,address,description,price,rooms,capacity,cleaning_minutes,published,created_at,property_type,rate_unit) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',propertyId,this.userId,null,required(body.title,'Название',120),required(body.city,'Город',80),required(body.district,'Район',120),required(body.address,'Точный адрес',300),required(body.description,'Описание и правила',2500),number(body.price,'Цена за сутки',100,10000000),number(body.rooms,'Комнаты',1,20),number(body.capacity,'Вместимость',1,50),number(body.cleaningMinutes,'Время уборки',30,1440),1,now(),propertyType,rateUnit),this.audit(propertyId,'property.created')]);
+    await this.db.batch([this.query('INSERT INTO properties (id,owner_id,demo_owner,title,city,district,address,description,price,rooms,capacity,cleaning_minutes,published,created_at,property_type,rate_unit) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',propertyId,this.userId,null,required(body.title,'Название',120),required(body.city,'Город',80),required(body.district,'Район',120),required(body.address,'Точный адрес',300),required(body.description,'Описание и правила',2500),number(body.price,'Цена за сутки',100,10000000),number(body.rooms,'Комнаты',1,20),number(body.capacity,'Вместимость',1,50),number(body.cleaningMinutes,'Время уборки',30,1440),1,now(),propertyType,rateUnit),this.audit(propertyId,'property.created'),...await this.photoStatements(propertyId,body.photoIds)]);
     return {id:propertyId,message:'Квартира добавлена в каталог. Точный адрес скрыт до подтверждения брони.'};
   }
   async updateProperty(propertyId:string, body:Row) {
@@ -78,7 +89,7 @@ export class RentalService {
       const active=await this.one(`SELECT id FROM bookings WHERE property_id=? AND occupied_until>? AND (status='confirmed' OR (status='requested' AND expires_at>?)) LIMIT 1`,propertyId,now(),now());
       if(active) throw new DomainError('Время уборки нельзя изменить при активных бронях. Остальные сведения можно сохранить с прежним временем уборки.',409);
     }
-    await this.db.batch([this.query('UPDATE properties SET title=?,city=?,district=?,address=?,description=?,price=?,rooms=?,capacity=?,cleaning_minutes=?,property_type=?,rate_unit=? WHERE id=?',...values,propertyType,rateUnit,propertyId),this.audit(propertyId,'property.updated')]);
+    await this.db.batch([this.query('UPDATE properties SET title=?,city=?,district=?,address=?,description=?,price=?,rooms=?,capacity=?,cleaning_minutes=?,property_type=?,rate_unit=? WHERE id=?',...values,propertyType,rateUnit,propertyId),this.audit(propertyId,'property.updated'),...await this.photoStatements(propertyId,body.photoIds)]);
     return {message:'Изменения квартиры сохранены. Стоимость существующих броней не изменена.'};
   }
   async createBooking(body:Row) {
@@ -220,16 +231,17 @@ export class RentalService {
     const text=required(body.text,'Сообщение',2000), role=roles.includes(body.role)?body.role:'guest';
     await this.requireRole(role);
     const reply=assistantReply(text,role,!!await this.profile()), ts=Date.now();
-    if(body.aiConsent===true&&config.OPENAI_API_KEY&&config.OPENAI_MODEL){
+    let mode='scenario';
+    if(localAI(config)||(body.aiConsent===true&&config.AI_PROVIDER==='openai'&&config.OPENAI_API_KEY&&config.OPENAI_MODEL)){
       const history=await this.all('SELECT sender,body FROM (SELECT sender,body,created_at FROM messages WHERE user_id=? AND scope=? ORDER BY created_at DESC LIMIT 8) ORDER BY created_at',this.userId,role);
       const generated=await generateAnswer(config,text,role,history as {sender:string;body:string}[],reply.text);
-      reply.text=generated.text;
+      reply.text=generated.text; mode=generated.mode;
     }
     await this.db.batch([
       this.query('INSERT INTO messages VALUES (?,?,?,?,?,?)',id(),this.userId,role,'user',text,ts),
       this.query('INSERT INTO messages VALUES (?,?,?,?,?,?)',id(),this.userId,role,'assistant',reply.text,ts+1)
     ]);
-    return reply;
+    return {...reply,mode};
   }
   async demo() {
     const existing=await this.one('SELECT id FROM properties WHERE demo_owner=? LIMIT 1',this.userId);

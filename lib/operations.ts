@@ -20,6 +20,7 @@ export async function runOperations(db:D1Database,t=Math.floor(Date.now()/1000))
  const departures=await system.all("SELECT b.id,b.guest_id,p.owner_id,p.title FROM bookings b JOIN properties p ON p.id=b.property_id WHERE b.status='confirmed' AND b.end<=? AND b.end>? AND NOT EXISTS (SELECT 1 FROM notifications n WHERE n.dedupe='departure:guest:'||b.id) LIMIT 50",t,t-3600);
  for(const b of departures)await db.batch([system.notify(b.guest_id,`Время проживания в «${b.title}» закончилось. Проверьте порядок выезда с владельцем.`,'departure:guest:'+b.id),system.notify(b.owner_id,`Выезд из «${b.title}». Проверьте статус подготовки и уборки.`,'departure:owner:'+b.id)]);
  await db.prepare("UPDATE bookings SET status='completed' WHERE status='confirmed' AND occupied_until<=? AND NOT EXISTS (SELECT 1 FROM cleaning_jobs j WHERE j.booking_id=bookings.id AND j.status IN ('open','assigned','in_progress','submitted'))").bind(t).run();
+ await db.prepare('DELETE FROM property_photos WHERE property_id IS NULL AND created_at<?').bind(t-86400).run();
  await db.batch([db.prepare('DELETE FROM sessions WHERE expires_at<=?').bind(t),db.prepare('DELETE FROM auth_limits WHERE reset_at<=?').bind(t)]);
  return {expired:expiring.length,arrivals:due.length,overdue:jobs.length};
 }
