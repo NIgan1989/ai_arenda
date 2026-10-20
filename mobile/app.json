@@ -1,0 +1,13 @@
+{
+  "expo": {
+    "name": "AI Аренда",
+    "slug": "ai-arenda",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "scheme": "aiarenda",
+    "ios": {"supportsTablet": true, "bundleIdentifier": "app.aiarenda.assistant"},
+    "android": {"package": "app.aiarenda.assistant"},
+    "web": {"name": "AI Аренда — мобильное приложение", "bundler": "metro", "output": "single"}
+  }
+}

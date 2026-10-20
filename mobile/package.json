@@ -1,0 +1,28 @@
+{
+  "name": "ai-arenda-mobile",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "index.ts",
+  "scripts": {
+    "start": "expo start",
+    "web": "expo start --web",
+    "server": "node scripts/prepare-server.mjs && node server/index.mjs",
+    "test": "node scripts/prepare-server.mjs && node --test tests/*.test.mjs",
+    "typecheck": "tsc --noEmit",
+    "export": "expo export --platform all"
+  },
+  "dependencies": {
+    "expo": "~57.0.0",
+    "expo-secure-store": "~57.0.4",
+    "react": "19.2.3",
+    "react-dom": "19.2.3",
+    "react-native": "0.86.0",
+    "react-native-safe-area-context": "~5.7.0",
+    "react-native-web": "~0.21.0"
+  },
+  "devDependencies": {
+    "@types/react": "~19.2.0",
+    "typescript": "~5.9.2"
+  }
+}
