@@ -350,3 +350,10 @@ test('assistant planning does not expose another role tasks and settings do not 
     await assert.rejects(f.g.authorizeWorkspace('guest','bookings/other',{action:'paid'}),e=>e.status===403);
   }finally{f.database.db.close();}
 });
+
+test('assistant remembers a future guest stay instead of proposing a new booking',()=>{
+  const t=Date.parse('2026-11-01T12:00:00+05:00')/1000;
+  const state={profile:{id:'guest'},bookings:[{id:'trip',property_id:'p',title:'Booked home',status:'confirmed',start:t+3*86400,end:t+4*86400,terms:{actual_checkout:null}}],jobs:[],ownProperties:[]};
+  const brief=assistantBrief(state,'guest',defaultAssistantSettings,t);
+  assert.equal(brief.tasks[0].id,'arrival:trip');assert.equal(brief.tasks[0].kind,'booking');assert.equal(brief.tasks.some(task=>task.id==='setup:trip'),false);
+});

@@ -16,6 +16,11 @@ export function assistantBrief(data:Row,role:Role,settings:Row,t:number){
     if(b.status==='requested'&&b.expires_at>t&&role==='owner')add('request:'+b.id,'Ответить на заявку',b.title+' · резерв скоро истечёт','booking','bookings',b.id,b.expires_at-t<=600?3:2,b.expires_at);
     if(b.status!=='confirmed')continue;
     if(!b.terms?.actual_checkout&&b.end<=t){add('checkout:'+b.id,role==='owner'?'Проверить фактический выезд':'Уточнить завершение проживания',b.title+' · время выезда прошло; освобождение ещё не подтверждено','booking','bookings',b.id,3,b.end);continue;}
+    if(role==='guest'){
+      const leaving=b.start<=t&&b.end<=horizon;
+      add('arrival:'+b.id,leaving?'Подготовиться к выезду':b.start>t?'Проверить предстоящий заезд':'Проверить данные проживания',b.title+' · даты, адрес и условия уже сохранены в вашей брони','booking','bookings',b.id,leaving||b.start>t&&b.start<=horizon?2:1,leaving?b.end:b.start);
+      continue;
+    }
     if(role==='owner'&&b.terms?.checkout_reported_at&&!b.terms.actual_checkout)add('reported:'+b.id,'Проверить освобождение квартиры',b.title+' · гость сообщил о выезде','booking','bookings',b.id,2,b.terms.checkout_reported_at);
     if(b.start>horizon)continue;
     if(role==='owner'){
@@ -23,7 +28,7 @@ export function assistantBrief(data:Row,role:Role,settings:Row,t:number){
       if(b.terms?.deposit_status==='pending')add('deposit:'+b.id,'Проверить получение депозита',b.title+' · депозит предусмотрен условиями','booking','bookings',b.id,2,b.start);
       if(b.readiness&&b.readiness!=='ready'&&!b.terms?.actual_checkin)add('ready:'+b.id,'Подготовить квартиру к заезду',b.title+' · готовность не подтверждена','property','properties',b.property_id,2,b.start);
       if(b.start<=t&&b.end>t&&!b.terms?.actual_checkin&&b.readiness==='ready'&&b.payment_status==='owner_verified'&&b.terms?.deposit_status!=='pending')add('checkin:'+b.id,'Подтвердить фактическое заселение',b.title+' · время заезда наступило','booking','bookings',b.id,2,b.start);
-    }else if(role==='guest')add('arrival:'+b.id,b.start>t?'Подготовиться к заезду':'Проверить данные проживания',b.title+' · адрес и условия в вашей брони','booking','bookings',b.id,1,b.start);
+    }
   }
   for(const j of data.jobs||[]){
     if(role==='owner'&&j.status==='submitted')add('report:'+j.id,'Проверить отчёт об уборке',j.title+' · результат ожидает приёмки','job','cleaning',j.id,2,j.end);
