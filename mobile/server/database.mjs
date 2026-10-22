@@ -9,9 +9,16 @@ export class Database {
     if (!this.raw.prepare("SELECT name FROM sqlite_master WHERE name='profiles'").get()) {
       this.raw.exec(readFileSync(new URL('./generated/schema.sql',import.meta.url),'utf8'));
     }
+    this.raw.exec('CREATE TABLE IF NOT EXISTS rental_migrations (name TEXT PRIMARY KEY)');
+    for(const migration of ['0001_rental_operations','0002_assistant_preferences','0003_owner_calendar','0004_account_settings']){
+      if(this.raw.prepare('SELECT name FROM rental_migrations WHERE name=?').get(migration))continue;
+      this.raw.exec('BEGIN IMMEDIATE');
+      try{this.raw.exec(readFileSync(new URL('./generated/'+migration+'.sql',import.meta.url),'utf8'));this.raw.prepare('INSERT INTO rental_migrations VALUES (?)').run(migration);this.raw.exec('COMMIT');}catch(error){this.raw.exec('ROLLBACK');throw error;}
+    }
     this.raw.exec(`CREATE TABLE IF NOT EXISTS accounts (id TEXT PRIMARY KEY, login TEXT UNIQUE NOT NULL, password TEXT NOT NULL, created_at INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS sessions (hash TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES accounts(id), expires INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS conversations (user_id TEXT PRIMARY KEY REFERENCES accounts(id), body TEXT NOT NULL, updated_at INTEGER NOT NULL);
+      CREATE TABLE IF NOT EXISTS workspace_conversations (user_id TEXT NOT NULL REFERENCES accounts(id), role TEXT NOT NULL, body TEXT NOT NULL, updated_at INTEGER NOT NULL, PRIMARY KEY(user_id,role));
       CREATE TABLE IF NOT EXISTS command_receipts (user_id TEXT NOT NULL, key TEXT NOT NULL, digest TEXT NOT NULL, result TEXT NOT NULL, PRIMARY KEY(user_id,key));`);
   }
   prepare(sql) {

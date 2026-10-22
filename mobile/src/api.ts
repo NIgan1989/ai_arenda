@@ -2,8 +2,10 @@ import { Platform } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
 export const API_URL=(process.env.EXPO_PUBLIC_API_URL||'http://127.0.0.1:8788').replace(/\/$/,'');
 let token:string|null=null;
+let workspaceRole:string|null=null;
+export function setWorkspaceRole(role:string|null){workspaceRole=role;}
 export class ApiError extends Error {constructor(message:string,public status:number){super(message);}}
-export async function restoreSession(){token=Platform.OS==='web'?null:await SecureStore.getItemAsync('ai-arenda-session');return token;}
+export async function restoreSession(){token=Platform.OS==='web'?token:await SecureStore.getItemAsync('ai-arenda-session');return token;}
 export async function saveSession(value:string|null){
   // Browser preview keeps the token in memory. On a phone it lives in Keychain/Keystore.
   if(Platform.OS!=='web'){
@@ -15,7 +17,7 @@ export async function saveSession(value:string|null){
 export async function request(path:string,body?:unknown,method?:string,requestKey?:string):Promise<any>{
   const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),15000);
   try {
-    const response=await fetch(API_URL+path,{method:method||(body===undefined?'GET':'POST'),headers:{...(token?{Authorization:'Bearer '+token}:{}),...(body!==undefined?{'Content-Type':'application/json'}:{}),...(requestKey?{'Idempotency-Key':requestKey}:{})},body:body===undefined?undefined:JSON.stringify(body),signal:controller.signal});
+    const response=await fetch(API_URL+path,{method:method||(body===undefined?'GET':'POST'),headers:{...(token?{Authorization:'Bearer '+token}:{}),...(workspaceRole?{'X-Workspace-Role':workspaceRole}:{}),...(body!==undefined?{'Content-Type':'application/json'}:{}),...(requestKey?{'Idempotency-Key':requestKey}:{})},body:body===undefined?undefined:JSON.stringify(body),signal:controller.signal});
     const data=await response.json();
     if(!response.ok)throw new ApiError(data.error||'Сервер не подтвердил действие.',response.status);
     return data;

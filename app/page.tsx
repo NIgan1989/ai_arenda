@@ -1,2 +1,2 @@
-import Chat from './chat';
-export default function Home() { return <Chat/>; }
+import RoleEntry from '../components/role-entry';
+export default function Home() { return <RoleEntry/>; }

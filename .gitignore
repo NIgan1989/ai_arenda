@@ -61,3 +61,6 @@ next-env.d.ts
 /mobile/server/generated/
 /mobile/data/
 /mobile/outputs/
+
+# Local server credentials and administrator configuration.
+.dev.vars*

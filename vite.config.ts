@@ -1,5 +1,3 @@
-import {localOperationsToken,operationsDev} from './scripts/operations-dev-plugin';
-import {readFileSync} from 'node:fs';
 import vinext from "vinext";
 import { defineConfig } from "vite";
 import hostingConfig from "./.openai/hosting.json";
@@ -53,9 +51,6 @@ export default defineConfig(async ({ command }) => {
   // Wrangler snapshots its log path while the Cloudflare plugin is imported.
   const { cloudflare } = await import("@cloudflare/vite-plugin");
 
-  let localAIConfig:Record<string,string>={};
-  if(command==='serve'){try{const cfg=JSON.parse(readFileSync('.sites-runtime/local-ai.json','utf8').replace(/^\uFEFF/,''));if(cfg.enabled===true)localAIConfig={AI_PROVIDER:'ollama',OLLAMA_BASE_URL:cfg.baseUrl||'http://127.0.0.1:11434',OLLAMA_MODEL:cfg.model||'qwen3:1.7b'};}catch{}}
-  const operationsToken=command==='serve'?localOperationsToken():'';
   return {
     server: {
       ...(managedLinux
@@ -67,7 +62,6 @@ export default defineConfig(async ({ command }) => {
     },
     plugins: [
       vinext(),
-      ...(command==='serve'?[operationsDev(operationsToken)]:[]),
       sites({ mockAuth: !managedLinux }),
       connectorPreview(),
       cloudflare({
@@ -75,7 +69,6 @@ export default defineConfig(async ({ command }) => {
         inspectorPort: false,
         config: {
           ...localBindingConfig,
-          ...(command==='serve'?{vars:{OPERATIONS_TOKEN:operationsToken,...localAIConfig}}:{}),
           ...(command === "serve"
             ? {
                 services: [
