@@ -4,10 +4,11 @@ import { promisify } from 'node:util';
 import { RentalService } from './generated/service.js';
 import { Database } from './database.mjs';
 import { interval } from './generated/domain.js';
+import {isPlatformAdmin} from './generated/account.js';
 const derive=promisify(scrypt), now=()=>Math.floor(Date.now()/1000);
 const hash=value=>createHash('sha256').update(value).digest('hex');
 class HttpError extends Error {constructor(message,status=400){super(message);this.status=status;}}
-export function createApp({filename=':memory:',origins=['http://localhost:8081','http://127.0.0.1:8081'],maintenance=true}={}) {
+export function createApp({filename=':memory:',origins=['http://localhost:8081','http://127.0.0.1:8081'],maintenance=true,adminIds=process.env.PLATFORM_ADMIN_IDS||''}={}) {
   const db=new Database(filename), attempts=new Map(); let queue=Promise.resolve();
   const serial=task=>{const run=queue.then(task);queue=run.catch(()=>{});return run;};
   async function body(req) {
@@ -57,6 +58,8 @@ export function createApp({filename=':memory:',origins=['http://localhost:8081',
     if(path==='/api/access'&&req.method==='GET')return {profile:await service.profile(),user:accountUser};
     if(path==='/api/profile'&&req.method==='POST')return service.saveProfile(input);
     const activeRole=await service.authorizeWorkspace(req.headers['x-workspace-role'],path.replace(/^\/api\//,''),input);
+    if(path==='/api/account'&&req.method==='GET')return {...await service.accountState(),platformAdmin:isPlatformAdmin(user.id,adminIds),modelConfigured:false};
+    if(path==='/api/admin/users'&&req.method==='GET'){const url=new URL(req.url,'http://local');return service.listUsers(isPlatformAdmin(user.id,adminIds),{role:url.searchParams.get('role'),search:url.searchParams.get('search'),page:url.searchParams.get('page')||0});}
     if(path==='/api/state'&&req.method==='GET')return {...await service.roleState(activeRole),user:accountUser};
     if(path==='/api/catalog'&&req.method==='GET'){if(activeRole!=='guest')throw new HttpError('Каталог жилья доступен в роли гостя.',403);return service.publicCatalog();}
     if(path==='/api/conversation'&&req.method==='GET')return JSON.parse(db.raw.prepare('SELECT body FROM workspace_conversations WHERE user_id=? AND role=?').get(user.id,activeRole)?.body||JSON.stringify({messages:[],flow:null,actor:activeRole}));
@@ -70,6 +73,7 @@ export function createApp({filename=':memory:',origins=['http://localhost:8081',
     if(req.method!=='POST')throw new HttpError('Не найдено.',404);
     if(path==='/api/quote')return service.bookingQuote(input);
     if(path==='/api/assistant-settings')return service.saveAssistantSettings(activeRole,input);
+    if(path==='/api/account')return service.saveAccountSettings(input);
     if(path==='/api/properties')return service.createProperty(input);
     if(path==='/api/bookings')return service.createBooking(input);
     if(path==='/api/jobs'){
@@ -83,6 +87,8 @@ export function createApp({filename=':memory:',origins=['http://localhost:8081',
     }
     if(path==='/api/demo')return service.demo();
     if(path==='/api/chat')return service.chat({...input,role:activeRole});
+    const change=path.match(/^\/api\/bookings\/([a-zA-Z0-9-]+)\/(change-quote|changes)(?:\/([a-zA-Z0-9-]+))?$/);
+    if(change)return change[3]?service.decideBookingChange(change[1],change[3],activeRole,input):change[2]==='change-quote'?service.bookingChangeQuote(change[1],activeRole,input):service.proposeBookingChange(change[1],activeRole,input);
     const propertyAction=path.match(/^\/api\/properties\/([a-zA-Z0-9-]+)\/(policy|readiness)$/);
     if(propertyAction)return propertyAction[2]==='policy'?service.savePolicy(propertyAction[1],input):service.readinessAction(propertyAction[1],input);
     const action=path.match(/^\/api\/(bookings|jobs)\/([a-zA-Z0-9-]+)$/);

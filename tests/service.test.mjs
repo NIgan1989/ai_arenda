@@ -7,9 +7,9 @@ import ts from 'typescript';
 
 // Exercise the real SQL and service against SQLite with D1-compatible batches.
 mkdirSync('outputs/test-lib',{recursive:true});
-for(const name of ['domain','ai','operations','assistant','access','rental-policy','service']){
+for(const name of ['domain','ai','operations','assistant','access','rental-policy','account','service']){
   const source=readFileSync(`lib/${name}.ts`,'utf8');
-  const compiled=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.ES2022,target:ts.ScriptTarget.ES2022}}).outputText.replace("from './domain'","from './domain.js'").replace("from './ai'","from './ai.js'").replace("from './operations'","from './operations.js'").replace("from './assistant'", "from './assistant.js'").replace("from './access'", "from './access.js'").replace("from './rental-policy'","from './rental-policy.js'");
+  const compiled=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.ES2022,target:ts.ScriptTarget.ES2022}}).outputText.replace("from './domain'","from './domain.js'").replace("from './ai'","from './ai.js'").replace("from './operations'","from './operations.js'").replace("from './assistant'", "from './assistant.js'").replace("from './access'", "from './access.js'").replace("from './rental-policy'","from './rental-policy.js'").replace("from './account'","from './account.js'");
   writeFileSync(`outputs/test-lib/${name}.js`,compiled);
 }
 const {RentalService}=await import(pathToFileURL(process.cwd()+'/outputs/test-lib/service.js'));
@@ -18,7 +18,7 @@ const {operationOverview}=await import(pathToFileURL(process.cwd()+'/outputs/tes
 const {assistantBrief,defaultAssistantSettings}=await import(pathToFileURL(process.cwd()+'/outputs/test-lib/assistant.js'));
 const {rentalPrice,defaultPolicy}=await import(pathToFileURL(process.cwd()+'/outputs/test-lib/rental-policy.js'));
 class D1 {
-  constructor(){this.db=new DatabaseSync(':memory:');this.db.exec('PRAGMA foreign_keys=ON');this.db.exec(readFileSync('drizzle/0000_boring_unus.sql','utf8'));this.db.exec(readFileSync('drizzle/0001_rental_operations.sql','utf8'));this.db.exec(readFileSync('drizzle/0002_assistant_preferences.sql','utf8'));}
+  constructor(){this.db=new DatabaseSync(':memory:');this.db.exec('PRAGMA foreign_keys=ON');for(const migration of ['0000_boring_unus','0001_rental_operations','0002_assistant_preferences','0003_owner_calendar','0004_account_settings'])this.db.exec(readFileSync(`drizzle/${migration}.sql`,'utf8'));}
   prepare(sql){const db=this.db;let args=[];return {bind(...values){args=values;return this;},async first(){return db.prepare(sql).get(...args)||null;},async all(){return {results:db.prepare(sql).all(...args)};},async run(){const r=db.prepare(sql).run(...args);return {meta:{changes:Number(r.changes)}};}};}
   async batch(statements){this.db.exec('BEGIN');try{const result=[];for(const q of statements)result.push(await q.run());this.db.exec('COMMIT');return result;}catch(e){this.db.exec('ROLLBACK');throw e;}}
 }
@@ -30,6 +30,128 @@ before(async()=>{
   await owner.saveProfile({name:'Owner',contact:'owner test',city:'Павлодар',roles:['owner']});
   await guest.saveProfile({name:'Guest',contact:'guest test',city:'Павлодар',roles:['guest']});
   await worker.saveProfile({name:'Cleaner',contact:'worker test',city:'Павлодар',roles:['cleaner'],districts:'Центр',experience:'Учебная анкета',availability:'Днём'});
+});
+
+async function changeFixture(extra={}){
+  const f=await rentalFixture();
+  await f.o.savePolicy(f.propertyId,{...f.policy,expectedVersion:1,maxDiscountPercent:20,minimumRate:1000,repairBudget:25000,escalationContact:'Duty test contact',...extra});
+  const request={propertyId:f.propertyId,start:iso(start),end:iso(start+86400000),guests:1,requestKey:'change-stay',acceptTerms:true};
+  const b=await f.g.createBooking(request);if((await f.g.state()).bookings[0].status==='requested')await f.o.bookingAction(b.id,{action:'confirm',cleaningFee:3000});
+  return {...f,b,request};
+}
+async function proposal(f,actor,role,values,key='change'){
+  const body={start:f.request.start,end:f.request.end,reason:'Test schedule agreement',...values},q=await actor.bookingChangeQuote(f.b.id,role,body);
+  return {...await actor.proposeBookingChange(f.b.id,role,{...body,requestKey:key,expectedAmount:q.amount,baseVersion:q.baseVersion,policyVersion:q.policyVersion,acceptTerms:true}),q,body};
+}
+test('owner mandate validates floors, extension limits and expiry; private limits stay private',async()=>{
+  const f=await changeFixture();try{
+    const p=(await f.o.roleState('owner')).ownProperties[0].policy;assert.equal(p.repair_budget,25000);assert.equal(p.escalation_contact,'Duty test contact');
+    const publicP=(await f.g.roleState('guest')).properties[0].policy;for(const key of ['repair_budget','max_discount_percent','minimum_rate','escalation_contact','mandate_until'])assert.equal(publicP[key],undefined);
+    await assert.rejects(f.o.savePolicy(f.propertyId,{...f.policy,expectedVersion:2,autoExtension:true,maxExtensionHours:0}),/предел/);
+    await assert.rejects(f.o.savePolicy(f.propertyId,{...f.policy,expectedVersion:2,autoConfirm:true,mandateUntil:'2001-01-01T00:00:00Z'}),/истёк/);
+    await assert.rejects(f.o.savePolicy(f.propertyId,{...f.policy,expectedVersion:2,autoConfirm:true,minimumRate:3000}),/ниже/);
+    await assert.rejects(f.o.bookingChangeQuote(f.b.id,'owner',{...f.request,discountPercent:21}),/предел/);
+    await assert.rejects(f.g.bookingChangeQuote(f.b.id,'guest',{...f.request,discountPercent:10}),e=>e.status===403);
+  }finally{f.database.db.close();}
+});
+test('early arrival and owner discount require guest agreement; retries do not apply twice',async()=>{
+  const f=await changeFixture();try{
+    const change=await proposal(f,f.o,'owner',{start:iso(start-3600000),discountPercent:10});
+    assert.equal(change.q.amount,18000);assert.equal((await f.g.state()).bookings[0].amount,10000);
+    await assert.rejects(f.o.decideBookingChange(f.b.id,change.id,'owner',{action:'accept'}),e=>e.status===403);
+    await f.g.decideBookingChange(f.b.id,change.id,'guest',{action:'accept'});await f.g.decideBookingChange(f.b.id,change.id,'guest',{action:'accept'});
+    const b=(await f.g.state()).bookings[0];assert.equal(b.start,Math.floor((start-3600000)/1000));assert.equal(b.amount,18000);assert.equal(b.terms.discount_percent,10);assert.equal(b.terms.version,2);assert.equal(b.terms.deposit,15000);
+  }finally{f.database.db.close();}
+});
+test('changes reject invalid roles, self approval, changed tariffs, stale versions and expired offers',async()=>{
+  const f=await changeFixture();try{
+    await assert.rejects(f.w.bookingChangeQuote(f.b.id,'cleaner',f.request),e=>e.status===403);
+    await assert.rejects(f.stranger.bookingChangeQuote(f.b.id,'guest',f.request),e=>e.status===403);
+    const first=await proposal(f,f.g,'guest',{end:iso(start+90000000)}),second=await proposal(f,f.g,'guest',{end:iso(start+93600000)},'change-2');
+    await f.o.decideBookingChange(f.b.id,first.id,'owner',{action:'accept'});
+    await assert.rejects(f.o.decideBookingChange(f.b.id,second.id,'owner',{action:'accept'}),e=>e.status===409);
+    const third=await proposal(f,f.g,'guest',{end:iso(start+97200000)},'change-3');
+    f.database.db.prepare('UPDATE booking_changes SET expires_at=unixepoch()-1 WHERE id=?').run(third.id);
+    await assert.rejects(f.o.decideBookingChange(f.b.id,third.id,'owner',{action:'accept'}),e=>e.status===409);
+    const fourth=await proposal(f,f.g,'guest',{end:iso(start+100800000)},'change-4');
+    await f.o.savePolicy(f.propertyId,{...f.policy,expectedVersion:2,dailyPrice:12000});
+    await assert.rejects(f.o.decideBookingChange(f.b.id,fourth.id,'owner',{action:'accept'}),/изменились/);
+  }finally{f.database.db.close();}
+});
+test('extension rechecks adjacent reservations and independent cleaning at acceptance',async()=>{
+  const f=await changeFixture();try{
+    const change=await proposal(f,f.g,'guest',{end:iso(start+93600000)});
+    await f.g.createBooking({...f.request,start:iso(start+86400000+90*60000),end:iso(start+2*86400000),requestKey:'adjacent'});
+    await assert.rejects(f.o.decideBookingChange(f.b.id,change.id,'owner',{action:'accept'}),/пересекает/);
+    assert.equal((await f.g.state()).bookings.find(b=>b.id===f.b.id).end,Math.floor((start+86400000)/1000));
+    // SQL also defends a direct update that bypasses a preflight quote.
+    const t=Math.floor((start-4*3600000)/1000);
+    await f.o.createJob({propertyId:f.propertyId,start:iso((t-3600)*1000),end:iso((t+3600)*1000),fee:3000,description:'Independent cleaning'});
+    assert.throws(()=>f.database.db.prepare('UPDATE bookings SET start=? WHERE id=?').run(t,f.b.id),/booking_overlap/);
+  }finally{f.database.db.close();}
+});
+test('extensions preserve verified funds, expose only the balance and never invent a refund',async()=>{
+  const f=await changeFixture();try{
+    await f.o.bookingAction(f.b.id,{action:'paid'});
+    await assert.rejects(f.o.bookingChangeQuote(f.b.id,'owner',{...f.request,discountPercent:10}),/возврат/);
+    const change=await proposal(f,f.g,'guest',{end:iso(start+90000000)});assert.equal(change.q.amountDue,10000);assert.equal(change.q.paidAmount,10000);
+    await f.o.decideBookingChange(f.b.id,change.id,'owner',{action:'accept'});
+    let b=(await f.g.state()).bookings[0];assert.equal(b.amount,20000);assert.equal(b.terms.paid_amount,10000);assert.equal(b.payment_status,'unpaid');assert.equal(b.terms.deposit_status,'pending');
+    await f.o.bookingAction(f.b.id,{action:'paid'});b=(await f.g.state()).bookings[0];assert.equal(b.terms.paid_amount,20000);assert.equal(b.payment_status,'owner_verified');
+  }finally{f.database.db.close();}
+});
+test('automatic extension is audited and its limit is cumulative from the original checkout',async()=>{
+  const f=await changeFixture({autoExtension:true,maxExtensionHours:2});try{
+    const first=await proposal(f,f.g,'guest',{end:iso(start+90000000)});assert.equal(first.q.automatic,true);
+    const b=(await f.g.state()).bookings[0];assert.equal(b.end,Math.floor((start+90000000)/1000));assert.equal(b.payment_status,'unpaid');
+    const events=f.database.db.prepare("SELECT * FROM audit_events WHERE entity_id=? AND actor_id='system:rental-policy'").all(f.b.id);assert.equal(JSON.parse(events[0].action).action,'booking.change_accepted');
+    const next=await proposal(f,f.g,'guest',{end:iso(start+3*3600000+86400000)},'over-limit');assert.equal(next.q.automatic,false);assert.equal((await f.g.state()).bookings[0].end,b.end);
+    f.database.db.prepare('UPDATE property_policies SET mandate_until=unixepoch()-1 WHERE property_id=?').run(f.propertyId);
+    const q=await f.g.bookingChangeQuote(f.b.id,'guest',{...f.request,end:iso(start+2*3600000+86400000)});assert.equal(q.automatic,false);
+  }finally{f.database.db.close();}
+});
+test('rescheduling cleaning revokes old availability and requires a new worker application',async()=>{
+  const f=await changeFixture();try{
+    let state=await f.o.state(),j=state.jobs[0];await f.w.jobAction(j.id,{action:'apply'});state=await f.o.state();await f.o.jobAction(j.id,{action:'assign',applicationId:state.applications[0].id});
+    const change=await proposal(f,f.g,'guest',{end:iso(start+90000000)});assert.equal(change.q.cleanerReconfirmation,true);await f.o.decideBookingChange(f.b.id,change.id,'owner',{action:'accept'});
+    state=await f.o.state();j=state.jobs[0];assert.equal(j.status,'open');assert.equal(j.assigned_to,null);assert.equal(j.start,change.q.end);assert.equal(state.applications[0].status,'rejected');
+    const publicJob=(await f.w.roleState('cleaner')).jobs[0];assert.equal(publicJob.address,null);
+    await assert.rejects(f.o.jobAction(j.id,{action:'assign',applicationId:state.applications[0].id}),/недоступен/);
+    await f.w.jobAction(j.id,{action:'apply'});state=await f.o.state();await f.o.jobAction(j.id,{action:'assign',applicationId:state.applications[0].id});assert.equal((await f.w.state()).jobs[0].assigned_to,'w');
+  }finally{f.database.db.close();}
+});
+test('checkout report, maintenance and missing consent block changes without freeing the property',async()=>{
+  const f=await changeFixture();try{
+    const q=await f.g.bookingChangeQuote(f.b.id,'guest',{...f.request,end:iso(start+90000000)});
+    await assert.rejects(f.g.proposeBookingChange(f.b.id,'guest',{...f.request,acceptTerms:false,end:iso(start+90000000),requestKey:'no-consent',expectedAmount:q.amount,baseVersion:q.baseVersion,policyVersion:q.policyVersion,reason:'Test'}),/согласие/);
+    await f.o.readinessAction(f.propertyId,{expectedVersion:1,readiness:'maintenance',note:'Lock repair'});
+    await assert.rejects(f.g.bookingChangeQuote(f.b.id,'guest',{...f.request,end:iso(start+90000000)}),/закрыты/);
+    f.database.db.prepare('UPDATE booking_terms SET checkout_reported_at=unixepoch() WHERE booking_id=?').run(f.b.id);
+    await assert.rejects(f.g.bookingChangeQuote(f.b.id,'guest',{...f.request,end:iso(start+90000000)}),/сообщения о выезде/);
+  }finally{f.database.db.close();}
+});
+test('nightly changes bill early arrival and late checkout by started hours without switching tariff',async()=>{
+  const f=await rentalFixture();try{
+    const day=new Date(Date.now()+7*86400000+18000000).toISOString().slice(0,10),next=new Date(Date.now()+8*86400000+18000000).toISOString().slice(0,10),start=day+'T14:00:00+05:00',end=next+'T12:00:00+05:00';
+    const b=await f.g.createBooking({propertyId:f.propertyId,start,end,billingMode:'nightly',guests:1,requestKey:'nightly-change',acceptTerms:true});await f.o.bookingAction(b.id,{action:'confirm',cleaningFee:3000});
+    const q=await f.o.bookingChangeQuote(b.id,'owner',{start:day+'T12:30:00+05:00',end:next+'T13:01:00+05:00',billingMode:'nightly'});
+    assert.equal(q.billingMode,'nightly');assert.equal(q.units,1);assert.equal(q.extraHours,4);assert.equal(q.extraRate,2000);assert.equal(q.amount,17000);
+    const change=await f.o.proposeBookingChange(b.id,'owner',{start:day+'T12:30:00+05:00',end:next+'T13:01:00+05:00',billingMode:'nightly',requestKey:'nightly-early-late',reason:'Early arrival and late checkout',expectedAmount:q.amount,baseVersion:q.baseVersion,policyVersion:q.policyVersion,acceptTerms:true});
+    await f.g.decideBookingChange(b.id,change.id,'guest',{action:'accept'});assert.equal((await f.g.state()).bookings[0].amount,17000);
+  }finally{f.database.db.close();}
+});
+test('account payment preferences are private, versioned and do not grant administrator rights',async()=>{
+ const f=await rentalFixture();try{
+  assert.equal((await f.g.accountState()).settings.version,0);
+  await f.g.saveAccountSettings({paymentProvider:'kaspi',paymentNotifications:false,expectedVersion:0,platformAdmin:true});
+  assert.equal((await f.g.accountState()).settings.payment_provider,'kaspi');assert.equal((await f.o.accountState()).settings.payment_provider,'undecided');
+  await assert.rejects(f.g.saveAccountSettings({paymentProvider:'halyk',paymentNotifications:true,expectedVersion:0}),e=>e.status===409);
+  await assert.rejects(f.g.listUsers(false,{platformAdmin:true}),e=>e.status===403);
+  await f.g.notify('g','Payment test','paid:pref-test','guest').run();await f.g.notify('g','Booking test','confirmed:pref-test','guest').run();
+  const notifications=(await f.g.roleState('guest')).notifications;assert.equal(notifications.some(n=>n.dedupe==='guest:paid:pref-test'),false);assert.equal(notifications.some(n=>n.dedupe==='guest:confirmed:pref-test'),true);
+  const admins=await f.o.listUsers(true,{role:'cleaner'});assert.equal(admins.users.length,1);assert.deepEqual(admins.users[0].roles,['cleaner']);assert.equal(admins.users[0].password,undefined);
+  assert.equal((await f.o.listUsers(true,{search:'%'})).users.length,0);
+ }finally{f.database.db.close();}
 });
 test('date and quote rules include midnight and started daily periods',()=>{
   assert.throws(()=>interval(iso(start),iso(start-1)));

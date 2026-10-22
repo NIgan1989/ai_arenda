@@ -2,6 +2,7 @@ import { env } from 'cloudflare:workers';
 import { getChatGPTUser } from '../../chatgpt-auth';
 import { RentalService } from '../../../lib/service';
 import { DomainError } from '../../../lib/domain';
+import {isPlatformAdmin} from '../../../lib/account';
 export const dynamic='force-dynamic';
 const json=(data:unknown,status=200)=>Response.json(data,{status,headers:{'Cache-Control':'no-store','X-Content-Type-Options':'nosniff'}});
 async function handle(request:Request, context:{params:Promise<{path:string[]}>}) {
@@ -13,6 +14,8 @@ async function handle(request:Request, context:{params:Promise<{path:string[]}>}
     const service=new RentalService(env.DB,user.userId);
     if(request.method==='GET'&&route.length===1&&route[0]==='access')return json({profile:await service.profile(),user:{id:user.userId,name:user.fullName||''}});
     const activeRole=request.headers.get('X-Workspace-Role');
+    if(request.method==='GET'&&route.length===1&&route[0]==='account'){await service.authorizeWorkspace(activeRole,'account');return json({...await service.accountState(),platformAdmin:isPlatformAdmin(user.userId,env.PLATFORM_ADMIN_IDS),modelConfigured:!!(env.OPENAI_API_KEY&&env.OPENAI_MODEL)});}
+    if(request.method==='GET'&&route.join('/')==='admin/users'){await service.authorizeWorkspace(activeRole,'admin/users');const url=new URL(request.url);return json(await service.listUsers(isPlatformAdmin(user.userId,env.PLATFORM_ADMIN_IDS),{role:url.searchParams.get('role'),search:url.searchParams.get('search'),page:url.searchParams.get('page')||0}));}
     if(request.method==='GET'&&route[0]==='state') { const state=await service.roleState(activeRole);return json({...state,integrations:{...state.integrations,ai:!!(env.OPENAI_API_KEY&&env.OPENAI_MODEL)},user:{id:user.userId,name:user.fullName||''}}); }
     if(request.method==='GET'&&route.length===1&&route[0]==='catalog'){await service.authorizeWorkspace(activeRole,'quote');return json(await service.publicCatalog());}
     if(request.method!=='POST') return json({error:'Маршрут не найден.'},404);
@@ -27,6 +30,7 @@ async function handle(request:Request, context:{params:Promise<{path:string[]}>}
     if(route.length===1) {
       switch(route[0]) {
         case 'assistant-settings':return json(await service.saveAssistantSettings(activeRole,body));
+        case 'account':return json(await service.saveAccountSettings(body));
         case 'quote':return json(await service.bookingQuote(body));
         case 'profile':return json(await service.saveProfile(body));
         case 'properties':return json(await service.createProperty(body));
@@ -40,6 +44,9 @@ async function handle(request:Request, context:{params:Promise<{path:string[]}>}
     }
     if(route.length===2 && route[0]==='bookings') return json(await service.bookingAction(route[1],body));
     if(route.length===2 && route[0]==='jobs') return json(await service.jobAction(route[1],body));
+    if(route[0]==='bookings'&&route.length===3&&route[2]==='change-quote')return json(await service.bookingChangeQuote(route[1],activeRole,body));
+    if(route[0]==='bookings'&&route.length===3&&route[2]==='changes')return json(await service.proposeBookingChange(route[1],activeRole,body));
+    if(route[0]==='bookings'&&route.length===4&&route[2]==='changes')return json(await service.decideBookingChange(route[1],route[3],activeRole,body));
     if(route.length===3&&route[0]==='properties'&&route[2]==='policy')return json(await service.savePolicy(route[1],body));
     if(route.length===3&&route[0]==='properties'&&route[2]==='readiness')return json(await service.readinessAction(route[1],body));
     return json({error:'Маршрут не найден.'},404);

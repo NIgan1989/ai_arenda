@@ -2,9 +2,9 @@ import { DomainError, roles, type Role } from './domain';
 
 export const roleNames:Record<Role,string>={guest:'Гость',owner:'Владелец',cleaner:'Исполнитель уборки'};
 export const rolePages:Record<Role,{id:string;title:string;intent:string}[]>={
-  guest:[{id:'overview',title:'Обзор',intent:'workspace'},{id:'catalog',title:'Найти квартиру',intent:'properties'},{id:'bookings',title:'Мои брони',intent:'bookings'},{id:'assistant',title:'Ассистент',intent:'assistant'},{id:'settings',title:'Настройки',intent:'settings'}],
-  owner:[{id:'overview',title:'Обзор',intent:'workspace'},{id:'properties',title:'Мои квартиры',intent:'own-properties'},{id:'bookings',title:'Заявки гостей',intent:'owner-bookings'},{id:'cleaning',title:'Уборки',intent:'owner-jobs'},{id:'assistant',title:'Ассистент',intent:'assistant'},{id:'settings',title:'Настройки',intent:'settings'}],
-  cleaner:[{id:'overview',title:'Обзор',intent:'workspace'},{id:'jobs',title:'Найти задания',intent:'jobs'},{id:'assignments',title:'Мои задания',intent:'my-jobs'},{id:'assistant',title:'Ассистент',intent:'assistant'},{id:'settings',title:'Настройки',intent:'settings'}],
+  guest:[{id:'overview',title:'Обзор',intent:'workspace'},{id:'catalog',title:'Найти квартиру',intent:'properties'},{id:'bookings',title:'Мои брони',intent:'bookings'},{id:'calendar',title:'Календарь',intent:'calendar'},{id:'assistant',title:'Ассистент',intent:'assistant'},{id:'settings',title:'Настройки',intent:'settings'},{id:'account',title:'Аккаунт',intent:'account'}],
+  owner:[{id:'overview',title:'Обзор',intent:'workspace'},{id:'properties',title:'Мои квартиры',intent:'own-properties'},{id:'bookings',title:'Заявки гостей',intent:'owner-bookings'},{id:'cleaning',title:'Уборки',intent:'owner-jobs'},{id:'calendar',title:'Календарь',intent:'calendar'},{id:'assistant',title:'Ассистент',intent:'assistant'},{id:'settings',title:'Настройки',intent:'settings'},{id:'account',title:'Аккаунт',intent:'account'}],
+  cleaner:[{id:'overview',title:'Обзор',intent:'workspace'},{id:'jobs',title:'Найти задания',intent:'jobs'},{id:'assignments',title:'Мои задания',intent:'my-jobs'},{id:'calendar',title:'Календарь',intent:'calendar'},{id:'assistant',title:'Ассистент',intent:'assistant'},{id:'settings',title:'Настройки',intent:'settings'},{id:'account',title:'Аккаунт',intent:'account'}],
 };
 export function parseRole(value:unknown):Role{
   if(!roles.includes(value as Role))throw new DomainError('Сначала выберите роль на экране входа.',403);

@@ -14,6 +14,7 @@ export function assistantBrief(data:Row,role:Role,settings:Row,t:number){
   const add=(key:string,title:string,reason:string,kind:string,section:string,entityId:string,priority:number,at=t,intent?:string)=>tasks.push({id:key,title,reason,kind,section,entityId,priority,at,intent});
   for(const b of data.bookings||[]){
     if(b.status==='requested'&&b.expires_at>t&&role==='owner')add('request:'+b.id,'Ответить на заявку',b.title+' · резерв скоро истечёт','booking','bookings',b.id,b.expires_at-t<=600?3:2,b.expires_at);
+    for(const c of b.changes||[])if(c.status==='pending'&&c.expires_at>t&&c.proposer_role!==role)add('change:'+c.id,'Согласовать изменение проживания',b.title+' · проверьте новые даты и стоимость','booking','bookings',b.id,2,c.expires_at);
     if(b.status!=='confirmed')continue;
     if(!b.terms?.actual_checkout&&b.end<=t){add('checkout:'+b.id,role==='owner'?'Проверить фактический выезд':'Уточнить завершение проживания',b.title+' · время выезда прошло; освобождение ещё не подтверждено','booking','bookings',b.id,3,b.end);continue;}
     if(role==='guest'){

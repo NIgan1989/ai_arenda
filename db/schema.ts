@@ -54,6 +54,9 @@ export const propertyPolicies = sqliteTable('property_policies', {
   deposit: integer('deposit').notNull().default(0), houseRules: text('house_rules').notNull().default(''),
   autoConfirm: integer('auto_confirm').notNull().default(0), cleaningFee: integer('cleaning_fee').notNull().default(0),
   cleaningBudget: integer('cleaning_budget').notNull().default(0), version: integer('version').notNull().default(1),
+  maxDiscountPercent: integer('max_discount_percent').notNull().default(0), minimumRate: integer('minimum_rate').notNull().default(0),
+  repairBudget: integer('repair_budget').notNull().default(0), autoExtension: integer('auto_extension').notNull().default(0), maxExtensionHours: integer('max_extension_hours').notNull().default(0),
+  mandateUntil: integer('mandate_until').notNull().default(0), escalationContact: text('escalation_contact').notNull().default(''),
   revision: text('revision').notNull(), updatedAt: integer('updated_at').notNull(),
 });
 export const propertyOperations = sqliteTable('property_operations', {
@@ -66,9 +69,16 @@ export const bookingTerms = sqliteTable('booking_terms', {
   rate: integer('rate').notNull(), units: integer('units').notNull(), amount: integer('amount').notNull(),
   deposit: integer('deposit').notNull().default(0), depositStatus: text('deposit_status').notNull().default('not_required'),
   houseRules: text('house_rules').notNull().default(''), policyVersion: integer('policy_version').notNull().default(0),
+  version: integer('version').notNull().default(1), discountPercent: integer('discount_percent').notNull().default(0), paidAmount: integer('paid_amount').notNull().default(0), originalEnd: integer('original_end').notNull().default(0),
   actualCheckin: integer('actual_checkin'), actualCheckout: integer('actual_checkout'), checkoutReportedAt: integer('checkout_reported_at'),
 });
 export const assistantPreferences = sqliteTable('assistant_preferences', {
   userId: text('user_id').notNull(), role: text('role').notNull(), settings: text('settings').notNull(),
   version: integer('version').notNull().default(1), updatedAt: integer('updated_at').notNull(),
 }, t => [uniqueIndex('assistant_preferences_user_role').on(t.userId,t.role)]);
+
+export const bookingChanges = sqliteTable('booking_changes', {
+ id:text('id').primaryKey(),bookingId:text('booking_id').notNull().references(()=>bookings.id),proposedBy:text('proposed_by').notNull(),proposerRole:text('proposer_role').notNull(),requestKey:text('request_key').notNull(),baseVersion:integer('base_version').notNull(),policyVersion:integer('policy_version').notNull(),start:integer('start').notNull(),end:integer('end').notNull(),occupiedUntil:integer('occupied_until').notNull(),billingMode:text('billing_mode').notNull(),rate:integer('rate').notNull(),units:integer('units').notNull(),discountPercent:integer('discount_percent').notNull(),amount:integer('amount').notNull(),reason:text('reason').notNull(),status:text('status').notNull().default('pending'),expiresAt:integer('expires_at').notNull(),createdAt:integer('created_at').notNull(),decidedAt:integer('decided_at'),
+},t=>[uniqueIndex('booking_change_request').on(t.proposedBy,t.requestKey)]);
+
+export const accountPreferences=sqliteTable('account_preferences',{userId:text('user_id').primaryKey().references(()=>profiles.id),paymentProvider:text('payment_provider').notNull().default('undecided'),paymentNotifications:integer('payment_notifications').notNull().default(1),version:integer('version').notNull().default(1),updatedAt:integer('updated_at').notNull()});

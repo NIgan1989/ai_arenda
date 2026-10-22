@@ -6,9 +6,9 @@ import {join,resolve,sep} from 'node:path';
 import {createApp} from '../server/app.mjs';
 const folder=mkdtempSync(join(tmpdir(),'ai-arenda-api-'));
 const filename=join(folder,'test.sqlite');let app,base,owner,guest,worker,property,booking,job;
-async function start(){app=createApp({filename,maintenance:false});await new Promise(done=>app.server.listen(0,'127.0.0.1',done));base='http://127.0.0.1:'+app.server.address().port;}
+async function start(adminIds=''){app=createApp({filename,maintenance:false,adminIds});await new Promise(done=>app.server.listen(0,'127.0.0.1',done));base='http://127.0.0.1:'+app.server.address().port;}
 async function call(path,body,token,method){const response=await fetch(base+path,{method:method||(body===undefined?'GET':'POST'),headers:{...(token?{Authorization:'Bearer '+token,'X-Workspace-Role':token===owner?.token?'owner':token===worker?.token?'cleaner':'guest'}:{}),...(body!==undefined?{'Content-Type':'application/json'}:{})},body:body===undefined?undefined:JSON.stringify(body)});return {status:response.status,body:await response.json()};}
-before(start);
+before(()=>start());
 after(async()=>{await app.close();const target=resolve(folder);assert.ok(target.startsWith(resolve(tmpdir())+sep)&&target.includes('ai-arenda-api-'));rmSync(target,{recursive:true,force:true});});
 test('unauthenticated clients cannot read data; CORS rejects unapproved web origins',async()=>{
   assert.equal((await call('/api/state')).status,401);
@@ -122,6 +122,42 @@ test('assistant settings persist across restart and stay within the authenticate
   assert.equal(ownerState.assistantSettings.mode,'important');assert.equal(guestState.assistantSettings.mode,'reactive');
   assert.equal(guestState.assistantBrief.automatic,false);assert.equal(ownerState.assistantBrief.capabilities.modelActions,false);
 });
+test('schedule proposals use the authenticated role and persist consent and payment balance across restart',async()=>{
+  const p=(await call('/api/properties',{title:'Calendar test',city:'Павлодар',district:'Test',address:'PRIVATE',description:'Test rules',price:10000,rooms:1,capacity:2,cleaningMinutes:90},owner.token)).body.id;
+  const policy={expectedVersion:0,dailyPrice:10000,hourlyPrice:2000,minHours:2,nightlyPrice:9000,checkinTime:'14:00',checkoutTime:'12:00',deposit:10000,houseRules:'Test rules',cleaningFee:3000,cleaningBudget:4000,maxDiscountPercent:15,repairBudget:20000,escalationContact:'Duty test contact'};
+  assert.equal((await call('/api/properties/'+p+'/policy',policy,owner.token)).status,200);
+  const t=Date.now()+20*86400000,request={propertyId:p,start:new Date(t).toISOString(),end:new Date(t+86400000).toISOString(),guests:1,requestKey:'http-change-stay',acceptTerms:true};
+  const b=(await call('/api/bookings',request,guest.token)).body.id;
+  assert.equal((await call('/api/bookings/'+b,{action:'confirm',cleaningFee:3000},owner.token)).status,200);
+  assert.equal((await call('/api/bookings/'+b,{action:'paid'},owner.token)).status,200);
+  const body={start:request.start,end:new Date(t+90000000).toISOString(),reason:'Extend test stay'};
+  assert.equal((await call('/api/bookings/'+b+'/change-quote',{...body,role:'owner',discountPercent:10},guest.token)).status,403);
+  assert.equal((await call('/api/bookings/'+b+'/change-quote',body,worker.token)).status,403);
+  const q=(await call('/api/bookings/'+b+'/change-quote',body,guest.token)).body;assert.equal(q.amountDue,10000);
+  const change=await call('/api/bookings/'+b+'/changes',{...body,requestKey:'http-change',expectedAmount:q.amount,baseVersion:q.baseVersion,policyVersion:q.policyVersion,acceptTerms:true},guest.token);assert.equal(change.status,200);
+  assert.equal((await call('/api/bookings/'+b+'/changes/'+change.body.id,{action:'accept',role:'owner'},guest.token)).status,403);
+  await app.close();await start();
+  const pending=(await call('/api/state',undefined,owner.token)).body.bookings.find(v=>v.id===b);assert.equal(pending.changes[0].status,'pending');assert.equal(pending.amount,10000);
+  assert.equal((await call('/api/bookings/'+b+'/changes/'+change.body.id,{action:'accept'},owner.token)).status,200);
+  await app.close();await start();
+  const saved=(await call('/api/state',undefined,guest.token)).body.bookings.find(v=>v.id===b);assert.equal(saved.amount,20000);assert.equal(saved.terms.paid_amount,10000);assert.equal(saved.payment_status,'unpaid');assert.equal(saved.changes[0].status,'accepted');
+  assert.equal((await call('/api/bookings/'+b+'/changes/'+change.body.id,{action:'accept'},owner.token)).status,200);
+});
+
+test('account settings persist and only a server-designated administrator can list every role',async()=>{
+  assert.equal((await call('/api/admin/users?platformAdmin=true',undefined,owner.token)).status,403);
+  const body={paymentProvider:'halyk',paymentNotifications:false,expectedVersion:0,platformAdmin:true};
+  assert.equal((await call('/api/account',body,guest.token)).status,200);
+  assert.equal((await call('/api/account',body,guest.token)).status,409);
+  assert.equal((await call('/api/admin/users',undefined,guest.token)).status,403);
+  await app.close();await start(owner.user.id);
+  const a=(await call('/api/account',undefined,owner.token)).body;assert.equal(a.platformAdmin,true);assert.equal(a.settings.payment_provider,'undecided');
+  const g=(await call('/api/account',undefined,guest.token)).body;assert.equal(g.platformAdmin,false);assert.equal(g.settings.payment_provider,'halyk');
+  const list=await call('/api/admin/users?role=cleaner',undefined,owner.token);assert.equal(list.status,200);assert.ok(list.body.users.length>=1);assert.ok(list.body.users.every(u=>u.roles.includes('cleaner')));assert.equal(list.body.users[0].password,undefined);
+  assert.equal((await call('/api/admin/users',undefined,worker.token)).status,403);
+  await app.close();await start();assert.equal((await call('/api/admin/users',undefined,owner.token)).status,403);
+});
+
 test('logout revokes the server session, leaving other accounts connected',async()=>{
   assert.equal((await call('/auth/logout',{},owner.token)).status,200);
   assert.equal((await call('/api/state',undefined,owner.token)).status,401);
