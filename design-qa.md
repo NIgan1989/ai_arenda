@@ -35,7 +35,7 @@ The full-view and focused comparison images were both opened and evaluated. Scre
 ## Interactions and accessibility
 
 - Desktop selected link has `aria-current=page`; account links to the protected account page.
-- Phone has overview, a role-specific primary section, assistant, More, and account. Other sections remain reachable through More.
+- Current phone bottom navigation has four primary role-specific sections and account. More is in the header; secondary pages remain reachable through it. See the scoped update below.
 - Tested opening More and the account page, closing More with Escape, and restoring focus to its trigger. The web drawer traps Tab within its controls while open.
 - Checked all bottom controls stay inside the 320-pixel viewport; document width equals scroll width.
 - Browser error logs for the verification tab: none.
@@ -53,3 +53,13 @@ No actionable P0/P1/P2 findings remain for the requested navigation change. P3: 
 - [x] Preserve role-scoped routes and backend authorization.
 - [x] Verify desktop/mobile screenshots and primary interactions.
 - [x] Recompare after the account affordance fix.
+
+## Scoped update: move More out of bottom navigation (22.10.2026)
+
+final result: passed
+
+The user attachment C:/Users/03021/AppData/Local/Temp/codex-clipboard-ac4b3b6b-6b3d-400f-a949-979c11d8a5e9.png requests moving the existing ellipsis control away from the bottom bar. This is a scoped navigation edit. More now sits at the right of the mobile header; the bottom bar has four primary sections and account. Owner: overview, properties, bookings, assistant, account. Guest: overview, catalog, bookings, assistant, account. Cleaner: overview, jobs, assignments, assistant, account.
+
+Evidence: docs/design-audit/44-primary-bottom-navigation.jpg (390×844), docs/design-audit/45-header-more-menu.jpg, docs/design-audit/46-navigation-before-after.png (two 390×844 app views), and docs/design-audit/47-request-navigation-comparison.png (the 739×979 attachment and the 390×844 current app side by side, without scaling). The attachment includes browser chrome and a different capture size, so it is used to check the requested placement, not to infer pixel-level font differences. The matched-viewport before/after comparison confirms the app layout is retained. Both comparison images were opened and reviewed.
+
+No P0/P1/P2 issue remains. Spacing, typography, colors and library icon assets remain consistent; the help label becomes a labelled help icon on phones to make room for the header menu. The header and all five bottom targets fit a 320×640 viewport without horizontal overflow. All three role layouts were opened in the browser. Header menu contents, Escape close and focus restoration were checked. On desktop the header menu is hidden and all eight owner links remain in the rail. Browser error logs are empty. TypeScript, 42 service tests, 16 HTTP tests, web build and Android/iOS/web exports pass.

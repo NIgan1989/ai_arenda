@@ -6,7 +6,7 @@ import { baseQuestions,cleanerQuestions,date,empty,labels,money,parseDate,proper
 import { C,s } from './src/styles';
 import {PropertyControl,readinessLabels} from './src/PropertyControl';
 import {BookingChanges} from './src/BookingChanges';
-import {WorkspaceNavigation} from './src/WorkspaceNavigation';
+import {WorkspaceNavigation,WorkspaceMenuButton} from './src/WorkspaceNavigation';
 import {AccountControl} from './src/AccountControl';
 import {RentalCalendar} from './src/RentalCalendar';
 import {AssistantControl} from './src/AssistantControl';
@@ -46,6 +46,7 @@ function Chat(){
   const [data,setData]=useState<Row>(empty),[messages,setMessages]=useState<Message[]>([]),[flow,setFlow]=useState<Flow|null>(null),[actor,setActor]=useState<Role>('guest');
   const [input,setInput]=useState(''),[busy,setBusy]=useState(false),[ready,setReady]=useState(false),[online,setOnline]=useState(false),[historyReady,setHistoryReady]=useState(false),[saveError,setSaveError]=useState(false);
   const scroll=useRef<ScrollView>(null),composer=useRef<TextInput>(null),locked=useRef(false),session=useRef(false),pending=useRef(''),seen=useRef(new Set<string>());
+  const [navigationMenu,setNavigationMenu]=useState(false);
   const [selectedRole,setSelectedRole]=useState<Role|null>(null),[pageId,setPageId]=useState('overview');
   const activeRoleRef=useRef<Role|null>(null),prompted=useRef(new Map<string,{signature:string;time:number}>());
   const userId=data.user?.id;
@@ -290,7 +291,7 @@ function Chat(){
   const primary:Message={id:'page-'+pageId,sender:'assistant',text:'',block:pageId==='overview'?'workspace':pageId==='properties'||pageId==='catalog'?'properties':pageId==='bookings'?'bookings':['cleaning','jobs','assignments'].includes(pageId)?'jobs':undefined,payload:{ids,role:selectedRole,mode:selectedRole==='owner'?'owner':'guest'}};
   if(!selectedRole)return <RoleEntry ready={ready} profile={data.profile} user={data.user} busy={busy} auth={<Auth busy={busy} onSubmit={(mode,login,password)=>authenticate(mode,login,password,'entry','workspace')}/>} onChoose={chooseRole} onSave={async(body,role)=>{await request('/api/profile',body);await chooseRole(role);}} onLogout={()=>send('Выйти')}/>;
   return <SafeAreaView style={s.screen} edges={['top','bottom']}><StatusBar barStyle="dark-content" backgroundColor={C.bg}/><KeyboardAvoidingView style={s.shell} behavior={Platform.OS==='ios'?'padding':undefined}>
-    <View style={s.header}><View style={s.logo}><Text style={s.logoText}>а</Text></View><View style={{flex:1}}><Text style={s.brand}>AI Аренда</Text><Text style={s.subtitle}>{roleNames[selectedRole]}</Text></View><Button title="Сменить роль" secondary disabled={busy||!!flow} onPress={switchRole}/><View accessibilityLabel={online?'Есть связь с сервером':'Нет связи с сервером'} style={s.connection}><View style={[s.status,{backgroundColor:online?C.green:'#98672F'}]}/><Text style={s.connectionText}>{!ready?'Подключаюсь':online?'Есть связь':'Нет связи'}</Text></View></View>
+    <View style={s.header}><View style={s.logo}><Text style={s.logoText}>а</Text></View><View style={{flex:1}}><Text style={s.brand}>AI Аренда</Text><Text style={s.subtitle}>{roleNames[selectedRole]}</Text></View><View accessibilityLabel={online?'Есть связь с сервером':'Нет связи с сервером'} style={s.connection}><View style={[s.status,{backgroundColor:online?C.green:'#98672F'}]}/></View><WorkspaceMenuButton open={navigationMenu} busy={busy||!!flow} onPress={()=>setNavigationMenu(v=>!v)}/></View>
     <ScrollView ref={scroll} style={{flex:1}} contentContainerStyle={s.transcript} keyboardShouldPersistTaps="handled" onContentSizeChange={()=>{if(messages[messages.length-1]?.sender==='user'||busy)scroll.current?.scrollToEnd({animated:true});}}>
       <Text accessibilityRole="header" style={s.hero}>{page?.title}</Text>
       {pageId==='properties'&&<Button title="Добавить квартиру" disabled={busy} onPress={()=>run('property')}/>}
@@ -301,7 +302,7 @@ function Chat(){
       {saveError&&<Text accessibilityRole="alert" style={s.error}>История ещё не сохранена. Проверьте связь; заявки хранятся на сервере.</Text>}
     </ScrollView>
     <View style={s.composerWrap}>{flow?.questions[flow.index].choices&&<View style={s.buttonRow}>{flow.questions[flow.index].choices!.map(choice=><Button key={choice.value} title={choice.label} secondary disabled={busy} onPress={()=>send(choice.label)}/>)}</View>}{!!flow&&<View style={s.flowProgress}><Text style={s.flowLabel}>Вопрос {flow.index+1} из {flow.questions.length}</Text><View style={s.buttonRow}>{flow.index>0&&<Button title="Назад" secondary disabled={busy} onPress={()=>{const previous={...flow,index:flow.index-1};setFlow(previous);say(previous.questions[previous.index].text);}}/>}<Button title="Стоп" secondary disabled={busy} onPress={()=>send('Стоп')}/></View></View>}<View style={s.composer}><TextInput ref={composer} accessibilityLabel="Сообщение ассистенту" placeholder={flow?'Ваш ответ…':'Напишите, чем помочь…'} placeholderTextColor={C.muted} value={input} onChangeText={setInput} style={s.input} maxLength={2500} multiline submitBehavior="submit" onSubmitEditing={()=>send()} editable={ready&&!busy}/><Pressable accessibilityRole="button" accessibilityLabel="Отправить сообщение" accessibilityState={{disabled:!ready||busy||!input.trim()}} disabled={!ready||busy||!input.trim()} onPress={()=>send()} style={[s.send,(!input.trim()||busy)&&s.disabled]}><Text style={s.sendText}>{busy?'Ждите':'Отправить'}</Text></Pressable></View><Text style={s.footnote}>AI Аренда · пилотная версия</Text></View>
-  <WorkspaceNavigation role={selectedRole} pageId={pageId} busy={busy||!!flow} onSelect={setPageId}/></KeyboardAvoidingView></SafeAreaView>;
+  <WorkspaceNavigation role={selectedRole} pageId={pageId} busy={busy||!!flow} onSelect={setPageId} more={navigationMenu} setMore={setNavigationMenu} onSwitchRole={switchRole}/></KeyboardAvoidingView></SafeAreaView>;
 }
 function Report({busy,onSubmit}:{busy:boolean;onSubmit:(body:Row)=>void}){
   const [checks,setChecks]=useState([false,false,false,false]),[report,setReport]=useState('');

@@ -1,7 +1,7 @@
 'use client';
 
 import {useState,useEffect,useRef,type FormEvent} from 'react';
-import {Sparkles,ArrowUp,ArrowUpRight,Check,LoaderCircle,MapPin,Clock3,ShieldCheck,Home,Brush,CalendarDays,RotateCcw,LayoutList,ChevronRight,AlertCircle,Users} from 'lucide-react';
+import {Ellipsis,CircleHelp,Sparkles,ArrowUp,ArrowUpRight,Check,LoaderCircle,MapPin,Clock3,ShieldCheck,Home,Brush,CalendarDays,RotateCcw,LayoutList,ChevronRight,AlertCircle,Users} from 'lucide-react';
 import {WorkspaceNavigation} from '../components/workspace-navigation';
 import {AccountControl} from '../components/account-control';
 import {RentalCalendar} from '../components/rental-calendar';
@@ -39,6 +39,7 @@ export default function Chat({workspaceRole,section}:{workspaceRole:Role;section
   const role=workspaceRole;
   const [flow,setFlow]=useState<Flow|null>(null),[busy,setBusy]=useState(false),[ready,setReady]=useState(false);
   const [online,setOnline]=useState(false);
+  const [navigationMenu,setNavigationMenu]=useState(false),navigationTrigger=useRef<HTMLButtonElement>(null);
   const transcript=useRef<HTMLDivElement>(null),composer=useRef<HTMLTextAreaElement>(null),messageCounter=useRef(0),lock=useRef(false);
   const user=data.user,profile=data.profile,myId=user?.id;
   const say=(text:string,block?:string,payload?:Row)=>{const id='message-'+Date.now()+'-'+(++messageCounter.current);setMessages(v=>[...v,{id,sender:'assistant',text,block,payload}]);return id;};
@@ -227,7 +228,7 @@ export default function Chat({workspaceRole,section}:{workspaceRole:Role;section
   }
   const page=rolePages[role].find(p=>p.id===section)!;
   const primary:Message={id:'page-'+section,sender:'assistant',text:'',block:section==='overview'?'workspace':section==='catalog'||section==='properties'?'properties':section==='bookings'?'bookings':section==='cleaning'||section==='jobs'||section==='assignments'?'jobs':undefined,payload:{actor:role,own:role==='owner',items:section==='catalog'?data.properties:section==='properties'?data.ownProperties:section==='bookings'?data.bookings:section==='assignments'?data.jobs.filter((j:Row)=>j.assigned_to===myId||data.applications.some((a:Row)=>a.job_id===j.id&&a.user_id===myId)):data.jobs,applications:data.applications}};
-  return <div className="chat-app workspace-shell"><WorkspaceNavigation role={role} section={section}/><div className="workspace-content"><header className="chat-header"><button className="chat-logo" onClick={()=>composer.current?.focus()} aria-label="AI Аренда — перейти к вводу сообщения"><span><Sparkles size={22} strokeWidth={1.7}/></span><span className="brand-copy">AI Аренда<small>{roleNames[role]} · своё рабочее пространство</small></span></button><div className="header-actions"><a className="about-button" href="/">Сменить роль</a><span className={'connection-status '+(!online?'offline':'')} role="status"><i/>{!ready?'Подключаюсь':online?'Есть связь':'Нет связи'}</span><button className="about-button" disabled={busy||!!flow} onClick={()=>send('Как всё работает?')}>Помощь<ArrowUpRight size={15}/></button></div></header>
+  return <div className="chat-app workspace-shell"><WorkspaceNavigation role={role} section={section} more={navigationMenu} setMore={setNavigationMenu} trigger={navigationTrigger}/><div className="workspace-content"><header className="chat-header"><button className="chat-logo" onClick={()=>composer.current?.focus()} aria-label="AI Аренда — перейти к вводу сообщения"><span><Sparkles size={22} strokeWidth={1.7}/></span><span className="brand-copy">AI Аренда<small>{roleNames[role]} · своё рабочее пространство</small></span></button><div className="header-actions"><a className="about-button" href="/">Сменить роль</a><span className={'connection-status '+(!online?'offline':'')} role="status"><i/>{!ready?'Подключаюсь':online?'Есть связь':'Нет связи'}</span><button className="about-button help-trigger" aria-label="Помощь" disabled={busy||!!flow} onClick={()=>send('Как всё работает?')}><span className="help-label">Помощь</span><CircleHelp size={20}/></button><button className={"nav-icon header-more-trigger"+(navigationMenu?" selected":"")} aria-label="Ещё разделы" aria-expanded={navigationMenu} aria-controls="workspace-more-menu" ref={navigationTrigger} disabled={busy||!!flow} onClick={()=>setNavigationMenu(v=>!v)} title="Ещё разделы"><Ellipsis size={24}/></button></div></header>
 
     <main className="chat-main"><div className={'chat-transcript '+(!messages.length?'is-empty':'')} ref={transcript}>
       <div className="role-page-heading"><span className="welcome-eyebrow">{roleNames[role]}</span><h1>{page.title}</h1>{section==='properties'&&button('Добавить квартиру',()=>runIntent('property'))}{section==='cleaning'&&button('Создать уборку',()=>runIntent('job'))}</div>
