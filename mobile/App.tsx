@@ -226,7 +226,7 @@ function Chat(){
     if(!selectedRole||!historyReady||busy||flow||pageId==='settings'||!brief?.automatic||!brief.signature)return;
     const key=userId+':'+selectedRole,last=prompted.current.get(key);
     if(last&&last.signature===brief.signature&&Date.now()-last.time<settings.repeatMinutes*60000)return;
-    prompted.current.set(key,{signature:brief.signature,time:Date.now()});say('Предлагаю начать с задачи: '+brief.prompts[0].title.toLowerCase()+'.','assistant-brief');
+    prompted.current.set(key,{signature:brief.signature,time:Date.now()});say('Предлагаю начать с задачи: '+brief.prompts[0].title.toLowerCase()+'.',pageId==='assistant'?undefined:'assistant-brief');
   },[selectedRole,historyReady,data.assistantBrief?.signature,data.assistantBrief?.automatic,busy,flow,pageId]);
   function block(m:Message){
     const payload=m.payload||{};

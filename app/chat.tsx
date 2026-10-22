@@ -188,7 +188,7 @@ export default function Chat({workspaceRole,section}:{workspaceRole:Role;section
     const key='rental-assistant:'+myId+':'+role,last=Number(sessionStorage.getItem(key+':time')||0),signature=sessionStorage.getItem(key+':signature');
     if(signature===brief.signature&&Date.now()-last<settings.repeatMinutes*60000)return;
     sessionStorage.setItem(key+':time',String(Date.now()));sessionStorage.setItem(key+':signature',brief.signature);
-    say('Предлагаю начать с задачи: '+brief.prompts[0].title.toLowerCase()+'.','assistant-brief');
+    say('Предлагаю начать с задачи: '+brief.prompts[0].title.toLowerCase()+'.',section==='assistant'?undefined:'assistant-brief');
   },[ready,data.assistantBrief?.signature,data.assistantBrief?.automatic,busy,flow,section]);
   function renderBlock(m:Message){
     const p={...(m.payload||{})};
