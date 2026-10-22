@@ -53,16 +53,23 @@ export function createApp({filename=':memory:',origins=['http://localhost:8081',
     }
     const user=await authenticate(req), service=new RentalService(db,user.id);
     if(path==='/auth/logout'&&req.method==='POST'){db.raw.prepare('DELETE FROM sessions WHERE hash=?').run(hash(user.token));return {message:'Вы вышли из аккаунта.'};}
-    if(path==='/api/state'&&req.method==='GET')return {...await service.state(),user:{id:user.id,login:db.raw.prepare('SELECT login FROM accounts WHERE id=?').get(user.id).login}};
-    if(path==='/api/conversation'&&req.method==='GET')return JSON.parse(db.raw.prepare('SELECT body FROM conversations WHERE user_id=?').get(user.id)?.body||'{"messages":[],"flow":null,"actor":"guest"}');
+    const accountUser={id:user.id,login:db.raw.prepare('SELECT login FROM accounts WHERE id=?').get(user.id).login};
+    if(path==='/api/access'&&req.method==='GET')return {profile:await service.profile(),user:accountUser};
+    if(path==='/api/profile'&&req.method==='POST')return service.saveProfile(input);
+    const activeRole=await service.authorizeWorkspace(req.headers['x-workspace-role'],path.replace(/^\/api\//,''),input);
+    if(path==='/api/state'&&req.method==='GET')return {...await service.roleState(activeRole),user:accountUser};
+    if(path==='/api/catalog'&&req.method==='GET'){if(activeRole!=='guest')throw new HttpError('Каталог жилья доступен в роли гостя.',403);return service.publicCatalog();}
+    if(path==='/api/conversation'&&req.method==='GET')return JSON.parse(db.raw.prepare('SELECT body FROM workspace_conversations WHERE user_id=? AND role=?').get(user.id,activeRole)?.body||JSON.stringify({messages:[],flow:null,actor:activeRole}));
     if(path==='/api/conversation'&&req.method==='PUT'){
       if(!Array.isArray(input.messages)||input.messages.length>150||input.messages.some(m=>!m||typeof m.id!=='string'||!['assistant','user'].includes(m.sender)||typeof m.text!=='string'))throw new HttpError('Некорректная история.');
-      const body=JSON.stringify({messages:input.messages,flow:input.flow||null,actor:['owner','guest','cleaner'].includes(input.actor)?input.actor:'guest'});
-      db.raw.prepare('INSERT INTO conversations VALUES (?,?,?) ON CONFLICT(user_id) DO UPDATE SET body=excluded.body,updated_at=excluded.updated_at').run(user.id,body,now());
+      if(input.flow&&input.flow.role!==activeRole)throw new HttpError('Сценарий относится к другой роли.',403);
+      const body=JSON.stringify({messages:input.messages,flow:input.flow||null,actor:activeRole});
+      db.raw.prepare('INSERT INTO workspace_conversations VALUES (?,?,?,?) ON CONFLICT(user_id,role) DO UPDATE SET body=excluded.body,updated_at=excluded.updated_at').run(user.id,activeRole,body,now());
       return {ok:true};
     }
     if(req.method!=='POST')throw new HttpError('Не найдено.',404);
-    if(path==='/api/profile')return service.saveProfile(input);
+    if(path==='/api/quote')return service.bookingQuote(input);
+    if(path==='/api/assistant-settings')return service.saveAssistantSettings(activeRole,input);
     if(path==='/api/properties')return service.createProperty(input);
     if(path==='/api/bookings')return service.createBooking(input);
     if(path==='/api/jobs'){
@@ -75,7 +82,9 @@ export function createApp({filename=':memory:',origins=['http://localhost:8081',
       return service.createJob(input);
     }
     if(path==='/api/demo')return service.demo();
-    if(path==='/api/chat')return service.chat(input);
+    if(path==='/api/chat')return service.chat({...input,role:activeRole});
+    const propertyAction=path.match(/^\/api\/properties\/([a-zA-Z0-9-]+)\/(policy|readiness)$/);
+    if(propertyAction)return propertyAction[2]==='policy'?service.savePolicy(propertyAction[1],input):service.readinessAction(propertyAction[1],input);
     const action=path.match(/^\/api\/(bookings|jobs)\/([a-zA-Z0-9-]+)$/);
     if(action)return action[1]==='bookings'?service.bookingAction(action[2],input):service.jobAction(action[2],input);
     throw new HttpError('Не найдено.',404);
@@ -84,7 +93,9 @@ export function createApp({filename=':memory:',origins=['http://localhost:8081',
     const key=req.headers['idempotency-key'];
     if(!key||req.method!=='POST'||!path.startsWith('/api/'))return route(req,path,input);
     if(typeof key!=='string'||key.length>200||key.length<8)throw new HttpError('Некорректный ключ действия.');
-    const user=await authenticate(req),digest=hash(path+'\n'+JSON.stringify(input));
+    const user=await authenticate(req);
+    if(path!=='/api/profile')await new RentalService(db,user.id).authorizeWorkspace(req.headers['x-workspace-role'],path.replace(/^\/api\//,''),input);
+    const digest=hash(path+'\n'+String(req.headers['x-workspace-role']||'')+'\n'+JSON.stringify(input));
     const existing=db.raw.prepare('SELECT digest,result FROM command_receipts WHERE user_id=? AND key=?').get(user.id,key);
     if(existing){if(existing.digest!==digest)throw new HttpError('Этот ключ уже использован с другими данными. Обновите карточку.',409);return JSON.parse(existing.result);}
     db.raw.exec('BEGIN IMMEDIATE');db.transactionDepth++;
@@ -98,7 +109,7 @@ export function createApp({filename=':memory:',origins=['http://localhost:8081',
   const server=createServer(async(req,res)=>{
     const origin=req.headers.origin;
     const headers={'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff','Vary':'Origin'};
-    if(origin&&origins.includes(origin))Object.assign(headers,{'Access-Control-Allow-Origin':origin,'Access-Control-Allow-Methods':'GET, POST, PUT, OPTIONS','Access-Control-Allow-Headers':'Authorization, Content-Type, Idempotency-Key'});
+    if(origin&&origins.includes(origin))Object.assign(headers,{'Access-Control-Allow-Origin':origin,'Access-Control-Allow-Methods':'GET, POST, PUT, OPTIONS','Access-Control-Allow-Headers':'Authorization, Content-Type, Idempotency-Key, X-Workspace-Role'});
     const reply=(status,data)=>{res.writeHead(status,headers);res.end(JSON.stringify(data));};
     try {
       if(origin&&!origins.includes(origin))throw new HttpError('Источник не разрешён.',403);
@@ -106,6 +117,7 @@ export function createApp({filename=':memory:',origins=['http://localhost:8081',
       const input=await body(req), path=new URL(req.url,'http://localhost').pathname;
       reply(200,await serial(()=>execute(req,path,input)));
     }catch(error){
+      if(/checkout_required|property_not_vacant|property_cleaning_busy/.test(error.message)){reply(409,{error:'Квартира не освобождена или другая уборка ещё не принята.'});return;}
       const overlap=/booking_overlap|cleaner_overlap/.test(error.message);
       const status=overlap?409:Number(error.status)||500;
       reply(status,{error:overlap?'Время уже занято. Выберите другой интервал.':status>=500?'Сервер не подтвердил действие. Попробуйте позже.':error.message});

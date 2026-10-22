@@ -15,7 +15,7 @@ export function interval(start: unknown, end: unknown, now = Date.now()) {
   if (!Number.isFinite(a) || !Number.isFinite(b) || a < now - 60_000 || b <= a || b - a > 90 * 86400_000) throw new DomainError('Проверьте время: начало должно быть в будущем, окончание — позже начала. Максимум 90 дней.');
   return { start: Math.floor(a / 1000), end: Math.floor(b / 1000) };
 }
-export function quote(price: number, start: number, end: number, unit='day') { return Math.ceil((end - start) / (unit==='hour'?3600:86400)) * price; }
+export function quote(price: number, start: number, end: number) { return Math.ceil((end - start) / 86400) * price; }
 export function assistantReply(text: string, role: Role, hasProfile: boolean) {
   const s = text.toLowerCase();
   if (/оплат|перев[её]л|чек/.test(s)) return {text:'Оплата в этой версии отмечается владельцем после проверки поступления. Сообщение или скриншот не подтверждают платёж автоматически. Откройте свою бронь, чтобы посмотреть статус.', action:'bookings'};
