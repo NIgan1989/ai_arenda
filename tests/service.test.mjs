@@ -7,18 +7,19 @@ import ts from 'typescript';
 
 // Exercise the real SQL and service against SQLite with D1-compatible batches.
 mkdirSync('outputs/test-lib',{recursive:true});
-for(const name of ['domain','ai','operations','assistant','access','rental-policy','account','service']){
+for(const name of ['domain','ai','operations','assistant','access','rental-policy','account','approvals','activity','service']){
   const source=readFileSync(`lib/${name}.ts`,'utf8');
-  const compiled=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.ES2022,target:ts.ScriptTarget.ES2022}}).outputText.replace("from './domain'","from './domain.js'").replace("from './ai'","from './ai.js'").replace("from './operations'","from './operations.js'").replace("from './assistant'", "from './assistant.js'").replace("from './access'", "from './access.js'").replace("from './rental-policy'","from './rental-policy.js'").replace("from './account'","from './account.js'");
+  const compiled=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.ES2022,target:ts.ScriptTarget.ES2022}}).outputText.replace("from './domain'","from './domain.js'").replace("from './ai'","from './ai.js'").replace("from './operations'","from './operations.js'").replace("from './assistant'", "from './assistant.js'").replace("from './access'", "from './access.js'").replace("from './rental-policy'","from './rental-policy.js'").replace("from './account'","from './account.js'").replace("from './approvals'","from './approvals.js'");
   writeFileSync(`outputs/test-lib/${name}.js`,compiled);
 }
 const {RentalService}=await import(pathToFileURL(process.cwd()+'/outputs/test-lib/service.js'));
 const {interval,quote}=await import(pathToFileURL(process.cwd()+'/outputs/test-lib/domain.js'));
 const {operationOverview}=await import(pathToFileURL(process.cwd()+'/outputs/test-lib/operations.js'));
 const {assistantBrief,defaultAssistantSettings}=await import(pathToFileURL(process.cwd()+'/outputs/test-lib/assistant.js'));
+const {activity,duration}=await import(pathToFileURL(process.cwd()+'/outputs/test-lib/activity.js'));
 const {rentalPrice,defaultPolicy}=await import(pathToFileURL(process.cwd()+'/outputs/test-lib/rental-policy.js'));
 class D1 {
-  constructor(){this.db=new DatabaseSync(':memory:');this.db.exec('PRAGMA foreign_keys=ON');for(const migration of ['0000_boring_unus','0001_rental_operations','0002_assistant_preferences','0003_owner_calendar','0004_account_settings'])this.db.exec(readFileSync(`drizzle/${migration}.sql`,'utf8'));}
+  constructor(){this.db=new DatabaseSync(':memory:');this.db.exec('PRAGMA foreign_keys=ON');for(const migration of ['0000_boring_unus','0001_rental_operations','0002_assistant_preferences','0003_owner_calendar','0004_account_settings','0005_activity_approvals'])this.db.exec(readFileSync(`drizzle/${migration}.sql`,'utf8'));}
   prepare(sql){const db=this.db;let args=[];return {bind(...values){args=values;return this;},async first(){return db.prepare(sql).get(...args)||null;},async all(){return {results:db.prepare(sql).all(...args)};},async run(){const r=db.prepare(sql).run(...args);return {meta:{changes:Number(r.changes)}};}};}
   async batch(statements){this.db.exec('BEGIN');try{const result=[];for(const q of statements)result.push(await q.run());this.db.exec('COMMIT');return result;}catch(e){this.db.exec('ROLLBACK');throw e;}}
 }
@@ -478,4 +479,123 @@ test('assistant remembers a future guest stay instead of proposing a new booking
   const state={profile:{id:'guest'},bookings:[{id:'trip',property_id:'p',title:'Booked home',status:'confirmed',start:t+3*86400,end:t+4*86400,terms:{actual_checkout:null}}],jobs:[],ownProperties:[]};
   const brief=assistantBrief(state,'guest',defaultAssistantSettings,t);
   assert.equal(brief.tasks[0].id,'arrival:trip');assert.equal(brief.tasks[0].kind,'booking');assert.equal(brief.tasks.some(task=>task.id==='setup:trip'),false);
+});
+
+
+async function pendingStay(f,key='approval-stay'){
+ return f.g.createBooking({propertyId:f.propertyId,start:iso(start),end:iso(start+86400000),guests:1,requestKey:key,acceptTerms:true});
+}
+async function getCard(service,role,kind){return (await service.roleState(role)).approvals.find(c=>c.kind===kind);}
+const decision=(card,action='accept',extra={})=>({id:card.id,revision:card.revision,action,...extra});
+
+test('approval inbox is role scoped, refuses forged/self decisions and closes a booking exactly once',async()=>{
+ const f=await rentalFixture();try{
+  const b=await pendingStay(f),card=await getCard(f.o,'owner','booking'),sent=await getCard(f.g,'guest','booking');
+  assert.equal(card.entityId,b.id);assert.equal(card.canDecide,true);assert.equal(sent.canDecide,false);
+  assert.equal((await f.w.roleState('cleaner')).approvals.length,0);
+  await assert.rejects(f.g.decideApproval('guest',decision(sent)),e=>e.status===403);
+  await assert.rejects(f.o.decideApproval('owner',{...decision(card),revision:'forged'}),e=>e.status===409);
+  await f.stranger.saveProfile({name:'Stranger',contact:'test',city:'Test',roles:['owner']});
+  await assert.rejects(f.stranger.decideApproval('owner',decision(card)),e=>e.status===409);
+  await f.o.decideApproval('owner',decision(card,'accept',{cleaningFee:3000}));
+  assert.equal((await f.g.state()).bookings[0].status,'confirmed');
+  await assert.rejects(f.o.decideApproval('owner',decision(card)),e=>e.status===409);
+  assert.equal((await f.o.state()).jobs.length,1);assert.equal((await f.o.roleState('owner')).approvals.length,0);
+ }finally{f.database.db.close();}
+});
+
+test('booking rejection and expired or stale decisions cannot confirm a stay',async()=>{
+ const f=await rentalFixture();try{
+  const b=await pendingStay(f),card=await getCard(f.o,'owner','booking');
+  f.database.db.prepare('UPDATE booking_terms SET version=version+1 WHERE booking_id=?').run(b.id);
+  await assert.rejects(f.o.decideApproval('owner',decision(card)),e=>e.status===409);
+  const current=await getCard(f.o,'owner','booking');await f.o.decideApproval('owner',decision(current,'reject'));
+  assert.equal((await f.g.state()).bookings[0].status,'cancelled');assert.equal((await f.o.state()).jobs.length,0);
+  assert.ok((await f.g.roleState('guest')).notifications.some(n=>n.body.includes('отклонил')));
+  const second=await pendingStay(f,'expired-approval'),expired=await getCard(f.o,'owner','booking');
+  f.database.db.prepare('UPDATE bookings SET expires_at=unixepoch()-1 WHERE id=?').run(second.id);
+  await assert.rejects(f.o.decideApproval('owner',decision(expired)),e=>e.status===409);
+ }finally{f.database.db.close();}
+});
+
+test('cleaner application decisions preserve consent and reject old job conditions',async()=>{
+ const f=await rentalFixture();try{
+  const j=await f.o.createJob({propertyId:f.propertyId,start:iso(start),end:iso(start+3600000),fee:3000,description:'Approval test'});
+  await f.w.jobAction(j.id,{action:'apply'});const card=await getCard(f.o,'owner','application');
+  await assert.rejects(f.w.decideApproval('cleaner',decision(await getCard(f.w,'cleaner','application'))),e=>e.status===403);
+  f.database.db.prepare('UPDATE cleaning_jobs SET fee=3500 WHERE id=?').run(j.id);
+  await assert.rejects(f.o.decideApproval('owner',decision(card)),e=>e.status===409);
+  const fresh=await getCard(f.o,'owner','application');await f.o.decideApproval('owner',decision(fresh,'reject'));
+  assert.equal((await f.w.state()).applications[0].status,'rejected');
+  await f.w.jobAction(j.id,{action:'apply'});await f.o.decideApproval('owner',decision(await getCard(f.o,'owner','application')));
+  assert.equal((await f.w.state()).jobs[0].assigned_to,'w');
+  await assert.rejects(f.o.decideApproval('owner',decision(fresh)),e=>e.status===409);
+ }finally{f.database.db.close();}
+});
+
+test('cleaning timestamps survive service reload and report rework never restarts the clock',async()=>{
+ const f=await rentalFixture();try{
+  const j=await f.o.createJob({propertyId:f.propertyId,start:iso(start),end:iso(start+3600000),fee:3000,description:'Timer lifecycle'});
+  await f.w.jobAction(j.id,{action:'apply'});await f.o.decideApproval('owner',decision(await getCard(f.o,'owner','application')));
+  assert.equal((await f.w.state()).jobs[0].started_at,null);
+  f.database.db.prepare('UPDATE cleaning_jobs SET start=unixepoch()-300,end=unixepoch()+1800 WHERE id=?').run(j.id);
+  await f.w.jobAction(j.id,{action:'start'});const running=(await f.w.state()).jobs[0];assert.ok(running.started_at>0);
+  await assert.rejects(f.w.jobAction(j.id,{action:'start'}),e=>e.status===409);
+  assert.equal((await new RentalService(f.database,'w').state()).jobs[0].started_at,running.started_at);
+  const report={action:'submit',checklist:[true,true,true,true],report:'All required work completed'};
+  await f.w.jobAction(j.id,report);const submitted=(await f.w.state()).jobs[0];assert.ok(submitted.submitted_at>=running.started_at);
+  const stopped=activity('job',submitted,submitted.submitted_at+300);assert.equal(stopped.phase,'stopped');assert.equal(stopped.elapsed,submitted.submitted_at-running.started_at);
+  const card=await getCard(f.o,'owner','report');await assert.rejects(f.o.decideApproval('owner',decision(card,'reject',{reason:''})),/доработать/);
+  await f.o.decideApproval('owner',decision(card,'reject',{reason:'Recheck the kitchen'}));
+  const rework=(await f.w.state()).jobs[0];assert.equal(rework.started_at,running.started_at);assert.equal(rework.submitted_at,null);assert.equal(rework.status,'in_progress');
+  assert.notEqual((await f.o.state()).ownProperties[0].operation.readiness,'ready');
+  await f.w.jobAction(j.id,report);await assert.rejects(f.o.decideApproval('owner',decision(card)),e=>e.status===409);
+  await f.o.decideApproval('owner',decision(await getCard(f.o,'owner','report')));
+  const done=(await f.w.state()).jobs[0];assert.equal(done.status,'completed');assert.ok(done.completed_at>=done.submitted_at);assert.equal(done.started_at,running.started_at);
+ }finally{f.database.db.close();}
+});
+
+test('guest checkout agreement requires owner inspection and rejection keeps premises occupied',async()=>{
+ const f=await rentalFixture();try{
+  const b=await pendingStay(f);await f.o.bookingAction(b.id,{action:'confirm'});await f.o.bookingAction(b.id,{action:'paid'});await f.o.bookingAction(b.id,{action:'deposit_received'});
+  await f.o.readinessAction(f.propertyId,{readiness:'ready',expectedVersion:1,inspected:true,note:'Inspected'});
+  f.database.db.prepare('UPDATE bookings SET start=unixepoch()-300,end=unixepoch()+1800,occupied_until=unixepoch()+7200 WHERE id=?').run(b.id);
+  await f.o.bookingAction(b.id,{action:'checkin'});const started=(await f.g.state()).bookings[0].terms.actual_checkin;
+  await f.g.bookingAction(b.id,{action:'report_checkout'});const card=await getCard(f.o,'owner','checkout');
+  await assert.rejects(f.g.decideApproval('guest',decision(await getCard(f.g,'guest','checkout'))),e=>e.status===403);
+  await f.o.decideApproval('owner',decision(card,'reject',{reason:'Keys have not been returned'}));
+  let stay=(await f.g.state()).bookings[0];assert.equal(stay.status,'confirmed');assert.equal(stay.terms.actual_checkout,null);assert.equal(stay.terms.actual_checkin,started);
+  assert.equal((await f.o.state()).ownProperties[0].operation.readiness,'occupied');
+  await f.g.bookingAction(b.id,{action:'report_checkout'});await f.o.decideApproval('owner',decision(await getCard(f.o,'owner','checkout')));
+  stay=(await f.g.state()).bookings[0];assert.equal(stay.status,'completed');assert.ok(stay.terms.actual_checkout>=started);
+ }finally{f.database.db.close();}
+});
+
+test('the shared approval endpoint delegates change consent without changing payment verification',async()=>{
+ const f=await changeFixture();try{
+  const c=await proposal(f,f.o,'owner',{end:iso(start+90000000)});
+  const card=await getCard(f.g,'guest','change');assert.equal(card.entityId,f.b.id);
+  await f.g.decideApproval('guest',decision(card));assert.equal((await f.g.state()).bookings[0].end,c.q.end);
+  assert.notEqual((await f.g.state()).bookings[0].payment_status,'owner_verified');
+  await assert.rejects(f.g.decideApproval('guest',decision(card)),e=>e.status===409);
+ }finally{f.database.db.close();}
+});
+
+test('activity math uses actual start and agreed end, survives elapsed time and freezes on completion',()=>{
+ const b={status:'confirmed',start:900,end:2000,terms:{actual_checkin:null}};
+ assert.equal(activity('booking',b,1000).phase,'waiting');b.terms.actual_checkin=1100;
+ const running=activity('booking',b,1200);assert.equal(running.seconds,800);assert.equal(running.elapsed,100);
+ assert.equal(activity('booking',b,1250).seconds,750);assert.equal(activity('booking',b,2100).phase,'overdue');
+ assert.equal(activity('booking',{...b,end:2400},2100).seconds,300);
+ b.terms.actual_checkout=1800;b.status='completed';assert.equal(activity('booking',b,9999).elapsed,700);
+ assert.equal(activity('job',{status:'in_progress',end:2000,started_at:null},1500).label,'Начало не зафиксировано');
+ assert.equal(activity('job',{status:'assigned',end:2000},1000).phase,'waiting');assert.equal(activity('job',{status:'open'},1000),null);
+ assert.equal(duration(90061),'1 д. 01:01:01');assert.equal(duration(-10),'00:00:00');
+});
+
+
+test('cleaner assistant keeps current work and pending acceptance ahead of finding another job',()=>{
+ const t=Date.now()/1000,state={profile:{id:'w'},bookings:[],ownProperties:[],jobs:[{id:'active-cleaning',title:'Home',assigned_to:'w',status:'in_progress',start:t-60,end:t+900}]};
+ let brief=assistantBrief(state,'cleaner',defaultAssistantSettings,t);assert.equal(brief.tasks[0].id,'working:active-cleaning');assert.equal(brief.tasks.some(v=>v.id==='setup:jobs'),false);
+ state.jobs[0].status='submitted';brief=assistantBrief(state,'cleaner',defaultAssistantSettings,t);assert.equal(brief.tasks[0].id,'review:active-cleaning');
 });

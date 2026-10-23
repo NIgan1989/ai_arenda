@@ -20,7 +20,7 @@ export function commandRole(path:string,body:Record<string,any>):Role[]|null{
   if(path==='profile'||path==='demo'||path==='notifications')return null;
   if(path==='quote'||path==='bookings')return ['guest'];
   if(path==='properties'||path.startsWith('properties/')||path==='jobs')return ['owner'];
-  if(path.startsWith('bookings/'))return ['confirm','paid','deposit_received','checkin','checkout'].includes(body.action)?['owner']:body.action==='report_checkout'?['guest']:['owner','guest'];
+  if(path.startsWith('bookings/'))return ['confirm','reject','paid','deposit_received','checkin','checkout','dispute_checkout'].includes(body.action)?['owner']:body.action==='report_checkout'?['guest']:['owner','guest'];
   if(path.startsWith('jobs/'))return ['apply','start','submit'].includes(body.action)?['cleaner']:body.action==='issue'?['owner','cleaner']:['owner'];
   return null;
 }

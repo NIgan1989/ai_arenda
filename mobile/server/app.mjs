@@ -76,6 +76,7 @@ export function createApp({filename=':memory:',origins=['http://localhost:8081',
     if(path==='/api/account')return service.saveAccountSettings(input);
     if(path==='/api/properties')return service.createProperty(input);
     if(path==='/api/bookings')return service.createBooking(input);
+    if(path==='/api/approvals')return service.decideApproval(activeRole,input);
     if(path==='/api/jobs'){
       await service.requireRole('owner');
       if(!await service.one('SELECT id FROM properties WHERE id=? AND owner_id=?',String(input.propertyId||''),user.id))throw new HttpError('Выберите свою квартиру.',403);

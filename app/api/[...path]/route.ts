@@ -30,6 +30,7 @@ async function handle(request:Request, context:{params:Promise<{path:string[]}>}
     if(route.length===1) {
       switch(route[0]) {
         case 'assistant-settings':return json(await service.saveAssistantSettings(activeRole,body));
+        case 'approvals':return json(await service.decideApproval(activeRole,body));
         case 'account':return json(await service.saveAccountSettings(body));
         case 'quote':return json(await service.bookingQuote(body));
         case 'profile':return json(await service.saveProfile(body));

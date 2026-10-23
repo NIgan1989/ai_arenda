@@ -33,8 +33,10 @@ export function assistantBrief(data:Row,role:Role,settings:Row,t:number){
   }
   for(const j of data.jobs||[]){
     if(role==='owner'&&j.status==='submitted')add('report:'+j.id,'Проверить отчёт об уборке',j.title+' · результат ожидает приёмки','job','cleaning',j.id,2,j.end);
+    else if(role==='cleaner'&&j.assigned_to===data.profile?.id&&j.status==='submitted')add('review:'+j.id,'Дождаться приёмки уборки',j.title+' · отчёт отправлен владельцу, таймер работы остановлен','job','assignments',j.id,1,j.end);
     else if(['open','assigned','in_progress'].includes(j.status)&&j.end<=t&&(role==='owner'||j.assigned_to===data.profile?.id))add('late:'+j.id,'Разобраться с просроченной уборкой',j.title+' · срок задания прошёл','job',role==='owner'?'cleaning':'assignments',j.id,3,j.end);
     else if(role==='owner'&&j.status==='open')add('assign:'+j.id,'Найти исполнителя уборки',j.title+' · исполнитель ещё не назначен','job','cleaning',j.id,j.start<=horizon?2:1,j.start);
+    else if(role==='cleaner'&&j.assigned_to===data.profile?.id&&j.status==='in_progress')add('working:'+j.id,'Завершить текущую уборку',j.title+' · проверьте оставшееся время и отправьте отчёт по готовности','job','assignments',j.id,2,j.end);
     else if(role==='cleaner'&&j.assigned_to===data.profile?.id&&j.status==='assigned'&&j.start<=horizon)add('start:'+j.id,j.checkout_confirmed?'Подготовиться к назначенной уборке':'Дождаться подтверждения выезда',j.title+' · '+(j.checkout_confirmed?'проверьте инструкции и время':'начинать уборку пока нельзя'),'job','assignments',j.id,j.checkout_confirmed?2:1,j.start);
   }
   if(role==='owner'){
