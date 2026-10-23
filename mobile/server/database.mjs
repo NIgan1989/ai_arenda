@@ -10,7 +10,7 @@ export class Database {
       this.raw.exec(readFileSync(new URL('./generated/schema.sql',import.meta.url),'utf8'));
     }
     this.raw.exec('CREATE TABLE IF NOT EXISTS rental_migrations (name TEXT PRIMARY KEY)');
-    for(const migration of ['0001_rental_operations','0002_assistant_preferences','0003_owner_calendar','0004_account_settings','0005_activity_approvals']){
+    for(const migration of ['0001_rental_operations','0002_assistant_preferences','0003_owner_calendar','0004_account_settings','0005_activity_approvals','0006_listing_profiles']){
       if(this.raw.prepare('SELECT name FROM rental_migrations WHERE name=?').get(migration))continue;
       this.raw.exec('BEGIN IMMEDIATE');
       try{this.raw.exec(readFileSync(new URL('./generated/'+migration+'.sql',import.meta.url),'utf8'));this.raw.prepare('INSERT INTO rental_migrations VALUES (?)').run(migration);this.raw.exec('COMMIT');}catch(error){this.raw.exec('ROLLBACK');throw error;}

@@ -6,8 +6,27 @@
     "orientation": "portrait",
     "userInterfaceStyle": "light",
     "scheme": "aiarenda",
-    "ios": {"supportsTablet": true, "bundleIdentifier": "app.aiarenda.assistant"},
-    "android": {"package": "app.aiarenda.assistant"},
-    "web": {"name": "AI Аренда — мобильное приложение", "bundler": "metro", "output": "single"}
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "app.aiarenda.assistant"
+    },
+    "android": {
+      "package": "app.aiarenda.assistant"
+    },
+    "web": {
+      "name": "AI Аренда — мобильное приложение",
+      "bundler": "metro",
+      "output": "single"
+    },
+    "plugins": [
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Разрешите выбрать фотографии жилья и фото профиля.",
+          "cameraPermission": false,
+          "microphonePermission": false
+        }
+      ]
+    ]
   }
 }

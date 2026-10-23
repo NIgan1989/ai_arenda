@@ -15,7 +15,8 @@ export function createApp({filename=':memory:',origins=['http://localhost:8081',
     if(!['POST','PUT'].includes(req.method)) return {};
     if(!req.headers['content-type']?.startsWith('application/json'))throw new HttpError('Нужен JSON.',415);
     let size=0;const chunks=[];
-    for await(const chunk of req){size+=chunk.length;if(size>262144)throw new HttpError('Слишком большой запрос.',413);chunks.push(chunk);}
+    const max=new URL(req.url,'http://local').pathname==='/api/media'?510000:262144;
+    for await(const chunk of req){size+=chunk.length;if(size>max)throw new HttpError('Слишком большой запрос.',413);chunks.push(chunk);}
     try {const data=JSON.parse(Buffer.concat(chunks).toString('utf8'));if(!data||typeof data!=='object'||Array.isArray(data))throw 0;return data;}
     catch {throw new HttpError('Некорректный запрос.');}
   }
@@ -58,6 +59,8 @@ export function createApp({filename=':memory:',origins=['http://localhost:8081',
     if(path==='/api/access'&&req.method==='GET')return {profile:await service.profile(),user:accountUser};
     if(path==='/api/profile'&&req.method==='POST')return service.saveProfile(input);
     const activeRole=await service.authorizeWorkspace(req.headers['x-workspace-role'],path.replace(/^\/api\//,''),input);
+    const mediaPath=path.match(/^\/api\/media\/([a-zA-Z0-9-]+)$/);
+    if(mediaPath&&req.method==='GET')return service.readMedia(mediaPath[1]);
     if(path==='/api/account'&&req.method==='GET')return {...await service.accountState(),platformAdmin:isPlatformAdmin(user.id,adminIds),modelConfigured:false};
     if(path==='/api/admin/users'&&req.method==='GET'){const url=new URL(req.url,'http://local');return service.listUsers(isPlatformAdmin(user.id,adminIds),{role:url.searchParams.get('role'),search:url.searchParams.get('search'),page:url.searchParams.get('page')||0});}
     if(path==='/api/state'&&req.method==='GET')return {...await service.roleState(activeRole),user:accountUser};
@@ -71,6 +74,12 @@ export function createApp({filename=':memory:',origins=['http://localhost:8081',
       return {ok:true};
     }
     if(req.method!=='POST')throw new HttpError('Не найдено.',404);
+    if(path==='/api/media')return service.uploadMedia(input);
+    if(mediaPath&&input.action==='remove')return service.deleteMedia(mediaPath[1]);
+    if(path==='/api/profile/edit')return service.editProfile(input);
+    if(path==='/api/listings')return service.saveListing(null,input);
+    const listingPath=path.match(/^\/api\/listings\/([a-zA-Z0-9-]+)$/);
+    if(listingPath)return service.saveListing(listingPath[1],input);
     if(path==='/api/quote')return service.bookingQuote(input);
     if(path==='/api/assistant-settings')return service.saveAssistantSettings(activeRole,input);
     if(path==='/api/account')return service.saveAccountSettings(input);

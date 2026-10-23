@@ -4,12 +4,13 @@ import { DatabaseSync } from 'node:sqlite';
 import { readFileSync, mkdirSync, writeFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import ts from 'typescript';
+import {photo} from './fixtures/photo.mjs';
 
 // Exercise the real SQL and service against SQLite with D1-compatible batches.
 mkdirSync('outputs/test-lib',{recursive:true});
-for(const name of ['domain','ai','operations','assistant','access','rental-policy','account','approvals','activity','service']){
+for(const name of ['domain','ai','operations','assistant','access','rental-policy','account','listings','approvals','activity','service']){
   const source=readFileSync(`lib/${name}.ts`,'utf8');
-  const compiled=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.ES2022,target:ts.ScriptTarget.ES2022}}).outputText.replace("from './domain'","from './domain.js'").replace("from './ai'","from './ai.js'").replace("from './operations'","from './operations.js'").replace("from './assistant'", "from './assistant.js'").replace("from './access'", "from './access.js'").replace("from './rental-policy'","from './rental-policy.js'").replace("from './account'","from './account.js'").replace("from './approvals'","from './approvals.js'");
+  const compiled=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.ES2022,target:ts.ScriptTarget.ES2022}}).outputText.replace("from './domain'","from './domain.js'").replace("from './ai'","from './ai.js'").replace("from './operations'","from './operations.js'").replace("from './assistant'", "from './assistant.js'").replace("from './access'", "from './access.js'").replace("from './rental-policy'","from './rental-policy.js'").replace("from './account'","from './account.js'").replace("from './listings'","from './listings.js'").replace("from './approvals'","from './approvals.js'");
   writeFileSync(`outputs/test-lib/${name}.js`,compiled);
 }
 const {RentalService}=await import(pathToFileURL(process.cwd()+'/outputs/test-lib/service.js'));
@@ -19,7 +20,7 @@ const {assistantBrief,defaultAssistantSettings}=await import(pathToFileURL(proce
 const {activity,duration}=await import(pathToFileURL(process.cwd()+'/outputs/test-lib/activity.js'));
 const {rentalPrice,defaultPolicy}=await import(pathToFileURL(process.cwd()+'/outputs/test-lib/rental-policy.js'));
 class D1 {
-  constructor(){this.db=new DatabaseSync(':memory:');this.db.exec('PRAGMA foreign_keys=ON');for(const migration of ['0000_boring_unus','0001_rental_operations','0002_assistant_preferences','0003_owner_calendar','0004_account_settings','0005_activity_approvals'])this.db.exec(readFileSync(`drizzle/${migration}.sql`,'utf8'));}
+  constructor(){this.db=new DatabaseSync(':memory:');this.db.exec('PRAGMA foreign_keys=ON');for(const migration of ['0000_boring_unus','0001_rental_operations','0002_assistant_preferences','0003_owner_calendar','0004_account_settings','0005_activity_approvals','0006_listing_profiles'])this.db.exec(readFileSync(`drizzle/${migration}.sql`,'utf8'));}
   prepare(sql){const db=this.db;let args=[];return {bind(...values){args=values;return this;},async first(){return db.prepare(sql).get(...args)||null;},async all(){return {results:db.prepare(sql).all(...args)};},async run(){const r=db.prepare(sql).run(...args);return {meta:{changes:Number(r.changes)}};}};}
   async batch(statements){this.db.exec('BEGIN');try{const result=[];for(const q of statements)result.push(await q.run());this.db.exec('COMMIT');return result;}catch(e){this.db.exec('ROLLBACK');throw e;}}
 }
@@ -27,6 +28,89 @@ const db=new D1(),owner=new RentalService(db,'owner'),guest=new RentalService(db
 let property,booking,job;
 const start=Date.now()+2*86400000;
 const iso=n=>new Date(n).toISOString();
+function listingBody(photos=[],extra={}){return {title:'Listing form test',city:'Павлодар',district:'Центр',address:'PRIVATE UNIT ADDRESS',description:'Подробное учебное описание квартиры: отдельная спальня, оборудованная кухня, тихий двор и удобный транспорт.',price:15000,rooms:1,capacity:2,cleaningMinutes:90,photos,published:false,expectedVersion:0,policyVersion:0,details:{type:'studio',area:35,beds:2,bathrooms:1,floor:2,floors:5,checkinMethod:'meet',amenities:['wifi','kitchen'],pets:false,smoking:false,parties:false},rental:{hourlyPrice:2000,minHours:2,nightlyPrice:14000,checkinTime:'14:00',checkoutTime:'12:00',deposit:10000,houseRules:'Тихие часы 22:00–08:00. Депозит возвращается после проверки.'},...extra};}
+
+test('listing drafts, photos and publication persist without exposing private address or images',async()=>{
+ const f=await rentalFixture();try{
+  const upload=await f.o.uploadMedia({kind:'property',data:photo}),b=listingBody([upload.id]);
+  const draft=await f.o.saveListing(null,b);
+  assert.equal((await f.o.roleState('owner')).ownProperties.find(p=>p.id===draft.id).display_status.code,'draft');
+  assert.ok(!(await f.g.publicCatalog()).properties.some(p=>p.id===draft.id));
+  await assert.rejects(f.g.readMedia(upload.id),e=>e.status===404);
+  assert.equal((await f.o.readMedia(upload.id)).width,8);
+  await assert.rejects(f.stranger.saveListing(draft.id,{...b,expectedVersion:1,policyVersion:1}),/роль|Объявление/);
+  await f.o.saveListing(draft.id,{...b,published:true,expectedVersion:1,policyVersion:1});
+  const visible=(await f.g.publicCatalog()).properties.find(p=>p.id===draft.id);
+  assert.equal(visible.address,undefined);assert.equal(visible.owner_id,undefined);assert.equal(visible.operation,undefined);
+  assert.equal(visible.details.area,35);assert.deepEqual(visible.photos,[upload.id]);assert.equal(visible.policy.deposit,10000);assert.equal(visible.display_status.code,'inspection');
+  assert.match((await f.g.readMedia(upload.id)).data,/^data:image\/jpeg;base64,/);
+  await assert.rejects(f.o.deleteMedia(upload.id),/Сначала/);
+  await f.o.saveListing(draft.id,{...b,published:false,expectedVersion:2,policyVersion:2});
+  await assert.rejects(f.g.readMedia(upload.id),e=>e.status===404);
+  assert.equal((await new RentalService(f.database,'o').roleState('owner')).ownProperties.find(p=>p.id===draft.id).listing_version,3);
+ }finally{f.database.db.close();}
+});
+test('listing validation refuses stolen media, malformed details, incomplete publication and stale writes',async()=>{
+ const f=await rentalFixture();try{
+  const upload=await f.o.uploadMedia({kind:'property',data:photo}),avatar=await f.o.uploadMedia({kind:'avatar',data:photo}),b=listingBody([upload.id]);
+  await assert.rejects(f.o.saveListing(null,listingBody([],{published:true})),/фото/);
+  await assert.rejects(f.o.saveListing(null,listingBody([avatar.id])),e=>e.status===403);
+  await assert.rejects(f.o.saveListing(null,{...b,details:{...b.details,beds:1}}),/Спальных/);
+  await assert.rejects(f.o.saveListing(null,{...b,details:{...b.details,amenities:['invented']}}),/удобства/);
+  await assert.rejects(f.o.saveListing(null,{...b,details:{...b.details,floor:9}}),/Этаж/);
+  await f.stranger.saveProfile({name:'Other owner',contact:'test',city:'Павлодар',roles:['owner']});
+  await assert.rejects(f.stranger.saveListing(null,b),e=>e.status===403);
+  const d=await f.o.saveListing(null,b);
+  await f.o.saveListing(d.id,{...b,title:'New version',expectedVersion:1,policyVersion:1});
+  await assert.rejects(f.o.saveListing(d.id,{...b,title:'Stale overwrite',expectedVersion:1,policyVersion:1}),e=>e.status===409);
+  assert.equal((await f.o.state()).ownProperties.find(p=>p.id===d.id).title,'New version');
+  assert.deepEqual(await f.g.authorizeWorkspace('guest','profile/edit'), 'guest');
+  await assert.rejects(f.g.authorizeWorkspace('guest','listings'),e=>e.status===403);
+  await assert.rejects(f.g.authorizeWorkspace('guest','media',{kind:'property'}),e=>e.status===403);
+ }finally{f.database.db.close();}
+});
+test('profile photo and availability are versioned and cannot grant roles or expose other contacts',async()=>{
+ const f=await rentalFixture();try{
+  const upload=await f.w.uploadMedia({kind:'avatar',data:photo}),p=await f.w.profile(),b={...p,avatarId:upload.id,workStatus:'away',expectedVersion:0,roles:['owner'],platformAdmin:true};
+  await f.w.editProfile(b);const saved=await f.w.profile();assert.equal(saved.avatar_id,upload.id);assert.deepEqual(JSON.parse(saved.roles),['cleaner']);
+  await assert.rejects(f.w.editProfile({...b,name:'Stale'}),e=>e.status===409);
+  assert.equal((await f.w.profile()).name,p.name);
+  await assert.rejects(f.o.readMedia(upload.id),e=>e.status===404);
+  const job=await f.o.createJob({propertyId:f.propertyId,start:iso(start),end:iso(start+3600000),fee:3000,description:'Test cleaning'});
+  await assert.rejects(f.w.jobAction(job.id,{action:'apply'}),/выключен/);
+  await f.w.editProfile({...saved,avatarId:upload.id,workStatus:'available',expectedVersion:1});
+  await f.w.jobAction(job.id,{action:'apply'});
+  const active=await f.w.profile();await f.w.editProfile({...active,avatarId:upload.id,workStatus:'away',expectedVersion:2});
+  const applicant=(await f.o.roleState('owner')).applications.find(a=>a.job_id===job.id);
+  assert.equal(applicant.worker.display_status.code,'away');assert.equal(applicant.worker.contact,undefined);assert.equal(applicant.worker.avatar_id,upload.id);
+  assert.ok((await f.o.readMedia(upload.id)).data);
+  await assert.rejects(f.g.readMedia(upload.id),e=>e.status===404);
+  await assert.rejects(f.o.jobAction(job.id,{action:'assign',applicationId:applicant.id}),/не принимает/);
+  await f.w.editProfile({...saved,avatarId:null,workStatus:'available',expectedVersion:3});
+  await f.w.deleteMedia(upload.id);await assert.rejects(f.w.readMedia(upload.id),e=>e.status===404);
+ }finally{f.database.db.close();}
+});
+test('image upload strips EXIF, rejects scripts and enforces decoded dimensions and size',async()=>{
+ const f=await rentalFixture();try{
+  const raw=Buffer.from(photo.split(',')[1],'base64'),tag=Buffer.from([255,225,0,10,69,120,105,102,0,0,1,2]),withExif='data:image/jpeg;base64,'+Buffer.concat([raw.subarray(0,2),tag,raw.subarray(2)]).toString('base64');
+  const m=await f.o.uploadMedia({kind:'property',data:withExif});assert.ok(!Buffer.from((await f.o.readMedia(m.id)).data.split(',')[1],'base64').includes(Buffer.from('Exif')));
+  for(const data of ['data:image/svg+xml;base64,PHN2Zz4=','data:image/jpeg;base64,'+Buffer.from('<script>alert(1)</script>').toString('base64'),photo.slice(0,-16),photo+'!'])await assert.rejects(f.o.uploadMedia({kind:'property',data}));
+  await assert.rejects(f.o.uploadMedia({kind:'passport',data:photo}));
+  const huge=Buffer.from(raw);const sof=huge.indexOf(Buffer.from([255,192]));huge[sof+7]=255;huge[sof+8]=255;
+  await assert.rejects(f.o.uploadMedia({kind:'property',data:'data:image/jpeg;base64,'+huge.toString('base64')}),/размера/);
+ }finally{f.database.db.close();}
+});
+test('presentation statuses follow operations and worker activity, not a simulated online flag',async()=>{
+ const {propertyStatus,cleanerStatus}=await import(pathToFileURL(process.cwd()+'/outputs/test-lib/listings.js'));
+ for(const [code,label] of [['ready','Готова к заселению'],['cleaning','На уборке'],['occupied','Проживают гости'],['maintenance','На ремонте']])assert.equal(propertyStatus({published:1},{readiness:code}).label,label);
+ assert.equal(propertyStatus({published:0},{readiness:'ready'}).code,'draft');
+ assert.equal(propertyStatus({published:1},{readiness:'ready',active_booking_id:'b'}).code,'occupied');
+ assert.equal(cleanerStatus('available',[{status:'in_progress'}],100).code,'working');
+ assert.equal(cleanerStatus('away',[{status:'submitted'}],100).code,'review');
+ assert.equal(cleanerStatus('available',[{status:'assigned',start:150,end:200}],100).upcoming,true);
+ assert.equal(cleanerStatus('available',[{status:'assigned',start:50,end:200}],100).code,'assigned');
+ assert.equal(cleanerStatus('available',[{status:'assigned',start:10,end:50}],100).code,'late_assignment');
+});
 before(async()=>{
   await owner.saveProfile({name:'Owner',contact:'owner test',city:'Павлодар',roles:['owner']});
   await guest.saveProfile({name:'Guest',contact:'guest test',city:'Павлодар',roles:['guest']});

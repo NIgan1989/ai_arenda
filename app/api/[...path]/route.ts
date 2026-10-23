@@ -14,6 +14,7 @@ async function handle(request:Request, context:{params:Promise<{path:string[]}>}
     const service=new RentalService(env.DB,user.userId);
     if(request.method==='GET'&&route.length===1&&route[0]==='access')return json({profile:await service.profile(),user:{id:user.userId,name:user.fullName||''}});
     const activeRole=request.headers.get('X-Workspace-Role');
+    if(request.method==='GET'&&route.length===2&&route[0]==='media'){await service.authorizeWorkspace(activeRole,'media');return json(await service.readMedia(route[1]));}
     if(request.method==='GET'&&route.length===1&&route[0]==='account'){await service.authorizeWorkspace(activeRole,'account');return json({...await service.accountState(),platformAdmin:isPlatformAdmin(user.userId,env.PLATFORM_ADMIN_IDS),modelConfigured:!!(env.OPENAI_API_KEY&&env.OPENAI_MODEL)});}
     if(request.method==='GET'&&route.join('/')==='admin/users'){await service.authorizeWorkspace(activeRole,'admin/users');const url=new URL(request.url);return json(await service.listUsers(isPlatformAdmin(user.userId,env.PLATFORM_ADMIN_IDS),{role:url.searchParams.get('role'),search:url.searchParams.get('search'),page:url.searchParams.get('page')||0}));}
     if(request.method==='GET'&&route[0]==='state') { const state=await service.roleState(activeRole);return json({...state,integrations:{...state.integrations,ai:!!(env.OPENAI_API_KEY&&env.OPENAI_MODEL)},user:{id:user.userId,name:user.fullName||''}}); }
@@ -22,8 +23,9 @@ async function handle(request:Request, context:{params:Promise<{path:string[]}>}
     const origin=request.headers.get('origin');
     if(origin && origin!==new URL(request.url).origin) return json({error:'Источник запроса не разрешён.'},403);
     if(!request.headers.get('content-type')?.includes('application/json')) return json({error:'Ожидается JSON.'},415);
-    if(Number(request.headers.get('content-length')||0)>20000) return json({error:'Слишком большой запрос.'},413);
-    const raw=await request.text(); if(raw.length>20000) return json({error:'Слишком большой запрос.'},413);
+    const maxBody=route.length===1&&route[0]==='media'?510000:20000;
+    if(Number(request.headers.get('content-length')||0)>maxBody) return json({error:'Слишком большой запрос.'},413);
+    const raw=await request.text(); if(raw.length>maxBody) return json({error:'Слишком большой запрос.'},413);
     const body=JSON.parse(raw||'{}');
     if(!(route.length===1&&route[0]==='profile'))await service.authorizeWorkspace(activeRole,route.join('/'),body);
     if(route[0]==='chat')body.role=activeRole;
@@ -34,6 +36,8 @@ async function handle(request:Request, context:{params:Promise<{path:string[]}>}
         case 'account':return json(await service.saveAccountSettings(body));
         case 'quote':return json(await service.bookingQuote(body));
         case 'profile':return json(await service.saveProfile(body));
+        case 'media':return json(await service.uploadMedia(body));
+        case 'listings':return json(await service.saveListing(null,body));
         case 'properties':return json(await service.createProperty(body));
         case 'bookings':return json(await service.createBooking(body));
         case 'jobs':return json(await service.createJob(body));
@@ -43,6 +47,9 @@ async function handle(request:Request, context:{params:Promise<{path:string[]}>}
         case 'notifications':await service.query('UPDATE notifications SET read=1 WHERE user_id=?',user.userId).run();return json({message:'Уведомления прочитаны.'});
       }
     }
+    if(route.length===2&&route[0]==='profile'&&route[1]==='edit')return json(await service.editProfile(body));
+    if(route.length===2&&route[0]==='media'&&body.action==='remove')return json(await service.deleteMedia(route[1]));
+    if(route.length===2&&route[0]==='listings')return json(await service.saveListing(route[1],body));
     if(route.length===2 && route[0]==='bookings') return json(await service.bookingAction(route[1],body));
     if(route.length===2 && route[0]==='jobs') return json(await service.jobAction(route[1],body));
     if(route[0]==='bookings'&&route.length===3&&route[2]==='change-quote')return json(await service.bookingChangeQuote(route[1],activeRole,body));

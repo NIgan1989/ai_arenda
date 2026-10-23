@@ -18,6 +18,7 @@ export function intentRole(intent:string):Role|null{
 }
 export function commandRole(path:string,body:Record<string,any>):Role[]|null{
   if(path==='profile'||path==='demo'||path==='notifications')return null;
+  if(path==='listings'||path.startsWith('listings/')||(path==='media'&&body.kind==='property'))return ['owner'];
   if(path==='quote'||path==='bookings')return ['guest'];
   if(path==='properties'||path.startsWith('properties/')||path==='jobs')return ['owner'];
   if(path.startsWith('bookings/'))return ['confirm','reject','paid','deposit_received','checkin','checkout','dispute_checkout'].includes(body.action)?['owner']:body.action==='report_checkout'?['guest']:['owner','guest'];
