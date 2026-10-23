@@ -1,6 +1,10 @@
 import { StyleSheet,Platform } from 'react-native';
 export const C={bg:'#F8F7F3',ink:'#233D32',muted:'#616E64',green:'#315E48',line:'#DCE2D8',white:'#FFFFFF',pale:'#EDF2E9'};
 export const s=StyleSheet.create({
+  pageTitle:{fontSize:28,lineHeight:36,color:C.ink,fontWeight:'600',letterSpacing:-.8,marginBottom:16},
+  recommendation:{padding:15,borderWidth:1,borderColor:'#DCE7D5',backgroundColor:'#EDF3E8',borderRadius:16,gap:6,marginBottom:16},
+  urgentRecommendation:{backgroundColor:'#FFF8EC',borderColor:'#ECD8B8'},
+  recommendationLabel:{fontSize:12,lineHeight:18,color:'#56704E'},
   screen:{flex:1,backgroundColor:C.bg},shell:{flex:1,width:'100%',maxWidth:760,alignSelf:'center'},
   header:{minHeight:80,paddingVertical:16,paddingHorizontal:20,flexDirection:'row',alignItems:'center',gap:11},
   logo:{width:39,height:39,backgroundColor:C.green,borderRadius:14,alignItems:'center',justifyContent:'center'},logoText:{fontSize:19,color:C.white,fontWeight:'600'},brand:{color:C.ink,fontWeight:'600',fontSize:20,letterSpacing:-.6},subtitle:{color:C.muted,fontSize:12,marginTop:3},

@@ -73,3 +73,39 @@ The phone dock now floats 12px from either side and 10px above the bottom safe a
 Verified the guest assistant at 390×844 and 320×640. All five links retain 48×48 targets; document and viewport widths match. The 72px dock stays clear of the composer, with bottom safe-area space reserved in the content. Browser computed styles confirm rgba(244,242,239,0.78), 30px corners and blur(20px). Console errors: none. Native TypeScript passes.
 
 Evidence: docs/design-audit/48-rounded-translucent-navigation.jpg and docs/design-audit/49-rounded-navigation-comparison.png. The comparison was opened and reviewed: the earlier capture shows owner overview and the current capture guest assistant, so only the shared dock treatment and screen spacing are compared. Typography, icons, active states and role routing remain unchanged. No actionable P0/P1/P2 findings remain. Screenshots remain local.
+
+## Audit-led improvements (23.10.2026)
+
+final result: passed
+
+Scope: improve the existing visual language and the audited role journeys, preserving the user-selected icon rail, account placement and translucent phone dock. This is an improvement pass against current product captures, not a claim of pixel-identical recreation. The user-facing audit and its limits are in docs/DESIGN_AUDIT_2026-10-23.md.
+
+### Visual truth and comparison evidence
+
+Source captures from this audit: docs/design-audit/51-audit-catalog-before.jpg, 52-audit-booking-form-before.jpg, 53-audit-owner-overview-before.jpg, 54-audit-settings-before.jpg, 55-audit-cleaner-jobs-before.jpg, 56-audit-desktop-before.jpg. Implementations: 57-audit-desktop-after.jpg, 58-audit-owner-overview-after.jpg, 59-audit-catalog-after.jpg, 60-audit-booking-form-after.jpg, 61-audit-quote-review.jpg, 62-audit-cleaner-jobs-after.jpg, 63-audit-settings-after.jpg, 64-audit-desktop-catalog-after.jpg and 68-audit-guest-overview-after.jpg in the same local directory.
+
+Phone captures: 390×844 pixels at a 390×844 CSS viewport. Desktop captures: 1280×900 pixels at a 1280×900 CSS viewport. No density scaling or device frame normalization was needed. Additional browser checks used 320×640. Source and revised catalog/settings show the same role, route and initial state. Form captures use the same daily tariff, apartment and initial guest count; generated time differs by minutes. The owner and cleaner before captures show the unintended automatic scroll; the revised page entry intentionally remains at the top.
+
+Opened and reviewed full comparisons: 65-audit-catalog-comparison.png, 66-audit-form-comparison.png and 67-audit-settings-comparison.png (780×844, two unchanged-size captures). Opened and reviewed focused detail: 69-audit-settings-detail.png, showing the earlier clipped mode and its revised name/explanation. Screenshots are local evidence and are not included in GitHub uploads.
+
+### Findings, fixes and iteration history
+
+- P1, page entry: automatic assistant messages scrolled overview/jobs away from their headings and primary records. Replaced repeated automatic messages with a compact overview recommendation based on server-filtered prompts. Confirmed guest overview scrollTop=0; the owner recommendation opens the matching existing task.
+- P2, hierarchy and duplication: retained one role label in the header, added useful page descriptions, removed repeated introductory paragraphs and the duplicate automatic plan in list pages. Primary record and overview headings use h2. Warm attention styling applies only when the count is nonzero.
+- P2, desktop layout: primary cards use the content width; the catalog uses two 411px columns at 1280px. Prices/actions align at the card bottom. Verified actual grid and card bounds in the browser.
+- P2, mobile form: the original card lost width to the avatar column. The first revised comparison revealed that placing the avatar on its own row wasted vertical space. Fixed the message with a two-column grid: avatar and introductory text share the first row; the form spans both columns. Recaptured 60 and rebuilt/reopened comparison 66. Dates and guest count remain readable; no horizontal overflow at 320px.
+- P2, settings: shortened selectable mode names and added an associated description. The former repeat control was removed because the persistent recommendation no longer repeats messages; its saved value remains unchanged in API submissions. Checked description updates without saving settings.
+- P2, clarity/accessibility: darker navigation icons, distinct active fill, textual status chips, apartment-specific accessible selection names, visible field focus and a 44px brand-button target. Existing 48×48 phone navigation targets are preserved.
+- P3 polish found in comparison: amount and unit spacing was tight; added explicit spacing. Shortened the composer placeholder so it stays on one line at 320px.
+
+No actionable P0/P1/P2 issue remains within this implemented scope. Real listing photography, all account/long-form states and full assistive-technology coverage remain separate product/audit work, not certified by this pass.
+
+### Required surfaces and verification
+
+- Typography: retained Golos Text, strengthened page/card hierarchy, kept 16px form controls, shortened clipped mode labels, and checked wrapping at 320/390px.
+- Spacing/layout: consistent 18px phone cards, full-width message forms, responsive catalog columns, unchanged safe-area-aware rounded dock. Composer and dock do not overlap.
+- Colors/tokens: retained the warm neutral/green palette, strengthened icon contrast, used both text and warm color for urgent items, and avoided warning emphasis on zero attention count.
+- Assets: existing Lucide icons and native rasterizations retained; no fake apartment photos, decorative generated imagery or new dependencies introduced.
+- Copy/content: page-specific descriptions, explicit mode explanations, honest demo and integration statuses. No new capabilities claimed by the presentation.
+
+Interactions checked: role navigation; opening a recommendation; apartment selection; occupied-interval error; successful quote with separate deposit; mode-description updates; More menu, Escape and trigger focus restoration. No booking or payment was submitted. Browser error logs: none. Web and native TypeScript checks pass; final web build passes. Native source parity was typechecked, not visually verified on a physical device. Full screen-reader, system text scaling and financial/identity flows were not tested.

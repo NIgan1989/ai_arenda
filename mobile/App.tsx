@@ -48,9 +48,9 @@ function Chat(){
   const scroll=useRef<ScrollView>(null),composer=useRef<TextInput>(null),locked=useRef(false),session=useRef(false),pending=useRef(''),seen=useRef(new Set<string>());
   const [navigationMenu,setNavigationMenu]=useState(false);
   const [selectedRole,setSelectedRole]=useState<Role|null>(null),[pageId,setPageId]=useState('overview');
-  const activeRoleRef=useRef<Role|null>(null),prompted=useRef(new Map<string,{signature:string;time:number}>());
+  const activeRoleRef=useRef<Role|null>(null),scrollMessage=useRef<string|null>(null);
   const userId=data.user?.id;
-  const say=(text:string,block?:string,payload?:Row)=>setMessages(prev=>[...prev,{id:uid(),sender:'assistant' as const,text,block,payload}].slice(-120));
+  const say=(text:string,block?:string,payload?:Row)=>{const id=uid();scrollMessage.current=id;setMessages(prev=>[...prev,{id,sender:'assistant' as const,text,block,payload}].slice(-120));};
   const finish=(id:string,result='Сохранено')=>setMessages(prev=>prev.map(m=>m.id===id?{...m,done:true,result}:m));
   async function load(){
     const active=activeRoleRef.current;
@@ -226,13 +226,6 @@ function Chat(){
     say(task.reason,task.kind==='job'?'jobs':'bookings',{ids:[task.entityId],role:selectedRole});
   }
   function renderAssistantBrief(){const brief=data.assistantBrief;if(!brief)return null;return <View style={s.card}><Text style={s.eyebrow}>ПЛАН АССИСТЕНТА</Text><Text style={s.cardTitle}>{brief.summary}</Text>{brief.tasks.map((task:Row)=><View key={task.id} style={s.event}><Text style={s.eventTitle}>{task.title}</Text><Text style={s.meta}>{task.reason}</Text><Button title="Открыть задачу" secondary disabled={busy} onPress={()=>openAssistantTask(task)}/></View>)}<Text style={s.meta}>Фоновая доставка сообщений и действия свободной модели пока не подключены.</Text></View>;}
-  useEffect(()=>{
-    const brief=data.assistantBrief,settings=data.assistantSettings;
-    if(!selectedRole||!historyReady||busy||flow||pageId==='settings'||!brief?.automatic||!brief.signature)return;
-    const key=userId+':'+selectedRole,last=prompted.current.get(key);
-    if(last&&last.signature===brief.signature&&Date.now()-last.time<settings.repeatMinutes*60000)return;
-    prompted.current.set(key,{signature:brief.signature,time:Date.now()});say('Предлагаю начать с задачи: '+brief.prompts[0].title.toLowerCase()+'.',pageId==='assistant'?undefined:'assistant-brief');
-  },[selectedRole,historyReady,data.assistantBrief?.signature,data.assistantBrief?.automatic,busy,flow,pageId]);
   function block(m:Message){
     const payload=m.payload||{};
     if(m.block==='assistant-brief')return renderAssistantBrief();
@@ -287,22 +280,24 @@ function Chat(){
   }
   const pages=selectedRole?rolePages[selectedRole]:[];
   const page=pages.find(p=>p.id===pageId);
+  const nextTask=data.assistantBrief?.automatic?data.assistantBrief.prompts[0]:null;
   const ids=pageId==='catalog'?data.properties.map((p:Row)=>p.id):pageId==='properties'?data.ownProperties.map((p:Row)=>p.id):pageId==='bookings'?data.bookings.map((b:Row)=>b.id):(pageId==='assignments'?data.jobs.filter((j:Row)=>j.assigned_to===userId||data.applications.some((a:Row)=>a.job_id===j.id&&a.user_id===userId)):data.jobs).map((j:Row)=>j.id);
   const primary:Message={id:'page-'+pageId,sender:'assistant',text:'',block:pageId==='overview'?'workspace':pageId==='properties'||pageId==='catalog'?'properties':pageId==='bookings'?'bookings':['cleaning','jobs','assignments'].includes(pageId)?'jobs':undefined,payload:{ids,role:selectedRole,mode:selectedRole==='owner'?'owner':'guest'}};
   if(!selectedRole)return <RoleEntry ready={ready} profile={data.profile} user={data.user} busy={busy} auth={<Auth busy={busy} onSubmit={(mode,login,password)=>authenticate(mode,login,password,'entry','workspace')}/>} onChoose={chooseRole} onSave={async(body,role)=>{await request('/api/profile',body);await chooseRole(role);}} onLogout={()=>send('Выйти')}/>;
   return <SafeAreaView style={s.screen} edges={['top','bottom']}><StatusBar barStyle="dark-content" backgroundColor={C.bg}/><KeyboardAvoidingView style={s.shell} behavior={Platform.OS==='ios'?'padding':undefined}>
     <View style={s.header}><View style={s.logo}><Text style={s.logoText}>а</Text></View><View style={{flex:1}}><Text style={s.brand}>AI Аренда</Text><Text style={s.subtitle}>{roleNames[selectedRole]}</Text></View><View accessibilityLabel={online?'Есть связь с сервером':'Нет связи с сервером'} style={s.connection}><View style={[s.status,{backgroundColor:online?C.green:'#98672F'}]}/></View><WorkspaceMenuButton open={navigationMenu} busy={busy||!!flow} onPress={()=>setNavigationMenu(v=>!v)}/></View>
     <ScrollView ref={scroll} style={{flex:1}} contentContainerStyle={s.transcript} keyboardShouldPersistTaps="handled" onContentSizeChange={()=>{if(messages[messages.length-1]?.sender==='user'||busy)scroll.current?.scrollToEnd({animated:true});}}>
-      <Text accessibilityRole="header" style={s.hero}>{page?.title}</Text>
+      <Text accessibilityRole="header" style={s.pageTitle}>{page?.title}</Text>
+      {pageId==='overview'&&nextTask&&<Pressable accessibilityRole="button" accessibilityLabel={'Ассистент рекомендует: '+nextTask.title} disabled={busy} onPress={()=>openAssistantTask(nextTask)} style={[s.recommendation,nextTask.priority===3&&s.urgentRecommendation]}><Text style={s.recommendationLabel}>Ассистент рекомендует</Text><Text style={s.eventTitle}>{nextTask.title}</Text></Pressable>}
       {pageId==='properties'&&<Button title="Добавить квартиру" disabled={busy} onPress={()=>run('property')}/>}
       {pageId==='settings'&&data.assistantSettings?<AssistantControl key={selectedRole+':'+data.assistantSettings.version} settings={data.assistantSettings} busy={busy} onSave={body=>perform('assistant-settings',body,'assistant-settings:'+selectedRole+':v'+data.assistantSettings.version)}/>:pageId==='account'?<AccountControl key={selectedRole} onEdit={()=>run('profile')}/>:pageId==='calendar'?<RentalCalendar data={data} role={selectedRole} busy={busy} onOpen={(kind,id)=>say('Текущий статус и доступные действия.',kind==='job'?'jobs':'bookings',{ids:[id],role:selectedRole})}/>:pageId==='assistant'?renderAssistantBrief():primary.block&&block(primary)}
       {!messages.length&&<Text style={s.lead}>Ассистент работает с задачами роли «{roleNames[selectedRole]}». Выберите действие или напишите сообщение.</Text>}
-      {messages.map((m,index)=><View key={m.id} onLayout={event=>{if(index===messages.length-1&&m.sender==='assistant')scroll.current?.scrollTo({y:Math.max(0,event.nativeEvent.layout.y-12),animated:false});}} style={[s.message,m.sender==='user'?s.user:s.assistant]}>{m.sender==='assistant'&&<Text style={s.sender}>AI АРЕНДА</Text>}<Text selectable style={s.text}>{m.text}</Text>{m.sender==='assistant'&&block(m)}</View>)}
+      {messages.map((m,index)=><View key={m.id} onLayout={event=>{if(index===messages.length-1&&m.sender==='assistant'&&m.id===scrollMessage.current)scroll.current?.scrollTo({y:Math.max(0,event.nativeEvent.layout.y-12),animated:false});}} style={[s.message,m.sender==='user'?s.user:s.assistant]}>{m.sender==='assistant'&&<Text style={s.sender}>AI АРЕНДА</Text>}<Text selectable style={s.text}>{m.text}</Text>{m.sender==='assistant'&&block(m)}</View>)}
       {busy&&<ActivityIndicator accessibilityLabel="Ожидаем ответ сервера" color={C.green} style={{alignSelf:'flex-start',marginBottom:20}}/>}
       {saveError&&<Text accessibilityRole="alert" style={s.error}>История ещё не сохранена. Проверьте связь; заявки хранятся на сервере.</Text>}
     </ScrollView>
     <View style={s.composerWrap}>{flow?.questions[flow.index].choices&&<View style={s.buttonRow}>{flow.questions[flow.index].choices!.map(choice=><Button key={choice.value} title={choice.label} secondary disabled={busy} onPress={()=>send(choice.label)}/>)}</View>}{!!flow&&<View style={s.flowProgress}><Text style={s.flowLabel}>Вопрос {flow.index+1} из {flow.questions.length}</Text><View style={s.buttonRow}>{flow.index>0&&<Button title="Назад" secondary disabled={busy} onPress={()=>{const previous={...flow,index:flow.index-1};setFlow(previous);say(previous.questions[previous.index].text);}}/>}<Button title="Стоп" secondary disabled={busy} onPress={()=>send('Стоп')}/></View></View>}<View style={s.composer}><TextInput ref={composer} accessibilityLabel="Сообщение ассистенту" placeholder={flow?'Ваш ответ…':'Напишите, чем помочь…'} placeholderTextColor={C.muted} value={input} onChangeText={setInput} style={s.input} maxLength={2500} multiline submitBehavior="submit" onSubmitEditing={()=>send()} editable={ready&&!busy}/><Pressable accessibilityRole="button" accessibilityLabel="Отправить сообщение" accessibilityState={{disabled:!ready||busy||!input.trim()}} disabled={!ready||busy||!input.trim()} onPress={()=>send()} style={[s.send,(!input.trim()||busy)&&s.disabled]}><Text style={s.sendText}>{busy?'Ждите':'Отправить'}</Text></Pressable></View><Text style={s.footnote}>AI Аренда · пилотная версия</Text></View>
-  <WorkspaceNavigation role={selectedRole} pageId={pageId} busy={busy||!!flow} onSelect={setPageId} more={navigationMenu} setMore={setNavigationMenu} onSwitchRole={switchRole}/></KeyboardAvoidingView></SafeAreaView>;
+  <WorkspaceNavigation role={selectedRole} pageId={pageId} busy={busy||!!flow} onSelect={id=>{scrollMessage.current=null;setPageId(id);scroll.current?.scrollTo({y:0,animated:false});}} more={navigationMenu} setMore={setNavigationMenu} onSwitchRole={switchRole}/></KeyboardAvoidingView></SafeAreaView>;
 }
 function Report({busy,onSubmit}:{busy:boolean;onSubmit:(body:Row)=>void}){
   const [checks,setChecks]=useState([false,false,false,false]),[report,setReport]=useState('');
