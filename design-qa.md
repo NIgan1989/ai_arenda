@@ -63,3 +63,13 @@ The user attachment C:/Users/03021/AppData/Local/Temp/codex-clipboard-ac4b3b6b-6
 Evidence: docs/design-audit/44-primary-bottom-navigation.jpg (390×844), docs/design-audit/45-header-more-menu.jpg, docs/design-audit/46-navigation-before-after.png (two 390×844 app views), and docs/design-audit/47-request-navigation-comparison.png (the 739×979 attachment and the 390×844 current app side by side, without scaling). The attachment includes browser chrome and a different capture size, so it is used to check the requested placement, not to infer pixel-level font differences. The matched-viewport before/after comparison confirms the app layout is retained. Both comparison images were opened and reviewed.
 
 No P0/P1/P2 issue remains. Spacing, typography, colors and library icon assets remain consistent; the help label becomes a labelled help icon on phones to make room for the header menu. The header and all five bottom targets fit a 320×640 viewport without horizontal overflow. All three role layouts were opened in the browser. Header menu contents, Escape close and focus restoration were checked. On desktop the header menu is hidden and all eight owner links remain in the rail. Browser error logs are empty. TypeScript, 42 service tests, 16 HTTP tests, web build and Android/iOS/web exports pass.
+
+## Scoped update: rounded translucent bottom navigation (23.10.2026)
+
+final result: passed
+
+The phone dock now floats 12px from either side and 10px above the bottom safe area. It has a 30px corner radius, a warm background at 78% opacity, a fine translucent border and a soft shadow. Web adds 20px backdrop blur. The native component shares the shape, translucency and spacing; it does not add a native blur dependency. Desktop rail rules are unchanged.
+
+Verified the guest assistant at 390×844 and 320×640. All five links retain 48×48 targets; document and viewport widths match. The 72px dock stays clear of the composer, with bottom safe-area space reserved in the content. Browser computed styles confirm rgba(244,242,239,0.78), 30px corners and blur(20px). Console errors: none. Native TypeScript passes.
+
+Evidence: docs/design-audit/48-rounded-translucent-navigation.jpg and docs/design-audit/49-rounded-navigation-comparison.png. The comparison was opened and reviewed: the earlier capture shows owner overview and the current capture guest assistant, so only the shared dock treatment and screen spacing are compared. Typography, icons, active states and role routing remain unchanged. No actionable P0/P1/P2 findings remain. Screenshots remain local.
