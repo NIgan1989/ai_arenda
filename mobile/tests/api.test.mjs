@@ -4,6 +4,7 @@ import {mkdtempSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join,resolve,sep} from 'node:path';
 import {createApp} from '../server/app.mjs';
+import {photo} from '../../tests/fixtures/photo.mjs';
 const folder=mkdtempSync(join(tmpdir(),'ai-arenda-api-'));
 const filename=join(folder,'test.sqlite');let app,base,owner,guest,worker,property,booking,job;
 async function start(adminIds=''){app=createApp({filename,maintenance:false,adminIds});await new Promise(done=>app.server.listen(0,'127.0.0.1',done));base='http://127.0.0.1:'+app.server.address().port;}
@@ -204,4 +205,30 @@ test('expired bearer sessions are rejected even if the client claims an owner ro
   assert.equal((await call('/api/state',undefined,worker.token)).status,401);
   assert.equal((await call('/api/properties/'+property+'/readiness',{role:'owner',userId:owner.user.id,readiness:'ready'},worker.token)).status,401);
   assert.equal((await call('/api/state',undefined,guest.token)).status,200);
+});
+
+test('photo, listing and profile forms survive HTTP restart, enforce roles and protect draft media',async()=>{
+ owner=(await call('/auth/login',{login:'owner',password:'test-password-only'})).body;
+ guest=(await call('/auth/login',{login:'guest',password:'test-password-only'})).body;
+ const uploaded=await call('/api/media',{kind:'property',data:photo},owner.token);assert.equal(uploaded.status,200);
+ assert.equal((await call('/api/media',{kind:'property',data:photo},guest.token)).status,403);
+ assert.equal((await call('/api/media',{kind:'property',data:'data:image/svg+xml;base64,PHN2Zz4='},owner.token)).status,400);
+ const b={title:'HTTP listing form',city:'Павлодар',district:'Центр',address:'PRIVATE FORM ADDRESS',description:'Учебное описание объекта для проверки формы. Отдельная спальня, кухня, рабочее место и тихий двор. Реального заселения нет.',price:17000,rooms:1,capacity:2,cleaningMinutes:90,photos:[uploaded.body.id],published:false,expectedVersion:0,policyVersion:0,details:{type:'studio',area:35,beds:2,bathrooms:1,floor:1,floors:5,checkinMethod:'meet',amenities:['wifi','kitchen']},rental:{hourlyPrice:2000,minHours:2,nightlyPrice:15000,checkinTime:'14:00',checkoutTime:'12:00',deposit:10000,houseRules:'Тихие часы, возврат депозита после осмотра.'}};
+ assert.equal((await call('/api/listings',b,guest.token)).status,403);
+ const created=await call('/api/listings',b,owner.token);assert.equal(created.status,200);const listing=created.body.id;
+ assert.equal((await call('/api/media/'+uploaded.body.id,undefined,guest.token)).status,404);
+ assert.equal((await call('/api/listings/'+listing,{...b,published:true,expectedVersion:1,policyVersion:1},owner.token)).status,200);
+ assert.equal((await call('/api/listings/'+listing,{...b,title:'Stale',expectedVersion:1,policyVersion:1},owner.token)).status,409);
+ assert.equal((await call('/api/listings/'+listing,{...b,expectedVersion:2,policyVersion:2},guest.token)).status,403);
+ const avatar=await call('/api/media',{kind:'avatar',data:photo},guest.token);assert.equal(avatar.status,200);
+ const profile=(await call('/api/account',undefined,guest.token)).body.profile;
+ assert.equal((await call('/api/profile/edit',{...profile,avatarId:avatar.body.id,workStatus:'available',expectedVersion:profile.profile_version,roles:['owner'],platformAdmin:true},guest.token)).status,200);
+ await app.close();await start();
+ const state=(await call('/api/state',undefined,guest.token)).body,card=state.properties.find(p=>p.id===listing);
+ assert.equal(card.details.area,35);assert.equal(card.policy.deposit,10000);assert.equal(card.address,undefined);assert.equal(card.owner_id,undefined);
+ assert.equal(state.profile.avatar_id,avatar.body.id);assert.deepEqual(JSON.parse(state.profile.roles),['guest']);
+ assert.equal((await call('/api/media/'+uploaded.body.id,undefined,guest.token)).body.width,8);
+ assert.equal((await call('/api/media/'+avatar.body.id,undefined,owner.token)).status,404);
+ assert.equal((await call('/api/media/'+uploaded.body.id,{action:'remove'},owner.token)).status,409);
+ assert.equal((await call('/api/media',{kind:'property',data:'x'.repeat(520000)},owner.token)).status,413);
 });

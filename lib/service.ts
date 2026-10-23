@@ -6,6 +6,7 @@ import { parseRole,commandRole } from './access';
 import {assistantBrief,assistantSettingsInput,defaultAssistantSettings} from './assistant';
 import {defaultAccountSettings,accountSettingsInput,userSearchInput} from './account';
 import {approvalCards} from './approvals';
+import {listingInput,jpegInput,propertyStatus,cleanerStatus} from './listings';
 
 type Row = Record<string, any>;
 const now = () => Math.floor(Date.now() / 1000);
@@ -15,8 +16,78 @@ export class RentalService {
   query(sql: string, ...args: any[]) { return this.db.prepare(sql).bind(...args); }
   async one(sql: string, ...args: any[]) { return this.query(sql, ...args).first<Row>(); }
   async all(sql: string, ...args: any[]) { return (await this.query(sql, ...args).all<Row>()).results; }
-  async profile() { return this.one('SELECT * FROM profiles WHERE id=?', this.userId); }
-  async accountState(){return {profile:await this.profile(),settings:await this.one('SELECT payment_provider,payment_notifications,version FROM account_preferences WHERE user_id=?',this.userId)||defaultAccountSettings};}
+  async profile() { return this.one('SELECT p.*,d.avatar_id,d.work_status,COALESCE(d.version,0) profile_version FROM profiles p LEFT JOIN profile_details d ON d.user_id=p.id WHERE p.id=?', this.userId); }
+  async uploadMedia(body:Row){
+    if(!await this.profile())throw new DomainError('Сначала заполните профиль.',403);
+    if(body.kind==='property')await this.requireRole('owner');
+    await this.query("DELETE FROM media WHERE user_id=? AND created_at<? AND NOT EXISTS(SELECT 1 FROM property_details d,json_each(d.photos) f WHERE f.value=media.id) AND NOT EXISTS(SELECT 1 FROM profile_details d WHERE d.avatar_id=media.id)",this.userId,now()-86400).run();
+    const image=jpegInput(body.data,body.kind),mediaId=id();
+    const r=await this.query('INSERT INTO media SELECT ?,?,?,?,?,?,?,? WHERE (SELECT COUNT(*) FROM media WHERE user_id=?)<100',mediaId,this.userId,body.kind,image.data,image.width,image.height,image.bytes,now(),this.userId).run();
+    if(!r.meta.changes)throw new DomainError('Достигнут лимит фотографий. Удалите неиспользуемые снимки.',409);
+    return {id:mediaId,width:image.width,height:image.height};
+  }
+  async readMedia(mediaId:string){
+    const m=await this.one(`SELECT m.data,m.width,m.height FROM media m WHERE m.id=? AND (m.user_id=? OR (m.kind='property' AND EXISTS(SELECT 1 FROM property_details d JOIN properties p ON p.id=d.property_id,json_each(d.photos) f WHERE f.value=m.id AND p.published=1 AND (p.demo_owner IS NULL OR p.demo_owner=?))) OR (m.kind='avatar' AND EXISTS(SELECT 1 FROM profile_details d WHERE d.avatar_id=m.id AND (EXISTS(SELECT 1 FROM applications a JOIN cleaning_jobs j ON j.id=a.job_id WHERE a.user_id=d.user_id AND j.owner_id=?) OR EXISTS(SELECT 1 FROM cleaning_jobs j WHERE j.assigned_to=d.user_id AND j.owner_id=?) OR EXISTS(SELECT 1 FROM bookings b JOIN properties p ON p.id=b.property_id WHERE b.guest_id=? AND p.owner_id=d.user_id AND b.status='confirmed')))))`,mediaId,this.userId,this.userId,this.userId,this.userId,this.userId);
+    if(!m)throw new DomainError('Фотография недоступна.',404);return m;
+  }
+  async deleteMedia(mediaId:string){
+    if(!await this.one('SELECT id FROM media WHERE id=? AND user_id=?',mediaId,this.userId))throw new DomainError('Фотография недоступна.',404);
+    if(await this.one("SELECT d.property_id FROM property_details d,json_each(d.photos) f WHERE f.value=? UNION ALL SELECT user_id FROM profile_details WHERE avatar_id=?",mediaId,mediaId))throw new DomainError('Сначала уберите фотографию из объявления или профиля.',409);
+    await this.query('DELETE FROM media WHERE id=? AND user_id=?',mediaId,this.userId).run();return {message:'Неиспользуемая фотография удалена.'};
+  }
+  async checkMedia(photoIds:string[],kind:string){for(const photoId of photoIds)if(!await this.one('SELECT id FROM media WHERE id=? AND user_id=? AND kind=?',photoId,this.userId,kind))throw new DomainError('Фотография не принадлежит вашему аккаунту или имеет другой тип.',403);}
+  async editProfile(body:Row){
+    const p=await this.profile();if(!p)throw new DomainError('Профиль не найден.',404);
+    const version=number(body.expectedVersion,'Версия профиля',0,10000000),avatar=body.avatarId||null;
+    if(p.profile_version!==version)throw new DomainError('Профиль уже изменился. Обновите форму.',409);
+    if(avatar)await this.checkMedia([required(avatar,'Фото профиля',100)],'avatar');
+    if(!['available','away'].includes(body.workStatus))throw new DomainError('Выберите доступность для заданий.');
+    const name=required(body.name,'Имя',100),contact=required(body.contact,'Контакт',120),city=required(body.city,'Город',80),districts=String(body.districts||'').trim(),experience=String(body.experience||'').trim(),availability=String(body.availability||'').trim();
+    if(districts.length>300||experience.length>1000||availability.length>300)throw new DomainError('Проверьте длину полей анкеты.');
+    if(JSON.parse(p.roles).includes('cleaner')&&(!districts||!experience||!availability))throw new DomainError('Заполните районы, опыт и график исполнителя.');
+    const revision=id(),r=await this.db.batch([
+      this.query('INSERT INTO profile_details VALUES (?,?,?,?,?,?) ON CONFLICT(user_id) DO UPDATE SET avatar_id=excluded.avatar_id,work_status=excluded.work_status,version=excluded.version,revision=excluded.revision,updated_at=excluded.updated_at WHERE profile_details.version=?',this.userId,avatar,body.workStatus,version+1,revision,now(),version),
+      this.query('UPDATE profiles SET name=?,contact=?,city=?,districts=?,experience=?,availability=? WHERE id=? AND EXISTS(SELECT 1 FROM profile_details WHERE user_id=? AND revision=?)',name,contact,city,districts,experience,availability,this.userId,this.userId,revision)
+    ]);
+    if(!r[0].meta.changes)throw new DomainError('Профиль уже изменился. Обновите форму.',409);
+    await this.audit(this.userId,'profile.form_updated').run();return {message:'Профиль сохранён.'};
+  }
+  async saveListing(propertyId:string|null,body:Row){
+    await this.requireRole('owner');const value=listingInput(body),{p,details,photos,published,expectedVersion}=value;
+    await this.checkMedia(photos,'property');
+    const current=propertyId?await this.one('SELECT p.*,COALESCE(d.version,0) listing_version FROM properties p LEFT JOIN property_details d ON d.property_id=p.id WHERE p.id=? AND p.owner_id=?',propertyId,this.userId):null;
+    if(propertyId&&!current)throw new DomainError('Объявление не найдено.',404);
+    if((current?.listing_version||0)!==expectedVersion)throw new DomainError('Объявление уже изменилось. Обновите форму.',409);
+    if(current&&await this.one("SELECT id FROM bookings WHERE property_id=? AND guests>? AND (status='confirmed' OR (status='requested' AND expires_at>?)) AND occupied_until>?",propertyId,p.capacity,now(),now()))throw new DomainError('Вместимость меньше числа гостей в действующей брони.',409);
+    const currentPolicy=propertyId?await this.one('SELECT * FROM property_policies WHERE property_id=?',propertyId):null;
+    const policyVersion=number(body.policyVersion??0,'Версия тарифов',0,10000000);
+    if((currentPolicy?.version||0)!==policyVersion)throw new DomainError('Тарифы уже изменились. Обновите форму.',409);
+    const rental=body.rental||{},policy=policyInput({...rental,dailyPrice:p.price,autoConfirm:!!currentPolicy?.auto_confirm,cleaningFee:currentPolicy?.cleaning_fee||0,cleaningBudget:currentPolicy?.cleaning_budget||0,maxDiscountPercent:currentPolicy?.max_discount_percent||0,minimumRate:currentPolicy?.minimum_rate||0,repairBudget:currentPolicy?.repair_budget||0,autoExtension:!!currentPolicy?.auto_extension,maxExtensionHours:currentPolicy?.max_extension_hours||0,mandateUntil:currentPolicy?.mandate_until?new Date(currentPolicy.mandate_until*1000).toISOString():'',escalationContact:currentPolicy?.escalation_contact||''});
+    const key=propertyId||id(),revision=id(),gate='EXISTS(SELECT 1 FROM property_details WHERE property_id=? AND revision=?)';
+    const statements=[];
+    if(!propertyId)statements.push(this.query('INSERT INTO properties VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)',key,this.userId,null,p.title,p.city,p.district,p.address,p.description,p.price,p.rooms,p.capacity,p.cleaningMinutes,published,now()),this.query('INSERT INTO property_operations(property_id,updated_at) VALUES (?,?)',key,now()));
+    statements.push(this.query('INSERT INTO property_details SELECT ?,?,?,?,?,? WHERE COALESCE((SELECT version FROM property_policies WHERE property_id=?),0)=? ON CONFLICT(property_id) DO UPDATE SET details=excluded.details,photos=excluded.photos,version=excluded.version,revision=excluded.revision,updated_at=excluded.updated_at WHERE property_details.version=?',key,JSON.stringify(details),JSON.stringify(photos),expectedVersion+1,revision,now(),key,policyVersion,expectedVersion));
+    if(propertyId){
+      statements.push(this.query(`UPDATE properties SET title=?,city=?,district=?,address=?,description=?,price=?,rooms=?,capacity=?,cleaning_minutes=?,published=? WHERE id=? AND owner_id=? AND ${gate}`,p.title,p.city,p.district,p.address,p.description,p.price,p.rooms,p.capacity,p.cleaningMinutes,published,key,this.userId,key,revision));
+    }
+    const keys=Object.keys(policy);
+    statements.push(this.query(`INSERT INTO property_policies(property_id,${keys.join(',')},version,revision,updated_at) SELECT ?,${keys.map(()=>'?').join(',')},?,?,? WHERE ${gate} ON CONFLICT(property_id) DO UPDATE SET ${keys.map(k=>`${k}=excluded.${k}`).join(',')},version=excluded.version,revision=excluded.revision,updated_at=excluded.updated_at`,key,...Object.values(policy),policyVersion+1,id(),now(),key,revision));
+    statements.push(this.query(`INSERT INTO audit_events SELECT ?,?,?,?,? WHERE ${gate}`,id(),this.userId,key,propertyId?'property.listing_updated':'property.listing_created',now(),key,revision));
+    const results=await this.db.batch(statements);if(!results[propertyId?0:2].meta.changes)throw new DomainError('Объявление уже изменилось. Обновите форму.',409);
+    return {id:key,message:published?'Объявление опубликовано. Готовность и даты проверяются отдельно.':'Черновик сохранён. Гости его не видят.'};
+  }
+  async enrichProperties(items:Row[],owner=false){
+    if(!items.length)return [];
+    const [details,operations,busy]=await Promise.all([this.all('SELECT * FROM property_details'),this.all('SELECT * FROM property_operations'),this.all("SELECT DISTINCT property_id FROM bookings WHERE (status='confirmed' OR (status='requested' AND expires_at>?)) AND start<=? AND occupied_until>?",now(),now(),now())]);
+    return items.map(p=>{const d=details.find(d=>d.property_id===p.id),op=operations.find(o=>o.property_id===p.id);return {...p,details:d?JSON.parse(d.details):{},photos:d?JSON.parse(d.photos):[],listing_version:d?.version||0,display_status:propertyStatus(p,op,busy.some(b=>b.property_id===p.id)),...(owner?{}:{published:undefined})};});
+  }
+  async workerCard(userId:string){
+    const p=await this.one('SELECT p.name,p.city,p.districts,p.experience,p.availability,d.avatar_id,d.work_status FROM profiles p LEFT JOIN profile_details d ON d.user_id=p.id WHERE p.id=?',userId);
+    if(!p)return null;
+    const jobs=await this.all("SELECT start,end,status FROM cleaning_jobs WHERE assigned_to=? AND status IN ('assigned','in_progress','submitted')",userId);
+    return {...p,display_status:cleanerStatus(p.work_status,jobs,now())};
+  }
+  async accountState(){return {profile:await this.profile(),workerStatus:(await this.workerCard(this.userId))?.display_status,settings:await this.one('SELECT payment_provider,payment_notifications,version FROM account_preferences WHERE user_id=?',this.userId)||defaultAccountSettings};}
   async saveAccountSettings(body:Row){
     const {provider,notifications,version}=accountSettingsInput(body);if(!await this.profile())throw new DomainError('Сначала заполните профиль.',403);
     if(!await this.one('SELECT user_id FROM account_preferences WHERE user_id=?',this.userId)&&version!==0)throw new DomainError('Обновите настройки аккаунта.',409);
@@ -51,8 +122,9 @@ export class RentalService {
       const legacyRole=/^(booking|checkout-reported|application|submitted|overdue):/.test(n.dedupe)?'owner':/^(confirmed|paid):/.test(n.dedupe)?'guest':/^(assigned|approved):/.test(n.dedupe)?'cleaner':null;
       return legacyRole===role&&entityIds.some(entityId=>n.dedupe.includes(entityId));
     });
-    const result={...state,activeRole:role,properties:role==='guest'?state.properties:[],ownProperties:role==='owner'?state.ownProperties:[],bookings,jobs,
-      notifications,applications:state.applications.filter(a=>jobIds.has(a.job_id)&&(role==='owner'||a.user_id===this.userId)),messages:state.messages.filter(m=>m.scope===role)};
+    const workers=new Map<string,Row|null>();if(role==="owner"){for(const userId of new Set([...state.applications.map(a=>a.user_id),...jobs.map(j=>j.assigned_to).filter(Boolean)]))workers.set(userId,await this.workerCard(userId));}
+    const result={...state,profile:state.profile?{...state.profile,display_status:cleanerStatus(state.profile.work_status,state.jobs.filter(j=>j.assigned_to===this.userId),state.serverTime)}:null,activeRole:role,properties:role==='guest'?state.properties:[],ownProperties:role==='owner'?state.ownProperties:[],bookings,jobs:jobs.map((j:Row):Row=>({...j,worker:role==='owner'?workers.get(j.assigned_to):null})),
+      notifications,applications:state.applications.filter(a=>jobIds.has(a.job_id)&&(role==='owner'||a.user_id===this.userId)).map(a=>({...a,worker:role==='owner'?workers.get(a.user_id):null})),messages:state.messages.filter(m=>m.scope===role)};
     const preference=await this.one('SELECT * FROM assistant_preferences WHERE user_id=? AND role=?',this.userId,role);
     const assistantSettings={...defaultAssistantSettings,...(preference?JSON.parse(preference.settings):{}),version:preference?.version||0};
     return {...result,approvals:approvalCards(result,role,this.userId,state.serverTime),assistantSettings,assistantBrief:assistantBrief(result,role,assistantSettings,state.serverTime),workspaces:{[role]:operationOverview(result,this.userId,role,state.serverTime)}};
@@ -87,7 +159,7 @@ export class RentalService {
   async state() {
     const [profile, properties, ownProperties, bookings, jobs, applications, notifications, messages] = await Promise.all([
       this.profile(),
-      this.all('SELECT id,title,city,district,description,price,rooms,capacity,cleaning_minutes,demo_owner FROM properties WHERE published=1 AND (demo_owner IS NULL OR demo_owner=?) ORDER BY created_at DESC', this.userId),
+      this.all('SELECT id,title,city,district,description,price,rooms,capacity,cleaning_minutes,demo_owner,published FROM properties WHERE published=1 AND (demo_owner IS NULL OR demo_owner=?) ORDER BY created_at DESC', this.userId),
       this.all('SELECT * FROM properties WHERE owner_id=? ORDER BY created_at DESC', this.userId),
       this.all(`SELECT b.*,p.title,p.owner_id,p.city,p.district,p.demo_owner,
         CASE WHEN p.owner_id=? OR (b.guest_id=? AND b.status='confirmed') THEN p.address ELSE NULL END address,
@@ -108,13 +180,13 @@ export class RentalService {
     const serverTime=now();
     const [policies,operations,terms,changes]=await Promise.all([this.all('SELECT * FROM property_policies'),this.all('SELECT * FROM property_operations'),this.all('SELECT t.* FROM booking_terms t JOIN bookings b ON b.id=t.booking_id JOIN properties p ON p.id=b.property_id WHERE b.guest_id=? OR p.owner_id=?',this.userId,this.userId),this.all('SELECT c.* FROM booking_changes c JOIN bookings b ON b.id=c.booking_id JOIN properties p ON p.id=b.property_id WHERE b.guest_id=? OR p.owner_id=? ORDER BY c.created_at DESC',this.userId,this.userId)]);
     const policyFor=(p:Row)=>policies.find(v=>v.property_id===p.id)||defaultPolicy;
-    const state={ profile, properties:properties.map(p=>({...p,policy:publicPolicy(policyFor(p))})), ownProperties:ownProperties.map(p=>({...p,policy:policyFor(p),operation:operations.find(v=>v.property_id===p.id)})), bookings:bookings.map(b => ({...b,status:b.status==='requested' && b.expires_at<=serverTime?'expired':b.status,terms:terms.find(t=>t.booking_id===b.id),changes:changes.filter(c=>c.booking_id===b.id).map(c=>({...c,status:c.status==='pending'&&c.expires_at<=serverTime?'expired':c.status})),readiness:operations.find(o=>o.property_id===b.property_id)?.readiness})), jobs:jobs.map(j=>({...j,checkout_confirmed:!j.booking_id||!!j.checkout_confirmed})), applications, notifications, messages, serverTime, integrations:{ai:false,telegram:false,whatsapp:false,payments:false} };
+    const state={ profile, properties:await this.enrichProperties(properties.map(p=>({...p,policy:publicPolicy(policyFor(p))}))), ownProperties:await this.enrichProperties(ownProperties.map(p=>({...p,policy:policyFor(p),operation:operations.find(v=>v.property_id===p.id)})),true), bookings:bookings.map(b => ({...b,status:b.status==='requested' && b.expires_at<=serverTime?'expired':b.status,terms:terms.find(t=>t.booking_id===b.id),changes:changes.filter(c=>c.booking_id===b.id).map(c=>({...c,status:c.status==='pending'&&c.expires_at<=serverTime?'expired':c.status})),readiness:operations.find(o=>o.property_id===b.property_id)?.readiness})), jobs:jobs.map((j:Row):Row=>({...j,checkout_confirmed:!j.booking_id||!!j.checkout_confirmed})), applications, notifications, messages, serverTime, integrations:{ai:false,telegram:false,whatsapp:false,payments:false} };
     return {...state,workspaces:Object.fromEntries(roles.map(role=>[role,operationOverview(state,this.userId,role,serverTime)]))};
   }
   async publicCatalog() {
     const properties=await this.all('SELECT id,title,city,district,description,price,rooms,capacity,cleaning_minutes FROM properties WHERE published=1 AND demo_owner IS NULL ORDER BY created_at DESC');
     const policies=await this.all('SELECT * FROM property_policies');
-    return {properties:properties.map(p=>({...p,policy:publicPolicy(policies.find(v=>v.property_id===p.id))}))};
+    return {properties:await this.enrichProperties(properties.map(p=>({...p,policy:publicPolicy(policies.find(v=>v.property_id===p.id))})))};
   }
   async savePolicy(propertyId:string,body:Row){
     const p=await this.one('SELECT * FROM properties WHERE id=? AND owner_id=?',propertyId,this.userId);if(!p)throw new DomainError('Квартира не найдена.',404);
@@ -159,7 +231,7 @@ export class RentalService {
     if (!selected.length) throw new DomainError('Выберите хотя бы одну роль.');
     const districts=String(body.districts||'').slice(0,300), experience=String(body.experience||'').slice(0,1000), availability=String(body.availability||'').slice(0,300);
     if(selected.includes('cleaner') && (!districts.trim()||!experience.trim()||!availability.trim())) throw new DomainError('Для анкеты исполнителя укажите районы, опыт и график.');
-    await this.db.batch([this.query(`INSERT INTO profiles VALUES (?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name,contact=excluded.contact,city=excluded.city,roles=excluded.roles,districts=excluded.districts,experience=excluded.experience,availability=excluded.availability`,this.userId,name,contact,city,JSON.stringify(selected),districts,experience,availability,now()),this.audit(this.userId,'profile.updated')]);
+    await this.db.batch([this.query(`INSERT INTO profiles VALUES (?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name,contact=excluded.contact,city=excluded.city,roles=excluded.roles,districts=excluded.districts,experience=excluded.experience,availability=excluded.availability`,this.userId,name,contact,city,JSON.stringify(selected),districts,experience,availability,now()),this.query('UPDATE profile_details SET version=version+1,revision=?,updated_at=? WHERE user_id=?',id(),now(),this.userId),this.audit(this.userId,'profile.updated')]);
     return {message:'Профиль сохранён. Роли подключены.'};
   }
   async createProperty(body:Row) {
@@ -364,8 +436,9 @@ export class RentalService {
     if(body.expectedVersion!==undefined&&body.expectedVersion!==j.version)throw new DomainError('Задание изменилось. Обновите карточку перед решением.',409);
     if(body.action==='apply') {
       await this.requireRole('cleaner');
+      if((await this.profile())?.work_status==='away')throw new DomainError('В профиле выключен приём заданий. Включите его перед откликом.',409);
       if(j.status!=='open'||j.end<=now()) throw new DomainError('Задание уже недоступно.',409);
-      const results=await this.db.batch([this.query("INSERT INTO applications SELECT ?,id,?,'pending',? FROM cleaning_jobs WHERE id=? AND status='open' AND end>? ON CONFLICT(job_id,user_id) DO UPDATE SET status='pending',created_at=excluded.created_at WHERE applications.status='rejected'",id(),this.userId,now(),jobId,now()),this.notify(j.owner_id,'Новый отклик на уборку. Посмотрите анкету исполнителя.','application:'+jobId+':'+this.userId+':'+j.start,'owner'),this.audit(jobId,'job.application')]);
+      const results=await this.db.batch([this.query("INSERT INTO applications SELECT ?,id,?,'pending',? FROM cleaning_jobs WHERE id=? AND status='open' AND end>? AND NOT EXISTS(SELECT 1 FROM profile_details WHERE user_id=? AND work_status='away') ON CONFLICT(job_id,user_id) DO UPDATE SET status='pending',created_at=excluded.created_at WHERE applications.status='rejected'",id(),this.userId,now(),jobId,now(),this.userId),this.notify(j.owner_id,'Новый отклик на уборку. Посмотрите анкету исполнителя.','application:'+jobId+':'+this.userId+':'+j.start,'owner'),this.audit(jobId,'job.application')]);
       if(!results[0].meta.changes && !await this.one('SELECT id FROM applications WHERE job_id=? AND user_id=?',jobId,this.userId)) throw new DomainError('Задание больше недоступно.',409);
       return {message:'Отклик отправлен. Назначение появится после подтверждения заказчиком.'};
     }
@@ -380,8 +453,9 @@ export class RentalService {
     if(body.action==='assign' && j.owner_id===this.userId) {
       const a=await this.one("SELECT * FROM applications WHERE id=? AND job_id=? AND status='pending'",required(body.applicationId,'Отклик',100),jobId);
       if(!a) throw new DomainError('Отклик недоступен.',409);
+      if((await this.one('SELECT work_status FROM profile_details WHERE user_id=?',a.user_id))?.work_status==='away')throw new DomainError('Исполнитель сейчас не принимает новые задания.',409);
       const results=await this.db.batch([
-        this.query("UPDATE cleaning_jobs SET assigned_to=?,status='assigned' WHERE id=? AND status='open' AND end>? AND version=?",a.user_id,jobId,now(),j.version),
+        this.query("UPDATE cleaning_jobs SET assigned_to=?,status='assigned' WHERE id=? AND status='open' AND end>? AND version=? AND NOT EXISTS(SELECT 1 FROM profile_details WHERE user_id=? AND work_status='away')",a.user_id,jobId,now(),j.version,a.user_id),
         this.query("UPDATE applications SET status=CASE WHEN user_id=(SELECT assigned_to FROM cleaning_jobs WHERE id=?) THEN 'accepted' ELSE 'rejected' END WHERE job_id=? AND (SELECT status FROM cleaning_jobs WHERE id=?)='assigned'",jobId,jobId,jobId),
         this.query("INSERT OR IGNORE INTO notifications SELECT ?,assigned_to,?,?,0,? FROM cleaning_jobs WHERE id=? AND assigned_to=? AND status='assigned'",id(),'Вас назначили на уборку. Адрес и контакт заказчика доступны в задании.','cleaner:assigned:'+jobId+':'+a.user_id+':'+j.start,now(),jobId,a.user_id),this.audit(jobId,'job.assigned')
       ]);
