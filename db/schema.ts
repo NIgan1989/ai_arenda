@@ -29,6 +29,8 @@ export const cleaningJobs = sqliteTable('cleaning_jobs', {
   description: text('description').notNull(), status: text('status').notNull().default('open'),
   assignedTo: text('assigned_to'), checklist: text('checklist').notNull().default('[]'),
   report: text('report').notNull().default(''), createdAt: integer('created_at').notNull(),
+  startedAt: integer('started_at'), submittedAt: integer('submitted_at'), completedAt: integer('completed_at'),
+  version: integer('version').notNull().default(1),
 }, t => [uniqueIndex('job_for_booking').on(t.bookingId)]);
 export const applications = sqliteTable('applications', {
   id: text('id').primaryKey(), jobId: text('job_id').notNull().references(() => cleaningJobs.id),

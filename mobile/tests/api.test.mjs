@@ -158,6 +158,35 @@ test('account settings persist and only a server-designated administrator can li
   await app.close();await start();assert.equal((await call('/api/admin/users',undefined,owner.token)).status,403);
 });
 
+test('approval cards and cleaning timers persist across HTTP server restarts',async()=>{
+ const p=(await call('/api/properties',{title:'Approval lifecycle',city:'Павлодар',district:'Test',address:'PRIVATE',description:'Test',price:10000,rooms:1,capacity:2,cleaningMinutes:60},owner.token)).body.id;
+ const t=Date.now()+30*86400000;
+ const b=(await call('/api/bookings',{propertyId:p,start:new Date(t).toISOString(),end:new Date(t+86400000).toISOString(),guests:1,requestKey:'approval-http',acceptTerms:true},guest.token)).body.id;
+ const incoming=(await call('/api/state',undefined,owner.token)).body.approvals.find(c=>c.kind==='booking'&&c.entityId===b);assert.ok(incoming);
+ const body={id:incoming.id,revision:incoming.revision,action:'accept',cleaningFee:0};
+ assert.equal((await call('/api/approvals',{...body,role:'owner'},guest.token)).status,403);
+ await app.close();await start();
+ assert.ok((await call('/api/state',undefined,owner.token)).body.approvals.some(c=>c.id===incoming.id));
+ assert.equal((await call('/api/approvals',body,owner.token)).status,200);assert.equal((await call('/api/approvals',body,owner.token)).status,409);
+ const j=(await call('/api/jobs',{propertyId:p,start:new Date(t+2*86400000).toISOString(),end:new Date(t+2*86400000+3600000).toISOString(),fee:3000,description:'Timer test'},owner.token)).body.id;
+ assert.equal((await call('/api/jobs/'+j,{action:'apply'},worker.token)).status,200);
+ let card=(await call('/api/state',undefined,owner.token)).body.approvals.find(c=>c.kind==='application'&&c.entityId===j);
+ assert.equal((await call('/api/approvals',{id:card.id,revision:card.revision,action:'accept'},owner.token)).status,200);
+ app.db.raw.prepare('UPDATE cleaning_jobs SET start=unixepoch()-60,end=unixepoch()+1200 WHERE id=?').run(j);
+ assert.equal((await call('/api/jobs/'+j,{action:'start'},worker.token)).status,200);
+ const started=(await call('/api/state',undefined,worker.token)).body.jobs.find(v=>v.id===j).started_at;assert.ok(started);
+ await app.close();await start();assert.equal((await call('/api/state',undefined,worker.token)).body.jobs.find(v=>v.id===j).started_at,started);
+ const report={action:'submit',checklist:[true,true,true,true],report:'Completed test report'};
+ assert.equal((await call('/api/jobs/'+j,report,worker.token)).status,200);
+ card=(await call('/api/state',undefined,owner.token)).body.approvals.find(c=>c.kind==='report'&&c.entityId===j);
+ assert.equal((await call('/api/approvals',{id:card.id,revision:card.revision,action:'reject',reason:'Check the kitchen'},owner.token)).status,200);
+ assert.equal((await call('/api/jobs/'+j,report,worker.token)).status,200);
+ assert.equal((await call('/api/approvals',{id:card.id,revision:card.revision,action:'accept'},owner.token)).status,409);
+ card=(await call('/api/state',undefined,owner.token)).body.approvals.find(c=>c.kind==='report'&&c.entityId===j);
+ assert.equal((await call('/api/approvals',{id:card.id,revision:card.revision,action:'accept'},owner.token)).status,200);
+ const completed=(await call('/api/state',undefined,worker.token)).body.jobs.find(v=>v.id===j);assert.equal(completed.status,'completed');assert.equal(completed.started_at,started);assert.ok(completed.submitted_at);assert.ok(completed.completed_at);
+});
+
 test('logout revokes the server session, leaving other accounts connected',async()=>{
   assert.equal((await call('/auth/logout',{},owner.token)).status,200);
   assert.equal((await call('/api/state',undefined,owner.token)).status,401);
