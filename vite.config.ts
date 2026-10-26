@@ -4,6 +4,8 @@ import hostingConfig from "./.openai/hosting.json";
 import { readExecutionProfile } from "./scripts/execution-profile.mjs";
 import { sites } from "./build/sites-vite-plugin";
 import { connectorPreview } from "./build/connector-preview-plugin.mjs";
+import { existsSync, writeFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 
 const SITE_CREATOR_PLACEHOLDER_DATABASE_ID =
   "00000000-0000-4000-8000-000000000000";
@@ -37,6 +39,10 @@ const localBindingConfig = {
 };
 
 export default defineConfig(async ({ command }) => {
+  // A config path lets Wrangler load root .dev.vars as secret dev bindings.
+  // Only local serving uses this file; builds never serialize local credentials.
+  const localConfigPath=command==='serve'&&!managedLinux?fileURLToPath(new URL('./.sites-local.wrangler.json',import.meta.url)):undefined;
+  if(localConfigPath&&!existsSync(localConfigPath))writeFileSync(localConfigPath,JSON.stringify({name:'ai-arenda-local',compatibility_date:'2026-05-15'}));
   // Use Miniflare's local Request.cf placeholder unless fetching is requested.
   process.env.CLOUDFLARE_CF_FETCH_ENABLED ??= "false";
   process.env.WRANGLER_SEND_METRICS ??= "false";
@@ -62,9 +68,10 @@ export default defineConfig(async ({ command }) => {
     },
     plugins: [
       vinext(),
-      sites({ mockAuth: !managedLinux }),
+      sites({ mockAuth: false }),
       connectorPreview(),
       cloudflare({
+        ...(localConfigPath?{configPath:localConfigPath}:{}),
         viteEnvironment: { name: "rsc", childEnvironments: ["ssr"] },
         inspectorPort: false,
         config: {

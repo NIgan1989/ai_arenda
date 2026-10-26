@@ -11,7 +11,7 @@ for (const name of ['service','domain','operations','assistant','access','rental
   writeFileSync(new URL(name+'.js', target), js);
 }
 // Native pilot deliberately has no external language-model connection.
-writeFileSync(new URL('ai.js',target), 'export async function generateAnswer(config,text,role,history,fallback){ return {text:fallback}; }\n');
+writeFileSync(new URL('ai.js',target), 'export function assistantContext(){ return undefined; }\nexport async function generateAnswer(config,text,role,history,fallback){ return {text:fallback,mode:"scenario"}; }\n');
 const schema=readFileSync(new URL('../../drizzle/0000_boring_unus.sql', import.meta.url), 'utf8');
 writeFileSync(new URL('schema.sql',target),schema);
 writeFileSync(new URL('0001_rental_operations.sql',target),readFileSync(new URL('../../drizzle/0001_rental_operations.sql',import.meta.url),'utf8'));

@@ -385,6 +385,58 @@ async function rentalFixture(){
   await o.savePolicy(propertyId,policy);
   return {database,o,g,w,stranger,propertyId,policy};
 }
+test('anonymous search checks hourly pricing, guest counts and cleaning buffers without exposing private data',async()=>{
+ const f=await rentalFixture();try{
+  const publicService=new RentalService(f.database,''),start=Date.now()+3*86400000,end=start+2*3600000;
+  const filters={city:'павлодар',mode:'hourly',start:iso(start),end:iso(end),guests:'2'};
+  const initial=await publicService.publicSearch(filters),p=initial.properties.find(p=>p.id===f.propertyId);
+  assert.ok(p);assert.equal(p.estimate.amount,4000);assert.equal(initial.availabilityChecked,true);
+  for(const field of ['address','owner_id','owner_contact','operation','escalation_contact'])assert.equal(p[field],undefined);
+  assert.ok(!JSON.stringify(initial).includes('PRIVATE'));assert.equal(p.policy.cleaning_budget,undefined);
+  assert.equal((await publicService.publicSearch({...filters,guests:'50'})).properties.length,0);
+  assert.equal((await publicService.publicSearch({...filters,end:iso(start+3600000)})).properties.length,0);
+  assert.equal(f.database.db.prepare('SELECT COUNT(*) n FROM bookings').get().n,0);
+  const body={propertyId:f.propertyId,start:iso(start),end:iso(end),guests:2,billingMode:'hourly'},quote=await f.g.bookingQuote(body);
+  await f.g.createBooking({...body,requestKey:'public-search-hold',expectedAmount:quote.amount,expectedPolicyVersion:quote.policy.version,acceptTerms:true});
+  assert.ok(!(await publicService.publicSearch(filters)).properties.some(p=>p.id===f.propertyId));
+  assert.ok(!(await publicService.publicSearch({...filters,start:iso(end+30*60000),end:iso(end+180*60000)})).properties.some(p=>p.id===f.propertyId));
+  assert.ok((await publicService.publicSearch({...filters,start:iso(end+90*60000),end:iso(end+210*60000)})).properties.some(p=>p.id===f.propertyId));
+  f.database.db.prepare('UPDATE bookings SET expires_at=0').run();assert.ok((await publicService.publicSearch(filters)).properties.some(p=>p.id===f.propertyId));
+  await assert.rejects(publicService.publicSearch({...filters,mode:'invalid'}),e=>e.status===400);
+ }finally{f.database.db.close();}
+});
+
+test('anonymous media can read only photos attached to published non-demo listings',async()=>{
+ const f=await rentalFixture();try{
+  const publicService=new RentalService(f.database,''),photoId=(await f.o.uploadMedia({kind:'property',data:photo})).id,avatar=(await f.o.uploadMedia({kind:'avatar',data:photo})).id,body=listingBody([photoId]);
+  const listing=await f.o.saveListing(null,body);await assert.rejects(publicService.publicMedia(photoId),e=>e.status===404);await assert.rejects(publicService.publicMedia(avatar),e=>e.status===404);
+  await f.o.saveListing(listing.id,{...body,published:true,expectedVersion:1,policyVersion:1});assert.match((await publicService.publicMedia(photoId)).data,/^data:image\/jpeg;base64,/);
+  await f.o.saveListing(listing.id,{...body,published:false,expectedVersion:2,policyVersion:2});await assert.rejects(publicService.publicMedia(photoId),e=>e.status===404);
+ }finally{f.database.db.close();}
+});
+
+test('additional role onboarding preserves profiles and cannot replace another account or grant admin access',async()=>{
+ const f=await rentalFixture();try{
+  await f.g.connectRole('owner',{roles:['admin'],userId:'o'});await f.g.connectRole('owner',{});let p=await f.g.profile();assert.deepEqual(new Set(JSON.parse(p.roles)),new Set(['guest','owner']));assert.equal(JSON.parse(p.roles).length,2);assert.equal((await f.o.profile()).name,'Owner');
+  await assert.rejects(f.g.connectRole('cleaner',{}),e=>e.status===400);await assert.rejects(f.g.connectRole('admin',{}),e=>e.status===403);
+  await f.g.connectRole('cleaner',{districts:'Центр',experience:'Уборка квартир',availability:'По выходным'});p=await f.g.profile();assert.deepEqual(new Set(JSON.parse(p.roles)),new Set(['guest','owner','cleaner']));
+  await f.g.connectRole('guest',{city:'Другой город',name:'Changed'});p=await f.g.profile();assert.equal(p.name,'Guest');assert.equal(p.city,'Павлодар');assert.equal(p.districts,'Центр');
+  await f.w.connectRole('owner',{});assert.equal((await f.w.profile()).experience,'test');assert.ok(JSON.parse((await f.w.profile()).roles).includes('guest'));
+ }finally{f.database.db.close();}
+});
+
+test('chat requires an enrolled role and explicit consent before any external model request',async()=>{
+ const f=await rentalFixture(),originalFetch=globalThis.fetch;let calls=0;
+ globalThis.fetch=async()=>{calls++;return Response.json({output:[{type:'message',content:[{type:'output_text',text:'Проверенный тестовый ответ.'}]}]});};
+ try{
+  const config={OPENAI_API_KEY:'synthetic-test-key',OPENAI_MODEL:'gpt-6-luna'};
+  await assert.rejects(f.g.chat({role:'owner',text:'Покажи чужие квартиры',aiConsent:true},config),e=>e.status===403);assert.equal(calls,0);
+  const scenario=await f.g.chat({role:'guest',text:'Привет',aiConsent:false},config);assert.equal(scenario.mode,'scenario');assert.equal(calls,0);
+  const model=await f.g.chat({role:'guest',text:'Как снять жильё?',aiConsent:true},config);assert.equal(model.mode,'model');assert.equal(calls,1);assert.equal(model.text,'Проверенный тестовый ответ.');
+  assert.equal((await f.g.roleState('guest')).messages.length,4);assert.equal((await f.o.roleState('owner')).messages.length,0);
+ }finally{globalThis.fetch=originalFetch;f.database.db.close();}
+});
+
 test('declaring every role does not grant access to another owner property or booking',async()=>{
   const f=await rentalFixture();try{
     await f.stranger.saveProfile({name:'Stranger',contact:'test',city:'Павлодар',roles:['guest','owner','cleaner'],districts:'test',experience:'test',availability:'test'});

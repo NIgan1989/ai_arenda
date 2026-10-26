@@ -5,8 +5,8 @@ export const metadata: Metadata = {
   title: "AI Аренда — всё складывается",
   description: "Единый ассистент для аренды жилья, управления квартирами и работы по уборке.",
   icons: {
-    icon: "/favicon.svg",
-    shortcut: "/favicon.svg",
+    icon: "/brand-mark.png",
+    shortcut: "/brand-mark.png",
   },
 };
 

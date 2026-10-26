@@ -2,9 +2,9 @@
 import {useEffect,useState} from 'react';
 import {Image as ImageIcon,UserRound,Upload} from 'lucide-react';
 type API=(path:string,body?:Record<string,any>)=>Promise<any>;
-export function Photo({id,role,alt,avatar=false}:{id?:string|null;role:string;alt:string;avatar?:boolean}){
+export function Photo({id,role,alt,avatar=false,publicView=false}:{id?:string|null;role:string;alt:string;avatar?:boolean;publicView?:boolean}){
  const [uri,setUri]=useState(''),[failed,setFailed]=useState(false);
- useEffect(()=>{let live=true;setUri('');setFailed(false);if(id)fetch('/api/media/'+encodeURIComponent(id),{headers:{'X-Workspace-Role':role},cache:'no-store'}).then(async r=>{if(!r.ok)throw new Error();return r.json() as Promise<{data:string}>;}).then(r=>{if(live)setUri(r.data);}).catch(()=>{if(live)setFailed(true);});return()=>{live=false;};},[id,role]);
+ useEffect(()=>{let live=true;setUri('');setFailed(false);if(id)fetch((publicView?'/api/public/media/':'/api/media/')+encodeURIComponent(id),{headers:publicView?{}:{'X-Workspace-Role':role},cache:'no-store'}).then(async r=>{if(!r.ok)throw new Error();return r.json() as Promise<{data:string}>;}).then(r=>{if(live)setUri(r.data);}).catch(()=>{if(live)setFailed(true);});return()=>{live=false;};},[id,role,publicView]);
  return uri&&!failed?<img className={avatar?'profile-photo':'listing-photo'} src={uri} alt={alt} onError={()=>setFailed(true)}/>:<span className={avatar?'profile-photo photo-placeholder':'listing-photo photo-placeholder'} role="img" aria-label={alt}>{avatar?<UserRound size={26}/>:<><ImageIcon size={30}/><small>{failed?'Фото недоступно':'Фотографии ещё не добавлены'}</small></>}</span>;
 }
 export async function preparePhoto(file:File,avatar=false){

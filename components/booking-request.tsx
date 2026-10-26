@@ -8,12 +8,12 @@ const money=(n:number)=>new Intl.NumberFormat('ru-RU').format(n)+' ₸';
 const local=(hours:number)=>new Date(Date.now()+(hours+5)*3600000).toISOString().slice(0,16);
 const date=(n:number)=>new Date(n*1000).toLocaleString('ru-RU',{timeZone:'Asia/Almaty',day:'numeric',month:'long',hour:'2-digit',minute:'2-digit'});
 
-export function BookingRequest({property,requestKey,disabled,onQuote,onConfirm}:{
-  property:Row;requestKey:string;disabled:boolean;onQuote:(body:Row)=>Promise<Row>;onConfirm:(body:Row)=>void;
+export function BookingRequest({property,requestKey,disabled,onQuote,onConfirm,initial}:{
+  property:Row;requestKey:string;disabled:boolean;onQuote:(body:Row)=>Promise<Row>;onConfirm:(body:Row)=>void;initial?:Row;
 }){
-  const [start,setStart]=useState(()=>local(24)),[end,setEnd]=useState(()=>local(48)),[guests,setGuests]=useState(1);
+  const [start,setStart]=useState(()=>initial?.start||local(24)),[end,setEnd]=useState(()=>initial?.end||local(initial?.mode==='hourly'?24+Math.max(2,property.policy?.min_hours||2):48)),[guests,setGuests]=useState(()=>Number(initial?.guests)||1);
   const [quote,setQuote]=useState<Row|null>(null),[checking,setChecking]=useState(false),[error,setError]=useState('');
-  const [mode,setMode]=useState('daily'),[accepted,setAccepted]=useState(false);
+  const [mode,setMode]=useState(initial?.mode==='hourly'?'hourly':'daily'),[accepted,setAccepted]=useState(false);
   const card=useRef<HTMLElement>(null),errorMessage=useRef<HTMLParagraphElement>(null);
   useEffect(()=>{if(quote)card.current?.scrollIntoView({block:'start',behavior:'instant'});else if(error)errorMessage.current?.scrollIntoView({block:'nearest',behavior:'instant'});},[quote,error]);
   const body=()=>({propertyId:property.id,requestKey,start:start+'+05:00',end:end+'+05:00',guests,billingMode:mode});

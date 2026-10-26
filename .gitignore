@@ -64,3 +64,4 @@ next-env.d.ts
 
 # Local server credentials and administrator configuration.
 .dev.vars*
+.sites-local.wrangler.json

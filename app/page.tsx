@@ -1,2 +1,2 @@
-import RoleEntry from '../components/role-entry';
-export default function Home() { return <RoleEntry/>; }
+import PublicHome from '../components/public-home';
+export default function Home() { return <PublicHome/>; }

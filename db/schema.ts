@@ -1,5 +1,18 @@
 import { sqliteTable, text, integer, uniqueIndex } from 'drizzle-orm/sqlite-core';
 
+export const authAccounts=sqliteTable('auth_accounts',{
+ id:text('id').primaryKey(),phone:text('phone').notNull().unique(),name:text('name').notNull(),
+ passwordHash:text('password_hash').notNull(),recoveryHash:text('recovery_hash').notNull(),
+ credentialVersion:integer('credential_version').notNull().default(1),createdAt:integer('created_at').notNull(),
+});
+export const authSessions=sqliteTable('auth_sessions',{
+ hash:text('hash').primaryKey(),userId:text('user_id').notNull().references(()=>authAccounts.id,{onDelete:'cascade'}),
+ credentialVersion:integer('credential_version').notNull(),expiresAt:integer('expires_at').notNull(),
+});
+export const authLimits=sqliteTable('auth_attempt_limits',{
+ key:text('key').primaryKey(),attempts:integer('attempts').notNull(),expiresAt:integer('expires_at').notNull(),
+});
+
 export const profiles = sqliteTable('profiles', {
   id: text('id').primaryKey(), name: text('name').notNull(), contact: text('contact').notNull().default(''),
   city: text('city').notNull().default('Павлодар'), roles: text('roles').notNull().default('["guest"]'),

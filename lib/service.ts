@@ -1,5 +1,5 @@
 import { DomainError, required, number, interval, quote, roles, assistantReply, type Role } from './domain';
-import { generateAnswer, type AIConfig } from './ai';
+import { generateAnswer, assistantContext, type AIConfig } from './ai';
 import { operationOverview } from './operations';
 import { defaultPolicy,publicPolicy,policyInput,rentalPrice,changeRentalPrice,mandateActive } from './rental-policy';
 import { parseRole,commandRole } from './access';
@@ -76,7 +76,7 @@ export class RentalService {
     const results=await this.db.batch(statements);if(!results[propertyId?0:2].meta.changes)throw new DomainError('Объявление уже изменилось. Обновите форму.',409);
     return {id:key,message:published?'Объявление опубликовано. Готовность и даты проверяются отдельно.':'Черновик сохранён. Гости его не видят.'};
   }
-  async enrichProperties(items:Row[],owner=false){
+  async enrichProperties(items:Row[],owner=false):Promise<Row[]>{
     if(!items.length)return [];
     const [details,operations,busy]=await Promise.all([this.all('SELECT * FROM property_details'),this.all('SELECT * FROM property_operations'),this.all("SELECT DISTINCT property_id FROM bookings WHERE (status='confirmed' OR (status='requested' AND expires_at>?)) AND start<=? AND occupied_until>?",now(),now(),now())]);
     return items.map(p=>{const d=details.find(d=>d.property_id===p.id),op=operations.find(o=>o.property_id===p.id);return {...p,details:d?JSON.parse(d.details):{},photos:d?JSON.parse(d.photos):[],listing_version:d?.version||0,display_status:propertyStatus(p,op,busy.some(b=>b.property_id===p.id)),...(owner?{}:{published:undefined})};});
@@ -187,6 +187,43 @@ export class RentalService {
     const properties=await this.all('SELECT id,title,city,district,description,price,rooms,capacity,cleaning_minutes FROM properties WHERE published=1 AND demo_owner IS NULL ORDER BY created_at DESC');
     const policies=await this.all('SELECT * FROM property_policies');
     return {properties:await this.enrichProperties(properties.map(p=>({...p,policy:publicPolicy(policies.find(v=>v.property_id===p.id))})))};
+  }
+  async publicSearch(filters:Record<string,string>={}){
+    const city=String(filters.city||'').trim(),mode=filters.mode||'daily',guests=number(filters.guests||1,'Гости',1,50);
+    if(city.length>80||!['daily','hourly'].includes(mode))throw new DomainError('Проверьте город и вид аренды.');
+    const catalog=await this.publicCatalog(),cities=[...new Set(catalog.properties.map(p=>String(p.city)))].sort();
+    let items=catalog.properties.filter(p=>(!city||p.city.toLocaleLowerCase('ru').includes(city.toLocaleLowerCase('ru')))&&p.capacity>=guests&&(mode!=='hourly'||p.policy.hourly_price>0));
+    let range:{start:number;end:number}|null=null;
+    if(filters.start||filters.end){
+      range=interval(filters.start,filters.end);
+      const {start,end}=range;
+      const [booked,cleaning]=await Promise.all([
+        this.all("SELECT DISTINCT b.property_id FROM bookings b JOIN properties p ON p.id=b.property_id WHERE (b.status='confirmed' OR (b.status='requested' AND b.expires_at>?)) AND b.start<?+p.cleaning_minutes*60 AND b.occupied_until>?",now(),end,start),
+        this.all("SELECT DISTINCT j.property_id FROM cleaning_jobs j JOIN properties p ON p.id=j.property_id WHERE j.status IN ('open','assigned','in_progress','submitted') AND j.start<?+p.cleaning_minutes*60 AND j.end>?",end,start),
+      ]);
+      const occupied=new Set([...booked,...cleaning].map(p=>p.property_id));
+      items=items.filter(p=>!occupied.has(p.id)&&!['maintenance','blocked'].includes(p.display_status.code)&&(start>now()+60||p.display_status.code==='ready'));
+      items=items.flatMap(p=>{try{const price=rentalPrice(p.price,p.policy,start,end,mode);return [{...p,estimate:{amount:price.amount,periods:price.periods,rate:price.price,unitLabel:price.unitLabel}}];}catch(error){if(error instanceof DomainError)return [];throw error;}});
+    }
+    return {properties:items.slice(0,60),total:items.length,cities,filters:{city,mode,guests,...(range?{start:range.start,end:range.end}:{})},availabilityChecked:!!range};
+  }
+  async publicMedia(mediaId:string){
+    const image=await this.one("SELECT m.data,m.width,m.height FROM media m WHERE m.id=? AND m.kind='property' AND EXISTS(SELECT 1 FROM property_details d JOIN properties p ON p.id=d.property_id,json_each(d.photos) f WHERE f.value=m.id AND p.published=1 AND p.demo_owner IS NULL)",required(mediaId,'Фото',100));
+    if(!image)throw new DomainError('Фотография недоступна.',404);return image;
+  }
+  async connectRole(roleValue:unknown,body:Row={}){
+    const role=parseRole(roleValue),profile=await this.profile();
+    if(!profile)throw new DomainError('Сначала войдите или создайте аккаунт.',403);
+    const name=required(role==='guest'?profile.name:body.name??profile.name,'Имя',100),contact=required(role==='guest'?profile.contact:body.contact??profile.contact,'Контакт',120),city=required(role==='guest'?profile.city:body.city??profile.city,'Город',80);
+    const districts=String(body.districts??profile.districts??'').trim(),experience=String(body.experience??profile.experience??'').trim(),availability=String(body.availability??profile.availability??'').trim();
+    if(role==='cleaner'&&(!districts||!experience||!availability||districts.length>300||experience.length>1000||availability.length>300))throw new DomainError('Для работы на уборках укажите районы, опыт и график.');
+    await this.db.batch([
+      this.query("UPDATE profiles SET roles=CASE WHEN EXISTS(SELECT 1 FROM json_each(roles) WHERE value='guest') THEN roles ELSE json_insert(roles,'$[#]','guest') END WHERE id=?",this.userId),
+      this.query("UPDATE profiles SET name=?,contact=?,city=?,roles=CASE WHEN EXISTS(SELECT 1 FROM json_each(roles) WHERE value=?) THEN roles ELSE json_insert(roles,'$[#]',?) END,districts=CASE WHEN ?='cleaner' THEN ? ELSE districts END,experience=CASE WHEN ?='cleaner' THEN ? ELSE experience END,availability=CASE WHEN ?='cleaner' THEN ? ELSE availability END WHERE id=?",name,contact,city,role,role,role,districts,role,experience,role,availability,this.userId),
+      this.query('UPDATE profile_details SET version=version+1,revision=?,updated_at=? WHERE user_id=?',id(),now(),this.userId),
+      this.audit(this.userId,'role.connected:'+role),
+    ]);
+    return {message:'Рабочий профиль подключён.',role,profile:await this.profile()};
   }
   async savePolicy(propertyId:string,body:Row){
     const p=await this.one('SELECT * FROM properties WHERE id=? AND owner_id=?',propertyId,this.userId);if(!p)throw new DomainError('Квартира не найдена.',404);
@@ -496,18 +533,21 @@ export class RentalService {
     throw new DomainError('Нет доступа к этому действию.',403);
   }
   async chat(body:Row,config:AIConfig={}) {
-    const text=required(body.text,'Сообщение',2000), role=roles.includes(body.role)?body.role:'guest';
+    const text=required(body.text,'Сообщение',2000), role=await this.authorizeWorkspace(body.role,'chat');
     const reply=assistantReply(text,role,!!await this.profile()), ts=Date.now();
+    let mode='scenario',errorCode:string|undefined;
     if(body.aiConsent===true&&config.OPENAI_API_KEY&&config.OPENAI_MODEL){
       const history=await this.all('SELECT sender,body FROM (SELECT sender,body,created_at FROM messages WHERE user_id=? AND scope=? ORDER BY created_at DESC LIMIT 8) ORDER BY created_at',this.userId,role);
-      const generated=await generateAnswer(config,text,role,history as {sender:string;body:string}[],reply.text);
+      const context=assistantContext(await this.roleState(role),role);
+      const generated=await generateAnswer(config,text,role,history as {sender:string;body:string}[],reply.text,context);
       reply.text=generated.text;
+      mode=generated.mode;errorCode=generated.errorCode;
     }
     await this.db.batch([
       this.query('INSERT INTO messages VALUES (?,?,?,?,?,?)',id(),this.userId,role,'user',text,ts),
       this.query('INSERT INTO messages VALUES (?,?,?,?,?,?)',id(),this.userId,role,'assistant',reply.text,ts+1)
     ]);
-    return reply;
+    return {...reply,mode,...(errorCode?{errorCode}:{})};
   }
   async demo() {
     const existing=await this.one('SELECT id FROM properties WHERE demo_owner=? LIMIT 1',this.userId);

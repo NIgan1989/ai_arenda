@@ -1,18 +1,23 @@
 import { env } from 'cloudflare:workers';
-import { getChatGPTUser } from '../../chatgpt-auth';
+import { getAppUser } from '../../session';
+import {authRequest} from '../../../lib/native-auth';
 import { RentalService } from '../../../lib/service';
 import { DomainError } from '../../../lib/domain';
 import {isPlatformAdmin} from '../../../lib/account';
+import {reserveAIRequest} from '../../../lib/ai';
 export const dynamic='force-dynamic';
 const json=(data:unknown,status=200)=>Response.json(data,{status,headers:{'Cache-Control':'no-store','X-Content-Type-Options':'nosniff'}});
 async function handle(request:Request, context:{params:Promise<{path:string[]}>}) {
   try {
     const route=(await context.params).path;
     if(!env.DB) return json({error:'База данных ещё не подключена.'},503);
-    const user=await getChatGPTUser();
-    if(!user) return json({error:'Войдите, чтобы сохранить данные.',signIn:'/signin-with-chatgpt?return_to=/'},401);
+    if(request.method==='GET'&&route.join('/')==='public/catalog')return json(await new RentalService(env.DB,'').publicSearch(Object.fromEntries(new URL(request.url).searchParams)));
+    if(request.method==='GET'&&route.length===3&&route[0]==='public'&&route[1]==='media')return json(await new RentalService(env.DB,'').publicMedia(route[2]));
+    if(route.length===2&&route[0]==='auth')return await authRequest(env.DB,request,route[1]);
+    const user=await getAppUser();
+    if(!user) return json({error:'Войдите, чтобы сохранить данные.',signIn:'/'},401);
     const service=new RentalService(env.DB,user.userId);
-    if(request.method==='GET'&&route.length===1&&route[0]==='access')return json({profile:await service.profile(),user:{id:user.userId,name:user.fullName||''}});
+    if(request.method==='GET'&&route.length===1&&route[0]==='access')return json({profile:await service.profile(),user:{id:user.userId,name:user.fullName||'',phone:user.phone}});
     const activeRole=request.headers.get('X-Workspace-Role');
     if(request.method==='GET'&&route.length===2&&route[0]==='media'){await service.authorizeWorkspace(activeRole,'media');return json(await service.readMedia(route[1]));}
     if(request.method==='GET'&&route.length===1&&route[0]==='account'){await service.authorizeWorkspace(activeRole,'account');return json({...await service.accountState(),platformAdmin:isPlatformAdmin(user.userId,env.PLATFORM_ADMIN_IDS),modelConfigured:!!(env.OPENAI_API_KEY&&env.OPENAI_MODEL)});}
@@ -27,6 +32,11 @@ async function handle(request:Request, context:{params:Promise<{path:string[]}>}
     if(Number(request.headers.get('content-length')||0)>maxBody) return json({error:'Слишком большой запрос.'},413);
     const raw=await request.text(); if(raw.length>maxBody) return json({error:'Слишком большой запрос.'},413);
     const body=JSON.parse(raw||'{}');
+    if(route.length===2&&route[0]==='onboarding'){
+      if(!['guest','owner','cleaner'].includes(route[1]))return json({error:'Такой профиль недоступен.'},400);
+      if(!await service.profile())await service.saveProfile({name:user.fullName||'Гость',contact:user.phone,city:body.city||'Павлодар',roles:['guest']});
+      return json(await service.connectRole(route[1],body));
+    }
     if(!(route.length===1&&route[0]==='profile'))await service.authorizeWorkspace(activeRole,route.join('/'),body);
     if(route[0]==='chat')body.role=activeRole;
     if(route.length===1) {
@@ -41,7 +51,7 @@ async function handle(request:Request, context:{params:Promise<{path:string[]}>}
         case 'properties':return json(await service.createProperty(body));
         case 'bookings':return json(await service.createBooking(body));
         case 'jobs':return json(await service.createJob(body));
-        case 'chat':return json(await service.chat(body,{OPENAI_API_KEY:env.OPENAI_API_KEY,OPENAI_MODEL:env.OPENAI_MODEL}));
+        case 'chat':if(body.aiConsent===true&&env.OPENAI_API_KEY&&env.OPENAI_MODEL)await reserveAIRequest(env.DB,user.userId);return json(await service.chat(body,{OPENAI_API_KEY:env.OPENAI_API_KEY,OPENAI_MODEL:env.OPENAI_MODEL}));
         case 'demo':return json(await service.demo());
         case 'maintenance':return json(await service.maintenance());
         case 'notifications':await service.query('UPDATE notifications SET read=1 WHERE user_id=?',user.userId).run();return json({message:'Уведомления прочитаны.'});
