@@ -1,6 +1,6 @@
 import {DomainError,number,type Role} from './domain';
 type Row=Record<string,any>;
-export const defaultAssistantSettings={mode:'proactive',leadMinutes:60,repeatMinutes:60,quietEnabled:false,quietStart:'22:00',quietEnd:'08:00',urgentInQuiet:true,version:0};
+export const defaultAssistantSettings=Object.freeze({mode:'proactive',leadMinutes:60,repeatMinutes:60,quietEnabled:false,quietStart:'22:00',quietEnd:'08:00',urgentInQuiet:true,version:0});
 function minute(value:unknown){if(typeof value!=='string'||!/^([01]\d|2[0-3]):[0-5]\d$/.test(value))throw new DomainError('Укажите время в формате ЧЧ:ММ.');const [h,m]=value.split(':').map(Number);return h*60+m;}
 export function assistantSettingsInput(body:Row){
   if(!['reactive','important','proactive'].includes(body.mode))throw new DomainError('Выберите режим инициативности.');

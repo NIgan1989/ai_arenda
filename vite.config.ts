@@ -58,24 +58,28 @@ export default defineConfig(async ({ command }) => {
   const { cloudflare } = await import("@cloudflare/vite-plugin");
 
   return {
+    ...(process.env.ARENDA_BROWSER_QA==='1'?{cacheDir:'node_modules/.vite-browser-qa'}:{}),
     server: {
       ...(managedLinux
         ? { host: "0.0.0.0", allowedHosts: ["terminal.local"] }
         : {}),
-      ...(isCodexSeatbeltSandbox
-        ? { watch: { useFsEvents: false, usePolling: true } }
-        : {}),
+      watch: {
+        ignored: ['**/.wrangler/**','**/outputs/**','**/mobile/server/generated/**'],
+        ...(isCodexSeatbeltSandbox ? {useFsEvents:false,usePolling:true} : {}),
+      },
     },
     plugins: [
       vinext(),
       sites({ mockAuth: false }),
       connectorPreview(),
       cloudflare({
+        ...(command==='serve'&&process.env.ARENDA_BROWSER_QA==='1'?{persistState:{path:fileURLToPath(new URL('./outputs/browser-qa/state',import.meta.url))}}:{}),
         ...(localConfigPath?{configPath:localConfigPath}:{}),
         viteEnvironment: { name: "rsc", childEnvironments: ["ssr"] },
         inspectorPort: false,
         config: {
           ...localBindingConfig,
+          ...(command==='serve'&&process.env.ARENDA_BROWSER_QA==='1'?{vars:{PLATFORM_ADMIN_IDS:'qa-owner',TEST_DATA_ONLY:'1',TEST_AI_ENABLED:process.env.ARENDA_QA_LIVE_AI==='1'?'1':'0'}}:{}),
           ...(command === "serve"
             ? {
                 services: [

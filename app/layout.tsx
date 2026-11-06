@@ -1,5 +1,8 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import "./design-system.css";
+import "./mobile-first.css";
+import {WorkspaceProvider} from "../components/workspace-provider";
 
 export const metadata: Metadata = {
   title: "AI Аренда — всё складывается",
@@ -16,8 +19,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="ru">
-      <body className="antialiased">{children}</body>
+    <html lang="ru" data-design="unified">
+      <body className="antialiased"><WorkspaceProvider>{children}</WorkspaceProvider></body>
     </html>
   );
 }

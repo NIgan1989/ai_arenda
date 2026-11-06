@@ -1,4 +1,7 @@
 'use client';
+import {Button} from '@/components/ui/button';
+import {NativeSelect} from '@/components/ui/native-select';
+import {Input} from '@/components/ui/input';
 
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { ArrowLeft, ArrowUpRight, CalendarDays, Check, Clock3, LoaderCircle } from 'lucide-react';
@@ -8,8 +11,8 @@ const money=(n:number)=>new Intl.NumberFormat('ru-RU').format(n)+' ₸';
 const local=(hours:number)=>new Date(Date.now()+(hours+5)*3600000).toISOString().slice(0,16);
 const date=(n:number)=>new Date(n*1000).toLocaleString('ru-RU',{timeZone:'Asia/Almaty',day:'numeric',month:'long',hour:'2-digit',minute:'2-digit'});
 
-export function BookingRequest({property,requestKey,disabled,onQuote,onConfirm,initial}:{
-  property:Row;requestKey:string;disabled:boolean;onQuote:(body:Row)=>Promise<Row>;onConfirm:(body:Row)=>void;initial?:Row;
+export function BookingRequest({property,requestKey,disabled,onQuote,onConfirm,initial,testMode=false}:{
+  property:Row;requestKey:string;disabled:boolean;onQuote:(body:Row)=>Promise<Row>;onConfirm:(body:Row)=>void;initial?:Row;testMode?:boolean;
 }){
   const [start,setStart]=useState(()=>initial?.start||local(24)),[end,setEnd]=useState(()=>initial?.end||local(initial?.mode==='hourly'?24+Math.max(2,property.policy?.min_hours||2):48)),[guests,setGuests]=useState(()=>Number(initial?.guests)||1);
   const [quote,setQuote]=useState<Row|null>(null),[checking,setChecking]=useState(false),[error,setError]=useState('');
@@ -24,7 +27,7 @@ export function BookingRequest({property,requestKey,disabled,onQuote,onConfirm,i
     try{setQuote(await onQuote({...body(),start:chosenStart+'+05:00',end:chosenEnd+'+05:00',guests:chosenGuests}));}catch(e:any){setError(e.message);}finally{setChecking(false);}
   }
   return <section ref={card} className="inline-card booking-request" aria-label="Оформление заявки">
-    <div className="card-eyebrow"><CalendarDays size={16}/>Заявка на проживание</div>
+    {testMode&&<p className="booking-test-note">Учебная заявка. Можно пройти весь процесс без проверки личности и SMS. Банковский перевод не выполняется; расчёты подтверждаются отдельно.</p>}<div className="card-eyebrow"><CalendarDays size={16}/>Заявка на проживание</div>
     <h3>{property.title}</h3>
     <ol className="booking-steps" aria-label="Этапы заявки"><li className="complete"><Check size={13}/>Квартира</li><li className="current" aria-current="step">{quote?'2. Проверка':'2. Даты'}</li><li>3. Заявка</li></ol>
     {quote?<div className="quote-review">
@@ -35,14 +38,14 @@ export function BookingRequest({property,requestKey,disabled,onQuote,onConfirm,i
       {quote.policy.house_rules&&<p className="quote-note" style={{whiteSpace:'pre-wrap'}}>{quote.policy.house_rules}</p>}
       <p className="quote-note">Интервал ещё не зарезервирован. {quote.policy.auto_confirm?'Бронь подтверждается автоматически по правилам владельца.':'После отправки заявки он удерживается до решения владельца на 30 минут.'}</p>
       <label className="check-label"><input type="checkbox" checked={accepted} onChange={e=>setAccepted(e.target.checked)}/>Согласен с указанными датами, тарифом, депозитом и правилами проживания</label>
-      <div className="inline-actions"><button className="inline-button" disabled={disabled||!accepted} onClick={()=>onConfirm({...body(),expectedAmount:quote.amount,expectedPolicyVersion:quote.policy.version,acceptTerms:accepted})}>Отправить заявку<ArrowUpRight size={16}/></button><button className="inline-button secondary" disabled={disabled} onClick={()=>setQuote(null)}><ArrowLeft size={15}/>Изменить даты</button></div>
+      <div className="inline-actions"><Button className="inline-button" disabled={disabled||!accepted} onClick={()=>onConfirm({...body(),expectedAmount:quote.amount,expectedPolicyVersion:quote.policy.version,acceptTerms:accepted})}>Отправить заявку<ArrowUpRight size={16}/></Button><Button className="inline-button secondary" disabled={disabled} onClick={()=>setQuote(null)}><ArrowLeft size={15}/>Изменить даты</Button></div>
     </div>:<form className="inline-form" onSubmit={calculate}>
-      <label>Тариф<select value={mode} onChange={e=>setMode(e.target.value)} disabled={disabled||checking}><option value="daily">Начатые сутки, 24 часа</option>{property.policy?.hourly_price>0&&<option value="hourly">Почасово · минимум {property.policy.min_hours} ч.</option>}{property.policy?.nightly_price>0&&<option value="nightly">По ночам, с расчётным часом</option>}</select></label>
-      <div className="input-row"><label>Заезд<input name="start" required type="datetime-local" defaultValue={start} disabled={disabled||checking}/></label><label>Выезд<input name="end" required type="datetime-local" defaultValue={end} disabled={disabled||checking}/></label></div>
-      <label>Количество гостей<input name="guests" type="number" min={1} max={property.capacity} defaultValue={guests} required disabled={disabled||checking}/></label>
+      <label>Тариф<NativeSelect value={mode} onChange={e=>setMode(e.target.value)} disabled={disabled||checking}><option value="daily">Начатые сутки, 24 часа</option>{property.policy?.hourly_price>0&&<option value="hourly">Почасово · минимум {property.policy.min_hours} ч.</option>}{property.policy?.nightly_price>0&&<option value="nightly">По ночам, с расчётным часом</option>}</NativeSelect></label>
+      <div className="input-row"><label>Заезд<Input name="start" required type="datetime-local" defaultValue={start} disabled={disabled||checking}/></label><label>Выезд<Input name="end" required type="datetime-local" defaultValue={end} disabled={disabled||checking}/></label></div>
+      <label>Количество гостей<Input name="guests" type="number" min={1} max={property.capacity} defaultValue={guests} required disabled={disabled||checking}/></label>
       <small>Время Казахстана, UTC+5. {mode==='nightly'?`Заезд в ${String(Math.floor(property.policy.checkin_minutes/60)).padStart(2,'0')}:${String(property.policy.checkin_minutes%60).padStart(2,'0')}, выезд в ${String(Math.floor(property.policy.checkout_minutes/60)).padStart(2,'0')}:${String(property.policy.checkout_minutes%60).padStart(2,'0')}.`:mode==='hourly'?money(property.policy.hourly_price)+' за каждый начатый час.':money(property.price)+' за каждые начатые 24 часа.'} Проверю свободный интервал перед отправкой.</small>
       {error&&<p ref={errorMessage} className="form-error" role="alert">{error}</p>}
-      <button className="inline-button" disabled={disabled||checking}>{checking?<><LoaderCircle size={16}/>Проверяю интервал…</>:<>Проверить даты и стоимость<ArrowUpRight size={16}/></>}</button>
+      <Button className="inline-button" disabled={disabled||checking}>{checking?<><LoaderCircle size={16}/>Проверяю интервал…</>:<>Проверить даты и стоимость<ArrowUpRight size={16}/></>}</Button>
     </form>}
   </section>;
 }

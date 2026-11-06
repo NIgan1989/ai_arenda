@@ -10,7 +10,8 @@
     "server": "node scripts/prepare-server.mjs && node server/index.mjs",
     "test": "node scripts/prepare-server.mjs && node --test tests/*.test.mjs",
     "typecheck": "tsc --noEmit",
-    "export": "expo export --platform all"
+    "export": "expo export --platform all",
+    "check:release": "node ../scripts/check-mobile-release.mjs --profile production"
   },
   "dependencies": {
     "expo": "~57.0.0",

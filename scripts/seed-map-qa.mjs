@@ -1,0 +1,5 @@
+// Synthetic map positions only in the explicitly isolated browser QA database.
+import {openQaDatabase,qaModule} from './qa-database.mjs';
+if(process.argv.slice(2).join(' ')!=='--confirm-isolated')throw Error('Use --confirm-isolated; real property locations are never inferred by this script.');
+const db=openQaDatabase(),{mapCities}=await qaModule('map-workspace');let added=0,withoutCityAnchor=0;
+try{for(const p of db.raw.prepare("SELECT * FROM properties WHERE description LIKE 'СИНТЕТИЧЕСКОЕ ОБЪЯВЛЕНИЕ%' OR owner_id='qa-owner'").all()){const center=mapCities[p.city];if(!center){withoutCityAnchor++;continue;}let hash=0;for(const ch of p.id)hash=(hash*31+ch.charCodeAt(0))>>>0;added+=Number(db.raw.prepare("INSERT OR IGNORE INTO property_locations VALUES (?,?,?,'fixture',?,1,?)").run(p.id,center[0]+((hash%100)-50)*.0006,center[1]+((Math.floor(hash/100)%100)-50)*.0004,[p.city,p.district,p.address].join('|'),Math.floor(Date.now()/1000)).changes);}console.log(JSON.stringify({added,withoutCityAnchor,note:'Synthetic fixtures, not real addresses; owner pins are preserved.'}));}finally{db.raw.close();}

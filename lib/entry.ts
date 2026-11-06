@@ -1,10 +1,10 @@
-export const defaultGuestPath='/workspace/guest/overview';
+export const defaultGuestPath='/workspace/guest/map';
 export function safeEntryReturn(value:unknown){
  if(typeof value!=='string'||!value.startsWith('/')||value.startsWith('//')||value.length>2000)return defaultGuestPath;
  try{
   const url=new URL(value,'https://arenda.local');
   if(url.origin!=='https://arenda.local')return defaultGuestPath;
-  if(!/^\/workspace\/(guest|owner|cleaner)\/(overview|catalog|properties|bookings|cleaning|jobs|assignments|calendar|assistant|settings|account)$/.test(url.pathname)&&!/^\/join\/(guest|owner|cleaner)$/.test(url.pathname))return defaultGuestPath;
+  if(!/^\/workspace\/(guest|owner|cleaner)\/(map|overview|catalog|properties|bookings|cleaning|jobs|assignments|calendar|assistant|chats|operations|settings|account)$/.test(url.pathname)&&!/^\/join\/(guest|owner|cleaner)$/.test(url.pathname))return defaultGuestPath;
   return url.pathname+url.search;
  }catch{return defaultGuestPath;}
 }

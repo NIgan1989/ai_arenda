@@ -1,7 +1,10 @@
 import React,{useEffect,useRef,useState} from 'react';
 import { ActivityIndicator,AppState,KeyboardAvoidingView,Platform,Pressable,ScrollView,StatusBar,Text,TextInput,View } from 'react-native';
 import { SafeAreaProvider,SafeAreaView } from 'react-native-safe-area-context';
-import { ApiError,request,restoreSession,saveSession,setWorkspaceRole } from './src/api';
+import {NativeChats,type NativeChatInitial} from './src/NativeChats';
+import {useProcessLinks} from './src/use-process-links';
+import {resolveProcessLink} from './src/deep-links';
+import { API_URL,ApiError,StaleSessionError,getSessionGeneration,request,restoreSession,saveSession,setWorkspaceRole } from './src/api';
 import { baseQuestions,cleanerQuestions,date,empty,labels,money,parseDate,propertyQuestions,uid,type Flow,type Message,type Question,type Role,type Row } from './src/model';
 import { C,s } from './src/styles';
 import {ActivityClockProvider,ActivityTimer} from './src/ActivityTimer';
@@ -13,7 +16,6 @@ import {PropertyListing,PropertyEditor} from './src/PropertyListing';
 import {CleanerCard} from './src/ProfileEditor';
 import {AccountControl} from './src/AccountControl';
 import {RentalCalendar} from './src/RentalCalendar';
-import {AssistantControl} from './src/AssistantControl';
 import {RoleEntry,roleNames,rolePages,intentRole} from './src/RoleEntry';
 
 function Button({title,onPress,secondary=false,disabled=false}:{title:string;onPress:()=>void;secondary?:boolean;disabled?:boolean}){
@@ -32,16 +34,18 @@ function BookingReview({flow,busy,done,result,onConfirm,onEdit}:{flow:Flow;busy:
     <Button title="Изменить даты и гостей" secondary disabled={busy||checking} onPress={onEdit}/>
   </View>;
 }
-function Auth({onSubmit,busy}:{onSubmit:(mode:string,login:string,password:string)=>Promise<void>;busy:boolean}){
-  const [mode,setMode]=useState('register'),[login,setLogin]=useState(''),[password,setPassword]=useState(''),[error,setError]=useState('');
+function Auth({onSubmit,busy}:{onSubmit:(mode:string,phone:string,password:string,name?:string,city?:string,recovery?:string)=>Promise<void>;busy:boolean}){
+  const [mode,setMode]=useState('login'),[phone,setPhone]=useState(''),[password,setPassword]=useState(''),[name,setName]=useState(''),[city,setCity]=useState('Павлодар'),[recovery,setRecovery]=useState(''),[error,setError]=useState('');
   return <View style={s.card}>
-    <Text style={s.cardTitle}>{mode==='register'?'Сохраним ваши заявки':'С возвращением'}</Text>
-    <Text style={s.meta}>Один аккаунт для жилья и работы. В пилотной версии — вход по логину и паролю, без проверки телефона.</Text>
-    <Text style={s.fieldLabel}>Логин</Text>
-    <TextInput accessibilityLabel="Логин" style={s.field} placeholder="Логин латиницей" placeholderTextColor={C.muted} value={login} onChangeText={setLogin} autoCapitalize="none" autoCorrect={false} autoComplete="username" maxLength={40} editable={!busy}/>
-    <Text style={s.fieldLabel}>Пароль</Text><TextInput accessibilityLabel="Пароль" style={s.field} placeholder="Пароль, от 10 символов" placeholderTextColor={C.muted} value={password} onChangeText={setPassword} secureTextEntry autoCapitalize="none" autoCorrect={false} autoComplete={mode==='register'?'new-password':'current-password'} maxLength={128} editable={!busy}/>
+    <Text style={s.cardTitle}>{mode==='register'?'Один аккаунт для всех устройств':mode==='recover'?'Восстановить доступ':'С возвращением'}</Text>
+    <Text style={s.meta}>Войдите с тем же номером телефона и паролем, что используете на сайте. Брони и роли хранятся на общем сервере.</Text>
+    {mode==='register'&&<><Text style={s.fieldLabel}>Имя</Text><TextInput accessibilityLabel="Имя" style={s.field} value={name} onChangeText={setName} maxLength={100} editable={!busy}/><Text style={s.fieldLabel}>Город</Text><TextInput accessibilityLabel="Город" style={s.field} value={city} onChangeText={setCity} maxLength={80} editable={!busy}/></>}
+    <Text style={s.fieldLabel}>Номер телефона</Text><TextInput accessibilityLabel="Номер телефона" style={s.field} placeholder="+7 777 123 45 67" placeholderTextColor={C.muted} value={phone} onChangeText={setPhone} keyboardType="phone-pad" autoComplete="tel" maxLength={30} editable={!busy}/>
+    {mode==='recover'&&<><Text style={s.fieldLabel}>Резервный код</Text><TextInput accessibilityLabel="Резервный код" style={s.field} value={recovery} onChangeText={setRecovery} maxLength={80} autoCapitalize="none" autoCorrect={false} editable={!busy}/><Text style={s.meta}>Восстановление завершит прежние сеансы на всех устройствах.</Text></>}
+    <Text style={s.fieldLabel}>{mode==='recover'?'Новый пароль':'Пароль'}</Text><TextInput accessibilityLabel="Пароль" style={s.field} placeholder="От 10 символов" placeholderTextColor={C.muted} value={password} onChangeText={setPassword} secureTextEntry autoCapitalize="none" autoCorrect={false} autoComplete={mode==='register'?'new-password':'current-password'} maxLength={128} editable={!busy}/>
     {!!error&&<Text accessibilityRole="alert" style={s.error}>{error}</Text>}
-    <Button title={mode==='register'?'Создать аккаунт':'Войти'} disabled={busy} onPress={()=>{setError('');onSubmit(mode,login,password).then(()=>setPassword('')).catch(e=>setError(e.message));}}/>
+    <Button title={mode==='register'?'Создать аккаунт':mode==='recover'?'Обновить пароль':'Войти'} disabled={busy} onPress={()=>{setError('');onSubmit(mode,phone,password,name,city,recovery).then(()=>setPassword('')).catch(e=>setError(e.message));}}/>
+    <Button secondary title="Восстановить доступ по резервному коду" disabled={busy} onPress={()=>{setError('');setPassword('');setRecovery('');setMode('recover');}}/>
     <Button secondary title={mode==='register'?'Уже есть аккаунт':'Создать новый аккаунт'} disabled={busy} onPress={()=>{setError('');setPassword('');setMode(mode==='register'?'login':'register');}}/>
   </View>;
 }
@@ -50,27 +54,43 @@ function Chat(){
   const [data,setData]=useState<Row>(empty),[messages,setMessages]=useState<Message[]>([]),[flow,setFlow]=useState<Flow|null>(null),[actor,setActor]=useState<Role>('guest');
   const [input,setInput]=useState(''),[busy,setBusy]=useState(false),[ready,setReady]=useState(false),[online,setOnline]=useState(false),[historyReady,setHistoryReady]=useState(false),[saveError,setSaveError]=useState(false);
   const scroll=useRef<ScrollView>(null),composer=useRef<TextInput>(null),locked=useRef(false),session=useRef(false),pending=useRef(''),seen=useRef(new Set<string>());
-  const [navigationMenu,setNavigationMenu]=useState(false);
-  const [selectedRole,setSelectedRole]=useState<Role|null>(null),[pageId,setPageId]=useState('overview');
+  const [navigationMenu,setNavigationMenu]=useState(false),[recoveryCode,setRecoveryCode]=useState(''),[linkError,setLinkError]=useState('');
+  const [selectedRole,setSelectedRole]=useState<Role|null>(null),[pageId,setPageId]=useState('overview'),[chatsActive,setChatsActive]=useState(false),[chatInitial,setChatInitial]=useState<NativeChatInitial|null>(null),[erasureResult,setErasureResult]=useState<Row|null>(null);
   const activeRoleRef=useRef<Role|null>(null),scrollMessage=useRef<string|null>(null);
   const userId=data.user?.id;
   const say=(text:string,block?:string,payload?:Row)=>{const id=uid();scrollMessage.current=id;setMessages(prev=>[...prev,{id,sender:'assistant' as const,text,block,payload}].slice(-120));};
+  const processLinks=useProcessLinks({apiUrl:API_URL,ready,accountId:userId||null,blocked:busy||!!flow||!!recoveryCode||chatsActive,onError:message=>setLinkError(message),onOpen:async(link,guard)=>{
+    if(locked.current||!session.current||!guard.isCurrent())return;
+    setLinkError('');locked.current=true;setBusy(true);
+    try{
+      const [state,history]=await Promise.all([request('/api/state',undefined,undefined,undefined,link.role),request('/api/conversation',undefined,undefined,undefined,link.role)]);
+      if(!session.current||!guard.isCurrent())return;
+      const view=resolveProcessLink(link,state,guard.accountId);
+      setWorkspaceRole(link.role);activeRoleRef.current=link.role;setData(state);setMessages(history.messages||[]);setFlow(history.flow||null);setActor(link.role);setSelectedRole(link.role);setPageId(history.flow?'overview':view.section);setHistoryReady(true);setOnline(true);seen.current=new Set(state.notifications.map((n:Row)=>n.id));
+      if(history.flow)setLinkError('В этой роли сохранён незавершённый ввод. Завершите или отмените его, затем откройте ссылку повторно.');else if(view.block)say('Актуальный процесс по ссылке.',view.block,view.payload);
+    }finally{locked.current=false;setBusy(false);}
+  }});
   const finish=(id:string,result='Сохранено')=>setMessages(prev=>prev.map(m=>m.id===id?{...m,done:true,result}:m));
+  async function signedOut(result?:Row){
+    try{await saveSession(null);}finally{session.current=false;setWorkspaceRole(null);activeRoleRef.current=null;setSelectedRole(null);setHistoryReady(false);setData(empty);setMessages([]);setFlow(null);setInput('');setChatInitial(null);setChatsActive(false);setRecoveryCode('');if(result?.receipt)setErasureResult(result);}
+  }
   async function load(){
-    const active=activeRoleRef.current;
-    try{const state=await request(active?'/api/state':'/api/access');if(activeRoleRef.current===active)setData(active?state:{...empty,...state});setOnline(true);return state;}
-    catch(error){if(active&&error instanceof ApiError&&error.status===403){setWorkspaceRole(null);activeRoleRef.current=null;setSelectedRole(null);setHistoryReady(false);setMessages([]);setFlow(null);setData({...empty,...await request('/api/access')});}throw error;}
+    const active=activeRoleRef.current,generation=getSessionGeneration();
+    try{const state=await request(active?'/api/state':'/api/access');if(activeRoleRef.current!==active||generation!==getSessionGeneration())return;setData(active?state:{...empty,...state});setOnline(true);return state;}
+    catch(error){if(error instanceof StaleSessionError||generation!==getSessionGeneration()||activeRoleRef.current!==active)return;if(active&&error instanceof ApiError&&error.status===403){setWorkspaceRole(null);activeRoleRef.current=null;setSelectedRole(null);setHistoryReady(false);setMessages([]);setFlow(null);const access=await request('/api/access');if(generation===getSessionGeneration()&&activeRoleRef.current===null)setData({...empty,...access});}throw error;}
   }
   async function hydrate(role:Role){
-    setWorkspaceRole(role);activeRoleRef.current=role;
-    const [state,history]=await Promise.all([request('/api/state'),request('/api/conversation')]);
-    setData(state);setMessages(history.messages||[]);setFlow(history.flow||null);setActor(role);setSelectedRole(role);setPageId('overview');setSaveError(false);setOnline(true);setHistoryReady(true);seen.current=new Set(state.notifications.map((n:Row)=>n.id));return state;
+    const generation=getSessionGeneration();setHistoryReady(false);setWorkspaceRole(role);activeRoleRef.current=role;
+    const [state,history]=await Promise.all([request('/api/state',undefined,undefined,undefined,role),request('/api/conversation',undefined,undefined,undefined,role)]);
+    if(generation!==getSessionGeneration()||activeRoleRef.current!==role)throw new StaleSessionError();
+    setData(state);setMessages(history.messages||[]);setFlow(history.flow||null);setActor(role);setSelectedRole(role);setPageId('overview');if(history.draftInvalid)setLinkError('Сохранённый ввод не удалось открыть. Начните форму заново; заявки сохранены на сервере.');setSaveError(false);setOnline(true);setHistoryReady(true);seen.current=new Set(state.notifications.map((n:Row)=>n.id));return state;
   }
   async function chooseRole(role:Role){if(locked.current)return;locked.current=true;setBusy(true);try{await hydrate(role);}catch(e){setWorkspaceRole(null);activeRoleRef.current=null;throw e;}finally{locked.current=false;setBusy(false);}}
   function switchRole(){if(locked.current)return;setWorkspaceRole(null);activeRoleRef.current=null;setSelectedRole(null);setHistoryReady(false);setMessages([]);setFlow(null);setInput('');setData({...empty,user:data.user,profile:data.profile});}
   async function handleError(error:any){
+    if(error instanceof StaleSessionError)return;
     if(error instanceof ApiError&&error.status===401&&session.current){
-      await saveSession(null);session.current=false;setWorkspaceRole(null);activeRoleRef.current=null;setSelectedRole(null);setHistoryReady(false);setData(empty);setMessages([]);setFlow(null);say('Сессия закончилась. Войдите снова.','auth',{intent:pending.current||'properties'});
+      try{await signedOut();}catch{}setLinkError('Сессия закончилась. Войдите снова.');
     }else {setOnline(error instanceof ApiError);say(error.message);}
   }
   useEffect(()=>{let active=true;(async()=>{
@@ -79,16 +99,18 @@ function Chat(){
     finally{if(active)setReady(true);}
   })();return()=>{active=false;};},[]);
   useEffect(()=>{
-    if(!userId||!historyReady||!selectedRole)return;
-    const timer=setTimeout(()=>{request('/api/conversation',{messages,flow,actor},'PUT').then(()=>setSaveError(false)).catch(()=>setSaveError(true));},500);
+    if(!userId||!historyReady||!selectedRole||busy||locked.current||activeRoleRef.current!==selectedRole)return;
+    const role=selectedRole,generation=getSessionGeneration();
+    const current=()=>generation===getSessionGeneration()&&session.current&&activeRoleRef.current===role;
+    const timer=setTimeout(()=>{if(!current()||locked.current)return;request('/api/conversation',{messages,flow,actor},'PUT',undefined,role).then(()=>{if(current())setSaveError(false);}).catch(error=>{if(current()&&!(error instanceof StaleSessionError))setSaveError(true);});},500);
     return()=>clearTimeout(timer);
-  },[messages,flow,actor,userId,historyReady,selectedRole]);
+  },[messages,flow,actor,userId,historyReady,selectedRole,busy]);
   useEffect(()=>{
     if(!userId||!selectedRole)return;
-    async function refresh(){if(AppState.currentState!=='active'||locked.current)return;try{const state=await load();
+    async function refresh(){if(AppState.currentState!=='active'||locked.current)return;try{const state=await load();if(!state)return;
       const fresh=state.notifications.filter((n:Row)=>!seen.current.has(n.id));state.notifications.forEach((n:Row)=>seen.current.add(n.id));
       if(fresh.length)say('Появились новые события. Напишите «Что нового», чтобы посмотреть.');
-    }catch{setOnline(false);}}
+    }catch(error){if(error instanceof ApiError&&error.status===401)await handleError(error);else setOnline(false);}}
     const timer=setInterval(refresh,15000),subscription=AppState.addEventListener('change',status=>{if(status==='active')refresh();});
     return()=>{clearInterval(timer);subscription.remove();};
   },[userId,selectedRole]);
@@ -158,14 +180,14 @@ function Chat(){
     if(locked.current)return;locked.current=true;setBusy(true);
     try{
       const result=await request('/api/'+path,body,undefined,id+':'+path+':'+(body.action||'save')+(body.expectedVersion!==undefined?':v'+body.expectedVersion:''));finish(id);say(result.message||'Сохранено.');
-      try{const state=await load();if(after)run(after,state);}catch(e){await handleError(e);}
+      try{const state=await load();if(after&&state)run(after,state);}catch(e){await handleError(e);}
     }catch(e){await handleError(e);}
     finally{locked.current=false;setBusy(false);}
   }
-  async function authenticate(mode:string,login:string,password:string,id:string,intent:string){
+  async function authenticate(mode:string,phone:string,password:string,id:string,intent:string,name?:string,city?:string,recovery?:string){
     if(locked.current)return;locked.current=true;setBusy(true);
     try{
-      const result=await request('/auth/'+mode,{login,password});await saveSession(result.token);session.current=true;
+      const result=await request('/auth/'+mode,{phone,password,...(mode==='register'?{name,city}:mode==='recover'?{recoveryCode:recovery}:{})});if(result.recoveryCode)setRecoveryCode(result.recoveryCode);if(mode==='recover'){await saveSession(null);session.current=false;setWorkspaceRole(null);activeRoleRef.current=null;setSelectedRole(null);setData(empty);setMessages([]);setFlow(null);return;}if(typeof result.token!=='string')throw Error('Сервер не подтвердил вход.');await saveSession(result.token);session.current=true;
       setWorkspaceRole(null);activeRoleRef.current=null;setSelectedRole(null);await load();
     }finally{locked.current=false;setBusy(false);}
   }
@@ -193,7 +215,7 @@ function Chat(){
         let revoked=true;try{if(session.current)await request('/auth/logout',{});}catch{revoked=false;}
         await saveSession(null);session.current=false;setWorkspaceRole(null);activeRoleRef.current=null;setSelectedRole(null);setData(empty);setMessages([]);setFlow(null);setActor('guest');setHistoryReady(false);say(revoked?'Вы вышли из аккаунта.':'Вы вышли на этом устройстве. Для завершения серверной сессии не хватило связи.');return;
       }
-      const state=session.current?await load():data;
+      const state=session.current?await load():data;if(!state)return;
       if(/демо|учебн|пример/i.test(text)){run('demo',state);return;}
       if(/сдать|сдаю|сдавать|добав.*кварт|подключ.*кварт/i.test(text)){run('property',state);return;}
       if(/изменить.*(?:профил|анкет)/i.test(text)){run('profile',state);return;}
@@ -208,7 +230,7 @@ function Chat(){
       if(/обзор|ближайш|что.*сегодня|что.*внимани/i.test(text)){run('workspace',state);return;}
       if(/что нового|уведомлен/i.test(text)){run('notifications',state);return;}
       if(/обновить/i.test(text)){say('Данные обновлены.','workspace',{role:actor});return;}
-      if(/помощь|что.*уме|о сервисе|как.*работ/i.test(text)){say('Помогу снять квартиру, подключить жильё и организовать уборку. Напишите, что нужно сделать. В этой первой версии я веду диалог по сценариям. Свободный ИИ, фото, мессенджеры и автоматические платежи ещё не подключены. Важные действия подтверждаете вы.','help');return;}
+      if(/помощь|что.*уме|о сервисе|как.*работ/i.test(text)){say('Помогу снять квартиру, подключить жильё и организовать уборку. Напишите, что нужно сделать. AI администратор доступен в разделе «Чаты». Там сохраняются вопросы и ответы. Внешняя доставка и банковские платежи зависят от подключений сервиса. Важные действия подтверждаете вы.','help');return;}
       if(/снять|квартир|жиль|аренд/i.test(text)){if(!state.user){run('properties',state);return;}setActor('guest');catalog(state,'guest',text);return;}
       say('Уточните вашу задачу: хотите снять квартиру, сдавать жильё или работать на уборке?','help');
     }catch(e){await handleError(e);}finally{locked.current=false;setBusy(false);composer.current?.focus();}
@@ -229,7 +251,7 @@ function Chat(){
     if(task.kind==='property'){say(task.reason,'property-settings',{id:task.entityId});return;}
     say(task.reason,task.kind==='job'?'jobs':'bookings',{ids:[task.entityId],role:selectedRole});
   }
-  function renderAssistantBrief(){const brief=data.assistantBrief;if(!brief)return null;return <View style={s.card}><Text style={s.eyebrow}>ПЛАН АССИСТЕНТА</Text><Text style={s.cardTitle}>{brief.summary}</Text>{brief.tasks.map((task:Row)=><View key={task.id} style={s.event}><Text style={s.eventTitle}>{task.title}</Text><Text style={s.meta}>{task.reason}</Text><Button title="Открыть задачу" secondary disabled={busy} onPress={()=>openAssistantTask(task)}/></View>)}<Text style={s.meta}>Фоновая доставка сообщений и действия свободной модели пока не подключены.</Text></View>;}
+  function renderAssistantBrief(){const brief=data.assistantBrief;if(!brief)return null;return <View style={s.card}><Text style={s.eyebrow}>ПЛАН АССИСТЕНТА</Text><Text style={s.cardTitle}>{brief.summary}</Text>{brief.tasks.map((task:Row)=><View key={task.id} style={s.event}><Text style={s.eventTitle}>{task.title}</Text><Text style={s.meta}>{task.reason}</Text><Button title="Открыть задачу" secondary disabled={busy} onPress={()=>openAssistantTask(task)}/></View>)}<Text style={s.meta}>Сроки и согласования проверяются сервером. Внешние каналы подключаются отдельно.</Text></View>;}
   function approval(id:string){const card=(data.approvals||[]).find((c:Row)=>c.id===id);return card?<ApprovalCard key={card.id+card.revision} card={card} busy={busy} onDecide={body=>perform('approvals',body,uid())}/>:<Text style={s.meta}>Согласование закрыто или срок истёк. Проверьте статус задачи.</Text>;}
   function block(m:Message){
     const payload=m.payload||{};
@@ -239,12 +261,12 @@ function Chat(){
     if(m.block==='workspace'){
       const target=payload.role||actor,workspace=data.workspaces?.[target];
       if(!workspace)return <View style={s.card}><Text style={s.meta}>Обновите данные, чтобы увидеть ближайшие события.</Text><Button title="Обновить" secondary disabled={busy} onPress={()=>send('Ближайшие события')}/></View>;
-      return <View style={s.card}><Text style={s.eyebrow}>БЛИЖАЙШЕЕ</Text><Text accessibilityRole="header" style={s.cardTitle}>{target==='owner'?'Квартиры и заезды':target==='cleaner'?'Ваши задания':'Ваши поездки'}</Text>{data.bookings.filter((b:Row)=>b.status==='confirmed'&&b.terms?.actual_checkin&&!b.terms?.actual_checkout).map((b:Row)=><View key={b.id}><Text style={s.eventTitle}>{b.title}</Text><ActivityTimer kind="booking" item={b}/><Button title="Открыть проживание" secondary disabled={busy} onPress={()=>say('Данные проживания.','bookings',{ids:[b.id],role:target})}/></View>)}{data.jobs.filter((j:Row)=>['in_progress','submitted'].includes(j.status)).map((j:Row)=><View key={j.id}><Text style={s.eventTitle}>{j.title}</Text><ActivityTimer kind="job" item={j}/>{selectedRole==='owner'&&j.worker&&<CleanerCard worker={j.worker}/>}<Button title="Открыть уборку" secondary disabled={busy} onPress={()=>say('Данные уборки.','jobs',{ids:[j.id],role:target})}/></View>)}<View style={s.metrics}>{[{n:target==='cleaner'?workspace.activeJobs:workspace.activeBookings,label:target==='cleaner'?'заданий':'активных броней'},{n:workspace.attention.length,label:'требуют внимания'},{n:workspace.unread,label:'новых событий'}].map(({n,label})=><View key={label} style={s.metric}><Text style={s.metricNumber}>{n}</Text><Text style={s.metricLabel}>{label}</Text></View>)}</View>
+      return <View style={s.card}><Text style={s.eyebrow}>БЛИЖАЙШЕЕ</Text><Text accessibilityRole="header" style={s.cardTitle}>{target==='owner'?'Квартиры и заезды':target==='cleaner'?'Ваши задания':'Ваши поездки'}</Text>{data.bookings.filter((b:Row)=>b.status==='confirmed'&&b.terms?.actual_checkin&&!b.terms?.actual_checkout).map((b:Row)=><View key={b.id}><Text style={s.eventTitle}>{b.title}</Text><Button title={target==='owner'?'Обсудить с гостем':'Обсудить с владельцем'} disabled={busy||!!flow} onPress={()=>{setChatInitial({kind:'booking',entityId:b.id,channel:'stay'});setPageId('chats');}}/><ActivityTimer kind="booking" item={b}/><Button title="Открыть проживание" secondary disabled={busy} onPress={()=>say('Данные проживания.','bookings',{ids:[b.id],role:target})}/></View>)}{data.jobs.filter((j:Row)=>['in_progress','submitted'].includes(j.status)).map((j:Row)=><View key={j.id}><Text style={s.eventTitle}>{j.title}</Text>{(target==='owner'&&j.assigned_to||j.assigned_to===userId)&&<Button title={target==='owner'?'Обсудить с исполнителем':'Обсудить с владельцем'} disabled={busy||!!flow} onPress={()=>{setChatInitial({kind:'job',entityId:j.id,channel:'cleaning'});setPageId('chats');}}/>}<ActivityTimer kind="job" item={j}/>{selectedRole==='owner'&&j.worker&&<CleanerCard worker={j.worker}/>}<Button title="Открыть уборку" secondary disabled={busy} onPress={()=>say('Данные уборки.','jobs',{ids:[j.id],role:target})}/></View>)}<View style={s.metrics}>{[{n:target==='cleaner'?workspace.activeJobs:workspace.activeBookings,label:target==='cleaner'?'заданий':'активных броней'},{n:workspace.attention.length,label:'требуют внимания'},{n:workspace.unread,label:'новых событий'}].map(({n,label})=><View key={label} style={s.metric}><Text style={s.metricNumber}>{n}</Text><Text style={s.metricLabel}>{label}</Text></View>)}</View>
         {[['Требует внимания',workspace.attention],['По расписанию',workspace.upcoming]].map(([label,events]:any)=>events.length>0&&<View key={label} style={s.eventGroup}><Text style={s.meta}>{label}</Text>{events.slice(0,5).map((event:Row)=><View key={event.id} style={[s.event,event.urgent&&s.urgentEvent]}><Text style={s.eventTitle}>{event.title}</Text><Text style={s.meta}>{event.detail}{'\n'}{date(event.at)}</Text><Button title="Открыть" secondary disabled={busy} onPress={()=>say('Текущий статус и доступные действия.',event.kind==='job'?'jobs':'bookings',{ids:[event.entityId],role:target})}/></View>)}</View>)}
         {!workspace.attention.length&&!workspace.upcoming.length&&<Text style={s.meta}>Ближайших событий пока нет. Новые брони и задания появятся здесь.</Text>}<Text style={s.meta}>Обновлено: {date(workspace.generatedAt)}</Text>
       </View>;
     }
-    if(m.block==='auth')return session.current?<Text style={s.meta}>Вход выполнен.</Text>:<Auth key={m.id} busy={busy} onSubmit={(mode,login,password)=>authenticate(mode,login,password,m.id,payload.intent)}/>;
+    if(m.block==='auth')return session.current?<Text style={s.meta}>Вход выполнен.</Text>:<Auth key={m.id} busy={busy} onSubmit={(mode,phone,password,name,city,recovery)=>authenticate(mode,phone,password,m.id,payload.intent,name,city,recovery)}/>;
     if(m.block==='review')return review(m);
     if(m.block==='confirm')return <View style={s.card}><Text accessibilityRole="header" style={s.cardTitle}>{payload.title}</Text><Text style={s.text}>{payload.subject||'Подтверждение действия'}</Text><Text style={s.meta}>{payload.dates}{payload.amount!==undefined?' · '+money(payload.amount):''}</Text><Button title={m.done?(m.result||'Действие закрыто'):payload.title} disabled={busy||m.done} onPress={()=>perform(payload.path,payload.body,m.id,payload.after)}/>{!m.done&&<Button title="Отменить" secondary disabled={busy} onPress={()=>finish(m.id,'Отменено')}/>}</View>;
     if(m.block==='help')return <View style={s.suggestions}>{['Хочу снять квартиру','Хочу сдать квартиру','Хочу работать на уборке','Мои брони','Что нового'].map(t=><Button key={t} title={t} secondary disabled={busy} onPress={()=>send(t)}/>)}</View>;
@@ -285,22 +307,24 @@ function Chat(){
   const nextTask=data.assistantBrief?.automatic?data.assistantBrief.prompts[0]:null;
   const ids=pageId==='catalog'?data.properties.map((p:Row)=>p.id):pageId==='properties'?data.ownProperties.map((p:Row)=>p.id):pageId==='bookings'?data.bookings.map((b:Row)=>b.id):(pageId==='assignments'?data.jobs.filter((j:Row)=>j.assigned_to===userId||data.applications.some((a:Row)=>a.job_id===j.id&&a.user_id===userId)):data.jobs).map((j:Row)=>j.id);
   const primary:Message={id:'page-'+pageId,sender:'assistant',text:'',block:pageId==='overview'?'workspace':pageId==='properties'||pageId==='catalog'?'properties':pageId==='bookings'?'bookings':['cleaning','jobs','assignments'].includes(pageId)?'jobs':undefined,payload:{ids,role:selectedRole,mode:selectedRole==='owner'?'owner':'guest'}};
-  if(!selectedRole)return <RoleEntry ready={ready} profile={data.profile} user={data.user} busy={busy} auth={<Auth busy={busy} onSubmit={(mode,login,password)=>authenticate(mode,login,password,'entry','workspace')}/>} onChoose={chooseRole} onSave={async(body,role)=>{await request('/api/profile',body);await chooseRole(role);}} onLogout={()=>send('Выйти')}/>;
-  return <ActivityClockProvider serverTime={data.serverTime}><SafeAreaView style={s.screen} edges={['top','bottom']}><StatusBar barStyle="dark-content" backgroundColor={C.bg}/><KeyboardAvoidingView style={s.shell} behavior={Platform.OS==='ios'?'padding':undefined}>
-    <View style={s.header}><View style={s.logo}><Text style={s.logoText}>а</Text></View><View style={{flex:1}}><Text style={s.brand}>AI Аренда</Text><Text style={s.subtitle}>{roleNames[selectedRole]}</Text></View><View accessibilityLabel={online?'Есть связь с сервером':'Нет связи с сервером'} style={s.connection}><View style={[s.status,{backgroundColor:online?C.green:'#98672F'}]}/></View><WorkspaceMenuButton open={navigationMenu} busy={busy||!!flow} onPress={()=>setNavigationMenu(v=>!v)}/></View>
-    <ScrollView ref={scroll} style={{flex:1}} contentContainerStyle={s.transcript} keyboardShouldPersistTaps="handled" onContentSizeChange={()=>{if(messages[messages.length-1]?.sender==='user'||busy)scroll.current?.scrollToEnd({animated:true});}}>
-      <Text accessibilityRole="header" style={s.pageTitle}>{page?.title}</Text>
-      {pageId==='overview'&&(data.approvals||[]).some((c:Row)=>c.canDecide)&&<Button title={'Согласования · '+data.approvals.filter((c:Row)=>c.canDecide).length} disabled={busy} onPress={()=>{setPageId('assistant');scroll.current?.scrollTo({y:0,animated:false});}}/>}
+  if(erasureResult)return <SafeAreaView style={s.screen}><ScrollView contentContainerStyle={s.transcript}><View style={s.card}><Text style={s.cardTitle}>Результат удаления</Text><Text style={s.text}>{erasureResult.message}</Text><Text selectable style={s.meta}>Квитанция: {erasureResult.receipt.id}</Text><Button title="Продолжить" onPress={()=>setErasureResult(null)}/></View></ScrollView></SafeAreaView>;
+  if(recoveryCode)return <SafeAreaView style={s.screen}><ScrollView contentContainerStyle={s.transcript}><View style={s.card}><Text style={s.cardTitle}>Сохраните резервный код</Text><Text style={s.text}>Он понадобится для восстановления доступа к общему аккаунту. Код показывается один раз и не сохраняется в переписке.</Text><Text selectable style={s.value}>{recoveryCode}</Text><Button title="Код сохранён — продолжить" onPress={()=>setRecoveryCode('')}/></View></ScrollView></SafeAreaView>;
+  if(!selectedRole)return <RoleEntry notice={linkError} ready={ready} profile={data.profile} user={data.user} busy={busy} auth={<Auth busy={busy} onSubmit={(mode,phone,password,name,city,recovery)=>authenticate(mode,phone,password,'entry','workspace',name,city,recovery)}/>} onChoose={chooseRole} onSave={async(body,role)=>{await request('/api/profile',body);await chooseRole(role);}} onLogout={()=>send('Выйти')}/>;
+  return <ActivityClockProvider serverTime={data.serverTime}><SafeAreaView style={s.screen} edges={['top','bottom']}><StatusBar barStyle="dark-content" backgroundColor={C.bg}/><KeyboardAvoidingView style={s.shell} behavior={pageId==='chats'?undefined:Platform.OS==='ios'?'padding':undefined}>
+    {!chatsActive&&<View style={s.header}><View style={s.logo}><Text style={s.logoText}>а</Text></View><View style={{flex:1}}><Text style={s.brand}>AI Аренда</Text><Text style={s.subtitle}>{roleNames[selectedRole]}</Text></View><View accessibilityLabel={online?'Есть связь с сервером':'Нет связи с сервером'} style={s.connection}><View style={[s.status,{backgroundColor:online?C.green:'#98672F'}]}/></View><WorkspaceMenuButton open={navigationMenu} busy={busy||!!flow} onPress={()=>setNavigationMenu(v=>!v)}/></View>}
+    {linkError&&<Text accessibilityRole="alert" style={s.error}>{linkError}</Text>}{processLinks.pending&&chatsActive&&<Text style={s.meta}>Переход к процессу откроется после закрытия диалога.</Text>}{pageId==='chats'?<NativeChats key={userId+':'+selectedRole} accountId={userId} role={selectedRole} onChanged={load} initial={chatInitial} onInitialConsumed={()=>setChatInitial(null)} onConversationChange={setChatsActive} onAuthError={handleError}/>:<><ScrollView ref={scroll} style={{flex:1}} contentContainerStyle={s.transcript} keyboardShouldPersistTaps="handled" onContentSizeChange={()=>{if(messages[messages.length-1]?.sender==='user'||busy)scroll.current?.scrollToEnd({animated:true});}}>
+      <Text accessibilityRole="header" style={s.pageTitle}>{page?.title}</Text>{pageId==='overview'&&<ApprovalInbox cards={data.approvals||[]} busy={busy} onDecide={body=>perform('approvals',body,uid())}/>}
+      {pageId==='overview'&&(data.approvals||[]).some((c:Row)=>c.canDecide)&&<Button title={'Согласования · '+data.approvals.filter((c:Row)=>c.canDecide).length} disabled={busy||!!flow} onPress={()=>{setPageId('chats');setChatInitial({administrator:true});}}/>}
       {pageId==='overview'&&nextTask&&<Pressable accessibilityRole="button" accessibilityLabel={'Ассистент рекомендует: '+nextTask.title} disabled={busy} onPress={()=>openAssistantTask(nextTask)} style={[s.recommendation,nextTask.priority===3&&s.urgentRecommendation]}><Text style={s.recommendationLabel}>Ассистент рекомендует</Text><Text style={s.eventTitle}>{nextTask.title}</Text></Pressable>}
       {pageId==='properties'&&<Button title="Добавить квартиру" disabled={busy} onPress={()=>run('property')}/>}
-      {pageId==='settings'&&data.assistantSettings?<AssistantControl key={selectedRole+':'+data.assistantSettings.version} settings={data.assistantSettings} busy={busy} onSave={body=>perform('assistant-settings',body,'assistant-settings:'+selectedRole+':v'+data.assistantSettings.version)}/>:pageId==='account'?<AccountControl onChanged={load} key={selectedRole} onEdit={()=>run('profile')}/>:pageId==='calendar'?<RentalCalendar data={data} role={selectedRole} busy={busy} onOpen={(kind,id)=>say('Текущий статус и доступные действия.',kind==='job'?'jobs':'bookings',{ids:[id],role:selectedRole})}/>:pageId==='assistant'?<><ApprovalInbox cards={data.approvals||[]} busy={busy} onDecide={body=>perform('approvals',body,uid())}/>{renderAssistantBrief()}</>:primary.block&&block(primary)}
-      {!messages.length&&<Text style={s.lead}>Ассистент работает с задачами роли «{roleNames[selectedRole]}». Выберите действие или напишите сообщение.</Text>}
+      {pageId==='account'?<AccountControl onChanged={load} onSignedOut={signedOut} key={selectedRole} onEdit={()=>run('profile')}/>:pageId==='calendar'?<RentalCalendar data={data} role={selectedRole} busy={busy} onOpen={(kind,id)=>say('Текущий статус и доступные действия.',kind==='job'?'jobs':'bookings',{ids:[id],role:selectedRole})}/>:primary.block&&block(primary)}
+      {!messages.length&&<Text style={s.lead}>Выберите нужный процесс. Переписка с AI администратором доступна в чатах.</Text>}
       {messages.map((m,index)=><View key={m.id} onLayout={event=>{if(index===messages.length-1&&m.sender==='assistant'&&m.id===scrollMessage.current)scroll.current?.scrollTo({y:Math.max(0,event.nativeEvent.layout.y-12),animated:false});}} style={[s.message,m.sender==='user'?s.user:s.assistant]}>{m.sender==='assistant'&&<Text style={s.sender}>AI АРЕНДА</Text>}<Text selectable style={s.text}>{m.text}</Text>{m.sender==='assistant'&&block(m)}</View>)}
       {busy&&<ActivityIndicator accessibilityLabel="Ожидаем ответ сервера" color={C.green} style={{alignSelf:'flex-start',marginBottom:20}}/>}
       {saveError&&<Text accessibilityRole="alert" style={s.error}>История ещё не сохранена. Проверьте связь; заявки хранятся на сервере.</Text>}
     </ScrollView>
-    <View style={s.composerWrap}>{flow?.questions[flow.index].choices&&<View style={s.buttonRow}>{flow.questions[flow.index].choices!.map(choice=><Button key={choice.value} title={choice.label} secondary disabled={busy} onPress={()=>send(choice.label)}/>)}</View>}{!!flow&&<View style={s.flowProgress}><Text style={s.flowLabel}>Вопрос {flow.index+1} из {flow.questions.length}</Text><View style={s.buttonRow}>{flow.index>0&&<Button title="Назад" secondary disabled={busy} onPress={()=>{const previous={...flow,index:flow.index-1};setFlow(previous);say(previous.questions[previous.index].text);}}/>}<Button title="Стоп" secondary disabled={busy} onPress={()=>send('Стоп')}/></View></View>}<View style={s.composer}><TextInput ref={composer} accessibilityLabel="Сообщение ассистенту" placeholder={flow?'Ваш ответ…':'Напишите, чем помочь…'} placeholderTextColor={C.muted} value={input} onChangeText={setInput} style={s.input} maxLength={2500} multiline submitBehavior="submit" onSubmitEditing={()=>send()} editable={ready&&!busy}/><Pressable accessibilityRole="button" accessibilityLabel="Отправить сообщение" accessibilityState={{disabled:!ready||busy||!input.trim()}} disabled={!ready||busy||!input.trim()} onPress={()=>send()} style={[s.send,(!input.trim()||busy)&&s.disabled]}><Text style={s.sendText}>{busy?'Ждите':'Отправить'}</Text></Pressable></View><Text style={s.footnote}>AI Аренда · пилотная версия</Text></View>
-  <WorkspaceNavigation avatarId={data.profile?.avatar_id} role={selectedRole} pageId={pageId} busy={busy||!!flow} onSelect={id=>{scrollMessage.current=null;setPageId(id);scroll.current?.scrollTo({y:0,animated:false});}} more={navigationMenu} setMore={setNavigationMenu} onSwitchRole={switchRole}/></KeyboardAvoidingView></SafeAreaView></ActivityClockProvider>;
+    {flow?<View style={s.composerWrap}>{flow?.questions[flow.index].choices&&<View style={s.buttonRow}>{flow.questions[flow.index].choices!.map(choice=><Button key={choice.value} title={choice.label} secondary disabled={busy} onPress={()=>send(choice.label)}/>)}</View>}{!!flow&&<View style={s.flowProgress}><Text style={s.flowLabel}>Вопрос {flow.index+1} из {flow.questions.length}</Text><View style={s.buttonRow}>{flow.index>0&&<Button title="Назад" secondary disabled={busy} onPress={()=>{const previous={...flow,index:flow.index-1};setFlow(previous);say(previous.questions[previous.index].text);}}/>}<Button title="Стоп" secondary disabled={busy} onPress={()=>send('Стоп')}/></View></View>}<View style={s.composer}><TextInput ref={composer} accessibilityLabel="Ответ в форме процесса" placeholder="Ваш ответ…" placeholderTextColor={C.muted} value={input} onChangeText={setInput} style={s.input} maxLength={2500} multiline submitBehavior="submit" onSubmitEditing={()=>send()} editable={ready&&!busy}/><Pressable accessibilityRole="button" accessibilityLabel="Отправить сообщение" accessibilityState={{disabled:!ready||busy||!input.trim()}} disabled={!ready||busy||!input.trim()} onPress={()=>send()} style={[s.send,(!input.trim()||busy)&&s.disabled]}><Text style={s.sendText}>{busy?'Ждите':'Отправить'}</Text></Pressable></View><Text style={s.footnote}>Данные формы отправятся после проверки и подтверждения.</Text></View>:<View style={s.composerWrap}><Button title="Помощь AI администратора" secondary disabled={busy} onPress={()=>{setInput('');setPageId('chats');setChatInitial({administrator:true});}}/></View>}</>}
+  {!chatsActive&&<WorkspaceNavigation avatarId={data.profile?.avatar_id} role={selectedRole} pageId={pageId} busy={busy||!!flow} onSelect={id=>{scrollMessage.current=null;setPageId(id);scroll.current?.scrollTo({y:0,animated:false});}} more={navigationMenu} setMore={setNavigationMenu} onSwitchRole={switchRole}/>}</KeyboardAvoidingView></SafeAreaView></ActivityClockProvider>;
 }
 function Report({busy,onSubmit}:{busy:boolean;onSubmit:(body:Row)=>void}){
   const [checks,setChecks]=useState([false,false,false,false]),[report,setReport]=useState('');

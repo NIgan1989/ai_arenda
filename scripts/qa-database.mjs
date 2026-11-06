@@ -1,0 +1,13 @@
+import {DatabaseSync} from 'node:sqlite';
+import {readdirSync,readFileSync,writeFileSync,mkdirSync,realpathSync} from 'node:fs';
+import {resolve,sep} from 'node:path';import {fileURLToPath,pathToFileURL} from 'node:url';import ts from 'typescript';
+export const root=fileURLToPath(new URL('../',import.meta.url));
+export function openQaDatabase(){
+ const base=realpathSync(resolve(root,'outputs/browser-qa')),expected=resolve(realpathSync(root),'outputs/browser-qa');if(base!==expected)throw Error('QA root must not be a symlink');
+ const directory=realpathSync(resolve(base,'state/v3/d1/miniflare-D1DatabaseObject'));if(!directory.startsWith(base+sep)||directory.split(/[\\/]/).includes('.wrangler'))throw Error('Refusing non-QA storage');
+ const files=readdirSync(directory).filter(f=>f.endsWith('.sqlite')&&f!=='metadata.sqlite');if(files.length!==1)throw Error('Start QA server and request /api/public/catalog first');
+ const filename=realpathSync(resolve(directory,files[0]));if(!filename.startsWith(base+sep))throw Error('Database escapes isolated storage');
+ const raw=new DatabaseSync(filename);raw.exec('PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;');
+ let depth=0;return {raw,async transaction(fn){raw.exec('BEGIN IMMEDIATE');depth++;try{const result=await fn();raw.exec('COMMIT');return result;}catch(e){raw.exec('ROLLBACK');throw e;}finally{depth--;}} ,prepare(sql){let args=[];return {bind(...values){args=values;return this;},async first(){return raw.prepare(sql).get(...args)||null;},async all(){return {results:raw.prepare(sql).all(...args)};},execute(){return {meta:{changes:Number(raw.prepare(sql).run(...args).changes)}};},async run(){return this.execute();}};},async batch(statements){const nested=depth>0,savepoint='qa_batch_'+depth;raw.exec(nested?'SAVEPOINT '+savepoint:'BEGIN IMMEDIATE');depth++;try{const result=statements.map(s=>s.execute());raw.exec(nested?'RELEASE '+savepoint:'COMMIT');return result;}catch(error){raw.exec(nested?'ROLLBACK TO '+savepoint+'; RELEASE '+savepoint:'ROLLBACK');throw error;}finally{depth--;}}};
+}
+export async function qaModule(name){const generated=resolve(root,'outputs/browser-qa/generated');mkdirSync(generated,{recursive:true});for(const file of readdirSync(resolve(root,'lib')).filter(f=>f.endsWith('.ts')&&!f.endsWith('.d.ts'))){const source=ts.transpileModule(readFileSync(resolve(root,'lib',file),'utf8'),{compilerOptions:{module:ts.ModuleKind.ES2022,target:ts.ScriptTarget.ES2022}}).outputText.replace(/from '(\.\/[^']+)'/g,(_,v)=>"from '"+(v.endsWith('.js')?v:v+'.js')+"'");writeFileSync(resolve(generated,file.replace(/\.ts$/,'.js')),source);}return import(pathToFileURL(resolve(generated,name+'.js')));}

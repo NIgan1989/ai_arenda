@@ -2,9 +2,9 @@ import { DomainError, roles, type Role } from './domain';
 
 export const roleNames:Record<Role,string>={guest:'Гость',owner:'Владелец',cleaner:'Исполнитель уборки'};
 export const rolePages:Record<Role,{id:string;title:string;intent:string}[]>={
-  guest:[{id:'overview',title:'Обзор',intent:'workspace'},{id:'catalog',title:'Найти квартиру',intent:'properties'},{id:'bookings',title:'Мои брони',intent:'bookings'},{id:'calendar',title:'Календарь',intent:'calendar'},{id:'assistant',title:'Ассистент',intent:'assistant'},{id:'settings',title:'Настройки',intent:'settings'},{id:'account',title:'Аккаунт',intent:'account'}],
-  owner:[{id:'overview',title:'Обзор',intent:'workspace'},{id:'properties',title:'Мои квартиры',intent:'own-properties'},{id:'bookings',title:'Заявки гостей',intent:'owner-bookings'},{id:'cleaning',title:'Уборки',intent:'owner-jobs'},{id:'calendar',title:'Календарь',intent:'calendar'},{id:'assistant',title:'Ассистент',intent:'assistant'},{id:'settings',title:'Настройки',intent:'settings'},{id:'account',title:'Аккаунт',intent:'account'}],
-  cleaner:[{id:'overview',title:'Обзор',intent:'workspace'},{id:'jobs',title:'Найти задания',intent:'jobs'},{id:'assignments',title:'Мои задания',intent:'my-jobs'},{id:'calendar',title:'Календарь',intent:'calendar'},{id:'assistant',title:'Ассистент',intent:'assistant'},{id:'settings',title:'Настройки',intent:'settings'},{id:'account',title:'Аккаунт',intent:'account'}],
+  guest:[{id:'map',title:'Карта',intent:'workspace'},{id:'catalog',title:'Найти квартиру',intent:'properties'},{id:'bookings',title:'Мои брони',intent:'bookings'},{id:'calendar',title:'Календарь',intent:'calendar'},{id:'chats',title:'Чаты',intent:'chats'},{id:'operations',title:'Управление',intent:'operations'},{id:'account',title:'Аккаунт',intent:'account'}],
+  owner:[{id:'map',title:'Карта',intent:'workspace'},{id:'properties',title:'Мои квартиры',intent:'own-properties'},{id:'bookings',title:'Заявки гостей',intent:'owner-bookings'},{id:'cleaning',title:'Уборки',intent:'owner-jobs'},{id:'calendar',title:'Календарь',intent:'calendar'},{id:'chats',title:'Чаты',intent:'chats'},{id:'operations',title:'Управление',intent:'operations'},{id:'account',title:'Аккаунт',intent:'account'}],
+  cleaner:[{id:'map',title:'Карта',intent:'workspace'},{id:'jobs',title:'Найти задания',intent:'jobs'},{id:'assignments',title:'Мои задания',intent:'my-jobs'},{id:'calendar',title:'Календарь',intent:'calendar'},{id:'chats',title:'Чаты',intent:'chats'},{id:'operations',title:'Управление',intent:'operations'},{id:'account',title:'Аккаунт',intent:'account'}],
 };
 export function parseRole(value:unknown):Role{
   if(!roles.includes(value as Role))throw new DomainError('Сначала выберите роль на экране входа.',403);
@@ -21,7 +21,7 @@ export function commandRole(path:string,body:Record<string,any>):Role[]|null{
   if(path==='listings'||path.startsWith('listings/')||(path==='media'&&body.kind==='property'))return ['owner'];
   if(path==='quote'||path==='bookings')return ['guest'];
   if(path==='properties'||path.startsWith('properties/')||path==='jobs')return ['owner'];
-  if(path.startsWith('bookings/'))return ['confirm','reject','paid','deposit_received','checkin','checkout','dispute_checkout'].includes(body.action)?['owner']:body.action==='report_checkout'?['guest']:['owner','guest'];
+  if(path.startsWith('bookings/'))return ['confirm','reject','paid','deposit_received','checkin','checkout','dispute_checkout','record_deposit_return','record_refund'].includes(body.action)?['owner']:body.action==='report_checkout'?['guest']:['owner','guest'];
   if(path.startsWith('jobs/'))return ['apply','start','submit'].includes(body.action)?['cleaner']:body.action==='issue'?['owner','cleaner']:['owner'];
   return null;
 }

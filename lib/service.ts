@@ -1,12 +1,24 @@
 import { DomainError, required, number, interval, quote, roles, assistantReply, type Role } from './domain';
-import { generateAnswer, assistantContext, type AIConfig } from './ai';
+import { generateAnswer, assistantContext, type AIConfig,type AIToolExecutor } from './ai';
 import { operationOverview } from './operations';
 import { defaultPolicy,publicPolicy,policyInput,rentalPrice,changeRentalPrice,mandateActive } from './rental-policy';
 import { parseRole,commandRole } from './access';
-import {assistantBrief,assistantSettingsInput,defaultAssistantSettings} from './assistant';
+import {assistantBrief,defaultAssistantSettings} from './assistant';
 import {defaultAccountSettings,accountSettingsInput,userSearchInput} from './account';
 import {approvalCards} from './approvals';
 import {listingInput,jpegInput,propertyStatus,cleanerStatus} from './listings';
+import {readAdministratorState} from './administrator';
+import {recordFinance,migrateFinanceEntity} from './finance';
+import {requireEvidence} from './evidence';
+import {hash as operationHash} from './operation-core';
+import {assertCalendarAvailable} from './external-calendar';
+import {assertPilotAllowed,readPilotPolicy,pilotPropertyVisibleSql} from './pilot-governance';
+import {mapCities} from './map-location';
+import {publicPoint} from './map-workspace';
+import {createAIBudgetLifecycle} from './ai-budget';
+import {aiDataPermission} from './ai-data-permission';
+import {administratorSearch,isPropertySearch,isSearchRefinement,previousAdministratorSearch} from './administrator-search';
+import {readAdministratorProcesses,processReadIntent} from './administrator-process-read';
 
 type Row = Record<string, any>;
 const now = () => Math.floor(Date.now() / 1000);
@@ -16,7 +28,7 @@ export class RentalService {
   query(sql: string, ...args: any[]) { return this.db.prepare(sql).bind(...args); }
   async one(sql: string, ...args: any[]) { return this.query(sql, ...args).first<Row>(); }
   async all(sql: string, ...args: any[]) { return (await this.query(sql, ...args).all<Row>()).results; }
-  async profile() { return this.one('SELECT p.*,d.avatar_id,d.work_status,COALESCE(d.version,0) profile_version FROM profiles p LEFT JOIN profile_details d ON d.user_id=p.id WHERE p.id=?', this.userId); }
+  async profile() { return this.one(`SELECT p.*,d.avatar_id,d.work_status,COALESCE(d.version,0) profile_version,COALESCE(x.bio,'') bio,COALESCE(x.languages,'') languages,COALESCE(x.avatar_visibility,'participants') avatar_visibility,COALESCE(x.show_presence,1) show_presence,COALESCE(x.show_receipts,1) show_receipts FROM profiles p LEFT JOIN profile_details d ON d.user_id=p.id LEFT JOIN profile_preferences x ON x.user_id=p.id WHERE p.id=?`, this.userId); }
   async uploadMedia(body:Row){
     if(!await this.profile())throw new DomainError('Сначала заполните профиль.',403);
     if(body.kind==='property')await this.requireRole('owner');
@@ -26,8 +38,13 @@ export class RentalService {
     if(!r.meta.changes)throw new DomainError('Достигнут лимит фотографий. Удалите неиспользуемые снимки.',409);
     return {id:mediaId,width:image.width,height:image.height};
   }
-  async readMedia(mediaId:string){
-    const m=await this.one(`SELECT m.data,m.width,m.height FROM media m WHERE m.id=? AND (m.user_id=? OR (m.kind='property' AND EXISTS(SELECT 1 FROM property_details d JOIN properties p ON p.id=d.property_id,json_each(d.photos) f WHERE f.value=m.id AND p.published=1 AND (p.demo_owner IS NULL OR p.demo_owner=?))) OR (m.kind='avatar' AND EXISTS(SELECT 1 FROM profile_details d WHERE d.avatar_id=m.id AND (EXISTS(SELECT 1 FROM applications a JOIN cleaning_jobs j ON j.id=a.job_id WHERE a.user_id=d.user_id AND j.owner_id=?) OR EXISTS(SELECT 1 FROM cleaning_jobs j WHERE j.assigned_to=d.user_id AND j.owner_id=?) OR EXISTS(SELECT 1 FROM bookings b JOIN properties p ON p.id=b.property_id WHERE b.guest_id=? AND p.owner_id=d.user_id AND b.status='confirmed')))))`,mediaId,this.userId,this.userId,this.userId,this.userId,this.userId);
+  async readMedia(mediaId:string,activeRole?:Role){
+    const role=activeRole||(JSON.parse((await this.profile())?.roles||'[]').includes('owner')?'owner':JSON.parse((await this.profile())?.roles||'[]').includes('cleaner')?'cleaner':'guest');
+    const m=await this.one(`SELECT m.data,m.width,m.height FROM media m WHERE m.id=? AND (m.user_id=? OR (m.kind='property' AND EXISTS(SELECT 1 FROM property_details d JOIN properties p ON p.id=d.property_id,json_each(d.photos) f WHERE f.value=m.id AND p.published=1 AND (p.demo_owner IS NULL OR p.demo_owner=?) AND ${pilotPropertyVisibleSql('p')})) OR (m.kind='avatar' AND EXISTS(SELECT 1 FROM profile_details d LEFT JOIN profile_preferences x ON x.user_id=d.user_id WHERE d.avatar_id=m.id AND COALESCE(x.avatar_visibility,'participants')='participants' AND (
+      (?='owner' AND (EXISTS(SELECT 1 FROM applications a JOIN cleaning_jobs j ON j.id=a.job_id WHERE a.user_id=d.user_id AND j.owner_id=?) OR EXISTS(SELECT 1 FROM cleaning_jobs j WHERE j.assigned_to=d.user_id AND j.owner_id=?))) OR
+      (?='guest' AND EXISTS(SELECT 1 FROM bookings b JOIN properties p ON p.id=b.property_id WHERE b.guest_id=? AND p.owner_id=d.user_id AND b.status='confirmed')) OR
+      (?='cleaner' AND EXISTS(SELECT 1 FROM cleaning_jobs j WHERE j.assigned_to=? AND j.owner_id=d.user_id))
+    ))))`,mediaId,this.userId,this.userId,role,this.userId,this.userId,role,this.userId,role,this.userId);
     if(!m)throw new DomainError('Фотография недоступна.',404);return m;
   }
   async deleteMedia(mediaId:string){
@@ -45,9 +62,13 @@ export class RentalService {
     const name=required(body.name,'Имя',100),contact=required(body.contact,'Контакт',120),city=required(body.city,'Город',80),districts=String(body.districts||'').trim(),experience=String(body.experience||'').trim(),availability=String(body.availability||'').trim();
     if(districts.length>300||experience.length>1000||availability.length>300)throw new DomainError('Проверьте длину полей анкеты.');
     if(JSON.parse(p.roles).includes('cleaner')&&(!districts||!experience||!availability))throw new DomainError('Заполните районы, опыт и график исполнителя.');
+    const bio=String(body.bio??p.bio??'').trim(),languages=String(body.languages??p.languages??'').trim(),visibility=body.avatarVisibility??p.avatar_visibility??'participants';
+    if(bio.length>500||languages.length>100||!['participants','self'].includes(visibility))throw new DomainError('Проверьте описание, языки и видимость профиля.');
+    const presence=body.showPresence===undefined?(p.show_presence??1):body.showPresence===true?1:0,receipts=body.showReceipts===undefined?(p.show_receipts??1):body.showReceipts===true?1:0;
     const revision=id(),r=await this.db.batch([
       this.query('INSERT INTO profile_details VALUES (?,?,?,?,?,?) ON CONFLICT(user_id) DO UPDATE SET avatar_id=excluded.avatar_id,work_status=excluded.work_status,version=excluded.version,revision=excluded.revision,updated_at=excluded.updated_at WHERE profile_details.version=?',this.userId,avatar,body.workStatus,version+1,revision,now(),version),
-      this.query('UPDATE profiles SET name=?,contact=?,city=?,districts=?,experience=?,availability=? WHERE id=? AND EXISTS(SELECT 1 FROM profile_details WHERE user_id=? AND revision=?)',name,contact,city,districts,experience,availability,this.userId,this.userId,revision)
+      this.query('UPDATE profiles SET name=?,contact=?,city=?,districts=?,experience=?,availability=? WHERE id=? AND EXISTS(SELECT 1 FROM profile_details WHERE user_id=? AND revision=?)',name,contact,city,districts,experience,availability,this.userId,this.userId,revision),
+      this.query('INSERT INTO profile_preferences SELECT ?,?,?,?,?,? WHERE EXISTS(SELECT 1 FROM profile_details WHERE user_id=? AND revision=?) ON CONFLICT(user_id) DO UPDATE SET bio=excluded.bio,languages=excluded.languages,avatar_visibility=excluded.avatar_visibility,show_presence=excluded.show_presence,show_receipts=excluded.show_receipts',this.userId,bio,languages,visibility,presence,receipts,this.userId,revision)
     ]);
     if(!r[0].meta.changes)throw new DomainError('Профиль уже изменился. Обновите форму.',409);
     await this.audit(this.userId,'profile.form_updated').run();return {message:'Профиль сохранён.'};
@@ -62,7 +83,12 @@ export class RentalService {
     const currentPolicy=propertyId?await this.one('SELECT * FROM property_policies WHERE property_id=?',propertyId):null;
     const policyVersion=number(body.policyVersion??0,'Версия тарифов',0,10000000);
     if((currentPolicy?.version||0)!==policyVersion)throw new DomainError('Тарифы уже изменились. Обновите форму.',409);
-    const rental=body.rental||{},policy=policyInput({...rental,dailyPrice:p.price,autoConfirm:!!currentPolicy?.auto_confirm,cleaningFee:currentPolicy?.cleaning_fee||0,cleaningBudget:currentPolicy?.cleaning_budget||0,maxDiscountPercent:currentPolicy?.max_discount_percent||0,minimumRate:currentPolicy?.minimum_rate||0,repairBudget:currentPolicy?.repair_budget||0,autoExtension:!!currentPolicy?.auto_extension,maxExtensionHours:currentPolicy?.max_extension_hours||0,mandateUntil:currentPolicy?.mandate_until?new Date(currentPolicy.mandate_until*1000).toISOString():'',escalationContact:currentPolicy?.escalation_contact||''});
+    if(published){
+      const admission=await readPilotPolicy(this.db);
+      if(current&&admission.require_owner_review&&(current.address!==p.address||current.city!==p.city||current.district!==p.district))throw new DomainError('Сохраните изменение адреса черновиком и пройдите новую проверку объекта.',409);
+      if(propertyId)await assertPilotAllowed(this,'publish',propertyId);else if(admission.require_owner_review||admission.require_phone)throw new DomainError('Сначала сохраните черновик, затем пройдите проверку в разделе «Управление → Допуск».',409);
+    }
+    const rental=body.rental||{},policy=policyInput({...rental,dailyPrice:p.price,autoConfirm:!!currentPolicy?.auto_confirm,autoAssign:!!currentPolicy?.auto_assign,cleaningFee:currentPolicy?.cleaning_fee||0,cleaningBudget:currentPolicy?.cleaning_budget||0,maxDiscountPercent:currentPolicy?.max_discount_percent||0,minimumRate:currentPolicy?.minimum_rate||0,repairBudget:currentPolicy?.repair_budget||0,autoExtension:!!currentPolicy?.auto_extension,maxExtensionHours:currentPolicy?.max_extension_hours||0,mandateUntil:currentPolicy?.mandate_until?new Date(currentPolicy.mandate_until*1000).toISOString():'',escalationContact:currentPolicy?.escalation_contact||''});
     const key=propertyId||id(),revision=id(),gate='EXISTS(SELECT 1 FROM property_details WHERE property_id=? AND revision=?)';
     const statements=[];
     if(!propertyId)statements.push(this.query('INSERT INTO properties VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)',key,this.userId,null,p.title,p.city,p.district,p.address,p.description,p.price,p.rooms,p.capacity,p.cleaningMinutes,published,now()),this.query('INSERT INTO property_operations(property_id,updated_at) VALUES (?,?)',key,now()));
@@ -109,8 +135,8 @@ export class RentalService {
     if(allowed&&!allowed.includes(role))throw new DomainError('Действие недоступно в этой роли. Переключите роль на экране входа.',403);
     return role;
   }
-  async roleState(value:unknown){
-    const role=await this.authorizeWorkspace(value,'state'),state=await this.state();
+  async roleState(value:unknown,options:{catalog?:boolean}={}){
+    const role=await this.authorizeWorkspace(value,'state'),state=await this.state(options.catalog!==false);
     const bookings=state.bookings.filter((b:Row)=>role==='owner'?b.owner_id===this.userId:role==='guest'&&b.guest_id===this.userId).map((b:Row)=>role==='owner'?b:{...b,address:b.status==='confirmed'?b.address:null,owner_contact:b.status==='confirmed'?b.owner_contact:null,guest_name:null,guest_contact:null});
     const jobs=role==='guest'?[]:state.jobs.filter((j:Row)=>role==='owner'?j.owner_id===this.userId:j.assigned_to===this.userId||(j.status==='open'&&j.end>state.serverTime)).map((j:Row)=>role==='owner'||j.assigned_to===this.userId?j:{...j,address:null,owner_contact:null,report:'',checklist:'[]'});
     const jobIds=new Set(jobs.map((j:Row)=>j.id));
@@ -125,9 +151,27 @@ export class RentalService {
     const workers=new Map<string,Row|null>();if(role==="owner"){for(const userId of new Set([...state.applications.map(a=>a.user_id),...jobs.map(j=>j.assigned_to).filter(Boolean)]))workers.set(userId,await this.workerCard(userId));}
     const result={...state,profile:state.profile?{...state.profile,display_status:cleanerStatus(state.profile.work_status,state.jobs.filter(j=>j.assigned_to===this.userId),state.serverTime)}:null,activeRole:role,properties:role==='guest'?state.properties:[],ownProperties:role==='owner'?state.ownProperties:[],bookings,jobs:jobs.map((j:Row):Row=>({...j,worker:role==='owner'?workers.get(j.assigned_to):null})),
       notifications,applications:state.applications.filter(a=>jobIds.has(a.job_id)&&(role==='owner'||a.user_id===this.userId)).map(a=>({...a,worker:role==='owner'?workers.get(a.user_id):null})),messages:state.messages.filter(m=>m.scope===role)};
-    const preference=await this.one('SELECT * FROM assistant_preferences WHERE user_id=? AND role=?',this.userId,role);
-    const assistantSettings={...defaultAssistantSettings,...(preference?JSON.parse(preference.settings):{}),version:preference?.version||0};
-    return {...result,approvals:approvalCards(result,role,this.userId,state.serverTime),assistantSettings,assistantBrief:assistantBrief(result,role,assistantSettings,state.serverTime),workspaces:{[role]:operationOverview(result,this.userId,role,state.serverTime)}};
+    const assistantSettings={...defaultAssistantSettings};
+    const administrator=await readAdministratorState(this.db,this.userId,role);
+    return {...result,administrator,approvals:approvalCards(result,role,this.userId,state.serverTime),assistantSettings,assistantBrief:assistantBrief(result,role,assistantSettings,state.serverTime),workspaces:{[role]:operationOverview(result,this.userId,role,state.serverTime)}};
+  }
+  async resolveAdministratorIssue(roleValue:unknown,body:Row){
+    const role=await this.authorizeWorkspace(roleValue,'administrator/issues'),issue=await this.one('SELECT * FROM administrator_issues WHERE id=?',required(body.id,'Обращение',100));
+    if(!issue||!(role==='owner'&&issue.owner_id===this.userId||issue.other_user===this.userId&&issue.other_role===role))throw new DomainError('Обращение недоступно для решения в этой роли.',403);
+    const resolution=required(body.resolution,'Как решено обращение',1500),version=number(body.expectedVersion,'Версия обращения',1,10000000);
+    const auditId=id(),r=await this.db.batch([
+      this.query("UPDATE administrator_issues SET status='resolved',resolution=?,resolved_at=?,version=version+1 WHERE id=? AND status='open' AND version=?",resolution,now(),issue.id,version),
+      this.query('INSERT INTO audit_events SELECT ?,?,?,?,? WHERE changes()>0',auditId,this.userId,issue.entity_id,JSON.stringify({action:'administrator.issue_resolved',issueId:issue.id,resolution}),now()),
+      this.query('INSERT OR IGNORE INTO notifications SELECT ?,?,?,?,?,? WHERE EXISTS(SELECT 1 FROM audit_events WHERE id=?)',id(),issue.opened_by,'AI администратор: по вашему обращению записано решение: '+resolution,issue.opened_role+':issue-resolved:'+issue.id,0,now(),auditId)
+    ]);
+    if(!r[0].meta.changes)throw new DomainError('Обращение уже изменилось. Обновите карточку.',409);
+    return {message:'Решение сохранено, участник получит уведомление внутри сервиса.'};
+  }
+  administratorIssueStatement(entity:Row,kind:'booking'|'job',description:string){
+    const owner=entity.owner_id===this.userId,role:Role=owner?'owner':kind==='booking'?'guest':'cleaner',other=owner?(kind==='booking'?entity.guest_id:entity.assigned_to):entity.owner_id;
+    if(!other)throw new DomainError('У задания пока нет второго участника. Укажите проблему в состоянии квартиры.',409);
+    const issueId=id();
+    return this.query('INSERT INTO administrator_issues(id,owner_id,property_id,entity_kind,entity_id,opened_by,opened_role,other_user,other_role,description,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)',issueId,entity.owner_id,entity.property_id,kind,entity.id,this.userId,role,other,owner?(kind==='booking'?'guest':'cleaner'):'owner',description,now());
   }
   async decideApproval(roleValue:unknown,body:Row){
     const role=parseRole(roleValue),state=await this.roleState(role),card=state.approvals.find(c=>c.id===body.id);
@@ -142,13 +186,11 @@ export class RentalService {
     const job=state.jobs.find(j=>j.id===card.entityId);
     return this.jobAction(card.entityId,{action:card.kind==='application'?(accept?'assign':'reject_application'):(accept?'approve':'revise'),applicationId:card.id.slice(12),reason:body.reason,expectedVersion:job?.version});
   }
-  async saveAssistantSettings(roleValue:unknown,body:Row){
-    const role=await this.authorizeWorkspace(roleValue,'assistant-settings'),settings=assistantSettingsInput(body),expected=number(body.expectedVersion,'Версия настроек',0,1000000);
-    const r=await this.query('INSERT INTO assistant_preferences VALUES (?,?,?,?,?) ON CONFLICT(user_id,role) DO UPDATE SET settings=excluded.settings,version=excluded.version,updated_at=excluded.updated_at WHERE assistant_preferences.version=?',this.userId,role,JSON.stringify(settings),expected+1,now(),expected).run();
-    if(!r.meta.changes)throw new DomainError('Настройки уже изменились. Обновите страницу.',409);
-    await this.audit(this.userId,'assistant.settings_updated:'+role).run();
-    return {message:'Настройки инициативности сохранены для этой роли.'};
+  async saveAssistantSettings(roleValue:unknown,_body:Row){
+    await this.authorizeWorkspace(roleValue,'assistant-settings');
+    throw new DomainError('Настройки помощника управляются сервисом.',410);
   }
+
   async requireRole(role: Role) {
     const p = await this.profile();
     if (!p || !JSON.parse(p.roles).includes(role)) throw new DomainError('Заполните профиль и подключите нужную роль.', 403);
@@ -156,19 +198,20 @@ export class RentalService {
   }
   audit(entity: string, action: string) { return this.query('INSERT INTO audit_events VALUES (?,?,?,?,?)', id(), this.execution?'system:rental-policy':this.userId, entity, this.execution?JSON.stringify({action,onBehalfOf:this.userId,...this.execution}):action, now()); }
   notify(user: string, body: string, key: string, role:Role) { return this.query('INSERT OR IGNORE INTO notifications VALUES (?,?,?,?,?,?)', id(), user, body, role+':'+key, 0, now()); }
-  async state() {
+  async operationReceipt(kind:string,body:Row,payload:unknown){const key=body.requestKey?required(body.requestKey,'Ключ операции',120):id(),digest=await operationHash(JSON.stringify(payload)),previous=await this.one('SELECT * FROM operation_receipts WHERE user_id=? AND kind=? AND request_key=?',this.userId,kind,key);if(previous&&previous.payload_hash!==digest)throw new DomainError('Ключ операции уже использован с другими данными.',409);return {key,digest,previous:previous?JSON.parse(previous.result):null};}
+  async state(includeCatalog=true) {
     const [profile, properties, ownProperties, bookings, jobs, applications, notifications, messages] = await Promise.all([
       this.profile(),
-      this.all('SELECT id,title,city,district,description,price,rooms,capacity,cleaning_minutes,demo_owner,published FROM properties WHERE published=1 AND (demo_owner IS NULL OR demo_owner=?) ORDER BY created_at DESC', this.userId),
+      includeCatalog?this.all('SELECT id,title,city,district,description,price,rooms,capacity,cleaning_minutes,demo_owner,published FROM properties p WHERE published=1 AND (demo_owner IS NULL OR demo_owner=?) AND '+pilotPropertyVisibleSql('p')+' ORDER BY created_at DESC', this.userId):Promise.resolve([]),
       this.all('SELECT * FROM properties WHERE owner_id=? ORDER BY created_at DESC', this.userId),
-      this.all(`SELECT b.*,p.title,p.owner_id,p.city,p.district,p.demo_owner,
+      this.all(`SELECT b.*,p.title,p.owner_id,p.city,p.district,p.demo_owner,(SELECT photos FROM property_details WHERE property_id=p.id) property_photos,
         CASE WHEN p.owner_id=? OR (b.guest_id=? AND b.status='confirmed') THEN p.address ELSE NULL END address,
         CASE WHEN p.owner_id=? OR (b.guest_id=? AND b.status='confirmed') THEN o.contact ELSE NULL END owner_contact,
         CASE WHEN p.owner_id=? THEN g.name ELSE NULL END guest_name,
         CASE WHEN p.owner_id=? THEN g.contact ELSE NULL END guest_contact
         FROM bookings b JOIN properties p ON p.id=b.property_id LEFT JOIN profiles o ON o.id=p.owner_id LEFT JOIN profiles g ON g.id=b.guest_id
         WHERE b.guest_id=? OR p.owner_id=? ORDER BY b.start DESC`, ...Array(8).fill(this.userId)),
-      this.all(`SELECT j.*,EXISTS(SELECT 1 FROM booking_terms t WHERE t.booking_id=j.booking_id AND t.actual_checkout IS NOT NULL) checkout_confirmed,p.title,p.city,p.district,p.rooms,p.demo_owner,
+      this.all(`SELECT j.*,EXISTS(SELECT 1 FROM booking_terms t WHERE t.booking_id=j.booking_id AND t.actual_checkout IS NOT NULL) checkout_confirmed,p.title,p.city,p.district,p.rooms,p.demo_owner,(SELECT photos FROM property_details WHERE property_id=p.id) property_photos,
         CASE WHEN j.owner_id=? OR j.assigned_to=? THEN p.address ELSE NULL END address,
         CASE WHEN j.owner_id=? OR j.assigned_to=? THEN o.contact ELSE NULL END owner_contact
         FROM cleaning_jobs j JOIN properties p ON p.id=j.property_id LEFT JOIN profiles o ON o.id=j.owner_id
@@ -179,36 +222,53 @@ export class RentalService {
     ]);
     const serverTime=now();
     const [policies,operations,terms,changes]=await Promise.all([this.all('SELECT * FROM property_policies'),this.all('SELECT * FROM property_operations'),this.all('SELECT t.* FROM booking_terms t JOIN bookings b ON b.id=t.booking_id JOIN properties p ON p.id=b.property_id WHERE b.guest_id=? OR p.owner_id=?',this.userId,this.userId),this.all('SELECT c.* FROM booking_changes c JOIN bookings b ON b.id=c.booking_id JOIN properties p ON p.id=b.property_id WHERE b.guest_id=? OR p.owner_id=? ORDER BY c.created_at DESC',this.userId,this.userId)]);
+    const [financeBalances,jobPayments]=await Promise.all([
+      this.all("SELECT f.booking_id,SUM(CASE WHEN f.kind='deposit' THEN f.amount ELSE 0 END) deposit_received,SUM(CASE WHEN f.kind='deposit_return' THEN f.amount ELSE 0 END) deposit_returned FROM finance_entries f JOIN bookings b ON b.id=f.booking_id JOIN properties p ON p.id=b.property_id WHERE b.guest_id=? OR p.owner_id=? GROUP BY f.booking_id",this.userId,this.userId),
+      this.all("SELECT f.job_id,SUM(f.amount) paid FROM finance_entries f JOIN cleaning_jobs j ON j.id=f.job_id WHERE f.kind='job_payment' AND (j.owner_id=? OR j.assigned_to=?) GROUP BY f.job_id",this.userId,this.userId)
+    ]);
+    const enrichedTerms:Row[]=terms.map(t=>{const f=financeBalances.find(f=>f.booking_id===t.booking_id),received=f?.deposit_received??(t.deposit_status==='owner_verified'?t.deposit:0),returned=f?.deposit_returned??(t.deposit_returned_at?t.deposit:0);return {...t,deposit_received_amount:received,deposit_returned_amount:returned,deposit_balance:Math.max(0,received-returned)};});
     const policyFor=(p:Row)=>policies.find(v=>v.property_id===p.id)||defaultPolicy;
-    const state={ profile, properties:await this.enrichProperties(properties.map(p=>({...p,policy:publicPolicy(policyFor(p))}))), ownProperties:await this.enrichProperties(ownProperties.map(p=>({...p,policy:policyFor(p),operation:operations.find(v=>v.property_id===p.id)})),true), bookings:bookings.map(b => ({...b,status:b.status==='requested' && b.expires_at<=serverTime?'expired':b.status,terms:terms.find(t=>t.booking_id===b.id),changes:changes.filter(c=>c.booking_id===b.id).map(c=>({...c,status:c.status==='pending'&&c.expires_at<=serverTime?'expired':c.status})),readiness:operations.find(o=>o.property_id===b.property_id)?.readiness})), jobs:jobs.map((j:Row):Row=>({...j,checkout_confirmed:!j.booking_id||!!j.checkout_confirmed})), applications, notifications, messages, serverTime, integrations:{ai:false,telegram:false,whatsapp:false,payments:false} };
+    const state={ profile, properties:await this.enrichProperties(properties.map(p=>({...p,policy:publicPolicy(policyFor(p))}))), ownProperties:await this.enrichProperties(ownProperties.map(p=>({...p,policy:policyFor(p),operation:operations.find(v=>v.property_id===p.id)})),true), bookings:bookings.map(b => ({...b,status:b.status==='requested' && b.expires_at<=serverTime?'expired':b.status,terms:enrichedTerms.find(t=>t.booking_id===b.id),changes:changes.filter(c=>c.booking_id===b.id).map(c=>({...c,status:c.status==='pending'&&c.expires_at<=serverTime?'expired':c.status})),readiness:operations.find(o=>o.property_id===b.property_id)?.readiness})), jobs:jobs.map((j:Row):Row=>({...j,settlement_paid:jobPayments.find(p=>p.job_id===j.id)?.paid??(j.settled_at?j.fee:0),checkout_confirmed:!j.booking_id||!!j.checkout_confirmed})), applications, notifications, messages, serverTime, integrations:{ai:false,telegram:false,whatsapp:false,payments:false} };
     return {...state,workspaces:Object.fromEntries(roles.map(role=>[role,operationOverview(state,this.userId,role,serverTime)]))};
   }
-  async publicCatalog() {
-    const properties=await this.all('SELECT id,title,city,district,description,price,rooms,capacity,cleaning_minutes FROM properties WHERE published=1 AND demo_owner IS NULL ORDER BY created_at DESC');
+  async publicCatalog(options:{syntheticPreview?:boolean}={}) {
+    const visible=pilotPropertyVisibleSql('p'),visibility=options.syntheticPreview?"("+visible+" OR p.description LIKE 'СИНТЕТИЧЕСКОЕ ОБЪЯВЛЕНИЕ%')":visible;
+    const properties=await this.all('SELECT id,title,city,district,description,price,rooms,capacity,cleaning_minutes,CASE WHEN '+visible+' THEN 0 ELSE 1 END test_preview FROM properties p WHERE published=1 AND demo_owner IS NULL AND '+visibility+' ORDER BY created_at DESC');
     const policies=await this.all('SELECT * FROM property_policies');
     return {properties:await this.enrichProperties(properties.map(p=>({...p,policy:publicPolicy(policies.find(v=>v.property_id===p.id))})))};
   }
-  async publicSearch(filters:Record<string,string>={}){
+  async publicSearch(filters:Record<string,string>={},options:{syntheticPreview?:boolean}={}){
     const city=String(filters.city||'').trim(),mode=filters.mode||'daily',guests=number(filters.guests||1,'Гости',1,50);
     if(city.length>80||!['daily','hourly'].includes(mode))throw new DomainError('Проверьте город и вид аренды.');
-    const catalog=await this.publicCatalog(),cities=[...new Set(catalog.properties.map(p=>String(p.city)))].sort();
-    let items=catalog.properties.filter(p=>(!city||p.city.toLocaleLowerCase('ru').includes(city.toLocaleLowerCase('ru')))&&p.capacity>=guests&&(mode!=='hourly'||p.policy.hourly_price>0));
+    const catalog=await this.publicCatalog(options),cities=[...new Set(catalog.properties.map(p=>String(p.city)))].sort();
+    const cityKey=city.toLocaleLowerCase('ru'),exactCity=catalog.properties.some(p=>String(p.city).toLocaleLowerCase('ru')===cityKey);
+    let items=catalog.properties.filter(p=>(!city||(exactCity?String(p.city).toLocaleLowerCase('ru')===cityKey:String(p.city).toLocaleLowerCase('ru').includes(cityKey)))&&p.capacity>=guests&&(mode!=='hourly'||p.policy.hourly_price>0));
     let range:{start:number;end:number}|null=null;
     if(filters.start||filters.end){
       range=interval(filters.start,filters.end);
       const {start,end}=range;
-      const [booked,cleaning]=await Promise.all([
+      const [booked,cleaning,external,stale]=await Promise.all([
         this.all("SELECT DISTINCT b.property_id FROM bookings b JOIN properties p ON p.id=b.property_id WHERE (b.status='confirmed' OR (b.status='requested' AND b.expires_at>?)) AND b.start<?+p.cleaning_minutes*60 AND b.occupied_until>?",now(),end,start),
         this.all("SELECT DISTINCT j.property_id FROM cleaning_jobs j JOIN properties p ON p.id=j.property_id WHERE j.status IN ('open','assigned','in_progress','submitted') AND j.start<?+p.cleaning_minutes*60 AND j.end>?",end,start),
+        this.all('SELECT DISTINCT x.property_id FROM external_blocks x JOIN calendar_sources s ON s.id=x.source_id JOIN properties p ON p.id=x.property_id WHERE s.enabled=1 AND x.start<?+p.cleaning_minutes*60 AND x.end>?',end,start),
+        this.all("SELECT DISTINCT property_id FROM calendar_sources WHERE enabled=1 AND url<>'' AND (last_success IS NULL OR last_success<? OR last_error<>'')",now()-3600),
       ]);
-      const occupied=new Set([...booked,...cleaning].map(p=>p.property_id));
+      const occupied=new Set([...booked,...cleaning,...external,...stale].map(p=>p.property_id));
       items=items.filter(p=>!occupied.has(p.id)&&!['maintenance','blocked'].includes(p.display_status.code)&&(start>now()+60||p.display_status.code==='ready'));
       items=items.flatMap(p=>{try{const price=rentalPrice(p.price,p.policy,start,end,mode);return [{...p,estimate:{amount:price.amount,periods:price.periods,rate:price.price,unitLabel:price.unitLabel}}];}catch(error){if(error instanceof DomainError)return [];throw error;}});
     }
-    return {properties:items.slice(0,60),total:items.length,cities,filters:{city,mode,guests,...(range?{start:range.start,end:range.end}:{})},availabilityChecked:!!range};
+    const pageInput=number(filters.page||1,'Страница',1,100000),limit=number(filters.limit||24,'На странице',1,60),minPrice=number(filters.minPrice||0,'Минимальная цена',0,100000000),maxPrice=number(filters.maxPrice||100000000,'Максимальная цена',0,100000000),rooms=number(filters.rooms||0,'Комнаты',0,20),sort=filters.sort||'recommended';
+    if(minPrice>maxPrice||!['recommended','price-asc','price-desc'].includes(sort)||filters.roomsExact&&!['0','1'].includes(filters.roomsExact))throw new DomainError('Проверьте цену, число комнат и сортировку.');
+    const rate=(p:Row)=>range?p.estimate?.amount:(mode==='hourly'?p.policy.hourly_price:p.price);
+    items=items.filter(p=>(!rooms||(filters.roomsExact==='1'?p.rooms===rooms:p.rooms>=rooms))&&rate(p)>=minPrice&&rate(p)<=maxPrice);
+    if(sort!=='recommended')items.sort((a,b)=>(sort==='price-asc'?1:-1)*(rate(a)-rate(b))||String(a.id).localeCompare(String(b.id)));
+    const total=items.length,totalPages=Math.max(1,Math.ceil(total/limit)),page=Math.min(pageInput,totalPages);
+    let pageItems:Row[]=items.slice((page-1)*limit,page*limit);
+    if(filters.map==='1'&&pageItems.length){const locations=await this.all('SELECT l.*,p.city,p.district,p.address FROM property_locations l JOIN properties p ON p.id=l.property_id WHERE p.id IN ('+pageItems.map(()=>'?').join(',')+')',...pageItems.map(p=>p.id));pageItems=pageItems.map(p=>{const l=locations.find(l=>l.property_id===p.id);return {...p,location:l&&l.address_fingerprint===[l.city,l.district,l.address].join('|')?publicPoint(l):null};});}
+    return {properties:pageItems,total,page,limit,totalPages,cities,filters:{city,mode,guests,minPrice,maxPrice,rooms,sort,...(range?{start:range.start,end:range.end}:{})},availabilityChecked:!!range,...(filters.map==='1'?{center:mapCities[Object.keys(mapCities).find(c=>c.toLocaleLowerCase('ru')===city.toLocaleLowerCase('ru'))||'']||[67,48]}:{})};
   }
   async publicMedia(mediaId:string){
-    const image=await this.one("SELECT m.data,m.width,m.height FROM media m WHERE m.id=? AND m.kind='property' AND EXISTS(SELECT 1 FROM property_details d JOIN properties p ON p.id=d.property_id,json_each(d.photos) f WHERE f.value=m.id AND p.published=1 AND p.demo_owner IS NULL)",required(mediaId,'Фото',100));
+    const image=await this.one(`SELECT m.data,m.width,m.height FROM media m WHERE m.id=? AND m.kind='property' AND EXISTS(SELECT 1 FROM property_details d JOIN properties p ON p.id=d.property_id,json_each(d.photos) f WHERE f.value=m.id AND p.published=1 AND p.demo_owner IS NULL AND ${pilotPropertyVisibleSql('p')})`,required(mediaId,'Фото',100));
     if(!image)throw new DomainError('Фотография недоступна.',404);return image;
   }
   async connectRole(roleValue:unknown,body:Row={}){
@@ -229,7 +289,7 @@ export class RentalService {
     const p=await this.one('SELECT * FROM properties WHERE id=? AND owner_id=?',propertyId,this.userId);if(!p)throw new DomainError('Квартира не найдена.',404);
     const current=await this.one('SELECT * FROM property_policies WHERE property_id=?',propertyId),expected=number(body.expectedVersion,'Версия правил',0,1000000);
     if((current?.version||0)!==expected)throw new DomainError('Правила уже изменились. Обновите карточку.',409);
-    const policy=policyInput({...body,maxDiscountPercent:body.maxDiscountPercent??current?.max_discount_percent??0,minimumRate:body.minimumRate??current?.minimum_rate??0,repairBudget:body.repairBudget??current?.repair_budget??0,autoExtension:body.autoExtension??!!current?.auto_extension,maxExtensionHours:body.maxExtensionHours??current?.max_extension_hours??0,mandateUntil:body.mandateUntil??(current?.mandate_until?new Date(current.mandate_until*1000).toISOString():''),escalationContact:body.escalationContact??current?.escalation_contact??''}),price=number(body.dailyPrice,'Цена за сутки',100,10000000),revision=id(),keys=Object.keys(policy);
+    const policy=policyInput({...body,autoAssign:body.autoAssign??!!current?.auto_assign,maxDiscountPercent:body.maxDiscountPercent??current?.max_discount_percent??0,minimumRate:body.minimumRate??current?.minimum_rate??0,repairBudget:body.repairBudget??current?.repair_budget??0,autoExtension:body.autoExtension??!!current?.auto_extension,maxExtensionHours:body.maxExtensionHours??current?.max_extension_hours??0,mandateUntil:body.mandateUntil??(current?.mandate_until?new Date(current.mandate_until*1000).toISOString():''),escalationContact:body.escalationContact??current?.escalation_contact??''}),price=number(body.dailyPrice,'Цена за сутки',100,10000000),revision=id(),keys=Object.keys(policy);
     const result=await this.db.batch([
       this.query(`INSERT INTO property_policies(property_id,${keys.join(',')},version,revision,updated_at) VALUES (?,${keys.map(()=>'?').join(',')},?,?,?) ON CONFLICT(property_id) DO UPDATE SET ${keys.map(k=>`${k}=excluded.${k}`).join(',')},version=excluded.version,revision=excluded.revision,updated_at=excluded.updated_at WHERE property_policies.version=?`,propertyId,...Object.values(policy),expected+1,revision,now(),expected),
       this.query('UPDATE properties SET price=? WHERE id=? AND owner_id=? AND EXISTS(SELECT 1 FROM property_policies WHERE property_id=? AND revision=?)',price,propertyId,this.userId,propertyId,revision),
@@ -253,10 +313,12 @@ export class RentalService {
   async bookingQuote(body:Row) {
     const p=await this.one('SELECT * FROM properties WHERE id=? AND published=1 AND (demo_owner IS NULL OR demo_owner=?)',required(body.propertyId,'Квартира',100),this.userId);
     if(!p) throw new DomainError('Квартира недоступна.',404);
+    await assertPilotAllowed(this,'booking',p.id);
     const {start,end}=interval(body.start,body.end), guests=number(body.guests,'Гости',1,p.capacity), occupiedUntil=end+p.cleaning_minutes*60;
     const policy={...defaultPolicy,...await this.one('SELECT * FROM property_policies WHERE property_id=?',p.id)},op=await this.one('SELECT readiness FROM property_operations WHERE property_id=?',p.id);
     if(op&&(['maintenance','blocked'].includes(op.readiness)||(start<=now()+60&&op.readiness!=='ready')))throw new DomainError('Квартира сейчас не готова к новым заездам.',409);
     const pricing=rentalPrice(p.price,policy,start,end,body.billingMode||'daily');
+    await assertCalendarAvailable(this.db,p.id,start,occupiedUntil);
     const occupied=await this.one("SELECT id FROM bookings WHERE property_id=? AND (status='confirmed' OR (status='requested' AND expires_at>?)) AND start<? AND occupied_until>?",p.id,now(),occupiedUntil,start);
     const cleaning=await this.one("SELECT id FROM cleaning_jobs WHERE property_id=? AND status IN ('open','assigned','in_progress','submitted') AND start<? AND end>?",p.id,occupiedUntil,start);
     if(occupied||cleaning) throw new DomainError('Этот интервал уже занят, включая время уборки. Выберите другое время.',409);
@@ -273,9 +335,9 @@ export class RentalService {
   }
   async createProperty(body:Row) {
     await this.requireRole('owner');
-    const propertyId=id();
-    await this.db.batch([this.query('INSERT INTO properties VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)',propertyId,this.userId,null,required(body.title,'Название',120),required(body.city,'Город',80),required(body.district,'Район',120),required(body.address,'Точный адрес',300),required(body.description,'Описание и правила',2500),number(body.price,'Цена за сутки',100,10000000),number(body.rooms,'Комнаты',1,20),number(body.capacity,'Вместимость',1,50),number(body.cleaningMinutes,'Время уборки',30,1440),1,now()),this.query('INSERT INTO property_operations(property_id,updated_at) VALUES (?,?)',propertyId,now()),this.audit(propertyId,'property.created')]);
-    return {id:propertyId,message:'Квартира добавлена в каталог. Точный адрес скрыт до подтверждения брони.'};
+    const propertyId=id(),admission=await readPilotPolicy(this.db),published=admission.require_owner_review||admission.require_phone?0:1;
+    await this.db.batch([this.query('INSERT INTO properties VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)',propertyId,this.userId,null,required(body.title,'Название',120),required(body.city,'Город',80),required(body.district,'Район',120),required(body.address,'Точный адрес',300),required(body.description,'Описание и правила',2500),number(body.price,'Цена за сутки',100,10000000),number(body.rooms,'Комнаты',1,20),number(body.capacity,'Вместимость',1,50),number(body.cleaningMinutes,'Время уборки',30,1440),published,now()),this.query('INSERT INTO property_operations(property_id,updated_at) VALUES (?,?)',propertyId,now()),this.audit(propertyId,'property.created')]);
+    return {id:propertyId,message:published?'Квартира добавлена в каталог. Точный адрес скрыт до подтверждения брони.':'Квартира сохранена черновиком. Пройдите проверку перед публикацией.'};
   }
   async createBooking(body:Row) {
     await this.requireRole('guest');
@@ -306,10 +368,22 @@ export class RentalService {
     const owner=b.owner_id===this.userId;
     const terms=await this.one('SELECT * FROM booking_terms WHERE booking_id=?',bookingId),op=await this.one('SELECT * FROM property_operations WHERE property_id=?',b.property_id);
     if(body.expectedVersion!==undefined&&body.expectedVersion!==terms?.version)throw new DomainError('Бронь изменилась. Обновите карточку.',409);
+    if(['record_deposit_return','record_refund'].includes(body.action)){
+      if(!owner)throw new DomainError('Фактический расчёт отмечает владелец.',403);
+      if(body.confirmed!==true)throw new DomainError('Подтвердите, что перевод уже выполнен вне сервиса.');
+      number(body.expectedVersion,'Версия брони',1,10000000);
+      const deposit=body.action==='record_deposit_return';
+      if(deposit?b.status!=='completed'||terms?.deposit_status!=='owner_verified':!['cancelled','expired'].includes(b.status)||!terms?.paid_amount)throw new DomainError('Для этой брони такой расчёт не ожидается.',409);
+      const note=required(body.note,'Основание отметки расчёта',1000);await migrateFinanceEntity(this,'booking',bookingId);
+      const balance=await this.one("SELECT COALESCE(SUM(CASE WHEN kind=? THEN amount WHEN kind=? THEN -amount ELSE 0 END),0) n FROM finance_entries WHERE booking_id=?",deposit?'deposit':'payment',deposit?'deposit_return':'refund',bookingId),remaining=balance?.n||0;
+      if(!remaining)return {message:'Расчёт уже полностью отмечен.'};
+      return recordFinance(this,{kind:deposit?'deposit_return':'refund',bookingId,amount:remaining,confirmed:true,note,requestKey:body.action+':'+bookingId+':'+terms?.version});
+    }
     if(body.action==='deposit_received'){
       if(!owner)throw new DomainError('Депозит подтверждает владелец.',403);
       if(b.status!=='confirmed'||!terms?.deposit)throw new DomainError('Для этой брони депозит не ожидается.',409);
-      await this.db.batch([this.query("UPDATE booking_terms SET deposit_status='owner_verified',version=version+1 WHERE booking_id=? AND deposit_status='pending'",bookingId),this.audit(bookingId,'deposit.owner_verified')]);return {message:'Владелец подтвердил поступление депозита. Банковская операция не выполнялась.'};
+      await migrateFinanceEntity(this,'booking',bookingId);const balance=await this.one("SELECT COALESCE(SUM(CASE WHEN kind='deposit' THEN amount WHEN kind='deposit_return' THEN -amount ELSE 0 END),0) n FROM finance_entries WHERE booking_id=?",bookingId),remaining=Math.max(0,terms.deposit-(balance?.n||0));if(!remaining)return {message:'Депозит уже учтён.'};
+      return recordFinance(this,{kind:'deposit',bookingId,amount:remaining,confirmed:true,note:'Поступление депозита проверено владельцем',requestKey:'deposit:'+bookingId+':'+terms.version});
     }
     if(body.action==='report_checkout'){
       if(b.guest_id!==this.userId)throw new DomainError('Сообщить о выезде может гость.',403);
@@ -339,16 +413,22 @@ export class RentalService {
       const t=now(),result=await this.db.batch([
         this.query("UPDATE bookings SET status='completed' WHERE id=? AND status='confirmed' AND EXISTS(SELECT 1 FROM booking_terms WHERE booking_id=? AND actual_checkout IS NULL AND version=?)",bookingId,bookingId,body.expectedVersion??terms?.version),
         this.query("UPDATE property_operations SET readiness=CASE WHEN readiness IN ('maintenance','blocked') THEN readiness ELSE 'awaiting_cleaning' END,active_booking_id=NULL,version=version+1,updated_at=? WHERE property_id=? AND (active_booking_id IS NULL OR active_booking_id=?) AND EXISTS(SELECT 1 FROM booking_terms t JOIN bookings b ON b.id=t.booking_id WHERE b.id=? AND b.status='completed' AND t.actual_checkout IS NULL)",t,b.property_id,bookingId,bookingId),
-        this.query("UPDATE cleaning_jobs SET start=?,end=? WHERE booking_id=? AND status IN ('open','assigned') AND EXISTS(SELECT 1 FROM booking_terms WHERE booking_id=? AND actual_checkout IS NULL)",t,t+b.cleaning_minutes*60,bookingId,bookingId),
+        this.query("INSERT OR IGNORE INTO notifications SELECT ?,assigned_to,?,'cleaner:checkout-reschedule:'||id||':'||version,0,? FROM cleaning_jobs WHERE booking_id=? AND status='assigned' AND start<? AND EXISTS(SELECT 1 FROM booking_terms bt JOIN bookings b ON b.id=bt.booking_id WHERE b.id=? AND b.status='completed' AND bt.actual_checkout IS NULL)",id(),'AI администратор: гость освободил квартиру позже начала уборки. Прежнее назначение снято; проверьте новое время и откликнитесь заново.',t,bookingId,t-60,bookingId),
+        this.query("UPDATE applications SET status='rejected' WHERE job_id IN(SELECT id FROM cleaning_jobs WHERE booking_id=? AND status IN ('open','assigned') AND start<?) AND EXISTS(SELECT 1 FROM booking_terms bt JOIN bookings b ON b.id=bt.booking_id WHERE b.id=? AND b.status='completed' AND bt.actual_checkout IS NULL)",bookingId,t-60,bookingId),
+        this.query("UPDATE cleaning_jobs SET start=?,end=?,assigned_to=NULL,status='open' WHERE booking_id=? AND status IN ('open','assigned') AND start<? AND EXISTS(SELECT 1 FROM booking_terms bt JOIN bookings b ON b.id=bt.booking_id WHERE b.id=? AND b.status='completed' AND bt.actual_checkout IS NULL)",t,t+b.cleaning_minutes*60,bookingId,t-60,bookingId),
         this.query('UPDATE booking_terms SET actual_checkout=? WHERE booking_id=? AND actual_checkout IS NULL AND EXISTS(SELECT 1 FROM bookings WHERE id=? AND status=\'completed\')',t,bookingId,bookingId),this.audit(bookingId,'booking.checkout_confirmed')]);
       if(!result[0].meta.changes)throw new DomainError('Выезд уже обрабатывается. Обновите данные.',409);await this.notify(b.guest_id,'Владелец подтвердил освобождение квартиры. Проживание завершено.','checkout-confirmed:'+bookingId,'guest').run();return {message:'Выезд подтверждён. Квартира ожидает уборки и проверки.'};
     }
     if(body.action==='confirm') {
+      await assertPilotAllowed(this,'booking',b.property_id);
       if(!owner) throw new DomainError('Подтвердить может только владелец.',403);
+      await assertCalendarAvailable(this.db,b.property_id,b.start,b.occupied_until);
       const fee=number(body.cleaningFee||0,'Стоимость уборки',0,1000000);
       if(b.status!=='requested'||b.expires_at<=now()) throw new DomainError('Срок заявки истёк или статус уже изменился.',409);
-      const statements=[this.query("UPDATE bookings SET status='confirmed' WHERE id=? AND status='requested' AND expires_at>? AND EXISTS(SELECT 1 FROM booking_terms WHERE booking_id=? AND version=?)",bookingId,now(),bookingId,terms?.version),this.notify(b.guest_id,`Бронь «${b.title}» подтверждена. Адрес доступен в карточке.`,`confirmed:${bookingId}`,'guest'),this.audit(bookingId,'booking.confirmed')];
-      if(fee>0) statements.push(this.query("INSERT OR IGNORE INTO cleaning_jobs(id,property_id,owner_id,booking_id,start,end,fee,description,status,assigned_to,checklist,report,created_at) SELECT ?,property_id,?,?,end,occupied_until,?,?,'open',NULL,'[]','',? FROM bookings WHERE id=? AND status='confirmed'",id(),this.userId,bookingId,fee,'Уборка после выезда: сменить бельё, проверить санузел и кухню, вынести мусор.',now(),bookingId));
+      const policyGate=this.execution?" AND EXISTS(SELECT 1 FROM property_policies WHERE property_id=bookings.property_id AND version=? AND auto_confirm=1 AND cleaning_fee=? AND cleaning_fee<=cleaning_budget AND (mandate_until=0 OR mandate_until>?))":'';
+      const auditId=id(),auditAction=this.execution?JSON.stringify({action:'booking.confirmed',onBehalfOf:this.userId,...this.execution}):'booking.confirmed';
+      const statements=[this.query("UPDATE bookings SET status='confirmed' WHERE id=? AND status='requested' AND expires_at>? AND EXISTS(SELECT 1 FROM booking_terms WHERE booking_id=? AND version=?)"+policyGate,bookingId,now(),bookingId,terms?.version,...(this.execution?[this.execution.policyVersion,fee,now()]:[])),this.query('INSERT INTO audit_events SELECT ?,?,?,?,? WHERE changes()>0',auditId,this.execution?'system:rental-policy':this.userId,bookingId,auditAction,now()),this.query("INSERT OR IGNORE INTO notifications SELECT ?,?,?,?,?,? WHERE EXISTS(SELECT 1 FROM audit_events WHERE id=?)",id(),b.guest_id,`Бронь «${b.title}» подтверждена. Адрес доступен в карточке.`,'guest:confirmed:'+bookingId,0,now(),auditId)];
+      if(fee>0) statements.push(this.query("INSERT OR IGNORE INTO cleaning_jobs(id,property_id,owner_id,booking_id,start,end,fee,description,status,assigned_to,checklist,report,created_at) SELECT ?,property_id,?,?,end,occupied_until,?,?,'open',NULL,'[]','',? FROM bookings WHERE id=? AND status='confirmed' AND EXISTS(SELECT 1 FROM audit_events WHERE id=?)",id(),this.userId,bookingId,fee,'Уборка после выезда: сменить бельё, проверить санузел и кухню, вынести мусор.',now(),bookingId,auditId));
       const results=await this.db.batch(statements);
       if(!results[0].meta.changes) throw new DomainError('Срок заявки истёк или статус уже изменился.',409);
       return {message:fee>0?'Бронь подтверждена, задание на уборку опубликовано.':'Бронь подтверждена.'};
@@ -368,15 +448,14 @@ export class RentalService {
     if(body.action==='paid'&&owner) {
       if(b.status!=='confirmed') throw new DomainError('Сначала подтвердите бронь.');
       if(body.expectedAmount!==undefined&&body.expectedAmount!==b.amount)throw new DomainError('Стоимость брони изменилась. Проверьте сумму заново.',409);
-      const result=await this.db.batch([this.query("UPDATE bookings SET payment_status='owner_verified' WHERE id=? AND status='confirmed' AND amount=? AND EXISTS(SELECT 1 FROM booking_terms WHERE booking_id=? AND version=?)",bookingId,b.amount,bookingId,terms?.version),this.query("UPDATE booking_terms SET paid_amount=?,version=version+1 WHERE booking_id=? AND version=? AND EXISTS(SELECT 1 FROM bookings WHERE id=? AND amount=? AND status='confirmed' AND payment_status='owner_verified')",b.amount,bookingId,terms?.version,bookingId,b.amount),this.query("INSERT INTO audit_events SELECT ?,?,?,?,? WHERE EXISTS(SELECT 1 FROM booking_terms WHERE booking_id=? AND version=? AND paid_amount=?)",id(),this.userId,bookingId,'payment.owner_verified',now(),bookingId,terms?.version+1,b.amount)]);
-      if(!result[0].meta.changes||!result[1].meta.changes)throw new DomainError('Бронь изменилась. Проверьте сумму оплаты заново.',409);
-      await this.notify(b.guest_id,`Владелец отметил оплату брони «${b.title}».`,`paid:${bookingId}:${b.amount}`,'guest').run();
-      return {message:'Оплата отмечена как проверенная владельцем.'};
+      await migrateFinanceEntity(this,'booking',bookingId);const balance=await this.one("SELECT COALESCE(SUM(CASE WHEN kind='payment' THEN amount WHEN kind='refund' THEN -amount ELSE 0 END),0) n FROM finance_entries WHERE booking_id=?",bookingId),remaining=Math.max(0,b.amount-(balance?.n||0));if(!remaining)return {message:'Полная оплата уже учтена.'};
+      return recordFinance(this,{kind:'payment',bookingId,amount:remaining,confirmed:true,note:'Поступление проживания проверено владельцем',requestKey:'paid:'+bookingId+':'+terms?.version});
     }
     if(body.action==='issue') {
       const issue=required(body.issue,'Описание проблемы',1500);
-      await this.db.batch([this.notify(owner?b.guest_id:b.owner_id,`Обращение по «${b.title}»: ${issue}`,id(),owner?'guest':'owner'),this.audit(bookingId,'booking.issue')]);
-      return {message:'Обращение сохранено в уведомлениях получателя. Для срочной связи используйте контакт в брони.'};
+      const receipt=await this.operationReceipt('booking_issue',body,[bookingId,issue]);if(receipt.previous)return receipt.previous;const result={message:'Обращение сохранено в уведомлениях получателя. Для срочной связи используйте контакт в брони.'};
+      await this.db.batch([this.administratorIssueStatement(b,'booking',issue),this.notify(owner?b.guest_id:b.owner_id,`Обращение по «${b.title}»: ${issue}`,id(),owner?'guest':'owner'),this.audit(bookingId,'booking.issue'),this.query('INSERT INTO operation_receipts VALUES (?,?,?,?,?,?)',this.userId,'booking_issue',receipt.key,receipt.digest,JSON.stringify(result),now())]);
+      return result;
     }
     throw new DomainError('Действие недоступно.',403);
   }
@@ -404,6 +483,7 @@ export class RentalService {
     if(amount<terms.paid_amount)throw new DomainError('Новая сумма меньше подтверждённой оплаты. Сначала согласуйте возврат с владельцем; автоматический возврат не подключён.',409);
     if(start===b.start&&end===b.end&&amount===b.amount&&mode===terms.billing_mode)throw new DomainError('Условия не изменились.');
     const occupiedUntil=end+b.cleaning_minutes*60;
+    await assertCalendarAvailable(this.db,b.property_id,start,occupiedUntil);
     const occupied=await this.one("SELECT id FROM bookings WHERE property_id=? AND id<>? AND (status='confirmed' OR (status='requested' AND expires_at>?)) AND start<? AND occupied_until>?",b.property_id,bookingId,t,occupiedUntil,start);
     const cleaning=await this.one("SELECT id FROM cleaning_jobs WHERE property_id=? AND (booking_id IS NULL OR booking_id<>?) AND status IN ('open','assigned','in_progress','submitted') AND start<? AND end>?",b.property_id,bookingId,occupiedUntil,start);
     const started=await this.one("SELECT id FROM cleaning_jobs WHERE booking_id=? AND status IN ('in_progress','submitted','completed')",bookingId);
@@ -463,14 +543,29 @@ export class RentalService {
     await this.requireRole('owner');
     const p=await this.one('SELECT * FROM properties WHERE id=? AND owner_id=?',required(body.propertyId,'Квартира',100),this.userId);
     if(!p) throw new DomainError('Выберите свою квартиру.',403);
-    const {start,end}=interval(body.start,body.end), jobId=id();
-    await this.db.batch([this.query('INSERT INTO cleaning_jobs(id,property_id,owner_id,booking_id,start,end,fee,description,status,assigned_to,checklist,report,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)',jobId,p.id,this.userId,null,start,end,number(body.fee,'Вознаграждение',100,1000000),required(body.description,'Условия',2000),'open',null,'[]','',now()),this.audit(jobId,'job.created')]);
-    return {id:jobId,message:'Задание опубликовано. Исполнители могут откликаться.'};
+    const fee=number(body.fee,'Вознаграждение',100,1000000),description=required(body.description,'Условия',2000),requestKey=body.requestKey?required(body.requestKey,'Ключ операции',120):id(),digest=await operationHash(JSON.stringify([p.id,Date.parse(body.start),Date.parse(body.end),fee,description]));
+    const previous=await this.one("SELECT * FROM operation_receipts WHERE user_id=? AND kind='create_job' AND request_key=?",this.userId,requestKey);if(previous){if(previous.payload_hash!==digest)throw new DomainError('Ключ задания уже использован с другими условиями.',409);return JSON.parse(previous.result);}
+    const {start,end}=interval(body.start,body.end), jobId=id(),result={id:jobId,message:'Задание опубликовано. Исполнители могут откликаться.'};
+    await assertCalendarAvailable(this.db,p.id,start,end);
+    if(await this.one("SELECT id FROM cleaning_jobs WHERE property_id=? AND status IN ('open','assigned','in_progress','submitted') AND start<? AND end>?",p.id,end,start))throw new DomainError('У квартиры уже есть уборка на это время.',409);
+    await this.db.batch([this.query('INSERT INTO cleaning_jobs(id,property_id,owner_id,booking_id,start,end,fee,description,status,assigned_to,checklist,report,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)',jobId,p.id,this.userId,null,start,end,fee,description,'open',null,'[]','',now()),this.audit(jobId,'job.created'),this.query('INSERT INTO operation_receipts VALUES (?,?,?,?,?,?)',this.userId,'create_job',requestKey,digest,JSON.stringify(result),now())]);
+    return result;
   }
   async jobAction(jobId:string,body:Row) {
     const j=await this.one('SELECT j.*,p.demo_owner,p.title FROM cleaning_jobs j JOIN properties p ON p.id=j.property_id WHERE j.id=? AND (p.demo_owner IS NULL OR p.demo_owner=?)',jobId,this.userId);
     if(!j) throw new DomainError('Задание не найдено.',404);
+    if(this.execution){
+      const policy=await this.one('SELECT * FROM property_policies WHERE property_id=?',j.property_id);
+      if(body.action!=='assign'||j.owner_id!==this.userId||this.execution.propertyId!==j.property_id||policy?.version!==this.execution.policyVersion||!policy.auto_assign||!mandateActive(policy)||j.fee>policy.cleaning_budget)throw new DomainError('Автоназначение выходит за полномочия владельца.',403);
+    }
     if(body.expectedVersion!==undefined&&body.expectedVersion!==j.version)throw new DomainError('Задание изменилось. Обновите карточку перед решением.',409);
+    if(body.action==='record_job_payment'){
+      if(j.owner_id!==this.userId)throw new DomainError('Оплату исполнителю отмечает владелец.',403);
+      if(j.status!=='completed'||body.confirmed!==true)throw new DomainError('Сначала примите работу и подтвердите выполненный перевод.',409);
+      number(body.expectedVersion,'Версия задания',1,10000000);await migrateFinanceEntity(this,'job',jobId);
+      const balance=await this.one("SELECT COALESCE(SUM(amount),0) n FROM finance_entries WHERE job_id=? AND kind='job_payment'",jobId),remaining=Math.max(0,j.fee-(balance?.n||0));if(!remaining)return {message:'Оплата уборки уже полностью отмечена.'};
+      return recordFinance(this,{kind:'job_payment',jobId,amount:remaining,confirmed:true,note:required(body.note,'Основание отметки расчёта',1000),requestKey:'job-paid:'+jobId+':'+j.version});
+    }
     if(body.action==='apply') {
       await this.requireRole('cleaner');
       if((await this.profile())?.work_status==='away')throw new DomainError('В профиле выключен приём заданий. Включите его перед откликом.',409);
@@ -491,10 +586,14 @@ export class RentalService {
       const a=await this.one("SELECT * FROM applications WHERE id=? AND job_id=? AND status='pending'",required(body.applicationId,'Отклик',100),jobId);
       if(!a) throw new DomainError('Отклик недоступен.',409);
       if((await this.one('SELECT work_status FROM profile_details WHERE user_id=?',a.user_id))?.work_status==='away')throw new DomainError('Исполнитель сейчас не принимает новые задания.',409);
+      await assertPilotAllowed(this,'assignment',j.property_id,a.user_id);
+      const mandateGate=this.execution?" AND EXISTS(SELECT 1 FROM property_policies WHERE property_id=cleaning_jobs.property_id AND version=? AND auto_assign=1 AND cleaning_jobs.fee<=cleaning_budget AND (mandate_until=0 OR mandate_until>?))":'';
+      const auditId=id(),auditAction=this.execution?JSON.stringify({action:'job.assigned',onBehalfOf:this.userId,...this.execution}):'job.assigned';
       const results=await this.db.batch([
-        this.query("UPDATE cleaning_jobs SET assigned_to=?,status='assigned' WHERE id=? AND status='open' AND end>? AND version=? AND NOT EXISTS(SELECT 1 FROM profile_details WHERE user_id=? AND work_status='away')",a.user_id,jobId,now(),j.version,a.user_id),
-        this.query("UPDATE applications SET status=CASE WHEN user_id=(SELECT assigned_to FROM cleaning_jobs WHERE id=?) THEN 'accepted' ELSE 'rejected' END WHERE job_id=? AND (SELECT status FROM cleaning_jobs WHERE id=?)='assigned'",jobId,jobId,jobId),
-        this.query("INSERT OR IGNORE INTO notifications SELECT ?,assigned_to,?,?,0,? FROM cleaning_jobs WHERE id=? AND assigned_to=? AND status='assigned'",id(),'Вас назначили на уборку. Адрес и контакт заказчика доступны в задании.','cleaner:assigned:'+jobId+':'+a.user_id+':'+j.start,now(),jobId,a.user_id),this.audit(jobId,'job.assigned')
+        this.query("UPDATE cleaning_jobs SET assigned_to=?,status='assigned' WHERE id=? AND status='open' AND end>? AND version=? AND NOT EXISTS(SELECT 1 FROM profile_details WHERE user_id=? AND work_status='away') AND EXISTS(SELECT 1 FROM applications WHERE id=? AND job_id=cleaning_jobs.id AND user_id=? AND status='pending')"+mandateGate,a.user_id,jobId,now(),j.version,a.user_id,a.id,a.user_id,...(this.execution?[this.execution.policyVersion,now()]:[])),
+        this.query('INSERT INTO audit_events SELECT ?,?,?,?,? WHERE changes()>0',auditId,this.execution?'system:rental-policy':this.userId,jobId,auditAction,now()),
+        this.query("UPDATE applications SET status=CASE WHEN user_id=(SELECT assigned_to FROM cleaning_jobs WHERE id=?) THEN 'accepted' ELSE 'rejected' END WHERE job_id=? AND EXISTS(SELECT 1 FROM audit_events WHERE id=?)",jobId,jobId,auditId),
+        this.query("INSERT OR IGNORE INTO notifications SELECT ?,assigned_to,?,?,0,? FROM cleaning_jobs WHERE id=? AND assigned_to=? AND status='assigned' AND EXISTS(SELECT 1 FROM audit_events WHERE id=?)",id(),'Вас назначили на уборку. Адрес и контакт заказчика доступны в задании.','cleaner:assigned:'+jobId+':'+a.user_id+':'+j.start,now(),jobId,a.user_id,auditId)
       ]);
       if(!results[0].meta.changes) throw new DomainError('Исполнитель уже назначен или задание истекло.',409);
       return {message:'Исполнитель назначен.'};
@@ -505,6 +604,7 @@ export class RentalService {
       if(!r[0].meta.changes) throw new DomainError('Статус задания изменился.',409);return {message:'Начало работы отмечено.'};
     }
     if(body.action==='submit' && j.assigned_to===this.userId) {
+      await requireEvidence(this,jobId);
       const checklist=Array.isArray(body.checklist)?body.checklist:[];
       if(checklist.length!==4||checklist.some((v:any)=>v!==true)) throw new DomainError('Подтвердите все пункты чек-листа.');
       const report=required(body.report,'Отчёт о работе',1500);
@@ -521,33 +621,54 @@ export class RentalService {
       return {message:'Отчёт возвращён на доработку. Квартира не отмечена готовой.'};
     }
     if(body.action==='approve' && j.owner_id===this.userId) {
+      await requireEvidence(this,jobId);
       const r=await this.db.batch([this.query("UPDATE cleaning_jobs SET status='completed' WHERE id=? AND status='submitted' AND version=?",jobId,j.version),this.query("UPDATE property_operations SET readiness='ready',version=version+1,updated_at=? WHERE property_id=? AND readiness='inspection' AND active_booking_id IS NULL AND EXISTS(SELECT 1 FROM cleaning_jobs WHERE id=? AND status='completed') AND NOT EXISTS(SELECT 1 FROM cleaning_jobs WHERE property_id=? AND (status IN ('in_progress','submitted') OR (status IN ('open','assigned') AND start<=?)))",now(),j.property_id,jobId,j.property_id,now()),this.notify(j.assigned_to,'Заказчик принял уборку. Расчёт производится с заказчиком отдельно.','approved:'+jobId,'cleaner'),this.audit(jobId,'job.completed')]);
       if(!r[0].meta.changes) throw new DomainError('Нет отчёта для приёмки.',409);
       return {message:'Работа принята. Денежные расчёты выполняются отдельно.'};
     }
     if(body.action==='cancel'&&j.owner_id===this.userId){const reason=required(body.reason,'Причина отмены',1000);const r=await this.query("UPDATE cleaning_jobs SET status='cancelled' WHERE id=? AND status IN ('open','assigned')",jobId).run();if(!r.meta.changes)throw new DomainError('Начатую работу нельзя отменить этим действием.',409);await this.audit(jobId,'job.cancelled:'+reason).run();return {message:'Задание отменено. Готовность квартиры нужно проверить отдельно.'};}
     if(body.action==='issue' && (j.owner_id===this.userId||j.assigned_to===this.userId)) {
-      await this.db.batch([this.notify(j.owner_id===this.userId?j.assigned_to:j.owner_id,'Проблема по уборке: '+required(body.issue,'Описание',1500),id(),j.owner_id===this.userId?'cleaner':'owner'),this.audit(jobId,'job.issue')]);
-      return {message:'Обращение записано в уведомлениях. Статус работы не изменён.'};
+      const issue=required(body.issue,'Описание',1500);
+      const receipt=await this.operationReceipt('job_issue',body,[jobId,issue]);if(receipt.previous)return receipt.previous;const result={message:'Обращение записано в уведомлениях. Статус работы не изменён.'};
+      await this.db.batch([this.administratorIssueStatement(j,'job',issue),this.notify(j.owner_id===this.userId?j.assigned_to:j.owner_id,'Проблема по уборке: '+issue,id(),j.owner_id===this.userId?'cleaner':'owner'),this.audit(jobId,'job.issue'),this.query('INSERT INTO operation_receipts VALUES (?,?,?,?,?,?)',this.userId,'job_issue',receipt.key,receipt.digest,JSON.stringify(result),now())]);
+      return result;
     }
     throw new DomainError('Нет доступа к этому действию.',403);
   }
-  async chat(body:Row,config:AIConfig={}) {
+  async chat(body:Row,config:AIConfig={},toolExecutor?:AIToolExecutor) {
     const text=required(body.text,'Сообщение',2000), role=await this.authorizeWorkspace(body.role,'chat');
     const reply=assistantReply(text,role,!!await this.profile()), ts=Date.now();
-    let mode='scenario',errorCode:string|undefined;
-    if(body.aiConsent===true&&config.OPENAI_API_KEY&&config.OPENAI_MODEL){
+    const permission=await aiDataPermission(this);
+    let search:Record<string,any>|undefined;
+    const previous=role==='guest'?await previousAdministratorSearch(this):null;
+    const current=body.searchFilters&&typeof body.searchFilters==='object'?body.searchFilters:{};
+    const readSearch=async()=>{
+      const inherited=previous&&!isPropertySearch(text)?{...previous.filters}:null;
+      if(inherited?.start&&Date.parse(inherited.start+(inherited.start.length===16?'+05:00':''))<=Date.now()){delete inherited.start;delete inherited.end;}
+      return administratorSearch(this,text,inherited||current,{syntheticPreview:config.TEST_DATA_ONLY==='1'});
+    };
+    let mode='scenario',errorCode:string|undefined,commands:Row[]=[];
+    if(role==='guest'&&(isPropertySearch(text)||previous&&isSearchRefinement(text))){
+      const found=await readSearch();
+      reply.text=found.text;reply.action='properties';search=found.result;
+    }else if(processReadIntent(text)){
+      reply.text=(await readAdministratorProcesses(this,role)).text;
+    }else if(permission.allowed&&config.OPENAI_API_KEY&&config.OPENAI_MODEL){
       const history=await this.all('SELECT sender,body FROM (SELECT sender,body,created_at FROM messages WHERE user_id=? AND scope=? ORDER BY created_at DESC LIMIT 8) ORDER BY created_at',this.userId,role);
       const context=assistantContext(await this.roleState(role),role);
-      const generated=await generateAnswer(config,text,role,history as {sender:string;body:string}[],reply.text,context);
+      const budget=createAIBudgetLifecycle(this.db,this.userId,config);
+      const generated=await generateAnswer(config,text,role,history as {sender:string;body:string}[],reply.text,context,toolExecutor,{...budget,beforeRequest:async body=>{if(!(await aiDataPermission(this)).allowed)throw new DomainError('Передача данных отозвана. Поиск и формы доступны.');await budget.beforeRequest(body);}},role==='guest'?readSearch:undefined,()=>readAdministratorProcesses(this,role));
       reply.text=generated.text;
-      mode=generated.mode;errorCode=generated.errorCode;
+      mode=generated.mode;errorCode=generated.errorCode;commands=generated.commands||[];
+      if(generated.search){search=generated.search;reply.action='properties';}
     }
+    const answerId=id();
     await this.db.batch([
       this.query('INSERT INTO messages VALUES (?,?,?,?,?,?)',id(),this.userId,role,'user',text,ts),
-      this.query('INSERT INTO messages VALUES (?,?,?,?,?,?)',id(),this.userId,role,'assistant',reply.text,ts+1)
+      this.query('INSERT INTO messages VALUES (?,?,?,?,?,?)',answerId,this.userId,role,'assistant',reply.text,ts+1),
+      ...(search?[this.query('INSERT INTO administrator_search_results VALUES (?,?)',answerId,JSON.stringify(search))]:[])
     ]);
-    return {...reply,mode,...(errorCode?{errorCode}:{})};
+    return {...reply,mode,commands,permissionRequired:!permission.allowed,...(search?{search}:{}),...(errorCode?{errorCode}:{})};
   }
   async demo() {
     const existing=await this.one('SELECT id FROM properties WHERE demo_owner=? LIMIT 1',this.userId);

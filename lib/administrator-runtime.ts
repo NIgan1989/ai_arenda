@@ -1,0 +1,131 @@
+import {RentalService} from './service';
+import {defaultAssistantSettings} from './assistant';
+import {planAdministrator,quietNow} from './administrator';
+import {mandateActive} from './rental-policy';
+import type {Role} from './domain';
+import {coordinateDispatch} from './dispatch';
+
+type Row=Record<string,any>;
+const now=()=>Math.floor(Date.now()/1000);
+const all=async(db:D1Database,sql:string,...args:any[])=>(await db.prepare(sql).bind(...args).all<Row>()).results;
+
+async function acquire(db:D1Database,key:string,seconds:number){
+ const t=now(),token=crypto.randomUUID();
+ const row=await db.prepare(`INSERT INTO administrator_runs(id,token,lease_until,checked_at) VALUES (?,?,?,?)
+ ON CONFLICT(id) DO UPDATE SET token=excluded.token,lease_until=excluded.lease_until,checked_at=excluded.checked_at
+ WHERE administrator_runs.lease_until<=? RETURNING id`).bind(key,token,t+seconds,t,t).first();
+ return row?token:null;
+}
+
+async function ownerData(service:RentalService){
+ const owner=service.userId;
+ const [properties,bookings,jobs,applications,issues]=await Promise.all([
+  service.all('SELECT p.*,o.readiness FROM properties p LEFT JOIN property_operations o ON o.property_id=p.id WHERE p.owner_id=?',owner),
+  service.all(`SELECT b.*,t.deposit,t.deposit_status,t.actual_checkin,t.actual_checkout,t.checkout_reported_at,t.paid_amount,t.deposit_returned_at,t.refund_recorded_at FROM bookings b JOIN properties p ON p.id=b.property_id LEFT JOIN booking_terms t ON t.booking_id=b.id WHERE p.owner_id=?`,owner),
+  service.all('SELECT * FROM cleaning_jobs WHERE owner_id=?',owner),
+  service.all('SELECT a.* FROM applications a JOIN cleaning_jobs j ON j.id=a.job_id WHERE j.owner_id=?',owner),
+  service.all("SELECT * FROM administrator_issues WHERE owner_id=? AND status='open'",owner)
+ ]);
+ const changes=await service.all('SELECT c.* FROM booking_changes c JOIN bookings b ON b.id=c.booking_id JOIN properties p ON p.id=b.property_id WHERE p.owner_id=?',owner);
+ return {ownerId:owner,properties,bookings:bookings.map(b=>({...b,terms:b,changes:changes.filter(c=>c.booking_id===b.id)})),jobs,applications,issues,settings:{} as Record<string,Row>};
+}
+
+async function automaticActions(service:RentalService){
+ const policies=await service.all('SELECT pp.* FROM property_policies pp JOIN properties p ON p.id=pp.property_id WHERE p.owner_id=?',service.userId);
+ let actions=0;
+ for(const policy of policies){
+  if(!mandateActive(policy))continue;
+  const delegated=new RentalService(service.db,service.userId,{propertyId:policy.property_id,policyVersion:policy.version});
+  if(policy.auto_confirm){
+   const requests=await service.all("SELECT b.id FROM bookings b JOIN booking_terms t ON t.booking_id=b.id WHERE b.property_id=? AND b.status='requested' AND b.expires_at>? AND t.policy_version=?",policy.property_id,now(),policy.version);
+   for(const b of requests){try{await delegated.bookingAction(b.id,{action:'confirm',cleaningFee:policy.cleaning_fee});await service.notify(service.userId,'AI администратор подтвердил заявку по вашим правилам. Оплата и депозит проверяются отдельно.','administrator-confirmed:'+b.id,'owner').run();actions++;}catch(error){if(!expectedConflict(error))throw error;}}
+  }
+  if(policy.auto_assign){
+   const jobs=await service.all("SELECT * FROM cleaning_jobs WHERE property_id=? AND status='open' AND end>? AND fee<=? ORDER BY start,id",policy.property_id,now(),policy.cleaning_budget);
+   for(const job of jobs){
+    // A pending application is consent to these conditions. Never assign a person who did not apply.
+    const candidates=await service.all(`SELECT a.id FROM applications a JOIN profiles p ON p.id=a.user_id
+     WHERE a.job_id=? AND a.status='pending' AND EXISTS(SELECT 1 FROM json_each(p.roles) WHERE value='cleaner')
+     AND NOT EXISTS(SELECT 1 FROM profile_details d WHERE d.user_id=a.user_id AND d.work_status='away')
+     AND NOT EXISTS(SELECT 1 FROM cleaning_jobs j WHERE j.assigned_to=a.user_id AND j.status IN ('assigned','in_progress','submitted') AND j.start<? AND j.end>?)
+     ORDER BY a.created_at,a.id`,job.id,job.end,job.start);
+    for(const candidate of candidates){try{await delegated.jobAction(job.id,{action:'assign',applicationId:candidate.id,expectedVersion:job.version});await service.notify(service.userId,'AI администратор назначил свободного исполнителя из откликнувшихся в пределах вашего лимита уборки.','administrator-assigned:'+job.id+':'+job.version,'owner').run();actions++;break;}catch(error){if(!expectedConflict(error))throw error;}}
+   }
+  }
+ }
+ return actions;
+}
+function expectedConflict(error:unknown){return [400,403,404,409].includes((error as Row)?.status)||/cleaner_overlap|booking_overlap/.test(String(error));}
+
+export async function checkAdministratorOwner(db:D1Database,ownerId:string){
+ const key='owner:'+ownerId,token=await acquire(db,key,120);
+ if(!token)return {checked:false,actions:0};
+ const service=new RentalService(db,ownerId),t=now();
+ try{
+  if(!await service.one('SELECT id FROM properties WHERE owner_id=? LIMIT 1',ownerId))return {checked:false,actions:0};
+  // Expiry is a calendar fact; it never implies a physical checkout or completed work.
+  const expired=await service.all("SELECT b.id,b.guest_id FROM bookings b JOIN properties p ON p.id=b.property_id WHERE p.owner_id=? AND b.status='requested' AND b.expires_at<=?",ownerId,t);
+  for(const b of expired){
+   await db.batch([
+    service.query("UPDATE bookings SET status='expired' WHERE id=? AND status='requested' AND expires_at<=?",b.id,t),
+    service.notify(b.guest_id,'AI администратор: срок заявки истёк. Интервал больше не удерживается; выберите даты заново.','expired:'+b.id,'guest'),
+    service.notify(ownerId,'AI администратор: заявка истекла без решения. Проверьте новые обращения.','expired:'+b.id,'owner')
+   ]);
+  }
+  await service.query("UPDATE booking_changes SET status='expired',decided_at=? WHERE status='pending' AND expires_at<=? AND booking_id IN(SELECT b.id FROM bookings b JOIN properties p ON p.id=b.property_id WHERE p.owner_id=?)",t,t,ownerId).run();
+  await coordinateDispatch(service);
+  const actions=await automaticActions(service),data=await ownerData(service),tasks=planAdministrator(data,t);
+  // Renew before writes; a superseded scan cannot close another scan's tasks.
+  const renew=async()=>{const r=await service.query('UPDATE administrator_runs SET lease_until=? WHERE id=? AND token=?',now()+120,key,token).run();if(!r.meta.changes)throw new Error('Administrator lease was superseded');};
+  await renew();let processed=0;
+  for(const task of tasks){
+   if(processed++%20===0)await renew();
+   await service.query(`INSERT INTO administrator_tasks(id,owner_id,user_id,role,property_id,entity_kind,entity_id,stage,title,reason,section,deadline,priority,first_seen,updated_at,seen_run)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET title=excluded.title,reason=excluded.reason,section=excluded.section,deadline=excluded.deadline,priority=excluded.priority,status='open',resolved_at=NULL,first_seen=CASE WHEN administrator_tasks.status='resolved' THEN excluded.first_seen ELSE administrator_tasks.first_seen END,last_notified=CASE WHEN administrator_tasks.status='resolved' THEN 0 ELSE administrator_tasks.last_notified END,notified_priority=CASE WHEN administrator_tasks.status='resolved' THEN 0 ELSE administrator_tasks.notified_priority END,updated_at=excluded.updated_at,seen_run=excluded.seen_run`,task.id,task.owner_id,task.user_id,task.role,task.property_id,task.entity_kind,task.entity_id,task.stage,task.title,task.reason,task.section,task.deadline,task.priority,t,t,token).run();
+  }
+  // Only a complete successful scan can close tasks that no longer have a factual cause.
+  await renew();await service.query("UPDATE administrator_tasks SET status='resolved',resolved_at=?,updated_at=? WHERE owner_id=? AND status='open' AND seen_run<>? AND EXISTS(SELECT 1 FROM administrator_runs WHERE id=? AND token=?)",t,t,ownerId,token,key,token).run();
+  const persisted=await service.all("SELECT * FROM administrator_tasks WHERE owner_id=? AND status='open'",ownerId);
+  for(const task of persisted){
+   const settings=data.settings[task.user_id+':'+task.role]||defaultAssistantSettings;
+   const priority=task.priority>=2&&task.first_seen+settings.repeatMinutes*120<=t?3:task.priority;
+   if(priority!==task.priority)await service.query('UPDATE administrator_tasks SET priority=? WHERE id=?',priority,task.id).run();
+   if(priority<2||settings.mode==='reactive'||quietNow(settings,t)&&!(settings.urgentInQuiet&&priority===3))continue;
+   if(task.last_notified&&task.last_notified+settings.repeatMinutes*60>t&&task.notified_priority>=priority)continue;
+   const noticeToken=crypto.randomUUID();
+   await db.batch([
+    service.query('UPDATE administrator_tasks SET last_notified=?,notified_priority=?,notice_revision=notice_revision+1,notice_run=? WHERE id=? AND status=\'open\' AND (last_notified=0 OR last_notified+?<=? OR notified_priority<?)',t,priority,noticeToken,task.id,settings.repeatMinutes*60,t,priority),
+    service.query(`INSERT OR IGNORE INTO notifications SELECT ?,user_id,?,role||':administrator:'||id||':'||notice_revision,0,? FROM administrator_tasks WHERE id=? AND notice_run=?`,crypto.randomUUID(),'AI администратор: '+(priority===3?'Требует внимания. ':'')+task.title+'. '+task.reason,t,task.id,noticeToken)
+   ]);
+  }
+  await service.query("UPDATE administrator_runs SET last_success=?,last_error='',lease_until=? WHERE id=? AND token=?",now(),now()+30,key,token).run();
+  return {checked:true,actions,tasks:tasks.length};
+ }catch(error){
+  await service.query("UPDATE administrator_runs SET last_error='Проверка не завершена',lease_until=? WHERE id=? AND token=?",now()+15,key,token).run();
+  throw error;
+ }finally{
+  await service.query('UPDATE administrator_runs SET lease_until=MIN(lease_until,?) WHERE id=? AND token=?',now()+30,key,token).run();
+ }
+}
+
+export async function checkAdministratorForUser(db:D1Database,userId:string,role:Role){
+ const owners=role==='owner'?[{owner_id:userId}]:await all(db,role==='guest'?
+  "SELECT DISTINCT p.owner_id FROM bookings b JOIN properties p ON p.id=b.property_id WHERE b.guest_id=? AND (b.status IN ('requested','confirmed') OR b.end>unixepoch()-604800)":
+  "SELECT DISTINCT owner_id FROM cleaning_jobs WHERE assigned_to=? AND (status IN ('assigned','in_progress','submitted') OR end>unixepoch()-604800)",userId);
+ for(const owner of owners)await checkAdministratorOwner(db,owner.owner_id);
+}
+
+export async function runAdministrator(db:D1Database){
+ const token=await acquire(db,'scheduler',120);if(!token)return {checked:0,actions:0,busy:true};
+ let checked=0,actions=0,failures=0;
+ try{
+  const run=await db.prepare("SELECT cursor,last_success FROM administrator_runs WHERE id='scheduler'").first<Row>();
+  let owners=await all(db,'SELECT DISTINCT owner_id FROM properties WHERE owner_id>? ORDER BY owner_id LIMIT 25',run?.cursor||'');
+  if(!owners.length)owners=await all(db,'SELECT DISTINCT owner_id FROM properties ORDER BY owner_id LIMIT 25');
+  for(const owner of owners){try{const result=await checkAdministratorOwner(db,owner.owner_id);checked+=Number(result.checked);actions+=result.actions;}catch{failures++;}}
+  await db.prepare("UPDATE administrator_runs SET cursor=?,last_success=?,last_error=?,lease_until=? WHERE id='scheduler' AND token=?").bind(owners.at(-1)?.owner_id||'',failures?run?.last_success||0:now(),failures?'Есть незавершённые проверки':'',now()+15,token).run();
+  return {checked,actions,failures};
+ }catch(error){
+  await db.prepare("UPDATE administrator_runs SET last_error='Планировщик остановился с ошибкой',lease_until=? WHERE id='scheduler' AND token=?").bind(now()+15,token).run();throw error;
+ }
+}

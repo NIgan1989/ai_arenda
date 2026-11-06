@@ -1,26 +1,17 @@
 import ts from 'typescript';
-import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 const target = new URL('../server/generated/', import.meta.url);
 mkdirSync(target, {recursive:true});
 // Native and web clients share the same booking and cleaning rules.
-for (const name of ['service','domain','operations','assistant','access','rental-policy','account','listings','approvals']) {
+for (const name of readdirSync(new URL('../../lib/',import.meta.url)).filter(f=>f.endsWith('.ts')&&!f.endsWith('.d.ts')).map(f=>f.slice(0,-3))) {
   const source = readFileSync(new URL(`../../lib/${name}.ts`, import.meta.url), 'utf8');
   const js = ts.transpileModule(source, {compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ES2022}}).outputText
-    .replace("from './domain'", "from './domain.js'").replace("from './ai'", "from './ai.js'").replace("from './operations'", "from './operations.js'").replace("from './assistant'", "from './assistant.js'").replace("from './access'", "from './access.js'").replace("from './rental-policy'", "from './rental-policy.js'").replace("from './account'", "from './account.js'").replace("from './listings'","from './listings.js'").replace("from './approvals'", "from './approvals.js'");
-  writeFileSync(new URL(name+'.js', target), js);
+    .replace("from './domain'", "from './domain.js'").replace("from './ai'", "from './ai.js'").replace("from './operations'", "from './operations.js'").replace("from './assistant'", "from './assistant.js'").replace("from './access'", "from './access.js'").replace("from './rental-policy'", "from './rental-policy.js'").replace("from './account'", "from './account.js'").replace("from './listings'","from './listings.js'").replace("from './approvals'", "from './approvals.js'").replace(/from '(\.\/[^']+)'/g, (all,name)=>name.endsWith(".js")?all:`from '${name}.js'`);
+  writeFileSync(new URL(name+'.js', target), js.replace(/from '(\.\/[^']+)'/g,(_,name)=>`from '${name.endsWith('.js')?name:name+'.js'}'`));
 }
-// Native pilot deliberately has no external language-model connection.
-writeFileSync(new URL('ai.js',target), 'export function assistantContext(){ return undefined; }\nexport async function generateAnswer(config,text,role,history,fallback){ return {text:fallback,mode:"scenario"}; }\n');
-const schema=readFileSync(new URL('../../drizzle/0000_boring_unus.sql', import.meta.url), 'utf8');
-writeFileSync(new URL('schema.sql',target),schema);
-writeFileSync(new URL('0001_rental_operations.sql',target),readFileSync(new URL('../../drizzle/0001_rental_operations.sql',import.meta.url),'utf8'));
+const migrations=readdirSync(new URL('../../drizzle/',import.meta.url)).filter(f=>/^\d+.*\.sql$/.test(f)).sort();
+writeFileSync(new URL('schema.sql',target),readFileSync(new URL('../../drizzle/'+migrations[0],import.meta.url),'utf8'));
+for(const file of migrations.slice(1))writeFileSync(new URL(file,target),readFileSync(new URL('../../drizzle/'+file,import.meta.url),'utf8'));
+writeFileSync(new URL('migrations.json',target),JSON.stringify(migrations.slice(1)));
 console.log('Shared server prepared:',fileURLToPath(target));
-
-writeFileSync(new URL('0002_assistant_preferences.sql',target),readFileSync(new URL('../../drizzle/0002_assistant_preferences.sql',import.meta.url),'utf8'));
-writeFileSync(new URL('0003_owner_calendar.sql',target),readFileSync(new URL('../../drizzle/0003_owner_calendar.sql',import.meta.url),'utf8'));
-writeFileSync(new URL('0004_account_settings.sql',target),readFileSync(new URL('../../drizzle/0004_account_settings.sql',import.meta.url),'utf8'));
-
-writeFileSync(new URL('0005_activity_approvals.sql',target),readFileSync(new URL('../../drizzle/0005_activity_approvals.sql',import.meta.url),'utf8'));
-
-writeFileSync(new URL('0006_listing_profiles.sql',target),readFileSync(new URL('../../drizzle/0006_listing_profiles.sql',import.meta.url),'utf8'));

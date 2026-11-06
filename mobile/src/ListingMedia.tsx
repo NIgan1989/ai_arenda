@@ -12,8 +12,8 @@ export function Photo({id,avatar=false,alt,size=48}:{id?:string|null;avatar?:boo
 }
 export function PhotoUpload({kind,onAdd,disabled=false,onBusy}:{onBusy?:(v:boolean)=>void;kind:'property'|'avatar';onAdd:(id:string)=>void;disabled?:boolean}){
  const [busy,setBusy]=useState(false),[error,setError]=useState('');
- async function pick(){setBusy(true);onBusy?.(true);setError('');try{
-  const result=await ImagePicker.launchImageLibraryAsync({mediaTypes:['images'],quality:1,exif:false});if(result.canceled)return;
+ async function pick(camera=false){setBusy(true);onBusy?.(true);setError('');try{
+  if(camera){const permission=await ImagePicker.requestCameraPermissionsAsync();if(!permission.granted)throw Error('Доступ к камере не разрешён. Можно выбрать готовое фото.');}const result=camera?await ImagePicker.launchCameraAsync({mediaTypes:['images'],quality:1,exif:false}):await ImagePicker.launchImageLibraryAsync({mediaTypes:['images'],quality:1,exif:false});if(result.canceled)return;
   const image=result.assets[0],max=kind==='avatar'?512:1600,context=ImageManipulator.manipulate(image.uri);
   if(image.width>max||image.height>max)context.resize(image.width>=image.height?{width:max}:{height:max});
   const resized=await context.renderAsync();let data='';
@@ -21,6 +21,6 @@ export function PhotoUpload({kind,onAdd,disabled=false,onBusy}:{onBusy?:(v:boole
   if(data.length>(kind==='avatar'?105000:475000))throw new Error('Выберите менее крупный снимок.');
   const saved=await request('/api/media',{kind,data});onAdd(saved.id);
  }catch(e:any){setError(e.message||'Не удалось загрузить фото.');}finally{setBusy(false);onBusy?.(false);}}
- return <View><Pressable accessibilityRole="button" disabled={busy||disabled} onPress={pick} style={[s.button,s.secondary,(busy||disabled)&&s.disabled]}><Text style={[s.buttonText,s.secondaryText]}>{busy?'Загружаю…':kind==='avatar'?'Загрузить фото профиля':'Добавить фотографию'}</Text></Pressable>{!!error&&<Text accessibilityRole="alert" style={s.error}>{error}</Text>}</View>;
+ return <View><Pressable accessibilityRole="button" disabled={busy||disabled} onPress={()=>pick(false)} style={[s.button,s.secondary,(busy||disabled)&&s.disabled]}><Text style={[s.buttonText,s.secondaryText]}>{busy?'Загружаю…':kind==='avatar'?'Загрузить фото профиля':'Добавить фотографию'}</Text></Pressable><Pressable accessibilityRole="button" disabled={busy||disabled} onPress={()=>pick(true)} style={[s.button,s.secondary,(busy||disabled)&&s.disabled]}><Text style={[s.buttonText,s.secondaryText]}>Снять фото камерой</Text></Pressable>{!!error&&<Text accessibilityRole="alert" style={s.error}>{error}</Text>}</View>;
 }
 export const m=StyleSheet.create({photo:{width:'100%',aspectRatio:1.5,borderRadius:15},placeholder:{width:'100%',aspectRatio:1.5,backgroundColor:'#eeeee7',alignItems:'center',justifyContent:'center',gap:12,borderRadius:15},avatar:{width:48,height:48,borderRadius:24},avatarPlaceholder:{width:48,height:48,borderRadius:24,alignItems:'center',justifyContent:'center',backgroundColor:'#e8eee3'},heading:{flexDirection:'row',alignItems:'center',gap:12},badge:{borderRadius:20,paddingHorizontal:10,paddingVertical:7,alignSelf:'flex-start',fontSize:11,color:C.ink,backgroundColor:'#eff1e9',overflow:'hidden'},good:{backgroundColor:'#e8f2e8',color:'#315e48'},warning:{backgroundColor:'#fff3df',color:'#835521'},danger:{backgroundColor:'#fcece8',color:'#994b37'},divider:{height:1,backgroundColor:'#e0e6da',marginVertical:15},wrap:{flexDirection:'row',flexWrap:'wrap',gap:8},photoActions:{flexDirection:'row',gap:8,justifyContent:'space-between'},group:{gap:10,marginVertical:14}});

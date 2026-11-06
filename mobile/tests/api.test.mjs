@@ -112,17 +112,16 @@ test('multi-role views, conversations and replayed actions remain scoped to the 
   assert.equal((await scoped('/api/properties','guest',payload,'role-replay-key')).status,403);
   assert.equal((await scoped('/api/catalog','owner')).status,403);
 });
-test('assistant settings persist across restart and stay within the authenticated role',async()=>{
-  const settings={expectedVersion:0,mode:'important',leadMinutes:120,repeatMinutes:60,quietEnabled:true,quietStart:'22:00',quietEnd:'08:00',urgentInQuiet:true};
-  assert.equal((await call('/api/assistant-settings',settings)).status,401);
-  assert.equal((await call('/api/assistant-settings',settings,owner.token)).status,200);
-  assert.equal((await call('/api/assistant-settings',settings,owner.token)).status,409);
-  assert.equal((await call('/api/assistant-settings',{...settings,role:'owner',mode:'reactive'},guest.token)).status,200);
-  await app.close();await start();
-  const ownerState=(await call('/api/state',undefined,owner.token)).body,guestState=(await call('/api/state',undefined,guest.token)).body;
-  assert.equal(ownerState.assistantSettings.mode,'important');assert.equal(guestState.assistantSettings.mode,'reactive');
-  assert.equal(guestState.assistantBrief.automatic,false);assert.equal(ownerState.assistantBrief.capabilities.modelActions,false);
+test('assistant policy stays enabled across restart and user settings are retired',async()=>{
+ const settings={mode:'reactive',quietEnabled:true};
+ assert.equal((await call('/api/assistant-settings',settings)).status,401);
+ assert.equal((await call('/api/assistant-settings',settings,owner.token)).status,410);
+ assert.equal((await call('/api/assistant-settings',settings,guest.token)).status,410);
+ await app.close();await start();
+ const ownerState=(await call('/api/state',undefined,owner.token)).body,guestState=(await call('/api/state',undefined,guest.token)).body;
+ assert.equal(ownerState.assistantSettings.mode,'proactive');assert.equal(guestState.assistantSettings.mode,'proactive');assert.equal(ownerState.assistantSettings.quietEnabled,false);
 });
+
 test('schedule proposals use the authenticated role and persist consent and payment balance across restart',async()=>{
   const p=(await call('/api/properties',{title:'Calendar test',city:'Павлодар',district:'Test',address:'PRIVATE',description:'Test rules',price:10000,rooms:1,capacity:2,cleaningMinutes:90},owner.token)).body.id;
   const policy={expectedVersion:0,dailyPrice:10000,hourlyPrice:2000,minHours:2,nightlyPrice:9000,checkinTime:'14:00',checkoutTime:'12:00',deposit:10000,houseRules:'Test rules',cleaningFee:3000,cleaningBudget:4000,maxDiscountPercent:15,repairBudget:20000,escalationContact:'Duty test contact'};

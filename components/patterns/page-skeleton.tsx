@@ -1,0 +1,2 @@
+import {Skeleton} from '../ui/skeleton';
+export function PageSkeleton(){return <div className="page-skeleton" role="status" aria-label="Загрузка страницы"><span className="sr-only">Загружаем данные…</span><Skeleton className="h-11 w-full"/><div className="skeleton-cards">{[1,2,3].map(i=><div key={i}><Skeleton className="h-36 w-full"/><Skeleton className="mt-4 h-5 w-2/3"/><Skeleton className="mt-3 h-4 w-full"/></div>)}</div></div>;}

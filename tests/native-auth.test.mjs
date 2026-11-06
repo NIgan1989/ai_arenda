@@ -5,10 +5,10 @@ import {readFileSync,writeFileSync,mkdirSync} from 'node:fs';
 import {pathToFileURL} from 'node:url';
 import ts from 'typescript';
 mkdirSync('outputs/auth-test',{recursive:true});
-for(const name of ['domain','native-auth'])writeFileSync(`outputs/auth-test/${name}.js`,ts.transpileModule(readFileSync(`lib/${name}.ts`,'utf8'),{compilerOptions:{module:ts.ModuleKind.ES2022,target:ts.ScriptTarget.ES2022}}).outputText.replace("from './domain'","from './domain.js'"));
+for(const name of ['domain','request-body','native-auth'])writeFileSync(`outputs/auth-test/${name}.js`,ts.transpileModule(readFileSync(`lib/${name}.ts`,'utf8'),{compilerOptions:{module:ts.ModuleKind.ES2022,target:ts.ScriptTarget.ES2022}}).outputText.replace(/from '(\.\/[^']+)'/g,(_,name)=>`from '${name}.js'`));
 const {authRequest,sessionUser,normalizePhone,digest}=await import(pathToFileURL(process.cwd()+'/outputs/auth-test/native-auth.js'));
 function fixture(){
- const raw=new DatabaseSync(':memory:');raw.exec(readFileSync('drizzle/0000_boring_unus.sql','utf8'));raw.exec(readFileSync('drizzle/0007_native_auth.sql','utf8'));
+ const raw=new DatabaseSync(':memory:');raw.exec(readFileSync('drizzle/0000_boring_unus.sql','utf8'));raw.exec(readFileSync('drizzle/0007_native_auth.sql','utf8'));raw.exec(readFileSync('drizzle/0027_shared_mobile_api.sql','utf8'));
  const db={prepare(sql){let values=[];return {bind(...args){values=args;return this;},async first(){return raw.prepare(sql).get(...values)||null;},async run(){return {meta:{changes:raw.prepare(sql).run(...values).changes}};}};},async batch(statements){raw.exec('BEGIN');try{const results=[];for(const statement of statements)results.push(await statement.run());raw.exec('COMMIT');return results;}catch(error){raw.exec('ROLLBACK');throw error;}}};
  const call=(action,body={},headers={})=>authRequest(db,new Request('http://localhost/api/auth/'+action,{method:'POST',headers:{origin:'http://localhost','content-type':'application/json',...headers},body:JSON.stringify(body)}),action);
  return {db,raw,call};

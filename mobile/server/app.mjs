@@ -1,33 +1,49 @@
 import { createServer } from 'node:http';
 import { randomBytes, randomUUID, createHash, scrypt, timingSafeEqual } from 'node:crypto';
 import { promisify } from 'node:util';
+import {authRequest,sessionUser} from './generated/native-auth.js';
+import {clientConversation} from './generated/client-conversation.js';
+import {accountSessions} from './generated/account-sessions.js';
+import {reserveAIRequest} from './generated/ai.js';
+import {isolateTestConfig} from './generated/test-environment.js';
 import { RentalService } from './generated/service.js';
 import { Database } from './database.mjs';
 import { interval } from './generated/domain.js';
 import {isPlatformAdmin} from './generated/account.js';
+import {runAdministrator,checkAdministratorForUser} from './generated/administrator-runtime.js';
+import {readOperations,writeOperations,publicOperationsRequest} from './generated/operations-api.js';
+import {runOperationalTick} from './generated/background.js';
 const derive=promisify(scrypt), now=()=>Math.floor(Date.now()/1000);
 const hash=value=>createHash('sha256').update(value).digest('hex');
 class HttpError extends Error {constructor(message,status=400){super(message);this.status=status;}}
-export function createApp({filename=':memory:',origins=['http://localhost:8081','http://127.0.0.1:8081'],maintenance=true,adminIds=process.env.PLATFORM_ADMIN_IDS||''}={}) {
-  const db=new Database(filename), attempts=new Map(); let queue=Promise.resolve();
+export function createApp({filename=':memory:',origins=['http://localhost:8081','http://127.0.0.1:8081'],maintenance=true,adminIds=process.env.PLATFORM_ADMIN_IDS||'',operationsConfig={}}={}) {
+  const db=new Database(filename), attempts=new Map(),rawBodies=new WeakMap(),config=isolateTestConfig({...process.env,...operationsConfig}); let queue=Promise.resolve();
   const serial=task=>{const run=queue.then(task);queue=run.catch(()=>{});return run;};
   async function body(req) {
     if(!['POST','PUT'].includes(req.method)) return {};
     if(!req.headers['content-type']?.startsWith('application/json'))throw new HttpError('Нужен JSON.',415);
     let size=0;const chunks=[];
-    const max=new URL(req.url,'http://local').pathname==='/api/media'?510000:262144;
+    const pathname=new URL(req.url,'http://local').pathname,max=pathname==='/api/operations/evidence'?11500000:/^\/api\/operations\/(discussion\/send|evidence|calendar\/(source|import|preview)|import\/preview)$/.test(pathname)?700000:pathname==='/api/media'?510000:262144;
     for await(const chunk of req){size+=chunk.length;if(size>max)throw new HttpError('Слишком большой запрос.',413);chunks.push(chunk);}
-    try {const data=JSON.parse(Buffer.concat(chunks).toString('utf8'));if(!data||typeof data!=='object'||Array.isArray(data))throw 0;return data;}
+    try {const raw=Buffer.concat(chunks).toString('utf8');rawBodies.set(req,raw);const data=JSON.parse(raw);if(!data||typeof data!=='object'||Array.isArray(data))throw 0;return data;}
     catch {throw new HttpError('Некорректный запрос.');}
   }
+  function sharedRequest(req,path){return new Request('http://'+(req.headers.host||'local')+path,{method:req.method,headers:{...Object.fromEntries(Object.entries(req.headers).map(([name,value])=>[name,Array.isArray(value)?value.join(','):value||''])),'cf-connecting-ip':req.socket.remoteAddress||'local'},...(['POST','PUT'].includes(req.method)?{body:rawBodies.get(req)||'{}'}:{})});}
   async function authenticate(req) {
+    if(/^Bearer [a-f0-9]{64}$/.test(req.headers.authorization||'')||!req.headers.authorization&&req.headers.cookie){const user=await sessionUser(db,req.headers.cookie||null,req.headers.authorization);if(!user)throw new HttpError('Войдите в общий аккаунт.',401);return {id:user.userId,shared:true};}
     const bearer=req.headers.authorization?.match(/^Bearer ([A-Za-z0-9_-]{43})$/)?.[1];
     const session=bearer&&db.raw.prepare('SELECT user_id FROM sessions WHERE hash=? AND expires>?').get(hash(bearer),now());
     if(!session)throw new HttpError('Войдите в аккаунт, чтобы продолжить.',401);
     return {id:session.user_id,token:bearer};
   }
   async function route(req,path,input) {
+    const sharedAuth=path.match(/^\/api\/(mobile\/)?auth\/(register|login|logout|recover)$/);if(sharedAuth)return authRequest(db,sharedRequest(req,path),sharedAuth[2],sharedAuth[1]?'mobile':'web');
     if(path==='/health'&&req.method==='GET')return {ok:true,mode:'pilot',ai:false,payments:false};
+    if(path.startsWith('/api/hooks/')||path.startsWith('/api/calendar/feed/')){
+      const headers=Object.fromEntries(Object.entries(req.headers).map(([name,value])=>[name,Array.isArray(value)?value.join(','):value||'']));
+      const request=new Request('http://local'+path,{method:req.method,headers,...(req.method==='POST'?{body:rawBodies.get(req)||''}:{})});
+      const result=await publicOperationsRequest(db,request,path.replace(/^\/api\//,'').split('/'),config);if(result)return result;
+    }
     if(['/auth/register','/auth/login'].includes(path)&&req.method==='POST') {
       const login=typeof input.login==='string'?input.login.trim().toLowerCase():'';
       const password=typeof input.password==='string'?input.password:'';
@@ -55,16 +71,21 @@ export function createApp({filename=':memory:',origins=['http://localhost:8081',
     }
     const user=await authenticate(req), service=new RentalService(db,user.id);
     if(path==='/auth/logout'&&req.method==='POST'){db.raw.prepare('DELETE FROM sessions WHERE hash=?').run(hash(user.token));return {message:'Вы вышли из аккаунта.'};}
-    const accountUser={id:user.id,login:db.raw.prepare('SELECT login FROM accounts WHERE id=?').get(user.id).login};
+    const accountUser=user.shared?db.raw.prepare('SELECT id,name,phone FROM auth_accounts WHERE id=?').get(user.id):{id:user.id,login:db.raw.prepare('SELECT login FROM accounts WHERE id=?').get(user.id).login};
     if(path==='/api/access'&&req.method==='GET')return {profile:await service.profile(),user:accountUser};
     if(path==='/api/profile'&&req.method==='POST')return service.saveProfile(input);
     const activeRole=await service.authorizeWorkspace(req.headers['x-workspace-role'],path.replace(/^\/api\//,''),input);
+    if(path.startsWith('/api/operations/')){
+      const parts=path.replace('/api/operations/','').split('/');if(req.method==='GET')return readOperations(service,activeRole,parts,config,isPlatformAdmin(user.id,adminIds));if(req.method==='POST')return writeOperations(service,activeRole,parts,input,config,isPlatformAdmin(user.id,adminIds));
+    }
     const mediaPath=path.match(/^\/api\/media\/([a-zA-Z0-9-]+)$/);
-    if(mediaPath&&req.method==='GET')return service.readMedia(mediaPath[1]);
+    if(mediaPath&&req.method==='GET')return service.readMedia(mediaPath[1],activeRole);
     if(path==='/api/account'&&req.method==='GET')return {...await service.accountState(),platformAdmin:isPlatformAdmin(user.id,adminIds),modelConfigured:false};
     if(path==='/api/admin/users'&&req.method==='GET'){const url=new URL(req.url,'http://local');return service.listUsers(isPlatformAdmin(user.id,adminIds),{role:url.searchParams.get('role'),search:url.searchParams.get('search'),page:url.searchParams.get('page')||0});}
-    if(path==='/api/state'&&req.method==='GET')return {...await service.roleState(activeRole),user:accountUser};
-    if(path==='/api/catalog'&&req.method==='GET'){if(activeRole!=='guest')throw new HttpError('Каталог жилья доступен в роли гостя.',403);return service.publicCatalog();}
+    if(path==='/api/state'&&req.method==='GET'){await checkAdministratorForUser(db,user.id,activeRole);return {...await service.roleState(activeRole,{catalog:new URL(req.url,'http://local').searchParams.get('catalog')!=='0'}),testMode:config.TEST_DATA_ONLY==='1',user:accountUser};}
+    if(path==='/api/catalog'&&req.method==='GET'){if(activeRole!=='guest')throw new HttpError('Каталог жилья доступен в роли гостя.',403);return service.publicCatalog({syntheticPreview:config.TEST_DATA_ONLY==='1'});}
+    if(path==='/api/sessions'&&user.shared)return accountSessions(service,sharedRequest(req,path),req.method==='POST'?input:undefined);
+    if(path==='/api/conversation'&&user.shared&&['GET','PUT'].includes(req.method))return clientConversation(service,activeRole,req.method==='PUT'?input:undefined);
     if(path==='/api/conversation'&&req.method==='GET')return JSON.parse(db.raw.prepare('SELECT body FROM workspace_conversations WHERE user_id=? AND role=?').get(user.id,activeRole)?.body||JSON.stringify({messages:[],flow:null,actor:activeRole}));
     if(path==='/api/conversation'&&req.method==='PUT'){
       if(!Array.isArray(input.messages)||input.messages.length>150||input.messages.some(m=>!m||typeof m.id!=='string'||!['assistant','user'].includes(m.sender)||typeof m.text!=='string'))throw new HttpError('Некорректная история.');
@@ -74,6 +95,8 @@ export function createApp({filename=':memory:',origins=['http://localhost:8081',
       return {ok:true};
     }
     if(req.method!=='POST')throw new HttpError('Не найдено.',404);
+    if(path==='/api/administrator/check'){await checkAdministratorForUser(db,user.id,activeRole);return {message:'Цепочки действий проверены.'};}
+    if(path==='/api/administrator/issues')return service.resolveAdministratorIssue(activeRole,input);
     if(path==='/api/media')return service.uploadMedia(input);
     if(mediaPath&&input.action==='remove')return service.deleteMedia(mediaPath[1]);
     if(path==='/api/profile/edit')return service.editProfile(input);
@@ -96,7 +119,7 @@ export function createApp({filename=':memory:',origins=['http://localhost:8081',
       return service.createJob(input);
     }
     if(path==='/api/demo')return service.demo();
-    if(path==='/api/chat')return service.chat({...input,role:activeRole});
+    if(path==='/api/chat'){if(config.OPENAI_API_KEY&&config.OPENAI_MODEL)await reserveAIRequest(db,user.id);return service.chat({...input,role:activeRole},config);}
     const change=path.match(/^\/api\/bookings\/([a-zA-Z0-9-]+)\/(change-quote|changes)(?:\/([a-zA-Z0-9-]+))?$/);
     if(change)return change[3]?service.decideBookingChange(change[1],change[3],activeRole,input):change[2]==='change-quote'?service.bookingChangeQuote(change[1],activeRole,input):service.proposeBookingChange(change[1],activeRole,input);
     const propertyAction=path.match(/^\/api\/properties\/([a-zA-Z0-9-]+)\/(policy|readiness)$/);
@@ -117,7 +140,7 @@ export function createApp({filename=':memory:',origins=['http://localhost:8081',
     db.raw.exec('BEGIN IMMEDIATE');db.transactionDepth++;
     try{
       const result=await route(req,path,input);
-      db.raw.prepare('INSERT INTO command_receipts VALUES (?,?,?,?)').run(user.id,key,digest,JSON.stringify(result));
+      if(!result?.signOut)db.raw.prepare('INSERT INTO command_receipts VALUES (?,?,?,?)').run(user.id,key,digest,JSON.stringify(result));
       db.raw.exec('COMMIT');return result;
     }catch(error){db.raw.exec('ROLLBACK');throw error;}
     finally{db.transactionDepth--;}
@@ -131,10 +154,13 @@ export function createApp({filename=':memory:',origins=['http://localhost:8081',
       if(origin&&!origins.includes(origin))throw new HttpError('Источник не разрешён.',403);
       if(req.method==='OPTIONS'){res.writeHead(204,headers);res.end();return;}
       const input=await body(req), path=new URL(req.url,'http://localhost').pathname;
-      reply(200,await serial(()=>execute(req,path,input)));
+      const result=await serial(()=>execute(req,path,input));
+      if(result instanceof Response){res.writeHead(result.status,{...headers,...Object.fromEntries(result.headers)});res.end(await result.text());}else reply(200,result);
     }catch(error){
+      if(/account_erased/.test(error.message)){reply(410,{error:'Аккаунт удалён. Обновите вход.'});return;}
       if(/checkout_required|property_not_vacant|property_cleaning_busy/.test(error.message)){reply(409,{error:'Квартира не освобождена или другая уборка ещё не принята.'});return;}
-      const overlap=/booking_overlap|cleaner_overlap/.test(error.message);
+      if(/pilot_/.test(error.message)){reply(409,{error:'Требуется актуальная проверка участника или телефона. Откройте «Управление → Допуск».'});return;}
+      const overlap=/booking_overlap|cleaner_overlap|external_calendar_overlap|external_calendar_stale/.test(error.message);
       const status=overlap?409:Number(error.status)||500;
       reply(status,{error:overlap?'Время уже занято. Выберите другой интервал.':status>=500?'Сервер не подтвердил действие. Попробуйте позже.':error.message});
       if(status>=500)console.error('Request failed:',error.name,error.code||'internal');
@@ -143,7 +169,7 @@ export function createApp({filename=':memory:',origins=['http://localhost:8081',
   server.requestTimeout=15000;server.headersTimeout=10000;
   const timer=maintenance?setInterval(()=>serial(async()=>{
     db.raw.prepare('DELETE FROM sessions WHERE expires<=?').run(now());
-    await new RentalService(db,'system').maintenance();
+    await runOperationalTick(db,config);
   }).catch(e=>console.error('Maintenance failed:',e.name)),60000):null;
   timer?.unref();
   return {server,db,async close(){if(timer)clearInterval(timer);server.closeAllConnections();await new Promise(resolve=>server.close(resolve));await queue;db.close();}};

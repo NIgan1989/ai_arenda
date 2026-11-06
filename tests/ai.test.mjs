@@ -15,10 +15,10 @@ test('model input excludes private fields and bounds role context/history; respo
  globalThis.fetch=async(url,request)=>{called++;assert.equal(url,'https://api.openai.com/v1/responses');const body=JSON.parse(request.body);assert.equal(body.store,false);assert.equal(body.max_output_tokens,1400);assert.equal(body.input.length,10);assert.equal(body.reasoning.effort,'none');const input=JSON.stringify(body.input);for(const text of [contact,phone,secret])assert.ok(!input.includes(text));return Response.json({output:[{type:'message',content:[{type:'output_text',text:'Могу помочь с выбором района.'}]}]});};
  try{const answer=await generateAnswer({OPENAI_API_KEY:'fake-test-key',OPENAI_MODEL:'gpt-6-luna'},contact+' '+phone+' '+secret,'guest',Array.from({length:12},()=>({sender:'user',body:phone})),'Scenario',context);assert.equal(answer.mode,'model');assert.equal(answer.text,'Могу помочь с выбором района.');assert.equal(called,1);}finally{globalThis.fetch=fetch;}
 });
-test('missing configuration makes no model request; billing/auth/rate errors are explicit',async()=>{
+test('missing configuration makes no model request; billing/auth/rate errors are classified without provider details',async()=>{
  const fetch=globalThis.fetch;let called=0;
  globalThis.fetch=async()=>{called++;return Response.json({error:{code:'insufficient_quota'}},{status:429});};
- try{assert.equal((await generateAnswer({},'Hi','guest',[],'Fallback')).mode,'scenario');assert.equal(called,0);const config={OPENAI_API_KEY:'fake',OPENAI_MODEL:'gpt-6-luna'};const billing=await generateAnswer(config,'Hi','guest',[],'Fallback');assert.equal(billing.errorCode,'billing');assert.equal(billing.mode,'fallback');assert.match(billing.text,/баланса/);
+ try{assert.equal((await generateAnswer({},'Hi','guest',[],'Fallback')).mode,'scenario');assert.equal(called,0);const config={OPENAI_API_KEY:'fake',OPENAI_MODEL:'gpt-6-luna'};const billing=await generateAnswer(config,'Hi','guest',[],'Fallback');assert.equal(billing.errorCode,'billing');assert.equal(billing.mode,'fallback');assert.match(billing.text,/временно ограничен/);assert.doesNotMatch(billing.text,/OpenAI|API-ключ|Platform/i);
  globalThis.fetch=async()=>Response.json({error:{code:'invalid_api_key'}},{status:401});assert.equal((await generateAnswer(config,'Hi','guest',[],'Fallback')).errorCode,'authentication');
  globalThis.fetch=async()=>Response.json({error:{code:'rate_limit_exceeded'}},{status:429});assert.equal((await generateAnswer(config,'Hi','guest',[],'Fallback')).errorCode,'rate_limit');
  }finally{globalThis.fetch=fetch;}
@@ -27,4 +27,10 @@ test('persistent account/global request limits cannot be bypassed by switching r
  const raw=new DatabaseSync(':memory:');raw.exec(readFileSync('drizzle/0007_native_auth.sql','utf8'));
  const db={prepare(sql){let args=[];return {bind(...values){args=values;return this;},async first(){return raw.prepare(sql).get(...args)||null;}};}};
  try{for(let i=0;i<30;i++)await reserveAIRequest(db,'one-account');await assert.rejects(reserveAIRequest(db,'one-account'),e=>e.status===429);raw.prepare("UPDATE auth_attempt_limits SET expires_at=0 WHERE key='ai:user:one-account'").run();await reserveAIRequest(db,'one-account');raw.prepare("UPDATE auth_attempt_limits SET attempts=200 WHERE key='ai:global'").run();await assert.rejects(reserveAIRequest(db,'another-account'),e=>e.status===429);}finally{raw.close();}
+});
+
+test('model prepares one strict command and cannot replace the server confirmation result',async()=>{
+ const original=globalThis.fetch;let prepared=0;
+ globalThis.fetch=async(_url,request)=>{const body=JSON.parse(request.body);assert.equal(body.parallel_tool_calls,false);assert.equal(body.tools[0].strict,true);assert.equal(body.tools[0].parameters.additionalProperties,false);return Response.json({output:[{type:'message',content:[{type:'output_text',text:'Already executed!'}]},{type:'function_call',name:'prepare_administrator_action',arguments:JSON.stringify({action:'report_issue',bookingId:'own-booking',note:'Please review'}),call_id:'fixture'}]});};
+ try{const result=await generateAnswer({OPENAI_API_KEY:'fixture',OPENAI_MODEL:'gpt-6-luna'},'Передай обращение','guest',[],'fallback',{},async(args,key)=>{prepared++;assert.equal(args.bookingId,'own-booking');assert.equal(key,'fixture');return {text:'Поручение подготовлено. Подтвердите условия.',commands:[{id:'draft'}]};});assert.equal(prepared,1);assert.match(result.text,/Подтвердите/);assert.ok(!result.text.includes('executed'));assert.equal(result.commands[0].id,'draft');}finally{globalThis.fetch=original;}
 });

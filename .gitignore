@@ -65,3 +65,8 @@ next-env.d.ts
 # Local server credentials and administrator configuration.
 .dev.vars*
 .sites-local.wrangler.json
+
+# Local evidence and internal project notes.
+/docs/design-audit/
+/docs/design-research/current-inventory.json
+/docs/IMPLEMENTATION_STATE.md

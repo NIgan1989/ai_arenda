@@ -1,0 +1,25 @@
+import {test} from 'node:test';import assert from 'node:assert/strict';import {createApp} from '../server/app.mjs';
+test('HTTP assistant ignores old opt-out, obeys server isolation and retains request limits',async()=>{
+ const original=globalThis.fetch;let modelCalls=0;
+ globalThis.fetch=async(url,options)=>{if(String(url)==='https://api.openai.com/v1/responses'){modelCalls++;return Response.json({usage:{input_tokens:40,output_tokens:12,total_tokens:52},output:[{type:'message',content:[{type:'output_text',text:'Помогу с условиями проживания.'}]}]});}return original(url,options);};
+ const app=createApp({maintenance:false,operationsConfig:{OPENAI_API_KEY:'synthetic-key',OPENAI_MODEL:'fixture-model',TEST_DATA_ONLY:'0'}});await new Promise(done=>app.server.listen(0,'127.0.0.1',done));const base='http://127.0.0.1:'+app.server.address().port;
+ async function call(path,body,token){const r=await fetch(base+path,{method:'POST',headers:{'Content-Type':'application/json',...(token?{Authorization:'Bearer '+token,'X-Workspace-Role':'guest'}:{})},body:JSON.stringify(body)});return {status:r.status,value:await r.json()};}
+ try{const user=(await call('/auth/register',{login:'automatic_guest',password:'fixture-password'})).value;await call('/api/profile',{name:'Fixture',roles:['guest'],city:'Павлодар',contact:'fixture'},user.token);
+  const denied=await call('/api/chat',{text:'Привет',aiConsent:true},user.token);assert.equal(denied.value.mode,'scenario');assert.equal(modelCalls,0);
+  const permissionResponse=await fetch(base+'/api/operations/ai-data-permission',{headers:{Authorization:'Bearer '+user.token,'X-Workspace-Role':'guest'}});const {permission}=await permissionResponse.json();
+  assert.equal((await call('/api/operations/ai-data-permission',{allowed:true,policyVersion:permission.policyVersion,expectedVersion:permission.version},user.token)).status,200);
+  for(const extra of [{aiConsent:false},{}]){const r=await call('/api/chat',{text:'Какие условия проживания?',...extra},user.token);assert.equal(r.status,200);assert.equal(r.value.mode,'model');}assert.equal(modelCalls,2);
+  const historyResponse=await fetch(base+'/api/operations/administrator/conversation',{headers:{Authorization:'Bearer '+user.token,'X-Workspace-Role':'guest'}});assert.equal(historyResponse.status,200);const history=await historyResponse.json();assert.equal(history.messages.length,6);assert.equal(modelCalls,2);
+  const ownerHistory=await fetch(base+'/api/operations/administrator/conversation',{headers:{Authorization:'Bearer '+user.token,'X-Workspace-Role':'owner'}});assert.equal(ownerHistory.status,403);
+  const older=await call('/api/operations/administrator/history',{before:history.messages[0].id},user.token);assert.equal(older.status,200);assert.deepEqual(older.value.messages,[]);assert.equal(modelCalls,2);
+  assert.equal((await call('/api/assistant-settings',{mode:'reactive'},user.token)).status,410);
+  const stale=await call('/api/operations/ai-data-permission',{allowed:false,policyVersion:permission.policyVersion,expectedVersion:0},user.token);assert.equal(stale.status,409);
+  const revoked=await call('/api/operations/ai-data-permission',{allowed:false,policyVersion:permission.policyVersion,expectedVersion:1},user.token);assert.equal(revoked.status,200);
+  const local=await call('/api/chat',{text:'Привет',aiConsent:true},user.token);assert.equal(local.value.mode,'scenario');assert.equal(modelCalls,2);
+  const searched=await call('/api/chat',{text:'Найди квартиру в Павлодаре'},user.token);assert.equal(searched.status,200);assert.equal(searched.value.search.total,0);assert.equal(searched.value.search.availabilityChecked,false);assert.equal(modelCalls,2);
+  app.db.raw.prepare("UPDATE auth_attempt_limits SET attempts=30 WHERE key LIKE 'ai:user:%'").run();const limited=await call('/api/chat',{text:'Помоги'},user.token);assert.equal(limited.status,429);assert.equal(modelCalls,2);assert.doesNotMatch(limited.value.error,/OpenAI|API-ключ|Platform/);
+ }finally{await app.close();globalThis.fetch=original;}
+ const isolated=createApp({maintenance:false,operationsConfig:{OPENAI_API_KEY:'synthetic-key',OPENAI_MODEL:'fixture-model',TEST_DATA_ONLY:'1',TEST_AI_ENABLED:'0'}});await new Promise(done=>isolated.server.listen(0,'127.0.0.1',done));const isolatedBase='http://127.0.0.1:'+isolated.server.address().port;
+ async function isolatedCall(path,body,token){const r=await original(isolatedBase+path,{method:'POST',headers:{'Content-Type':'application/json',...(token?{Authorization:'Bearer '+token,'X-Workspace-Role':'guest'}:{})},body:JSON.stringify(body)});return r.json();}
+ try{const user=await isolatedCall('/auth/register',{login:'isolated_guest',password:'fixture-password'});await isolatedCall('/api/profile',{name:'Fixture',roles:['guest'],city:'Павлодар',contact:'fixture'},user.token);const reply=await isolatedCall('/api/chat',{text:'Привет',aiConsent:true},user.token);assert.equal(reply.mode,'scenario');assert.equal(modelCalls,2);}finally{await isolated.close();}
+});

@@ -1,0 +1,26 @@
+import {test} from 'node:test';import assert from 'node:assert/strict';import {mkdtempSync,mkdirSync,writeFileSync} from 'node:fs';import {resolve,join} from 'node:path';
+import {fixture,load,now,TestDatabase} from './helpers/platform.mjs';
+import {checkRelease} from '../scripts/check-release.mjs';import {healthcheck} from '../scripts/healthcheck.mjs';
+const {buildRuntimeHealth}=await load('runtime-health');
+test('runtime health reports absent checks honestly and fresh checks as healthy',async()=>{
+ const db=new TestDatabase();try{let result=await buildRuntimeHealth(db);assert.equal(result.ok,false);assert.equal(result.checks.scheduler.ageSeconds,null);assert.equal(result.checks.backup.fresh,false);db.raw.prepare("INSERT INTO administrator_runs(id,last_success,checked_at) VALUES ('scheduler',?,?)").run(now(),now());db.raw.prepare("INSERT INTO background_jobs(id,kind,scope,status,available_at,last_completed,updated_at) VALUES ('local-backup','local-backup','system','done',?,?,?)").run(now(),now(),now());result=await buildRuntimeHealth(db);assert.equal(result.ok,true);assert.equal(result.status,'healthy');db.raw.prepare("UPDATE administrator_runs SET last_success=?").run(now()-181);assert.equal((await buildRuntimeHealth(db)).ok,false);}finally{db.close();}
+ const broken=await buildRuntimeHealth({prepare(){throw Error('secret SQL failure');}});assert.equal(broken.status,'database_not_ready');assert.ok(!JSON.stringify(broken).includes('secret SQL'));
+});
+test('health counters identify overdue work and stale sources without returning private data',async()=>{
+ const f=await fixture();try{
+  f.db.raw.prepare("INSERT INTO administrator_runs(id,last_success,checked_at) VALUES ('scheduler',?,?)").run(now(),now());f.db.raw.prepare("INSERT INTO background_jobs(id,kind,scope,status,available_at,last_completed,updated_at) VALUES ('local-backup','local-backup','system','done',?,?,?)").run(now(),now(),now());
+  f.db.raw.prepare("INSERT INTO background_jobs(id,kind,scope,status,available_at,last_error,updated_at) VALUES ('PRIVATE-JOB','owner','PRIVATE-USER','dead',?,'PRIVATE-ERROR',?)").run(now()-600,now());f.db.raw.prepare('INSERT INTO calendar_sources(id,property_id,owner_id,label,url,last_success,last_error,created_at) VALUES (?,?,?,?,?,?,?,?)').run('PRIVATE-SOURCE',f.property,'owner','PRIVATE-LABEL','https://calendar.example.test/PRIVATE-TOKEN',now()-4000,'PRIVATE-CALENDAR-ERROR',now());
+  const result=await buildRuntimeHealth(f.db,{ADMINISTRATOR_RUNNER_SECRET:'PRIVATE-SECRET-'.repeat(4),ACCESS_ENCRYPTION_KEY:'PRIVATE-ENCRYPTION-'.repeat(4),PLATFORM_ADMIN_IDS:'PRIVATE-ADMIN',SITE_PUBLIC_URL:'https://rental.example.test/PRIVATE-URL'});assert.equal(result.checks.queue.dead,1);assert.equal(result.checks.calendars.stale,1);assert.equal(result.ok,false);const encoded=JSON.stringify(result);for(const word of ['PRIVATE-','owner','Test apartment'])assert.ok(!encoded.includes(word));
+ }finally{f.db.close();}
+});
+test('release inspection prints names and flags only, with explicit production requirements',()=>{
+ const root=mkdtempSync(resolve('outputs/release-test-'));mkdirSync(join(root,'.openai'));writeFileSync(join(root,'.openai/hosting.json'),JSON.stringify({d1:'DB'}));const env={ADMINISTRATOR_RUNNER_SECRET:'SECRET-'.repeat(8),ACCESS_ENCRYPTION_KEY:'ENCRYPTION-'.repeat(8),PLATFORM_ADMIN_IDS:'PRIVATE-ADMIN'};
+ assert.equal(checkRelease({root,env}).ok,true);let result=checkRelease({root,env,mode:'production'});assert.equal(result.ok,false);assert.ok(result.missing.includes('scheduled_trigger'));assert.ok(result.missing.includes('BACKUP_RECOVERY_VERIFIED'));assert.ok(!JSON.stringify(result).includes('SECRET-'));
+ mkdirSync(join(root,'dist/server'),{recursive:true});mkdirSync(join(root,'dist/client'),{recursive:true});writeFileSync(join(root,'dist/server/wrangler.json'),JSON.stringify({triggers:{crons:['* * * * *']}}));result=checkRelease({root,env:{...env,SITE_PUBLIC_URL:'https://rental.example.test',BACKUP_RECOVERY_VERIFIED:'yes'},mode:'production'});assert.equal(result.ok,true);
+ assert.ok(checkRelease({root,env:{...env,TELEGRAM_BOT_TOKEN:'PRIVATE-TOKEN'}}).missing.includes('TELEGRAM_WEBHOOK_SECRET'));
+});
+test('healthcheck sends secret in the header, refuses HTTP remote and sanitises unexpected response data',async()=>{
+ let calls=0;const secret='fixture-monitor-secret-'.repeat(3),fetcher=async(url,options)=>{calls++;assert.equal(String(url),'https://rental.example.test/api/internal/health');assert.equal(options.headers.Authorization,'Bearer '+secret);assert.equal(options.redirect,'error');return Response.json({ok:true,status:'healthy',serverTime:now(),secret:'SHOULD-NOT-PRINT',checks:{private:'HIDDEN'}});};
+ const result=await healthcheck({baseUrl:'https://rental.example.test',secret,fetcher});assert.equal(result.ok,true);assert.ok(!JSON.stringify(result).includes('SHOULD'));assert.ok(!JSON.stringify(result).includes('HIDDEN'));await assert.rejects(healthcheck({baseUrl:'http://rental.example.test',secret,fetcher}));assert.equal(calls,1);
+ const error=await healthcheck({baseUrl:'https://rental.example.test',secret,fetcher:async()=>Response.json({error:'PRIVATE-ERROR'},{status:503})});assert.equal(error.ok,false);assert.ok(!JSON.stringify(error).includes('PRIVATE'));
+});

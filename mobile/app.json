@@ -23,7 +23,7 @@
         "expo-image-picker",
         {
           "photosPermission": "Разрешите выбрать фотографии жилья и фото профиля.",
-          "cameraPermission": false,
+          "cameraPermission": "Разрешите снять фото объекта или профиля по вашему запросу.",
           "microphonePermission": false
         }
       ]

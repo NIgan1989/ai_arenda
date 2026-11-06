@@ -40,7 +40,7 @@ const buttonVariants = cva(
 
 function Button({
   className,
-  variant = "default",
+  variant,
   size = "default",
   asChild = false,
   ...props
@@ -49,13 +49,14 @@ function Button({
     asChild?: boolean
   }) {
   const Comp = asChild ? Slot.Root : "button"
+  const resolvedVariant = variant ?? (className?.includes("secondary") ? "outline" : "default")
 
   return (
     <Comp
       data-slot="button"
-      data-variant={variant}
+      data-variant={resolvedVariant}
       data-size={size}
-      className={cn(buttonVariants({ variant, size, className }))}
+      className={cn(buttonVariants({ variant: resolvedVariant, size, className }))}
       {...props}
     />
   )

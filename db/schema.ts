@@ -1,3 +1,6 @@
+// Legacy ORM declarations retained for source compatibility. They are not the complete database.
+// Authoritative schema: append-only drizzle/*.sql, verified in db/current-schema.sql.
+// Drizzle Kit generation/push is deliberately disabled; see docs/SCHEMA_WORKFLOW.md.
 import { sqliteTable, text, integer, uniqueIndex } from 'drizzle-orm/sqlite-core';
 
 export const authAccounts=sqliteTable('auth_accounts',{

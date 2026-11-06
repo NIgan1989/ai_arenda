@@ -1,26 +1,27 @@
 import { test, before } from 'node:test';
 import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
-import { readFileSync, mkdirSync, writeFileSync } from 'node:fs';
+import { readFileSync, mkdirSync, writeFileSync, readdirSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import ts from 'typescript';
 import {photo} from './fixtures/photo.mjs';
 
 // Exercise the real SQL and service against SQLite with D1-compatible batches.
 mkdirSync('outputs/test-lib',{recursive:true});
-for(const name of ['domain','ai','operations','assistant','access','rental-policy','account','listings','approvals','activity','service']){
+for(const name of readdirSync('lib').filter(f=>f.endsWith('.ts')&&!f.endsWith('.d.ts')).map(f=>f.slice(0,-3))){
   const source=readFileSync(`lib/${name}.ts`,'utf8');
   const compiled=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.ES2022,target:ts.ScriptTarget.ES2022}}).outputText.replace("from './domain'","from './domain.js'").replace("from './ai'","from './ai.js'").replace("from './operations'","from './operations.js'").replace("from './assistant'", "from './assistant.js'").replace("from './access'", "from './access.js'").replace("from './rental-policy'","from './rental-policy.js'").replace("from './account'","from './account.js'").replace("from './listings'","from './listings.js'").replace("from './approvals'","from './approvals.js'");
-  writeFileSync(`outputs/test-lib/${name}.js`,compiled);
+  writeFileSync(`outputs/test-lib/${name}.js`,compiled.replace(/from '(\.\/[^']+)'/g,(_,name)=>`from '${name.endsWith('.js')?name:name+'.js'}'`));
 }
 const {RentalService}=await import(pathToFileURL(process.cwd()+'/outputs/test-lib/service.js'));
+const {saveAIDataPermission,AI_DATA_POLICY_VERSION}=await import(pathToFileURL(process.cwd()+'/outputs/test-lib/ai-data-permission.js'));
 const {interval,quote}=await import(pathToFileURL(process.cwd()+'/outputs/test-lib/domain.js'));
 const {operationOverview}=await import(pathToFileURL(process.cwd()+'/outputs/test-lib/operations.js'));
 const {assistantBrief,defaultAssistantSettings}=await import(pathToFileURL(process.cwd()+'/outputs/test-lib/assistant.js'));
 const {activity,duration}=await import(pathToFileURL(process.cwd()+'/outputs/test-lib/activity.js'));
 const {rentalPrice,defaultPolicy}=await import(pathToFileURL(process.cwd()+'/outputs/test-lib/rental-policy.js'));
 class D1 {
-  constructor(){this.db=new DatabaseSync(':memory:');this.db.exec('PRAGMA foreign_keys=ON');for(const migration of ['0000_boring_unus','0001_rental_operations','0002_assistant_preferences','0003_owner_calendar','0004_account_settings','0005_activity_approvals','0006_listing_profiles'])this.db.exec(readFileSync(`drizzle/${migration}.sql`,'utf8'));}
+  constructor(){this.db=new DatabaseSync(':memory:');this.db.exec('PRAGMA foreign_keys=ON');for(const file of readdirSync('drizzle').filter(f=>/^\d+.*\.sql$/.test(f)).sort())this.db.exec(readFileSync('drizzle/'+file,'utf8'));}
   prepare(sql){const db=this.db;let args=[];return {bind(...values){args=values;return this;},async first(){return db.prepare(sql).get(...args)||null;},async all(){return {results:db.prepare(sql).all(...args)};},async run(){const r=db.prepare(sql).run(...args);return {meta:{changes:Number(r.changes)}};}};}
   async batch(statements){this.db.exec('BEGIN');try{const result=[];for(const q of statements)result.push(await q.run());this.db.exec('COMMIT');return result;}catch(e){this.db.exec('ROLLBACK');throw e;}}
 }
@@ -289,7 +290,8 @@ test('assignment checks permissions and cannot be overwritten',async()=>{
 });
 test('overlapping assignments are rejected in SQL',async()=>{
   const j=(await owner.state()).jobs[0];
-  const otherJob=(await owner.createJob({propertyId:property,start:iso(j.start*1000),end:iso(j.end*1000),fee:2000,description:'Second job'})).id;
+  const secondProperty=(await owner.createProperty({title:'Second assignment property',city:'Павлодар',district:'Центр',address:'PRIVATE SECOND ADDRESS',description:'Test',price:10000,rooms:1,capacity:2,cleaningMinutes:90})).id;
+  const otherJob=(await owner.createJob({propertyId:secondProperty,start:iso(j.start*1000),end:iso(j.end*1000),fee:2000,description:'Second job'})).id;
   await worker.jobAction(otherJob,{action:'apply'});const a=(await owner.state()).applications.find(a=>a.job_id===otherJob);
   await assert.rejects(owner.jobAction(otherJob,{action:'assign',applicationId:a.id}),/cleaner_overlap/);
   assert.equal((await owner.state()).jobs.find(j=>j.id===otherJob).assigned_to,null);
@@ -297,6 +299,7 @@ test('overlapping assignments are rejected in SQL',async()=>{
 test('report requires started work and completed checklist; owner accepts result',async()=>{
   await assert.rejects(worker.jobAction(job,{action:'start'}),/не раньше/);
   await owner.query('UPDATE bookings SET start=?,end=?,occupied_until=? WHERE id=?',Math.floor(Date.now()/1000)-600,Math.floor(Date.now()/1000)+3600,Math.floor(Date.now()/1000)+9000,booking).run();
+  await owner.query('UPDATE cleaning_jobs SET start=?,end=? WHERE id=?',Math.floor(Date.now()/1000)+3600,Math.floor(Date.now()/1000)+9000,job).run();
   await owner.bookingAction(booking,{action:'checkout'});
   await worker.jobAction(job,{action:'start'});
   await assert.rejects(worker.jobAction(job,{action:'submit',checklist:[true],report:'Test'}),/пункты/);
@@ -425,14 +428,15 @@ test('additional role onboarding preserves profiles and cannot replace another a
  }finally{f.database.db.close();}
 });
 
-test('chat requires an enrolled role and explicit consent before any external model request',async()=>{
+test('chat uses server configuration regardless of legacy consent while enforcing enrolled roles',async()=>{
  const f=await rentalFixture(),originalFetch=globalThis.fetch;let calls=0;
  globalThis.fetch=async()=>{calls++;return Response.json({output:[{type:'message',content:[{type:'output_text',text:'Проверенный тестовый ответ.'}]}]});};
  try{
   const config={OPENAI_API_KEY:'synthetic-test-key',OPENAI_MODEL:'gpt-6-luna'};
   await assert.rejects(f.g.chat({role:'owner',text:'Покажи чужие квартиры',aiConsent:true},config),e=>e.status===403);assert.equal(calls,0);
-  const scenario=await f.g.chat({role:'guest',text:'Привет',aiConsent:false},config);assert.equal(scenario.mode,'scenario');assert.equal(calls,0);
-  const model=await f.g.chat({role:'guest',text:'Как снять жильё?',aiConsent:true},config);assert.equal(model.mode,'model');assert.equal(calls,1);assert.equal(model.text,'Проверенный тестовый ответ.');
+  await saveAIDataPermission(f.g,{allowed:true,policyVersion:AI_DATA_POLICY_VERSION,expectedVersion:0});
+  const automatic=await f.g.chat({role:'guest',text:'Привет',aiConsent:false},config);assert.equal(automatic.mode,'model');assert.equal(calls,1);
+  const model=await f.g.chat({role:'guest',text:'Как снять жильё?'},config);assert.equal(model.mode,'model');assert.equal(calls,2);assert.equal(model.text,'Проверенный тестовый ответ.');
   assert.equal((await f.g.roleState('guest')).messages.length,4);assert.equal((await f.o.roleState('owner')).messages.length,0);
  }finally{globalThis.fetch=originalFetch;f.database.db.close();}
 });
@@ -491,7 +495,7 @@ async function occupiedFixture(){
   const b=await f.g.createBooking({propertyId:f.propertyId,start:iso(start),end:iso(start+86400000),guests:1,requestKey:'stay',acceptTerms:true});
   await f.o.bookingAction(b.id,{action:'confirm',cleaningFee:3000});
   const t=Math.floor(Date.now()/1000);f.database.db.prepare('UPDATE bookings SET start=?,end=?,occupied_until=? WHERE id=?').run(t-600,t+3600,t+9000,b.id);
-  const j=(await f.o.state()).jobs[0];await f.w.jobAction(j.id,{action:'apply'});const a=(await f.o.state()).applications[0];await f.o.jobAction(j.id,{action:'assign',applicationId:a.id});
+  const j=(await f.o.state()).jobs[0];f.database.db.prepare('UPDATE cleaning_jobs SET start=?,end=? WHERE id=?').run(t+3600,t+9000,j.id);await f.w.jobAction(j.id,{action:'apply'});const a=(await f.o.state()).applications[0];await f.o.jobAction(j.id,{action:'assign',applicationId:a.id});
   return {...f,b,j,t};
 }
 test('check-in requires ready premises, owner-verified payment and the agreed deposit',async()=>{
@@ -567,19 +571,17 @@ test('workspace command permissions cannot be expanded by body role or claimed o
   }finally{f.database.db.close();}
 });
 
-test('assistant preferences persist per role and reject stale or invalid settings',async()=>{
-  const f=await rentalFixture();try{
-    const settings={...defaultAssistantSettings,expectedVersion:0,mode:'important',leadMinutes:120,repeatMinutes:60,quietEnabled:true};
-    await f.o.saveAssistantSettings('owner',settings);
-    const ownerState=await f.o.roleState('owner'),guestState=await f.g.roleState('guest');
-    assert.equal(ownerState.assistantSettings.mode,'important');assert.equal(ownerState.assistantSettings.version,1);assert.equal(guestState.assistantSettings.mode,'proactive');
-    await assert.rejects(f.o.saveAssistantSettings('owner',settings),e=>e.status===409);
-    await assert.rejects(f.g.saveAssistantSettings('owner',settings),e=>e.status===403);
-    await assert.rejects(f.o.saveAssistantSettings('owner',{...settings,expectedVersion:1,quietStart:'25:00'}),/ЧЧ:ММ/);
-    await assert.rejects(f.o.saveAssistantSettings('owner',{...settings,expectedVersion:1,leadMinutes:0}),/Заблаговременность/);
-    assert.equal(f.database.db.prepare('SELECT COUNT(*) n FROM bookings').get().n,0);
-  }finally{f.database.db.close();}
+test('assistant policy is server-owned and ignores legacy per-role preferences',async()=>{
+ const f=await rentalFixture();try{
+  f.database.db.prepare('INSERT INTO assistant_preferences VALUES (?,?,?,?,?)').run('owner','owner',JSON.stringify({mode:'reactive',leadMinutes:1440,quietEnabled:true}),7,1);
+  const ownerState=await f.o.roleState('owner'),guestState=await f.g.roleState('guest');
+  assert.deepEqual(ownerState.assistantSettings,defaultAssistantSettings);assert.deepEqual(guestState.assistantSettings,defaultAssistantSettings);
+  await assert.rejects(f.o.saveAssistantSettings('owner',{mode:'reactive'}),e=>e.status===410);
+  await assert.rejects(f.g.saveAssistantSettings('owner',{}),e=>e.status===403);
+  assert.equal(f.database.db.prepare('SELECT COUNT(*) n FROM bookings').get().n,0);
+ }finally{f.database.db.close();}
 });
+
 test('assistant quiet hours span midnight, with explicit urgent exceptions and a reactive mode',()=>{
   const t=Date.parse('2026-11-01T23:00:00+05:00')/1000,settings={...defaultAssistantSettings,quietEnabled:true};
   const ordinary={profile:{id:'owner'},ownProperties:[],bookings:[],jobs:[]};
@@ -604,7 +606,7 @@ test('assistant planning does not expose another role tasks and settings do not 
   const f=await rentalFixture();try{
     await f.o.createJob({propertyId:f.propertyId,start:iso(start),end:iso(start+3600000),fee:3000,description:'Owner only'});
     const state=await f.g.roleState('guest');assert.equal(state.assistantBrief.tasks.some(t=>t.kind==='job'),false);
-    await f.g.saveAssistantSettings('guest',{...defaultAssistantSettings,expectedVersion:0,role:'owner',allowPayments:true});
+    await assert.rejects(f.g.saveAssistantSettings('guest',{role:'owner',allowPayments:true}),e=>e.status===410);
     const saved=await f.g.roleState('guest');assert.equal(saved.assistantSettings.allowPayments,undefined);
     await assert.rejects(f.g.authorizeWorkspace('guest','bookings/other',{action:'paid'}),e=>e.status===403);
   }finally{f.database.db.close();}

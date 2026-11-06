@@ -1,0 +1,11 @@
+'use client';
+import {useState,type FormEvent} from 'react';
+import {Input} from './ui/input';
+import {NativeSelect} from './ui/native-select';
+import {Button} from './ui/button';
+import {MapPin} from 'lucide-react';
+export function AdministratorPropertySearch({city='',onShow}:{city?:string;onShow:(filters:Record<string,string>)=>void}){
+ const [error,setError]=useState('');
+ function submit(event:FormEvent<HTMLFormElement>){event.preventDefault();const data=new FormData(event.currentTarget),filters=Object.fromEntries(['city','guests','rooms','maxPrice','mode','start','end'].map(key=>[key,String(data.get(key)||'')]));if(!!filters.start!==!!filters.end){setError('Укажите и заезд, и выезд или оставьте обе даты пустыми.');return;}if(filters.start&&(Date.parse(filters.end+'+05:00')<=Date.parse(filters.start+'+05:00')||Date.parse(filters.start+'+05:00')<=Date.now()+60000)){setError('Выберите будущий заезд и выезд позже него. Время Казахстана, UTC+5.');return;}setError('');onShow(filters);}
+ return <form className="administrator-property-search" aria-label="Подбор квартиры" onSubmit={submit}><h3>Подберём квартиру</h3><p>Укажите условия — покажем подходящие квартиры на карте. С датами проверим занятость.</p><label>Город<Input name="city" defaultValue={city} placeholder="Все города" maxLength={80}/></label><div className="administrator-search-grid"><label>Заезд<Input name="start" type="datetime-local"/></label><label>Выезд<Input name="end" type="datetime-local"/></label><label>Гостей<Input name="guests" type="number" min={1} max={50} defaultValue={1} required/></label><label>Комнат<NativeSelect name="rooms" defaultValue="0"><option value="0">Любое число</option>{[1,2,3,4].map(n=><option key={n} value={n}>От {n}</option>)}</NativeSelect></label><label>Бюджет до, ₸<Input name="maxPrice" type="number" min={1} max={100000000} placeholder="Любой"/></label><label>Аренда<NativeSelect name="mode" defaultValue="daily"><option value="daily">На сутки</option><option value="hourly">На часы</option></NativeSelect></label></div><small>Время Казахстана, UTC+5. Без дат покажем каталог без подтверждения доступности.</small>{error&&<p className="form-error" role="alert">{error}</p>}<Button type="submit"><MapPin size={17}/>Показать на карте</Button></form>;
+}

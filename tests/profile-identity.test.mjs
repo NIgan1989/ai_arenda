@@ -1,0 +1,27 @@
+import {test} from 'node:test';import assert from 'node:assert/strict';import {fixture,load} from './helpers/platform.mjs';import {photo} from './fixtures/photo.mjs';
+const {openDiscussion,readDiscussion,discussionInbox,discussionAvatar,discussionTyping,sendDiscussionMessage}=await load('process-discussions'),{avatarInitials,avatarCrop}=await load('avatar');
+async function edit(service,extra={}){const p=await service.profile();return service.editProfile({name:p.name,contact:p.contact,city:p.city,districts:p.districts,experience:p.experience,availability:p.availability,workStatus:p.work_status||'available',avatarId:p.avatar_id,expectedVersion:p.profile_version,...extra});}
+async function assign(f){await f.cleaner.jobAction(f.job.id,{action:'apply'});await f.owner.jobAction(f.job.id,{action:'assign',applicationId:f.db.raw.prepare('SELECT id FROM applications WHERE job_id=?').get(f.job.id).id});}
+test('chat identities update from profiles without leaking contacts, unrelated roles or worker data',async()=>{
+ const f=await fixture();try{const room=await openDiscussion(f.guest,'guest',{kind:'booking',entityId:f.booking});const avatar=await f.owner.uploadMedia({kind:'avatar',data:photo});await edit(f.owner,{avatarId:avatar.id,name:'Новое имя',bio:'Помогу с заездом',languages:'Қазақша, русский'});
+ const member=(await readDiscussion(f.guest,'guest',room)).room.members.find(m=>m.id==='owner');assert.equal(member.name,'Новое имя');assert.equal(member.avatar_id,avatar.id);assert.equal(member.bio,'Помогу с заездом');assert.equal(member.contact,undefined);assert.equal(member.roles,undefined);assert.match((await discussionAvatar(f.guest,'guest',{...room,userId:'owner'})).data,/^data:image\/jpeg/);
+ assert.equal((await discussionInbox(f.guest,'guest')).rooms[0].members.find(m=>m.id==='owner').name,'Новое имя');await assert.rejects(discussionAvatar(f.guest,'guest',{...room,userId:'cleaner'}),e=>e.status===404);await assert.rejects(discussionAvatar(f.other,'owner',{...room,userId:'owner'}),e=>e.status===403);
+ await edit(f.owner,{avatarVisibility:'self'});assert.equal((await readDiscussion(f.guest,'guest',room)).room.members.find(m=>m.id==='owner').avatar_id,null);await assert.rejects(discussionAvatar(f.guest,'guest',{...room,userId:'owner'}),e=>e.status===404);await assert.rejects(f.guest.readMedia(avatar.id,'guest'),e=>e.status===404);assert.ok(await f.owner.readMedia(avatar.id,'owner'));
+ await edit(f.owner,{avatarId:null});await assert.rejects(discussionAvatar(f.owner,'owner',{...room,userId:'owner'}),e=>e.status===404);
+ }finally{f.db.close();}
+});
+test('worker avatars respect the active role, assignment and private discussion boundary',async()=>{
+ const f=await fixture();try{await assign(f);const avatar=await f.cleaner.uploadMedia({kind:'avatar',data:photo});await edit(f.cleaner,{avatarId:avatar.id});const room=await openDiscussion(f.owner,'owner',{kind:'job',entityId:f.job.id});assert.ok(await discussionAvatar(f.owner,'owner',{...room,userId:'cleaner'}));assert.ok(await f.owner.readMedia(avatar.id,'owner'));await assert.rejects(f.owner.readMedia(avatar.id,'guest'),e=>e.status===404);await assert.rejects(f.guest.readMedia(avatar.id,'guest'),e=>e.status===404);await assert.rejects(discussionAvatar(f.guest,'guest',{...room,userId:'cleaner'}),e=>e.status===403);await assert.rejects(edit(f.owner,{avatarId:avatar.id}),e=>e.status===403);
+ }finally{f.db.close();}
+});
+test('privacy controls suppress presence and read receipts mutually while retaining private unread state',async()=>{
+ const f=await fixture();try{const room=await openDiscussion(f.guest,'guest',{kind:'booking',entityId:f.booking});await sendDiscussionMessage(f.owner,'owner',{...room,text:'Привет',requestKey:'privacy'});await edit(f.guest,{showPresence:false,showReceipts:false});assert.equal((await discussionInbox(f.guest,'guest')).unread,1);await discussionTyping(f.guest,'guest',{...room,typing:true});await readDiscussion(f.guest,'guest',room);const ownerView=await readDiscussion(f.owner,'owner',room),guestVisit=ownerView.visits.find(v=>v.user_id==='guest');assert.equal(guestVisit.last_seq,0);assert.equal(guestVisit.seen_at,0);assert.equal(guestVisit.typing_until,0);assert.equal((await discussionInbox(f.guest,'guest')).unread,0);
+ }finally{f.db.close();}
+});
+test('stale profile updates do not overwrite newer privacy settings',async()=>{
+ const f=await fixture();try{const p=await f.owner.profile();await edit(f.owner,{avatarVisibility:'self',bio:'Сохранённое описание'});await assert.rejects(f.owner.editProfile({name:'Old',contact:p.contact,city:p.city,avatarId:null,workStatus:'available',expectedVersion:p.profile_version,avatarVisibility:'participants'}),e=>e.status===409);assert.equal((await f.owner.profile()).avatar_visibility,'self');assert.equal((await f.owner.profile()).bio,'Сохранённое описание');await assert.rejects(edit(f.owner,{bio:'x'.repeat(501)}),e=>e.status===400);
+ }finally{f.db.close();}
+});
+test('square avatar crops stay within source bounds for wide, tall and zoomed images',()=>{
+ assert.equal(avatarInitials(' Айгуль Садыкова '),'АС');assert.equal(avatarInitials(''),'?' );assert.equal(avatarInitials('Logo'),'L');for(const [w,h] of [[1600,800],[800,1600],[512,512]])for(const zoom of [1,2,3])for(const x of [-100,0,100])for(const y of [-100,0,100]){const b=avatarCrop(w,h,zoom,x,y);assert.ok(b.x>=0&&b.y>=0&&b.x+b.size<=w+.0001&&b.y+b.size<=h+.0001);}assert.throws(()=>avatarCrop(0,10,1,0,0));
+});

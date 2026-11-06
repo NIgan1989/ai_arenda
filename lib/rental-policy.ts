@@ -1,6 +1,6 @@
 import {DomainError,number,required} from './domain';
 type Row=Record<string,any>;
-export const defaultPolicy={hourly_price:0,min_hours:2,nightly_price:0,checkin_minutes:840,checkout_minutes:720,deposit:0,house_rules:'',auto_confirm:0,cleaning_fee:0,cleaning_budget:0,max_discount_percent:0,minimum_rate:0,repair_budget:0,auto_extension:0,max_extension_hours:0,mandate_until:0,escalation_contact:'',version:0};
+export const defaultPolicy={hourly_price:0,min_hours:2,nightly_price:0,checkin_minutes:840,checkout_minutes:720,deposit:0,house_rules:'',auto_confirm:0,auto_assign:0,cleaning_fee:0,cleaning_budget:0,max_discount_percent:0,minimum_rate:0,repair_budget:0,auto_extension:0,max_extension_hours:0,mandate_until:0,escalation_contact:'',version:0};
 export function mandateActive(policy:Row,t=Math.floor(Date.now()/1000)){return !policy.mandate_until||policy.mandate_until>t;}
 export function publicPolicy(policy:Row=defaultPolicy){const {hourly_price,min_hours,nightly_price,checkin_minutes,checkout_minutes,deposit,house_rules,auto_confirm,version}={...defaultPolicy,...policy};return {hourly_price,min_hours,nightly_price,checkin_minutes,checkout_minutes,deposit,house_rules,auto_confirm:mandateActive(policy)?auto_confirm:0,version};}
 export function clock(minutes:number){return String(Math.floor(minutes/60)).padStart(2,'0')+':'+String(minutes%60).padStart(2,'0');}
@@ -13,7 +13,8 @@ export function policyInput(body:Row){
   if(mandate.auto_extension&&!mandate.max_extension_hours)throw new DomainError('Укажите предел автоматического продления.');
   if((policy.auto_confirm||mandate.auto_extension)&&mandate.mandate_until&&!mandateActive(mandate))throw new DomainError('Срок автоматических полномочий уже истёк.');
   if((policy.auto_confirm||mandate.auto_extension)&&mandate.minimum_rate&&[number(body.dailyPrice,'Цена за сутки',100,10000000),policy.hourly_price,policy.nightly_price].some(rate=>rate>0&&rate<mandate.minimum_rate))throw new DomainError('Один из тарифов ниже минимальной разрешённой ставки.');
-  return {...policy,...mandate};
+  if(body.autoAssign===true&&mandate.mandate_until&&!mandateActive(mandate))throw new DomainError('Срок автоматических полномочий уже истёк.');
+  return {...policy,...mandate,auto_assign:body.autoAssign===true?1:0};
 }
 export function rentalPrice(dailyPrice:number,policy:Row,start:number,end:number,mode:unknown='daily'){
   let units:number,price:number,label:string;
