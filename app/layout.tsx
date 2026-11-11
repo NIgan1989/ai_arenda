@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import "./tokens.css";
 import "./design-system.css";
 import "./mobile-first.css";
 import "./interface-release.css";

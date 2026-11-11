@@ -4,7 +4,8 @@ import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {ApiError,request} from './api';
 import {Photo} from './ListingMedia';
 import {date,labels,money,uid,type Role,type Row} from './model';
-import {C} from './styles';
+import {C,type} from './styles';
+import {T} from './tokens';
 import {TileMap,type MapPin} from './TileMap';
 import {countdown,kzHour,mapCities,stayInterval,validPoint,type MapPoint} from './map-math';
 
@@ -101,10 +102,10 @@ function GuestPanel({accountId,data,mapData,publish,selected,setSelected,expand,
   const booking=booked?(data.bookings||[]).find((b:Row)=>b.id===live?.bookingId):null;
   return <View style={h.block}>
    <Stage steps={['Условия','Владельцы','Предложение','Бронь']} current={step}/>
-   {!live&&<View style={h.row}><ActivityIndicator color={C.green}/><Text style={h.note}>Восстанавливаем ваш подбор…</Text></View>}
+   {!live&&<View style={h.row}><ActivityIndicator color={C.accent}/><Text style={h.note}>Восстанавливаем ваш подбор…</Text></View>}
    {live&&status==='searching'&&<>
     <Text accessibilityRole="header" style={h.title}>Администратор опрашивает владельцев</Text>
-    <View style={h.row}><ActivityIndicator color={C.green}/><Text style={h.note}>Ждём ответа: {live.pending} из {live.sent} запросов. На ответ у владельца 2 минуты.</Text></View>
+    <View style={h.row}><ActivityIndicator color={C.accent}/><Text style={h.note}>Ждём ответа: {live.pending} из {live.sent} запросов. На ответ у владельца 2 минуты.</Text></View>
     <Text style={h.timer} accessibilityLabel={'До конца подбора '+countdown(live.expiresAt-now)}>{countdown(live.expiresAt-now)}</Text>
     <Text style={h.note}>Объекты, которые сейчас отвечают, подсвечены на карте. Броней и блокировок на этом этапе нет.</Text>
    </>}
@@ -185,7 +186,7 @@ function OwnerPanel({data,mapData,publish,expand,onChanged,onOpenProcess,onOpenP
  const requested=(data.bookings||[]).filter((b:Row)=>b.status==='requested'&&b.owner_id===data.user?.id);
  return <View style={h.block}>
   <Text accessibilityRole="header" style={h.title}>{offers.length?'Быстрые запросы гостей':'Ваши объекты на линии'}</Text>
-  {!inbox&&!error&&<View style={h.row}><ActivityIndicator color={C.green}/><Text style={h.note}>Загружаем запросы…</Text></View>}
+  {!inbox&&!error&&<View style={h.row}><ActivityIndicator color={C.accent}/><Text style={h.note}>Загружаем запросы…</Text></View>}
   {!!error&&<Text accessibilityRole="alert" style={h.error}>{error}</Text>}
   {offers.map(o=><View key={o.id} style={[h.card,h.urgent]}>
    <View style={h.row}><Text style={[h.cardTitle,{flex:1}]}>{o.title}</Text><Text style={h.timerSmall} accessibilityLabel={'На ответ осталось '+countdown(o.expires_at-now)}>{countdown(o.expires_at-now)}</Text></View>
@@ -199,7 +200,7 @@ function OwnerPanel({data,mapData,publish,expand,onChanged,onOpenProcess,onOpenP
   {requested.length>0&&<Pressable accessibilityRole="button" onPress={()=>onOpenPage('bookings')} style={[h.card,h.listRow]}><View style={{flex:1}}><Text style={h.eventTitle}>Заявки ждут решения: {requested.length}</Text><Text style={h.note}>Подтвердите или отклоните бронирование</Text></View><Text style={h.rowPrice}>→</Text></Pressable>}
   {processes.length>0&&<View style={h.card}><Text style={h.label}>Сейчас в работе</Text>{processes.slice(0,6).map(p=><Pressable key={p.kind+p.id} accessibilityRole="button" onPress={()=>onOpenProcess(p.kind,p.id)} style={h.listRow}><View style={{flex:1}}><Text style={h.eventTitle}>{p.kind==='job'?'Уборка':'Заезд'} · {p.title}</Text><Text style={h.note}>{labels[p.status]||p.status} · {date(p.start)}</Text></View><Text style={h.rowPrice}>→</Text></Pressable>)}</View>}
   {inbox&&<View style={h.card}><Text style={h.label}>Принимать быстрые запросы</Text><Text style={h.note}>Включите для объектов, по которым готовы отвечать за 2 минуты.</Text>
-   {inbox.preferences.map((p:Row)=><View key={p.id} style={h.listRow}><Text style={[h.eventTitle,{flex:1}]}>{p.title}</Text><Switch accessibilityLabel={'Быстрые запросы: '+p.title} value={!!p.enabled} disabled={working} onValueChange={enabled=>act('preference',{propertyId:p.id,enabled})} trackColor={{true:C.green,false:C.line}}/></View>)}
+   {inbox.preferences.map((p:Row)=><View key={p.id} style={h.listRow}><Text style={[h.eventTitle,{flex:1}]}>{p.title}</Text><Switch accessibilityLabel={'Быстрые запросы: '+p.title} value={!!p.enabled} disabled={working} onValueChange={enabled=>act('preference',{propertyId:p.id,enabled})} trackColor={{true:C.accent,false:C.line}}/></View>)}
    {!inbox.preferences.length&&<><Text style={h.note}>Сначала добавьте квартиру и пройдите проверку.</Text><Action secondary title="Мои квартиры" onPress={()=>onOpenPage('properties')}/></>}
   </View>}
  </View>;
@@ -270,24 +271,25 @@ export function MapHome({role,accountId,data,menu,onChanged,onOpenProcess,onOpen
  </View>;
 }
 
+const R=T.radius,H=T.control,shadow={shadowColor:C.ink,shadowOffset:{width:0,height:2},shadowOpacity:.12,shadowRadius:8,elevation:3};
 const h=StyleSheet.create({
  host:{flex:1,backgroundColor:C.bg},
  top:{position:'absolute',left:12,right:12,flexDirection:'row',alignItems:'center',gap:8},
- menu:{width:48,height:48,borderRadius:24,backgroundColor:'rgba(255,255,255,0.96)',borderWidth:1,borderColor:C.line,alignItems:'center',justifyContent:'center'},
- orb:{width:48,height:48,borderRadius:24,backgroundColor:C.green,alignItems:'center',justifyContent:'center',shadowColor:'#17231F',shadowOffset:{width:0,height:3},shadowOpacity:.2,shadowRadius:6,elevation:4},orbText:{color:C.white,fontWeight:'700',fontSize:15,letterSpacing:.5},
- orbBadge:{position:'absolute',top:-3,right:-3,minWidth:20,height:20,borderRadius:10,backgroundColor:'#B4532A',alignItems:'center',justifyContent:'center',paddingHorizontal:5},orbBadgeText:{color:C.white,fontSize:11,fontWeight:'700'},
- hint:{flex:1,minHeight:48,borderRadius:24,backgroundColor:'rgba(255,255,255,0.96)',borderWidth:1,borderColor:C.line,paddingHorizontal:16,justifyContent:'center',shadowColor:'#17231F',shadowOffset:{width:0,height:3},shadowOpacity:.12,shadowRadius:6,elevation:3},hintLabel:{fontSize:10,color:C.muted,letterSpacing:.6},hintText:{fontSize:14,color:C.ink,fontWeight:'500'},
- sheet:{position:'absolute',left:0,right:0,bottom:0,backgroundColor:'#FAF9F6',borderTopLeftRadius:24,borderTopRightRadius:24,borderWidth:1,borderColor:C.line,shadowColor:'#17231F',shadowOffset:{width:0,height:-4},shadowOpacity:.12,shadowRadius:12,elevation:12},
- handleArea:{height:28,alignItems:'center',justifyContent:'center'},handle:{width:44,height:5,borderRadius:3,backgroundColor:'#C9CFC5'},sheetContent:{paddingHorizontal:16,paddingBottom:28},
- block:{gap:12},title:{fontSize:21,lineHeight:27,color:C.ink,fontWeight:'600',letterSpacing:-.4},note:{fontSize:13,lineHeight:19,color:C.muted},label:{fontSize:12,color:C.muted,marginBottom:6},
- field:{gap:0},chips:{gap:8,paddingRight:8},chip:{minHeight:44,paddingHorizontal:15,borderRadius:14,borderWidth:1,borderColor:C.line,backgroundColor:C.white,justifyContent:'center'},chipOn:{backgroundColor:C.ink,borderColor:C.ink},chipText:{fontSize:14,color:C.ink},chipTextOn:{color:C.white,fontWeight:'600'},
- pair:{flexDirection:'row',gap:10},stepper:{flex:1},stepperRow:{flexDirection:'row',alignItems:'center',borderWidth:1,borderColor:C.line,borderRadius:14,backgroundColor:C.white,height:48},step:{width:46,height:46,alignItems:'center',justifyContent:'center'},stepText:{fontSize:22,color:C.ink},stepValue:{flex:1,textAlign:'center',fontSize:16,color:C.ink,fontWeight:'600'},
- input:{height:48,borderWidth:1,borderColor:C.line,borderRadius:14,backgroundColor:C.white,paddingHorizontal:14,fontSize:16,color:C.ink},
- action:{minHeight:50,borderRadius:16,backgroundColor:C.green,alignItems:'center',justifyContent:'center',paddingHorizontal:16},actionSecondary:{backgroundColor:C.white,borderWidth:1,borderColor:C.line},actionText:{color:C.white,fontSize:16,fontWeight:'600'},actionSecondaryText:{color:C.ink,fontSize:14,fontWeight:'500'},dangerText:{color:'#9B3B22'},dim:{opacity:.5},
- row:{flexDirection:'row',alignItems:'center',gap:10},card:{borderWidth:1,borderColor:C.line,borderRadius:18,backgroundColor:C.white,padding:14,gap:8},urgent:{borderColor:'#E8C98F',backgroundColor:'#FFFBF2'},cardTitle:{fontSize:17,lineHeight:23,color:C.ink,fontWeight:'600'},price:{fontSize:22,color:C.ink,fontWeight:'700',letterSpacing:-.4},
- reason:{fontSize:13,color:'#3D6A4F'},timer:{fontSize:34,color:C.ink,fontWeight:'300',letterSpacing:-1},timerSmall:{fontSize:14,color:'#7A4B10',fontWeight:'600'},
- check:{flexDirection:'row',alignItems:'center',gap:10,minHeight:44},checkBox:{fontSize:22,color:C.green},checkText:{flex:1,fontSize:14,lineHeight:20,color:C.ink},
- listRow:{flexDirection:'row',alignItems:'center',gap:10,minHeight:48},eventTitle:{fontSize:15,color:C.ink,fontWeight:'500'},rowPrice:{fontSize:15,color:C.ink,fontWeight:'600'},picked:{gap:6},
- error:{fontSize:13,lineHeight:19,color:'#9B3B22',backgroundColor:'#FBEDE7',borderRadius:12,padding:10},
- stages:{flexDirection:'row',gap:6},stage:{flex:1,gap:4},stageBar:{height:4,borderRadius:2,backgroundColor:C.line},stageBarOn:{backgroundColor:C.green},stageText:{fontSize:10,color:C.muted},stageTextOn:{color:C.ink,fontWeight:'600'}
+ menu:{width:H.field,height:H.field,borderRadius:R.full,backgroundColor:C.surface,borderWidth:1,borderColor:C.line,alignItems:'center',justifyContent:'center',...shadow},
+ orb:{width:H.field,height:H.field,borderRadius:R.full,backgroundColor:C.accent,alignItems:'center',justifyContent:'center',...shadow},orbText:{...type.label,color:C.onAccent,fontWeight:'700'},
+ orbBadge:{position:'absolute',top:-4,right:-4,minWidth:20,height:20,borderRadius:R.full,backgroundColor:C.ink,alignItems:'center',justifyContent:'center',paddingHorizontal:4},orbBadgeText:{...type.caption,color:C.onAccent,fontWeight:'700'},
+ hint:{flex:1,minHeight:H.field,borderRadius:R.xl,backgroundColor:C.surface,borderWidth:1,borderColor:C.line,paddingHorizontal:16,justifyContent:'center',...shadow},hintLabel:{...type.caption,color:C.muted},hintText:{...type.label,color:C.ink,fontWeight:'600'},
+ sheet:{position:'absolute',left:0,right:0,bottom:0,backgroundColor:C.surface,borderTopLeftRadius:R.xl,borderTopRightRadius:R.xl,borderTopWidth:1,borderColor:C.line,shadowColor:C.ink,shadowOffset:{width:0,height:-4},shadowOpacity:.1,shadowRadius:12,elevation:12},
+ handleArea:{height:24,alignItems:'center',justifyContent:'center'},handle:{width:40,height:4,borderRadius:R.xs,backgroundColor:C.lineStrong},sheetContent:{paddingHorizontal:16,paddingBottom:24},
+ block:{gap:12},title:{...type.title,color:C.ink,fontWeight:'600',letterSpacing:-.3},note:{...type.label,color:C.muted},label:{...type.caption,color:C.muted,marginBottom:4},
+ field:{gap:0},chips:{gap:8,paddingRight:8},chip:{minHeight:H.touch,paddingHorizontal:16,borderRadius:R.md,borderWidth:1,borderColor:C.line,backgroundColor:C.surface,justifyContent:'center'},chipOn:{backgroundColor:C.ink,borderColor:C.ink},chipText:{...type.label,color:C.ink},chipTextOn:{color:C.onAccent,fontWeight:'600'},
+ pair:{flexDirection:'row',gap:8},stepper:{flex:1},stepperRow:{flexDirection:'row',alignItems:'center',borderWidth:1,borderColor:C.line,borderRadius:R.md,backgroundColor:C.surface,height:H.field},step:{width:H.touch,height:H.touch,alignItems:'center',justifyContent:'center'},stepText:{...type.title,color:C.ink},stepValue:{flex:1,textAlign:'center',...type.body,color:C.ink,fontWeight:'600'},
+ input:{height:H.field,borderWidth:1,borderColor:C.line,borderRadius:R.md,backgroundColor:C.surface,paddingHorizontal:12,fontSize:16,color:C.ink},
+ action:{minHeight:H.field,borderRadius:R.md,backgroundColor:C.accent,alignItems:'center',justifyContent:'center',paddingHorizontal:16,paddingVertical:12},actionSecondary:{backgroundColor:C.surface,borderWidth:1,borderColor:C.lineStrong},actionText:{...type.body,color:C.onAccent,fontWeight:'600',textAlign:'center'},actionSecondaryText:{...type.body,color:C.ink,fontWeight:'500',textAlign:'center'},dangerText:{color:C.danger},dim:{opacity:.45},
+ row:{flexDirection:'row',alignItems:'center',gap:8},card:{borderWidth:1,borderColor:C.line,borderRadius:R.lg,backgroundColor:C.surface,padding:16,gap:8},urgent:{borderColor:C.warningLine,backgroundColor:C.warningSoft},cardTitle:{...type.subtitle,color:C.ink,fontWeight:'600'},price:{...type.title,color:C.ink,fontWeight:'700',letterSpacing:-.4},
+ reason:{...type.label,color:C.success},timer:{...type.display,color:C.ink,fontWeight:'300',letterSpacing:-1},timerSmall:{...type.label,color:C.warning,fontWeight:'600'},
+ check:{flexDirection:'row',alignItems:'center',gap:12,minHeight:H.touch},checkBox:{...type.title,color:C.accent},checkText:{flex:1,...type.label,color:C.ink},
+ listRow:{flexDirection:'row',alignItems:'center',gap:12,minHeight:H.field},eventTitle:{...type.body,color:C.ink,fontWeight:'500'},rowPrice:{...type.body,color:C.ink,fontWeight:'600'},picked:{gap:8},
+ error:{...type.label,color:C.danger,backgroundColor:C.dangerSoft,borderRadius:R.md,padding:12},
+ stages:{flexDirection:'row',gap:4},stage:{flex:1,gap:4},stageBar:{height:4,borderRadius:R.xs,backgroundColor:C.line},stageBarOn:{backgroundColor:C.accent},stageText:{...type.caption,color:C.muted},stageTextOn:{color:C.ink,fontWeight:'600'}
 });
