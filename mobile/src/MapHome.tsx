@@ -45,11 +45,11 @@ function Stage({steps,current}:{steps:string[];current:number}){
 }
 const dayOptions=():[number,string][]=>[0,1,2,3,4,5,6].map(offset=>[offset,offset===0?'Сегодня':offset===1?'Завтра':new Date(Date.now()+offset*86400000).toLocaleDateString('ru-RU',{timeZone:'Asia/Almaty',weekday:'short',day:'numeric',month:'short'})]);
 
-function GuestPanel({accountId,data,mapData,publish,selected,setSelected,expand,onChanged,onOpenPage,picking,setPicking,mapCenter}:Common&{picking:boolean;setPicking:(value:boolean)=>void;mapCenter:React.RefObject<MapPoint|null>}){
+function GuestPanel({accountId,data,mapData,publish,selected,setSelected,expand,onChanged,onOpenPage,picking,setPicking,mapCenter,city,setCity}:Common&{picking:boolean;setPicking:(value:boolean)=>void;mapCenter:React.RefObject<MapPoint|null>;city:string;setCity:(city:string)=>void}){
  const late=kzHour()>=13;
- const [draft,setDraft]=useState<Row>({city:mapCities[data.profile?.city]?data.profile.city:'Павлодар',mode:'daily',day:late?1:0,hour:14,units:1,guests:2,maxPrice:'20000',priority:'balanced',near:null});
+ const [draft,setDraft]=useState<Row>({city,mode:'daily',day:late?1:0,hour:14,units:1,guests:2,maxPrice:'20000',priority:'balanced',near:null});
  const [preview,setPreview]=useState<Row|null>(null),[requestId,setRequestId]=useState(()=>liveRequests.get(accountId)||''),[live,setLive]=useState<Row|null>(null);
- const [error,setError]=useState(''),[working,setWorking]=useState(false),[index,setIndex]=useState(0),[accepted,setAccepted]=useState(false),[skew,setSkew]=useState(0);
+ const [error,setError]=useState(''),[working,setWorking]=useState(false),[index,setIndex]=useState(0),[acceptedKey,setAcceptedKey]=useState(''),[skew,setSkew]=useState(0);
  const lock=useRef(false),requestKey=useRef('');
  const active=!!requestId&&(!live||['searching','ready','booking'].includes(live.status)),now=useNow(active)+skew;
  const set=(patch:Row)=>{setDraft(v=>({...v,...patch}));setPreview(null);setError('');};
@@ -75,8 +75,10 @@ function GuestPanel({accountId,data,mapData,publish,selected,setSelected,expand,
   catch(e){if(e instanceof ApiError&&e.status===404)reset();else if(e instanceof ApiError)setError(e.message);}
  },3000,active);
  const offers:Row[]=live?.properties||[],offer=offers[Math.min(index,Math.max(0,offers.length-1))];
+ // Consent belongs to one offer and its terms; a different offer shown after a poll is not accepted.
+ const offerKey=offer?offer.offerId+':'+offer.estimate.amount+':'+offer.policy.version:'',accepted=!!offerKey&&acceptedKey===offerKey,setAccepted=(value:boolean|((v:boolean)=>boolean))=>setAcceptedKey((typeof value==='function'?value(accepted):value)?offerKey:'');
  const book=()=>guarded(async()=>{
-  if(!offer||!live)return;
+  if(!offer||!live||!accepted)return;
   await request('/api/operations/matching/book',{id:live.id,offerId:offer.offerId,start:live.filters.start,end:live.filters.end,guests:Number(live.filters.guests),billingMode:live.filters.mode,expectedAmount:offer.estimate.amount,expectedPolicyVersion:offer.policy.version,acceptTerms:true},undefined,'match:'+live.id,'guest');
   const state=await request('/api/operations/matching/state',{id:live.id},undefined,undefined,'guest');setLive(state);await onChanged();
  });
@@ -141,7 +143,7 @@ function GuestPanel({accountId,data,mapData,publish,selected,setSelected,expand,
  return <View style={h.block}>
   <Stage steps={['Условия','Владельцы','Предложение','Бронь']} current={0}/>
   <Text accessibilityRole="header" style={h.title}>Куда и когда?</Text>
-  <Chips label="Город" value={draft.city} options={Object.keys(mapCities).map(c=>[c,c])} onChange={city=>set({city,near:null})} disabled={working}/>
+  <Chips label="Город" value={draft.city} options={Object.keys(mapCities).map(c=>[c,c])} onChange={next=>{set({city:next,near:null});setCity(next);}} disabled={working}/>
   <Chips label="Тариф" value={draft.mode} options={[['daily','На сутки'],['hourly','На часы']]} onChange={mode=>set({mode,units:mode==='hourly'?3:1,hour:mode==='hourly'?Math.min(23,kzHour()+2):14})} disabled={working}/>
   <Chips label="Заезд" value={draft.day} options={dayOptions()} onChange={day=>set({day})} disabled={working}/>
   <View style={h.pair}>
@@ -242,12 +244,16 @@ export function MapHome({role,accountId,data,menu,onChanged,onOpenProcess,onOpen
   onMoveShouldSetPanResponder:(_e,g)=>Math.abs(g.dy)>8,
   onPanResponderRelease:(_e,g)=>{if(g.dy<-24)setSnap(Math.min(2,snapRef.current+1));else if(g.dy>24)setSnap(Math.max(0,snapRef.current-1));}
  })).current;
- const city=data.profile?.city||'Павлодар';
- usePoll(async()=>{setMapData(await request('/api/operations/map/search',{filters:{city}},undefined,undefined,role));},30000,true);
+ // One city drives the map query, the viewport and the guest's request, so a picked point always lies in the searched city.
+ const [city,setCity]=useState<string>(mapCities[data.profile?.city]?data.profile.city:'Павлодар'),cityRef=useRef(city);cityRef.current=city;
+ const loadMap=async()=>{const asked=cityRef.current,result=await request('/api/operations/map/search',{filters:{city:asked}},undefined,undefined,role);if(cityRef.current===asked)setMapData({...result,city:asked});};
+ usePoll(loadMap,30000,true);
+ const firstCity=useRef(true);
+ useEffect(()=>{if(firstCity.current){firstCity.current=false;return;}setMapData(null);loadMap().catch(()=>{});},[city]);
  const publish:Publish=(next,key)=>{setPins(next);setFocusKey(key);};
  const approvals=(data.approvals||[]).filter((c:Row)=>c.canDecide).length,task=data.assistantBrief?.tasks?.[0];
  const common:Common={accountId,data,mapData,publish,selected,setSelected:key=>{setSelected(key);if(key&&snapRef.current===0)setSnap(1);},expand:setSnap,onChanged,onOpenProcess,onOpenPage};
- const center=validPoint(mapData?.center)||mapCities[city]||mapCities['Павлодар'];
+ const center=mapCities[city]||validPoint(mapData?.center)||mapCities['Павлодар'];
  return <View style={h.host} onLayout={e=>setHeight(Math.round(e.nativeEvent.layout.height))}>
   <TileMap center={center} pins={pins} selected={selected} onSelect={common.setSelected} bottomInset={Math.min(sheetHeight,Math.round(height*.5))} topInset={insets.top+64} focusKey={focusKey} picking={picking} onCenter={c=>{mapCenter.current=c;}}/>
   <View style={[h.top,{top:insets.top+10}]} pointerEvents="box-none">
@@ -258,7 +264,7 @@ export function MapHome({role,accountId,data,menu,onChanged,onOpenProcess,onOpen
   <Animated.View style={[h.sheet,{height:sheet}]} accessibilityViewIsModal={false}>
    <View {...drag.panHandlers}><Pressable accessibilityRole="button" accessibilityLabel={snap===2?'Свернуть панель':'Развернуть панель'} onPress={()=>setSnap(snap===2?0:snap+1)} style={h.handleArea}><View style={h.handle}/></Pressable></View>
    <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={h.sheetContent} showsVerticalScrollIndicator={false}>
-    {role==='guest'?<GuestPanel {...common} picking={picking} setPicking={setPicking} mapCenter={mapCenter}/>:role==='owner'?<OwnerPanel {...common}/>:<CleanerPanel {...common}/>}
+    {role==='guest'?<GuestPanel {...common} picking={picking} setPicking={setPicking} mapCenter={mapCenter} city={city} setCity={setCity}/>:role==='owner'?<OwnerPanel {...common}/>:<CleanerPanel {...common}/>}
    </ScrollView>
   </Animated.View>
  </View>;
