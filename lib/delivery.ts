@@ -2,9 +2,10 @@ import {DomainError,required,type Role} from './domain';
 import type {RentalService} from './service';
 import {defaultAssistantSettings} from './assistant';
 import {quietNow} from './administrator';
+import {pushConfigured} from './web-push';
 import {epoch,uuid,q,one,rows,hash,randomToken,httpsEndpoint,safeEqual,type Row,type OperationConfig} from './operation-core';
 
-export function integrationStatus(config:OperationConfig){return {telegram:!!(config.TELEGRAM_BOT_TOKEN&&config.TELEGRAM_BOT_USERNAME&&config.TELEGRAM_WEBHOOK_SECRET),sms:!!(config.SMS_GATEWAY_URL&&config.SMS_GATEWAY_TOKEN),whatsapp:!!(config.WHATSAPP_GATEWAY_URL&&config.WHATSAPP_GATEWAY_TOKEN),payments:!!(config.PAYMENT_GATEWAY_URL&&config.PAYMENT_GATEWAY_TOKEN&&config.PAYMENT_WEBHOOK_SECRET),secureAccess:!!config.ACCESS_ENCRYPTION_KEY};}
+export function integrationStatus(config:OperationConfig){return {push:pushConfigured(config),telegram:!!(config.TELEGRAM_BOT_TOKEN&&config.TELEGRAM_BOT_USERNAME&&config.TELEGRAM_WEBHOOK_SECRET),sms:!!(config.SMS_GATEWAY_URL&&config.SMS_GATEWAY_TOKEN),whatsapp:!!(config.WHATSAPP_GATEWAY_URL&&config.WHATSAPP_GATEWAY_TOKEN),payments:!!(config.PAYMENT_GATEWAY_URL&&config.PAYMENT_GATEWAY_TOKEN&&config.PAYMENT_WEBHOOK_SECRET),secureAccess:!!config.ACCESS_ENCRYPTION_KEY};}
 export async function deliveryState(service:RentalService,role:Role,config:OperationConfig){return {configured:integrationStatus(config),channels:(await rows(service.db,'SELECT channel,address,enabled,verified_at FROM delivery_channels WHERE user_id=? AND role=?',service.userId,role)).map(c=>({...c,address:c.channel==='telegram'?'Привязанный личный чат':c.address.replace(/.(?=.{4})/g,'•')})),recent:await rows(service.db,'SELECT channel,status,attempts,last_error,created_at,sent_at,delivered_at,read_at FROM delivery_outbox WHERE user_id=? AND role=? ORDER BY created_at DESC LIMIT 20',service.userId,role)};}
 export async function createTelegramLink(service:RentalService,role:Role,config:OperationConfig){
  if(!integrationStatus(config).telegram)throw new DomainError('Рабочий Telegram-бот ещё не подключён. После подключения здесь появится привязка.',503);

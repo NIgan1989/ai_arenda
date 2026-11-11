@@ -47,3 +47,10 @@ html[data-design="unified"] .workspace-shell[data-section="map"] .chat-transcrip
 @media(max-width:700px){html[data-design="unified"] .map-workspace .map-panel[data-snap="0"]{height:max(120px,calc((100dvh - var(--dock-height) - var(--dock-bottom) - 24px)*.18))}html[data-design="unified"] .map-workspace .map-panel[data-snap="1"]{height:calc((100dvh - var(--dock-height) - var(--dock-bottom) - 24px)*.44)}html[data-design="unified"] .map-workspace .map-panel[data-snap="2"]{height:calc((100dvh - var(--dock-height) - var(--dock-bottom) - 24px)*.86)}}
 @media(max-width:700px){html[data-design="unified"] .map-workspace .map-panel[data-snap="2"]{z-index:20}html[data-design="unified"] .map-workspace:has(.map-panel[data-snap="2"]) .map-toolbar{visibility:hidden;pointer-events:none}.map-panel[data-snap="0"]>.form-error{position:fixed;top:270px;left:12px;right:72px;padding:12px;background:var(--glass-panel);border:1px solid var(--border);border-radius:15px;box-shadow:0 4px 20px #302d281a;z-index:30}}
 .map-room-exact{display:flex!important;align-items:center;gap:8px;min-height:44px}.map-room-exact input{width:18px!important;height:18px!important;min-height:18px!important;flex:0 0 18px}
+/* Empty toolbar space must pass clicks and map gestures through to the canvas. */
+.map-toolbar{pointer-events:none}.map-toolbar form,.map-toolbar .map-mode-tabs button,.map-toolbar .map-search-feedback{pointer-events:auto}
+html[data-design="unified"] .map-mode-tabs{width:max-content;max-width:100%;pointer-events:none}
+.map-location-feedback{position:absolute;top:274px;left:16px;right:76px;max-width:420px;z-index:9;display:flex;align-items:flex-start;gap:9px;padding:12px 14px;background:#fffdf8f5;border:1px solid #e2dcd4;border-radius:15px;box-shadow:0 4px 20px #302d2812;font-size:12px;line-height:1.6;color:#55473a;pointer-events:none}
+.map-location-feedback svg{flex:none;margin-top:3px}.map-locate[aria-busy=true] svg{animation:map-location-pulse 1s ease-in-out infinite}
+@keyframes map-location-pulse{50%{opacity:.3}}
+@media(prefers-reduced-motion:reduce){.map-locate[aria-busy=true] svg{animation:none}}

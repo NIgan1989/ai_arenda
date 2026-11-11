@@ -31,6 +31,7 @@
 -- migration 0027_shared_mobile_api.sql sha256:ff13b7fca3c6a17a5f60ef1f8ea0057cd69704b7a6e53d30f4ccb8b55e377681
 -- migration 0028_content_moderation.sql sha256:7046a9ad24be521d283237859e9fcbac2bf906c8365d57afb812ccd7fd9273c2
 -- migration 0029_account_deletion.sql sha256:941690588864e3f9bcc6342f49abfeb64aa45cbd4fa8732b76ffe25a11dd575e
+-- migration 0030_web_push.sql sha256:0f2d262dfdc6775b5f806c36b20a231e2f5763e02dfe0c75942c6d89a498fa38
 
 -- table access_receipts
 CREATE TABLE access_receipts (id TEXT PRIMARY KEY,property_id TEXT NOT NULL,entity_kind TEXT NOT NULL,entity_id TEXT NOT NULL,user_id TEXT NOT NULL,created_at INTEGER NOT NULL,expires_at INTEGER NOT NULL);
@@ -660,6 +661,36 @@ CREATE TABLE property_policies (
 -- table provider_events
 CREATE TABLE provider_events (provider TEXT NOT NULL,event_id TEXT NOT NULL,intent_id TEXT NOT NULL,payload_hash TEXT NOT NULL,created_at INTEGER NOT NULL,PRIMARY KEY(provider,event_id));
 
+-- table push_deliveries
+CREATE TABLE push_deliveries (
+ id TEXT PRIMARY KEY,
+ subscription_id TEXT NOT NULL REFERENCES push_subscriptions(id) ON DELETE CASCADE,
+ notification_id TEXT REFERENCES notifications(id) ON DELETE CASCADE,
+ status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','sending','sent','dead')),
+ attempts INTEGER NOT NULL DEFAULT 0,
+ available_at INTEGER NOT NULL,
+ lease_until INTEGER NOT NULL DEFAULT 0,
+ lease_token TEXT NOT NULL DEFAULT '',
+ last_error TEXT NOT NULL DEFAULT '',
+ created_at INTEGER NOT NULL,
+ sent_at INTEGER,
+ UNIQUE(subscription_id,notification_id)
+);
+
+-- table push_subscriptions
+CREATE TABLE push_subscriptions (
+ id TEXT PRIMARY KEY,
+ user_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+ session_hash TEXT NOT NULL REFERENCES auth_sessions(hash) ON DELETE CASCADE,
+ role TEXT NOT NULL CHECK(role IN ('guest','owner','cleaner')),
+ endpoint_hash TEXT NOT NULL,
+ ciphertext TEXT NOT NULL,
+ created_at INTEGER NOT NULL,
+ updated_at INTEGER NOT NULL,
+ last_test_at INTEGER NOT NULL DEFAULT 0,
+ UNIQUE(session_hash,role), UNIQUE(endpoint_hash,role)
+);
+
 -- table review_property_bindings
 CREATE TABLE review_property_bindings (
  property_id TEXT PRIMARY KEY REFERENCES properties(id),revision INTEGER NOT NULL DEFAULT 0
@@ -775,6 +806,9 @@ CREATE INDEX participant_review_user ON participant_reviews(user_id,role,status)
 
 -- index property_imports_owner
 CREATE INDEX property_imports_owner ON property_imports(owner_id,created_at);
+
+-- index push_due
+CREATE INDEX push_due ON push_deliveries(status,available_at,lease_until);
 
 -- view pilot_property_admissions
 CREATE VIEW pilot_property_admissions AS
@@ -1119,6 +1153,16 @@ CREATE TRIGGER account_erased_property_imports_insert BEFORE INSERT ON property_
 -- trigger account_erased_property_imports_update
 CREATE TRIGGER account_erased_property_imports_update BEFORE UPDATE ON property_imports WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.owner_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END;
 
+-- trigger account_erased_push_subscriptions_insert
+CREATE TRIGGER account_erased_push_subscriptions_insert BEFORE INSERT ON push_subscriptions
+ WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.user_id)
+ BEGIN SELECT RAISE(ABORT,'account_erased'); END;
+
+-- trigger account_erased_push_subscriptions_update
+CREATE TRIGGER account_erased_push_subscriptions_update BEFORE UPDATE ON push_subscriptions
+ WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.user_id)
+ BEGIN SELECT RAISE(ABORT,'account_erased'); END;
+
 -- trigger account_erased_worker_dispatch_insert
 CREATE TRIGGER account_erased_worker_dispatch_insert BEFORE INSERT ON worker_dispatch WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.user_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END;
 
@@ -1263,6 +1307,15 @@ CREATE TRIGGER notification_outbox AFTER INSERT ON notifications BEGIN
  INSERT OR IGNORE INTO delivery_outbox(id,notification_id,user_id,role,channel,available_at,created_at)
  SELECT lower(hex(randomblob(16))),NEW.id,NEW.user_id,c.role,c.channel,NEW.created_at,NEW.created_at FROM delivery_channels c
  WHERE c.user_id=NEW.user_id AND c.enabled=1 AND c.verified_at IS NOT NULL AND NEW.dedupe LIKE c.role||':%';
+END;
+
+-- trigger notification_push
+CREATE TRIGGER notification_push AFTER INSERT ON notifications BEGIN
+ INSERT OR IGNORE INTO push_deliveries(id,subscription_id,notification_id,available_at,created_at)
+ SELECT lower(hex(randomblob(16))),s.id,NEW.id,NEW.created_at,NEW.created_at
+ FROM push_subscriptions s JOIN auth_sessions a ON a.hash=s.session_hash AND a.user_id=s.user_id
+ JOIN auth_accounts c ON c.id=a.user_id AND c.credential_version=a.credential_version
+ WHERE s.user_id=NEW.user_id AND a.expires_at>unixepoch() AND NEW.dedupe LIKE s.role||':%';
 END;
 
 -- trigger pilot_booking_insert

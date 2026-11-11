@@ -1,0 +1,6 @@
+{
+ "id":"/", "name":"AI Аренда", "short_name":"AI Аренда", "lang":"ru",
+ "start_url":"/", "scope":"/", "display":"standalone",
+ "background_color":"#faf9f6", "theme_color":"#9e442e",
+ "icons":[{"src":"/brand-mark.png","sizes":"1254x1254","type":"image/png","purpose":"any"}]
+}

@@ -17,6 +17,21 @@ test('normalizes phone numbers and rejects malformed input',()=>{
  assert.equal(normalizePhone('8 (777) 123-45-67'),'+77771234567');assert.equal(normalizePhone('+7 777 123 45 67'),'+77771234567');
  for(const value of ['abc+77771234567','123','+00000000000'])assert.throws(()=>normalizePhone(value));
 });
+
+test('configured administrator email is only a password-protected alias for the same phone account',async()=>{
+ const f=fixture();try{
+  const user={name:'Operator',phone:'+77771234567',password:'Operator test password'};
+  await f.call('register',user);
+  const config={ADMIN_LOGIN_EMAIL:'operator@example.test',ADMIN_LOGIN_PHONE:user.phone};
+  const login=(phone,password=user.password,settings=config)=>authRequest(f.db,new Request('http://localhost/api/auth/login',{method:'POST',headers:{origin:'http://localhost','content-type':'application/json'},body:JSON.stringify({phone,password,platformAdmin:true,roles:['admin']})}),'login','web',settings);
+  const result=await login(' OPERATOR@example.test ');assert.equal(result.status,200);
+  const session=await sessionUser(f.db,result.headers.get('set-cookie'));assert.equal(session.phone,user.phone);
+  await assert.rejects(login('operator@example.test','Wrong password'),e=>e.status===401);
+  await assert.rejects(login('unknown@example.test'),e=>e.status===401);
+  await assert.rejects(login('operator@example.test',user.password,{}),e=>e.status===401);
+  assert.deepEqual(JSON.parse(f.raw.prepare('SELECT roles FROM profiles').get().roles),['guest']);
+ }finally{f.raw.close();}
+});
 test('registration, password verification, session isolation, logout, recovery and replay rejection',async()=>{
  const f=fixture();try{
  const user={name:'Test User',phone:'+77771234567',password:'Long password 2026'};

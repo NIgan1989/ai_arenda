@@ -2,7 +2,6 @@ declare namespace Cloudflare {
   interface Env {
     TEST_DATA_ONLY?: string;
     TEST_AI_ENABLED?: string;
-    DB?: D1Database;
     BUCKET?: R2Bucket;
     OPENAI_API_KEY?: string;
     OPENAI_MODEL?: string;
@@ -14,6 +13,9 @@ declare namespace Cloudflare {
     AI_GLOBAL_DAILY_USD_CAP?: string;
     ADMINISTRATOR_RUNNER_SECRET?: string;
     SITE_PUBLIC_URL?: string;
+    VAPID_PUBLIC_KEY?: string;
+    VAPID_PRIVATE_KEY?: string;
+    VAPID_SUBJECT?: string;
     TELEGRAM_BOT_TOKEN?: string;
     TELEGRAM_BOT_USERNAME?: string;
     TELEGRAM_WEBHOOK_SECRET?: string;
@@ -28,5 +30,7 @@ declare namespace Cloudflare {
     ACCESS_ENCRYPTION_KEY?: string;
     CALENDAR_ALLOWED_HOSTS?: string;
     PLATFORM_ADMIN_IDS?: string;
+    ADMIN_LOGIN_EMAIL?: string;
+    ADMIN_LOGIN_PHONE?: string;
   }
 }

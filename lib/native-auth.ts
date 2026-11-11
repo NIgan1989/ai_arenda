@@ -57,7 +57,8 @@ async function limit(db:D1Database,key:string,max:number){
  if(!value||value.attempts>max)throw new DomainError('Слишком много попыток. Попробуйте через 15 минут.',429);
 }
 
-export async function authRequest(db:D1Database,request:Request,action:string,client:'web'|'mobile'='web'){
+export type AdminLoginConfig={ADMIN_LOGIN_EMAIL?:string;ADMIN_LOGIN_PHONE?:string};
+export async function authRequest(db:D1Database,request:Request,action:string,client:'web'|'mobile'='web',config:AdminLoginConfig={}){
  if(request.method!=='POST')return response({error:'Используйте POST.'},undefined,405);
  const origin=request.headers.get('origin');
  if((client==='web'?origin!==new URL(request.url).origin:!!origin&&origin!==new URL(request.url).origin)||request.headers.get('sec-fetch-site')==='cross-site')throw new DomainError('Источник запроса не разрешён.',403);
@@ -73,8 +74,10 @@ export async function authRequest(db:D1Database,request:Request,action:string,cl
  if(!['register','login','recover'].includes(action))return response({error:'Маршрут не найден.'},undefined,404);
  const ip=request.headers.get('cf-connecting-ip')||'local';
  await limit(db,'ip:'+await digest(ip),60);
- const phone=normalizePhone(body.phone),password=passwordInput(body.password);
- await limit(db,action+':phone:'+await digest(phone),action==='register'?5:10);
+ const identifier=String(body.phone??'').trim(),emailLogin=action==='login'&&identifier.includes('@');
+ // An optional operator email is a server-configured login alias, never an admin grant.
+ const phone=emailLogin?(config.ADMIN_LOGIN_EMAIL?.trim().toLowerCase()===identifier.toLowerCase()&&config.ADMIN_LOGIN_PHONE?normalizePhone(config.ADMIN_LOGIN_PHONE):null):normalizePhone(identifier),password=passwordInput(body.password);
+ await limit(db,action+':phone:'+await digest(phone||identifier.toLowerCase()),action==='register'?5:10);
  await query(db,'DELETE FROM auth_attempt_limits WHERE expires_at<?',now()-86400).run();
  await query(db,'DELETE FROM auth_sessions WHERE expires_at<?',now()).run();
  await query(db,'DELETE FROM auth_mobile_sessions WHERE expires_at<?',now()).run();
@@ -83,11 +86,11 @@ export async function authRequest(db:D1Database,request:Request,action:string,cl
   const name=String(body.name??'').trim();if(name.length<2||name.length>100)throw new DomainError('Укажите имя: от 2 до 100 символов.');
   const city=String(body.city||'Павлодар').trim();if(!city||city.length>80)throw new DomainError('Проверьте город.');
   const id=crypto.randomUUID(),code=recoveryCode(),token=random();
-  try{await db.batch([query(db,'INSERT INTO auth_accounts(id,phone,name,password_hash,recovery_hash,created_at) VALUES (?,?,?,?,?,?)',id,phone,name,await hashPassword(password),await recoveryDigest(code),now()),guestProfile(db,id,name,phone,city),query(db,`INSERT INTO ${sessions} VALUES (?,?,1,?)`,await digest(token),id,now()+lifetime)]);}
+  try{await db.batch([query(db,'INSERT INTO auth_accounts(id,phone,name,password_hash,recovery_hash,created_at) VALUES (?,?,?,?,?,?)',id,phone,name,await hashPassword(password),await recoveryDigest(code),now()),guestProfile(db,id,name,phone!,city),query(db,`INSERT INTO ${sessions} VALUES (?,?,1,?)`,await digest(token),id,now()+lifetime)]);}
   catch(error){if(/UNIQUE/.test(String(error)))throw new DomainError('Не удалось зарегистрировать номер. Попробуйте войти или восстановить доступ.',409);throw error;}
   return response({message:'Аккаунт создан.',recoveryCode:code,...(client==='mobile'?{token,user:{id,name,phone}}:{})},client==='web'?cookie(token,request):undefined,201);
  }
- const account=await query(db,'SELECT * FROM auth_accounts WHERE phone=?',phone).first<{id:string;name:string;password_hash:string;recovery_hash:string;credential_version:number}>();
+ const account=await query(db,'SELECT * FROM auth_accounts WHERE phone=?',phone||'').first<{id:string;name:string;phone:string;password_hash:string;recovery_hash:string;credential_version:number}>();
  if(action==='recover'){
   const codeHash=await recoveryDigest(body.recoveryCode);
   if(!account||!equal(codeHash,account.recovery_hash))throw new DomainError('Номер или резервный код не подходят.',401);
@@ -102,6 +105,6 @@ export async function authRequest(db:D1Database,request:Request,action:string,cl
  const valid=await verifyPassword(password,account?.password_hash||'pbkdf2-sha512$100000$00000000000000000000000000000000$'+ '0'.repeat(128));
  if(!account||!valid)throw new DomainError('Номер или пароль не подходят.',401);
  const token=random();
- await db.batch([guestProfile(db,account.id,account.name,phone),query(db,`INSERT INTO ${sessions} VALUES (?,?,?,?)`,await digest(token),account.id,account.credential_version,now()+lifetime)]);
- return response({message:'Вы вошли.',...(client==='mobile'?{token,user:{id:account.id,name:account.name,phone}}:{})},client==='web'?cookie(token,request):undefined);
+ await db.batch([guestProfile(db,account.id,account.name,account.phone),query(db,`INSERT INTO ${sessions} VALUES (?,?,?,?)`,await digest(token),account.id,account.credential_version,now()+lifetime)]);
+ return response({message:'Вы вошли.',...(client==='mobile'?{token,user:{id:account.id,name:account.name,phone:account.phone}}:{})},client==='web'?cookie(token,request):undefined);
 }

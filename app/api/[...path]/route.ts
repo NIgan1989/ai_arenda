@@ -1,7 +1,8 @@
 import { env as workerEnv } from 'cloudflare:workers';
 import {isolateTestConfig} from '../../../lib/test-environment';
 import { getAppUser } from '../../session';
-import {authRequest,expireSessionCookie} from '../../../lib/native-auth';
+import {authRequest,expireSessionCookie,requestSessionIdentity} from '../../../lib/native-auth';
+import {webPushState,manageWebPush} from '../../../lib/web-push';
 import { RentalService } from '../../../lib/service';
 import { DomainError } from '../../../lib/domain';
 import {isPlatformAdmin} from '../../../lib/account';
@@ -16,6 +17,7 @@ import {boundedRequestText} from '../../../lib/request-body';
 import {buildRuntimeHealth} from '../../../lib/runtime-health';
 import {clientConversation} from '../../../lib/client-conversation';
 import {accountSessions} from '../../../lib/account-sessions';
+import {readPlatformAdmin,writePlatformAdmin} from '../../../lib/platform-admin';
 export const dynamic='force-dynamic';
 const json=(data:unknown,status=200)=>Response.json(data,{status,headers:{'Cache-Control':'no-store','X-Content-Type-Options':'nosniff'}});
 async function handle(request:Request, context:{params:Promise<{path:string[]}>}) {
@@ -39,20 +41,22 @@ async function handle(request:Request, context:{params:Promise<{path:string[]}>}
     }
     if(request.method==='GET'&&route.join('/')==='public/catalog')return json(await new RentalService(env.DB,'').publicSearch(Object.fromEntries(new URL(request.url).searchParams),{syntheticPreview:env.TEST_DATA_ONLY==='1'}));
     if(request.method==='GET'&&route.length===3&&route[0]==='public'&&route[1]==='media')return json(await new RentalService(env.DB,'').publicMedia(route[2]));
-    if(route.length===2&&route[0]==='auth')return await authRequest(env.DB,request,route[1]);
-    if(route.length===3&&route[0]==='mobile'&&route[1]==='auth')return await authRequest(env.DB,request,route[2],'mobile');
+    if(route.length===2&&route[0]==='auth')return await authRequest(env.DB,request,route[1],'web',env);
+    if(route.length===3&&route[0]==='mobile'&&route[1]==='auth')return await authRequest(env.DB,request,route[2],'mobile',env);
     const user=await getAppUser(request);
     if(!user) return json({error:'Войдите, чтобы сохранить данные.',signIn:'/'},401);
     const service=new RentalService(env.DB,user.userId);
-    if(request.method==='GET'&&route.length===1&&route[0]==='access')return json({profile:await service.profile(),user:{id:user.userId,name:user.fullName||'',phone:user.phone}});
+    if(request.method==='GET'&&route.length===1&&route[0]==='access')return json({profile:await service.profile(),platformAdmin:isPlatformAdmin(user.userId,env.PLATFORM_ADMIN_IDS),user:{id:user.userId,name:user.fullName||'',phone:user.phone}});
+    if(request.method==='GET'&&route[0]==='admin')return json(await readPlatformAdmin(service,route.slice(1).join('/'),Object.fromEntries(new URL(request.url).searchParams),env));
     const activeRole=request.headers.get('X-Workspace-Role');
+    if(request.method==='GET'&&route.join('/')==='push'){const identity=await requestSessionIdentity(request);return json(await webPushState(service,parseRole(activeRole),env,identity?.kind==='web'?identity.hash:''));}
     if(request.method==='GET'&&route.join('/')==='sessions'){await service.authorizeWorkspace(activeRole,'account');return json(await accountSessions(service,request));}
     if(request.method==='GET'&&route.join('/')==='conversation')return json(await clientConversation(service,parseRole(activeRole)));
     if(request.method==='GET'&&route[0]==='operations')return json(await readOperations(service,parseRole(activeRole),route.slice(1),env,isPlatformAdmin(user.userId,env.PLATFORM_ADMIN_IDS)));
     if(request.method==='GET'&&route.length===2&&route[0]==='media'){const mediaRole=await service.authorizeWorkspace(activeRole,'media');return json(await service.readMedia(route[1],mediaRole));}
     if(request.method==='GET'&&route.length===1&&route[0]==='account'){await service.authorizeWorkspace(activeRole,'account');return json({...await service.accountState(),platformAdmin:isPlatformAdmin(user.userId,env.PLATFORM_ADMIN_IDS),modelConfigured:!!(env.OPENAI_API_KEY&&env.OPENAI_MODEL)});}
     if(request.method==='GET'&&route.join('/')==='admin/users'){await service.authorizeWorkspace(activeRole,'admin/users');const url=new URL(request.url);return json(await service.listUsers(isPlatformAdmin(user.userId,env.PLATFORM_ADMIN_IDS),{role:url.searchParams.get('role'),search:url.searchParams.get('search'),page:url.searchParams.get('page')||0}));}
-    if(request.method==='GET'&&route[0]==='state') { const role=await service.authorizeWorkspace(activeRole,'state');try{await checkAdministratorForUser(env.DB,user.userId,role);}catch{console.error('AI administrator: workflow check failed');}const state=await service.roleState(role,{catalog:new URL(request.url).searchParams.get('catalog')!=='0'});return json({...state,testMode:env.TEST_DATA_ONLY==='1',commands:await listCommands(service,role),integrations:{...state.integrations,ai:!!(env.OPENAI_API_KEY&&env.OPENAI_MODEL)},user:{id:user.userId,name:user.fullName||''}}); }
+    if(request.method==='GET'&&route[0]==='state') { const role=await service.authorizeWorkspace(activeRole,'state');try{await checkAdministratorForUser(env.DB,user.userId,role);}catch{console.error('AI administrator: workflow check failed');}const state=await service.roleState(role,{catalog:new URL(request.url).searchParams.get('catalog')!=='0'});return json({...state,platformAdmin:isPlatformAdmin(user.userId,env.PLATFORM_ADMIN_IDS),testMode:env.TEST_DATA_ONLY==='1',commands:await listCommands(service,role),integrations:{...state.integrations,ai:!!(env.OPENAI_API_KEY&&env.OPENAI_MODEL)},user:{id:user.userId,name:user.fullName||''}}); }
     if(request.method==='GET'&&route.length===1&&route[0]==='catalog'){await service.authorizeWorkspace(activeRole,'quote');return json(await service.publicCatalog());}
     if(request.method!=='POST'&&!(request.method==='PUT'&&route.join('/')==='conversation')) return json({error:'Маршрут не найден.'},404);
     const origin=request.headers.get('origin');
@@ -64,6 +68,8 @@ async function handle(request:Request, context:{params:Promise<{path:string[]}>}
     const body=JSON.parse(raw||'{}');
     if(!body||typeof body!=='object'||Array.isArray(body))return json({error:'Ожидается объект JSON.'},400);
     const requestKey=request.headers.get('Idempotency-Key');if(requestKey){if(requestKey.length>120||body.requestKey&&body.requestKey!==requestKey)return json({error:'Проверьте ключ операции.'},400);body.requestKey=requestKey;}
+    if(route[0]==='admin')return json(await writePlatformAdmin(service,route.slice(1).join('/'),body,env));
+    if(route.join('/')==='push'){const identity=await requestSessionIdentity(request);return json(await manageWebPush(service,parseRole(activeRole),body,env,identity?.kind==='web'?identity.hash:''));}
     if(request.method==='POST'&&route.join('/')==='sessions'){await service.authorizeWorkspace(activeRole,'account');return json(await accountSessions(service,request,body));}
     if(request.method==='PUT'&&route.join('/')==='conversation')return json(await clientConversation(service,parseRole(activeRole),body));
     if(route[0]==='operations'){const result=await writeOperations(service,parseRole(activeRole),route.slice(1),body,env,isPlatformAdmin(user.userId,env.PLATFORM_ADMIN_IDS)),response=json(result);if((result as Record<string,any>)?.signOut)response.headers.set('Set-Cookie',expireSessionCookie(request));return response;}
