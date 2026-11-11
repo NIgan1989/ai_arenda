@@ -1,6 +1,7 @@
 name: Publish to Cloudflare
 # Publishes main to the Cloudflare Worker after the checks on that commit pass.
-# Needs three repository secrets: CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID, CLOUDFLARE_D1_DATABASE_ID.
+# Needs one repository secret: CLOUDFLARE_API_TOKEN (Workers Scripts: Edit, D1: Edit, Account Settings: Read).
+# The account and the D1 database are found with that token; CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_D1_DATABASE_ID are optional overrides.
 # Runtime secrets of the Worker are never read or changed here; --keep-vars keeps the ones already stored in Cloudflare.
 on:
   workflow_run:
@@ -29,14 +30,12 @@ jobs:
         id: configured
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          CLOUDFLARE_D1_DATABASE_ID: ${{ secrets.CLOUDFLARE_D1_DATABASE_ID }}
         run: |
-          if [ -n "$CLOUDFLARE_API_TOKEN" ] && [ -n "$CLOUDFLARE_ACCOUNT_ID" ] && [ -n "$CLOUDFLARE_D1_DATABASE_ID" ]; then
+          if [ -n "$CLOUDFLARE_API_TOKEN" ]; then
             echo "ready=true" >> "$GITHUB_OUTPUT"
           else
             echo "ready=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::Publishing skipped: add CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_D1_DATABASE_ID to the repository secrets."
+            echo "::notice::Publishing skipped: add CLOUDFLARE_API_TOKEN to the repository secrets."
           fi
       - uses: actions/checkout@v7
         if: steps.configured.outputs.ready == 'true'
@@ -54,24 +53,26 @@ jobs:
       - name: Build
         if: steps.configured.outputs.ready == 'true'
         run: npm run build
-      - name: Prepare the deployment configuration
+      - name: Find the account and the database
         if: steps.configured.outputs.ready == 'true'
         env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           CLOUDFLARE_D1_DATABASE_ID: ${{ secrets.CLOUDFLARE_D1_DATABASE_ID }}
+        run: node scripts/resolve-cloudflare-ids.mjs
+      - name: Prepare the deployment configuration
+        if: steps.configured.outputs.ready == 'true'
         run: node scripts/prepare-cloudflare.mjs --database-id "$CLOUDFLARE_D1_DATABASE_ID" --account-id "$CLOUDFLARE_ACCOUNT_ID" > /dev/null
       - name: Apply pending database migrations
         if: steps.configured.outputs.ready == 'true'
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           WRANGLER_SEND_METRICS: 'false'
         run: node node_modules/wrangler/bin/wrangler.js d1 migrations apply ai-arenda --remote --config .sites-runtime/cloudflare/wrangler.json
       - name: Publish the Worker
         if: steps.configured.outputs.ready == 'true'
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           WRANGLER_SEND_METRICS: 'false'
         run: node node_modules/wrangler/bin/wrangler.js deploy --config .sites-runtime/cloudflare/wrangler.json --keep-vars
       - name: Check the published site

@@ -19,3 +19,20 @@ test('automatic publishing keeps stored Worker secrets and never reads local one
  assert.match(workflow,/cancel-in-progress: false/);
  assert.match(workflow,/workflow_run\.conclusion == 'success'/);
 });
+
+test('automatic publishing needs only the API token and finds the account and database itself',async()=>{
+ const {readFileSync}=await import('node:fs');const workflow=readFileSync(new URL('../.github/workflows/deploy.yml',import.meta.url),'utf8');
+ const gate=workflow.slice(workflow.indexOf('Check that publishing is configured'),workflow.indexOf('actions/checkout'));
+ assert.match(gate,/CLOUDFLARE_API_TOKEN/);assert.doesNotMatch(gate,/ACCOUNT_ID|DATABASE_ID/);
+ assert.ok(workflow.indexOf('resolve-cloudflare-ids.mjs')<workflow.indexOf('prepare-cloudflare.mjs'));
+ const {pickAccount,pickDatabase}=await import('../scripts/resolve-cloudflare-ids.mjs');
+ const account='a'.repeat(32),other='b'.repeat(32),database='11111111-2222-3333-4444-555555555555';
+ assert.equal(pickAccount([{id:account}]),account);
+ assert.equal(pickAccount([{id:account},{id:other}],other),other);
+ assert.throws(()=>pickAccount([]),/any Cloudflare account/);
+ assert.throws(()=>pickAccount([{id:account},{id:other}]),/several accounts/);
+ assert.throws(()=>pickAccount([],'not-an-id'),/not a Cloudflare account ID/);
+ assert.equal(pickDatabase([{name:'other',uuid:database},{name:'ai-arenda',uuid:database}]),database);
+ assert.throws(()=>pickDatabase([{name:'ai-arenda-test',uuid:database}]),/was not found/);
+ assert.equal(pickDatabase([],'ai-arenda',database),database);
+});

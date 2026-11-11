@@ -27,12 +27,9 @@
 
 С 12 ноября 2026 в репозитории есть `.github/workflows/deploy.yml`. После каждого слияния в main, когда проверки `Check local application` на этом коммите прошли, GitHub сам собирает проект, применяет новые миграции D1 и публикует Worker, затем проверяет, что главная, вход и каталог отвечают 200. Запустить вручную можно на странице Actions кнопкой Run workflow.
 
-Нужны три секрета репозитория (Settings → Secrets and variables → Actions):
+Нужен один секрет репозитория (Settings → Secrets and variables → Actions): `CLOUDFLARE_API_TOKEN` — токен Cloudflare с правами Account → Workers Scripts: Edit, Account → D1: Edit и Account → Account Settings: Read, ограниченный этим аккаунтом. Аккаунт и базу D1 `ai-arenda` публикация находит сама этим токеном (`scripts/resolve-cloudflare-ids.mjs`) и скрывает их в журнале. Если токен видит несколько аккаунтов, добавьте секрет `CLOUDFLARE_ACCOUNT_ID`; `CLOUDFLARE_D1_DATABASE_ID` тоже можно задать явно.
 
-- `CLOUDFLARE_API_TOKEN` — токен Cloudflare с правами Account → Workers Scripts: Edit и Account → D1: Edit, ограниченный этим аккаунтом.
-- `CLOUDFLARE_ACCOUNT_ID` и `CLOUDFLARE_D1_DATABASE_ID` — значения `account_id` и `database_id` из локального `.sites-runtime/cloudflare/wrangler.json`.
-
-Пока секретов нет, публикация пропускается с пометкой, а не падает. Серверные секреты приложения (OpenAI, ключи шифрования, VAPID) в GitHub не передаются: публикация идёт с `--keep-vars` и оставляет те, что уже сохранены в Cloudflare. Менять их по-прежнему нужно локально через `node scripts/deploy-cloudflare.mjs`. Адрес сайта для проверки можно переопределить переменной репозитория `ARENDA_PUBLIC_URL`.
+Пока секрета нет, публикация пропускается с пометкой, а не падает. Серверные секреты приложения (OpenAI, ключи шифрования, VAPID) в GitHub не передаются: публикация идёт с `--keep-vars` и оставляет те, что уже сохранены в Cloudflare. Менять их по-прежнему нужно локально через `node scripts/deploy-cloudflare.mjs`. Адрес сайта для проверки можно переопределить переменной репозитория `ARENDA_PUBLIC_URL`.
 
 ## Очистка локального приложения
 
