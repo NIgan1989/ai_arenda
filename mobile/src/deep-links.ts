@@ -3,9 +3,9 @@ import type {Role,Row} from './model';
 export type ProcessLink={role:Role;section:string;entityId?:string};
 export type ProcessLinkView={section:string;block?:'bookings'|'jobs'|'properties';payload?:{ids:string[];role:Role;mode:'owner'|'guest'}};
 const sections:Record<Role,Record<string,'booking'|'job'|'property'|null>>={
- guest:{bookings:'booking',calendar:null,account:null},
- owner:{bookings:'booking',cleaning:'job',properties:'property',calendar:null,account:null},
- cleaner:{jobs:'job',assignments:'job',calendar:null,account:null}
+ guest:{map:null,bookings:'booking',calendar:null,account:null},
+ owner:{map:null,bookings:'booking',cleaning:'job',properties:'property',calendar:null,account:null},
+ cleaner:{map:null,jobs:'job',assignments:'job',calendar:null,account:null}
 };
 const idPattern=/^[A-Za-z0-9_-]{1,100}$/;
 const owns=(object:object,key:string)=>Object.prototype.hasOwnProperty.call(object,key);
