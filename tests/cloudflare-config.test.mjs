@@ -11,3 +11,11 @@ test('cloud deployment preparation rejects placeholder destinations and cannot c
  assert.throws(()=>cloudflareConfig({...input,accountId:''}),/account ID/);
  const config=cloudflareConfig(input);assert.equal(config.workers_dev,true);assert.deepEqual(config.triggers.crons,['* * * * *']);assert.equal(config.d1_databases[0].binding,'DB');assert.equal(config.assets.run_worker_first,false);assert.equal('vars' in config,false);assert.equal('services' in config,false);assert.equal(JSON.stringify(config).includes('private-fixture'),false);
 });
+
+test('automatic publishing keeps stored Worker secrets and never reads local ones',async()=>{
+ const {readFileSync}=await import('node:fs');const workflow=readFileSync(new URL('../.github/workflows/deploy.yml',import.meta.url),'utf8');
+ assert.match(workflow,/wrangler\.js deploy [^\n]*--keep-vars/);
+ assert.doesNotMatch(workflow,/\.dev\.vars|--secrets-file|reset-local-data|deploy-cloudflare\.mjs/);
+ assert.match(workflow,/cancel-in-progress: false/);
+ assert.match(workflow,/workflow_run\.conclusion == 'success'/);
+});
