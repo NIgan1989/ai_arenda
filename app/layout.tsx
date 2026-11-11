@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 import "./design-system.css";
 import "./mobile-first.css";
+import "./interface-release.css";
 import {WorkspaceProvider} from "../components/workspace-provider";
 
 export const metadata: Metadata = {
@@ -22,7 +23,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="ru" data-design="unified">
+    <html lang="ru" data-design="unified" data-interface="release">
       <body className="antialiased"><WorkspaceProvider>{children}</WorkspaceProvider></body>
     </html>
   );
