@@ -1,0 +1,3 @@
+/* Keep sizing independent of route CSS order and MapLibre's position:relative. */
+.rental-map-canvas{position:absolute;inset:0}
+.rental-map-canvas>.map-surface{position:absolute;inset:0}

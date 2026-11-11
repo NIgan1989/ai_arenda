@@ -2,6 +2,7 @@
 import {useEffect,useRef,useState} from 'react';
 import type {Map as MapType,GeoJSONSource} from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
+import './map-canvas.css';
 import {RasterMapCanvas} from './raster-map-canvas';
 type Row=Record<string,any>;
 export type MapCanvasProps={adaptivePanel?:boolean;searching?:boolean;items:Row[];selected:string;onSelect:(id:string)=>void;center:[number,number];people?:Row[];routes?:Row[];sheetSize?:number;searchKey?:string;pick?:boolean;onPick?:(p:[number,number])=>void;focus?:[number,number]|null};
