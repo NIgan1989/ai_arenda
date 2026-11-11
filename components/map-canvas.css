@@ -1,3 +1,5 @@
 /* Keep sizing independent of route CSS order and MapLibre's position:relative. */
 .rental-map-canvas{position:absolute;inset:0}
 .rental-map-canvas>.map-surface{position:absolute;inset:0}
+.smart-map .map-surface .maplibregl-ctrl-top-right,
+html[data-design="unified"] .workspace-shell .smart-map .map-surface .maplibregl-ctrl-top-right{top:150px;right:12px}
