@@ -4,3 +4,5 @@
 @media(max-width:700px){.aside{display:none}.summary .section-heading h2{margin-bottom:0}.summary .data-row{padding:14px 0}}
 
 @media(max-width:700px){.page-home .stack{display:flex;flex-direction:column}.page-home .stack>.panel{order:-1}.page-home .eyebrow{display:none}.page-home .hero{padding:20px}.page-home .page-title{margin-bottom:18px}}
+
+.public-shell .workspace{max-width:1240px;width:100%;margin:auto}.public-actions{display:flex;align-items:center;gap:24px;font-size:14px}@media(max-width:700px){.public-actions{gap:8px}.public-shell .workspace{padding-bottom:32px}.public-actions .action{min-height:44px;padding:8px 16px}}
