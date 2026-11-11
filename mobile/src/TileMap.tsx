@@ -8,7 +8,7 @@ export type MapPin={key:string;point:MapPoint;label:string;tone?:'home'|'pending
 type Props={center:MapPoint;pins:MapPin[];selected?:string;onSelect?:(key:string)=>void;bottomInset?:number;topInset?:number;focusKey?:string;picking?:boolean;onCenter?:(center:MapPoint)=>void};
 // The tile service asks clients to identify themselves; no account or device data is sent.
 const tileHeaders={'User-Agent':'AIArenda-mobile/0.1 (+'+API_URL+')'};
-const tones={home:{bg:C.white,fg:C.ink,line:C.line},pending:{bg:'#FFF4DF',fg:'#7A4B10',line:'#E8C98F'},offer:{bg:C.green,fg:C.white,line:C.green},job:{bg:'#E7EEF8',fg:'#24406B',line:'#BFCFE6'},booking:{bg:'#EDF3E8',fg:C.ink,line:'#C9D8C2'}};
+const tones={home:{bg:C.surface,fg:C.ink,line:C.line},pending:{bg:C.warningSoft,fg:C.warning,line:C.warningLine},offer:{bg:C.accent,fg:C.surface,line:C.accent},job:{bg:C.infoSoft,fg:C.info,line:C.infoLine},booking:{bg:C.accentSoft,fg:C.ink,line:C.accentLine}};
 
 export function TileMap({center,pins,selected,onSelect,bottomInset=0,topInset=0,focusKey='',picking=false,onCenter}:Props){
  const [size,setSize]=useState({w:0,h:0}),[view,setView]=useState<{center:MapPoint;zoom:number}>({center,zoom:12}),[drag,setDrag]=useState({x:0,y:0}),[still,setStill]=useState(false);
@@ -42,7 +42,7 @@ export function TileMap({center,pins,selected,onSelect,bottomInset=0,topInset=0,
    {placed.map(({pin,x,y})=>{const tone=tones[pin.tone||'home'],active=pin.key===selected;
     return <View key={pin.key} pointerEvents="box-none" style={[m.pinWrap,{left:x-70,top:y-20,zIndex:active?3:pin.tone==='offer'?2:1}]}>
      {pin.tone==='pending'&&!still&&<Animated.View pointerEvents="none" style={[m.ring,{opacity:pulse.interpolate({inputRange:[0,1],outputRange:[.55,0]}),transform:[{scale:pulse.interpolate({inputRange:[0,1],outputRange:[.6,1.9]})}]}]}/>}
-     <Pressable accessibilityRole="button" accessibilityLabel={(pin.title||'Объект')+', '+pin.label} accessibilityState={{selected:active}} disabled={picking||!onSelect} onPress={()=>onSelect?.(pin.key)} hitSlop={6} style={[m.pin,{backgroundColor:active?C.ink:tone.bg,borderColor:active?C.ink:tone.line}]}><Text numberOfLines={1} style={[m.pinText,{color:active?C.white:tone.fg}]}>{pin.label}</Text></Pressable>
+     <Pressable accessibilityRole="button" accessibilityLabel={(pin.title||'Объект')+', '+pin.label} accessibilityState={{selected:active}} disabled={picking||!onSelect} onPress={()=>onSelect?.(pin.key)} hitSlop={6} style={[m.pin,{backgroundColor:active?C.ink:tone.bg,borderColor:active?C.ink:tone.line}]}><Text numberOfLines={1} style={[m.pinText,{color:active?C.surface:tone.fg}]}>{pin.label}</Text></Pressable>
     </View>;})}
   </View>
   {picking&&<View pointerEvents="none" style={[m.cross,{left:size.w/2-14,top:originY-28}]}><View style={m.crossHead}/><View style={m.crossStem}/></View>}
@@ -54,11 +54,11 @@ export function TileMap({center,pins,selected,onSelect,bottomInset=0,topInset=0,
  </View>;
 }
 const m=StyleSheet.create({
- host:{flex:1,backgroundColor:'#E6E9E1',overflow:'hidden'},tile:{position:'absolute',width:TILE,height:TILE},
+ host:{flex:1,backgroundColor:C.line,overflow:'hidden'},tile:{position:'absolute',width:TILE,height:TILE},
  pinWrap:{position:'absolute',width:140,height:40,alignItems:'center',justifyContent:'center'},
- pin:{minHeight:32,minWidth:44,paddingHorizontal:11,borderRadius:16,borderWidth:1,alignItems:'center',justifyContent:'center',shadowColor:'#17231F',shadowOffset:{width:0,height:2},shadowOpacity:.18,shadowRadius:5,elevation:3},
- pinText:{fontSize:13,fontWeight:'600'},ring:{position:'absolute',width:56,height:56,borderRadius:28,backgroundColor:'#E0A84A'},
- cross:{position:'absolute',width:28,alignItems:'center'},crossHead:{width:24,height:24,borderRadius:12,backgroundColor:C.green,borderWidth:4,borderColor:C.white},crossStem:{width:3,height:10,backgroundColor:C.green},
- controls:{position:'absolute',right:12,gap:8},control:{width:44,height:44,borderRadius:14,backgroundColor:'rgba(255,255,255,0.94)',borderWidth:1,borderColor:C.line,alignItems:'center',justifyContent:'center'},controlText:{fontSize:22,lineHeight:26,color:C.ink},
- credit:{position:'absolute',left:8,fontSize:10,color:'#4C574E',backgroundColor:'rgba(255,255,255,0.75)',paddingHorizontal:5,borderRadius:4}
+ pin:{minHeight:32,minWidth:44,paddingHorizontal:12,borderRadius:16,borderWidth:1,alignItems:'center',justifyContent:'center',shadowColor:C.ink,shadowOffset:{width:0,height:2},shadowOpacity:.18,shadowRadius:5,elevation:3},
+ pinText:{fontSize:14,fontWeight:'600'},ring:{position:'absolute',width:56,height:56,borderRadius:999,backgroundColor:C.warningLine},
+ cross:{position:'absolute',width:28,alignItems:'center'},crossHead:{width:24,height:24,borderRadius:12,backgroundColor:C.accent,borderWidth:4,borderColor:C.surface},crossStem:{width:3,height:10,backgroundColor:C.accent},
+ controls:{position:'absolute',right:12,gap:8},control:{width:44,height:44,borderRadius:12,backgroundColor:C.surface,borderWidth:1,borderColor:C.line,alignItems:'center',justifyContent:'center'},controlText:{fontSize:22,lineHeight:28,color:C.ink},
+ credit:{position:'absolute',left:8,fontSize:12,color:C.inkSoft,backgroundColor:'rgba(255,255,255,0.75)',paddingHorizontal:4,borderRadius:4}
 });
