@@ -1,0 +1,85 @@
+name: Publish to Cloudflare
+# Publishes main to the Cloudflare Worker after the checks on that commit pass.
+# Needs one repository secret: CLOUDFLARE_API_TOKEN (Workers Scripts: Edit, D1: Edit, Account Settings: Read).
+# The account and the D1 database are found with that token; CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_D1_DATABASE_ID are optional overrides.
+# Runtime secrets of the Worker are never read or changed here; --keep-vars keeps the ones already stored in Cloudflare.
+on:
+  workflow_run:
+    workflows: ['Check local application']
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: publish-cloudflare
+  cancel-in-progress: false
+env:
+  ARENDA_PUBLIC_URL: ${{ vars.ARENDA_PUBLIC_URL || 'https://ai-arenda.ai-arenda-kz.workers.dev' }}
+jobs:
+  publish:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push' &&
+       github.event.workflow_run.head_branch == 'main')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check that publishing is configured
+        id: configured
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          if [ -n "$CLOUDFLARE_API_TOKEN" ]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Publishing skipped: add CLOUDFLARE_API_TOKEN to the repository secrets."
+          fi
+      - uses: actions/checkout@v7
+        if: steps.configured.outputs.ready == 'true'
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        if: steps.configured.outputs.ready == 'true'
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Install locked dependencies
+        if: steps.configured.outputs.ready == 'true'
+        run: npm ci
+      - name: Build
+        if: steps.configured.outputs.ready == 'true'
+        run: npm run build
+      - name: Find the account and the database
+        if: steps.configured.outputs.ready == 'true'
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_D1_DATABASE_ID: ${{ secrets.CLOUDFLARE_D1_DATABASE_ID }}
+        run: node scripts/resolve-cloudflare-ids.mjs
+      - name: Prepare the deployment configuration
+        if: steps.configured.outputs.ready == 'true'
+        run: node scripts/prepare-cloudflare.mjs --database-id "$CLOUDFLARE_D1_DATABASE_ID" --account-id "$CLOUDFLARE_ACCOUNT_ID" > /dev/null
+      - name: Apply pending database migrations
+        if: steps.configured.outputs.ready == 'true'
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          WRANGLER_SEND_METRICS: 'false'
+        run: node node_modules/wrangler/bin/wrangler.js d1 migrations apply ai-arenda --remote --config .sites-runtime/cloudflare/wrangler.json
+      - name: Publish the Worker
+        if: steps.configured.outputs.ready == 'true'
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          WRANGLER_SEND_METRICS: 'false'
+        run: node node_modules/wrangler/bin/wrangler.js deploy --config .sites-runtime/cloudflare/wrangler.json --keep-vars
+      - name: Check the published site
+        if: steps.configured.outputs.ready == 'true'
+        run: |
+          for path in / /signin /api/public/catalog; do
+            code=$(curl -s -o /dev/null -w '%{http_code}' --retry 5 --retry-delay 5 --retry-all-errors --max-time 30 "$ARENDA_PUBLIC_URL$path")
+            echo "$path $code"
+            [ "$code" = "200" ] || exit 1
+          done
