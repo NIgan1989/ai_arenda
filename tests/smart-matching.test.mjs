@@ -1,6 +1,8 @@
 import {test} from 'node:test';import assert from 'node:assert/strict';import {fixture,load,now,iso} from './helpers/platform.mjs';
 const {matchingInput,rankMatches,previewMatches,matchingAction,matchingState}=await load('smart-matching');
-const input=()=>({city:'Павлодар',start:iso(now()+86400),end:iso(now()+172800),guests:'2',mode:'daily',maxPrice:'11000',priority:'balanced',features:[]});
+// Booking must repeat the requested dates exactly. Fix them once: recomputing from the clock made a test fail whenever a second passed between the request and the booking.
+const base=now();
+const input=()=>({city:'Павлодар',start:iso(base+86400),end:iso(base+172800),guests:'2',mode:'daily',maxPrice:'11000',priority:'balanced',features:[]});
 async function enabled(){const f=await fixture();await matchingAction(f.owner,'owner','preference',{propertyId:f.property,enabled:true});return f;}
 test('matching validates constraints, whole-period budget and mandatory amenities; location is coarse',async()=>{
  assert.throws(()=>matchingInput({...input(),mode:'nightly'}));assert.throws(()=>matchingInput({...input(),features:['not_real']}));assert.throws(()=>matchingInput({...input(),near:{longitude:'76',latitude:52}}));
