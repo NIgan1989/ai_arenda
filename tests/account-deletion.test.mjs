@@ -10,6 +10,7 @@ test('unused shared account deletion removes local data and sessions, retaining 
  const f=await unused();try{
   const other=await authRequest(f.db,auth('register',{phone:'+77770000001',name:'Other account',password}),'register');const otherUser=await sessionUser(f.db,other.headers.get('set-cookie'));
   f.db.raw.prepare('INSERT INTO profile_preferences VALUES (?,?,?,?,?,?)').run(f.s.userId,'Private bio','Русский','participants',1,1);
+  f.db.raw.prepare("INSERT INTO matching_requests(id,guest_id,request_key,filters,status,created_at,expires_at) VALUES (?,?,?,'{\"district\":\"Private search\"}','empty',?,?)").run('unused-match',f.s.userId,'unused-key',now(),now()+600);
   f.db.raw.prepare('INSERT INTO media VALUES (?,?,?,?,?,?,?,?)').run('avatar',f.s.userId,'avatar','private-local-image',8,8,100,now());
   f.db.raw.prepare('INSERT INTO profile_details VALUES (?,?,?,?,?,?)').run(f.s.userId,'avatar','available',1,'revision',now());
   f.db.raw.prepare("INSERT INTO notifications VALUES ('notification',?,'Private notification','unique',0,?)").run(f.s.userId,now());
@@ -18,7 +19,7 @@ test('unused shared account deletion removes local data and sessions, retaining 
   assert.equal((await accountDeletionState(f.s,'guest')).canEraseActiveDatabase,true);
   const result=await accountDeletionAction(f.s,'guest',f.erase);assert.equal(result.erased,true);assert.equal(result.signOut,true);assert.equal(result.receipt.scope,'active_database_only');
   assert.equal(await sessionUser(f.db,f.cookie),null);assert.equal(await sessionUser(f.db,null,'Bearer '+f.token),null);assert.equal(await f.s.profile(),null);
-  for(const table of ['messages','media','profile_details','profile_preferences','notifications','delivery_outbox','deletion_requests','auth_mobile_sessions'])assert.equal(f.db.raw.prepare('SELECT COUNT(*) n FROM '+table).get().n,0,table);
+  for(const table of ['matching_requests','matching_offers','matching_preferences','messages','media','profile_details','profile_preferences','notifications','delivery_outbox','deletion_requests','auth_mobile_sessions'])assert.equal(f.db.raw.prepare('SELECT COUNT(*) n FROM '+table).get().n,0,table);
   assert.equal(f.db.raw.prepare('SELECT COUNT(*) n FROM auth_sessions WHERE user_id=?').get(f.s.userId).n,0);
   assert.ok(await new RentalService(f.db,otherUser.userId).profile());assert.equal(f.db.raw.prepare('SELECT COUNT(*) n FROM auth_accounts').get().n,1);
   const receipt=f.db.raw.prepare('SELECT * FROM account_erasure_receipts').get();assert.doesNotMatch(JSON.stringify(receipt),new RegExp(f.s.userId+'|77771112233|Erasure fixture|Private bio'));

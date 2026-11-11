@@ -1,4 +1,5 @@
 import {safetyState,safetyAction} from './account-safety';
+import {matchingAction} from './smart-matching';
 import {aiDataPermission,saveAIDataPermission} from './ai-data-permission';
 import {buildJourneyRoute} from './journey-routing';
 import {mapSearch,saveMapPoint,journeyAction} from './map-workspace';
@@ -41,6 +42,7 @@ export async function readOperations(service:RentalService,role:Role,path:string
 }
 export async function writeOperations(service:RentalService,role:Role,path:string[],body:Row,config:OperationConfig={},platformAdmin=false){
  await service.authorizeWorkspace(role,'operations');const route=path.join('/');
+ if(path[0]==='matching')return matchingAction(service,role,path[1],body);
  if(route==='ai-data-permission')return saveAIDataPermission(service,body);
  if(path[0]==='safety')return safetyAction(service,role,path[1],body,platformAdmin);
  if(route==='administrator/history')return administratorConversation(service,role,body.before);

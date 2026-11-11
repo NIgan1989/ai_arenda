@@ -13,11 +13,11 @@ const money=(n:number)=>new Intl.NumberFormat('ru-RU').format(n)+' ₸';
 const local=(hours:number)=>new Date(Date.now()+(hours+5)*3600000).toISOString().slice(0,16);
 const date=(n:number)=>new Date(n*1000).toLocaleString('ru-RU',{timeZone:'Asia/Almaty',day:'numeric',month:'long',hour:'2-digit',minute:'2-digit'});
 
-export function BookingRequest({property,requestKey,disabled,onQuote,onConfirm,initial,testMode=false}:{
-  property:Row;requestKey:string;disabled:boolean;onQuote:(body:Row)=>Promise<Row>;onConfirm:(body:Row)=>Promise<unknown>|void;initial?:Row;testMode?:boolean;
+export function BookingRequest({property,requestKey,disabled,onQuote,onConfirm,initial,initialQuote,onChangeDates,testMode=false}:{
+  property:Row;requestKey:string;disabled:boolean;onQuote:(body:Row)=>Promise<Row>;onConfirm:(body:Row)=>Promise<unknown>|void;initial?:Row;initialQuote?:Row;onChangeDates?:()=>void;testMode?:boolean;
 }){
   const [start,setStart]=useState(()=>initial?.start||local(24)),[end,setEnd]=useState(()=>initial?.end||local(initial?.mode==='hourly'?24+Math.max(2,property.policy?.min_hours||2):48)),[guests,setGuests]=useState(()=>Number(initial?.guests)||1);
-  const [quote,setQuote]=useState<Row|null>(null),[checking,setChecking]=useState(false),[error,setError]=useState('');
+  const [quote,setQuote]=useState<Row|null>(initialQuote||null),[checking,setChecking]=useState(false),[error,setError]=useState('');
   const [submitting,setSubmitting]=useState(false);
   const [mode,setMode]=useState(initial?.mode==='hourly'?'hourly':'daily'),[accepted,setAccepted]=useState(false);
   const confirming=useRef(false),calculating=useRef(false),card=useRef<HTMLElement>(null),errorMessage=useRef<HTMLParagraphElement>(null);
@@ -40,7 +40,7 @@ export function BookingRequest({property,requestKey,disabled,onQuote,onConfirm,i
       <aside className="quote-price-card" aria-label="Стоимость заявки"><span>Стоимость проживания</span><strong>{money(quote.amount)}</strong><p>Депозит учитывается отдельно от проживания. Отправка заявки не списывает деньги.</p><div className="flow-notice important">Интервал ещё не зарезервирован. {quote.policy.auto_confirm?'Бронь подтверждается автоматически по правилам владельца.':'После отправки заявки он удерживается до решения владельца на 30 минут.'}</div></aside></div>
       {quote.policy.house_rules&&<details className="booking-rules" open><summary>Правила проживания</summary><p>{quote.policy.house_rules}</p></details>}
       <label className="booking-consent"><input type="checkbox" checked={accepted} disabled={disabled||submitting} onChange={e=>setAccepted(e.target.checked)}/><span>Согласен с указанными датами, тарифом, депозитом и правилами проживания</span></label>
-      <div className="flow-actions"><Button type="button" variant="outline" disabled={disabled||submitting} onClick={()=>{setError('');setAccepted(false);setQuote(null);}}><ArrowLeft size={16}/>Изменить даты</Button><Button type="button" className="flow-primary" disabled={disabled||submitting||!accepted} onClick={()=>void confirm()}>{disabled||submitting?<><LoaderCircle size={17}/>Отправляем…</>:<>Отправить заявку<ArrowUpRight size={17}/></>}</Button></div>
+      <div className="flow-actions"><Button type="button" variant="outline" disabled={disabled||submitting} onClick={()=>{if(onChangeDates){onChangeDates();return;}setError('');setAccepted(false);setQuote(null);}}><ArrowLeft size={16}/>Изменить даты</Button><Button type="button" className="flow-primary" disabled={disabled||submitting||!accepted} onClick={()=>void confirm()}>{disabled||submitting?<><LoaderCircle size={17}/>Отправляем…</>:<>Отправить заявку<ArrowUpRight size={17}/></>}</Button></div>
     </div>:<div className="booking-layout"><form className="inline-form flow-panel booking-form-grid" onSubmit={calculate}>
       <label>Тариф<NativeSelect value={mode} onChange={e=>setMode(e.target.value)} disabled={disabled||checking}><option value="daily">На сутки · 24 часа</option>{property.policy?.hourly_price>0&&<option value="hourly">На часы · минимум {property.policy.min_hours} ч.</option>}{property.policy?.nightly_price>0&&<option value="nightly">По ночам · расчётный час</option>}</NativeSelect></label>
       <div className="input-row"><label>Заезд<Input name="start" required type="datetime-local" defaultValue={start} disabled={disabled||checking}/></label><label>Выезд<Input name="end" required type="datetime-local" defaultValue={end} disabled={disabled||checking}/></label></div>

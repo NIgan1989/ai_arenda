@@ -15,6 +15,7 @@ test('admin permission comes only from the server allowlist, never from role, em
   assert.throws(()=>requirePlatformAdmin('',config),e=>e.status===403);
   const assigned={PLATFORM_ADMIN_IDS:f.guest.userId};
   const overview=await readPlatformAdmin(f.guest,'overview',{},assigned);assert.equal(overview.counts.users,4);assert.equal(overview.counts.properties,1);assert.equal(overview.counts.bookings,1);assert.equal(overview.counts.unmapped,1);assert.equal(overview.counts.withoutPhotos,1);
+  await assert.rejects(readPlatformAdmin(f.owner,'map',{},assigned),e=>e.status===403);const map=await readPlatformAdmin(f.guest,'map',{},assigned);assert.equal(map.properties.length,1);assert.equal(map.properties[0].bookings,1);assert.doesNotMatch(JSON.stringify(map),/PRIVATE ADDRESS|owner_id|guest_id|contact/);
   // Quality counters describe only published, non-demo listings, not private drafts.
   f.db.raw.prepare('UPDATE properties SET published=0 WHERE id=?').run(f.property);
   const drafts=await readPlatformAdmin(f.guest,'overview',{},assigned);assert.equal(drafts.counts.unmapped,0);assert.equal(drafts.counts.withoutPhotos,0);assert.equal(drafts.counts.drafts,1);

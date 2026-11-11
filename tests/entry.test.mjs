@@ -11,5 +11,5 @@ test('entry redirects stay inside the app and cannot loop back to authentication
 });
 test('booking intent keeps property, local Kazakhstan times, guests and tariff through login',()=>{
  const path=bookingEntryPath('p&1',{city:'Павлодар',start:'2026-11-01T14:00',end:'2026-11-01T17:00',guests:'2',mode:'hourly'});
- assert.equal(safeEntryReturn(path),path);const url=new URL(path,'https://arenda.local');assert.equal(url.pathname,'/workspace/guest/catalog');for(const [key,value] of Object.entries({book:'p&1',city:'Павлодар',start:'2026-11-01T14:00',end:'2026-11-01T17:00',guests:'2',mode:'hourly'}))assert.equal(url.searchParams.get(key),value);
+ assert.equal(safeEntryReturn(path),path);const url=new URL(path,'https://arenda.local');assert.equal(url.pathname,'/workspace/guest/map');for(const [key,value] of Object.entries({book:'p&1',city:'Павлодар',start:'2026-11-01T14:00',end:'2026-11-01T17:00',guests:'2',mode:'hourly'}))assert.equal(url.searchParams.get(key),value);
 });

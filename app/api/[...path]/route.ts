@@ -1,8 +1,8 @@
-import { env as workerEnv } from 'cloudflare:workers';
+import { waitUntil, env as workerEnv } from 'cloudflare:workers';
 import {isolateTestConfig} from '../../../lib/test-environment';
 import { getAppUser } from '../../session';
 import {authRequest,expireSessionCookie,requestSessionIdentity} from '../../../lib/native-auth';
-import {webPushState,manageWebPush} from '../../../lib/web-push';
+import {webPushState,manageWebPush,deliverWebPush} from '../../../lib/web-push';
 import { RentalService } from '../../../lib/service';
 import { DomainError } from '../../../lib/domain';
 import {isPlatformAdmin} from '../../../lib/account';
@@ -11,6 +11,7 @@ import {checkAdministratorForUser,runAdministrator} from '../../../lib/administr
 import {administratorRunnerAuthorized} from '../../../lib/administrator-auth';
 import {runOperationalTick} from '../../../lib/background';
 import {readOperations,writeOperations,publicOperationsRequest} from '../../../lib/operations-api';
+import {previewMatches,matchingState} from '../../../lib/smart-matching';
 import {listCommands,prepareAdministratorCommand} from '../../../lib/administrator-commands';
 import {parseRole} from '../../../lib/access';
 import {boundedRequestText} from '../../../lib/request-body';
@@ -26,6 +27,12 @@ async function handle(request:Request, context:{params:Promise<{path:string[]}>}
     const route=(await context.params).path;
     if(!env.DB) return json({error:'База данных ещё не подключена.'},503);
     const publicResult=await publicOperationsRequest(env.DB,request,route,env);if(publicResult)return publicResult;
+    if(route.join('/')==='internal/matching-advance'){
+      if(!await administratorRunnerAuthorized(request,env.ADMINISTRATOR_RUNNER_SECRET))return json({error:'Нет доступа.'},403);
+      const input=JSON.parse(await boundedRequestText(request,500));if(typeof input.id!=='string'||input.id.length>100)return json({error:'Неверный запрос.'},400);
+      const entry=await env.DB.prepare('SELECT guest_id FROM matching_requests WHERE id=?').bind(input.id).first<{guest_id:string}>();if(!entry)return json({advanced:false});
+      const result=await matchingState(new RentalService(env.DB,entry.guest_id),input.id);if(result.dispatchChanged)waitUntil(deliverWebPush(env.DB,env,3));return json({advanced:true,status:result.status});
+    }
     if(route.join('/')==='internal/health'){
       if(!await administratorRunnerAuthorized(request,env.ADMINISTRATOR_RUNNER_SECRET,'GET'))return json({error:'Нет доступа.'},403);
       const health=await buildRuntimeHealth(env.DB,env);return json(health,health.ok?200:503);
@@ -40,6 +47,7 @@ async function handle(request:Request, context:{params:Promise<{path:string[]}>}
       await env.DB.prepare("INSERT INTO background_jobs(id,kind,scope,status,available_at,last_completed,updated_at) VALUES ('local-backup','local-backup','system','done',?,?,?) ON CONFLICT(id) DO UPDATE SET status='done',last_completed=excluded.last_completed,updated_at=excluded.updated_at,last_error=''").bind(at,at,Math.floor(Date.now()/1000)).run();return json({recorded:true});
     }
     if(request.method==='GET'&&route.join('/')==='public/catalog')return json(await new RentalService(env.DB,'').publicSearch(Object.fromEntries(new URL(request.url).searchParams),{syntheticPreview:env.TEST_DATA_ONLY==='1'}));
+    if(request.method==='GET'&&route.join('/')==='public/matching'){const input=new URL(request.url).searchParams.get('q')||'{}';if(input.length>2500)return json({error:'Слишком длинные условия поиска.'},400);let filters;try{filters=JSON.parse(input);}catch{return json({error:'Проверьте формат условий поиска.'},400);}return json(await previewMatches(new RentalService(env.DB,''),filters));}
     if(request.method==='GET'&&route.length===3&&route[0]==='public'&&route[1]==='media')return json(await new RentalService(env.DB,'').publicMedia(route[2]));
     if(route.length===2&&route[0]==='auth')return await authRequest(env.DB,request,route[1],'web',env);
     if(route.length===3&&route[0]==='mobile'&&route[1]==='auth')return await authRequest(env.DB,request,route[2],'mobile',env);
@@ -72,7 +80,7 @@ async function handle(request:Request, context:{params:Promise<{path:string[]}>}
     if(route.join('/')==='push'){const identity=await requestSessionIdentity(request);return json(await manageWebPush(service,parseRole(activeRole),body,env,identity?.kind==='web'?identity.hash:''));}
     if(request.method==='POST'&&route.join('/')==='sessions'){await service.authorizeWorkspace(activeRole,'account');return json(await accountSessions(service,request,body));}
     if(request.method==='PUT'&&route.join('/')==='conversation')return json(await clientConversation(service,parseRole(activeRole),body));
-    if(route[0]==='operations'){const result=await writeOperations(service,parseRole(activeRole),route.slice(1),body,env,isPlatformAdmin(user.userId,env.PLATFORM_ADMIN_IDS)),response=json(result);if((result as Record<string,any>)?.signOut)response.headers.set('Set-Cookie',expireSessionCookie(request));return response;}
+    if(route[0]==='operations'){const result=await writeOperations(service,parseRole(activeRole),route.slice(1),body,env,isPlatformAdmin(user.userId,env.PLATFORM_ADMIN_IDS)),response=json(result);if(route[1]==='matching'&&(['begin','respond','book'].includes(route[2])||(result as Record<string,any>).dispatchChanged===true))waitUntil(deliverWebPush(env.DB,env,3).catch(()=>({configured:true,sent:0,failed:1})));if((result as Record<string,any>)?.signOut)response.headers.set('Set-Cookie',expireSessionCookie(request));return response;}
     if(route.length===2&&route[0]==='onboarding'){
       if(!['guest','owner','cleaner'].includes(route[1]))return json({error:'Такой профиль недоступен.'},400);
       if(!await service.profile())await service.saveProfile({name:user.fullName||'Гость',contact:user.phone,city:body.city||'Павлодар',roles:['guest']});

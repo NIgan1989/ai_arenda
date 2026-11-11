@@ -237,7 +237,7 @@ export class RentalService {
     const policies=await this.all('SELECT * FROM property_policies');
     return {properties:await this.enrichProperties(properties.map(p=>({...p,policy:publicPolicy(policies.find(v=>v.property_id===p.id))})))};
   }
-  async publicSearch(filters:Record<string,string>={},options:{syntheticPreview?:boolean}={}){
+  async publicSearch(filters:Record<string,string>={},options:{syntheticPreview?:boolean;matching?:boolean}={}){
     const city=String(filters.city||'').trim(),mode=filters.mode||'daily',guests=number(filters.guests||1,'Гости',1,50);
     if(city.length>80||!['daily','hourly'].includes(mode))throw new DomainError('Проверьте город и вид аренды.');
     const catalog=await this.publicCatalog(options),cities=[...new Set(catalog.properties.map(p=>String(p.city)))].sort();
@@ -263,8 +263,8 @@ export class RentalService {
     items=items.filter(p=>(!rooms||(filters.roomsExact==='1'?p.rooms===rooms:p.rooms>=rooms))&&rate(p)>=minPrice&&rate(p)<=maxPrice);
     if(sort!=='recommended')items.sort((a,b)=>(sort==='price-asc'?1:-1)*(rate(a)-rate(b))||String(a.id).localeCompare(String(b.id)));
     const total=items.length,totalPages=Math.max(1,Math.ceil(total/limit)),page=Math.min(pageInput,totalPages);
-    let pageItems:Row[]=items.slice((page-1)*limit,page*limit);
-    if(filters.map==='1'&&pageItems.length){const locations=await this.all('SELECT l.*,p.city,p.district,p.address FROM property_locations l JOIN properties p ON p.id=l.property_id WHERE p.id IN ('+pageItems.map(()=>'?').join(',')+')',...pageItems.map(p=>p.id));pageItems=pageItems.map(p=>{const l=locations.find(l=>l.property_id===p.id);return {...p,location:l&&l.address_fingerprint===[l.city,l.district,l.address].join('|')?publicPoint(l):null};});}
+    let pageItems:Row[]=options.matching?items:items.slice((page-1)*limit,page*limit);
+    if(filters.map==='1'&&pageItems.length){const locations=options.matching?await this.all('SELECT l.*,p.city,p.district,p.address FROM property_locations l JOIN properties p ON p.id=l.property_id WHERE p.published=1'):await this.all('SELECT l.*,p.city,p.district,p.address FROM property_locations l JOIN properties p ON p.id=l.property_id WHERE p.id IN ('+pageItems.map(()=>'?').join(',')+')',...pageItems.map(p=>p.id));pageItems=pageItems.map(p=>{const l=locations.find(l=>l.property_id===p.id);return {...p,location:l&&l.address_fingerprint===[l.city,l.district,l.address].join('|')?publicPoint(l):null};});}
     return {properties:pageItems,total,page,limit,totalPages,cities,filters:{city,mode,guests,minPrice,maxPrice,rooms,sort,...(range?{start:range.start,end:range.end}:{})},availabilityChecked:!!range,...(filters.map==='1'?{center:mapCities[Object.keys(mapCities).find(c=>c.toLocaleLowerCase('ru')===city.toLocaleLowerCase('ru'))||'']||[67,48]}:{})};
   }
   async publicMedia(mediaId:string){

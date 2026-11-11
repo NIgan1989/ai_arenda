@@ -171,9 +171,9 @@ export default function Chat({workspaceRole,section,accountId}:{workspaceRole:Ro
     if(!ready||!user||entryHandled.current)return;entryHandled.current=true;
     const params=new URLSearchParams(window.location.search);
     if(role==='owner'&&section==='properties'&&params.get('new')==='1'){startProperty(data);return;}
-    if(role==='guest'&&section==='catalog'&&params.get('book')){
+    if(role==='guest'&&['catalog','map'].includes(section)&&params.get('book')){
       const property=data.properties.find((p:Row)=>p.id===params.get('book'));
-      if(!property){say('Это объявление больше недоступно. Выберите другой вариант в каталоге.');return;}
+      if(!property){say('Это объявление больше недоступно. Запустите новый подбор на карте.');return;}
       const valid=(value:string|null)=>value&&/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(value)?value:undefined;
       const count=Number(params.get('guests'));
       const hourly=params.get('mode')==='hourly'&&property.policy?.hourly_price>0;

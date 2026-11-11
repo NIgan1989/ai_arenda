@@ -52,16 +52,17 @@ export async function manageWebPush(service:RentalService,role:Role,body:Row,con
  }
  throw new DomainError('Неизвестное действие.');
 }
-export function pushPayload(role:Role,test=false){return JSON.stringify({title:'AI Аренда',body:test?'Уведомления на этом устройстве работают.':'В вашем кабинете есть новое событие. Откройте приложение, чтобы узнать подробности.',url:'/workspace/'+role+'/assistant'});}
+export function pushPayload(role:Role,test=false,matching=false){return JSON.stringify({title:'AI Аренда',body:test?'Уведомления на этом устройстве работают.':'В вашем кабинете есть новое событие. Откройте приложение, чтобы узнать подробности.',url:'/workspace/'+role+(matching?'/map':'/assistant')});}
 export async function deliverWebPush(db:D1Database,config:OperationConfig,limit=12,transport:typeof fetch=fetch){
  if(!pushConfigured(config))return {configured:false,sent:0,failed:0};
  const now=epoch();
  // Expired/revoked sessions cannot retain an endpoint, even if no deliveries are due.
  await q(db,'DELETE FROM push_subscriptions WHERE NOT EXISTS(SELECT 1 FROM auth_sessions a JOIN auth_accounts c ON c.id=a.user_id AND c.credential_version=a.credential_version WHERE a.hash=push_subscriptions.session_hash AND a.user_id=push_subscriptions.user_id AND a.expires_at>?)',now).run();
  await q(db,"DELETE FROM push_deliveries WHERE status='sent' AND sent_at<?",now-7*86400).run();
- const due=await rows(db,`SELECT d.*,s.ciphertext,s.user_id,s.role,s.session_hash,p.settings FROM push_deliveries d JOIN push_subscriptions s ON s.id=d.subscription_id LEFT JOIN assistant_preferences p ON p.user_id=s.user_id AND p.role=s.role WHERE (d.status='pending' AND d.available_at<=?) OR (d.status='sending' AND d.lease_until<=?) ORDER BY d.created_at LIMIT ?`,now,now,Math.min(30,Math.max(1,limit)));
+ const due=await rows(db,`SELECT d.*,n.dedupe,s.ciphertext,s.user_id,s.role,s.session_hash,p.settings FROM push_deliveries d JOIN push_subscriptions s ON s.id=d.subscription_id LEFT JOIN notifications n ON n.id=d.notification_id LEFT JOIN assistant_preferences p ON p.user_id=s.user_id AND p.role=s.role WHERE (d.status='pending' AND d.available_at<=?) OR (d.status='sending' AND d.lease_until<=?) ORDER BY d.created_at LIMIT ?`,now,now,Math.min(30,Math.max(1,limit)));
  let sent=0,failed=0;
- for(const item of due){
+ const deadline=Date.now()+19000;
+ for(const item of due){if(Date.now()>deadline)break;
   let settings=defaultAssistantSettings;try{settings={...settings,...JSON.parse(item.settings||'{}')};}catch{}
   if(item.notification_id&&quietNow(settings,epoch())){await q(db,"UPDATE push_deliveries SET available_at=?,status='pending',lease_until=0 WHERE id=? AND (status='pending' OR (status='sending' AND lease_until<=?))",epoch()+300,item.id,epoch()).run();continue;}
   const token=uuid(),claim=await q(db,"UPDATE push_deliveries SET status='sending',attempts=attempts+1,lease_token=?,lease_until=? WHERE id=? AND ((status='pending' AND available_at<=?) OR (status='sending' AND lease_until<=?)) RETURNING attempts",token,epoch()+90,item.id,epoch(),epoch()).first<Row>();if(!claim)continue;
@@ -69,7 +70,7 @@ export async function deliverWebPush(db:D1Database,config:OperationConfig,limit=
    const sub=validatePushSubscription(JSON.parse(await decryptInstructions(item.ciphertext,config)));
    // Recheck current ownership, role and session immediately before external delivery.
    if(!await one(db,`SELECT 1 FROM push_subscriptions s JOIN profiles p ON p.id=s.user_id JOIN auth_sessions a ON a.hash=s.session_hash AND a.user_id=s.user_id JOIN auth_accounts c ON c.id=a.user_id AND c.credential_version=a.credential_version WHERE s.id=? AND s.ciphertext=? AND a.expires_at>? AND EXISTS(SELECT 1 FROM json_each(p.roles) WHERE value=s.role)`,item.subscription_id,item.ciphertext,epoch())){await q(db,'DELETE FROM push_subscriptions WHERE id=? AND ciphertext=?',item.subscription_id,item.ciphertext).run();continue;}
-   const request=generateRequestDetails(sub,pushPayload(item.role,!item.notification_id),{TTL:300,urgency:'normal',vapidDetails:{subject:config.VAPID_SUBJECT!,publicKey:config.VAPID_PUBLIC_KEY!,privateKey:config.VAPID_PRIVATE_KEY!}});
+   const request=generateRequestDetails(sub,pushPayload(item.role,!item.notification_id,String(item.dedupe||'').startsWith(item.role+':matching')),{TTL:300,urgency:'normal',vapidDetails:{subject:config.VAPID_SUBJECT!,publicKey:config.VAPID_PUBLIC_KEY!,privateKey:config.VAPID_PRIVATE_KEY!}});
    const response=await transport(request.endpoint,{method:'POST',headers:request.headers as Record<string,string>,body:new Uint8Array(request.body!) as BodyInit,redirect:'error',signal:AbortSignal.timeout(10000)});
    await response.body?.cancel();
    if(response.status===404||response.status===410){await q(db,'DELETE FROM push_subscriptions WHERE id=?',item.subscription_id).run();continue;}

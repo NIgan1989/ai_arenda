@@ -1,6 +1,9 @@
-// Reviewed deletion inventory through migration 0030. Any new application column
+// Reviewed deletion inventory through migration 0031. Any new application column
 // must be classified before unused-account erasure is enabled for that schema.
 export const accountDeletionColumns:Record<string,string>={
+ "matching_preferences":"property_id,owner_id,enabled,updated_at",
+ "matching_requests":"id,guest_id,request_key,filters,status,created_at,expires_at,selected_offer,booking_id,lease_until",
+ "matching_offers":"id,request_id,property_id,owner_id,status,amount,policy_version,created_at,expires_at,responded_at",
  "push_subscriptions":"id,user_id,session_hash,role,endpoint_hash,ciphertext,created_at,updated_at,last_test_at",
  "push_deliveries":"id,subscription_id,notification_id,status,attempts,available_at,lease_until,lease_token,last_error,created_at,sent_at",
  "access_receipts": "id,property_id,entity_kind,entity_id,user_id,created_at,expires_at",
@@ -84,6 +87,12 @@ export const accountDeletionColumns:Record<string,string>={
  "command_receipts": "user_id,key,digest,result"
 };
 export const accountDeletionFenceSql:Record<string,string>={
+"account_erased_matching_preferences_insert":"CREATE TRIGGER account_erased_matching_preferences_insert BEFORE INSERT ON matching_preferences WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.owner_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END",
+"account_erased_matching_requests_insert":"CREATE TRIGGER account_erased_matching_requests_insert BEFORE INSERT ON matching_requests WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.guest_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END",
+"account_erased_matching_offers_insert":"CREATE TRIGGER account_erased_matching_offers_insert BEFORE INSERT ON matching_offers WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.owner_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END",
+"account_erased_matching_preferences_update":"CREATE TRIGGER account_erased_matching_preferences_update BEFORE UPDATE ON matching_preferences WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.owner_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END",
+"account_erased_matching_requests_update":"CREATE TRIGGER account_erased_matching_requests_update BEFORE UPDATE ON matching_requests WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.guest_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END",
+"account_erased_matching_offers_update":"CREATE TRIGGER account_erased_matching_offers_update BEFORE UPDATE ON matching_offers WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.owner_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END",
  "account_erased_push_subscriptions_insert":"CREATE TRIGGER account_erased_push_subscriptions_insert BEFORE INSERT ON push_subscriptions WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.user_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END",
  "account_erased_push_subscriptions_update":"CREATE TRIGGER account_erased_push_subscriptions_update BEFORE UPDATE ON push_subscriptions WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.user_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END",
  "account_erased_access_receipts_insert": "CREATE TRIGGER account_erased_access_receipts_insert BEFORE INSERT ON access_receipts WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.user_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END",

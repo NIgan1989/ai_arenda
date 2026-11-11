@@ -32,6 +32,7 @@
 -- migration 0028_content_moderation.sql sha256:7046a9ad24be521d283237859e9fcbac2bf906c8365d57afb812ccd7fd9273c2
 -- migration 0029_account_deletion.sql sha256:941690588864e3f9bcc6342f49abfeb64aa45cbd4fa8732b76ffe25a11dd575e
 -- migration 0030_web_push.sql sha256:0f2d262dfdc6775b5f806c36b20a231e2f5763e02dfe0c75942c6d89a498fa38
+-- migration 0031_smart_matching.sql sha256:ccaa44e5e4d91f2119a142d4e96ffe1d10d340770b0a95e0ae7746597f095b41
 
 -- table access_receipts
 CREATE TABLE access_receipts (id TEXT PRIMARY KEY,property_id TEXT NOT NULL,entity_kind TEXT NOT NULL,entity_id TEXT NOT NULL,user_id TEXT NOT NULL,created_at INTEGER NOT NULL,expires_at INTEGER NOT NULL);
@@ -447,6 +448,28 @@ CREATE TABLE journey_sessions (
  received_at INTEGER
 , route TEXT, route_recorded_at INTEGER);
 
+-- table matching_offers
+CREATE TABLE matching_offers (
+ id TEXT PRIMARY KEY, request_id TEXT NOT NULL REFERENCES matching_requests(id) ON DELETE CASCADE,
+ property_id TEXT NOT NULL REFERENCES properties(id) ON DELETE CASCADE, owner_id TEXT NOT NULL REFERENCES profiles(id),
+ status TEXT NOT NULL CHECK(status IN ('pending','accepted','declined','expired')), amount INTEGER NOT NULL, policy_version INTEGER NOT NULL,
+ created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL, responded_at INTEGER, UNIQUE(request_id,property_id)
+);
+
+-- table matching_preferences
+CREATE TABLE matching_preferences (
+ property_id TEXT PRIMARY KEY REFERENCES properties(id) ON DELETE CASCADE,
+ owner_id TEXT NOT NULL REFERENCES profiles(id), enabled INTEGER NOT NULL DEFAULT 0 CHECK(enabled IN (0,1)), updated_at INTEGER NOT NULL
+);
+
+-- table matching_requests
+CREATE TABLE matching_requests (
+ id TEXT PRIMARY KEY, guest_id TEXT NOT NULL REFERENCES profiles(id), request_key TEXT NOT NULL,
+ filters TEXT NOT NULL, status TEXT NOT NULL CHECK(status IN ('searching','ready','booking','booked','empty','cancelled','expired')),
+ created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL, selected_offer TEXT, booking_id TEXT, lease_until INTEGER NOT NULL DEFAULT 0,
+ UNIQUE(guest_id,request_key)
+);
+
 -- table media
 CREATE TABLE media (
  id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES profiles(id),
@@ -783,6 +806,12 @@ CREATE INDEX jobs_assigned_interval ON cleaning_jobs(assigned_to,start,end);
 -- index journey_active
 CREATE INDEX journey_active ON journey_sessions(sender_id,entity_kind,entity_id,expires_at);
 
+-- index matching_guest
+CREATE INDEX matching_guest ON matching_requests(guest_id,created_at);
+
+-- index matching_inbox
+CREATE INDEX matching_inbox ON matching_offers(owner_id,status,expires_at);
+
 -- index media_owner
 CREATE INDEX media_owner ON media(user_id,kind);
 
@@ -1050,6 +1079,24 @@ CREATE TRIGGER account_erased_journey_sessions_insert BEFORE INSERT ON journey_s
 
 -- trigger account_erased_journey_sessions_update
 CREATE TRIGGER account_erased_journey_sessions_update BEFORE UPDATE ON journey_sessions WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.sender_id OR user_id=NEW.owner_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END;
+
+-- trigger account_erased_matching_offers_insert
+CREATE TRIGGER account_erased_matching_offers_insert BEFORE INSERT ON matching_offers WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.owner_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END;
+
+-- trigger account_erased_matching_offers_update
+CREATE TRIGGER account_erased_matching_offers_update BEFORE UPDATE ON matching_offers WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.owner_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END;
+
+-- trigger account_erased_matching_preferences_insert
+CREATE TRIGGER account_erased_matching_preferences_insert BEFORE INSERT ON matching_preferences WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.owner_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END;
+
+-- trigger account_erased_matching_preferences_update
+CREATE TRIGGER account_erased_matching_preferences_update BEFORE UPDATE ON matching_preferences WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.owner_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END;
+
+-- trigger account_erased_matching_requests_insert
+CREATE TRIGGER account_erased_matching_requests_insert BEFORE INSERT ON matching_requests WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.guest_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END;
+
+-- trigger account_erased_matching_requests_update
+CREATE TRIGGER account_erased_matching_requests_update BEFORE UPDATE ON matching_requests WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.guest_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END;
 
 -- trigger account_erased_media_insert
 CREATE TRIGGER account_erased_media_insert BEFORE INSERT ON media WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.user_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END;

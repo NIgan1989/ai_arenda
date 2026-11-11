@@ -1,6 +1,5 @@
 'use client';
 import {useEffect,useRef,useState} from 'react';
-import {PublicSearchIntro} from './public-search-intro';
 import {UserRound,ArrowUpRight,House,Brush,LogIn,MapPin} from 'lucide-react';
 import {MapWorkspace} from './map-workspace';
 import {Popover,PopoverTrigger,PopoverContent} from './ui/popover';
@@ -20,12 +19,10 @@ export default function PublicHome(){
   setEntering(true);setError('');
   try{if(!JSON.parse(access.profile?.roles||'[]').includes('guest')){const response=await fetch('/api/onboarding/guest',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({city:filters.city||property.city})});if(!response.ok)throw Error('Не удалось подготовить кабинет гостя. Попробуйте войти снова.');}window.location.assign(next);}catch(e:any){setError(e.message);setEntering(false);}
  }
- return <div className="chat-app workspace-shell public-map-shell release-public" data-section="map">
-  <PublicSearchIntro signedIn={!!access?.user} onSearch={()=>mapSection.current?.scrollIntoView({behavior:'auto',block:'start'})}/>
+ return <div className="chat-app workspace-shell public-map-shell release-public smart-public" data-section="map">
+
   <nav className="public-map-account" aria-label="Вход и разделы сервиса"><Popover><PopoverTrigger className="public-map-menu-trigger" aria-label={access?.user?'Аккаунт и разделы':'Вход и разделы'}><UserRound size={22}/></PopoverTrigger><PopoverContent align="end" className="public-map-menu"><strong>{access?.user?access.profile?.name||access.user.name:'Добро пожаловать'}</strong><p>Смотрите жильё и проверяйте даты без регистрации.</p>{access?.platformAdmin&&<a href="/admin"><House size={18}/>Управление сервисом<ArrowUpRight size={16}/></a>}<a href={access?.user?'/workspace/guest/map':'/signin'}><LogIn size={18}/>{access?.user?'Мой кабинет':'Войти или зарегистрироваться'}<ArrowUpRight size={16}/></a><a href="/join/owner"><House size={18}/>Сдавать недвижимость<ArrowUpRight size={16}/></a><a href="/join/cleaner"><Brush size={18}/>Работать на уборках<ArrowUpRight size={16}/></a><small><MapPin size={14}/>До подтверждения брони показываем приблизительное расположение.</small><div className="public-legal-links"><a href="/privacy">Приватность</a><a href="/terms">Условия пилота</a><a href="/data-deletion">Удаление данных</a></div></PopoverContent></Popover></nav>
   <div className="workspace-content" ref={mapSection}><main className="chat-main"><div className="chat-transcript is-empty"><MapWorkspace publicMode role="guest" accountId="public" data={publicData} onChoose={choose} onDiscussion={()=>{}} onProcess={()=>{}} onCreate={()=>{}} onAsk={()=>{}}/></div></main></div>
-  <a className="public-map-brand" href="/" aria-label="AI Аренда — главная"><img src="/brand-mark.png" alt="" width={25} height={25}/><span><strong>AI Аренда</strong><small>Жильё на часы и сутки</small></span></a>
-  <footer className="release-public-footer"><a href="/privacy">Конфиденциальность</a><a href="/terms">Условия сервиса</a><a href="/data-deletion">Удаление данных</a></footer>
   {(error||entering)&&<div className="public-map-entry-status" role={error?'alert':'status'}>{error||'Переходим к бронированию…'}{error&&<button type="button" onClick={()=>setError('')} aria-label="Закрыть сообщение">×</button>}</div>}
  </div>;
 }

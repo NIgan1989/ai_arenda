@@ -3,6 +3,7 @@ import {RentalService} from './service';
 import {checkAdministratorOwner} from './administrator-runtime';
 import {deliverOutbox} from './delivery';
 import {deliverWebPush} from './web-push';
+import {advanceMatchingRequests} from './matching-background';
 import {refreshCalendar} from './external-calendar';
 import {migrateFinanceEntity} from './finance';
 import {encryptInstructions} from './participant-security';
@@ -42,10 +43,12 @@ async function cloudBackup(db:D1Database,config:OperationConfig){
  const sealed=await encryptInstructions(encoded,config),key='private-backups/'+new Date().toISOString().slice(0,10)+'.snapshot.enc';await config.BUCKET.put(key,sealed,{httpMetadata:{contentType:'application/octet-stream'}});return {key};
 }
 export async function runOperationalTick(db:D1Database,config:OperationConfig={}){
+ await enqueueJob(db,'matching-dispatch','matching-dispatch','system',{},30);
  await q(db,'UPDATE journey_sessions SET longitude=NULL,latitude=NULL,accuracy=NULL,route=NULL,route_recorded_at=NULL WHERE (expires_at<=? OR stopped_at IS NOT NULL) AND (longitude IS NOT NULL OR route IS NOT NULL)',epoch()).run();
  await enqueueJob(db,'discovery','discovery','system',{},30);await enqueueJob(db,'delivery','delivery','system',{},30);if(config.BUCKET&&config.ACCESS_ENCRYPTION_KEY)await enqueueJob(db,'cloud-backup','backup','system',{},86400);
  const result=await runBackgroundJobs(db,async job=>{
   if(job.kind==='discovery')return discover(db,job);
+  if(job.kind==='matching-dispatch')return advanceMatchingRequests(db,config);
   if(job.kind==='owner')return checkAdministratorOwner(db,job.scope);
   if(job.kind==='delivery')return {external:await deliverOutbox(db,config,12),push:await deliverWebPush(db,config,12)};
   if(job.kind==='calendar')return refreshCalendar(db,job.payload.sourceId,config);

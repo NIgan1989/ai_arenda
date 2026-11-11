@@ -12,5 +12,5 @@ export function entryDestination(value:unknown,platformAdmin=false){return !valu
 export function bookingEntryPath(propertyId:string,values:Record<string,string>={}){
  const query=new URLSearchParams({book:propertyId});
  for(const key of ['city','start','end','guests','mode'])if(values[key])query.set(key,values[key]);
- return '/workspace/guest/catalog?'+query.toString();
+ return '/workspace/guest/map?'+query.toString();
 }
