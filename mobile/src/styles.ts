@@ -6,6 +6,7 @@ const [caption,label,body,subtitle,title,heading,display]=Object.values(T.font).
 const R=T.radius,H=T.control;
 export const type={caption,label,body,subtitle,title,heading,display};
 export const s=StyleSheet.create({
+  groupTitle:{...caption,color:C.muted,fontWeight:'600',letterSpacing:.4,textTransform:'uppercase',marginTop:8,marginBottom:8,marginHorizontal:4},
   pageTitle:{...heading,color:C.ink,fontWeight:'600',letterSpacing:-.4,marginBottom:16},
   recommendation:{padding:16,borderWidth:1,borderColor:C.accentLine,backgroundColor:C.accentSoft,borderRadius:R.lg,gap:4,marginBottom:16},
   urgentRecommendation:{backgroundColor:C.warningSoft,borderColor:C.warningLine},

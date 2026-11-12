@@ -1,0 +1,12 @@
+/* The site on a phone behaves like an app: the page itself never zooms, bounces or lets its parts be picked up.
+   The map still pans and zooms (it handles its own gestures), fields still type and lists still scroll. */
+html{-webkit-text-size-adjust:100%;text-size-adjust:100%;touch-action:pan-x pan-y;overscroll-behavior:none}
+body{overscroll-behavior:none}
+img,svg,a,video{-webkit-user-drag:none}
+@media (hover:none) and (pointer:coarse){
+  body{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;-webkit-tap-highlight-color:transparent}
+  /* What people type or may want to copy stays selectable. */
+  input,textarea,select,[contenteditable]:not([contenteditable="false"]),
+  .discussion-log article p,.administrator-bubble p,.chat-message .message-content>p,.recovery-code,.selectable{-webkit-user-select:text;user-select:text;-webkit-touch-callout:default}
+  .recovery-code{-webkit-user-select:all;user-select:all}
+}
