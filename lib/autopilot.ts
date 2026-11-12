@@ -44,6 +44,9 @@ export async function setGuestMode(s:RentalService,body:Row){
  return {message:mode==='auto'?'Автопилот включён: ИИ отвечает гостям, подтверждает брони и организует уборку в пределах ваших правил.':mode==='manual'?'Запросы гостей приходят вам, отвечаете вы.':'Быстрые запросы гостей выключены.'};
 }
 
+// SQL: the flat is under autopilot right now (one ? for the current time). Same conditions as guestModeSql's 'auto'.
+export const underAutopilot=(property:string)=>`EXISTS(SELECT 1 FROM property_policies pp JOIN operation_rules r ON r.property_id=pp.property_id JOIN matching_preferences m ON m.property_id=pp.property_id WHERE pp.property_id=${property} AND pp.auto_confirm=1 AND pp.auto_assign=1 AND pp.cleaning_fee>0 AND r.auto_offers=1 AND r.auto_replace=1 AND m.enabled=1 AND (pp.mandate_until=0 OR pp.mandate_until>?))`;
+
 // The AI answers only for a flat shown as «ИИ»: the same conditions as guestModeSql's 'auto'.
 const autopilotGate=(property:string,version:string)=>`EXISTS(SELECT 1 FROM property_policies pp JOIN operation_rules r ON r.property_id=pp.property_id JOIN matching_preferences m ON m.property_id=pp.property_id WHERE pp.property_id=${property} AND pp.version=${version} AND pp.auto_confirm=1 AND pp.auto_assign=1 AND pp.cleaning_fee>0 AND r.auto_offers=1 AND r.auto_replace=1 AND m.enabled=1 AND (pp.mandate_until=0 OR pp.mandate_until>?))`;
 

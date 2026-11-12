@@ -1,8 +1,8 @@
-// Reviewed deletion inventory through migration 0033. Any new application column
+// Reviewed deletion inventory through migration 0034. Any new application column
 // must be classified before unused-account erasure is enabled for that schema.
 export const accountDeletionColumns:Record<string,string>={
- "platform_billing":"id,enabled,starts_at,rate_bp,min_fee,max_fee,free_bookings,version,updated_by,updated_at",
- "platform_commissions":"booking_id,owner_id,property_id,booking_amount,rate_bp,amount,mode,settings_version,created_at",
+ "platform_billing":"id,enabled,starts_at,rate_bp,min_fee,max_fee,free_bookings,version,updated_by,updated_at,ai_rate_bp",
+ "platform_commissions":"booking_id,owner_id,property_id,booking_amount,rate_bp,amount,mode,settings_version,created_at,managed",
  "owner_balance_entries":"id,owner_id,kind,amount,note,actor_id,request_key,created_at",
  "matching_preferences":"property_id,owner_id,enabled,updated_at",
  "matching_requests":"id,guest_id,request_key,filters,status,created_at,expires_at,selected_offer,booking_id,lease_until",

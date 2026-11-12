@@ -1,6 +1,7 @@
 import {DomainError,number,required} from './domain';
 import type {RentalService} from './service';
 import {epoch,uuid,q,one,rows,type Row} from './operation-core';
+import {underAutopilot} from './autopilot';
 
 // Platform revenue model: the owner pays a commission for every booking confirmed
 // through the service. While billing is off (or before its start date) every
@@ -8,7 +9,7 @@ import {epoch,uuid,q,one,rows,type Row} from './operation-core';
 // A cancelled booking never costs the owner anything: balances count only
 // commissions whose booking is still confirmed or completed.
 
-export type BillingSettings={enabled:number;starts_at:number;rate_bp:number;min_fee:number;max_fee:number;free_bookings:number;version:number;updated_at:number};
+export type BillingSettings={enabled:number;starts_at:number;rate_bp:number;ai_rate_bp:number;min_fee:number;max_fee:number;free_bookings:number;version:number;updated_at:number};
 const live="(SELECT status FROM bookings WHERE id=c.booking_id) IN ('confirmed','completed')";
 
 export function commissionFor(amount:number,s:Pick<BillingSettings,'rate_bp'|'min_fee'|'max_fee'>){
@@ -20,17 +21,19 @@ export function commissionFor(amount:number,s:Pick<BillingSettings,'rate_bp'|'mi
 
 // Statement for the booking-confirmation batch. The amount is computed in SQL from the
 // settings row read in the same batch, so a concurrent settings change cannot split it.
+// A flat under autopilot at confirmation time pays the AI rate (ai_rate_bp) instead of the base rate.
 export function accrueCommission(db:D1Database,bookingId:string,auditId:string,at:number){
- const fee="MIN(b.amount,MAX(s.min_fee,CASE WHEN s.max_fee>0 THEN MIN(s.max_fee,(b.amount*s.rate_bp+5000)/10000) ELSE (b.amount*s.rate_bp+5000)/10000 END))";
- const used=`(SELECT COUNT(*) FROM platform_commissions c WHERE c.owner_id=p.owner_id AND c.mode IN ('free','charged') AND ${live})`;
- return q(db,`INSERT OR IGNORE INTO platform_commissions(booking_id,owner_id,property_id,booking_amount,rate_bp,amount,mode,settings_version,created_at)
-  SELECT b.id,p.owner_id,b.property_id,b.amount,s.rate_bp,${fee},CASE WHEN s.enabled=1 AND s.starts_at<=? THEN CASE WHEN ${used}<s.free_bookings THEN 'free' ELSE 'charged' END ELSE 'shadow' END,s.version,?
-  FROM bookings b JOIN properties p ON p.id=b.property_id JOIN platform_billing s ON s.id='global'
-  WHERE b.id=? AND b.status='confirmed' AND p.demo_owner IS NULL AND EXISTS(SELECT 1 FROM audit_events WHERE id=?)`,at,at,bookingId,auditId);
+ const fee="MIN(x.amount,MAX(x.min_fee,CASE WHEN x.max_fee>0 THEN MIN(x.max_fee,(x.amount*x.rate+5000)/10000) ELSE (x.amount*x.rate+5000)/10000 END))";
+ const used=`(SELECT COUNT(*) FROM platform_commissions c WHERE c.owner_id=x.owner_id AND c.mode IN ('free','charged') AND ${live})`;
+ return q(db,`INSERT OR IGNORE INTO platform_commissions(booking_id,owner_id,property_id,booking_amount,rate_bp,amount,mode,settings_version,created_at,managed)
+  SELECT x.id,x.owner_id,x.property_id,x.amount,x.rate,${fee},CASE WHEN x.enabled=1 AND x.starts_at<=? THEN CASE WHEN ${used}<x.free_bookings THEN 'free' ELSE 'charged' END ELSE 'shadow' END,x.version,?,x.managed
+  FROM (SELECT z.*,CASE WHEN z.managed=1 THEN z.ai_rate_bp ELSE z.rate_bp END rate FROM (SELECT b.id,p.owner_id,b.property_id,b.amount,s.min_fee,s.max_fee,s.enabled,s.starts_at,s.free_bookings,s.version,s.rate_bp,s.ai_rate_bp,CASE WHEN ${underAutopilot('b.property_id')} THEN 1 ELSE 0 END managed
+   FROM bookings b JOIN properties p ON p.id=b.property_id JOIN platform_billing s ON s.id='global'
+   WHERE b.id=? AND b.status='confirmed' AND p.demo_owner IS NULL AND EXISTS(SELECT 1 FROM audit_events WHERE id=?)) z) x`,at,at,at,bookingId,auditId);
 }
 
 export async function billingSettings(db:D1Database){
- return (await one(db,"SELECT enabled,starts_at,rate_bp,min_fee,max_fee,free_bookings,version,updated_at FROM platform_billing WHERE id='global'")) as BillingSettings|null;
+ return (await one(db,"SELECT enabled,starts_at,rate_bp,ai_rate_bp,min_fee,max_fee,free_bookings,version,updated_at FROM platform_billing WHERE id='global'")) as BillingSettings|null;
 }
 export function billingPhase(s:BillingSettings|null,at=epoch()){return !s||!s.enabled?'off':s.starts_at>at?'scheduled':'active';}
 
@@ -80,22 +83,24 @@ export async function saveBillingSettings(service:RentalService,body:Row){
  if(typeof body.enabled!=='boolean')throw new DomainError('Укажите, включена ли плата.');
  const percent=Number(body.ratePercent);
  if(!Number.isFinite(percent)||percent<0||percent>30||Math.round(percent*10)!==percent*10)throw new DomainError('Комиссия: от 0 до 30%, с шагом 0,1.');
- const rate=Math.round(percent*100),minFee=number(body.minFee??0,'Минимум за бронь',0,1000000),maxFee=number(body.maxFee??0,'Максимум за бронь',0,10000000);
+ const aiPercent=body.aiRatePercent===undefined?Number(((await billingSettings(service.db))?.ai_rate_bp??1000)/100):Number(body.aiRatePercent);
+ if(!Number.isFinite(aiPercent)||aiPercent<0||aiPercent>30||Math.round(aiPercent*10)!==aiPercent*10)throw new DomainError('Комиссия за режим «ИИ»: от 0 до 30%, с шагом 0,1.');
+ const aiRate=Math.round(aiPercent*100),rate=Math.round(percent*100),minFee=number(body.minFee??0,'Минимум за бронь',0,1000000),maxFee=number(body.maxFee??0,'Максимум за бронь',0,10000000);
  if(maxFee>0&&maxFee<minFee)throw new DomainError('Максимум за бронь не может быть меньше минимума.');
  const free=number(body.freeBookings??0,'Бесплатные брони',0,1000),version=number(body.expectedVersion,'Версия условий',1,10000000),at=epoch();
  const before=await billingSettings(service.db);if(!before)throw new DomainError('Настройки оплаты не найдены. Примените обновление базы.',503);
  // An already running start date is kept as is; only a new or rescheduled start must lie ahead.
  let startsAt=0;
  if(body.enabled){startsAt=number(body.startsAt,'Дата начала',0,4102444800);const running=before.enabled===1&&before.starts_at<=at&&startsAt===before.starts_at;if(!running&&startsAt<at-60)throw new DomainError('Дата начала платы не может быть в прошлом.');}
- const changed=body.enabled&&(!before.enabled||before.starts_at!==startsAt||before.rate_bp!==rate||before.min_fee!==minFee||before.max_fee!==maxFee||before.free_bookings!==free);
+ const changed=body.enabled&&(!before.enabled||before.starts_at!==startsAt||before.rate_bp!==rate||before.ai_rate_bp!==aiRate||before.min_fee!==minFee||before.max_fee!==maxFee||before.free_bookings!==free);
  const event=uuid(),statements=[
-  q(service.db,"UPDATE platform_billing SET enabled=?,starts_at=?,rate_bp=?,min_fee=?,max_fee=?,free_bookings=?,version=version+1,updated_by=?,updated_at=? WHERE id='global' AND version=?",body.enabled?1:0,startsAt,rate,minFee,maxFee,free,service.userId,at,version),
-  q(service.db,'INSERT INTO audit_events SELECT ?,?,?,?,? WHERE changes()>0',event,service.userId,'platform-billing',JSON.stringify({action:'billing.settings_changed',enabled:body.enabled,startsAt,ratePercent:percent,minFee,maxFee,freeBookings:free,previousVersion:version}),at),
+  q(service.db,"UPDATE platform_billing SET enabled=?,starts_at=?,rate_bp=?,ai_rate_bp=?,min_fee=?,max_fee=?,free_bookings=?,version=version+1,updated_by=?,updated_at=? WHERE id='global' AND version=?",body.enabled?1:0,startsAt,rate,aiRate,minFee,maxFee,free,service.userId,at,version),
+  q(service.db,'INSERT INTO audit_events SELECT ?,?,?,?,? WHERE changes()>0',event,service.userId,'platform-billing',JSON.stringify({action:'billing.settings_changed',enabled:body.enabled,startsAt,ratePercent:percent,aiRatePercent:aiPercent,minFee,maxFee,freeBookings:free,previousVersion:version}),at),
  ];
  let notified=0;
  if(changed){
   const fees=[minFee?`не меньше ${minFee} ₸`:'',maxFee?`не больше ${maxFee} ₸`:''].filter(Boolean).join(' и ');
-  const text=`С ${dateText(Math.max(startsAt,at))} сервис берёт комиссию ${String(percent).replace('.',',')}% с брони, подтверждённой через приложение${fees?` (${fees})`:''}.${free?` Первые брони бесплатно: ${free}.`:''} Отменённые брони не оплачиваются.`;
+  const text=`С ${dateText(Math.max(startsAt,at))} сервис берёт комиссию ${String(percent).replace('.',',')}% с брони, подтверждённой через приложение${fees?` (${fees})`:''}${aiPercent!==percent?`; для квартир в режиме «ИИ», где AI администратор ведёт гостей и уборку за вас, ${String(aiPercent).replace('.',',')}%`:''}.${free?` Первые брони бесплатно: ${free}.`:''} Отменённые брони не оплачиваются.`;
   for(const o of await owners(service.db)){statements.push(q(service.db,'INSERT OR IGNORE INTO notifications SELECT ?,?,?,?,?,? WHERE EXISTS(SELECT 1 FROM audit_events WHERE id=?)',uuid(),o.id,text,'owner:billing:'+(version+1),0,at,event));notified++;}
  }
  const results=await service.db.batch(statements);
