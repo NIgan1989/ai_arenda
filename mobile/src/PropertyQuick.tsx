@@ -64,7 +64,7 @@ export function PropertyQuick({city,onSave,onGuestMode,onClose,onMap,onDone}:{ci
     <View style={q.cover}>{photos[0]?<Photo id={photos[0]} alt="Обложка"/>:<Text style={q.coverEmpty}>Без фото: квартира сохранится черновиком</Text>}</View>
     <View style={q.previewBody}><TextInput accessibilityLabel="Название" style={q.previewTitle} value={draftTitle(draft)} maxLength={120} onChangeText={v=>patch({title:v})}/><Text style={q.sub}>📍 {[draft.district||'Район не указан',draft.city].filter(Boolean).join(' · ')}</Text><Text style={q.price}>{priceLine||'Цена не указана'}</Text></View>
    </View>
-   {ask?<View style={q.ask}><View style={[q.orb,q.orbSm]}><Text style={q.orbTextSm}>✦</Text></View><View style={{flex:1,gap:8}}><Text style={q.askQ}>{ask.question}</Text><Text style={q.hint}>{questions.length>1?'Ещё вопросов: '+(questions.length-1):'Последний вопрос'}</Text>
+   {ask?<View style={q.ask}><View style={[q.orb,q.orbSm]}><Text style={q.orbTextSm}>✦</Text></View><View style={{flex:1,minWidth:0,gap:8}}><Text style={q.askQ}>{ask.question}</Text><Text style={q.hint}>{questions.length>1?'Ещё вопросов: '+(questions.length-1):'Последний вопрос'}</Text>
      <View style={q.askRow}><TextInput accessibilityLabel={ask.label} style={q.askInput} value={answer} onChangeText={setAnswer} placeholder={ask.placeholder} placeholderTextColor={C.muted} onSubmitEditing={reply} returnKeyType="send" keyboardType={ask.key==='price'||ask.key==='cleaningFee'?'number-pad':'default'}/><Pressable accessibilityRole="button" disabled={!answer.trim()} onPress={reply} style={[q.send,!answer.trim()&&q.primaryOff]}><Text style={q.primaryText}>↑</Text></Pressable></View></View></View>
    :<Text style={q.ready}>✓ Всё нужное есть.{found.length?' ИИ понял из рассказа: '+found.length+' '+plural(found.length,'деталь','детали','деталей')+'.':''}</Text>}
    <Text style={q.h}>КВАРТИРА</Text>
@@ -93,7 +93,7 @@ export function PropertyQuick({city,onSave,onGuestMode,onClose,onMap,onDone}:{ci
     <Pressable accessibilityRole="radio" accessibilityState={{checked:mode==='manual'}} onPress={()=>setMode('manual')} style={[q.mode,mode==='manual'&&q.modeOn]}><Text style={q.modeTitle}>Я сам</Text><Text style={q.hint}>Запросы приходят вам, вы решаете</Text></Pressable>
    </View>
    {mode==='auto'&&draft.cleaningFee>=100&&<View style={q.grid}>{num('cleaningFee','Уборка после гостя, ₸',1000000)}</View>}
-   <View style={q.actions}><Pressable accessibilityRole="button" onPress={()=>setStep(0)} disabled={busy} style={q.ghost}><Text style={q.ghostText}>← Рассказ</Text></Pressable><Pressable accessibilityRole="button" accessibilityState={{disabled:busy||uploading||!!questions.length}} disabled={busy||uploading||!!questions.length} onPress={save} style={[q.primary,{flex:1},(busy||uploading||!!questions.length)&&q.primaryOff]}><Text style={q.primaryText}>{busy?'Сохраняю…':questions.length?'Ответьте ИИ: '+questions.length:photos.length?'Опубликовать':'Сохранить черновик'}</Text></Pressable></View>
+   <View style={q.actions}><Pressable accessibilityRole="button" onPress={()=>setStep(0)} disabled={busy} style={q.ghost}><Text style={q.ghostText}>← Назад</Text></Pressable><Pressable accessibilityRole="button" accessibilityState={{disabled:busy||uploading||!!questions.length}} disabled={busy||uploading||!!questions.length} onPress={save} style={[q.primary,{flex:1},(busy||uploading||!!questions.length)&&q.primaryOff]}><Text style={q.primaryText}>{busy?'Сохраняю…':photos.length?'Опубликовать':'Сохранить черновик'}</Text></Pressable></View>
   </View>}
 
   {step===2&&saved&&<View style={[q.body,{alignItems:'center'}]}>
@@ -132,7 +132,7 @@ const q=StyleSheet.create({
  previewBody:{padding:12,gap:4},previewTitle:{color:C.ink,...type.subtitle,fontWeight:'700',padding:0},price:{color:C.accent,...type.body,fontWeight:'700'},
  ask:{flexDirection:'row',gap:12,padding:16,borderRadius:R.lg,backgroundColor:C.accentSoft,borderWidth:1,borderColor:C.accentLine},
  askQ:{color:C.ink,...type.body,fontWeight:'600'},askRow:{flexDirection:'row',gap:8},
- askInput:{flex:1,minHeight:H.field,borderRadius:R.full,borderWidth:1,borderColor:C.lineStrong,backgroundColor:C.surface,paddingHorizontal:16,color:C.ink,...type.body},
+ askInput:{flex:1,minWidth:0,minHeight:H.field,borderRadius:R.full,borderWidth:1,borderColor:C.lineStrong,backgroundColor:C.surface,paddingHorizontal:16,color:C.ink,...type.body},
  send:{width:H.field,height:H.field,borderRadius:R.full,backgroundColor:C.accent,alignItems:'center',justifyContent:'center'},
  ready:{color:C.success,backgroundColor:C.successSoft,borderRadius:R.md,padding:12,...type.label,fontWeight:'600'},
  h:{color:C.muted,...type.caption,fontWeight:'700',letterSpacing:.8,marginTop:8},

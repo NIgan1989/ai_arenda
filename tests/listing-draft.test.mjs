@@ -6,7 +6,7 @@ const read=t=>readListingText(t,emptyDraft('Павлодар'));
 
 test('one message fills the listing: rooms, floor, area, guests, tariffs, amenities, rules and address',()=>{
  const {draft:d,found}=read(DRAFT_EXAMPLE);
- assert.deepEqual([d.rooms,d.floor,d.floors,d.area,d.capacity,d.beds],[1,4,9,42,3,3]);
+ assert.deepEqual([d.rooms,d.floor,d.floors,d.area,d.capacity,d.beds],[1,4,9,42,3,3]);assert.ok(found.includes('rooms'));
  assert.deepEqual([d.price,d.hourlyPrice,d.minHours],[15000,2500,2]);
  assert.deepEqual(d.amenities,['wifi','kitchen','washer','aircon']);
  assert.equal(d.address,'Торайгырова 64, кв. 12');assert.equal(d.district,'Центр');assert.equal(d.checkinMethod,'lockbox');assert.equal(d.smoking,false);

@@ -48,7 +48,7 @@ export function readListingText(text:string,base:ListingDraft):{draft:ListingDra
  if(/студи/.test(t))set('type','studio');else if(/апарт/.test(t))set('type','aparthotel');else if(/(?<![а-я])(?:дом|коттедж)(?![а-я])/.test(t))set('type','house');
  else if(/квартир|однушк|двушк|трешк|комнатн/.test(t))set('type','apartment');
  const rooms=t.match(/(?<!\d)([1-9])\s*[-–]?\s*(?:х\s*)?(?:комн|к(?:\.|\s|-)?\s*кв|к(?![а-я]))/)?.[1]
-  ||(t.match(/(одно|двух|трех|четырех|пяти)комнат/)?.[1])||(t.match(/(одн|дву|тре)шк/)?.[1]);
+  ||(t.match(/(одно|двух|трех|четырех|пяти)комнат/)?.[1])||(t.match(/(одн|дву|тре)у?шк/)?.[1]);
  if(rooms)set('rooms',Number(rooms)||WORD_ROOMS[rooms]||1);else if(d.type==='studio')set('rooms',1);
 
  const area=t.match(/(\d+(?:[.,]\d+)?)\s*(?:м²|м2|кв\.?\s*м|квадрат|метр)/);if(area){const v=Math.round(Number(area[1].replace(',','.')));if(v>=5&&v<=2000)set('area',v);}

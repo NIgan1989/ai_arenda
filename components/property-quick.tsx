@@ -3,7 +3,7 @@
 // the AI filled. The AI asks only what it could not read (address, district, daily price) — one
 // question at a time, like the administrator in the chat. The long form stays for editing later.
 import {useMemo,useRef,useState} from 'react';
-import {ArrowLeft,Building2,Camera,Check,MapPin,Minus,Plus,Sparkles,X} from 'lucide-react';
+import {ArrowLeft,ArrowUp,Building2,Camera,Check,MapPin,Minus,Plus,Sparkles,X} from 'lucide-react';
 import {Photo,preparePhoto} from './media';
 import {amenities,checkinMethods,propertyTypes} from '../lib/listings';
 import {DRAFT_EXAMPLE,answerDraft,draftDescription,draftListingBody,draftQuestions,draftRules,draftTitle,emptyDraft,readListingText,type ListingDraft} from '../lib/listing-draft';
@@ -52,7 +52,7 @@ export function PropertyQuick({city,role,api,onSave,onGuestMode,onClose,onMap,on
 
   {step===0&&<div className="pq-body">
    <label className="pq-line"><span className="pq-sr">Расскажите о квартире</span><textarea value={text} onChange={e=>setText(e.target.value)} rows={5} maxLength={2000} autoFocus placeholder="Например: однушка на Торайгырова 64, 4 этаж, до 3 гостей, есть Wi-Fi и стиралка, 15 000 в сутки, 2 500 в час" onKeyDown={e=>{if(e.key==='Enter'&&(e.metaKey||e.ctrlKey))read();}}/>
-    <span className="pq-line-bar"><button type="button" className="pq-chip" onClick={()=>setText(DRAFT_EXAMPLE)}>Пример</button><span className="pq-count">{text.length? text.length+' / 2000':'Пишите как удобно, порядок не важен'}</span></span></label>
+    <span className="pq-line-bar"><button type="button" className="pq-chip" onClick={()=>setText(DRAFT_EXAMPLE)}>Пример</button><span className="pq-count">{text.length? text.length+' / 2000':'Порядок не важен'}</span></span></label>
    <div className="pq-photos" aria-label="Фотографии">
     {photos.map((id,i)=><figure key={id} className="pq-photo"><Photo id={id} role={role} alt={'Фото '+(i+1)}/>{i===0&&<figcaption>Обложка</figcaption>}<button type="button" className="pq-photo-x" aria-label={'Убрать фото '+(i+1)} onClick={()=>setPhotos(v=>v.filter(x=>x!==id))}><X size={14}/></button></figure>)}
     {photos.length<8&&<button type="button" className="pq-photo pq-photo-add" onClick={()=>fileRef.current?.click()} disabled={uploading}><Camera size={22}/><span>{uploading?'Загружаю…':photos.length?'Ещё фото':'Добавить фото'}</span></button>}
@@ -76,7 +76,7 @@ export function PropertyQuick({city,role,api,onSave,onGuestMode,onClose,onMap,on
    {ask?<form className="pq-ask" onSubmit={reply}>
     <span className="pq-orb pq-orb-sm" aria-hidden="true"><Sparkles size={14}/></span>
     <div><p className="pq-ask-q">{ask.question}</p><p className="pq-ask-left">{questions.length>1?'Ещё вопросов: '+(questions.length-1):'Последний вопрос'}</p>
-     <span className="pq-ask-row"><input ref={answerRef} aria-label={ask.label} value={answer} onChange={e=>setAnswer(e.target.value)} placeholder={ask.placeholder} autoFocus inputMode={ask.key==='price'||ask.key==='cleaningFee'?'numeric':'text'}/><button className="pq-send" disabled={!answer.trim()}>Ответить</button></span></div>
+     <span className="pq-ask-row"><input ref={answerRef} aria-label={ask.label} value={answer} onChange={e=>setAnswer(e.target.value)} placeholder={ask.placeholder} autoFocus inputMode={ask.key==='price'||ask.key==='cleaningFee'?'numeric':'text'}/><button className="pq-send" disabled={!answer.trim()} aria-label="Ответить"><ArrowUp size={20}/></button></span></div>
    </form>:<p className="pq-ready"><Check size={16}/>Всё нужное есть. {found.length?'ИИ понял из рассказа: '+found.length+' '+plural(found.length,'деталь','детали','деталей')+'.':''}</p>}
 
    <h3 className="pq-h">Квартира</h3>
@@ -121,7 +121,7 @@ export function PropertyQuick({city,role,api,onSave,onGuestMode,onClose,onMap,on
    </div>
    {mode==='auto'&&draft.cleaningFee>=100&&<Num label="Уборка после гостя, ₸" value={draft.cleaningFee} min={100} max={1000000} step={500} onChange={v=>patch({cleaningFee:v})}/>}
 
-   <div className="pq-actions pq-sticky"><button type="button" className="pq-ghost" onClick={()=>setStep(0)} disabled={busy}><ArrowLeft size={16}/>Рассказ</button><button type="button" className="pq-primary" disabled={busy||uploading||!!questions.length} onClick={save}>{busy?'Сохраняю…':questions.length?'Ответьте ИИ: '+questions.length:photos.length?'Опубликовать':'Сохранить черновик'}</button></div>
+   <div className="pq-actions pq-sticky"><button type="button" className="pq-ghost" onClick={()=>setStep(0)} disabled={busy}><ArrowLeft size={16}/>Назад</button><button type="button" className="pq-primary" disabled={busy||uploading||!!questions.length} onClick={save}>{busy?'Сохраняю…':photos.length?'Опубликовать':'Сохранить черновик'}</button></div>
   </div>}
 
   {step===2&&saved&&<div className="pq-body pq-done">
