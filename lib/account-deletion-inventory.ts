@@ -1,6 +1,9 @@
-// Reviewed deletion inventory through migration 0031. Any new application column
+// Reviewed deletion inventory through migration 0032. Any new application column
 // must be classified before unused-account erasure is enabled for that schema.
 export const accountDeletionColumns:Record<string,string>={
+ "platform_billing":"id,enabled,starts_at,rate_bp,min_fee,max_fee,free_bookings,version,updated_by,updated_at",
+ "platform_commissions":"booking_id,owner_id,property_id,booking_amount,rate_bp,amount,mode,settings_version,created_at",
+ "owner_balance_entries":"id,owner_id,kind,amount,note,actor_id,request_key,created_at",
  "matching_preferences":"property_id,owner_id,enabled,updated_at",
  "matching_requests":"id,guest_id,request_key,filters,status,created_at,expires_at,selected_offer,booking_id,lease_until",
  "matching_offers":"id,request_id,property_id,owner_id,status,amount,policy_version,created_at,expires_at,responded_at",
@@ -87,6 +90,11 @@ export const accountDeletionColumns:Record<string,string>={
  "command_receipts": "user_id,key,digest,result"
 };
 export const accountDeletionFenceSql:Record<string,string>={
+ "account_erased_platform_commissions_insert": "CREATE TRIGGER account_erased_platform_commissions_insert BEFORE INSERT ON platform_commissions WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.owner_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END",
+ "account_erased_platform_commissions_update": "CREATE TRIGGER account_erased_platform_commissions_update BEFORE UPDATE ON platform_commissions WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.owner_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END",
+ "account_erased_owner_balance_entries_insert": "CREATE TRIGGER account_erased_owner_balance_entries_insert BEFORE INSERT ON owner_balance_entries WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.owner_id OR user_id=NEW.actor_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END",
+ "account_erased_owner_balance_entries_update": "CREATE TRIGGER account_erased_owner_balance_entries_update BEFORE UPDATE ON owner_balance_entries WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.owner_id OR user_id=NEW.actor_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END",
+ "account_erased_platform_billing_update": "CREATE TRIGGER account_erased_platform_billing_update BEFORE UPDATE ON platform_billing WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.updated_by) BEGIN SELECT RAISE(ABORT,'account_erased'); END",
 "account_erased_matching_preferences_insert":"CREATE TRIGGER account_erased_matching_preferences_insert BEFORE INSERT ON matching_preferences WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.owner_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END",
 "account_erased_matching_requests_insert":"CREATE TRIGGER account_erased_matching_requests_insert BEFORE INSERT ON matching_requests WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.guest_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END",
 "account_erased_matching_offers_insert":"CREATE TRIGGER account_erased_matching_offers_insert BEFORE INSERT ON matching_offers WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.owner_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END",
