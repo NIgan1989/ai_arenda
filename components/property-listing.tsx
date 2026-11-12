@@ -3,6 +3,7 @@ import {Button} from '@/components/ui/button';
 import {useState} from 'react';
 import {MapPin,BedDouble,Users,Maximize2,ChevronRight,Check,Pencil,Building2} from 'lucide-react';
 import './flow-release.css';
+import './listing-compact.css';
 import {PropertyGallery} from './property-gallery';
 import {propertyTypes,amenities,checkinMethods} from '../lib/listings';
 import {clock} from '../lib/rental-policy';
@@ -11,9 +12,9 @@ type Row=Record<string,any>;
 type API=(path:string,body?:Row)=>Promise<any>;
 const money=(n:number)=>new Intl.NumberFormat('ru-RU').format(n)+' ₸';
 export function StatusBadge({status}:{status?:Row}){return <span className={'listing-status tone-'+(status?.tone||'neutral')}><span/>{status?.label||'Статус уточняется'}</span>;}
-export function PropertyListing({property:p,role,onChoose,onEdit,onSettings,publicView=false,billingMode='daily',actionLabel}:{property:Row;role:string;onChoose:()=>void;onEdit?:()=>void;onSettings?:()=>void;publicView?:boolean;billingMode?:'daily'|'hourly';actionLabel?:string}){
+export function PropertyListing({property:p,role,onChoose,onEdit,onSettings,publicView=false,billingMode='daily',actionLabel,compact=false}:{compact?:boolean;property:Row;role:string;onChoose:()=>void;onEdit?:()=>void;onSettings?:()=>void;publicView?:boolean;billingMode?:'daily'|'hourly';actionLabel?:string}){
  const [expanded,setExpanded]=useState(false),d=p.details||{},photos=p.photos||[],policy=p.policy||{};
- return <article className="property-listing">
+ return <article className={'property-listing'+(compact?' listing-compact'+(expanded?' is-open':''):'')}>
  <div className="listing-visual">{String(p.description||'').startsWith('СИНТЕТИЧЕСКОЕ ОБЪЯВЛЕНИЕ')?<div className="listing-synthetic" role="img" aria-label="Схема учебного объявления"><Building2/><span>Учебное объявление</span><small>Реальной квартиры по этому описанию нет</small></div>:<PropertyGallery photos={photos} publicView={publicView} role={role} title={p.title}/>}<div className="listing-badges"><StatusBadge status={p.display_status}/>{p.demo_owner&&<span className="tag">Учебный объект</span>}</div></div>
  <div className="listing-body"><div className="card-meta"><MapPin size={14}/>{p.city} · {p.district}{p.rating?.count>0&&<span className="listing-rating" aria-label={'Оценка гостей '+String(p.rating.average).replace('.',',')+' из 5, отзывов: '+p.rating.count}> · ★ {String(p.rating.average).replace('.',',')} ({p.rating.count})</span>}</div><h2>{p.title}</h2><div className="listing-specs"><span><Building2 size={15}/>{propertyTypes[d.type]||'Квартира'} · {p.rooms} комн.</span>{!!d.area&&<span><Maximize2 size={15}/>{d.area} м²</span>}<span><Users size={15}/>До {p.capacity} гостей</span>{!!d.beds&&<span><BedDouble size={15}/>{d.beds} {plural(Number(d.beds),'спальное место','спальных места','спальных мест')}</span>}</div>
  <p className={expanded?'listing-description':'listing-description clamped'}>{p.description}</p>

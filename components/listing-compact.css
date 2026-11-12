@@ -1,0 +1,17 @@
+/* A catalogue card that leaves room for the next one: a short picture, the name, the essentials in a line
+   and the price with its button. The description and amenities open on request. */
+html[data-design="unified"] .property-listing.listing-compact{margin-top:12px;border-radius:var(--t-radius-xl)}
+html[data-design="unified"] .property-listing.listing-compact .listing-visual{aspect-ratio:16/9;max-height:192px;width:100%}
+html[data-design="unified"] .property-listing.listing-compact .listing-visual:has(.listing-synthetic){aspect-ratio:auto;height:96px}
+.listing-compact .listing-synthetic{grid-auto-flow:column;align-items:center;align-content:end;justify-content:center;gap:8px;padding-bottom:16px;box-sizing:border-box}
+.listing-compact .listing-synthetic svg{width:24px;height:24px;stroke-width:1.5}
+.listing-compact .listing-synthetic small{display:none}
+html[data-design="unified"] .property-listing.listing-compact .listing-body{padding:12px 16px 16px;display:grid;gap:8px}
+html[data-design="unified"] .property-listing.listing-compact .listing-body>*{margin:0}
+html[data-design="unified"] .property-listing.listing-compact .listing-body h2{font-size:16px;line-height:24px;font-weight:650}
+html[data-design="unified"] .property-listing.listing-compact .listing-specs{gap:4px 12px;font-size:12px;line-height:16px}
+.listing-compact:not(.is-open) .listing-description,.listing-compact:not(.is-open) .listing-amenities{display:none!important}
+html[data-design="unified"] .property-listing.listing-compact .listing-expand{min-height:var(--t-control-compact);padding:0;font-size:14px}
+html[data-design="unified"] .property-listing.listing-compact .listing-footer{padding-top:12px;margin-top:0;align-items:center}
+html[data-design="unified"] .property-listing.listing-compact .listing-footer strong{font-size:22px;line-height:28px}
+html[data-design="unified"] .property-listing.listing-compact .listing-footer small{font-size:12px;line-height:16px}
