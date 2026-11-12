@@ -20,6 +20,7 @@ import {aiDataPermission} from './ai-data-permission';
 import {administratorSearch,isPropertySearch,isSearchRefinement,previousAdministratorSearch} from './administrator-search';
 import {readAdministratorProcesses,processReadIntent} from './administrator-process-read';
 import {accrueCommission} from './platform-billing';
+import {offerPriceAdvice,ownerPriceSuggestions,decidePriceSuggestion} from './price-advice';
 
 type Row = Record<string, any>;
 const now = () => Math.floor(Date.now() / 1000);
@@ -176,6 +177,7 @@ export class RentalService {
     const workers=new Map<string,Row|null>();if(role==="owner"){for(const userId of new Set([...state.applications.map(a=>a.user_id),...jobs.map(j=>j.assigned_to).filter(Boolean)]))workers.set(userId,await this.workerCard(userId));}
     const result={...state,profile:state.profile?{...state.profile,display_status:cleanerStatus(state.profile.work_status,state.jobs.filter(j=>j.assigned_to===this.userId),state.serverTime)}:null,activeRole:role,properties:role==='guest'?state.properties:[],ownProperties:role==='owner'?state.ownProperties:[],bookings,jobs:jobs.map((j:Row):Row=>({...j,worker:role==='owner'?workers.get(j.assigned_to):null})),
       notifications,applications:state.applications.filter(a=>jobIds.has(a.job_id)&&(role==='owner'||a.user_id===this.userId)).map(a=>({...a,worker:role==='owner'?workers.get(a.user_id):null})),messages:state.messages.filter(m=>m.scope===role)};
+    if(role==='owner')(result as Row).priceSuggestions=await ownerPriceSuggestions(this.db,this.userId,state.serverTime);
     const assistantSettings={...defaultAssistantSettings};
     const administrator=await readAdministratorState(this.db,this.userId,role);
     return {...result,administrator,approvals:approvalCards(result,role,this.userId,state.serverTime),assistantSettings,assistantBrief:assistantBrief(result,role,assistantSettings,state.serverTime),workspaces:{[role]:operationOverview(result,this.userId,role,state.serverTime)}};
@@ -207,6 +209,7 @@ export class RentalService {
     const accept=body.action==='accept';
     if(card.kind==='booking')return this.bookingAction(card.entityId,{action:accept?'confirm':'reject',cleaningFee:body.cleaningFee??card.cleaningFee,expectedVersion:state.bookings.find(b=>b.id===card.entityId)?.terms?.version});
     if(card.kind==='change')return this.decideBookingChange(card.entityId,card.id.slice(7),role,{action:body.action});
+    if(card.kind==='price')return decidePriceSuggestion(this,card.id.slice(6),accept);
     if(card.kind==='checkout')return this.bookingAction(card.entityId,{action:accept?'checkout':'dispute_checkout',reason:body.reason,expectedVersion:state.bookings.find(b=>b.id===card.entityId)?.terms?.version});
     const job=state.jobs.find(j=>j.id===card.entityId);
     return this.jobAction(card.entityId,{action:card.kind==='application'?(accept?'assign':'reject_application'):(accept?'approve':'revise'),applicationId:card.id.slice(12),reason:body.reason,expectedVersion:job?.version});
@@ -333,7 +336,13 @@ export class RentalService {
     if(readiness==='ready'&&pending)throw new DomainError('Сначала завершите и примите запланированную уборку.',409);
     const result=await this.db.batch([this.query('UPDATE property_operations SET readiness=?,note=?,version=version+1,updated_at=? WHERE property_id=? AND version=?',readiness,note,now(),propertyId,number(body.expectedVersion,'Версия состояния',1,10000000)),this.audit(propertyId,'property.readiness_requested')]);
     if(!result[0].meta.changes)throw new DomainError('Состояние уже изменилось. Обновите карточку.',409);
-    return {message:readiness==='ready'?'Готовность квартиры подтверждена.':'Состояние квартиры сохранено.'};
+    const advice=readiness==='ready'?await this.priceAdviceAfterReady(propertyId):null;
+    return {message:readiness==='ready'?'Готовность квартиры подтверждена.'+(advice?' AI администратор предлагает новую цену, решение за вами.':''):'Состояние квартиры сохранено.',priceSuggestion:advice};
+  }
+  // The flat is ready for the next guest: the moment for the AI administrator's price advice.
+  // The advice is optional, so a failure here never undoes the owner's action.
+  async priceAdviceAfterReady(propertyId:string){
+    try{return await offerPriceAdvice(this.db,propertyId);}catch(error){console.error('Price advice failed',error instanceof Error?error.message:'');return null;}
   }
   async bookingQuote(body:Row) {
     const p=await this.one('SELECT * FROM properties WHERE id=? AND published=1 AND (demo_owner IS NULL OR demo_owner=?)',required(body.propertyId,'Квартира',100),this.userId);
@@ -655,7 +664,8 @@ export class RentalService {
       await requireEvidence(this,jobId);
       const r=await this.db.batch([this.query("UPDATE cleaning_jobs SET status='completed' WHERE id=? AND status='submitted' AND version=?",jobId,j.version),this.query("UPDATE property_operations SET readiness='ready',version=version+1,updated_at=? WHERE property_id=? AND readiness='inspection' AND active_booking_id IS NULL AND EXISTS(SELECT 1 FROM cleaning_jobs WHERE id=? AND status='completed') AND NOT EXISTS(SELECT 1 FROM cleaning_jobs WHERE property_id=? AND (status IN ('in_progress','submitted') OR (status IN ('open','assigned') AND start<=?)))",now(),j.property_id,jobId,j.property_id,now()),this.notify(j.assigned_to,'Заказчик принял уборку. Расчёт производится с заказчиком отдельно.','approved:'+jobId,'cleaner'),this.audit(jobId,'job.completed')]);
       if(!r[0].meta.changes) throw new DomainError('Нет отчёта для приёмки.',409);
-      return {message:'Работа принята. Денежные расчёты выполняются отдельно.'};
+      const advice=await this.priceAdviceAfterReady(j.property_id);
+      return {message:'Работа принята. Денежные расчёты выполняются отдельно.'+(advice?' AI администратор посмотрел спрос и предлагает новую цену, решение за вами.':''),priceSuggestion:advice};
     }
     if(body.action==='cancel'&&j.owner_id===this.userId){const reason=required(body.reason,'Причина отмены',1000);const r=await this.query("UPDATE cleaning_jobs SET status='cancelled' WHERE id=? AND status IN ('open','assigned')",jobId).run();if(!r.meta.changes)throw new DomainError('Начатую работу нельзя отменить этим действием.',409);await this.audit(jobId,'job.cancelled:'+reason).run();return {message:'Задание отменено. Готовность квартиры нужно проверить отдельно.'};}
     if(body.action==='issue' && (j.owner_id===this.userId||j.assigned_to===this.userId)) {
