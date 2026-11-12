@@ -71,7 +71,7 @@ export async function matchingState(s:RentalService,id:unknown,prepared?:Row){
 }
 export async function matchingInbox(s:RentalService){
  await s.requireRole('owner');await expire(s);
- const preferences=await rows(s.db,`SELECT p.id,p.title,COALESCE(m.enabled,0) enabled,${guestModeSql} mode,COALESCE(pp.cleaning_fee,0) cleaning_fee FROM properties p ${guestModeJoins} WHERE p.owner_id=? ORDER BY p.created_at DESC`,epoch(),s.userId);
+ const preferences=await rows(s.db,`SELECT p.id,p.title,COALESCE(m.enabled,0) enabled,${guestModeSql} mode,COALESCE(pp.cleaning_fee,0) cleaning_fee FROM properties p ${guestModeJoins} WHERE p.owner_id=? AND p.archived_at IS NULL ORDER BY p.created_at DESC`,epoch(),s.userId);
  const offers=await rows(s.db,"SELECT o.id,o.property_id,o.amount,o.expires_at,o.status,r.filters,p.title FROM matching_offers o JOIN matching_requests r ON r.id=o.request_id JOIN properties p ON p.id=o.property_id WHERE o.owner_id=? AND p.owner_id=? AND o.status='pending' AND o.expires_at>? AND r.status IN ('searching','ready') AND r.expires_at>? ORDER BY o.created_at DESC",s.userId,s.userId,epoch(),epoch());
  return {preferences,offers:offers.map(o=>{const {near,...filters}=JSON.parse(o.filters);return {...o,filters};}),serverTime:epoch()};
 }

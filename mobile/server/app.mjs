@@ -101,6 +101,8 @@ export function createApp({filename=':memory:',origins=['http://localhost:8081',
     if(mediaPath&&input.action==='remove')return service.deleteMedia(mediaPath[1]);
     if(path==='/api/profile/edit')return service.editProfile(input);
     if(path==='/api/listings')return service.saveListing(null,input);
+    const removePath=path.match(/^\/api\/listings\/([a-zA-Z0-9-]+)\/remove$/);
+    if(removePath)return service.removeProperty(removePath[1]);
     const listingPath=path.match(/^\/api\/listings\/([a-zA-Z0-9-]+)$/);
     if(listingPath)return service.saveListing(listingPath[1],input);
     if(path==='/api/quote')return service.bookingQuote(input);
@@ -157,6 +159,7 @@ export function createApp({filename=':memory:',origins=['http://localhost:8081',
       const result=await serial(()=>execute(req,path,input));
       if(result instanceof Response){res.writeHead(result.status,{...headers,...Object.fromEntries(result.headers)});res.end(await result.text());}else reply(200,result);
     }catch(error){
+      if(/property_archived/.test(error.message)){reply(409,{error:'Квартира удалена владельцем: показать или забронировать её нельзя.'});return;}
       if(/account_erased/.test(error.message)){reply(410,{error:'Аккаунт удалён. Обновите вход.'});return;}
       if(/checkout_required|property_not_vacant|property_cleaning_busy/.test(error.message)){reply(409,{error:'Квартира не освобождена или другая уборка ещё не принята.'});return;}
       if(/pilot_/.test(error.message)){reply(409,{error:'Требуется актуальная проверка участника или телефона. Откройте «Управление → Допуск».'});return;}

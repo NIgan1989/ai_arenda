@@ -14,13 +14,16 @@ const SAVED:Record<EditStep|'publish',string>={photos:'Фото сохранен
 
 // Editing a flat in the app: an overview of short steps, each opened on its own small screen and saved at once.
 // After each save the AI administrator offers the next step. Same rules as the site (lib/listing-edit.ts).
-export function PropertyEdit({property,onSave,onReview,onClose}:{property:Row;onSave:(body:Row)=>Promise<Row|undefined>;onReview?:(body:Row)=>Promise<unknown>;onClose:()=>void}){
+export function PropertyEdit({property,onSave,onReview,onRemove,onClose}:{property:Row;onSave:(body:Row)=>Promise<Row|undefined>;onReview?:(body:Row)=>Promise<unknown>;onRemove?:()=>Promise<unknown>;onClose:()=>void}){
  const [p,setP]=useState(property),[base,setBase]=useState<EditBody>(()=>editBody(property)),[draft,setDraft]=useState<EditBody>(base);
  const [open,setOpen]=useState<EditStep|null>(null),[busy,setBusy]=useState(false),[uploading,setUploading]=useState(false),[error,setError]=useState(''),[done,setDone]=useState(''),[skipped,setSkipped]=useState<string[]>([]),[held,setHeld]=useState(false),[sent,setSent]=useState(false);
+ const [confirm,setConfirm]=useState(false),[removeError,setRemoveError]=useState('');
  // A save that failed keeps its changes: the owner fixes what the server asked for in another step and everything is saved together.
  const fix=held&&error?stepForError(error):null;
  const advice:Advice=held&&error?{step:fix,text:'Не сохранилось: '+error+(fix?' Заполните это, и сохранится всё вместе.':''),action:fix?'Заполнить':undefined}:sent&&!base.published?{step:null,text:REVIEW_SENT}:nextAdvice(base,skipped);
  function go(step:EditStep){if(!held)setDraft(base);setError(held?error:'');setDone('');setOpen(step);}
+ // Removing asks once more right here; the server deletes a flat without history and archives one with bookings.
+ async function remove(){if(!onRemove||busy)return;setBusy(true);setRemoveError('');try{await onRemove();}catch(x:any){setRemoveError(x?.message||'Не удалось удалить квартиру.');}finally{setBusy(false);}}
  async function commit(next:EditBody,what:EditStep|'publish'){
   if(busy||uploading)return;setBusy(true);setError('');
   try{const fresh=await onSave(editRequest(next,p));setP(fresh||{...p,listing_version:(p.listing_version||0)+1});const b=fresh?editBody(fresh):next;setBase(b);setDraft(b);setOpen(null);setHeld(false);setError('');setDone(SAVED[what]);}
@@ -103,6 +106,11 @@ export function PropertyEdit({property,onSave,onReview,onClose}:{property:Row;on
    {needs&&<View style={e.dot}/>}
   </Pressable>;})}</View>
   <View style={e.switchRow}><View style={{flex:1}}><Text style={e.stepTitle}>Показывать гостям</Text><Text style={e.stepLine}>{base.published?'Объявление на карте':'Черновик, видите только вы'}</Text></View><Switch accessibilityLabel="Показывать гостям" value={base.published} disabled={busy} onValueChange={v=>commit({...(held?draft:base),published:v},'publish')} trackColor={{true:C.success,false:C.lineStrong}} thumbColor={C.surface}/></View>
+  {onRemove&&(confirm?<View style={e.remove}>
+   <Text style={e.adviceText}><Text style={{fontWeight:'700'}}>Удалить «{base.title||'квартиру'}»? </Text>Гости больше её не увидят. Если по ней были брони, история броней и оплат сохранится.</Text>
+   {!!removeError&&<Text accessibilityRole="alert" style={e.errorText}>{removeError}</Text>}
+   <View style={e.adviceRow}><Pressable accessibilityRole="button" disabled={busy} onPress={remove} style={e.danger}><Text style={e.goText}>{busy?'Удаляю…':'🗑 Удалить'}</Text></Pressable><Pressable accessibilityRole="button" disabled={busy} onPress={()=>{setConfirm(false);setRemoveError('');}} style={e.later}><Text style={e.laterText}>Отмена</Text></Pressable></View>
+  </View>:<Pressable accessibilityRole="button" disabled={busy} onPress={()=>setConfirm(true)} style={e.removeLink}><Text style={e.removeText}>🗑 Удалить квартиру</Text></Pressable>)}
  </View>;
 }
 const e=StyleSheet.create({
@@ -125,6 +133,9 @@ const e=StyleSheet.create({
  ico:{color:C.accent,...type.label},
  stepTitle:{color:C.ink,...type.label,fontWeight:'600'},stepLine:{color:C.muted,...type.caption},
  dot:{position:'absolute',top:8,right:8,width:8,height:8,borderRadius:R.full,backgroundColor:C.warning},
+ remove:{gap:8,padding:12,borderRadius:R.md,borderWidth:1,borderColor:C.danger,backgroundColor:C.dangerSoft},
+ danger:{minHeight:H.compact,borderRadius:R.full,backgroundColor:C.danger,justifyContent:'center',paddingHorizontal:16},
+ removeLink:{minHeight:H.compact,alignSelf:'center',justifyContent:'center',paddingHorizontal:12},removeText:{color:C.danger,...type.label,fontWeight:'600'},
  switchRow:{flexDirection:'row',alignItems:'center',gap:12,minHeight:56,paddingHorizontal:12,paddingVertical:8,borderRadius:R.md,borderWidth:1,borderColor:C.line},
  row:{flexDirection:'row',gap:8},
  chips:{flexDirection:'row',flexWrap:'wrap',gap:8},

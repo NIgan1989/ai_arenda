@@ -24,6 +24,8 @@ import {accrueCommission} from './platform-billing';
 type Row = Record<string, any>;
 const now = () => Math.floor(Date.now() / 1000);
 const id = () => crypto.randomUUID();
+const HISTORY_TABLES=['bookings','cleaning_jobs','finance_entries','platform_commissions','access_receipts','administrator_issues','administrator_tasks','matching_offers','review_property_bindings'];
+const SETTINGS_TABLES=['property_details','property_locations','property_operations','property_policies','operation_rules','matching_preferences','property_access','calendar_exports','property_import_links'];
 export class RentalService {
   constructor(public db: D1Database, public userId: string, private execution?:{propertyId:string;policyVersion:number}) {}
   query(sql: string, ...args: any[]) { return this.db.prepare(sql).bind(...args); }
@@ -77,7 +79,7 @@ export class RentalService {
   async saveListing(propertyId:string|null,body:Row){
     await this.requireRole('owner');const value=listingInput(body),{p,details,photos,published,expectedVersion}=value;
     await this.checkMedia(photos,'property');
-    const current=propertyId?await this.one('SELECT p.*,COALESCE(d.version,0) listing_version FROM properties p LEFT JOIN property_details d ON d.property_id=p.id WHERE p.id=? AND p.owner_id=?',propertyId,this.userId):null;
+    const current=propertyId?await this.one('SELECT p.*,COALESCE(d.version,0) listing_version FROM properties p LEFT JOIN property_details d ON d.property_id=p.id WHERE p.id=? AND p.owner_id=? AND p.archived_at IS NULL',propertyId,this.userId):null;
     if(propertyId&&!current)throw new DomainError('Объявление не найдено.',404);
     if((current?.listing_version||0)!==expectedVersion)throw new DomainError('Объявление уже изменилось. Обновите форму.',409);
     if(current&&await this.one("SELECT id FROM bookings WHERE property_id=? AND guests>? AND (status='confirmed' OR (status='requested' AND expires_at>?)) AND occupied_until>?",propertyId,p.capacity,now(),now()))throw new DomainError('Вместимость меньше числа гостей в действующей брони.',409);
@@ -102,6 +104,28 @@ export class RentalService {
     statements.push(this.query(`INSERT INTO audit_events SELECT ?,?,?,?,? WHERE ${gate}`,id(),this.userId,key,propertyId?'property.listing_updated':'property.listing_created',now(),key,revision));
     const results=await this.db.batch(statements);if(!results[propertyId?0:2].meta.changes)throw new DomainError('Объявление уже изменилось. Обновите форму.',409);
     return {id:key,message:published?'Объявление опубликовано. Готовность и даты проверяются отдельно.':'Черновик сохранён. Гости его не видят.'};
+  }
+  // Removing a flat: one with no history at all is deleted; otherwise it is archived (hidden from guests and
+  // from the owner's lists) so bookings, cleanings and money records keep pointing at it.
+  async removeProperty(propertyId:string){
+    await this.requireRole('owner');
+    const p=await this.one('SELECT * FROM properties WHERE id=? AND owner_id=? AND demo_owner IS NULL AND archived_at IS NULL',propertyId,this.userId);if(!p)throw new DomainError('Квартира не найдена.',404);
+    const time=now(),ahead=await this.one("SELECT COUNT(*) n FROM bookings WHERE property_id=? AND (status='confirmed' OR (status='requested' AND expires_at>?)) AND occupied_until>?",propertyId,time,time);
+    if(ahead?.n)throw new DomainError('У квартиры есть будущие брони ('+ahead.n+'). Сначала отмените их, затем удалите квартиру.',409);
+    if(await this.one("SELECT id FROM cleaning_jobs WHERE property_id=? AND status IN ('open','assigned','in_progress','submitted') LIMIT 1",propertyId))throw new DomainError('По квартире есть незавершённая уборка. Отмените или завершите её, затем удалите квартиру.',409);
+    const history=await this.one(`SELECT ${HISTORY_TABLES.map(t=>`EXISTS(SELECT 1 FROM ${t} WHERE property_id=?)`).join(' OR ')} OR EXISTS(SELECT 1 FROM participant_reviews WHERE property_id=? AND status<>'pending') OR EXISTS(SELECT 1 FROM calendar_sources WHERE property_id=?) found`,...Array(HISTORY_TABLES.length+2).fill(propertyId));
+    if(!history?.found){
+     try{await this.db.batch([...SETTINGS_TABLES.map(t=>this.query(`DELETE FROM ${t} WHERE property_id=?`,propertyId)),this.query("DELETE FROM participant_reviews WHERE property_id=? AND status='pending'",propertyId),this.query('DELETE FROM properties WHERE id=? AND owner_id=?',propertyId,this.userId),this.audit(propertyId,'property.deleted')]);
+      return {removed:'deleted',message:'Квартира «'+p.title+'» удалена.'};}
+     catch(e:any){if(!/FOREIGN KEY|constraint/i.test(String(e?.message||e)))throw e;}
+    }
+    // The archive re-checks future stays and unfinished cleanings in the same write, and the rest only follows it,
+    // so a booking or cleaning made after the checks above stops the removal instead of being orphaned.
+    const archived='EXISTS(SELECT 1 FROM properties WHERE id=? AND archived_at=?)';
+    const r=await this.db.batch([this.query(`UPDATE properties SET published=0,archived_at=? WHERE id=? AND owner_id=? AND archived_at IS NULL AND NOT EXISTS(SELECT 1 FROM bookings WHERE property_id=? AND (status='confirmed' OR (status='requested' AND expires_at>?)) AND occupied_until>?) AND NOT EXISTS(SELECT 1 FROM cleaning_jobs WHERE property_id=? AND status IN ('open','assigned','in_progress','submitted'))`,time,propertyId,this.userId,propertyId,time,time,propertyId),
+     this.query(`UPDATE matching_preferences SET enabled=0,updated_at=? WHERE property_id=? AND ${archived}`,time,propertyId,propertyId,time),this.query(`UPDATE calendar_sources SET enabled=0 WHERE property_id=? AND ${archived}`,propertyId,propertyId,time),this.query(`UPDATE calendar_exports SET revoked_at=? WHERE property_id=? AND revoked_at IS NULL AND ${archived}`,time,propertyId,propertyId,time),this.query(`INSERT INTO audit_events SELECT ?,?,?,?,? WHERE ${archived}`,id(),this.userId,propertyId,'property.archived',time,propertyId,time)]);
+    if(!r[0].meta.changes)throw new DomainError('Пока квартиру удаляли, у неё появилась бронь или уборка. Обновите данные и попробуйте снова.',409);
+    return {removed:'archived',message:'Квартира «'+p.title+'» убрана: гости её больше не видят, история броней и оплат сохранена.'};
   }
   async enrichProperties(items:Row[],owner=false):Promise<Row[]>{
     if(!items.length)return [];
@@ -204,7 +228,7 @@ export class RentalService {
     const [profile, properties, ownProperties, bookings, jobs, applications, notifications, messages] = await Promise.all([
       this.profile(),
       includeCatalog?this.all('SELECT id,title,city,district,description,price,rooms,capacity,cleaning_minutes,demo_owner,published FROM properties p WHERE published=1 AND (demo_owner IS NULL OR demo_owner=?) AND '+pilotPropertyVisibleSql('p')+' ORDER BY created_at DESC', this.userId):Promise.resolve([]),
-      this.all('SELECT * FROM properties WHERE owner_id=? ORDER BY created_at DESC', this.userId),
+      this.all('SELECT * FROM properties WHERE owner_id=? AND archived_at IS NULL ORDER BY created_at DESC', this.userId),
       this.all(`SELECT b.*,p.title,p.owner_id,p.city,p.district,p.demo_owner,(SELECT photos FROM property_details WHERE property_id=p.id) property_photos,
         CASE WHEN p.owner_id=? OR (b.guest_id=? AND b.status='confirmed') THEN p.address ELSE NULL END address,
         CASE WHEN p.owner_id=? OR (b.guest_id=? AND b.status='confirmed') THEN o.contact ELSE NULL END owner_contact,

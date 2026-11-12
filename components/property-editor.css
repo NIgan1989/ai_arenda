@@ -54,3 +54,8 @@
 .pe .pq-tile input:focus,.pe .pq-field input:focus,.pe .pq-field textarea:focus{outline:none!important;box-shadow:0 0 0 3px rgba(99,102,241,.25)!important;border-color:var(--t-accent)!important}
 @media (max-width:767px){.task-sheet .pe-close{display:none}}
 .pe-advice.is-held{background:var(--t-danger-soft);border-color:var(--t-danger)}
+.pe-remove-link{display:inline-flex;align-items:center;gap:var(--t-space-8);align-self:center;min-height:40px;padding:0 var(--t-space-12);border:0;background:none;color:var(--t-danger);font:inherit;font-size:var(--t-font-label);cursor:pointer}
+.pe-remove{display:grid;gap:var(--t-space-8);padding:var(--t-space-12);border:1px solid var(--t-danger);border-radius:var(--t-radius-md);background:var(--t-danger-soft)}
+.pe-remove p{margin:0;font-size:var(--t-font-label)}
+.pe-danger{display:inline-flex;align-items:center;gap:var(--t-space-8);min-height:40px;padding:0 var(--t-space-16);border:0;border-radius:var(--t-radius-full);background:var(--t-danger);color:#fff;font:inherit;font-size:var(--t-font-label);font-weight:600;cursor:pointer}
+.pe-danger:disabled,.pe-remove-link:disabled{opacity:.6;cursor:default}
