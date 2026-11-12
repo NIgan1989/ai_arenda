@@ -5,7 +5,9 @@
 import {useEffect,useMemo,useRef,useState} from 'react';
 import {ArrowLeft,ArrowUp,Building2,Camera,Check,MapPin,Minus,Plus,Sparkles,X} from 'lucide-react';
 import {Photo,preparePhoto} from './media';
+import {PhotoGrid} from './photo-grid';
 import {amenities,checkinMethods,propertyTypes} from '../lib/listings';
+import {needsReview,reviewRequest} from '../lib/listing-edit';
 import {DRAFT_EXAMPLE,answerDraft,draftDescription,draftListingBody,draftQuestions,draftRules,draftTitle,emptyDraft,moneyAnswer,readListingText,type ListingDraft} from '../lib/listing-draft';
 import {plural} from '../lib/map-search-request';
 import './property-quick.css';
@@ -16,7 +18,7 @@ const money=(n:number)=>new Intl.NumberFormat('ru-RU').format(n)+' ₸';
 const STEPS=['Расскажите','Проверьте','Готово'];
 const RULES:[keyof ListingDraft,string][]=[['pets','Можно с питомцами'],['smoking','Можно курить'],['parties','Можно вечеринки']];
 
-export function PropertyQuick({city,role,api,onSave,onGuestMode,onPlace,onClose,onMap,onDone}:{city:string;role:string;api:API;onSave:(body:Row)=>Promise<Row>;onGuestMode:(body:Row)=>Promise<unknown>;onPlace?:(body:Row)=>Promise<unknown>;onClose:()=>void;onMap?:(id:string)=>void;onDone:(saved:Saved)=>void}){
+export function PropertyQuick({city,role,api,onSave,onGuestMode,onPlace,onReview,onClose,onMap,onDone}:{city:string;role:string;api:API;onSave:(body:Row)=>Promise<Row>;onGuestMode:(body:Row)=>Promise<unknown>;onPlace?:(body:Row)=>Promise<unknown>;onReview?:(body:Row)=>Promise<unknown>;onClose:()=>void;onMap?:(id:string)=>void;onDone:(saved:Saved)=>void}){
  const [step,setStep]=useState(0),[text,setText]=useState(''),[draft,setDraft]=useState<ListingDraft>(()=>emptyDraft(city)),[found,setFound]=useState<string[]>([]);
  const [photos,setPhotos]=useState<string[]>([]),[uploading,setUploading]=useState(false),[answer,setAnswer]=useState(''),[mode,setMode]=useState<'auto'|'manual'>('auto');
  const [busy,setBusy]=useState(false),[error,setError]=useState(''),[saved,setSaved]=useState<Saved|null>(null);
@@ -40,13 +42,14 @@ export function PropertyQuick({city,role,api,onSave,onGuestMode,onPlace,onClose,
  async function save(){
   if(busy||uploading||questions.length)return;setBusy(true);setError('');
   try{
-   let result:Row,published=photos.length>0;
+   let result:Row,published=photos.length>0,review=false;
    try{result=await onSave(draftListingBody(draft,photos,published));}
-   catch(e:any){if(!published||!/провер|допуск/i.test(String(e?.message)))throw e;published=false;result=await onSave(draftListingBody(draft,photos,false));}
+   catch(e:any){if(!published||!/провер|допуск/i.test(String(e?.message)))throw e;published=false;result=await onSave(draftListingBody(draft,photos,false));
+    if(onReview&&needsReview(String(e?.message))){try{await onReview(reviewRequest({id:result.id,title:draftTitle(draft),city:draft.city,address:draft.address}));review=true;}catch{/* the owner can still ask from «Допуск» */}}}
    // The flat goes on the map by its address right away; the owner only checks the pin.
    let placed=false;try{placed=!!((await onPlace?.({propertyId:result.id})) as Row|undefined)?.saved;}catch{/* the map pin can be set later */}
    let note='';try{await onGuestMode({propertyId:result.id,mode,cleaningFee:mode==='auto'?draft.cleaningFee:undefined});}catch(e:any){note=' '+(e?.message||'Режим ответов гостям включите в «Запросах гостей».');}
-   const done={id:result.id,published,placed,message:(published?'Квартира опубликована, гости уже видят её на карте.':photos.length?'Сохранена черновиком: чтобы показать гостям, пройдите проверку в «Управление → Допуск».':'Сохранена черновиком. Добавьте фото, и её можно будет показать гостям.')+note};
+   const done={id:result.id,published,placed,message:(published?'Квартира опубликована, гости уже видят её на карте.':review?'Сохранена черновиком и отправлена на проверку администратору: после проверки появится на карте сама.':photos.length?'Сохранена черновиком: чтобы показать гостям, пройдите проверку в «Управление → Допуск».':'Сохранена черновиком. Добавьте фото, и её можно будет показать гостям.')+note};
    setSaved(done);setStep(2);
   }catch(e:any){setError(e?.message||'Не удалось сохранить квартиру.');}finally{setBusy(false);}
  }
@@ -62,11 +65,7 @@ export function PropertyQuick({city,role,api,onSave,onGuestMode,onPlace,onClose,
   {step===0&&<div className="pq-body">
    <label className="pq-line"><span className="pq-sr">Расскажите о квартире</span><textarea value={text} onChange={e=>setText(e.target.value)} rows={5} maxLength={2000} autoFocus={fine} placeholder="Например: однушка на Торайгырова 64, 4 этаж, до 3 гостей, есть Wi-Fi и стиралка, 15 000 в сутки, 2 500 в час" onKeyDown={e=>{if(e.key==='Enter'&&(e.metaKey||e.ctrlKey))read();}}/>
     <span className="pq-line-bar"><button type="button" className="pq-chip" onClick={()=>setText(DRAFT_EXAMPLE)}>Пример</button><span className="pq-count">{text.length? text.length+' / 2000':'Порядок не важен'}</span></span></label>
-   <div className="pq-photos" aria-label="Фотографии">
-    {photos.map((id,i)=><figure key={id} className="pq-photo"><Photo id={id} role={role} alt={'Фото '+(i+1)}/>{i===0&&<figcaption>Обложка</figcaption>}<button type="button" className="pq-photo-x" aria-label={'Убрать фото '+(i+1)} onClick={()=>setPhotos(v=>v.filter(x=>x!==id))}><X size={14}/></button></figure>)}
-    {photos.length<8&&<button type="button" className="pq-photo pq-photo-add" onClick={()=>fileRef.current?.click()} disabled={uploading}><Camera size={22}/><span>{uploading?'Загружаю…':photos.length?'Ещё фото':'Добавить фото'}</span></button>}
-    <input ref={fileRef} type="file" hidden multiple accept="image/jpeg,image/png,image/webp" onChange={e=>{void addPhotos(e.target.files);e.target.value='';}}/>
-   </div>
+   <PhotoGrid photos={photos} onChange={setPhotos} role={role} api={api} onBusy={setUploading}/>
    <p className="pq-hint">ИИ поймёт комнаты, этаж, площадь, гостей, цены за сутки и час, удобства, правила и адрес. Фото можно добавить и потом.</p>
    <div className="pq-actions"><button type="button" className="pq-primary" disabled={!text.trim()||uploading} onClick={read}><Sparkles size={18}/>Заполнить с ИИ</button></div>
   </div>}

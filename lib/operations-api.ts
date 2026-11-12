@@ -81,7 +81,7 @@ export async function writeOperations(service:RentalService,role:Role,path:strin
  if(route==='calendar/revoke'){active(role,['owner']);const propertyId=required(body.propertyId,'Квартира',100);await q(service.db,'UPDATE calendar_exports SET revoked_at=? WHERE property_id=? AND owner_id=? AND revoked_at IS NULL',epoch(),propertyId,service.userId).run();return {message:'Ранее выданные ссылки на календарь отозваны.'};}
  if(route==='phone/request')return requestPhoneCode(service,config);
  if(route==='phone/verify')return verifyPhoneCode(service,body);
- if(route==='reviews/request')return requestParticipantReview(service,role,body);
+ if(route==='reviews/request')return requestParticipantReview(service,role,body,config);
  if(route==='reviews/decide')return decideParticipantReview(service,body,platformAdmin);
  if(route==='access/save'){active(role,['owner']);return savePropertyAccess(service,body,config);}
  if(route==='access/open')return revealPropertyAccess(service,role,body,config);

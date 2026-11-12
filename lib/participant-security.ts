@@ -1,5 +1,6 @@
 import {DomainError,required,number,type Role} from './domain';
 import type {RentalService} from './service';
+import {PUBLISH_REVIEW} from './listing-edit';
 import {epoch,uuid,q,one,rows,hash,httpsEndpoint,safeEqual,type Row,type OperationConfig} from './operation-core';
 
 export async function securityState(service:RentalService,role:Role,platformAdmin=false){
@@ -21,12 +22,17 @@ export async function verifyPhoneCode(service:RentalService,body:Row){
  if(!row||row.expires_at<=epoch()||row.attempts>=5)throw new DomainError('Код истёк или исчерпаны попытки.',409);
  const [salt,expected]=row.code_hash.split(':'),valid=safeEqual(await hash(salt+':'+code),expected),r=await q(service.db,'UPDATE phone_verifications SET attempts=attempts+1,verified_at=CASE WHEN ?=1 THEN ? ELSE verified_at END WHERE user_id=? AND code_hash=? AND expires_at>? AND attempts<5',valid?1:0,epoch(),service.userId,row.code_hash,epoch()).run();if(!r.meta.changes||!valid)throw new DomainError('Код не подходит.');return {message:'Номер телефона подтверждён.'};
 }
-export async function requestParticipantReview(service:RentalService,role:Role,body:Row){
+export async function requestParticipantReview(service:RentalService,role:Role,body:Row,config:OperationConfig&{PLATFORM_ADMIN_IDS?:string}={}){
  if(role==='guest')throw new DomainError('В этой форме проверяются владельцы и исполнители.',403);
  const reference=required(body.reference,'Основание проверки',500),propertyId=role==='owner'?required(body.propertyId,'Квартира',100):null;
  if(propertyId&&!await service.one('SELECT id FROM properties WHERE id=? AND owner_id=?',propertyId,service.userId))throw new DomainError('Квартира недоступна.',403);
  if(await one(service.db,"SELECT id FROM participant_reviews WHERE user_id=? AND role=? AND COALESCE(property_id,'')=COALESCE(?,'') AND status='pending' AND (role<>'owner' OR property_revision=COALESCE((SELECT revision FROM review_property_bindings WHERE property_id=participant_reviews.property_id),0))",service.userId,role,propertyId))return {message:'Заявка уже ожидает проверки.'};
- await q(service.db,'INSERT INTO participant_reviews(id,user_id,role,property_id,reference,created_at) VALUES (?,?,?,?,?,?)',uuid(),service.userId,role,propertyId,reference,epoch()).run();return {message:'Заявка на проверку сохранена. Документы и персональные номера в это поле добавлять не нужно.'};
+ const reviewId=uuid(),at=epoch();await q(service.db,'INSERT INTO participant_reviews(id,user_id,role,property_id,reference,created_at) VALUES (?,?,?,?,?,?)',reviewId,service.userId,role,propertyId,reference,at).run();
+ // The platform administrators hear about the request at once, so the owner does not wait for someone to open the admin page.
+ const admins=typeof config.PLATFORM_ADMIN_IDS==='string'?config.PLATFORM_ADMIN_IDS.split(',').map(v=>v.trim()).filter(Boolean):[];
+ if(admins.length){const title=propertyId?(await one(service.db,'SELECT title FROM properties WHERE id=?',propertyId))?.title:'';const text=role==='owner'?'Новая квартира ждёт проверки: «'+(title||'без названия')+'». Откройте админку → Проверки.':'Исполнитель ждёт проверки. Откройте админку → Проверки.';
+  await service.db.batch(admins.map(admin=>q(service.db,'INSERT OR IGNORE INTO notifications(id,user_id,body,dedupe,read,created_at) VALUES (?,?,?,?,0,?)',uuid(),admin,text,'admin:review:'+reviewId+':'+admin,at)));}
+ return {message:'Заявка на проверку сохранена. Документы и персональные номера в это поле добавлять не нужно.'};
 }
 export async function decideParticipantReview(service:RentalService,body:Row,platformAdmin:boolean){
  if(!platformAdmin)throw new DomainError('Проверку проводит администратор платформы.',403);
@@ -37,7 +43,18 @@ export async function decideParticipantReview(service:RentalService,body:Row,pla
  const event=uuid(),at=epoch(),result=await service.db.batch([
   q(service.db,"UPDATE participant_reviews SET status=?,method=?,reviewer_id=?,notes=?,reviewed_at=?,valid_until=?,version=version+1 WHERE id=? AND status='pending' AND version=?",body.status,method,service.userId,notes,at,validUntil,id,number(body.expectedVersion,'Версия',1,10000000)),
   q(service.db,'INSERT INTO audit_events SELECT ?,?,?,?,? WHERE changes()>0',event,service.userId,id,'participant.review_'+body.status,at)
- ]);if(!result[0].meta.changes)throw new DomainError('Проверка уже рассмотрена.',409);return {message:'Результат фактической проверки сохранён.'};
+ ]);if(!result[0].meta.changes)throw new DomainError('Проверка уже рассмотрена.',409);
+ // A flat sent for review from «Показать гостям» goes on the map as soon as it is approved, and the owner hears the result either way.
+ if(review?.role==='owner'&&review.property_id){
+  const title=(await one(service.db,'SELECT title FROM properties WHERE id=?',review.property_id))?.title||'квартира',wanted=String(review.reference||'').startsWith(PUBLISH_REVIEW);
+  let shown=false;
+  if(body.status==='approved'&&wanted){const r=await service.db.batch([
+   q(service.db,"UPDATE properties SET published=1 WHERE id=? AND published=0 AND length(description)>=80 AND EXISTS(SELECT 1 FROM property_details d WHERE d.property_id=properties.id AND json_array_length(d.photos)>0)",review.property_id),
+   q(service.db,'UPDATE property_details SET version=version+1 WHERE property_id=? AND changes()>0',review.property_id)]);shown=!!r[0].meta.changes;}
+  const text=body.status==='approved'?'Администратор проверил «'+title+'».'+(shown?' Квартира показана гостям на карте.':' Теперь её можно показать гостям.'):'Проверка «'+title+'» не пройдена: '+notes;
+  await q(service.db,'INSERT OR IGNORE INTO notifications(id,user_id,body,dedupe,read,created_at) VALUES (?,?,?,?,0,?)',uuid(),review.user_id,text,'owner:review:'+id+':'+body.status,at).run();
+ }
+ return {message:'Результат фактической проверки сохранён.'};
 }
 async function accessKey(config:OperationConfig){if(!config.ACCESS_ENCRYPTION_KEY||config.ACCESS_ENCRYPTION_KEY.length<32)throw new DomainError('Серверное шифрование инструкций ещё не настроено.',503);const bytes=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(config.ACCESS_ENCRYPTION_KEY));return crypto.subtle.importKey('raw',bytes,{name:'AES-GCM'},false,['encrypt','decrypt']);}
 const base64=(bytes:Uint8Array)=>{let text='';for(const byte of bytes)text+=String.fromCharCode(byte);return btoa(text);};
