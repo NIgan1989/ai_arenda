@@ -39,7 +39,7 @@
   border: 1px solid var(--t-line);
   border-radius: var(--t-radius-full);
   background: var(--t-surface);
-  box-shadow: 0 2px 8px rgb(30 32 29 / 0.12);
+  box-shadow: 0 2px 8px rgb(14 19 36 / 0.12);
 }
 
 .public-map-shell .public-top-brand {
@@ -127,7 +127,7 @@
   border: 1px solid var(--t-line);
   border-radius: var(--t-radius-lg);
   background: var(--t-surface);
-  box-shadow: 0 8px 24px rgb(30 32 29 / 0.14);
+  box-shadow: 0 8px 24px rgb(14 19 36 / 0.14);
   color: var(--t-ink);
   font-size: var(--t-font-label);
   line-height: var(--t-line-label);

@@ -84,5 +84,5 @@ const m=StyleSheet.create({
  pinText:{fontSize:14,fontWeight:'600'},pinMore:{fontWeight:'500',opacity:.7},ring:{position:'absolute',width:56,height:56,borderRadius:999,backgroundColor:C.warningLine},
  cross:{position:'absolute',width:28,alignItems:'center'},crossHead:{width:24,height:24,borderRadius:12,backgroundColor:C.accent,borderWidth:4,borderColor:C.surface},crossStem:{width:3,height:10,backgroundColor:C.accent},
  controls:{position:'absolute',right:12,gap:8},control:{width:44,height:44,borderRadius:T.radius.full,backgroundColor:C.surface,borderWidth:1,borderColor:C.line,alignItems:'center',justifyContent:'center',shadowColor:C.ink,shadowOffset:{width:0,height:2},shadowOpacity:.12,shadowRadius:8,elevation:3},controlIcon:{width:20,height:20,tintColor:C.ink},
- credit:{position:'absolute',left:8,fontSize:12,color:C.inkSoft,backgroundColor:'rgba(255,255,255,0.75)',paddingHorizontal:4,borderRadius:4}
+ credit:{position:'absolute',left:8,fontSize:12,color:C.inkSoft,backgroundColor:C.glass,paddingHorizontal:4,borderRadius:4}
 });

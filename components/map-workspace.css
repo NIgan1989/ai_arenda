@@ -1,11 +1,11 @@
-.rental-map-canvas,.map-surface{position:absolute;inset:0}.map-loading,.map-network-error{position:absolute;right:55px;top:15px;max-width:300px;padding:12px;border-radius:12px;background:var(--t-surface);font-size:12px;box-shadow:0 4px 20px #0001}.map-network-error{top:auto;bottom:44px;color:#854232}.map-action-sheet{width:min(680px,100vw)!important;max-width:100vw!important;overflow-y:auto;padding-bottom:28px}.map-action-sheet .chat-messages{padding:16px}.map-action-sheet .record-collection{margin-top:12px}.map-action-sheet .records-table{display:none}.map-action-sheet .record-cards.hidden-view{display:grid}.map-action-sheet .record-view-toggle{display:none}
+.rental-map-canvas,.map-surface{position:absolute;inset:0}.map-loading,.map-network-error{position:absolute;right:55px;top:15px;max-width:300px;padding:12px;border-radius:12px;background:var(--t-surface);font-size:12px;box-shadow:0 4px 20px #0001}.map-network-error{top:auto;bottom:44px;color:#3630b8}.map-action-sheet{width:min(680px,100vw)!important;max-width:100vw!important;overflow-y:auto;padding-bottom:28px}.map-action-sheet .chat-messages{padding:16px}.map-action-sheet .record-collection{margin-top:12px}.map-action-sheet .records-table{display:none}.map-action-sheet .record-cards.hidden-view{display:grid}.map-action-sheet .record-view-toggle{display:none}
 html[data-design="unified"] [data-section="map"] .role-page-heading{display:none}html[data-design="unified"] [data-section="map"] .chat-transcript{padding:16px 20px;max-width:none}html[data-design="unified"] [data-section="map"] .chat-main{position:relative}
 @media(max-width:700px){html[data-design="unified"] [data-section="map"] .chat-transcript{padding:0}.map-network-error{bottom:45%;right:10px;left:10px;max-width:none}.map-loading{top:50%;right:20px}.map-action-sheet{width:100vw!important}}
 html[data-design="unified"] .workspace-shell[data-section="map"] .workspace-content{margin-left:0;width:100%;height:100dvh;border:0;border-radius:0;background:transparent}
 html[data-design="unified"] .workspace-shell[data-section="map"] .chat-header{display:none}
 html[data-design="unified"] .workspace-shell[data-section="map"] .chat-main{position:relative;width:100%;max-width:none;height:100dvh;margin:0;padding:0}
 html[data-design="unified"] .workspace-shell[data-section="map"] .chat-transcript{position:relative;display:block;flex:1;padding:0;margin:0;max-width:none;width:100%;overflow:hidden}
-html[data-design="unified"] .workspace-shell[data-section="map"] .chat-bottom{position:absolute;right:24px;bottom:24px;width:min(410px,calc(100vw - 48px));max-height:calc(100dvh - 48px);overflow:auto;overscroll-behavior:contain;padding:16px;background:var(--glass-panel);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border:1px solid var(--glass-border);border-radius:24px;box-shadow:0 12px 50px #302d2826;z-index:45}
+html[data-design="unified"] .workspace-shell[data-section="map"] .chat-bottom{position:absolute;right:24px;bottom:24px;width:min(410px,calc(100vw - 48px));max-height:calc(100dvh - 48px);overflow:auto;overscroll-behavior:contain;padding:16px;background:var(--glass-panel);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border:1px solid var(--glass-border);border-radius:24px;box-shadow:0 12px 50px #26293226;z-index:45}
 html[data-design="unified"] .workspace-shell[data-section="map"] .chat-bottom .chat-composer{border-radius:16px;background:var(--t-surface);margin-top:8px}
 @media(max-width:700px){html[data-design="unified"] .workspace-shell[data-section="map"] .chat-bottom{bottom:calc(var(--dock-height) + var(--dock-bottom) + 12px);right:12px;width:calc(100% - 24px);max-height:calc(100dvh - var(--dock-height) - var(--dock-bottom) - 36px)}.map-network-error{top:272px;bottom:auto;left:12px;right:72px;font-size:12px}}
 html[data-design="unified"] .workspace-shell[data-section="map"] .chat-transcript{scrollbar-gutter:auto}
@@ -72,7 +72,7 @@ html[data-design="unified"] .workspace-shell .map-role .map-surface .maplibregl-
   border: 1px solid var(--t-line);
   border-radius: var(--t-radius-full);
   background-color: var(--t-surface);
-  box-shadow: 0 2px 8px rgb(30 32 29 / 0.12);
+  box-shadow: 0 2px 8px rgb(14 19 36 / 0.12);
 }
 
 html[data-design="unified"] .workspace-shell .map-role .map-surface .maplibregl-ctrl-group button:focus-visible {
@@ -131,7 +131,7 @@ html[data-design="unified"] .workspace-shell .map-role .map-surface .maplibregl-
   background: var(--t-surface);
   color: var(--t-ink);
   line-height: 42px;
-  box-shadow: 0 2px 8px rgb(30 32 29 / 0.12);
+  box-shadow: 0 2px 8px rgb(14 19 36 / 0.12);
 }
 
 /* ---------- Map credits: a quiet caption in the corner, not a button among the controls ---------- */
@@ -226,7 +226,7 @@ html[data-design="unified"] .workspace-shell .map-role .map-network-error {
   padding: var(--t-space-8) var(--t-space-12);
   border-radius: var(--t-radius-md);
   background: var(--t-surface);
-  box-shadow: 0 2px 8px rgb(30 32 29 / 0.12);
+  box-shadow: 0 2px 8px rgb(14 19 36 / 0.12);
   color: var(--t-ink-soft);
   font-size: var(--t-font-caption);
   line-height: var(--t-line-caption);
@@ -813,7 +813,7 @@ html[data-design="unified"] .workspace-shell .map-role .map-network-error {
 
 .map-concept-operations .map-role-inbox .matching-inbox-panel {
   max-height: calc(100dvh - var(--t-space-32));
-  box-shadow: 0 8px 32px rgb(30 32 29 / 0.12);
+  box-shadow: 0 8px 32px rgb(14 19 36 / 0.12);
 }
 
 @media (min-width: 1200px) {
@@ -837,7 +837,7 @@ html[data-design="unified"] .workspace-shell .map-role .map-network-error {
     padding: var(--t-space-16);
     border: 0;
     border-radius: var(--t-radius-xl) var(--t-radius-xl) 0 0;
-    box-shadow: 0 -8px 24px rgb(30 32 29 / 0.1);
+    box-shadow: 0 -8px 24px rgb(14 19 36 / 0.1);
   }
 }
 

@@ -107,7 +107,7 @@
   background: var(--t-surface);
   color: var(--t-accent);
   font-weight: 600;
-  box-shadow: 0 1px 4px rgb(30 32 29 / 0.1);
+  box-shadow: 0 1px 4px rgb(14 19 36 / 0.1);
 }
 
 .request-form .request-field {
