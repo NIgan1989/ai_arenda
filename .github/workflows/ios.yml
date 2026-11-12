@@ -1,0 +1,169 @@
+name: Build iPhone test app
+# Builds the iPhone app of mobile/ on a GitHub macOS runner. No Apple Developer account, Expo/EAS account or secrets are
+# needed, so the result is NOT signed: an iPhone will not install it as it is. A tester signs it on their own computer
+# with a free Apple ID (for example with Sideloadly), or a later step signs it once an Apple Developer account exists.
+# See docs/IOS_BUILD.md. The build also proves that the app still compiles for iOS after every change.
+# Every run keeps the .ipa as a workflow artifact. Only builds of main (a push, or a manual run started on main) also
+# replace the file on the rolling prerelease "ios-latest". Pull requests and runs on other branches never publish.
+#
+# The two path lists below must stay identical, and match the ones in android.yml apart from the workflow file itself.
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'mobile/**'
+      - 'lib/**'
+      - 'design/tokens.json'
+      - 'scripts/check-mobile-release.mjs'
+      - '.github/workflows/ios.yml'
+  pull_request:
+    paths:
+      - 'mobile/**'
+      - 'lib/**'
+      - 'design/tokens.json'
+      - 'scripts/check-mobile-release.mjs'
+      - '.github/workflows/ios.yml'
+permissions:
+  contents: read
+env:
+  ARENDA_PUBLIC_URL: ${{ vars.ARENDA_PUBLIC_URL || 'https://ai-arenda.ai-arenda-kz.workers.dev' }}
+jobs:
+  build:
+    runs-on: macos-26
+    timeout-minutes: 60
+    concurrency:
+      group: ios-build-${{ github.ref }}
+      cancel-in-progress: true
+    defaults:
+      run:
+        working-directory: mobile
+    env:
+      EXPO_NO_TELEMETRY: '1'
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+      - name: Show the Xcode in use
+        run: xcodebuild -version
+      - name: Install locked mobile dependencies
+        run: npm ci
+      - name: Check the app configuration and the server address
+        env:
+          EXPO_PUBLIC_API_URL: ${{ env.ARENDA_PUBLIC_URL }}
+          SITE_PUBLIC_URL: ${{ env.ARENDA_PUBLIC_URL }}
+        run: node ../scripts/check-mobile-release.mjs --profile preview
+      # iOS needs a purely numeric version, so only the build number grows with every run. Nothing is committed.
+      - name: Number the build
+        run: |
+          jq --arg build "$GITHUB_RUN_NUMBER" '.expo.ios.buildNumber = $build' app.json > "$RUNNER_TEMP/app.json"
+          mv "$RUNNER_TEMP/app.json" app.json
+          jq '{version: .expo.version, ios: .expo.ios}' app.json
+      - name: Generate the iOS project and install CocoaPods
+        env:
+          CI: '1'
+        run: npx expo prebuild --platform ios
+      - name: Build the app without signing
+        working-directory: mobile/ios
+        env:
+          EXPO_PUBLIC_API_URL: ${{ env.ARENDA_PUBLIC_URL }}
+        run: |
+          workspace="$(ls -d *.xcworkspace | head -n 1)"
+          scheme="${workspace%.xcworkspace}"
+          echo "Workspace: $workspace"
+          # The full log is long, so it goes to a file; on failure its errors and last lines are printed.
+          if ! xcodebuild -workspace "$workspace" -scheme "$scheme" -configuration Release \
+            -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath "$RUNNER_TEMP/derived" \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY= \
+            build > "$RUNNER_TEMP/xcodebuild.log" 2>&1; then
+            grep -E 'error:' "$RUNNER_TEMP/xcodebuild.log" | head -n 50 || true
+            tail -n 150 "$RUNNER_TEMP/xcodebuild.log"
+            exit 1
+          fi
+          tail -n 5 "$RUNNER_TEMP/xcodebuild.log"
+      - name: Package the .ipa
+        run: |
+          app="$(ls -d "$RUNNER_TEMP"/derived/Build/Products/Release-iphoneos/*.app | head -n 1)"
+          test -d "$app"
+          mkdir -p "$RUNNER_TEMP/ipa/Payload"
+          cp -R "$app" "$RUNNER_TEMP/ipa/Payload/"
+          (cd "$RUNNER_TEMP/ipa" && zip -qry "$RUNNER_TEMP/ai-arenda-unsigned.ipa" Payload)
+          echo "APP_DIR=$app" >> "$GITHUB_ENV"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ai-arenda-ios
+          path: ${{ runner.temp }}/ai-arenda-unsigned.ipa
+          retention-days: 30
+          if-no-files-found: error
+      # Runs after the upload so a failed check still leaves the file for inspection; publishing needs this job green.
+      - name: Check the bundle id and the server address inside the app
+        env:
+          EXPO_PUBLIC_API_URL: ${{ env.ARENDA_PUBLIC_URL }}
+        run: |
+          ipa="$RUNNER_TEMP/ai-arenda-unsigned.ipa"
+          plist="$APP_DIR/Info.plist"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$plist")" = "$(jq -r .expo.ios.bundleIdentifier app.json)"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$plist")" = "$GITHUB_RUN_NUMBER"
+          test -s "$APP_DIR/main.jsbundle"
+          grep -a -q -F "$EXPO_PUBLIC_API_URL" "$APP_DIR/main.jsbundle"
+          {
+            echo "### iPhone test build $GITHUB_RUN_NUMBER (not signed)"
+            echo
+            echo "- File: ai-arenda-unsigned.ipa, $(du -h "$ipa" | cut -f 1)"
+            echo "- SHA-256: $(shasum -a 256 "$ipa" | cut -d ' ' -f 1)"
+            echo "- Version: $(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$plist") ($GITHUB_RUN_NUMBER), minimum iOS $(/usr/libexec/PlistBuddy -c 'Print :MinimumOSVersion' "$plist")"
+            echo "- Server: $EXPO_PUBLIC_API_URL"
+            if [ "$GITHUB_EVENT_NAME" != pull_request ] && [ "$GITHUB_REF" = refs/heads/main ]; then
+              echo "- Next: the publish job of this run replaces the file on the ios-latest page."
+            else
+              echo "- Not published: only builds of main go to the ios-latest page. This file is in Artifacts of this run (ai-arenda-ios)."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+  publish:
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    concurrency:
+      group: ios-latest-release
+      cancel-in-progress: false
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: ai-arenda-ios
+      - name: Replace the .ipa on the ios-latest prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          ipa=ai-arenda-unsigned.ipa
+          test -s "$ipa"
+          title='AI Аренда для iPhone: тестовая сборка без подписи'
+          {
+            echo 'Тестовая сборка для пилота. Без подписи Apple: перед установкой её нужно подписать своим Apple ID. Не для App Store.'
+            echo
+            echo "- Файл: $ipa"
+            echo "- Сборка № $GITHUB_RUN_NUMBER от $(TZ=Asia/Almaty date '+%d.%m.%Y %H:%M') (время Казахстана)"
+            echo "- Исходный код: $GITHUB_SHA, ветка $GITHUB_REF_NAME"
+            echo "- Сервер: $ARENDA_PUBLIC_URL"
+            echo "- SHA-256: $(sha256sum "$ipa" | cut -d ' ' -f 1)"
+            echo
+            echo "Как установить и что пока не работает: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/blob/main/docs/IOS_BUILD.md"
+          } > notes.md
+          if gh api "repos/$GH_REPO/git/ref/tags/ios-latest" > /dev/null 2>&1; then
+            gh api --method PATCH "repos/$GH_REPO/git/refs/tags/ios-latest" -f sha="$GITHUB_SHA" -F force=true > /dev/null
+          fi
+          if gh release view ios-latest > /dev/null 2>&1; then
+            gh release upload ios-latest "$ipa" --clobber
+            gh release edit ios-latest --title "$title" --notes-file notes.md --prerelease
+          else
+            gh release create ios-latest "$ipa" --target "$GITHUB_SHA" --title "$title" --notes-file notes.md --prerelease
+          fi
+          echo "Download page: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/releases/tag/ios-latest" >> "$GITHUB_STEP_SUMMARY"
