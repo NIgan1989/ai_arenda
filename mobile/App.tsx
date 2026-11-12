@@ -2,6 +2,7 @@ import React,{useEffect,useRef,useState} from 'react';
 import { ActivityIndicator,AppState,BackHandler,KeyboardAvoidingView,Platform,Pressable,ScrollView,StatusBar,Text,TextInput,View } from 'react-native';
 import { SafeAreaProvider,SafeAreaView } from 'react-native-safe-area-context';
 import {NativeChats,type NativeChatInitial} from './src/NativeChats';
+import {RecordHead,RecordJourney,RecordFacts,RecordActions,recordStyles} from './src/RecordCard';
 import {useProcessLinks} from './src/use-process-links';
 import {resolveProcessLink} from './src/deep-links';
 import { API_URL,ApiError,StaleSessionError,getSessionGeneration,isOffline,onServerReach,request,restoreLastRole,restoreSession,saveLastRole,saveSession,setWorkspaceRole } from './src/api';
@@ -326,28 +327,40 @@ function Chat(){
     if(m.block==='properties')return <View>{!!payload.back&&<Button title="Назад к карте" secondary disabled={busy} onPress={backToMap}/>}{payload.ids.map((id:string)=>{const p=[...data.properties,...data.ownProperties].find((p:Row)=>p.id===id);if(!p)return null;const stay:MapStay|undefined=payload.mode==='guest'?payload.stay:undefined;return <PropertyListing key={id} property={p} owner={payload.mode==='owner'} chooseTitle={stay?'Забронировать':undefined} onChoose={()=>stay?bookFromMap(p,stay):run((payload.mode==='owner'||payload.mode==='job'?'job:':'book:')+id)} onEdit={()=>say('Измените сведения и сохраните объявление.','property-editor',{id})} onSettings={()=>say('Полномочия и готовность квартиры.','property-settings',{id})}/>;})}{!payload.ids.length&&<Button title={payload.mode==='guest'?'Посмотреть учебный пример':'Добавить квартиру'} secondary disabled={busy} onPress={()=>send(payload.mode==='guest'?'Покажи учебный пример':'Хочу сдать квартиру')}/>}</View>;
     if(m.block==='bookings')return <View>{payload.ids.map((id:string)=>{
       const b=data.bookings.find((b:Row)=>b.id===id);if(!b)return null;const owner=b.owner_id===userId&&payload.role==='owner';
-      return <View style={s.card} key={id}><Text style={s.badge}>{labels[b.status]||b.status}</Text><Text style={s.cardTitle}>{b.title}</Text><Text style={s.meta}>{date(b.start)} → {date(b.end)}</Text><Text style={s.price}>{money(b.amount)}</Text><Text style={s.meta}>{b.payment_status==='owner_verified'?'Владелец проверил оплату':'Оплата не подтверждена'}{b.address?'\n'+b.address:''}{b.owner_contact?'\nКонтакт: '+b.owner_contact:''}{owner&&b.guest_name?'\nГость: '+b.guest_name+' · '+b.guest_contact:''}</Text>
-        <ActivityTimer kind="booking" item={b}/><BookingChanges key={b.id+':'+b.terms?.version} booking={b} role={payload.role} busy={busy} onReview={id=>say('Предложение новых условий.','approval',{id:'change:'+id})} onQuote={body=>request('/api/bookings/'+id+'/change-quote',body)} onPropose={body=>perform('bookings/'+id+'/changes',body,uid())} onDecide={(changeId,action)=>perform('bookings/'+id+'/changes/'+changeId,{action},uid())}/>{owner&&b.status==='requested'&&<Button title="Рассмотреть заявку" disabled={busy} onPress={()=>say('Запрос гостя на согласование.','approval',{id:'booking:'+id})}/>}
-        {b.terms&&<Text style={s.meta}>Депозит: {money(b.terms.deposit)} · {b.terms.deposit_status==='owner_verified'?'подтверждён владельцем':b.terms.deposit?'ожидается':'не требуется'}{b.readiness?'\n'+readinessLabels[b.readiness]:''}</Text>}
-        {owner&&b.status==='confirmed'&&b.terms?.deposit_status==='pending'&&<Button title="Подтвердить получение депозита" secondary disabled={busy} onPress={()=>confirm('bookings/'+id,{action:'deposit_received'},'Подтверждаю фактическое получение депозита; банковская операция не выполняется','owner-bookings')}/>}
-        {owner&&b.status==='confirmed'&&b.start<=data.serverTime&&!b.terms?.actual_checkin&&<Button title="Подтвердить заселение" secondary disabled={busy} onPress={()=>confirm('bookings/'+id,{action:'checkin'},'Подтверждаю фактическое заселение гостя','owner-bookings')}/>}
-        {owner&&b.status==='confirmed'&&b.start<=data.serverTime&&<Button title="Подтвердить освобождение квартиры" secondary disabled={busy} onPress={()=>confirm('bookings/'+id,{action:'checkout'},'Подтверждаю, что гость выехал и квартира освобождена','owner-bookings')}/>}
-        {!owner&&b.status==='confirmed'&&b.start<=data.serverTime&&!b.terms?.checkout_reported_at&&<Button title="Я выехал" secondary disabled={busy} onPress={()=>confirm('bookings/'+id,{action:'report_checkout'},'Сообщить владельцу о выезде; освобождение квартиры потребует проверки')}/>}
-        {owner&&b.status==='confirmed'&&b.payment_status!=='owner_verified'&&<Button title="Я проверил поступление оплаты" secondary disabled={busy} onPress={()=>confirm('bookings/'+id,{action:'paid',expectedAmount:b.amount},'Отметить оплату после проверки в банке')}/>}
-        {['requested','confirmed'].includes(b.status)&&!b.terms?.actual_checkin&&<Button title="Отменить бронь" secondary disabled={busy} onPress={()=>confirm('bookings/'+id,{action:'cancel'},'Отменить бронирование. Возврат денег согласуется отдельно')}/>}
-        {b.status==='confirmed'&&<Button title="Сообщить о проблеме" secondary disabled={busy} onPress={()=>beginFlow('issue',[{key:'issue',text:'Что произошло? Сообщение получит другая сторона бронирования.',label:'Проблема'}],{},'bookings/'+id,'bookings',actor,{action:'issue'})}/>}
+      const confirmed=b.status==='confirmed',started=b.start<=data.serverTime,left=b.amount-(b.terms?.paid_amount||0),guests=Number(b.guests)||1,tens=guests%100,units=guests%10;
+      return <View style={recordStyles.card} key={id}><RecordHead kind="booking" item={b} role={payload.role} userId={userId||''}/><RecordJourney kind="booking" item={b}/>
+        <RecordFacts rows={[['Гости',guests+' '+(tens>10&&tens<20?'гостей':units===1?'гость':units>1&&units<5?'гостя':'гостей')],owner&&b.guest_name&&['Гость',b.guest_name+(b.guest_contact?' · '+b.guest_contact:'')],b.terms&&['Оплачено',money(b.terms.paid_amount||0)+(left>0?' · остаток '+money(left):'')],b.terms&&['Депозит',b.terms.deposit?money(b.terms.deposit)+' · '+(b.terms.deposit_status==='owner_verified'?'подтверждён владельцем':'ожидается'):'не требуется'],b.readiness&&['Квартира',readinessLabels[b.readiness]],b.address&&['Адрес',b.address+(b.owner_contact?' · '+b.owner_contact:''),true]]}/>
+        <ActivityTimer kind="booking" item={b}/>
+        <RecordActions busy={busy} actions={[
+          owner&&b.status==='requested'&&{title:'Рассмотреть заявку',kind:'main',onPress:()=>say('Запрос гостя на согласование.','approval',{id:'booking:'+id})},
+          owner&&confirmed&&started&&!b.terms?.actual_checkin&&{title:'Подтвердить заселение',kind:'main',onPress:()=>confirm('bookings/'+id,{action:'checkin'},'Подтверждаю фактическое заселение гостя','owner-bookings')},
+          owner&&confirmed&&b.terms?.deposit_status==='pending'&&{title:'Подтвердить депозит',kind:'main',onPress:()=>confirm('bookings/'+id,{action:'deposit_received'},'Подтверждаю фактическое получение депозита; банковская операция не выполняется','owner-bookings')},
+          owner&&confirmed&&b.payment_status!=='owner_verified'&&{title:'Отметить оплату',kind:'main',onPress:()=>confirm('bookings/'+id,{action:'paid',expectedAmount:b.amount},'Отметить оплату после проверки в банке')},
+          owner&&confirmed&&started&&{title:'Подтвердить выезд',kind:'main',onPress:()=>confirm('bookings/'+id,{action:'checkout'},'Подтверждаю, что гость выехал и квартира освобождена','owner-bookings')},
+          !owner&&confirmed&&started&&!b.terms?.checkout_reported_at&&{title:'Сообщить о выезде',kind:'main',onPress:()=>confirm('bookings/'+id,{action:'report_checkout'},'Сообщить владельцу о выезде; освобождение квартиры потребует проверки')},
+          {title:'Открыть чат',kind:'side',onPress:()=>{setChatInitial({kind:'booking',entityId:id,channel:'stay'});setPageId('chats');}},
+          confirmed&&{title:'Есть проблема',kind:'side',onPress:()=>beginFlow('issue',[{key:'issue',text:'Что произошло? Сообщение получит другая сторона бронирования.',label:'Проблема'}],{},'bookings/'+id,'bookings',actor,{action:'issue'})},
+          ['requested','confirmed'].includes(b.status)&&!b.terms?.actual_checkin&&{title:'Отменить бронь',kind:'danger',onPress:()=>confirm('bookings/'+id,{action:'cancel'},'Отменить бронирование. Возврат денег согласуется отдельно')},
+        ]}/>
+        <BookingChanges key={b.id+':'+b.terms?.version} booking={b} role={payload.role} busy={busy} onReview={id=>say('Предложение новых условий.','approval',{id:'change:'+id})} onQuote={body=>request('/api/bookings/'+id+'/change-quote',body)} onPropose={body=>perform('bookings/'+id+'/changes',body,uid())} onDecide={(changeId,action)=>perform('bookings/'+id+'/changes/'+changeId,{action},uid())}/>
       </View>;
     })}</View>;
     if(m.block==='jobs')return <View>{payload.ids.map((id:string)=>{
       const j=data.jobs.find((j:Row)=>j.id===id);if(!j)return null;const owner=j.owner_id===userId&&payload.role==='owner',assigned=j.assigned_to===userId&&!owner;
       const applied=data.applications.some((a:Row)=>a.job_id===id&&a.user_id===userId&&a.status!=='rejected');
-      return <View style={s.card} key={id}><Text style={s.badge}>{labels[j.status]||j.status}</Text><Text style={s.cardTitle}>{j.title}</Text><Text style={s.meta}>{j.city} · {j.district}{'\n'}{date(j.start)} → {date(j.end)}</Text><Text style={s.text}>{j.description}</Text><Text style={s.price}>{money(j.fee)}</Text><ActivityTimer kind="job" item={j}/>{!!j.address&&<Text style={s.meta}>{j.address}{j.owner_contact?'\n'+j.owner_contact:''}</Text>}
-        {!owner&&j.status==='open'&&<Button title={applied?'Отклик отправлен':'Откликнуться'} disabled={busy||applied} onPress={()=>perform('jobs/'+id,{action:'apply'},m.id)}/>}
+      const application=data.applications.find((a:Row)=>a.job_id===id&&a.user_id===userId);
+      return <View style={recordStyles.card} key={id}><RecordHead kind="job" item={j} role={payload.role} userId={userId||''} application={application}/><RecordJourney kind="job" item={j}/>
+        <RecordFacts rows={[j.description&&['Что сделать',j.description],j.address&&['Адрес',j.address+(j.owner_contact?' · '+j.owner_contact:''),true],j.report&&['Отчёт',j.report]]}/>
+        <ActivityTimer kind="job" item={j}/>
+        {assigned&&j.status==='assigned'&&!j.checkout_confirmed&&<Text style={s.meta}>Ожидаем подтверждения выезда гостя.</Text>}
+        <RecordActions busy={busy} actions={[
+          !owner&&j.status==='open'&&{title:applied?'Отклик отправлен':'Откликнуться',kind:'main',disabled:applied,onPress:()=>perform('jobs/'+id,{action:'apply'},m.id)},
+          assigned&&j.status==='assigned'&&{title:'Начать уборку',kind:'main',disabled:!j.checkout_confirmed,onPress:()=>confirm('jobs/'+id,{action:'start'},'Отметить начало работы','my-jobs')},
+          assigned&&j.status==='in_progress'&&{title:'Подготовить отчёт',kind:'main',onPress:()=>say('Проверьте каждый пункт. Отчёт уйдёт владельцу после вашего подтверждения.','report',{id})},
+          owner&&j.status==='submitted'&&{title:'Рассмотреть отчёт',kind:'main',onPress:()=>say('Отчёт на приёмке.','approval',{id:'report:'+id})},
+          (owner||assigned)&&{title:'Открыть чат',kind:'side',onPress:()=>{setChatInitial({kind:'job',entityId:id,channel:'cleaning'});setPageId('chats');}},
+        ]}/>
         {owner&&j.status==='open'&&data.applications.filter((a:Row)=>a.job_id===id&&a.status==='pending').map((a:Row)=><View key={a.id} style={s.card}><CleanerCard worker={a.worker||a}/><Button title="Рассмотреть отклик" disabled={busy} onPress={()=>say('Отклик исполнителя.','approval',{id:'application:'+a.id})}/></View>)}
-        {assigned&&j.status==='assigned'&&!j.checkout_confirmed&&<Text style={s.meta}>Ожидаем подтверждения выезда гостя.</Text>}{assigned&&j.status==='assigned'&&<Button title="Начать уборку" disabled={busy||!j.checkout_confirmed} onPress={()=>confirm('jobs/'+id,{action:'start'},'Отметить начало работы','my-jobs')}/>}
-        {assigned&&j.status==='in_progress'&&<Button title="Подготовить отчёт" disabled={busy} onPress={()=>say('Проверьте каждый пункт. Отчёт уйдёт владельцу после вашего подтверждения.','report',{id})}/>}
-        {!!j.report&&<Text style={s.text}>{j.report}</Text>}
-        {owner&&j.status==='submitted'&&<Button title="Рассмотреть отчёт" disabled={busy} onPress={()=>say('Отчёт на приёмке.','approval',{id:'report:'+id})}/>}
       </View>;
     })}{payload.role==='owner'&&<Button title="Создать уборку" secondary disabled={busy} onPress={()=>send('Создать уборку')}/>}</View>;
     if(m.block==='report')return <Report busy={busy||!!m.done} onSubmit={(body:Row)=>perform('jobs/'+payload.id,{action:'submit',...body},m.id,'my-jobs')}/>;

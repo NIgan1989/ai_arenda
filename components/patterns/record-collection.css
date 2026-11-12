@@ -22,3 +22,43 @@
 /* The steps start right under the header of the sheet: no second line and no gap above them. */
 .record-details-body.is-inline>.process-journey{margin:0}
 .record-details-body.is-inline>.process-journey:first-child,.record-details-body.is-inline>.record-property-photo:has(.photo-placeholder[data-state="failed"])+.process-journey{padding-top:0;border-top:0}
+/* An opened booking or cleaning. The sheet names the kind once («Бронь»), the head says what, when and how much,
+   the steps follow, then the facts and the actions. New class names keep the older layers of .inline-card away. */
+html[data-design=unified] [data-slot=sheet-content].record-details-sheet:is(.kind-booking,.kind-job) [data-slot=sheet-header]{padding:16px 20px 8px}
+html[data-design=unified] [data-slot=sheet-content].record-details-sheet:is(.kind-booking,.kind-job) [data-slot=sheet-title]{font-size:var(--t-font-label);line-height:var(--t-line-label);font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--t-muted)}
+.record-details-sheet:is(.kind-booking,.kind-job) .record-details-body{display:grid;grid-template-columns:minmax(0,1fr);align-content:start;gap:12px}
+.record-details-body>.process-journey,.record-entry>.process-journey{margin:0}
+.record-head{display:grid;gap:8px;min-width:0}
+.record-head>.record-property-photo{height:160px;overflow:hidden;border-radius:var(--t-radius-lg);margin:0 0 4px;background:var(--t-surface-alt)}
+.record-head>.record-property-photo .listing-photo{width:100%;height:100%;object-fit:cover}
+.record-head>.record-property-photo:has(.photo-placeholder[data-state="failed"]){display:none}
+.record-head>.record-property-photo .photo-placeholder[data-state="loading"]>*{visibility:hidden}
+.record-head-tags{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.record-head-demo{font-size:12px;padding:4px 8px;border-radius:var(--t-radius-sm);background:var(--t-surface-alt);color:var(--t-muted)}
+.record-head h2{margin:0;font-size:22px;line-height:1.25;font-weight:650;letter-spacing:-.01em;color:var(--t-ink);overflow-wrap:anywhere}
+.record-head p{display:flex;align-items:center;gap:8px;margin:0;font-size:14px;line-height:1.45;color:var(--t-ink-soft)}
+.record-head p svg{flex:none;color:var(--t-muted)}
+.record-head-sum{display:flex;align-items:baseline;flex-wrap:wrap;gap:4px 12px;margin-top:4px}
+.record-head-sum strong{font-size:28px;line-height:1.15;font-weight:700;letter-spacing:-.02em;color:var(--t-ink)}
+.record-head-sum span{font-size:12px;color:var(--t-muted)}
+.record-head-sum span.is-paid{color:var(--t-success)}
+.record-card{display:grid;grid-template-columns:minmax(0,1fr);gap:12px;min-width:0;text-align:left}
+.record-card>*{margin:0;min-width:0}
+.record-facts{display:grid;margin:0;border:1px solid var(--t-line);border-radius:var(--t-radius-lg);background:var(--t-surface);overflow:hidden}
+.record-facts>div{display:grid;grid-template-columns:minmax(96px,.4fr) minmax(0,1fr);gap:12px;padding:12px 16px;font-size:14px;line-height:1.45}
+.record-facts>div+div{border-top:1px solid var(--t-line)}
+.record-facts dt{display:flex;align-items:center;gap:4px;color:var(--t-muted)}
+.record-facts dd{margin:0;color:var(--t-ink);overflow-wrap:anywhere}
+.record-facts>.is-private{background:var(--t-success-soft)}
+.record-note{font-size:12px;line-height:1.5;color:var(--t-muted)}
+.record-actions{display:grid;gap:8px}
+.record-actions-side{display:grid;grid-template-columns:repeat(auto-fit,minmax(0,1fr));gap:8px}
+.record-actions [data-slot=button].record-action{width:100%;min-height:var(--t-control-touch);height:auto;padding:8px 16px;border-radius:var(--t-radius-md);font-size:14px;font-weight:600;white-space:normal}
+.record-actions [data-slot=button].record-action.is-main{min-height:var(--t-control-primary);font-size:16px;background:var(--t-accent);color:var(--t-on-accent);border:0}
+.record-actions [data-slot=button].record-action.is-main:hover{background:var(--t-accent-pressed)}
+.record-actions [data-slot=button].record-action.is-next{background:var(--t-accent-soft);color:var(--t-accent-pressed);border:0}
+.record-actions [data-slot=button].record-action.is-side{background:var(--t-surface);color:var(--t-ink);border:1px solid var(--t-line)}
+.record-actions [data-slot=button].record-action.is-danger{background:transparent;color:var(--t-danger);border:0;font-weight:500}
+.record-actions [data-slot=button].record-action.is-danger:hover{background:var(--t-danger-soft)}
+.record-card .booking-changes>.inline-button.secondary{width:100%}
+.record-card>.activity-timer{margin:0}
