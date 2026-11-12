@@ -13,6 +13,7 @@ import {PropertyControl,readinessLabels} from './src/PropertyControl';
 import {BookingChanges} from './src/BookingChanges';
 import {WorkspaceNavigation,WorkspaceMenuButton} from './src/WorkspaceNavigation';
 import {PropertyListing,PropertyEditor} from './src/PropertyListing';
+import {PropertyQuick} from './src/PropertyQuick';
 import {CleanerCard} from './src/ProfileEditor';
 import {AccountControl} from './src/AccountControl';
 import {RentalCalendar} from './src/RentalCalendar';
@@ -170,8 +171,7 @@ function Chat(){
     if(intent==='workspace'){if(!state.user){ensure(actor,intent,state);return;}say('Ближайшие события и задачи по вашим данным.','workspace',{role:actor});return;}
     if(intent==='property'){
       if(!ensure('owner',intent,state))return;
-      const answers:Row={city:state.profile.city};say('Добавим квартиру. Перед публикацией вы проверите все сведения.');
-      beginFlow('property',propertyQuestions.filter(q=>!answers[q.key]),answers,'properties','own-properties','owner');return;
+      say('Расскажите о квартире одним сообщением, остальное заполню сам.','property-quick',{});return;
     }
     if(intent==='own-properties'){if(ensure('owner',intent,state)){setActor('owner');catalog(state,'owner');}return;}
     if(intent==='cleaner-profile'){if(ensure('cleaner','jobs',state)){setActor('cleaner');say('Анкета уже сохранена. Посмотрим доступные уборки.');run('jobs',state);}return;}
@@ -321,6 +321,7 @@ function Chat(){
     if(m.block==='review')return review(m);
     if(m.block==='confirm')return <View style={s.card}><Text accessibilityRole="header" style={s.cardTitle}>{payload.title}</Text><Text style={s.text}>{payload.subject||'Подтверждение действия'}</Text><Text style={s.meta}>{payload.dates}{payload.amount!==undefined?' · '+money(payload.amount):''}</Text><Button title={m.done?(m.result||'Действие закрыто'):payload.title} disabled={busy||m.done} onPress={()=>perform(payload.path,payload.body,m.id,payload.after)}/>{!m.done&&<Button title="Отменить" secondary disabled={busy} onPress={()=>finish(m.id,'Отменено')}/>}</View>;
     if(m.block==='help')return <View style={s.suggestions}>{['Хочу снять квартиру','Хочу сдать квартиру','Хочу работать на уборке','Мои брони','Что нового'].map(t=><Button key={t} title={t} secondary disabled={busy} onPress={()=>send(t)}/>)}</View>;
+    if(m.block==='property-quick')return m.done?<Text style={s.meta}>{m.result||'Готово'}</Text>:<PropertyQuick city={data.profile?.city||'Павлодар'} onSave={body=>request('/api/listings',body)} onGuestMode={body=>request('/api/operations/matching/preference',body,undefined,undefined,'owner')} onClose={()=>finish(m.id,'Добавление отменено')} onMap={async()=>{finish(m.id,'Квартира добавлена');await load();setPageId('map');}} onDone={async saved=>{finish(m.id,'Квартира добавлена');const state=await load();say(saved.message);catalog(state,'owner');}}/>;
     if(m.block==='property-editor')return m.done?<Text style={s.meta}>{m.result||'Форма закрыта'}</Text>:<PropertyEditor property={data.ownProperties.find((p:Row)=>p.id===payload.id)} city={data.profile?.city||'Павлодар'} onClose={()=>finish(m.id,'Форма закрыта')} onSave={async body=>{const result=await request('/api/listings'+(payload.id?'/'+payload.id:''),body);const state=await load();finish(m.id);say(result.message);catalog(state,'owner');}}/>;
     if(m.block==='properties')return <View>{!!payload.back&&<Button title="Назад к карте" secondary disabled={busy} onPress={backToMap}/>}{payload.ids.map((id:string)=>{const p=[...data.properties,...data.ownProperties].find((p:Row)=>p.id===id);if(!p)return null;const stay:MapStay|undefined=payload.mode==='guest'?payload.stay:undefined;return <PropertyListing key={id} property={p} owner={payload.mode==='owner'} chooseTitle={stay?'Забронировать':undefined} onChoose={()=>stay?bookFromMap(p,stay):run((payload.mode==='owner'||payload.mode==='job'?'job:':'book:')+id)} onEdit={()=>say('Измените сведения и сохраните объявление.','property-editor',{id})} onSettings={()=>say('Полномочия и готовность квартиры.','property-settings',{id})}/>;})}{!payload.ids.length&&<Button title={payload.mode==='guest'?'Посмотреть учебный пример':'Добавить квартиру'} secondary disabled={busy} onPress={()=>send(payload.mode==='guest'?'Покажи учебный пример':'Хочу сдать квартиру')}/>}</View>;
     if(m.block==='bookings')return <View>{payload.ids.map((id:string)=>{
