@@ -48,7 +48,7 @@ test('under autopilot a guest gets an instant answer, the booking confirms itsel
   const job=f.db.raw.prepare('SELECT * FROM cleaning_jobs WHERE booking_id=?').get(booking.id);assert.equal(job.fee,3000);
   await saveWorkerDispatch(f.cleaner,{receiveOffers:true});f.release();await checkAdministratorOwner(f.db,'owner');
   const work=f.db.raw.prepare("SELECT * FROM cleaning_offers WHERE job_id=? AND status='offered'").get(job.id);assert.ok(work,'the AI offers the cleaning to a free cleaner');
-  await decideOffer(f.cleaner,{id:work.id,action:'accept'});f.release();await checkAdministratorOwner(f.db,'owner');
+  await decideOffer(f.cleaner,{id:work.id,action:'accept'});f.release();f.db.raw.prepare('UPDATE applications SET created_at=created_at-1801').run();await checkAdministratorOwner(f.db,'owner');
   assert.equal(f.db.raw.prepare('SELECT assigned_to FROM cleaning_jobs WHERE id=?').get(job.id).assigned_to,'cleaner');
  }finally{f.db.close();}
 });
@@ -72,4 +72,35 @@ test('the AI does not answer for an owner who answers personally, or when the da
   assert.equal(f.db.raw.prepare("SELECT COUNT(*) n FROM matching_offers WHERE status='accepted'").get().n,0);
   assert.equal((await matchingState(f.guest,taken.id)).status,'empty');
  }finally{f.db.close();}
+});
+
+test('under autopilot the guest report of leaving frees the flat; an owner answering personally still confirms it',async()=>{
+ const {checkAdministratorOwner}=await load('administrator-runtime');
+ for(const mode of ['manual','auto']){const f=await fixture();try{
+  await matchingAction(f.owner,'owner','preference',{propertyId:f.property,mode});
+  f.db.raw.prepare('UPDATE bookings SET start=?,end=?,occupied_until=? WHERE id=?').run(now()-3600,now()+600,now()+6000,f.booking);
+  await f.guest.bookingAction(f.booking,{action:'report_checkout'});f.release();await checkAdministratorOwner(f.db,'owner');
+  const terms=f.db.raw.prepare('SELECT actual_checkout FROM booking_terms WHERE booking_id=?').get(f.booking),status=f.db.raw.prepare('SELECT status FROM bookings WHERE id=?').get(f.booking).status;
+  if(mode==='auto'){assert.ok(terms.actual_checkout);assert.equal(status,'completed');assert.equal(f.db.raw.prepare("SELECT COUNT(*) n FROM notifications WHERE user_id='owner' AND dedupe LIKE 'owner:administrator-checkout:%'").get().n,1);assert.ok(f.db.raw.prepare("SELECT id FROM audit_events WHERE entity_id=? AND actor_id='system:rental-policy' AND action LIKE '%checkout_confirmed%'").get(f.booking));}
+  else{assert.equal(terms.actual_checkout,null);assert.equal(status,'confirmed');}
+ }finally{f.db.close();}}
+});
+
+test('the AI proposes a cleaner and the owner agrees with one tap; a cleaning within the hour is assigned at once',async()=>{
+ const {checkAdministratorOwner}=await load('administrator-runtime');
+ const f=await fixture();try{
+  await matchingAction(f.owner,'owner','preference',{propertyId:f.property,mode:'auto'});
+  await f.cleaner.jobAction(f.job.id,{action:'apply'});f.release();await checkAdministratorOwner(f.db,'owner');
+  assert.equal(f.db.raw.prepare('SELECT assigned_to FROM cleaning_jobs WHERE id=?').get(f.job.id).assigned_to,null);
+  const proposal=f.db.raw.prepare("SELECT body FROM notifications WHERE user_id='owner' AND dedupe LIKE 'owner:administrator-propose:%'").get();assert.match(proposal.body,/Cleaner/);
+  const application=f.db.raw.prepare('SELECT id FROM applications WHERE job_id=?').get(f.job.id),job=f.db.raw.prepare('SELECT version FROM cleaning_jobs WHERE id=?').get(f.job.id);
+  await f.owner.jobAction(f.job.id,{action:'assign',applicationId:application.id,expectedVersion:job.version});
+  assert.equal(f.db.raw.prepare('SELECT assigned_to FROM cleaning_jobs WHERE id=?').get(f.job.id).assigned_to,'cleaner');
+ }finally{f.db.close();}
+ const g=await fixture();try{
+  await matchingAction(g.owner,'owner','preference',{propertyId:g.property,mode:'auto'});
+  g.db.raw.prepare('UPDATE cleaning_jobs SET start=?,end=? WHERE id=?').run(now()+1800,now()+7200,g.job.id);
+  await g.cleaner.jobAction(g.job.id,{action:'apply'});g.release();await checkAdministratorOwner(g.db,'owner');
+  assert.equal(g.db.raw.prepare('SELECT assigned_to FROM cleaning_jobs WHERE id=?').get(g.job.id).assigned_to,'cleaner');
+ }finally{g.db.close();}
 });

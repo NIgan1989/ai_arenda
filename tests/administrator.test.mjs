@@ -76,7 +76,12 @@ test('automatic assignment needs owner permission and worker application, preser
  const f=await fixture();try{
   const job=await confirm(f);await f.cleaner.jobAction(job.id,{action:'apply'});
   await checkAdministratorOwner(f.db,'owner');assert.equal(f.db.raw.prepare('SELECT assigned_to FROM cleaning_jobs WHERE id=?').get(job.id).assigned_to,null);
-  await f.owner.savePolicy(f.property,{...f.policy,autoAssign:true,expectedVersion:1});f.release();const result=await checkAdministratorOwner(f.db,'owner');assert.equal(result.actions,1);
+  await f.owner.savePolicy(f.property,{...f.policy,autoAssign:true,expectedVersion:1});f.release();
+  // First the AI proposes the cleaner to the owner and waits for an answer.
+  assert.equal((await checkAdministratorOwner(f.db,'owner')).actions,0);assert.equal(f.db.raw.prepare('SELECT assigned_to FROM cleaning_jobs WHERE id=?').get(job.id).assigned_to,null);
+  assert.equal(f.db.raw.prepare("SELECT COUNT(*) n FROM notifications WHERE user_id='owner' AND dedupe LIKE 'owner:administrator-propose:%'").get().n,1);
+  // No answer within 30 minutes: the AI assigns by itself.
+  f.db.raw.prepare('UPDATE applications SET created_at=created_at-1801 WHERE job_id=?').run(job.id);f.release();const result=await checkAdministratorOwner(f.db,'owner');assert.equal(result.actions,1);
   const saved=f.db.raw.prepare('SELECT * FROM cleaning_jobs WHERE id=?').get(job.id);assert.equal(saved.assigned_to,'cleaner');assert.equal(saved.status,'assigned');
   assert.equal(f.db.raw.prepare('SELECT payment_status FROM bookings WHERE id=?').get(f.booking).payment_status,'unpaid');
   assert.equal(f.db.raw.prepare('SELECT actual_checkout FROM booking_terms WHERE booking_id=?').get(f.booking).actual_checkout,null);

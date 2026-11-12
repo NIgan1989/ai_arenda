@@ -364,7 +364,10 @@ export class RentalService {
     if(!b) throw new DomainError('Бронь не найдена.',404);
     if(this.execution){
       const mandate=await this.one('SELECT * FROM property_policies WHERE property_id=?',b.property_id);
-      if(body.action!=='confirm'||this.execution.propertyId!==b.property_id||!mandate?.auto_confirm||!mandateActive(mandate)||mandate.version!==this.execution.policyVersion||body.cleaningFee!==mandate.cleaning_fee||body.cleaningFee>mandate.cleaning_budget)throw new DomainError('Автоматическое действие выходит за полномочия владельца.',403);
+      const scoped=this.execution.propertyId===b.property_id&&!!mandate?.auto_confirm&&mandateActive(mandate)&&mandate.version===this.execution.policyVersion;
+      // Under autopilot the guest's own report of leaving frees the flat; the owner is told and keeps the deposit decision.
+      const checkout=body.action==='checkout'&&!!mandate?.auto_assign&&!!(await this.one('SELECT checkout_reported_at FROM booking_terms WHERE booking_id=? AND checkout_reported_at IS NOT NULL',bookingId));
+      if(!scoped||!(checkout||body.action==='confirm'&&body.cleaningFee===mandate.cleaning_fee&&body.cleaningFee<=mandate.cleaning_budget))throw new DomainError('Автоматическое действие выходит за полномочия владельца.',403);
     }
     const owner=b.owner_id===this.userId;
     const terms=await this.one('SELECT * FROM booking_terms WHERE booking_id=?',bookingId),op=await this.one('SELECT * FROM property_operations WHERE property_id=?',b.property_id);
@@ -418,7 +421,7 @@ export class RentalService {
         this.query("UPDATE applications SET status='rejected' WHERE job_id IN(SELECT id FROM cleaning_jobs WHERE booking_id=? AND status IN ('open','assigned') AND start<?) AND EXISTS(SELECT 1 FROM booking_terms bt JOIN bookings b ON b.id=bt.booking_id WHERE b.id=? AND b.status='completed' AND bt.actual_checkout IS NULL)",bookingId,t-60,bookingId),
         this.query("UPDATE cleaning_jobs SET start=?,end=?,assigned_to=NULL,status='open' WHERE booking_id=? AND status IN ('open','assigned') AND start<? AND EXISTS(SELECT 1 FROM booking_terms bt JOIN bookings b ON b.id=bt.booking_id WHERE b.id=? AND b.status='completed' AND bt.actual_checkout IS NULL)",t,t+b.cleaning_minutes*60,bookingId,t-60,bookingId),
         this.query('UPDATE booking_terms SET actual_checkout=? WHERE booking_id=? AND actual_checkout IS NULL AND EXISTS(SELECT 1 FROM bookings WHERE id=? AND status=\'completed\')',t,bookingId,bookingId),this.audit(bookingId,'booking.checkout_confirmed')]);
-      if(!result[0].meta.changes)throw new DomainError('Выезд уже обрабатывается. Обновите данные.',409);await this.notify(b.guest_id,'Владелец подтвердил освобождение квартиры. Проживание завершено.','checkout-confirmed:'+bookingId,'guest').run();return {message:'Выезд подтверждён. Квартира ожидает уборки и проверки.'};
+      if(!result[0].meta.changes)throw new DomainError('Выезд уже обрабатывается. Обновите данные.',409);await this.notify(b.guest_id,this.execution?'Выезд подтверждён. Спасибо, что выбрали нас.':'Владелец подтвердил освобождение квартиры. Проживание завершено.','checkout-confirmed:'+bookingId,'guest').run();return {message:'Выезд подтверждён. Квартира ожидает уборки и проверки.'};
     }
     if(body.action==='confirm') {
       await assertPilotAllowed(this,'booking',b.property_id);
