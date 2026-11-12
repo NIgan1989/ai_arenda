@@ -1,5 +1,5 @@
 import {q,one,uuid,epoch,type Row} from './operation-core';
-import {guestModeSql,guestModeJoins} from './autopilot';
+import {guestModeSql,guestModeJoins,underAutopilot} from './autopilot';
 
 // Under autopilot the AI administrator answers the guest in the booking chat for the owner.
 // It answers only from the booking's own facts: dates, check-in and checkout times, the address
@@ -69,8 +69,8 @@ export async function answerGuest(db:D1Database,roomId:string,seq:number){
  const topics=guestTopics(message.body);
  if(topics==='thanks'||Array.isArray(topics)&&!topics.length)return false;
  const reply=topics==='greeting'?{text:'Здравствуйте! Я AI администратор этой квартиры. Подскажу время заезда и выезда, адрес, правила, депозит и оплату. Остальное передам владельцу.',escalate:false}:compose(topics,b);
- const gate='EXISTS(SELECT 1 FROM bookings b JOIN properties p ON p.id=b.property_id WHERE b.id=? AND p.owner_id=? AND b.guest_id=?) AND EXISTS(SELECT 1 FROM discussion_rooms WHERE id=? AND membership_key=?) AND NOT EXISTS(SELECT 1 FROM discussion_blocks WHERE room_id=?)';
- const statements=[q(db,`INSERT OR IGNORE INTO discussion_messages(room_id,sender_id,sender_role,body,request_key,created_at,photo_data,reply_to) SELECT ?,?,'owner',?,?,?,'',? WHERE ${gate}`,roomId,b.owner_id,reply.text.slice(0,4000),AI_KEY+seq,t,seq,b.id,b.owner_id,b.guest_id,roomId,message.membership_key,roomId)];
+ const gate='EXISTS(SELECT 1 FROM bookings b JOIN properties p ON p.id=b.property_id WHERE b.id=? AND p.owner_id=? AND b.guest_id=?) AND EXISTS(SELECT 1 FROM discussion_rooms WHERE id=? AND membership_key=?) AND NOT EXISTS(SELECT 1 FROM discussion_blocks WHERE room_id=?) AND '+underAutopilot('?');
+ const statements=[q(db,`INSERT OR IGNORE INTO discussion_messages(room_id,sender_id,sender_role,body,request_key,created_at,photo_data,reply_to) SELECT ?,?,'owner',?,?,?,'',? WHERE ${gate}`,roomId,b.owner_id,reply.text.slice(0,4000),AI_KEY+seq,t,seq,b.id,b.owner_id,b.guest_id,roomId,message.membership_key,roomId,b.property_id,t)];
  if(reply.escalate)statements.push(q(db,'INSERT OR IGNORE INTO notifications SELECT ?,?,?,?,0,? WHERE changes()>0',uuid(),b.owner_id,'Гость спрашивает в чате брони «'+b.title+'»: «'+String(message.body).slice(0,140)+'». AI администратор не знает ответа, ответьте гостю.','owner:guest-question:'+roomId+':'+seq,t));
  const result=await db.batch(statements);
  return result[0].meta.changes>0;

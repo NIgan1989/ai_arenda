@@ -17,7 +17,7 @@ export async function saveStayReview(s:RentalService,body:Row){
  const t=epoch(),stars='★'.repeat(rating)+'☆'.repeat(5-rating);
  const result=await s.db.batch([
   q(s.db,"INSERT OR IGNORE INTO stay_reviews(booking_id,property_id,guest_id,owner_id,rating,body,created_at) SELECT ?,?,?,?,?,?,? WHERE EXISTS(SELECT 1 FROM bookings WHERE id=? AND guest_id=? AND status='completed')",b.id,b.property_id,s.userId,b.owner_id,rating,text,t,b.id,s.userId),
-  q(s.db,'INSERT OR IGNORE INTO notifications SELECT ?,?,?,?,0,? WHERE changes()>0',uuid(),b.owner_id,'Гость оценил проживание в «'+b.title+'»: '+stars+(text?' «'+text.slice(0,200)+'»':''),'owner:stay-review:'+b.id,t),
+  q(s.db,'INSERT OR IGNORE INTO notifications SELECT ?,?,?,?,0,? WHERE changes()>0',uuid(),b.owner_id,'Гость оценил проживание в «'+b.title+'»: '+stars+(text?' «'+text+'»':''),'owner:stay-review:'+b.id,t),
   q(s.db,'UPDATE notifications SET read=1 WHERE user_id=? AND dedupe=?',s.userId,'guest:review-request:'+b.id)
  ]);
  if(!result[0].meta.changes)throw new DomainError('Вы уже оценили это проживание.',409);

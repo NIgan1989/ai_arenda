@@ -33,7 +33,9 @@ export function rankMatches(properties:Row[],filters:Row):Row[]{
 export async function previewMatches(s:RentalService,body:Row):Promise<Row>{
  const filters=matchingInput(body),search={city:filters.city,start:filters.start,end:filters.end,guests:filters.guests,mode:filters.mode,maxPrice:filters.maxPrice,map:'1',limit:'60'};
  const first=await s.publicSearch(search,{matching:true}),properties=first.properties;
- const modes=properties.length?await rows(s.db,`SELECT p.id,${guestModeSql} mode FROM properties p ${guestModeJoins} WHERE p.id IN (${properties.map(()=>'?').join(',')})`,epoch(),...properties.map((p:Row)=>p.id)):[];
+ // In chunks: a matching search returns every match, and D1 binds at most 100 parameters.
+ const modes:Row[]=[],ids=properties.map((p:Row)=>p.id);
+ for(let i=0;i<ids.length;i+=90){const part=ids.slice(i,i+90);modes.push(...await rows(s.db,`SELECT p.id,${guestModeSql} mode FROM properties p ${guestModeJoins} WHERE p.id IN (${part.map(()=>'?').join(',')})`,epoch(),...part));}
  const instant=new Set(modes.filter(m=>m.mode==='auto').map(m=>m.id));
  const ranked=rankMatches(properties.map((p:Row)=>({...p,instant:instant.has(p.id)})),filters),preferences=await rows(s.db,'SELECT property_id FROM matching_preferences WHERE enabled=1');
  const enabled=new Set(preferences.map(p=>p.property_id));

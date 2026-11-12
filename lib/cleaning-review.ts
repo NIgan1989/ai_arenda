@@ -14,7 +14,8 @@ export async function reviewCleaning(db:D1Database,job:Row){
  const count=(phase:string)=>Number(photos.find(p=>p.phase===phase)?.n||0);
  if(count('before')<1)findings.push('нет фото «до»');
  if(count('after')<2)findings.push('меньше двух фото «после»');
- if(count('damage')>0)findings.push('приложены фото повреждений');
+ // Damage counts in any media the cleaner may use, photo or video.
+ if(await one(db,"SELECT id FROM job_evidence WHERE job_id=? AND phase='damage' LIMIT 1",job.id))findings.push('приложены фото или видео повреждений');
  // Work may start an hour before the slot, so earlier photos belong to something else.
  if(photos.some(p=>p.first<job.start-3600))findings.push('часть фото сделана до начала уборки');
  if(await one(db,"SELECT id FROM administrator_issues WHERE entity_kind='job' AND entity_id=? AND status='open'",job.id))findings.push('по уборке открыто обращение');
