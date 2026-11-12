@@ -27,6 +27,9 @@ export async function setGuestMode(s:RentalService,body:Row){
   if(!policy)throw new DomainError('Сначала заполните тарифы квартиры: по ним ИИ отвечает гостям.',409);
   if(body.cleaningFee!==undefined&&body.cleaningFee!==null&&body.cleaningFee!=='')fee=number(body.cleaningFee,'Стоимость уборки',100,1000000);
   if(fee<100)throw new DomainError('Укажите стоимость уборки: по ней ИИ заказывает уборку после каждого выезда.',422);
+  // The same tariff floor savePolicy enforces before any automatic confirmation.
+  const daily=Number((await one(db,'SELECT price FROM properties WHERE id=?',p.id))?.price||0);
+  if(policy.minimum_rate&&[daily,policy.hourly_price,policy.nightly_price].some(rate=>rate>0&&rate<policy.minimum_rate))throw new DomainError('Один из тарифов ниже минимальной разрешённой ставки. Исправьте тарифы квартиры.',409);
   if(policy.mandate_until&&policy.mandate_until<=t)throw new DomainError('Срок полномочий в правилах квартиры истёк. Продлите его или очистите поле.',409);
  }
  const statements:D1PreparedStatement[]=[q(db,'INSERT INTO matching_preferences VALUES (?,?,?,?) ON CONFLICT(property_id) DO UPDATE SET enabled=excluded.enabled,owner_id=excluded.owner_id,updated_at=excluded.updated_at',p.id,s.userId,mode==='off'?0:1,t)];
@@ -41,19 +44,22 @@ export async function setGuestMode(s:RentalService,body:Row){
  return {message:mode==='auto'?'Автопилот включён: ИИ отвечает гостям, подтверждает брони и организует уборку в пределах ваших правил.':mode==='manual'?'Запросы гостей приходят вам, отвечаете вы.':'Быстрые запросы гостей выключены.'};
 }
 
+// The AI answers only for a flat shown as «ИИ»: the same conditions as guestModeSql's 'auto'.
+const autopilotGate=(property:string,version:string)=>`EXISTS(SELECT 1 FROM property_policies pp JOIN operation_rules r ON r.property_id=pp.property_id JOIN matching_preferences m ON m.property_id=pp.property_id WHERE pp.property_id=${property} AND pp.version=${version} AND pp.auto_confirm=1 AND pp.auto_assign=1 AND pp.cleaning_fee>0 AND r.auto_offers=1 AND r.auto_replace=1 AND m.enabled=1 AND (pp.mandate_until=0 OR pp.mandate_until>?))`;
+
 // Called right after a wave of quick requests is sent. Under an active mandate to confirm bookings,
 // the AI answers "ready" for the owner: the same quote check a manual answer runs, done at once.
 export async function autoAnswerOffers(s:RentalService,requestId:string){
  const t=epoch();
- const offers=await rows(s.db,`SELECT o.id,o.property_id,o.owner_id,o.amount,o.policy_version,r.filters,r.guest_id,p.title FROM matching_offers o JOIN matching_requests r ON r.id=o.request_id JOIN properties p ON p.id=o.property_id JOIN property_policies pp ON pp.property_id=o.property_id
-  WHERE o.request_id=? AND o.status='pending' AND o.expires_at>? AND pp.auto_confirm=1 AND pp.version=o.policy_version AND (pp.mandate_until=0 OR pp.mandate_until>?) ORDER BY o.created_at,o.id`,requestId,t,t);
+ const offers=await rows(s.db,`SELECT o.id,o.property_id,o.owner_id,o.amount,o.policy_version,r.filters,r.guest_id,p.title FROM matching_offers o JOIN matching_requests r ON r.id=o.request_id JOIN properties p ON p.id=o.property_id
+  WHERE o.request_id=? AND o.status='pending' AND o.expires_at>? AND ${autopilotGate('o.property_id','o.policy_version')} ORDER BY o.created_at,o.id`,requestId,t,t);
  let answered=0;
  for(const offer of offers){
   const filters=JSON.parse(offer.filters);
   let quote:Row;try{quote=await s.bookingQuote({...filters,propertyId:offer.property_id,billingMode:filters.mode});}catch(error){if(error instanceof DomainError)continue;throw error;}
   if(quote.amount!==offer.amount||quote.policy.version!==offer.policy_version)continue;
   const audit=uuid(),result=await s.db.batch([
-   q(s.db,`UPDATE matching_offers SET status='accepted',responded_at=?,expires_at=? WHERE id=? AND status='pending' AND expires_at>? AND EXISTS(SELECT 1 FROM property_policies pp WHERE pp.property_id=matching_offers.property_id AND pp.auto_confirm=1 AND pp.version=matching_offers.policy_version AND (pp.mandate_until=0 OR pp.mandate_until>?)) AND EXISTS(SELECT 1 FROM matching_requests r WHERE r.id=matching_offers.request_id AND r.status IN ('searching','ready') AND r.expires_at>?)`,t,t+300,offer.id,t,t,t),
+   q(s.db,`UPDATE matching_offers SET status='accepted',responded_at=?,expires_at=? WHERE id=? AND status='pending' AND expires_at>? AND ${autopilotGate('matching_offers.property_id','matching_offers.policy_version')} AND EXISTS(SELECT 1 FROM matching_requests r WHERE r.id=matching_offers.request_id AND r.status IN ('searching','ready') AND r.expires_at>?)`,t,t+300,offer.id,t,t,t),
    q(s.db,'INSERT INTO audit_events SELECT ?,?,?,?,? WHERE changes()>0',audit,'system:autopilot',offer.property_id,JSON.stringify({action:'matching.auto_answered',offerId:offer.id,onBehalfOf:offer.owner_id,amount:offer.amount,policyVersion:offer.policy_version}),t),
    q(s.db,'INSERT OR IGNORE INTO notifications SELECT ?,?,?,?,0,? WHERE EXISTS(SELECT 1 FROM audit_events WHERE id=?)',uuid(),offer.owner_id,'AI администратор ответил гостю за вас: «'+offer.title+'» свободна, '+new Intl.NumberFormat('ru-RU').format(offer.amount)+' ₸ по вашему тарифу. Если гость выберет квартиру, бронь подтвердится по вашим правилам.','owner:matching-auto:'+offer.id,t,audit),
    q(s.db,'INSERT OR IGNORE INTO notifications SELECT ?,?,?,?,0,? WHERE EXISTS(SELECT 1 FROM audit_events WHERE id=?)',uuid(),offer.guest_id,'Владелец ответил на ваш подбор. Откройте карту, чтобы посмотреть предложение.','guest:matching-response:'+offer.id,t,audit)

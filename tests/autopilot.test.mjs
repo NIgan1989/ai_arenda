@@ -29,6 +29,9 @@ test('autopilot needs a cleaning price, a live mandate and the owner of the flat
   assert.deepEqual(Object.values(f.db.raw.prepare('SELECT cleaning_fee,cleaning_budget FROM property_policies WHERE property_id=?').get(flat)),[2500,2500]);
   await assert.rejects(matchingAction(f.other,'owner','preference',{propertyId:f.property,mode:'auto'}),e=>e.status===404);
   await assert.rejects(matchingAction(f.owner,'owner','preference',{propertyId:f.property,mode:'everything'}));
+  await f.owner.savePolicy(flat,{...f.policy,expectedVersion:2,cleaningFee:2500,cleaningBudget:2500,minimumRate:3000,dailyPrice:10000,hourlyPrice:0,nightlyPrice:0});
+  f.db.raw.prepare('UPDATE property_policies SET hourly_price=2000,auto_confirm=0 WHERE property_id=?').run(flat);
+  await assert.rejects(matchingAction(f.owner,'owner','preference',{propertyId:flat,mode:'auto'}),/минимальной разрешённой ставки/);
   f.db.raw.prepare('UPDATE property_policies SET mandate_until=? WHERE property_id=?').run(now()-60,f.property);
   await assert.rejects(matchingAction(f.owner,'owner','preference',{propertyId:f.property,mode:'auto'}),/полномочий/);
  }finally{f.db.close();}
@@ -55,6 +58,11 @@ test('the AI does not answer for an owner who answers personally, or when the da
   await matchingAction(f.owner,'owner','preference',{propertyId:f.property,mode:'manual'});
   const manual=await matchingAction(f.guest,'guest','begin',{...input(),requestKey:'manual',consent:true});assert.equal(manual.status,'searching');assert.equal(manual.pending,1);
   await matchingAction(f.guest,'guest','cancel',{id:manual.id});
+  // Booking auto-confirmation alone, as an owner could set it before autopilot existed, is shown as «Я сам» and gets no AI answer.
+  await f.owner.savePolicy(f.property,{...f.policy,expectedVersion:f.db.raw.prepare('SELECT version FROM property_policies WHERE property_id=?').get(f.property).version,autoConfirm:true});
+  assert.equal(await mode(f),'manual');
+  const confirmOnly=await matchingAction(f.guest,'guest','begin',{...input(),requestKey:'confirm-only',consent:true});assert.equal(confirmOnly.status,'searching');
+  await matchingAction(f.guest,'guest','cancel',{id:confirmOnly.id});
   await matchingAction(f.owner,'owner','preference',{propertyId:f.property,mode:'auto'});
   // Another guest's request holds these dates while the owner decides: the quote fails, so the offer stays with the owner.
   f.db.raw.prepare('UPDATE property_policies SET auto_confirm=0 WHERE property_id=?').run(f.property);
