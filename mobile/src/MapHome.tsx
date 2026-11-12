@@ -24,7 +24,7 @@ type Publish=(pins:MapPin[],focusKey:string)=>void;
 // The stay a guest books from the map: Kazakhstan time, as the request form keeps it.
 export type MapStay={mode:'daily'|'hourly';start:string;end:string;guests:number};
 // showNow: whether the "Сейчас" card has its place in the sheet as it is now (see MapHome).
-type Common={accountId:string;data:Row;mapData:Row|null;city:string;publish:Publish;selected:string;setSelected:(key:string)=>void;snap:number;showNow:boolean;expand:(snap:number)=>void;onHead:(height:number)=>void;onReach:(bottom:number)=>void;onAsk:(text:string)=>void;onIntent:(intent:string,stay?:MapStay)=>void;onBook:(property:Row,stay:MapStay)=>void;onChanged:()=>Promise<unknown>;onOpenProcess:(kind:'booking'|'job',id:string)=>void;onOpenPage:(id:string)=>void};
+type Common={setScanning:(on:boolean)=>void;accountId:string;data:Row;mapData:Row|null;city:string;publish:Publish;selected:string;setSelected:(key:string)=>void;snap:number;showNow:boolean;expand:(snap:number)=>void;onHead:(height:number)=>void;onReach:(bottom:number)=>void;onAsk:(text:string)=>void;onIntent:(intent:string,stay?:MapStay)=>void;onBook:(property:Row,stay:MapStay)=>void;onChanged:()=>Promise<unknown>;onOpenProcess:(kind:'booking'|'job',id:string)=>void;onOpenPage:(id:string)=>void};
 const liveRequests=new Map<string,string>();
 // What the guest searched for outlives a visit to another page (a flat's details, the check of a booking):
 // coming back to the map within ten minutes shows the same conditions and the same list.
@@ -54,14 +54,14 @@ function openNow(card:NowCard|null,c:Pick<Common,'expand'|'onOpenProcess'|'onOpe
 }
 function useNow(active:boolean){const [now,setNow]=useState(Date.now()/1000);useEffect(()=>{if(!active)return;const timer=setInterval(()=>setNow(Date.now()/1000),1000);return()=>clearInterval(timer);},[active]);return now;}
 
-function GuestPanel({accountId,data,mapData,publish,selected,setSelected,snap,showNow,expand,onHead,onReach,onAsk,onIntent,onBook,onChanged,onOpenProcess,onOpenPage,picking,setPicking,mapCenter,city,setCity}:Common&{picking:boolean;setPicking:(value:boolean)=>void;mapCenter:React.RefObject<MapPoint|null>;setCity:(city:string)=>void}){
+function GuestPanel({setScanning,accountId,data,mapData,publish,selected,setSelected,snap,showNow,expand,onHead,onReach,onAsk,onIntent,onBook,onChanged,onOpenProcess,onOpenPage,picking,setPicking,mapCenter,city,setCity}:Common&{picking:boolean;setPicking:(value:boolean)=>void;mapCenter:React.RefObject<MapPoint|null>;setCity:(city:string)=>void}){
  const kept=useRef(guestSearches.get(accountId)).current,foundAt=useRef(kept?.foundAt||0),recent=!!kept?.preview&&Date.now()-kept.foundAt<SEARCH_KEEP;
  const [draft,setDraft]=useState<GuestDraft>(()=>kept?.draft||newDraft(city));
  // hint.ask: text the request rules could not read; the guest can still send it to the AI administrator.
  const [asked,setAsked]=useState(''),[hint,setHint]=useState<{text:string;ask?:string;error?:boolean}|null>(null),[refine,setRefine]=useState(false);
  const [preview,setPreview]=useState<Row|null>(recent?kept!.preview:null),[requestId,setRequestId]=useState(()=>liveRequests.get(accountId)||''),[live,setLive]=useState<Row|null>(null);
  const [error,setError]=useState(''),[working,setWorking]=useState(false),[index,setIndex]=useState(0),[acceptedKey,setAcceptedKey]=useState(''),[skew,setSkew]=useState(0);
- const lock=useRef(false),requestKey=useRef(''),pickThenFind=useRef(false);
+ const lock=useRef(false),requestKey=useRef(''),pickThenFind=useRef(false),bookedFlat=useRef<Row|null>(null);
  const active=!!requestId&&(!live||['searching','ready','booking'].includes(live.status)),now=useNow(active)+skew;
  // Any change of the conditions makes the shown results stale.
  const change=(next:GuestDraft)=>{if(next.city!==draft.city)setCity(next.city);setDraft(next);setPreview(null);setError('');setHint(null);};
@@ -120,6 +120,7 @@ function GuestPanel({accountId,data,mapData,publish,selected,setSelected,snap,sh
  const offerKey=offer?offer.offerId+':'+offer.estimate.amount+':'+offer.policy.version:'',accepted=!!offerKey&&acceptedKey===offerKey,setAccepted=(value:boolean|((v:boolean)=>boolean))=>setAcceptedKey((typeof value==='function'?value(accepted):value)?offerKey:'');
  const book=()=>guarded(async()=>{
   if(!offer||!live||!accepted)return;
+  bookedFlat.current=offer;
   await request('/api/operations/matching/book',{id:live.id,offerId:offer.offerId,start:live.filters.start,end:live.filters.end,guests:Number(live.filters.guests),billingMode:live.filters.mode,expectedAmount:offer.estimate.amount,expectedPolicyVersion:offer.policy.version,acceptTerms:true},undefined,'match:'+live.id,'guest');
   const state=await request('/api/operations/matching/state',{id:live.id},undefined,undefined,'guest');setLive(state);await onChanged();
  });
@@ -127,10 +128,15 @@ function GuestPanel({accountId,data,mapData,publish,selected,setSelected,snap,sh
  const stageKey=requestId?'live':preview?'preview:'+preview.serverTime:'base:'+draft.city;
  useEffect(()=>{
   const pin=(p:Row,tone:MapPin['tone']):MapPin[]=>{const point=pointOf(p),amount=p.estimate?.amount??p.price;return point?[{key:p.id,point,title:p.title,label:short(amount),tone,rank:typeof amount==='number'?amount:0}]:[];};
-  if(requestId&&live)publish([...(live.pendingProperties||[]).flatMap((p:Row)=>pin(p,'pending')),...offers.flatMap(p=>pin(p,'offer'))],'live:'+live.id+':'+offers.length+':'+(live.pendingProperties||[]).length);
+  // A booking made: the flat that was booked stays on the map, green, and the rest leave it.
+  if(requestId&&live?.status==='booked'){const flat=bookedFlat.current;publish(flat?pin(flat,'booked').map(p=>({...p,label:'✓ Бронь'})):[],'booked:'+live.id);}
+  else if(requestId&&live)publish([...(live.pendingProperties||[]).flatMap((p:Row)=>pin(p,'pending')),...offers.flatMap(p=>pin(p,'offer'))],'live:'+live.id+':'+offers.length+':'+(live.pendingProperties||[]).length);
   else if(preview)publish(preview.properties.flatMap((p:Row)=>pin(p,p.quickRequest?'booking':'home')),stageKey);
   else publish((mapData?.properties||[]).flatMap((p:Row)=>pin(p,'home')),stageKey+':'+(mapData?.properties?.length||0));
  },[requestId,live,preview,mapData,draft.city]);
+ // The radar on the map runs while flats are searched and while owners are being asked.
+ const scanning=(working&&!requestId)||(!!requestId&&(!live||live.status==='searching'));
+ useEffect(()=>{setScanning(scanning);return()=>setScanning(false);},[scanning]);
  useEffect(()=>{if(offers.length&&selected){const at=offers.findIndex(p=>p.id===selected);if(at>=0&&at!==index){setIndex(at);setAccepted(false);}}},[selected]);
 
  const pickView=<View style={h.block}><Text style={h.title}>Где ищем?</Text><Text style={h.note}>Передвиньте карту так, чтобы метка стояла в нужном месте. Владельцам точка не передаётся, для подбора она округляется.</Text>
@@ -207,14 +213,17 @@ function OwnerPanel({data,mapData,publish,snap,showNow,expand,onHead,onAsk,onInt
  const [asked,setAsked]=useState('');
  const [inbox,setInbox]=useState<Row|null>(null),[error,setError]=useState(''),[working,setWorking]=useState(false),[ready,setReady]=useState<Record<string,boolean>>({}),[skew,setSkew]=useState(0);
  const lock=useRef(false),seen=useRef(0),now=useNow(!!inbox?.offers?.length)+skew;
+ // An answer just sent shows on the flat's pin for a few seconds: «Ответ отправлен» after «Готов», the price again after a refusal.
+ const [answered,setAnswered]=useState<Record<string,number>>({});
+ useEffect(()=>{const keys=Object.keys(answered);if(!keys.length)return;const timer=setTimeout(()=>setAnswered({}),5000);return()=>clearTimeout(timer);},[answered]);
  const apply=(result:Row)=>{setSkew(result.serverTime-Date.now()/1000);setInbox(result);if(result.offers.length>seen.current)expand(1);seen.current=result.offers.length;};
  usePoll(async()=>{try{apply(await request('/api/operations/matching/inbox',{},undefined,undefined,'owner'));setError('');}catch(e){if(e instanceof ApiError)setError(e.message);}},3000,true);
- async function act(action:string,body:Row){if(lock.current)return;lock.current=true;setWorking(true);setError('');try{apply(await request('/api/operations/matching/'+action,body,undefined,undefined,'owner'));if(action==='respond')await onChanged();}catch(e){setError(message(e));}finally{lock.current=false;setWorking(false);}}
+ async function act(action:string,body:Row){if(lock.current)return;lock.current=true;setWorking(true);setError('');try{const property=action==='respond'?(inbox?.offers||[]).find((o:Row)=>o.id===body.offerId)?.property_id:'';apply(await request('/api/operations/matching/'+action,body,undefined,undefined,'owner'));if(property&&body.decision==='accept')setAnswered(v=>({...v,[property]:Date.now()}));if(action==='respond')await onChanged();}catch(e){setError(message(e));}finally{lock.current=false;setWorking(false);}}
  const offers:Row[]=(inbox?.offers||[]).filter((o:Row)=>o.expires_at>now),processes:Row[]=mapData?.processes||[];
  useEffect(()=>{
   const asked=new Set(offers.map(o=>o.property_id));
-  publish([...(mapData?.properties||[]).flatMap((p:Row):MapPin[]=>{const point=pointOf(p);return point?[{key:'property:'+p.id,point,title:p.title,label:asked.has(p.id)?'Запрос':short(p.price),rank:typeof p.price==='number'?p.price:0,tone:asked.has(p.id)?'pending':'home'}]:[];})],'owner:'+(mapData?.properties?.length||0));
- },[mapData,inbox]);
+  publish([...(mapData?.properties||[]).flatMap((p:Row):MapPin[]=>{const point=pointOf(p),sent=!!answered[p.id]&&!asked.has(p.id);return point?[{key:'property:'+p.id,point,title:p.title,label:asked.has(p.id)?'Запрос':sent?'Ответ отправлен':short(p.price),rank:typeof p.price==='number'?p.price:0,tone:asked.has(p.id)?'pending':sent?'offer':'home'}]:[];})],'owner:'+(mapData?.properties?.length||0));
+ },[mapData,inbox,answered]);
  const clock=Date.now()/1000+skew,flats:Row[]=data.ownProperties||[];
  const card=showNow?nowCard('owner',data,clock,{quickOffers:inbox?.offers||[]}):null;
  return <View style={h.block}>
@@ -258,6 +267,13 @@ function OwnerPanel({data,mapData,publish,snap,showNow,expand,onHead,onAsk,onInt
  </View>;
 }
 
+// What a job's pin says at each step; the change between them is what the map animates (see map-motion.ts).
+function jobPin(status:string,applied:boolean):Pick<MapPin,'label'|'tone'>{
+ if(status==='open')return applied?{label:'Отклик ✓',tone:'job'}:{label:'Уборка',tone:'job'};
+ if(status==='in_progress')return {label:'Уборка идёт',tone:'active'};
+ if(status==='submitted')return {label:'На приёмке',tone:'booking'};
+ return {label:'Моё задание',tone:'offer'};
+}
 function CleanerPanel({data,mapData,city,publish,snap,showNow,expand,onHead,onAsk,onChanged,onOpenProcess,onOpenPage}:Common){
  const [asked,setAsked]=useState(''),clock=serverNow(data),card=showNow?nowCard('cleaner',data,clock):null;
  const [error,setError]=useState(''),[working,setWorking]=useState(''),lock=useRef(false);
@@ -269,8 +285,8 @@ function CleanerPanel({data,mapData,city,publish,snap,showNow,expand,onHead,onAs
  // Jobs in other cities are one tap away, on the page of all jobs.
  const nearby=open.filter(j=>String(j.city||'').toLocaleLowerCase('ru').includes(city.trim().toLocaleLowerCase('ru'))),nearbyIds=nearby.map(j=>j.id).join();
  useEffect(()=>{
-  publish((mapData?.processes||[]).filter((p:Row)=>p.kind==='job'&&(p.status!=='open'||nearby.some(j=>j.id===p.id))).flatMap((p:Row):MapPin[]=>{const point=pointOf(p);return point?[{key:'job:'+p.id,point,title:p.title,label:p.status==='open'?'Уборка':'Моё задание',tone:p.status==='open'?'job':'offer'}]:[];}),'cleaner:'+(mapData?.processes?.length||0));
- },[mapData,nearbyIds]);
+  publish((mapData?.processes||[]).filter((p:Row)=>p.kind==='job'&&(p.status!=='open'||nearby.some(j=>j.id===p.id))).flatMap((p:Row):MapPin[]=>{const point=pointOf(p);return point?[{key:'job:'+p.id,point,title:p.title,...jobPin(p.status,applied(p.id))}]:[];}),'cleaner:'+(mapData?.processes?.length||0));
+ },[mapData,nearbyIds,data.applications]);
  async function apply(id:string){if(lock.current)return;lock.current=true;setWorking(id);setError('');try{await request('/api/jobs/'+id,{action:'apply'},undefined,'map-apply:'+id,'cleaner');await onChanged();}catch(e){setError(message(e));}finally{lock.current=false;setWorking('');}}
  return <View style={h.block}>
   <HeadSlot onHeight={onHead}><MapSheetHead role="cleaner" text={asked} onText={setAsked} onSend={text=>{setAsked('');onAsk(text);}} onChip={action=>{if(action==='nearby')expand(1);else if(action==='schedule')onOpenPage('calendar');}} now={card} onNow={()=>openNow(card,{expand,onOpenProcess,onOpenPage})}/></HeadSlot>
@@ -321,6 +337,7 @@ export function MapHome({ role, accountId, data, menu, onChanged, onOpenProcess,
   const [selected, setSelected] = useState('');
   const [mapData, setMapData] = useState<Row | null>(null);
   const [picking, setPicking] = useState(false);
+  const [scanning, setScanning] = useState(false);
   const host = useRef<View>(null);
   const scroll = useRef<ScrollView>(null);
   const mapCenter = useRef<MapPoint | null>(null);
@@ -421,7 +438,7 @@ export function MapHome({ role, accountId, data, menu, onChanged, onOpenProcess,
     setPins(next);
     setFocusKey(key);
   };
-  const common: Common = { accountId, data, mapData, city, publish, selected, setSelected, snap, showNow, expand: setSnap, onHead: setHead, onReach: setReach, onAsk, onIntent, onBook, onChanged, onOpenProcess, onOpenPage };
+  const common: Common = { setScanning, accountId, data, mapData, city, publish, selected, setSelected, snap, showNow, expand: setSnap, onHead: setHead, onReach: setReach, onAsk, onIntent, onBook, onChanged, onOpenProcess, onOpenPage };
   const center = mapCities[city] || validPoint(mapData?.center) || mapCities['Павлодар'];
 
   return (
@@ -442,6 +459,7 @@ export function MapHome({ role, accountId, data, menu, onChanged, onOpenProcess,
         topInset={topInset}
         focusKey={focusKey}
         picking={picking}
+        scanning={scanning}
         onCenter={c => {
           mapCenter.current = c;
         }}
