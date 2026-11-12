@@ -29,8 +29,7 @@ const styles=`.entry-splash{position:fixed;inset:0;z-index:2147483000;display:gr
 @keyframes entry-rise{to{opacity:1;transform:none}}
 @keyframes entry-glow{0%{opacity:0;transform:scale(.9)}60%{opacity:1}100%{opacity:1;transform:scale(1)}}
 @keyframes entry-splash-fallback{to{visibility:hidden;pointer-events:none}}
-/* While the story plays, the page under it keeps still and the loading line waits. */
-html:has(.entry-splash[data-state="playing"]) body{overflow:hidden}
+/* While the story plays, the loading line waits. The page is not scroll-locked: the splash covers it, and a lock could outlive a splash whose script never ran. */
 .entry-splash[data-state="playing"]~.app-loader,.entry-splash[data-state="playing"]~.app-loader-pill{display:none}
 @media (prefers-reduced-motion:reduce){
   .entry-splash-glow,.entry-splash-ring{animation:none;opacity:0}
