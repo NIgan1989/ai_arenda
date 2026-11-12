@@ -110,3 +110,12 @@ test('the distance in the reasons has a decimal comma and names the chosen place
   // Without a chosen place no distance is claimed.
   assert.deepEqual(rankMatches([flat], { ...filters, near: null })[0].match.reasons, ['В пределах бюджета', 'Готовность проверена']);
 });
+
+test('a flat under autopilot is lifted a little in the balanced choice and says it answers at once',async()=>{
+ const {rankMatches}=await load('smart-matching');
+ const flat=(id,amount,instant)=>({id,district:'Центр',estimate:{amount},display_status:{code:'ready'},details:{amenities:[]},instant});
+ const filters={maxPrice:'10000',district:'',features:[],priority:'balanced',near:null};
+ const ranked=rankMatches([flat('cheap',8000,false),flat('ai',8500,true)],filters);
+ assert.equal(ranked[0].id,'ai');assert.ok(ranked[0].match.reasons.includes('Отвечает и подтверждает сразу'));
+ assert.equal(rankMatches([flat('cheap',8000,false),flat('ai',8500,true)],{...filters,priority:'cheaper'})[0].id,'cheap','«Дешевле» stays about price');
+});

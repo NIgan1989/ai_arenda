@@ -2,6 +2,7 @@ import {DomainError,required,number,type Role} from './domain';
 import type {RentalService} from './service';
 import {q,one,rows,uuid,epoch,hash,type Row} from './operation-core';
 import {jpegInput} from './listings';
+import {answerGuest,AI_KEY} from './guest-answers';
 type Member={id:string;role:Role;name?:string};
 export async function discussionContext(service:RentalService,role:Role,body:Row){
  await service.authorizeWorkspace(role,'operations');
@@ -55,7 +56,7 @@ export async function discussionAvatar(service:RentalService,role:Role,body:Row)
 }
 export async function readDiscussion(service:RentalService,role:Role,body:Row){
  const {room,context}=await authorisedRoom(service,role,body),before=body.before?number(body.before,'Номер сообщения',1,Number.MAX_SAFE_INTEGER):Number.MAX_SAFE_INTEGER;
- const messages=await rows(service.db,"SELECT m.seq,m.sender_id,m.sender_role,m.body,m.created_at,m.reply_to,(m.photo_data<>'') photo,r.body reply_body FROM discussion_messages m LEFT JOIN discussion_messages r ON r.seq=m.reply_to AND r.room_id=m.room_id WHERE m.room_id=? AND m.seq<? ORDER BY m.seq DESC LIMIT 100",room.id,before);messages.reverse();
+ const messages=await rows(service.db,"SELECT m.seq,m.sender_id,m.sender_role,m.body,m.created_at,m.reply_to,(m.photo_data<>'') photo,(m.sender_role='owner' AND m.request_key LIKE 'ai:%') by_ai,r.body reply_body FROM discussion_messages m LEFT JOIN discussion_messages r ON r.seq=m.reply_to AND r.room_id=m.room_id WHERE m.room_id=? AND m.seq<? ORDER BY m.seq DESC LIMIT 100",room.id,before);messages.reverse();
  const older=messages.length?!!await one(service.db,'SELECT seq FROM discussion_messages WHERE room_id=? AND seq<? LIMIT 1',room.id,messages[0].seq):false;
  if(!body.before&&body.markRead!==false){const seq=messages.at(-1)?.seq||0;await q(service.db,'INSERT INTO discussion_visits(room_id,user_id,role,last_seq,seen_at) VALUES (?,?,?,?,?) ON CONFLICT(room_id,user_id,role) DO UPDATE SET last_seq=MAX(last_seq,excluded.last_seq),seen_at=excluded.seen_at',room.id,service.userId,role,seq,epoch()).run();await q(service.db,"UPDATE notifications SET read=1 WHERE user_id=? AND substr(dedupe,1,length(?))=? AND CAST(substr(dedupe,length(?)+1) AS INTEGER)<=?",service.userId,role+':discussion:'+room.id+':',role+':discussion:'+room.id+':',role+':discussion:'+room.id+':',seq).run();}
  const viewer=await one(service.db,'SELECT show_presence,show_receipts FROM profile_preferences WHERE user_id=?',service.userId);
@@ -68,11 +69,13 @@ export async function sendDiscussionMessage(service:RentalService,role:Role,body
  if(await one(service.db,'SELECT room_id FROM discussion_blocks WHERE room_id=?',room.id))throw new DomainError('Переписка заблокирована участником. История и действия по процессу доступны.',403);
  const photo=body.photo?jpegInput(body.photo,'property').data:'',reply=body.replyTo?number(body.replyTo,'Ответ на сообщение',1,Number.MAX_SAFE_INTEGER):null;
  if(reply&&!await one(service.db,'SELECT seq FROM discussion_messages WHERE room_id=? AND seq=?',room.id,reply))throw new DomainError('Исходное сообщение недоступно.',403);
- const text=required(body.text||(photo?'Фотография':''),'Сообщение',4000),key=required(body.requestKey,'Ключ сообщения',100),previous=await one(service.db,'SELECT seq,body,photo_data,reply_to FROM discussion_messages WHERE room_id=? AND sender_id=? AND sender_role=? AND request_key=?',room.id,service.userId,role,key);
+ const text=required(body.text||(photo?'Фотография':''),'Сообщение',4000),key=required(body.requestKey,'Ключ сообщения',100);if(key.startsWith(AI_KEY))throw new DomainError('Некорректный ключ сообщения.');const previous=await one(service.db,'SELECT seq,body,photo_data,reply_to FROM discussion_messages WHERE room_id=? AND sender_id=? AND sender_role=? AND request_key=?',room.id,service.userId,role,key);
  const same=(m:Row)=>m.body===text&&m.photo_data===photo&&m.reply_to===reply;
  if(previous){if(!same(previous))throw new DomainError('Этот ключ использован для другого сообщения.',409);return {sent:true,seq:previous.seq};}
  const message=await q(service.db,`INSERT OR IGNORE INTO discussion_messages(room_id,sender_id,sender_role,body,request_key,created_at,photo_data,reply_to) SELECT ?,?,?,?,?,?,?,? WHERE ${context.gate} AND NOT EXISTS(SELECT 1 FROM discussion_blocks WHERE room_id=?) AND (SELECT COUNT(*) FROM discussion_messages WHERE sender_id=? AND created_at>?)<30 RETURNING seq`,room.id,service.userId,role,text,key,epoch(),photo,reply,...context.gateArgs,room.id,service.userId,epoch()-60).first<Row>();
  if(!message){const replay=await one(service.db,'SELECT seq,body,photo_data,reply_to FROM discussion_messages WHERE room_id=? AND sender_id=? AND sender_role=? AND request_key=?',room.id,service.userId,role,key);if(replay&&same(replay))return {sent:true,seq:replay.seq};throw new DomainError('Сообщение не отправлено: изменился состав участников или достигнут лимит. Обновите чат.',409);}
+ // Under autopilot the AI administrator answers the guest for the owner. A failed answer never fails the guest's message.
+ if(role==='guest'&&room.channel==='stay'){try{await answerGuest(service.db,room.id,message.seq);}catch(error){console.error('AI administrator: guest answer failed',error);}}
  return {sent:true,seq:message.seq};
 }
 

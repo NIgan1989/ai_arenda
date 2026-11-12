@@ -1,0 +1,14 @@
+/* Sign-in and the role pages share one look: one heading per screen, the same segmented «Вход | Регистрация». */
+html[data-design="unified"] :is(.sign-in-main,.onboarding-auth) .auth-tabs{display:flex;gap:4px;margin:16px 0 0;padding:4px;border-radius:var(--t-radius-md);background:var(--t-surface-alt)}
+html[data-design="unified"] :is(.sign-in-main,.onboarding-auth) .auth-tabs button{flex:1;min-height:var(--t-control-touch);border:0;box-shadow:none;background:transparent;color:var(--t-muted);font-weight:600}
+html[data-design="unified"] :is(.sign-in-main,.onboarding-auth) .auth-tabs button[aria-pressed=true]{background:var(--t-surface);color:var(--t-accent);box-shadow:0 1px 4px var(--t-glass-ink,#0e13240f)}
+html[data-design="unified"] .onboarding-auth{display:grid;gap:8px}
+html[data-design="unified"] .onboarding-auth .onboarding-auth-title{margin:0;font-size:22px;line-height:28px;font-weight:650;letter-spacing:-.3px;color:var(--t-ink)}
+html[data-design="unified"] .onboarding-auth .entry-note{margin:0;font-size:14px;line-height:20px;color:var(--t-muted)}
+html[data-design="unified"] .onboarding-auth .auth-form{margin-top:8px}
+@media(max-width:700px){
+ html[data-design="unified"] .onboarding-intro h1{font-size:28px;line-height:36px;font-weight:650;letter-spacing:-.6px;margin:8px 0 12px}
+ html[data-design="unified"] .onboarding-intro>p{font-size:14px;line-height:20px;margin:0}
+ html[data-design="unified"] .onboarding-intro>ul{margin-top:16px;gap:8px}
+ html[data-design="unified"] .onboarding-intro li{font-size:14px;line-height:20px}
+}

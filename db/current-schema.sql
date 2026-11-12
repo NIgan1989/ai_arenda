@@ -35,7 +35,8 @@
 -- migration 0031_smart_matching.sql sha256:ccaa44e5e4d91f2119a142d4e96ffe1d10d340770b0a95e0ae7746597f095b41
 -- migration 0032_platform_billing.sql sha256:4fe19e04e8358484e46e4f86b0d7a7925d799fd5eea3f0e3845b970032d2155b
 -- migration 0033_property_archive.sql sha256:15264859b54b5535aaabbec84a284b525760962bf652590ba7cb5bdc7913f535
--- migration 0034_price_advice.sql sha256:675c9441fd26087ef8ef3e63caf8f71e7b78c7d9c1ee4fd0156505f47ad51fcf
+-- migration 0034_ai_autopilot.sql sha256:f053f458ea584b4ac7e2f5b9aa2443c16b6b0c52e8618c67095611a18e2a0e2e
+-- migration 0035_price_advice.sql sha256:675c9441fd26087ef8ef3e63caf8f71e7b78c7d9c1ee4fd0156505f47ad51fcf
 
 -- table access_receipts
 CREATE TABLE access_receipts (id TEXT PRIMARY KEY,property_id TEXT NOT NULL,entity_kind TEXT NOT NULL,entity_id TEXT NOT NULL,user_id TEXT NOT NULL,created_at INTEGER NOT NULL,expires_at INTEGER NOT NULL);
@@ -267,7 +268,7 @@ CREATE TABLE booking_terms (
  deposit_status TEXT NOT NULL DEFAULT 'not_required' CHECK(deposit_status IN ('not_required','pending','owner_verified')),
  house_rules TEXT NOT NULL DEFAULT '', policy_version INTEGER NOT NULL DEFAULT 0,
  actual_checkin INTEGER, actual_checkout INTEGER, checkout_reported_at INTEGER
-, version INTEGER NOT NULL DEFAULT 1, discount_percent INTEGER NOT NULL DEFAULT 0, paid_amount INTEGER NOT NULL DEFAULT 0, original_end INTEGER NOT NULL DEFAULT 0, deposit_returned_at INTEGER, refund_recorded_at INTEGER);
+, version INTEGER NOT NULL DEFAULT 1, discount_percent INTEGER NOT NULL DEFAULT 0, paid_amount INTEGER NOT NULL DEFAULT 0, original_end INTEGER NOT NULL DEFAULT 0, deposit_returned_at INTEGER, refund_recorded_at INTEGER, checkin_reported_at INTEGER);
 
 -- table bookings
 CREATE TABLE `bookings` (
@@ -598,7 +599,7 @@ CREATE TABLE platform_billing (
  version INTEGER NOT NULL DEFAULT 1,
  updated_by TEXT,
  updated_at INTEGER NOT NULL DEFAULT 0
-);
+, ai_rate_bp INTEGER NOT NULL DEFAULT 1000 CHECK(ai_rate_bp BETWEEN 0 AND 3000));
 
 -- table platform_commissions
 CREATE TABLE platform_commissions (
@@ -611,7 +612,7 @@ CREATE TABLE platform_commissions (
  mode TEXT NOT NULL CHECK(mode IN ('shadow','free','charged')),
  settings_version INTEGER NOT NULL,
  created_at INTEGER NOT NULL
-);
+, managed INTEGER NOT NULL DEFAULT 0 CHECK(managed IN (0,1)));
 
 -- table price_suggestions
 CREATE TABLE price_suggestions (
@@ -780,6 +781,17 @@ CREATE TABLE review_property_bindings (
  property_id TEXT PRIMARY KEY REFERENCES properties(id),revision INTEGER NOT NULL DEFAULT 0
 );
 
+-- table stay_reviews
+CREATE TABLE stay_reviews (
+ booking_id TEXT PRIMARY KEY REFERENCES bookings(id),
+ property_id TEXT NOT NULL REFERENCES properties(id),
+ guest_id TEXT NOT NULL REFERENCES profiles(id),
+ owner_id TEXT NOT NULL REFERENCES profiles(id),
+ rating INTEGER NOT NULL CHECK(rating BETWEEN 1 AND 5),
+ body TEXT NOT NULL DEFAULT '' CHECK(length(body)<=1000),
+ created_at INTEGER NOT NULL
+);
+
 -- table worker_dispatch
 CREATE TABLE worker_dispatch (user_id TEXT PRIMARY KEY REFERENCES profiles(id),receive_offers INTEGER NOT NULL DEFAULT 0 CHECK(receive_offers IN (0,1)),updated_at INTEGER NOT NULL);
 
@@ -897,6 +909,9 @@ CREATE INDEX owner_balance_entries_owner ON owner_balance_entries(owner_id,creat
 -- index participant_review_user
 CREATE INDEX participant_review_user ON participant_reviews(user_id,role,status);
 
+-- index platform_commissions_managed
+CREATE INDEX platform_commissions_managed ON platform_commissions(managed,created_at);
+
 -- index platform_commissions_owner
 CREATE INDEX platform_commissions_owner ON platform_commissions(owner_id,mode);
 
@@ -914,6 +929,9 @@ CREATE INDEX property_imports_owner ON property_imports(owner_id,created_at);
 
 -- index push_due
 CREATE INDEX push_due ON push_deliveries(status,available_at,lease_until);
+
+-- index stay_reviews_property
+CREATE INDEX stay_reviews_property ON stay_reviews(property_id,created_at);
 
 -- view pilot_property_admissions
 CREATE VIEW pilot_property_admissions AS
@@ -1306,6 +1324,9 @@ CREATE TRIGGER account_erased_push_subscriptions_insert BEFORE INSERT ON push_su
 CREATE TRIGGER account_erased_push_subscriptions_update BEFORE UPDATE ON push_subscriptions
  WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.user_id)
  BEGIN SELECT RAISE(ABORT,'account_erased'); END;
+
+-- trigger account_erased_stay_reviews_insert
+CREATE TRIGGER account_erased_stay_reviews_insert BEFORE INSERT ON stay_reviews WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.guest_id OR user_id=NEW.owner_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END;
 
 -- trigger account_erased_worker_dispatch_insert
 CREATE TRIGGER account_erased_worker_dispatch_insert BEFORE INSERT ON worker_dispatch WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.user_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END;

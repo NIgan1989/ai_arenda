@@ -21,7 +21,7 @@ export function commandRole(path:string,body:Record<string,any>):Role[]|null{
   if(path==='listings'||path.startsWith('listings/')||(path==='media'&&body.kind==='property'))return ['owner'];
   if(path==='quote'||path==='bookings')return ['guest'];
   if(path==='properties'||path.startsWith('properties/')||path==='jobs')return ['owner'];
-  if(path.startsWith('bookings/'))return ['confirm','reject','paid','deposit_received','checkin','checkout','dispute_checkout','record_deposit_return','record_refund'].includes(body.action)?['owner']:body.action==='report_checkout'?['guest']:['owner','guest'];
+  if(path.startsWith('bookings/'))return ['confirm','reject','paid','deposit_received','checkin','checkout','dispute_checkout','record_deposit_return','record_refund'].includes(body.action)?['owner']:['report_checkout','report_checkin'].includes(body.action)?['guest']:['owner','guest'];
   if(path.startsWith('jobs/'))return ['apply','start','submit'].includes(body.action)?['cleaner']:body.action==='issue'?['owner','cleaner']:['owner'];
   return null;
 }
