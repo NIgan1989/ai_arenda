@@ -45,10 +45,18 @@ test('the photo bucket is bound only when publishing confirmed it exists',async(
  assert.deepEqual(cloudflareConfig({...input,bucket:'ai-arenda-media'}).r2_buckets,[{binding:'BUCKET',bucket_name:'ai-arenda-media'}]);
  assert.throws(()=>cloudflareConfig({...input,bucket:'Bad Name'}),/bucket/);
  const {ensureBucket,explain}=await import('../scripts/ensure-r2-bucket.mjs');
- const reply=body=>new Response(JSON.stringify(body));
+ const reply=(body,status=200)=>new Response(JSON.stringify(body),{status});
  assert.deepEqual(await ensureBucket({token:'t',account:'a',fetcher:async()=>reply({success:true})}),{ready:true,created:false});
- let calls=[];assert.deepEqual(await ensureBucket({token:'t',account:'a',fetcher:async(url,init={})=>{calls.push(init.method||'GET');return reply(calls.length===1?{success:false,errors:[{code:10006}]}:{success:true});}}),{ready:true,created:true});assert.deepEqual(calls,['GET','POST']);
- const off=await ensureBucket({token:'t',account:'a',fetcher:async()=>reply({success:false,errors:[{code:10042,message:'Please enable R2'}]})});assert.equal(off.ready,false);assert.match(off.reason,/enable it/);
+ let calls=[];assert.deepEqual(await ensureBucket({token:'t',account:'a',fetcher:async(url,init={})=>{calls.push(init.method||'GET');return calls.length===1?reply({success:false,errors:[{code:10006}]},404):reply({success:true});}}),{ready:true,created:true});assert.deepEqual(calls,['GET','POST']);
+ // R2 switched off and no bucket on the published Worker: publish without storage, photos stay in D1.
+ const disabled=async url=>url.endsWith('/settings')?reply({success:true,result:{bindings:[{type:'d1',name:'DB'}]}}):reply({success:false,errors:[{code:10042,message:'Please enable R2'}]},403);
+ const off=await ensureBucket({token:'t',account:'a',fetcher:disabled});assert.equal(off.ready,false);assert.match(off.reason,/enable it/);
+ // Indeterminate replies stop the publish instead of dropping the binding.
+ await assert.rejects(ensureBucket({token:'t',account:'a',fetcher:async()=>reply({success:false,errors:[]},503)}),/did not answer/);
+ await assert.rejects(ensureBucket({token:'t',account:'a',fetcher:async()=>new Response('<html>',{status:502})}),/unreadable/);
+ await assert.rejects(ensureBucket({token:'t',account:'a',fetcher:async(url,init={})=>init.method==='POST'?reply({success:false,errors:[]},500):reply({success:false,errors:[{code:10006}]},404)}),/did not create/);
+ // A permission error while the Worker already uses R2 also stops it: photos may live there.
+ await assert.rejects(ensureBucket({token:'t',account:'a',fetcher:async url=>url.endsWith('/settings')?reply({success:true,result:{bindings:[{type:'r2_bucket',name:'BUCKET'}]}}):reply({success:false,errors:[{code:10000}]},403)}),/already stores photos/);
  assert.match(explain([{code:10000}]),/R2 permission/);
  const workflow=(await import('node:fs')).readFileSync('.github/workflows/deploy.yml','utf8');assert.ok(workflow.indexOf('ensure-r2-bucket.mjs')<workflow.indexOf('prepare-cloudflare.mjs'));assert.match(workflow,/MEDIA_BUCKET:\+--bucket/);
 });
