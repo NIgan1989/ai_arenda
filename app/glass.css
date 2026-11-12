@@ -1,0 +1,109 @@
+/* Glass layer: the 2026-11 palette. Cool neutrals, an indigo accent, a cyan-indigo AI gradient and
+   translucent surfaces over the map and the page background. Loaded last, so it wins over older layers. */
+:root{
+ --g-blur:saturate(180%) blur(20px);
+ --g-shadow:0 8px 32px rgba(14,19,36,.08),0 1px 2px rgba(14,19,36,.06);
+ --g-shadow-lift:0 12px 40px rgba(79,70,229,.16),0 2px 6px rgba(14,19,36,.08);
+ --g-ai:linear-gradient(135deg,var(--t-ai-from),var(--t-ai-to));
+ --g-accent:linear-gradient(135deg,var(--t-accent),var(--t-ai-from));
+ --ring:var(--t-focus);
+ --muted-foreground:var(--t-muted);
+}
+html[data-interface=release] body{background:
+ radial-gradient(1100px 620px at 110% -10%,rgba(99,102,241,.12),transparent 60%),
+ radial-gradient(900px 560px at -20% 110%,rgba(6,182,212,.10),transparent 60%),
+ var(--t-bg);background-attachment:fixed;color:var(--t-ink)}
+
+/* Bars and sheets float over content as frosted glass. */
+html[data-interface=release] .release-bottom-nav{background:var(--t-glass);-webkit-backdrop-filter:var(--g-blur);backdrop-filter:var(--g-blur);border-top:1px solid var(--t-glass-line);box-shadow:0 -8px 32px rgba(14,19,36,.06)}
+html[data-interface=release] .release-bottom-nav a[aria-current=page]{background:rgba(79,70,229,.10);color:var(--t-accent)}
+html[data-interface=release] .release-sidebar{background:var(--t-glass);-webkit-backdrop-filter:var(--g-blur);backdrop-filter:var(--g-blur);border-right:1px solid var(--t-glass-line)}
+html[data-interface=release] .release-sidebar nav a[aria-current=page]{background:rgba(79,70,229,.10);color:var(--t-accent)}
+html[data-interface=release] .chat-header{position:sticky;top:0;z-index:30;background:var(--t-glass);-webkit-backdrop-filter:var(--g-blur);backdrop-filter:var(--g-blur);border-bottom:1px solid var(--t-glass-line)}
+html[data-interface=release] .map-home-panel{background:var(--t-glass-strong);-webkit-backdrop-filter:var(--g-blur);backdrop-filter:var(--g-blur);border:1px solid var(--t-glass-line);box-shadow:0 -12px 40px rgba(14,19,36,.12)}
+html[data-interface=release] .map-home-round,html[data-interface=release] .profile-navigation-trigger{background:var(--t-glass-strong);-webkit-backdrop-filter:var(--g-blur);backdrop-filter:var(--g-blur);border:1px solid var(--t-glass-line);box-shadow:var(--g-shadow)}
+
+/* The AI line: a gradient ring says "this is the assistant". */
+html[data-interface=release] .map-home-ai-form{border:1.5px solid transparent;background:linear-gradient(var(--t-surface),var(--t-surface)) padding-box,var(--g-ai) border-box;box-shadow:0 6px 24px rgba(99,102,241,.14)}
+html[data-interface=release] .map-home-ai-send:not(:disabled){background:var(--g-ai);color:var(--t-on-accent)}
+html[data-interface=release] .map-home-chip{background:rgba(79,70,229,.06);border-color:rgba(79,70,229,.14);color:var(--t-ink-soft)}
+html[data-interface=release] .map-home-now{background:rgba(255,255,255,.66);border:1px solid var(--t-line);-webkit-backdrop-filter:var(--g-blur);backdrop-filter:var(--g-blur)}
+html[data-interface=release] .map-home-now.is-urgent{background:rgba(79,70,229,.08);border-color:var(--t-accent-line)}
+
+/* Cards: translucent white with a soft cool shadow instead of hard borders. */
+html[data-interface=release] .inline-card,html[data-interface=release] .property-listing,html[data-interface=release] .record-collection .inline-card{background:var(--t-glass-strong);-webkit-backdrop-filter:var(--g-blur);backdrop-filter:var(--g-blur);border:1px solid var(--t-glass-line);box-shadow:var(--g-shadow)}
+
+/* Primary actions get the accent gradient. */
+html[data-interface=release] .inline-button:not(.secondary):not(:disabled),html[data-interface=release] .map-home-now-action{background:var(--g-accent);border-color:transparent;color:var(--t-on-accent);box-shadow:0 6px 18px rgba(79,70,229,.24)}
+html[data-interface=release] .inline-button.secondary{background:rgba(255,255,255,.7);border-color:var(--t-line)}
+
+/* Simpler page heading: one compact title, no eyebrow and no lead paragraph. */
+html[data-interface=release] .role-page-heading{align-items:center;padding-top:8px;margin-bottom:16px}
+html[data-interface=release] .role-page-heading h1{font-size:var(--t-font-heading);line-height:var(--t-line-heading);letter-spacing:-.02em;margin:0}
+
+/* The administrator's floating button: glass with the AI gradient ring. */
+html[data-interface=release] .administrator-orb-button{border:1.5px solid transparent;background:linear-gradient(var(--t-glass-strong),var(--t-glass-strong)) padding-box,var(--g-ai) border-box;-webkit-backdrop-filter:var(--g-blur);backdrop-filter:var(--g-blur);border-radius:var(--t-radius-full);box-shadow:var(--g-shadow-lift)}
+html[data-interface=release] .orb-status{background:var(--t-ai-to)}
+html[data-interface=release] .administrator-orb-count{background:var(--t-accent)}
+
+@supports not ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){
+ html[data-interface=release] .release-bottom-nav,html[data-interface=release] .chat-header,html[data-interface=release] .map-home-panel,html[data-interface=release] .inline-card{background:var(--t-surface)}
+}
+@media(prefers-reduced-transparency:reduce){
+ html[data-interface=release] .release-bottom-nav,html[data-interface=release] .chat-header,html[data-interface=release] .map-home-panel,html[data-interface=release] .inline-card,html[data-interface=release] .property-listing{background:var(--t-surface);-webkit-backdrop-filter:none;backdrop-filter:none}
+}
+
+/* AI administrator chat: as plain as possible. A living gradient orb, answers as clean text,
+   the person's questions as gradient bubbles, three quick questions over one input. */
+.ai-orb{display:grid;place-items:center;width:40px;height:40px;flex:none;border-radius:999px;color:#fff;background:conic-gradient(from 0deg,var(--t-ai-from),var(--t-ai-to),#a78bfa,var(--t-ai-from));box-shadow:0 4px 16px rgba(99,102,241,.36);animation:ai-orb-spin 8s linear infinite}
+.ai-orb>svg{animation:ai-orb-spin 8s linear infinite reverse}
+.ai-orb.large{width:72px;height:72px;box-shadow:0 12px 40px rgba(99,102,241,.40),0 0 0 8px rgba(99,102,241,.08)}
+.ai-orb.thinking{animation-duration:1.6s}.ai-orb.thinking>svg{animation-duration:1.6s}
+@keyframes ai-orb-spin{to{transform:rotate(360deg)}}
+html[data-interface=release] .administrator-conversation{background:
+ radial-gradient(600px 400px at 100% 0,rgba(99,102,241,.10),transparent 60%),
+ radial-gradient(500px 360px at 0 100%,rgba(6,182,212,.10),transparent 60%),var(--t-bg)}
+html[data-interface=release] .administrator-conversation .messenger-header{background:var(--t-glass);-webkit-backdrop-filter:var(--g-blur);backdrop-filter:var(--g-blur);border-bottom:1px solid var(--t-glass-line);gap:12px}
+html[data-interface=release] .administrator-conversation .messenger-header strong{font-size:16px;line-height:24px}
+.ai-status{display:flex;align-items:center;gap:4px}
+.ai-status::before{content:"";width:8px;height:8px;border-radius:999px;background:#10b981;box-shadow:0 0 0 2px rgba(16,185,129,.2)}
+.ai-hero{margin:auto;display:grid;justify-items:center;gap:8px;text-align:center;padding:24px 16px;max-width:320px}
+.ai-hero h2{margin:8px 0 0;font-size:22px;line-height:28px;letter-spacing:-.01em}
+.ai-hero p{margin:0;font-size:14px;line-height:20px;color:var(--t-muted)}
+html[data-interface=release] .administrator-bubble{background:transparent;box-shadow:none;padding:4px 0;max-width:100%}
+html[data-interface=release] .administrator-bubble p{font-size:16px;line-height:24px;color:var(--t-ink)}
+html[data-interface=release] .administrator-bubble:not(.mine) time{text-align:left}
+html[data-interface=release] .administrator-bubble.mine{max-width:86%;padding:8px 16px;border-radius:24px 24px 4px 24px;background:var(--g-accent);box-shadow:0 4px 16px rgba(79,70,229,.24)}
+html[data-interface=release] .administrator-bubble.mine p,html[data-interface=release] .administrator-bubble.mine time,html[data-interface=release] .administrator-bubble.mine>small{color:#fff}
+html[data-interface=release] .administrator-bubble.mine time{opacity:.8}
+.administrator-typing{padding:4px 0}
+.ai-dots{display:inline-flex;gap:4px;padding:12px 16px;border-radius:999px;background:var(--t-glass-strong);box-shadow:var(--g-shadow)}
+.ai-dots i{width:8px;height:8px;border-radius:999px;background:var(--g-ai);animation:ai-dot 1s ease-in-out infinite}
+.ai-dots i:nth-child(2){animation-delay:.15s}.ai-dots i:nth-child(3){animation-delay:.3s}
+@keyframes ai-dot{0%,80%,100%{transform:translateY(0);opacity:.4}40%{transform:translateY(-4px);opacity:1}}
+.ai-suggestions{display:flex;gap:8px;overflow-x:auto;padding:8px 12px 0;scrollbar-width:none;flex:none}
+.ai-suggestions::-webkit-scrollbar{display:none}
+.ai-suggestions button{flex:none;display:inline-flex;align-items:center;gap:4px;min-height:40px;padding:8px 16px;border-radius:999px;border:1px solid rgba(79,70,229,.18);background:var(--t-glass-strong);-webkit-backdrop-filter:var(--g-blur);backdrop-filter:var(--g-blur);color:var(--t-ink-soft);font-size:14px;line-height:20px;cursor:pointer;white-space:nowrap}
+.ai-suggestions button:hover,.ai-suggestions button[aria-expanded=true]{border-color:var(--t-accent);color:var(--t-accent)}
+html[data-interface=release] .administrator-conversation .messenger-composer{background:transparent;border-top:0;padding-top:8px}
+html[data-interface=release] .administrator-conversation .messenger-composer textarea{border:1.5px solid transparent;background:linear-gradient(var(--t-surface),var(--t-surface)) padding-box,linear-gradient(135deg,rgba(99,102,241,.35),rgba(6,182,212,.35)) border-box;box-shadow:0 4px 20px rgba(14,19,36,.06)}
+html[data-interface=release] .administrator-conversation .messenger-composer textarea:focus{outline:0;background:linear-gradient(var(--t-surface),var(--t-surface)) padding-box,var(--g-ai) border-box}
+html[data-interface=release] .administrator-conversation .messenger-composer button:not(:disabled){background:var(--g-ai);box-shadow:0 4px 16px rgba(99,102,241,.36)}
+html[data-interface=release] .administrator-conversation .messenger-composer button:disabled{background:var(--t-line-strong);opacity:1}
+html[data-interface=release] .administrator-conversation>.ai-data-permission{background:transparent;border:0;margin:0 12px;padding:0 4px}
+html[data-interface=release] .administrator-conversation>.ai-data-permission>summary{min-height:32px;background:transparent;font-weight:500;color:var(--t-muted);justify-content:center;gap:8px}
+html[data-interface=release] .administrator-process-support>summary{background:rgba(79,70,229,.08);border-radius:999px;color:var(--t-accent)}
+@media(prefers-reduced-motion:reduce){.ai-orb,.ai-orb>svg,.ai-dots i{animation:none}}
+
+/* Fewer layers on role pages: a tight top, no view switcher on phones, a calm assistant button. */
+html[data-interface=release] .administrator-orb.has-recommendations .administrator-orb-button,html[data-interface=release] .administrator-orb.has-recommendations.urgent .administrator-orb-button{border:1.5px solid transparent;background:linear-gradient(var(--t-glass-strong),var(--t-glass-strong)) padding-box,var(--g-ai) border-box}
+html[data-interface=release] .records-search{border-radius:999px;background:var(--t-glass-ink);border-color:transparent}
+html[data-interface=release] .records-search input{background:transparent;border:0;box-shadow:none}
+html[data-interface=release] .records-status-list{background:var(--t-glass-ink);border-radius:999px}
+html[data-interface=release] .records-status-list [data-state=active],html[data-interface=release] .records-status-list [aria-selected=true]{background:var(--t-surface);color:var(--t-accent);border-radius:999px;box-shadow:0 1px 4px rgba(14,19,36,.08)}
+@media(max-width:700px){
+ html[data-interface=release] .record-view-toggle{display:none!important}
+ html[data-interface=release] .chat-header{min-height:48px;padding-top:4px;padding-bottom:4px}
+ html[data-interface=release] .role-page-heading{padding-top:0!important;margin-top:0!important}
+ html[data-interface=release] .role-page-heading h1{font-size:var(--t-font-heading)!important;line-height:var(--t-line-heading)!important;margin:0!important}
+}

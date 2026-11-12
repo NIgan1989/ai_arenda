@@ -4,6 +4,7 @@ import "./tokens.css";
 import "./design-system.css";
 import "./mobile-first.css";
 import "./interface-release.css";
+import "./glass.css";
 import {WorkspaceProvider} from "../components/workspace-provider";
 
 export const metadata: Metadata = {

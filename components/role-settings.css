@@ -1,6 +1,6 @@
 .role-profile,.role-management{--role-tint:var(--t-accent-soft);--role-ink:var(--t-accent)}
 .role-profile.role-guest,.role-management.role-guest{--role-tint:#eaf1f7;--role-ink:#365f7d}
-.role-profile.role-cleaner,.role-management.role-cleaner{--role-tint:var(--t-success-soft);--role-ink:#366850}
+.role-profile.role-cleaner,.role-management.role-cleaner{--role-tint:var(--t-success-soft);--role-ink:#366856}
 html[data-design="unified"] .workspace-shell .role-profile{display:grid;gap:12px;width:100%;max-width:980px;margin:0 auto;min-width:0;padding:0;background:transparent;border:0;box-shadow:none}
 html[data-design="unified"] .workspace-shell .role-profile>.inline-card{margin:0}
 html[data-design="unified"] .workspace-shell .role-profile .account-hero{padding:20px;background:linear-gradient(135deg,var(--role-tint),var(--card) 78%)}
@@ -8,7 +8,7 @@ html[data-design="unified"] .workspace-shell .role-profile .account-hero .accoun
 html[data-design="unified"] .workspace-shell .role-profile .account-identity>div{flex:1;gap:4px}
 html[data-design="unified"] .workspace-shell .role-profile .account-identity h2{font-size:22px;line-height:1.25;letter-spacing:-.5px;margin:0;overflow-wrap:anywhere}
 html[data-design="unified"] .workspace-shell .role-profile .account-identity .avatar-change{position:relative;width:76px;height:76px;min-height:76px;display:block;flex:none}
-html[data-design="unified"] .workspace-shell .role-profile .account-identity .avatar-change>.profile-photo{width:76px;height:76px;min-width:76px;max-width:76px;border:3px solid var(--t-surface);box-shadow:0 4px 16px #302d2812;object-fit:cover}
+html[data-design="unified"] .workspace-shell .role-profile .account-identity .avatar-change>.profile-photo{width:76px;height:76px;min-width:76px;max-width:76px;border:3px solid var(--t-surface);box-shadow:0 4px 16px #26293212;object-fit:cover}
 .account-camera{position:absolute;bottom:0;right:-2px;width:25px;height:25px;border:2px solid var(--t-surface);background:var(--primary);color:var(--t-surface);border-radius:50%;display:grid;place-items:center}
 .account-role-label{font-size:12px;font-weight:650;letter-spacing:.3px;color:var(--role-ink);line-height:1.4}
 .account-location{display:flex;align-items:center;gap:4px;font-size:12px;color:var(--muted-foreground)}

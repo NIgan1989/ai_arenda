@@ -56,7 +56,7 @@ export function RasterMapCanvas(props:MapCanvasProps){
   const L=library.current,layer=people.current;if(!ready||!L||!layer)return;layer.clearLayers();
   for(const person of props.people||[]){const point=mapPoint([person.longitude,person.latitude]);if(!point)continue;
    const label=document.createElement('span');label.textContent=(person.mine?'Вы':person.kind==='booking'?'Гость':'Исполнитель')+(person.mode==='driving'?' · авто':person.mode==='walking'?' · пешком':'');
-   const color=person.mine?'#347fbd':person.kind==='job'?'#b56630':'#397b68';
+   const color=person.mine?'#347fbd':person.kind==='job'?'#362de2':'#397b63';
    if(person.accuracy>0&&person.accuracy<=500)L.circle(latLng(point),{radius:person.accuracy,color,weight:1,fillOpacity:.12,interactive:false}).addTo(layer);
    L.circleMarker(latLng(point),{radius:10,color:'#fff',weight:3,fillColor:color,fillOpacity:1}).bindTooltip(label,{permanent:true,direction:'bottom',offset:[0,8]}).addTo(layer);
   }
@@ -66,8 +66,8 @@ export function RasterMapCanvas(props:MapCanvasProps){
   const valid=(props.routes||[]).filter(r=>r.geometry?.type==='LineString'&&r.geometry.coordinates?.length>1&&r.geometry.coordinates.every((p:unknown)=>mapPoint(p)));
   for(const route of valid){const points:MapPoint[]=route.geometry.coordinates;all.push(...points);
    L.polyline(points.map(latLng),{color:'#fff',weight:9,opacity:.95,interactive:false}).addTo(layer);
-   L.polyline(points.map(latLng),{color:route.kind==='job'?'#b56630':'#367d9b',weight:5,opacity:.9,interactive:false}).addTo(layer);
-   L.circleMarker(latLng(points[points.length-1]),{radius:7,color:'#fff',weight:3,fillColor:'#9d452f',fillOpacity:1,interactive:false}).addTo(layer);
+   L.polyline(points.map(latLng),{color:route.kind==='job'?'#362de2':'#367d9b',weight:5,opacity:.9,interactive:false}).addTo(layer);
+   L.circleMarker(latLng(points[points.length-1]),{radius:7,color:'#fff',weight:3,fillColor:'#4f46e5',fillOpacity:1,interactive:false}).addTo(layer);
   }
   const key=valid.map(r=>r.kind+':'+r.entityId+':'+r.createdAt).sort().join('|');if(key&&key!==fittedRoute.current)fit(all,15);fittedRoute.current=key;
  },[props.routes,ready]);

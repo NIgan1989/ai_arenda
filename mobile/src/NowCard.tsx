@@ -38,8 +38,8 @@ const n = StyleSheet.create({
     paddingRight: 12,
     borderRadius: T.radius.lg,
     borderWidth: 1,
-    borderColor: C.line,
-    backgroundColor: C.bg
+    borderColor: C.glassLine,
+    backgroundColor: C.glass
   },
   urgent: { borderColor: C.accentLine, backgroundColor: C.accentSoft },
   text: { flexGrow: 999, flexShrink: 1, flexBasis: 160, minWidth: 0 },
@@ -53,7 +53,7 @@ const n = StyleSheet.create({
     minHeight: T.control.touch,
     minWidth: 88,
     paddingHorizontal: 16,
-    borderRadius: T.radius.md,
+    borderRadius: T.radius.full,
     backgroundColor: C.accent,
     alignItems: 'center',
     justifyContent: 'center'

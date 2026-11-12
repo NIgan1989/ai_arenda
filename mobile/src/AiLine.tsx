@@ -99,12 +99,17 @@ const a = StyleSheet.create({
     paddingLeft: 12,
     paddingRight: 4,
     borderRadius: T.radius.full,
-    borderWidth: 1,
-    borderColor: C.lineStrong,
-    backgroundColor: C.surface
+    borderWidth: 2,
+    borderColor: C.accentLine,
+    backgroundColor: C.surface,
+    shadowColor: C.aiFrom,
+    shadowOpacity: 0.16,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 4
   },
-  lineFocused: { borderColor: C.accent },
-  mark: { width: 24, height: 24, tintColor: C.accent },
+  lineFocused: { borderColor: C.aiFrom },
+  mark: { width: 24, height: 24, tintColor: C.aiFrom },
   field: { flex: 1, minWidth: 0, justifyContent: 'center' },
   exampleBox: { position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, justifyContent: 'center', pointerEvents: 'none' },
   example: { ...type.body, color: C.muted },
@@ -117,7 +122,7 @@ const a = StyleSheet.create({
     color: C.ink,
     ...(Platform.OS === 'web' ? ({ outlineStyle: 'none' } as object) : null)
   },
-  send: { width: T.control.touch, height: T.control.touch, borderRadius: T.radius.full, backgroundColor: C.accent, alignItems: 'center', justifyContent: 'center' },
+  send: { width: T.control.touch, height: T.control.touch, borderRadius: T.radius.full, backgroundColor: C.aiFrom, alignItems: 'center', justifyContent: 'center' },
   sendIdle: { opacity: 0.45 },
   sendPressed: { backgroundColor: C.accentPressed },
   arrow: { width: 24, height: 24, tintColor: C.onAccent }

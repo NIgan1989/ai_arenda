@@ -22,10 +22,10 @@ export function WorkspaceNavigation({role,pageId,busy,onSelect,more,setMore,onSw
 const n=StyleSheet.create({
  menu:{width:T.control.field,height:T.control.field,borderRadius:T.radius.full,alignItems:'center',justifyContent:'center'},menuAvatar:{width:T.control.touch,height:T.control.touch,borderRadius:T.radius.full,alignItems:'center',justifyContent:'center'},
  avatar:{width:24,height:24,borderRadius:T.radius.full,overflow:'hidden',backgroundColor:C.surfaceAlt,alignItems:'center',justifyContent:'center'},avatarOn:{borderWidth:2,borderColor:C.accent},
- bar:{minHeight:T.control.primary,flexDirection:'row',alignItems:'stretch',borderTopWidth:1,borderTopColor:C.line,backgroundColor:C.surface,paddingHorizontal:4},
+ bar:{minHeight:T.control.primary,flexDirection:'row',alignItems:'stretch',borderTopWidth:StyleSheet.hairlineWidth,borderTopColor:C.line,backgroundColor:C.glassStrong,paddingHorizontal:4},
  tab:{flex:1,minHeight:T.control.primary,alignItems:'center',justifyContent:'center',gap:2,borderRadius:T.radius.md},close:{flexGrow:0,flexShrink:0,flexBasis:'auto',width:T.control.touch,minHeight:T.control.touch},
  tabLabel:{fontSize:12,lineHeight:16,color:C.muted,fontWeight:'500'},tabLabelOn:{color:C.accent,fontWeight:'600'},
- active:{backgroundColor:C.accentSoft},pressed:{backgroundColor:C.surfaceAlt},focus:{borderWidth:2,borderColor:C.focus},icon:{width:24,height:24},
- overlay:{flex:1,backgroundColor:'rgba(30,32,29,0.32)',justifyContent:'flex-end'},sheet:{padding:16,paddingBottom:32,backgroundColor:C.surface,borderTopLeftRadius:T.radius.xl,borderTopRightRadius:T.radius.xl,gap:4},
+ active:{backgroundColor:C.accentSoft,borderRadius:T.radius.full},pressed:{backgroundColor:C.surfaceAlt},focus:{borderWidth:2,borderColor:C.focus},icon:{width:24,height:24},
+ overlay:{flex:1,backgroundColor:C.scrim,justifyContent:'flex-end'},sheet:{padding:16,paddingBottom:32,backgroundColor:C.surface,borderTopLeftRadius:T.radius.xl,borderTopRightRadius:T.radius.xl,gap:4},
  heading:{flexDirection:'row',alignItems:'center',justifyContent:'space-between',marginBottom:8},title:{fontSize:22,lineHeight:28,color:C.ink,fontWeight:'600'},
  grow:{flex:1,minWidth:0},hint:{fontSize:14,lineHeight:20,color:C.muted},row:{minHeight:T.control.primary,paddingHorizontal:12,flexDirection:'row',alignItems:'center',gap:16,borderRadius:T.radius.md},label:{color:C.ink,fontSize:16,lineHeight:24}});
