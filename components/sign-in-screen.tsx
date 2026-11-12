@@ -5,6 +5,7 @@ import AuthForm from './auth-form';
 import {safeEntryReturn,entryDestination} from '../lib/entry';
 import '../app/chat.css';
 import '../app/warm-theme.css';
+import './role-entry.css';
 export default function SignInScreen({next,register=false}:{next?:string;register?:boolean}){
  const destination=safeEntryReturn(next),[ready,setReady]=useState(false),[error,setError]=useState('');
  const city=new URL(destination,'https://arenda.local').searchParams.get('city')?.slice(0,80)||'Павлодар';
