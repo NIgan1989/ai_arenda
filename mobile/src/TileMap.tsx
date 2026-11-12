@@ -86,7 +86,7 @@ export function TileMap({center,pins,selected,onSelect,bottomInset=0,topInset=0,
  const cam=useRef(new Animated.Value(0)).current,[trip,setTrip]=useState<{f:Flight;id:number}|null>(null),tripId=useRef(0);
  const setView=(next:View2|((v:View2)=>View2),fly=true)=>{
   const from=state.current.view,to=typeof next==='function'?next(from):next;
-  const f=fly&&!still&&state.current.size.w?flight({...project(from.center,from.zoom),zoom:from.zoom},{...project(to.center,to.zoom),zoom:to.zoom}):null;
+  const f=fly&&!still&&state.current.size.w?flight({...project(from.center,from.zoom),zoom:from.zoom},{...project(to.center,to.zoom),zoom:to.zoom},TILE):null;
   setTrip(f?{f,id:++tripId.current}:null);setViewNow(to);
  };
  // Before the new view is painted, the layer is put where the old one was; then it flies home.
@@ -97,14 +97,22 @@ export function TileMap({center,pins,selected,onSelect,bottomInset=0,topInset=0,
  },[trip?.id,size.w,size.h,originY]);
 
  // ---------- Arrivals and departures of pins ----------
- const born=useRef(new Map<string,number>()),known=useRef(new Map<string,MapPin>()),[leaving,setLeaving]=useState<MapPin[]>([]);
+ const born=useRef(new Map<string,number>()),known=useRef(new Map<string,MapPin>()),[leaving,setLeaving]=useState<(MapPin&{gone:number})[]>([]);
  const arrived=useMemo(()=>{
   const now=Date.now(),next=new Map(pins.map(p=>[p.key,p])),gone:MapPin[]=[];
   for(const p of pins)if(!known.current.has(p.key))born.current.set(p.key,now);
   for(const [key,p] of known.current)if(!next.has(key)){gone.push(p);born.current.delete(key);}
   known.current=next;return gone;
  },[pins]);
- useEffect(()=>{if(still||!arrived.length)return;setLeaving(l=>[...l.filter(p=>!arrived.some(a=>a.key===p.key)),...arrived]);const timer=setTimeout(()=>setLeaving(l=>l.filter(p=>!arrived.includes(p))),LEAVE+40);return()=>clearTimeout(timer);},[arrived]);
+ // Each departure is cleared by its own timer, which a later change of the pins never cancels; a pin that comes back stops leaving.
+ const timers=useRef(new Set<ReturnType<typeof setTimeout>>());
+ useEffect(()=>()=>{timers.current.forEach(clearTimeout);timers.current.clear();},[]);
+ useEffect(()=>{
+  setLeaving(l=>l.filter(p=>!pins.some(n=>n.key===p.key)));
+  if(still||!arrived.length)return;const gone=Date.now(),batch=arrived.map(p=>({...p,gone}));
+  setLeaving(l=>[...l.filter(p=>!arrived.some(a=>a.key===p.key)),...batch]);
+  const timer=setTimeout(()=>{timers.current.delete(timer);setLeaving(l=>l.filter(p=>!batch.includes(p)));},LEAVE+40);timers.current.add(timer);
+ },[arrived]);
 
  // Reframe only when the caller announces a new set of results, never on background refreshes.
  const fitted=useRef(''),fittedHeight=useRef(0),moved=useRef(false),first=useRef(true);
@@ -155,7 +163,7 @@ export function TileMap({center,pins,selected,onSelect,bottomInset=0,topInset=0,
    <Animated.View style={[StyleSheet.absoluteFill,camera?{transform:camera}:null]}>
     {tiles.map(t=><Image key={t.key} fadeDuration={0} accessibilityIgnoresInvertColors source={{uri:'https://tile.openstreetmap.org/'+view.zoom+'/'+t.x+'/'+t.y+'.png',headers:tileHeaders}} style={[m.tile,{left:t.left,top:t.top}]}/>)}
     {scanning&&!still&&<Radar x={size.w/2} y={originY}/>}
-    {!still&&leaving.filter(p=>validPoint(p.point)).map(p=><Leaving key={'gone:'+p.key} pin={p} {...at(p.point)}/>)}
+    {!still&&leaving.filter(p=>validPoint(p.point)).map(p=><Leaving key={'gone:'+p.key+':'+p.gone} pin={p} {...at(p.point)}/>)}
     {shown.map(({pin,x,y,members})=>{const more=members.length-1,b=born.current.get(pin.key)||0;
      return <Pin key={pin.key} pin={pin} x={x} y={y} more={more} active={pin.key===selected} still={still} picking={picking} loop={loop}
       born={now-b<FRESH?b:0} delay={appearDelay(x,y,size.w/2,originY)} onPress={onSelect?()=>more?openGroup(members):onSelect(pin.key):undefined}/>;})}

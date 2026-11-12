@@ -28,10 +28,13 @@ export function appearDelay(x:number,y:number,originX:number,originY:number){
 // k: how much bigger the new picture is drawn at the start (zooming in starts small); d: the shift of the old centre, in new pixels.
 // One step of zoom at most is shown, so a jump over several levels never leaves the edges of the screen empty.
 export type Flight={k:number;dx:number;dy:number};
-export function flight(from:{x:number;y:number;zoom:number},to:{x:number;y:number;zoom:number}):Flight|null{
+// maxShift: the new picture is drawn this far beyond the screen at most, so a longer trip (another city, «show all» far away)
+// starts only that far out, in the right direction, instead of starting from an empty screen.
+export function flight(from:{x:number;y:number;zoom:number},to:{x:number;y:number;zoom:number},maxShift=Infinity):Flight|null{
  const k=Math.max(.5,Math.min(2,2**(from.zoom-to.zoom))),scale=2**(to.zoom-from.zoom);
  // The old centre, projected at the new zoom.
- const dx=to.x-from.x*scale,dy=to.y-from.y*scale;
+ let dx=to.x-from.x*scale,dy=to.y-from.y*scale;
+ const far=Math.hypot(dx,dy);if(far>maxShift){dx*=maxShift/far;dy*=maxShift/far;}
  if(k===1&&Math.abs(dx)<1&&Math.abs(dy)<1)return null;
  return {k,dx,dy};
 }

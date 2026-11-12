@@ -50,6 +50,10 @@ test('a flight starts exactly where the old view was and ends at the new one', (
   assert.equal(flight(from, from), null);
   assert.equal(flight(from, view([76.95, 52.287], 16)).k, 0.5);
   assert.equal(flight(view([76.95, 52.287], 16), from).k, 2);
+  // A trip to another city starts at most one tile away, in the direction of the trip.
+  const far = flight(from, view([71.43, 51.13], 12), 256);
+  assert.ok(Math.abs(Math.hypot(far.dx, far.dy) - 256) < 1e-6);
+  assert.ok(far.dx < 0);
 });
 
 test('the list of map events covers every role, and the doc lists each of them', () => {
