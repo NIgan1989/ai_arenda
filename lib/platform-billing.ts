@@ -40,7 +40,7 @@ const ownerFilter="EXISTS(SELECT 1 FROM properties p WHERE p.owner_id=o.id AND p
 // Paged and searchable on the server, so every owner stays reachable however many there are.
 export async function billingOwners(service:RentalService,params:Row){
  const search=String(params.search||'').trim();if(search.length>100)throw new DomainError('Сократите запрос.');
- const page=number(params.page||0,'Страница',0,100000),limit=25,pattern='%'+search.replace(/[\\%_]/g,'\\$&')+'%';
+ const page=number(params.page||0,'Страница',0,100000),limit=10,pattern='%'+search.replace(/[\\%_]/g,'\\$&')+'%';
  const where=`${ownerFilter} AND o.name LIKE ? ESCAPE '\\'`;
  const [settings,total,list]=await Promise.all([billingSettings(service.db),one(service.db,`SELECT COUNT(*) count FROM profiles o WHERE ${where}`,pattern),
   rows(service.db,`SELECT o.id,o.name,(SELECT COUNT(*) FROM properties p WHERE p.owner_id=o.id AND p.demo_owner IS NULL) properties,(SELECT COUNT(*) FROM platform_commissions c WHERE c.owner_id=o.id AND ${live}) bookings,(SELECT COUNT(*) FROM platform_commissions c WHERE c.owner_id=o.id AND c.mode IN ('free','charged') AND ${live}) billed_bookings,COALESCE((SELECT SUM(c.amount) FROM platform_commissions c WHERE c.owner_id=o.id AND c.mode='charged' AND ${live}),0) charged,COALESCE((SELECT SUM(c.amount) FROM platform_commissions c WHERE c.owner_id=o.id AND ${live}),0) projected,COALESCE((SELECT SUM(amount) FROM owner_balance_entries e WHERE e.owner_id=o.id),0) credited,${balanceSql} balance FROM profiles o WHERE ${where} ORDER BY balance ASC,projected DESC,o.name,o.id LIMIT ? OFFSET ?`,pattern,limit,page*limit)]);

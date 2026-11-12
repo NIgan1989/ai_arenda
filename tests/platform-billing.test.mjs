@@ -87,9 +87,9 @@ test('owner balances are searchable and paged on the server, and debtors are cou
   const debt=f.db.raw.prepare("INSERT INTO owner_balance_entries(id,owner_id,kind,amount,note,actor_id,request_key,created_at) VALUES (?,?,'adjustment',-100,'долг','other',?,0)");
   for(let i=0;i<30;i++){insert.run('o'+i,'Хозяин '+i);prop.run('p'+i,'o'+i,f.property);debt.run('d'+i,'o'+i,'k'+i);}
   const state=await readPlatformAdmin(f.other,'billing',{},config(f));
-  assert.equal(state.ownersTotal,31);assert.equal(state.owners.length,25);assert.equal(state.debtors,30);
-  const second=await readPlatformAdmin(f.other,'billing/owners',{page:'1'},config(f));assert.equal(second.owners.length,6);
-  const found=await readPlatformAdmin(f.other,'billing/owners',{search:'Хозяин 2'},config(f));assert.deepEqual(found.owners.map(o=>o.id).sort(),['o2','o20','o21','o22','o23','o24','o25','o26','o27','o28','o29']);
+  assert.equal(state.ownersTotal,31);assert.equal(state.owners.length,10);assert.equal(state.debtors,30);
+  const last=await readPlatformAdmin(f.other,'billing/owners',{page:'3'},config(f));assert.equal(last.owners.length,1);
+  const found=await readPlatformAdmin(f.other,'billing/owners',{search:'Хозяин 2'},config(f));assert.equal(found.total,11);assert.ok(found.owners.every(o=>o.name.startsWith('Хозяин 2')));
   await assert.rejects(readPlatformAdmin(f.owner,'billing/owners',{},config(f)),e=>e.status===403);
  }finally{f.db.close();}
 });
