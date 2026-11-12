@@ -33,6 +33,7 @@
 -- migration 0029_account_deletion.sql sha256:941690588864e3f9bcc6342f49abfeb64aa45cbd4fa8732b76ffe25a11dd575e
 -- migration 0030_web_push.sql sha256:0f2d262dfdc6775b5f806c36b20a231e2f5763e02dfe0c75942c6d89a498fa38
 -- migration 0031_smart_matching.sql sha256:ccaa44e5e4d91f2119a142d4e96ffe1d10d340770b0a95e0ae7746597f095b41
+-- migration 0032_platform_billing.sql sha256:4fe19e04e8358484e46e4f86b0d7a7925d799fd5eea3f0e3845b970032d2155b
 
 -- table access_receipts
 CREATE TABLE access_receipts (id TEXT PRIMARY KEY,property_id TEXT NOT NULL,entity_kind TEXT NOT NULL,entity_id TEXT NOT NULL,user_id TEXT NOT NULL,created_at INTEGER NOT NULL,expires_at INTEGER NOT NULL);
@@ -549,6 +550,18 @@ CREATE TABLE operator_tickets (
  version INTEGER NOT NULL DEFAULT 1,created_at INTEGER NOT NULL,updated_at INTEGER NOT NULL,resolved_at INTEGER
 );
 
+-- table owner_balance_entries
+CREATE TABLE owner_balance_entries (
+ id TEXT PRIMARY KEY,
+ owner_id TEXT NOT NULL REFERENCES profiles(id),
+ kind TEXT NOT NULL CHECK(kind IN ('topup','bonus','adjustment')),
+ amount INTEGER NOT NULL CHECK(amount<>0 AND amount BETWEEN -100000000 AND 100000000),
+ note TEXT NOT NULL,
+ actor_id TEXT NOT NULL,
+ request_key TEXT NOT NULL UNIQUE,
+ created_at INTEGER NOT NULL
+);
+
 -- table participant_reviews
 CREATE TABLE participant_reviews (id TEXT PRIMARY KEY,user_id TEXT NOT NULL REFERENCES profiles(id),role TEXT NOT NULL,property_id TEXT REFERENCES properties(id),status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','approved','rejected')),method TEXT NOT NULL DEFAULT '',reference TEXT NOT NULL DEFAULT '',reviewer_id TEXT,notes TEXT NOT NULL DEFAULT '',created_at INTEGER NOT NULL,reviewed_at INTEGER,valid_until INTEGER,version INTEGER NOT NULL DEFAULT 1, property_revision INTEGER NOT NULL DEFAULT 0);
 
@@ -569,6 +582,33 @@ CREATE TABLE pilot_policy (
  require_cleaner_review INTEGER NOT NULL DEFAULT 0 CHECK(require_cleaner_review IN (0,1)),
  require_phone INTEGER NOT NULL DEFAULT 0 CHECK(require_phone IN (0,1)),
  version INTEGER NOT NULL DEFAULT 1, updated_by TEXT NOT NULL DEFAULT '',updated_at INTEGER NOT NULL DEFAULT 0
+);
+
+-- table platform_billing
+CREATE TABLE platform_billing (
+ id TEXT PRIMARY KEY CHECK(id='global'),
+ enabled INTEGER NOT NULL DEFAULT 0 CHECK(enabled IN (0,1)),
+ starts_at INTEGER NOT NULL DEFAULT 0,
+ rate_bp INTEGER NOT NULL DEFAULT 500 CHECK(rate_bp BETWEEN 0 AND 3000),
+ min_fee INTEGER NOT NULL DEFAULT 0 CHECK(min_fee>=0),
+ max_fee INTEGER NOT NULL DEFAULT 0 CHECK(max_fee>=0),
+ free_bookings INTEGER NOT NULL DEFAULT 3 CHECK(free_bookings BETWEEN 0 AND 1000),
+ version INTEGER NOT NULL DEFAULT 1,
+ updated_by TEXT,
+ updated_at INTEGER NOT NULL DEFAULT 0
+);
+
+-- table platform_commissions
+CREATE TABLE platform_commissions (
+ booking_id TEXT PRIMARY KEY REFERENCES bookings(id),
+ owner_id TEXT NOT NULL REFERENCES profiles(id),
+ property_id TEXT NOT NULL REFERENCES properties(id),
+ booking_amount INTEGER NOT NULL CHECK(booking_amount>=0),
+ rate_bp INTEGER NOT NULL,
+ amount INTEGER NOT NULL CHECK(amount>=0),
+ mode TEXT NOT NULL CHECK(mode IN ('shadow','free','charged')),
+ settings_version INTEGER NOT NULL,
+ created_at INTEGER NOT NULL
 );
 
 -- table profile_details
@@ -830,8 +870,17 @@ CREATE INDEX operator_history_issue ON operator_history(issue_id,created_at,id);
 -- index operator_tickets_queue
 CREATE INDEX operator_tickets_queue ON operator_tickets(status,priority,deadline);
 
+-- index owner_balance_entries_owner
+CREATE INDEX owner_balance_entries_owner ON owner_balance_entries(owner_id,created_at);
+
 -- index participant_review_user
 CREATE INDEX participant_review_user ON participant_reviews(user_id,role,status);
+
+-- index platform_commissions_owner
+CREATE INDEX platform_commissions_owner ON platform_commissions(owner_id,mode);
+
+-- index platform_commissions_time
+CREATE INDEX platform_commissions_time ON platform_commissions(created_at);
 
 -- index property_imports_owner
 CREATE INDEX property_imports_owner ON property_imports(owner_id,created_at);
@@ -1140,6 +1189,12 @@ CREATE TRIGGER account_erased_operator_tickets_insert BEFORE INSERT ON operator_
 -- trigger account_erased_operator_tickets_update
 CREATE TRIGGER account_erased_operator_tickets_update BEFORE UPDATE ON operator_tickets WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.assigned_to) BEGIN SELECT RAISE(ABORT,'account_erased'); END;
 
+-- trigger account_erased_owner_balance_entries_insert
+CREATE TRIGGER account_erased_owner_balance_entries_insert BEFORE INSERT ON owner_balance_entries WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.owner_id OR user_id=NEW.actor_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END;
+
+-- trigger account_erased_owner_balance_entries_update
+CREATE TRIGGER account_erased_owner_balance_entries_update BEFORE UPDATE ON owner_balance_entries WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.owner_id OR user_id=NEW.actor_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END;
+
 -- trigger account_erased_participant_reviews_insert
 CREATE TRIGGER account_erased_participant_reviews_insert BEFORE INSERT ON participant_reviews WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.user_id OR user_id=NEW.reviewer_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END;
 
@@ -1163,6 +1218,15 @@ CREATE TRIGGER account_erased_pilot_policy_insert BEFORE INSERT ON pilot_policy 
 
 -- trigger account_erased_pilot_policy_update
 CREATE TRIGGER account_erased_pilot_policy_update BEFORE UPDATE ON pilot_policy WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.updated_by) BEGIN SELECT RAISE(ABORT,'account_erased'); END;
+
+-- trigger account_erased_platform_billing_update
+CREATE TRIGGER account_erased_platform_billing_update BEFORE UPDATE ON platform_billing WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.updated_by) BEGIN SELECT RAISE(ABORT,'account_erased'); END;
+
+-- trigger account_erased_platform_commissions_insert
+CREATE TRIGGER account_erased_platform_commissions_insert BEFORE INSERT ON platform_commissions WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.owner_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END;
+
+-- trigger account_erased_platform_commissions_update
+CREATE TRIGGER account_erased_platform_commissions_update BEFORE UPDATE ON platform_commissions WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.owner_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END;
 
 -- trigger account_erased_profile_details_insert
 CREATE TRIGGER account_erased_profile_details_insert BEFORE INSERT ON profile_details WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.user_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END;

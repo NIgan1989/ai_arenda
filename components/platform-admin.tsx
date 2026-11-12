@@ -1,6 +1,6 @@
 'use client';
 import {useEffect,useRef,useState,type FormEvent} from 'react';
-import {LayoutDashboard,Users,House,ShieldCheck,MessagesSquare,SlidersHorizontal,Activity,Flag,ArrowUpRight,RefreshCw,LogOut,Menu,X,ChevronRight,CheckCircle2,AlertCircle,MapPin,Camera,CalendarDays,Brush,Search,MoreHorizontal,type LucideIcon} from 'lucide-react';
+import {LayoutDashboard,Users,House,ShieldCheck,MessagesSquare,SlidersHorizontal,Activity,Flag,ArrowUpRight,RefreshCw,LogOut,Menu,X,ChevronRight,CheckCircle2,AlertCircle,MapPin,Camera,CalendarDays,Brush,Search,MoreHorizontal,Wallet,type LucideIcon} from 'lucide-react';
 import {Brand} from './brand';
 import {AdminActivityMap} from './admin-activity-map';
 import {Button} from './ui/button';
@@ -9,6 +9,7 @@ import {Textarea} from './ui/textarea';
 import {NativeSelect} from './ui/native-select';
 import {Sheet,SheetContent,SheetHeader,SheetTitle,SheetDescription,SheetTrigger,SheetClose} from './ui/sheet';
 import {PilotGovernance} from './pilot-governance';
+import {AdminRevenue} from './admin-revenue';
 import {AccountSafety} from './safety-controls';
 import {logout} from './auth-form';
 import {roleNames} from '../lib/access';
@@ -26,6 +27,7 @@ const sections:Section[]=[
  {id:'operator',label:'Обращения',hint:'Вопросы участников, ответственные и решения.',Icon:MessagesSquare,group:'service',count:'issues'},
  {id:'moderation',label:'Жалобы и безопасность',hint:'Разбор жалоб и запросов на удаление данных.',Icon:Flag,group:'control',count:'reports'},
  {id:'policy',label:'Правила допуска',hint:'Требования к новым публикациям, броням и назначениям.',Icon:SlidersHorizontal,group:'control'},
+ {id:'revenue',label:'Доход',hint:'Комиссия с владельцев: бесплатный период, прогноз, условия и балансы.',Icon:Wallet,group:'control'},
  {id:'health',label:'Состояние сервиса',hint:'Фоновые проверки, резервные копии и подключения.',Icon:Activity,group:'control'},
 ];
 const labels:Row={guest:'Гость',owner:'Владелец',cleaner:'Исполнитель',pending:'На проверке',approved:'Одобрено',rejected:'Отклонено'};
@@ -60,7 +62,7 @@ export function PlatformAdmin({name}:{name:string}){
  useEffect(()=>{const read=()=>setTab(adminSection(new URLSearchParams(window.location.search).get('section')));read();window.addEventListener('popstate',read);return()=>window.removeEventListener('popstate',read);},[]);
  async function refresh(target=tab,p=page,query=search,role=filter){
   const request=++sequence.current;setLoading(true);setError('');
-  const path=target==='operator'||target==='policy'?'governance':target==='moderation'?'overview':target;
+  const path=target==='operator'||target==='policy'?'governance':target==='moderation'?'overview':target==='revenue'?'billing':target;
   try{const value=await adminAPI(path+(['users','properties'].includes(target)?'?'+new URLSearchParams({search:query,role,page:String(p)}):''));if(request===sequence.current){setData({...value,_adminSection:target});setPage(p);setUpdatedAt(Math.floor(Date.now()/1000));if(path==='overview')setSummary(value);}}catch(e:any){if(request===sequence.current)setError(e.message);}finally{if(request===sequence.current)setLoading(false);}
  }
  useEffect(()=>{setData(null);setSearch('');setFilter('');setPage(0);setNotice('');void refresh(tab,0,'','');return()=>{sequence.current++;};},[tab]);
@@ -80,6 +82,7 @@ export function PlatformAdmin({name}:{name:string}){
  {tab==='reviews'&&(data.pendingReviews.length===0?<EmptyState Icon={ShieldCheck} title="Новых заявок пока нет" note="Когда владельцы и исполнители отправят сведения, заявки появятся здесь."/>:<div className="admin-records">{data.pendingReviews.map((r:Row)=><ReviewDecision key={r.id+':'+r.version} review={r} busy={busy} save={save}/>)}</div>)}
  {(tab==='operator'||tab==='policy')&&<PilotGovernance state={data} role="guest" mode={tab==='operator'?'operator':'admissions'} busy={busy} save={save}/>}
  {tab==='moderation'&&<AccountSafety role="guest" admin/>}
+ {tab==='revenue'&&<AdminRevenue data={data} busy={busy} save={save}/>}
  {tab==='health'&&<AdminHealth data={data} busy={busy} save={save}/>}
  </>}
  </div></main>

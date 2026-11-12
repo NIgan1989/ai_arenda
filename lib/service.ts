@@ -19,6 +19,7 @@ import {createAIBudgetLifecycle} from './ai-budget';
 import {aiDataPermission} from './ai-data-permission';
 import {administratorSearch,isPropertySearch,isSearchRefinement,previousAdministratorSearch} from './administrator-search';
 import {readAdministratorProcesses,processReadIntent} from './administrator-process-read';
+import {accrueCommission} from './platform-billing';
 
 type Row = Record<string, any>;
 const now = () => Math.floor(Date.now() / 1000);
@@ -428,6 +429,7 @@ export class RentalService {
       const policyGate=this.execution?" AND EXISTS(SELECT 1 FROM property_policies WHERE property_id=bookings.property_id AND version=? AND auto_confirm=1 AND cleaning_fee=? AND cleaning_fee<=cleaning_budget AND (mandate_until=0 OR mandate_until>?))":'';
       const auditId=id(),auditAction=this.execution?JSON.stringify({action:'booking.confirmed',onBehalfOf:this.userId,...this.execution}):'booking.confirmed';
       const statements=[this.query("UPDATE bookings SET status='confirmed' WHERE id=? AND status='requested' AND expires_at>? AND EXISTS(SELECT 1 FROM booking_terms WHERE booking_id=? AND version=?)"+policyGate,bookingId,now(),bookingId,terms?.version,...(this.execution?[this.execution.policyVersion,fee,now()]:[])),this.query('INSERT INTO audit_events SELECT ?,?,?,?,? WHERE changes()>0',auditId,this.execution?'system:rental-policy':this.userId,bookingId,auditAction,now()),this.query("INSERT OR IGNORE INTO notifications SELECT ?,?,?,?,?,? WHERE EXISTS(SELECT 1 FROM audit_events WHERE id=?)",id(),b.guest_id,`Бронь «${b.title}» подтверждена. Адрес доступен в карточке.`,'guest:confirmed:'+bookingId,0,now(),auditId)];
+      statements.push(accrueCommission(this.db,bookingId,auditId,now()));
       if(fee>0) statements.push(this.query("INSERT OR IGNORE INTO cleaning_jobs(id,property_id,owner_id,booking_id,start,end,fee,description,status,assigned_to,checklist,report,created_at) SELECT ?,property_id,?,?,end,occupied_until,?,?,'open',NULL,'[]','',? FROM bookings WHERE id=? AND status='confirmed' AND EXISTS(SELECT 1 FROM audit_events WHERE id=?)",id(),this.userId,bookingId,fee,'Уборка после выезда: сменить бельё, проверить санузел и кухню, вынести мусор.',now(),bookingId,auditId));
       const results=await this.db.batch(statements);
       if(!results[0].meta.changes) throw new DomainError('Срок заявки истёк или статус уже изменился.',409);
