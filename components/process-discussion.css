@@ -46,8 +46,9 @@
 .discussion-log article p{margin:0;font-size:16px;line-height:22px;color:var(--t-ink)}
 .bubble-meta{float:right;display:inline-flex;align-items:center;gap:2px;margin:8px 0 -4px 12px;font-size:12px;line-height:16px;color:var(--t-muted);white-space:nowrap;user-select:none}
 .bubble-ticks{display:inline-flex;color:var(--t-muted)}.bubble-ticks.read{color:var(--t-tick)}
-.discussion-log article footer{display:none;margin:4px 0 0;justify-content:flex-start;gap:12px}
-.discussion-log article:hover footer,.discussion-log article:focus-within footer{display:flex}
+/* Hidden until hover or keyboard focus, but still in the tab order: Tab reaches «Ответить» and reveals it. */
+.discussion-log article footer{display:flex;margin:4px 0 0;justify-content:flex-start;gap:12px;position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+.discussion-log article:hover footer,.discussion-log article:focus-within footer{position:static;width:auto;height:auto;overflow:visible;clip-path:none}
 .discussion-log blockquote{border-left:3px solid var(--t-accent);background:rgba(79,70,229,.06);border-radius:4px;margin:4px 0}
 .discussion-photo img{border-radius:8px;margin-top:4px}
 .discussion-photo small{display:none}
