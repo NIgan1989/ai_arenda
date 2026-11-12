@@ -8,3 +8,21 @@ export const roleExperience:Record<Role,Experience>={
 export function experienceFor(role:string){return roleExperience[role as Role]||roleExperience.guest;}
 export function managementTab(role:string,value:string|null){const config=experienceFor(role);return config.tabs.some(([id])=>id===value)?value!:config.defaultTab;}
 export function profileWorkFields(role:string,fields:Record<string,any>,profile:Record<string,any>){return Object.fromEntries(['districts','experience','availability'].map(key=>[key,role==='cleaner'?fields[key]??profile[key]??'':profile[key]??'']));}
+// «Управление» as a list: each section is one row with its current state in a few words; the section opens on its own screen.
+export const managementGroup=(tab:string)=>['connections','import','calendars'].includes(tab)?'connections':tab==='finance'?'finance':['dispatch','access','reviews'].includes(tab)?'people':'control';
+export function managementSection(role:string,value:string|null){return experienceFor(role).tabs.some(([id])=>id===value)?value:null;}
+const tenge=(n:number)=>new Intl.NumberFormat('ru-RU').format(n||0)+' ₸';
+export function managementStatus(role:string,tab:string,state:Record<string,any>|null){
+ if(!state)return '';const flats=state.properties||[],of=(n:number)=>flats.length?n+' из '+flats.length:'Нет квартир';
+ if(tab==='dispatch')return role==='owner'?of(flats.filter((p:any)=>p.auto_offers).length):role==='cleaner'?(state.dispatch?.receiveOffers?'Включены':'Выключены'):'';
+ if(tab==='access')return role==='owner'?of(flats.filter((p:any)=>p.access_version>0).length):'';
+ if(tab==='finance')return tenge(state.finance?.totals?.operatingBalance);
+ if(tab==='connections'){const on=(state.delivery?.channels||[]).filter((c:any)=>c.enabled&&c.verified_at).length;return on?'Каналов: '+on:'Только в сервисе';}
+ if(tab==='reviews')return state.security?.phone?.verified_at?'Подтверждён':'Не подтверждён';
+ if(tab==='calendars')return state.sources?.length?'Источников: '+state.sources.length:'Нет';
+ return '';
+}
+export function managementMenu(role:string,state:Record<string,any>|null){const config=experienceFor(role);return config.groups.map(([id,label])=>({id,label,rows:config.tabs.filter(([tab])=>managementGroup(tab)===id).map(([tab,title])=>({id:tab,title,status:managementStatus(role,tab,state)}))})).filter(group=>group.rows.length);}
+// Minutes an executor gets to answer an offer: the steps a person would actually pick.
+export const offerSteps=[2,5,10,15,20,30,45,60,90,120];
+export function offerStep(value:number,direction:1|-1){const i=offerSteps.findIndex(step=>step>=value),at=i<0?offerSteps.length-1:i;return direction>0?offerSteps[Math.min(offerSteps.length-1,offerSteps[at]===value?at+1:at)]:offerSteps[Math.max(0,at-1)];}
