@@ -36,24 +36,36 @@ export function billingPhase(s:BillingSettings|null,at=epoch()){return !s||!s.en
 
 const balanceSql=`COALESCE((SELECT SUM(amount) FROM owner_balance_entries e WHERE e.owner_id=o.id),0)-COALESCE((SELECT SUM(c.amount) FROM platform_commissions c WHERE c.owner_id=o.id AND c.mode='charged' AND ${live}),0)`;
 
+const ownerFilter="EXISTS(SELECT 1 FROM properties p WHERE p.owner_id=o.id AND p.demo_owner IS NULL)";
+// Paged and searchable on the server, so every owner stays reachable however many there are.
+export async function billingOwners(service:RentalService,params:Row){
+ const search=String(params.search||'').trim();if(search.length>100)throw new DomainError('Сократите запрос.');
+ const page=number(params.page||0,'Страница',0,100000),limit=25,pattern='%'+search.replace(/[\\%_]/g,'\\$&')+'%';
+ const where=`${ownerFilter} AND o.name LIKE ? ESCAPE '\\'`;
+ const [settings,total,list]=await Promise.all([billingSettings(service.db),one(service.db,`SELECT COUNT(*) count FROM profiles o WHERE ${where}`,pattern),
+  rows(service.db,`SELECT o.id,o.name,(SELECT COUNT(*) FROM properties p WHERE p.owner_id=o.id AND p.demo_owner IS NULL) properties,(SELECT COUNT(*) FROM platform_commissions c WHERE c.owner_id=o.id AND ${live}) bookings,(SELECT COUNT(*) FROM platform_commissions c WHERE c.owner_id=o.id AND c.mode IN ('free','charged') AND ${live}) billed_bookings,COALESCE((SELECT SUM(c.amount) FROM platform_commissions c WHERE c.owner_id=o.id AND c.mode='charged' AND ${live}),0) charged,COALESCE((SELECT SUM(c.amount) FROM platform_commissions c WHERE c.owner_id=o.id AND ${live}),0) projected,COALESCE((SELECT SUM(amount) FROM owner_balance_entries e WHERE e.owner_id=o.id),0) credited,${balanceSql} balance FROM profiles o WHERE ${where} ORDER BY balance ASC,projected DESC,o.name,o.id LIMIT ? OFFSET ?`,pattern,limit,page*limit)]);
+ const free=settings?.free_bookings||0;
+ return {owners:list.map(o=>({...o,freeLeft:Math.max(0,free-(o.billed_bookings||0))})),total:total?.count||0,page,limit};
+}
+
 export async function billingState(service:RentalService){
  const db=service.db,at=epoch(),month=at-30*86400;
  const settings=await billingSettings(db);
  const totals=(since:number)=>one(db,`SELECT COUNT(*) bookings,COALESCE(SUM(c.booking_amount),0) turnover,COALESCE(SUM(c.amount),0) projected,COALESCE(SUM(CASE WHEN c.mode='charged' THEN c.amount ELSE 0 END),0) charged,COALESCE(SUM(CASE WHEN c.mode='free' THEN c.amount ELSE 0 END),0) waived FROM platform_commissions c WHERE c.created_at>=? AND ${live}`,since);
- const [last30,allTime,monthly,owners,topups,ai,history]=await Promise.all([
+ const [last30,allTime,monthly,owners,topups,ai,history,debtors]=await Promise.all([
   totals(month),totals(0),
   rows(db,`SELECT strftime('%Y-%m',c.created_at+18000,'unixepoch') month,COUNT(*) bookings,SUM(c.booking_amount) turnover,SUM(c.amount) projected,SUM(CASE WHEN c.mode='charged' THEN c.amount ELSE 0 END) charged FROM platform_commissions c WHERE c.created_at>=? AND ${live} GROUP BY month ORDER BY month DESC`,at-183*86400),
-  rows(db,`SELECT o.id,o.name,(SELECT COUNT(*) FROM properties p WHERE p.owner_id=o.id AND p.demo_owner IS NULL) properties,(SELECT COUNT(*) FROM platform_commissions c WHERE c.owner_id=o.id AND ${live}) bookings,(SELECT COUNT(*) FROM platform_commissions c WHERE c.owner_id=o.id AND c.mode IN ('free','charged') AND ${live}) billed_bookings,COALESCE((SELECT SUM(c.amount) FROM platform_commissions c WHERE c.owner_id=o.id AND c.mode='charged' AND ${live}),0) charged,COALESCE((SELECT SUM(c.amount) FROM platform_commissions c WHERE c.owner_id=o.id AND ${live}),0) projected,COALESCE((SELECT SUM(amount) FROM owner_balance_entries e WHERE e.owner_id=o.id),0) credited,${balanceSql} balance FROM profiles o WHERE EXISTS(SELECT 1 FROM properties p WHERE p.owner_id=o.id AND p.demo_owner IS NULL) ORDER BY balance ASC,projected DESC,o.name LIMIT 100`),
+  billingOwners(service,{}),
   rows(db,'SELECT e.id,e.kind,e.amount,e.note,e.created_at,o.name owner_name FROM owner_balance_entries e LEFT JOIN profiles o ON o.id=e.owner_id ORDER BY e.created_at DESC,e.id LIMIT 20'),
   one(db,'SELECT COALESCE(SUM(charged_cost_micros),0) micros,COUNT(*) requests FROM ai_usage_reservations WHERE created_at>=?',month),
   rows(db,"SELECT action,created_at at FROM audit_events WHERE entity_id='platform-billing' ORDER BY created_at DESC,rowid DESC LIMIT 10"),
+  one(db,`SELECT COUNT(*) count FROM profiles o WHERE ${ownerFilter} AND ${balanceSql}<0`),
  ]);
- const free=settings?.free_bookings||0;
  return {
   settings,phase:billingPhase(settings,at),serverTime:at,
   last30,allTime,monthly,
-  owners:owners.map(o=>({...o,freeLeft:Math.max(0,free-(o.billed_bookings||0))})),
-  debtors:owners.filter(o=>o.balance<0).length,
+  owners:owners.owners,ownersTotal:owners.total,ownersLimit:owners.limit,
+  debtors:debtors?.count||0,
   topups,
   aiCostUsd30:Math.round((ai?.micros||0)/10000)/100,aiRequests30:ai?.requests||0,
   history:history.map(h=>{try{return {...JSON.parse(h.action),at:h.at};}catch{return {action:'unknown',at:h.at};}}),
@@ -71,9 +83,10 @@ export async function saveBillingSettings(service:RentalService,body:Row){
  const rate=Math.round(percent*100),minFee=number(body.minFee??0,'Минимум за бронь',0,1000000),maxFee=number(body.maxFee??0,'Максимум за бронь',0,10000000);
  if(maxFee>0&&maxFee<minFee)throw new DomainError('Максимум за бронь не может быть меньше минимума.');
  const free=number(body.freeBookings??0,'Бесплатные брони',0,1000),version=number(body.expectedVersion,'Версия условий',1,10000000),at=epoch();
- let startsAt=0;
- if(body.enabled){startsAt=number(body.startsAt,'Дата начала',0,4102444800);if(startsAt<at-60)throw new DomainError('Дата начала платы не может быть в прошлом.');}
  const before=await billingSettings(service.db);if(!before)throw new DomainError('Настройки оплаты не найдены. Примените обновление базы.',503);
+ // An already running start date is kept as is; only a new or rescheduled start must lie ahead.
+ let startsAt=0;
+ if(body.enabled){startsAt=number(body.startsAt,'Дата начала',0,4102444800);const running=before.enabled===1&&before.starts_at<=at&&startsAt===before.starts_at;if(!running&&startsAt<at-60)throw new DomainError('Дата начала платы не может быть в прошлом.');}
  const changed=body.enabled&&(!before.enabled||before.starts_at!==startsAt||before.rate_bp!==rate||before.min_fee!==minFee||before.max_fee!==maxFee||before.free_bookings!==free);
  const event=uuid(),statements=[
   q(service.db,"UPDATE platform_billing SET enabled=?,starts_at=?,rate_bp=?,min_fee=?,max_fee=?,free_bookings=?,version=version+1,updated_by=?,updated_at=? WHERE id='global' AND version=?",body.enabled?1:0,startsAt,rate,minFee,maxFee,free,service.userId,at,version),
@@ -82,7 +95,7 @@ export async function saveBillingSettings(service:RentalService,body:Row){
  let notified=0;
  if(changed){
   const fees=[minFee?`не меньше ${minFee} ₸`:'',maxFee?`не больше ${maxFee} ₸`:''].filter(Boolean).join(' и ');
-  const text=`С ${dateText(startsAt)} сервис берёт комиссию ${String(percent).replace('.',',')}% с брони, подтверждённой через приложение${fees?` (${fees})`:''}.${free?` Первые брони бесплатно: ${free}.`:''} Отменённые брони не оплачиваются.`;
+  const text=`С ${dateText(Math.max(startsAt,at))} сервис берёт комиссию ${String(percent).replace('.',',')}% с брони, подтверждённой через приложение${fees?` (${fees})`:''}.${free?` Первые брони бесплатно: ${free}.`:''} Отменённые брони не оплачиваются.`;
   for(const o of await owners(service.db)){statements.push(q(service.db,'INSERT OR IGNORE INTO notifications SELECT ?,?,?,?,?,? WHERE EXISTS(SELECT 1 FROM audit_events WHERE id=?)',uuid(),o.id,text,'owner:billing:'+(version+1),0,at,event));notified++;}
  }
  const results=await service.db.batch(statements);

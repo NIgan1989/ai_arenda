@@ -9,7 +9,7 @@ import {governanceState,savePilotPolicy,updateOperatorTicket} from './pilot-gove
 import {operationalHealth,retryBackgroundJob} from './background';
 import {aiBudgetState} from './ai-budget';
 import {publicPoint,mapCities} from './map-workspace';
-import {billingState,saveBillingSettings,recordBalanceEntry} from './platform-billing';
+import {billingState,billingOwners,saveBillingSettings,recordBalanceEntry} from './platform-billing';
 type Config=OperationConfig&{PLATFORM_ADMIN_IDS?:string;ADMINISTRATOR_RUNNER_SECRET?:string;OPENAI_API_KEY?:string;OPENAI_MODEL?:string};
 type Row=Record<string,any>;
 export function requirePlatformAdmin(userId:string,config:Config){if(!isPlatformAdmin(userId,config.PLATFORM_ADMIN_IDS))throw new DomainError('Управление сервисом доступно только администратору.',403);}
@@ -26,6 +26,7 @@ export async function readPlatformAdmin(service:RentalService,route:string,param
   const pendingReviews=await service.all("SELECT r.*,u.name,p.title,p.city,p.district,p.address FROM participant_reviews r JOIN profiles u ON u.id=r.user_id LEFT JOIN properties p ON p.id=r.property_id WHERE r.status='pending' ORDER BY r.created_at LIMIT 100");
   await service.audit(service.userId,'admin.reviews_viewed').run();return {...state,pendingReviews};
  }
+ if(route==='billing/owners')return billingOwners(service,params);
  if(route==='billing'){const state=await billingState(service);await service.audit(service.userId,'admin.billing_viewed').run();return state;}
  if(route==='governance')return {...await governanceState(service,'guest',true),admissions:[],testMode:config.TEST_DATA_ONLY==='1'};
  if(route==='health')return {runtime:await buildRuntimeHealth(service.db,config),queue:await operationalHealth(service,'guest',true),integrations:integrationStatus(config),aiBudget:await aiBudgetState(service,config,true)};

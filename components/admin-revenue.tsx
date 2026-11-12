@@ -42,13 +42,15 @@ export function AdminRevenue({data,busy,save}:{data:Row;busy:boolean;save:Save})
 }
 
 function BillingSettings({settings:s,now,phase,busy,save}:{settings:Row;now:number;phase:string;busy:boolean;save:Save}){
- const [enabled,setEnabled]=useState(!!s.enabled),[rate,setRate]=useState(String((s.rate_bp??500)/100)),[minFee,setMinFee]=useState(String(s.min_fee||0)),[maxFee,setMaxFee]=useState(String(s.max_fee||0)),[free,setFree]=useState(String(s.free_bookings??3)),[start,setStart]=useState(isoDay(s.enabled&&s.starts_at>now?s.starts_at:now+30*86400));
+ const [enabled,setEnabled]=useState(!!s.enabled),[rate,setRate]=useState(String((s.rate_bp??500)/100)),[minFee,setMinFee]=useState(String(s.min_fee||0)),[maxFee,setMaxFee]=useState(String(s.max_fee||0)),[free,setFree]=useState(String(s.free_bookings??3)),[start,setStart]=useState(isoDay(s.enabled?s.starts_at:now+30*86400));
  const r=Number(rate)||0,min=Number(minFee)||0,max=Number(maxFee)||0;
  async function submit(e:FormEvent<HTMLFormElement>){
   e.preventDefault();const form=new FormData(e.currentTarget),chosen=Math.floor(Date.parse(start+'T00:00:00+05:00')/1000);
-  await save('billing/settings',{enabled,ratePercent:r,minFee:min,maxFee:max,freeBookings:Number(free)||0,startsAt:Math.max(chosen,Math.floor(Date.now()/1000)),expectedVersion:s.version,confirmed:form.get('confirmed')==='on'});
+  // Keep a running start date untouched unless the administrator picked another day.
+  const startsAt=s.enabled&&s.starts_at<=now&&start===isoDay(s.starts_at)?s.starts_at:Math.max(chosen,Math.floor(Date.now()/1000));
+  await save('billing/settings',{enabled,ratePercent:r,minFee:min,maxFee:max,freeBookings:Number(free)||0,startsAt,expectedVersion:s.version,confirmed:form.get('confirmed')==='on'});
  }
- const soon=enabled&&Date.parse(start+'T00:00:00+05:00')/1000<now+14*86400;
+ const soon=enabled&&phase!=='active'&&Date.parse(start+'T00:00:00+05:00')/1000<now+14*86400;
  return <form className="admin-surface inline-form" onSubmit={submit}><div className="admin-section-heading"><div><h2>Условия оплаты</h2><p>Комиссия с владельца за каждую бронь через приложение</p></div><span className={'admin-pill '+(phase==='off'?'':'positive')}>{phase==='off'?'Бесплатный период':phase==='scheduled'?'Запланирована':'Включена'}</span></div>
   <label className="check-label"><input type="checkbox" checked={enabled} onChange={e=>setEnabled(e.target.checked)}/>Брать комиссию с владельцев</label>
   <div className="admin-revenue-fields">
@@ -56,7 +58,7 @@ function BillingSettings({settings:s,now,phase,busy,save}:{settings:Row;now:numb
    <label>Бесплатных броней каждому<Input type="number" inputMode="numeric" min={0} max={1000} value={free} onChange={e=>setFree(e.target.value)}/></label>
    <label>Минимум за бронь, ₸<Input type="number" inputMode="numeric" min={0} value={minFee} onChange={e=>setMinFee(e.target.value)}/></label>
    <label>Максимум за бронь, ₸<Input type="number" inputMode="numeric" min={0} value={maxFee} onChange={e=>setMaxFee(e.target.value)} placeholder="0 — без ограничения"/></label>
-   {enabled&&<label>Начать с<Input type="date" min={isoDay(now)} value={start} onChange={e=>setStart(e.target.value)} required/></label>}
+   {enabled&&<label>Начать с<Input type="date" min={phase==='active'?undefined:isoDay(now)} value={start} onChange={e=>setStart(e.target.value)} required/></label>}
   </div>
   <p className="admin-revenue-example">Пример: с брони на 15 000 ₸ владелец заплатит {money(feeFor(15000,r,min,max))}, с почасовой брони на 4 000 ₸ заплатит {money(feeFor(4000,r,min,max))}.</p>
   {enabled&&<p className="admin-muted">Владельцы получат уведомление в приложении. {soon?'Лучше дать им хотя бы 2 недели, а лучше месяц.':'Брони, подтверждённые до этой даты, останутся бесплатными.'} Отменённые брони никогда не оплачиваются.</p>}
@@ -66,12 +68,20 @@ function BillingSettings({settings:s,now,phase,busy,save}:{settings:Row;now:numb
 }
 
 function OwnerBalances({data,busy,save,phase}:{data:Row;busy:boolean;save:Save;phase:string}){
- const [query,setQuery]=useState(''),[all,setAll]=useState(false),list:Row[]=data.owners||[];
- const found=query.trim()?list.filter(o=>String(o.name).toLowerCase().includes(query.trim().toLowerCase())):list,shown=all||query.trim()?found:found.slice(0,8);
+ const [query,setQuery]=useState(''),[result,setResult]=useState<Row|null>(null),[loading,setLoading]=useState(false),[error,setError]=useState('');
+ const view=result||{owners:data.owners||[],total:data.ownersTotal||0,page:0,limit:data.ownersLimit||25,search:''};
+ async function load(search:string,page:number){
+  setLoading(true);setError('');
+  try{const r=await fetch('/api/admin/billing/owners?'+new URLSearchParams({search,page:String(page)}),{cache:'no-store'});const value=await r.json() as Row;if(!r.ok)throw Error(value.error||'Не удалось загрузить владельцев.');setResult({...value,search,owners:page?[...view.owners,...value.owners]:value.owners});}
+  catch(e){setError(e instanceof Error?e.message:'Не удалось загрузить владельцев.');}finally{setLoading(false);}
+ }
+ // A saved operation refreshes the whole section; drop the local list so balances are current.
+ const [seen,setSeen]=useState(data);if(seen!==data){setSeen(data);setResult(null);setQuery('');}
  return <section className="admin-surface"><div className="admin-section-heading"><div><h2>Балансы владельцев</h2><p>{data.debtors?`С минусом: ${data.debtors}. Они показаны первыми.`:'Пополнение отмечайте, когда деньги пришли вам на Kaspi.'}</p></div><Wallet size={20}/></div>
-  {list.length>8&&<label className="admin-revenue-search"><span className="sr-only">Найти владельца</span><Input value={query} onChange={e=>setQuery(e.target.value)} maxLength={100} placeholder="Найти владельца по имени"/></label>}
-  {shown.length?shown.map(o=><OwnerBalance key={o.id} owner={o} busy={busy} save={save} phase={phase}/>):<p className="admin-muted">{list.length?'Никого не нашли.':'Владельцев с объектами пока нет.'}</p>}
-  {!query.trim()&&found.length>8&&<Button variant="outline" className="admin-revenue-more" onClick={()=>setAll(!all)}>{all?'Свернуть список':`Показать всех: ${found.length}`}</Button>}
+  <form className="admin-revenue-search" onSubmit={e=>{e.preventDefault();void load(query.trim(),0);}}><label><span className="sr-only">Найти владельца</span><Input value={query} onChange={e=>setQuery(e.target.value)} maxLength={100} placeholder="Найти владельца по имени"/></label><Button variant="outline" disabled={loading}>Найти</Button></form>
+  {error&&<p className="admin-muted" role="alert">{error}</p>}
+  {view.owners.length?view.owners.map((o:Row)=><OwnerBalance key={o.id} owner={o} busy={busy} save={save} phase={phase}/>):<p className="admin-muted">{view.search?'Никого не нашли.':'Владельцев с объектами пока нет.'}</p>}
+  {view.owners.length<view.total&&<Button variant="outline" className="admin-revenue-more" disabled={loading} onClick={()=>load(view.search||'',Math.ceil(view.owners.length/view.limit))}>{loading?'Загружаю…':`Показать ещё (всего ${view.total})`}</Button>}
  </section>;
 }
 

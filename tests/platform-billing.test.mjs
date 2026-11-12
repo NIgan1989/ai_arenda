@@ -69,3 +69,27 @@ test('a future start date schedules billing without charging earlier confirmatio
   assert.equal((await readPlatformAdmin(f.other,'billing',{},config(f))).phase,'scheduled');
  }finally{f.db.close();}
 });
+
+test('editing running billing keeps its start date; a past date is refused only for a new start',async()=>{
+ const f=await fixture();try{
+  const start=now()-5;f.db.raw.prepare("UPDATE platform_billing SET enabled=1,starts_at=?,version=2 WHERE id='global'").run(start-86400);
+  const kept=await writePlatformAdmin(f.other,'billing/settings',{confirmed:true,enabled:true,ratePercent:7,startsAt:start-86400,freeBookings:0,expectedVersion:2},config(f));assert.equal(kept.version,3);
+  const s=f.db.raw.prepare("SELECT starts_at,rate_bp FROM platform_billing").get();assert.equal(s.starts_at,start-86400);assert.equal(s.rate_bp,700);
+  assert.equal((await readPlatformAdmin(f.other,'billing',{},config(f))).phase,'active');
+  await assert.rejects(writePlatformAdmin(f.other,'billing/settings',{confirmed:true,enabled:true,ratePercent:7,startsAt:start-2*86400,freeBookings:0,expectedVersion:3},config(f)),/прошлом/);
+ }finally{f.db.close();}
+});
+
+test('owner balances are searchable and paged on the server, and debtors are counted across all owners',async()=>{
+ const f=await fixture();try{
+  const insert=f.db.raw.prepare("INSERT INTO profiles(id,name,roles,city,contact,districts,experience,availability,created_at) SELECT ?,?,roles,city,contact,districts,experience,availability,created_at FROM profiles WHERE id='owner'");
+  const prop=f.db.raw.prepare("INSERT INTO properties(id,owner_id,title,city,district,address,description,price,rooms,capacity,cleaning_minutes,published,created_at) SELECT ?,?,title,city,district,address,description,price,rooms,capacity,cleaning_minutes,published,created_at FROM properties WHERE id=?");
+  const debt=f.db.raw.prepare("INSERT INTO owner_balance_entries(id,owner_id,kind,amount,note,actor_id,request_key,created_at) VALUES (?,?,'adjustment',-100,'долг','other',?,0)");
+  for(let i=0;i<30;i++){insert.run('o'+i,'Хозяин '+i);prop.run('p'+i,'o'+i,f.property);debt.run('d'+i,'o'+i,'k'+i);}
+  const state=await readPlatformAdmin(f.other,'billing',{},config(f));
+  assert.equal(state.ownersTotal,31);assert.equal(state.owners.length,25);assert.equal(state.debtors,30);
+  const second=await readPlatformAdmin(f.other,'billing/owners',{page:'1'},config(f));assert.equal(second.owners.length,6);
+  const found=await readPlatformAdmin(f.other,'billing/owners',{search:'Хозяин 2'},config(f));assert.deepEqual(found.owners.map(o=>o.id).sort(),['o2','o20','o21','o22','o23','o24','o25','o26','o27','o28','o29']);
+  await assert.rejects(readPlatformAdmin(f.owner,'billing/owners',{},config(f)),e=>e.status===403);
+ }finally{f.db.close();}
+});
