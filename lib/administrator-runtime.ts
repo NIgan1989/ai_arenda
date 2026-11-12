@@ -6,6 +6,8 @@ import type {Role} from './domain';
 import {coordinateDispatch} from './dispatch';
 
 type Row=Record<string,any>;
+// How long the owner has to agree the cleaner the AI proposes before it assigns her itself.
+export const OWNER_ANSWER_SECONDS=1800;
 const now=()=>Math.floor(Date.now()/1000);
 const all=async(db:D1Database,sql:string,...args:any[])=>(await db.prepare(sql).bind(...args).all<Row>()).results;
 
@@ -40,15 +42,29 @@ async function automaticActions(service:RentalService){
    const requests=await service.all("SELECT b.id FROM bookings b JOIN booking_terms t ON t.booking_id=b.id WHERE b.property_id=? AND b.status='requested' AND b.expires_at>? AND t.policy_version=?",policy.property_id,now(),policy.version);
    for(const b of requests){try{await delegated.bookingAction(b.id,{action:'confirm',cleaningFee:policy.cleaning_fee});await service.notify(service.userId,'AI администратор подтвердил заявку по вашим правилам. Оплата и депозит проверяются отдельно.','administrator-confirmed:'+b.id,'owner').run();actions++;}catch(error){if(!expectedConflict(error))throw error;}}
   }
+  if(policy.auto_assign&&policy.auto_confirm){
+   // The guest said they left: free the flat so the cleaner can start. The owner is told.
+   const left=await service.all("SELECT b.id FROM bookings b JOIN booking_terms t ON t.booking_id=b.id WHERE b.property_id=? AND b.status='confirmed' AND t.checkout_reported_at IS NOT NULL AND t.actual_checkout IS NULL",policy.property_id);
+   for(const b of left){try{await delegated.bookingAction(b.id,{action:'checkout'});await service.notify(service.userId,'AI администратор подтвердил выезд по сообщению гостя. Квартира ждёт уборки.','administrator-checkout:'+b.id,'owner').run();actions++;}catch(error){if(!expectedConflict(error))throw error;}}
+  }
   if(policy.auto_assign){
-   const jobs=await service.all("SELECT * FROM cleaning_jobs WHERE property_id=? AND status='open' AND end>? AND fee<=? ORDER BY start,id",policy.property_id,now(),policy.cleaning_budget);
+   const jobs=await service.all("SELECT j.*,p.title FROM cleaning_jobs j JOIN properties p ON p.id=j.property_id WHERE j.property_id=? AND j.status='open' AND j.end>? AND j.fee<=? ORDER BY j.start,j.id",policy.property_id,now(),policy.cleaning_budget);
    for(const job of jobs){
     // A pending application is consent to these conditions. Never assign a person who did not apply.
-    const candidates=await service.all(`SELECT a.id FROM applications a JOIN profiles p ON p.id=a.user_id
+    const candidates=await service.all(`SELECT a.id,a.created_at,p.name FROM applications a JOIN profiles p ON p.id=a.user_id
      WHERE a.job_id=? AND a.status='pending' AND EXISTS(SELECT 1 FROM json_each(p.roles) WHERE value='cleaner')
      AND NOT EXISTS(SELECT 1 FROM profile_details d WHERE d.user_id=a.user_id AND d.work_status='away')
      AND NOT EXISTS(SELECT 1 FROM cleaning_jobs j WHERE j.assigned_to=a.user_id AND j.status IN ('assigned','in_progress','submitted') AND j.start<? AND j.end>?)
      ORDER BY a.created_at,a.id`,job.id,job.end,job.start);
+    // The owner agrees the cleaner: the AI proposes the first one who applied and assigns by itself
+    // only if the owner has not answered OWNER_ANSWER_SECONDS after the proposal, or the cleaning starts within the hour.
+    // The proposal notification is the record of when the owner was asked, however old the application is.
+    const first=candidates[0],t=now();
+    if(first&&job.start>t+3600){
+     const proposed=await service.one('SELECT created_at FROM notifications WHERE user_id=? AND dedupe=?',service.userId,'owner:administrator-propose:'+first.id);
+     if(!proposed){await service.notify(service.userId,'AI администратор предлагает уборщицу '+first.name+' на уборку «'+(job.title||'квартира')+'». Назначьте её в карточке уборки, или через 30 минут ИИ назначит сам.','administrator-propose:'+first.id,'owner').run();continue;}
+     if(proposed.created_at+OWNER_ANSWER_SECONDS>t)continue;
+    }
     for(const candidate of candidates){try{await delegated.jobAction(job.id,{action:'assign',applicationId:candidate.id,expectedVersion:job.version});await service.notify(service.userId,'AI администратор назначил свободного исполнителя из откликнувшихся в пределах вашего лимита уборки.','administrator-assigned:'+job.id+':'+job.version,'owner').run();actions++;break;}catch(error){if(!expectedConflict(error))throw error;}}
    }
   }

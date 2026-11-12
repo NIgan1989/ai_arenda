@@ -388,7 +388,10 @@ export class RentalService {
     if(!b) throw new DomainError('Бронь не найдена.',404);
     if(this.execution){
       const mandate=await this.one('SELECT * FROM property_policies WHERE property_id=?',b.property_id);
-      if(body.action!=='confirm'||this.execution.propertyId!==b.property_id||!mandate?.auto_confirm||!mandateActive(mandate)||mandate.version!==this.execution.policyVersion||body.cleaningFee!==mandate.cleaning_fee||body.cleaningFee>mandate.cleaning_budget)throw new DomainError('Автоматическое действие выходит за полномочия владельца.',403);
+      const scoped=this.execution.propertyId===b.property_id&&!!mandate?.auto_confirm&&mandateActive(mandate)&&mandate.version===this.execution.policyVersion;
+      // Under autopilot the guest's own report of leaving frees the flat; the owner is told and keeps the deposit decision.
+      const checkout=body.action==='checkout'&&!!mandate?.auto_assign&&!!(await this.one('SELECT checkout_reported_at FROM booking_terms WHERE booking_id=? AND checkout_reported_at IS NOT NULL',bookingId));
+      if(!scoped||!(checkout||body.action==='confirm'&&body.cleaningFee===mandate.cleaning_fee&&body.cleaningFee<=mandate.cleaning_budget))throw new DomainError('Автоматическое действие выходит за полномочия владельца.',403);
     }
     const owner=b.owner_id===this.userId;
     const terms=await this.one('SELECT * FROM booking_terms WHERE booking_id=?',bookingId),op=await this.one('SELECT * FROM property_operations WHERE property_id=?',b.property_id);
@@ -436,13 +439,15 @@ export class RentalService {
       if(terms?.actual_checkout)return {message:'Выезд уже подтверждён.'};
       if(b.status!=='confirmed'||b.start>now()||(op?.active_booking_id&&op.active_booking_id!==bookingId))throw new DomainError('Сейчас нельзя подтвердить выезд по этой брони.',409);
       const t=now(),result=await this.db.batch([
-        this.query("UPDATE bookings SET status='completed' WHERE id=? AND status='confirmed' AND EXISTS(SELECT 1 FROM booking_terms WHERE booking_id=? AND actual_checkout IS NULL AND version=?)",bookingId,bookingId,body.expectedVersion??terms?.version),
+        // Under execution the mandate and the guest's report are checked again inside the batch,
+        // so a revoked autopilot or a disputed report stops the automatic checkout.
+        this.query("UPDATE bookings SET status='completed' WHERE id=? AND status='confirmed' AND EXISTS(SELECT 1 FROM booking_terms WHERE booking_id=? AND actual_checkout IS NULL AND version=? AND (?=0 OR checkout_reported_at IS NOT NULL)) AND (?=0 OR EXISTS(SELECT 1 FROM property_policies WHERE property_id=? AND version=? AND auto_confirm=1 AND auto_assign=1 AND (mandate_until=0 OR mandate_until>?)))",bookingId,bookingId,body.expectedVersion??terms?.version,this.execution?1:0,this.execution?1:0,b.property_id,this.execution?.policyVersion??0,t),
         this.query("UPDATE property_operations SET readiness=CASE WHEN readiness IN ('maintenance','blocked') THEN readiness ELSE 'awaiting_cleaning' END,active_booking_id=NULL,version=version+1,updated_at=? WHERE property_id=? AND (active_booking_id IS NULL OR active_booking_id=?) AND EXISTS(SELECT 1 FROM booking_terms t JOIN bookings b ON b.id=t.booking_id WHERE b.id=? AND b.status='completed' AND t.actual_checkout IS NULL)",t,b.property_id,bookingId,bookingId),
         this.query("INSERT OR IGNORE INTO notifications SELECT ?,assigned_to,?,'cleaner:checkout-reschedule:'||id||':'||version,0,? FROM cleaning_jobs WHERE booking_id=? AND status='assigned' AND start<? AND EXISTS(SELECT 1 FROM booking_terms bt JOIN bookings b ON b.id=bt.booking_id WHERE b.id=? AND b.status='completed' AND bt.actual_checkout IS NULL)",id(),'AI администратор: гость освободил квартиру позже начала уборки. Прежнее назначение снято; проверьте новое время и откликнитесь заново.',t,bookingId,t-60,bookingId),
         this.query("UPDATE applications SET status='rejected' WHERE job_id IN(SELECT id FROM cleaning_jobs WHERE booking_id=? AND status IN ('open','assigned') AND start<?) AND EXISTS(SELECT 1 FROM booking_terms bt JOIN bookings b ON b.id=bt.booking_id WHERE b.id=? AND b.status='completed' AND bt.actual_checkout IS NULL)",bookingId,t-60,bookingId),
         this.query("UPDATE cleaning_jobs SET start=?,end=?,assigned_to=NULL,status='open' WHERE booking_id=? AND status IN ('open','assigned') AND start<? AND EXISTS(SELECT 1 FROM booking_terms bt JOIN bookings b ON b.id=bt.booking_id WHERE b.id=? AND b.status='completed' AND bt.actual_checkout IS NULL)",t,t+b.cleaning_minutes*60,bookingId,t-60,bookingId),
         this.query('UPDATE booking_terms SET actual_checkout=? WHERE booking_id=? AND actual_checkout IS NULL AND EXISTS(SELECT 1 FROM bookings WHERE id=? AND status=\'completed\')',t,bookingId,bookingId),this.audit(bookingId,'booking.checkout_confirmed')]);
-      if(!result[0].meta.changes)throw new DomainError('Выезд уже обрабатывается. Обновите данные.',409);await this.notify(b.guest_id,'Владелец подтвердил освобождение квартиры. Проживание завершено.','checkout-confirmed:'+bookingId,'guest').run();return {message:'Выезд подтверждён. Квартира ожидает уборки и проверки.'};
+      if(!result[0].meta.changes)throw new DomainError('Выезд уже обрабатывается. Обновите данные.',409);await this.notify(b.guest_id,this.execution?'Выезд подтверждён. Спасибо, что выбрали нас.':'Владелец подтвердил освобождение квартиры. Проживание завершено.','checkout-confirmed:'+bookingId,'guest').run();return {message:'Выезд подтверждён. Квартира ожидает уборки и проверки.'};
     }
     if(body.action==='confirm') {
       await assertPilotAllowed(this,'booking',b.property_id);
