@@ -11,13 +11,13 @@ import {amenities,checkinMethods,propertyTypes} from '../../lib/listings';
 import {DRAFT_EXAMPLE,answerDraft,draftDescription,draftListingBody,draftQuestions,draftRules,draftTitle,emptyDraft,moneyAnswer,readListingText,type ListingDraft} from '../../lib/listing-draft';
 import {plural} from '../../lib/map-search-request';
 type Row=Record<string,any>;
-type Saved={id:string;message:string;published:boolean};
+type Saved={id:string;message:string;published:boolean;placed?:boolean};
 const R=T.radius,H=T.control;
 const money=(n:number)=>new Intl.NumberFormat('ru-RU').format(n)+' ₸';
 const STEPS=['Расскажите','Проверьте','Готово'];
 const RULES:[keyof ListingDraft,string][]=[['pets','Можно с питомцами'],['smoking','Можно курить'],['parties','Можно вечеринки']];
 
-export function PropertyQuick({city,onSave,onGuestMode,onClose,onMap,onDone}:{city:string;onSave:(body:Row)=>Promise<Row>;onGuestMode:(body:Row)=>Promise<unknown>;onClose:()=>void;onMap?:(id:string)=>void;onDone:(saved:Saved)=>void}){
+export function PropertyQuick({city,onSave,onGuestMode,onPlace,onClose,onMap,onDone}:{city:string;onSave:(body:Row)=>Promise<Row>;onGuestMode:(body:Row)=>Promise<unknown>;onPlace?:(body:Row)=>Promise<unknown>;onClose:()=>void;onMap?:(id:string)=>void;onDone:(saved:Saved)=>void}){
  const [step,setStep]=useState(0),[text,setText]=useState(''),[draft,setDraft]=useState<ListingDraft>(()=>emptyDraft(city)),[found,setFound]=useState<string[]>([]);
  const [photos,setPhotos]=useState<string[]>([]),[uploading,setUploading]=useState(false),[answer,setAnswer]=useState(''),[mode,setMode]=useState<'auto'|'manual'>('auto'),[more,setMore]=useState(false);
  const [busy,setBusy]=useState(false),[error,setError]=useState(''),[saved,setSaved]=useState<Saved|null>(null);
@@ -36,8 +36,10 @@ export function PropertyQuick({city,onSave,onGuestMode,onClose,onMap,onDone}:{ci
    let result:Row,published=photos.length>0;
    try{result=await onSave(draftListingBody(draft,photos,published));}
    catch(e:any){if(!published||!/провер|допуск/i.test(String(e?.message)))throw e;published=false;result=await onSave(draftListingBody(draft,photos,false));}
+   // The flat goes on the map by its address right away; the owner only checks the pin.
+   let placed=false;try{placed=!!((await onPlace?.({propertyId:result.id})) as Row|undefined)?.saved;}catch{/* the map pin can be set later */}
    let note='';try{await onGuestMode({propertyId:result.id,mode,cleaningFee:mode==='auto'?draft.cleaningFee:undefined});}catch(e:any){note=' '+(e?.message||'');}
-   setSaved({id:result.id,published,message:(published?'Квартира опубликована, гости уже видят её на карте.':photos.length?'Сохранена черновиком: чтобы показать гостям, пройдите проверку допуска.':'Сохранена черновиком. Добавьте фото, и её можно будет показать гостям.')+note});setStep(2);
+   setSaved({id:result.id,published,placed,message:(published?'Квартира опубликована, гости уже видят её на карте.':photos.length?'Сохранена черновиком: чтобы показать гостям, пройдите проверку допуска.':'Сохранена черновиком. Добавьте фото, и её можно будет показать гостям.')+note});setStep(2);
   }catch(e:any){setError(e?.message||'Не удалось сохранить квартиру.');}finally{setBusy(false);}
  }
  const priceLine=[draft.price>=100&&money(draft.price)+' / сутки',draft.hourlyPrice>=100&&money(draft.hourlyPrice)+' / час',draft.nightlyPrice>=100&&money(draft.nightlyPrice)+' / ночь'].filter(Boolean).join(' · ');
@@ -60,13 +62,13 @@ export function PropertyQuick({city,onSave,onGuestMode,onClose,onMap,onDone}:{ci
   </View>}
 
   {step===1&&<View style={q.body}>
+   {ask?<View style={q.ask}><View style={[q.orb,q.orbSm]}><Text style={q.orbTextSm}>✦</Text></View><View style={{flex:1,minWidth:0,gap:8}}><Text style={q.askQ}>{ask.question}</Text><Text style={q.hint}>{questions.length>1?'Ещё вопросов: '+(questions.length-1):'Последний вопрос'}</Text>
+     <View style={q.askRow}><TextInput accessibilityLabel={ask.label} style={q.askInput} value={answer} onChangeText={setAnswer} placeholder={ask.placeholder} placeholderTextColor={C.muted} onSubmitEditing={reply} returnKeyType="send" keyboardType={ask.key==='price'||ask.key==='cleaningFee'?'number-pad':'default'}/><Pressable accessibilityRole="button" disabled={!answer.trim()} onPress={reply} style={[q.send,!answer.trim()&&q.primaryOff]}><Text style={q.primaryText}>↑</Text></Pressable></View></View></View>
+   :<Text style={q.ready}>✓ Всё нужное есть.{found.length?' ИИ понял из рассказа: '+found.length+' '+plural(found.length,'деталь','детали','деталей')+'.':''}</Text>}
    <View style={q.preview}>
     <View style={q.cover}>{photos[0]?<Photo id={photos[0]} alt="Обложка"/>:<Text style={q.coverEmpty}>Без фото: квартира сохранится черновиком</Text>}</View>
     <View style={q.previewBody}><TextInput accessibilityLabel="Название" style={q.previewTitle} value={draftTitle(draft)} maxLength={120} onChangeText={v=>patch({title:v})}/><Text style={q.sub}>📍 {[draft.district||'Район не указан',draft.city].filter(Boolean).join(' · ')}</Text><Text style={q.price}>{priceLine||'Цена не указана'}</Text></View>
    </View>
-   {ask?<View style={q.ask}><View style={[q.orb,q.orbSm]}><Text style={q.orbTextSm}>✦</Text></View><View style={{flex:1,minWidth:0,gap:8}}><Text style={q.askQ}>{ask.question}</Text><Text style={q.hint}>{questions.length>1?'Ещё вопросов: '+(questions.length-1):'Последний вопрос'}</Text>
-     <View style={q.askRow}><TextInput accessibilityLabel={ask.label} style={q.askInput} value={answer} onChangeText={setAnswer} placeholder={ask.placeholder} placeholderTextColor={C.muted} onSubmitEditing={reply} returnKeyType="send" keyboardType={ask.key==='price'||ask.key==='cleaningFee'?'number-pad':'default'}/><Pressable accessibilityRole="button" disabled={!answer.trim()} onPress={reply} style={[q.send,!answer.trim()&&q.primaryOff]}><Text style={q.primaryText}>↑</Text></Pressable></View></View></View>
-   :<Text style={q.ready}>✓ Всё нужное есть.{found.length?' ИИ понял из рассказа: '+found.length+' '+plural(found.length,'деталь','детали','деталей')+'.':''}</Text>}
    <Text style={q.h}>КВАРТИРА</Text>
    <View style={q.chips}>{Object.entries(propertyTypes).map(([id,label])=>chip(id,label,draft.type===id,()=>patch({type:id}),true))}</View>
    <View style={q.grid}><View style={q.half}><Stepper label={'Комнаты'+(guessed('rooms')?' · ИИ предположил':'')} value={draft.rooms} text={String(draft.rooms)} min={1} max={20} onChange={v=>patch({rooms:v})}/></View><View style={q.half}><Stepper label={'Гостей'+(guessed('capacity')?' · ИИ предположил':'')} value={draft.capacity} text={String(draft.capacity)} min={1} max={50} onChange={v=>setDraft(d=>({...d,capacity:v,beds:Math.max(d.beds,v),known:[...new Set([...d.known,'capacity'])]}))}/></View></View>
@@ -99,8 +101,8 @@ export function PropertyQuick({city,onSave,onGuestMode,onClose,onMap,onDone}:{ci
   {step===2&&saved&&<View style={[q.body,{alignItems:'center'}]}>
    <View style={q.doneMark}><Text style={q.doneMarkText}>✓</Text></View>
    <Text style={[q.title,{textAlign:'center'}]}>{draftTitle(draft)}</Text><Text style={[q.sub,{textAlign:'center'}]}>{saved.message}</Text>
-   <Text style={[q.hint,{textAlign:'center'}]}>{mode==='auto'?'Гостям отвечает ИИ: он подтвердит бронь по вашим ценам и закажет уборку.':'Запросы гостей будут приходить вам.'}</Text>
-   {onMap&&<Pressable accessibilityRole="button" onPress={()=>onMap(saved.id)} style={[q.primary,{alignSelf:'stretch'}]}><Text style={q.primaryText}>Показать на карте</Text></Pressable>}
+   <Text style={[q.hint,{textAlign:'center'}]}>{(saved.placed?'Метку на карте ИИ поставил сам по адресу. ':'')+(mode==='auto'?'Гостям отвечает ИИ: он подтвердит бронь по вашим ценам и закажет уборку.':'Запросы гостей будут приходить вам.')}</Text>
+   {onMap&&<Pressable accessibilityRole="button" onPress={()=>onMap(saved.id)} style={[q.primary,{alignSelf:'stretch'}]}><Text style={q.primaryText}>{saved.placed?'Метка по адресу: посмотреть':'Показать на карте'}</Text></Pressable>}
    <Pressable accessibilityRole="button" onPress={()=>onDone(saved)} style={[onMap?q.ghost:q.primary,{alignSelf:'stretch'}]}><Text style={onMap?q.ghostText:q.primaryText}>Готово</Text></Pressable>
   </View>}
  </View>;

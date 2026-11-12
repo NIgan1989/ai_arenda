@@ -2,7 +2,7 @@ import {safetyState,safetyAction} from './account-safety';
 import {matchingAction} from './smart-matching';
 import {aiDataPermission,saveAIDataPermission} from './ai-data-permission';
 import {buildJourneyRoute} from './journey-routing';
-import {mapSearch,saveMapPoint,journeyAction} from './map-workspace';
+import {mapSearch,saveMapPoint,journeyAction,geocodeFlat,placeFlatByAddress} from './map-workspace';
 import {administratorConversation} from './administrator-conversation';
 import {DomainError,required,type Role} from './domain';
 import {RentalService} from './service';
@@ -49,6 +49,8 @@ export async function writeOperations(service:RentalService,role:Role,path:strin
  if(route==='map/route')return buildJourneyRoute(service,role,body,config);
  if(route==='map/search')return mapSearch(service,role,body,config);
  if(route==='map/location')return saveMapPoint(service,role,body);
+ if(route==='map/geocode')return geocodeFlat(service,role,body);
+ if(route==='map/place')return placeFlatByAddress(service,role,body);
  if(path[0]==='map'&&path[1]==='journey')return journeyAction(service,role,path[2],body);
  if(route==='discussion/open')return openDiscussion(service,role,body);
  if(route==='discussion/read')return readDiscussion(service,role,body);

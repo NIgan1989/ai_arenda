@@ -161,6 +161,19 @@ function RoleMap({ role, accountId, data, onDiscussion, onProcess, onCreate, onA
   }, [role, data.profile?.city]);
   useEffect(() => { panel.current?.scrollTo({ top: 0 }); }, [selected, picking, expanded]);
   useEffect(() => { if (!chosen) { setPicking(false); setPicked(null); } }, [selected]);
+  // Opening the picker looks the flat up by its address, so the owner only checks the pin or taps the right house.
+  const [spotNote, setSpotNote] = useState('');
+  useEffect(() => {
+    if (!picking || role !== 'owner' || !chosen || chosen.kind) return;
+    let on = true; setSpotNote('Ищу дом по адресу…');
+    const existing = point ? [point.longitude, point.latitude] as [number, number] : null;
+    if (existing && point?.precision === 'exact') { setPicked(existing); setSpotNote('Метка стоит там, где вы её сохранили. Нажмите на карте, чтобы передвинуть.'); return; }
+    mapAPI(role, 'geocode', { propertyId: chosen.id }).then((r: Row) => {
+      if (!on) return; setPicked([r.longitude, r.latitude]);
+      setSpotNote(r.found ? 'Нашёл дом по адресу «' + chosen.address + '». Если метка не на том доме, нажмите на нужный дом на карте.' : 'По адресу дом не нашёлся, метка в центре города. Нажмите на свой дом на карте или «Я сейчас здесь».');
+    }).catch(() => { if (on) setSpotNote('Нажмите на свой дом на карте или «Я сейчас здесь».'); });
+    return () => { on = false; };
+  }, [picking, chosen?.id]);
   // A flat just added with the AI asks to be put on the map: open it with the point picker on.
   const [pendingPick, setPendingPick] = useState('');
   useEffect(() => {
@@ -505,18 +518,20 @@ function RoleMap({ role, accountId, data, onDiscussion, onProcess, onCreate, onA
     );
     pointEditor = (
       <div className="map-role-point">
-        <h2 className="map-role-title">Точка на карте</h2>
-        <p className="map-role-note">Нажмите нужное место на карте и проверьте точку перед сохранением.</p>
-        <div className="map-role-coords">
-          <label><span>Долгота</span><input className="map-role-select" type="number" step="any" inputMode="decimal" value={picked?.[0] ?? ''} onChange={e => setPicked([Number(e.target.value), picked?.[1] ?? point?.latitude ?? center[1]])} /></label>
-          <label><span>Широта</span><input className="map-role-select" type="number" step="any" inputMode="decimal" value={picked?.[1] ?? ''} onChange={e => setPicked([picked?.[0] ?? point?.longitude ?? center[0], Number(e.target.value)])} /></label>
-        </div>
+        <h2 className="map-role-title">Где дом на карте</h2>
+        <p className="map-role-note" aria-live="polite">{spotNote}</p>
         <div className="map-role-actions">
           <button type="button" className="map-role-button" disabled={busy || !picked} onClick={async () => {
             if (!picked) return;
             const saved = await act('location', { propertyId: chosen.id, longitude: picked[0], latitude: picked[1], version: point?.version || 0, confirmed: true });
             if (saved) { setPicking(false); setPicked(null); }
-          }}>Сохранить точку</button>
+          }}>Сохранить</button>
+          <button type="button" className="map-role-button is-quiet" disabled={locating} onClick={async () => {
+            setLocating(true); const { fix, problem } = await readLocation(); setLocating(false);
+            if (!live.current) return;
+            if (fix) { setPicked([Number(fix.longitude.toFixed(6)), Number(fix.latitude.toFixed(6))]); setSpotNote('Метка там, где вы сейчас. Если дом не здесь, нажмите на него на карте.'); }
+            else setSpotNote(problem);
+          }}><LocateFixed size={18} aria-hidden="true" />Я сейчас здесь</button>
           <button type="button" className="map-role-button is-quiet" onClick={() => { setPicking(false); setPicked(null); }}>Отмена</button>
         </div>
       </div>

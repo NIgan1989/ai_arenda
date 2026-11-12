@@ -27,3 +27,31 @@ export async function mapSearch(s:RentalService,role:Role,b:Row,config:Operation
  for(const v of sessions){try{await authorisedSession(s,role,v.id);journeys.push({id:v.id,kind:v.entity_kind,entityId:v.entity_id,mode:v.mode,expiresAt:v.expires_at,mine:v.sender_id===s.userId&&v.sender_role===role,longitude:epoch()-(v.received_at||0)<=90?v.longitude:null,latitude:epoch()-(v.received_at||0)<=90?v.latitude:null,accuracy:v.accuracy,recordedAt:v.recorded_at,route:epoch()-(v.received_at||0)<=90&&v.route?JSON.parse(v.route):null});}catch{await q(s.db,'UPDATE journey_sessions SET stopped_at=?,longitude=NULL,latitude=NULL,accuracy=NULL WHERE id=?',epoch(),v.id).run();}}
  return {...result,properties,processes,journeys,center:mapCities[Object.keys(mapCities).find(c=>c.toLocaleLowerCase('ru')===String(filters.city||(state.profile as Row)?.city||'').trim().toLocaleLowerCase('ru'))||'']||[67,48],serverTime:epoch()};
 }
+
+// The owner's own address, as he typed it, turned into a point on the map (OpenStreetMap search).
+// Only the owner of the flat can ask, and only the street and city leave the service: the flat number is cut off.
+// When nothing is found the city centre comes back with found:false, so the owner taps the house himself.
+export function geocodeQuery(p:Row){const street=String(p.address||'').replace(/,?\s*(?:кв\.?|квартира|офис|подъезд|эт\.?|этаж)\s*\d.*$/i,'').trim();return [street,p.city,'Казахстан'].filter(Boolean).join(', ');}
+export async function geocodeFlat(s:RentalService,role:Role,b:Row,lookup:typeof fetch=fetch){
+ await s.authorizeWorkspace(role,'operations');if(role!=='owner')throw new DomainError('Точку указывает владелец.',403);
+ const p=await one(s.db,'SELECT * FROM properties WHERE id=? AND owner_id=?',b.propertyId,s.userId);if(!p)throw new DomainError('Объект недоступен.',404);
+ const centre=mapCities[p.city as string]||mapCities['Павлодар'],fallback={longitude:centre[0],latitude:centre[1],found:false};
+ if(!String(p.address||'').trim())return fallback;
+ const url='https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&countrycodes=kz&accept-language=ru&q='+encodeURIComponent(geocodeQuery(p));
+ try{
+  const signal=AbortSignal.timeout?AbortSignal.timeout(6000):undefined;
+  const r=await lookup(url,{headers:{'User-Agent':'ai-arenda/1.0 (rental map)','Accept':'application/json'},signal});if(!r.ok)return fallback;
+  const hit=(await r.json() as Row[])[0],lon=Number(hit?.lon),lat=Number(hit?.lat);
+  // A result far from the flat's city is somebody else's street with the same name.
+  if(!Number.isFinite(lon)||!Number.isFinite(lat)||geoDistance([lon,lat],centre)>60000)return fallback;
+  return {longitude:Number(lon.toFixed(6)),latitude:Number(lat.toFixed(6)),found:true};
+ }catch{return fallback;}
+}
+// Right after a flat is added: put it on the map by its address, unless the owner already placed it.
+export async function placeFlatByAddress(s:RentalService,role:Role,b:Row,lookup:typeof fetch=fetch){
+ const spot=await geocodeFlat(s,role,b,lookup);
+ const current=await one(s.db,'SELECT version FROM property_locations WHERE property_id=?',b.propertyId);
+ if(!spot.found||current)return {...spot,saved:false};
+ await saveMapPoint(s,role,{propertyId:b.propertyId,longitude:spot.longitude,latitude:spot.latitude,version:0,confirmed:true});
+ return {...spot,saved:true};
+}
