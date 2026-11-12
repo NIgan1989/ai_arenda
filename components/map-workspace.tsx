@@ -163,15 +163,18 @@ function RoleMap({ role, accountId, data, onDiscussion, onProcess, onCreate, onA
   useEffect(() => { if (!chosen) { setPicking(false); setPicked(null); } }, [selected]);
   // Opening the picker looks the flat up by its address, so the owner only checks the pin or taps the right house.
   const [spotNote, setSpotNote] = useState('');
+  // Once the owner taps the map or uses "I am here", a late address answer must not move the pin back.
+  const handPicked = useRef(false);
+  const pickByHand = (spot: [number, number]) => { handPicked.current = true; setPicked(spot); };
   useEffect(() => {
     if (!picking || role !== 'owner' || !chosen || chosen.kind) return;
-    let on = true; setSpotNote('Ищу дом по адресу…');
+    let on = true; handPicked.current = false; setSpotNote('Ищу дом по адресу…');
     const existing = point ? [point.longitude, point.latitude] as [number, number] : null;
     if (existing && point?.precision === 'exact') { setPicked(existing); setSpotNote('Метка стоит там, где вы её сохранили. Нажмите на карте, чтобы передвинуть.'); return; }
     mapAPI(role, 'geocode', { propertyId: chosen.id }).then((r: Row) => {
-      if (!on) return; setPicked([r.longitude, r.latitude]);
+      if (!on || handPicked.current) return; setPicked([r.longitude, r.latitude]);
       setSpotNote(r.found ? 'Нашёл дом по адресу «' + chosen.address + '». Если метка не на том доме, нажмите на нужный дом на карте.' : 'По адресу дом не нашёлся, метка в центре города. Нажмите на свой дом на карте или «Я сейчас здесь».');
-    }).catch(() => { if (on) setSpotNote('Нажмите на свой дом на карте или «Я сейчас здесь».'); });
+    }).catch(() => { if (on && !handPicked.current) setSpotNote('Нажмите на свой дом на карте или «Я сейчас здесь».'); });
     return () => { on = false; };
   }, [picking, chosen?.id]);
   // A flat just added with the AI asks to be put on the map: open it with the point picker on.
@@ -529,7 +532,7 @@ function RoleMap({ role, accountId, data, onDiscussion, onProcess, onCreate, onA
           <button type="button" className="map-role-button is-quiet" disabled={locating} onClick={async () => {
             setLocating(true); const { fix, problem } = await readLocation(); setLocating(false);
             if (!live.current) return;
-            if (fix) { setPicked([Number(fix.longitude.toFixed(6)), Number(fix.latitude.toFixed(6))]); setSpotNote('Метка там, где вы сейчас. Если дом не здесь, нажмите на него на карте.'); }
+            if (fix) { pickByHand([Number(fix.longitude.toFixed(6)), Number(fix.latitude.toFixed(6))]); setSpotNote('Метка там, где вы сейчас. Если дом не здесь, нажмите на него на карте.'); }
             else setSpotNote(problem);
           }}><LocateFixed size={18} aria-hidden="true" />Я сейчас здесь</button>
           <button type="button" className="map-role-button is-quiet" onClick={() => { setPicking(false); setPicked(null); }}>Отмена</button>
@@ -622,7 +625,7 @@ function RoleMap({ role, accountId, data, onDiscussion, onProcess, onCreate, onA
             items={[...pins, ...draft]}
             selected={draft.length ? 'draft-point' : role === 'owner' && chosen?.kind ? 'property:' + chosen.propertyId : selected}
             onSelect={select} center={center} people={people} routes={routes} pick={picking}
-            onPick={p => setPicked([Number(p[0].toFixed(6)), Number(p[1].toFixed(6))])} focus={focus} />
+            onPick={p => pickByHand([Number(p[0].toFixed(6)), Number(p[1].toFixed(6))])} focus={focus} />
         )}
         <button type="button" className="map-home-round map-role-locate" disabled={locating} aria-busy={locating} aria-pressed={watching}
           aria-label={locating ? 'Определяем положение' : watching ? 'Скрыть моё положение' : 'Показать, где я'} onClick={() => void locate()}>

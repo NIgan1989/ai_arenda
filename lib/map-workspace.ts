@@ -35,7 +35,7 @@ export function geocodeQuery(p:Row){const street=String(p.address||'').replace(/
 export async function geocodeFlat(s:RentalService,role:Role,b:Row,lookup:typeof fetch=fetch){
  await s.authorizeWorkspace(role,'operations');if(role!=='owner')throw new DomainError('Точку указывает владелец.',403);
  const p=await one(s.db,'SELECT * FROM properties WHERE id=? AND owner_id=?',b.propertyId,s.userId);if(!p)throw new DomainError('Объект недоступен.',404);
- const centre=mapCities[p.city as string]||mapCities['Павлодар'],fallback={longitude:centre[0],latitude:centre[1],found:false};
+ const city=String(p.city||'').trim().toLocaleLowerCase('ru'),centre=mapCities[Object.keys(mapCities).find(c=>c.toLocaleLowerCase('ru')===city)||'']||mapCities['Павлодар'],fallback={longitude:centre[0],latitude:centre[1],found:false};
  if(!String(p.address||'').trim())return fallback;
  const url='https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&countrycodes=kz&accept-language=ru&q='+encodeURIComponent(geocodeQuery(p));
  try{

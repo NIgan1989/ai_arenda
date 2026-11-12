@@ -19,4 +19,5 @@ test('a new flat goes on the map by its address: only street and city leave, a f
  await assert.rejects(geocodeFlat(f.guest,'guest',{propertyId:f.property},near));
  const placed=await placeFlatByAddress(f.owner,'owner',{propertyId:f.property},near);assert.equal(placed.saved,true);
  const again=await placeFlatByAddress(f.owner,'owner',{propertyId:f.property},near);assert.equal(again.saved,false);
+ f.db.raw.prepare('UPDATE properties SET city=? WHERE id=?').run(' алматы ',f.property);const almaty=await geocodeFlat(f.owner,'owner',{propertyId:f.property},async()=>new Response(JSON.stringify([{lon:'76.92',lat:'43.25'}])));assert.equal(almaty.found,true);
 }finally{f.db.close();}});
