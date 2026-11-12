@@ -48,6 +48,13 @@ async function automaticActions(service:RentalService){
    // The guest said they left: free the flat so the cleaner can start. The owner is told.
    const left=await service.all("SELECT b.id FROM bookings b JOIN booking_terms t ON t.booking_id=b.id WHERE b.property_id=? AND b.status='confirmed' AND t.checkout_reported_at IS NOT NULL AND t.actual_checkout IS NULL",policy.property_id);
    for(const b of left){try{await delegated.bookingAction(b.id,{action:'checkout'});await service.notify(service.userId,'AI администратор подтвердил выезд по сообщению гостя. Квартира ждёт уборки.','administrator-checkout:'+b.id,'owner').run();actions++;}catch(error){if(!expectedConflict(error))throw error;}}
+   // The guest says they arrived: with payment and deposit verified the AI confirms the check-in for the owner;
+   // otherwise the owner is told once that only the payment check is missing.
+   const arrived=await service.all("SELECT b.id,b.payment_status,t.deposit_status,p.title FROM bookings b JOIN booking_terms t ON t.booking_id=b.id JOIN properties p ON p.id=b.property_id WHERE b.property_id=? AND b.status='confirmed' AND t.checkin_reported_at IS NOT NULL AND t.actual_checkin IS NULL AND b.end>?",policy.property_id,now());
+   for(const b of arrived){
+    if(b.payment_status!=='owner_verified'||b.deposit_status==='pending'){await service.notify(service.userId,'Гость на месте в «'+(b.title||'квартира')+'», но оплата или депозит ещё не подтверждены. Проверьте поступление, и AI администратор сразу подтвердит заселение.','administrator-checkin-payment:'+b.id,'owner').run();continue;}
+    try{await delegated.bookingAction(b.id,{action:'checkin'});await service.notify(service.userId,'AI администратор подтвердил заселение гостя в «'+(b.title||'квартира')+'» по его сообщению.','administrator-checkin:'+b.id,'owner').run();actions++;}catch(error){if(!expectedConflict(error))throw error;}
+   }
    // The AI checks each submitted cleaning report. A clean report is offered to the owner for one-tap acceptance;
    // without an answer in OWNER_REVIEW_SECONDS, or when the next guest arrives within two hours, the AI accepts it.
    const submitted=await service.all("SELECT j.*,p.title FROM cleaning_jobs j JOIN properties p ON p.id=j.property_id WHERE j.property_id=? AND j.status='submitted' ORDER BY j.end,j.id",policy.property_id);

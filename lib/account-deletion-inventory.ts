@@ -33,7 +33,7 @@ export const accountDeletionColumns:Record<string,string>={
  "auth_sessions": "hash,user_id,credential_version,expires_at",
  "background_jobs": "id,kind,scope,payload,status,attempts,max_attempts,available_at,lease_until,lease_token,repeat_seconds,last_completed,last_error,updated_at",
  "booking_changes": "id,booking_id,proposed_by,proposer_role,request_key,base_version,policy_version,start,end,occupied_until,billing_mode,rate,units,discount_percent,amount,reason,status,expires_at,created_at,decided_at",
- "booking_terms": "booking_id,billing_mode,rate,units,amount,deposit,deposit_status,house_rules,policy_version,actual_checkin,actual_checkout,checkout_reported_at,version,discount_percent,paid_amount,original_end,deposit_returned_at,refund_recorded_at",
+ "booking_terms": "booking_id,billing_mode,rate,units,amount,deposit,deposit_status,house_rules,policy_version,actual_checkin,actual_checkout,checkout_reported_at,version,discount_percent,paid_amount,original_end,deposit_returned_at,refund_recorded_at,checkin_reported_at",
  "bookings": "id,property_id,guest_id,start,end,occupied_until,guests,amount,status,expires_at,payment_status,request_key,created_at",
  "calendar_exports": "hash,property_id,owner_id,created_at,expires_at,revoked_at",
  "calendar_previews": "id,user_id,source_id,source_version,content_hash,expires_at,created_at",

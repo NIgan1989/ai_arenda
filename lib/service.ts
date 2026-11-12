@@ -393,7 +393,9 @@ export class RentalService {
       const scoped=this.execution.propertyId===b.property_id&&!!mandate?.auto_confirm&&mandateActive(mandate)&&mandate.version===this.execution.policyVersion;
       // Under autopilot the guest's own report of leaving frees the flat; the owner is told and keeps the deposit decision.
       const checkout=body.action==='checkout'&&!!mandate?.auto_assign&&!!(await this.one('SELECT checkout_reported_at FROM booking_terms WHERE booking_id=? AND checkout_reported_at IS NOT NULL',bookingId));
-      if(!scoped||!(checkout||body.action==='confirm'&&body.cleaningFee===mandate.cleaning_fee&&body.cleaningFee<=mandate.cleaning_budget))throw new DomainError('Автоматическое действие выходит за полномочия владельца.',403);
+      // The guest's report of arrival lets the AI confirm the check-in; payment and deposit are still checked below.
+      const checkin=body.action==='checkin'&&!!mandate?.auto_assign&&!!(await this.one('SELECT checkin_reported_at FROM booking_terms WHERE booking_id=? AND checkin_reported_at IS NOT NULL',bookingId));
+      if(!scoped||!(checkout||checkin||body.action==='confirm'&&body.cleaningFee===mandate.cleaning_fee&&body.cleaningFee<=mandate.cleaning_budget))throw new DomainError('Автоматическое действие выходит за полномочия владельца.',403);
     }
     const owner=b.owner_id===this.userId;
     const terms=await this.one('SELECT * FROM booking_terms WHERE booking_id=?',bookingId),op=await this.one('SELECT * FROM property_operations WHERE property_id=?',b.property_id);
@@ -420,12 +422,20 @@ export class RentalService {
       if(b.status!=='confirmed'||b.start>now())throw new DomainError('Проживание ещё не началось или уже завершено.',409);
       await this.db.batch([this.query('UPDATE booking_terms SET checkout_reported_at=?,version=version+1 WHERE booking_id=? AND checkout_reported_at IS NULL',now(),bookingId),this.notify(b.owner_id,'Гость сообщил о выезде. Проверьте освобождение квартиры.','checkout-reported:'+bookingId,'owner'),this.audit(bookingId,'booking.checkout_reported')]);return {message:'Сообщение о выезде сохранено. Ожидаем подтверждения освобождения квартиры.'};
     }
+    if(body.action==='report_checkin'){
+      if(b.guest_id!==this.userId)throw new DomainError('Сообщить о заселении может гость.',403);
+      if(b.status!=='confirmed'||b.start>now()||b.end<=now()||terms?.actual_checkin)throw new DomainError('Сейчас нельзя сообщить о заселении по этой брони.',409);
+      await this.db.batch([this.query('UPDATE booking_terms SET checkin_reported_at=?,version=version+1 WHERE booking_id=? AND checkin_reported_at IS NULL AND actual_checkin IS NULL',now(),bookingId),this.notify(b.owner_id,'Гость сообщил, что заселился в «'+b.title+'».','checkin-reported:'+bookingId,'owner'),this.audit(bookingId,'booking.checkin_reported')]);
+      return {message:'Спасибо! Заселение подтвердится, как только будут проверены оплата и депозит.'};
+    }
     if(body.action==='checkin'){
       if(!owner)throw new DomainError('Заселение подтверждает владелец.',403);
       if(terms?.actual_checkin&&!terms.actual_checkout&&op?.active_booking_id===bookingId)return {message:'Заселение уже подтверждено.'};
       if(b.status!=='confirmed'||b.start>now()||b.end<=now()||terms?.actual_checkout)throw new DomainError('Сейчас нельзя подтвердить заселение по этой брони.',409);
       if(b.payment_status!=='owner_verified'||terms?.deposit_status==='pending')throw new DomainError('Сначала проверьте оплату проживания и предусмотренный депозит.',409);
-      const result=await this.db.batch([this.query("UPDATE property_operations SET readiness='occupied',active_booking_id=?,version=version+1,updated_at=? WHERE property_id=? AND readiness='ready' AND active_booking_id IS NULL AND EXISTS(SELECT 1 FROM bookings b JOIN booking_terms t ON t.booking_id=b.id WHERE b.id=? AND b.status='confirmed' AND b.start<=? AND b.end>? AND b.payment_status='owner_verified' AND t.deposit_status<>'pending' AND t.actual_checkout IS NULL)",bookingId,now(),b.property_id,bookingId,now(),now()),this.query('UPDATE booking_terms SET actual_checkin=?,version=version+1 WHERE booking_id=? AND actual_checkin IS NULL AND EXISTS(SELECT 1 FROM property_operations WHERE property_id=? AND active_booking_id=?)',now(),bookingId,b.property_id,bookingId),this.audit(bookingId,'booking.checkin_requested')]);
+      // Under execution the mandate and the guest's report are checked again inside the write.
+      const checkinGate=this.execution?" AND t.checkin_reported_at IS NOT NULL AND EXISTS(SELECT 1 FROM property_policies pp WHERE pp.property_id=b.property_id AND pp.version=? AND pp.auto_confirm=1 AND pp.auto_assign=1 AND (pp.mandate_until=0 OR pp.mandate_until>?))":'';
+      const result=await this.db.batch([this.query("UPDATE property_operations SET readiness='occupied',active_booking_id=?,version=version+1,updated_at=? WHERE property_id=? AND readiness='ready' AND active_booking_id IS NULL AND EXISTS(SELECT 1 FROM bookings b JOIN booking_terms t ON t.booking_id=b.id WHERE b.id=? AND b.status='confirmed' AND b.start<=? AND b.end>? AND b.payment_status='owner_verified' AND t.deposit_status<>'pending' AND t.actual_checkout IS NULL"+checkinGate+")",bookingId,now(),b.property_id,bookingId,now(),now(),...(this.execution?[this.execution.policyVersion,now()]:[])),this.query('UPDATE booking_terms SET actual_checkin=?,version=version+1 WHERE booking_id=? AND actual_checkin IS NULL AND EXISTS(SELECT 1 FROM property_operations WHERE property_id=? AND active_booking_id=?)',now(),bookingId,b.property_id,bookingId),this.audit(bookingId,'booking.checkin_requested')]);
       if(!result[0].meta.changes)throw new DomainError('Квартира не готова или в ней ещё проживает другой гость.',409);return {message:'Фактическое заселение подтверждено.'};
     }
     if(body.action==='dispute_checkout'){

@@ -138,3 +138,21 @@ test('the AI checks the cleaning photo report: the owner accepts with one tap, o
   else assert.equal(status(),'submitted','a report with a problem is never accepted by the AI');
  }finally{f.db.close();}}
 });
+
+test('under autopilot the guest report of arrival confirms the check-in once the payment is verified',async()=>{
+ const {checkAdministratorOwner}=await load('administrator-runtime');
+ for(const mode of ['manual','auto']){const f=await fixture();try{
+  await matchingAction(f.owner,'owner','preference',{propertyId:f.property,mode});
+  f.db.raw.prepare('UPDATE bookings SET start=?,end=?,occupied_until=? WHERE id=?').run(now()-600,now()+7200,now()+12600,f.booking);
+  f.db.raw.prepare("UPDATE property_operations SET readiness='ready' WHERE property_id=?").run(f.property);
+  await assert.rejects(f.owner.bookingAction(f.booking,{action:'report_checkin'}),e=>e.status===403);
+  await f.guest.bookingAction(f.booking,{action:'report_checkin'});
+  const checkin=()=>f.db.raw.prepare('SELECT actual_checkin FROM booking_terms WHERE booking_id=?').get(f.booking).actual_checkin;
+  f.release();await checkAdministratorOwner(f.db,'owner');assert.equal(checkin(),null,'not before the payment is verified');
+  if(mode==='auto')assert.ok(f.db.raw.prepare("SELECT id FROM notifications WHERE dedupe=?").get('owner:administrator-checkin-payment:'+f.booking));
+  f.db.raw.prepare("UPDATE bookings SET payment_status='owner_verified' WHERE id=?").run(f.booking);f.db.raw.prepare("UPDATE booking_terms SET deposit_status='owner_verified' WHERE booking_id=?").run(f.booking);
+  f.release();await checkAdministratorOwner(f.db,'owner');
+  if(mode==='auto'){assert.ok(checkin());assert.equal(f.db.raw.prepare('SELECT readiness FROM property_operations WHERE property_id=?').get(f.property).readiness,'occupied');}
+  else assert.equal(checkin(),null,'an owner answering personally confirms it in person');
+ }finally{f.db.close();}}
+});

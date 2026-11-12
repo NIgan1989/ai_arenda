@@ -17,3 +17,6 @@ CREATE TABLE stay_reviews (
 );
 CREATE INDEX stay_reviews_property ON stay_reviews(property_id,created_at);
 CREATE TRIGGER account_erased_stay_reviews_insert BEFORE INSERT ON stay_reviews WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.guest_id OR user_id=NEW.owner_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END;
+-- The guest says they have arrived; under autopilot the AI confirms the check-in once the
+-- payment and the deposit are verified.
+ALTER TABLE booking_terms ADD COLUMN checkin_reported_at INTEGER;
