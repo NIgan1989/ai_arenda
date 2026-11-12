@@ -17,6 +17,7 @@ import {Action,Stage,h,handleHeight,topInset} from './SheetParts';
 import {GuestForm} from './GuestForm';
 import {GuestResults} from './GuestResults';
 import {GuestMode} from './GuestMode';
+import {PriceTip} from './PriceTip';
 
 // Map-first home screen, like a taxi app: a full-screen map and one bottom sheet.
 // Collapsed, the sheet holds only the head (AI line, chips, the "Сейчас" card); expanded, the controls of the role.
@@ -467,6 +468,7 @@ export function MapHome({ role, accountId, data, menu, onChanged, onOpenProcess,
           mapCenter.current = c;
         }}
       />
+      {role === 'owner' && !selected && <PriceTip cards={data.approvals || []} onChanged={onChanged} />}
       {!!menu && <View style={h.menu}>{menu}</View>}
       <Animated.View style={[h.sheet, { height: sheet }]} accessibilityViewIsModal={false}>
         <View {...drag.handle.panHandlers}>

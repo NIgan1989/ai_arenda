@@ -36,6 +36,7 @@
 -- migration 0032_platform_billing.sql sha256:4fe19e04e8358484e46e4f86b0d7a7925d799fd5eea3f0e3845b970032d2155b
 -- migration 0033_property_archive.sql sha256:15264859b54b5535aaabbec84a284b525760962bf652590ba7cb5bdc7913f535
 -- migration 0034_ai_autopilot.sql sha256:f053f458ea584b4ac7e2f5b9aa2443c16b6b0c52e8618c67095611a18e2a0e2e
+-- migration 0035_price_advice.sql sha256:675c9441fd26087ef8ef3e63caf8f71e7b78c7d9c1ee4fd0156505f47ad51fcf
 
 -- table access_receipts
 CREATE TABLE access_receipts (id TEXT PRIMARY KEY,property_id TEXT NOT NULL,entity_kind TEXT NOT NULL,entity_id TEXT NOT NULL,user_id TEXT NOT NULL,created_at INTEGER NOT NULL,expires_at INTEGER NOT NULL);
@@ -613,6 +614,25 @@ CREATE TABLE platform_commissions (
  created_at INTEGER NOT NULL
 , managed INTEGER NOT NULL DEFAULT 0 CHECK(managed IN (0,1)));
 
+-- table price_suggestions
+CREATE TABLE price_suggestions (
+ id TEXT PRIMARY KEY,
+ property_id TEXT NOT NULL REFERENCES properties(id) ON DELETE CASCADE,
+ owner_id TEXT NOT NULL REFERENCES profiles(id),
+ direction TEXT NOT NULL CHECK(direction IN ('up','down')),
+ percent INTEGER NOT NULL CHECK(percent BETWEEN 1 AND 50),
+ policy_version INTEGER NOT NULL,
+ from_daily INTEGER NOT NULL, to_daily INTEGER NOT NULL,
+ from_hourly INTEGER NOT NULL, to_hourly INTEGER NOT NULL,
+ from_nightly INTEGER NOT NULL, to_nightly INTEGER NOT NULL,
+ signals TEXT NOT NULL DEFAULT '{}',
+ reasons TEXT NOT NULL DEFAULT '[]',
+ status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','accepted','declined','expired')),
+ created_at INTEGER NOT NULL,
+ expires_at INTEGER NOT NULL,
+ decided_at INTEGER
+);
+
 -- table profile_details
 CREATE TABLE profile_details (
  user_id TEXT PRIMARY KEY REFERENCES profiles(id) ON DELETE CASCADE,
@@ -897,6 +917,12 @@ CREATE INDEX platform_commissions_owner ON platform_commissions(owner_id,mode);
 
 -- index platform_commissions_time
 CREATE INDEX platform_commissions_time ON platform_commissions(created_at);
+
+-- index price_suggestions_owner
+CREATE INDEX price_suggestions_owner ON price_suggestions(owner_id,status,expires_at);
+
+-- index price_suggestions_property
+CREATE INDEX price_suggestions_property ON price_suggestions(property_id,created_at);
 
 -- index property_imports_owner
 CREATE INDEX property_imports_owner ON property_imports(owner_id,created_at);
@@ -1246,6 +1272,12 @@ CREATE TRIGGER account_erased_platform_commissions_insert BEFORE INSERT ON platf
 
 -- trigger account_erased_platform_commissions_update
 CREATE TRIGGER account_erased_platform_commissions_update BEFORE UPDATE ON platform_commissions WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.owner_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END;
+
+-- trigger account_erased_price_suggestions_insert
+CREATE TRIGGER account_erased_price_suggestions_insert BEFORE INSERT ON price_suggestions WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.owner_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END;
+
+-- trigger account_erased_price_suggestions_update
+CREATE TRIGGER account_erased_price_suggestions_update BEFORE UPDATE ON price_suggestions WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.owner_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END;
 
 -- trigger account_erased_profile_details_insert
 CREATE TRIGGER account_erased_profile_details_insert BEFORE INSERT ON profile_details WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.user_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END;
