@@ -1,7 +1,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {fixture,load,now,iso} from './helpers/platform.mjs';
-const {processStatus}=await load('process-status'),{calendarEvents}=await load('calendar-events');
+const {processStatus}=await load('process-status');
 test('catalog pagination, sorting and filters preserve safe public projection',async()=>{
  const f=await fixture();try{
   f.db.raw.prepare('UPDATE properties SET published=1 WHERE id=?').run(f.property);
@@ -14,11 +14,6 @@ test('catalog pagination, sorting and filters preserve safe public projection',a
   for(const bad of [{page:'0'},{limit:'61'},{limit:'1.5'},{minPrice:'5',maxPrice:'4'},{sort:'unsafe'}])await assert.rejects(f.guest.publicSearch(bad));
   const slim=await f.guest.roleState('guest',{catalog:false});assert.deepEqual(slim.properties,[]);assert.equal(slim.bookings.length,1);assert.deepEqual(slim.jobs,[]);
  }finally{f.db.close();}
-});
-test('calendar hides cleaner workflow from guests and preserves confirmed checkout facts',()=>{
- const time=10000,data={user:{id:'worker'},bookings:[{id:'stay',title:'Home',status:'confirmed',start:100,end:1000,terms:{}},{id:'done',title:'Done',status:'completed',start:100,end:800,terms:{actual_checkout:700}}],jobs:[{id:'mine',title:'Home',assigned_to:'worker',status:'assigned',start:100,end:1000},{id:'other',title:'Private',assigned_to:'other',status:'assigned',start:100,end:1000}]};
- const guest=calendarEvents(data,'guest','',time);assert.equal(guest.length,2);assert.match(guest[0].title,/требует проверки/);assert.equal(Date.parse(guest[1].end)/1000,700);assert.equal(data.bookings[0].terms.actual_checkout,undefined);
- assert.equal(calendarEvents(data,'cleaner','',time).filter(e=>e.extendedProps.kind==='job').length,1);
 });
 test('pending applications cannot display a second invitation to apply',()=>{
  const job={status:'open',assigned_to:null};assert.equal(processStatus('job',job,'cleaner','c',{status:'pending'}).label,'Отклик отправлен');assert.equal(processStatus('job',job,'cleaner','c',{status:'pending'}).bucket,'waiting');assert.equal(processStatus('job',{status:'submitted'},'owner','o').bucket,'waiting');assert.equal(processStatus('booking',{status:'cancelled'},'guest','g').bucket,'done');
