@@ -664,3 +664,17 @@ html[data-design="unified"] .workspace-shell.release-workspace[data-section="map
 html[data-design="unified"] .workspace-shell.release-workspace[data-section="map"] .chat-transcript{padding:0}
 @media(max-width:900px) and (min-width:701px){html[data-design="unified"] .workspace-shell.release-workspace[data-section="map"] .workspace-content{margin-left:208px;width:calc(100% - 208px)}}
 @media(max-width:700px){html[data-design="unified"] .workspace-shell.release-workspace[data-section="map"] .workspace-content{margin-left:0;width:100%}.release-workspace[data-section="map"] .map-concept-operations{height:calc(100dvh - 88px - env(safe-area-inset-bottom))!important;min-height:0!important}.matching-inbox{bottom:110px}.matching-inbox-panel{max-height:calc(100dvh - 240px)}}
+
+/* A quiet text action under a card: the route to the booked flat, or a new search after a request is sent. */
+.smart-route {
+  align-self: flex-start;
+  min-height: var(--t-control-touch);
+  padding: 0 var(--t-space-8);
+  border: 0;
+  background: none;
+  color: var(--t-accent);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+.smart-route:disabled { opacity: .5; cursor: default; }

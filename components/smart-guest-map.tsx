@@ -209,7 +209,7 @@ function MatchingBooking({ property, filters, requestId, onChanged, onEdit }: {
 }
 
 // The guest's first screen and the public page: the map, one line for a request and, after it, one offer at a time.
-export function SmartGuestMap({ publicMode = false, accountId, city, onChoose, data, onProcess, onAsk, title, links }: SmartGuestMapProps) {
+export function SmartGuestMap({ publicMode = false, accountId, city, onChoose, data, onProcess, onAsk, onActivity, title, links }: SmartGuestMapProps) {
   // ---------- State ----------
   const [draft, setDraft] = useState<Row>(() => ({
     city: city || DEFAULT_CITY, district: '', guests: '2', maxPrice: '', priority: 'balanced', features: [], near: null,
@@ -750,6 +750,7 @@ export function SmartGuestMap({ publicMode = false, accountId, city, onChoose, d
           focus={focus}
           card={card}
           onOpenCard={openCard}
+          onRoute={onActivity}
           onText={text => void ask(text)}
           onChip={chip}
           onChange={change}
@@ -826,6 +827,9 @@ export function SmartGuestMap({ publicMode = false, accountId, city, onChoose, d
                 Мои брони
                 <ArrowUpRight size={18} aria-hidden="true" />
               </a>
+              <button type="button" className="smart-route" disabled={busy} onClick={() => void edit()}>
+                Новый поиск
+              </button>
             </div>
           ) : stage === 'detail' && current ? (
             <div className="smart-detail">

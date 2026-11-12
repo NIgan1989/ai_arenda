@@ -29,6 +29,8 @@ type SearchIntroProps = {
   focus: SearchFocus | null;
   card: NowCardData | null;
   onOpenCard?: (card: NowCardData) => void;
+  /** Opens the map of the guest's own stay: the route to the flat and location sharing. */
+  onRoute?: () => void;
   onText: (text: string) => void;
   onChip: (chip: AiChip) => void;
   onChange: (patch: Row) => void;
@@ -101,6 +103,11 @@ export function SearchIntro(props: SearchIntroProps) {
       {/* A note is the answer to what was just typed and takes the card's place while it is shown. On a short phone
           the card would leave too little of the map: there it waits in the opened sheet (see the styles). */}
       {!note && <NowCard card={props.card} onOpen={props.onOpenCard} />}
+      {!note && props.onRoute && props.card?.entityKind === 'booking' && (
+        <button type="button" className="smart-route" onClick={props.onRoute}>
+          Маршрут и заселение
+        </button>
+      )}
       <button type="button" className="map-home-refine" aria-expanded={expanded} onClick={() => onExpanded(!expanded)}>
         <SlidersHorizontal size={18} aria-hidden="true" />
         Уточнить
