@@ -1,0 +1,23 @@
+/* Choosing a day, a time and "how many". */
+.pick-field{display:grid;gap:8px;min-width:0}
+.pick-label{font-size:var(--t-font-label);line-height:var(--t-line-label);font-weight:600;color:var(--t-ink-soft)}
+.pick-days{display:flex;gap:8px;overflow-x:auto;padding:4px;margin:-4px;scrollbar-width:none;scroll-snap-type:x proximity}
+.pick-days::-webkit-scrollbar{display:none}
+.pick-day{display:grid;justify-items:center;gap:0;flex:none;width:64px;padding:8px 4px;border:1px solid var(--t-line);border-radius:var(--t-radius-lg);background:var(--t-surface);color:var(--t-ink);font:inherit;cursor:pointer;scroll-snap-align:start}
+.pick-day small{font-size:12px;line-height:16px;color:var(--t-muted)}
+.pick-day strong{font-size:22px;line-height:28px;font-weight:650;font-variant-numeric:tabular-nums}
+.pick-day.is-on{border-color:var(--t-accent);background:var(--t-accent);color:var(--t-on-accent)}
+.pick-day.is-on small{color:var(--t-on-accent)}
+.pick-day:focus-visible,.pick-stepper button:focus-visible,.pick-segments button:focus-visible,.pick-time:focus-visible{outline:3px solid var(--t-focus);outline-offset:2px}
+.pick-time{width:100%;height:var(--t-control-field);padding:0 16px;border:1px solid var(--t-line);border-radius:var(--t-radius-md);background:var(--t-surface);color:var(--t-ink);font:inherit;font-size:16px;font-weight:600;font-variant-numeric:tabular-nums}
+.pick-stepper{display:grid;grid-template-columns:40px minmax(0,1fr) 40px;align-items:center;gap:4px;height:var(--t-control-field);padding:0 4px;border:1px solid var(--t-line);border-radius:var(--t-radius-md);background:var(--t-surface)}
+.pick-stepper button{display:grid;place-items:center;width:40px;height:40px;border:0;border-radius:var(--t-radius-sm);background:var(--t-surface-alt);color:var(--t-ink);cursor:pointer}
+.pick-stepper button:disabled{color:var(--t-line-strong);cursor:default}
+.pick-stepper output{min-width:0;overflow:hidden;text-overflow:ellipsis;text-align:center;font-size:16px;font-weight:600;color:var(--t-ink);white-space:nowrap}
+.pick-segments{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);gap:4px;padding:4px;border-radius:var(--t-radius-lg);background:var(--t-surface-alt)}
+.pick-segments button{display:grid;gap:0;justify-items:center;min-height:var(--t-control-primary);padding:8px 4px;border:0;border-radius:var(--t-radius-md);background:transparent;color:var(--t-ink-soft);font:inherit;cursor:pointer}
+.pick-segments strong{font-size:14px;line-height:20px;font-weight:600}
+.pick-segments small{font-size:12px;line-height:16px;color:var(--t-muted)}
+.pick-segments button.is-on{background:var(--t-surface);color:var(--t-accent);box-shadow:0 1px 4px rgb(14 19 36 / .08)}
+.pick-row{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+@media(max-width:400px){.pick-row .pick-stepper output{font-size:14px}}
