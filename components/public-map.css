@@ -1,13 +1,180 @@
-.public-map-shell{height:100dvh;overflow:hidden}
-.public-map-account{position:fixed;right:14px;top:16px;z-index:75}
-.public-map-menu-trigger{width:44px;height:44px;display:grid;place-items:center;background:var(--glass-nav,#ffffffe0);border:1px solid #ffffffc0;border-radius:50%;box-shadow:0 3px 16px #302d2824;backdrop-filter:blur(20px);color:var(--primary);cursor:pointer}
-.public-map-menu{z-index:100;width:min(320px,calc(100vw - 24px));padding:16px;border-radius:24px;background:var(--card);box-shadow:0 12px 44px #302d2826}
-.public-map-menu>strong{display:block;font-size:18px}.public-map-menu>p{font-size:12px;line-height:1.5;color:var(--muted-foreground);margin:8px 0 12px}
-.public-map-menu>a{display:flex;align-items:center;gap:8px;min-height:48px;font-size:14px;border-top:1px solid var(--border);text-decoration:none;color:var(--foreground)}.public-map-menu>a>svg:last-child{margin-left:auto;color:var(--primary)}
-.public-map-menu>small{display:flex;align-items:flex-start;gap:8px;font-size:12px;line-height:1.5;background:var(--accent);border-radius:12px;padding:8px;margin-top:8px}.public-map-menu>small>svg{flex:none;margin-top:2px}
-.public-map-brand{position:fixed;bottom:calc(52px + env(safe-area-inset-bottom,0px));left:16px;z-index:2;display:flex;align-items:center;gap:8px;background:var(--glass-nav,#ffffffe0);border:1px solid #ffffffc0;backdrop-filter:blur(20px);box-shadow:0 3px 16px #302d2814;padding:8px 12px;border-radius:16px;text-decoration:none;color:var(--foreground)}
-.public-map-brand span{display:grid;gap:1px}.public-map-brand strong{font-size:12px}.public-map-brand small{font-size:12px;color:var(--muted-foreground)}
-.public-map-shell:has(.map-panel:not([data-snap="0"])) .public-map-brand,.public-map-shell:has(.map-list-view) .public-map-brand{display:none}
-.public-map-entry-status{position:fixed;left:50%;bottom:60px;transform:translateX(-50%);max-width:calc(100vw - 32px);padding:12px;background:var(--card);border:1px solid var(--border);border-radius:16px;box-shadow:0 5px 20px #0002;z-index:90;font-size:14px;display:flex;align-items:center;gap:12px}.public-map-entry-status button{min-width:44px;min-height:44px}
-@supports not (backdrop-filter:blur(20px)){.public-map-brand,.public-map-menu-trigger{background:var(--t-surface)}}
-.public-legal-links{display:grid;gap:2px;margin-top:8px}.public-legal-links a{min-height:44px;display:flex;align-items:center;font-size:12px;color:var(--primary);text-decoration:none}
+/* The public page "/" (components/public-home.tsx): the guest's map with a brand and a way in over it. */
+
+.public-map-shell.smart-public {
+  position: relative;
+  display: block;
+  height: 100dvh;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--t-surface-alt);
+}
+
+.public-map-shell .public-map-main {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  padding: 0;
+}
+
+/* ---------- Brand on the left, the way in on the right ---------- */
+.public-map-shell .public-top {
+  position: absolute;
+  z-index: 40;
+  top: calc(var(--t-space-16) + env(safe-area-inset-top, 0px));
+  right: var(--t-space-16);
+  left: var(--t-space-16);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--t-space-12);
+  pointer-events: none;
+}
+
+.public-map-shell .public-top-brand,
+.public-map-shell .public-top-nav {
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  min-height: var(--t-control-field);
+  border: 1px solid var(--t-line);
+  border-radius: var(--t-radius-full);
+  background: var(--t-surface);
+  box-shadow: 0 2px 8px rgb(30 32 29 / 0.12);
+}
+
+.public-map-shell .public-top-brand {
+  gap: var(--t-space-8);
+  padding: 0 var(--t-space-16) 0 var(--t-space-12);
+  color: var(--t-ink);
+  font-size: var(--t-font-subtitle);
+  line-height: var(--t-line-subtitle);
+  font-weight: 600;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.public-map-shell .public-top-brand img {
+  width: 28px;
+  height: 28px;
+  object-fit: contain;
+}
+
+.public-map-shell .public-top-nav {
+  gap: var(--t-space-4);
+  padding: var(--t-space-4);
+}
+
+.public-map-shell .public-top-link,
+.public-map-shell .public-top-enter {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--t-control-compact);
+  padding: 0 var(--t-space-16);
+  border-radius: var(--t-radius-full);
+  font-size: var(--t-font-label);
+  line-height: var(--t-line-label);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.public-map-shell .public-top-link {
+  color: var(--t-ink-soft);
+  font-weight: 500;
+}
+
+.public-map-shell .public-top-link:hover {
+  background: var(--t-surface-alt);
+  color: var(--t-ink);
+}
+
+.public-map-shell .public-top-enter {
+  background: var(--t-accent);
+  color: var(--t-on-accent);
+  font-weight: 600;
+}
+
+.public-map-shell .public-top-enter:hover {
+  background: var(--t-accent-pressed);
+}
+
+.public-map-shell .public-top-brand:focus-visible,
+.public-map-shell .public-top-link:focus-visible,
+.public-map-shell .public-top-enter:focus-visible {
+  outline: 3px solid var(--t-focus);
+  outline-offset: 2px;
+}
+
+/* ---------- The map under the brand ---------- */
+.public-map-shell .smart-map {
+  --smart-controls-top: 80px;
+  --smart-edge: var(--t-space-16);
+  --smart-note-top: 80px;
+  height: 100%;
+}
+
+/* The message while a chosen flat opens its booking form. */
+.public-map-entry-status {
+  position: fixed;
+  z-index: 90;
+  left: 50%;
+  bottom: var(--t-space-24);
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: var(--t-space-12);
+  max-width: calc(100vw - var(--t-space-32));
+  padding: var(--t-space-12) var(--t-space-16);
+  border: 1px solid var(--t-line);
+  border-radius: var(--t-radius-lg);
+  background: var(--t-surface);
+  box-shadow: 0 8px 24px rgb(30 32 29 / 0.14);
+  color: var(--t-ink);
+  font-size: var(--t-font-label);
+  line-height: var(--t-line-label);
+}
+
+.public-map-entry-status button {
+  display: grid;
+  place-items: center;
+  min-width: var(--t-control-touch);
+  min-height: var(--t-control-touch);
+  border: 0;
+  background: none;
+  color: var(--t-muted);
+  cursor: pointer;
+}
+
+@media (min-width: 701px) {
+  /* The floating card starts under the brand. */
+  .public-map-shell .smart-map .map-home-panel {
+    top: 80px;
+    max-height: calc(100% - 96px);
+  }
+}
+
+@media (max-width: 700px) {
+  /* On a phone the two "work with us" links live in the opened sheet; here only the way in. */
+  .public-map-shell .public-top-link {
+    display: none;
+  }
+
+  .public-map-shell .public-top-enter {
+    min-height: var(--t-control-field);
+    padding: 0 var(--t-space-20);
+  }
+
+  .public-map-shell .public-top-nav {
+    padding: 0;
+    border: 0;
+    background: none;
+  }
+
+  .public-map-shell .smart-map .map-home-panel {
+    padding-bottom: calc(var(--t-space-16) + env(safe-area-inset-bottom, 0px));
+  }
+
+  /* The opened sheet stops just under the brand and the way in. */
+  .public-map-shell .smart-map .map-home-panel[data-expanded="true"] {
+    max-height: calc(100% - 72px - env(safe-area-inset-top, 0px));
+  }
+}

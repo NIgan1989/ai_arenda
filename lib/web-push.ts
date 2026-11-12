@@ -26,7 +26,7 @@ export async function webPushState(service:RentalService,role:Role,config:Operat
 export async function manageWebPush(service:RentalService,role:Role,body:Row,config:OperationConfig,sessionHash:string){
  await service.authorizeWorkspace(role,'account');await activeSession(service,sessionHash);
  if(body.action==='remove'){
-  await q(service.db,'DELETE FROM push_subscriptions WHERE user_id=? AND session_hash=? AND role=?',service.userId,sessionHash,role).run();return {message:'Уведомления этого кабинета отключены на устройстве.'};
+  await q(service.db,'DELETE FROM push_subscriptions WHERE user_id=? AND session_hash=? AND role=?',service.userId,sessionHash,role).run();return {message:'Уведомления для этой роли отключены на устройстве.'};
  }
  if(!pushConfigured(config))throw new DomainError('Push-уведомления ещё не настроены на сервере.',503);
  if(body.action==='subscribe'){
@@ -39,7 +39,7 @@ export async function manageWebPush(service:RentalService,role:Role,body:Row,con
    q(service.db,'DELETE FROM push_subscriptions WHERE user_id=? AND session_hash=? AND role=?',service.userId,sessionHash,role),
    q(service.db,`INSERT INTO push_subscriptions(id,user_id,session_hash,role,endpoint_hash,ciphertext,created_at,updated_at) SELECT ?,?,?,?,?,?,?,? WHERE EXISTS(SELECT 1 FROM auth_sessions s JOIN auth_accounts a ON a.id=s.user_id AND a.credential_version=s.credential_version WHERE s.hash=? AND s.user_id=? AND s.expires_at>?) ON CONFLICT(endpoint_hash,role) DO UPDATE SET session_hash=excluded.session_hash,ciphertext=excluded.ciphertext,updated_at=excluded.updated_at WHERE push_subscriptions.user_id=excluded.user_id`,uuid(),service.userId,sessionHash,role,endpointHash,ciphertext,at,at,sessionHash,service.userId,at)
   ]);
-  await activeSession(service,sessionHash);return {message:'Уведомления включены для этого кабинета на устройстве.'};
+  await activeSession(service,sessionHash);return {message:'Уведомления для этой роли включены на устройстве.'};
  }
  if(body.action==='test'){
   const at=epoch(),id=uuid();
@@ -52,7 +52,7 @@ export async function manageWebPush(service:RentalService,role:Role,body:Row,con
  }
  throw new DomainError('Неизвестное действие.');
 }
-export function pushPayload(role:Role,test=false,matching=false){return JSON.stringify({title:'AI Аренда',body:test?'Уведомления на этом устройстве работают.':'В вашем кабинете есть новое событие. Откройте приложение, чтобы узнать подробности.',url:'/workspace/'+role+(matching?'/map':'/assistant')});}
+export function pushPayload(role:Role,test=false,matching=false){return JSON.stringify({title:'AI Аренда',body:test?'Уведомления на этом устройстве работают.':'Есть новое событие. Откройте приложение, чтобы узнать подробности.',url:'/workspace/'+role+(matching?'/map':'/assistant')});}
 export async function deliverWebPush(db:D1Database,config:OperationConfig,limit=12,transport:typeof fetch=fetch){
  if(!pushConfigured(config))return {configured:false,sent:0,failed:0};
  const now=epoch();

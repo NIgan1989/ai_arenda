@@ -42,3 +42,35 @@ export function stayInterval(mode:'daily'|'hourly',dayOffset:number,hour:number,
  return {start:start.toISOString(),end:end.toISOString()};
 }
 export function countdown(seconds:number){const v=Math.max(0,Math.floor(seconds));return Math.floor(v/60)+':'+String(v%60).padStart(2,'0');}
+
+// ---------- Pins that would cover each other ----------
+// Price pins are text boxes; at city zoom neighbours overlap and cut each other's text. Boxes are visited in
+// order of importance (lower `rank` first, then input order); a box that touches one already shown joins it,
+// and the screen draws the shown box with "+N". Pure function, covered by mobile/tests/map-cluster.test.mjs.
+export type PinBox = { key: string; x: number; y: number; width: number; height: number; rank?: number };
+export type PinGroup = { key: string; members: string[] };
+
+const SUFFIX = 28; // room for the "+N" of a pin that stands for several
+
+/** The width of a pin with this label: 14px semibold text plus its padding. */
+export function pinWidth(label: string) {
+  return Math.max(44, Math.round(label.length * 8 + 24));
+}
+
+export function groupPins(boxes: PinBox[], gap = 6): PinGroup[] {
+  const ordered = boxes
+    .map((box, index) => ({ box, index }))
+    .sort((a, b) => (a.box.rank ?? 0) - (b.box.rank ?? 0) || a.index - b.index)
+    .map(item => item.box);
+  const shown: { box: PinBox; members: string[] }[] = [];
+  for (const box of ordered) {
+    // A shown box may grow by its "+N", so it is tested at that width.
+    const host = shown.find(({ box: other }) => {
+      const reach = (other.width + SUFFIX + box.width) / 2 + gap;
+      return Math.abs(other.x - box.x) < reach && Math.abs(other.y - box.y) < (other.height + box.height) / 2 + gap;
+    });
+    if (host) host.members.push(box.key);
+    else shown.push({ box, members: [box.key] });
+  }
+  return shown.map(({ box, members }) => ({ key: box.key, members }));
+}

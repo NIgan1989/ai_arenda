@@ -1,75 +1,627 @@
 'use client';
-import {useEffect,useRef,useState,type FormEvent} from 'react';
+import {useEffect,useRef,useState,type PointerEvent as ReactPointerEvent,type ReactNode} from 'react';
 import {useQuery,useQueryClient} from '@tanstack/react-query';
-import {MapPin,Search,Navigation,LocateFixed,ArrowLeft,ChevronUp,ChevronDown,MessagesSquare,SlidersHorizontal,Sparkles,ArrowUp} from 'lucide-react';
-import {Button} from './ui/button';import {Input} from './ui/input';import {NativeSelect} from './ui/native-select';
+import {ArrowLeft,Brush,Building2,CalendarCheck,ChevronDown,ChevronRight,LocateFixed,MapPin,MessagesSquare,Navigation,Zap} from 'lucide-react';
 import {JourneyNavigation,type LocationFix} from './journey-navigation';
 import type {JourneyRoute} from '../lib/route-geometry';
+import type {Role} from '../lib/domain';
 import {PropertyCover} from './property-cover';
-import {mapSearchRequest,mapSearchFilters} from '../lib/map-search-request';
-import {cityNearLocation,geoDistance,mapCities} from '../lib/map-location';
+import {cityNearLocation,mapCities} from '../lib/map-location';
 import {browserLocationFix,locationFailure,requestBrowserLocation} from '../lib/browser-location';
-import {StatusBadge} from './property-listing';
-import {MapCanvas} from './map-canvas';import {PropertyListing} from './property-listing';import {DateRangeField} from './patterns/date-range-field';import {processStatus} from '../lib/process-status';
+import {MapCanvas} from './map-canvas';import {PropertyListing,StatusBadge} from './property-listing';import {processStatus} from '../lib/process-status';
+import {AiLine,roleAiLine,type AiChip} from './ai-line';
+import {NowCard,nowCard,nowCardWhen,type NowCardData} from './now-card';
 import './map-workspace.css';
-import {SmartGuestMap} from './smart-guest-map';
+import {SmartGuestMap,matchingAPI} from './smart-guest-map';
 import {MatchingInbox} from './matching-inbox';
 import {ProcessJourney} from './process-journey';
 type Row=Record<string,any>;
 async function mapAPI(role:string,action:string,body:Row={}){const r=await fetch('/api/operations/map/'+action,{method:'POST',headers:{'Content-Type':'application/json','X-Workspace-Role':role},body:JSON.stringify(body),cache:'no-store',keepalive:action==='journey/stop'}),v=await r.json() as Row;if(!r.ok)throw Object.assign(Error(v.error||'Нет связи с картой.'),{status:r.status});return v;}
 type MapWorkspaceInput={publicMode?:boolean;role:string;accountId:string;data:Row;onChoose:(p:Row,initial:Row)=>void;onDiscussion:(c:Row)=>void;onProcess:(kind:string,id:string)=>void;onCreate:()=>void;onAsk:(text:string)=>void};
-export function MapWorkspace(props:MapWorkspaceInput){const [activity,setActivity]=useState(false);if(props.role==='guest'&&!activity)return <SmartGuestMap publicMode={props.publicMode} accountId={props.accountId} city={props.data.profile?.city} onChoose={props.onChoose} onActivity={props.publicMode?undefined:()=>setActivity(true)}/>;return <div className="map-concept-operations" style={{position:'relative',width:'100%',height:'100%',minHeight:520}}>{activity&&<button className="smart-activity" style={{zIndex:40,top:80}} onClick={()=>setActivity(false)}><ArrowLeft size={17}/>К подбору жилья</button>}<LegacyMapWorkspace {...props}/>{props.role==='owner'&&<MatchingInbox accountId={props.accountId}/>}</div>;}
-function LegacyMapWorkspace({publicMode=false,role,accountId,data,onChoose,onDiscussion,onProcess,onCreate}:{publicMode?:boolean;role:string;accountId:string;data:Row;onChoose:(p:Row,initial:Row)=>void;onDiscussion:(c:Row)=>void;onProcess:(kind:string,id:string)=>void;onCreate:()=>void;onAsk:(text:string)=>void}){
- const qc=useQueryClient(),[filters,setFilters]=useState<Row>({city:data.profile?.city||'',guests:'1',mode:'daily',page:'1'}),[draft,setDraft]=useState<Row>(filters),[advanced,setAdvanced]=useState(false),[view,setView]=useState(role==='guest'?'search':'activity'),[selected,setSelected]=useState(''),[snap,setSnap]=useState<0|1|2>(0),[list,setList]=useState(false),[error,setError]=useState(''),[busy,setBusy]=useState(false),[picking,setPicking]=useState(false),[picked,setPicked]=useState<[number,number]|null>(null),[travelMode,setTravelMode]=useState('walking'),[session,setSession]=useState(''),[gpsStatus,setGpsStatus]=useState(''),[localPoint,setLocalPoint]=useState<[number,number]|null>(null),pointer=useRef(0),sending=useRef(false),initialised=useRef(false),panel=useRef<HTMLElement>(null);
- const toolbar=useRef<HTMLDivElement>(null),[toolbarBottom,setToolbarBottom]=useState(124);
- useEffect(()=>{const node=toolbar.current;if(!node)return;const update=()=>setToolbarBottom(Math.min(node.offsetTop+node.offsetHeight+10,window.innerHeight-80));const observer=new ResizeObserver(update);observer.observe(node);update();return()=>observer.disconnect();},[]);
- const [searchRevision,setSearchRevision]=useState(0);
- const [searchMessage,setSearchMessage]=useState(''),[searchBusy,setSearchBusy]=useState(false);
- const [request,setRequest]=useState(''),[cityHint,setCityHint]=useState(''),[nearby,setNearby]=useState(false),[searchOrigin,setSearchOrigin]=useState<[number,number]|null>(null),manualCity=useRef(false);
- const [locationWatching,setLocationWatching]=useState(false),[locationBusy,setLocationBusy]=useState(false),[locationNotice,setLocationNotice]=useState('');
- const locationRequest=useRef<Promise<LocationFix|null>|null>(null),locationLive=useRef(true);
- useEffect(()=>{locationLive.current=true;return()=>{locationLive.current=false;};},[]);
- const [privateRoute,setPrivateRoute]=useState<JourneyRoute|null>(null),[localFix,setLocalFix]=useState<LocationFix|null>(null);
- const expanded=snap===2,setExpanded=(value:boolean)=>setSnap(value?2:1);
- useEffect(()=>{if(!localFix)return;const remaining=90000-(Date.now()-localFix.recordedAt*1000);if(remaining<=0){setLocalFix(null);return;}const timer=setTimeout(()=>setLocalFix(null),remaining);return()=>clearTimeout(timer);},[localFix]);
- useEffect(()=>{if(!locationWatching||!navigator.geolocation)return;const watch=navigator.geolocation.watchPosition(p=>{const fix=browserLocationFix(p);if(fix){setLocalFix(fix);setLocationNotice((fix.accuracy>500?'Положение приблизительное':'Положение найдено')+' · точность ±'+Math.round(fix.accuracy)+' м. Точка видна только вам.');}},e=>{setLocationNotice(locationFailure(e));if(e.code===1){setLocationWatching(false);setLocalFix(null);setLocalPoint(null);}},{enableHighAccuracy:true,maximumAge:5000,timeout:15000});const timer=setTimeout(()=>setLocationWatching(false),3600000);return()=>{navigator.geolocation.clearWatch(watch);clearTimeout(timer);};},[locationWatching]);
- async function readLocation():Promise<LocationFix|null>{
-  if(locationRequest.current)return locationRequest.current;
-  setLocationBusy(true);setLocationNotice('Определяем положение… Разрешите доступ, если браузер попросит.');
-  const request=requestBrowserLocation(navigator.geolocation,window.isSecureContext).then(fix=>{
-   if(!locationLive.current)return null;const point:[number,number]=[fix.longitude,fix.latitude];setLocalFix(fix);setLocalPoint(point);setSearchOrigin(point);setList(false);setSnap(0);
-   setLocationNotice((fix.accuracy>500?'Положение приблизительное':'Положение найдено')+' · точность ±'+Math.round(fix.accuracy)+' м. Точка видна только вам.');return fix;
-  }).catch((e:Error)=>{if(locationLive.current)setLocationNotice(e.message);return null;}).finally(()=>{locationRequest.current=null;if(locationLive.current)setLocationBusy(false);});
-  locationRequest.current=request;return request;
- }
- function applyLocationCity(fix:LocationFix,force=false){const city=cityNearLocation(fix.longitude,fix.latitude);if(city&&(force||!manualCity.current)){setFilters(v=>({...v,city,page:'1'}));setDraft(v=>({...v,city,page:'1'}));setCityHint('Город определён по геолокации. Точное положение остаётся в браузере.');}else if(!city)setCityHint('Положение найдено. Для поиска жилья выберите город вручную.');return city;}
- async function locateCity(force=false):Promise<string|null>{const fix=await readLocation();return fix?applyLocationCity(fix,force):null;}
- useEffect(()=>{let live=true;const detect=async()=>{try{const permission=await navigator.permissions?.query({name:'geolocation'});if(permission?.state==='granted'&&live){void locateCity();return;}if(live)setCityHint(permission?.state==='denied'?'Доступ к геолокации отключён. Разрешите его в настройках браузера или выберите город вручную.':'Выберите город или нажмите «Мой город».');}catch{if(live)setCityHint('Выберите город или нажмите «Мой город».');}};void detect();return()=>{live=false;};},[]);
- function applyFilters(){setSearchRevision(v=>v+1);setNearby(false);setError('');setFilters({...draft,page:'1'});select('');setAdvanced(false);}
- async function submitRequest(event:FormEvent){event.preventDefault();if(searchBusy)return;const text=request.trim();if(!text){setAdvanced(true);return;}setSearchBusy(true);setError('');try{const result=mapSearchRequest(text,filters,[...Object.keys(mapCities),...(query.data?.cities||[])]);let next=result.filters,near=result.nearby;const messages=[...result.notes];if(near){const city=await locateCity(true);if(city){if(result.citySpecified&&next.city!==city){near=false;messages.push('Геопозиция в другом городе — ищем в указанном городе без ограничения радиуса.');}else{next={...next,city};messages.push('Рядом: примерно в радиусе 5 км, '+city+'.');}}else{near=false;messages.push('Нет геопозиции — ищем по выбранному городу.');}}setNearby(near);manualCity.current=true;setSearchRevision(v=>v+1);setFilters(next);setDraft(next);setView(role==='guest'?'search':'activity');setSelected('');setPrivateRoute(null);setPicked(null);setPicking(false);setLocalPoint(null);setList(false);setSnap(0);setAdvanced(false);setSearchMessage((next.city!==result.filters.city?next.city+' · ':'')+result.summary+(messages.length?' · '+messages.join(' '):''));}finally{setSearchBusy(false);}}
 
- function cardStatus(item:Row){if(!item.kind)return item.display_status;const actual=(item.kind==='job'?data.jobs:data.bookings)?.find((v:Row)=>v.id===item.id);return processStatus(item.kind,actual||item,role,accountId);}
- const filterTrigger=useRef<HTMLButtonElement>(null);
- useEffect(()=>{const close=(event:KeyboardEvent)=>{if(event.key!=='Escape'||event.defaultPrevented||advanced||document.querySelector('dialog[open], [data-slot=dialog-content][data-state=open], [data-slot=sheet-content][data-state=open], [data-slot=popover-content][data-state=open]'))return;setList(false);setSnap(0);setPicking(false);filterTrigger.current?.focus();};window.addEventListener('keydown',close);return()=>window.removeEventListener('keydown',close);},[advanced]);
- useEffect(()=>{if(role!=='guest')return;const apply=(input:Row)=>{const next=mapSearchFilters(input);manualCity.current=true;setFilters(next);setDraft(next);setView('search');setSelected('');setPrivateRoute(null);setList(false);setSnap(0);setNearby(false);setAdvanced(false);setSearchRevision(v=>v+1);setSearchMessage('Условия подбора применены.'+(!next.start?' Для проверки свободных дат выберите заезд и выезд.':''));};const listener=(event:Event)=>apply((event as CustomEvent<Row>).detail||{});window.addEventListener('rental-map-search',listener);const params=new URLSearchParams(window.location.search);if(params.get('mapSearch')==='1')apply(Object.fromEntries(params));return()=>window.removeEventListener('rental-map-search',listener);},[role]);
- const query=useQuery({queryKey:['map-workspace',publicMode?'public':accountId,role,filters],queryFn:async()=>{const params={...filters,...(filters.start?{start:filters.start+'+05:00',end:filters.end+'+05:00'}:{})};if(!publicMode)return mapAPI(role,'search',{filters:params});const response=await fetch('/api/public/catalog?'+new URLSearchParams({...params,map:'1',limit:'60'}),{cache:'no-store'}),result=await response.json() as Row;if(!response.ok)throw Error(result.error||'Не удалось загрузить жильё.');return {...result,processes:[],journeys:[]};},refetchInterval:publicMode?30000:8000,refetchIntervalInBackground:false,refetchOnWindowFocus:true,retry:1});
- const properties=(query.data?.properties||[]).map((p:Row)=>({...p,mapPrice:filters.mode==='hourly'?p.policy?.hourly_price:p.price,mapKey:'property:'+p.id})),processes=(query.data?.processes||[]).map((p:Row)=>({...p,mapKey:p.kind+':'+p.id})),items:Row[]=view==='search'?(nearby&&searchOrigin?properties.filter((p:Row)=>p.location&&geoDistance(searchOrigin,[p.location.longitude,p.location.latitude])<=5000).sort((a:Row,b:Row)=>(a.location?geoDistance(searchOrigin,[a.location.longitude,a.location.latitude]):Infinity)-(b.location?geoDistance(searchOrigin,[b.location.longitude,b.location.latitude]):Infinity)):properties):role==='owner'?[...properties,...processes]:processes,chosen=items.find(p=>p.mapKey===selected),mine=(query.data?.journeys||[]).find((j:Row)=>j.mine),currentJourney=(query.data?.journeys||[]).find((j:Row)=>j.entityId===chosen?.id&&j.kind===chosen?.kind),center=query.data?.center||[67,48],focus=picked||localPoint||(chosen?.location?[chosen.location.longitude,chosen.location.latitude]:null);
- useEffect(()=>{if(!query.data||initialised.current)return;initialised.current=true;const t=Date.now()/1000,next=processes.filter((p:Row)=>p.start<t+86400&&p.end>t&&(role==='guest'?p.kind==='booking'&&p.status==='confirmed':role==='cleaner'?p.kind==='job'&&p.status==='assigned':false)).sort((a:Row,b:Row)=>a.start-b.start)[0];if(next&&role!=='guest'){setView('activity');setSelected(next.mapKey);}},[query.data]);
- useEffect(()=>{panel.current?.scrollTo({top:0});},[selected,view]);
- useEffect(()=>{if(!chosen){setPicking(false);setPicked(null);}},[selected,view]);
- useEffect(()=>{if(!query.data)return;if(session&&!query.data.journeys.some((j:Row)=>j.id===session)){setSession('');setGpsStatus('Передача завершена или процесс изменился.');}},[query.data]);
- useEffect(()=>{if(!session)return;let live=true,watch:number|undefined;const update=async(p:GeolocationPosition)=>{if(live)setLocalFix({longitude:p.coords.longitude,latitude:p.coords.latitude,accuracy:p.coords.accuracy,recordedAt:p.timestamp/1000});if(!live||sending.current||document.hidden)return;sending.current=true;try{await mapAPI(role,'journey/point',{id:session,longitude:p.coords.longitude,latitude:p.coords.latitude,accuracy:p.coords.accuracy,recordedAt:Math.floor(p.timestamp/1000)});if(live)setGpsStatus('Передаём владельцу · точность ±'+Math.round(p.coords.accuracy)+' м');void qc.invalidateQueries({queryKey:['map-workspace',accountId,role]});}catch(e:any){if(live){setGpsStatus(e.message);if([403,409,410].includes(e.status))setSession('');}}finally{sending.current=false;}};if(!navigator.geolocation){setGpsStatus('Геолокация недоступна.');return;}watch=navigator.geolocation.watchPosition(update,e=>{if(live){setGpsStatus(e.code===1?'Нет разрешения на геолокацию. Передача остановлена.':'Нет сигнала. Последняя точка может устареть.');if(e.code===1){void mapAPI(role,'journey/stop',{id:session}).catch(()=>{});setSession('');}}},{enableHighAccuracy:true,maximumAge:5000,timeout:15000});const visibility=()=>{if(document.hidden)setGpsStatus('Вкладка скрыта: обновления положения могут приостановиться.');};document.addEventListener('visibilitychange',visibility);return()=>{live=false;if(watch!==undefined)navigator.geolocation.clearWatch(watch);document.removeEventListener('visibilitychange',visibility);void mapAPI(role,'journey/stop',{id:session}).catch(()=>{});};},[session,role,accountId]);
- async function act(action:string,body:Row){setBusy(true);setError('');try{const v=await mapAPI(role,action,body);await query.refetch();return v;}catch(e:any){setError(e.message);return null;}finally{setBusy(false);}}
- async function start(){if(!chosen)return;if(!navigator.geolocation){setError('Геолокация недоступна. Можно открыть маршрут без передачи положения.');return;}setBusy(true);setError('');navigator.geolocation.getCurrentPosition(async()=>{const v=await act('journey/start',{kind:chosen.kind,entityId:chosen.id,mode:travelMode,consent:true});if(v){setSession(v.id);setGpsStatus('Передача включена на час или до выхода с карты.');}setBusy(false);},()=>{setError('Не удалось получить положение. Проверьте разрешение браузера; ручные действия доступны.');setBusy(false);},{enableHighAccuracy:true,timeout:15000,maximumAge:10000});}
- async function stop(){const id=session||mine?.id;if(id){const result=await act('journey/stop',{id});if(!result)return false;}setSession('');setGpsStatus('Передача остановлена.');return true;}
- async function locate(){if(locationWatching){setLocationWatching(false);setLocalFix(null);setLocalPoint(null);setLocationNotice('');return;}const fix=await readLocation();if(fix){applyLocationCity(fix,true);setLocationWatching(true);}}
- function chooseProperty(p:Row){if(publicMode&&(!filters.start||!filters.end)){setSnap(0);setList(false);setAdvanced(true);setDraft(filters);setSearchMessage('Выберите заезд и выезд — проверим доступность без регистрации.');return;}onChoose(p,filters);}
- function select(id:string){if(id)manualCity.current=true;setError('');setPrivateRoute(null);setSelected(id);if(id)setList(false);setSnap(id?1:0);setPicked(null);setLocalPoint(null);setPicking(false);}
- const statusLabel=(p:Row)=>processStatus(p.kind,(p.kind==='job'?data.jobs:data.bookings)?.find((e:Row)=>e.id===p.id)||p,role,accountId,data.applications?.find((a:Row)=>a.job_id===p.id&&a.user_id===accountId)).label;
- const searchDirty=['city','guests','mode','start','end','minPrice','maxPrice','rooms','sort'].some(key=>String(draft[key]||'')!==String(filters[key]||''));
- const actual=chosen?.kind?(chosen.kind==='job'?data.jobs:data.bookings)?.find((e:Row)=>e.id===chosen.id):null,point=chosen?.location;
- return <section data-filters-open={advanced} className={'map-workspace'+(list?' map-list-view':'')} aria-label="Карта и процессы аренды"><h1 className="sr-only">Карта аренды</h1><MapCanvas searchKey={!selected&&searchRevision?String(searchRevision):''} sheetSize={list?2:snap} items={[...(role==='owner'?properties:items),...(picking&&picked?[{mapKey:'draft-point',location:{longitude:picked[0],latitude:picked[1]}}]:[])]} selected={picking&&picked?'draft-point':role==='owner'&&chosen?.kind?'property:'+chosen.propertyId:selected} onSelect={select} center={center} people={[...(query.data?.journeys||[]).filter((p:Row)=>!localFix||!p.mine),...(localFix?[{id:'local-me',mine:true,kind:role==='cleaner'?'job':'booking',...localFix}]:[])]} routes={[...(query.data?.journeys||[]).filter((j:Row)=>j.route&&chosen&&(chosen.kind?j.entityId===chosen.id&&j.kind===chosen.kind:processes.some((p:Row)=>p.id===j.entityId&&p.kind===j.kind&&p.propertyId===chosen.id))&&(!privateRoute||j.entityId!==privateRoute.entityId||j.kind!==privateRoute.kind)).map((j:Row)=>j.route),...(privateRoute?[privateRoute]:[])]} pick={picking} onPick={setPicked} focus={focus as [number,number]|null}/><div className="map-toolbar" ref={toolbar}><form onKeyDown={e=>{if(e.key==='Escape'&&advanced){e.stopPropagation();setAdvanced(false);filterTrigger.current?.focus();}else if(e.key==='Enter'&&e.target instanceof HTMLInputElement&&e.target.getAttribute('aria-label')!=='Поиск жилья на карте'){e.preventDefault();applyFilters();}}} onSubmit={submitRequest}><label className="map-request"><Search size={17}/><Input aria-label="Поиск жилья на карте" placeholder="Найди квартиру рядом…" value={request} maxLength={2000} onChange={e=>setRequest(e.target.value)}/></label><Button type="submit" size="icon" aria-label="Найти жильё на карте" disabled={!request.trim()||searchBusy}><ArrowUp size={18}/></Button><Button ref={filterTrigger} type="button" variant="outline" className="map-search-options" aria-label={'Город и фильтры: '+(filters.city||'выбрать город')} aria-expanded={advanced} onClick={()=>setAdvanced(!advanced)}><span className="map-options-icons"><MapPin size={16}/><SlidersHorizontal size={14}/></span><span className="map-city-chip">{filters.city||'Город'}</span></Button>{searchDirty&&<p className="map-filter-dirty" role="status">Параметры изменены — примените поиск</p>}{advanced&&<div className="map-filter-fields" aria-label="Дополнительные фильтры"><label className="map-filter-city">Город<Input aria-label="Город на карте" placeholder="Выберите город" value={draft.city||''} onChange={e=>{manualCity.current=true;setDraft({...draft,city:e.target.value});}} list="map-cities"/><datalist id="map-cities">{(query.data?.cities||[]).map((c:string)=><option key={c}>{c}</option>)}</datalist></label><Button type="button" variant="outline" className="map-detect-city" disabled={locationBusy} onClick={()=>void locateCity(true)}><LocateFixed size={16}/>Мой город</Button>{cityHint&&<small className="map-city-hint" role="status">{cityHint}</small>}{role==='guest'&&<><label>Гостей<Input type="number" min={1} max={50} value={draft.guests} onChange={e=>setDraft({...draft,guests:e.target.value})}/></label><label>Аренда<NativeSelect value={draft.mode} onChange={e=>setDraft({...draft,mode:e.target.value})}><option value="daily">На сутки</option><option value="hourly">На часы</option></NativeSelect></label><DateRangeField start={draft.start||''} end={draft.end||''} onChange={v=>setDraft({...draft,...v})}/><label>Цена от<Input type="number" min={0} value={draft.minPrice||''} onChange={e=>setDraft({...draft,minPrice:e.target.value})}/></label><label>Цена до<Input type="number" min={0} value={draft.maxPrice||''} onChange={e=>setDraft({...draft,maxPrice:e.target.value})}/></label><label>Комнаты<NativeSelect value={draft.rooms||'0'} onChange={e=>setDraft({...draft,rooms:e.target.value})}><option value="0">Любые</option>{[1,2,3,4].map(n=><option key={n} value={n}>{draft.roomsExact==='1'?n:n+'+'}</option>)}</NativeSelect></label><label className="map-room-exact"><input type="checkbox" checked={draft.roomsExact==='1'} onChange={e=>setDraft({...draft,roomsExact:e.target.checked?'1':'0'})}/>Ровно указанное число комнат</label><label>Сортировка<NativeSelect value={draft.sort||'recommended'} onChange={e=>setDraft({...draft,sort:e.target.value})}><option value="recommended">Рекомендуемые</option><option value="price-asc">Сначала дешевле</option><option value="price-desc">Сначала дороже</option></NativeSelect></label></>}<Button type="button" className="map-apply-filters" onClick={applyFilters}>Применить</Button></div>}</form><div className="map-mode-tabs" aria-label="Режим карты"><Button variant={!list&&view==='search'?'default':'outline'} aria-pressed={!list&&view==='search'} onClick={()=>{setView(role==='guest'?'search':'activity');setList(false);setSnap(selected?1:0);setAdvanced(false);}}>Карта</Button>{!publicMode&&<Button variant={view==='activity'&&!list?'default':'outline'} aria-pressed={view==='activity'&&!list} onClick={()=>{setView('activity');setSelected('');setList(false);setSnap(1);setAdvanced(false);}}>Мой процесс</Button>}<Button variant={list?'default':'outline'} aria-pressed={list} onClick={()=>{setView(role==='guest'?'search':'activity');setSelected('');setList(true);setSnap(1);setAdvanced(false);}}>Список</Button></div>{(searchMessage||searchBusy||query.isError)&&<div className="map-search-feedback" role="status">{searchBusy||query.isPending?'Ищем жильё…':query.isError?'Не удалось загрузить жильё.':(query.data?'На карте: '+items.filter(p=>p.location).length+' · ':'')+searchMessage}{query.isError&&<button type="button" onClick={()=>void query.refetch()}>Повторить</button>}</div>}</div><Button className="map-locate" variant="outline" size="icon" disabled={locationBusy} aria-busy={locationBusy} aria-label={locationBusy?'Определяем положение':locationWatching?'Скрыть моё положение на карте':'Показать моё положение только мне'} onClick={locate}><LocateFixed size={19}/></Button>{locationNotice&&<div className="map-location-feedback" role="status"><LocateFixed size={16}/><span>{locationNotice}</span></div>}
- <aside ref={panel} style={{top:list?toolbarBottom:undefined}} className={'map-panel'+(expanded?' expanded':'')+(chosen?' has-selection':'')} data-snap={snap} aria-label="Карточки на карте"><button className="map-sheet-handle" onPointerDown={e=>{pointer.current=e.clientY;e.currentTarget.setPointerCapture(e.pointerId);}} onPointerUp={e=>{if(Math.abs(e.clientY-pointer.current)>25){setSnap(previous=>Math.max(0,Math.min(2,previous+(e.clientY<pointer.current?1:-1))) as 0|1|2);pointer.current=NaN;}}} onClick={()=>{if(Number.isNaN(pointer.current)){pointer.current=0;return;}setSnap(previous=>previous===2?0:(previous+1) as 0|1|2);}} onKeyDown={e=>{if(e.key==='ArrowUp'||e.key==='ArrowDown'){e.preventDefault();setSnap(previous=>Math.max(0,Math.min(2,previous+(e.key==='ArrowUp'?1:-1))) as 0|1|2);}}} aria-expanded={snap>0} aria-label={snap===0?'Развернуть карточки': 'Размер панели: '+(snap===1?'средний':'подробный')+'. Изменить размер'}><span className="map-grab-bar"/>{expanded?<ChevronDown size={15}/>:<ChevronUp size={15}/>}</button>{(error||query.error)&&<p role="alert" className="form-error">{error||(query.error as Error).message}</p>}{gpsStatus&&<p className="map-gps-status" role="status">{gpsStatus}</p>}{(session||mine)&&<Button variant="destructive" disabled={busy} onClick={stop}>Остановить передачу положения</Button>}
- {chosen?<><Button className="map-back" variant="ghost" aria-label="К вариантам" onClick={()=>select('')}><ArrowLeft size={16}/><span>К вариантам</span></Button>{point?.source==='fixture'&&<p className="map-demo-note">Учебная точка. Это не адрес реального объявления.</p>}{!chosen.kind?<><div className="map-selected-summary"><button type="button" className="map-property-hero" onClick={()=>setExpanded(true)} aria-label={'Фото и условия: '+chosen.title}><div className="map-summary-photo"><PropertyCover property={chosen} role={role} publicView={role==='guest'}/></div><div className="map-property-overlay"><small className="map-selection-status"><StatusBadge status={chosen.display_status}/>{point?.source==='fixture'&&<span className="map-test-label">Учебное</span>}</small><strong>{chosen.title}</strong><b>{new Intl.NumberFormat('ru-RU').format(chosen.estimate?.amount??(filters.mode==='hourly'?chosen.policy?.hourly_price:chosen.price))} ₸ <small>{chosen.estimate?'за период':filters.mode==='hourly'?'за час':'за сутки'}</small></b></div></button><div className="map-summary-actions"><Button disabled={!!chosen.test_preview} onClick={()=>role==='guest'?chooseProperty(chosen):onProcess('property',chosen.id)}>{chosen.test_preview?'Учебный просмотр':role==='guest'?'Проверить даты':'Действия по объекту'}</Button><Button variant="secondary" onClick={()=>setExpanded(true)}>Подробнее</Button></div></div><div className="map-selected-details"><PropertyListing property={chosen} role={role} publicView={role==='guest'} billingMode={filters.mode} onChoose={()=>role==='guest'?chooseProperty(chosen):onProcess('property',chosen.id)} actionLabel={role==='owner'?'Действия по объекту':undefined} onEdit={()=>onProcess('property',chosen.id)} onSettings={()=>onProcess('property',chosen.id)}/></div>{role==='owner'&&<details className="map-secondary-actions"><summary>Управление объектом<ChevronDown size={16}/></summary><Button variant="outline" onClick={()=>{setList(false);setPicking(true);setPicked(null);setExpanded(true);}}>Уточнить точку объекта</Button>{processes.filter((e:Row)=>e.propertyId===chosen.id).map((e:Row)=><Button key={e.mapKey} variant="outline" onClick={()=>select(e.mapKey)}>{e.kind==='job'?'Уборка':'Бронь'} · {statusLabel(e)}</Button>)}</details>}</>:<div className="map-process-card"><span className="map-eyebrow">{chosen.kind==='job'?'Уборка':'Проживание'}</span><h2>{chosen.title}</h2><StatusBadge status={processStatus(chosen.kind,actual||chosen,role,accountId)}/><ProcessJourney kind={chosen.kind} item={actual||chosen}/><p>{new Date(chosen.start*1000).toLocaleString('ru-RU',{timeZone:'Asia/Almaty',day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})} · время Казахстана</p><Button onClick={()=>onProcess(chosen.kind,chosen.id)}>Действия по процессу</Button><Button variant="outline" onClick={()=>onDiscussion({kind:chosen.kind,entityId:chosen.id,channel:chosen.kind==='job'?'cleaning':'stay'})}><MessagesSquare size={17}/>{role==='owner'?'Обсудить с участником':'Обсудить с владельцем'}</Button>{role!=='owner'&&point?.precision==='exact'&&chosen.start<(query.data?.serverTime||Date.now()/1000)+86400&&chosen.end>(query.data?.serverTime||Date.now()/1000)&&((chosen.kind==='booking'&&actual?.status==='confirmed'&&!actual?.terms?.actual_checkin)||(chosen.kind==='job'&&actual?.assigned_to===accountId&&actual?.status==='assigned'))&&<JourneyNavigation key={chosen.mapKey} role={role} kind={chosen.kind} entityId={chosen.id} mode={travelMode} onMode={setTravelMode} sharingId={session||mine?.id} onSharing={id=>{setSession(id);setGpsStatus('Передача положения и маршрута владельцу включена.');}} onStopSharing={stop} onLocation={setLocalFix} onRoute={route=>{setPrivateRoute(route);if(route){setList(false);setSnap(1);}}}/>}<div className="map-shared-travelers" aria-label="Положение участников">{(query.data?.journeys||[]).filter((j:Row)=>j.kind===chosen.kind&&j.entityId===chosen.id).map((j:Row)=><div key={j.id}><strong>{j.mine?'Вы':j.kind==='booking'?'Гость в пути':'Исполнитель в пути'}</strong><small>{j.longitude===null?'Нет свежего положения':new Date(j.recordedAt*1000).toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'})+' · точность ±'+Math.round(j.accuracy||0)+' м'}</small>{j.route&&<small>План маршрута · {(j.route.distance/1000).toFixed(1)} км · около {Math.max(1,Math.round(j.route.duration/60))} мин</small>}</div>)}</div>{point?.precision==='exact'&&<a className="map-route-link" href={'https://yandex.kz/maps/?rtext=~'+point.latitude+','+point.longitude+'&rtt='+(travelMode==='walking'?'pd':'auto')} target="_blank" rel="noreferrer"><Navigation size={17}/>Маршрут в Яндекс Картах</a>}{role!=='owner'&&point?.precision==='exact'&&((chosen.kind==='booking'&&actual?.status==='confirmed'&&!actual?.terms?.actual_checkin)||(chosen.kind==='job'&&actual?.assigned_to===accountId&&actual?.status==='assigned'))&&<div className="map-sharing"><p>Владелец этого процесса увидит ваше положение. Передача до часа, пока открыта карта; её можно остановить.</p><Button disabled={busy||!!mine||!!session} onClick={start}>{busy?'Подключаем…':'Я направляюсь · поделиться положением'}</Button></div>}{currentJourney&&<p role="status">{currentJourney.longitude===null?'Нет свежего положения.':'Положение обновлено '+new Date(currentJourney.recordedAt*1000).toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'})+' · точность ±'+Math.round(currentJourney.accuracy||0)+' м'}</p>}</div>}{picking&&<div className="map-point-editor"><p>Нажмите нужное место на карте. Проверьте точку перед сохранением.</p><div className="map-coordinate-fields"><label>Долгота<Input type="number" step="any" value={picked?.[0]??''} onChange={e=>setPicked([Number(e.target.value),picked?.[1]??point?.latitude??center[1]])}/></label><label>Широта<Input type="number" step="any" value={picked?.[1]??''} onChange={e=>setPicked([picked?.[0]??point?.longitude??center[0],Number(e.target.value)])}/></label></div><Button disabled={busy||!picked} onClick={async()=>{if(!picked)return;const v=await act('location',{propertyId:chosen.id,longitude:picked[0],latitude:picked[1],version:point?.version||0,confirmed:true});if(v){setPicking(false);setPicked(null);}}}>Подтвердить расположение</Button><Button variant="ghost" onClick={()=>{setPicking(false);setPicked(null);}}>Отменить</Button></div>}{point?<small>{point.source==='fixture'?'Тестовое расположение для проверки карты.':point.precision==='exact'?'Точка указана владельцем.':'Приблизительная область, точный адрес скрыт.'}</small>:<p>Точка ещё не указана владельцем. Карточка и действия доступны.</p>}</>:<>{query.isPending&&<p role="status">Подбираем варианты…</p>}{query.isError&&<Button variant="outline" onClick={()=>void query.refetch()}>Повторить загрузку</Button>}{!query.isPending&&!query.isError&&!items.length&&<div><p>{role==='owner'?'Добавьте первый объект или выберите другой город.':view==='activity'?'У вас пока нет активных процессов. Откройте список жилья.':'На эти условия пока нет вариантов. Измените город или фильтры.'}</p>{role==='owner'?<Button onClick={onCreate}>Добавить квартиру</Button>:role==='guest'?<Button variant="outline" onClick={()=>{setView('search');setFilters({city:'',guests:'1',mode:'daily',page:'1'});setDraft({city:'',guests:'1',mode:'daily',page:'1'});}}>Показать всё жильё</Button>:null}</div>}{role==='owner'&&items.length>0&&<Button variant="outline" onClick={onCreate}>Добавить объект</Button>}{items.map(p=><button className="map-result" key={p.mapKey} onClick={()=>select(p.mapKey)}><span className="map-result-media"><PropertyCover property={p} role={role} publicView={role==='guest'&&!p.kind}/></span><span className="map-result-content"><strong>{p.title}</strong><span className="map-result-statuses"><StatusBadge status={cardStatus(p)}/>{!!p.test_preview&&<span className="map-date-status">Учебный просмотр · без бронирования</span>}{!p.kind&&!p.test_preview&&<span className={'map-date-status '+(query.data?.availabilityChecked?'checked':'')} >{query.data?.availabilityChecked?'Даты проверены':'Даты не проверены'}</span>}</span><small>{p.city}{p.location?.source==='fixture'?' · Учебный объект':!p.location?' · Без точки на карте':''}</small>{!p.kind&&p.price&&<b>{new Intl.NumberFormat('ru-RU').format(p.estimate?.amount??(filters.mode==='hourly'?p.policy?.hourly_price:p.price))} ₸ <small>{p.estimate?'за период':filters.mode==='hourly'?'за час':'за сутки'}</small></b>}</span><ChevronUp className="map-result-open" size={16}/></button>)}{view==='search'&&query.data&&query.data.totalPages>1&&<div className="map-pagination"><Button variant="outline" disabled={query.data.page===1} onClick={()=>setFilters({...filters,page:String(query.data.page-1)})}>Назад</Button><span>{query.data.page} / {query.data.totalPages}</span><Button variant="outline" disabled={query.data.page>=query.data.totalPages} onClick={()=>setFilters({...filters,page:String(query.data.page+1)})}>Дальше</Button></div>}<p className="map-footnote">{view==='search'?'Цены на метках округлены; точная сумма в карточке. Без дат доступность ещё не проверена.':'Администратор проверяет сроки. Фактические действия подтверждаются отдельно.'}</p></>}
- </aside></section>;
+// The guest's first screen is the search map. It gets the state the shell has already loaded (so it does not ask
+// the server for it again), opens a booking in the shell's task sheet and hands a question to the AI administrator.
+export function MapWorkspace(props: MapWorkspaceInput) {
+  const [activity, setActivity] = useState(false);
+  if (props.role === 'guest' && !activity) {
+    const signedIn = !props.publicMode;
+    return (
+      <SmartGuestMap
+        publicMode={props.publicMode}
+        accountId={props.accountId}
+        city={props.data.profile?.city}
+        onChoose={props.onChoose}
+        onActivity={signedIn ? () => setActivity(true) : undefined}
+        data={signedIn ? props.data : undefined}
+        onProcess={signedIn ? props.onProcess : undefined}
+        onAsk={signedIn ? props.onAsk : undefined}
+      />
+    );
+  }
+  return <RoleMap {...props} onBack={activity ? () => setActivity(false) : undefined} />;
+}
+
+// ---------- First screen of the owner and of the cleaner (and "my rental" of the guest) ----------
+
+const zone = 'Asia/Almaty';
+const clockFormat = new Intl.DateTimeFormat('ru-RU', { timeZone: zone, hour: '2-digit', minute: '2-digit' });
+const dayFormat = new Intl.DateTimeFormat('en-CA', { timeZone: zone });
+const clock = (seconds: number) => clockFormat.format(new Date(seconds * 1000));
+const capital = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
+const money = (amount: number) => new Intl.NumberFormat('ru-RU').format(amount) + ' ₸';
+
+function plural(n: number, one: string, few: string, many: string) {
+  const tens = n % 100, units = n % 10;
+  return n + ' ' + (tens > 10 && tens < 20 ? many : units === 1 ? one : units > 1 && units < 5 ? few : many);
+}
+
+// "Сегодня в 14:00 – 16:00", or both dates when the stay ends on another day. Kazakhstan time.
+function period(start: number, end: number, now: number) {
+  const sameDay = dayFormat.format(new Date(start * 1000)) === dayFormat.format(new Date(end * 1000));
+  return capital(nowCardWhen(start, now)) + ' – ' + (sameDay ? clock(end) : nowCardWhen(end, now));
+}
+
+const accuracyNote = (fix: LocationFix) =>
+  (fix.accuracy > 500 ? 'Положение приблизительное' : 'Вы на карте') + ', точность ±' + Math.round(fix.accuracy) + ' м. Видно только вам.';
+
+type LocationResult = { fix: LocationFix | null; problem: string };
+type RoleMapInput = MapWorkspaceInput & { onBack?: () => void };
+
+function Thumb({ item, role }: { item: Row; role: string }) {
+  if (!item.kind) return <span className="map-role-thumb"><PropertyCover property={item} role={role} /></span>;
+  return (
+    <span className="map-role-thumb is-icon" aria-hidden="true">
+      {item.kind === 'job' ? <Brush size={20} /> : <CalendarCheck size={20} />}
+    </span>
+  );
+}
+
+function MapRow({ item, role, line, onOpen }: { item: Row; role: string; line: string; onOpen: () => void }) {
+  return (
+    <li>
+      <button type="button" className="map-role-row" onClick={onOpen}>
+        <Thumb item={item} role={role} />
+        <span className="map-role-row-text">
+          <strong>{item.title}</strong>
+          <span>{line}</span>
+        </span>
+        <ChevronRight size={18} aria-hidden="true" />
+      </button>
+    </li>
+  );
+}
+
+function RoleMap({ role, accountId, data, onDiscussion, onProcess, onCreate, onAsk, onBack }: RoleMapInput) {
+  const qc = useQueryClient();
+  // The owner sees every flat he has; the cleaner looks for jobs in one city.
+  const [city, setCity] = useState<string>(role === 'cleaner' ? data.profile?.city || '' : '');
+  const [selected, setSelected] = useState(''), [expanded, setExpanded] = useState(false);
+  const [error, setError] = useState(''), [busy, setBusy] = useState(false);
+  const [picking, setPicking] = useState(false), [picked, setPicked] = useState<[number, number] | null>(null);
+  const [travelMode, setTravelMode] = useState('walking'), [session, setSession] = useState(''), [gpsStatus, setGpsStatus] = useState('');
+  const [privateRoute, setPrivateRoute] = useState<JourneyRoute | null>(null);
+  const [localFix, setLocalFix] = useState<LocationFix | null>(null), [localPoint, setLocalPoint] = useState<[number, number] | null>(null);
+  const [watching, setWatching] = useState(false), [locating, setLocating] = useState(false);
+  // A passing remark ("found you") goes away by itself; a problem stays until the next attempt.
+  const [locationNote, setLocationNote] = useState<{ text: string; stays: boolean } | null>(null);
+  // How much of the map the folded sheet covers on a phone, so the map keeps its pins above it. Not set for the card on a wide screen.
+  const [covered, setCovered] = useState<number | undefined>();
+  const sending = useRef(false), live = useRef(true), manualCity = useRef(false);
+  const locationRequest = useRef<Promise<LocationResult> | null>(null);
+  const panel = useRef<HTMLElement>(null), inboxHost = useRef<HTMLDivElement>(null), dragFrom = useRef<number | null>(null), swiped = useRef(false);
+
+  const filters = { city, guests: '1', mode: 'daily', page: '1' };
+  const query = useQuery({
+    queryKey: ['map-workspace', accountId, role, filters],
+    queryFn: () => mapAPI(role, 'search', { filters }),
+    refetchInterval: 8000, refetchIntervalInBackground: false, refetchOnWindowFocus: true, retry: 1,
+  });
+  // Quick requests of guests are loaded and refreshed by MatchingInbox; this only reads the same data.
+  const inbox = useQuery({ queryKey: ['matching-inbox', accountId], queryFn: () => matchingAPI('inbox', {}, 'owner'), enabled: role === 'owner', retry: 1 });
+
+  const now: number = query.data?.serverTime || data.serverTime || Date.now() / 1000;
+  const flats: Row[] = role === 'owner' ? (query.data?.properties || []).map((p: Row) => ({ ...p, mapPrice: p.price, mapKey: 'property:' + p.id })) : [];
+  const deals: Row[] = (query.data?.processes || []).map((p: Row) => ({ ...p, mapKey: p.kind + ':' + p.id })).sort((a: Row, b: Row) => a.start - b.start);
+  const nearby = role === 'cleaner' ? deals.filter(d => d.kind === 'job' && d.status === 'open') : [];
+  const mine = role === 'cleaner' ? deals.filter(d => !(d.kind === 'job' && d.status === 'open')) : deals;
+  const pins = role === 'owner' ? flats : deals;
+  const chosen = [...flats, ...deals].find(item => item.mapKey === selected);
+  const journeys: Row[] = query.data?.journeys || [];
+  const myJourney = journeys.find(j => j.mine);
+  const sharing = !!session || !!myJourney;
+  const center: [number, number] = query.data?.center || [67, 48];
+  const point = chosen?.location;
+  const focus = picked || localPoint || (point ? [point.longitude, point.latitude] as [number, number] : null);
+  const offers: Row[] = inbox.data?.offers || [];
+  const quickOn = (inbox.data?.preferences || []).filter((p: Row) => p.enabled).length;
+  const noFlats = role === 'owner' && !!data.user && !(data.ownProperties || []).length;
+
+  const record = (item: Row): Row | undefined => (item.kind === 'job' ? data.jobs : data.bookings)?.find((e: Row) => e.id === item.id);
+  const status = (item: Row) => processStatus(item.kind, record(item) || item, role, accountId,
+    data.applications?.find((a: Row) => a.job_id === item.id && a.user_id === accountId));
+  const when = (at: number) => capital(nowCardWhen(at, now));
+
+  useEffect(() => { live.current = true; return () => { live.current = false; }; }, []);
+  useEffect(() => {
+    const sheet = panel.current, host = sheet?.parentElement;
+    if (!sheet || !host) return;
+    const measure = () => {
+      // An opened sheet hides the map anyway: the map keeps the view it had under the folded one.
+      if (sheet.dataset.expanded === 'true') return;
+      const box = sheet.getBoundingClientRect(), outer = host.getBoundingClientRect();
+      setCovered(box.width >= outer.width - 1 ? Math.round((outer.bottom - box.top) / 8) * 8 : undefined);
+    };
+    const observer = new ResizeObserver(measure);
+    observer.observe(sheet);
+    measure();
+    return () => observer.disconnect();
+  }, []);
+  useEffect(() => {
+    if (role === 'cleaner' && !manualCity.current && data.profile?.city) setCity(current => current || data.profile.city);
+  }, [role, data.profile?.city]);
+  useEffect(() => { panel.current?.scrollTo({ top: 0 }); }, [selected, picking, expanded]);
+  useEffect(() => { if (!chosen) { setPicking(false); setPicked(null); } }, [selected]);
+
+  // My own position is kept in the browser and forgotten after 90 seconds without an update.
+  useEffect(() => {
+    if (!localFix) return;
+    const remaining = 90000 - (Date.now() - localFix.recordedAt * 1000);
+    if (remaining <= 0) { setLocalFix(null); return; }
+    const timer = setTimeout(() => setLocalFix(null), remaining);
+    return () => clearTimeout(timer);
+  }, [localFix]);
+  useEffect(() => {
+    if (!watching || !navigator.geolocation) return;
+    const watch = navigator.geolocation.watchPosition(
+      p => { const fix = browserLocationFix(p); if (fix) setLocalFix(fix); },
+      e => { setLocationNote({ text: locationFailure(e), stays: true }); if (e.code === 1) { setWatching(false); setLocalFix(null); setLocalPoint(null); } },
+      { enableHighAccuracy: true, maximumAge: 5000, timeout: 15000 });
+    const timer = setTimeout(() => setWatching(false), 3600000);
+    return () => { navigator.geolocation.clearWatch(watch); clearTimeout(timer); };
+  }, [watching]);
+  useEffect(() => {
+    if (!locationNote || locationNote.stays) return;
+    const timer = setTimeout(() => setLocationNote(null), 6000);
+    return () => clearTimeout(timer);
+  }, [locationNote]);
+
+  // One request at a time; whoever asked decides what to do with the answer.
+  async function readLocation(): Promise<LocationResult> {
+    if (!locationRequest.current) {
+      setLocating(true);
+      locationRequest.current = requestBrowserLocation(navigator.geolocation, window.isSecureContext)
+        .then((fix): LocationResult => ({ fix, problem: '' }), (e: Error): LocationResult => ({ fix: null, problem: e.message }))
+        .finally(() => { locationRequest.current = null; if (live.current) setLocating(false); });
+    }
+    const result = await locationRequest.current;
+    if (live.current && result.fix) setLocalFix(result.fix);
+    return result;
+  }
+  // "Nearby" for the cleaner is the known city he is in.
+  function cityFromLocation(fix: LocationFix, force: boolean) {
+    if (role !== 'cleaner' || (!force && manualCity.current)) return null;
+    const found = cityNearLocation(fix.longitude, fix.latitude);
+    if (found && found !== city) setCity(found);
+    return found;
+  }
+  function chooseCity(next: string) { manualCity.current = true; setCity(next); setSelected(''); }
+  // The round button on the map: show me, and for the cleaner switch to the city I am in.
+  async function locate() {
+    if (watching) { setWatching(false); setLocalFix(null); setLocalPoint(null); setLocationNote(null); return; }
+    setLocationNote({ text: 'Определяем положение… Разрешите доступ, если браузер попросит.', stays: true });
+    const { fix, problem } = await readLocation();
+    if (!live.current) return;
+    if (!fix) { setLocationNote({ text: problem, stays: true }); return; }
+    cityFromLocation(fix, true);
+    setLocalPoint([fix.longitude, fix.latitude]); setExpanded(false); setWatching(true);
+    setLocationNote({ text: accuracyNote(fix), stays: false });
+  }
+  async function locateCity() {
+    setLocationNote({ text: 'Определяем город…', stays: true });
+    const { fix, problem } = await readLocation();
+    if (!live.current) return;
+    if (!fix) { setLocationNote({ text: problem, stays: true }); return; }
+    const found = cityFromLocation(fix, true);
+    if (found) manualCity.current = true;
+    setLocationNote(found
+      ? { text: 'Город определён: ' + found + '. Точное положение остаётся в браузере.', stays: false }
+      : { text: 'Рядом нет города из списка. Выберите город вручную.', stays: true });
+  }
+  // If the browser already has the permission, the cleaner's city follows where he is, without a word.
+  useEffect(() => {
+    if (role !== 'cleaner') return;
+    let alive = true;
+    void (async () => {
+      try {
+        const permission = await navigator.permissions?.query({ name: 'geolocation' });
+        if (permission?.state !== 'granted' || !alive) return;
+        const { fix } = await readLocation();
+        if (fix && alive) cityFromLocation(fix, false);
+      } catch { /* the city from the profile stays */ }
+    })();
+    return () => { alive = false; };
+  }, []);
+
+  // ----- Sharing my way to the flat with its owner (guest before check-in, cleaner before the job) -----
+  useEffect(() => {
+    if (!query.data) return;
+    if (session && !query.data.journeys.some((j: Row) => j.id === session)) { setSession(''); setGpsStatus(''); setLocationNote({ text: 'Передача положения завершена.', stays: false }); }
+  }, [query.data]);
+  useEffect(() => {
+    if (!session) return;
+    let alive = true, watch: number | undefined;
+    const update = async (p: GeolocationPosition) => {
+      if (alive) setLocalFix({ longitude: p.coords.longitude, latitude: p.coords.latitude, accuracy: p.coords.accuracy, recordedAt: p.timestamp / 1000 });
+      if (!alive || sending.current || document.hidden) return;
+      sending.current = true;
+      try {
+        await mapAPI(role, 'journey/point', { id: session, longitude: p.coords.longitude, latitude: p.coords.latitude, accuracy: p.coords.accuracy, recordedAt: Math.floor(p.timestamp / 1000) });
+        if (alive) setGpsStatus('Владелец видит, где вы. Точность ±' + Math.round(p.coords.accuracy) + ' м.');
+        void qc.invalidateQueries({ queryKey: ['map-workspace', accountId, role] });
+      } catch (e: any) {
+        if (alive) { setGpsStatus(e.message); if ([403, 409, 410].includes(e.status)) setSession(''); }
+      } finally { sending.current = false; }
+    };
+    if (!navigator.geolocation) { setGpsStatus('Геолокация недоступна.'); return; }
+    watch = navigator.geolocation.watchPosition(update, e => {
+      if (!alive) return;
+      setGpsStatus(e.code === 1 ? 'Нет разрешения на геолокацию. Передача остановлена.' : 'Нет сигнала. Последняя точка может устареть.');
+      if (e.code === 1) { void mapAPI(role, 'journey/stop', { id: session }).catch(() => {}); setSession(''); }
+    }, { enableHighAccuracy: true, maximumAge: 5000, timeout: 15000 });
+    const visibility = () => { if (document.hidden) setGpsStatus('Вкладка скрыта: положение может не обновляться.'); };
+    document.addEventListener('visibilitychange', visibility);
+    return () => {
+      alive = false;
+      if (watch !== undefined) navigator.geolocation.clearWatch(watch);
+      document.removeEventListener('visibilitychange', visibility);
+      void mapAPI(role, 'journey/stop', { id: session }).catch(() => {});
+    };
+  }, [session, role, accountId]);
+
+  async function act(action: string, body: Row) {
+    setBusy(true); setError('');
+    try { const value = await mapAPI(role, action, body); await query.refetch(); return value; }
+    catch (e: any) { setError(e.message); return null; }
+    finally { setBusy(false); }
+  }
+  async function startSharing() {
+    if (!chosen) return;
+    if (!navigator.geolocation) { setError('Геолокация недоступна. Маршрут можно открыть и без неё.'); return; }
+    setBusy(true); setError('');
+    navigator.geolocation.getCurrentPosition(async () => {
+      const value = await act('journey/start', { kind: chosen.kind, entityId: chosen.id, mode: travelMode, consent: true });
+      if (value) { setSession(value.id); setGpsStatus('Передача включена на час или пока открыта карта.'); }
+      setBusy(false);
+    }, () => {
+      setError('Не удалось получить положение. Проверьте разрешение в браузере.'); setBusy(false);
+    }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 10000 });
+  }
+  async function stopSharing() {
+    const id = session || myJourney?.id;
+    if (id && !await act('journey/stop', { id })) return false;
+    setSession(''); setGpsStatus(''); setLocationNote({ text: 'Передача положения остановлена.', stays: false });
+    return true;
+  }
+
+  // ----- Panel -----
+  function select(id: string) {
+    setError(''); setPrivateRoute(null); setSelected(id); setExpanded(false);
+    setPicked(null); setLocalPoint(null); setPicking(false);
+  }
+  useEffect(() => {
+    const close = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || event.defaultPrevented) return;
+      if (document.querySelector('dialog[open], [data-slot=dialog-content][data-state=open], [data-slot=sheet-content][data-state=open], [data-slot=popover-content][data-state=open]')) return;
+      if (picking) { setPicking(false); setPicked(null); }
+      else if (expanded) setExpanded(false);
+      else if (selected) select('');
+    };
+    window.addEventListener('keydown', close);
+    return () => window.removeEventListener('keydown', close);
+  }, [picking, expanded, selected]);
+
+  // The handle follows the finger: up opens the sheet, down closes it; a tap toggles it.
+  const handle = {
+    onPointerDown: (e: ReactPointerEvent<HTMLButtonElement>) => { dragFrom.current = e.clientY; e.currentTarget.setPointerCapture(e.pointerId); },
+    onPointerUp: (e: ReactPointerEvent<HTMLButtonElement>) => {
+      const from = dragFrom.current; dragFrom.current = null;
+      if (from !== null && Math.abs(e.clientY - from) > 24) { swiped.current = true; setExpanded(e.clientY < from); }
+    },
+    onClick: () => { if (swiped.current) { swiped.current = false; return; } setExpanded(v => !v); },
+  };
+
+  // MatchingInbox keeps its own open state: its launcher is hidden by CSS and pressed from here.
+  function openInbox() {
+    const host = inboxHost.current;
+    if (host?.querySelector('.matching-inbox-panel')) return true;
+    const launcher = host?.querySelector<HTMLButtonElement>('.matching-inbox > button');
+    if (!launcher) return false;
+    launcher.click();
+    return true;
+  }
+  function pressChip(chip: AiChip) {
+    if (chip.id === 'requests' && offers.length && openInbox()) return;
+    if (chip.id === 'add-property') { onCreate(); return; }
+    if (chip.id === 'jobs-nearby') { setExpanded(v => !v); return; }
+    if (chip.href) window.location.assign(chip.href);
+  }
+  // Something to answer or to fix opens its actions at once; a calm reminder is shown on the map first.
+  function openNow(card: NowCardData) {
+    if (card.kind === 'request' && !card.entityId) { openInbox(); return; }
+    const onMap = card.entityId ? deals.find(d => d.kind === card.entityKind && d.id === card.entityId) : undefined;
+    if (onMap && !card.urgent && ['checkin', 'checkout', 'stay', 'job', 'application'].includes(card.kind)) { select(onMap.mapKey); return; }
+    if (card.entityKind && card.entityId) onProcess(card.entityKind, card.entityId);
+    else if (card.href) window.location.assign(card.href);
+  }
+
+  const line = roleAiLine(role as Role);
+  const chips: AiChip[] = noFlats ? [] : line.chips.map(chip =>
+    chip.id === 'requests' && offers.length ? { ...chip, hint: 'Запросы гостей без ответа: ' + offers.length, active: true }
+      : chip.id === 'jobs-nearby' ? { ...chip, active: expanded }
+        : chip);
+  const offer = offers[0];
+  const card: NowCardData | null = noFlats ? null : offer
+    ? { kind: 'request', title: 'Гость ждёт ответа', detail: 'Ответить до ' + clock(offer.expires_at) + ' · ' + offer.title, at: offer.expires_at, actionLabel: 'Ответить', urgent: true }
+    : nowCard(role as Role, data, now);
+  const loaded = !!query.data;
+  const noJobs = role === 'cleaner' && loaded && !nearby.length;
+  const noJobsLine = <p className="map-role-note">Сейчас рядом нет заданий. Новые появятся здесь.</p>;
+
+  const dealLine = (item: Row) => when(item.start) + ' · ' + (role === 'cleaner' && item.status === 'open' && record(item)?.fee ? money(record(item)!.fee) : status(item).label);
+  const flatLine = (item: Row) => (item.display_status?.label || 'Статус уточняется') + ' · ' + item.city + (item.location ? '' : ' · нет точки на карте');
+  const rows = (items: Row[], text: (item: Row) => string) => (
+    <ul className="map-role-list">
+      {items.map(item => <MapRow key={item.mapKey} item={item} role={role} line={text(item)} onOpen={() => select(item.mapKey)} />)}
+    </ul>
+  );
+  const disclosure = (icon: ReactNode, label: string, counter: string) => (
+    <button type="button" className="map-home-refine" aria-expanded={expanded} onClick={() => setExpanded(v => !v)}>
+      {icon}<span className="map-role-refine-label">{label}</span>
+      {counter && <span className="map-role-count">{counter}</span>}
+      <ChevronDown size={18} aria-hidden="true" />
+    </button>
+  );
+  const pending = !loaded && !query.isError && <p className="map-role-note" role="status">Загружаем…</p>;
+
+  const home = (
+    <>
+      {onBack && <button type="button" className="map-role-back" onClick={onBack}><ArrowLeft size={18} aria-hidden="true" />К поиску жилья</button>}
+      {role !== 'guest' && <AiLine placeholder={line.placeholder} shortPlaceholder={line.shortPlaceholder} label={line.label} chips={chips} onSubmit={onAsk} onChip={pressChip} />}
+      <NowCard card={card} onOpen={openNow} />
+      {noFlats && (
+        <div className="map-role-empty">
+          <p>Добавьте первую квартиру, и она появится на карте</p>
+          <button type="button" className="map-role-button" onClick={onCreate}>Добавить квартиру</button>
+        </div>
+      )}
+      {noJobs && !card && noJobsLine}
+      {role === 'owner' && !noFlats && (
+        <>
+          {disclosure(<Building2 size={18} aria-hidden="true" />, 'Мои квартиры', loaded ? String(flats.length) : '')}
+          <div className="map-home-details">
+            {pending}
+            {rows(flats, flatLine)}
+            {mine.length > 0 && <><h2 className="map-role-heading">Брони и уборки</h2>{rows(mine, dealLine)}</>}
+            {inbox.data && (
+              <button type="button" className="map-role-row is-link" onClick={openInbox}>
+                <span className="map-role-thumb is-icon" aria-hidden="true"><Zap size={20} /></span>
+                <span className="map-role-row-text">
+                  <strong>Быстрые запросы гостей</strong>
+                  <span>{quickOn ? 'Включены: ' + plural(quickOn, 'квартира', 'квартиры', 'квартир') : 'Выключены'}</span>
+                </span>
+                <ChevronRight size={18} aria-hidden="true" />
+              </button>
+            )}
+          </div>
+        </>
+      )}
+      {role === 'cleaner' && (
+        <>
+          {disclosure(<MapPin size={18} aria-hidden="true" />, city || 'Все города', !loaded ? '' : nearby.length ? plural(nearby.length, 'задание', 'задания', 'заданий') : 'нет заданий')}
+          <div className="map-home-details">
+            <div className="map-role-city">
+              <label>
+                <span>Город</span>
+                <select className="map-role-select" value={city} onChange={e => chooseCity(e.target.value)}>
+                  <option value="">Все города</option>
+                  {[...new Set([...Object.keys(mapCities), ...(city ? [city] : [])])].map(name => <option key={name} value={name}>{name}</option>)}
+                </select>
+              </label>
+              <button type="button" className="map-role-button is-quiet" disabled={locating} onClick={() => void locateCity()}><LocateFixed size={18} aria-hidden="true" />Мой город</button>
+            </div>
+            {pending}
+            {nearby.length > 0 && <><h2 className="map-role-heading">{city ? 'Задания рядом' : 'Задания'}</h2>{rows(nearby.slice(0, 20), dealLine)}</>}
+            {noJobs && !!card && noJobsLine}
+            {mine.length > 0 && <><h2 className="map-role-heading">Мои задания</h2>{rows(mine, dealLine)}</>}
+            <a className="map-role-row is-link" href="/workspace/cleaner/jobs">
+              <span className="map-role-row-text"><strong>Все задания</strong></span>
+              <ChevronRight size={18} aria-hidden="true" />
+            </a>
+          </div>
+        </>
+      )}
+      {role === 'guest' && (
+        <>
+          <h2 className="map-role-heading">Моя аренда</h2>
+          {pending}
+          {rows(mine, dealLine)}
+          {loaded && !mine.length && <p className="map-role-note">Броней пока нет.</p>}
+        </>
+      )}
+    </>
+  );
+
+  // ----- A flat or a booking/job chosen on the map or in the list -----
+  const back = <button type="button" className="map-role-back" onClick={() => select('')}><ArrowLeft size={18} aria-hidden="true" />Назад</button>;
+  const precision = !point ? 'Точка на карте ещё не указана.'
+    : point.source === 'fixture' ? 'Учебная точка, это не настоящий адрес.'
+      : point.precision === 'exact' ? 'Точка указана владельцем.' : 'Показан примерный район, точный адрес скрыт.';
+  const more = (label: string) => (
+    <button type="button" className="map-home-refine" aria-expanded={expanded} onClick={() => setExpanded(v => !v)}>
+      {label}<ChevronDown size={18} aria-hidden="true" />
+    </button>
+  );
+
+  let flatCard: ReactNode = null, dealCard: ReactNode = null, pointEditor: ReactNode = null;
+  if (chosen && !chosen.kind) {
+    const openFlat = () => onProcess('property', chosen.id);
+    const flatDeals = deals.filter(d => d.propertyId === chosen.id);
+    flatCard = (
+      <>
+        {back}
+        {!expanded && (
+          <div className="map-role-flat">
+            <Thumb item={chosen} role={role} />
+            <div className="map-role-flat-text">
+              <h2 className="map-role-title">{chosen.title}</h2>
+              <StatusBadge status={chosen.display_status} />
+              {!!chosen.price && <span className="map-role-when">{money(chosen.price)} за сутки</span>}
+            </div>
+          </div>
+        )}
+        {!expanded && <div className="map-role-actions"><button type="button" className="map-role-button" onClick={openFlat}>Действия</button></div>}
+        {more(expanded ? 'Свернуть' : 'Подробнее')}
+        <div className="map-home-details">
+          <PropertyListing property={chosen} role={role} onChoose={openFlat} actionLabel="Действия" onEdit={openFlat} onSettings={openFlat} />
+          {flatDeals.length > 0 && <><h2 className="map-role-heading">Брони и уборки</h2>{rows(flatDeals, dealLine)}</>}
+          <button type="button" className="map-role-button is-quiet" onClick={() => { setPicked(null); setPicking(true); setExpanded(false); }}>
+            <MapPin size={18} aria-hidden="true" />{point ? 'Уточнить точку на карте' : 'Указать точку на карте'}
+          </button>
+          <p className="map-role-note">{precision}</p>
+        </div>
+      </>
+    );
+    pointEditor = (
+      <div className="map-role-point">
+        <h2 className="map-role-title">Точка на карте</h2>
+        <p className="map-role-note">Нажмите нужное место на карте и проверьте точку перед сохранением.</p>
+        <div className="map-role-coords">
+          <label><span>Долгота</span><input className="map-role-select" type="number" step="any" inputMode="decimal" value={picked?.[0] ?? ''} onChange={e => setPicked([Number(e.target.value), picked?.[1] ?? point?.latitude ?? center[1]])} /></label>
+          <label><span>Широта</span><input className="map-role-select" type="number" step="any" inputMode="decimal" value={picked?.[1] ?? ''} onChange={e => setPicked([picked?.[0] ?? point?.longitude ?? center[0], Number(e.target.value)])} /></label>
+        </div>
+        <div className="map-role-actions">
+          <button type="button" className="map-role-button" disabled={busy || !picked} onClick={async () => {
+            if (!picked) return;
+            const saved = await act('location', { propertyId: chosen.id, longitude: picked[0], latitude: picked[1], version: point?.version || 0, confirmed: true });
+            if (saved) { setPicking(false); setPicked(null); }
+          }}>Сохранить точку</button>
+          <button type="button" className="map-role-button is-quiet" onClick={() => { setPicking(false); setPicked(null); }}>Отмена</button>
+        </div>
+      </div>
+    );
+  }
+  if (chosen?.kind) {
+    const actual = record(chosen), job = chosen.kind === 'job';
+    const travelers = journeys.filter(j => j.kind === chosen.kind && j.entityId === chosen.id);
+    const chosenJourney = travelers[0];
+    // The way to the flat is offered to the one who goes there, within a day of the start.
+    const canTravel = role !== 'owner' && point?.precision === 'exact' && chosen.start < now + 86400 && chosen.end > now
+      && (job ? actual?.assigned_to === accountId && actual?.status === 'assigned' : actual?.status === 'confirmed' && !actual?.terms?.actual_checkin);
+    const hasMore = canTravel || point?.precision === 'exact' || travelers.length > 0;
+    dealCard = (
+      <>
+        {back}
+        <div className="map-role-card">
+          <div className="map-role-card-head">
+            <span className="map-role-eyebrow">{job ? 'Уборка' : 'Проживание'}</span>
+            <StatusBadge status={status(chosen)} />
+          </div>
+          <h2 className="map-role-title">{chosen.title}</h2>
+          <span className="map-role-when">{period(chosen.start, chosen.end, now)}{job && actual?.fee ? ' · ' + money(actual.fee) : ''}</span>
+        </div>
+        <div className="map-role-actions">
+          <button type="button" className="map-role-button" onClick={() => onProcess(chosen.kind, chosen.id)}>Действия</button>
+          <button type="button" className="map-role-button is-quiet" onClick={() => onDiscussion({ kind: chosen.kind, entityId: chosen.id, channel: job ? 'cleaning' : 'stay' })}>
+            <MessagesSquare size={18} aria-hidden="true" />{role !== 'owner' ? 'Написать владельцу' : job ? 'Чат по уборке' : 'Написать гостю'}
+          </button>
+        </div>
+        {more(expanded ? 'Свернуть' : hasMore ? 'Маршрут и подробности' : 'Подробнее')}
+        <div className="map-home-details">
+          <ProcessJourney kind={chosen.kind} item={actual || chosen} />
+          {canTravel && (
+            <JourneyNavigation key={chosen.mapKey} role={role} kind={chosen.kind} entityId={chosen.id} mode={travelMode} onMode={setTravelMode}
+              sharingId={session || myJourney?.id}
+              onSharing={id => { setSession(id); setGpsStatus('Владелец видит ваше положение и маршрут.'); }}
+              onStopSharing={stopSharing} onLocation={setLocalFix}
+              onRoute={route => { setPrivateRoute(route); if (route) setExpanded(false); }} />
+          )}
+          {travelers.length > 0 && (
+            <ul className="map-role-travelers" aria-label="Кто в пути">
+              {travelers.map(j => (
+                <li key={j.id}>
+                  <strong>{j.mine ? 'Вы в пути' : j.kind === 'booking' ? 'Гость в пути' : 'Исполнитель в пути'}</strong>
+                  <span>{j.longitude === null ? 'Нет свежего положения' : 'Обновлено в ' + clock(j.recordedAt) + ', точность ±' + Math.round(j.accuracy || 0) + ' м'}</span>
+                  {j.route && <span>Маршрут: {(j.route.distance / 1000).toFixed(1)} км, около {Math.max(1, Math.round(j.route.duration / 60))} мин</span>}
+                </li>
+              ))}
+            </ul>
+          )}
+          {point?.precision === 'exact' && (
+            <a className="map-role-button is-quiet" href={'https://yandex.kz/maps/?rtext=~' + point.latitude + ',' + point.longitude + '&rtt=' + (travelMode === 'walking' ? 'pd' : 'auto')} target="_blank" rel="noreferrer">
+              <Navigation size={18} aria-hidden="true" />Маршрут в Яндекс Картах
+            </a>
+          )}
+          {canTravel && !chosenJourney && (
+            <div className="map-role-sharing">
+              <p className="map-role-note">Владелец увидит, где вы. Передача идёт до часа, пока открыта карта, и её можно остановить.</p>
+              <button type="button" className="map-role-button is-quiet" disabled={busy || !!myJourney || !!session} onClick={startSharing}>{busy ? 'Подключаем…' : 'Я в пути: показать владельцу'}</button>
+            </div>
+          )}
+          <p className="map-role-note">{precision}</p>
+        </div>
+      </>
+    );
+  }
+
+  const view = picking && pointEditor ? 'point' : flatCard ? 'flat' : dealCard ? 'deal' : 'home';
+  const people = [...journeys.filter(p => !localFix || !p.mine), ...(localFix ? [{ id: 'local-me', mine: true, kind: role === 'cleaner' ? 'job' : 'booking', ...localFix }] : [])];
+  const routes = [
+    ...journeys.filter(j => j.route && chosen
+      && (chosen.kind ? j.entityId === chosen.id && j.kind === chosen.kind : deals.some(d => d.id === j.entityId && d.kind === j.kind && d.propertyId === chosen.id))
+      && (!privateRoute || j.entityId !== privateRoute.entityId || j.kind !== privateRoute.kind)).map(j => j.route),
+    ...(privateRoute ? [privateRoute] : []),
+  ];
+  const draft = picking && picked ? [{ mapKey: 'draft-point', location: { longitude: picked[0], latitude: picked[1] } }] : [];
+
+  return (
+    <div className="map-concept-operations" data-role={role}>
+      <section className="map-role" data-expanded={expanded ? 'true' : 'false'} aria-label="Карта">
+        <h1 className="sr-only">Карта</h1>
+        {/* MapCanvas places the pins correctly only when they are known before the map is ready and its
+            camera has not been moved yet. So the map is created once the data has come, and again for another city. */}
+        {(loaded || query.isError) && (
+          <MapCanvas key={city + (loaded ? ':data' : ':empty')} searchKey={selected ? '' : 'fit'}
+            sheetSize={expanded && focus && !routes.length ? 2 : 1} sheetHeight={covered}
+            items={[...pins, ...draft]}
+            selected={draft.length ? 'draft-point' : role === 'owner' && chosen?.kind ? 'property:' + chosen.propertyId : selected}
+            onSelect={select} center={center} people={people} routes={routes} pick={picking}
+            onPick={p => setPicked([Number(p[0].toFixed(6)), Number(p[1].toFixed(6))])} focus={focus} />
+        )}
+        <button type="button" className="map-home-round map-role-locate" disabled={locating} aria-busy={locating} aria-pressed={watching}
+          aria-label={locating ? 'Определяем положение' : watching ? 'Скрыть моё положение' : 'Показать, где я'} onClick={() => void locate()}>
+          <LocateFixed size={20} aria-hidden="true" />
+        </button>
+        <section ref={panel} className="map-home-panel map-role-panel" data-expanded={expanded ? 'true' : 'false'} data-view={view} aria-label={view === 'home' ? 'Главное' : 'Выбрано на карте'}>
+          <button type="button" className="map-home-handle" aria-label={expanded ? 'Свернуть' : 'Развернуть'} aria-expanded={expanded} {...handle} />
+          {error && <p className="map-role-status is-error" role="alert">{error}</p>}
+          {!loaded && query.isError && (
+            <p className="map-role-status is-error" role="alert">
+              <span>Не удалось загрузить карту.</span>
+              <button type="button" className="map-role-inline" onClick={() => void query.refetch()}>Повторить</button>
+            </p>
+          )}
+          {locationNote && <p className="map-role-status" role="status"><LocateFixed size={16} aria-hidden="true" /><span>{locationNote.text}</span></p>}
+          {gpsStatus && !sharing && <p className="map-role-status" role="status"><Navigation size={16} aria-hidden="true" /><span>{gpsStatus}</span></p>}
+          {sharing && (
+            <div className="map-role-live">
+              <p role="status"><Navigation size={16} aria-hidden="true" /><span>{gpsStatus || 'Передача положения включена.'}</span></p>
+              <button type="button" className="map-role-button is-danger" disabled={busy} aria-label="Остановить передачу положения" onClick={() => void stopSharing()}>Остановить</button>
+            </div>
+          )}
+          {view === 'point' ? pointEditor : view === 'flat' ? flatCard : view === 'deal' ? dealCard : home}
+        </section>
+      </section>
+      {role === 'owner' && <div ref={inboxHost} className="map-role-inbox"><MatchingInbox accountId={accountId} /></div>}
+    </div>
+  );
 }

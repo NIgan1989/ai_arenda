@@ -2,7 +2,7 @@ import type {Role} from './domain';
 type Row=Record<string,any>;
 export type Approval={id:string;kind:string;entityId:string;revision:string;title:string;subject:string;from:string;to:string;canDecide:boolean;expiresAt?:number;facts:[string,string][];acceptLabel:string;rejectLabel:string;requiresReason?:boolean;cleaningFee?:number;cleaningBudget?:number;detail?:string};
 const money=(n:number)=>new Intl.NumberFormat('ru-RU').format(n)+' ₸';
-const date=(n:number)=>new Date(n*1000).toLocaleString('ru-RU',{timeZone:'Asia/Almaty',day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'});
+const date=(n:number)=>new Date(n*1000).toLocaleString('ru-RU',{timeZone:'Asia/Almaty',day:'numeric',month:'long',hour:'2-digit',minute:'2-digit'});
 export function approvalCards(data:Row,role:Role,userId:string,t:number):Approval[]{
  const cards:Approval[]=[];
  for(const b of data.bookings||[]){

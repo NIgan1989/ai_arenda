@@ -1,1 +1,40 @@
 .modern-calendar{padding:16px;background:white;border:1px solid var(--border);border-radius:16px;min-width:0;--fc-monarch-primary:var(--primary);--fc-monarch-primary-foreground:white;--fc-monarch-border:var(--t-line);--fc-monarch-background:var(--t-surface);font-size:14px}.calendar-context-toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:8px}.calendar-context-toolbar>label{display:flex;align-items:center;gap:8px;font-size:12px;max-width:360px}.calendar-legend{display:flex;align-items:center;gap:16px;flex-wrap:wrap}.calendar-legend span{display:flex;gap:8px;align-items:center;font-size:12px;color:var(--muted-foreground)}.calendar-legend i{width:8px;height:8px;border-radius:50%}.calendar-note{font-size:12px;color:var(--muted-foreground);line-height:1.6;margin:8px 0 16px}.modern-calendar button{font-family:inherit}.modern-calendar a{cursor:pointer}.modern-calendar table{font-size:12px}.modern-calendar h2{font-size:18px;font-family:inherit;letter-spacing:-.4px}.modern-calendar .calendar-week{margin-top:12px}.modern-calendar .calendar-toolbar{margin-top:0}@media(max-width:700px){.modern-calendar{padding:12px}.calendar-context-toolbar{flex-direction:column;align-items:stretch}.calendar-context-toolbar>label{max-width:none}.calendar-legend{gap:8px}.modern-calendar h2{font-size:16px}}
+
+/* The list view shows an entry whole: the name wraps instead of being cut in the middle of a word,
+   and on a phone the day stands above its entries, so they get the full width. */
+.modern-calendar .calendar-list-row {
+  align-items: flex-start;
+}
+
+.modern-calendar .calendar-list-dot {
+  flex: none;
+  margin-top: 4px;
+}
+
+.modern-calendar .calendar-list-event {
+  align-items: baseline;
+  min-width: 0;
+}
+
+.modern-calendar .calendar-list-title {
+  min-width: 0;
+  overflow: visible;
+  overflow-wrap: anywhere;
+  white-space: normal;
+  line-height: 1.4;
+}
+
+@media (max-width: 700px) {
+  .modern-calendar .calendar-list-day {
+    flex-direction: column;
+  }
+
+  .modern-calendar .calendar-list-day > * {
+    width: 100%;
+    max-width: none;
+  }
+
+  .modern-calendar .calendar-list-time {
+    width: 96px;
+  }
+}

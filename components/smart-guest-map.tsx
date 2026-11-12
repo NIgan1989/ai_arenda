@@ -1,78 +1,911 @@
 'use client';
-import {useEffect,useRef,useState,type FormEvent} from 'react';
-import {useQuery} from '@tanstack/react-query';
-import {ArrowLeft,ArrowUpRight,Check,ChevronDown,House,LoaderCircle,LocateFixed,MapPin,Pencil,Search,SlidersHorizontal,Sparkles,UserRound,X} from 'lucide-react';
-import {MapCanvas} from './map-canvas';
-import {Button} from './ui/button';
-import {Input} from './ui/input';
-import {NativeSelect} from './ui/native-select';
-import {PropertyListing} from './property-listing';
-import {PropertyCover} from './property-cover';
-import {BookingRequest} from './booking-request';
-import {mapCities,cityNearLocation} from '../lib/map-location';
-import {requestBrowserLocation} from '../lib/browser-location';
-import {mapSearchFilters} from '../lib/map-search-request';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { ArrowLeft, ArrowUpRight, LoaderCircle, LocateFixed, Pencil } from 'lucide-react';
+import { MapCanvas } from './map-canvas';
+import { PropertyListing } from './property-listing';
+import { PropertyCover } from './property-cover';
+import { BookingRequest } from './booking-request';
+import { SearchIntro, type SearchFocus, type SearchLink, type SearchNote } from './public-search-intro';
+import { nowCard, type NowCardData } from './now-card';
+import { administratorChatPath, askAdministratorInChats, cleanAiText, leaveAiAsk, type AiChip } from '../lib/ai-line';
+import { mapCities, cityNearLocation } from '../lib/map-location';
+import { requestBrowserLocation, type BrowserLocationFix } from '../lib/browser-location';
+import {
+  MAX_GUESTS, NO_BUDGET, defaultStay, freshStay, guestRequestLine, guestSearchRequest, mapSearchFilters, plural, unbrokenParts, weekendStay,
+  type GuestSearch, type GuestStay,
+} from '../lib/map-search-request';
 import './smart-map.css';
 
-type Row=Record<string,any>;
-const money=(v:number)=>new Intl.NumberFormat('ru-RU').format(v)+' ₸';
-const tripTime=(value:string)=>new Date(value+'+05:00').toLocaleString('ru-RU',{timeZone:'Asia/Almaty',day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'});
-const local=(hours:number)=>new Date(Date.now()+(hours+5)*3600000).toISOString().slice(0,16);
-export async function matchingAPI(action:string,body:Row={},role='guest'){
- const response=await fetch('/api/operations/matching/'+action,{method:'POST',headers:{'Content-Type':'application/json','X-Workspace-Role':role},body:JSON.stringify(body),cache:'no-store'}),value=await response.json() as Row;
- if(!response.ok)throw new Error(value.error||'Не удалось обработать подбор.');return value;
+type Row = Record<string, any>;
+type Stage = 'request' | 'search' | 'result' | 'detail' | 'book';
+
+type SmartGuestMapProps = {
+  publicMode?: boolean;
+  accountId: string;
+  city?: string;
+  onChoose: (property: Row, filters: Row) => void;
+  /** Part of the shell's contract. The guest's own stay is the "Сейчас" card now, so nothing here calls it. */
+  onActivity?: () => void;
+  /** The /api/state payload the shell has already loaded. Only without it does the map load the state itself. */
+  data?: Row;
+  /** Opens a booking with its actions; without it the "Сейчас" card links to the bookings page. */
+  onProcess?: (kind: 'booking' | 'job' | 'property', id: string) => void;
+  /** Opens the AI administrator over the map and sends it the text. */
+  onAsk?: (text: string) => void;
+  /** The heading of the public page. */
+  title?: string;
+  /** Links shown at the end of the opened sheet on the public page. */
+  links?: SearchLink[];
+};
+
+const DEFAULT_CITY = 'Павлодар';
+const DEFAULT_CENTER: [number, number] = [76.9674, 52.2856];
+const DRAFT_STORAGE = 'smart-match-draft';
+const KZ = 5 * 3600000;
+// The server's reason in the words the listing itself uses for the same state.
+const REASON_TEXT: Record<string, string> = { 'Готовность проверена': 'Готова к заселению' };
+
+const money = (value: number) => new Intl.NumberFormat('ru-RU').format(value) + ' ₸';
+// ISO time of the server as the Kazakhstan-local string the form works with.
+const toLocal = (iso: string) => new Date(Date.parse(iso) + KZ).toISOString().slice(0, 16);
+const localPattern = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/;
+const round = (value: number) => Math.round(value * 100) / 100;
+
+function remember(key: string, value: string) {
+  try {
+    sessionStorage.setItem(key, value);
+  } catch {
+    // Session storage is optional: the search works without it.
+  }
 }
-async function getQuote(body:Row){const r=await fetch('/api/quote',{method:'POST',headers:{'Content-Type':'application/json','X-Workspace-Role':'guest'},body:JSON.stringify(body)}),value=await r.json() as Row;if(!r.ok)throw Error(value.error||'Не удалось проверить условия.');return value;}
-function MatchingBooking({property,filters,requestId,onChanged,onEdit}:{property:Row;filters:Row;requestId:string;onChanged:()=>Promise<unknown>;onEdit:()=>void}){
- const initial={start:new Date(Date.parse(filters.start)+5*3600000).toISOString().slice(0,16),end:new Date(Date.parse(filters.end)+5*3600000).toISOString().slice(0,16),guests:filters.guests,mode:filters.mode};
- const quote=useQuery({queryKey:['matching-quote',requestId,property.offerId],queryFn:()=>getQuote({...filters,propertyId:property.id,billingMode:filters.mode}),retry:1,refetchOnWindowFocus:false});
- if(quote.isPending)return <p role="status">Проверяем окончательную стоимость…</p>;
- if(quote.error||!quote.data)return <div className="smart-error" role="alert">{quote.error instanceof Error?quote.error.message:'Условия недоступны.'}<Button variant="outline" onClick={onEdit}>Изменить запрос</Button></div>;
- return <BookingRequest property={property} requestKey={'match:'+requestId} disabled={false} initial={initial} initialQuote={quote.data} onChangeDates={onEdit} onQuote={getQuote} onConfirm={async body=>{await matchingAPI('book',{...body,id:requestId,offerId:property.offerId});await onChanged();}}/>;
+
+function forget(key: string) {
+  try {
+    sessionStorage.removeItem(key);
+  } catch {
+    // See remember().
+  }
 }
-export function SmartGuestMap({publicMode=false,accountId,city='Павлодар',onChoose,onActivity}:{publicMode?:boolean;accountId:string;city?:string;onChoose:(property:Row,filters:Row)=>void;onActivity?:()=>void}){
- const [draft,setDraft]=useState<Row>({city:city||'Павлодар',district:'',mode:'daily',guests:'2',maxPrice:'20000',priority:'balanced',features:[],start:local(2),end:local(26)});
- const [preview,setPreview]=useState<Row|null>(null),[requestId,setRequestId]=useState(''),[busy,setBusy]=useState(false),[error,setError]=useState(''),[stage,setStage]=useState<'request'|'search'|'result'|'detail'|'book'>('request'),[index,setIndex]=useState(0),[more,setMore]=useState(false),[picking,setPicking]=useState(false),[locationNotice,setLocationNotice]=useState('');
- const lock=useRef(false),requestKey=useRef(''),generation=useRef(0),heading=useRef<HTMLHeadingElement>(null),requestStorage='smart-match:'+accountId;
- useEffect(()=>{const apply=(input:Row)=>{if(requestId)return;const values=mapSearchFilters(input);setDraft(v=>({...v,...values}));setStage('request');setPreview(null);};const listener=(event:Event)=>apply((event as CustomEvent<Row>).detail||{});window.addEventListener('rental-map-search',listener);const params=new URLSearchParams(location.search);if(params.get('mapSearch')==='1'||params.has('book'))apply(Object.fromEntries(params));return()=>window.removeEventListener('rental-map-search',listener);},[requestId]);
- useEffect(()=>{try{const saved=sessionStorage.getItem('smart-match-draft');if(saved){const value=JSON.parse(saved);if(value?.city&&typeof value.start==='string'&&Date.parse(value.start+'+05:00')>Date.now()){setDraft(value);if(new URLSearchParams(location.search).get('matchResume')==='1')sessionStorage.removeItem('smart-match-draft');}}if(!publicMode){const id=sessionStorage.getItem(requestStorage);if(id){setRequestId(id);setStage('search');}}}catch{/* Optional session restoration must not prevent search. */}},[accountId,publicMode]);
- const live=useQuery({queryKey:['smart-matching',accountId,requestId],enabled:!!requestId&&!publicMode,queryFn:()=>matchingAPI('state',{id:requestId}),refetchInterval:query=>query.state.error?false:['searching','ready','booking'].includes(query.state.data?.status||'searching')?3000:false,refetchIntervalInBackground:false,retry:1});
- const state=live.data as Row|undefined,active=!!requestId&&!!state&&['searching','ready','booking'].includes(state.status),waiting=!!requestId&&(!state||state.status==='searching'||state.status==='booking');
- const candidates:Row[]=requestId?(state?.properties||[]):(preview?.properties||[]),current=candidates[Math.min(index,Math.max(0,candidates.length-1))],selected=current?'property:'+current.id:'';
- const items=[...candidates,...(state?.pendingProperties||[])].map(p=>({...p,mapKey:'property:'+p.id,matchPending:!p.ownerConfirmed&&!!requestId})),center=mapCities[draft.city]||preview?.center||[76.9674,52.2856],filters=state?.filters||preview?.filters;
- useEffect(()=>{if(state?.filters){const f=state.filters;setDraft({...f,start:new Date(Date.parse(f.start)+5*3600000).toISOString().slice(0,16),end:new Date(Date.parse(f.end)+5*3600000).toISOString().slice(0,16)});}if(state?.status==='ready')setStage(value=>value==='search'?'result':value);if(state&&['empty','cancelled','expired','booked'].includes(state.status))setStage('result');},[state?.status,state?.id]);
- useEffect(()=>{heading.current?.focus({preventScroll:true});},[stage]);
- const body=()=>({...draft,start:draft.start+'+05:00',end:draft.end+'+05:00'});
- const update=(key:string,value:any)=>setDraft(previous=>({...previous,[key]:value}));
- async function find(event:FormEvent){event.preventDefault();if(lock.current)return;lock.current=true;const version=++generation.current;setBusy(true);setError('');setStage('search');setIndex(0);const values=Object.fromEntries(new FormData(event.currentTarget as HTMLFormElement)),next={...draft,...values};setDraft(next);try{const input={...next,start:next.start+'+05:00',end:next.end+'+05:00'},response=await fetch('/api/public/matching?q='+encodeURIComponent(JSON.stringify(input)),{cache:'no-store'}),result=await response.json() as Row;if(!response.ok)throw Error(result.error||'Не удалось подобрать жильё.');if(version!==generation.current)return;setPreview(result);if(!publicMode&&result.properties.some((p:Row)=>p.quickRequest)){requestKey.current||=crypto.randomUUID();const sent=await matchingAPI('begin',{...result.filters,requestKey:requestKey.current,consent:true});setRequestId(sent.id);try{sessionStorage.setItem(requestStorage,sent.id);}catch{}setStage('search');}else setStage('result');try{sessionStorage.setItem('smart-match-draft',JSON.stringify(next));}catch{}}catch(e){if(version===generation.current){setError(e instanceof Error?e.message:'Не удалось выполнить поиск.');setStage('request');}}finally{lock.current=false;setBusy(false);}}
- async function send(){if(lock.current||!filters)return;if(publicMode){try{sessionStorage.setItem('smart-match-draft',JSON.stringify(draft));}catch{}window.location.assign('/signin?next='+encodeURIComponent('/workspace/guest/map?matchResume=1'));return;}lock.current=true;setBusy(true);setError('');try{requestKey.current||=crypto.randomUUID();const result=await matchingAPI('begin',{...filters,requestKey:requestKey.current,consent:true});setRequestId(result.id);try{sessionStorage.setItem(requestStorage,result.id);}catch{}setStage('search');setIndex(0);}catch(e){setError(e instanceof Error?e.message:'Не удалось отправить запрос.');}finally{setBusy(false);lock.current=false;}}
- async function edit(){if(lock.current)return;setError('');if(active){setBusy(true);lock.current=true;try{await matchingAPI('cancel',{id:requestId});}catch(e){setError(e instanceof Error?e.message:'Не удалось отменить подбор.');return;}finally{setBusy(false);lock.current=false;}}generation.current++;setRequestId('');try{sessionStorage.removeItem(requestStorage);}catch{}requestKey.current='';setStage('request');setPreview(null);setPicking(false);}
- async function locate(){if(busy)return;setBusy(true);setError('');try{const fix=await requestBrowserLocation(navigator.geolocation,window.isSecureContext),city=cityNearLocation(fix.longitude,fix.latitude);setDraft(v=>({...v,...(city?{city}:{}),near:{longitude:Math.round(fix.longitude*100)/100,latitude:Math.round(fix.latitude*100)/100,radius:5000}}));setLocationNotice('Ищем в радиусе 5 км. Для подбора используется округлённая точка.');}catch(e){setError(e instanceof Error?e.message:'Положение недоступно. Выберите район вручную.');}finally{setBusy(false);}}
- const summary=[draft.city,draft.district,draft.mode==='hourly'?'На часы':'На сутки',draft.guests+' гост.'].filter(Boolean).join(' · ');
- const queryError=live.error instanceof Error?live.error.message:'';
- return <section className={'smart-map stage-'+stage+(picking?' is-picking':'')} aria-label="Умный подбор жилья">
-  <MapCanvas adaptivePanel searching={waiting} items={items} selected={selected} onSelect={id=>{const i=candidates.findIndex(p=>'property:'+p.id===id);if(i>=0){setIndex(i);setStage('result');}}} center={center} sheetSize={1} searchKey={preview?.serverTime?String(preview.serverTime):requestId} focus={draft.near?[draft.near.longitude,draft.near.latitude]:null} pick={picking} onPick={point=>{update('near',{longitude:Math.round(point[0]*100)/100,latitude:Math.round(point[1]*100)/100,radius:5000});setPicking(false);setLocationNotice('Зона выбрана на карте · радиус 5 км.');}}/>
-  {<header className="smart-brand"><a href="/" aria-label="AI Аренда — главная"><img src="/brand-mark.png" alt=""/><strong>AI Аренда</strong></a>{publicMode&&<a href="/signin" aria-label="Профиль"><UserRound size={22}/></a>}</header>}
-  <div className="smart-summary"><MapPin size={18}/><span>{summary}<small>{draft.near?'Зона на карте · 5 км':stage==='request'?'Какое жильё подобрать?':tripTime(draft.start)+' → '+tripTime(draft.end)}</small></span><strong>до {money(Number(draft.maxPrice)||0)}</strong><button aria-label="Изменить запрос" disabled={busy||state?.status==='booking'} onClick={()=>void edit()}><Pencil size={18}/></button></div>
-  {onActivity&&<button className="smart-activity" onClick={onActivity}><House size={17}/>Моя аренда</button>}
-  {waiting&&<div className="smart-search-motion" aria-hidden="true"><Search size={28}/></div>}
-  {picking&&<div className="smart-pick-note" role="status">Нажмите нужное место на карте<button onClick={()=>setPicking(false)} aria-label="Отменить выбор точки"><X size={20}/></button></div>}
-  <aside className="smart-panel" aria-label="Панель подбора"><div className="smart-grip" aria-hidden="true"/>
-   <ol className="smart-steps" aria-label="Этапы подбора">{['Запрос','Поиск','Вариант'].map((label,i)=>{const step=stage==='request'?0:stage==='search'?1:2;return <li key={label} className={i===step?'current':i<step?'complete':''} aria-current={i===step?'step':undefined}>{i<step?<Check size={15}/>:i===2?<House size={15}/>:<span>{i+1}</span>}{label}</li>;})}</ol>
-   {(error||queryError)&&<div className="smart-error" role="alert">{error||queryError}{queryError&&<Button variant="outline" onClick={()=>void live.refetch()}>Повторить</Button>}</div>}
-   {stage==='request'?<form className="smart-survey" onSubmit={find}><h2 ref={heading} tabIndex={-1}>Какое жильё вам нужно?</h2><p>Подберём под ваши планы и уточним готовность.</p><div className="smart-mode" role="group" aria-label="Срок аренды">{[['daily','На сутки'],['hourly','На часы']].map(([id,label])=><button type="button" aria-pressed={draft.mode===id} key={id} onClick={()=>setDraft(v=>({...v,mode:id,end:new Date(Date.parse(v.start+'+05:00')+(id==='hourly'?3:24)*3600000+5*3600000).toISOString().slice(0,16)}))}>{label}</button>)}</div>
-    <div className="smart-fields"><label>Город<Input name="city" value={draft.city} maxLength={80} required onChange={e=>update('city',e.target.value)} list="smart-cities"/><datalist id="smart-cities">{Object.keys(mapCities).map(city=><option key={city}>{city}</option>)}</datalist></label><label>Район<Input name="district" value={draft.district} maxLength={120} onChange={e=>update('district',e.target.value)} placeholder="Необязательно"/></label><label>Заезд<Input type="datetime-local" name="start" value={draft.start} required onChange={e=>update('start',e.target.value)}/></label><label>Выезд<Input type="datetime-local" name="end" value={draft.end} required onChange={e=>update('end',e.target.value)}/></label><label>Гостей<Input type="number" min={1} max={50} name="guests" value={draft.guests} required onChange={e=>update('guests',e.target.value)}/></label><label>Бюджет за весь период, ₸<Input type="number" min={100} max={100000000} name="maxPrice" value={draft.maxPrice} required onChange={e=>update('maxPrice',e.target.value)}/></label></div>
-    <button className="smart-more" type="button" aria-expanded={more} onClick={()=>setMore(!more)}><SlidersHorizontal size={17}/>Пожелания и зона поиска<ChevronDown size={16}/></button>{more&&<div className="smart-extras"><label>Что важнее?<NativeSelect value={draft.priority} onChange={e=>update('priority',e.target.value)}><option value="balanced">Баланс цены и расположения</option><option value="cheaper">Дешевле</option><option value="closer">Ближе к выбранной точке</option></NativeSelect></label><div className="smart-features">{[['parking','Парковка'],['wifi','Wi-Fi'],['kitchen','Кухня'],['workspace','Рабочее место']].map(([id,label])=><label key={id}><input type="checkbox" checked={draft.features.includes(id)} onChange={e=>update('features',e.target.checked?[...draft.features,id]:draft.features.filter((v:string)=>v!==id))}/>{label}</label>)}</div><div className="smart-zone"><Button type="button" variant="outline" disabled={busy} onClick={()=>void locate()}><LocateFixed size={16}/>Рядом со мной</Button><Button type="button" variant="outline" onClick={()=>setPicking(true)}><MapPin size={16}/>Выбрать на карте</Button>{draft.near&&<Button type="button" variant="ghost" onClick={()=>{update('near',null);setLocationNotice('');}}>Убрать зону</Button>}</div>{locationNotice&&<small>{locationNotice}</small>}</div>}
-    <div className="smart-cta"><Button className="smart-primary" disabled={busy} type="submit">{busy?<LoaderCircle size={18}/>:<Sparkles size={18}/>}Подобрать жильё</Button></div><small>{publicMode?'Подбор без входа. Для ответа владельца понадобится аккаунт.':'Отправим даты, число гостей и бюджет до трёх владельцев одновременно. Это не бронь.'} Депозит отдельно. Время UTC+5.</small></form>
-   :stage==='search'?<div className="smart-wait" role="status"><h2 ref={heading} tabIndex={-1}>{state?.status==='booking'?'Оформляем заявку':requestId?'Уточняем готовность':'Проверяем варианты'}</h2><p>{requestId&&state?`Отправлено запросов: ${state.sent}. Ожидаем ответов: ${state.pending}.`:'Проверяем даты, стоимость и ваши пожелания.'}</p><p className="smart-assistant"><Sparkles size={18}/>ИИ-администратор ведёт подбор</p><small>{requestId?'На ответ владельцам отведено две минуты. Предварительный запрос не бронирует квартиру.':'Доступность и стоимость проверяются по базе сервиса.'}</small><Button variant="outline" disabled={busy||state?.status==='booking'} onClick={()=>void edit()}>Отменить поиск</Button></div>
-   :state?.status==='booked'?<div className="smart-wait"><Check size={28}/><h2 ref={heading} tabIndex={-1}>Заявка сохранена</h2><p>Следующий шаг и ответ владельца — в ваших бронированиях. Отправка заявки не списывает деньги.</p><a className="smart-link-button" href="/workspace/guest/bookings">Моя аренда<ArrowUpRight size={18}/></a></div>
-   :stage==='detail'&&current?<div className="smart-detail"><button className="smart-back" onClick={()=>setStage('result')}><ArrowLeft size={18}/>К предложению</button><PropertyListing property={current} role="guest" publicView billingMode={draft.mode} onChoose={()=>requestId?setStage('book'):onChoose(current,{...draft,start:draft.start,end:draft.end})}/></div>
-   :stage==='book'&&current?<div className="smart-detail"><button className="smart-back" onClick={()=>setStage('detail')}><ArrowLeft size={18}/>К квартире</button><MatchingBooking key={current.id+':'+current.offerId} property={current} filters={filters} requestId={requestId} onChanged={()=>live.refetch()} onEdit={()=>void edit()}/></div>
-   :current?<div className="smart-recommendation"><h2 ref={heading} tabIndex={-1}>Вариант для вас</h2><p className="smart-assistant"><Sparkles size={21}/>Подобрал ИИ-администратор</p><p className="smart-reasons">{current.match.reasons.join(' · ')}{current.ownerConfirmed?' · владелец подтвердил готовность':''}</p><div className="smart-preview"><div><PropertyCover property={current} role="guest" publicView/></div><div><h3>{current.title}</h3><strong>{money(current.estimate.amount)} за период</strong><small>{current.policy.deposit?'Депозит '+money(current.policy.deposit)+' отдельно':'Без депозита'}</small></div></div><Button className="smart-primary" onClick={()=>setStage('detail')}>Посмотреть квартиру<ArrowUpRight size={18}/></Button>
-    {!requestId&&candidates.some(p=>p.quickRequest)&&<><Button variant="outline" disabled={busy} onClick={()=>void send()}>{busy?<LoaderCircle size={17}/>:<Search size={17}/>}Уточнить готовность у владельцев</Button><small>Отправим даты, число гостей и бюджет до трёх владельцев одновременно. Контакты и точная геопозиция не передаются.</small></>}
-    {!current.ownerConfirmed&&<small>Даты проверены. Готовность к заезду ещё не подтверждена владельцем.</small>}<div className="smart-secondary"><button disabled={candidates.length<2} onClick={()=>setIndex((index+1)%candidates.length)}>Другой вариант{candidates.length>1?' · '+(index+1)+'/'+candidates.length:''}</button><button disabled={busy} onClick={()=>void edit()}><Pencil size={15}/>Изменить запрос</button></div></div>
-   :<div className="smart-empty"><Search size={28}/><h2 ref={heading} tabIndex={-1}>{state?.status==='expired'?'Время подбора истекло':state?.status==='cancelled'?'Поиск отменён':'Пока нет подходящего варианта'}</h2><p>{requestId?'Не получили действующего подтверждения. Можно изменить условия или повторить подбор.':'Измените даты, район или бюджет. Мы не будем менять ваши условия без согласия.'}</p><Button className="smart-primary" onClick={()=>void edit()}>Изменить запрос</Button></div>}
-   {publicMode&&<footer className="smart-footer"><a href="/join/owner">Сдавать жильё</a><a href="/join/cleaner">Работать на уборках</a><a href="/terms">Условия</a><a href="/privacy">Приватность</a></footer>}
-  </aside>
- </section>;
+
+// A dialog or a sheet opened over the map takes Escape itself.
+const OPEN_OVERLAY = 'dialog[open], [data-slot=dialog-content][data-state=open], [data-slot=sheet-content][data-state=open], [data-slot=popover-content][data-state=open]';
+
+// Moves focus to the first of the given elements that takes it; false when none did.
+function focusIn(host: HTMLElement, ...selectors: string[]) {
+  for (const selector of selectors) {
+    const target = host.querySelector<HTMLElement>(selector);
+    target?.focus({ preventScroll: true });
+    if (target && document.activeElement === target) return true;
+  }
+  return false;
+}
+
+function recall(key: string) {
+  try {
+    return sessionStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+const NO_CONNECTION = 'Не удалось связаться с сервером. Проверьте интернет и попробуйте ещё раз.';
+const PAST_TEXT = { date: 'Эта дата уже прошла.', time: 'Это время уже прошло.' };
+const ASK_WHEN = 'Укажите, когда нужно жильё.';
+
+// The answer of the server, or an error in words meant for the person: a request that did not reach the server
+// and an error page instead of an answer never show the browser's own technical text.
+async function answer(request: Promise<Response>, fallback: string): Promise<Row> {
+  let response: Response;
+  try {
+    response = await request;
+  } catch {
+    throw Error(NO_CONNECTION);
+  }
+  let value: Row | null = null;
+  try {
+    value = await response.json() as Row;
+  } catch {
+    // Not an answer of the service: handled below.
+  }
+  if (response.ok && value) return value;
+  // What the service itself says is shown only for a request it refused; its own failure gets the general words.
+  throw Error(response.status < 500 && typeof value?.error === 'string' && value.error ? value.error : fallback);
+}
+
+// The text of a failure for the screen. Anything that is not written for the person (not in Russian) is replaced.
+const told = (failure: unknown, fallback: string) =>
+  failure instanceof Error && /[а-яё]/i.test(failure.message) ? failure.message : fallback;
+
+export async function matchingAPI(action: string, body: Row = {}, role = 'guest') {
+  return answer(fetch('/api/operations/matching/' + action, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Workspace-Role': role },
+    body: JSON.stringify(body),
+    cache: 'no-store',
+  }), 'Не удалось обработать подбор. Попробуйте ещё раз.');
+}
+
+async function getQuote(body: Row) {
+  return answer(fetch('/api/quote', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Workspace-Role': 'guest' },
+    body: JSON.stringify(body),
+  }), 'Не удалось проверить условия. Попробуйте ещё раз.');
+}
+
+// The request exactly as /api/public/matching and matching/begin expect it: Kazakhstan time with its offset.
+function requestBody(draft: Row) {
+  return {
+    city: String(draft.city || '').trim(),
+    district: String(draft.district || '').trim(),
+    mode: draft.mode,
+    guests: String(draft.guests),
+    maxPrice: String(draft.maxPrice || NO_BUDGET),
+    priority: draft.priority || 'balanced',
+    features: Array.isArray(draft.features) ? draft.features : [],
+    near: draft.near || null,
+    start: draft.start + '+05:00',
+    end: draft.end + '+05:00',
+  };
+}
+
+// "Понял: Астана, 2 гостя." — only what the text itself named.
+function understoodLine(result: GuestSearch, before: Row) {
+  const { stated, filters } = result, guests = Number(filters.guests);
+  const parts = [
+    stated.city && filters.city,
+    stated.district && filters.district,
+    filters.mode !== before.mode && (filters.mode === 'hourly' ? 'на часы' : 'на сутки'),
+    stated.guests && guests + ' ' + plural(guests, 'гость', 'гостя', 'гостей'),
+    stated.budget && 'до ' + money(Number(filters.maxPrice)),
+    stated.wishes && 'пожелания',
+  ].filter(Boolean);
+  return parts.length ? 'Понял: ' + parts.join(', ') + '. ' : '';
+}
+
+function priceLine(property: Row, mode: string) {
+  const periods = Number(property.estimate?.periods) || 1;
+  const length = mode === 'hourly'
+    ? periods + ' ' + plural(periods, 'час', 'часа', 'часов')
+    : periods === 1 ? 'сутки' : periods + ' ' + plural(periods, 'сутки', 'суток', 'суток');
+  return money(property.estimate.amount) + ' за ' + length;
+}
+
+function MatchingBooking({ property, filters, requestId, onChanged, onEdit }: {
+  property: Row; filters: Row; requestId: string; onChanged: () => Promise<unknown>; onEdit: () => void;
+}) {
+  const initial = { start: toLocal(filters.start), end: toLocal(filters.end), guests: filters.guests, mode: filters.mode };
+  const quote = useQuery({
+    queryKey: ['matching-quote', requestId, property.offerId],
+    queryFn: () => getQuote({ ...filters, propertyId: property.id, billingMode: filters.mode }),
+    retry: 1,
+    refetchOnWindowFocus: false,
+  });
+  if (quote.isPending) return <p className="smart-status" role="status">Считаем итоговую сумму…</p>;
+  if (quote.error || !quote.data) {
+    return (
+      <div className="smart-error" role="alert">
+        {told(quote.error, 'Не удалось проверить условия. Попробуйте ещё раз.')}
+        <button type="button" className="smart-button" onClick={onEdit}>Изменить запрос</button>
+      </div>
+    );
+  }
+  return (
+    <BookingRequest
+      property={property}
+      requestKey={'match:' + requestId}
+      disabled={false}
+      initial={initial}
+      initialQuote={quote.data}
+      onChangeDates={onEdit}
+      onQuote={getQuote}
+      onConfirm={async body => {
+        await matchingAPI('book', { ...body, id: requestId, offerId: property.offerId });
+        await onChanged();
+      }}
+    />
+  );
+}
+
+// The guest's first screen and the public page: the map, one line for a request and, after it, one offer at a time.
+export function SmartGuestMap({ publicMode = false, accountId, city, onChoose, data, onProcess, onAsk, onActivity, title, links }: SmartGuestMapProps) {
+  // ---------- State ----------
+  const [draft, setDraft] = useState<Row>(() => ({
+    city: city || DEFAULT_CITY, district: '', guests: '2', maxPrice: '', priority: 'balanced', features: [], near: null,
+    ...defaultStay('daily'),
+  }));
+  const [stage, setStage] = useState<Stage>('request');
+  const [preview, setPreview] = useState<Row | null>(null);
+  const [requestId, setRequestId] = useState('');
+  const [index, setIndex] = useState(0);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [expanded, setExpanded] = useState(false);
+  const [note, setNote] = useState<SearchNote | null>(null);
+  const [focus, setFocus] = useState<SearchFocus | null>(null);
+  const [picking, setPicking] = useState(false);
+  const [zoneNotice, setZoneNotice] = useState('');
+  const [me, setMe] = useState<BrowserLocationFix | null>(null);
+  const [panel, setPanel] = useState<HTMLElement | null>(null);
+  // How much of the map's height the sheet across the bottom covers; 0 when the sheet is a card on the side.
+  const [covered, setCovered] = useState<number | undefined>();
+  // What was cut to what the service offers ("30 часов" searched as 23): said next to the result.
+  const [remark, setRemark] = useState('');
+
+  const root = useRef<HTMLElement>(null), heading = useRef<HTMLHeadingElement>(null), toFields = useRef(false);
+  const lock = useRef(false), requestKey = useRef(''), generation = useRef(0);
+  // Dates and city count as chosen once the guest named them; until then a request without them is asked for them.
+  const whenChosen = useRef(false), cityChosen = useRef(false), asked = useRef(false);
+  const requestStorage = 'smart-match:' + accountId;
+
+  // ---------- Data ----------
+  const catalog = useQuery({
+    queryKey: ['guest-cities'],
+    queryFn: async () => {
+      const response = await fetch('/api/public/catalog?limit=1');
+      if (!response.ok) throw Error('Список городов недоступен.');
+      return ((await response.json() as Row).cities || []) as string[];
+    },
+    staleTime: 3600000,
+    retry: 1,
+  });
+  const cities = useMemo(() => [...new Set([...Object.keys(mapCities), ...(catalog.data || [])])], [catalog.data]);
+
+  const ownState = useQuery({
+    queryKey: ['guest-now', accountId],
+    enabled: !publicMode && !data,
+    queryFn: async () => {
+      const response = await fetch('/api/state?catalog=0', { cache: 'no-store', headers: { 'X-Workspace-Role': 'guest' } });
+      if (!response.ok) throw Error('Состояние недоступно.');
+      return await response.json() as Row;
+    },
+    refetchInterval: 60000,
+    refetchIntervalInBackground: false,
+    retry: 1,
+  });
+  const account = data || ownState.data;
+  const card = publicMode || !account ? null : nowCard('guest', account, account.serverTime || Date.now() / 1000);
+
+  const live = useQuery({
+    queryKey: ['smart-matching', accountId, requestId],
+    enabled: !!requestId && !publicMode,
+    queryFn: () => matchingAPI('state', { id: requestId }),
+    refetchInterval: query => query.state.error ? false : ['searching', 'ready', 'booking'].includes(query.state.data?.status || 'searching') ? 3000 : false,
+    refetchIntervalInBackground: false,
+    retry: 1,
+  });
+  const state = live.data as Row | undefined;
+  const active = !!requestId && !!state && ['searching', 'ready', 'booking'].includes(state.status);
+  const waiting = !!requestId && (!state || state.status === 'searching' || state.status === 'booking');
+  const candidates: Row[] = requestId ? state?.properties || [] : preview?.properties || [];
+  const current = candidates[Math.min(index, Math.max(0, candidates.length - 1))];
+  const filters: Row | undefined = state?.filters || preview?.filters;
+  const items = [...candidates, ...(state?.pendingProperties || [])].map(property => ({
+    ...property, mapKey: 'property:' + property.id, matchPending: !property.ownerConfirmed && !!requestId,
+  }));
+  const center = mapCities[draft.city] || preview?.center || DEFAULT_CENTER;
+  const queryError = live.error ? told(live.error, 'Не удалось обновить подбор. Попробуйте ещё раз.') : '';
+
+  // ---------- Applying conditions from outside the form ----------
+  // A link or the administrator hands over ready conditions: only known keys, only valid values.
+  function applyConditions(input: Row) {
+    const values = mapSearchFilters(input), patch: Row = {};
+    if (values.city) patch.city = values.city;
+    if (typeof input.guests === 'string' && /^\d{1,2}$/.test(input.guests) && Number(input.guests) >= 1 && Number(input.guests) <= MAX_GUESTS) patch.guests = input.guests;
+    if (/^\d{3,9}$/.test(values.maxPrice || '')) patch.maxPrice = values.maxPrice;
+    if (typeof input.mode === 'string') patch.mode = values.mode === 'hourly' ? 'hourly' : 'daily';
+    const dated = localPattern.test(values.start || '') && localPattern.test(values.end || '') && values.end > values.start
+      && Date.parse(values.start + '+05:00') > Date.now();
+    if (dated) Object.assign(patch, { start: values.start, end: values.end });
+    else if (patch.mode) Object.assign(patch, defaultStay(patch.mode));
+    if (patch.city) cityChosen.current = true;
+    if (dated) whenChosen.current = true;
+    return { patch, dated };
+  }
+
+  useEffect(() => {
+    const show = (input: Row) => {
+      if (requestId) return;
+      const { patch, dated } = applyConditions(input), next = { ...draft, ...patch };
+      setPreview(null);
+      setRemark('');
+      setStage('request');
+      setDraft(next);
+      // "Показать на карте" with dates is a finished request; without them the guest still has to say when.
+      if (dated && input.book === undefined) void search(next, false);
+      else if (input.book === undefined) {
+        setNote({ text: ASK_WHEN });
+        openFields('when');
+      }
+    };
+    const listener = (event: Event) => show((event as CustomEvent<Row>).detail || {});
+    window.addEventListener('rental-map-search', listener);
+    return () => window.removeEventListener('rental-map-search', listener);
+  }, [requestId, draft]);
+
+  // Once, when the page opens: conditions from the address, the request saved before signing in, an unfinished search.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    let next = draft, resume = false;
+    try {
+      const saved = sessionStorage.getItem(DRAFT_STORAGE);
+      if (saved) {
+        const value = JSON.parse(saved);
+        if (value?.city && localPattern.test(value.start) && localPattern.test(value.end) && Date.parse(value.start + '+05:00') > Date.now()) {
+          next = { ...next, ...value, maxPrice: value.maxPrice === NO_BUDGET ? '' : value.maxPrice || '' };
+          whenChosen.current = cityChosen.current = true;
+          resume = params.get('matchResume') === '1';
+          if (resume) sessionStorage.removeItem(DRAFT_STORAGE);
+        }
+      }
+      if (!publicMode) {
+        const id = sessionStorage.getItem(requestStorage);
+        if (id) {
+          setRequestId(id);
+          setStage('search');
+          resume = false;
+        }
+      }
+    } catch {
+      // Restoring is optional and must not stand in the way of a new search.
+    }
+    const fromLink = params.get('mapSearch') === '1', linked = fromLink || params.has('book');
+    if (linked) next = { ...next, ...applyConditions(Object.fromEntries(params)).patch };
+    if (next !== draft) setDraft(next);
+    // Back from signing in: show the same offers again, the question to the owners is one tap away.
+    if (resume && !publicMode) void search(next, false);
+    else if (fromLink && whenChosen.current) void search(next, false);
+    else if (fromLink) {
+      // "Показать на карте" without dates: the city and the guests are in the fields, the guest still has to say when.
+      setNote({ text: ASK_WHEN });
+      openFields('when');
+    }
+    if (fromLink) {
+      // The conditions are in the fields: the link leaves the address, so a reload starts from a clean page.
+      for (const key of ['mapSearch', 'city', 'guests', 'rooms', 'roomsExact', 'minPrice', 'maxPrice', 'mode', 'sort', 'start', 'end', 'page']) params.delete(key);
+      window.history.replaceState(window.history.state, '', window.location.pathname + (params.size ? '?' + params : '') + window.location.hash);
+    }
+  }, [accountId, publicMode]);
+
+  // /workspace/guest/map?q=<text>: the text is applied once, as if it was typed into the line, and leaves the address.
+  useEffect(() => {
+    if (asked.current || catalog.isPending) return;
+    const params = new URLSearchParams(window.location.search);
+    if (!params.has('q')) return;
+    asked.current = true;
+    const text = cleanAiText(params.get('q'));
+    params.delete('q');
+    window.history.replaceState(window.history.state, '', window.location.pathname + (params.size ? '?' + params : '') + window.location.hash);
+    // A search that is still running keeps the screen: the text does not replace it.
+    if (text && !requestId && !recall(requestStorage)) void ask(text);
+  }, [catalog.isPending]);
+
+  useEffect(() => {
+    if (state?.filters) {
+      const saved = state.filters;
+      setDraft({ ...saved, start: toLocal(saved.start), end: toLocal(saved.end), maxPrice: saved.maxPrice === NO_BUDGET ? '' : saved.maxPrice });
+      whenChosen.current = cityChosen.current = true;
+    }
+    if (state?.status === 'ready') setStage(value => value === 'search' ? 'result' : value);
+    if (state && ['empty', 'cancelled', 'expired', 'booked'].includes(state.status)) setStage('result');
+  }, [state?.status, state?.id]);
+
+  useEffect(() => {
+    heading.current?.focus({ preventScroll: true });
+  }, [stage]);
+
+  // After "Изменить запрос" focus goes to the request line (to the form itself: a phone does not open the keyboard for it).
+  useEffect(() => {
+    if (stage !== 'request' || !toFields.current || !panel) return;
+    // The sheet of the request replaces the sheet of the result: until it is on the page there is nothing to focus.
+    if (focusIn(panel, '.map-home-ai-form', '.map-home-refine')) toFields.current = false;
+  }, [stage, panel]);
+
+  // Escape steps back: out of choosing a point on the map, then out of the opened fields.
+  useEffect(() => {
+    if (!picking && !(stage === 'request' && expanded)) return;
+    const close = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || event.defaultPrevented || document.querySelector(OPEN_OVERLAY)) return;
+      if (picking) {
+        setPicking(false);
+        return;
+      }
+      // The fields are about to leave the page: focus must not be left on one of them.
+      const inside = !!panel?.querySelector('.map-home-details')?.contains(document.activeElement);
+      setExpanded(false);
+      if (inside && panel) focusIn(panel, '.map-home-refine');
+    };
+    window.addEventListener('keydown', close);
+    return () => window.removeEventListener('keydown', close);
+  }, [picking, expanded, stage, panel]);
+
+  // The height of the sheet: for what sits on the map just above it, and for the map itself,
+  // which keeps what it shows clear of the sheet.
+  useEffect(() => {
+    const host = root.current;
+    if (!panel || !host) return;
+    const update = () => {
+      const box = panel.getBoundingClientRect(), outer = host.getBoundingClientRect();
+      host.style.setProperty('--smart-sheet', Math.round(box.height) + 'px');
+      // An opened sheet hides the map anyway: the map keeps the view it had under the folded one.
+      if (host.dataset.covered === 'true') return;
+      setCovered(box.width >= outer.width - 1 ? Math.round((outer.bottom - box.top) / 8) * 8 : 0);
+    };
+    const observer = new ResizeObserver(update);
+    observer.observe(panel);
+    update();
+    return () => observer.disconnect();
+  }, [panel]);
+
+  // ---------- Actions ----------
+  function openFields(field?: SearchFocus['field']) {
+    setExpanded(true);
+    if (field) setFocus({ field, id: Date.now() });
+  }
+
+  function change(patch: Row) {
+    if ('start' in patch || 'end' in patch || 'mode' in patch) whenChosen.current = true;
+    if ('city' in patch) cityChosen.current = true;
+    setNote(null);
+    setDraft(previous => ({ ...previous, ...patch }));
+  }
+
+  // Looks for flats that fit. With askOwners a signed-in guest's request also goes to the owners
+  // who take quick requests; the free line and the shortcuts only look.
+  async function search(conditions: Row, askOwners: boolean) {
+    if (lock.current) return;
+    const next = { ...conditions, city: String(conditions.city || '').trim(), ...freshStay(conditions as GuestStay) };
+    if (!next.city) {
+      setNote({ text: 'Укажите город.', tone: 'error' });
+      openFields('city');
+      return;
+    }
+    lock.current = true;
+    const version = ++generation.current;
+    setBusy(true);
+    setError('');
+    setNote(null);
+    setIndex(0);
+    setDraft(next);
+    setStage('search');
+    try {
+      const result = await answer(
+        fetch('/api/public/matching?q=' + encodeURIComponent(JSON.stringify(requestBody(next))), { cache: 'no-store' }),
+        'Не удалось подобрать жильё. Попробуйте ещё раз.',
+      );
+      if (version !== generation.current) return;
+      setPreview(result);
+      if (askOwners && !publicMode && result.properties.some((property: Row) => property.quickRequest)) {
+        requestKey.current ||= crypto.randomUUID();
+        const sent = await matchingAPI('begin', { ...result.filters, requestKey: requestKey.current, consent: true });
+        setRequestId(sent.id);
+        remember(requestStorage, sent.id);
+      } else {
+        setStage('result');
+      }
+      remember(DRAFT_STORAGE, JSON.stringify(next));
+    } catch (failure) {
+      if (version !== generation.current) return;
+      setNote({ text: told(failure, 'Не удалось подобрать жильё. Попробуйте ещё раз.'), tone: 'error' });
+      setStage('request');
+      setExpanded(true);
+    } finally {
+      lock.current = false;
+      setBusy(false);
+    }
+  }
+
+  // The free line. The text is read by the search rules, not by a model: what it names is applied, a request
+  // without dates is asked for them, and whatever was cut or could not be taken is said. A text the rules
+  // do not understand is not guessed at: the guest is offered to ask the AI administrator.
+  async function ask(text: string) {
+    if (lock.current) return;
+    const result = guestSearchRequest(text, draft, cities, Date.now());
+    if (!result.understood) {
+      setNote({ text: 'Не понял запрос. Назовите день и срок.', ask: text });
+      return;
+    }
+    let next = result.filters;
+    const remarks = result.remarks.join(' ');
+    setRemark('');
+    if (result.stated.city) cityChosen.current = true;
+    if (result.stated.when) whenChosen.current = true;
+    if (result.past) {
+      // A day or an hour that has passed is never moved to another one: the guest is asked for the date.
+      setDraft(next);
+      setNote({ text: [PAST_TEXT[result.past], remarks, ASK_WHEN].filter(Boolean).join(' '), tone: 'error' });
+      openFields('when');
+      return;
+    }
+    if (result.nearby) {
+      const zone = await findZone();
+      if (!zone) {
+        setDraft(next);
+        setExpanded(true);
+        return;
+      }
+      next = { ...next, ...zone };
+    }
+    if (!whenChosen.current) {
+      setDraft(next);
+      setNote({ text: [understoodLine(result, draft).trim(), remarks, ASK_WHEN].filter(Boolean).join(' ') });
+      openFields('when');
+      return;
+    }
+    // Shown next to the result: the search has run with what the note says.
+    setRemark(remarks);
+    await search(next, false);
+  }
+
+  function chip(shortcut: AiChip) {
+    if (lock.current) return;
+    whenChosen.current = true;
+    setNote(null);
+    setRemark('');
+    if (shortcut.id === 'hourly') {
+      // A few hours need a start and a length: the fields open in the hourly mode.
+      setDraft(previous => ({ ...previous, ...defaultStay('hourly') }));
+      openFields();
+      return;
+    }
+    void search({ ...draft, ...(shortcut.id === 'weekend' ? weekendStay() : defaultStay('daily')) }, false);
+  }
+
+  // Asks the owners who take quick requests whether the flat is free; needs an account.
+  async function askOwners() {
+    if (lock.current || !filters) return;
+    if (publicMode) {
+      remember(DRAFT_STORAGE, JSON.stringify(draft));
+      window.location.assign('/signin?next=' + encodeURIComponent('/workspace/guest/map?matchResume=1'));
+      return;
+    }
+    lock.current = true;
+    setBusy(true);
+    setError('');
+    try {
+      requestKey.current ||= crypto.randomUUID();
+      const result = await matchingAPI('begin', { ...filters, requestKey: requestKey.current, consent: true });
+      setRequestId(result.id);
+      remember(requestStorage, result.id);
+      setStage('search');
+      setIndex(0);
+    } catch (failure) {
+      setError(told(failure, 'Не удалось отправить запрос. Попробуйте ещё раз.'));
+    } finally {
+      setBusy(false);
+      lock.current = false;
+    }
+  }
+
+  // Back to the request with its conditions in the fields; a search that is still running is cancelled first.
+  async function edit() {
+    if (lock.current) return;
+    setError('');
+    if (active) {
+      setBusy(true);
+      lock.current = true;
+      try {
+        await matchingAPI('cancel', { id: requestId });
+      } catch (failure) {
+        setError(told(failure, 'Не удалось отменить подбор. Попробуйте ещё раз.'));
+        return;
+      } finally {
+        setBusy(false);
+        lock.current = false;
+      }
+    }
+    generation.current++;
+    setRequestId('');
+    forget(requestStorage);
+    requestKey.current = '';
+    setPreview(null);
+    setPicking(false);
+    setNote(null);
+    setRemark('');
+    setExpanded(true);
+    toFields.current = true;
+    setStage('request');
+  }
+
+  async function findPosition() {
+    try {
+      const fix = await requestBrowserLocation(navigator.geolocation, window.isSecureContext);
+      setMe(fix);
+      return fix;
+    } catch (failure) {
+      const text = told(failure, 'Положение недоступно. Выберите район вручную.');
+      if (stage === 'request') setNote({ text, tone: 'error' });
+      else setError(text);
+      return null;
+    }
+  }
+
+  // The search zone around the guest: a point rounded to 0.01° and a 5 km radius.
+  async function findZone(): Promise<Row | null> {
+    const fix = await findPosition();
+    if (!fix) return null;
+    const near = cityNearLocation(fix.longitude, fix.latitude);
+    setZoneNotice('Ищем в 5 км от вас. Точное положение не передаётся.');
+    return { ...(near ? { city: near } : {}), near: { longitude: round(fix.longitude), latitude: round(fix.latitude), radius: 5000 } };
+  }
+
+  async function locateZone() {
+    if (busy) return;
+    setBusy(true);
+    setNote(null);
+    const zone = await findZone();
+    if (zone) setDraft(previous => ({ ...previous, ...zone }));
+    setBusy(false);
+  }
+
+  // The round button on the map: shows where the guest is and, until a city is chosen, searches in theirs.
+  async function showMe() {
+    const fix = await findPosition();
+    if (!fix || stage !== 'request' || cityChosen.current) return;
+    const near = cityNearLocation(fix.longitude, fix.latitude);
+    if (near && near !== draft.city) {
+      setDraft(previous => ({ ...previous, city: near, district: '', near: null }));
+      setNote({ text: 'Ищем в городе ' + near + ': он ближе всего к вам.' });
+    }
+  }
+
+  function openCard(now: NowCardData) {
+    if (onProcess && now.entityKind && now.entityId) onProcess(now.entityKind, now.entityId);
+    else if (now.href) window.location.assign(now.href);
+  }
+
+  // A question the search rules did not understand goes to the AI administrator only when the guest asks for it.
+  // A visitor signs in first: the question waits in this tab (never in the address) and the chats page sends it once.
+  function askAdministrator(text: string) {
+    setNote(null);
+    if (publicMode) {
+      leaveAiAsk('guest', text);
+      window.location.assign('/signin?next=' + encodeURIComponent(administratorChatPath('guest')));
+    } else if (onAsk) {
+      onAsk(text);
+    } else {
+      askAdministratorInChats('guest', text);
+    }
+  }
+
+  // ---------- Screen ----------
+  const mode = filters?.mode || draft.mode;
+  const limited = !!draft.maxPrice && draft.maxPrice !== NO_BUDGET;
+  const reasons: string[] = current
+    ? [
+        ...current.match.reasons
+          .filter((reason: string) => limited || reason !== 'В пределах бюджета')
+          .map((reason: string) => REASON_TEXT[reason] || reason),
+        ...(current.ownerConfirmed ? ['Владелец подтвердил, что квартира свободна'] : []),
+      ]
+    : [];
+  const canAskOwners = !requestId && candidates.some(property => property.quickRequest);
+  // A search restored after a reload has no conditions to show until the server returns them.
+  const summary = stage === 'request' || (requestId && !state) ? '' : guestRequestLine(draft);
+  const submit = () => {
+    setRemark('');
+    void search(draft, true);
+  };
+  const focusPoint: [number, number] | null = draft.near
+    ? [draft.near.longitude, draft.near.latitude]
+    : me ? [me.longitude, me.latitude] : null;
+
+  return (
+    <section
+      ref={root}
+      className={'smart-map stage-' + stage + (publicMode ? ' is-public' : '')}
+      data-covered={!picking && (stage === 'detail' || stage === 'book' || (stage === 'request' && expanded)) ? 'true' : 'false'}
+      aria-label="Подбор жилья"
+    >
+      {/* The public page has its own heading in the sheet; the signed-in guest's page gets one for screen readers. */}
+      {!title && <h1 className="sr-only">Поиск жилья</h1>}
+      <MapCanvas
+        adaptivePanel
+        searching={waiting}
+        items={items}
+        selected={current ? 'property:' + current.id : ''}
+        onSelect={id => {
+          const found = candidates.findIndex(property => 'property:' + property.id === id);
+          if (found >= 0) {
+            setIndex(found);
+            setStage('result');
+          }
+        }}
+        center={center}
+        sheetSize={1}
+        sheetHeight={covered}
+        searchKey={preview?.serverTime ? String(preview.serverTime) : requestId}
+        people={me ? [{ id: 'me', mine: true, longitude: me.longitude, latitude: me.latitude, accuracy: me.accuracy }] : []}
+        focus={focusPoint}
+        pick={picking}
+        onPick={point => {
+          change({ near: { longitude: round(point[0]), latitude: round(point[1]), radius: 5000 } });
+          setPicking(false);
+          setZoneNotice('Ищем в 5 км от выбранного места.');
+        }}
+      />
+
+      <button type="button" className="map-home-round smart-locate" aria-label="Показать, где я" onClick={() => void showMe()}>
+        <LocateFixed size={20} aria-hidden="true" />
+      </button>
+
+      {picking && (
+        <div className="smart-pick" role="status">
+          <span>Нажмите место на карте</span>
+          <button type="button" onClick={() => setPicking(false)}>Отмена</button>
+        </div>
+      )}
+
+      {!picking && stage === 'request' && (
+        <SearchIntro
+          panelRef={setPanel}
+          title={title}
+          draft={draft}
+          cities={catalog.data?.length ? catalog.data : Object.keys(mapCities)}
+          busy={busy}
+          expanded={expanded}
+          onExpanded={setExpanded}
+          note={note}
+          focus={focus}
+          card={card}
+          onOpenCard={openCard}
+          onRoute={onActivity}
+          onText={text => void ask(text)}
+          onChip={chip}
+          onChange={change}
+          onSubmit={submit}
+          onAsk={askAdministrator}
+          askLabel={publicMode ? 'Войти и спросить AI' : 'Спросить AI администратора'}
+          ai={!publicMode}
+          zoneNotice={draft.near ? zoneNotice || 'Ищем в 5 км от выбранного места.' : ''}
+          onLocate={() => void locateZone()}
+          onPick={() => setPicking(true)}
+          onClearZone={() => {
+            change({ near: null });
+            setZoneNotice('');
+          }}
+          fine={publicMode
+            ? 'Смотреть можно без входа. Вход нужен, чтобы отправить заявку.'
+            : 'Запрос увидят до трёх владельцев. Это ещё не бронь.'}
+          links={links}
+        />
+      )}
+
+      {!picking && stage !== 'request' && (
+        <section
+          ref={setPanel}
+          className="map-home-panel smart-stage"
+          data-expanded={stage === 'detail' || stage === 'book' ? 'true' : 'false'}
+          aria-label="Подбор жилья"
+        >
+          {(stage === 'search' || stage === 'result') && state?.status !== 'booked' && summary && (
+            <button
+              type="button"
+              className="smart-line"
+              disabled={busy || state?.status === 'booking'}
+              aria-label={'Изменить запрос: ' + summary}
+              onClick={() => void edit()}
+            >
+              <span>{unbrokenParts(summary)}</span>
+              <Pencil size={18} aria-hidden="true" />
+            </button>
+          )}
+          {remark && (stage === 'search' || stage === 'result') && <p className="smart-remark" role="status">{remark}</p>}
+
+          {(error || queryError) && (
+            <div className="smart-error" role="alert">
+              {error || queryError}
+              {queryError && <button type="button" className="smart-button" onClick={() => void live.refetch()}>Повторить</button>}
+            </div>
+          )}
+
+          {stage === 'search' ? (
+            <div className="smart-wait" role="status">
+              <LoaderCircle className="map-home-spin" size={24} aria-hidden="true" />
+              <div>
+                <h2 ref={heading} tabIndex={-1}>
+                  {state?.status === 'booking' ? 'Отправляем заявку' : requestId ? 'Спрашиваем владельцев' : 'Ищем жильё'}
+                </h2>
+                <p>
+                  {requestId && state
+                    ? `Отправили запросов: ${state.sent}. Ждём ответа: ${state.pending}. На ответ у владельца две минуты.`
+                    : 'Проверяем свободные даты и цену.'}
+                </p>
+              </div>
+              {requestId && (
+                <button type="button" className="smart-button" disabled={busy || state?.status === 'booking'} onClick={() => void edit()}>
+                  Отменить поиск
+                </button>
+              )}
+            </div>
+          ) : state?.status === 'booked' ? (
+            <div className="smart-done">
+              <h2 ref={heading} tabIndex={-1}>Заявка отправлена</h2>
+              <p>Ответ владельца появится в бронях. Деньги не списаны.</p>
+              <a className="smart-primary" href="/workspace/guest/bookings">
+                Мои брони
+                <ArrowUpRight size={18} aria-hidden="true" />
+              </a>
+              <button type="button" className="smart-route" disabled={busy} onClick={() => void edit()}>
+                Новый поиск
+              </button>
+            </div>
+          ) : stage === 'detail' && current ? (
+            <div className="smart-detail">
+              <button type="button" className="smart-back" onClick={() => setStage('result')}>
+                <ArrowLeft size={18} aria-hidden="true" />
+                Назад
+              </button>
+              <PropertyListing
+                property={current}
+                role="guest"
+                publicView
+                billingMode={draft.mode}
+                actionLabel="Забронировать"
+                onChoose={() => requestId ? setStage('book') : onChoose(current, { ...draft })}
+              />
+            </div>
+          ) : stage === 'book' && current && filters ? (
+            <div className="smart-detail">
+              <button type="button" className="smart-back" onClick={() => setStage('detail')}>
+                <ArrowLeft size={18} aria-hidden="true" />
+                К квартире
+              </button>
+              <MatchingBooking
+                key={current.id + ':' + current.offerId}
+                property={current}
+                filters={filters}
+                requestId={requestId}
+                onChanged={() => live.refetch()}
+                onEdit={() => void edit()}
+              />
+            </div>
+          ) : current ? (
+            <div className="smart-offer">
+              <div className="smart-offer-head">
+                <div className="smart-offer-cover"><PropertyCover property={current} role="guest" publicView /></div>
+                <div className="smart-offer-text">
+                  {candidates.length > 1 && <span className="smart-offer-count">Вариант {index + 1} из {candidates.length}</span>}
+                  <h2 ref={heading} tabIndex={-1}>{current.title}</h2>
+                  <strong>{priceLine(current, mode)}</strong>
+                  <small>{current.policy.deposit ? 'Депозит ' + money(current.policy.deposit) + ' отдельно' : 'Без депозита'}</small>
+                </div>
+              </div>
+              {reasons.length > 0 && <p className="smart-reasons">{reasons.join(' · ')}</p>}
+              <button type="button" className="smart-primary" onClick={() => setStage('detail')}>Посмотреть квартиру</button>
+              {canAskOwners && (
+                <button type="button" className="smart-button" disabled={busy} onClick={() => void askOwners()}>
+                  {busy && <LoaderCircle className="map-home-spin" size={18} aria-hidden="true" />}
+                  {publicMode ? 'Войти и спросить владельцев' : 'Спросить владельцев'}
+                </button>
+              )}
+              <div className="smart-offer-foot">
+                <small>
+                  {canAskOwners
+                    ? 'Запрос увидят до трёх владельцев. Это ещё не бронь.'
+                    : current.ownerConfirmed ? 'Владелец ждёт вашу заявку.' : 'Свободно по календарю. Бронь подтверждает владелец.'}
+                </small>
+                {candidates.length > 1 && (
+                  <button type="button" className="smart-next" onClick={() => setIndex((index + 1) % candidates.length)}>Другой вариант</button>
+                )}
+              </div>
+            </div>
+          ) : (
+            <div className="smart-done">
+              <h2 ref={heading} tabIndex={-1}>
+                {state?.status === 'expired' ? 'Время подбора вышло' : state?.status === 'cancelled' ? 'Поиск отменён' : 'Ничего не нашлось'}
+              </h2>
+              <p>
+                {requestId
+                  ? 'Владельцы не подтвердили готовность. Измените условия или попробуйте ещё раз.'
+                  : 'Попробуйте другие даты, район или бюджет.'}
+              </p>
+              <button type="button" className="smart-primary" onClick={() => void edit()}>Изменить запрос</button>
+            </div>
+          )}
+        </section>
+      )}
+    </section>
+  );
 }

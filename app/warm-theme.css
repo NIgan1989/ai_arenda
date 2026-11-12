@@ -28,8 +28,6 @@ button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible,
 .workspace-mobile-brand{display:none}
 .header-actions{gap:16px}
 .header-actions .about-button{font-size:12px;color:var(--chat-muted)}
-.connection-status{font-size:12px;color:#77717a}
-.connection-status i{background:#6a8068}
 .workspace-content .chat-main{width:calc(100% - 84px);max-width:1160px;position:relative}
 .workspace-content .chat-transcript{padding-bottom:28px;scrollbar-gutter:stable;scrollbar-color:var(--t-line-strong) transparent}
 .workspace-content .role-page-heading{padding:28px 0 28px;align-items:flex-end}
@@ -110,7 +108,7 @@ input[type=checkbox]{accent-color:var(--warm-accent)}
 .auth-tabs{gap:8px}.auth-form{border:0;background:none;padding:0;margin-top:28px;max-width:440px}.auth-form h1{font-family:var(--warm-heading);font-size:36px}.auth-form>p{font-size:14px;color:var(--chat-muted);line-height:1.8}.auth-form label{font-size:14px}.auth-form .inline-button{width:100%;margin-top:16px}.auth-form small{color:var(--chat-muted);font-size:12px;line-height:1.7}.recovery-code{background:var(--t-accent-soft);border-color:var(--t-accent-line);color:#6d402b;font-size:16px}
 .form-error{color:#a33f30!important}.role-profile{border-color:var(--chat-line);background:var(--t-surface);border-radius:16px;padding:24px}
 @media(min-width:1100px){.account-control{display:grid;grid-template-columns:1fr 1fr;gap:20px;align-items:start}.account-control>.inline-card{margin-top:0}.account-control>.profile-editor,.account-control>.form-error{grid-column:1/-1}}
-@media(min-width:701px) and (max-width:1100px){.workspace-navigation{width:224px;padding:24px 12px}.workspace-content{margin-left:224px}.brand>span{font-size:18px}.brand small{font-size:12px}.brand>img{width:44px;height:44px}.workspace-navigation .nav-icon{padding:12px 16px;font-size:14px;gap:12px}.workspace-content .chat-main{width:calc(100% - 48px)}.workspace-content .chat-header{padding:20px 24px}.header-date{font-size:12px}.header-actions{gap:8px}.header-actions .connection-status{display:none}.home-feature-body{flex-wrap:wrap;gap:16px}.home-feature-date{padding-left:0;border:0}.home-feature-title{flex-basis:100%}.role-page-heading h1{font-size:36px}.home-feature-photo{height:240px}}
+@media(min-width:701px) and (max-width:1100px){.workspace-navigation{width:224px;padding:24px 12px}.workspace-content{margin-left:224px}.brand>span{font-size:18px}.brand small{font-size:12px}.brand>img{width:44px;height:44px}.workspace-navigation .nav-icon{padding:12px 16px;font-size:14px;gap:12px}.workspace-content .chat-main{width:calc(100% - 48px)}.workspace-content .chat-header{padding:20px 24px}.header-date{font-size:12px}.header-actions{gap:8px}.home-feature-body{flex-wrap:wrap;gap:16px}.home-feature-date{padding-left:0;border:0}.home-feature-title{flex-basis:100%}.role-page-heading h1{font-size:36px}.home-feature-photo{height:240px}}
 @media(max-width:700px){
  .workspace-content{margin-left:0;border:0;border-radius:0;height:100dvh}
  .workspace-navigation{width:100%;height:78px;top:auto;bottom:0;padding:0 8px 8px;background:#fcfaf7f5;border-top:1px solid var(--chat-line)}
@@ -120,7 +118,7 @@ input[type=checkbox]{accent-color:var(--warm-accent)}
  .workspace-navigation .nav-icon[aria-current=page]{box-shadow:none;background:var(--t-accent-soft)}
  .workspace-content .chat-header{height:80px;min-height:80px;max-width:none;padding:16px 20px;flex-wrap:nowrap;gap:8px}
  .workspace-mobile-brand{display:block}.workspace-mobile-brand .brand>img{width:36px;height:36px}.workspace-mobile-brand .brand>span{font-size:18px;gap:4px}.workspace-mobile-brand .brand small{font-size:12px}
- .header-date{display:none}.header-actions{margin-left:auto;gap:8px;flex-wrap:nowrap!important}.header-actions .connection-status,.header-actions>a,.help-trigger{display:none}.header-more-trigger.nav-icon{background:var(--t-accent-soft);color:#78594a;width:40px;height:40px;border-radius:50%}
+ .header-date{display:none}.header-actions{margin-left:auto;gap:8px;flex-wrap:nowrap!important}.header-actions>a,.help-trigger{display:none}.header-more-trigger.nav-icon{background:var(--t-accent-soft);color:#78594a;width:40px;height:40px;border-radius:50%}
  .workspace-content .chat-main{width:calc(100% - 36px);margin-bottom:76px}
  .workspace-content .role-page-heading{padding:16px 0 24px;gap:8px}.page-eyebrow{font-size:12px;letter-spacing:1.6px;margin:0 0 12px}
  .role-page-heading h1{font-size:36px;line-height:1.3;letter-spacing:-1px;margin-bottom:12px}.workspace-content .role-page-heading p{font-size:14px;line-height:1.7}

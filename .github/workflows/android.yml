@@ -1,0 +1,176 @@
+name: Build Android test app
+# Builds an installable Android APK of mobile/ on the GitHub runner itself. No Expo/EAS account and no secrets are needed.
+# The release variant is signed with the public debug keystore that the React Native template ships, so this is a
+# pilot test build: it installs on a phone, but it is not a Google Play build. See docs/ANDROID_BUILD.md.
+# Every run keeps the APK as a workflow artifact. Only builds of the main branch (a push, or a manual run started on
+# main) also replace the file on the rolling prerelease "android-latest". Pull requests and manual runs on any other
+# branch or tag never publish, so testers only ever download code that is in main.
+#
+# The two path lists below must stay identical. Besides mobile/ they cover what the build takes from outside it:
+#   lib/**                             shared rules the app bundles (mobile/src imports ../../lib/...)
+#   design/tokens.json                 source of the generated mobile/src/tokens.ts
+#   scripts/check-mobile-release.mjs   the configuration check this workflow runs
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'mobile/**'
+      - 'lib/**'
+      - 'design/tokens.json'
+      - 'scripts/check-mobile-release.mjs'
+      - '.github/workflows/android.yml'
+  pull_request:
+    paths:
+      - 'mobile/**'
+      - 'lib/**'
+      - 'design/tokens.json'
+      - 'scripts/check-mobile-release.mjs'
+      - '.github/workflows/android.yml'
+permissions:
+  contents: read
+env:
+  ARENDA_PUBLIC_URL: ${{ vars.ARENDA_PUBLIC_URL || 'https://ai-arenda.ai-arenda-kz.workers.dev' }}
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    concurrency:
+      group: android-build-${{ github.ref }}
+      cancel-in-progress: true
+    defaults:
+      run:
+        working-directory: mobile
+    env:
+      EXPO_NO_TELEMETRY: '1'
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '17'
+      # mobile/android is generated on the runner, so the Gradle downloads are cached by the locked npm versions.
+      - name: Restore Gradle downloads
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: android-gradle-${{ runner.os }}-${{ hashFiles('mobile/package-lock.json') }}
+          restore-keys: |
+            android-gradle-${{ runner.os }}-
+      - name: Install locked mobile dependencies
+        run: npm ci
+      - name: Check the app configuration and the server address
+        env:
+          EXPO_PUBLIC_API_URL: ${{ env.ARENDA_PUBLIC_URL }}
+          SITE_PUBLIC_URL: ${{ env.ARENDA_PUBLIC_URL }}
+        run: node ../scripts/check-mobile-release.mjs --profile preview
+      # The build number grows with every run, so a newer APK installs over an older one. Nothing is committed.
+      - name: Number the build
+        run: |
+          jq --argjson build "$GITHUB_RUN_NUMBER" \
+            '.expo.android.versionCode = $build | .expo.version += "-pilot.\($build)"' \
+            app.json > "$RUNNER_TEMP/app.json"
+          mv "$RUNNER_TEMP/app.json" app.json
+          jq '{version: .expo.version, android: .expo.android}' app.json
+      - name: Generate the Android project
+        env:
+          CI: '1'
+        run: npx expo prebuild --platform android --no-install
+      - name: Check the generated signing setup
+        working-directory: mobile/android
+        run: |
+          test -f app/debug.keystore
+          test "$(grep -c 'signingConfig signingConfigs.debug' app/build.gradle)" = 2
+          grep -E '^\s+(applicationId|versionCode|versionName) ' app/build.gradle
+      # Phones only: the x86 builds for emulators are left out to keep the build short and the file small.
+      - name: Build the APK
+        working-directory: mobile/android
+        env:
+          EXPO_PUBLIC_API_URL: ${{ env.ARENDA_PUBLIC_URL }}
+        run: ./gradlew assembleRelease --no-daemon --console=plain -PreactNativeArchitectures=armeabi-v7a,arm64-v8a
+      - name: Name the APK
+        run: cp android/app/build/outputs/apk/release/app-release.apk "$RUNNER_TEMP/ai-arenda.apk"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ai-arenda-android
+          path: ${{ runner.temp }}/ai-arenda.apk
+          retention-days: 30
+          if-no-files-found: error
+      # Runs after the upload so a failed check still leaves the file for inspection; publishing needs this job green.
+      - name: Check the signature and the server address inside the APK
+        env:
+          EXPO_PUBLIC_API_URL: ${{ env.ARENDA_PUBLIC_URL }}
+        run: |
+          apk="$RUNNER_TEMP/ai-arenda.apk"
+          sdk="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
+          "$(ls -d "$sdk"/build-tools/*/ | sort -V | tail -n 1)apksigner" verify --print-certs "$apk"
+          unzip -q -o "$apk" assets/index.android.bundle -d "$RUNNER_TEMP/apk-check"
+          grep -a -q -F "$EXPO_PUBLIC_API_URL" "$RUNNER_TEMP/apk-check/assets/index.android.bundle"
+          {
+            echo "### Android test build $GITHUB_RUN_NUMBER"
+            echo
+            echo "- File: ai-arenda.apk, $(du -h "$apk" | cut -f 1)"
+            echo "- SHA-256: $(sha256sum "$apk" | cut -d ' ' -f 1)"
+            echo "- Server: $EXPO_PUBLIC_API_URL"
+            # Same rule as the "if" of the publish job below.
+            if [ "$GITHUB_EVENT_NAME" != pull_request ] && [ "$GITHUB_REF" = refs/heads/main ]; then
+              echo "- Next: the publish job of this run replaces the file on the android-latest page."
+            else
+              echo "- Not published: only builds of main go to the android-latest page. This file is in Artifacts of this run (ai-arenda-android)."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+  publish:
+    # Builds of main only (a push, or a manual run started on main). A pull request, and a manual run on any other
+    # branch or tag, never reaches the job with write access: the APK stays a workflow artifact.
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    concurrency:
+      group: android-latest-release
+      cancel-in-progress: false
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: ai-arenda-android
+      - name: Replace the APK on the android-latest prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          apk=ai-arenda.apk
+          test -s "$apk"
+          title='AI Аренда для Android: тестовая сборка'
+          {
+            echo 'Тестовая сборка для пилота. Не для Google Play.'
+            echo
+            echo "- Файл: $apk"
+            echo "- Сборка № $GITHUB_RUN_NUMBER от $(TZ=Asia/Almaty date '+%d.%m.%Y %H:%M') (время Казахстана)"
+            echo "- Исходный код: $GITHUB_SHA, ветка $GITHUB_REF_NAME"
+            echo "- Сервер: $ARENDA_PUBLIC_URL"
+            echo "- SHA-256: $(sha256sum "$apk" | cut -d ' ' -f 1)"
+            echo
+            echo "Как установить и что пока не работает: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/blob/main/docs/ANDROID_BUILD.md"
+          } > notes.md
+          # The tag follows the commit that was built; the release and its download address stay the same.
+          if gh api "repos/$GH_REPO/git/ref/tags/android-latest" > /dev/null 2>&1; then
+            gh api --method PATCH "repos/$GH_REPO/git/refs/tags/android-latest" -f sha="$GITHUB_SHA" -F force=true > /dev/null
+          fi
+          if gh release view android-latest > /dev/null 2>&1; then
+            gh release upload android-latest "$apk" --clobber
+            gh release edit android-latest --title "$title" --notes-file notes.md --prerelease
+          else
+            gh release create android-latest "$apk" --target "$GITHUB_SHA" --title "$title" --notes-file notes.md --prerelease
+          fi
+          echo "Download page: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/releases/tag/android-latest" >> "$GITHUB_STEP_SUMMARY"

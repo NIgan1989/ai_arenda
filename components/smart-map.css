@@ -1,34 +1,680 @@
-/* Approved map-first concept. Existing MapCanvas supplies the real interactive map. */
-.smart-map{container:smart-map/inline-size;position:relative;isolation:isolate;width:100%;height:100%;min-height:600px;overflow:hidden;background:var(--t-bg);color:var(--t-ink);font-family:'Golos Text',Arial,sans-serif}.smart-map>.rental-map-canvas{position:absolute;inset:0;z-index:0}.smart-map .maplibregl-ctrl-top-right{top:140px;right:14px}.smart-brand{position:absolute;z-index:3;inset:16px 18px auto;display:flex;align-items:center;justify-content:space-between;gap:16px;pointer-events:none}.smart-brand a{pointer-events:auto;display:flex;align-items:center;gap:8px;min-height:56px;border-radius:16px;background:#fffffff5;padding:8px 16px;border:1px solid var(--t-line)}.smart-brand a[aria-label="Профиль"]{width:56px;padding:12px;justify-content:center;border-radius:50%}.smart-brand img{width:29px;height:29px;object-fit:contain}.smart-brand strong{font-size:22px;letter-spacing:-.7px}.smart-summary{position:absolute;z-index:3;top:18px;left:18px;right:76px;display:flex;align-items:center;gap:12px;padding:12px 16px;background:#fffffff5;border:1px solid var(--t-line);border-radius:16px;box-shadow:0 3px 12px #25292307}.smart-map:has(.smart-brand) .smart-summary{top:84px;right:18px}.smart-summary>span{flex:1;min-width:0;font-size:14px;line-height:1.5;overflow-wrap:anywhere}.smart-summary small{display:block;font-size:12px;color:var(--t-muted)}.smart-summary>strong{font-size:14px;color:var(--t-success);white-space:nowrap}.smart-summary>button{width:44px;height:44px;flex:none;border-radius:12px;background:var(--t-bg)}.smart-summary>svg{color:var(--t-accent);flex:none}.smart-activity{position:absolute;top:96px;left:18px;z-index:3;min-height:44px;padding:8px 12px;border-radius:16px;background:var(--t-surface);border:1px solid var(--t-line);font-size:14px}.smart-panel{position:absolute;z-index:4;bottom:0;left:0;width:100%;max-height:60%;overflow:auto;overscroll-behavior:contain;padding:12px 20px 20px;background:var(--t-surface);border:1px solid var(--t-line);border-radius:24px 24px 0 0;box-shadow:0 -4px 20px #25292308;scrollbar-width:thin}.smart-grip{height:4px;width:44px;border-radius:8px;background:var(--t-line-strong);margin:0 auto 16px}.smart-steps{list-style:none;padding:0;margin:0 0 20px;display:flex;gap:8px;align-items:center}.smart-steps li{display:flex;align-items:center;justify-content:center;gap:8px;flex:1;min-height:36px;padding:8px 8px;border-radius:24px;background:var(--t-surface-alt);color:#71766d;font-size:12px;font-weight:500;white-space:nowrap}.smart-steps li.current{color:var(--t-accent);background:var(--t-accent-soft)}.smart-steps li.complete{background:var(--t-success-soft);color:var(--t-success)}.smart-steps li>span{font-size:12px}.smart-panel h2{margin:0 0 8px!important;font-size:22px!important;line-height:1.25!important;letter-spacing:-.7px;font-weight:650}.smart-panel h2:focus{outline:none}.smart-panel p{font-size:14px;line-height:1.6;margin:0 0 12px;color:var(--t-muted)}.smart-panel small{display:block;font-size:12px;line-height:1.6;color:var(--t-muted)}.smart-survey,.smart-recommendation,.smart-wait,.smart-empty{display:grid;gap:12px}.smart-survey>h2,.smart-survey>p,.smart-recommendation>h2,.smart-recommendation>p{margin:0!important}.smart-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.smart-fields label,.smart-extras>label{display:grid;gap:8px;font-size:12px;font-weight:500;min-width:0}.smart-map input:not([type=checkbox]),.smart-map select{width:100%;min-width:0;background:var(--t-surface);font-size:14px;border:1px solid var(--t-line);border-radius:12px;padding:8px;min-height:48px}.smart-map input[type=checkbox]{width:18px;height:18px;accent-color:var(--t-accent);flex:none}.smart-mode{display:flex;padding:4px;background:var(--t-surface-alt);border-radius:16px;gap:4px}.smart-mode button{flex:1;min-height:44px;font-size:14px;border-radius:12px}.smart-mode button[aria-pressed=true]{background:white;color:var(--t-accent);box-shadow:0 1px 4px #25292308}.smart-more{justify-content:flex-start!important;min-height:44px;font-size:14px;color:var(--t-muted)}.smart-more>svg:last-child{margin-left:auto}.smart-extras{display:grid;gap:12px}.smart-features{display:grid;grid-template-columns:1fr 1fr;gap:8px}.smart-features label{display:flex;align-items:center;gap:8px;min-height:44px;font-size:14px}.smart-zone{display:flex;gap:8px;flex-wrap:wrap}.smart-zone button{font-size:12px!important;padding:8px!important}.smart-primary{width:100%;min-height:48px!important;background:var(--t-accent)!important;color:var(--t-surface)!important;border-radius:16px!important;font-size:16px!important;font-weight:500}.smart-assistant{display:flex;align-items:center;gap:8px;font-size:14px!important;color:var(--t-success)!important}.smart-assistant>svg{flex:none}.smart-preview{display:grid;grid-template-columns:110px minmax(0,1fr);align-items:center;gap:12px;margin:4px 0 8px}.smart-preview>div:first-child{height:100px;overflow:hidden;border-radius:16px;background:var(--t-surface-alt)}.smart-preview img,.smart-preview .property-cover{width:100%;height:100%;object-fit:cover}.smart-preview h3{font-size:18px!important;margin:0 0 8px!important;line-height:1.35;letter-spacing:-.3px}.smart-preview strong{display:inline-block;font-size:18px;color:var(--t-accent);margin-bottom:4px}.smart-preview small{font-size:12px}.smart-secondary{display:flex;gap:8px;align-items:center;border-top:1px solid var(--t-line);padding-top:8px}.smart-secondary button{flex:1;min-height:44px;font-size:12px}.smart-secondary button+button{border-left:1px solid var(--t-line)}.smart-footer{display:flex;gap:12px;flex-wrap:wrap;padding-top:12px;margin-top:16px;border-top:1px solid var(--t-line)}.smart-footer a{min-height:36px;display:flex;align-items:center;font-size:12px;color:var(--t-muted)}.smart-wait>svg,.smart-empty>svg{color:var(--t-accent)}.smart-error{padding:12px;border:1px solid #e2b6aa;border-radius:12px;background:var(--t-danger-soft);color:#8c3523;font-size:14px;line-height:1.5;margin-bottom:16px}.smart-search-motion{position:absolute;z-index:2;top:30%;left:55%;width:100px;height:100px;display:grid;place-items:center;border-radius:50%;color:var(--t-accent);background:#f6e8dfbb;border:1px solid #9e442e55;animation:smart-search-pulse 1.8s ease-out infinite;pointer-events:none}.smart-pick-note{position:absolute;inset:160px 16px auto;z-index:6;background:var(--t-surface);padding:12px 16px;border-radius:16px;display:flex;align-items:center;justify-content:space-between;gap:12px;font-size:14px}.smart-pick-note button{min-height:44px;min-width:44px}.smart-map.is-picking .smart-panel{max-height:90px;overflow:hidden;pointer-events:none}.smart-detail .property-listing{margin:12px 0 0;max-width:none}.smart-detail .inline-card{padding:16px!important}.smart-back{min-height:44px;font-size:14px;color:var(--t-muted)}.smart-link-button{display:flex;justify-content:center;align-items:center;gap:8px;background:var(--t-accent);color:white;padding:12px;border-radius:16px;min-height:48px;font-size:16px}.smart-map.stage-detail .smart-panel,.smart-map.stage-book .smart-panel{max-height:88%}.smart-detail>.booking-request .flow-steps{display:none}
-@keyframes smart-search-pulse{0%{box-shadow:0 0 0 0 #9e442e33}100%{box-shadow:0 0 0 65px #9e442e00}}
-@media(prefers-reduced-motion:reduce){.smart-search-motion{animation:none}.smart-map *{scroll-behavior:auto!important}}
-@container smart-map (min-width:800px){.smart-panel{left:24px;bottom:24px;top:auto;width:410px;max-height:calc(100% - 140px);border-radius:24px;padding:20px 24px}.smart-grip{display:none}.smart-summary{left:24px;right:auto;max-width:calc(100% - 110px);width:600px}.smart-map:has(.smart-brand) .smart-summary{top:90px;left:24px;right:auto}.smart-map:has(.smart-brand) .smart-panel{max-height:calc(100% - 180px)}.smart-brand{left:24px;right:24px}.smart-map .maplibregl-ctrl-top-right{top:160px}.smart-activity{left:auto;right:24px;top:24px}.smart-map.stage-detail .smart-panel,.smart-map.stage-book .smart-panel{width:min(700px,calc(100% - 100px));max-height:calc(100% - 140px)}.smart-search-motion{left:64%;top:40%}.smart-footer a{font-size:12px}}
-@container smart-map (max-width:420px){.smart-panel{padding:8px 16px 20px;max-height:61%}.smart-map.stage-request .smart-panel{max-height:68%}.smart-summary{left:12px;gap:8px;padding:8px 8px}.smart-map:has(.smart-brand) .smart-summary{right:12px}.smart-summary>svg{display:none}.smart-summary>span{font-size:12px}.smart-summary>strong{font-size:12px}.smart-summary small{font-size:12px}.smart-summary>button{width:36px;min-height:44px}.smart-panel h2{font-size:22px!important}.smart-preview{grid-template-columns:100px minmax(0,1fr);gap:12px}.smart-preview h3{font-size:16px!important}.smart-preview strong{font-size:16px}.smart-fields{gap:12px}.smart-fields label{font-size:12px}.smart-fields input{font-size:14px!important;padding:8px!important}.smart-steps{gap:8px;margin-bottom:16px}.smart-steps li{font-size:12px;padding:8px}.smart-brand{left:12px;right:12px}.smart-brand strong{font-size:22px}.smart-map{min-height:520px}}
+/* The guest's first screen and the public page (components/smart-guest-map.tsx): the map, round controls on the
+   right edge and one sheet. The sheet, the AI line and the "Сейчас" card are in map-home.css, the request fields
+   in public-search-intro.css; this file places things on the map and styles the steps after the request.
+   Rules for the shell and for the owner's quick requests are kept at the end as they were. */
+
+.smart-map {
+  /* Where the round controls start: under the profile button, at its distance from the edge. */
+  --smart-controls-top: 80px;
+  --smart-edge: 28px;
+  --smart-note-top: var(--t-space-16);
+  /* The width of the card that floats over the map on a wide screen. */
+  --smart-card: 400px;
+  position: relative;
+  isolation: isolate;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--t-surface-alt);
+  color: var(--t-ink);
+  font-family: 'Golos Text', Arial, sans-serif;
+}
+
+.smart-map > .rental-map-canvas {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+}
+
+/* ---------- Round controls: zoom of the map library, then "where am I" ---------- */
+html[data-design="unified"] .workspace-shell .smart-map.smart-map .map-surface .maplibregl-ctrl-top-right {
+  top: var(--smart-controls-top);
+  right: var(--smart-edge);
+  max-width: none;
+}
+
+html[data-design="unified"] .workspace-shell .smart-map.smart-map .map-surface .maplibregl-ctrl-group {
+  display: grid;
+  gap: var(--t-space-8);
+  margin: 0;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+  backdrop-filter: none;
+}
+
+html[data-design="unified"] .workspace-shell .smart-map.smart-map .map-surface .maplibregl-ctrl-group button {
+  width: var(--t-control-touch);
+  height: var(--t-control-touch);
+  min-height: var(--t-control-touch);
+  border: 1px solid var(--t-line);
+  border-radius: var(--t-radius-full);
+  background-color: var(--t-surface);
+  box-shadow: 0 2px 8px rgb(30 32 29 / 0.12);
+}
+
+/* Plus and minus drawn like the other icons of the product. */
+html[data-design="unified"] .workspace-shell .smart-map.smart-map .map-surface .maplibregl-ctrl-zoom-in .maplibregl-ctrl-icon {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 24 24' fill='none' stroke='%231e201d' stroke-width='2' stroke-linecap='round'%3E%3Cpath d='M5 12h14M12 5v14'/%3E%3C/svg%3E");
+}
+
+html[data-design="unified"] .workspace-shell .smart-map.smart-map .map-surface .maplibregl-ctrl-zoom-out .maplibregl-ctrl-icon {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 24 24' fill='none' stroke='%231e201d' stroke-width='2' stroke-linecap='round'%3E%3Cpath d='M5 12h14'/%3E%3C/svg%3E");
+}
+
+/* The same look for the map that is shown when WebGL is not available. */
+.smart-map .raster-map-canvas .leaflet-control-zoom.leaflet-bar {
+  display: grid;
+  gap: var(--t-space-8);
+  margin: var(--smart-controls-top) var(--smart-edge) 0 0;
+  overflow: visible;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+}
+
+.smart-map .raster-map-canvas .leaflet-control-zoom.leaflet-bar a {
+  width: var(--t-control-touch);
+  height: var(--t-control-touch);
+  line-height: var(--t-control-touch);
+  border: 1px solid var(--t-line);
+  border-radius: var(--t-radius-full);
+  color: var(--t-ink);
+  box-shadow: 0 2px 8px rgb(30 32 29 / 0.12);
+}
+
+.smart-map .smart-locate {
+  position: absolute;
+  z-index: 20;
+  /* Two 44px buttons and two 8px gaps above it. */
+  top: calc(var(--smart-controls-top) + 104px);
+  right: var(--smart-edge);
+}
+
+/* ---------- Notes of the map itself ---------- */
+/* The sources of the map: the usual quiet copyright mark instead of a button. */
+.smart-map .rental-map-canvas .map-attribution,
+.smart-map .rental-map-canvas .raster-map-attribution {
+  top: auto;
+  right: var(--t-space-12);
+  bottom: var(--t-space-12);
+  left: auto;
+  z-index: 5;
+  max-width: calc(100% - var(--t-space-24));
+  padding: 0;
+  border-radius: var(--t-radius-full);
+  background: rgb(255 255 255 / 0.86);
+  box-shadow: none;
+  color: var(--t-muted);
+  font-size: var(--t-font-caption);
+  line-height: var(--t-line-caption);
+}
+
+.smart-map .rental-map-canvas .map-attribution > summary {
+  position: relative;
+  display: block;
+  width: auto;
+  height: auto;
+  padding: var(--t-space-2) var(--t-space-8);
+  border-radius: var(--t-radius-full);
+  background: none;
+  backdrop-filter: none;
+  /* The letter "i" of the shared map is replaced by the mark below. */
+  font-size: 0;
+  font-weight: 400;
+  line-height: var(--t-line-caption);
+}
+
+.smart-map .rental-map-canvas .map-attribution > summary::after {
+  content: "© OpenStreetMap";
+  font-size: var(--t-font-caption);
+}
+
+/* The mark is small, the area that takes the finger is 44px high. */
+.smart-map .rental-map-canvas .map-attribution > summary::before {
+  content: "";
+  position: absolute;
+  inset: -12px 0;
+}
+
+.smart-map .rental-map-canvas .map-attribution[open] {
+  flex-direction: column;
+  align-items: flex-start;
+  border-radius: var(--t-radius-md);
+  background: var(--t-surface);
+  box-shadow: 0 2px 8px rgb(30 32 29 / 0.12);
+}
+
+.smart-map .rental-map-canvas .map-attribution > div {
+  gap: 0 var(--t-space-12);
+  padding: 0 var(--t-space-8);
+}
+
+.smart-map .rental-map-canvas .map-attribution a,
+.smart-map .rental-map-canvas .raster-map-attribution a {
+  min-height: var(--t-control-touch);
+  color: var(--t-ink-soft);
+}
+
+.smart-map .rental-map-canvas .raster-map-attribution {
+  padding: 0 var(--t-space-8);
+  font: inherit;
+  font-size: var(--t-font-caption);
+}
+
+/* On a wide screen the notes of the map sit beside the card, which may reach the bottom of the map. */
+html[data-design="unified"] .workspace-shell .smart-map.smart-map .rental-map-canvas .map-loading,
+html[data-design="unified"] .workspace-shell .smart-map.smart-map .rental-map-canvas .map-network-error {
+  position: absolute;
+  top: auto;
+  right: auto;
+  bottom: var(--t-space-16);
+  left: calc(var(--smart-card) + var(--t-space-32));
+  z-index: 5;
+  max-width: min(320px, calc(100% - var(--smart-card) - 192px));
+  margin: 0;
+  padding: var(--t-space-8) var(--t-space-12);
+  border-radius: var(--t-radius-md);
+  background: var(--t-surface);
+  box-shadow: 0 2px 8px rgb(30 32 29 / 0.12);
+  color: var(--t-muted);
+  font-size: var(--t-font-caption);
+  line-height: var(--t-line-caption);
+}
+
+/* ---------- Choosing a point on the map ---------- */
+.smart-map .smart-pick {
+  position: absolute;
+  z-index: 30;
+  left: var(--t-space-16);
+  bottom: var(--t-space-16);
+  display: flex;
+  align-items: center;
+  gap: var(--t-space-12);
+  max-width: calc(100% - var(--t-space-32));
+  padding: var(--t-space-4) var(--t-space-4) var(--t-space-4) var(--t-space-16);
+  border: 1px solid var(--t-line);
+  border-radius: var(--t-radius-full);
+  background: var(--t-surface);
+  box-shadow: 0 8px 24px rgb(30 32 29 / 0.14);
+  font-size: var(--t-font-label);
+  line-height: var(--t-line-label);
+  font-weight: 500;
+}
+
+.smart-map .smart-pick button {
+  min-height: var(--t-control-touch);
+  padding: 0 var(--t-space-16);
+  border: 0;
+  border-radius: var(--t-radius-full);
+  background: var(--t-surface-alt);
+  color: var(--t-ink);
+  font-size: var(--t-font-label);
+  line-height: var(--t-line-label);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+/* ---------- After the request: one sheet, one thing in it ---------- */
+.smart-map .smart-stage {
+  gap: var(--t-space-12);
+  padding-top: var(--t-space-16);
+}
+
+.smart-map .smart-stage h2 {
+  margin: 0;
+  color: var(--t-ink);
+  font-size: var(--t-font-subtitle);
+  line-height: var(--t-line-subtitle);
+  font-weight: 600;
+  letter-spacing: 0;
+  overflow-wrap: anywhere;
+}
+
+.smart-map .smart-stage h2:focus {
+  outline: none;
+}
+
+.smart-map .smart-stage p {
+  margin: 0;
+  color: var(--t-ink-soft);
+  font-size: var(--t-font-label);
+  line-height: var(--t-line-label);
+}
+
+.smart-map .smart-stage small {
+  display: block;
+  color: var(--t-muted);
+  font-size: var(--t-font-caption);
+  line-height: var(--t-line-caption);
+}
+
+/* The request in one line; a tap returns to its fields. */
+.smart-map .smart-line {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--t-space-12);
+  width: 100%;
+  min-height: var(--t-control-field);
+  padding: var(--t-space-8) var(--t-space-12) var(--t-space-8) var(--t-space-16);
+  border: 1px solid var(--t-line);
+  border-radius: var(--t-radius-md);
+  background: var(--t-bg);
+  color: var(--t-ink);
+  font-size: var(--t-font-label);
+  line-height: var(--t-line-label);
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+}
+
+/*
+ * The parts of the line do not break inside (see unbrokenParts); two lines come out of about the same length.
+ * A part longer than the line of the narrowest phone still breaks instead of running out of the box.
+ */
+.smart-map .smart-line > span {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  text-wrap: balance;
+}
+
+.smart-map .smart-line > svg {
+  flex: none;
+  color: var(--t-accent);
+}
+
+.smart-map .smart-line:disabled {
+  cursor: default;
+}
+
+.smart-map .smart-line:disabled > svg {
+  color: var(--t-line-strong);
+}
+
+/* What was cut to what the service offers: "Максимум 23 часа, ищу на 23." */
+.smart-map .smart-stage .smart-remark {
+  padding: var(--t-space-8) var(--t-space-16);
+  border-radius: var(--t-radius-md);
+  background: var(--t-accent-soft);
+  color: var(--t-ink);
+}
+
+.smart-map .smart-wait {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: var(--t-space-12);
+}
+
+.smart-map .smart-wait > svg {
+  color: var(--t-accent);
+}
+
+.smart-map .smart-wait > div {
+  display: grid;
+  gap: var(--t-space-4);
+}
+
+.smart-map .smart-wait > .smart-button {
+  grid-column: 1 / -1;
+}
+
+.smart-map .smart-done,
+.smart-map .smart-offer {
+  display: grid;
+  gap: var(--t-space-12);
+  min-width: 0;
+}
+
+.smart-map .smart-done {
+  gap: var(--t-space-8);
+}
+
+.smart-map .smart-done > .smart-primary {
+  margin-top: var(--t-space-4);
+}
+
+.smart-map .smart-offer-head {
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr);
+  align-items: center;
+  gap: var(--t-space-12);
+}
+
+.smart-map .smart-offer-cover {
+  width: 96px;
+  height: 96px;
+  overflow: hidden;
+  border-radius: var(--t-radius-md);
+  background: var(--t-surface-alt);
+}
+
+.smart-map .smart-offer-cover .listing-photo {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* The drawing that stands in for a photo fills the small square; its caption does not fit here
+   and is on the flat's own page. */
+.smart-map .smart-offer-cover .photo-placeholder > svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.smart-map .smart-offer-cover .photo-placeholder > small {
+  display: none;
+}
+
+.smart-map .smart-offer-text {
+  display: grid;
+  gap: var(--t-space-2);
+  min-width: 0;
+}
+
+.smart-map .smart-offer-count {
+  color: var(--t-muted);
+  font-size: var(--t-font-caption);
+  line-height: var(--t-line-caption);
+  font-weight: 500;
+}
+
+.smart-map .smart-offer-text h2 {
+  display: -webkit-box;
+  overflow: hidden;
+  font-size: var(--t-font-body);
+  line-height: var(--t-line-body);
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.smart-map .smart-offer-text strong {
+  color: var(--t-accent);
+  font-size: var(--t-font-subtitle);
+  line-height: var(--t-line-subtitle);
+  font-weight: 700;
+}
+
+.smart-map .smart-offer-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--t-space-12);
+}
+
+.smart-map .smart-next {
+  flex: none;
+  min-height: var(--t-control-touch);
+  padding: 0 var(--t-space-4);
+  border: 0;
+  background: none;
+  color: var(--t-accent);
+  font-size: var(--t-font-label);
+  line-height: var(--t-line-label);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+/* Buttons of the steps: one main, the rest quiet. */
+.smart-map .smart-primary,
+.smart-map .smart-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--t-space-8);
+  width: 100%;
+  padding: 0 var(--t-space-16);
+  border-radius: var(--t-radius-lg);
+  font-size: var(--t-font-body);
+  line-height: var(--t-line-body);
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background-color var(--t-motion-fast), border-color var(--t-motion-fast);
+}
+
+.smart-map .smart-primary {
+  min-height: var(--t-control-primary);
+  border: 0;
+  background: var(--t-accent);
+  color: var(--t-on-accent);
+}
+
+.smart-map .smart-primary:hover {
+  background: var(--t-accent-pressed);
+}
+
+.smart-map .smart-button,
+.smart-error .smart-button {
+  min-height: var(--t-control-field);
+  border: 1px solid var(--t-line-strong);
+  background: var(--t-surface);
+  color: var(--t-ink);
+}
+
+.smart-map .smart-button:hover:not(:disabled) {
+  border-color: var(--t-accent-line);
+  background: var(--t-accent-soft);
+}
+
+.smart-map .smart-button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.smart-map .smart-line:focus-visible,
+.smart-map .smart-primary:focus-visible,
+.smart-map .smart-button:focus-visible,
+.smart-map .smart-next:focus-visible,
+.smart-map .smart-back:focus-visible,
+.smart-map .smart-pick button:focus-visible {
+  outline: 3px solid var(--t-focus);
+  outline-offset: 2px;
+}
+
+.smart-map .smart-status {
+  margin: 0;
+  color: var(--t-ink-soft);
+  font-size: var(--t-font-label);
+  line-height: var(--t-line-label);
+}
+
+/* Also used by the owner's quick requests (components/matching-inbox.tsx). */
+.smart-error {
+  display: grid;
+  gap: var(--t-space-8);
+  padding: var(--t-space-12);
+  border: 1px solid var(--t-accent-line);
+  border-radius: var(--t-radius-md);
+  background: var(--t-danger-soft);
+  color: var(--t-danger);
+  font-size: var(--t-font-label);
+  line-height: var(--t-line-label);
+}
+
+/* The flat itself and the booking form open in the same sheet, at its full height.
+   The form scrolls itself to the top of the sheet: it stops below the "back" row, which stays in place. */
+.smart-map .smart-stage[data-expanded="true"] {
+  scroll-padding-top: var(--t-space-48);
+}
+
+.smart-map .smart-detail {
+  display: grid;
+  gap: var(--t-space-8);
+  min-width: 0;
+}
+
+.smart-map .smart-back {
+  position: sticky;
+  top: calc(-1 * var(--t-space-16));
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: var(--t-space-8);
+  width: 100%;
+  min-height: var(--t-control-touch);
+  padding: 0;
+  border: 0;
+  background: var(--t-surface);
+  color: var(--t-ink-soft);
+  font-size: var(--t-font-label);
+  line-height: var(--t-line-label);
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.smart-map .smart-detail .property-listing {
+  max-width: none;
+  margin: 0;
+}
+
+.smart-map .smart-detail .inline-card {
+  padding: var(--t-space-16) !important;
+}
+
+.smart-map .smart-detail > .booking-request .flow-steps {
+  display: none;
+}
+
+/* The price and the button to book stay in sight while the flat's description scrolls.
+   The card clips its corners without becoming a scroller of its own, or the row would have nothing to stick to. */
+.smart-map .smart-detail .property-listing {
+  overflow: clip;
+}
+
+.smart-map .smart-detail .listing-footer {
+  position: sticky;
+  bottom: 0;
+  z-index: 1;
+  margin-top: var(--t-space-8);
+  padding: var(--t-space-12) 0;
+  background: var(--t-surface);
+}
+
+.smart-map .smart-detail .listing-footer small {
+  max-width: none;
+}
+
+/* A sheet that scrolls shows a thin quiet bar, not the grey one of the system. */
+.smart-map .smart-stage {
+  scrollbar-width: thin;
+  scrollbar-color: var(--t-line-strong) transparent;
+}
+
+@media (min-width: 701px) {
+  /* A flat and its booking form need more room than a request. */
+  .smart-map.stage-detail,
+  .smart-map.stage-book {
+    --smart-card: 560px;
+  }
+
+  .smart-map.stage-detail .smart-stage,
+  .smart-map.stage-book .smart-stage {
+    width: var(--smart-card);
+  }
+}
+
+@media (max-width: 700px) {
+  .smart-map {
+    --smart-controls-top: 72px;
+    --smart-edge: 20px;
+  }
+
+  /* The map ends where the bottom navigation begins (56px of links, 8 and 12px of padding, 1px of line). */
+  .release-workspace[data-section="map"] .smart-map {
+    height: calc(100dvh - 77px - env(safe-area-inset-bottom, 0px));
+    min-height: 0;
+  }
+
+  /* On a phone the lower left corner belongs to the sheet: the mark sits just above it, the notes at the top. */
+  .smart-map .rental-map-canvas .map-attribution,
+  .smart-map .rental-map-canvas .raster-map-attribution {
+    right: auto;
+    bottom: calc(var(--smart-sheet, 208px) + var(--t-space-8));
+    left: var(--t-space-12);
+  }
+
+  /* An offer with its buttons is taller than the request: the sheet takes what it needs and scrolls
+     only when the map would be left with less than a strip. */
+  .smart-map .smart-stage:not([data-expanded="true"]) {
+    max-height: calc(100% - 168px);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+
+  /* An opened sheet covers the map, and the notes of the map go with it. */
+  .smart-map[data-covered="true"] .rental-map-canvas .map-attribution,
+  .smart-map[data-covered="true"] .rental-map-canvas .raster-map-attribution {
+    display: none;
+  }
+
+  html[data-design="unified"] .workspace-shell .smart-map.smart-map .rental-map-canvas .map-loading,
+  html[data-design="unified"] .workspace-shell .smart-map.smart-map .rental-map-canvas .map-network-error {
+    top: var(--smart-note-top);
+    bottom: auto;
+    left: var(--t-space-16);
+    max-width: calc(100% - 96px);
+  }
+
+  .smart-map .smart-pick {
+    right: var(--t-space-16);
+    justify-content: space-between;
+  }
+}
+
+/* A short phone with an offer on the screen: the sheet reaches the round buttons. Two fingers zoom the map
+   there, and "where am I" moves up to the place of the zoom buttons. */
+@media (max-width: 700px) and (max-height: 699px) {
+  html[data-design="unified"] .workspace-shell .smart-map.smart-map:is(.stage-search, .stage-result) .map-surface .maplibregl-ctrl-top-right,
+  .smart-map:is(.stage-search, .stage-result) .raster-map-canvas .leaflet-control-zoom.leaflet-bar {
+    display: none;
+  }
+
+  .smart-map:is(.stage-search, .stage-result) .smart-locate {
+    top: var(--smart-controls-top);
+  }
+
+  /* The sheet may come up to that one button. */
+  .smart-map .smart-stage:not([data-expanded="true"]) {
+    max-height: calc(100% - 124px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .smart-map .smart-primary,
+  .smart-map .smart-button {
+    transition: none;
+  }
+
+  .smart-map * {
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ---------- Kept as they were: the owner's quick requests and the shell around the map ---------- */
 .matching-inbox{position:absolute;z-index:32;right:18px;bottom:22px;max-width:400px;width:calc(100% - 36px)}.matching-inbox>button{background:var(--t-surface)!important;color:var(--t-accent)!important;border:1px solid var(--t-line);box-shadow:0 3px 14px #25292312}.matching-inbox-panel{background:var(--t-surface);border:1px solid var(--t-line);border-radius:24px;padding:20px;max-height:65vh;overflow:auto;box-shadow:0 4px 24px #25292316}.matching-inbox-panel>header{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px}.matching-inbox-panel h2{font-size:22px;line-height:1.3}.matching-inbox-panel p,.matching-inbox-panel small{font-size:14px;line-height:1.6;color:var(--t-muted)}.matching-inbox-panel>header button{min-height:44px;min-width:44px}.matching-offer{padding:16px 0;border-top:1px solid var(--t-line)}.matching-offer h3{font-size:16px;margin-bottom:8px}.matching-offer dl{display:grid;gap:4px;font-size:14px;margin:8px 0}.matching-offer dl>div{display:flex;justify-content:space-between;gap:12px}.matching-offer dt{color:var(--t-muted)}.matching-offer dd{margin:0;text-align:right}.matching-offer-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}.matching-preferences{padding-top:12px;border-top:1px solid var(--t-line);margin-top:12px}.matching-preferences label{display:flex;align-items:center;gap:8px;min-height:48px;font-size:14px}.matching-preferences input{width:18px;height:18px;accent-color:var(--t-accent)}.matching-offer-consent{display:flex;align-items:flex-start;gap:8px;font-size:14px;margin-top:12px}.matching-offer-consent input{width:18px;height:18px;accent-color:var(--t-accent);flex:none;margin-top:4px}
-.public-map-shell.smart-public>.workspace-content{margin:0!important;flex:1;min-height:0;padding:0!important}.public-map-shell.smart-public{height:100dvh!important;min-height:0!important;overflow:hidden!important;display:flex!important;flex-direction:column}.public-map-shell.smart-public :is(.chat-main,.chat-transcript){height:100%;width:100%;max-width:none;margin:0;padding:0}.public-map-shell.smart-public .public-map-account{display:block;top:22px;right:20px;z-index:10}.smart-public .smart-brand>a[aria-label="Профиль"]{visibility:hidden}.smart-public .smart-map{height:100dvh}
 html[data-design="unified"] .workspace-shell.release-workspace[data-section="map"] .workspace-content{margin-left:240px;width:calc(100% - 240px)}
 html[data-design="unified"] .workspace-shell.release-workspace[data-section="map"] .chat-transcript{padding:0}
 @media(max-width:900px) and (min-width:701px){html[data-design="unified"] .workspace-shell.release-workspace[data-section="map"] .workspace-content{margin-left:208px;width:calc(100% - 208px)}}
-@media(max-width:700px){html[data-design="unified"] .workspace-shell.release-workspace[data-section="map"] .workspace-content{margin-left:0;width:100%}.release-workspace[data-section="map"] .smart-map{height:calc(100dvh - 88px - env(safe-area-inset-bottom));min-height:0}.release-workspace[data-section="map"] .map-concept-operations{height:calc(100dvh - 88px - env(safe-area-inset-bottom))!important;min-height:0!important}.matching-inbox{bottom:110px}.matching-inbox-panel{max-height:calc(100dvh - 240px)}}
-.smart-map .map-surface .maplibre-ctrl-top-right{top:150px;right:12px}.smart-map .map-attribution{top:260px;bottom:auto;right:12px}.smart-activity{top:158px}@container smart-map (min-width:800px){.smart-activity{top:24px;right:88px}}
-.smart-brand{background:#fffffff5;border:1px solid var(--t-line);border-radius:24px;padding:0 8px;min-height:56px;pointer-events:auto}.smart-brand>a:first-child{border:0;background:transparent;padding:8px 4px}.smart-brand>a[aria-label="Профиль"]{border:0;background:transparent}
-.smart-detail>.smart-back{position:sticky;top:-12px;z-index:2;display:flex;width:100%;padding:8px 0;background:var(--t-surface)}
-@container smart-map (min-width:800px){.smart-brand{right:auto;width:fit-content;min-width:220px}}
-/* Phone layout inside the signed-in workspace: the bottom navigation already carries brand and profile,
-   so the brand bar is dropped, the request summary moves to the top edge and the main action stays in view. */
-@media(max-width:700px){
-.release-workspace[data-section="map"] .smart-brand{display:none}
-.release-workspace[data-section="map"] .smart-map:has(.smart-brand) .smart-summary,.release-workspace[data-section="map"] .smart-summary{top:12px;left:12px;right:68px;min-height:56px}
-.release-workspace[data-section="map"] .smart-summary small{display:none}
-.release-workspace[data-section="map"] .smart-activity{top:76px;left:12px}
-html[data-design="unified"] .workspace-shell.release-workspace[data-section="map"] .smart-map .map-surface .maplibregl-ctrl-top-right{top:66px;right:2px}
-html[data-design="unified"] .workspace-shell.release-workspace[data-section="map"] .smart-map .map-attribution{top:176px}
-.release-workspace[data-section="map"] .smart-pick-note{inset:76px 12px auto}
-html[data-design="unified"] .workspace-shell[data-section="map"]:has(.smart-map) .administrator-orb:not([style]){top:132px;left:12px;right:auto}
-html[data-design="unified"] .workspace-shell[data-section="map"]:has(.smart-map) .administrator-orb:not([style]) .administrator-orb-hint{left:60px;right:auto;width:min(236px,calc(100vw - 144px))}
-.smart-map .smart-panel,.smart-map.stage-request .smart-panel{max-height:60%}
-.smart-map input:not([type=checkbox]),.smart-map select,.smart-fields input{font-size:16px!important;padding:8px 12px!important}
-.smart-fields label:has(input[type=datetime-local]){grid-column:1/-1}
-.smart-cta{position:sticky;bottom:-20px;z-index:2;margin:0 -16px -8px;padding:12px 16px 20px;background:var(--t-surface);border-top:1px solid var(--t-line)}
+@media(max-width:700px){html[data-design="unified"] .workspace-shell.release-workspace[data-section="map"] .workspace-content{margin-left:0;width:100%}.release-workspace[data-section="map"] .map-concept-operations{height:calc(100dvh - 88px - env(safe-area-inset-bottom))!important;min-height:0!important}.matching-inbox{bottom:110px}.matching-inbox-panel{max-height:calc(100dvh - 240px)}}
+
+/* A quiet text action under a card: the route to the booked flat, or a new search after a request is sent. */
+.smart-route {
+  align-self: flex-start;
+  min-height: var(--t-control-touch);
+  padding: 0 var(--t-space-8);
+  border: 0;
+  background: none;
+  color: var(--t-accent);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
 }
-@container smart-map (min-width:800px){.smart-map:has(.smart-brand) .smart-panel{max-height:calc(100% - 196px)}}
+.smart-route:disabled { opacity: .5; cursor: default; }

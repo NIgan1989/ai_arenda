@@ -3,7 +3,7 @@ self.addEventListener('push',event=>{
  let data={};try{data=event.data?.json()||{};}catch{}
  const path=/^\/workspace\/(guest|owner|cleaner)\/assistant$/.test(data.url)?data.url:'/';
  event.waitUntil(self.registration.showNotification('AI Аренда',{
-  body:data.body==='Уведомления на этом устройстве работают.'?data.body:'В вашем кабинете есть новое событие. Откройте приложение, чтобы узнать подробности.',
+  body:data.body==='Уведомления на этом устройстве работают.'?data.body:'Есть новое событие. Откройте приложение, чтобы узнать подробности.',
   icon:'/brand-mark.png',badge:'/brand-mark.png',data:{url:path},tag:path,renotify:true
  }));
 });
