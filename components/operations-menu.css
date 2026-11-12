@@ -1,0 +1,15 @@
+/* «Управление» as a list of sections; a section opens on its own screen with a way back. */
+.ops-menu{max-width:640px}
+.ops-menu>section{display:grid;gap:12px}
+.operations-hub .ops-lead{margin:0;font-size:14px;line-height:20px;color:var(--t-muted)}
+.ops-section{max-width:720px;margin:0 auto;width:100%}
+.ops-back{display:inline-flex;align-items:center;gap:4px;justify-self:start;min-height:var(--t-control-touch);padding:0 12px 0 8px;border:1px solid var(--t-line);border-radius:var(--t-radius-full);background:var(--t-surface);color:var(--t-ink);font:inherit;font-size:14px;font-weight:600;cursor:pointer}
+.ops-back:focus-visible,.ops-stepper button:focus-visible{outline:3px solid var(--t-focus);outline-offset:2px}
+.operations-hub .ops-title{margin:0!important;font-size:22px!important;line-height:28px!important;font-weight:700!important;letter-spacing:-.3px}
+.ops-rules{max-width:none}
+.ops-rules .acct-row{cursor:pointer}.ops-rules .ops-minutes{cursor:default}.ops-rules .ops-minutes:hover{background:none}
+.ops-stepper{flex:none;display:grid;grid-template-columns:40px 64px 40px;align-items:center;gap:4px}
+.ops-stepper button{display:grid;place-items:center;width:40px;height:40px;border:0;border-radius:var(--t-radius-sm);background:var(--t-surface-alt);color:var(--t-ink);cursor:pointer}
+.ops-stepper button:disabled{color:var(--t-line-strong);cursor:default}
+.ops-stepper output{text-align:center;font-size:14px;font-weight:600;white-space:nowrap}
+.ops-note{margin-top:-8px}
