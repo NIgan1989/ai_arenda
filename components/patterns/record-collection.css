@@ -62,3 +62,9 @@ html[data-design=unified] [data-slot=sheet-content].record-details-sheet:is(.kin
 .record-actions [data-slot=button].record-action.is-danger:hover{background:var(--t-danger-soft)}
 .record-card .booking-changes>.inline-button.secondary{width:100%}
 .record-card>.activity-timer{margin:0}
+
+/* Lists by time: a quiet title where a new group starts; a row without a photo shows the kind's icon, not words. */
+.record-collection .record-group-title{margin:12px 4px 0!important;font-size:12px!important;line-height:16px!important;font-weight:650!important;letter-spacing:.4px;text-transform:uppercase;color:var(--t-muted)}
+.record-collection .record-group-title:first-child{margin-top:0!important}
+html[data-design="unified"] :is(.workspace-shell,.task-sheet) .record-summary>.record-property-photo{width:64px;height:64px;border-radius:var(--t-radius-md);background:var(--t-accent-soft);color:var(--t-accent);align-self:center}
+html[data-design="unified"] :is(.workspace-shell,.task-sheet) .record-summary>.record-property-photo .photo-placeholder{display:grid;place-items:center;width:100%;height:100%;min-height:0;margin:0;background:var(--t-accent-soft);color:var(--t-accent)}

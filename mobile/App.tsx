@@ -1,4 +1,5 @@
-import React,{useEffect,useRef,useState} from 'react';
+import React,{Fragment,useEffect,useRef,useState} from 'react';
+import {groupRecords,recordGroupLabels} from '../lib/record-groups';
 import { ActivityIndicator,AppState,BackHandler,KeyboardAvoidingView,Platform,Pressable,ScrollView,StatusBar,Text,TextInput,View } from 'react-native';
 import { SafeAreaProvider,SafeAreaView } from 'react-native-safe-area-context';
 import {NativeChats,type NativeChatInitial} from './src/NativeChats';
@@ -334,10 +335,10 @@ function Chat(){
     if(m.block==='property-quick')return m.done?<Text style={s.meta}>{m.result||'Готово'}</Text>:<PropertyQuick city={data.profile?.city||'Павлодар'} onSave={body=>request('/api/listings',body)} onGuestMode={body=>request('/api/operations/matching/preference',body,undefined,undefined,'owner')} onReview={body=>request('/api/operations/reviews/request',body,undefined,undefined,'owner')} onPlace={body=>request('/api/operations/map/place',body,undefined,undefined,'owner')} onClose={()=>finish(m.id,'Добавление отменено')} onMap={async()=>{finish(m.id,'Квартира добавлена');await load();setPageId('map');}} onDone={async saved=>{finish(m.id,'Квартира добавлена');const state=await load();say(saved.message);catalog(state,'owner');}}/>;
     if(m.block==='property-editor'){const property=data.ownProperties.find((p:Row)=>p.id===payload.id);return m.done||!property?<Text style={s.meta}>{m.result||'Форма закрыта'}</Text>:<PropertyEdit key={property.id} property={property} onClose={()=>{finish(m.id,'Изменения сохранены');void load().then(state=>{if(state)catalog(state,'owner');});}} onReview={body=>request('/api/operations/reviews/request',body,undefined,undefined,'owner')} onRemove={async()=>{const r=await request('/api/listings/'+property.id+'/remove',{},undefined,undefined,'owner');finish(m.id,r?.message||'Квартира удалена');const state=await load();if(state)catalog(state,'owner');}} onSave={async body=>{await request('/api/listings/'+property.id,body);const state=await load();return state?.ownProperties?.find((p:Row)=>p.id===property.id);}}/>;}
     if(m.block==='properties')return <View>{!!payload.back&&<Button title="Назад к карте" secondary disabled={busy} onPress={backToMap}/>}{payload.ids.map((id:string)=>{const p=[...data.properties,...data.ownProperties].find((p:Row)=>p.id===id);if(!p)return null;const stay:MapStay|undefined=payload.mode==='guest'?payload.stay:undefined;return <PropertyListing key={id} property={p} owner={payload.mode==='owner'} chooseTitle={stay?'Забронировать':payload.mode==='job'?'Убрать здесь':undefined} onChoose={()=>stay?bookFromMap(p,stay):run((payload.mode==='owner'||payload.mode==='job'?'job:':'book:')+id)} onEdit={()=>say('','property-editor',{id})} onSettings={()=>say('Полномочия и готовность квартиры.','property-settings',{id})}/>;})}{!payload.ids.length&&<Button title={payload.mode==='guest'?'Посмотреть учебный пример':'Добавить квартиру'} secondary disabled={busy} onPress={()=>send(payload.mode==='guest'?'Покажи учебный пример':'Хочу сдать квартиру')}/>}</View>;
-    if(m.block==='bookings')return <View>{payload.ids.map((id:string)=>{
+    if(m.block==='bookings')return <View>{byTime(payload.ids,data.bookings).map(({id,title}:{id:string;title:string})=>{
       const b=data.bookings.find((b:Row)=>b.id===id);if(!b)return null;const owner=b.owner_id===userId&&payload.role==='owner';
       const confirmed=b.status==='confirmed',started=b.start<=data.serverTime,left=b.amount-(b.terms?.paid_amount||0),guests=Number(b.guests)||1,tens=guests%100,units=guests%10;
-      return <View style={recordStyles.card} key={id}><RecordHead kind="booking" item={b} role={payload.role} userId={userId||''}/><RecordJourney kind="booking" item={b}/>
+      return <Fragment key={id}>{!!title&&<Text accessibilityRole="header" style={s.groupTitle}>{title}</Text>}<View style={recordStyles.card}><RecordHead kind="booking" item={b} role={payload.role} userId={userId||''}/><RecordJourney kind="booking" item={b}/>
         <RecordFacts rows={[['Гости',guests+' '+(tens>10&&tens<20?'гостей':units===1?'гость':units>1&&units<5?'гостя':'гостей')],owner&&b.guest_name&&['Гость',b.guest_name+(b.guest_contact?' · '+b.guest_contact:'')],b.terms&&['Оплачено',money(b.terms.paid_amount||0)+(left>0?' · остаток '+money(left):'')],b.terms&&['Депозит',b.terms.deposit?money(b.terms.deposit)+' · '+(b.terms.deposit_status==='owner_verified'?'подтверждён владельцем':'ожидается'):'не требуется'],b.readiness&&['Квартира',readinessLabels[b.readiness]],b.address&&['Адрес',b.address+(b.owner_contact?' · '+b.owner_contact:''),true]]}/>
         <ActivityTimer kind="booking" item={b}/>
         <RecordActions busy={busy} actions={[
@@ -352,13 +353,13 @@ function Chat(){
           ['requested','confirmed'].includes(b.status)&&!b.terms?.actual_checkin&&{title:'Отменить бронь',kind:'danger',onPress:()=>confirm('bookings/'+id,{action:'cancel'},'Отменить бронирование. Возврат денег согласуется отдельно')},
         ]}/>
         <BookingChanges key={b.id+':'+b.terms?.version} booking={b} role={payload.role} busy={busy} onReview={id=>say('Предложение новых условий.','approval',{id:'change:'+id})} onQuote={body=>request('/api/bookings/'+id+'/change-quote',body)} onPropose={body=>perform('bookings/'+id+'/changes',body,uid())} onDecide={(changeId,action)=>perform('bookings/'+id+'/changes/'+changeId,{action},uid())}/>
-      </View>;
+      </View></Fragment>;
     })}</View>;
-    if(m.block==='jobs')return <View>{payload.ids.map((id:string)=>{
+    if(m.block==='jobs')return <View>{byTime(payload.ids,data.jobs).map(({id,title}:{id:string;title:string})=>{
       const j=data.jobs.find((j:Row)=>j.id===id);if(!j)return null;const owner=j.owner_id===userId&&payload.role==='owner',assigned=j.assigned_to===userId&&!owner;
       const applied=data.applications.some((a:Row)=>a.job_id===id&&a.user_id===userId&&a.status!=='rejected');
       const application=data.applications.find((a:Row)=>a.job_id===id&&a.user_id===userId);
-      return <View style={recordStyles.card} key={id}><RecordHead kind="job" item={j} role={payload.role} userId={userId||''} application={application}/><RecordJourney kind="job" item={j}/>
+      return <Fragment key={id}>{!!title&&<Text accessibilityRole="header" style={s.groupTitle}>{title}</Text>}<View style={recordStyles.card}><RecordHead kind="job" item={j} role={payload.role} userId={userId||''} application={application}/><RecordJourney kind="job" item={j}/>
         <RecordFacts rows={[j.description&&['Что сделать',j.description],j.address&&['Адрес',j.address+(j.owner_contact?' · '+j.owner_contact:''),true],j.report&&['Отчёт',j.report]]}/>
         <ActivityTimer kind="job" item={j}/>
         {assigned&&j.status==='assigned'&&!j.checkout_confirmed&&<Text style={s.meta}>Ожидаем подтверждения выезда гостя.</Text>}
@@ -370,7 +371,7 @@ function Chat(){
           (owner||assigned)&&{title:'Открыть чат',kind:'side',onPress:()=>{setChatInitial({kind:'job',entityId:id,channel:'cleaning'});setPageId('chats');}},
         ]}/>
         {owner&&j.status==='open'&&data.applications.filter((a:Row)=>a.job_id===id&&a.status==='pending').map((a:Row)=><View key={a.id} style={s.card}><CleanerCard worker={a.worker||a}/><Button title="Рассмотреть отклик" disabled={busy} onPress={()=>say('Отклик исполнителя.','approval',{id:'application:'+a.id})}/></View>)}
-      </View>;
+      </View></Fragment>;
     })}{payload.role==='owner'&&<Button title="Создать уборку" secondary disabled={busy} onPress={()=>send('Создать уборку')}/>}</View>;
     if(m.block==='report')return <Report busy={busy||!!m.done} onSubmit={(body:Row)=>perform('jobs/'+payload.id,{action:'submit',...body},m.id,'my-jobs')}/>;
     if(m.block==='notifications')return <View>{data.notifications.slice(0,20).map((n:Row)=><View style={s.card} key={n.id}><Text style={s.text}>{n.body}</Text><Text style={s.meta}>{date(n.created_at)}</Text></View>)}</View>;
@@ -406,4 +407,10 @@ function Report({busy,onSubmit}:{busy:boolean;onSubmit:(body:Row)=>void}){
   return <View style={s.card}>{['Постельное бельё заменено','Санузел и кухня убраны','Мусор вынесен','Квартира проверена перед заездом'].map((label,i)=><Pressable key={label} accessibilityRole="checkbox" accessibilityState={{checked:checks[i],disabled:busy}} disabled={busy} onPress={()=>setChecks(prev=>prev.map((v,k)=>k===i?!v:v))} style={s.keyval}><Text style={s.text}>{checks[i]?'☑':'☐'}  {label}</Text></Pressable>)}<TextInput accessibilityLabel="Текст отчёта" style={s.field} placeholder="Что сделано, есть ли замечания?" placeholderTextColor={C.muted} multiline value={report} onChangeText={setReport} maxLength={1500} editable={!busy}/><Button title="Отправить отчёт владельцу" disabled={busy||checks.some(v=>!v)||!report.trim()} onPress={()=>onSubmit({checklist:checks,report})}/></View>;
 }
 // Every tap is noted, so a request that follows it lights the loading line (background refreshes do not).
+// Bookings and cleanings from now to later, then the past; a group gets its title where it starts.
+function byTime(ids:string[],items:Row[]):{id:string;title:string}[]{
+ const chosen=ids.map(id=>items.find((item:Row)=>item.id===id)).filter(Boolean) as Row[];
+ if(chosen.length<2)return ids.map(id=>({id,title:''}));
+ return groupRecords(chosen,Math.floor(Date.now()/1000)).map((item,i,all)=>({id:item.id,title:item._group!==all[i-1]?._group?recordGroupLabels[item._group]:''}));
+}
 export default function App(){return <SafeAreaProvider><View style={{flex:1}} onStartShouldSetResponderCapture={markGesture}><Chat/><LoadingBar/><EntrySplash/></View></SafeAreaProvider>;}
