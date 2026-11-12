@@ -1,0 +1,19 @@
+/* Privacy, terms and data deletion: one readable column with the brand on top and the three pages as tabs. */
+.legal{min-height:100dvh;background:var(--t-bg);color:var(--t-ink)}
+.legal-top{display:flex;align-items:center;justify-content:space-between;gap:12px;max-width:720px;margin:0 auto;padding:12px 16px}
+.legal-back{display:inline-flex;align-items:center;gap:4px;min-height:var(--t-control-touch);padding:0 12px 0 8px;border:1px solid var(--t-line);border-radius:var(--t-radius-full);background:var(--t-surface);color:var(--t-ink);font-size:14px;font-weight:600;text-decoration:none}
+.legal-tabs{display:flex;gap:4px;max-width:688px;margin:4px auto 0;padding:4px;border-radius:var(--t-radius-md);background:var(--t-surface-alt);box-sizing:border-box}
+.legal-tabs a{flex:1;display:grid;place-items:center;min-height:40px;padding:0 8px;border-radius:var(--t-radius-sm);font-size:14px;font-weight:600;color:var(--t-muted);text-decoration:none;text-align:center}
+.legal-tabs a[aria-current]{background:var(--t-surface);color:var(--t-accent);box-shadow:0 1px 4px var(--t-glass-ink,#0e13240f)}
+.legal-page{max-width:688px;margin:16px auto 32px;padding:24px;border:1px solid var(--t-line);border-radius:var(--t-radius-xl);background:var(--t-surface);box-sizing:border-box;font-size:16px;line-height:24px}
+.legal-page h1{margin:0 0 16px;font-size:28px;line-height:36px;font-weight:700;letter-spacing:-.6px}
+.legal-page p{margin:0 0 16px;color:var(--t-ink);overflow-wrap:anywhere}
+.legal-page p:last-child{margin-bottom:0}
+.legal-page .legal-version{padding:12px 16px;border-radius:var(--t-radius-md);background:var(--t-warning-soft,#fff6e0);font-size:14px;line-height:20px;color:var(--t-ink)}
+.legal-page a{color:var(--t-accent);font-weight:600}
+.legal-page .legal-action{display:inline-flex;align-items:center;min-height:var(--t-control-field);padding:0 20px;border-radius:var(--t-radius-full);background:var(--t-accent);color:var(--t-on-accent);text-decoration:none}
+.legal :is(a):focus-visible{outline:3px solid var(--t-focus);outline-offset:2px}
+@media(max-width:720px){.legal-tabs{margin-left:16px;margin-right:16px}.legal-page{margin:12px 16px 24px;padding:20px 16px}.legal-page h1{font-size:22px;line-height:28px}}
+.legal-top .brand{display:flex;align-items:center;gap:8px;color:var(--t-ink);text-decoration:none;font-size:16px;line-height:24px;font-weight:700}
+.legal-top .brand img{width:32px;height:32px}
+.legal-top .brand small{display:none}
