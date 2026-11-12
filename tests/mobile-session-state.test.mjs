@@ -42,7 +42,8 @@ test('restoration binds tokens to the exact API origin and persistence failure n
 async function apiFixture(){
  writeFileSync(output+'/platform.js',"export const Platform={OS:'web'};");
  writeFileSync(output+'/secure-store.js',"export async function getItemAsync(){throw Error('Web preview must not access Keychain');} export async function setItemAsync(){throw Error('Web preview must not access Keychain');} export async function deleteItemAsync(){throw Error('Web preview must not access Keychain');}");
- const source=compile('mobile/src/api.ts').replaceAll("from 'react-native'","from './platform.js'").replaceAll("from 'expo-secure-store'","from './secure-store.js'").replaceAll("from './session-state'","from './session-state.js'");
+ const source=compile('mobile/src/api.ts').replaceAll("from 'react-native'","from './platform.js'").replaceAll("from 'expo-secure-store'","from './secure-store.js'").replaceAll("from './session-state'","from './session-state.js'").replaceAll("from './loading'","from './loading.js'");
+ writeFileSync(output+'/loading.js',compile('mobile/src/loading.ts'));
  writeFileSync(output+'/api.js',source);const previous=process.env.EXPO_PUBLIC_API_URL;process.env.EXPO_PUBLIC_API_URL=origin;
  try{return await import(pathToFileURL(output+'/api.js'));}finally{if(previous===undefined)delete process.env.EXPO_PUBLIC_API_URL;else process.env.EXPO_PUBLIC_API_URL=previous;}
 }
