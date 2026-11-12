@@ -5,6 +5,7 @@ import {T} from './tokens';
 import {Photo} from './ListingMedia';
 import {PhotoGrid} from './PhotoGrid';
 import {Stepper} from './SheetParts';
+import {FlatCalendars} from './FlatCalendars';
 import {EDIT_STEPS,editBody,editRequest,nextAdvice,needsReview,reviewRequest,REVIEW_SENT,stepForError,stepLine,stepNeeds,type Advice,type EditBody,type EditStep} from '../../lib/listing-edit';
 import {amenities,checkinMethods,propertyTypes} from '../../lib/listings';
 type Row=Record<string,any>;
@@ -17,7 +18,7 @@ const SAVED:Record<EditStep|'publish',string>={photos:'Фото сохранен
 export function PropertyEdit({property,onSave,onReview,onRemove,onClose}:{property:Row;onSave:(body:Row)=>Promise<Row|undefined>;onReview?:(body:Row)=>Promise<unknown>;onRemove?:()=>Promise<unknown>;onClose:()=>void}){
  const [p,setP]=useState(property),[base,setBase]=useState<EditBody>(()=>editBody(property)),[draft,setDraft]=useState<EditBody>(base);
  const [open,setOpen]=useState<EditStep|null>(null),[busy,setBusy]=useState(false),[uploading,setUploading]=useState(false),[error,setError]=useState(''),[done,setDone]=useState(''),[skipped,setSkipped]=useState<string[]>([]),[held,setHeld]=useState(false),[sent,setSent]=useState(false);
- const [confirm,setConfirm]=useState(false),[removeError,setRemoveError]=useState('');
+ const [confirm,setConfirm]=useState(false),[removeError,setRemoveError]=useState(''),[calendars,setCalendars]=useState(false);
  // A save that failed keeps its changes: the owner fixes what the server asked for in another step and everything is saved together.
  const fix=held&&error?stepForError(error):null;
  const advice:Advice=held&&error?{step:fix,text:'Не сохранилось: '+error+(fix?' Заполните это, и сохранится всё вместе.':''),action:fix?'Заполнить':undefined}:sent&&!base.published?{step:null,text:REVIEW_SENT}:nextAdvice(base,skipped);
@@ -41,6 +42,7 @@ export function PropertyEdit({property,onSave,onReview,onRemove,onClose}:{proper
  const text=(label:string,value:string,on:(v:string)=>void,max=120,placeholder='',multiline=false)=><View style={e.field} key={label}><Text style={e.label}>{label}</Text><TextInput accessibilityLabel={label} style={[e.input,multiline&&e.area]} value={value} maxLength={max} placeholder={placeholder} placeholderTextColor={C.muted} multiline={multiline} textAlignVertical={multiline?'top':'center'} onChangeText={on}/></View>;
  const half=(node:React.ReactNode)=><View style={{flex:1}}>{node}</View>;
 
+ if(calendars&&p.id)return <FlatCalendars propertyId={p.id} onBack={()=>setCalendars(false)}/>;
  if(open){const title=EDIT_STEPS.find(s=>s.key===open)!.title;
   return <View style={e.sheet}>
    <View style={e.bar}><Pressable accessibilityRole="button" accessibilityLabel="Назад к списку" onPress={()=>{setOpen(null);if(!held)setError('');}} disabled={busy||uploading} style={e.round}><Text style={e.roundText}>←</Text></Pressable><Text accessibilityRole="header" style={e.title}>{title}</Text></View>
@@ -105,6 +107,10 @@ export function PropertyEdit({property,onSave,onReview,onRemove,onClose}:{proper
    <View style={{flex:1,minWidth:0}}><Text style={e.stepTitle} numberOfLines={1}>{s.title}</Text><Text style={e.stepLine} numberOfLines={1}>{stepLine(base,s.key)}</Text></View>
    {needs&&<View style={e.dot}/>}
   </Pressable>;})}</View>
+  <Pressable accessibilityRole="button" accessibilityLabel="Календари площадок: Airbnb, Booking, Суточно" onPress={()=>{setDone('');setCalendars(true);}} style={({pressed})=>[e.step,{width:'100%'},pressed&&e.pressed]}>
+   <View style={e.icoBox}><Text style={e.ico}>📅</Text></View>
+   <View style={{flex:1,minWidth:0}}><Text style={e.stepTitle} numberOfLines={1}>Календари площадок</Text><Text style={e.stepLine} numberOfLines={1}>Airbnb, Booking, Суточно: без двойных броней</Text></View>
+  </Pressable>
   <View style={e.switchRow}><View style={{flex:1}}><Text style={e.stepTitle}>Показывать гостям</Text><Text style={e.stepLine}>{base.published?'Объявление на карте':'Черновик, видите только вы'}</Text></View><Switch accessibilityLabel="Показывать гостям" value={base.published} disabled={busy} onValueChange={v=>commit({...(held?draft:base),published:v},'publish')} trackColor={{true:C.success,false:C.lineStrong}} thumbColor={C.surface}/></View>
   {onRemove&&(confirm?<View style={e.remove}>
    <Text style={e.adviceText}><Text style={{fontWeight:'700'}}>Удалить «{base.title||'квартиру'}»? </Text>Гости больше её не увидят. Если по ней были брони, история броней и оплат сохранится.</Text>

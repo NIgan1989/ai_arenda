@@ -48,7 +48,14 @@ export async function importCalendar(db:D1Database,source:Row,text:string){
  const conflict=await one(db,"SELECT COUNT(DISTINCT b.id) n FROM bookings b JOIN external_blocks x ON x.property_id=b.property_id WHERE x.source_id=? AND (b.status='confirmed' OR (b.status='requested' AND b.expires_at>?)) AND x.start<b.occupied_until AND x.end>b.start",source.id,epoch());
  return {count:events.length,conflicts:conflict?.n||0,message:conflict?.n?'Календарь импортирован. Есть пересечения с действующими бронями — требуется решение владельца.':'Календарь импортирован, интервалы закрыты для новых заявок.'};
 }
-function allowedCalendarUrl(value:string,config:OperationConfig){const url=httpsEndpoint(value);const allowed=(config.CALENDAR_ALLOWED_HOSTS||'www.airbnb.com,airbnb.com,www.booking.com,calendar.google.com,outlook.office365.com,outlook.live.com').split(',').map(v=>v.trim().toLowerCase());if(!allowed.includes(url.hostname.toLowerCase()))throw new DomainError('Домен источника не разрешён сервером. Загрузите ICS вручную или настройте разрешённый домен.');return url;}
+// Hosts that publish availability links. Subdomains count (admin.booking.com, www.airbnb.ru),
+// so the link an owner copies from the platform works as is.
+const calendarHosts=['airbnb.com','airbnb.ru','airbnb.kz','booking.com','calendar.google.com','outlook.office365.com','outlook.live.com','vrbo.com','sutochno.ru','avito.ru','ostrovok.ru','yandex.ru','icloud.com'];
+const allowedHost=(host:string,list:string[])=>list.some(h=>host===h||host.endsWith('.'+h));
+function allowedCalendarUrl(value:string,config:OperationConfig){const url=httpsEndpoint(value);const allowed=config.CALENDAR_ALLOWED_HOSTS?config.CALENDAR_ALLOWED_HOSTS.split(',').map(v=>v.trim().toLowerCase()).filter(Boolean):calendarHosts;if(!allowedHost(url.hostname.toLowerCase(),allowed))throw new DomainError('Ссылки с этого сайта пока не принимаются. Подойдут Airbnb, Booking, Суточно, Авито, Google и Outlook. Можно загрузить файл .ics в разделе «Управление».');return url;}
+export function calendarProvider(value:string){const host=(()=>{try{return new URL(value).hostname.toLowerCase();}catch{return '';}})();
+ const known:[string,string,string][]=[['airbnb','airbnb','Airbnb'],['booking.com','booking','Booking.com'],['vrbo.com','vrbo','Vrbo'],['sutochno.ru','other','Суточно'],['avito.ru','other','Авито'],['ostrovok.ru','other','Островок'],['google.com','other','Google Календарь'],['outlook','other','Outlook'],['yandex.ru','other','Яндекс Календарь'],['icloud.com','other','iCloud']];
+ const hit=known.find(([part])=>host.includes(part));return {provider:hit?.[1]||'other',label:hit?.[2]||host||'Другая площадка'};}
 export async function refreshCalendar(db:D1Database,sourceId:string,config:OperationConfig){
  const source=await one(db,'SELECT * FROM calendar_sources WHERE id=? AND enabled=1',sourceId);if(!source||!source.url)return {skipped:true};
  try{const url=allowedCalendarUrl(source.url,config),response=await fetch(url,{redirect:'error',signal:AbortSignal.timeout(15000),headers:{Accept:'text/calendar'}});if(!response.ok)throw new Error('Calendar source unavailable');if(Number(response.headers.get('content-length')||0)>512000)throw new Error('Calendar source too large');
@@ -86,5 +93,28 @@ export async function commitCalendarImport(service:RentalService,body:Row){
  if(preview.expires_at<=epoch()||source.version!==preview.source_version)throw new DomainError('Предпросмотр истёк или источник изменился. Проверьте файл заново.',409);
  return importCalendar(service.db,source,text);
 }
-export async function createCalendarExport(service:RentalService,body:Row,config:OperationConfig){await service.requireRole('owner');const propertyId=required(body.propertyId,'Квартира',100);if(!await service.one('SELECT id FROM properties WHERE id=? AND owner_id=?',propertyId,service.userId))throw new DomainError('Квартира недоступна.',403);const token=randomToken(),expires=epoch()+90*86400;await q(service.db,'INSERT INTO calendar_exports VALUES (?,?,?,?,?,NULL)',await hash(token),propertyId,service.userId,epoch(),expires).run();const base=config.SITE_PUBLIC_URL?httpsEndpoint(config.SITE_PUBLIC_URL).origin:'';return {url:base+'/api/calendar/feed/'+token+'.ics',expiresAt:expires,message:'Ссылка показывает только занятые интервалы. Храните её как секрет; срок действия 90 дней.'};}
+export async function createCalendarExport(service:RentalService,body:Row,config:OperationConfig){await service.requireRole('owner');const propertyId=required(body.propertyId,'Квартира',100);if(!await service.one('SELECT id FROM properties WHERE id=? AND owner_id=?',propertyId,service.userId))throw new DomainError('Квартира недоступна.',403);const token=randomToken(),expires=epoch()+EXPORT_SECONDS;await q(service.db,'INSERT INTO calendar_exports VALUES (?,?,?,?,?,NULL)',await hash(token),propertyId,service.userId,epoch(),expires).run();const base=config.SITE_PUBLIC_URL?httpsEndpoint(config.SITE_PUBLIC_URL).origin:'';return {url:base+'/api/calendar/feed/'+token+'.ics',expiresAt:expires,message:'Ссылка показывает только занятые даты, без имён и адресов. Вставьте её в календарь другой площадки. Она работает, пока вы её не отзовёте.'};}
 export async function exportCalendar(db:D1Database,token:string){token=token.replace(/\.ics$/,'');const feed=await one(db,'SELECT * FROM calendar_exports WHERE hash=? AND revoked_at IS NULL AND expires_at>?',await hash(token),epoch());if(!feed)throw new DomainError('Календарь недоступен.',404);const blocks=await rows(db,"SELECT id,start,occupied_until end FROM bookings WHERE property_id=? AND (status='confirmed' OR (status='requested' AND expires_at>?)) UNION ALL SELECT id,start,end FROM cleaning_jobs WHERE property_id=? AND status IN ('open','assigned','in_progress','submitted')",feed.property_id,epoch(),feed.property_id);return ['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//AI Arenda//Availability//RU','CALSCALE:GREGORIAN',...blocks.flatMap(b=>['BEGIN:VEVENT','UID:'+b.id+'@ai-arenda','DTSTAMP:'+icalDate(epoch()),'DTSTART:'+icalDate(b.start),'DTEND:'+icalDate(b.end),'SUMMARY:Reserved','END:VEVENT']),'END:VCALENDAR',''].join('\r\n');}
+
+// Platforms poll the link for as long as the flat is listed there, so it lives until revoked.
+export const EXPORT_SECONDS=10*365*86400;
+
+// The flat editor's calendar screen: the sources of one flat and whether each is up to date.
+export async function flatCalendars(service:RentalService,body:Row){
+ await service.requireRole('owner');const propertyId=required(body.propertyId,'Квартира',100);
+ if(!await service.one('SELECT id FROM properties WHERE id=? AND owner_id=?',propertyId,service.userId))throw new DomainError('Квартира недоступна.',403);
+ const sources=await rows(service.db,"SELECT s.id,s.label,s.provider,s.enabled,s.version,s.last_success,s.last_attempt,s.last_error,CASE WHEN s.url<>'' THEN 1 ELSE 0 END automatic,(SELECT COUNT(*) FROM external_blocks WHERE source_id=s.id AND end>unixepoch()) busy FROM calendar_sources s WHERE s.property_id=? AND s.owner_id=? ORDER BY s.enabled DESC,s.created_at DESC",propertyId,service.userId);
+ const exports=await one(service.db,'SELECT COUNT(*) n FROM calendar_exports WHERE property_id=? AND owner_id=? AND revoked_at IS NULL AND expires_at>?',propertyId,service.userId,epoch());
+ return {sources,exportLinks:exports?.n||0};
+}
+
+// One step for the owner: paste the platform's calendar link, the service names the source and
+// loads it right away. A failed first load keeps the source, which blocks new requests until it works.
+export async function connectCalendar(service:RentalService,body:Row,config:OperationConfig){
+ const url=required(body.url,'Ссылка календаря',2000).trim().replace(/^webcal:\/\//i,'https://');
+ if(!/^https:\/\/[^\s/]+\.[^\s]+$/i.test(url))throw new DomainError('Вставьте ссылку на календарь целиком, она начинается с https://');
+ const {provider,label}=calendarProvider(url);
+ const saved=await saveCalendarSource(service,{propertyId:body.propertyId,url,provider,label},config) as Row;
+ try{const result=await refreshCalendar(service.db,saved.id,config) as Row;return {id:saved.id,label,...result,message:label+' подключён. '+(result.count?'Занятых периодов: '+result.count+'.':'Занятых дат пока нет.')+(result.conflicts?' Есть пересечения с бронями здесь, проверьте их.':'')};}
+ catch{return {id:saved.id,label,message:label+' добавлен, но календарь пока не загрузился. Проверьте ссылку: пока календарь не обновится, новые заявки на эту квартиру не принимаются.',failed:true};}
+}

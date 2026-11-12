@@ -36,3 +36,19 @@ test('automatic publishing needs only the API token and finds the account and da
  assert.throws(()=>pickDatabase([{name:'ai-arenda-test',uuid:database}]),/was not found/);
  assert.equal(pickDatabase([],'ai-arenda',database),database);
 });
+
+test('the photo bucket is bound only when publishing confirmed it exists',async()=>{
+ const root=mkdtempSync(resolve('outputs/cloud-config-test-'));mkdirSync(resolve(root,'dist/server'),{recursive:true});mkdirSync(resolve(root,'dist/client'),{recursive:true});
+ writeFileSync(resolve(root,'dist/server/index.js'),'export default {};');writeFileSync(resolve(root,'dist/server/wrangler.json'),'{}');
+ const input={root,databaseId:'12345678-1234-4234-8234-123456789abc',accountId:'a'.repeat(32)};
+ assert.equal('r2_buckets' in cloudflareConfig(input),false);
+ assert.deepEqual(cloudflareConfig({...input,bucket:'ai-arenda-media'}).r2_buckets,[{binding:'BUCKET',bucket_name:'ai-arenda-media'}]);
+ assert.throws(()=>cloudflareConfig({...input,bucket:'Bad Name'}),/bucket/);
+ const {ensureBucket,explain}=await import('../scripts/ensure-r2-bucket.mjs');
+ const reply=body=>new Response(JSON.stringify(body));
+ assert.deepEqual(await ensureBucket({token:'t',account:'a',fetcher:async()=>reply({success:true})}),{ready:true,created:false});
+ let calls=[];assert.deepEqual(await ensureBucket({token:'t',account:'a',fetcher:async(url,init={})=>{calls.push(init.method||'GET');return reply(calls.length===1?{success:false,errors:[{code:10006}]}:{success:true});}}),{ready:true,created:true});assert.deepEqual(calls,['GET','POST']);
+ const off=await ensureBucket({token:'t',account:'a',fetcher:async()=>reply({success:false,errors:[{code:10042,message:'Please enable R2'}]})});assert.equal(off.ready,false);assert.match(off.reason,/enable it/);
+ assert.match(explain([{code:10000}]),/R2 permission/);
+ const workflow=(await import('node:fs')).readFileSync('.github/workflows/deploy.yml','utf8');assert.ok(workflow.indexOf('ensure-r2-bucket.mjs')<workflow.indexOf('prepare-cloudflare.mjs'));assert.match(workflow,/MEDIA_BUCKET:\+--bucket/);
+});

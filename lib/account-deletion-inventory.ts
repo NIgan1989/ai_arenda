@@ -58,7 +58,7 @@ export const accountDeletionColumns:Record<string,string>={
  "finance_entries": "id,owner_id,property_id,booking_id,job_id,kind,amount,currency,source,external_reference,note,actor_id,request_key,created_at",
  "job_evidence": "id,job_id,user_id,phase,data,object_key,width,height,bytes,note,created_at,mime,duration",
  "journey_sessions": "id,entity_kind,entity_id,sender_id,sender_role,owner_id,mode,created_at,expires_at,stopped_at,longitude,latitude,accuracy,recorded_at,received_at,route,route_recorded_at",
- "media": "id,user_id,kind,data,width,height,bytes,created_at",
+ "media": "id,user_id,kind,data,width,height,bytes,created_at,object_key",
  "messages": "id,user_id,scope,sender,body,created_at",
  "moderated_content": "kind,target_id,room_id,original_body,original_photo_data,original_search_result,hidden,version,operation_key,updated_at",
  "moderation_access_events": "id,actor_id,report_id,action,reason,created_at",

@@ -9,7 +9,7 @@ import {RentalService} from './service';
 import {financeState,recordFinance,createPaymentIntent,acceptPaymentEvent} from './finance';
 import {dispatchState,saveOperationRules,saveWorkerDispatch,decideOffer,declineAssignment} from './dispatch';
 import {saveEvidence,listEvidence,readEvidence} from './evidence';
-import {calendarSources,saveCalendarSource,refreshCalendar,commitCalendarImport,previewCalendarImport,createCalendarExport,exportCalendar} from './external-calendar';
+import {calendarSources,saveCalendarSource,refreshCalendar,commitCalendarImport,previewCalendarImport,createCalendarExport,exportCalendar,flatCalendars,connectCalendar} from './external-calendar';
 import {importState,previewPropertyImport,commitPropertyImport} from './property-import';
 import {governanceState,savePilotPolicy,updateOperatorTicket} from './pilot-governance';
 import {deliveryState,createTelegramLink,setDeliveryChannel,acceptTelegramLink,integrationStatus,acceptDeliveryReceipt} from './delivery';
@@ -76,6 +76,8 @@ export async function writeOperations(service:RentalService,role:Role,path:strin
  if(route==='rules'){active(role,['owner']);return saveOperationRules(service,body);}
  if(route==='evidence'){active(role,['cleaner']);return saveEvidence(service,body,config);}
  if(route==='calendar/source'){active(role,['owner']);if(body.ics)throw new DomainError('Создайте источник, затем проверьте файл в предпросмотре.');return saveCalendarSource(service,body,config);}
+ if(route==='calendar/flat'){active(role,['owner']);return flatCalendars(service,body);}
+ if(route==='calendar/connect'){active(role,['owner']);return connectCalendar(service,body,config);}
  if(route==='calendar/preview'){active(role,['owner']);return previewCalendarImport(service,body);}
  if(route==='calendar/import'){active(role,['owner']);return commitCalendarImport(service,body);}
  if(route==='calendar/refresh'){active(role,['owner']);const source=await one(service.db,'SELECT id FROM calendar_sources WHERE id=? AND owner_id=? AND enabled=1',required(body.sourceId,'Источник',100),service.userId);if(!source)throw new DomainError('Источник недоступен.',403);return refreshCalendar(service.db,source.id,config);}
