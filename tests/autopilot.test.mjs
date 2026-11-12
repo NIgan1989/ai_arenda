@@ -118,3 +118,41 @@ test('an automatic checkout stops if the autopilot is turned off while it runs',
   assert.equal(f.db.raw.prepare('SELECT actual_checkout FROM booking_terms WHERE booking_id=?').get(f.booking).actual_checkout,null);
  }finally{f.db.close();}
 });
+
+test('the AI checks the cleaning photo report: the owner accepts with one tap, or the AI accepts after an hour; a report with a problem stays with the owner',async()=>{
+ const {checkAdministratorOwner}=await load('administrator-runtime'),{saveEvidence}=await load('evidence'),{photo}=await import('./fixtures/photo.mjs');
+ for(const report of ['Убрано, всё чисто','Убрано, но разбита ваза']){const f=await fixture();try{
+  await matchingAction(f.owner,'owner','preference',{propertyId:f.property,mode:'auto'});
+  await f.cleaner.jobAction(f.job.id,{action:'apply'});const app=f.db.raw.prepare('SELECT * FROM applications WHERE job_id=?').get(f.job.id);await f.owner.jobAction(f.job.id,{action:'assign',applicationId:app.id});
+  f.db.raw.prepare('UPDATE bookings SET start=?,end=?,occupied_until=? WHERE id=?').run(now()-600,now()+15,now()+5415,f.booking);f.db.raw.prepare('UPDATE cleaning_jobs SET start=?,end=? WHERE id=?').run(now()+15,now()+5415,f.job.id);
+  await f.owner.bookingAction(f.booking,{action:'checkout'});await f.cleaner.jobAction(f.job.id,{action:'start'});
+  for(const phase of ['before','after','after'])await saveEvidence(f.cleaner,{jobId:f.job.id,phase,data:photo});
+  await f.cleaner.jobAction(f.job.id,{action:'submit',checklist:[true,true,true,true],report});
+  const status=()=>f.db.raw.prepare('SELECT status FROM cleaning_jobs WHERE id=?').get(f.job.id).status;
+  f.release();await checkAdministratorOwner(f.db,'owner');assert.equal(status(),'submitted','the owner is asked first');
+  const clean=report==='Убрано, всё чисто',key=clean?'owner:administrator-review:%':'owner:administrator-review-issue:%';
+  const notice=f.db.raw.prepare("SELECT body FROM notifications WHERE user_id='owner' AND dedupe LIKE ?").get(key);assert.ok(notice,report+' '+JSON.stringify(f.db.raw.prepare("SELECT dedupe,body FROM notifications WHERE user_id='owner' ORDER BY created_at DESC LIMIT 4").all()));
+  if(!clean)assert.match(notice.body,/разбит/);
+  f.db.raw.prepare("UPDATE notifications SET created_at=created_at-3601 WHERE dedupe LIKE 'owner:administrator-review%'").run();f.release();await checkAdministratorOwner(f.db,'owner');
+  if(clean){assert.equal(status(),'completed');assert.equal(f.db.raw.prepare('SELECT readiness FROM property_operations WHERE property_id=?').get(f.property).readiness,'ready');assert.ok(f.db.raw.prepare("SELECT id FROM audit_events WHERE entity_id=? AND actor_id='system:rental-policy' AND action LIKE '%job.completed%'").get(f.job.id));}
+  else assert.equal(status(),'submitted','a report with a problem is never accepted by the AI');
+ }finally{f.db.close();}}
+});
+
+test('under autopilot the guest report of arrival confirms the check-in once the payment is verified',async()=>{
+ const {checkAdministratorOwner}=await load('administrator-runtime');
+ for(const mode of ['manual','auto']){const f=await fixture();try{
+  await matchingAction(f.owner,'owner','preference',{propertyId:f.property,mode});
+  f.db.raw.prepare('UPDATE bookings SET start=?,end=?,occupied_until=? WHERE id=?').run(now()-600,now()+7200,now()+12600,f.booking);
+  f.db.raw.prepare("UPDATE property_operations SET readiness='ready' WHERE property_id=?").run(f.property);
+  await assert.rejects(f.owner.bookingAction(f.booking,{action:'report_checkin'}),e=>e.status===403);
+  await f.guest.bookingAction(f.booking,{action:'report_checkin'});
+  const checkin=()=>f.db.raw.prepare('SELECT actual_checkin FROM booking_terms WHERE booking_id=?').get(f.booking).actual_checkin;
+  f.release();await checkAdministratorOwner(f.db,'owner');assert.equal(checkin(),null,'not before the payment is verified');
+  if(mode==='auto')assert.ok(f.db.raw.prepare("SELECT id FROM notifications WHERE dedupe=?").get('owner:administrator-checkin-payment:'+f.booking));
+  f.db.raw.prepare("UPDATE bookings SET payment_status='owner_verified' WHERE id=?").run(f.booking);f.db.raw.prepare("UPDATE booking_terms SET deposit_status='owner_verified' WHERE booking_id=?").run(f.booking);
+  f.release();await checkAdministratorOwner(f.db,'owner');
+  if(mode==='auto'){assert.ok(checkin());assert.equal(f.db.raw.prepare('SELECT readiness FROM property_operations WHERE property_id=?').get(f.property).readiness,'occupied');}
+  else assert.equal(checkin(),null,'an owner answering personally confirms it in person');
+ }finally{f.db.close();}}
+});

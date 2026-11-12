@@ -24,15 +24,20 @@ export function rankMatches(properties:Row[],filters:Row):Row[]{
   const distance=filters.near&&p.location?geoDistance([filters.near.longitude,filters.near.latitude],[p.location.longitude,p.location.latitude]):null;
   if(filters.near&&(distance===null||distance>filters.near.radius))return [];
   const ready=p.display_status?.code==='ready',saving=1-amount/budget,proximity=distance===null?0:1-distance/filters.near.radius;
-  const score=filters.priority==='cheaper'?saving:filters.priority==='closer'&&filters.near?proximity:.5*saving+.3*proximity+.2*Number(ready);
-  const reasons=['В пределах бюджета',...(distance!==null?['Примерно '+Math.max(.1,distance/1000).toFixed(1).replace('.',',')+' км от выбранного места']:[]),...(ready?['Готовность проверена']:[]),...(filters.features.length?['Нужные удобства есть']:[])];
+  // A flat under autopilot answers and confirms at once, so the balanced choice lifts it a little.
+  const instant=!!p.instant,score=filters.priority==='cheaper'?saving:filters.priority==='closer'&&filters.near?proximity:.5*saving+.3*proximity+.2*Number(ready)+.1*Number(instant);
+  const reasons=['В пределах бюджета',...(distance!==null?['Примерно '+Math.max(.1,distance/1000).toFixed(1).replace('.',',')+' км от выбранного места']:[]),...(ready?['Готовность проверена']:[]),...(instant?['Отвечает и подтверждает сразу']:[]),...(filters.features.length?['Нужные удобства есть']:[])];
   return [{...p,match:{score,distance,reasons}}];
- }).sort((a,b)=>b.match.score-a.match.score||a.estimate.amount-b.estimate.amount||String(a.id).localeCompare(String(b.id)));
+ }).sort((a,b)=>b.match.score-a.match.score||a.estimate.amount-b.estimate.amount||Number(!!b.instant)-Number(!!a.instant)||String(a.id).localeCompare(String(b.id)));
 }
 export async function previewMatches(s:RentalService,body:Row):Promise<Row>{
  const filters=matchingInput(body),search={city:filters.city,start:filters.start,end:filters.end,guests:filters.guests,mode:filters.mode,maxPrice:filters.maxPrice,map:'1',limit:'60'};
  const first=await s.publicSearch(search,{matching:true}),properties=first.properties;
- const ranked=rankMatches(properties,filters),preferences=await rows(s.db,'SELECT property_id FROM matching_preferences WHERE enabled=1');
+ // In chunks: a matching search returns every match, and D1 binds at most 100 parameters.
+ const modes:Row[]=[],ids=properties.map((p:Row)=>p.id);
+ for(let i=0;i<ids.length;i+=90){const part=ids.slice(i,i+90);modes.push(...await rows(s.db,`SELECT p.id,${guestModeSql} mode FROM properties p ${guestModeJoins} WHERE p.id IN (${part.map(()=>'?').join(',')})`,epoch(),...part));}
+ const instant=new Set(modes.filter(m=>m.mode==='auto').map(m=>m.id));
+ const ranked=rankMatches(properties.map((p:Row)=>({...p,instant:instant.has(p.id)})),filters),preferences=await rows(s.db,'SELECT property_id FROM matching_preferences WHERE enabled=1');
  const enabled=new Set(preferences.map(p=>p.property_id));
  return {filters,properties:ranked.map(p=>({...p,quickRequest:enabled.has(p.id)})),total:ranked.length,center:first.center,availabilityChecked:true,serverTime:epoch()};
 }

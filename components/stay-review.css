@@ -1,0 +1,7 @@
+.stay-review{display:grid;gap:8px}
+.stay-review-stars{display:flex;gap:4px}
+.stay-review-stars button{border:0;background:transparent;padding:4px;cursor:pointer;color:var(--t-line-strong);border-radius:8px}
+.stay-review-stars button.is-on{color:var(--t-accent)}
+.stay-review-stars button.is-on svg{fill:currentColor}
+.stay-review-stars button:focus-visible{outline:3px solid var(--t-accent);outline-offset:2px}
+.stay-review small{color:var(--t-muted);font-size:12px}

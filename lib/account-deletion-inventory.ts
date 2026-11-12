@@ -1,8 +1,9 @@
-// Reviewed deletion inventory through migration 0033. Any new application column
+// Reviewed deletion inventory through migration 0034. Any new application column
 // must be classified before unused-account erasure is enabled for that schema.
 export const accountDeletionColumns:Record<string,string>={
- "platform_billing":"id,enabled,starts_at,rate_bp,min_fee,max_fee,free_bookings,version,updated_by,updated_at",
- "platform_commissions":"booking_id,owner_id,property_id,booking_amount,rate_bp,amount,mode,settings_version,created_at",
+ "platform_billing":"id,enabled,starts_at,rate_bp,min_fee,max_fee,free_bookings,version,updated_by,updated_at,ai_rate_bp",
+ "stay_reviews":"booking_id,property_id,guest_id,owner_id,rating,body,created_at",
+ "platform_commissions":"booking_id,owner_id,property_id,booking_amount,rate_bp,amount,mode,settings_version,created_at,managed",
  "owner_balance_entries":"id,owner_id,kind,amount,note,actor_id,request_key,created_at",
  "matching_preferences":"property_id,owner_id,enabled,updated_at",
  "matching_requests":"id,guest_id,request_key,filters,status,created_at,expires_at,selected_offer,booking_id,lease_until",
@@ -32,7 +33,7 @@ export const accountDeletionColumns:Record<string,string>={
  "auth_sessions": "hash,user_id,credential_version,expires_at",
  "background_jobs": "id,kind,scope,payload,status,attempts,max_attempts,available_at,lease_until,lease_token,repeat_seconds,last_completed,last_error,updated_at",
  "booking_changes": "id,booking_id,proposed_by,proposer_role,request_key,base_version,policy_version,start,end,occupied_until,billing_mode,rate,units,discount_percent,amount,reason,status,expires_at,created_at,decided_at",
- "booking_terms": "booking_id,billing_mode,rate,units,amount,deposit,deposit_status,house_rules,policy_version,actual_checkin,actual_checkout,checkout_reported_at,version,discount_percent,paid_amount,original_end,deposit_returned_at,refund_recorded_at",
+ "booking_terms": "booking_id,billing_mode,rate,units,amount,deposit,deposit_status,house_rules,policy_version,actual_checkin,actual_checkout,checkout_reported_at,version,discount_percent,paid_amount,original_end,deposit_returned_at,refund_recorded_at,checkin_reported_at",
  "bookings": "id,property_id,guest_id,start,end,occupied_until,guests,amount,status,expires_at,payment_status,request_key,created_at",
  "calendar_exports": "hash,property_id,owner_id,created_at,expires_at,revoked_at",
  "calendar_previews": "id,user_id,source_id,source_version,content_hash,expires_at,created_at",
@@ -90,6 +91,7 @@ export const accountDeletionColumns:Record<string,string>={
  "command_receipts": "user_id,key,digest,result"
 };
 export const accountDeletionFenceSql:Record<string,string>={
+ "account_erased_stay_reviews_insert": "CREATE TRIGGER account_erased_stay_reviews_insert BEFORE INSERT ON stay_reviews WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.guest_id OR user_id=NEW.owner_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END",
  "account_erased_platform_commissions_insert": "CREATE TRIGGER account_erased_platform_commissions_insert BEFORE INSERT ON platform_commissions WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.owner_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END",
  "account_erased_platform_commissions_update": "CREATE TRIGGER account_erased_platform_commissions_update BEFORE UPDATE ON platform_commissions WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.owner_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END",
  "account_erased_owner_balance_entries_insert": "CREATE TRIGGER account_erased_owner_balance_entries_insert BEFORE INSERT ON owner_balance_entries WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.owner_id OR user_id=NEW.actor_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END",
