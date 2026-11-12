@@ -57,11 +57,13 @@ async function automaticActions(service:RentalService){
      AND NOT EXISTS(SELECT 1 FROM cleaning_jobs j WHERE j.assigned_to=a.user_id AND j.status IN ('assigned','in_progress','submitted') AND j.start<? AND j.end>?)
      ORDER BY a.created_at,a.id`,job.id,job.end,job.start);
     // The owner agrees the cleaner: the AI proposes the first one who applied and assigns by itself
-    // only if the owner has not answered in OWNER_ANSWER_SECONDS, or the cleaning starts within the hour.
+    // only if the owner has not answered OWNER_ANSWER_SECONDS after the proposal, or the cleaning starts within the hour.
+    // The proposal notification is the record of when the owner was asked, however old the application is.
     const first=candidates[0],t=now();
-    if(first&&first.created_at+OWNER_ANSWER_SECONDS>t&&job.start>t+3600){
-     await service.notify(service.userId,'AI администратор предлагает уборщицу '+first.name+' на уборку «'+(job.title||'квартира')+'». Назначьте её в карточке уборки, или через 30 минут ИИ назначит сам.','administrator-propose:'+first.id,'owner').run();
-     continue;
+    if(first&&job.start>t+3600){
+     const proposed=await service.one('SELECT created_at FROM notifications WHERE user_id=? AND dedupe=?',service.userId,'owner:administrator-propose:'+first.id);
+     if(!proposed){await service.notify(service.userId,'AI администратор предлагает уборщицу '+first.name+' на уборку «'+(job.title||'квартира')+'». Назначьте её в карточке уборки, или через 30 минут ИИ назначит сам.','administrator-propose:'+first.id,'owner').run();continue;}
+     if(proposed.created_at+OWNER_ANSWER_SECONDS>t)continue;
     }
     for(const candidate of candidates){try{await delegated.jobAction(job.id,{action:'assign',applicationId:candidate.id,expectedVersion:job.version});await service.notify(service.userId,'AI администратор назначил свободного исполнителя из откликнувшихся в пределах вашего лимита уборки.','administrator-assigned:'+job.id+':'+job.version,'owner').run();actions++;break;}catch(error){if(!expectedConflict(error))throw error;}}
    }

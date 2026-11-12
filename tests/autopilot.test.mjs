@@ -48,7 +48,7 @@ test('under autopilot a guest gets an instant answer, the booking confirms itsel
   const job=f.db.raw.prepare('SELECT * FROM cleaning_jobs WHERE booking_id=?').get(booking.id);assert.equal(job.fee,3000);
   await saveWorkerDispatch(f.cleaner,{receiveOffers:true});f.release();await checkAdministratorOwner(f.db,'owner');
   const work=f.db.raw.prepare("SELECT * FROM cleaning_offers WHERE job_id=? AND status='offered'").get(job.id);assert.ok(work,'the AI offers the cleaning to a free cleaner');
-  await decideOffer(f.cleaner,{id:work.id,action:'accept'});f.release();f.db.raw.prepare('UPDATE applications SET created_at=created_at-1801').run();await checkAdministratorOwner(f.db,'owner');
+  await decideOffer(f.cleaner,{id:work.id,action:'accept'});f.release();await checkAdministratorOwner(f.db,'owner');f.db.raw.prepare("UPDATE notifications SET created_at=created_at-1801 WHERE dedupe LIKE 'owner:administrator-propose:%'").run();f.release();await checkAdministratorOwner(f.db,'owner');
   assert.equal(f.db.raw.prepare('SELECT assigned_to FROM cleaning_jobs WHERE id=?').get(job.id).assigned_to,'cleaner');
  }finally{f.db.close();}
 });
@@ -103,4 +103,18 @@ test('the AI proposes a cleaner and the owner agrees with one tap; a cleaning wi
   await g.cleaner.jobAction(g.job.id,{action:'apply'});g.release();await checkAdministratorOwner(g.db,'owner');
   assert.equal(g.db.raw.prepare('SELECT assigned_to FROM cleaning_jobs WHERE id=?').get(g.job.id).assigned_to,'cleaner');
  }finally{g.db.close();}
+});
+
+test('an automatic checkout stops if the autopilot is turned off while it runs',async()=>{
+ const {RentalService}=await load('service'),f=await fixture();try{
+  await matchingAction(f.owner,'owner','preference',{propertyId:f.property,mode:'auto'});
+  f.db.raw.prepare('UPDATE bookings SET start=?,end=?,occupied_until=? WHERE id=?').run(now()-3600,now()+600,now()+6000,f.booking);
+  await f.guest.bookingAction(f.booking,{action:'report_checkout'});
+  const policy=f.db.raw.prepare('SELECT * FROM property_policies WHERE property_id=?').get(f.property),delegated=new RentalService(f.db,'owner',{propertyId:f.property,policyVersion:policy.version});
+  // The owner switches to «Я сам» after the AI read the mandate but before its write lands.
+  const read=delegated.one.bind(delegated);delegated.one=async(sql,...args)=>{const row=await read(sql,...args);if(/FROM property_policies/.test(sql))f.db.raw.prepare('UPDATE property_policies SET auto_assign=0 WHERE property_id=?').run(f.property);return row;};
+  await assert.rejects(delegated.bookingAction(f.booking,{action:'checkout'}),e=>e.status===409);
+  assert.equal(f.db.raw.prepare('SELECT status FROM bookings WHERE id=?').get(f.booking).status,'confirmed');
+  assert.equal(f.db.raw.prepare('SELECT actual_checkout FROM booking_terms WHERE booking_id=?').get(f.booking).actual_checkout,null);
+ }finally{f.db.close();}
 });
