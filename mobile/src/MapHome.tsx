@@ -1,5 +1,5 @@
 import React,{useEffect,useRef,useState,type ReactNode} from 'react';
-import {ActivityIndicator,Animated,AppState,BackHandler,PanResponder,Platform,Pressable,ScrollView,Switch,Text,View,useWindowDimensions} from 'react-native';
+import {ActivityIndicator,Animated,AppState,BackHandler,PanResponder,Platform,Pressable,ScrollView,Text,View,useWindowDimensions} from 'react-native';
 import {NO_BUDGET} from '../../lib/map-search-request';
 import {ApiError,isOffline,request} from './api';
 import {Photo} from './ListingMedia';
@@ -16,6 +16,7 @@ import {nowCard,when,type NowCard} from './now-card';
 import {Action,Stage,h,handleHeight,topInset} from './SheetParts';
 import {GuestForm} from './GuestForm';
 import {GuestResults} from './GuestResults';
+import {GuestMode} from './GuestMode';
 
 // Map-first home screen, like a taxi app: a full-screen map and one bottom sheet.
 // Collapsed, the sheet holds only the head (AI line, chips, the "Сейчас" card); expanded, the controls of the role.
@@ -215,10 +216,11 @@ function OwnerPanel({data,mapData,publish,snap,showNow,expand,onHead,onAsk,onInt
  const lock=useRef(false),seen=useRef(0),now=useNow(!!inbox?.offers?.length)+skew;
  // An answer just sent shows on the flat's pin for a few seconds: «Ответ отправлен» after «Готов», the price again after a refusal.
  const [answered,setAnswered]=useState<Record<string,number>>({});
+ const [saved,setSaved]=useState('');
  useEffect(()=>{const keys=Object.keys(answered);if(!keys.length)return;const timer=setTimeout(()=>setAnswered({}),5000);return()=>clearTimeout(timer);},[answered]);
  const apply=(result:Row)=>{setSkew(result.serverTime-Date.now()/1000);setInbox(result);if(result.offers.length>seen.current)expand(1);seen.current=result.offers.length;};
  usePoll(async()=>{try{apply(await request('/api/operations/matching/inbox',{},undefined,undefined,'owner'));setError('');}catch(e){if(e instanceof ApiError)setError(e.message);}},3000,true);
- async function act(action:string,body:Row){if(lock.current)return;lock.current=true;setWorking(true);setError('');try{const property=action==='respond'?(inbox?.offers||[]).find((o:Row)=>o.id===body.offerId)?.property_id:'';apply(await request('/api/operations/matching/'+action,body,undefined,undefined,'owner'));if(property&&body.decision==='accept')setAnswered(v=>({...v,[property]:Date.now()}));if(action==='respond')await onChanged();}catch(e){setError(message(e));}finally{lock.current=false;setWorking(false);}}
+ async function act(action:string,body:Row){if(lock.current)return;lock.current=true;setWorking(true);setError('');setSaved('');try{const property=action==='respond'?(inbox?.offers||[]).find((o:Row)=>o.id===body.offerId)?.property_id:'';const result=await request('/api/operations/matching/'+action,body,undefined,undefined,'owner');apply(result);if(action==='preference'&&result.message)setSaved(result.message);if(property&&body.decision==='accept')setAnswered(v=>({...v,[property]:Date.now()}));if(action==='respond')await onChanged();}catch(e){setError(message(e));}finally{lock.current=false;setWorking(false);}}
  const offers:Row[]=(inbox?.offers||[]).filter((o:Row)=>o.expires_at>now),processes:Row[]=mapData?.processes||[];
  useEffect(()=>{
   const asked=new Set(offers.map(o=>o.property_id));
@@ -258,9 +260,10 @@ function OwnerPanel({data,mapData,publish,snap,showNow,expand,onHead,onAsk,onInt
     <Action secondary title="Добавить квартиру" onPress={()=>onIntent('add-property')}/>
    </View>
    <View style={h.card}>
-    <Text accessibilityRole="header" style={h.label}>Быстрые запросы гостей</Text>
-    <Text style={h.note}>{!inbox?'Загружаем…':offers.length?'На ответ даётся 2 минуты.':'Новых запросов нет. На ответ даётся 2 минуты.'}</Text>
-    {(inbox?.preferences||[]).map((p:Row)=><View key={p.id} style={h.listRow}><Text numberOfLines={2} style={[h.eventTitle,h.grow]}>{p.title}</Text><Switch accessibilityLabel={'Принимать быстрые запросы: '+p.title} value={!!p.enabled} disabled={working} onValueChange={enabled=>act('preference',{propertyId:p.id,enabled})} trackColor={{true:C.accent,false:C.line}}/></View>)}
+    <Text accessibilityRole="header" style={h.label}>Кто отвечает гостям</Text>
+    <Text style={h.note}>{!inbox?'Загружаем…':'ИИ — это автопилот: сразу отвечает гостю, подтверждает бронь, заказывает уборку и назначает уборщицу по вашим тарифам. Оплату и депозит проверяете вы.'}</Text>
+    {!!saved&&<Text accessibilityLiveRegion="polite" style={h.note}>{saved}</Text>}
+    {(inbox?.preferences||[]).map((p:Row)=><GuestMode key={p.id} flat={p} busy={working} onChange={body=>act('preference',body)}/>)}
     {!!inbox&&!inbox.preferences.length&&<Text style={h.note}>Включить можно после добавления квартиры.</Text>}
    </View>
   </>}
