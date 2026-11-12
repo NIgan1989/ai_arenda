@@ -119,8 +119,12 @@ export class RentalService {
       return {removed:'deleted',message:'Квартира «'+p.title+'» удалена.'};}
      catch(e:any){if(!/FOREIGN KEY|constraint/i.test(String(e?.message||e)))throw e;}
     }
-    const r=await this.db.batch([this.query('UPDATE properties SET published=0,archived_at=? WHERE id=? AND owner_id=? AND archived_at IS NULL',time,propertyId,this.userId),this.query('UPDATE matching_preferences SET enabled=0,updated_at=? WHERE property_id=?',time,propertyId),this.query('UPDATE calendar_sources SET enabled=0 WHERE property_id=?',propertyId),this.query('UPDATE calendar_exports SET revoked_at=? WHERE property_id=? AND revoked_at IS NULL',time,propertyId),this.audit(propertyId,'property.archived')]);
-    if(!r[0].meta.changes)throw new DomainError('Квартира уже удалена.',409);
+    // The archive re-checks future stays and unfinished cleanings in the same write, and the rest only follows it,
+    // so a booking or cleaning made after the checks above stops the removal instead of being orphaned.
+    const archived='EXISTS(SELECT 1 FROM properties WHERE id=? AND archived_at=?)';
+    const r=await this.db.batch([this.query(`UPDATE properties SET published=0,archived_at=? WHERE id=? AND owner_id=? AND archived_at IS NULL AND NOT EXISTS(SELECT 1 FROM bookings WHERE property_id=? AND (status='confirmed' OR (status='requested' AND expires_at>?)) AND occupied_until>?) AND NOT EXISTS(SELECT 1 FROM cleaning_jobs WHERE property_id=? AND status IN ('open','assigned','in_progress','submitted'))`,time,propertyId,this.userId,propertyId,time,time,propertyId),
+     this.query(`UPDATE matching_preferences SET enabled=0,updated_at=? WHERE property_id=? AND ${archived}`,time,propertyId,propertyId,time),this.query(`UPDATE calendar_sources SET enabled=0 WHERE property_id=? AND ${archived}`,propertyId,propertyId,time),this.query(`UPDATE calendar_exports SET revoked_at=? WHERE property_id=? AND revoked_at IS NULL AND ${archived}`,time,propertyId,propertyId,time),this.query(`INSERT INTO audit_events SELECT ?,?,?,?,? WHERE ${archived}`,id(),this.userId,propertyId,'property.archived',time,propertyId,time)]);
+    if(!r[0].meta.changes)throw new DomainError('Пока квартиру удаляли, у неё появилась бронь или уборка. Обновите данные и попробуйте снова.',409);
     return {removed:'archived',message:'Квартира «'+p.title+'» убрана: гости её больше не видят, история броней и оплат сохранена.'};
   }
   async enrichProperties(items:Row[],owner=false):Promise<Row[]>{

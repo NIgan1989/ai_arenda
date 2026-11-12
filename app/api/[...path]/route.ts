@@ -124,7 +124,7 @@ async function handle(request:Request, context:{params:Promise<{path:string[]}>}
     if(error instanceof DomainError) return json({error:error.message},error.status);
     if(error instanceof SyntaxError) return json({error:'Некорректный запрос.'},400);
     const msg=String(error?.message||error);
-    if(/property_archived/.test(msg))return json({error:'Квартира удалена, её нельзя показать гостям.'},409);
+    if(/property_archived/.test(msg))return json({error:'Квартира удалена владельцем: показать или забронировать её нельзя.'},409);
     if(/account_erased/.test(msg))return json({error:'Аккаунт удалён. Обновите вход.'},410);
     if(/checkout_required|property_not_vacant/.test(msg))return json({error:'Сначала подтвердите выезд гостя и освобождение квартиры.'},409);
     if(/property_cleaning_busy/.test(msg))return json({error:'В этой квартире уже выполняется или проверяется другая уборка.'},409);
