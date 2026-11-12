@@ -31,3 +31,12 @@ test('each step has a one-line summary and a mark when something is missing',()=
  assert.equal(stepLine(b,'photos'),'Нет фото');assert.equal(stepLine(b,'flat'),'1 комн. · 30 м² · 2 гост.');
  assert.ok(stepNeeds(b,'photos'));assert.ok(stepNeeds(b,'rules'));assert.ok(!stepNeeds(b,'prices'));
 });
+
+test('a failed save points to the step to fix, and an admission refusal turns into a review request',async()=>{
+ const {stepForError,needsReview,reviewRequest,PUBLISH_REVIEW}=await load('listing-edit');
+ assert.equal(stepForError('Заполните поле «Правила проживания».'),'rules');
+ assert.equal(stepForError('Для публикации добавьте фото и описание от 80 символов.'),'text');
+ assert.ok(needsReview('Публикация и новые брони доступны после действующей проверки владельца и этого объекта.'));
+ assert.ok(!needsReview('Владельцу нужно подтвердить номер телефона аккаунта.'));
+ const r=reviewRequest({id:'p1',title:'Студия',city:'Павлодар',address:'Ленина 5'});assert.equal(r.propertyId,'p1');assert.ok(r.reference.startsWith(PUBLISH_REVIEW));
+});

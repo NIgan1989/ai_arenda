@@ -99,3 +99,22 @@ test('operator resolution is versioned, requires a responsible human and never s
   await assert.rejects(updateOperatorTicket(f.owner,'owner',{issueId:ticket.issue_id,expectedVersion:1,action:'release'},true),e=>e.status===409);
  }finally{f.db.close();}
 });
+
+test('a flat sent for review from «Показать гостям» reaches the administrators and is shown to guests once approved',async()=>{
+ const f=await fixture();try{
+  const {PUBLISH_REVIEW}=await load('listing-edit');
+  await policy(f,{requireOwnerReview:true});
+  f.db.raw.prepare('UPDATE properties SET published=0 WHERE id=?').run(f.property);
+  f.db.raw.prepare("UPDATE properties SET description=? WHERE id=?").run('Светлая квартира в центре: двуспальная кровать, кухня, стиральная машина, быстрый Wi-Fi, рядом остановка и магазины.',f.property);
+  f.db.raw.prepare("INSERT OR REPLACE INTO property_details(property_id,photos,revision,updated_at) VALUES (?,'[\"m1\"]','r1',?)").run(f.property,now());
+  await requestParticipantReview(f.owner,'owner',{propertyId:f.property,reference:PUBLISH_REVIEW+': fixture'},{PLATFORM_ADMIN_IDS:'admin-a, admin-b'});
+  const asked=f.db.raw.prepare("SELECT user_id,body FROM notifications WHERE dedupe LIKE 'admin:review:%' ORDER BY user_id").all();
+  assert.deepEqual(asked.map(n=>n.user_id),['admin-a','admin-b']);assert.match(asked[0].body,/ждёт проверки/);
+  const pending=f.db.raw.prepare("SELECT * FROM participant_reviews WHERE status='pending'").get();
+  const before=f.db.raw.prepare('SELECT version FROM property_details WHERE property_id=?').get(f.property).version;
+  await decideParticipantReview(f.owner,{id:pending.id,expectedVersion:pending.version,status:'approved',method:'Видеозвонок',notes:'Квартира совпадает с фото'},true);
+  assert.equal(f.db.raw.prepare('SELECT published FROM properties WHERE id=?').get(f.property).published,1);
+  assert.equal(f.db.raw.prepare('SELECT version FROM property_details WHERE property_id=?').get(f.property).version,before+1);
+  const told=f.db.raw.prepare("SELECT body FROM notifications WHERE dedupe LIKE 'owner:review:%'").get();assert.match(told.body,/показана гостям/);
+ }finally{f.db.close();}
+});

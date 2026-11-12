@@ -5,7 +5,7 @@ import {T} from './tokens';
 import {Photo} from './ListingMedia';
 import {PhotoGrid} from './PhotoGrid';
 import {Stepper} from './SheetParts';
-import {EDIT_STEPS,editBody,editRequest,nextAdvice,stepLine,stepNeeds,type EditBody,type EditStep} from '../../lib/listing-edit';
+import {EDIT_STEPS,editBody,editRequest,nextAdvice,needsReview,reviewRequest,REVIEW_SENT,stepForError,stepLine,stepNeeds,type Advice,type EditBody,type EditStep} from '../../lib/listing-edit';
 import {amenities,checkinMethods,propertyTypes} from '../../lib/listings';
 type Row=Record<string,any>;
 const R=T.radius,H=T.control;
@@ -14,15 +14,20 @@ const SAVED:Record<EditStep|'publish',string>={photos:'Фото сохранен
 
 // Editing a flat in the app: an overview of short steps, each opened on its own small screen and saved at once.
 // After each save the AI administrator offers the next step. Same rules as the site (lib/listing-edit.ts).
-export function PropertyEdit({property,onSave,onClose}:{property:Row;onSave:(body:Row)=>Promise<Row|undefined>;onClose:()=>void}){
+export function PropertyEdit({property,onSave,onReview,onClose}:{property:Row;onSave:(body:Row)=>Promise<Row|undefined>;onReview?:(body:Row)=>Promise<unknown>;onClose:()=>void}){
  const [p,setP]=useState(property),[base,setBase]=useState<EditBody>(()=>editBody(property)),[draft,setDraft]=useState<EditBody>(base);
- const [open,setOpen]=useState<EditStep|null>(null),[busy,setBusy]=useState(false),[uploading,setUploading]=useState(false),[error,setError]=useState(''),[done,setDone]=useState(''),[skipped,setSkipped]=useState<string[]>([]);
- const advice=nextAdvice(base,skipped);
- function go(step:EditStep){setDraft(base);setError('');setDone('');setOpen(step);}
+ const [open,setOpen]=useState<EditStep|null>(null),[busy,setBusy]=useState(false),[uploading,setUploading]=useState(false),[error,setError]=useState(''),[done,setDone]=useState(''),[skipped,setSkipped]=useState<string[]>([]),[held,setHeld]=useState(false),[sent,setSent]=useState(false);
+ // A save that failed keeps its changes: the owner fixes what the server asked for in another step and everything is saved together.
+ const fix=held&&error?stepForError(error):null;
+ const advice:Advice=held&&error?{step:fix,text:'Не сохранилось: '+error+(fix?' Заполните это, и сохранится всё вместе.':''),action:fix?'Заполнить':undefined}:sent&&!base.published?{step:null,text:REVIEW_SENT}:nextAdvice(base,skipped);
+ function go(step:EditStep){if(!held)setDraft(base);setError(held?error:'');setDone('');setOpen(step);}
  async function commit(next:EditBody,what:EditStep|'publish'){
   if(busy||uploading)return;setBusy(true);setError('');
-  try{const fresh=await onSave(editRequest(next,p));setP(fresh||{...p,listing_version:(p.listing_version||0)+1});const b=fresh?editBody(fresh):next;setBase(b);setDraft(b);setOpen(null);setDone(SAVED[what]);}
-  catch(e:any){setError(e?.message||'Не удалось сохранить.');}finally{setBusy(false);}
+  try{const fresh=await onSave(editRequest(next,p));setP(fresh||{...p,listing_version:(p.listing_version||0)+1});const b=fresh?editBody(fresh):next;setBase(b);setDraft(b);setOpen(null);setHeld(false);setError('');setDone(SAVED[what]);}
+  catch(e:any){const message=e?.message||'Не удалось сохранить.';
+   // Publishing waits for the administrator: the flat is sent for review instead of failing, and is shown once approved.
+   if(what==='publish'&&next.published&&onReview&&needsReview(message)){try{const kept={...next,published:false};if(held){const fresh=await onSave(editRequest(kept,p));setP(fresh||p);const b=fresh?editBody(fresh):kept;setBase(b);setDraft(b);}await onReview(reviewRequest({id:p.id,title:next.title,city:next.city,address:next.address}));setSent(true);setHeld(false);setDone('');setError('');setOpen(null);return;}catch(r:any){setError(r?.message||message);setHeld(true);setOpen(null);return;}}
+   setError(message);setHeld(true);setOpen(null);}finally{setBusy(false);}
  }
  const d=draft.details,r=draft.rental;
  const set=(v:Partial<EditBody>)=>setDraft(o=>({...o,...v}));
@@ -35,7 +40,7 @@ export function PropertyEdit({property,onSave,onClose}:{property:Row;onSave:(bod
 
  if(open){const title=EDIT_STEPS.find(s=>s.key===open)!.title;
   return <View style={e.sheet}>
-   <View style={e.bar}><Pressable accessibilityRole="button" accessibilityLabel="Назад к списку" onPress={()=>{setOpen(null);setError('');}} disabled={busy} style={e.round}><Text style={e.roundText}>←</Text></Pressable><Text accessibilityRole="header" style={e.title}>{title}</Text></View>
+   <View style={e.bar}><Pressable accessibilityRole="button" accessibilityLabel="Назад к списку" onPress={()=>{setOpen(null);if(!held)setError('');}} disabled={busy||uploading} style={e.round}><Text style={e.roundText}>←</Text></Pressable><Text accessibilityRole="header" style={e.title}>{title}</Text></View>
    {open==='photos'&&<PhotoGrid photos={draft.photos} onChange={photos=>set({photos})} onBusy={setUploading} disabled={busy}/>}
    {open==='flat'&&<>
     <View style={e.chips}>{Object.entries(propertyTypes).map(([id,label])=>chip(id,label,d.type===id,()=>setD({type:id}),true))}</View>
@@ -81,14 +86,14 @@ export function PropertyEdit({property,onSave,onClose}:{property:Row;onSave:(bod
    <View style={{flex:1,minWidth:0}}><Text accessibilityRole="header" numberOfLines={1} style={e.name}>{base.title||'Без названия'}</Text><Text style={[e.state,base.published&&e.stateOn]}>{base.published?'Гости видят на карте':'Скрыто от гостей'}</Text></View>
    <Pressable accessibilityRole="button" accessibilityLabel="Закрыть" onPress={onClose} disabled={busy} style={e.round}><Text style={e.roundText}>✕</Text></Pressable>
   </View>
-  <View style={e.advice} accessibilityLiveRegion="polite">
+  <View style={[e.advice,held&&e.adviceHeld]} accessibilityLiveRegion="polite">
    <View style={e.orb}><Text style={e.orbText}>✦</Text></View>
    <View style={{flex:1,minWidth:0,gap:8}}>
     <Text style={e.adviceText}>{!!done&&<Text style={e.saved}>{done} </Text>}{advice.text}</Text>
-    {!!error&&<Text accessibilityRole="alert" style={e.errorText}>{error}</Text>}
+    
     {!!advice.step&&<View style={e.adviceRow}>
-     <Pressable accessibilityRole="button" disabled={busy} onPress={()=>advice.step==='publish'?commit({...base,published:true},'publish'):go(advice.step as EditStep)} style={e.go}><Text style={e.goText}>{busy&&advice.step==='publish'?'Сохраняю…':advice.action}</Text></Pressable>
-     <Pressable accessibilityRole="button" onPress={()=>{setSkipped(v=>[...v,advice.step as string]);setDone('');}} style={e.later}><Text style={e.laterText}>Не сейчас</Text></Pressable>
+     <Pressable accessibilityRole="button" disabled={busy} onPress={()=>advice.step==='publish'?commit({...(held?draft:base),published:true},'publish'):go(advice.step as EditStep)} style={e.go}><Text style={e.goText}>{busy&&advice.step==='publish'?'Сохраняю…':advice.action}</Text></Pressable>
+     {!held&&<Pressable accessibilityRole="button" onPress={()=>{setSkipped(v=>[...v,advice.step as string]);setDone('');}} style={e.later}><Text style={e.laterText}>Не сейчас</Text></Pressable>}
     </View>}
    </View>
   </View>
@@ -97,7 +102,7 @@ export function PropertyEdit({property,onSave,onClose}:{property:Row;onSave:(bod
    <View style={{flex:1,minWidth:0}}><Text style={e.stepTitle} numberOfLines={1}>{s.title}</Text><Text style={e.stepLine} numberOfLines={1}>{stepLine(base,s.key)}</Text></View>
    {needs&&<View style={e.dot}/>}
   </Pressable>;})}</View>
-  <View style={e.switchRow}><View style={{flex:1}}><Text style={e.stepTitle}>Показывать гостям</Text><Text style={e.stepLine}>{base.published?'Объявление на карте':'Черновик, видите только вы'}</Text></View><Switch accessibilityLabel="Показывать гостям" value={base.published} disabled={busy} onValueChange={v=>commit({...base,published:v},'publish')} trackColor={{true:C.success,false:C.lineStrong}} thumbColor={C.surface}/></View>
+  <View style={e.switchRow}><View style={{flex:1}}><Text style={e.stepTitle}>Показывать гостям</Text><Text style={e.stepLine}>{base.published?'Объявление на карте':'Черновик, видите только вы'}</Text></View><Switch accessibilityLabel="Показывать гостям" value={base.published} disabled={busy} onValueChange={v=>commit({...(held?draft:base),published:v},'publish')} trackColor={{true:C.success,false:C.lineStrong}} thumbColor={C.surface}/></View>
  </View>;
 }
 const e=StyleSheet.create({
@@ -109,7 +114,7 @@ const e=StyleSheet.create({
  name:{color:C.ink,...type.subtitle,fontWeight:'700'},state:{color:C.muted,...type.caption,fontWeight:'600'},stateOn:{color:C.success},
  advice:{flexDirection:'row',gap:12,padding:12,borderRadius:R.lg,backgroundColor:C.accentSoft,borderWidth:1,borderColor:C.accentLine},
  orb:{width:32,height:32,borderRadius:R.full,backgroundColor:C.aiFrom,alignItems:'center',justifyContent:'center'},orbText:{color:C.onAccent,...type.label,fontWeight:'700'},
- adviceText:{color:C.ink,...type.label},saved:{color:C.success,fontWeight:'700'},errorText:{color:C.danger,...type.label},
+ adviceHeld:{backgroundColor:C.dangerSoft,borderColor:C.danger},adviceText:{color:C.ink,...type.label},saved:{color:C.success,fontWeight:'700'},errorText:{color:C.danger,...type.label},
  adviceRow:{flexDirection:'row',alignItems:'center',gap:12},
  go:{minHeight:H.compact,borderRadius:R.full,backgroundColor:C.accent,justifyContent:'center',paddingHorizontal:16},goText:{color:C.onAccent,...type.label,fontWeight:'700'},
  later:{minHeight:H.compact,justifyContent:'center'},laterText:{color:C.muted,...type.label},

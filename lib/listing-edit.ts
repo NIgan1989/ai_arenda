@@ -58,3 +58,15 @@ export function nextAdvice(b:EditBody,skipped:string[]=[]):Advice{
   ...keep(!b.rental.houseRules.trim()&&{step:'rules',text:'Напишите короткие правила: тишина, курение, возврат депозита. Так меньше споров с гостями.',action:'Написать'})];
  return better[0]||{step:null,text:b.published?'Объявление в порядке, гости видят его на карте. Если что-то изменится, откройте нужный пункт.':'Объявление скрыто от гостей. Когда будете готовы, включите показ ниже.'};
 }
+// A save can fail because of another step (an older listing without rules, say): the step to open next.
+export function stepForError(message:string):EditStep|null{
+ const m=message.toLowerCase();
+ return /правил/.test(m)?'rules':/описан|80 символ/.test(m)?'text':/фото/.test(m)?'photos':/адрес|район|город/.test(m)?'place':/цен|депозит|час/.test(m)?'prices':/этаж|спальн|комнат|гост|площад/.test(m)?'flat':/заезд|выезд|заселен|уборк/.test(m)?'checkin':/удобств/.test(m)?'amenities':null;
+}
+
+// When publishing waits for the administrator's check, the flat is sent for review with this reference;
+// approving such a review shows the flat to guests at once (lib/participant-security.ts).
+export const PUBLISH_REVIEW='Показать гостям после проверки';
+export const needsReview=(message:string)=>/провер|допуск/i.test(message)&&!/телефон/i.test(message);
+export function reviewRequest(p:{id:string;title?:string;city?:string;address?:string}){return {propertyId:p.id,reference:PUBLISH_REVIEW+': «'+(p.title||'квартира')+'», '+[p.city,p.address].filter(Boolean).join(', ')};}
+export const REVIEW_SENT='Отправил квартиру на проверку администратору. Как только он подтвердит, она сама появится на карте, а вам придёт уведомление.';

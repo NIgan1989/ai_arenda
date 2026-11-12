@@ -53,3 +53,4 @@
 .pe .pe-list button:focus-visible{outline:2px solid var(--t-focus);outline-offset:2px}
 .pe .pq-tile input:focus,.pe .pq-field input:focus,.pe .pq-field textarea:focus{outline:none!important;box-shadow:0 0 0 3px rgba(99,102,241,.25)!important;border-color:var(--t-accent)!important}
 @media (max-width:767px){.task-sheet .pe-close{display:none}}
+.pe-advice.is-held{background:var(--t-danger-soft);border-color:var(--t-danger)}

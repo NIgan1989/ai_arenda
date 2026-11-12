@@ -3,7 +3,7 @@ import {useEffect,useRef,useState,type ReactNode} from 'react';
 import {ArrowLeft,BedDouble,Camera,Check,Clock,FileText,MapPin,Minus,Plus,ScrollText,Sparkles,Wallet,Wifi,X} from 'lucide-react';
 import {Photo} from './media';
 import {PhotoGrid} from './photo-grid';
-import {EDIT_STEPS,editBody,editRequest,nextAdvice,stepLine,stepNeeds,type EditBody,type EditStep} from '../lib/listing-edit';
+import {EDIT_STEPS,editBody,editRequest,nextAdvice,needsReview,reviewRequest,REVIEW_SENT,stepForError,stepLine,stepNeeds,type Advice,type EditBody,type EditStep} from '../lib/listing-edit';
 import {amenities,checkinMethods,propertyTypes} from '../lib/listings';
 import './property-quick.css';
 import './property-editor.css';
@@ -14,17 +14,22 @@ const SAVED:Record<EditStep|'publish',string>={photos:'Фото сохранен
 
 // Editing a flat: an overview of short steps, each opened on its own small screen and saved at once.
 // After each save the AI administrator offers the next step, so the owner never scrolls a long form.
-export function PropertyEditor({property,role,api,onSave,onClose}:{property:Row;role:string;api:API;onSave:(body:Row)=>Promise<Row|undefined>;onClose:()=>void}){
+export function PropertyEditor({property,role,api,onSave,onReview,onClose}:{property:Row;role:string;api:API;onSave:(body:Row)=>Promise<Row|undefined>;onReview?:(body:Row)=>Promise<unknown>;onClose:()=>void}){
  const [p,setP]=useState(property),[base,setBase]=useState<EditBody>(()=>editBody(property)),[draft,setDraft]=useState<EditBody>(base);
- const [open,setOpen]=useState<EditStep|null>(null),[busy,setBusy]=useState(false),[uploading,setUploading]=useState(false),[error,setError]=useState(''),[done,setDone]=useState(''),[skipped,setSkipped]=useState<string[]>([]);
+ const [open,setOpen]=useState<EditStep|null>(null),[busy,setBusy]=useState(false),[uploading,setUploading]=useState(false),[error,setError]=useState(''),[done,setDone]=useState(''),[skipped,setSkipped]=useState<string[]>([]),[held,setHeld]=useState(false),[sent,setSent]=useState(false);
  const box=useRef<HTMLElement>(null);
  useEffect(()=>{box.current?.scrollIntoView({block:'start',behavior:'instant' as ScrollBehavior});},[open]);
- const advice=nextAdvice(base,skipped);
- function go(step:EditStep){setDraft(base);setError('');setDone('');setOpen(step);}
+ // A save that failed keeps its changes: the owner fixes what the server asked for in another step and everything is saved together.
+ const fix=held&&error?stepForError(error):null;
+ const advice:Advice=held&&error?{step:fix,text:'Не сохранилось: '+error+(fix?' Заполните это, и сохранится всё вместе.':''),action:fix?'Заполнить':undefined}:sent&&!base.published?{step:null,text:REVIEW_SENT}:nextAdvice(base,skipped);
+ function go(step:EditStep){if(!held)setDraft(base);setError(held?error:'');setDone('');setOpen(step);}
  async function commit(next:EditBody,what:EditStep|'publish'){
   if(busy||uploading)return;setBusy(true);setError('');
-  try{const fresh=await onSave(editRequest(next,p));const row=fresh||{...p,listing_version:(p.listing_version||0)+1};setP(row);const b=fresh?editBody(fresh):next;setBase(b);setDraft(b);setOpen(null);setDone(SAVED[what]);}
-  catch(e:any){setError(e?.message||'Не удалось сохранить.');}finally{setBusy(false);}
+  try{const fresh=await onSave(editRequest(next,p));const row=fresh||{...p,listing_version:(p.listing_version||0)+1};setP(row);const b=fresh?editBody(fresh):next;setBase(b);setDraft(b);setOpen(null);setHeld(false);setError('');setDone(SAVED[what]);}
+  catch(e:any){const message=e?.message||'Не удалось сохранить.';
+   // Publishing waits for the administrator: the flat is sent for review instead of failing, and is shown once approved.
+   if(what==='publish'&&next.published&&onReview&&needsReview(message)){try{const kept={...next,published:false};if(held){const fresh=await onSave(editRequest(kept,p));setP(fresh||p);const b=fresh?editBody(fresh):kept;setBase(b);setDraft(b);}await onReview(reviewRequest({id:p.id,title:next.title,city:next.city,address:next.address}));setSent(true);setHeld(false);setDone('');setError('');setOpen(null);return;}catch(r:any){setError(r?.message||message);setHeld(true);setOpen(null);return;}}
+   setError(message);setHeld(true);setOpen(null);}finally{setBusy(false);}
  }
  const d=draft.details,r=draft.rental;
  const set=(v:Partial<EditBody>)=>setDraft(o=>({...o,...v}));
@@ -37,7 +42,7 @@ export function PropertyEditor({property,role,api,onSave,onClose}:{property:Row;
 
  if(open){const title=EDIT_STEPS.find(s=>s.key===open)!.title;
   return <section ref={box} className="pq pe" aria-labelledby="pe-step-title">
-   <header className="pe-bar"><button type="button" className="pq-icon" onClick={()=>{setOpen(null);setError('');}} aria-label="Назад к списку" disabled={busy}><ArrowLeft size={20}/></button><h2 id="pe-step-title">{title}</h2></header>
+   <header className="pe-bar"><button type="button" className="pq-icon" onClick={()=>{setOpen(null);if(!held)setError('');}} aria-label="Назад к списку" disabled={busy||uploading}><ArrowLeft size={20}/></button><h2 id="pe-step-title">{title}</h2></header>
    <div className="pe-body">
     {open==='photos'&&<PhotoGrid photos={draft.photos} onChange={photos=>set({photos})} role={role} api={api} onBusy={setUploading} disabled={busy}/>}
     {open==='flat'&&<>
@@ -83,19 +88,19 @@ export function PropertyEditor({property,role,api,onSave,onClose}:{property:Row;
    <div><h2 id="pe-title">{base.title||'Без названия'}</h2><p className={base.published?'is-on':''}>{base.published?'Гости видят на карте':'Скрыто от гостей'}</p></div>
    <button type="button" className="pq-icon pe-close" onClick={onClose} aria-label="Закрыть" disabled={busy}><X size={20}/></button>
   </header>
-  <div className="pe-advice" role="status">
+  <div className={'pe-advice'+(held?' is-held':'')} role="status">
    <span className="pq-orb pq-orb-sm" aria-hidden="true"><Sparkles size={14}/></span>
    <div><p>{done&&<b>{done} </b>}{advice.text}</p>
-    {error&&<p className="pe-advice-error" role="alert">{error}</p>}
+    
     {advice.step&&<span className="pe-advice-actions">
-     <button type="button" className="pq-send pe-go" disabled={busy} onClick={()=>advice.step==='publish'?commit({...base,published:true},'publish'):go(advice.step as EditStep)}>{busy&&advice.step==='publish'?'Сохраняю…':advice.action}</button>
-     <button type="button" className="pe-later" onClick={()=>{setSkipped(v=>[...v,advice.step as string]);setDone('');}}>Не сейчас</button>
+     <button type="button" className="pq-send pe-go" disabled={busy} onClick={()=>advice.step==='publish'?commit({...(held?draft:base),published:true},'publish'):go(advice.step as EditStep)}>{busy&&advice.step==='publish'?'Сохраняю…':advice.action}</button>
+     {!held&&<button type="button" className="pe-later" onClick={()=>{setSkipped(v=>[...v,advice.step as string]);setDone('');}}>Не сейчас</button>}
     </span>}
    </div>
   </div>
   <ul className="pe-list">
    {EDIT_STEPS.map(s=><li key={s.key}><button type="button" onClick={()=>go(s.key)} className={stepNeeds(base,s.key)?'needs':''}><span className="pe-ico">{ICONS[s.key]}</span><span className="pe-text"><strong>{s.title}</strong><small>{stepLine(base,s.key)}</small></span>{stepNeeds(base,s.key)&&<span className="pe-dot" aria-label="Нужно заполнить"/>}</button></li>)}
-   <li className="pe-wide"><label className="pe-switch"><span className="pe-text"><strong>Показывать гостям</strong><small>{base.published?'Объявление на карте':'Черновик, видите только вы'}</small></span><input type="checkbox" role="switch" checked={base.published} disabled={busy} onChange={e=>commit({...base,published:e.target.checked},'publish')}/></label></li>
+   <li className="pe-wide"><label className="pe-switch"><span className="pe-text"><strong>Показывать гостям</strong><small>{base.published?'Объявление на карте':'Черновик, видите только вы'}</small></span><input type="checkbox" role="switch" checked={base.published} disabled={busy} onChange={e=>commit({...(held?draft:base),published:e.target.checked},'publish')}/></label></li>
   </ul>
  </section>;
 }
