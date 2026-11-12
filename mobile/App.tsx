@@ -13,6 +13,7 @@ import {ActivityClockProvider,ActivityTimer} from './src/ActivityTimer';
 import {ApprovalCard,ApprovalInbox} from './src/ApprovalCard';
 import {PropertyControl,readinessLabels} from './src/PropertyControl';
 import {BookingChanges} from './src/BookingChanges';
+import {StayReview} from './src/StayReview';
 import {WorkspaceNavigation,WorkspaceMenuButton} from './src/WorkspaceNavigation';
 import {PropertyListing} from './src/PropertyListing';
 import {PropertyEdit} from './src/PropertyEdit';
@@ -352,6 +353,7 @@ function Chat(){
           ['requested','confirmed'].includes(b.status)&&!b.terms?.actual_checkin&&{title:'Отменить бронь',kind:'danger',onPress:()=>confirm('bookings/'+id,{action:'cancel'},'Отменить бронирование. Возврат денег согласуется отдельно')},
         ]}/>
         <BookingChanges key={b.id+':'+b.terms?.version} booking={b} role={payload.role} busy={busy} onReview={id=>say('Предложение новых условий.','approval',{id:'change:'+id})} onQuote={body=>request('/api/bookings/'+id+'/change-quote',body)} onPropose={body=>perform('bookings/'+id+'/changes',body,uid())} onDecide={(changeId,action)=>perform('bookings/'+id+'/changes/'+changeId,{action},uid())}/>
+        {payload.role==='guest'&&b.status==='completed'&&!b.review_rating&&<StayReview busy={busy} onSubmit={(rating,text)=>perform('operations/review',{bookingId:id,rating,text},uid())}/>}
       </View>;
     })}</View>;
     if(m.block==='jobs')return <View>{payload.ids.map((id:string)=>{

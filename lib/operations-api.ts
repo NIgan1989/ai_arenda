@@ -19,6 +19,7 @@ import {listCommands,decideAdministratorCommand} from './administrator-commands'
 import {epoch,q,one,rows,validSignature,type Row,type OperationConfig} from './operation-core';
 import {aiBudgetState,saveAIBudget} from './ai-budget';
 import {boundedRequestText} from './request-body';
+import {saveStayReview} from './stay-reviews';
 import {discussionCandidates,openDiscussion,readDiscussion,sendDiscussionMessage,discussionInbox,discussionPhoto,discussionTyping,discussionAvatar} from './process-discussions';
 
 const active=(role:Role,allowed:Role[])=>{if(!allowed.includes(role))throw new DomainError('Операция недоступна в текущей роли.',403);};
@@ -66,6 +67,7 @@ export async function writeOperations(service:RentalService,role:Role,path:strin
  if(route==='governance/ticket')return updateOperatorTicket(service,role,body,platformAdmin);
  if(route==='delivery/telegram')return createTelegramLink(service,role,config);
  if(route==='delivery/channel')return setDeliveryChannel(service,role,body,config);
+ if(route==='review'){active(role,['guest']);return saveStayReview(service,body);}
  if(route==='finance'){active(role,['owner']);return recordFinance(service,body);}
  if(route==='payment-intent'){active(role,['guest']);return createPaymentIntent(service,body,config);}
  if(route==='dispatch/preferences'){active(role,['cleaner']);return saveWorkerDispatch(service,body);}

@@ -2,6 +2,7 @@
 // must be classified before unused-account erasure is enabled for that schema.
 export const accountDeletionColumns:Record<string,string>={
  "platform_billing":"id,enabled,starts_at,rate_bp,min_fee,max_fee,free_bookings,version,updated_by,updated_at,ai_rate_bp",
+ "stay_reviews":"booking_id,property_id,guest_id,owner_id,rating,body,created_at",
  "platform_commissions":"booking_id,owner_id,property_id,booking_amount,rate_bp,amount,mode,settings_version,created_at,managed",
  "owner_balance_entries":"id,owner_id,kind,amount,note,actor_id,request_key,created_at",
  "matching_preferences":"property_id,owner_id,enabled,updated_at",
@@ -90,6 +91,7 @@ export const accountDeletionColumns:Record<string,string>={
  "command_receipts": "user_id,key,digest,result"
 };
 export const accountDeletionFenceSql:Record<string,string>={
+ "account_erased_stay_reviews_insert": "CREATE TRIGGER account_erased_stay_reviews_insert BEFORE INSERT ON stay_reviews WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.guest_id OR user_id=NEW.owner_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END",
  "account_erased_platform_commissions_insert": "CREATE TRIGGER account_erased_platform_commissions_insert BEFORE INSERT ON platform_commissions WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.owner_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END",
  "account_erased_platform_commissions_update": "CREATE TRIGGER account_erased_platform_commissions_update BEFORE UPDATE ON platform_commissions WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.owner_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END",
  "account_erased_owner_balance_entries_insert": "CREATE TRIGGER account_erased_owner_balance_entries_insert BEFORE INSERT ON owner_balance_entries WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.owner_id OR user_id=NEW.actor_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END",

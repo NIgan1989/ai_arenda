@@ -4,6 +4,7 @@ import {planAdministrator,quietNow} from './administrator';
 import {mandateActive} from './rental-policy';
 import type {Role} from './domain';
 import {coordinateDispatch} from './dispatch';
+import {askForReviews} from './stay-reviews';
 import {reviewCleaning,OWNER_REVIEW_SECONDS} from './cleaning-review';
 
 type Row=Record<string,any>;
@@ -105,6 +106,7 @@ export async function checkAdministratorOwner(db:D1Database,ownerId:string){
   }
   await service.query("UPDATE booking_changes SET status='expired',decided_at=? WHERE status='pending' AND expires_at<=? AND booking_id IN(SELECT b.id FROM bookings b JOIN properties p ON p.id=b.property_id WHERE p.owner_id=?)",t,t,ownerId).run();
   await coordinateDispatch(service);
+  await askForReviews(service);
   const actions=await automaticActions(service),data=await ownerData(service),tasks=planAdministrator(data,t);
   // Renew before writes; a superseded scan cannot close another scan's tasks.
   const renew=async()=>{const r=await service.query('UPDATE administrator_runs SET lease_until=? WHERE id=? AND token=?',now()+120,key,token).run();if(!r.meta.changes)throw new Error('Administrator lease was superseded');};
