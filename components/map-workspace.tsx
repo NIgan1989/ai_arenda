@@ -161,6 +161,18 @@ function RoleMap({ role, accountId, data, onDiscussion, onProcess, onCreate, onA
   }, [role, data.profile?.city]);
   useEffect(() => { panel.current?.scrollTo({ top: 0 }); }, [selected, picking, expanded]);
   useEffect(() => { if (!chosen) { setPicking(false); setPicked(null); } }, [selected]);
+  // A flat just added with the AI asks to be put on the map: open it with the point picker on.
+  const [pendingPick, setPendingPick] = useState('');
+  useEffect(() => {
+    if (role !== 'owner') return;
+    const take = () => { try { const id = sessionStorage.getItem('owner-map-pick'); if (id) { sessionStorage.removeItem('owner-map-pick'); setPendingPick(id); } } catch { /* storage off */ } };
+    take(); window.addEventListener('owner-map-pick', take); return () => window.removeEventListener('owner-map-pick', take);
+  }, [role]);
+  useEffect(() => {
+    if (!pendingPick || !flats.some(f => f.id === pendingPick)) return;
+    setSelected('property:' + pendingPick); setPendingPick(''); setExpanded(false);
+    requestAnimationFrame(() => { setPicked(null); setPicking(true); });
+  }, [pendingPick, flats]);
 
   // My own position is kept in the browser and forgotten after 90 seconds without an update.
   useEffect(() => {

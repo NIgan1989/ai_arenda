@@ -23,6 +23,7 @@ import {useQueryClient,isCancelledError} from '@tanstack/react-query';
 import {RecordCollection} from '../components/patterns/record-collection';
 import {processStatus} from '../lib/process-status';
 import {MapWorkspace} from '../components/map-workspace';
+import {PropertyQuick} from '../components/property-quick';
 import {TaskSheet} from '../components/task-sheet';
 import {CatalogPage} from '../components/catalog-page';
 import {PageSkeleton} from '../components/patterns/page-skeleton';
@@ -135,7 +136,7 @@ export default function Chat({workspaceRole,section,accountId}:{workspaceRole:Ro
   }
   function startProperty(state=data){
     if(!beginProfile('owner','property',state))return;
-    say('Заполните карточку жилья. Можно сохранить черновик и вернуться позже.','property-editor',{});
+    say('Расскажите о квартире одним сообщением, остальное заполню сам.','property-quick',{});
   }
   function listProperties(state=data,own=false,query=''){
     if((own?'owner':'guest')!==workspaceRole){say('Для этой страницы нужно переключить роль.');return;}
@@ -271,6 +272,7 @@ export default function Chat({workspaceRole,section,accountId}:{workspaceRole:Ro
     if(m.block==='assistant-brief')return renderAssistantBrief();
     if(m.done)return <div className="done"><Check size={14}/>{m.outcome||'Сохранено'}</div>;
     if(m.block==='booking-action'){const b=data.bookings.find((b:Row)=>b.id===p.id);return <DecisionPrompt title={p.action==='checkin'?'Подтвердить заселение':p.action==='deposit_received'?'Подтвердить депозит':p.action==='report_checkout'?'Сообщить о выезде':'Подтвердить освобождение'} subject={b?.title||'Бронирование'} busy={busy} acceptLabel="Подтверждаю" onAccept={()=>perform('bookings/'+p.id,{action:p.action,expectedVersion:p.version},m.id)} onDismiss={()=>finish(m.id,'Действие не выполнено')}><dl><div><dt>Заезд</dt><dd>{b&&date(b.start)}</dd></div><div><dt>Выезд</dt><dd>{b&&date(b.end)}</dd></div><div><dt>Депозит</dt><dd>{money(b?.terms?.deposit||0)}</dd></div></dl></DecisionPrompt>;}
+    if(m.block==='property-quick')return <PropertyQuick city={profile?.city||'Павлодар'} role={role} api={async(path,body)=>body?post(path,body):fetch('/api/'+path,{headers:{'X-Workspace-Role':role}}).then(r=>r.json())} onSave={body=>post('listings',body)} onGuestMode={body=>post('operations/matching/preference',body)} onClose={()=>finish(m.id,'Добавление отменено')} onMap={id=>{try{sessionStorage.setItem('owner-map-pick',id);}catch{}finish(m.id,'Квартира добавлена');if(section==='map'){setMapActionOpen(false);window.dispatchEvent(new Event('owner-map-pick'));}else window.location.href='/workspace/owner/map';}} onDone={async saved=>{finish(m.id,'Квартира добавлена');const state=await load();say(saved.message);listProperties(state,true);}}/>;
     if(m.block==='property-editor'){const property=p.id?data.ownProperties.find((v:Row)=>v.id===p.id):undefined;return <PropertyEditor property={property} city={profile?.city||'Павлодар'} role={role} api={async(path,body)=>body?post(path,body):fetch('/api/'+path,{headers:{'X-Workspace-Role':role}}).then(r=>r.json())} onClose={()=>finish(m.id,'Форма закрыта')} onSave={async body=>{const result=await post('listings'+(p.id?'/'+p.id:''),body);const state=await load();finish(m.id);say(result.message);listProperties(state,true);}}/>;}
     if(m.block==='property-settings'){const property=data.ownProperties.find((item:Row)=>item.id===p.id);return property?<PropertyControl key={property.id+':'+property.policy.version} property={property} busy={busy} onSave={body=>perform('properties/'+property.id+'/policy',body)} onReadiness={body=>perform('properties/'+property.id+'/readiness',body)}/>:<p>Квартира больше недоступна.</p>;}
     if(m.block==='signin')return <a className="inline-button" href="/" target="_top">Войти и продолжить<ArrowUpRight size={14}/></a>;
