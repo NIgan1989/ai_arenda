@@ -8,6 +8,7 @@ import {Sheet,SheetContent,SheetHeader,SheetTitle,SheetDescription} from '../ui/
 import {Table,TableHeader,TableRow,TableHead,TableBody,TableCell} from '../ui/table';
 import {processStatus} from '../../lib/process-status';import {groupRecords,recordGroupLabels} from '../../lib/record-groups';import {recordSpan as span} from '../../lib/record-span';
 import {Photo} from '../media';
+import {useActivityClock} from '../activity-clock';
 import './record-collection.css';
 import {ProcessJourney} from '../process-journey';
 type Row=Record<string,any>;
@@ -22,7 +23,8 @@ export function RecordCollection({items,kind,role,userId,applications=[],propert
  const [search,setSearch]=useState(''),[tab,setTab]=useState('all'),[view,setView]=useState<'list'|'cards'|'table'>('list'),[page,setPage]=useState(1),[selected,setSelected]=useState<string|null>(null);
  useEffect(()=>{const close=()=>setSelected(null);window.addEventListener('process-discussion-open',close);return()=>window.removeEventListener('process-discussion-open',close);},[]);
  const propertyFor=(item:Row)=>kind==='property'?item:properties.find(p=>p.id===item.property_id)||item;
- const [opened]=useState(()=>Math.floor(Date.now()/1000));
+ // Groups follow the shared clock, a minute at a time: a stay that ends moves out of «Сейчас», and midnight moves «Завтра» to «Сегодня».
+ const clock=useActivityClock(),[mounted]=useState(()=>Math.floor(Date.now()/1000)),opened=Math.floor((clock||mounted)/60)*60;
  const cover=(item:Row,onlyReal=false)=>{const p=propertyFor(item);let photos=p.photos||[];if(!photos.length&&item.property_photos){try{photos=JSON.parse(item.property_photos);}catch{photos=[];}}if(onlyReal&&!photos.length)return null;return <div className="record-property-photo"><Photo id={photos[0]} role={role} alt={'Фото: '+item.title} rejectTiny fallback={kind==='booking'?<CalendarDays size={24}/>:kind==='job'?<Sparkles size={24}/>:<Building2 size={24}/>}/></div>;};
  // The top of an opened booking or cleaning: what it is, where it stands, when and how much. Said once, so the
  // blocks below it carry only details and actions.
