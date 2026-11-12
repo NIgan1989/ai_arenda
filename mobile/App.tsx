@@ -1,6 +1,6 @@
 import React,{Fragment,useEffect,useRef,useState} from 'react';
 import {groupRecords,recordGroupLabels} from '../lib/record-groups';
-import { ActivityIndicator,AppState,BackHandler,KeyboardAvoidingView,Platform,Pressable,ScrollView,StatusBar,Text,TextInput,View } from 'react-native';
+import { ActivityIndicator,AppState,BackHandler,KeyboardAvoidingView,Linking,Platform,Pressable,ScrollView,StatusBar,Text,TextInput,View } from 'react-native';
 import { SafeAreaProvider,SafeAreaView } from 'react-native-safe-area-context';
 import {NativeChats,type NativeChatInitial} from './src/NativeChats';
 import {StayRequest,CleaningRequest} from './src/StayRequest';
@@ -49,6 +49,7 @@ function BookingReview({flow,busy,done,result,onConfirm,onEdit}:{flow:Flow;busy:
 }
 function Auth({onSubmit,busy,titled=true}:{titled?:boolean;onSubmit:(mode:string,phone:string,password:string,name?:string,city?:string,recovery?:string)=>Promise<void>;busy:boolean}){
   const [mode,setMode]=useState('login'),[phone,setPhone]=useState(''),[password,setPassword]=useState(''),[name,setName]=useState(''),[city,setCity]=useState('Павлодар'),[recovery,setRecovery]=useState(''),[error,setError]=useState('');
+  const [accepted,setAccepted]=useState(false);const legal=(path:string)=>void Linking.openURL(API_URL+path).catch(()=>setError('Не удалось открыть документ.'));
   return <View style={s.card}>
     {(titled||mode!=='login')&&<Text style={s.cardTitle}>{mode==='register'?'Один аккаунт для всех устройств':mode==='recover'?'Восстановить доступ':'С возвращением'}</Text>}
     <Text style={s.meta}>Номер телефона и пароль те же, что на сайте. Брони и чаты общие.</Text>
@@ -56,8 +57,9 @@ function Auth({onSubmit,busy,titled=true}:{titled?:boolean;onSubmit:(mode:string
     <Text style={s.fieldLabel}>Номер телефона</Text><TextInput accessibilityLabel="Номер телефона" style={s.field} placeholder="+7 777 123 45 67" placeholderTextColor={C.muted} value={phone} onChangeText={setPhone} keyboardType="phone-pad" autoComplete="tel" maxLength={30} editable={!busy}/>
     {mode==='recover'&&<><Text style={s.fieldLabel}>Резервный код</Text><TextInput accessibilityLabel="Резервный код" style={s.field} value={recovery} onChangeText={setRecovery} maxLength={80} autoCapitalize="none" autoCorrect={false} editable={!busy}/><Text style={s.meta}>Восстановление завершит прежние сеансы на всех устройствах.</Text></>}
     <Text style={s.fieldLabel}>{mode==='recover'?'Новый пароль':'Пароль'}</Text><TextInput accessibilityLabel="Пароль" style={s.field} placeholder="От 10 символов" placeholderTextColor={C.muted} value={password} onChangeText={setPassword} secureTextEntry autoCapitalize="none" autoCorrect={false} autoComplete={mode==='register'?'new-password':'current-password'} maxLength={128} editable={!busy}/>
+    {mode==='register'&&<><Pressable accessibilityRole="checkbox" accessibilityState={{checked:accepted}} disabled={busy} onPress={()=>setAccepted(v=>!v)} style={s.keyval}><Text style={[s.text,{flex:1}]}>{accepted?'☑':'☐'} Принимаю Пользовательское соглашение и даю согласие на обработку персональных данных</Text></Pressable><View style={{flexDirection:'row',flexWrap:'wrap',gap:16}}><Text accessibilityRole="link" style={[s.meta,{textDecorationLine:'underline',minHeight:44,paddingVertical:12}]} onPress={()=>legal('/terms')}>Соглашение</Text><Text accessibilityRole="link" style={[s.meta,{textDecorationLine:'underline',minHeight:44,paddingVertical:12}]} onPress={()=>legal('/privacy/consent')}>Согласие на обработку</Text></View></>}
     {!!error&&<Text accessibilityRole="alert" style={s.error}>{error}</Text>}
-    <Button title={mode==='register'?'Создать аккаунт':mode==='recover'?'Обновить пароль':'Войти'} disabled={busy} onPress={()=>{setError('');onSubmit(mode,phone,password,name,city,recovery).then(()=>setPassword('')).catch(e=>setError(isOffline(e)?'':e.message));}}/>
+    <Button title={mode==='register'?'Создать аккаунт':mode==='recover'?'Обновить пароль':'Войти'} disabled={busy||mode==='register'&&!accepted} onPress={()=>{setError('');onSubmit(mode,phone,password,name,city,recovery).then(()=>setPassword('')).catch(e=>setError(isOffline(e)?'':e.message));}}/>
     <Button secondary title="Забыли пароль?" disabled={busy} onPress={()=>{setError('');setPassword('');setRecovery('');setMode('recover');}}/>
     <Button secondary title={mode==='register'?'Уже есть аккаунт':'Создать новый аккаунт'} disabled={busy} onPress={()=>{setError('');setPassword('');setMode(mode==='register'?'login':'register');}}/>
   </View>;

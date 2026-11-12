@@ -12,3 +12,4 @@ html[data-design="unified"] .onboarding-auth .auth-form{margin-top:8px}
  html[data-design="unified"] .onboarding-intro>ul{margin-top:16px;gap:8px}
  html[data-design="unified"] .onboarding-intro li{font-size:14px;line-height:20px}
 }
+.auth-accept a{color:var(--t-accent);text-decoration:underline}
