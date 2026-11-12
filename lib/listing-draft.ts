@@ -73,8 +73,10 @@ export function readListingText(text:string,base:ListingDraft):{draft:ListingDra
  if(/без (?:депозит|залог)/.test(t))set('deposit',0);else{const deposit=new RegExp('(?:депозит|залог)[а-я]*\\s*(?:[:—–-]|в)?\\s*'+NUM,'u').exec(t);if(deposit)set('deposit',amount(deposit[1],deposit[2]));}
  const fee=new RegExp('уборк[а-я]*\\s*(?:[:—–-]|стоит|за)?\\s*'+NUM,'u').exec(t);if(fee){const v=amount(fee[1],fee[2]);if(v>=100)set('cleaningFee',v);}
 
- const has=AMENITY_WORDS.filter(([,re])=>re.test(t)).map(([id])=>id);
- if(has.length){set('amenities',[...new Set([...d.amenities,...has])]);}
+ // «без лифта», «нет кондиционера» name what the flat lacks, so a negated mention removes the amenity.
+ const negated=(at:number)=>/(?:^|[^а-я])(?:без|нет|не)\s+(?:[а-я-]+\s+)?$/.test(t.slice(Math.max(0,at-24),at));
+ const mentions=AMENITY_WORDS.map(([id,re])=>{const all=[...t.matchAll(new RegExp(re.source,'g'))];return {id,said:all.length>0,has:all.some(m=>{const at=m.index||0;return !negated(at)&&!/^[а-я-]*\s+(?:нет|не\s|отсутств)/.test(t.slice(at+m[0].length,at+m[0].length+24));})};}).filter(m=>m.said);
+ if(mentions.length)set('amenities',[...new Set([...d.amenities.filter(a=>!mentions.some(m=>m.id===a&&!m.has)),...mentions.filter(m=>m.has).map(m=>m.id)])]);
  if(/(?:можно|разрешен[а-я]*|допуска[а-я]*)\s*(?:с\s*)?(?:питом|животн|собак|кош)|(?:питом|животн)[а-я]*\s*(?:можно|разрешен|допуска)|pet.?friendly/.test(t))set('pets',true);
  else if(/без (?:питом|животн)|(?:питом|животн)[а-я]*\s*(?:нельзя|запрещ|не допуска)/.test(t))set('pets',false);
  if(/(?:можно|разрешено)\s*курить|курение\s*разрешено|курить можно/.test(t))set('smoking',true);
@@ -99,13 +101,16 @@ export function readListingText(text:string,base:ListingDraft):{draft:ListingDra
  return {draft:d,found};
 }
 
-// The owner's answer to one question is taken whole when the general reading finds nothing.
+// A money answer: «3000», «3 000 ₸», «2,5 тыс», «3к».
+export function moneyAnswer(text:string){const m=new RegExp(NUM,'u').exec(lower(text));return m?amount(m[1],m[2]):0;}
+
+// The owner's answer to one question changes only that field, never what he said before.
 export function answerDraft(draft:ListingDraft,key:DraftQuestion['key'],answer:string):ListingDraft{
  const text=answer.trim();if(!text)return draft;
- const {draft:read}=readListingText(text,draft);
- if(read.known.includes(key)&&read[key]!==draft[key])return read;
- if(key==='price'){const v=amount((text.match(/\d[\d  ]*(?:[.,]\d+)?/)?.[0]||'0'),/тыс|\dк/i.test(text)?'k':undefined);return v>=100?{...read,price:v,known:[...new Set([...read.known,'price'])]}:read;}
- return {...read,[key]:text.slice(0,key==='address'?300:120),known:[...new Set([...read.known,key])]};
+ let value:string|number;
+ if(key==='price'){value=moneyAnswer(text);if(!(value>=100))return draft;}
+ else{const {draft:read}=readListingText(text,draft);value=read.known.includes(key)&&read[key]!==draft[key]?read[key]:text.slice(0,key==='address'?300:120);}
+ return {...draft,[key]:value,known:[...new Set([...draft.known,key])]};
 }
 
 export function draftQuestions(d:ListingDraft):DraftQuestion[]{

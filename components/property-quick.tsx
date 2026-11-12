@@ -6,7 +6,7 @@ import {useMemo,useRef,useState} from 'react';
 import {ArrowLeft,ArrowUp,Building2,Camera,Check,MapPin,Minus,Plus,Sparkles,X} from 'lucide-react';
 import {Photo,preparePhoto} from './media';
 import {amenities,checkinMethods,propertyTypes} from '../lib/listings';
-import {DRAFT_EXAMPLE,answerDraft,draftDescription,draftListingBody,draftQuestions,draftRules,draftTitle,emptyDraft,readListingText,type ListingDraft} from '../lib/listing-draft';
+import {DRAFT_EXAMPLE,answerDraft,draftDescription,draftListingBody,draftQuestions,draftRules,draftTitle,emptyDraft,moneyAnswer,readListingText,type ListingDraft} from '../lib/listing-draft';
 import {plural} from '../lib/map-search-request';
 import './property-quick.css';
 type Row=Record<string,any>;
@@ -28,7 +28,7 @@ export function PropertyQuick({city,role,api,onSave,onGuestMode,onClose,onMap,on
 
  function read(){if(!text.trim())return;const r=readListingText(text,draft);setDraft(r.draft);setFound(r.found);setError('');setStep(1);}
  function reply(e:React.FormEvent){e.preventDefault();if(!ask||!answer.trim())return;
-  if(ask.key==='cleaningFee'){const v=Number(answer.replace(/[^\d]/g,''))*(/тыс|\dк/i.test(answer)?1000:1);if(v>=100)patch({cleaningFee:v});else{setError('Напишите сумму числом, от 100 ₸.');return;}}
+  if(ask.key==='cleaningFee'){const v=moneyAnswer(answer);if(v>=100)patch({cleaningFee:v});else{setError('Напишите сумму числом, от 100 ₸.');return;}}
   else setDraft(d=>answerDraft(d,ask.key,answer));
   setAnswer('');setError('');requestAnimationFrame(()=>answerRef.current?.focus());}
  async function addPhotos(files:FileList|null){if(!files?.length)return;setUploading(true);setError('');try{for(const file of Array.from(files).slice(0,8-photos.length)){const data=await preparePhoto(file),r=await api('media',{kind:'property',data});setPhotos(v=>v.length<8&&!v.includes(r.id)?[...v,r.id]:v);}}catch(e:any){setError(e.message||'Фото не загрузилось.');}finally{setUploading(false);}}

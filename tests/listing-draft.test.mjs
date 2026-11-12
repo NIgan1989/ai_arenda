@@ -1,6 +1,6 @@
 import {test} from 'node:test';import assert from 'node:assert/strict';
 import {load} from './helpers/platform.mjs';
-const {readListingText,emptyDraft,DRAFT_EXAMPLE,draftQuestions,draftListingBody,answerDraft,draftTitle}=await load('listing-draft');
+const {moneyAnswer,readListingText,emptyDraft,DRAFT_EXAMPLE,draftQuestions,draftListingBody,answerDraft,draftTitle}=await load('listing-draft');
 const {listingInput}=await load('listings');
 const read=t=>readListingText(t,emptyDraft('Павлодар'));
 
@@ -35,4 +35,13 @@ test('the draft becomes a body the listing validator accepts, and the public tex
 test('the owner\'s own title and text win over the generated ones',()=>{
  const {draft}=read(DRAFT_EXAMPLE),d={...draft,title:'Вид на Иртыш',description:'Свой текст'};
  const body=draftListingBody(d,[],false);assert.equal(body.title,'Вид на Иртыш');assert.equal(body.description,'Свой текст');
+});
+test('negated amenities are not advertised and an earlier mention is withdrawn',()=>{
+ const {draft:d}=read('Однушка, без лифта, без балкона, нет кондиционера, есть Wi-Fi');assert.deepEqual(d.amenities,['wifi']);
+ const {draft:again}=readListingText('кондиционера нет, без кондиционера',{...d,amenities:['wifi','aircon']});assert.deepEqual(again.amenities,['wifi']);
+});
+test('answers keep decimals and change only the asked field',()=>{
+ assert.equal(moneyAnswer('2,5 тыс'),2500);assert.equal(moneyAnswer('2.5 тыс'),2500);assert.equal(moneyAnswer('3 000 ₸'),3000);assert.equal(moneyAnswer('3к'),3000);
+ const {draft:studio}=read('Студия в центре, 12 000 в сутки');const d=answerDraft(studio,'address','ул. Ленина 5, квартира 12');
+ assert.equal(d.type,'studio');assert.equal(d.address,'ул. Ленина 5, кв. 12');assert.equal(answerDraft(studio,'price','2,5 тыс').price,2500);
 });

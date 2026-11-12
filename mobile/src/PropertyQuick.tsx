@@ -8,7 +8,7 @@ import {T} from './tokens';
 import {Photo,PhotoUpload} from './ListingMedia';
 import {Stepper} from './SheetParts';
 import {amenities,checkinMethods,propertyTypes} from '../../lib/listings';
-import {DRAFT_EXAMPLE,answerDraft,draftDescription,draftListingBody,draftQuestions,draftRules,draftTitle,emptyDraft,readListingText,type ListingDraft} from '../../lib/listing-draft';
+import {DRAFT_EXAMPLE,answerDraft,draftDescription,draftListingBody,draftQuestions,draftRules,draftTitle,emptyDraft,moneyAnswer,readListingText,type ListingDraft} from '../../lib/listing-draft';
 import {plural} from '../../lib/map-search-request';
 type Row=Record<string,any>;
 type Saved={id:string;message:string;published:boolean};
@@ -27,7 +27,7 @@ export function PropertyQuick({city,onSave,onGuestMode,onClose,onMap,onDone}:{ci
  const guessed=(key:string)=>!draft.known.includes(key);
  function read(){if(!text.trim())return;const r=readListingText(text,draft);setDraft(r.draft);setFound(r.found);setError('');setStep(1);}
  function reply(){if(!ask||!answer.trim())return;
-  if(ask.key==='cleaningFee'){const v=Number(answer.replace(/[^\d]/g,''))*(/тыс|\dк/i.test(answer)?1000:1);if(v>=100)patch({cleaningFee:v});else{setError('Напишите сумму числом, от 100 ₸.');return;}}
+  if(ask.key==='cleaningFee'){const v=moneyAnswer(answer);if(v>=100)patch({cleaningFee:v});else{setError('Напишите сумму числом, от 100 ₸.');return;}}
   else setDraft(d=>answerDraft(d,ask.key as 'address'|'district'|'price',answer));
   setAnswer('');setError('');}
  async function save(){
