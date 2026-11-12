@@ -5,6 +5,7 @@
 import {useEffect,useMemo,useRef,useState} from 'react';
 import {ArrowLeft,ArrowUp,Building2,Camera,Check,MapPin,Minus,Plus,Sparkles,X} from 'lucide-react';
 import {Photo,preparePhoto} from './media';
+import {PhotoGrid} from './photo-grid';
 import {amenities,checkinMethods,propertyTypes} from '../lib/listings';
 import {DRAFT_EXAMPLE,answerDraft,draftDescription,draftListingBody,draftQuestions,draftRules,draftTitle,emptyDraft,moneyAnswer,readListingText,type ListingDraft} from '../lib/listing-draft';
 import {plural} from '../lib/map-search-request';
@@ -62,11 +63,7 @@ export function PropertyQuick({city,role,api,onSave,onGuestMode,onPlace,onClose,
   {step===0&&<div className="pq-body">
    <label className="pq-line"><span className="pq-sr">Расскажите о квартире</span><textarea value={text} onChange={e=>setText(e.target.value)} rows={5} maxLength={2000} autoFocus={fine} placeholder="Например: однушка на Торайгырова 64, 4 этаж, до 3 гостей, есть Wi-Fi и стиралка, 15 000 в сутки, 2 500 в час" onKeyDown={e=>{if(e.key==='Enter'&&(e.metaKey||e.ctrlKey))read();}}/>
     <span className="pq-line-bar"><button type="button" className="pq-chip" onClick={()=>setText(DRAFT_EXAMPLE)}>Пример</button><span className="pq-count">{text.length? text.length+' / 2000':'Порядок не важен'}</span></span></label>
-   <div className="pq-photos" aria-label="Фотографии">
-    {photos.map((id,i)=><figure key={id} className="pq-photo"><Photo id={id} role={role} alt={'Фото '+(i+1)}/>{i===0&&<figcaption>Обложка</figcaption>}<button type="button" className="pq-photo-x" aria-label={'Убрать фото '+(i+1)} onClick={()=>setPhotos(v=>v.filter(x=>x!==id))}><X size={14}/></button></figure>)}
-    {photos.length<8&&<button type="button" className="pq-photo pq-photo-add" onClick={()=>fileRef.current?.click()} disabled={uploading}><Camera size={22}/><span>{uploading?'Загружаю…':photos.length?'Ещё фото':'Добавить фото'}</span></button>}
-    <input ref={fileRef} type="file" hidden multiple accept="image/jpeg,image/png,image/webp" onChange={e=>{void addPhotos(e.target.files);e.target.value='';}}/>
-   </div>
+   <PhotoGrid photos={photos} onChange={setPhotos} role={role} api={api} onBusy={setUploading}/>
    <p className="pq-hint">ИИ поймёт комнаты, этаж, площадь, гостей, цены за сутки и час, удобства, правила и адрес. Фото можно добавить и потом.</p>
    <div className="pq-actions"><button type="button" className="pq-primary" disabled={!text.trim()||uploading} onClick={read}><Sparkles size={18}/>Заполнить с ИИ</button></div>
   </div>}

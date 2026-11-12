@@ -5,7 +5,8 @@ import React,{useMemo,useState} from 'react';
 import {View,Text,TextInput,Pressable,StyleSheet} from 'react-native';
 import {C,type} from './styles';
 import {T} from './tokens';
-import {Photo,PhotoUpload} from './ListingMedia';
+import {Photo} from './ListingMedia';
+import {PhotoGrid} from './PhotoGrid';
 import {Stepper} from './SheetParts';
 import {amenities,checkinMethods,propertyTypes} from '../../lib/listings';
 import {DRAFT_EXAMPLE,answerDraft,draftDescription,draftListingBody,draftQuestions,draftRules,draftTitle,emptyDraft,moneyAnswer,readListingText,type ListingDraft} from '../../lib/listing-draft';
@@ -55,8 +56,7 @@ export function PropertyQuick({city,onSave,onGuestMode,onPlace,onClose,onMap,onD
   {step===0&&<View style={q.body}>
    <View style={q.line}><TextInput accessibilityLabel="Расскажите о квартире" style={q.lineInput} multiline value={text} onChangeText={setText} maxLength={2000} placeholder="Например: однушка на Торайгырова 64, 4 этаж, до 3 гостей, есть Wi-Fi и стиралка, 15 000 в сутки, 2 500 в час" placeholderTextColor={C.muted} textAlignVertical="top"/>
     <View style={q.lineBar}><Pressable accessibilityRole="button" onPress={()=>setText(DRAFT_EXAMPLE)} style={q.chip}><Text style={q.chipText}>Пример</Text></Pressable><Text style={q.hint}>{text.length?text.length+' / 2000':'Порядок не важен'}</Text></View></View>
-   {photos.length>0&&<View style={q.photos}>{photos.map((id,i)=><View key={id} style={q.photo}><Photo id={id} alt={'Фото '+(i+1)}/><Pressable accessibilityRole="button" accessibilityLabel={'Убрать фото '+(i+1)} onPress={()=>setPhotos(v=>v.filter(x=>x!==id))} style={q.photoX}><Text style={q.photoXText}>✕</Text></Pressable></View>)}</View>}
-   <PhotoUpload kind="property" onBusy={setUploading} disabled={photos.length>=8} onAdd={id=>setPhotos(v=>v.length<8&&!v.includes(id)?[...v,id]:v)}/>
+   <PhotoGrid photos={photos} onChange={setPhotos} onBusy={setUploading}/>
    <Text style={q.hint}>ИИ поймёт комнаты, этаж, площадь, гостей, цены за сутки и час, удобства, правила и адрес. Фото можно добавить и потом.</Text>
    <Pressable accessibilityRole="button" accessibilityState={{disabled:!text.trim()||uploading}} disabled={!text.trim()||uploading} onPress={read} style={[q.primary,(!text.trim()||uploading)&&q.primaryOff]}><Text style={q.primaryText}>✦  Заполнить с ИИ</Text></Pressable>
   </View>}
