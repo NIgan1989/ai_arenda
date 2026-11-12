@@ -3,11 +3,11 @@ const allowed=path=>/^\/workspace\/(guest|owner|cleaner)\/(assistant|map)$/.test
 self.addEventListener('push',event=>{
  let data={};try{data=event.data?.json()||{};}catch{}
  // The AI administrator's price advice is answered right from the notification: two buttons, the owner's choice.
- if(data.kind==='price'&&data.decision&&typeof data.decision.id==='string'){
+ if((data.kind==='price'||data.kind==='window')&&data.decision&&typeof data.decision.id==='string'){
   const d=data.decision;
-  event.waitUntil(self.registration.showNotification(String(data.title||'Совет по цене').slice(0,120),{
-   body:String(data.body||'').slice(0,300),icon:'/brand-mark.png',badge:'/brand-mark.png',tag:'price-advice',renotify:true,requireInteraction:true,
-   data:{url:'/workspace/owner/map',decision:{id:d.id,revision:d.revision}},
+  event.waitUntil(self.registration.showNotification(String(data.title||'AI администратор').slice(0,120),{
+   body:String(data.body||'').slice(0,300),icon:'/brand-mark.png',badge:'/brand-mark.png',tag:data.kind==='window'?'calendar-window':'price-advice',renotify:true,requireInteraction:true,
+   data:{url:'/workspace/owner/map',decision:{id:d.id,revision:d.revision,done:d.done&&typeof d.done==='object'?{accept:String(d.done.accept||'').slice(0,80),reject:String(d.done.reject||'').slice(0,80)}:null}},
    actions:[{action:'accept',title:String(d.accept||'Принять').slice(0,40)},{action:'reject',title:String(d.reject||'Оставить').slice(0,40)}]
   }));
   return;
@@ -30,7 +30,7 @@ async function decide(decision,action){
   const r=await fetch('/api/approvals',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json','X-Workspace-Role':'owner'},body:JSON.stringify({id:decision.id,revision:decision.revision,action})});
   const v=await r.json().catch(()=>({}));
   if(!r.ok)return openApp('/workspace/owner/map');
-  return self.registration.showNotification(action==='accept'?'Цена обновлена':'Цена осталась прежней',{body:String(v.message||'').slice(0,300),icon:'/brand-mark.png',badge:'/brand-mark.png',tag:'price-advice',data:{url:'/workspace/owner/map'}});
+  return self.registration.showNotification(decision.done?.[action]||(action==='accept'?'Цена обновлена':'Цена осталась прежней'),{body:String(v.message||'').slice(0,300),icon:'/brand-mark.png',badge:'/brand-mark.png',tag:decision.done?'calendar-window':'price-advice',data:{url:'/workspace/owner/map'}});
  }catch{return openApp('/workspace/owner/map');}
 }
 self.addEventListener('notificationclick',event=>{

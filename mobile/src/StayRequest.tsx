@@ -1,4 +1,5 @@
 import React,{useEffect,useMemo,useRef,useState} from 'react';
+import {windowBadge} from '../../lib/window-badge';
 import {ActivityIndicator,Pressable,ScrollView,StyleSheet,Text,TextInput,View} from 'react-native';
 import {C,type} from './styles';
 import {T} from './tokens';
@@ -56,7 +57,7 @@ export function StayRequest({property,busy,done,result,onQuote,onConfirm}:{prope
   <View style={p.row}><View style={p.half}><Stepper label={choice.mode==='hourly'?'Сколько часов':choice.mode==='nightly'?'Сколько ночей':'Сколько суток'} value={choice.count} min={limits.min} max={limits.max} disabled={busy} format={n=>n+' '+stayUnit(choice.mode,n)} onChange={count=>change({count})}/></View>{(property.capacity||1)>1&&<View style={p.half}><Stepper label="Гости" value={guests} min={1} max={property.capacity} disabled={busy} format={guestsWord} onChange={setGuests}/></View>}</View>
   <View style={[p.total,!!error&&!quote&&{backgroundColor:C.dangerSoft}]} accessibilityLiveRegion="polite">
    <Text style={p.span}>{recordSpan(span.start,span.end)}</Text>
-   {quote?<><View style={p.sum}><Text style={[p.amount,checking&&p.dim]}>{money(quote.amount)}</Text><Text style={p.sumNote}>{quote.periods} × {money(quote.price)} · {quote.unitLabel}</Text></View><Text style={p.fact}>Депозит: {quote.policy.deposit?money(quote.policy.deposit)+', отдельно от проживания':'не нужен'}</Text><Text style={p.fact}>{quote.policy.auto_confirm?'Подтверждается сразу, по правилам владельца.':'Владелец отвечает в течение 30 минут.'}</Text></>
+   {quote?<><View style={p.sum}><Text style={[p.amount,checking&&p.dim]}>{money(quote.amount)}</Text><Text style={p.sumNote}>{quote.periods} × {money(quote.price)} · {quote.unitLabel}</Text></View>{!!quote.window&&<Text style={p.window}>✦ {windowBadge(quote.window)} · обычно {money(quote.window.regular)}/час</Text>}<Text style={p.fact}>Депозит: {quote.policy.deposit?money(quote.policy.deposit)+', отдельно от проживания':'не нужен'}</Text><Text style={p.fact}>{quote.policy.auto_confirm?'Подтверждается сразу, по правилам владельца.':'Владелец отвечает в течение 30 минут.'}</Text></>
     :error?<Text accessibilityRole="alert" style={p.error}>{error}</Text>:<View style={p.wait}><ActivityIndicator color={C.accent}/><Text style={p.fact}>Проверяю свободное время и цену…</Text></View>}
   </View>
   {!!quote?.policy.house_rules&&<Text style={p.note}>Правила проживания: {quote.policy.house_rules}</Text>}
@@ -85,6 +86,7 @@ export function CleaningRequest({property,busy,done,result,onSubmit}:{property:R
 }
 const R=T.radius,H=T.control;
 const p=StyleSheet.create({
+ window:{...type.label,marginTop:8,paddingHorizontal:12,paddingVertical:4,alignSelf:'flex-start',borderRadius:T.radius.full,overflow:'hidden',backgroundColor:C.surface,borderWidth:1,borderColor:C.accentLine,color:C.accent,fontWeight:'600'},
  card:{gap:16,marginTop:12,padding:16,borderRadius:R.xl,borderWidth:1,borderColor:C.line,backgroundColor:C.surface},
  head:{gap:4},eyebrow:{...type.caption,color:C.accent,fontWeight:'600',letterSpacing:.8},title:{...type.title,color:C.ink,fontWeight:'700',letterSpacing:-.3},note:{...type.caption,color:C.muted},closed:{...type.body,color:C.ink,fontWeight:'600'},
  field:{gap:8},label:{...type.label,color:C.inkSoft,fontWeight:'600'},strip:{gap:8,paddingRight:8},

@@ -46,6 +46,7 @@ const KZ = 5 * 3600000;
 // The server's reason in the words the listing itself uses for the same state.
 const REASON_TEXT: Record<string, string> = { 'Готовность проверена': 'Готова к заселению' };
 
+import { windowBadge } from '../lib/window-badge';
 const money = (value: number) => new Intl.NumberFormat('ru-RU').format(value) + ' ₸';
 // ISO time of the server as the Kazakhstan-local string the form works with.
 const toLocal = (iso: string) => new Date(Date.parse(iso) + KZ).toISOString().slice(0, 16);
@@ -869,6 +870,7 @@ export function SmartGuestMap({ publicMode = false, accountId, city, onChoose, d
                   {candidates.length > 1 && <span className="smart-offer-count">Вариант {index + 1} из {candidates.length}</span>}
                   <h2 ref={heading} tabIndex={-1}>{current.title}</h2>
                   <strong>{priceLine(current, mode)}</strong>
+                  {!!windowBadge(current.estimate?.window) && <span className="smart-window">{windowBadge(current.estimate.window)}</span>}
                   <small>{current.policy.deposit ? 'Депозит ' + money(current.policy.deposit) + ' отдельно' : 'Без депозита'}</small>
                 </div>
               </div>

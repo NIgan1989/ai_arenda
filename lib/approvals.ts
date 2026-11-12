@@ -1,9 +1,12 @@
 import type {Role} from './domain';
 type Row=Record<string,any>;
-export type Approval={id:string;kind:string;entityId:string;revision:string;title:string;subject:string;from:string;to:string;canDecide:boolean;expiresAt?:number;facts:[string,string][];acceptLabel:string;rejectLabel:string;requiresReason?:boolean;cleaningFee?:number;cleaningBudget?:number;detail?:string;price?:PriceTip};
+export type Approval={id:string;kind:string;entityId:string;revision:string;title:string;subject:string;from:string;to:string;canDecide:boolean;expiresAt?:number;facts:[string,string][];acceptLabel:string;rejectLabel:string;requiresReason?:boolean;cleaningFee?:number;cleaningBudget?:number;detail?:string;price?:PriceTip;window?:WindowTip};
+export type WindowTip={percent:number;from:number;to:number;propertyId:string;when:string;hours:number};
 export type PriceTip={direction:'up'|'down';percent:number;from:number;to:number;propertyId:string;reasons:string[];rows:[string,number,number][]};
 // Same value in the card, the push and the server check: a changed price or tariff makes the answer stale.
 export const priceRevision=(p:Row)=>JSON.stringify([p.id,p.status,p.policy_version,p.from_daily,p.to_daily]);
+// A calendar window: same idea, the answer goes stale when the window or its price changes.
+export const windowRevision=(w:Row)=>JSON.stringify([w.id,w.status,w.start,w.end,w.hourly_to]);
 const money=(n:number)=>new Intl.NumberFormat('ru-RU').format(n)+' ₸';
 const date=(n:number)=>new Date(n*1000).toLocaleString('ru-RU',{timeZone:'Asia/Almaty',day:'numeric',month:'long',hour:'2-digit',minute:'2-digit'});
 export function approvalCards(data:Row,role:Role,userId:string,t:number):Approval[]{
@@ -31,6 +34,13 @@ export function approvalCards(data:Row,role:Role,userId:string,t:number):Approva
   cards.unshift({id:'price:'+p.id,kind:'price',entityId:p.property_id,revision:priceRevision(p),title:up?'Спрос вырос: можно поднять цену':'Спрос снизился: можно снизить цену',subject:p.title,from:'AI администратор',to:'Вам',canDecide:true,expiresAt:p.expires_at,
    facts:rows.map(([label,from,to])=>[label,money(from)+' → '+money(to)] as [string,string]),detail:(p.reasons||[]).join(' · ')+'. Без вашего согласия цена не изменится.',acceptLabel:(up?'Поднять до ':'Снизить до ')+money(p.to_daily),rejectLabel:'Оставить '+money(p.from_daily),
    price:{direction:p.direction,percent:p.percent,from:p.from_daily,to:p.to_daily,propertyId:p.property_id,reasons:p.reasons||[],rows}});
+ }
+ // A gap between stays: the AI administrator asks before letting it by the hour at a discount.
+ if(role==='owner')for(const w of data.calendarWindows||[])if(w.owner_id===userId&&w.status==='suggested'&&w.start>t+1800){
+  const hours=Math.round((w.end-w.start)/360)/10,day=new Date(w.start*1000).toLocaleString('ru-RU',{timeZone:'Asia/Almaty',weekday:'short',day:'numeric',month:'short'}),hm=(n:number)=>new Date(n*1000).toLocaleTimeString('ru-RU',{timeZone:'Asia/Almaty',hour:'2-digit',minute:'2-digit'}),when=day+', '+hm(w.start)+'–'+hm(w.end);
+  cards.unshift({id:'window:'+w.id,kind:'window',entityId:w.property_id,revision:windowRevision(w),title:'Окно в календаре: сдать почасово',subject:w.title,from:'AI администратор',to:'Вам',canDecide:true,expiresAt:w.start,
+   facts:[['Свободно',when+' ('+hours+' ч)'],['Час',money(w.hourly_from)+' → '+money(w.hourly_to)]],detail:'Квартира пустует между бронями. Гости увидят скидку только внутри окна. Без вашего согласия ничего не изменится.',acceptLabel:'Открыть окно',rejectLabel:'Не надо',
+   window:{percent:w.percent,from:w.hourly_from,to:w.hourly_to,propertyId:w.property_id,when,hours}});
  }
  return cards;
 }
