@@ -28,12 +28,22 @@ test('a quiet market suggests lowering, never below the minimum rate or far belo
  assert.equal(floor.daily,9500);
  assert.equal(advisePrice({...calm,occupancy:.05,upcoming:0,median:null,minimumRate:9800}),null,'a change under 3% is not worth a question');assert.ok(floor.hourly>=0&&floor.nightly>=9000);
  assert.equal(advisePrice({...calm,occupancy:.05,upcoming:1}),null,'a booking in the next two days keeps the price');
+ assert.equal(advisePrice({...calm,occupancy:.05,upcoming:0,median:10000,similar:3,daily:14000,requestsDay:2}),null,'guests asked earlier today: not a quiet day');
  assert.equal(advisePrice({...calm,occupancy:.05,upcoming:0,peak:true}),null,'no discounts at the weekend');
 });
 
 test('weekend peak follows Almaty time',()=>{
  assert.equal(weekendPeak(Date.UTC(2026,10,13,12)/1000),true,'Friday 17:00 in Almaty');
  assert.equal(weekendPeak(Date.UTC(2026,10,11,12)/1000),false,'Wednesday');
+});
+
+test('finished stays count towards the flat\'s load',async()=>{
+ const f=await fixture();try{
+  const {priceSignals}=await load('price-advice'),t=now();
+  f.db.raw.prepare("UPDATE bookings SET status='completed',start=?,end=?,occupied_until=? WHERE id=?").run(t-7*86400,t-3600,t-3600,f.booking);
+  const p=f.db.raw.prepare('SELECT * FROM properties WHERE id=?').get(f.property),pol=f.db.raw.prepare('SELECT * FROM property_policies WHERE property_id=?').get(f.property);
+  const s=await priceSignals(f.db,p,pol,t);assert.ok(s.occupancy>0.45,'a week of a finished stay is half of two weeks');
+ }finally{f.db.close();}
 });
 
 async function hotMarket(f){
