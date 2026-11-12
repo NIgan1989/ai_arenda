@@ -1,10 +1,10 @@
 import React,{useEffect,useRef,useState} from 'react';
-import { ActivityIndicator,AppState,KeyboardAvoidingView,Platform,Pressable,ScrollView,StatusBar,Text,TextInput,View } from 'react-native';
+import { ActivityIndicator,AppState,BackHandler,KeyboardAvoidingView,Platform,Pressable,ScrollView,StatusBar,Text,TextInput,View } from 'react-native';
 import { SafeAreaProvider,SafeAreaView } from 'react-native-safe-area-context';
 import {NativeChats,type NativeChatInitial} from './src/NativeChats';
 import {useProcessLinks} from './src/use-process-links';
 import {resolveProcessLink} from './src/deep-links';
-import { API_URL,ApiError,StaleSessionError,getSessionGeneration,request,restoreSession,saveSession,setWorkspaceRole } from './src/api';
+import { API_URL,ApiError,StaleSessionError,getSessionGeneration,isOffline,onServerReach,request,restoreLastRole,restoreSession,saveLastRole,saveSession,setWorkspaceRole } from './src/api';
 import { baseQuestions,cleanerQuestions,date,empty,labels,money,parseDate,propertyQuestions,uid,type Flow,type Message,type Question,type Role,type Row } from './src/model';
 import { C,s } from './src/styles';
 import {ActivityClockProvider,ActivityTimer} from './src/ActivityTimer';
@@ -17,7 +17,9 @@ import {CleanerCard} from './src/ProfileEditor';
 import {AccountControl} from './src/AccountControl';
 import {RentalCalendar} from './src/RentalCalendar';
 import {RoleEntry,roleNames,rolePages,intentRole} from './src/RoleEntry';
-import {MapHome} from './src/MapHome';
+import {MapHome,type MapStay} from './src/MapHome';
+import {stayISO} from './src/ai-request';
+import {OfflineNotice} from './src/OfflineNotice';
 
 function Button({title,onPress,secondary=false,disabled=false}:{title:string;onPress:()=>void;secondary?:boolean;disabled?:boolean}){
   const [focused,setFocused]=useState(false);
@@ -39,13 +41,13 @@ function Auth({onSubmit,busy}:{onSubmit:(mode:string,phone:string,password:strin
   const [mode,setMode]=useState('login'),[phone,setPhone]=useState(''),[password,setPassword]=useState(''),[name,setName]=useState(''),[city,setCity]=useState('Павлодар'),[recovery,setRecovery]=useState(''),[error,setError]=useState('');
   return <View style={s.card}>
     <Text style={s.cardTitle}>{mode==='register'?'Один аккаунт для всех устройств':mode==='recover'?'Восстановить доступ':'С возвращением'}</Text>
-    <Text style={s.meta}>Войдите с тем же номером телефона и паролем, что используете на сайте. Брони и роли хранятся на общем сервере.</Text>
+    <Text style={s.meta}>Номер телефона и пароль те же, что на сайте. Брони и чаты общие.</Text>
     {mode==='register'&&<><Text style={s.fieldLabel}>Имя</Text><TextInput accessibilityLabel="Имя" style={s.field} value={name} onChangeText={setName} maxLength={100} editable={!busy}/><Text style={s.fieldLabel}>Город</Text><TextInput accessibilityLabel="Город" style={s.field} value={city} onChangeText={setCity} maxLength={80} editable={!busy}/></>}
     <Text style={s.fieldLabel}>Номер телефона</Text><TextInput accessibilityLabel="Номер телефона" style={s.field} placeholder="+7 777 123 45 67" placeholderTextColor={C.muted} value={phone} onChangeText={setPhone} keyboardType="phone-pad" autoComplete="tel" maxLength={30} editable={!busy}/>
     {mode==='recover'&&<><Text style={s.fieldLabel}>Резервный код</Text><TextInput accessibilityLabel="Резервный код" style={s.field} value={recovery} onChangeText={setRecovery} maxLength={80} autoCapitalize="none" autoCorrect={false} editable={!busy}/><Text style={s.meta}>Восстановление завершит прежние сеансы на всех устройствах.</Text></>}
     <Text style={s.fieldLabel}>{mode==='recover'?'Новый пароль':'Пароль'}</Text><TextInput accessibilityLabel="Пароль" style={s.field} placeholder="От 10 символов" placeholderTextColor={C.muted} value={password} onChangeText={setPassword} secureTextEntry autoCapitalize="none" autoCorrect={false} autoComplete={mode==='register'?'new-password':'current-password'} maxLength={128} editable={!busy}/>
     {!!error&&<Text accessibilityRole="alert" style={s.error}>{error}</Text>}
-    <Button title={mode==='register'?'Создать аккаунт':mode==='recover'?'Обновить пароль':'Войти'} disabled={busy} onPress={()=>{setError('');onSubmit(mode,phone,password,name,city,recovery).then(()=>setPassword('')).catch(e=>setError(e.message));}}/>
+    <Button title={mode==='register'?'Создать аккаунт':mode==='recover'?'Обновить пароль':'Войти'} disabled={busy} onPress={()=>{setError('');onSubmit(mode,phone,password,name,city,recovery).then(()=>setPassword('')).catch(e=>setError(isOffline(e)?'':e.message));}}/>
     <Button secondary title="Восстановить доступ по резервному коду" disabled={busy} onPress={()=>{setError('');setPassword('');setRecovery('');setMode('recover');}}/>
     <Button secondary title={mode==='register'?'Уже есть аккаунт':'Создать новый аккаунт'} disabled={busy} onPress={()=>{setError('');setPassword('');setMode(mode==='register'?'login':'register');}}/>
   </View>;
@@ -56,7 +58,10 @@ function Chat(){
   const [input,setInput]=useState(''),[busy,setBusy]=useState(false),[ready,setReady]=useState(false),[online,setOnline]=useState(false),[historyReady,setHistoryReady]=useState(false),[saveError,setSaveError]=useState(false);
   const scroll=useRef<ScrollView>(null),composer=useRef<TextInput>(null),locked=useRef(false),session=useRef(false),pending=useRef(''),seen=useRef(new Set<string>());
   const [navigationMenu,setNavigationMenu]=useState(false),[recoveryCode,setRecoveryCode]=useState(''),[linkError,setLinkError]=useState('');
+  const [retrying,setRetrying]=useState(false),[opening,setOpening]=useState(false);
   const [selectedRole,setSelectedRole]=useState<Role|null>(null),[pageId,setPageId]=useState('map'),[chatsActive,setChatsActive]=useState(false),[chatInitial,setChatInitial]=useState<NativeChatInitial|null>(null),[erasureResult,setErasureResult]=useState<Row|null>(null);
+  // A long page is shown a dozen records at a time (the catalogue holds hundreds of flats); the catalogue starts with the person's own city.
+  const [listed,setListed]=useState({page:'',count:12}),[allCities,setAllCities]=useState(false);
   const activeRoleRef=useRef<Role|null>(null),scrollMessage=useRef<string|null>(null);
   const userId=data.user?.id;
   const say=(text:string,block?:string,payload?:Row)=>{const id=uid();scrollMessage.current=id;setMessages(prev=>[...prev,{id,sender:'assistant' as const,text,block,payload}].slice(-120));};
@@ -68,12 +73,12 @@ function Chat(){
       if(!session.current||!guard.isCurrent())return;
       const view=resolveProcessLink(link,state,guard.accountId);
       setWorkspaceRole(link.role);activeRoleRef.current=link.role;setData(state);setMessages(history.messages||[]);setFlow(history.flow||null);setActor(link.role);setSelectedRole(link.role);setPageId(history.flow?'overview':view.section);setHistoryReady(true);setOnline(true);seen.current=new Set(state.notifications.map((n:Row)=>n.id));
-      if(history.flow)setLinkError('В этой роли сохранён незавершённый ввод. Завершите или отмените его, затем откройте ссылку повторно.');else if(view.block)say('Актуальный процесс по ссылке.',view.block,view.payload);
+      if(history.flow)setLinkError('В этой роли сохранён незавершённый ввод. Завершите или отмените его, затем откройте ссылку повторно.');else if(view.block)say('Открыто по ссылке.',view.block,view.payload);
     }finally{locked.current=false;setBusy(false);}
   }});
   const finish=(id:string,result='Сохранено')=>setMessages(prev=>prev.map(m=>m.id===id?{...m,done:true,result}:m));
   async function signedOut(result?:Row){
-    try{await saveSession(null);}finally{session.current=false;setWorkspaceRole(null);activeRoleRef.current=null;setSelectedRole(null);setHistoryReady(false);setData(empty);setMessages([]);setFlow(null);setInput('');setChatInitial(null);setChatsActive(false);setRecoveryCode('');if(result?.receipt)setErasureResult(result);}
+    try{await saveSession(null);await saveLastRole(null,null);}finally{session.current=false;setWorkspaceRole(null);activeRoleRef.current=null;setSelectedRole(null);setHistoryReady(false);setData(empty);setMessages([]);setFlow(null);setInput('');setChatInitial(null);setChatsActive(false);setRecoveryCode('');if(result?.receipt)setErasureResult(result);}
   }
   async function load(){
     const active=activeRoleRef.current,generation=getSessionGeneration();
@@ -84,7 +89,15 @@ function Chat(){
     const generation=getSessionGeneration();setHistoryReady(false);setWorkspaceRole(role);activeRoleRef.current=role;
     const [state,history]=await Promise.all([request('/api/state',undefined,undefined,undefined,role),request('/api/conversation',undefined,undefined,undefined,role)]);
     if(generation!==getSessionGeneration()||activeRoleRef.current!==role)throw new StaleSessionError();
-    setData(state);setMessages(history.messages||[]);setFlow(history.flow||null);setActor(role);setSelectedRole(role);setPageId(history.flow?'overview':'map');if(history.draftInvalid)setLinkError('Сохранённый ввод не удалось открыть. Начните форму заново; заявки сохранены на сервере.');setSaveError(false);setOnline(true);setHistoryReady(true);seen.current=new Set(state.notifications.map((n:Row)=>n.id));return state;
+    setData(state);setMessages(history.messages||[]);setFlow(history.flow||null);setActor(role);setSelectedRole(role);setPageId(history.flow?'overview':'map');if(history.draftInvalid)setLinkError('Сохранённый ввод не удалось открыть. Начните форму заново; заявки сохранены на сервере.');setSaveError(false);setOnline(true);setHistoryReady(true);seen.current=new Set(state.notifications.map((n:Row)=>n.id));void saveLastRole(state.user?.id||null,role);return state;
+  }
+  // The map opens first: the role used last on this device, or the only role the account has. The role chooser stays behind «Сменить роль».
+  async function openLastRole(state?:Row){
+    const id=state?.user?.id;if(!id)return;
+    let roles:Role[]=[];try{roles=JSON.parse(state.profile?.roles||'[]');}catch{}
+    const saved=await restoreLastRole(id),role=roles.find(r=>r===saved)||(roles.length===1?roles[0]:null);
+    if(!role)return;
+    try{await hydrate(role);}catch(e){setWorkspaceRole(null);activeRoleRef.current=null;if(e instanceof ApiError&&e.status===401)throw e;}
   }
   async function chooseRole(role:Role){if(locked.current)return;locked.current=true;setBusy(true);try{await hydrate(role);}catch(e){setWorkspaceRole(null);activeRoleRef.current=null;throw e;}finally{locked.current=false;setBusy(false);}}
   function switchRole(){if(locked.current)return;setWorkspaceRole(null);activeRoleRef.current=null;setSelectedRole(null);setHistoryReady(false);setMessages([]);setFlow(null);setInput('');setData({...empty,user:data.user,profile:data.profile});}
@@ -92,13 +105,24 @@ function Chat(){
     if(error instanceof StaleSessionError)return;
     if(error instanceof ApiError&&error.status===401&&session.current){
       try{await signedOut();}catch{}setLinkError('Сессия закончилась. Войдите снова.');
-    }else {setOnline(error instanceof ApiError);say(error.message);}
+    }else {setOnline(error instanceof ApiError);if(!isOffline(error))say(error.message);}
   }
+  // The offline line's «Повторить»: one more attempt to reach the server; the line stays until an answer arrives.
+  async function retry(){if(retrying||locked.current)return;setRetrying(true);try{await load();}catch(error){if(error instanceof ApiError&&error.status===401)await handleError(error);}finally{setRetrying(false);}}
+  const offline=ready&&!online?<OfflineNotice busy={retrying} onRetry={()=>void retry()}/>:null;
   useEffect(()=>{let active=true;(async()=>{
-    try{setWorkspaceRole(null);const token=await restoreSession();if(!active)return;session.current=!!token;if(token)await load();else setOnline(true);}
+    try{setWorkspaceRole(null);const token=await restoreSession();if(!active)return;session.current=!!token;if(token)await openLastRole(await load());else setOnline(true);}
     catch(e){if(active)await handleError(e);}
     finally{if(active)setReady(true);}
   })();return()=>{active=false;};},[]);
+  // Every answer or silence of the server updates the one "Нет связи" line.
+  useEffect(()=>{onServerReach(setOnline);return()=>onServerReach(null);},[]);
+  // Android's back button returns to the map from any other page before it leaves the app. An open chat and the map's sheet handle it first.
+  useEffect(()=>{
+    if(Platform.OS!=='android'||!selectedRole||pageId==='map'||flow)return;
+    const back=BackHandler.addEventListener('hardwareBackPress',()=>{setPageId('map');return true;});
+    return()=>back.remove();
+  },[selectedRole,pageId,!!flow]);
   useEffect(()=>{
     if(!userId||!historyReady||!selectedRole||busy||locked.current||activeRoleRef.current!==selectedRole)return;
     const role=selectedRole,generation=getSessionGeneration();
@@ -138,6 +162,8 @@ function Chat(){
     if(mode==='guest')items=items.filter((p:Row)=>(!max||p.price<=max)&&(!people||p.capacity>=people)&&(!city||p.city.toLowerCase()===city.toLowerCase()));
     say(items.length?(mode==='job'?'Для какой квартиры нужна уборка?':mode==='owner'?'Ваши квартиры.':'Посмотрим, что вам подойдёт.'):(mode==='guest'?'В этом городе пока нет предложений. Можем посмотреть учебный пример.':'Сначала добавим вашу квартиру.'),'properties',{ids:items.map((p:Row)=>p.id),mode});
   }
+  // The four answers a booking needs. The map's results already carry all of them; the chat asks for them one by one.
+  const bookingQuestions=(property:Row):Question[]=>[{key:'billingMode',text:'Какой тариф выбираете? По ночам заезд и выезд строго в часы, указанные владельцем.',label:'Тариф',choices:[{label:'Сутки',value:'daily'},...(property.policy?.hourly_price?[{label:'Почасово',value:'hourly'}]:[]),...(property.policy?.nightly_price?[{label:'По ночам',value:'nightly'}]:[])]},{key:'start',text:'Когда заедете? Напишите дату и время: ДД.ММ.ГГГГ ЧЧ:ММ.',label:'Заезд',date:true},{key:'end',text:'Когда выезжаете? Такой же формат: ДД.ММ.ГГГГ ЧЧ:ММ.',label:'Выезд',date:true},{key:'guests',text:'Сколько будет гостей?',label:'Гостей',min:1,max:property.capacity}];
   function run(intent:string,state=data){
     const required=intentRole(intent);if(required&&required!==selectedRole){say('Эта задача относится к другой роли. Нажмите «Сменить роль».');return;}
     if(intent==='properties'){setActor('guest');catalog(state);return;}
@@ -162,17 +188,17 @@ function Chat(){
     if(intent.startsWith('book:')){
       if(!ensure('guest',intent,state))return;const property=state.properties.find((p:Row)=>p.id===intent.slice(5));
       if(!property){say('Квартира больше недоступна. Обновите предложения.');return;}
-      say('Уточним время проживания в «'+property.title+'». Все даты — по времени Казахстана (UTC+5).');
-      beginFlow('booking',[{key:'billingMode',text:'Какой тариф выбираете? По ночам заезд и выезд строго в часы, указанные владельцем.',label:'Тариф',choices:[{label:'Сутки',value:'daily'},...(property.policy?.hourly_price?[{label:'Почасово',value:'hourly'}]:[]),...(property.policy?.nightly_price?[{label:'По ночам',value:'nightly'}]:[])]},{key:'start',text:'Когда заедете? Напишите дату и время: ДД.ММ.ГГГГ ЧЧ:ММ.',label:'Заезд',date:true},{key:'end',text:'Когда выезжаете? Такой же формат: ДД.ММ.ГГГГ ЧЧ:ММ.',label:'Выезд',date:true},{key:'guests',text:'Сколько будет гостей?',label:'Гостей',min:1,max:property.capacity}],{},'bookings','bookings','guest',{propertyId:property.id,requestKey:uid()});return;
+      say('Уточним время проживания в «'+property.title+'». Время — по Казахстану.');
+      beginFlow('booking',bookingQuestions(property),{},'bookings','bookings','guest',{propertyId:property.id,requestKey:uid()});return;
     }
     if(intent.startsWith('job:')){
       if(!ensure('owner',intent,state))return;const id=intent.slice(4);if(!state.ownProperties.some((p:Row)=>p.id===id)){say('Квартира недоступна.');return;}
-      beginFlow('job',[{key:'start',text:'Когда нужно начать уборку? ДД.ММ.ГГГГ ЧЧ:ММ, время Казахстана (UTC+5).',label:'Начало',date:true},{key:'end',text:'К какому времени нужно закончить? ДД.ММ.ГГГГ ЧЧ:ММ.',label:'Окончание',date:true},{key:'fee',text:'Какое вознаграждение за уборку, в тенге?',label:'Вознаграждение, ₸',min:100,max:1000000},{key:'description',text:'Что нужно сделать? Есть ли бельё и средства на объекте?',label:'Условия'}],{},'jobs','owner-jobs','owner',{propertyId:id});return;
+      beginFlow('job',[{key:'start',text:'Когда нужно начать уборку? ДД.ММ.ГГГГ ЧЧ:ММ, время Казахстана.',label:'Начало',date:true},{key:'end',text:'К какому времени нужно закончить? ДД.ММ.ГГГГ ЧЧ:ММ.',label:'Окончание',date:true},{key:'fee',text:'Какое вознаграждение за уборку, в тенге?',label:'Вознаграждение, ₸',min:100,max:1000000},{key:'description',text:'Что нужно сделать? Есть ли бельё и средства в квартире?',label:'Условия'}],{},'jobs','owner-jobs','owner',{propertyId:id});return;
     }
     if(intent==='bookings'||intent==='owner-bookings'){
       const role=intent==='owner-bookings'?'owner':'guest';if(!ensure(role,intent,state))return;setActor(role);
       const items=state.bookings.filter((b:Row)=>role==='owner'?b.owner_id===state.user.id:b.guest_id===state.user.id);
-      say(items.length?'Ваши бронирования. Время Казахстана (UTC+5).':'У вас пока нет бронирований.','bookings',{ids:items.map((b:Row)=>b.id),role});return;
+      say(items.length?'Ваши бронирования. Время Казахстана.':'У вас пока нет бронирований.','bookings',{ids:items.map((b:Row)=>b.id),role});return;
     }
     if(intent==='demo'){if(!state.user){ensure('guest',intent,state);return;}say('Добавлю две учебные квартиры и уборку. Их увидите только вы. Реальных заездов и выплат по ним нет.','confirm',{path:'demo',body:{},after:selectedRole==='owner'?'own-properties':selectedRole==='cleaner'?'jobs':'properties',title:'Добавить учебные данные'});return;}
     if(intent==='notifications'){if(!state.user){ensure('guest',intent,state);return;}say(state.notifications.length?'Последние события:':'Пока новых событий нет.','notifications');return;}
@@ -189,7 +215,9 @@ function Chat(){
     if(locked.current)return;locked.current=true;setBusy(true);
     try{
       const result=await request('/auth/'+mode,{phone,password,...(mode==='register'?{name,city}:mode==='recover'?{recoveryCode:recovery}:{})});if(result.recoveryCode)setRecoveryCode(result.recoveryCode);if(mode==='recover'){await saveSession(null);session.current=false;setWorkspaceRole(null);activeRoleRef.current=null;setSelectedRole(null);setData(empty);setMessages([]);setFlow(null);return;}if(typeof result.token!=='string')throw Error('Сервер не подтвердил вход.');await saveSession(result.token);session.current=true;
-      setWorkspaceRole(null);activeRoleRef.current=null;setSelectedRole(null);await load();
+      setWorkspaceRole(null);activeRoleRef.current=null;setSelectedRole(null);
+      // While the last role is opening the chooser is not shown, so the map is the first thing seen after «Войти».
+      setOpening(true);try{await openLastRole(await load());}finally{setOpening(false);}
     }finally{locked.current=false;setBusy(false);}
   }
   async function send(value=input){
@@ -239,7 +267,7 @@ function Chat(){
   function confirm(path:string,body:Row,title:string,after?:string){const id=path.split('/')[1],item=(path.startsWith('bookings/')?data.bookings:data.jobs).find((v:Row)=>v.id===id);say('Подтвердите действие: '+title.toLowerCase()+'.','confirm',{path,body:{...body,expectedVersion:path.startsWith('bookings/')?item?.terms?.version:item?.version},title,subject:item?.title,dates:item?date(item.start)+' → '+date(item.end):'',amount:item?.amount??item?.fee,after});}
   function review(m:Message){
     const f=m.payload!.flow as Flow;
-    if(f.kind==='booking')return <BookingReview flow={f} busy={busy} done={m.done} result={m.result} onConfirm={quote=>perform(f.endpoint,{...f.answers,...f.extra,expectedAmount:quote.amount,expectedPolicyVersion:quote.policy.version,acceptTerms:true},m.id,f.after)} onEdit={()=>{finish(m.id,'Изменено');const next={...f,index:0};setFlow(next);say(next.questions[0].text);}}/>;
+    if(f.kind==='booking')return <><BookingReview flow={f} busy={busy} done={m.done} result={m.result} onConfirm={quote=>perform(f.endpoint,{...f.answers,...f.extra,expectedAmount:quote.amount,expectedPolicyVersion:quote.policy.version,acceptTerms:true},m.id,f.after)} onEdit={()=>{finish(m.id,'Изменено');const next={...f,index:0};setFlow(next);say(next.questions[0].text);}}/>{!!m.payload!.back&&!m.done&&<Button title="Назад к вариантам" secondary disabled={busy} onPress={backToMap}/>}</>;
     const questions=f.kind==='profile'?[...baseQuestions,...cleanerQuestions]:f.kind==='property'?propertyQuestions:f.questions;
     return <View style={s.card}><Text style={s.cardTitle}>{({profile:'Ваш профиль',property:'Ваша квартира',job:'Уборка',report:'Отчёт',confirm:'Подтверждение'} as Row)[f.kind]||'Проверьте сведения'}</Text>
       {questions.filter(q=>f.answers[q.key]!==undefined).map(q=><View key={q.key} style={s.keyval}><Text style={s.key}>{q.label}</Text><Text style={s.value}>{q.date?date(Date.parse(f.answers[q.key])/1000):String(f.answers[q.key])}</Text></View>)}
@@ -252,6 +280,28 @@ function Chat(){
     if(task.kind==='property'){say(task.reason,'property-settings',{id:task.entityId});return;}
     say(task.reason,task.kind==='job'?'jobs':'bookings',{ids:[task.entityId],role:selectedRole});
   }
+  // Actions of the map's bottom sheet that continue on another page.
+  // stay: the time and guests of the search the flat was found by, so the flat's own page books the same stay.
+  function openMapIntent(intent:string,stay?:MapStay){
+    scrollMessage.current=null;
+    if(intent==='add-property'){setPageId('properties');run('property');return;}
+    if(!intent.startsWith('property:'))return;
+    const id=intent.slice(9);
+    if(!data.properties.some((p:Row)=>p.id===id)){setPageId('catalog');return;}
+    setPageId('overview');say('Квартира, выбранная на карте.','properties',{ids:[id],mode:'guest',back:true,...(stay?{stay}:{})});
+  }
+  // «Забронировать» in the map's results: the dates and guests are chosen there, so the guest goes straight to the check of the request.
+  function bookFromMap(found:Row,stay:MapStay){
+    scrollMessage.current=null;setPageId('overview');
+    if(!ensure('guest','bookings'))return;
+    const property=data.properties.find((p:Row)=>p.id===found.id)||found,questions=bookingQuestions(property);
+    // A stay kept from an earlier visit may already be behind: the dates are asked again instead of sending the past.
+    if(Date.parse(stayISO(stay).start)<Date.now()){run('book:'+property.id);return;}
+    const next:Flow={kind:'booking',questions,index:questions.length,answers:{billingMode:stay.mode,...stayISO(stay),guests:stay.guests},endpoint:'bookings',after:'bookings',role:'guest',extra:{propertyId:property.id,requestKey:uid()}};
+    setActor('guest');say('Проверьте бронь: «'+property.title+'».','review',{flow:next,back:true});
+  }
+  // From a flat or a booking check opened on the map: back to the map, where the list of found flats is kept.
+  const backToMap=()=>{scrollMessage.current=null;setPageId('map');};
   function renderAssistantBrief(){const brief=data.assistantBrief;if(!brief)return null;return <View style={s.card}><Text style={s.eyebrow}>ПЛАН АССИСТЕНТА</Text><Text style={s.cardTitle}>{brief.summary}</Text>{brief.tasks.map((task:Row)=><View key={task.id} style={s.event}><Text style={s.eventTitle}>{task.title}</Text><Text style={s.meta}>{task.reason}</Text><Button title="Открыть задачу" secondary disabled={busy} onPress={()=>openAssistantTask(task)}/></View>)}<Text style={s.meta}>Сроки и согласования проверяются сервером. Внешние каналы подключаются отдельно.</Text></View>;}
   function approval(id:string){const card=(data.approvals||[]).find((c:Row)=>c.id===id);return card?<ApprovalCard key={card.id+card.revision} card={card} busy={busy} onDecide={body=>perform('approvals',body,uid())}/>:<Text style={s.meta}>Согласование закрыто или срок истёк. Проверьте статус задачи.</Text>;}
   function block(m:Message){
@@ -272,7 +322,7 @@ function Chat(){
     if(m.block==='confirm')return <View style={s.card}><Text accessibilityRole="header" style={s.cardTitle}>{payload.title}</Text><Text style={s.text}>{payload.subject||'Подтверждение действия'}</Text><Text style={s.meta}>{payload.dates}{payload.amount!==undefined?' · '+money(payload.amount):''}</Text><Button title={m.done?(m.result||'Действие закрыто'):payload.title} disabled={busy||m.done} onPress={()=>perform(payload.path,payload.body,m.id,payload.after)}/>{!m.done&&<Button title="Отменить" secondary disabled={busy} onPress={()=>finish(m.id,'Отменено')}/>}</View>;
     if(m.block==='help')return <View style={s.suggestions}>{['Хочу снять квартиру','Хочу сдать квартиру','Хочу работать на уборке','Мои брони','Что нового'].map(t=><Button key={t} title={t} secondary disabled={busy} onPress={()=>send(t)}/>)}</View>;
     if(m.block==='property-editor')return m.done?<Text style={s.meta}>{m.result||'Форма закрыта'}</Text>:<PropertyEditor property={data.ownProperties.find((p:Row)=>p.id===payload.id)} city={data.profile?.city||'Павлодар'} onClose={()=>finish(m.id,'Форма закрыта')} onSave={async body=>{const result=await request('/api/listings'+(payload.id?'/'+payload.id:''),body);const state=await load();finish(m.id);say(result.message);catalog(state,'owner');}}/>;
-    if(m.block==='properties')return <View>{payload.ids.map((id:string)=>{const p=[...data.properties,...data.ownProperties].find((p:Row)=>p.id===id);if(!p)return null;return <PropertyListing key={id} property={p} owner={payload.mode==='owner'} onChoose={()=>run((payload.mode==='owner'||payload.mode==='job'?'job:':'book:')+id)} onEdit={()=>say('Измените сведения и сохраните объявление.','property-editor',{id})} onSettings={()=>say('Полномочия и готовность квартиры.','property-settings',{id})}/>;})}{!payload.ids.length&&<Button title={payload.mode==='guest'?'Посмотреть учебный пример':'Добавить квартиру'} secondary disabled={busy} onPress={()=>send(payload.mode==='guest'?'Покажи учебный пример':'Хочу сдать квартиру')}/>}</View>;
+    if(m.block==='properties')return <View>{!!payload.back&&<Button title="Назад к карте" secondary disabled={busy} onPress={backToMap}/>}{payload.ids.map((id:string)=>{const p=[...data.properties,...data.ownProperties].find((p:Row)=>p.id===id);if(!p)return null;const stay:MapStay|undefined=payload.mode==='guest'?payload.stay:undefined;return <PropertyListing key={id} property={p} owner={payload.mode==='owner'} chooseTitle={stay?'Забронировать':undefined} onChoose={()=>stay?bookFromMap(p,stay):run((payload.mode==='owner'||payload.mode==='job'?'job:':'book:')+id)} onEdit={()=>say('Измените сведения и сохраните объявление.','property-editor',{id})} onSettings={()=>say('Полномочия и готовность квартиры.','property-settings',{id})}/>;})}{!payload.ids.length&&<Button title={payload.mode==='guest'?'Посмотреть учебный пример':'Добавить квартиру'} secondary disabled={busy} onPress={()=>send(payload.mode==='guest'?'Покажи учебный пример':'Хочу сдать квартиру')}/>}</View>;
     if(m.block==='bookings')return <View>{payload.ids.map((id:string)=>{
       const b=data.bookings.find((b:Row)=>b.id===id);if(!b)return null;const owner=b.owner_id===userId&&payload.role==='owner';
       return <View style={s.card} key={id}><Text style={s.badge}>{labels[b.status]||b.status}</Text><Text style={s.cardTitle}>{b.title}</Text><Text style={s.meta}>{date(b.start)} → {date(b.end)}</Text><Text style={s.price}>{money(b.amount)}</Text><Text style={s.meta}>{b.payment_status==='owner_verified'?'Владелец проверил оплату':'Оплата не подтверждена'}{b.address?'\n'+b.address:''}{b.owner_contact?'\nКонтакт: '+b.owner_contact:''}{owner&&b.guest_name?'\nГость: '+b.guest_name+' · '+b.guest_contact:''}</Text>
@@ -306,26 +356,28 @@ function Chat(){
   const pages=selectedRole?rolePages[selectedRole]:[];
   const page=pages.find(p=>p.id===pageId);
   const nextTask=data.assistantBrief?.automatic?data.assistantBrief.prompts[0]:null;
-  const ids=pageId==='catalog'?data.properties.map((p:Row)=>p.id):pageId==='properties'?data.ownProperties.map((p:Row)=>p.id):pageId==='bookings'?data.bookings.map((b:Row)=>b.id):(pageId==='assignments'?data.jobs.filter((j:Row)=>j.assigned_to===userId||data.applications.some((a:Row)=>a.job_id===j.id&&a.user_id===userId)):data.jobs).map((j:Row)=>j.id);
+  const homeCity=String(data.profile?.city||''),cityFlats=pageId==='catalog'&&homeCity?data.properties.filter((p:Row)=>p.city===homeCity):[],byCity=cityFlats.length>0&&!allCities;
+  const allIds:string[]=pageId==='catalog'?(byCity?cityFlats:data.properties).map((p:Row)=>p.id):pageId==='properties'?data.ownProperties.map((p:Row)=>p.id):pageId==='bookings'?data.bookings.map((b:Row)=>b.id):(pageId==='assignments'?data.jobs.filter((j:Row)=>j.assigned_to===userId||data.applications.some((a:Row)=>a.job_id===j.id&&a.user_id===userId)):data.jobs).map((j:Row)=>j.id);
+  const ids=allIds.slice(0,listed.page===pageId?listed.count:12),hidden=allIds.length-ids.length;
   const primary:Message={id:'page-'+pageId,sender:'assistant',text:'',block:pageId==='overview'?'workspace':pageId==='properties'||pageId==='catalog'?'properties':pageId==='bookings'?'bookings':['cleaning','jobs','assignments'].includes(pageId)?'jobs':undefined,payload:{ids,role:selectedRole,mode:selectedRole==='owner'?'owner':'guest'}};
   if(erasureResult)return <SafeAreaView style={s.screen}><ScrollView contentContainerStyle={s.transcript}><View style={s.card}><Text style={s.cardTitle}>Результат удаления</Text><Text style={s.text}>{erasureResult.message}</Text><Text selectable style={s.meta}>Квитанция: {erasureResult.receipt.id}</Text><Button title="Продолжить" onPress={()=>setErasureResult(null)}/></View></ScrollView></SafeAreaView>;
   if(recoveryCode)return <SafeAreaView style={s.screen}><ScrollView contentContainerStyle={s.transcript}><View style={s.card}><Text style={s.cardTitle}>Сохраните резервный код</Text><Text style={s.text}>Он понадобится для восстановления доступа к общему аккаунту. Код показывается один раз и не сохраняется в переписке.</Text><Text selectable style={s.value}>{recoveryCode}</Text><Button title="Код сохранён — продолжить" onPress={()=>setRecoveryCode('')}/></View></ScrollView></SafeAreaView>;
-  if(!selectedRole)return <RoleEntry notice={linkError} ready={ready} profile={data.profile} user={data.user} busy={busy} auth={<Auth busy={busy} onSubmit={(mode,phone,password,name,city,recovery)=>authenticate(mode,phone,password,'entry','workspace',name,city,recovery)}/>} onChoose={chooseRole} onSave={async(body,role)=>{await request('/api/profile',body);await chooseRole(role);}} onLogout={()=>send('Выйти')}/>;
-  return <ActivityClockProvider serverTime={data.serverTime}><SafeAreaView style={s.screen} edges={['top','bottom']}><StatusBar barStyle="dark-content" backgroundColor={C.bg}/><KeyboardAvoidingView style={s.shell} behavior={pageId==='chats'||pageId==='map'?undefined:Platform.OS==='ios'?'padding':undefined}>
-    {!chatsActive&&!(pageId==='map'&&!flow)&&<View style={s.header}><View style={{flex:1}}><Text accessibilityRole="header" numberOfLines={1} style={s.headerTitle}>{page?.title||'AI Аренда'}</Text><Text numberOfLines={1} style={s.subtitle}>{roleNames[selectedRole]}{online?'':' · нет связи'}</Text></View>{!flow&&<Pressable accessibilityRole="button" accessibilityLabel="Открыть AI администратора" disabled={busy} onPress={()=>{setInput('');setPageId('chats');setChatInitial({administrator:true});}} style={({pressed})=>[s.headerAI,pressed&&s.disabled]}><Text style={s.headerAIText}>AI</Text></Pressable>}<WorkspaceMenuButton open={navigationMenu} busy={busy||!!flow} onPress={()=>setNavigationMenu(v=>!v)}/></View>}
-    {linkError&&<Text accessibilityRole="alert" style={s.error}>{linkError}</Text>}{processLinks.pending&&chatsActive&&<Text style={s.meta}>Переход к процессу откроется после закрытия диалога.</Text>}{pageId==='map'&&!flow?<MapHome key={userId+':'+selectedRole} role={selectedRole} accountId={userId} data={data} menu={<WorkspaceMenuButton open={navigationMenu} busy={busy} onPress={()=>setNavigationMenu(v=>!v)}/>} onChanged={async()=>{await load();}} onOpenPage={id=>{scrollMessage.current=null;setPageId(id);}} onOpenProcess={(kind,id)=>{setPageId('overview');say('Текущий статус и доступные действия.',kind==='job'?'jobs':'bookings',{ids:[id],role:selectedRole});}} onAdministrator={()=>{setChatInitial({administrator:true});setPageId('chats');}} onAssistantTask={task=>{setPageId('overview');openAssistantTask(task);}}/>:pageId==='chats'?<NativeChats key={userId+':'+selectedRole} accountId={userId} role={selectedRole} onChanged={load} initial={chatInitial} onInitialConsumed={()=>setChatInitial(null)} onConversationChange={setChatsActive} onAuthError={handleError}/>:<><ScrollView ref={scroll} style={{flex:1}} contentContainerStyle={s.transcript} keyboardShouldPersistTaps="handled" onContentSizeChange={()=>{if(messages[messages.length-1]?.sender==='user'||busy)scroll.current?.scrollToEnd({animated:true});}}>
+  if(!selectedRole)return <RoleEntry banner={offline} notice={linkError} ready={ready&&!opening} profile={data.profile} user={data.user} busy={busy} auth={<Auth busy={busy} onSubmit={(mode,phone,password,name,city,recovery)=>authenticate(mode,phone,password,'entry','workspace',name,city,recovery)}/>} onChoose={chooseRole} onSave={async(body,role)=>{await request('/api/profile',body);await chooseRole(role);}} onLogout={()=>send('Выйти')}/>;
+  return <ActivityClockProvider serverTime={data.serverTime}><SafeAreaView style={s.screen} edges={['top','bottom']}><StatusBar barStyle="dark-content" backgroundColor={C.bg}/><KeyboardAvoidingView style={s.shell} behavior={pageId==='chats'?undefined:'padding'}>
+    {!chatsActive&&!(pageId==='map'&&!flow)&&<View style={s.header}><View style={{flex:1}}><Text accessibilityRole="header" numberOfLines={1} style={s.headerTitle}>{page?.title||'AI Аренда'}</Text><Text numberOfLines={1} style={s.subtitle}>{roleNames[selectedRole]}</Text></View>{!flow&&<Pressable accessibilityRole="button" accessibilityLabel="Открыть AI администратора" disabled={busy} onPress={()=>{setInput('');setPageId('chats');setChatInitial({administrator:true});}} style={({pressed})=>[s.headerAI,pressed&&s.disabled]}><Text style={s.headerAIText}>AI</Text></Pressable>}<WorkspaceMenuButton open={navigationMenu} busy={busy||!!flow} onPress={()=>setNavigationMenu(v=>!v)}/></View>}
+    {offline}{!!linkError&&<Text accessibilityRole="alert" style={s.error}>{linkError}</Text>}{processLinks.pending&&chatsActive&&<Text style={s.meta}>Ссылка откроется после закрытия диалога.</Text>}{pageId==='map'&&!flow?<MapHome key={userId+':'+selectedRole} role={selectedRole} accountId={userId} data={data} menu={<WorkspaceMenuButton avatar avatarId={data.profile?.avatar_id} open={navigationMenu} busy={busy} onPress={()=>setNavigationMenu(v=>!v)}/>} onChanged={async()=>{await load();}} onOpenPage={id=>{scrollMessage.current=null;setPageId(id);}} onOpenProcess={(kind,id)=>{setPageId('overview');say('Текущий статус и доступные действия.',kind==='job'?'jobs':'bookings',{ids:[id],role:selectedRole});}} onAsk={text=>{setInput('');setChatInitial({administrator:true,text,key:uid(),fromMap:true});setPageId('chats');}} onIntent={openMapIntent} onBook={bookFromMap}/>:pageId==='chats'?<NativeChats key={userId+':'+selectedRole} accountId={userId} role={selectedRole} onChanged={load} initial={chatInitial} onInitialConsumed={()=>setChatInitial(null)} onConversationChange={setChatsActive} onAuthError={handleError} onReturnToMap={()=>setPageId('map')}/>:<><ScrollView ref={scroll} style={{flex:1}} contentContainerStyle={s.transcript} keyboardShouldPersistTaps="handled" onContentSizeChange={()=>{if(messages[messages.length-1]?.sender==='user'||busy)scroll.current?.scrollToEnd({animated:true});}}>
       {pageId==='overview'&&<ApprovalInbox cards={data.approvals||[]} busy={busy} onDecide={body=>perform('approvals',body,uid())}/>}
       {pageId==='overview'&&(data.approvals||[]).some((c:Row)=>c.canDecide)&&<Button title={'Согласования · '+data.approvals.filter((c:Row)=>c.canDecide).length} disabled={busy||!!flow} onPress={()=>{setPageId('chats');setChatInitial({administrator:true});}}/>}
       {pageId==='overview'&&nextTask&&<Pressable accessibilityRole="button" accessibilityLabel={'Ассистент рекомендует: '+nextTask.title} disabled={busy} onPress={()=>openAssistantTask(nextTask)} style={[s.recommendation,nextTask.priority===3&&s.urgentRecommendation]}><Text style={s.recommendationLabel}>Ассистент рекомендует</Text><Text style={s.eventTitle}>{nextTask.title}</Text></Pressable>}
       {pageId==='properties'&&<Button title="Добавить квартиру" disabled={busy} onPress={()=>run('property')}/>}
-      {pageId==='account'?<AccountControl onChanged={load} onSignedOut={signedOut} key={selectedRole} onEdit={()=>run('profile')}/>:pageId==='calendar'?<RentalCalendar data={data} role={selectedRole} busy={busy} onOpen={(kind,id)=>say('Текущий статус и доступные действия.',kind==='job'?'jobs':'bookings',{ids:[id],role:selectedRole})}/>:primary.block&&block(primary)}
-      {!messages.length&&<Text style={s.lead}>Выберите нужный процесс. Переписка с AI администратором доступна в чатах.</Text>}
+      {pageId==='account'?<AccountControl onChanged={load} onSignedOut={signedOut} key={selectedRole} onEdit={()=>run('profile')}/>:pageId==='calendar'?<RentalCalendar data={data} role={selectedRole} busy={busy} onOpen={(kind,id)=>say('Текущий статус и доступные действия.',kind==='job'?'jobs':'bookings',{ids:[id],role:selectedRole})}/>:<>{pageId==='catalog'&&cityFlats.length>0&&cityFlats.length<data.properties.length&&<View style={s.listScope}><Text style={[s.meta,{flex:1}]}>{byCity?homeCity+' · '+allIds.length:'Все города · '+allIds.length}</Text><Pressable accessibilityRole="button" disabled={busy} onPress={()=>{setAllCities(!allCities);setListed({page:pageId,count:12});}} style={({pressed})=>[s.listScopeLink,pressed&&s.disabled]}><Text style={s.listScopeText}>{byCity?'Показать все города':'Только '+homeCity}</Text></Pressable></View>}{primary.block&&block(primary)}{!!primary.block&&pageId!=='overview'&&hidden>0&&<Button title={'Показать ещё '+Math.min(12,hidden)} secondary disabled={busy} onPress={()=>setListed({page:pageId,count:ids.length+12})}/>}</>}
+      {!messages.length&&<Text style={s.lead}>Вопрос можно задать AI администратору в чатах.</Text>}
       {messages.map((m,index)=><View key={m.id} onLayout={event=>{if(index===messages.length-1&&m.sender==='assistant'&&m.id===scrollMessage.current)scroll.current?.scrollTo({y:Math.max(0,event.nativeEvent.layout.y-12),animated:false});}} style={[s.message,m.sender==='user'?s.user:s.assistant]}>{m.sender==='assistant'&&<Text style={s.sender}>AI АРЕНДА</Text>}<Text selectable style={s.text}>{m.text}</Text>{m.sender==='assistant'&&block(m)}</View>)}
       {busy&&<ActivityIndicator accessibilityLabel="Ожидаем ответ сервера" color={C.accent} style={{alignSelf:'flex-start',marginBottom:20}}/>}
       {saveError&&<Text accessibilityRole="alert" style={s.error}>История ещё не сохранена. Проверьте связь; заявки хранятся на сервере.</Text>}
     </ScrollView>
-    {flow?<View style={s.composerWrap}>{flow?.questions[flow.index].choices&&<View style={s.buttonRow}>{flow.questions[flow.index].choices!.map(choice=><Button key={choice.value} title={choice.label} secondary disabled={busy} onPress={()=>send(choice.label)}/>)}</View>}{!!flow&&<View style={s.flowProgress}><Text style={s.flowLabel}>Вопрос {flow.index+1} из {flow.questions.length}</Text><View style={s.buttonRow}>{flow.index>0&&<Button title="Назад" secondary disabled={busy} onPress={()=>{const previous={...flow,index:flow.index-1};setFlow(previous);say(previous.questions[previous.index].text);}}/>}<Button title="Стоп" secondary disabled={busy} onPress={()=>send('Стоп')}/></View></View>}<View style={s.composer}><TextInput ref={composer} accessibilityLabel="Ответ в форме процесса" placeholder="Ваш ответ…" placeholderTextColor={C.muted} value={input} onChangeText={setInput} style={s.input} maxLength={2500} multiline submitBehavior="submit" onSubmitEditing={()=>send()} editable={ready&&!busy}/><Pressable accessibilityRole="button" accessibilityLabel="Отправить сообщение" accessibilityState={{disabled:!ready||busy||!input.trim()}} disabled={!ready||busy||!input.trim()} onPress={()=>send()} style={[s.send,(!input.trim()||busy)&&s.disabled]}><Text style={s.sendText}>{busy?'Ждите':'Отправить'}</Text></Pressable></View><Text style={s.footnote}>Данные формы отправятся после проверки и подтверждения.</Text></View>:null}</>}
-  {!chatsActive&&<WorkspaceNavigation avatarId={data.profile?.avatar_id} role={selectedRole} pageId={pageId} busy={busy||!!flow} onSelect={id=>{scrollMessage.current=null;setPageId(id);scroll.current?.scrollTo({y:0,animated:false});}} more={navigationMenu} setMore={setNavigationMenu} onSwitchRole={switchRole}/>}</KeyboardAvoidingView></SafeAreaView></ActivityClockProvider>;
+    {flow?<View style={s.composerWrap}>{flow?.questions[flow.index].choices&&<View style={s.buttonRow}>{flow.questions[flow.index].choices!.map(choice=><Button key={choice.value} title={choice.label} secondary disabled={busy} onPress={()=>send(choice.label)}/>)}</View>}{!!flow&&<View style={s.flowProgress}><Text style={s.flowLabel}>Вопрос {flow.index+1} из {flow.questions.length}</Text><View style={s.buttonRow}>{flow.index>0&&<Button title="Назад" secondary disabled={busy} onPress={()=>{const previous={...flow,index:flow.index-1};setFlow(previous);say(previous.questions[previous.index].text);}}/>}<Button title="Стоп" secondary disabled={busy} onPress={()=>send('Стоп')}/></View></View>}<View style={s.composer}><TextInput ref={composer} accessibilityLabel="Ваш ответ" placeholder="Ваш ответ…" placeholderTextColor={C.muted} value={input} onChangeText={setInput} style={s.input} maxLength={2500} multiline submitBehavior="submit" onSubmitEditing={()=>send()} editable={ready&&!busy}/><Pressable accessibilityRole="button" accessibilityLabel="Отправить сообщение" accessibilityState={{disabled:!ready||busy||!input.trim()}} disabled={!ready||busy||!input.trim()} onPress={()=>send()} style={[s.send,(!input.trim()||busy)&&s.disabled]}><Text style={s.sendText}>{busy?'Ждите':'Отправить'}</Text></Pressable></View><Text style={s.footnote}>Данные формы отправятся после проверки и подтверждения.</Text></View>:null}</>}
+  {!chatsActive&&<WorkspaceNavigation avatarId={data.profile?.avatar_id} name={data.profile?.name} role={selectedRole} pageId={pageId} busy={busy||!!flow} onSelect={id=>{scrollMessage.current=null;setPageId(id);scroll.current?.scrollTo({y:0,animated:false});}} more={navigationMenu} setMore={setNavigationMenu} onSwitchRole={switchRole}/>}</KeyboardAvoidingView></SafeAreaView></ActivityClockProvider>;
 }
 function Report({busy,onSubmit}:{busy:boolean;onSubmit:(body:Row)=>void}){
   const [checks,setChecks]=useState([false,false,false,false]),[report,setReport]=useState('');

@@ -9,7 +9,7 @@ export function ActivityClockProvider({serverTime,children}:{serverTime?:number;
  return <ClockContext.Provider value={now}>{children}</ClockContext.Provider>;
 }
 export const useActivityClock=()=>useContext(ClockContext);
-const time=(t:number)=>new Date(t*1000).toLocaleString('ru-RU',{timeZone:'Asia/Almaty',day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'});
+const time=(t:number)=>new Date(t*1000).toLocaleString('ru-RU',{timeZone:'Asia/Almaty',day:'numeric',month:'long',hour:'2-digit',minute:'2-digit'});
 export function ActivityTimer({kind,item,compact=false}:{kind:'booking'|'job';item:Record<string,any>;compact?:boolean}){
  const t=useActivityClock(),clock=activity(kind,item,t);if(!clock||!t)return null;
  return <span className={'activity-timer '+clock.phase+(compact?' compact':'')}>

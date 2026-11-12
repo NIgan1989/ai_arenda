@@ -11,7 +11,7 @@ export default async function Workspace({params,searchParams}:{params:Promise<{r
   if(roles.includes(role as Role)&&(section==='settings'||section==='overview'))redirect('/workspace/'+role+'/map');
   if(roles.includes(role as Role)&&section==='assistant')redirect('/workspace/'+role+'/chats');
   if(!roles.includes(role as Role)||!rolePages[role as Role].some(p=>p.id===section))notFound();
-  const search=await searchParams,query=new URLSearchParams();for(const key of ['book','city','start','end','guests','mode','rooms','maxPrice','mapSearch','new'])if(typeof search[key]==='string')query.set(key,search[key] as string);
+  const search=await searchParams,query=new URLSearchParams();for(const key of ['book','city','start','end','guests','mode','rooms','maxPrice','mapSearch','new','q'])if(typeof search[key]==='string')query.set(key,search[key] as string);
   const path='/workspace/'+role+'/'+section+(query.size?'?'+query.toString():'');
   const user=await getAppUser();if(!user)redirect('/signin?next='+encodeURIComponent(path));
   if(!env.DB)redirect('/');

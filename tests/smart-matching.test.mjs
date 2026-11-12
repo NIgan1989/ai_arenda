@@ -76,3 +76,37 @@ test('matching joins the real booking, authorised cleaner dispatch, checkout and
 test('a cancellation racing booking never reports success for an already claimed reservation',async()=>{
  const f=await enabled();try{const r=await matchingAction(f.guest,'guest','begin',{...input(),requestKey:'cancel-race',consent:true}),offerId=r.offers[0].id;await matchingAction(f.owner,'owner','respond',{offerId,decision:'accept',ready:true});const results=await Promise.allSettled([matchingAction(f.guest,'guest','book',{...input(),billingMode:'daily',expectedAmount:10000,expectedPolicyVersion:1,id:r.id,offerId,acceptTerms:true}),matchingAction(f.guest,'guest','cancel',{id:r.id})]);assert.equal(results.filter(r=>r.status==='fulfilled').length,1);const count=f.db.raw.prepare("SELECT COUNT(*) n FROM bookings WHERE request_key LIKE 'match:%'").get().n;assert.equal(count,results[0].status==='fulfilled'?1:0);}finally{f.db.close();}
 });
+
+// The guest's form leaves the budget empty by default and sends the largest amount the server accepts.
+test('a request without a budget passes with the value the form sends and still checks dates and guests', async () => {
+  const { NO_BUDGET } = await load('map-search-request');
+  assert.equal(matchingInput({ ...input(), maxPrice: NO_BUDGET }).maxPrice, NO_BUDGET);
+  assert.throws(() => matchingInput({ ...input(), maxPrice: String(Number(NO_BUDGET) + 1) }));
+  const f = await fixture();
+  try {
+    const open = await previewMatches(f.guest, { ...input(), maxPrice: NO_BUDGET });
+    assert.equal(open.properties.length, 1);
+    assert.equal(open.properties[0].estimate.amount, 10000);
+    assert.equal(open.filters.maxPrice, NO_BUDGET);
+    assert.equal((await previewMatches(f.guest, { ...input(), maxPrice: NO_BUDGET, guests: '9' })).properties.length, 0);
+  } finally {
+    f.db.close();
+  }
+});
+
+// The reasons are read by people: a distance is written the Russian way and names what the guest chose.
+test('the distance in the reasons has a decimal comma and names the chosen place', () => {
+  const near = { longitude: 76.95, latitude: 52.28, radius: 5000 };
+  const flat = {
+    id: 'a', district: 'Центр', details: { amenities: [] }, estimate: { amount: 9000 },
+    display_status: { code: 'ready' }, location: { longitude: 76.96, latitude: 52.28 },
+  };
+  const filters = { maxPrice: '11000', district: '', features: [], priority: 'balanced', near };
+  const [match] = rankMatches([flat], filters);
+  assert.deepEqual(match.match.reasons, ['В пределах бюджета', 'Примерно 0,7 км от выбранного места', 'Готовность проверена']);
+  // Next to the point itself the smallest distance shown is 0,1 km.
+  const [next] = rankMatches([{ ...flat, location: { longitude: 76.95, latitude: 52.28 } }], filters);
+  assert.equal(next.match.reasons[1], 'Примерно 0,1 км от выбранного места');
+  // Without a chosen place no distance is claimed.
+  assert.deepEqual(rankMatches([flat], { ...filters, near: null })[0].match.reasons, ['В пределах бюджета', 'Готовность проверена']);
+});

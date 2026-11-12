@@ -5,7 +5,6 @@ html[data-design="unified"] .workspace-shell .chat-main{margin:0;width:100%;max-
 html[data-design="unified"] .workspace-shell .chat-transcript{width:100%;max-width:none;padding:12px 24px 80px;scrollbar-gutter:auto;overflow:auto;flex:1;min-height:0}
 html[data-design="unified"] .workspace-shell .chat-header{height:64px;min-height:64px;padding:8px 80px 8px 24px;border:0;background:transparent;gap:12px}
 .workspace-back{display:inline-flex;align-items:center;gap:4px;min-height:44px;color:var(--foreground);font-size:14px;text-decoration:none}.workspace-back svg{transform:rotate(180deg)}
-html[data-design="unified"] .workspace-shell .chat-header .connection-status{margin-left:auto;font-size:12px}
 html[data-design="unified"] .workspace-shell .profile-navigation{position:fixed;inset:12px 14px auto auto;width:44px;height:44px;padding:0;margin:0;display:block;z-index:70;border:0;background:none}
 .profile-navigation-trigger{display:grid;place-items:center;position:relative;width:44px;height:44px;padding:4px;background:var(--glass-nav);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border:1px solid #ffffffc0;border-radius:50%;box-shadow:0 3px 16px #302d2824;cursor:pointer}
 .profile-navigation-trigger .profile-photo{width:36px;height:36px;border-radius:50%;object-fit:cover;margin:0}.profile-unread{position:absolute;top:-3px;right:-3px;min-width:18px;padding:1px 4px;border:2px solid var(--t-surface);background:var(--primary);color:var(--t-surface);font-size:12px;border-radius:24px;line-height:1.4}
@@ -58,7 +57,7 @@ html[data-design="unified"] .workspace-shell .inbox-room:hover,html[data-design=
 html[data-design="unified"] .workspace-shell .inbox-room strong{font-size:14px}.inbox-room>span>span{font-size:12px}.inbox-room .inbox-avatar{width:44px;height:44px;border-radius:16px;background:var(--t-accent-soft)}.inbox-avatar>img{width:30px;height:30px;object-fit:contain}
 .administrator-conversation{display:flex;flex-direction:column;min-height:0;background:var(--t-bg);color:var(--foreground);overflow:hidden;animation:messenger-enter 200ms ease}
 .messenger-header{display:flex;align-items:center;gap:8px;padding:8px 76px 8px 12px;border-bottom:1px solid var(--border);background:var(--glass-panel);flex:none;min-height:68px}
-.messenger-header>button{display:grid;place-items:center;width:44px;height:44px;border:0;background:none;border-radius:50%;cursor:pointer;flex:none}.messenger-header>img{width:34px;height:34px;object-fit:contain}.messenger-header>span{display:grid;gap:4px;min-width:0}.messenger-header strong{font-size:14px}.messenger-header small{font-size:12px;color:var(--muted-foreground)}
+.messenger-header>button{display:grid;place-items:center;width:44px;height:44px;border:0;background:none;border-radius:50%;cursor:pointer;flex:none}.messenger-header>img{width:34px;height:34px;object-fit:contain}.messenger-header>span{display:grid;gap:4px;min-width:0}.messenger-header strong{font-size:14px}.messenger-header small{font-size:12px;color:var(--muted-foreground);text-wrap:balance}
 .administrator-messages{flex:1;min-height:0;overflow:auto;overscroll-behavior:contain;padding:16px;display:flex;flex-direction:column;gap:8px}
 .administrator-bubble{align-self:flex-start;max-width:86%;padding:8px 12px 8px;background:var(--t-surface);border-radius:16px 16px 16px 4px;box-shadow:0 1px 3px #332a2008;animation:messenger-enter 200ms ease;overflow-wrap:anywhere}
 .administrator-bubble.mine{align-self:flex-end;background:var(--t-accent-soft);border-radius:16px 16px 4px 16px}.administrator-bubble.pending{opacity:.6}
@@ -335,35 +334,35 @@ html[data-design="unified"] .workspace-shell[data-section="map"] .map-workspace:
 .booking-request .booking-test-note{font-size:12px;line-height:1.5;background:var(--accent);color:var(--foreground);border-radius:12px;padding:12px;margin:0 0 12px}
 /* Equal management tabs for every workspace role, including narrow screens. */
 html[data-design="unified"] .workspace-shell .operations-groups{width:100%;min-width:0}
-html[data-design="unified"] .workspace-shell .operations-groups>.operations-group-list{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);width:100%;max-width:none;min-width:0;justify-self:stretch;box-sizing:border-box;height:auto;min-height:48px;padding:4px;gap:2px;overflow:visible;border-radius:16px}
-html[data-design="unified"] .workspace-shell .operations-groups>.operations-group-list>[role="tab"]{width:100%;min-width:0;height:auto;min-height:44px;padding:8px 4px;white-space:normal;overflow-wrap:anywhere;line-height:1.25;font-size:clamp(12px,2.6vw,14px);border-radius:12px}
+html[data-design="unified"] .workspace-shell .operations-groups>.operations-group-list{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(max-content,1fr);width:100%;max-width:none;min-width:0;justify-self:stretch;box-sizing:border-box;height:auto;min-height:48px;padding:4px;gap:2px;overflow-x:auto;overflow-y:hidden;scrollbar-width:none;border-radius:16px}
+html[data-design="unified"] .workspace-shell .operations-groups>.operations-group-list>[role="tab"]{width:100%;min-width:0;height:auto;min-height:44px;padding:8px 4px;white-space:nowrap;line-height:1.25;font-size:clamp(12px,2.6vw,14px);border-radius:12px}
 /* Shared process views: compact photographic list, cards and a scrollable table. */
-html[data-design="unified"] .workspace-shell .record-collection .records-toolbar{display:flex;flex-wrap:wrap;gap:8px}
-html[data-design="unified"] .workspace-shell .record-collection .records-search{min-width:180px;max-width:none}
-html[data-design="unified"] .workspace-shell .record-collection .record-view-toggle{display:flex;flex:none;gap:4px}
-html[data-design="unified"] .workspace-shell .record-collection .record-view-toggle button{width:44px;height:44px;padding:8px}
-html[data-design="unified"] .workspace-shell .record-collection .records-table.chosen{display:block;overflow:auto;max-width:100%}
-html[data-design="unified"] .workspace-shell .record-collection .records-table.hidden-view{display:none}
-html[data-design="unified"] .workspace-shell .record-summary-list{display:grid;gap:8px;min-width:0}
-html[data-design="unified"] .workspace-shell .record-summary{display:flex;align-items:center;gap:12px;width:100%;min-width:0;text-align:left;border:1px solid var(--border);border-radius:16px;padding:8px;background:var(--glass-panel);color:var(--foreground);cursor:pointer;transition:background 200ms,border-color 200ms}
-html[data-design="unified"] .workspace-shell .record-summary:hover{border-color:var(--primary);background:var(--accent)}
-html[data-design="unified"] .workspace-shell .record-summary:focus-visible{outline:2px solid var(--primary);outline-offset:3px}
-html[data-design="unified"] .workspace-shell .record-property-photo{height:128px;overflow:hidden;border-radius:12px;background:var(--muted);flex:none}
-html[data-design="unified"] .workspace-shell .record-property-photo .listing-photo{width:100%;height:100%;object-fit:cover;display:flex;flex-direction:column;justify-content:center;align-items:center;gap:4px;margin:0}
-html[data-design="unified"] .workspace-shell .record-property-photo small{font-size:12px;text-align:center}
-html[data-design="unified"] .workspace-shell .record-summary>.record-property-photo{width:88px;height:100px}
-html[data-design="unified"] .workspace-shell .record-summary-copy{display:grid;gap:4px;flex:1;min-width:0}
-html[data-design="unified"] .workspace-shell .record-summary-copy .process-status{justify-self:start;white-space:normal;font-size:12px;padding:4px 8px}
-html[data-design="unified"] .workspace-shell .record-summary-copy strong{font-size:14px;line-height:1.35;overflow-wrap:anywhere}
-html[data-design="unified"] .workspace-shell .record-summary-copy small{font-size:12px;line-height:1.4;color:var(--muted-foreground)}
-html[data-design="unified"] .workspace-shell .record-summary-copy b{font-size:14px;line-height:1.4}
-html[data-design="unified"] .workspace-shell .record-summary>svg{flex:none;color:var(--muted-foreground)}
-html[data-design="unified"] .workspace-shell .record-entry:not(.is-property){border:1px solid var(--border);border-radius:16px;padding:8px;background:var(--glass-panel);min-width:0}
-html[data-design="unified"] .workspace-shell .record-entry:not(.is-property)>.inline-card{border:0;box-shadow:none;background:transparent;padding:8px 2px 0}
-html[data-design="unified"] .workspace-shell .record-entry .inline-card h2{font-size:16px;margin:8px 0}
-html[data-design="unified"] .workspace-shell .record-entry .inline-card p{font-size:12px;margin:8px 0}
-html[data-design="unified"] .workspace-shell .record-entry .inline-actions{gap:4px;margin-top:8px}
-html[data-design="unified"] .workspace-shell .record-entry .inline-actions button{padding:8px 8px;font-size:12px}
+html[data-design="unified"] :is(.workspace-shell,.task-sheet) .record-collection .records-toolbar{display:flex;flex-wrap:wrap;gap:8px}
+html[data-design="unified"] :is(.workspace-shell,.task-sheet) .record-collection .records-search{min-width:180px;max-width:none}
+html[data-design="unified"] :is(.workspace-shell,.task-sheet) .record-collection .record-view-toggle{display:flex;flex:none;gap:4px}
+html[data-design="unified"] :is(.workspace-shell,.task-sheet) .record-collection .record-view-toggle button{width:44px;height:44px;padding:8px}
+html[data-design="unified"] :is(.workspace-shell,.task-sheet) .record-collection .records-table.chosen{display:block;overflow:auto;max-width:100%}
+html[data-design="unified"] :is(.workspace-shell,.task-sheet) .record-collection .records-table.hidden-view{display:none}
+html[data-design="unified"] :is(.workspace-shell,.task-sheet) .record-summary-list{display:grid;gap:8px;min-width:0}
+html[data-design="unified"] :is(.workspace-shell,.task-sheet) .record-summary{display:flex;align-items:center;gap:12px;width:100%;min-width:0;text-align:left;border:1px solid var(--border);border-radius:16px;padding:8px;background:var(--glass-panel);color:var(--foreground);cursor:pointer;transition:background 200ms,border-color 200ms}
+html[data-design="unified"] :is(.workspace-shell,.task-sheet) .record-summary:hover{border-color:var(--primary);background:var(--accent)}
+html[data-design="unified"] :is(.workspace-shell,.task-sheet) .record-summary:focus-visible{outline:2px solid var(--primary);outline-offset:3px}
+html[data-design="unified"] :is(.workspace-shell,.task-sheet) .record-property-photo{height:128px;overflow:hidden;border-radius:12px;background:var(--muted);flex:none}
+html[data-design="unified"] :is(.workspace-shell,.task-sheet) .record-property-photo .listing-photo{width:100%;height:100%;object-fit:cover;display:flex;flex-direction:column;justify-content:center;align-items:center;gap:4px;margin:0}
+html[data-design="unified"] :is(.workspace-shell,.task-sheet) .record-property-photo small{font-size:12px;text-align:center}
+html[data-design="unified"] :is(.workspace-shell,.task-sheet) .record-summary>.record-property-photo{width:88px;height:100px}
+html[data-design="unified"] :is(.workspace-shell,.task-sheet) .record-summary-copy{display:grid;gap:4px;flex:1;min-width:0}
+html[data-design="unified"] :is(.workspace-shell,.task-sheet) .record-summary-copy .process-status{justify-self:start;white-space:normal;font-size:12px;padding:4px 8px}
+html[data-design="unified"] :is(.workspace-shell,.task-sheet) .record-summary-copy strong{font-size:14px;line-height:1.35;overflow-wrap:anywhere}
+html[data-design="unified"] :is(.workspace-shell,.task-sheet) .record-summary-copy small{font-size:12px;line-height:1.4;color:var(--muted-foreground)}
+html[data-design="unified"] :is(.workspace-shell,.task-sheet) .record-summary-copy b{font-size:14px;line-height:1.4}
+html[data-design="unified"] :is(.workspace-shell,.task-sheet) .record-summary>svg{flex:none;color:var(--muted-foreground)}
+html[data-design="unified"] :is(.workspace-shell,.task-sheet) .record-entry:not(.is-property){border:1px solid var(--border);border-radius:16px;padding:8px;background:var(--glass-panel);min-width:0}
+html[data-design="unified"] :is(.workspace-shell,.task-sheet) .record-entry:not(.is-property)>.inline-card{border:0;box-shadow:none;background:transparent;padding:8px 2px 0}
+html[data-design="unified"] :is(.workspace-shell,.task-sheet) .record-entry .inline-card h2{font-size:16px;margin:8px 0}
+html[data-design="unified"] :is(.workspace-shell,.task-sheet) .record-entry .inline-card p{font-size:12px;margin:8px 0}
+html[data-design="unified"] :is(.workspace-shell,.task-sheet) .record-entry .inline-actions{gap:4px;margin-top:8px}
+html[data-design="unified"] :is(.workspace-shell,.task-sheet) .record-entry .inline-actions button{padding:8px 8px;font-size:12px}
 html[data-design="unified"] .workspace-shell .record-collection .record-cards{grid-template-columns:repeat(auto-fit,minmax(min(100%,280px),1fr));align-items:start}
 html[data-design="unified"] .workspace-shell .record-details-body>.record-property-photo{height:160px;margin-bottom:8px}
 @media(prefers-reduced-motion:reduce){.record-summary{transition:none!important}}

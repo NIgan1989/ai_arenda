@@ -39,7 +39,7 @@ export function RasterMapCanvas(props:MapCanvasProps){
    L.control.zoom({position:'topright',zoomInTitle:'Приблизить',zoomOutTitle:'Отдалить'}).addTo(instance);
    // Preserve browser cache/referrer defaults; load only visible tiles.
    const tiles=L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,keepBuffer:0,updateWhenIdle:true}).addTo(instance);
-   let loaded=0;tiles.on('tileload',()=>{loaded++;if(!disposed)setError('');});tiles.on('tileerror',()=>{if(!disposed&&loaded===0)setError('Не удалось загрузить подложку карты. Проверьте соединение.');});
+   let loaded=0;tiles.on('tileload',()=>{loaded++;if(!disposed)setError('');});tiles.on('tileerror',()=>{if(!disposed&&loaded===0)setError('Карта временно не загружается. Список и действия работают.');});
    homes.current=L.layerGroup().addTo(instance);people.current=L.layerGroup().addTo(instance);travel.current=L.layerGroup().addTo(instance);
    instance.on('moveend zoomend',drawHomes);
    instance.on('click',e=>{if(latest.current.pick)latest.current.onPick?.([e.latlng.lng,e.latlng.lat]);});
@@ -49,7 +49,7 @@ export function RasterMapCanvas(props:MapCanvasProps){
  },[]);
  useEffect(()=>{if(ready)drawHomes();},[props.items,props.selected,ready]);
  useEffect(()=>{if(ready&&!(props.routes||[]).length)fit([props.center],11);},[props.center[0],props.center[1],ready]);
- useEffect(()=>{if(!ready||!props.searchKey||fittedSearch.current===props.searchKey||(props.routes||[]).length)return;
+ useEffect(()=>{if(!props.searchKey)fittedSearch.current='';if(!ready||!props.searchKey||fittedSearch.current===props.searchKey||(props.routes||[]).length)return;
   const points=props.items.map(p=>mapPoint([p.location?.longitude,p.location?.latitude])).filter((p):p is MapPoint=>!!p);if(points.length){fittedSearch.current=props.searchKey;fit(points,14);}
  },[props.items,props.searchKey,ready]);
  useEffect(()=>{

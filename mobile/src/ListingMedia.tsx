@@ -5,10 +5,11 @@ import {ImageManipulator,SaveFormat} from 'expo-image-manipulator';
 import {request} from './api';
 import {C,s} from './styles';
 export function Photo({id,avatar=false,alt,size=48}:{id?:string|null;avatar?:boolean;alt:string;size?:number}){
- const [uri,setUri]=useState('');
- useEffect(()=>{let live=true;setUri('');if(id)request('/api/media/'+id).then(r=>{if(live)setUri(r.data);}).catch(()=>{});return()=>{live=false;};},[id]);
+ // The loaded picture is kept with its id, so a new id shows the placeholder at once and the effect never sets state while it runs.
+ const [loaded,setLoaded]=useState<{id:string;uri:string}|null>(null),uri=loaded&&loaded.id===id?loaded.uri:'';
+ useEffect(()=>{if(!id)return;let live=true;request('/api/media/'+id).then(r=>{if(live)setLoaded({id,uri:r.data});}).catch(()=>{});return()=>{live=false;};},[id]);
  const avatarSize={width:size,height:size,borderRadius:size/2};
- return uri?<Image source={{uri}} accessibilityLabel={alt} style={avatar?[m.avatar,avatarSize]:m.photo} resizeMode="cover" onError={()=>setUri('')}/>:<View accessibilityRole="image" accessibilityLabel={alt} style={avatar?[m.avatarPlaceholder,avatarSize]:m.placeholder}>{avatar?<Image source={require('../assets/navigation/account.png')} style={{width:26,height:26,tintColor:C.accent}}/>:<><Image source={require('../assets/navigation/properties.png')} style={{width:28,height:28,tintColor:C.muted}}/><Text style={s.meta}>Фотографии ещё не добавлены</Text></>}</View>;
+ return uri?<Image source={{uri}} accessibilityLabel={alt} style={avatar?[m.avatar,avatarSize]:m.photo} resizeMode="cover" onError={()=>setLoaded(null)}/>:<View accessibilityRole="image" accessibilityLabel={alt} style={avatar?[m.avatarPlaceholder,avatarSize]:m.placeholder}>{avatar?<Image source={require('../assets/navigation/account.png')} style={{width:26,height:26,tintColor:C.accent}}/>:<><Image source={require('../assets/navigation/properties.png')} style={{width:28,height:28,tintColor:C.muted}}/><Text style={s.meta}>Фотографии ещё не добавлены</Text></>}</View>;
 }
 export function PhotoUpload({kind,onAdd,disabled=false,onBusy}:{onBusy?:(v:boolean)=>void;kind:'property'|'avatar';onAdd:(id:string)=>void;disabled?:boolean}){
  const [busy,setBusy]=useState(false),[error,setError]=useState('');

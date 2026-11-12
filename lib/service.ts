@@ -647,12 +647,13 @@ export class RentalService {
       if(inherited?.start&&Date.parse(inherited.start+(inherited.start.length===16?'+05:00':''))<=Date.now()){delete inherited.start;delete inherited.end;}
       return administratorSearch(this,text,inherited||current,{syntheticPreview:config.TEST_DATA_ONLY==='1'});
     };
-    let mode='scenario',errorCode:string|undefined,commands:Row[]=[];
+    let mode='scenario',errorCode:string|undefined,commands:Row[]=[],fromAccount=false;
     if(role==='guest'&&(isPropertySearch(text)||previous&&isSearchRefinement(text))){
       const found=await readSearch();
       reply.text=found.text;reply.action='properties';search=found.result;
-    }else if(processReadIntent(text)){
-      reply.text=(await readAdministratorProcesses(this,role)).text;
+    }else if(processReadIntent(text,role)){
+      // Answered from the person's own bookings and cleaning jobs: no model is needed and none is asked.
+      reply.text=(await readAdministratorProcesses(this,role,text)).text;reply.action=role==='cleaner'?'jobs':'bookings';fromAccount=true;
     }else if(permission.allowed&&config.OPENAI_API_KEY&&config.OPENAI_MODEL){
       const history=await this.all('SELECT sender,body FROM (SELECT sender,body,created_at FROM messages WHERE user_id=? AND scope=? ORDER BY created_at DESC LIMIT 8) ORDER BY created_at',this.userId,role);
       const context=assistantContext(await this.roleState(role),role);
@@ -668,7 +669,7 @@ export class RentalService {
       this.query('INSERT INTO messages VALUES (?,?,?,?,?,?)',answerId,this.userId,role,'assistant',reply.text,ts+1),
       ...(search?[this.query('INSERT INTO administrator_search_results VALUES (?,?)',answerId,JSON.stringify(search))]:[])
     ]);
-    return {...reply,mode,commands,permissionRequired:!permission.allowed,...(search?{search}:{}),...(errorCode?{errorCode}:{})};
+    return {...reply,mode,commands,permissionRequired:!permission.allowed,...(fromAccount?{fromAccount}:{}),...(search?{search}:{}),...(errorCode?{errorCode}:{})};
   }
   async demo() {
     const existing=await this.one('SELECT id FROM properties WHERE demo_owner=? LIMIT 1',this.userId);

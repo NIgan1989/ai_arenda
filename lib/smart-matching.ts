@@ -24,7 +24,7 @@ export function rankMatches(properties:Row[],filters:Row):Row[]{
   if(filters.near&&(distance===null||distance>filters.near.radius))return [];
   const ready=p.display_status?.code==='ready',saving=1-amount/budget,proximity=distance===null?0:1-distance/filters.near.radius;
   const score=filters.priority==='cheaper'?saving:filters.priority==='closer'&&filters.near?proximity:.5*saving+.3*proximity+.2*Number(ready);
-  const reasons=['В пределах бюджета',...(distance!==null?['Примерно '+Math.max(.1,distance/1000).toFixed(1)+' км от выбранной зоны']:[]),...(ready?['Готовность проверена']:[]),...(filters.features.length?['Нужные удобства есть']:[])];
+  const reasons=['В пределах бюджета',...(distance!==null?['Примерно '+Math.max(.1,distance/1000).toFixed(1).replace('.',',')+' км от выбранного места']:[]),...(ready?['Готовность проверена']:[]),...(filters.features.length?['Нужные удобства есть']:[])];
   return [{...p,match:{score,distance,reasons}}];
  }).sort((a,b)=>b.match.score-a.match.score||a.estimate.amount-b.estimate.amount||String(a.id).localeCompare(String(b.id)));
 }

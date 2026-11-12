@@ -11,7 +11,8 @@
       "bundleIdentifier": "app.aiarenda.assistant"
     },
     "android": {
-      "package": "app.aiarenda.assistant"
+      "package": "app.aiarenda.assistant",
+      "softwareKeyboardLayoutMode": "resize"
     },
     "web": {
       "name": "AI Аренда — мобильное приложение",

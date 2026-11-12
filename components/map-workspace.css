@@ -1,56 +1,852 @@
-.map-workspace{position:relative;height:calc(100dvh - 154px);min-height:500px;isolation:isolate;background:var(--t-surface-alt);overflow:hidden;border-radius:24px;border:1px solid var(--border)}.rental-map-canvas,.map-surface{position:absolute;inset:0}.map-loading,.map-network-error{position:absolute;right:55px;top:15px;max-width:300px;padding:12px;border-radius:12px;background:var(--t-surface);font-size:12px;box-shadow:0 4px 20px #0001}.map-network-error{top:auto;bottom:44px;color:#854232}.map-toolbar{position:absolute;left:20px;top:18px;width:360px;z-index:2;display:grid;gap:8px}.map-toolbar form{background:var(--t-surface);border:1px solid var(--border);border-radius:16px;padding:8px;display:flex;gap:8px;flex-wrap:wrap;box-shadow:0 4px 20px #302d2812}.map-city{display:flex;align-items:center;flex:1;min-width:110px;gap:8px}.map-city input{border:0;box-shadow:none;min-width:0;padding-inline:4px}.map-filter-fields{display:grid;grid-template-columns:1fr 1fr;gap:8px;width:100%;padding-top:8px;border-top:1px solid var(--border)}.map-filter-fields label,.map-sharing label{display:grid;font-size:12px;gap:4px}.map-filter-fields>.date-range-trigger,.map-filter-fields>button[type=submit]{grid-column:1/-1}.map-mode-tabs{display:flex;gap:4px}.map-mode-tabs button{font-size:12px;padding:8px 8px;background:var(--t-surface)}.map-mode-tabs [data-variant=default]{background:var(--primary);color:var(--t-surface)}.map-panel{position:absolute;top:143px;bottom:20px;left:20px;width:360px;background:var(--card);border:1px solid var(--border);border-radius:16px;padding:16px;overflow:auto;display:flex;flex-direction:column;gap:12px;box-shadow:0 8px 30px #302d281a;z-index:1;overscroll-behavior:contain}.map-toolbar:has(.map-filter-fields)+.map-locate{top:65px}.map-workspace:has(.map-filter-fields) .map-panel{top:410px}.map-sheet-handle{display:none}.map-results-title{display:flex;align-items:center;justify-content:space-between;gap:8px}.map-results-title h2{font-size:18px;margin:0}.map-results-title span{font-size:12px;color:var(--muted-foreground)}.map-result{display:flex;align-items:center;gap:8px;text-align:left;border:1px solid var(--border);background:var(--t-surface);padding:12px;border-radius:12px;cursor:pointer;width:100%;flex:none;color:var(--foreground)}.map-result:hover{border-color:var(--primary);background:var(--accent)}.map-result>span:nth-child(2){display:grid;gap:4px;flex:1;min-width:0}.map-result strong{font-size:14px;line-height:1.4}.map-result small{font-size:12px;color:var(--muted-foreground);display:block;line-height:1.4}.map-result b{font-size:12px;white-space:nowrap}.map-result-icon{width:32px;height:36px;border-radius:12px;background:var(--accent);color:var(--primary);display:grid;place-items:center;flex:none}.map-footnote,.map-panel>small{font-size:12px;color:var(--muted-foreground);line-height:1.5}.map-process-card{display:grid;gap:12px}.map-process-card h2{font-size:22px;line-height:1.25;margin:0}.map-process-card p{font-size:14px;line-height:1.5;margin:0}.map-eyebrow{font-size:12px;text-transform:uppercase;letter-spacing:1.4px;color:var(--muted-foreground)}.map-route-link{display:flex;align-items:center;justify-content:center;padding:12px;border:1px solid var(--border);border-radius:12px;gap:8px;color:var(--primary);font-size:14px;text-decoration:none}.map-sharing,.map-point-editor{display:grid;gap:8px;padding:12px;border:1px solid var(--border);border-radius:12px}.map-sharing p,.map-point-editor p{font-size:12px}.map-coordinate-fields{display:grid;grid-template-columns:1fr 1fr;gap:8px}.map-coordinate-fields label{font-size:12px;min-width:0}.map-coordinate-fields input{width:100%;min-width:0}.map-demo-note{font-size:12px;padding:8px;background:var(--surface-warning);color:var(--text-warning);border-radius:12px;margin:0}.map-gps-status{font-size:12px;color:#285968;background:var(--t-bg);padding:8px;border-radius:12px;margin:0}.map-locate{position:absolute;top:100px;right:10px;z-index:1;box-shadow:0 4px 20px #0001}.map-panel .property-listing{display:block;flex:none}.map-panel .listing-visual{height:175px;aspect-ratio:auto}.map-panel .listing-body{padding:12px}.map-panel .listing-footer{display:grid;gap:8px}.map-panel .listing-owner-actions{flex-wrap:wrap}.map-panel .listing-body h2{font-size:18px}.map-pagination{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:12px}.picking .map-surface{cursor:crosshair}.map-list-view .rental-map-canvas{visibility:hidden}.map-list-view .map-panel{right:20px;width:auto;max-width:800px}.map-list-view .map-result{max-width:750px}.map-list-view .map-panel .property-listing{max-width:480px}.map-action-sheet{width:min(680px,100vw)!important;max-width:100vw!important;overflow-y:auto;padding-bottom:28px}.map-action-sheet .chat-messages{padding:16px}.map-action-sheet .record-collection{margin-top:12px}.map-action-sheet .records-table{display:none}.map-action-sheet .record-cards.hidden-view{display:grid}.map-action-sheet .record-view-toggle{display:none}
-html[data-design="unified"] [data-section="map"] .role-page-heading,html[data-design="unified"] [data-section="map"] .process-support{display:none}html[data-design="unified"] [data-section="map"] .chat-transcript{padding:16px 20px;max-width:none}html[data-design="unified"] [data-section="map"] .assistant-recommendation{display:none}html[data-design="unified"] [data-section="map"] .assistant-launcher{position:absolute;bottom:35px;right:40px;padding:0;background:transparent;width:auto;z-index:2}html[data-design="unified"] [data-section="map"] .assistant-launcher button{padding:12px;background:var(--t-surface);box-shadow:0 4px 20px #0001}html[data-design="unified"] [data-section="map"] .chat-main{position:relative}
-@media(max-width:700px){html[data-design="unified"] [data-section="map"] .chat-transcript{padding:0}.map-workspace{border:0;border-radius:0;height:calc(100dvh - 150px - env(safe-area-inset-bottom));min-height:400px}.map-toolbar{left:12px;right:55px;top:12px;width:auto}.map-toolbar form{padding:8px}.map-mode-tabs button{min-height:36px;font-size:12px;padding:8px 8px}.map-panel{left:0;right:0;bottom:0;top:auto;width:auto;max-height:36%;min-height:150px;border-radius:24px 24px 0 0;padding:8px 16px 16px;box-shadow:0 -6px 25px #302d2820;transition:max-height .25s ease}.map-panel.expanded{max-height:82%}.map-panel.has-selection{max-height:48%}.map-panel.has-selection.expanded{max-height:85%}.map-sheet-handle{display:grid;place-items:center;width:100%;border:0;background:transparent;color:var(--muted-foreground);min-height:25px;cursor:ns-resize;touch-action:none;flex:none}.map-result{padding:8px}.map-result strong{font-size:14px}.map-locate{top:112px}.map-workspace:has(.map-filter-fields) .map-panel{top:auto;max-height:25%}.map-network-error{bottom:45%;right:10px;left:10px;max-width:none}.map-loading{top:50%;right:20px}.map-list-view .map-panel{left:12px;right:12px;top:130px;bottom:0;max-height:none;min-height:0}.map-list-view:has(.map-filter-fields) .map-panel{top:430px}.map-list-view .map-locate{display:none}html[data-design="unified"] [data-section="map"] .assistant-launcher{bottom:calc(40% + 8px);right:12px}html[data-design="unified"] [data-section="map"] .assistant-launcher span{display:none}.map-action-sheet{width:100vw!important}}
-@media(prefers-reduced-motion:reduce){.map-panel{transition:none}}
-.map-selected-summary{display:none}.map-selected-details{flex:none}
-@media(max-width:700px){.map-panel.has-selection{max-height:55%}.map-selected-summary{display:grid;gap:8px}.map-selected-summary>strong{font-size:18px;line-height:1.3}.map-selected-summary>b{font-size:22px}.map-selected-summary small{font-size:12px;font-weight:400;color:var(--muted-foreground)}.map-panel:not(.expanded) .map-selected-details{display:none}.map-panel.expanded .map-selected-summary{display:none}.map-panel.has-selection .map-demo-note{padding:8px;font-size:12px}.map-panel .property-listing{border:none}.map-panel.has-selection .map-result{display:none}}
-/* Floating map surfaces. Stronger selectors deliberately supersede the previous fixed shell. */
+.rental-map-canvas,.map-surface{position:absolute;inset:0}.map-loading,.map-network-error{position:absolute;right:55px;top:15px;max-width:300px;padding:12px;border-radius:12px;background:var(--t-surface);font-size:12px;box-shadow:0 4px 20px #0001}.map-network-error{top:auto;bottom:44px;color:#854232}.map-action-sheet{width:min(680px,100vw)!important;max-width:100vw!important;overflow-y:auto;padding-bottom:28px}.map-action-sheet .chat-messages{padding:16px}.map-action-sheet .record-collection{margin-top:12px}.map-action-sheet .records-table{display:none}.map-action-sheet .record-cards.hidden-view{display:grid}.map-action-sheet .record-view-toggle{display:none}
+html[data-design="unified"] [data-section="map"] .role-page-heading{display:none}html[data-design="unified"] [data-section="map"] .chat-transcript{padding:16px 20px;max-width:none}html[data-design="unified"] [data-section="map"] .chat-main{position:relative}
+@media(max-width:700px){html[data-design="unified"] [data-section="map"] .chat-transcript{padding:0}.map-network-error{bottom:45%;right:10px;left:10px;max-width:none}.map-loading{top:50%;right:20px}.map-action-sheet{width:100vw!important}}
 html[data-design="unified"] .workspace-shell[data-section="map"] .workspace-content{margin-left:0;width:100%;height:100dvh;border:0;border-radius:0;background:transparent}
 html[data-design="unified"] .workspace-shell[data-section="map"] .chat-header{display:none}
 html[data-design="unified"] .workspace-shell[data-section="map"] .chat-main{position:relative;width:100%;max-width:none;height:100dvh;margin:0;padding:0}
 html[data-design="unified"] .workspace-shell[data-section="map"] .chat-transcript{position:relative;display:block;flex:1;padding:0;margin:0;max-width:none;width:100%;overflow:hidden}
-html[data-design="unified"] .workspace-shell[data-section="map"] .map-workspace{position:absolute;inset:0;height:auto;min-height:0;width:100%;border:0;border-radius:0;background:var(--t-surface-alt)}
-html[data-design="unified"] .map-toolbar{left:104px;top:20px;width:360px;gap:8px;z-index:15}
-html[data-design="unified"] .map-toolbar form{position:relative;background:var(--glass-nav);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border:1px solid var(--glass-border);border-radius:24px;padding:8px;box-shadow:0 6px 24px #302d2812;gap:4px;align-items:center}
-html[data-design="unified"] .map-toolbar [data-slot=button]{min-height:44px;border-radius:16px;padding:8px 12px;font-size:12px}
-html[data-design="unified"] .map-toolbar .map-city{min-width:90px;gap:4px;padding-left:8px}
-html[data-design="unified"] .map-toolbar .map-city input{background:transparent;border:0;outline-offset:0;min-height:44px;padding:8px 4px;font-size:14px;box-shadow:none}
-.map-search-summary{display:flex;align-items:center;gap:8px;width:100%;min-height:36px;padding:8px 8px;font-size:12px;color:#57584f;text-align:left;justify-content:flex-start;border-radius:12px}.map-search-summary>span{font-size:12px;color:var(--muted-foreground)}.map-search-summary>svg{margin-left:auto}.map-search-summary:hover{background:#f1e9df80}.map-filter-dirty{font-size:12px;padding:8px 8px;color:var(--t-warning);width:100%;margin:0}
-html[data-design="unified"] .map-filter-fields{position:absolute;top:calc(100% + 10px);left:0;right:0;width:100%;max-height:min(65dvh,560px);overflow:auto;overscroll-behavior:contain;padding:16px;background:var(--glass-panel);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border:1px solid var(--glass-border);border-radius:24px;box-shadow:0 12px 36px #302d2826;z-index:20;gap:12px}
-html[data-design="unified"] .map-mode-tabs{gap:8px;align-items:center;justify-content:flex-start}
-html[data-design="unified"] .map-mode-tabs button{border:1px solid var(--glass-border);border-radius:16px;background:var(--glass-nav);backdrop-filter:blur(20px);min-height:44px;font-size:12px;padding:8px 12px;box-shadow:0 4px 15px #302d2808}
-html[data-design="unified"] .map-mode-tabs button[aria-pressed=true]{background:var(--accent);color:var(--primary);border-color:#9d452f24}
-html[data-design="unified"] .map-panel{left:104px;top:148px;bottom:24px;width:360px;min-height:0;max-height:none;padding:16px;gap:12px;background:var(--glass-panel);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);border:1px solid var(--glass-border);border-radius:24px;box-shadow:0 10px 40px #302d281a;scrollbar-width:thin}
-html[data-design="unified"] .map-workspace:has(.map-search-summary) .map-panel{top:190px}
-html[data-design="unified"] .map-workspace:has(.map-filter-fields) .map-panel{top:190px}
-html[data-design="unified"] .map-result{background:#ffffff8c;border:1px solid #e4e2da99;border-radius:16px;padding:12px;gap:12px;box-shadow:none;transition:background 180ms ease,border-color 180ms ease}
-html[data-design="unified"] .map-result:hover{background:var(--t-surface);border-color:#9d452f55}.map-result-icon{background:#f3e9deaa;color:var(--primary);width:36px;height:40px;border-radius:12px}.map-result strong{font-size:14px;font-weight:550}.map-result small{font-size:12px}.map-results-title h2{font-size:18px;letter-spacing:-.4px}
-html[data-design="unified"] .map-panel [data-slot=button]{border-radius:16px;min-height:44px;flex:none}
-html[data-design="unified"] .map-panel .map-selected-summary{display:grid;grid-template-columns:minmax(0,1fr) 72px;gap:8px;align-items:start}.map-selected-summary>strong{grid-column:1;font-size:18px;line-height:1.3}.map-selected-summary>.map-selection-status{grid-column:1;font-size:12px;color:var(--muted-foreground)}.map-selected-summary>b{grid-column:1;font-size:22px;letter-spacing:-.4px}.map-selected-summary>b small{font-size:12px;color:var(--muted-foreground);font-weight:400}.map-summary-photo{grid-column:2;grid-row:1/4;width:72px;height:78px;border-radius:16px;overflow:hidden;background:var(--muted)}.map-summary-photo .listing-photo{width:100%;height:100%;object-fit:cover;min-height:0}.map-summary-photo .photo-placeholder{font-size:12px;display:grid;place-items:center}.map-summary-photo .photo-placeholder small{display:none}.map-selected-summary>[data-slot=button]{grid-column:1/-1}
-html[data-design="unified"] .map-panel:not(.expanded) .map-selected-details{display:none}html[data-design="unified"] .map-panel.expanded .map-selected-summary{display:none}
-.map-secondary-actions{border-top:1px solid var(--border);padding-top:8px;font-size:12px;display:block}.map-secondary-actions>summary{display:flex;align-items:center;justify-content:space-between;min-height:44px;cursor:pointer;list-style:none;color:var(--muted-foreground);padding:8px}.map-secondary-actions>summary::-webkit-details-marker{display:none}.map-secondary-actions[open]>summary{margin-bottom:8px;color:var(--primary)}.map-secondary-actions>[data-slot=button]{width:100%;margin-bottom:8px}.map-secondary-actions[open]>summary>svg{transform:rotate(180deg)}
-html[data-design="unified"] .map-workspace .map-locate{right:16px;top:158px;width:44px;height:44px;min-height:44px;padding:0;background:var(--glass-nav);backdrop-filter:blur(20px);border:1px solid var(--glass-border);border-radius:16px;box-shadow:0 4px 20px #302d2812;z-index:5}
-.map-surface .maplibre-ctrl-top-right{top:6px;right:6px}.map-surface .maplibre-ctrl-group{border-radius:16px;background:var(--glass-nav);backdrop-filter:blur(20px);box-shadow:0 4px 20px #302d2812}.map-surface .maplibre-ctrl-group button{width:44px;height:44px;min-height:44px}.map-surface .maplibre-ctrl-attrib{background:var(--glass-panel);border-radius:16px}.map-surface .maplibre-ctrl-attrib-button{min-width:32px;min-height:32px;cursor:pointer}
-html[data-design="unified"] .workspace-shell[data-section="map"] .assistant-launcher{position:absolute;top:214px;bottom:auto;right:16px;left:auto;width:44px;padding:0;z-index:8;background:none}
-html[data-design="unified"] .workspace-shell[data-section="map"] .assistant-launcher button{width:44px;height:44px;min-height:44px;border-radius:16px;padding:0;background:var(--glass-nav);border:1px solid var(--glass-border);backdrop-filter:blur(20px);box-shadow:0 4px 20px #302d2812}
-html[data-design="unified"] .workspace-shell[data-section="map"] .assistant-launcher button span,html[data-design="unified"] .workspace-shell[data-section="map"] .assistant-launcher button>svg:last-child{display:none}
 html[data-design="unified"] .workspace-shell[data-section="map"] .chat-bottom{position:absolute;right:24px;bottom:24px;width:min(410px,calc(100vw - 48px));max-height:calc(100dvh - 48px);overflow:auto;overscroll-behavior:contain;padding:16px;background:var(--glass-panel);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border:1px solid var(--glass-border);border-radius:24px;box-shadow:0 12px 50px #302d2826;z-index:45}
-html[data-design="unified"] .workspace-shell[data-section="map"] .chat-bottom .chat-composer{border-radius:16px;background:var(--t-surface);margin-top:8px}.composer-collapse{min-height:44px}
-html[data-design="unified"] .map-list-view .map-panel{right:auto;width:min(680px,calc(100vw - 208px));max-width:none}
-@media(max-width:700px){html[data-design="unified"] .map-toolbar{top:calc(12px + env(safe-area-inset-top,0px));left:12px;right:72px;width:auto;gap:8px}html[data-design="unified"] .map-toolbar form{padding:8px;border-radius:24px;gap:4px}html[data-design="unified"] .map-toolbar .map-city{padding-left:2px}html[data-design="unified"] .map-toolbar .map-city input{font-size:16px;min-width:0}html[data-design="unified"] .map-toolbar [data-slot=button]{padding:8px;min-width:44px}html[data-design="unified"] .map-mode-tabs button{font-size:12px;padding:8px;min-width:0;flex-shrink:1}html[data-design="unified"] .map-filter-fields{position:fixed;top:calc(134px + env(safe-area-inset-top,0px));left:12px;right:12px;width:auto;max-height:calc(100dvh - var(--dock-height) - var(--dock-bottom) - 160px);padding:12px}.map-search-summary{font-size:12px;padding:4px 8px;min-height:34px;white-space:nowrap;overflow:hidden}.map-search-summary>span{font-size:12px}.map-search-summary>svg{flex:none}.map-filter-dirty{font-size:12px;padding:4px 8px}html[data-design="unified"] .map-panel,html[data-design="unified"] .map-workspace:has(.map-search-summary) .map-panel,html[data-design="unified"] .map-workspace:has(.map-filter-fields) .map-panel{top:auto;left:12px;right:12px;width:auto;bottom:calc(var(--dock-height) + var(--dock-bottom) + 12px);height:calc((100dvh - var(--dock-height) - var(--dock-bottom) - 24px)*.44);max-height:none;min-height:0;padding:4px 12px 12px;border-radius:24px;gap:8px;transition:height 220ms ease;scroll-padding-top:44px}html[data-design="unified"] .map-panel[data-snap="0"]{height:max(120px,calc((100dvh - var(--dock-height) - var(--dock-bottom) - 24px)*.18))}html[data-design="unified"] .map-panel[data-snap="2"]{height:calc((100dvh - var(--dock-height) - var(--dock-bottom) - 24px)*.86)}html[data-design="unified"] .map-sheet-handle{position:relative;display:flex;align-items:center;justify-content:center;gap:8px;height:40px;min-height:40px;flex:none;width:100%;padding:8px 0 4px;border:0;background:transparent;color:var(--muted-foreground);touch-action:none}.map-grab-bar{position:absolute;top:3px;left:calc(50% - 18px);height:4px;width:36px;background:#99998b66;border-radius:8px}.map-snap-label{font-size:12px}html[data-design="unified"] .map-panel .map-back{position:absolute;top:5px;left:10px;width:40px;min-width:40px;padding:8px;background:transparent;z-index:1}.map-back span{display:none}html[data-design="unified"] .map-panel:not(.expanded):has(.map-selected-summary)>.map-demo-note{display:none}html[data-design="unified"] .map-panel .map-selected-summary{grid-template-columns:minmax(0,1fr) 64px;gap:8px}.map-summary-photo{width:64px;height:72px;border-radius:12px}.map-selected-summary>strong{font-size:16px;line-height:1.25}.map-selected-summary>b{font-size:22px}html[data-design="unified"] .map-panel .map-selected-summary>[data-slot=button]{min-height:44px;padding:8px 12px}.map-secondary-actions{font-size:12px;padding-top:2px}.map-secondary-actions summary{min-height:44px}html[data-design="unified"] .map-panel .map-result{padding:8px;gap:8px;border-radius:16px;min-height:68px}.map-result small{font-size:12px}.map-result strong{font-size:12px}.map-results-title h2{font-size:18px}.map-panel[data-snap="0"] .map-result~.map-result,.map-panel[data-snap="0"] .map-footnote,.map-panel[data-snap="0"] .map-pagination{display:none}.map-panel[data-snap="0"]:has(.map-result) .map-results-title{display:none}.map-panel[data-snap="0"]:has(.map-result) .map-results-title+[data-slot=button]{display:none}html[data-design="unified"] .map-panel[data-snap="0"] .map-sheet-handle{min-height:24px;height:24px;padding-top:8px}.map-panel[data-snap="0"] .map-snap-label,.map-panel[data-snap="0"] .map-sheet-handle>svg,.map-panel[data-snap="0"] .map-back,.map-panel[data-snap="0"]>.map-demo-note,.map-panel[data-snap="0"]>.map-secondary-actions,.map-panel[data-snap="0"]>small{display:none}html[data-design="unified"] .map-panel[data-snap="0"] .map-selected-summary{grid-template-columns:minmax(0,1fr) 112px;column-gap:8px;row-gap:2px}.map-panel[data-snap="0"] .map-summary-photo{display:none}.map-panel[data-snap="0"] .map-selected-summary>strong{font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.map-panel[data-snap="0"] .map-selected-summary>b{font-size:18px;grid-row:2}.map-panel[data-snap="0"] .map-selection-status{font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;grid-row:3}.map-panel[data-snap="0"] .map-selected-summary>[data-slot=button]:first-of-type{grid-column:2;grid-row:1/4;font-size:12px;align-self:center;white-space:normal}.map-panel[data-snap="0"] .map-selected-summary>[data-slot=button]:last-of-type{display:none}.map-panel[data-snap="0"] .map-process-card{display:grid;grid-template-columns:minmax(0,1fr) 115px;gap:4px}.map-panel[data-snap="0"] .map-process-card>.map-eyebrow,.map-panel[data-snap="0"] .map-process-card>p,.map-panel[data-snap="0"] .map-process-card>button:not(:first-of-type),.map-panel[data-snap="0"] .map-process-card>a,.map-panel[data-snap="0"] .map-process-card>.map-sharing{display:none}.map-panel[data-snap="0"] .map-process-card>h2{grid-column:1;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.map-panel[data-snap="0"] .map-process-card>strong{grid-column:1;font-size:12px}.map-panel[data-snap="0"] .map-process-card>button:first-of-type{grid-column:2;grid-row:1/3;white-space:normal;font-size:12px}html[data-design="unified"] .map-panel.expanded .map-selected-summary{display:none}html[data-design="unified"] .map-panel.expanded .map-selected-details{display:block}html[data-design="unified"] .map-list-view .map-panel{left:12px;right:12px;width:auto;max-height:none}html[data-design="unified"] .workspace-shell[data-section="map"] .chat-bottom{bottom:calc(var(--dock-height) + var(--dock-bottom) + 12px);right:12px;width:calc(100% - 24px);max-height:calc(100dvh - var(--dock-height) - var(--dock-bottom) - 36px)}.map-network-error{top:272px;bottom:auto;left:12px;right:72px;font-size:12px}.map-process-card{gap:8px}.map-process-card h2{font-size:22px}.map-sharing{padding:12px}}
-@supports not ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){html[data-design="unified"] :is(.map-panel,.map-toolbar form,.map-filter-fields,.map-mode-tabs button,.map-locate),html[data-design="unified"] .workspace-shell[data-section="map"] :is(.chat-bottom,.assistant-launcher button){background:var(--t-surface);border-color:var(--border)}}
-@media(prefers-reduced-motion:reduce){html[data-design="unified"] .map-panel,html[data-design="unified"] .map-result{transition:none}}
+html[data-design="unified"] .workspace-shell[data-section="map"] .chat-bottom .chat-composer{border-radius:16px;background:var(--t-surface);margin-top:8px}
+@media(max-width:700px){html[data-design="unified"] .workspace-shell[data-section="map"] .chat-bottom{bottom:calc(var(--dock-height) + var(--dock-bottom) + 12px);right:12px;width:calc(100% - 24px);max-height:calc(100dvh - var(--dock-height) - var(--dock-bottom) - 36px)}.map-network-error{top:272px;bottom:auto;left:12px;right:72px;font-size:12px}}
 html[data-design="unified"] .workspace-shell[data-section="map"] .chat-transcript{scrollbar-gutter:auto}
-.map-surface .maplibre-ctrl-attrib[open]{max-width:min(300px,calc(100vw - 32px));white-space:normal}
-@media(max-width:700px){html[data-design="unified"] .map-mode-tabs{width:calc(100vw - 24px)}}
-@media(max-width:390px){.map-filter-label{display:none}}
-@media(max-width:700px){html[data-design="unified"] .map-workspace .map-panel[data-snap="0"]{height:max(120px,calc((100dvh - var(--dock-height) - var(--dock-bottom) - 24px)*.18))}html[data-design="unified"] .map-workspace .map-panel[data-snap="1"]{height:calc((100dvh - var(--dock-height) - var(--dock-bottom) - 24px)*.44)}html[data-design="unified"] .map-workspace .map-panel[data-snap="2"]{height:calc((100dvh - var(--dock-height) - var(--dock-bottom) - 24px)*.86)}}
-@media(max-width:700px){html[data-design="unified"] .map-workspace .map-panel[data-snap="2"]{z-index:20}html[data-design="unified"] .map-workspace:has(.map-panel[data-snap="2"]) .map-toolbar{visibility:hidden;pointer-events:none}.map-panel[data-snap="0"]>.form-error{position:fixed;top:270px;left:12px;right:72px;padding:12px;background:var(--glass-panel);border:1px solid var(--border);border-radius:16px;box-shadow:0 4px 20px #302d281a;z-index:30}}
-.map-room-exact{display:flex!important;align-items:center;gap:8px;min-height:44px}.map-room-exact input{width:18px!important;height:18px!important;min-height:18px!important;flex:0 0 18px}
-/* Empty toolbar space must pass clicks and map gestures through to the canvas. */
-.map-toolbar{pointer-events:none}.map-toolbar form,.map-toolbar .map-mode-tabs button,.map-toolbar .map-search-feedback{pointer-events:auto}
-html[data-design="unified"] .map-mode-tabs{width:max-content;max-width:100%;pointer-events:none}
-.map-location-feedback{position:absolute;top:274px;left:16px;right:76px;max-width:420px;z-index:9;display:flex;align-items:flex-start;gap:8px;padding:12px 12px;background:#fffdf8f5;border:1px solid var(--t-line);border-radius:16px;box-shadow:0 4px 20px #302d2812;font-size:12px;line-height:1.6;color:#55473a;pointer-events:none}
-.map-location-feedback svg{flex:none;margin-top:4px}.map-locate[aria-busy=true] svg{animation:map-location-pulse 1s ease-in-out infinite}
-@keyframes map-location-pulse{50%{opacity:.3}}
-@media(prefers-reduced-motion:reduce){.map-locate[aria-busy=true] svg{animation:none}}
+
+/* ==========================================================================
+   Owner and cleaner (and "my rental" of the guest): the map with one panel.
+   Markup: components/map-workspace.tsx. The panel itself, the AI line and the
+   "Сейчас" card come from components/map-home.css.
+   ========================================================================== */
+
+.map-concept-operations {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-height: 520px;
+}
+
+/* On a phone the map ends exactly where the bottom navigation begins:
+   8 + 56 + 12 and a 1px line, see .release-bottom-nav in workspace-release.css. */
+@media (max-width: 700px) {
+  html[data-design="unified"] .workspace-shell.release-workspace[data-section="map"] .map-concept-operations {
+    height: calc(100dvh - 77px - env(safe-area-inset-bottom, 0px)) !important;
+  }
+}
+
+.map-role {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  isolation: isolate;
+  background: var(--t-surface-alt);
+  color: var(--t-ink);
+}
+
+.map-role .rental-map-canvas.picking .map-surface {
+  cursor: crosshair;
+}
+
+/* ---------- Controls on the right edge: zoom and "where am I", under the profile button ---------- */
+html[data-design="unified"] .workspace-shell .map-role .map-surface .maplibregl-ctrl-top-right {
+  top: 76px;
+  right: var(--t-space-20);
+}
+
+html[data-design="unified"] .workspace-shell .map-role .map-surface .maplibregl-ctrl-top-right .maplibregl-ctrl {
+  margin: 0;
+}
+
+html[data-design="unified"] .workspace-shell .map-role .map-surface .maplibregl-ctrl-group {
+  display: grid;
+  gap: var(--t-space-8);
+  overflow: visible;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+html[data-design="unified"] .workspace-shell .map-role .map-surface .maplibregl-ctrl-group button {
+  width: var(--t-control-touch);
+  height: var(--t-control-touch);
+  min-height: var(--t-control-touch);
+  border: 1px solid var(--t-line);
+  border-radius: var(--t-radius-full);
+  background-color: var(--t-surface);
+  box-shadow: 0 2px 8px rgb(30 32 29 / 0.12);
+}
+
+html[data-design="unified"] .workspace-shell .map-role .map-surface .maplibregl-ctrl-group button:focus-visible {
+  outline: 3px solid var(--t-focus);
+  outline-offset: 2px;
+}
+
+.map-role .map-role-locate {
+  position: absolute;
+  z-index: 5;
+  top: 180px;
+  right: var(--t-space-20);
+}
+
+.map-role .map-role-locate[aria-pressed="true"] {
+  border-color: var(--t-accent);
+  color: var(--t-accent);
+}
+
+.map-role .map-role-locate:disabled {
+  cursor: progress;
+}
+
+.map-role .map-role-locate[aria-busy="true"] svg {
+  animation: map-role-pulse 1s ease-in-out infinite;
+}
+
+@keyframes map-role-pulse {
+  50% {
+    opacity: 0.3;
+  }
+}
+
+/* The compatibility map (Leaflet) gets the same two round buttons. */
+.map-role .raster-map-canvas .leaflet-top.leaflet-right {
+  top: 76px;
+  right: var(--t-space-20);
+}
+
+.map-role .raster-map-canvas .leaflet-control-zoom {
+  display: grid;
+  gap: var(--t-space-8);
+  margin: 0;
+  overflow: visible;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+}
+
+.map-role .raster-map-canvas .leaflet-control-zoom a {
+  width: var(--t-control-touch);
+  height: var(--t-control-touch);
+  border: 1px solid var(--t-line);
+  border-radius: var(--t-radius-full);
+  background: var(--t-surface);
+  color: var(--t-ink);
+  line-height: 42px;
+  box-shadow: 0 2px 8px rgb(30 32 29 / 0.12);
+}
+
+/* ---------- Map credits: a quiet caption in the corner, not a button among the controls ---------- */
+.map-role .map-attribution,
+.map-role .raster-map-attribution {
+  position: absolute;
+  z-index: 4;
+  top: var(--t-space-16);
+  right: auto;
+  bottom: auto;
+  left: var(--t-space-16);
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  flex-wrap: wrap;
+  max-width: calc(100% - 96px);
+  padding: 0;
+  border-radius: var(--t-radius-sm);
+  background: rgb(255 255 255 / 0.82);
+  box-shadow: none;
+  color: var(--t-muted);
+  font-size: var(--t-font-caption);
+  line-height: var(--t-line-caption);
+}
+
+.map-role .raster-map-attribution {
+  padding: var(--t-space-4) var(--t-space-8);
+}
+
+/* The caption is small; the button that takes the finger is 44px high. The box of the credits is
+   lifted by the difference, so the caption itself stays 16px from the corner. */
+.map-role .map-attribution {
+  top: var(--t-space-4);
+  background: none;
+}
+
+.map-role .map-attribution > summary {
+  display: flex;
+  align-items: center;
+  width: auto;
+  height: var(--t-control-touch);
+  min-height: var(--t-control-touch);
+  padding: 0;
+  border-radius: var(--t-radius-sm);
+  background: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  font-size: 0;
+  font-weight: 400;
+  line-height: 0;
+}
+
+.map-role .map-attribution > summary::before {
+  content: "© OpenStreetMap";
+  padding: var(--t-space-4) var(--t-space-8);
+  border-radius: var(--t-radius-sm);
+  background: rgb(255 255 255 / 0.82);
+  font-size: var(--t-font-caption);
+  line-height: var(--t-line-caption);
+}
+
+.map-role .map-attribution[open] > summary::before {
+  content: "Карта:";
+}
+
+.map-role .map-attribution > div {
+  gap: var(--t-space-8);
+  margin-left: var(--t-space-4);
+  padding: var(--t-space-4) var(--t-space-8);
+  border-radius: var(--t-radius-sm);
+  background: rgb(255 255 255 / 0.82);
+}
+
+.map-role .map-attribution a,
+.map-role .raster-map-attribution a {
+  min-height: 0;
+  color: inherit;
+}
+
+/* What the map itself has to say goes under the credits, small and calm. */
+html[data-design="unified"] .workspace-shell .map-role .map-loading,
+html[data-design="unified"] .workspace-shell .map-role .map-network-error {
+  position: absolute;
+  z-index: 4;
+  top: 48px;
+  right: 76px;
+  bottom: auto;
+  left: var(--t-space-16);
+  width: auto;
+  max-width: 320px;
+  margin: 0;
+  padding: var(--t-space-8) var(--t-space-12);
+  border-radius: var(--t-radius-md);
+  background: var(--t-surface);
+  box-shadow: 0 2px 8px rgb(30 32 29 / 0.12);
+  color: var(--t-ink-soft);
+  font-size: var(--t-font-caption);
+  line-height: var(--t-line-caption);
+}
+
+/* On a phone the opened sheet takes the screen: the controls would only peek from behind it. */
+@media (max-width: 700px) {
+  html[data-design="unified"] .workspace-shell .map-role[data-expanded="true"] .map-surface .maplibregl-ctrl-top-right,
+  html[data-design="unified"] .workspace-shell .map-role[data-expanded="true"] .map-loading,
+  html[data-design="unified"] .workspace-shell .map-role[data-expanded="true"] .map-network-error,
+  .map-role[data-expanded="true"] .raster-map-canvas .leaflet-top.leaflet-right,
+  .map-role[data-expanded="true"] .map-role-locate,
+  html[data-design="unified"] .workspace-shell .map-concept-operations:has(.matching-inbox-panel) .map-surface .maplibregl-ctrl-top-right,
+  .map-concept-operations:has(.matching-inbox-panel) .raster-map-canvas .leaflet-top.leaflet-right,
+  .map-concept-operations:has(.matching-inbox-panel) .map-role-locate {
+    visibility: hidden;
+  }
+}
+
+@media (min-width: 701px) {
+  html[data-design="unified"] .workspace-shell .map-role .map-surface .maplibregl-ctrl-top-right,
+  .map-role .raster-map-canvas .leaflet-top.leaflet-right {
+    top: 82px;
+    right: 28px;
+  }
+
+  .map-role .map-role-locate {
+    top: 186px;
+    right: 28px;
+  }
+
+  .map-role .map-attribution,
+  .map-role .raster-map-attribution {
+    top: auto;
+    right: var(--t-space-16);
+    bottom: var(--t-space-16);
+    left: auto;
+    max-width: 480px;
+  }
+
+  .map-role .map-attribution {
+    bottom: var(--t-space-4);
+  }
+
+  html[data-design="unified"] .workspace-shell .map-role .map-loading,
+  html[data-design="unified"] .workspace-shell .map-role .map-network-error {
+    top: auto;
+    right: var(--t-space-16);
+    bottom: 48px;
+    left: auto;
+  }
+}
+
+/* ---------- Panel ---------- */
+/* The row that opens the sheet is the last thing in the folded sheet and has air of its own (44px for one line):
+   it sits closer to the card above and to the edge below, and the map gets those pixels. */
+.map-role .map-role-panel .map-home-now + .map-home-refine,
+.map-role .map-role-panel .map-home-ai + .map-home-refine {
+  margin-top: calc(-1 * var(--t-space-4));
+}
+
+@media (max-width: 700px) {
+  .map-role .map-role-panel:not([data-expanded="true"]) {
+    padding-bottom: var(--t-space-8);
+  }
+}
+
+/* The handle stays in place while the opened sheet scrolls under it. */
+.map-role .map-role-panel .map-home-handle {
+  position: sticky;
+  z-index: 2;
+  top: 0;
+  background: var(--t-surface);
+}
+
+/* A wide block inside (a row of steps, a long label) scrolls or wraps by itself and never widens the panel. */
+.map-role .map-role-panel .map-home-details {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.map-role-panel .map-role-refine-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.map-role-panel .map-role-count {
+  flex: none;
+  margin-left: auto;
+  color: var(--t-muted);
+  font-weight: 400;
+}
+
+.map-role .map-role-panel .map-home-refine > .map-role-count + svg:last-child {
+  margin-left: 0;
+}
+
+.map-role-panel .map-role-status {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--t-space-8);
+  margin: 0;
+  padding: var(--t-space-8) var(--t-space-12);
+  border-radius: var(--t-radius-md);
+  background: var(--t-bg);
+  color: var(--t-ink-soft);
+  font-size: var(--t-font-caption);
+  line-height: var(--t-line-caption);
+}
+
+.map-role-panel .map-role-status > svg {
+  flex: none;
+  color: var(--t-muted);
+}
+
+.map-role-panel .map-role-status.is-error {
+  background: var(--t-danger-soft);
+  color: var(--t-danger);
+}
+
+/* While my position is shared: what the owner sees and the way to stop it, in one line. */
+.map-role-panel .map-role-live {
+  display: flex;
+  align-items: center;
+  gap: var(--t-space-8);
+  padding: var(--t-space-4) var(--t-space-4) var(--t-space-4) var(--t-space-12);
+  border-radius: var(--t-radius-md);
+  background: var(--t-bg);
+}
+
+.map-role-panel .map-role-live > p {
+  flex: 1;
+  display: flex;
+  align-items: flex-start;
+  gap: var(--t-space-8);
+  min-width: 0;
+  margin: 0;
+  color: var(--t-ink-soft);
+  font-size: var(--t-font-caption);
+  line-height: var(--t-line-caption);
+}
+
+.map-role-panel .map-role-live > p > svg {
+  flex: none;
+  color: var(--t-muted);
+}
+
+.map-role-panel .map-role-live > .map-role-button {
+  flex: none;
+  min-height: var(--t-control-touch);
+  padding: 0 var(--t-space-12);
+  font-size: var(--t-font-label);
+  line-height: var(--t-line-label);
+}
+
+.map-role-panel .map-role-inline {
+  flex: none;
+  margin: calc(-1 * var(--t-space-16)) calc(-1 * var(--t-space-8)) calc(-1 * var(--t-space-16)) auto;
+  padding: var(--t-space-16) var(--t-space-8);
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-weight: 600;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.map-role-panel .map-role-note {
+  margin: 0;
+  color: var(--t-muted);
+  font-size: var(--t-font-label);
+  line-height: var(--t-line-label);
+}
+
+.map-role-panel .map-role-back {
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-start;
+  gap: var(--t-space-8);
+  min-height: var(--t-control-touch);
+  margin-left: calc(-1 * var(--t-space-4));
+  padding: 0 var(--t-space-12) 0 var(--t-space-4);
+  border: 0;
+  border-radius: var(--t-radius-md);
+  background: none;
+  color: var(--t-ink-soft);
+  font-size: var(--t-font-label);
+  line-height: var(--t-line-label);
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.map-role-panel .map-role-back:hover {
+  background: var(--t-bg);
+}
+
+.map-role-panel .map-role-empty {
+  display: grid;
+  gap: var(--t-space-12);
+}
+
+.map-role-panel .map-role-empty p {
+  margin: 0;
+  color: var(--t-ink);
+  font-size: var(--t-font-body);
+  line-height: var(--t-line-body);
+}
+
+/* ---------- Buttons ---------- */
+.map-role-panel .map-role-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--t-space-8);
+  min-width: 0;
+  min-height: var(--t-control-field);
+  padding: 0 var(--t-space-16);
+  border: 1px solid var(--t-accent);
+  border-radius: var(--t-radius-md);
+  background: var(--t-accent);
+  color: var(--t-on-accent);
+  font: inherit;
+  font-size: var(--t-font-body);
+  line-height: var(--t-line-body);
+  font-weight: 600;
+  text-align: center;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background-color var(--t-motion-fast), border-color var(--t-motion-fast);
+}
+
+.map-role-panel .map-role-button > svg {
+  flex: none;
+}
+
+.map-role-panel .map-role-button:hover:not(:disabled) {
+  border-color: var(--t-accent-pressed);
+  background: var(--t-accent-pressed);
+}
+
+.map-role-panel .map-role-button.is-quiet {
+  border-color: var(--t-line-strong);
+  background: var(--t-surface);
+  color: var(--t-ink);
+  font-weight: 500;
+}
+
+.map-role-panel .map-role-button.is-quiet:hover:not(:disabled) {
+  border-color: var(--t-accent-line);
+  background: var(--t-accent-soft);
+}
+
+.map-role-panel .map-role-button.is-danger {
+  border-color: var(--t-danger);
+  background: var(--t-surface);
+  color: var(--t-danger);
+}
+
+.map-role-panel .map-role-button.is-danger:hover:not(:disabled) {
+  border-color: var(--t-danger);
+  background: var(--t-danger-soft);
+}
+
+.map-role-panel .map-role-button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.map-role-panel .map-role-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--t-space-8);
+}
+
+/* Two buttons share the line; if a long label does not fit, they stack. */
+.map-role-panel .map-role-actions > .map-role-button {
+  flex: 1 1 auto;
+  white-space: nowrap;
+}
+
+.map-role-panel .map-role-button:focus-visible,
+.map-role-panel .map-role-back:focus-visible,
+.map-role-panel .map-role-row:focus-visible,
+.map-role-panel .map-role-inline:focus-visible,
+.map-role-panel .map-role-select:focus-visible {
+  outline: 3px solid var(--t-focus);
+  outline-offset: 2px;
+}
+
+/* ---------- Lists under the panel: flats, bookings, cleaning jobs ---------- */
+.map-role-panel .map-role-heading {
+  margin: var(--t-space-4) 0 0;
+  color: var(--t-muted);
+  font-size: var(--t-font-label);
+  line-height: var(--t-line-label);
+  font-weight: 600;
+  letter-spacing: 0;
+}
+
+.map-role-panel .map-role-list {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.map-role-panel .map-role-row {
+  display: flex;
+  align-items: center;
+  gap: var(--t-space-12);
+  width: 100%;
+  min-height: var(--t-space-64);
+  margin: 0;
+  padding: var(--t-space-8) var(--t-space-4);
+  border: 0;
+  border-radius: var(--t-radius-md);
+  background: none;
+  color: var(--t-ink);
+  font: inherit;
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.map-role-panel .map-role-row:hover {
+  background: var(--t-bg);
+}
+
+.map-role-panel .map-role-row.is-link {
+  min-height: var(--t-control-primary);
+}
+
+.map-role-panel .map-role-row > svg:last-child {
+  flex: none;
+  color: var(--t-muted);
+}
+
+.map-role-panel .map-role-row-text {
+  flex: 1;
+  display: grid;
+  gap: var(--t-space-2);
+  min-width: 0;
+}
+
+/* A flat name and its state are read whole: each may take two lines; only something longer than that is cut. */
+.map-role-panel .map-role-row-text > strong,
+.map-role-panel .map-role-row-text > span {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+
+.map-role-panel .map-role-row-text > strong {
+  font-size: var(--t-font-body);
+  line-height: var(--t-line-body);
+  font-weight: 600;
+}
+
+.map-role-panel .map-role-row-text > span {
+  color: var(--t-muted);
+  font-size: var(--t-font-label);
+  line-height: var(--t-line-label);
+}
+
+.map-role-panel .map-role-thumb {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: var(--t-control-field);
+  height: var(--t-control-field);
+  overflow: hidden;
+  border-radius: var(--t-radius-md);
+  background: var(--t-surface-alt);
+  color: var(--t-muted);
+}
+
+.map-role-panel .map-role-thumb.is-icon {
+  background: var(--t-accent-soft);
+  color: var(--t-accent);
+}
+
+.map-role-panel .map-role-thumb .listing-photo {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  object-fit: cover;
+}
+
+.map-role-panel .map-role-thumb .photo-placeholder {
+  gap: 0;
+  padding: 0;
+}
+
+.map-role-panel .map-role-thumb .photo-placeholder > svg {
+  width: 100%;
+  height: 100%;
+}
+
+.map-role-panel .map-role-thumb .photo-placeholder > svg.lucide {
+  width: 20px;
+  height: 20px;
+}
+
+.map-role-panel .map-role-thumb .photo-placeholder small {
+  display: none;
+}
+
+/* ---------- City of the cleaner, coordinates of a flat ---------- */
+.map-role-panel .map-role-city {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: var(--t-space-8);
+}
+
+.map-role-panel .map-role-coords {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: var(--t-space-8);
+}
+
+.map-role-panel .map-role-city label,
+.map-role-panel .map-role-coords label {
+  display: grid;
+  gap: var(--t-space-4);
+  min-width: 0;
+  color: var(--t-muted);
+  font-size: var(--t-font-caption);
+  line-height: var(--t-line-caption);
+}
+
+.map-role-panel .map-role-select {
+  width: 100%;
+  min-width: 0;
+  height: var(--t-control-field);
+  min-height: var(--t-control-field);
+  margin: 0;
+  padding: 0 var(--t-space-12);
+  border: 1px solid var(--t-line-strong);
+  border-radius: var(--t-radius-md);
+  background-color: var(--t-surface);
+  box-shadow: none;
+  color: var(--t-ink);
+  font: inherit;
+  font-size: var(--t-font-body);
+  line-height: var(--t-line-body);
+}
+
+/* ---------- A flat, a booking or a cleaning job chosen on the map ---------- */
+.map-role-panel .map-role-card {
+  display: grid;
+  gap: var(--t-space-4);
+  min-width: 0;
+}
+
+.map-role-panel .map-role-card-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--t-space-8);
+}
+
+.map-role-panel .map-role-eyebrow {
+  color: var(--t-accent);
+  font-size: var(--t-font-caption);
+  line-height: var(--t-line-caption);
+  font-weight: 600;
+}
+
+.map-role-panel .map-role-title {
+  margin: 0;
+  color: var(--t-ink);
+  font-size: var(--t-font-subtitle);
+  line-height: var(--t-line-subtitle);
+  font-weight: 600;
+  letter-spacing: 0;
+  overflow-wrap: anywhere;
+}
+
+.map-role-panel .map-role-when {
+  color: var(--t-muted);
+  font-size: var(--t-font-label);
+  line-height: var(--t-line-label);
+}
+
+.map-role-panel .map-role-flat {
+  display: flex;
+  align-items: center;
+  gap: var(--t-space-12);
+  min-width: 0;
+}
+
+.map-role-panel .map-role-flat .map-role-thumb {
+  width: 72px;
+  height: 72px;
+  border-radius: var(--t-radius-lg);
+}
+
+.map-role-panel .map-role-flat-text {
+  display: grid;
+  justify-items: start;
+  gap: var(--t-space-4);
+  min-width: 0;
+}
+
+.map-role-panel .map-role-point,
+.map-role-panel .map-role-sharing {
+  display: grid;
+  gap: var(--t-space-12);
+}
+
+.map-role-panel .map-role-travelers {
+  display: grid;
+  gap: var(--t-space-8);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.map-role-panel .map-role-travelers li {
+  display: grid;
+  gap: var(--t-space-2);
+  padding: var(--t-space-12);
+  border-radius: var(--t-radius-md);
+  background: var(--t-info-soft);
+  color: var(--t-info);
+  font-size: var(--t-font-label);
+  line-height: var(--t-line-label);
+}
+
+/* Blocks made elsewhere, fitted into the panel. */
+.map-role-panel .process-journey {
+  margin: 0;
+}
+
+.map-role-panel .property-listing {
+  display: block;
+  overflow: hidden;
+  border: 1px solid var(--t-line);
+  border-radius: var(--t-radius-lg);
+}
+
+.map-role-panel .listing-visual {
+  height: 176px;
+  aspect-ratio: auto;
+}
+
+.map-role-panel .listing-body {
+  padding: var(--t-space-12);
+}
+
+.map-role-panel .listing-body h2 {
+  font-size: var(--t-font-subtitle);
+}
+
+.map-role-panel .listing-footer {
+  display: grid;
+  gap: var(--t-space-8);
+}
+
+.map-role-panel .listing-owner-actions {
+  flex-wrap: wrap;
+}
+
+/* ---------- Quick requests of guests (MatchingInbox) ----------
+   The panel is opened from the "Заявки гостей" shortcut and from the "Сейчас" card,
+   so its own launcher button is not shown over the map. */
+.map-role-inbox .matching-inbox > button {
+  display: none;
+}
+
+.map-concept-operations .map-role-inbox .matching-inbox {
+  top: var(--t-space-16);
+  right: auto;
+  bottom: auto;
+  left: var(--t-space-16);
+  width: 400px;
+  max-width: calc(100% - var(--t-space-32));
+}
+
+.map-concept-operations .map-role-inbox .matching-inbox-panel {
+  max-height: calc(100dvh - var(--t-space-32));
+  box-shadow: 0 8px 32px rgb(30 32 29 / 0.12);
+}
+
+@media (min-width: 1200px) {
+  .map-concept-operations .map-role-inbox .matching-inbox {
+    left: 432px;
+  }
+}
+
+@media (max-width: 700px) {
+  .map-concept-operations .map-role-inbox .matching-inbox {
+    top: auto;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    width: auto;
+    max-width: none;
+  }
+
+  .map-concept-operations .map-role-inbox .matching-inbox-panel {
+    max-height: calc(100dvh - 77px - var(--t-space-64) - env(safe-area-inset-bottom, 0px));
+    padding: var(--t-space-16);
+    border: 0;
+    border-radius: var(--t-radius-xl) var(--t-radius-xl) 0 0;
+    box-shadow: 0 -8px 24px rgb(30 32 29 / 0.1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .map-role .map-role-locate[aria-busy="true"] svg {
+    animation: none;
+  }
+
+  .map-role-panel .map-role-button {
+    transition: none;
+  }
+}

@@ -59,3 +59,9 @@ test('live search checks occupancy, prices and timezone and never creates a book
   assert.equal(f.db.raw.prepare('SELECT COUNT(*) n FROM bookings').get().n,before+1);
  }finally{f.db.close();}
 });
+
+test('a request for a flat is a search with or without a search verb, a question about how things work is not',async()=>{
+ const {isPropertySearch}=await load('administrator-search');
+ for(const text of ['Найди квартиру в Астане до 15000','Как найти квартиру на завтра?','квартира в Астане на сутки завтра на троих','Хочу снять квартиру','Нужна студия на выходные','жильё на 3 часа сегодня'])assert.equal(isPropertySearch(text),true,text);
+ for(const text of ['Как снять жильё?','Что нужно, чтобы снять квартиру?','Можно ли снять квартиру с собакой?','Сколько стоит снять квартиру?','Покажи мои квартиры','Когда заезд в квартиру сегодня?','Отмени бронь квартиры на завтра','Привет'])assert.equal(isPropertySearch(text),false,text);
+});
