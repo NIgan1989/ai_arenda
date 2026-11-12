@@ -1,0 +1,16 @@
+import {test} from 'node:test';import assert from 'node:assert/strict';import {load} from './helpers/platform.mjs';
+const {stayInterval,stayStamp,stayDay,stayTimes,stayDays,defaultStay,settleStay,stayFromInterval,stayModes,stayLimits,stayUnit}=await load('stay-choice'),{rentalPrice}=await load('rental-policy');
+const at=iso=>Math.floor(Date.parse(iso)/1000),day13=at('2026-11-12T19:00:00Z'),policy={hourly_price:2000,min_hours:3,nightly_price:9000,checkin_minutes:840,checkout_minutes:720};
+test('a moment is sent as Kazakhstan time',()=>{assert.equal(stayStamp(day13+14*3600),'2026-11-13T14:00+05:00');assert.equal(Date.parse(stayStamp(day13+14*3600))/1000,day13+14*3600);assert.equal(stayDay(day13+86399),day13);});
+test('every tariff gives an interval the price rules accept',()=>{
+ const daily=stayInterval({mode:'daily',day:day13,time:900,count:2},policy);assert.equal(daily.end-daily.start,2*86400);assert.equal(rentalPrice(10000,policy,daily.start,daily.end,'daily').amount,20000);
+ const hourly=stayInterval({mode:'hourly',day:day13,time:600,count:3},policy);assert.equal(rentalPrice(10000,policy,hourly.start,hourly.end,'hourly').amount,6000);
+ const nightly=stayInterval({mode:'nightly',day:day13,time:0,count:2},policy);assert.equal(stayStamp(nightly.start),'2026-11-13T14:00+05:00');assert.equal(stayStamp(nightly.end),'2026-11-15T12:00+05:00');assert.equal(rentalPrice(10000,policy,nightly.start,nightly.end,'nightly').amount,18000);});
+test('only offered tariffs and sensible limits',()=>{assert.deepEqual(stayModes({price:1,policy:{}}),['daily']);assert.deepEqual(stayModes({price:1,policy}),['daily','hourly','nightly']);assert.equal(stayLimits('hourly',policy).min,3);assert.equal(stayLimits('daily',policy).min,1);});
+test('today offers only the time still ahead and the choice is kept possible',()=>{const now=day13+13*3600+600;assert.equal(stayTimes(day13,now)[0],810);assert.equal(stayTimes(day13+86400,now).length,48);assert.equal(stayDays(now,3)[2],day13+2*86400);
+ assert.deepEqual(settleStay({mode:'hourly',day:day13,time:300,count:1},policy,now),{mode:'hourly',day:day13,time:810,count:3});
+ assert.equal(settleStay({mode:'daily',day:day13,time:600,count:0},policy,day13+86399).day,day13+86400);
+ assert.equal(settleStay({mode:'nightly',day:day13,time:5,count:2},policy,now).time,840);});
+test('the first offer: tomorrow at check-in, or the nearest hour',()=>{const now=day13+13*3600+600;assert.deepEqual(defaultStay('daily',policy,now),{mode:'daily',day:day13+86400,time:840,count:1});assert.deepEqual(defaultStay('hourly',policy,now),{mode:'hourly',day:day13,time:840,count:3});});
+test('two moments become the same stay',()=>{assert.deepEqual(stayFromInterval('hourly',day13+3*3600,day13+6*3600,policy),{mode:'hourly',day:day13,time:180,count:3});assert.deepEqual(stayFromInterval('daily',day13+14*3600,day13+86400+12*3600,policy),{mode:'daily',day:day13,time:840,count:1});assert.equal(stayFromInterval('nightly',day13+14*3600,day13+2*86400+12*3600,policy).count,2);});
+test('units are declined',()=>{assert.equal([1,2,5,11,21,22].map(n=>stayUnit('hourly',n)).join(),'час,часа,часов,часов,час,часа');assert.equal([1,2,5].map(n=>stayUnit('daily',n)).join(),'сутки,суток,суток');assert.equal([1,3,7].map(n=>stayUnit('nightly',n)).join(),'ночь,ночи,ночей');});
