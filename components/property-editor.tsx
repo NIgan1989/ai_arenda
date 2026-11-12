@@ -1,6 +1,6 @@
 'use client';
 import {useEffect,useRef,useState,type ReactNode} from 'react';
-import {ArrowLeft,BedDouble,Camera,Check,Clock,FileText,MapPin,Minus,Plus,ScrollText,Sparkles,Wallet,Wifi,X} from 'lucide-react';
+import {ArrowLeft,BedDouble,Camera,Check,Clock,FileText,MapPin,Minus,Plus,ScrollText,Sparkles,Trash2,Wallet,Wifi,X} from 'lucide-react';
 import {Photo} from './media';
 import {PhotoGrid} from './photo-grid';
 import {EDIT_STEPS,editBody,editRequest,nextAdvice,needsReview,reviewRequest,REVIEW_SENT,stepForError,stepLine,stepNeeds,type Advice,type EditBody,type EditStep} from '../lib/listing-edit';
@@ -14,9 +14,10 @@ const SAVED:Record<EditStep|'publish',string>={photos:'Фото сохранен
 
 // Editing a flat: an overview of short steps, each opened on its own small screen and saved at once.
 // After each save the AI administrator offers the next step, so the owner never scrolls a long form.
-export function PropertyEditor({property,role,api,onSave,onReview,onClose}:{property:Row;role:string;api:API;onSave:(body:Row)=>Promise<Row|undefined>;onReview?:(body:Row)=>Promise<unknown>;onClose:()=>void}){
+export function PropertyEditor({property,role,api,onSave,onReview,onRemove,onClose}:{property:Row;role:string;api:API;onSave:(body:Row)=>Promise<Row|undefined>;onReview?:(body:Row)=>Promise<unknown>;onRemove?:()=>Promise<unknown>;onClose:()=>void}){
  const [p,setP]=useState(property),[base,setBase]=useState<EditBody>(()=>editBody(property)),[draft,setDraft]=useState<EditBody>(base);
  const [open,setOpen]=useState<EditStep|null>(null),[busy,setBusy]=useState(false),[uploading,setUploading]=useState(false),[error,setError]=useState(''),[done,setDone]=useState(''),[skipped,setSkipped]=useState<string[]>([]),[held,setHeld]=useState(false),[sent,setSent]=useState(false);
+ const [confirm,setConfirm]=useState(false),[removeError,setRemoveError]=useState('');
  const box=useRef<HTMLElement>(null);
  useEffect(()=>{box.current?.scrollIntoView({block:'start',behavior:'instant' as ScrollBehavior});},[open]);
  // A save that failed keeps its changes: the owner fixes what the server asked for in another step and everything is saved together.
@@ -31,6 +32,8 @@ export function PropertyEditor({property,role,api,onSave,onReview,onClose}:{prop
    if(what==='publish'&&next.published&&onReview&&needsReview(message)){try{const kept={...next,published:false};if(held){const fresh=await onSave(editRequest(kept,p));setP(fresh||p);const b=fresh?editBody(fresh):kept;setBase(b);setDraft(b);}await onReview(reviewRequest({id:p.id,title:next.title,city:next.city,address:next.address}));setSent(true);setHeld(false);setDone('');setError('');setOpen(null);return;}catch(r:any){setError(r?.message||message);setHeld(true);setOpen(null);return;}}
    setError(message);setHeld(true);setOpen(null);}finally{setBusy(false);}
  }
+ // Removing asks once more right here; the server deletes a flat without history and archives one with bookings.
+ async function remove(){if(!onRemove||busy)return;setBusy(true);setRemoveError('');try{await onRemove();}catch(e:any){setRemoveError(e?.message||'Не удалось удалить квартиру.');}finally{setBusy(false);}}
  const d=draft.details,r=draft.rental;
  const set=(v:Partial<EditBody>)=>setDraft(o=>({...o,...v}));
  const setD=(v:Partial<EditBody['details']>)=>setDraft(o=>({...o,details:{...o.details,...v}}));
@@ -102,5 +105,10 @@ export function PropertyEditor({property,role,api,onSave,onReview,onClose}:{prop
    {EDIT_STEPS.map(s=><li key={s.key}><button type="button" onClick={()=>go(s.key)} className={stepNeeds(base,s.key)?'needs':''}><span className="pe-ico">{ICONS[s.key]}</span><span className="pe-text"><strong>{s.title}</strong><small>{stepLine(base,s.key)}</small></span>{stepNeeds(base,s.key)&&<span className="pe-dot" aria-label="Нужно заполнить"/>}</button></li>)}
    <li className="pe-wide"><label className="pe-switch"><span className="pe-text"><strong>Показывать гостям</strong><small>{base.published?'Объявление на карте':'Черновик, видите только вы'}</small></span><input type="checkbox" role="switch" checked={base.published} disabled={busy} onChange={e=>commit({...(held?draft:base),published:e.target.checked},'publish')}/></label></li>
   </ul>
+  {onRemove&&(confirm?<div className="pe-remove" role="group" aria-labelledby="pe-remove-q">
+   <p id="pe-remove-q"><strong>Удалить «{base.title||'квартиру'}»?</strong> Гости больше её не увидят. Если по ней были брони, история броней и оплат сохранится.</p>
+   {removeError&&<p className="pq-error" role="alert">{removeError}</p>}
+   <span className="pe-advice-actions"><button type="button" className="pe-danger" disabled={busy} onClick={remove}><Trash2 size={16}/>{busy?'Удаляю…':'Удалить'}</button><button type="button" className="pe-later" disabled={busy} onClick={()=>{setConfirm(false);setRemoveError('');}}>Отмена</button></span>
+  </div>:<button type="button" className="pe-remove-link" disabled={busy} onClick={()=>setConfirm(true)}><Trash2 size={16}/>Удалить квартиру</button>)}
  </section>;
 }

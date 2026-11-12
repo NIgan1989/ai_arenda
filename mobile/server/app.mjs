@@ -101,6 +101,8 @@ export function createApp({filename=':memory:',origins=['http://localhost:8081',
     if(mediaPath&&input.action==='remove')return service.deleteMedia(mediaPath[1]);
     if(path==='/api/profile/edit')return service.editProfile(input);
     if(path==='/api/listings')return service.saveListing(null,input);
+    const removePath=path.match(/^\/api\/listings\/([a-zA-Z0-9-]+)\/remove$/);
+    if(removePath)return service.removeProperty(removePath[1]);
     const listingPath=path.match(/^\/api\/listings\/([a-zA-Z0-9-]+)$/);
     if(listingPath)return service.saveListing(listingPath[1],input);
     if(path==='/api/quote')return service.bookingQuote(input);

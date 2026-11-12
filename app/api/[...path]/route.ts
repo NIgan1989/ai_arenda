@@ -110,6 +110,7 @@ async function handle(request:Request, context:{params:Promise<{path:string[]}>}
     }
     if(route.length===2&&route[0]==='profile'&&route[1]==='edit')return json(await service.editProfile(body));
     if(route.length===2&&route[0]==='media'&&body.action==='remove')return json(await service.deleteMedia(route[1]));
+    if(route.length===3&&route[0]==='listings'&&route[2]==='remove')return json(await service.removeProperty(route[1]));
     if(route.length===2&&route[0]==='listings')return json(await service.saveListing(route[1],body));
     if(route.length===2 && route[0]==='bookings') return json(await service.bookingAction(route[1],body));
     if(route.length===2 && route[0]==='jobs') return json(await service.jobAction(route[1],body));
@@ -123,6 +124,7 @@ async function handle(request:Request, context:{params:Promise<{path:string[]}>}
     if(error instanceof DomainError) return json({error:error.message},error.status);
     if(error instanceof SyntaxError) return json({error:'Некорректный запрос.'},400);
     const msg=String(error?.message||error);
+    if(/property_archived/.test(msg))return json({error:'Квартира удалена, её нельзя показать гостям.'},409);
     if(/account_erased/.test(msg))return json({error:'Аккаунт удалён. Обновите вход.'},410);
     if(/checkout_required|property_not_vacant/.test(msg))return json({error:'Сначала подтвердите выезд гостя и освобождение квартиры.'},409);
     if(/property_cleaning_busy/.test(msg))return json({error:'В этой квартире уже выполняется или проверяется другая уборка.'},409);

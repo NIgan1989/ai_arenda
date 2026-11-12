@@ -34,6 +34,7 @@
 -- migration 0030_web_push.sql sha256:0f2d262dfdc6775b5f806c36b20a231e2f5763e02dfe0c75942c6d89a498fa38
 -- migration 0031_smart_matching.sql sha256:ccaa44e5e4d91f2119a142d4e96ffe1d10d340770b0a95e0ae7746597f095b41
 -- migration 0032_platform_billing.sql sha256:4fe19e04e8358484e46e4f86b0d7a7925d799fd5eea3f0e3845b970032d2155b
+-- migration 0033_property_archive.sql sha256:6d4f456761b9c3d354ba9a1edeb6b1f3b33f8fcceae95088a570d588f89d0ef8
 
 -- table access_receipts
 CREATE TABLE access_receipts (id TEXT PRIMARY KEY,property_id TEXT NOT NULL,entity_kind TEXT NOT NULL,entity_id TEXT NOT NULL,user_id TEXT NOT NULL,created_at INTEGER NOT NULL,expires_at INTEGER NOT NULL);
@@ -655,7 +656,7 @@ CREATE TABLE `properties` (
 	`cleaning_minutes` integer DEFAULT 90 NOT NULL,
 	`published` integer DEFAULT 1 NOT NULL,
 	`created_at` integer NOT NULL
-);
+, archived_at INTEGER);
 
 -- table property_access
 CREATE TABLE property_access (property_id TEXT PRIMARY KEY REFERENCES properties(id),ciphertext TEXT NOT NULL,version INTEGER NOT NULL DEFAULT 1,updated_at INTEGER NOT NULL);
@@ -1470,6 +1471,11 @@ CREATE TRIGGER pilot_property_publish_update BEFORE UPDATE OF published,owner_id
  SELECT CASE WHEN (SELECT require_phone FROM pilot_policy WHERE id='global')=1 AND NOT EXISTS(SELECT 1 FROM phone_verifications WHERE user_id=NEW.owner_id AND verified_at IS NOT NULL)
   THEN RAISE(ABORT,'pilot_phone_required') END;
 END;
+
+-- trigger property_archived_hidden
+CREATE TRIGGER property_archived_hidden BEFORE UPDATE OF published ON properties
+WHEN NEW.archived_at IS NOT NULL AND NEW.published=1
+BEGIN SELECT RAISE(ABORT,'property_archived'); END;
 
 -- trigger property_location_address_changed
 CREATE TRIGGER property_location_address_changed AFTER UPDATE OF address,city,district ON properties

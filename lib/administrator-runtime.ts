@@ -20,7 +20,7 @@ async function acquire(db:D1Database,key:string,seconds:number){
 async function ownerData(service:RentalService){
  const owner=service.userId;
  const [properties,bookings,jobs,applications,issues]=await Promise.all([
-  service.all('SELECT p.*,o.readiness FROM properties p LEFT JOIN property_operations o ON o.property_id=p.id WHERE p.owner_id=?',owner),
+  service.all('SELECT p.*,o.readiness FROM properties p LEFT JOIN property_operations o ON o.property_id=p.id WHERE p.owner_id=? AND p.archived_at IS NULL',owner),
   service.all(`SELECT b.*,t.deposit,t.deposit_status,t.actual_checkin,t.actual_checkout,t.checkout_reported_at,t.paid_amount,t.deposit_returned_at,t.refund_recorded_at FROM bookings b JOIN properties p ON p.id=b.property_id LEFT JOIN booking_terms t ON t.booking_id=b.id WHERE p.owner_id=?`,owner),
   service.all('SELECT * FROM cleaning_jobs WHERE owner_id=?',owner),
   service.all('SELECT a.* FROM applications a JOIN cleaning_jobs j ON j.id=a.job_id WHERE j.owner_id=?',owner),
