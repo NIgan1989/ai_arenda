@@ -67,3 +67,4 @@
 .process-discussion .chat-block,.process-discussion details.chat-safety{margin:0;border:0;border-radius:0;background:var(--t-glass);font-size:12px;padding:0 16px}
 .chat-inbox .inbox-search input,.chat-inbox .inbox-search input:focus{border:0;box-shadow:none;background:transparent;outline:0}
 .chat-inbox .inbox-search:focus-within{box-shadow:0 0 0 2px var(--t-focus)}
+.discussion-ai-tag{display:block;font-size:12px;line-height:16px;font-weight:600;color:var(--t-accent-pressed);margin:0 0 4px}
