@@ -50,6 +50,12 @@ test('the AI suggests an empty window, guests get the discount only after the ow
   const search=await f.guest.publicSearch({mode:'hourly',start:iso(w.start),end:iso(w.start+2*H)});
   assert.equal(search.properties.find(p=>p.id===f.property).estimate.rate,w.hourly_to);
   const browse=await f.guest.publicSearch({mode:'hourly'});assert.equal(browse.properties.find(p=>p.id===f.property).window.end,w.end);
+  // A minimum rate set later still holds inside the window.
+  f.db.raw.prepare('UPDATE property_policies SET minimum_rate=? WHERE property_id=?').run(w.hourly_to+100,f.property);
+  assert.equal((await f.guest.bookingQuote(inside)).price,w.hourly_to+100);
+  f.db.raw.prepare('UPDATE property_policies SET minimum_rate=2000 WHERE property_id=?').run(f.property);
+  assert.equal((await f.guest.bookingQuote(inside)).window,null,'no discount left: a regular quote');
+  f.db.raw.prepare('UPDATE property_policies SET minimum_rate=0 WHERE property_id=?').run(f.property);
   // A booking at the window price goes through.
   const booked=await f.guest.createBooking({...inside,requestKey:'window',acceptTerms:true});
   assert.equal(f.db.raw.prepare('SELECT amount FROM bookings WHERE id=?').get(booked.id).amount,2*w.hourly_to);

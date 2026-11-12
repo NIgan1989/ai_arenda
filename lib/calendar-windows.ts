@@ -90,14 +90,16 @@ export async function decideCalendarWindow(s:RentalService,windowId:string,accep
  return {message:accept?'Окно открыто: до '+till+' гости видят «'+w.title+'» почасово за '+money(w.hourly_to)+' в час.':'Хорошо, окно не открываем.'};
 }
 
+// The owner's current minimum rate always wins over the price stored when the window was opened.
+const windowCols='w.property_id,w.id,w.percent,w.start,w.end,MAX(w.hourly_to,COALESCE(pp.minimum_rate,0)) hourly_to FROM calendar_windows w LEFT JOIN property_policies pp ON pp.property_id=w.property_id';
 // The hourly price inside an open window. Null when the stay does not fit one.
 export async function openWindowFor(db:D1Database,propertyId:string,start:number,end:number){
- return one(db,"SELECT id,percent,start,end,hourly_to FROM calendar_windows WHERE property_id=? AND status='open' AND start<=? AND end>=? ORDER BY hourly_to LIMIT 1",propertyId,start,end);
+ return one(db,"SELECT "+windowCols+" WHERE w.property_id=? AND w.status='open' AND w.start<=? AND w.end>=? ORDER BY hourly_to LIMIT 1",propertyId,start,end);
 }
 // Open windows for the catalog: with a range, those the stay fits in; without one, those not over yet.
 export async function openWindowsFor(db:D1Database,start:number|null,end:number|null,t=epoch()){
- const list=start!==null&&end!==null?await rows(db,"SELECT property_id,id,percent,start,end,hourly_to FROM calendar_windows WHERE status='open' AND start<=? AND end>=? ORDER BY hourly_to DESC",start,end)
-  :await rows(db,"SELECT property_id,id,percent,start,end,hourly_to FROM calendar_windows WHERE status='open' AND end>? ORDER BY start DESC",t+3600);
+ const list=start!==null&&end!==null?await rows(db,"SELECT "+windowCols+" WHERE w.status='open' AND w.start<=? AND w.end>=? ORDER BY hourly_to DESC",start,end)
+  :await rows(db,"SELECT "+windowCols+" WHERE w.status='open' AND w.end>? ORDER BY w.start DESC",t+3600);
  return new Map(list.map(w=>[w.property_id,w]));
 }
 // Applies an open window to an hourly quote. The stored price never raises the current tariff.
