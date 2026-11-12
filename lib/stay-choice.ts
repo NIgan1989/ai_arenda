@@ -10,7 +10,8 @@ export const stayClock=(minutes:number)=>String(Math.floor(minutes/60)).padStart
 export const stayStamp=(t:number)=>new Date((t+SHIFT)*1000).toISOString().slice(0,16)+'+05:00';
 export const stayModes=(property:Row):StayMode[]=>['daily',...(property.policy?.hourly_price>0?['hourly' as const]:[]),...(property.policy?.nightly_price>0?['nightly' as const]:[])];
 export const stayRate=(property:Row,mode:StayMode)=>mode==='hourly'?property.policy.hourly_price:mode==='nightly'?property.policy.nightly_price:property.price;
-export const stayLimits=(mode:StayMode,policy:Row={})=>mode==='hourly'?{min:Math.max(1,policy.min_hours||1),max:23}:{min:1,max:30};
+// An owner may ask for a whole day as the hourly minimum, so the ceiling never falls below it.
+export const stayLimits=(mode:StayMode,policy:Row={})=>mode==='hourly'?{min:Math.max(1,policy.min_hours||1),max:Math.max(23,policy.min_hours||1)}:{min:1,max:30};
 // A night is tied to the owner's check-in and check-out times; a day and an hour start when the guest says.
 export function stayInterval(choice:StayChoice,policy:Row={}){
  if(choice.mode==='nightly')return {start:choice.day+(policy.checkin_minutes??840)*60,end:choice.day+choice.count*DAY+(policy.checkout_minutes??720)*60};

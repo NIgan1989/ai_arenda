@@ -23,12 +23,14 @@ export function BookingRequest({property,requestKey,disabled,onQuote,onConfirm,i
   const policy=property.policy||{},modes=useMemo(()=>stayModes(property),[property.price,policy.hourly_price,policy.nightly_price]),fixed=!!(initialQuote&&onChangeDates);
   const clock=useActivityClock(),[opened]=useState(()=>Math.floor(Date.now()/1000)),now=clock||opened;
   const [choice,setChoice]=useState<StayChoice>(()=>{const mode:StayMode=modes.includes(initial?.mode)?initial!.mode:'daily',start=moment(initial?.start),end=moment(initial?.end);return settleStay(start&&end>start?stayFromInterval(mode,start,end,policy):defaultStay(mode,policy,opened),policy,opened);});
+  // Two moments that came from a search stay exactly as given until the guest changes something.
+  const [given,setGiven]=useState<{start:number;end:number}|null>(()=>{const start=moment(initial?.start),end=moment(initial?.end);return start>opened&&end>start?{start,end}:null;});
   const [guests,setGuests]=useState(()=>Math.min(property.capacity||1,Math.max(1,Number(initial?.guests)||1)));
   const [quote,setQuote]=useState<Row|null>(initialQuote||null),[checking,setChecking]=useState(false),[error,setError]=useState(''),[accepted,setAccepted]=useState(false),[submitting,setSubmitting]=useState(false);
-  const confirming=useRef(false),round=useRef(0),limits=stayLimits(choice.mode,policy),span=stayInterval(choice,policy),locked=disabled||submitting;
+  const confirming=useRef(false),round=useRef(0),limits=stayLimits(choice.mode,policy),span=given||stayInterval(choice,policy),locked=disabled||submitting;
   const fixedBody=fixed?{start:String(initial?.start||'')+'+05:00',end:String(initial?.end||'')+'+05:00',guests:Number(initial?.guests)||initialQuote!.guests,billingMode:initial?.mode==='hourly'?'hourly':'daily'}:null;
   const body=()=>({propertyId:property.id,requestKey,...(fixedBody||{start:stayStamp(span.start),end:stayStamp(span.end),guests,billingMode:choice.mode})});
-  const change=(next:Partial<StayChoice>)=>{const mode=next.mode||choice.mode;setChoice(settleStay(next.mode&&next.mode!==choice.mode?{...defaultStay(mode,policy,now),day:choice.day,...(mode==='hourly'&&choice.day!==defaultStay(mode,policy,now).day?{time:policy.checkin_minutes??840}:{})}:{...choice,...next},policy,now));};
+  const change=(next:Partial<StayChoice>)=>{const mode=next.mode||choice.mode;setGiven(null);setChoice(settleStay(next.mode&&next.mode!==choice.mode?{...defaultStay(mode,policy,now),day:choice.day,...(mode==='hourly'&&choice.day!==defaultStay(mode,policy,now).day?{time:policy.checkin_minutes??840}:{})}:{...choice,...next},policy,now));};
   // The price follows the choice: a short pause after the last change, and only the latest answer is shown.
   useEffect(()=>{
     if(fixed)return;const id=++round.current;setChecking(true);setAccepted(false);
