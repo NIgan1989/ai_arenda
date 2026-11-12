@@ -1,6 +1,7 @@
 import { Platform } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
 import {SessionState,StaleSessionError} from './session-state';
+import {trackRequest} from './loading';
 export {StaleSessionError} from './session-state';
 export const API_URL=(process.env.EXPO_PUBLIC_API_URL||'http://127.0.0.1:5174').replace(/\/$/,'');
 const sessionKey='ai-arenda-shared-session-v2';
@@ -43,6 +44,7 @@ export async function request(path:string,body?:unknown,method?:string,requestKe
   const key=body&&typeof body==='object'&&'requestKey' in body&&typeof body.requestKey==='string'?body.requestKey:requestKey;
   const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),target==='/api/chat'?40000:15000);
   const verb=method||(body===undefined?'GET':'POST');
+  const settle=trackRequest();
   try {
     const response=await fetch(API_URL+target,{method:verb,credentials:'omit',redirect:'error',headers:{...(snapshot.token?{Authorization:'Bearer '+snapshot.token}:{}),...(requestRole?{'X-Workspace-Role':requestRole}:{}),...(body!==undefined?{'Content-Type':'application/json'}:{}),...(key?{'Idempotency-Key':key}:{})},body:body===undefined?undefined:JSON.stringify(body),signal:controller.signal});
     const data=await response.json();
@@ -56,5 +58,5 @@ export async function request(path:string,body?:unknown,method?:string,requestKe
     if(error instanceof ApiError)throw error;
     reachListener?.(false);
     throw new NetworkError(verb!=='GET'&&!readOnly.test(path.split('?')[0]));
-  }finally{clearTimeout(timer);}
+  }finally{clearTimeout(timer);settle?.();}
 }

@@ -5,7 +5,10 @@ import "./design-system.css";
 import "./mobile-first.css";
 import "./interface-release.css";
 import "./glass.css";
+import "./loader.css";
 import {WorkspaceProvider} from "../components/workspace-provider";
+import {EntrySplash} from "../components/entry-splash";
+import {AppLoader} from "../components/app-loader";
 
 export const metadata: Metadata = {
   title: "AI Аренда — всё складывается",
@@ -26,7 +29,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="ru" data-design="unified" data-interface="release">
-      <body className="antialiased"><WorkspaceProvider>{children}</WorkspaceProvider></body>
+      <body className="antialiased"><EntrySplash/><AppLoader/><WorkspaceProvider>{children}</WorkspaceProvider></body>
     </html>
   );
 }
