@@ -587,7 +587,9 @@ export class RentalService {
     if(!j) throw new DomainError('Задание не найдено.',404);
     if(this.execution){
       const policy=await this.one('SELECT * FROM property_policies WHERE property_id=?',j.property_id);
-      if(body.action!=='assign'||j.owner_id!==this.userId||this.execution.propertyId!==j.property_id||policy?.version!==this.execution.policyVersion||!policy.auto_assign||!mandateActive(policy)||j.fee>policy.cleaning_budget)throw new DomainError('Автоназначение выходит за полномочия владельца.',403);
+      // Under autopilot (both automations on) the AI may also accept a report it checked.
+      const allowed=body.action==='assign'||body.action==='approve'&&!!policy?.auto_confirm;
+      if(!allowed||j.owner_id!==this.userId||this.execution.propertyId!==j.property_id||policy?.version!==this.execution.policyVersion||!policy.auto_assign||!mandateActive(policy)||j.fee>policy.cleaning_budget)throw new DomainError('Автоназначение выходит за полномочия владельца.',403);
     }
     if(body.expectedVersion!==undefined&&body.expectedVersion!==j.version)throw new DomainError('Задание изменилось. Обновите карточку перед решением.',409);
     if(body.action==='record_job_payment'){
@@ -653,7 +655,8 @@ export class RentalService {
     }
     if(body.action==='approve' && j.owner_id===this.userId) {
       await requireEvidence(this,jobId);
-      const r=await this.db.batch([this.query("UPDATE cleaning_jobs SET status='completed' WHERE id=? AND status='submitted' AND version=?",jobId,j.version),this.query("UPDATE property_operations SET readiness='ready',version=version+1,updated_at=? WHERE property_id=? AND readiness='inspection' AND active_booking_id IS NULL AND EXISTS(SELECT 1 FROM cleaning_jobs WHERE id=? AND status='completed') AND NOT EXISTS(SELECT 1 FROM cleaning_jobs WHERE property_id=? AND (status IN ('in_progress','submitted') OR (status IN ('open','assigned') AND start<=?)))",now(),j.property_id,jobId,j.property_id,now()),this.notify(j.assigned_to,'Заказчик принял уборку. Расчёт производится с заказчиком отдельно.','approved:'+jobId,'cleaner'),this.audit(jobId,'job.completed')]);
+      const approveGate=this.execution?" AND EXISTS(SELECT 1 FROM property_policies WHERE property_id=cleaning_jobs.property_id AND version=? AND auto_assign=1 AND auto_confirm=1 AND (mandate_until=0 OR mandate_until>?))":'';
+      const r=await this.db.batch([this.query("UPDATE cleaning_jobs SET status='completed' WHERE id=? AND status='submitted' AND version=?"+approveGate,jobId,j.version,...(this.execution?[this.execution.policyVersion,now()]:[])),this.query("UPDATE property_operations SET readiness='ready',version=version+1,updated_at=? WHERE property_id=? AND readiness='inspection' AND active_booking_id IS NULL AND EXISTS(SELECT 1 FROM cleaning_jobs WHERE id=? AND status='completed') AND NOT EXISTS(SELECT 1 FROM cleaning_jobs WHERE property_id=? AND (status IN ('in_progress','submitted') OR (status IN ('open','assigned') AND start<=?)))",now(),j.property_id,jobId,j.property_id,now()),this.notify(j.assigned_to,this.execution?'AI администратор принял уборку по фотоотчёту. Расчёт производится с заказчиком отдельно.':'Заказчик принял уборку. Расчёт производится с заказчиком отдельно.','approved:'+jobId,'cleaner'),this.audit(jobId,'job.completed')]);
       if(!r[0].meta.changes) throw new DomainError('Нет отчёта для приёмки.',409);
       return {message:'Работа принята. Денежные расчёты выполняются отдельно.'};
     }

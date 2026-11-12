@@ -4,6 +4,7 @@ import {planAdministrator,quietNow} from './administrator';
 import {mandateActive} from './rental-policy';
 import type {Role} from './domain';
 import {coordinateDispatch} from './dispatch';
+import {reviewCleaning,OWNER_REVIEW_SECONDS} from './cleaning-review';
 
 type Row=Record<string,any>;
 // How long the owner has to agree the cleaner the AI proposes before it assigns her itself.
@@ -46,6 +47,20 @@ async function automaticActions(service:RentalService){
    // The guest said they left: free the flat so the cleaner can start. The owner is told.
    const left=await service.all("SELECT b.id FROM bookings b JOIN booking_terms t ON t.booking_id=b.id WHERE b.property_id=? AND b.status='confirmed' AND t.checkout_reported_at IS NOT NULL AND t.actual_checkout IS NULL",policy.property_id);
    for(const b of left){try{await delegated.bookingAction(b.id,{action:'checkout'});await service.notify(service.userId,'AI администратор подтвердил выезд по сообщению гостя. Квартира ждёт уборки.','administrator-checkout:'+b.id,'owner').run();actions++;}catch(error){if(!expectedConflict(error))throw error;}}
+   // The AI checks each submitted cleaning report. A clean report is offered to the owner for one-tap acceptance;
+   // without an answer in OWNER_REVIEW_SECONDS, or when the next guest arrives within two hours, the AI accepts it.
+   const submitted=await service.all("SELECT j.*,p.title FROM cleaning_jobs j JOIN properties p ON p.id=j.property_id WHERE j.property_id=? AND j.status='submitted' ORDER BY j.end,j.id",policy.property_id);
+   for(const job of submitted){
+    const t=now(),review=await reviewCleaning(service.db,job),title=job.title||'квартира';
+    if(!review.ok){await service.notify(service.userId,'AI администратор проверил отчёт об уборке «'+title+'» и нашёл замечания: '+review.findings.join('; ')+'. Проверьте фото и примите уборку или верните на доработку.','administrator-review-issue:'+job.id+':'+job.version,'owner').run();continue;}
+    const nextGuest=await service.one("SELECT id FROM bookings WHERE property_id=? AND status IN ('requested','confirmed') AND start>? AND start<=?",policy.property_id,t-3600,t+7200);
+    if(!nextGuest){
+     const asked=await service.one('SELECT created_at FROM notifications WHERE user_id=? AND dedupe=?',service.userId,'owner:administrator-review:'+job.id+':'+job.version);
+     if(!asked){await service.notify(service.userId,'AI администратор проверил отчёт об уборке «'+title+'»: фото до ('+review.before+') и после ('+review.after+') сделаны во время уборки, чек-лист выполнен, проблем не указано. Примите уборку в карточке, или через час ИИ примет сам.','administrator-review:'+job.id+':'+job.version,'owner').run();continue;}
+     if(asked.created_at+OWNER_REVIEW_SECONDS>t)continue;
+    }
+    try{await delegated.jobAction(job.id,{action:'approve',expectedVersion:job.version});await service.notify(service.userId,'AI администратор принял уборку «'+title+'» по фотоотчёту. Квартира готова к заселению.','administrator-approved:'+job.id,'owner').run();actions++;}catch(error){if(!expectedConflict(error))throw error;}
+   }
   }
   if(policy.auto_assign){
    const jobs=await service.all("SELECT j.*,p.title FROM cleaning_jobs j JOIN properties p ON p.id=j.property_id WHERE j.property_id=? AND j.status='open' AND j.end>? AND j.fee<=? ORDER BY j.start,j.id",policy.property_id,now(),policy.cleaning_budget);
