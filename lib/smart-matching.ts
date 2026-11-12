@@ -3,6 +3,7 @@ import type {RentalService} from './service';
 import {epoch,uuid,q,one,rows,type Row} from './operation-core';
 import {geoDistance} from './map-location';
 import {amenities} from './listings';
+import {autoAnswerOffers,setGuestMode,guestModeSql,guestModeJoins} from './autopilot';
 
 // Structured facts are authoritative; the administrator's explanation is derived from them.
 export function matchingInput(body:Row){
@@ -43,7 +44,7 @@ async function sendWave(s:RentalService,request:Row,ranked:Row[]){
  for(const p of candidates){const owner=await one(s.db,'SELECT owner_id FROM properties WHERE id=?',p.id);if(!owner)continue;const id=uuid();
   statements.push(q(s.db,`INSERT OR IGNORE INTO matching_offers(id,request_id,property_id,owner_id,status,amount,policy_version,created_at,expires_at) SELECT ?,?,?,?,'pending',?,?,?,? WHERE EXISTS(SELECT 1 FROM matching_preferences WHERE property_id=? AND owner_id=? AND enabled=1) AND EXISTS(SELECT 1 FROM matching_requests WHERE id=? AND status IN ('searching','ready') AND expires_at>?) AND (SELECT COUNT(*) FROM matching_offers WHERE request_id=?)<9 AND (SELECT COUNT(*) FROM matching_offers WHERE request_id=? AND status='pending' AND expires_at>?)<3 AND NOT EXISTS(SELECT 1 FROM matching_offers WHERE request_id=? AND status='accepted' AND expires_at>?)`,id,request.id,p.id,owner.owner_id,p.estimate.amount,p.policy.version,t,Math.min(t+120,request.expires_at),p.id,owner.owner_id,request.id,t,request.id,request.id,t,request.id,t),q(s.db,`INSERT OR IGNORE INTO notifications SELECT ?,?,?,?,0,? WHERE EXISTS(SELECT 1 FROM matching_offers WHERE id=?)`,uuid(),owner.owner_id,'Новый быстрый запрос на «'+p.title+'». Проверьте даты и готовность в разделе карты.','owner:matching:'+id,t,id));
  }
- if(statements.length)await s.db.batch(statements);
+ if(statements.length){await s.db.batch(statements);await autoAnswerOffers(s,request.id);}
  const count=await one(s.db,'SELECT COUNT(*) n FROM matching_offers WHERE request_id=?',request.id);return Number(count?.n||0)>existing.length;
 }
 export async function beginMatching(s:RentalService,body:Row){
@@ -70,7 +71,7 @@ export async function matchingState(s:RentalService,id:unknown,prepared?:Row){
 }
 export async function matchingInbox(s:RentalService){
  await s.requireRole('owner');await expire(s);
- const preferences=await rows(s.db,'SELECT p.id,p.title,COALESCE(m.enabled,0) enabled FROM properties p LEFT JOIN matching_preferences m ON m.property_id=p.id WHERE p.owner_id=? ORDER BY p.created_at DESC',s.userId);
+ const preferences=await rows(s.db,`SELECT p.id,p.title,COALESCE(m.enabled,0) enabled,${guestModeSql} mode,COALESCE(pp.cleaning_fee,0) cleaning_fee FROM properties p ${guestModeJoins} WHERE p.owner_id=? ORDER BY p.created_at DESC`,epoch(),s.userId);
  const offers=await rows(s.db,"SELECT o.id,o.property_id,o.amount,o.expires_at,o.status,r.filters,p.title FROM matching_offers o JOIN matching_requests r ON r.id=o.request_id JOIN properties p ON p.id=o.property_id WHERE o.owner_id=? AND p.owner_id=? AND o.status='pending' AND o.expires_at>? AND r.status IN ('searching','ready') AND r.expires_at>? ORDER BY o.created_at DESC",s.userId,s.userId,epoch(),epoch());
  return {preferences,offers:offers.map(o=>{const {near,...filters}=JSON.parse(o.filters);return {...o,filters};}),serverTime:epoch()};
 }
@@ -78,6 +79,7 @@ export async function matchingAction(s:RentalService,role:Role,action:string,bod
  if(action==='begin'&&role==='guest')return beginMatching(s,body);
  if(action==='state'&&role==='guest')return matchingState(s,body.id);
  if(action==='inbox'&&role==='owner')return matchingInbox(s);
+ if(action==='preference'&&role==='owner'&&body.mode!==undefined){const saved=await setGuestMode(s,body);return {...await matchingInbox(s),message:saved.message};}
  if(action==='preference'&&role==='owner'){await s.requireRole('owner');const p=await one(s.db,'SELECT id FROM properties WHERE id=? AND owner_id=?',body.propertyId,s.userId);if(!p)throw new DomainError('Объект недоступен.',404);if(typeof body.enabled!=='boolean')throw new DomainError('Укажите режим запросов.');await q(s.db,'INSERT INTO matching_preferences VALUES (?,?,?,?) ON CONFLICT(property_id) DO UPDATE SET enabled=excluded.enabled,owner_id=excluded.owner_id,updated_at=excluded.updated_at',p.id,s.userId,Number(body.enabled),epoch()).run();return matchingInbox(s);}
  if(action==='respond'&&role==='owner'){
   await s.requireRole('owner');if(!['accept','decline'].includes(body.decision))throw new DomainError('Выберите ответ.');await expire(s);
