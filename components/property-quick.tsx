@@ -2,7 +2,7 @@
 // Adding a flat in two moves: the owner tells the AI about it in one message, then checks the card
 // the AI filled. The AI asks only what it could not read (address, district, daily price) — one
 // question at a time, like the administrator in the chat. The long form stays for editing later.
-import {useMemo,useRef,useState} from 'react';
+import {useEffect,useMemo,useRef,useState} from 'react';
 import {ArrowLeft,ArrowUp,Building2,Camera,Check,MapPin,Minus,Plus,Sparkles,X} from 'lucide-react';
 import {Photo,preparePhoto} from './media';
 import {amenities,checkinMethods,propertyTypes} from '../lib/listings';
@@ -11,16 +11,21 @@ import {plural} from '../lib/map-search-request';
 import './property-quick.css';
 type Row=Record<string,any>;
 type API=(path:string,body?:Row)=>Promise<any>;
-type Saved={id:string;message:string;published:boolean};
+type Saved={id:string;message:string;published:boolean;placed?:boolean};
 const money=(n:number)=>new Intl.NumberFormat('ru-RU').format(n)+' ₸';
 const STEPS=['Расскажите','Проверьте','Готово'];
 const RULES:[keyof ListingDraft,string][]=[['pets','Можно с питомцами'],['smoking','Можно курить'],['parties','Можно вечеринки']];
 
-export function PropertyQuick({city,role,api,onSave,onGuestMode,onClose,onMap,onDone}:{city:string;role:string;api:API;onSave:(body:Row)=>Promise<Row>;onGuestMode:(body:Row)=>Promise<unknown>;onClose:()=>void;onMap?:(id:string)=>void;onDone:(saved:Saved)=>void}){
+export function PropertyQuick({city,role,api,onSave,onGuestMode,onPlace,onClose,onMap,onDone}:{city:string;role:string;api:API;onSave:(body:Row)=>Promise<Row>;onGuestMode:(body:Row)=>Promise<unknown>;onPlace?:(body:Row)=>Promise<unknown>;onClose:()=>void;onMap?:(id:string)=>void;onDone:(saved:Saved)=>void}){
  const [step,setStep]=useState(0),[text,setText]=useState(''),[draft,setDraft]=useState<ListingDraft>(()=>emptyDraft(city)),[found,setFound]=useState<string[]>([]);
  const [photos,setPhotos]=useState<string[]>([]),[uploading,setUploading]=useState(false),[answer,setAnswer]=useState(''),[mode,setMode]=useState<'auto'|'manual'>('auto');
  const [busy,setBusy]=useState(false),[error,setError]=useState(''),[saved,setSaved]=useState<Saved|null>(null);
  const fileRef=useRef<HTMLInputElement>(null),answerRef=useRef<HTMLInputElement>(null);
+ // The keyboard opens by itself only with a mouse and keyboard; on a phone it waits for a tap.
+ const box=useRef<HTMLElement>(null),first=useRef(true);
+ // Each new step starts at the sheet's top, not where the previous one was scrolled to.
+ useEffect(()=>{if(first.current){first.current=false;return;}box.current?.scrollIntoView({block:'start',behavior:'smooth'});},[step]);
+ const [fine]=useState(()=>typeof window!=='undefined'&&window.matchMedia?.('(pointer:fine)').matches);
  const questions=useMemo(()=>{const q=draftQuestions(draft);return mode==='auto'&&!(draft.cleaningFee>=100)?[...q,{key:'cleaningFee' as const,label:'Уборка',question:'Сколько вы платите за уборку после гостя? ИИ будет заказывать её сам.',placeholder:'Например, 3 000'}]:q;},[draft,mode]);
  const ask=questions[0];
  const patch=(value:Partial<ListingDraft>)=>setDraft(d=>({...d,...value,known:[...new Set([...d.known,...Object.keys(value)])]}));
@@ -30,7 +35,7 @@ export function PropertyQuick({city,role,api,onSave,onGuestMode,onClose,onMap,on
  function reply(e:React.FormEvent){e.preventDefault();if(!ask||!answer.trim())return;
   if(ask.key==='cleaningFee'){const v=moneyAnswer(answer);if(v>=100)patch({cleaningFee:v});else{setError('Напишите сумму числом, от 100 ₸.');return;}}
   else setDraft(d=>answerDraft(d,ask.key,answer));
-  setAnswer('');setError('');requestAnimationFrame(()=>answerRef.current?.focus());}
+  setAnswer('');setError('');if(fine)requestAnimationFrame(()=>answerRef.current?.focus());}
  async function addPhotos(files:FileList|null){if(!files?.length)return;setUploading(true);setError('');try{for(const file of Array.from(files).slice(0,8-photos.length)){const data=await preparePhoto(file),r=await api('media',{kind:'property',data});setPhotos(v=>v.length<8&&!v.includes(r.id)?[...v,r.id]:v);}}catch(e:any){setError(e.message||'Фото не загрузилось.');}finally{setUploading(false);}}
  async function save(){
   if(busy||uploading||questions.length)return;setBusy(true);setError('');
@@ -38,20 +43,24 @@ export function PropertyQuick({city,role,api,onSave,onGuestMode,onClose,onMap,on
    let result:Row,published=photos.length>0;
    try{result=await onSave(draftListingBody(draft,photos,published));}
    catch(e:any){if(!published||!/провер|допуск/i.test(String(e?.message)))throw e;published=false;result=await onSave(draftListingBody(draft,photos,false));}
+   // The flat goes on the map by its address right away; the owner only checks the pin.
+   let placed=false;try{placed=!!((await onPlace?.({propertyId:result.id})) as Row|undefined)?.saved;}catch{/* the map pin can be set later */}
    let note='';try{await onGuestMode({propertyId:result.id,mode,cleaningFee:mode==='auto'?draft.cleaningFee:undefined});}catch(e:any){note=' '+(e?.message||'Режим ответов гостям включите в «Запросах гостей».');}
-   const done={id:result.id,published,message:(published?'Квартира опубликована, гости уже видят её на карте.':photos.length?'Сохранена черновиком: чтобы показать гостям, пройдите проверку в «Управление → Допуск».':'Сохранена черновиком. Добавьте фото, и её можно будет показать гостям.')+note};
+   const done={id:result.id,published,placed,message:(published?'Квартира опубликована, гости уже видят её на карте.':photos.length?'Сохранена черновиком: чтобы показать гостям, пройдите проверку в «Управление → Допуск».':'Сохранена черновиком. Добавьте фото, и её можно будет показать гостям.')+note};
    setSaved(done);setStep(2);
   }catch(e:any){setError(e?.message||'Не удалось сохранить квартиру.');}finally{setBusy(false);}
  }
  const priceLine=[draft.price>=100&&money(draft.price)+' / сутки',draft.hourlyPrice>=100&&money(draft.hourlyPrice)+' / час',draft.nightlyPrice>=100&&money(draft.nightlyPrice)+' / ночь'].filter(Boolean).join(' · ');
 
- return <section className="pq" aria-labelledby="pq-title">
+ return <section ref={box} className="pq" aria-labelledby="pq-title" onFocus={e=>{const t=e.target as HTMLElement;if(fine||!t.matches('input,textarea'))return;
+  // The phone keyboard covers the lower half: once it is up, bring the field into the middle of what is left.
+  setTimeout(()=>t.scrollIntoView({block:'center',behavior:'smooth'}),350);}}>
   <header className="pq-head"><span className="pq-orb" aria-hidden="true"><Sparkles size={18}/></span><div><h2 id="pq-title">Новая квартира</h2><p>{['ИИ заполнит объявление по вашему рассказу','ИИ заполнил карточку. Проверьте и поправьте','Квартира добавлена'][step]}</p></div>{step<2&&<button type="button" className="pq-icon" onClick={onClose} aria-label="Закрыть" disabled={busy}><X size={20}/></button>}</header>
   <ol className="pq-steps" aria-label={'Шаг '+(step+1)+' из 3'}>{STEPS.map((s,i)=><li key={s} className={i<step?'is-done':i===step?'is-now':''} aria-current={i===step?'step':undefined}><span>{i<step?<Check size={12}/>:i+1}</span>{s}</li>)}</ol>
   {error&&<p className="pq-error" role="alert">{error}</p>}
 
   {step===0&&<div className="pq-body">
-   <label className="pq-line"><span className="pq-sr">Расскажите о квартире</span><textarea value={text} onChange={e=>setText(e.target.value)} rows={5} maxLength={2000} autoFocus placeholder="Например: однушка на Торайгырова 64, 4 этаж, до 3 гостей, есть Wi-Fi и стиралка, 15 000 в сутки, 2 500 в час" onKeyDown={e=>{if(e.key==='Enter'&&(e.metaKey||e.ctrlKey))read();}}/>
+   <label className="pq-line"><span className="pq-sr">Расскажите о квартире</span><textarea value={text} onChange={e=>setText(e.target.value)} rows={5} maxLength={2000} autoFocus={fine} placeholder="Например: однушка на Торайгырова 64, 4 этаж, до 3 гостей, есть Wi-Fi и стиралка, 15 000 в сутки, 2 500 в час" onKeyDown={e=>{if(e.key==='Enter'&&(e.metaKey||e.ctrlKey))read();}}/>
     <span className="pq-line-bar"><button type="button" className="pq-chip" onClick={()=>setText(DRAFT_EXAMPLE)}>Пример</button><span className="pq-count">{text.length? text.length+' / 2000':'Порядок не важен'}</span></span></label>
    <div className="pq-photos" aria-label="Фотографии">
     {photos.map((id,i)=><figure key={id} className="pq-photo"><Photo id={id} role={role} alt={'Фото '+(i+1)}/>{i===0&&<figcaption>Обложка</figcaption>}<button type="button" className="pq-photo-x" aria-label={'Убрать фото '+(i+1)} onClick={()=>setPhotos(v=>v.filter(x=>x!==id))}><X size={14}/></button></figure>)}
@@ -63,6 +72,11 @@ export function PropertyQuick({city,role,api,onSave,onGuestMode,onClose,onMap,on
   </div>}
 
   {step===1&&<div className="pq-body">
+   {ask?<form className="pq-ask" onSubmit={reply}>
+    <span className="pq-orb pq-orb-sm" aria-hidden="true"><Sparkles size={14}/></span>
+    <div><p className="pq-ask-q">{ask.question}</p><p className="pq-ask-left">{questions.length>1?'Ещё вопросов: '+(questions.length-1):'Последний вопрос'}</p>
+     <span className="pq-ask-row"><input ref={answerRef} aria-label={ask.label} value={answer} onChange={e=>setAnswer(e.target.value)} placeholder={ask.placeholder} autoFocus={fine} inputMode={ask.key==='price'||ask.key==='cleaningFee'?'numeric':'text'}/><button className="pq-send" disabled={!answer.trim()} aria-label="Ответить"><ArrowUp size={20}/></button></span></div>
+   </form>:<p className="pq-ready"><Check size={16}/>Всё нужное есть. {found.length?'ИИ понял из рассказа: '+found.length+' '+plural(found.length,'деталь','детали','деталей')+'.':''}</p>}
    <article className="pq-preview">
     <div className="pq-cover">{photos[0]?<Photo id={photos[0]} role={role} alt="Обложка"/>:<span className="pq-cover-empty"><Building2 size={30}/><button type="button" onClick={()=>fileRef.current?.click()}><Camera size={16}/>{uploading?'Загружаю…':'Добавить фото'}</button></span>}<span className="pq-cover-tag">{photos.length?'Увидят гости':'Черновик без фото'}</span>{photos.length>1&&<span className="pq-cover-count">{photos.length} фото</span>}</div>
     <input ref={fileRef} type="file" hidden multiple accept="image/jpeg,image/png,image/webp" onChange={e=>{void addPhotos(e.target.files);e.target.value='';}}/>
@@ -72,12 +86,6 @@ export function PropertyQuick({city,role,api,onSave,onGuestMode,onClose,onMap,on
      <p className="pq-price">{priceLine||'Цена не указана'}</p>
     </div>
    </article>
-
-   {ask?<form className="pq-ask" onSubmit={reply}>
-    <span className="pq-orb pq-orb-sm" aria-hidden="true"><Sparkles size={14}/></span>
-    <div><p className="pq-ask-q">{ask.question}</p><p className="pq-ask-left">{questions.length>1?'Ещё вопросов: '+(questions.length-1):'Последний вопрос'}</p>
-     <span className="pq-ask-row"><input ref={answerRef} aria-label={ask.label} value={answer} onChange={e=>setAnswer(e.target.value)} placeholder={ask.placeholder} autoFocus inputMode={ask.key==='price'||ask.key==='cleaningFee'?'numeric':'text'}/><button className="pq-send" disabled={!answer.trim()} aria-label="Ответить"><ArrowUp size={20}/></button></span></div>
-   </form>:<p className="pq-ready"><Check size={16}/>Всё нужное есть. {found.length?'ИИ понял из рассказа: '+found.length+' '+plural(found.length,'деталь','детали','деталей')+'.':''}</p>}
 
    <h3 className="pq-h">Квартира</h3>
    <div className="pq-chips" role="radiogroup" aria-label="Тип жилья">{Object.entries(propertyTypes).map(([id,label])=><button key={id} type="button" role="radio" aria-checked={draft.type===id} className="pq-chip" onClick={()=>patch({type:id})}>{label}</button>)}</div>
@@ -127,8 +135,8 @@ export function PropertyQuick({city,role,api,onSave,onGuestMode,onClose,onMap,on
   {step===2&&saved&&<div className="pq-body pq-done">
    <span className="pq-done-mark" aria-hidden="true"><Check size={28}/></span>
    <h3>{draftTitle(draft)}</h3><p>{saved.message}</p>
-   <p className="pq-done-mode">{mode==='auto'?'Гостям отвечает ИИ: он подтвердит бронь по вашим ценам и закажет уборку.':'Запросы гостей будут приходить вам.'}</p>
-   <div className="pq-actions pq-stack">{onMap&&<button type="button" className="pq-primary" onClick={()=>onMap(saved.id)}><MapPin size={18}/>Отметить дом на карте</button>}<button type="button" className={onMap?'pq-ghost':'pq-primary'} onClick={()=>onDone(saved)}>Готово</button></div>
+   <p className="pq-done-mode">{(saved.placed?'Метку на карте ИИ поставил сам по адресу. ':'')+(mode==='auto'?'Гостям отвечает ИИ: он подтвердит бронь по вашим ценам и закажет уборку.':'Запросы гостей будут приходить вам.')}</p>
+   <div className="pq-actions pq-stack">{onMap&&<button type="button" className="pq-primary" onClick={()=>onMap(saved.id)}><MapPin size={18}/>{saved.placed?'Проверить метку на карте':'Отметить дом на карте'}</button>}<button type="button" className={onMap?'pq-ghost':'pq-primary'} onClick={()=>onDone(saved)}>Готово</button></div>
   </div>}
  </section>;
 }

@@ -90,7 +90,7 @@
 .pq-counter output{font-size:var(--t-font-subtitle);font-weight:700}
 .pq-field{display:flex;flex-direction:column;gap:var(--t-space-4)}
 .pq-field input,.pq-field textarea{width:100%;min-height:var(--t-control-field);padding:var(--t-space-12) var(--t-space-16);border:1px solid var(--t-line);border-radius:var(--t-radius-md);background:var(--t-surface);color:var(--t-ink);font:inherit;outline:none}
-.pq-field textarea{resize:vertical;font-size:var(--t-font-label);line-height:var(--t-line-label)}
+.pq-field textarea{resize:vertical;font-size:var(--t-font-body);line-height:var(--t-line-body)}
 .pq-more{border-radius:var(--t-radius-md);background:var(--t-surface);border:1px solid var(--t-line);padding:0 var(--t-space-16)}
 .pq-more summary{min-height:var(--t-control-field);display:flex;align-items:center;font-weight:600;font-size:var(--t-font-label);cursor:pointer;color:var(--t-accent)}
 .pq-more[open]{padding-bottom:var(--t-space-16)}
@@ -118,3 +118,6 @@
 .pq .pq-line:focus-within{box-shadow:0 0 0 4px rgba(99,102,241,.18)}
 .pq .pq-ask-row input:focus,.pq .pq-field input:focus,.pq .pq-field textarea:focus{outline:none!important;box-shadow:0 0 0 3px rgba(99,102,241,.25)!important;border-color:var(--t-accent)!important}
 .pq .pq-send{flex:none;width:var(--t-control-field);padding:0}
+/* Inside the sheet over the map on a phone the card takes the whole width: the sheet is already the frame. */
+@media (max-width:767px){.task-sheet .pq{max-width:none;padding:var(--t-space-16);border-radius:var(--t-radius-lg);box-shadow:0 2px 8px var(--t-glass-ink)}}
+@media (max-width:767px){.task-sheet .pq-head .pq-icon{display:none}.pq-cover{aspect-ratio:2/1}}
