@@ -28,6 +28,7 @@ import {GuestResults} from './GuestResults';
 import {GuestMode} from './GuestMode';
 import {PriceTip} from './PriceTip';
 import {kindLabel} from '../../lib/listings';
+import {ECHO_WINDOW,pinStates,recallMap,rememberMap,stageOf,targetPin,withEchoes,type MapTarget} from './map-memory';
 
 // Map-first home screen, like a taxi app: a full-screen map and one bottom sheet.
 // Collapsed, the sheet holds only the head (AI line, chips, the "Сейчас" card); expanded, the controls of the role.
@@ -41,6 +42,7 @@ export type MapStay={mode:'daily'|'hourly';start:string;end:string;guests:number
 // showNow: whether the "Сейчас" card has its place in the sheet as it is now (see MapHome).
 type Common={setScanning:(on:boolean)=>void;accountId:string;data:Row;mapData:Row|null;city:string;publish:Publish;selected:string;setSelected:(key:string)=>void;focus:string;setFocus:(key:string)=>void;snap:number;showNow:boolean;expand:(snap:number)=>void;onHead:(height:number)=>void;onReach:(bottom:number)=>void;onAsk:(text:string)=>void;onIntent:(intent:string,stay?:MapStay)=>void;onBook:(property:Row,stay:MapStay)=>void;onChanged:()=>Promise<unknown>;onOpenProcess:(kind:'booking'|'job',id:string)=>void;onOpenPage:(id:string)=>void};
 const liveRequests=new Map<string,string>();
+const NOT_ON_MAP='Этого нет на карте сейчас: у объекта не отмечено место или он в другом городе.';
 // What the guest searched for outlives a visit to another page (a flat's details, the check of a booking):
 // coming back to the map within ten minutes shows the same conditions and the same list.
 const guestSearches=new Map<string,{draft:GuestDraft;preview:Row|null;foundAt:number}>(),SEARCH_KEEP=600000;
@@ -69,8 +71,9 @@ function openNow(card:NowCard|null,c:Pick<Common,'expand'|'onOpenProcess'|'onOpe
 }
 function useNow(active:boolean){const [now,setNow]=useState(Date.now()/1000);useEffect(()=>{if(!active)return;const timer=setInterval(()=>setNow(Date.now()/1000),1000);return()=>clearInterval(timer);},[active]);return now;}
 
-function GuestPanel({setScanning,accountId,data,mapData,publish,selected,setSelected,setFocus,snap,showNow,expand,onHead,onReach,onAsk,onIntent,onBook,onChanged,onOpenProcess,onOpenPage,picking,setPicking,mapCenter,city,setCity}:Common&{picking:boolean;setPicking:(value:boolean)=>void;mapCenter:React.RefObject<MapPoint|null>;setCity:(city:string)=>void}){
- const kept=useRef(guestSearches.get(accountId)).current,foundAt=useRef(kept?.foundAt||0),recent=!!kept?.preview&&Date.now()-kept.foundAt<SEARCH_KEEP;
+function GuestPanel({setScanning,accountId,data,mapData,publish,selected,setSelected,setFocus,snap,showNow,expand,onHead,onReach,onAsk,onIntent,onBook,onChanged,onOpenProcess,onOpenPage,picking,setPicking,mapCenter,city,setCity,aimed}:Common&{aimed:boolean;picking:boolean;setPicking:(value:boolean)=>void;mapCenter:React.RefObject<MapPoint|null>;setCity:(city:string)=>void}){
+ // «На карте» from a page wins over the search the guest left: the panel starts clean in the target's city.
+ const kept=useRef(aimed?undefined:guestSearches.get(accountId)).current,foundAt=useRef(kept?.foundAt||0),recent=!!kept?.preview&&Date.now()-kept.foundAt<SEARCH_KEEP;
  const [draft,setDraft]=useState<GuestDraft>(()=>kept?.draft||newDraft(city));
  // hint.ask: text the request rules could not read; the guest can still send it to the AI administrator.
  const [asked,setAsked]=useState(''),[hint,setHint]=useState<{text:string;ask?:string;error?:boolean}|null>(null),[refine,setRefine]=useState(false);
@@ -379,11 +382,21 @@ type Props = {
   onIntent: (intent: string, stay?: MapStay) => void;
   onBook: (property: Row, stay: MapStay) => void;
   onEdit?: (id: string, step: string | null) => void;
+  // «На карте» on a page: the pin to bring into view and choose; onTargetDone when it was shown (or cannot be).
+  target?: MapTarget | null;
+  onTargetDone?: () => void;
 };
 
 // The screen itself: the map, the avatar button over it, and the sheet with its three positions
 // (0: only the head, 1: a little over half of the screen, 2: almost all of it).
-export function MapHome({ role, accountId, data, menu, onChanged, onOpenProcess, onOpenPage, onAsk, onIntent, onBook, onEdit }: Props) {
+export function MapHome({ role, accountId, data, menu, onChanged, onOpenProcess, onOpenPage, onAsk, onIntent, onBook, onEdit, target, onTargetDone }: Props) {
+  // What the map kept from the last visit of this account in this role (map-memory.ts): the view, the chosen pin,
+  // the last map answer and how each pin looked. A pin asked for by «На карте» wins over the remembered view.
+  const scope = accountId + ':' + role;
+  const kept = useRef(recallMap(scope)).current;
+  const echoes = useRef(kept ? { stage: kept.stage, pins: { ...kept.pins } } : null);
+  const aim = useRef(target ? targetPin(role, target, data) : null);
+  const restore = useRef(kept?.view && !aim.current ? { view: kept.view, key: kept.viewKey } : null).current;
   const screen = useWindowDimensions();
   const [height, setHeight] = useState(0);
   const [top, setTop] = useState(0);
@@ -392,14 +405,15 @@ export function MapHome({ role, accountId, data, menu, onChanged, onOpenProcess,
   const [reach, setReach] = useState(0);
   const [pins, setPins] = useState<MapPin[]>([]);
   const [focusKey, setFocusKey] = useState('');
-  const [selected, setSelected] = useState('');
+  const [selected, setSelected] = useState(aim.current ? '' : kept?.selected || '');
+  const [notice, setNotice] = useState('');
   // The pin of the carousel card in view; a new set of pins forgets it.
   const [focus, setFocus] = useState('');
   const [lines, setLines] = useState<MapLine[]>([]);
   const [heat, setHeat] = useState<HeatPoint[]>([]);
   const [sparks, setSparks] = useState<MapPoint[]>([]);
   const shownKey = useRef('');
-  const [mapData, setMapData] = useState<Row | null>(null);
+  const [mapData, setMapData] = useState<Row | null>(kept?.data || null);
   const [picking, setPicking] = useState(false);
   const [scanning, setScanning] = useState(false);
   const host = useRef<View>(null);
@@ -484,13 +498,19 @@ export function MapHome({ role, accountId, data, menu, onChanged, onOpenProcess,
   }, [snap, picking]);
 
   // One city drives the map query, the viewport and the guest's request, so a picked point always lies in the searched city.
-  const [city, setCity] = useState<string>(mapCities[data.profile?.city] ? data.profile.city : 'Павлодар');
+  const [city, setCity] = useState<string>(() => {
+    const wanted = aim.current?.city || kept?.city || data.profile?.city;
+    return mapCities[wanted] ? wanted : mapCities[data.profile?.city] ? data.profile.city : 'Павлодар';
+  });
   const cityRef = useRef(city);
   cityRef.current = city;
   const loadMap = async () => {
     const asked = cityRef.current;
     const result = await request('/api/operations/map/search', { filters: { city: asked } }, undefined, undefined, role);
-    if (cityRef.current === asked) setMapData({ ...result, city: asked, receivedAt: Date.now() / 1000 });
+    if (cityRef.current !== asked) return;
+    const next = { ...result, city: asked, receivedAt: Date.now() / 1000 };
+    setMapData(next);
+    rememberMap(scope, { data: next, city: asked });
   };
   // Someone on the way moves on the map: it refreshes every 10 seconds while they do, otherwise every 30.
   usePoll(loadMap, mapData?.journeys?.some((j: Row) => j.longitude != null) ? 10000 : 30000, true);
@@ -503,9 +523,15 @@ export function MapHome({ role, accountId, data, menu, onChanged, onOpenProcess,
     setMapData(null);
     loadMap().catch(() => {});
   }, [city]);
+  // A remembered answer is for the city it was asked in.
+  useEffect(() => {
+    if (mapData && mapData.city !== city) setMapData(null);
+  }, []);
 
   const publish: Publish = (next, key, extra = {}) => {
-    setPins(next);
+    const stage = stageOf(key);
+    setPins(withEchoes(next, echoes.current, stage));
+    rememberMap(scope, { stage, pins: pinStates(next) });
     setLines(extra.lines || []);
     setHeat(extra.heat || []);
     setSparks(extra.sparks || []);
@@ -513,6 +539,56 @@ export function MapHome({ role, accountId, data, menu, onChanged, onOpenProcess,
     shownKey.current = key;
     setFocusKey(key);
   };
+  // The chosen pin is kept for the return; so is the view, with the set of pins it was looking at.
+  useEffect(() => {
+    rememberMap(scope, { selected });
+  }, [selected]);
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      echoes.current = null;
+    }, ECHO_WINDOW);
+    return () => clearTimeout(timer);
+  }, []);
+  // «На карте»: once the pin is on the map it is chosen and the map flies to it. A pin that does not come within a few
+  // seconds (no place on the map yet, or not in this role's map) is said in one line instead.
+  useEffect(() => {
+    const t = aim.current;
+    if (!target) return;
+    if (!t) {
+      setNotice(NOT_ON_MAP);
+      onTargetDone?.();
+      return;
+    }
+    if (t.city && mapCities[t.city] && t.city !== cityRef.current) setCity(t.city);
+    const timer = setTimeout(() => {
+      if (aim.current !== t) return;
+      aim.current = null;
+      setNotice(NOT_ON_MAP);
+      onTargetDone?.();
+    }, 8000);
+    return () => clearTimeout(timer);
+  }, []);
+  const openedAt = useRef(Date.now() / 1000).current;
+  useEffect(() => {
+    const t = aim.current;
+    if (!t) return;
+    if (pins.some(p => p.key === t.key)) {
+      aim.current = null;
+      setSelected(t.key);
+      setFocus(t.key);
+      onTargetDone?.();
+    } else if (mapData && mapData.receivedAt >= openedAt && (!t.city || !mapCities[t.city] || mapData.city === t.city)) {
+      // The map has answered after this visit began and the pin is not among its pins.
+      aim.current = null;
+      setNotice(NOT_ON_MAP);
+      onTargetDone?.();
+    }
+  }, [pins]);
+  useEffect(() => {
+    if (!notice) return;
+    const timer = setTimeout(() => setNotice(''), 4000);
+    return () => clearTimeout(timer);
+  }, [notice]);
   const common: Common = { setScanning, accountId, data, mapData, city, publish, selected, setSelected, focus, setFocus, snap, showNow, expand: setSnap, onHead: setHead, onReach: setReach, onAsk, onIntent, onBook, onChanged, onOpenProcess, onOpenPage };
   const center = mapCities[city] || validPoint(mapData?.center) || mapCities['Павлодар'];
 
@@ -542,7 +618,14 @@ export function MapHome({ role, accountId, data, menu, onChanged, onOpenProcess,
         onCenter={c => {
           mapCenter.current = c;
         }}
+        restore={restore}
+        onView={view => rememberMap(scope, shownKey.current ? { view, viewKey: shownKey.current } : { view })}
       />
+      {!!notice && (
+        <Text accessibilityLiveRegion="polite" style={h.mapNotice}>
+          {notice}
+        </Text>
+      )}
       {(role === 'owner' || role === 'guest') && !selected && <PriceTip role={role} cards={data.approvals || []} onChanged={onChanged} onEdit={onEdit} />}
       {!!menu && <View style={h.menu}>{menu}</View>}
       <Animated.View style={[h.sheet, { height: sheet }]} accessibilityViewIsModal={false}>
@@ -559,7 +642,7 @@ export function MapHome({ role, accountId, data, menu, onChanged, onOpenProcess,
         <View style={h.grow} {...drag.body.panHandlers}>
           <ScrollView ref={scroll} scrollEnabled={scrollable} keyboardShouldPersistTaps="handled" contentContainerStyle={h.sheetContent} showsVerticalScrollIndicator={false}>
             {role === 'guest' ? (
-              <GuestPanel {...common} picking={picking} setPicking={setPicking} mapCenter={mapCenter} setCity={setCity} />
+              <GuestPanel {...common} aimed={!!aim.current} picking={picking} setPicking={setPicking} mapCenter={mapCenter} setCity={setCity} />
             ) : role === 'owner' ? (
               <OwnerPanel {...common} />
             ) : (

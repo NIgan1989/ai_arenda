@@ -3,30 +3,35 @@ import {AccessibilityInfo,Animated,Easing,Image,PanResponder,Pressable,StyleShee
 import {C} from './styles';
 import {T} from './tokens';
 import {API_URL} from './api';
+import {restoreStep} from './map-memory';
 import {MAX_ZOOM,MIN_ZOOM,TILE,fitView,groupPins,pinWidth,project,unproject,validPoint,visibleTiles,type MapPoint} from './map-math';
-import {appearDelay,flight,flightSteps,lineOrigin,type Flight,type MapLine,type PinTone} from './map-motion';
+import {appearDelay,flight,flightSteps,lineOrigin,type Flight,type MapLine,type PinState,type PinTone} from './map-motion';
 import {Beam,FRESH,HeatBlob,LEAVE,Leaving,Origin,Pin,Radar,Spark,controlsHeight,m,toneOrder} from './MapPins';
 
 // rank: among pins of one tone, the lower one stays visible when their boxes meet (the price, for flats).
 // until: for a waiting pin, when the owner's time to answer ends, in seconds by this phone's clock; a strip under the label runs down to it.
 // best: the AI's best choice for the guest; it wears the two-colour ring of the AI and a ✦.
 // order: the stop's number on the cleaner's route of the day; progress: how far a cleaning under way has gone (0..1), a strip that fills.
-export type MapPin={key:string;point:MapPoint;label:string;tone?:PinTone;title?:string;rank?:number;until?:number;best?:boolean;order?:number;progress?:number};
+// was: how the pin looked when the person left the map (map-memory.ts); the pin plays that change once when they come back.
+export type MapPin={key:string;point:MapPoint;label:string;tone?:PinTone;title?:string;rank?:number;until?:number;best?:boolean;order?:number;progress?:number;was?:PinState};
 export type {MapLine};
 // scanning: a search is running; the map sends radar waves from the middle of what is visible.
 // focus: the pin of the card the guest is looking at in the carousel: it lifts and the map flies to it.
 // lines: beams from the guest's search point to the flats being asked.
 // heat: demand around the owner's objects, weight 0..1; sparks: where guests are asking right now.
+// restore: the view the person left (map-memory.ts): it is shown instead of framing the pins while the same set of pins
+// (key, the focusKey of then) is on the map, and the pins of that return do not drop in again. onView: each settled view.
 export type HeatPoint={point:MapPoint;weight:number};
-export type MapProps={center:MapPoint;pins:MapPin[];selected?:string;focus?:string;lines?:MapLine[];heat?:HeatPoint[];sparks?:MapPoint[];onSelect?:(key:string)=>void;bottomInset?:number;topInset?:number;focusKey?:string;picking?:boolean;scanning?:boolean;onCenter?:(center:MapPoint)=>void};
+export type MapRestore={view:{center:MapPoint;zoom:number};key:string};
+export type MapProps={center:MapPoint;pins:MapPin[];selected?:string;focus?:string;lines?:MapLine[];heat?:HeatPoint[];sparks?:MapPoint[];onSelect?:(key:string)=>void;bottomInset?:number;topInset?:number;focusKey?:string;picking?:boolean;scanning?:boolean;onCenter?:(center:MapPoint)=>void;restore?:MapRestore|null;onView?:(view:{center:MapPoint;zoom:number})=>void};
 type View2={center:MapPoint;zoom:number};
 // The tile service asks clients to identify themselves; no account or device data is sent.
 const tileHeaders={'User-Agent':'AIArenda-mobile/0.1 (+'+API_URL+')'};
 const plusIcon=require('../assets/ui/plus.png'),minusIcon=require('../assets/ui/minus.png'),fitIcon=require('../assets/ui/fit.png');
-export function TileMap({center,pins,selected,focus='',lines=[],heat=[],sparks=[],onSelect,bottomInset=0,topInset=0,focusKey='',picking=false,scanning=false,onCenter}:MapProps){
- const [size,setSize]=useState({w:0,h:0}),[view,setViewNow]=useState<View2>({center,zoom:12}),[drag,setDrag]=useState({x:0,y:0}),[still,setStill]=useState(false);
+export function TileMap({center,pins,selected,focus='',lines=[],heat=[],sparks=[],onSelect,bottomInset=0,topInset=0,focusKey='',picking=false,scanning=false,onCenter,restore,onView}:MapProps){
+ const [size,setSize]=useState({w:0,h:0}),[view,setViewNow]=useState<View2>(restore?.view||{center,zoom:12}),[drag,setDrag]=useState({x:0,y:0}),[still,setStill]=useState(false);
  const state=useRef({view,size,bottomInset,topInset,picking});state.current={view,size,bottomInset,topInset,picking};
- const loop=useRef(new Animated.Value(0)).current,report=useRef(onCenter);report.current=onCenter;
+ const loop=useRef(new Animated.Value(0)).current,report=useRef(onCenter),reportView=useRef(onView);report.current=onCenter;reportView.current=onView;
  const usableHeight=Math.max(120,size.h-bottomInset-topInset),originY=topInset+usableHeight/2;
  useEffect(()=>{let live=true;AccessibilityInfo.isReduceMotionEnabled().then(v=>{if(live)setStill(v);}).catch(()=>{});const sub=AccessibilityInfo.addEventListener?.('reduceMotionChanged',v=>setStill(v));return()=>{live=false;sub?.remove();};},[]);
  const breathing=pins.some(p=>p.tone==='pending'||p.tone==='active');
@@ -48,10 +53,12 @@ export function TileMap({center,pins,selected,focus='',lines=[],heat=[],sparks=[
  },[trip?.id,size.w,size.h,originY]);
 
  // ---------- Arrivals and departures of pins ----------
- const born=useRef(new Map<string,number>()),known=useRef(new Map<string,MapPin>()),[leaving,setLeaving]=useState<(MapPin&{gone:number})[]>([]);
+ const born=useRef(new Map<string,number>()),known=useRef(new Map<string,MapPin>()),[leaving,setLeaving]=useState<(MapPin&{gone:number})[]>([]),calm=useRef(!!restore);
  const arrived=useMemo(()=>{
   const now=Date.now(),next=new Map(pins.map(p=>[p.key,p])),gone:MapPin[]=[];
-  for(const p of pins)if(!known.current.has(p.key))born.current.set(p.key,now);
+  // On a return to the map its pins are simply there: they dropped in on the first visit.
+  for(const p of pins)if(!known.current.has(p.key)&&!calm.current)born.current.set(p.key,now);
+  if(pins.length)calm.current=false;
   for(const [key,p] of known.current)if(!next.has(key)){gone.push(p);born.current.delete(key);}
   known.current=next;return gone;
  },[pins]);
@@ -66,7 +73,7 @@ export function TileMap({center,pins,selected,focus='',lines=[],heat=[],sparks=[
  },[arrived]);
 
  // Reframe only when the caller announces a new set of results, never on background refreshes.
- const fitted=useRef(''),fittedHeight=useRef(0),moved=useRef(false),first=useRef(true);
+ const fitted=useRef(''),fittedHeight=useRef(0),moved=useRef(false),first=useRef(true),restoring=useRef(restore||null);
  const fit=()=>{
   const points=pins.map(p=>p.point).filter(p=>validPoint(p)),next=points.length?fitView(points,size.w-96,usableHeight-96,15):null;
   moved.current=false;fittedHeight.current=usableHeight;
@@ -74,12 +81,16 @@ export function TileMap({center,pins,selected,focus='',lines=[],heat=[],sparks=[
   setView(next||{center:validPoint(center)||[76.95,52.287],zoom:12},!first.current);first.current=false;
  };
  useEffect(()=>{
-  if(!size.w||fitted.current===focusKey+':'+size.w)return;fitted.current=focusKey+':'+size.w;
+  if(!size.w||fitted.current===focusKey+':'+size.w)return;
+  // Back from another page: the view the person left, as long as the same pins are on the map.
+  const back=restoring.current,step=restoreStep(back,focusKey,pins.length);
+  if(back&&step!=='fit'){setView(back.view,false);first.current=false;moved.current=true;fittedHeight.current=usableHeight;if(step==='show'){restoring.current=null;fitted.current=focusKey+':'+size.w;}return;}
+  restoring.current=null;fitted.current=focusKey+':'+size.w;
   fit();
  },[focusKey,size.w]);
  // The sheet grew or shrank: frame the same pins in the part of the map that is still visible, unless the person has moved the map themselves.
  useEffect(()=>{if(!size.w||!fitted.current||moved.current||picking)return;if(Math.abs(usableHeight-fittedHeight.current)>=48)fit();},[usableHeight]);
- useEffect(()=>{report.current?.(view.center);},[view.center[0],view.center[1]]);
+ useEffect(()=>{report.current?.(view.center);reportView.current?.(view);},[view.center[0],view.center[1],view.zoom]);
  // A card of the carousel came into view: the map flies to its pin, at no less than a street's zoom.
  useEffect(()=>{const pin=focus&&pins.find(p=>p.key===focus),point=pin&&validPoint(pin.point);if(!point||!size.w)return;moved.current=true;setView(v=>({center:point,zoom:Math.max(v.zoom,13)}));},[focus]);
 

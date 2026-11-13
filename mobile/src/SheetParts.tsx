@@ -28,6 +28,8 @@ export const handleHeight=T.control.touch,topInset=64;
 const R=T.radius,H=T.control,shadow={shadowColor:C.ink,shadowOffset:{width:0,height:2},shadowOpacity:.12,shadowRadius:8,elevation:3};
 export const h=StyleSheet.create({
  host:{flex:1,backgroundColor:C.bg},
+ // A short line over the map, under the avatar: what «На карте» could not show.
+ mapNotice:{position:'absolute',top:68,left:16,right:16,alignSelf:'center',textAlign:'center',paddingVertical:8,paddingHorizontal:16,borderRadius:R.lg,backgroundColor:C.glassStrong,borderWidth:1,borderColor:C.glassLine,...type.label,color:C.ink,...shadow},
  menu:{position:'absolute',top:12,right:12,width:H.touch,height:H.touch,borderRadius:R.full,backgroundColor:C.glassStrong,borderWidth:1,borderColor:C.glassLine,alignItems:'center',justifyContent:'center',...shadow},
  sheet:{position:'absolute',left:0,right:0,bottom:0,backgroundColor:C.glassStrong,borderTopLeftRadius:R.xl,borderTopRightRadius:R.xl,borderTopWidth:1,borderColor:C.glassLine,shadowColor:C.ink,shadowOffset:{width:0,height:-4},shadowOpacity:.1,shadowRadius:12,elevation:12},
  handleArea:{height:handleHeight,alignItems:'center',justifyContent:'center'},handle:{width:40,height:4,borderRadius:R.xs,backgroundColor:C.lineStrong},sheetContent:{paddingHorizontal:16,paddingBottom:16},

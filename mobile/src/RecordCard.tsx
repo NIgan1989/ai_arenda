@@ -10,13 +10,18 @@ import {recordSpan} from '../../lib/record-span';
 // An opened booking or cleaning, built the same way as on the site: the head says what it is, when and how much,
 // one line and a bar show the step, the facts follow, and the next action is the only big button.
 const tones:Record<string,[string,string]>={success:[C.successSoft,C.success],warning:[C.warningSoft,C.warning],active:[C.accentSoft,C.accentPressed],neutral:[C.surfaceAlt,C.muted],danger:[C.dangerSoft,C.danger]};
-export function RecordHead({kind,item,role,userId,application}:{kind:'booking'|'job';item:Row;role:string;userId:string;application?:Row}){
+// «На карте»: a small pill next to the place of a booking, a cleaning or an object, in a chat's subject line too.
+// It opens the home map on that pin (MapHome, map-memory.ts targetPin).
+export function MapLink({onPress,label='Показать на карте'}:{onPress:()=>void;label?:string}){
+ return <Pressable accessibilityRole="button" accessibilityLabel={label} hitSlop={8} onPress={onPress} style={({pressed})=>[r.mapLink,pressed&&r.dim]}><View style={r.mapPin}><View style={r.mapPinDot}/></View><Text style={r.mapLinkText}>На карте</Text></Pressable>;
+}
+export function RecordHead({kind,item,role,userId,application,onMap}:{kind:'booking'|'job';item:Row;role:string;userId:string;application?:Row;onMap?:()=>void}){
  const status=processStatus(kind,item,role,userId,application),[bg,ink]=tones[status.tone]||tones.neutral,paid=item.payment_status==='owner_verified',place=[item.city,item.district].filter(Boolean).join(', ');
  return <View style={r.head}>
   <View style={r.tags}><Text style={[r.status,{backgroundColor:bg,color:ink}]}>{status.label}</Text>{!!item.demo_owner&&<Text style={[r.status,{backgroundColor:C.surfaceAlt,color:C.muted}]}>{kind==='job'?'Учебное':'Учебная'}</Text>}{kind==='job'&&!!item.regular&&<Text style={[r.status,{backgroundColor:C.accentSoft,color:C.accentPressed}]}>Постоянный исполнитель</Text>}</View>
   <Text accessibilityRole="header" style={r.title}>{item.title}</Text>
   <Text style={r.when}>{recordSpan(item.start,item.end)}</Text>
-  {!!place&&<Text style={r.where}>{place}</Text>}
+  {(!!place||!!onMap)&&<View style={r.whereRow}><Text style={[r.where,r.whereText]}>{place}</Text>{!!onMap&&<MapLink onPress={onMap}/>}</View>}
   <View style={r.sum}><Text style={r.amount}>{money(kind==='job'?item.fee:item.amount)}</Text><Text style={[r.sumNote,(kind==='booking'&&paid||kind==='job'&&!!item.guarantee)&&{color:C.success}]}>{kind==='job'?jobPayNote(item):paid?'оплата отмечена владельцем':'оплата не подтверждена'}</Text></View>
  </View>;
 }
@@ -54,5 +59,8 @@ const r=StyleSheet.create({
  main:{minHeight:H.primary,backgroundColor:C.accent},mainText:{...type.body,fontWeight:'600',color:C.onAccent},next:{backgroundColor:C.accentSoft},nextText:{color:C.accentPressed},
  side:{flex:1,backgroundColor:C.surface,borderWidth:1,borderColor:C.line},sideText:{color:C.ink},danger:{backgroundColor:'transparent'},dangerText:{color:C.danger,fontWeight:'500'},
  focus:{borderWidth:2,borderColor:C.focus},dim:{opacity:.55},
+ whereRow:{flexDirection:'row',alignItems:'center',gap:8},whereText:{flex:1,minWidth:0},
+ mapLink:{flexDirection:'row',alignItems:'center',gap:4,minHeight:32,paddingHorizontal:12,borderRadius:R.full,backgroundColor:C.accentSoft},mapLinkText:{...type.caption,fontWeight:'600',color:C.accentPressed},
+ mapPin:{width:12,height:12,borderRadius:R.full,borderBottomRightRadius:0,backgroundColor:C.accentPressed,transform:[{rotate:'45deg'}],alignItems:'center',justifyContent:'center'},mapPinDot:{width:4,height:4,borderRadius:R.full,backgroundColor:C.accentSoft},
 });
 export const recordStyles=r;

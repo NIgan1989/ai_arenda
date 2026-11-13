@@ -1,0 +1,45 @@
+/* Pins of the site's map, the same «таблетки» as in the app (mobile/src/MapPins.tsx). Colours come from the design tokens. */
+.map-pills{position:absolute;inset:0;pointer-events:none;overflow:hidden;z-index:1}
+.map-pill{position:absolute;width:0;height:0;display:flex;align-items:center;justify-content:center;
+ --pill-bg:var(--t-surface);--pill-fg:var(--t-ink);--pill-line:var(--t-line);--pill-glow:var(--t-accent-line)}
+.map-pill.tone-pending{--pill-bg:var(--t-warning-soft);--pill-fg:var(--t-warning);--pill-line:var(--t-warning-line);--pill-glow:var(--t-warning-line)}
+.map-pill.tone-offer{--pill-bg:var(--t-accent);--pill-fg:var(--t-on-accent);--pill-line:var(--t-accent);--pill-glow:var(--t-accent)}
+.map-pill.tone-job{--pill-bg:var(--t-info-soft);--pill-fg:var(--t-info);--pill-line:var(--t-info-line);--pill-glow:var(--t-info)}
+.map-pill.tone-booking{--pill-bg:var(--t-accent-soft);--pill-fg:var(--t-ink);--pill-line:var(--t-accent-line);--pill-glow:var(--t-accent-line)}
+.map-pill.tone-booked{--pill-bg:var(--t-success);--pill-fg:var(--t-on-accent);--pill-line:var(--t-success);--pill-glow:var(--t-success)}
+.map-pill.tone-active{--pill-bg:var(--t-info);--pill-fg:var(--t-on-accent);--pill-line:var(--t-info);--pill-glow:var(--t-info)}
+.map-pill-body{position:relative;pointer-events:auto;flex:none;display:inline-flex;align-items:center;gap:4px;white-space:nowrap;min-height:32px;min-width:44px;padding:0 12px;
+ border-radius:16px;border:1px solid var(--pill-line);background:var(--pill-bg);color:var(--pill-fg);font-family:inherit;font-size:14px;font-weight:600;line-height:1;
+ box-shadow:0 2px 6px rgba(14,19,36,.14);cursor:pointer;transition:transform var(--t-motion-fast,150ms) ease,background-color var(--t-motion-fast,150ms),color var(--t-motion-fast,150ms)}
+.map-pill-body small{font-weight:500;opacity:.7;font-size:inherit}
+.map-pill-body:focus-visible{outline:2px solid var(--t-focus);outline-offset:2px}
+.map-pill.active .map-pill-body{background:var(--t-ink);border-color:var(--t-ink);color:var(--t-surface);transform:translateY(-4px) scale(1.08)}
+.map-pill.best .map-pill-body{border:2px solid var(--t-ai-from);box-shadow:0 0 0 2px var(--t-ai-to),0 2px 6px rgba(14,19,36,.14)}
+.map-pill-star{font-style:normal;color:var(--t-ai-from)}
+.map-pill.active .map-pill-star{color:var(--t-ai-to)}
+.map-pill.ordered .map-pill-body{padding-left:4px}
+.map-pill-order{display:inline-grid;place-items:center;width:24px;height:24px;border-radius:12px;background:var(--pill-fg);color:var(--pill-bg);font-size:12px;font-weight:700}
+.map-pill-strip{position:absolute;left:8px;right:8px;bottom:3px;height:3px;border-radius:2px;background:var(--t-warning-line);overflow:hidden}
+.map-pill-strip>span{display:block;height:100%;background:var(--t-warning);transform-origin:left;animation:map-pill-run linear forwards}
+.map-pill-strip.work{background:rgba(255,255,255,.35)}
+.map-pill-strip.work>span{background:var(--t-surface);animation:none;transition:transform .6s ease-out}
+@keyframes map-pill-run{to{transform:scaleX(0)}}
+.map-pill-ring,.map-pill-breath{position:absolute;width:56px;height:56px;left:-28px;top:-28px;border-radius:50%;pointer-events:none;opacity:0;background:var(--pill-glow)}
+.map-pill-ring.wave{background:transparent;border:3px solid var(--t-success)}
+.map-pill-ring.echo{background:var(--t-accent-soft);border:3px solid var(--t-accent)}
+.map-pill-breath{animation:map-pill-breath 1.6s ease-out infinite}
+.map-pill.tone-active .map-pill-breath{animation-name:map-pill-breath-soft}
+@keyframes map-pill-breath{from{opacity:.55;transform:scale(.6)}to{opacity:0;transform:scale(1.9)}}
+@keyframes map-pill-breath-soft{from{opacity:.35;transform:scale(.6)}to{opacity:0;transform:scale(1.5)}}
+.map-pill.leaving .map-pill-body{pointer-events:none;animation:map-pill-leave .26s ease-in forwards}
+@keyframes map-pill-leave{to{opacity:0;transform:translateY(8px) scale(.6)}}
+.map-pills.picking .map-pill-body{pointer-events:none}
+@media (prefers-reduced-motion: reduce){.map-pill-breath{animation:none}.map-pill-strip>span{animation:none}.map-pill-body{transition:none}}
+/* Where guests ask right now (owner's map): a dot that sends a ring out; the guest's search point, where beams start. */
+.map-spark,.map-origin{position:absolute;width:0;height:0;display:flex;align-items:center;justify-content:center;pointer-events:none}
+.map-spark i{display:block;flex:none;width:8px;height:8px;border-radius:50%;background:var(--t-ai-to)}
+.map-spark::before{content:"";position:absolute;width:32px;height:32px;left:-16px;top:-16px;border-radius:50%;border:2px solid var(--t-ai-to);opacity:0;animation:map-spark 1.8s ease-out infinite;animation-delay:inherit}
+@keyframes map-spark{from{opacity:.9;transform:scale(.3)}to{opacity:0;transform:scale(1.6)}}
+.map-origin::before{content:"";position:absolute;width:22px;height:22px;left:-11px;top:-11px;border-radius:50%;background:var(--t-accent-soft)}
+.map-origin i{position:relative;display:block;flex:none;width:12px;height:12px;border-radius:50%;background:var(--t-accent);border:2px solid var(--t-surface)}
+@media (prefers-reduced-motion: reduce){.map-spark::before{animation:none}}

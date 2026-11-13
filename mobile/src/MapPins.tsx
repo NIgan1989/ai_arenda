@@ -15,7 +15,8 @@ export const toneOrder:Record<PinTone,number>={offer:0,booked:0,pending:1,active
 const tones:Record<PinTone,{bg:string;fg:string;line:string}>={home:{bg:C.surface,fg:C.ink,line:C.line},pending:{bg:C.warningSoft,fg:C.warning,line:C.warningLine},offer:{bg:C.accent,fg:C.surface,line:C.accent},job:{bg:C.infoSoft,fg:C.info,line:C.infoLine},booking:{bg:C.accentSoft,fg:C.ink,line:C.accentLine},booked:{bg:C.success,fg:C.surface,line:C.success},active:{bg:C.info,fg:C.surface,line:C.info}};
 // The colour of the flash and of the waves an event sends out.
 const glow:Record<PinTone,string>={home:C.accentLine,pending:C.warningLine,offer:C.accent,job:C.info,booking:C.accentLine,booked:C.success,active:C.info};
-export const FRESH=900,LEAVE=260;
+// ECHO_DELAY: a pin that changed while the person was away waits for the page to turn into the map before it plays.
+export const FRESH=900,LEAVE=260,ECHO_DELAY=450;
 
 // One pin and what happens to it. A pin knows its last tone and label, so it plays its event once when they change.
 // born: when the key first came in the pins (0: it was there before, then it plays nothing on mount).
@@ -23,19 +24,26 @@ export const FRESH=900,LEAVE=260;
 export function Pin({pin,x,y,more,active,still,picking,born,delay,loop,onPress}:{pin:MapPin;x?:number;y?:number;more:number;active:boolean;still:boolean;picking:boolean;born:number;delay:number;loop:Animated.Value;onPress?:()=>void}){
  const tone=pin.tone||'home',colors=tones[tone],best=!!pin.best;
  const entering=useRef(!still&&!!born&&Date.now()-born<=FRESH),enter=useRef(new Animated.Value(entering.current?0:1)).current;
- const pop=useRef(new Animated.Value(0)).current,flash=useRef(new Animated.Value(0)).current,flash2=useRef(new Animated.Value(0)).current,shake=useRef(new Animated.Value(0)).current,lift=useRef(new Animated.Value(active?1:0)).current;
+ const pop=useRef(new Animated.Value(0)).current,flash=useRef(new Animated.Value(0)).current,flash2=useRef(new Animated.Value(0)).current,shake=useRef(new Animated.Value(0)).current,ping=useRef(new Animated.Value(0)).current,lift=useRef(new Animated.Value(active?1:0)).current;
  const [flashTone,setFlashTone]=useState<PinTone>(tone);
- const last=useRef<PinState>({tone,label:pin.label});
+ // While the map has just come back (map-memory.ts ECHO_WINDOW), a change against how the pin looked when the person left
+ // carries pin.was too: a stale first answer that is then refreshed still echoes.
+ // A pin that comes back changed (pin.was, map-memory.ts) starts from how it looked then and plays the change once the
+ // page has turned into the map, with a flash, so the person sees where the thing they did elsewhere happened.
+ const last=useRef<PinState>(pin.was||{tone,label:pin.label}),echo=useRef(!!pin.was);
  useEffect(()=>{if(entering.current)Animated.spring(enter,{toValue:1,delay,friction:6,tension:90,useNativeDriver:true}).start();},[]);
  useEffect(()=>{
-  const event:PinEvent=pinEvent(last.current,{tone,label:pin.label});last.current={tone,label:pin.label};
+  const event:PinEvent=pinEvent(last.current,{tone,label:pin.label}),echoed=echo.current||!!pin.was;last.current={tone,label:pin.label};echo.current=false;
   if(still||event==='none'||event==='appear')return;
   setFlashTone(tone);
   const bounce=(to:number)=>Animated.sequence([Animated.timing(pop,{toValue:to,duration:140,easing:Easing.out(Easing.quad),useNativeDriver:true}),Animated.spring(pop,{toValue:0,friction:4,tension:120,useNativeDriver:true})]);
   const burst=()=>{flash.setValue(0);return Animated.timing(flash,{toValue:1,duration:700,easing:Easing.out(Easing.cubic),useNativeDriver:true});};
   const wiggle=()=>{shake.setValue(0);return Animated.timing(shake,{toValue:1,duration:420,easing:Easing.linear,useNativeDriver:true});};
   const play={ask:()=>Animated.parallel([wiggle(),bounce(.12)]),answer:()=>Animated.parallel([burst(),bounce(.28)]),celebrate:()=>{flash2.setValue(0);return Animated.parallel([burst(),bounce(.4),Animated.timing(flash2,{toValue:1,delay:240,duration:900,easing:Easing.out(Easing.cubic),useNativeDriver:true})]);},start:()=>Animated.parallel([burst(),bounce(.16)]),settle:()=>bounce(-.12),update:()=>bounce(.16)}[event];
-  play().start();
+  if(!echoed){play().start();return;}
+  // The echo: two wide waves of the accent colour go out from the pin while it plays its change.
+  const wave=()=>Animated.sequence([Animated.timing(ping,{toValue:0,duration:0,useNativeDriver:true}),Animated.timing(ping,{toValue:1,duration:900,easing:Easing.out(Easing.quad),useNativeDriver:true})]);
+  Animated.sequence([Animated.delay(ECHO_DELAY),Animated.parallel([play(),Animated.sequence([wave(),wave()])])]).start();
  },[tone,pin.label,still]);
  useEffect(()=>{if(still){lift.setValue(active?1:0);return;}Animated.spring(lift,{toValue:active?1:0,friction:6,tension:140,useNativeDriver:true}).start();},[active,still]);
  const scale=Animated.add(Animated.add(enter.interpolate({inputRange:[0,1],outputRange:[.4,1]}),pop),lift.interpolate({inputRange:[0,1],outputRange:[0,.08]}));
@@ -50,6 +58,7 @@ export function Pin({pin,x,y,more,active,still,picking,born,delay,loop,onPress}:
  useEffect(()=>{if(!filling)return;if(still){done.setValue(pin.progress!);return;}Animated.timing(done,{toValue:pin.progress!,duration:600,easing:Easing.out(Easing.quad),useNativeDriver:true}).start();},[filling,pin.progress,still]);
  return <View pointerEvents="box-none" style={[m.pinWrap,x==null||y==null?m.pinInMarker:{left:x-90,top:y-20},{zIndex:active?3:tone==='offer'||tone==='booked'?2:1}]}>
   {breathing&&!still&&<Animated.View pointerEvents="none" style={[m.ring,{backgroundColor:glow[tone],opacity:loop.interpolate({inputRange:[0,1],outputRange:[tone==='active'?.35:.55,0]}),transform:[{scale:loop.interpolate({inputRange:[0,1],outputRange:[.6,tone==='active'?1.5:1.9]})}]}]}/>}
+  {!still&&<Animated.View pointerEvents="none" style={[m.ring,m.echo,{opacity:ping.interpolate({inputRange:[0,.08,.7,1],outputRange:[0,1,.5,0]}),transform:[{scale:ping.interpolate({inputRange:[0,1],outputRange:[.8,2.8]})}]}]}/>}
   {!still&&<Animated.View pointerEvents="none" style={[m.ring,{backgroundColor:glow[flashTone],opacity:flash.interpolate({inputRange:[0,.05,1],outputRange:[0,.6,0]}),transform:[{scale:flash.interpolate({inputRange:[0,1],outputRange:[.5,2.6]})}]}]}/>}
   {!still&&tone==='booked'&&<Animated.View pointerEvents="none" style={[m.ring,m.wave2,{opacity:flash2.interpolate({inputRange:[0,.05,1],outputRange:[0,.8,0]}),transform:[{scale:flash2.interpolate({inputRange:[0,1],outputRange:[.6,3.4]})}]}]}/>}
   <Animated.View style={{opacity:enter.interpolate({inputRange:[0,.3,1],outputRange:[0,1,1]}),transform:[{translateY},{scale},{rotate}]}}>
@@ -109,7 +118,7 @@ export const m=StyleSheet.create({
  host:{flex:1,backgroundColor:C.line,overflow:'hidden'},tile:{position:'absolute',width:TILE,height:TILE},
  pinWrap:{position:'absolute',width:180,height:40,alignItems:'center',justifyContent:'center'},pinInMarker:{position:'relative'},
  pin:{minHeight:32,minWidth:44,paddingHorizontal:12,borderRadius:16,borderWidth:1,flexDirection:'row',gap:4,alignItems:'center',justifyContent:'center',shadowColor:C.ink,shadowOffset:{width:0,height:2},shadowOpacity:.18,shadowRadius:5,elevation:3},
- pinText:{fontSize:14,fontWeight:'600'},bestRing:{padding:2,borderRadius:16,backgroundColor:C.aiTo,shadowColor:C.ink,shadowOffset:{width:0,height:2},shadowOpacity:.18,shadowRadius:5,elevation:3},bestPin:{borderWidth:2,minHeight:30,shadowOpacity:0,elevation:0},wave2:{borderWidth:3,borderColor:C.success,backgroundColor:'transparent'},timeTrack:{position:'absolute',left:8,right:8,bottom:3,height:3,borderRadius:2,backgroundColor:C.warningLine,overflow:'hidden'},timeFill:{flex:1,backgroundColor:C.warning,transformOrigin:'left'},pinMore:{fontWeight:'500',opacity:.7},pinOrdered:{paddingLeft:4},order:{width:24,height:24,borderRadius:12,alignItems:'center',justifyContent:'center'},orderText:{fontSize:12,fontWeight:'700'},workTrack:{backgroundColor:'rgba(255,255,255,0.35)'},workFill:{backgroundColor:C.surface},ring:{position:'absolute',width:56,height:56,borderRadius:999},
+ pinText:{fontSize:14,fontWeight:'600'},bestRing:{padding:2,borderRadius:16,backgroundColor:C.aiTo,shadowColor:C.ink,shadowOffset:{width:0,height:2},shadowOpacity:.18,shadowRadius:5,elevation:3},bestPin:{borderWidth:2,minHeight:30,shadowOpacity:0,elevation:0},wave2:{borderWidth:3,borderColor:C.success,backgroundColor:'transparent'},timeTrack:{position:'absolute',left:8,right:8,bottom:3,height:3,borderRadius:2,backgroundColor:C.warningLine,overflow:'hidden'},timeFill:{flex:1,backgroundColor:C.warning,transformOrigin:'left'},pinMore:{fontWeight:'500',opacity:.7},pinOrdered:{paddingLeft:4},order:{width:24,height:24,borderRadius:12,alignItems:'center',justifyContent:'center'},orderText:{fontSize:12,fontWeight:'700'},workTrack:{backgroundColor:'rgba(255,255,255,0.35)'},workFill:{backgroundColor:C.surface},ring:{position:'absolute',width:56,height:56,borderRadius:999},echo:{borderWidth:3,borderColor:C.accent,backgroundColor:C.accentSoft},
  beam:{position:'absolute',height:2,justifyContent:'center'},beamAsk:{height:0,borderTopWidth:2,borderStyle:'dashed',borderColor:C.warning},beamAnswer:{height:2,borderRadius:1,backgroundColor:C.accent},beamRoute:{height:4,borderRadius:2,backgroundColor:C.info,opacity:.7},beamNav:{height:6,borderRadius:4,backgroundColor:C.accent,borderWidth:1,borderColor:C.surface},
  heat:{position:'absolute'},spark:{position:'absolute',width:32,height:32,alignItems:'center',justifyContent:'center'},sparkRing:{position:'absolute',width:32,height:32,borderRadius:16,borderWidth:2,borderColor:C.aiTo},sparkDot:{width:8,height:8,borderRadius:4,backgroundColor:C.aiTo},
  origin:{position:'absolute',width:22,height:22,borderRadius:12,backgroundColor:C.accentSoft,alignItems:'center',justifyContent:'center'},
