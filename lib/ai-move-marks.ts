@@ -57,3 +57,41 @@ export function latestMove(marks:unknown,about:{kind:string;id:string}[],now:num
  }
  return best;
 }
+
+// ---------- The journal: everything the AI did for this person, one short line each ----------
+// Wider than the map: it also keeps what has no pin (a price advice, a forecast, a deposit returned).
+// Shown in the menu, under «Тариф и автопилот» for the owner and the cleaner and as its own short row for the guest.
+export type AiNote={kind:AiMark['kind']|'';id:string;text:string;at:number};
+const NOTES:[string,AiNote['kind'],string][]=[
+ ['owner:administrator-propose:','','ИИ предложил исполнителя'],
+ ['owner:administrator-review-issue:','job','ИИ нашёл замечания в отчёте'],
+ ['owner:administrator-checkin-payment:','booking','ИИ попросил гостя оплатить'],
+ ['owner:administrator-checkin-ready:','booking','ИИ ждёт готовности жилья'],
+ ['owner:price:','','ИИ посоветовал цену'],
+ ['owner:window:','','ИИ нашёл окно в календаре'],
+ ['owner:forecast:','','ИИ составил прогноз загрузки'],
+ ['owner:autopilot-week:','','ИИ подвёл итоги недели'],
+ ['owner:guest-question:','','ИИ передал вопрос гостя'],
+ ['guest:administrator-checkin-pay:','booking','ИИ попросил оплатить на месте'],
+ ['guest:test-deposit-return:','booking','ИИ вернул депозит'],
+ ['guest:stay:','','ИИ предложил изменить проживание'],
+ ['guest:review-request:','','ИИ спросил, как прошло'],
+ ['cleaner:day-plan:','','ИИ составил план дня'],
+ ['cleaner:offer:','cleaning-offer','ИИ предложил уборку'],
+ ['cleaner:no-show:','job','ИИ снял назначение'],
+ ['cleaner:overdue-released:','job','ИИ снял с уборки']
+];
+export function aiNoteOf(dedupe:unknown,at:unknown,body?:unknown):AiNote|null{
+ const mark=aiMarkOf(dedupe,at,body);if(mark)return {kind:mark.kind,id:mark.id,text:AI_SAYS[mark.move],at:mark.at};
+ if(typeof dedupe!=='string'||typeof at!=='number'||!Number.isFinite(at))return null;
+ for(const [prefix,kind,text] of NOTES)if(dedupe.startsWith(prefix)){const id=dedupe.slice(prefix.length).split(':')[0];return {kind,id:kind?id:'',text,at};}
+ return null;
+}
+// «сегодня 14:05», «вчера 09:30», «12.11 18:40», in Kazakhstan time (UTC+5) as everywhere in the service.
+export function journalWhen(at:number,now:number){
+ const zone=5*3600,d=new Date((at+zone)*1000),day=(t:number)=>Math.floor((t+zone)/86400),two=(n:number)=>String(n).padStart(2,'0');
+ const clock=two(d.getUTCHours())+':'+two(d.getUTCMinutes()),ago=day(now)-day(at);
+ return ago===0?'сегодня '+clock:ago===1?'вчера '+clock:two(d.getUTCDate())+'.'+two(d.getUTCMonth()+1)+' '+clock;
+}
+// How many of these lines are from today: the number next to the row of the menu.
+export function journalToday(entries:{at:number}[],now:number){const zone=5*3600,day=(t:number)=>Math.floor((t+zone)/86400);return entries.filter(e=>day(e.at)===day(now)).length;}
