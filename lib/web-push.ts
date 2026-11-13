@@ -5,7 +5,7 @@ import {epoch,uuid,q,one,rows,hash,type OperationConfig,type Row} from './operat
 import {encryptInstructions,decryptInstructions} from './participant-security';
 import {quietNow} from './administrator';
 import {defaultAssistantSettings} from './assistant';
-import {priceRevision} from './approvals';
+import {priceRevision,windowRevision,stayRevision} from './approvals';
 
 export function pushConfigured(config:OperationConfig){return !!(config.VAPID_PUBLIC_KEY&&config.VAPID_PRIVATE_KEY&&config.VAPID_SUBJECT&&config.ACCESS_ENCRYPTION_KEY);}
 export function validatePushSubscription(input:Row){
@@ -53,11 +53,19 @@ export async function manageWebPush(service:RentalService,role:Role,body:Row,con
  }
  throw new DomainError('Неизвестное действие.');
 }
-export function pushPayload(role:Role,test=false,matching=false,price?:Row|null){
+export function pushPayload(role:Role,test=false,matching=false,price?:Row|null,window?:Row|null,stay?:Row|null){
  // The price advice is the one notice that carries its content: the owner can answer from the notification itself.
  if(price&&role==='owner'&&price.status==='pending'){const up=price.direction==='up',sum=new Intl.NumberFormat('ru-RU').format(price.to_daily)+' ₸';
   return JSON.stringify({kind:'price',title:(up?'Спрос вырос · ':'Спрос снизился · ')+price.title,body:(up?'Предлагаю поднять цену до ':'Предлагаю снизить цену до ')+sum+' за сутки ('+(up?'+':'−')+price.percent+'%). Без вашего согласия цена не изменится.',url:'/workspace/owner/map',
    decision:{id:'price:'+price.id,revision:priceRevision(price),accept:(up?'Поднять до ':'Снизить до ')+sum,reject:'Оставить'}});}
+ // A calendar window: the owner opens the discounted hours right from the notification too.
+ if(window&&role==='owner'&&window.status==='suggested'){const sum=(n:number)=>new Intl.NumberFormat('ru-RU').format(n)+' ₸',hm=(n:number)=>new Date(n*1000).toLocaleTimeString('ru-RU',{timeZone:'Asia/Almaty',hour:'2-digit',minute:'2-digit'}),day=new Date(window.start*1000).toLocaleDateString('ru-RU',{timeZone:'Asia/Almaty',weekday:'short'});
+  return JSON.stringify({kind:'window',title:'Окно в календаре · '+window.title,body:'Свободно '+day+' '+hm(window.start)+'–'+hm(window.end)+' между бронями. Сдать почасово за '+sum(window.hourly_to)+' вместо '+sum(window.hourly_from)+' (−'+window.percent+'%)? Без вашего согласия ничего не изменится.',url:'/workspace/owner/map',
+   decision:{id:'window:'+window.id,revision:windowRevision(window),accept:'Открыть окно',reject:'Не надо',done:{accept:'Окно открыто',reject:'Окно не открываем'}}});}
+ // Late checkout or early check-in the guest asked about: answered from the notification.
+ if(stay&&role==='guest'&&stay.status==='suggested'){const late=stay.kind==='late',hm=(n:number)=>new Date(n*1000).toLocaleTimeString('ru-RU',{timeZone:'Asia/Almaty',hour:'2-digit',minute:'2-digit'}),when=late?'до '+hm(stay.end):'с '+hm(stay.start);
+  return JSON.stringify({kind:'stay',title:(late?'Можно остаться ':'Можно заехать ')+when,body:'Доплата '+new Intl.NumberFormat('ru-RU').format(stay.extra)+' ₸. '+(stay.automatic?'Оформлю сразу.':'Отправлю запрос владельцу.'),url:'/workspace/guest/map',
+   decision:{id:'stay:'+stay.id,revision:stayRevision(stay),role:'guest',accept:(late?'Остаться ':'Заехать ')+when,reject:'Не нужно',done:{accept:'Готово',reject:'Время прежнее'}}});}
  return JSON.stringify({title:'AI Аренда',body:test?'Уведомления на этом устройстве работают.':'Есть новое событие. Откройте приложение, чтобы узнать подробности.',url:'/workspace/'+role+(matching?'/map':'/assistant')});
 }
 export async function deliverWebPush(db:D1Database,config:OperationConfig,limit=12,transport:typeof fetch=fetch){
@@ -66,7 +74,7 @@ export async function deliverWebPush(db:D1Database,config:OperationConfig,limit=
  // Expired/revoked sessions cannot retain an endpoint, even if no deliveries are due.
  await q(db,'DELETE FROM push_subscriptions WHERE NOT EXISTS(SELECT 1 FROM auth_sessions a JOIN auth_accounts c ON c.id=a.user_id AND c.credential_version=a.credential_version WHERE a.hash=push_subscriptions.session_hash AND a.user_id=push_subscriptions.user_id AND a.expires_at>?)',now).run();
  await q(db,"DELETE FROM push_deliveries WHERE status='sent' AND sent_at<?",now-7*86400).run();
- const due=await rows(db,`SELECT d.*,n.dedupe,s.ciphertext,ps.id price_id,ps.status price_status,ps.direction price_direction,ps.percent price_percent,ps.policy_version price_version,ps.from_daily price_from,ps.to_daily price_to,pr.title price_title,s.user_id,s.role,s.session_hash,p.settings FROM push_deliveries d JOIN push_subscriptions s ON s.id=d.subscription_id LEFT JOIN notifications n ON n.id=d.notification_id LEFT JOIN price_suggestions ps ON n.dedupe='owner:price:'||ps.id LEFT JOIN properties pr ON pr.id=ps.property_id LEFT JOIN assistant_preferences p ON p.user_id=s.user_id AND p.role=s.role WHERE (d.status='pending' AND d.available_at<=?) OR (d.status='sending' AND d.lease_until<=?) ORDER BY d.created_at LIMIT ?`,now,now,Math.min(30,Math.max(1,limit)));
+ const due=await rows(db,`SELECT d.*,n.dedupe,s.ciphertext,ps.id price_id,ps.status price_status,ps.direction price_direction,ps.percent price_percent,ps.policy_version price_version,ps.from_daily price_from,ps.to_daily price_to,pr.title price_title,cw.id window_id,cw.status window_status,cw.start window_start,cw.end window_end,cw.percent window_percent,cw.hourly_from window_from,cw.hourly_to window_to,wp.title window_title,so.id stay_id,so.status stay_status,so.kind stay_kind,so.start stay_start,so.end stay_end,so.amount stay_amount,so.extra stay_extra,so.base_version stay_base,so.policy_version stay_policy,so.automatic stay_auto,s.user_id,s.role,s.session_hash,p.settings FROM push_deliveries d JOIN push_subscriptions s ON s.id=d.subscription_id LEFT JOIN notifications n ON n.id=d.notification_id LEFT JOIN price_suggestions ps ON n.dedupe='owner:price:'||ps.id LEFT JOIN properties pr ON pr.id=ps.property_id LEFT JOIN calendar_windows cw ON n.dedupe='owner:window:'||cw.id LEFT JOIN properties wp ON wp.id=cw.property_id LEFT JOIN stay_offers so ON n.dedupe='guest:stay:'||so.id LEFT JOIN assistant_preferences p ON p.user_id=s.user_id AND p.role=s.role WHERE (d.status='pending' AND d.available_at<=?) OR (d.status='sending' AND d.lease_until<=?) ORDER BY d.created_at LIMIT ?`,now,now,Math.min(30,Math.max(1,limit)));
  let sent=0,failed=0;
  const deadline=Date.now()+19000;
  for(const item of due){if(Date.now()>deadline)break;
@@ -77,7 +85,7 @@ export async function deliverWebPush(db:D1Database,config:OperationConfig,limit=
    const sub=validatePushSubscription(JSON.parse(await decryptInstructions(item.ciphertext,config)));
    // Recheck current ownership, role and session immediately before external delivery.
    if(!await one(db,`SELECT 1 FROM push_subscriptions s JOIN profiles p ON p.id=s.user_id JOIN auth_sessions a ON a.hash=s.session_hash AND a.user_id=s.user_id JOIN auth_accounts c ON c.id=a.user_id AND c.credential_version=a.credential_version WHERE s.id=? AND s.ciphertext=? AND a.expires_at>? AND EXISTS(SELECT 1 FROM json_each(p.roles) WHERE value=s.role)`,item.subscription_id,item.ciphertext,epoch())){await q(db,'DELETE FROM push_subscriptions WHERE id=? AND ciphertext=?',item.subscription_id,item.ciphertext).run();continue;}
-   const request=generateRequestDetails(sub,pushPayload(item.role,!item.notification_id,String(item.dedupe||'').startsWith(item.role+':matching'),item.price_id?{id:item.price_id,status:item.price_status,direction:item.price_direction,percent:item.price_percent,policy_version:item.price_version,from_daily:item.price_from,to_daily:item.price_to,title:item.price_title}:null),{TTL:300,urgency:'normal',vapidDetails:{subject:config.VAPID_SUBJECT!,publicKey:config.VAPID_PUBLIC_KEY!,privateKey:config.VAPID_PRIVATE_KEY!}});
+   const request=generateRequestDetails(sub,pushPayload(item.role,!item.notification_id,String(item.dedupe||'').startsWith(item.role+':matching'),item.price_id?{id:item.price_id,status:item.price_status,direction:item.price_direction,percent:item.price_percent,policy_version:item.price_version,from_daily:item.price_from,to_daily:item.price_to,title:item.price_title}:null,item.window_id?{id:item.window_id,status:item.window_status,start:item.window_start,end:item.window_end,percent:item.window_percent,hourly_from:item.window_from,hourly_to:item.window_to,title:item.window_title}:null,item.stay_id?{id:item.stay_id,status:item.stay_status,kind:item.stay_kind,start:item.stay_start,end:item.stay_end,amount:item.stay_amount,extra:item.stay_extra,base_version:item.stay_base,policy_version:item.stay_policy,automatic:item.stay_auto}:null),{TTL:300,urgency:'normal',vapidDetails:{subject:config.VAPID_SUBJECT!,publicKey:config.VAPID_PUBLIC_KEY!,privateKey:config.VAPID_PRIVATE_KEY!}});
    const response=await transport(request.endpoint,{method:'POST',headers:request.headers as Record<string,string>,body:new Uint8Array(request.body!) as BodyInit,redirect:'error',signal:AbortSignal.timeout(10000)});
    await response.body?.cancel();
    if(response.status===404||response.status===410){await q(db,'DELETE FROM push_subscriptions WHERE id=?',item.subscription_id).run();continue;}

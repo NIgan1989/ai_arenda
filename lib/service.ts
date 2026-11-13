@@ -8,6 +8,7 @@ import {assistantBrief,defaultAssistantSettings} from './assistant';
 import {defaultAccountSettings,accountSettingsInput,userSearchInput} from './account';
 import {approvalCards} from './approvals';
 import {listingInput,jpegInput,propertyStatus,cleanerStatus} from './listings';
+import {mediaKey,dataUrlBytes,mediaData} from './media-store';
 import {readAdministratorState} from './administrator';
 import {recordFinance,migrateFinanceEntity} from './finance';
 import {requireEvidence} from './evidence';
@@ -22,6 +23,8 @@ import {administratorSearch,isPropertySearch,isSearchRefinement,previousAdminist
 import {readAdministratorProcesses,processReadIntent} from './administrator-process-read';
 import {accrueCommission} from './platform-billing';
 import {offerPriceAdvice,ownerPriceSuggestions,decidePriceSuggestion} from './price-advice';
+import {guestStayOffers,decideStayOffer} from './stay-offers';
+import {ownerWindows,decideCalendarWindow,openWindowFor,openWindowsFor,windowQuote} from './calendar-windows';
 
 type Row = Record<string, any>;
 const now = () => Math.floor(Date.now() / 1000);
@@ -34,28 +37,32 @@ export class RentalService {
   async one(sql: string, ...args: any[]) { return this.query(sql, ...args).first<Row>(); }
   async all(sql: string, ...args: any[]) { return (await this.query(sql, ...args).all<Row>()).results; }
   async profile() { return this.one(`SELECT p.*,d.avatar_id,d.work_status,COALESCE(d.version,0) profile_version,COALESCE(x.bio,'') bio,COALESCE(x.languages,'') languages,COALESCE(x.avatar_visibility,'participants') avatar_visibility,COALESCE(x.show_presence,1) show_presence,COALESCE(x.show_receipts,1) show_receipts FROM profiles p LEFT JOIN profile_details d ON d.user_id=p.id LEFT JOIN profile_preferences x ON x.user_id=p.id WHERE p.id=?`, this.userId); }
-  async uploadMedia(body:Row){
+  async uploadMedia(body:Row,bucket?:R2Bucket){
     if(!await this.profile())throw new DomainError('Сначала заполните профиль.',403);
     if(body.kind==='property')await this.requireRole('owner');
     await this.query("DELETE FROM media WHERE user_id=? AND created_at<? AND NOT EXISTS(SELECT 1 FROM property_details d,json_each(d.photos) f WHERE f.value=media.id) AND NOT EXISTS(SELECT 1 FROM profile_details d WHERE d.avatar_id=media.id)",this.userId,now()-86400).run();
-    const image=jpegInput(body.data,body.kind),mediaId=id();
-    const r=await this.query('INSERT INTO media SELECT ?,?,?,?,?,?,?,? WHERE (SELECT COUNT(*) FROM media WHERE user_id=?)<100',mediaId,this.userId,body.kind,image.data,image.width,image.height,image.bytes,now(),this.userId).run();
-    if(!r.meta.changes)throw new DomainError('Достигнут лимит фотографий. Удалите неиспользуемые снимки.',409);
+    const image=jpegInput(body.data,body.kind),mediaId=id(),key=bucket&&body.kind==='property'?mediaKey(mediaId):'';
+    if(key)await bucket!.put(key,dataUrlBytes(image.data),{httpMetadata:{contentType:'image/jpeg'}});
+    const r=await this.query('INSERT INTO media(id,user_id,kind,data,width,height,bytes,created_at,object_key) SELECT ?,?,?,?,?,?,?,?,? WHERE (SELECT COUNT(*) FROM media WHERE user_id=?)<100',mediaId,this.userId,body.kind,key?'':image.data,image.width,image.height,image.bytes,now(),key,this.userId).run();
+    if(!r.meta.changes){if(key)await bucket!.delete(key);throw new DomainError('Достигнут лимит фотографий. Удалите неиспользуемые снимки.',409);}
     return {id:mediaId,width:image.width,height:image.height};
   }
-  async readMedia(mediaId:string,activeRole?:Role){
+  async readMedia(mediaId:string,activeRole?:Role,bucket?:R2Bucket){
     const role=activeRole||(JSON.parse((await this.profile())?.roles||'[]').includes('owner')?'owner':JSON.parse((await this.profile())?.roles||'[]').includes('cleaner')?'cleaner':'guest');
-    const m=await this.one(`SELECT m.data,m.width,m.height FROM media m WHERE m.id=? AND (m.user_id=? OR (m.kind='property' AND EXISTS(SELECT 1 FROM property_details d JOIN properties p ON p.id=d.property_id,json_each(d.photos) f WHERE f.value=m.id AND p.published=1 AND (p.demo_owner IS NULL OR p.demo_owner=?) AND ${pilotPropertyVisibleSql('p')})) OR (m.kind='avatar' AND EXISTS(SELECT 1 FROM profile_details d LEFT JOIN profile_preferences x ON x.user_id=d.user_id WHERE d.avatar_id=m.id AND COALESCE(x.avatar_visibility,'participants')='participants' AND (
+    const m=await this.one(`SELECT m.data,m.object_key,m.width,m.height FROM media m WHERE m.id=? AND (m.user_id=? OR (m.kind='property' AND EXISTS(SELECT 1 FROM property_details d JOIN properties p ON p.id=d.property_id,json_each(d.photos) f WHERE f.value=m.id AND p.published=1 AND (p.demo_owner IS NULL OR p.demo_owner=?) AND ${pilotPropertyVisibleSql('p')})) OR (m.kind='avatar' AND EXISTS(SELECT 1 FROM profile_details d LEFT JOIN profile_preferences x ON x.user_id=d.user_id WHERE d.avatar_id=m.id AND COALESCE(x.avatar_visibility,'participants')='participants' AND (
       (?='owner' AND (EXISTS(SELECT 1 FROM applications a JOIN cleaning_jobs j ON j.id=a.job_id WHERE a.user_id=d.user_id AND j.owner_id=?) OR EXISTS(SELECT 1 FROM cleaning_jobs j WHERE j.assigned_to=d.user_id AND j.owner_id=?))) OR
       (?='guest' AND EXISTS(SELECT 1 FROM bookings b JOIN properties p ON p.id=b.property_id WHERE b.guest_id=? AND p.owner_id=d.user_id AND b.status='confirmed')) OR
       (?='cleaner' AND EXISTS(SELECT 1 FROM cleaning_jobs j WHERE j.assigned_to=? AND j.owner_id=d.user_id))
     ))))`,mediaId,this.userId,this.userId,role,this.userId,this.userId,role,this.userId,role,this.userId);
-    if(!m)throw new DomainError('Фотография недоступна.',404);return m;
+    if(!m)throw new DomainError('Фотография недоступна.',404);return this.mediaBody(m,bucket);
   }
-  async deleteMedia(mediaId:string){
+  async mediaBody(m:Row,bucket?:R2Bucket){
+    try{return {data:await mediaData(m,bucket),width:m.width,height:m.height};}catch{throw new DomainError('Хранилище фото сейчас недоступно.',503);}
+  }
+  async deleteMedia(mediaId:string,bucket?:R2Bucket){
     if(!await this.one('SELECT id FROM media WHERE id=? AND user_id=?',mediaId,this.userId))throw new DomainError('Фотография недоступна.',404);
     if(await this.one("SELECT d.property_id FROM property_details d,json_each(d.photos) f WHERE f.value=? UNION ALL SELECT user_id FROM profile_details WHERE avatar_id=?",mediaId,mediaId))throw new DomainError('Сначала уберите фотографию из объявления или профиля.',409);
-    await this.query('DELETE FROM media WHERE id=? AND user_id=?',mediaId,this.userId).run();return {message:'Неиспользуемая фотография удалена.'};
+    const gone=await this.query('DELETE FROM media WHERE id=? AND user_id=? RETURNING object_key',mediaId,this.userId).first<Row>();if(gone?.object_key)await bucket?.delete(gone.object_key).catch(()=>{});return {message:'Неиспользуемая фотография удалена.'};
   }
   async checkMedia(photoIds:string[],kind:string){for(const photoId of photoIds)if(!await this.one('SELECT id FROM media WHERE id=? AND user_id=? AND kind=?',photoId,this.userId,kind))throw new DomainError('Фотография не принадлежит вашему аккаунту или имеет другой тип.',403);}
   async editProfile(body:Row){
@@ -178,7 +185,8 @@ export class RentalService {
     const workers=new Map<string,Row|null>();if(role==="owner"){for(const userId of new Set([...state.applications.map(a=>a.user_id),...jobs.map(j=>j.assigned_to).filter(Boolean)]))workers.set(userId,await this.workerCard(userId));}
     const result={...state,profile:state.profile?{...state.profile,display_status:cleanerStatus(state.profile.work_status,state.jobs.filter(j=>j.assigned_to===this.userId),state.serverTime)}:null,activeRole:role,properties:role==='guest'?state.properties:[],ownProperties:role==='owner'?state.ownProperties:[],bookings,jobs:jobs.map((j:Row):Row=>({...j,worker:role==='owner'?workers.get(j.assigned_to):null})),
       notifications,applications:state.applications.filter(a=>jobIds.has(a.job_id)&&(role==='owner'||a.user_id===this.userId)).map(a=>({...a,worker:role==='owner'?workers.get(a.user_id):null})),messages:state.messages.filter(m=>m.scope===role)};
-    if(role==='owner')(result as Row).priceSuggestions=await ownerPriceSuggestions(this.db,this.userId,state.serverTime);
+    if(role==='owner'){(result as Row).priceSuggestions=await ownerPriceSuggestions(this.db,this.userId,state.serverTime);(result as Row).calendarWindows=await ownerWindows(this.db,this.userId,state.serverTime);}
+    if(role==='guest')(result as Row).stayOffers=await guestStayOffers(this.db,this.userId,state.serverTime);
     const assistantSettings={...defaultAssistantSettings};
     const administrator=await readAdministratorState(this.db,this.userId,role);
     return {...result,administrator,approvals:approvalCards(result,role,this.userId,state.serverTime),assistantSettings,assistantBrief:assistantBrief(result,role,assistantSettings,state.serverTime),workspaces:{[role]:operationOverview(result,this.userId,role,state.serverTime)}};
@@ -211,6 +219,8 @@ export class RentalService {
     if(card.kind==='booking')return this.bookingAction(card.entityId,{action:accept?'confirm':'reject',cleaningFee:body.cleaningFee??card.cleaningFee,expectedVersion:state.bookings.find(b=>b.id===card.entityId)?.terms?.version});
     if(card.kind==='change')return this.decideBookingChange(card.entityId,card.id.slice(7),role,{action:body.action});
     if(card.kind==='price')return decidePriceSuggestion(this,card.id.slice(6),accept);
+    if(card.kind==='window')return decideCalendarWindow(this,card.id.slice(7),accept);
+    if(card.kind==='stay')return decideStayOffer(this,card.id.slice(5),accept);
     if(card.kind==='checkout')return this.bookingAction(card.entityId,{action:accept?'checkout':'dispute_checkout',reason:body.reason,expectedVersion:state.bookings.find(b=>b.id===card.entityId)?.terms?.version});
     const job=state.jobs.find(j=>j.id===card.entityId);
     return this.jobAction(card.entityId,{action:card.kind==='application'?(accept?'assign':'reject_application'):(accept?'approve':'revise'),applicationId:card.id.slice(12),reason:body.reason,expectedVersion:job?.version});
@@ -285,8 +295,11 @@ export class RentalService {
       ]);
       const occupied=new Set([...booked,...cleaning,...external,...stale].map(p=>p.property_id));
       items=items.filter(p=>!occupied.has(p.id)&&!['maintenance','blocked'].includes(p.display_status.code)&&(start>now()+60||p.display_status.code==='ready'));
-      items=items.flatMap(p=>{try{const price=rentalPrice(p.price,p.policy,start,end,mode);return [{...p,estimate:{amount:price.amount,periods:price.periods,rate:price.price,unitLabel:price.unitLabel}}];}catch(error){if(error instanceof DomainError)return [];throw error;}});
+      const windows=mode==='hourly'?await openWindowsFor(this.db,start,end):new Map();
+      items=items.flatMap(p=>{try{const price=windowQuote(rentalPrice(p.price,p.policy,start,end,mode),p.policy.hourly_price,windows.get(p.id));return [{...p,estimate:{amount:price.amount,periods:price.periods,rate:price.price,unitLabel:price.unitLabel,...(price.window?{window:price.window}:{})}}];}catch(error){if(error instanceof DomainError)return [];throw error;}});
     }
+    // Open calendar windows: guests see the discounted hourly price and until when it lasts.
+    if(!range){const windows=await openWindowsFor(this.db,null,null);if(windows.size)items=items.map(p=>{const w=windows.get(p.id);return w&&w.hourly_to<p.policy.hourly_price?{...p,window:{percent:Math.round((1-w.hourly_to/p.policy.hourly_price)*100),start:w.start,end:w.end,hourly:w.hourly_to}}:p;});}
     const pageInput=number(filters.page||1,'Страница',1,100000),limit=number(filters.limit||24,'На странице',1,60),minPrice=number(filters.minPrice||0,'Минимальная цена',0,100000000),maxPrice=number(filters.maxPrice||100000000,'Максимальная цена',0,100000000),rooms=number(filters.rooms||0,'Комнаты',0,20),sort=filters.sort||'recommended';
     if(minPrice>maxPrice||!['recommended','price-asc','price-desc'].includes(sort)||filters.roomsExact&&!['0','1'].includes(filters.roomsExact))throw new DomainError('Проверьте цену, число комнат и сортировку.');
     const rate=(p:Row)=>range?p.estimate?.amount:(mode==='hourly'?p.policy.hourly_price:p.price);
@@ -297,9 +310,9 @@ export class RentalService {
     if(filters.map==='1'&&pageItems.length){const locations=options.matching?await this.all('SELECT l.*,p.city,p.district,p.address FROM property_locations l JOIN properties p ON p.id=l.property_id WHERE p.published=1'):await this.all('SELECT l.*,p.city,p.district,p.address FROM property_locations l JOIN properties p ON p.id=l.property_id WHERE p.id IN ('+pageItems.map(()=>'?').join(',')+')',...pageItems.map(p=>p.id));pageItems=pageItems.map(p=>{const l=locations.find(l=>l.property_id===p.id);return {...p,location:l&&l.address_fingerprint===[l.city,l.district,l.address].join('|')?publicPoint(l):null};});}
     return {properties:pageItems,total,page,limit,totalPages,cities,filters:{city,mode,guests,minPrice,maxPrice,rooms,sort,...(range?{start:range.start,end:range.end}:{})},availabilityChecked:!!range,...(filters.map==='1'?{center:mapCities[Object.keys(mapCities).find(c=>c.toLocaleLowerCase('ru')===city.toLocaleLowerCase('ru'))||'']||[67,48]}:{})};
   }
-  async publicMedia(mediaId:string){
-    const image=await this.one(`SELECT m.data,m.width,m.height FROM media m WHERE m.id=? AND m.kind='property' AND EXISTS(SELECT 1 FROM property_details d JOIN properties p ON p.id=d.property_id,json_each(d.photos) f WHERE f.value=m.id AND p.published=1 AND p.demo_owner IS NULL AND ${pilotPropertyVisibleSql('p')})`,required(mediaId,'Фото',100));
-    if(!image)throw new DomainError('Фотография недоступна.',404);return image;
+  async publicMedia(mediaId:string,bucket?:R2Bucket){
+    const image=await this.one(`SELECT m.data,m.object_key,m.width,m.height FROM media m WHERE m.id=? AND m.kind='property' AND EXISTS(SELECT 1 FROM property_details d JOIN properties p ON p.id=d.property_id,json_each(d.photos) f WHERE f.value=m.id AND p.published=1 AND p.demo_owner IS NULL AND ${pilotPropertyVisibleSql('p')})`,required(mediaId,'Фото',100));
+    if(!image)throw new DomainError('Фотография недоступна.',404);return this.mediaBody(image,bucket);
   }
   async connectRole(roleValue:unknown,body:Row={}){
     const role=parseRole(roleValue),profile=await this.profile();
@@ -353,7 +366,7 @@ export class RentalService {
     const {start,end}=interval(body.start,body.end), guests=number(body.guests,'Гости',1,p.capacity), occupiedUntil=end+p.cleaning_minutes*60;
     const policy={...defaultPolicy,...await this.one('SELECT * FROM property_policies WHERE property_id=?',p.id)},op=await this.one('SELECT readiness FROM property_operations WHERE property_id=?',p.id);
     if(op&&(['maintenance','blocked'].includes(op.readiness)||(start<=now()+60&&op.readiness!=='ready')))throw new DomainError('Квартира сейчас не готова к новым заездам.',409);
-    const pricing=rentalPrice(p.price,policy,start,end,body.billingMode||'daily');
+    const base=rentalPrice(p.price,policy,start,end,body.billingMode||'daily'),pricing=windowQuote(base,policy.hourly_price,base.billingMode==='hourly'?await openWindowFor(this.db,p.id,start,end):null);
     await assertCalendarAvailable(this.db,p.id,start,occupiedUntil);
     const occupied=await this.one("SELECT id FROM bookings WHERE property_id=? AND (status='confirmed' OR (status='requested' AND expires_at>?)) AND start<? AND occupied_until>?",p.id,now(),occupiedUntil,start);
     const cleaning=await this.one("SELECT id FROM cleaning_jobs WHERE property_id=? AND status IN ('open','assigned','in_progress','submitted') AND start<? AND end>?",p.id,occupiedUntil,start);

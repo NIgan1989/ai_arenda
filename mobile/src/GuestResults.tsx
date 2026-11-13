@@ -4,6 +4,7 @@ import { plural } from '../../lib/map-search-request';
 import { Photo } from './ListingMedia';
 import { Action, h } from './SheetParts';
 import { money, type Row } from './model';
+import { windowBadge } from '../../lib/window-badge';
 import { C, type } from './styles';
 import { T } from './tokens';
 import { draftUnits, shownReasons, type GuestDraft } from './ai-request';
@@ -79,6 +80,7 @@ export function GuestResults({ preview, draft, selected, onSelect, onBook, onOpe
           <View style={r.amount}>
             <Text style={h.price}>{money(chosen.estimate.amount)}</Text>
             <Text style={h.note}>за {stayWords(draft)}</Text>
+            {!!windowBadge(chosen.estimate.window) && <Text style={r.window}>{windowBadge(chosen.estimate.window)}</Text>}
           </View>
         </View>
         <View onLayout={e => onBookEdge?.(Math.round(e.nativeEvent.layout.y + e.nativeEvent.layout.height))}>
@@ -115,7 +117,10 @@ export function GuestResults({ preview, draft, selected, onSelect, onBook, onOpe
                 </Text>
               )}
             </View>
-            <Text style={h.rowPrice}>{money(flat.estimate.amount)}</Text>
+            <View style={r.amount}>
+              <Text style={h.rowPrice}>{money(flat.estimate.amount)}</Text>
+              {!!flat.estimate.window && <Text style={r.window}>−{flat.estimate.window.percent}%</Text>}
+            </View>
             <Image source={chevron} style={r.rowIcon} accessibilityIgnoresInvertColors />
           </Pressable>
         ))}
@@ -149,5 +154,6 @@ const r = StyleSheet.create({
   backIcon: { width: 16, height: 16, tintColor: C.accent, transform: [{ rotate: '180deg' }] },
   backText: { ...type.label, color: C.accent, fontWeight: '600' },
   chosen: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
-  amount: { alignItems: 'flex-end' }
+  amount: { alignItems: 'flex-end' },
+  window: { ...type.caption, marginTop: 4, paddingHorizontal: 8, paddingVertical: 2, borderRadius: T.radius.full, overflow: 'hidden', backgroundColor: C.accentSoft, color: C.accent, fontWeight: '600' }
 });

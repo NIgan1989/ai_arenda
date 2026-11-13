@@ -37,6 +37,9 @@
 -- migration 0033_property_archive.sql sha256:15264859b54b5535aaabbec84a284b525760962bf652590ba7cb5bdc7913f535
 -- migration 0034_ai_autopilot.sql sha256:f053f458ea584b4ac7e2f5b9aa2443c16b6b0c52e8618c67095611a18e2a0e2e
 -- migration 0035_price_advice.sql sha256:675c9441fd26087ef8ef3e63caf8f71e7b78c7d9c1ee4fd0156505f47ad51fcf
+-- migration 0036_calendar_windows.sql sha256:41b9c67a5e26e15adbc4d54317aec6f3ed3d490ffb568bda0001b66bc8e25cab
+-- migration 0037_media_storage.sql sha256:81d18d7c4d84874c7f88bd1667fb623d5b1eb3df583a9778156532fb20664d77
+-- migration 0038_stay_offers.sql sha256:52ed5e14d7adadec2a588fd57418ece2c9f9e906d5a8d35b10c77e5f3bdd0c56
 
 -- table access_receipts
 CREATE TABLE access_receipts (id TEXT PRIMARY KEY,property_id TEXT NOT NULL,entity_kind TEXT NOT NULL,entity_id TEXT NOT NULL,user_id TEXT NOT NULL,created_at INTEGER NOT NULL,expires_at INTEGER NOT NULL);
@@ -300,6 +303,22 @@ CREATE TABLE calendar_previews (
 -- table calendar_sources
 CREATE TABLE calendar_sources (id TEXT PRIMARY KEY,property_id TEXT NOT NULL REFERENCES properties(id),owner_id TEXT NOT NULL,label TEXT NOT NULL,url TEXT NOT NULL DEFAULT '',enabled INTEGER NOT NULL DEFAULT 1,last_success INTEGER,last_attempt INTEGER,last_error TEXT NOT NULL DEFAULT '',version INTEGER NOT NULL DEFAULT 1,created_at INTEGER NOT NULL, provider TEXT NOT NULL DEFAULT 'manual' CHECK(provider IN ('manual','booking','airbnb','vrbo','other')), external_property_id TEXT NOT NULL DEFAULT '', content_hash TEXT NOT NULL DEFAULT '');
 
+-- table calendar_windows
+CREATE TABLE calendar_windows (
+ id TEXT PRIMARY KEY,
+ property_id TEXT NOT NULL REFERENCES properties(id) ON DELETE CASCADE,
+ owner_id TEXT NOT NULL REFERENCES profiles(id),
+ start INTEGER NOT NULL,
+ end INTEGER NOT NULL CHECK(end>start),
+ percent INTEGER NOT NULL CHECK(percent BETWEEN 5 AND 40),
+ hourly_from INTEGER NOT NULL,
+ hourly_to INTEGER NOT NULL,
+ status TEXT NOT NULL DEFAULT 'suggested' CHECK(status IN ('suggested','open','declined','expired')),
+ created_at INTEGER NOT NULL,
+ decided_at INTEGER,
+ UNIQUE(property_id,start)
+);
+
 -- table cleaning_jobs
 CREATE TABLE `cleaning_jobs` (
 	`id` text PRIMARY KEY NOT NULL,
@@ -479,7 +498,7 @@ CREATE TABLE media (
  id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES profiles(id),
  kind TEXT NOT NULL CHECK(kind IN ('property','avatar')), data TEXT NOT NULL,
  width INTEGER NOT NULL, height INTEGER NOT NULL, bytes INTEGER NOT NULL, created_at INTEGER NOT NULL
-);
+, object_key TEXT NOT NULL DEFAULT '');
 
 -- table messages
 CREATE TABLE `messages` (
@@ -781,6 +800,29 @@ CREATE TABLE review_property_bindings (
  property_id TEXT PRIMARY KEY REFERENCES properties(id),revision INTEGER NOT NULL DEFAULT 0
 );
 
+-- table stay_offers
+CREATE TABLE stay_offers (
+ id TEXT PRIMARY KEY,
+ booking_id TEXT NOT NULL REFERENCES bookings(id) ON DELETE CASCADE,
+ guest_id TEXT NOT NULL REFERENCES profiles(id),
+ owner_id TEXT NOT NULL REFERENCES profiles(id),
+ kind TEXT NOT NULL CHECK(kind IN ('late','early')),
+ start INTEGER NOT NULL,
+ end INTEGER NOT NULL CHECK(end>start),
+ hours INTEGER NOT NULL CHECK(hours BETWEEN 1 AND 12),
+ amount INTEGER NOT NULL,
+ extra INTEGER NOT NULL,
+ billing_mode TEXT NOT NULL,
+ base_version INTEGER NOT NULL,
+ policy_version INTEGER NOT NULL,
+ automatic INTEGER NOT NULL DEFAULT 0,
+ status TEXT NOT NULL DEFAULT 'suggested' CHECK(status IN ('suggested','accepted','declined','expired')),
+ change_id TEXT,
+ created_at INTEGER NOT NULL,
+ expires_at INTEGER NOT NULL,
+ decided_at INTEGER
+);
+
 -- table stay_reviews
 CREATE TABLE stay_reviews (
  booking_id TEXT PRIMARY KEY REFERENCES bookings(id),
@@ -840,6 +882,12 @@ CREATE INDEX calendar_previews_owner ON calendar_previews(user_id,expires_at);
 -- index calendar_source_mapping
 CREATE UNIQUE INDEX calendar_source_mapping ON calendar_sources(owner_id,provider,external_property_id) WHERE external_property_id<>'' AND enabled=1;
 
+-- index calendar_windows_open
+CREATE INDEX calendar_windows_open ON calendar_windows(property_id,status,start,end);
+
+-- index calendar_windows_owner
+CREATE INDEX calendar_windows_owner ON calendar_windows(owner_id,status,start);
+
 -- index cleaning_offer_worker
 CREATE INDEX cleaning_offer_worker ON cleaning_offers(worker_id,status,expires_at);
 
@@ -885,6 +933,9 @@ CREATE INDEX matching_guest ON matching_requests(guest_id,created_at);
 -- index matching_inbox
 CREATE INDEX matching_inbox ON matching_offers(owner_id,status,expires_at);
 
+-- index media_object_key
+CREATE INDEX media_object_key ON media(object_key) WHERE object_key<>'';
+
 -- index media_owner
 CREATE INDEX media_owner ON media(user_id,kind);
 
@@ -929,6 +980,12 @@ CREATE INDEX property_imports_owner ON property_imports(owner_id,created_at);
 
 -- index push_due
 CREATE INDEX push_due ON push_deliveries(status,available_at,lease_until);
+
+-- index stay_offers_booking
+CREATE INDEX stay_offers_booking ON stay_offers(booking_id,status);
+
+-- index stay_offers_guest
+CREATE INDEX stay_offers_guest ON stay_offers(guest_id,status,expires_at);
 
 -- index stay_reviews_property
 CREATE INDEX stay_reviews_property ON stay_reviews(property_id,created_at);
@@ -1083,6 +1140,12 @@ CREATE TRIGGER account_erased_calendar_sources_insert BEFORE INSERT ON calendar_
 
 -- trigger account_erased_calendar_sources_update
 CREATE TRIGGER account_erased_calendar_sources_update BEFORE UPDATE ON calendar_sources WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.owner_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END;
+
+-- trigger account_erased_calendar_windows_insert
+CREATE TRIGGER account_erased_calendar_windows_insert BEFORE INSERT ON calendar_windows WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.owner_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END;
+
+-- trigger account_erased_calendar_windows_update
+CREATE TRIGGER account_erased_calendar_windows_update BEFORE UPDATE ON calendar_windows WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.owner_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END;
 
 -- trigger account_erased_cleaning_jobs_insert
 CREATE TRIGGER account_erased_cleaning_jobs_insert BEFORE INSERT ON cleaning_jobs WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.owner_id OR user_id=NEW.assigned_to) BEGIN SELECT RAISE(ABORT,'account_erased'); END;
@@ -1324,6 +1387,12 @@ CREATE TRIGGER account_erased_push_subscriptions_insert BEFORE INSERT ON push_su
 CREATE TRIGGER account_erased_push_subscriptions_update BEFORE UPDATE ON push_subscriptions
  WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.user_id)
  BEGIN SELECT RAISE(ABORT,'account_erased'); END;
+
+-- trigger account_erased_stay_offers_insert
+CREATE TRIGGER account_erased_stay_offers_insert BEFORE INSERT ON stay_offers WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.guest_id OR user_id=NEW.owner_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END;
+
+-- trigger account_erased_stay_offers_update
+CREATE TRIGGER account_erased_stay_offers_update BEFORE UPDATE ON stay_offers WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.guest_id OR user_id=NEW.owner_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END;
 
 -- trigger account_erased_stay_reviews_insert
 CREATE TRIGGER account_erased_stay_reviews_insert BEFORE INSERT ON stay_reviews WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.guest_id OR user_id=NEW.owner_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END;
