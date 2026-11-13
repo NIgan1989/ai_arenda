@@ -1,5 +1,5 @@
 import {test} from 'node:test';import assert from 'node:assert/strict';import {fixture,load,now} from './helpers/platform.mjs';
-const {buildJourneyRoute}=await load('journey-routing'),{mapSearch,journeyAction}=await load('map-workspace'),{readRouteGeometry}=await load('route-geometry');
+const {buildJourneyRoute}=await load('journey-routing'),{mapSearch,journeyAction}=await load('map-workspace'),{readRouteGeometry,decodePolyline,stepText}=await load('route-geometry');
 async function ready(){const f=await fixture();f.db.raw.prepare('INSERT INTO property_locations VALUES (?,?,?,?,?,?,?)').run(f.property,76.95,52.287,'fixture','Павлодар|Центр|PRIVATE ADDRESS',1,now());return f;}
 const body=(f,extra={})=>({kind:'booking',entityId:f.booking,mode:'walking',longitude:76.94,latitude:52.287,accuracy:15,recordedAt:now(),routingConsent:true,...extra});
 const payload={code:'Ok',routes:[{distance:900,duration:700,geometry:{type:'LineString',coordinates:[[76.94,52.287],[76.945,52.288],[76.95,52.287]]}}]};
@@ -32,4 +32,31 @@ test('assigned cleaner uses the car profile and starting work ends live position
  const f=await ready(),original=globalThis.fetch;let requested='';globalThis.fetch=async url=>{requested=String(url);return Response.json(payload);};
  try{f.db.raw.prepare("UPDATE cleaning_jobs SET assigned_to='cleaner',status='assigned',booking_id=NULL,start=?,end=? WHERE id=?").run(now()+60,now()+3600,f.job.id);const result=await buildJourneyRoute(f.cleaner,'cleaner',body(f,{kind:'job',entityId:f.job.id,mode:'driving',shareWithOwner:true}));assert.match(requested,/routed-car\/route\/v1\/driving/);assert.equal((await mapSearch(f.owner,'owner',{})).journeys[0].route.mode,'driving');await f.cleaner.jobAction(f.job.id,{action:'start'});const session=f.db.raw.prepare('SELECT * FROM journey_sessions WHERE id=?').get(result.sharing.id);assert.equal(session.route,null);assert.equal(session.longitude,null);assert.ok(session.stopped_at);assert.equal((await mapSearch(f.owner,'owner',{})).journeys.length,0);
  }finally{globalThis.fetch=original;f.db.close();}
+});
+
+test('with a Stadia Maps key the route goes to Stadia by POST, in Russian, and its polyline6 and steps are read',async()=>{
+ const f=await ready(),original=globalThis.fetch;let seen=null;
+ // [76.94,52.287] → [76.95,52.287] as polyline6, with a depart, a right turn and an arrival.
+ const line='o`jvbB_m`wqC?_pR';
+ globalThis.fetch=async (url,init)=>{seen={url:String(url),method:init.method,body:JSON.parse(init.body)};return Response.json({code:'Ok',routes:[{distance:700,duration:120,geometry:line,legs:[{steps:[
+  {distance:300,name:'улица Ленина',maneuver:{type:'depart',location:[76.94,52.287],instruction:'Двигайтесь на восток по улице Ленина.'}},
+  {distance:400,name:'улица Торайгырова',maneuver:{type:'turn',modifier:'right',location:[76.944,52.287]}},
+  {distance:0,name:'',maneuver:{type:'arrive',location:[76.95,52.287]}}]}]}]});};
+ try{const result=await buildJourneyRoute(f.guest,'guest',body(f),{STADIA_API_KEY:'test-key-12345'});
+  assert.equal(seen.method,'POST');assert.match(seen.url,/^https:\/\/api\.stadiamaps\.com\/route\/v1\?api_key=test-key-12345$/);
+  assert.equal(seen.body.costing,'pedestrian');assert.equal(seen.body.format,'osrm');assert.equal(seen.body.language,'ru-RU');assert.deepEqual(seen.body.locations.map(l=>[l.lon,l.lat]),[[76.94,52.287],[76.95,52.287]]);
+  assert.equal(result.route.source,'stadia');assert.deepEqual(result.route.geometry.coordinates,[[76.94,52.287],[76.95,52.287]]);
+  assert.deepEqual(result.route.steps.map(s=>s.text),['Двигайтесь на восток по улице Ленина.','Поверните направо на улица Торайгырова','Вы на месте']);
+  // The public router's one-per-two-seconds limit does not apply to the paid one.
+  await buildJourneyRoute(f.guest,'guest',body(f),{STADIA_API_KEY:'test-key-12345'});
+ }finally{globalThis.fetch=original;f.db.close();}
+});
+test('the public router is asked for steps, and steps without the router\'s words are told in Russian',async()=>{
+ const f=await ready(),original=globalThis.fetch;let asked='';globalThis.fetch=async url=>{asked=String(url);return Response.json({...payload,routes:[{...payload.routes[0],legs:[{steps:[{distance:500,name:'',maneuver:{type:'roundabout',modifier:'left',location:[76.945,52.288]}}]}]}]});};
+ try{const result=await buildJourneyRoute(f.guest,'guest',body(f));assert.match(asked,/steps=true/);assert.equal(result.route.source,'fossgis');assert.equal(result.route.steps[0].text,'На кольце держитесь налево и съезжайте');}finally{globalThis.fetch=original;f.db.close();}
+ assert.deepEqual(decodePolyline('_p~iF~ps|U_ulLnnqC_mqNvxq`@',5),[[-120.2,38.5],[-120.95,40.7],[-126.453,43.252]]);
+ assert.equal(stepText('turn','slight left','проспект Назарбаева'),'Поверните плавно налево на проспект Назарбаева');
+ assert.equal(stepText('continue','straight','улица Кутузова'),'Продолжайте прямо по улица Кутузова');
+ assert.equal(stepText('turn','uturn'),'Развернитесь');
+ assert.equal(stepText('depart',undefined,''),'Начните движение');
 });

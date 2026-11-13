@@ -12,6 +12,8 @@ import {C} from './styles';
 import {T} from './tokens';
 import {LiveMap,type HeatPoint,type MapLine,type MapPin} from './LiveMap';
 import {ownerPin,travellers} from './owner-map';
+import {cleanerPin,dayRoute,routeLines,routeSummary} from './cleaner-map';
+import {TripHead,useTrip} from './Navigator';
 import {SwipeConfirm} from './SwipeConfirm';
 import {beams} from './map-motion';
 import {countdown,mapCities,validPoint,type MapPoint} from './map-math';
@@ -250,7 +252,7 @@ function OwnerPanel({data,mapData,publish,snap,showNow,expand,onHead,onAsk,onInt
   const advice=new Map<string,{from:number;to:number}>((data.approvals||[]).filter((c:Row)=>c.kind==='price'&&c.price?.propertyId&&c.canDecide).map((c:Row)=>[c.price.propertyId,{from:Number(c.price.from),to:Number(c.price.to)}]));
   const clock=serverNow(mapData||data);
   const own=(mapData?.properties||[]).flatMap((p:Row):MapPin[]=>{const point=pointOf(p),sent=!!answered[p.id]&&!asked.has(p.id),state=ownerPin(p,processes,clock,advice.get(p.id));
-   return point?[{key:'property:'+p.id,point,title:p.title,label:asked.has(p.id)?'Запрос':sent?'Ответ отправлен':state.label,rank:typeof p.price==='number'?p.price:0,tone:asked.has(p.id)?'pending':sent?'offer':state.tone,best:!asked.has(p.id)&&!sent&&state.best,until:asked.get(p.id)}]:[];});
+   return point?[{key:'property:'+p.id,point,title:p.title,label:asked.has(p.id)?'Запрос':sent?'Ответ отправлен':state.label,rank:typeof p.price==='number'?p.price:0,tone:asked.has(p.id)?'pending':sent?'offer':state.tone,best:!asked.has(p.id)&&!sent&&state.best,until:asked.get(p.id),progress:asked.has(p.id)||sent?undefined:state.progress}]:[];});
   const moving=travellers(mapData?.journeys||[]).map((t):MapPin=>({...t,title:t.label,tone:'active'}));
   // Demand: the heat of the city, and sparks over the busiest places while guests are asking owners right now.
   const cells:Row[]=mapData?.demand?.cells||[],searching=Number(mapData?.demand?.searching)||0;
@@ -303,36 +305,55 @@ function OwnerPanel({data,mapData,publish,snap,showNow,expand,onHead,onAsk,onInt
  </View>;
 }
 
-// What a job's pin says at each step; the change between them is what the map animates (see map-motion.ts).
-function jobPin(status:string,applied:boolean):Pick<MapPin,'label'|'tone'>{
- if(status==='open')return applied?{label:'Отклик ✓',tone:'job'}:{label:'Уборка',tone:'job'};
- if(status==='in_progress')return {label:'Уборка идёт',tone:'active'};
- if(status==='submitted')return {label:'На приёмке',tone:'booking'};
- return {label:'Моё задание',tone:'offer'};
-}
 function CleanerPanel({data,mapData,city,publish,snap,showNow,expand,onHead,onAsk,onChanged,onOpenProcess,onOpenPage}:Common){
  const [asked,setAsked]=useState(''),clock=serverNow(data),card=showNow?nowCard('cleaner',data,clock):null;
  const [error,setError]=useState(''),[working,setWorking]=useState(''),lock=useRef(false);
  const userId=data.user?.id,jobs:Row[]=data.jobs||[],applications:Row[]=data.applications||[];
  const mine=jobs.filter(j=>j.assigned_to===userId&&['assigned','in_progress','submitted'].includes(j.status)).sort((a,b)=>a.start-b.start);
+ // The day's route: the cleaning under way, then today's in time order (cleaner-map.ts); the first assigned stop is where to go next.
+ const route=dayRoute(jobs,userId,clock),routeIds=route.map(r=>r.id+':'+r.status).join(),order=new Map(route.map(r=>[r.id,r.order]));
+ const located=new Map<string,MapPoint|null>((mapData?.processes||[]).map((p:Row)=>[p.id,pointOf(p)]));
+ const next=route.find(r=>r.status==='assigned'&&located.get(r.id))?.id,summary=routeSummary(route.map(r=>({fee:Number(mine.find(j=>j.id===r.id)?.fee)||0,point:located.get(r.id)})));
+ // «Поехали» leads on our own map (Navigator.tsx): the sheet folds down to the turn ahead, the map shows the road and the cleaner's point.
+ const skew=mapData?.serverTime&&mapData?.receivedAt?Number(mapData.serverTime)-Number(mapData.receivedAt):0,nav=useTrip('cleaner',skew);
+ const go=(j:Row)=>{const point=located.get(j.id);if(!point)return;expand(0);void nav.start({kind:'job',id:j.id,title:j.title,target:point});};
  const applied=(id:string)=>applications.some(a=>a.job_id===id&&a.user_id===userId&&a.status!=='rejected');
  const open=jobs.filter(j=>j.status==='open'&&j.end>clock&&j.owner_id!==userId).sort((a,b)=>a.start-b.start);
  // "Рядом" is the city the map shows (the cleaner's own): the same open jobs as the pins, matched the way the server matches them.
  // Jobs in other cities are one tap away, on the page of all jobs.
  const nearby=open.filter(j=>String(j.city||'').toLocaleLowerCase('ru').includes(city.trim().toLocaleLowerCase('ru'))),nearbyIds=nearby.map(j=>j.id).join();
  useEffect(()=>{
-  publish((mapData?.processes||[]).filter((p:Row)=>p.kind==='job'&&(p.status!=='open'||nearby.some(j=>j.id===p.id))).flatMap((p:Row):MapPin[]=>{const point=pointOf(p);return point?[{key:'job:'+p.id,point,title:p.title,...jobPin(p.status,applied(p.id))}]:[];}),'cleaner:'+(mapData?.processes?.length||0));
- },[mapData,nearbyIds,data.applications]);
+  // Each job says what to do now; the day's stops carry their number and are joined by the route line in order.
+  const shown=(mapData?.processes||[]).filter((p:Row)=>p.kind==='job'&&(p.status!=='open'||nearby.some(j=>j.id===p.id)));
+  const at=serverNow(mapData||data),byId=new Map(jobs.map(j=>[j.id,j]));
+  const pins=shown.flatMap((p:Row):MapPin[]=>{const point=pointOf(p);if(!point)return [];const state=cleanerPin({...byId.get(p.id),...p},route.find(r=>r.id===p.id),at,applied(p.id));return [{key:'job:'+p.id,point,title:p.title,...state}];});
+  const placed=new Map<string,MapPoint|null>(shown.map((p:Row)=>[p.id,pointOf(p)]));
+  // On a trip the map shows only the way: the object, the cleaner's point and the road between them; it frames them at the start and after a new route.
+  if(nav.trip){
+   const target=pins.filter((p:MapPin)=>p.key==='job:'+nav.trip!.id),me:MapPin[]=nav.here&&nav.status!=='arrived'?[{key:'me',point:nav.here.point,title:'Вы',label:'Вы',tone:'active'}]:[];
+   const path=nav.state?.path;
+   publish([...target,...me],'nav:'+nav.trip.id+':'+nav.rerouted,{lines:path&&path.length>1?[{key:'nav:'+nav.trip.id,from:path[0],to:path[path.length-1],tone:'nav',path}]:[]});
+   return;
+  }
+  publish(pins,'cleaner:'+(mapData?.processes?.length||0),{lines:routeLines(route.map(r=>placed.get(r.id)))});
+ },[mapData,nearbyIds,data.applications,routeIds,nav.trip,nav.here,nav.route,nav.rerouted]);
  async function apply(id:string){if(lock.current)return;lock.current=true;setWorking(id);setError('');try{await request('/api/jobs/'+id,{action:'apply'},undefined,'map-apply:'+id,'cleaner');await onChanged();}catch(e){setError(message(e));}finally{lock.current=false;setWorking('');}}
  return <View style={h.block}>
-  <HeadSlot onHeight={onHead}><MapSheetHead role="cleaner" text={asked} onText={setAsked} onSend={text=>{setAsked('');onAsk(text);}} onChip={action=>{if(action==='nearby')expand(1);else if(action==='schedule')onOpenPage('calendar');}} now={card} onNow={()=>openNow(card,{expand,onOpenProcess,onOpenPage})}/></HeadSlot>
+  <HeadSlot onHeight={onHead}>{nav.trip?<TripHead nav={nav} onOpen={()=>{const id=nav.trip!.id;nav.close();onOpenProcess('job',id);}}/>:<MapSheetHead role="cleaner" text={asked} onText={setAsked} onSend={text=>{setAsked('');onAsk(text);}} onChip={action=>{if(action==='nearby')expand(1);else if(action==='schedule')onOpenPage('calendar');}} now={card} onNow={()=>openNow(card,{expand,onOpenProcess,onOpenPage})}>
+   {!!nav.error&&<Text accessibilityRole="alert" style={h.error}>{nav.error}</Text>}
+  </MapSheetHead>}</HeadSlot>
   {snap>0&&<>
-   {mine.length>0&&<Text accessibilityRole="header" style={h.cardTitle}>Ваше задание</Text>}
-   {mine.map(j=><View key={j.id} style={[h.card,h.urgent]}>
+   {mine.length>0&&<Text accessibilityRole="header" style={h.cardTitle}>{route.length?'Маршрут дня':'Ваше задание'}</Text>}
+   {!!summary&&<Text style={h.note}>{summary}</Text>}
+   {mine.map(j=><View key={j.id} style={[h.card,j.id===next||j.status==='in_progress'?h.urgent:null]}>
     <Stage steps={['Назначено','Выезд','Уборка','Приёмка']} current={j.status==='submitted'?3:j.status==='in_progress'?2:j.checkout_confirmed?1:0}/>
-    <Text style={h.cardTitle}>{j.title}</Text><Text style={h.note}>{date(j.start)} → {date(j.end)}{j.address?'\n'+j.address:''}</Text><Text style={h.price}>{money(j.fee)}</Text>
+    <Text style={h.cardTitle}>{order.get(j.id)?order.get(j.id)+'. ':''}{j.title}</Text><Text style={h.note}>{date(j.start)} → {date(j.end)}{j.address?'\n'+j.address:''}</Text><Text style={h.price}>{money(j.fee)}</Text>
     <Text style={h.note}>{j.status==='submitted'?'Отчёт у владельца на приёмке.':j.status==='in_progress'?'Уборка идёт. Подготовьте отчёт с фото.':j.checkout_confirmed?'Гость выехал, можно начинать.':'Ждём подтверждения выезда гостя.'}</Text>
-    <Action title="Открыть задание" onPress={()=>onOpenProcess('job',j.id)}/>
+    {j.id===next&&<>
+     <Action title="Поехали" disabled={!!nav.trip} onPress={()=>go(j)}/>
+     <Text style={h.note}>Поведём по нашей карте. Пока вы в пути, владелец видит вашу точку.</Text>
+    </>}
+    <Action secondary={j.id===next} title="Открыть задание" onPress={()=>onOpenProcess('job',j.id)}/>
    </View>)}
    {!!error&&<Text accessibilityRole="alert" style={h.error}>{error}</Text>}
    <Text accessibilityRole="header" style={h.cardTitle}>Задания рядом · {city}</Text>
@@ -469,7 +490,7 @@ export function MapHome({ role, accountId, data, menu, onChanged, onOpenProcess,
   const loadMap = async () => {
     const asked = cityRef.current;
     const result = await request('/api/operations/map/search', { filters: { city: asked } }, undefined, undefined, role);
-    if (cityRef.current === asked) setMapData({ ...result, city: asked });
+    if (cityRef.current === asked) setMapData({ ...result, city: asked, receivedAt: Date.now() / 1000 });
   };
   // Someone on the way moves on the map: it refreshes every 10 seconds while they do, otherwise every 30.
   usePoll(loadMap, mapData?.journeys?.some((j: Row) => j.longitude != null) ? 10000 : 30000, true);

@@ -66,13 +66,17 @@ export function answerLeft(until:number,now:number,window=ANSWER_WINDOW){
 
 // ---------- Stage 2: the guest's live map ----------
 // A beam is a line from the guest's search point to a flat whose owner is asked (ask, dashed) or has said yes (answer, solid).
-export type BeamTone='ask'|'answer';
-export type MapLine={key:string;from:[number,number];to:[number,number];tone:BeamTone};
+// A route line (stage 4) joins the cleaner's stops of the day in order: one calm solid line, without a search point.
+// A nav line (navigation on our map) is the road route from the person's place to the destination: path holds its points.
+export type BeamTone='ask'|'answer'|'route'|'nav';
+export type MapLine={key:string;from:[number,number];to:[number,number];tone:BeamTone;path?:[number,number][]};
 const okPoint=(p:unknown):p is [number,number]=>Array.isArray(p)&&p.length===2&&p.every(n=>typeof n==='number'&&Number.isFinite(n))&&Math.abs(p[0])<=180&&Math.abs(p[1])<=90;
 export function beams(origin:unknown,pins:{key:string;point:unknown;tone?:PinTone}[]):MapLine[]{
  if(!okPoint(origin))return [];
  return pins.flatMap(p=>{const tone:BeamTone|null=p.tone==='pending'?'ask':p.tone==='offer'?'answer':null;return tone&&okPoint(p.point)?[{key:'beam:'+p.key,from:origin,to:p.point,tone}]:[];});
 }
+// Where the round search-point mark stands: the start of the beams; a route has none.
+export function lineOrigin(lines:MapLine[]):[number,number]|null{const beam=lines.find(l=>l.tone==='ask'||l.tone==='answer');return beam&&okPoint(beam.from)?beam.from:null;}
 // The card of the carousel that a swipe stopped on: the nearest one, never outside the list.
 export function carouselIndex(offset:number,step:number,count:number){
  if(!(count>0)||!(step>0)||!Number.isFinite(offset))return 0;
@@ -109,7 +113,10 @@ export const MAP_EVENTS:{role:'guest'|'owner'|'cleaner'|'all';event:string;motio
  {role:'owner',event:'Отказ или время ответа вышло',motion:'Метка спокойно возвращается к цене'},
  {role:'cleaner',event:'Новое задание рядом',motion:'Метка «Уборка» падает на карту'},
  {role:'cleaner',event:'Отклик отправлен',motion:'Метка «Отклик ✓» коротко подпрыгивает'},
- {role:'cleaner',event:'Задание назначено',motion:'Метка «Моё задание» со вспышкой'},
- {role:'cleaner',event:'Уборка началась',motion:'Метка «Уборка идёт» мягко дышит'},
+ {role:'cleaner',event:'Задание назначено',motion:'Метка со временем уборки и номером в маршруте, со вспышкой'},
+ {role:'cleaner',event:'Маршрут дня',motion:'Уборки дня пронумерованы по порядку и соединены линией; в шторке число уборок, километры и сумма'},
+ {role:'cleaner',event:'Гость выехал',motion:'Метка следующей уборки меняется на «Начинайте» с подскоком'},
+ {role:'cleaner',event:'Поехали',motion:'На нашей карте: маршрут по дорогам до следующей уборки, точка «Вы», в шторке ближайший поворот, остаток пути и времени'},
+ {role:'cleaner',event:'Уборка началась',motion:'Метка «Уборка до 14:00» мягко дышит, полоска на ней заполняется к сроку'},
  {role:'cleaner',event:'Отчёт на приёмке',motion:'Метка «На приёмке» без движения'}
 ];

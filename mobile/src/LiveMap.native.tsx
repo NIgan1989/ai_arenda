@@ -2,7 +2,7 @@ import React,{useEffect,useMemo,useRef,useState} from 'react';
 import {AccessibilityInfo,Animated,Easing,Image,Pressable,StyleSheet,Text,View,type LayoutChangeEvent,type NativeSyntheticEvent} from 'react-native';
 import {Camera,GeoJSONSource,Layer,Map as GlMap,Marker,type CameraRef,type ViewStateChangeEvent} from '@maplibre/maplibre-react-native';
 import {MAX_ZOOM,MIN_ZOOM,fitView,groupPins,pinWidth,project,validPoint,type MapPoint} from './map-math';
-import {appearDelay,type MapLine} from './map-motion';
+import {appearDelay,lineOrigin,type MapLine} from './map-motion';
 import {BEAM,FRESH,HEAT,LEAVE,Leaving,Origin,Pin,Radar,Spark,controlsHeight,m,toneOrder} from './MapPins';
 import type {HeatPoint,MapPin,MapProps} from './TileMap';
 
@@ -80,7 +80,10 @@ export function LiveMap({center,pins,selected,focus='',lines=[],heat=[],sparks=[
  const c=project(view.center,view.zoom),at=(point:MapPoint)=>{const p=project(point,view.zoom);return {x:p.x-c.x,y:p.y-c.y};};
  const placed=pins.flatMap(pin=>validPoint(pin.point)?[{pin,...at(pin.point)}]:[]);
  const byKey=new Map(placed.map(p=>[p.pin.key,p]));
- const shown=groupPins(placed.map(({pin,x,y})=>({key:pin.key,x,y,width:pinWidth(pin.label),height:32,rank:pin.key===selected||pin.key===focus?-1:toneOrder[pin.tone||'home']*1e9+(pin.best?0:Math.max(0,Math.min(pin.rank??0,1e9-1)))}))).map(g=>({...byKey.get(g.key)!,members:g.members}));
+ // The stops of a cleaner's route never fold into other pins; stops that meet each other fold into the first of them with «+N»,
+ // and a tap opens them as for any group (at the closest zoom each tap shows the next stop).
+ const box=(selectedRank:(pin:MapPin)=>number)=>({pin,x,y}:{pin:MapPin;x:number;y:number})=>({key:pin.key,x,y,width:pinWidth(pin.label)+(pin.order?22:0),height:32,rank:pin.key===selected||pin.key===focus?-1:selectedRank(pin)});
+ const shown=[false,true].flatMap(stops=>groupPins(placed.filter(p=>!!p.pin.order===stops).map(box(pin=>stops?pin.order!:toneOrder[pin.tone||'home']*1e9+(pin.best?0:Math.max(0,Math.min(pin.rank??0,1e9-1))))))).map(g=>({...byKey.get(g.key)!,members:g.members}));
  const openGroup=(keys:string[])=>{
   if(view.zoom>=MAX_ZOOM){onSelect?.(keys[(keys.indexOf(selected||'')+1)%keys.length]);return;}
   const next=fitView(keys.map(key=>byKey.get(key)!.pin.point),size.w-96,usableHeight-96,MAX_ZOOM);
@@ -102,8 +105,11 @@ export function LiveMap({center,pins,selected,focus='',lines=[],heat=[],sparks=[
    <GeoJSONSource id="beams" data={drawn}>
     <Layer id="beams-ask" type="line" filter={['==',['get','tone'],'ask']} layout={{'line-cap':'round'}} paint={{'line-color':BEAM.ask,'line-width':2,'line-dasharray':[2,2]}}/>
     <Layer id="beams-answer" type="line" filter={['==',['get','tone'],'answer']} layout={{'line-cap':'round'}} paint={{'line-color':BEAM.answer,'line-width':2.5}}/>
+    <Layer id="beams-nav-casing" type="line" filter={['==',['get','tone'],'nav']} layout={{'line-cap':'round','line-join':'round'}} paint={{'line-color':BEAM.casing,'line-width':9}}/>
+    <Layer id="beams-nav" type="line" filter={['==',['get','tone'],'nav']} layout={{'line-cap':'round','line-join':'round'}} paint={{'line-color':BEAM.nav,'line-width':6}}/>
+    <Layer id="beams-route" type="line" filter={['==',['get','tone'],'route']} layout={{'line-cap':'round','line-join':'round'}} paint={{'line-color':BEAM.route,'line-width':4,'line-opacity':.7}}/>
    </GeoJSONSource>
-   {!!lines.length&&validPoint(lines[0].from)&&<Marker id="beam-origin" lngLat={lines[0].from} anchor="center"><Origin/></Marker>}
+   {(origin=>origin?<Marker id="beam-origin" lngLat={origin} anchor="center"><Origin/></Marker>:null)(lineOrigin(lines))}
    {!still&&leaving.filter(p=>validPoint(p.point)).map(p=><Marker key={'gone:'+p.key+':'+p.gone} id={'gone:'+p.key+':'+p.gone} lngLat={p.point} anchor="center"><Leaving pin={p}/></Marker>)}
    {shown.map(({pin,x,y,members})=>{const more=members.length-1,b=born.current.get(pin.key)||0;
     return <Marker key={pin.key} id={pin.key} lngLat={pin.point} anchor="center">
@@ -138,5 +144,5 @@ function useBeams(lines:MapLine[],still:boolean){
   frame=requestAnimationFrame(step);return()=>cancelAnimationFrame(frame);
  },[keys,still]);
  return useMemo(()=>({type:'FeatureCollection' as const,features:lines.map(l=>{const k=!seen.current.has(l.key)?0:fresh.has(l.key)?t:1,end:MapPoint=[l.from[0]+(l.to[0]-l.from[0])*k,l.from[1]+(l.to[1]-l.from[1])*k];
-  return {type:'Feature' as const,id:l.key,properties:{tone:l.tone},geometry:{type:'LineString' as const,coordinates:[l.from,end]}};})}),[lines,fresh,t]);
+  return {type:'Feature' as const,id:l.key,properties:{tone:l.tone},geometry:{type:'LineString' as const,coordinates:l.path&&l.path.length>1?l.path:[l.from,end]}};})}),[lines,fresh,t]);
 }
