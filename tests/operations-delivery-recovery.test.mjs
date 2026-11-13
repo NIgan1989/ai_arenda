@@ -59,3 +59,35 @@ test('one Telegram Start links every role of the person; a role switched off sta
   assert.deepEqual(f.db.raw.prepare("SELECT DISTINCT address FROM delivery_channels WHERE user_id=?").all(id).map(r=>r.address),['88']);
  }finally{globalThis.fetch=fetch;f.db.close();}
 });
+test('a notice that needs a decision comes to Telegram with buttons; a tap decides it once',async()=>{
+ const f=await fixture(),fetch=globalThis.fetch,{RentalService}=await load('service'),serviceFor=id=>new RentalService(f.db,id),config={TELEGRAM_BOT_TOKEN:'test-token',TELEGRAM_BOT_USERNAME:'rental_test_bot',TELEGRAM_WEBHOOK_SECRET:'test-webhook-secret',SITE_PUBLIC_URL:'https://rental.example.test'};try{
+  const calls=[];globalThis.fetch=async(url,request)=>{calls.push({method:String(url).split('/').pop(),body:JSON.parse(request.body)});return Response.json({ok:true,result:{message_id:9}});};
+  const link=await createTelegramLink(f.owner,'owner',config);await acceptTelegramLink(f.db,{message:{text:'/start '+new URL(link.url).searchParams.get('start'),chat:{type:'private',id:555},from:{id:555,is_bot:false}}},config.TELEGRAM_WEBHOOK_SECRET,config,serviceFor);
+  const booking=(await f.guest.createBooking({propertyId:f.property,start:iso(now()+86400),end:iso(now()+93600),guests:1,billingMode:'hourly',requestKey:'tg-buttons',acceptTerms:true})).id;
+  calls.length=0;assert.equal((await deliverOutbox(f.db,config,30,serviceFor)).sent,1);
+  const sent=calls.find(c=>c.method==='sendMessage').body;assert.match(sent.text,/Запрос на бронирование · Test apartment/);assert.ok(!sent.text.includes('PRIVATE ADDRESS'));
+  const [answer,open]=sent.reply_markup.inline_keyboard;assert.equal(answer.length,2);assert.equal(open[0].url,'https://rental.example.test/workspace/owner/map');assert.ok(answer.every(b=>b.callback_data.length<=64));
+  const tap=(data,from=555)=>acceptTelegramLink(f.db,{callback_query:{id:'q1',data,from:{id:from,is_bot:false},message:{message_id:9,text:sent.text,chat:{type:'private',id:from}}}},config.TELEGRAM_WEBHOOK_SECRET,config,serviceFor);
+  // Someone else's chat cannot press the owner's button, and a forged revision is refused.
+  assert.equal((await tap(answer[0].callback_data,777)).ignored,true);
+  assert.equal((await tap(answer[0].callback_data.replace(/\|.+$/,'|0000000000'))).ignored,true);assert.equal(f.db.raw.prepare('SELECT status FROM bookings WHERE id=?').get(booking).status,'requested');
+  calls.length=0;assert.equal((await tap(answer[0].callback_data)).decided,true);
+  assert.equal(f.db.raw.prepare('SELECT status FROM bookings WHERE id=?').get(booking).status,'confirmed');
+  const edited=calls.find(c=>c.method==='editMessageText').body;assert.match(edited.text,/✅/);assert.equal(edited.reply_markup,undefined);
+  assert.equal((await tap(answer[1].callback_data)).ignored,true);assert.equal(f.db.raw.prepare('SELECT status FROM bookings WHERE id=?').get(booking).status,'confirmed');
+ }finally{globalThis.fetch=fetch;f.db.close();}
+});
+test('each Telegram notice gets the buttons of its own card; reports people wrote stay in the service',async()=>{
+ const f=await fixture(),fetch=globalThis.fetch,{RentalService}=await load('service'),{noticeDecision,decisionMessage}=await load('delivery');try{
+  globalThis.fetch=async()=>Response.json({ok:true,result:{}});const job=f.job.id||f.job;
+  const second=new RentalService(f.db,'cleaner-two');await second.saveProfile({name:'Second',roles:['cleaner'],city:'Павлодар',contact:'test',districts:'Центр',experience:'Experienced',availability:'By agreement'});
+  await f.cleaner.jobAction(job,{action:'apply'});await second.jobAction(job,{action:'apply'});
+  const apps=Object.fromEntries(f.db.raw.prepare('SELECT user_id,id FROM applications WHERE job_id=?').all(job).map(a=>[a.user_id,a.id]));
+  const keys=f.db.raw.prepare("SELECT dedupe FROM notifications WHERE dedupe LIKE 'owner:application:%' ORDER BY dedupe").all().map(n=>n.dedupe);assert.equal(keys.length,2);
+  for(const key of keys){const card=await noticeDecision(f.owner,'owner',key);assert.equal(card.id,'application:'+apps[key.split(':')[3]]);}
+  // A notice about something else on the same booking does not borrow another card's buttons.
+  assert.equal(await noticeDecision(f.owner,'owner','owner:checkin-reported:'+f.booking),null);
+  const card={id:'report:'+job,kind:'report',title:'Приёмка уборки',subject:'Test apartment',facts:[['Оплата за работу','3 000 ₸']],detail:'Код замка 1234, адрес PRIVATE ADDRESS',acceptLabel:'Принять работу',rejectLabel:'Вернуть',requiresReason:true,canDecide:true,revision:'r',entityId:job};
+  const message=await decisionMessage(card,'owner',null);assert.ok(!message.text.includes('1234'));assert.equal(message.reply_markup.inline_keyboard[0].length,1);
+ }finally{globalThis.fetch=fetch;f.db.close();}
+});
