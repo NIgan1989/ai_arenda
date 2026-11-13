@@ -25,7 +25,8 @@ export async function cleanerAdmission(db:D1Database,userId:string):Promise<Clea
  return review.status==='rejected'?'rejected':'pending';
 }
 // A response is the moment the check becomes needed, so the request goes to the platform administrators by itself.
-export async function requestCleanerAdmission(service:RentalService,config:OperationConfig&{PLATFORM_ADMIN_IDS?:string}){
+export async function requestCleanerAdmission(service:RentalService,config:OperationConfig&{PLATFORM_ADMIN_IDS?:string},jobId:string){
+ if((await one(service.db,'SELECT p.demo_owner FROM cleaning_jobs j JOIN properties p ON p.id=j.property_id WHERE j.id=?',jobId))?.demo_owner)return 'not_required' as CleanerAdmission;
  let admission=await cleanerAdmission(service.db,service.userId);
  if(admission==='none'||admission==='expired'){await requestParticipantReview(service,'cleaner',{reference:'Отклик на уборку: проверьте анкету исполнителя.'},config);admission='pending';}
  return admission;

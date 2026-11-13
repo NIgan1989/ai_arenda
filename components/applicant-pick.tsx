@@ -24,12 +24,12 @@ export function ApplicantPick({applications,approvals,role,busy,onDecide,platfor
  if(!applications.length)return <section className="applicant-pick is-empty" aria-label="Отклики исполнителей"><UserRound size={18}/><p><strong>Откликов пока нет</strong><small>Исполнитель появится здесь, как только откликнется. Назначить можно одной кнопкой.</small></p></section>;
  return <section className="applicant-pick" aria-label="Отклики исполнителей">
   <h3>{applications.length===1?'Откликнулся исполнитель':'Отклики'}{applications.length>1&&<span>{applications.length}</span>}</h3>
-  {applications.map(a=>{const card=approvals.find(c=>c.id==='application:'+a.id),admission=a.worker?.admission,blocked=admissionBlocks(admission),off=busy||!card,decide=(action:string)=>card&&onDecide({id:card.id,revision:card.revision,action});
+  {applications.map(a=>{const card=approvals.find(c=>c.id==='application:'+a.id),admission=a.admission??a.worker?.admission,blocked=admissionBlocks(admission),off=busy||!card,decide=(action:string)=>card&&onDecide({id:card.id,revision:card.revision,action});
    return <article key={a.id} className="applicant-option"><WorkerRow worker={{...a,...(a.worker||{}),experience:a.worker?.experience||a.experience}} role={role}/>
     <div className="applicant-decide"><Button disabled={off||blocked} className="applicant-accept" onClick={()=>decide('accept')}><Check size={17}/>Назначить</Button><Button variant="outline" disabled={off} className="applicant-reject" onClick={()=>decide('reject')} aria-label={'Отклонить отклик: '+(a.worker?.name||a.name||'исполнитель')}><X size={17}/>Отклонить</Button></div>
     {blocked&&<p className={'applicant-admission'+(admission==='rejected'?' is-rejected':'')}><ShieldCheck size={16}/><span>{admissionNotes[admission]}{platformAdmin&&admission!=='rejected'&&<a href="/admin?section=reviews">Проверить в админке<ArrowUpRight size={14}/></a>}</span></p>}
     {!card&&!blocked&&<small className="applicant-closed">Срок ответа истёк. Обновите данные.</small>}
    </article>;})}
-  {applications.every(a=>!a.worker?.admission||a.worker.admission==='not_required')&&<small className="applicant-note">Анкету заполняет исполнитель, платформа её пока не проверяет.</small>}
+  {applications.every(a=>(a.admission??a.worker?.admission??'not_required')==='not_required')&&<small className="applicant-note">Анкету заполняет исполнитель, платформа её пока не проверяет.</small>}
  </section>;
 }

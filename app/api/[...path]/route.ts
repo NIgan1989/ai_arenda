@@ -116,7 +116,7 @@ async function handle(request:Request, context:{params:Promise<{path:string[]}>}
     if(route.length===2 && route[0]==='bookings') return json(await service.bookingAction(route[1],body));
     if(route.length===2 && route[0]==='jobs'){const result=await service.jobAction(route[1],body);if(body.action!=='apply')return json(result);
       // The response itself sends the cleaner's profile to the platform check that assignment needs, and says so.
-      const admission=await requestCleanerAdmission(service,env);
+      const admission=await requestCleanerAdmission(service,env,route[1]);
       return json({...result,admission,message:admission==='approved'||admission==='not_required'?'Отклик отправлен. Когда владелец назначит вас, здесь появятся адрес и кнопка «Начать уборку».':admission==='rejected'?'Отклик отправлен, но анкета не прошла проверку платформы. Владелец не сможет назначить вас, пока проверка не пройдена.':'Отклик отправлен. Анкету проверит администратор платформы, после этого владелец сможет вас назначить.'});}
     if(route[0]==='bookings'&&route.length===3&&route[2]==='change-quote')return json(await service.bookingChangeQuote(route[1],activeRole,body));
     if(route[0]==='bookings'&&route.length===3&&route[2]==='changes')return json(await service.proposeBookingChange(route[1],activeRole,body));

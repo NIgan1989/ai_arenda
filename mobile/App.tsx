@@ -373,7 +373,7 @@ function Chat(){
         {owner&&!!j.worker&&<View style={applicantStyles.assigned}><WorkerRow worker={j.worker} label="Исполнитель"/></View>}
         <RecordFacts rows={[j.description&&['Что сделать',j.description],j.address&&['Адрес',j.address+(j.owner_contact?' · '+j.owner_contact:''),true],j.report&&['Отчёт',j.report]]}/>
         <ActivityTimer kind="job" item={j}/>
-        {!owner&&<CleanerNextBox job={j} application={application} admission={data.profile?.admission} userId={userId||''} busy={busy} onRequestReview={()=>perform('operations/reviews/request',{reference:'Отклик на уборку: проверьте анкету исполнителя.'},uid())}/>}
+        {!owner&&<CleanerNextBox job={j} application={application} admission={application?.admission??data.profile?.admission} userId={userId||''} busy={busy} onRequestReview={()=>perform('operations/reviews/request',{reference:'Отклик на уборку: проверьте анкету исполнителя.'},uid())}/>}
         <RecordActions busy={busy} actions={[
           !owner&&j.status==='open'&&!applied&&{title:'Откликнуться',kind:'main',onPress:()=>perform('jobs/'+id,{action:'apply'},m.id)},
           assigned&&j.status==='assigned'&&{title:'Начать уборку',kind:'main',disabled:!j.checkout_confirmed,onPress:()=>confirm('jobs/'+id,{action:'start'},'Отметить начало работы','my-jobs')},

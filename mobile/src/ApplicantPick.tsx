@@ -21,7 +21,7 @@ export function ApplicantPick({applications,approvals,busy,onDecide}:{applicatio
  if(!applications.length)return <View style={[a.box,a.empty]}><Text style={a.emptyTitle}>Откликов пока нет</Text><Text style={a.note}>Исполнитель появится здесь, как только откликнется. Назначить можно одной кнопкой.</Text></View>;
  return <View style={a.box} accessibilityLabel="Отклики исполнителей">
   <Text accessibilityRole="header" style={a.title}>{applications.length===1?'Откликнулся исполнитель':'Отклики · '+applications.length}</Text>
-  {applications.map((x,i)=>{const card=approvals.find(c=>c.id==='application:'+x.id),admission=x.worker?.admission,blocked=!!admission&&admission in admissionNotes,off=busy||!card,decide=(action:string)=>card&&onDecide({id:card.id,revision:card.revision,action}),name=x.worker?.name||x.name||'исполнитель';
+  {applications.map((x,i)=>{const card=approvals.find(c=>c.id==='application:'+x.id),admission=x.admission??x.worker?.admission,blocked=!!admission&&admission in admissionNotes,off=busy||!card,decide=(action:string)=>card&&onDecide({id:card.id,revision:card.revision,action}),name=x.worker?.name||x.name||'исполнитель';
    return <View key={x.id} style={[a.option,i>0&&a.optionLine]}><WorkerRow worker={{...x,...(x.worker||{}),experience:x.worker?.experience||x.experience}}/>
     <View style={a.decide}>
      <Pressable accessibilityRole="button" accessibilityLabel={'Назначить: '+name} disabled={off||blocked} onPress={()=>decide('accept')} style={({pressed})=>[a.btn,a.accept,(pressed||off||blocked)&&a.dim]}><Text style={a.acceptText}>✓  Назначить</Text></Pressable>
@@ -30,7 +30,7 @@ export function ApplicantPick({applications,approvals,busy,onDecide}:{applicatio
     {blocked&&<Text style={[a.admission,admission==='rejected'&&a.admissionBad]}>{admissionNotes[admission]}</Text>}
     {!card&&!blocked&&<Text style={[a.note,{color:C.danger}]}>Срок ответа истёк. Обновите данные.</Text>}
    </View>;})}
-  {applications.every(x=>!x.worker?.admission||x.worker.admission==='not_required')&&<Text style={a.note}>Анкету заполняет исполнитель, платформа её пока не проверяет.</Text>}
+  {applications.every(x=>(x.admission??x.worker?.admission??'not_required')==='not_required')&&<Text style={a.note}>Анкету заполняет исполнитель, платформа её пока не проверяет.</Text>}
  </View>;
 }
 // The cleaner's own card: what happens next with the response, said once.
