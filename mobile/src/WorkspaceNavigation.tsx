@@ -1,5 +1,5 @@
 import React from 'react';
-import {Image,Pressable,StyleSheet} from 'react-native';
+import {Image,Pressable,StyleSheet,Text,View} from 'react-native';
 import {Photo} from './ListingMedia';
 import {C} from './styles';
 import {T} from './tokens';
@@ -9,9 +9,10 @@ export function WorkspaceMenuButton({open,busy,onPress,avatar=false,avatarId}:{o
  return <Pressable accessibilityRole="button" accessibilityLabel={avatar?'Меню и профиль':'Ещё разделы'} accessibilityState={{expanded:open,disabled:busy}} disabled={busy} onPress={onPress} style={avatar?n.menuAvatar:n.menu}>{avatar?<Photo id={avatarId} size={36} avatar alt="Профиль"/>:<Image source={icons.more} style={[n.icon,{tintColor:C.ink}]}/>}</Pressable>;
 }
 // The app has no bottom bar: the map is its only screen. The person's round button opens the menu, this one the chats.
-export function MapChatsButton({busy,onPress}:{busy:boolean;onPress:()=>void}){
- return <Pressable accessibilityRole="button" accessibilityLabel="Чаты" accessibilityState={{disabled:busy}} disabled={busy} onPress={onPress} style={n.menuAvatar}><Image source={icons.chats} style={[n.icon,{tintColor:C.ink}]}/></Pressable>;
+export function MapChatsButton({busy,onPress,unread=0}:{busy:boolean;onPress:()=>void;unread?:number}){
+ return <Pressable accessibilityRole="button" accessibilityLabel={unread?'Чаты, непрочитанных: '+unread:'Чаты'} accessibilityState={{disabled:busy}} disabled={busy} onPress={onPress} style={n.menuAvatar}><Image source={icons.chats} style={[n.icon,{tintColor:C.ink}]}/>{unread>0&&<View style={n.unread}><Text style={n.unreadText}>{unread>99?'99+':unread}</Text></View>}</Pressable>;
 }
 const n=StyleSheet.create({
+ unread:{position:'absolute',top:-2,right:-2,minWidth:20,height:20,borderRadius:T.radius.full,paddingHorizontal:4,backgroundColor:C.danger,alignItems:'center',justifyContent:'center'},unreadText:{fontSize:T.font.caption[0],lineHeight:T.font.caption[1],fontWeight:'700',color:C.onAccent},
  menu:{width:T.control.field,height:T.control.field,borderRadius:T.radius.full,alignItems:'center',justifyContent:'center'},menuAvatar:{width:T.control.touch,height:T.control.touch,borderRadius:T.radius.full,alignItems:'center',justifyContent:'center'},
  icon:{width:24,height:24}});

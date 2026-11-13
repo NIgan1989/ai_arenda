@@ -31,3 +31,15 @@ test('a phone has no bottom bar and no floating AI button: the map carries the m
  assert.match(shell,/\.map-shell \.administrator-orb\{display:none!important\}/);
  assert.match(chrome,/\/account/);assert.match(chrome,/\/chats/);
 });
+
+test('the menu is short: five rows open their own screens, the rest stays one tap away', async () => {
+  const { readFileSync } = await import('node:fs');
+  const read = path => readFileSync(new URL('../' + path, import.meta.url), 'utf8');
+  for (const text of [read('components/account-control.tsx'), read('mobile/src/AccountControl.tsx')]) {
+    assert.match(text, /type MenuView=''\|'profile'\|'trust'\|'plan'\|'settings'\|'safety'/);
+    for (const view of ['profile', 'trust', 'plan', 'settings', 'safety']) assert.ok(text.includes("view==='" + view + "'"), view);
+    assert.match(text, /'properties'\]:\['jobs'\]/, "the owner's objects and the cleaner's search for jobs live on the map");
+  }
+  assert.match(read('mobile/src/WorkspaceNavigation.tsx'), /Чаты, непрочитанных: /);
+  assert.match(read('mobile/App.tsx'), /<MapChatsButton busy=\{busy\} unread=\{unread\}/);
+});
