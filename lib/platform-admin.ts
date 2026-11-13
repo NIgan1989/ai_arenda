@@ -10,6 +10,7 @@ import {governanceState,savePilotPolicy,updateOperatorTicket} from './pilot-gove
 import {operationalHealth,retryBackgroundJob} from './background';
 import {aiBudgetState} from './ai-budget';
 import {publicPoint,mapCities} from './map-workspace';
+import {adminLiveMap} from './admin-map';
 import {AI_REVIEWER,sweepReviews} from './admin-autocheck';
 import {safetyAction} from './account-safety';
 import {billingState,billingOwners,saveBillingSettings,recordBalanceEntry} from './platform-billing';
@@ -23,7 +24,7 @@ export async function readPlatformAdmin(service:RentalService,route:string,param
  if(route==='map'){
   const entries=await service.all("SELECT p.id,p.title,p.city,p.district,p.price,p.published,l.longitude,l.latitude,(SELECT COUNT(*) FROM bookings b WHERE b.property_id=p.id AND (b.status='confirmed' OR (b.status='requested' AND b.expires_at>unixepoch()))) bookings,(SELECT COUNT(*) FROM cleaning_jobs j WHERE j.property_id=p.id AND j.status IN ('open','assigned','in_progress','submitted')) jobs FROM properties p LEFT JOIN property_locations l ON l.property_id=p.id AND l.address_fingerprint=p.city||'|'||p.district||'|'||p.address WHERE p.demo_owner IS NULL ORDER BY p.created_at DESC,p.id LIMIT 60");
   const matching=await service.one("SELECT COUNT(*) active,SUM(status='ready') ready FROM matching_requests WHERE status IN ('searching','ready','booking') AND expires_at>unixepoch()");
-  return {properties:entries.map(({longitude,latitude,...p})=>({...p,mapKey:'property:'+p.id,location:longitude!==null&&latitude!==null?publicPoint({longitude,latitude,source:'owner'}):null})),matching:{active:matching?.active||0,ready:matching?.ready||0},center:mapCities[entries[0]?.city]||mapCities['Павлодар'],limit:60};
+  return {properties:entries.map(({longitude,latitude,...p})=>({...p,mapKey:'property:'+p.id,location:longitude!==null&&latitude!==null?publicPoint({longitude,latitude,source:'owner'}):null})),matching:{active:matching?.active||0,ready:matching?.ready||0},center:mapCities[entries[0]?.city]||mapCities['Павлодар'],limit:60,...await adminLiveMap(service.db)};
  }
  if(route==='users')return service.listUsers(true,{role:params.role,search:params.search,page:params.page||0});
  if(route==='reviews'){
