@@ -84,6 +84,24 @@ test('the admin map tells the pulse, the problems and the shortage without anyon
     assert.equal(after.pulse.today.resolved, 1);
     assert.equal(after.pulse.today.withoutAdmin, 1);
 
+    // A cleaning nobody took stays a problem after its end, as the most urgent kind.
+    raw.prepare("UPDATE cleaning_jobs SET status='open',assigned_to=NULL WHERE id=?").run(f.job.id);
+    const late = (await adminLiveMap(f.db, t)).problems.find(p => p.kind === 'unassigned');
+    assert.deepEqual([late.tone, late.text], ['urgent', 'Нет исполнителя, срок уборки прошёл 20 мин назад']);
+    // Busy day: the counters count the whole day, the feed keeps the latest; an old urgent issue is not pushed out by newer ones.
+    raw.prepare("INSERT INTO administrator_issues(id,owner_id,property_id,entity_kind,entity_id,opened_by,opened_role,other_user,other_role,description,created_at) VALUES ('old','owner',?,'booking',?,'guest','guest','owner','owner','Нет ключей, не могу войти',?)").run(f.property, f.booking, t - 200);
+    raw.prepare("INSERT INTO operator_tickets(issue_id,status,priority,deadline,created_at,updated_at) VALUES ('old','open','urgent',?,?,?)").run(t - 100, t - 200, t - 200);
+    for (let i = 0; i < 70; i++) {
+      raw.prepare('INSERT INTO matching_requests(id,guest_id,request_key,filters,status,created_at,expires_at) VALUES (?,?,?,?,?,?,?)').run('busy' + i, 'guest', 'busy' + i, '{}', 'ready', t - 10, t + 600);
+      raw.prepare("INSERT INTO administrator_issues(id,owner_id,property_id,entity_kind,entity_id,opened_by,opened_role,other_user,other_role,description,created_at) VALUES (?,'owner',?,'booking',?,'guest','guest','owner','owner','Вопрос по счёту',?)").run('n' + i, f.property, f.booking, t - 5);
+      raw.prepare("INSERT INTO operator_tickets(issue_id,status,priority,deadline,created_at,updated_at) VALUES (?,'open','normal',?,?,?)").run('n' + i, t + 86400, t - 5, t - 5);
+    }
+    const busy = await adminLiveMap(f.db, t);
+    if (dayStart(t) <= t - 700) assert.ok(busy.pulse.today.asks >= 74);
+    assert.equal(busy.pulse.events.length, 40);
+    assert.deepEqual(busy.problems.slice(0, 2).map(p => p.tone), ['urgent', 'urgent']);
+    assert.ok(busy.problems.slice(0, 2).some(p => p.id === 'issue:old'));
+
     // The admin route carries it all and nothing personal.
     const route = await readPlatformAdmin(f.guest, 'map', {}, {PLATFORM_ADMIN_IDS: f.guest.userId});
     assert.ok(route.pulse && route.problems && route.shortage);

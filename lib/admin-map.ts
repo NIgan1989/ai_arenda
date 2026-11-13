@@ -85,21 +85,29 @@ export async function adminLiveMap(db:D1Database,now=epoch()){
  for(const j of jobs){const p=at(j.property_id),step=cleaningStep(j);if(step.at>since)events.push({id:'cleaning:'+j.id+':'+step.at,kind:'cleaning',at:step.at,point:p?.point||null,place:p?.place||'',text:'Уборка',ai:step.ai});}
  for(const i of issues){const p=at(i.property_id),{kind,priority}=classifyIssue(String(i.description||''));events.push({id:'issue:'+i.id,kind:'issue',at:Number(i.created_at),point:p?.point||null,place:p?.place||'',text:'Есть проблема',ai:KIND_LABEL[kind]+(priority==='urgent'?', срочно':'')});}
  events.sort((a,b)=>b.at-a.at||a.id.localeCompare(b.id));
- const day=events.filter(e=>e.at>=today),resolvedToday=await rows(db,"SELECT t.assigned_to FROM administrator_issues i LEFT JOIN operator_tickets t ON t.issue_id=i.id WHERE i.status='resolved' AND i.resolved_at>=?",today);
- const count=(k:PulseKind)=>day.filter(e=>e.kind===k).length;
- const pulse={events:events.slice(0,40),today:{asks:count('ask'),bookings:count('booking'),cleanings:count('cleaning'),issues:count('issue'),resolved:resolvedToday.length,withoutAdmin:resolvedToday.filter(r=>!r.assigned_to).length}};
+ // The day's counters come from whole-day counts, not from the feed above, which is cut to the latest events.
+ const totals=await rows(db,`SELECT
+  (SELECT COUNT(*) FROM matching_requests WHERE created_at>=?1) asks,
+  (SELECT COUNT(*) FROM bookings b JOIN properties p ON p.id=b.property_id WHERE p.demo_owner IS NULL AND b.created_at>=?1) bookings,
+  (SELECT COUNT(*) FROM cleaning_jobs j JOIN properties p ON p.id=j.property_id WHERE p.demo_owner IS NULL AND MAX(j.created_at,COALESCE(j.started_at,0),COALESCE(j.submitted_at,0),COALESCE(j.completed_at,0))>=?1) cleanings,
+  (SELECT COUNT(*) FROM administrator_issues WHERE created_at>=?1) issues,
+  (SELECT COUNT(*) FROM administrator_issues i WHERE i.status='resolved' AND i.resolved_at>=?1) resolved,
+  (SELECT COUNT(*) FROM administrator_issues i LEFT JOIN operator_tickets t ON t.issue_id=i.id WHERE i.status='resolved' AND i.resolved_at>=?1 AND t.assigned_to IS NULL) without_admin`,today),t0=totals[0]||{};
+ const pulse={events:events.slice(0,40),today:{asks:Number(t0.asks)||0,bookings:Number(t0.bookings)||0,cleanings:Number(t0.cleanings)||0,issues:Number(t0.issues)||0,resolved:Number(t0.resolved)||0,withoutAdmin:Number(t0.without_admin)||0}};
 
  // Problems: open issues by urgency, late or unattended cleanings, and the issues solved in the last hours.
  const problems:Problem[]=[];
- for(const i of await rows(db,"SELECT i.id,i.property_id,i.description,i.opened_role,i.status,i.created_at,i.resolved_at,t.priority,t.deadline,t.assigned_to FROM administrator_issues i LEFT JOIN operator_tickets t ON t.issue_id=i.id WHERE i.status<>'resolved' OR i.resolved_at>? ORDER BY i.created_at DESC LIMIT 40",now-RESOLVED_SHOWN)){
+ for(const i of [...await rows(db,"SELECT i.id,i.property_id,i.description,i.opened_role,i.status,i.created_at,i.resolved_at,t.priority,t.deadline,t.assigned_to FROM administrator_issues i LEFT JOIN operator_tickets t ON t.issue_id=i.id WHERE i.status<>'resolved' ORDER BY CASE t.priority WHEN 'urgent' THEN 0 WHEN 'high' THEN 1 ELSE 2 END,COALESCE(t.deadline,i.created_at) LIMIT 60"),...await rows(db,"SELECT i.id,i.property_id,i.description,i.opened_role,i.status,i.created_at,i.resolved_at FROM administrator_issues i WHERE i.status='resolved' AND i.resolved_at>? ORDER BY i.resolved_at DESC LIMIT 10",now-RESOLVED_SHOWN)]){
   const p=at(i.property_id),{kind,priority}=classifyIssue(String(i.description||'')),open=i.status!=='resolved';
   const tone:ProblemTone=open?((i.priority||priority) as ProblemTone):'resolved',deadline=open?Number(i.deadline)||undefined:undefined;
   const text=open?KIND_LABEL[kind]+' · пишет '+(ROLE_WORD[i.opened_role]||'участник')+(deadline?deadline>now?' · ответ в течение '+minutesText(deadline-now):' · срок ответа прошёл':''):'Решено за '+minutesText(Number(i.resolved_at)-Number(i.created_at));
   problems.push({id:'issue:'+i.id,issueId:String(i.id),kind:'issue',tone,point:p?.point||null,place:p?.place||'',title:p?.title||'Объект',text,since:Number(i.created_at),deadline,resolvedIn:open?undefined:Number(i.resolved_at)-Number(i.created_at)});
  }
- for(const j of await rows(db,"SELECT j.id,j.property_id,j.status,j.start,j.end FROM cleaning_jobs j JOIN properties p ON p.id=j.property_id WHERE p.demo_owner IS NULL AND ((j.status IN ('assigned','in_progress') AND j.end<?) OR (j.status='open' AND j.start<? AND j.end>?)) LIMIT 30",now,now+3600,now)){
-  const p=at(j.property_id),late=j.status!=='open';
-  problems.push({id:'job:'+j.id,kind:late?'overdue':'unassigned',tone:late?'high':Number(j.start)<=now?'high':'normal',point:p?.point||null,place:p?.place||'',title:p?.title||'Объект',text:late?'Уборка просрочена на '+minutesText(now-Number(j.end)):Number(j.start)<=now?'Нет исполнителя, уборка уже должна идти':'Нет исполнителя, начало через '+minutesText(Number(j.start)-now),since:late?Number(j.end):Number(j.start)});
+ for(const j of await rows(db,"SELECT j.id,j.property_id,j.status,j.start,j.end FROM cleaning_jobs j JOIN properties p ON p.id=j.property_id WHERE p.demo_owner IS NULL AND ((j.status IN ('assigned','in_progress') AND j.end<?1) OR (j.status='open' AND j.start<?2)) ORDER BY j.end LIMIT 40",now,now+3600)){
+  // An open job past its end still has nobody: it stays a problem, and the most urgent kind, until it is done or cancelled.
+  const p=at(j.property_id),open=j.status==='open',late=Number(j.end)<=now,started=Number(j.start)<=now;
+  const text=!open?'Уборка просрочена на '+minutesText(now-Number(j.end)):late?'Нет исполнителя, срок уборки прошёл '+minutesText(now-Number(j.end))+' назад':started?'Нет исполнителя, уборка уже должна идти':'Нет исполнителя, начало через '+minutesText(Number(j.start)-now);
+  problems.push({id:'job:'+j.id,kind:open?'unassigned':'overdue',tone:open&&late?'urgent':open&&!started?'normal':'high',point:p?.point||null,place:p?.place||'',title:p?.title||'Объект',text,since:late?Number(j.end):Number(j.start)});
  }
 
  // Соты: searches of the last two weeks that ended without a stay. The point is the guest's chosen zone (already rounded
