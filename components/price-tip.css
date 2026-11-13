@@ -64,3 +64,16 @@
 .listing-compare small{font-size:12px;line-height:16px;color:var(--t-muted)}
 .listing-compare-arrow{flex:none;align-self:center;display:grid;place-items:center;width:32px;height:32px;border-radius:var(--t-radius-full);background:var(--t-surface);border:1px solid var(--t-line);color:var(--t-accent)}
 .price-tip-why.is-full{-webkit-line-clamp:4}
+/* Booking risk on the owner's request card: level, short reasons, one line of advice. */
+.booking-risk{margin:var(--t-space-12) 0 var(--t-space-8);padding:var(--t-space-12);border-radius:var(--t-radius-md);border:1px solid var(--t-line);background:var(--t-surface-alt)}
+.booking-risk.is-low{background:var(--t-success-soft);border-color:transparent}
+.booking-risk.is-medium{background:var(--t-warning-soft);border-color:var(--t-warning-line)}
+.booking-risk.is-high{background:var(--t-danger-soft);border-color:transparent}
+.booking-risk-head{display:flex;align-items:center;flex-wrap:wrap;gap:var(--t-space-8);font-size:16px;line-height:24px}
+.booking-risk.is-low .booking-risk-head svg{color:var(--t-success)}
+.booking-risk.is-medium .booking-risk-head svg{color:var(--t-warning)}
+.booking-risk.is-high .booking-risk-head svg{color:var(--t-danger)}
+.booking-risk-head span{font-size:12px;line-height:16px;color:var(--t-muted)}
+.booking-risk-reasons{display:flex;flex-wrap:wrap;gap:var(--t-space-8);margin:var(--t-space-8) 0 0;padding:0;list-style:none}
+.booking-risk-reasons li{padding:2px 8px;border-radius:var(--t-radius-full);background:var(--t-surface);font-size:14px;line-height:20px;color:var(--t-ink-soft)}
+.booking-risk-advice{margin:var(--t-space-8) 0 0;font-size:14px;line-height:20px;color:var(--t-ink)}

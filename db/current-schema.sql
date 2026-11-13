@@ -43,6 +43,7 @@
 -- migration 0039_load_forecasts.sql sha256:26d8d5834e810de1cc8c8a8f58aa7f2043fc36bc599cedd126fdd2a86735aea2
 -- migration 0040_listing_tips.sql sha256:6daf35e84b70a92a86e2e186ee7df461cebaa20c7737a16e99cb7b250d25ecfb
 -- migration 0041_cleaning_fee_tips.sql sha256:d063c3719616e2d1a4beb3d68954a83483c21d56bd836d398f125db7a2d5155a
+-- migration 0042_booking_risks.sql sha256:be613dd277154762a2b1bd450b2e89f165c4ad1a6cb14b4a3547e37ee9359dcd
 
 -- table access_receipts
 CREATE TABLE access_receipts (id TEXT PRIMARY KEY,property_id TEXT NOT NULL,entity_kind TEXT NOT NULL,entity_id TEXT NOT NULL,user_id TEXT NOT NULL,created_at INTEGER NOT NULL,expires_at INTEGER NOT NULL);
@@ -263,6 +264,21 @@ CREATE TABLE booking_changes (
  reason TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','accepted','rejected','expired')),
  expires_at INTEGER NOT NULL, created_at INTEGER NOT NULL, decided_at INTEGER,
  UNIQUE(proposed_by,request_key)
+);
+
+-- table booking_risks
+CREATE TABLE booking_risks (
+ booking_id TEXT PRIMARY KEY REFERENCES bookings(id),
+ property_id TEXT NOT NULL REFERENCES properties(id),
+ guest_id TEXT NOT NULL REFERENCES profiles(id),
+ owner_id TEXT NOT NULL REFERENCES profiles(id),
+ level TEXT NOT NULL CHECK(level IN ('low','medium','high')),
+ score INTEGER NOT NULL,
+ reasons TEXT NOT NULL DEFAULT '[]' CHECK(length(reasons)<=2000),
+ deposit_advice INTEGER NOT NULL DEFAULT 0 CHECK(deposit_advice>=0),
+ phone_verified INTEGER NOT NULL DEFAULT 0 CHECK(phone_verified IN (0,1)),
+ held INTEGER NOT NULL DEFAULT 0 CHECK(held IN (0,1)),
+ created_at INTEGER NOT NULL
 );
 
 -- table booking_terms
@@ -938,6 +954,12 @@ CREATE INDEX booking_changes_pending ON booking_changes(booking_id,status,expire
 -- index booking_request_key
 CREATE UNIQUE INDEX `booking_request_key` ON `bookings` (`guest_id`,`request_key`);
 
+-- index booking_risks_guest
+CREATE INDEX booking_risks_guest ON booking_risks(guest_id,created_at);
+
+-- index booking_risks_owner
+CREATE INDEX booking_risks_owner ON booking_risks(owner_id,created_at);
+
 -- index bookings_property_interval
 CREATE INDEX bookings_property_interval ON bookings(property_id,start,occupied_until);
 
@@ -1196,6 +1218,9 @@ CREATE TRIGGER account_erased_background_jobs_insert BEFORE INSERT ON background
 
 -- trigger account_erased_background_jobs_update
 CREATE TRIGGER account_erased_background_jobs_update BEFORE UPDATE ON background_jobs WHEN EXISTS(SELECT 1 FROM account_erasure_fences f WHERE f.user_id=NEW.scope OR (json_valid(NEW.payload) AND EXISTS(SELECT 1 FROM json_tree(NEW.payload) j WHERE j.type='text' AND j.atom=f.user_id))) BEGIN SELECT RAISE(ABORT,'account_erased'); END;
+
+-- trigger account_erased_booking_risks_insert
+CREATE TRIGGER account_erased_booking_risks_insert BEFORE INSERT ON booking_risks WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.guest_id OR user_id=NEW.owner_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END;
 
 -- trigger account_erased_bookings_insert
 CREATE TRIGGER account_erased_bookings_insert BEFORE INSERT ON bookings WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.guest_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END;

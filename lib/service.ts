@@ -1,3 +1,4 @@
+import {assessBookingRisk,riskSignals,saveRiskSql,riskLabel,riskFromRow} from './booking-risk';
 import { DomainError, required, number, interval, quote, roles, assistantReply, type Role } from './domain';
 import { ratingsFor } from './stay-reviews';
 import { markDeals } from './price-deal';
@@ -221,9 +222,9 @@ export class RentalService {
     if(!card)throw new DomainError('Согласование уже закрыто, истекло или недоступно. Обновите карточку.',409);
     if(!card.canDecide)throw new DomainError('Решение должна принять другая сторона.',403);
     if(body.revision!==card.revision)throw new DomainError('Условия изменились. Обновите карточку перед решением.',409);
-    if(!['accept','reject'].includes(body.action))throw new DomainError('Выберите принятие или отклонение.');
-    const accept=body.action==='accept';
-    if(card.kind==='booking')return this.bookingAction(card.entityId,{action:accept?'confirm':'reject',cleaningFee:body.cleaningFee??card.cleaningFee,expectedVersion:state.bookings.find(b=>b.id===card.entityId)?.terms?.version});
+    if(!['accept','reject','deposit'].includes(body.action)||body.action==='deposit'&&!card.depositLabel)throw new DomainError('Выберите принятие или отклонение.');
+    const accept=body.action!=='reject';
+    if(card.kind==='booking')return this.bookingAction(card.entityId,{action:accept?'confirm':'reject',withDeposit:body.action==='deposit',cleaningFee:body.cleaningFee??card.cleaningFee,expectedVersion:state.bookings.find(b=>b.id===card.entityId)?.terms?.version});
     if(card.kind==='change')return this.decideBookingChange(card.entityId,card.id.slice(7),role,{action:body.action});
     if(card.kind==='price')return decidePriceSuggestion(this,card.id.slice(6),accept);
     if(card.kind==='window')return decideCalendarWindow(this,card.id.slice(7),accept);
@@ -258,9 +259,10 @@ export class RentalService {
         (SELECT rating FROM stay_reviews r WHERE r.booking_id=b.id) review_rating,
         CASE WHEN p.owner_id=? OR (b.guest_id=? AND b.status='confirmed') THEN o.contact ELSE NULL END owner_contact,
         CASE WHEN p.owner_id=? THEN g.name ELSE NULL END guest_name,
-        CASE WHEN p.owner_id=? THEN g.contact ELSE NULL END guest_contact
+        CASE WHEN p.owner_id=? THEN g.contact ELSE NULL END guest_contact,
+        CASE WHEN p.owner_id=? THEN (SELECT json_object('level',level,'score',score,'reasons',reasons,'deposit_advice',deposit_advice,'phone_verified',phone_verified,'held',held) FROM booking_risks WHERE booking_id=b.id) ELSE NULL END risk_row
         FROM bookings b JOIN properties p ON p.id=b.property_id LEFT JOIN profiles o ON o.id=p.owner_id LEFT JOIN profiles g ON g.id=b.guest_id
-        WHERE b.guest_id=? OR p.owner_id=? ORDER BY b.start DESC`, ...Array(8).fill(this.userId)),
+        WHERE b.guest_id=? OR p.owner_id=? ORDER BY b.start DESC`, ...Array(9).fill(this.userId)),
       this.all(`SELECT j.*,EXISTS(SELECT 1 FROM booking_terms t WHERE t.booking_id=j.booking_id AND t.actual_checkout IS NOT NULL) checkout_confirmed,p.title,p.city,p.district,p.rooms,p.demo_owner,(SELECT photos FROM property_details WHERE property_id=p.id) property_photos,
         CASE WHEN j.owner_id=? OR j.assigned_to=? THEN p.address ELSE NULL END address,
         CASE WHEN j.owner_id=? OR j.assigned_to=? THEN o.contact ELSE NULL END owner_contact
@@ -278,7 +280,7 @@ export class RentalService {
     ]);
     const enrichedTerms:Row[]=terms.map(t=>{const f=financeBalances.find(f=>f.booking_id===t.booking_id),received=f?.deposit_received??(t.deposit_status==='owner_verified'?t.deposit:0),returned=f?.deposit_returned??(t.deposit_returned_at?t.deposit:0);return {...t,deposit_received_amount:received,deposit_returned_amount:returned,deposit_balance:Math.max(0,received-returned)};});
     const policyFor=(p:Row)=>policies.find(v=>v.property_id===p.id)||defaultPolicy;
-    const state={ profile, properties:await this.enrichProperties(properties.map(p=>({...p,policy:publicPolicy(policyFor(p))}))), ownProperties:await this.enrichProperties(ownProperties.map(p=>({...p,policy:policyFor(p),operation:operations.find(v=>v.property_id===p.id)})),true), bookings:bookings.map(b => ({...b,status:b.status==='requested' && b.expires_at<=serverTime?'expired':b.status,terms:enrichedTerms.find(t=>t.booking_id===b.id),changes:changes.filter(c=>c.booking_id===b.id).map(c=>({...c,status:c.status==='pending'&&c.expires_at<=serverTime?'expired':c.status})),readiness:operations.find(o=>o.property_id===b.property_id)?.readiness})), jobs:jobs.map((j:Row):Row=>({...j,settlement_paid:jobPayments.find(p=>p.job_id===j.id)?.paid??(j.settled_at?j.fee:0),checkout_confirmed:!j.booking_id||!!j.checkout_confirmed})), applications, notifications, messages, serverTime, integrations:{ai:false,telegram:false,whatsapp:false,payments:false} };
+    const state={ profile, properties:await this.enrichProperties(properties.map(p=>({...p,policy:publicPolicy(policyFor(p))}))), ownProperties:await this.enrichProperties(ownProperties.map(p=>({...p,policy:policyFor(p),operation:operations.find(v=>v.property_id===p.id)})),true), bookings:bookings.map(({risk_row,...b}) => ({...b,risk:riskFromRow(risk_row?JSON.parse(risk_row):null),status:b.status==='requested' && b.expires_at<=serverTime?'expired':b.status,terms:enrichedTerms.find(t=>t.booking_id===b.id),changes:changes.filter(c=>c.booking_id===b.id).map(c=>({...c,status:c.status==='pending'&&c.expires_at<=serverTime?'expired':c.status})),readiness:operations.find(o=>o.property_id===b.property_id)?.readiness})), jobs:jobs.map((j:Row):Row=>({...j,settlement_paid:jobPayments.find(p=>p.job_id===j.id)?.paid??(j.settled_at?j.fee:0),checkout_confirmed:!j.booking_id||!!j.checkout_confirmed})), applications, notifications, messages, serverTime, integrations:{ai:false,telegram:false,whatsapp:false,payments:false} };
     return {...state,workspaces:Object.fromEntries(roles.map(role=>[role,operationOverview(state,this.userId,role,serverTime)]))};
   }
   async publicCatalog(options:{syntheticPreview?:boolean}={}) {
@@ -409,14 +411,20 @@ export class RentalService {
     if(body.expectedPolicyVersion!==undefined&&body.expectedPolicyVersion!==checked.policy.version)throw new DomainError('Условия проживания изменились. Проверьте новый расчёт.',409);
     if(checked.policy.version>0&&body.acceptTerms!==true)throw new DomainError('Подтвердите согласие с показанными правилами проживания.');
     const bookingId=id(), p={id:checked.propertyId,cleaning_minutes:checked.cleaningMinutes};
-    const owner=await this.one('SELECT owner_id FROM properties WHERE id=?',p.id);
+    const owner=await this.one('SELECT owner_id,price FROM properties WHERE id=?',p.id);
+    const policyNow=await this.one('SELECT * FROM property_policies WHERE property_id=?',p.id),autoConfirm=!!policyNow?.auto_confirm&&mandateActive(policyNow)&&policyNow.version===checked.policy.version;
+    const risk=assessBookingRisk(await riskSignals(this.db,this.userId,{start,end,billingMode:checked.billingMode,price:Number(owner!.price||0),deposit:checked.policy.deposit}));
+    // Under autopilot a high risk is not confirmed automatically: the owner decides.
+    risk.held=autoConfirm&&risk.level==='high';
     await this.db.batch([
       this.query('INSERT INTO bookings(id,property_id,guest_id,start,end,occupied_until,guests,amount,status,expires_at,payment_status,request_key,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)',bookingId,p.id,this.userId,start,end,end+p.cleaning_minutes*60,guests,amount,'requested',now()+1800,'unpaid',key,now()),
       this.query('INSERT INTO booking_terms(booking_id,billing_mode,rate,units,amount,deposit,deposit_status,house_rules,policy_version,original_end) VALUES (?,?,?,?,?,?,?,?,?,?)',bookingId,checked.billingMode,checked.price,checked.periods,amount,checked.policy.deposit,checked.policy.deposit?'pending':'not_required',checked.policy.house_rules,checked.policy.version,end),
-      this.notify(owner!.owner_id,`Новая заявка на «${checked.title}». Подтвердите её в течение 30 минут.`,`booking:${bookingId}`,'owner'),this.audit(bookingId,'booking.requested')
+      this.notify(owner!.owner_id,risk.held?`AI администратор не подтвердил заявку на «${checked.title}» автоматически: ${riskLabel.high.toLowerCase()} (${risk.reasons.slice(0,2).join(', ')}). Решите в течение 30 минут.`:`Новая заявка на «${checked.title}». ${riskLabel[risk.level]}. Подтвердите её в течение 30 минут.`,`booking:${bookingId}`,'owner'),this.audit(bookingId,'booking.requested'),
+      saveRiskSql(this.db,bookingId,p.id,this.userId,owner!.owner_id,risk),
+      ...(!risk.phone&&risk.level!=='low'?[this.notify(this.userId,'Подтвердите телефон в профиле: владельцу так спокойнее, и заявку на «'+checked.title+'» подтвердят быстрее.','phone-ask:'+bookingId,'guest')]:[])
     ]);
-    const policy=await this.one('SELECT * FROM property_policies WHERE property_id=?',p.id);
-    if(policy?.auto_confirm&&mandateActive(policy)&&policy.version===checked.policy.version){await new RentalService(this.db,owner!.owner_id,{propertyId:p.id,policyVersion:policy.version}).bookingAction(bookingId,{action:'confirm',cleaningFee:policy.cleaning_fee});return {id:bookingId,amount,message:'Бронь подтверждена автоматически по правилам владельца. Оплата и депозит учитываются отдельно.'};}
+    const policy=policyNow!;
+    if(autoConfirm&&!risk.held){await new RentalService(this.db,owner!.owner_id,{propertyId:p.id,policyVersion:policy.version}).bookingAction(bookingId,{action:'confirm',cleaningFee:policy.cleaning_fee});return {id:bookingId,amount,message:'Бронь подтверждена автоматически по правилам владельца. Оплата и депозит учитываются отдельно.'};}
     return {id:bookingId,amount,message:'Заявка отправлена. Интервал зарезервирован на 30 минут до решения владельца.'};
   }
   async bookingAction(bookingId:string,body:Row) {
@@ -505,9 +513,16 @@ export class RentalService {
       const auditId=id(),auditAction=this.execution?JSON.stringify({action:'booking.confirmed',onBehalfOf:this.userId,...this.execution}):'booking.confirmed';
       const statements=[this.query("UPDATE bookings SET status='confirmed' WHERE id=? AND status='requested' AND expires_at>? AND EXISTS(SELECT 1 FROM booking_terms WHERE booking_id=? AND version=?)"+policyGate,bookingId,now(),bookingId,terms?.version,...(this.execution?[this.execution.policyVersion,fee,now()]:[])),this.query('INSERT INTO audit_events SELECT ?,?,?,?,? WHERE changes()>0',auditId,this.execution?'system:rental-policy':this.userId,bookingId,auditAction,now()),this.query("INSERT OR IGNORE INTO notifications SELECT ?,?,?,?,?,? WHERE EXISTS(SELECT 1 FROM audit_events WHERE id=?)",id(),b.guest_id,`Бронь «${b.title}» подтверждена. Адрес доступен в карточке.`,'guest:confirmed:'+bookingId,0,now(),auditId)];
       statements.push(accrueCommission(this.db,bookingId,auditId,now()));
+      // «С депозитом»: the owner follows the AI's risk advice and asks for a refundable deposit.
+      const depositAsked=body.withDeposit===true&&!this.execution?Number((await this.one('SELECT deposit_advice FROM booking_risks WHERE booking_id=?',bookingId))?.deposit_advice||0):0;
+      if(body.withDeposit===true&&(!depositAsked||terms?.deposit))throw new DomainError('Для этой заявки депозит уже предусмотрен или не нужен.',409);
+      if(depositAsked)statements.push(
+        this.query("UPDATE booking_terms SET deposit=?,deposit_status='pending',version=version+1 WHERE booking_id=? AND deposit=0 AND EXISTS(SELECT 1 FROM audit_events WHERE id=?)",depositAsked,bookingId,auditId),
+        this.query("INSERT OR IGNORE INTO notifications SELECT ?,?,?,?,?,? WHERE EXISTS(SELECT 1 FROM audit_events WHERE id=?)",id(),b.guest_id,`Владелец «${b.title}» просит возвратный депозит ${new Intl.NumberFormat('ru-RU').format(depositAsked)} ₸. Он вернётся после выезда, если всё в порядке. Не согласны — отмените бронь до оплаты.`,'guest:deposit-asked:'+bookingId,0,now(),auditId));
       if(fee>0) statements.push(this.query("INSERT OR IGNORE INTO cleaning_jobs(id,property_id,owner_id,booking_id,start,end,fee,description,status,assigned_to,checklist,report,created_at) SELECT ?,property_id,?,?,end,occupied_until,?,?,'open',NULL,'[]','',? FROM bookings WHERE id=? AND status='confirmed' AND EXISTS(SELECT 1 FROM audit_events WHERE id=?)",id(),this.userId,bookingId,fee,'Уборка после выезда: сменить бельё, проверить санузел и кухню, вынести мусор.',now(),bookingId,auditId));
       const results=await this.db.batch(statements);
       if(!results[0].meta.changes) throw new DomainError('Срок заявки истёк или статус уже изменился.',409);
+      if(depositAsked)return {message:'Бронь подтверждена с депозитом '+new Intl.NumberFormat('ru-RU').format(depositAsked)+' ₸. Гость получил уведомление.'+(fee>0?' Задание на уборку опубликовано.':'')};
       return {message:fee>0?'Бронь подтверждена, задание на уборку опубликовано.':'Бронь подтверждена.'};
     }
     if(body.action==='reject'){

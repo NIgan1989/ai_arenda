@@ -3,7 +3,7 @@ import {Input} from '@/components/ui/input';
 import {Textarea} from '@/components/ui/textarea';
 import {Button} from '@/components/ui/button';
 import {useState,type ReactNode} from 'react';
-import {Check,Clock3,MessagesSquare,X} from 'lucide-react';
+import {Check,Clock3,MessagesSquare,ShieldAlert,ShieldCheck,Wallet,X} from 'lucide-react';
 import type {Approval} from '../lib/approvals';
 import {duration} from '../lib/activity';
 import {useActivityClock} from './activity-clock';
@@ -15,13 +15,21 @@ export function ApprovalCard({card,busy,onDecide}:{card:Approval;busy:boolean;on
  return <section className="inline-card approval-card" aria-label={card.title+': '+card.subject}>
   <div className="card-eyebrow"><MessagesSquare size={16}/>{card.canDecide?'Нужно ваше решение':'Ожидает ответа'}{card.expiresAt&&<span className="approval-expiry"><Clock3 size={13}/>{expired?'Срок истёк':t?duration(card.expiresAt-t):'Уточняю время'}</span>}</div>
   <h2>{card.title}</h2><p className="approval-subject">{card.subject}</p><p className="approval-participants">{card.from} → {card.to}</p>
-  {(card.price||card.window||card.stay||card.forecast||card.listing||card.cleaningTip)&&card.canDecide&&!expired?<PriceTipBody card={card} busy={busy} onDecide={action=>onDecide({id:card.id,revision:card.revision,action})}/>:<><dl>{card.facts.map(([label,value])=><div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>{card.detail&&<p className="approval-detail">{card.detail}</p>}</>}
+  {(card.price||card.window||card.stay||card.forecast||card.listing||card.cleaningTip)&&card.canDecide&&!expired?<PriceTipBody card={card} busy={busy} onDecide={action=>onDecide({id:card.id,revision:card.revision,action})}/>:<>{card.risk&&<BookingRiskBox risk={card.risk}/>}<dl>{card.facts.map(([label,value])=><div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>{card.detail&&<p className="approval-detail">{card.detail}</p>}</>}
   {(card.price||card.window||card.stay||card.forecast||card.listing||card.cleaningTip)&&card.canDecide&&!expired?null:card.canDecide&&!expired?<><form className="inline-form" onSubmit={event=>{event.preventDefault();decide(rejecting?'reject':'accept');}}>
    {card.kind==='booking'&&!rejecting&&<label>Оплата уборки после выезда, ₸<Input type="number" min={0} max={1000000} required value={fee} disabled={busy} onChange={event=>setFee(Number(event.target.value))}/><small>Ноль — не публиковать уборку автоматически. Это расход владельца; стоимость проживания не меняется.</small></label>}
    {rejecting&&card.requiresReason&&<label>{card.kind==='report'?'Что нужно доработать?':'Почему выезд не подтверждён?'}<Textarea value={reason} onChange={event=>setReason(event.target.value)} required maxLength={1000} disabled={busy}/></label>}
-   <div className="inline-actions">{rejecting?<><Button className="inline-button" disabled={busy}><X size={16}/>{card.rejectLabel}</Button><Button type="button" className="inline-button secondary" disabled={busy} onClick={()=>setRejecting(false)}>Назад</Button></>:<><Button className="inline-button" disabled={busy}><Check size={16}/>{card.acceptLabel}</Button><Button type="button" className="inline-button secondary" disabled={busy} onClick={()=>card.requiresReason?setRejecting(true):decide('reject')}><X size={16}/>{card.rejectLabel}</Button></>}</div>
+   <div className="inline-actions">{rejecting?<><Button className="inline-button" disabled={busy}><X size={16}/>{card.rejectLabel}</Button><Button type="button" className="inline-button secondary" disabled={busy} onClick={()=>setRejecting(false)}>Назад</Button></>:<>{card.depositLabel&&<Button type="button" className="inline-button" disabled={busy} onClick={()=>decide('deposit')}><Wallet size={16}/>{card.depositLabel}</Button>}<Button className={'inline-button'+(card.depositLabel?' secondary':'')} disabled={busy}><Check size={16}/>{card.depositLabel?'Без депозита':card.acceptLabel}</Button><Button type="button" className="inline-button secondary" disabled={busy} onClick={()=>card.requiresReason?setRejecting(true):decide('reject')}><X size={16}/>{card.rejectLabel}</Button></>}</div>
   </form><small className="approval-note">Решение проверяется и сохраняется на сервере. Кнопки не выполняют банковскую операцию.</small></>:<p className="approval-note">{expired?'Обновите данные: ответ по этой карточке больше не принимается.':'Решение доступно получателю. После ответа здесь появится актуальный статус задачи.'}</p>}
  </section>;
+}
+export function BookingRiskBox({risk}:{risk:NonNullable<Approval['risk']>}){
+ const Icon=risk.level==='low'?ShieldCheck:ShieldAlert;
+ return <div className={'booking-risk is-'+risk.level} role="note" aria-label={risk.label}>
+  <div className="booking-risk-head"><Icon size={18}/><strong>{risk.label}</strong>{risk.held&&<span>автоподтверждение остановлено</span>}</div>
+  <ul className="booking-risk-reasons">{risk.reasons.map(r=><li key={r}>{r}</li>)}</ul>
+  <p className="booking-risk-advice">{risk.advice}</p>
+ </div>;
 }
 export function ApprovalInbox({cards,busy,onDecide}:{cards:Approval[];busy:boolean;onDecide:(body:Row)=>void}){
  const incoming=cards.filter(c=>c.canDecide),outgoing=cards.filter(c=>!c.canDecide);
