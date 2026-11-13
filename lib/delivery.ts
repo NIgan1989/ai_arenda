@@ -22,7 +22,7 @@ async function botReply(config:OperationConfig,chatId:unknown,text:string){
 // The account screen: is the bot set up, and is this role's chat linked and switched on.
 export async function telegramStatus(service:RentalService,role:Role,config:OperationConfig){
  const c=await one(service.db,"SELECT enabled,verified_at FROM delivery_channels WHERE user_id=? AND role=? AND channel='telegram'",service.userId,role);
- return {configured:integrationStatus(config).telegram,linked:!!c?.verified_at,enabled:!!(c?.verified_at&&c.enabled)};
+ return {configured:integrationStatus(config).telegram,linked:!!c?.verified_at,enabled:!!(c?.verified_at&&c.enabled),linkedAt:Number(c?.verified_at||0)};
 }
 export async function acceptTelegramLink(db:D1Database,body:Row,providedSecret:string|null,config:OperationConfig){
  if(!config.TELEGRAM_WEBHOOK_SECRET||!safeEqual(providedSecret||'',config.TELEGRAM_WEBHOOK_SECRET))throw new DomainError('Нет доступа к событию бота.',403);

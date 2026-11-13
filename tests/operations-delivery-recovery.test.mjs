@@ -13,7 +13,7 @@ test('Telegram binding needs a private signed start event; delivery is opt-in, r
   assert.match(replies.at(-1).text,/Готово/);assert.equal(replies.at(-1).chat_id,123);
   await acceptTelegramLink(f.db,event,config.TELEGRAM_WEBHOOK_SECRET,config);assert.match(replies.at(-1).text,/устарела/);
   await acceptTelegramLink(f.db,{message:{...event.message,text:'/start'}},config.TELEGRAM_WEBHOOK_SECRET,config);assert.match(replies.at(-1).text,/Подключить/);
-  assert.deepEqual(await telegramStatus(f.guest,'guest',config),{configured:true,linked:true,enabled:true});assert.deepEqual(await telegramStatus(f.owner,'owner',config),{configured:true,linked:false,enabled:false});assert.equal((await telegramStatus(f.guest,'guest',{})).configured,false);
+  const linked=await telegramStatus(f.guest,'guest',config);assert.deepEqual({...linked,linkedAt:linked.linkedAt>0},{configured:true,linked:true,enabled:true,linkedAt:true});assert.deepEqual(await telegramStatus(f.owner,'owner',config),{configured:true,linked:false,enabled:false,linkedAt:0});assert.equal((await telegramStatus(f.guest,'guest',{})).configured,false);
   await f.owner.notify('guest','PRIVATE ADDRESS AND LOCK CODE','test-notice','guest').run();
   let calls=0;globalThis.fetch=async(_url,request)=>{calls++;const body=JSON.parse(request.body);assert.equal(body.chat_id,'123');assert.ok(!body.text.includes('PRIVATE ADDRESS'));assert.ok(!body.text.includes('LOCK CODE'));return Response.json({ok:true,result:{message_id:5}});};
   assert.equal((await deliverOutbox(f.db,config)).sent,1);assert.equal((await deliverOutbox(f.db,config)).sent,0);assert.equal(calls,1);
