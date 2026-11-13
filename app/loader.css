@@ -13,12 +13,13 @@
 @keyframes loader-shine{from{transform:translateX(-240px)}to{transform:translateX(120px)}}
 
 /* ── Long-action pill ─────────────────────────────────────────── */
-.app-loader-pill{position:fixed;top:50%;left:50%;z-index:2147482001;display:flex;align-items:center;gap:8px;
-  min-height:36px;padding:8px 16px 8px 12px;border-radius:999px;transform:translate(-50%,calc(-50% - 12px));opacity:0;pointer-events:none;
+/* Sits low like a toast, above the home indicator: in the middle it covered the text being read. */
+.app-loader-pill{position:fixed;bottom:calc(24px + env(safe-area-inset-bottom));left:50%;z-index:2147482001;display:flex;align-items:center;gap:8px;
+  min-height:36px;padding:8px 16px 8px 12px;border-radius:999px;transform:translate(-50%,12px);opacity:0;pointer-events:none;
   background:rgba(255,255,255,.88);border:1px solid rgba(255,255,255,.65);box-shadow:0 8px 24px rgba(14,19,36,.12);
   -webkit-backdrop-filter:blur(16px) saturate(1.4);backdrop-filter:blur(16px) saturate(1.4);
   font-size:14px;line-height:20px;font-weight:600;color:var(--t-ink,#0E1324);transition:opacity .2s ease,transform .25s cubic-bezier(.2,.7,.2,1)}
-.app-loader-pill[data-visible="true"]{opacity:1;transform:translate(-50%,-50%)}
+.app-loader-pill[data-visible="true"]{opacity:1;transform:translate(-50%,0)}
 .app-loader-pill svg path{fill:none;stroke:var(--t-accent,#4F46E5);stroke-width:11;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:.62 .38;animation:pill-trace 1.3s linear infinite}
 @keyframes pill-trace{to{stroke-dashoffset:-1}}
 
