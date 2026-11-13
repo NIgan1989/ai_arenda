@@ -3,8 +3,10 @@ import {Button} from './ui/button';
 import {NativeSelect} from './ui/native-select';
 import {Input} from './ui/input';
 import {useEffect,useState,type ReactNode} from 'react';
-import {ChevronRight,ShieldCheck,Wallet,MessagesSquare,SlidersHorizontal,LockKeyhole,Camera,Users,Sparkles,UserRound,Languages,MapPin,Phone,Map as MapIcon,Clock,BadgeCheck,Eye,LogOut,BriefcaseBusiness} from 'lucide-react';
-import {roleNames} from '../lib/access';
+import {ChevronRight,ShieldCheck,Wallet,MessagesSquare,SlidersHorizontal,LockKeyhole,Camera,Users,Sparkles,UserRound,Languages,MapPin,Phone,Map as MapIcon,Clock,BadgeCheck,Eye,LogOut,BriefcaseBusiness,Plus} from 'lucide-react';
+import {roleNames,rolePages} from '../lib/access';
+import {bottomTabs,pageIcon} from './workspace-navigation';
+import type {Role} from '../lib/domain';
 import {experienceFor} from '../lib/role-experience';
 import {Photo} from './media';
 import {ProfileEditor} from './profile-editor';
@@ -42,6 +44,8 @@ export function AccountControl({role,onChanged,onAdministrator}:{role:string;onA
  <div className="acct-live" aria-live="polite">{error&&<p className="form-error" role="alert">{error}</p>}{message&&<p role="status" className="acct-saved">{message}</p>}</div>
  <h3 className="acct-label">{experience.profileTitle}</h3>
  <section className="acct-group">{worker&&toggle(BriefcaseBusiness,'Принимаю предложения',(profile.work_status||'available')==='available',v=>person({work_status:v?'available':'away'},{workStatus:v?'available':'away'},true),/^(Принимает|Не принимает)/.test(account.workerStatus?.label||'')?undefined:account.workerStatus?.label)}{row(UserRound,'О себе',profile.bio)}{row(Languages,'Языки общения',profile.languages)}{row(MapPin,experience.cityLabel,profile.city)}{worker&&<>{row(MapIcon,'Районы работы',profile.districts)}{row(Clock,'График',profile.availability)}{row(BadgeCheck,'Опыт и услуги',profile.experience)}</>}{row(Phone,'Телефон',profile.contact)}</section>
+ {/* Phone only: the sections that are not in the bottom bar. The desktop sidebar already lists them. */}
+ {(()=>{const r=role as Role,tabs=bottomTabs(r),more=(rolePages[r]||[]).filter(p=>!tabs.includes(p.id)&&p.id!=='operations'),join=(['owner','cleaner'] as Role[]).filter(v=>v!==r&&!roles.includes(v));return more.length+join.length>0&&<><h3 className="acct-label acct-phone-only">Разделы</h3><section className="acct-group acct-phone-only">{more.map(p=>{const Icon=pageIcon(r,p.id);return <a key={p.id} className="acct-row" href={base+p.id}><Icon size={20}/><span>{p.title}</span><ChevronRight size={16}/></a>;})}{join.map(v=><a key={v} className="acct-row" href={'/join/'+v}><Plus size={20}/><span>{v==='owner'?'Сдавать недвижимость':'Работать на уборках'}</span><ChevronRight size={16}/></a>)}</section></>;})()}
  <h3 className="acct-label">Настройки</h3>
  <section className="acct-group"><WebPushSettings key={'push:'+role} role={role}/><TelegramSettings key={'tg:'+role} role={role}/>
  <details className="acct-details">{summary(Wallet,experience.paymentTitle,banks[account.settings.payment_provider]||banks.undecided)}<div className="acct-body"><label className="acct-field">Предпочтительный банк<NativeSelect value={account.settings.payment_provider} disabled={busy} onChange={e=>settings({payment_provider:e.target.value})}><option value="undecided">Пока не выбран</option><option value="kaspi">Kaspi</option><option value="halyk">Halyk Bank</option></NativeSelect></label>{toggle(Wallet,'Уведомлять о расчётах',!!account.settings.payment_notifications,v=>settings({payment_notifications:v?1:0}))}<small>{experience.paymentHint} Банковский перевод эта настройка не выполняет.</small></div></details>
