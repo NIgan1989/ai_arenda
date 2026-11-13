@@ -34,9 +34,9 @@ const localHour=(t:number)=>Number(new Date(t*1000).toLocaleString('en-GB',{time
 export async function riskSignals(db:D1Database,guestId:string,booking:{start:number;end:number;billingMode:string;price:number;deposit:number},t=epoch()):Promise<RiskSignals>{
  const g=await one(db,`SELECT p.created_at,
   EXISTS(SELECT 1 FROM phone_verifications v WHERE v.user_id=p.id AND v.verified_at IS NOT NULL) phone,
-  (SELECT COUNT(*) FROM bookings WHERE guest_id=p.id AND status='completed') completed,
-  (SELECT COUNT(DISTINCT a.entity_id) FROM audit_events a JOIN bookings b ON b.id=a.entity_id WHERE b.guest_id=p.id AND a.action LIKE '%booking.checkout_disputed%') disputes,
-  (SELECT COUNT(DISTINCT a.entity_id) FROM audit_events a JOIN bookings b ON b.id=a.entity_id WHERE a.actor_id=p.id AND b.guest_id=p.id AND a.action='booking.cancelled' AND EXISTS(SELECT 1 FROM audit_events c WHERE c.entity_id=a.entity_id AND c.action LIKE '%booking.confirmed%' AND c.created_at<=a.created_at)) cancels
+  (SELECT COUNT(*) FROM bookings b JOIN properties lp ON lp.id=b.property_id WHERE b.guest_id=p.id AND b.status='completed' AND lp.demo_owner IS NULL) completed,
+  (SELECT COUNT(DISTINCT a.entity_id) FROM audit_events a JOIN bookings b ON b.id=a.entity_id JOIN properties lp ON lp.id=b.property_id WHERE b.guest_id=p.id AND lp.demo_owner IS NULL AND a.action LIKE '%booking.checkout_disputed%') disputes,
+  (SELECT COUNT(DISTINCT a.entity_id) FROM audit_events a JOIN bookings b ON b.id=a.entity_id JOIN properties lp ON lp.id=b.property_id WHERE a.actor_id=p.id AND b.guest_id=p.id AND lp.demo_owner IS NULL AND a.action='booking.cancelled' AND EXISTS(SELECT 1 FROM audit_events c WHERE c.entity_id=a.entity_id AND c.action LIKE '%booking.confirmed%' AND c.created_at<=a.created_at)) cancels
   FROM profiles p WHERE p.id=?`,guestId)||{} as Row;
  const h=localHour(booking.start);
  return {phone:!!g.phone,completed:Number(g.completed||0),disputes:Number(g.disputes||0),cancels:Number(g.cancels||0),accountAge:t-Number(g.created_at||t),lead:booking.start-t,

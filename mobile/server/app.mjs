@@ -80,7 +80,7 @@ export function createApp({filename=':memory:',origins=['http://localhost:8081',
     }
     const mediaPath=path.match(/^\/api\/media\/([a-zA-Z0-9-]+)$/);
     if(mediaPath&&req.method==='GET')return service.readMedia(mediaPath[1],activeRole);
-    if(path==='/api/account'&&req.method==='GET')return {...await service.accountState(),platformAdmin:isPlatformAdmin(user.id,adminIds),modelConfigured:false};
+    if(path==='/api/account'&&req.method==='GET')return {...await service.accountState(activeRole),platformAdmin:isPlatformAdmin(user.id,adminIds),modelConfigured:false};
     if(path==='/api/admin/users'&&req.method==='GET'){const url=new URL(req.url,'http://local');return service.listUsers(isPlatformAdmin(user.id,adminIds),{role:url.searchParams.get('role'),search:url.searchParams.get('search'),page:url.searchParams.get('page')||0});}
     if(path==='/api/state'&&req.method==='GET'){await checkAdministratorForUser(db,user.id,activeRole);return {...await service.roleState(activeRole,{catalog:new URL(req.url,'http://local').searchParams.get('catalog')!=='0'}),testMode:config.TEST_DATA_ONLY==='1',user:accountUser};}
     if(path==='/api/catalog'&&req.method==='GET'){if(activeRole!=='guest')throw new HttpError('Каталог жилья доступен в роли гостя.',403);return service.publicCatalog({syntheticPreview:config.TEST_DATA_ONLY==='1'});}

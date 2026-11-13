@@ -4,6 +4,7 @@ import {Button} from './ui/button';
 import {Photo} from './media';
 import {StatusBadge} from './property-listing';
 import './applicant-pick.css';
+import {ReliabilityBadge} from './reliability';
 type Row=Record<string,any>;
 // One line about a cleaner: photo, name, where, and the profile facts as short tags. Used for the assigned cleaner
 // and for every response, so the owner sees the same row before and after choosing.
@@ -26,6 +27,7 @@ export function ApplicantPick({applications,approvals,role,busy,onDecide,platfor
   <h3>{applications.length===1?'Откликнулся исполнитель':'Отклики'}{applications.length>1&&<span>{applications.length}</span>}</h3>
   {applications.map(a=>{const card=approvals.find(c=>c.id==='application:'+a.id),admission=a.admission??a.worker?.admission,blocked=admissionBlocks(admission),off=busy||!card,decide=(action:string)=>card&&onDecide({id:card.id,revision:card.revision,action});
    return <article key={a.id} className="applicant-option"><WorkerRow worker={{...a,...(a.worker||{}),experience:a.worker?.experience||a.experience}} role={role}/>
+    {a.worker?.reliability&&<ReliabilityBadge value={a.worker.reliability} title="Исполнитель"/>}
     <div className="applicant-decide"><Button disabled={off||blocked} className="applicant-accept" onClick={()=>decide('accept')}><Check size={17}/>Назначить</Button><Button variant="outline" disabled={off} className="applicant-reject" onClick={()=>decide('reject')} aria-label={'Отклонить отклик: '+(a.worker?.name||a.name||'исполнитель')}><X size={17}/>Отклонить</Button></div>
     {blocked&&<p className={'applicant-admission'+(admission==='rejected'?' is-rejected':'')}><ShieldCheck size={16}/><span>{admissionNotes[admission]}{platformAdmin&&admission!=='rejected'&&<a href="/admin?section=reviews">Проверить в админке<ArrowUpRight size={14}/></a>}</span></p>}
     {!card&&!blocked&&<small className="applicant-closed">Срок ответа истёк. Обновите данные.</small>}
