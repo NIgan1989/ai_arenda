@@ -15,7 +15,7 @@ const stateIcon={ok:CheckCircle2,fix:CircleDashed,risk:AlertTriangle} as const;
 // the AI asks about, decides with one tap, and can look back at what the AI approved by itself this week.
 export function AdminReviews({data,busy,save}:{data:Row;busy:boolean;save:Save}){
  const auto=!!data.policy?.ai_review,pending:Row[]=data.pendingReviews||[],decided:Row[]=data.aiDecided||[];
- const yours=pending.filter(r=>!auto||r.ai_verdict==='escalate'||r.ai_verdict===''),waiting=auto?pending.filter(r=>r.ai_verdict==='fix'):[],approvedAI=decided.filter(r=>r.status==='approved').length;
+ const yours=pending.filter(r=>!auto||r.ai_verdict!=='fix'),waiting=auto?pending.filter(r=>r.ai_verdict==='fix'):[],approvedAI=decided.filter(r=>r.status==='approved').length;
  const [showWaiting,setShowWaiting]=useState(false);
  return <div className="admin-reviews">
   <section className={'reviews-ai'+(auto?'':' is-off')}>

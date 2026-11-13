@@ -88,7 +88,13 @@ export async function autoReview(db:D1Database,reviewId:string,config:OperationC
  const what=review.role==='owner'?'«'+(review.title||'квартира')+'»':'Анкета исполнителя';
  if(auto&&verdict==='approve'){
   try{await decideParticipantReview({db,userId:AI_REVIEWER} as unknown as RentalService,{id:reviewId,status:'approved',method:AI_METHOD,notes:'Все правила пройдены: '+checksSummary(checks,['ok']),validUntil:review.role==='cleaner'?new Date((at+CLEANER_VALID)*1000).toISOString():undefined,expectedVersion:review.version},true);return verdict;}
-  catch(e){if(!(e instanceof DomainError))throw e;return null;}
+  catch(e){if(!(e instanceof DomainError))throw e;
+   // The request no longer matches the flat (address changed) or was decided meanwhile: never leave it hidden.
+   checks.push({key:'stale',label:'Заявка',state:'risk',note:e.message});
+   await q(db,"UPDATE participant_reviews SET ai_verdict='escalate',ai_checks=? WHERE id=? AND status='pending'",JSON.stringify(checks),reviewId).run();
+   const list=admins(config);if(list.length)await db.batch(list.map(admin=>note(db,admin,what+' ждёт проверки. ИИ не смог одобрить: '+e.message+' Админка → Проверки.','admin:review:'+reviewId+':'+admin,at)));
+   return 'escalate';
+  }
  }
  if(auto&&verdict==='fix'){
   const missing=checks.filter(c=>c.state==='fix'),tag=(await hash(missing.map(c=>c.key).join(','))).slice(0,8);

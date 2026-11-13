@@ -85,3 +85,15 @@ test('a cleaner with a name and a photo is admitted for six months on the first 
   assert.equal(review.status,'approved');assert.ok(review.valid_until>now()+170*86400);
  }finally{f.db.close();}
 });
+test('an approval refused because the flat changed after the request goes to the administrator instead of hiding',async()=>{
+ const f=await fixture();try{
+  const {PUBLISH_REVIEW}=await load('listing-edit');await strict(f);readyFlat(f,1);
+  await requestParticipantReview(f.owner,'owner',{propertyId:f.property,reference:PUBLISH_REVIEW+': fixture'},{PLATFORM_ADMIN_IDS:'admin'});
+  f.db.raw.prepare("INSERT INTO review_property_bindings(property_id,revision) VALUES (?,1) ON CONFLICT(property_id) DO UPDATE SET revision=revision+1").run(f.property);
+  readyFlat(f,4);f.db.raw.prepare('UPDATE participant_reviews SET ai_checked_at=0').run();
+  assert.equal((await sweepReviews(f.db,{PLATFORM_ADMIN_IDS:'admin'})).escalate,1);
+  const review=f.db.raw.prepare('SELECT * FROM participant_reviews WHERE property_id=?').get(f.property);
+  assert.equal(review.status,'pending');assert.equal(review.ai_verdict,'escalate');
+  assert.equal(f.db.raw.prepare("SELECT COUNT(*) n FROM notifications WHERE dedupe LIKE 'admin:review:%'").get().n,1);
+ }finally{f.db.close();}
+});
