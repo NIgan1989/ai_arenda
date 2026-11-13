@@ -61,7 +61,7 @@
 .reviews-done strong{display:block;font-size:14px;font-weight:550;overflow-wrap:anywhere}
 .reviews-done small{font-size:12px;color:var(--t-muted)}
 .reviews-when{font-size:12px;color:var(--t-success);white-space:nowrap}
-@media(max-width:700px){
+@media(max-width:700px){.review-head:has(.issue-priority){grid-template-columns:auto minmax(0,1fr)}.review-head .issue-priority{grid-column:2;justify-self:start}
  .reviews-ai{grid-template-columns:1fr;padding:20px;gap:16px}
  .reviews-ai h2{font-size:22px;margin-top:12px}
  .reviews-rules>div{grid-template-columns:1fr;gap:16px}
