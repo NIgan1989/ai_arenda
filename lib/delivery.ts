@@ -17,7 +17,7 @@ const ROLE_NAMES:Record<string,string>={guest:'Гость',owner:'Владеле
 // The bot answers in the chat so the person sees that linking worked. A failed reply never undoes the link.
 async function botReply(config:OperationConfig,chatId:unknown,text:string){
  if(!config.TELEGRAM_BOT_TOKEN)return;
- try{await fetch('https://api.telegram.org/bot'+config.TELEGRAM_BOT_TOKEN+'/sendMessage',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({chat_id:chatId,text,link_preview_options:{is_disabled:true}}),redirect:'error',signal:AbortSignal.timeout(8000)});}catch{/* the link is already saved */}
+ try{const r=await fetch('https://api.telegram.org/bot'+config.TELEGRAM_BOT_TOKEN+'/sendMessage',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({chat_id:chatId,text,link_preview_options:{is_disabled:true}}),redirect:'manual',signal:AbortSignal.timeout(8000)});if(!r.ok)console.error('Telegram reply failed: '+r.status);}catch(e){console.error('Telegram reply failed: '+String((e as Error)?.message||e).split(config.TELEGRAM_BOT_TOKEN).join('***'));}
 }
 // The account screen: is the bot set up, and is this role's chat linked and switched on.
 export async function telegramStatus(service:RentalService,role:Role,config:OperationConfig){
@@ -63,10 +63,10 @@ export async function deliverOutbox(db:D1Database,config:OperationConfig,limit=3
    let response:Response;
    if(item.channel==='telegram'){
     if(!config.TELEGRAM_BOT_TOKEN)throw new Error('channel_not_configured');
-    response=await fetch('https://api.telegram.org/bot'+config.TELEGRAM_BOT_TOKEN+'/sendMessage',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({chat_id:item.address,text,link_preview_options:{is_disabled:true}}),redirect:'error',signal:AbortSignal.timeout(15000)});
+    response=await fetch('https://api.telegram.org/bot'+config.TELEGRAM_BOT_TOKEN+'/sendMessage',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({chat_id:item.address,text,link_preview_options:{is_disabled:true}}),redirect:'manual',signal:AbortSignal.timeout(15000)});
    }else{
     const url=item.channel==='sms'?config.SMS_GATEWAY_URL:config.WHATSAPP_GATEWAY_URL,secret=item.channel==='sms'?config.SMS_GATEWAY_TOKEN:config.WHATSAPP_GATEWAY_TOKEN;if(!secret)throw new Error('channel_not_configured');
-    response=await fetch(httpsEndpoint(url),{method:'POST',headers:{Authorization:'Bearer '+secret,'Content-Type':'application/json','Idempotency-Key':item.id},body:JSON.stringify({id:item.id,to:item.address,text,category:'notification'}),redirect:'error',signal:AbortSignal.timeout(15000)});
+    response=await fetch(httpsEndpoint(url),{method:'POST',headers:{Authorization:'Bearer '+secret,'Content-Type':'application/json','Idempotency-Key':item.id},body:JSON.stringify({id:item.id,to:item.address,text,category:'notification'}),redirect:'manual',signal:AbortSignal.timeout(15000)});
    }
    if(!response.ok)throw new Error(response.status===429?'rate_limit':'delivery_failed');
    const value=await response.json() as Row;if(item.channel==='telegram'&&value.ok!==true)throw new Error('delivery_failed');const reference=String(item.channel==='telegram'?value.result?.message_id:value.id||'accepted');
