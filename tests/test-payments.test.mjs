@@ -19,6 +19,12 @@ test('test payments take a booking through payment and deposit without money, on
   assert.equal(f.db.raw.prepare('SELECT deposit_status FROM booking_terms WHERE booking_id=?').get(f.booking).deposit_status,'owner_verified');
   // With a real gateway or with the switch off nothing is faked.
   await assert.rejects(testPayment(f.guest,{bookingId:f.booking,kind:'payment'},{PAYMENT_GATEWAY_URL:'https://pay.example',PAYMENT_GATEWAY_TOKEN:'t',PAYMENT_WEBHOOK_SECRET:'s'},owner),e=>e.status===409&&/выключена/.test(e.message));
+  // A later balance with the same amount (after a change of stay) is a new payment, not the old one.
+  f.db.raw.prepare('UPDATE bookings SET amount=amount*2 WHERE id=?').run(f.booking);
+  const extra=f.db.raw.prepare('SELECT amount-(SELECT paid_amount FROM booking_terms WHERE booking_id=bookings.id) n FROM bookings WHERE id=?').get(f.booking).n;assert.ok(extra>0);
+  assert.match((await testPayment(f.guest,{bookingId:f.booking,kind:'payment'},{},owner)).message,/тестовом режиме/);
+  assert.equal(f.db.raw.prepare("SELECT COUNT(*) n FROM finance_entries WHERE booking_id=? AND kind='payment'").get(f.booking).n,2);
+  assert.equal(f.db.raw.prepare('SELECT payment_status FROM bookings WHERE id=?').get(f.booking).payment_status,'owner_verified');
   await setTestPayments(f.owner,{enabled:false});assert.equal(await paymentMode(f.db,{}),'off');
  }finally{f.db.close();}
 });

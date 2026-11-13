@@ -113,8 +113,10 @@ export async function testPayment(service:RentalService,body:Row,config:Operatio
  await migrateFinanceEntity({db:service.db,userId:b.owner_id},'booking',bookingId);
  const received=await one(service.db,"SELECT COALESCE(SUM(CASE WHEN kind='deposit' THEN amount WHEN kind='deposit_return' THEN -amount ELSE 0 END),0) n FROM finance_entries WHERE booking_id=?",bookingId);
  const amount=kind==='payment'?Math.max(0,b.amount-b.paid_amount):Math.max(0,b.deposit-(received?.n||0));if(!amount)throw new DomainError(kind==='payment'?'Бронь уже оплачена.':'Депозит уже внесён.',409);
- // One attempt per remaining amount: a second tap finds the same attempt and records nothing twice.
- const key='test:'+bookingId+':'+kind+':'+amount;
+ // One attempt per settlement state: a second tap finds the same attempt and records nothing twice,
+ // while a new balance (after a change or a refund) adds a journal entry and gets its own attempt.
+ const entries=await one(service.db,'SELECT COUNT(*) n FROM finance_entries WHERE booking_id=?',bookingId);
+ const key='test:'+bookingId+':'+kind+':'+(entries?.n||0)+':'+amount;
  await q(service.db,"INSERT OR IGNORE INTO payment_intents(id,booking_id,user_id,kind,amount,status,request_key,created_at,test) VALUES (?,?,?,?,?,'ready',?,?,1)",uuid(),bookingId,service.userId,kind,amount,key,epoch()).run();
  const intent=await one(service.db,'SELECT * FROM payment_intents WHERE user_id=? AND request_key=?',service.userId,key);
  if(!intent||intent.test!==1)throw new DomainError('Попытка оплаты недоступна.',409);
