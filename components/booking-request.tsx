@@ -1,5 +1,6 @@
 'use client';
 import './flow-release.css';
+import {windowBadge} from '../lib/window-badge';
 import './booking-request.css';
 import {Button} from '@/components/ui/button';
 import {useEffect,useMemo,useRef,useState} from 'react';
@@ -53,6 +54,7 @@ export function BookingRequest({property,requestKey,disabled,onQuote,onConfirm,i
     <div className={'stay-total'+(error&&!quote?' is-error':'')} aria-live="polite">
       <p className="stay-span">{fixed&&quote?recordSpan(quote.start,quote.end):recordSpan(span.start,span.end)}</p>
       {quote?<><div className="stay-sum"><strong className={checking?'is-stale':undefined}>{money(quote.amount)}</strong><span>{quote.periods} × {money(quote.price)} · {quote.unitLabel}</span></div>
+        {quote.window&&<p className="stay-window">✦ {windowBadge(quote.window)} · обычно {money(quote.window.regular)}/час</p>}
         <dl className="stay-facts"><div><dt>Депозит</dt><dd>{quote.policy.deposit?money(quote.policy.deposit)+', отдельно от проживания':'не нужен'}</dd></div><div><dt>Подтверждение</dt><dd>{quote.policy.auto_confirm?'сразу, по правилам владельца':'владелец отвечает в течение 30 минут'}</dd></div>{fixed&&<div><dt>Гости</dt><dd>{guestsWord(quote.guests)}</dd></div>}</dl></>
         :error?<p className="stay-error" role="alert">{error}</p>:<p className="stay-wait"><LoaderCircle size={16}/>Проверяю свободное время и цену…</p>}
       {error&&quote&&<p className="stay-error" role="alert">{error}</p>}

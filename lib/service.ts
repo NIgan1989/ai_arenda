@@ -23,6 +23,7 @@ import {administratorSearch,isPropertySearch,isSearchRefinement,previousAdminist
 import {readAdministratorProcesses,processReadIntent} from './administrator-process-read';
 import {accrueCommission} from './platform-billing';
 import {offerPriceAdvice,ownerPriceSuggestions,decidePriceSuggestion} from './price-advice';
+import {ownerWindows,decideCalendarWindow,openWindowFor,openWindowsFor,windowQuote} from './calendar-windows';
 
 type Row = Record<string, any>;
 const now = () => Math.floor(Date.now() / 1000);
@@ -183,7 +184,7 @@ export class RentalService {
     const workers=new Map<string,Row|null>();if(role==="owner"){for(const userId of new Set([...state.applications.map(a=>a.user_id),...jobs.map(j=>j.assigned_to).filter(Boolean)]))workers.set(userId,await this.workerCard(userId));}
     const result={...state,profile:state.profile?{...state.profile,display_status:cleanerStatus(state.profile.work_status,state.jobs.filter(j=>j.assigned_to===this.userId),state.serverTime)}:null,activeRole:role,properties:role==='guest'?state.properties:[],ownProperties:role==='owner'?state.ownProperties:[],bookings,jobs:jobs.map((j:Row):Row=>({...j,worker:role==='owner'?workers.get(j.assigned_to):null})),
       notifications,applications:state.applications.filter(a=>jobIds.has(a.job_id)&&(role==='owner'||a.user_id===this.userId)).map(a=>({...a,worker:role==='owner'?workers.get(a.user_id):null})),messages:state.messages.filter(m=>m.scope===role)};
-    if(role==='owner')(result as Row).priceSuggestions=await ownerPriceSuggestions(this.db,this.userId,state.serverTime);
+    if(role==='owner'){(result as Row).priceSuggestions=await ownerPriceSuggestions(this.db,this.userId,state.serverTime);(result as Row).calendarWindows=await ownerWindows(this.db,this.userId,state.serverTime);}
     const assistantSettings={...defaultAssistantSettings};
     const administrator=await readAdministratorState(this.db,this.userId,role);
     return {...result,administrator,approvals:approvalCards(result,role,this.userId,state.serverTime),assistantSettings,assistantBrief:assistantBrief(result,role,assistantSettings,state.serverTime),workspaces:{[role]:operationOverview(result,this.userId,role,state.serverTime)}};
@@ -216,6 +217,7 @@ export class RentalService {
     if(card.kind==='booking')return this.bookingAction(card.entityId,{action:accept?'confirm':'reject',cleaningFee:body.cleaningFee??card.cleaningFee,expectedVersion:state.bookings.find(b=>b.id===card.entityId)?.terms?.version});
     if(card.kind==='change')return this.decideBookingChange(card.entityId,card.id.slice(7),role,{action:body.action});
     if(card.kind==='price')return decidePriceSuggestion(this,card.id.slice(6),accept);
+    if(card.kind==='window')return decideCalendarWindow(this,card.id.slice(7),accept);
     if(card.kind==='checkout')return this.bookingAction(card.entityId,{action:accept?'checkout':'dispute_checkout',reason:body.reason,expectedVersion:state.bookings.find(b=>b.id===card.entityId)?.terms?.version});
     const job=state.jobs.find(j=>j.id===card.entityId);
     return this.jobAction(card.entityId,{action:card.kind==='application'?(accept?'assign':'reject_application'):(accept?'approve':'revise'),applicationId:card.id.slice(12),reason:body.reason,expectedVersion:job?.version});
@@ -290,8 +292,11 @@ export class RentalService {
       ]);
       const occupied=new Set([...booked,...cleaning,...external,...stale].map(p=>p.property_id));
       items=items.filter(p=>!occupied.has(p.id)&&!['maintenance','blocked'].includes(p.display_status.code)&&(start>now()+60||p.display_status.code==='ready'));
-      items=items.flatMap(p=>{try{const price=rentalPrice(p.price,p.policy,start,end,mode);return [{...p,estimate:{amount:price.amount,periods:price.periods,rate:price.price,unitLabel:price.unitLabel}}];}catch(error){if(error instanceof DomainError)return [];throw error;}});
+      const windows=mode==='hourly'?await openWindowsFor(this.db,start,end):new Map();
+      items=items.flatMap(p=>{try{const price=windowQuote(rentalPrice(p.price,p.policy,start,end,mode),p.policy.hourly_price,windows.get(p.id));return [{...p,estimate:{amount:price.amount,periods:price.periods,rate:price.price,unitLabel:price.unitLabel,...(price.window?{window:price.window}:{})}}];}catch(error){if(error instanceof DomainError)return [];throw error;}});
     }
+    // Open calendar windows: guests see the discounted hourly price and until when it lasts.
+    if(!range){const windows=await openWindowsFor(this.db,null,null);if(windows.size)items=items.map(p=>{const w=windows.get(p.id);return w&&w.hourly_to<p.policy.hourly_price?{...p,window:{percent:Math.round((1-w.hourly_to/p.policy.hourly_price)*100),start:w.start,end:w.end,hourly:w.hourly_to}}:p;});}
     const pageInput=number(filters.page||1,'Страница',1,100000),limit=number(filters.limit||24,'На странице',1,60),minPrice=number(filters.minPrice||0,'Минимальная цена',0,100000000),maxPrice=number(filters.maxPrice||100000000,'Максимальная цена',0,100000000),rooms=number(filters.rooms||0,'Комнаты',0,20),sort=filters.sort||'recommended';
     if(minPrice>maxPrice||!['recommended','price-asc','price-desc'].includes(sort)||filters.roomsExact&&!['0','1'].includes(filters.roomsExact))throw new DomainError('Проверьте цену, число комнат и сортировку.');
     const rate=(p:Row)=>range?p.estimate?.amount:(mode==='hourly'?p.policy.hourly_price:p.price);
@@ -358,7 +363,7 @@ export class RentalService {
     const {start,end}=interval(body.start,body.end), guests=number(body.guests,'Гости',1,p.capacity), occupiedUntil=end+p.cleaning_minutes*60;
     const policy={...defaultPolicy,...await this.one('SELECT * FROM property_policies WHERE property_id=?',p.id)},op=await this.one('SELECT readiness FROM property_operations WHERE property_id=?',p.id);
     if(op&&(['maintenance','blocked'].includes(op.readiness)||(start<=now()+60&&op.readiness!=='ready')))throw new DomainError('Квартира сейчас не готова к новым заездам.',409);
-    const pricing=rentalPrice(p.price,policy,start,end,body.billingMode||'daily');
+    const base=rentalPrice(p.price,policy,start,end,body.billingMode||'daily'),pricing=windowQuote(base,policy.hourly_price,base.billingMode==='hourly'?await openWindowFor(this.db,p.id,start,end):null);
     await assertCalendarAvailable(this.db,p.id,start,occupiedUntil);
     const occupied=await this.one("SELECT id FROM bookings WHERE property_id=? AND (status='confirmed' OR (status='requested' AND expires_at>?)) AND start<? AND occupied_until>?",p.id,now(),occupiedUntil,start);
     const cleaning=await this.one("SELECT id FROM cleaning_jobs WHERE property_id=? AND status IN ('open','assigned','in_progress','submitted') AND start<? AND end>?",p.id,occupiedUntil,start);
