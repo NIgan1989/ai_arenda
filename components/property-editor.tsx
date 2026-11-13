@@ -1,6 +1,6 @@
 'use client';
 import {useEffect,useRef,useState,type ReactNode} from 'react';
-import {ArrowLeft,BedDouble,CalendarDays,Camera,Check,Clock,FileText,MapPin,Minus,Plus,ScrollText,Sparkles,Trash2,UserCheck,Wallet,Wifi,X} from 'lucide-react';
+import {ArrowLeft,House,CalendarDays,Camera,Check,Clock,FileText,MapPin,Minus,Plus,ScrollText,Sparkles,Trash2,UserCheck,Wallet,Wifi,X} from 'lucide-react';
 import {Photo} from './media';
 import {PhotoGrid} from './photo-grid';
 import {EDIT_STEPS,editBody,editRequest,nextAdvice,needsReview,reviewRequest,REVIEW_SENT,stepForError,stepLine,stepNeeds,type Advice,type EditBody,type EditStep} from '../lib/listing-edit';
@@ -12,7 +12,7 @@ import {FlatCalendars} from './flat-calendars';
 import {RegularCleaner} from './regular-cleaner';
 type Row=Record<string,any>;
 type API=(path:string,body?:Row)=>Promise<any>;
-const ICONS:Record<EditStep,ReactNode>={photos:<Camera size={18}/>,flat:<BedDouble size={18}/>,place:<MapPin size={18}/>,text:<FileText size={18}/>,amenities:<Wifi size={18}/>,prices:<Wallet size={18}/>,checkin:<Clock size={18}/>,rules:<ScrollText size={18}/>};
+const ICONS:Record<EditStep,ReactNode>={photos:<Camera size={18}/>,flat:<House size={18}/>,place:<MapPin size={18}/>,text:<FileText size={18}/>,amenities:<Wifi size={18}/>,prices:<Wallet size={18}/>,checkin:<Clock size={18}/>,rules:<ScrollText size={18}/>};
 const SAVED:Record<EditStep|'publish',string>={photos:'Фото сохранены.',flat:'Сохранено.',place:'Адрес сохранён.',text:'Описание сохранено.',amenities:'Удобства сохранены.',prices:'Цены сохранены.',checkin:'Заезд сохранён.',rules:'Правила сохранены.',publish:'Готово.'};
 
 // Editing a flat: an overview of short steps, each opened on its own small screen and saved at once.

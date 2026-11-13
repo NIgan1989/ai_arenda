@@ -19,7 +19,7 @@ export function KindPicker({kind,ownStaff,onChange}:{kind:string;ownStaff:boolea
   <Text style={k.h}>КТО УБИРАЕТ ПОСЛЕ ГОСТЕЙ</Text>
   <View style={k.row} accessibilityRole="radiogroup">
    {staff(false,'✦ Исполнители сервиса','ИИ находит исполнителя после каждого выезда')}
-   {staff(true,'Свой персонал','Убирают ваши сотрудники, ИИ исполнителей не ищет')}
+   {staff(true,'👥 Свой персонал','Убирают ваши сотрудники, ИИ исполнителей не ищет')}
   </View>
  </View>;
 }

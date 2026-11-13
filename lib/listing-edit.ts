@@ -27,7 +27,7 @@ export function stepLine(b:EditBody,key:EditStep):string{
  const d=b.details,r=b.rental;
  switch(key){
   case 'photos':return b.photos.length?b.photos.length+' из 8':'Нет фото';
-  case 'flat':return [kindLabel(d.type),b.rooms+' комн.',b.capacity+' гост.',b.ownStaff?'свой персонал':''].filter(Boolean).join(' · ');
+  case 'flat':return [kindLabel(d.type),b.ownStaff?'свой персонал':'',b.rooms+' комн.',b.capacity+' гост.'].filter(Boolean).join(' · ');
   case 'place':return b.address||[b.city,b.district].filter(Boolean).join(', ')||'Не указан';
   case 'text':return b.description.trim().length+' знаков';
   case 'amenities':return d.amenities.length?d.amenities.length+' отмечено':'Не отмечены';
