@@ -14,6 +14,7 @@ import {ProfileEditor} from './profile-editor';
 import {logout} from './auth-form';
 import './role-settings.css';
 import './account-list.css';
+import {ReliabilityBadge,reliabilityHints} from './reliability';
 import {AccountSafety} from './safety-controls';
 import {WebPushSettings} from './web-push-settings';
 import {TelegramSettings} from './telegram-settings';
@@ -43,6 +44,7 @@ export function AccountControl({role,onChanged,onAdministrator}:{role:string;onA
  {roles.length>1&&<nav className="acct-roles" aria-label="Роль">{(['guest','owner','cleaner']).filter(r=>roles.includes(r)).map(r=><a key={r} href={'/workspace/'+r+'/account'} aria-current={r===role?'page':undefined}>{shortRole[r]}</a>)}</nav>}
  {steps.length>0&&<button type="button" className="acct-next" onClick={edit}><Sparkles size={18}/><span>{steps[0]}{steps.length>1&&<small>и ещё {steps.length-1} {steps.length===2?'шаг':'шага'} до полного профиля</small>}</span><ChevronRight size={16}/></button>}
  <div className="acct-live" aria-live="polite">{error&&<p className="form-error" role="alert">{error}</p>}{message&&<p role="status" className="acct-saved">{message}</p>}</div>
+ {account?.reliability&&<><h3 className="acct-label">Надёжность</h3><section className="acct-group acct-reliability"><ReliabilityBadge value={account.reliability} title={owner?'Как вас видят гости':worker?'Как вас видят владельцы':'Как вас видят владельцы'}/><ul className="reliability-hints">{(reliabilityHints[role]||[]).map(h=><li key={h}>{h}</li>)}</ul></section></>}
  <h3 className="acct-label">{experience.profileTitle}</h3>
  <section className="acct-group">{worker&&toggle(BriefcaseBusiness,'Принимаю предложения',(profile.work_status||'available')==='available',v=>person({work_status:v?'available':'away'},{workStatus:v?'available':'away'},true),/^(Принимает|Не принимает)/.test(account.workerStatus?.label||'')?undefined:account.workerStatus?.label)}{row(UserRound,'О себе',profile.bio)}{row(Languages,'Языки общения',profile.languages)}{row(MapPin,experience.cityLabel,profile.city)}{worker&&<>{row(MapIcon,'Районы работы',profile.districts)}{row(Clock,'График',profile.availability)}{row(BadgeCheck,'Опыт и услуги',profile.experience)}</>}{row(Phone,'Телефон',profile.contact)}</section>
  {/* The sections that are not in the phone's bottom bar (the desktop sidebar lists them), and joining another role, which no other workspace screen offers. */}

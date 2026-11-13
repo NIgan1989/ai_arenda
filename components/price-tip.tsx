@@ -3,6 +3,7 @@ import {useEffect,useState} from 'react';
 import {Brush,CalendarClock,CalendarDays,Camera,Check,Clock3,FileText,KeyRound,Lightbulb,ShieldAlert,ShieldCheck,Sparkles,TrendingDown,TrendingUp,Wallet,X} from 'lucide-react';
 import type {Approval} from '../lib/approvals';
 import './price-tip.css';
+import {ReliabilityBadge} from './reliability';
 type Row=Record<string,any>;
 const money=(n:number)=>new Intl.NumberFormat('ru-RU').format(n)+' ₸';
 const hiddenKey='ai-arenda-price-tip-later';
@@ -116,11 +117,10 @@ function StayTipBody({card,busy,onDecide,compact}:{card:Approval;busy:boolean;on
 // A new booking request pops up on the owner's map like an order: dates, money, the AI's risk read.
 type Decision='accept'|'reject'|'deposit';
 const fact=(card:Approval,label:string)=>card.facts.find(([l])=>l===label)?.[1]||'';
-const guests=(v:string)=>{const n=Number(v)||1;return n+' '+(n%10===1&&n%100!==11?'гость':n%10>=2&&n%10<=4&&(n%100<12||n%100>14)?'гостя':'гостей');};
 function BookingTipBody({card,busy,onDecide}:{card:Approval;busy:boolean;onDecide:(action:Decision)=>void}){
  const r=card.risk!,Icon=r.level==='low'?ShieldCheck:ShieldAlert;
  return <>
-  <div className="price-tip-price"><strong className="price-tip-to">{fact(card,'Проживание')}</strong><span className="price-tip-from is-plain">{card.from} · {guests(fact(card,'Гостей'))}</span></div>
+  <div className="price-tip-price"><strong className="price-tip-to">{fact(card,'Проживание')}</strong><span className="price-tip-from is-plain">{card.from} <ReliabilityBadge value={card.reliability} compact/></span></div>
   <p className="price-tip-when is-dates"><CalendarClock size={16} aria-hidden="true"/><span>{fact(card,'Заезд')} → {fact(card,'Выезд')}</span></p>
   <div className={'booking-risk is-compact is-'+r.level} role="note">
    <div className="booking-risk-head"><Icon size={18} aria-hidden="true"/><strong>{r.label}</strong>{r.held&&<span>автоподтверждение остановлено</span>}</div>

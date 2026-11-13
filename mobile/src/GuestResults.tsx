@@ -8,6 +8,7 @@ import { windowBadge } from '../../lib/window-badge';
 import { dealNote } from '../../lib/price-deal';
 import { C, type } from './styles';
 import { T } from './tokens';
+import { ReliabilityBadge } from './Reliability';
 import { draftUnits, shownReasons, type GuestDraft } from './ai-request';
 
 const chevron = require('../assets/ui/chevron.png');
@@ -87,6 +88,7 @@ export function GuestResults({ preview, draft, selected, onSelect, onBook, onOpe
             {!!chosen.estimate.deal && <Text style={r.deal}>Цена выгодная</Text>}
           </View>
         </View>
+        {!!chosen.host && <View style={{ marginBottom: 12 }}><ReliabilityBadge value={chosen.host} title="Владелец" /></View>}
         <View onLayout={e => onBookEdge?.(Math.round(e.nativeEvent.layout.y + e.nativeEvent.layout.height))}>
           <Action title="Забронировать" disabled={busy} onPress={() => onBook(chosen)} />
         </View>
