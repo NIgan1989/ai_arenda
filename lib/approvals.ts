@@ -1,12 +1,14 @@
 import type {Role} from './domain';
 type Row=Record<string,any>;
-export type Approval={id:string;kind:string;entityId:string;revision:string;title:string;subject:string;from:string;to:string;canDecide:boolean;expiresAt?:number;facts:[string,string][];acceptLabel:string;rejectLabel:string;requiresReason?:boolean;cleaningFee?:number;cleaningBudget?:number;detail?:string;price?:PriceTip;window?:WindowTip};
+export type Approval={id:string;kind:string;entityId:string;revision:string;title:string;subject:string;from:string;to:string;canDecide:boolean;expiresAt?:number;facts:[string,string][];acceptLabel:string;rejectLabel:string;requiresReason?:boolean;cleaningFee?:number;cleaningBudget?:number;detail?:string;price?:PriceTip;window?:WindowTip;stay?:StayTip};
+export type StayTip={kind:'late'|'early';when:string;hours:number;extra:number;amount:number;automatic:boolean};
 export type WindowTip={percent:number;from:number;to:number;propertyId:string;when:string;hours:number};
 export type PriceTip={direction:'up'|'down';percent:number;from:number;to:number;propertyId:string;reasons:string[];rows:[string,number,number][]};
 // Same value in the card, the push and the server check: a changed price or tariff makes the answer stale.
 export const priceRevision=(p:Row)=>JSON.stringify([p.id,p.status,p.policy_version,p.from_daily,p.to_daily]);
 // A calendar window: same idea, the answer goes stale when the window or its price changes.
 export const windowRevision=(w:Row)=>JSON.stringify([w.id,w.status,w.start,w.end,w.hourly_to]);
+export const stayRevision=(o:Row)=>JSON.stringify([o.id,o.status,o.start,o.end,o.amount,o.base_version,o.policy_version]);
 const money=(n:number)=>new Intl.NumberFormat('ru-RU').format(n)+' ₸';
 const date=(n:number)=>new Date(n*1000).toLocaleString('ru-RU',{timeZone:'Asia/Almaty',day:'numeric',month:'long',hour:'2-digit',minute:'2-digit'});
 export function approvalCards(data:Row,role:Role,userId:string,t:number):Approval[]{
@@ -41,6 +43,13 @@ export function approvalCards(data:Row,role:Role,userId:string,t:number):Approva
   cards.unshift({id:'window:'+w.id,kind:'window',entityId:w.property_id,revision:windowRevision(w),title:'Окно в календаре: сдать почасово',subject:w.title,from:'AI администратор',to:'Вам',canDecide:true,expiresAt:w.start,
    facts:[['Свободно',when+' ('+hours+' ч)'],['Час',money(w.hourly_from)+' → '+money(w.hourly_to)]],detail:'Квартира пустует между бронями. Гости увидят скидку только внутри окна. Без вашего согласия ничего не изменится.',acceptLabel:'Открыть окно',rejectLabel:'Не надо',
    window:{percent:w.percent,from:w.hourly_from,to:w.hourly_to,propertyId:w.property_id,when,hours}});
+ }
+ // Late checkout or early check-in the guest asked about: one button, the usual change of the stay.
+ if(role==='guest')for(const o of data.stayOffers||[])if(o.guest_id===userId&&o.status==='suggested'&&o.expires_at>t){
+  const late=o.kind==='late',hm=(n:number)=>new Date(n*1000).toLocaleTimeString('ru-RU',{timeZone:'Asia/Almaty',hour:'2-digit',minute:'2-digit'}),when=late?'до '+hm(o.end):'с '+hm(o.start);
+  cards.unshift({id:'stay:'+o.id,kind:'stay',entityId:o.booking_id,revision:stayRevision(o),title:late?'Поздний выезд':'Ранний заезд',subject:o.title,from:'AI администратор',to:'Вам',canDecide:true,expiresAt:o.expires_at,
+   facts:[[late?'Выезд':'Заезд',when],['Доплата',money(o.extra)],['Итого за проживание',money(o.amount)]],detail:o.automatic?'Оформлю сразу, по правилам владельца.':'Отправлю запрос владельцу, время изменится после его подтверждения.',acceptLabel:(late?'Остаться ':'Заехать ')+when,rejectLabel:'Не нужно',
+   stay:{kind:o.kind,when,hours:o.hours,extra:o.extra,amount:o.amount,automatic:!!o.automatic}});
  }
  return cards;
 }

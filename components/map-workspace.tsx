@@ -36,6 +36,7 @@ export function MapWorkspace(props: MapWorkspaceInput) {
         data={signedIn ? props.data : undefined}
         onProcess={signedIn ? props.onProcess : undefined}
         onAsk={signedIn ? props.onAsk : undefined}
+        onChanged={props.onChanged}
       />
     );
   }
@@ -618,7 +619,7 @@ function RoleMap({ role, accountId, data, onDiscussion, onProcess, onCreate, onA
     <div className="map-concept-operations" data-role={role}>
       <section className="map-role" data-expanded={expanded ? 'true' : 'false'} aria-label="Карта">
         <h1 className="sr-only">Карта</h1>
-        {role === 'owner' && !selected && !picking && <PriceTip cards={data.approvals || []} onChanged={onChanged} />}
+        {(role === 'owner' || role === 'guest') && !selected && !picking && <PriceTip role={role} cards={data.approvals || []} onChanged={onChanged} />}
         {/* MapCanvas places the pins correctly only when they are known before the map is ready and its
             camera has not been moved yet. So the map is created once the data has come, and again for another city. */}
         {(loaded || query.isError) && (

@@ -26,6 +26,7 @@
 .price-tip-delta.is-down{background:var(--t-warning-soft);color:var(--t-warning)}
 .price-tip-delta.is-window{background:var(--t-accent-soft);color:var(--t-accent)}
 .price-tip-to small{font-size:14px;line-height:20px;font-weight:500;color:var(--t-muted)}
+.price-tip-from.is-plain{text-decoration:none;font-size:14px;line-height:20px}
 .price-tip-when{display:flex;align-items:center;gap:var(--t-space-8);margin:var(--t-space-8) 0 0;font-size:14px;line-height:20px;color:var(--t-ink-soft)}
 .price-tip-when svg{flex:none;color:var(--t-accent)}
 .price-tip-when b{margin-left:auto;padding:2px 8px;border-radius:var(--t-radius-full);background:var(--t-surface-alt);font-weight:600;color:var(--t-ink)}

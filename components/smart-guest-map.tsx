@@ -22,6 +22,7 @@ type Stage = 'request' | 'search' | 'result' | 'detail' | 'book';
 
 type SmartGuestMapProps = {
   publicMode?: boolean;
+  onChanged?: () => void;
   accountId: string;
   city?: string;
   onChoose: (property: Row, filters: Row) => void;
@@ -46,6 +47,7 @@ const KZ = 5 * 3600000;
 // The server's reason in the words the listing itself uses for the same state.
 const REASON_TEXT: Record<string, string> = { 'Готовность проверена': 'Готова к заселению' };
 
+import { PriceTip } from './price-tip';
 import { windowBadge } from '../lib/window-badge';
 const money = (value: number) => new Intl.NumberFormat('ru-RU').format(value) + ' ₸';
 // ISO time of the server as the Kazakhstan-local string the form works with.
@@ -210,7 +212,7 @@ function MatchingBooking({ property, filters, requestId, onChanged, onEdit }: {
 }
 
 // The guest's first screen and the public page: the map, one line for a request and, after it, one offer at a time.
-export function SmartGuestMap({ publicMode = false, accountId, city, onChoose, data, onProcess, onAsk, onActivity, title, links }: SmartGuestMapProps) {
+export function SmartGuestMap({ publicMode = false, onChanged, accountId, city, onChoose, data, onProcess, onAsk, onActivity, title, links }: SmartGuestMapProps) {
   // ---------- State ----------
   const [draft, setDraft] = useState<Row>(() => ({
     city: city || DEFAULT_CITY, district: '', guests: '2', maxPrice: '', priority: 'balanced', features: [], near: null,
@@ -726,6 +728,9 @@ export function SmartGuestMap({ publicMode = false, accountId, city, onChoose, d
           setZoneNotice('Ищем в 5 км от выбранного места.');
         }}
       />
+
+      {/* The AI administrator's answer about the guest's own stay: stay longer or come earlier. */}
+      {data && !picking && <PriceTip role="guest" cards={data.approvals || []} onChanged={onChanged} />}
 
       <button type="button" className="map-home-round smart-locate" aria-label="Показать, где я" onClick={() => void showMe()}>
         <LocateFixed size={20} aria-hidden="true" />

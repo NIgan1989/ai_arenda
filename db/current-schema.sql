@@ -39,6 +39,7 @@
 -- migration 0035_price_advice.sql sha256:675c9441fd26087ef8ef3e63caf8f71e7b78c7d9c1ee4fd0156505f47ad51fcf
 -- migration 0036_calendar_windows.sql sha256:41b9c67a5e26e15adbc4d54317aec6f3ed3d490ffb568bda0001b66bc8e25cab
 -- migration 0037_media_storage.sql sha256:81d18d7c4d84874c7f88bd1667fb623d5b1eb3df583a9778156532fb20664d77
+-- migration 0038_stay_offers.sql sha256:52ed5e14d7adadec2a588fd57418ece2c9f9e906d5a8d35b10c77e5f3bdd0c56
 
 -- table access_receipts
 CREATE TABLE access_receipts (id TEXT PRIMARY KEY,property_id TEXT NOT NULL,entity_kind TEXT NOT NULL,entity_id TEXT NOT NULL,user_id TEXT NOT NULL,created_at INTEGER NOT NULL,expires_at INTEGER NOT NULL);
@@ -799,6 +800,29 @@ CREATE TABLE review_property_bindings (
  property_id TEXT PRIMARY KEY REFERENCES properties(id),revision INTEGER NOT NULL DEFAULT 0
 );
 
+-- table stay_offers
+CREATE TABLE stay_offers (
+ id TEXT PRIMARY KEY,
+ booking_id TEXT NOT NULL REFERENCES bookings(id) ON DELETE CASCADE,
+ guest_id TEXT NOT NULL REFERENCES profiles(id),
+ owner_id TEXT NOT NULL REFERENCES profiles(id),
+ kind TEXT NOT NULL CHECK(kind IN ('late','early')),
+ start INTEGER NOT NULL,
+ end INTEGER NOT NULL CHECK(end>start),
+ hours INTEGER NOT NULL CHECK(hours BETWEEN 1 AND 12),
+ amount INTEGER NOT NULL,
+ extra INTEGER NOT NULL,
+ billing_mode TEXT NOT NULL,
+ base_version INTEGER NOT NULL,
+ policy_version INTEGER NOT NULL,
+ automatic INTEGER NOT NULL DEFAULT 0,
+ status TEXT NOT NULL DEFAULT 'suggested' CHECK(status IN ('suggested','accepted','declined','expired')),
+ change_id TEXT,
+ created_at INTEGER NOT NULL,
+ expires_at INTEGER NOT NULL,
+ decided_at INTEGER
+);
+
 -- table stay_reviews
 CREATE TABLE stay_reviews (
  booking_id TEXT PRIMARY KEY REFERENCES bookings(id),
@@ -956,6 +980,12 @@ CREATE INDEX property_imports_owner ON property_imports(owner_id,created_at);
 
 -- index push_due
 CREATE INDEX push_due ON push_deliveries(status,available_at,lease_until);
+
+-- index stay_offers_booking
+CREATE INDEX stay_offers_booking ON stay_offers(booking_id,status);
+
+-- index stay_offers_guest
+CREATE INDEX stay_offers_guest ON stay_offers(guest_id,status,expires_at);
 
 -- index stay_reviews_property
 CREATE INDEX stay_reviews_property ON stay_reviews(property_id,created_at);
@@ -1357,6 +1387,12 @@ CREATE TRIGGER account_erased_push_subscriptions_insert BEFORE INSERT ON push_su
 CREATE TRIGGER account_erased_push_subscriptions_update BEFORE UPDATE ON push_subscriptions
  WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.user_id)
  BEGIN SELECT RAISE(ABORT,'account_erased'); END;
+
+-- trigger account_erased_stay_offers_insert
+CREATE TRIGGER account_erased_stay_offers_insert BEFORE INSERT ON stay_offers WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.guest_id OR user_id=NEW.owner_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END;
+
+-- trigger account_erased_stay_offers_update
+CREATE TRIGGER account_erased_stay_offers_update BEFORE UPDATE ON stay_offers WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.guest_id OR user_id=NEW.owner_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END;
 
 -- trigger account_erased_stay_reviews_insert
 CREATE TRIGGER account_erased_stay_reviews_insert BEFORE INSERT ON stay_reviews WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.guest_id OR user_id=NEW.owner_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END;
