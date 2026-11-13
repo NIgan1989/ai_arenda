@@ -69,3 +69,18 @@ test('«Поставить» raises the cleaning price and offers open cleanings
   assert.equal(await offerCleaningPriceTip(f.db,'owner',t+2*FEE_PAUSE+180),null);
  }finally{f.db.close();}
 });
+
+test('«Поставить» leaves a cleaning alone once a cleaner has accepted it at the old price',async()=>{
+ const f=await fixture();try{
+  await saveOperationRules(f.owner,{propertyId:f.property,autoOffers:true,offerMinutes:10,expectedVersion:0});
+  const t=now();
+  for(const [k,w] of [[1,'cleaner'],[2,'other']])f.db.raw.prepare("INSERT INTO cleaning_offers VALUES (?,?,?,?,?,?,3000,0,'expired',?,?,?)").run('o'+k,f.job.id,w,f.job.version,f.job.start,f.job.end,t-3600*k,t-3000*k,t-3000*k);
+  const id=await offerCleaningPriceTip(f.db,'owner',t);assert.ok(id);
+  f.db.raw.prepare("UPDATE cleaning_offers SET id='ok',status='accepted',replacement_allowed=1,decided_at=? WHERE id='o2'").run(t);
+  const card=(await f.owner.roleState('owner')).approvals.find(c=>c.kind==='cleaning-fee');
+  const r=await f.owner.decideApproval('owner',{id:card.id,revision:card.revision,action:'accept'});
+  assert.doesNotMatch(r.message,/предложу/);
+  const job=f.db.raw.prepare('SELECT fee,version FROM cleaning_jobs WHERE id=?').get(f.job.id);assert.deepEqual([job.fee,job.version],[3000,f.job.version]);
+  assert.equal(f.db.raw.prepare("SELECT status FROM cleaning_offers WHERE id='ok'").get().status,'accepted');
+ }finally{f.db.close();}
+});

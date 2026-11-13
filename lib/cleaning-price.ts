@@ -79,7 +79,8 @@ export async function decideCleaningTip(s:RentalService,tipId:string,accept:bool
  const revision=uuid(),r=await s.db.batch([
   q(s.db,"UPDATE property_policies SET cleaning_fee=?,cleaning_budget=MAX(cleaning_budget,?),version=version+1,revision=?,updated_at=? WHERE property_id=? AND cleaning_fee=? AND EXISTS(SELECT 1 FROM cleaning_fee_tips WHERE id=? AND status='suggested')",tip.to_fee,tip.to_fee,revision,t,tip.property_id,tip.from_fee,id),
   // Open cleanings that nobody has taken yet go out again at the new price.
-  q(s.db,"UPDATE cleaning_jobs SET fee=? WHERE property_id=? AND status='open' AND assigned_to IS NULL AND fee<? AND end>? AND EXISTS(SELECT 1 FROM property_policies WHERE property_id=? AND revision=?)",tip.to_fee,tip.property_id,tip.to_fee,t,tip.property_id,revision),
+  // A cleaner who already agreed keeps the terms they accepted, so those jobs are left alone.
+  q(s.db,"UPDATE cleaning_jobs SET fee=? WHERE property_id=? AND status='open' AND assigned_to IS NULL AND fee<? AND end>? AND NOT EXISTS(SELECT 1 FROM cleaning_offers o WHERE o.job_id=cleaning_jobs.id AND o.status='accepted') AND NOT EXISTS(SELECT 1 FROM applications a WHERE a.job_id=cleaning_jobs.id AND a.status='pending') AND EXISTS(SELECT 1 FROM property_policies WHERE property_id=? AND revision=?)",tip.to_fee,tip.property_id,tip.to_fee,t,tip.property_id,revision),
   q(s.db,"UPDATE cleaning_fee_tips SET status='accepted',decided_at=? WHERE id=? AND EXISTS(SELECT 1 FROM property_policies WHERE property_id=? AND revision=?)",t,id,tip.property_id,revision),
   q(s.db,'INSERT INTO audit_events SELECT ?,?,?,?,? WHERE EXISTS(SELECT 1 FROM property_policies WHERE property_id=? AND revision=?)',uuid(),s.userId,tip.property_id,JSON.stringify({action:'cleaning.fee_accepted',tipId:id,from:tip.from_fee,to:tip.to_fee,version:tip.current_policy+1}),t,tip.property_id,revision)
  ]);
