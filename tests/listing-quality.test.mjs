@@ -16,7 +16,7 @@ test('an amenity most leaders list, an hourly price, self check-in, a longer des
  const leaders=[flat({amenities:['wifi','kitchen','parking','washer']}),flat({amenities:['wifi','parking','washer']}),flat({amenities:['parking','aircon']}),flat({amenities:['wifi','washer']})];
  const a=listingTip(flat(),leaders);
  assert.equal(a.kind,'amenity');assert.equal(a.subject,'washer','washer and parking are equally common: the one guests search first');assert.equal(a.count,3);
- assert.match(tipText(a).text,/У 3 из 4 похожих квартир, которые бронируют чаще, отмечено «стиральная машина»/);assert.equal(tipText(a).accept,'Да, есть');
+ assert.match(tipText(a).text,/У 3 из 4 похожих объектов, которые бронируют чаще, отмечено «стиральная машина»/);assert.equal(tipText(a).accept,'Да, есть');
  assert.equal(listingTip(flat(),leaders,new Set(['amenity:washer'])).subject,'parking','an answered tip is not repeated');
  const hourly=listingTip(flat({hourly:0,price:12000}),[flat({price:10000,hourly:2000}),flat({price:10000,hourly:1500}),flat({price:8000,hourly:2000}),flat({hourly:0})]);
  assert.equal(hourly.kind,'hourly');assert.equal(hourly.value,2400);assert.match(tipText(hourly).accept,/^Сдавать за 2\s400 ₸\/ч$/);

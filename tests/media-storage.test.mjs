@@ -68,7 +68,7 @@ test('the flat calendar screen connects a platform link in one step and shows it
   const screen=await flatCalendars(f.owner,{propertyId:f.property});
   const air=screen.sources.find(s=>s.label==='Airbnb'),booking=screen.sources.find(s=>s.label==='Booking.com');
   assert.equal(air.busy,1);assert.equal(calendarStatus(air).tone,'ok');assert.match(calendarStatus(air).text,/занято 1 период/);
-  assert.equal(calendarStatus(booking).tone,'warn');assert.match(calendarStatus(booking).text,/заявки на квартиру остановлены/);
+  assert.equal(calendarStatus(booking).tone,'warn');assert.match(calendarStatus(booking).text,/заявки на это жильё остановлены/);
   await assert.rejects(flatCalendars(f.other,{propertyId:f.property}),e=>e.status===403);
   // The link handed to other platforms keeps working: they poll it for as long as the flat is listed.
   const feed=await createCalendarExport(f.owner,{propertyId:f.property},{});assert.ok(feed.expiresAt-Math.floor(Date.now()/1000)>=EXPORT_SECONDS-60);

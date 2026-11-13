@@ -23,6 +23,7 @@ import {GuestForm} from './GuestForm';
 import {GuestResults} from './GuestResults';
 import {GuestMode} from './GuestMode';
 import {PriceTip} from './PriceTip';
+import {kindLabel} from '../../lib/listings';
 
 // Map-first home screen, like a taxi app: a full-screen map and one bottom sheet.
 // Collapsed, the sheet holds only the head (AI line, chips, the "Сейчас" card); expanded, the controls of the role.
@@ -37,7 +38,7 @@ const liveRequests=new Map<string,string>();
 // What the guest searched for outlives a visit to another page (a flat's details, the check of a booking):
 // coming back to the map within ten minutes shows the same conditions and the same list.
 const guestSearches=new Map<string,{draft:GuestDraft;preview:Row|null;foundAt:number}>(),SEARCH_KEEP=600000;
-const short=(amount:unknown)=>typeof amount==='number'&&amount>0?(amount>=10000?Math.round(amount/1000)+' тыс.':money(amount)):'Квартира';
+const short=(amount:unknown)=>typeof amount==='number'&&amount>0?(amount>=10000?Math.round(amount/1000)+' тыс.':money(amount)):'Жильё';
 const pointOf=(item:Row):MapPoint|null=>validPoint([item.location?.longitude,item.location?.latitude]);
 const message=(error:unknown)=>error instanceof Error?error.message:'Действие не подтверждено. Обновите данные.';
 // The server's clock, as of the last refresh of the state: a wrong clock on the phone must not change what is "now".
@@ -168,7 +169,7 @@ function GuestPanel({setScanning,accountId,data,mapData,publish,selected,setSele
     <Text accessibilityRole="header" style={h.cardTitle}>Спрашиваем владельцев</Text>
     <View style={h.row}><Thinking size="sm"/><Text style={h.note}>Ждём ответа: {live.pending} из {live.sent} запросов. На ответ у владельца 2 минуты.</Text></View>
     <Text style={h.timer} accessibilityLabel={'До конца подбора '+countdown(live.expiresAt-now)}>{countdown(live.expiresAt-now)}</Text>
-    <Text style={h.note}>Квартиры, владельцы которых сейчас отвечают, отмечены на карте. Бронь на этом шаге не создаётся.</Text>
+    <Text style={h.note}>Объекты, владельцы которых сейчас отвечают, отмечены на карте. Бронь на этом шаге не создаётся.</Text>
    </>}
    {live&&(status==='ready'||status==='booking')&&offer&&<>
     <Text accessibilityRole="header" style={h.cardTitle}>Владелец подтвердил готовность</Text>
@@ -184,7 +185,7 @@ function GuestPanel({setScanning,accountId,data,mapData,publish,selected,setSele
      {shownReasons(offer.match?.reasons,{maxPrice:String(live.filters.maxPrice)===NO_BUDGET?'':String(live.filters.maxPrice||'')}).map((reason:string)=><Text key={reason} style={h.reason}>✓ {reason}</Text>)}
      {!!offer.policy?.house_rules&&<Text style={h.note}>Правила: {offer.policy.house_rules}</Text>}
      <Text style={h.timerSmall}>Предложение действует ещё {countdown(offer.offerExpiresAt-now)}</Text>
-     <Pressable accessibilityRole="checkbox" accessibilityState={{checked:accepted}} onPress={()=>setAccepted(v=>!v)} style={h.check}><Text style={h.checkBox}>{accepted?'☑':'☐'}</Text><Text style={h.checkText}>Принимаю стоимость, депозит и правила этой квартиры</Text></Pressable>
+     <Pressable accessibilityRole="checkbox" accessibilityState={{checked:accepted}} onPress={()=>setAccepted(v=>!v)} style={h.check}><Text style={h.checkBox}>{accepted?'☑':'☐'}</Text><Text style={h.checkText}>Принимаю стоимость, депозит и правила этого жилья</Text></Pressable>
      <Action title={status==='booking'?'Оформляем…':'Забронировать'} disabled={working||!accepted||status==='booking'} onPress={book}/>
     </View>
     <Text style={h.note}>Оплата в приложении не списывается. {offer.policy?.auto_confirm?'Бронь подтвердится по правилам владельца.':'Владелец подтвердит заявку отдельно.'}</Text>
@@ -247,7 +248,7 @@ function OwnerPanel({data,mapData,publish,snap,showNow,expand,onHead,onAsk,onInt
  const card=showNow?nowCard('owner',data,clock,{quickOffers:inbox?.offers||[]}):null;
  return <View style={h.block}>
   <HeadSlot onHeight={onHead}><MapSheetHead role="owner" text={asked} onText={setAsked} onSend={text=>{setAsked('');onAsk(text);}} onChip={action=>{/* A guest waiting for a quick answer is in this sheet; other requests are on their page. */if(action==='requests'){if(offers.length)expand(1);else onOpenPage('bookings');}else if(action==='calendar')onOpenPage('calendar');else if(action==='add-property')onIntent('add-property');}} now={card} onNow={()=>openNow(card,{expand,onOpenProcess,onOpenPage})}>
-   {snap===0&&!card&&Array.isArray(data.ownProperties)&&!flats.length&&<Text style={h.note}>Добавьте первую квартиру, и она появится на карте.</Text>}
+   {snap===0&&!card&&Array.isArray(data.ownProperties)&&!flats.length&&<Text style={h.note}>Добавьте первое жильё, и оно появится на карте.</Text>}
   </MapSheetHead></HeadSlot>
   {snap>0&&<>
    {!!error&&<Text accessibilityRole="alert" style={h.error}>{error}</Text>}
@@ -256,9 +257,9 @@ function OwnerPanel({data,mapData,publish,snap,showNow,expand,onHead,onAsk,onInt
     <View style={h.row}><Text style={[h.cardTitle,h.grow]}>{o.title}</Text><Text style={h.timerSmall} accessibilityLabel={'На ответ осталось '+countdown(o.expires_at-now)}>{countdown(o.expires_at-now)}</Text></View>
     <Text style={h.note}>{date(Date.parse(o.filters.start)/1000)} → {date(Date.parse(o.filters.end)/1000)}{'\n'}{o.filters.mode==='hourly'?'На часы':'На сутки'} · гостей: {o.filters.guests}</Text>
     <Text style={h.price}>{money(o.amount)}</Text>
-    <Pressable accessibilityRole="checkbox" accessibilityState={{checked:!!ready[o.id]}} onPress={()=>setReady(v=>({...v,[o.id]:!v[o.id]}))} style={h.check}><Text style={h.checkBox}>{ready[o.id]?'☑':'☐'}</Text><Text style={h.checkText}>Квартира будет свободна и готова к этому заезду</Text></Pressable>
+    <Pressable accessibilityRole="checkbox" accessibilityState={{checked:!!ready[o.id]}} onPress={()=>setReady(v=>({...v,[o.id]:!v[o.id]}))} style={h.check}><Text style={h.checkBox}>{ready[o.id]?'☑':'☐'}</Text><Text style={h.checkText}>Жильё будет свободно и готово к этому заезду</Text></Pressable>
     <View style={h.pair}><View style={h.grow}><Action title="Готов принять" disabled={working||!ready[o.id]} onPress={()=>act('respond',{offerId:o.id,decision:'accept',ready:true})}/></View><View style={h.grow}><Action secondary title="Отказать" disabled={working} onPress={()=>act('respond',{offerId:o.id,decision:'decline'})}/></View></View>
-    <Text style={h.note}>Ответ не создаёт бронь и не меняет цену. Если гость выберет вашу квартиру, заявка придёт в «Заявки гостей».</Text>
+    <Text style={h.note}>Ответ не создаёт бронь и не меняет цену. Если гость выберет ваше жильё, заявка придёт в «Заявки гостей».</Text>
    </View>)}
    {processes.length>0&&<View style={h.card}>
     <Text accessibilityRole="header" style={h.label}>Сейчас в работе</Text>
@@ -268,20 +269,20 @@ function OwnerPanel({data,mapData,publish,snap,showNow,expand,onHead,onAsk,onInt
     </Pressable>)}
    </View>}
    <View style={h.card}>
-    <Text accessibilityRole="header" style={h.label}>Мои квартиры</Text>
-    {flats.slice(0,6).map(p=><Pressable key={p.id} accessibilityRole="button" accessibilityLabel={'Мои квартиры: '+p.title} onPress={()=>onOpenPage('properties')} style={h.listRow}>
-     <View style={h.grow}><Text numberOfLines={1} style={h.eventTitle}>{p.title}</Text><Text numberOfLines={1} style={h.note}>{[typeof p.price==='number'?money(p.price)+' за сутки':'',p.district].filter(Boolean).join(' · ')}</Text></View>
+    <Text accessibilityRole="header" style={h.label}>Мои объекты</Text>
+    {flats.slice(0,6).map(p=><Pressable key={p.id} accessibilityRole="button" accessibilityLabel={'Мои объекты: '+p.title} onPress={()=>onOpenPage('properties')} style={h.listRow}>
+     <View style={h.grow}><Text numberOfLines={1} style={h.eventTitle}>{p.title}</Text><Text numberOfLines={1} style={h.note}>{[kindLabel(p.details?.type),typeof p.price==='number'?money(p.price)+' за сутки':'',p.district].filter(Boolean).join(' · ')}</Text></View>
      <Text style={h.rowPrice}>→</Text>
     </Pressable>)}
-    {!flats.length&&<Text style={h.note}>Квартир пока нет.</Text>}
-    <Action secondary title="Добавить квартиру" onPress={()=>onIntent('add-property')}/>
+    {!flats.length&&<Text style={h.note}>Объектов пока нет.</Text>}
+    <Action secondary title="Добавить жильё" onPress={()=>onIntent('add-property')}/>
    </View>
    <View style={h.card}>
     <Text accessibilityRole="header" style={h.label}>Кто отвечает гостям</Text>
     <Text style={h.note}>{!inbox?'Загружаем…':'ИИ — это автопилот: сразу отвечает гостю, подтверждает бронь, заказывает уборку и назначает исполнителя по вашим тарифам. Оплату и депозит проверяете вы.'}</Text>
     {!!saved&&<Text accessibilityLiveRegion="polite" style={h.note}>{saved}</Text>}
     {(inbox?.preferences||[]).map((p:Row)=><GuestMode key={p.id} flat={p} busy={working} onChange={body=>act('preference',body)}/>)}
-    {!!inbox&&!inbox.preferences.length&&<Text style={h.note}>Включить можно после добавления квартиры.</Text>}
+    {!!inbox&&!inbox.preferences.length&&<Text style={h.note}>Включить можно после добавления жилья.</Text>}
    </View>
   </>}
  </View>;

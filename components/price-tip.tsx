@@ -75,7 +75,7 @@ function ListingTipBody({card,busy,onDecide,compact}:{card:Approval;busy:boolean
    <button type="button" className="price-tip-accept" disabled={busy} onClick={()=>onDecide('accept')}><Check size={18} aria-hidden="true"/>{card.acceptLabel}</button>
    <button type="button" className="price-tip-reject" disabled={busy} onClick={()=>onDecide('reject')}>{card.rejectLabel}</button>
   </div>
-  {!compact&&<p className="price-tip-note">Сравниваю с похожими квартирами в вашем городе за последние 2 месяца.</p>}
+  {!compact&&<p className="price-tip-note">Сравниваю с похожими объектами в вашем городе за последние 2 месяца.</p>}
  </>;
 }
 

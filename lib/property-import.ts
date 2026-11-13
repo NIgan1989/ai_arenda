@@ -15,7 +15,7 @@ export function parsePropertyCSV(content:string){
  for(let i=0;i<first.length;i++){if(first[i]==='"'){if(first[i+1]==='"'&&quoted)i++;else quoted=!quoted;}else if(!quoted){if(first[i]===',')commas++;if(first[i]===';')semicolons++;}}
  if(semicolons>commas)separator=';';
  const records:string[][]=[];let record:string[]=[],field='',inside=false,closed=false;
- const cell=()=>{record.push(field);field='';closed=false;};const line=()=>{cell();if(record.some(v=>v.trim()!==''))records.push(record);record=[];if(records.length>MAX_ROWS+1)throw new DomainError('За один импорт можно подготовить до 25 квартир.');};
+ const cell=()=>{record.push(field);field='';closed=false;};const line=()=>{cell();if(record.some(v=>v.trim()!==''))records.push(record);record=[];if(records.length>MAX_ROWS+1)throw new DomainError('За один импорт можно подготовить до 25 объектов.');};
  for(let i=0;i<text.length;i++){
   const c=text[i];if(inside){if(c==='"'){if(text[i+1]==='"'){field+='"';i++;}else{inside=false;closed=true;}}else field+=c;continue;}
   if(c==='"'){if(field||closed)throw new DomainError('CSV: кавычки должны начинаться в начале поля.');inside=true;}
@@ -24,7 +24,7 @@ export function parsePropertyCSV(content:string){
   else field+=c;
  }
  if(inside)throw new DomainError('CSV: поле в кавычках не закрыто.');if(field||record.length||closed)line();
- if(records.length<2)throw new DomainError('В CSV нужны заголовок и хотя бы одна квартира.');
+ if(records.length<2)throw new DomainError('В CSV нужны заголовок и хотя бы один объект.');
  const headers=records.shift()!.map(h=>{const key=h.trim().toLocaleLowerCase('ru-RU').replace(/[\s_-]/g,'');return Object.hasOwn(columns,key)?columns[key]:undefined;});
  if(headers.some(h=>!h)||new Set(headers).size!==headers.length)throw new DomainError('CSV: неизвестные или повторяющиеся столбцы. Используйте шаблон.');
  return records.map((cells,index)=>{if(cells.length!==headers.length)throw new DomainError('CSV: число полей не совпадает с заголовком в строке '+(index+2)+'.');return Object.fromEntries(headers.map((h,i)=>[h!,cells[i]]));});
@@ -32,10 +32,10 @@ export function parsePropertyCSV(content:string){
 function inputRows(body:Row){
  const content=required(body.content,'Файл импорта',MAX_BYTES);if(new TextEncoder().encode(content).length>MAX_BYTES)throw new DomainError('Файл должен быть не больше 280 КБ.',413);
  let values:unknown;if(body.format==='csv')values=parsePropertyCSV(content);else if(body.format==='json'){try{values=JSON.parse(content.replace(/^\uFEFF/,''));}catch{throw new DomainError('Не удалось прочитать JSON.');}if(values&&typeof values==='object'&&!Array.isArray(values))values=(values as Row).properties;}else throw new DomainError('Выберите CSV или JSON.');
- if(!Array.isArray(values)||!values.length||values.length>MAX_ROWS)throw new DomainError('В файле должно быть от 1 до 25 квартир.');return values;
+ if(!Array.isArray(values)||!values.length||values.length>MAX_ROWS)throw new DomainError('В файле должно быть от 1 до 25 объектов.');return values;
 }
 function validate(raw:unknown):Row{
- if(!raw||typeof raw!=='object'||Array.isArray(raw))throw new DomainError('Квартира должна быть объектом с полями.');const row=raw as Row;
+ if(!raw||typeof raw!=='object'||Array.isArray(raw))throw new DomainError('Каждая запись должна быть объектом с полями.');const row=raw as Row;
  // Publishing, ownership, readiness and automation permissions never come from an import.
  if(Object.keys(row).some(k=>!Object.values(columns).includes(k)))throw new DomainError('Неизвестное поле. Импорт принимает только столбцы шаблона и photos.');
  for(const key of ['price','rooms','capacity','cleaningMinutes'])if(row[key]!==undefined&&row[key]!==null&&!['number','string'].includes(typeof row[key]))throw new DomainError('Числовые поля принимают число или строку с числом.');
@@ -59,13 +59,13 @@ export async function previewPropertyImport(service:RentalService,body:Row){
  for(let i=0;i<values.length;i++){
   let value:Row|undefined;try{
    value=validate(values[i]);if(value.photos.some((id:string)=>!ownPhotos.has(id)))throw new DomainError('Фотография недоступна вашему аккаунту.',403);const address=addressKey(value),external=value.externalId||'address:'+await hash(address),duplicate=links.find(l=>l.source===source&&l.external_id===external)||links.find(l=>l.address_key===address),property=existing.find(p=>addressKey(p)===address),repeated=seenAddresses.has(address)||seenExternal.has(external);
-   const duplicateId=duplicate?.property_id||property?.id;prepared.push({number:i+1,status:duplicateId||repeated?'duplicate':'ready',value:{...value,externalId:external},addressKey:address,errors:duplicateId?['У вас уже есть квартира с этим адресом или внешним ID.']:repeated?['Этот объект повторяется внутри файла.']:[],...(duplicateId?{duplicateId}:{})});seenAddresses.add(address);seenExternal.add(external);
+   const duplicateId=duplicate?.property_id||property?.id;prepared.push({number:i+1,status:duplicateId||repeated?'duplicate':'ready',value:{...value,externalId:external},addressKey:address,errors:duplicateId?['У вас уже есть объект с этим адресом или внешним ID.']:repeated?['Этот объект повторяется внутри файла.']:[],...(duplicateId?{duplicateId}:{})});seenAddresses.add(address);seenExternal.add(external);
   }catch(error){if(!(error instanceof DomainError))throw error;prepared.push({number:i+1,status:'invalid',value:value?{title:value.title,city:value.city,address:value.address}:null,errors:[error.status===403?'Фотография недоступна вашему аккаунту.':error.message]});}
  }
  const id=uuid(),at=epoch(),payloadHash=await hash(JSON.stringify({source,rows:prepared}));
  const saved=await service.db.batch([q(service.db,'DELETE FROM property_imports WHERE owner_id=? AND status=\'prepared\' AND expires_at<=?',service.userId,at),q(service.db,"INSERT INTO property_imports(id,owner_id,source,payload_hash,rows_json,created_at,expires_at) SELECT ?,?,?,?,?,?,? WHERE (SELECT COUNT(*) FROM property_imports WHERE owner_id=? AND created_at>?)<5 AND (SELECT COUNT(*) FROM property_imports WHERE owner_id=? AND status='prepared' AND expires_at>?)<20",id,service.userId,source,payloadHash,JSON.stringify(prepared),at,at+900,service.userId,at-60,service.userId,at)]);
  if(!saved[1].meta.changes)throw new DomainError('Достигнут лимит предпросмотров. Подождите минуту или завершите подготовленные импорты.',429);
- return {preview:{id,version:1,payloadHash,expiresAt:at+900,source,rows:prepared,readyCount:prepared.filter(r=>r.status==='ready').length},message:'Предпросмотр готов. Квартиры ещё не созданы.'};
+ return {preview:{id,version:1,payloadHash,expiresAt:at+900,source,rows:prepared,readyCount:prepared.filter(r=>r.status==='ready').length},message:'Предпросмотр готов. Объекты ещё не созданы.'};
 }
 export async function commitPropertyImport(service:RentalService,body:Row){
  await service.requireRole('owner');if(body.confirmed!==true)throw new DomainError('Подтвердите создание выбранных черновиков.');

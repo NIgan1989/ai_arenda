@@ -45,7 +45,7 @@ test('a complete flat is approved by the AI administrator and shown on the map a
   assert.equal(review.status,'approved');assert.equal(review.reviewer_id,AI_REVIEWER);assert.match(review.notes,/Все правила пройдены/);
   assert.equal(f.db.raw.prepare('SELECT published FROM properties WHERE id=?').get(f.property).published,1);
   assert.equal(f.db.raw.prepare("SELECT COUNT(*) n FROM notifications WHERE dedupe LIKE 'admin:%'").get().n,0);
-  assert.match(f.db.raw.prepare("SELECT body FROM notifications WHERE dedupe LIKE 'owner:review:%'").get().body,/показана гостям/);
+  assert.match(f.db.raw.prepare("SELECT body FROM notifications WHERE dedupe LIKE 'owner:review:%'").get().body,/показано гостям/);
  }finally{f.db.close();}
 });
 test('a flat with too few photos waits for the owner and is approved by the sweep once fixed',async()=>{

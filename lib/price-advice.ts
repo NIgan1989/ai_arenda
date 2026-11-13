@@ -60,7 +60,7 @@ export function advisePrice(s:PriceSignals):PriceAdvice|null{
  if(direction==='up'){
   if(s.requests)reasons.push('Ищут жильё: '+plural(s.requests,'запрос','запроса','запросов')+' за 6 ч');
   if(s.bookings)reasons.push(plural(s.bookings,'бронь','брони','броней')+' в городе за сутки');
-  reasons.push('Свободных квартир: '+s.freeFlats);
+  reasons.push('Свободных объектов: '+s.freeFlats);
   if(s.occupancy>=0.5)reasons.push('Загрузка за 2 недели: '+Math.round(s.occupancy*100)+'%');
   if(s.peak)reasons.push('Выходные: спрос выше');
  }else{
@@ -68,7 +68,7 @@ export function advisePrice(s:PriceSignals):PriceAdvice|null{
   reasons.push('Ближайшие 2 дня свободны');
   if(s.occupancy<0.3)reasons.push('Загрузка за 2 недели: '+Math.round(s.occupancy*100)+'%');
  }
- if(s.median!==null)reasons.push('Похожие квартиры: ~'+money(s.median));
+ if(s.median!==null)reasons.push('Похожие объекты: ~'+money(s.median));
  return {direction,percent:real,daily,hourly:scale(s.hourly,100),nightly:scale(s.nightly,500),reasons};
 }
 
@@ -148,7 +148,7 @@ export async function decidePriceSuggestion(s:RentalService,suggestionId:string,
   if(!r[0].meta.changes)throw new DomainError('Совет по цене уже закрыт.',409);
   return {message:'Цена осталась прежней: '+money(p.from_daily)+' за сутки.'};
  }
- if(p.minimum_rate&&[p.to_daily,p.to_hourly,p.to_nightly].some(rate=>rate>0&&rate<p.minimum_rate))throw new DomainError('Новая цена ниже минимальной ставки в правилах квартиры.',409);
+ if(p.minimum_rate&&[p.to_daily,p.to_hourly,p.to_nightly].some(rate=>rate>0&&rate<p.minimum_rate))throw new DomainError('Новая цена ниже минимальной ставки в правилах жилья.',409);
  const revision=uuid(),r=await s.db.batch([
   q(s.db,"UPDATE property_policies SET hourly_price=?,nightly_price=?,version=version+1,revision=?,updated_at=? WHERE property_id=? AND version=? AND EXISTS(SELECT 1 FROM price_suggestions WHERE id=? AND status='pending' AND expires_at>?) AND EXISTS(SELECT 1 FROM properties WHERE id=? AND price=?)",p.to_hourly,p.to_nightly,revision,t,p.property_id,p.policy_version,sid,t,p.property_id,p.from_daily),
   q(s.db,'UPDATE properties SET price=? WHERE id=? AND owner_id=? AND EXISTS(SELECT 1 FROM property_policies WHERE property_id=? AND revision=?)',p.to_daily,p.property_id,s.userId,p.property_id,revision),

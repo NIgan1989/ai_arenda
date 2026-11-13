@@ -22,14 +22,14 @@ export async function recordFinance(service:RentalService,body:Row,provider?:{ev
  const previous=await one(db,'SELECT * FROM finance_entries WHERE actor_id=? AND request_key=?',actor,requestKey);
  const bookingId=bookingKinds.includes(kind)?required(body.bookingId,'Бронь',100):null,jobId=kind==='job_payment'?required(body.jobId,'Задание',100):null;
  if(previous){if(previous.kind!==kind||previous.amount!==amount||previous.booking_id!==bookingId||previous.job_id!==jobId)throw new DomainError('Ключ расчёта уже использован с другими данными.',409);return {id:previous.id,message:'Этот расчёт уже записан.'};}
- const entity=bookingId?await one(db,'SELECT b.*,p.owner_id FROM bookings b JOIN properties p ON p.id=b.property_id WHERE b.id=? AND p.owner_id=?',bookingId,service.userId):jobId?await one(db,'SELECT * FROM cleaning_jobs WHERE id=? AND owner_id=?',jobId,service.userId):await one(db,'SELECT id property_id,owner_id FROM properties WHERE id=? AND owner_id=?',required(body.propertyId,'Квартира',100),service.userId);
+ const entity=bookingId?await one(db,'SELECT b.*,p.owner_id FROM bookings b JOIN properties p ON p.id=b.property_id WHERE b.id=? AND p.owner_id=?',bookingId,service.userId):jobId?await one(db,'SELECT * FROM cleaning_jobs WHERE id=? AND owner_id=?',jobId,service.userId):await one(db,'SELECT id property_id,owner_id FROM properties WHERE id=? AND owner_id=?',required(body.propertyId,'Жильё',100),service.userId);
  if(!entity)throw new DomainError('Запись недоступна этому владельцу.',403);
  const propertyId=entity.property_id;
  if(bookingId)await migrateFinanceEntity(service,'booking',bookingId);if(jobId)await migrateFinanceEntity(service,'job',jobId);
  if(['payment','deposit'].includes(kind)&&!(provider?['confirmed','cancelled','expired','completed']:['confirmed']).includes(entity.status))throw new DomainError('Поступление недоступно для этой брони.',409);
  if(kind==='job_payment'&&entity.status!=='completed')throw new DomainError('Сначала примите результат работы.',409);
  if(['refund','compensation'].includes(kind)&&!['confirmed','cancelled','completed','expired'].includes(entity.status))throw new DomainError('Для этой брони такой расчёт недоступен.',409);
- if(kind==='deposit_return'&&entity.status!=='completed')throw new DomainError('Сначала подтвердите освобождение квартиры.',409);
+ if(kind==='deposit_return'&&entity.status!=='completed')throw new DomainError('Сначала подтвердите освобождение жилья.',409);
  const entryId=uuid(),at=epoch(),reference=String(body.externalReference||'').trim();if(reference.length>200)throw new DomainError('Слишком длинный номер операции.');
  const balance=(positive:string,negative:string)=>`COALESCE((SELECT SUM(CASE WHEN kind='${positive}' THEN amount WHEN kind='${negative}' THEN -amount ELSE 0 END) FROM finance_entries WHERE booking_id=?),0)`;
  let guard='1=1',args:any[]=[];

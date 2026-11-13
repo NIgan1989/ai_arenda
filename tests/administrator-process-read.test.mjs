@@ -5,12 +5,12 @@ test('process read counts all own properties, scopes participants and reports ve
   for(let i=0;i<17;i++)await f.owner.createProperty({title:'Own '+i,city:'Павлодар',district:'Центр',address:'PRIVATE ADDRESS',description:'Test',price:10000,rooms:1,capacity:2,cleaningMinutes:90});
   await f.other.createProperty({title:'FOREIGN SECRET',city:'Павлодар',district:'Центр',address:'PRIVATE',description:'Test',price:10000,rooms:1,capacity:2,cleaningMinutes:90});
   const count=f.db.raw.prepare('SELECT COUNT(*) n FROM finance_entries').get().n;
-  const owner=await readAdministratorProcesses(f.owner,'owner');assert.match(owner.text,/Ваших квартир: 18/);assert.match(owner.text,/оплата не подтверждена/);assert.doesNotMatch(owner.text,/FOREIGN SECRET|PRIVATE ADDRESS/);
+  const owner=await readAdministratorProcesses(f.owner,'owner');assert.match(owner.text,/Ваших объектов: 18/);assert.match(owner.text,/оплата не подтверждена/);assert.doesNotMatch(owner.text,/FOREIGN SECRET|PRIVATE ADDRESS/);
   const noAssignment=await readAdministratorProcesses(f.cleaner,'cleaner');assert.doesNotMatch(noAssignment.text,/Test apartment/);
   f.db.raw.prepare("UPDATE cleaning_jobs SET assigned_to='cleaner',status='assigned',booking_id=NULL,start=?,end=? WHERE id=?").run(now()+60,now()+3600,f.job.id);
   assert.match((await readAdministratorProcesses(f.cleaner,'cleaner')).text,/Test apartment/);assert.equal(f.db.raw.prepare('SELECT COUNT(*) n FROM finance_entries').get().n,count);
   await assert.rejects(readAdministratorProcesses(f.guest,'owner'),e=>e.status===403);
-  const reply=await f.owner.chat({role:'owner',text:'Покажи мои актуальные процессы'});assert.match(reply.text,/Ваших квартир: 18/);assert.equal(reply.mode,'scenario');
+  const reply=await f.owner.chat({role:'owner',text:'Покажи мои актуальные процессы'});assert.match(reply.text,/Ваших объектов: 18/);assert.equal(reply.mode,'scenario');
  }finally{f.db.close();}
 });
 test('model process tool accepts no IDs from the model and returns server result instead of accompanying claims',async()=>{
@@ -36,7 +36,7 @@ test('the question each role is offered on the first screen is answered from the
       assert.match(reply.text, /^Требует внимания: 2\.\n/, text);
       assert.match(reply.text, /— Оплата не подтверждена: Test apartment · заезд (сегодня|завтра) в \d\d:\d\d/, text);
       assert.match(reply.text, /— На уборку нет исполнителя: Test apartment/, text);
-      assert.doesNotMatch(reply.text, /Помогу подключить квартиру|процесс|PRIVATE ADDRESS/, text);
+      assert.doesNotMatch(reply.text, /Помогу подключить жильё|процесс|PRIVATE ADDRESS/, text);
       assert.equal(reply.action, 'bookings', text);
     }
     for (const text of [cleaner.placeholder, cleaner.shortPlaceholder, 'Есть уборки рядом на сегодня?', 'есть задания рядом', 'Свободные уборки', 'Мой график', 'Что у меня сегодня?']) {
@@ -73,7 +73,7 @@ test('the owner is told what waits for an answer, what is planned for today, or 
   const ask = state => processAnswer(state, 'owner', 'owner', NOW, 'Что сегодня требует внимания?');
 
   assert.equal(ask(ownerState()), 'Сегодня ничего срочного: заявок, заездов и уборок нет.');
-  assert.match(ask(ownerState([], [], [])), /^Сегодня ничего срочного\. Квартир у вас пока нет/);
+  assert.match(ask(ownerState([], [], [])), /^Сегодня ничего срочного\. Объектов у вас пока нет/);
   // Something is ahead, but not today.
   assert.equal(ask(ownerState([booking({start: NOW + 30 * HOUR, end: NOW + 54 * HOUR})])),
     'Сегодня ничего срочного. Ближайшее: заезд гостя завтра в 16:00, Студия у набережной.');
@@ -109,7 +109,7 @@ test('the owner is told what waits for an answer, what is planned for today, or 
     [job({owner_id: 'other'}), job({status: 'completed'})]));
   assert.equal(foreign, 'Сегодня ничего срочного: заявок, заездов и уборок нет.');
   // A question that is not about today still gets the full summary.
-  assert.match(processAnswer(ownerState([booking({})]), 'owner', 'owner', NOW, 'Мои брони'), /^Ваших квартир: 1\. Броней без выезда: 1\./);
+  assert.match(processAnswer(ownerState([booking({})]), 'owner', 'owner', NOW, 'Мои брони'), /^Ваших объектов: 1\. Броней без выезда: 1\./);
 });
 
 test('the cleaner is told about own jobs and the open jobs of the city, or honestly that there are none nearby', () => {

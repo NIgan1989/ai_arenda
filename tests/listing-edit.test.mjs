@@ -28,7 +28,7 @@ test('the AI first asks for what keeps the flat hidden, then offers to show it, 
 test('each step has a one-line summary and a mark when something is missing',()=>{
  const b=editBody(flat);
  for(const s of EDIT_STEPS)assert.ok(stepLine(b,s.key).length>0);
- assert.equal(stepLine(b,'photos'),'Нет фото');assert.equal(stepLine(b,'flat'),'1 комн. · 30 м² · 2 гост.');
+ assert.equal(stepLine(b,'photos'),'Нет фото');assert.equal(stepLine(b,'flat'),'Студия · 1 комн. · 2 гост.');
  assert.ok(stepNeeds(b,'photos'));assert.ok(stepNeeds(b,'rules'));assert.ok(!stepNeeds(b,'prices'));
 });
 

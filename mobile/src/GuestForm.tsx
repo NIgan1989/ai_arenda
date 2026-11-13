@@ -107,7 +107,7 @@ export function GuestForm({ draft, onChange, onPickPoint, onSubmit, busy }: Prop
         />
       </View>
       <View>
-        <Text style={h.label}>Обязательно в квартире</Text>
+        <Text style={h.label}>Обязательно в жилье</Text>
         <View style={f.wishes}>
           {WISHES.map(([id, title]) => {
             const on = draft.features.includes(id);

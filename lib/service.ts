@@ -106,32 +106,48 @@ export class RentalService {
       if(current&&admission.require_owner_review&&(current.address!==p.address||current.city!==p.city||current.district!==p.district))throw new DomainError('Сохраните изменение адреса черновиком и пройдите новую проверку объекта.',409);
       if(propertyId)await assertPilotAllowed(this,'publish',propertyId);else if(admission.require_owner_review||admission.require_phone)throw new DomainError('Сначала сохраните черновик, затем пройдите проверку в разделе «Управление → Допуск».',409);
     }
-    const rental=body.rental||{},policy=policyInput({...rental,dailyPrice:p.price,autoConfirm:!!currentPolicy?.auto_confirm,autoAssign:!!currentPolicy?.auto_assign,cleaningFee:currentPolicy?.cleaning_fee||0,cleaningBudget:currentPolicy?.cleaning_budget||0,maxDiscountPercent:currentPolicy?.max_discount_percent||0,minimumRate:currentPolicy?.minimum_rate||0,repairBudget:currentPolicy?.repair_budget||0,autoExtension:!!currentPolicy?.auto_extension,maxExtensionHours:currentPolicy?.max_extension_hours||0,mandateUntil:currentPolicy?.mandate_until?new Date(currentPolicy.mandate_until*1000).toISOString():'',escalationContact:currentPolicy?.escalation_contact||''});
+    // An older app does not send «Свой персонал»: the property keeps what it had.
+    if(typeof body.ownStaff!=='boolean'&&current)p.ownStaff=Number(current.own_staff)?1:0;
+    // Own staff cleans: the AI does not order cleanings, so there is no cleaning fee to pay an executor.
+    const staffOn=!!p.ownStaff&&!Number(current?.own_staff);
+    // Back to executors: there is no cleaning fee yet, so automatic confirmation stops until the owner sets one
+    // (with no fee a confirmed booking would get no cleaning). The owner turns «ИИ» on again with the fee.
+    const staffOff=!p.ownStaff&&!!Number(current?.own_staff)&&!(Number(currentPolicy?.cleaning_fee)>0);
+    if(staffOn&&current&&await this.one("SELECT id FROM cleaning_jobs WHERE property_id=? AND status IN ('in_progress','submitted')",propertyId))throw new DomainError('Сейчас идёт уборка исполнителем. Включите «Свой персонал» после её приёмки.',409);
+    if(staffOn&&current&&await this.one('SELECT 1 FROM regular_cleaners WHERE property_id=?',propertyId))throw new DomainError('Сначала открепите постоянного исполнителя, потом включите «Свой персонал».',409);
+    const rental=body.rental||{},policy=policyInput({...rental,dailyPrice:p.price,autoConfirm:!staffOff&&!!currentPolicy?.auto_confirm,autoAssign:!staffOff&&!!currentPolicy?.auto_assign,cleaningFee:p.ownStaff?0:currentPolicy?.cleaning_fee||0,cleaningBudget:currentPolicy?.cleaning_budget||0,maxDiscountPercent:currentPolicy?.max_discount_percent||0,minimumRate:currentPolicy?.minimum_rate||0,repairBudget:currentPolicy?.repair_budget||0,autoExtension:!!currentPolicy?.auto_extension,maxExtensionHours:currentPolicy?.max_extension_hours||0,mandateUntil:currentPolicy?.mandate_until?new Date(currentPolicy.mandate_until*1000).toISOString():'',escalationContact:currentPolicy?.escalation_contact||''});
     const key=propertyId||id(),revision=id(),gate='EXISTS(SELECT 1 FROM property_details WHERE property_id=? AND revision=?)';
     const statements=[];
-    if(!propertyId)statements.push(this.query('INSERT INTO properties(id,owner_id,demo_owner,title,city,district,address,description,price,rooms,capacity,cleaning_minutes,published,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)',key,this.userId,null,p.title,p.city,p.district,p.address,p.description,p.price,p.rooms,p.capacity,p.cleaningMinutes,published,now()),this.query('INSERT INTO property_operations(property_id,updated_at) VALUES (?,?)',key,now()));
+    if(!propertyId)statements.push(this.query('INSERT INTO properties(id,owner_id,demo_owner,title,city,district,address,description,price,rooms,capacity,cleaning_minutes,published,created_at,own_staff) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',key,this.userId,null,p.title,p.city,p.district,p.address,p.description,p.price,p.rooms,p.capacity,p.cleaningMinutes,published,now(),p.ownStaff),this.query('INSERT INTO property_operations(property_id,updated_at) VALUES (?,?)',key,now()));
     statements.push(this.query('INSERT INTO property_details SELECT ?,?,?,?,?,? WHERE COALESCE((SELECT version FROM property_policies WHERE property_id=?),0)=? ON CONFLICT(property_id) DO UPDATE SET details=excluded.details,photos=excluded.photos,version=excluded.version,revision=excluded.revision,updated_at=excluded.updated_at WHERE property_details.version=?',key,JSON.stringify(details),JSON.stringify(photos),expectedVersion+1,revision,now(),key,policyVersion,expectedVersion));
     if(propertyId){
-      statements.push(this.query(`UPDATE properties SET title=?,city=?,district=?,address=?,description=?,price=?,rooms=?,capacity=?,cleaning_minutes=?,published=? WHERE id=? AND owner_id=? AND ${gate}`,p.title,p.city,p.district,p.address,p.description,p.price,p.rooms,p.capacity,p.cleaningMinutes,published,key,this.userId,key,revision));
+      statements.push(this.query(`UPDATE properties SET title=?,city=?,district=?,address=?,description=?,price=?,rooms=?,capacity=?,cleaning_minutes=?,published=?,own_staff=? WHERE id=? AND owner_id=? AND ${gate}`,p.title,p.city,p.district,p.address,p.description,p.price,p.rooms,p.capacity,p.cleaningMinutes,published,p.ownStaff,key,this.userId,key,revision));
+      // «Свой персонал» switched on: planned cleanings by executors are cancelled and the assigned executor is told.
+      if(staffOn){
+        statements.push(this.query(`INSERT OR IGNORE INTO notifications SELECT ?||id,assigned_to,?,'cleaner:own-staff:'||id,0,? FROM cleaning_jobs WHERE property_id=? AND status='assigned' AND assigned_to IS NOT NULL AND ${gate}`,id()+':','Владелец перевёл «'+p.title+'» на свой персонал. Назначенная уборка отменена, оплата за неё не удерживается.',now(),key,key,revision));
+        statements.push(this.query(`UPDATE applications SET status='rejected' WHERE status='pending' AND job_id IN (SELECT id FROM cleaning_jobs WHERE property_id=? AND status IN ('open','assigned')) AND ${gate}`,key,key,revision));
+        statements.push(this.query(`UPDATE cleaning_jobs SET status='cancelled' WHERE property_id=? AND status IN ('open','assigned') AND ${gate}`,key,key,revision));
+      }
     }
     const keys=Object.keys(policy);
     statements.push(this.query(`INSERT INTO property_policies(property_id,${keys.join(',')},version,revision,updated_at) SELECT ?,${keys.map(()=>'?').join(',')},?,?,? WHERE ${gate} ON CONFLICT(property_id) DO UPDATE SET ${keys.map(k=>`${k}=excluded.${k}`).join(',')},version=excluded.version,revision=excluded.revision,updated_at=excluded.updated_at`,key,...Object.values(policy),policyVersion+1,id(),now(),key,revision));
     statements.push(this.query(`INSERT INTO audit_events SELECT ?,?,?,?,? WHERE ${gate}`,id(),this.userId,key,propertyId?'property.listing_updated':'property.listing_created',now(),key,revision));
     const results=await this.db.batch(statements);if(!results[propertyId?0:2].meta.changes)throw new DomainError('Объявление уже изменилось. Обновите форму.',409);
-    return {id:key,message:published?'Объявление опубликовано. Готовность и даты проверяются отдельно.':'Черновик сохранён. Гости его не видят.'};
+    const paused=staffOff&&!!currentPolicy?.auto_confirm?' Автопилот приостановлен: укажите цену уборки и снова включите «ИИ».':'';
+    return {id:key,message:(published?'Объявление опубликовано. Готовность и даты проверяются отдельно.':'Черновик сохранён. Гости его не видят.')+paused};
   }
   // Removing a flat: one with no history at all is deleted; otherwise it is archived (hidden from guests and
   // from the owner's lists) so bookings, cleanings and money records keep pointing at it.
   async removeProperty(propertyId:string){
     await this.requireRole('owner');
-    const p=await this.one('SELECT * FROM properties WHERE id=? AND owner_id=? AND demo_owner IS NULL AND archived_at IS NULL',propertyId,this.userId);if(!p)throw new DomainError('Квартира не найдена.',404);
+    const p=await this.one('SELECT * FROM properties WHERE id=? AND owner_id=? AND demo_owner IS NULL AND archived_at IS NULL',propertyId,this.userId);if(!p)throw new DomainError('Жильё не найдено.',404);
     const time=now(),ahead=await this.one("SELECT COUNT(*) n FROM bookings WHERE property_id=? AND (status='confirmed' OR (status='requested' AND expires_at>?)) AND occupied_until>?",propertyId,time,time);
-    if(ahead?.n)throw new DomainError('У квартиры есть будущие брони ('+ahead.n+'). Сначала отмените их, затем удалите квартиру.',409);
-    if(await this.one("SELECT id FROM cleaning_jobs WHERE property_id=? AND status IN ('open','assigned','in_progress','submitted') LIMIT 1",propertyId))throw new DomainError('По квартире есть незавершённая уборка. Отмените или завершите её, затем удалите квартиру.',409);
+    if(ahead?.n)throw new DomainError('У жилья есть будущие брони ('+ahead.n+'). Сначала отмените их, затем удалите жильё.',409);
+    if(await this.one("SELECT id FROM cleaning_jobs WHERE property_id=? AND status IN ('open','assigned','in_progress','submitted') LIMIT 1",propertyId))throw new DomainError('По жилью есть незавершённая уборка. Отмените или завершите её, затем удалите жильё.',409);
     const history=await this.one(`SELECT ${HISTORY_TABLES.map(t=>`EXISTS(SELECT 1 FROM ${t} WHERE property_id=?)`).join(' OR ')} OR EXISTS(SELECT 1 FROM participant_reviews WHERE property_id=? AND status<>'pending') OR EXISTS(SELECT 1 FROM calendar_sources WHERE property_id=?) found`,...Array(HISTORY_TABLES.length+2).fill(propertyId));
     if(!history?.found){
      try{await this.db.batch([...SETTINGS_TABLES.map(t=>this.query(`DELETE FROM ${t} WHERE property_id=?`,propertyId)),this.query("DELETE FROM participant_reviews WHERE property_id=? AND status='pending'",propertyId),this.query('DELETE FROM properties WHERE id=? AND owner_id=?',propertyId,this.userId),this.audit(propertyId,'property.deleted')]);
-      return {removed:'deleted',message:'Квартира «'+p.title+'» удалена.'};}
+      return {removed:'deleted',message:'Объявление «'+p.title+'» удалено.'};}
      catch(e:any){if(!/FOREIGN KEY|constraint/i.test(String(e?.message||e)))throw e;}
     }
     // The archive re-checks future stays and unfinished cleanings in the same write, and the rest only follows it,
@@ -139,8 +155,8 @@ export class RentalService {
     const archived='EXISTS(SELECT 1 FROM properties WHERE id=? AND archived_at=?)';
     const r=await this.db.batch([this.query(`UPDATE properties SET published=0,archived_at=? WHERE id=? AND owner_id=? AND archived_at IS NULL AND NOT EXISTS(SELECT 1 FROM bookings WHERE property_id=? AND (status='confirmed' OR (status='requested' AND expires_at>?)) AND occupied_until>?) AND NOT EXISTS(SELECT 1 FROM cleaning_jobs WHERE property_id=? AND status IN ('open','assigned','in_progress','submitted'))`,time,propertyId,this.userId,propertyId,time,time,propertyId),
      this.query(`UPDATE matching_preferences SET enabled=0,updated_at=? WHERE property_id=? AND ${archived}`,time,propertyId,propertyId,time),this.query(`UPDATE calendar_sources SET enabled=0 WHERE property_id=? AND ${archived}`,propertyId,propertyId,time),this.query(`UPDATE calendar_exports SET revoked_at=? WHERE property_id=? AND revoked_at IS NULL AND ${archived}`,time,propertyId,propertyId,time),this.query(`INSERT INTO audit_events SELECT ?,?,?,?,? WHERE ${archived}`,id(),this.userId,propertyId,'property.archived',time,propertyId,time)]);
-    if(!r[0].meta.changes)throw new DomainError('Пока квартиру удаляли, у неё появилась бронь или уборка. Обновите данные и попробуйте снова.',409);
-    return {removed:'archived',message:'Квартира «'+p.title+'» убрана: гости её больше не видят, история броней и оплат сохранена.'};
+    if(!r[0].meta.changes)throw new DomainError('Пока жильё удаляли, у него появилась бронь или уборка. Обновите данные и попробуйте снова.',409);
+    return {removed:'archived',message:'Объявление «'+p.title+'» убрано: гости его больше не видят, история броней и оплат сохранена.'};
   }
   async enrichProperties(items:Row[],owner=false):Promise<Row[]>{
     if(!items.length)return [];
@@ -217,7 +233,7 @@ export class RentalService {
   }
   administratorIssueStatement(entity:Row,kind:'booking'|'job',description:string){
     const owner=entity.owner_id===this.userId,role:Role=owner?'owner':kind==='booking'?'guest':'cleaner',other=owner?(kind==='booking'?entity.guest_id:entity.assigned_to):entity.owner_id;
-    if(!other)throw new DomainError('У задания пока нет второго участника. Укажите проблему в состоянии квартиры.',409);
+    if(!other)throw new DomainError('У задания пока нет второго участника. Укажите проблему в состоянии жилья.',409);
     const issueId=id();
     return this.query('INSERT INTO administrator_issues(id,owner_id,property_id,entity_kind,entity_id,opened_by,opened_role,other_user,other_role,description,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)',issueId,entity.owner_id,entity.property_id,kind,entity.id,this.userId,role,other,owner?(kind==='booking'?'guest':'cleaner'):'owner',description,now());
   }
@@ -348,10 +364,11 @@ export class RentalService {
     return {message:'Рабочий профиль подключён.',role,profile:await this.profile()};
   }
   async savePolicy(propertyId:string,body:Row){
-    const p=await this.one('SELECT * FROM properties WHERE id=? AND owner_id=?',propertyId,this.userId);if(!p)throw new DomainError('Квартира не найдена.',404);
+    const p=await this.one('SELECT * FROM properties WHERE id=? AND owner_id=?',propertyId,this.userId);if(!p)throw new DomainError('Жильё не найдено.',404);
     const current=await this.one('SELECT * FROM property_policies WHERE property_id=?',propertyId),expected=number(body.expectedVersion,'Версия правил',0,1000000);
     if((current?.version||0)!==expected)throw new DomainError('Правила уже изменились. Обновите карточку.',409);
-    const policy=policyInput({...body,autoAssign:body.autoAssign??!!current?.auto_assign,maxDiscountPercent:body.maxDiscountPercent??current?.max_discount_percent??0,minimumRate:body.minimumRate??current?.minimum_rate??0,repairBudget:body.repairBudget??current?.repair_budget??0,autoExtension:body.autoExtension??!!current?.auto_extension,maxExtensionHours:body.maxExtensionHours??current?.max_extension_hours??0,mandateUntil:body.mandateUntil??(current?.mandate_until?new Date(current.mandate_until*1000).toISOString():''),escalationContact:body.escalationContact??current?.escalation_contact??''}),price=number(body.dailyPrice,'Цена за сутки',100,10000000),revision=id(),keys=Object.keys(policy);
+    // Own staff cleans: no cleaning fee for executors, whatever the form sends.
+    const policy=policyInput({...body,...(Number(p.own_staff)?{cleaningFee:0}:{}),autoAssign:body.autoAssign??!!current?.auto_assign,maxDiscountPercent:body.maxDiscountPercent??current?.max_discount_percent??0,minimumRate:body.minimumRate??current?.minimum_rate??0,repairBudget:body.repairBudget??current?.repair_budget??0,autoExtension:body.autoExtension??!!current?.auto_extension,maxExtensionHours:body.maxExtensionHours??current?.max_extension_hours??0,mandateUntil:body.mandateUntil??(current?.mandate_until?new Date(current.mandate_until*1000).toISOString():''),escalationContact:body.escalationContact??current?.escalation_contact??''}),price=number(body.dailyPrice,'Цена за сутки',100,10000000),revision=id(),keys=Object.keys(policy);
     const result=await this.db.batch([
       this.query(`INSERT INTO property_policies(property_id,${keys.join(',')},version,revision,updated_at) VALUES (?,${keys.map(()=>'?').join(',')},?,?,?) ON CONFLICT(property_id) DO UPDATE SET ${keys.map(k=>`${k}=excluded.${k}`).join(',')},version=excluded.version,revision=excluded.revision,updated_at=excluded.updated_at WHERE property_policies.version=?`,propertyId,...Object.values(policy),expected+1,revision,now(),expected),
       this.query('UPDATE properties SET price=? WHERE id=? AND owner_id=? AND EXISTS(SELECT 1 FROM property_policies WHERE property_id=? AND revision=?)',price,propertyId,this.userId,propertyId,revision),
@@ -361,17 +378,17 @@ export class RentalService {
     return {message:'Тарифы, правила и полномочия сохранены.',version:expected+1};
   }
   async readinessAction(propertyId:string,body:Row){
-    const op=await this.one('SELECT o.* FROM property_operations o JOIN properties p ON p.id=o.property_id WHERE p.id=? AND p.owner_id=?',propertyId,this.userId);if(!op)throw new DomainError('Квартира не найдена.',404);
+    const op=await this.one('SELECT o.* FROM property_operations o JOIN properties p ON p.id=o.property_id WHERE p.id=? AND p.owner_id=?',propertyId,this.userId);if(!op)throw new DomainError('Жильё не найдено.',404);
     const readiness=required(body.readiness,'Состояние',30),note=required(body.note,'Результат проверки или причина',1000);
     if(!['ready','inspection','maintenance','blocked'].includes(readiness))throw new DomainError('Недопустимое состояние.');
     if((readiness==='ready'||readiness==='inspection')&&op.active_booking_id)throw new DomainError('Сначала подтвердите выезд проживающего гостя.',409);
-    if(readiness==='ready'&&body.inspected!==true)throw new DomainError('Подтвердите, что уборка и проверка квартиры выполнены.');
+    if(readiness==='ready'&&body.inspected!==true)throw new DomainError('Подтвердите, что уборка и проверка жилья выполнены.');
     const pending=await this.one("SELECT id FROM cleaning_jobs WHERE property_id=? AND (status IN ('in_progress','submitted') OR (status IN ('open','assigned') AND start<=?))",propertyId,now());
     if(readiness==='ready'&&pending)throw new DomainError('Сначала завершите и примите запланированную уборку.',409);
     const result=await this.db.batch([this.query('UPDATE property_operations SET readiness=?,note=?,version=version+1,updated_at=? WHERE property_id=? AND version=?',readiness,note,now(),propertyId,number(body.expectedVersion,'Версия состояния',1,10000000)),this.audit(propertyId,'property.readiness_requested')]);
     if(!result[0].meta.changes)throw new DomainError('Состояние уже изменилось. Обновите карточку.',409);
     const advice=readiness==='ready'?await this.priceAdviceAfterReady(propertyId):null;
-    return {message:readiness==='ready'?'Готовность квартиры подтверждена.'+(advice?' AI администратор предлагает новую цену, решение за вами.':''):'Состояние квартиры сохранено.',priceSuggestion:advice};
+    return {message:readiness==='ready'?'Готовность жилья подтверждена.'+(advice?' AI администратор предлагает новую цену, решение за вами.':''):'Состояние жилья сохранено.',priceSuggestion:advice};
   }
   // The flat is ready for the next guest: the moment for the AI administrator's price advice.
   // The advice is optional, so a failure here never undoes the owner's action.
@@ -379,12 +396,12 @@ export class RentalService {
     try{return await offerPriceAdvice(this.db,propertyId);}catch(error){console.error('Price advice failed',error instanceof Error?error.message:'');return null;}
   }
   async bookingQuote(body:Row) {
-    const p=await this.one('SELECT * FROM properties WHERE id=? AND published=1 AND (demo_owner IS NULL OR demo_owner=?)',required(body.propertyId,'Квартира',100),this.userId);
-    if(!p) throw new DomainError('Квартира недоступна.',404);
+    const p=await this.one('SELECT * FROM properties WHERE id=? AND published=1 AND (demo_owner IS NULL OR demo_owner=?)',required(body.propertyId,'Жильё',100),this.userId);
+    if(!p) throw new DomainError('Жильё недоступно.',404);
     await assertPilotAllowed(this,'booking',p.id);
     const {start,end}=interval(body.start,body.end), guests=number(body.guests,'Гости',1,p.capacity), occupiedUntil=end+p.cleaning_minutes*60;
     const policy={...defaultPolicy,...await this.one('SELECT * FROM property_policies WHERE property_id=?',p.id)},op=await this.one('SELECT readiness FROM property_operations WHERE property_id=?',p.id);
-    if(op&&(['maintenance','blocked'].includes(op.readiness)||(start<=now()+60&&op.readiness!=='ready')))throw new DomainError('Квартира сейчас не готова к новым заездам.',409);
+    if(op&&(['maintenance','blocked'].includes(op.readiness)||(start<=now()+60&&op.readiness!=='ready')))throw new DomainError('Жильё сейчас не готово к новым заездам.',409);
     const base=rentalPrice(p.price,policy,start,end,body.billingMode||'daily'),pricing=windowQuote(base,policy.hourly_price,base.billingMode==='hourly'?await openWindowFor(this.db,p.id,start,end):null);
     await assertCalendarAvailable(this.db,p.id,start,occupiedUntil);
     const occupied=await this.one("SELECT id FROM bookings WHERE property_id=? AND (status='confirmed' OR (status='requested' AND expires_at>?)) AND start<? AND occupied_until>?",p.id,now(),occupiedUntil,start);
@@ -405,7 +422,7 @@ export class RentalService {
     await this.requireRole('owner');
     const propertyId=id(),admission=await readPilotPolicy(this.db),published=admission.require_owner_review||admission.require_phone?0:1;
     await this.db.batch([this.query('INSERT INTO properties(id,owner_id,demo_owner,title,city,district,address,description,price,rooms,capacity,cleaning_minutes,published,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)',propertyId,this.userId,null,required(body.title,'Название',120),required(body.city,'Город',80),required(body.district,'Район',120),required(body.address,'Точный адрес',300),required(body.description,'Описание и правила',2500),number(body.price,'Цена за сутки',100,10000000),number(body.rooms,'Комнаты',1,20),number(body.capacity,'Вместимость',1,50),number(body.cleaningMinutes,'Время уборки',30,1440),published,now()),this.query('INSERT INTO property_operations(property_id,updated_at) VALUES (?,?)',propertyId,now()),this.audit(propertyId,'property.created')]);
-    return {id:propertyId,message:published?'Квартира добавлена в каталог. Точный адрес скрыт до подтверждения брони.':'Квартира сохранена черновиком. Пройдите проверку перед публикацией.'};
+    return {id:propertyId,message:published?'Жильё добавлено в каталог. Точный адрес скрыт до подтверждения брони.':'Жильё сохранено черновиком. Пройдите проверку перед публикацией.'};
   }
   async createBooking(body:Row) {
     await this.requireRole('guest');
@@ -471,7 +488,7 @@ export class RentalService {
     if(body.action==='report_checkout'){
       if(b.guest_id!==this.userId)throw new DomainError('Сообщить о выезде может гость.',403);
       if(b.status!=='confirmed'||b.start>now())throw new DomainError('Проживание ещё не началось или уже завершено.',409);
-      await this.db.batch([this.query('UPDATE booking_terms SET checkout_reported_at=?,version=version+1 WHERE booking_id=? AND checkout_reported_at IS NULL',now(),bookingId),this.notify(b.owner_id,'Гость сообщил о выезде. Проверьте освобождение квартиры.','checkout-reported:'+bookingId,'owner'),this.audit(bookingId,'booking.checkout_reported')]);return {message:'Сообщение о выезде сохранено. Ожидаем подтверждения освобождения квартиры.'};
+      await this.db.batch([this.query('UPDATE booking_terms SET checkout_reported_at=?,version=version+1 WHERE booking_id=? AND checkout_reported_at IS NULL',now(),bookingId),this.notify(b.owner_id,'Гость сообщил о выезде. Проверьте освобождение жилья.','checkout-reported:'+bookingId,'owner'),this.audit(bookingId,'booking.checkout_reported')]);return {message:'Сообщение о выезде сохранено. Ожидаем подтверждения освобождения жилья.'};
     }
     if(body.action==='report_checkin'){
       if(b.guest_id!==this.userId)throw new DomainError('Сообщить о заселении может гость.',403);
@@ -487,36 +504,38 @@ export class RentalService {
       // Under execution the mandate and the guest's report are checked again inside the write.
       const checkinGate=this.execution?" AND t.checkin_reported_at IS NOT NULL AND EXISTS(SELECT 1 FROM property_policies pp WHERE pp.property_id=b.property_id AND pp.version=? AND pp.auto_confirm=1 AND pp.auto_assign=1 AND (pp.mandate_until=0 OR pp.mandate_until>?))":'';
       const result=await this.db.batch([this.query("UPDATE property_operations SET readiness='occupied',active_booking_id=?,version=version+1,updated_at=? WHERE property_id=? AND readiness='ready' AND active_booking_id IS NULL AND EXISTS(SELECT 1 FROM bookings b JOIN booking_terms t ON t.booking_id=b.id WHERE b.id=? AND b.status='confirmed' AND b.start<=? AND b.end>? AND b.payment_status='owner_verified' AND t.deposit_status<>'pending' AND t.actual_checkout IS NULL"+checkinGate+")",bookingId,now(),b.property_id,bookingId,now(),now(),...(this.execution?[this.execution.policyVersion,now()]:[])),this.query('UPDATE booking_terms SET actual_checkin=?,version=version+1 WHERE booking_id=? AND actual_checkin IS NULL AND EXISTS(SELECT 1 FROM property_operations WHERE property_id=? AND active_booking_id=?)',now(),bookingId,b.property_id,bookingId),this.audit(bookingId,'booking.checkin_requested')]);
-      if(!result[0].meta.changes)throw new DomainError('Квартира не готова или в ней ещё проживает другой гость.',409);return {message:'Фактическое заселение подтверждено.'};
+      if(!result[0].meta.changes)throw new DomainError('Жильё не готово или в нём ещё проживает другой гость.',409);return {message:'Фактическое заселение подтверждено.'};
     }
     if(body.action==='dispute_checkout'){
-      if(!owner)throw new DomainError('Освобождение квартиры проверяет владелец.',403);
+      if(!owner)throw new DomainError('Освобождение жилья проверяет владелец.',403);
       const reason=required(body.reason,'Причина',1000);
       const r=await this.query("UPDATE booking_terms SET checkout_reported_at=NULL,version=version+1 WHERE booking_id=? AND checkout_reported_at IS NOT NULL AND actual_checkout IS NULL AND version=? AND EXISTS(SELECT 1 FROM bookings WHERE id=? AND status='confirmed')",bookingId,body.expectedVersion??terms?.version,bookingId).run();
       if(!r.meta.changes)throw new DomainError('Сообщение уже рассмотрено. Обновите данные.',409);
       await this.db.batch([this.notify(b.guest_id,'Выезд пока не подтверждён: '+reason,'checkout-disputed:'+bookingId+':'+(terms?.version||0),'guest'),this.audit(bookingId,'booking.checkout_disputed:'+reason)]);
-      return {message:'Гостю передана причина. Квартира остаётся занятой до подтверждения выезда.'};
+      return {message:'Гостю передана причина. Жильё остаётся занятым до подтверждения выезда.'};
     }
     if(body.action==='checkout'){
-      if(!owner)throw new DomainError('Освобождение квартиры подтверждает владелец.',403);
+      if(!owner)throw new DomainError('Освобождение жилья подтверждает владелец.',403);
       if(terms?.actual_checkout)return {message:'Выезд уже подтверждён.'};
       if(b.status!=='confirmed'||b.start>now()||(op?.active_booking_id&&op.active_booking_id!==bookingId))throw new DomainError('Сейчас нельзя подтвердить выезд по этой брони.',409);
       const t=now(),result=await this.db.batch([
         // Under execution the mandate and the guest's report are checked again inside the batch,
         // so a revoked autopilot or a disputed report stops the automatic checkout.
         this.query("UPDATE bookings SET status='completed' WHERE id=? AND status='confirmed' AND EXISTS(SELECT 1 FROM booking_terms WHERE booking_id=? AND actual_checkout IS NULL AND version=? AND (?=0 OR checkout_reported_at IS NOT NULL)) AND (?=0 OR EXISTS(SELECT 1 FROM property_policies WHERE property_id=? AND version=? AND auto_confirm=1 AND auto_assign=1 AND (mandate_until=0 OR mandate_until>?)))",bookingId,bookingId,body.expectedVersion??terms?.version,this.execution?1:0,this.execution?1:0,b.property_id,this.execution?.policyVersion??0,t),
-        this.query("UPDATE property_operations SET readiness=CASE WHEN readiness IN ('maintenance','blocked') THEN readiness ELSE 'awaiting_cleaning' END,active_booking_id=NULL,version=version+1,updated_at=? WHERE property_id=? AND (active_booking_id IS NULL OR active_booking_id=?) AND EXISTS(SELECT 1 FROM booking_terms t JOIN bookings b ON b.id=t.booking_id WHERE b.id=? AND b.status='completed' AND t.actual_checkout IS NULL)",t,b.property_id,bookingId,bookingId),
-        this.query("INSERT OR IGNORE INTO notifications SELECT ?,assigned_to,?,'cleaner:checkout-reschedule:'||id||':'||version,0,? FROM cleaning_jobs WHERE booking_id=? AND status='assigned' AND start<? AND EXISTS(SELECT 1 FROM booking_terms bt JOIN bookings b ON b.id=bt.booking_id WHERE b.id=? AND b.status='completed' AND bt.actual_checkout IS NULL)",id(),'AI администратор: гость освободил квартиру позже начала уборки. Прежнее назначение снято; проверьте новое время и откликнитесь заново.',t,bookingId,t-60,bookingId),
+        this.query("UPDATE property_operations SET readiness=CASE WHEN readiness IN ('maintenance','blocked') THEN readiness WHEN EXISTS(SELECT 1 FROM properties WHERE id=property_operations.property_id AND own_staff=1) THEN 'ready' ELSE 'awaiting_cleaning' END,active_booking_id=NULL,version=version+1,updated_at=? WHERE property_id=? AND (active_booking_id IS NULL OR active_booking_id=?) AND EXISTS(SELECT 1 FROM booking_terms t JOIN bookings b ON b.id=t.booking_id WHERE b.id=? AND b.status='completed' AND t.actual_checkout IS NULL)",t,b.property_id,bookingId,bookingId),
+        this.query("INSERT OR IGNORE INTO notifications SELECT ?,assigned_to,?,'cleaner:checkout-reschedule:'||id||':'||version,0,? FROM cleaning_jobs WHERE booking_id=? AND status='assigned' AND start<? AND EXISTS(SELECT 1 FROM booking_terms bt JOIN bookings b ON b.id=bt.booking_id WHERE b.id=? AND b.status='completed' AND bt.actual_checkout IS NULL)",id(),'AI администратор: гость освободил жильё позже начала уборки. Прежнее назначение снято; проверьте новое время и откликнитесь заново.',t,bookingId,t-60,bookingId),
         this.query("UPDATE applications SET status='rejected' WHERE job_id IN(SELECT id FROM cleaning_jobs WHERE booking_id=? AND status IN ('open','assigned') AND start<?) AND EXISTS(SELECT 1 FROM booking_terms bt JOIN bookings b ON b.id=bt.booking_id WHERE b.id=? AND b.status='completed' AND bt.actual_checkout IS NULL)",bookingId,t-60,bookingId),
         this.query("UPDATE cleaning_jobs SET start=?,end=?,assigned_to=NULL,status='open' WHERE booking_id=? AND status IN ('open','assigned') AND start<? AND EXISTS(SELECT 1 FROM booking_terms bt JOIN bookings b ON b.id=bt.booking_id WHERE b.id=? AND b.status='completed' AND bt.actual_checkout IS NULL)",t,t+b.cleaning_minutes*60,bookingId,t-60,bookingId),
         this.query('UPDATE booking_terms SET actual_checkout=? WHERE booking_id=? AND actual_checkout IS NULL AND EXISTS(SELECT 1 FROM bookings WHERE id=? AND status=\'completed\')',t,bookingId,bookingId),this.audit(bookingId,'booking.checkout_confirmed')]);
-      if(!result[0].meta.changes)throw new DomainError('Выезд уже обрабатывается. Обновите данные.',409);await this.notify(b.guest_id,this.execution?'Выезд подтверждён. Спасибо, что выбрали нас.':'Владелец подтвердил освобождение квартиры. Проживание завершено.','checkout-confirmed:'+bookingId,'guest').run();return {message:'Выезд подтверждён. Квартира ожидает уборки и проверки.'};
+      if(!result[0].meta.changes)throw new DomainError('Выезд уже обрабатывается. Обновите данные.',409);await this.notify(b.guest_id,this.execution?'Выезд подтверждён. Спасибо, что выбрали нас.':'Владелец подтвердил освобождение жилья. Проживание завершено.','checkout-confirmed:'+bookingId,'guest').run();return {message:'Выезд подтверждён. Жильё ожидает уборки и проверки.'};
     }
     if(body.action==='confirm') {
       await assertPilotAllowed(this,'booking',b.property_id);
       if(!owner) throw new DomainError('Подтвердить может только владелец.',403);
       await assertCalendarAvailable(this.db,b.property_id,b.start,b.occupied_until);
-      const fee=number(body.cleaningFee||0,'Стоимость уборки',0,1000000);
+      // Own staff cleans this property: no cleaning job for executors after the stay.
+      const ownStaff=!!Number((await this.one('SELECT own_staff FROM properties WHERE id=?',b.property_id))?.own_staff);
+      const fee=ownStaff?0:number(body.cleaningFee||0,'Стоимость уборки',0,1000000);
       if(b.status!=='requested'||b.expires_at<=now()) throw new DomainError('Срок заявки истёк или статус уже изменился.',409);
       // A high booking risk is never confirmed on the owner's behalf: the owner decides.
       const policyGate=this.execution?" AND EXISTS(SELECT 1 FROM property_policies WHERE property_id=bookings.property_id AND version=? AND auto_confirm=1 AND cleaning_fee=? AND cleaning_fee<=cleaning_budget AND (mandate_until=0 OR mandate_until>?)) AND NOT EXISTS(SELECT 1 FROM booking_risks WHERE booking_id=bookings.id AND level='high')":'';
@@ -592,7 +611,7 @@ export class RentalService {
     const started=await this.one("SELECT id FROM cleaning_jobs WHERE booking_id=? AND status IN ('in_progress','submitted','completed')",bookingId);
     if(occupied||cleaning||started)throw new DomainError('Изменение пересекает другую бронь или уборку.',409);
     const op=await this.one('SELECT * FROM property_operations WHERE property_id=?',b.property_id);
-    if(op&&['maintenance','blocked'].includes(op.readiness))throw new DomainError('Заезды в квартиру закрыты.',409);
+    if(op&&['maintenance','blocked'].includes(op.readiness))throw new DomainError('Заезды в это жильё закрыты.',409);
     const automatic=role==='guest'&&!!policy.auto_extension&&mandateActive(policy)&&terms.policy_version===policy.version&&start===b.start&&end>b.end&&end-(terms.original_end||b.end)<=policy.max_extension_hours*3600&&mode===terms.billing_mode&&discount===(terms.discount_percent||0);
     return {bookingId,start,end,occupiedUntil,billingMode:pricing.billingMode,rate:pricing.price,units:pricing.periods,extraHours:pricing.extraHours,extraRate:pricing.extraRate,discountPercent:discount,amount,previousAmount:b.amount,paidAmount:terms.paid_amount,amountDue:Math.max(0,amount-terms.paid_amount),baseVersion:terms.version,policyVersion:policy.version,automatic,cleanerReconfirmation:end!==b.end&&!!await this.one("SELECT id FROM cleaning_jobs WHERE booking_id=? AND assigned_to IS NOT NULL AND status='assigned'",bookingId),currency:'KZT'};
   }
@@ -644,13 +663,14 @@ export class RentalService {
   }
   async createJob(body:Row) {
     await this.requireRole('owner');
-    const p=await this.one('SELECT * FROM properties WHERE id=? AND owner_id=?',required(body.propertyId,'Квартира',100),this.userId);
-    if(!p) throw new DomainError('Выберите свою квартиру.',403);
+    const p=await this.one('SELECT * FROM properties WHERE id=? AND owner_id=?',required(body.propertyId,'Жильё',100),this.userId);
+    if(!p) throw new DomainError('Выберите своё жильё.',403);
+    if(Number(p.own_staff))throw new DomainError('Здесь убирает свой персонал. Чтобы заказать исполнителя, выключите «Свой персонал» в настройках жилья.',409);
     const fee=number(body.fee,'Вознаграждение',100,1000000),description=required(body.description,'Условия',2000),requestKey=body.requestKey?required(body.requestKey,'Ключ операции',120):id(),digest=await operationHash(JSON.stringify([p.id,Date.parse(body.start),Date.parse(body.end),fee,description]));
     const previous=await this.one("SELECT * FROM operation_receipts WHERE user_id=? AND kind='create_job' AND request_key=?",this.userId,requestKey);if(previous){if(previous.payload_hash!==digest)throw new DomainError('Ключ задания уже использован с другими условиями.',409);return JSON.parse(previous.result);}
     const {start,end}=interval(body.start,body.end), jobId=id(),result={id:jobId,message:'Задание опубликовано. Исполнители могут откликаться.'};
     await assertCalendarAvailable(this.db,p.id,start,end);
-    if(await this.one("SELECT id FROM cleaning_jobs WHERE property_id=? AND status IN ('open','assigned','in_progress','submitted') AND start<? AND end>?",p.id,end,start))throw new DomainError('У квартиры уже есть уборка на это время.',409);
+    if(await this.one("SELECT id FROM cleaning_jobs WHERE property_id=? AND status IN ('open','assigned','in_progress','submitted') AND start<? AND end>?",p.id,end,start))throw new DomainError('У жилья уже есть уборка на это время.',409);
     await this.db.batch([this.query('INSERT INTO cleaning_jobs(id,property_id,owner_id,booking_id,start,end,fee,description,status,assigned_to,checklist,report,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)',jobId,p.id,this.userId,null,start,end,fee,description,'open',null,'[]','',now()),this.audit(jobId,'job.created'),this.query('INSERT INTO operation_receipts VALUES (?,?,?,?,?,?)',this.userId,'create_job',requestKey,digest,JSON.stringify(result),now())]);
     return result;
   }
@@ -684,7 +704,7 @@ export class RentalService {
       if(!a)throw new DomainError('Отклик уже рассмотрен.',409);
       const r=await this.query("UPDATE applications SET status='rejected' WHERE id=? AND status='pending' AND EXISTS(SELECT 1 FROM cleaning_jobs WHERE id=? AND status='open' AND version=? AND end>?)",a.id,jobId,j.version,now()).run();
       if(!r.meta.changes)throw new DomainError('Условия задания изменились. Обновите карточку.',409);
-      await this.db.batch([this.notify(a.user_id,'Ваш отклик на уборку «'+(j.title||'квартира')+'» отклонён.','application-rejected:'+a.id+':'+a.created_at,'cleaner'),this.audit(jobId,'job.application_rejected:'+a.id)]);
+      await this.db.batch([this.notify(a.user_id,'Ваш отклик на уборку «'+(j.title||'жильё')+'» отклонён.','application-rejected:'+a.id+':'+a.created_at,'cleaner'),this.audit(jobId,'job.application_rejected:'+a.id)]);
       return {message:'Отклик отклонён. Исполнитель уведомлён в приложении.'};
     }
     if(body.action==='assign' && j.owner_id===this.userId) {
@@ -723,7 +743,7 @@ export class RentalService {
       const r=await this.query("UPDATE cleaning_jobs SET status='in_progress' WHERE id=? AND status='submitted' AND version=?",jobId,j.version).run();
       if(!r.meta.changes)throw new DomainError('Отчёт уже рассмотрен. Обновите карточку.',409);
       await this.db.batch([this.query("UPDATE property_operations SET readiness='cleaning',version=version+1,updated_at=? WHERE property_id=? AND active_booking_id IS NULL AND readiness='inspection' AND EXISTS(SELECT 1 FROM cleaning_jobs WHERE id=? AND status='in_progress' AND version=?)",now(),j.property_id,jobId,j.version+1),this.notify(j.assigned_to,'Доработайте уборку: '+reason,'revision:'+jobId+':'+j.version,'cleaner'),this.audit(jobId,'job.revision_requested:'+reason)]);
-      return {message:'Отчёт возвращён на доработку. Квартира не отмечена готовой.'};
+      return {message:'Отчёт возвращён на доработку. Жильё не отмечено готовым.'};
     }
     if(body.action==='approve' && j.owner_id===this.userId) {
       await requireEvidence(this,jobId);
@@ -733,7 +753,7 @@ export class RentalService {
       const advice=await this.priceAdviceAfterReady(j.property_id);
       return {message:'Работа принята. Денежные расчёты выполняются отдельно.'+(advice?' AI администратор посмотрел спрос и предлагает новую цену, решение за вами.':''),priceSuggestion:advice};
     }
-    if(body.action==='cancel'&&j.owner_id===this.userId){const reason=required(body.reason,'Причина отмены',1000);const r=await this.query("UPDATE cleaning_jobs SET status='cancelled' WHERE id=? AND status IN ('open','assigned')",jobId).run();if(!r.meta.changes)throw new DomainError('Начатую работу нельзя отменить этим действием.',409);await this.audit(jobId,'job.cancelled:'+reason).run();return {message:'Задание отменено. Готовность квартиры нужно проверить отдельно.'};}
+    if(body.action==='cancel'&&j.owner_id===this.userId){const reason=required(body.reason,'Причина отмены',1000);const r=await this.query("UPDATE cleaning_jobs SET status='cancelled' WHERE id=? AND status IN ('open','assigned')",jobId).run();if(!r.meta.changes)throw new DomainError('Начатую работу нельзя отменить этим действием.',409);await this.audit(jobId,'job.cancelled:'+reason).run();return {message:'Задание отменено. Готовность жилья нужно проверить отдельно.'};}
     if(body.action==='issue' && (j.owner_id===this.userId||j.assigned_to===this.userId)) {
       const issue=required(body.issue,'Описание',1500);
       const receipt=await this.operationReceipt('job_issue',body,[jobId,issue]);if(receipt.previous)return receipt.previous;const result={message:'Обращение записано в уведомлениях. Статус работы не изменён.'};
@@ -791,7 +811,7 @@ export class RentalService {
     ];
     statements.push(this.query('INSERT INTO property_operations(property_id,updated_at) VALUES (?,?),(?,?)',p1,t,p2,t));
     await this.db.batch(statements);
-    return {message:'Добавлены учебные квартиры и уборка. Данные изолированы от других пользователей.'};
+    return {message:'Добавлены учебные объекты и уборка. Данные изолированы от других пользователей.'};
   }
   async maintenance() {
     await this.query("UPDATE bookings SET status='expired' WHERE status='requested' AND expires_at<=?",now()).run();

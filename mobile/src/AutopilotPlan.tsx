@@ -14,10 +14,10 @@ const hhmm=(m:number)=>String(Math.floor(m/60)).padStart(2,'0')+':'+String(m%60)
 const toMinutes=(v:string)=>{const [h,m]=v.split(':').map(Number);return Math.max(0,Math.min(1440,(h||0)*60+(m||0)));};
 const plural=(n:number,one:string,few:string,many:string)=>n%10===1&&n%100!==11?one:[2,3,4].includes(n%10)&&![12,13,14].includes(n%100)?few:many;
 const FEATURES={
- owner:['Принимает брони и отвечает гостям за вас, днём и ночью','Заказывает уборку, назначает исполнителя и находит замену','Принимает уборку по фотоотчёту и отмечает выезд гостя','Квартира выше в подборе для гостей','Комиссия с брони обычная, без надбавки за ИИ','Итоги недели по понедельникам'],
+ owner:['Принимает брони и отвечает гостям за вас, днём и ночью','Заказывает уборку, назначает исполнителя и находит замену','Принимает уборку по фотоотчёту и отмечает выезд гостя','Объект выше в подборе для гостей','Комиссия с брони обычная, без надбавки за ИИ','Итоги недели по понедельникам'],
  cleaner:['Берёт уборки сам по вашим правилам: районы, дни, часы, оплата','Подходящие уборки приходят вам раньше остальных','План дня в 8:00: адреса по порядку и время','«Не могу сегодня»: ИИ вернёт уборки и найдёт замену','Итоги недели в профиле']
 };
-const STEPS={owner:['Квартиры','Уборка','Итог'],cleaner:['Где и когда','Оплата','Итог']};
+const STEPS={owner:['Объекты','Уборка','Итог'],cleaner:['Где и когда','Оплата','Итог']};
 
 // The steps of connecting the plan: done ones can be reopened, the next ones open in order.
 function Steps({steps,current,onPick}:{steps:string[];current:number;onPick:(i:number)=>void}){
@@ -41,10 +41,10 @@ export function NativeAutopilotPlan({role}:{role:'owner'|'cleaner'}){
  if(!state)return <Group title="Тариф">{error?<Text accessibilityRole="alert" style={[s.error,{padding:16}]}>{error}</Text>:<View style={{padding:16}}><ThinkingLine style={s.meta} text="Загружаю тариф…"/></View>}</Group>;
  const st=state.settings||{},plan=state.plan,live=!!state.live,flats:Data[]=state.flats||[];
  const statusLine=!plan?'':plan.status==='trial'?`Пробный период до ${date(plan.periodEnd)}`+(st.charge?`, потом ${owner?money(state.nextAmount)+' в месяц с баланса':money(st.price)+' в месяц из выплат'}`:', плата пока не взимается'):plan.status==='grace'?`Не хватило денег. Работает до ${date(plan.graceUntil)}`:plan.status==='active'?(plan.autoRenew?`Оплачено до ${date(plan.periodEnd)}`:`Работает до ${date(plan.periodEnd)} и не продлится`):'';
- const offNote=plan?.status==='active'&&st.charge?'Доработает оплаченный месяц и не продлится.':owner?'Квартиры перейдут в режим «Я сам». Принятые брони и уборки останутся в силе.':'Предложения уборок снова будут приходить вам на решение. Принятые уборки останутся.';
+ const offNote=plan?.status==='active'&&st.charge?'Доработает оплаченный месяц и не продлится.':owner?'Объекты перейдут в режим «Я сам». Принятые брони и уборки останутся в силе.':'Предложения уборок снова будут приходить вам на решение. Принятые уборки останутся.';
  const steps=STEPS[role],last=steps.length-1,num=(v:string)=>v.replace(/\D/g,'').slice(0,7);
  const begin=()=>{setOpen(true);setStep(0);setMessage('');};
- const fresh=flats.filter(f=>picked.includes(f.id)&&f.ready&&!f.managed),feeMissing=fresh.some(f=>!f.cleaningFee&&Number(fees[f.id]||0)<100);
+ const fresh=flats.filter(f=>picked.includes(f.id)&&f.ready&&!f.managed),feeMissing=fresh.some(f=>!f.cleaningFee&&!f.ownStaff&&Number(fees[f.id]||0)<100);
  const fromM=toMinutes(from),toM=toMinutes(to);
  const canNext=owner?(step===0?fresh.length>0:step===1?!feeMissing:true):(step===0?!!rules.days&&toM-fromM>=60:true);
  const chip=(label:string,on:boolean,press:()=>void,wide=false)=><Pressable key={label} accessibilityRole="button" accessibilityState={{selected:on}} onPress={press} style={[p.chip,wide&&p.day,on&&(wide?p.dayOn:p.chipOn)]}><Text style={[p.chipText,on&&(wide?p.dayOnText:p.chipOnText)]}>{label}</Text></Pressable>;
@@ -55,13 +55,13 @@ export function NativeAutopilotPlan({role}:{role:'owner'|'cleaner'}){
   :()=>run(live?'operations/autopilot/rules':'operations/autopilot/start',{...rules,fromMinute:fromM,toMinute:toM});
  const ownerStep=[
   <View key="flats" style={p.connect}>
-   <Text style={p.lead}>Отметьте квартиры, которые поведёт ИИ.</Text>
-   {flats.length===0&&<Text style={a.note}>Сначала добавьте квартиру.</Text>}
-   <View style={p.list}>{flats.map((f,i)=>{const on=picked.includes(f.id)||f.managed,locked=!f.ready||f.managed;return <Pressable key={f.id} accessibilityRole="checkbox" accessibilityState={{checked:on,disabled:locked}} disabled={busy||locked} onPress={()=>setPicked(picked.includes(f.id)?picked.filter(x=>x!==f.id):[...picked,f.id])} style={[p.flatRow,i>0&&p.flatLine]}><View style={[p.box,on&&p.boxOn]}>{on&&<Text style={p.tick}>✓</Text>}</View><View style={{flex:1}}><Text style={a.title}>{f.title}</Text><Text style={a.note}>{f.managed?'Уже на автопилоте':!f.ready?'Сначала заполните тарифы квартиры':money(st.price)+' в месяц'}</Text></View></Pressable>;})}</View>
+   <Text style={p.lead}>Отметьте объекты, которые поведёт ИИ.</Text>
+   {flats.length===0&&<Text style={a.note}>Сначала добавьте жильё.</Text>}
+   <View style={p.list}>{flats.map((f,i)=>{const on=picked.includes(f.id)||f.managed,locked=!f.ready||f.managed;return <Pressable key={f.id} accessibilityRole="checkbox" accessibilityState={{checked:on,disabled:locked}} disabled={busy||locked} onPress={()=>setPicked(picked.includes(f.id)?picked.filter(x=>x!==f.id):[...picked,f.id])} style={[p.flatRow,i>0&&p.flatLine]}><View style={[p.box,on&&p.boxOn]}>{on&&<Text style={p.tick}>✓</Text>}</View><View style={{flex:1}}><Text style={a.title}>{f.title}</Text><Text style={a.note}>{f.managed?'Уже на автопилоте':!f.ready?'Сначала заполните тарифы жилья':money(st.price)+' в месяц'}</Text></View></Pressable>;})}</View>
   </View>,
   <View key="fees" style={p.connect}>
    <Text style={p.lead}>После каждого выезда ИИ закажет уборку по этой цене и найдёт исполнителя.</Text>
-   <View style={p.list}>{fresh.map((f,i)=><View key={f.id} style={[p.flat,i>0&&p.flatLine]}><Text style={a.title}>{f.title}</Text>{f.cleaningFee?<Text style={a.note}>Уборка {money(f.cleaningFee)}, уже указана</Text>:<><Text style={a.note}>Цена уборки, ₸</Text><TextInput style={s.field} keyboardType="number-pad" value={fees[f.id]||''} placeholder="5000" onChangeText={v=>setFees({...fees,[f.id]:num(v)})}/></>}</View>)}</View>
+   <View style={p.list}>{fresh.map((f,i)=><View key={f.id} style={[p.flat,i>0&&p.flatLine]}><Text style={a.title}>{f.title}</Text>{f.ownStaff?<Text style={a.note}>Убирает свой персонал, ИИ исполнителей не ищет</Text>:f.cleaningFee?<Text style={a.note}>Уборка {money(f.cleaningFee)}, уже указана</Text>:<><Text style={a.note}>Цена уборки, ₸</Text><TextInput style={s.field} keyboardType="number-pad" value={fees[f.id]||''} placeholder="5000" onChangeText={v=>setFees({...fees,[f.id]:num(v)})}/></>}</View>)}</View>
   </View>,
   <View key="sum" style={p.connect}>
    {fresh.map(f=><View key={f.id} style={p.feature}><Text style={p.check}>✓</Text><Text style={p.featureText}>{f.title}</Text></View>)}
@@ -73,7 +73,7 @@ export function NativeAutopilotPlan({role}:{role:'owner'|'cleaner'}){
   <View key="where" style={p.connect}>
    <Text style={p.h4}>Районы</Text>
    <View style={p.chips}>{(state.cityDistricts||[]).map((d:string)=>chip(d,rules.districts.includes(d),()=>setRules({...rules,districts:rules.districts.includes(d)?rules.districts.filter((x:string)=>x!==d):[...rules.districts,d]})))}</View>
-   <Text style={a.note}>{(state.cityDistricts||[]).length===0?'Районы появятся, когда в вашем городе будут квартиры. Пока ИИ берёт уборки по всему городу.':rules.districts.length?'Только выбранные районы.':'Не выбрано: весь город.'}</Text>
+   <Text style={a.note}>{(state.cityDistricts||[]).length===0?'Районы появятся, когда в вашем городе будет жильё. Пока ИИ берёт уборки по всему городу.':rules.districts.length?'Только выбранные районы.':'Не выбрано: весь город.'}</Text>
    <Text style={p.h4}>Когда работаю</Text>
    <View style={p.days}>{DAYS.map((d,i)=>chip(d,!!(rules.days>>i&1),()=>setRules({...rules,days:rules.days^(1<<i)}),true))}</View>
    <View style={p.two}><View style={p.half}><Text style={a.note}>С</Text><TextInput style={s.field} value={from} onChangeText={setFrom} placeholder="10:00"/></View><View style={p.half}><Text style={a.note}>До</Text><TextInput style={s.field} value={to} onChangeText={setTo} placeholder="19:00"/></View></View>
@@ -92,7 +92,7 @@ export function NativeAutopilotPlan({role}:{role:'owner'|'cleaner'}){
   {(owner?ownerStep:cleanerStep)[step]}
   <View style={p.nav}>
    {step>0?btn('‹ Назад',()=>setStep(step-1),'line'):btn('Отмена',()=>{setOpen(false);setStep(0);},'line')}
-   {step<last?btn('Далее ›',()=>setStep(step+1),'main',!canNext):btn(live?(owner?'Добавить квартиры':'Сохранить правила'):st.trialDays>0&&!plan?'Включить бесплатно':'Включить за '+money(st.price*Math.max(1,owner?fresh.length:1)),finish,'main',owner&&!fresh.length)}
+   {step<last?btn('Далее ›',()=>setStep(step+1),'main',!canNext):btn(live?(owner?'Добавить объекты':'Сохранить правила'):st.trialDays>0&&!plan?'Включить бесплатно':'Включить за '+money(st.price*Math.max(1,owner?fresh.length:1)),finish,'main',owner&&!fresh.length)}
   </View>
  </View>;
  const notice=<>{!!error&&<Text accessibilityRole="alert" style={s.error}>{error}</Text>}{!!message&&<Text accessibilityLiveRegion="polite" style={a.saved}>{message}</Text>}</>;
@@ -101,7 +101,7 @@ export function NativeAutopilotPlan({role}:{role:'owner'|'cleaner'}){
   {notice}
   <View style={p.card}>
    <Text style={p.badge}>✦ AI администратор</Text>
-   <View style={p.head}><View style={{flex:1,gap:4}}><Text style={p.h3}>{owner?'Автопилот':'Автопилот исполнителя'}</Text><Text style={p.price}><Text style={p.priceBig}>{money(st.price)}</Text> {owner?'в месяц за квартиру':'в месяц'}{st.trialDays>0&&!plan?`, первые ${st.trialDays} дней бесплатно`:''}</Text></View><Switch accessibilityLabel="Автопилот" value={open} disabled={busy} onValueChange={v=>v?begin():(setOpen(false),setStep(0))} trackColor={{false:C.lineStrong,true:C.accent}} thumbColor={C.surface}/></View>
+   <View style={p.head}><View style={{flex:1,gap:4}}><Text style={p.h3}>{owner?'Автопилот':'Автопилот исполнителя'}</Text><Text style={p.price}><Text style={p.priceBig}>{money(st.price)}</Text> {owner?'в месяц за объект':'в месяц'}{st.trialDays>0&&!plan?`, первые ${st.trialDays} дней бесплатно`:''}</Text></View><Switch accessibilityLabel="Автопилот" value={open} disabled={busy} onValueChange={v=>v?begin():(setOpen(false),setStep(0))} trackColor={{false:C.lineStrong,true:C.accent}} thumbColor={C.surface}/></View>
    {plan?.status==='paused'&&<Text style={p.paused}>Автопилот на паузе. Принятые брони и уборки в силе.</Text>}
    {open?wizard:<>
     <View style={{gap:12}}>{FEATURES[role].map(f=><View key={f} style={p.feature}><Text style={p.check}>✓</Text><Text style={p.featureText}>{f}</Text></View>)}</View>
@@ -116,7 +116,7 @@ export function NativeAutopilotPlan({role}:{role:'owner'|'cleaner'}){
   <Text accessibilityRole="header" style={a.label}>Тариф</Text>
   <View style={p.on}>
    <View style={p.head}><Text style={[p.onLabel,{flex:1}]}>● {plan?.status==='trial'?'Автопилот включён · пробный период':plan?.status==='grace'?'Автопилот · нужна оплата':'Автопилот включён'}</Text><Switch accessibilityLabel="Автопилот включён" value={!confirmOff} disabled={busy} onValueChange={v=>setConfirmOff(!v)} trackColor={{false:C.accentPressed,true:C.onAccent}} thumbColor={confirmOff?C.surface:C.accent}/></View>
-   <Text style={p.onTitle}>{owner?`ИИ ведёт ${state.units} ${plural(state.units,'квартиру','квартиры','квартир')}`:n?`На сегодня ${n} ${plural(n,'уборка','уборки','уборок')}`:'ИИ берёт уборки по вашим правилам'}</Text><Text style={p.onNote}>{statusLine}</Text>
+   <Text style={p.onTitle}>{owner?`ИИ ведёт ${state.units} ${plural(state.units,'объект','объекта','объектов')}`:n?`На сегодня ${n} ${plural(n,'уборка','уборки','уборок')}`:'ИИ берёт уборки по вашим правилам'}</Text><Text style={p.onNote}>{statusLine}</Text>
   </View>
   {confirmOff&&<View accessibilityRole="alert" style={p.off}><Text style={a.title}>Отключить автопилот?</Text><Text style={a.note}>{offNote}</Text><View style={p.nav}>{btn('Оставить',()=>setConfirmOff(false),'line')}{btn('Отключить',()=>void run('operations/autopilot/stop'),'danger')}</View></View>}
   {notice}
@@ -125,7 +125,7 @@ export function NativeAutopilotPlan({role}:{role:'owner'|'cleaner'}){
   {!owner&&<Group title="План на сегодня">{n?state.today.map((j:Data)=><View key={j.id} style={a.row}><View style={a.wide}><Text style={a.title}>{j.from}–{j.to} · {j.title}</Text><Text style={a.note}>{[j.district,j.address].filter(Boolean).join(', ')} · {money(j.fee)}</Text></View></View>):<View style={a.row}><Text style={a.title}>На сегодня уборок нет</Text></View>}
    {n>0&&<Row title="Не могу сегодня, найти замену" note="ИИ вернёт уборки владельцам и найдёт замену" disabled={busy} onPress={()=>void run('operations/autopilot/away')}/>}</Group>}
   <Group title="Настройки автопилота">
-   <Row title={owner?'Квартиры':'Правила'} value={owner?state.units+' на автопилоте':(rules.districts.length?rules.districts.length+' р-на':'весь город')} open={open} onPress={()=>{setOpen(v=>!v);setStep(0);}}/>
+   <Row title={owner?'Объекты':'Правила'} value={owner?state.units+' на автопилоте':(rules.districts.length?rules.districts.length+' р-на':'весь город')} open={open} onPress={()=>{setOpen(v=>!v);setStep(0);}}/>
    {open&&<View style={a.body}>{wizard}</View>}
   </Group>
  </>;

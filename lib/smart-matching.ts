@@ -115,7 +115,7 @@ export async function matchingState(s:RentalService,id:unknown,prepared?:Row){
 }
 export async function matchingInbox(s:RentalService){
  await s.requireRole('owner');await expire(s);
- const preferences=await rows(s.db,`SELECT p.id,p.title,COALESCE(m.enabled,0) enabled,${guestModeSql} mode,COALESCE(pp.cleaning_fee,0) cleaning_fee FROM properties p ${guestModeJoins} WHERE p.owner_id=? AND p.archived_at IS NULL ORDER BY p.created_at DESC`,epoch(),s.userId);
+ const preferences=await rows(s.db,`SELECT p.id,p.title,COALESCE(m.enabled,0) enabled,${guestModeSql} mode,COALESCE(pp.cleaning_fee,0) cleaning_fee,p.own_staff FROM properties p ${guestModeJoins} WHERE p.owner_id=? AND p.archived_at IS NULL ORDER BY p.created_at DESC`,epoch(),s.userId);
  const offers=await rows(s.db,"SELECT o.id,o.property_id,o.amount,o.expires_at,o.status,r.filters,p.title FROM matching_offers o JOIN matching_requests r ON r.id=o.request_id JOIN properties p ON p.id=o.property_id WHERE o.owner_id=? AND p.owner_id=? AND o.status='pending' AND o.expires_at>? AND r.status IN ('searching','ready') AND r.expires_at>? ORDER BY o.created_at DESC",s.userId,s.userId,epoch(),epoch());
  return {preferences,offers:offers.map(o=>{const {near,...filters}=JSON.parse(o.filters);return {...o,filters};}),serverTime:epoch()};
 }
@@ -137,7 +137,7 @@ export async function matchingAction(s:RentalService,role:Role,action:string,bod
  if(action==='book'&&role==='guest'){
   const r=await guestRequest(s,body.id),key='match:'+r.id,saved=await one(s.db,'SELECT id FROM bookings WHERE guest_id=? AND request_key=?',s.userId,key);if(saved)return {id:saved.id,message:'Эта заявка уже сохранена.'};
   const offer=await one(s.db,"SELECT * FROM matching_offers WHERE id=? AND request_id=? AND status='accepted' AND expires_at>?",body.offerId,r.id,epoch());if(!offer||r.expires_at<=epoch()||!['ready','searching','booking'].includes(r.status))throw new DomainError('Предложение истекло. Запустите новый подбор.',409);
-  if(body.acceptTerms!==true)throw new DomainError('Примите условия конкретной квартиры.');
+  if(body.acceptTerms!==true)throw new DomainError('Примите условия конкретного жилья.');
   const agreed=JSON.parse(r.filters);if(Date.parse(body.start)!==Date.parse(agreed.start)||Date.parse(body.end)!==Date.parse(agreed.end)||Number(body.guests)!==Number(agreed.guests)||body.billingMode!==agreed.mode||body.expectedAmount!==offer.amount||body.expectedPolicyVersion!==offer.policy_version)throw new DomainError('Условия отличаются от предложения. Измените запрос и получите новый расчёт.',409);
   const claimed=await q(s.db,"UPDATE matching_requests SET status='booking',selected_offer=?,lease_until=? WHERE id=? AND (status IN ('ready','searching') OR (status='booking' AND lease_until<?))",offer.id,epoch()+60,r.id,epoch()).run();if(!claimed.meta.changes)throw new DomainError('Заявка уже оформляется. Подождите и обновите подбор.',409);
   try{const f=JSON.parse(r.filters),result=await s.createBooking({...f,propertyId:offer.property_id,billingMode:f.mode,expectedAmount:offer.amount,expectedPolicyVersion:offer.policy_version,requestKey:key,acceptTerms:true});await q(s.db,"UPDATE matching_requests SET status='booked',booking_id=? WHERE id=? AND selected_offer=?",result.id,r.id,offer.id).run();return result;}catch(error){await q(s.db,"UPDATE matching_requests SET status='ready',lease_until=0 WHERE id=? AND status='booking' AND selected_offer=?",r.id,offer.id).run();throw error;}

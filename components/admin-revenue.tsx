@@ -206,15 +206,15 @@ function AutopilotPlans({data,busy,save}:{data:Row;busy:boolean;save:Save}){
    {s.charge?<Button variant="outline" disabled={busy} onClick={()=>submit(false)}>Выключить плату</Button>:<label className="plans-agree"><input type="checkbox" checked={agreed} disabled={busy} onChange={e=>setAgreed(e.target.checked)}/>Участники получат уведомление</label>}
    {!s.charge&&<Button disabled={busy||!agreed} onClick={()=>submit(true)}>Включить плату</Button>}</div>
   <div className="plans-cols">
-   <section className="plans-card"><h3>Автопилот владельца</h3><p>Цена за одну квартиру под ИИ в месяц. Комиссия с брони у таких квартир обычная, без надбавки за ИИ.</p>
-    <dl className="revenue-facts">{stat(o.trial||0,'В пробном')}{stat(o.active||0,'Платят')}{stat(o.grace||0,'Отсрочка')}{stat(o.paused||0,'На паузе')}{stat(o.flats||0,'Квартир под ИИ')}</dl>
+   <section className="plans-card"><h3>Автопилот владельца</h3><p>Цена за один объект под ИИ в месяц. Комиссия с брони у таких объектов обычная, без надбавки за ИИ.</p>
+    <dl className="revenue-facts">{stat(o.trial||0,'В пробном')}{stat(o.active||0,'Платят')}{stat(o.grace||0,'Отсрочка')}{stat(o.paused||0,'На паузе')}{stat(o.flats||0,'Объектов под ИИ')}</dl>
     <p className="plans-sum">{s.charge?'Списано за 30 дней: '+money(o.charged30):'Было бы за месяц: '+money(o.monthly)}</p></section>
    <section className="plans-card"><h3>Автопилот исполнителя</h3><p>Цена в месяц. Удерживается из ближайшей выплаты за уборки.</p>
     <dl className="revenue-facts">{stat(c.trial||0,'В пробном')}{stat(c.active||0,'Платят')}{stat(c.grace||0,'Отсрочка')}{stat(c.paused||0,'На паузе')}{stat(c.taken30||0,'Уборок взял ИИ за 30 дней')}</dl>
     <p className="plans-sum">{s.charge?'Удержано за 30 дней: '+money(c.charged30):'Было бы за 30 дней: '+money(c.shadow30)}</p></section>
   </div>
   <section className="plans-card"><h3>Условия</h3>
-   <div className="plans-fields">{field('ownerPrice','Владелец, за квартиру','₸ в месяц')}{field('cleanerPrice','Исполнитель','₸ в месяц')}{field('trialDays','Бесплатно','дней')}{field('graceDays','Отсрочка','дней')}</div>
+   <div className="plans-fields">{field('ownerPrice','Владелец, за объект','₸ в месяц')}{field('cleanerPrice','Исполнитель','₸ в месяц')}{field('trialDays','Бесплатно','дней')}{field('graceDays','Отсрочка','дней')}</div>
    <Button disabled={busy} onClick={()=>submit(!!s.charge)}>Сохранить условия</Button></section>
  </div>;
 }

@@ -6,7 +6,8 @@ import {useEffect,useMemo,useRef,useState} from 'react';
 import {ArrowLeft,ArrowUp,Building2,Camera,Check,MapPin,Minus,Plus,Sparkles,X} from 'lucide-react';
 import {Photo,preparePhoto} from './media';
 import {PhotoGrid} from './photo-grid';
-import {amenities,checkinMethods,propertyTypes} from '../lib/listings';
+import {amenities,checkinMethods} from '../lib/listings';
+import {KindPicker} from './kind-picker';
 import {needsReview,reviewRequest} from '../lib/listing-edit';
 import {DRAFT_EXAMPLE,answerDraft,draftDescription,draftListingBody,draftQuestions,draftRules,draftTitle,emptyDraft,moneyAnswer,readListingText,type ListingDraft} from '../lib/listing-draft';
 import {plural} from '../lib/map-search-request';
@@ -28,7 +29,7 @@ export function PropertyQuick({city,role,api,onSave,onGuestMode,onPlace,onReview
  // Each new step starts at the sheet's top, not where the previous one was scrolled to.
  useEffect(()=>{if(first.current){first.current=false;return;}box.current?.scrollIntoView({block:'start',behavior:'smooth'});},[step]);
  const [fine]=useState(()=>typeof window!=='undefined'&&window.matchMedia?.('(pointer:fine)').matches);
- const questions=useMemo(()=>{const q=draftQuestions(draft);return mode==='auto'&&!(draft.cleaningFee>=100)?[...q,{key:'cleaningFee' as const,label:'Уборка',question:'Сколько вы платите за уборку после гостя? ИИ будет заказывать её сам.',placeholder:'Например, 3 000'}]:q;},[draft,mode]);
+ const questions=useMemo(()=>{const q=draftQuestions(draft);return mode==='auto'&&!draft.ownStaff&&!(draft.cleaningFee>=100)?[...q,{key:'cleaningFee' as const,label:'Уборка',question:'Сколько вы платите за уборку после гостя? ИИ будет заказывать её сам.',placeholder:'Например, 3 000'}]:q;},[draft,mode]);
  const ask=questions[0];
  const patch=(value:Partial<ListingDraft>)=>setDraft(d=>({...d,...value,known:[...new Set([...d.known,...Object.keys(value)])]}));
  const guessed=(key:string)=>!draft.known.includes(key);
@@ -48,22 +49,22 @@ export function PropertyQuick({city,role,api,onSave,onGuestMode,onPlace,onReview
     if(onReview&&needsReview(String(e?.message))){try{await onReview(reviewRequest({id:result.id,title:draftTitle(draft),city:draft.city,address:draft.address}));review=true;}catch{/* the owner can still ask from «Допуск» */}}}
    // The flat goes on the map by its address right away; the owner only checks the pin.
    let placed=false;try{placed=!!((await onPlace?.({propertyId:result.id})) as Row|undefined)?.saved;}catch{/* the map pin can be set later */}
-   let note='';try{await onGuestMode({propertyId:result.id,mode,cleaningFee:mode==='auto'?draft.cleaningFee:undefined});}catch(e:any){note=' '+(e?.message||'Режим ответов гостям включите в «Запросах гостей».');}
-   const done={id:result.id,published,placed,message:(published?'Квартира опубликована, гости уже видят её на карте.':review?'Сохранена черновиком и отправлена на проверку администратору: после проверки появится на карте сама.':photos.length?'Сохранена черновиком: чтобы показать гостям, пройдите проверку в «Управление → Допуск».':'Сохранена черновиком. Добавьте фото, и её можно будет показать гостям.')+note};
+   let note='';try{await onGuestMode({propertyId:result.id,mode,cleaningFee:mode==='auto'&&!draft.ownStaff?draft.cleaningFee:undefined});}catch(e:any){note=' '+(e?.message||'Режим ответов гостям включите в «Запросах гостей».');}
+   const done={id:result.id,published,placed,message:(published?'Жильё опубликовано, гости уже видят его на карте.':review?'Сохранено черновиком и отправлено на проверку администратору: после проверки появится на карте само.':photos.length?'Сохранено черновиком: чтобы показать гостям, пройдите проверку в «Управление → Допуск».':'Сохранено черновиком. Добавьте фото, и его можно будет показать гостям.')+note};
    setSaved(done);setStep(2);
-  }catch(e:any){setError(e?.message||'Не удалось сохранить квартиру.');}finally{setBusy(false);}
+  }catch(e:any){setError(e?.message||'Не удалось сохранить жильё.');}finally{setBusy(false);}
  }
  const priceLine=[draft.price>=100&&money(draft.price)+' / сутки',draft.hourlyPrice>=100&&money(draft.hourlyPrice)+' / час',draft.nightlyPrice>=100&&money(draft.nightlyPrice)+' / ночь'].filter(Boolean).join(' · ');
 
  return <section ref={box} className="pq" aria-labelledby="pq-title" onFocus={e=>{const t=e.target as HTMLElement;if(fine||!t.matches('input,textarea'))return;
   // The phone keyboard covers the lower half: once it is up, bring the field into the middle of what is left.
   setTimeout(()=>t.scrollIntoView({block:'center',behavior:'smooth'}),350);}}>
-  <header className="pq-head"><span className="pq-orb" aria-hidden="true"><Sparkles size={18}/></span><div><h2 id="pq-title">Новая квартира</h2><p>{['ИИ заполнит объявление по вашему рассказу','ИИ заполнил карточку. Проверьте и поправьте','Квартира добавлена'][step]}</p></div>{step<2&&<button type="button" className="pq-icon" onClick={onClose} aria-label="Закрыть" disabled={busy}><X size={20}/></button>}</header>
+  <header className="pq-head"><span className="pq-orb" aria-hidden="true"><Sparkles size={18}/></span><div><h2 id="pq-title">Новое жильё</h2><p>{['ИИ заполнит объявление по вашему рассказу','ИИ заполнил карточку. Проверьте и поправьте','Жильё добавлено'][step]}</p></div>{step<2&&<button type="button" className="pq-icon" onClick={onClose} aria-label="Закрыть" disabled={busy}><X size={20}/></button>}</header>
   <ol className="pq-steps" aria-label={'Шаг '+(step+1)+' из 3'}>{STEPS.map((s,i)=><li key={s} className={i<step?'is-done':i===step?'is-now':''} aria-current={i===step?'step':undefined}><span>{i<step?<Check size={12}/>:i+1}</span>{s}</li>)}</ol>
   {error&&<p className="pq-error" role="alert">{error}</p>}
 
   {step===0&&<div className="pq-body">
-   <label className="pq-line"><span className="pq-sr">Расскажите о квартире</span><textarea value={text} onChange={e=>setText(e.target.value)} rows={5} maxLength={2000} autoFocus={fine} placeholder="Например: однушка на Торайгырова 64, 4 этаж, до 3 гостей, есть Wi-Fi и стиралка, 15 000 в сутки, 2 500 в час" onKeyDown={e=>{if(e.key==='Enter'&&(e.metaKey||e.ctrlKey))read();}}/>
+   <label className="pq-line"><span className="pq-sr">Расскажите о жилье</span><textarea value={text} onChange={e=>setText(e.target.value)} rows={5} maxLength={2000} autoFocus={fine} placeholder="Например: однушка на Торайгырова 64, 4 этаж, до 3 гостей, есть Wi-Fi и стиралка, 15 000 в сутки, 2 500 в час" onKeyDown={e=>{if(e.key==='Enter'&&(e.metaKey||e.ctrlKey))read();}}/>
     <span className="pq-line-bar"><button type="button" className="pq-chip" onClick={()=>setText(DRAFT_EXAMPLE)}>Пример</button><span className="pq-count">{text.length? text.length+' / 2000':'Порядок не важен'}</span></span></label>
    <PhotoGrid photos={photos} onChange={setPhotos} role={role} api={api} onBusy={setUploading}/>
    <p className="pq-hint">ИИ поймёт комнаты, этаж, площадь, гостей, цены за сутки и час, удобства, правила и адрес. Фото можно добавить и потом.</p>
@@ -86,15 +87,15 @@ export function PropertyQuick({city,role,api,onSave,onGuestMode,onPlace,onReview
     </div>
    </article>
 
-   <h3 className="pq-h">Квартира</h3>
-   <div className="pq-chips" role="radiogroup" aria-label="Тип жилья">{Object.entries(propertyTypes).map(([id,label])=><button key={id} type="button" role="radio" aria-checked={draft.type===id} className="pq-chip" onClick={()=>patch({type:id})}>{label}</button>)}</div>
+   <h3 className="pq-h">Жильё</h3>
+   <KindPicker type={draft.type} ownStaff={draft.ownStaff} onChange={v=>patch(v)}/>
    <div className="pq-grid">
     <Counter label="Комнаты" value={draft.rooms} min={1} max={20} guessed={guessed('rooms')} onChange={v=>patch({rooms:v})}/>
     <Counter label="Гостей" value={draft.capacity} min={1} max={50} guessed={guessed('capacity')} onChange={v=>setDraft(d=>({...d,capacity:v,beds:Math.max(d.beds,v),known:[...new Set([...d.known,'capacity'])]}))}/>
     <Num label="Площадь, м²" value={draft.area} min={5} max={2000} guessed={guessed('area')} onChange={v=>patch({area:v})}/>
     <label className="pq-tile"><span>Этаж{guessed('floor')&&<em>ИИ предположил</em>}</span><span className="pq-pair"><input type="number" inputMode="numeric" min={0} max={100} value={draft.floor} onChange={e=>patch({floor:Math.max(0,Number(e.target.value)||0)})} aria-label="Этаж"/>из<input type="number" inputMode="numeric" min={1} max={100} value={draft.floors} onChange={e=>patch({floors:Math.max(1,Number(e.target.value)||1)})} aria-label="Этажей в доме"/></span></label>
    </div>
-   <label className="pq-field"><span>Точный адрес · видят только гость с бронью и исполнитель уборки</span><input value={draft.address} maxLength={300} placeholder="Улица, дом, квартира" onChange={e=>patch({address:e.target.value})}/></label>
+   <label className="pq-field"><span>Точный адрес · видят только гость с бронью и исполнитель уборки</span><input value={draft.address} maxLength={300} placeholder="Улица, дом, номер" onChange={e=>patch({address:e.target.value})}/></label>
    <div className="pq-two"><label className="pq-field"><span>Район</span><input value={draft.district} maxLength={120} onChange={e=>patch({district:e.target.value})}/></label><label className="pq-field"><span>Город</span><input value={draft.city} maxLength={80} onChange={e=>patch({city:e.target.value})}/></label></div>
 
    <h3 className="pq-h">Цены</h3>
@@ -123,10 +124,10 @@ export function PropertyQuick({city,role,api,onSave,onGuestMode,onPlace,onReview
 
    <h3 className="pq-h">Кто отвечает гостям</h3>
    <div className="pq-mode" role="radiogroup" aria-label="Кто отвечает гостям">
-    <button type="button" role="radio" aria-checked={mode==='auto'} onClick={()=>setMode('auto')}><strong><Sparkles size={15}/>ИИ</strong><small>Отвечает за минуту, подтверждает бронь и заказывает уборку</small></button>
+    <button type="button" role="radio" aria-checked={mode==='auto'} onClick={()=>setMode('auto')}><strong><Sparkles size={15}/>ИИ</strong><small>{draft.ownStaff?'Отвечает за минуту и подтверждает бронь':'Отвечает за минуту, подтверждает бронь и заказывает уборку'}</small></button>
     <button type="button" role="radio" aria-checked={mode==='manual'} onClick={()=>setMode('manual')}><strong>Я сам</strong><small>Запросы приходят вам, вы решаете</small></button>
    </div>
-   {mode==='auto'&&draft.cleaningFee>=100&&<Num label="Уборка после гостя, ₸" value={draft.cleaningFee} min={100} max={1000000} step={500} onChange={v=>patch({cleaningFee:v})}/>}
+   {mode==='auto'&&!draft.ownStaff&&draft.cleaningFee>=100&&<Num label="Уборка после гостя, ₸" value={draft.cleaningFee} min={100} max={1000000} step={500} onChange={v=>patch({cleaningFee:v})}/>}
 
    <div className="pq-actions pq-sticky"><button type="button" className="pq-ghost" onClick={()=>setStep(0)} disabled={busy}><ArrowLeft size={16}/>Назад</button><button type="button" className="pq-primary" disabled={busy||uploading||!!questions.length} onClick={save}>{busy?'Сохраняю…':photos.length?'Опубликовать':'Сохранить черновик'}</button></div>
   </div>}

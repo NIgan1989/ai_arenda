@@ -115,6 +115,6 @@ test('a flat sent for review from «Показать гостям» reaches the 
   await decideParticipantReview(f.owner,{id:pending.id,expectedVersion:pending.version,status:'approved',method:'Видеозвонок',notes:'Квартира совпадает с фото'},true);
   assert.equal(f.db.raw.prepare('SELECT published FROM properties WHERE id=?').get(f.property).published,1);
   assert.equal(f.db.raw.prepare('SELECT version FROM property_details WHERE property_id=?').get(f.property).version,before+1);
-  const told=f.db.raw.prepare("SELECT body FROM notifications WHERE dedupe LIKE 'owner:review:%'").get();assert.match(told.body,/показана гостям/);
+  const told=f.db.raw.prepare("SELECT body FROM notifications WHERE dedupe LIKE 'owner:review:%'").get();assert.match(told.body,/показано гостям/);
  }finally{f.db.close();}
 });

@@ -20,7 +20,7 @@ export function FlatCalendars({propertyId,onBack}:{propertyId:string;onBack:()=>
  const share=()=>run(async()=>{const r=await request('/api/operations/calendar/export',{propertyId});setLink(r.url);});
  return <View style={f.sheet}>
   <View style={f.bar}><Pressable accessibilityRole="button" accessibilityLabel="Назад к списку" onPress={onBack} disabled={busy} style={f.round}><Text style={f.roundText}>←</Text></Pressable><Text accessibilityRole="header" style={f.title}>Календари площадок</Text></View>
-  <Text style={f.hint}>Если квартира есть на Airbnb, Booking или Суточно, свяжите календари, и одну квартиру не забронируют дважды.</Text>
+  <Text style={f.hint}>Если жильё есть на Airbnb, Booking или Суточно, свяжите календари, и одно жильё не забронируют дважды.</Text>
   <Text style={f.h}>ЗАНЯТОСТЬ С ДРУГИХ ПЛОЩАДОК</Text>
   {!state&&!error&&<ThinkingLine style={f.hint} text="Загружаю…"/>}
   {(state?.sources||[]).map((s:Row)=>{const st=calendarStatus(s);return <View key={s.id} style={[f.row,st.tone==='warn'&&f.rowWarn,st.tone==='off'&&f.rowOff]}>

@@ -58,7 +58,7 @@ test('catalogue requires the guest role while quotes verify the interval without
 });
 
 test('conversation and data persist across server restarts, with no account leakage',async()=>{
-  const history={messages:[{id:'test-1',sender:'user',text:'Мои квартиры'}],flow:null,actor:'owner'};
+  const history={messages:[{id:'test-1',sender:'user',text:'Мои объекты'}],flow:null,actor:'owner'};
   assert.equal((await call('/api/conversation',history,owner.token,'PUT')).status,200);
   assert.deepEqual((await call('/api/conversation',undefined,guest.token)).body.messages,[]);
   await app.close();await start();
@@ -106,7 +106,7 @@ test('multi-role views, conversations and replayed actions remain scoped to the 
   const ownerState=await scoped('/api/state','owner'),guestState=await scoped('/api/state','guest'),cleanerState=await scoped('/api/state','cleaner');
   assert.ok(ownerState.body.ownProperties.length>0);assert.equal(guestState.body.ownProperties.length,0);assert.equal(guestState.body.jobs.length,0);assert.equal(cleanerState.body.bookings.length,0);
   assert.deepEqual((await scoped('/api/conversation','guest')).body.messages,[]);
-  assert.equal((await scoped('/api/conversation','owner')).body.messages[0].text,'Мои квартиры');
+  assert.equal((await scoped('/api/conversation','owner')).body.messages[0].text,'Мои объекты');
   const payload={title:'Role receipt check',city:'Павлодар',district:'Центр',address:'PRIVATE',description:'test',price:10000,rooms:1,capacity:2,cleaningMinutes:60};
   assert.equal((await scoped('/api/properties','owner',payload,'role-replay-key')).status,200);
   assert.equal((await scoped('/api/properties','guest',payload,'role-replay-key')).status,403);

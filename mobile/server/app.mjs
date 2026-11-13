@@ -113,11 +113,11 @@ export function createApp({filename=':memory:',origins=['http://localhost:8081',
     if(path==='/api/approvals')return service.decideApproval(activeRole,input);
     if(path==='/api/jobs'){
       await service.requireRole('owner');
-      if(!await service.one('SELECT id FROM properties WHERE id=? AND owner_id=?',String(input.propertyId||''),user.id))throw new HttpError('Выберите свою квартиру.',403);
+      if(!await service.one('SELECT id FROM properties WHERE id=? AND owner_id=?',String(input.propertyId||''),user.id))throw new HttpError('Выберите своё жильё.',403);
       const {start,end}=interval(input.start,input.end);
       const occupied=db.raw.prepare(`SELECT id FROM bookings WHERE property_id=? AND (status='confirmed' OR (status='requested' AND expires_at>?)) AND start<? AND occupied_until>?`).get(String(input.propertyId||''),now(),end,start);
       const cleaning=db.raw.prepare(`SELECT id FROM cleaning_jobs WHERE property_id=? AND status IN ('open','assigned','in_progress','submitted') AND start<? AND end>?`).get(String(input.propertyId||''),end,start);
-      if(occupied||cleaning)throw new HttpError('У квартиры уже есть бронь или уборка на это время.',409);
+      if(occupied||cleaning)throw new HttpError('У жилья уже есть бронь или уборка на это время.',409);
       return service.createJob(input);
     }
     if(path==='/api/demo')return service.demo();
@@ -159,9 +159,9 @@ export function createApp({filename=':memory:',origins=['http://localhost:8081',
       const result=await serial(()=>execute(req,path,input));
       if(result instanceof Response){res.writeHead(result.status,{...headers,...Object.fromEntries(result.headers)});res.end(await result.text());}else reply(200,result);
     }catch(error){
-      if(/property_archived/.test(error.message)){reply(409,{error:'Квартира удалена владельцем: показать или забронировать её нельзя.'});return;}
+      if(/property_archived/.test(error.message)){reply(409,{error:'Жильё удалено владельцем: показать или забронировать её нельзя.'});return;}
       if(/account_erased/.test(error.message)){reply(410,{error:'Аккаунт удалён. Обновите вход.'});return;}
-      if(/checkout_required|property_not_vacant|property_cleaning_busy/.test(error.message)){reply(409,{error:'Квартира не освобождена или другая уборка ещё не принята.'});return;}
+      if(/checkout_required|property_not_vacant|property_cleaning_busy/.test(error.message)){reply(409,{error:'Жильё не освобождено или другая уборка ещё не принята.'});return;}
       if(/pilot_/.test(error.message)){reply(409,{error:'Требуется актуальная проверка участника или телефона. Откройте «Управление → Допуск».'});return;}
       const overlap=/booking_overlap|cleaner_overlap|external_calendar_overlap|external_calendar_stale/.test(error.message);
       const status=overlap?409:Number(error.status)||500;

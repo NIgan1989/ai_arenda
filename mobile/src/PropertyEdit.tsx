@@ -8,11 +8,12 @@ import {Stepper} from './SheetParts';
 import {FlatCalendars} from './FlatCalendars';
 import {RegularCleaner} from './RegularCleaner';
 import {EDIT_STEPS,editBody,editRequest,nextAdvice,needsReview,reviewRequest,REVIEW_SENT,stepForError,stepLine,stepNeeds,type Advice,type EditBody,type EditStep} from '../../lib/listing-edit';
-import {amenities,checkinMethods,propertyTypes} from '../../lib/listings';
+import {amenities,checkinMethods} from '../../lib/listings';
+import {KindPicker} from './KindPicker';
 type Row=Record<string,any>;
 const R=T.radius,H=T.control;
-const ICONS:Record<EditStep,string>={photos:'📷',flat:'🛏',place:'📍',text:'📝',amenities:'📶',prices:'₸',checkin:'🕑',rules:'📜'};
-const SAVED:Record<EditStep|'publish',string>={photos:'Фото сохранены.',flat:'Квартира сохранена.',place:'Адрес сохранён.',text:'Описание сохранено.',amenities:'Удобства сохранены.',prices:'Цены сохранены.',checkin:'Заезд сохранён.',rules:'Правила сохранены.',publish:'Готово.'};
+const ICONS:Record<EditStep,string>={photos:'📷',flat:'🏠',place:'📍',text:'📝',amenities:'📶',prices:'₸',checkin:'🕑',rules:'📜'};
+const SAVED:Record<EditStep|'publish',string>={photos:'Фото сохранены.',flat:'Сохранено.',place:'Адрес сохранён.',text:'Описание сохранено.',amenities:'Удобства сохранены.',prices:'Цены сохранены.',checkin:'Заезд сохранён.',rules:'Правила сохранены.',publish:'Готово.'};
 
 // Editing a flat in the app: an overview of short steps, each opened on its own small screen and saved at once.
 // After each save the AI administrator offers the next step. Same rules as the site (lib/listing-edit.ts).
@@ -25,7 +26,7 @@ export function PropertyEdit({property,onSave,onReview,onRemove,onClose,step}:{p
  const advice:Advice=held&&error?{step:fix,text:'Не сохранилось: '+error+(fix?' Заполните это, и сохранится всё вместе.':''),action:fix?'Заполнить':undefined}:sent&&!base.published?{step:null,text:REVIEW_SENT}:nextAdvice(base,skipped);
  function go(step:EditStep){if(!held)setDraft(base);setError(held?error:'');setDone('');setOpen(step);}
  // Removing asks once more right here; the server deletes a flat without history and archives one with bookings.
- async function remove(){if(!onRemove||busy)return;setBusy(true);setRemoveError('');try{await onRemove();}catch(x:any){setRemoveError(x?.message||'Не удалось удалить квартиру.');}finally{setBusy(false);}}
+ async function remove(){if(!onRemove||busy)return;setBusy(true);setRemoveError('');try{await onRemove();}catch(x:any){setRemoveError(x?.message||'Не удалось удалить жильё.');}finally{setBusy(false);}}
  async function commit(next:EditBody,what:EditStep|'publish'){
   if(busy||uploading)return;setBusy(true);setError('');
   try{const fresh=await onSave(editRequest(next,p));setP(fresh||{...p,listing_version:(p.listing_version||0)+1});const b=fresh?editBody(fresh):next;setBase(b);setDraft(b);setOpen(null);setHeld(false);setError('');setDone(SAVED[what]);}
@@ -50,14 +51,14 @@ export function PropertyEdit({property,onSave,onReview,onRemove,onClose,step}:{p
    <View style={e.bar}><Pressable accessibilityRole="button" accessibilityLabel="Назад к списку" onPress={()=>{setOpen(null);if(!held)setError('');}} disabled={busy||uploading} style={e.round}><Text style={e.roundText}>←</Text></Pressable><Text accessibilityRole="header" style={e.title}>{title}</Text></View>
    {open==='photos'&&<PhotoGrid photos={draft.photos} onChange={photos=>set({photos})} onBusy={setUploading} disabled={busy}/>}
    {open==='flat'&&<>
-    <View style={e.chips}>{Object.entries(propertyTypes).map(([id,label])=>chip(id,label,d.type===id,()=>setD({type:id}),true))}</View>
+    <KindPicker kind={d.type} ownStaff={draft.ownStaff} onChange={v=>setDraft(o=>({...o,ownStaff:v.ownStaff??o.ownStaff,details:{...o.details,type:v.type??o.details.type}}))}/>
     <View style={e.row}>{half(<Stepper label="Комнаты" value={draft.rooms} text={String(draft.rooms)} min={1} max={20} onChange={n=>set({rooms:n})}/>)}{half(<Stepper label="Гостей" value={draft.capacity} text={String(draft.capacity)} min={1} max={50} onChange={n=>setDraft(o=>({...o,capacity:n,details:{...o.details,beds:Math.max(o.details.beds,n)}}))}/>)}</View>
     <View style={e.row}>{half(<Stepper label="Спальных мест" value={d.beds} text={String(d.beds)} min={1} max={50} onChange={n=>setD({beds:n})}/>)}{half(<Stepper label="Санузлы" value={d.bathrooms} text={String(d.bathrooms)} min={1} max={20} onChange={n=>setD({bathrooms:n})}/>)}</View>
     <View style={e.row}>{num('Площадь, м²',d.area,n=>setD({area:n}),2000)}{num('Этаж',d.floor,n=>setD({floor:n}),100)}{num('Этажей',d.floors,n=>setD({floors:n}),100)}</View>
    </>}
    {open==='place'&&<>
     <View style={e.row}>{half(text('Город',draft.city,v=>set({city:v}),80))}{half(text('Район',draft.district,v=>set({district:v}),120,'Например, Центр'))}</View>
-    {text('Точный адрес',draft.address,v=>set({address:v}),300,'Улица, дом, квартира')}
+    {text('Точный адрес',draft.address,v=>set({address:v}),300,'Улица, дом, номер')}
     <Text style={e.hint}>Адрес видит только гость с подтверждённой бронью. Метку на карте ставим по нему.</Text>
    </>}
    {open==='text'&&<>
@@ -109,7 +110,7 @@ export function PropertyEdit({property,onSave,onReview,onRemove,onClose,step}:{p
    <View style={{flex:1,minWidth:0}}><Text style={e.stepTitle} numberOfLines={1}>{s.title}</Text><Text style={e.stepLine} numberOfLines={1}>{stepLine(base,s.key)}</Text></View>
    {needs&&<View style={e.dot}/>}
   </Pressable>;})}</View>
-  {!!p.id&&<Pressable accessibilityRole="button" accessibilityLabel="Постоянный исполнитель" onPress={()=>{setDone('');setCleaner(true);}} style={({pressed})=>[e.step,{width:'100%'},pressed&&e.pressed]}>
+  {!!p.id&&!base.ownStaff&&<Pressable accessibilityRole="button" accessibilityLabel="Постоянный исполнитель" onPress={()=>{setDone('');setCleaner(true);}} style={({pressed})=>[e.step,{width:'100%'},pressed&&e.pressed]}>
    <View style={e.icoBox}><Text style={e.ico}>🧹</Text></View>
    <View style={{flex:1,minWidth:0}}><Text style={e.stepTitle} numberOfLines={1}>Постоянный исполнитель</Text><Text style={e.stepLine} numberOfLines={1}>{p.regular_cleaner_name?p.regular_cleaner_name+': уборки приходят сначала к нему':'Закрепите свою: уборки, оплата и замена через сервис'}</Text></View>
   </Pressable>}
@@ -119,10 +120,10 @@ export function PropertyEdit({property,onSave,onReview,onRemove,onClose,step}:{p
   </Pressable>
   <View style={e.switchRow}><View style={{flex:1}}><Text style={e.stepTitle}>Показывать гостям</Text><Text style={e.stepLine}>{base.published?'Объявление на карте':'Черновик, видите только вы'}</Text></View><Switch accessibilityLabel="Показывать гостям" value={base.published} disabled={busy} onValueChange={v=>commit({...(held?draft:base),published:v},'publish')} trackColor={{true:C.success,false:C.lineStrong}} thumbColor={C.surface}/></View>
   {onRemove&&(confirm?<View style={e.remove}>
-   <Text style={e.adviceText}><Text style={{fontWeight:'700'}}>Удалить «{base.title||'квартиру'}»? </Text>Гости больше её не увидят. Если по ней были брони, история броней и оплат сохранится.</Text>
+   <Text style={e.adviceText}><Text style={{fontWeight:'700'}}>Удалить «{base.title||'жильё'}»? </Text>Гости больше его не увидят. Если по нему были брони, история броней и оплат сохранится.</Text>
    {!!removeError&&<Text accessibilityRole="alert" style={e.errorText}>{removeError}</Text>}
    <View style={e.adviceRow}><Pressable accessibilityRole="button" disabled={busy} onPress={remove} style={e.danger}><Text style={e.goText}>{busy?'Удаляю…':'🗑 Удалить'}</Text></Pressable><Pressable accessibilityRole="button" disabled={busy} onPress={()=>{setConfirm(false);setRemoveError('');}} style={e.later}><Text style={e.laterText}>Отмена</Text></Pressable></View>
-  </View>:<Pressable accessibilityRole="button" disabled={busy} onPress={()=>setConfirm(true)} style={e.removeLink}><Text style={e.removeText}>🗑 Удалить квартиру</Text></Pressable>)}
+  </View>:<Pressable accessibilityRole="button" disabled={busy} onPress={()=>setConfirm(true)} style={e.removeLink}><Text style={e.removeText}>🗑 Удалить жильё</Text></Pressable>)}
  </View>;
 }
 const e=StyleSheet.create({

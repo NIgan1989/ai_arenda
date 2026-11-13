@@ -32,13 +32,13 @@ export type FlatFacts={description:string;title:string;photos:number;mapped:bool
 export function flatChecks(f:FlatFacts):ReviewCheck[]{
  const checks:ReviewCheck[]=[];
  const len=f.description.trim().length;
- checks.push({key:'description',label:'Описание',state:len>=MIN_DESCRIPTION?'ok':'fix',note:len>=MIN_DESCRIPTION?'Описание есть':'Описание короче '+MIN_DESCRIPTION+' знаков, допишите пару предложений о квартире'});
+ checks.push({key:'description',label:'Описание',state:len>=MIN_DESCRIPTION?'ok':'fix',note:len>=MIN_DESCRIPTION?'Описание есть':'Описание короче '+MIN_DESCRIPTION+' знаков, допишите пару предложений о жилье'});
  checks.push({key:'photos',label:'Фото',state:f.photos>=MIN_PHOTOS?'ok':'fix',note:f.photos>=MIN_PHOTOS?'Фото: '+f.photos:'Фото: '+f.photos+', нужно не меньше '+MIN_PHOTOS});
- checks.push({key:'map',label:'Точка на карте',state:f.mapped?'ok':'fix',note:f.mapped?'Точка на карте есть':'Поставьте точку квартиры на карте'});
+ checks.push({key:'map',label:'Точка на карте',state:f.mapped?'ok':'fix',note:f.mapped?'Точка на карте есть':'Поставьте точку жилья на карте'});
  if(f.comparable.length>=3){const m=median(f.comparable),ratio=f.price/m,odd=ratio<PRICE_LOW||ratio>PRICE_HIGH;
   checks.push({key:'price',label:'Цена',state:odd?'risk':'ok',note:(odd?'Цена '+money(f.price)+' сильно '+(ratio<1?'ниже':'выше')+' обычной в городе':'Цена '+money(f.price)+' в пределах рынка')+' (обычно '+money(m)+')'});}
  else checks.push({key:'price',label:'Цена',state:f.price>0?'ok':'risk',note:f.price>0?'Цена указана, сравнить пока не с чем':'Цена не указана'});
- checks.push({key:'address',label:'Адрес',state:f.duplicateAddress?'risk':'ok',note:f.duplicateAddress?'Такой же адрес уже у квартиры другого владельца':'Адрес не повторяется'});
+ checks.push({key:'address',label:'Адрес',state:f.duplicateAddress?'risk':'ok',note:f.duplicateAddress?'Такой же адрес уже у жилья другого владельца':'Адрес не повторяется'});
  const contacts=hasContacts(f.title+' '+f.description);
  checks.push({key:'contacts',label:'Текст',state:contacts?'risk':'ok',note:contacts?'В тексте телефон, ссылка или просьба оплатить напрямую':'Нет контактов и оплаты мимо сервиса'});
  checks.push({key:'history',label:'История владельца',state:f.rejectedBefore||f.openComplaints?'risk':'ok',note:f.rejectedBefore?'Раньше проверка уже не проходила':f.openComplaints?'Открытые жалобы гостей: '+f.openComplaints:'Отказов и жалоб нет'});
@@ -85,7 +85,7 @@ export async function autoReview(db:D1Database,reviewId:string,config:OperationC
  const checks=await reviewChecks(db,review);if(!checks)return null;
  const verdict=verdictOf(checks),at=epoch(),policy=await one(db,"SELECT ai_review FROM pilot_policy WHERE id='global'"),auto=!!(policy?.ai_review??1);
  await q(db,"UPDATE participant_reviews SET ai_verdict=?,ai_checks=?,ai_checked_at=? WHERE id=? AND status='pending'",verdict,JSON.stringify(checks),at,reviewId).run();
- const what=review.role==='owner'?'Квартира «'+(review.title||'без названия')+'»':'Анкета исполнителя «'+(review.name||'без имени')+'»';
+ const what=review.role==='owner'?'Жильё «'+(review.title||'без названия')+'»':'Анкета исполнителя «'+(review.name||'без имени')+'»';
  if(auto&&verdict==='approve'){
   try{await decideParticipantReview({db,userId:AI_REVIEWER} as unknown as RentalService,{id:reviewId,status:'approved',method:AI_METHOD,notes:'Все правила пройдены: '+checksSummary(checks,['ok']),validUntil:review.role==='cleaner'?new Date((at+CLEANER_VALID)*1000).toISOString():undefined,expectedVersion:review.version},true);return verdict;}
   catch(e){if(!(e instanceof DomainError))throw e;

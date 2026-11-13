@@ -31,8 +31,8 @@ export function pairTermsText(t:PairTerms){
 }
 
 async function ownFlat(service:RentalService,propertyId:string){
- const p=await one(service.db,'SELECT id,title,city FROM properties WHERE id=? AND owner_id=? AND archived_at IS NULL',propertyId,service.userId);
- if(!p)throw new DomainError('Квартира недоступна.',403);return p;
+ const p=await one(service.db,'SELECT id,title,city,own_staff FROM properties WHERE id=? AND owner_id=? AND archived_at IS NULL',propertyId,service.userId);
+ if(!p)throw new DomainError('Жильё недоступно.',403);return p;
 }
 
 // What the owner sees on «Моя уборщица»: the pinned cleaner or the best candidates to pin, the guarantee and the terms.
@@ -63,24 +63,25 @@ export async function regularState(service:RentalService,propertyId:string){
 }
 
 export async function pinRegular(service:RentalService,body:Row){
- await service.requireRole('owner');const p=await ownFlat(service,required(body.propertyId,'Квартира',100)),cleanerId=required(body.cleanerId,'Исполнитель',100),at=epoch();
+ await service.requireRole('owner');const p=await ownFlat(service,required(body.propertyId,'Жильё',100)),cleanerId=required(body.cleanerId,'Исполнитель',100),at=epoch();
  const c=await one(service.db,"SELECT id,name FROM profiles WHERE id=? AND id<>? AND EXISTS(SELECT 1 FROM json_each(roles) WHERE value='cleaner')",cleanerId,service.userId);
+ if(Number(p.own_staff))throw new DomainError('Здесь убирает свой персонал: постоянный исполнитель не нужен.',409);
  if(!c)throw new DomainError('Исполнитель не найден.',404);
  const before=await one(service.db,'SELECT cleaner_id FROM regular_cleaners WHERE property_id=?',p.id);
  if(before?.cleaner_id===c.id)return {message:`${c.name} уже ваш постоянный исполнитель.`};
  const terms=await pairTerms(service.db),statements=[
   q(service.db,'INSERT INTO regular_cleaners(property_id,owner_id,cleaner_id,created_at) VALUES (?,?,?,?) ON CONFLICT(property_id) DO UPDATE SET cleaner_id=excluded.cleaner_id,created_at=excluded.created_at',p.id,service.userId,c.id,at),
   service.audit(p.id,JSON.stringify({action:'regular_cleaner.pinned',cleanerId:c.id,previous:before?.cleaner_id||null})),
-  service.notify(c.id,`Вы постоянный исполнитель квартиры «${p.title}». Все уборки этой квартиры сначала приходят вам, ваше «да» сразу назначает вас. Если на балансе владельца есть деньги, оплата резервируется заранее и приходит после приёмки. ${pairTermsText(terms)}`,'regular:'+p.id+':'+at,'cleaner'),
+  service.notify(c.id,`Вы постоянный исполнитель объекта «${p.title}». Все уборки этого жилья сначала приходят вам, ваше «да» сразу назначает вас. Если на балансе владельца есть деньги, оплата резервируется заранее и приходит после приёмки. ${pairTermsText(terms)}`,'regular:'+p.id+':'+at,'cleaner'),
  ];
- if(before)statements.push(service.notify(before.cleaner_id,`Владелец закрепил за квартирой «${p.title}» другого исполнителя. Уже назначенные вам уборки остаются за вами.`,'regular-ended:'+p.id+':'+at,'cleaner'));
+ if(before)statements.push(service.notify(before.cleaner_id,`Владелец закрепил за объектом «${p.title}» другого исполнителя. Уже назначенные вам уборки остаются за вами.`,'regular-ended:'+p.id+':'+at,'cleaner'));
  await service.db.batch(statements);
  return {message:`${c.name} теперь ваш постоянный исполнитель. Уборки «${p.title}» будут приходить сначала к нему.`};
 }
 
 // Either side can end the pair: the owner from the flat, the cleaner from her list.
 export async function unpinRegular(service:RentalService,role:string,body:Row){
- const propertyId=required(body.propertyId,'Квартира',100);
+ const propertyId=required(body.propertyId,'Жильё',100);
  const r=await one(service.db,'SELECT r.*,p.title,c.name FROM regular_cleaners r JOIN properties p ON p.id=r.property_id JOIN profiles c ON c.id=r.cleaner_id WHERE r.property_id=?',propertyId);
  const mine=role==='owner'?r?.owner_id===service.userId:role==='cleaner'&&r?.cleaner_id===service.userId;
  if(!r||!mine)throw new DomainError('Закрепление не найдено.',404);
@@ -88,9 +89,9 @@ export async function unpinRegular(service:RentalService,role:string,body:Row){
  await service.db.batch([
   q(service.db,'DELETE FROM regular_cleaners WHERE property_id=? AND cleaner_id=?',propertyId,r.cleaner_id),
   service.audit(propertyId,JSON.stringify({action:'regular_cleaner.unpinned',by:role,cleanerId:r.cleaner_id})),
-  service.notify(other,role==='owner'?`Владелец снял закрепление квартиры «${r.title}». Уже назначенные уборки остаются за вами.`:`${r.name} больше не постоянный исполнитель «${r.title}». Уборки этой квартиры AI администратор будет предлагать лучшим свободным исполнителям.`,'regular-ended:'+propertyId+':'+at,role==='owner'?'cleaner':'owner'),
+  service.notify(other,role==='owner'?`Владелец снял закрепление объекта «${r.title}». Уже назначенные уборки остаются за вами.`:`${r.name} больше не постоянный исполнитель «${r.title}». Уборки этого жилья AI администратор будет предлагать лучшим свободным исполнителям.`,'regular-ended:'+propertyId+':'+at,role==='owner'?'cleaner':'owner'),
  ]);
- return {message:role==='owner'?'Закрепление снято.':'Вы больше не постоянный исполнитель этой квартиры.'};
+ return {message:role==='owner'?'Закрепление снято.':'Вы больше не постоянный исполнитель этого объекта.'};
 }
 
 // The cleaner's side: her regular flats and her money from the service.

@@ -14,6 +14,9 @@ const topUp=(f,amount)=>f.db.raw.prepare("INSERT INTO owner_balance_entries(id,o
 const charging=(f,on=true)=>f.db.raw.prepare("UPDATE platform_billing SET plan_charge=?").run(on?1:0);
 const auto=f=>setGuestMode(f.owner,{propertyId:f.property,mode:'auto',cleaningFee:3000});
 const managed=f=>f.db.raw.prepare('SELECT auto_confirm FROM property_policies WHERE property_id=?').get(f.property).auto_confirm===1;
+// The fixture's cleaning follows a stay that ends a few hours from now, so in the evening it runs past
+// local midnight and no daily window fits it. Rules tests move it to tomorrow's noon (Asia/Almaty, UTC+5).
+const daytime=f=>{const local=now()+DAY+5*3600,noon=local-local%DAY-5*3600+12*3600;f.db.raw.prepare('UPDATE cleaning_jobs SET start=?,"end"=? WHERE id=?').run(noon,noon+5400,f.job.id);};
 const openRules={districts:[],days:127,fromMinute:0,toMinute:1440,minFee:0,maxPerDay:4,askNewOwner:false};
 
 test('turning a flat to «ИИ» starts the free trial once, with a notice; the state shows the flat as managed',async()=>{
@@ -64,6 +67,7 @@ test('stop: a trial pauses now and the flats go manual; a paid month with chargi
 
 test('cleaner rules decide what the AI takes: district, day, hours, pay, load, new owner',async()=>{
  const f=await fixture();try{
+  daytime(f);
   const job=f.db.raw.prepare('SELECT j.*,p.district FROM cleaning_jobs j JOIN properties p ON p.id=j.property_id WHERE j.id=?').get(f.job.id);
   assert.equal(await autopilotFits(f.db,'cleaner',job),false);
   await startCleanerPlan(f.cleaner,openRules);assert.equal(plan(f,'cleaner','cleaner').status,'trial');
@@ -84,7 +88,7 @@ test('cleaner rules decide what the AI takes: district, day, hours, pay, load, n
 
 test('the cleaner autopilot accepts a fitting offer at once, and «Не могу сегодня» stops it until tomorrow',async()=>{
  const f=await fixture();try{
-  await auto(f);await startCleanerPlan(f.cleaner,openRules);
+  daytime(f);await auto(f);await startCleanerPlan(f.cleaner,openRules);
   await coordinateDispatch(f.owner);
   const offer=f.db.raw.prepare("SELECT * FROM cleaning_offers WHERE worker_id='cleaner'").get();assert.ok(offer);
   assert.notEqual(offer.status,'offered');

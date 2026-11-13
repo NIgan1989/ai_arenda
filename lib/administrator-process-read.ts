@@ -101,7 +101,7 @@ function ownerToday({state, userId, now, when}: View) {
   if (plan.length) lines.push(urgent.length ? 'Сегодня по плану:' : 'Срочного нет. Сегодня по плану:', ...listed(plan));
   if (!urgent.length && !plan.length) {
     const next = nearest(ahead);
-    lines.push(!(state.ownProperties || []).length ? 'Сегодня ничего срочного. Квартир у вас пока нет: добавьте первую, и гости смогут её найти.'
+    lines.push(!(state.ownProperties || []).length ? 'Сегодня ничего срочного. Объектов у вас пока нет: добавьте первый, и гости смогут его найти.'
       : next ? 'Сегодня ничего срочного. Ближайшее: ' + next + '.'
         : 'Сегодня ничего срочного: заявок, заездов и уборок нет.');
   }
@@ -180,7 +180,7 @@ function summary({state, role, userId, when}: View) {
     .sort((a: Row, b: Row) => b.priority - a.priority || a.deadline - b.deadline);
 
   const lines: string[] = [];
-  if (role === 'owner') lines.push(`Ваших квартир: ${state.ownProperties?.length || 0}. Броней без выезда: ${activeBookings.length}. Уборок не закрыто: ${activeJobs.length}.`);
+  if (role === 'owner') lines.push(`Ваших объектов: ${state.ownProperties?.length || 0}. Броней без выезда: ${activeBookings.length}. Уборок не закрыто: ${activeJobs.length}.`);
   else lines.push(`Ваших броней без выезда: ${activeBookings.length}.`);
 
   if (tasks.length) {

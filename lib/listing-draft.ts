@@ -2,7 +2,7 @@
 // message into a listing draft without a model call: instant, free and the same on the site and in the app.
 // Everything the text does not say gets a safe default and is marked as guessed, so the check screen
 // can ask the owner to look at it. Only the address, the district and the daily price are asked for.
-import {propertyTypes,amenities,checkinMethods} from './listings';
+import {propertyTypes,amenities,checkinMethods,defaultOwnStaff} from './listings';
 type Row=Record<string,any>;
 
 export type ListingDraft={
@@ -11,6 +11,8 @@ export type ListingDraft={
  price:number;hourlyPrice:number;minHours:number;nightlyPrice:number;deposit:number;cleaningFee:number;
  amenities:string[];pets:boolean;smoking:boolean;parties:boolean;
  checkinMethod:string;checkinTime:string;checkoutTime:string;cleaningMinutes:number;
+ // «Свой персонал»: own staff cleans, the AI does not look for executors.
+ ownStaff:boolean;
  title:string;description:string;houseRules:string;
  // Keys the owner said or set himself; the rest are defaults the AI picked.
  known:string[];
@@ -20,7 +22,7 @@ export type DraftQuestion={key:'address'|'district'|'price';label:string;questio
 export function emptyDraft(city=''):ListingDraft{
  return {type:'apartment',rooms:1,capacity:2,beds:2,bathrooms:1,area:35,floor:1,floors:5,city,district:'',address:'',
   price:0,hourlyPrice:0,minHours:2,nightlyPrice:0,deposit:0,cleaningFee:0,amenities:[],pets:false,smoking:false,parties:false,
-  checkinMethod:'meet',checkinTime:'14:00',checkoutTime:'12:00',cleaningMinutes:90,title:'',description:'',houseRules:'',known:city?['city']:[]};
+  checkinMethod:'meet',checkinTime:'14:00',checkoutTime:'12:00',cleaningMinutes:90,ownStaff:false,title:'',description:'',houseRules:'',known:city?['city']:[]};
 }
 
 const lower=(text:string)=>text.toLocaleLowerCase('ru').replace(/ё/g,'е');
@@ -45,8 +47,12 @@ export function readListingText(text:string,base:ListingDraft):{draft:ListingDra
  const t=lower(text),d:ListingDraft={...base,amenities:[...base.amenities],known:[...base.known]},found:string[]=[];
  const set=<K extends keyof ListingDraft>(key:K,value:ListingDraft[K])=>{(d as Row)[key]=value;if(!found.includes(key))found.push(key);};
 
- if(/студи/.test(t))set('type','studio');else if(/апарт/.test(t))set('type','aparthotel');else if(/(?<![а-я])(?:дом|коттедж)(?![а-я])/.test(t))set('type','house');
+ if(/хостел/.test(t))set('type','hostel');else if(/апарт-?отел|апарт-?гостиниц/.test(t))set('type','aparthotel');else if(/гостиниц|(?<![а-я])(?:мини-?)?отел/.test(t))set('type','hotel');
+ else if(/гостев[а-я]* дом/.test(t))set('type','guesthouse');else if(/студи/.test(t))set('type','studio');else if(/апарт/.test(t))set('type','aparthotel');else if(/(?<![а-я])(?:дом|коттедж)(?![а-я])/.test(t))set('type','house');
+ else if(/(?<![а-я])комнат[ау](?![а-я])/.test(t)&&!/квартир|комнатн/.test(t))set('type','room');
  else if(/квартир|однушк|двушк|трешк|комнатн/.test(t))set('type','apartment');
+ // Hotels and hostels clean with their own staff; the owner can also just say so.
+ if(/сво[йиея][а-я]* (?:персонал|горничн|уборщ|клининг|сотрудник)|горничн/.test(t))set('ownStaff',true);else if(found.includes('type'))d.ownStaff=defaultOwnStaff(d.type);
  const rooms=t.match(/(?<!\d)([1-9])\s*[-–]?\s*(?:х\s*)?(?:комн|к(?:\.|\s|-)?\s*кв|к(?![а-я]))/)?.[1]
   ||(t.match(/(одно|двух|трех|четырех|пяти)комнат/)?.[1])||(t.match(/(одн|дву|тре)у?шк/)?.[1]);
  if(rooms)set('rooms',Number(rooms)||WORD_ROOMS[rooms]||1);else if(d.type==='studio')set('rooms',1);
@@ -115,15 +121,26 @@ export function answerDraft(draft:ListingDraft,key:DraftQuestion['key'],answer:s
 
 export function draftQuestions(d:ListingDraft):DraftQuestion[]{
  const q:DraftQuestion[]=[];
- if(!d.address.trim())q.push({key:'address',label:'Адрес',question:'Какой точный адрес? Гости увидят его только после брони.',placeholder:'Улица, дом, квартира'});
- if(!d.district.trim())q.push({key:'district',label:'Район',question:'В каком районе квартира? Его гости видят на карте.',placeholder:'Например, Центр'});
+ if(!d.address.trim())q.push({key:'address',label:'Адрес',question:'Какой точный адрес? Гости увидят его только после брони.',placeholder:'Улица, дом, номер'});
+ if(!d.district.trim())q.push({key:'district',label:'Район',question:'В каком районе жильё? Его гости видят на карте.',placeholder:'Например, Центр'});
  if(!(d.price>=100))q.push({key:'price',label:'Цена за сутки',question:'Сколько стоят сутки?',placeholder:'Например, 15 000'});
  return q;
 }
 
 const fmt=(n:number)=>new Intl.NumberFormat('ru-RU').format(n)+' ₸';
 const plural=(n:number,one:string,few:string,many:string)=>{const a=Math.abs(n)%100,b=a%10;return a>10&&a<20?many:b>1&&b<5?few:b===1?one:many;};
-export function draftKind(d:ListingDraft){return d.type==='apartment'?d.rooms+'-комнатная квартира':d.type==='studio'?'Студия':d.type==='house'?(d.rooms>1?'Дом, '+d.rooms+' комн.':'Дом'):(d.rooms>1?d.rooms+'-комнатные апартаменты':'Апартаменты');}
+export function draftKind(d:ListingDraft){
+ switch(d.type){
+  case 'apartment':return d.rooms+'-комнатная квартира';
+  case 'studio':return 'Студия';
+  case 'room':return 'Комната';
+  case 'house':return d.rooms>1?'Дом, '+d.rooms+' комн.':'Дом';
+  case 'guesthouse':return 'Гостевой дом';
+  case 'hostel':return 'Хостел';
+  case 'hotel':return 'Гостиница';
+  default:return d.rooms>1?'Апарт-отель, '+d.rooms+' комн.':'Апарт-отель';
+ }
+}
 export function draftTitle(d:ListingDraft){return (d.title.trim()||[draftKind(d),d.district.trim()].filter(Boolean).join(' · ')).slice(0,120);}
 export function draftDescription(d:ListingDraft){
  if(d.description.trim())return d.description.trim().slice(0,2500);
@@ -140,14 +157,14 @@ export function draftDescription(d:ListingDraft){
 }
 export function draftRules(d:ListingDraft){
  if(d.houseRules.trim())return d.houseRules.trim().slice(0,2500);
- return ['Тишина с 23:00 до 08:00.',d.smoking?'Курение разрешено.':'Курение в квартире запрещено.',d.parties?'Вечеринки по согласованию.':'Без вечеринок.',d.pets?'Можно с питомцами.':'Без питомцев.',
-  d.deposit>0?'Депозит '+fmt(d.deposit)+' возвращается после выезда, если квартира в порядке.':'Депозит не берётся.'].join(' ');
+ return ['Тишина с 23:00 до 08:00.',d.smoking?'Курение разрешено.':'Курение в помещении запрещено.',d.parties?'Вечеринки по согласованию.':'Без вечеринок.',d.pets?'Можно с питомцами.':'Без питомцев.',
+  d.deposit>0?'Депозит '+fmt(d.deposit)+' возвращается после выезда, если всё в порядке.':'Депозит не берётся.'].join(' ');
 }
 
 // The body POST /api/listings expects (see listingInput), built from the draft.
 export function draftListingBody(d:ListingDraft,photos:string[],published:boolean):Row{
  const type=propertyTypes[d.type]?d.type:'apartment',method=checkinMethods[d.checkinMethod]?d.checkinMethod:'meet';
- return {title:draftTitle(d),city:d.city.trim(),district:d.district.trim(),address:d.address.trim(),description:draftDescription(d),price:d.price,rooms:d.rooms,capacity:d.capacity,cleaningMinutes:d.cleaningMinutes,
+ return {title:draftTitle(d),city:d.city.trim(),district:d.district.trim(),address:d.address.trim(),description:draftDescription(d),price:d.price,rooms:d.rooms,capacity:d.capacity,cleaningMinutes:d.cleaningMinutes,ownStaff:!!d.ownStaff,
   photos,published,expectedVersion:0,policyVersion:0,
   details:{type,area:d.area,beds:Math.max(d.beds,d.capacity),bathrooms:d.bathrooms,floor:d.floor,floors:Math.max(d.floors,d.floor,1),checkinMethod:method,amenities:d.amenities.filter(a=>amenities[a]),pets:d.pets,smoking:d.smoking,parties:d.parties},
   rental:{hourlyPrice:d.hourlyPrice,minHours:d.minHours,nightlyPrice:d.nightlyPrice,checkinTime:d.checkinTime,checkoutTime:d.checkoutTime,deposit:d.deposit,houseRules:draftRules(d)}};

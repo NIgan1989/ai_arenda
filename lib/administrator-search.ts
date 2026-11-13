@@ -2,12 +2,12 @@ import type {RentalService} from './service';
 import {mapSearchFilters,mapSearchRequest} from './map-search-request';
 import {mapCities} from './map-location';
 
-// A search for a flat is "Найди квартиру…" or a request with no search verb that names when or for whom:
-// "квартира в Астане на сутки завтра на троих", "хочу снять квартиру". A question about how things work
+// A search for a flat is "Найди жильё…" or a request with no search verb that names when or for whom:
+// "квартира в Астане на сутки завтра на троих", "хочу снять жильё". A question about how things work
 // ("Как снять жильё?") is not a search: it is answered, not turned into a list of flats.
 const SEARCH_VERB = /(?:най[дт]|подб[ео]р|покаж|ищ[уи]|поиск|свободн|доступн)/iu;
 const SEARCH_NEED = /(?:снять|сниму|нужн[ао]|хочу|сегодня|завтра|выходн|посуточ|почасов|на\s+(?:сутки|ночь|неделю|двоих|троих|четверых|\d+\s*(?:сут|час|дн|ноч|гост|чел)))/iu;
-const SEARCH_SUBJECT = /(?:квартир|жиль|недвиж|студи|апартамент|(?:^|\s)кв(?:[.\s?!,]|$))/iu;
+const SEARCH_SUBJECT = /(?:квартир|жиль|недвиж|студи|апартамент|апарт-?отел|хостел|гостиниц|(?:^|\s)отел|гостев[а-я]* дом|(?:^|\s)кв(?:[.\s?!,]|$))/iu;
 const NOT_A_SEARCH = /(?:мои|мою|моих|моей|отмен|оплат|продл|забронир|оформи|уборк|заезд|выезд|заселен)/iu;
 const HOW_QUESTION = /^\s*(?:как|что|почему|зачем|можно\s+ли|сколько\s+стоит)(?:\s|$)/iu;
 

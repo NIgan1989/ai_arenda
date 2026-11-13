@@ -13,7 +13,7 @@ export const managementGroup=(tab:string)=>['connections','import','calendars'].
 export function managementSection(role:string,value:string|null){return experienceFor(role).tabs.some(([id])=>id===value)?value:null;}
 const tenge=(n:number)=>new Intl.NumberFormat('ru-RU').format(n||0)+' ₸';
 export function managementStatus(role:string,tab:string,state:Record<string,any>|null){
- if(!state)return '';const flats=state.properties||[],of=(n:number)=>flats.length?n+' из '+flats.length:'Нет квартир';
+ if(!state)return '';const flats=state.properties||[],of=(n:number)=>flats.length?n+' из '+flats.length:'Нет объектов';
  if(tab==='dispatch')return role==='owner'?of(flats.filter((p:any)=>p.auto_offers).length):role==='cleaner'?(state.dispatch?.receiveOffers?'Включены':'Выключены'):'';
  if(tab==='access')return role==='owner'?of(flats.filter((p:any)=>p.access_version>0).length):'';
  if(tab==='finance')return tenge(state.finance?.totals?.operatingBalance);

@@ -4,7 +4,7 @@ type Row=Record<string,any>;
 export type CleanerNext={title:string;text:string;tone:'info'|'warning'|'danger';action?:'request-review'};
 export function cleanerNext(job:Row,application:Row|undefined,admission:string|undefined,userId:string):CleanerNext|null{
  if(job.assigned_to===userId){
-  if(job.status==='assigned')return job.checkout_confirmed?{title:'Квартира свободна',text:'Можно начинать. Нажмите «Начать уборку», когда будете на месте.',tone:'info'}:{title:'Вы назначены',text:'Адрес и контакт владельца выше. Кнопка «Начать уборку» появится, когда владелец подтвердит выезд гостя.',tone:'info'};
+  if(job.status==='assigned')return job.checkout_confirmed?{title:'Жильё свободно',text:'Можно начинать. Нажмите «Начать уборку», когда будете на месте.',tone:'info'}:{title:'Вы назначены',text:'Адрес и контакт владельца выше. Кнопка «Начать уборку» появится, когда владелец подтвердит выезд гостя.',tone:'info'};
   if(job.status==='submitted')return {title:'Отчёт у владельца',text:'Владелец проверит фото и чек-лист. Если нужно что-то исправить, он напишет в чат задания.',tone:'info'};
   return null;
  }
