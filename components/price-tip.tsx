@@ -1,6 +1,6 @@
 'use client';
 import {useEffect,useState} from 'react';
-import {Brush,CalendarClock,CalendarDays,Camera,Check,Clock3,FileText,KeyRound,Lightbulb,Sparkles,TrendingDown,TrendingUp,X} from 'lucide-react';
+import {Brush,CalendarClock,CalendarDays,Camera,Check,Clock3,FileText,KeyRound,Lightbulb,ShieldAlert,ShieldCheck,Sparkles,TrendingDown,TrendingUp,Wallet,X} from 'lucide-react';
 import type {Approval} from '../lib/approvals';
 import './price-tip.css';
 type Row=Record<string,any>;
@@ -113,7 +113,31 @@ function StayTipBody({card,busy,onDecide,compact}:{card:Approval;busy:boolean;on
  </>;
 }
 
-export function PriceTipBody({card,busy,onDecide,compact=false}:{card:Approval;busy:boolean;onDecide:(action:'accept'|'reject')=>void;compact?:boolean}){
+// A new booking request pops up on the owner's map like an order: dates, money, the AI's risk read.
+type Decision='accept'|'reject'|'deposit';
+const fact=(card:Approval,label:string)=>card.facts.find(([l])=>l===label)?.[1]||'';
+const guests=(v:string)=>{const n=Number(v)||1;return n+' '+(n%10===1&&n%100!==11?'гость':n%10>=2&&n%10<=4&&(n%100<12||n%100>14)?'гостя':'гостей');};
+function BookingTipBody({card,busy,onDecide}:{card:Approval;busy:boolean;onDecide:(action:Decision)=>void}){
+ const r=card.risk!,Icon=r.level==='low'?ShieldCheck:ShieldAlert;
+ return <>
+  <div className="price-tip-price"><strong className="price-tip-to">{fact(card,'Проживание')}</strong><span className="price-tip-from is-plain">{card.from} · {guests(fact(card,'Гостей'))}</span></div>
+  <p className="price-tip-when is-dates"><CalendarClock size={16} aria-hidden="true"/><span>{fact(card,'Заезд')} → {fact(card,'Выезд')}</span></p>
+  <div className={'booking-risk is-compact is-'+r.level} role="note">
+   <div className="booking-risk-head"><Icon size={18} aria-hidden="true"/><strong>{r.label}</strong>{r.held&&<span>автоподтверждение остановлено</span>}</div>
+   <p className="booking-risk-line">{r.reasons.join(' · ')}</p>
+  </div>
+  {card.depositLabel?<>
+   <div className="price-tip-actions"><button type="button" className="price-tip-accept" disabled={busy} onClick={()=>onDecide('deposit')}><Wallet size={18} aria-hidden="true"/>{card.depositLabel}</button></div>
+   <div className="price-tip-actions is-pair"><button type="button" className="price-tip-reject" disabled={busy} onClick={()=>onDecide('accept')}>Без депозита</button><button type="button" className="price-tip-reject" disabled={busy} onClick={()=>onDecide('reject')}>{card.rejectLabel}</button></div>
+  </>:<div className="price-tip-actions">
+   <button type="button" className="price-tip-accept" disabled={busy} onClick={()=>onDecide('accept')}><Check size={18} aria-hidden="true"/>{card.acceptLabel}</button>
+   <button type="button" className="price-tip-reject" disabled={busy} onClick={()=>onDecide('reject')}>{card.rejectLabel}</button>
+  </div>}
+ </>;
+}
+
+export function PriceTipBody({card,busy,onDecide,compact=false}:{card:Approval;busy:boolean;onDecide:(action:Decision)=>void;compact?:boolean}){
+ if(card.kind==='booking'&&card.risk)return <BookingTipBody card={card} busy={busy} onDecide={onDecide}/>;
  if(card.cleaningTip)return <CleaningTipBody card={card} busy={busy} onDecide={onDecide} compact={compact}/>;
  if(card.listing)return <ListingTipBody card={card} busy={busy} onDecide={onDecide} compact={compact}/>;
  if(card.forecast)return <ForecastTipBody card={card} busy={busy} onDecide={onDecide} compact={compact}/>;
@@ -139,24 +163,24 @@ export function PriceTipBody({card,busy,onDecide,compact=false}:{card:Approval;b
 
 export function PriceTip({cards,onChanged,onEdit,role='owner'}:{cards:Approval[];onChanged?:()=>void;onEdit?:(id:string,step:string|null)=>void;role?:'owner'|'guest'}){
  const [later,setLater]=useState<string[]>(()=>typeof window==='undefined'?[]:laterIds()),[busy,setBusy]=useState(false),[result,setResult]=useState<{text:string;error:boolean}|null>(null);
- const card=cards.find(c=>(c.kind==='price'&&c.price||c.kind==='window'&&c.window||c.kind==='stay'&&c.stay||c.kind==='forecast'&&c.forecast||c.kind==='listing'&&c.listing||c.kind==='cleaning-fee'&&c.cleaningTip)&&c.canDecide&&!later.includes(c.id));
+ const card=cards.find(c=>c.kind==='booking'&&c.risk&&c.canDecide&&!later.includes(c.id))||cards.find(c=>(c.kind==='price'&&c.price||c.kind==='window'&&c.window||c.kind==='stay'&&c.stay||c.kind==='forecast'&&c.forecast||c.kind==='listing'&&c.listing||c.kind==='cleaning-fee'&&c.cleaningTip)&&c.canDecide&&!later.includes(c.id));
  useEffect(()=>{if(!result)return;const t=setTimeout(()=>setResult(null),result.error?8000:5000);return()=>clearTimeout(t);},[result]);
  if(result)return <aside className="price-tip is-result" role="status"><span className={'price-tip-icon'+(result.error?' is-error':'')} aria-hidden="true">{result.error?<X size={18}/>:<Check size={18}/>}</span><p>{result.text}</p></aside>;
  if(!card)return null;
- const up=card.price?.direction==='up',kind=card.window||card.stay||card.forecast||card.listing||card.cleaningTip?'is-window':up?'is-up':'is-down';
- async function decide(action:'accept'|'reject'){
+ const up=card.price?.direction==='up',kind=card.risk||card.window||card.stay||card.forecast||card.listing||card.cleaningTip?'is-window':up?'is-up':'is-down';
+ async function decide(action:Decision){
   if(!card)return;setBusy(true);
   try{const r=await fetch('/api/approvals',{method:'POST',headers:{'Content-Type':'application/json','X-Workspace-Role':role},body:JSON.stringify({id:card.id,revision:card.revision,action}),cache:'no-store'}),v=await r.json() as Row;
    if(r.ok&&v.edit&&onEdit){onChanged?.();onEdit(v.edit.propertyId,v.edit.step);return;}
    setResult({text:r.ok?v.message||'Готово.':v.error||'Не получилось. Обновите экран.',error:!r.ok});onChanged?.();}
-  catch{setResult({text:card.listing||card.forecast||card.cleaningTip?'Нет связи. Ничего не изменилось, попробуйте ещё раз.':card.stay?'Нет связи. Время не изменилось, попробуйте ещё раз.':card.window?'Нет связи. Окно не открыто, попробуйте ещё раз.':'Нет связи. Цена не изменилась, попробуйте ещё раз.',error:true});}
+  catch{setResult({text:card.risk?'Нет связи. Заявка не изменилась, попробуйте ещё раз.':card.listing||card.forecast||card.cleaningTip?'Нет связи. Ничего не изменилось, попробуйте ещё раз.':card.stay?'Нет связи. Время не изменилось, попробуйте ещё раз.':card.window?'Нет связи. Окно не открыто, попробуйте ещё раз.':'Нет связи. Цена не изменилась, попробуйте ещё раз.',error:true});}
   finally{setBusy(false);}
  }
  function hide(){if(!card)return;const next=[...later,card.id];setLater(next);try{sessionStorage.setItem(hiddenKey,JSON.stringify(next));}catch{}}
- return <aside className={'price-tip '+kind} aria-label={card.cleaningTip?'Совет AI администратора по цене уборки':card.listing?'Совет AI администратора по объявлению':card.forecast?'Прогноз загрузки на неделю от AI администратора':card.stay?'Предложение AI администратора по времени проживания':card.window?'Окно в календаре от AI администратора':'Совет AI администратора по цене'}>
+ return <aside className={'price-tip '+kind} aria-label={card.risk?'Новая заявка на бронирование':card.cleaningTip?'Совет AI администратора по цене уборки':card.listing?'Совет AI администратора по объявлению':card.forecast?'Прогноз загрузки на неделю от AI администратора':card.stay?'Предложение AI администратора по времени проживания':card.window?'Окно в календаре от AI администратора':'Совет AI администратора по цене'}>
   <header className="price-tip-head">
-   <span className="price-tip-icon" aria-hidden="true">{card.forecast?<CalendarDays size={18}/>:card.cleaningTip?<Brush size={18}/>:<Sparkles size={18}/>}</span>
-   <span className="price-tip-title"><small>AI администратор · {card.cleaningTip?'цена уборки':card.listing?card.listing.title.toLocaleLowerCase('ru'):card.forecast?'прогноз на неделю':card.stay?(card.stay.kind==='late'?'поздний выезд':'ранний заезд'):card.window?'окно в календаре':up?'спрос вырос':'спрос снизился'}</small><strong>{card.subject}</strong></span>
+   <span className="price-tip-icon" aria-hidden="true">{card.risk?<CalendarClock size={18}/>:card.forecast?<CalendarDays size={18}/>:card.cleaningTip?<Brush size={18}/>:<Sparkles size={18}/>}</span>
+   <span className="price-tip-title"><small>AI администратор · {card.risk?'новая заявка':card.cleaningTip?'цена уборки':card.listing?card.listing.title.toLocaleLowerCase('ru'):card.forecast?'прогноз на неделю':card.stay?(card.stay.kind==='late'?'поздний выезд':'ранний заезд'):card.window?'окно в календаре':up?'спрос вырос':'спрос снизился'}</small><strong>{card.subject}</strong></span>
    <button type="button" className="price-tip-close" aria-label="Позже" title="Позже" onClick={hide}><X size={18}/></button>
   </header>
   <PriceTipBody card={card} busy={busy} onDecide={decide} compact/>
