@@ -119,3 +119,19 @@ test('a quiet week: a shorter minimum stay, and stale advice closes itself',asyn
   assert.equal(f.db.raw.prepare('SELECT min_hours FROM property_policies WHERE property_id=?').get(f.property).min_hours,4);
  }finally{f.db.close();}
 });
+
+test('only bookable flats and dates count: archived flats and other calendars',async()=>{
+ const f=await fixture();try{
+  const flats=await city(f),week=weekStart(now())+21*DAY,t=week+10*H;
+  // An archived flat was full every weekend: that is not demand for the flats on sale now.
+  for(let w=1;w<=4;w++)for(const i of [4,5]){const e=week-w*7*DAY+i*DAY+21*H;insertStay(f,flats[2],e-3*H,e+12*H,'arch'+w+i);}
+  f.db.raw.prepare('UPDATE properties SET archived_at=? WHERE id=?').run(t-DAY,flats[2]);
+  insertStay(f,flats[1],week-20*DAY,week-19*DAY,'old');
+  // The owner's flat is closed all week in another calendar: nothing to fill, nothing to change.
+  f.db.raw.prepare('INSERT INTO calendar_sources(id,property_id,owner_id,label,url,created_at) VALUES (?,?,?,?,?,?)').run('src',f.property,'owner','Booking','https://calendar.example.test/x',t);
+  f.db.raw.prepare('INSERT INTO external_blocks(id,source_id,property_id,event_uid,start,end) VALUES (?,?,?,?,?,?)').run('blk','src',f.property,'u1',week,week+8*DAY);
+  const id=await offerWeeklyForecast(f.db,'owner',t),row=f.db.raw.prepare('SELECT * FROM load_forecasts WHERE id=?').get(id);
+  assert.ok(JSON.parse(row.days).every(d=>d.level!=='busy'),'the archived flat\'s weekends do not make the city busy');
+  assert.equal(row.advice,'none');
+ }finally{f.db.close();}
+});

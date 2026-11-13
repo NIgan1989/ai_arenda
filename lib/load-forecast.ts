@@ -88,15 +88,18 @@ export async function offerWeeklyForecast(db:D1Database,ownerId:string,t=epoch()
  const byCity=new Map<string,number>();for(const p of own)byCity.set(p.city,(byCity.get(p.city)||0)+1);
  const city=[...byCity.entries()].sort((a,b)=>b[1]-a[1])[0][0],from=localDay(t);
  const flats=Number((await one(db,'SELECT COUNT(*) n FROM properties WHERE city=? AND published=1 AND archived_at IS NULL AND demo_owner IS NULL',city))?.n||0);
- const stays=(await rows(db,`SELECT b.property_id,b.start,b.end FROM bookings b JOIN properties p ON p.id=b.property_id WHERE p.city=? AND p.demo_owner IS NULL
+ const stays=(await rows(db,`SELECT b.property_id,b.start,b.end FROM bookings b JOIN properties p ON p.id=b.property_id WHERE p.city=? AND p.published=1 AND p.archived_at IS NULL AND p.demo_owner IS NULL
   AND (b.status IN ('confirmed','completed') OR (b.status='requested' AND b.expires_at>?)) AND b.end>? AND b.start<?`,city,t,from-HISTORY_WEEKS*7*DAY,from+7*DAY+DAY)).map(r=>({property_id:String(r.property_id),start:Number(r.start),end:Number(r.end)}));
  // No bookings in the city for a month and none ahead: nothing to base a forecast on yet.
  if(!stays.length)return null;
  const days=forecastWeek(stays,flats,from),mine=own.filter(p=>p.city===city);
+ // Dates closed in the owner's other calendars cannot be sold here either.
+ const blocks=(await rows(db,`SELECT x.property_id,x.start,x.end FROM external_blocks x JOIN calendar_sources c ON c.id=x.source_id JOIN properties p ON p.id=x.property_id WHERE p.owner_id=? AND p.city=? AND c.enabled=1 AND x.end>? AND x.start<?`,ownerId,city,from,from+8*DAY)).map(r=>({property_id:String(r.property_id),start:Number(r.start),end:Number(r.end)}));
+ const closed=[...stays,...blocks];
  const recent=new Set((await rows(db,'SELECT property_id FROM price_suggestions WHERE owner_id=? AND (status=\'pending\' OR created_at>?)',ownerId,t-PRICE_COOLDOWN)).map(r=>r.property_id));
  const candidates:ForecastFlat[]=[];
  for(const p of mine)candidates.push({id:p.id,title:p.title,price:Number(p.price),hourly:Number(p.hourly),nightly:Number(p.nightly),minHours:Number(p.min_hours),minimumRate:Number(p.minimum_rate),
-  median:await similarMedian(db,p),priceLocked:recent.has(p.id),free:days.map(d=>!stays.some(s=>s.property_id===p.id&&s.start<=d.day+EVENING&&s.end>d.day+EVENING))});
+  median:await similarMedian(db,p),priceLocked:recent.has(p.id),free:days.map(d=>!closed.some(s=>s.property_id===p.id&&s.start<=d.day+EVENING&&s.end>d.day+EVENING))});
  const advice=adviseWeek(days,candidates),summary=weekSummary(days),target=mine.find(p=>p.id===advice.propertyId),id=uuid();
  const body='Прогноз на неделю · '+summary+'. '+(advice.advice==='none'?'Менять ничего не нужно, сообщу, если что-то изменится.':adviceSentence(advice)+' Без вашего согласия ничего не изменится.');
  const r=await db.batch([
