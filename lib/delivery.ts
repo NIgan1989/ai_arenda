@@ -31,6 +31,7 @@ export async function noticeDecision(service:RentalService,role:Role,dedupe:stri
  // Each notice kind names its own card; nothing is guessed from shared booking or job ids.
  const [kind,first,second]=(dedupe.startsWith(role+':')?dedupe.slice(role.length+1):dedupe).split(':');let cardId='';
  if(['booking','change','price','window','forecast','listing','stay'].includes(kind)&&first)cardId=kind+':'+first;
+ else if(kind==='booking-held'&&first)cardId='booking:'+first;
  else if(kind==='checkout-reported'&&first)cardId='checkout:'+first;
  else if(kind==='submitted'&&first)cardId='report:'+first;
  else if(kind==='application'&&first&&second){const a=await one(service.db,"SELECT id FROM applications WHERE job_id=? AND user_id=? AND status='pending'",first,second);if(a)cardId='application:'+a.id;}

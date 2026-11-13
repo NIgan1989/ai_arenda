@@ -10,6 +10,7 @@ import {offerCalendarWindows} from './calendar-windows';
 import {offerWeeklyForecast} from './load-forecast';
 import {offerListingTip} from './listing-quality';
 import {offerCleaningPriceTip} from './cleaning-price';
+import {settleTestMoney} from './finance';
 
 type Row=Record<string,any>;
 // How long the owner has to agree the cleaner the AI proposes before it assigns her itself.
@@ -54,10 +55,20 @@ async function automaticActions(service:RentalService){
    for(const b of left){try{await delegated.bookingAction(b.id,{action:'checkout'});await service.notify(service.userId,'AI администратор подтвердил выезд по сообщению гостя. Квартира ждёт уборки.','administrator-checkout:'+b.id,'owner').run();actions++;}catch(error){if(!expectedConflict(error))throw error;}}
    // The guest says they arrived: with payment and deposit verified the AI confirms the check-in for the owner;
    // otherwise the owner is told once that only the payment check is missing.
-   const arrived=await service.all("SELECT b.id,b.payment_status,t.deposit_status,p.title FROM bookings b JOIN booking_terms t ON t.booking_id=b.id JOIN properties p ON p.id=b.property_id WHERE b.property_id=? AND b.status='confirmed' AND t.checkin_reported_at IS NOT NULL AND t.actual_checkin IS NULL AND b.end>?",policy.property_id,now());
+   const arrived=await service.all("SELECT b.id,b.guest_id,b.payment_status,t.deposit_status,p.title FROM bookings b JOIN booking_terms t ON t.booking_id=b.id JOIN properties p ON p.id=b.property_id WHERE b.property_id=? AND b.status='confirmed' AND t.checkin_reported_at IS NOT NULL AND t.actual_checkin IS NULL AND b.end>?",policy.property_id,now());
    for(const b of arrived){
-    if(b.payment_status!=='owner_verified'||b.deposit_status==='pending'){await service.notify(service.userId,'Гость на месте в «'+(b.title||'квартира')+'», но оплата или депозит ещё не подтверждены. Проверьте поступление, и AI администратор сразу подтвердит заселение.','administrator-checkin-payment:'+b.id,'owner').run();continue;}
-    try{await delegated.bookingAction(b.id,{action:'checkin'});await service.notify(service.userId,'AI администратор подтвердил заселение гостя в «'+(b.title||'квартира')+'» по его сообщению.','administrator-checkin:'+b.id,'owner').run();actions++;}catch(error){if(!expectedConflict(error))throw error;}
+    const title=b.title||'квартира';
+    if(b.payment_status!=='owner_verified'||b.deposit_status==='pending'){
+     // With in-app payment the guest is the one who can fix it: they are asked to pay in the booking card.
+     const inApp=!!(await service.one("SELECT test_payments FROM platform_billing WHERE id='global'").catch(()=>null))?.test_payments;
+     if(inApp)await service.notify(b.guest_id,'Вы на месте в «'+title+'». Оплатите '+(b.payment_status!=='owner_verified'?'проживание':'депозит')+' в карточке брони, и AI администратор сразу подтвердит заселение.','administrator-checkin-pay:'+b.id,'guest').run();
+     await service.notify(service.userId,'Гость на месте в «'+title+'», но оплата или депозит ещё не подтверждены. '+(inApp?'Гостя попросили оплатить в карточке брони; после оплаты AI администратор сразу подтвердит заселение.':'Проверьте поступление, и AI администратор сразу подтвердит заселение.'),'administrator-checkin-payment:'+b.id,'owner').run();continue;}
+    try{await delegated.bookingAction(b.id,{action:'checkin'});await service.notify(service.userId,'AI администратор подтвердил заселение гостя в «'+title+'» по его сообщению.','administrator-checkin:'+b.id,'owner').run();actions++;}catch(error){
+     if(!expectedConflict(error))throw error;
+     // Paid, but the flat is not marked ready (a new flat, or a cleaning not yet accepted): only the owner can say it is.
+     const op=await service.one('SELECT readiness,active_booking_id FROM property_operations WHERE property_id=?',policy.property_id);
+     if(op&&op.readiness!=='ready'&&!op.active_booking_id)await service.notify(service.userId,'Гость оплатил и уже на месте в «'+title+'», но квартира не отмечена готовой. Подтвердите готовность в карточке квартиры (или примите уборку), и AI администратор сразу заселит гостя.','administrator-checkin-ready:'+b.id,'owner').run();
+    }
    }
    // The AI checks each submitted cleaning report. A clean report is offered to the owner for one-tap acceptance;
    // without an answer in OWNER_REVIEW_SECONDS, or when the next guest arrives within two hours, the AI accepts it.
@@ -73,6 +84,7 @@ async function automaticActions(service:RentalService){
     }
     try{await delegated.jobAction(job.id,{action:'approve',expectedVersion:job.version});await service.notify(service.userId,'AI администратор принял уборку «'+title+'» по фотоотчёту. Квартира готова к заселению.','administrator-approved:'+job.id,'owner').run();actions++;}catch(error){if(!expectedConflict(error))throw error;}
    }
+   actions+=await settleTestMoney(service,policy.property_id);
   }
   if(policy.auto_assign){
    const jobs=await service.all("SELECT j.*,p.title FROM cleaning_jobs j JOIN properties p ON p.id=j.property_id WHERE j.property_id=? AND j.status='open' AND j.end>? AND j.fee<=? ORDER BY j.start,j.id",policy.property_id,now(),policy.cleaning_budget);
