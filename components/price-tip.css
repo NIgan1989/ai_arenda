@@ -24,6 +24,11 @@
 .price-tip-delta{display:inline-flex;align-items:center;gap:4px;align-self:center;padding:2px 8px;border-radius:var(--t-radius-full);font-size:14px;line-height:20px;font-weight:600}
 .price-tip-delta.is-up{background:var(--t-success-soft);color:var(--t-success)}
 .price-tip-delta.is-down{background:var(--t-warning-soft);color:var(--t-warning)}
+.price-tip-delta.is-window{background:var(--t-accent-soft);color:var(--t-accent)}
+.price-tip-to small{font-size:14px;line-height:20px;font-weight:500;color:var(--t-muted)}
+.price-tip-when{display:flex;align-items:center;gap:var(--t-space-8);margin:var(--t-space-8) 0 0;font-size:14px;line-height:20px;color:var(--t-ink-soft)}
+.price-tip-when svg{flex:none;color:var(--t-accent)}
+.price-tip-when b{margin-left:auto;padding:2px 8px;border-radius:var(--t-radius-full);background:var(--t-surface-alt);font-weight:600;color:var(--t-ink)}
 .price-tip-rows{display:flex;flex-wrap:wrap;gap:4px 12px;margin:4px 0 0;font-size:14px;line-height:20px;color:var(--t-ink-soft)}
 .price-tip-reasons{display:flex;flex-wrap:wrap;gap:var(--t-space-8);margin:var(--t-space-12) 0 0;padding:0;list-style:none}
 .price-tip-reasons li{padding:4px 12px;border-radius:var(--t-radius-full);background:rgba(79,70,229,.07);border:1px solid rgba(79,70,229,.12);font-size:14px;line-height:20px;color:var(--t-ink-soft)}
