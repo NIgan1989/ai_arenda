@@ -1,0 +1,8 @@
+/* On a phone the active bottom tab already names the page, so a tab page shows no title of its own.
+   The title stays for screen readers. Pages outside the bottom bar (calendar, catalogue, cleanings…) keep it,
+   because nothing else on screen says where you are. A button that lived beside the title stays. */
+@media(max-width:700px){
+ html[data-interface=release] .workspace-shell[data-tab] .role-page-heading{padding:0!important;margin:0!important;min-height:0;justify-content:flex-start}
+ html[data-interface=release] .workspace-shell[data-tab] .role-page-heading:has(button,a){padding-bottom:12px!important}
+ html[data-interface=release] .workspace-shell[data-tab] :is(.role-page-heading h1,.inbox-heading){position:absolute!important;width:1px;height:1px;padding:0;margin:-1px!important;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
+}
