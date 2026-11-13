@@ -12,6 +12,7 @@ import {publicPoint,mapCities} from './map-workspace';
 import {AI_REVIEWER,sweepReviews} from './admin-autocheck';
 import {safetyAction} from './account-safety';
 import {billingState,billingOwners,saveBillingSettings,recordBalanceEntry} from './platform-billing';
+import {plansAdminState,savePlanSettings} from './autopilot-plans';
 import {markCleanerPayout} from './regular-cleaner';
 type Config=OperationConfig&{PLATFORM_ADMIN_IDS?:string;ADMINISTRATOR_RUNNER_SECRET?:string;OPENAI_API_KEY?:string;OPENAI_MODEL?:string};
 type Row=Record<string,any>;
@@ -40,7 +41,8 @@ export async function readPlatformAdmin(service:RentalService,route:string,param
   await service.audit(service.userId,'admin.reports_viewed').run();return {queue,hidden};
  }
  if(route==='billing/owners')return billingOwners(service,params);
- if(route==='billing'){const state=await billingState(service);await service.audit(service.userId,'admin.billing_viewed').run();return state;}
+ if(route==='billing/plans')return plansAdminState(service.db);
+ if(route==='billing'){const state={...await billingState(service),plans:await plansAdminState(service.db)};await service.audit(service.userId,'admin.billing_viewed').run();return state;}
  if(route==='governance')return {...await governanceState(service,'guest',true),admissions:[],testMode:config.TEST_DATA_ONLY==='1'};
  if(route==='health')return {runtime:await buildRuntimeHealth(service.db,config),queue:await operationalHealth(service,'guest',true),integrations:integrationStatus(config),aiBudget:await aiBudgetState(service,config,true)};
  if(route==='properties'){
@@ -78,6 +80,7 @@ export async function writePlatformAdmin(service:RentalService,route:string,body
  }
  if(route==='governance/ticket')return updateOperatorTicket(service,'guest',body,true);
  if(route==='billing/settings')return saveBillingSettings(service,body);
+ if(route==='billing/plans')return savePlanSettings(service,body);
  if(route==='billing/balance')return recordBalanceEntry(service,body);
  if(route==='billing/payout')return markCleanerPayout(service,body);
  if(route==='background/retry')return retryBackgroundJob(service,body,true);

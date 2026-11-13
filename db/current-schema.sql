@@ -47,6 +47,7 @@
 -- migration 0043_booking_risks.sql sha256:be613dd277154762a2b1bd450b2e89f165c4ad1a6cb14b4a3547e37ee9359dcd
 -- migration 0044_admin_telegram.sql sha256:9725018759d6a70777133870a226d9da60c4b786fac3d486324268d0a3664d81
 -- migration 0045_regular_cleaners.sql sha256:86cb5a6108be0475ed15430c72aae60e3f0067ca8e788b93e051a2c8a28075cd
+-- migration 0046_autopilot_plans.sql sha256:911a0b05ae335a2d427404f7d641c8846f51b9a722277078cc323514c87cd323
 
 -- table access_receipts
 CREATE TABLE access_receipts (id TEXT PRIMARY KEY,property_id TEXT NOT NULL,entity_kind TEXT NOT NULL,entity_id TEXT NOT NULL,user_id TEXT NOT NULL,created_at INTEGER NOT NULL,expires_at INTEGER NOT NULL);
@@ -247,6 +248,38 @@ CREATE TABLE auth_sessions (
  credential_version INTEGER NOT NULL, expires_at INTEGER NOT NULL
 );
 
+-- table autopilot_charges
+CREATE TABLE autopilot_charges (
+ id TEXT PRIMARY KEY,
+ user_id TEXT NOT NULL REFERENCES profiles(id),
+ role TEXT NOT NULL CHECK(role IN ('owner','cleaner')),
+ period_start INTEGER NOT NULL,
+ period_end INTEGER NOT NULL,
+ units INTEGER NOT NULL CHECK(units>=0),
+ amount INTEGER NOT NULL CHECK(amount>=0),
+ withheld INTEGER NOT NULL DEFAULT 0 CHECK(withheld>=0),
+ mode TEXT NOT NULL CHECK(mode IN ('charged','shadow')),
+ settled_at INTEGER,
+ settled_job TEXT,
+ created_at INTEGER NOT NULL,
+ UNIQUE(user_id,role,period_start)
+);
+
+-- table autopilot_plans
+CREATE TABLE autopilot_plans (
+ user_id TEXT NOT NULL REFERENCES profiles(id),
+ role TEXT NOT NULL CHECK(role IN ('owner','cleaner')),
+ status TEXT NOT NULL CHECK(status IN ('trial','active','grace','paused')),
+ started_at INTEGER NOT NULL,
+ period_end INTEGER NOT NULL,
+ grace_until INTEGER,
+ auto_renew INTEGER NOT NULL DEFAULT 1 CHECK(auto_renew IN (0,1)),
+ trial_used INTEGER NOT NULL DEFAULT 1 CHECK(trial_used IN (0,1)),
+ version INTEGER NOT NULL DEFAULT 1,
+ updated_at INTEGER NOT NULL,
+ PRIMARY KEY(user_id,role)
+);
+
 -- table background_jobs
 CREATE TABLE background_jobs (
  id TEXT PRIMARY KEY, kind TEXT NOT NULL, scope TEXT NOT NULL, payload TEXT NOT NULL DEFAULT '{}',
@@ -339,6 +372,21 @@ CREATE TABLE calendar_windows (
  created_at INTEGER NOT NULL,
  decided_at INTEGER,
  UNIQUE(property_id,start)
+);
+
+-- table cleaner_autopilot
+CREATE TABLE cleaner_autopilot (
+ user_id TEXT PRIMARY KEY REFERENCES profiles(id),
+ districts TEXT NOT NULL DEFAULT '[]',
+ days INTEGER NOT NULL DEFAULT 127 CHECK(days BETWEEN 0 AND 127),
+ from_minute INTEGER NOT NULL DEFAULT 540 CHECK(from_minute BETWEEN 0 AND 1440),
+ to_minute INTEGER NOT NULL DEFAULT 1200 CHECK(to_minute BETWEEN 0 AND 1440),
+ min_fee INTEGER NOT NULL DEFAULT 0 CHECK(min_fee>=0),
+ max_per_day INTEGER NOT NULL DEFAULT 4 CHECK(max_per_day BETWEEN 1 AND 20),
+ ask_new_owner INTEGER NOT NULL DEFAULT 1 CHECK(ask_new_owner IN (0,1)),
+ paused_until INTEGER NOT NULL DEFAULT 0,
+ version INTEGER NOT NULL DEFAULT 1,
+ updated_at INTEGER NOT NULL
 );
 
 -- table cleaning_commissions
@@ -731,7 +779,7 @@ CREATE TABLE platform_billing (
  version INTEGER NOT NULL DEFAULT 1,
  updated_by TEXT,
  updated_at INTEGER NOT NULL DEFAULT 0
-, ai_rate_bp INTEGER NOT NULL DEFAULT 1000 CHECK(ai_rate_bp BETWEEN 0 AND 3000), cleaning_rate_bp INTEGER NOT NULL DEFAULT 1000 CHECK(cleaning_rate_bp BETWEEN 0 AND 3000), pair_rate_bp INTEGER NOT NULL DEFAULT 500 CHECK(pair_rate_bp BETWEEN 0 AND 3000), pair_month_cap INTEGER NOT NULL DEFAULT 2000 CHECK(pair_month_cap>=0));
+, ai_rate_bp INTEGER NOT NULL DEFAULT 1000 CHECK(ai_rate_bp BETWEEN 0 AND 3000), cleaning_rate_bp INTEGER NOT NULL DEFAULT 1000 CHECK(cleaning_rate_bp BETWEEN 0 AND 3000), pair_rate_bp INTEGER NOT NULL DEFAULT 500 CHECK(pair_rate_bp BETWEEN 0 AND 3000), pair_month_cap INTEGER NOT NULL DEFAULT 2000 CHECK(pair_month_cap>=0), plan_charge INTEGER NOT NULL DEFAULT 0 CHECK(plan_charge IN (0,1)), plan_owner_price INTEGER NOT NULL DEFAULT 4900 CHECK(plan_owner_price BETWEEN 0 AND 1000000), plan_cleaner_price INTEGER NOT NULL DEFAULT 1900 CHECK(plan_cleaner_price BETWEEN 0 AND 1000000), plan_trial_days INTEGER NOT NULL DEFAULT 14 CHECK(plan_trial_days BETWEEN 0 AND 90), plan_grace_days INTEGER NOT NULL DEFAULT 3 CHECK(plan_grace_days BETWEEN 0 AND 30));
 
 -- table platform_commissions
 CREATE TABLE platform_commissions (
@@ -984,6 +1032,12 @@ CREATE INDEX auth_sessions_expiry ON auth_sessions(expires_at);
 
 -- index auth_sessions_user
 CREATE INDEX auth_sessions_user ON auth_sessions(user_id);
+
+-- index autopilot_charges_user
+CREATE INDEX autopilot_charges_user ON autopilot_charges(user_id,role,mode);
+
+-- index autopilot_plans_due
+CREATE INDEX autopilot_plans_due ON autopilot_plans(status,period_end);
 
 -- index background_due
 CREATE INDEX background_due ON background_jobs(status,available_at,lease_until);
@@ -1271,6 +1325,18 @@ CREATE TRIGGER account_erased_auth_sessions_insert BEFORE INSERT ON auth_session
 -- trigger account_erased_auth_sessions_update
 CREATE TRIGGER account_erased_auth_sessions_update BEFORE UPDATE ON auth_sessions WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.user_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END;
 
+-- trigger account_erased_autopilot_charges_insert
+CREATE TRIGGER account_erased_autopilot_charges_insert BEFORE INSERT ON autopilot_charges WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.user_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END;
+
+-- trigger account_erased_autopilot_charges_update
+CREATE TRIGGER account_erased_autopilot_charges_update BEFORE UPDATE ON autopilot_charges WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.user_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END;
+
+-- trigger account_erased_autopilot_plans_insert
+CREATE TRIGGER account_erased_autopilot_plans_insert BEFORE INSERT ON autopilot_plans WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.user_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END;
+
+-- trigger account_erased_autopilot_plans_update
+CREATE TRIGGER account_erased_autopilot_plans_update BEFORE UPDATE ON autopilot_plans WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.user_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END;
+
 -- trigger account_erased_background_jobs_insert
 CREATE TRIGGER account_erased_background_jobs_insert BEFORE INSERT ON background_jobs WHEN EXISTS(SELECT 1 FROM account_erasure_fences f WHERE f.user_id=NEW.scope OR (json_valid(NEW.payload) AND EXISTS(SELECT 1 FROM json_tree(NEW.payload) j WHERE j.type='text' AND j.atom=f.user_id))) BEGIN SELECT RAISE(ABORT,'account_erased'); END;
 
@@ -1309,6 +1375,12 @@ CREATE TRIGGER account_erased_calendar_windows_insert BEFORE INSERT ON calendar_
 
 -- trigger account_erased_calendar_windows_update
 CREATE TRIGGER account_erased_calendar_windows_update BEFORE UPDATE ON calendar_windows WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.owner_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END;
+
+-- trigger account_erased_cleaner_autopilot_insert
+CREATE TRIGGER account_erased_cleaner_autopilot_insert BEFORE INSERT ON cleaner_autopilot WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.user_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END;
+
+-- trigger account_erased_cleaner_autopilot_update
+CREATE TRIGGER account_erased_cleaner_autopilot_update BEFORE UPDATE ON cleaner_autopilot WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.user_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END;
 
 -- trigger account_erased_cleaning_commissions_insert
 CREATE TRIGGER account_erased_cleaning_commissions_insert BEFORE INSERT ON cleaning_commissions WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.owner_id OR user_id=NEW.cleaner_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END;
@@ -1686,7 +1758,8 @@ BEGIN
  WHERE COALESCE((SELECT SUM(amount) FROM owner_balance_entries WHERE owner_id=NEW.owner_id),0)
   -COALESCE((SELECT SUM(c.amount) FROM platform_commissions c WHERE c.owner_id=NEW.owner_id AND c.mode='charged' AND (SELECT status FROM bookings WHERE id=c.booking_id) IN ('confirmed','completed')),0)
   -COALESCE((SELECT SUM(amount) FROM cleaning_commissions WHERE owner_id=NEW.owner_id AND mode='charged'),0)
-  -COALESCE((SELECT SUM(amount) FROM cleaning_holds WHERE owner_id=NEW.owner_id AND status IN ('held','due','paid') AND job_id<>NEW.id),0)>=NEW.fee
+  -COALESCE((SELECT SUM(amount) FROM cleaning_holds WHERE owner_id=NEW.owner_id AND status IN ('held','due','paid') AND job_id<>NEW.id),0)
+  -COALESCE((SELECT SUM(amount) FROM autopilot_charges WHERE user_id=NEW.owner_id AND role='owner' AND mode='charged'),0)>=NEW.fee
  ON CONFLICT(job_id) DO UPDATE SET cleaner_id=excluded.cleaner_id,amount=excluded.amount,status='held',created_at=excluded.created_at WHERE cleaning_holds.status IN ('held','returned');
 END;
 

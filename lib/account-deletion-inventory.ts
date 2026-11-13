@@ -8,7 +8,10 @@ export const accountDeletionColumns:Record<string,string>={
  "listing_tips":"id,property_id,owner_id,kind,subject,mine,theirs,count,leaders,value,details_version,policy_version,status,created_at,expires_at,decided_at",
  "load_forecasts":"id,owner_id,week_start,city,days,advice,property_id,policy_version,from_value,to_value,from_hourly,to_hourly,from_nightly,to_nightly,percent,reasons,status,created_at,expires_at,decided_at",
  "price_suggestions":"id,property_id,owner_id,direction,percent,policy_version,from_daily,to_daily,from_hourly,to_hourly,from_nightly,to_nightly,signals,reasons,status,created_at,expires_at,decided_at",
- "platform_billing":"id,enabled,starts_at,rate_bp,min_fee,max_fee,free_bookings,version,updated_by,updated_at,ai_rate_bp,cleaning_rate_bp,pair_rate_bp,pair_month_cap",
+ "platform_billing":"id,enabled,starts_at,rate_bp,min_fee,max_fee,free_bookings,version,updated_by,updated_at,ai_rate_bp,cleaning_rate_bp,pair_rate_bp,pair_month_cap,plan_charge,plan_owner_price,plan_cleaner_price,plan_trial_days,plan_grace_days",
+ "autopilot_plans":"user_id,role,status,started_at,period_end,grace_until,auto_renew,trial_used,version,updated_at",
+ "autopilot_charges":"id,user_id,role,period_start,period_end,units,amount,withheld,mode,settled_at,settled_job,created_at",
+ "cleaner_autopilot":"user_id,districts,days,from_minute,to_minute,min_fee,max_per_day,ask_new_owner,paused_until,version,updated_at",
  "regular_cleaners":"property_id,owner_id,cleaner_id,created_at",
  "cleaning_holds":"job_id,owner_id,cleaner_id,property_id,amount,status,created_at,due_at,paid_at,paid_by,payout_note",
  "cleaning_commissions":"job_id,owner_id,cleaner_id,property_id,fee,rate_bp,amount,pair,mode,created_at",
@@ -101,6 +104,12 @@ export const accountDeletionColumns:Record<string,string>={
  "command_receipts": "user_id,key,digest,result"
 };
 export const accountDeletionFenceSql:Record<string,string>={
+ "account_erased_autopilot_plans_insert": "CREATE TRIGGER account_erased_autopilot_plans_insert BEFORE INSERT ON autopilot_plans WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.user_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END",
+ "account_erased_autopilot_plans_update": "CREATE TRIGGER account_erased_autopilot_plans_update BEFORE UPDATE ON autopilot_plans WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.user_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END",
+ "account_erased_autopilot_charges_insert": "CREATE TRIGGER account_erased_autopilot_charges_insert BEFORE INSERT ON autopilot_charges WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.user_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END",
+ "account_erased_autopilot_charges_update": "CREATE TRIGGER account_erased_autopilot_charges_update BEFORE UPDATE ON autopilot_charges WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.user_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END",
+ "account_erased_cleaner_autopilot_insert": "CREATE TRIGGER account_erased_cleaner_autopilot_insert BEFORE INSERT ON cleaner_autopilot WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.user_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END",
+ "account_erased_cleaner_autopilot_update": "CREATE TRIGGER account_erased_cleaner_autopilot_update BEFORE UPDATE ON cleaner_autopilot WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.user_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END",
  "account_erased_regular_cleaners_insert": "CREATE TRIGGER account_erased_regular_cleaners_insert BEFORE INSERT ON regular_cleaners WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.owner_id OR user_id=NEW.cleaner_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END",
  "account_erased_regular_cleaners_update": "CREATE TRIGGER account_erased_regular_cleaners_update BEFORE UPDATE ON regular_cleaners WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.owner_id OR user_id=NEW.cleaner_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END",
  "account_erased_cleaning_holds_insert": "CREATE TRIGGER account_erased_cleaning_holds_insert BEFORE INSERT ON cleaning_holds WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.owner_id OR user_id=NEW.cleaner_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END",

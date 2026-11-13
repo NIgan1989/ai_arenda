@@ -21,6 +21,7 @@ import {epoch,q,one,rows,validSignature,type Row,type OperationConfig} from './o
 import {aiBudgetState,saveAIBudget} from './ai-budget';
 import {boundedRequestText} from './request-body';
 import {saveStayReview} from './stay-reviews';
+import {planState,startOwnerPlan,startCleanerPlan,stopPlan,saveCleanerRules,awayToday,planRequired} from './autopilot-plans';
 import {discussionCandidates,openDiscussion,readDiscussion,sendDiscussionMessage,discussionInbox,discussionPhoto,discussionTyping,discussionAvatar} from './process-discussions';
 
 const active=(role:Role,allowed:Role[])=>{if(!allowed.includes(role))throw new DomainError('Операция недоступна в текущей роли.',403);};
@@ -35,6 +36,7 @@ export async function readOperations(service:RentalService,role:Role,path:string
  if(route==='discussion/candidates')return discussionCandidates(service,role);
  if(route==='commands')return {commands:await listCommands(service,role)};
  if(route==='import/state'){active(role,['owner']);return importState(service);}
+ if(route==='autopilot/state')return planState(service,planRequired(role));
  if(path[0]==='evidence'&&path[1])return path[2]==='photo'?readEvidence(service,role,path[1],config):{photos:await listEvidence(service,role,path[1])};
  if(route!=='state')throw new DomainError('Раздел не найден.',404);
  const [finance,dispatch,delivery,security,health,commands]=await Promise.all([financeState(service,role),dispatchState(service,role),deliveryState(service,role,config),securityState(service,role,platformAdmin),operationalHealth(service,role,platformAdmin),listCommands(service,role)]);
@@ -73,6 +75,10 @@ export async function writeOperations(service:RentalService,role:Role,path:strin
  if(route==='finance'){active(role,['owner']);return recordFinance(service,body);}
  if(route==='payment-intent'){active(role,['guest']);return createPaymentIntent(service,body,config);}
  if(route==='dispatch/preferences'){active(role,['cleaner']);return saveWorkerDispatch(service,body);}
+ if(route==='autopilot/start')return planRequired(role)==='owner'?startOwnerPlan(service,body):startCleanerPlan(service,body);
+ if(route==='autopilot/stop')return stopPlan(service,planRequired(role));
+ if(route==='autopilot/rules'){active(role,['cleaner']);await saveCleanerRules(service,body);return {message:'Правила сохранены.',state:await planState(service,'cleaner')};}
+ if(route==='autopilot/away'){active(role,['cleaner']);return awayToday(service);}
  if(route==='dispatch/offer'){active(role,['cleaner']);return decideOffer(service,body);}
  if(route==='dispatch/decline'){active(role,['cleaner']);return declineAssignment(service,body);}
  if(route==='rules'){active(role,['owner']);return saveOperationRules(service,body);}
