@@ -1,3 +1,4 @@
+import {ReliabilityBadge} from './Reliability';
 import React,{useEffect,useRef,useState,type ReactNode} from 'react';
 import {Thinking} from './Thinking';
 import {Animated,AppState,BackHandler,PanResponder,Platform,Pressable,ScrollView,Text,View,useWindowDimensions} from 'react-native';
@@ -169,6 +170,7 @@ function GuestPanel({setScanning,accountId,data,mapData,publish,selected,setSele
      <Text style={h.price}>{money(offer.estimate.amount)}</Text>
      {!!windowBadge(offer.estimate.window)&&<Text style={h.reason}>✦ {windowBadge(offer.estimate.window)}</Text>}
      {!!dealBadge(offer.estimate.deal)&&<Text style={h.reason}>✦ {dealBadge(offer.estimate.deal)}</Text>}
+     {!!offer.host&&<View style={{marginTop:8}}><ReliabilityBadge value={offer.host} title="Владелец"/></View>}
      <Text style={h.note}>{date(Date.parse(live.filters.start)/1000)} → {date(Date.parse(live.filters.end)/1000)} · гостей: {live.filters.guests}{'\n'}Депозит отдельно: {offer.policy?.deposit?money(offer.policy.deposit):'не требуется'}</Text>
      {shownReasons(offer.match?.reasons,{maxPrice:String(live.filters.maxPrice)===NO_BUDGET?'':String(live.filters.maxPrice||'')}).map((reason:string)=><Text key={reason} style={h.reason}>✓ {reason}</Text>)}
      {!!offer.policy?.house_rules&&<Text style={h.note}>Правила: {offer.policy.house_rules}</Text>}

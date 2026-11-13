@@ -6,6 +6,7 @@ import {Photo} from './ListingMedia';
 import {Badge} from './PropertyListing';
 import type {Row} from './model';
 import {cleanerNext} from '../../lib/cleaner-next';
+import {ReliabilityBadge} from './Reliability';
 // Same words as the site: assignment waits for the platform check of the cleaner, and the row says so up front.
 const admissionNotes:Record<string,string>={none:'Анкета исполнителя ещё не отправлена на проверку платформы. Назначить можно после проверки.',pending:'Анкету исполнителя проверяет администратор платформы. Назначить можно сразу после проверки, мы пришлём уведомление.',expired:'Срок проверки исполнителя истёк. Назначить можно после новой проверки.',rejected:'Исполнитель не прошёл проверку платформы. Назначить его нельзя.'};
 // Same as components/applicant-pick.tsx on the site: one row per cleaner, and the owner's decision on the row itself,
@@ -22,7 +23,7 @@ export function ApplicantPick({applications,approvals,busy,onDecide}:{applicatio
  return <View style={a.box} accessibilityLabel="Отклики исполнителей">
   <Text accessibilityRole="header" style={a.title}>{applications.length===1?'Откликнулся исполнитель':'Отклики · '+applications.length}</Text>
   {applications.map((x,i)=>{const card=approvals.find(c=>c.id==='application:'+x.id),admission=x.admission??x.worker?.admission,blocked=!!admission&&admission in admissionNotes,off=busy||!card,decide=(action:string)=>card&&onDecide({id:card.id,revision:card.revision,action}),name=x.worker?.name||x.name||'исполнитель';
-   return <View key={x.id} style={[a.option,i>0&&a.optionLine]}><WorkerRow worker={{...x,...(x.worker||{}),experience:x.worker?.experience||x.experience}}/>
+   return <View key={x.id} style={[a.option,i>0&&a.optionLine]}><WorkerRow worker={{...x,...(x.worker||{}),experience:x.worker?.experience||x.experience}}/>{!!x.worker?.reliability&&<View style={{marginTop:8}}><ReliabilityBadge value={x.worker.reliability} title="Исполнитель"/></View>}
     <View style={a.decide}>
      <Pressable accessibilityRole="button" accessibilityLabel={'Назначить: '+name} disabled={off||blocked} onPress={()=>decide('accept')} style={({pressed})=>[a.btn,a.accept,(pressed||off||blocked)&&a.dim]}><Text style={a.acceptText}>✓  Назначить</Text></Pressable>
      <Pressable accessibilityRole="button" accessibilityLabel={'Отклонить отклик: '+name} disabled={off} onPress={()=>decide('reject')} style={({pressed})=>[a.btn,a.reject,(pressed||off)&&a.dim]}><Text style={a.rejectText}>Отклонить</Text></Pressable>

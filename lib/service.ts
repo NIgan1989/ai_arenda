@@ -1,3 +1,4 @@
+import {reliabilityFor} from './reliability';
 import {assessBookingRisk,riskSignals,saveRiskSql,riskLabel,riskFromRow} from './booking-risk';
 import { DomainError, required, number, interval, quote, roles, assistantReply, type Role } from './domain';
 import { ratingsFor } from './stay-reviews';
@@ -143,16 +144,19 @@ export class RentalService {
   }
   async enrichProperties(items:Row[],owner=false):Promise<Row[]>{
     if(!items.length)return [];
+    // The owner's reliability travels with each flat; the owner's id itself stays private.
+    const owners=owner?[]:await this.all(`SELECT id,owner_id FROM properties WHERE id IN (${items.slice(0,500).map(()=>'?').join(',')})`,...items.slice(0,500).map(p=>p.id)),hosts=await reliabilityFor(this.db,'owner',owners.map(o=>o.owner_id));
+    const hostOf=(id:string)=>hosts.get(owners.find(o=>o.id===id)?.owner_id);
     const [ratings,details,operations,busy]=await Promise.all([ratingsFor(this.db,items.map(p=>p.id)),this.all('SELECT * FROM property_details'),this.all('SELECT * FROM property_operations'),this.all("SELECT DISTINCT property_id FROM bookings WHERE (status='confirmed' OR (status='requested' AND expires_at>?)) AND start<=? AND occupied_until>?",now(),now(),now())]);
-    return items.map(p=>{const d=details.find(d=>d.property_id===p.id),op=operations.find(o=>o.property_id===p.id);return {...p,details:d?JSON.parse(d.details):{},photos:d?JSON.parse(d.photos):[],listing_version:d?.version||0,rating:ratings.get(p.id)||null,display_status:propertyStatus(p,op,busy.some(b=>b.property_id===p.id)),...(owner?{}:{published:undefined})};});
+    return items.map(p=>{const d=details.find(d=>d.property_id===p.id),op=operations.find(o=>o.property_id===p.id);return {...p,...(owner?{}:{host:hostOf(p.id)||null}),details:d?JSON.parse(d.details):{},photos:d?JSON.parse(d.photos):[],listing_version:d?.version||0,rating:ratings.get(p.id)||null,display_status:propertyStatus(p,op,busy.some(b=>b.property_id===p.id)),...(owner?{}:{published:undefined})};});
   }
   async workerCard(userId:string){
     const p=await this.one('SELECT p.name,p.city,p.districts,p.experience,p.availability,d.avatar_id,d.work_status FROM profiles p LEFT JOIN profile_details d ON d.user_id=p.id WHERE p.id=?',userId);
     if(!p)return null;
     const jobs=await this.all("SELECT start,end,status FROM cleaning_jobs WHERE assigned_to=? AND status IN ('assigned','in_progress','submitted')",userId);
-    return {...p,display_status:cleanerStatus(p.work_status,jobs,now()),admission:await cleanerAdmission(this.db,userId)};
+    return {...p,display_status:cleanerStatus(p.work_status,jobs,now()),admission:await cleanerAdmission(this.db,userId),reliability:(await reliabilityFor(this.db,'cleaner',[userId])).get(userId)};
   }
-  async accountState(){return {profile:await this.profile(),workerStatus:(await this.workerCard(this.userId))?.display_status,settings:await this.one('SELECT payment_provider,payment_notifications,version FROM account_preferences WHERE user_id=?',this.userId)||defaultAccountSettings};}
+  async accountState(role?:Role){return {reliability:role?(await reliabilityFor(this.db,role,[this.userId])).get(this.userId):undefined,profile:await this.profile(),workerStatus:(await this.workerCard(this.userId))?.display_status,settings:await this.one('SELECT payment_provider,payment_notifications,version FROM account_preferences WHERE user_id=?',this.userId)||defaultAccountSettings};}
   async saveAccountSettings(body:Row){
     const {provider,notifications,version}=accountSettingsInput(body);if(!await this.profile())throw new DomainError('Сначала заполните профиль.',403);
     if(!await this.one('SELECT user_id FROM account_preferences WHERE user_id=?',this.userId)&&version!==0)throw new DomainError('Обновите настройки аккаунта.',409);
@@ -280,7 +284,8 @@ export class RentalService {
     ]);
     const enrichedTerms:Row[]=terms.map(t=>{const f=financeBalances.find(f=>f.booking_id===t.booking_id),received=f?.deposit_received??(t.deposit_status==='owner_verified'?t.deposit:0),returned=f?.deposit_returned??(t.deposit_returned_at?t.deposit:0);return {...t,deposit_received_amount:received,deposit_returned_amount:returned,deposit_balance:Math.max(0,received-returned)};});
     const policyFor=(p:Row)=>policies.find(v=>v.property_id===p.id)||defaultPolicy;
-    const state={ profile, properties:await this.enrichProperties(properties.map(p=>({...p,policy:publicPolicy(policyFor(p))}))), ownProperties:await this.enrichProperties(ownProperties.map(p=>({...p,policy:policyFor(p),operation:operations.find(v=>v.property_id===p.id)})),true), bookings:bookings.map(({risk_row,...b}) => ({...b,risk:riskFromRow(risk_row?JSON.parse(risk_row):null),status:b.status==='requested' && b.expires_at<=serverTime?'expired':b.status,terms:enrichedTerms.find(t=>t.booking_id===b.id),changes:changes.filter(c=>c.booking_id===b.id).map(c=>({...c,status:c.status==='pending'&&c.expires_at<=serverTime?'expired':c.status})),readiness:operations.find(o=>o.property_id===b.property_id)?.readiness})), jobs:jobs.map((j:Row):Row=>({...j,settlement_paid:jobPayments.find(p=>p.job_id===j.id)?.paid??(j.settled_at?j.fee:0),checkout_confirmed:!j.booking_id||!!j.checkout_confirmed})), applications, notifications, messages, serverTime, integrations:{ai:false,telegram:false,whatsapp:false,payments:false} };
+    const guests=await reliabilityFor(this.db,'guest',bookings.filter(b=>b.owner_id===this.userId&&b.status==='requested').map(b=>b.guest_id));
+    const state={ profile, properties:await this.enrichProperties(properties.map(p=>({...p,policy:publicPolicy(policyFor(p))}))), ownProperties:await this.enrichProperties(ownProperties.map(p=>({...p,policy:policyFor(p),operation:operations.find(v=>v.property_id===p.id)})),true), bookings:bookings.map(({risk_row,...b}) => ({...b,risk:riskFromRow(risk_row?JSON.parse(risk_row):null),...(b.owner_id===this.userId?{guest_reliability:guests.get(b.guest_id)}:{}),status:b.status==='requested' && b.expires_at<=serverTime?'expired':b.status,terms:enrichedTerms.find(t=>t.booking_id===b.id),changes:changes.filter(c=>c.booking_id===b.id).map(c=>({...c,status:c.status==='pending'&&c.expires_at<=serverTime?'expired':c.status})),readiness:operations.find(o=>o.property_id===b.property_id)?.readiness})), jobs:jobs.map((j:Row):Row=>({...j,settlement_paid:jobPayments.find(p=>p.job_id===j.id)?.paid??(j.settled_at?j.fee:0),checkout_confirmed:!j.booking_id||!!j.checkout_confirmed})), applications, notifications, messages, serverTime, integrations:{ai:false,telegram:false,whatsapp:false,payments:false} };
     return {...state,workspaces:Object.fromEntries(roles.map(role=>[role,operationOverview(state,this.userId,role,serverTime)]))};
   }
   async publicCatalog(options:{syntheticPreview?:boolean}={}) {

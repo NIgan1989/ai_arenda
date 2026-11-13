@@ -5,6 +5,7 @@ import {request} from './api';
 import {uid} from './model';
 import {C} from './styles';
 import {T} from './tokens';
+import {ReliabilityBadge} from './Reliability';
 
 // The AI administrator's price advice on top of the owner's map, like an incoming notification.
 // The owner raises (or lowers) the price with one button or leaves it; «×» only hides it until the next visit.
@@ -118,7 +119,7 @@ function BookingTipBody({card,busy,onDecide}:{card:Approval;busy:boolean;onDecid
  const r=card.risk!,[bg,fg]=riskTone[r.level];
  const btn=(label:string,action:Decision,primary:boolean)=><Pressable key={action} accessibilityRole="button" accessibilityLabel={label} disabled={busy} onPress={()=>onDecide(action)} style={({pressed})=>[primary?t.accept:[t.reject,{flex:1}],(busy||pressed)&&t.dim]}><Text numberOfLines={1} style={primary?t.acceptText:t.rejectText}>{label}</Text></Pressable>;
  return <View>
-  <View style={t.priceRow}><Text style={t.to}>{fact(card,'Проживание')}</Text><Text numberOfLines={1} style={[t.unit,{flexShrink:1}]}>{card.from+' · '+guests(fact(card,'Гостей'))}</Text></View>
+  <View style={t.priceRow}><Text style={t.to}>{fact(card,'Проживание')}</Text><Text numberOfLines={1} style={[t.unit,{flexShrink:1}]}>{card.from}</Text><ReliabilityBadge value={card.reliability} compact/><Text style={t.unit}>{guests(fact(card,'Гостей'))}</Text></View>
   <View style={[t.when,{marginTop:4}]}><Text style={t.whenIcon}>◷</Text><Text numberOfLines={1} style={t.whenText}>{fact(card,'Заезд')+' → '+fact(card,'Выезд')}</Text></View>
   <View accessibilityLabel={r.label} style={[t.risk,{backgroundColor:bg,borderColor:r.level==='medium'?C.warningLine:bg}]}>
    <View style={t.riskHead}><View style={[t.riskDot,{backgroundColor:fg}]}/><Text style={t.riskTitle}>{r.label}</Text>{r.held&&<Text style={t.small}>автоподтверждение остановлено</Text>}</View>

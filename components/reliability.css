@@ -1,0 +1,20 @@
+/* Reliability rating: score tile, label and the facts behind it. */
+.reliability{display:flex;align-items:center;gap:var(--t-space-12);padding:var(--t-space-12);border-radius:var(--t-radius-md);background:var(--t-surface-alt);border:1px solid var(--t-line)}
+.reliability.is-excellent{background:var(--t-success-soft);border-color:transparent}
+.reliability.is-attention{background:var(--t-warning-soft);border-color:var(--t-warning-line)}
+.reliability-score{flex:none;display:inline-flex;align-items:center;justify-content:center;gap:4px;min-width:64px;height:44px;padding:0 var(--t-space-8);border-radius:var(--t-radius-sm);background:var(--t-surface);font-size:18px;line-height:24px;font-weight:700;color:var(--t-ink)}
+.reliability-score svg{color:var(--t-warning)}
+.reliability.is-new .reliability-score svg{color:var(--t-accent)}
+.reliability-text{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.reliability-text small{font-size:12px;line-height:16px;color:var(--t-muted)}
+.reliability-text strong{font-size:16px;line-height:24px;color:var(--t-ink)}
+.reliability-text span{font-size:14px;line-height:20px;color:var(--t-ink-soft)}
+.reliability-mark{flex:none;color:var(--t-success)}
+.reliability-chip{display:inline-flex;align-items:center;gap:2px;padding:0 8px;border-radius:var(--t-radius-full);background:var(--t-warning-soft);font-size:12px;line-height:16px;font-weight:600;color:var(--t-ink);vertical-align:middle;white-space:nowrap}
+.reliability-chip.is-new{background:var(--t-accent-soft)}
+.reliability-chip svg{color:var(--t-warning)}
+.reliability-chip.is-new svg{color:var(--t-accent)}
+.reliability-hints{margin:var(--t-space-8) 0 0;padding-left:var(--t-space-20);font-size:14px;line-height:20px;color:var(--t-ink-soft)}
+.listing-host{margin-top:var(--t-space-12)}
+.acct-reliability{padding:var(--t-space-12)}
+.applicant-option .reliability{margin-top:var(--t-space-8)}
