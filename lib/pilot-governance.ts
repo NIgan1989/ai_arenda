@@ -1,6 +1,7 @@
 import {DomainError,required,number,type Role} from './domain';
 import type {RentalService} from './service';
-import {epoch,uuid,q,one,rows,hash,type Row} from './operation-core';
+import {epoch,uuid,q,one,rows,hash,type Row,type OperationConfig} from './operation-core';
+import {requestParticipantReview} from './participant-security';
 
 export async function readPilotPolicy(db:D1Database){return (await one(db,"SELECT require_owner_review,require_cleaner_review,require_phone,version,updated_at FROM pilot_policy WHERE id='global'"))!;}
 export async function pilotPolicy(service:RentalService){return readPilotPolicy(service.db);}
@@ -11,6 +12,24 @@ async function reviewed(service:RentalService,userId:string,role:'owner'|'cleane
  if(role==='owner')return !!(await one(service.db,'SELECT owner_reviewed FROM pilot_property_admissions WHERE id=? AND owner_id=?',propertyId,userId))?.owner_reviewed;
  const review=await one(service.db,latestReviewSql('cleaner'),userId);
  return !!review&&review.status==='approved'&&(!review.valid_until||review.valid_until>epoch());
+}
+// Where a cleaner stands with the platform check that assignment needs. Owners see it on the response row, the cleaner
+// sees it on their own card, so neither of them learns about the check from a refused «Назначить».
+export type CleanerAdmission='not_required'|'approved'|'pending'|'rejected'|'expired'|'none';
+export async function cleanerAdmission(db:D1Database,userId:string):Promise<CleanerAdmission>{
+ const policy=await one(db,"SELECT require_cleaner_review FROM pilot_policy WHERE id='global'");
+ if(!policy?.require_cleaner_review)return 'not_required';
+ const review=await one(db,latestReviewSql('cleaner'),userId);
+ if(!review)return 'none';
+ if(review.status==='approved')return !review.valid_until||review.valid_until>epoch()?'approved':'expired';
+ return review.status==='rejected'?'rejected':'pending';
+}
+// A response is the moment the check becomes needed, so the request goes to the platform administrators by itself.
+export async function requestCleanerAdmission(service:RentalService,config:OperationConfig&{PLATFORM_ADMIN_IDS?:string},jobId:string){
+ if((await one(service.db,'SELECT p.demo_owner FROM cleaning_jobs j JOIN properties p ON p.id=j.property_id WHERE j.id=?',jobId))?.demo_owner)return 'not_required' as CleanerAdmission;
+ let admission=await cleanerAdmission(service.db,service.userId);
+ if(admission==='none'||admission==='expired'){await requestParticipantReview(service,'cleaner',{reference:'Отклик на уборку: проверьте анкету исполнителя.'},config);admission='pending';}
+ return admission;
 }
 async function verifiedPhone(service:RentalService,userId:string){
  const verification=await one(service.db,'SELECT phone FROM phone_verifications WHERE user_id=? AND verified_at IS NOT NULL',userId);

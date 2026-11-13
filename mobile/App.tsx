@@ -29,7 +29,7 @@ import {stayISO} from './src/ai-request';
 import {OfflineNotice} from './src/OfflineNotice';
 import {EntrySplash} from './src/EntrySplash';
 import {LoadingBar} from './src/LoadingBar';
-import {ApplicantPick,WorkerRow,applicantStyles} from './src/ApplicantPick';
+import {ApplicantPick,CleanerNextBox,WorkerRow,applicantStyles} from './src/ApplicantPick';
 import {PageTransition} from './src/PageTransition';
 import {entryReady,markGesture} from './src/loading';
 
@@ -194,6 +194,8 @@ function Chat(){
     if(intent==='profile-done'){say('Профиль сохранён. Чем займёмся дальше?');return;}
     if(intent==='jobs'||intent==='my-jobs'||intent==='owner-jobs'){
       const role=intent==='owner-jobs'?'owner':'cleaner';if(!ensure(role,intent,state))return;setActor(role);
+      // A list that has its own page opens that page instead of repeating the same cards under the current one.
+      const listPage=rolePages[role].find(p=>p.intent===intent);if(listPage&&selectedRole===role){setPageId(listPage.id);return;}
       const items=state.jobs.filter((j:Row)=>role==='owner'?j.owner_id===state.user.id:intent==='my-jobs'?j.assigned_to===state.user.id||state.applications.some((a:Row)=>a.job_id===j.id&&a.user_id===state.user.id):j.status==='open'&&j.end>Date.now()/1000&&(!state.profile?.city||j.city.toLowerCase()===state.profile.city.toLowerCase()));
       say(items.length?(intent==='jobs'?'Вот доступные уборки. Адрес появится после назначения.':'Вот ваши задания и их текущий статус.'):'Сейчас заданий по этому запросу нет.','jobs',{ids:items.map((j:Row)=>j.id),role});return;
     }
@@ -374,9 +376,9 @@ function Chat(){
         {owner&&!!j.worker&&<View style={applicantStyles.assigned}><WorkerRow worker={j.worker} label="Исполнитель"/></View>}
         <RecordFacts rows={[j.description&&['Что сделать',j.description],j.address&&['Адрес',j.address+(j.owner_contact?' · '+j.owner_contact:''),true],j.report&&['Отчёт',j.report]]}/>
         <ActivityTimer kind="job" item={j}/>
-        {assigned&&j.status==='assigned'&&!j.checkout_confirmed&&<Text style={s.meta}>Ожидаем подтверждения выезда гостя.</Text>}
+        {!owner&&<CleanerNextBox job={j} application={application} admission={application?.admission??data.profile?.admission} userId={userId||''} busy={busy} onRequestReview={()=>perform('operations/reviews/request',{reference:'Отклик на уборку: проверьте анкету исполнителя.'},uid())}/>}
         <RecordActions busy={busy} actions={[
-          !owner&&j.status==='open'&&{title:applied?'Отклик отправлен':'Откликнуться',kind:'main',disabled:applied,onPress:()=>perform('jobs/'+id,{action:'apply'},m.id)},
+          !owner&&j.status==='open'&&!applied&&{title:'Откликнуться',kind:'main',onPress:()=>perform('jobs/'+id,{action:'apply'},m.id)},
           assigned&&j.status==='assigned'&&{title:'Начать уборку',kind:'main',disabled:!j.checkout_confirmed,onPress:()=>confirm('jobs/'+id,{action:'start'},'Отметить начало работы','my-jobs')},
           assigned&&j.status==='in_progress'&&{title:'Подготовить отчёт',kind:'main',onPress:()=>say('Проверьте каждый пункт. Отчёт уйдёт владельцу после вашего подтверждения.','report',{id})},
           owner&&j.status==='submitted'&&{title:'Рассмотреть отчёт',kind:'main',onPress:()=>say('Отчёт на приёмке.','approval',{id:'report:'+id})},
