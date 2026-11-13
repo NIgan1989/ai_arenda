@@ -16,7 +16,7 @@ test('HTTP assistant ignores old opt-out, obeys server isolation and retains req
   const stale=await call('/api/operations/ai-data-permission',{allowed:false,policyVersion:permission.policyVersion,expectedVersion:0},user.token);assert.equal(stale.status,409);
   const revoked=await call('/api/operations/ai-data-permission',{allowed:false,policyVersion:permission.policyVersion,expectedVersion:1},user.token);assert.equal(revoked.status,200);
   const local=await call('/api/chat',{text:'Привет',aiConsent:true},user.token);assert.equal(local.value.mode,'scenario');assert.equal(modelCalls,2);
-  const searched=await call('/api/chat',{text:'Найди квартиру в Павлодаре'},user.token);assert.equal(searched.status,200);assert.equal(searched.value.search.total,0);assert.equal(searched.value.search.availabilityChecked,false);assert.equal(modelCalls,2);
+  const searched=await call('/api/chat',{text:'Найди жильё в Павлодаре'},user.token);assert.equal(searched.status,200);assert.equal(searched.value.search.total,0);assert.equal(searched.value.search.availabilityChecked,false);assert.equal(modelCalls,2);
   app.db.raw.prepare("UPDATE auth_attempt_limits SET attempts=30 WHERE key LIKE 'ai:user:%'").run();const limited=await call('/api/chat',{text:'Помоги'},user.token);assert.equal(limited.status,429);assert.equal(modelCalls,2);assert.doesNotMatch(limited.value.error,/OpenAI|API-ключ|Platform/);
  }finally{await app.close();globalThis.fetch=original;}
  const isolated=createApp({maintenance:false,operationsConfig:{OPENAI_API_KEY:'synthetic-key',OPENAI_MODEL:'fixture-model',TEST_DATA_ONLY:'1',TEST_AI_ENABLED:'0'}});await new Promise(done=>isolated.server.listen(0,'127.0.0.1',done));const isolatedBase='http://127.0.0.1:'+isolated.server.address().port;

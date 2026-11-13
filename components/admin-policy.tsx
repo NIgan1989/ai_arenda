@@ -10,7 +10,7 @@ type Save=(path:string,body:Row)=>Promise<Row|undefined>;
 export function AdminPolicy({state,busy,save}:{state:Row;busy:boolean;save:Save}){
  const p=state.policy||{},locked=!!state.testMode;
  const rules:{key:string;field:string;on:boolean;Icon:LucideIcon;title:string;note:string}[]=[
-  {key:'owner',field:'requireOwnerReview',on:!!p.require_owner_review,Icon:ShieldCheck,title:'Проверять квартиру до показа на карте',note:'Новая квартира попадает на карту и принимает брони после проверки.'},
+  {key:'owner',field:'requireOwnerReview',on:!!p.require_owner_review,Icon:ShieldCheck,title:'Проверять жильё до показа на карте',note:'Новое жильё попадает на карту и принимает брони после проверки.'},
   {key:'cleaner',field:'requireCleanerReview',on:!!p.require_cleaner_review,Icon:UserRound,title:'Проверять исполнителя до назначения',note:'Назначить на уборку можно только проверенного исполнителя.'},
   {key:'phone',field:'requirePhone',on:!!p.require_phone,Icon:Smartphone,title:'Требовать подтверждённый номер',note:'Нужен работающий SMS-канал, иначе новые операции остановятся.'}
  ];

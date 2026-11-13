@@ -23,7 +23,7 @@ export function planAdministrator(data:Row,t:number):AdministratorTask[]{
   for(const role of roles){const user=role==='owner'?owner:b.guest_id;if(due(at,user,role))add(b,'booking',stage,user,role,role==='guest'?guestTitles[stage]||title:title,reason,at,urgent||at<=t?3:2);}
  };
  for(const b of data.bookings||[]){
-  const p=properties.get(b.property_id),terms=b.terms||{},subject=p?.title||b.title||'Квартира';
+  const p=properties.get(b.property_id),terms=b.terms||{},subject=p?.title||b.title||'Жильё';
   if(b.status==='requested'&&b.expires_at>t){
    add(b,'booking','request',owner,'owner','Рассмотреть заявку',subject+' · ожидается решение владельца',b.expires_at,b.expires_at-t<=600?3:2);
    add(b,'booking','request',b.guest_id,'guest','Ожидается решение по заявке',subject+' · резерв действует до срока в карточке',b.expires_at,1);
@@ -34,31 +34,32 @@ export function planAdministrator(data:Row,t:number):AdministratorTask[]{
   }
   if(['cancelled','expired'].includes(b.status)&&terms.paid_amount>0&&!terms.refund_recorded_at)add(b,'booking','refund',owner,'owner','Проверить возврат оплаты',subject+' · бронь закрыта, возврат фактически полученной оплаты ещё не отмечен',b.created_at,2);
   if(b.status==='completed'){
-   if(terms.deposit_status==='owner_verified'&&!terms.deposit_returned_at)add(b,'booking','deposit-return',owner,'owner','Закрыть расчёт по депозиту',subject+' · после проверки квартиры отметьте фактический возврат или разберите спор',(terms.actual_checkout||b.end)+86400,t>=(terms.actual_checkout||b.end)+86400?3:2);
+   if(terms.deposit_status==='owner_verified'&&!terms.deposit_returned_at)add(b,'booking','deposit-return',owner,'owner','Закрыть расчёт по депозиту',subject+' · после проверки жилья отметьте фактический возврат или разберите спор',(terms.actual_checkout||b.end)+86400,t>=(terms.actual_checkout||b.end)+86400?3:2);
    continue;
   }
   if(b.status!=='confirmed')continue;
   if(b.payment_status!=='owner_verified')bookingTask(b,'payment','Проверить оплату проживания',subject+' · поступление не подтверждено владельцем',b.start);
   if(terms.deposit_status==='pending')bookingTask(b,'deposit','Проверить депозит',subject+' · депозит предусмотрен согласованными условиями',b.start);
   if(!terms.actual_checkin&&!terms.actual_checkout){
-   if(p?.readiness!=='ready')bookingTask(b,'readiness','Подготовить квартиру к заезду',subject+' · готовность квартиры не подтверждена',b.start,['owner']);
+   if(p?.readiness!=='ready')bookingTask(b,'readiness','Подготовить жильё к заезду',subject+' · готовность жилья не подтверждена',b.start,['owner']);
    bookingTask(b,'checkin','Проверить заселение',subject+' · фактический заезд ещё не подтверждён; сначала нужны готовность, оплата и депозит',b.start);
   }
   if(!terms.actual_checkout){
    if(terms.checkout_reported_at)add(b,'booking','checkout-reported',owner,'owner','Проверить сообщение о выезде',subject+' · гость сообщил о выезде; подтвердите освобождение после проверки',terms.checkout_reported_at+900,t>=terms.checkout_reported_at+900?3:2);
-   bookingTask(b,'checkout',b.end<=t?'Просрочен выезд':'Подготовиться к выезду',subject+' · освобождение квартиры подтверждается отдельно',b.end,undefined,b.end<=t);
+   bookingTask(b,'checkout',b.end<=t?'Просрочен выезд':'Подготовиться к выезду',subject+' · освобождение жилья подтверждается отдельно',b.end,undefined,b.end<=t);
   }
-  if(!data.jobs.some((j:Row)=>j.booking_id===b.id&&j.status!=='cancelled'))add(b,'booking','missing-cleaning',owner,'owner','Запланировать уборку после выезда',subject+' · связанного задания нет; проверьте стоимость и создайте уборку',b.end,2);
+  // Own staff cleans this property: no cleaning task for executors is expected.
+  if(!Number(p?.own_staff)&&!data.jobs.some((j:Row)=>j.booking_id===b.id&&j.status!=='cancelled'))add(b,'booking','missing-cleaning',owner,'owner','Запланировать уборку после выезда',subject+' · связанного задания нет; проверьте стоимость и создайте уборку',b.end,2);
  }
  for(const j of data.jobs||[]){
-  const subject=properties.get(j.property_id)?.title||'Квартира',base=data.bookings.find((b:Row)=>b.id===j.booking_id);
+  const subject=properties.get(j.property_id)?.title||'Жильё',base=data.bookings.find((b:Row)=>b.id===j.booking_id);
   if(j.status==='open'){
    const applicants=(data.applications||[]).filter((a:Row)=>a.job_id===j.id&&a.status==='pending');
    add(j,'job','assignment',owner,'owner',applicants.length?'Выбрать исполнителя из откликов':'Найти исполнителя уборки',subject+' · '+(applicants.length?'есть отклики; назначение ещё не выполнено':'откликов пока нет'),j.start,j.start<=t?3:due(j.start,owner,'owner')?2:1);
   }
   if(j.status==='assigned'){
-   if(j.booking_id&&!base?.terms?.actual_checkout&&due(j.start,owner,'owner'))add(j,'job','vacancy',owner,'owner','Уборка ждёт подтверждения выезда',subject+' · исполнителю нельзя начинать, пока квартира не освобождена',j.start,j.start<=t?3:2);
-   if(due(j.start,j.assigned_to,'cleaner'))add(j,'job','start',j.assigned_to,'cleaner',j.booking_id&&!base?.terms?.actual_checkout?'Дождаться освобождения квартиры':'Начать назначенную уборку',subject+' · проверьте время, условия и подтверждение выезда',j.start,j.start+900<=t?3:2);
+   if(j.booking_id&&!base?.terms?.actual_checkout&&due(j.start,owner,'owner'))add(j,'job','vacancy',owner,'owner','Уборка ждёт подтверждения выезда',subject+' · исполнителю нельзя начинать, пока жильё не освобождено',j.start,j.start<=t?3:2);
+   if(due(j.start,j.assigned_to,'cleaner'))add(j,'job','start',j.assigned_to,'cleaner',j.booking_id&&!base?.terms?.actual_checkout?'Дождаться освобождения жилья':'Начать назначенную уборку',subject+' · проверьте время, условия и подтверждение выезда',j.start,j.start+900<=t?3:2);
    if(j.start+900<=t)add(j,'job','no-start',owner,'owner','Исполнитель не отметил начало',subject+' · свяжитесь с исполнителем и проверьте необходимость замены',j.start+900,3);
   }
   if(['open','assigned','in_progress'].includes(j.status)&&j.end<=t){

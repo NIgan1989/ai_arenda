@@ -40,9 +40,9 @@ async function verifiedPhone(service:RentalService,userId:string){
 export async function assertPilotAllowed(service:RentalService,capability:'publish'|'booking'|'assignment',propertyId?:string,workerId?:string){
  if(!['publish','booking','assignment'].includes(capability))throw new DomainError('Неизвестный вид допуска.');
  const property=propertyId?await one(service.db,'SELECT id,owner_id,demo_owner FROM properties WHERE id=?',propertyId):null;
- if(!property)throw new DomainError('Квартира недоступна.',403);
- if(capability==='publish'&&property.owner_id!==service.userId)throw new DomainError('Квартира недоступна.',403);
- if(property.demo_owner){if(property.demo_owner!==service.userId&&capability!=='assignment')throw new DomainError('Учебная квартира недоступна.',403);return;}
+ if(!property)throw new DomainError('Жильё недоступно.',403);
+ if(capability==='publish'&&property.owner_id!==service.userId)throw new DomainError('Жильё недоступно.',403);
+ if(property.demo_owner){if(property.demo_owner!==service.userId&&capability!=='assignment')throw new DomainError('Учебное жильё недоступно.',403);return;}
  const policy=await pilotPolicy(service);
  if(['publish','booking'].includes(capability)&&policy.require_owner_review&&!await reviewed(service,property.owner_id,'owner',property.id))throw new DomainError('Публикация и новые брони доступны после действующей проверки владельца и этого объекта.',409);
  if(capability==='assignment'){
@@ -89,7 +89,7 @@ export async function governanceState(service:RentalService,role:Role,platformAd
  const tickets=await rows(service.db,`SELECT t.*,i.owner_id,i.property_id,i.entity_kind,i.entity_id,i.description,i.resolution,i.opened_role,p.title property_title,CASE WHEN t.assigned_to IS NULL THEN '' ELSE 'Назначен оператор' END assignee_label FROM operator_tickets t JOIN administrator_issues i ON i.id=t.issue_id JOIN properties p ON p.id=i.property_id WHERE ${where} ORDER BY t.status='resolved',CASE t.priority WHEN 'urgent' THEN 0 WHEN 'high' THEN 1 ELSE 2 END,t.deadline,t.issue_id LIMIT 100`,...args);
  const histories=tickets.length?await rows(service.db,`SELECT h.* FROM operator_history h JOIN administrator_issues i ON i.id=h.issue_id WHERE (${where}) AND (?=1 OR h.visibility='participants') ORDER BY h.created_at,h.rowid LIMIT 1000`,...args,platformAdmin?1:0):[];
  const admissions=role==='owner'?await rows(service.db,'SELECT p.id,p.title,p.published,p.demo_owner,a.owner_reviewed,a.owner_phone_verified FROM properties p JOIN pilot_property_admissions a ON a.id=p.id WHERE p.owner_id=? ORDER BY p.created_at DESC LIMIT 100',service.userId):role==='cleaner'?[{id:service.userId,cleaner_reviewed:await reviewed(service,service.userId,'cleaner'),phone_verified:await verifiedPhone(service,service.userId)}]:[{id:service.userId,phone_verified:await verifiedPhone(service,service.userId)}];
- return {policy:await pilotPolicy(service),admissions,platformAdmin,currentUserId:service.userId,tickets:tickets.map(ticket=>({...ticket,overdue:ticket.status!=='resolved'&&ticket.deadline<epoch(),history:histories.filter(item=>item.issue_id===ticket.issue_id)})),note:'Оператор фиксирует разбор обращения. Закрытие обращения не подтверждает перевод денег, освобождение квартиры или качество работы.'};
+ return {policy:await pilotPolicy(service),admissions,platformAdmin,currentUserId:service.userId,tickets:tickets.map(ticket=>({...ticket,overdue:ticket.status!=='resolved'&&ticket.deadline<epoch(),history:histories.filter(item=>item.issue_id===ticket.issue_id)})),note:'Оператор фиксирует разбор обращения. Закрытие обращения не подтверждает перевод денег, освобождение жилья или качество работы.'};
 }
 export async function updateOperatorTicket(service:RentalService,role:Role,body:Row,platformAdmin=false){
  const issueId=required(body.issueId,'Обращение',100),action=required(body.action,'Действие',30),version=number(body.expectedVersion,'Версия обращения',1,10000000);
@@ -121,7 +121,7 @@ export async function updateOperatorTicket(service:RentalService,role:Role,body:
   const parsed=typeof body.deadline==='number'?body.deadline:Math.floor(Date.parse(String(body.deadline))/1000);
   deadline=number(parsed,'Срок ответа',at+60,at+90*86400);
  }
- const result={message:action==='resolve'?'Разбор обращения закрыт. Фактические расчёты и готовность квартиры отмечаются отдельно.':action==='note'?'Комментарий сохранён.':'Состояние обращения сохранено.',issueId,version:version+1};
+ const result={message:action==='resolve'?'Разбор обращения закрыт. Фактические расчёты и готовность жилья отмечаются отдельно.':action==='note'?'Комментарий сохранён.':'Состояние обращения сохранено.',issueId,version:version+1};
  const statements=[
   q(service.db,'UPDATE operator_tickets SET status=?,assigned_to=?,priority=?,deadline=?,resolved_at=?,updated_at=?,version=version+1 WHERE issue_id=? AND version=? AND EXISTS(SELECT 1 FROM administrator_issues WHERE id=? AND version=?)',status,assignee,priority,deadline,resolved,at,issueId,version,issueId,issue.version),
   q(service.db,'INSERT INTO operator_history SELECT ?,?,?,?,?,?,?,? WHERE changes()>0',eventId,issueId,service.userId,platformAdmin?'platform_admin':role,action,note,action==='resolve'||action==='reopen'?'participants':visibility,at)

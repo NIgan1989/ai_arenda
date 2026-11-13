@@ -103,7 +103,7 @@ export async function pushTarget(db:D1Database,userId:string,role:Role,dedupe:st
    const mine=item.a===userId||!!await one(db,'SELECT 1 FROM applications WHERE job_id=? AND user_id=?',item.id,userId);
    return {url:base+(mine?'assignments':'jobs')+'?entity='+item.id,title:'Уборка · '+item.title};
   }
-  if(item.kind==='property'&&role==='owner'&&item.b===userId)return {url:base+'properties?entity='+item.id,title:'Квартира · '+item.title};
+  if(item.kind==='property'&&role==='owner'&&item.b===userId)return {url:base+'properties?entity='+item.id,title:'Жильё · '+item.title};
  }
  return null;
 }

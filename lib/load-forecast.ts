@@ -55,19 +55,19 @@ export function adviseWeek(days:ForecastDay[],flats:ForecastFlat[]):ForecastAdvi
   const free=count(f,'busy'),percent=free>=3?15:10;
   let to=round(f.price*(1+percent/100),500);if(f.median!==null)to=Math.min(to,round(f.median*1.25,500));
   if(to<=f.price||(to-f.price)/f.price<0.03)continue;
-  return priced(f,to,'raise',[dayList(busyDays)+': в городе занято '+Math.max(...busyDays.map(d=>d.load))+'% вечеров','Квартира свободна в '+free+(free>=5?' дней':' дня')+' из них',...(f.median!==null?['Похожие квартиры: ~'+money(f.median)]:[])]);
+  return priced(f,to,'raise',[dayList(busyDays)+': в городе занято '+Math.max(...busyDays.map(d=>d.load))+'% вечеров','Жильё свободно в '+free+(free>=5?' дней':' дня')+' из них',...(f.median!==null?['Похожие объекты: ~'+money(f.median)]:[])]);
  }
  const quietDays=days.filter(d=>d.level==='quiet');
  if(busyDays.length===0||quietDays.length>=4){
   const quiet=flats.filter(f=>count(f,'quiet')>=3).sort((a,b)=>count(b,'quiet')-count(a,'quiet'));
   for(const f of quiet){
-   const free=count(f,'quiet'),why=[dayList(quietDays)+': в городе занято до '+Math.max(0,...quietDays.map(d=>d.load))+'% вечеров','Квартира свободна в '+free+(free>=5?' дней':' дня')+' из них'];
+   const free=count(f,'quiet'),why=[dayList(quietDays)+': в городе занято до '+Math.max(0,...quietDays.map(d=>d.load))+'% вечеров','Жильё свободно в '+free+(free>=5?' дней':' дня')+' из них'];
    if(f.hourly>0&&f.minHours>1){const to=f.minHours<=2?1:Math.max(2,Math.ceil(f.minHours/2));return {...none,advice:'min_hours',propertyId:f.id,title:f.title,from:f.minHours,to,reasons:[...why,'Короткие брони занимают пустые часы']};}
    // Busy days ahead: a lower price would sell them cheap, so only the minimum stay may change.
    if(busyDays.length||f.priceLocked||f.price<100||(f.median!==null&&f.price<=f.median*1.1))continue;
    const to=Math.max(round(f.price*0.9,500),f.minimumRate,f.median!==null?round(f.median*0.9,500):0);
    if(to>=f.price||(f.price-to)/f.price<0.03)continue;
-   return priced(f,to,'lower',[...why,...(f.median!==null?['Похожие квартиры: ~'+money(f.median)]:[])]);
+   return priced(f,to,'lower',[...why,...(f.median!==null?['Похожие объекты: ~'+money(f.median)]:[])]);
   }
  }
  return none;
@@ -142,10 +142,10 @@ export async function decideForecast(s:RentalService,forecastId:string,accept:bo
    q(s.db,"UPDATE load_forecasts SET status='accepted',decided_at=? WHERE id=? AND EXISTS(SELECT 1 FROM property_policies WHERE property_id=? AND revision=?)",t,id,f.property_id,revision),
    q(s.db,'INSERT INTO audit_events SELECT ?,?,?,?,? WHERE EXISTS(SELECT 1 FROM property_policies WHERE property_id=? AND revision=?)',uuid(),s.userId,f.property_id,JSON.stringify({action:'forecast.accepted',forecastId:id,minHours:[f.from_value,f.to_value],version:f.policy_version+1}),t,f.property_id,revision)
   ]);
-  if(!r[0].meta.changes)throw new DomainError('Правила квартиры уже изменились. Обновите экран.',409);
+  if(!r[0].meta.changes)throw new DomainError('Правила жилья уже изменились. Обновите экран.',409);
   return {message:'Готово: «'+f.title+'» теперь можно снять от '+f.to_value+' ч.'};
  }
- if(f.minimum_rate&&[f.to_value,f.to_hourly,f.to_nightly].some(rate=>rate>0&&rate<f.minimum_rate))throw new DomainError('Новая цена ниже минимальной ставки в правилах квартиры.',409);
+ if(f.minimum_rate&&[f.to_value,f.to_hourly,f.to_nightly].some(rate=>rate>0&&rate<f.minimum_rate))throw new DomainError('Новая цена ниже минимальной ставки в правилах жилья.',409);
  const r=await s.db.batch([
   q(s.db,"UPDATE property_policies SET hourly_price=?,nightly_price=?,version=version+1,revision=?,updated_at=? WHERE property_id=? AND version=? AND EXISTS(SELECT 1 FROM load_forecasts WHERE id=? AND status='suggested') AND EXISTS(SELECT 1 FROM properties WHERE id=? AND price=?)",f.to_hourly,f.to_nightly,revision,t,f.property_id,f.policy_version,id,f.property_id,f.from_value),
   q(s.db,'UPDATE properties SET price=? WHERE id=? AND owner_id=? AND EXISTS(SELECT 1 FROM property_policies WHERE property_id=? AND revision=?)',f.to_value,f.property_id,s.userId,f.property_id,revision),

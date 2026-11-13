@@ -23,7 +23,7 @@ export function RegularCleaner({propertyId,onBack}:{propertyId:string;onBack:()=
   {!state&&!error&&<ThinkingLine style={f.hint} text="Загружаю…"/>}
   {r&&<View style={[f.row,f.pinned]}>{avatar(r.name)}<View style={{flex:1,minWidth:0}}><Text style={f.name}>{r.name}</Text><Text style={f.line}>{regularSince(r)}</Text></View><Text style={f.badge}>Постоянная</Text></View>}
   {state&&!r&&<>
-   <Text style={f.hint}>Закрепите исполнителя, с которым уже работаете, и уборки этой квартиры будут сами приходить к нему.</Text>
+   <Text style={f.hint}>Закрепите исполнителя, с которым уже работаете, и уборки этого жилья будут сами приходить к нему.</Text>
    {state.candidates.length?state.candidates.map((c:Row)=><View key={c.id} style={f.row}>{avatar(c.name)}<View style={{flex:1,minWidth:0}}><Text style={f.name}>{c.name}</Text><Text style={f.line}>{regularSince(c)}</Text></View>
     <Pressable accessibilityRole="button" accessibilityLabel={'Закрепить '+c.name} disabled={busy} onPress={()=>run('/api/operations/regular/pin',{cleanerId:c.id})} style={[f.send,busy&&f.disabled]}><Text style={f.sendText}>Закрепить</Text></Pressable></View>)
     :<Text style={f.empty}>Пока закрепить некого. После первой уборки через сервис здесь появится тот, кто её сделал.</Text>}

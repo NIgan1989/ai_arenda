@@ -73,7 +73,7 @@ export async function ensurePlan(db:D1Database,user:string,role:PlanRole,at=epoc
  if(!plan&&s.trialDays>0){
   await db.batch([
    q(db,"INSERT OR IGNORE INTO autopilot_plans(user_id,role,status,started_at,period_end,updated_at) VALUES (?,?,'trial',?,?,?)",user,role,at,at+s.trialDays*DAY,at),
-   notice(db,user,`Автопилот включён. ${s.trialDays} дней бесплатно, до ${dateText(at+s.trialDays*DAY)}. ${s.charge?'Потом '+(role==='owner'?money(s.ownerPrice)+' в месяц за квартиру с баланса':money(s.cleanerPrice)+' в месяц из выплат за уборки')+'. За 3 дня до списания напомним.':'Пока плата не взимается.'}`,role+':autopilot-trial:'+user,at)
+   notice(db,user,`Автопилот включён. ${s.trialDays} дней бесплатно, до ${dateText(at+s.trialDays*DAY)}. ${s.charge?'Потом '+(role==='owner'?money(s.ownerPrice)+' в месяц за объект с баланса':money(s.cleanerPrice)+' в месяц из выплат за уборки')+'. За 3 дня до списания напомним.':'Пока плата не взимается.'}`,role+':autopilot-trial:'+user,at)
   ]);
   return {status:'trial',started:true};
  }
@@ -90,8 +90,8 @@ export async function stopPlan(service:RentalService,role:PlanRole){
  if(!plan||plan.status==='paused')return {message:'Автопилот уже выключен.'};
  const s=await planSettings(service.db);
  if(plan.status==='active'&&s.charge){await q(service.db,'UPDATE autopilot_plans SET auto_renew=0,version=version+1,updated_at=? WHERE user_id=? AND role=?',at,service.userId,role).run();return {message:`Автопилот работает до ${dateText(plan.period_end)} и не продлится. Включить снова можно в профиле.`};}
- await pause(service.db,plan,at,role==='owner'?'Автопилот выключен. Квартиры в режиме «Я сам»: запросы гостей приходят вам.':'Автопилот выключен. Предложения уборок снова приходят вам на решение.');
- return {message:role==='owner'?'Автопилот выключен. Квартиры переведены в режим «Я сам».':'Автопилот выключен.'};
+ await pause(service.db,plan,at,role==='owner'?'Автопилот выключен. Объекты в режиме «Я сам»: запросы гостей приходят вам.':'Автопилот выключен. Предложения уборок снова приходят вам на решение.');
+ return {message:role==='owner'?'Автопилот выключен. Объекты переведены в режим «Я сам».':'Автопилот выключен.'};
 }
 
 // Owner: turn the plan on and put the chosen flats under the AI. Every flat is checked first (tariffs, cleaning
@@ -99,14 +99,14 @@ export async function stopPlan(service:RentalService,role:PlanRole){
 export async function startOwnerPlan(service:RentalService,body:Row){
  await service.requireRole('owner');
  const ids:string[]=Array.isArray(body.propertyIds)?[...new Set<string>(body.propertyIds.map(String))].slice(0,50):[];
- if(!ids.length)throw new DomainError('Выберите квартиры для автопилота.');
+ if(!ids.length)throw new DomainError('Выберите объекты для автопилота.');
  const ready:string[]=[],failed:{id:string;error:string}[]=[];
  for(const id of ids){try{await setGuestMode(service,{propertyId:id,mode:'auto',cleaningFee:body.cleaningFees?.[id],check:true});ready.push(id);}catch(e){if(e instanceof DomainError)failed.push({id,error:e.message});else throw e;}}
  if(!ready.length)return {message:'Автопилот не включён: '+failed.map(f=>f.error).join(' '),done:[],failed,state:await planState(service,'owner')};
  await ensurePlan(service.db,service.userId,'owner',epoch(),ready.length);
  const done:string[]=[];
  for(const id of ready){try{await setGuestMode(service,{propertyId:id,mode:'auto',cleaningFee:body.cleaningFees?.[id]});done.push(id);}catch(e){if(e instanceof DomainError)failed.push({id,error:e.message});else throw e;}}
- return {message:done.length?`Автопилот включён для ${done.length} ${done.length===1?'квартиры':'квартир'}.`+(failed.length?' Не получилось: '+failed.map(f=>f.error).join(' '):''):'Автопилот не включён: '+failed.map(f=>f.error).join(' '),done,failed,state:await planState(service,'owner')};
+ return {message:done.length?`Автопилот включён для ${done.length} ${done.length===1?'объекта':'объектов'}.`+(failed.length?' Не получилось: '+failed.map(f=>f.error).join(' '):''):'Автопилот не включён: '+failed.map(f=>f.error).join(' '),done,failed,state:await planState(service,'owner')};
 }
 
 export async function startCleanerPlan(service:RentalService,body:Row){
@@ -169,12 +169,12 @@ export async function planState(service:RentalService,role:PlanRole){
  const live=!!plan&&['trial','active','grace'].includes(plan.status);
  const base={plan:plan?{status:plan.status,periodEnd:plan.period_end,graceUntil:plan.grace_until,autoRenew:!!plan.auto_renew,startedAt:plan.started_at}:null,live,settings:{charge:s.charge,price:role==='owner'?s.ownerPrice:s.cleanerPrice,trialDays:plan?0:s.trialDays,graceDays:s.graceDays}};
  if(role==='owner'){
-  const flats=await rows(db,`SELECT p.id,p.title,COALESCE(pp.cleaning_fee,0) cleaning_fee,pp.property_id IS NOT NULL has_policy,CASE WHEN ${underAutopilot('p.id')} THEN 1 ELSE 0 END managed FROM properties p LEFT JOIN property_policies pp ON pp.property_id=p.id WHERE p.owner_id=? AND p.archived_at IS NULL AND p.demo_owner IS NULL ORDER BY p.created_at`,at,service.userId);
+  const flats=await rows(db,`SELECT p.id,p.title,p.own_staff,COALESCE(pp.cleaning_fee,0) cleaning_fee,pp.property_id IS NOT NULL has_policy,CASE WHEN ${underAutopilot('p.id')} THEN 1 ELSE 0 END managed FROM properties p LEFT JOIN property_policies pp ON pp.property_id=p.id WHERE p.owner_id=? AND p.archived_at IS NULL AND p.demo_owner IS NULL ORDER BY p.created_at`,at,service.userId);
   const units=flats.filter(f=>f.managed).length;
   const stats=await one(db,`SELECT (SELECT COUNT(*) FROM audit_events a JOIN properties p ON p.id=a.entity_id WHERE p.owner_id=? AND a.actor_id='system:autopilot' AND a.created_at>?) answered,
    (SELECT COUNT(*) FROM bookings b JOIN properties p ON p.id=b.property_id WHERE p.owner_id=? AND b.status IN ('confirmed','completed') AND b.created_at>? AND ${underAutopilot('p.id')}) bookings,
    (SELECT COUNT(*) FROM cleaning_jobs j WHERE j.owner_id=? AND j.status='completed' AND j.completed_at>? AND ${underAutopilot('j.property_id')}) cleanings`,service.userId,week,service.userId,week,at,service.userId,week,at);
-  return {...base,flats:flats.map(f=>({id:f.id,title:f.title,cleaningFee:f.cleaning_fee,ready:!!f.has_policy,managed:!!f.managed})),units,nextAmount:priceFor(s,'owner',Math.max(units,1)),balance:await ownerAvailable(db,service.userId),week:{answered:Number(stats?.answered||0),bookings:Number(stats?.bookings||0),cleanings:Number(stats?.cleanings||0)}};
+  return {...base,flats:flats.map(f=>({id:f.id,title:f.title,ownStaff:!!f.own_staff,cleaningFee:f.cleaning_fee,ready:!!f.has_policy,managed:!!f.managed})),units,nextAmount:priceFor(s,'owner',Math.max(units,1)),balance:await ownerAvailable(db,service.userId),week:{answered:Number(stats?.answered||0),bookings:Number(stats?.bookings||0),cleanings:Number(stats?.cleanings||0)}};
  }
  const rules=await one(db,'SELECT * FROM cleaner_autopilot WHERE user_id=?',service.userId);
  let districts:string[]=[];try{districts=JSON.parse(rules?.districts||'[]');}catch{}
@@ -200,8 +200,8 @@ export async function sweepPlans(db:D1Database,at=epoch()){
   if(plan.status!=='grace'){
    const until=at+s.graceDays*DAY;
    const r=await q(db,"UPDATE autopilot_plans SET status='grace',grace_until=?,version=version+1,updated_at=? WHERE user_id=? AND role=? AND version=?",until,at,plan.user_id,plan.role,plan.version).run();
-   if(r.meta.changes){result.grace++;await notice(db,plan.user_id,plan.role==='owner'?`Не хватает ${money(paid.amount)} на балансе для автопилота. Пополните до ${dateText(until)}, иначе квартиры перейдут в режим «Я сам».`:`Для автопилота нужно ${money(paid.amount)} в ожидающих выплатах. До ${dateText(until)} он работает, потом встанет на паузу.`,plan.role+':autopilot-grace:'+plan.user_id+':'+plan.period_end,at).run();}
-  }else if(plan.grace_until<=at){if(await pause(db,plan,at,plan.role==='owner'?'Автопилот на паузе: оплата не прошла. Квартиры в режиме «Я сам», принятые брони и уборки в силе. Пополните баланс и включите в профиле.':'Автопилот на паузе: оплата не прошла. Принятые уборки в силе. Включите снова в профиле.'))result.paused++;}
+   if(r.meta.changes){result.grace++;await notice(db,plan.user_id,plan.role==='owner'?`Не хватает ${money(paid.amount)} на балансе для автопилота. Пополните до ${dateText(until)}, иначе объекты перейдут в режим «Я сам».`:`Для автопилота нужно ${money(paid.amount)} в ожидающих выплатах. До ${dateText(until)} он работает, потом встанет на паузу.`,plan.role+':autopilot-grace:'+plan.user_id+':'+plan.period_end,at).run();}
+  }else if(plan.grace_until<=at){if(await pause(db,plan,at,plan.role==='owner'?'Автопилот на паузе: оплата не прошла. Объекты в режиме «Я сам», принятые брони и уборки в силе. Пополните баланс и включите в профиле.':'Автопилот на паузе: оплата не прошла. Принятые уборки в силе. Включите снова в профиле.'))result.paused++;}
  }
  if(s.charge){
   const soon=await rows(db,"SELECT * FROM autopilot_plans WHERE status IN ('trial','active') AND auto_renew=1 AND period_end>? AND period_end<=? LIMIT 200",at,at+3*DAY);
@@ -254,7 +254,7 @@ export async function savePlanSettings(service:RentalService,body:Row){
  // People on a plan hear about a new price or the start of charging.
  if(charge&&(!before.charge||before.ownerPrice!==ownerPrice||before.cleanerPrice!==cleanerPrice)){
   const people=await rows(service.db,`SELECT user_id,role FROM autopilot_plans WHERE status IN ${LIVE} LIMIT 2000`);
-  for(const p of people)await notice(service.db,p.user_id,`Условия автопилота: ${p.role==='owner'?money(ownerPrice)+' в месяц за квартиру с баланса':money(cleanerPrice)+' в месяц из выплат за уборки'}. Действует со следующего продления. Отключить можно в профиле.`,p.role+':autopilot-terms:'+p.user_id+':'+at,at).run();
+  for(const p of people)await notice(service.db,p.user_id,`Условия автопилота: ${p.role==='owner'?money(ownerPrice)+' в месяц за объект с баланса':money(cleanerPrice)+' в месяц из выплат за уборки'}. Действует со следующего продления. Отключить можно в профиле.`,p.role+':autopilot-terms:'+p.user_id+':'+at,at).run();
  }
  return {message:charge?'Тарифы сохранены, плата включена.':'Тарифы сохранены. Плата выключена, сервис только считает.',state:await plansAdminState(service.db)};
 }

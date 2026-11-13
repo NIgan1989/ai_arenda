@@ -25,7 +25,7 @@ export function RegularCleaner({propertyId,api,onBack}:{propertyId:string;api:AP
     <span className="rc-badge"><UserCheck size={14}/>Постоянная</span>
    </div>}
    {state&&!r&&<>
-    <p className="pe-hint">Закрепите исполнителя, с которым уже работаете, и уборки этой квартиры будут сами приходить к нему.</p>
+    <p className="pe-hint">Закрепите исполнителя, с которым уже работаете, и уборки этого жилья будут сами приходить к нему.</p>
     {state.candidates.length?<ul className="rc-list">{state.candidates.map((c:Row)=><li key={c.id} className="rc-person">
      <span className="rc-avatar" aria-hidden="true">{(c.name||'?').slice(0,1)}</span>
      <span className="pe-text"><strong>{c.name}</strong><small>{regularSince(c)}</small></span>

@@ -9,7 +9,7 @@ export type HeadAction = 'daily' | 'hourly' | 'weekend' | 'requests' | 'calendar
 export type HeadChip = {
   id: string;
   title: string; // the short label on the chip
-  hint: string; // the full name for a screen reader: "Добавить квартиру" for "+ Квартира"
+  hint: string; // the full name for a screen reader: "Добавить жильё" for "+ Жильё"
   action: HeadAction;
 };
 export type HeadLine = {

@@ -27,7 +27,7 @@ export async function readEvidence(service:RentalService,role:Role,id:string,con
 export async function requireEvidence(service:RentalService,jobId:string){
  const rule=await one(service.db,'SELECT r.require_photos FROM operation_rules r JOIN cleaning_jobs j ON j.property_id=r.property_id WHERE j.id=?',jobId);if(!rule?.require_photos)return;
  const phases=await rows(service.db,"SELECT phase,COUNT(*) n FROM job_evidence WHERE job_id=? AND mime='image/jpeg' GROUP BY phase",jobId);
- if(!phases.some(p=>p.phase==='before')||!phases.some(p=>p.phase==='after'))throw new DomainError('По правилам квартиры нужны фото до и после уборки.',409);
+ if(!phases.some(p=>p.phase==='before')||!phases.some(p=>p.phase==='after'))throw new DomainError('По правилам жилья нужны фото до и после уборки.',409);
 }
 
 function videoInput(body:Row){

@@ -71,7 +71,7 @@ function ListingTipBody({card,busy,onDecide,compact}:{card:Approval;busy:boolean
    <Pressable accessibilityRole="button" accessibilityLabel={card.acceptLabel} disabled={busy} onPress={()=>onDecide('accept')} style={({pressed})=>[t.accept,(busy||pressed)&&t.dim]}><Text numberOfLines={1} style={t.acceptText}>{card.acceptLabel}</Text></Pressable>
    <Pressable accessibilityRole="button" accessibilityLabel={card.rejectLabel} disabled={busy} onPress={()=>onDecide('reject')} style={({pressed})=>[t.reject,(busy||pressed)&&t.dim]}><Text style={t.rejectText}>{card.rejectLabel}</Text></Pressable>
   </View>
-  {!compact&&<Text style={t.note}>Сравниваю с похожими квартирами в вашем городе за последние 2 месяца.</Text>}
+  {!compact&&<Text style={t.note}>Сравниваю с похожими объектами в вашем городе за последние 2 месяца.</Text>}
  </View>;
 }
 

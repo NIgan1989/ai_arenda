@@ -129,10 +129,10 @@ async function handle(request:Request, context:{params:Promise<{path:string[]}>}
     if(error instanceof DomainError) return json({error:error.message},error.status);
     if(error instanceof SyntaxError) return json({error:'Некорректный запрос.'},400);
     const msg=String(error?.message||error);
-    if(/property_archived/.test(msg))return json({error:'Квартира удалена владельцем: показать или забронировать её нельзя.'},409);
+    if(/property_archived/.test(msg))return json({error:'Жильё удалено владельцем: показать или забронировать её нельзя.'},409);
     if(/account_erased/.test(msg))return json({error:'Аккаунт удалён. Обновите вход.'},410);
-    if(/checkout_required|property_not_vacant/.test(msg))return json({error:'Сначала подтвердите выезд гостя и освобождение квартиры.'},409);
-    if(/property_cleaning_busy/.test(msg))return json({error:'В этой квартире уже выполняется или проверяется другая уборка.'},409);
+    if(/checkout_required|property_not_vacant/.test(msg))return json({error:'Сначала подтвердите выезд гостя и освобождение жилья.'},409);
+    if(/property_cleaning_busy/.test(msg))return json({error:'В этом жилье уже выполняется или проверяется другая уборка.'},409);
     if(/booking_overlap|external_calendar_overlap/.test(msg)) return json({error:'Этот интервал уже занят, включая время уборки и внешние календари. Выберите другое время.'},409);
     if(/external_calendar_stale/.test(msg))return json({error:'Актуальность внешнего календаря не подтверждена. Обновите источник перед новым бронированием.'},409);
     if(/pilot_owner_review_required|pilot_cleaner_review_required|pilot_phone_required|pilot_review_stale/.test(msg))return json({error:'Операция ожидает проверки участника или телефона. Откройте «Управление → Допуск».'},409);

@@ -20,11 +20,11 @@ export function rentalPrice(dailyPrice:number,policy:Row,start:number,end:number
   let units:number,price:number,label:string;
   if(mode==='daily'){units=Math.ceil((end-start)/86400);price=dailyPrice;label='начатые сутки (24 часа)';}
   else if(mode==='hourly'){
-    if(!policy.hourly_price)throw new DomainError('Почасовая аренда для этой квартиры выключена.');
+    if(!policy.hourly_price)throw new DomainError('Почасовая аренда для этого жилья выключена.');
     if(end-start<policy.min_hours*3600)throw new DomainError(`Минимальная почасовая аренда — ${policy.min_hours} ч.`);
     units=Math.ceil((end-start)/3600);price=policy.hourly_price;label='начатый час';
   }else if(mode==='nightly'){
-    if(!policy.nightly_price)throw new DomainError('Тариф по ночам для этой квартиры выключен.');
+    if(!policy.nightly_price)throw new DomainError('Тариф по ночам для этого жилья выключен.');
     const localStart=start+18000,localEnd=end+18000;
     if(localStart%86400!==policy.checkin_minutes*60||localEnd%86400!==policy.checkout_minutes*60)throw new DomainError(`По тарифу за ночь заезд в ${clock(policy.checkin_minutes)}, выезд в ${clock(policy.checkout_minutes)}. Время Казахстана.`);
     units=Math.floor(localEnd/86400)-Math.floor(localStart/86400);if(units<1)throw new DomainError('По тарифу за ночь нужен выезд на следующий день или позже.');

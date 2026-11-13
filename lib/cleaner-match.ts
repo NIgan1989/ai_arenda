@@ -13,7 +13,7 @@ export function cleanerScore(s:CleanerStats){
  const experience=Math.min(s.completed,20)/20,familiar=s.here>0?1:0;
  const score=.35*reliability+.25*response+.25*experience+.15*familiar;
  const reasons=[
-  ...(s.here>0?['знает эту квартиру: '+plural(s.here,'уборка','уборки','уборок')]:[]),
+  ...(s.here>0?['знает это жильё: '+plural(s.here,'уборка','уборки','уборок')]:[]),
   ...(s.completed>0?[plural(s.completed,'уборка','уборки','уборок')+(s.noShows?', '+plural(s.noShows,'срыв','срыва','срывов'):' без срывов')]:['новый исполнитель']),
   ...(s.accepted+s.refused>=3?['принимает '+Math.round(100*s.accepted/(s.accepted+s.refused))+'% предложений']:[])
  ];

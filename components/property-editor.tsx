@@ -1,18 +1,19 @@
 'use client';
 import {useEffect,useRef,useState,type ReactNode} from 'react';
-import {ArrowLeft,BedDouble,CalendarDays,Camera,Check,Clock,FileText,MapPin,Minus,Plus,ScrollText,Sparkles,Trash2,UserCheck,Wallet,Wifi,X} from 'lucide-react';
+import {ArrowLeft,House,CalendarDays,Camera,Check,Clock,FileText,MapPin,Minus,Plus,ScrollText,Sparkles,Trash2,UserCheck,Wallet,Wifi,X} from 'lucide-react';
 import {Photo} from './media';
 import {PhotoGrid} from './photo-grid';
 import {EDIT_STEPS,editBody,editRequest,nextAdvice,needsReview,reviewRequest,REVIEW_SENT,stepForError,stepLine,stepNeeds,type Advice,type EditBody,type EditStep} from '../lib/listing-edit';
-import {amenities,checkinMethods,propertyTypes} from '../lib/listings';
+import {amenities,checkinMethods} from '../lib/listings';
+import {KindPicker} from './kind-picker';
 import './property-quick.css';
 import './property-editor.css';
 import {FlatCalendars} from './flat-calendars';
 import {RegularCleaner} from './regular-cleaner';
 type Row=Record<string,any>;
 type API=(path:string,body?:Row)=>Promise<any>;
-const ICONS:Record<EditStep,ReactNode>={photos:<Camera size={18}/>,flat:<BedDouble size={18}/>,place:<MapPin size={18}/>,text:<FileText size={18}/>,amenities:<Wifi size={18}/>,prices:<Wallet size={18}/>,checkin:<Clock size={18}/>,rules:<ScrollText size={18}/>};
-const SAVED:Record<EditStep|'publish',string>={photos:'Фото сохранены.',flat:'Квартира сохранена.',place:'Адрес сохранён.',text:'Описание сохранено.',amenities:'Удобства сохранены.',prices:'Цены сохранены.',checkin:'Заезд сохранён.',rules:'Правила сохранены.',publish:'Готово.'};
+const ICONS:Record<EditStep,ReactNode>={photos:<Camera size={18}/>,flat:<House size={18}/>,place:<MapPin size={18}/>,text:<FileText size={18}/>,amenities:<Wifi size={18}/>,prices:<Wallet size={18}/>,checkin:<Clock size={18}/>,rules:<ScrollText size={18}/>};
+const SAVED:Record<EditStep|'publish',string>={photos:'Фото сохранены.',flat:'Сохранено.',place:'Адрес сохранён.',text:'Описание сохранено.',amenities:'Удобства сохранены.',prices:'Цены сохранены.',checkin:'Заезд сохранён.',rules:'Правила сохранены.',publish:'Готово.'};
 
 // Editing a flat: an overview of short steps, each opened on its own small screen and saved at once.
 // After each save the AI administrator offers the next step, so the owner never scrolls a long form.
@@ -35,7 +36,7 @@ export function PropertyEditor({property,role,api,onSave,onReview,onRemove,onClo
    setError(message);setHeld(true);setOpen(null);}finally{setBusy(false);}
  }
  // Removing asks once more right here; the server deletes a flat without history and archives one with bookings.
- async function remove(){if(!onRemove||busy)return;setBusy(true);setRemoveError('');try{await onRemove();}catch(e:any){setRemoveError(e?.message||'Не удалось удалить квартиру.');}finally{setBusy(false);}}
+ async function remove(){if(!onRemove||busy)return;setBusy(true);setRemoveError('');try{await onRemove();}catch(e:any){setRemoveError(e?.message||'Не удалось удалить жильё.');}finally{setBusy(false);}}
  const d=draft.details,r=draft.rental;
  const set=(v:Partial<EditBody>)=>setDraft(o=>({...o,...v}));
  const setD=(v:Partial<EditBody['details']>)=>setDraft(o=>({...o,details:{...o.details,...v}}));
@@ -53,13 +54,13 @@ export function PropertyEditor({property,role,api,onSave,onReview,onRemove,onClo
    <div className="pe-body">
     {open==='photos'&&<PhotoGrid photos={draft.photos} onChange={photos=>set({photos})} role={role} api={api} onBusy={setUploading} disabled={busy}/>}
     {open==='flat'&&<>
-     <div className="pq-chips" role="radiogroup" aria-label="Тип жилья">{Object.entries(propertyTypes).map(([id,label])=>chip(id,label,d.type===id,()=>setD({type:id}),true))}</div>
+     <KindPicker type={d.type} ownStaff={draft.ownStaff} onChange={v=>setDraft(o=>({...o,ownStaff:v.ownStaff??o.ownStaff,details:{...o.details,type:v.type??o.details.type}}))}/>
      <div className="pq-two">{count('Комнаты',draft.rooms,1,20,n=>set({rooms:n}))}{count('Гостей',draft.capacity,1,50,n=>setDraft(o=>({...o,capacity:n,details:{...o.details,beds:Math.max(o.details.beds,n)}})))}{count('Спальных мест',d.beds,1,50,n=>setD({beds:n}))}{count('Санузлы',d.bathrooms,1,20,n=>setD({bathrooms:n}))}</div>
      <div className="pe-three">{num('Площадь, м²',d.area,n=>setD({area:n}),2000)}{num('Этаж',d.floor,n=>setD({floor:n}),100)}{num('Этажей',d.floors,n=>setD({floors:n}),100)}</div>
     </>}
     {open==='place'&&<>
      <div className="pq-two">{field('Город',draft.city,v=>set({city:v}),80)}{field('Район',draft.district,v=>set({district:v}),120,'Например, Центр')}</div>
-     {field('Точный адрес',draft.address,v=>set({address:v}),300,'Улица, дом, квартира')}
+     {field('Точный адрес',draft.address,v=>set({address:v}),300,'Улица, дом, номер')}
      <p className="pe-hint">Адрес видит только гость с подтверждённой бронью. Метку на карте ставим по нему.</p>
     </>}
     {open==='text'&&<>
@@ -107,14 +108,14 @@ export function PropertyEditor({property,role,api,onSave,onReview,onRemove,onClo
   </div>
   <ul className="pe-list">
    {EDIT_STEPS.map(s=><li key={s.key}><button type="button" onClick={()=>go(s.key)} className={stepNeeds(base,s.key)?'needs':''}><span className="pe-ico">{ICONS[s.key]}</span><span className="pe-text"><strong>{s.title}</strong><small>{stepLine(base,s.key)}</small></span>{stepNeeds(base,s.key)&&<span className="pe-dot" aria-label="Нужно заполнить"/>}</button></li>)}
-   {p.id&&<li className="pe-wide"><button type="button" onClick={()=>{setDone('');setCleaner(true);}}><span className="pe-ico"><UserCheck size={18}/></span><span className="pe-text"><strong>Постоянный исполнитель</strong><small>{p.regular_cleaner_name?p.regular_cleaner_name+': уборки приходят сначала к нему':'Закрепите свою: уборки, оплата и замена через сервис'}</small></span></button></li>}
+   {p.id&&!base.ownStaff&&<li className="pe-wide"><button type="button" onClick={()=>{setDone('');setCleaner(true);}}><span className="pe-ico"><UserCheck size={18}/></span><span className="pe-text"><strong>Постоянный исполнитель</strong><small>{p.regular_cleaner_name?p.regular_cleaner_name+': уборки приходят сначала к нему':'Закрепите свою: уборки, оплата и замена через сервис'}</small></span></button></li>}
    <li className="pe-wide"><button type="button" onClick={()=>{setDone('');setCalendars(true);}}><span className="pe-ico"><CalendarDays size={18}/></span><span className="pe-text"><strong>Календари площадок</strong><small>Airbnb, Booking, Суточно: без двойных броней</small></span></button></li>
    <li className="pe-wide"><label className="pe-switch"><span className="pe-text"><strong>Показывать гостям</strong><small>{base.published?'Объявление на карте':'Черновик, видите только вы'}</small></span><input type="checkbox" role="switch" checked={base.published} disabled={busy} onChange={e=>commit({...(held?draft:base),published:e.target.checked},'publish')}/></label></li>
   </ul>
   {onRemove&&(confirm?<div className="pe-remove" role="group" aria-labelledby="pe-remove-q">
-   <p id="pe-remove-q"><strong>Удалить «{base.title||'квартиру'}»?</strong> Гости больше её не увидят. Если по ней были брони, история броней и оплат сохранится.</p>
+   <p id="pe-remove-q"><strong>Удалить «{base.title||'жильё'}»?</strong> Гости больше его не увидят. Если по нему были брони, история броней и оплат сохранится.</p>
    {removeError&&<p className="pq-error" role="alert">{removeError}</p>}
    <span className="pe-advice-actions"><button type="button" className="pe-danger" disabled={busy} onClick={remove}><Trash2 size={16}/>{busy?'Удаляю…':'Удалить'}</button><button type="button" className="pe-later" disabled={busy} onClick={()=>{setConfirm(false);setRemoveError('');}}>Отмена</button></span>
-  </div>:<button type="button" className="pe-remove-link" disabled={busy} onClick={()=>setConfirm(true)}><Trash2 size={16}/>Удалить квартиру</button>)}
+  </div>:<button type="button" className="pe-remove-link" disabled={busy} onClick={()=>setConfirm(true)}><Trash2 size={16}/>Удалить жильё</button>)}
  </section>;
 }

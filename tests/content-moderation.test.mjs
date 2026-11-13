@@ -25,7 +25,7 @@ test('hiding redacts message, reply preview, inbox and photo API; restoring and 
 });
 test('AI moderation hides and restores search metadata; original and operator reasons are never forwarded to the model',async()=>{
  const f=await fixture();try{
-  await f.guest.chat({role:'guest',text:'Найди квартиру'});const message=(await administratorConversation(f.guest,'guest')).messages.at(-1);assert.ok(message.search);
+  await f.guest.chat({role:'guest',text:'Найди жильё'});const message=(await administratorConversation(f.guest,'guest')).messages.at(-1);assert.ok(message.search);
   await safetyAction(f.guest,'guest','report',{kind:'ai',targetId:message.id,reason:'Review answer'});const report=(await safetyState(f.owner,'owner',true)).queue[0],body={reportId:report.id,reason:'Review',decision:'hide',expectedVersion:0};
   await safetyAction(f.owner,'owner','moderate',body,true);const hidden=(await administratorConversation(f.guest,'guest')).messages.at(-1);assert.match(hidden.body,/скрыт/);assert.equal(hidden.search,undefined);
   await safetyAction(f.owner,'owner','moderate',{...body,decision:'restore',expectedVersion:1},true);assert.equal((await administratorConversation(f.guest,'guest')).messages.at(-1).body,message.body);assert.ok((await administratorConversation(f.guest,'guest')).messages.at(-1).search);

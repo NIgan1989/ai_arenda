@@ -16,6 +16,7 @@ import {SmartGuestMap,matchingAPI} from './smart-guest-map';
 import {MatchingInbox} from './matching-inbox';
 import {ProcessJourney} from './process-journey';
 import {PriceTip} from './price-tip';
+import {kindLabel} from '../lib/listings';
 type Row=Record<string,any>;
 async function mapAPI(role:string,action:string,body:Row={}){const r=await fetch('/api/operations/map/'+action,{method:'POST',headers:{'Content-Type':'application/json','X-Workspace-Role':role},body:JSON.stringify(body),cache:'no-store',keepalive:action==='journey/stop'}),v=await r.json() as Row;if(!r.ok)throw Object.assign(Error(v.error||'Нет связи с картой.'),{status:r.status});return v;}
 type MapWorkspaceInput={publicMode?:boolean;role:string;accountId:string;data:Row;onChoose:(p:Row,initial:Row)=>void;onDiscussion:(c:Row)=>void;onProcess:(kind:string,id:string)=>void;onCreate:()=>void;onAsk:(text:string)=>void;onChanged?:()=>void;onEdit?:(id:string,step:string|null)=>void};
@@ -398,7 +399,7 @@ function RoleMap({ role, accountId, data, onDiscussion, onProcess, onCreate, onA
   const noJobsLine = <p className="map-role-note">Сейчас рядом нет заданий. Новые появятся здесь.</p>;
 
   const dealLine = (item: Row) => when(item.start) + ' · ' + (role === 'cleaner' && item.status === 'open' && record(item)?.fee ? money(record(item)!.fee) : status(item).label);
-  const flatLine = (item: Row) => (item.display_status?.label || 'Статус уточняется') + ' · ' + item.city + (item.location ? '' : ' · нет точки на карте');
+  const flatLine = (item: Row) => kindLabel(item.details?.type) + ' · ' + (item.display_status?.label || 'Статус уточняется') + ' · ' + item.city + (item.location ? '' : ' · нет точки на карте');
   const rows = (items: Row[], text: (item: Row) => string) => (
     <ul className="map-role-list">
       {items.map(item => <MapRow key={item.mapKey} item={item} role={role} line={text(item)} onOpen={() => select(item.mapKey)} />)}
@@ -420,14 +421,14 @@ function RoleMap({ role, accountId, data, onDiscussion, onProcess, onCreate, onA
       <NowCard card={card} onOpen={openNow} />
       {noFlats && (
         <div className="map-role-empty">
-          <p>Добавьте первую квартиру, и она появится на карте</p>
-          <button type="button" className="map-role-button" onClick={onCreate}>Добавить квартиру</button>
+          <p>Добавьте первое жильё, и оно появится на карте</p>
+          <button type="button" className="map-role-button" onClick={onCreate}>Добавить жильё</button>
         </div>
       )}
       {noJobs && !card && noJobsLine}
       {role === 'owner' && !noFlats && (
         <>
-          {disclosure(<Building2 size={18} aria-hidden="true" />, 'Мои квартиры', loaded ? String(flats.length) : '')}
+          {disclosure(<Building2 size={18} aria-hidden="true" />, 'Мои объекты', loaded ? String(flats.length) : '')}
           <div className="map-home-details">
             {pending}
             {rows(flats, flatLine)}
@@ -437,7 +438,7 @@ function RoleMap({ role, accountId, data, onDiscussion, onProcess, onCreate, onA
                 <span className="map-role-thumb is-icon" aria-hidden="true"><Zap size={20} /></span>
                 <span className="map-role-row-text">
                   <strong>Быстрые запросы гостей</strong>
-                  <span>{quickOn ? 'Включены: ' + plural(quickOn, 'квартира', 'квартиры', 'квартир') : 'Выключены'}</span>
+                  <span>{quickOn ? 'Включены: ' + plural(quickOn, 'объект', 'объекта', 'объектов') : 'Выключены'}</span>
                 </span>
                 <ChevronRight size={18} aria-hidden="true" />
               </button>

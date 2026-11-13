@@ -5,7 +5,7 @@ import {mkdirSync,readFileSync,writeFileSync} from 'node:fs';
 import {pathToFileURL} from 'node:url';
 import ts from 'typescript';
 mkdirSync('outputs/ai-test',{recursive:true});
-for(const name of ['domain','ai'])writeFileSync(`outputs/ai-test/${name}.js`,ts.transpileModule(readFileSync(`lib/${name}.ts`,'utf8'),{compilerOptions:{module:ts.ModuleKind.ES2022,target:ts.ScriptTarget.ES2022}}).outputText.replace("from './domain'","from './domain.js'"));
+for(const name of ['domain','listings','ai'])writeFileSync(`outputs/ai-test/${name}.js`,ts.transpileModule(readFileSync(`lib/${name}.ts`,'utf8'),{compilerOptions:{module:ts.ModuleKind.ES2022,target:ts.ScriptTarget.ES2022}}).outputText.replace("from './domain'","from './domain.js'").replace("from './listings'","from './listings.js'"));
 const {generateAnswer,assistantContext,reserveAIRequest}=await import(pathToFileURL(process.cwd()+'/outputs/ai-test/ai.js'));
 test('model input excludes private fields and bounds role context/history; responses are real model text',async()=>{
  const secret='sk-FAKEKEYNOTAREALCREDENTIAL12345',contact='private@example.com',phone='+7 777 123 45 67';

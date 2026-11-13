@@ -36,7 +36,7 @@ test('autopilot journey: booking, test payment, check-in, chat, checkout, cleani
   await testPayment(f.guest,{bookingId:id,kind:'payment'},{},ownerFor);await testPayment(f.guest,{bookingId:id,kind:'deposit'},{},ownerFor);
   // Paid, but a new flat was never marked ready: the owner is told exactly that.
   await tick();assert.equal(R.prepare('SELECT actual_checkin FROM booking_terms WHERE booking_id=?').get(id).actual_checkin,null);
-  assert.match(notice('owner','owner:administrator-checkin-ready:'+id),/не отмечена готовой/);
+  assert.match(notice('owner','owner:administrator-checkin-ready:'+id),/не отмечено готовым/);
   const op=R.prepare('SELECT version FROM property_operations WHERE property_id=?').get(f.property);
   await f.owner.readinessAction(f.property,{readiness:'ready',note:'Проверено',inspected:true,expectedVersion:op.version});await tick();
   assert.ok(R.prepare('SELECT actual_checkin FROM booking_terms WHERE booking_id=?').get(id).actual_checkin,'the AI checks the guest in');
