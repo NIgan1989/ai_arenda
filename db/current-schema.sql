@@ -42,6 +42,7 @@
 -- migration 0038_stay_offers.sql sha256:52ed5e14d7adadec2a588fd57418ece2c9f9e906d5a8d35b10c77e5f3bdd0c56
 -- migration 0039_load_forecasts.sql sha256:26d8d5834e810de1cc8c8a8f58aa7f2043fc36bc599cedd126fdd2a86735aea2
 -- migration 0040_listing_tips.sql sha256:6daf35e84b70a92a86e2e186ee7df461cebaa20c7737a16e99cb7b250d25ecfb
+-- migration 0041_cleaning_fee_tips.sql sha256:d063c3719616e2d1a4beb3d68954a83483c21d56bd836d398f125db7a2d5155a
 
 -- table access_receipts
 CREATE TABLE access_receipts (id TEXT PRIMARY KEY,property_id TEXT NOT NULL,entity_kind TEXT NOT NULL,entity_id TEXT NOT NULL,user_id TEXT NOT NULL,created_at INTEGER NOT NULL,expires_at INTEGER NOT NULL);
@@ -319,6 +320,23 @@ CREATE TABLE calendar_windows (
  created_at INTEGER NOT NULL,
  decided_at INTEGER,
  UNIQUE(property_id,start)
+);
+
+-- table cleaning_fee_tips
+CREATE TABLE cleaning_fee_tips (
+ id TEXT PRIMARY KEY,
+ property_id TEXT NOT NULL REFERENCES properties(id) ON DELETE CASCADE,
+ owner_id TEXT NOT NULL REFERENCES profiles(id),
+ from_fee INTEGER NOT NULL,
+ to_fee INTEGER NOT NULL,
+ typical INTEGER NOT NULL DEFAULT 0,
+ samples INTEGER NOT NULL DEFAULT 0,
+ refused INTEGER NOT NULL DEFAULT 0,
+ policy_version INTEGER NOT NULL,
+ status TEXT NOT NULL DEFAULT 'suggested' CHECK(status IN ('suggested','accepted','declined','expired')),
+ created_at INTEGER NOT NULL,
+ expires_at INTEGER NOT NULL,
+ decided_at INTEGER
 );
 
 -- table cleaning_jobs
@@ -935,6 +953,12 @@ CREATE INDEX calendar_windows_open ON calendar_windows(property_id,status,start,
 -- index calendar_windows_owner
 CREATE INDEX calendar_windows_owner ON calendar_windows(owner_id,status,start);
 
+-- index cleaning_fee_tips_owner
+CREATE INDEX cleaning_fee_tips_owner ON cleaning_fee_tips(owner_id,status,created_at);
+
+-- index cleaning_fee_tips_property
+CREATE INDEX cleaning_fee_tips_property ON cleaning_fee_tips(property_id,status,decided_at);
+
 -- index cleaning_offer_worker
 CREATE INDEX cleaning_offer_worker ON cleaning_offers(worker_id,status,expires_at);
 
@@ -1202,6 +1226,12 @@ CREATE TRIGGER account_erased_calendar_windows_insert BEFORE INSERT ON calendar_
 
 -- trigger account_erased_calendar_windows_update
 CREATE TRIGGER account_erased_calendar_windows_update BEFORE UPDATE ON calendar_windows WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.owner_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END;
+
+-- trigger account_erased_cleaning_fee_tips_insert
+CREATE TRIGGER account_erased_cleaning_fee_tips_insert BEFORE INSERT ON cleaning_fee_tips WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.owner_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END;
+
+-- trigger account_erased_cleaning_fee_tips_update
+CREATE TRIGGER account_erased_cleaning_fee_tips_update BEFORE UPDATE ON cleaning_fee_tips WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.owner_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END;
 
 -- trigger account_erased_cleaning_jobs_insert
 CREATE TRIGGER account_erased_cleaning_jobs_insert BEFORE INSERT ON cleaning_jobs WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.owner_id OR user_id=NEW.assigned_to) BEGIN SELECT RAISE(ABORT,'account_erased'); END;

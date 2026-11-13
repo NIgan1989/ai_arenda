@@ -1,6 +1,7 @@
 import {DomainError,number,required,type Role} from './domain';
 import type {RentalService} from './service';
 import {epoch,uuid,q,one,rows,type Row} from './operation-core';
+import {cleanerStats,rankCleaners} from './cleaner-match';
 
 export async function saveOperationRules(service:RentalService,body:Row){
  await service.requireRole('owner');const propertyId=required(body.propertyId,'Квартира',100);if(!await service.one('SELECT id FROM properties WHERE id=? AND owner_id=?',propertyId,service.userId))throw new DomainError('Квартира недоступна.',403);
@@ -57,11 +58,15 @@ export async function coordinateDispatch(service:RentalService){
  let offered=0;
  for(const job of jobs){
   if(await one(db,"SELECT id FROM cleaning_offers WHERE job_id=? AND job_version=? AND status IN ('offered','accepted') AND (status='accepted' OR expires_at>?)",job.id,job.version,at))continue;
-  const worker=await one(db,`SELECT p.id FROM profiles p JOIN worker_dispatch d ON d.user_id=p.id AND d.receive_offers=1 WHERE p.city=? AND EXISTS(SELECT 1 FROM json_each(p.roles) WHERE value='cleaner') AND p.id<>? AND NOT EXISTS(SELECT 1 FROM profile_details WHERE user_id=p.id AND work_status='away') AND NOT EXISTS(SELECT 1 FROM cleaning_jobs WHERE assigned_to=p.id AND status IN ('assigned','in_progress','submitted') AND start<? AND end>?) AND NOT EXISTS(SELECT 1 FROM cleaning_offers WHERE job_id=? AND worker_id=p.id AND (job_version=? OR status IN ('declined','expired') AND start=? AND end=? AND fee=? AND (status='declined' OR replacement_allowed=1))) ORDER BY (SELECT COUNT(*) FROM cleaning_jobs WHERE assigned_to=p.id AND status='completed') DESC,p.created_at,p.id LIMIT 1`,job.city,service.userId,job.end,job.start,job.id,job.version,job.start,job.end,job.fee);
+  const candidates=await rows(db,`SELECT p.id,p.name FROM profiles p JOIN worker_dispatch d ON d.user_id=p.id AND d.receive_offers=1 WHERE p.city=? AND EXISTS(SELECT 1 FROM json_each(p.roles) WHERE value='cleaner') AND p.id<>? AND NOT EXISTS(SELECT 1 FROM profile_details WHERE user_id=p.id AND work_status='away') AND NOT EXISTS(SELECT 1 FROM cleaning_jobs WHERE assigned_to=p.id AND status IN ('assigned','in_progress','submitted') AND start<? AND end>?) AND NOT EXISTS(SELECT 1 FROM cleaning_offers WHERE job_id=? AND worker_id=p.id AND (job_version=? OR status IN ('declined','expired') AND start=? AND end=? AND fee=? AND (status='declined' OR replacement_allowed=1))) ORDER BY (SELECT COUNT(*) FROM cleaning_jobs WHERE assigned_to=p.id AND status='completed') DESC,p.created_at,p.id LIMIT 20`,job.city,service.userId,job.end,job.start,job.id,job.version,job.start,job.end,job.fee);
+  // The most reliable of the free cleaners, and the one who knows this flat, comes first.
+  const worker=rankCleaners(await cleanerStats(db,candidates,job.property_id,at))[0];
   if(!worker)continue;
   const id=uuid(),expires=Math.min(job.end,at+job.offer_minutes*60),results=await db.batch([
    q(db,"INSERT OR IGNORE INTO cleaning_offers SELECT ?,id,?,version,start,end,fee,?,'offered',?,?,NULL FROM cleaning_jobs WHERE id=? AND status='open' AND version=? AND EXISTS(SELECT 1 FROM operation_rules r JOIN property_policies p ON p.property_id=r.property_id WHERE r.property_id=cleaning_jobs.property_id AND r.auto_offers=1 AND p.version=? AND cleaning_jobs.fee<=p.cleaning_budget AND (p.mandate_until=0 OR p.mandate_until>?))",id,worker.id,job.auto_replace,at,expires,job.id,job.version,job.policy_version,at),
-   q(db,"INSERT OR IGNORE INTO notifications SELECT ?,?,?,?,?,? WHERE EXISTS(SELECT 1 FROM cleaning_offers WHERE id=?)",uuid(),worker.id,'AI администратор предлагает уборку «'+job.title+'». Проверьте время, оплату и правило замены в предложении.','cleaner:offer:'+id,0,at,id)
+   q(db,"INSERT OR IGNORE INTO notifications SELECT ?,?,?,?,?,? WHERE EXISTS(SELECT 1 FROM cleaning_offers WHERE id=?)",uuid(),worker.id,'AI администратор предлагает уборку «'+job.title+'». Проверьте время, оплату и правило замены в предложении.','cleaner:offer:'+id,0,at,id),
+   // The owner sees whom the cleaning went to first and why.
+   q(db,"INSERT OR IGNORE INTO notifications SELECT ?,?,?,?,?,? WHERE EXISTS(SELECT 1 FROM cleaning_offers WHERE id=?)",uuid(),service.userId,'AI администратор предложил уборку «'+job.title+'» исполнителю '+(worker.name||'из вашего города')+': '+worker.reasons.join(', ')+'.','owner:offer:'+id,0,at,id)
   ]);offered+=Number(results[0].meta.changes>0);
  }
  return {offered,replacements:late.length};
