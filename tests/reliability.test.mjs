@@ -42,3 +42,12 @@ test('reliability for many people binds one parameter, under the D1 limit of 100
   assert.ok(Math.max(...seen)<=2,'at most the list and a time');
  }finally{f.db.close();}
 });
+
+test('training flats never move anyone\'s public reliability',async()=>{
+ const f=await fixture();try{
+  assert.equal((await reliabilityFor(f.db,'owner',['owner'])).get('owner').facts[0],'отвечает на 100% заявок');
+  await f.db.prepare('UPDATE properties SET demo_owner=owner_id WHERE id=?').bind(f.property).run();
+  const host=(await reliabilityFor(f.db,'owner',['owner'])).get('owner');
+  assert.equal(host.level,'new','simulated requests the owner answered alone do not count');
+ }finally{f.db.close();}
+});
