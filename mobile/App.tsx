@@ -28,6 +28,7 @@ import {stayISO} from './src/ai-request';
 import {OfflineNotice} from './src/OfflineNotice';
 import {EntrySplash} from './src/EntrySplash';
 import {LoadingBar} from './src/LoadingBar';
+import {ApplicantPick,WorkerRow,applicantStyles} from './src/ApplicantPick';
 import {PageTransition} from './src/PageTransition';
 import {entryReady,markGesture} from './src/loading';
 
@@ -365,6 +366,8 @@ function Chat(){
       const applied=data.applications.some((a:Row)=>a.job_id===id&&a.user_id===userId&&a.status!=='rejected');
       const application=data.applications.find((a:Row)=>a.job_id===id&&a.user_id===userId);
       return <Fragment key={id}>{!!title&&<Text accessibilityRole="header" style={s.groupTitle}>{title}</Text>}<View style={recordStyles.card}><RecordHead kind="job" item={j} role={payload.role} userId={userId||''} application={application}/><RecordJourney kind="job" item={j}/>
+        {owner&&j.status==='open'&&<ApplicantPick applications={data.applications.filter((a:Row)=>a.job_id===id&&a.status==='pending')} approvals={data.approvals||[]} busy={busy} onDecide={body=>perform('approvals',body,uid())}/>}
+        {owner&&!!j.worker&&<View style={applicantStyles.assigned}><WorkerRow worker={j.worker} label="Исполнитель"/></View>}
         <RecordFacts rows={[j.description&&['Что сделать',j.description],j.address&&['Адрес',j.address+(j.owner_contact?' · '+j.owner_contact:''),true],j.report&&['Отчёт',j.report]]}/>
         <ActivityTimer kind="job" item={j}/>
         {assigned&&j.status==='assigned'&&!j.checkout_confirmed&&<Text style={s.meta}>Ожидаем подтверждения выезда гостя.</Text>}
@@ -373,9 +376,8 @@ function Chat(){
           assigned&&j.status==='assigned'&&{title:'Начать уборку',kind:'main',disabled:!j.checkout_confirmed,onPress:()=>confirm('jobs/'+id,{action:'start'},'Отметить начало работы','my-jobs')},
           assigned&&j.status==='in_progress'&&{title:'Подготовить отчёт',kind:'main',onPress:()=>say('Проверьте каждый пункт. Отчёт уйдёт владельцу после вашего подтверждения.','report',{id})},
           owner&&j.status==='submitted'&&{title:'Рассмотреть отчёт',kind:'main',onPress:()=>say('Отчёт на приёмке.','approval',{id:'report:'+id})},
-          (owner||assigned)&&{title:'Открыть чат',kind:'side',onPress:()=>{setChatInitial({kind:'job',entityId:id,channel:'cleaning'});setPageId('chats');}},
+          (owner&&!!j.assigned_to||assigned)&&{title:'Открыть чат',kind:'side',onPress:()=>{setChatInitial({kind:'job',entityId:id,channel:'cleaning'});setPageId('chats');}},
         ]}/>
-        {owner&&j.status==='open'&&data.applications.filter((a:Row)=>a.job_id===id&&a.status==='pending').map((a:Row)=><View key={a.id} style={s.card}><CleanerCard worker={a.worker||a}/><Button title="Рассмотреть отклик" disabled={busy} onPress={()=>say('Отклик исполнителя.','approval',{id:'application:'+a.id})}/></View>)}
       </View></Fragment>;
     })}{payload.role==='owner'&&<Button title="Создать уборку" secondary disabled={busy} onPress={()=>send('Создать уборку')}/>}</View>;
     if(m.block==='report')return <Report busy={busy||!!m.done} onSubmit={(body:Row)=>perform('jobs/'+payload.id,{action:'submit',...body},m.id,'my-jobs')}/>;
