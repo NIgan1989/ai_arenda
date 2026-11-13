@@ -4,6 +4,7 @@ import type {Approval} from './approvals';
 import {defaultAssistantSettings} from './assistant';
 import {quietNow} from './administrator';
 import {pushConfigured} from './web-push';
+import {isAdminNotice,adminNotice,adminDecide} from './admin-telegram';
 import {epoch,uuid,q,one,rows,hash,randomToken,httpsEndpoint,safeEqual,type Row,type OperationConfig} from './operation-core';
 
 export function integrationStatus(config:OperationConfig){return {push:pushConfigured(config),telegram:!!(config.TELEGRAM_BOT_TOKEN&&config.TELEGRAM_BOT_USERNAME&&config.TELEGRAM_WEBHOOK_SECRET),sms:!!(config.SMS_GATEWAY_URL&&config.SMS_GATEWAY_TOKEN),whatsapp:!!(config.WHATSAPP_GATEWAY_URL&&config.WHATSAPP_GATEWAY_TOKEN),payments:!!(config.PAYMENT_GATEWAY_URL&&config.PAYMENT_GATEWAY_TOKEN&&config.PAYMENT_WEBHOOK_SECRET),secureAccess:!!config.ACCESS_ENCRYPTION_KEY};}
@@ -47,9 +48,13 @@ export async function decisionMessage(card:Approval,role:Role,base:string|null){
  return {text,reply_markup:{inline_keyboard:[answer,...(open.length?[open]:[])]}};
 }
 async function telegramDecide(db:D1Database,query:Row,config:OperationConfig,serviceFor:ServiceFor){
- const chat=query.message?.chat,match=typeof query.data==='string'?query.data.match(/^([yn])([goc])(.+)\|([0-9a-f]{10})$/):null;
+ const chat=query.message?.chat,match=typeof query.data==='string'?query.data.match(/^([yn])([goca])(.+)\|([0-9a-f]{10})$/):null;
  const reply=async(text:string,done:boolean)=>{await tg(config,'answerCallbackQuery',{callback_query_id:query.id,text:text.slice(0,190)});if(done&&chat)await tg(config,'editMessageText',{chat_id:chat.id,message_id:query.message.message_id,text:(String(query.message.text||'')+'\n\n'+text).slice(0,4000)});};
  if(!match||chat?.type!=='private'||query.from?.is_bot||String(chat.id)!==String(query.from?.id)){await tg(config,'answerCallbackQuery',{callback_query_id:query.id});return {ignored:true};}
+ if(match[2]==='a'){
+  try{const r=await adminDecide(db,String(chat.id),match[1]==='y',match[3],match[4],config,serviceFor);await reply((r.done?'✅ ':'')+r.text,r.done);return {decided:r.done};}
+  catch{await reply('Не получилось. Откройте админку и повторите.',false);console.error('Telegram admin decision failed');return {failed:true};}
+ }
  const role=ROLE_CODES[match[2]],channel=await one(db,"SELECT user_id FROM delivery_channels WHERE channel='telegram' AND role=? AND address=? AND verified_at IS NOT NULL",role,String(chat.id));
  if(!channel){await reply('Этот чат не привязан. Подключите Telegram в «Ай Аренда» → Аккаунт.',false);return {ignored:true};}
  const service=serviceFor(channel.user_id);
@@ -136,6 +141,7 @@ export async function acceptDeliveryReceipt(db:D1Database,raw:string){
 
 // A notice that asks for a decision carries the card and its buttons; anything else stays a short pointer.
 async function telegramNotice(item:Row,text:string,base:string|null,serviceFor?:ServiceFor):Promise<Row>{
+ if(isAdminNotice(String(item.dedupe||'')))return serviceFor?adminNotice(serviceFor(item.user_id).db,item,base):{text:String(item.body||text)};
  if(!serviceFor)return {text};
  try{const card=await noticeDecision(serviceFor(item.user_id),item.role,item.dedupe);if(card)return decisionMessage(card,item.role,base);}catch{/* the plain notice still goes out */}
  return {text};

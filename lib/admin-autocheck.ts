@@ -80,12 +80,12 @@ const note=(db:D1Database,user:string,body:string,dedupe:string,at:number)=>q(db
 
 // Checks one pending review and acts on it. Safe to repeat: decisions are versioned and notices are deduplicated.
 export async function autoReview(db:D1Database,reviewId:string,config:OperationConfig&{PLATFORM_ADMIN_IDS?:string}={}):Promise<Verdict|null>{
- const review=await one(db,"SELECT r.*,p.title FROM participant_reviews r LEFT JOIN properties p ON p.id=r.property_id WHERE r.id=? AND r.status='pending'",reviewId);
+ const review=await one(db,"SELECT r.*,p.title,u.name FROM participant_reviews r LEFT JOIN properties p ON p.id=r.property_id LEFT JOIN profiles u ON u.id=r.user_id WHERE r.id=? AND r.status='pending'",reviewId);
  if(!review)return null;
  const checks=await reviewChecks(db,review);if(!checks)return null;
  const verdict=verdictOf(checks),at=epoch(),policy=await one(db,"SELECT ai_review FROM pilot_policy WHERE id='global'"),auto=!!(policy?.ai_review??1);
  await q(db,"UPDATE participant_reviews SET ai_verdict=?,ai_checks=?,ai_checked_at=? WHERE id=? AND status='pending'",verdict,JSON.stringify(checks),at,reviewId).run();
- const what=review.role==='owner'?'«'+(review.title||'квартира')+'»':'Анкета исполнителя';
+ const what=review.role==='owner'?'Квартира «'+(review.title||'без названия')+'»':'Анкета исполнителя «'+(review.name||'без имени')+'»';
  if(auto&&verdict==='approve'){
   try{await decideParticipantReview({db,userId:AI_REVIEWER} as unknown as RentalService,{id:reviewId,status:'approved',method:AI_METHOD,notes:'Все правила пройдены: '+checksSummary(checks,['ok']),validUntil:review.role==='cleaner'?new Date((at+CLEANER_VALID)*1000).toISOString():undefined,expectedVersion:review.version},true);return verdict;}
   catch(e){if(!(e instanceof DomainError))throw e;
