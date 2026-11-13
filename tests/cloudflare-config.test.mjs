@@ -77,3 +77,12 @@ test('publishing connects the Telegram bot from one GitHub secret without printi
  await assert.rejects(setupTelegram({token:'bad',account:'acc',cfToken:'cf',site:'https://x.dev',fetcher:async()=>Response.json({ok:false,description:'Unauthorized'})}),/getMe failed/);
  const workflow=(await import('node:fs')).readFileSync('.github/workflows/deploy.yml','utf8');assert.ok(workflow.indexOf('Publish the Worker')<workflow.indexOf('setup-telegram.mjs'));assert.match(workflow,/TELEGRAM_BOT_TOKEN: \$\{\{ secrets\.TELEGRAM_BOT_TOKEN \}\}/);
 });
+test('the Stadia Maps key from a GitHub secret is saved as a Worker secret after publishing, never printed',async()=>{
+ const {saveMapKey}=await import('../scripts/setup-map-key.mjs');const calls=[];
+ const fetcher=async(url,init)=>{calls.push({url,body:JSON.parse(init.body)});return Response.json({success:true});};
+ assert.deepEqual(await saveMapKey({key:'abcd-1234-efgh',account:'acc',cfToken:'cf',fetcher}),{saved:true});
+ assert.equal(calls[0].url,'https://api.cloudflare.com/client/v4/accounts/acc/workers/scripts/ai-arenda/secrets');assert.deepEqual(calls[0].body,{name:'STADIA_API_KEY',text:'abcd-1234-efgh',type:'secret_text'});
+ await assert.rejects(saveMapKey({key:'bad key!',account:'acc',cfToken:'cf',fetcher}),/does not look like/);
+ await assert.rejects(saveMapKey({key:'abcd-1234-efgh',account:'acc',cfToken:'cf',fetcher:async()=>Response.json({success:false},{status:403})}),/did not save STADIA_API_KEY \(403\)/);
+ const workflow=(await import('node:fs')).readFileSync('.github/workflows/deploy.yml','utf8');assert.ok(workflow.indexOf('Publish the Worker')<workflow.indexOf('setup-map-key.mjs'));assert.match(workflow,/STADIA_API_KEY: \$\{\{ secrets\.STADIA_API_KEY \}\}/);
+});

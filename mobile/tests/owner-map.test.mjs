@@ -19,6 +19,7 @@ test('the most urgent state of an object wins over its price', () => {
   const booking = (status, start, end) => ({kind: 'booking', propertyId: 'p1', status, start, end});
   assert.deepEqual(ownerPin(flat, [], now), {label: '11 тыс.', tone: 'home'});
   assert.deepEqual(ownerPin(flat, [job('in_progress'), booking('confirmed', at(8), at(12))], now), {label: 'Уборка идёт', tone: 'active'});
+  assert.deepEqual(ownerPin(flat, [{...job('in_progress', at(9)), startedAt: at(9), end: at(11)}], now), {label: 'Уборка идёт', tone: 'active', progress: 0.5});
   assert.deepEqual(ownerPin(flat, [booking('confirmed', at(8), at(12))], now), {label: 'Гость до 12:00', tone: 'booking'});
   assert.deepEqual(ownerPin(flat, [booking('confirmed', at(8, 0, -1), at(12, 0, 1))], now), {label: 'Гость до завтра 12:00', tone: 'booking'});
   assert.deepEqual(ownerPin(flat, [booking('confirmed', at(8, 0, -1), at(9))], now), {label: 'Выезд не подтверждён', tone: 'pending'});

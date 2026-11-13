@@ -17,6 +17,7 @@ declare namespace Cloudflare {
     VAPID_PRIVATE_KEY?: string;
     VAPID_SUBJECT?: string;
     TELEGRAM_BOT_TOKEN?: string;
+    STADIA_API_KEY?: string;
     TELEGRAM_BOT_USERNAME?: string;
     TELEGRAM_WEBHOOK_SECRET?: string;
     SMS_GATEWAY_URL?: string;

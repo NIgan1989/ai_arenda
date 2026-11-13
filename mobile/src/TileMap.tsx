@@ -4,13 +4,14 @@ import {C} from './styles';
 import {T} from './tokens';
 import {API_URL} from './api';
 import {MAX_ZOOM,MIN_ZOOM,TILE,fitView,groupPins,pinWidth,project,unproject,validPoint,visibleTiles,type MapPoint} from './map-math';
-import {appearDelay,flight,flightSteps,type Flight,type MapLine,type PinTone} from './map-motion';
+import {appearDelay,flight,flightSteps,lineOrigin,type Flight,type MapLine,type PinTone} from './map-motion';
 import {Beam,FRESH,HeatBlob,LEAVE,Leaving,Origin,Pin,Radar,Spark,controlsHeight,m,toneOrder} from './MapPins';
 
 // rank: among pins of one tone, the lower one stays visible when their boxes meet (the price, for flats).
 // until: for a waiting pin, when the owner's time to answer ends, in seconds by this phone's clock; a strip under the label runs down to it.
 // best: the AI's best choice for the guest; it wears the two-colour ring of the AI and a ✦.
-export type MapPin={key:string;point:MapPoint;label:string;tone?:PinTone;title?:string;rank?:number;until?:number;best?:boolean};
+// order: the stop's number on the cleaner's route of the day; progress: how far a cleaning under way has gone (0..1), a strip that fills.
+export type MapPin={key:string;point:MapPoint;label:string;tone?:PinTone;title?:string;rank?:number;until?:number;best?:boolean;order?:number;progress?:number};
 export type {MapLine};
 // scanning: a search is running; the map sends radar waves from the middle of what is visible.
 // focus: the pin of the card the guest is looking at in the carousel: it lifts and the map flies to it.
@@ -101,7 +102,10 @@ export function TileMap({center,pins,selected,focus='',lines=[],heat=[],sparks=[
  const placed=size.w?pins.flatMap(pin=>{if(!validPoint(pin.point))return [];return [{pin,...at(pin.point)}];}).filter(p=>p.x>-80&&p.x<size.w+80&&p.y>-40&&p.y<size.h+40):[];
  // Boxes that would cover each other are drawn as one pin with "+N"; a tap on it zooms in until they part.
  const byKey=new Map(placed.map(p=>[p.pin.key,p]));
- const shown=groupPins(placed.map(({pin,x,y})=>({key:pin.key,x,y,width:pinWidth(pin.label),height:32,rank:pin.key===selected||pin.key===focus?-1:toneOrder[pin.tone||'home']*1e9+(pin.best?0:Math.max(0,Math.min(pin.rank??0,1e9-1)))}))).map(g=>({...byKey.get(g.key)!,members:g.members}));
+ // The stops of a cleaner's route never fold into other pins; stops that meet each other fold into the first of them with «+N»,
+ // and a tap opens them as for any group (at the closest zoom each tap shows the next stop).
+ const box=(selectedRank:(pin:MapPin)=>number)=>({pin,x,y}:{pin:MapPin;x:number;y:number})=>({key:pin.key,x,y,width:pinWidth(pin.label)+(pin.order?22:0),height:32,rank:pin.key===selected||pin.key===focus?-1:selectedRank(pin)});
+ const shown=[false,true].flatMap(stops=>groupPins(placed.filter(p=>!!p.pin.order===stops).map(box(pin=>stops?pin.order!:toneOrder[pin.tone||'home']*1e9+(pin.best?0:Math.max(0,Math.min(pin.rank??0,1e9-1))))))).map(g=>({...byKey.get(g.key)!,members:g.members}));
  const openGroup=(keys:string[])=>{
   const {view:v}=state.current;
   // At the closest zoom the flats share one spot: each tap shows the next one.
@@ -117,8 +121,8 @@ export function TileMap({center,pins,selected,focus='',lines=[],heat=[],sparks=[
     {scanning&&!still&&<Radar x={size.w/2} y={originY}/>}
     {heat.map((c,i)=><HeatBlob key={'heat:'+i} weight={c.weight} {...at(c.point)}/>)}
     {!still&&sparks.map((p,i)=><Spark key={'spark:'+i} delay={i*500} {...at(p)}/>)}
-    {lines.map(l=><Beam key={l.key} a={at(l.from)} b={at(l.to)} tone={l.tone} still={still}/>)}
-    {!!lines.length&&<Origin {...at(lines[0].from)}/>}
+    {lines.flatMap(l=>l.path&&l.path.length>1?l.path.slice(1).map((q,i)=><Beam key={l.key+':'+i} a={at(l.path![i])} b={at(q)} tone={l.tone} still/>):[<Beam key={l.key} a={at(l.from)} b={at(l.to)} tone={l.tone} still={still}/>])}
+    {(origin=>origin?<Origin {...at(origin)}/>:null)(lineOrigin(lines))}
     {!still&&leaving.filter(p=>validPoint(p.point)).map(p=><Leaving key={'gone:'+p.key+':'+p.gone} pin={p} {...at(p.point)}/>)}
     {shown.map(({pin,x,y,members})=>{const more=members.length-1,b=born.current.get(pin.key)||0;
      return <Pin key={pin.key} pin={pin} x={x} y={y} more={more} active={pin.key===selected||pin.key===focus} still={still} picking={picking} loop={loop}

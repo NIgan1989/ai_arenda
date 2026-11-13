@@ -28,6 +28,14 @@
           "microphonePermission": false
         }
       ],
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Разрешите определить ваше положение, чтобы вести вас к объекту по карте приложения.",
+          "isAndroidBackgroundLocationEnabled": false,
+          "isIosBackgroundLocationEnabled": false
+        }
+      ],
       "@maplibre/maplibre-react-native"
     ]
   }
