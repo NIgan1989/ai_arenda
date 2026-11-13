@@ -101,7 +101,7 @@ export async function publicOperationsRequest(db:D1Database,request:Request,path
  if(path.length!==2||path[0]!=='hooks')return null;
  if(request.method!=='POST')throw new DomainError('Используйте POST.',405);
  const raw=await boundedRequestText(request,64000);
- if(path[1]==='telegram'){let body:Row;try{body=JSON.parse(raw);}catch{throw new DomainError('Неверный формат события.');}return Response.json(await acceptTelegramLink(db,body,request.headers.get('X-Telegram-Bot-Api-Secret-Token'),config));}
+ if(path[1]==='telegram'){let body:Row;try{body=JSON.parse(raw);}catch{throw new DomainError('Неверный формат события.');}return Response.json(await acceptTelegramLink(db,body,request.headers.get('X-Telegram-Bot-Api-Secret-Token'),config,id=>new RentalService(db,id)));}
  if(path[1]==='payment'){
   if(!await validSignature(config.PAYMENT_WEBHOOK_SECRET,raw,request.headers.get('X-Event-Timestamp'),request.headers.get('X-Event-Signature')))throw new DomainError('Подпись события не подтверждена.',403);
   return Response.json(await acceptPaymentEvent(db,raw,id=>new RentalService(db,id)));

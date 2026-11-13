@@ -59,3 +59,21 @@ test('one Telegram Start links every role of the person; a role switched off sta
   assert.deepEqual(f.db.raw.prepare("SELECT DISTINCT address FROM delivery_channels WHERE user_id=?").all(id).map(r=>r.address),['88']);
  }finally{globalThis.fetch=fetch;f.db.close();}
 });
+test('a notice that needs a decision comes to Telegram with buttons; a tap decides it once',async()=>{
+ const f=await fixture(),fetch=globalThis.fetch,{RentalService}=await load('service'),serviceFor=id=>new RentalService(f.db,id),config={TELEGRAM_BOT_TOKEN:'test-token',TELEGRAM_BOT_USERNAME:'rental_test_bot',TELEGRAM_WEBHOOK_SECRET:'test-webhook-secret',SITE_PUBLIC_URL:'https://rental.example.test'};try{
+  const calls=[];globalThis.fetch=async(url,request)=>{calls.push({method:String(url).split('/').pop(),body:JSON.parse(request.body)});return Response.json({ok:true,result:{message_id:9}});};
+  const link=await createTelegramLink(f.owner,'owner',config);await acceptTelegramLink(f.db,{message:{text:'/start '+new URL(link.url).searchParams.get('start'),chat:{type:'private',id:555},from:{id:555,is_bot:false}}},config.TELEGRAM_WEBHOOK_SECRET,config,serviceFor);
+  const booking=(await f.guest.createBooking({propertyId:f.property,start:iso(now()+86400),end:iso(now()+93600),guests:1,billingMode:'hourly',requestKey:'tg-buttons',acceptTerms:true})).id;
+  calls.length=0;assert.equal((await deliverOutbox(f.db,config,30,serviceFor)).sent,1);
+  const sent=calls.find(c=>c.method==='sendMessage').body;assert.match(sent.text,/Запрос на бронирование · Test apartment/);assert.ok(!sent.text.includes('PRIVATE ADDRESS'));
+  const [answer,open]=sent.reply_markup.inline_keyboard;assert.equal(answer.length,2);assert.equal(open[0].url,'https://rental.example.test/workspace/owner/map');assert.ok(answer.every(b=>b.callback_data.length<=64));
+  const tap=(data,from=555)=>acceptTelegramLink(f.db,{callback_query:{id:'q1',data,from:{id:from,is_bot:false},message:{message_id:9,text:sent.text,chat:{type:'private',id:from}}}},config.TELEGRAM_WEBHOOK_SECRET,config,serviceFor);
+  // Someone else's chat cannot press the owner's button, and a forged revision is refused.
+  assert.equal((await tap(answer[0].callback_data,777)).ignored,true);
+  assert.equal((await tap(answer[0].callback_data.replace(/\|.+$/,'|0000000000'))).ignored,true);assert.equal(f.db.raw.prepare('SELECT status FROM bookings WHERE id=?').get(booking).status,'requested');
+  calls.length=0;assert.equal((await tap(answer[0].callback_data)).decided,true);
+  assert.equal(f.db.raw.prepare('SELECT status FROM bookings WHERE id=?').get(booking).status,'confirmed');
+  const edited=calls.find(c=>c.method==='editMessageText').body;assert.match(edited.text,/✅/);assert.equal(edited.reply_markup,undefined);
+  assert.equal((await tap(answer[1].callback_data)).ignored,true);assert.equal(f.db.raw.prepare('SELECT status FROM bookings WHERE id=?').get(booking).status,'confirmed');
+ }finally{globalThis.fetch=fetch;f.db.close();}
+});

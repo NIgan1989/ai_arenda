@@ -15,8 +15,16 @@ export async function setupTelegram({token,account,cfToken,site,worker='ai-arend
   const r=await fetcher(`https://api.cloudflare.com/client/v4/accounts/${account}/workers/scripts/${worker}/secrets`,{method:'PUT',headers:{Authorization:'Bearer '+cfToken,'Content-Type':'application/json'},body:JSON.stringify({name,text,type:'secret_text'})});
   const v=await r.json().catch(()=>({}));if(!v.success)throw new Error('Cloudflare did not save '+name+' ('+r.status+')');
  }
+ // Buttons in the bot's messages open the site; the Worker learns its public address once, if nobody set it.
+ try{
+  const list=await fetcher(`https://api.cloudflare.com/client/v4/accounts/${account}/workers/scripts/${worker}/secrets`,{headers:{Authorization:'Bearer '+cfToken}}).then(r=>r.json()).catch(()=>({}));
+  if(list.success&&Array.isArray(list.result)&&!list.result.some(x=>x?.name==='SITE_PUBLIC_URL')){
+   const r=await fetcher(`https://api.cloudflare.com/client/v4/accounts/${account}/workers/scripts/${worker}/secrets`,{method:'PUT',headers:{Authorization:'Bearer '+cfToken,'Content-Type':'application/json'},body:JSON.stringify({name:'SITE_PUBLIC_URL',text:new URL(site).origin,type:'secret_text'})});
+   const v=await r.json().catch(()=>({}));if(!v.success)console.log('::notice::The site address was not saved for the bot buttons ('+r.status+').');
+  }
+ }catch{console.log('::notice::The site address was not saved for the bot buttons.');}
  const url=new URL('/api/hooks/telegram',site).href;
- await tg('setWebhook',{url,secret_token:secret,allowed_updates:['message'],drop_pending_updates:false});
+ await tg('setWebhook',{url,secret_token:secret,allowed_updates:['message','callback_query'],drop_pending_updates:false});
  await tg('setMyCommands',{commands:[{command:'start',description:'Подключить уведомления'}]}).catch(()=>{});
  return {username:me.username,url};
 }

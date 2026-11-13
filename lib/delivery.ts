@@ -1,5 +1,6 @@
 import {DomainError,required,type Role} from './domain';
 import type {RentalService} from './service';
+import type {Approval} from './approvals';
 import {defaultAssistantSettings} from './assistant';
 import {quietNow} from './administrator';
 import {pushConfigured} from './web-push';
@@ -20,12 +21,47 @@ async function botReply(config:OperationConfig,chatId:unknown,text:string){
  try{const r=await fetch('https://api.telegram.org/bot'+config.TELEGRAM_BOT_TOKEN+'/sendMessage',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({chat_id:chatId,text,link_preview_options:{is_disabled:true}}),redirect:'manual',signal:AbortSignal.timeout(8000)});if(!r.ok)console.error('Telegram reply failed: '+r.status);}catch(e){console.error('Telegram reply failed: '+String((e as Error)?.message||e).split(config.TELEGRAM_BOT_TOKEN).join('***'));}
 }
 // The account screen: is the bot set up, and is this role's chat linked and switched on.
+export type ServiceFor=(userId:string)=>RentalService;
+const ROLE_CODES:Record<string,Role>={g:'guest',o:'owner',c:'cleaner'};
+const tg=async(config:OperationConfig,method:string,body:Row)=>{try{const r=await fetch('https://api.telegram.org/bot'+config.TELEGRAM_BOT_TOKEN+'/'+method,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body),redirect:'manual',signal:AbortSignal.timeout(8000)});if(!r.ok)console.error('Telegram '+method+' failed: '+r.status);}catch(e){console.error('Telegram '+method+' failed: '+String((e as Error)?.message||e).split(String(config.TELEGRAM_BOT_TOKEN)).join('***'));}};
+const revisionTag=async(revision:string)=>(await hash(revision)).slice(0,10);
+// The card a notice is about: the same one-tap decision as on the map, answered from Telegram.
+export async function noticeDecision(service:RentalService,role:Role,dedupe:string):Promise<Approval|null>{
+ const rest=dedupe.startsWith(role+':')?dedupe.slice(role.length+1):dedupe,ids=rest.split(':').filter(s=>/^[0-9a-f-]{8,}$/i.test(s));
+ const cards=((await service.roleState(role,{catalog:false})).approvals as Approval[]).filter(c=>c.canDecide);
+ const only=(list:Approval[])=>list.length===1?list[0]:null;
+ return cards.find(c=>c.id===rest)||only(cards.filter(c=>ids.includes(c.id.slice(c.id.indexOf(':')+1))))||only(cards.filter(c=>ids.includes(c.entityId)))||null;
+}
+export async function decisionMessage(card:Approval,role:Role,base:string|null){
+ const code=Object.keys(ROLE_CODES).find(k=>ROLE_CODES[k]===role)!,tag=await revisionTag(card.revision),data=(a:string)=>a+code+card.id+'|'+tag;
+ const text=[card.title+(card.subject?' · '+card.subject:''),...card.facts.filter(([,v])=>v).map(([k,v])=>k+': '+v),card.detail||''].filter(Boolean).join('\n').slice(0,3500);
+ const open=base?[{text:'Открыть',url:base+'/workspace/'+role+'/map'}]:[];
+ if(data('y').length>64)return {text,reply_markup:open.length?{inline_keyboard:[open]}:undefined};
+ const answer=[{text:card.acceptLabel.slice(0,60),callback_data:data('y')},...(card.requiresReason?[]:[{text:card.rejectLabel.slice(0,60),callback_data:data('n')}])];
+ return {text,reply_markup:{inline_keyboard:[answer,...(open.length?[open]:[])]}};
+}
+async function telegramDecide(db:D1Database,query:Row,config:OperationConfig,serviceFor:ServiceFor){
+ const chat=query.message?.chat,match=typeof query.data==='string'?query.data.match(/^([yn])([goc])(.+)\|([0-9a-f]{10})$/):null;
+ const reply=async(text:string,done:boolean)=>{await tg(config,'answerCallbackQuery',{callback_query_id:query.id,text:text.slice(0,190)});if(done&&chat)await tg(config,'editMessageText',{chat_id:chat.id,message_id:query.message.message_id,text:(String(query.message.text||'')+'\n\n'+text).slice(0,4000)});};
+ if(!match||chat?.type!=='private'||query.from?.is_bot||String(chat.id)!==String(query.from?.id)){await tg(config,'answerCallbackQuery',{callback_query_id:query.id});return {ignored:true};}
+ const role=ROLE_CODES[match[2]],channel=await one(db,"SELECT user_id FROM delivery_channels WHERE channel='telegram' AND role=? AND address=? AND verified_at IS NOT NULL",role,String(chat.id));
+ if(!channel){await reply('Этот чат не привязан. Подключите Telegram в «Ай Аренда» → Аккаунт.',false);return {ignored:true};}
+ const service=serviceFor(channel.user_id);
+ try{
+  const card=((await service.roleState(role,{catalog:false})).approvals as Approval[]).find(c=>c.id===match[3]);
+  if(!card){await reply('Уже решено или срок истёк.',true);return {ignored:true};}
+  if(await revisionTag(card.revision)!==match[4]){await reply('Условия изменились. Откройте сервис и проверьте карточку.',true);return {ignored:true};}
+  const result=await service.decideApproval(role,{id:card.id,revision:card.revision,action:match[1]==='y'?'accept':'reject'}) as Row;
+  await reply('✅ '+String(result?.message||'Готово.'),true);return {decided:true};
+ }catch(e){await reply(e instanceof DomainError?e.message:'Не получилось. Откройте сервис и повторите.',e instanceof DomainError);if(!(e instanceof DomainError))console.error('Telegram decision failed');return {failed:true};}
+}
 export async function telegramStatus(service:RentalService,role:Role,config:OperationConfig){
  const c=await one(service.db,"SELECT enabled,verified_at FROM delivery_channels WHERE user_id=? AND role=? AND channel='telegram'",service.userId,role);
  return {configured:integrationStatus(config).telegram,linked:!!c?.verified_at,enabled:!!(c?.verified_at&&c.enabled),linkedAt:Number(c?.verified_at||0)};
 }
-export async function acceptTelegramLink(db:D1Database,body:Row,providedSecret:string|null,config:OperationConfig){
+export async function acceptTelegramLink(db:D1Database,body:Row,providedSecret:string|null,config:OperationConfig,serviceFor?:ServiceFor){
  if(!config.TELEGRAM_WEBHOOK_SECRET||!safeEqual(providedSecret||'',config.TELEGRAM_WEBHOOK_SECRET))throw new DomainError('Нет доступа к событию бота.',403);
+ if(body.callback_query)return serviceFor?telegramDecide(db,body.callback_query,config,serviceFor):{ignored:true};
  const message=body.message,match=typeof message?.text==='string'?message.text.match(/^\/start(?:@[A-Za-z0-9_]+)? ([a-f0-9]{48})$/):null;
  const privateChat=message?.chat?.type==='private'&&!message.from?.is_bot&&String(message.chat?.id)===String(message.from?.id);
  if(!match||!privateChat){if(privateChat)await botReply(config,message.chat.id,BOT_HELP);return {ignored:true};}
@@ -52,7 +88,7 @@ export async function setDeliveryChannel(service:RentalService,role:Role,body:Ro
  return {message:'Доставка включена для вашей текущей роли.'};
 }
 
-export async function deliverOutbox(db:D1Database,config:OperationConfig,limit=30){
+export async function deliverOutbox(db:D1Database,config:OperationConfig,limit=30,serviceFor?:ServiceFor){
  const pending=await rows(db,"SELECT o.*,n.dedupe,n.body,c.address,c.enabled,c.verified_at,p.settings FROM delivery_outbox o JOIN notifications n ON n.id=o.notification_id LEFT JOIN delivery_channels c ON c.user_id=o.user_id AND c.role=o.role AND c.channel=o.channel LEFT JOIN assistant_preferences p ON p.user_id=o.user_id AND p.role=o.role WHERE (o.status='pending' AND o.available_at<=?) OR (o.status='sending' AND o.lease_until<=?) ORDER BY o.created_at LIMIT ?",epoch(),epoch(),limit);
  let sent=0,failed=0;const deadline=Date.now()+20000;
  for(const item of pending){
@@ -68,7 +104,7 @@ export async function deliverOutbox(db:D1Database,config:OperationConfig,limit=3
    let response:Response;
    if(item.channel==='telegram'){
     if(!config.TELEGRAM_BOT_TOKEN)throw new Error('channel_not_configured');
-    response=await fetch('https://api.telegram.org/bot'+config.TELEGRAM_BOT_TOKEN+'/sendMessage',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({chat_id:item.address,text,link_preview_options:{is_disabled:true}}),redirect:'manual',signal:AbortSignal.timeout(15000)});
+    response=await fetch('https://api.telegram.org/bot'+config.TELEGRAM_BOT_TOKEN+'/sendMessage',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({chat_id:item.address,...await telegramNotice(item,text,base,serviceFor),link_preview_options:{is_disabled:true}}),redirect:'manual',signal:AbortSignal.timeout(15000)});
    }else{
     const url=item.channel==='sms'?config.SMS_GATEWAY_URL:config.WHATSAPP_GATEWAY_URL,secret=item.channel==='sms'?config.SMS_GATEWAY_TOKEN:config.WHATSAPP_GATEWAY_TOKEN;if(!secret)throw new Error('channel_not_configured');
     response=await fetch(httpsEndpoint(url),{method:'POST',headers:{Authorization:'Bearer '+secret,'Content-Type':'application/json','Idempotency-Key':item.id},body:JSON.stringify({id:item.id,to:item.address,text,category:'notification'}),redirect:'manual',signal:AbortSignal.timeout(15000)});
@@ -90,4 +126,11 @@ export async function acceptDeliveryReceipt(db:D1Database,raw:string){
   q(db,'INSERT INTO delivery_events VALUES (?,?,?,?,?,?)',body.channel,eventId,outboxId,body.status,digest,epoch()),
   q(db,"UPDATE delivery_outbox SET delivered_at=CASE WHEN ? IN ('delivered','read') THEN COALESCE(delivered_at,?) ELSE delivered_at END,read_at=CASE WHEN ?='read' THEN COALESCE(read_at,?) ELSE read_at END,last_error=CASE WHEN ?='failed' THEN 'provider_delivery_failed' ELSE last_error END WHERE id=? AND channel=?",body.status,epoch(),body.status,epoch(),body.status,outboxId,body.channel)
  ]);return {recorded:true};
+}
+
+// A notice that asks for a decision carries the card and its buttons; anything else stays a short pointer.
+async function telegramNotice(item:Row,text:string,base:string|null,serviceFor?:ServiceFor):Promise<Row>{
+ if(!serviceFor)return {text};
+ try{const card=await noticeDecision(serviceFor(item.user_id),item.role,item.dedupe);if(card)return decisionMessage(card,item.role,base);}catch{/* the plain notice still goes out */}
+ return {text};
 }
