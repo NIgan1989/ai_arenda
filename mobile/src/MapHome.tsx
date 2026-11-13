@@ -269,7 +269,7 @@ function OwnerPanel({data,mapData,publish,snap,showNow,expand,onHead,onAsk,onInt
    </View>
    <View style={h.card}>
     <Text accessibilityRole="header" style={h.label}>Кто отвечает гостям</Text>
-    <Text style={h.note}>{!inbox?'Загружаем…':'ИИ — это автопилот: сразу отвечает гостю, подтверждает бронь, заказывает уборку и назначает уборщицу по вашим тарифам. Оплату и депозит проверяете вы.'}</Text>
+    <Text style={h.note}>{!inbox?'Загружаем…':'ИИ — это автопилот: сразу отвечает гостю, подтверждает бронь, заказывает уборку и назначает исполнителя по вашим тарифам. Оплату и депозит проверяете вы.'}</Text>
     {!!saved&&<Text accessibilityLiveRegion="polite" style={h.note}>{saved}</Text>}
     {(inbox?.preferences||[]).map((p:Row)=><GuestMode key={p.id} flat={p} busy={working} onChange={body=>act('preference',body)}/>)}
     {!!inbox&&!inbox.preferences.length&&<Text style={h.note}>Включить можно после добавления квартиры.</Text>}
