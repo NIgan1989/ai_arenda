@@ -30,6 +30,7 @@ import {PriceTip} from './PriceTip';
 import {kindLabel} from '../../lib/listings';
 import {guestTrips,guestTripsLabel} from '../../lib/guest-trips';
 import type {HubTab} from '../../lib/property-hub';
+import {cleanerLine,cleanerStep} from '../../lib/job-steps';
 import {FlatHub,FlatHubHead} from './FlatHub';
 import {ECHO_WINDOW,pinStates,recallMap,rememberMap,stageOf,targetPin,withEchoes,type MapTarget} from './map-memory';
 
@@ -353,7 +354,9 @@ function CleanerPanel({data,mapData,city,publish,snap,showNow,expand,onHead,onAs
   }
   publish(pins,'cleaner:'+(mapData?.processes?.length||0),{lines:routeLines(route.map(r=>placed.get(r.id)))});
  },[mapData,nearbyIds,data.applications,routeIds,nav.trip,nav.here,nav.route,nav.rerouted]);
- async function apply(id:string){if(lock.current)return;lock.current=true;setWorking(id);setError('');try{await request('/api/jobs/'+id,{action:'apply'},undefined,'map-apply:'+id,'cleaner');await onChanged();}catch(e){setError(message(e));}finally{lock.current=false;setWorking('');}}
+ // The step of a job taken right on the map: an answer to an open one, the start of the one the guest has left.
+ async function act(id:string,action:'apply'|'start'){if(lock.current)return;lock.current=true;setWorking(id);setError('');try{await request('/api/jobs/'+id,{action},undefined,'map-'+action+':'+id,'cleaner');await onChanged();}catch(e){setError(message(e));}finally{lock.current=false;setWorking('');}}
+ const apply=(id:string)=>act(id,'apply');
  return <View style={h.block}>
   <HeadSlot onHeight={onHead}>{nav.trip?<TripHead nav={nav} onOpen={()=>{const id=nav.trip!.id;nav.close();onOpenProcess('job',id);}}/>:<MapSheetHead role="cleaner" text={asked} onText={setAsked} onSend={text=>{setAsked('');onAsk(text);}} onChip={action=>{if(action==='nearby')expand(1);else if(action==='schedule')onOpenPage('calendar');}} now={card} onNow={()=>openNow(card,{expand,onOpenProcess,onOpenPage})}>
    {!!nav.error&&<Text accessibilityRole="alert" style={h.error}>{nav.error}</Text>}
@@ -361,16 +364,22 @@ function CleanerPanel({data,mapData,city,publish,snap,showNow,expand,onHead,onAs
   {snap>0&&<>
    {mine.length>0&&<Text accessibilityRole="header" style={h.cardTitle}>{route.length?'Маршрут дня':'Ваше задание'}</Text>}
    {!!summary&&<Text style={h.note}>{summary}</Text>}
-   {mine.map(j=><View key={j.id} style={[h.card,j.id===next||j.status==='in_progress'?h.urgent:null]}>
-    <Stage steps={['Назначено','Выезд','Уборка','Приёмка']} current={j.status==='submitted'?3:j.status==='in_progress'?2:j.checkout_confirmed?1:0}/>
-    <Text style={h.cardTitle}>{order.get(j.id)?order.get(j.id)+'. ':''}{j.title}</Text><Text style={h.note}>{date(j.start)} → {date(j.end)}{j.address?'\n'+j.address:''}</Text><Text style={h.price}>{money(j.fee)}</Text>
-    <Text style={h.note}>{j.status==='submitted'?'Отчёт у владельца на приёмке.':j.status==='in_progress'?'Уборка идёт. Подготовьте отчёт с фото.':j.checkout_confirmed?'Гость выехал, можно начинать.':'Ждём подтверждения выезда гостя.'}</Text>
-    {j.id===next&&<>
-     <Action title="Поехали" disabled={!!nav.trip} onPress={()=>go(j)}/>
-     <Text style={h.note}>Поведём по нашей карте. Пока вы в пути, владелец видит вашу точку.</Text>
-    </>}
-    <Action secondary={j.id===next} title="Открыть задание" onPress={()=>onOpenProcess('job',j.id)}/>
-   </View>)}
+   {mine.map(j=>{
+    // One main button a stop: the step that is due (start, report); before it, the way there.
+    const step=cleanerStep(j,undefined,userId),isNext=j.id===next;
+    return <View key={j.id} style={[h.card,isNext||j.status==='in_progress'?h.urgent:null]}>
+     <Stage steps={['Назначено','Выезд','Уборка','Приёмка']} current={j.status==='submitted'?3:j.status==='in_progress'?2:j.checkout_confirmed?1:0}/>
+     <Text style={h.cardTitle}>{order.get(j.id)?order.get(j.id)+'. ':''}{j.title}</Text><Text style={h.note}>{date(j.start)} → {date(j.end)}{j.address?'\n'+j.address:''}</Text><Text style={h.price}>{money(j.fee)}</Text>
+     <Text style={h.note}>{cleanerLine(j)}.</Text>
+     {step?.id==='start'&&<Action title={working===j.id?'Начинаем…':step.label} disabled={!!working} onPress={()=>act(j.id,'start')}/>}
+     {step?.id==='report'&&<Action title={step.label} onPress={()=>onOpenProcess('job',j.id)}/>}
+     {isNext&&<>
+      <Action secondary={!!step} title="Поехали" disabled={!!nav.trip} onPress={()=>go(j)}/>
+      <Text style={h.note}>Поведём по нашей карте. Пока вы в пути, владелец видит вашу точку.</Text>
+     </>}
+     {step?.id!=='report'&&<Action secondary={!!step||isNext} title="Открыть задание" onPress={()=>onOpenProcess('job',j.id)}/>}
+    </View>;
+   })}
    {!!error&&<Text accessibilityRole="alert" style={h.error}>{error}</Text>}
    <Text accessibilityRole="header" style={h.cardTitle}>Задания рядом · {city}</Text>
    {nearby.slice(0,8).map(j=><View key={j.id} style={h.card}>
