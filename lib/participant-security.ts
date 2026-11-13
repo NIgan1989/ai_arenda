@@ -54,6 +54,14 @@ export async function decideParticipantReview(service:RentalService,body:Row,pla
   const text=body.status==='approved'?'Администратор проверил «'+title+'».'+(shown?' Квартира показана гостям на карте.':' Теперь её можно показать гостям.'):'Проверка «'+title+'» не пройдена: '+notes;
   await q(service.db,'INSERT OR IGNORE INTO notifications(id,user_id,body,dedupe,read,created_at) VALUES (?,?,?,?,0,?)',uuid(),review.user_id,text,'owner:review:'+id+':'+body.status,at).run();
  }
+ // A cleaner hears the result, and so does every owner whose open cleaning is waiting on this cleaner's response.
+ if(review?.role==='cleaner'){
+  const ok=body.status==='approved',waiting=await rows(service.db,"SELECT DISTINCT j.owner_id,j.id,p.title FROM applications a JOIN cleaning_jobs j ON j.id=a.job_id JOIN properties p ON p.id=j.property_id WHERE a.user_id=? AND a.status='pending' AND j.status='open' AND j.end>?",review.user_id,at);
+  await service.db.batch([
+   q(service.db,'INSERT OR IGNORE INTO notifications(id,user_id,body,dedupe,read,created_at) VALUES (?,?,?,?,0,?)',uuid(),review.user_id,ok?'Анкета исполнителя проверена. Владельцы теперь могут назначать вас по откликам.':'Анкета исполнителя не прошла проверку: '+notes,'cleaner:review:'+id+':'+body.status,at),
+   ...(ok?waiting.map(job=>q(service.db,'INSERT OR IGNORE INTO notifications(id,user_id,body,dedupe,read,created_at) VALUES (?,?,?,?,0,?)',uuid(),job.owner_id,'Исполнитель, откликнувшийся на уборку «'+(job.title||'квартира')+'», прошёл проверку. Его можно назначить.','owner:cleaner-reviewed:'+id+':'+job.id,at)):[])
+  ]);
+ }
  return {message:'Результат фактической проверки сохранён.'};
 }
 async function accessKey(config:OperationConfig){if(!config.ACCESS_ENCRYPTION_KEY||config.ACCESS_ENCRYPTION_KEY.length<32)throw new DomainError('Серверное шифрование инструкций ещё не настроено.',503);const bytes=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(config.ACCESS_ENCRYPTION_KEY));return crypto.subtle.importKey('raw',bytes,{name:'AES-GCM'},false,['encrypt','decrypt']);}
