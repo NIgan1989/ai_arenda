@@ -14,7 +14,7 @@ import {recordFinance,migrateFinanceEntity} from './finance';
 import {requireEvidence} from './evidence';
 import {hash as operationHash} from './operation-core';
 import {assertCalendarAvailable} from './external-calendar';
-import {assertPilotAllowed,readPilotPolicy,pilotPropertyVisibleSql} from './pilot-governance';
+import {assertPilotAllowed,cleanerAdmission,readPilotPolicy,pilotPropertyVisibleSql} from './pilot-governance';
 import {mapCities} from './map-location';
 import {publicPoint} from './map-workspace';
 import {createAIBudgetLifecycle} from './ai-budget';
@@ -147,7 +147,7 @@ export class RentalService {
     const p=await this.one('SELECT p.name,p.city,p.districts,p.experience,p.availability,d.avatar_id,d.work_status FROM profiles p LEFT JOIN profile_details d ON d.user_id=p.id WHERE p.id=?',userId);
     if(!p)return null;
     const jobs=await this.all("SELECT start,end,status FROM cleaning_jobs WHERE assigned_to=? AND status IN ('assigned','in_progress','submitted')",userId);
-    return {...p,display_status:cleanerStatus(p.work_status,jobs,now())};
+    return {...p,display_status:cleanerStatus(p.work_status,jobs,now()),admission:await cleanerAdmission(this.db,userId)};
   }
   async accountState(){return {profile:await this.profile(),workerStatus:(await this.workerCard(this.userId))?.display_status,settings:await this.one('SELECT payment_provider,payment_notifications,version FROM account_preferences WHERE user_id=?',this.userId)||defaultAccountSettings};}
   async saveAccountSettings(body:Row){
@@ -185,7 +185,7 @@ export class RentalService {
       return legacyRole===role&&entityIds.some(entityId=>n.dedupe.includes(entityId));
     });
     const workers=new Map<string,Row|null>();if(role==="owner"){for(const userId of new Set([...state.applications.map(a=>a.user_id),...jobs.map(j=>j.assigned_to).filter(Boolean)]))workers.set(userId,await this.workerCard(userId));}
-    const result={...state,profile:state.profile?{...state.profile,display_status:cleanerStatus(state.profile.work_status,state.jobs.filter(j=>j.assigned_to===this.userId),state.serverTime)}:null,activeRole:role,properties:role==='guest'?state.properties:[],ownProperties:role==='owner'?state.ownProperties:[],bookings,jobs:jobs.map((j:Row):Row=>({...j,worker:role==='owner'?workers.get(j.assigned_to):null})),
+    const result={...state,profile:state.profile?{...state.profile,display_status:cleanerStatus(state.profile.work_status,state.jobs.filter(j=>j.assigned_to===this.userId),state.serverTime),...(role==='cleaner'?{admission:await cleanerAdmission(this.db,this.userId)}:{})}:null,activeRole:role,properties:role==='guest'?state.properties:[],ownProperties:role==='owner'?state.ownProperties:[],bookings,jobs:jobs.map((j:Row):Row=>({...j,worker:role==='owner'?workers.get(j.assigned_to):null})),
       notifications,applications:state.applications.filter(a=>jobIds.has(a.job_id)&&(role==='owner'||a.user_id===this.userId)).map(a=>({...a,worker:role==='owner'?workers.get(a.user_id):null})),messages:state.messages.filter(m=>m.scope===role)};
     if(role==='owner'){(result as Row).priceSuggestions=await ownerPriceSuggestions(this.db,this.userId,state.serverTime);(result as Row).calendarWindows=await ownerWindows(this.db,this.userId,state.serverTime);(result as Row).loadForecasts=await ownerForecasts(this.db,this.userId,state.serverTime);(result as Row).listingTips=await ownerListingTips(this.db,this.userId,state.serverTime);}
     if(role==='guest')(result as Row).stayOffers=await guestStayOffers(this.db,this.userId,state.serverTime);

@@ -5,6 +5,9 @@ import {T} from './tokens';
 import {Photo} from './ListingMedia';
 import {Badge} from './PropertyListing';
 import type {Row} from './model';
+import {cleanerNext} from '../../lib/cleaner-next';
+// Same words as the site: assignment waits for the platform check of the cleaner, and the row says so up front.
+const admissionNotes:Record<string,string>={none:'Анкета исполнителя ещё не отправлена на проверку платформы. Назначить можно после проверки.',pending:'Анкету исполнителя проверяет администратор платформы. Назначить можно сразу после проверки, мы пришлём уведомление.',expired:'Срок проверки исполнителя истёк. Назначить можно после новой проверки.',rejected:'Исполнитель не прошёл проверку платформы. Назначить его нельзя.'};
 // Same as components/applicant-pick.tsx on the site: one row per cleaner, and the owner's decision on the row itself,
 // right under the step, instead of a second card further down the screen.
 export function WorkerRow({worker:w,label}:{worker:Row;label?:string}){
@@ -18,15 +21,24 @@ export function ApplicantPick({applications,approvals,busy,onDecide}:{applicatio
  if(!applications.length)return <View style={[a.box,a.empty]}><Text style={a.emptyTitle}>Откликов пока нет</Text><Text style={a.note}>Исполнитель появится здесь, как только откликнется. Назначить можно одной кнопкой.</Text></View>;
  return <View style={a.box} accessibilityLabel="Отклики исполнителей">
   <Text accessibilityRole="header" style={a.title}>{applications.length===1?'Откликнулся исполнитель':'Отклики · '+applications.length}</Text>
-  {applications.map((x,i)=>{const card=approvals.find(c=>c.id==='application:'+x.id),off=busy||!card,decide=(action:string)=>card&&onDecide({id:card.id,revision:card.revision,action}),name=x.worker?.name||x.name||'исполнитель';
+  {applications.map((x,i)=>{const card=approvals.find(c=>c.id==='application:'+x.id),admission=x.worker?.admission,blocked=!!admission&&admission in admissionNotes,off=busy||!card,decide=(action:string)=>card&&onDecide({id:card.id,revision:card.revision,action}),name=x.worker?.name||x.name||'исполнитель';
    return <View key={x.id} style={[a.option,i>0&&a.optionLine]}><WorkerRow worker={{...x,...(x.worker||{}),experience:x.worker?.experience||x.experience}}/>
     <View style={a.decide}>
-     <Pressable accessibilityRole="button" accessibilityLabel={'Назначить: '+name} disabled={off} onPress={()=>decide('accept')} style={({pressed})=>[a.btn,a.accept,(pressed||off)&&a.dim]}><Text style={a.acceptText}>✓  Назначить</Text></Pressable>
+     <Pressable accessibilityRole="button" accessibilityLabel={'Назначить: '+name} disabled={off||blocked} onPress={()=>decide('accept')} style={({pressed})=>[a.btn,a.accept,(pressed||off||blocked)&&a.dim]}><Text style={a.acceptText}>✓  Назначить</Text></Pressable>
      <Pressable accessibilityRole="button" accessibilityLabel={'Отклонить отклик: '+name} disabled={off} onPress={()=>decide('reject')} style={({pressed})=>[a.btn,a.reject,(pressed||off)&&a.dim]}><Text style={a.rejectText}>Отклонить</Text></Pressable>
     </View>
-    {!card&&<Text style={[a.note,{color:C.danger}]}>Срок ответа истёк. Обновите данные.</Text>}
+    {blocked&&<Text style={[a.admission,admission==='rejected'&&a.admissionBad]}>{admissionNotes[admission]}</Text>}
+    {!card&&!blocked&&<Text style={[a.note,{color:C.danger}]}>Срок ответа истёк. Обновите данные.</Text>}
    </View>;})}
-  <Text style={a.note}>Анкету заполняет исполнитель, платформа её пока не проверяет.</Text>
+  {applications.every(x=>!x.worker?.admission||x.worker.admission==='not_required')&&<Text style={a.note}>Анкету заполняет исполнитель, платформа её пока не проверяет.</Text>}
+ </View>;
+}
+// The cleaner's own card: what happens next with the response, said once.
+export function CleanerNextBox({job,application,admission,userId,busy,onRequestReview}:{job:Row;application?:Row;admission?:string;userId:string;busy:boolean;onRequestReview:()=>void}){
+ const next=cleanerNext(job,application,admission,userId);if(!next)return null;
+ return <View accessibilityRole="summary" style={[a.next,next.tone==='warning'&&a.nextWarn,next.tone==='danger'&&a.nextBad]}>
+  <Text style={a.nextTitle}>{next.title}</Text><Text style={a.nextText}>{next.text}</Text>
+  {next.action==='request-review'&&<Pressable accessibilityRole="button" disabled={busy} onPress={onRequestReview} style={({pressed})=>[a.btn,a.accept,(pressed||busy)&&a.dim]}><Text style={a.acceptText}>Отправить анкету на проверку</Text></Pressable>}
  </View>;
 }
 const R=T.radius,H=T.control;
@@ -42,6 +54,8 @@ const a=StyleSheet.create({
  accept:{flex:1.6,backgroundColor:C.accent},acceptText:{...type.body,fontWeight:'600',color:C.onAccent},
  reject:{flex:1,backgroundColor:C.surface,borderWidth:1,borderColor:C.line},rejectText:{...type.body,fontWeight:'600',color:C.ink},
  dim:{opacity:.55},note:{...type.caption,color:C.muted},
+ admission:{...type.label,color:C.ink,padding:12,borderRadius:R.md,borderWidth:1,borderColor:C.warningLine,backgroundColor:C.warningSoft,overflow:'hidden'},admissionBad:{borderColor:C.danger,backgroundColor:C.dangerSoft},
+ next:{gap:4,padding:16,borderRadius:R.lg,borderWidth:1,borderColor:C.infoLine,backgroundColor:C.infoSoft,marginTop:8},nextWarn:{borderColor:C.warningLine,backgroundColor:C.warningSoft},nextBad:{borderColor:C.danger,backgroundColor:C.dangerSoft},nextTitle:{...type.label,color:C.ink,fontWeight:'600'},nextText:{...type.label,color:C.inkSoft,marginBottom:4},
  assigned:{padding:16,borderRadius:R.lg,borderWidth:1,borderColor:C.line,backgroundColor:C.surface},
 });
 export const applicantStyles=a;

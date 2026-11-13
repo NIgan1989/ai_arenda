@@ -19,6 +19,7 @@ import {buildRuntimeHealth} from '../../../lib/runtime-health';
 import {clientConversation} from '../../../lib/client-conversation';
 import {accountSessions} from '../../../lib/account-sessions';
 import {readPlatformAdmin,writePlatformAdmin} from '../../../lib/platform-admin';
+import {requestCleanerAdmission} from '../../../lib/pilot-governance';
 export const dynamic='force-dynamic';
 const json=(data:unknown,status=200)=>Response.json(data,{status,headers:{'Cache-Control':'no-store','X-Content-Type-Options':'nosniff'}});
 async function handle(request:Request, context:{params:Promise<{path:string[]}>}) {
@@ -113,7 +114,10 @@ async function handle(request:Request, context:{params:Promise<{path:string[]}>}
     if(route.length===3&&route[0]==='listings'&&route[2]==='remove')return json(await service.removeProperty(route[1]));
     if(route.length===2&&route[0]==='listings')return json(await service.saveListing(route[1],body));
     if(route.length===2 && route[0]==='bookings') return json(await service.bookingAction(route[1],body));
-    if(route.length===2 && route[0]==='jobs') return json(await service.jobAction(route[1],body));
+    if(route.length===2 && route[0]==='jobs'){const result=await service.jobAction(route[1],body);if(body.action!=='apply')return json(result);
+      // The response itself sends the cleaner's profile to the platform check that assignment needs, and says so.
+      const admission=await requestCleanerAdmission(service,env);
+      return json({...result,admission,message:admission==='approved'||admission==='not_required'?'Отклик отправлен. Когда владелец назначит вас, здесь появятся адрес и кнопка «Начать уборку».':admission==='rejected'?'Отклик отправлен, но анкета не прошла проверку платформы. Владелец не сможет назначить вас, пока проверка не пройдена.':'Отклик отправлен. Анкету проверит администратор платформы, после этого владелец сможет вас назначить.'});}
     if(route[0]==='bookings'&&route.length===3&&route[2]==='change-quote')return json(await service.bookingChangeQuote(route[1],activeRole,body));
     if(route[0]==='bookings'&&route.length===3&&route[2]==='changes')return json(await service.proposeBookingChange(route[1],activeRole,body));
     if(route[0]==='bookings'&&route.length===4&&route[2]==='changes')return json(await service.decideBookingChange(route[1],route[3],activeRole,body));
