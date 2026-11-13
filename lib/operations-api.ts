@@ -8,6 +8,7 @@ import {DomainError,required,type Role} from './domain';
 import {RentalService} from './service';
 import {financeState,recordFinance,createPaymentIntent,acceptPaymentEvent} from './finance';
 import {dispatchState,saveOperationRules,saveWorkerDispatch,decideOffer,declineAssignment} from './dispatch';
+import {regularState,pinRegular,unpinRegular} from './regular-cleaner';
 import {saveEvidence,listEvidence,readEvidence} from './evidence';
 import {calendarSources,saveCalendarSource,refreshCalendar,commitCalendarImport,previewCalendarImport,createCalendarExport,exportCalendar,flatCalendars,connectCalendar} from './external-calendar';
 import {importState,previewPropertyImport,commitPropertyImport} from './property-import';
@@ -75,6 +76,9 @@ export async function writeOperations(service:RentalService,role:Role,path:strin
  if(route==='dispatch/offer'){active(role,['cleaner']);return decideOffer(service,body);}
  if(route==='dispatch/decline'){active(role,['cleaner']);return declineAssignment(service,body);}
  if(route==='rules'){active(role,['owner']);return saveOperationRules(service,body);}
+ if(route==='regular/state'){active(role,['owner']);return regularState(service,required(body.propertyId,'Квартира',100));}
+ if(route==='regular/pin'){active(role,['owner']);return pinRegular(service,body);}
+ if(route==='regular/unpin'){active(role,['owner','cleaner']);return unpinRegular(service,role,body);}
  if(route==='evidence'){active(role,['cleaner']);return saveEvidence(service,body,config);}
  if(route==='calendar/source'){active(role,['owner']);if(body.ics)throw new DomainError('Создайте источник, затем проверьте файл в предпросмотре.');return saveCalendarSource(service,body,config);}
  if(route==='calendar/flat'){active(role,['owner']);return flatCalendars(service,body);}

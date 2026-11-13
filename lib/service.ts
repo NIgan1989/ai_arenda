@@ -252,7 +252,7 @@ export class RentalService {
     const [profile, properties, ownProperties, bookings, jobs, applications, notifications, messages] = await Promise.all([
       this.profile(),
       includeCatalog?this.all('SELECT id,title,city,district,description,price,rooms,capacity,cleaning_minutes,demo_owner,published FROM properties p WHERE published=1 AND (demo_owner IS NULL OR demo_owner=?) AND '+pilotPropertyVisibleSql('p')+' ORDER BY created_at DESC', this.userId):Promise.resolve([]),
-      this.all('SELECT * FROM properties WHERE owner_id=? AND archived_at IS NULL ORDER BY created_at DESC', this.userId),
+      this.all('SELECT p.*,(SELECT c.name FROM regular_cleaners r JOIN profiles c ON c.id=r.cleaner_id WHERE r.property_id=p.id) regular_cleaner_name FROM properties p WHERE p.owner_id=? AND p.archived_at IS NULL ORDER BY p.created_at DESC', this.userId),
       this.all(`SELECT b.*,p.title,p.owner_id,p.city,p.district,p.demo_owner,(SELECT photos FROM property_details WHERE property_id=p.id) property_photos,
         CASE WHEN p.owner_id=? OR (b.guest_id=? AND b.status='confirmed') THEN p.address ELSE NULL END address,
         (SELECT rating FROM stay_reviews r WHERE r.booking_id=b.id) review_rating,
@@ -261,11 +261,11 @@ export class RentalService {
         CASE WHEN p.owner_id=? THEN g.contact ELSE NULL END guest_contact
         FROM bookings b JOIN properties p ON p.id=b.property_id LEFT JOIN profiles o ON o.id=p.owner_id LEFT JOIN profiles g ON g.id=b.guest_id
         WHERE b.guest_id=? OR p.owner_id=? ORDER BY b.start DESC`, ...Array(8).fill(this.userId)),
-      this.all(`SELECT j.*,EXISTS(SELECT 1 FROM booking_terms t WHERE t.booking_id=j.booking_id AND t.actual_checkout IS NOT NULL) checkout_confirmed,p.title,p.city,p.district,p.rooms,p.demo_owner,(SELECT photos FROM property_details WHERE property_id=p.id) property_photos,
+      this.all(`SELECT j.*,EXISTS(SELECT 1 FROM regular_cleaners rc WHERE rc.property_id=j.property_id AND rc.cleaner_id=COALESCE(j.assigned_to,?)) regular,CASE WHEN j.owner_id=? OR j.assigned_to=? THEN (SELECT status FROM cleaning_holds h WHERE h.job_id=j.id AND h.cleaner_id=j.assigned_to AND h.status<>'returned') END guarantee,EXISTS(SELECT 1 FROM booking_terms t WHERE t.booking_id=j.booking_id AND t.actual_checkout IS NOT NULL) checkout_confirmed,p.title,p.city,p.district,p.rooms,p.demo_owner,(SELECT photos FROM property_details WHERE property_id=p.id) property_photos,
         CASE WHEN j.owner_id=? OR j.assigned_to=? THEN p.address ELSE NULL END address,
         CASE WHEN j.owner_id=? OR j.assigned_to=? THEN o.contact ELSE NULL END owner_contact
         FROM cleaning_jobs j JOIN properties p ON p.id=j.property_id LEFT JOIN profiles o ON o.id=j.owner_id
-        WHERE (j.owner_id=? OR j.assigned_to=? OR (j.status='open' AND j.end>?)) AND (p.demo_owner IS NULL OR p.demo_owner=?) ORDER BY j.start`, this.userId,this.userId,this.userId,this.userId,this.userId,this.userId,now(),this.userId),
+        WHERE (j.owner_id=? OR j.assigned_to=? OR (j.status='open' AND j.end>?)) AND (p.demo_owner IS NULL OR p.demo_owner=?) ORDER BY j.start`, this.userId,this.userId,this.userId,this.userId,this.userId,this.userId,this.userId,this.userId,this.userId,now(),this.userId),
       this.all(`SELECT a.*,p.name,p.experience,p.availability,p.districts,(SELECT pr.demo_owner FROM properties pr WHERE pr.id=j.property_id) job_demo FROM applications a JOIN cleaning_jobs j ON j.id=a.job_id JOIN profiles p ON p.id=a.user_id WHERE a.user_id=? OR j.owner_id=?`, this.userId,this.userId),
       this.all('SELECT * FROM notifications WHERE user_id=? ORDER BY created_at DESC LIMIT 40', this.userId),
       this.all('SELECT * FROM (SELECT * FROM messages WHERE user_id=? ORDER BY created_at DESC,rowid DESC LIMIT 100) ORDER BY created_at', this.userId),

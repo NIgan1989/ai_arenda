@@ -19,7 +19,7 @@ function lastMonths(now:number,count:number){const d=new Date((now+5*3600)*1000)
 
 export function AdminRevenue({data,busy,save}:{data:Row;busy:boolean;save:Save}){
  const s=data.settings||{},phase=data.phase as Phase,m=data.last30||{};
- const [termsOpen,setTermsOpen]=useState(false),[tab,setTab]=useState<'owners'|'topups'|'history'>('owners');
+ const [termsOpen,setTermsOpen]=useState(false),[tab,setTab]=useState<'owners'|'cleaners'|'topups'|'history'>('owners');
  const headline=phase==='off'?m.projected:m.charged;
  const status=phase==='active'?{label:'Плата включена',note:`${percent(s.rate_bp)} с брони с ${day(s.starts_at)}`}:phase==='scheduled'?{label:'Плата запланирована',note:`${percent(s.rate_bp)} с брони начиная с ${day(s.starts_at)}`}:{label:'Бесплатный период',note:'Владельцы ничего не платят'};
  async function saveTerms(body:Row){const result=await save('billing/settings',body);if(result)setTermsOpen(false);return result;}
@@ -52,8 +52,9 @@ export function AdminRevenue({data,busy,save}:{data:Row;busy:boolean;save:Save})
 
   <section className="admin-surface revenue-ledger">
    <div className="revenue-tabs" role="tablist" aria-label="Деньги владельцев">
-    {([['owners','Владельцы'],['topups','Пополнения'],['history','Журнал условий']] as const).map(([id,label])=><button key={id} role="tab" type="button" aria-selected={tab===id} onClick={()=>setTab(id)}>{label}{id==='owners'&&data.debtors>0&&<b>{data.debtors}</b>}</button>)}
+    {([['owners','Владельцы'],['cleaners','Уборщицам'],['topups','Пополнения'],['history','Журнал условий']] as const).map(([id,label])=><button key={id} role="tab" type="button" aria-selected={tab===id} onClick={()=>setTab(id)}>{label}{id==='owners'&&data.debtors>0&&<b>{data.debtors}</b>}{id==='cleaners'&&data.cleaners?.due?.length>0&&<b>{data.cleaners.due.length}</b>}</button>)}
    </div>
+   {tab==='cleaners'&&<CleanerPayouts data={data.cleaners||{}} busy={busy} save={save}/>}
    {tab==='owners'&&<OwnerBalances data={data} busy={busy} save={save} phase={phase}/>}
    {tab==='topups'&&(data.topups?.length?<ul className="revenue-list">{data.topups.map((t:Row)=><li key={t.id}><div className="revenue-row"><span className={'revenue-icon kind-'+t.kind}>{t.kind==='bonus'?<Gift size={18}/>:<PiggyBank size={18}/>}</span><span><strong>{t.owner_name||'Владелец'}</strong><small>{kinds[t.kind]} · {day(t.created_at)} · {t.note}</small></span><b className={t.amount<0?'is-negative':'is-positive'}>{t.amount>0?'+':''}{money(t.amount)}</b></div></li>)}</ul>:<Empty Icon={PiggyBank} text="Пополнений пока нет. Отмечайте их в карточке владельца, когда деньги придут на Kaspi."/>)}
    {tab==='history'&&(data.history?.length?<ol className="revenue-timeline">{data.history.map((h:Row,i:number)=><li key={i}><strong>{h.enabled?`Комиссия ${String(h.ratePercent).replace('.',',')}% с ${day(h.startsAt)}`:'Плата выключена'}</strong><small>{day(h.at)}{h.enabled?` · бесплатно ${h.freeBookings} брон.${h.minFee?` · минимум ${money(h.minFee)}`:''}${h.maxFee?` · максимум ${money(h.maxFee)}`:''}`:''}</small></li>)}</ol>:<Empty Icon={Info} text="Условия ещё не менялись. Сейчас действует бесплатный период."/>)}
@@ -88,14 +89,14 @@ function MonthlyChart({rows,now,phase}:{rows:Row[];now:number;phase:Phase}){
 }
 
 function BillingTerms({settings:s,now,phase,busy,save}:{settings:Row;now:number;phase:Phase;busy:boolean;save:(body:Row)=>Promise<Row|undefined>}){
- const [enabled,setEnabled]=useState(!!s.enabled),[rate,setRate]=useState(String((s.rate_bp??500)/100)),[aiRate,setAiRate]=useState(String((s.ai_rate_bp??1000)/100)),[minFee,setMinFee]=useState(String(s.min_fee||0)),[maxFee,setMaxFee]=useState(String(s.max_fee||0)),[free,setFree]=useState(String(s.free_bookings??3)),[start,setStart]=useState(isoDay(s.enabled?s.starts_at:now+30*86400)),[agreed,setAgreed]=useState(false);
- const r=Number(rate)||0,ai=Number(aiRate)||0,min=Number(minFee)||0,max=Number(maxFee)||0;
+ const [enabled,setEnabled]=useState(!!s.enabled),[rate,setRate]=useState(String((s.rate_bp??500)/100)),[aiRate,setAiRate]=useState(String((s.ai_rate_bp??1000)/100)),[minFee,setMinFee]=useState(String(s.min_fee||0)),[maxFee,setMaxFee]=useState(String(s.max_fee||0)),[free,setFree]=useState(String(s.free_bookings??3)),[cleanRate,setCleanRate]=useState(String((s.cleaning_rate_bp??1000)/100)),[pairRate,setPairRate]=useState(String((s.pair_rate_bp??500)/100)),[pairCap,setPairCap]=useState(String(s.pair_month_cap??2000)),[start,setStart]=useState(isoDay(s.enabled?s.starts_at:now+30*86400)),[agreed,setAgreed]=useState(false);
+ const cr=Number(cleanRate)||0,pr=Number(pairRate)||0,cap=Number(pairCap)||0,r=Number(rate)||0,ai=Number(aiRate)||0,min=Number(minFee)||0,max=Number(maxFee)||0;
  const soon=enabled&&phase!=='active'&&Date.parse(start+'T00:00:00+05:00')/1000<now+14*86400;
  async function submit(e:FormEvent<HTMLFormElement>){
   e.preventDefault();const chosen=Math.floor(Date.parse(start+'T00:00:00+05:00')/1000);
   // Keep a running start date untouched unless the administrator picked another day.
   const startsAt=s.enabled&&s.starts_at<=now&&start===isoDay(s.starts_at)?s.starts_at:Math.max(chosen,Math.floor(Date.now()/1000));
-  await save({enabled,ratePercent:r,aiRatePercent:ai,minFee:min,maxFee:max,freeBookings:Number(free)||0,startsAt,expectedVersion:s.version,confirmed:agreed});
+  await save({enabled,ratePercent:r,aiRatePercent:ai,minFee:min,maxFee:max,freeBookings:Number(free)||0,cleaningRatePercent:cr,pairRatePercent:pr,pairMonthCap:cap,startsAt,expectedVersion:s.version,confirmed:agreed});
  }
  return <form className="revenue-terms" onSubmit={submit}>
   <label className="revenue-switch"><input type="checkbox" role="switch" checked={enabled} onChange={e=>setEnabled(e.target.checked)}/><span className="revenue-switch-track" aria-hidden="true"/><span><strong>Брать комиссию с владельцев</strong><small>{enabled?'Плата спишется с баланса владельца при подтверждении брони.':'Сейчас сервис бесплатный. Прогноз дохода всё равно считается.'}</small></span></label>
@@ -108,9 +109,15 @@ function BillingTerms({settings:s,now,phase,busy,save}:{settings:Row;now:number;
     <label>Минимум, ₸<Input type="number" inputMode="numeric" min={0} value={minFee} onChange={e=>setMinFee(e.target.value)}/></label>
     <label>Максимум, ₸<Input type="number" inputMode="numeric" min={0} value={maxFee} onChange={e=>setMaxFee(e.target.value)} placeholder="Без ограничения"/></label>
    </div>
+   <p className="revenue-sublegend">Уборки</p>
+   <div className="revenue-fields">
+    <label>За уборку, %<Input type="number" inputMode="decimal" min={0} max={30} step={0.1} value={cleanRate} onChange={e=>setCleanRate(e.target.value)} required/></label>
+    <label>Постоянной паре, %<Input type="number" inputMode="decimal" min={0} max={30} step={0.1} value={pairRate} onChange={e=>setPairRate(e.target.value)} required/></label>
+    <label>Паре не больше в месяц, ₸<Input type="number" inputMode="numeric" min={0} value={pairCap} onChange={e=>setPairCap(e.target.value)} placeholder="Без ограничения"/></label>
+   </div>
    <label>Начать с<Input type="date" min={phase==='active'?undefined:isoDay(now)} value={start} onChange={e=>setStart(e.target.value)} required={enabled}/></label>
   </fieldset>
-  <div className="revenue-example"><small>Пример расчёта</small><div><span>Бронь на сутки, 15 000 ₸</span><b>{money(feeFor(15000,r,min,max))}</b></div><div><span>Почасовая бронь, 4 000 ₸</span><b>{money(feeFor(4000,r,min,max))}</b></div><div><span>Сутки, 15 000 ₸, режим «ИИ»</span><b>{money(feeFor(15000,ai,min,max))}</b></div></div>
+  <div className="revenue-example"><small>Пример расчёта</small><div><span>Бронь на сутки, 15 000 ₸</span><b>{money(feeFor(15000,r,min,max))}</b></div><div><span>Почасовая бронь, 4 000 ₸</span><b>{money(feeFor(4000,r,min,max))}</b></div><div><span>Сутки, 15 000 ₸, режим «ИИ»</span><b>{money(feeFor(15000,ai,min,max))}</b></div><div><span>Уборка 8 000 ₸ / у постоянной пары</span><b>{money(feeFor(8000,cr,0,0))} / {money(Math.min(feeFor(8000,pr,0,0),cap||Infinity))}</b></div></div>
   {enabled&&<p className={'revenue-callout'+(soon?' is-warning':'')}><Info size={16}/>{soon?'До начала меньше двух недель. Лучше дать владельцам месяц, чтобы они успели пополнить баланс.':'Владельцы получат уведомление в приложении. Отменённые брони никогда не оплачиваются.'}</p>}
   <label className="revenue-confirm"><input type="checkbox" checked={agreed} onChange={e=>setAgreed(e.target.checked)} required/>{enabled?'Я понимаю, что владельцы будут платить по этим условиям.':'Оставить сервис бесплатным.'}</label>
   <Button className="revenue-primary" disabled={busy||!agreed}>Сохранить условия</Button>
@@ -153,5 +160,28 @@ function OwnerCard({owner:o,busy,save}:{owner:Row;busy:boolean;save:Save}){
     <Button className="revenue-primary" disabled={busy}>Записать</Button>
    </form>
   </div>
+ </>;
+}
+
+// Money the service holds for cleaners: reserves due after the owner accepted the work. Until bank payouts
+// exist the administrator sends it by Kaspi and marks it here; the cleaner and the owner are told at once.
+function CleanerPayouts({data:c,busy,save}:{data:Row;busy:boolean;save:Save}){
+ const [open,setOpen]=useState<Row|null>(null),[agreed,setAgreed]=useState(false);
+ const k=c.commissions30||{};
+ return <>
+  <dl className="revenue-facts revenue-cleaners-facts"><div><dt>Постоянных пар</dt><dd>{c.pairs||0}</dd></div><div><dt>Зарезервировано</dt><dd>{money(c.held)}</dd></div><div><dt>К выплате</dt><dd>{money(c.dueTotal)}</dd></div><div><dt>Выплачено за 30 дней</dt><dd>{money(c.paid30)}</dd></div><div><dt>Комиссия с уборок, 30 дней</dt><dd>{money(k.amount)}{k.count?` · ${k.count} убор., пар ${k.pairs}`:''}</dd></div></dl>
+  {c.due?.length?<ul className="revenue-list">{c.due.map((d:Row)=><li key={d.job_id}><button type="button" className="revenue-row" onClick={()=>{setOpen(d);setAgreed(false);}}><span className="revenue-avatar" aria-hidden="true">{String(d.cleaner_name||'?').slice(0,1)}</span><span><strong>{d.cleaner_name}</strong><small>{d.title} · {d.owner_name} · принято {day(d.due_at)}</small></span><b className="is-positive">{money(d.amount)}</b><ChevronRight size={18} aria-hidden="true"/></button></li>)}</ul>
+   :<Empty Icon={Wallet} text="Выплачивать сейчас некому. Здесь появятся уборки, принятые владельцем, если их оплата была зарезервирована."/>}
+  <Sheet open={!!open} onOpenChange={v=>{if(!v)setOpen(null);}}><SheetContent side="right" className="revenue-sheet">{open&&<>
+   <SheetHeader><SheetTitle>Выплата {open.cleaner_name}</SheetTitle><SheetDescription>{open.title} · владелец {open.owner_name}</SheetDescription></SheetHeader>
+   <div className="revenue-sheet-body">
+    <div className="revenue-balance"><small>Отправить</small><strong>{money(open.amount)}</strong><span>{open.cleaner_contact?'Контакт: '+open.cleaner_contact:'Контакт в профиле исполнителя'}</span></div>
+    <form className="revenue-terms" onSubmit={async e=>{e.preventDefault();const r=await save('billing/payout',{jobId:open.job_id,confirmed:agreed,note:String(new FormData(e.currentTarget).get('note')||'')});if(r)setOpen(null);}}>
+     <label>Комментарий<Input name="note" maxLength={300} placeholder="Например: перевод Kaspi, 13 ноября"/></label>
+     <label className="revenue-confirm"><input type="checkbox" checked={agreed} onChange={e=>setAgreed(e.target.checked)} required/>Деньги отправлены уборщице.</label>
+     <Button className="revenue-primary" disabled={busy||!agreed}>Отметить выплату</Button>
+    </form>
+   </div>
+  </>}</SheetContent></Sheet>
  </>;
 }

@@ -35,6 +35,7 @@ html[data-design=unified] [data-slot=sheet-content].record-details-sheet:is(.kin
 .record-head>.record-property-photo .photo-placeholder[data-state="loading"]>*{visibility:hidden}
 .record-head-tags{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
 .record-head-demo{font-size:12px;padding:4px 8px;border-radius:var(--t-radius-sm);background:var(--t-surface-alt);color:var(--t-muted)}
+.record-head-demo.is-regular{background:var(--t-accent-soft);color:var(--t-accent);font-weight:600}
 .record-head h2{margin:0;font-size:22px;line-height:1.25;font-weight:650;letter-spacing:-.01em;color:var(--t-ink);overflow-wrap:anywhere}
 .record-head p{display:flex;align-items:center;gap:8px;margin:0;font-size:14px;line-height:1.45;color:var(--t-ink-soft)}
 .record-head p svg{flex:none;color:var(--t-muted)}

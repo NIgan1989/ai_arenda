@@ -6,6 +6,7 @@ import {Photo} from './ListingMedia';
 import {PhotoGrid} from './PhotoGrid';
 import {Stepper} from './SheetParts';
 import {FlatCalendars} from './FlatCalendars';
+import {RegularCleaner} from './RegularCleaner';
 import {EDIT_STEPS,editBody,editRequest,nextAdvice,needsReview,reviewRequest,REVIEW_SENT,stepForError,stepLine,stepNeeds,type Advice,type EditBody,type EditStep} from '../../lib/listing-edit';
 import {amenities,checkinMethods,propertyTypes} from '../../lib/listings';
 type Row=Record<string,any>;
@@ -18,7 +19,7 @@ const SAVED:Record<EditStep|'publish',string>={photos:'Фото сохранен
 export function PropertyEdit({property,onSave,onReview,onRemove,onClose,step}:{property:Row;onSave:(body:Row)=>Promise<Row|undefined>;onReview?:(body:Row)=>Promise<unknown>;onRemove?:()=>Promise<unknown>;onClose:()=>void;step?:EditStep|null}){
  const [p,setP]=useState(property),[base,setBase]=useState<EditBody>(()=>editBody(property)),[draft,setDraft]=useState<EditBody>(base);
  const [open,setOpen]=useState<EditStep|null>(step&&EDIT_STEPS.some(x=>x.key===step)?step:null),[busy,setBusy]=useState(false),[uploading,setUploading]=useState(false),[error,setError]=useState(''),[done,setDone]=useState(''),[skipped,setSkipped]=useState<string[]>([]),[held,setHeld]=useState(false),[sent,setSent]=useState(false);
- const [confirm,setConfirm]=useState(false),[removeError,setRemoveError]=useState(''),[calendars,setCalendars]=useState(false);
+ const [confirm,setConfirm]=useState(false),[removeError,setRemoveError]=useState(''),[calendars,setCalendars]=useState(false),[cleaner,setCleaner]=useState(false);
  // A save that failed keeps its changes: the owner fixes what the server asked for in another step and everything is saved together.
  const fix=held&&error?stepForError(error):null;
  const advice:Advice=held&&error?{step:fix,text:'Не сохранилось: '+error+(fix?' Заполните это, и сохранится всё вместе.':''),action:fix?'Заполнить':undefined}:sent&&!base.published?{step:null,text:REVIEW_SENT}:nextAdvice(base,skipped);
@@ -43,6 +44,7 @@ export function PropertyEdit({property,onSave,onReview,onRemove,onClose,step}:{p
  const half=(node:React.ReactNode)=><View style={{flex:1}}>{node}</View>;
 
  if(calendars&&p.id)return <FlatCalendars propertyId={p.id} onBack={()=>setCalendars(false)}/>;
+ if(cleaner&&p.id)return <RegularCleaner propertyId={p.id} onBack={()=>setCleaner(false)}/>;
  if(open){const title=EDIT_STEPS.find(s=>s.key===open)!.title;
   return <View style={e.sheet}>
    <View style={e.bar}><Pressable accessibilityRole="button" accessibilityLabel="Назад к списку" onPress={()=>{setOpen(null);if(!held)setError('');}} disabled={busy||uploading} style={e.round}><Text style={e.roundText}>←</Text></Pressable><Text accessibilityRole="header" style={e.title}>{title}</Text></View>
@@ -107,6 +109,10 @@ export function PropertyEdit({property,onSave,onReview,onRemove,onClose,step}:{p
    <View style={{flex:1,minWidth:0}}><Text style={e.stepTitle} numberOfLines={1}>{s.title}</Text><Text style={e.stepLine} numberOfLines={1}>{stepLine(base,s.key)}</Text></View>
    {needs&&<View style={e.dot}/>}
   </Pressable>;})}</View>
+  {!!p.id&&<Pressable accessibilityRole="button" accessibilityLabel="Моя уборщица" onPress={()=>{setDone('');setCleaner(true);}} style={({pressed})=>[e.step,{width:'100%'},pressed&&e.pressed]}>
+   <View style={e.icoBox}><Text style={e.ico}>🧹</Text></View>
+   <View style={{flex:1,minWidth:0}}><Text style={e.stepTitle} numberOfLines={1}>Моя уборщица</Text><Text style={e.stepLine} numberOfLines={1}>{p.regular_cleaner_name?p.regular_cleaner_name+': уборки уходят ей первой':'Закрепите свою: уборки, оплата и замена через сервис'}</Text></View>
+  </Pressable>}
   <Pressable accessibilityRole="button" accessibilityLabel="Календари площадок: Airbnb, Booking, Суточно" onPress={()=>{setDone('');setCalendars(true);}} style={({pressed})=>[e.step,{width:'100%'},pressed&&e.pressed]}>
    <View style={e.icoBox}><Text style={e.ico}>📅</Text></View>
    <View style={{flex:1,minWidth:0}}><Text style={e.stepTitle} numberOfLines={1}>Календари площадок</Text><Text style={e.stepLine} numberOfLines={1}>Airbnb, Booking, Суточно: без двойных броней</Text></View>
