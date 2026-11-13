@@ -29,6 +29,8 @@ import {GuestMode} from './GuestMode';
 import {PriceTip} from './PriceTip';
 import {kindLabel} from '../../lib/listings';
 import {guestTrips,guestTripsLabel} from '../../lib/guest-trips';
+import type {HubTab} from '../../lib/property-hub';
+import {FlatHub,FlatHubHead} from './FlatHub';
 import {ECHO_WINDOW,pinStates,recallMap,rememberMap,stageOf,targetPin,withEchoes,type MapTarget} from './map-memory';
 
 // Map-first home screen, like a taxi app: a full-screen map and one bottom sheet.
@@ -41,7 +43,7 @@ type Publish=(pins:MapPin[],focusKey:string,extra?:MapExtra)=>void;
 // The stay a guest books from the map: Kazakhstan time, as the request form keeps it.
 export type MapStay={mode:'daily'|'hourly';start:string;end:string;guests:number};
 // showNow: whether the "Сейчас" card has its place in the sheet as it is now (see MapHome).
-type Common={setScanning:(on:boolean)=>void;accountId:string;data:Row;mapData:Row|null;city:string;publish:Publish;selected:string;setSelected:(key:string)=>void;focus:string;setFocus:(key:string)=>void;snap:number;showNow:boolean;expand:(snap:number)=>void;onHead:(height:number)=>void;onReach:(bottom:number)=>void;onAsk:(text:string)=>void;onIntent:(intent:string,stay?:MapStay)=>void;onBook:(property:Row,stay:MapStay)=>void;onChanged:()=>Promise<unknown>;onOpenProcess:(kind:'booking'|'job',id:string)=>void;onOpenPage:(id:string)=>void};
+type Common={setScanning:(on:boolean)=>void;accountId:string;data:Row;mapData:Row|null;city:string;publish:Publish;selected:string;setSelected:(key:string)=>void;focus:string;setFocus:(key:string)=>void;snap:number;showNow:boolean;expand:(snap:number)=>void;onHead:(height:number)=>void;onReach:(bottom:number)=>void;onAsk:(text:string)=>void;onIntent:(intent:string,stay?:MapStay)=>void;onBook:(property:Row,stay:MapStay)=>void;onChanged:()=>Promise<unknown>;onOpenProcess:(kind:'booking'|'job',id:string)=>void;onOpenPage:(id:string)=>void;onEdit?:(id:string,step:string|null)=>void};
 const liveRequests=new Map<string,string>();
 const NOT_ON_MAP='Этого нет на карте сейчас: у объекта не отмечено место или он в другом городе.';
 // What the guest searched for outlives a visit to another page (a flat's details, the check of a booking):
@@ -241,8 +243,8 @@ function GuestPanel({setScanning,accountId,data,mapData,publish,selected,setSele
  </View>;
 }
 
-function OwnerPanel({data,mapData,publish,snap,showNow,expand,onHead,onAsk,onIntent,onChanged,onOpenProcess,onOpenPage}:Common){
- const [asked,setAsked]=useState('');
+function OwnerPanel({data,mapData,publish,snap,showNow,expand,onHead,onAsk,onIntent,onChanged,onOpenProcess,onOpenPage,onEdit,selected,setSelected}:Common){
+ const [asked,setAsked]=useState(''),[tab,setTab]=useState<HubTab>('today');
  const [inbox,setInbox]=useState<Row|null>(null),[error,setError]=useState(''),[working,setWorking]=useState(false),[skew,setSkew]=useState(0);
  const lock=useRef(false),seen=useRef(0),now=useNow(!!inbox?.offers?.length)+skew;
  // An answer just sent shows on the flat's pin for a few seconds: «Ответ отправлен» after «Готов», the price again after a refusal.
@@ -268,6 +270,13 @@ function OwnerPanel({data,mapData,publish,snap,showNow,expand,onHead,onAsk,onInt
  const searching=Number(mapData?.demand?.searching)||0;
  const clock=Date.now()/1000+skew,flats:Row[]=data.ownProperties||[];
  const card=showNow?nowCard('owner',data,clock,{quickOffers:inbox?.offers||[]}):null;
+ // A flat chosen by its pin or its row: its card of four tabs takes the sheet, the map keeps the flat in view.
+ const flat=selected.startsWith('property:')?flats.find(p=>'property:'+p.id===selected):undefined;
+ useEffect(()=>{setTab('today');},[flat?.id]);
+ if(flat)return <View style={h.block}>
+  <HeadSlot onHeight={onHead}><FlatHubHead flat={flat} data={data} now={serverNow(data)} tab={tab} open={snap>0} onTab={next=>{setTab(next);if(snap===0)expand(1);}} onBack={()=>{setSelected('');expand(0);}}/></HeadSlot>
+  {snap>0&&<FlatHub flat={flat} data={data} now={serverNow(data)} tab={tab} onOpen={onOpenProcess} onEdit={step=>step==='job'?onIntent('job'):onEdit?.(flat.id,step)} onChanged={onChanged}/>}
+ </View>;
  return <View style={h.block}>
   <HeadSlot onHeight={onHead}><MapSheetHead role="owner" text={asked} onText={setAsked} onSend={text=>{setAsked('');onAsk(text);}} onChip={action=>{/* A guest waiting for a quick answer is in this sheet; other requests are on their page. */if(action==='requests'){if(offers.length)expand(1);else onOpenPage('bookings');}else if(action==='calendar')onOpenPage('calendar');else if(action==='add-property')onIntent('add-property');}} now={card} onNow={()=>openNow(card,{expand,onOpenProcess,onOpenPage})}>
    {snap===0&&!card&&Array.isArray(data.ownProperties)&&!flats.length&&<Text style={h.note}>Добавьте первое жильё, и оно появится на карте.</Text>}
@@ -294,7 +303,7 @@ function OwnerPanel({data,mapData,publish,snap,showNow,expand,onHead,onAsk,onInt
    </View>}
    <View style={h.card}>
     <Text accessibilityRole="header" style={h.label}>Мои объекты</Text>
-    {flats.slice(0,6).map(p=><Pressable key={p.id} accessibilityRole="button" accessibilityLabel={'Мои объекты: '+p.title} onPress={()=>onOpenPage('properties')} style={h.listRow}>
+    {flats.slice(0,6).map(p=><Pressable key={p.id} accessibilityRole="button" accessibilityLabel={'Мои объекты: '+p.title} onPress={()=>{setSelected('property:'+p.id);expand(1);}} style={h.listRow}>
      <View style={h.grow}><Text numberOfLines={1} style={h.eventTitle}>{p.title}</Text><Text numberOfLines={1} style={h.note}>{[kindLabel(p.details?.type),typeof p.price==='number'?money(p.price)+' за сутки':'',p.district].filter(Boolean).join(' · ')}</Text></View>
      <Text style={h.rowPrice}>→</Text>
     </Pressable>)}
@@ -594,7 +603,7 @@ export function MapHome({ role, accountId, data, menu, chats, onChanged, onOpenP
     const timer = setTimeout(() => setNotice(''), 4000);
     return () => clearTimeout(timer);
   }, [notice]);
-  const common: Common = { setScanning, accountId, data, mapData, city, publish, selected, setSelected, focus, setFocus, snap, showNow, expand: setSnap, onHead: setHead, onReach: setReach, onAsk, onIntent, onBook, onChanged, onOpenProcess, onOpenPage };
+  const common: Common = { setScanning, accountId, data, mapData, city, publish, selected, setSelected, focus, setFocus, snap, showNow, expand: setSnap, onHead: setHead, onReach: setReach, onAsk, onIntent, onBook, onChanged, onOpenProcess, onOpenPage, onEdit };
   const center = mapCities[city] || validPoint(mapData?.center) || mapCities['Павлодар'];
 
   return (

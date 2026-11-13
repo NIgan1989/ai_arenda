@@ -11,10 +11,10 @@ const capital=(text:string)=>text.charAt(0).toUpperCase()+text.slice(1);
 const weekdays=['пн','вт','ср','чт','пт','сб','вс'];
 const dot:Record<CalendarTone,string>={stay:C.accent,request:C.warning,cleaning:C.aiTo,done:C.lineStrong,late:C.danger};
 const names:[CalendarTone,string][]=[['stay','Проживание'],['request','Заявка'],['cleaning','Уборка'],['late','Нужна проверка'],['done','Завершено']];
-export function RentalCalendar({data,role,busy,onOpen}:{data:Row;role:string;busy:boolean;onOpen:(kind:string,id:string)=>void}){
+export function RentalCalendar({data,role,busy,onOpen,propertyId=''}:{data:Row;role:string;busy:boolean;onOpen:(kind:string,id:string)=>void;propertyId?:string}){
  const now=useActivityClock()||data.serverTime||Math.floor(Date.now()/1000),today=dayStart(now),minute=Math.floor(now/60);
  const [chosen,setChosen]=useState<number|null>(null),[month,setMonth]=useState<number|null>(null),day=chosen??today,shown=month??day;
- const entries=useMemo(()=>calendarEntries(data,role,'',now),[data.bookings,data.jobs,data.user?.id,role,minute]);
+ const entries=useMemo(()=>calendarEntries(data,role,propertyId,now),[data.bookings,data.jobs,data.user?.id,role,minute,propertyId]);
  const grid=useMemo(()=>monthGrid(shown),[shown]),list=entriesOn(entries,day),next=list.length?[]:entries.filter(e=>e.start>=day+86400).slice(0,3);
  const present=new Set(grid.flatMap(d=>entriesOn(entries,d).map(e=>e.tone))),legend=names.filter(([tone])=>present.has(tone));
  const move=(by:number)=>{const target=shiftMonth(shown,by);setMonth(target);setChosen(sameMonth(target,today)?today:target);};
