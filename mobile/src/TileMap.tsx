@@ -4,10 +4,11 @@ import {C} from './styles';
 import {T} from './tokens';
 import {API_URL} from './api';
 import {MAX_ZOOM,MIN_ZOOM,TILE,fitView,groupPins,pinWidth,project,unproject,validPoint,visibleTiles,type MapPoint} from './map-math';
-import {appearDelay,flight,flightSteps,pinEvent,type Flight,type PinEvent,type PinState,type PinTone} from './map-motion';
+import {ANSWER_WINDOW,answerLeft,appearDelay,flight,flightSteps,pinEvent,type Flight,type PinEvent,type PinState,type PinTone} from './map-motion';
 
 // rank: among pins of one tone, the lower one stays visible when their boxes meet (the price, for flats).
-export type MapPin={key:string;point:MapPoint;label:string;tone?:PinTone;title?:string;rank?:number};
+// until: for a waiting pin, when the owner's time to answer ends, in seconds by this phone's clock; a strip under the label runs down to it.
+export type MapPin={key:string;point:MapPoint;label:string;tone?:PinTone;title?:string;rank?:number;until?:number};
 // scanning: a search is running; the map sends radar waves from the middle of what is visible.
 type Props={center:MapPoint;pins:MapPin[];selected?:string;onSelect?:(key:string)=>void;bottomInset?:number;topInset?:number;focusKey?:string;picking?:boolean;scanning?:boolean;onCenter?:(center:MapPoint)=>void};
 type View2={center:MapPoint;zoom:number};
@@ -47,11 +48,14 @@ function Pin({pin,x,y,more,active,still,picking,born,delay,loop,onPress}:{pin:Ma
  const translateY=Animated.add(enter.interpolate({inputRange:[0,1],outputRange:[-18,0]}),lift.interpolate({inputRange:[0,1],outputRange:[0,-4]}));
  const rotate=shake.interpolate({inputRange:[0,.2,.4,.6,.8,1],outputRange:['0deg','-9deg','8deg','-5deg','3deg','0deg']});
  const breathing=tone==='pending'||tone==='active';
+ // The time left to answer runs down as a strip under the label, at its real pace; it starts again from the right place after each refresh.
+ const left=useRef(new Animated.Value(1)).current,timed=tone==='pending'&&!!pin.until;
+ useEffect(()=>{if(!timed)return;const now=Date.now()/1000,share=answerLeft(pin.until!,now);left.setValue(share);if(still||!share)return;const a=Animated.timing(left,{toValue:0,duration:Math.round(share*ANSWER_WINDOW*1000),easing:Easing.linear,useNativeDriver:true});a.start();return()=>a.stop();},[timed,Math.round(pin.until||0),still]);
  return <View pointerEvents="box-none" style={[m.pinWrap,{left:x-90,top:y-20,zIndex:active?3:tone==='offer'||tone==='booked'?2:1}]}>
   {breathing&&!still&&<Animated.View pointerEvents="none" style={[m.ring,{backgroundColor:glow[tone],opacity:loop.interpolate({inputRange:[0,1],outputRange:[tone==='active'?.35:.55,0]}),transform:[{scale:loop.interpolate({inputRange:[0,1],outputRange:[.6,tone==='active'?1.5:1.9]})}]}]}/>}
   {!still&&<Animated.View pointerEvents="none" style={[m.ring,{backgroundColor:glow[flashTone],opacity:flash.interpolate({inputRange:[0,.05,1],outputRange:[0,.6,0]}),transform:[{scale:flash.interpolate({inputRange:[0,1],outputRange:[.5,2.6]})}]}]}/>}
   <Animated.View style={{opacity:enter.interpolate({inputRange:[0,.3,1],outputRange:[0,1,1]}),transform:[{translateY},{scale},{rotate}]}}>
-   <Pressable accessibilityRole="button" accessibilityLabel={(pin.title||'Метка')+', '+pin.label+(more?'. Рядом ещё '+more+'. Приблизить':'')} accessibilityState={{selected:active}} disabled={picking||!onPress} onPress={onPress} hitSlop={6} style={[m.pin,{backgroundColor:active?C.ink:colors.bg,borderColor:active?C.ink:colors.line}]}><Text numberOfLines={1} style={[m.pinText,{color:active?C.surface:colors.fg}]}>{pin.label}{more?<Text style={m.pinMore}>{' +'+more}</Text>:null}</Text></Pressable>
+   <Pressable accessibilityRole="button" accessibilityLabel={(pin.title||'Метка')+', '+pin.label+(more?'. Рядом ещё '+more+'. Приблизить':'')} accessibilityState={{selected:active}} disabled={picking||!onPress} onPress={onPress} hitSlop={6} style={[m.pin,{backgroundColor:active?C.ink:colors.bg,borderColor:active?C.ink:colors.line}]}><Text numberOfLines={1} style={[m.pinText,{color:active?C.surface:colors.fg}]}>{pin.label}{more?<Text style={m.pinMore}>{' +'+more}</Text>:null}</Text>{timed&&<View pointerEvents="none" style={m.timeTrack}><Animated.View style={[m.timeFill,{transform:[{scaleX:left}]}]}/></View>}</Pressable>
   </Animated.View>
  </View>;
 }
@@ -86,11 +90,12 @@ export function TileMap({center,pins,selected,onSelect,bottomInset=0,topInset=0,
  const cam=useRef(new Animated.Value(0)).current,[trip,setTrip]=useState<{f:Flight;id:number}|null>(null),tripId=useRef(0);
  const setView=(next:View2|((v:View2)=>View2),fly=true)=>{
   const from=state.current.view,to=typeof next==='function'?next(from):next;
-  const f=fly&&!still&&state.current.size.w?flight({...project(from.center,from.zoom),zoom:from.zoom},{...project(to.center,to.zoom),zoom:to.zoom},TILE):null;
+  const f=fly&&!still&&state.current.size.w?flight({...project(from.center,from.zoom),zoom:from.zoom},{...project(to.center,to.zoom),zoom:to.zoom},TILE,TILE):null;
   setTrip(f?{f,id:++tripId.current}:null);setViewNow(to);
  };
  // Before the new view is painted, the layer is put where the old one was; then it flies home.
- useLayoutEffect(()=>{if(!trip)return;cam.setValue(1);const a=Animated.timing(cam,{toValue:0,duration:T.motion.slow,easing:Easing.out(Easing.cubic),useNativeDriver:true});a.start(({finished})=>{if(finished)setTrip(t=>t&&t.id===trip.id?null:t);});return()=>a.stop();},[trip?.id]);
+ useLayoutEffect(()=>{if(!trip)return;cam.setValue(1);// A short move eases out; a longer one rises and lands, so it reads as one flight over the city.
+ const a=Animated.timing(cam,{toValue:0,duration:trip.f.ms,easing:trip.f.arc?Easing.inOut(Easing.cubic):Easing.out(Easing.cubic),useNativeDriver:true});a.start(({finished})=>{if(finished)setTrip(t=>t&&t.id===trip.id?null:t);});return()=>a.stop();},[trip?.id]);
  const camera=useMemo(()=>{
   if(!trip||!size.w)return null;const s=flightSteps(trip.f,size.w/2,size.h/2,size.w/2,originY);
   return [{translateX:cam.interpolate({inputRange:s.input,outputRange:s.x})},{translateY:cam.interpolate({inputRange:s.input,outputRange:s.y})},{scale:cam.interpolate({inputRange:s.input,outputRange:s.scale})}];
@@ -186,7 +191,7 @@ const m=StyleSheet.create({
  host:{flex:1,backgroundColor:C.line,overflow:'hidden'},tile:{position:'absolute',width:TILE,height:TILE},
  pinWrap:{position:'absolute',width:180,height:40,alignItems:'center',justifyContent:'center'},
  pin:{minHeight:32,minWidth:44,paddingHorizontal:12,borderRadius:16,borderWidth:1,alignItems:'center',justifyContent:'center',shadowColor:C.ink,shadowOffset:{width:0,height:2},shadowOpacity:.18,shadowRadius:5,elevation:3},
- pinText:{fontSize:14,fontWeight:'600'},pinMore:{fontWeight:'500',opacity:.7},ring:{position:'absolute',width:56,height:56,borderRadius:999},
+ pinText:{fontSize:14,fontWeight:'600'},timeTrack:{position:'absolute',left:8,right:8,bottom:3,height:3,borderRadius:2,backgroundColor:C.warningLine,overflow:'hidden'},timeFill:{flex:1,backgroundColor:C.warning,transformOrigin:'left'},pinMore:{fontWeight:'500',opacity:.7},ring:{position:'absolute',width:56,height:56,borderRadius:999},
  radar:{position:'absolute',width:240,height:240,alignItems:'center',justifyContent:'center'},wave:{position:'absolute',width:240,height:240,borderRadius:999,borderWidth:2,borderColor:C.accent,backgroundColor:C.accentSoft},radarDot:{width:12,height:12,borderRadius:8,backgroundColor:C.accent,borderWidth:2,borderColor:C.surface},
  cross:{position:'absolute',width:56,height:56,alignItems:'center',justifyContent:'flex-end'},landing:{position:'absolute',bottom:-12,width:56,height:24,borderRadius:999,borderWidth:2,borderColor:C.accent},crossShadow:{position:'absolute',bottom:-3,width:14,height:6,borderRadius:999,backgroundColor:C.ink},
  crossHead:{width:24,height:24,borderRadius:12,backgroundColor:C.accent,borderWidth:4,borderColor:C.surface},crossStem:{width:3,height:10,backgroundColor:C.accent},
