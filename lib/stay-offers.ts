@@ -43,7 +43,7 @@ async function busyAround(db:D1Database,b:Row,t:number):Promise<[number,number][
 export function wantedHours(text:string){
  const m=text.match(/на\s+(\d{1,2})\s*(?:ч|час)/i);if(m)return Math.max(1,Number(m[1]));
  if(/пар[уы] час/i.test(text))return 2;
- if(/на\s+(?:один\s+)?час(?:ик|ок)?\b|на\s+часик/i.test(text))return 1;
+ if(/на\s+(?:один\s+|одн[уо]\s+)?час(?:ик|ок)?(?![а-яё])/i.test(text))return 1;
  return null;
 }
 

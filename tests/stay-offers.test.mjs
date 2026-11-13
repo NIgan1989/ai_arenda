@@ -10,7 +10,7 @@ async function ask(f,text,setMode=true){
 }
 
 test('the hours the guest named',()=>{
- assert.equal(wantedHours('Можно продлить на 2 часа?'),2);assert.equal(wantedHours('на пару часов'),2);assert.equal(wantedHours('продлить на часик'),1);assert.equal(wantedHours('Можно продлить?'),null);
+ assert.equal(wantedHours('Можно продлить на 2 часа?'),2);assert.equal(wantedHours('на пару часов'),2);assert.equal(wantedHours('продлить на часик'),1);assert.equal(wantedHours('Можно продлить на час?'),1);assert.equal(wantedHours('Можно продлить на один час?'),1);assert.equal(wantedHours('на часа три'),null);assert.equal(wantedHours('Можно продлить?'),null);
 });
 
 test('free hours stop before the next stay and its cleaning',()=>{
@@ -59,7 +59,7 @@ test('under the owner\'s automatic extension rule the button applies at once',as
 test('a next guest right after: the AI says it is not possible; early check-in fits before the stay',async()=>{
  const f=await fixture();try{
   f.db.raw.prepare('UPDATE properties SET published=1').run();
-  const b=f.db.raw.prepare('SELECT * FROM bookings WHERE id=?').get(f.booking),next=Math.ceil((b.occupied_until+30*60)/H)*H;
+  const b=f.db.raw.prepare('SELECT * FROM bookings WHERE id=?').get(f.booking),next=b.occupied_until+30*60;
   const second=(await f.guest.createBooking({propertyId:f.property,start:iso(next),end:iso(next+3*H),guests:1,billingMode:'hourly',requestKey:'next',acceptTerms:true})).id;
   await f.owner.bookingAction(second,{action:'confirm',cleaningFee:0});
   const reply=await ask(f,'Можно продлить?');assert.match(reply.body,/не получится/);assert.equal(f.db.raw.prepare('SELECT COUNT(*) n FROM stay_offers').get().n,0);
