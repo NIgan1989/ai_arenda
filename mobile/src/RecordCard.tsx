@@ -1,3 +1,4 @@
+import {jobPayNote} from '../../lib/regular-cleaner-text';
 import React,{useState} from 'react';
 import {View,Text,Pressable,StyleSheet,Platform} from 'react-native';
 import {C,type} from './styles';
@@ -12,11 +13,11 @@ const tones:Record<string,[string,string]>={success:[C.successSoft,C.success],wa
 export function RecordHead({kind,item,role,userId,application}:{kind:'booking'|'job';item:Row;role:string;userId:string;application?:Row}){
  const status=processStatus(kind,item,role,userId,application),[bg,ink]=tones[status.tone]||tones.neutral,paid=item.payment_status==='owner_verified',place=[item.city,item.district].filter(Boolean).join(', ');
  return <View style={r.head}>
-  <View style={r.tags}><Text style={[r.status,{backgroundColor:bg,color:ink}]}>{status.label}</Text>{!!item.demo_owner&&<Text style={[r.status,{backgroundColor:C.surfaceAlt,color:C.muted}]}>{kind==='job'?'Учебное':'Учебная'}</Text>}</View>
+  <View style={r.tags}><Text style={[r.status,{backgroundColor:bg,color:ink}]}>{status.label}</Text>{!!item.demo_owner&&<Text style={[r.status,{backgroundColor:C.surfaceAlt,color:C.muted}]}>{kind==='job'?'Учебное':'Учебная'}</Text>}{kind==='job'&&!!item.regular&&<Text style={[r.status,{backgroundColor:C.accentSoft,color:C.accentPressed}]}>Постоянный исполнитель</Text>}</View>
   <Text accessibilityRole="header" style={r.title}>{item.title}</Text>
   <Text style={r.when}>{recordSpan(item.start,item.end)}</Text>
   {!!place&&<Text style={r.where}>{place}</Text>}
-  <View style={r.sum}><Text style={r.amount}>{money(kind==='job'?item.fee:item.amount)}</Text><Text style={[r.sumNote,kind==='booking'&&paid&&{color:C.success}]}>{kind==='job'?'за выполнение':paid?'оплата отмечена владельцем':'оплата не подтверждена'}</Text></View>
+  <View style={r.sum}><Text style={r.amount}>{money(kind==='job'?item.fee:item.amount)}</Text><Text style={[r.sumNote,(kind==='booking'&&paid||kind==='job'&&!!item.guarantee)&&{color:C.success}]}>{kind==='job'?jobPayNote(item):paid?'оплата отмечена владельцем':'оплата не подтверждена'}</Text></View>
  </View>;
 }
 export function RecordJourney({kind,item}:{kind:'booking'|'job';item:Row}){

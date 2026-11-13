@@ -8,7 +8,10 @@ export const accountDeletionColumns:Record<string,string>={
  "listing_tips":"id,property_id,owner_id,kind,subject,mine,theirs,count,leaders,value,details_version,policy_version,status,created_at,expires_at,decided_at",
  "load_forecasts":"id,owner_id,week_start,city,days,advice,property_id,policy_version,from_value,to_value,from_hourly,to_hourly,from_nightly,to_nightly,percent,reasons,status,created_at,expires_at,decided_at",
  "price_suggestions":"id,property_id,owner_id,direction,percent,policy_version,from_daily,to_daily,from_hourly,to_hourly,from_nightly,to_nightly,signals,reasons,status,created_at,expires_at,decided_at",
- "platform_billing":"id,enabled,starts_at,rate_bp,min_fee,max_fee,free_bookings,version,updated_by,updated_at,ai_rate_bp",
+ "platform_billing":"id,enabled,starts_at,rate_bp,min_fee,max_fee,free_bookings,version,updated_by,updated_at,ai_rate_bp,cleaning_rate_bp,pair_rate_bp,pair_month_cap",
+ "regular_cleaners":"property_id,owner_id,cleaner_id,created_at",
+ "cleaning_holds":"job_id,owner_id,cleaner_id,property_id,amount,status,created_at,due_at,paid_at,paid_by,payout_note",
+ "cleaning_commissions":"job_id,owner_id,cleaner_id,property_id,fee,rate_bp,amount,pair,mode,created_at",
  "stay_reviews":"booking_id,property_id,guest_id,owner_id,rating,body,created_at",
  "platform_commissions":"booking_id,owner_id,property_id,booking_amount,rate_bp,amount,mode,settings_version,created_at,managed",
  "owner_balance_entries":"id,owner_id,kind,amount,note,actor_id,request_key,created_at",
@@ -98,6 +101,13 @@ export const accountDeletionColumns:Record<string,string>={
  "command_receipts": "user_id,key,digest,result"
 };
 export const accountDeletionFenceSql:Record<string,string>={
+ "account_erased_regular_cleaners_insert": "CREATE TRIGGER account_erased_regular_cleaners_insert BEFORE INSERT ON regular_cleaners WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.owner_id OR user_id=NEW.cleaner_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END",
+ "account_erased_regular_cleaners_update": "CREATE TRIGGER account_erased_regular_cleaners_update BEFORE UPDATE ON regular_cleaners WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.owner_id OR user_id=NEW.cleaner_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END",
+ "account_erased_cleaning_holds_insert": "CREATE TRIGGER account_erased_cleaning_holds_insert BEFORE INSERT ON cleaning_holds WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.owner_id OR user_id=NEW.cleaner_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END",
+ "account_erased_cleaning_holds_update": "CREATE TRIGGER account_erased_cleaning_holds_update BEFORE UPDATE ON cleaning_holds WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.owner_id OR user_id=NEW.cleaner_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END",
+ "account_erased_cleaning_commissions_insert": "CREATE TRIGGER account_erased_cleaning_commissions_insert BEFORE INSERT ON cleaning_commissions WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.owner_id OR user_id=NEW.cleaner_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END",
+ "account_erased_cleaning_commissions_update": "CREATE TRIGGER account_erased_cleaning_commissions_update BEFORE UPDATE ON cleaning_commissions WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.owner_id OR user_id=NEW.cleaner_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END",
+
  "account_erased_stay_reviews_insert": "CREATE TRIGGER account_erased_stay_reviews_insert BEFORE INSERT ON stay_reviews WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.guest_id OR user_id=NEW.owner_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END",
  "account_erased_stay_offers_insert": "CREATE TRIGGER account_erased_stay_offers_insert BEFORE INSERT ON stay_offers WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.guest_id OR user_id=NEW.owner_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END",
  "account_erased_stay_offers_update": "CREATE TRIGGER account_erased_stay_offers_update BEFORE UPDATE ON stay_offers WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.guest_id OR user_id=NEW.owner_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END",

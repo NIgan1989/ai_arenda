@@ -1,0 +1,18 @@
+/* «Моя уборщица»: the pinned cleaner or candidates, then what the pair gets. */
+.rc-list,.rc-benefits{display:flex;flex-direction:column;gap:var(--t-space-8);margin:0;padding:0;list-style:none}
+.rc-person{display:flex;align-items:center;gap:var(--t-space-12);min-height:64px;padding:var(--t-space-12);border:1px solid var(--t-line);border-radius:var(--t-radius-md);background:var(--t-surface)}
+.rc-person.is-pinned{border-color:var(--t-accent);background:var(--t-accent-soft)}
+.rc-person .pe-text small{white-space:normal}
+.rc-avatar{flex:none;display:grid;place-items:center;width:40px;height:40px;border-radius:var(--t-radius-full);background:var(--t-accent);color:#fff;font-weight:700;font-size:var(--t-font-body)}
+.rc-badge{flex:none;display:inline-flex;align-items:center;gap:var(--t-space-4);padding:var(--t-space-4) var(--t-space-8);border-radius:var(--t-radius-full);background:var(--t-surface);color:var(--t-accent);font-size:var(--t-font-caption);font-weight:600}
+.rc-pin{flex:none;display:inline-flex;align-items:center;justify-content:center;min-height:var(--t-control-compact);padding:0 var(--t-space-16);border:0;border-radius:var(--t-radius-full);background:var(--t-accent);color:var(--t-on-accent);font:inherit;font-size:var(--t-font-label);font-weight:600;cursor:pointer}
+.rc-pin:disabled{opacity:.45;cursor:default}
+.rc-benefits li{display:flex;align-items:flex-start;gap:var(--t-space-12);padding:var(--t-space-8) 0}
+.rc-benefits .pe-text small{white-space:normal}
+.rc-benefits li.is-warn .pe-ico{background:var(--t-warning-soft);color:var(--t-warning)}
+.rc-benefits li.is-warn strong{color:var(--t-warning)}
+.rc-empty{display:flex;gap:var(--t-space-8);align-items:flex-start;margin:0;padding:var(--t-space-12);border-radius:var(--t-radius-md);background:var(--t-surface-alt);color:var(--t-muted);font-size:var(--t-font-label)}
+.rc .pe-remove-link{color:var(--t-muted)}
+.rc-note{margin:0;padding:var(--t-space-12) var(--t-space-16);border-radius:var(--t-radius-md);background:var(--t-accent-soft);font-size:var(--t-font-label);line-height:var(--t-line-label)}
+.rc-money{display:flex;align-items:center;gap:var(--t-space-8);margin:0;color:var(--t-success);font-size:var(--t-font-label);font-weight:600}
+.dispatch-perks{color:var(--t-success);font-weight:600}

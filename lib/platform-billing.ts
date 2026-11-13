@@ -2,6 +2,7 @@ import {DomainError,number,required} from './domain';
 import type {RentalService} from './service';
 import {epoch,uuid,q,one,rows,type Row} from './operation-core';
 import {underAutopilot} from './autopilot';
+import {availableSql,cleanerPayouts} from './regular-cleaner';
 
 // Platform revenue model: the owner pays a commission for every booking confirmed
 // through the service. While billing is off (or before its start date) every
@@ -9,7 +10,7 @@ import {underAutopilot} from './autopilot';
 // A cancelled booking never costs the owner anything: balances count only
 // commissions whose booking is still confirmed or completed.
 
-export type BillingSettings={enabled:number;starts_at:number;rate_bp:number;ai_rate_bp:number;min_fee:number;max_fee:number;free_bookings:number;version:number;updated_at:number};
+export type BillingSettings={enabled:number;starts_at:number;rate_bp:number;ai_rate_bp:number;cleaning_rate_bp:number;pair_rate_bp:number;pair_month_cap:number;min_fee:number;max_fee:number;free_bookings:number;version:number;updated_at:number};
 const live="(SELECT status FROM bookings WHERE id=c.booking_id) IN ('confirmed','completed')";
 
 export function commissionFor(amount:number,s:Pick<BillingSettings,'rate_bp'|'min_fee'|'max_fee'>){
@@ -33,11 +34,12 @@ export function accrueCommission(db:D1Database,bookingId:string,auditId:string,a
 }
 
 export async function billingSettings(db:D1Database){
- return (await one(db,"SELECT enabled,starts_at,rate_bp,ai_rate_bp,min_fee,max_fee,free_bookings,version,updated_at FROM platform_billing WHERE id='global'")) as BillingSettings|null;
+ return (await one(db,"SELECT enabled,starts_at,rate_bp,ai_rate_bp,cleaning_rate_bp,pair_rate_bp,pair_month_cap,min_fee,max_fee,free_bookings,version,updated_at FROM platform_billing WHERE id='global'")) as BillingSettings|null;
 }
 export function billingPhase(s:BillingSettings|null,at=epoch()){return !s||!s.enabled?'off':s.starts_at>at?'scheduled':'active';}
 
-const balanceSql=`COALESCE((SELECT SUM(amount) FROM owner_balance_entries e WHERE e.owner_id=o.id),0)-COALESCE((SELECT SUM(c.amount) FROM platform_commissions c WHERE c.owner_id=o.id AND c.mode='charged' AND ${live}),0)`;
+// Free balance: top-ups minus booking and cleaning commissions and cleaning reserves.
+const balanceSql=availableSql('o.id');
 
 const ownerFilter="EXISTS(SELECT 1 FROM properties p WHERE p.owner_id=o.id AND p.demo_owner IS NULL)";
 // Paged and searchable on the server, so every owner stays reachable however many there are.
@@ -55,7 +57,7 @@ export async function billingState(service:RentalService){
  const db=service.db,at=epoch(),month=at-30*86400;
  const settings=await billingSettings(db);
  const totals=(since:number)=>one(db,`SELECT COUNT(*) bookings,COALESCE(SUM(c.booking_amount),0) turnover,COALESCE(SUM(c.amount),0) projected,COALESCE(SUM(CASE WHEN c.mode='charged' THEN c.amount ELSE 0 END),0) charged,COALESCE(SUM(CASE WHEN c.mode='free' THEN c.amount ELSE 0 END),0) waived FROM platform_commissions c WHERE c.created_at>=? AND ${live}`,since);
- const [last30,allTime,monthly,owners,topups,ai,history,debtors]=await Promise.all([
+ const [last30,allTime,monthly,owners,topups,ai,history,debtors,cleaners]=await Promise.all([
   totals(month),totals(0),
   rows(db,`SELECT strftime('%Y-%m',c.created_at+18000,'unixepoch') month,COUNT(*) bookings,SUM(c.booking_amount) turnover,SUM(c.amount) projected,SUM(CASE WHEN c.mode='charged' THEN c.amount ELSE 0 END) charged FROM platform_commissions c WHERE c.created_at>=? AND ${live} GROUP BY month ORDER BY month DESC`,at-183*86400),
   billingOwners(service,{}),
@@ -63,12 +65,14 @@ export async function billingState(service:RentalService){
   one(db,'SELECT COALESCE(SUM(charged_cost_micros),0) micros,COUNT(*) requests FROM ai_usage_reservations WHERE created_at>=?',month),
   rows(db,"SELECT action,created_at at FROM audit_events WHERE entity_id='platform-billing' ORDER BY created_at DESC,rowid DESC LIMIT 10"),
   one(db,`SELECT COUNT(*) count FROM profiles o WHERE ${ownerFilter} AND ${balanceSql}<0`),
+  cleanerPayouts(db),
  ]);
  return {
   settings,phase:billingPhase(settings,at),serverTime:at,
   last30,allTime,monthly,
   owners:owners.owners,ownersTotal:owners.total,ownersLimit:owners.limit,
   debtors:debtors?.count||0,
+  cleaners,
   topups,
   aiCostUsd30:Math.round((ai?.micros||0)/10000)/100,aiRequests30:ai?.requests||0,
   history:history.map(h=>{try{return {...JSON.parse(h.action),at:h.at};}catch{return {action:'unknown',at:h.at};}}),
@@ -85,6 +89,12 @@ export async function saveBillingSettings(service:RentalService,body:Row){
  if(!Number.isFinite(percent)||percent<0||percent>30||Math.round(percent*10)!==percent*10)throw new DomainError('Комиссия: от 0 до 30%, с шагом 0,1.');
  const aiPercent=body.aiRatePercent===undefined?Number(((await billingSettings(service.db))?.ai_rate_bp??1000)/100):Number(body.aiRatePercent);
  if(!Number.isFinite(aiPercent)||aiPercent<0||aiPercent>30||Math.round(aiPercent*10)!==aiPercent*10)throw new DomainError('Комиссия за режим «ИИ»: от 0 до 30%, с шагом 0,1.');
+ // Cleaning commissions: every finished cleaning and the lower rate with a monthly cap for a regular pair.
+ const prev=await billingSettings(service.db);
+ const pct=(v:any,fallback:number,label:string)=>{const n=v===undefined?fallback/100:Number(v);if(!Number.isFinite(n)||n<0||n>30||Math.round(n*10)!==n*10)throw new DomainError(label+': от 0 до 30%, с шагом 0,1.');return Math.round(n*100);};
+ const cleaningRate=pct(body.cleaningRatePercent,prev?.cleaning_rate_bp??1000,'Комиссия за уборку'),pairRate=pct(body.pairRatePercent,prev?.pair_rate_bp??500,'Комиссия для постоянной пары');
+ const pairCap=body.pairMonthCap===undefined?(prev?.pair_month_cap??2000):number(body.pairMonthCap,'Потолок в месяц для пары',0,10000000);
+ if(pairRate>cleaningRate)throw new DomainError('Комиссия для постоянной пары не может быть выше обычной.');
  const aiRate=Math.round(aiPercent*100),rate=Math.round(percent*100),minFee=number(body.minFee??0,'Минимум за бронь',0,1000000),maxFee=number(body.maxFee??0,'Максимум за бронь',0,10000000);
  if(maxFee>0&&maxFee<minFee)throw new DomainError('Максимум за бронь не может быть меньше минимума.');
  const free=number(body.freeBookings??0,'Бесплатные брони',0,1000),version=number(body.expectedVersion,'Версия условий',1,10000000),at=epoch();
@@ -92,15 +102,15 @@ export async function saveBillingSettings(service:RentalService,body:Row){
  // An already running start date is kept as is; only a new or rescheduled start must lie ahead.
  let startsAt=0;
  if(body.enabled){startsAt=number(body.startsAt,'Дата начала',0,4102444800);const running=before.enabled===1&&before.starts_at<=at&&startsAt===before.starts_at;if(!running&&startsAt<at-60)throw new DomainError('Дата начала платы не может быть в прошлом.');}
- const changed=body.enabled&&(!before.enabled||before.starts_at!==startsAt||before.rate_bp!==rate||before.ai_rate_bp!==aiRate||before.min_fee!==minFee||before.max_fee!==maxFee||before.free_bookings!==free);
+ const changed=body.enabled&&(!before.enabled||before.starts_at!==startsAt||before.rate_bp!==rate||before.ai_rate_bp!==aiRate||before.min_fee!==minFee||before.max_fee!==maxFee||before.free_bookings!==free||before.cleaning_rate_bp!==cleaningRate||before.pair_rate_bp!==pairRate||before.pair_month_cap!==pairCap);
  const event=uuid(),statements=[
-  q(service.db,"UPDATE platform_billing SET enabled=?,starts_at=?,rate_bp=?,ai_rate_bp=?,min_fee=?,max_fee=?,free_bookings=?,version=version+1,updated_by=?,updated_at=? WHERE id='global' AND version=?",body.enabled?1:0,startsAt,rate,aiRate,minFee,maxFee,free,service.userId,at,version),
-  q(service.db,'INSERT INTO audit_events SELECT ?,?,?,?,? WHERE changes()>0',event,service.userId,'platform-billing',JSON.stringify({action:'billing.settings_changed',enabled:body.enabled,startsAt,ratePercent:percent,aiRatePercent:aiPercent,minFee,maxFee,freeBookings:free,previousVersion:version}),at),
+  q(service.db,"UPDATE platform_billing SET enabled=?,starts_at=?,rate_bp=?,ai_rate_bp=?,cleaning_rate_bp=?,pair_rate_bp=?,pair_month_cap=?,min_fee=?,max_fee=?,free_bookings=?,version=version+1,updated_by=?,updated_at=? WHERE id='global' AND version=?",body.enabled?1:0,startsAt,rate,aiRate,cleaningRate,pairRate,pairCap,minFee,maxFee,free,service.userId,at,version),
+  q(service.db,'INSERT INTO audit_events SELECT ?,?,?,?,? WHERE changes()>0',event,service.userId,'platform-billing',JSON.stringify({action:'billing.settings_changed',enabled:body.enabled,startsAt,ratePercent:percent,aiRatePercent:aiPercent,cleaningRatePercent:cleaningRate/100,pairRatePercent:pairRate/100,pairMonthCap:pairCap,minFee,maxFee,freeBookings:free,previousVersion:version}),at),
  ];
  let notified=0;
  if(changed){
   const fees=[minFee?`не меньше ${minFee} ₸`:'',maxFee?`не больше ${maxFee} ₸`:''].filter(Boolean).join(' и ');
-  const text=`С ${dateText(Math.max(startsAt,at))} сервис берёт комиссию ${String(percent).replace('.',',')}% с брони, подтверждённой через приложение${fees?` (${fees})`:''}${aiPercent!==percent?`; для квартир в режиме «ИИ», где AI администратор ведёт гостей и уборку за вас, ${String(aiPercent).replace('.',',')}%`:''}.${free?` Первые брони бесплатно: ${free}.`:''} Отменённые брони не оплачиваются.`;
+  const text=`С ${dateText(Math.max(startsAt,at))} сервис берёт комиссию ${String(percent).replace('.',',')}% с брони, подтверждённой через приложение${fees?` (${fees})`:''}${aiPercent!==percent?`; для квартир в режиме «ИИ», где AI администратор ведёт гостей и уборку за вас, ${String(aiPercent).replace('.',',')}%`:''}.${free?` Первые брони бесплатно: ${free}.`:''} Отменённые брони не оплачиваются.${cleaningRate>0?` За принятую уборку ${String(cleaningRate/100).replace('.',',')}%, для постоянного исполнителя ${String(pairRate/100).replace('.',',')}%${pairCap>0?` и не больше ${pairCap} ₸ в месяц`:''}.`:''}`;
   for(const o of await owners(service.db)){statements.push(q(service.db,'INSERT OR IGNORE INTO notifications SELECT ?,?,?,?,?,? WHERE EXISTS(SELECT 1 FROM audit_events WHERE id=?)',uuid(),o.id,text,'owner:billing:'+(version+1),0,at,event));notified++;}
  }
  const results=await service.db.batch(statements);

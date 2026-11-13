@@ -66,7 +66,8 @@ export function planAdministrator(data:Row,t:number):AdministratorTask[]{
    if(j.assigned_to)add(j,'job','overdue',j.assigned_to,'cleaner','Передать результат или сообщить о задержке',subject+' · срок уборки истёк',j.end,3);
   }else if(j.status==='in_progress'&&due(j.end,j.assigned_to,'cleaner'))add(j,'job','report',j.assigned_to,'cleaner','Завершить уборку и передать отчёт',subject+' · заполните чек-лист и опишите результат',j.end,2);
   if(j.status==='submitted')add(j,'job','review',owner,'owner','Принять уборку или вернуть на доработку',subject+' · исполнитель передал отчёт; готовность ожидает проверки',(j.submitted_at||j.end)+1800,t>=(j.submitted_at||j.end)+1800?3:2);
-  if(j.status==='completed'&&!j.settled_at)add(j,'job','settlement',owner,'owner','Рассчитаться с исполнителем',subject+' · работа принята; отметьте фактическую оплату после расчёта',j.end+86400,j.end+86400<=t?3:2);
+  // A cleaning paid from the reserve is settled by the service, the owner owes nothing more.
+  if(j.status==='completed'&&!j.settled_at&&!j.guarantee)add(j,'job','settlement',owner,'owner','Рассчитаться с исполнителем',subject+' · работа принята; отметьте фактическую оплату после расчёта',j.end+86400,j.end+86400<=t?3:2);
   if(['open','assigned','in_progress','submitted'].includes(j.status)){
    const next=data.bookings.filter((b:Row)=>b.property_id===j.property_id&&b.id!==j.booking_id&&b.status==='confirmed'&&!b.terms?.actual_checkin&&!b.terms?.actual_checkout&&b.start>=j.start).sort((a:Row,b:Row)=>a.start-b.start)[0];
    if(next&&(j.end>next.start||next.start<=t+3600))add(j,'job','next-arrival',owner,'owner','Под угрозой следующий заезд',subject+' · уборка и проверка ещё не завершены; согласуйте подготовку и предупредите следующего гостя',next.start,3);
