@@ -686,3 +686,122 @@ html[data-design="unified"] .workspace-shell.release-workspace[data-section="map
 .smart-map .smart-best{width:fit-content}
 .smart-map .smart-reason{display:inline-block;max-width:100%}
 .smart-map .smart-deal{width:fit-content;background:var(--t-success-soft);color:var(--t-success)}
+
+/* ---------- Several results: a list in the sheet, the map with their pins above it ---------- */
+.smart-map .smart-list {
+  display: grid;
+  gap: var(--t-space-8);
+  min-width: 0;
+}
+
+.smart-map .smart-list > ul {
+  display: grid;
+  gap: var(--t-space-4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.smart-map .smart-row {
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--t-space-12);
+  width: 100%;
+  padding: var(--t-space-8);
+  border: 0;
+  border-radius: var(--t-radius-lg);
+  background: var(--t-surface-alt);
+  color: var(--t-ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.smart-map .smart-row:focus-visible {
+  outline: 2px solid var(--t-focus);
+  outline-offset: 2px;
+}
+
+.smart-map .smart-row > svg {
+  color: var(--t-muted);
+}
+
+.smart-map .smart-row-cover {
+  width: 56px;
+  height: 56px;
+  overflow: hidden;
+  border-radius: var(--t-radius-md);
+  background: var(--t-surface);
+}
+
+.smart-map .smart-row-cover .listing-photo,
+.smart-map .smart-row-cover .photo-placeholder > svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.smart-map .smart-row-cover .photo-placeholder {
+  height: 100%;
+  min-height: 0;
+  gap: 0;
+  padding: 0;
+}
+
+.smart-map .smart-row-cover .photo-placeholder > small {
+  display: none;
+}
+
+.smart-map .smart-row-text {
+  display: grid;
+  gap: var(--t-space-2);
+  min-width: 0;
+}
+
+.smart-map .smart-row-text > strong {
+  overflow: hidden;
+  font-size: var(--t-font-label);
+  line-height: var(--t-line-label);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.smart-map .smart-row-price {
+  color: var(--t-accent);
+  font-size: var(--t-font-label);
+  line-height: var(--t-line-label);
+  font-weight: 700;
+}
+
+.smart-map .smart-row-text > .smart-window {
+  justify-self: start;
+}
+
+.smart-map .smart-list-foot {
+  position: sticky;
+  bottom: calc(-1 * var(--t-space-16));
+  display: grid;
+  gap: var(--t-space-4);
+  padding: var(--t-space-8) 0 var(--t-space-16);
+  background: var(--t-surface);
+}
+
+.smart-map .smart-list-foot > small {
+  text-align: center;
+}
+
+/* The back row of one result sits in the flow of a short sheet; it does not need to stick. */
+.smart-map .smart-offer > .smart-back {
+  position: static;
+  margin-top: calc(-1 * var(--t-space-8));
+}
+
+@media (max-width: 700px) {
+  /* The list leaves the upper half of the screen to the map and scrolls inside the sheet. */
+  .smart-map .smart-stage[data-view="list"]:not([data-expanded="true"]) {
+    max-height: 56%;
+  }
+}

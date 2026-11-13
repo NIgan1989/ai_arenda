@@ -1,7 +1,7 @@
 'use client';
 import {Thinking} from './thinking';
 import { useEffect, useId, useRef, useState, type FormEvent, type PointerEvent, type Ref } from 'react';
-import { ChevronDown, LocateFixed, MapPin, Minus, Plus, SlidersHorizontal, Sparkles } from 'lucide-react';
+import { CalendarCheck, ChevronDown, ChevronRight, LocateFixed, MapPin, Minus, Plus, SlidersHorizontal, Sparkles } from 'lucide-react';
 import { AiLine, roleAiLine, type AiChip } from './ai-line';
 import { NowCard, type NowCardData } from './now-card';
 import {
@@ -30,8 +30,8 @@ type SearchIntroProps = {
   focus: SearchFocus | null;
   card: NowCardData | null;
   onOpenCard?: (card: NowCardData) => void;
-  /** Opens the map of the guest's own stay: the route to the flat and location sharing. */
-  onRoute?: () => void;
+  /** The guest's own bookings: the row under the line that opens them on the map. */
+  trips?: { label: string; hint?: string; onOpen: () => void };
   onText: (text: string) => void;
   onChip: (chip: AiChip) => void;
   onChange: (patch: Row) => void;
@@ -104,9 +104,12 @@ export function SearchIntro(props: SearchIntroProps) {
       {/* A note is the answer to what was just typed and takes the card's place while it is shown. On a short phone
           the card would leave too little of the map: there it waits in the opened sheet (see the styles). */}
       {!note && <NowCard card={props.card} onOpen={props.onOpenCard} />}
-      {!note && props.onRoute && props.card?.entityKind === 'booking' && (
-        <button type="button" className="smart-route" onClick={props.onRoute}>
-          Маршрут и заселение
+      {props.trips && !expanded && (
+        <button type="button" className="map-home-refine request-trips" onClick={props.trips.onOpen}>
+          <CalendarCheck size={18} aria-hidden="true" />
+          <span className="request-trips-label">{props.trips.label}</span>
+          {props.trips.hint && <span className="request-trips-hint">{props.trips.hint}</span>}
+          <ChevronRight size={18} aria-hidden="true" />
         </button>
       )}
       <button type="button" className="map-home-refine" aria-expanded={expanded} onClick={() => onExpanded(!expanded)}>

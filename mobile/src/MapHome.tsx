@@ -28,6 +28,7 @@ import {GuestResults} from './GuestResults';
 import {GuestMode} from './GuestMode';
 import {PriceTip} from './PriceTip';
 import {kindLabel} from '../../lib/listings';
+import {guestTrips,guestTripsLabel} from '../../lib/guest-trips';
 import {ECHO_WINDOW,pinStates,recallMap,rememberMap,stageOf,targetPin,withEchoes,type MapTarget} from './map-memory';
 
 // Map-first home screen, like a taxi app: a full-screen map and one bottom sheet.
@@ -202,12 +203,12 @@ function GuestPanel({setScanning,accountId,data,mapData,publish,selected,setSele
    {live&&booked&&<>
     <Text accessibilityRole="header" style={h.cardTitle}>Заявка на бронь создана</Text>
     <Text style={h.note}>{booking?'Статус: '+(labels[booking.status]||booking.status)+'. ':''}Адрес и инструкции заезда появятся после подтверждения. Оплату отмечает владелец.</Text>
-    <Action title="Открыть мои брони" onPress={()=>onOpenPage('bookings')}/><Action secondary title="Новый подбор" onPress={reset}/>
+    <Action title={booking?'Открыть бронь':'Мои брони'} onPress={()=>booking?onOpenProcess('booking',booking.id):onOpenPage('bookings')}/><Action secondary title="Новый подбор" onPress={reset}/>
    </>}
    {live&&['empty','expired','cancelled'].includes(status)&&<>
     <Text accessibilityRole="header" style={h.cardTitle}>{status==='empty'?'Сейчас никто не подтвердил':status==='expired'?'Время подбора вышло':'Подбор отменён'}</Text>
     <Text style={h.note}>{status==='empty'?'Подходящие владельцы не ответили или отказали. Попробуйте изменить время, бюджет или район.':'Условия сохранены. Можно запустить подбор заново.'}</Text>
-    <Action title="Изменить условия" onPress={reset}/><Action secondary title="Открыть каталог" onPress={()=>onOpenPage('catalog')}/>
+    <Action title="Изменить условия" onPress={reset}/>
    </>}
    {!!error&&<Text accessibilityRole="alert" style={h.error}>{error}</Text>}
    {active&&<Action secondary danger title="Отменить подбор" disabled={working||status==='booking'} onPress={cancel}/>}
@@ -220,10 +221,13 @@ function GuestPanel({setScanning,accountId,data,mapData,publish,selected,setSele
  const card=showNow&&!picked&&!hint&&!error?nowCard('guest',data,serverNow(data)):null;
  // On a short phone the card lives in the opened sheet, but never above what the person has just asked for:
  // with the list of flats or the form opened by "Уточнить" on screen it goes under them.
+ const trips=guestTrips(data,serverNow(data));
  const cardBelow=snap>0&&(!!preview||refine),openCard=()=>openNow(card,{expand,onOpenProcess,onOpenPage});
  const head=<MapSheetHead role="guest" text={asked} onText={setAsked} onSend={ask} onChip={chip} busy={working} summary={guestSummary(freshDraft(draft))} onRefine={toggleRefine} refining={refining} now={cardBelow?null:card} onNow={openCard}>
   {!!hint&&<View style={h.picked}><Text accessibilityRole={hint.error?'alert':undefined} accessibilityLiveRegion="polite" style={hint.error?h.error:h.note}>{hint.text}</Text>{!!hint.ask&&<Action secondary title="Спросить AI администратора" onPress={()=>onAsk(hint.ask!)}/>}</View>}
   {!!error&&<Text accessibilityRole="alert" style={h.error}>{error}</Text>}
+  {/* The guest's own bookings are one row away from the search; the row says what the nearest one waits for. */}
+  {trips.length>0&&!preview&&!picked&&<Pressable accessibilityRole="button" accessibilityLabel={guestTripsLabel(trips)+(trips[0].open?'. '+trips[0].status:'')} onPress={()=>onOpenPage('bookings')} style={h.listRow}><Text style={[h.eventTitle,h.grow]}>{guestTripsLabel(trips)}</Text>{trips[0].open&&<Text numberOfLines={1} style={h.note}>{trips[0].status}</Text>}<Text style={h.note}>›</Text></Pressable>}
   {picked&&<View style={h.listRow}><View style={h.grow}><Text numberOfLines={1} style={h.eventTitle}>{picked.title}</Text><Text numberOfLines={1} style={h.note}>{[typeof picked.price==='number'?money(picked.price)+' за сутки':'',picked.district].filter(Boolean).join(' · ')}</Text></View><Action secondary title="Открыть" onPress={()=>onIntent('property:'+picked.id)}/></View>}
  </MapSheetHead>;
  // The form and the results live in the opened sheet only; a running request to owners keeps its place in any state.

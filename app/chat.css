@@ -289,3 +289,5 @@ body{font-size:16px}
 .chat-message.is-flash .message-content{animation:step-flash 1.2s ease-out}
 @keyframes step-flash{0%{box-shadow:0 0 0 0 rgba(79,70,229,.45);border-radius:16px}100%{box-shadow:0 0 0 14px rgba(79,70,229,0);border-radius:16px}}
 @media (prefers-reduced-motion: reduce){.chat-message.is-flash .message-content{animation:none}}
+/* A confirmation on a phone: a long label ("Оплатить 12 000 ₸") takes the width it needs and the second button moves under it, instead of the label being cut. */
+@media(max-width:700px){.approval-card .inline-actions{flex-wrap:wrap}.approval-card .inline-actions>.inline-button{flex:1 1 auto;white-space:nowrap}}

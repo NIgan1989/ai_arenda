@@ -469,3 +469,37 @@
     transition: none;
   }
 }
+
+/* The guest's own bookings: a row of the sheet as plain as "Уточнить", but named in full ink; its arrow leads away. */
+.map-home-panel .map-home-refine.request-trips {
+  color: var(--t-ink);
+  font-weight: 600;
+}
+
+.map-home-panel .map-home-refine.request-trips > svg:first-child {
+  color: var(--t-accent);
+}
+
+.map-home-panel .map-home-refine.request-trips > .request-trips-label {
+  flex: none;
+}
+
+/* What the nearest booking waits for: quiet, on the right, cut before the name of the row is. */
+.map-home-panel .map-home-refine.request-trips > .request-trips-hint {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--t-muted);
+  font-weight: 500;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.map-home-panel .map-home-refine.request-trips > svg:last-child {
+  margin-left: 0;
+}
+
+.map-home-panel .map-home-refine.request-trips > .request-trips-label + svg:last-child {
+  margin-left: auto;
+}
