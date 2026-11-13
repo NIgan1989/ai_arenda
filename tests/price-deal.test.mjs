@@ -15,6 +15,9 @@ test('a flat is a good price when it is clearly below similar free flats for the
  assert.ok(DEAL_PERCENT>=10);
  const marked=markDeals(all);assert.equal(marked[0].estimate.deal.percent,24);assert.equal(marked[1].estimate.deal,undefined);assert.equal(marked[0].estimate.amount,8000);
  assert.equal(dealBadge(null),'');
+ const mixed=[flat('pv',10000,1,{city:'Павлодар'}),flat('a1',20000,1,{city:'Алматы'}),flat('a2',21000,1,{city:'Алматы'}),flat('a3',22000,1,{city:' алматы'})];
+ assert.equal(dealFor(mixed[0],mixed),null,'flats of another city are never the comparison');
+ assert.equal(dealFor(flat('a0',15000,1,{city:'Алматы'}),[...mixed,flat('a0',15000,1,{city:'Алматы'})])?.similar,3,'the city is compared without case or spaces');
 });
 
 test('the catalog for given dates marks the cheaper flat and keeps the mark after a budget cut',async()=>{
