@@ -3,6 +3,7 @@ import { goWorkspace } from '../lib/workspace-go';
 import { ownerPin } from '../mobile/src/owner-map';
 import { cleanerPin, dayRoute, routeLines, routeSummary } from '../mobile/src/cleaner-map';
 import {useEffect,useRef,useState,type PointerEvent as ReactPointerEvent,type ReactNode} from 'react';
+import {latestMove} from '../lib/ai-move-marks';
 import {useQuery,useQueryClient} from '@tanstack/react-query';
 import {ArrowLeft,Brush,Building2,CalendarCheck,ChevronDown,ChevronRight,LocateFixed,MapPin,MessagesSquare,Navigation,Zap} from 'lucide-react';
 import {JourneyNavigation,type LocationFix} from './journey-navigation';
@@ -141,13 +142,13 @@ function RoleMap({ role, accountId, data, onDiscussion, onProcess, onCreate, onA
   const route = role === 'cleaner' ? dayRoute(data.jobs || [], accountId, now) : [];
   const flats: Row[] = role === 'owner' ? (query.data?.properties || []).map((p: Row) => {
     const pin = ownerPin(p, processes, now, advice.get(p.id));
-    return { ...p, mapPrice: p.price, mapKey: 'property:' + p.id, pinTone: pin.tone, pinLabel: pin.label, pinProgress: pin.progress, pinBest: pin.best };
+    return { ...p, mapPrice: p.price, mapKey: 'property:' + p.id, pinTone: pin.tone, pinLabel: pin.label, pinProgress: pin.progress, pinBest: pin.best, pinAi: latestMove(query.data?.aiMarks, [{ kind: 'property', id: String(p.id) }], now) };
   }) : [];
   const deals: Row[] = processes.map((p: Row) => {
     if (role !== 'cleaner' || p.kind !== 'job') return { ...p, mapKey: p.kind + ':' + p.id };
     const job = (data.jobs || []).find((j: Row) => j.id === p.id), applied = (data.applications || []).some((a: Row) => a.job_id === p.id && a.user_id === accountId && a.status !== 'rejected');
     const pin = cleanerPin({ ...job, ...p }, route.find(r => r.id === p.id), now, applied);
-    return { ...p, mapKey: p.kind + ':' + p.id, pinTone: pin.tone, pinLabel: pin.label, pinProgress: pin.progress, pinOrder: pin.order };
+    return { ...p, mapKey: p.kind + ':' + p.id, pinTone: pin.tone, pinLabel: pin.label, pinProgress: pin.progress, pinOrder: pin.order, pinAi: latestMove(query.data?.aiMarks, [{ kind: 'job', id: String(p.id) }], now) };
   }).sort((a: Row, b: Row) => a.start - b.start);
   // Demand around the owner's objects glows, with sparks over the busiest places while guests are asking right now;
   // the cleaner's stops of the day are joined by the route line in their order.

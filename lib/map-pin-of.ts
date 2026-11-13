@@ -3,9 +3,10 @@
 // say how its pin looks (pinTone, pinLabel, pinUntil, pinProgress, pinOrder), otherwise it is read from the row the way the
 // circles of the site's map read it before. Pure, covered by tests/map-pin-of.test.mjs.
 import type {PinState,PinTone} from '../mobile/src/map-motion';
+import type {AiMove} from './ai-move-marks';
 
 type Row=Record<string,any>;
-export type WebPin={key:string;point:[number,number];label:string;tone:PinTone;title:string;until?:number;progress?:number;best?:boolean;order?:number;was?:PinState};
+export type WebPin={key:string;point:[number,number];label:string;tone:PinTone;title:string;until?:number;progress?:number;best?:boolean;order?:number;was?:PinState;ai?:{move:AiMove;at:number}};
 const TONES:PinTone[]=['home','pending','offer','job','booking','booked','active'];
 
 // 18 000 → «18 тыс.», 9 500 → «9 500 ₸», as the app's price pins.
@@ -29,7 +30,9 @@ export function pinOf(item:Row):WebPin|null{
   ...(tone==='pending'&&until>0?{until}:{}),
   ...(typeof item.pinProgress==='number'?{progress:Math.max(0,Math.min(1,item.pinProgress))}:{}),
   ...(item.pinBest===true||item.match?.best===true?{best:true}:{}),
-  ...(Number(item.pinOrder)>0?{order:Number(item.pinOrder)}:{})
+  ...(Number(item.pinOrder)>0?{order:Number(item.pinOrder)}:{}),
+  // What the AI administrator just did here (lib/ai-move-marks.ts): the pin plays its sign once.
+  ...(item.pinAi&&typeof item.pinAi.move==='string'&&Number(item.pinAi.at)>0?{ai:{move:item.pinAi.move,at:Number(item.pinAi.at)}}:{})
  };
 }
 export function pinsOf(items:Row[]):WebPin[]{

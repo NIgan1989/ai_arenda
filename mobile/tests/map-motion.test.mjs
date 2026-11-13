@@ -19,6 +19,8 @@ test('each change of a pin is one named event', () => {
   assert.equal(pinEvent(pin('home'), pin('pending')), 'ask');
   assert.equal(pinEvent(pin('pending'), pin('home')), 'settle');
   assert.equal(pinEvent(pin('offer'), pin('home')), 'settle');
+  // A request the owner or the AI confirmed («Заявка» → «Заезд 21:00») is a yes, never the calm end of a refusal.
+  assert.equal(pinEvent(pin('pending', 'Заявка'), pin('booking', 'Заезд 21:00')), 'answer');
   // Cleaner: applied, assigned, started, handed over.
   assert.equal(pinEvent(pin('job', 'Уборка'), pin('job', 'Отклик ✓')), 'update');
   assert.equal(pinEvent(pin('job'), pin('offer')), 'answer');

@@ -28,6 +28,13 @@ test('autopilot journey: booking, test payment, check-in, chat, checkout, cleani
   await tick();await tick();R.prepare("UPDATE notifications SET created_at=created_at-1801 WHERE dedupe LIKE 'owner:administrator-propose:%'").run();await tick();
   assert.equal(R.prepare('SELECT assigned_to FROM cleaning_jobs WHERE id=?').get(job.id).assigned_to,'cleaner');
   assert.ok(notice('cleaner','cleaner:autopilot-took:%'));
+  // The map shows the AI's own work on the pins it concerns: the owner's object, the cleaner's job.
+  const {recentAiMarks}=await load('ai-moves');
+  const ownerMarks=await recentAiMarks(f.db,'owner','owner'),cleanerMarks=await recentAiMarks(f.db,'cleaner','cleaner');
+  assert.ok(ownerMarks.some(m=>m.kind==='booking'&&m.id===id&&m.move==='confirmed'&&m.propertyId===f.property),'the AI confirmation is on the object');
+  assert.ok(ownerMarks.some(m=>m.kind==='job'&&m.id===job.id&&m.move==='assigned'),'the AI assignment is on the object');
+  assert.ok(cleanerMarks.some(m=>m.kind==='job'&&m.id===job.id&&m.move==='took'),'the cleaner sees the autopilot took the job');
+  assert.ok(!ownerMarks.some(m=>m.move==='took')&&!cleanerMarks.some(m=>m.move==='confirmed'),'each person sees only their own notices');
   // Arrival day. The guest arrives before paying: they are asked to pay in the card, not the owner to check a transfer.
   move(id,job.id,-(86400+600));
   await f.guest.bookingAction(id,{action:'report_checkin'});await tick();

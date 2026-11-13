@@ -13,6 +13,7 @@ import {T} from './tokens';
 import {LiveMap,type HeatPoint,type MapLine,type MapPin} from './LiveMap';
 import {ownerPin,travellers} from './owner-map';
 import {cleanerPin,dayRoute,routeLines,routeSummary} from './cleaner-map';
+import {latestMove} from '../../lib/ai-move-marks';
 import {TripHead,useTrip} from './Navigator';
 import {SwipeConfirm} from './SwipeConfirm';
 import {beams} from './map-motion';
@@ -262,7 +263,7 @@ function OwnerPanel({data,mapData,publish,snap,showNow,expand,onHead,onAsk,onInt
   const advice=new Map<string,{from:number;to:number}>((data.approvals||[]).filter((c:Row)=>c.kind==='price'&&c.price?.propertyId&&c.canDecide).map((c:Row)=>[c.price.propertyId,{from:Number(c.price.from),to:Number(c.price.to)}]));
   const clock=serverNow(mapData||data);
   const own=(mapData?.properties||[]).flatMap((p:Row):MapPin[]=>{const point=pointOf(p),sent=!!answered[p.id]&&!asked.has(p.id),state=ownerPin(p,processes,clock,advice.get(p.id));
-   return point?[{key:'property:'+p.id,point,title:p.title,label:asked.has(p.id)?'Запрос':sent?'Ответ отправлен':state.label,rank:typeof p.price==='number'?p.price:0,tone:asked.has(p.id)?'pending':sent?'offer':state.tone,best:!asked.has(p.id)&&!sent&&state.best,until:asked.get(p.id),progress:asked.has(p.id)||sent?undefined:state.progress}]:[];});
+   return point?[{key:'property:'+p.id,point,title:p.title,label:asked.has(p.id)?'Запрос':sent?'Ответ отправлен':state.label,rank:typeof p.price==='number'?p.price:0,tone:asked.has(p.id)?'pending':sent?'offer':state.tone,best:!asked.has(p.id)&&!sent&&state.best,until:asked.get(p.id),progress:asked.has(p.id)||sent?undefined:state.progress,ai:latestMove(mapData?.aiMarks,[{kind:'property',id:String(p.id)}],clock)}]:[];});
   const moving=travellers(mapData?.journeys||[]).map((t):MapPin=>({...t,title:t.label,tone:'active'}));
   // Demand: the heat of the city, and sparks over the busiest places while guests are asking owners right now.
   const cells:Row[]=mapData?.demand?.cells||[],searching=Number(mapData?.demand?.searching)||0;
@@ -343,7 +344,7 @@ function CleanerPanel({data,mapData,city,publish,snap,showNow,expand,onHead,onAs
   // Each job says what to do now; the day's stops carry their number and are joined by the route line in order.
   const shown=(mapData?.processes||[]).filter((p:Row)=>p.kind==='job'&&(p.status!=='open'||nearby.some(j=>j.id===p.id)));
   const at=serverNow(mapData||data),byId=new Map(jobs.map(j=>[j.id,j]));
-  const pins=shown.flatMap((p:Row):MapPin[]=>{const point=pointOf(p);if(!point)return [];const state=cleanerPin({...byId.get(p.id),...p},route.find(r=>r.id===p.id),at,applied(p.id));return [{key:'job:'+p.id,point,title:p.title,...state}];});
+  const pins=shown.flatMap((p:Row):MapPin[]=>{const point=pointOf(p);if(!point)return [];const state=cleanerPin({...byId.get(p.id),...p},route.find(r=>r.id===p.id),at,applied(p.id));return [{key:'job:'+p.id,point,title:p.title,...state,ai:latestMove(mapData?.aiMarks,[{kind:'job',id:String(p.id)}],at)}];});
   const placed=new Map<string,MapPoint|null>(shown.map((p:Row)=>[p.id,pointOf(p)]));
   // On a trip the map shows only the way: the object, the cleaner's point and the road between them; it frames them at the start and after a new route.
   if(nav.trip){

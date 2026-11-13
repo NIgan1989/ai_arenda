@@ -43,3 +43,11 @@
 .map-origin::before{content:"";position:absolute;width:22px;height:22px;left:-11px;top:-11px;border-radius:50%;background:var(--t-accent-soft)}
 .map-origin i{position:relative;display:block;flex:none;width:12px;height:12px;border-radius:50%;background:var(--t-accent);border:2px solid var(--t-surface)}
 @media (prefers-reduced-motion: reduce){.map-spark::before{animation:none}}
+
+/* The sign of the AI administrator's own work (map-pills.tsx, pin.ai): a ring in the AI colours and a short line above. */
+.map-pill-ai{position:absolute;width:var(--ai-w,96px);height:44px;left:calc(var(--ai-w,96px) / -2);top:-22px;border-radius:24px;pointer-events:none;opacity:0;padding:4px;
+ background:conic-gradient(from 0deg,var(--t-ai-from),var(--t-ai-mid),var(--t-ai-to),var(--t-ai-from));
+ -webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;mask-composite:exclude;filter:drop-shadow(0 0 6px var(--t-ai-to))}
+.map-pill-ai-says{position:absolute;left:0;bottom:22px;transform:translate(-50%,0);white-space:nowrap;pointer-events:none;opacity:0;padding:4px 8px;border-radius:12px;
+ background:linear-gradient(90deg,var(--t-ai-from),var(--t-ai-mid),var(--t-ai-to));color:#fff;font-size:12px;font-weight:700;line-height:16px;box-shadow:0 2px 8px rgba(14,19,36,.2)}
+@media (prefers-reduced-motion: reduce){.map-pill-ai,.map-pill-ai-says{display:none}}

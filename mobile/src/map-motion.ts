@@ -14,6 +14,8 @@ export function pinEvent(before:PinState|undefined,after:PinState):PinEvent{
  if(after.tone==='booked')return 'celebrate';
  if(after.tone==='pending')return 'ask';
  if(after.tone==='offer')return 'answer';
+ // A request that became a booking (the owner or the AI confirmed it) is a yes, not a request that ended: it answers.
+ if(before.tone==='pending'&&after.tone==='booking')return 'answer';
  if(after.tone==='active')return 'start';
  if(before.tone==='pending'||before.tone==='offer')return 'settle';
  return 'update';
@@ -95,6 +97,7 @@ export const MAP_EVENTS:{role:'guest'|'owner'|'cleaner'|'all';event:string;motio
  {role:'all',event:'Метка выбрана',motion:'Метка приподнимается и становится тёмной'},
  {role:'all',event:'Метка больше не нужна',motion:'Метка тает и опускается'},
  {role:'all',event:'Ждём ответа владельца',motion:'Под меткой убывает полоска времени на ответ'},
+ {role:'all',event:'ИИ-администратор сделал шаг сам',motion:'Цветное кольцо ИИ обегает метку, над ней на пару секунд поднимается строка «✦ ИИ подтвердил бронь»'},
  {role:'guest',event:'Идёт поиск жилья',motion:'Волны радара из центра карты'},
  {role:'guest',event:'Выбор точки «рядом»',motion:'Метка-булавка поднимается, пока карту двигают, и ставится с кругом'},
  {role:'guest',event:'Найдены варианты',motion:'Лучший выбор ИИ отмечен на карте значком ✦ и цветным кольцом'},
@@ -110,6 +113,7 @@ export const MAP_EVENTS:{role:'guest'|'owner'|'cleaner'|'all';event:string;motio
  {role:'owner',event:'Исполнитель или гость в пути',motion:'Синяя дышащая метка «Исполнитель в пути» или «Гость в пути»'},
  {role:'owner',event:'Пришёл быстрый запрос гостя',motion:'Объект вздрагивает, метка «Запрос» пульсирует'},
  {role:'owner',event:'Владелец ответил «Готов»',motion:'Метка «Ответ отправлен» со вспышкой'},
+ {role:'owner',event:'Заявка подтверждена',motion:'Метка «Заявка» становится «Заезд 21:00» с подскоком и вспышкой, как ответ «да»'},
  {role:'owner',event:'Отказ или время ответа вышло',motion:'Метка спокойно возвращается к цене'},
  {role:'cleaner',event:'Новое задание рядом',motion:'Метка «Уборка» падает на карту'},
  {role:'cleaner',event:'Отклик отправлен',motion:'Метка «Отклик ✓» коротко подпрыгивает'},
