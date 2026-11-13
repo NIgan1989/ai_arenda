@@ -82,6 +82,8 @@ test('test money is not settled when the stay has real money, an open issue, or 
   R.prepare("UPDATE administrator_issues SET status='resolved'").run();R.prepare("UPDATE platform_billing SET test_payments=0").run();
   assert.equal(await settleTestMoney(f.owner,f.property),0,'test mode off');
   R.prepare("UPDATE platform_billing SET test_payments=1").run();
+  // A reserve that was given back (the assignment was released) does not pay the cleaner; the test payout does.
+  R.prepare("INSERT INTO cleaning_holds(job_id,owner_id,cleaner_id,property_id,amount,status,created_at) VALUES (?,?,?,?,3000,'returned',?)").run(f.job.id,'owner','cleaner',f.property,now());
   assert.equal(await settleTestMoney(f.owner,f.property),2);assert.equal(await settleTestMoney(f.owner,f.property),0,'once');
  }finally{f.db.close();}
 });
