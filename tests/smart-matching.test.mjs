@@ -103,10 +103,10 @@ test('the distance in the reasons has a decimal comma and names the chosen place
   };
   const filters = { maxPrice: '11000', district: '', features: [], priority: 'balanced', near };
   const [match] = rankMatches([flat], filters);
-  assert.deepEqual(match.match.reasons, ['В пределах бюджета', 'Примерно 0,7 км от выбранного места', 'Готовность проверена']);
+  assert.deepEqual(match.match.reasons, ['Примерно 0,7 км от выбранного места', 'В пределах бюджета', 'Готовность проверена']);
   // Next to the point itself the smallest distance shown is 0,1 km.
   const [next] = rankMatches([{ ...flat, location: { longitude: 76.95, latitude: 52.28 } }], filters);
-  assert.equal(next.match.reasons[1], 'Примерно 0,1 км от выбранного места');
+  assert.equal(next.match.reasons[0], 'Примерно 0,1 км от выбранного места');
   // Without a chosen place no distance is claimed.
   assert.deepEqual(rankMatches([flat], { ...filters, near: null })[0].match.reasons, ['В пределах бюджета', 'Готовность проверена']);
 });
@@ -118,4 +118,34 @@ test('a flat under autopilot is lifted a little in the balanced choice and says 
  const ranked=rankMatches([flat('cheap',8000,false),flat('ai',8500,true)],filters);
  assert.equal(ranked[0].id,'ai');assert.ok(ranked[0].match.reasons.includes('Отвечает и подтверждает сразу'));
  assert.equal(rankMatches([flat('cheap',8000,false),flat('ai',8500,true)],{...filters,priority:'cheaper'})[0].id,'cheap','«Дешевле» stays about price');
+});
+test('the balanced choice weighs reviews and answer speed and names the best flat',async()=>{
+ const {rankMatches,ratingFit,responseFit,responseText}=await load('smart-matching');
+ const flat=(id,amount,over={})=>({id,district:'Центр',estimate:{amount},display_status:{code:'ready'},details:{amenities:[]},...over});
+ const filters={maxPrice:'10000',district:'',features:[],priority:'balanced',near:null};
+ assert.ok(ratingFit({average:4.9,count:20})>ratingFit(null),'many good reviews beat none');
+ assert.ok(ratingFit({average:5,count:1})<ratingFit({average:4.8,count:30}),'one review says less than thirty');
+ assert.ok(ratingFit({average:2,count:10})<ratingFit(null),'poor reviews fall below a new flat');
+ assert.deepEqual([responseFit(300),responseFit(7200),responseFit(86400),responseFit(null),responseFit(null,true)],[1,.5,.2,.5,1]);
+ assert.equal(responseText(600),'Отвечает в среднем за 10 минут');assert.equal(responseText(7200),'Отвечает в среднем за 2 часа');
+ // A little cheaper but slow and poorly rated loses to a well rated flat whose owner answers in minutes.
+ const ranked=rankMatches([flat('cheap',8500,{rating:{average:3.1,count:8},response:6*3600}),flat('good',9000,{rating:{average:4.8,count:12},response:600})],filters);
+ assert.deepEqual(ranked.map(p=>p.id),['good','cheap']);assert.equal(ranked[0].match.best,true);assert.equal(ranked[1].match.best,undefined);
+ assert.ok(ranked[0].match.reasons.includes('Оценка 4,8 из 5 · 12 отзывов'));assert.ok(ranked[0].match.reasons.includes('Отвечает в среднем за 10 минут'));
+ assert.ok(ranked[0].match.chance>ranked[1].match.chance&&ranked[0].match.chance<=100);
+ // «Дешевле» still sorts by price; the cheaper flat is first but is not called the best choice.
+ const cheaper=rankMatches([flat('cheap',8500,{rating:{average:3.1,count:8},response:6*3600}),flat('good',9000,{rating:{average:4.8,count:12},response:600})],{...filters,priority:'cheaper'});
+ assert.equal(cheaper[0].id,'cheap');assert.equal(cheaper[0].match.best,undefined);
+ assert.equal(rankMatches([flat('only',9000)],filters)[0].match.best,undefined,'one flat is not a choice');
+});
+test('answer speed is the median time from request to the owner’s answer over 90 days',async()=>{
+ const {responseTimes}=await load('smart-matching');
+ const f=await fixture();try{
+  f.db.raw.prepare('DELETE FROM audit_events').run();f.db.raw.prepare('DELETE FROM matching_offers').run();
+  const t=now(),add=(id,created,answered,action)=>{f.db.raw.prepare("INSERT INTO bookings(id,property_id,guest_id,start,end,occupied_until,guests,amount,status,expires_at,payment_status,request_key,created_at) VALUES (?,?,'guest',?,?,?,1,10000,'completed',?,'paid',?,?)").run(id,f.property,t+86400,t+2*86400,t+2*86400,t,id,created);f.db.raw.prepare('INSERT INTO audit_events(id,actor_id,entity_id,action,created_at) VALUES (?,?,?,?,?)').run('a'+id,'owner',id,action,answered);};
+  add('r1',t-5000,t-4400,'booking.confirmed');add('r2',t-9000,t-7200,JSON.stringify({action:'booking.confirmed',onBehalfOf:'owner'}));add('r3',t-20000,t-19700,'booking.rejected');
+  add('old',t-100*86400,t-90*86400,'booking.confirmed');
+  const times=await responseTimes(f.db,[f.property],t);assert.equal(times.get(f.property),600,'300, 600 and 1800 seconds: the median is ten minutes');
+  assert.equal((await responseTimes(f.db,['missing'],t)).size,0);
+ }finally{f.db.close();}
 });

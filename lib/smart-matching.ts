@@ -17,18 +17,56 @@ export function matchingInput(body:Row){
  if(priority==='closer'&&!near)throw new DomainError('Для приоритета «Ближе» выберите точку на карте или зону рядом с вами.');
  return {city:required(body.city,'Город',80),district:String(body.district||'').trim().slice(0,120),start:new Date(start*1000).toISOString(),end:new Date(end*1000).toISOString(),guests:String(number(body.guests,'Гости',1,50)),mode,maxPrice:String(number(body.maxPrice,'Бюджет за период',100,100000000)),priority,features:[...new Set(features)],near};
 }
+// The chance a guest books a flat, from what we know before they ask: the price against their budget,
+// the distance to their place, what earlier guests said and how fast the owner answers. Pure parts, so
+// the ranking can be checked without a database.
+const plural=(n:number,one:string,few:string,many:string)=>{const a=n%10,b=n%100;return n+' '+(a===1&&b!==11?one:a>=2&&a<=4&&(b<10||b>=20)?few:many);};
+// Earlier guests: a few reviews say less than many, so a new flat starts from a fair middle, not from zero.
+export function ratingFit(rating:Row|null|undefined){
+ const count=Number(rating?.count||0);if(!count)return .6;
+ const conf=count/(count+2);return Math.max(0,Math.min(1,(Number(rating!.average)-1)/4))*conf+.6*(1-conf);
+}
+// How fast the owner answers: a flat under autopilot confirms at once.
+export function responseFit(seconds:number|null|undefined,instant=false){
+ if(instant)return 1;if(seconds===null||seconds===undefined)return .5;
+ return seconds<=900?1:seconds<=3600?.8:seconds<=4*3600?.5:.2;
+}
+export function responseText(seconds:number){return 'Отвечает в среднем за '+(seconds<3600?plural(Math.max(1,Math.round(seconds/60)),'минуту','минуты','минут'):plural(Math.round(seconds/3600),'час','часа','часов'));}
 export function rankMatches(properties:Row[],filters:Row):Row[]{
  const budget=Number(filters.maxPrice),district=filters.district.toLocaleLowerCase('ru');
- return properties.filter(p=>!p.test_preview&&(!district||String(p.district).toLocaleLowerCase('ru').includes(district))&&filters.features.every((a:string)=>(p.details?.amenities||[]).includes(a))).flatMap<Row>(p=>{
+ const ranked=properties.filter(p=>!p.test_preview&&(!district||String(p.district).toLocaleLowerCase('ru').includes(district))&&filters.features.every((a:string)=>(p.details?.amenities||[]).includes(a))).flatMap<Row>(p=>{
   const amount=p.estimate?.amount;if(!Number.isInteger(amount)||amount>budget)return [];
   const distance=filters.near&&p.location?geoDistance([filters.near.longitude,filters.near.latitude],[p.location.longitude,p.location.latitude]):null;
   if(filters.near&&(distance===null||distance>filters.near.radius))return [];
   const ready=p.display_status?.code==='ready',saving=1-amount/budget,proximity=distance===null?0:1-distance/filters.near.radius;
-  // A flat under autopilot answers and confirms at once, so the balanced choice lifts it a little.
-  const instant=!!p.instant,score=filters.priority==='cheaper'?saving:filters.priority==='closer'&&filters.near?proximity:.5*saving+.3*proximity+.2*Number(ready)+.1*Number(instant);
-  const reasons=['В пределах бюджета',...(distance!==null?['Примерно '+Math.max(.1,distance/1000).toFixed(1).replace('.',',')+' км от выбранного места']:[]),...(ready?['Готовность проверена']:[]),...(instant?['Отвечает и подтверждает сразу']:[]),...(filters.features.length?['Нужные удобства есть']:[])];
-  return [{...p,match:{score,distance,reasons}}];
- }).sort((a,b)=>b.match.score-a.match.score||a.estimate.amount-b.estimate.amount||Number(!!b.instant)-Number(!!a.instant)||String(a.id).localeCompare(String(b.id)));
+  const instant=!!p.instant,rated=Number(p.rating?.count||0)>0,answered=!instant&&Number.isFinite(p.response);
+  // Balanced: price 30%, distance 20% (when a place is chosen), reviews 20%, answer speed 20%, readiness 10%.
+  const chance=.3*saving+(filters.near?.2*proximity:0)+.2*ratingFit(p.rating)+.2*responseFit(answered?p.response:null,instant)+.1*Number(ready);
+  const score=filters.priority==='cheaper'?saving:filters.priority==='closer'&&filters.near?proximity:chance;
+  // What tells this flat apart comes first, so a one-line list still shows it.
+  const reasons=[...(distance!==null?['Примерно '+Math.max(.1,distance/1000).toFixed(1).replace('.',',')+' км от выбранного места']:[]),
+   ...(rated?['Оценка '+String(p.rating.average).replace('.',',')+' из 5 · '+plural(Number(p.rating.count),'отзыв','отзыва','отзывов')]:[]),
+   ...(instant?['Отвечает и подтверждает сразу']:answered?[responseText(p.response)]:[]),'В пределах бюджета',...(ready?['Готовность проверена']:[]),...(filters.features.length?['Нужные удобства есть']:[])];
+  return [{...p,match:{score,chance:Math.round(chance*100),distance,reasons}}];
+ }).sort((a,b)=>b.match.score-a.match.score||b.match.chance-a.match.chance||a.estimate.amount-b.estimate.amount||Number(!!b.instant)-Number(!!a.instant)||String(a.id).localeCompare(String(b.id)));
+ // The first of several, when it also leads on the whole chance, is named the best choice for the guest.
+ if(ranked.length>1&&ranked[0].match.chance>=Math.max(...ranked.slice(1).map(p=>p.match.chance)))ranked[0]={...ranked[0],match:{...ranked[0].match,best:true}};
+ return ranked;
+}
+// Median time from a guest's request to the owner's answer, per flat, over the last 90 days.
+export async function responseTimes(db:D1Database,ids:string[],t=epoch()){
+ const samples=new Map<string,number[]>();
+ for(let i=0;i<ids.length;i+=45){
+  const part=ids.slice(i,i+45),marks=part.map(()=>'?').join(',');
+  const list=await rows(db,`SELECT b.property_id,MIN(a.created_at)-b.created_at d FROM bookings b JOIN audit_events a ON a.entity_id=b.id
+    AND (a.action IN ('booking.confirmed','booking.rejected') OR (json_valid(a.action) AND json_extract(a.action,'$.action') IN ('booking.confirmed','booking.rejected')))
+    WHERE b.property_id IN (${marks}) AND b.created_at>? GROUP BY b.id
+   UNION ALL SELECT property_id,responded_at-created_at d FROM matching_offers WHERE property_id IN (${marks}) AND responded_at IS NOT NULL AND created_at>?`,...part,t-90*86400,...part,t-90*86400);
+  for(const r of list){const d=Number(r.d);if(d>=0){const v=samples.get(r.property_id)||[];v.push(d);samples.set(r.property_id,v);}}
+ }
+ const result=new Map<string,number>();
+ for(const [id,v] of samples){const s=v.sort((a,b)=>a-b),m=s.length>>1;result.set(id,s.length%2?s[m]:Math.round((s[m-1]+s[m])/2));}
+ return result;
 }
 export async function previewMatches(s:RentalService,body:Row):Promise<Row>{
  const filters=matchingInput(body),search={city:filters.city,start:filters.start,end:filters.end,guests:filters.guests,mode:filters.mode,maxPrice:filters.maxPrice,map:'1',limit:'60'};
@@ -37,7 +75,8 @@ export async function previewMatches(s:RentalService,body:Row):Promise<Row>{
  const modes:Row[]=[],ids=properties.map((p:Row)=>p.id);
  for(let i=0;i<ids.length;i+=90){const part=ids.slice(i,i+90);modes.push(...await rows(s.db,`SELECT p.id,${guestModeSql} mode FROM properties p ${guestModeJoins} WHERE p.id IN (${part.map(()=>'?').join(',')})`,epoch(),...part));}
  const instant=new Set(modes.filter(m=>m.mode==='auto').map(m=>m.id));
- const ranked=rankMatches(properties.map((p:Row)=>({...p,instant:instant.has(p.id)})),filters),preferences=await rows(s.db,'SELECT property_id FROM matching_preferences WHERE enabled=1');
+ const response=await responseTimes(s.db,ids);
+ const ranked=rankMatches(properties.map((p:Row)=>({...p,instant:instant.has(p.id),response:response.get(p.id)??null})),filters),preferences=await rows(s.db,'SELECT property_id FROM matching_preferences WHERE enabled=1');
  const enabled=new Set(preferences.map(p=>p.property_id));
  return {filters,properties:ranked.map(p=>({...p,quickRequest:enabled.has(p.id)})),total:ranked.length,center:first.center,availabilityChecked:true,serverTime:epoch()};
 }

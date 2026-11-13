@@ -68,11 +68,12 @@ export function GuestResults({ preview, draft, selected, onSelect, onBook, onOpe
         </Pressable>
         <View style={r.chosen}>
           <View style={h.grow}>
+            {!!chosen.match?.best && <Text style={r.best}>Лучший выбор для вас</Text>}
             <Text accessibilityRole="header" numberOfLines={2} style={h.cardTitle}>
               {chosen.title}
             </Text>
             {!!about(chosen) && (
-              <Text numberOfLines={2} style={h.note}>
+              <Text style={h.note}>
                 {about(chosen)}
               </Text>
             )}
@@ -108,11 +109,12 @@ export function GuestResults({ preview, draft, selected, onSelect, onBook, onOpe
             style={({ pressed }) => [r.row, pressed && r.rowPressed]}
           >
             <View style={h.grow}>
+              {!!flat.match?.best && <Text style={r.best}>Лучший выбор для вас</Text>}
               <Text numberOfLines={2} style={h.eventTitle}>
                 {flat.title}
               </Text>
               {!!about(flat) && (
-                <Text numberOfLines={1} style={h.note}>
+                <Text numberOfLines={2} style={h.note}>
                   {about(flat)}
                 </Text>
               )}
@@ -155,5 +157,6 @@ const r = StyleSheet.create({
   backText: { ...type.label, color: C.accent, fontWeight: '600' },
   chosen: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
   amount: { alignItems: 'flex-end' },
+  best: { ...type.caption, alignSelf: 'flex-start', marginBottom: 4, paddingHorizontal: 8, paddingVertical: 2, borderRadius: T.radius.full, overflow: 'hidden', backgroundColor: C.accentSoft, color: C.accent, fontWeight: '600' },
   window: { ...type.caption, marginTop: 4, paddingHorizontal: 8, paddingVertical: 2, borderRadius: T.radius.full, overflow: 'hidden', backgroundColor: C.accentSoft, color: C.accent, fontWeight: '600' }
 });

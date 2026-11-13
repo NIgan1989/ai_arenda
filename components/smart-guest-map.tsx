@@ -873,13 +873,18 @@ export function SmartGuestMap({ publicMode = false, onChanged, accountId, city, 
                 <div className="smart-offer-cover"><PropertyCover property={current} role="guest" publicView /></div>
                 <div className="smart-offer-text">
                   {candidates.length > 1 && <span className="smart-offer-count">Вариант {index + 1} из {candidates.length}</span>}
+                  {!!current.match?.best && <span className="smart-window smart-best">Лучший выбор для вас</span>}
                   <h2 ref={heading} tabIndex={-1}>{current.title}</h2>
                   <strong>{priceLine(current, mode)}</strong>
                   {!!windowBadge(current.estimate?.window) && <span className="smart-window">{windowBadge(current.estimate.window)}</span>}
                   <small>{current.policy.deposit ? 'Депозит ' + money(current.policy.deposit) + ' отдельно' : 'Без депозита'}</small>
                 </div>
               </div>
-              {reasons.length > 0 && <p className="smart-reasons">{reasons.join(' · ')}</p>}
+              {reasons.length > 0 && (
+                <p className="smart-reasons">
+                  {reasons.map((reason, i) => <span key={reason}>{i > 0 && ' · '}<span className="smart-reason">{reason}</span></span>)}
+                </p>
+              )}
               <button type="button" className="smart-primary" onClick={() => setStage('detail')}>Посмотреть квартиру</button>
               {canAskOwners && (
                 <button type="button" className="smart-button" disabled={busy} onClick={() => void askOwners()}>
