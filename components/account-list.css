@@ -52,3 +52,7 @@
 @media(prefers-reduced-motion:reduce){.acct *,.acct-switch,.acct-switch::after{transition:none!important}}
 /* Sections outside the phone's bottom bar; the desktop sidebar lists them already. */
 @media(min-width:701px){.acct-phone-only{display:none}}
+
+/* A screen opened from the menu: the way back to the menu sits where its title was. */
+.acct-back{display:inline-flex;justify-self:start;align-self:flex-start;align-items:center;gap:8px;min-height:44px;padding:0 12px 0 0;border:0;background:none;color:var(--t-ink-soft);font:inherit;font-size:14px;line-height:20px;font-weight:500;cursor:pointer}
+.acct-back:focus-visible{outline:2px solid var(--t-focus);outline-offset:2px}
