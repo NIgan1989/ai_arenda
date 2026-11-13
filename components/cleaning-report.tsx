@@ -11,7 +11,7 @@ type Row=Record<string,any>;
 const tasks=['Кухня и санузел убраны','Бельё заменено','Мусор вынесен, поверхности чистые','Вода и электроприборы проверены'];
 export function CleaningReport({job,role,busy,onSubmit,onChanged}:{job?:Row;role:string;busy:boolean;onSubmit:(body:Row)=>Promise<unknown>;onChanged:()=>Promise<unknown>}){
  const [checked,setChecked]=useState(tasks.map(()=>false)),[sending,setSending]=useState(false),[error,setError]=useState(''),[photos,setPhotos]=useState<Row[]>([]),lock=useRef(false);
- const completed=checked.filter(Boolean).length,allowed=role==='cleaner'&&job?.status==='in_progress',has=(p:string)=>photos.some(v=>v.phase===p);
+ const completed=checked.filter(Boolean).length,allowed=role==='cleaner'&&job?.status==='in_progress',has=(p:string)=>photos.some(v=>v.phase===p&&v.mime==='image/jpeg');
  const steps=[has('before'),has('after'),completed===tasks.length],done=steps.filter(Boolean).length;
  async function submit(event:FormEvent<HTMLFormElement>){event.preventDefault();if(busy||lock.current||!allowed)return;if(!checked.every(Boolean)){setError('Проверьте и отметьте каждый пункт чек-листа.');return;}const report=String(new FormData(event.currentTarget).get('report')||'').trim();if(!report){setError('Опишите результат уборки.');return;}lock.current=true;setSending(true);setError('');try{await onSubmit({report,checklist:checked});}catch(e){setError(e instanceof Error?e.message:'Не удалось отправить отчёт. Материалы и текст сохранены на экране.');}finally{lock.current=false;setSending(false);}}
  return <section className="inline-card cleaning-report" aria-label="Отчёт об уборке">
