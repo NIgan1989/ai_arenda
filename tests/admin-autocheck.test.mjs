@@ -113,6 +113,10 @@ test('a doubtful request reaches the administrator in Telegram with buttons; onl
   assert.equal(open.url,'https://rental.example.test/admin?section=reviews');assert.ok(yes.callback_data.length<=64&&no.callback_data.length<=64);
   const tap=(data,from)=>acceptTelegramLink(f.db,{callback_query:{id:'q',data,from:{id:from,is_bot:false},message:{message_id:9,text:sent.text,chat:{type:'private',id:from}}}},'s',config,serviceFor);
   await tap(yes.callback_data,555);assert.equal(f.db.raw.prepare('SELECT status FROM participant_reviews WHERE property_id=?').get(f.property).status,'pending');
+  const before=f.db.raw.prepare('SELECT description FROM properties WHERE id=?').get(f.property).description;
+  f.db.raw.prepare("UPDATE properties SET description=replace(description,' Пишите в WhatsApp','') WHERE id=?").run(f.property);
+  await tap(yes.callback_data,321);assert.equal(f.db.raw.prepare('SELECT status FROM participant_reviews WHERE property_id=?').get(f.property).status,'pending');
+  f.db.raw.prepare('UPDATE properties SET description=? WHERE id=?').run(before,f.property);
   assert.equal((await tap(yes.callback_data,321)).decided,true);
   const review=f.db.raw.prepare('SELECT * FROM participant_reviews WHERE property_id=?').get(f.property);
   assert.equal(review.status,'approved');assert.equal(review.reviewer_id,'guest');
