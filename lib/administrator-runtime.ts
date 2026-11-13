@@ -8,6 +8,7 @@ import {askForReviews} from './stay-reviews';
 import {reviewCleaning,OWNER_REVIEW_SECONDS} from './cleaning-review';
 import {offerCalendarWindows} from './calendar-windows';
 import {offerWeeklyForecast} from './load-forecast';
+import {offerListingTip} from './listing-quality';
 
 type Row=Record<string,any>;
 // How long the owner has to agree the cleaner the AI proposes before it assigns her itself.
@@ -120,6 +121,7 @@ export async function checkAdministratorOwner(db:D1Database,ownerId:string){
   try{await offerCalendarWindows(db,ownerId,t);}catch(error){console.error('Calendar windows failed',error instanceof Error?error.message:'');}
   // The week ahead: once a week, the same rule: advice only, a failure never stops the check.
   try{await offerWeeklyForecast(db,ownerId,t);}catch(error){console.error('Load forecast failed',error instanceof Error?error.message:'');}
+  try{await offerListingTip(db,ownerId,t);}catch(error){console.error('Listing tip failed',error instanceof Error?error.message:'');}
   const actions=await automaticActions(service),data=await ownerData(service),tasks=planAdministrator(data,t);
   // Renew before writes; a superseded scan cannot close another scan's tasks.
   const renew=async()=>{const r=await service.query('UPDATE administrator_runs SET lease_until=? WHERE id=? AND token=?',now()+120,key,token).run();if(!r.meta.changes)throw new Error('Administrator lease was superseded');};

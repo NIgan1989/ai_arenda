@@ -54,6 +54,26 @@ function ForecastTipBody({card,busy,onDecide,compact}:{card:Approval;busy:boolea
  </View>;
 }
 
+// Listing quality: the flat next to similar flats that are booked more often, and one button.
+function ListingTipBody({card,busy,onDecide,compact}:{card:Approval;busy:boolean;onDecide:(action:'accept'|'reject')=>void;compact:boolean}){
+ const l=card.listing!,icon=l.kind==='photos'?'▣':l.kind==='checkin'?'⚿':l.kind==='text'?'≡':'✓';
+ const compare=l.kind==='photos'?[[String(l.mine),'фото у вас'],[String(l.theirs),'у тех, кого бронируют чаще']]:l.kind==='text'?[[String(l.mine),'знаков у вас'],[String(l.theirs),'у тех, кого бронируют чаще']]
+  :l.kind==='amenity'?[['Нет','у вас: '+l.amenity.toLocaleLowerCase('ru')],[l.count+' из '+l.leaders,'отмечают у себя']]:l.kind==='hourly'?[['—','почасовой цены нет'],[money(l.value),'в час, как у '+l.count+' из '+l.leaders]]:[['Встреча','сейчас у вас'],[l.count+' из '+l.leaders,'заселяют без встречи']];
+ return <View>
+  <View style={t.compare} accessible accessibilityLabel={compare[0].join(' ')+'; '+compare[1].join(' ')}>
+   <View style={t.cmpMine}><Text numberOfLines={1} style={t.cmpValue}>{compare[0][0]}</Text><Text style={t.cmpLabel}>{compare[0][1]}</Text></View>
+   <View style={t.cmpIcon}><Text style={t.cmpIconText}>{icon}</Text></View>
+   <View style={t.cmpThem}><Text numberOfLines={1} style={[t.cmpValue,{color:C.accent}]}>{compare[1][0]}</Text><Text style={t.cmpLabel}>{compare[1][1]}</Text></View>
+  </View>
+  <Text numberOfLines={compact?4:6} style={t.rows}>{l.text}</Text>
+  <View style={t.actions}>
+   <Pressable accessibilityRole="button" accessibilityLabel={card.acceptLabel} disabled={busy} onPress={()=>onDecide('accept')} style={({pressed})=>[t.accept,(busy||pressed)&&t.dim]}><Text numberOfLines={1} style={t.acceptText}>{card.acceptLabel}</Text></Pressable>
+   <Pressable accessibilityRole="button" accessibilityLabel={card.rejectLabel} disabled={busy} onPress={()=>onDecide('reject')} style={({pressed})=>[t.reject,(busy||pressed)&&t.dim]}><Text style={t.rejectText}>{card.rejectLabel}</Text></Pressable>
+  </View>
+  {!compact&&<Text style={t.note}>Сравниваю с похожими квартирами в вашем городе за последние 2 месяца.</Text>}
+ </View>;
+}
+
 // Late checkout or early check-in for the guest who asked about it in the booking chat.
 function StayTipBody({card,busy,onDecide,compact}:{card:Approval;busy:boolean;onDecide:(action:'accept'|'reject')=>void;compact:boolean}){
  const o=card.stay!;
@@ -72,6 +92,7 @@ function StayTipBody({card,busy,onDecide,compact}:{card:Approval;busy:boolean;on
 }
 
 export function PriceTipBody({card,busy,onDecide,compact=false}:{card:Approval;busy:boolean;onDecide:(action:'accept'|'reject')=>void;compact?:boolean}){
+ if(card.listing)return <ListingTipBody card={card} busy={busy} onDecide={onDecide} compact={compact}/>;
  if(card.forecast)return <ForecastTipBody card={card} busy={busy} onDecide={onDecide} compact={compact}/>;
  if(card.stay)return <StayTipBody card={card} busy={busy} onDecide={onDecide} compact={compact}/>;
  if(card.window)return <WindowTipBody card={card} busy={busy} onDecide={onDecide} compact={compact}/>;
@@ -93,10 +114,10 @@ export function PriceTipBody({card,busy,onDecide,compact=false}:{card:Approval;b
  </View>;
 }
 
-export function PriceTip({cards,onChanged,role='owner'}:{cards:Approval[];onChanged?:()=>unknown;role?:'owner'|'guest'}){
+export function PriceTip({cards,onChanged,onEdit,role='owner'}:{cards:Approval[];onChanged?:()=>unknown;onEdit?:(id:string,step:string|null)=>void;role?:'owner'|'guest'}){
  const [later,setLater]=useState<string[]>([]),[busy,setBusy]=useState(false),[result,setResult]=useState<{text:string;error:boolean}|null>(null);
  const [slide]=useState(()=>new Animated.Value(0));
- const card=cards.find(c=>(c.kind==='price'&&c.price||c.kind==='window'&&c.window||c.kind==='stay'&&c.stay||c.kind==='forecast'&&c.forecast)&&c.canDecide&&!later.includes(c.id));
+ const card=cards.find(c=>(c.kind==='price'&&c.price||c.kind==='window'&&c.window||c.kind==='stay'&&c.stay||c.kind==='forecast'&&c.forecast||c.kind==='listing'&&c.listing)&&c.canDecide&&!later.includes(c.id));
  const visible=!!card||!!result;
  useEffect(()=>{Animated.spring(slide,{toValue:visible?1:0,useNativeDriver:true,friction:8,tension:60}).start();},[visible,card?.id]);
  useEffect(()=>{if(!result)return;const timer=setTimeout(()=>setResult(null),result.error?8000:5000);return()=>clearTimeout(timer);},[result]);
@@ -105,14 +126,14 @@ export function PriceTip({cards,onChanged,role='owner'}:{cards:Approval[];onChan
  if(result||!card)return <Animated.View style={[t.box,t.resultBox,style]} accessibilityLiveRegion="polite"><View style={[t.icon,result?.error&&{backgroundColor:C.danger}]}><Text style={t.iconText}>{result?.error?'!':'✓'}</Text></View><Text style={t.resultText}>{result?.text}</Text></Animated.View>;
  async function decide(action:'accept'|'reject'){
   if(!card)return;setBusy(true);
-  try{const v=await request('/api/approvals',{id:card.id,revision:card.revision,action},undefined,uid()+':'+card.kind+':'+action,role);setResult({text:v.message||'Готово.',error:false});await onChanged?.();}
+  try{const v=await request('/api/approvals',{id:card.id,revision:card.revision,action},undefined,uid()+':'+card.kind+':'+action,role);if(v.edit&&onEdit){await onChanged?.();onEdit(v.edit.propertyId,v.edit.step);return;}setResult({text:v.message||'Готово.',error:false});await onChanged?.();}
   catch(error){setResult({text:error instanceof Error?error.message:'Не получилось. Обновите экран.',error:true});}
   finally{setBusy(false);}
  }
- return <Animated.View style={[t.box,style]} accessibilityLabel={card.forecast?'Прогноз загрузки на неделю от AI администратора':card.stay?'Предложение AI администратора по времени проживания':card.window?'Окно в календаре от AI администратора':'Совет AI администратора по цене'}>
+ return <Animated.View style={[t.box,style]} accessibilityLabel={card.listing?'Совет AI администратора по объявлению':card.forecast?'Прогноз загрузки на неделю от AI администратора':card.stay?'Предложение AI администратора по времени проживания':card.window?'Окно в календаре от AI администратора':'Совет AI администратора по цене'}>
   <View style={t.head}>
-   <View style={t.icon}><Text style={t.iconText}>{card.forecast?'▥':'✦'}</Text></View>
-   <View style={t.titleBox}><Text style={t.small}>{'AI администратор · '+(card.forecast?'прогноз на неделю':card.stay?(card.stay.kind==='late'?'поздний выезд':'ранний заезд'):card.window?'окно в календаре':card.price?.direction==='up'?'спрос вырос':'спрос снизился')}</Text><Text numberOfLines={1} style={t.title}>{card.subject}</Text></View>
+   <View style={t.icon}><Text style={t.iconText}>{card.forecast?'▥':card.listing?'★':'✦'}</Text></View>
+   <View style={t.titleBox}><Text style={t.small}>{'AI администратор · '+(card.listing?card.listing.title.toLocaleLowerCase('ru'):card.forecast?'прогноз на неделю':card.stay?(card.stay.kind==='late'?'поздний выезд':'ранний заезд'):card.window?'окно в календаре':card.price?.direction==='up'?'спрос вырос':'спрос снизился')}</Text><Text numberOfLines={1} style={t.title}>{card.subject}</Text></View>
    <Pressable accessibilityRole="button" accessibilityLabel="Позже" onPress={()=>setLater(v=>[...v,card.id])} style={t.close}><Text style={t.closeText}>×</Text></Pressable>
   </View>
   <PriceTipBody card={card} busy={busy} onDecide={decide} compact/>
@@ -162,5 +183,12 @@ const t=StyleSheet.create({
  dayLabel:{fontSize:F.caption[0],lineHeight:F.caption[1],fontWeight:'600',color:C.ink},
  dayLoad:{fontSize:F.caption[0],lineHeight:F.caption[1],color:C.muted},dayLoadBusy:{color:C.accent,fontWeight:'600'},
  summary:{marginTop:8,fontSize:F.label[0],lineHeight:F.label[1],fontWeight:'500',color:C.ink},
+ compare:{flexDirection:'row',alignItems:'center',gap:8,marginTop:12},
+ cmpMine:{flex:1,minWidth:0,gap:2,paddingVertical:8,paddingHorizontal:12,borderRadius:R.md,backgroundColor:C.surfaceAlt},
+ cmpThem:{flex:1,minWidth:0,gap:2,paddingVertical:8,paddingHorizontal:12,borderRadius:R.md,backgroundColor:C.accentSoft,borderWidth:1,borderColor:C.accentLine},
+ cmpValue:{fontSize:F.title[0],lineHeight:F.title[1],fontWeight:'700',color:C.ink},
+ cmpLabel:{fontSize:F.caption[0],lineHeight:F.caption[1],color:C.muted},
+ cmpIcon:{width:32,height:32,borderRadius:R.full,borderWidth:1,borderColor:C.line,backgroundColor:C.surface,alignItems:'center',justifyContent:'center'},
+ cmpIconText:{fontSize:F.label[0],lineHeight:F.label[1],color:C.accent},
  dim:{opacity:.6},
 });
