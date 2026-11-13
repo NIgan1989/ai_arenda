@@ -29,7 +29,7 @@ import {GuestResults} from './GuestResults';
 import {GuestMode} from './GuestMode';
 import {PriceTip} from './PriceTip';
 import {kindLabel} from '../../lib/listings';
-import {guestTrips,guestTripsLabel} from '../../lib/guest-trips';
+import {guestPin,guestTrips,guestTripsLabel} from '../../lib/guest-trips';
 import type {HubTab} from '../../lib/property-hub';
 import {cleanerLine,cleanerStep} from '../../lib/job-steps';
 import {FlatHub,FlatHubHead} from './FlatHub';
@@ -148,12 +148,28 @@ function GuestPanel({setScanning,accountId,data,mapData,publish,selected,setSele
   await request('/api/operations/matching/book',{id:live.id,offerId:offer.offerId,start:live.filters.start,end:live.filters.end,guests:Number(live.filters.guests),billingMode:live.filters.mode,expectedAmount:offer.estimate.amount,expectedPolicyVersion:offer.policy.version,acceptTerms:true},undefined,'match:'+live.id,'guest');
   const state=await request('/api/operations/matching/state',{id:live.id},undefined,undefined,'guest');setLive(state);await onChanged();
  });
+ // The guest's own confirmed stays stand on the map among the homes and say the next step (guest-trips.ts);
+ // «Маршрут» leads to the home on our own map, the same way the cleaner is led (Navigator.tsx).
+ const mapSkew=mapData?.serverTime&&mapData?.receivedAt?Number(mapData.serverTime)-Number(mapData.receivedAt):0,nav=useTrip('guest',mapSkew);
+ const stayNow=serverNow(mapData||data);
+ const stays:(MapPin&{id:string;canGo:boolean})[]=(mapData?.processes||[]).flatMap((p:Row)=>{
+  const own=p.kind==='booking'?(data.bookings||[]).find((b:Row)=>b.id===p.id):null,point=pointOf(p),state=own?guestPin(own,stayNow,data.paymentMode):null;
+  return own&&point&&state?[{key:'booking:'+p.id,id:String(p.id),point,title:p.title,label:state.label,tone:state.tone,canGo:p.location?.precision==='exact'&&own.start<stayNow+86400&&own.end>stayNow}]:[];
+ });
+ const staysKey=stays.map(v=>v.key+v.label).join();
+ const go=(stay:{id:string;title?:string;point:MapPoint})=>{setSelected('');expand(0);void nav.start({kind:'booking',id:stay.id,title:stay.title||'Жильё',target:stay.point});};
  // Pins follow the stage: catalogue, checked candidates, then owners who are answering.
  const stageKey=requestId?'live':preview?'preview:'+preview.serverTime:'base:'+draft.city;
  useEffect(()=>{
   const pin=(p:Row,tone:MapPin['tone']):MapPin[]=>{const point=pointOf(p),amount=p.estimate?.amount??p.price;return point?[{key:p.id,point,title:p.title,label:short(amount),tone,rank:typeof amount==='number'?amount:0}]:[];};
+  // On the way the map shows only the way: the home, the guest's point and the road between them.
+  if(nav.trip){
+   const target=stays.filter(v=>v.id===nav.trip!.id).map(({id,canGo,...m})=>m),me:MapPin[]=nav.here&&nav.status!=='arrived'?[{key:'me',point:nav.here.point,title:'Вы',label:'Вы',tone:'active'}]:[];
+   const path=nav.state?.path;
+   publish([...target,...me],'nav:'+nav.trip.id+':'+nav.rerouted,{lines:path&&path.length>1?[{key:'nav:'+nav.trip.id,from:path[0],to:path[path.length-1],tone:'nav',path}]:[]});
+  }
   // A booking made: the flat that was booked stays on the map, green, and the rest leave it.
-  if(requestId&&live?.status==='booked'){const flat=bookedFlat.current;publish(flat?pin(flat,'booked').map(p=>({...p,label:'✓ Бронь'})):[],'booked:'+live.id);}
+  else if(requestId&&live?.status==='booked'){const flat=bookedFlat.current;publish(flat?pin(flat,'booked').map(p=>({...p,label:'✓ Бронь'})):[],'booked:'+live.id);}
   // A flat being asked carries the end of its owner's time to answer, moved to this phone's clock.
   else if(requestId&&live){
    // Beams start at the searched point; a request restored after a restart starts them at the middle of the map.
@@ -162,8 +178,8 @@ function GuestPanel({setScanning,accountId,data,mapData,publish,selected,setSele
    publish(asked,'live:'+live.id+':'+offers.length+':'+(live.pendingProperties||[]).length,{lines:live.status==='searching'||live.status==='ready'||live.status==='booking'?beams(from,asked):[]});
   }
   else if(preview)publish(preview.properties.flatMap((p:Row)=>pin(p,p.quickRequest?'booking':'home').map(m=>p.match?.best?{...m,best:true}:m)),stageKey);
-  else publish((mapData?.properties||[]).flatMap((p:Row)=>pin(p,'home')),stageKey+':'+(mapData?.properties?.length||0));
- },[requestId,live,preview,mapData,draft.city]);
+  else publish([...(mapData?.properties||[]).flatMap((p:Row)=>pin(p,'home')),...stays.map(({id,canGo,...m})=>m)],stageKey+':'+(mapData?.properties?.length||0));
+ },[requestId,live,preview,mapData,draft.city,staysKey,nav.trip,nav.here,nav.route,nav.rerouted]);
  // The radar on the map runs while flats are searched and while owners are being asked.
  const scanning=(working&&!requestId)||(!!requestId&&(!live||live.status==='searching'));
  useEffect(()=>{setScanning(scanning);return()=>setScanning(false);},[scanning]);
@@ -222,7 +238,9 @@ function GuestPanel({setScanning,accountId,data,mapData,publish,selected,setSele
  const quick=preview?preview.properties.filter((p:Row)=>p.quickRequest).length:0;
  // Under the line the collapsed sheet shows one thing: a message, the flat tapped on the map, or the "Сейчас" card.
  const picked=snap===0&&!preview&&selected?(mapData?.properties||[]).find((p:Row)=>p.id===selected):null;
- const card=showNow&&!picked&&!hint&&!error?nowCard('guest',data,serverNow(data)):null;
+ // The guest's own stay tapped on the map, or the nearest one that can be reached now.
+ const stay=snap===0&&!preview?stays.find(v=>v.key===selected)||null:null,near=stays.find(v=>v.canGo)||null;
+ const card=showNow&&!picked&&!stay&&!hint&&!error?nowCard('guest',data,serverNow(data)):null;
  // On a short phone the card lives in the opened sheet, but never above what the person has just asked for:
  // with the list of flats or the form opened by "Уточнить" on screen it goes under them.
  const trips=guestTrips(data,serverNow(data));
@@ -230,8 +248,11 @@ function GuestPanel({setScanning,accountId,data,mapData,publish,selected,setSele
  const head=<MapSheetHead role="guest" text={asked} onText={setAsked} onSend={ask} onChip={chip} busy={working} summary={guestSummary(freshDraft(draft))} onRefine={toggleRefine} refining={refining} now={cardBelow?null:card} onNow={openCard}>
   {!!hint&&<View style={h.picked}><Text accessibilityRole={hint.error?'alert':undefined} accessibilityLiveRegion="polite" style={hint.error?h.error:h.note}>{hint.text}</Text>{!!hint.ask&&<Action secondary title="Спросить AI администратора" onPress={()=>onAsk(hint.ask!)}/>}</View>}
   {!!error&&<Text accessibilityRole="alert" style={h.error}>{error}</Text>}
+  {!!nav.error&&<Text accessibilityRole="alert" style={h.error}>{nav.error}</Text>}
+  {stay&&<View style={h.listRow}><View style={h.grow}><Text numberOfLines={1} style={h.eventTitle}>{stay.title}</Text><Text numberOfLines={1} style={h.note}>{stay.label}</Text></View>{stay.canGo&&<Action title="Маршрут" onPress={()=>go(stay)}/>}<Action secondary title="Открыть" onPress={()=>onOpenProcess('booking',stay.id)}/></View>}
+  {!stay&&near&&!preview&&!picked&&<View style={h.listRow}><View style={h.grow}><Text numberOfLines={1} style={h.eventTitle}>{near.title}</Text><Text numberOfLines={1} style={h.note}>{near.label}</Text></View><Action secondary title="Маршрут" onPress={()=>go(near)}/></View>}
   {/* The guest's own bookings are one row away from the search; the row says what the nearest one waits for. */}
-  {trips.length>0&&!preview&&!picked&&<Pressable accessibilityRole="button" accessibilityLabel={guestTripsLabel(trips)+(trips[0].open?'. '+trips[0].status:'')} onPress={()=>onOpenPage('bookings')} style={h.listRow}><Text style={[h.eventTitle,h.grow]}>{guestTripsLabel(trips)}</Text>{trips[0].open&&<Text numberOfLines={1} style={h.note}>{trips[0].status}</Text>}<Text style={h.note}>›</Text></Pressable>}
+  {trips.length>0&&!preview&&!picked&&!stay&&<Pressable accessibilityRole="button" accessibilityLabel={guestTripsLabel(trips)+(trips[0].open?'. '+trips[0].status:'')} onPress={()=>onOpenPage('bookings')} style={h.listRow}><Text style={[h.eventTitle,h.grow]}>{guestTripsLabel(trips)}</Text>{trips[0].open&&<Text numberOfLines={1} style={h.note}>{trips[0].status}</Text>}<Text style={h.note}>›</Text></Pressable>}
   {picked&&<View style={h.listRow}><View style={h.grow}><Text numberOfLines={1} style={h.eventTitle}>{picked.title}</Text><Text numberOfLines={1} style={h.note}>{[typeof picked.price==='number'?money(picked.price)+' за сутки':'',picked.district].filter(Boolean).join(' · ')}</Text></View><Action secondary title="Открыть" onPress={()=>onIntent('property:'+picked.id)}/></View>}
  </MapSheetHead>;
  // The form and the results live in the opened sheet only; a running request to owners keeps its place in any state.
@@ -239,7 +260,7 @@ function GuestPanel({setScanning,accountId,data,mapData,publish,selected,setSele
   ?<GuestResults preview={preview} draft={draft} selected={selected} onSelect={setSelected} onFocus={setFocus} onBook={bookFlat} onOpen={property=>onIntent('property:'+property.id,{mode:draft.mode,start:draft.start,end:draft.end,guests:draft.guests})} onRefine={toggleRefine} onWiden={narrowed?widen:undefined} onAskOwners={quick>0?()=>void begin():undefined} onBookEdge={onReach} busy={working}/>
   :<GuestForm draft={draft} onChange={change} onPickPoint={()=>{setPicking(true);expand(0);}} onSubmit={()=>void find()} busy={working}/>;
  return <View style={h.block}>
-  <HeadSlot onHeight={onHead}>{picking?pickView:requestId?null:head}</HeadSlot>
+  <HeadSlot onHeight={onHead}>{picking?pickView:nav.trip?<TripHead nav={nav} onOpen={()=>{const id=nav.trip!.id;nav.close();onOpenProcess('booking',id);}}/>:requestId?null:head}</HeadSlot>
   {!picking&&body}
   {!picking&&!requestId&&cardBelow&&!!card&&<NowCardView card={card} onOpen={openCard}/>}
  </View>;

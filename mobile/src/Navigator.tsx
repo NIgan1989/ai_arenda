@@ -65,7 +65,7 @@ export function TripHead({nav,onOpen}:{nav:TripControl;onOpen:()=>void}){
  const {trip,status,state}=nav;if(!trip)return null;
  if(status==='arrived')return <View style={n.wrap}>
   <View style={n.row}><View style={[n.arrow,n.arrived]}><Text style={n.arrowText}>⚑</Text></View><View style={h.grow}><Text style={n.big}>Вы на месте</Text><Text numberOfLines={1} style={h.note}>{trip.title}</Text></View></View>
-  <Action title="Открыть задание" onPress={onOpen}/><Action secondary title="Закрыть" onPress={nav.close}/>
+  <Action title={trip.kind==='booking'?'Открыть бронь':'Открыть задание'} onPress={onOpen}/><Action secondary title="Закрыть" onPress={nav.close}/>
  </View>;
  const waiting=status==='locating'||status==='routing'||!state;
  return <View style={n.wrap} accessibilityLiveRegion="polite">
