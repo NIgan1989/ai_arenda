@@ -1,14 +1,17 @@
-/* The kind of housing: icon tiles, four in a row (two rows fit a phone), then who cleans between guests. */
+/* The kind of housing: compact chips with an icon, then one switch for the owner's own staff. */
 .kp{display:flex;flex-direction:column;gap:var(--t-space-12)}
-.kp-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:var(--t-space-8)}
-.kp-kind{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:var(--t-space-4);min-height:76px;padding:var(--t-space-8) var(--t-space-4);border:1px solid var(--t-line);border-radius:var(--t-radius-md);background:var(--t-surface);color:var(--t-ink-soft);font:inherit;font-size:var(--t-font-caption);line-height:var(--t-line-caption);font-weight:600;text-align:center;cursor:pointer;transition:background var(--t-motion-fast),border-color var(--t-motion-fast),color var(--t-motion-fast)}
-.kp-ico{display:grid;place-items:center;width:36px;height:36px;border-radius:var(--t-radius-full);background:var(--t-surface-alt);color:var(--t-accent)}
-.kp-kind[aria-checked=true]{border-color:var(--t-accent);background:var(--t-accent-soft);color:var(--t-ink)}
-.kp-kind[aria-checked=true] .kp-ico{background:var(--t-accent);color:#fff}
-.kp-h{margin:var(--t-space-4) 0 0!important;font-size:var(--t-font-caption);line-height:var(--t-line-caption);font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--t-muted)}
-.kp-staff{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--t-space-8)}
-.kp-staff button{display:flex;flex-direction:column;align-items:flex-start;gap:var(--t-space-4);min-height:var(--t-control-touch);padding:var(--t-space-12) var(--t-space-16);border:2px solid var(--t-line);border-radius:var(--t-radius-lg);background:var(--t-surface);color:var(--t-ink);font:inherit;text-align:left;cursor:pointer}
-.kp-staff strong{display:flex;flex-direction:column;align-items:flex-start;gap:var(--t-space-4);line-height:var(--t-line-label)}
-.kp-staff strong svg{color:var(--t-accent)}
-.kp-staff small{color:var(--t-muted);font-size:var(--t-font-caption);line-height:var(--t-line-caption)}
-.kp-staff button[aria-checked=true]{border-color:var(--t-ai-from);background:linear-gradient(135deg,rgba(99,102,241,.08),rgba(6,182,212,.08))}
+.kp-grid{display:flex;flex-wrap:wrap;gap:var(--t-space-8)}
+.kp-kind{display:inline-flex;align-items:center;gap:var(--t-space-8);min-height:40px;padding:0 var(--t-space-12) 0 var(--t-space-8);border:1px solid var(--t-line-strong);border-radius:var(--t-radius-full);background:var(--t-surface);color:var(--t-ink-soft);font:inherit;font-size:var(--t-font-label);line-height:var(--t-line-label);font-weight:600;cursor:pointer;transition:background var(--t-motion-fast),border-color var(--t-motion-fast),color var(--t-motion-fast)}
+.kp-ico{display:grid;place-items:center;width:24px;height:24px;border-radius:var(--t-radius-full);background:var(--t-surface-alt);color:var(--t-accent)}
+.kp-kind[aria-checked=true]{border-color:var(--t-accent);background:var(--t-accent);color:#fff}
+.kp-kind[aria-checked=true] .kp-ico{display:grid;place-items:center;width:24px;height:24px;border-radius:var(--t-radius-full);background:var(--t-surface-alt);color:var(--t-accent)}
+.kp-staff{display:flex;align-items:center;gap:var(--t-space-12);min-height:56px;padding:var(--t-space-8) var(--t-space-12);border:1px solid var(--t-line);border-radius:var(--t-radius-md);background:var(--t-surface);cursor:pointer}
+.kp-staff-ico{flex:none;display:grid;place-items:center;width:36px;height:36px;border-radius:var(--t-radius-full);background:var(--t-surface-alt);color:var(--t-accent)}
+.kp-staff-text{flex:1;min-width:0;display:flex;flex-direction:column}
+.kp-staff-text strong{font-size:var(--t-font-label);line-height:var(--t-line-label)}
+.kp-staff-text small{color:var(--t-muted);font-size:var(--t-font-caption);line-height:var(--t-line-caption)}
+.kp-staff input{flex:none;appearance:none;-webkit-appearance:none;position:relative;width:56px;height:32px;margin:0;border-radius:var(--t-radius-full);background:var(--t-line-strong);cursor:pointer;transition:background var(--t-motion-fast)}
+.kp-staff input::after{content:'';position:absolute;top:4px;left:4px;width:24px;height:24px;border-radius:var(--t-radius-full);background:#fff;box-shadow:0 2px 4px rgba(14,19,36,.2);transition:transform var(--t-motion-fast)}
+.kp-staff input:checked{background:var(--t-success)}
+.kp-staff input:checked::after{transform:translateX(24px)}
+.kp-staff input:focus-visible{outline:2px solid var(--t-focus);outline-offset:2px}

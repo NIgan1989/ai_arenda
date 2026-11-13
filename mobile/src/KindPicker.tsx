@@ -1,25 +1,24 @@
 import React from 'react';
-import {Pressable,StyleSheet,Text,View} from 'react-native';
+import {Pressable,StyleSheet,Switch,Text,View} from 'react-native';
 import {C,type} from './styles';
 import {T} from './tokens';
 import {defaultOwnStaff,propertyTypes} from '../../lib/listings';
 const R=T.radius;
 const ICONS:Record<string,string>={apartment:'🏢',studio:'🛋',room:'🚪',house:'🏠',guesthouse:'🌲',hostel:'🛏',hotel:'🏨',aparthotel:'🏬'};
 
-// The kind of housing as icon tiles, four in a row, and who cleans between guests. Same rules as the site
+// The kind of housing as compact chips with an icon, and one switch for the owner's own staff. Same rules as the site
 // (components/kind-picker.tsx): a hotel, a hostel or an apart-hotel turns «Свой персонал» on, the owner can change it.
 export function KindPicker({kind,ownStaff,onChange}:{kind:string;ownStaff:boolean;onChange:(v:{type?:string;ownStaff?:boolean})=>void}){
- const staff=(on:boolean,title:string,hint:string)=><Pressable accessibilityRole="radio" accessibilityState={{checked:ownStaff===on}} onPress={()=>onChange({ownStaff:on})} style={[k.staff,ownStaff===on&&k.staffOn]}><Text style={k.staffTitle}>{title}</Text><Text style={k.hint}>{hint}</Text></Pressable>;
  return <View style={k.box}>
   <View style={k.grid} accessibilityRole="radiogroup" accessibilityLabel="Тип жилья">
    {Object.entries(propertyTypes).map(([id,label])=>{const on=kind===id;return <Pressable key={id} accessibilityRole="radio" accessibilityLabel={label} accessibilityState={{checked:on}} onPress={()=>onChange({type:id,ownStaff:defaultOwnStaff(id)})} style={[k.kind,on&&k.kindOn]}>
-    <View style={[k.ico,on&&k.icoOn]}><Text style={k.icoText}>{ICONS[id]}</Text></View><Text numberOfLines={2} style={[k.label,on&&k.labelOn]}>{label}</Text>
+    <View style={[k.ico,on&&k.icoOn]}><Text style={k.icoText}>{ICONS[id]}</Text></View><Text numberOfLines={1} style={[k.label,on&&k.labelOn]}>{label}</Text>
    </Pressable>;})}
   </View>
-  <Text style={k.h}>КТО УБИРАЕТ ПОСЛЕ ГОСТЕЙ</Text>
-  <View style={k.row} accessibilityRole="radiogroup">
-   {staff(false,'✦ Исполнители сервиса','ИИ находит исполнителя после каждого выезда')}
-   {staff(true,'👥 Свой персонал','Убирают ваши сотрудники, ИИ исполнителей не ищет')}
+  <View style={k.staff}>
+   <View style={k.ico}><Text style={k.icoText}>👥</Text></View>
+   <View style={{flex:1}}><Text style={k.staffTitle}>Свой персонал</Text><Text style={k.hint}>{ownStaff?'Убирают ваши сотрудники, ИИ исполнителей не ищет':'Выключено: после выезда ИИ найдёт исполнителя'}</Text></View>
+   <Switch accessibilityLabel="Свой персонал" value={ownStaff} onValueChange={v=>onChange({ownStaff:v})} trackColor={{true:C.success,false:C.lineStrong}} thumbColor="#FFFFFF"/>
   </View>
  </View>;
 }
@@ -27,17 +26,14 @@ export function KindPicker({kind,ownStaff,onChange}:{kind:string;ownStaff:boolea
 const k=StyleSheet.create({
  box:{gap:12},
  grid:{flexDirection:'row',flexWrap:'wrap',gap:8},
- kind:{width:'23%',flexGrow:1,minHeight:76,alignItems:'center',justifyContent:'center',gap:4,paddingVertical:8,paddingHorizontal:4,borderRadius:R.md,borderWidth:1,borderColor:C.line,backgroundColor:C.surface},
- kindOn:{borderColor:C.accent,backgroundColor:C.accentSoft},
- ico:{width:36,height:36,borderRadius:R.full,alignItems:'center',justifyContent:'center',backgroundColor:C.surfaceAlt},
- icoOn:{backgroundColor:C.accent},
- icoText:{fontSize:18,lineHeight:24},
- label:{...type.caption,color:C.inkSoft,fontWeight:'600',textAlign:'center'},
- labelOn:{color:C.ink},
- h:{...type.caption,color:C.muted,fontWeight:'700',letterSpacing:.6,marginTop:4},
- row:{flexDirection:'row',gap:8},
- staff:{flex:1,minHeight:44,padding:12,borderRadius:R.lg,borderWidth:2,borderColor:C.line,backgroundColor:C.surface,gap:4},
- staffOn:{borderColor:C.aiFrom,backgroundColor:C.accentSoft},
- staffTitle:{...type.body,color:C.ink,fontWeight:'700'},
+ kind:{flexDirection:'row',alignItems:'center',gap:8,minHeight:40,paddingLeft:8,paddingRight:12,borderRadius:R.full,borderWidth:1,borderColor:C.lineStrong,backgroundColor:C.surface},
+ kindOn:{borderColor:C.accent,backgroundColor:C.accent},
+ ico:{width:24,height:24,borderRadius:R.full,alignItems:'center',justifyContent:'center',backgroundColor:C.surfaceAlt},
+ icoOn:{backgroundColor:'rgba(255,255,255,0.2)'},
+ icoText:{fontSize:14,lineHeight:20},
+ label:{...type.label,color:C.inkSoft,fontWeight:'600'},
+ labelOn:{color:C.onAccent},
+ staff:{flexDirection:'row',alignItems:'center',gap:12,minHeight:56,paddingVertical:8,paddingHorizontal:12,borderRadius:R.md,borderWidth:1,borderColor:C.line,backgroundColor:C.surface},
+ staffTitle:{...type.label,color:C.ink,fontWeight:'700'},
  hint:{...type.caption,color:C.muted},
 });
