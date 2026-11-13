@@ -1,6 +1,7 @@
 import {DomainError,required,number,type Role} from './domain';
 import type {RentalService} from './service';
 import {PUBLISH_REVIEW} from './listing-edit';
+import {autoReview} from './admin-autocheck';
 import {epoch,uuid,q,one,rows,hash,httpsEndpoint,safeEqual,type Row,type OperationConfig} from './operation-core';
 
 export async function securityState(service:RentalService,role:Role,platformAdmin=false){
@@ -26,12 +27,14 @@ export async function requestParticipantReview(service:RentalService,role:Role,b
  if(role==='guest')throw new DomainError('В этой форме проверяются владельцы и исполнители.',403);
  const reference=required(body.reference,'Основание проверки',500),propertyId=role==='owner'?required(body.propertyId,'Квартира',100):null;
  if(propertyId&&!await service.one('SELECT id FROM properties WHERE id=? AND owner_id=?',propertyId,service.userId))throw new DomainError('Квартира недоступна.',403);
- if(await one(service.db,"SELECT id FROM participant_reviews WHERE user_id=? AND role=? AND COALESCE(property_id,'')=COALESCE(?,'') AND status='pending' AND (role<>'owner' OR property_revision=COALESCE((SELECT revision FROM review_property_bindings WHERE property_id=participant_reviews.property_id),0))",service.userId,role,propertyId))return {message:'Заявка уже ожидает проверки.'};
+ const waiting=await one(service.db,"SELECT id FROM participant_reviews WHERE user_id=? AND role=? AND COALESCE(property_id,'')=COALESCE(?,'') AND status='pending' AND (role<>'owner' OR property_revision=COALESCE((SELECT revision FROM review_property_bindings WHERE property_id=participant_reviews.property_id),0))",service.userId,role,propertyId);
+ if(waiting){if(await autoReview(service.db,waiting.id,config)==='approve')return {message:'ИИ-администратор проверил: всё в порядке.',verdict:'approve'};return {message:'Заявка уже ожидает проверки.'};}
  const reviewId=uuid(),at=epoch();await q(service.db,'INSERT INTO participant_reviews(id,user_id,role,property_id,reference,created_at) VALUES (?,?,?,?,?,?)',reviewId,service.userId,role,propertyId,reference,at).run();
- // The platform administrators hear about the request at once, so the owner does not wait for someone to open the admin page.
- const admins=typeof config.PLATFORM_ADMIN_IDS==='string'?config.PLATFORM_ADMIN_IDS.split(',').map(v=>v.trim()).filter(Boolean):[];
- if(admins.length){const title=propertyId?(await one(service.db,'SELECT title FROM properties WHERE id=?',propertyId))?.title:'';const text=role==='owner'?'Новая квартира ждёт проверки: «'+(title||'без названия')+'». Откройте админку → Проверки.':'Исполнитель ждёт проверки. Откройте админку → Проверки.';
-  await service.db.batch(admins.map(admin=>q(service.db,'INSERT OR IGNORE INTO notifications(id,user_id,body,dedupe,read,created_at) VALUES (?,?,?,?,0,?)',uuid(),admin,text,'admin:review:'+reviewId+':'+admin,at)));}
+ // The AI administrator checks the request at once: it approves when every rule passes, tells the participant
+ // what to add, or hands the request to the platform administrators with the reasons.
+ const verdict=await autoReview(service.db,reviewId,config);
+ if(verdict==='approve')return {message:role==='owner'?'ИИ-администратор проверил квартиру: всё в порядке.':'ИИ-администратор проверил анкету: всё в порядке.',verdict};
+ if(verdict==='fix'){const checks=JSON.parse((await one(service.db,'SELECT ai_checks FROM participant_reviews WHERE id=?',reviewId))?.ai_checks||'[]') as Row[];return {message:'Чтобы пройти проверку, осталось: '+checks.filter(c=>c.state==='fix').map(c=>c.note.charAt(0).toLowerCase()+c.note.slice(1)).join('; ')+'.',verdict};}
  return {message:'Заявка на проверку сохранена. Документы и персональные номера в это поле добавлять не нужно.'};
 }
 export async function decideParticipantReview(service:RentalService,body:Row,platformAdmin:boolean){

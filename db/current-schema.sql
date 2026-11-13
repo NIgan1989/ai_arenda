@@ -43,7 +43,8 @@
 -- migration 0039_load_forecasts.sql sha256:26d8d5834e810de1cc8c8a8f58aa7f2043fc36bc599cedd126fdd2a86735aea2
 -- migration 0040_listing_tips.sql sha256:6daf35e84b70a92a86e2e186ee7df461cebaa20c7737a16e99cb7b250d25ecfb
 -- migration 0041_cleaning_fee_tips.sql sha256:d063c3719616e2d1a4beb3d68954a83483c21d56bd836d398f125db7a2d5155a
--- migration 0042_booking_risks.sql sha256:be613dd277154762a2b1bd450b2e89f165c4ad1a6cb14b4a3547e37ee9359dcd
+-- migration 0042_ai_reviews.sql sha256:b08d917839abb0a26c858117a85b4f20d9a3ac1e7660a5224a5f1c81d69bef4c
+-- migration 0043_booking_risks.sql sha256:be613dd277154762a2b1bd450b2e89f165c4ad1a6cb14b4a3547e37ee9359dcd
 
 -- table access_receipts
 CREATE TABLE access_receipts (id TEXT PRIMARY KEY,property_id TEXT NOT NULL,entity_kind TEXT NOT NULL,entity_id TEXT NOT NULL,user_id TEXT NOT NULL,created_at INTEGER NOT NULL,expires_at INTEGER NOT NULL);
@@ -666,7 +667,7 @@ CREATE TABLE owner_balance_entries (
 );
 
 -- table participant_reviews
-CREATE TABLE participant_reviews (id TEXT PRIMARY KEY,user_id TEXT NOT NULL REFERENCES profiles(id),role TEXT NOT NULL,property_id TEXT REFERENCES properties(id),status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','approved','rejected')),method TEXT NOT NULL DEFAULT '',reference TEXT NOT NULL DEFAULT '',reviewer_id TEXT,notes TEXT NOT NULL DEFAULT '',created_at INTEGER NOT NULL,reviewed_at INTEGER,valid_until INTEGER,version INTEGER NOT NULL DEFAULT 1, property_revision INTEGER NOT NULL DEFAULT 0);
+CREATE TABLE participant_reviews (id TEXT PRIMARY KEY,user_id TEXT NOT NULL REFERENCES profiles(id),role TEXT NOT NULL,property_id TEXT REFERENCES properties(id),status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','approved','rejected')),method TEXT NOT NULL DEFAULT '',reference TEXT NOT NULL DEFAULT '',reviewer_id TEXT,notes TEXT NOT NULL DEFAULT '',created_at INTEGER NOT NULL,reviewed_at INTEGER,valid_until INTEGER,version INTEGER NOT NULL DEFAULT 1, property_revision INTEGER NOT NULL DEFAULT 0, ai_verdict TEXT NOT NULL DEFAULT '' CHECK(ai_verdict IN ('','approve','fix','escalate')), ai_checks TEXT NOT NULL DEFAULT '[]', ai_checked_at INTEGER);
 
 -- table payment_intents
 CREATE TABLE payment_intents (
@@ -685,7 +686,7 @@ CREATE TABLE pilot_policy (
  require_cleaner_review INTEGER NOT NULL DEFAULT 0 CHECK(require_cleaner_review IN (0,1)),
  require_phone INTEGER NOT NULL DEFAULT 0 CHECK(require_phone IN (0,1)),
  version INTEGER NOT NULL DEFAULT 1, updated_by TEXT NOT NULL DEFAULT '',updated_at INTEGER NOT NULL DEFAULT 0
-);
+, ai_review INTEGER NOT NULL DEFAULT 1 CHECK(ai_review IN (0,1)));
 
 -- table platform_billing
 CREATE TABLE platform_billing (
