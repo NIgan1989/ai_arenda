@@ -97,3 +97,25 @@ test('an approval refused because the flat changed after the request goes to the
   assert.equal(f.db.raw.prepare("SELECT COUNT(*) n FROM notifications WHERE dedupe LIKE 'admin:review:%'").get().n,1);
  }finally{f.db.close();}
 });
+test('a doubtful request reaches the administrator in Telegram with buttons; only the administrator can decide',async()=>{
+ const f=await fixture(),fetch=globalThis.fetch,{RentalService}=await load('service'),{createTelegramLink,acceptTelegramLink,deliverOutbox}=await load('delivery'),serviceFor=id=>new RentalService(f.db,id);
+ const config={TELEGRAM_BOT_TOKEN:'test-token',TELEGRAM_BOT_USERNAME:'rental_test_bot',TELEGRAM_WEBHOOK_SECRET:'s',SITE_PUBLIC_URL:'https://rental.example.test',PLATFORM_ADMIN_IDS:'guest'};
+ try{
+  const calls=[];globalThis.fetch=async(url,request)=>{calls.push({method:String(url).split('/').pop(),body:JSON.parse(request.body)});return Response.json({ok:true,result:{message_id:9}});};
+  const link=await createTelegramLink(f.guest,'guest',config);await acceptTelegramLink(f.db,{message:{text:'/start '+new URL(link.url).searchParams.get('start'),chat:{type:'private',id:321},from:{id:321,is_bot:false}}},'s',config,serviceFor);
+  const ownerLink=await createTelegramLink(f.owner,'owner',config);await acceptTelegramLink(f.db,{message:{text:'/start '+new URL(ownerLink.url).searchParams.get('start'),chat:{type:'private',id:555},from:{id:555,is_bot:false}}},'s',config,serviceFor);
+  const {PUBLISH_REVIEW}=await load('listing-edit');await strict(f);readyFlat(f);
+  f.db.raw.prepare("UPDATE properties SET description=description||' Пишите в WhatsApp' WHERE id=?").run(f.property);
+  await requestParticipantReview(f.owner,'owner',{propertyId:f.property,reference:PUBLISH_REVIEW+': fixture'},config);
+  calls.length=0;await deliverOutbox(f.db,config,30,serviceFor);
+  const sent=calls.filter(c=>c.method==='sendMessage').find(c=>c.body.chat_id==='321').body;
+  assert.match(sent.text,/ждёт проверки/);const [[yes,no],[open]]=sent.reply_markup.inline_keyboard;
+  assert.equal(open.url,'https://rental.example.test/admin?section=reviews');assert.ok(yes.callback_data.length<=64&&no.callback_data.length<=64);
+  const tap=(data,from)=>acceptTelegramLink(f.db,{callback_query:{id:'q',data,from:{id:from,is_bot:false},message:{message_id:9,text:sent.text,chat:{type:'private',id:from}}}},'s',config,serviceFor);
+  await tap(yes.callback_data,555);assert.equal(f.db.raw.prepare('SELECT status FROM participant_reviews WHERE property_id=?').get(f.property).status,'pending');
+  assert.equal((await tap(yes.callback_data,321)).decided,true);
+  const review=f.db.raw.prepare('SELECT * FROM participant_reviews WHERE property_id=?').get(f.property);
+  assert.equal(review.status,'approved');assert.equal(review.reviewer_id,'guest');
+  assert.equal((await tap(no.callback_data,321)).decided,true);assert.equal(f.db.raw.prepare('SELECT status FROM participant_reviews WHERE property_id=?').get(f.property).status,'approved');
+ }finally{globalThis.fetch=fetch;f.db.close();}
+});

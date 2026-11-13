@@ -44,6 +44,7 @@
 -- migration 0040_listing_tips.sql sha256:6daf35e84b70a92a86e2e186ee7df461cebaa20c7737a16e99cb7b250d25ecfb
 -- migration 0041_cleaning_fee_tips.sql sha256:d063c3719616e2d1a4beb3d68954a83483c21d56bd836d398f125db7a2d5155a
 -- migration 0042_ai_reviews.sql sha256:b08d917839abb0a26c858117a85b4f20d9a3ac1e7660a5224a5f1c81d69bef4c
+-- migration 0043_admin_telegram.sql sha256:9725018759d6a70777133870a226d9da60c4b786fac3d486324268d0a3664d81
 
 -- table access_receipts
 CREATE TABLE access_receipts (id TEXT PRIMARY KEY,property_id TEXT NOT NULL,entity_kind TEXT NOT NULL,entity_id TEXT NOT NULL,user_id TEXT NOT NULL,created_at INTEGER NOT NULL,expires_at INTEGER NOT NULL);
@@ -1640,6 +1641,14 @@ CREATE TRIGGER notification_outbox AFTER INSERT ON notifications BEGIN
  INSERT OR IGNORE INTO delivery_outbox(id,notification_id,user_id,role,channel,available_at,created_at)
  SELECT lower(hex(randomblob(16))),NEW.id,NEW.user_id,c.role,c.channel,NEW.created_at,NEW.created_at FROM delivery_channels c
  WHERE c.user_id=NEW.user_id AND c.enabled=1 AND c.verified_at IS NOT NULL AND NEW.dedupe LIKE c.role||':%';
+END;
+
+-- trigger notification_outbox_admin
+CREATE TRIGGER notification_outbox_admin AFTER INSERT ON notifications WHEN NEW.dedupe LIKE 'admin:%' BEGIN
+ INSERT OR IGNORE INTO delivery_outbox(id,notification_id,user_id,role,channel,available_at,created_at)
+ SELECT lower(hex(randomblob(16))),NEW.id,NEW.user_id,c.role,'telegram',NEW.created_at,NEW.created_at FROM delivery_channels c
+ WHERE c.user_id=NEW.user_id AND c.channel='telegram' AND c.enabled=1 AND c.verified_at IS NOT NULL
+ ORDER BY CASE c.role WHEN 'owner' THEN 0 WHEN 'guest' THEN 1 ELSE 2 END LIMIT 1;
 END;
 
 -- trigger notification_push
