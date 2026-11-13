@@ -36,7 +36,9 @@ test('the menu is short: five rows open their own screens, the rest stays one ta
   const { readFileSync } = await import('node:fs');
   const read = path => readFileSync(new URL('../' + path, import.meta.url), 'utf8');
   for (const text of [read('components/account-control.tsx'), read('mobile/src/AccountControl.tsx')]) {
-    assert.match(text, /type MenuView=''\|'profile'\|'trust'\|'plan'\|'settings'\|'safety'/);
+    // «journal» is the guest's short row «Что сделал ИИ»; the owner and the cleaner read the same journal inside «plan».
+    assert.match(text, /type MenuView=''\|'profile'\|'trust'\|'plan'\|'journal'\|'settings'\|'safety'/);
+    assert.match(text, /!owner&&!worker&&[^<]*'Что сделал ИИ'|!owner&&!worker&&journal\.length>0&&<Row title="Что сделал ИИ"/, 'the journal row is only the guest\'s');
     for (const view of ['profile', 'trust', 'plan', 'settings', 'safety']) assert.ok(text.includes("view==='" + view + "'"), view);
     assert.match(text, /'properties'\]:\['jobs'\]/, "the owner's objects and the cleaner's search for jobs live on the map");
   }

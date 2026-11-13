@@ -34,6 +34,10 @@ test('autopilot journey: booking, test payment, check-in, chat, checkout, cleani
   assert.ok(ownerMarks.some(m=>m.kind==='booking'&&m.id===id&&m.move==='confirmed'&&m.propertyId===f.property),'the AI confirmation is on the object');
   assert.ok(ownerMarks.some(m=>m.kind==='job'&&m.id===job.id&&m.move==='assigned'),'the AI assignment is on the object');
   assert.ok(cleanerMarks.some(m=>m.kind==='job'&&m.id===job.id&&m.move==='took'),'the cleaner sees the autopilot took the job');
+  const {aiJournal}=await load('ai-moves'),ownerLog=await aiJournal(f.db,'owner','owner'),cleanerLog=await aiJournal(f.db,'cleaner','cleaner');
+  assert.ok(ownerLog.some(e=>e.text==='ИИ подтвердил бронь'&&e.title)&&ownerLog.some(e=>e.text==='ИИ назначил исполнителя'),'the owner reads what the AI did, with the object');
+  assert.ok(cleanerLog.some(e=>e.text==='Автопилот взял уборку'&&e.title),'the cleaner reads what the autopilot took');
+  assert.ok(ownerLog.every((e,i)=>!i||ownerLog[i-1].at>=e.at),'the newest first');
   assert.ok(!ownerMarks.some(m=>m.move==='took')&&!cleanerMarks.some(m=>m.move==='confirmed'),'each person sees only their own notices');
   // Arrival day. The guest arrives before paying: they are asked to pay in the card, not the owner to check a transfer.
   move(id,job.id,-(86400+600));
