@@ -509,7 +509,8 @@ export class RentalService {
       await assertCalendarAvailable(this.db,b.property_id,b.start,b.occupied_until);
       const fee=number(body.cleaningFee||0,'Стоимость уборки',0,1000000);
       if(b.status!=='requested'||b.expires_at<=now()) throw new DomainError('Срок заявки истёк или статус уже изменился.',409);
-      const policyGate=this.execution?" AND EXISTS(SELECT 1 FROM property_policies WHERE property_id=bookings.property_id AND version=? AND auto_confirm=1 AND cleaning_fee=? AND cleaning_fee<=cleaning_budget AND (mandate_until=0 OR mandate_until>?))":'';
+      // A high booking risk is never confirmed on the owner's behalf: the owner decides.
+      const policyGate=this.execution?" AND EXISTS(SELECT 1 FROM property_policies WHERE property_id=bookings.property_id AND version=? AND auto_confirm=1 AND cleaning_fee=? AND cleaning_fee<=cleaning_budget AND (mandate_until=0 OR mandate_until>?)) AND NOT EXISTS(SELECT 1 FROM booking_risks WHERE booking_id=bookings.id AND level='high')":'';
       const auditId=id(),auditAction=this.execution?JSON.stringify({action:'booking.confirmed',onBehalfOf:this.userId,...this.execution}):'booking.confirmed';
       const statements=[this.query("UPDATE bookings SET status='confirmed' WHERE id=? AND status='requested' AND expires_at>? AND EXISTS(SELECT 1 FROM booking_terms WHERE booking_id=? AND version=?)"+policyGate,bookingId,now(),bookingId,terms?.version,...(this.execution?[this.execution.policyVersion,fee,now()]:[])),this.query('INSERT INTO audit_events SELECT ?,?,?,?,? WHERE changes()>0',auditId,this.execution?'system:rental-policy':this.userId,bookingId,auditAction,now()),this.query("INSERT OR IGNORE INTO notifications SELECT ?,?,?,?,?,? WHERE EXISTS(SELECT 1 FROM audit_events WHERE id=?)",id(),b.guest_id,`Бронь «${b.title}» подтверждена. Адрес доступен в карточке.`,'guest:confirmed:'+bookingId,0,now(),auditId)];
       statements.push(accrueCommission(this.db,bookingId,auditId,now()));

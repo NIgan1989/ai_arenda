@@ -11,8 +11,8 @@ test('a guest with clean stays is low risk; a new guest without a phone at the l
  assert.equal(riskAdvice(good),'Можно подтверждать без дополнительных условий.');
  const first=assessBookingRisk(signals({phone:false}));
  assert.equal(first.level,'medium');assert.equal(first.deposit,10000,'half a day for a medium risk');
- assert.equal(riskAdvice(first).replace(/\s/g,' '),'Можно взять депозит 10 000 ₸ (вернётся гостю после выезда) и попросить гостя подтвердить телефон.');
- assert.match(riskAdvice(assessBookingRisk(signals({phone:false,accountAge:3600,lead:3600}))),/^Советую взять депозит/);
+ assert.equal(riskAdvice(first).replace(/\s/g,' '),'Можно взять возвратный депозит 10 000 ₸ и попросить подтвердить телефон.');
+ assert.match(riskAdvice(assessBookingRisk(signals({phone:false,accountAge:3600,lead:3600}))),/^Советую взять возвратный депозит/);
  const night=assessBookingRisk(signals({phone:false,accountAge:3600,lead:3600,nightHourly:true}));
  assert.equal(night.level,'high');assert.equal(night.deposit,20000);
  assert.deepEqual(night.reasons,['телефон не подтверждён','первая бронь в сервисе','аккаунт создан сегодня','заезд меньше чем через 3 часа']);
@@ -31,7 +31,7 @@ test('the owner sees the risk on the request and can confirm it with the advised
   assert.ok(f.db.raw.prepare("SELECT 1 FROM notifications WHERE dedupe=?").get('guest:phone-ask:'+id),'the guest is asked to verify the phone');
   const card=(await f.owner.roleState('owner')).approvals.find(c=>c.id==='booking:'+id);
   assert.equal(card.risk.label,'Риск средний');assert.equal(card.depositLabel.replace(/\s/g,' '),'С депозитом 5 000 ₸');
-  assert.match(card.risk.advice,/депозит 5\s000\s₸/);
+  assert.match(card.risk.advice,/возвратный депозит 5\s000\s₸/);
   const guestCard=(await f.guest.roleState('guest')).approvals.find(c=>c.id==='booking:'+id);
   assert.equal(guestCard.risk,undefined,'the guest never sees their own risk');
   const r=await f.owner.decideApproval('owner',{id:card.id,revision:card.revision,action:'deposit',cleaningFee:0});
@@ -62,6 +62,10 @@ test('under autopilot a high risk is not confirmed automatically and goes to the
   const row=f.db.raw.prepare('SELECT level,held FROM booking_risks WHERE booking_id=?').get(r.id);assert.deepEqual([row.level,row.held],['high',1]);
   assert.match(f.db.raw.prepare("SELECT body FROM notifications WHERE dedupe=?").get('owner:booking:'+r.id).body,/не подтвердил заявку .* автоматически: риск высокий/);
   const card=(await f.owner.roleState('owner')).approvals.find(c=>c.id==='booking:'+r.id);assert.equal(card.risk.held,true);
+  // The background administrator does not confirm it either, even on a direct delegated call.
+  const {RentalService}=await load('service'),pv=policyVersion(f),fee=f.db.raw.prepare('SELECT cleaning_fee FROM property_policies WHERE property_id=?').get(f.property).cleaning_fee;
+  await assert.rejects(new RentalService(f.db,'owner',{propertyId:f.property,policyVersion:pv}).bookingAction(r.id,{action:'confirm',cleaningFee:fee}));
+  assert.equal(f.db.raw.prepare('SELECT status FROM bookings WHERE id=?').get(r.id).status,'requested');
   // A verified phone and past stays let autopilot confirm on its own again.
   f.db.raw.prepare("INSERT INTO phone_verifications VALUES ('guest','+77000000009','x',0,0,0,?)").run(now());
   f.db.raw.prepare('UPDATE profiles SET created_at=? WHERE id=?').run(now()-30*DAY,'guest');

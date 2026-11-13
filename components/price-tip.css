@@ -77,3 +77,9 @@
 .booking-risk-reasons{display:flex;flex-wrap:wrap;gap:var(--t-space-8);margin:var(--t-space-8) 0 0;padding:0;list-style:none}
 .booking-risk-reasons li{padding:2px 8px;border-radius:var(--t-radius-full);background:var(--t-surface);font-size:14px;line-height:20px;color:var(--t-ink-soft)}
 .booking-risk-advice{margin:var(--t-space-8) 0 0;font-size:14px;line-height:20px;color:var(--t-ink)}
+.booking-risk.is-compact{margin:var(--t-space-12) 0 0;padding:var(--t-space-8) var(--t-space-12)}
+.price-tip-actions.is-pair{margin-top:var(--t-space-8)}
+.price-tip-actions.is-pair button{flex:1;min-width:0}
+.price-tip-when.is-dates{margin-top:4px}
+.price-tip-when.is-dates span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.booking-risk-line{margin:4px 0 0;font-size:14px;line-height:20px;color:var(--t-ink-soft)}
