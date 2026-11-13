@@ -36,7 +36,7 @@ export async function riskSignals(db:D1Database,guestId:string,booking:{start:nu
   EXISTS(SELECT 1 FROM phone_verifications v WHERE v.user_id=p.id AND v.verified_at IS NOT NULL) phone,
   (SELECT COUNT(*) FROM bookings WHERE guest_id=p.id AND status='completed') completed,
   (SELECT COUNT(DISTINCT a.entity_id) FROM audit_events a JOIN bookings b ON b.id=a.entity_id WHERE b.guest_id=p.id AND a.action LIKE '%booking.checkout_disputed%') disputes,
-  (SELECT COUNT(*) FROM audit_events WHERE actor_id=p.id AND action='booking.cancelled') cancels
+  (SELECT COUNT(DISTINCT a.entity_id) FROM audit_events a JOIN bookings b ON b.id=a.entity_id WHERE a.actor_id=p.id AND b.guest_id=p.id AND a.action='booking.cancelled' AND EXISTS(SELECT 1 FROM audit_events c WHERE c.entity_id=a.entity_id AND c.action LIKE '%booking.confirmed%' AND c.created_at<=a.created_at)) cancels
   FROM profiles p WHERE p.id=?`,guestId)||{} as Row;
  const h=localHour(booking.start);
  return {phone:!!g.phone,completed:Number(g.completed||0),disputes:Number(g.disputes||0),cancels:Number(g.cancels||0),accountAge:t-Number(g.created_at||t),lead:booking.start-t,

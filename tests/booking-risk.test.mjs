@@ -73,3 +73,16 @@ test('under autopilot a high risk is not confirmed automatically and goes to the
   assert.equal(f.db.raw.prepare('SELECT status FROM bookings WHERE id=?').get(ok.id).status,'confirmed');
  }finally{f.db.close();}
 });
+
+test('only the guest own cancellations of confirmed bookings count, once per booking',async()=>{
+ const f=await fixture();try{
+  const {riskSignals}=await load('booking-risk'),t=now(),ins=f.db.raw.prepare('INSERT INTO audit_events VALUES (?,?,?,?,?)');
+  const sig=()=>riskSignals(f.db,'guest',{start:t+2*DAY,end:t+3*DAY,billingMode:'daily',price:10000,deposit:0});
+  // The fixture booking is confirmed; the guest cancels it twice and the owner cancels another one.
+  ins.run('c1','guest',f.booking,'booking.cancelled',t+1);ins.run('c2','guest',f.booking,'booking.cancelled',t+2);
+  const start=t+5*DAY,req=(await f.guest.createBooking({propertyId:f.property,start:iso(start),end:iso(start+DAY),guests:1,billingMode:'daily',requestKey:'cx',acceptTerms:true})).id;
+  ins.run('c3','guest',req,'booking.cancelled',t+3);
+  ins.run('c4','owner',req,'booking.cancelled',t+4);
+  assert.equal((await sig()).cancels,1);
+ }finally{f.db.close();}
+});
