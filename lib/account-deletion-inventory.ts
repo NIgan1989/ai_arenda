@@ -3,6 +3,7 @@
 export const accountDeletionColumns:Record<string,string>={
  "stay_offers":"id,booking_id,guest_id,owner_id,kind,start,end,hours,amount,extra,billing_mode,base_version,policy_version,automatic,status,change_id,created_at,expires_at,decided_at",
  "calendar_windows":"id,property_id,owner_id,start,end,percent,hourly_from,hourly_to,status,created_at,decided_at",
+ "cleaning_fee_tips":"id,property_id,owner_id,from_fee,to_fee,typical,samples,refused,policy_version,status,created_at,expires_at,decided_at",
  "listing_tips":"id,property_id,owner_id,kind,subject,mine,theirs,count,leaders,value,details_version,policy_version,status,created_at,expires_at,decided_at",
  "load_forecasts":"id,owner_id,week_start,city,days,advice,property_id,policy_version,from_value,to_value,from_hourly,to_hourly,from_nightly,to_nightly,percent,reasons,status,created_at,expires_at,decided_at",
  "price_suggestions":"id,property_id,owner_id,direction,percent,policy_version,from_daily,to_daily,from_hourly,to_hourly,from_nightly,to_nightly,signals,reasons,status,created_at,expires_at,decided_at",
@@ -103,6 +104,8 @@ export const accountDeletionFenceSql:Record<string,string>={
  "account_erased_calendar_windows_update": "CREATE TRIGGER account_erased_calendar_windows_update BEFORE UPDATE ON calendar_windows WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.owner_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END",
  "account_erased_load_forecasts_update": "CREATE TRIGGER account_erased_load_forecasts_update BEFORE UPDATE ON load_forecasts WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.owner_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END",
  "account_erased_load_forecasts_insert": "CREATE TRIGGER account_erased_load_forecasts_insert BEFORE INSERT ON load_forecasts WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.owner_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END",
+ "account_erased_cleaning_fee_tips_update": "CREATE TRIGGER account_erased_cleaning_fee_tips_update BEFORE UPDATE ON cleaning_fee_tips WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.owner_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END",
+ "account_erased_cleaning_fee_tips_insert": "CREATE TRIGGER account_erased_cleaning_fee_tips_insert BEFORE INSERT ON cleaning_fee_tips WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.owner_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END",
  "account_erased_listing_tips_update": "CREATE TRIGGER account_erased_listing_tips_update BEFORE UPDATE ON listing_tips WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.owner_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END",
  "account_erased_listing_tips_insert": "CREATE TRIGGER account_erased_listing_tips_insert BEFORE INSERT ON listing_tips WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.owner_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END",
  "account_erased_price_suggestions_insert": "CREATE TRIGGER account_erased_price_suggestions_insert BEFORE INSERT ON price_suggestions WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.owner_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END",

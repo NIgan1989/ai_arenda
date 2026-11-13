@@ -1,6 +1,6 @@
 'use client';
 import {useEffect,useState} from 'react';
-import {CalendarClock,CalendarDays,Camera,Check,Clock3,FileText,KeyRound,Lightbulb,Sparkles,TrendingDown,TrendingUp,X} from 'lucide-react';
+import {Brush,CalendarClock,CalendarDays,Camera,Check,Clock3,FileText,KeyRound,Lightbulb,Sparkles,TrendingDown,TrendingUp,X} from 'lucide-react';
 import type {Approval} from '../lib/approvals';
 import './price-tip.css';
 type Row=Record<string,any>;
@@ -78,6 +78,24 @@ function ListingTipBody({card,busy,onDecide,compact}:{card:Approval;busy:boolean
  </>;
 }
 
+// Cleaning price: the flat's price next to what similar flats pay (or what cleaners refused), and one button.
+function CleaningTipBody({card,busy,onDecide,compact}:{card:Approval;busy:boolean;onDecide:(action:'accept'|'reject')=>void;compact:boolean}){
+ const c=card.cleaningTip!;
+ return <>
+  <div className="listing-compare">
+   <span className="listing-compare-mine"><b>{money(c.from)}</b><small>{c.refused?'отказов: '+c.refused:'сейчас у вас'}</small></span>
+   <span className="listing-compare-arrow" aria-hidden="true"><Brush size={18}/></span>
+   <span className="listing-compare-them"><b>{money(c.to)}</b><small>{c.typical?'платят за похожие':'предлагаю'}</small></span>
+  </div>
+  <p className="price-tip-why is-full">{c.text}</p>
+  <div className="price-tip-actions">
+   <button type="button" className="price-tip-accept" disabled={busy} onClick={()=>onDecide('accept')}><Check size={18} aria-hidden="true"/>{card.acceptLabel}</button>
+   <button type="button" className="price-tip-reject" disabled={busy} onClick={()=>onDecide('reject')}>{card.rejectLabel}</button>
+  </div>
+  {!compact&&<p className="price-tip-note">Открытые уборки уйдут исполнителям заново по новой цене. Без вашего согласия ничего не изменится.</p>}
+ </>;
+}
+
 // Late checkout or early check-in for the guest who asked about it in the booking chat.
 function StayTipBody({card,busy,onDecide,compact}:{card:Approval;busy:boolean;onDecide:(action:'accept'|'reject')=>void;compact:boolean}){
  const o=card.stay!;
@@ -96,6 +114,7 @@ function StayTipBody({card,busy,onDecide,compact}:{card:Approval;busy:boolean;on
 }
 
 export function PriceTipBody({card,busy,onDecide,compact=false}:{card:Approval;busy:boolean;onDecide:(action:'accept'|'reject')=>void;compact?:boolean}){
+ if(card.cleaningTip)return <CleaningTipBody card={card} busy={busy} onDecide={onDecide} compact={compact}/>;
  if(card.listing)return <ListingTipBody card={card} busy={busy} onDecide={onDecide} compact={compact}/>;
  if(card.forecast)return <ForecastTipBody card={card} busy={busy} onDecide={onDecide} compact={compact}/>;
  if(card.stay)return <StayTipBody card={card} busy={busy} onDecide={onDecide} compact={compact}/>;
@@ -120,24 +139,24 @@ export function PriceTipBody({card,busy,onDecide,compact=false}:{card:Approval;b
 
 export function PriceTip({cards,onChanged,onEdit,role='owner'}:{cards:Approval[];onChanged?:()=>void;onEdit?:(id:string,step:string|null)=>void;role?:'owner'|'guest'}){
  const [later,setLater]=useState<string[]>(()=>typeof window==='undefined'?[]:laterIds()),[busy,setBusy]=useState(false),[result,setResult]=useState<{text:string;error:boolean}|null>(null);
- const card=cards.find(c=>(c.kind==='price'&&c.price||c.kind==='window'&&c.window||c.kind==='stay'&&c.stay||c.kind==='forecast'&&c.forecast||c.kind==='listing'&&c.listing)&&c.canDecide&&!later.includes(c.id));
+ const card=cards.find(c=>(c.kind==='price'&&c.price||c.kind==='window'&&c.window||c.kind==='stay'&&c.stay||c.kind==='forecast'&&c.forecast||c.kind==='listing'&&c.listing||c.kind==='cleaning-fee'&&c.cleaningTip)&&c.canDecide&&!later.includes(c.id));
  useEffect(()=>{if(!result)return;const t=setTimeout(()=>setResult(null),result.error?8000:5000);return()=>clearTimeout(t);},[result]);
  if(result)return <aside className="price-tip is-result" role="status"><span className={'price-tip-icon'+(result.error?' is-error':'')} aria-hidden="true">{result.error?<X size={18}/>:<Check size={18}/>}</span><p>{result.text}</p></aside>;
  if(!card)return null;
- const up=card.price?.direction==='up',kind=card.window||card.stay||card.forecast||card.listing?'is-window':up?'is-up':'is-down';
+ const up=card.price?.direction==='up',kind=card.window||card.stay||card.forecast||card.listing||card.cleaningTip?'is-window':up?'is-up':'is-down';
  async function decide(action:'accept'|'reject'){
   if(!card)return;setBusy(true);
   try{const r=await fetch('/api/approvals',{method:'POST',headers:{'Content-Type':'application/json','X-Workspace-Role':role},body:JSON.stringify({id:card.id,revision:card.revision,action}),cache:'no-store'}),v=await r.json() as Row;
    if(r.ok&&v.edit&&onEdit){onChanged?.();onEdit(v.edit.propertyId,v.edit.step);return;}
    setResult({text:r.ok?v.message||'Готово.':v.error||'Не получилось. Обновите экран.',error:!r.ok});onChanged?.();}
-  catch{setResult({text:card.listing||card.forecast?'Нет связи. Ничего не изменилось, попробуйте ещё раз.':card.stay?'Нет связи. Время не изменилось, попробуйте ещё раз.':card.window?'Нет связи. Окно не открыто, попробуйте ещё раз.':'Нет связи. Цена не изменилась, попробуйте ещё раз.',error:true});}
+  catch{setResult({text:card.listing||card.forecast||card.cleaningTip?'Нет связи. Ничего не изменилось, попробуйте ещё раз.':card.stay?'Нет связи. Время не изменилось, попробуйте ещё раз.':card.window?'Нет связи. Окно не открыто, попробуйте ещё раз.':'Нет связи. Цена не изменилась, попробуйте ещё раз.',error:true});}
   finally{setBusy(false);}
  }
  function hide(){if(!card)return;const next=[...later,card.id];setLater(next);try{sessionStorage.setItem(hiddenKey,JSON.stringify(next));}catch{}}
- return <aside className={'price-tip '+kind} aria-label={card.listing?'Совет AI администратора по объявлению':card.forecast?'Прогноз загрузки на неделю от AI администратора':card.stay?'Предложение AI администратора по времени проживания':card.window?'Окно в календаре от AI администратора':'Совет AI администратора по цене'}>
+ return <aside className={'price-tip '+kind} aria-label={card.cleaningTip?'Совет AI администратора по цене уборки':card.listing?'Совет AI администратора по объявлению':card.forecast?'Прогноз загрузки на неделю от AI администратора':card.stay?'Предложение AI администратора по времени проживания':card.window?'Окно в календаре от AI администратора':'Совет AI администратора по цене'}>
   <header className="price-tip-head">
-   <span className="price-tip-icon" aria-hidden="true">{card.forecast?<CalendarDays size={18}/>:<Sparkles size={18}/>}</span>
-   <span className="price-tip-title"><small>AI администратор · {card.listing?card.listing.title.toLocaleLowerCase('ru'):card.forecast?'прогноз на неделю':card.stay?(card.stay.kind==='late'?'поздний выезд':'ранний заезд'):card.window?'окно в календаре':up?'спрос вырос':'спрос снизился'}</small><strong>{card.subject}</strong></span>
+   <span className="price-tip-icon" aria-hidden="true">{card.forecast?<CalendarDays size={18}/>:card.cleaningTip?<Brush size={18}/>:<Sparkles size={18}/>}</span>
+   <span className="price-tip-title"><small>AI администратор · {card.cleaningTip?'цена уборки':card.listing?card.listing.title.toLocaleLowerCase('ru'):card.forecast?'прогноз на неделю':card.stay?(card.stay.kind==='late'?'поздний выезд':'ранний заезд'):card.window?'окно в календаре':up?'спрос вырос':'спрос снизился'}</small><strong>{card.subject}</strong></span>
    <button type="button" className="price-tip-close" aria-label="Позже" title="Позже" onClick={hide}><X size={18}/></button>
   </header>
   <PriceTipBody card={card} busy={busy} onDecide={decide} compact/>
