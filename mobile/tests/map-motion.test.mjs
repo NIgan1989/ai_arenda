@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {loadPure} from './helpers/pure.mjs';
 import {readFileSync} from 'node:fs';
 
-const {pinEvent, appearDelay, flight, flightFrame, answerLeft, ANSWER_WINDOW, FLIGHT_MIN_MS, FLIGHT_MAX_MS, MAP_EVENTS} = await loadPure('mobile/src/map-motion.ts');
+const {pinEvent, appearDelay, flight, flightFrame, answerLeft, ANSWER_WINDOW, FLIGHT_MIN_MS, FLIGHT_MAX_MS, MAP_EVENTS, beams, carouselIndex, beamBox} = await loadPure('mobile/src/map-motion.ts');
 const {project} = await loadPure('mobile/src/map-math.ts');
 const pin = (tone, label = 'x') => ({tone, label});
 
@@ -77,6 +77,37 @@ test('the strip under a waiting pin shows the share of the answer time left', ()
   assert.equal(answerLeft(1000, 1030), 0);
   assert.equal(answerLeft(5000, 1000), 1);
   assert.equal(answerLeft(NaN, 1000), 0);
+});
+
+test('beams go from the search point to asked and answering flats only', () => {
+  const from = [76.95, 52.28];
+  const lines = beams(from, [
+    {key: 'a', point: [76.96, 52.29], tone: 'pending'},
+    {key: 'b', point: [76.97, 52.3], tone: 'offer'},
+    {key: 'c', point: [76.98, 52.31], tone: 'home'},
+    {key: 'd', point: [NaN, 52.3], tone: 'pending'}
+  ]);
+  assert.deepEqual(lines.map(l => [l.key, l.tone]), [['beam:a', 'ask'], ['beam:b', 'answer']]);
+  assert.deepEqual(lines[0].from, from);
+  assert.deepEqual(beams(null, [{key: 'a', point: [76.96, 52.29], tone: 'pending'}]), []);
+  assert.deepEqual(beams([200, 10], [{key: 'a', point: [76.96, 52.29], tone: 'pending'}]), []);
+});
+
+test('the carousel stops on the nearest card and never outside the list', () => {
+  assert.equal(carouselIndex(0, 300, 5), 0);
+  assert.equal(carouselIndex(140, 300, 5), 0);
+  assert.equal(carouselIndex(160, 300, 5), 1);
+  assert.equal(carouselIndex(5000, 300, 5), 4);
+  assert.equal(carouselIndex(-40, 300, 5), 0);
+  assert.equal(carouselIndex(300, 0, 5), 0);
+  assert.equal(carouselIndex(300, 300, 0), 0);
+});
+
+test('a beam on the web preview is one rotated line between its ends', () => {
+  const box = beamBox({x: 0, y: 0}, {x: 30, y: 40});
+  assert.deepEqual([box.cx, box.cy, box.length], [15, 20, 50]);
+  assert.ok(Math.abs(box.angle - 53.13) < 0.01);
+  assert.equal(beamBox({x: 10, y: 10}, {x: 0, y: 10}).angle, 180);
 });
 
 test('the list of map events covers every role, and the doc lists each of them', () => {
