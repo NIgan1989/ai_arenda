@@ -35,7 +35,7 @@ test('push uses encrypted VAPID requests, sends once, rate-limits self tests and
  const f=await fixture();try{
   const hash=session(f),sub=device();await manageWebPush(f.guest,'guest',{action:'subscribe',subscription:sub},config,hash);
   await manageWebPush(f.guest,'guest',{action:'test'},config,hash);await assert.rejects(manageWebPush(f.guest,'guest',{action:'test'},config,hash),e=>e.status===429);
-  let calls=0;const transport=async(url,req)=>{calls++;assert.equal(url,sub.endpoint);assert.equal(req.redirect,'error');assert.match(req.headers.Authorization||req.headers.authorization,/vapid /);assert.equal(req.headers['Content-Encoding']||req.headers['content-encoding'],'aes128gcm');assert.ok(!Buffer.from(req.body).toString().includes('Уведомления'));return new Response('',{status:201});};
+  let calls=0;const transport=async(url,req)=>{calls++;assert.equal(url,sub.endpoint);assert.equal(req.redirect,'manual');assert.match(req.headers.Authorization||req.headers.authorization,/vapid /);assert.equal(req.headers['Content-Encoding']||req.headers['content-encoding'],'aes128gcm');assert.ok(!Buffer.from(req.body).toString().includes('Уведомления'));return new Response('',{status:201});};
   assert.equal((await deliverWebPush(f.db,config,12,transport)).sent,1);assert.equal((await deliverWebPush(f.db,config,12,transport)).sent,0);assert.equal(calls,1);
   await f.owner.notify('guest','PRIVATE ADDRESS','retry','guest').run();assert.equal((await deliverWebPush(f.db,config,12,async()=>new Response('',{status:503}))).failed,1);
   const pending=f.db.raw.prepare("SELECT * FROM push_deliveries WHERE status='pending'").get();assert.equal(pending.attempts,1);assert.ok(pending.available_at>now());assert.equal(pending.last_error,'provider_unavailable');
