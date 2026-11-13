@@ -33,3 +33,12 @@ test('the owner sees the guest, the cleaner and every guest sees the owner relia
   const worker=await f.owner.workerCard('cleaner');assert.equal(worker.reliability.level,'new');
  }finally{f.db.close();}
 });
+
+test('reliability for many people binds one parameter, under the D1 limit of 100',async()=>{
+ const f=await fixture();try{
+  const ids=Array.from({length:150},(_,i)=>'nobody'+i).concat('owner'),seen=[];
+  const orig=f.db.prepare.bind(f.db);f.db.prepare=sql=>{const st=orig(sql),bind=st.bind;st.bind=(...v)=>{seen.push(v.length);return bind.apply(st,v);};return st;};
+  for(const role of ['guest','owner','cleaner'])assert.equal((await reliabilityFor(f.db,role,ids)).size,151);
+  assert.ok(Math.max(...seen)<=2,'at most the list and a time');
+ }finally{f.db.close();}
+});

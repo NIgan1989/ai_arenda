@@ -145,7 +145,7 @@ export class RentalService {
   async enrichProperties(items:Row[],owner=false):Promise<Row[]>{
     if(!items.length)return [];
     // The owner's reliability travels with each flat; the owner's id itself stays private.
-    const owners=owner?[]:await this.all(`SELECT id,owner_id FROM properties WHERE id IN (${items.slice(0,500).map(()=>'?').join(',')})`,...items.slice(0,500).map(p=>p.id)),hosts=await reliabilityFor(this.db,'owner',owners.map(o=>o.owner_id));
+    const owners=owner?[]:await this.all('SELECT id,owner_id FROM properties WHERE id IN (SELECT value FROM json_each(?))',JSON.stringify(items.slice(0,500).map(p=>p.id))),hosts=await reliabilityFor(this.db,'owner',owners.map(o=>o.owner_id));
     const hostOf=(id:string)=>hosts.get(owners.find(o=>o.id===id)?.owner_id);
     const [ratings,details,operations,busy]=await Promise.all([ratingsFor(this.db,items.map(p=>p.id)),this.all('SELECT * FROM property_details'),this.all('SELECT * FROM property_operations'),this.all("SELECT DISTINCT property_id FROM bookings WHERE (status='confirmed' OR (status='requested' AND expires_at>?)) AND start<=? AND occupied_until>?",now(),now(),now())]);
     return items.map(p=>{const d=details.find(d=>d.property_id===p.id),op=operations.find(o=>o.property_id===p.id);return {...p,...(owner?{}:{host:hostOf(p.id)||null}),details:d?JSON.parse(d.details):{},photos:d?JSON.parse(d.photos):[],listing_version:d?.version||0,rating:ratings.get(p.id)||null,display_status:propertyStatus(p,op,busy.some(b=>b.property_id===p.id)),...(owner?{}:{published:undefined})};});

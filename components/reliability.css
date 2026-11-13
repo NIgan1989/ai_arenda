@@ -14,7 +14,7 @@
 .reliability-chip.is-new{background:var(--t-accent-soft)}
 .reliability-chip svg{color:var(--t-warning)}
 .reliability-chip.is-new svg{color:var(--t-accent)}
-.reliability-hints{margin:var(--t-space-8) 0 0;padding-left:var(--t-space-20);font-size:14px;line-height:20px;color:var(--t-ink-soft)}
+.reliability-hints{list-style:disc;margin:var(--t-space-8) 0 0;padding-left:var(--t-space-20);font-size:14px;line-height:20px;color:var(--t-ink-soft)}
 .listing-host{margin-top:var(--t-space-12)}
 .acct-reliability{padding:var(--t-space-12)}
 .applicant-option .reliability{margin-top:var(--t-space-8)}

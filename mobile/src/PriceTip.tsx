@@ -113,13 +113,12 @@ function StayTipBody({card,busy,onDecide,compact}:{card:Approval;busy:boolean;on
 // A new booking request pops up on the owner's map like an order: dates, money, the AI's risk read.
 type Decision='accept'|'reject'|'deposit';
 const fact=(card:Approval,label:string)=>card.facts.find(([l])=>l===label)?.[1]||'';
-const guests=(v:string)=>{const n=Number(v)||1;return n+' '+(n%10===1&&n%100!==11?'гость':n%10>=2&&n%10<=4&&(n%100<12||n%100>14)?'гостя':'гостей');};
 const riskTone={low:[C.successSoft,C.success],medium:[C.warningSoft,C.warning],high:[C.dangerSoft,C.danger]} as const;
 function BookingTipBody({card,busy,onDecide}:{card:Approval;busy:boolean;onDecide:(action:Decision)=>void}){
  const r=card.risk!,[bg,fg]=riskTone[r.level];
  const btn=(label:string,action:Decision,primary:boolean)=><Pressable key={action} accessibilityRole="button" accessibilityLabel={label} disabled={busy} onPress={()=>onDecide(action)} style={({pressed})=>[primary?t.accept:[t.reject,{flex:1}],(busy||pressed)&&t.dim]}><Text numberOfLines={1} style={primary?t.acceptText:t.rejectText}>{label}</Text></Pressable>;
  return <View>
-  <View style={t.priceRow}><Text style={t.to}>{fact(card,'Проживание')}</Text><Text numberOfLines={1} style={[t.unit,{flexShrink:1}]}>{card.from}</Text><ReliabilityBadge value={card.reliability} compact/><Text style={t.unit}>{guests(fact(card,'Гостей'))}</Text></View>
+  <View style={t.priceRow}><Text style={t.to}>{fact(card,'Проживание')}</Text><Text numberOfLines={1} style={[t.unit,{flexShrink:1}]}>{card.from}</Text><ReliabilityBadge value={card.reliability} compact/></View>
   <View style={[t.when,{marginTop:4}]}><Text style={t.whenIcon}>◷</Text><Text numberOfLines={1} style={t.whenText}>{fact(card,'Заезд')+' → '+fact(card,'Выезд')}</Text></View>
   <View accessibilityLabel={r.label} style={[t.risk,{backgroundColor:bg,borderColor:r.level==='medium'?C.warningLine:bg}]}>
    <View style={t.riskHead}><View style={[t.riskDot,{backgroundColor:fg}]}/><Text style={t.riskTitle}>{r.label}</Text>{r.held&&<Text style={t.small}>автоподтверждение остановлено</Text>}</View>
