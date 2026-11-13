@@ -3,7 +3,7 @@ import type {RentalService} from './service';
 import {epoch,uuid,q,one,rows,hash,type Row,type OperationConfig} from './operation-core';
 import {requestParticipantReview} from './participant-security';
 
-export async function readPilotPolicy(db:D1Database){return (await one(db,"SELECT require_owner_review,require_cleaner_review,require_phone,version,updated_at FROM pilot_policy WHERE id='global'"))!;}
+export async function readPilotPolicy(db:D1Database){return (await one(db,"SELECT require_owner_review,require_cleaner_review,require_phone,ai_review,version,updated_at FROM pilot_policy WHERE id='global'"))!;}
 export async function pilotPolicy(service:RentalService){return readPilotPolicy(service.db);}
 function latestReviewSql(role:'owner'|'cleaner'){
  return `SELECT status,valid_until FROM participant_reviews WHERE user_id=? AND role='${role}' AND ${role==='owner'?'property_id=?':'property_id IS NULL'} ORDER BY COALESCE(reviewed_at,created_at) DESC,created_at DESC,rowid DESC LIMIT 1`;
@@ -28,7 +28,7 @@ export async function cleanerAdmission(db:D1Database,userId:string):Promise<Clea
 export async function requestCleanerAdmission(service:RentalService,config:OperationConfig&{PLATFORM_ADMIN_IDS?:string},jobId:string){
  if((await one(service.db,'SELECT p.demo_owner FROM cleaning_jobs j JOIN properties p ON p.id=j.property_id WHERE j.id=?',jobId))?.demo_owner)return 'not_required' as CleanerAdmission;
  let admission=await cleanerAdmission(service.db,service.userId);
- if(admission==='none'||admission==='expired'){await requestParticipantReview(service,'cleaner',{reference:'Отклик на уборку: проверьте анкету исполнителя.'},config);admission='pending';}
+ if(admission==='none'||admission==='expired'){await requestParticipantReview(service,'cleaner',{reference:'Отклик на уборку: проверьте анкету исполнителя.'},config);admission=await cleanerAdmission(service.db,service.userId);}
  return admission;
 }
 async function verifiedPhone(service:RentalService,userId:string){
@@ -64,10 +64,11 @@ export async function savePilotPolicy(service:RentalService,body:Row,platformAdm
  if(!platformAdmin)throw new DomainError('Правила допуска меняет администратор платформы.',403);
  if(body.confirmed!==true)throw new DomainError('Подтвердите правила допуска и их влияние на новые операции.');
  for(const field of ['requireOwnerReview','requireCleanerReview','requirePhone'])if(typeof body[field]!=='boolean')throw new DomainError('Проверьте правила допуска.');
- const version=number(body.expectedVersion,'Версия правил',1,10000000),event=uuid(),at=epoch();
+ if(body.aiReview!==undefined&&typeof body.aiReview!=='boolean')throw new DomainError('Проверьте правила допуска.');
+ const version=number(body.expectedVersion,'Версия правил',1,10000000),event=uuid(),at=epoch(),aiReview=body.aiReview===undefined?null:body.aiReview?1:0;
  const results=await service.db.batch([
-  q(service.db,"UPDATE pilot_policy SET require_owner_review=?,require_cleaner_review=?,require_phone=?,version=version+1,updated_by=?,updated_at=? WHERE id='global' AND version=?",body.requireOwnerReview?1:0,body.requireCleanerReview?1:0,body.requirePhone?1:0,service.userId,at,version),
-  q(service.db,'INSERT INTO audit_events SELECT ?,?,?,?,? WHERE changes()>0',event,service.userId,'pilot-policy',JSON.stringify({action:'pilot.policy_changed',requireOwnerReview:body.requireOwnerReview,requireCleanerReview:body.requireCleanerReview,requirePhone:body.requirePhone,previousVersion:version}),at)
+  q(service.db,"UPDATE pilot_policy SET require_owner_review=?,require_cleaner_review=?,require_phone=?,ai_review=COALESCE(?,ai_review),version=version+1,updated_by=?,updated_at=? WHERE id='global' AND version=?",body.requireOwnerReview?1:0,body.requireCleanerReview?1:0,body.requirePhone?1:0,aiReview,service.userId,at,version),
+  q(service.db,'INSERT INTO audit_events SELECT ?,?,?,?,? WHERE changes()>0',event,service.userId,'pilot-policy',JSON.stringify({action:'pilot.policy_changed',requireOwnerReview:body.requireOwnerReview,requireCleanerReview:body.requireCleanerReview,requirePhone:body.requirePhone,aiReview:body.aiReview,previousVersion:version}),at)
  ]);
  if(!results[0].meta.changes)throw new DomainError('Правила уже изменились. Обновите страницу.',409);
  return {message:'Правила допуска сохранены. Фактические оплаты, выезды и результаты работ не изменены.',version:version+1};
