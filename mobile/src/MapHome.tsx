@@ -2,7 +2,7 @@ import {ReliabilityBadge} from './Reliability';
 import React,{useEffect,useRef,useState,type ReactNode} from 'react';
 import {Thinking} from './Thinking';
 import {AccessibilityInfo,Animated,AppState,BackHandler,PanResponder,Platform,Pressable,ScrollView,Text,View,useWindowDimensions} from 'react-native';
-import {NO_BUDGET} from '../../lib/map-search-request';
+import {NO_BUDGET,plural} from '../../lib/map-search-request';
 import {ApiError,isOffline,request} from './api';
 import {Photo} from './ListingMedia';
 import {date,labels,money,uid,type Role,type Row} from './model';
@@ -10,7 +10,9 @@ import {windowBadge} from '../../lib/window-badge';
 import {dealBadge} from '../../lib/price-deal';
 import {C} from './styles';
 import {T} from './tokens';
-import {LiveMap,type MapLine,type MapPin} from './LiveMap';
+import {LiveMap,type HeatPoint,type MapLine,type MapPin} from './LiveMap';
+import {ownerPin,travellers} from './owner-map';
+import {SwipeConfirm} from './SwipeConfirm';
 import {beams} from './map-motion';
 import {countdown,mapCities,validPoint,type MapPoint} from './map-math';
 import {MapSheetHead} from './MapSheetHead';
@@ -28,8 +30,10 @@ import {kindLabel} from '../../lib/listings';
 // Map-first home screen, like a taxi app: a full-screen map and one bottom sheet.
 // Collapsed, the sheet holds only the head (AI line, chips, the "Сейчас" card); expanded, the controls of the role.
 // Every action goes through the same server rules as the web workspace: people only confirm facts.
-// lines: beams from the guest's search point to the flats being asked (guest only).
-type Publish=(pins:MapPin[],focusKey:string,lines?:MapLine[])=>void;
+// extra.lines: beams from the guest's search point to the objects being asked (guest);
+// extra.heat and extra.sparks: demand around the owner's objects and guests asking right now (owner).
+type MapExtra={lines?:MapLine[];heat?:HeatPoint[];sparks?:MapPoint[]};
+type Publish=(pins:MapPin[],focusKey:string,extra?:MapExtra)=>void;
 // The stay a guest books from the map: Kazakhstan time, as the request form keeps it.
 export type MapStay={mode:'daily'|'hourly';start:string;end:string;guests:number};
 // showNow: whether the "Сейчас" card has its place in the sheet as it is now (see MapHome).
@@ -145,7 +149,7 @@ function GuestPanel({setScanning,accountId,data,mapData,publish,selected,setSele
    // Beams start at the searched point; a request restored after a restart starts them at the middle of the map.
    const near=live.filters?.near,from=validPoint(near?[near.longitude,near.latitude]:null)||(askedFrom.current||=mapCenter.current);
    const asked=[...(live.pendingProperties||[]).flatMap((p:Row)=>pin(p,'pending').map(m=>Number(p.askExpiresAt)?{...m,until:Number(p.askExpiresAt)-skew}:m)),...offers.flatMap(p=>pin(p,'offer'))];
-   publish(asked,'live:'+live.id+':'+offers.length+':'+(live.pendingProperties||[]).length,live.status==='searching'||live.status==='ready'||live.status==='booking'?beams(from,asked):[]);
+   publish(asked,'live:'+live.id+':'+offers.length+':'+(live.pendingProperties||[]).length,{lines:live.status==='searching'||live.status==='ready'||live.status==='booking'?beams(from,asked):[]});
   }
   else if(preview)publish(preview.properties.flatMap((p:Row)=>pin(p,p.quickRequest?'booking':'home').map(m=>p.match?.best?{...m,best:true}:m)),stageKey);
   else publish((mapData?.properties||[]).flatMap((p:Row)=>pin(p,'home')),stageKey+':'+(mapData?.properties?.length||0));
@@ -230,7 +234,7 @@ function GuestPanel({setScanning,accountId,data,mapData,publish,selected,setSele
 
 function OwnerPanel({data,mapData,publish,snap,showNow,expand,onHead,onAsk,onIntent,onChanged,onOpenProcess,onOpenPage}:Common){
  const [asked,setAsked]=useState('');
- const [inbox,setInbox]=useState<Row|null>(null),[error,setError]=useState(''),[working,setWorking]=useState(false),[ready,setReady]=useState<Record<string,boolean>>({}),[skew,setSkew]=useState(0);
+ const [inbox,setInbox]=useState<Row|null>(null),[error,setError]=useState(''),[working,setWorking]=useState(false),[skew,setSkew]=useState(0);
  const lock=useRef(false),seen=useRef(0),now=useNow(!!inbox?.offers?.length)+skew;
  // An answer just sent shows on the flat's pin for a few seconds: «Ответ отправлен» after «Готов», the price again after a refusal.
  const [answered,setAnswered]=useState<Record<string,number>>({});
@@ -242,13 +246,23 @@ function OwnerPanel({data,mapData,publish,snap,showNow,expand,onHead,onAsk,onInt
  const offers:Row[]=(inbox?.offers||[]).filter((o:Row)=>o.expires_at>now),processes:Row[]=mapData?.processes||[];
  useEffect(()=>{
   const asked=new Map(offers.map(o=>[o.property_id,Number(o.expires_at)-skew]));
-  publish([...(mapData?.properties||[]).flatMap((p:Row):MapPin[]=>{const point=pointOf(p),sent=!!answered[p.id]&&!asked.has(p.id);return point?[{key:'property:'+p.id,point,title:p.title,label:asked.has(p.id)?'Запрос':sent?'Ответ отправлен':short(p.price),rank:typeof p.price==='number'?p.price:0,tone:asked.has(p.id)?'pending':sent?'offer':'home',until:asked.get(p.id)}]:[];})],'owner:'+(mapData?.properties?.length||0));
- },[mapData,inbox,answered]);
+  // Each object says its most urgent state; the AI's price advice puts the AI ring on it.
+  const advice=new Map<string,{from:number;to:number}>((data.approvals||[]).filter((c:Row)=>c.kind==='price'&&c.price?.propertyId&&c.canDecide).map((c:Row)=>[c.price.propertyId,{from:Number(c.price.from),to:Number(c.price.to)}]));
+  const clock=serverNow(mapData||data);
+  const own=(mapData?.properties||[]).flatMap((p:Row):MapPin[]=>{const point=pointOf(p),sent=!!answered[p.id]&&!asked.has(p.id),state=ownerPin(p,processes,clock,advice.get(p.id));
+   return point?[{key:'property:'+p.id,point,title:p.title,label:asked.has(p.id)?'Запрос':sent?'Ответ отправлен':state.label,rank:typeof p.price==='number'?p.price:0,tone:asked.has(p.id)?'pending':sent?'offer':state.tone,best:!asked.has(p.id)&&!sent&&state.best,until:asked.get(p.id)}]:[];});
+  const moving=travellers(mapData?.journeys||[]).map((t):MapPin=>({...t,title:t.label,tone:'active'}));
+  // Demand: the heat of the city, and sparks over the busiest places while guests are asking owners right now.
+  const cells:Row[]=mapData?.demand?.cells||[],searching=Number(mapData?.demand?.searching)||0;
+  publish([...own,...moving],'owner:'+(mapData?.properties?.length||0),{heat:cells.map(c=>({point:[c.longitude,c.latitude] as MapPoint,weight:c.weight})),sparks:searching?cells.slice(0,Math.min(3,searching)).map(c=>[c.longitude,c.latitude] as MapPoint):[]});
+ },[mapData,inbox,answered,data.approvals]);
+ const searching=Number(mapData?.demand?.searching)||0;
  const clock=Date.now()/1000+skew,flats:Row[]=data.ownProperties||[];
  const card=showNow?nowCard('owner',data,clock,{quickOffers:inbox?.offers||[]}):null;
  return <View style={h.block}>
   <HeadSlot onHeight={onHead}><MapSheetHead role="owner" text={asked} onText={setAsked} onSend={text=>{setAsked('');onAsk(text);}} onChip={action=>{/* A guest waiting for a quick answer is in this sheet; other requests are on their page. */if(action==='requests'){if(offers.length)expand(1);else onOpenPage('bookings');}else if(action==='calendar')onOpenPage('calendar');else if(action==='add-property')onIntent('add-property');}} now={card} onNow={()=>openNow(card,{expand,onOpenProcess,onOpenPage})}>
    {snap===0&&!card&&Array.isArray(data.ownProperties)&&!flats.length&&<Text style={h.note}>Добавьте первое жильё, и оно появится на карте.</Text>}
+   {snap===0&&!card&&searching>0&&<Text style={h.note}>Сейчас {searching} {plural(searching,'гость ищет','гостя ищут','гостей ищут')} жильё в городе. Где спрос выше, карта светится ярче.</Text>}
   </MapSheetHead></HeadSlot>
   {snap>0&&<>
    {!!error&&<Text accessibilityRole="alert" style={h.error}>{error}</Text>}
@@ -257,8 +271,9 @@ function OwnerPanel({data,mapData,publish,snap,showNow,expand,onHead,onAsk,onInt
     <View style={h.row}><Text style={[h.cardTitle,h.grow]}>{o.title}</Text><Text style={h.timerSmall} accessibilityLabel={'На ответ осталось '+countdown(o.expires_at-now)}>{countdown(o.expires_at-now)}</Text></View>
     <Text style={h.note}>{date(Date.parse(o.filters.start)/1000)} → {date(Date.parse(o.filters.end)/1000)}{'\n'}{o.filters.mode==='hourly'?'На часы':'На сутки'} · гостей: {o.filters.guests}</Text>
     <Text style={h.price}>{money(o.amount)}</Text>
-    <Pressable accessibilityRole="checkbox" accessibilityState={{checked:!!ready[o.id]}} onPress={()=>setReady(v=>({...v,[o.id]:!v[o.id]}))} style={h.check}><Text style={h.checkBox}>{ready[o.id]?'☑':'☐'}</Text><Text style={h.checkText}>Жильё будет свободно и готово к этому заезду</Text></Pressable>
-    <View style={h.pair}><View style={h.grow}><Action title="Готов принять" disabled={working||!ready[o.id]} onPress={()=>act('respond',{offerId:o.id,decision:'accept',ready:true})}/></View><View style={h.grow}><Action secondary title="Отказать" disabled={working} onPress={()=>act('respond',{offerId:o.id,decision:'decline'})}/></View></View>
+    {/* One swipe answers «Готов»; the words on the track are the promise the owner gives with it. */}
+    <SwipeConfirm label="Проведите: свободно и готово" disabled={working} onConfirm={()=>act('respond',{offerId:o.id,decision:'accept',ready:true})}/>
+    <Action secondary title="Отказать" disabled={working} onPress={()=>act('respond',{offerId:o.id,decision:'decline'})}/>
     <Text style={h.note}>Ответ не создаёт бронь и не меняет цену. Если гость выберет ваше жильё, заявка придёт в «Заявки гостей».</Text>
    </View>)}
    {processes.length>0&&<View style={h.card}>
@@ -360,6 +375,8 @@ export function MapHome({ role, accountId, data, menu, onChanged, onOpenProcess,
   // The pin of the carousel card in view; a new set of pins forgets it.
   const [focus, setFocus] = useState('');
   const [lines, setLines] = useState<MapLine[]>([]);
+  const [heat, setHeat] = useState<HeatPoint[]>([]);
+  const [sparks, setSparks] = useState<MapPoint[]>([]);
   const shownKey = useRef('');
   const [mapData, setMapData] = useState<Row | null>(null);
   const [picking, setPicking] = useState(false);
@@ -454,7 +471,8 @@ export function MapHome({ role, accountId, data, menu, onChanged, onOpenProcess,
     const result = await request('/api/operations/map/search', { filters: { city: asked } }, undefined, undefined, role);
     if (cityRef.current === asked) setMapData({ ...result, city: asked });
   };
-  usePoll(loadMap, 30000, true);
+  // Someone on the way moves on the map: it refreshes every 10 seconds while they do, otherwise every 30.
+  usePoll(loadMap, mapData?.journeys?.some((j: Row) => j.longitude != null) ? 10000 : 30000, true);
   const firstCity = useRef(true);
   useEffect(() => {
     if (firstCity.current) {
@@ -465,9 +483,11 @@ export function MapHome({ role, accountId, data, menu, onChanged, onOpenProcess,
     loadMap().catch(() => {});
   }, [city]);
 
-  const publish: Publish = (next, key, beamLines = []) => {
+  const publish: Publish = (next, key, extra = {}) => {
     setPins(next);
-    setLines(beamLines);
+    setLines(extra.lines || []);
+    setHeat(extra.heat || []);
+    setSparks(extra.sparks || []);
     if (key !== shownKey.current) setFocus('');
     shownKey.current = key;
     setFocusKey(key);
@@ -490,6 +510,8 @@ export function MapHome({ role, accountId, data, menu, onChanged, onOpenProcess,
         selected={selected}
         focus={focus}
         lines={lines}
+        heat={heat}
+        sparks={sparks}
         onSelect={setSelected}
         bottomInset={Math.min(sheetHeight, Math.round(height * 0.5))}
         topInset={topInset}

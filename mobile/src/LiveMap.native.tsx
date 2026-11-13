@@ -3,20 +3,20 @@ import {AccessibilityInfo,Animated,Easing,Image,Pressable,StyleSheet,Text,View,t
 import {Camera,GeoJSONSource,Layer,Map as GlMap,Marker,type CameraRef,type ViewStateChangeEvent} from '@maplibre/maplibre-react-native';
 import {MAX_ZOOM,MIN_ZOOM,fitView,groupPins,pinWidth,project,validPoint,type MapPoint} from './map-math';
 import {appearDelay,type MapLine} from './map-motion';
-import {BEAM,FRESH,LEAVE,Leaving,Origin,Pin,Radar,controlsHeight,m,toneOrder} from './MapPins';
-import type {MapPin,MapProps} from './TileMap';
+import {BEAM,FRESH,HEAT,LEAVE,Leaving,Origin,Pin,Radar,Spark,controlsHeight,m,toneOrder} from './MapPins';
+import type {HeatPoint,MapPin,MapProps} from './TileMap';
 
 // The home map on a phone: MapLibre with the same OpenFreeMap style as the site, so both look alike and the vector map
 // can tilt, fly and draw layers (heat, routes) in the next stages of the live map. The pins are the same React views as
 // in the web preview (MapPins.tsx) and keep all their events; MapLibre only carries them with the map.
-export type {MapLine,MapPin,MapProps};
+export type {HeatPoint,MapLine,MapPin,MapProps};
 const STYLE='https://tiles.openfreemap.org/styles/positron';
 // MapLibre counts zoom for 512px tiles, map-math for 256px ones: the same picture is one level lower here.
 const toGl=(zoom:number)=>zoom-1,fromGl=(zoom:number)=>zoom+1;
 const plusIcon=require('../assets/ui/plus.png'),minusIcon=require('../assets/ui/minus.png'),fitIcon=require('../assets/ui/fit.png');
 const fallback:MapPoint=[76.95,52.287];
 
-export function LiveMap({center,pins,selected,focus='',lines=[],onSelect,bottomInset=0,topInset=0,focusKey='',picking=false,scanning=false,onCenter}:MapProps){
+export function LiveMap({center,pins,selected,focus='',lines=[],heat=[],sparks=[],onSelect,bottomInset=0,topInset=0,focusKey='',picking=false,scanning=false,onCenter}:MapProps){
  const camera=useRef<CameraRef>(null);
  const [size,setSize]=useState({w:0,h:0}),[still,setStill]=useState(false),[failed,setFailed]=useState(false);
  // The view as the map last reported it, in map-math zoom; pins are grouped by it.
@@ -88,12 +88,17 @@ export function LiveMap({center,pins,selected,focus='',lines=[],onSelect,bottomI
  };
  // ---------- Beams: new ones are drawn out from the guest's point, as on the web preview ----------
  const drawn=useBeams(lines,still);
+ const heatData=useMemo(()=>({type:'FeatureCollection' as const,features:heat.filter(c=>validPoint(c.point)).map((c,i)=>({type:'Feature' as const,id:i,properties:{w:Math.max(0,Math.min(1,c.weight))},geometry:{type:'Point' as const,coordinates:c.point}}))}),[heat]);
  const layout=(e:LayoutChangeEvent)=>{const {width,height}=e.nativeEvent.layout;if(Math.round(width)!==size.w||Math.round(height)!==size.h)setSize({w:Math.round(width),h:Math.round(height)});};
  const now=Date.now(),start=validPoint(center)||fallback;
  return <View style={m.host} onLayout={layout} accessibilityLabel={'Карта. Меток: '+placed.length}>
   <GlMap style={StyleSheet.absoluteFill} mapStyle={STYLE} logo={false} compass={false} touchRotate={false} touchPitch={false} attribution attributionPosition={{bottom:bottomInset+6,left:8}}
    onRegionWillChange={willChange} onRegionDidChange={didChange} onDidFailLoadingMap={()=>setFailed(true)} onDidFinishLoadingMap={()=>setFailed(false)}>
    <Camera ref={camera} initialViewState={{center:start,zoom:toGl(12)}} minZoom={toGl(MIN_ZOOM)} maxZoom={toGl(MAX_ZOOM)}/>
+   <GeoJSONSource id="heat" data={heatData}>
+    <Layer id="heat" type="heatmap" paint={{'heatmap-weight':['get','w'],'heatmap-intensity':1,'heatmap-opacity':.7,'heatmap-radius':['interpolate',['linear'],['zoom'],9,24,12,48,15,90],'heatmap-color':['interpolate',['linear'],['heatmap-density'],0,HEAT[0],.3,HEAT[1],.65,HEAT[2],1,HEAT[3]]}}/>
+   </GeoJSONSource>
+   {!still&&sparks.filter(p=>validPoint(p)).map((p,i)=><Marker key={'spark:'+i} id={'spark:'+i} lngLat={p} anchor="center"><Spark delay={i*500}/></Marker>)}
    <GeoJSONSource id="beams" data={drawn}>
     <Layer id="beams-ask" type="line" filter={['==',['get','tone'],'ask']} layout={{'line-cap':'round'}} paint={{'line-color':BEAM.ask,'line-width':2,'line-dasharray':[2,2]}}/>
     <Layer id="beams-answer" type="line" filter={['==',['get','tone'],'answer']} layout={{'line-cap':'round'}} paint={{'line-color':BEAM.answer,'line-width':2.5}}/>
