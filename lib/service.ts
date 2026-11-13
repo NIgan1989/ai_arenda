@@ -30,7 +30,7 @@ import {guestStayOffers,decideStayOffer} from './stay-offers';
 import {ownerForecasts,decideForecast} from './load-forecast';
 import {ownerListingTips,decideListingTip} from './listing-quality';
 import {ownerCleaningTips,decideCleaningTip} from './cleaning-price';
-import {releaseStatements} from './overdue-cleaning';
+import {releaseStatements,releaseWindow} from './overdue-cleaning';
 import {ownerWindows,decideCalendarWindow,openWindowFor,openWindowsFor,windowQuote} from './calendar-windows';
 
 type Row = Record<string, any>;
@@ -268,7 +268,8 @@ export class RentalService {
     }
     if(body.action==='release'){
       if(owner&&j.end>t&&j.status==='in_progress')throw new DomainError('Исполнитель ещё в отведённом времени. Найти замену можно после срока.',409);
-      const statements=releaseStatements(this.db,j,t),r=await this.db.batch([...statements,
+      const window=await releaseWindow(this.db,j,t);if(!window)throw new DomainError('До следующего заезда меньше получаса: нового исполнителя не найти. Продлите срок или закройте уборку.',409);
+      const r=await this.db.batch([...releaseStatements(this.db,j,window,t),
         this.notify(owner?j.assigned_to:j.owner_id,owner?'Владелец передал уборку «'+title+'» другому исполнителю.':'Исполнитель отказался от уборки «'+title+'». Уборка снова в поиске, выберите нового исполнителя из откликов.','released:'+j.id+':'+j.version,owner?'cleaner':'owner'),
         this.audit(j.id,owner?'job.reassign_requested':'job.released_by_cleaner')]);
       if(!r[0].meta.changes)throw new DomainError('Задание уже изменилось. Обновите карточку.',409);

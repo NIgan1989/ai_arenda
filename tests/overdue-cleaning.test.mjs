@@ -69,3 +69,30 @@ test('pressing «Есть проблема» again adds to the open issue instea
   assert.equal(issues.length,1);assert.match(issues[0].description,/Нет ключа\nДополнение: Жду у двери/);
  }finally{f.db.close();}
 });
+test('an urgent addition to an open issue raises its priority and reaches the admin',async()=>{
+ const f=await fixture();try{
+  const {sweepIssues}=await load('admin-issues');
+  late(f,'in_progress',now()+600);
+  await f.cleaner.jobAction(f.job.id,{action:'issue',issue:'Хотим уточнить про оплату позже',requestKey:'a'});
+  await sweepIssues(f.db,{PLATFORM_ADMIN_IDS:'admin'});
+  const issue=f.db.raw.prepare('SELECT * FROM administrator_issues').get();
+  assert.equal(f.db.raw.prepare('SELECT priority FROM operator_tickets WHERE issue_id=?').get(issue.id).priority,'high');
+  await f.cleaner.jobAction(f.job.id,{action:'issue',issue:'Дверь не открывается, ключа нет',requestKey:'b'});
+  assert.equal((await sweepIssues(f.db,{PLATFORM_ADMIN_IDS:'admin'})).escalated,1);
+  assert.equal(f.db.raw.prepare('SELECT priority FROM operator_tickets WHERE issue_id=?').get(issue.id).priority,'urgent');
+  assert.equal((await sweepIssues(f.db,{PLATFORM_ADMIN_IDS:'admin'})).triaged,0);
+  await f.cleaner.jobAction(f.job.id,{action:'issue',issue:'Просто уточнение',requestKey:'c'});await sweepIssues(f.db,{});
+  assert.equal(f.db.raw.prepare('SELECT priority FROM operator_tickets WHERE issue_id=?').get(issue.id).priority,'urgent');
+ }finally{f.db.close();}
+});
+test('a cleaning back in the search never runs into the next confirmed arrival',async()=>{
+ const f=await fixture();try{
+  const {releaseWindow}=await load('overdue-cleaning');
+  late(f,'in_progress',now()-60);const j=job(f),t=now();
+  f.db.raw.prepare("UPDATE bookings SET start=?,status='confirmed' WHERE id=?").run(t+2400,f.booking);
+  assert.equal((await releaseWindow(f.db,j,t)).end,t+2400);
+  f.db.raw.prepare('UPDATE bookings SET start=? WHERE id=?').run(t+600,f.booking);
+  assert.equal(await releaseWindow(f.db,j,t),null);
+  await assert.rejects(f.owner.jobAction(f.job.id,{action:'release'}),/меньше получаса/);
+ }finally{f.db.close();}
+});
