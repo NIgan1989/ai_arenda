@@ -45,7 +45,7 @@ async function automaticActions(service:RentalService){
   if(!mandateActive(policy))continue;
   const delegated=new RentalService(service.db,service.userId,{propertyId:policy.property_id,policyVersion:policy.version});
   if(policy.auto_confirm){
-   const requests=await service.all("SELECT b.id FROM bookings b JOIN booking_terms t ON t.booking_id=b.id WHERE b.property_id=? AND b.status='requested' AND b.expires_at>? AND t.policy_version=?",policy.property_id,now(),policy.version);
+   const requests=await service.all("SELECT b.id FROM bookings b JOIN booking_terms t ON t.booking_id=b.id WHERE b.property_id=? AND b.status='requested' AND b.expires_at>? AND t.policy_version=? AND NOT EXISTS(SELECT 1 FROM booking_risks r WHERE r.booking_id=b.id AND r.level='high')",policy.property_id,now(),policy.version);
    for(const b of requests){try{await delegated.bookingAction(b.id,{action:'confirm',cleaningFee:policy.cleaning_fee});await service.notify(service.userId,'AI администратор подтвердил заявку по вашим правилам. Оплата и депозит проверяются отдельно.','administrator-confirmed:'+b.id,'owner').run();actions++;}catch(error){if(!expectedConflict(error))throw error;}}
   }
   if(policy.auto_assign&&policy.auto_confirm){
