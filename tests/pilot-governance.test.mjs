@@ -103,7 +103,7 @@ test('operator resolution is versioned, requires a responsible human and never s
 test('a flat sent for review from «Показать гостям» reaches the administrators and is shown to guests once approved',async()=>{
  const f=await fixture();try{
   const {PUBLISH_REVIEW}=await load('listing-edit');
-  await policy(f,{requireOwnerReview:true});
+  await policy(f,{requireOwnerReview:true,aiReview:false});
   f.db.raw.prepare('UPDATE properties SET published=0 WHERE id=?').run(f.property);
   f.db.raw.prepare("UPDATE properties SET description=? WHERE id=?").run('Светлая квартира в центре: двуспальная кровать, кухня, стиральная машина, быстрый Wi-Fi, рядом остановка и магазины.',f.property);
   f.db.raw.prepare("INSERT OR REPLACE INTO property_details(property_id,photos,revision,updated_at) VALUES (?,'[\"m1\"]','r1',?)").run(f.property,now());

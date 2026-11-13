@@ -2,9 +2,11 @@ import type {Role} from './domain';
 import {weekSummary,adviceSentence} from './forecast-text';
 import {tipText} from './listing-tip-text';
 import {feeTipText} from './cleaning-tip-text';
+import {riskAdvice,riskLabel,type BookingRisk} from './booking-risk-text';
 import {amenities} from './listings';
 type Row=Record<string,any>;
-export type Approval={id:string;kind:string;entityId:string;revision:string;title:string;subject:string;from:string;to:string;canDecide:boolean;expiresAt?:number;facts:[string,string][];acceptLabel:string;rejectLabel:string;requiresReason?:boolean;cleaningFee?:number;cleaningBudget?:number;detail?:string;price?:PriceTip;window?:WindowTip;stay?:StayTip;forecast?:ForecastTip;listing?:ListingTip;cleaningTip?:CleaningTip};
+export type Approval={id:string;kind:string;entityId:string;revision:string;title:string;subject:string;from:string;to:string;canDecide:boolean;expiresAt?:number;facts:[string,string][];acceptLabel:string;rejectLabel:string;requiresReason?:boolean;cleaningFee?:number;cleaningBudget?:number;detail?:string;price?:PriceTip;window?:WindowTip;stay?:StayTip;forecast?:ForecastTip;listing?:ListingTip;cleaningTip?:CleaningTip;risk?:RiskTip;depositLabel?:string};
+export type RiskTip=BookingRisk&{label:string;advice:string};
 export type CleaningTip={from:number;to:number;typical:number;refused:number;text:string};
 export type ListingTip={kind:'photos'|'amenity'|'hourly'|'checkin'|'text';amenity:string;mine:number;theirs:number;count:number;leaders:number;value:number;text:string;title:string};
 export type ForecastTip={days:{label:string;date:number;load:number;level:'busy'|'normal'|'quiet'}[];summary:string;advice:'none'|'raise'|'lower'|'min_hours';from:number;to:number;percent:number;title:string;reasons:string[]};
@@ -28,7 +30,8 @@ export function approvalCards(data:Row,role:Role,userId:string,t:number):Approva
   const owner=role==='owner',terms=b.terms||{};
   if(b.status==='requested'&&b.expires_at>t){
    const property=(data.ownProperties||[]).find((p:Row)=>p.id===b.property_id);
-   cards.push({id:'booking:'+b.id,kind:'booking',entityId:b.id,revision:JSON.stringify([b.status,b.start,b.end,b.amount,b.guests,b.expires_at,terms.version]),title:'Запрос на бронирование',subject:b.title,from:owner?(b.guest_name||'Гость'):'Вы',to:owner?'Вам':'Владельцу',canDecide:owner,expiresAt:b.expires_at,facts:[['Заезд',date(b.start)],['Выезд',date(b.end)],['Гостей',String(b.guests)],['Проживание',money(b.amount)],['Депозит',money(terms.deposit||0)]],detail:terms.house_rules,acceptLabel:'Подтвердить бронь',rejectLabel:'Отклонить',cleaningFee:property?.policy?.cleaning_fee||0,cleaningBudget:property?.policy?.cleaning_budget||0});
+   cards.push({id:'booking:'+b.id,kind:'booking',entityId:b.id,revision:JSON.stringify([b.status,b.start,b.end,b.amount,b.guests,b.expires_at,terms.version]),title:'Запрос на бронирование',subject:b.title,from:owner?(b.guest_name||'Гость'):'Вы',to:owner?'Вам':'Владельцу',canDecide:owner,expiresAt:b.expires_at,facts:[['Заезд',date(b.start)],['Выезд',date(b.end)],['Гостей',String(b.guests)],['Проживание',money(b.amount)],['Депозит',money(terms.deposit||0)]],detail:terms.house_rules,acceptLabel:'Подтвердить бронь',rejectLabel:'Отклонить',cleaningFee:property?.policy?.cleaning_fee||0,cleaningBudget:property?.policy?.cleaning_budget||0,
+    ...(owner&&b.risk?{risk:{...b.risk,label:riskLabel[b.risk.level as 'low'],advice:riskAdvice(b.risk,terms.deposit||0)},...(b.risk.deposit>0&&!terms.deposit?{depositLabel:'С депозитом '+money(b.risk.deposit)}:{})}:{})});
   }
   for(const c of b.changes||[])if(c.status==='pending'&&c.expires_at>t){
    cards.push({id:'change:'+c.id,kind:'change',entityId:b.id,revision:JSON.stringify([c.id,c.status,c.base_version,terms.version,c.policy_version,c.start,c.end,c.amount,c.expires_at]),title:'Согласование новых условий',subject:b.title,from:c.proposer_role===role?'Вы':c.proposer_role==='owner'?'Владелец':'Гость',to:c.proposer_role!==role?'Вам':'Другой стороне',canDecide:c.proposer_role!==role,expiresAt:c.expires_at,facts:[['Заезд',date(c.start)],['Выезд',date(c.end)],['Новая стоимость',money(c.amount)],['Подтверждено оплаты',money(terms.paid_amount||0)],['Депозит',money(terms.deposit||0)]],detail:c.reason,acceptLabel:'Принимаю условия',rejectLabel:'Отклонить'});

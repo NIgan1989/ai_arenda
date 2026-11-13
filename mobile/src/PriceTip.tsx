@@ -109,7 +109,28 @@ function StayTipBody({card,busy,onDecide,compact}:{card:Approval;busy:boolean;on
  </View>;
 }
 
-export function PriceTipBody({card,busy,onDecide,compact=false}:{card:Approval;busy:boolean;onDecide:(action:'accept'|'reject')=>void;compact?:boolean}){
+// A new booking request pops up on the owner's map like an order: dates, money, the AI's risk read.
+type Decision='accept'|'reject'|'deposit';
+const fact=(card:Approval,label:string)=>card.facts.find(([l])=>l===label)?.[1]||'';
+const guests=(v:string)=>{const n=Number(v)||1;return n+' '+(n%10===1&&n%100!==11?'гость':n%10>=2&&n%10<=4&&(n%100<12||n%100>14)?'гостя':'гостей');};
+const riskTone={low:[C.successSoft,C.success],medium:[C.warningSoft,C.warning],high:[C.dangerSoft,C.danger]} as const;
+function BookingTipBody({card,busy,onDecide}:{card:Approval;busy:boolean;onDecide:(action:Decision)=>void}){
+ const r=card.risk!,[bg,fg]=riskTone[r.level];
+ const btn=(label:string,action:Decision,primary:boolean)=><Pressable key={action} accessibilityRole="button" accessibilityLabel={label} disabled={busy} onPress={()=>onDecide(action)} style={({pressed})=>[primary?t.accept:[t.reject,{flex:1}],(busy||pressed)&&t.dim]}><Text numberOfLines={1} style={primary?t.acceptText:t.rejectText}>{label}</Text></Pressable>;
+ return <View>
+  <View style={t.priceRow}><Text style={t.to}>{fact(card,'Проживание')}</Text><Text numberOfLines={1} style={[t.unit,{flexShrink:1}]}>{card.from+' · '+guests(fact(card,'Гостей'))}</Text></View>
+  <View style={[t.when,{marginTop:4}]}><Text style={t.whenIcon}>◷</Text><Text numberOfLines={1} style={t.whenText}>{fact(card,'Заезд')+' → '+fact(card,'Выезд')}</Text></View>
+  <View accessibilityLabel={r.label} style={[t.risk,{backgroundColor:bg,borderColor:r.level==='medium'?C.warningLine:bg}]}>
+   <View style={t.riskHead}><View style={[t.riskDot,{backgroundColor:fg}]}/><Text style={t.riskTitle}>{r.label}</Text>{r.held&&<Text style={t.small}>автоподтверждение остановлено</Text>}</View>
+   <Text style={t.riskLine}>{r.reasons.join(' · ')}</Text>
+  </View>
+  {card.depositLabel?<><View style={t.actions}>{btn(card.depositLabel,'deposit',true)}</View><View style={[t.actions,{marginTop:8}]}>{btn('Без депозита','accept',false)}{btn(card.rejectLabel,'reject',false)}</View></>
+   :<View style={t.actions}>{btn(card.acceptLabel,'accept',true)}<Pressable accessibilityRole="button" accessibilityLabel={card.rejectLabel} disabled={busy} onPress={()=>onDecide('reject')} style={({pressed})=>[t.reject,(busy||pressed)&&t.dim]}><Text style={t.rejectText}>{card.rejectLabel}</Text></Pressable></View>}
+ </View>;
+}
+
+export function PriceTipBody({card,busy,onDecide,compact=false}:{card:Approval;busy:boolean;onDecide:(action:Decision)=>void;compact?:boolean}){
+ if(card.kind==='booking'&&card.risk)return <BookingTipBody card={card} busy={busy} onDecide={onDecide}/>;
  if(card.cleaningTip)return <CleaningTipBody card={card} busy={busy} onDecide={onDecide} compact={compact}/>;
  if(card.listing)return <ListingTipBody card={card} busy={busy} onDecide={onDecide} compact={compact}/>;
  if(card.forecast)return <ForecastTipBody card={card} busy={busy} onDecide={onDecide} compact={compact}/>;
@@ -136,23 +157,23 @@ export function PriceTipBody({card,busy,onDecide,compact=false}:{card:Approval;b
 export function PriceTip({cards,onChanged,onEdit,role='owner'}:{cards:Approval[];onChanged?:()=>unknown;onEdit?:(id:string,step:string|null)=>void;role?:'owner'|'guest'}){
  const [later,setLater]=useState<string[]>([]),[busy,setBusy]=useState(false),[result,setResult]=useState<{text:string;error:boolean}|null>(null);
  const [slide]=useState(()=>new Animated.Value(0));
- const card=cards.find(c=>(c.kind==='price'&&c.price||c.kind==='window'&&c.window||c.kind==='stay'&&c.stay||c.kind==='forecast'&&c.forecast||c.kind==='listing'&&c.listing||c.kind==='cleaning-fee'&&c.cleaningTip)&&c.canDecide&&!later.includes(c.id));
+ const card=cards.find(c=>c.kind==='booking'&&c.risk&&c.canDecide&&!later.includes(c.id))||cards.find(c=>(c.kind==='price'&&c.price||c.kind==='window'&&c.window||c.kind==='stay'&&c.stay||c.kind==='forecast'&&c.forecast||c.kind==='listing'&&c.listing||c.kind==='cleaning-fee'&&c.cleaningTip)&&c.canDecide&&!later.includes(c.id));
  const visible=!!card||!!result;
  useEffect(()=>{Animated.spring(slide,{toValue:visible?1:0,useNativeDriver:true,friction:8,tension:60}).start();},[visible,card?.id]);
  useEffect(()=>{if(!result)return;const timer=setTimeout(()=>setResult(null),result.error?8000:5000);return()=>clearTimeout(timer);},[result]);
  if(!visible)return null;
  const style={opacity:slide,transform:[{translateY:slide.interpolate({inputRange:[0,1],outputRange:[-40,0]})}]};
  if(result||!card)return <Animated.View style={[t.box,t.resultBox,style]} accessibilityLiveRegion="polite"><View style={[t.icon,result?.error&&{backgroundColor:C.danger}]}><Text style={t.iconText}>{result?.error?'!':'✓'}</Text></View><Text style={t.resultText}>{result?.text}</Text></Animated.View>;
- async function decide(action:'accept'|'reject'){
+ async function decide(action:Decision){
   if(!card)return;setBusy(true);
   try{const v=await request('/api/approvals',{id:card.id,revision:card.revision,action},undefined,uid()+':'+card.kind+':'+action,role);if(v.edit&&onEdit){await onChanged?.();onEdit(v.edit.propertyId,v.edit.step);return;}setResult({text:v.message||'Готово.',error:false});await onChanged?.();}
   catch(error){setResult({text:error instanceof Error?error.message:'Не получилось. Обновите экран.',error:true});}
   finally{setBusy(false);}
  }
- return <Animated.View style={[t.box,style]} accessibilityLabel={card.cleaningTip?'Совет AI администратора по цене уборки':card.listing?'Совет AI администратора по объявлению':card.forecast?'Прогноз загрузки на неделю от AI администратора':card.stay?'Предложение AI администратора по времени проживания':card.window?'Окно в календаре от AI администратора':'Совет AI администратора по цене'}>
+ return <Animated.View style={[t.box,style]} accessibilityLabel={card.risk?'Новая заявка на бронирование':card.cleaningTip?'Совет AI администратора по цене уборки':card.listing?'Совет AI администратора по объявлению':card.forecast?'Прогноз загрузки на неделю от AI администратора':card.stay?'Предложение AI администратора по времени проживания':card.window?'Окно в календаре от AI администратора':'Совет AI администратора по цене'}>
   <View style={t.head}>
-   <View style={t.icon}><Text style={t.iconText}>{card.forecast?'▥':card.listing?'★':card.cleaningTip?'✧':'✦'}</Text></View>
-   <View style={t.titleBox}><Text style={t.small}>{'AI администратор · '+(card.cleaningTip?'цена уборки':card.listing?card.listing.title.toLocaleLowerCase('ru'):card.forecast?'прогноз на неделю':card.stay?(card.stay.kind==='late'?'поздний выезд':'ранний заезд'):card.window?'окно в календаре':card.price?.direction==='up'?'спрос вырос':'спрос снизился')}</Text><Text numberOfLines={1} style={t.title}>{card.subject}</Text></View>
+   <View style={t.icon}><Text style={t.iconText}>{card.risk?'◷':card.forecast?'▥':card.listing?'★':card.cleaningTip?'✧':'✦'}</Text></View>
+   <View style={t.titleBox}><Text style={t.small}>{'AI администратор · '+(card.risk?'новая заявка':card.cleaningTip?'цена уборки':card.listing?card.listing.title.toLocaleLowerCase('ru'):card.forecast?'прогноз на неделю':card.stay?(card.stay.kind==='late'?'поздний выезд':'ранний заезд'):card.window?'окно в календаре':card.price?.direction==='up'?'спрос вырос':'спрос снизился')}</Text><Text numberOfLines={1} style={t.title}>{card.subject}</Text></View>
    <Pressable accessibilityRole="button" accessibilityLabel="Позже" onPress={()=>setLater(v=>[...v,card.id])} style={t.close}><Text style={t.closeText}>×</Text></Pressable>
   </View>
   <PriceTipBody card={card} busy={busy} onDecide={decide} compact/>
@@ -210,4 +231,9 @@ const t=StyleSheet.create({
  cmpIcon:{width:32,height:32,borderRadius:R.full,borderWidth:1,borderColor:C.line,backgroundColor:C.surface,alignItems:'center',justifyContent:'center'},
  cmpIconText:{fontSize:F.label[0],lineHeight:F.label[1],color:C.accent},
  dim:{opacity:.6},
+ risk:{marginTop:12,paddingVertical:8,paddingHorizontal:12,borderRadius:R.md,borderWidth:1},
+ riskHead:{flexDirection:'row',alignItems:'center',flexWrap:'wrap',gap:8},
+ riskDot:{width:8,height:8,borderRadius:R.full},
+ riskTitle:{fontSize:F.body[0],lineHeight:F.body[1],fontWeight:'700',color:C.ink},
+ riskLine:{marginTop:4,fontSize:F.label[0],lineHeight:F.label[1],color:C.inkSoft},
 });
