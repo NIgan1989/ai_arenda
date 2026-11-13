@@ -110,9 +110,12 @@ export class RentalService {
     if(typeof body.ownStaff!=='boolean'&&current)p.ownStaff=Number(current.own_staff)?1:0;
     // Own staff cleans: the AI does not order cleanings, so there is no cleaning fee to pay an executor.
     const staffOn=!!p.ownStaff&&!Number(current?.own_staff);
+    // Back to executors: there is no cleaning fee yet, so automatic confirmation stops until the owner sets one
+    // (with no fee a confirmed booking would get no cleaning). The owner turns «ИИ» on again with the fee.
+    const staffOff=!p.ownStaff&&!!Number(current?.own_staff)&&!(Number(currentPolicy?.cleaning_fee)>0);
     if(staffOn&&current&&await this.one("SELECT id FROM cleaning_jobs WHERE property_id=? AND status IN ('in_progress','submitted')",propertyId))throw new DomainError('Сейчас идёт уборка исполнителем. Включите «Свой персонал» после её приёмки.',409);
     if(staffOn&&current&&await this.one('SELECT 1 FROM regular_cleaners WHERE property_id=?',propertyId))throw new DomainError('Сначала открепите постоянного исполнителя, потом включите «Свой персонал».',409);
-    const rental=body.rental||{},policy=policyInput({...rental,dailyPrice:p.price,autoConfirm:!!currentPolicy?.auto_confirm,autoAssign:!!currentPolicy?.auto_assign,cleaningFee:p.ownStaff?0:currentPolicy?.cleaning_fee||0,cleaningBudget:currentPolicy?.cleaning_budget||0,maxDiscountPercent:currentPolicy?.max_discount_percent||0,minimumRate:currentPolicy?.minimum_rate||0,repairBudget:currentPolicy?.repair_budget||0,autoExtension:!!currentPolicy?.auto_extension,maxExtensionHours:currentPolicy?.max_extension_hours||0,mandateUntil:currentPolicy?.mandate_until?new Date(currentPolicy.mandate_until*1000).toISOString():'',escalationContact:currentPolicy?.escalation_contact||''});
+    const rental=body.rental||{},policy=policyInput({...rental,dailyPrice:p.price,autoConfirm:!staffOff&&!!currentPolicy?.auto_confirm,autoAssign:!staffOff&&!!currentPolicy?.auto_assign,cleaningFee:p.ownStaff?0:currentPolicy?.cleaning_fee||0,cleaningBudget:currentPolicy?.cleaning_budget||0,maxDiscountPercent:currentPolicy?.max_discount_percent||0,minimumRate:currentPolicy?.minimum_rate||0,repairBudget:currentPolicy?.repair_budget||0,autoExtension:!!currentPolicy?.auto_extension,maxExtensionHours:currentPolicy?.max_extension_hours||0,mandateUntil:currentPolicy?.mandate_until?new Date(currentPolicy.mandate_until*1000).toISOString():'',escalationContact:currentPolicy?.escalation_contact||''});
     const key=propertyId||id(),revision=id(),gate='EXISTS(SELECT 1 FROM property_details WHERE property_id=? AND revision=?)';
     const statements=[];
     if(!propertyId)statements.push(this.query('INSERT INTO properties(id,owner_id,demo_owner,title,city,district,address,description,price,rooms,capacity,cleaning_minutes,published,created_at,own_staff) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',key,this.userId,null,p.title,p.city,p.district,p.address,p.description,p.price,p.rooms,p.capacity,p.cleaningMinutes,published,now(),p.ownStaff),this.query('INSERT INTO property_operations(property_id,updated_at) VALUES (?,?)',key,now()));
@@ -130,7 +133,8 @@ export class RentalService {
     statements.push(this.query(`INSERT INTO property_policies(property_id,${keys.join(',')},version,revision,updated_at) SELECT ?,${keys.map(()=>'?').join(',')},?,?,? WHERE ${gate} ON CONFLICT(property_id) DO UPDATE SET ${keys.map(k=>`${k}=excluded.${k}`).join(',')},version=excluded.version,revision=excluded.revision,updated_at=excluded.updated_at`,key,...Object.values(policy),policyVersion+1,id(),now(),key,revision));
     statements.push(this.query(`INSERT INTO audit_events SELECT ?,?,?,?,? WHERE ${gate}`,id(),this.userId,key,propertyId?'property.listing_updated':'property.listing_created',now(),key,revision));
     const results=await this.db.batch(statements);if(!results[propertyId?0:2].meta.changes)throw new DomainError('Объявление уже изменилось. Обновите форму.',409);
-    return {id:key,message:published?'Объявление опубликовано. Готовность и даты проверяются отдельно.':'Черновик сохранён. Гости его не видят.'};
+    const paused=staffOff&&!!currentPolicy?.auto_confirm?' Автопилот приостановлен: укажите цену уборки и снова включите «ИИ».':'';
+    return {id:key,message:(published?'Объявление опубликовано. Готовность и даты проверяются отдельно.':'Черновик сохранён. Гости его не видят.')+paused};
   }
   // Removing a flat: one with no history at all is deleted; otherwise it is archived (hidden from guests and
   // from the owner's lists) so bookings, cleanings and money records keep pointing at it.

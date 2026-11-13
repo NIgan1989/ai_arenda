@@ -47,5 +47,11 @@ test('switching «Свой персонал» on cancels planned cleanings by ex
   const body=listing({title:'Test apartment',expectedVersion:v.lv,policyVersion:v.pv,details:{...listing().details,type:'apartment',checkinMethod:'meet'}});
   await f.owner.saveListing(f.property,body);
   assert.equal(f.db.raw.prepare('SELECT own_staff FROM properties WHERE id=?').get(f.property).own_staff,1);
+  // Under «ИИ» with own staff, switching back to executors pauses automatic confirmation until a fee is set.
+  const {setGuestMode}=await load('autopilot');await setGuestMode(f.owner,{propertyId:f.property,mode:'auto'});
+  const w=f.db.raw.prepare('SELECT d.version lv,p.version pv,p.auto_confirm FROM property_details d JOIN property_policies p ON p.property_id=d.property_id WHERE d.property_id=?').get(f.property);assert.equal(w.auto_confirm,1);
+  const off=await f.owner.saveListing(f.property,{...body,ownStaff:false,expectedVersion:w.lv,policyVersion:w.pv});
+  assert.match(off.message,/Автопилот приостановлен/);
+  const after=f.db.raw.prepare('SELECT auto_confirm,auto_assign FROM property_policies WHERE property_id=?').get(f.property);assert.equal(after.auto_confirm,0);assert.equal(after.auto_assign,0);
  }finally{f.db.close();}
 });

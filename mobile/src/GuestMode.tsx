@@ -9,7 +9,7 @@ import type {Row} from './model';
 const modes:[string,string][]=[['off','Выкл'],['manual','Я сам'],['auto','ИИ']];
 export function GuestMode({flat,busy,onChange}:{flat:Row;busy:boolean;onChange:(body:Row)=>void}){
  const [asking,setAsking]=useState(false),[fee,setFee]=useState(''),current=flat.mode||(flat.enabled?'manual':'off');
- const choose=(mode:string)=>{if(mode===current){setAsking(false);return;}if(mode==='auto'&&!(Number(flat.cleaning_fee)>=100)){setAsking(true);return;}setAsking(false);onChange({propertyId:flat.id,mode});};
+ const choose=(mode:string)=>{if(mode===current){setAsking(false);return;}if(mode==='auto'&&!Number(flat.own_staff)&&!(Number(flat.cleaning_fee)>=100)){setAsking(true);return;}setAsking(false);onChange({propertyId:flat.id,mode});};
  const amount=Number(fee);
  return <View style={{gap:8,paddingVertical:4}}>
   <View style={h.listRow}>

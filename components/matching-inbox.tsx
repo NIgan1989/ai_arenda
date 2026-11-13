@@ -8,7 +8,7 @@ function Offer({offer,busy,onRespond}:{offer:Row;busy:boolean;onRespond:(decisio
 const guestModes:[string,string][]=[['off','Выкл'],['manual','Я сам'],['auto','ИИ']];
 function FlatMode({flat,busy,onChange}:{flat:Row;busy:boolean;onChange:(body:Row)=>void}){
  const [asking,setAsking]=useState(false),[fee,setFee]=useState(''),current=flat.mode||(flat.enabled?'manual':'off');
- const choose=(mode:string)=>{if(mode===current){setAsking(false);return;}if(mode==='auto'&&!(Number(flat.cleaning_fee)>=100)){setAsking(true);return;}setAsking(false);onChange({propertyId:flat.id,mode});};
+ const choose=(mode:string)=>{if(mode===current){setAsking(false);return;}if(mode==='auto'&&!Number(flat.own_staff)&&!(Number(flat.cleaning_fee)>=100)){setAsking(true);return;}setAsking(false);onChange({propertyId:flat.id,mode});};
  return <div className="guest-mode"><div className="guest-mode-row"><span>{flat.title}</span><div role="radiogroup" aria-label={'Кто отвечает гостям: '+flat.title} className="guest-mode-switch">{guestModes.map(([mode,label])=><button key={mode} type="button" role="radio" aria-checked={current===mode} disabled={busy} onClick={()=>choose(mode)}>{label}</button>)}</div></div>
  {asking&&<form className="guest-mode-fee" onSubmit={e=>{e.preventDefault();setAsking(false);onChange({propertyId:flat.id,mode:'auto',cleaningFee:Number(fee)});}}><label>Стоимость уборки, ₸<input type="number" inputMode="numeric" min={100} max={1000000} required value={fee} onChange={e=>setFee(e.target.value)} autoFocus/></label><Button disabled={busy}>Включить автопилот</Button></form>}</div>;
 }
