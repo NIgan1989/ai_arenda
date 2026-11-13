@@ -12,8 +12,9 @@ import {cleanerStats,rankCleaners} from './cleaner-match';
 export const availableSql=(owner:string)=>`(COALESCE((SELECT SUM(amount) FROM owner_balance_entries WHERE owner_id=${owner}),0)
  -COALESCE((SELECT SUM(c.amount) FROM platform_commissions c WHERE c.owner_id=${owner} AND c.mode='charged' AND (SELECT status FROM bookings WHERE id=c.booking_id) IN ('confirmed','completed')),0)
  -COALESCE((SELECT SUM(amount) FROM cleaning_commissions WHERE owner_id=${owner} AND mode='charged'),0)
- -COALESCE((SELECT SUM(amount) FROM cleaning_holds WHERE owner_id=${owner} AND status IN ('held','due','paid')),0))`;
-export async function ownerAvailable(db:D1Database,ownerId:string){return Number((await one(db,`SELECT ${availableSql('?')} n`,ownerId,ownerId,ownerId,ownerId))?.n||0);}
+ -COALESCE((SELECT SUM(amount) FROM cleaning_holds WHERE owner_id=${owner} AND status IN ('held','due','paid')),0)
+ -COALESCE((SELECT SUM(amount) FROM autopilot_charges WHERE user_id=${owner} AND role='owner' AND mode='charged'),0))`;
+export async function ownerAvailable(db:D1Database,ownerId:string){return Number((await one(db,`SELECT ${availableSql('?')} n`,ownerId,ownerId,ownerId,ownerId,ownerId))?.n||0);}
 
 const money=(n:number)=>new Intl.NumberFormat('ru-RU').format(n)+' ₸';
 const percent=(bp:number)=>String(bp/100).replace('.',',')+'%';
@@ -111,13 +112,22 @@ export async function cleanerPayouts(db:D1Database){
  ]);
  const commissions=await one(db,"SELECT COUNT(*) n,COALESCE(SUM(amount),0) amount,COALESCE(SUM(CASE WHEN pair=1 THEN 1 END),0) pairs,COALESCE(SUM(CASE WHEN mode='charged' THEN amount END),0) charged FROM cleaning_commissions WHERE created_at>=?",epoch()-30*86400);
  const pairs=await one(db,'SELECT COUNT(*) n FROM regular_cleaners');
+ for(const d of due)d.withhold=(await withholdPlan(db,d.cleaner_id,d.amount)).total;
  return {due,held:Number(totals?.held||0),dueTotal:Number(totals?.due||0),paid30:Number(totals?.paid30||0),commissions30:{count:Number(commissions?.n||0),amount:Number(commissions?.amount||0),pairs:Number(commissions?.pairs||0),charged:Number(commissions?.charged||0)},pairs:Number(pairs?.n||0)};
+}
+
+// A cleaner's «Автопилот» months are withheld from her payouts: whole charges, oldest first, while they fit.
+async function withholdPlan(db:D1Database,cleaner:string,amount:number){
+ const owed=await rows(db,"SELECT id,amount FROM autopilot_charges WHERE user_id=? AND role='cleaner' AND mode='charged' AND settled_at IS NULL ORDER BY created_at,id",cleaner);
+ const ids:string[]=[];let total=0;for(const c of owed)if(total+Number(c.amount)<=amount){ids.push(c.id);total+=Number(c.amount);}
+ return {ids,total};
 }
 export async function markCleanerPayout(service:RentalService,body:Row){
  if(body.confirmed!==true)throw new DomainError('Подтвердите, что деньги отправлены исполнителю.');
  const jobId=required(body.jobId,'Уборка',100),note=String(body.note||'').trim().slice(0,300),at=epoch();
  const h=await one(service.db,"SELECT h.*,p.title FROM cleaning_holds h JOIN properties p ON p.id=h.property_id WHERE h.job_id=? AND h.status='due'",jobId);
  if(!h)throw new DomainError('Выплата уже отмечена или ещё не положена.',409);
+ const plan=await withholdPlan(service.db,h.cleaner_id,h.amount),net=h.amount-plan.total;
  const entry=uuid(),r=await service.db.batch([
   q(service.db,"UPDATE cleaning_holds SET status='paid',paid_at=?,paid_by=?,payout_note=? WHERE job_id=? AND status='due'",at,service.userId,note,jobId),
   q(service.db,"INSERT INTO finance_entries(id,owner_id,property_id,booking_id,job_id,kind,amount,currency,source,external_reference,note,actor_id,request_key,created_at) SELECT ?,owner_id,property_id,NULL,job_id,'job_payment',amount,'KZT','provider','',?,'system:cleaner-payout',?,? FROM cleaning_holds WHERE job_id=? AND status='paid' AND paid_at=? AND changes()>0",entry,'Выплата через сервис из резерва'+(note?': '+note:''),'hold-payout:'+jobId,at,jobId,at),
@@ -125,9 +135,10 @@ export async function markCleanerPayout(service:RentalService,body:Row){
   // The service-paid row is the job's ledger entry: mark the job migrated so the legacy backfill does not add a second one.
   q(service.db,"INSERT OR IGNORE INTO finance_backfill_receipts SELECT ?,? WHERE EXISTS(SELECT 1 FROM finance_entries WHERE id=?)",'job:'+jobId,at,entry),
   q(service.db,"INSERT INTO audit_events SELECT ?,?,?,?,? WHERE EXISTS(SELECT 1 FROM finance_entries WHERE id=?)",uuid(),service.userId,jobId,JSON.stringify({action:'cleaning.payout_marked',amount:h.amount}),at,entry),
-  q(service.db,"INSERT OR IGNORE INTO notifications SELECT ?,?,?,?,0,? WHERE EXISTS(SELECT 1 FROM finance_entries WHERE id=?)",uuid(),h.cleaner_id,`Сервис отправил вам ${money(h.amount)} за уборку «${h.title}».`,'cleaner:payout:'+jobId,at,entry),
+  q(service.db,"INSERT OR IGNORE INTO notifications SELECT ?,?,?,?,0,? WHERE EXISTS(SELECT 1 FROM finance_entries WHERE id=?)",uuid(),h.cleaner_id,`Сервис отправил вам ${money(net)} за уборку «${h.title}»`+(plan.total?`: ${money(h.amount)} минус ${money(plan.total)} за автопилот.`:'.'),'cleaner:payout:'+jobId,at,entry),
   q(service.db,"INSERT OR IGNORE INTO notifications SELECT ?,?,?,?,0,? WHERE EXISTS(SELECT 1 FROM finance_entries WHERE id=?)",uuid(),h.owner_id,`Исполнитель получил ${money(h.amount)} за уборку «${h.title}» из резерва на вашем балансе. Рассчитываться отдельно не нужно.`,'owner:payout:'+jobId,at,entry),
+  ...plan.ids.map(id=>q(service.db,'UPDATE autopilot_charges SET settled_at=?,settled_job=? WHERE id=? AND settled_at IS NULL AND EXISTS(SELECT 1 FROM finance_entries WHERE id=?)',at,jobId,id,entry))
  ]);
  if(!r[0].meta.changes)throw new DomainError('Выплата уже отмечена.',409);
- return {message:`Выплата ${money(h.amount)} отмечена. Исполнитель получил уведомление.`};
+ return {message:`Выплата ${money(net)} отмечена`+(plan.total?` (удержано ${money(plan.total)} за автопилот)`:'')+'. Исполнитель получил уведомление.'};
 }

@@ -18,6 +18,7 @@ import {ReliabilityBadge,reliabilityHints} from './reliability';
 import {AccountSafety} from './safety-controls';
 import {WebPushSettings} from './web-push-settings';
 import {TelegramSettings} from './telegram-settings';
+import {AutopilotPlan} from './autopilot-plan';
 type Row=Record<string,any>;
 const shortRole:Row={guest:'Гость',owner:'Владелец',cleaner:'Уборка'},banks:Row={undecided:'Не выбран',kaspi:'Kaspi',halyk:'Halyk Bank'};
 // One screen, three groups: every row shows its current value, switches save at once.
@@ -45,6 +46,7 @@ export function AccountControl({role,onChanged,onAdministrator}:{role:string;onA
  {steps.length>0&&<button type="button" className="acct-next" onClick={edit}><Sparkles size={18}/><span>{steps[0]}{steps.length>1&&<small>и ещё {steps.length-1} {steps.length===2?'шаг':'шага'} до полного профиля</small>}</span><ChevronRight size={16}/></button>}
  <div className="acct-live" aria-live="polite">{error&&<p className="form-error" role="alert">{error}</p>}{message&&<p role="status" className="acct-saved">{message}</p>}</div>
  {account?.reliability&&<><h3 className="acct-label">Надёжность</h3><section className="acct-group acct-reliability"><ReliabilityBadge value={account.reliability} title={owner?'Как вас видят гости':worker?'Как вас видят владельцы':'Как вас видят владельцы'}/><ul className="reliability-hints">{(reliabilityHints[role]||[]).map(h=><li key={h}>{h}</li>)}</ul></section></>}
+ {(owner||worker)&&<><h3 className="acct-label">Тариф</h3><AutopilotPlan key={'plan:'+role} role={owner?'owner':'cleaner'} api={api}/></>}
  <h3 className="acct-label">{experience.profileTitle}</h3>
  <section className="acct-group">{worker&&toggle(BriefcaseBusiness,'Принимаю предложения',(profile.work_status||'available')==='available',v=>person({work_status:v?'available':'away'},{workStatus:v?'available':'away'},true),/^(Принимает|Не принимает)/.test(account.workerStatus?.label||'')?undefined:account.workerStatus?.label)}{row(UserRound,'О себе',profile.bio)}{row(Languages,'Языки общения',profile.languages)}{row(MapPin,experience.cityLabel,profile.city)}{worker&&<>{row(MapIcon,'Районы работы',profile.districts)}{row(Clock,'График',profile.availability)}{row(BadgeCheck,'Опыт и услуги',profile.experience)}</>}{row(Phone,'Телефон',profile.contact)}</section>
  {/* The sections that are not in the phone's bottom bar (the desktop sidebar lists them), and joining another role, which no other workspace screen offers. */}

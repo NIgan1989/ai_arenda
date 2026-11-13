@@ -22,13 +22,14 @@ export function commissionFor(amount:number,s:Pick<BillingSettings,'rate_bp'|'mi
 
 // Statement for the booking-confirmation batch. The amount is computed in SQL from the
 // settings row read in the same batch, so a concurrent settings change cannot split it.
-// A flat under autopilot at confirmation time pays the AI rate (ai_rate_bp) instead of the base rate.
+// A flat under autopilot pays the base rate when its owner is on the «Автопилот» plan (the plan is the price of
+// the AI); a flat left under the AI without a plan pays the AI rate (ai_rate_bp).
 export function accrueCommission(db:D1Database,bookingId:string,auditId:string,at:number){
  const fee="MIN(x.amount,MAX(x.min_fee,CASE WHEN x.max_fee>0 THEN MIN(x.max_fee,(x.amount*x.rate+5000)/10000) ELSE (x.amount*x.rate+5000)/10000 END))";
  const used=`(SELECT COUNT(*) FROM platform_commissions c WHERE c.owner_id=x.owner_id AND c.mode IN ('free','charged') AND ${live})`;
  return q(db,`INSERT OR IGNORE INTO platform_commissions(booking_id,owner_id,property_id,booking_amount,rate_bp,amount,mode,settings_version,created_at,managed)
   SELECT x.id,x.owner_id,x.property_id,x.amount,x.rate,${fee},CASE WHEN x.enabled=1 AND x.starts_at<=? THEN CASE WHEN ${used}<x.free_bookings THEN 'free' ELSE 'charged' END ELSE 'shadow' END,x.version,?,x.managed
-  FROM (SELECT z.*,CASE WHEN z.managed=1 THEN z.ai_rate_bp ELSE z.rate_bp END rate FROM (SELECT b.id,p.owner_id,b.property_id,b.amount,s.min_fee,s.max_fee,s.enabled,s.starts_at,s.free_bookings,s.version,s.rate_bp,s.ai_rate_bp,CASE WHEN ${underAutopilot('b.property_id')} THEN 1 ELSE 0 END managed
+  FROM (SELECT z.*,CASE WHEN z.managed=1 AND NOT EXISTS(SELECT 1 FROM autopilot_plans ap WHERE ap.user_id=z.owner_id AND ap.role='owner' AND ap.status IN ('trial','active','grace')) THEN z.ai_rate_bp ELSE z.rate_bp END rate FROM (SELECT b.id,p.owner_id,b.property_id,b.amount,s.min_fee,s.max_fee,s.enabled,s.starts_at,s.free_bookings,s.version,s.rate_bp,s.ai_rate_bp,CASE WHEN ${underAutopilot('b.property_id')} THEN 1 ELSE 0 END managed
    FROM bookings b JOIN properties p ON p.id=b.property_id JOIN platform_billing s ON s.id='global'
    WHERE b.id=? AND b.status='confirmed' AND p.demo_owner IS NULL AND EXISTS(SELECT 1 FROM audit_events WHERE id=?)) z) x`,at,at,at,bookingId,auditId);
 }

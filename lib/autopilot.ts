@@ -1,6 +1,7 @@
 import {DomainError,number,required} from './domain';
 import type {RentalService} from './service';
 import {epoch,uuid,q,one,rows,type Row} from './operation-core';
+import {ensurePlan} from './autopilot-plans';
 
 // The owner's autopilot for one flat is one choice instead of five switches on two screens:
 // quick requests, the AI's instant answer to them, booking confirmation with a cleaning job,
@@ -31,6 +32,9 @@ export async function setGuestMode(s:RentalService,body:Row){
   const daily=Number((await one(db,'SELECT price FROM properties WHERE id=?',p.id))?.price||0);
   if(policy.minimum_rate&&[daily,policy.hourly_price,policy.nightly_price].some(rate=>rate>0&&rate<policy.minimum_rate))throw new DomainError('Один из тарифов ниже минимальной разрешённой ставки. Исправьте тарифы квартиры.',409);
   if(policy.mandate_until&&policy.mandate_until<=t)throw new DomainError('Срок полномочий в правилах квартиры истёк. Продлите его или очистите поле.',409);
+
+  // «ИИ» is the paid «Автопилот» plan: the first flat starts the free trial, a paused plan pays its month first.
+  await ensurePlan(db,s.userId,'owner',t);
  }
  const statements:D1PreparedStatement[]=[q(db,'INSERT INTO matching_preferences VALUES (?,?,?,?) ON CONFLICT(property_id) DO UPDATE SET enabled=excluded.enabled,owner_id=excluded.owner_id,updated_at=excluded.updated_at',p.id,s.userId,mode==='off'?0:1,t)];
  // A new policy version expires answers given under the old one, so bump it only when something changes.

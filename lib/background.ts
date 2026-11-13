@@ -1,6 +1,7 @@
 import {DomainError,type Role} from './domain';
 import {sweepReviews} from './admin-autocheck';
 import {sweepIssues} from './admin-issues';
+import {sweepPlans} from './autopilot-plans';
 import {sweepReports} from './admin-reports';
 import {sendDigest} from './admin-digest';
 import {RentalService} from './service';
@@ -50,10 +51,11 @@ async function cloudBackup(db:D1Database,config:OperationConfig){
 export async function runOperationalTick(db:D1Database,config:OperationConfig={}){
  await enqueueJob(db,'matching-dispatch','matching-dispatch','system',{},30);
  await q(db,'UPDATE journey_sessions SET longitude=NULL,latitude=NULL,accuracy=NULL,route=NULL,route_recorded_at=NULL WHERE (expires_at<=? OR stopped_at IS NOT NULL) AND (longitude IS NOT NULL OR route IS NOT NULL)',epoch()).run();
- await enqueueJob(db,'discovery','discovery','system',{},30);await enqueueJob(db,'admin-autocheck','admin-autocheck','system',{},300);await enqueueJob(db,'admin-issues','admin-issues','system',{},120);await enqueueJob(db,'delivery','delivery','system',{},30);if(config.BUCKET&&config.ACCESS_ENCRYPTION_KEY)await enqueueJob(db,'cloud-backup','backup','system',{},86400);
+ await enqueueJob(db,'discovery','discovery','system',{},30);await enqueueJob(db,'admin-autocheck','admin-autocheck','system',{},300);await enqueueJob(db,'admin-issues','admin-issues','system',{},120);await enqueueJob(db,'autopilot-plans','autopilot-plans','system',{},600);await enqueueJob(db,'delivery','delivery','system',{},30);if(config.BUCKET&&config.ACCESS_ENCRYPTION_KEY)await enqueueJob(db,'cloud-backup','backup','system',{},86400);
  if(config.BUCKET){await enqueueJob(db,'media-move','media-move','system',{},60);await enqueueJob(db,'media-sweep','media-sweep','system',{},3600);}
  const result=await runBackgroundJobs(db,async job=>{
   if(job.kind==='discovery')return discover(db,job);
+  if(job.kind==='autopilot-plans')return sweepPlans(db);
   if(job.kind==='admin-issues')return {issues:await sweepIssues(db,config as OperationConfig&{PLATFORM_ADMIN_IDS?:string}),reports:await sweepReports(db),digest:await sendDigest(db,config as OperationConfig&{PLATFORM_ADMIN_IDS?:string})};
   if(job.kind==='admin-autocheck')return sweepReviews(db,config as OperationConfig&{PLATFORM_ADMIN_IDS?:string});
   if(job.kind==='matching-dispatch')return advanceMatchingRequests(db,config);

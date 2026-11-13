@@ -94,14 +94,21 @@ test('owner balances are searchable and paged on the server, and debtors are cou
  }finally{f.db.close();}
 });
 
-test('a flat under the AI autopilot pays the AI rate and is marked as managed; the administrator sets that rate',async()=>{
+test('a managed flat pays the base rate on the «Автопилот» plan, the AI rate without it, and is marked as managed; the administrator sets that rate',async()=>{
  const {matchingAction}=await load('smart-matching'),f=await fixture();try{
   const manual=await book(f,3,'manual-rate');assert.deepEqual([row(f,manual).rate_bp,row(f,manual).managed],[500,0]);
   await matchingAction(f.owner,'owner','preference',{propertyId:f.property,mode:'auto'});
   const id=(await f.guest.createBooking({propertyId:f.property,start:iso(now()+5*86400),end:iso(now()+5*86400+7200),guests:1,billingMode:'hourly',requestKey:'ai-rate',acceptTerms:true})).id;
   // Under autopilot the booking confirms itself.
   if(f.db.raw.prepare('SELECT status FROM bookings WHERE id=?').get(id).status==='requested')await f.owner.bookingAction(id,{action:'confirm',cleaningFee:3000});
-  const managed=row(f,id);assert.deepEqual([managed.rate_bp,managed.managed],[1000,1]);assert.equal(managed.amount,Math.floor((managed.booking_amount*1000+5000)/10000));
+  // Turning the flat to auto starts the «Автопилот» plan: a paid plan keeps the base rate.
+  const planned=row(f,id);assert.deepEqual([planned.rate_bp,planned.managed],[500,1]);
+  assert.equal(f.db.raw.prepare("SELECT status FROM autopilot_plans WHERE user_id='owner' AND role='owner'").get().status,'trial');
+  // Without a live plan a managed flat pays the AI rate.
+  f.db.raw.prepare("UPDATE autopilot_plans SET status='paused' WHERE user_id='owner'").run();
+  const bare=(await f.guest.createBooking({propertyId:f.property,start:iso(now()+7*86400),end:iso(now()+7*86400+7200),guests:1,billingMode:'hourly',requestKey:'ai-rate-2',acceptTerms:true})).id;
+  if(f.db.raw.prepare('SELECT status FROM bookings WHERE id=?').get(bare).status==='requested')await f.owner.bookingAction(bare,{action:'confirm',cleaningFee:3000});
+  const managed=row(f,bare);assert.deepEqual([managed.rate_bp,managed.managed],[1000,1]);assert.equal(managed.amount,Math.floor((managed.booking_amount*1000+5000)/10000));
   await writePlatformAdmin(f.other,'billing/settings',{confirmed:true,enabled:true,ratePercent:5,aiRatePercent:12,startsAt:now()+86400,freeBookings:0,expectedVersion:1},config(f));
   const settings=f.db.raw.prepare("SELECT rate_bp,ai_rate_bp FROM platform_billing WHERE id='global'").get();assert.deepEqual([settings.rate_bp,settings.ai_rate_bp],[500,1200]);
   assert.match(f.db.raw.prepare("SELECT body FROM notifications WHERE user_id='owner' AND dedupe LIKE 'owner:billing:%'").get().body,/режиме «ИИ».*12%/);
