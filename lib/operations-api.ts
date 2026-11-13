@@ -12,7 +12,7 @@ import {saveEvidence,listEvidence,readEvidence} from './evidence';
 import {calendarSources,saveCalendarSource,refreshCalendar,commitCalendarImport,previewCalendarImport,createCalendarExport,exportCalendar,flatCalendars,connectCalendar} from './external-calendar';
 import {importState,previewPropertyImport,commitPropertyImport} from './property-import';
 import {governanceState,savePilotPolicy,updateOperatorTicket} from './pilot-governance';
-import {deliveryState,createTelegramLink,setDeliveryChannel,acceptTelegramLink,integrationStatus,acceptDeliveryReceipt} from './delivery';
+import {deliveryState,createTelegramLink,telegramStatus,setDeliveryChannel,acceptTelegramLink,integrationStatus,acceptDeliveryReceipt} from './delivery';
 import {securityState,requestPhoneCode,verifyPhoneCode,requestParticipantReview,decideParticipantReview,savePropertyAccess,revealPropertyAccess} from './participant-security';
 import {operationalHealth,retryBackgroundJob} from './background';
 import {listCommands,decideAdministratorCommand} from './administrator-commands';
@@ -66,6 +66,7 @@ export async function writeOperations(service:RentalService,role:Role,path:strin
  if(route==='governance/policy'){if(platformAdmin&&config.TEST_DATA_ONLY==='1'&&[body.requireOwnerReview,body.requireCleanerReview,body.requirePhone].some(v=>v===true))throw new DomainError('На учебном стенде обязательные проверки отключены, чтобы проходить тестовые процессы. Рабочие проверки настраиваются отдельно.',409);return savePilotPolicy(service,body,platformAdmin);}
  if(route==='governance/ticket')return updateOperatorTicket(service,role,body,platformAdmin);
  if(route==='delivery/telegram')return createTelegramLink(service,role,config);
+ if(route==='delivery/status')return telegramStatus(service,role,config);
  if(route==='delivery/channel')return setDeliveryChannel(service,role,body,config);
  if(route==='review'){active(role,['guest']);return saveStayReview(service,body);}
  if(route==='finance'){active(role,['owner']);return recordFinance(service,body);}

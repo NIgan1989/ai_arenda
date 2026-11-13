@@ -13,6 +13,7 @@ import './role-settings.css';
 import './account-list.css';
 import {AccountSafety} from './safety-controls';
 import {WebPushSettings} from './web-push-settings';
+import {TelegramSettings} from './telegram-settings';
 type Row=Record<string,any>;
 const shortRole:Row={guest:'Гость',owner:'Владелец',cleaner:'Уборка'},banks:Row={undecided:'Не выбран',kaspi:'Kaspi',halyk:'Halyk Bank'};
 // One screen, three groups: every row shows its current value, switches save at once.
@@ -42,7 +43,7 @@ export function AccountControl({role,onChanged,onAdministrator}:{role:string;onA
  <h3 className="acct-label">{experience.profileTitle}</h3>
  <section className="acct-group">{worker&&toggle(BriefcaseBusiness,'Принимаю предложения',(profile.work_status||'available')==='available',v=>person({work_status:v?'available':'away'},{workStatus:v?'available':'away'},true),/^(Принимает|Не принимает)/.test(account.workerStatus?.label||'')?undefined:account.workerStatus?.label)}{row(UserRound,'О себе',profile.bio)}{row(Languages,'Языки общения',profile.languages)}{row(MapPin,experience.cityLabel,profile.city)}{worker&&<>{row(MapIcon,'Районы работы',profile.districts)}{row(Clock,'График',profile.availability)}{row(BadgeCheck,'Опыт и услуги',profile.experience)}</>}{row(Phone,'Телефон',profile.contact)}</section>
  <h3 className="acct-label">Настройки</h3>
- <section className="acct-group"><WebPushSettings key={'push:'+role} role={role}/>
+ <section className="acct-group"><WebPushSettings key={'push:'+role} role={role}/><TelegramSettings key={'tg:'+role} role={role}/>
  <details className="acct-details">{summary(Wallet,experience.paymentTitle,banks[account.settings.payment_provider]||banks.undecided)}<div className="acct-body"><label className="acct-field">Предпочтительный банк<NativeSelect value={account.settings.payment_provider} disabled={busy} onChange={e=>settings({payment_provider:e.target.value})}><option value="undecided">Пока не выбран</option><option value="kaspi">Kaspi</option><option value="halyk">Halyk Bank</option></NativeSelect></label>{toggle(Wallet,'Уведомлять о расчётах',!!account.settings.payment_notifications,v=>settings({payment_notifications:v?1:0}))}<small>{experience.paymentHint} Банковский перевод эта настройка не выполняет.</small></div></details>
  <details className="acct-details">{summary(Eye,'Приватность',profile.avatar_visibility==='self'?'Фото вижу только я':'Фото видят участники')}<div className="acct-body"><label className="acct-field">Кто видит фото профиля<NativeSelect value={profile.avatar_visibility||'participants'} disabled={busy} onChange={e=>person({avatar_visibility:e.target.value},{avatarVisibility:e.target.value})}><option value="participants">Только участники моих броней и уборок</option><option value="self">Только я</option></NativeSelect></label>{toggle(Eye,'Показывать, что я в сети',profile.show_presence!==0,v=>person({show_presence:v?1:0},{showPresence:v}))}{toggle(Eye,'Отметки прочтения',profile.show_receipts!==0,v=>person({show_receipts:v?1:0},{showReceipts:v}))}<small>Если скрыть присутствие или прочтение, такие же сведения собеседника тоже не будут показаны.</small></div></details></section>
  <h3 className="acct-label">Данные и безопасность</h3>
