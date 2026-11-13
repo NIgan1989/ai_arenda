@@ -27,7 +27,8 @@
           "cameraPermission": "Разрешите снять фото объекта или профиля по вашему запросу.",
           "microphonePermission": false
         }
-      ]
+      ],
+      "@maplibre/maplibre-react-native"
     ]
   }
 }

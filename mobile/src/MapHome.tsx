@@ -10,7 +10,7 @@ import {windowBadge} from '../../lib/window-badge';
 import {dealBadge} from '../../lib/price-deal';
 import {C} from './styles';
 import {T} from './tokens';
-import {TileMap,type MapPin} from './TileMap';
+import {LiveMap,type MapPin} from './LiveMap';
 import {countdown,mapCities,validPoint,type MapPoint} from './map-math';
 import {MapSheetHead} from './MapSheetHead';
 import {NowCard as NowCardView} from './NowCard';
@@ -468,7 +468,7 @@ export function MapHome({ role, accountId, data, menu, onChanged, onOpenProcess,
         host.current?.measureInWindow((_x, y) => setTop(Math.round(y) || 0));
       }}
     >
-      <TileMap
+      <LiveMap
         center={center}
         pins={pins}
         selected={selected}
