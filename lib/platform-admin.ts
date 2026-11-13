@@ -10,6 +10,7 @@ import {operationalHealth,retryBackgroundJob} from './background';
 import {aiBudgetState} from './ai-budget';
 import {publicPoint,mapCities} from './map-workspace';
 import {AI_REVIEWER,sweepReviews} from './admin-autocheck';
+import {safetyAction} from './account-safety';
 import {billingState,billingOwners,saveBillingSettings,recordBalanceEntry} from './platform-billing';
 type Config=OperationConfig&{PLATFORM_ADMIN_IDS?:string;ADMINISTRATOR_RUNNER_SECRET?:string;OPENAI_API_KEY?:string;OPENAI_MODEL?:string};
 type Row=Record<string,any>;
@@ -30,6 +31,12 @@ export async function readPlatformAdmin(service:RentalService,route:string,param
   const aiDecided=(await service.all("SELECT r.id,r.role,r.status,r.reviewed_at,r.valid_until,r.ai_checks,u.name,p.title,p.city FROM participant_reviews r JOIN profiles u ON u.id=r.user_id LEFT JOIN properties p ON p.id=r.property_id WHERE r.reviewer_id=? AND r.reviewed_at>? ORDER BY r.reviewed_at DESC LIMIT 30",AI_REVIEWER,Math.floor(Date.now()/1000)-7*86400)).map(parse);
   const policy=await service.one("SELECT ai_review,require_owner_review,require_cleaner_review,version FROM pilot_policy WHERE id='global'");
   await service.audit(service.userId,'admin.reviews_viewed').run();return {...state,pendingReviews,aiDecided,policy};
+ }
+ if(route==='reports'){
+  // Message text stays behind an audited «Открыть»; the list carries only who reported, why, and what the AI concluded.
+  const queue=await service.all("SELECT r.id,r.role,r.target_kind,r.reason,r.status,r.created_at,(SELECT e.reason FROM moderation_access_events e WHERE e.id='ai-check:'||r.id) ai_note,(SELECT version FROM moderated_content m WHERE m.kind=r.target_kind AND m.target_id=r.target_id AND m.room_id=r.room_id) version FROM content_reports r WHERE r.status<>'resolved' ORDER BY r.created_at LIMIT 100");
+  const hidden=await service.all("SELECT r.id,r.role,r.target_kind,r.reason,r.resolution,e.created_at,(SELECT version FROM moderated_content m WHERE m.kind=r.target_kind AND m.target_id=r.target_id AND m.room_id=r.room_id) version,(SELECT hidden FROM moderated_content m WHERE m.kind=r.target_kind AND m.target_id=r.target_id AND m.room_id=r.room_id) hidden FROM moderation_access_events e JOIN content_reports r ON r.id=e.report_id WHERE e.actor_id='ai-administrator' AND e.action='hide' AND e.created_at>? ORDER BY e.created_at DESC LIMIT 50",Math.floor(Date.now()/1000)-7*86400);
+  await service.audit(service.userId,'admin.reports_viewed').run();return {queue,hidden};
  }
  if(route==='billing/owners')return billingOwners(service,params);
  if(route==='billing'){const state=await billingState(service);await service.audit(service.userId,'admin.billing_viewed').run();return state;}
@@ -63,6 +70,10 @@ export async function writePlatformAdmin(service:RentalService,route:string,body
  if(route==='governance/policy'){
   if(config.TEST_DATA_ONLY==='1'&&[body.requireOwnerReview,body.requireCleanerReview,body.requirePhone].some(v=>v===true))throw new DomainError('Правила рабочего сервиса настраиваются вне учебного стенда.',409);
   return savePilotPolicy(service,body,true);
+ }
+ if(route==='reports/action'){
+  if(!['inspect','moderate','review'].includes(body.action))throw new DomainError('Неизвестное действие с жалобой.');
+  return safetyAction(service,'guest',body.action,body,true);
  }
  if(route==='governance/ticket')return updateOperatorTicket(service,'guest',body,true);
  if(route==='billing/settings')return saveBillingSettings(service,body);

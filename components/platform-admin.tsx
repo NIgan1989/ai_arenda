@@ -7,7 +7,9 @@ import {Button} from './ui/button';
 import {Input} from './ui/input';
 import {NativeSelect} from './ui/native-select';
 import {Sheet,SheetContent,SheetHeader,SheetTitle,SheetDescription,SheetTrigger,SheetClose} from './ui/sheet';
-import {PilotGovernance} from './pilot-governance';
+import {AdminIssues} from './admin-issues';
+import {AdminReports} from './admin-reports';
+import {AdminPolicy} from './admin-policy';
 import {AdminRevenue} from './admin-revenue';
 import {AdminReviews} from './admin-reviews';
 import {AccountSafety} from './safety-controls';
@@ -24,9 +26,9 @@ const sections:Section[]=[
  {id:'users',label:'Пользователи',hint:'Аккаунты, подключённые роли и участие в работе сервиса.',Icon:Users,group:'service'},
  {id:'properties',label:'Недвижимость',hint:'Объявления владельцев, готовность карточек и публикация.',Icon:House,group:'service'},
  {id:'reviews',label:'Проверки',hint:'ИИ проверяет квартиры и исполнителей сам, спорное отдаёт вам.',Icon:ShieldCheck,group:'service',count:'reviews'},
- {id:'operator',label:'Обращения',hint:'Вопросы участников, ответственные и решения.',Icon:MessagesSquare,group:'service',count:'issues'},
- {id:'moderation',label:'Жалобы и безопасность',hint:'Разбор жалоб и запросов на удаление данных.',Icon:Flag,group:'control',count:'reports'},
- {id:'policy',label:'Правила допуска',hint:'Требования к новым публикациям, броням и назначениям.',Icon:SlidersHorizontal,group:'control'},
+ {id:'operator',label:'Обращения',hint:'ИИ ведёт обращения сам, вам приходит только срочное и просроченное.',Icon:MessagesSquare,group:'service',count:'issues'},
+ {id:'moderation',label:'Жалобы и безопасность',hint:'ИИ скрывает явные нарушения сам, остальные жалобы решаете вы.',Icon:Flag,group:'control',count:'reports'},
+ {id:'policy',label:'Правила допуска',hint:'Какие проверки нужны до показа квартиры и назначения исполнителя.',Icon:SlidersHorizontal,group:'control'},
  {id:'revenue',label:'Доход',hint:'Комиссия с владельцев: бесплатный период, прогноз, условия и балансы.',Icon:Wallet,group:'control'},
  {id:'health',label:'Состояние сервиса',hint:'Фоновые проверки, резервные копии и подключения.',Icon:Activity,group:'control'},
 ];
@@ -62,7 +64,7 @@ export function PlatformAdmin({name}:{name:string}){
  useEffect(()=>{const read=()=>setTab(adminSection(new URLSearchParams(window.location.search).get('section')));read();window.addEventListener('popstate',read);return()=>window.removeEventListener('popstate',read);},[]);
  async function refresh(target=tab,p=page,query=search,role=filter){
   const request=++sequence.current;setLoading(true);setError('');
-  const path=target==='operator'||target==='policy'?'governance':target==='moderation'?'overview':target==='revenue'?'billing':target;
+  const path=target==='operator'||target==='policy'?'governance':target==='moderation'?'reports':target==='revenue'?'billing':target;
   try{const value=await adminAPI(path+(['users','properties'].includes(target)?'?'+new URLSearchParams({search:query,role,page:String(p)}):''));if(request===sequence.current){setData({...value,_adminSection:target});setPage(p);setUpdatedAt(Math.floor(Date.now()/1000));if(path==='overview')setSummary(value);}}catch(e:any){if(request===sequence.current)setError(e.message);}finally{if(request===sequence.current)setLoading(false);}
  }
  useEffect(()=>{setData(null);setSearch('');setFilter('');setPage(0);setNotice('');void refresh(tab,0,'','');return()=>{sequence.current++;};},[tab]);
@@ -80,8 +82,9 @@ export function PlatformAdmin({name}:{name:string}){
  {tab==='overview'&&<AdminOverview data={data} onSelect={select}/>}
  {['users','properties'].includes(tab)&&<><div className="admin-results-label"><span>{tab==='users'?'Пользователей':'Объектов'} найдено: <strong>{data.total}</strong></span><small>Страница {page+1} из {Math.max(1,Math.ceil(data.total/data.limit))}</small></div><div className="admin-records">{tab==='users'?data.users.map((u:Row)=><article className="admin-surface admin-user-record" key={u.id}><span className="admin-avatar" aria-hidden="true">{u.name.slice(0,1).toUpperCase()}</span><div className="admin-record-copy"><h2>{u.name}</h2><p>{u.city||'Город не указан'}</p><div className="admin-role-chips">{u.roles.map((r:string)=><span key={r}>{labels[r]||r}</span>)}</div><details><summary>Контакты и участие<ChevronRight size={14}/></summary><p>{u.contact||'Контакт не указан'}</p><small>Объекты: {u.property_count} · брони: {u.booking_count} · уборки: {u.assignment_count}</small></details></div></article>):data.items.map((p:Row)=><article className="admin-surface admin-property-record" key={p.id}><div className="admin-record-heading"><span className={'admin-pill '+(p.published?'positive':'')}>{p.published?'Опубликовано':'Черновик'}</span><strong>{money(p.price)}<small> / сутки</small></strong></div><h2>{p.title}</h2><p>{p.city} · {p.district}</p><p className="admin-owner-name">{p.owner_name||'Владелец не указан'}</p><div className="admin-property-checks"><span className={p.photos?'complete':'incomplete'}><Camera size={15}/>{p.photos?`Фото: ${p.photos}`:'Нет фотографий'}</span><span className={p.has_location?'complete':'incomplete'}><MapPin size={15}/>{p.has_location?'Точка указана':'Нет точки на карте'}</span></div><small className="admin-property-review"><ShieldCheck size={14}/>{p.review_status?labels[p.review_status]:'Проверка не проведена'}</small></article>)}</div>{data.total===0&&<EmptyState Icon={Search} title="Ничего не найдено" note="Измените запрос или выберите другую роль."/>}<div className="admin-pagination"><Button variant="outline" disabled={loading||page===0} onClick={()=>refresh(tab,page-1)}>Назад</Button><span>{page+1} / {Math.max(1,Math.ceil(data.total/data.limit))}</span><Button variant="outline" disabled={loading||(page+1)*data.limit>=data.total} onClick={()=>refresh(tab,page+1)}>Дальше</Button></div></>}
  {tab==='reviews'&&<AdminReviews data={data} busy={busy} save={save}/>}
- {(tab==='operator'||tab==='policy')&&<PilotGovernance state={data} role="guest" mode={tab==='operator'?'operator':'admissions'} busy={busy} save={save}/>}
- {tab==='moderation'&&<AccountSafety role="guest" admin/>}
+ {tab==='operator'&&<AdminIssues state={data} busy={busy} save={save}/>}
+ {tab==='policy'&&<AdminPolicy state={data} busy={busy} save={save}/>}
+ {tab==='moderation'&&<><AdminReports data={data} busy={busy} save={save}/><details className="reviews-rules"><summary>Удаление аккаунтов и ваши сеансы<ChevronRight size={16}/></summary><div className="admin-safety-extra"><AccountSafety role="guest" admin/></div></details></>}
  {tab==='revenue'&&<AdminRevenue data={data} busy={busy} save={save}/>}
  {tab==='health'&&<AdminHealth data={data} busy={busy} save={save}/>}
  </>}

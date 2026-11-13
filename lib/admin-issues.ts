@@ -31,7 +31,7 @@ export async function sweepIssues(db:D1Database,config:OperationConfig&{PLATFORM
  const fresh=await rows(db,"SELECT i.*,p.title FROM administrator_issues i JOIN properties p ON p.id=i.property_id WHERE i.status<>'resolved' AND NOT EXISTS(SELECT 1 FROM operator_history h WHERE h.id='ai-triage:'||i.id) ORDER BY i.created_at LIMIT 30");
  for(const issue of fresh){
   const {kind,priority}=classifyIssue(issue.description),deadline=issue.created_at+ANSWER_WITHIN[priority];
-  const body='ИИ-администратор: тема «'+KIND_LABEL[kind]+'», срочность — '+PRIORITY_LABEL[priority]+'. Ответ ожидается в течение '+minutes(ANSWER_WITHIN[priority])+'.';
+  const body='ИИ-администратор: тема «'+KIND_LABEL[kind]+'», срочность: '+PRIORITY_LABEL[priority]+'. Ответ нужен в течение '+minutes(ANSWER_WITHIN[priority])+'.';
   await db.batch([
    q(db,"INSERT OR IGNORE INTO operator_tickets(issue_id,status,priority,deadline,created_at,updated_at) VALUES (?,'open',?,?,?,?)",issue.id,priority,deadline,issue.created_at,at),
    q(db,"UPDATE operator_tickets SET priority=?,deadline=?,version=version+1,updated_at=? WHERE issue_id=? AND status<>'resolved' AND assigned_to IS NULL",priority,deadline,at,issue.id),
