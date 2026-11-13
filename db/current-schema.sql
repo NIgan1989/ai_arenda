@@ -49,6 +49,7 @@
 -- migration 0045_regular_cleaners.sql sha256:86cb5a6108be0475ed15430c72aae60e3f0067ca8e788b93e051a2c8a28075cd
 -- migration 0046_autopilot_plans.sql sha256:911a0b05ae335a2d427404f7d641c8846f51b9a722277078cc323514c87cd323
 -- migration 0047_discussion_notice_text.sql sha256:d3e1b2fee1b66841cabbc359edba94784c7068377bcb199c1bf71f130ed16640
+-- migration 0048_test_payments.sql sha256:def5594e44cfe1fc2272f6766ef840ad15a8b79a7f9fe56118dd4822a6763ae9
 
 -- table access_receipts
 CREATE TABLE access_receipts (id TEXT PRIMARY KEY,property_id TEXT NOT NULL,entity_kind TEXT NOT NULL,entity_id TEXT NOT NULL,user_id TEXT NOT NULL,created_at INTEGER NOT NULL,expires_at INTEGER NOT NULL);
@@ -753,7 +754,7 @@ CREATE TABLE participant_reviews (id TEXT PRIMARY KEY,user_id TEXT NOT NULL REFE
 CREATE TABLE payment_intents (
  id TEXT PRIMARY KEY,booking_id TEXT NOT NULL REFERENCES bookings(id),user_id TEXT NOT NULL,kind TEXT NOT NULL CHECK(kind IN ('payment','deposit')),
  amount INTEGER NOT NULL CHECK(amount>0),currency TEXT NOT NULL DEFAULT 'KZT',status TEXT NOT NULL DEFAULT 'prepared' CHECK(status IN ('prepared','processing','ready','paid','failed')),
- checkout_url TEXT NOT NULL DEFAULT '',provider_reference TEXT NOT NULL DEFAULT '',request_key TEXT NOT NULL,created_at INTEGER NOT NULL,UNIQUE(user_id,request_key)
+ checkout_url TEXT NOT NULL DEFAULT '',provider_reference TEXT NOT NULL DEFAULT '',request_key TEXT NOT NULL,created_at INTEGER NOT NULL, test INTEGER NOT NULL DEFAULT 0 CHECK(test IN (0,1)),UNIQUE(user_id,request_key)
 );
 
 -- table phone_verifications
@@ -780,7 +781,7 @@ CREATE TABLE platform_billing (
  version INTEGER NOT NULL DEFAULT 1,
  updated_by TEXT,
  updated_at INTEGER NOT NULL DEFAULT 0
-, ai_rate_bp INTEGER NOT NULL DEFAULT 1000 CHECK(ai_rate_bp BETWEEN 0 AND 3000), cleaning_rate_bp INTEGER NOT NULL DEFAULT 1000 CHECK(cleaning_rate_bp BETWEEN 0 AND 3000), pair_rate_bp INTEGER NOT NULL DEFAULT 500 CHECK(pair_rate_bp BETWEEN 0 AND 3000), pair_month_cap INTEGER NOT NULL DEFAULT 2000 CHECK(pair_month_cap>=0), plan_charge INTEGER NOT NULL DEFAULT 0 CHECK(plan_charge IN (0,1)), plan_owner_price INTEGER NOT NULL DEFAULT 4900 CHECK(plan_owner_price BETWEEN 0 AND 1000000), plan_cleaner_price INTEGER NOT NULL DEFAULT 1900 CHECK(plan_cleaner_price BETWEEN 0 AND 1000000), plan_trial_days INTEGER NOT NULL DEFAULT 14 CHECK(plan_trial_days BETWEEN 0 AND 90), plan_grace_days INTEGER NOT NULL DEFAULT 3 CHECK(plan_grace_days BETWEEN 0 AND 30));
+, ai_rate_bp INTEGER NOT NULL DEFAULT 1000 CHECK(ai_rate_bp BETWEEN 0 AND 3000), cleaning_rate_bp INTEGER NOT NULL DEFAULT 1000 CHECK(cleaning_rate_bp BETWEEN 0 AND 3000), pair_rate_bp INTEGER NOT NULL DEFAULT 500 CHECK(pair_rate_bp BETWEEN 0 AND 3000), pair_month_cap INTEGER NOT NULL DEFAULT 2000 CHECK(pair_month_cap>=0), plan_charge INTEGER NOT NULL DEFAULT 0 CHECK(plan_charge IN (0,1)), plan_owner_price INTEGER NOT NULL DEFAULT 4900 CHECK(plan_owner_price BETWEEN 0 AND 1000000), plan_cleaner_price INTEGER NOT NULL DEFAULT 1900 CHECK(plan_cleaner_price BETWEEN 0 AND 1000000), plan_trial_days INTEGER NOT NULL DEFAULT 14 CHECK(plan_trial_days BETWEEN 0 AND 90), plan_grace_days INTEGER NOT NULL DEFAULT 3 CHECK(plan_grace_days BETWEEN 0 AND 30), test_payments INTEGER NOT NULL DEFAULT 1 CHECK(test_payments IN (0,1)));
 
 -- table platform_commissions
 CREATE TABLE platform_commissions (

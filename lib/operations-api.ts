@@ -6,7 +6,7 @@ import {mapSearch,saveMapPoint,journeyAction,geocodeFlat,placeFlatByAddress} fro
 import {administratorConversation} from './administrator-conversation';
 import {DomainError,required,type Role} from './domain';
 import {RentalService} from './service';
-import {financeState,recordFinance,createPaymentIntent,acceptPaymentEvent} from './finance';
+import {financeState,recordFinance,createPaymentIntent,acceptPaymentEvent,testPayment} from './finance';
 import {dispatchState,saveOperationRules,saveWorkerDispatch,decideOffer,declineAssignment} from './dispatch';
 import {regularState,pinRegular,unpinRegular} from './regular-cleaner';
 import {saveEvidence,listEvidence,readEvidence} from './evidence';
@@ -74,6 +74,7 @@ export async function writeOperations(service:RentalService,role:Role,path:strin
  if(route==='review'){active(role,['guest']);return saveStayReview(service,body);}
  if(route==='finance'){active(role,['owner']);return recordFinance(service,body);}
  if(route==='payment-intent'){active(role,['guest']);return createPaymentIntent(service,body,config);}
+ if(route==='payment-test'){active(role,['guest']);return testPayment(service,body,config,id=>new RentalService(service.db,id));}
  if(route==='dispatch/preferences'){active(role,['cleaner']);return saveWorkerDispatch(service,body);}
  if(route==='autopilot/start')return planRequired(role)==='owner'?startOwnerPlan(service,body):startCleanerPlan(service,body);
  if(route==='autopilot/stop')return stopPlan(service,planRequired(role));
