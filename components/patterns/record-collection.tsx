@@ -21,7 +21,9 @@ const emptyNote:Record<string,string>={booking:'Новые брони появя
 // are shown at once, without a list, a search field or a second sheet to open.
 export function RecordCollection({items,kind,role,userId,applications=[],properties=[],direct=false,children}:{items:Row[];kind:'booking'|'job'|'property';role:string;userId?:string;applications?:Row[];properties?:Row[];direct?:boolean;children:(item:Row)=>ReactNode}){
  const [search,setSearch]=useState(''),[tab,setTab]=useState('all'),[view,setView]=useState<'list'|'cards'|'table'>('list'),[page,setPage]=useState(1),[selected,setSelected]=useState<string|null>(null);
- useEffect(()=>{const close=()=>setSelected(null);window.addEventListener('process-discussion-open',close);return()=>window.removeEventListener('process-discussion-open',close);},[]);
+ // A button inside an opened record that adds a step to the page (a form, a card, an answer) closes the record, so the
+ // step is seen at once instead of being added behind it.
+ useEffect(()=>{const close=()=>setSelected(null),events=['process-discussion-open','chat-step-added'];events.forEach(e=>window.addEventListener(e,close));return()=>events.forEach(e=>window.removeEventListener(e,close));},[]);
  const propertyFor=(item:Row)=>kind==='property'?item:properties.find(p=>p.id===item.property_id)||item;
  // Groups follow the shared clock, a minute at a time: a stay that ends moves out of «Сейчас», and midnight moves «Завтра» to «Сегодня».
  const clock=useActivityClock(),[mounted]=useState(()=>Math.floor(Date.now()/1000)),opened=Math.floor((clock||mounted)/60)*60;
