@@ -25,15 +25,21 @@ export function demandCells(flats:{longitude:number;latitude:number;asks:number;
 const same=(a:unknown,b:unknown)=>String(a||'').trim().toLocaleLowerCase('ru')===String(b||'').trim().toLocaleLowerCase('ru');
 const fingerprint=(p:Row)=>[p.city,p.district,p.address].join('|');
 
-// cells: the heat of the city; searching: how many guests are asking owners in this city right now.
+// cells: the heat of the city; searching: how many guests in this city are waiting for an owner's answer right now.
 export async function ownerDemand(s:RentalService,city:string,now=epoch()){
  const since=now-DEMAND_DAYS*86400;
- const flats=await rows(s.db,`SELECT p.city,p.district,p.address,l.longitude,l.latitude,l.address_fingerprint,
-  (SELECT COUNT(*) FROM matching_offers o WHERE o.property_id=p.id AND o.created_at>?) asks,
-  (SELECT COUNT(*) FROM bookings b WHERE b.property_id=p.id AND b.created_at>? AND b.status NOT IN ('cancelled','rejected','expired')) books
-  FROM properties p JOIN property_locations l ON l.property_id=p.id WHERE p.published=1 AND p.demo_owner IS NULL`,since,since);
- const cells=demandCells(flats.filter((f:Row)=>same(f.city,city)&&f.address_fingerprint===fingerprint(f)).map((f:Row)=>({longitude:Number(f.longitude),latitude:Number(f.latitude),asks:Number(f.asks),books:Number(f.books)})));
- const live=await rows(s.db,"SELECT filters FROM matching_requests WHERE status='searching' AND expires_at>?",now);
+ // One pass over the offers and the bookings of the window, grouped by object, instead of a count per object.
+ const flats=await rows(s.db,`SELECT p.id,p.city,p.district,p.address,l.longitude,l.latitude,l.address_fingerprint
+  FROM properties p JOIN property_locations l ON l.property_id=p.id WHERE p.published=1 AND p.demo_owner IS NULL`);
+ const here=flats.filter((f:Row)=>same(f.city,city)&&f.address_fingerprint===fingerprint(f));
+ const asks=new Map<string,number>(),books=new Map<string,number>();
+ if(here.length){
+  for(const r of await rows(s.db,'SELECT property_id,COUNT(*) n FROM matching_offers WHERE created_at>? GROUP BY property_id',since))asks.set(r.property_id,Number(r.n));
+  for(const r of await rows(s.db,"SELECT property_id,COUNT(*) n FROM bookings WHERE created_at>? AND status NOT IN ('cancelled','rejected','expired') GROUP BY property_id",since))books.set(r.property_id,Number(r.n));
+ }
+ const cells=demandCells(here.map((f:Row)=>({longitude:Number(f.longitude),latitude:Number(f.latitude),asks:asks.get(f.id)||0,books:books.get(f.id)||0})));
+ // Guests still waiting for an owner's answer: a request stays «ready» after the first yes while other owners are asked.
+ const live=await rows(s.db,"SELECT r.filters FROM matching_requests r WHERE r.status IN ('searching','ready') AND r.expires_at>? AND EXISTS(SELECT 1 FROM matching_offers o WHERE o.request_id=r.id AND o.status='pending' AND o.expires_at>?)",now,now);
  const searching=live.filter((r:Row)=>{try{return same(JSON.parse(r.filters).city,city);}catch{return false;}}).length;
  return {cells,searching};
 }

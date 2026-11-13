@@ -13,11 +13,13 @@ export function soon(at:number,now:number){const d=day(at)-day(now);return d===0
 export function thousands(amount:number){return amount>=10000?Math.round(amount/1000)+' тыс.':amount.toLocaleString('ru-RU').replace(/\s/g,' ')+' ₸';}
 export function priceChange(from:number,to:number){return from>=10000&&to>=10000?Math.round(from/1000)+' → '+Math.round(to/1000)+' тыс.':thousands(from)+' → '+thousands(to);}
 
-// The most urgent thing about the object wins: cleaning under way, a guest inside, a report to accept, a request,
+// The most urgent thing about the object wins: cleaning under way, a departure not confirmed, a guest inside, a report to accept, a request,
 // an arrival or a cleaning within a day; otherwise its price, or the AI's price advice with the AI ring.
 export function ownerPin(property:Row,processes:Row[],now:number,advice?:{from:number;to:number}|null):OwnerPin{
  const mine=processes.filter(p=>p.propertyId===property.id),of=(kind:string,...status:string[])=>mine.filter(p=>p.kind===kind&&status.includes(p.status)).sort((a,b)=>Number(a.start)-Number(b.start));
  const working=of('job','in_progress')[0];if(working)return {label:'Уборка идёт',tone:'active'};
+ // A stay past its end without a confirmed departure still needs the owner: the map keeps it until the checkout is confirmed.
+ if(of('booking','confirmed').some(b=>Number(b.start)<=now&&now>=Number(b.end)))return {label:'Выезд не подтверждён',tone:'pending'};
  const inside=of('booking','confirmed').find(b=>Number(b.start)<=now&&now<Number(b.end));if(inside)return {label:'Гость до '+(soon(Number(inside.end),now)||clock(Number(inside.end))),tone:'booking'};
  if(of('job','submitted')[0])return {label:'Уборка на приёмке',tone:'job'};
  if(of('booking','requested')[0])return {label:'Заявка',tone:'pending'};
