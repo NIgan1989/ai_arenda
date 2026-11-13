@@ -47,7 +47,7 @@
 -- migration 0043_booking_risks.sql sha256:be613dd277154762a2b1bd450b2e89f165c4ad1a6cb14b4a3547e37ee9359dcd
 -- migration 0044_admin_telegram.sql sha256:9725018759d6a70777133870a226d9da60c4b786fac3d486324268d0a3664d81
 -- migration 0045_regular_cleaners.sql sha256:86cb5a6108be0475ed15430c72aae60e3f0067ca8e788b93e051a2c8a28075cd
--- migration 0046_autopilot_plans.sql sha256:dfcb330477d2297b4ea8f5df9c5a491c8b69bcef75b4d1663653047fe4b845a7
+-- migration 0046_autopilot_plans.sql sha256:911a0b05ae335a2d427404f7d641c8846f51b9a722277078cc323514c87cd323
 
 -- table access_receipts
 CREATE TABLE access_receipts (id TEXT PRIMARY KEY,property_id TEXT NOT NULL,entity_kind TEXT NOT NULL,entity_id TEXT NOT NULL,user_id TEXT NOT NULL,created_at INTEGER NOT NULL,expires_at INTEGER NOT NULL);
@@ -257,6 +257,7 @@ CREATE TABLE autopilot_charges (
  period_end INTEGER NOT NULL,
  units INTEGER NOT NULL CHECK(units>=0),
  amount INTEGER NOT NULL CHECK(amount>=0),
+ withheld INTEGER NOT NULL DEFAULT 0 CHECK(withheld>=0),
  mode TEXT NOT NULL CHECK(mode IN ('charged','shadow')),
  settled_at INTEGER,
  settled_job TEXT,

@@ -33,7 +33,7 @@ export async function planSettings(db:D1Database):Promise<PlanSettings>{
 export const planOf=(db:D1Database,user:string,role:PlanRole)=>one(db,'SELECT * FROM autopilot_plans WHERE user_id=? AND role=?',user,role);
 const managedCount=async(db:D1Database,owner:string,at:number)=>Number((await one(db,`SELECT COUNT(*) n FROM properties p WHERE p.owner_id=? AND p.archived_at IS NULL AND ${underAutopilot('p.id')}`,owner,at))?.n||0);
 // What the cleaner still has to receive through the service, less what is already withheld.
-const cleanerPending=async(db:D1Database,cleaner:string)=>Number((await one(db,"SELECT COALESCE((SELECT SUM(amount) FROM cleaning_holds WHERE cleaner_id=? AND status IN ('held','due')),0)-COALESCE((SELECT SUM(amount) FROM autopilot_charges WHERE user_id=? AND role='cleaner' AND mode='charged' AND settled_at IS NULL),0) n",cleaner,cleaner))?.n||0);
+const cleanerPending=async(db:D1Database,cleaner:string)=>Number((await one(db,"SELECT COALESCE((SELECT SUM(amount) FROM cleaning_holds WHERE cleaner_id=? AND status IN ('held','due')),0)-COALESCE((SELECT SUM(amount-withheld) FROM autopilot_charges WHERE user_id=? AND role='cleaner' AND mode='charged' AND settled_at IS NULL),0) n",cleaner,cleaner))?.n||0);
 export const priceFor=(s:PlanSettings,role:PlanRole,units:number)=>role==='owner'?s.ownerPrice*units:s.cleanerPrice;
 
 // Takes one month. Returns false when the money is not there (nothing is written then).
@@ -94,15 +94,18 @@ export async function stopPlan(service:RentalService,role:PlanRole){
  return {message:role==='owner'?'Автопилот выключен. Квартиры переведены в режим «Я сам».':'Автопилот выключен.'};
 }
 
-// Owner: turn the plan on and put the chosen flats under the AI. A flat that cannot go on (no tariffs, no
-// cleaning price) is reported, the others are switched.
+// Owner: turn the plan on and put the chosen flats under the AI. Every flat is checked first (tariffs, cleaning
+// price, mandate); a month is paid only for the flats that pass, and only those are switched.
 export async function startOwnerPlan(service:RentalService,body:Row){
  await service.requireRole('owner');
- const ids=Array.isArray(body.propertyIds)?body.propertyIds.map(String).slice(0,50):[];
+ const ids:string[]=Array.isArray(body.propertyIds)?[...new Set<string>(body.propertyIds.map(String))].slice(0,50):[];
  if(!ids.length)throw new DomainError('Выберите квартиры для автопилота.');
- await ensurePlan(service.db,service.userId,'owner',epoch(),ids.length);
- const done:string[]=[],failed:{id:string;error:string}[]=[];
- for(const id of ids){try{await setGuestMode(service,{propertyId:id,mode:'auto',cleaningFee:body.cleaningFees?.[id]});done.push(id);}catch(e){if(e instanceof DomainError)failed.push({id,error:e.message});else throw e;}}
+ const ready:string[]=[],failed:{id:string;error:string}[]=[];
+ for(const id of ids){try{await setGuestMode(service,{propertyId:id,mode:'auto',cleaningFee:body.cleaningFees?.[id],check:true});ready.push(id);}catch(e){if(e instanceof DomainError)failed.push({id,error:e.message});else throw e;}}
+ if(!ready.length)return {message:'Автопилот не включён: '+failed.map(f=>f.error).join(' '),done:[],failed,state:await planState(service,'owner')};
+ await ensurePlan(service.db,service.userId,'owner',epoch(),ready.length);
+ const done:string[]=[];
+ for(const id of ready){try{await setGuestMode(service,{propertyId:id,mode:'auto',cleaningFee:body.cleaningFees?.[id]});done.push(id);}catch(e){if(e instanceof DomainError)failed.push({id,error:e.message});else throw e;}}
  return {message:done.length?`Автопилот включён для ${done.length} ${done.length===1?'квартиры':'квартир'}.`+(failed.length?' Не получилось: '+failed.map(f=>f.error).join(' '):''):'Автопилот не включён: '+failed.map(f=>f.error).join(' '),done,failed,state:await planState(service,'owner')};
 }
 
@@ -130,6 +133,12 @@ export async function awayToday(service:RentalService){
  await service.requireRole('cleaner');
  const at=epoch(),end=dayStart(at)+DAY;
  await q(service.db,'UPDATE cleaner_autopilot SET paused_until=?,updated_at=? WHERE user_id=?',end,at,service.userId).run();
+ // Today's offers already accepted but not yet assigned are taken back too, so nobody assigns them after this.
+ const todayOpen="SELECT id FROM cleaning_jobs WHERE status='open' AND start<? AND end>?";
+ await service.db.batch([
+  q(service.db,`UPDATE cleaning_offers SET status='declined',decided_at=? WHERE worker_id=? AND status='accepted' AND job_id IN (${todayOpen})`,at,service.userId,end,at),
+  q(service.db,`UPDATE applications SET status='rejected' WHERE user_id=? AND status='pending' AND job_id IN (${todayOpen})`,service.userId,end,at)
+ ]);
  const jobs=await rows(service.db,"SELECT id FROM cleaning_jobs WHERE assigned_to=? AND status='assigned' AND start<? AND end>?",service.userId,end,at);
  let released=0;
  for(const j of jobs){try{await declineAssignment(service,{jobId:j.id,reason:'Исполнитель не может выйти сегодня. AI администратор ищет замену.'});released++;}catch(e){if(!(e instanceof DomainError))throw e;}}

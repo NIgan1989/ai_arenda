@@ -25,7 +25,8 @@ CREATE TABLE autopilot_plans (
 CREATE INDEX autopilot_plans_due ON autopilot_plans(status,period_end);
 
 -- One row per paid month. mode 'shadow' is what charging would have taken while it is off.
--- A cleaner's charge is withheld from a payout: settled_at marks the payout that covered it.
+-- A cleaner's charge is withheld from payouts, in parts when a payout is smaller: withheld is what was taken so
+-- far, settled_at marks the payout that completed it.
 CREATE TABLE autopilot_charges (
  id TEXT PRIMARY KEY,
  user_id TEXT NOT NULL REFERENCES profiles(id),
@@ -34,6 +35,7 @@ CREATE TABLE autopilot_charges (
  period_end INTEGER NOT NULL,
  units INTEGER NOT NULL CHECK(units>=0),
  amount INTEGER NOT NULL CHECK(amount>=0),
+ withheld INTEGER NOT NULL DEFAULT 0 CHECK(withheld>=0),
  mode TEXT NOT NULL CHECK(mode IN ('charged','shadow')),
  settled_at INTEGER,
  settled_job TEXT,

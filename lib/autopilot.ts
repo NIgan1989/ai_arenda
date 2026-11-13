@@ -33,6 +33,8 @@ export async function setGuestMode(s:RentalService,body:Row){
   if(policy.minimum_rate&&[daily,policy.hourly_price,policy.nightly_price].some(rate=>rate>0&&rate<policy.minimum_rate))throw new DomainError('Один из тарифов ниже минимальной разрешённой ставки. Исправьте тарифы квартиры.',409);
   if(policy.mandate_until&&policy.mandate_until<=t)throw new DomainError('Срок полномочий в правилах квартиры истёк. Продлите его или очистите поле.',409);
 
+  // A check only validates: the plan is paid for the flats that pass, before any is switched.
+  if(body.check===true)return {ok:true};
   // «ИИ» is the paid «Автопилот» plan: the first flat starts the free trial, a paused plan pays its month first.
   await ensurePlan(db,s.userId,'owner',t);
  }

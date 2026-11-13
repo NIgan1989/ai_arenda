@@ -116,11 +116,13 @@ export async function cleanerPayouts(db:D1Database){
  return {due,held:Number(totals?.held||0),dueTotal:Number(totals?.due||0),paid30:Number(totals?.paid30||0),commissions30:{count:Number(commissions?.n||0),amount:Number(commissions?.amount||0),pairs:Number(commissions?.pairs||0),charged:Number(commissions?.charged||0)},pairs:Number(pairs?.n||0)};
 }
 
-// A cleaner's «Автопилот» months are withheld from her payouts: whole charges, oldest first, while they fit.
+// A cleaner's «Автопилот» months are withheld from the cleaner's payouts, oldest first; a payout smaller than a
+// month takes what it can and the rest comes from the next one.
 async function withholdPlan(db:D1Database,cleaner:string,amount:number){
- const owed=await rows(db,"SELECT id,amount FROM autopilot_charges WHERE user_id=? AND role='cleaner' AND mode='charged' AND settled_at IS NULL ORDER BY created_at,id",cleaner);
- const ids:string[]=[];let total=0;for(const c of owed)if(total+Number(c.amount)<=amount){ids.push(c.id);total+=Number(c.amount);}
- return {ids,total};
+ const owed=await rows(db,"SELECT id,amount,withheld FROM autopilot_charges WHERE user_id=? AND role='cleaner' AND mode='charged' AND settled_at IS NULL ORDER BY created_at,id",cleaner);
+ const parts:{id:string;take:number;withheld:number;done:boolean}[]=[];let total=0;
+ for(const c of owed){const left=Number(c.amount)-Number(c.withheld),take=Math.min(left,amount-total);if(take<=0)break;parts.push({id:c.id,take,withheld:Number(c.withheld),done:take===left});total+=take;}
+ return {parts,total};
 }
 export async function markCleanerPayout(service:RentalService,body:Row){
  if(body.confirmed!==true)throw new DomainError('Подтвердите, что деньги отправлены исполнителю.');
@@ -128,6 +130,8 @@ export async function markCleanerPayout(service:RentalService,body:Row){
  const h=await one(service.db,"SELECT h.*,p.title FROM cleaning_holds h JOIN properties p ON p.id=h.property_id WHERE h.job_id=? AND h.status='due'",jobId);
  if(!h)throw new DomainError('Выплата уже отмечена или ещё не положена.',409);
  const plan=await withholdPlan(service.db,h.cleaner_id,h.amount),net=h.amount-plan.total;
+ // The administrator transferred the net amount shown on the sheet: refuse if the deduction changed since.
+ if(Number(body.withhold||0)!==plan.total)throw new DomainError(`Удержание за автопилот изменилось: теперь ${money(plan.total)}, к выплате ${money(net)}. Обновите раздел и проверьте сумму перевода.`,409);
  const entry=uuid(),r=await service.db.batch([
   q(service.db,"UPDATE cleaning_holds SET status='paid',paid_at=?,paid_by=?,payout_note=? WHERE job_id=? AND status='due'",at,service.userId,note,jobId),
   q(service.db,"INSERT INTO finance_entries(id,owner_id,property_id,booking_id,job_id,kind,amount,currency,source,external_reference,note,actor_id,request_key,created_at) SELECT ?,owner_id,property_id,NULL,job_id,'job_payment',amount,'KZT','provider','',?,'system:cleaner-payout',?,? FROM cleaning_holds WHERE job_id=? AND status='paid' AND paid_at=? AND changes()>0",entry,'Выплата через сервис из резерва'+(note?': '+note:''),'hold-payout:'+jobId,at,jobId,at),
@@ -137,7 +141,7 @@ export async function markCleanerPayout(service:RentalService,body:Row){
   q(service.db,"INSERT INTO audit_events SELECT ?,?,?,?,? WHERE EXISTS(SELECT 1 FROM finance_entries WHERE id=?)",uuid(),service.userId,jobId,JSON.stringify({action:'cleaning.payout_marked',amount:h.amount}),at,entry),
   q(service.db,"INSERT OR IGNORE INTO notifications SELECT ?,?,?,?,0,? WHERE EXISTS(SELECT 1 FROM finance_entries WHERE id=?)",uuid(),h.cleaner_id,`Сервис отправил вам ${money(net)} за уборку «${h.title}»`+(plan.total?`: ${money(h.amount)} минус ${money(plan.total)} за автопилот.`:'.'),'cleaner:payout:'+jobId,at,entry),
   q(service.db,"INSERT OR IGNORE INTO notifications SELECT ?,?,?,?,0,? WHERE EXISTS(SELECT 1 FROM finance_entries WHERE id=?)",uuid(),h.owner_id,`Исполнитель получил ${money(h.amount)} за уборку «${h.title}» из резерва на вашем балансе. Рассчитываться отдельно не нужно.`,'owner:payout:'+jobId,at,entry),
-  ...plan.ids.map(id=>q(service.db,'UPDATE autopilot_charges SET settled_at=?,settled_job=? WHERE id=? AND settled_at IS NULL AND EXISTS(SELECT 1 FROM finance_entries WHERE id=?)',at,jobId,id,entry))
+  ...plan.parts.map(c=>q(service.db,'UPDATE autopilot_charges SET withheld=withheld+?,settled_at=?,settled_job=? WHERE id=? AND settled_at IS NULL AND withheld=? AND EXISTS(SELECT 1 FROM finance_entries WHERE id=?)',c.take,c.done?at:null,jobId,c.id,c.withheld,entry))
  ]);
  if(!r[0].meta.changes)throw new DomainError('Выплата уже отмечена.',409);
  return {message:`Выплата ${money(net)} отмечена`+(plan.total?` (удержано ${money(plan.total)} за автопилот)`:'')+'. Исполнитель получил уведомление.'};

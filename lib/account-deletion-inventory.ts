@@ -10,7 +10,7 @@ export const accountDeletionColumns:Record<string,string>={
  "price_suggestions":"id,property_id,owner_id,direction,percent,policy_version,from_daily,to_daily,from_hourly,to_hourly,from_nightly,to_nightly,signals,reasons,status,created_at,expires_at,decided_at",
  "platform_billing":"id,enabled,starts_at,rate_bp,min_fee,max_fee,free_bookings,version,updated_by,updated_at,ai_rate_bp,cleaning_rate_bp,pair_rate_bp,pair_month_cap,plan_charge,plan_owner_price,plan_cleaner_price,plan_trial_days,plan_grace_days",
  "autopilot_plans":"user_id,role,status,started_at,period_end,grace_until,auto_renew,trial_used,version,updated_at",
- "autopilot_charges":"id,user_id,role,period_start,period_end,units,amount,mode,settled_at,settled_job,created_at",
+ "autopilot_charges":"id,user_id,role,period_start,period_end,units,amount,withheld,mode,settled_at,settled_job,created_at",
  "cleaner_autopilot":"user_id,districts,days,from_minute,to_minute,min_fee,max_per_day,ask_new_owner,paused_until,version,updated_at",
  "regular_cleaners":"property_id,owner_id,cleaner_id,created_at",
  "cleaning_holds":"job_id,owner_id,cleaner_id,property_id,amount,status,created_at,due_at,paid_at,paid_by,payout_note",

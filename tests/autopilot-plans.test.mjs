@@ -100,7 +100,9 @@ test('a cleaner charge is withheld from the next payout and settled by it',async
   f.db.raw.prepare("INSERT INTO autopilot_charges(id,user_id,role,period_start,period_end,units,amount,mode,created_at) VALUES ('c1','cleaner','cleaner',?,?,1,1900,'charged',?)").run(now()-DAY,now()+29*DAY,now());
   f.db.raw.exec('PRAGMA foreign_keys=ON');
   assert.equal((await cleanerPayouts(f.db)).due.find(d=>d.job_id===f.job.id).withhold,1900);
-  await markCleanerPayout(f.other,{jobId:f.job.id,note:'Kaspi',confirmed:true});
+  // The sheet showed no deduction: the payout is refused instead of silently paying less.
+  await assert.rejects(markCleanerPayout(f.other,{jobId:f.job.id,note:'Kaspi',confirmed:true,withhold:0}),e=>e.status===409);
+  await markCleanerPayout(f.other,{jobId:f.job.id,note:'Kaspi',confirmed:true,withhold:1900});
   const c=f.db.raw.prepare("SELECT * FROM autopilot_charges WHERE id='c1'").get();assert.ok(c.settled_at);assert.equal(c.settled_job,f.job.id);
   assert.match(f.db.raw.prepare("SELECT body FROM notifications WHERE user_id='cleaner' ORDER BY created_at DESC").get().body,/1\s100.*минус 1\s900.*автопилот/);
  }finally{f.db.close();}
@@ -116,5 +118,46 @@ test('the administrator sets prices and turns charging on with consent; people o
   const r=await writePlatformAdmin(f.other,'billing/plans',{...body,confirmed:true},config(f));
   assert.equal(r.state.settings.ownerPrice,5900);assert.equal(r.state.settings.charge,true);
   assert.match(f.db.raw.prepare("SELECT body FROM notifications WHERE dedupe LIKE 'owner:autopilot-terms:%'").get().body,/5\s900/);
+ }finally{f.db.close();}
+});
+
+test('a payout smaller than the month withholds part of it, and the next payout settles the rest',async()=>{
+ const f=await fixture();try{
+  f.db.raw.exec('PRAGMA foreign_keys=OFF');
+  const second=f.job.id+'-2';
+  f.db.raw.prepare('INSERT INTO cleaning_jobs SELECT ?,'+f.db.raw.prepare('PRAGMA table_info(cleaning_jobs)').all().slice(1).map(c=>c.name==='booking_id'?'NULL':['start','end'].includes(c.name)?c.name+'+86400':c.name).join(',')+' FROM cleaning_jobs WHERE id=?').run(second,f.job.id);
+  for(const id of [f.job.id,second])f.db.raw.prepare("INSERT INTO cleaning_holds(job_id,owner_id,cleaner_id,property_id,amount,status,created_at,due_at) VALUES (?,?,?,?,?,?,?,?)").run(id,'owner','cleaner',f.property,1000,'due',now(),now());
+  f.db.raw.prepare("INSERT INTO autopilot_charges(id,user_id,role,period_start,period_end,units,amount,mode,created_at) VALUES ('c1','cleaner','cleaner',?,?,1,1900,'charged',?)").run(now()-DAY,now()+29*DAY,now());
+  f.db.raw.exec('PRAGMA foreign_keys=ON');
+  assert.equal((await cleanerPayouts(f.db)).due.find(d=>d.job_id===f.job.id).withhold,1000);
+  await markCleanerPayout(f.other,{jobId:f.job.id,confirmed:true,withhold:1000});
+  let c=f.db.raw.prepare("SELECT * FROM autopilot_charges WHERE id='c1'").get();assert.equal(c.withheld,1000);assert.equal(c.settled_at,null);
+  assert.equal((await cleanerPayouts(f.db)).due.find(d=>d.job_id===second).withhold,900);
+  await markCleanerPayout(f.other,{jobId:second,confirmed:true,withhold:900});
+  c=f.db.raw.prepare("SELECT * FROM autopilot_charges WHERE id='c1'").get();assert.equal(c.withheld,1900);assert.ok(c.settled_at);
+ }finally{f.db.close();}
+});
+
+test('turning the plan on checks the flats first: nothing is charged when none can go on, and duplicates count once',async()=>{
+ const f=await fixture();try{
+  charging(f);topUp(f,20000);f.db.raw.prepare("INSERT INTO autopilot_plans(user_id,role,status,started_at,period_end,updated_at) VALUES ('owner','owner','paused',?,?,?)").run(now()-40*DAY,now()-10*DAY,now()-10*DAY);
+  f.db.raw.prepare('UPDATE property_policies SET mandate_until=? WHERE property_id=?').run(now()-60,f.property);
+  const r=await writeOperations(f.owner,'owner',['autopilot','start'],{propertyIds:[f.property]});
+  assert.match(r.message,/не включён.*полномочий/);assert.equal(charges(f).length,0);assert.equal(plan(f).status,'paused');
+  f.db.raw.prepare('UPDATE property_policies SET mandate_until=0 WHERE property_id=?').run(f.property);
+  await writeOperations(f.owner,'owner',['autopilot','start'],{propertyIds:[f.property,f.property,'missing']});
+  assert.deepEqual(charges(f).map(c=>[c.units,c.amount]),[[1,4900]]);assert.ok(managed(f));
+ }finally{f.db.close();}
+});
+
+test('«Не могу сегодня» also takes back today\'s accepted offers that are not assigned yet',async()=>{
+ const f=await fixture();try{
+  await auto(f);await startCleanerPlan(f.cleaner,openRules);
+  f.db.raw.prepare('UPDATE cleaning_jobs SET start=?,end=? WHERE id=?').run(now()+600,now()+1800,f.job.id);
+  await coordinateDispatch(f.owner);
+  assert.equal(f.db.raw.prepare("SELECT status FROM cleaning_offers WHERE worker_id='cleaner'").get().status,'accepted');
+  await awayToday(f.cleaner);
+  assert.equal(f.db.raw.prepare("SELECT status FROM cleaning_offers WHERE worker_id='cleaner'").get().status,'declined');
+  assert.equal(f.db.raw.prepare("SELECT status FROM applications WHERE user_id='cleaner' AND job_id=?").get(f.job.id).status,'rejected');
  }finally{f.db.close();}
 });

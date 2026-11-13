@@ -178,7 +178,7 @@ function CleanerPayouts({data:c,busy,save}:{data:Row;busy:boolean;save:Save}){
    <SheetHeader><SheetTitle>Выплата {open.cleaner_name}</SheetTitle><SheetDescription>{open.title} · владелец {open.owner_name}</SheetDescription></SheetHeader>
    <div className="revenue-sheet-body">
     <div className="revenue-balance"><small>Отправить</small><strong>{money(open.amount-(open.withhold||0))}</strong><span>{open.withhold?'Из '+money(open.amount)+' удержано '+money(open.withhold)+' за автопилот исполнителя. ':''}{open.cleaner_contact?'Контакт: '+open.cleaner_contact:'Контакт в профиле исполнителя'}</span></div>
-    <form className="revenue-terms" onSubmit={async e=>{e.preventDefault();const r=await save('billing/payout',{jobId:open.job_id,confirmed:agreed,note:String(new FormData(e.currentTarget).get('note')||'')});if(r)setOpen(null);}}>
+    <form className="revenue-terms" onSubmit={async e=>{e.preventDefault();const r=await save('billing/payout',{jobId:open.job_id,withhold:open.withhold||0,confirmed:agreed,note:String(new FormData(e.currentTarget).get('note')||'')});if(r)setOpen(null);}}>
      <label>Комментарий<Input name="note" maxLength={300} placeholder="Например: перевод Kaspi, 13 ноября"/></label>
      <label className="revenue-confirm"><input type="checkbox" checked={agreed} onChange={e=>setAgreed(e.target.checked)} required/>Деньги отправлены исполнителю.</label>
      <Button className="revenue-primary" disabled={busy||!agreed}>Отметить выплату</Button>
