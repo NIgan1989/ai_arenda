@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {loadPure} from './helpers/pure.mjs';
 import {readFileSync} from 'node:fs';
 
-const {pinEvent, appearDelay, flight, flightFrame, MAP_EVENTS} = await loadPure('mobile/src/map-motion.ts');
+const {pinEvent, appearDelay, flight, flightFrame, answerLeft, ANSWER_WINDOW, FLIGHT_MIN_MS, FLIGHT_MAX_MS, MAP_EVENTS} = await loadPure('mobile/src/map-motion.ts');
 const {project} = await loadPure('mobile/src/map-math.ts');
 const pin = (tone, label = 'x') => ({tone, label});
 
@@ -54,6 +54,29 @@ test('a flight starts exactly where the old view was and ends at the new one', (
   const far = flight(from, view([71.43, 51.13], 12), 256);
   assert.ok(Math.abs(Math.hypot(far.dx, far.dy) - 256) < 1e-6);
   assert.ok(far.dx < 0);
+});
+
+test('a longer trip flies longer and along an arc, and still starts and ends in place', () => {
+  const view = (center, zoom) => ({...project(center, zoom), zoom});
+  const home = view([76.95, 52.287], 13);
+  const near = flight(home, view([76.951, 52.287], 13), 256, 256), far = flight(home, view([76.99, 52.30], 13), 256, 256);
+  assert.equal(near.arc, 0);
+  assert.equal(near.ms, FLIGHT_MIN_MS + Math.round((FLIGHT_MAX_MS - FLIGHT_MIN_MS) * Math.hypot(near.dx, near.dy) / 512));
+  assert.ok(far.arc > 0 && far.arc <= 0.2);
+  assert.ok(far.ms > near.ms && far.ms <= FLIGHT_MAX_MS);
+  // The arc lifts the camera half-way only: the first and last frames are the plain ones.
+  const plain = {...far, arc: 0};
+  for (const u of [0, 1]) assert.deepEqual(flightFrame(far, u, 195, 400, 195, 260), flightFrame(plain, u, 195, 400, 195, 260));
+  assert.ok(flightFrame(far, 0.5, 195, 400, 195, 260).scale < flightFrame(plain, 0.5, 195, 400, 195, 260).scale);
+});
+
+test('the strip under a waiting pin shows the share of the answer time left', () => {
+  assert.equal(ANSWER_WINDOW, 120);
+  assert.equal(answerLeft(1000 + 120, 1000), 1);
+  assert.equal(answerLeft(1000 + 30, 1000), 0.25);
+  assert.equal(answerLeft(1000, 1030), 0);
+  assert.equal(answerLeft(5000, 1000), 1);
+  assert.equal(answerLeft(NaN, 1000), 0);
 });
 
 test('the list of map events covers every role, and the doc lists each of them', () => {

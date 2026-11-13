@@ -79,6 +79,10 @@ test('cleaner rules decide what the AI takes: district, day, hours, pay, load, n
   assert.equal(await fits({askNewOwner:true}),false);
   await assert.rejects(writeOperations(f.cleaner,'cleaner',['autopilot','rules'],{...openRules,fromMinute:600,toMinute:630}),/не меньше часа/);
   const state=await planState(f.cleaner,'cleaner');assert.deepEqual(state.cityDistricts,['Центр']);assert.equal(state.rules.askNewOwner,true);
+  // A job from 23:00 to 01:00 fits a whole-day rule, and not a window that ends at 23:00.
+  const night=Math.floor((now()+5*3600)/86400)*86400+86400+18*3600,late={...job,start:night,end:night+7200};
+  await writeOperations(f.cleaner,'cleaner',['autopilot','rules'],openRules);assert.equal(await autopilotFits(f.db,'cleaner',late),true);
+  await writeOperations(f.cleaner,'cleaner',['autopilot','rules'],{...openRules,toMinute:1380});assert.equal(await autopilotFits(f.db,'cleaner',late),false);
  }finally{f.db.close();}
 });
 

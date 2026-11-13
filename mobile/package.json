@@ -14,6 +14,8 @@
     "check:release": "node ../scripts/check-mobile-release.mjs --profile production"
   },
   "dependencies": {
+    "@maplibre/maplibre-react-native": "11.5.0",
+    "@types/geojson": "7946.0.16",
     "expo": "~57.0.0",
     "expo-image-manipulator": "~57.0.21",
     "expo-image-picker": "~57.0.20",

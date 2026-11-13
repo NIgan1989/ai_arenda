@@ -1,7 +1,7 @@
 import {ReliabilityBadge} from './Reliability';
 import React,{useEffect,useRef,useState,type ReactNode} from 'react';
 import {Thinking} from './Thinking';
-import {Animated,AppState,BackHandler,PanResponder,Platform,Pressable,ScrollView,Text,View,useWindowDimensions} from 'react-native';
+import {AccessibilityInfo,Animated,AppState,BackHandler,PanResponder,Platform,Pressable,ScrollView,Text,View,useWindowDimensions} from 'react-native';
 import {NO_BUDGET} from '../../lib/map-search-request';
 import {ApiError,isOffline,request} from './api';
 import {Photo} from './ListingMedia';
@@ -10,7 +10,7 @@ import {windowBadge} from '../../lib/window-badge';
 import {dealBadge} from '../../lib/price-deal';
 import {C} from './styles';
 import {T} from './tokens';
-import {TileMap,type MapPin} from './TileMap';
+import {LiveMap,type MapPin} from './LiveMap';
 import {countdown,mapCities,validPoint,type MapPoint} from './map-math';
 import {MapSheetHead} from './MapSheetHead';
 import {NowCard as NowCardView} from './NowCard';
@@ -137,7 +137,8 @@ function GuestPanel({setScanning,accountId,data,mapData,publish,selected,setSele
   const pin=(p:Row,tone:MapPin['tone']):MapPin[]=>{const point=pointOf(p),amount=p.estimate?.amount??p.price;return point?[{key:p.id,point,title:p.title,label:short(amount),tone,rank:typeof amount==='number'?amount:0}]:[];};
   // A booking made: the flat that was booked stays on the map, green, and the rest leave it.
   if(requestId&&live?.status==='booked'){const flat=bookedFlat.current;publish(flat?pin(flat,'booked').map(p=>({...p,label:'✓ Бронь'})):[],'booked:'+live.id);}
-  else if(requestId&&live)publish([...(live.pendingProperties||[]).flatMap((p:Row)=>pin(p,'pending')),...offers.flatMap(p=>pin(p,'offer'))],'live:'+live.id+':'+offers.length+':'+(live.pendingProperties||[]).length);
+  // A flat being asked carries the end of its owner's time to answer, moved to this phone's clock.
+  else if(requestId&&live)publish([...(live.pendingProperties||[]).flatMap((p:Row)=>pin(p,'pending').map(m=>Number(p.askExpiresAt)?{...m,until:Number(p.askExpiresAt)-skew}:m)),...offers.flatMap(p=>pin(p,'offer'))],'live:'+live.id+':'+offers.length+':'+(live.pendingProperties||[]).length);
   else if(preview)publish(preview.properties.flatMap((p:Row)=>pin(p,p.quickRequest?'booking':'home')),stageKey);
   else publish((mapData?.properties||[]).flatMap((p:Row)=>pin(p,'home')),stageKey+':'+(mapData?.properties?.length||0));
  },[requestId,live,preview,mapData,draft.city]);
@@ -232,8 +233,8 @@ function OwnerPanel({data,mapData,publish,snap,showNow,expand,onHead,onAsk,onInt
  async function act(action:string,body:Row){if(lock.current)return;lock.current=true;setWorking(true);setError('');setSaved('');try{const property=action==='respond'?(inbox?.offers||[]).find((o:Row)=>o.id===body.offerId)?.property_id:'';const result=await request('/api/operations/matching/'+action,body,undefined,undefined,'owner');apply(result);if(action==='preference'&&result.message)setSaved(result.message);if(property&&body.decision==='accept')setAnswered(v=>({...v,[property]:Date.now()}));if(action==='respond')await onChanged();}catch(e){setError(message(e));}finally{lock.current=false;setWorking(false);}}
  const offers:Row[]=(inbox?.offers||[]).filter((o:Row)=>o.expires_at>now),processes:Row[]=mapData?.processes||[];
  useEffect(()=>{
-  const asked=new Set(offers.map(o=>o.property_id));
-  publish([...(mapData?.properties||[]).flatMap((p:Row):MapPin[]=>{const point=pointOf(p),sent=!!answered[p.id]&&!asked.has(p.id);return point?[{key:'property:'+p.id,point,title:p.title,label:asked.has(p.id)?'Запрос':sent?'Ответ отправлен':short(p.price),rank:typeof p.price==='number'?p.price:0,tone:asked.has(p.id)?'pending':sent?'offer':'home'}]:[];})],'owner:'+(mapData?.properties?.length||0));
+  const asked=new Map(offers.map(o=>[o.property_id,Number(o.expires_at)-skew]));
+  publish([...(mapData?.properties||[]).flatMap((p:Row):MapPin[]=>{const point=pointOf(p),sent=!!answered[p.id]&&!asked.has(p.id);return point?[{key:'property:'+p.id,point,title:p.title,label:asked.has(p.id)?'Запрос':sent?'Ответ отправлен':short(p.price),rank:typeof p.price==='number'?p.price:0,tone:asked.has(p.id)?'pending':sent?'offer':'home',until:asked.get(p.id)}]:[];})],'owner:'+(mapData?.properties?.length||0));
  },[mapData,inbox,answered]);
  const clock=Date.now()/1000+skew,flats:Row[]=data.ownProperties||[];
  const card=showNow?nowCard('owner',data,clock,{quickOffers:inbox?.offers||[]}):null;
@@ -355,6 +356,11 @@ export function MapHome({ role, accountId, data, menu, onChanged, onOpenProcess,
   const scroll = useRef<ScrollView>(null);
   const mapCenter = useRef<MapPoint | null>(null);
   const sheet = useRef(new Animated.Value(0)).current;
+  // The sheet settles like a spring with a light overshoot, as in the live map concept; with «reduce motion» it simply moves.
+  const [calm, setCalm] = useState(false);
+  useEffect(() => { let live = true; AccessibilityInfo.isReduceMotionEnabled().then(v => { if (live) setCalm(v); }).catch(() => {}); const sub = AccessibilityInfo.addEventListener?.('reduceMotionChanged', v => setCalm(v)); return () => { live = false; sub?.remove(); }; }, []);
+  const calmRef = useRef(calm); calmRef.current = calm;
+  const settle = (to: number) => calmRef.current ? Animated.timing(sheet, { toValue: to, duration: T.motion.base, useNativeDriver: false }).start() : Animated.spring(sheet, { toValue: to, stiffness: 260, damping: 24, mass: 1, overshootClamping: false, restDisplacementThreshold: 0.5, restSpeedThreshold: 0.5, useNativeDriver: false }).start();
 
   // Collapsed, the sheet is as tall as its head, and its top edge stays in the lower half of the screen.
   // A phone shorter than 700px never has the "Сейчас" card there, so a head taller than that is a message with
@@ -375,7 +381,7 @@ export function MapHome({ role, accountId, data, menu, onChanged, onOpenProcess,
   const showNow = screen.height >= 700 ? snap === 0 : snap > 0;
 
   useEffect(() => {
-    if (sheetHeight) Animated.timing(sheet, { toValue: sheetHeight, duration: T.motion.base, useNativeDriver: false }).start();
+    if (sheetHeight) settle(sheetHeight);
   }, [sheetHeight, sheet]);
   useEffect(() => {
     if (snap === 0) scroll.current?.scrollTo({ y: 0, animated: false });
@@ -399,7 +405,7 @@ export function MapHome({ role, accountId, data, menu, onChanged, onOpenProcess,
       const release = (dy: number, vy: number) => {
         const { snap: at, heights: all } = live.current;
         const next = dy < -24 || vy < -0.5 ? Math.min(2, at + 1) : dy > 24 || vy > 0.5 ? Math.max(0, at - 1) : at;
-        Animated.timing(sheet, { toValue: all[next], duration: T.motion.base, useNativeDriver: false }).start();
+        settle(all[next]);
         if (next !== at) setSnap(next);
       };
       const vertical = (dx: number, dy: number, slop: number) => Math.abs(dy) > slop && Math.abs(dy) > Math.abs(dx) * 1.5;
@@ -463,7 +469,7 @@ export function MapHome({ role, accountId, data, menu, onChanged, onOpenProcess,
         host.current?.measureInWindow((_x, y) => setTop(Math.round(y) || 0));
       }}
     >
-      <TileMap
+      <LiveMap
         center={center}
         pins={pins}
         selected={selected}

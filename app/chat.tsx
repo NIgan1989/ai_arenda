@@ -11,7 +11,7 @@ import {MessagesSquare,Ellipsis,CircleHelp,Sparkles,ArrowUp,ArrowUpRight,ArrowRi
 import {ActivityClockProvider,ActivityTimer} from '../components/activity-clock';
 import {ApprovalCard,ApprovalInbox,BookingRiskBox,DecisionPrompt} from '../components/approval-card';
 import {riskAdvice,riskLabel} from '../lib/booking-risk-text';
-import {WorkspaceNavigation} from '../components/workspace-navigation';
+import {WorkspaceNavigation,bottomTabs} from '../components/workspace-navigation';
 import {PropertyListing,PropertyEditor} from '../components/property-listing';
 import {AccountControl} from '../components/account-control';
 import {RentalCalendar} from '../components/rental-calendar';
@@ -349,7 +349,7 @@ export default function Chat({workspaceRole,section,accountId}:{workspaceRole:Ro
   const leaveAdministrator=(action:()=>void)=>{setAdministratorOpen(false);action();};
   const administratorSupport=ready?<>{administratorNotice&&<p className={administratorNotice.error?'form-error':'administrator-outcome'} role={administratorNotice.error?'alert':'status'}>{administratorNotice.text}</p>}<ApprovalInbox cards={data.approvals||[]} busy={busy} onDecide={body=>administratorAction('approvals',body)}/>{renderAssistantBrief()}<details className="administrator-controls"><summary>Проверки и обращения</summary><AdministratorPanel data={data} role={role} busy={busy} onCheck={()=>administratorAction('administrator/check',{})} onTask={task=>leaveAdministrator(()=>openAssistantTask(task))} onResolve={body=>administratorAction('administrator/issues',body)} onSettlement={task=>leaveAdministrator(()=>say('Зафиксируйте расчёт после фактического перевода.','administrator-settlement',task))}/></details></>:null;
   if(closedResult)return <main style={{minHeight:'100dvh',display:'grid',placeItems:'center',padding:24}}><section className="inline-card" style={{maxWidth:620}}><h1>{closedResult.receipt?'Результат удаления':'Выход выполнен'}</h1><p>{closedResult.message}</p>{closedResult.receipt&&<p>Квитанция: <strong>{closedResult.receipt.id}</strong></p>}<Button onClick={()=>window.location.replace('/signin')}>Перейти к входу</Button></section></main>;
-  return <ActivityClockProvider serverTime={data.serverTime}><div className="chat-app workspace-shell release-workspace" data-section={section}><WorkspaceNavigation platformAdmin={data.platformAdmin===true} accountId={accountId} role={role} section={section}/><div className="workspace-content">
+  return <ActivityClockProvider serverTime={data.serverTime}><div className="chat-app workspace-shell release-workspace" data-section={section} data-tab={bottomTabs(role).includes(section)?'':undefined}><WorkspaceNavigation platformAdmin={data.platformAdmin===true} accountId={accountId} role={role} section={section}/><div className="workspace-content">
     {ready&&!online&&<div className="connection-notice" role="status"><WifiOff size={18} aria-hidden="true"/><span>Нет связи. Проверьте интернет.</span><button type="button" onClick={()=>void reconnect()} disabled={reconnecting} aria-busy={reconnecting}>{reconnecting?'Проверяю…':'Повторить'}</button></div>}
 
     <main className="chat-main"><div className={'chat-transcript '+(!messages.length?'is-empty':'')} ref={transcript}>
