@@ -1,6 +1,7 @@
 import React,{Fragment,useEffect,useRef,useState} from 'react';
 import {Thinking} from './src/Thinking';
 import {groupRecords,recordGroupLabels} from '../lib/record-groups';
+import {checkinOpen,checkinOpensLabel} from '../lib/checkin-window';
 import { AppState,BackHandler,KeyboardAvoidingView,Linking,Platform,Pressable,ScrollView,StatusBar,Text,TextInput,View } from 'react-native';
 import { SafeAreaProvider,SafeAreaView } from 'react-native-safe-area-context';
 import {NativeChats,type NativeChatInitial} from './src/NativeChats';
@@ -369,13 +370,13 @@ function Chat(){
         <ActivityTimer kind="booking" item={b}/>
         <RecordActions busy={busy} actions={[
           owner&&b.status==='requested'&&{title:'Рассмотреть заявку',kind:'main',onPress:()=>say('Запрос гостя на согласование.','approval',{id:'booking:'+id})},
-          owner&&confirmed&&started&&!b.terms?.actual_checkin&&{title:'Подтвердить заселение',kind:'main',onPress:()=>confirm('bookings/'+id,{action:'checkin'},'Подтверждаю фактическое заселение гостя','owner-bookings')},
+          owner&&confirmed&&checkinOpen(b.start,data.serverTime)&&!b.terms?.actual_checkin&&{title:'Подтвердить заселение',kind:'main',onPress:()=>confirm('bookings/'+id,{action:'checkin'},'Подтверждаю фактическое заселение гостя','owner-bookings')},
           owner&&confirmed&&b.terms?.deposit_status==='pending'&&{title:'Подтвердить депозит',kind:'main',onPress:()=>confirm('bookings/'+id,{action:'deposit_received'},'Подтверждаю фактическое получение депозита; банковская операция не выполняется','owner-bookings')},
           owner&&confirmed&&b.payment_status!=='owner_verified'&&{title:'Отметить оплату',kind:'main',onPress:()=>confirm('bookings/'+id,{action:'paid',expectedAmount:b.amount},'Отметить оплату после проверки в банке')},
           owner&&confirmed&&started&&{title:'Подтвердить выезд',kind:'main',onPress:()=>confirm('bookings/'+id,{action:'checkout'},'Подтверждаю, что гость выехал и жильё освобождено','owner-bookings')},
           !owner&&confirmed&&data.paymentMode==='test'&&left>0&&{title:'Оплатить '+money(left),kind:'main',onPress:()=>say('Оплата брони. Это тестовая оплата: банк ещё не подключён, деньги не списываются.','confirm',{path:'operations/payment-test',body:{bookingId:id,kind:'payment'},title:'Оплатить '+money(left)+' (тест)',subject:b.title,dates:date(b.start)+' → '+date(b.end),amount:left})},
           !owner&&confirmed&&data.paymentMode==='test'&&b.terms?.deposit>0&&b.terms?.deposit_status==='pending'&&{title:'Внести депозит '+money(b.terms.deposit),kind:'main',onPress:()=>say('Депозит по брони. Это тестовая оплата: деньги не списываются.','confirm',{path:'operations/payment-test',body:{bookingId:id,kind:'deposit'},title:'Внести депозит '+money(b.terms.deposit)+' (тест)',subject:b.title,dates:date(b.start)+' → '+date(b.end),amount:b.terms.deposit})},
-          !owner&&confirmed&&started&&!b.terms?.actual_checkin&&!b.terms?.checkin_reported_at&&b.end>data.serverTime&&{title:'Я заселился',kind:'main',onPress:()=>confirm('bookings/'+id,{action:'report_checkin'},'Сообщить, что вы заселились; заселение подтвердится после проверки оплаты и депозита')},
+          !owner&&confirmed&&!b.terms?.actual_checkin&&!b.terms?.checkin_reported_at&&b.end>data.serverTime&&{title:'Я заселился',kind:'main',onPress:()=>confirm('bookings/'+id,{action:'report_checkin'},'Сообщить, что вы заселились; заселение подтвердится после проверки оплаты и депозита'),...(checkinOpen(b.start,data.serverTime)?{}:{disabled:true,note:'Кнопка станет активной за 15 минут до заезда: '+checkinOpensLabel(b.start,data.serverTime)+'.'})},
           !owner&&confirmed&&started&&!b.terms?.checkout_reported_at&&{title:'Сообщить о выезде',kind:'main',onPress:()=>confirm('bookings/'+id,{action:'report_checkout'},'Сообщить владельцу о выезде; освобождение жилья потребует проверки')},
           {title:'Открыть чат',kind:'side',onPress:()=>{setChatInitial({kind:'booking',entityId:id,channel:'stay'});setPageId('chats');}},
           confirmed&&{title:'Есть проблема',kind:'side',onPress:()=>raiseIssue('booking',id,actor)},
