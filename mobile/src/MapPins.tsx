@@ -4,7 +4,8 @@ import {C} from './styles';
 import {T} from './tokens';
 import {ANSWER_WINDOW,answerLeft,beamBox,pinEvent,type BeamTone,type PinEvent,type PinState,type PinTone} from './map-motion';
 import type {MapPin} from './TileMap';
-import {TILE} from './map-math';
+import {TILE,pinWidth} from './map-math';
+import {AI_SAYS,AI_WINDOW} from '../../lib/ai-move-marks';
 
 // The pins, their events and the radar, shared by both maps of the app: the MapLibre map on a phone (LiveMap.native.tsx)
 // and the tile map of the web preview (TileMap.tsx). The map decides where a pin stands; the pin decides how it moves.
@@ -17,6 +18,9 @@ const tones:Record<PinTone,{bg:string;fg:string;line:string}>={home:{bg:C.surfac
 const glow:Record<PinTone,string>={home:C.accentLine,pending:C.warningLine,offer:C.accent,job:C.info,booking:C.accentLine,booked:C.success,active:C.info};
 // ECHO_DELAY: a pin that changed while the person was away waits for the page to turn into the map before it plays.
 export const FRESH=900,LEAVE=260,ECHO_DELAY=450;
+// The AI's own work plays once per move: a pin remembers which move it has shown, even when the map is built again.
+const aiShown=new Map<string,number>();
+export const AI_PLAY=2600;
 
 // One pin and what happens to it. A pin knows its last tone and label, so it plays its event once when they change.
 // born: when the key first came in the pins (0: it was there before, then it plays nothing on mount).
@@ -45,6 +49,16 @@ export function Pin({pin,x,y,more,active,still,picking,born,delay,loop,onPress}:
   const wave=()=>Animated.sequence([Animated.timing(ping,{toValue:0,duration:0,useNativeDriver:true}),Animated.timing(ping,{toValue:1,duration:900,easing:Easing.out(Easing.quad),useNativeDriver:true})]);
   Animated.sequence([Animated.delay(ECHO_DELAY),Animated.parallel([play(),Animated.sequence([wave(),wave()])])]).start();
  },[tone,pin.label,still]);
+ // The sign of the AI: a ring in its colour goes round the pin and a short line lifts above it, then both fade.
+ // It plays once for each move the AI made (pin.ai), right after the pin's own event.
+ const ai=useRef(new Animated.Value(0)).current,[aiText,setAiText]=useState('');
+ useEffect(()=>{
+  const move=pin.ai;if(!move||still||aiShown.get(pin.key)===move.at)return;
+  aiShown.set(pin.key,move.at);if(Date.now()/1000-move.at>AI_WINDOW)return;
+  setAiText(AI_SAYS[move.move]);ai.setValue(0);
+  const run=Animated.timing(ai,{toValue:1,duration:AI_PLAY,delay:(pin.was?ECHO_DELAY:0)+260,easing:Easing.linear,useNativeDriver:true});
+  run.start(({finished})=>{if(finished)setAiText('');});return()=>run.stop();
+ },[pin.ai?.at,pin.ai?.move,still]);
  useEffect(()=>{if(still){lift.setValue(active?1:0);return;}Animated.spring(lift,{toValue:active?1:0,friction:6,tension:140,useNativeDriver:true}).start();},[active,still]);
  const scale=Animated.add(Animated.add(enter.interpolate({inputRange:[0,1],outputRange:[.4,1]}),pop),lift.interpolate({inputRange:[0,1],outputRange:[0,.08]}));
  const translateY=Animated.add(enter.interpolate({inputRange:[0,1],outputRange:[-18,0]}),lift.interpolate({inputRange:[0,1],outputRange:[0,-4]}));
@@ -61,6 +75,8 @@ export function Pin({pin,x,y,more,active,still,picking,born,delay,loop,onPress}:
   {!still&&<Animated.View pointerEvents="none" style={[m.ring,m.echo,{opacity:ping.interpolate({inputRange:[0,.08,.7,1],outputRange:[0,1,.5,0]}),transform:[{scale:ping.interpolate({inputRange:[0,1],outputRange:[.8,2.8]})}]}]}/>}
   {!still&&<Animated.View pointerEvents="none" style={[m.ring,{backgroundColor:glow[flashTone],opacity:flash.interpolate({inputRange:[0,.05,1],outputRange:[0,.6,0]}),transform:[{scale:flash.interpolate({inputRange:[0,1],outputRange:[.5,2.6]})}]}]}/>}
   {!still&&tone==='booked'&&<Animated.View pointerEvents="none" style={[m.ring,m.wave2,{opacity:flash2.interpolate({inputRange:[0,.05,1],outputRange:[0,.8,0]}),transform:[{scale:flash2.interpolate({inputRange:[0,1],outputRange:[.6,3.4]})}]}]}/>}
+  {!!aiText&&<Animated.View pointerEvents="none" style={[m.aiRing,{width:pinWidth(pin.label)+(pin.order?22:0)+12,opacity:ai.interpolate({inputRange:[0,.08,.7,1],outputRange:[0,1,.9,0]}),transform:[{scale:ai.interpolate({inputRange:[0,.25,1],outputRange:[.92,1.06,1.14]})}]}]}/>}
+  {!!aiText&&<Animated.View pointerEvents="none" accessibilityLiveRegion="polite" style={[m.aiSays,{opacity:ai.interpolate({inputRange:[0,.1,.75,1],outputRange:[0,1,1,0]}),transform:[{translateY:ai.interpolate({inputRange:[0,.1,1],outputRange:[6,0,-8]})}]}]}><Text style={m.aiSaysText} numberOfLines={1}>✦ {aiText}</Text></Animated.View>}
   <Animated.View style={{opacity:enter.interpolate({inputRange:[0,.3,1],outputRange:[0,1,1]}),transform:[{translateY},{scale},{rotate}]}}>
    <View style={best?m.bestRing:null}><Pressable accessibilityRole="button" accessibilityLabel={(pin.order?'Остановка '+pin.order+'. ':'')+(pin.title||'Метка')+', '+pin.label+(filling?', прошло '+Math.round(pin.progress!*100)+'% времени':'')+(best?', лучший выбор для вас':'')+(more?'. Рядом ещё '+more+'. Приблизить':'')} accessibilityState={{selected:active}} disabled={picking||!onPress} onPress={onPress} hitSlop={6} style={[m.pin,{backgroundColor:active?C.ink:colors.bg,borderColor:active?C.ink:best?C.aiFrom:colors.line},best&&m.bestPin,!!pin.order&&m.pinOrdered]}>{!!pin.order&&<View style={[m.order,{backgroundColor:active?C.surface:colors.fg}]}><Text style={[m.orderText,{color:active?C.ink:colors.bg}]}>{pin.order}</Text></View>}<Text numberOfLines={1} style={[m.pinText,{color:active?C.surface:colors.fg}]}>{best?<Text style={{color:active?C.aiTo:C.aiFrom}}>✦ </Text>:null}{pin.label}{more?<Text style={m.pinMore}>{' +'+more}</Text>:null}</Text>{timed&&<View pointerEvents="none" style={m.timeTrack}><Animated.View style={[m.timeFill,{transform:[{scaleX:left}]}]}/></View>}{filling&&<View pointerEvents="none" style={[m.timeTrack,m.workTrack]}><Animated.View style={[m.timeFill,m.workFill,{transform:[{scaleX:done}]}]}/></View>}</Pressable></View>
   </Animated.View>
@@ -118,7 +134,7 @@ export const m=StyleSheet.create({
  host:{flex:1,backgroundColor:C.line,overflow:'hidden'},tile:{position:'absolute',width:TILE,height:TILE},
  pinWrap:{position:'absolute',width:180,height:40,alignItems:'center',justifyContent:'center'},pinInMarker:{position:'relative'},
  pin:{minHeight:32,minWidth:44,paddingHorizontal:12,borderRadius:16,borderWidth:1,flexDirection:'row',gap:4,alignItems:'center',justifyContent:'center',shadowColor:C.ink,shadowOffset:{width:0,height:2},shadowOpacity:.18,shadowRadius:5,elevation:3},
- pinText:{fontSize:14,fontWeight:'600'},bestRing:{padding:2,borderRadius:16,backgroundColor:C.aiTo,shadowColor:C.ink,shadowOffset:{width:0,height:2},shadowOpacity:.18,shadowRadius:5,elevation:3},bestPin:{borderWidth:2,minHeight:30,shadowOpacity:0,elevation:0},wave2:{borderWidth:3,borderColor:C.success,backgroundColor:'transparent'},timeTrack:{position:'absolute',left:8,right:8,bottom:3,height:3,borderRadius:2,backgroundColor:C.warningLine,overflow:'hidden'},timeFill:{flex:1,backgroundColor:C.warning,transformOrigin:'left'},pinMore:{fontWeight:'500',opacity:.7},pinOrdered:{paddingLeft:4},order:{width:24,height:24,borderRadius:12,alignItems:'center',justifyContent:'center'},orderText:{fontSize:12,fontWeight:'700'},workTrack:{backgroundColor:'rgba(255,255,255,0.35)'},workFill:{backgroundColor:C.surface},ring:{position:'absolute',width:56,height:56,borderRadius:999},echo:{borderWidth:3,borderColor:C.accent,backgroundColor:C.accentSoft},
+ pinText:{fontSize:14,fontWeight:'600'},aiRing:{position:'absolute',height:44,borderRadius:24,borderWidth:3,borderColor:C.aiFrom,shadowColor:C.aiTo,shadowOpacity:.6,shadowRadius:8,shadowOffset:{width:0,height:0}},aiSays:{position:'absolute',top:-26,paddingHorizontal:8,height:22,borderRadius:12,backgroundColor:C.aiFrom,alignItems:'center',justifyContent:'center',borderWidth:1,borderColor:C.aiTo},aiSaysText:{color:C.surface,fontSize:12,fontWeight:'700'},bestRing:{padding:2,borderRadius:16,backgroundColor:C.aiTo,shadowColor:C.ink,shadowOffset:{width:0,height:2},shadowOpacity:.18,shadowRadius:5,elevation:3},bestPin:{borderWidth:2,minHeight:30,shadowOpacity:0,elevation:0},wave2:{borderWidth:3,borderColor:C.success,backgroundColor:'transparent'},timeTrack:{position:'absolute',left:8,right:8,bottom:3,height:3,borderRadius:2,backgroundColor:C.warningLine,overflow:'hidden'},timeFill:{flex:1,backgroundColor:C.warning,transformOrigin:'left'},pinMore:{fontWeight:'500',opacity:.7},pinOrdered:{paddingLeft:4},order:{width:24,height:24,borderRadius:12,alignItems:'center',justifyContent:'center'},orderText:{fontSize:12,fontWeight:'700'},workTrack:{backgroundColor:'rgba(255,255,255,0.35)'},workFill:{backgroundColor:C.surface},ring:{position:'absolute',width:56,height:56,borderRadius:999},echo:{borderWidth:3,borderColor:C.accent,backgroundColor:C.accentSoft},
  beam:{position:'absolute',height:2,justifyContent:'center'},beamAsk:{height:0,borderTopWidth:2,borderStyle:'dashed',borderColor:C.warning},beamAnswer:{height:2,borderRadius:1,backgroundColor:C.accent},beamRoute:{height:4,borderRadius:2,backgroundColor:C.info,opacity:.7},beamNav:{height:6,borderRadius:4,backgroundColor:C.accent,borderWidth:1,borderColor:C.surface},
  heat:{position:'absolute'},spark:{position:'absolute',width:32,height:32,alignItems:'center',justifyContent:'center'},sparkRing:{position:'absolute',width:32,height:32,borderRadius:16,borderWidth:2,borderColor:C.aiTo},sparkDot:{width:8,height:8,borderRadius:4,backgroundColor:C.aiTo},
  origin:{position:'absolute',width:22,height:22,borderRadius:12,backgroundColor:C.accentSoft,alignItems:'center',justifyContent:'center'},

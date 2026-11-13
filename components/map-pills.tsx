@@ -4,6 +4,7 @@ import type {Map as MapType} from 'maplibre-gl';
 import {groupPins,pinWidth} from '../mobile/src/map-math';
 import {ANSWER_WINDOW,answerLeft,appearDelay,pinEvent,type PinEvent,type PinState,type PinTone} from '../mobile/src/map-motion';
 import type {WebPin} from '../lib/map-pin-of';
+import {AI_SAYS,AI_WINDOW} from '../lib/ai-move-marks';
 import './map-pills.css';
 
 // The pins of the site's map, drawn like the app's (mobile/src/MapPins.tsx): «таблетки» with a price or a state,
@@ -12,7 +13,9 @@ import './map-pills.css';
 // fold into one with «+N»; a tap on it flies in. With «reduce motion» nothing moves.
 // They are HTML over the MapLibre map: each frame of a move puts them where the map projects their points.
 const toneOrder:Record<PinTone,number>={offer:0,booked:0,pending:1,active:1,booking:2,job:3,home:3};
-const FRESH=900,LEAVE=260,ECHO_DELAY=450;
+const FRESH=900,LEAVE=260,ECHO_DELAY=450,AI_PLAY=2600;
+// The AI's own work plays once per move, even when the page draws the pin again (mobile/src/MapPins.tsx does the same).
+const aiShown=new Map<string,number>();
 const calm=()=>typeof window!=='undefined'&&window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 // sparks: where guests are asking right now (owner); origin: the guest's search point, where the beams start.
@@ -72,6 +75,18 @@ function Pill({pin,x,y,more,active,born,delay,onPress}:{pin:WebPin;x:number;y:nu
   // The echo: two wide waves of the accent colour go out from a pin that changed while the person was elsewhere.
   if(echoed)echoRing.current?.animate([{opacity:0,transform:'scale(.8)'},{opacity:1,offset:.08},{opacity:.5,offset:.7},{opacity:0,transform:'scale(2.8)'}],{duration:900,delay:wait,iterations:2,easing:'ease-out'});
  },[pin.tone,pin.label]);
+ // The sign of the AI (pin.ai): a ring in its colours runs round the pin once and a short line lifts above it.
+ const [aiText,setAiText]=useState(''),aiRing=useRef<HTMLSpanElement>(null),aiSays=useRef<HTMLSpanElement>(null);
+ useEffect(()=>{
+  const move=pin.ai;if(!move||aiShown.get(pin.key)===move.at)return;
+  aiShown.set(pin.key,move.at);if(calm()||Date.now()/1000-move.at>AI_WINDOW)return;
+  setAiText(AI_SAYS[move.move]);const timer=setTimeout(()=>setAiText(''),AI_PLAY+(pin.was?ECHO_DELAY:0)+400);return()=>clearTimeout(timer);
+ },[pin.ai?.at,pin.ai?.move]);
+ useEffect(()=>{
+  if(!aiText)return;const wait=(pin.was?ECHO_DELAY:0)+260;
+  aiRing.current?.animate([{opacity:0,transform:'scale(.92)'},{opacity:1,transform:'scale(1.04)',offset:.12},{opacity:.9,transform:'scale(1.06)',offset:.7},{opacity:0,transform:'scale(1.14)'}],{duration:AI_PLAY,delay:wait,fill:'both'});
+  aiSays.current?.animate([{opacity:0,transform:'translate(-50%,6px)'},{opacity:1,transform:'translate(-50%,0)',offset:.1},{opacity:1,offset:.75},{opacity:0,transform:'translate(-50%,-8px)'}],{duration:AI_PLAY,delay:wait,fill:'both'});
+ },[aiText]);
  // The time left to answer runs down under the label; a cleaning under way fills its strip.
  // Read once per deadline, so the frames of a map move do not restart the strip.
  const left=useMemo(()=>pin.tone==='pending'&&pin.until?answerLeft(pin.until,Date.now()/1000):0,[pin.tone,pin.until]);
@@ -81,6 +96,8 @@ function Pill({pin,x,y,more,active,born,delay,onPress}:{pin:WebPin;x:number;y:nu
   <span ref={ring} className="map-pill-ring" aria-hidden="true"/>
   <span ref={ring2} className="map-pill-ring wave" aria-hidden="true"/>
   <span ref={echoRing} className="map-pill-ring echo" aria-hidden="true"/>
+  {!!aiText&&<span ref={aiRing} className="map-pill-ai" style={{['--ai-w' as string]:pinWidth(pin.label)+(pin.order?22:0)+12+'px'}} aria-hidden="true"/>}
+  {!!aiText&&<span ref={aiSays} className="map-pill-ai-says" role="status">✦ {aiText}</span>}
   <button ref={body} type="button" className="map-pill-body" aria-label={label} aria-pressed={active} onClick={e=>{e.stopPropagation();onPress();}}>
    {!!pin.order&&<b className="map-pill-order">{pin.order}</b>}
    {pin.best&&<i className="map-pill-star" aria-hidden="true">✦ </i>}{pin.label}{more>0&&<small> +{more}</small>}

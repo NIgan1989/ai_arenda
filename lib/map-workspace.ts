@@ -3,6 +3,7 @@ import type {RentalService} from './service';
 import {q,one,rows,uuid,epoch,type Row,type OperationConfig} from './operation-core';
 import {mapCities,geoDistance} from './map-location';
 import {ownerDemand} from './owner-demand';
+import {recentAiMarks} from './ai-moves';
 export {mapCities,geoDistance} from './map-location';
 export function coordinate(value:unknown,min:number,max:number){if(value===null||value===''||typeof value==='boolean')throw new DomainError('Укажите координаты точки.');const n=Number(value);if(!Number.isFinite(n)||n<min||n>max)throw new DomainError('Некорректные координаты.');return n;}
 const fingerprint=(p:Row)=>[p.city,p.district,p.address].join('|');
@@ -28,7 +29,9 @@ export async function mapSearch(s:RentalService,role:Role,b:Row,config:Operation
  for(const v of sessions){try{await authorisedSession(s,role,v.id);journeys.push({id:v.id,kind:v.entity_kind,entityId:v.entity_id,mode:v.mode,expiresAt:v.expires_at,mine:v.sender_id===s.userId&&v.sender_role===role,longitude:epoch()-(v.received_at||0)<=90?v.longitude:null,latitude:epoch()-(v.received_at||0)<=90?v.latitude:null,accuracy:v.accuracy,recordedAt:v.recorded_at,route:epoch()-(v.received_at||0)<=90&&v.route?JSON.parse(v.route):null});}catch{await q(s.db,'UPDATE journey_sessions SET stopped_at=?,longitude=NULL,latitude=NULL,accuracy=NULL WHERE id=?',epoch(),v.id).run();}}
  // The owner also sees where guests ask and book in the city, and how many are asking right now.
  const city=String(filters.city||(state.profile as Row)?.city||'').trim(),demand=role==='owner'&&city?await ownerDemand(s,city):undefined;
- return {...result,properties,processes,journeys,...(demand?{demand}:{}),center:mapCities[Object.keys(mapCities).find(c=>c.toLocaleLowerCase('ru')===String(filters.city||(state.profile as Row)?.city||'').trim().toLocaleLowerCase('ru'))||'']||[67,48],serverTime:epoch()};
+  // What the AI administrator did on its own in the last minutes: the map marks it on the pins it concerns.
+ const aiMarks=role==='guest'?[]:await recentAiMarks(s.db,s.userId,role);
+ return {...result,properties,processes,journeys,aiMarks,...(demand?{demand}:{}),center:mapCities[Object.keys(mapCities).find(c=>c.toLocaleLowerCase('ru')===String(filters.city||(state.profile as Row)?.city||'').trim().toLocaleLowerCase('ru'))||'']||[67,48],serverTime:epoch()};
 }
 
 // The owner's own address, as he typed it, turned into a point on the map (OpenStreetMap search).
