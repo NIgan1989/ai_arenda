@@ -33,9 +33,14 @@ export async function acceptTelegramLink(db:D1Database,body:Row,providedSecret:s
  const auditId=uuid(),at=epoch();await db.batch([
   q(db,'UPDATE delivery_links SET used_at=? WHERE hash=? AND used_at IS NULL AND expires_at>?',at,link.hash,at),
   q(db,'INSERT INTO audit_events SELECT ?,?,?,?,? WHERE changes()>0',auditId,link.user_id,link.user_id,'delivery.telegram_linked:'+link.role,at),
-  q(db,"INSERT INTO delivery_channels SELECT ?,?,'telegram',?,1,?,? WHERE EXISTS(SELECT 1 FROM audit_events WHERE id=?) ON CONFLICT(user_id,role,channel) DO UPDATE SET address=excluded.address,enabled=1,verified_at=excluded.verified_at,updated_at=excluded.updated_at",link.user_id,link.role,String(message.chat.id),at,at,auditId)
+  q(db,"INSERT INTO delivery_channels SELECT ?,?,'telegram',?,1,?,? WHERE EXISTS(SELECT 1 FROM audit_events WHERE id=?) ON CONFLICT(user_id,role,channel) DO UPDATE SET address=excluded.address,enabled=1,verified_at=excluded.verified_at,updated_at=excluded.updated_at",link.user_id,link.role,String(message.chat.id),at,at,auditId),
+  // One person, one Telegram: the same Start links the person's other roles too. A role the person
+  // switched off stays off; only its chat moves to the new one.
+  q(db,"INSERT INTO delivery_channels SELECT ?,r.value,'telegram',?,1,?,? FROM json_each(COALESCE((SELECT roles FROM profiles WHERE id=?),'[]')) r WHERE r.value IN ('guest','owner','cleaner') AND r.value<>? AND EXISTS(SELECT 1 FROM audit_events WHERE id=?) ON CONFLICT(user_id,role,channel) DO UPDATE SET address=excluded.address,verified_at=excluded.verified_at,updated_at=excluded.updated_at",link.user_id,String(message.chat.id),at,at,link.user_id,link.role,auditId)
  ]);
- await botReply(config,message.chat.id,'Готово! Уведомления «Ай Аренда» для роли «'+(ROLE_NAMES[link.role]||link.role)+'» будут приходить сюда: заявки, брони, уборки. Выключить можно в приложении: Аккаунт → Telegram.');
+ const linked=await rows(db,"SELECT role FROM delivery_channels WHERE user_id=? AND channel='telegram' AND verified_at=? AND address=?",link.user_id,at,String(message.chat.id));
+ const names=['guest','owner','cleaner'].filter(r=>linked.some(l=>l.role===r)).map(r=>'«'+ROLE_NAMES[r]+'»');
+ await botReply(config,message.chat.id,'Готово! Уведомления «Ай Аренда» будут приходить сюда: заявки, брони, уборки. '+(names.length>1?'Роли: ':'Роль: ')+(names.join(', ')||'«'+(ROLE_NAMES[link.role]||link.role)+'»')+'. Выключить можно на сайте или в приложении: Аккаунт → Telegram.');
  return {linked:true};
 }
 export async function setDeliveryChannel(service:RentalService,role:Role,body:Row,config:OperationConfig){

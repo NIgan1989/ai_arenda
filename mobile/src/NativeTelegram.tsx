@@ -19,7 +19,7 @@ export function NativeTelegram(){
  return <>
   <Row title="Telegram" value={value} open={open} onPress={()=>setOpen(v=>!v)}/>
   {open&&<View style={a.body}>
-   <Text style={a.note}>Заявки, брони и уборки этой роли будут приходить в личный чат с ботом «Ай Аренда».</Text>
+   <Text style={a.note}>Заявки, брони и уборки будут приходить в личный чат с ботом «Ай Аренда». Одно подключение работает для всех ваших ролей.</Text>
    {!state?null:!state.configured?<Text style={a.note}>Бот уведомлений скоро заработает. Пока события приходят в приложение.</Text>
     :!state.linked||waiting!==null?<><Text style={a.note}>{waiting!==null?'Нажмите «Start» в чате с ботом и вернитесь сюда. Я жду подтверждения…':'Откроется чат с ботом: нажмите «Start», и всё.'}</Text>{button(waiting?'Открыть ещё раз':'Подключить Telegram',connect)}</>
     :<View style={t.row}>{button(state.enabled?'Выключить':'Включить снова',()=>toggle(!state.enabled),!state.enabled)}{button('Другой чат',connect,false)}</View>}

@@ -17,7 +17,7 @@ export function TelegramSettings({role}:{role:string}){
  async function toggle(on:boolean){setBusy(true);setError('');setMessage('');try{const r=await api('delivery/channel',{channel:'telegram',enabled:on});setMessage(r.message);await load();}catch(e:any){setError(e.message);}finally{setBusy(false);}}
  const status=!state?'Проверяю…':!state.configured?'Скоро':state.enabled?'Включён':state.linked?'Выключен':'Не подключён';
  return <details className="acct-details"><summary><Send size={20}/><span>Telegram</span><em>{status}</em><ChevronRight size={16}/></summary><div className="acct-body">
-  <p>Заявки, брони и уборки этой роли будут приходить в личный чат с ботом «Ай Аренда».</p>
+  <p>Заявки, брони и уборки будут приходить в личный чат с ботом «Ай Аренда». Одно подключение работает для всех ваших ролей.</p>
   {!state?<p role="status">Проверяю…</p>:!state.configured?<p>Бот уведомлений скоро заработает. Пока события приходят в приложение.</p>
    :!state.linked||waiting!==null?<><p>{waiting!==null?'Откройте Telegram и нажмите «Start» в чате с ботом. Я жду подтверждения…':'Откроется чат с ботом: нажмите «Start», и всё.'}</p><div className="inline-actions"><Button disabled={busy} onClick={connect}>{waiting!==null?'Открыть ещё раз':'Подключить Telegram'}</Button></div></>
    :<div className="inline-actions"><Button variant={state.enabled?'ghost':'default'} disabled={busy} onClick={()=>toggle(!state.enabled)}>{state.enabled?'Выключить':'Включить снова'}</Button><Button variant="outline" disabled={busy} onClick={connect}>Привязать другой чат</Button></div>}
