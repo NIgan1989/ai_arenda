@@ -7,7 +7,7 @@ const {aiMarkOf, latestMove, AI_SAYS, AI_WINDOW, aiNoteOf, journalWhen, journalT
 test('the notices the AI leaves are read as moves on what they are about', () => {
   assert.deepEqual(aiMarkOf('owner:administrator-confirmed:b1', 100), {kind: 'booking', id: 'b1', move: 'confirmed', at: 100});
   assert.deepEqual(aiMarkOf('owner:administrator-assigned:j1:3', 100), {kind: 'job', id: 'j1', move: 'assigned', at: 100});
-  assert.deepEqual(aiMarkOf('owner:no-show:j2:4', 100), {kind: 'job', id: 'j2', move: 'replaced', at: 100});
+  assert.deepEqual(aiMarkOf('owner:no-show:j2:4', 100), {kind: 'job', id: 'j2', move: 'released', at: 100});
   assert.deepEqual(aiMarkOf('owner:matching-auto:o1', 100), {kind: 'matching-offer', id: 'o1', move: 'answered', at: 100});
   assert.deepEqual(aiMarkOf('cleaner:autopilot-took:c1', 100), {kind: 'cleaning-offer', id: 'c1', move: 'took', at: 100});
   assert.deepEqual(aiMarkOf('cleaner:overdue-remind:j3:999', 100), {kind: 'job', id: 'j3', move: 'reminded', at: 100});
@@ -46,7 +46,8 @@ test('a pin shows the newest move about it, only within the window', () => {
 test('the journal keeps every step of the AI as one short line, also those without a pin', () => {
   assert.deepEqual(aiNoteOf('owner:administrator-approved:j1', 100), {kind: 'job', id: 'j1', text: 'ИИ принял уборку', at: 100});
   assert.deepEqual(aiNoteOf('owner:price:s1', 100), {kind: '', id: '', text: 'ИИ посоветовал цену', at: 100});
-  assert.deepEqual(aiNoteOf('guest:test-deposit-return:b1', 100), {kind: 'booking', id: 'b1', text: 'ИИ вернул депозит', at: 100});
+  assert.deepEqual(aiNoteOf('guest:test-deposit-return:b1', 100), {kind: 'booking', id: 'b1', text: 'ИИ вернул депозит (тест, без перевода)', at: 100});
+  assert.deepEqual(aiNoteOf('owner:offer:o7', 100), {kind: 'cleaning-offer', id: 'o7', text: 'ИИ предложил уборку исполнителю', at: 100});
   assert.deepEqual(aiNoteOf('cleaner:day-plan:w1:2026-11-13', 100), {kind: '', id: '', text: 'ИИ составил план дня', at: 100});
   // What a person did is not in the journal of the AI.
   assert.equal(aiNoteOf('cleaner:assigned:j1', 100), null);

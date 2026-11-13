@@ -57,7 +57,9 @@ export function Pin({pin,x,y,more,active,still,picking,born,delay,loop,onPress}:
   aiShown.set(pin.key,move.at);if(Date.now()/1000-move.at>AI_WINDOW)return;
   setAiText(AI_SAYS[move.move]);ai.setValue(0);
   const run=Animated.timing(ai,{toValue:1,duration:AI_PLAY,delay:(pin.was?ECHO_DELAY:0)+260,easing:Easing.linear,useNativeDriver:true});
-  run.start(({finished})=>{if(finished)setAiText('');});return()=>run.stop();
+  run.start(({finished})=>{if(finished)setAiText('');});
+  // Stopped half-way (the pin changed, motion was switched off): the ring and the line leave with it.
+  return()=>{run.stop();setAiText('');};
  },[pin.ai?.at,pin.ai?.move,still]);
  useEffect(()=>{if(still){lift.setValue(active?1:0);return;}Animated.spring(lift,{toValue:active?1:0,friction:6,tension:140,useNativeDriver:true}).start();},[active,still]);
  const scale=Animated.add(Animated.add(enter.interpolate({inputRange:[0,1],outputRange:[.4,1]}),pop),lift.interpolate({inputRange:[0,1],outputRange:[0,.08]}));

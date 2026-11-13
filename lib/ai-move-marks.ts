@@ -20,7 +20,8 @@ const KEYS:[string,AiMark['kind'],AiMove][]=[
  ['owner:administrator-approved:','job','accepted'],
  ['owner:administrator-assigned:','job','assigned'],
  ['owner:regular-assigned:','job','assigned'],
- ['owner:no-show:','job','replaced'],
+ // The assignment is taken off and a replacement is only being looked for: not «нашёл замену» yet.
+ ['owner:no-show:','job','released'],
  ['owner:overdue-remind:','job','reminded'],
  ['owner:overdue-silent:','job','reminded'],
  ['owner:overdue-escalated:','job','escalated'],
@@ -75,7 +76,9 @@ const NOTES:[string,AiNote['kind'],string][]=[
  ['owner:autopilot-week:','','ИИ подвёл итоги недели'],
  ['owner:guest-question:','','ИИ передал вопрос гостя'],
  ['guest:administrator-checkin-pay:','booking','ИИ попросил оплатить на месте'],
- ['guest:test-deposit-return:','booking','ИИ вернул депозит'],
+ ['owner:offer:','cleaning-offer','ИИ предложил уборку исполнителю'],
+ // Payments are an imitation until the launch: the line says so, as the notice does.
+ ['guest:test-deposit-return:','booking','ИИ вернул депозит (тест, без перевода)'],
  ['guest:stay:','','ИИ предложил изменить проживание'],
  ['guest:review-request:','','ИИ спросил, как прошло'],
  ['cleaner:day-plan:','','ИИ составил план дня'],

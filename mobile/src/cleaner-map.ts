@@ -35,6 +35,8 @@ export function cleanerPin(job:Row,stop:Stop|undefined,now:number,applied:boolea
  if(status==='in_progress'){const until=soon(Number(job.end),now);return {label:until?'Уборка до '+until:'Уборка идёт',tone:'active',order:stop?.order,progress:progress(job.startedAt??job.started_at,job.end,now)};}
  if(status==='submitted')return {label:'На приёмке',tone:'booking'};
  if(status==='assigned'){
+  // Not started and the window is over: the day's route has dropped it, the pin still says so.
+  if(Number(job.end)<=now)return {label:'Срок вышел',tone:'alert'};
   if(!stop)return {label:soon(Number(job.start),now)||'Моё задание',tone:'offer'};
   // A guest already gone: the flat is free, the cleaning can start now.
   const ready=job.checkout_confirmed===true||job.checkout_confirmed===1;
