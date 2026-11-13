@@ -1,5 +1,6 @@
 // No offline cache: authenticated pages and API responses stay on the server.
-const allowed=path=>/^\/workspace\/(guest|owner|cleaner)\/(assistant|map)$/.test(path)?path:'/';
+// A push opens the screen it is about: a section of the role, optionally one booking, cleaning or flat (?entity=) or one chat (?room=).
+const allowed=path=>typeof path==='string'&&/^\/workspace\/(guest|owner|cleaner)\/(map|chats|bookings|cleaning|jobs|assignments|properties|calendar|operations|account)(\?(entity|room)=[A-Za-z0-9_-]{1,100})?$/.test(path)?path:'/';
 self.addEventListener('push',event=>{
  let data={};try{data=event.data?.json()||{};}catch{}
  // The AI administrator's price advice is answered right from the notification: two buttons, the owner's choice.
@@ -13,8 +14,9 @@ self.addEventListener('push',event=>{
   return;
  }
  const path=allowed(data.url);
- event.waitUntil(self.registration.showNotification('AI Аренда',{
-  body:data.body==='Уведомления на этом устройстве работают.'?data.body:'Есть новое событие. Откройте приложение, чтобы узнать подробности.',
+ // The notice itself says what happened: who, where and what.
+ event.waitUntil(self.registration.showNotification(String(data.title||'AI Аренда').slice(0,120),{
+  body:String(data.body||'Есть новое событие.').slice(0,300),
   icon:'/brand-mark.png',badge:'/brand-mark.png',data:{url:path},tag:path,renotify:true
  }));
 });

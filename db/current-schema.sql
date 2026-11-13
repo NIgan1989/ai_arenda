@@ -48,6 +48,7 @@
 -- migration 0044_admin_telegram.sql sha256:9725018759d6a70777133870a226d9da60c4b786fac3d486324268d0a3664d81
 -- migration 0045_regular_cleaners.sql sha256:86cb5a6108be0475ed15430c72aae60e3f0067ca8e788b93e051a2c8a28075cd
 -- migration 0046_autopilot_plans.sql sha256:911a0b05ae335a2d427404f7d641c8846f51b9a722277078cc323514c87cd323
+-- migration 0047_discussion_notice_text.sql sha256:d3e1b2fee1b66841cabbc359edba94784c7068377bcb199c1bf71f130ed16640
 
 -- table access_receipts
 CREATE TABLE access_receipts (id TEXT PRIMARY KEY,property_id TEXT NOT NULL,entity_kind TEXT NOT NULL,entity_id TEXT NOT NULL,user_id TEXT NOT NULL,created_at INTEGER NOT NULL,expires_at INTEGER NOT NULL);
@@ -1811,7 +1812,8 @@ END;
 CREATE TRIGGER discussion_message_notification AFTER INSERT ON discussion_messages BEGIN
  INSERT OR IGNORE INTO notifications(id,user_id,body,dedupe,read,created_at)
  SELECT lower(hex(randomblob(16))),json_extract(m.value,'$.id'),
- 'Новое сообщение в обсуждении процесса. Откройте чат участников.',
+ COALESCE((SELECT name FROM profiles WHERE id=NEW.sender_id),'Участник')||' ('||CASE NEW.sender_role WHEN 'owner' THEN 'владелец' WHEN 'guest' THEN 'гость' ELSE 'исполнитель' END||') в чате «'||r.title||'»: '||
+ CASE WHEN NEW.photo_data<>'' AND NEW.body='Фотография' THEN 'фото' WHEN length(NEW.body)>140 THEN substr(NEW.body,1,140)||'…' ELSE NEW.body END||CASE WHEN NEW.photo_data<>'' AND NEW.body<>'Фотография' THEN ' (+ фото)' ELSE '' END,
  json_extract(m.value,'$.role')||':discussion:'||NEW.room_id||':'||NEW.seq,0,NEW.created_at
  FROM discussion_rooms r,json_each(r.members) m
  WHERE r.id=NEW.room_id AND json_extract(m.value,'$.id')<>NEW.sender_id;

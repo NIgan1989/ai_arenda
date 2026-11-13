@@ -204,6 +204,17 @@ export default function Chat({workspaceRole,section,accountId}:{workspaceRole:Ro
     // A question left for the AI administrator by another page of this tab (see leaveAiAsk in lib/ai-line.ts) is taken once and sent.
     // Nothing in the address can make a signed-in person write to the administrator.
     if(section==='chats'){const ask=takeAiAsk(role);if(ask){openAdministrator(ask);return;}}
+    // A push or link names one chat (?room=) or one booking, cleaning or flat (?entity=): open it right away.
+    // The id only selects among what the server already returned for this person; anything else is not shown.
+    const room=params.get('room'),entity=params.get('entity'),validId=(v:string|null)=>!!v&&/^[A-Za-z0-9_-]{1,100}$/.test(v);
+    if(section==='chats'&&validId(room)){showDiscussion({roomId:room});return;}
+    if(validId(entity)&&['bookings','cleaning','jobs','assignments','properties'].includes(section)){
+      if(section==='properties'){const p=data.ownProperties.find((p:Row)=>p.id===entity);if(p)say('Квартира из уведомления.','property-settings',{id:p.id});else say('Эта квартира больше недоступна.');return;}
+      const job=section!=='bookings',items=(job?data.jobs:data.bookings).filter((item:Row)=>item.id===entity);
+      if(items.length)say(job?'Уборка из уведомления: что с ней сейчас и что можно сделать.':'Бронь из уведомления: что с ней сейчас и что можно сделать.',job?'jobs':'bookings',{items,actor:role,applications:data.applications,direct:true});
+      else say(job?'Эта уборка больше недоступна. Актуальный список — выше.':'Эта бронь больше недоступна. Актуальный список — выше.');
+      return;
+    }
     if(role==='owner'&&section==='properties'&&params.get('new')==='1'){startProperty(data);return;}
     if(role==='guest'&&['catalog','map'].includes(section)&&params.get('book')){
       const property=data.properties.find((p:Row)=>p.id===params.get('book'));

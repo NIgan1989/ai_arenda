@@ -30,7 +30,7 @@ test('operations HTTP routes enforce roles, real balances, calendar privacy and 
    const history=await call('/api/operations/discussion/read',{roomId:room.body.roomId},owner);assert.equal(history.status,200);assert.equal(history.body.messages.length,1);assert.equal(history.body.messages[0].body,body.text);
    assert.deepEqual(history.body.room.members.map(m=>m.role).sort(),['guest','owner']);
    assert.equal((await call('/api/operations/discussion/read',{roomId:room.body.roomId},owner,'cleaner')).status,403);
-   const notifications=app.db.raw.prepare("SELECT * FROM notifications WHERE dedupe LIKE '%:discussion:%'").all();assert.equal(notifications.length,1);assert.equal(notifications[0].user_id,owner.user.id);assert.ok(!notifications[0].body.includes(body.text));
+   const notifications=app.db.raw.prepare("SELECT * FROM notifications WHERE dedupe LIKE '%:discussion:%'").all();assert.equal(notifications.length,1);assert.equal(notifications[0].user_id,owner.user.id);assert.ok(notifications[0].body.includes(body.text),'the notice says what was written: it is the push text');
    const image=await call('/api/operations/discussion/send',{roomId:room.body.roomId,photo,replyTo:history.body.messages[0].seq,requestKey:'http-photo'},owner);assert.equal(image.status,200);
    const attachment=await call('/api/operations/discussion/photo',{roomId:room.body.roomId,seq:image.body.seq},guest,'guest');assert.equal(attachment.status,200);assert.match(attachment.body.data,/^data:image\/jpeg;base64,/);
    const inbox=await call('/api/operations/discussion/inbox',undefined,guest,'guest');assert.equal(inbox.body.unread,1);assert.equal(inbox.body.rooms[0].latest.photo,1);

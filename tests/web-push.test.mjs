@@ -54,3 +54,28 @@ test('expired/changed credentials cannot send, quiet hours defer notifications a
   f.db.raw.prepare('UPDATE auth_accounts SET credential_version=2 WHERE id=?').run('guest');await deliverWebPush(f.db,config,12,async()=>{throw Error('must not call');});assert.equal(f.db.raw.prepare('SELECT COUNT(*) n FROM push_subscriptions').get().n,0);
  }finally{f.db.close();}
 });
+test('a push says what happened and opens the booking, cleaning, flat or chat it is about',async()=>{
+ const {pushTarget}=await load('web-push');
+ const f=await fixture();try{
+  const job=f.job.id;
+  assert.deepEqual(await pushTarget(f.db,'guest','guest','guest:confirmed:'+f.booking),{url:'/workspace/guest/bookings?entity='+f.booking,title:'Бронь · Test apartment'});
+  assert.deepEqual(await pushTarget(f.db,'owner','owner','owner:checkout-reported:'+f.booking),{url:'/workspace/owner/bookings?entity='+f.booking,title:'Бронь · Test apartment'});
+  assert.deepEqual(await pushTarget(f.db,'owner','owner','owner:submitted:'+job+':3'),{url:'/workspace/owner/cleaning?entity='+job,title:'Уборка · Test apartment'});
+  assert.equal((await pushTarget(f.db,'cleaner','cleaner','cleaner:offer:'+job))?.url,'/workspace/cleaner/jobs?entity='+job);
+  assert.deepEqual(await pushTarget(f.db,'owner','owner','owner:listing:x'),{url:'/workspace/owner/map',title:'AI администратор'});
+  assert.equal((await pushTarget(f.db,'owner','owner','owner:stay-review:'+f.property))?.url,'/workspace/owner/properties?entity='+f.property);
+  // Someone else's booking, a key of another role or an unknown id never becomes a link.
+  assert.equal(await pushTarget(f.db,'other','owner','owner:confirmed:'+f.booking),null);
+  assert.equal(await pushTarget(f.db,'guest','guest','owner:confirmed:'+f.booking),null);
+  assert.equal(await pushTarget(f.db,'guest','guest','guest:confirmed:missing'),null);
+  // A chat message names the sender, the chat and the words.
+  f.db.raw.prepare("INSERT INTO discussion_rooms VALUES ('room1','booking',?,'stay','k',?,'Проживание · Test apartment',?)").run(f.booking,JSON.stringify([{id:'owner',role:'owner'},{id:'guest',role:'guest'}]),now());
+  f.db.raw.prepare("INSERT INTO discussion_messages(room_id,sender_id,sender_role,body,request_key,created_at) VALUES ('room1','guest','guest','Во сколько можно заехать?','r1',?)").run(now());
+  const notice=f.db.raw.prepare("SELECT * FROM notifications WHERE user_id='owner' AND dedupe LIKE 'owner:discussion:%'").get();
+  assert.equal(notice.body,'Guest (гость) в чате «Проживание · Test apartment»: Во сколько можно заехать?');
+  const target=await pushTarget(f.db,'owner','owner',notice.dedupe);assert.deepEqual(target,{url:'/workspace/owner/chats?room=room1',title:'Сообщение · Проживание · Test apartment'});
+  assert.equal(await pushTarget(f.db,'cleaner','cleaner','cleaner:discussion:room1:1').then(t=>t?.url),'/workspace/cleaner/chats');
+  const push=JSON.parse(pushPayload('owner',false,false,null,null,null,null,{body:notice.body},target));
+  assert.equal(push.body,notice.body);assert.equal(push.url,'/workspace/owner/chats?room=room1');
+ }finally{f.db.close();}
+});
