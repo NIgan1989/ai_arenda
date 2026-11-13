@@ -76,6 +76,22 @@ export function Beam({a,b,tone,still}:{a:{x:number;y:number};b:{x:number;y:numbe
 export function Origin({x,y}:{x?:number;y?:number}){
  return <View pointerEvents="none" style={[m.origin,x==null||y==null?m.pinInMarker:{left:x-11,top:y-11}]}><View style={m.radarDot}/></View>;
 }
+// Demand on the web preview map: a soft spot, larger and stronger where guests ask and book more.
+// On a phone it is a heatmap layer of MapLibre (LiveMap.native.tsx) in the same colours.
+export const HEAT=['rgba(99,102,241,0)','rgba(99,102,241,0.30)','rgba(6,182,212,0.45)','rgba(245,158,11,0.55)'] as const;
+export function HeatBlob({x,y,weight}:{x:number;y:number;weight:number}){
+ const w=Math.max(0,Math.min(1,weight)),r=Math.round(48+72*w);
+ return <View pointerEvents="none" style={[m.heat,{left:x-r,top:y-r,width:2*r,height:2*r,borderRadius:r,backgroundColor:w>.66?HEAT[3]:w>.33?HEAT[2]:HEAT[1],opacity:.35+.5*w},{filter:'blur('+Math.round(r/3)+'px)'} as object]}/>;
+}
+// A guest asking right now: a small spark that flares and fades, again and again, while they are asking.
+export function Spark({x,y,delay=0}:{x?:number;y?:number;delay?:number}){
+ const v=useRef(new Animated.Value(0)).current;
+ useEffect(()=>{const l=Animated.loop(Animated.sequence([Animated.delay(delay),Animated.timing(v,{toValue:1,duration:1400,easing:Easing.out(Easing.quad),useNativeDriver:true}),Animated.timing(v,{toValue:0,duration:0,useNativeDriver:true}),Animated.delay(600)]));l.start();return()=>l.stop();},[]);
+ return <View pointerEvents="none" style={[m.spark,x==null||y==null?m.pinInMarker:{left:x-16,top:y-16}]}>
+  <Animated.View style={[m.sparkRing,{opacity:v.interpolate({inputRange:[0,.1,1],outputRange:[0,.9,0]}),transform:[{scale:v.interpolate({inputRange:[0,1],outputRange:[.3,1.6]})}]}]}/>
+  <View style={m.sparkDot}/>
+ </View>;
+}
 // Radar waves while a search runs: three rings, one after another, from the middle of the visible map.
 export function Radar({x,y}:{x:number;y:number}){
  const waves=useRef([0,1,2].map(()=>new Animated.Value(0))).current;
@@ -92,6 +108,7 @@ export const m=StyleSheet.create({
  pin:{minHeight:32,minWidth:44,paddingHorizontal:12,borderRadius:16,borderWidth:1,alignItems:'center',justifyContent:'center',shadowColor:C.ink,shadowOffset:{width:0,height:2},shadowOpacity:.18,shadowRadius:5,elevation:3},
  pinText:{fontSize:14,fontWeight:'600'},bestRing:{padding:2,borderRadius:16,backgroundColor:C.aiTo,shadowColor:C.ink,shadowOffset:{width:0,height:2},shadowOpacity:.18,shadowRadius:5,elevation:3},bestPin:{borderWidth:2,minHeight:30,shadowOpacity:0,elevation:0},wave2:{borderWidth:3,borderColor:C.success,backgroundColor:'transparent'},timeTrack:{position:'absolute',left:8,right:8,bottom:3,height:3,borderRadius:2,backgroundColor:C.warningLine,overflow:'hidden'},timeFill:{flex:1,backgroundColor:C.warning,transformOrigin:'left'},pinMore:{fontWeight:'500',opacity:.7},ring:{position:'absolute',width:56,height:56,borderRadius:999},
  beam:{position:'absolute',height:2,justifyContent:'center'},beamAsk:{height:0,borderTopWidth:2,borderStyle:'dashed',borderColor:C.warning},beamAnswer:{height:2,borderRadius:1,backgroundColor:C.accent},
+ heat:{position:'absolute'},spark:{position:'absolute',width:32,height:32,alignItems:'center',justifyContent:'center'},sparkRing:{position:'absolute',width:32,height:32,borderRadius:16,borderWidth:2,borderColor:C.aiTo},sparkDot:{width:8,height:8,borderRadius:4,backgroundColor:C.aiTo},
  origin:{position:'absolute',width:22,height:22,borderRadius:12,backgroundColor:C.accentSoft,alignItems:'center',justifyContent:'center'},
  radar:{position:'absolute',width:240,height:240,alignItems:'center',justifyContent:'center'},wave:{position:'absolute',width:240,height:240,borderRadius:999,borderWidth:2,borderColor:C.accent,backgroundColor:C.accentSoft},radarDot:{width:12,height:12,borderRadius:8,backgroundColor:C.accent,borderWidth:2,borderColor:C.surface},
  cross:{position:'absolute',width:56,height:56,alignItems:'center',justifyContent:'flex-end'},landing:{position:'absolute',bottom:-12,width:56,height:24,borderRadius:999,borderWidth:2,borderColor:C.accent},crossShadow:{position:'absolute',bottom:-3,width:14,height:6,borderRadius:999,backgroundColor:C.ink},

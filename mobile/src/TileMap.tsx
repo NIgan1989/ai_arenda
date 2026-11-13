@@ -5,7 +5,7 @@ import {T} from './tokens';
 import {API_URL} from './api';
 import {MAX_ZOOM,MIN_ZOOM,TILE,fitView,groupPins,pinWidth,project,unproject,validPoint,visibleTiles,type MapPoint} from './map-math';
 import {appearDelay,flight,flightSteps,type Flight,type MapLine,type PinTone} from './map-motion';
-import {Beam,FRESH,LEAVE,Leaving,Origin,Pin,Radar,controlsHeight,m,toneOrder} from './MapPins';
+import {Beam,FRESH,HeatBlob,LEAVE,Leaving,Origin,Pin,Radar,Spark,controlsHeight,m,toneOrder} from './MapPins';
 
 // rank: among pins of one tone, the lower one stays visible when their boxes meet (the price, for flats).
 // until: for a waiting pin, when the owner's time to answer ends, in seconds by this phone's clock; a strip under the label runs down to it.
@@ -15,12 +15,14 @@ export type {MapLine};
 // scanning: a search is running; the map sends radar waves from the middle of what is visible.
 // focus: the pin of the card the guest is looking at in the carousel: it lifts and the map flies to it.
 // lines: beams from the guest's search point to the flats being asked.
-export type MapProps={center:MapPoint;pins:MapPin[];selected?:string;focus?:string;lines?:MapLine[];onSelect?:(key:string)=>void;bottomInset?:number;topInset?:number;focusKey?:string;picking?:boolean;scanning?:boolean;onCenter?:(center:MapPoint)=>void};
+// heat: demand around the owner's objects, weight 0..1; sparks: where guests are asking right now.
+export type HeatPoint={point:MapPoint;weight:number};
+export type MapProps={center:MapPoint;pins:MapPin[];selected?:string;focus?:string;lines?:MapLine[];heat?:HeatPoint[];sparks?:MapPoint[];onSelect?:(key:string)=>void;bottomInset?:number;topInset?:number;focusKey?:string;picking?:boolean;scanning?:boolean;onCenter?:(center:MapPoint)=>void};
 type View2={center:MapPoint;zoom:number};
 // The tile service asks clients to identify themselves; no account or device data is sent.
 const tileHeaders={'User-Agent':'AIArenda-mobile/0.1 (+'+API_URL+')'};
 const plusIcon=require('../assets/ui/plus.png'),minusIcon=require('../assets/ui/minus.png'),fitIcon=require('../assets/ui/fit.png');
-export function TileMap({center,pins,selected,focus='',lines=[],onSelect,bottomInset=0,topInset=0,focusKey='',picking=false,scanning=false,onCenter}:MapProps){
+export function TileMap({center,pins,selected,focus='',lines=[],heat=[],sparks=[],onSelect,bottomInset=0,topInset=0,focusKey='',picking=false,scanning=false,onCenter}:MapProps){
  const [size,setSize]=useState({w:0,h:0}),[view,setViewNow]=useState<View2>({center,zoom:12}),[drag,setDrag]=useState({x:0,y:0}),[still,setStill]=useState(false);
  const state=useRef({view,size,bottomInset,topInset,picking});state.current={view,size,bottomInset,topInset,picking};
  const loop=useRef(new Animated.Value(0)).current,report=useRef(onCenter);report.current=onCenter;
@@ -113,6 +115,8 @@ export function TileMap({center,pins,selected,focus='',lines=[],onSelect,bottomI
    <Animated.View style={[StyleSheet.absoluteFill,camera?{transform:camera}:null]}>
     {tiles.map(t=><Image key={t.key} fadeDuration={0} accessibilityIgnoresInvertColors source={{uri:'https://tile.openstreetmap.org/'+view.zoom+'/'+t.x+'/'+t.y+'.png',headers:tileHeaders}} style={[m.tile,{left:t.left,top:t.top}]}/>)}
     {scanning&&!still&&<Radar x={size.w/2} y={originY}/>}
+    {heat.map((c,i)=><HeatBlob key={'heat:'+i} weight={c.weight} {...at(c.point)}/>)}
+    {!still&&sparks.map((p,i)=><Spark key={'spark:'+i} delay={i*500} {...at(p)}/>)}
     {lines.map(l=><Beam key={l.key} a={at(l.from)} b={at(l.to)} tone={l.tone} still={still}/>)}
     {!!lines.length&&<Origin {...at(lines[0].from)}/>}
     {!still&&leaving.filter(p=>validPoint(p.point)).map(p=><Leaving key={'gone:'+p.key+':'+p.gone} pin={p} {...at(p.point)}/>)}
