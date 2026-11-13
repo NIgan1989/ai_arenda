@@ -15,18 +15,34 @@ export const MAP_KEEP=30*60*1000;
 
 const store=new Map<string,MapMemory>();
 const empty=(at:number):MapMemory=>({at,view:null,viewKey:'',selected:'',stage:'',pins:{},city:'',data:null});
+// On the site a tab of the bottom menu is a new page, so the memory also lives in the tab's sessionStorage (without the
+// map answer, which the page asks again). The app has no sessionStorage and keeps it in memory only.
+const SAVED='ai-arenda:map-memory';
+const session=()=>{try{return typeof sessionStorage!=='undefined'?sessionStorage:null;}catch{return null;}};
+let loaded=false;
+function load(){
+ if(loaded)return;loaded=true;
+ const box=session();if(!box)return;
+ try{const saved=JSON.parse(box.getItem(SAVED)||'{}');for(const scope of Object.keys(saved))if(!store.has(scope))store.set(scope,{...empty(0),...saved[scope],data:null});}catch{}
+}
+function save(){
+ const box=session();if(!box)return;
+ try{const out:Record<string,Omit<MapMemory,'data'>>={};for(const [scope,{data,...rest}] of store)out[scope]=rest;box.setItem(SAVED,JSON.stringify(out));}catch{}
+}
 
 export function recallMap(scope:string,now=Date.now()):MapMemory|null{
+ load();
  const kept=store.get(scope);
  if(!kept)return null;
- if(now-kept.at>MAP_KEEP){store.delete(scope);return null;}
+ if(now-kept.at>MAP_KEEP){store.delete(scope);save();return null;}
  return kept;
 }
 export function rememberMap(scope:string,patch:Partial<Omit<MapMemory,'at'>>,now=Date.now()){
  const kept=recallMap(scope,now)||empty(now);
  store.set(scope,{...kept,...patch,at:now});
+ save();
 }
-export function forgetMaps(){store.clear();}
+export function forgetMaps(){load();store.clear();save();}
 
 // The panel's state is the first part of the key of a set of pins: 'owner:5' → 'owner', 'preview:1700000000' → 'preview'.
 // Pins are compared only within one state: a flat in the guest's search list is not «changed» by the plain city map.

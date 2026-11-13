@@ -1,4 +1,6 @@
 'use client';
+import { ownerPin } from '../mobile/src/owner-map';
+import { cleanerPin, dayRoute, routeLines } from '../mobile/src/cleaner-map';
 import {useEffect,useRef,useState,type PointerEvent as ReactPointerEvent,type ReactNode} from 'react';
 import {useQuery,useQueryClient} from '@tanstack/react-query';
 import {ArrowLeft,Brush,Building2,CalendarCheck,ChevronDown,ChevronRight,LocateFixed,MapPin,MessagesSquare,Navigation,Zap} from 'lucide-react';
@@ -123,8 +125,27 @@ function RoleMap({ role, accountId, data, onDiscussion, onProcess, onCreate, onA
   const inbox = useQuery({ queryKey: ['matching-inbox', accountId], queryFn: () => matchingAPI('inbox', {}, 'owner'), enabled: role === 'owner', retry: 1 });
 
   const now: number = query.data?.serverTime || data.serverTime || Date.now() / 1000;
-  const flats: Row[] = role === 'owner' ? (query.data?.properties || []).map((p: Row) => ({ ...p, mapPrice: p.price, mapKey: 'property:' + p.id })) : [];
-  const deals: Row[] = (query.data?.processes || []).map((p: Row) => ({ ...p, mapKey: p.kind + ':' + p.id })).sort((a: Row, b: Row) => a.start - b.start);
+  // Each pin says its most urgent state, as in the app (mobile/src/owner-map.ts, cleaner-map.ts): the owner's object its
+  // guest or cleaning, the price advice of the AI with its ring; the cleaner's job its step, the day's stops their numbers.
+  const processes: Row[] = query.data?.processes || [];
+  const advice = new Map<string, { from: number; to: number }>((data.approvals || []).filter((c: Row) => c.kind === 'price' && c.price?.propertyId && c.canDecide).map((c: Row) => [c.price.propertyId, { from: Number(c.price.from), to: Number(c.price.to) }]));
+  const route = role === 'cleaner' ? dayRoute(data.jobs || [], accountId, now) : [];
+  const flats: Row[] = role === 'owner' ? (query.data?.properties || []).map((p: Row) => {
+    const pin = ownerPin(p, processes, now, advice.get(p.id));
+    return { ...p, mapPrice: p.price, mapKey: 'property:' + p.id, pinTone: pin.tone, pinLabel: pin.label, pinProgress: pin.progress, pinBest: pin.best };
+  }) : [];
+  const deals: Row[] = processes.map((p: Row) => {
+    if (role !== 'cleaner' || p.kind !== 'job') return { ...p, mapKey: p.kind + ':' + p.id };
+    const job = (data.jobs || []).find((j: Row) => j.id === p.id), applied = (data.applications || []).some((a: Row) => a.job_id === p.id && a.user_id === accountId && a.status !== 'rejected');
+    const pin = cleanerPin({ ...job, ...p }, route.find(r => r.id === p.id), now, applied);
+    return { ...p, mapKey: p.kind + ':' + p.id, pinTone: pin.tone, pinLabel: pin.label, pinProgress: pin.progress, pinOrder: pin.order };
+  }).sort((a: Row, b: Row) => a.start - b.start);
+  // Demand around the owner's objects glows, with sparks over the busiest places while guests are asking right now;
+  // the cleaner's stops of the day are joined by the route line in their order.
+  const cells: Row[] = role === 'owner' ? query.data?.demand?.cells || [] : [], searchingNow = Number(query.data?.demand?.searching) || 0;
+  const heat = cells.map(c => ({ point: [Number(c.longitude), Number(c.latitude)] as [number, number], weight: Number(c.weight) || 0 }));
+  const sparks = searchingNow ? heat.slice(0, Math.min(3, searchingNow)).map(c => c.point) : [];
+  const routeLine = role === 'cleaner' ? routeLines(route.map(r => { const d = processes.find((p: Row) => p.kind === 'job' && p.id === r.id); return d?.location ? [Number(d.location.longitude), Number(d.location.latitude)] as [number, number] : null; })) : [];
   const nearby = role === 'cleaner' ? deals.filter(d => d.kind === 'job' && d.status === 'open') : [];
   const mine = role === 'cleaner' ? deals.filter(d => !(d.kind === 'job' && d.status === 'open')) : deals;
   const pins = role === 'owner' ? flats : deals;
@@ -629,7 +650,8 @@ function RoleMap({ role, accountId, data, onDiscussion, onProcess, onCreate, onA
             items={[...pins, ...draft]}
             selected={draft.length ? 'draft-point' : role === 'owner' && chosen?.kind ? 'property:' + chosen.propertyId : selected}
             onSelect={select} center={center} people={people} routes={routes} pick={picking}
-            onPick={p => pickByHand([Number(p[0].toFixed(6)), Number(p[1].toFixed(6))])} focus={focus} />
+            onPick={p => pickByHand([Number(p[0].toFixed(6)), Number(p[1].toFixed(6))])} focus={focus} memoryKey={accountId + ':' + role + ':' + city}
+            heat={heat} sparks={sparks} lines={routeLine} />
         )}
         <button type="button" className="map-home-round map-role-locate" disabled={locating} aria-busy={locating} aria-pressed={watching}
           aria-label={locating ? 'Определяем положение' : watching ? 'Скрыть моё положение' : 'Показать, где я'} onClick={() => void locate()}>

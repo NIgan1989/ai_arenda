@@ -26,12 +26,14 @@ export function Pin({pin,x,y,more,active,still,picking,born,delay,loop,onPress}:
  const entering=useRef(!still&&!!born&&Date.now()-born<=FRESH),enter=useRef(new Animated.Value(entering.current?0:1)).current;
  const pop=useRef(new Animated.Value(0)).current,flash=useRef(new Animated.Value(0)).current,flash2=useRef(new Animated.Value(0)).current,shake=useRef(new Animated.Value(0)).current,ping=useRef(new Animated.Value(0)).current,lift=useRef(new Animated.Value(active?1:0)).current;
  const [flashTone,setFlashTone]=useState<PinTone>(tone);
+ // While the map has just come back (map-memory.ts ECHO_WINDOW), a change against how the pin looked when the person left
+ // carries pin.was too: a stale first answer that is then refreshed still echoes.
  // A pin that comes back changed (pin.was, map-memory.ts) starts from how it looked then and plays the change once the
  // page has turned into the map, with a flash, so the person sees where the thing they did elsewhere happened.
  const last=useRef<PinState>(pin.was||{tone,label:pin.label}),echo=useRef(!!pin.was);
  useEffect(()=>{if(entering.current)Animated.spring(enter,{toValue:1,delay,friction:6,tension:90,useNativeDriver:true}).start();},[]);
  useEffect(()=>{
-  const event:PinEvent=pinEvent(last.current,{tone,label:pin.label}),echoed=echo.current;last.current={tone,label:pin.label};echo.current=false;
+  const event:PinEvent=pinEvent(last.current,{tone,label:pin.label}),echoed=echo.current||!!pin.was;last.current={tone,label:pin.label};echo.current=false;
   if(still||event==='none'||event==='appear')return;
   setFlashTone(tone);
   const bounce=(to:number)=>Animated.sequence([Animated.timing(pop,{toValue:to,duration:140,easing:Easing.out(Easing.quad),useNativeDriver:true}),Animated.spring(pop,{toValue:0,friction:4,tension:120,useNativeDriver:true})]);

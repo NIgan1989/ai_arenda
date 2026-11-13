@@ -4,6 +4,8 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { ArrowLeft, ArrowUpRight, LocateFixed, Pencil } from 'lucide-react';
 import { MapCanvas } from './map-canvas';
+import { beams } from '../mobile/src/map-motion';
+import { pinsOf } from '../lib/map-pin-of';
 import { PropertyListing } from './property-listing';
 import { PropertyCover } from './property-cover';
 import { BookingRequest } from './booking-request';
@@ -289,6 +291,11 @@ export function SmartGuestMap({ publicMode = false, onChanged, accountId, city, 
   const items = [...candidates, ...(state?.pendingProperties || [])].map(property => ({
     ...property, mapKey: 'property:' + property.id, matchPending: !property.ownerConfirmed && !!requestId,
   }));
+  // While owners are asked, beams run from the searched point (or the middle of the city) to each asked flat,
+  // dashed yellow while it waits, indigo once its owner said yes (as in the app, mobile/src/map-motion.ts beams).
+  const near = filters?.near;
+  const beamFrom: [number, number] | null = near && Number.isFinite(Number(near.longitude)) ? [Number(near.longitude), Number(near.latitude)] : mapCities[draft.city] || null;
+  const lines = active ? beams(beamFrom, pinsOf(items)) : [];
   const center = mapCities[draft.city] || preview?.center || DEFAULT_CENTER;
   const queryError = live.error ? told(live.error, 'Не удалось обновить подбор. Попробуйте ещё раз.') : '';
 
@@ -722,6 +729,8 @@ export function SmartGuestMap({ publicMode = false, onChanged, accountId, city, 
         sheetSize={1}
         sheetHeight={covered}
         searchKey={preview?.serverTime ? String(preview.serverTime) : requestId}
+        memoryKey={publicMode ? undefined : accountId + ':guest'}
+        lines={lines}
         people={me ? [{ id: 'me', mine: true, longitude: me.longitude, latitude: me.latitude, accuracy: me.accuracy }] : []}
         focus={focusPoint}
         pick={picking}

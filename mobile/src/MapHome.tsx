@@ -71,8 +71,9 @@ function openNow(card:NowCard|null,c:Pick<Common,'expand'|'onOpenProcess'|'onOpe
 }
 function useNow(active:boolean){const [now,setNow]=useState(Date.now()/1000);useEffect(()=>{if(!active)return;const timer=setInterval(()=>setNow(Date.now()/1000),1000);return()=>clearInterval(timer);},[active]);return now;}
 
-function GuestPanel({setScanning,accountId,data,mapData,publish,selected,setSelected,setFocus,snap,showNow,expand,onHead,onReach,onAsk,onIntent,onBook,onChanged,onOpenProcess,onOpenPage,picking,setPicking,mapCenter,city,setCity}:Common&{picking:boolean;setPicking:(value:boolean)=>void;mapCenter:React.RefObject<MapPoint|null>;setCity:(city:string)=>void}){
- const kept=useRef(guestSearches.get(accountId)).current,foundAt=useRef(kept?.foundAt||0),recent=!!kept?.preview&&Date.now()-kept.foundAt<SEARCH_KEEP;
+function GuestPanel({setScanning,accountId,data,mapData,publish,selected,setSelected,setFocus,snap,showNow,expand,onHead,onReach,onAsk,onIntent,onBook,onChanged,onOpenProcess,onOpenPage,picking,setPicking,mapCenter,city,setCity,aimed}:Common&{aimed:boolean;picking:boolean;setPicking:(value:boolean)=>void;mapCenter:React.RefObject<MapPoint|null>;setCity:(city:string)=>void}){
+ // «На карте» from a page wins over the search the guest left: the panel starts clean in the target's city.
+ const kept=useRef(aimed?undefined:guestSearches.get(accountId)).current,foundAt=useRef(kept?.foundAt||0),recent=!!kept?.preview&&Date.now()-kept.foundAt<SEARCH_KEEP;
  const [draft,setDraft]=useState<GuestDraft>(()=>kept?.draft||newDraft(city));
  // hint.ask: text the request rules could not read; the guest can still send it to the AI administrator.
  const [asked,setAsked]=useState(''),[hint,setHint]=useState<{text:string;ask?:string;error?:boolean}|null>(null),[refine,setRefine]=useState(false);
@@ -618,7 +619,7 @@ export function MapHome({ role, accountId, data, menu, onChanged, onOpenProcess,
           mapCenter.current = c;
         }}
         restore={restore}
-        onView={view => rememberMap(scope, { view, viewKey: shownKey.current })}
+        onView={view => rememberMap(scope, shownKey.current ? { view, viewKey: shownKey.current } : { view })}
       />
       {!!notice && (
         <Text accessibilityLiveRegion="polite" style={h.mapNotice}>
@@ -641,7 +642,7 @@ export function MapHome({ role, accountId, data, menu, onChanged, onOpenProcess,
         <View style={h.grow} {...drag.body.panHandlers}>
           <ScrollView ref={scroll} scrollEnabled={scrollable} keyboardShouldPersistTaps="handled" contentContainerStyle={h.sheetContent} showsVerticalScrollIndicator={false}>
             {role === 'guest' ? (
-              <GuestPanel {...common} picking={picking} setPicking={setPicking} mapCenter={mapCenter} setCity={setCity} />
+              <GuestPanel {...common} aimed={!!aim.current} picking={picking} setPicking={setPicking} mapCenter={mapCenter} setCity={setCity} />
             ) : role === 'owner' ? (
               <OwnerPanel {...common} />
             ) : (
