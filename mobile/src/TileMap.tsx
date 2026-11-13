@@ -4,75 +4,18 @@ import {C} from './styles';
 import {T} from './tokens';
 import {API_URL} from './api';
 import {MAX_ZOOM,MIN_ZOOM,TILE,fitView,groupPins,pinWidth,project,unproject,validPoint,visibleTiles,type MapPoint} from './map-math';
-import {appearDelay,flight,flightSteps,pinEvent,type Flight,type PinEvent,type PinState,type PinTone} from './map-motion';
+import {appearDelay,flight,flightSteps,type Flight,type PinTone} from './map-motion';
+import {FRESH,LEAVE,Leaving,Pin,Radar,controlsHeight,m,toneOrder} from './MapPins';
 
 // rank: among pins of one tone, the lower one stays visible when their boxes meet (the price, for flats).
-export type MapPin={key:string;point:MapPoint;label:string;tone?:PinTone;title?:string;rank?:number};
+// until: for a waiting pin, when the owner's time to answer ends, in seconds by this phone's clock; a strip under the label runs down to it.
+export type MapPin={key:string;point:MapPoint;label:string;tone?:PinTone;title?:string;rank?:number;until?:number};
 // scanning: a search is running; the map sends radar waves from the middle of what is visible.
 type Props={center:MapPoint;pins:MapPin[];selected?:string;onSelect?:(key:string)=>void;bottomInset?:number;topInset?:number;focusKey?:string;picking?:boolean;scanning?:boolean;onCenter?:(center:MapPoint)=>void};
 type View2={center:MapPoint;zoom:number};
 // The tile service asks clients to identify themselves; no account or device data is sent.
 const tileHeaders={'User-Agent':'AIArenda-mobile/0.1 (+'+API_URL+')'};
 const plusIcon=require('../assets/ui/plus.png'),minusIcon=require('../assets/ui/minus.png'),fitIcon=require('../assets/ui/fit.png');
-// Three round controls on the right edge, centred on the visible part of the map.
-const controlsHeight=3*T.control.touch+2*8;
-// When pin boxes meet, one stays visible: the selected one, then an answering or waiting flat, then the cheapest.
-const toneOrder:Record<PinTone,number>={offer:0,booked:0,pending:1,active:1,booking:2,job:3,home:3};
-const tones:Record<PinTone,{bg:string;fg:string;line:string}>={home:{bg:C.surface,fg:C.ink,line:C.line},pending:{bg:C.warningSoft,fg:C.warning,line:C.warningLine},offer:{bg:C.accent,fg:C.surface,line:C.accent},job:{bg:C.infoSoft,fg:C.info,line:C.infoLine},booking:{bg:C.accentSoft,fg:C.ink,line:C.accentLine},booked:{bg:C.success,fg:C.surface,line:C.success},active:{bg:C.info,fg:C.surface,line:C.info}};
-// The colour of the flash and of the waves an event sends out.
-const glow:Record<PinTone,string>={home:C.accentLine,pending:C.warningLine,offer:C.accent,job:C.info,booking:C.accentLine,booked:C.success,active:C.info};
-const FRESH=900,LEAVE=260;
-
-// One pin and what happens to it. A pin knows its last tone and label, so it plays its event once when they change.
-// born: when the key first came in the pins (0: it was there before, then it plays nothing on mount).
-function Pin({pin,x,y,more,active,still,picking,born,delay,loop,onPress}:{pin:MapPin;x:number;y:number;more:number;active:boolean;still:boolean;picking:boolean;born:number;delay:number;loop:Animated.Value;onPress?:()=>void}){
- const tone=pin.tone||'home',colors=tones[tone];
- const entering=useRef(!still&&!!born&&Date.now()-born<=FRESH),enter=useRef(new Animated.Value(entering.current?0:1)).current;
- const pop=useRef(new Animated.Value(0)).current,flash=useRef(new Animated.Value(0)).current,shake=useRef(new Animated.Value(0)).current,lift=useRef(new Animated.Value(active?1:0)).current;
- const [flashTone,setFlashTone]=useState<PinTone>(tone);
- const last=useRef<PinState>({tone,label:pin.label});
- useEffect(()=>{if(entering.current)Animated.spring(enter,{toValue:1,delay,friction:6,tension:90,useNativeDriver:true}).start();},[]);
- useEffect(()=>{
-  const event:PinEvent=pinEvent(last.current,{tone,label:pin.label});last.current={tone,label:pin.label};
-  if(still||event==='none'||event==='appear')return;
-  setFlashTone(tone);
-  const bounce=(to:number)=>Animated.sequence([Animated.timing(pop,{toValue:to,duration:140,easing:Easing.out(Easing.quad),useNativeDriver:true}),Animated.spring(pop,{toValue:0,friction:4,tension:120,useNativeDriver:true})]);
-  const burst=()=>{flash.setValue(0);return Animated.timing(flash,{toValue:1,duration:700,easing:Easing.out(Easing.cubic),useNativeDriver:true});};
-  const wiggle=()=>{shake.setValue(0);return Animated.timing(shake,{toValue:1,duration:420,easing:Easing.linear,useNativeDriver:true});};
-  const play={ask:()=>Animated.parallel([wiggle(),bounce(.12)]),answer:()=>Animated.parallel([burst(),bounce(.28)]),celebrate:()=>Animated.parallel([burst(),bounce(.4)]),start:()=>Animated.parallel([burst(),bounce(.16)]),settle:()=>bounce(-.12),update:()=>bounce(.16)}[event];
-  play().start();
- },[tone,pin.label,still]);
- useEffect(()=>{if(still){lift.setValue(active?1:0);return;}Animated.spring(lift,{toValue:active?1:0,friction:6,tension:140,useNativeDriver:true}).start();},[active,still]);
- const scale=Animated.add(Animated.add(enter.interpolate({inputRange:[0,1],outputRange:[.4,1]}),pop),lift.interpolate({inputRange:[0,1],outputRange:[0,.08]}));
- const translateY=Animated.add(enter.interpolate({inputRange:[0,1],outputRange:[-18,0]}),lift.interpolate({inputRange:[0,1],outputRange:[0,-4]}));
- const rotate=shake.interpolate({inputRange:[0,.2,.4,.6,.8,1],outputRange:['0deg','-9deg','8deg','-5deg','3deg','0deg']});
- const breathing=tone==='pending'||tone==='active';
- return <View pointerEvents="box-none" style={[m.pinWrap,{left:x-90,top:y-20,zIndex:active?3:tone==='offer'||tone==='booked'?2:1}]}>
-  {breathing&&!still&&<Animated.View pointerEvents="none" style={[m.ring,{backgroundColor:glow[tone],opacity:loop.interpolate({inputRange:[0,1],outputRange:[tone==='active'?.35:.55,0]}),transform:[{scale:loop.interpolate({inputRange:[0,1],outputRange:[.6,tone==='active'?1.5:1.9]})}]}]}/>}
-  {!still&&<Animated.View pointerEvents="none" style={[m.ring,{backgroundColor:glow[flashTone],opacity:flash.interpolate({inputRange:[0,.05,1],outputRange:[0,.6,0]}),transform:[{scale:flash.interpolate({inputRange:[0,1],outputRange:[.5,2.6]})}]}]}/>}
-  <Animated.View style={{opacity:enter.interpolate({inputRange:[0,.3,1],outputRange:[0,1,1]}),transform:[{translateY},{scale},{rotate}]}}>
-   <Pressable accessibilityRole="button" accessibilityLabel={(pin.title||'Метка')+', '+pin.label+(more?'. Рядом ещё '+more+'. Приблизить':'')} accessibilityState={{selected:active}} disabled={picking||!onPress} onPress={onPress} hitSlop={6} style={[m.pin,{backgroundColor:active?C.ink:colors.bg,borderColor:active?C.ink:colors.line}]}><Text numberOfLines={1} style={[m.pinText,{color:active?C.surface:colors.fg}]}>{pin.label}{more?<Text style={m.pinMore}>{' +'+more}</Text>:null}</Text></Pressable>
-  </Animated.View>
- </View>;
-}
-// A pin that has left the map: it melts and sinks, then it is gone.
-function Leaving({pin,x,y}:{pin:MapPin;x:number;y:number}){
- const out=useRef(new Animated.Value(0)).current,colors=tones[pin.tone||'home'];
- useEffect(()=>{Animated.timing(out,{toValue:1,duration:LEAVE,easing:Easing.in(Easing.quad),useNativeDriver:true}).start();},[]);
- return <View pointerEvents="none" style={[m.pinWrap,{left:x-90,top:y-20}]}>
-  <Animated.View style={[m.pin,{backgroundColor:colors.bg,borderColor:colors.line,opacity:out.interpolate({inputRange:[0,1],outputRange:[1,0]}),transform:[{translateY:out.interpolate({inputRange:[0,1],outputRange:[0,8]})},{scale:out.interpolate({inputRange:[0,1],outputRange:[1,.6]})}]}]}><Text numberOfLines={1} style={[m.pinText,{color:colors.fg}]}>{pin.label}</Text></Animated.View>
- </View>;
-}
-// Radar waves while a search runs: three rings, one after another, from the middle of the visible map.
-function Radar({x,y}:{x:number;y:number}){
- const waves=useRef([0,1,2].map(()=>new Animated.Value(0))).current;
- useEffect(()=>{const loops=waves.map((v,i)=>Animated.loop(Animated.sequence([Animated.delay(i*600),Animated.timing(v,{toValue:1,duration:1800,easing:Easing.out(Easing.quad),useNativeDriver:true}),Animated.timing(v,{toValue:0,duration:0,useNativeDriver:true})])));loops.forEach(l=>l.start());return()=>loops.forEach(l=>l.stop());},[]);
- return <View pointerEvents="none" style={[m.radar,{left:x-120,top:y-120}]}>
-  {waves.map((v,i)=><Animated.View key={i} style={[m.wave,{opacity:v.interpolate({inputRange:[0,.15,1],outputRange:[0,.5,0]}),transform:[{scale:v.interpolate({inputRange:[0,1],outputRange:[.1,1]})}]}]}/>)}
-  <View style={m.radarDot}/>
- </View>;
-}
-
 export function TileMap({center,pins,selected,onSelect,bottomInset=0,topInset=0,focusKey='',picking=false,scanning=false,onCenter}:Props){
  const [size,setSize]=useState({w:0,h:0}),[view,setViewNow]=useState<View2>({center,zoom:12}),[drag,setDrag]=useState({x:0,y:0}),[still,setStill]=useState(false);
  const state=useRef({view,size,bottomInset,topInset,picking});state.current={view,size,bottomInset,topInset,picking};
@@ -86,11 +29,12 @@ export function TileMap({center,pins,selected,onSelect,bottomInset=0,topInset=0,
  const cam=useRef(new Animated.Value(0)).current,[trip,setTrip]=useState<{f:Flight;id:number}|null>(null),tripId=useRef(0);
  const setView=(next:View2|((v:View2)=>View2),fly=true)=>{
   const from=state.current.view,to=typeof next==='function'?next(from):next;
-  const f=fly&&!still&&state.current.size.w?flight({...project(from.center,from.zoom),zoom:from.zoom},{...project(to.center,to.zoom),zoom:to.zoom},TILE):null;
+  const f=fly&&!still&&state.current.size.w?flight({...project(from.center,from.zoom),zoom:from.zoom},{...project(to.center,to.zoom),zoom:to.zoom},TILE,TILE):null;
   setTrip(f?{f,id:++tripId.current}:null);setViewNow(to);
  };
  // Before the new view is painted, the layer is put where the old one was; then it flies home.
- useLayoutEffect(()=>{if(!trip)return;cam.setValue(1);const a=Animated.timing(cam,{toValue:0,duration:T.motion.slow,easing:Easing.out(Easing.cubic),useNativeDriver:true});a.start(({finished})=>{if(finished)setTrip(t=>t&&t.id===trip.id?null:t);});return()=>a.stop();},[trip?.id]);
+ useLayoutEffect(()=>{if(!trip)return;cam.setValue(1);// A short move eases out; a longer one rises and lands, so it reads as one flight over the city.
+ const a=Animated.timing(cam,{toValue:0,duration:trip.f.ms,easing:trip.f.arc?Easing.inOut(Easing.cubic):Easing.out(Easing.cubic),useNativeDriver:true});a.start(({finished})=>{if(finished)setTrip(t=>t&&t.id===trip.id?null:t);});return()=>a.stop();},[trip?.id]);
  const camera=useMemo(()=>{
   if(!trip||!size.w)return null;const s=flightSteps(trip.f,size.w/2,size.h/2,size.w/2,originY);
   return [{translateX:cam.interpolate({inputRange:s.input,outputRange:s.x})},{translateY:cam.interpolate({inputRange:s.input,outputRange:s.y})},{scale:cam.interpolate({inputRange:s.input,outputRange:s.scale})}];
@@ -182,14 +126,3 @@ export function TileMap({center,pins,selected,onSelect,bottomInset=0,topInset=0,
   <Text style={[m.credit,{bottom:bottomInset+6}]}>© OpenStreetMap</Text>
  </View>;
 }
-const m=StyleSheet.create({
- host:{flex:1,backgroundColor:C.line,overflow:'hidden'},tile:{position:'absolute',width:TILE,height:TILE},
- pinWrap:{position:'absolute',width:180,height:40,alignItems:'center',justifyContent:'center'},
- pin:{minHeight:32,minWidth:44,paddingHorizontal:12,borderRadius:16,borderWidth:1,alignItems:'center',justifyContent:'center',shadowColor:C.ink,shadowOffset:{width:0,height:2},shadowOpacity:.18,shadowRadius:5,elevation:3},
- pinText:{fontSize:14,fontWeight:'600'},pinMore:{fontWeight:'500',opacity:.7},ring:{position:'absolute',width:56,height:56,borderRadius:999},
- radar:{position:'absolute',width:240,height:240,alignItems:'center',justifyContent:'center'},wave:{position:'absolute',width:240,height:240,borderRadius:999,borderWidth:2,borderColor:C.accent,backgroundColor:C.accentSoft},radarDot:{width:12,height:12,borderRadius:8,backgroundColor:C.accent,borderWidth:2,borderColor:C.surface},
- cross:{position:'absolute',width:56,height:56,alignItems:'center',justifyContent:'flex-end'},landing:{position:'absolute',bottom:-12,width:56,height:24,borderRadius:999,borderWidth:2,borderColor:C.accent},crossShadow:{position:'absolute',bottom:-3,width:14,height:6,borderRadius:999,backgroundColor:C.ink},
- crossHead:{width:24,height:24,borderRadius:12,backgroundColor:C.accent,borderWidth:4,borderColor:C.surface},crossStem:{width:3,height:10,backgroundColor:C.accent},
- controls:{position:'absolute',right:12,gap:8},control:{width:44,height:44,borderRadius:T.radius.full,backgroundColor:C.surface,borderWidth:1,borderColor:C.line,alignItems:'center',justifyContent:'center',shadowColor:C.ink,shadowOffset:{width:0,height:2},shadowOpacity:.12,shadowRadius:8,elevation:3},controlIcon:{width:20,height:20,tintColor:C.ink},
- credit:{position:'absolute',left:8,fontSize:12,color:C.inkSoft,backgroundColor:C.glass,paddingHorizontal:4,borderRadius:4}
-});
