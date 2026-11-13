@@ -1,5 +1,5 @@
-// What the cleaner's live map says: the day's route in order, each stop's pin, how far the cleaning under way has gone,
-// and the links that hand the way to a navigator. Pure functions, covered by mobile/tests/cleaner-map.test.mjs.
+// What the cleaner's live map says: the day's route in order, each stop's pin and how far the cleaning under way has gone.
+// The way to a stop is led on our own map (navigation.ts, Navigator.tsx). Pure functions, covered by mobile/tests/cleaner-map.test.mjs.
 // Times are Kazakhstan time (UTC+5), as everywhere on the map.
 import type {MapLine,PinTone} from './map-motion';
 import {soon} from './owner-map';
@@ -59,15 +59,4 @@ export function routeSummary(stops:{fee?:number;point?:Point|null}[]){
  const fee=stops.reduce((sum,s)=>sum+(Number(s.fee)||0),0);
  const word=n%10===1&&n%100!==11?'уборка':n%10>=2&&n%10<=4&&(n%100<10||n%100>=20)?'уборки':'уборок';
  return [n+' '+word,pts.length>1?(km<10?km.toFixed(1).replace('.',','):String(Math.round(km)))+' км':'',fee>0?fee.toLocaleString('ru-RU').replace(/\s/g,' ')+' ₸':''].filter(Boolean).join(' · ');
-}
-
-// Links that open the way to a stop in a navigator: 2GIS (the usual one in Kazakhstan), Yandex, and the phone's own maps.
-// The https links open the app when it is installed and the site otherwise.
-export function navigatorLinks([lon,lat]:Point,platform:string){
- const to=lon.toFixed(6)+','+lat.toFixed(6),ll=lat.toFixed(6)+','+lon.toFixed(6);
- return {
-  dgis:'https://2gis.kz/routeSearch/rsType/car/to/'+to,
-  yandex:'https://yandex.kz/maps/?rtext=~'+ll+'&rtt=auto',
-  system:platform==='ios'?'https://maps.apple.com/?daddr='+ll+'&dirflg=d':'geo:'+ll+'?q='+ll
- };
 }

@@ -119,7 +119,7 @@ export function TileMap({center,pins,selected,focus='',lines=[],heat=[],sparks=[
     {scanning&&!still&&<Radar x={size.w/2} y={originY}/>}
     {heat.map((c,i)=><HeatBlob key={'heat:'+i} weight={c.weight} {...at(c.point)}/>)}
     {!still&&sparks.map((p,i)=><Spark key={'spark:'+i} delay={i*500} {...at(p)}/>)}
-    {lines.map(l=><Beam key={l.key} a={at(l.from)} b={at(l.to)} tone={l.tone} still={still}/>)}
+    {lines.flatMap(l=>l.path&&l.path.length>1?l.path.slice(1).map((q,i)=><Beam key={l.key+':'+i} a={at(l.path![i])} b={at(q)} tone={l.tone} still/>):[<Beam key={l.key} a={at(l.from)} b={at(l.to)} tone={l.tone} still={still}/>])}
     {(origin=>origin?<Origin {...at(origin)}/>:null)(lineOrigin(lines))}
     {!still&&leaving.filter(p=>validPoint(p.point)).map(p=><Leaving key={'gone:'+p.key+':'+p.gone} pin={p} {...at(p.point)}/>)}
     {shown.map(({pin,x,y,members})=>{const more=members.length-1,b=born.current.get(pin.key)||0;

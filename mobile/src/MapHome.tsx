@@ -1,7 +1,7 @@
 import {ReliabilityBadge} from './Reliability';
 import React,{useEffect,useRef,useState,type ReactNode} from 'react';
 import {Thinking} from './Thinking';
-import {AccessibilityInfo,Animated,AppState,BackHandler,Linking,PanResponder,Platform,Pressable,ScrollView,Text,View,useWindowDimensions} from 'react-native';
+import {AccessibilityInfo,Animated,AppState,BackHandler,PanResponder,Platform,Pressable,ScrollView,Text,View,useWindowDimensions} from 'react-native';
 import {NO_BUDGET,plural} from '../../lib/map-search-request';
 import {ApiError,isOffline,request} from './api';
 import {Photo} from './ListingMedia';
@@ -12,7 +12,8 @@ import {C} from './styles';
 import {T} from './tokens';
 import {LiveMap,type HeatPoint,type MapLine,type MapPin} from './LiveMap';
 import {ownerPin,travellers} from './owner-map';
-import {cleanerPin,dayRoute,navigatorLinks,routeLines,routeSummary} from './cleaner-map';
+import {cleanerPin,dayRoute,routeLines,routeSummary} from './cleaner-map';
+import {TripHead,useTrip} from './Navigator';
 import {SwipeConfirm} from './SwipeConfirm';
 import {beams} from './map-motion';
 import {countdown,mapCities,validPoint,type MapPoint} from './map-math';
@@ -313,7 +314,9 @@ function CleanerPanel({data,mapData,city,publish,snap,showNow,expand,onHead,onAs
  const route=dayRoute(jobs,userId,clock),routeIds=route.map(r=>r.id+':'+r.status).join(),order=new Map(route.map(r=>[r.id,r.order]));
  const located=new Map<string,MapPoint|null>((mapData?.processes||[]).map((p:Row)=>[p.id,pointOf(p)]));
  const next=route.find(r=>r.status==='assigned'&&located.get(r.id))?.id,summary=routeSummary(route.map(r=>({fee:Number(mine.find(j=>j.id===r.id)?.fee)||0,point:located.get(r.id)})));
- const go=(id:string,app:'dgis'|'yandex'|'system')=>{const point=located.get(id);if(point)Linking.openURL(navigatorLinks(point,Platform.OS)[app]).catch(()=>setError('Не удалось открыть навигатор. Адрес есть в задании.'));};
+ // «Поехали» leads on our own map (Navigator.tsx): the sheet folds down to the turn ahead, the map shows the road and the cleaner's point.
+ const skew=mapData?.serverTime&&mapData?.receivedAt?Number(mapData.serverTime)-Number(mapData.receivedAt):0,nav=useTrip('cleaner',skew);
+ const go=(j:Row)=>{const point=located.get(j.id);if(!point)return;expand(0);void nav.start({kind:'job',id:j.id,title:j.title,target:point});};
  const applied=(id:string)=>applications.some(a=>a.job_id===id&&a.user_id===userId&&a.status!=='rejected');
  const open=jobs.filter(j=>j.status==='open'&&j.end>clock&&j.owner_id!==userId).sort((a,b)=>a.start-b.start);
  // "Рядом" is the city the map shows (the cleaner's own): the same open jobs as the pins, matched the way the server matches them.
@@ -325,11 +328,20 @@ function CleanerPanel({data,mapData,city,publish,snap,showNow,expand,onHead,onAs
   const at=serverNow(mapData||data),byId=new Map(jobs.map(j=>[j.id,j]));
   const pins=shown.flatMap((p:Row):MapPin[]=>{const point=pointOf(p);if(!point)return [];const state=cleanerPin({...byId.get(p.id),...p},route.find(r=>r.id===p.id),at,applied(p.id));return [{key:'job:'+p.id,point,title:p.title,...state}];});
   const placed=new Map<string,MapPoint|null>(shown.map((p:Row)=>[p.id,pointOf(p)]));
+  // On a trip the map shows only the way: the object, the cleaner's point and the road between them; it frames them at the start and after a new route.
+  if(nav.trip){
+   const target=pins.filter((p:MapPin)=>p.key==='job:'+nav.trip!.id),me:MapPin[]=nav.here&&nav.status!=='arrived'?[{key:'me',point:nav.here.point,title:'Вы',label:'Вы',tone:'active'}]:[];
+   const path=nav.state?.path;
+   publish([...target,...me],'nav:'+nav.trip.id+':'+nav.rerouted,{lines:path&&path.length>1?[{key:'nav:'+nav.trip.id,from:path[0],to:path[path.length-1],tone:'nav',path}]:[]});
+   return;
+  }
   publish(pins,'cleaner:'+(mapData?.processes?.length||0),{lines:routeLines(route.map(r=>placed.get(r.id)))});
- },[mapData,nearbyIds,data.applications,routeIds]);
+ },[mapData,nearbyIds,data.applications,routeIds,nav.trip,nav.here,nav.route,nav.rerouted]);
  async function apply(id:string){if(lock.current)return;lock.current=true;setWorking(id);setError('');try{await request('/api/jobs/'+id,{action:'apply'},undefined,'map-apply:'+id,'cleaner');await onChanged();}catch(e){setError(message(e));}finally{lock.current=false;setWorking('');}}
  return <View style={h.block}>
-  <HeadSlot onHeight={onHead}><MapSheetHead role="cleaner" text={asked} onText={setAsked} onSend={text=>{setAsked('');onAsk(text);}} onChip={action=>{if(action==='nearby')expand(1);else if(action==='schedule')onOpenPage('calendar');}} now={card} onNow={()=>openNow(card,{expand,onOpenProcess,onOpenPage})}/></HeadSlot>
+  <HeadSlot onHeight={onHead}>{nav.trip?<TripHead nav={nav} onOpen={()=>{const id=nav.trip!.id;nav.close();onOpenProcess('job',id);}}/>:<MapSheetHead role="cleaner" text={asked} onText={setAsked} onSend={text=>{setAsked('');onAsk(text);}} onChip={action=>{if(action==='nearby')expand(1);else if(action==='schedule')onOpenPage('calendar');}} now={card} onNow={()=>openNow(card,{expand,onOpenProcess,onOpenPage})}>
+   {!!nav.error&&<Text accessibilityRole="alert" style={h.error}>{nav.error}</Text>}
+  </MapSheetHead>}</HeadSlot>
   {snap>0&&<>
    {mine.length>0&&<Text accessibilityRole="header" style={h.cardTitle}>{route.length?'Маршрут дня':'Ваше задание'}</Text>}
    {!!summary&&<Text style={h.note}>{summary}</Text>}
@@ -338,8 +350,8 @@ function CleanerPanel({data,mapData,city,publish,snap,showNow,expand,onHead,onAs
     <Text style={h.cardTitle}>{order.get(j.id)?order.get(j.id)+'. ':''}{j.title}</Text><Text style={h.note}>{date(j.start)} → {date(j.end)}{j.address?'\n'+j.address:''}</Text><Text style={h.price}>{money(j.fee)}</Text>
     <Text style={h.note}>{j.status==='submitted'?'Отчёт у владельца на приёмке.':j.status==='in_progress'?'Уборка идёт. Подготовьте отчёт с фото.':j.checkout_confirmed?'Гость выехал, можно начинать.':'Ждём подтверждения выезда гостя.'}</Text>
     {j.id===next&&<>
-     <Action title="Поехали · 2ГИС" onPress={()=>go(j.id,'dgis')}/>
-     <View style={h.pair}><View style={h.grow}><Action secondary title="Яндекс Карты" onPress={()=>go(j.id,'yandex')}/></View><View style={h.grow}><Action secondary title={Platform.OS==='ios'?'Apple Карты':'Выбрать карту'} onPress={()=>go(j.id,'system')}/></View></View>
+     <Action title="Поехали" disabled={!!nav.trip} onPress={()=>go(j)}/>
+     <Text style={h.note}>Поведём по нашей карте. Пока вы в пути, владелец видит вашу точку.</Text>
     </>}
     <Action secondary={j.id===next} title="Открыть задание" onPress={()=>onOpenProcess('job',j.id)}/>
    </View>)}
@@ -478,7 +490,7 @@ export function MapHome({ role, accountId, data, menu, onChanged, onOpenProcess,
   const loadMap = async () => {
     const asked = cityRef.current;
     const result = await request('/api/operations/map/search', { filters: { city: asked } }, undefined, undefined, role);
-    if (cityRef.current === asked) setMapData({ ...result, city: asked });
+    if (cityRef.current === asked) setMapData({ ...result, city: asked, receivedAt: Date.now() / 1000 });
   };
   // Someone on the way moves on the map: it refreshes every 10 seconds while they do, otherwise every 30.
   usePoll(loadMap, mapData?.journeys?.some((j: Row) => j.longitude != null) ? 10000 : 30000, true);

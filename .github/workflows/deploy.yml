@@ -3,6 +3,7 @@ name: Publish to Cloudflare
 # Needs one repository secret: CLOUDFLARE_API_TOKEN (Workers Scripts: Edit, D1: Edit, Account Settings: Read).
 # The account and the D1 database are found with that token; CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_D1_DATABASE_ID are optional overrides.
 # Runtime secrets of the Worker are never read or changed here; --keep-vars keeps the ones already stored in Cloudflare.
+# Optional STADIA_API_KEY (Stadia Maps): saved as a Worker secret after publishing, so routes on the map use Stadia instead of the public test router.
 on:
   workflow_run:
     workflows: ['Check local application']
@@ -86,6 +87,12 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
         run: node scripts/setup-telegram.mjs
+      - name: Save the map key
+        if: steps.configured.outputs.ready == 'true'
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          STADIA_API_KEY: ${{ secrets.STADIA_API_KEY }}
+        run: node scripts/setup-map-key.mjs
       - name: Check the published site
         if: steps.configured.outputs.ready == 'true'
         run: |

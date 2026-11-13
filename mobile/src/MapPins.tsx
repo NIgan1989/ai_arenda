@@ -67,12 +67,12 @@ export function Leaving({pin,x,y}:{pin:MapPin;x?:number;y?:number}){
 }
 // A beam of the web preview map: a line from the guest's search point to an asked flat, drawn out from the point.
 // On a phone the beams are a line layer of MapLibre (LiveMap.native.tsx); both use the same colours.
-export const BEAM={ask:C.warning,answer:C.accent,route:C.info};
+export const BEAM={ask:C.warning,answer:C.accent,route:C.info,nav:C.accent,casing:C.surface};
 export function Beam({a,b,tone,still}:{a:{x:number;y:number};b:{x:number;y:number};tone:BeamTone;still:boolean}){
  const grow=useRef(new Animated.Value(still?1:0)).current,box=beamBox(a,b);
  useEffect(()=>{if(!still)Animated.timing(grow,{toValue:1,duration:700,easing:Easing.out(Easing.cubic),useNativeDriver:true}).start();},[]);
  return <View pointerEvents="none" style={[m.beam,{left:box.cx-box.length/2,top:box.cy-1,width:box.length,transform:[{rotate:box.angle+'deg'}]}]}>
-  <Animated.View style={[tone==='ask'?m.beamAsk:tone==='route'?m.beamRoute:m.beamAnswer,{transformOrigin:'left',transform:[{scaleX:grow}]}]}/>
+  <Animated.View style={[tone==='ask'?m.beamAsk:tone==='route'?m.beamRoute:tone==='nav'?m.beamNav:m.beamAnswer,{transformOrigin:'left',transform:[{scaleX:grow}]}]}/>
  </View>;
 }
 // The guest's search point, where the beams start.
@@ -110,7 +110,7 @@ export const m=StyleSheet.create({
  pinWrap:{position:'absolute',width:180,height:40,alignItems:'center',justifyContent:'center'},pinInMarker:{position:'relative'},
  pin:{minHeight:32,minWidth:44,paddingHorizontal:12,borderRadius:16,borderWidth:1,flexDirection:'row',gap:4,alignItems:'center',justifyContent:'center',shadowColor:C.ink,shadowOffset:{width:0,height:2},shadowOpacity:.18,shadowRadius:5,elevation:3},
  pinText:{fontSize:14,fontWeight:'600'},bestRing:{padding:2,borderRadius:16,backgroundColor:C.aiTo,shadowColor:C.ink,shadowOffset:{width:0,height:2},shadowOpacity:.18,shadowRadius:5,elevation:3},bestPin:{borderWidth:2,minHeight:30,shadowOpacity:0,elevation:0},wave2:{borderWidth:3,borderColor:C.success,backgroundColor:'transparent'},timeTrack:{position:'absolute',left:8,right:8,bottom:3,height:3,borderRadius:2,backgroundColor:C.warningLine,overflow:'hidden'},timeFill:{flex:1,backgroundColor:C.warning,transformOrigin:'left'},pinMore:{fontWeight:'500',opacity:.7},pinOrdered:{paddingLeft:4},order:{width:24,height:24,borderRadius:12,alignItems:'center',justifyContent:'center'},orderText:{fontSize:12,fontWeight:'700'},workTrack:{backgroundColor:'rgba(255,255,255,0.35)'},workFill:{backgroundColor:C.surface},ring:{position:'absolute',width:56,height:56,borderRadius:999},
- beam:{position:'absolute',height:2,justifyContent:'center'},beamAsk:{height:0,borderTopWidth:2,borderStyle:'dashed',borderColor:C.warning},beamAnswer:{height:2,borderRadius:1,backgroundColor:C.accent},beamRoute:{height:4,borderRadius:2,backgroundColor:C.info,opacity:.7},
+ beam:{position:'absolute',height:2,justifyContent:'center'},beamAsk:{height:0,borderTopWidth:2,borderStyle:'dashed',borderColor:C.warning},beamAnswer:{height:2,borderRadius:1,backgroundColor:C.accent},beamRoute:{height:4,borderRadius:2,backgroundColor:C.info,opacity:.7},beamNav:{height:6,borderRadius:4,backgroundColor:C.accent,borderWidth:1,borderColor:C.surface},
  heat:{position:'absolute'},spark:{position:'absolute',width:32,height:32,alignItems:'center',justifyContent:'center'},sparkRing:{position:'absolute',width:32,height:32,borderRadius:16,borderWidth:2,borderColor:C.aiTo},sparkDot:{width:8,height:8,borderRadius:4,backgroundColor:C.aiTo},
  origin:{position:'absolute',width:22,height:22,borderRadius:12,backgroundColor:C.accentSoft,alignItems:'center',justifyContent:'center'},
  radar:{position:'absolute',width:240,height:240,alignItems:'center',justifyContent:'center'},wave:{position:'absolute',width:240,height:240,borderRadius:999,borderWidth:2,borderColor:C.accent,backgroundColor:C.accentSoft},radarDot:{width:12,height:12,borderRadius:8,backgroundColor:C.accent,borderWidth:2,borderColor:C.surface},

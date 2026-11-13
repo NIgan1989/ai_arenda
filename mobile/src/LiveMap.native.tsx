@@ -103,6 +103,8 @@ export function LiveMap({center,pins,selected,focus='',lines=[],heat=[],sparks=[
    <GeoJSONSource id="beams" data={drawn}>
     <Layer id="beams-ask" type="line" filter={['==',['get','tone'],'ask']} layout={{'line-cap':'round'}} paint={{'line-color':BEAM.ask,'line-width':2,'line-dasharray':[2,2]}}/>
     <Layer id="beams-answer" type="line" filter={['==',['get','tone'],'answer']} layout={{'line-cap':'round'}} paint={{'line-color':BEAM.answer,'line-width':2.5}}/>
+    <Layer id="beams-nav-casing" type="line" filter={['==',['get','tone'],'nav']} layout={{'line-cap':'round','line-join':'round'}} paint={{'line-color':BEAM.casing,'line-width':9}}/>
+    <Layer id="beams-nav" type="line" filter={['==',['get','tone'],'nav']} layout={{'line-cap':'round','line-join':'round'}} paint={{'line-color':BEAM.nav,'line-width':6}}/>
     <Layer id="beams-route" type="line" filter={['==',['get','tone'],'route']} layout={{'line-cap':'round','line-join':'round'}} paint={{'line-color':BEAM.route,'line-width':4,'line-opacity':.7}}/>
    </GeoJSONSource>
    {(origin=>origin?<Marker id="beam-origin" lngLat={origin} anchor="center"><Origin/></Marker>:null)(lineOrigin(lines))}
@@ -140,5 +142,5 @@ function useBeams(lines:MapLine[],still:boolean){
   frame=requestAnimationFrame(step);return()=>cancelAnimationFrame(frame);
  },[keys,still]);
  return useMemo(()=>({type:'FeatureCollection' as const,features:lines.map(l=>{const k=!seen.current.has(l.key)?0:fresh.has(l.key)?t:1,end:MapPoint=[l.from[0]+(l.to[0]-l.from[0])*k,l.from[1]+(l.to[1]-l.from[1])*k];
-  return {type:'Feature' as const,id:l.key,properties:{tone:l.tone},geometry:{type:'LineString' as const,coordinates:[l.from,end]}};})}),[lines,fresh,t]);
+  return {type:'Feature' as const,id:l.key,properties:{tone:l.tone},geometry:{type:'LineString' as const,coordinates:l.path&&l.path.length>1?l.path:[l.from,end]}};})}),[lines,fresh,t]);
 }

@@ -2,7 +2,7 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {loadPure} from './helpers/pure.mjs';
 
-const {dayRoute, progress, cleanerPin, routeLines, routeSummary, navigatorLinks} = await loadPure('mobile/src/cleaner-map.ts', 'mobile/src/owner-map.ts');
+const {dayRoute, progress, cleanerPin, routeLines, routeSummary} = await loadPure('mobile/src/cleaner-map.ts', 'mobile/src/owner-map.ts');
 const {lineOrigin} = await loadPure('mobile/src/map-motion.ts');
 
 // 2026-11-13 10:00 in Kazakhstan (UTC+5).
@@ -56,12 +56,4 @@ test('the route summary counts cleanings, kilometres and pay', () => {
   assert.equal(routeSummary([{fee: 5000, point: [76.9, 52.28]}]), '1 уборка · 5 000 ₸');
   const text = routeSummary([{fee: 5000, point: [76.9, 52.28]}, {fee: 4500, point: [76.95, 52.3]}, {fee: 4000, point: null}]);
   assert.equal(text, "3 уборки · 4,1 км · 13 500 ₸");
-});
-
-test('navigator links lead to the stop in 2GIS, Yandex and the phone maps', () => {
-  const links = navigatorLinks([76.95, 52.3], 'android');
-  assert.equal(links.dgis, 'https://2gis.kz/routeSearch/rsType/car/to/76.950000,52.300000');
-  assert.equal(links.yandex, 'https://yandex.kz/maps/?rtext=~52.300000,76.950000&rtt=auto');
-  assert.equal(links.system, 'geo:52.300000,76.950000?q=52.300000,76.950000');
-  assert.equal(navigatorLinks([76.95, 52.3], 'ios').system, 'https://maps.apple.com/?daddr=52.300000,76.950000&dirflg=d');
 });
