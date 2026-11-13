@@ -109,9 +109,9 @@ export function PropertyEdit({property,onSave,onReview,onRemove,onClose,step}:{p
    <View style={{flex:1,minWidth:0}}><Text style={e.stepTitle} numberOfLines={1}>{s.title}</Text><Text style={e.stepLine} numberOfLines={1}>{stepLine(base,s.key)}</Text></View>
    {needs&&<View style={e.dot}/>}
   </Pressable>;})}</View>
-  {!!p.id&&<Pressable accessibilityRole="button" accessibilityLabel="Моя уборщица" onPress={()=>{setDone('');setCleaner(true);}} style={({pressed})=>[e.step,{width:'100%'},pressed&&e.pressed]}>
+  {!!p.id&&<Pressable accessibilityRole="button" accessibilityLabel="Постоянный исполнитель" onPress={()=>{setDone('');setCleaner(true);}} style={({pressed})=>[e.step,{width:'100%'},pressed&&e.pressed]}>
    <View style={e.icoBox}><Text style={e.ico}>🧹</Text></View>
-   <View style={{flex:1,minWidth:0}}><Text style={e.stepTitle} numberOfLines={1}>Моя уборщица</Text><Text style={e.stepLine} numberOfLines={1}>{p.regular_cleaner_name?p.regular_cleaner_name+': уборки уходят ей первой':'Закрепите свою: уборки, оплата и замена через сервис'}</Text></View>
+   <View style={{flex:1,minWidth:0}}><Text style={e.stepTitle} numberOfLines={1}>Постоянный исполнитель</Text><Text style={e.stepLine} numberOfLines={1}>{p.regular_cleaner_name?p.regular_cleaner_name+': уборки приходят сначала к нему':'Закрепите свою: уборки, оплата и замена через сервис'}</Text></View>
   </Pressable>}
   <Pressable accessibilityRole="button" accessibilityLabel="Календари площадок: Airbnb, Booking, Суточно" onPress={()=>{setDone('');setCalendars(true);}} style={({pressed})=>[e.step,{width:'100%'},pressed&&e.pressed]}>
    <View style={e.icoBox}><Text style={e.ico}>📅</Text></View>

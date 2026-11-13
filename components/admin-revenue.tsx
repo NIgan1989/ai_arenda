@@ -52,7 +52,7 @@ export function AdminRevenue({data,busy,save}:{data:Row;busy:boolean;save:Save})
 
   <section className="admin-surface revenue-ledger">
    <div className="revenue-tabs" role="tablist" aria-label="Деньги владельцев">
-    {([['owners','Владельцы'],['cleaners','Уборщицам'],['topups','Пополнения'],['history','Журнал условий']] as const).map(([id,label])=><button key={id} role="tab" type="button" aria-selected={tab===id} onClick={()=>setTab(id)}>{label}{id==='owners'&&data.debtors>0&&<b>{data.debtors}</b>}{id==='cleaners'&&data.cleaners?.due?.length>0&&<b>{data.cleaners.due.length}</b>}</button>)}
+    {([['owners','Владельцы'],['cleaners','Исполнителям'],['topups','Пополнения'],['history','Журнал условий']] as const).map(([id,label])=><button key={id} role="tab" type="button" aria-selected={tab===id} onClick={()=>setTab(id)}>{label}{id==='owners'&&data.debtors>0&&<b>{data.debtors}</b>}{id==='cleaners'&&data.cleaners?.due?.length>0&&<b>{data.cleaners.due.length}</b>}</button>)}
    </div>
    {tab==='cleaners'&&<CleanerPayouts data={data.cleaners||{}} busy={busy} save={save}/>}
    {tab==='owners'&&<OwnerBalances data={data} busy={busy} save={save} phase={phase}/>}
@@ -178,7 +178,7 @@ function CleanerPayouts({data:c,busy,save}:{data:Row;busy:boolean;save:Save}){
     <div className="revenue-balance"><small>Отправить</small><strong>{money(open.amount)}</strong><span>{open.cleaner_contact?'Контакт: '+open.cleaner_contact:'Контакт в профиле исполнителя'}</span></div>
     <form className="revenue-terms" onSubmit={async e=>{e.preventDefault();const r=await save('billing/payout',{jobId:open.job_id,confirmed:agreed,note:String(new FormData(e.currentTarget).get('note')||'')});if(r)setOpen(null);}}>
      <label>Комментарий<Input name="note" maxLength={300} placeholder="Например: перевод Kaspi, 13 ноября"/></label>
-     <label className="revenue-confirm"><input type="checkbox" checked={agreed} onChange={e=>setAgreed(e.target.checked)} required/>Деньги отправлены уборщице.</label>
+     <label className="revenue-confirm"><input type="checkbox" checked={agreed} onChange={e=>setAgreed(e.target.checked)} required/>Деньги отправлены исполнителю.</label>
      <Button className="revenue-primary" disabled={busy||!agreed}>Отметить выплату</Button>
     </form>
    </div>

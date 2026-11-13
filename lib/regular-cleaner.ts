@@ -25,7 +25,7 @@ export async function pairTerms(db:D1Database):Promise<PairTerms>{
 // One line for both sides about what the pair pays. While the service is free, it says so.
 export function pairTermsText(t:PairTerms){
  const pair=t.pairRate<t.rate?`${percent(t.pairRate)} вместо ${percent(t.rate)}`:percent(t.pairRate);
- const fee=`Комиссия за уборку для постоянной пары ${pair}${t.cap>0?`, не больше ${money(t.cap)} в месяц`:''}. Платит владелец, уборщица получает всю сумму.`;
+ const fee=`Комиссия за уборку для постоянной пары ${pair}${t.cap>0?`, не больше ${money(t.cap)} в месяц`:''}. Платит владелец, исполнитель получает всю сумму.`;
  return t.active?fee:'Сейчас сервис бесплатный. Когда включится плата: '+fee.charAt(0).toLowerCase()+fee.slice(1);
 }
 
@@ -62,19 +62,19 @@ export async function regularState(service:RentalService,propertyId:string){
 }
 
 export async function pinRegular(service:RentalService,body:Row){
- await service.requireRole('owner');const p=await ownFlat(service,required(body.propertyId,'Квартира',100)),cleanerId=required(body.cleanerId,'Уборщица',100),at=epoch();
+ await service.requireRole('owner');const p=await ownFlat(service,required(body.propertyId,'Квартира',100)),cleanerId=required(body.cleanerId,'Исполнитель',100),at=epoch();
  const c=await one(service.db,"SELECT id,name FROM profiles WHERE id=? AND id<>? AND EXISTS(SELECT 1 FROM json_each(roles) WHERE value='cleaner')",cleanerId,service.userId);
  if(!c)throw new DomainError('Исполнитель не найден.',404);
  const before=await one(service.db,'SELECT cleaner_id FROM regular_cleaners WHERE property_id=?',p.id);
- if(before?.cleaner_id===c.id)return {message:`${c.name} уже ваша постоянная уборщица.`};
+ if(before?.cleaner_id===c.id)return {message:`${c.name} уже ваш постоянный исполнитель.`};
  const terms=await pairTerms(service.db),statements=[
   q(service.db,'INSERT INTO regular_cleaners(property_id,owner_id,cleaner_id,created_at) VALUES (?,?,?,?) ON CONFLICT(property_id) DO UPDATE SET cleaner_id=excluded.cleaner_id,created_at=excluded.created_at',p.id,service.userId,c.id,at),
   service.audit(p.id,JSON.stringify({action:'regular_cleaner.pinned',cleanerId:c.id,previous:before?.cleaner_id||null})),
-  service.notify(c.id,`Вы постоянная уборщица квартиры «${p.title}». Все её уборки сначала приходят вам, ваше «да» сразу назначает вас. Если на балансе владельца есть деньги, оплата резервируется заранее и приходит после приёмки. ${pairTermsText(terms)}`,'regular:'+p.id+':'+at,'cleaner'),
+  service.notify(c.id,`Вы постоянный исполнитель квартиры «${p.title}». Все уборки этой квартиры сначала приходят вам, ваше «да» сразу назначает вас. Если на балансе владельца есть деньги, оплата резервируется заранее и приходит после приёмки. ${pairTermsText(terms)}`,'regular:'+p.id+':'+at,'cleaner'),
  ];
- if(before)statements.push(service.notify(before.cleaner_id,`Владелец закрепил за квартирой «${p.title}» другую уборщицу. Уже назначенные вам уборки остаются за вами.`,'regular-ended:'+p.id+':'+at,'cleaner'));
+ if(before)statements.push(service.notify(before.cleaner_id,`Владелец закрепил за квартирой «${p.title}» другого исполнителя. Уже назначенные вам уборки остаются за вами.`,'regular-ended:'+p.id+':'+at,'cleaner'));
  await service.db.batch(statements);
- return {message:`${c.name} теперь ваша постоянная уборщица. Уборки «${p.title}» сначала уходят ей.`};
+ return {message:`${c.name} теперь ваш постоянный исполнитель. Уборки «${p.title}» будут приходить сначала к нему.`};
 }
 
 // Either side can end the pair: the owner from the flat, the cleaner from her list.
@@ -87,9 +87,9 @@ export async function unpinRegular(service:RentalService,role:string,body:Row){
  await service.db.batch([
   q(service.db,'DELETE FROM regular_cleaners WHERE property_id=? AND cleaner_id=?',propertyId,r.cleaner_id),
   service.audit(propertyId,JSON.stringify({action:'regular_cleaner.unpinned',by:role,cleanerId:r.cleaner_id})),
-  service.notify(other,role==='owner'?`Владелец снял закрепление квартиры «${r.title}». Уже назначенные уборки остаются за вами.`:`${r.name} больше не постоянная уборщица «${r.title}». Уборки этой квартиры AI администратор будет предлагать лучшим свободным исполнителям.`,'regular-ended:'+propertyId+':'+at,role==='owner'?'cleaner':'owner'),
+  service.notify(other,role==='owner'?`Владелец снял закрепление квартиры «${r.title}». Уже назначенные уборки остаются за вами.`:`${r.name} больше не постоянный исполнитель «${r.title}». Уборки этой квартиры AI администратор будет предлагать лучшим свободным исполнителям.`,'regular-ended:'+propertyId+':'+at,role==='owner'?'cleaner':'owner'),
  ]);
- return {message:role==='owner'?'Закрепление снято.':'Вы больше не постоянная уборщица этой квартиры.'};
+ return {message:role==='owner'?'Закрепление снято.':'Вы больше не постоянный исполнитель этой квартиры.'};
 }
 
 // The cleaner's side: her regular flats and her money from the service.
@@ -114,7 +114,7 @@ export async function cleanerPayouts(db:D1Database){
  return {due,held:Number(totals?.held||0),dueTotal:Number(totals?.due||0),paid30:Number(totals?.paid30||0),commissions30:{count:Number(commissions?.n||0),amount:Number(commissions?.amount||0),pairs:Number(commissions?.pairs||0),charged:Number(commissions?.charged||0)},pairs:Number(pairs?.n||0)};
 }
 export async function markCleanerPayout(service:RentalService,body:Row){
- if(body.confirmed!==true)throw new DomainError('Подтвердите, что деньги отправлены уборщице.');
+ if(body.confirmed!==true)throw new DomainError('Подтвердите, что деньги отправлены исполнителю.');
  const jobId=required(body.jobId,'Уборка',100),note=String(body.note||'').trim().slice(0,300),at=epoch();
  const h=await one(service.db,"SELECT h.*,p.title FROM cleaning_holds h JOIN properties p ON p.id=h.property_id WHERE h.job_id=? AND h.status='due'",jobId);
  if(!h)throw new DomainError('Выплата уже отмечена или ещё не положена.',409);
@@ -122,10 +122,12 @@ export async function markCleanerPayout(service:RentalService,body:Row){
   q(service.db,"UPDATE cleaning_holds SET status='paid',paid_at=?,paid_by=?,payout_note=? WHERE job_id=? AND status='due'",at,service.userId,note,jobId),
   q(service.db,"INSERT INTO finance_entries(id,owner_id,property_id,booking_id,job_id,kind,amount,currency,source,external_reference,note,actor_id,request_key,created_at) SELECT ?,owner_id,property_id,NULL,job_id,'job_payment',amount,'KZT','provider','',?,'system:cleaner-payout',?,? FROM cleaning_holds WHERE job_id=? AND status='paid' AND paid_at=? AND changes()>0",entry,'Выплата через сервис из резерва'+(note?': '+note:''),'hold-payout:'+jobId,at,jobId,at),
   q(service.db,"UPDATE cleaning_jobs SET settled_at=? WHERE id=? AND EXISTS(SELECT 1 FROM finance_entries WHERE id=?)",at,jobId,entry),
+  // The service-paid row is the job's ledger entry: mark the job migrated so the legacy backfill does not add a second one.
+  q(service.db,"INSERT OR IGNORE INTO finance_backfill_receipts SELECT ?,? WHERE EXISTS(SELECT 1 FROM finance_entries WHERE id=?)",'job:'+jobId,at,entry),
   q(service.db,"INSERT INTO audit_events SELECT ?,?,?,?,? WHERE EXISTS(SELECT 1 FROM finance_entries WHERE id=?)",uuid(),service.userId,jobId,JSON.stringify({action:'cleaning.payout_marked',amount:h.amount}),at,entry),
   q(service.db,"INSERT OR IGNORE INTO notifications SELECT ?,?,?,?,0,? WHERE EXISTS(SELECT 1 FROM finance_entries WHERE id=?)",uuid(),h.cleaner_id,`Сервис отправил вам ${money(h.amount)} за уборку «${h.title}».`,'cleaner:payout:'+jobId,at,entry),
-  q(service.db,"INSERT OR IGNORE INTO notifications SELECT ?,?,?,?,0,? WHERE EXISTS(SELECT 1 FROM finance_entries WHERE id=?)",uuid(),h.owner_id,`Уборщица получила ${money(h.amount)} за уборку «${h.title}» из резерва на вашем балансе. Рассчитываться отдельно не нужно.`,'owner:payout:'+jobId,at,entry),
+  q(service.db,"INSERT OR IGNORE INTO notifications SELECT ?,?,?,?,0,? WHERE EXISTS(SELECT 1 FROM finance_entries WHERE id=?)",uuid(),h.owner_id,`Исполнитель получил ${money(h.amount)} за уборку «${h.title}» из резерва на вашем балансе. Рассчитываться отдельно не нужно.`,'owner:payout:'+jobId,at,entry),
  ]);
  if(!r[0].meta.changes)throw new DomainError('Выплата уже отмечена.',409);
- return {message:`Выплата ${money(h.amount)} отмечена. Уборщица получила уведомление.`};
+ return {message:`Выплата ${money(h.amount)} отмечена. Исполнитель получил уведомление.`};
 }

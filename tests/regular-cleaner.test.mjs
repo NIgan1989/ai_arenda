@@ -1,6 +1,7 @@
 import {test} from 'node:test';import assert from 'node:assert/strict';
 import {fixture,load,now} from './helpers/platform.mjs';
 const {coordinateDispatch,decideOffer,saveWorkerDispatch,declineAssignment}=await load('dispatch');
+const {migrateFinanceEntity}=await load('finance');
 const {regularState,pinRegular,unpinRegular,cleanerRegulars,markCleanerPayout,ownerAvailable,pairTermsText}=await load('regular-cleaner');
 const topUp=(f,amount)=>f.db.raw.prepare("INSERT INTO owner_balance_entries(id,owner_id,kind,amount,note,actor_id,request_key,created_at) VALUES (?,?,?,?,?,?,?,?)").run('e'+amount+Math.random(),'owner','topup',amount,'Kaspi','admin','k'+Math.random(),now());
 async function finish(f){
@@ -35,6 +36,8 @@ test('reserve on assignment, due after acceptance, pair commission capped per mo
   topUp(f,10000);await pinRegular(f.owner,{propertyId:f.property,cleanerId:'cleaner'});
   await coordinateDispatch(f.owner);const offer=f.db.raw.prepare('SELECT * FROM cleaning_offers').get();await decideOffer(f.cleaner,{id:offer.id,action:'accept'});
   assert.equal(hold(f).status,'held');assert.equal(hold(f).amount,3000);assert.equal(await ownerAvailable(f.db,'owner'),7000);
+  // A shadow pair commission from before billing started must not eat the charged monthly cap.
+  f.db.raw.exec('PRAGMA foreign_keys=OFF');f.db.raw.prepare("INSERT INTO cleaning_commissions(job_id,owner_id,cleaner_id,property_id,fee,rate_bp,amount,pair,mode,created_at) VALUES ('old-shadow','owner','cleaner',?,2000,500,100,1,'shadow',?)").run(f.property,now()-60);f.db.raw.exec('PRAGMA foreign_keys=ON');
   await finish(f);
   assert.equal(hold(f).status,'due');
   const c=f.db.raw.prepare('SELECT * FROM cleaning_commissions WHERE job_id=?').get(f.job.id);assert.equal(c.pair,1);assert.equal(c.mode,'charged');assert.equal(c.amount,100);
@@ -42,6 +45,9 @@ test('reserve on assignment, due after acceptance, pair commission capped per mo
   await markCleanerPayout(f.owner,{jobId:f.job.id,confirmed:true});
   assert.equal(hold(f).status,'paid');assert.ok(job(f).settled_at);
   await assert.rejects(markCleanerPayout(f.owner,{jobId:f.job.id,confirmed:true}),e=>e.status===409);
+  // The legacy ledger backfill sees the job as migrated and adds no second payment.
+  await migrateFinanceEntity(f.owner,'job',f.job.id);
+  assert.equal(f.db.raw.prepare("SELECT COUNT(*) n FROM finance_entries WHERE job_id=? AND kind='job_payment'").get(f.job.id).n,1);
   assert.deepEqual((await cleanerRegulars(f.cleaner)).money,{held:0,due:0,paid:3000});
  }finally{f.db.close();}
 });
@@ -62,9 +68,11 @@ test('when the regular cleaner declines, the next ranked cleaner gets the offer;
   await f.other.saveProfile({name:'Reserve cleaner',contact:'test',city:'Павлодар',roles:['cleaner'],districts:'Центр',experience:'Test',availability:'By agreement'});await saveWorkerDispatch(f.other,{receiveOffers:true});
   await pinRegular(f.owner,{propertyId:f.property,cleanerId:'cleaner'});await coordinateDispatch(f.owner);
   const offer=f.db.raw.prepare('SELECT * FROM cleaning_offers').get();assert.equal(offer.worker_id,'cleaner');await decideOffer(f.cleaner,{id:offer.id,action:'decline'});
+  // A new job version with the same time and fee does not bring her refusal back.
+  f.db.raw.prepare('UPDATE cleaning_jobs SET version=version+1 WHERE id=?').run(f.job.id);
   assert.equal((await coordinateDispatch(f.owner)).offered,1);
   assert.equal(f.db.raw.prepare("SELECT worker_id FROM cleaning_offers WHERE status='offered'").get().worker_id,'other');
-  assert.ok(f.db.raw.prepare("SELECT body FROM notifications WHERE user_id='owner' AND body LIKE 'Постоянная уборщица не может%'").get());
+  assert.ok(f.db.raw.prepare("SELECT body FROM notifications WHERE user_id='owner' AND body LIKE 'Постоянный исполнитель не может%'").get());
   await assert.rejects(unpinRegular(f.other,'cleaner',{propertyId:f.property}),e=>e.status===404);
   await unpinRegular(f.cleaner,'cleaner',{propertyId:f.property});assert.equal((await regularState(f.owner,f.property)).regular,null);
  }finally{f.db.close();}

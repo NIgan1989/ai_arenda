@@ -13,7 +13,7 @@ const tones:Record<string,[string,string]>={success:[C.successSoft,C.success],wa
 export function RecordHead({kind,item,role,userId,application}:{kind:'booking'|'job';item:Row;role:string;userId:string;application?:Row}){
  const status=processStatus(kind,item,role,userId,application),[bg,ink]=tones[status.tone]||tones.neutral,paid=item.payment_status==='owner_verified',place=[item.city,item.district].filter(Boolean).join(', ');
  return <View style={r.head}>
-  <View style={r.tags}><Text style={[r.status,{backgroundColor:bg,color:ink}]}>{status.label}</Text>{!!item.demo_owner&&<Text style={[r.status,{backgroundColor:C.surfaceAlt,color:C.muted}]}>{kind==='job'?'Учебное':'Учебная'}</Text>}{kind==='job'&&!!item.regular&&<Text style={[r.status,{backgroundColor:C.accentSoft,color:C.accentPressed}]}>Постоянная уборщица</Text>}</View>
+  <View style={r.tags}><Text style={[r.status,{backgroundColor:bg,color:ink}]}>{status.label}</Text>{!!item.demo_owner&&<Text style={[r.status,{backgroundColor:C.surfaceAlt,color:C.muted}]}>{kind==='job'?'Учебное':'Учебная'}</Text>}{kind==='job'&&!!item.regular&&<Text style={[r.status,{backgroundColor:C.accentSoft,color:C.accentPressed}]}>Постоянный исполнитель</Text>}</View>
   <Text accessibilityRole="header" style={r.title}>{item.title}</Text>
   <Text style={r.when}>{recordSpan(item.start,item.end)}</Text>
   {!!place&&<Text style={r.where}>{place}</Text>}

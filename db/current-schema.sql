@@ -45,7 +45,7 @@
 -- migration 0041_cleaning_fee_tips.sql sha256:d063c3719616e2d1a4beb3d68954a83483c21d56bd836d398f125db7a2d5155a
 -- migration 0042_ai_reviews.sql sha256:b08d917839abb0a26c858117a85b4f20d9a3ac1e7660a5224a5f1c81d69bef4c
 -- migration 0043_booking_risks.sql sha256:be613dd277154762a2b1bd450b2e89f165c4ad1a6cb14b4a3547e37ee9359dcd
--- migration 0044_regular_cleaners.sql sha256:1dc73752e9e1d82ab2658b55f991e923c17236da807e6045a653ae3be6692c50
+-- migration 0044_regular_cleaners.sql sha256:86cb5a6108be0475ed15430c72aae60e3f0067ca8e788b93e051a2c8a28075cd
 
 -- table access_receipts
 CREATE TABLE access_receipts (id TEXT PRIMARY KEY,property_id TEXT NOT NULL,entity_kind TEXT NOT NULL,entity_id TEXT NOT NULL,user_id TEXT NOT NULL,created_at INTEGER NOT NULL,expires_at INTEGER NOT NULL);
@@ -1664,7 +1664,7 @@ BEGIN
  UPDATE cleaning_holds SET status='due',due_at=CAST(strftime('%s','now') AS INTEGER) WHERE job_id=NEW.id AND status='held';
  INSERT OR IGNORE INTO cleaning_commissions(job_id,owner_id,cleaner_id,property_id,fee,rate_bp,amount,pair,mode,created_at)
  SELECT NEW.id,NEW.owner_id,NEW.assigned_to,NEW.property_id,NEW.fee,x.rate,
-  CASE WHEN x.pair=1 AND x.cap>0 THEN MIN(x.raw,MAX(0,x.cap-COALESCE((SELECT SUM(amount) FROM cleaning_commissions c WHERE c.owner_id=NEW.owner_id AND c.cleaner_id=NEW.assigned_to AND c.pair=1
+  CASE WHEN x.pair=1 AND x.cap>0 THEN MIN(x.raw,MAX(0,x.cap-COALESCE((SELECT SUM(amount) FROM cleaning_commissions c WHERE c.owner_id=NEW.owner_id AND c.cleaner_id=NEW.assigned_to AND c.pair=1 AND c.mode=x.mode
    AND c.created_at>=CAST(strftime('%s',date('now','+5 hours','start of month')) AS INTEGER)-18000),0))) ELSE x.raw END,
   x.pair,x.mode,CAST(strftime('%s','now') AS INTEGER)
  FROM (SELECT y.*,MIN(NEW.fee,(NEW.fee*y.rate+5000)/10000) raw FROM (
