@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { ActivityIndicator, Image, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import {Thinking} from './Thinking';
+import { Image, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { C, type } from './styles';
 import { T } from './tokens';
 import { AI_LINE_MAX, cleanAiText } from '../../lib/ai-line';
@@ -84,7 +85,7 @@ export function AiLine({ value, onChangeText, onSend, placeholder, shortPlacehol
         onPress={send}
         style={({ pressed }) => [a.send, !text && !busy && a.sendIdle, pressed && a.sendPressed]}
       >
-        {busy ? <ActivityIndicator size="small" color={C.onAccent} /> : <Image source={arrow} style={a.arrow} accessibilityIgnoresInvertColors />}
+        {busy ? <Thinking size="sm" color={C.onAccent} /> : <Image source={arrow} style={a.arrow} accessibilityIgnoresInvertColors />}
       </Pressable>
     </View>
   );

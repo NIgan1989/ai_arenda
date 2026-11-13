@@ -1,10 +1,11 @@
 'use client';
+import {Thinking} from './thinking';
 import './flow-release.css';
 import {windowBadge} from '../lib/window-badge';
 import './booking-request.css';
 import {Button} from '@/components/ui/button';
 import {useEffect,useMemo,useRef,useState} from 'react';
-import {ArrowLeft,ArrowRight,CalendarDays,LoaderCircle,ShieldCheck} from 'lucide-react';
+import {ArrowLeft,ArrowRight,CalendarDays,ShieldCheck} from 'lucide-react';
 import {DayStrip,TimeSelect,Stepper,Segments} from './stay-picker';
 import {useActivityClock} from './activity-clock';
 import {defaultStay,settleStay,stayFromInterval,stayInterval,stayLimits,stayModes,stayRate,stayStamp,stayUnit,stayClock,type StayChoice,type StayMode} from '../lib/stay-choice';
@@ -56,12 +57,12 @@ export function BookingRequest({property,requestKey,disabled,onQuote,onConfirm,i
       {quote?<><div className="stay-sum"><strong className={checking?'is-stale':undefined}>{money(quote.amount)}</strong><span>{quote.periods} × {money(quote.price)} · {quote.unitLabel}</span></div>
         {quote.window&&<p className="stay-window">✦ {windowBadge(quote.window)} · обычно {money(quote.window.regular)}/час</p>}
         <dl className="stay-facts"><div><dt>Депозит</dt><dd>{quote.policy.deposit?money(quote.policy.deposit)+', отдельно от проживания':'не нужен'}</dd></div><div><dt>Подтверждение</dt><dd>{quote.policy.auto_confirm?'сразу, по правилам владельца':'владелец отвечает в течение 30 минут'}</dd></div>{fixed&&<div><dt>Гости</dt><dd>{guestsWord(quote.guests)}</dd></div>}</dl></>
-        :error?<p className="stay-error" role="alert">{error}</p>:<p className="stay-wait"><LoaderCircle size={16}/>Проверяю свободное время и цену…</p>}
+        :error?<p className="stay-error" role="alert">{error}</p>:<p className="stay-wait"><Thinking size="sm"/>Проверяю свободное время и цену…</p>}
       {error&&quote&&<p className="stay-error" role="alert">{error}</p>}
     </div>
     {quote?.policy.house_rules&&<details className="stay-rules"><summary>Правила проживания</summary><p>{quote.policy.house_rules}</p></details>}
     <label className="stay-consent"><input type="checkbox" checked={accepted} disabled={locked||!quote||checking} onChange={e=>setAccepted(e.target.checked)}/><span>Согласен с временем, ценой, депозитом и правилами проживания</span></label>
-    <div className="stay-actions">{onChangeDates&&<Button type="button" variant="outline" className="stay-back" disabled={locked} onClick={onChangeDates}><ArrowLeft size={16}/>Изменить запрос</Button>}<Button type="button" className="stay-send" disabled={locked||!accepted||!quote||checking} onClick={()=>void confirm()}>{disabled||submitting?<><LoaderCircle size={17}/>Отправляем…</>:<>Отправить заявку<ArrowRight size={17}/></>}</Button></div>
+    <div className="stay-actions">{onChangeDates&&<Button type="button" variant="outline" className="stay-back" disabled={locked} onClick={onChangeDates}><ArrowLeft size={16}/>Изменить запрос</Button>}<Button type="button" className="stay-send" disabled={locked||!accepted||!quote||checking} onClick={()=>void confirm()}>{disabled||submitting?<><Thinking size="sm" tone="plain"/>Отправляем…</>:<>Отправить заявку<ArrowRight size={17}/></>}</Button></div>
     <p className="stay-note"><ShieldCheck size={14}/>Отправка заявки не списывает деньги. Время Казахстана.</p>
   </section>;
 }

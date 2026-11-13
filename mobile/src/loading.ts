@@ -2,7 +2,7 @@
 // so background refreshes (inbox, map, autosave) never light the line. The entry splash waits for `entryReady`.
 const GESTURE_WINDOW=1500;
 type Listener=()=>void;
-const state={requests:0,lastGesture:0,entryReady:false,listeners:new Set<Listener>()};
+const state={requests:0,lastGesture:0,entryReady:false,thinking:0,listeners:new Set<Listener>()};
 const emit=()=>state.listeners.forEach(listener=>listener());
 
 export function markGesture(){state.lastGesture=Date.now();return false;}
@@ -22,3 +22,7 @@ export function trackRequest():(()=>void)|null{
     state.lastGesture=Math.max(state.lastGesture,Date.now()-GESTURE_WINDOW+300);emit();
   };
 }
+
+// «Thinking» dots that a screen shows by itself. While any are up, the long-action pill stays away: one sign is enough.
+export function thinkingShown(){state.thinking++;emit();let closed=false;return()=>{if(closed)return;closed=true;state.thinking--;emit();};}
+export const localThinking=()=>state.thinking>0;

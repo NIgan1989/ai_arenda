@@ -1,4 +1,5 @@
 'use client';
+import {Thinking} from './thinking';
 import {useEffect,useRef,useState,type FormEvent,type ReactNode} from 'react';
 import {useQuery} from '@tanstack/react-query';
 import {ArrowLeft,ArrowUp,Sparkles,Search} from 'lucide-react';
@@ -50,12 +51,12 @@ export function AdministratorConversation({role,accountId,hint,onClose,onChanged
  const content=<><div className="swipe-dismiss-edge" data-swipe-edge aria-hidden="true"/><header className="messenger-header" data-swipe-handle><div className="task-sheet-grip" aria-hidden="true"/><button type="button" onClick={onClose} aria-label="Закрыть чат администратора"><ArrowLeft size={21}/></button><span className={'ai-orb'+(busy?' thinking':'')} aria-hidden="true"><Sparkles size={18}/></span><span><strong>AI администратор</strong><small className="ai-status">{busy?'Думает…':'Онлайн · отвечает сразу'}</small></span></header>
  <div className="administrator-messages" ref={log} tabIndex={-1} role="log" aria-label="Переписка с AI администратором" aria-live="polite" aria-relevant="additions" onScroll={()=>{const el=log.current;if(el)follow.current=el.scrollHeight-el.scrollTop-el.clientHeight<80;}}>
  {(more??query.data?.hasOlder)&&<button className="history-more" disabled={busy} onClick={earlier}>Предыдущие сообщения</button>}
- {!query.data&&!query.error&&<p role="status">Открываю историю…</p>}
+ {!query.data&&!query.error&&<p role="status"><Thinking size="sm" lead/>Открываю историю…</p>}
  {searchExpanded&&role==='guest'&&onMapSearch&&<div ref={searchPanel}><AdministratorPropertySearch city={searchCity} onShow={onMapSearch}/></div>}
  {query.data&&!messages.length&&!searchExpanded&&<div className="ai-hero"><span className="ai-orb large" aria-hidden="true"><Sparkles size={28}/></span><h2>Чем помочь?</h2><p>Брони, квартиры, уборки и оплата. Отвечаю по вашим данным.</p></div>}
  {messages.map(m=><article key={m.id} className={'administrator-bubble '+(m.sender==='user'?'mine':'')}><p>{m.body}</p>{m.search&&onMapSearch&&<button type="button" className="administrator-action" onClick={()=>onMapSearch(m.search.filters)}>Повторить поиск на карте · {m.search.availabilityChecked?'с датами':'без дат'}</button>}{m.sender==='assistant'&&<ReportContent role={role} kind="ai" targetId={String(m.id)}/>}<time>{new Date(m.created_at*1000).toLocaleString('ru-RU',{day:'numeric',month:'long',hour:'2-digit',minute:'2-digit'}).replace(' в ',', ')}</time></article>)}
  {pending&&<article className="administrator-bubble mine pending"><p>{pending}</p><small>Отправляю…</small></article>}
- {busy&&<p className="administrator-typing" role="status"><span className="ai-dots" aria-hidden="true"><i/><i/><i/></span><span className="sr-only">Администратор думает</span></p>}
+ {busy&&<p className="administrator-typing" role="status"><span className="ai-dots" aria-hidden="true"><Thinking/></span><span className="sr-only">Администратор думает</span></p>}
  {page&&!(action==='properties'&&role==='guest')&&<a className="administrator-action" href={'/workspace/'+role+'/'+page.id}>{page.title} →</a>}{children&&<details className="administrator-process-support" open={supportExpanded} onToggle={e=>setSupportExpanded(e.currentTarget.open)} ref={support}><summary>Рекомендации и согласования</summary>{children}</details>}<AdministratorCommands commands={query.data?.commands||[]} busy={busy} onDecide={decide}/></div>
  {permissionNotice&&<p className="administrator-permission-notice" role="status">Ответ дан по правилам сервиса. Для свободного ответа можно отдельно разрешить передачу данных ниже и отправить запрос снова.</p>}<AIDataPermission role={role} refresh={permissionRefresh}/>
  {(error||query.error)&&<p className="messenger-error" role="alert">{error||query.error?.message}<button type="button" onClick={()=>void query.refetch()}>Обновить</button></p>}

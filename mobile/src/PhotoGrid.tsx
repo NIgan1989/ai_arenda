@@ -1,5 +1,6 @@
 import React,{useLayoutEffect,useRef,useState} from 'react';
-import {ActivityIndicator,Pressable,StyleSheet,Text,View} from 'react-native';
+import {Thinking} from './Thinking';
+import {Pressable,StyleSheet,Text,View} from 'react-native';
 import {C,type} from './styles';
 import {T} from './tokens';
 import {Photo,pickImages,uploadImage} from './ListingMedia';
@@ -27,7 +28,7 @@ export function PhotoGrid({photos,onChange,max=8,onBusy,disabled=false}:{photos:
   {i===0?<View style={g.badge}><Text style={g.badgeText}>★ Обложка</Text></View>:<Pressable accessibilityRole="button" accessibilityLabel={'Сделать фото '+(i+1)+' обложкой'} disabled={disabled} hitSlop={6} onPress={()=>onChange([id,...photos.filter(x=>x!==id)])} style={[g.round,g.left]}><Text style={g.roundText}>☆</Text></Pressable>}
   <Pressable accessibilityRole="button" accessibilityLabel={'Убрать фото '+(i+1)} disabled={disabled} hitSlop={6} onPress={()=>onChange(photos.filter(x=>x!==id))} style={[g.round,g.right]}><Text style={g.roundText}>✕</Text></Pressable>
  </View>;
- const extra=[...Array.from({length:pending},(_,i)=><View key={'wait'+i} accessibilityLabel="Фото загружается" style={[g.tile,g.wait,{width:cell,height:cell}]}><ActivityIndicator color={C.accent}/></View>),
+ const extra=[...Array.from({length:pending},(_,i)=><View key={'wait'+i} accessibilityLabel="Фото загружается" style={[g.tile,g.wait,{width:cell,height:cell}]}><Thinking/></View>),
   room&&photos.length>0?<Pressable key="add" accessibilityRole="button" accessibilityLabel="Добавить ещё фото" disabled={disabled||pending>0} onPress={()=>add(false)} style={[g.tile,g.add,{width:cell,height:cell}]}><Text style={g.addIcon}>＋</Text><Text style={g.addText}>Ещё</Text></Pressable>:null].filter(Boolean) as React.ReactElement[];
  const rest=[...photos.slice(3).map((id,i)=>tile(id,i+3,cell)),...extra];
  return <View style={g.box} onLayout={e=>setWidth(e.nativeEvent.layout.width)}>

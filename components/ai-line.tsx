@@ -1,6 +1,7 @@
 'use client';
+import {Thinking} from './thinking';
 import { useId, useLayoutEffect, useRef, useState, type FormEvent } from 'react';
-import { ArrowUp, LoaderCircle, Search, Sparkles } from 'lucide-react';
+import { ArrowUp, Search, Sparkles } from 'lucide-react';
 import { AI_LINE_MAX, cleanAiText, type AiChip } from '../lib/ai-line';
 import './map-home.css';
 
@@ -105,7 +106,7 @@ export function AiLine({
           readOnly={busy}
         />
         <button className="map-home-ai-send" type="submit" disabled={busy || !value} aria-label="Отправить">
-          {busy ? <LoaderCircle className="map-home-spin" size={20} aria-hidden="true" /> : <ArrowUp size={20} aria-hidden="true" />}
+          {busy ? <Thinking size="sm" tone="plain" /> : <ArrowUp size={20} aria-hidden="true" />}
         </button>
       </form>
       {chips.length > 0 && (

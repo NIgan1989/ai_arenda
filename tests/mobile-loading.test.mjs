@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdirSync,writeFileSync,readFileSync,mkdtempSync} from 'node:fs';
+import {mkdirSync,writeFileSync,readFileSync,readdirSync,mkdtempSync} from 'node:fs';
 import {resolve} from 'node:path';
 import {pathToFileURL} from 'node:url';
 import ts from 'typescript';
@@ -34,4 +34,26 @@ test('the site shows the splash once per session and the loading line from the f
  assert.match(layout,/<EntrySplash\/><AppLoader\/>/);
  assert.match(splash,/sessionStorage\.getItem\('ai-arenda-entry'\)/);assert.match(splash,/prefers-reduced-motion/);assert.match(splash,/entry-splash-fallback/);
  assert.match(loader,/useState\(true\)/);assert.match(loader,/beforeunload/);assert.match(loader,/GESTURE_WINDOW/);
+});
+
+test('while a screen shows its own «thinking» dots the long-action pill stays away',()=>{
+ assert.equal(loading.localThinking(),false);
+ const first=loading.thinkingShown(),second=loading.thinkingShown();assert.equal(loading.localThinking(),true);
+ first();first();assert.equal(loading.localThinking(),true);second();assert.equal(loading.localThinking(),false);
+});
+
+test('every wait in the product uses the one «thinking» sign, not a spinner of its own',()=>{
+ const sources=dir=>readdirSync(dir).filter(f=>f.endsWith('.tsx')).map(f=>dir+'/'+f);
+ for(const file of [...sources('components'),'app/chat.tsx'])assert.doesNotMatch(readFileSync(file,'utf8'),/<LoaderCircle\b/,file+' shows its own spinner; use <Thinking/> from components/thinking.tsx');
+ for(const file of [...sources('mobile/src'),'mobile/App.tsx'])assert.doesNotMatch(readFileSync(file,'utf8'),/<ActivityIndicator\b/,file+' shows the system spinner; use <Thinking/> from mobile/src/Thinking.tsx');
+ const loader=readFileSync('components/app-loader.tsx','utf8'),css=readFileSync('app/loader.css','utf8');
+ assert.match(loader,/<Thinking size="sm"\/>/);assert.match(loader,/localThinking\(\)/);assert.match(css,/@keyframes thinking-wave/);
+});
+
+test('the entry story is long enough to be watched and still releases itself',()=>{
+ const app=readFileSync('mobile/src/EntrySplash.tsx','utf8'),site=readFileSync('components/entry-splash.tsx','utf8');
+ const story=Number(app.match(/MIN_STORY=(\d+)/)[1]),cap=Number(app.match(/MAX_WAIT=(\d+)/)[1]);
+ assert.ok(story>=3000&&story<=4500,'app story '+story);assert.ok(cap>story&&cap<=8000);
+ const siteStory=Number(site.match(/calm\?450:(\d+)/)[1]),siteCap=Number(site.match(/setTimeout\(leave,(\d+)\)/)[1]);
+ assert.ok(siteStory>=3000&&siteStory<=4500,'site story '+siteStory);assert.ok(siteCap>siteStory&&siteCap<=8000);
 });

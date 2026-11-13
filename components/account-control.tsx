@@ -1,4 +1,5 @@
 'use client';
+import {Thinking} from './thinking';
 import {Button} from './ui/button';
 import {NativeSelect} from './ui/native-select';
 import {Input} from './ui/input';
@@ -35,7 +36,7 @@ export function AccountControl({role,onChanged,onAdministrator}:{role:string;onA
  const toggle=(Icon:any,title:string,checked:boolean,onChange:(v:boolean)=>void,note?:string)=><label className="acct-row"><Icon size={20}/><span>{title}{note&&<small>{note}</small>}</span><input type="checkbox" role="switch" className="acct-switch" checked={checked} disabled={busy} onChange={e=>onChange(e.target.checked)}/></label>;
  const summary=(Icon:any,title:string,value?:ReactNode)=><summary><Icon size={20}/><span>{title}</span>{value&&<em>{value}</em>}<ChevronRight size={16}/></summary>;
  return <div className={'acct acct-'+role}>
- {!account?<>{error&&<p className="form-error" role="alert">{error}</p>}<p role="status">Загружаю профиль…</p></>:<>
+ {!account?<>{error&&<p className="form-error" role="alert">{error}</p>}<p role="status"><Thinking size="sm" lead/>Загружаю профиль…</p></>:<>
  <header className="acct-head"><button type="button" className="acct-avatar" aria-label="Изменить фото профиля" onClick={edit}><svg viewBox="0 0 68 68" aria-hidden="true"><circle cx="34" cy="34" r="30"/><circle cx="34" cy="34" r="30" strokeDasharray={ring*completion/100+' '+ring}/></svg><Photo id={profile.avatar_id} role={role} name={profile.name} alt="Мой профиль" avatar/><span><Camera size={12}/></span></button><div><h2>{profile.name||'Мой профиль'}</h2><p>{profile.city||'Город не указан'} · {completion<100?'профиль на '+completion+'%':'профиль заполнен'}</p></div><button type="button" className="acct-edit" onClick={edit}>Изменить</button></header>
  {roles.length>1&&<nav className="acct-roles" aria-label="Роль">{(['guest','owner','cleaner']).filter(r=>roles.includes(r)).map(r=><a key={r} href={'/workspace/'+r+'/account'} aria-current={r===role?'page':undefined}>{shortRole[r]}</a>)}</nav>}
  {steps.length>0&&<button type="button" className="acct-next" onClick={edit}><Sparkles size={18}/><span>{steps[0]}{steps.length>1&&<small>и ещё {steps.length-1} {steps.length===2?'шаг':'шага'} до полного профиля</small>}</span><ChevronRight size={16}/></button>}

@@ -4,71 +4,84 @@ import {isEntryReady,subscribeLoading} from './loading';
 import {C} from './styles';
 
 const mark=require('../assets/brand/brand-mark.png');
-const SIZE=112,MIN_STORY=1900,MAX_WAIT=6000;
+// The story is meant to be watched, not glimpsed: about three and a half seconds before the screen opens.
+const SIZE=128,MIN_STORY=3600,MAX_WAIT=7500;
 const native=Platform.OS!=='web';
 
-// The entry story on every cold start: the house of the logo rises from the ground up, light runs across it,
-// two rings spread in the AI colours, the name comes up under it, and the screen opens onto the map.
+// The entry story on every cold start, unhurried:
+//   1. a soft glow in the AI colours comes up and keeps drifting the whole time;
+//   2. the house of the logo rises from the ground up;
+//   3. two rings spread from it, one after the other;
+//   4. the name comes up under it, then the line «Жильё на часы и сутки»;
+//   5. the mark breathes for a moment, and the screen opens onto the map.
 // It waits for the first data (so the map is ready under it), but never longer than a few seconds.
 export function EntrySplash(){
   const [gone,setGone]=useState(false);
-  const build=useRef(new Animated.Value(0)).current,glint=useRef(new Animated.Value(0)).current,rings=useRef(new Animated.Value(0)).current;
-  const name=useRef(new Animated.Value(0)).current,leave=useRef(new Animated.Value(0)).current,pop=useRef(new Animated.Value(0)).current;
+  const glow=useRef(new Animated.Value(0)).current,drift=useRef(new Animated.Value(0)).current,build=useRef(new Animated.Value(0)).current;
+  const ringA=useRef(new Animated.Value(0)).current,ringB=useRef(new Animated.Value(0)).current;
+  const name=useRef(new Animated.Value(0)).current,line=useRef(new Animated.Value(0)).current,breathe=useRef(new Animated.Value(0)).current,leave=useRef(new Animated.Value(0)).current;
   useEffect(()=>{
     let alive=true,calm=false,storyDone=false,left=false;
-    const started=Date.now();
+    const started=Date.now(),timers:ReturnType<typeof setTimeout>[]=[];
+    const t=(value:Animated.Value,duration:number,easing=Easing.out(Easing.cubic),delay=0)=>Animated.timing(value,{toValue:1,duration,delay,easing,useNativeDriver:native});
     const exit=()=>{
       if(left||!alive)return;left=true;
-      Animated.timing(leave,{toValue:1,duration:calm?160:480,easing:Easing.inOut(Easing.cubic),useNativeDriver:native}).start(()=>{if(alive)setGone(true);});
+      Animated.timing(leave,{toValue:1,duration:calm?160:620,easing:Easing.inOut(Easing.cubic),useNativeDriver:native}).start(()=>{if(alive)setGone(true);});
     };
     const maybeExit=()=>{if(storyDone&&isEntryReady())exit();};
     const unsubscribe=subscribeLoading(maybeExit);
-    const cap=setTimeout(exit,MAX_WAIT);
+    timers.push(setTimeout(exit,MAX_WAIT));
     AccessibilityInfo.isReduceMotionEnabled().catch(()=>false).then(reduced=>{
       if(!alive)return;calm=!!reduced;
-      if(calm){build.setValue(1);name.setValue(1);setTimeout(()=>{storyDone=true;maybeExit();},450);return;}
+      if(calm){glow.setValue(1);build.setValue(1);name.setValue(1);line.setValue(1);timers.push(setTimeout(()=>{storyDone=true;maybeExit();},450));return;}
+      t(glow,700,Easing.out(Easing.quad)).start();
+      t(drift,MIN_STORY+600,Easing.inOut(Easing.quad)).start();
       Animated.sequence([
-        Animated.timing(build,{toValue:1,duration:950,easing:Easing.inOut(Easing.cubic),useNativeDriver:native}),
+        t(build,1500,Easing.inOut(Easing.cubic),250),
         Animated.parallel([
-          Animated.sequence([Animated.timing(pop,{toValue:1,duration:180,easing:Easing.out(Easing.quad),useNativeDriver:native}),Animated.spring(pop,{toValue:0,friction:5,useNativeDriver:native})]),
-          Animated.timing(glint,{toValue:1,duration:650,easing:Easing.inOut(Easing.quad),useNativeDriver:native}),
-          Animated.timing(rings,{toValue:1,duration:1100,easing:Easing.out(Easing.cubic),useNativeDriver:native}),
-          Animated.timing(name,{toValue:1,duration:520,delay:80,easing:Easing.out(Easing.cubic),useNativeDriver:native}),
+          t(ringA,1400),
+          t(ringB,1400,Easing.out(Easing.cubic),320),
+          t(name,700,Easing.out(Easing.cubic),80),
+          t(line,700,Easing.out(Easing.cubic),420),
+          // One slow breath of the finished mark while the name settles.
+          Animated.sequence([t(breathe,700,Easing.inOut(Easing.quad),300),Animated.timing(breathe,{toValue:0,duration:800,easing:Easing.inOut(Easing.quad),useNativeDriver:native})]),
         ]),
       ]).start();
-      setTimeout(()=>{storyDone=true;maybeExit();},Math.max(0,MIN_STORY-(Date.now()-started)));
+      timers.push(setTimeout(()=>{storyDone=true;maybeExit();},Math.max(0,MIN_STORY-(Date.now()-started))));
     });
-    return()=>{alive=false;unsubscribe();clearTimeout(cap);};
-  },[build,glint,rings,name,leave,pop]);
+    return()=>{alive=false;unsubscribe();timers.forEach(clearTimeout);};
+  },[glow,drift,build,ringA,ringB,name,line,breathe,leave]);
   if(gone)return null;
-  // The house is built from the ground up: a window moves up over the mark while the mark itself stays still.
+  // The house is built from the ground up: a clipping window slides up over the mark while the mark itself stays still
+  // (the mark moves against the window by the same amount).
   const rise=build.interpolate({inputRange:[0,1],outputRange:[SIZE,0]}),counter=build.interpolate({inputRange:[0,1],outputRange:[-SIZE,0]});
-  const ring=(delay:number)=>({opacity:rings.interpolate({inputRange:[0,delay,delay+.15,1],outputRange:[0,0,.9,0],extrapolate:'clamp'}),transform:[{scale:rings.interpolate({inputRange:[0,delay,1],outputRange:[.9,.9,2.1],extrapolate:'clamp'})}]});
-  return <Animated.View pointerEvents={'auto'} accessibilityLabel="AI Аренда" accessibilityRole="image" style={[st.screen,{opacity:leave.interpolate({inputRange:[0,1],outputRange:[1,0]}),transform:[{scale:leave.interpolate({inputRange:[0,1],outputRange:[1,1.06]})}]}]}>
-    <Glow color={C.aiFrom} size={520} style={st.glowA}/><Glow color={C.aiTo} size={400} style={st.glowB}/>
+  const ring=(value:Animated.Value)=>({opacity:value.interpolate({inputRange:[0,.12,1],outputRange:[0,.85,0]}),transform:[{scale:value.interpolate({inputRange:[0,1],outputRange:[.9,2.3]})}]});
+  const up=(value:Animated.Value,from:number)=>({opacity:value,transform:[{translateY:value.interpolate({inputRange:[0,1],outputRange:[from,0]})}]});
+  return <Animated.View pointerEvents="auto" accessibilityLabel="AI Аренда" accessibilityRole="image" style={[st.screen,{opacity:leave.interpolate({inputRange:[0,1],outputRange:[1,0]}),transform:[{scale:leave.interpolate({inputRange:[0,1],outputRange:[1,1.08]})}]}]}>
+    <Animated.View style={[st.glowA,{opacity:glow,transform:[{scale:drift.interpolate({inputRange:[0,1],outputRange:[.86,1.1]})}]}]}><Glow color={C.aiFrom} size={520}/></Animated.View>
+    <Animated.View style={[st.glowB,{opacity:glow,transform:[{translateX:drift.interpolate({inputRange:[0,1],outputRange:[24,-16]})},{scale:drift.interpolate({inputRange:[0,1],outputRange:[.9,1.08]})}]}]}><Glow color={C.aiTo} size={400}/></Animated.View>
     <View style={st.stage}>
       <View style={st.markBox}>
-        <Animated.View style={[st.ring,{borderColor:C.aiFrom},ring(0)]}/>
-        <Animated.View style={[st.ring,{borderColor:C.aiTo},ring(.18)]}/>
-        <Animated.View style={{transform:[{scale:pop.interpolate({inputRange:[0,1],outputRange:[1,1.07]})}]}}>
+        <Animated.View style={[st.ring,{borderColor:C.aiFrom},ring(ringA)]}/>
+        <Animated.View style={[st.ring,{borderColor:C.aiTo},ring(ringB)]}/>
+        <Animated.View style={{transform:[{scale:breathe.interpolate({inputRange:[0,1],outputRange:[1,1.06]})}]}}>
           <View style={st.clip}>
-            <Animated.View style={{transform:[{translateY:rise}]}}>
+            <Animated.View style={[st.clip,{transform:[{translateY:rise}]}]}>
               <Animated.Image source={mark} style={[st.mark,{transform:[{translateY:counter}]}]}/>
             </Animated.View>
-            <Animated.View style={[st.glint,{transform:[{translateX:glint.interpolate({inputRange:[0,1],outputRange:[-SIZE,SIZE*1.4]})},{rotate:'20deg'}]}]}/>
           </View>
         </Animated.View>
       </View>
-      <Animated.Text style={[st.name,{opacity:name,transform:[{translateY:name.interpolate({inputRange:[0,1],outputRange:[12,0]})}]}]}>AI Аренда</Animated.Text>
-      <Animated.Text style={[st.line,{opacity:name.interpolate({inputRange:[0,.4,1],outputRange:[0,0,1]}),transform:[{translateY:name.interpolate({inputRange:[0,1],outputRange:[8,0]})}]}]}>Жильё на часы и сутки</Animated.Text>
+      <Animated.Text style={[st.name,up(name,14)]}>AI Аренда</Animated.Text>
+      <Animated.Text style={[st.line,up(line,10)]}>Жильё на часы и сутки</Animated.Text>
     </View>
   </Animated.View>;
 }
 
 // A soft glow without gradients: thin discs laid one over another, densest in the middle.
-function Glow({color,size,style}:{color:string;size:number;style:object}){
+function Glow({color,size}:{color:string;size:number}){
   const steps=28;
-  return <View style={[style,{width:size,height:size,alignItems:'center',justifyContent:'center'}]}>{Array.from({length:steps},(_,i)=>{const d=size*(1-i/steps);return <View key={i} style={[st.glowDisc,{width:d,height:d,backgroundColor:color}]}/>;})}</View>;
+  return <View style={{width:size,height:size,alignItems:'center',justifyContent:'center'}}>{Array.from({length:steps},(_,i)=>{const d=size*(1-i/steps);return <View key={i} style={[st.glowDisc,{width:d,height:d,backgroundColor:color}]}/>;})}</View>;
 }
 
 const st=StyleSheet.create({
@@ -77,11 +90,10 @@ const st=StyleSheet.create({
   glowB:{position:'absolute',top:'34%',left:'30%'},
   glowDisc:{position:'absolute',borderRadius:999,opacity:.009},
   stage:{alignItems:'center',gap:12,padding:24},
-  markBox:{width:SIZE,height:SIZE,alignItems:'center',justifyContent:'center',marginBottom:8},
+  markBox:{width:SIZE,height:SIZE,alignItems:'center',justifyContent:'center',marginBottom:12},
   ring:{position:'absolute',width:SIZE,height:SIZE,borderRadius:999,borderWidth:2},
   clip:{width:SIZE,height:SIZE,overflow:'hidden'},
   mark:{width:SIZE,height:SIZE},
-  glint:{position:'absolute',top:-SIZE/2,width:28,height:SIZE*2,backgroundColor:'rgba(255,255,255,0.55)'},
   name:{fontSize:28,lineHeight:36,fontWeight:'800',letterSpacing:-0.5,color:C.ink},
   line:{fontSize:14,lineHeight:20,color:C.muted},
 });

@@ -1,4 +1,5 @@
 import {NativeAccountSessions} from './AccountSessions';
+import {ThinkingLine} from './Thinking';
 import {NativeAccountSafety} from './AccountSafety';
 import {NativeAIDataPermission} from './AIDataPermission';
 import React,{useEffect,useState} from 'react';
@@ -23,7 +24,7 @@ export function AccountControl({role:active,onChanged,onSignedOut,onSwitchRole,o
  async function instant(change:(v:Row_)=>Row_,send:()=>Promise<unknown>){if(busy||!account)return;const before=account;setBusy(true);setError('');setMessage('');setAccount(change(account));try{await send();setAccount(await request('/api/account'));setMessage('Сохранено.');}catch(e:any){setAccount(before);setError(e.message);}finally{setBusy(false);}}
  const settings=(patch:Row_)=>instant(v=>({...v,settings:{...v.settings,...patch}}),()=>request('/api/account',{paymentProvider:patch.payment_provider??account!.settings.payment_provider,paymentNotifications:!!(patch.payment_notifications??account!.settings.payment_notifications),expectedVersion:account!.settings.version}));
  async function list(page=0){setBusy(true);setError('');try{setUsers(await request('/api/admin/users?role='+encodeURIComponent(role)+'&search='+encodeURIComponent(search)+'&page='+page));}catch(e:any){setError(e.message);}finally{setBusy(false);}}
- if(!account)return <View>{!!error&&<Text accessibilityRole="alert" style={s.error}>{error}</Text>}<Text style={s.meta}>Загружаю профиль…</Text></View>;
+ if(!account)return <View>{!!error&&<Text accessibilityRole="alert" style={s.error}>{error}</Text>}<ThinkingLine style={s.meta} text="Загружаю профиль…"/></View>;
  const p=account.profile||{},worker=active==='cleaner',owner=active==='owner';let roles:Role[]=[];try{roles=JSON.parse(p.roles||'[]');}catch{}
  const filled=[p.name,p.city,p.avatar_id,p.bio,p.languages,...(worker?[p.districts,p.experience,p.availability]:[])],completion=Math.round(filled.filter(Boolean).length/filled.length*100);
  const steps=[!p.avatar_id&&'Добавьте фото профиля',!p.bio&&(worker?'Опишите свою работу и услуги':owner?'Расскажите, как вы принимаете гостей':'Добавьте пару слов о себе для владельцев'),!p.languages&&'Укажите языки общения'].filter(Boolean) as string[];
