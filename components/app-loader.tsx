@@ -1,9 +1,9 @@
 'use client';
 import {useEffect,useRef,useState} from 'react';
-import {LOGO_PATH} from './entry-splash';
+import {Thinking} from './thinking';
 
 // One loading signal for the whole site: a thin gradient line along the top edge, and for a wait longer than
-// a second and a half a small glass pill with the logo. It covers three cases without touching any page:
+// a second and a half a small glass pill with the «thinking» dots. It covers three cases without touching any page:
 // the page is opening or reloading (it is on from the server's first byte until the page has loaded),
 // a move to another page (a click on a link, a reload, a redirect from code), and a long action — any request
 // that starts within a moment after a tap, a key or a form send. Background refreshes never show it.
@@ -48,18 +48,25 @@ function install(){
   };
 }
 
+// True while some «thinking» dots are already on the screen outside the pill.
+function localThinking(){
+  for(const dots of document.querySelectorAll('.thinking-dots'))if(!dots.closest('.app-loader-pill')&&dots.getClientRects().length)return true;
+  return false;
+}
+
 export function AppLoader(){
   // On the server and in the first paint the line is already running: the page is still loading.
   const [busy,setBusy]=useState(true),[progress,setProgress]=useState(0.18),[visible,setVisible]=useState(true),[pill,setPill]=useState(false);
   const running=useRef(true);
   useEffect(()=>{
     install();
-    let show:ReturnType<typeof setTimeout>|undefined,showPill:ReturnType<typeof setTimeout>|undefined,hide:ReturnType<typeof setTimeout>|undefined,creep:ReturnType<typeof setInterval>|undefined;
-    const clear=()=>{clearTimeout(show);clearTimeout(showPill);clearTimeout(hide);clearInterval(creep);};
+    let show:ReturnType<typeof setTimeout>|undefined,showPill:ReturnType<typeof setTimeout>|undefined,hide:ReturnType<typeof setTimeout>|undefined,creep:ReturnType<typeof setInterval>|undefined,watch:ReturnType<typeof setInterval>|undefined;
+    const clear=()=>{clearTimeout(show);clearTimeout(showPill);clearTimeout(hide);clearInterval(creep);clearInterval(watch);};
     const start=(now:boolean)=>{
       clear();running.current=true;setBusy(true);
       show=setTimeout(()=>setVisible(true),now?0:SHOW_AFTER);
-      showPill=setTimeout(()=>setPill(true),PILL_AFTER);
+      // The pill is for waits that show nothing of their own: where the page already has its dots, they are enough.
+      showPill=setTimeout(()=>{setPill(!localThinking());watch=setInterval(()=>setPill(!localThinking()),400);},PILL_AFTER);
       // The line creeps forward ever slower and never reaches the end on its own.
       creep=setInterval(()=>setProgress(p=>p+(0.92-p)*0.07),180);
     };
@@ -80,7 +87,7 @@ export function AppLoader(){
       <span className="app-loader-bar" style={{transform:`scaleX(${progress})`}}/>
     </div>
     <div className="app-loader-pill" data-visible={pill&&busy?'true':'false'} role="status" aria-live="polite">
-      {pill&&busy&&<><svg viewBox="0 0 100 100" width="20" height="20" aria-hidden="true"><path d={LOGO_PATH} pathLength={1}/></svg><span>Секунду…</span></>}
+      {pill&&busy&&<><Thinking size="sm"/><span>Секунду…</span></>}
     </div>
   </>;
 }

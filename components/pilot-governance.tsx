@@ -1,4 +1,5 @@
 'use client';
+import {Thinking} from './thinking';
 import {Button} from '@/components/ui/button';
 import {NativeSelect} from '@/components/ui/native-select';
 import {Input} from '@/components/ui/input';
@@ -13,7 +14,7 @@ const priorities:Row={normal:'Обычный',high:'Повышенный',urgent
 const actions:Row={takeover:'Изменён ответственный оператор',claim:'Взято в работу',release:'Передано в общую очередь',triage:'Изменены приоритет и срок',note:'Комментарий',resolve:'Решение',reopen:'Повторное рассмотрение',source_resolved:'Решение участника'};
 
 export function PilotGovernance({state,role,mode,save,busy=false}:{state:Row;role:string;mode:'admissions'|'operator';save:Save;busy?:boolean}){
- if(!state)return <p role="status">Загружаю правила и обращения…</p>;
+ if(!state)return <p role="status"><Thinking size="sm" lead/>Загружаю правила и обращения…</p>;
  if(mode==='admissions')return <div className="operations-hub">{state.testMode&&<section className="inline-card"><h3>Учебный режим · процессы доступны</h3><p>Для тестовых бронирований и назначений проверка личности и SMS не требуются. Это не отметка реальной проверки участников.</p><small>Пройдите цепочку вручную: заявка → решение владельца → подтверждение учебных расчётов → заселение и выезд → уборка и приёмка. Фактических банковских переводов и внешних сообщений стенд не выполняет.</small></section>}
   <section className="inline-card"><h3>Допуск к работе</h3><p>Роль аккаунта и проверка участника учитываются отдельно. Проверку проводит уполномоченный человек; данные владельца и конкретной квартиры проверяются вместе.</p><ul><li>Проверка владельца перед публикацией и новыми бронями: <strong>{state.policy.require_owner_review?'обязательна':'пока не обязательна'}</strong>.</li><li>Проверка исполнителя перед назначением: <strong>{state.policy.require_cleaner_review?'обязательна':'пока не обязательна'}</strong>.</li><li>Подтверждение номера аккаунта: <strong>{state.policy.require_phone?'обязательно':'пока не обязательно'}</strong>.</li></ul><small>Изменение правил действует на новые публикации, брони и назначения. Оплаты, фактическое проживание и принятые работы сохраняются.</small></section>
   {state.platformAdmin&&!state.testMode&&<PolicyForm key={state.policy.version} policy={state.policy} save={save} busy={busy}/>}

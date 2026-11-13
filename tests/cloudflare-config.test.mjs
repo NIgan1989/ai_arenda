@@ -66,11 +66,13 @@ test('publishing connects the Telegram bot from one GitHub secret without printi
  const calls=[],fetcher=async(url,init)=>{const body=JSON.parse(init.body||'{}');calls.push({url,body});
   if(url.endsWith('/getMe'))return Response.json({ok:true,result:{username:'ai_arenda_bot'}});
   if(url.includes('api.telegram.org'))return Response.json({ok:true,result:true});
+  if(url.endsWith('/secrets')&&!init.method)return Response.json({success:true,result:[{name:'TELEGRAM_BOT_TOKEN'}]});
   return Response.json({success:true});};
  const r=await setupTelegram({token:'123:secret',account:'acc',cfToken:'cf',site:'https://ai-arenda.example.dev',fetcher});
  assert.deepEqual(r,{username:'ai_arenda_bot',url:'https://ai-arenda.example.dev/api/hooks/telegram'});
- const saved=Object.fromEntries(calls.filter(c=>c.url.includes('/secrets')).map(c=>[c.body.name,c.body.text]));
- assert.deepEqual(saved,{TELEGRAM_BOT_TOKEN:'123:secret',TELEGRAM_BOT_USERNAME:'ai_arenda_bot',TELEGRAM_WEBHOOK_SECRET:webhookSecret('123:secret')});
+ const saved=Object.fromEntries(calls.filter(c=>c.url.includes('/secrets')&&c.body.name).map(c=>[c.body.name,c.body.text]));
+ assert.deepEqual(saved,{TELEGRAM_BOT_TOKEN:'123:secret',TELEGRAM_BOT_USERNAME:'ai_arenda_bot',TELEGRAM_WEBHOOK_SECRET:webhookSecret('123:secret'),SITE_PUBLIC_URL:'https://ai-arenda.example.dev'});
+ assert.deepEqual(calls.find(c=>c.url.endsWith('/setWebhook')).body.allowed_updates,['message','callback_query']);
  const hook=calls.find(c=>c.url.endsWith('/setWebhook')).body;assert.equal(hook.secret_token,webhookSecret('123:secret'));assert.match(hook.secret_token,/^[a-f0-9]{48}$/);
  await assert.rejects(setupTelegram({token:'bad',account:'acc',cfToken:'cf',site:'https://x.dev',fetcher:async()=>Response.json({ok:false,description:'Unauthorized'})}),/getMe failed/);
  const workflow=(await import('node:fs')).readFileSync('.github/workflows/deploy.yml','utf8');assert.ok(workflow.indexOf('Publish the Worker')<workflow.indexOf('setup-telegram.mjs'));assert.match(workflow,/TELEGRAM_BOT_TOKEN: \$\{\{ secrets\.TELEGRAM_BOT_TOKEN \}\}/);

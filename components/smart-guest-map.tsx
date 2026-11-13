@@ -1,7 +1,8 @@
 'use client';
+import {Thinking} from './thinking';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { ArrowLeft, ArrowUpRight, LoaderCircle, LocateFixed, Pencil } from 'lucide-react';
+import { ArrowLeft, ArrowUpRight, LocateFixed, Pencil } from 'lucide-react';
 import { MapCanvas } from './map-canvas';
 import { PropertyListing } from './property-listing';
 import { PropertyCover } from './property-cover';
@@ -810,7 +811,7 @@ export function SmartGuestMap({ publicMode = false, onChanged, accountId, city, 
 
           {stage === 'search' ? (
             <div className="smart-wait" role="status">
-              <LoaderCircle className="map-home-spin" size={24} aria-hidden="true" />
+              <Thinking size="lg" />
               <div>
                 <h2 ref={heading} tabIndex={-1}>
                   {state?.status === 'booking' ? 'Отправляем заявку' : requestId ? 'Спрашиваем владельцев' : 'Ищем жильё'}
@@ -891,7 +892,7 @@ export function SmartGuestMap({ publicMode = false, onChanged, accountId, city, 
               <button type="button" className="smart-primary" onClick={() => setStage('detail')}>Посмотреть квартиру</button>
               {canAskOwners && (
                 <button type="button" className="smart-button" disabled={busy} onClick={() => void askOwners()}>
-                  {busy && <LoaderCircle className="map-home-spin" size={18} aria-hidden="true" />}
+                  {busy && <Thinking size="sm" tone="plain" />}
                   {publicMode ? 'Войти и спросить владельцев' : 'Спросить владельцев'}
                 </button>
               )}

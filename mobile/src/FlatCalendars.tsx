@@ -1,4 +1,5 @@
 import React,{useEffect,useState} from 'react';
+import {ThinkingLine} from './Thinking';
 import {Pressable,Share,StyleSheet,Text,TextInput,View} from 'react-native';
 import {C,type} from './styles';
 import {T} from './tokens';
@@ -21,7 +22,7 @@ export function FlatCalendars({propertyId,onBack}:{propertyId:string;onBack:()=>
   <View style={f.bar}><Pressable accessibilityRole="button" accessibilityLabel="Назад к списку" onPress={onBack} disabled={busy} style={f.round}><Text style={f.roundText}>←</Text></Pressable><Text accessibilityRole="header" style={f.title}>Календари площадок</Text></View>
   <Text style={f.hint}>Если квартира есть на Airbnb, Booking или Суточно, свяжите календари, и одну квартиру не забронируют дважды.</Text>
   <Text style={f.h}>ЗАНЯТОСТЬ С ДРУГИХ ПЛОЩАДОК</Text>
-  {!state&&!error&&<Text style={f.hint}>Загружаю…</Text>}
+  {!state&&!error&&<ThinkingLine style={f.hint} text="Загружаю…"/>}
   {(state?.sources||[]).map((s:Row)=>{const st=calendarStatus(s);return <View key={s.id} style={[f.row,st.tone==='warn'&&f.rowWarn,st.tone==='off'&&f.rowOff]}>
    <View style={[f.ico,st.tone==='warn'&&f.icoWarn]}><Text style={f.icoText}>📅</Text></View>
    <View style={{flex:1,minWidth:0}}><Text style={f.name}>{s.label}</Text><Text style={[f.line,st.tone==='ok'&&f.lineOk,st.tone==='warn'&&f.lineWarn]}>{st.text}</Text></View>

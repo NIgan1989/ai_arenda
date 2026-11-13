@@ -1,6 +1,7 @@
 'use client';
+import {Thinking} from './thinking';
 import {useLayoutEffect,useRef,useState,useSyncExternalStore} from 'react';
-import {Camera,LoaderCircle,Star,X} from 'lucide-react';
+import {Camera,Star,X} from 'lucide-react';
 import {Photo,preparePhoto} from './media';
 import './photo-grid.css';
 type API=(path:string,body?:Record<string,any>)=>Promise<any>;
@@ -34,7 +35,7 @@ export function PhotoGrid({photos,onChange,role,api,max=8,onBusy,disabled=false}
     {i===0?<span className="pg-badge"><Star size={12} fill="currentColor"/>Обложка</span>:<button type="button" className="pg-btn pg-star" disabled={disabled} aria-label={'Сделать фото '+(i+1)+' обложкой'} title="Сделать обложкой" onClick={()=>onChange([id,...photos.filter(x=>x!==id)])}><Star size={16}/></button>}
     <button type="button" className="pg-btn pg-x" disabled={disabled} aria-label={'Убрать фото '+(i+1)} title="Убрать" onClick={()=>onChange(photos.filter(x=>x!==id))}><X size={16}/></button>
    </li>)}
-   {Array.from({length:pending},(_,i)=><li key={'wait'+i} className="pg-tile is-pending" role="status" aria-label="Фото загружается"><LoaderCircle size={22}/></li>)}
+   {Array.from({length:pending},(_,i)=><li key={'wait'+i} className="pg-tile is-pending" role="status" aria-label="Фото загружается"><Thinking/></li>)}
    {room&&<li className={'pg-tile pg-add-tile'+(photos.length||pending?'':' is-first')}><button type="button" className="pg-add" disabled={disabled||pending>0} onClick={()=>file.current?.click()}><Camera size={photos.length?22:28}/><strong>{photos.length?'Ещё':'Добавить фото'}</strong>{!photos.length&&<small>Можно выбрать сразу несколько</small>}</button></li>}
   </ul>
   <p className="pg-note"><span>{photos.length} из {max}</span>Первое фото — обложка. ☆ на снимке делает его первым.</p>

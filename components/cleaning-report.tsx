@@ -1,6 +1,7 @@
 'use client';
+import {Thinking} from './thinking';
 import {useRef,useState,type FormEvent} from 'react';
-import {ArrowUpRight,Brush,CheckCircle2,ClipboardCheck,LoaderCircle} from 'lucide-react';
+import {ArrowUpRight,Brush,CheckCircle2,ClipboardCheck} from 'lucide-react';
 import {Button} from './ui/button';
 import {Textarea} from './ui/textarea';
 import {JobOperations} from './job-operations';
@@ -15,5 +16,5 @@ export function CleaningReport({job,role,busy,onSubmit,onChanged}:{job?:Row;role
  {!allowed&&<div className="flow-notice important">{!job?'Данные задания ещё не загружены.':job.status==='submitted'?'Отчёт отправлен. Ожидаем проверку владельца.':job.status==='approved'?'Владелец принял работу.':'Отчёт можно отправить только по вашей текущей уборке после её начала.'}<Button type="button" variant="outline" disabled={busy} onClick={()=>void onChanged()}>Обновить задание</Button></div>}
  <div className="report-layout"><section aria-label="Фотографии и видео"><h3>Материалы уборки</h3><p className="form-note">Добавьте снимки нужных зон. Если владелец требует фото, сервер проверит их перед приёмкой отчёта.</p>{job&&<JobOperations job={job} role={role} onChanged={onChanged}/>}</section>
  <form onSubmit={submit}><p className="report-count" aria-live="polite"><ClipboardCheck size={17}/>Проверено {completed} из {tasks.length}</p><fieldset className="report-checklist" disabled={busy||sending||!allowed}><legend>Проверьте результат</legend>{tasks.map((task,index)=><label key={task}><input type="checkbox" name={'check'+index} checked={checked[index]} required onChange={event=>setChecked(value=>value.map((v,i)=>i===index?event.target.checked:v))}/><span>{task}</span></label>)}</fieldset><label className="report-comment">Комментарий к отчёту<Textarea name="report" required maxLength={1500} rows={5} disabled={busy||sending||!allowed} placeholder="Что сделано? Есть ли замечания, которые нужно знать владельцу?"/><small>Не указывайте коды доступа, данные документов и личные контакты.</small></label>
- <div className="flow-notice"><CheckCircle2 size={18}/><span>Отчёт проверяет владелец. Принятие работы и фактическая выплата фиксируются отдельно.</span></div>{error&&<p className="flow-error" role="alert">{error}</p>}<div className="flow-actions"><Button type="submit" className="flow-primary" disabled={busy||sending||!allowed||completed!==tasks.length}>{sending||busy?<><LoaderCircle size={17}/>Отправляем…</>:<>Отправить на проверку<ArrowUpRight size={17}/></>}</Button></div></form></div></section>;
+ <div className="flow-notice"><CheckCircle2 size={18}/><span>Отчёт проверяет владелец. Принятие работы и фактическая выплата фиксируются отдельно.</span></div>{error&&<p className="flow-error" role="alert">{error}</p>}<div className="flow-actions"><Button type="submit" className="flow-primary" disabled={busy||sending||!allowed||completed!==tasks.length}>{sending||busy?<><Thinking size="sm" tone="plain" lead/>Отправляем…</>:<>Отправить на проверку<ArrowUpRight size={17}/></>}</Button></div></form></div></section>;
 }
