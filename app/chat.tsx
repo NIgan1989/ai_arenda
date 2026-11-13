@@ -125,7 +125,7 @@ export default function Chat({workspaceRole,section,accountId}:{workspaceRole:Ro
     catch(e:any){if(propagateError)throw e;say(e.message+' Обновите данные перед повторной попыткой.');}
     finally{lock.current=false;setBusy(false);composer.current?.focus();}
   }
-  async function administratorAction(path:string,body:Row={}){if(lock.current)return;lock.current=true;setBusy(true);setAdministratorNotice(null);try{const result=await post(path,body);await load();setAdministratorNotice({text:result.message||'Данные обновлены.',error:false});}catch(e:any){setAdministratorNotice({text:e.message,error:true});}finally{lock.current=false;setBusy(false);}}
+  async function administratorAction(path:string,body:Row={}){if(lock.current)return;lock.current=true;setBusy(true);setAdministratorNotice(null);try{const result=await post(path,body);await load();if(result?.edit?.propertyId){setAdministratorOpen(false);setMessages([]);say('','property-editor',{id:result.edit.propertyId,step:result.edit.step});return;}setAdministratorNotice({text:result.message||'Данные обновлены.',error:false});}catch(e:any){setAdministratorNotice({text:e.message,error:true});}finally{lock.current=false;setBusy(false);}}
   function signin(intent:string){sessionStorage.setItem('ai-arenda-next-intent',intent);say('Чтобы сохранять ваши квартиры, брони и задания, сначала нужно войти. После входа продолжим здесь.','signin',{intent});}
   function beginProfile(target:Role,after:string,state=data,edit=false){
     if(target!==workspaceRole){say('Эта задача относится к другой роли. Переключите роль через экран входа.');return false;}

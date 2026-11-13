@@ -20,6 +20,7 @@ test('an amenity most leaders list, an hourly price, self check-in, a longer des
  assert.equal(listingTip(flat(),leaders,new Set(['amenity:washer'])).subject,'parking','an answered tip is not repeated');
  const hourly=listingTip(flat({hourly:0,price:12000}),[flat({price:10000,hourly:2000}),flat({price:10000,hourly:1500}),flat({price:8000,hourly:2000}),flat({hourly:0})]);
  assert.equal(hourly.kind,'hourly');assert.equal(hourly.value,2400);assert.match(tipText(hourly).accept,/^Сдавать за 2\s400 ₸\/ч$/);
+ assert.equal(listingTip(flat({hourly:0,price:12000,minimumRate:3000}),[flat({price:10000,hourly:2000}),flat({price:10000,hourly:1500}),flat({price:8000,hourly:2000})]).value,3000,'never below the minimum rate');
  assert.equal(listingTip(flat({checkin:'meet'}),[flat(),flat({checkin:'smartlock'}),flat({checkin:'meet'})]).kind,'checkin');
  const text=listingTip(flat({description:120}),[flat({description:400}),flat({description:500}),flat({description:350})]);
  assert.equal(text.kind,'text');assert.equal(text.theirs,400);

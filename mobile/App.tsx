@@ -219,7 +219,10 @@ function Chat(){
   async function perform(path:string,body:Row,id:string,after?:string){
     if(locked.current)return;locked.current=true;setBusy(true);
     try{
-      const result=await request('/api/'+path,body,undefined,id+':'+path+':'+(body.action||'save')+(body.expectedVersion!==undefined?':v'+body.expectedVersion:''));finish(id);say(result.message||'Сохранено.');
+      const result=await request('/api/'+path,body,undefined,id+':'+path+':'+(body.action||'save')+(body.expectedVersion!==undefined?':v'+body.expectedVersion:''));finish(id);
+      // A tip that is done in the listing editor opens it on the right step.
+      if(result?.edit?.propertyId){await load();setPageId('overview');say('','property-editor',{id:result.edit.propertyId,step:result.edit.step});return;}
+      say(result.message||'Сохранено.');
       try{const state=await load();if(after&&state)run(after,state);}catch(e){await handleError(e);}
     }catch(e){await handleError(e);}
     finally{locked.current=false;setBusy(false);}

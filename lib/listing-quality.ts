@@ -12,7 +12,7 @@ export {tipText,tipStep};
 // (only when the owner confirms it is true); the rest opens the right step of the listing editor.
 
 export type TipKind='photos'|'amenity'|'hourly'|'checkin'|'text';
-export type ListingStats={id:string;title:string;price:number;hourly:number;photos:number;description:number;amenities:string[];checkin:string;bookings:number};
+export type ListingStats={id:string;title:string;price:number;hourly:number;minimumRate?:number;photos:number;description:number;amenities:string[];checkin:string;bookings:number};
 export type ListingTip={kind:TipKind;subject:string;mine:number;theirs:number;count:number;leaders:number;value:number};
 
 export const TIP_LOOKBACK=60*86400,TIP_TTL=7*86400,TIP_PAUSE=3*86400,TIP_DECLINE_PAUSE=60*86400,TIP_REPEAT_PAUSE=30*86400,MIN_LEADERS=3;
@@ -31,7 +31,8 @@ export function listingTip(mine:ListingStats,leaders:ListingStats[],skip:Set<str
  if(missing.length)tips.push({kind:'amenity',subject:missing[0].a,mine:0,theirs:1,count:missing[0].count,leaders:n,value:0});
  const hourly=leaders.filter(l=>l.hourly>0&&l.price>0);
  if(!mine.hourly&&mine.price>=1000&&hourly.length/n>=0.6&&ok('hourly')){
-  const value=Math.max(100,Math.round(mine.price*median(hourly.map(l=>l.hourly/l.price))/100)*100);
+  // Never below the owner's own minimum rate: such a price could not be saved.
+  const value=Math.max(100,mine.minimumRate||0,Math.round(mine.price*median(hourly.map(l=>l.hourly/l.price))/100)*100);
   tips.push({kind:'hourly',subject:'',mine:0,theirs:value,count:hourly.length,leaders:n,value});
  }
  const self=leaders.filter(l=>l.checkin==='lockbox'||l.checkin==='smartlock').length;
@@ -42,12 +43,12 @@ export function listingTip(mine:ListingStats,leaders:ListingStats[],skip:Set<str
 }
 
 async function statsFor(db:D1Database,where:string,args:unknown[],t:number):Promise<ListingStats[]>{
- return (await rows(db,`SELECT p.id,p.title,p.price,p.description,COALESCE(pp.hourly_price,0) hourly,COALESCE(d.details,'{}') details,COALESCE(d.photos,'[]') photos,
+ return (await rows(db,`SELECT p.id,p.title,p.price,p.description,COALESCE(pp.hourly_price,0) hourly,COALESCE(pp.minimum_rate,0) minimum_rate,COALESCE(d.details,'{}') details,COALESCE(d.photos,'[]') photos,
   (SELECT COUNT(*) FROM bookings b WHERE b.property_id=p.id AND b.status IN ('confirmed','completed') AND b.created_at>?) bookings
   FROM properties p LEFT JOIN property_policies pp ON pp.property_id=p.id LEFT JOIN property_details d ON d.property_id=p.id
   WHERE p.published=1 AND p.archived_at IS NULL AND p.demo_owner IS NULL AND `+where,t-TIP_LOOKBACK,...args)).map(r=>{
   let details:Row={},photos:unknown[]=[];try{details=JSON.parse(r.details);}catch{}try{photos=JSON.parse(r.photos);}catch{}
-  return {id:String(r.id),title:String(r.title),price:Number(r.price),hourly:Number(r.hourly),photos:Array.isArray(photos)?photos.length:0,description:String(r.description||'').trim().length,amenities:Array.isArray(details.amenities)?details.amenities:[],checkin:String(details.checkinMethod||'meet'),bookings:Number(r.bookings)};
+  return {id:String(r.id),title:String(r.title),price:Number(r.price),hourly:Number(r.hourly),minimumRate:Number(r.minimum_rate),photos:Array.isArray(photos)?photos.length:0,description:String(r.description||'').trim().length,amenities:Array.isArray(details.amenities)?details.amenities:[],checkin:String(details.checkinMethod||'meet'),bookings:Number(r.bookings)};
  });
 }
 
