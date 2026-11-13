@@ -1,23 +1,22 @@
 import React,{useEffect,useMemo,useRef,useState} from 'react';
 import {AccessibilityInfo,Animated,Easing,Image,Pressable,StyleSheet,Text,View,type LayoutChangeEvent,type NativeSyntheticEvent} from 'react-native';
-import {Camera,Map as GlMap,Marker,type CameraRef,type ViewStateChangeEvent} from '@maplibre/maplibre-react-native';
+import {Camera,GeoJSONSource,Layer,Map as GlMap,Marker,type CameraRef,type ViewStateChangeEvent} from '@maplibre/maplibre-react-native';
 import {MAX_ZOOM,MIN_ZOOM,fitView,groupPins,pinWidth,project,validPoint,type MapPoint} from './map-math';
-import {appearDelay} from './map-motion';
-import {FRESH,LEAVE,Leaving,Pin,Radar,controlsHeight,m,toneOrder} from './MapPins';
-import type {MapPin} from './TileMap';
+import {appearDelay,type MapLine} from './map-motion';
+import {BEAM,FRESH,LEAVE,Leaving,Origin,Pin,Radar,controlsHeight,m,toneOrder} from './MapPins';
+import type {MapPin,MapProps} from './TileMap';
 
 // The home map on a phone: MapLibre with the same OpenFreeMap style as the site, so both look alike and the vector map
 // can tilt, fly and draw layers (heat, routes) in the next stages of the live map. The pins are the same React views as
 // in the web preview (MapPins.tsx) and keep all their events; MapLibre only carries them with the map.
-export type {MapPin};
-type Props={center:MapPoint;pins:MapPin[];selected?:string;onSelect?:(key:string)=>void;bottomInset?:number;topInset?:number;focusKey?:string;picking?:boolean;scanning?:boolean;onCenter?:(center:MapPoint)=>void};
+export type {MapLine,MapPin,MapProps};
 const STYLE='https://tiles.openfreemap.org/styles/positron';
 // MapLibre counts zoom for 512px tiles, map-math for 256px ones: the same picture is one level lower here.
 const toGl=(zoom:number)=>zoom-1,fromGl=(zoom:number)=>zoom+1;
 const plusIcon=require('../assets/ui/plus.png'),minusIcon=require('../assets/ui/minus.png'),fitIcon=require('../assets/ui/fit.png');
 const fallback:MapPoint=[76.95,52.287];
 
-export function LiveMap({center,pins,selected,onSelect,bottomInset=0,topInset=0,focusKey='',picking=false,scanning=false,onCenter}:Props){
+export function LiveMap({center,pins,selected,focus='',lines=[],onSelect,bottomInset=0,topInset=0,focusKey='',picking=false,scanning=false,onCenter}:MapProps){
  const camera=useRef<CameraRef>(null);
  const [size,setSize]=useState({w:0,h:0}),[still,setStill]=useState(false),[failed,setFailed]=useState(false);
  // The view as the map last reported it, in map-math zoom; pins are grouped by it.
@@ -47,6 +46,8 @@ export function LiveMap({center,pins,selected,onSelect,bottomInset=0,topInset=0,
  useEffect(()=>{if(!size.w||fitted.current===focusKey+':'+size.w)return;fitted.current=focusKey+':'+size.w;fit();},[focusKey,size.w]);
  // The sheet grew or shrank: frame the same pins in what is still visible, unless the person moved the map.
  useEffect(()=>{if(!size.w||!fitted.current||moved.current||picking)return;if(Math.abs(usableHeight-fittedHeight.current)>=48)fit();},[usableHeight]);
+ // A card of the carousel came into view: the map flies to its pin, at no less than a street's zoom.
+ useEffect(()=>{const pin=focus&&pins.find(p=>p.key===focus),point=pin&&validPoint(pin.point);if(!point||!size.w)return;moved.current=true;flyTo({center:point,zoom:Math.max(live.current.view.zoom,13)});},[focus]);
  const zoomBy=(delta:number)=>{moved.current=true;flyTo({center:view.center,zoom:Math.max(MIN_ZOOM,Math.min(MAX_ZOOM,view.zoom+delta))});};
 
  // ---------- Picking a point: the marker lifts while the map moves under it and lands with a ring ----------
@@ -79,22 +80,29 @@ export function LiveMap({center,pins,selected,onSelect,bottomInset=0,topInset=0,
  const c=project(view.center,view.zoom),at=(point:MapPoint)=>{const p=project(point,view.zoom);return {x:p.x-c.x,y:p.y-c.y};};
  const placed=pins.flatMap(pin=>validPoint(pin.point)?[{pin,...at(pin.point)}]:[]);
  const byKey=new Map(placed.map(p=>[p.pin.key,p]));
- const shown=groupPins(placed.map(({pin,x,y})=>({key:pin.key,x,y,width:pinWidth(pin.label),height:32,rank:pin.key===selected?-1:toneOrder[pin.tone||'home']*1e9+Math.max(0,Math.min(pin.rank??0,1e9-1))}))).map(g=>({...byKey.get(g.key)!,members:g.members}));
+ const shown=groupPins(placed.map(({pin,x,y})=>({key:pin.key,x,y,width:pinWidth(pin.label),height:32,rank:pin.key===selected||pin.key===focus?-1:toneOrder[pin.tone||'home']*1e9+(pin.best?0:Math.max(0,Math.min(pin.rank??0,1e9-1)))}))).map(g=>({...byKey.get(g.key)!,members:g.members}));
  const openGroup=(keys:string[])=>{
   if(view.zoom>=MAX_ZOOM){onSelect?.(keys[(keys.indexOf(selected||'')+1)%keys.length]);return;}
   const next=fitView(keys.map(key=>byKey.get(key)!.pin.point),size.w-96,usableHeight-96,MAX_ZOOM);
   moved.current=true;flyTo({center:next?.center||view.center,zoom:Math.min(MAX_ZOOM,Math.max(view.zoom+1,Math.min(next?.zoom??view.zoom+1,view.zoom+2)))});
  };
+ // ---------- Beams: new ones are drawn out from the guest's point, as on the web preview ----------
+ const drawn=useBeams(lines,still);
  const layout=(e:LayoutChangeEvent)=>{const {width,height}=e.nativeEvent.layout;if(Math.round(width)!==size.w||Math.round(height)!==size.h)setSize({w:Math.round(width),h:Math.round(height)});};
  const now=Date.now(),start=validPoint(center)||fallback;
  return <View style={m.host} onLayout={layout} accessibilityLabel={'Карта. Меток: '+placed.length}>
   <GlMap style={StyleSheet.absoluteFill} mapStyle={STYLE} logo={false} compass={false} touchRotate={false} touchPitch={false} attribution attributionPosition={{bottom:bottomInset+6,left:8}}
    onRegionWillChange={willChange} onRegionDidChange={didChange} onDidFailLoadingMap={()=>setFailed(true)} onDidFinishLoadingMap={()=>setFailed(false)}>
    <Camera ref={camera} initialViewState={{center:start,zoom:toGl(12)}} minZoom={toGl(MIN_ZOOM)} maxZoom={toGl(MAX_ZOOM)}/>
+   <GeoJSONSource id="beams" data={drawn}>
+    <Layer id="beams-ask" type="line" filter={['==',['get','tone'],'ask']} layout={{'line-cap':'round'}} paint={{'line-color':BEAM.ask,'line-width':2,'line-dasharray':[2,2]}}/>
+    <Layer id="beams-answer" type="line" filter={['==',['get','tone'],'answer']} layout={{'line-cap':'round'}} paint={{'line-color':BEAM.answer,'line-width':2.5}}/>
+   </GeoJSONSource>
+   {!!lines.length&&validPoint(lines[0].from)&&<Marker id="beam-origin" lngLat={lines[0].from} anchor="center"><Origin/></Marker>}
    {!still&&leaving.filter(p=>validPoint(p.point)).map(p=><Marker key={'gone:'+p.key+':'+p.gone} id={'gone:'+p.key+':'+p.gone} lngLat={p.point} anchor="center"><Leaving pin={p}/></Marker>)}
    {shown.map(({pin,x,y,members})=>{const more=members.length-1,b=born.current.get(pin.key)||0;
     return <Marker key={pin.key} id={pin.key} lngLat={pin.point} anchor="center">
-     <Pin pin={pin} more={more} active={pin.key===selected} still={still} picking={picking} loop={loop}
+     <Pin pin={pin} more={more} active={pin.key===selected||pin.key===focus} still={still} picking={picking} loop={loop}
       born={now-b<FRESH?b:0} delay={appearDelay(x,y,0,0)} onPress={onSelect?()=>more?openGroup(members):onSelect(pin.key):undefined}/>
     </Marker>;})}
   </GlMap>
@@ -111,4 +119,19 @@ export function LiveMap({center,pins,selected,onSelect,bottomInset=0,topInset=0,
   </View>
   {failed&&<Text accessibilityLiveRegion="polite" style={[m.credit,{bottom:bottomInset+30}]}>Карта временно не загружается. Список и действия работают.</Text>}
  </View>;
+}
+
+// The lines as GeoJSON. A line that was not there before grows from its start to its end in 700 ms; the rest stay whole.
+function useBeams(lines:MapLine[],still:boolean){
+ const seen=useRef(new Set<string>()),[t,setT]=useState(1),[fresh,setFresh]=useState<Set<string>>(new Set());
+ const keys=lines.map(l=>l.key).join('|');
+ useEffect(()=>{
+  const added=new Set(lines.filter(l=>!seen.current.has(l.key)).map(l=>l.key));seen.current=new Set(lines.map(l=>l.key));
+  if(still||!added.size){setFresh(new Set());setT(1);return;}
+  setFresh(added);setT(0);const start=Date.now();let frame=0;
+  const step=()=>{const u=Math.min(1,(Date.now()-start)/700);setT(1-Math.pow(1-u,3));if(u<1)frame=requestAnimationFrame(step);};
+  frame=requestAnimationFrame(step);return()=>cancelAnimationFrame(frame);
+ },[keys,still]);
+ return useMemo(()=>({type:'FeatureCollection' as const,features:lines.map(l=>{const k=!seen.current.has(l.key)?0:fresh.has(l.key)?t:1,end:MapPoint=[l.from[0]+(l.to[0]-l.from[0])*k,l.from[1]+(l.to[1]-l.from[1])*k];
+  return {type:'Feature' as const,id:l.key,properties:{tone:l.tone},geometry:{type:'LineString' as const,coordinates:[l.from,end]}};})}),[lines,fresh,t]);
 }

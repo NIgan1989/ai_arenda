@@ -64,6 +64,26 @@ export function answerLeft(until:number,now:number,window=ANSWER_WINDOW){
  return Math.max(0,Math.min(1,(until-now)/window));
 }
 
+// ---------- Stage 2: the guest's live map ----------
+// A beam is a line from the guest's search point to a flat whose owner is asked (ask, dashed) or has said yes (answer, solid).
+export type BeamTone='ask'|'answer';
+export type MapLine={key:string;from:[number,number];to:[number,number];tone:BeamTone};
+const okPoint=(p:unknown):p is [number,number]=>Array.isArray(p)&&p.length===2&&p.every(n=>typeof n==='number'&&Number.isFinite(n))&&Math.abs(p[0])<=180&&Math.abs(p[1])<=90;
+export function beams(origin:unknown,pins:{key:string;point:unknown;tone?:PinTone}[]):MapLine[]{
+ if(!okPoint(origin))return [];
+ return pins.flatMap(p=>{const tone:BeamTone|null=p.tone==='pending'?'ask':p.tone==='offer'?'answer':null;return tone&&okPoint(p.point)?[{key:'beam:'+p.key,from:origin,to:p.point,tone}]:[];});
+}
+// The card of the carousel that a swipe stopped on: the nearest one, never outside the list.
+export function carouselIndex(offset:number,step:number,count:number){
+ if(!(count>0)||!(step>0)||!Number.isFinite(offset))return 0;
+ return Math.max(0,Math.min(count-1,Math.round(offset/step)));
+}
+// A beam drawn as one straight line on the screen: from the middle of the line, its length and its angle in degrees.
+export function beamBox(a:{x:number;y:number},b:{x:number;y:number}){
+ const dx=b.x-a.x,dy=b.y-a.y;
+ return {cx:(a.x+b.x)/2,cy:(a.y+b.y)/2,length:Math.hypot(dx,dy),angle:Math.atan2(dy,dx)*180/Math.PI};
+}
+
 // Every event the map shows, by role, for the documentation and the preview.
 export const MAP_EVENTS:{role:'guest'|'owner'|'cleaner'|'all';event:string;motion:string}[]=[
  {role:'all',event:'Новый набор меток (город, результаты, задания)',motion:'Метки падают на карту волной от центра'},
@@ -73,10 +93,12 @@ export const MAP_EVENTS:{role:'guest'|'owner'|'cleaner'|'all';event:string;motio
  {role:'all',event:'Ждём ответа владельца',motion:'Под меткой убывает полоска времени на ответ'},
  {role:'guest',event:'Идёт поиск квартир',motion:'Волны радара из центра карты'},
  {role:'guest',event:'Выбор точки «рядом»',motion:'Метка-булавка поднимается, пока карту двигают, и ставится с кругом'},
- {role:'guest',event:'Запрос ушёл владельцам',motion:'Квартиры, которых спросили, вздрагивают и пульсируют, остальные уходят'},
- {role:'guest',event:'Владелец подтвердил',motion:'Метка становится синей с подскоком и вспышкой'},
+ {role:'guest',event:'Найдены варианты',motion:'Лучший выбор ИИ отмечен на карте значком ✦ и цветным кольцом'},
+ {role:'guest',event:'Листание карусели вариантов',motion:'Карта перелетает к метке этого варианта, метка приподнимается'},
+ {role:'guest',event:'Запрос ушёл владельцам',motion:'От точки поиска к вариантам тянутся пунктирные лучи; варианты вздрагивают и пульсируют, остальные уходят'},
+ {role:'guest',event:'Владелец подтвердил',motion:'Метка становится синей с подскоком и вспышкой, луч к ней сплошной'},
  {role:'guest',event:'Владелец отказал или не успел',motion:'Метка тает'},
- {role:'guest',event:'Бронь создана',motion:'Зелёная метка «Бронь» с подскоком и вспышкой'},
+ {role:'guest',event:'Бронь создана',motion:'Зелёная метка «Бронь» с подскоком и двойной вспышкой, лучи гаснут'},
  {role:'guest',event:'Подбор пуст, истёк или отменён',motion:'Метки тают, радар гаснет'},
  {role:'owner',event:'Пришёл быстрый запрос гостя',motion:'Квартира вздрагивает, метка «Запрос» пульсирует'},
  {role:'owner',event:'Владелец ответил «Готов»',motion:'Метка «Ответ отправлен» со вспышкой'},

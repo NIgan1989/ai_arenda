@@ -4,19 +4,23 @@ import {C} from './styles';
 import {T} from './tokens';
 import {API_URL} from './api';
 import {MAX_ZOOM,MIN_ZOOM,TILE,fitView,groupPins,pinWidth,project,unproject,validPoint,visibleTiles,type MapPoint} from './map-math';
-import {appearDelay,flight,flightSteps,type Flight,type PinTone} from './map-motion';
-import {FRESH,LEAVE,Leaving,Pin,Radar,controlsHeight,m,toneOrder} from './MapPins';
+import {appearDelay,flight,flightSteps,type Flight,type MapLine,type PinTone} from './map-motion';
+import {Beam,FRESH,LEAVE,Leaving,Origin,Pin,Radar,controlsHeight,m,toneOrder} from './MapPins';
 
 // rank: among pins of one tone, the lower one stays visible when their boxes meet (the price, for flats).
 // until: for a waiting pin, when the owner's time to answer ends, in seconds by this phone's clock; a strip under the label runs down to it.
-export type MapPin={key:string;point:MapPoint;label:string;tone?:PinTone;title?:string;rank?:number;until?:number};
+// best: the AI's best choice for the guest; it wears the two-colour ring of the AI and a ✦.
+export type MapPin={key:string;point:MapPoint;label:string;tone?:PinTone;title?:string;rank?:number;until?:number;best?:boolean};
+export type {MapLine};
 // scanning: a search is running; the map sends radar waves from the middle of what is visible.
-type Props={center:MapPoint;pins:MapPin[];selected?:string;onSelect?:(key:string)=>void;bottomInset?:number;topInset?:number;focusKey?:string;picking?:boolean;scanning?:boolean;onCenter?:(center:MapPoint)=>void};
+// focus: the pin of the card the guest is looking at in the carousel: it lifts and the map flies to it.
+// lines: beams from the guest's search point to the flats being asked.
+export type MapProps={center:MapPoint;pins:MapPin[];selected?:string;focus?:string;lines?:MapLine[];onSelect?:(key:string)=>void;bottomInset?:number;topInset?:number;focusKey?:string;picking?:boolean;scanning?:boolean;onCenter?:(center:MapPoint)=>void};
 type View2={center:MapPoint;zoom:number};
 // The tile service asks clients to identify themselves; no account or device data is sent.
 const tileHeaders={'User-Agent':'AIArenda-mobile/0.1 (+'+API_URL+')'};
 const plusIcon=require('../assets/ui/plus.png'),minusIcon=require('../assets/ui/minus.png'),fitIcon=require('../assets/ui/fit.png');
-export function TileMap({center,pins,selected,onSelect,bottomInset=0,topInset=0,focusKey='',picking=false,scanning=false,onCenter}:Props){
+export function TileMap({center,pins,selected,focus='',lines=[],onSelect,bottomInset=0,topInset=0,focusKey='',picking=false,scanning=false,onCenter}:MapProps){
  const [size,setSize]=useState({w:0,h:0}),[view,setViewNow]=useState<View2>({center,zoom:12}),[drag,setDrag]=useState({x:0,y:0}),[still,setStill]=useState(false);
  const state=useRef({view,size,bottomInset,topInset,picking});state.current={view,size,bottomInset,topInset,picking};
  const loop=useRef(new Animated.Value(0)).current,report=useRef(onCenter);report.current=onCenter;
@@ -73,6 +77,8 @@ export function TileMap({center,pins,selected,onSelect,bottomInset=0,topInset=0,
  // The sheet grew or shrank: frame the same pins in the part of the map that is still visible, unless the person has moved the map themselves.
  useEffect(()=>{if(!size.w||!fitted.current||moved.current||picking)return;if(Math.abs(usableHeight-fittedHeight.current)>=48)fit();},[usableHeight]);
  useEffect(()=>{report.current?.(view.center);},[view.center[0],view.center[1]]);
+ // A card of the carousel came into view: the map flies to its pin, at no less than a street's zoom.
+ useEffect(()=>{const pin=focus&&pins.find(p=>p.key===focus),point=pin&&validPoint(pin.point);if(!point||!size.w)return;moved.current=true;setView(v=>({center:point,zoom:Math.max(v.zoom,13)}));},[focus]);
 
  // ---------- Picking a point: the marker lifts while the map moves under it and lands with a ring ----------
  const lift=useRef(new Animated.Value(0)).current,land=useRef(new Animated.Value(1)).current;
@@ -93,7 +99,7 @@ export function TileMap({center,pins,selected,onSelect,bottomInset=0,topInset=0,
  const placed=size.w?pins.flatMap(pin=>{if(!validPoint(pin.point))return [];return [{pin,...at(pin.point)}];}).filter(p=>p.x>-80&&p.x<size.w+80&&p.y>-40&&p.y<size.h+40):[];
  // Boxes that would cover each other are drawn as one pin with "+N"; a tap on it zooms in until they part.
  const byKey=new Map(placed.map(p=>[p.pin.key,p]));
- const shown=groupPins(placed.map(({pin,x,y})=>({key:pin.key,x,y,width:pinWidth(pin.label),height:32,rank:pin.key===selected?-1:toneOrder[pin.tone||'home']*1e9+Math.max(0,Math.min(pin.rank??0,1e9-1))}))).map(g=>({...byKey.get(g.key)!,members:g.members}));
+ const shown=groupPins(placed.map(({pin,x,y})=>({key:pin.key,x,y,width:pinWidth(pin.label),height:32,rank:pin.key===selected||pin.key===focus?-1:toneOrder[pin.tone||'home']*1e9+(pin.best?0:Math.max(0,Math.min(pin.rank??0,1e9-1)))}))).map(g=>({...byKey.get(g.key)!,members:g.members}));
  const openGroup=(keys:string[])=>{
   const {view:v}=state.current;
   // At the closest zoom the flats share one spot: each tap shows the next one.
@@ -107,9 +113,11 @@ export function TileMap({center,pins,selected,onSelect,bottomInset=0,topInset=0,
    <Animated.View style={[StyleSheet.absoluteFill,camera?{transform:camera}:null]}>
     {tiles.map(t=><Image key={t.key} fadeDuration={0} accessibilityIgnoresInvertColors source={{uri:'https://tile.openstreetmap.org/'+view.zoom+'/'+t.x+'/'+t.y+'.png',headers:tileHeaders}} style={[m.tile,{left:t.left,top:t.top}]}/>)}
     {scanning&&!still&&<Radar x={size.w/2} y={originY}/>}
+    {lines.map(l=><Beam key={l.key} a={at(l.from)} b={at(l.to)} tone={l.tone} still={still}/>)}
+    {!!lines.length&&<Origin {...at(lines[0].from)}/>}
     {!still&&leaving.filter(p=>validPoint(p.point)).map(p=><Leaving key={'gone:'+p.key+':'+p.gone} pin={p} {...at(p.point)}/>)}
     {shown.map(({pin,x,y,members})=>{const more=members.length-1,b=born.current.get(pin.key)||0;
-     return <Pin key={pin.key} pin={pin} x={x} y={y} more={more} active={pin.key===selected} still={still} picking={picking} loop={loop}
+     return <Pin key={pin.key} pin={pin} x={x} y={y} more={more} active={pin.key===selected||pin.key===focus} still={still} picking={picking} loop={loop}
       born={now-b<FRESH?b:0} delay={appearDelay(x,y,size.w/2,originY)} onPress={onSelect?()=>more?openGroup(members):onSelect(pin.key):undefined}/>;})}
    </Animated.View>
   </View>

@@ -10,7 +10,8 @@ import {windowBadge} from '../../lib/window-badge';
 import {dealBadge} from '../../lib/price-deal';
 import {C} from './styles';
 import {T} from './tokens';
-import {LiveMap,type MapPin} from './LiveMap';
+import {LiveMap,type MapLine,type MapPin} from './LiveMap';
+import {beams} from './map-motion';
 import {countdown,mapCities,validPoint,type MapPoint} from './map-math';
 import {MapSheetHead} from './MapSheetHead';
 import {NowCard as NowCardView} from './NowCard';
@@ -26,11 +27,12 @@ import {PriceTip} from './PriceTip';
 // Map-first home screen, like a taxi app: a full-screen map and one bottom sheet.
 // Collapsed, the sheet holds only the head (AI line, chips, the "Сейчас" card); expanded, the controls of the role.
 // Every action goes through the same server rules as the web workspace: people only confirm facts.
-type Publish=(pins:MapPin[],focusKey:string)=>void;
+// lines: beams from the guest's search point to the flats being asked (guest only).
+type Publish=(pins:MapPin[],focusKey:string,lines?:MapLine[])=>void;
 // The stay a guest books from the map: Kazakhstan time, as the request form keeps it.
 export type MapStay={mode:'daily'|'hourly';start:string;end:string;guests:number};
 // showNow: whether the "Сейчас" card has its place in the sheet as it is now (see MapHome).
-type Common={setScanning:(on:boolean)=>void;accountId:string;data:Row;mapData:Row|null;city:string;publish:Publish;selected:string;setSelected:(key:string)=>void;snap:number;showNow:boolean;expand:(snap:number)=>void;onHead:(height:number)=>void;onReach:(bottom:number)=>void;onAsk:(text:string)=>void;onIntent:(intent:string,stay?:MapStay)=>void;onBook:(property:Row,stay:MapStay)=>void;onChanged:()=>Promise<unknown>;onOpenProcess:(kind:'booking'|'job',id:string)=>void;onOpenPage:(id:string)=>void};
+type Common={setScanning:(on:boolean)=>void;accountId:string;data:Row;mapData:Row|null;city:string;publish:Publish;selected:string;setSelected:(key:string)=>void;focus:string;setFocus:(key:string)=>void;snap:number;showNow:boolean;expand:(snap:number)=>void;onHead:(height:number)=>void;onReach:(bottom:number)=>void;onAsk:(text:string)=>void;onIntent:(intent:string,stay?:MapStay)=>void;onBook:(property:Row,stay:MapStay)=>void;onChanged:()=>Promise<unknown>;onOpenProcess:(kind:'booking'|'job',id:string)=>void;onOpenPage:(id:string)=>void};
 const liveRequests=new Map<string,string>();
 // What the guest searched for outlives a visit to another page (a flat's details, the check of a booking):
 // coming back to the map within ten minutes shows the same conditions and the same list.
@@ -60,14 +62,14 @@ function openNow(card:NowCard|null,c:Pick<Common,'expand'|'onOpenProcess'|'onOpe
 }
 function useNow(active:boolean){const [now,setNow]=useState(Date.now()/1000);useEffect(()=>{if(!active)return;const timer=setInterval(()=>setNow(Date.now()/1000),1000);return()=>clearInterval(timer);},[active]);return now;}
 
-function GuestPanel({setScanning,accountId,data,mapData,publish,selected,setSelected,snap,showNow,expand,onHead,onReach,onAsk,onIntent,onBook,onChanged,onOpenProcess,onOpenPage,picking,setPicking,mapCenter,city,setCity}:Common&{picking:boolean;setPicking:(value:boolean)=>void;mapCenter:React.RefObject<MapPoint|null>;setCity:(city:string)=>void}){
+function GuestPanel({setScanning,accountId,data,mapData,publish,selected,setSelected,setFocus,snap,showNow,expand,onHead,onReach,onAsk,onIntent,onBook,onChanged,onOpenProcess,onOpenPage,picking,setPicking,mapCenter,city,setCity}:Common&{picking:boolean;setPicking:(value:boolean)=>void;mapCenter:React.RefObject<MapPoint|null>;setCity:(city:string)=>void}){
  const kept=useRef(guestSearches.get(accountId)).current,foundAt=useRef(kept?.foundAt||0),recent=!!kept?.preview&&Date.now()-kept.foundAt<SEARCH_KEEP;
  const [draft,setDraft]=useState<GuestDraft>(()=>kept?.draft||newDraft(city));
  // hint.ask: text the request rules could not read; the guest can still send it to the AI administrator.
  const [asked,setAsked]=useState(''),[hint,setHint]=useState<{text:string;ask?:string;error?:boolean}|null>(null),[refine,setRefine]=useState(false);
  const [preview,setPreview]=useState<Row|null>(recent?kept!.preview:null),[requestId,setRequestId]=useState(()=>liveRequests.get(accountId)||''),[live,setLive]=useState<Row|null>(null);
  const [error,setError]=useState(''),[working,setWorking]=useState(false),[index,setIndex]=useState(0),[acceptedKey,setAcceptedKey]=useState(''),[skew,setSkew]=useState(0);
- const lock=useRef(false),requestKey=useRef(''),pickThenFind=useRef(false),bookedFlat=useRef<Row|null>(null);
+ const lock=useRef(false),requestKey=useRef(''),pickThenFind=useRef(false),bookedFlat=useRef<Row|null>(null),askedFrom=useRef<MapPoint|null>(null);
  const active=!!requestId&&(!live||['searching','ready','booking'].includes(live.status)),now=useNow(active)+skew;
  // Any change of the conditions makes the shown results stale.
  const change=(next:GuestDraft)=>{if(next.city!==draft.city)setCity(next.city);setDraft(next);setPreview(null);setError('');setHint(null);};
@@ -112,10 +114,11 @@ function GuestPanel({setScanning,accountId,data,mapData,publish,selected,setSele
  useEffect(()=>{if(!picking)pickThenFind.current=false;},[picking]);
  const begin=()=>guarded(async()=>{
   requestKey.current||=uid();
+  askedFrom.current=draft.near?[draft.near.longitude,draft.near.latitude]:mapCenter.current;
   const result=await request('/api/operations/matching/begin',{...matchingBody(freshDraft(draft)),requestKey:requestKey.current,consent:true},undefined,undefined,'guest');
   liveRequests.set(accountId,result.id);setSkew(result.serverTime-Date.now()/1000);setLive(result);setRequestId(result.id);setIndex(0);setAccepted(false);expand(1);
  });
- const reset=()=>{liveRequests.delete(accountId);requestKey.current='';setRequestId('');setLive(null);setPreview(null);setAccepted(false);setIndex(0);};
+ const reset=()=>{askedFrom.current=null;liveRequests.delete(accountId);requestKey.current='';setRequestId('');setLive(null);setPreview(null);setAccepted(false);setIndex(0);};
  const cancel=()=>guarded(async()=>{if(active)await request('/api/operations/matching/cancel',{id:requestId},undefined,undefined,'guest');reset();});
  usePoll(async()=>{
   try{const result=await request('/api/operations/matching/state',{id:requestId},undefined,undefined,'guest');setSkew(result.serverTime-Date.now()/1000);setLive(result);}
@@ -137,8 +140,13 @@ function GuestPanel({setScanning,accountId,data,mapData,publish,selected,setSele
   // A booking made: the flat that was booked stays on the map, green, and the rest leave it.
   if(requestId&&live?.status==='booked'){const flat=bookedFlat.current;publish(flat?pin(flat,'booked').map(p=>({...p,label:'✓ Бронь'})):[],'booked:'+live.id);}
   // A flat being asked carries the end of its owner's time to answer, moved to this phone's clock.
-  else if(requestId&&live)publish([...(live.pendingProperties||[]).flatMap((p:Row)=>pin(p,'pending').map(m=>Number(p.askExpiresAt)?{...m,until:Number(p.askExpiresAt)-skew}:m)),...offers.flatMap(p=>pin(p,'offer'))],'live:'+live.id+':'+offers.length+':'+(live.pendingProperties||[]).length);
-  else if(preview)publish(preview.properties.flatMap((p:Row)=>pin(p,p.quickRequest?'booking':'home')),stageKey);
+  else if(requestId&&live){
+   // Beams start at the searched point; a request restored after a restart starts them at the middle of the map.
+   const near=live.filters?.near,from=validPoint(near?[near.longitude,near.latitude]:null)||(askedFrom.current||=mapCenter.current);
+   const asked=[...(live.pendingProperties||[]).flatMap((p:Row)=>pin(p,'pending').map(m=>Number(p.askExpiresAt)?{...m,until:Number(p.askExpiresAt)-skew}:m)),...offers.flatMap(p=>pin(p,'offer'))];
+   publish(asked,'live:'+live.id+':'+offers.length+':'+(live.pendingProperties||[]).length,live.status==='searching'||live.status==='ready'||live.status==='booking'?beams(from,asked):[]);
+  }
+  else if(preview)publish(preview.properties.flatMap((p:Row)=>pin(p,p.quickRequest?'booking':'home').map(m=>p.match?.best?{...m,best:true}:m)),stageKey);
   else publish((mapData?.properties||[]).flatMap((p:Row)=>pin(p,'home')),stageKey+':'+(mapData?.properties?.length||0));
  },[requestId,live,preview,mapData,draft.city]);
  // The radar on the map runs while flats are searched and while owners are being asked.
@@ -210,7 +218,7 @@ function GuestPanel({setScanning,accountId,data,mapData,publish,selected,setSele
  </MapSheetHead>;
  // The form and the results live in the opened sheet only; a running request to owners keeps its place in any state.
  const body=requestId?renderLive():snap===0?null:preview&&!refine
-  ?<GuestResults preview={preview} draft={draft} selected={selected} onSelect={setSelected} onBook={bookFlat} onOpen={property=>onIntent('property:'+property.id,{mode:draft.mode,start:draft.start,end:draft.end,guests:draft.guests})} onRefine={toggleRefine} onWiden={narrowed?widen:undefined} onAskOwners={quick>0?()=>void begin():undefined} onBookEdge={onReach} busy={working}/>
+  ?<GuestResults preview={preview} draft={draft} selected={selected} onSelect={setSelected} onFocus={setFocus} onBook={bookFlat} onOpen={property=>onIntent('property:'+property.id,{mode:draft.mode,start:draft.start,end:draft.end,guests:draft.guests})} onRefine={toggleRefine} onWiden={narrowed?widen:undefined} onAskOwners={quick>0?()=>void begin():undefined} onBookEdge={onReach} busy={working}/>
   :<GuestForm draft={draft} onChange={change} onPickPoint={()=>{setPicking(true);expand(0);}} onSubmit={()=>void find()} busy={working}/>;
  return <View style={h.block}>
   <HeadSlot onHeight={onHead}>{picking?pickView:requestId?null:head}</HeadSlot>
@@ -348,6 +356,10 @@ export function MapHome({ role, accountId, data, menu, onChanged, onOpenProcess,
   const [pins, setPins] = useState<MapPin[]>([]);
   const [focusKey, setFocusKey] = useState('');
   const [selected, setSelected] = useState('');
+  // The pin of the carousel card in view; a new set of pins forgets it.
+  const [focus, setFocus] = useState('');
+  const [lines, setLines] = useState<MapLine[]>([]);
+  const shownKey = useRef('');
   const [mapData, setMapData] = useState<Row | null>(null);
   const [picking, setPicking] = useState(false);
   const [scanning, setScanning] = useState(false);
@@ -452,11 +464,14 @@ export function MapHome({ role, accountId, data, menu, onChanged, onOpenProcess,
     loadMap().catch(() => {});
   }, [city]);
 
-  const publish: Publish = (next, key) => {
+  const publish: Publish = (next, key, beamLines = []) => {
     setPins(next);
+    setLines(beamLines);
+    if (key !== shownKey.current) setFocus('');
+    shownKey.current = key;
     setFocusKey(key);
   };
-  const common: Common = { setScanning, accountId, data, mapData, city, publish, selected, setSelected, snap, showNow, expand: setSnap, onHead: setHead, onReach: setReach, onAsk, onIntent, onBook, onChanged, onOpenProcess, onOpenPage };
+  const common: Common = { setScanning, accountId, data, mapData, city, publish, selected, setSelected, focus, setFocus, snap, showNow, expand: setSnap, onHead: setHead, onReach: setReach, onAsk, onIntent, onBook, onChanged, onOpenProcess, onOpenPage };
   const center = mapCities[city] || validPoint(mapData?.center) || mapCities['Павлодар'];
 
   return (
@@ -472,6 +487,8 @@ export function MapHome({ role, accountId, data, menu, onChanged, onOpenProcess,
         center={center}
         pins={pins}
         selected={selected}
+        focus={focus}
+        lines={lines}
         onSelect={setSelected}
         bottomInset={Math.min(sheetHeight, Math.round(height * 0.5))}
         topInset={topInset}
