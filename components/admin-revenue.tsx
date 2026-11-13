@@ -49,6 +49,11 @@ export function AdminRevenue({data,busy,save}:{data:Row;busy:boolean;save:Save})
    <Stat Icon={Bot} label="Расходы на ИИ" value={'$'+(data.aiCostUsd30||0)} note={`${data.aiRequests30||0} запросов`}/>
   </div>
 
+  <section className="admin-surface revenue-test-pay" aria-label="Тестовая оплата">
+   <div><strong>Тестовая оплата · {data.testPayments?'включена':'выключена'}</strong><small>{data.testPayments?'Гости оплачивают бронь и депозит в приложении без списания денег. Так можно пройти весь путь до заселения, пока не подключён банк.':'Гости платят по договорённости с владельцем, оплату отмечает владелец.'}</small></div>
+   <Button variant="outline" disabled={busy} onClick={()=>save('billing/test-payments',{enabled:!data.testPayments})}>{data.testPayments?'Выключить':'Включить'}</Button>
+  </section>
+
   <MonthlyChart rows={data.monthly||[]} now={data.serverTime} phase={phase}/>
 
   <section className="admin-surface revenue-ledger">

@@ -98,3 +98,37 @@ export async function acceptPaymentEvent(db:D1Database,raw:string,serviceForOwne
  if(intent.status==='paid')throw new DomainError('Платёж уже закрыт другим событием. Нужна сверка.',409);
  return recordFinance(serviceForOwner(intent.owner_id),{kind:intent.kind,bookingId:intent.booking_id,amount:intent.amount,note:'Подтверждённое событие платёжного провайдера',externalReference:intent.provider_reference,requestKey:'provider:'+intent.id},{eventId,intentId,payloadHash});
 }
+
+// Until a bank is connected the platform can run test payments: the guest pays and the deposit is
+// recorded the same way a provider event would, but no money moves and every entry says so.
+export async function paymentMode(db:D1Database,config:OperationConfig):Promise<'live'|'test'|'off'>{
+ if(config.PAYMENT_GATEWAY_URL&&config.PAYMENT_GATEWAY_TOKEN&&config.PAYMENT_WEBHOOK_SECRET)return 'live';
+ const s=await one(db,"SELECT test_payments FROM platform_billing WHERE id='global'").catch(()=>null);
+ return s?.test_payments?'test':'off';
+}
+export async function testPayment(service:RentalService,body:Row,config:OperationConfig,serviceForOwner:(id:string)=>RentalService){
+ if(await paymentMode(service.db,config)!=='test')throw new DomainError('Тестовая оплата выключена.',409);
+ await service.requireRole('guest');const bookingId=required(body.bookingId,'Бронь',100),kind=body.kind==='deposit'?'deposit':'payment';
+ const b=await one(service.db,"SELECT b.*,p.owner_id,t.paid_amount,t.deposit FROM bookings b JOIN properties p ON p.id=b.property_id JOIN booking_terms t ON t.booking_id=b.id WHERE b.id=? AND b.guest_id=? AND b.status='confirmed'",bookingId,service.userId);if(!b)throw new DomainError('Подтверждённая бронь недоступна.',403);
+ await migrateFinanceEntity({db:service.db,userId:b.owner_id},'booking',bookingId);
+ const received=await one(service.db,"SELECT COALESCE(SUM(CASE WHEN kind='deposit' THEN amount WHEN kind='deposit_return' THEN -amount ELSE 0 END),0) n FROM finance_entries WHERE booking_id=?",bookingId);
+ const amount=kind==='payment'?Math.max(0,b.amount-b.paid_amount):Math.max(0,b.deposit-(received?.n||0));if(!amount)throw new DomainError(kind==='payment'?'Бронь уже оплачена.':'Депозит уже внесён.',409);
+ // One attempt per remaining amount: a second tap finds the same attempt and records nothing twice.
+ const key='test:'+bookingId+':'+kind+':'+amount;
+ await q(service.db,"INSERT OR IGNORE INTO payment_intents(id,booking_id,user_id,kind,amount,status,request_key,created_at,test) VALUES (?,?,?,?,?,'ready',?,?,1)",uuid(),bookingId,service.userId,kind,amount,key,epoch()).run();
+ const intent=await one(service.db,'SELECT * FROM payment_intents WHERE user_id=? AND request_key=?',service.userId,key);
+ if(!intent||intent.test!==1)throw new DomainError('Попытка оплаты недоступна.',409);
+ const what=kind==='payment'?'Оплата':'Депозит';
+ if(intent.status==='paid')return {message:what+' уже учтён'+(kind==='payment'?'а':'')+'.'};
+ await recordFinance(serviceForOwner(b.owner_id),{kind,bookingId,amount,note:'Тестовая оплата: деньги не списывались',externalReference:'TEST-'+String(intent.id).slice(0,8),requestKey:'provider:'+intent.id},{eventId:'test:'+intent.id,intentId:intent.id,payloadHash:'test'});
+ return {message:what+' '+new Intl.NumberFormat('ru-RU').format(amount)+' ₸ учтен'+(kind==='payment'?'а':'')+' в тестовом режиме. Деньги не списывались.'};
+}
+export async function setTestPayments(service:RentalService,body:Row){
+ if(typeof body.enabled!=='boolean')throw new DomainError('Укажите, включена ли тестовая оплата.');
+ const at=epoch(),r=await service.db.batch([
+  q(service.db,"UPDATE platform_billing SET test_payments=? WHERE id='global'",body.enabled?1:0),
+  q(service.db,'INSERT INTO audit_events SELECT ?,?,?,?,? WHERE changes()>0',uuid(),service.userId,'platform-billing',JSON.stringify({action:'billing.test_payments',enabled:body.enabled}),at),
+ ]);
+ if(!r[0].meta.changes)throw new DomainError('Настройки оплаты не найдены. Примените обновление базы.',503);
+ return {message:body.enabled?'Тестовая оплата включена: гости проходят оплату без списания денег.':'Тестовая оплата выключена. Гости платят по договорённости с владельцем, пока не подключён банк.'};
+}

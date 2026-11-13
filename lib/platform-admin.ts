@@ -1,7 +1,8 @@
 import {DomainError,number} from './domain';
 import {isPlatformAdmin} from './account';
 import type {RentalService} from './service';
-import type {OperationConfig} from './operation-core';
+import {one,type OperationConfig} from './operation-core';
+import {setTestPayments} from './finance';
 import {buildRuntimeHealth} from './runtime-health';
 import {integrationStatus} from './delivery';
 import {securityState,decideParticipantReview} from './participant-security';
@@ -42,7 +43,7 @@ export async function readPlatformAdmin(service:RentalService,route:string,param
  }
  if(route==='billing/owners')return billingOwners(service,params);
  if(route==='billing/plans')return plansAdminState(service.db);
- if(route==='billing'){const state={...await billingState(service),plans:await plansAdminState(service.db)};await service.audit(service.userId,'admin.billing_viewed').run();return state;}
+ if(route==='billing'){const state={...await billingState(service),plans:await plansAdminState(service.db),testPayments:(await one(service.db,"SELECT test_payments FROM platform_billing WHERE id='global'"))?.test_payments===1};await service.audit(service.userId,'admin.billing_viewed').run();return state;}
  if(route==='governance')return {...await governanceState(service,'guest',true),admissions:[],testMode:config.TEST_DATA_ONLY==='1'};
  if(route==='health')return {runtime:await buildRuntimeHealth(service.db,config),queue:await operationalHealth(service,'guest',true),integrations:integrationStatus(config),aiBudget:await aiBudgetState(service,config,true)};
  if(route==='properties'){
@@ -80,6 +81,7 @@ export async function writePlatformAdmin(service:RentalService,route:string,body
  }
  if(route==='governance/ticket')return updateOperatorTicket(service,'guest',body,true);
  if(route==='billing/settings')return saveBillingSettings(service,body);
+ if(route==='billing/test-payments')return setTestPayments(service,body);
  if(route==='billing/plans')return savePlanSettings(service,body);
  if(route==='billing/balance')return recordBalanceEntry(service,body);
  if(route==='billing/payout')return markCleanerPayout(service,body);
