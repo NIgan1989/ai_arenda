@@ -94,7 +94,7 @@ export function PropertyQuick({city,role,api,onSave,onGuestMode,onPlace,onReview
     <Num label="Площадь, м²" value={draft.area} min={5} max={2000} guessed={guessed('area')} onChange={v=>patch({area:v})}/>
     <label className="pq-tile"><span>Этаж{guessed('floor')&&<em>ИИ предположил</em>}</span><span className="pq-pair"><input type="number" inputMode="numeric" min={0} max={100} value={draft.floor} onChange={e=>patch({floor:Math.max(0,Number(e.target.value)||0)})} aria-label="Этаж"/>из<input type="number" inputMode="numeric" min={1} max={100} value={draft.floors} onChange={e=>patch({floors:Math.max(1,Number(e.target.value)||1)})} aria-label="Этажей в доме"/></span></label>
    </div>
-   <label className="pq-field"><span>Точный адрес · видят только гость с бронью и уборщица</span><input value={draft.address} maxLength={300} placeholder="Улица, дом, квартира" onChange={e=>patch({address:e.target.value})}/></label>
+   <label className="pq-field"><span>Точный адрес · видят только гость с бронью и исполнитель уборки</span><input value={draft.address} maxLength={300} placeholder="Улица, дом, квартира" onChange={e=>patch({address:e.target.value})}/></label>
    <div className="pq-two"><label className="pq-field"><span>Район</span><input value={draft.district} maxLength={120} onChange={e=>patch({district:e.target.value})}/></label><label className="pq-field"><span>Город</span><input value={draft.city} maxLength={80} onChange={e=>patch({city:e.target.value})}/></label></div>
 
    <h3 className="pq-h">Цены</h3>
