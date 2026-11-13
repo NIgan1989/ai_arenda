@@ -46,3 +46,16 @@ test('delivery acceptance and actual read receipts are separate and receipt repl
   const raw=JSON.stringify({channel:'whatsapp',eventId:'receipt-1',outboxId:item.id,status:'read'});await acceptDeliveryReceipt(f.db,raw);assert.equal((await acceptDeliveryReceipt(f.db,raw)).duplicate,true);assert.ok(f.db.raw.prepare('SELECT read_at,delivered_at FROM delivery_outbox').get().read_at);await assert.rejects(acceptDeliveryReceipt(f.db,raw.replace('"read"','"failed"')),e=>e.status===409);
  }finally{f.db.close();}
 });
+test('one Telegram Start links every role of the person; a role switched off stays off',async()=>{
+ const f=await fixture(),fetch=globalThis.fetch,config={TELEGRAM_BOT_TOKEN:'test-token',TELEGRAM_BOT_USERNAME:'rental_test_bot',TELEGRAM_WEBHOOK_SECRET:'test-webhook-secret'};try{
+  const replies=[];globalThis.fetch=async(_url,request)=>{replies.push(JSON.parse(request.body));return Response.json({ok:true,result:{}});};
+  const id=f.owner.userId;f.db.raw.prepare('UPDATE profiles SET roles=? WHERE id=?').run(JSON.stringify(['owner','guest','cleaner']),id);
+  const start=async(chat)=>{const link=await createTelegramLink(f.owner,'owner',config);await acceptTelegramLink(f.db,{message:{text:'/start '+new URL(link.url).searchParams.get('start'),chat:{type:'private',id:chat},from:{id:chat,is_bot:false}}},config.TELEGRAM_WEBHOOK_SECRET,config);};
+  await start(77);assert.match(replies.at(-1).text,/Готово.*«Гость», «Владелец», «Исполнитель»/);
+  for(const role of ['owner','guest','cleaner'])assert.equal((await telegramStatus(f.owner,role,config)).enabled,true);
+  await setDeliveryChannel(f.owner,'guest',{channel:'telegram',enabled:false},config);
+  await start(88);
+  assert.equal((await telegramStatus(f.owner,'guest',config)).enabled,false);assert.equal((await telegramStatus(f.owner,'guest',config)).linked,true);
+  assert.deepEqual(f.db.raw.prepare("SELECT DISTINCT address FROM delivery_channels WHERE user_id=?").all(id).map(r=>r.address),['88']);
+ }finally{globalThis.fetch=fetch;f.db.close();}
+});
