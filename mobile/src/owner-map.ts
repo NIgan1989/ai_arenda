@@ -17,12 +17,19 @@ export function priceChange(from:number,to:number){return from>=10000&&to>=10000
 // an arrival or a cleaning within a day; otherwise its price, or the AI's price advice with the AI ring.
 export function ownerPin(property:Row,processes:Row[],now:number,advice?:{from:number;to:number}|null):OwnerPin{
  const mine=processes.filter(p=>p.propertyId===property.id),of=(kind:string,...status:string[])=>mine.filter(p=>p.kind===kind&&status.includes(p.status)).sort((a,b)=>Number(a.start)-Number(b.start));
+ // Trouble first, in red: a cleaning past its deadline, then an arrival within the hour while a cleaning that began before it is not accepted.
+ // The same rules the AI administrator uses for its reminders (lib/administrator.ts).
+ if(of('job','open','assigned','in_progress').some(j=>Number(j.end)<=now))return {label:'Уборка просрочена',tone:'alert'};
+ const unfinished=of('job','open','assigned','in_progress','submitted'),risky=unfinished.length?of('booking','confirmed').find(b=>Number(b.start)>now&&Number(b.start)<=now+3600&&unfinished.some(j=>Number(j.start)<Number(b.start))):undefined;
+ if(risky)return {label:'Заезд под угрозой',tone:'alert'};
  // Cleaning under way fills a strip on the pin, from its start to the end of its window (see cleaner-map.ts).
  const working=of('job','in_progress')[0];if(working){const a=Number(working.startedAt),b=Number(working.end);return {label:'Уборка идёт',tone:'active',...(a>0&&b>a?{progress:Math.max(0,Math.min(1,(now-a)/(b-a)))}:{})};}
  // A stay past its end without a confirmed departure still needs the owner: the map keeps it until the checkout is confirmed.
  if(of('booking','confirmed').some(b=>Number(b.start)<=now&&now>=Number(b.end)))return {label:'Выезд не подтверждён',tone:'pending'};
  const inside=of('booking','confirmed').find(b=>Number(b.start)<=now&&now<Number(b.end));if(inside)return {label:'Гость до '+(soon(Number(inside.end),now)||clock(Number(inside.end))),tone:'booking'};
  if(of('job','submitted')[0])return {label:'Уборка на приёмке',tone:'job'};
+ // Assigned, the time has come a quarter of an hour ago, and nobody has started.
+ if(of('job','assigned').some(j=>Number(j.start)+900<=now))return {label:'Исполнитель не начал',tone:'alert'};
  if(of('booking','requested')[0])return {label:'Заявка',tone:'pending'};
  const arrival=of('booking','confirmed').find(b=>Number(b.start)>now&&soon(Number(b.start),now));if(arrival)return {label:'Заезд '+soon(Number(arrival.start),now),tone:'booking'};
  const cleaning=of('job','open','assigned').find(j=>soon(Number(j.start),now));if(cleaning)return {label:'Уборка '+soon(Number(cleaning.start),now),tone:'job'};
@@ -30,6 +37,9 @@ export function ownerPin(property:Row,processes:Row[],now:number,advice?:{from:n
  if(advice&&advice.from>0&&advice.to>0&&advice.from!==advice.to)return {label:priceChange(advice.from,advice.to),tone:'home',best:true};
  return {label:price>0?thousands(price):'Жильё',tone:'home'};
 }
+
+// What the AI has just finished shows as a result for a while: a cleaning it accepted makes the calm pin say «Готово к заезду» in green.
+export function withAiResult(pin:OwnerPin,move?:string):OwnerPin{return move==='accepted'&&pin.tone==='home'?{label:'Готово к заезду',tone:'booked'}:pin;}
 
 // The people on their way, as the server shares them: only with a fresh point.
 export function travellers(journeys:Row[]):{key:string;point:[number,number];label:string}[]{

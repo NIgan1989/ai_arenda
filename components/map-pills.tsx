@@ -12,7 +12,7 @@ import './map-pills.css';
 // sends two waves, work that starts flashes, a request that ends without a yes settles. Pins that would cover each other
 // fold into one with «+N»; a tap on it flies in. With «reduce motion» nothing moves.
 // They are HTML over the MapLibre map: each frame of a move puts them where the map projects their points.
-const toneOrder:Record<PinTone,number>={offer:0,booked:0,pending:1,active:1,booking:2,job:3,home:3};
+const toneOrder:Record<PinTone,number>={alert:0,offer:0,booked:0,pending:1,active:1,booking:2,job:3,home:3};
 const FRESH=900,LEAVE=260,ECHO_DELAY=450,AI_PLAY=2600;
 // The AI's own work plays once per move, even when the page draws the pin again (mobile/src/MapPins.tsx does the same).
 const aiShown=new Map<string,number>();
@@ -71,12 +71,14 @@ function Pill({pin,x,y,more,active,born,delay,onPress}:{pin:WebPin;x:number;y:nu
   const bounce=(to:number)=>el.animate([{transform:'scale(1)'},{transform:`scale(${1+to})`,offset:.25},{transform:`scale(${1-to/3})`,offset:.6},{transform:'scale(1)'}],{duration:520,delay:wait,easing:'ease-out'});
   const burst=()=>ring.current?.animate([{opacity:0,transform:'scale(.5)'},{opacity:.6,offset:.05},{opacity:0,transform:'scale(2.6)'}],{duration:700,delay:wait,easing:'cubic-bezier(.2,.7,.3,1)'});
   const wiggle=()=>el.animate([{transform:'rotate(0)'},{transform:'rotate(-9deg)',offset:.2},{transform:'rotate(8deg)',offset:.4},{transform:'rotate(-5deg)',offset:.6},{transform:'rotate(3deg)',offset:.8},{transform:'rotate(0)'}],{duration:420,delay:wait});
-  ({ask:()=>{wiggle();},answer:()=>{burst();bounce(.28);},celebrate:()=>{burst();bounce(.4);ring2.current?.animate([{opacity:0,transform:'scale(.6)'},{opacity:.8,offset:.05},{opacity:0,transform:'scale(3.4)'}],{duration:900,delay:wait+240,easing:'cubic-bezier(.2,.7,.3,1)'});},start:()=>{burst();bounce(.16);},settle:()=>{bounce(-.12);},update:()=>{bounce(.16);}} as Record<string,()=>void>)[event]?.();
+  ({ask:()=>{wiggle();},answer:()=>{burst();bounce(.28);},celebrate:()=>{burst();bounce(.4);ring2.current?.animate([{opacity:0,transform:'scale(.6)'},{opacity:.8,offset:.05},{opacity:0,transform:'scale(3.4)'}],{duration:900,delay:wait+240,easing:'cubic-bezier(.2,.7,.3,1)'});},start:()=>{burst();bounce(.16);},settle:()=>{bounce(-.12);},alarm:()=>{wiggle();burst();},calm:()=>{bounce(-.12);},update:()=>{bounce(.16);}} as Record<string,()=>void>)[event]?.();
   // The echo: two wide waves of the accent colour go out from a pin that changed while the person was elsewhere.
   if(echoed)echoRing.current?.animate([{opacity:0,transform:'scale(.8)'},{opacity:1,offset:.08},{opacity:.5,offset:.7},{opacity:0,transform:'scale(2.8)'}],{duration:900,delay:wait,iterations:2,easing:'ease-out'});
  },[pin.tone,pin.label]);
  // The sign of the AI (pin.ai): a ring in its colours runs round the pin once and a short line lifts above it.
- const [aiText,setAiText]=useState(''),aiRing=useRef<HTMLSpanElement>(null),aiSays=useRef<HTMLSpanElement>(null);
+ const [aiText,setAiText]=useState(''),aiRing=useRef<HTMLSpanElement>(null),aiSays=useRef<HTMLSpanElement>(null),comer=useRef<HTMLSpanElement>(null);
+ // A person the AI sent here (assigned, replaced, took the job): their dot flies to the pin along an arc.
+ const coming=!!aiText&&!!pin.ai&&['assigned','replaced','took'].includes(pin.ai.move);
  useEffect(()=>{
   const move=pin.ai;if(!move||aiShown.get(pin.key)===move.at)return;
   aiShown.set(pin.key,move.at);if(calm()||Date.now()/1000-move.at>AI_WINDOW)return;
@@ -85,18 +87,20 @@ function Pill({pin,x,y,more,active,born,delay,onPress}:{pin:WebPin;x:number;y:nu
  useEffect(()=>{
   if(!aiText)return;const wait=(pin.was?ECHO_DELAY:0)+260;
   aiRing.current?.animate([{opacity:0,transform:'scale(.92)'},{opacity:1,transform:'scale(1.04)',offset:.12},{opacity:.9,transform:'scale(1.06)',offset:.7},{opacity:0,transform:'scale(1.14)'}],{duration:AI_PLAY,delay:wait,fill:'both'});
+  comer.current?.animate([{opacity:0,transform:'translate(84px,64px) scale(.6)'},{opacity:1,offset:.15},{opacity:1,transform:'translate(52px,12px) scale(1)',offset:.55},{opacity:1,transform:'translate(0,0) scale(1)',offset:.85},{opacity:0,transform:'translate(0,0) scale(.4)'}],{duration:1500,delay:wait,easing:'cubic-bezier(.3,.7,.3,1)',fill:'both'});
   aiSays.current?.animate([{opacity:0,transform:'translate(-50%,6px)'},{opacity:1,transform:'translate(-50%,0)',offset:.1},{opacity:1,offset:.75},{opacity:0,transform:'translate(-50%,-8px)'}],{duration:AI_PLAY,delay:wait,fill:'both'});
  },[aiText]);
  // The time left to answer runs down under the label; a cleaning under way fills its strip.
  // Read once per deadline, so the frames of a map move do not restart the strip.
  const left=useMemo(()=>pin.tone==='pending'&&pin.until?answerLeft(pin.until,Date.now()/1000):0,[pin.tone,pin.until]);
  const label=(pin.order?'Остановка '+pin.order+'. ':'')+pin.title+', '+pin.label+(pin.progress!=null?', прошло '+Math.round(pin.progress*100)+'% времени':'')+(pin.best?', лучший выбор':'')+(more?'. Рядом ещё '+more+'. Приблизить':'');
- return <span ref={wrap} className={'map-pill tone-'+pin.tone+(active?' active':'')+(pin.best?' best':'')+(pin.order?' ordered':'')} style={{left:x,top:y,zIndex:active?3:pin.tone==='offer'||pin.tone==='booked'?2:1}}>
-  {(pin.tone==='pending'||pin.tone==='active')&&<span className="map-pill-breath" aria-hidden="true"/>}
+ return <span ref={wrap} className={'map-pill tone-'+pin.tone+(active?' active':'')+(pin.best?' best':'')+(pin.order?' ordered':'')} style={{left:x,top:y,zIndex:active?3:pin.tone==='offer'||pin.tone==='booked'||pin.tone==='alert'?2:1}}>
+  {(pin.tone==='pending'||pin.tone==='active'||pin.tone==='alert')&&<span className="map-pill-breath" aria-hidden="true"/>}
   <span ref={ring} className="map-pill-ring" aria-hidden="true"/>
   <span ref={ring2} className="map-pill-ring wave" aria-hidden="true"/>
   <span ref={echoRing} className="map-pill-ring echo" aria-hidden="true"/>
   {!!aiText&&<span ref={aiRing} className="map-pill-ai" style={{['--ai-w' as string]:pinWidth(pin.label)+(pin.order?22:0)+12+'px'}} aria-hidden="true"/>}
+  {coming&&<span ref={comer} className="map-pill-comer" aria-hidden="true"/>}
   {!!aiText&&<span ref={aiSays} className="map-pill-ai-says" role="status">✦ {aiText}</span>}
   <button ref={body} type="button" className="map-pill-body" aria-label={label} aria-pressed={active} onClick={e=>{e.stopPropagation();onPress();}}>
    {!!pin.order&&<b className="map-pill-order">{pin.order}</b>}

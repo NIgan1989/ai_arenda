@@ -29,7 +29,9 @@ const KEYS:[string,AiMark['kind'],AiMove][]=[
  ['cleaner:autopilot-took:','cleaning-offer','took'],
  ['cleaner:checkout-reschedule:','job','moved'],
  ['cleaner:overdue-remind:','job','reminded'],
- ['cleaner:overdue-escalated:','job','escalated']
+ ['cleaner:overdue-escalated:','job','escalated'],
+ ['cleaner:overdue-released:','job','released'],
+ ['cleaner:no-show:','job','released']
 ];
 export function aiMarkOf(dedupe:unknown,at:unknown,body?:unknown):AiMark|null{
  if(typeof dedupe!=='string'||typeof at!=='number'||!Number.isFinite(at))return null;
@@ -43,7 +45,7 @@ export function aiMarkOf(dedupe:unknown,at:unknown,body?:unknown):AiMark|null{
 export const AI_SAYS:Record<AiMove,string>={
  confirmed:'ИИ подтвердил бронь',answered:'ИИ ответил гостю',checkin:'ИИ заселил гостя',checkout:'ИИ подтвердил выезд',
  checked:'ИИ проверил отчёт',accepted:'ИИ принял уборку',assigned:'ИИ назначил исполнителя',replaced:'ИИ нашёл замену',
- took:'Автопилот взял уборку',moved:'ИИ перенёс время',reminded:'ИИ напомнил о сроке',escalated:'ИИ передал задержку',released:'ИИ снял исполнителя'
+ took:'Автопилот взял уборку',moved:'ИИ перенёс время',reminded:'ИИ напомнил о сроке',escalated:'ИИ передал задержку',released:'ИИ снял назначение'
 };
 
 // The newest move about any of these things, still within the window: the one a pin shows.
@@ -77,9 +79,7 @@ const NOTES:[string,AiNote['kind'],string][]=[
  ['guest:stay:','','ИИ предложил изменить проживание'],
  ['guest:review-request:','','ИИ спросил, как прошло'],
  ['cleaner:day-plan:','','ИИ составил план дня'],
- ['cleaner:offer:','cleaning-offer','ИИ предложил уборку'],
- ['cleaner:no-show:','job','ИИ снял назначение'],
- ['cleaner:overdue-released:','job','ИИ снял с уборки']
+ ['cleaner:offer:','cleaning-offer','ИИ предложил уборку']
 ];
 export function aiNoteOf(dedupe:unknown,at:unknown,body?:unknown):AiNote|null{
  const mark=aiMarkOf(dedupe,at,body);if(mark)return {kind:mark.kind,id:mark.id,text:AI_SAYS[mark.move],at:mark.at};

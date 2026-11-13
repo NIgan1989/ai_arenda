@@ -1,6 +1,6 @@
 'use client';
 import { goWorkspace } from '../lib/workspace-go';
-import { ownerPin } from '../mobile/src/owner-map';
+import { ownerPin, withAiResult } from '../mobile/src/owner-map';
 import { cleanerPin, dayRoute, routeLines, routeSummary } from '../mobile/src/cleaner-map';
 import {useEffect,useRef,useState,type PointerEvent as ReactPointerEvent,type ReactNode} from 'react';
 import {latestMove} from '../lib/ai-move-marks';
@@ -21,7 +21,7 @@ import {MatchingInbox} from './matching-inbox';
 import {ProcessJourney} from './process-journey';
 import {PriceTip} from './price-tip';
 import {kindLabel} from '../lib/listings';
-import {guestStep,guestTrips} from '../lib/guest-trips';
+import {guestPin,guestStep,guestTrips} from '../lib/guest-trips';
 import {ownerStep,ownerStepOnMap} from '../lib/owner-steps';
 import {cleanerLine,cleanerStep,ownerJobStep} from '../lib/job-steps';
 import {calendarEntries} from '../lib/calendar-days';
@@ -141,10 +141,15 @@ function RoleMap({ role, accountId, data, onDiscussion, onProcess, onCreate, onA
   const advice = new Map<string, { from: number; to: number }>((data.approvals || []).filter((c: Row) => c.kind === 'price' && c.price?.propertyId && c.canDecide).map((c: Row) => [c.price.propertyId, { from: Number(c.price.from), to: Number(c.price.to) }]));
   const route = role === 'cleaner' ? dayRoute(data.jobs || [], accountId, now) : [];
   const flats: Row[] = role === 'owner' ? (query.data?.properties || []).map((p: Row) => {
-    const pin = ownerPin(p, processes, now, advice.get(p.id));
-    return { ...p, mapPrice: p.price, mapKey: 'property:' + p.id, pinTone: pin.tone, pinLabel: pin.label, pinProgress: pin.progress, pinBest: pin.best, pinAi: latestMove(query.data?.aiMarks, [{ kind: 'property', id: String(p.id) }], now) };
+    const pinAi = latestMove(query.data?.aiMarks, [{ kind: 'property', id: String(p.id) }], now), pin = withAiResult(ownerPin(p, processes, now, advice.get(p.id)), pinAi?.move);
+    return { ...p, mapPrice: p.price, mapKey: 'property:' + p.id, pinTone: pin.tone, pinLabel: pin.label, pinProgress: pin.progress, pinBest: pin.best, pinAi };
   }) : [];
   const deals: Row[] = processes.map((p: Row) => {
+    if (role === 'guest' && p.kind === 'booking') {
+      // The guest's booking says what it waits for: a payment, the open check-in, the stay itself.
+      const own = (data.bookings || []).find((b: Row) => b.id === p.id), pin = own ? guestPin(own, now, data.paymentMode) : null;
+      return { ...p, mapKey: 'booking:' + p.id, ...(pin ? { pinTone: pin.tone, pinLabel: pin.label } : {}) };
+    }
     if (role !== 'cleaner' || p.kind !== 'job') return { ...p, mapKey: p.kind + ':' + p.id };
     const job = (data.jobs || []).find((j: Row) => j.id === p.id), applied = (data.applications || []).some((a: Row) => a.job_id === p.id && a.user_id === accountId && a.status !== 'rejected');
     const pin = cleanerPin({ ...job, ...p }, route.find(r => r.id === p.id), now, applied);
