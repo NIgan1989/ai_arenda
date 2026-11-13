@@ -80,8 +80,10 @@ export function LiveMap({center,pins,selected,focus='',lines=[],heat=[],sparks=[
  const c=project(view.center,view.zoom),at=(point:MapPoint)=>{const p=project(point,view.zoom);return {x:p.x-c.x,y:p.y-c.y};};
  const placed=pins.flatMap(pin=>validPoint(pin.point)?[{pin,...at(pin.point)}]:[]);
  const byKey=new Map(placed.map(p=>[p.pin.key,p]));
- // The stops of a cleaner's route are never folded into a group: each keeps its number at its place on the line.
- const shown=[...groupPins(placed.filter(p=>!p.pin.order).map(({pin,x,y})=>({key:pin.key,x,y,width:pinWidth(pin.label),height:32,rank:pin.key===selected||pin.key===focus?-1:toneOrder[pin.tone||'home']*1e9+(pin.best?0:Math.max(0,Math.min(pin.rank??0,1e9-1)))}))).map(g=>({...byKey.get(g.key)!,members:g.members})),...placed.filter(p=>p.pin.order).map(p=>({...p,members:[p.pin.key]}))];
+ // The stops of a cleaner's route never fold into other pins; stops that meet each other fold into the first of them with «+N»,
+ // and a tap opens them as for any group (at the closest zoom each tap shows the next stop).
+ const box=(selectedRank:(pin:MapPin)=>number)=>({pin,x,y}:{pin:MapPin;x:number;y:number})=>({key:pin.key,x,y,width:pinWidth(pin.label)+(pin.order?22:0),height:32,rank:pin.key===selected||pin.key===focus?-1:selectedRank(pin)});
+ const shown=[false,true].flatMap(stops=>groupPins(placed.filter(p=>!!p.pin.order===stops).map(box(pin=>stops?pin.order!:toneOrder[pin.tone||'home']*1e9+(pin.best?0:Math.max(0,Math.min(pin.rank??0,1e9-1))))))).map(g=>({...byKey.get(g.key)!,members:g.members}));
  const openGroup=(keys:string[])=>{
   if(view.zoom>=MAX_ZOOM){onSelect?.(keys[(keys.indexOf(selected||'')+1)%keys.length]);return;}
   const next=fitView(keys.map(key=>byKey.get(key)!.pin.point),size.w-96,usableHeight-96,MAX_ZOOM);

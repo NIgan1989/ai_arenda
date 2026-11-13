@@ -102,8 +102,10 @@ export function TileMap({center,pins,selected,focus='',lines=[],heat=[],sparks=[
  const placed=size.w?pins.flatMap(pin=>{if(!validPoint(pin.point))return [];return [{pin,...at(pin.point)}];}).filter(p=>p.x>-80&&p.x<size.w+80&&p.y>-40&&p.y<size.h+40):[];
  // Boxes that would cover each other are drawn as one pin with "+N"; a tap on it zooms in until they part.
  const byKey=new Map(placed.map(p=>[p.pin.key,p]));
- // The stops of a cleaner's route are never folded into a group: each keeps its number at its place on the line.
- const shown=[...groupPins(placed.filter(p=>!p.pin.order).map(({pin,x,y})=>({key:pin.key,x,y,width:pinWidth(pin.label),height:32,rank:pin.key===selected||pin.key===focus?-1:toneOrder[pin.tone||'home']*1e9+(pin.best?0:Math.max(0,Math.min(pin.rank??0,1e9-1)))}))).map(g=>({...byKey.get(g.key)!,members:g.members})),...placed.filter(p=>p.pin.order).map(p=>({...p,members:[p.pin.key]}))];
+ // The stops of a cleaner's route never fold into other pins; stops that meet each other fold into the first of them with «+N»,
+ // and a tap opens them as for any group (at the closest zoom each tap shows the next stop).
+ const box=(selectedRank:(pin:MapPin)=>number)=>({pin,x,y}:{pin:MapPin;x:number;y:number})=>({key:pin.key,x,y,width:pinWidth(pin.label)+(pin.order?22:0),height:32,rank:pin.key===selected||pin.key===focus?-1:selectedRank(pin)});
+ const shown=[false,true].flatMap(stops=>groupPins(placed.filter(p=>!!p.pin.order===stops).map(box(pin=>stops?pin.order!:toneOrder[pin.tone||'home']*1e9+(pin.best?0:Math.max(0,Math.min(pin.rank??0,1e9-1))))))).map(g=>({...byKey.get(g.key)!,members:g.members}));
  const openGroup=(keys:string[])=>{
   const {view:v}=state.current;
   // At the closest zoom the flats share one spot: each tap shows the next one.
