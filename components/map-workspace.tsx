@@ -1,4 +1,5 @@
 'use client';
+import { goWorkspace } from '../lib/workspace-go';
 import { ownerPin } from '../mobile/src/owner-map';
 import { cleanerPin, dayRoute, routeLines } from '../mobile/src/cleaner-map';
 import {useEffect,useRef,useState,type PointerEvent as ReactPointerEvent,type ReactNode} from 'react';
@@ -395,7 +396,7 @@ function RoleMap({ role, accountId, data, onDiscussion, onProcess, onCreate, onA
     if (chip.id === 'requests' && offers.length && openInbox()) return;
     if (chip.id === 'add-property') { onCreate(); return; }
     if (chip.id === 'jobs-nearby') { setExpanded(v => !v); return; }
-    if (chip.href) window.location.assign(chip.href);
+    if (chip.href) goWorkspace(chip.href);
   }
   // Something to answer or to fix opens its actions at once; a calm reminder is shown on the map first.
   function openNow(card: NowCardData) {
@@ -403,7 +404,7 @@ function RoleMap({ role, accountId, data, onDiscussion, onProcess, onCreate, onA
     const onMap = card.entityId ? deals.find(d => d.kind === card.entityKind && d.id === card.entityId) : undefined;
     if (onMap && !card.urgent && ['checkin', 'checkout', 'stay', 'job', 'application'].includes(card.kind)) { select(onMap.mapKey); return; }
     if (card.entityKind && card.entityId) onProcess(card.entityKind, card.entityId);
-    else if (card.href) window.location.assign(card.href);
+    else if (card.href) goWorkspace(card.href);
   }
 
   const line = roleAiLine(role as Role);

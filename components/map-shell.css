@@ -1,0 +1,39 @@
+/* The map is the phone's only screen: every other section is a sheet over it (see map-shell.tsx). */
+.map-shell-head{display:none}
+.map-chrome{display:none}
+@media(max-width:700px){
+ /* No bottom bar and no floating AI button on a phone: the map carries the menu, the chats and the AI line. */
+ html[data-design="unified"] .map-shell .administrator-orb{display:none!important}
+
+ /* The map's own corner notes start below the two round buttons. */
+ html[data-design="unified"] .workspace-shell[data-section="map"] .map-role>.rental-map-canvas .map-attribution{top:calc(64px + env(safe-area-inset-top,0px))!important}
+ html[data-design="unified"] .workspace-shell[data-section="map"] .rental-map-canvas .map-network-error{top:calc(104px + env(safe-area-inset-top,0px))!important}
+ html[data-design="unified"] .workspace-shell[data-section="map"] .connection-notice{top:calc(64px + env(safe-area-inset-top,0px))!important}
+
+ .map-chrome{display:block}
+ .map-chrome a{position:fixed;top:calc(12px + env(safe-area-inset-top,0px));z-index:40;width:44px;height:44px;border-radius:999px;display:grid;place-items:center;background:var(--t-surface);color:var(--t-ink);box-shadow:0 2px 10px rgba(14,19,36,.16);text-decoration:none}
+ .map-chrome-me{left:max(12px,env(safe-area-inset-left,0px));overflow:hidden}
+ .map-chrome-me .profile-photo{width:44px;height:44px;border-radius:999px;font-size:16px}
+ .map-chrome-chats{right:max(12px,env(safe-area-inset-right,0px))}
+ .map-chrome-chats b{position:absolute;top:-3px;right:-3px;min-width:18px;height:18px;padding:0 4px;border-radius:999px;background:var(--t-danger);color:#fff;font:600 11px/18px inherit;text-align:center}
+ .map-chrome a:focus-visible{outline:3px solid var(--t-focus);outline-offset:2px}
+
+ .map-shell-scrim{position:fixed;inset:0;z-index:84;border:0;padding:0;background:var(--t-scrim);animation:map-shell-fade .2s ease-out}
+ .map-shell-sheet{position:fixed;inset:calc(44px + env(safe-area-inset-top,0px)) 0 0;z-index:85;display:flex;flex-direction:column;background:var(--t-bg);border-radius:24px 24px 0 0;box-shadow:0 -8px 32px rgba(14,19,36,.16);overflow:hidden;animation:map-shell-rise .28s cubic-bezier(.2,.9,.3,1);transition:transform .2s ease-out}
+ .map-shell-head{position:relative;flex:none;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:16px 12px 8px 20px;touch-action:none;background:var(--t-bg)}
+ .map-shell-head i{position:absolute;top:8px;left:50%;width:40px;height:4px;margin-left:-20px;border-radius:4px;background:var(--t-line-strong)}
+ .map-shell-head h2{margin:0;font-size:22px;line-height:28px;font-weight:600;letter-spacing:-.02em;color:var(--t-ink);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+ .map-shell-head button{flex:none;width:44px;height:44px;border:0;border-radius:999px;display:grid;place-items:center;background:transparent;color:var(--t-ink)}
+ .map-shell-head button::before{content:"";position:absolute;width:32px;height:32px;border-radius:999px;background:var(--t-surface-alt);z-index:-1}
+ .map-shell-head button{position:relative;z-index:0}
+ .map-shell-head button:focus-visible{outline:3px solid var(--t-focus);outline-offset:-4px}
+ .map-shell-body{flex:1;min-height:0;position:relative;display:flex;flex-direction:column}
+ /* The section inside fills the sheet instead of the screen. */
+ html[data-design="unified"] .map-shell-body .workspace-shell[data-sheet]{height:100%!important;min-height:0!important;background:transparent}
+ html[data-design="unified"] .map-shell .workspace-content{padding-bottom:0!important}
+ html[data-design="unified"] .map-shell-body .workspace-shell[data-sheet] .workspace-content{height:100%!important;min-height:0!important}
+ html[data-design="unified"] .map-shell-body .workspace-shell[data-sheet]:not([data-section="chats"]) .chat-transcript{padding-top:4px!important;padding-bottom:calc(32px + env(safe-area-inset-bottom,0px))!important}
+}
+@keyframes map-shell-rise{from{transform:translateY(48px);opacity:.5}}
+@keyframes map-shell-fade{from{opacity:0}}
+@media(prefers-reduced-motion:reduce){.map-shell-sheet,.map-shell-scrim{animation:none}}

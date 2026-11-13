@@ -587,9 +587,9 @@ html[data-design="unified"] .workspace-shell .smart-map.smart-map .rental-map-ca
     --smart-edge: 20px;
   }
 
-  /* The map ends where the bottom navigation begins (56px of links, 8 and 12px of padding, 1px of line). */
+  /* The map is the whole screen of a phone: nothing sits under it (see map-shell.css). */
   .release-workspace[data-section="map"] .smart-map {
-    height: calc(100dvh - 77px - env(safe-area-inset-bottom, 0px));
+    height: 100dvh;
     min-height: 0;
   }
 

@@ -1,33 +1,17 @@
-import React,{useState} from 'react';
-import {Image,Modal,Platform,Pressable,Text,View,StyleSheet} from 'react-native';
+import React from 'react';
+import {Image,Pressable,StyleSheet} from 'react-native';
 import {Photo} from './ListingMedia';
 import {C} from './styles';
 import {T} from './tokens';
-import {rolePages} from './RoleEntry';
-import type {Role} from './model';
 const icons:Record<string,any>={chats:require('../assets/navigation/assistant.png'),map:require('../assets/navigation/map.png'),overview:require('../assets/navigation/overview.png'),catalog:require('../assets/navigation/catalog.png'),properties:require('../assets/navigation/properties.png'),bookings:require('../assets/navigation/bookings.png'),cleaning:require('../assets/navigation/cleaning.png'),jobs:require('../assets/navigation/jobs.png'),assignments:require('../assets/navigation/assignments.png'),calendar:require('../assets/navigation/calendar.png'),assistant:require('../assets/navigation/assistant.png'),settings:require('../assets/navigation/settings.png'),account:require('../assets/navigation/account.png'),more:require('../assets/navigation/more.png'),close:require('../assets/navigation/close.png')};
 // avatar: the round profile button over the map. It opens the same menu, which starts with the profile.
 export function WorkspaceMenuButton({open,busy,onPress,avatar=false,avatarId}:{open:boolean;busy:boolean;onPress:()=>void;avatar?:boolean;avatarId?:string|null}){
- return <Pressable accessibilityRole="button" accessibilityLabel={avatar?'Профиль и разделы':'Ещё разделы'} accessibilityState={{expanded:open,disabled:busy}} disabled={busy} onPress={onPress} style={avatar?n.menuAvatar:n.menu}>{avatar?<Photo id={avatarId} size={36} avatar alt="Профиль"/>:<Image source={icons.more} style={[n.icon,{tintColor:C.ink}]}/>}</Pressable>;
+ return <Pressable accessibilityRole="button" accessibilityLabel={avatar?'Меню и профиль':'Ещё разделы'} accessibilityState={{expanded:open,disabled:busy}} disabled={busy} onPress={onPress} style={avatar?n.menuAvatar:n.menu}>{avatar?<Photo id={avatarId} size={36} avatar alt="Профиль"/>:<Image source={icons.more} style={[n.icon,{tintColor:C.ink}]}/>}</Pressable>;
 }
-// The bottom bar's pages besides the profile. Their tab already names them, so they get no title bar.
-export const tabIds=(role:Role)=>role==='owner'?['map','properties','bookings','chats']:role==='guest'?['map','catalog','bookings','chats']:['map','jobs','assignments','chats'];
-export function WorkspaceNavigation({role,pageId,busy,onSelect,more,setMore,onSwitchRole,avatarId,name}:{avatarId?:string|null;name?:string|null;role:Role;pageId:string;busy:boolean;onSelect:(id:string)=>void;more:boolean;setMore:(value:boolean)=>void;onSwitchRole:()=>void}){
- const [focused,setFocused]=useState(''),pages=rolePages[role],ids=tabIds(role);
- const extra=pages.filter(p=>!ids.includes(p.id)&&p.id!=='account'),select=(id:string)=>{setMore(false);onSelect(id);};
- // The guest's first screen is a search, so its tab says «Поиск» and carries the magnifier; the catalogue takes the buildings icon.
- const icon=(id:string)=>role==='guest'&&id==='map'?icons.catalog:role==='guest'&&id==='catalog'?icons.properties:icons[id];
- const short:Record<string,string>={map:role==='guest'?'Поиск':'Карта',catalog:'Каталог',properties:'Объекты',bookings:role==='owner'?'Заявки':'Брони',jobs:'Задания',assignments:'В работе',chats:'Чаты',account:'Профиль'};
- const tab=(id:string,title:string,fn:()=>void,active=pageId===id)=><Pressable key={id} accessibilityRole="button" accessibilityLabel={title} accessibilityState={{selected:active,disabled:busy}} disabled={busy} onPress={fn} onFocus={(e:any)=>{if(Platform.OS!=='web'||e?.target?.matches?.(':focus-visible'))setFocused(id);}} onBlur={()=>setFocused('')} style={({pressed})=>[n.tab,id==='close'&&n.close,pressed&&n.pressed,focused===id&&n.focus]}>{id==='account'?<View style={[n.avatar,active&&n.avatarOn]}><Photo id={avatarId} size={24} avatar alt="Аккаунт"/></View>:<Image source={icon(id)} style={[n.icon,{tintColor:active?C.accent:C.muted}]} accessibilityIgnoresInvertColors/>}{!!short[id]&&<Text numberOfLines={1} style={[n.tabLabel,active&&n.tabLabelOn]}>{short[id]}</Text>}</Pressable>;
- return <><View accessibilityRole="tablist" style={n.bar}>{ids.map(id=>tab(id,pages.find(p=>p.id===id)!.title,()=>select(id)))}{tab('account','Аккаунт',()=>select('account'))}</View><Modal visible={more} transparent animationType="slide" onRequestClose={()=>setMore(false)}><View style={n.overlay}><Pressable style={StyleSheet.absoluteFill} accessibilityLabel="Закрыть меню разделов" onPress={()=>setMore(false)}/><View accessibilityViewIsModal style={n.sheet}><View style={n.heading}><Text style={n.title}>Все разделы</Text>{tab('close','Закрыть меню',()=>setMore(false),false)}</View><Pressable accessibilityRole="button" accessibilityLabel="Профиль" accessibilityState={{selected:pageId==='account'}} onPress={()=>select('account')} style={[n.row,pageId==='account'&&n.active]}><View style={n.avatar}><Photo id={avatarId} size={24} avatar alt=""/></View><View style={n.grow}><Text numberOfLines={1} style={n.label}>{name||'Профиль'}</Text></View><Text style={n.hint}>Профиль</Text></Pressable>{extra.map(p=><Pressable key={p.id} accessibilityRole="button" accessibilityState={{selected:p.id===pageId}} onPress={()=>select(p.id)} style={[n.row,p.id===pageId&&n.active]}><Image source={icons[p.id]} style={n.icon}/><Text style={n.label}>{p.title}</Text></Pressable>)}<Pressable accessibilityRole="button" onPress={()=>{setMore(false);onSwitchRole();}} style={n.row}><Text style={n.label}>Сменить роль</Text></Pressable></View></View></Modal></>;
+// The app has no bottom bar: the map is its only screen. The person's round button opens the menu, this one the chats.
+export function MapChatsButton({busy,onPress}:{busy:boolean;onPress:()=>void}){
+ return <Pressable accessibilityRole="button" accessibilityLabel="Чаты" accessibilityState={{disabled:busy}} disabled={busy} onPress={onPress} style={n.menuAvatar}><Image source={icons.chats} style={[n.icon,{tintColor:C.ink}]}/></Pressable>;
 }
 const n=StyleSheet.create({
  menu:{width:T.control.field,height:T.control.field,borderRadius:T.radius.full,alignItems:'center',justifyContent:'center'},menuAvatar:{width:T.control.touch,height:T.control.touch,borderRadius:T.radius.full,alignItems:'center',justifyContent:'center'},
- avatar:{width:24,height:24,borderRadius:T.radius.full,overflow:'hidden',backgroundColor:C.surfaceAlt,alignItems:'center',justifyContent:'center'},avatarOn:{borderWidth:2,borderColor:C.accent},
- bar:{minHeight:T.control.primary,flexDirection:'row',alignItems:'stretch',borderTopWidth:StyleSheet.hairlineWidth,borderTopColor:C.line,backgroundColor:C.glassStrong,paddingHorizontal:4},
- tab:{flex:1,minHeight:T.control.primary,alignItems:'center',justifyContent:'center',gap:2,borderRadius:T.radius.md},close:{flexGrow:0,flexShrink:0,flexBasis:'auto',width:T.control.touch,minHeight:T.control.touch},
- tabLabel:{fontSize:12,lineHeight:16,color:C.muted,fontWeight:'500'},tabLabelOn:{color:C.accent,fontWeight:'600'},
- active:{backgroundColor:C.accentSoft,borderRadius:T.radius.full},pressed:{backgroundColor:C.surfaceAlt},focus:{borderWidth:2,borderColor:C.focus},icon:{width:24,height:24},
- overlay:{flex:1,backgroundColor:C.scrim,justifyContent:'flex-end'},sheet:{padding:16,paddingBottom:32,backgroundColor:C.surface,borderTopLeftRadius:T.radius.xl,borderTopRightRadius:T.radius.xl,gap:4},
- heading:{flexDirection:'row',alignItems:'center',justifyContent:'space-between',marginBottom:8},title:{fontSize:22,lineHeight:28,color:C.ink,fontWeight:'600'},
- grow:{flex:1,minWidth:0},hint:{fontSize:14,lineHeight:20,color:C.muted},row:{minHeight:T.control.primary,paddingHorizontal:12,flexDirection:'row',alignItems:'center',gap:16,borderRadius:T.radius.md},label:{color:C.ink,fontSize:16,lineHeight:24}});
+ icon:{width:24,height:24}});

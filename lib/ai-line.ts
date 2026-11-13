@@ -99,5 +99,7 @@ export function takeAiAsk(role: Role, storage: AskStorage | null = tabStorage(),
 // On the map page call onAsk(text) instead: the dialog opens over the map.
 export function askAdministratorInChats(role: Role, text: string) {
   leaveAiAsk(role, text);
-  window.location.assign(administratorChatPath(role));
+  // Same as goWorkspace (lib/workspace-go.ts), written out here: the app reads this file too and it stays free of imports.
+  const path = administratorChatPath(role);
+  if (window.dispatchEvent(new CustomEvent('workspace-go', { detail: path, cancelable: true }))) window.location.assign(path);
 }
