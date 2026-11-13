@@ -10,7 +10,8 @@ import type {MapPoint} from './map-math';
 
 // Navigation on our own map, like a taxi app: the road route from where the person is to the object,
 // their point on the map, the next turn and what is left. The route comes from our server (Stadia Maps or the test router);
-// while the trip lasts the owner sees the person's point, as the person agreed by tapping «Поехали».
+// while the trip lasts the owner sees the cleaner's point, as the cleaner agreed by tapping «Поехали».
+// A guest only asks for the way: their point is not shared with the owner.
 export type Trip={kind:'job'|'booking';id:string;title:string;target:MapPoint};
 type Status='idle'|'locating'|'routing'|'driving'|'arrived';
 const REROUTE_AFTER=30000,POINT_EVERY=5000;
@@ -28,7 +29,7 @@ export function useTrip(role:'cleaner'|'guest',skew:number){
  async function reroute(t:Trip,pos:Location.LocationObject){
   if(routing.current)return;routing.current=true;
   try{
-   const result=await request('/api/operations/map/route',{kind:t.kind,entityId:t.id,mode:'driving',routingConsent:true,shareWithOwner:true,longitude:pos.coords.longitude,latitude:pos.coords.latitude,accuracy:Math.min(500,Math.round(pos.coords.accuracy??50)),recordedAt:stamp(pos.timestamp)},undefined,undefined,role);
+   const result=await request('/api/operations/map/route',{kind:t.kind,entityId:t.id,mode:'driving',routingConsent:true,shareWithOwner:role==='cleaner',longitude:pos.coords.longitude,latitude:pos.coords.latitude,accuracy:Math.min(500,Math.round(pos.coords.accuracy??50)),recordedAt:stamp(pos.timestamp)},undefined,undefined,role);
    setRoute(result.route);if(result.sharing?.id)sharing.current=result.sharing.id;lastRoute.current=Date.now();setRerouted(n=>n+1);setStatus('driving');setError('');
   }finally{routing.current=false;}
  }

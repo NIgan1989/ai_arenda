@@ -152,10 +152,10 @@ function GuestPanel({setScanning,accountId,data,mapData,publish,selected,setSele
  // «Маршрут» leads to the home on our own map, the same way the cleaner is led (Navigator.tsx).
  const mapSkew=mapData?.serverTime&&mapData?.receivedAt?Number(mapData.serverTime)-Number(mapData.receivedAt):0,nav=useTrip('guest',mapSkew);
  const stayNow=serverNow(mapData||data);
- const stays:(MapPin&{id:string;canGo:boolean})[]=(mapData?.processes||[]).flatMap((p:Row)=>{
+ const stays:(MapPin&{id:string;start:number;canGo:boolean})[]=(mapData?.processes||[]).flatMap((p:Row)=>{
   const own=p.kind==='booking'?(data.bookings||[]).find((b:Row)=>b.id===p.id):null,point=pointOf(p),state=own?guestPin(own,stayNow,data.paymentMode):null;
-  return own&&point&&state?[{key:'booking:'+p.id,id:String(p.id),point,title:p.title,label:state.label,tone:state.tone,canGo:p.location?.precision==='exact'&&own.start<stayNow+86400&&own.end>stayNow}]:[];
- });
+  return own&&point&&state?[{key:'booking:'+p.id,id:String(p.id),point,title:p.title,label:state.label,tone:state.tone,start:Number(own.start),canGo:p.location?.precision==='exact'&&!own.terms?.actual_checkin&&!own.terms?.actual_checkout&&own.start<stayNow+86400&&own.end>stayNow}]:[];
+ }).sort((a:{start:number},b:{start:number})=>a.start-b.start);
  const staysKey=stays.map(v=>v.key+v.label).join();
  const go=(stay:{id:string;title?:string;point:MapPoint})=>{setSelected('');expand(0);void nav.start({kind:'booking',id:stay.id,title:stay.title||'Жильё',target:stay.point});};
  // Pins follow the stage: catalogue, checked candidates, then owners who are answering.
@@ -164,7 +164,7 @@ function GuestPanel({setScanning,accountId,data,mapData,publish,selected,setSele
   const pin=(p:Row,tone:MapPin['tone']):MapPin[]=>{const point=pointOf(p),amount=p.estimate?.amount??p.price;return point?[{key:p.id,point,title:p.title,label:short(amount),tone,rank:typeof amount==='number'?amount:0}]:[];};
   // On the way the map shows only the way: the home, the guest's point and the road between them.
   if(nav.trip){
-   const target=stays.filter(v=>v.id===nav.trip!.id).map(({id,canGo,...m})=>m),me:MapPin[]=nav.here&&nav.status!=='arrived'?[{key:'me',point:nav.here.point,title:'Вы',label:'Вы',tone:'active'}]:[];
+   const target=stays.filter(v=>v.id===nav.trip!.id).map(({id,start,canGo,...m})=>m),me:MapPin[]=nav.here&&nav.status!=='arrived'?[{key:'me',point:nav.here.point,title:'Вы',label:'Вы',tone:'active'}]:[];
    const path=nav.state?.path;
    publish([...target,...me],'nav:'+nav.trip.id+':'+nav.rerouted,{lines:path&&path.length>1?[{key:'nav:'+nav.trip.id,from:path[0],to:path[path.length-1],tone:'nav',path}]:[]});
   }
@@ -178,7 +178,7 @@ function GuestPanel({setScanning,accountId,data,mapData,publish,selected,setSele
    publish(asked,'live:'+live.id+':'+offers.length+':'+(live.pendingProperties||[]).length,{lines:live.status==='searching'||live.status==='ready'||live.status==='booking'?beams(from,asked):[]});
   }
   else if(preview)publish(preview.properties.flatMap((p:Row)=>pin(p,p.quickRequest?'booking':'home').map(m=>p.match?.best?{...m,best:true}:m)),stageKey);
-  else publish([...(mapData?.properties||[]).flatMap((p:Row)=>pin(p,'home')),...stays.map(({id,canGo,...m})=>m)],stageKey+':'+(mapData?.properties?.length||0));
+  else publish([...(mapData?.properties||[]).flatMap((p:Row)=>pin(p,'home')),...stays.map(({id,start,canGo,...m})=>m)],stageKey+':'+(mapData?.properties?.length||0));
  },[requestId,live,preview,mapData,draft.city,staysKey,nav.trip,nav.here,nav.route,nav.rerouted]);
  // The radar on the map runs while flats are searched and while owners are being asked.
  const scanning=(working&&!requestId)||(!!requestId&&(!live||live.status==='searching'));
