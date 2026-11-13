@@ -50,3 +50,5 @@
 .acct-switch:checked{background:var(--t-accent)}.acct-switch:checked::after{transform:translateX(20px)}.acct-switch:disabled{opacity:.6}
 .acct-note{display:block;padding:0 4px;font-size:12px;line-height:16px;color:var(--t-muted)}
 @media(prefers-reduced-motion:reduce){.acct *,.acct-switch,.acct-switch::after{transition:none!important}}
+/* Sections outside the phone's bottom bar; the desktop sidebar lists them already. */
+@media(min-width:701px){.acct-phone-only{display:none}}
