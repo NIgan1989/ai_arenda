@@ -9,7 +9,7 @@ const stats=(id,over={})=>({id,completed:0,here:0,noShows:0,accepted:0,refused:0
 test('the cleaner who comes and knows the flat goes first; missed cleanings weigh against volume',()=>{
  const ranked=rankCleaners([stats('busy',{completed:25,noShows:4,accepted:10,refused:10}),stats('known',{completed:8,here:3,accepted:8,refused:1}),stats('new')]);
  assert.deepEqual(ranked.map(c=>c.id),['known','busy','new']);
- assert.deepEqual(ranked[0].reasons,['знает эту квартиру: 3 уборки','8 уборок без срывов','принимает 89% предложений']);
+ assert.deepEqual(ranked[0].reasons,['знает это жильё: 3 уборки','8 уборок без срывов','принимает 89% предложений']);
  assert.deepEqual(cleanerScore(stats('busy',{completed:25,noShows:4})).reasons,['25 уборок, 4 срыва']);
  assert.deepEqual(cleanerScore(stats('new')).reasons,['новый исполнитель']);
  assert.ok(cleanerScore(stats('a',{completed:10})).score>cleanerScore(stats('b',{completed:10,noShows:3})).score);
@@ -26,7 +26,7 @@ test('dispatch offers the cleaning to the best cleaner and tells the owner why',
   assert.equal((await coordinateDispatch(f.owner)).offered,1);
   const offer=f.db.raw.prepare('SELECT * FROM cleaning_offers').get();assert.equal(offer.worker_id,'cleaner2');
   const note=f.db.raw.prepare('SELECT body FROM notifications WHERE dedupe=?').get('owner:offer:'+offer.id).body;
-  assert.match(note,/исполнителю Second: знает эту квартиру: 2 уборки, 2 уборки без срывов\./);
+  assert.match(note,/исполнителю Second: знает это жильё: 2 уборки, 2 уборки без срывов\./);
  }finally{f.db.close();}
 });
 
@@ -38,7 +38,7 @@ test('the cleaning price: refused again and again, or well below similar flats i
  assert.equal(adviseCleaningFee({fee:4000,typical:4500,samples:5,refused:0,accepted:0}),null,'close enough');
  assert.equal(adviseCleaningFee({fee:3000,typical:9000,samples:2,refused:0,accepted:0}),null,'two cleanings are too few to compare');
  assert.equal(adviseCleaningFee({fee:2000,typical:9000,samples:5,refused:0,accepted:0}).to,4000,'never more than double in one step');
- assert.equal(feeTipText({from_fee:3000,to_fee:4500,typical:4500,refused:2}).replace(/\s/g,' '),'Исполнители 2 раза не взяли уборку за 3 000 ₸. За похожие квартиры в городе платят около 4 500 ₸. Предлагаю 4 500 ₸ за уборку.');
+ assert.equal(feeTipText({from_fee:3000,to_fee:4500,typical:4500,refused:2}).replace(/\s/g,' '),'Исполнители 2 раза не взяли уборку за 3 000 ₸. За похожие объекты в городе платят около 4 500 ₸. Предлагаю 4 500 ₸ за уборку.');
 });
 
 test('«Поставить» raises the cleaning price and offers open cleanings again at it; «Оставить» pauses it',async()=>{

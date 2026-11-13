@@ -119,7 +119,7 @@ test('owner without requests and without moves today gets the next check, else n
   assert.deepEqual([report.title, report.href, report.entityKind], ['Отчёт ждёт проверки', '/workspace/owner/cleaning', 'job']);
 
   assert.equal(nowCard('owner', state('owner', {bookings: [booking('far', {start: now + 30 * hour, end: now + 54 * hour})]}), now), null);
-  // An owner with no flats gets no placeholder card: the chip "Добавить квартиру" covers it.
+  // An owner with no flats gets no placeholder card: the chip "Добавить жильё" covers it.
   assert.equal(nowCard('owner', state('owner', {ownProperties: []}), now), null);
 });
 
@@ -180,8 +180,8 @@ test('the AI line of each role: the same words as in the app, shortcuts that fit
   // The labels are short enough for one row of a 360px phone; a shortened one keeps its full name for a screen reader.
   assert.deepEqual(roleAiLine('guest').chips.map(chip => chip.label), ['На сутки', 'На часы', 'На выходные']);
   assert.equal(roleAiLine('guest').placeholder, 'На 3 часа сегодня в центре');
-  assert.deepEqual(roleAiLine('owner').chips.map(chip => chip.label), ['Заявки', 'Календарь', '+ Квартира']);
-  assert.deepEqual(roleAiLine('owner').chips.map(chip => chip.hint || chip.label), ['Заявки гостей', 'Календарь', 'Добавить квартиру']);
+  assert.deepEqual(roleAiLine('owner').chips.map(chip => chip.label), ['Заявки', 'Календарь', '+ Жильё']);
+  assert.deepEqual(roleAiLine('owner').chips.map(chip => chip.hint || chip.label), ['Заявки гостей', 'Календарь', 'Добавить жильё']);
   assert.equal(roleAiLine('owner').placeholder, 'Что сегодня требует внимания?');
   assert.deepEqual(roleAiLine('cleaner').chips.map(chip => chip.label), ['Задания рядом', 'Мой график']);
   assert.equal(roleAiLine('cleaner').placeholder, 'Есть уборки рядом на сегодня?');

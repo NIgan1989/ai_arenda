@@ -682,7 +682,7 @@ export function SmartGuestMap({ publicMode = false, onChanged, accountId, city, 
         ...current.match.reasons
           .filter((reason: string) => limited || reason !== 'В пределах бюджета')
           .map((reason: string) => REASON_TEXT[reason] || reason),
-        ...(current.ownerConfirmed ? ['Владелец подтвердил, что квартира свободна'] : []),
+        ...(current.ownerConfirmed ? ['Владелец подтвердил, что жильё свободно'] : []),
         ...(current.estimate?.deal ? [dealNote(current.estimate.deal, money)] : []),
       ]
     : [];
@@ -859,7 +859,7 @@ export function SmartGuestMap({ publicMode = false, onChanged, accountId, city, 
             <div className="smart-detail">
               <button type="button" className="smart-back" onClick={() => setStage('detail')}>
                 <ArrowLeft size={18} aria-hidden="true" />
-                К квартире
+                К жилью
               </button>
               <MatchingBooking
                 key={current.id + ':' + current.offerId}
@@ -889,7 +889,7 @@ export function SmartGuestMap({ publicMode = false, onChanged, accountId, city, 
                   {reasons.map((reason, i) => <span key={reason}>{i > 0 && ' · '}<span className="smart-reason">{reason}</span></span>)}
                 </p>
               )}
-              <button type="button" className="smart-primary" onClick={() => setStage('detail')}>Посмотреть квартиру</button>
+              <button type="button" className="smart-primary" onClick={() => setStage('detail')}>Посмотреть жильё</button>
               {canAskOwners && (
                 <button type="button" className="smart-button" disabled={busy} onClick={() => void askOwners()}>
                   {busy && <Thinking size="sm" tone="plain" />}

@@ -37,7 +37,7 @@ export function approvalCards(data:Row,role:Role,userId:string,t:number):Approva
   for(const c of b.changes||[])if(c.status==='pending'&&c.expires_at>t){
    cards.push({id:'change:'+c.id,kind:'change',entityId:b.id,revision:JSON.stringify([c.id,c.status,c.base_version,terms.version,c.policy_version,c.start,c.end,c.amount,c.expires_at]),title:'Согласование новых условий',subject:b.title,from:c.proposer_role===role?'Вы':c.proposer_role==='owner'?'Владелец':'Гость',to:c.proposer_role!==role?'Вам':'Другой стороне',canDecide:c.proposer_role!==role,expiresAt:c.expires_at,facts:[['Заезд',date(c.start)],['Выезд',date(c.end)],['Новая стоимость',money(c.amount)],['Подтверждено оплаты',money(terms.paid_amount||0)],['Депозит',money(terms.deposit||0)]],detail:c.reason,acceptLabel:'Принимаю условия',rejectLabel:'Отклонить'});
   }
-  if(b.status==='confirmed'&&terms.checkout_reported_at&&!terms.actual_checkout)cards.push({id:'checkout:'+b.id,kind:'checkout',entityId:b.id,revision:JSON.stringify([b.status,terms.version,terms.checkout_reported_at,terms.actual_checkout]),title:'Гость сообщил о выезде',subject:b.title,from:owner?(b.guest_name||'Гость'):'Вы',to:owner?'Вам':'Владельцу',canDecide:owner,facts:[['Сообщение о выезде',date(terms.checkout_reported_at)],['Согласованный выезд',date(b.end)]],detail:'Подтверждайте только после проверки, что квартира освобождена. Таймер и статус готовности сами по себе этого не подтверждают.',acceptLabel:'Квартира освобождена',rejectLabel:'Выезд не подтверждён',requiresReason:true});
+  if(b.status==='confirmed'&&terms.checkout_reported_at&&!terms.actual_checkout)cards.push({id:'checkout:'+b.id,kind:'checkout',entityId:b.id,revision:JSON.stringify([b.status,terms.version,terms.checkout_reported_at,terms.actual_checkout]),title:'Гость сообщил о выезде',subject:b.title,from:owner?(b.guest_name||'Гость'):'Вы',to:owner?'Вам':'Владельцу',canDecide:owner,facts:[['Сообщение о выезде',date(terms.checkout_reported_at)],['Согласованный выезд',date(b.end)]],detail:'Подтверждайте только после проверки, что жильё освобождено. Таймер и статус готовности сами по себе этого не подтверждают.',acceptLabel:'Жильё освобождено',rejectLabel:'Выезд не подтверждён',requiresReason:true});
  }
  for(const j of data.jobs||[]){
   if(role==='guest'||role==='owner'&&j.owner_id!==userId||role==='cleaner'&&j.assigned_to!==userId&&j.status!=='open')continue;
@@ -55,7 +55,7 @@ export function approvalCards(data:Row,role:Role,userId:string,t:number):Approva
  if(role==='owner')for(const w of data.calendarWindows||[])if(w.owner_id===userId&&w.status==='suggested'&&w.start>t+1800){
   const hours=Math.round((w.end-w.start)/360)/10,day=new Date(w.start*1000).toLocaleString('ru-RU',{timeZone:'Asia/Almaty',weekday:'short',day:'numeric',month:'short'}),hm=(n:number)=>new Date(n*1000).toLocaleTimeString('ru-RU',{timeZone:'Asia/Almaty',hour:'2-digit',minute:'2-digit'}),when=day+', '+hm(w.start)+'–'+hm(w.end);
   cards.unshift({id:'window:'+w.id,kind:'window',entityId:w.property_id,revision:windowRevision(w),title:'Окно в календаре: сдать почасово',subject:w.title,from:'AI администратор',to:'Вам',canDecide:true,expiresAt:w.start,
-   facts:[['Свободно',when+' ('+hours+' ч)'],['Час',money(w.hourly_from)+' → '+money(w.hourly_to)]],detail:'Квартира пустует между бронями. Гости увидят скидку только внутри окна. Без вашего согласия ничего не изменится.',acceptLabel:'Открыть окно',rejectLabel:'Не надо',
+   facts:[['Свободно',when+' ('+hours+' ч)'],['Час',money(w.hourly_from)+' → '+money(w.hourly_to)]],detail:'Жильё пустует между бронями. Гости увидят скидку только внутри окна. Без вашего согласия ничего не изменится.',acceptLabel:'Открыть окно',rejectLabel:'Не надо',
    window:{percent:w.percent,from:w.hourly_from,to:w.hourly_to,propertyId:w.property_id,when,hours}});
  }
  // The week ahead: the city's busy and quiet evenings, and one change for one flat (or none).
@@ -71,7 +71,7 @@ export function approvalCards(data:Row,role:Role,userId:string,t:number):Approva
  if(role==='owner')for(const l of data.listingTips||[])if(l.owner_id===userId&&l.status==='suggested'&&l.expires_at>t){
   const w=tipText(l);
   cards.unshift({id:'listing:'+l.id,kind:'listing',entityId:l.property_id,revision:listingRevision(l),title:'Совет по объявлению',subject:l.title,from:'AI администратор',to:'Вам',canDecide:true,expiresAt:l.expires_at,
-   facts:[['Сравнение',l.count+' из '+l.leaders+' похожих квартир, которые бронируют чаще']],detail:w.text,acceptLabel:w.accept,rejectLabel:w.reject,
+   facts:[['Сравнение',l.count+' из '+l.leaders+' похожих объектов, которые бронируют чаще']],detail:w.text,acceptLabel:w.accept,rejectLabel:w.reject,
    listing:{kind:l.kind,amenity:l.kind==='amenity'?amenities[l.subject]||l.subject:'',mine:l.mine,theirs:l.theirs,count:l.count,leaders:l.leaders,value:l.value,text:w.text,title:w.title}});
  }
  // Cleaning price: cleaners refuse it or similar flats pay clearly more; one new price, one button.

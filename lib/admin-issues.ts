@@ -13,7 +13,7 @@ const RULES:[IssueKind,RegExp][]=[
  ['money',/деньг|оплат|возврат|депозит|залог|списал|перевод|предоплат|доплат|штраф/i],
  ['condition',/грязн|не убран|мусор|клоп|таракан|нет (воды|света|горяч|отоплен|интернет)|не работает|сломан|слома|шум|холодно|запах|wi-?fi|вай-?фай|бель[её]|полотенц/i]
 ];
-export const KIND_LABEL:Record<IssueKind,string>={access:'доступ в квартиру',safety:'безопасность',condition:'состояние квартиры',money:'деньги',other:'другое'};
+export const KIND_LABEL:Record<IssueKind,string>={access:'доступ в жильё',safety:'безопасность',condition:'состояние жилья',money:'деньги',other:'другое'};
 const PRIORITY:Record<IssueKind,Priority>={access:'urgent',safety:'urgent',condition:'high',money:'high',other:'normal'};
 export const ANSWER_WITHIN:Record<Priority,number>={urgent:30*60,high:3*3600,normal:24*3600};
 export function classifyIssue(text:string):{kind:IssueKind;priority:Priority}{
@@ -36,15 +36,15 @@ export async function sweepIssues(db:D1Database,config:OperationConfig&{PLATFORM
    q(db,"INSERT OR IGNORE INTO operator_tickets(issue_id,status,priority,deadline,created_at,updated_at) VALUES (?,'open',?,?,?,?)",issue.id,priority,deadline,issue.created_at,at),
    q(db,"UPDATE operator_tickets SET priority=?,deadline=?,version=version+1,updated_at=? WHERE issue_id=? AND status<>'resolved' AND assigned_to IS NULL",priority,deadline,at,issue.id),
    q(db,"INSERT OR IGNORE INTO operator_history(id,issue_id,actor_id,actor_role,action,body,visibility,created_at) VALUES (?,?,'ai-administrator','system','triage',?,'participants',?)",'ai-triage:'+issue.id,issue.id,body,at),
-   ...(priority==='urgent'?list.map(admin=>notice(db,admin,'Срочное обращение по «'+(issue.title||'квартира')+'»: '+KIND_LABEL[kind]+'. Ответ нужен в течение 30 мин. Админка → Обращения.','admin:issue-urgent:'+issue.id+':'+admin,at)):[])
+   ...(priority==='urgent'?list.map(admin=>notice(db,admin,'Срочное обращение по «'+(issue.title||'жильё')+'»: '+KIND_LABEL[kind]+'. Ответ нужен в течение 30 мин. Админка → Обращения.','admin:issue-urgent:'+issue.id+':'+admin,at)):[])
   ]);
   result.triaged++;if(priority==='urgent')result.escalated++;
  }
  // 2. Half the answer time passed: one reminder to the side that has to answer.
  const halfway=await rows(db,"SELECT i.id,i.other_user,i.other_role,p.title,t.deadline,t.created_at FROM operator_tickets t JOIN administrator_issues i ON i.id=t.issue_id JOIN properties p ON p.id=i.property_id WHERE t.status<>'resolved' AND i.status<>'resolved' AND t.created_at+(t.deadline-t.created_at)/2<=? AND t.deadline>? LIMIT 50",at,at);
- for(const t of halfway){const r=await notice(db,t.other_user,'Напоминание: по «'+(t.title||'квартира')+'» ждут вашего ответа на обращение. Осталось '+minutes(t.deadline-at)+'.',t.other_role+':issue-remind:'+t.id,at).run();if(r.meta.changes)result.reminded++;}
+ for(const t of halfway){const r=await notice(db,t.other_user,'Напоминание: по «'+(t.title||'жильё')+'» ждут вашего ответа на обращение. Осталось '+minutes(t.deadline-at)+'.',t.other_role+':issue-remind:'+t.id,at).run();if(r.meta.changes)result.reminded++;}
  // 3. Nobody resolved it in time: now it is the platform administrator's.
  const late=await rows(db,"SELECT i.id,i.description,p.title FROM operator_tickets t JOIN administrator_issues i ON i.id=t.issue_id JOIN properties p ON p.id=i.property_id WHERE t.status<>'resolved' AND i.status<>'resolved' AND t.deadline<=? AND t.assigned_to IS NULL LIMIT 50",at);
- for(const t of late)for(const admin of list){const r=await notice(db,admin,'Обращение по «'+(t.title||'квартира')+'» не решено в срок ('+KIND_LABEL[classifyIssue(t.description).kind]+'). Админка → Обращения.','admin:issue-overdue:'+t.id+':'+admin,at).run();if(r.meta.changes)result.escalated++;}
+ for(const t of late)for(const admin of list){const r=await notice(db,admin,'Обращение по «'+(t.title||'жильё')+'» не решено в срок ('+KIND_LABEL[classifyIssue(t.description).kind]+'). Админка → Обращения.','admin:issue-overdue:'+t.id+':'+admin,at).run();if(r.meta.changes)result.escalated++;}
  return result;
 }

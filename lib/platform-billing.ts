@@ -111,7 +111,7 @@ export async function saveBillingSettings(service:RentalService,body:Row){
  let notified=0;
  if(changed){
   const fees=[minFee?`не меньше ${minFee} ₸`:'',maxFee?`не больше ${maxFee} ₸`:''].filter(Boolean).join(' и ');
-  const text=`С ${dateText(Math.max(startsAt,at))} сервис берёт комиссию ${String(percent).replace('.',',')}% с брони, подтверждённой через приложение${fees?` (${fees})`:''}${aiPercent!==percent?`; для квартир в режиме «ИИ», где AI администратор ведёт гостей и уборку за вас, ${String(aiPercent).replace('.',',')}%`:''}.${free?` Первые брони бесплатно: ${free}.`:''} Отменённые брони не оплачиваются.${cleaningRate>0?` За принятую уборку ${String(cleaningRate/100).replace('.',',')}%, для постоянного исполнителя ${String(pairRate/100).replace('.',',')}%${pairCap>0?` и не больше ${pairCap} ₸ в месяц`:''}.`:''}`;
+  const text=`С ${dateText(Math.max(startsAt,at))} сервис берёт комиссию ${String(percent).replace('.',',')}% с брони, подтверждённой через приложение${fees?` (${fees})`:''}${aiPercent!==percent?`; для объектов в режиме «ИИ», где AI администратор ведёт гостей и уборку за вас, ${String(aiPercent).replace('.',',')}%`:''}.${free?` Первые брони бесплатно: ${free}.`:''} Отменённые брони не оплачиваются.${cleaningRate>0?` За принятую уборку ${String(cleaningRate/100).replace('.',',')}%, для постоянного исполнителя ${String(pairRate/100).replace('.',',')}%${pairCap>0?` и не больше ${pairCap} ₸ в месяц`:''}.`:''}`;
   for(const o of await owners(service.db)){statements.push(q(service.db,'INSERT OR IGNORE INTO notifications SELECT ?,?,?,?,?,? WHERE EXISTS(SELECT 1 FROM audit_events WHERE id=?)',uuid(),o.id,text,'owner:billing:'+(version+1),0,at,event));notified++;}
  }
  const results=await service.db.batch(statements);

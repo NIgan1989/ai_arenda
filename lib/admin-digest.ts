@@ -25,7 +25,7 @@ export async function digestFacts(db:D1Database,at=epoch()){
 }
 export function digestText(f:Awaited<ReturnType<typeof digestFacts>>){
  const lines=['Сводка ИИ-администратора за сутки'];
- lines.push('Сделал сам: одобрил квартир '+f.aiFlats+', исполнителей '+f.aiCleaners+(f.hidden?', скрыл нарушений в чатах '+f.hidden:'')+'.');
+ lines.push('Сделал сам: одобрил объектов '+f.aiFlats+', исполнителей '+f.aiCleaners+(f.hidden?', скрыл нарушений в чатах '+f.hidden:'')+'.');
  const yours=[f.waitingReviews?'заявок на проверку '+f.waitingReviews:'',f.lateIssues?'просроченных обращений '+f.lateIssues:'',f.openReports?'жалоб '+f.openReports:''].filter(Boolean);
  lines.push(yours.length?'Ждут вас: '+yours.join(', ')+'.':'Ждут вас: ничего.');
  if(f.waitingParticipant)lines.push('Ждут, пока участник допишет: '+f.waitingParticipant+'.');

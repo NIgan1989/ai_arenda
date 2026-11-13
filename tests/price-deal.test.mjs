@@ -8,7 +8,7 @@ test('a flat is a good price when it is clearly below similar free flats for the
  const deal=dealFor(all[0],all);
  assert.deepEqual(deal,{percent:24,typical:10500,similar:3},'four-room flat is not similar to a one-room flat');
  assert.equal(dealBadge(deal),'Цена выгодная · −24%');
- assert.equal(dealNote(deal,money),'Похожие свободные квартиры на эти даты стоят около 10500 ₸');
+ assert.equal(dealNote(deal,money),'Похожие свободные объекты на эти даты стоят около 10500 ₸');
  assert.equal(dealFor(all[1],all),null,'a few percent below is not a deal');
  assert.equal(dealFor(flat('x',8000),[flat('x',8000),flat('b',10000),flat('c',10500)]),null,'two similar flats are too few');
  assert.equal(dealFor(flat('t',5000),[flat('t',5000),flat('b',10000),flat('c',10000),flat('p',4000,1,{test_preview:true})])?.similar,undefined,'a test preview is never a comparison');

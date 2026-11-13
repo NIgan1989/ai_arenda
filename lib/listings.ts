@@ -1,6 +1,12 @@
 import {DomainError,number,required} from './domain';
 type Row=Record<string,any>;
-export const propertyTypes:Record<string,string>={apartment:'Квартира',studio:'Студия',house:'Дом',aparthotel:'Апартаменты'};
+// Kinds of housing. The service is not only about flats: a hostel, a hotel or an apart-hotel has its own staff,
+// so for them the AI administrator does not look for executors (own_staff, see staffedTypes).
+export const propertyTypes:Record<string,string>={apartment:'Квартира',studio:'Студия',room:'Комната',house:'Дом',guesthouse:'Гостевой дом',hostel:'Хостел',hotel:'Гостиница',aparthotel:'Апарт-отель'};
+// Kinds that usually clean with their own staff: «Свой персонал» is on by default, the owner can change it.
+export const staffedTypes=['hostel','hotel','aparthotel'];
+export const defaultOwnStaff=(type:string)=>staffedTypes.includes(type);
+export const kindLabel=(type?:string)=>propertyTypes[type||'']||'Жильё';
 export const amenities:Record<string,string>={wifi:'Wi-Fi',kitchen:'Кухня',washer:'Стиральная машина',aircon:'Кондиционер',tv:'Телевизор',workspace:'Рабочее место',parking:'Парковка',balcony:'Балкон',elevator:'Лифт',linen:'Постельное бельё',towels:'Полотенца',hairdryer:'Фен',iron:'Утюг',crib:'Детская кроватка'};
 export const checkinMethods:Record<string,string>={meet:'Встреча с хозяином',lockbox:'Сейф для ключей',smartlock:'Умный замок',reception:'Стойка регистрации'};
 export function listingInput(b:Row){
@@ -9,7 +15,7 @@ export function listingInput(b:Row){
  if(!Array.isArray(details.amenities)||details.amenities.some((v:unknown)=>typeof v!=='string'||!amenities[v]))throw new DomainError('Выберите удобства из списка.');
  if(!Array.isArray(b.photos)||b.photos.length>8||b.photos.some((v:unknown)=>typeof v!=='string'||v.length>100)||new Set(b.photos).size!==b.photos.length)throw new DomainError('Можно добавить до 8 разных фотографий.');
  if(typeof b.published!=='boolean')throw new DomainError('Выберите видимость объявления.');
- const p={title:required(b.title,'Название',120),city:required(b.city,'Город',80),district:required(b.district,'Район',120),address:required(b.address,'Точный адрес',300),description:required(b.description,'Описание',2500),price:number(b.price,'Цена за сутки',100,10000000),rooms:number(b.rooms,'Комнаты',1,20),capacity:number(b.capacity,'Гости',1,50),cleaningMinutes:number(b.cleaningMinutes,'Время уборки',30,1440)};
+ const p={title:required(b.title,'Название',120),city:required(b.city,'Город',80),district:required(b.district,'Район',120),address:required(b.address,'Точный адрес',300),description:required(b.description,'Описание',2500),price:number(b.price,'Цена за сутки',100,10000000),rooms:number(b.rooms,'Комнаты',1,20),capacity:number(b.capacity,'Гости',1,50),cleaningMinutes:number(b.cleaningMinutes,'Время уборки',30,1440),ownStaff:(typeof b.ownStaff==='boolean'?b.ownStaff:defaultOwnStaff(details.type))?1:0};
  const d={type:details.type,area:number(details.area,'Площадь',5,2000),beds:number(details.beds,'Спальные места',1,50),bathrooms:number(details.bathrooms,'Санузлы',1,20),floor:number(details.floor,'Этаж',0,100),floors:number(details.floors,'Этажей в доме',1,100),checkinMethod:details.checkinMethod,amenities:[...new Set<string>(details.amenities)],pets:details.pets===true,smoking:details.smoking===true,parties:details.parties===true};
  if(d.floor>d.floors)throw new DomainError('Этаж не может быть выше этажности дома.');
  if(d.beds<p.capacity)throw new DomainError('Спальных мест должно хватать для заявленного числа гостей.');

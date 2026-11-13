@@ -505,7 +505,7 @@ test('check-in requires ready premises, owner-verified payment and the agreed de
     await f.o.bookingAction(f.b.id,{action:'paid'});
     await assert.rejects(f.o.bookingAction(f.b.id,{action:'checkin'}),/депозит/);
     await f.o.bookingAction(f.b.id,{action:'deposit_received'});
-    await assert.rejects(f.o.bookingAction(f.b.id,{action:'checkin'}),/не готова/);
+    await assert.rejects(f.o.bookingAction(f.b.id,{action:'checkin'}),/не готово/);
     await assert.rejects(f.o.readinessAction(f.propertyId,{readiness:'ready',expectedVersion:1,note:'Проверено'}),/Подтвердите/);
     await f.o.readinessAction(f.propertyId,{readiness:'ready',expectedVersion:1,note:'Проверено',inspected:true});
     await f.o.bookingAction(f.b.id,{action:'checkin'});await f.o.bookingAction(f.b.id,{action:'checkin'});

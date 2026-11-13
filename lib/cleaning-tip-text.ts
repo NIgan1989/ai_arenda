@@ -4,7 +4,7 @@ const plural=(n:number,one:string,few:string,many:string)=>{const a=n%10,b=n%100
 export function feeTipText(t:{from_fee:number;to_fee:number;typical:number;refused:number}){
  const parts=[];
  if(t.refused)parts.push('Исполнители '+plural(t.refused,'раз','раза','раз')+' не взяли уборку за '+money(t.from_fee)+'.');
- if(t.typical)parts.push('За похожие квартиры в городе платят около '+money(t.typical)+'.');
+ if(t.typical)parts.push('За похожие объекты в городе платят около '+money(t.typical)+'.');
  parts.push('Предлагаю '+money(t.to_fee)+' за уборку.');
  return parts.join(' ');
 }

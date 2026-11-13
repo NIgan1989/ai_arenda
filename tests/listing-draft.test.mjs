@@ -28,7 +28,7 @@ test('only the address, the district and the daily price are asked; answers fill
 test('the draft becomes a body the listing validator accepts, and the public text never carries the address',()=>{
  const {draft:d}=read(DRAFT_EXAMPLE),body=draftListingBody(d,['photo-1'],true),value=listingInput(body);
  assert.equal(value.published,1);assert.ok(value.p.description.length>=80);assert.ok(!value.p.description.includes('Торайгырова'));
- assert.equal(value.details.floor,4);assert.equal(body.rental.hourlyPrice,2500);assert.ok(body.rental.houseRules.includes('Курение в квартире запрещено'));
+ assert.equal(value.details.floor,4);assert.equal(body.rental.hourlyPrice,2500);assert.ok(body.rental.houseRules.includes('Курение в помещении запрещено'));
  const bare=draftListingBody(answerDraft(answerDraft(answerDraft(emptyDraft('Павлодар'),'address','Ленина 5'),'district','Центр'),'price','9000'),[],false);
  assert.equal(listingInput(bare).published,0);assert.ok(bare.description.length>=80);
 });

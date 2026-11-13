@@ -50,7 +50,7 @@ export function GuestResults({ preview, draft, selected, onSelect, onBook, onOpe
     return (
       <>
         <Text accessibilityRole="header" style={h.cardTitle}>
-          На эти условия свободных квартир нет
+          На эти условия свободного жилья нет
         </Text>
         <Text style={h.note}>{onWiden ? 'Поиск сужают район, бюджет или пожелания. Можно искать без них.' : 'Попробуйте другое время или другой срок.'}</Text>
         {!!onWiden && <Action title={busy ? 'Ищем…' : 'Искать без этих условий'} disabled={busy} onPress={onWiden} />}
@@ -93,7 +93,7 @@ export function GuestResults({ preview, draft, selected, onSelect, onBook, onOpe
           <Action title="Забронировать" disabled={busy} onPress={() => onBook(chosen)} />
         </View>
         {!!chosen.photos?.[0] && <Photo id={chosen.photos[0]} alt={chosen.title + ', фото'} />}
-        <Action secondary title="Подробнее о квартире" disabled={busy} onPress={() => onOpen(chosen)} />
+        <Action secondary title="Подробнее о жилье" disabled={busy} onPress={() => onOpen(chosen)} />
         <Text style={h.note}>Перед отправкой заявки вы увидите даты, сумму и правила. Деньги в приложении не списываются.</Text>
       </>
     );
@@ -137,7 +137,7 @@ export function GuestResults({ preview, draft, selected, onSelect, onBook, onOpe
       {!!onAskOwners && (
         <>
           <Text style={h.note}>
-            Можно спросить владельцев, свободна ли квартира прямо сейчас. Они получат даты, число гостей и сумму. Имя, телефон и точка поиска не передаются.
+            Можно спросить владельцев, свободно ли жильё прямо сейчас. Они получат даты, число гостей и сумму. Имя, телефон и точка поиска не передаются.
           </Text>
           <Action secondary title={busy ? 'Отправляем…' : 'Спросить владельцев'} disabled={busy} onPress={onAskOwners} />
         </>

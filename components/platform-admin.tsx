@@ -25,10 +25,10 @@ const sections:Section[]=[
  {id:'overview',label:'Обзор',hint:'Главное по сервису и задачи, которым нужно внимание.',Icon:LayoutDashboard,group:'service'},
  {id:'users',label:'Пользователи',hint:'Аккаунты, подключённые роли и участие в работе сервиса.',Icon:Users,group:'service'},
  {id:'properties',label:'Недвижимость',hint:'Объявления владельцев, готовность карточек и публикация.',Icon:House,group:'service'},
- {id:'reviews',label:'Проверки',hint:'ИИ проверяет квартиры и исполнителей сам, спорное отдаёт вам.',Icon:ShieldCheck,group:'service',count:'reviews'},
+ {id:'reviews',label:'Проверки',hint:'ИИ проверяет жильё и исполнителей сам, спорное отдаёт вам.',Icon:ShieldCheck,group:'service',count:'reviews'},
  {id:'operator',label:'Обращения',hint:'ИИ ведёт обращения сам, вам приходит только срочное и просроченное.',Icon:MessagesSquare,group:'service',count:'issues'},
  {id:'moderation',label:'Жалобы и безопасность',hint:'ИИ скрывает явные нарушения сам, остальные жалобы решаете вы.',Icon:Flag,group:'control',count:'reports'},
- {id:'policy',label:'Правила допуска',hint:'Какие проверки нужны до показа квартиры и назначения исполнителя.',Icon:SlidersHorizontal,group:'control'},
+ {id:'policy',label:'Правила допуска',hint:'Какие проверки нужны до показа жилья и назначения исполнителя.',Icon:SlidersHorizontal,group:'control'},
  {id:'revenue',label:'Доход',hint:'Комиссия с владельцев: бесплатный период, прогноз, условия и балансы.',Icon:Wallet,group:'control'},
  {id:'health',label:'Состояние сервиса',hint:'Фоновые проверки, резервные копии и подключения.',Icon:Activity,group:'control'},
 ];

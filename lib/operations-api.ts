@@ -83,7 +83,7 @@ export async function writeOperations(service:RentalService,role:Role,path:strin
  if(route==='dispatch/offer'){active(role,['cleaner']);return decideOffer(service,body);}
  if(route==='dispatch/decline'){active(role,['cleaner']);return declineAssignment(service,body);}
  if(route==='rules'){active(role,['owner']);return saveOperationRules(service,body);}
- if(route==='regular/state'){active(role,['owner']);return regularState(service,required(body.propertyId,'Квартира',100));}
+ if(route==='regular/state'){active(role,['owner']);return regularState(service,required(body.propertyId,'Жильё',100));}
  if(route==='regular/pin'){active(role,['owner']);return pinRegular(service,body);}
  if(route==='regular/unpin'){active(role,['owner','cleaner']);return unpinRegular(service,role,body);}
  if(route==='evidence'){active(role,['cleaner']);return saveEvidence(service,body,config);}
@@ -94,7 +94,7 @@ export async function writeOperations(service:RentalService,role:Role,path:strin
  if(route==='calendar/import'){active(role,['owner']);return commitCalendarImport(service,body);}
  if(route==='calendar/refresh'){active(role,['owner']);const source=await one(service.db,'SELECT id FROM calendar_sources WHERE id=? AND owner_id=? AND enabled=1',required(body.sourceId,'Источник',100),service.userId);if(!source)throw new DomainError('Источник недоступен.',403);return refreshCalendar(service.db,source.id,config);}
  if(route==='calendar/export'){active(role,['owner']);return createCalendarExport(service,body,config);}
- if(route==='calendar/revoke'){active(role,['owner']);const propertyId=required(body.propertyId,'Квартира',100);await q(service.db,'UPDATE calendar_exports SET revoked_at=? WHERE property_id=? AND owner_id=? AND revoked_at IS NULL',epoch(),propertyId,service.userId).run();return {message:'Ранее выданные ссылки на календарь отозваны.'};}
+ if(route==='calendar/revoke'){active(role,['owner']);const propertyId=required(body.propertyId,'Жильё',100);await q(service.db,'UPDATE calendar_exports SET revoked_at=? WHERE property_id=? AND owner_id=? AND revoked_at IS NULL',epoch(),propertyId,service.userId).run();return {message:'Ранее выданные ссылки на календарь отозваны.'};}
  if(route==='phone/request')return requestPhoneCode(service,config);
  if(route==='phone/verify')return verifyPhoneCode(service,body);
  if(route==='reviews/request')return requestParticipantReview(service,role,body,config);

@@ -12,8 +12,8 @@ export const uid=()=>Date.now().toString(36)+'-'+(++sequence)+'-'+Math.random().
 export const baseQuestions:Question[]=[{key:'name',text:'Как к вам обращаться?',label:'Имя'},{key:'contact',text:'Напишите телефон или контакт в мессенджере для связи по заявкам.',label:'Контакт'},{key:'city',text:'В каком городе вы будете пользоваться сервисом?',label:'Город'}];
 export const cleanerQuestions:Question[]=[{key:'districts',text:'В каких районах удобно брать уборки?',label:'Районы'},{key:'experience',text:'Расскажите об опыте уборки. Что умеете и сколько работаете?',label:'Опыт'},{key:'availability',text:'В какие дни и часы вы готовы работать?',label:'График'}];
 export const propertyQuestions:Question[]=[
-  {key:'title',text:'Как назовём квартиру? Например, «Студия у набережной».',label:'Название'},
-  {key:'city',text:'В каком городе квартира?',label:'Город'},
+  {key:'title',text:'Как назовём жильё? Например, «Студия у набережной».',label:'Название'},
+  {key:'city',text:'В каком городе жильё?',label:'Город'},
   {key:'district',text:'В каком районе?',label:'Район'},
   {key:'address',text:'Напишите точный адрес. Он будет виден вам, подтверждённому гостю и назначенному исполнителю.',label:'Адрес'},
   {key:'price',text:'Сколько стоит проживание за сутки, в тенге?',label:'За сутки, ₸',min:100,max:10000000},

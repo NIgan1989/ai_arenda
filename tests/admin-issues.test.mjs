@@ -19,7 +19,7 @@ test('the AI triages a new issue, reminds the other side at half time and calls 
   assert.equal((await sweepIssues(f.db,config)).triaged,1);
   const ticket=f.db.raw.prepare('SELECT * FROM operator_tickets WHERE issue_id=?').get(issue.id);
   assert.equal(ticket.priority,'high');assert.equal(ticket.deadline,issue.created_at+3*3600);
-  assert.match(f.db.raw.prepare("SELECT body FROM operator_history WHERE id=?").get('ai-triage:'+issue.id).body,/состояние квартиры/);
+  assert.match(f.db.raw.prepare("SELECT body FROM operator_history WHERE id=?").get('ai-triage:'+issue.id).body,/состояние жилья/);
   assert.equal(f.db.raw.prepare("SELECT COUNT(*) n FROM notifications WHERE dedupe LIKE 'admin:%'").get().n,0);
   assert.equal((await sweepIssues(f.db,config)).triaged,0);
   assert.equal((await readPlatformAdmin(f.owner,'overview',{},{PLATFORM_ADMIN_IDS:'owner'})).counts.issues,0);
@@ -36,7 +36,7 @@ test('an urgent issue reaches the admin at once',async()=>{
  const f=await fixture();try{
   await f.guest.bookingAction(f.booking,{action:'issue',issue:'Не могу попасть в квартиру, ключа нет',requestKey:'i2'});
   const r=await sweepIssues(f.db,{PLATFORM_ADMIN_IDS:'admin'});assert.equal(r.escalated,1);
-  assert.match(f.db.raw.prepare("SELECT body FROM notifications WHERE dedupe LIKE 'admin:issue-urgent:%'").get().body,/доступ в квартиру/);
+  assert.match(f.db.raw.prepare("SELECT body FROM notifications WHERE dedupe LIKE 'admin:issue-urgent:%'").get().body,/доступ в жильё/);
  }finally{f.db.close();}
 });
 test('the AI hides a reported message that obviously breaks the rules and leaves the rest to the admin',async()=>{

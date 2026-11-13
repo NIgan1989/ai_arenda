@@ -246,7 +246,7 @@ function RequestForm({ draft, cities, busy, focus, onChange, onSubmit, zoneNotic
               <option value="closer">Ближе к выбранному месту</option>
             </select>
           </label>
-          <div className="request-checks" role="group" aria-label="Что должно быть в квартире">
+          <div className="request-checks" role="group" aria-label="Что должно быть в жилье">
             {WISHES.map(([feature, label]) => (
               <label key={feature}>
                 <input

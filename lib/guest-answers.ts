@@ -50,11 +50,11 @@ function compose(topics:Topic[],b:Row,change?:string):{text:string;escalate:bool
   if(topic==='change'&&change)lines.push(change);
   else if(topic==='change')lines.push('Ранний заезд или поздний выезд оформляется кнопкой «Изменить даты или продлить» в карточке брони: я сразу проверю календарь и тариф и покажу итоговую сумму.');
   if(topic==='address')lines.push(b.status==='confirmed'&&b.address?'Адрес: '+b.address+'.':'Точный адрес появится в карточке брони сразу после подтверждения.');
-  if(topic==='access'){lines.push('Ключи и доступ в квартиру передаёт владелец. Я передал ему ваш вопрос, он ответит здесь.');escalate=true;}
-  if(topic==='rules'){if(b.house_rules?.trim())lines.push('Правила квартиры: '+b.house_rules.trim());else{lines.push('Особых правил владелец не указал. Уточню у него ваш вопрос.');escalate=true;}}
-  if(topic==='deposit')lines.push(b.deposit>0?'Депозит '+money(b.deposit)+(b.deposit_status==='owner_verified'?', получен.':', передаётся владельцу при заезде.')+' Он возвращается после выезда и проверки квартиры.':'Депозит по этой брони не требуется.');
+  if(topic==='access'){lines.push('Ключи и доступ в жильё передаёт владелец. Я передал ему ваш вопрос, он ответит здесь.');escalate=true;}
+  if(topic==='rules'){if(b.house_rules?.trim())lines.push('Правила жилья: '+b.house_rules.trim());else{lines.push('Особых правил владелец не указал. Уточню у него ваш вопрос.');escalate=true;}}
+  if(topic==='deposit')lines.push(b.deposit>0?'Депозит '+money(b.deposit)+(b.deposit_status==='owner_verified'?', получен.':', передаётся владельцу при заезде.')+' Он возвращается после выезда и проверки жилья.':'Депозит по этой брони не требуется.');
   if(topic==='payment')lines.push('Сумма брони '+money(b.amount)+', '+(paymentText[b.payment_status]||'статус оплаты в карточке брони')+'.');
-  if(topic==='guests')lines.push('Квартира рассчитана на '+b.capacity+' '+(b.capacity===1?'гостя':'гостей')+'. В брони указано: '+b.guests+'.');
+  if(topic==='guests')lines.push('Жильё рассчитано на '+b.capacity+' '+(b.capacity===1?'гостя':'гостей')+'. В брони указано: '+b.guests+'.');
   if(topic==='other_question'){lines.push('На этот вопрос ответит владелец. Я передал ему ваше сообщение.');escalate=true;}
  }
  return {text:lines.join('\n'),escalate};
@@ -76,7 +76,7 @@ export async function answerGuest(db:D1Database,roomId:string,seq:number,offer?:
  // Earlier or longer: the AI checks the calendar and the cleaning and names the price right away.
  let change:string|undefined;
  if(Array.isArray(topics)&&topics.includes('change')&&offer){const kind=wantsEarly(message.body)?'early':'late';try{change=stayOfferAnswer(await offer(b.id,kind,wantedHours(message.body)),kind);}catch(error){console.error('AI administrator: stay offer failed',error instanceof Error?error.message:'');}}
- const reply=topics==='greeting'?{text:'Здравствуйте! Я AI администратор этой квартиры. Подскажу время заезда и выезда, адрес, правила, депозит и оплату. Остальное передам владельцу.',escalate:false}:compose(topics,b,change);
+ const reply=topics==='greeting'?{text:'Здравствуйте! Я AI администратор этого жилья. Подскажу время заезда и выезда, адрес, правила, депозит и оплату. Остальное передам владельцу.',escalate:false}:compose(topics,b,change);
  const gate='EXISTS(SELECT 1 FROM bookings b JOIN properties p ON p.id=b.property_id WHERE b.id=? AND p.owner_id=? AND b.guest_id=?) AND EXISTS(SELECT 1 FROM discussion_rooms WHERE id=? AND membership_key=?) AND NOT EXISTS(SELECT 1 FROM discussion_blocks WHERE room_id=?) AND '+underAutopilot('?');
  const statements=[q(db,`INSERT OR IGNORE INTO discussion_messages(room_id,sender_id,sender_role,body,request_key,created_at,photo_data,reply_to) SELECT ?,?,'owner',?,?,?,'',? WHERE ${gate}`,roomId,b.owner_id,reply.text.slice(0,4000),AI_KEY+seq,t,seq,b.id,b.owner_id,b.guest_id,roomId,message.membership_key,roomId,b.property_id,t)];
  if(reply.escalate)statements.push(q(db,'INSERT OR IGNORE INTO notifications SELECT ?,?,?,?,0,? WHERE changes()>0',uuid(),b.owner_id,'Гость спрашивает в чате брони «'+b.title+'»: «'+String(message.body).slice(0,140)+'». AI администратор не знает ответа, ответьте гостю.','owner:guest-question:'+roomId+':'+seq,t));

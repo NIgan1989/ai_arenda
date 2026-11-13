@@ -20,7 +20,7 @@ export function FlatCalendars({propertyId,api,onBack}:{propertyId:string;api:API
  return <section className="pq pe fc" aria-labelledby="fc-title">
   <header className="pe-bar"><button type="button" className="pq-icon" onClick={onBack} aria-label="Назад к списку" disabled={busy}><ArrowLeft size={20}/></button><h2 id="fc-title">Календари площадок</h2></header>
   <div className="pe-body">
-   <p className="pe-hint">Если квартира есть на Airbnb, Booking или Суточно, свяжите календари, и одну квартиру не забронируют дважды.</p>
+   <p className="pe-hint">Если жильё есть на Airbnb, Booking или Суточно, свяжите календари, и одно жильё не забронируют дважды.</p>
    <p className="pq-h">Занятость с других площадок</p>
    {!state&&!error&&<p className="pe-hint">Загружаю…</p>}
    {(state?.sources?.length||0)>0&&<ul className="fc-list">{state!.sources.map((s:Row)=>{const st=calendarStatus(s);return <li key={s.id} className={'is-'+st.tone}>
@@ -32,7 +32,7 @@ export function FlatCalendars({propertyId,api,onBack}:{propertyId:string;api:API
    <button type="button" className="pq-primary fc-button" disabled={busy||!url.trim()} onClick={connect}>{busy?'Подключаю…':<><Link2 size={18}/>Подключить</>}</button>
    <p className="pq-h">Ссылка для других площадок</p>
    <p className="pe-hint">Вставьте её в импорт календаря на Airbnb или Booking, тогда брони отсюда закроют даты и там. В ссылке только занятые даты, без имён и адресов.{state?.exportLinks?' Выданных ссылок: '+state.exportLinks+'.':''}</p>
-   {link?<div className="fc-link"><input readOnly value={link} aria-label="Ссылка на календарь квартиры" onFocus={e=>e.currentTarget.select()}/><button type="button" className="pq-send fc-copy" onClick={copy}>{copied?<><Check size={16}/>Скопировано</>:<><Copy size={16}/>Скопировать</>}</button></div>
+   {link?<div className="fc-link"><input readOnly value={link} aria-label="Ссылка на календарь жилья" onFocus={e=>e.currentTarget.select()}/><button type="button" className="pq-send fc-copy" onClick={copy}>{copied?<><Check size={16}/>Скопировано</>:<><Copy size={16}/>Скопировать</>}</button></div>
     :<button type="button" className="pq-ghost fc-button" disabled={busy} onClick={share}><Link2 size={18}/>Получить ссылку</button>}
    {note&&<p className="fc-note" role="status">{note}</p>}
    {error&&<p className="pq-error" role="alert">{error}</p>}

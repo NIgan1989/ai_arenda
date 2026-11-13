@@ -93,10 +93,10 @@ export function stayOfferText(o:Row){
 export function stayOfferAnswer(result:{offer:Row|null;reason:string},kind:'late'|'early'){
  if(result.offer)return stayOfferText(result.offer)+' Кнопка в уведомлении и на карте, предложение действует 30 минут.';
  const word=kind==='late'?'Продлить':'Заехать раньше';
- if(result.reason==='busy')return word+' сейчас не получится: '+(kind==='late'?'после вас':'до вас')+' в квартире другой гость или уборка.';
+ if(result.reason==='busy')return word+' сейчас не получится: '+(kind==='late'?'после вас':'до вас')+' в жилье другой гость или уборка.';
  if(result.reason==='daily'||result.reason==='no_hourly')return word+' на несколько часов можно по договорённости с владельцем: нажмите «Изменить даты или продлить» в карточке брони, я покажу сумму.';
  if(result.reason==='started')return 'Заезд уже скоро или вы заселились: время заезда больше не меняется.';
- return word+' сейчас не получится по правилам квартиры. Если нужно, напишите владельцу.';
+ return word+' сейчас не получится по правилам жилья. Если нужно, напишите владельцу.';
 }
 
 export async function guestStayOffers(db:D1Database,guestId:string,t=epoch()){

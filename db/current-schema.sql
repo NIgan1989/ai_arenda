@@ -50,6 +50,7 @@
 -- migration 0046_autopilot_plans.sql sha256:911a0b05ae335a2d427404f7d641c8846f51b9a722277078cc323514c87cd323
 -- migration 0047_discussion_notice_text.sql sha256:d3e1b2fee1b66841cabbc359edba94784c7068377bcb199c1bf71f130ed16640
 -- migration 0048_test_payments.sql sha256:def5594e44cfe1fc2272f6766ef840ad15a8b79a7f9fe56118dd4822a6763ae9
+-- migration 0049_own_staff.sql sha256:e405114ddd056e7f4463ebbbaf4ecef3a9348be4c3e944fe4d59728171313a19
 
 -- table access_receipts
 CREATE TABLE access_receipts (id TEXT PRIMARY KEY,property_id TEXT NOT NULL,entity_kind TEXT NOT NULL,entity_id TEXT NOT NULL,user_id TEXT NOT NULL,created_at INTEGER NOT NULL,expires_at INTEGER NOT NULL);
@@ -859,7 +860,7 @@ CREATE TABLE `properties` (
 	`cleaning_minutes` integer DEFAULT 90 NOT NULL,
 	`published` integer DEFAULT 1 NOT NULL,
 	`created_at` integer NOT NULL
-, archived_at INTEGER);
+, archived_at INTEGER, own_staff INTEGER NOT NULL DEFAULT 0 CHECK(own_staff IN (0,1)));
 
 -- table property_access
 CREATE TABLE property_access (property_id TEXT PRIMARY KEY REFERENCES properties(id),ciphertext TEXT NOT NULL,version INTEGER NOT NULL DEFAULT 1,updated_at INTEGER NOT NULL);

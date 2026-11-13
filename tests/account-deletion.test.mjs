@@ -15,7 +15,7 @@ test('unused shared account deletion removes local data and sessions, retaining 
   f.db.raw.prepare('INSERT INTO profile_details VALUES (?,?,?,?,?,?)').run(f.s.userId,'avatar','available',1,'revision',now());
   f.db.raw.prepare("INSERT INTO notifications VALUES ('notification',?,'Private notification','unique',0,?)").run(f.s.userId,now());
   f.db.raw.prepare("INSERT INTO delivery_outbox(id,notification_id,user_id,role,channel,status,attempts,available_at,created_at) VALUES ('pending','notification',?,'guest','telegram','pending',0,?,?)").run(f.s.userId,now(),now());
-  await f.s.chat({role:'guest',text:'Найди квартиру'});
+  await f.s.chat({role:'guest',text:'Найди жильё'});
   assert.equal((await accountDeletionState(f.s,'guest')).canEraseActiveDatabase,true);
   const result=await accountDeletionAction(f.s,'guest',f.erase);assert.equal(result.erased,true);assert.equal(result.signOut,true);assert.equal(result.receipt.scope,'active_database_only');
   assert.equal(await sessionUser(f.db,f.cookie),null);assert.equal(await sessionUser(f.db,null,'Bearer '+f.token),null);assert.equal(await f.s.profile(),null);

@@ -52,12 +52,12 @@ async function automaticActions(service:RentalService){
   if(policy.auto_assign&&policy.auto_confirm){
    // The guest said they left: free the flat so the cleaner can start. The owner is told.
    const left=await service.all("SELECT b.id FROM bookings b JOIN booking_terms t ON t.booking_id=b.id WHERE b.property_id=? AND b.status='confirmed' AND t.checkout_reported_at IS NOT NULL AND t.actual_checkout IS NULL",policy.property_id);
-   for(const b of left){try{await delegated.bookingAction(b.id,{action:'checkout'});await service.notify(service.userId,'AI администратор подтвердил выезд по сообщению гостя. Квартира ждёт уборки.','administrator-checkout:'+b.id,'owner').run();actions++;}catch(error){if(!expectedConflict(error))throw error;}}
+   for(const b of left){try{await delegated.bookingAction(b.id,{action:'checkout'});await service.notify(service.userId,'AI администратор подтвердил выезд по сообщению гостя. Жильё ждёт уборки.','administrator-checkout:'+b.id,'owner').run();actions++;}catch(error){if(!expectedConflict(error))throw error;}}
    // The guest says they arrived: with payment and deposit verified the AI confirms the check-in for the owner;
    // otherwise the owner is told once that only the payment check is missing.
    const arrived=await service.all("SELECT b.id,b.guest_id,b.payment_status,t.deposit_status,p.title FROM bookings b JOIN booking_terms t ON t.booking_id=b.id JOIN properties p ON p.id=b.property_id WHERE b.property_id=? AND b.status='confirmed' AND t.checkin_reported_at IS NOT NULL AND t.actual_checkin IS NULL AND b.end>?",policy.property_id,now());
    for(const b of arrived){
-    const title=b.title||'квартира';
+    const title=b.title||'жильё';
     if(b.payment_status!=='owner_verified'||b.deposit_status==='pending'){
      // With in-app payment the guest is the one who can fix it: they are asked to pay in the booking card.
      const inApp=!!(await service.one("SELECT test_payments FROM platform_billing WHERE id='global'").catch(()=>null))?.test_payments;
@@ -67,14 +67,14 @@ async function automaticActions(service:RentalService){
      if(!expectedConflict(error))throw error;
      // Paid, but the flat is not marked ready (a new flat, or a cleaning not yet accepted): only the owner can say it is.
      const op=await service.one('SELECT readiness,active_booking_id FROM property_operations WHERE property_id=?',policy.property_id);
-     if(op&&op.readiness!=='ready'&&!op.active_booking_id)await service.notify(service.userId,'Гость оплатил и уже на месте в «'+title+'», но квартира не отмечена готовой. Подтвердите готовность в карточке квартиры (или примите уборку), и AI администратор сразу заселит гостя.','administrator-checkin-ready:'+b.id,'owner').run();
+     if(op&&op.readiness!=='ready'&&!op.active_booking_id)await service.notify(service.userId,'Гость оплатил и уже на месте в «'+title+'», но жильё не отмечено готовым. Подтвердите готовность в карточке жилья (или примите уборку), и AI администратор сразу заселит гостя.','administrator-checkin-ready:'+b.id,'owner').run();
     }
    }
    // The AI checks each submitted cleaning report. A clean report is offered to the owner for one-tap acceptance;
    // without an answer in OWNER_REVIEW_SECONDS, or when the next guest arrives within two hours, the AI accepts it.
    const submitted=await service.all("SELECT j.*,p.title FROM cleaning_jobs j JOIN properties p ON p.id=j.property_id WHERE j.property_id=? AND j.status='submitted' ORDER BY j.end,j.id",policy.property_id);
    for(const job of submitted){
-    const t=now(),review=await reviewCleaning(service.db,job),title=job.title||'квартира';
+    const t=now(),review=await reviewCleaning(service.db,job),title=job.title||'жильё';
     if(!review.ok){await service.notify(service.userId,'AI администратор проверил отчёт об уборке «'+title+'» и нашёл замечания: '+review.findings.join('; ')+'. Проверьте фото и примите уборку или верните на доработку.','administrator-review-issue:'+job.id+':'+job.version,'owner').run();continue;}
     const nextGuest=await service.one("SELECT id FROM bookings WHERE property_id=? AND status IN ('requested','confirmed') AND start>? AND start<=?",policy.property_id,t-3600,t+7200);
     if(!nextGuest){
@@ -82,7 +82,7 @@ async function automaticActions(service:RentalService){
      if(!asked){await service.notify(service.userId,'AI администратор проверил отчёт об уборке «'+title+'»: фото до ('+review.before+') и после ('+review.after+') сделаны во время уборки, чек-лист выполнен, проблем не указано. Примите уборку в карточке, или через час ИИ примет сам.','administrator-review:'+job.id+':'+job.version,'owner').run();continue;}
      if(asked.created_at+OWNER_REVIEW_SECONDS>t)continue;
     }
-    try{await delegated.jobAction(job.id,{action:'approve',expectedVersion:job.version});await service.notify(service.userId,'AI администратор принял уборку «'+title+'» по фотоотчёту. Квартира готова к заселению.','administrator-approved:'+job.id,'owner').run();actions++;}catch(error){if(!expectedConflict(error))throw error;}
+    try{await delegated.jobAction(job.id,{action:'approve',expectedVersion:job.version});await service.notify(service.userId,'AI администратор принял уборку «'+title+'» по фотоотчёту. Жильё готово к заселению.','administrator-approved:'+job.id,'owner').run();actions++;}catch(error){if(!expectedConflict(error))throw error;}
    }
    actions+=await settleTestMoney(service,policy.property_id);
   }
@@ -101,7 +101,7 @@ async function automaticActions(service:RentalService){
     const first=candidates[0],t=now();
     if(first&&job.start>t+3600){
      const proposed=await service.one('SELECT created_at FROM notifications WHERE user_id=? AND dedupe=?',service.userId,'owner:administrator-propose:'+first.id);
-     if(!proposed){await service.notify(service.userId,'AI администратор предлагает исполнителя '+first.name+' на уборку «'+(job.title||'квартира')+'». Назначьте исполнителя в карточке уборки, или через 30 минут ИИ назначит сам.','administrator-propose:'+first.id,'owner').run();continue;}
+     if(!proposed){await service.notify(service.userId,'AI администратор предлагает исполнителя '+first.name+' на уборку «'+(job.title||'жильё')+'». Назначьте исполнителя в карточке уборки, или через 30 минут ИИ назначит сам.','administrator-propose:'+first.id,'owner').run();continue;}
      if(proposed.created_at+OWNER_ANSWER_SECONDS>t)continue;
     }
     for(const candidate of candidates){try{await delegated.jobAction(job.id,{action:'assign',applicationId:candidate.id,expectedVersion:job.version});await service.notify(service.userId,'AI администратор назначил свободного исполнителя из откликнувшихся в пределах вашего лимита уборки.','administrator-assigned:'+job.id+':'+job.version,'owner').run();actions++;break;}catch(error){if(!expectedConflict(error))throw error;}}

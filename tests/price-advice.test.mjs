@@ -11,7 +11,7 @@ test('the advice stays silent when the price fits the moment',()=>{
 test('high demand suggests raising the price, capped near similar flats',()=>{
  const up=advisePrice({...calm,requests:6,bookings:1,freeFlats:2});
  assert.equal(up.direction,'up');assert.equal(up.daily,11500);assert.equal(up.percent,15);assert.equal(up.hourly,2300);assert.equal(up.nightly,10500);
- assert.ok(up.reasons.some(r=>/6 запросов/.test(r)));assert.ok(up.reasons.some(r=>/Свободных квартир: 2/.test(r)));
+ assert.ok(up.reasons.some(r=>/6 запросов/.test(r)));assert.ok(up.reasons.some(r=>/Свободных объектов: 2/.test(r)));
  // Already well above similar flats: no push to go higher.
  assert.equal(advisePrice({...calm,requests:6,freeFlats:1,median:8000,similar:4}),null);
  // Close to the market: the rise stops at 125% of the median.

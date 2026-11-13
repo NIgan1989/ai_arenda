@@ -20,5 +20,5 @@ export function markDeals<T extends Row>(items:T[]):T[]{
 // «Цена выгодная · −18%»
 export function dealBadge(deal:{percent?:number}|null|undefined){return deal?.percent?'Цена выгодная · −'+deal.percent+'%':'';}
 export function dealNote(deal:{typical?:number;similar?:number}|null|undefined,money:(n:number)=>string){
- return deal?.typical?'Похожие свободные квартиры на эти даты стоят около '+money(deal.typical):'';
+ return deal?.typical?'Похожие свободные объекты на эти даты стоят около '+money(deal.typical):'';
 }

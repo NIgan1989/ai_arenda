@@ -9,7 +9,7 @@ export function calendarStatus(s:Row,now=Math.floor(Date.now()/1000)):{text:stri
  if(!s.enabled)return {text:'Отключён',tone:'off'};
  if(!s.automatic)return {text:'Загружается файлом в разделе «Управление»',tone:'off'};
  const fresh=s.last_success&&now-s.last_success<3600&&!s.last_error;
- if(!fresh)return {text:s.last_success?'Не обновляется с '+ago(now-s.last_success).replace(' назад','')+'. Новые заявки на квартиру остановлены':'Ещё не загрузился. Новые заявки на квартиру остановлены',tone:'warn'};
+ if(!fresh)return {text:s.last_success?'Не обновляется с '+ago(now-s.last_success).replace(' назад','')+'. Новые заявки на это жильё остановлены':'Ещё не загрузился. Новые заявки на это жильё остановлены',tone:'warn'};
  return {text:'Обновлён '+ago(now-s.last_success)+' · '+(s.busy?'занято '+s.busy+' '+periods(Number(s.busy)):'занятых дат нет'),tone:'ok'};
 }
 
