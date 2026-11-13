@@ -74,7 +74,7 @@ export function NativeAutopilotPlan({role}:{role:'owner'|'cleaner'}){
  const n=state.today?.length||0;
  return <>
   <Text accessibilityRole="header" style={a.label}>Тариф</Text>
-  <View style={p.on}><Text style={p.onLabel}>● {plan?.status==='trial'?'Автопилот включён · пробный период':plan?.status==='grace'?'Автопилот · нужна оплата':'Автопилот включён'}</Text><Text style={p.onTitle}>{owner?`ИИ ведёт ${state.units} ${plural(state.units,'квартиру','квартиры','квартир')}`:n?`ИИ взял ${n} ${plural(n,'уборку','уборки','уборок')} на сегодня`:'ИИ берёт уборки по вашим правилам'}</Text><Text style={p.onNote}>{statusLine}</Text></View>
+  <View style={p.on}><Text style={p.onLabel}>● {plan?.status==='trial'?'Автопилот включён · пробный период':plan?.status==='grace'?'Автопилот · нужна оплата':'Автопилот включён'}</Text><Text style={p.onTitle}>{owner?`ИИ ведёт ${state.units} ${plural(state.units,'квартиру','квартиры','квартир')}`:n?`На сегодня ${n} ${plural(n,'уборка','уборки','уборок')}`:'ИИ берёт уборки по вашим правилам'}</Text><Text style={p.onNote}>{statusLine}</Text></View>
   {notice}
   <Text accessibilityRole="header" style={a.label}>За эту неделю</Text>
   <View style={p.stats}>{(owner?[[state.week.answered,'ответов гостям'],[state.week.bookings,'броней'],[state.week.cleanings,'уборок принято']]:[[state.week.taken,'уборок взял ИИ'],[money(state.week.earned),'заработано']]).map(([v,l])=><View key={String(l)} style={p.stat}><Text style={p.statValue}>{v}</Text><Text style={a.note}>{l}</Text></View>)}</View>
