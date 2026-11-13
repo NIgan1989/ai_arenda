@@ -40,7 +40,8 @@ const GAP = 12,
   CARD_MAX = 300;
 
 // The chosen flat rises into the sheet as if from its pin; with «reduce motion» it is simply there.
-function Rise({ children }: { children: React.ReactNode }) {
+// onTop: where the card starts in the sheet's content; the rise moves it on screen only, never in the layout.
+function Rise({ children, onTop }: { children: React.ReactNode; onTop: (y: number) => void }) {
   const v = useRef(new Animated.Value(0)).current;
   useEffect(() => {
     let live = true;
@@ -55,7 +56,7 @@ function Rise({ children }: { children: React.ReactNode }) {
       live = false;
     };
   }, []);
-  return <Animated.View style={{ opacity: v.interpolate({ inputRange: [0, 0.4, 1], outputRange: [0, 1, 1] }), transform: [{ translateY: v.interpolate({ inputRange: [0, 1], outputRange: [28, 0] }) }, { scale: v.interpolate({ inputRange: [0, 1], outputRange: [0.96, 1] }) }] }}>{children}</Animated.View>;
+  return <Animated.View onLayout={e => onTop(Math.round(e.nativeEvent.layout.y))} style={{ opacity: v.interpolate({ inputRange: [0, 0.4, 1], outputRange: [0, 1, 1] }), transform: [{ translateY: v.interpolate({ inputRange: [0, 1], outputRange: [28, 0] }) }, { scale: v.interpolate({ inputRange: [0, 1], outputRange: [0.96, 1] }) }] }}>{children}</Animated.View>;
 }
 
 function stayWords(draft: GuestDraft) {
@@ -66,6 +67,7 @@ function stayWords(draft: GuestDraft) {
 // What the guest sees after a search: a short list, then one flat with a way to book it and a way back.
 export function GuestResults({ preview, draft, selected, onSelect, onFocus, onBook, onOpen, onRefine, onWiden, onAskOwners, onBookEdge, busy }: Props) {
   const flats: Row[] = preview.properties || [];
+  const chosen = flats.find(flat => flat.id === selected);
   const width = useWindowDimensions().width,
     card = Math.min(CARD_MAX, width - 72),
     step = card + GAP;
@@ -73,6 +75,17 @@ export function GuestResults({ preview, draft, selected, onSelect, onFocus, onBo
   const [index, setIndex] = useState(0),
     [seen, setSeen] = useState(0);
   const settle = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const strip = useRef<ScrollView>(null);
+  // Back from a result: the carousel opens again on the card the guest was looking at, as the counter and the map say.
+  useEffect(() => {
+    if (!chosen && index) strip.current?.scrollTo({ x: index * step, animated: false });
+  }, [!!chosen]);
+  // «Забронировать» ends where the chosen card starts in the sheet plus where the button ends in the card.
+  const [cardTop, setCardTop] = useState(0),
+    [buttonBottom, setButtonBottom] = useState(0);
+  useEffect(() => {
+    if (chosen && buttonBottom) onBookEdge?.(cardTop + buttonBottom);
+  }, [cardTop, buttonBottom, chosen?.id]);
   useEffect(() => () => clearTimeout(settle.current), []);
   // The map follows once the swipe has stopped, not on every card that passes by.
   const scrolled = (x: number) => {
@@ -84,7 +97,6 @@ export function GuestResults({ preview, draft, selected, onSelect, onFocus, onBo
       if (flats[at]) onFocus?.(flats[at].id);
     }, 160);
   };
-  const chosen = flats.find(flat => flat.id === selected);
   const about = (flat: Row) => [flat.district, ...shownReasons(flat.match?.reasons, draft)].filter(Boolean).join(' · ');
 
   if (!flats.length) {
@@ -104,7 +116,7 @@ export function GuestResults({ preview, draft, selected, onSelect, onFocus, onBo
     // The name, the price and the way to book come first, so they are on screen in the half-open sheet;
     // the photo and the rest are below.
     return (
-      <Rise key={chosen.id}>
+      <Rise key={chosen.id} onTop={setCardTop}>
         <Pressable accessibilityRole="button" accessibilityLabel="Все варианты" onPress={() => onSelect('')} style={({ pressed }) => [r.back, pressed && h.dim]}>
           <Image source={chevron} style={r.backIcon} accessibilityIgnoresInvertColors />
           <Text style={r.backText}>Все варианты · {flats.length}</Text>
@@ -130,7 +142,7 @@ export function GuestResults({ preview, draft, selected, onSelect, onFocus, onBo
           </View>
         </View>
         {!!chosen.host && <View style={{ marginBottom: 12 }}><ReliabilityBadge value={chosen.host} title="Владелец" /></View>}
-        <View onLayout={e => onBookEdge?.(Math.round(e.nativeEvent.layout.y + e.nativeEvent.layout.height))}>
+        <View onLayout={e => setButtonBottom(Math.round(e.nativeEvent.layout.y + e.nativeEvent.layout.height))}>
           <Action title="Забронировать" disabled={busy} onPress={() => onBook(chosen)} />
         </View>
         {!!chosen.photos?.[0] && <Photo id={chosen.photos[0]} alt={chosen.title + ', фото'} />}
@@ -149,6 +161,7 @@ export function GuestResults({ preview, draft, selected, onSelect, onFocus, onBo
         {flats.length > 1 ? 'Листайте варианты: метка на карте покажет, где каждый. ' + (index + 1) + ' из ' + flats.length + '.' : 'Нажмите, чтобы посмотреть и забронировать.'}
       </Text>
       <ScrollView
+        ref={strip}
         horizontal
         showsHorizontalScrollIndicator={false}
         snapToInterval={step}
@@ -167,6 +180,7 @@ export function GuestResults({ preview, draft, selected, onSelect, onFocus, onBo
             onPress={() => {
               // The map flies to the chosen card's pin, even when the swipe that showed it has not settled yet.
               clearTimeout(settle.current);
+              setIndex(i);
               onFocus?.(flat.id);
               onSelect(flat.id);
             }}
