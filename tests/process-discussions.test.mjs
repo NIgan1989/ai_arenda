@@ -55,3 +55,21 @@ test('photo messages and replies are private, replay safe and retained after reo
  f.db.close();rmSync(file);file=null;
  }finally{if(file){f.db.close();(await import('node:fs')).rmSync(file,{force:true});}else if(f.db.raw.isOpen)f.db.close();}
 });
+test('a call opens only while the deal goes through the service, and the chat shows the order it is about',async()=>{
+ const {callAllowed}=await load('process-discussions'),t=now();
+ assert.equal(callAllowed({kind:'booking',status:'confirmed',end:t+3600},false,t).ok,true);
+ assert.equal(callAllowed({kind:'booking',status:'confirmed',end:t-2*86400},false,t).ok,false);
+ assert.match(callAllowed({kind:'booking',status:'requested',end:t+3600},false,t).note,/после подтверждения/);
+ assert.equal(callAllowed({kind:'booking',status:'confirmed',end:t+3600},true,t).ok,false);
+ assert.equal(callAllowed({kind:'job',status:'assigned'},false,t).ok,true);
+ assert.equal(callAllowed({kind:'job',status:'open'},false,t).ok,false);
+ assert.equal(callAllowed({kind:'job',status:'completed'},false,t).ok,false);
+ const f=await fixture();try{
+  const room=await openDiscussion(f.guest,'guest',{kind:'booking',entityId:f.booking,channel:'stay'}),read=await readDiscussion(f.guest,'guest',room);
+  assert.equal(read.subject.kind,'booking');assert.equal(read.subject.id,f.booking);
+  const status=f.db.raw.prepare('SELECT status FROM bookings WHERE id=?').get(f.booking).status;
+  assert.equal(!!read.call.phone,callAllowed(read.subject,false).ok&&!!f.db.raw.prepare("SELECT phone FROM auth_accounts WHERE id='owner'").get()?.phone,'status '+status);
+  if(!read.call.phone)assert.ok(read.call.note);
+  assert.ok(read.room.members.find(m=>m.role==='owner').rating);assert.equal(read.room.members.find(m=>m.role==='guest').rating,undefined);
+ }finally{f.db.close();}
+});

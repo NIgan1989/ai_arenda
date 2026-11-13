@@ -4,6 +4,7 @@ import {q,one,rows,uuid,epoch,hash,type Row} from './operation-core';
 import {jpegInput} from './listings';
 import {answerGuest,AI_KEY} from './guest-answers';
 import {makeStayOffer} from './stay-offers';
+import {reliabilityFor,reliabilityShort} from './reliability';
 type Member={id:string;role:Role;name?:string};
 export async function discussionContext(service:RentalService,role:Role,body:Row){
  await service.authorizeWorkspace(role,'operations');
@@ -63,7 +64,10 @@ export async function readDiscussion(service:RentalService,role:Role,body:Row){
  const viewer=await one(service.db,'SELECT show_presence,show_receipts FROM profile_preferences WHERE user_id=?',service.userId);
  const rawVisits=await rows(service.db,'SELECT v.user_id,v.role,v.last_seq,v.seen_at,v.typing_until,COALESCE(x.show_presence,1) show_presence,COALESCE(x.show_receipts,1) show_receipts FROM discussion_visits v LEFT JOIN profile_preferences x ON x.user_id=v.user_id WHERE v.room_id=?',room.id);
  const visits=rawVisits.map(v=>({user_id:v.user_id,role:v.role,last_seq:v.show_receipts&&(viewer?.show_receipts??1)?v.last_seq:0,seen_at:v.show_presence&&(viewer?.show_presence??1)?v.seen_at:0,typing_until:v.show_presence&&(viewer?.show_presence??1)?v.typing_until:0}));
- return {room:{id:room.id,sendBlocked:!!await one(service.db,'SELECT room_id FROM discussion_blocks WHERE room_id=?',room.id),title:room.title,channel:room.channel,members:await currentMembers(service,room,context),archived:room.membership_key!==context.membershipKey},messages,visits,hasOlder:older,userId:service.userId};
+ const sendBlocked=!!await one(service.db,'SELECT room_id FROM discussion_blocks WHERE room_id=?',room.id),archived=room.membership_key!==context.membershipKey,members=await currentMembers(service,room,context);
+ for(const m of members){if(m.id===service.userId&&m.role===role)continue;try{const r=(await reliabilityFor(service.db,m.role,[m.id])).get(m.id);if(r)m.rating=reliabilityShort(r);}catch{}}
+ const subject=await discussionSubject(service,context);
+ return {room:{id:room.id,sendBlocked,title:room.title,channel:room.channel,members,archived},subject,call:archived?{phone:null,note:'Чат в архиве.'}:await discussionCall(service,role,context,subject,sendBlocked),messages,visits,hasOlder:older,userId:service.userId};
 }
 export async function sendDiscussionMessage(service:RentalService,role:Role,body:Row){
  const {room,context}=await authorisedRoom(service,role,body);if(room.membership_key!==context.membershipKey)throw new DomainError('Состав участников изменился. Откройте актуальное обсуждение.',409);
@@ -94,4 +98,26 @@ export async function discussionInbox(service:RentalService,role:Role){
  const rooms=await rows(service.db,"SELECT r.id FROM discussion_rooms r WHERE r.channel<>'shared' AND EXISTS(SELECT 1 FROM json_each(r.members) m WHERE json_extract(m.value,'$.id')=? AND json_extract(m.value,'$.role')=?) ORDER BY COALESCE((SELECT MAX(created_at) FROM discussion_messages WHERE room_id=r.id),r.created_at) DESC LIMIT 100",service.userId,role),items:Row[]=[];
  for(const r of rooms){try{const {room,context}=await authorisedRoom(service,role,{roomId:r.id});const latest=await one(service.db,"SELECT seq,body,created_at,(photo_data<>'') photo FROM discussion_messages WHERE room_id=? ORDER BY seq DESC LIMIT 1",r.id),unread=await one(service.db,'SELECT COUNT(*) n FROM discussion_messages WHERE room_id=? AND sender_id<>? AND seq>COALESCE((SELECT last_seq FROM discussion_visits WHERE room_id=? AND user_id=? AND role=?),0)',r.id,service.userId,r.id,service.userId,role);items.push({id:r.id,title:room.title,kind:room.entity_kind,entityId:room.entity_id,channel:room.channel,members:await currentMembers(service,room,context),archived:room.membership_key!==context.membershipKey,latest,unread:unread?.n||0});}catch(e){if(!(e instanceof DomainError)||![403,409].includes(e.status))throw e;}}
  return {userId:service.userId,rooms:items,unread:items.reduce((sum,r)=>sum+r.unread,0),...(await discussionCandidates(service,role))};
+}
+
+// The order the chat is about: shown pinned at the top of the chat, and a tap opens it.
+async function discussionSubject(service:RentalService,context:Row){
+ const r=context.kind==='job'?await one(service.db,'SELECT id,start,end,status,fee FROM cleaning_jobs WHERE id=?',context.id):await one(service.db,'SELECT id,start,end,status FROM bookings WHERE id=?',context.id);
+ return r?{kind:context.kind,id:r.id,title:context.title,status:r.status,start:r.start,end:r.end,...(r.fee!=null?{fee:r.fee}:{})}:null;
+}
+// A call to the other participant. The number opens only while the deal already goes through the service:
+// a confirmed stay up to a day after check-out, or a cleaning with an assigned performer, so a call does not
+// replace the booking or the payment through the service.
+const CALL_JOB=['assigned','in_progress','submitted'];
+export function callAllowed(subject:Row|null,blocked:boolean,t=epoch()){
+ if(blocked)return {ok:false,note:'Переписка заблокирована.'};
+ if(!subject)return {ok:false,note:'Звонок недоступен.'};
+ if(subject.kind==='booking')return subject.status==='confirmed'&&t<subject.end+86400?{ok:true,note:''}:{ok:false,note:subject.status==='requested'?'Позвонить можно после подтверждения брони.':'Бронь уже не действует.'};
+ return CALL_JOB.includes(subject.status)?{ok:true,note:''}:{ok:false,note:subject.status==='completed'?'Уборка завершена.':'Позвонить можно, когда исполнитель назначен.'};
+}
+async function discussionCall(service:RentalService,role:Role,context:Row,subject:Row|null,blocked:boolean){
+ const allowed=callAllowed(subject,blocked);if(!allowed.ok)return {phone:null,note:allowed.note};
+ const other=(context.members as Member[]).find(m=>!(m.id===service.userId&&m.role===role));if(!other)return {phone:null,note:'Собеседника нет.'};
+ const row=await one(service.db,'SELECT phone FROM auth_accounts WHERE id=?',other.id);
+ return row?.phone?{phone:String(row.phone),note:''}:{phone:null,note:'Собеседник не указал телефон.'};
 }
