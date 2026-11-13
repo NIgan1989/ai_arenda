@@ -1,6 +1,8 @@
 import type {Role} from './domain';
+import {weekSummary,adviceSentence} from './forecast-text';
 type Row=Record<string,any>;
-export type Approval={id:string;kind:string;entityId:string;revision:string;title:string;subject:string;from:string;to:string;canDecide:boolean;expiresAt?:number;facts:[string,string][];acceptLabel:string;rejectLabel:string;requiresReason?:boolean;cleaningFee?:number;cleaningBudget?:number;detail?:string;price?:PriceTip;window?:WindowTip;stay?:StayTip};
+export type Approval={id:string;kind:string;entityId:string;revision:string;title:string;subject:string;from:string;to:string;canDecide:boolean;expiresAt?:number;facts:[string,string][];acceptLabel:string;rejectLabel:string;requiresReason?:boolean;cleaningFee?:number;cleaningBudget?:number;detail?:string;price?:PriceTip;window?:WindowTip;stay?:StayTip;forecast?:ForecastTip};
+export type ForecastTip={days:{label:string;date:number;load:number;level:'busy'|'normal'|'quiet'}[];summary:string;advice:'none'|'raise'|'lower'|'min_hours';from:number;to:number;percent:number;title:string;reasons:string[]};
 export type StayTip={kind:'late'|'early';when:string;hours:number;extra:number;amount:number;automatic:boolean};
 export type WindowTip={percent:number;from:number;to:number;propertyId:string;when:string;hours:number};
 export type PriceTip={direction:'up'|'down';percent:number;from:number;to:number;propertyId:string;reasons:string[];rows:[string,number,number][]};
@@ -8,6 +10,7 @@ export type PriceTip={direction:'up'|'down';percent:number;from:number;to:number
 export const priceRevision=(p:Row)=>JSON.stringify([p.id,p.status,p.policy_version,p.from_daily,p.to_daily]);
 // A calendar window: same idea, the answer goes stale when the window or its price changes.
 export const windowRevision=(w:Row)=>JSON.stringify([w.id,w.status,w.start,w.end,w.hourly_to]);
+export const forecastRevision=(f:Row)=>JSON.stringify([f.id,f.status,f.advice,f.policy_version,f.from_value,f.to_value]);
 export const stayRevision=(o:Row)=>JSON.stringify([o.id,o.status,o.start,o.end,o.amount,o.base_version,o.policy_version]);
 const money=(n:number)=>new Intl.NumberFormat('ru-RU').format(n)+' ₸';
 const date=(n:number)=>new Date(n*1000).toLocaleString('ru-RU',{timeZone:'Asia/Almaty',day:'numeric',month:'long',hour:'2-digit',minute:'2-digit'});
@@ -43,6 +46,15 @@ export function approvalCards(data:Row,role:Role,userId:string,t:number):Approva
   cards.unshift({id:'window:'+w.id,kind:'window',entityId:w.property_id,revision:windowRevision(w),title:'Окно в календаре: сдать почасово',subject:w.title,from:'AI администратор',to:'Вам',canDecide:true,expiresAt:w.start,
    facts:[['Свободно',when+' ('+hours+' ч)'],['Час',money(w.hourly_from)+' → '+money(w.hourly_to)]],detail:'Квартира пустует между бронями. Гости увидят скидку только внутри окна. Без вашего согласия ничего не изменится.',acceptLabel:'Открыть окно',rejectLabel:'Не надо',
    window:{percent:w.percent,from:w.hourly_from,to:w.hourly_to,propertyId:w.property_id,when,hours}});
+ }
+ // The week ahead: the city's busy and quiet evenings, and one change for one flat (or none).
+ if(role==='owner')for(const f of data.loadForecasts||[])if(f.owner_id===userId&&f.status==='suggested'&&f.expires_at>t){
+  const money=(n:number)=>new Intl.NumberFormat('ru-RU').format(n)+' ₸',days=(f.days||[]) as Row[],summary=weekSummary(days as {label:string;level:string}[]),first=days[0],last=days[days.length-1];
+  const change=f.advice==='raise'||f.advice==='lower'?[['Сутки',money(f.from_value)+' → '+money(f.to_value)] as [string,string]]:f.advice==='min_hours'?[['Минимум',f.from_value+' ч → '+f.to_value+' ч'] as [string,string]]:[];
+  cards.unshift({id:'forecast:'+f.id,kind:'forecast',entityId:f.property_id||f.id,revision:forecastRevision(f),title:'Прогноз на неделю',subject:f.advice==='none'?f.city:f.title,from:'AI администратор',to:'Вам',canDecide:true,expiresAt:f.expires_at,
+   facts:[['Неделя',first?first.label+' '+first.date+' – '+last.label+' '+last.date:''],...change],detail:summary+'. '+(f.advice==='none'?'Менять ничего не нужно.':adviceSentence(f)+' Без вашего согласия ничего не изменится.'),
+   acceptLabel:f.advice==='raise'?'Поднять до '+money(f.to_value):f.advice==='lower'?'Снизить до '+money(f.to_value):f.advice==='min_hours'?'От '+f.to_value+' ч':'Понятно',rejectLabel:f.advice==='none'?'Скрыть':'Оставить',
+   forecast:{days:days.map(d=>({label:d.label,date:d.date,load:d.load,level:d.level})),summary,advice:f.advice,from:f.from_value,to:f.to_value,percent:f.percent,title:f.title||'',reasons:f.reasons||[]}});
  }
  // Late checkout or early check-in the guest asked about: one button, the usual change of the stay.
  if(role==='guest')for(const o of data.stayOffers||[])if(o.guest_id===userId&&o.status==='suggested'&&o.expires_at>t){

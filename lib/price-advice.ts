@@ -83,8 +83,7 @@ export async function priceSignals(db:D1Database,property:Row,policy:Row,t:numbe
   (SELECT COALESCE(SUM(MIN(b.end,?)-MAX(b.start,?)),0) FROM bookings b WHERE b.property_id=? AND b.status IN ('confirmed','completed') AND b.start<? AND b.end>?) booked,
   (SELECT COUNT(*) FROM bookings b WHERE b.property_id=? AND b.status IN ('requested','confirmed') AND b.start>=? AND b.start<?) upcoming`,
   t-6*3600,city,t-86400,city,t-86400,city,city,t,t,t,t-14*86400,property.id,t,t-14*86400,property.id,t,t+48*3600);
- const prices=(await rows(db,`SELECT price FROM properties WHERE city=? AND id<>? AND published=1 AND archived_at IS NULL AND demo_owner IS NULL AND rooms BETWEEN ? AND ? AND price>=100 ORDER BY price`,city,property.id,Number(property.rooms)-1,Number(property.rooms)+1)).map(r=>Number(r.price));
- const median=prices.length>=3?(prices.length%2?prices[(prices.length-1)/2]:Math.round((prices[prices.length/2-1]+prices[prices.length/2])/2)):null;
+ const prices=await similarPrices(db,property),median=medianOf(prices);
  return {daily:Number(property.price),hourly:Number(policy.hourly_price||0),nightly:Number(policy.nightly_price||0),minimumRate:Number(policy.minimum_rate||0),
   requests:Number(demand?.requests||0),requestsDay:Number(demand?.requests_day||0),bookings:Number(demand?.bookings||0),freeFlats:Math.max(1,Number(demand?.free||0)),
   occupancy:Math.min(1,Number(demand?.booked||0)/(14*86400)),upcoming:Number(demand?.upcoming||0),median,similar:prices.length,peak:weekendPeak(t)};
@@ -92,6 +91,13 @@ export async function priceSignals(db:D1Database,property:Row,policy:Row,t:numbe
 
 // Stale advice (old tariffs or past its time) is closed quietly, so the owner never answers an outdated question.
 export function expireStaleSql(){return "UPDATE price_suggestions SET status='expired',decided_at=? WHERE status='pending' AND (expires_at<=? OR NOT EXISTS(SELECT 1 FROM property_policies pp JOIN properties p ON p.id=pp.property_id WHERE pp.property_id=price_suggestions.property_id AND pp.version=price_suggestions.policy_version AND p.price=price_suggestions.from_daily AND p.published=1 AND p.archived_at IS NULL))";}
+
+// Daily prices of similar flats in the same city (rooms ±1), and their median when there are at least three.
+async function similarPrices(db:D1Database,property:Row){
+ return (await rows(db,`SELECT price FROM properties WHERE city=? AND id<>? AND published=1 AND archived_at IS NULL AND demo_owner IS NULL AND rooms BETWEEN ? AND ? AND price>=100 ORDER BY price`,property.city,property.id,Number(property.rooms)-1,Number(property.rooms)+1)).map(r=>Number(r.price));
+}
+const medianOf=(prices:number[])=>prices.length>=3?(prices.length%2?prices[(prices.length-1)/2]:Math.round((prices[prices.length/2-1]+prices[prices.length/2])/2)):null;
+export async function similarMedian(db:D1Database,property:Row){return medianOf(await similarPrices(db,property));}
 
 // Called after the owner accepts a cleaning or marks the flat ready. Returns the new suggestion id or null.
 export async function offerPriceAdvice(db:D1Database,propertyId:string,t=epoch()):Promise<string|null>{
