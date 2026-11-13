@@ -38,7 +38,8 @@
 -- migration 0034_ai_autopilot.sql sha256:f053f458ea584b4ac7e2f5b9aa2443c16b6b0c52e8618c67095611a18e2a0e2e
 -- migration 0035_price_advice.sql sha256:675c9441fd26087ef8ef3e63caf8f71e7b78c7d9c1ee4fd0156505f47ad51fcf
 -- migration 0036_calendar_windows.sql sha256:41b9c67a5e26e15adbc4d54317aec6f3ed3d490ffb568bda0001b66bc8e25cab
--- migration 0037_stay_offers.sql sha256:52ed5e14d7adadec2a588fd57418ece2c9f9e906d5a8d35b10c77e5f3bdd0c56
+-- migration 0037_media_storage.sql sha256:81d18d7c4d84874c7f88bd1667fb623d5b1eb3df583a9778156532fb20664d77
+-- migration 0038_stay_offers.sql sha256:52ed5e14d7adadec2a588fd57418ece2c9f9e906d5a8d35b10c77e5f3bdd0c56
 
 -- table access_receipts
 CREATE TABLE access_receipts (id TEXT PRIMARY KEY,property_id TEXT NOT NULL,entity_kind TEXT NOT NULL,entity_id TEXT NOT NULL,user_id TEXT NOT NULL,created_at INTEGER NOT NULL,expires_at INTEGER NOT NULL);
@@ -497,7 +498,7 @@ CREATE TABLE media (
  id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES profiles(id),
  kind TEXT NOT NULL CHECK(kind IN ('property','avatar')), data TEXT NOT NULL,
  width INTEGER NOT NULL, height INTEGER NOT NULL, bytes INTEGER NOT NULL, created_at INTEGER NOT NULL
-);
+, object_key TEXT NOT NULL DEFAULT '');
 
 -- table messages
 CREATE TABLE `messages` (
@@ -931,6 +932,9 @@ CREATE INDEX matching_guest ON matching_requests(guest_id,created_at);
 
 -- index matching_inbox
 CREATE INDEX matching_inbox ON matching_offers(owner_id,status,expires_at);
+
+-- index media_object_key
+CREATE INDEX media_object_key ON media(object_key) WHERE object_key<>'';
 
 -- index media_owner
 CREATE INDEX media_owner ON media(user_id,kind);

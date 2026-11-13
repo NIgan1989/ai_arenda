@@ -8,6 +8,7 @@ import {assistantBrief,defaultAssistantSettings} from './assistant';
 import {defaultAccountSettings,accountSettingsInput,userSearchInput} from './account';
 import {approvalCards} from './approvals';
 import {listingInput,jpegInput,propertyStatus,cleanerStatus} from './listings';
+import {mediaKey,dataUrlBytes,mediaData} from './media-store';
 import {readAdministratorState} from './administrator';
 import {recordFinance,migrateFinanceEntity} from './finance';
 import {requireEvidence} from './evidence';
@@ -36,28 +37,32 @@ export class RentalService {
   async one(sql: string, ...args: any[]) { return this.query(sql, ...args).first<Row>(); }
   async all(sql: string, ...args: any[]) { return (await this.query(sql, ...args).all<Row>()).results; }
   async profile() { return this.one(`SELECT p.*,d.avatar_id,d.work_status,COALESCE(d.version,0) profile_version,COALESCE(x.bio,'') bio,COALESCE(x.languages,'') languages,COALESCE(x.avatar_visibility,'participants') avatar_visibility,COALESCE(x.show_presence,1) show_presence,COALESCE(x.show_receipts,1) show_receipts FROM profiles p LEFT JOIN profile_details d ON d.user_id=p.id LEFT JOIN profile_preferences x ON x.user_id=p.id WHERE p.id=?`, this.userId); }
-  async uploadMedia(body:Row){
+  async uploadMedia(body:Row,bucket?:R2Bucket){
     if(!await this.profile())throw new DomainError('Сначала заполните профиль.',403);
     if(body.kind==='property')await this.requireRole('owner');
     await this.query("DELETE FROM media WHERE user_id=? AND created_at<? AND NOT EXISTS(SELECT 1 FROM property_details d,json_each(d.photos) f WHERE f.value=media.id) AND NOT EXISTS(SELECT 1 FROM profile_details d WHERE d.avatar_id=media.id)",this.userId,now()-86400).run();
-    const image=jpegInput(body.data,body.kind),mediaId=id();
-    const r=await this.query('INSERT INTO media SELECT ?,?,?,?,?,?,?,? WHERE (SELECT COUNT(*) FROM media WHERE user_id=?)<100',mediaId,this.userId,body.kind,image.data,image.width,image.height,image.bytes,now(),this.userId).run();
-    if(!r.meta.changes)throw new DomainError('Достигнут лимит фотографий. Удалите неиспользуемые снимки.',409);
+    const image=jpegInput(body.data,body.kind),mediaId=id(),key=bucket&&body.kind==='property'?mediaKey(mediaId):'';
+    if(key)await bucket!.put(key,dataUrlBytes(image.data),{httpMetadata:{contentType:'image/jpeg'}});
+    const r=await this.query('INSERT INTO media(id,user_id,kind,data,width,height,bytes,created_at,object_key) SELECT ?,?,?,?,?,?,?,?,? WHERE (SELECT COUNT(*) FROM media WHERE user_id=?)<100',mediaId,this.userId,body.kind,key?'':image.data,image.width,image.height,image.bytes,now(),key,this.userId).run();
+    if(!r.meta.changes){if(key)await bucket!.delete(key);throw new DomainError('Достигнут лимит фотографий. Удалите неиспользуемые снимки.',409);}
     return {id:mediaId,width:image.width,height:image.height};
   }
-  async readMedia(mediaId:string,activeRole?:Role){
+  async readMedia(mediaId:string,activeRole?:Role,bucket?:R2Bucket){
     const role=activeRole||(JSON.parse((await this.profile())?.roles||'[]').includes('owner')?'owner':JSON.parse((await this.profile())?.roles||'[]').includes('cleaner')?'cleaner':'guest');
-    const m=await this.one(`SELECT m.data,m.width,m.height FROM media m WHERE m.id=? AND (m.user_id=? OR (m.kind='property' AND EXISTS(SELECT 1 FROM property_details d JOIN properties p ON p.id=d.property_id,json_each(d.photos) f WHERE f.value=m.id AND p.published=1 AND (p.demo_owner IS NULL OR p.demo_owner=?) AND ${pilotPropertyVisibleSql('p')})) OR (m.kind='avatar' AND EXISTS(SELECT 1 FROM profile_details d LEFT JOIN profile_preferences x ON x.user_id=d.user_id WHERE d.avatar_id=m.id AND COALESCE(x.avatar_visibility,'participants')='participants' AND (
+    const m=await this.one(`SELECT m.data,m.object_key,m.width,m.height FROM media m WHERE m.id=? AND (m.user_id=? OR (m.kind='property' AND EXISTS(SELECT 1 FROM property_details d JOIN properties p ON p.id=d.property_id,json_each(d.photos) f WHERE f.value=m.id AND p.published=1 AND (p.demo_owner IS NULL OR p.demo_owner=?) AND ${pilotPropertyVisibleSql('p')})) OR (m.kind='avatar' AND EXISTS(SELECT 1 FROM profile_details d LEFT JOIN profile_preferences x ON x.user_id=d.user_id WHERE d.avatar_id=m.id AND COALESCE(x.avatar_visibility,'participants')='participants' AND (
       (?='owner' AND (EXISTS(SELECT 1 FROM applications a JOIN cleaning_jobs j ON j.id=a.job_id WHERE a.user_id=d.user_id AND j.owner_id=?) OR EXISTS(SELECT 1 FROM cleaning_jobs j WHERE j.assigned_to=d.user_id AND j.owner_id=?))) OR
       (?='guest' AND EXISTS(SELECT 1 FROM bookings b JOIN properties p ON p.id=b.property_id WHERE b.guest_id=? AND p.owner_id=d.user_id AND b.status='confirmed')) OR
       (?='cleaner' AND EXISTS(SELECT 1 FROM cleaning_jobs j WHERE j.assigned_to=? AND j.owner_id=d.user_id))
     ))))`,mediaId,this.userId,this.userId,role,this.userId,this.userId,role,this.userId,role,this.userId);
-    if(!m)throw new DomainError('Фотография недоступна.',404);return m;
+    if(!m)throw new DomainError('Фотография недоступна.',404);return this.mediaBody(m,bucket);
   }
-  async deleteMedia(mediaId:string){
+  async mediaBody(m:Row,bucket?:R2Bucket){
+    try{return {data:await mediaData(m,bucket),width:m.width,height:m.height};}catch{throw new DomainError('Хранилище фото сейчас недоступно.',503);}
+  }
+  async deleteMedia(mediaId:string,bucket?:R2Bucket){
     if(!await this.one('SELECT id FROM media WHERE id=? AND user_id=?',mediaId,this.userId))throw new DomainError('Фотография недоступна.',404);
     if(await this.one("SELECT d.property_id FROM property_details d,json_each(d.photos) f WHERE f.value=? UNION ALL SELECT user_id FROM profile_details WHERE avatar_id=?",mediaId,mediaId))throw new DomainError('Сначала уберите фотографию из объявления или профиля.',409);
-    await this.query('DELETE FROM media WHERE id=? AND user_id=?',mediaId,this.userId).run();return {message:'Неиспользуемая фотография удалена.'};
+    const gone=await this.query('DELETE FROM media WHERE id=? AND user_id=? RETURNING object_key',mediaId,this.userId).first<Row>();if(gone?.object_key)await bucket?.delete(gone.object_key).catch(()=>{});return {message:'Неиспользуемая фотография удалена.'};
   }
   async checkMedia(photoIds:string[],kind:string){for(const photoId of photoIds)if(!await this.one('SELECT id FROM media WHERE id=? AND user_id=? AND kind=?',photoId,this.userId,kind))throw new DomainError('Фотография не принадлежит вашему аккаунту или имеет другой тип.',403);}
   async editProfile(body:Row){
@@ -305,9 +310,9 @@ export class RentalService {
     if(filters.map==='1'&&pageItems.length){const locations=options.matching?await this.all('SELECT l.*,p.city,p.district,p.address FROM property_locations l JOIN properties p ON p.id=l.property_id WHERE p.published=1'):await this.all('SELECT l.*,p.city,p.district,p.address FROM property_locations l JOIN properties p ON p.id=l.property_id WHERE p.id IN ('+pageItems.map(()=>'?').join(',')+')',...pageItems.map(p=>p.id));pageItems=pageItems.map(p=>{const l=locations.find(l=>l.property_id===p.id);return {...p,location:l&&l.address_fingerprint===[l.city,l.district,l.address].join('|')?publicPoint(l):null};});}
     return {properties:pageItems,total,page,limit,totalPages,cities,filters:{city,mode,guests,minPrice,maxPrice,rooms,sort,...(range?{start:range.start,end:range.end}:{})},availabilityChecked:!!range,...(filters.map==='1'?{center:mapCities[Object.keys(mapCities).find(c=>c.toLocaleLowerCase('ru')===city.toLocaleLowerCase('ru'))||'']||[67,48]}:{})};
   }
-  async publicMedia(mediaId:string){
-    const image=await this.one(`SELECT m.data,m.width,m.height FROM media m WHERE m.id=? AND m.kind='property' AND EXISTS(SELECT 1 FROM property_details d JOIN properties p ON p.id=d.property_id,json_each(d.photos) f WHERE f.value=m.id AND p.published=1 AND p.demo_owner IS NULL AND ${pilotPropertyVisibleSql('p')})`,required(mediaId,'Фото',100));
-    if(!image)throw new DomainError('Фотография недоступна.',404);return image;
+  async publicMedia(mediaId:string,bucket?:R2Bucket){
+    const image=await this.one(`SELECT m.data,m.object_key,m.width,m.height FROM media m WHERE m.id=? AND m.kind='property' AND EXISTS(SELECT 1 FROM property_details d JOIN properties p ON p.id=d.property_id,json_each(d.photos) f WHERE f.value=m.id AND p.published=1 AND p.demo_owner IS NULL AND ${pilotPropertyVisibleSql('p')})`,required(mediaId,'Фото',100));
+    if(!image)throw new DomainError('Фотография недоступна.',404);return this.mediaBody(image,bucket);
   }
   async connectRole(roleValue:unknown,body:Row={}){
     const role=parseRole(roleValue),profile=await this.profile();

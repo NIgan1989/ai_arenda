@@ -47,14 +47,14 @@ export function LoadingBar(){
   if(!shown&&!pill)return null;
   // scaleX grows from the centre, so the bar is shifted left by the part not yet filled.
   const scale=progress,shift=progress.interpolate({inputRange:[0,1],outputRange:[-width/2,0]});
-  return <View pointerEvents="none" style={st.layer} onLayout={e=>setWidth(e.nativeEvent.layout.width)}>
+  return <View pointerEvents="none" style={[st.layer,{paddingBottom:insets.bottom+24}]} onLayout={e=>setWidth(e.nativeEvent.layout.width)}>
     {shown&&<Animated.View accessibilityRole="progressbar" accessibilityLabel="Загрузка" style={[st.track,{top:insets.top,opacity}]}>
       <Animated.View style={[st.bar,{transform:[{translateX:shift},{scaleX:scale}]}]}>
         <View style={st.from}/><View style={st.mid}/><View style={st.to}/>
         {!calm&&<Animated.View style={[st.shine,{transform:[{translateX:shine.interpolate({inputRange:[0,1],outputRange:[-120,Math.max(width,240)]})}]}]}/>}
       </Animated.View>
     </Animated.View>}
-    {pill&&<Animated.View accessibilityRole="text" accessibilityLiveRegion="polite" style={[st.pill,{opacity:pillIn,transform:[{translateY:pillIn.interpolate({inputRange:[0,1],outputRange:[-12,0]})}]}]}>
+    {pill&&<Animated.View accessibilityRole="text" accessibilityLiveRegion="polite" style={[st.pill,{opacity:pillIn,transform:[{translateY:pillIn.interpolate({inputRange:[0,1],outputRange:[12,0]})}]}]}>
       <Animated.Image source={mark} style={[st.pillMark,{transform:[{scale:spin.interpolate({inputRange:[0,1],outputRange:[1,0.82]})}]}]}/>
       <Text style={st.pillText}>Секунду…</Text>
     </Animated.View>}
@@ -62,7 +62,7 @@ export function LoadingBar(){
 }
 
 const st=StyleSheet.create({
-  layer:{position:'absolute',top:0,bottom:0,left:0,right:0,alignItems:'center',justifyContent:'center',zIndex:1000,elevation:1000},
+  layer:{position:'absolute',top:0,bottom:0,left:0,right:0,alignItems:'center',justifyContent:'flex-end',zIndex:1000,elevation:1000},
   track:{position:'absolute',left:0,right:0,height:3},
   bar:{flex:1,flexDirection:'row',overflow:'hidden',borderTopRightRadius:4,borderBottomRightRadius:4,shadowColor:C.aiFrom,shadowOpacity:.6,shadowRadius:6,shadowOffset:{width:0,height:0}},
   from:{flex:1,backgroundColor:C.accent},mid:{flex:1,backgroundColor:C.aiFrom},to:{flex:1,backgroundColor:C.aiTo},

@@ -9,10 +9,10 @@ import {RentalService} from './service';
 import {financeState,recordFinance,createPaymentIntent,acceptPaymentEvent} from './finance';
 import {dispatchState,saveOperationRules,saveWorkerDispatch,decideOffer,declineAssignment} from './dispatch';
 import {saveEvidence,listEvidence,readEvidence} from './evidence';
-import {calendarSources,saveCalendarSource,refreshCalendar,commitCalendarImport,previewCalendarImport,createCalendarExport,exportCalendar} from './external-calendar';
+import {calendarSources,saveCalendarSource,refreshCalendar,commitCalendarImport,previewCalendarImport,createCalendarExport,exportCalendar,flatCalendars,connectCalendar} from './external-calendar';
 import {importState,previewPropertyImport,commitPropertyImport} from './property-import';
 import {governanceState,savePilotPolicy,updateOperatorTicket} from './pilot-governance';
-import {deliveryState,createTelegramLink,setDeliveryChannel,acceptTelegramLink,integrationStatus,acceptDeliveryReceipt} from './delivery';
+import {deliveryState,createTelegramLink,telegramStatus,setDeliveryChannel,acceptTelegramLink,integrationStatus,acceptDeliveryReceipt} from './delivery';
 import {securityState,requestPhoneCode,verifyPhoneCode,requestParticipantReview,decideParticipantReview,savePropertyAccess,revealPropertyAccess} from './participant-security';
 import {operationalHealth,retryBackgroundJob} from './background';
 import {listCommands,decideAdministratorCommand} from './administrator-commands';
@@ -66,6 +66,7 @@ export async function writeOperations(service:RentalService,role:Role,path:strin
  if(route==='governance/policy'){if(platformAdmin&&config.TEST_DATA_ONLY==='1'&&[body.requireOwnerReview,body.requireCleanerReview,body.requirePhone].some(v=>v===true))throw new DomainError('На учебном стенде обязательные проверки отключены, чтобы проходить тестовые процессы. Рабочие проверки настраиваются отдельно.',409);return savePilotPolicy(service,body,platformAdmin);}
  if(route==='governance/ticket')return updateOperatorTicket(service,role,body,platformAdmin);
  if(route==='delivery/telegram')return createTelegramLink(service,role,config);
+ if(route==='delivery/status')return telegramStatus(service,role,config);
  if(route==='delivery/channel')return setDeliveryChannel(service,role,body,config);
  if(route==='review'){active(role,['guest']);return saveStayReview(service,body);}
  if(route==='finance'){active(role,['owner']);return recordFinance(service,body);}
@@ -76,6 +77,8 @@ export async function writeOperations(service:RentalService,role:Role,path:strin
  if(route==='rules'){active(role,['owner']);return saveOperationRules(service,body);}
  if(route==='evidence'){active(role,['cleaner']);return saveEvidence(service,body,config);}
  if(route==='calendar/source'){active(role,['owner']);if(body.ics)throw new DomainError('Создайте источник, затем проверьте файл в предпросмотре.');return saveCalendarSource(service,body,config);}
+ if(route==='calendar/flat'){active(role,['owner']);return flatCalendars(service,body);}
+ if(route==='calendar/connect'){active(role,['owner']);return connectCalendar(service,body,config);}
  if(route==='calendar/preview'){active(role,['owner']);return previewCalendarImport(service,body);}
  if(route==='calendar/import'){active(role,['owner']);return commitCalendarImport(service,body);}
  if(route==='calendar/refresh'){active(role,['owner']);const source=await one(service.db,'SELECT id FROM calendar_sources WHERE id=? AND owner_id=? AND enabled=1',required(body.sourceId,'Источник',100),service.userId);if(!source)throw new DomainError('Источник недоступен.',403);return refreshCalendar(service.db,source.id,config);}

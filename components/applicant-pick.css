@@ -1,0 +1,30 @@
+/* The owner's choice of a cleaner and the cleaner row: one surface, one decision, no repeated facts. */
+.worker-row{display:grid;gap:12px}
+.worker-row-who{display:flex;align-items:center;gap:12px;min-width:0}
+.worker-row-who .profile-photo{width:48px;height:48px;flex:none;border-radius:var(--t-radius-full);object-fit:cover}
+.worker-row-who>div{display:grid;gap:2px;min-width:0}
+.worker-row-who strong{font-size:16px;line-height:24px;font-weight:600;color:var(--t-ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.worker-row-who small{font-size:12px;line-height:16px;color:var(--t-muted)}
+.worker-row-who small.worker-row-label{text-transform:uppercase;letter-spacing:.6px;font-weight:600}
+.worker-row-tags{display:flex;flex-wrap:wrap;gap:8px}
+.worker-row-tags>span{display:inline-flex;align-items:center;min-height:28px;padding:4px 12px;border-radius:var(--t-radius-full);background:var(--t-surface-alt);color:var(--t-ink-soft);font-size:12px;line-height:16px}
+.worker-row-tags .listing-status{min-height:28px;margin:0}
+.record-card .worker-row.is-assigned{padding:16px;border:1px solid var(--t-line);border-radius:var(--t-radius-lg);background:var(--t-surface)}
+
+.applicant-pick{display:grid;gap:12px;padding:16px;border-radius:var(--t-radius-xl);border:1px solid var(--t-accent-line);background:var(--t-surface);box-shadow:0 8px 24px rgba(79,70,229,.08)}
+.applicant-pick>h3{display:flex;align-items:center;gap:8px;margin:0;font-size:16px;line-height:24px;font-weight:600;color:var(--t-ink)}
+.applicant-pick>h3>span{display:inline-grid;place-items:center;min-width:24px;height:24px;padding:0 8px;border-radius:var(--t-radius-full);background:var(--t-accent);color:var(--t-on-accent);font-size:12px}
+.applicant-option{display:grid;gap:12px}
+.applicant-option+.applicant-option{padding-top:12px;border-top:1px solid var(--t-line)}
+.applicant-decide{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(0,1fr);gap:8px}
+.applicant-decide [data-slot=button]{width:100%;min-height:var(--t-control-primary);height:auto;padding:8px 12px;border-radius:var(--t-radius-md);font-size:16px;font-weight:600;gap:8px;white-space:nowrap}
+.applicant-decide [data-slot=button].applicant-accept{background:var(--t-accent);color:var(--t-on-accent);border:0}
+.applicant-decide [data-slot=button].applicant-accept:hover{background:var(--t-accent-pressed)}
+.applicant-decide [data-slot=button].applicant-reject{background:var(--t-surface);color:var(--t-ink);border:1px solid var(--t-line)}
+.applicant-note,.applicant-closed{font-size:12px;line-height:16px;color:var(--t-muted)}
+.applicant-closed{color:var(--t-danger)}
+.applicant-pick.is-empty{grid-template-columns:auto 1fr;align-items:start;border-style:dashed;border-color:var(--t-line);box-shadow:none;background:var(--t-surface-alt)}
+.applicant-pick.is-empty>svg{color:var(--t-muted);margin-top:2px}
+.applicant-pick.is-empty p{display:grid;gap:4px;margin:0}
+.applicant-pick.is-empty strong{font-size:14px;line-height:20px;color:var(--t-ink)}
+.applicant-pick.is-empty small{font-size:12px;line-height:16px;color:var(--t-muted)}

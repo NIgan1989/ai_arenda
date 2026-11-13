@@ -1,0 +1,17 @@
+/* Calendars of a flat on other platforms: one row per platform, a field to add one, a link to share. */
+.fc-list{display:flex;flex-direction:column;gap:var(--t-space-8);margin:0;padding:0;list-style:none}
+.fc-list li{display:flex;align-items:center;gap:var(--t-space-8);min-height:56px;padding:var(--t-space-8) var(--t-space-12);border:1px solid var(--t-line);border-radius:var(--t-radius-md);background:var(--t-surface)}
+.fc-list li .pe-text small{white-space:normal}
+.fc-list li.is-ok .pe-text small{color:var(--t-success)}
+.fc-list li.is-warn{border-color:var(--t-warning-line)}
+.fc-list li.is-warn .pe-ico{background:var(--t-warning-soft);color:var(--t-warning)}
+.fc-list li.is-warn .pe-text small{color:var(--t-warning)}
+.fc-list li.is-off{opacity:.7}
+.fc .fc-button{flex:none;width:100%}
+.fc-help{font-size:var(--t-font-caption);line-height:var(--t-line-caption);color:var(--t-muted)}
+.fc-help summary{min-height:32px;display:flex;align-items:center;color:var(--t-accent);font-weight:600;cursor:pointer}
+.fc-help ul{display:flex;flex-direction:column;gap:var(--t-space-4);margin:0;padding-left:var(--t-space-16)}
+.fc-link{display:flex;gap:var(--t-space-8)}
+.fc-link input{flex:1;min-width:0;min-height:var(--t-control-field);padding:0 var(--t-space-12);border:1px solid var(--t-line);border-radius:var(--t-radius-md);background:var(--t-surface-alt);color:var(--t-ink);font:inherit;font-size:var(--t-font-caption)}
+.fc .fc-copy{flex:none;width:auto;padding:0 var(--t-space-16);font-size:var(--t-font-label)}
+.fc-note{padding:var(--t-space-12) var(--t-space-16);border-radius:var(--t-radius-md);background:var(--t-accent-soft);font-size:var(--t-font-label);line-height:var(--t-line-label)}
