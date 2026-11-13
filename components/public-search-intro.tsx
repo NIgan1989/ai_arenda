@@ -1,6 +1,7 @@
 'use client';
+import {Thinking} from './thinking';
 import { useEffect, useId, useRef, useState, type FormEvent, type PointerEvent, type Ref } from 'react';
-import { ChevronDown, LoaderCircle, LocateFixed, MapPin, Minus, Plus, SlidersHorizontal, Sparkles } from 'lucide-react';
+import { ChevronDown, LocateFixed, MapPin, Minus, Plus, SlidersHorizontal, Sparkles } from 'lucide-react';
 import { AiLine, roleAiLine, type AiChip } from './ai-line';
 import { NowCard, type NowCardData } from './now-card';
 import {
@@ -274,7 +275,7 @@ function RequestForm({ draft, cities, busy, focus, onChange, onSubmit, zoneNotic
 
       <div className="request-submit">
         <button type="submit" className="request-primary" disabled={busy} aria-busy={busy}>
-          {busy && <LoaderCircle className="map-home-spin" size={20} aria-hidden="true" />}
+          {busy && <Thinking size="sm" tone="plain" />}
           Подобрать жильё
         </button>
         <p className="request-fine">{fine}</p>

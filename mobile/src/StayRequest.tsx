@@ -1,6 +1,7 @@
 import React,{useEffect,useMemo,useRef,useState} from 'react';
+import {Thinking} from './Thinking';
 import {windowBadge} from '../../lib/window-badge';
-import {ActivityIndicator,Pressable,ScrollView,StyleSheet,Text,TextInput,View} from 'react-native';
+import {Pressable,ScrollView,StyleSheet,Text,TextInput,View} from 'react-native';
 import {C,type} from './styles';
 import {T} from './tokens';
 import {money,type Row} from './model';
@@ -32,7 +33,7 @@ function Segments<V extends string>({label,value,options,disabled,onChange}:{lab
  return <View accessibilityRole="radiogroup" accessibilityLabel={label} style={p.segments}>{options.map(o=>{const on=o.id===value;return <Pressable key={o.id} accessibilityRole="radio" accessibilityState={{selected:on,disabled}} disabled={disabled} onPress={()=>onChange(o.id)} style={[p.segment,on&&p.segmentOn]}><Text numberOfLines={1} style={[p.segmentTitle,on&&{color:C.accent}]}>{o.title}</Text>{!!o.note&&<Text numberOfLines={1} style={p.segmentNote}>{o.note}</Text>}</Pressable>;})}</View>;
 }
 function Send({title,disabled,busy,onPress}:{title:string;disabled:boolean;busy:boolean;onPress:()=>void}){
- return <Pressable accessibilityRole="button" accessibilityLabel={title} accessibilityState={{disabled}} disabled={disabled} onPress={onPress} style={({pressed})=>[p.send,disabled&&p.sendOff,pressed&&p.dim]}>{busy?<ActivityIndicator color={C.onAccent}/>:<Text style={[p.sendText,disabled&&{color:C.muted}]}>{title}</Text>}</Pressable>;
+ return <Pressable accessibilityRole="button" accessibilityLabel={title} accessibilityState={{disabled}} disabled={disabled} onPress={onPress} style={({pressed})=>[p.send,disabled&&p.sendOff,pressed&&p.dim]}>{busy?<Thinking color={C.onAccent}/>:<Text style={[p.sendText,disabled&&{color:C.muted}]}>{title}</Text>}</Pressable>;
 }
 const Closed=({text,note}:{text:string;note:string})=><View style={p.card}><Text style={p.closed}>{text}</Text><Text style={p.note}>{note}</Text></View>;
 export function StayRequest({property,busy,done,result,onQuote,onConfirm}:{property:Row;busy:boolean;done?:boolean;result?:string;onQuote:(body:Row)=>Promise<Row>;onConfirm:(body:Row)=>void}){
@@ -58,7 +59,7 @@ export function StayRequest({property,busy,done,result,onQuote,onConfirm}:{prope
   <View style={[p.total,!!error&&!quote&&{backgroundColor:C.dangerSoft}]} accessibilityLiveRegion="polite">
    <Text style={p.span}>{recordSpan(span.start,span.end)}</Text>
    {quote?<><View style={p.sum}><Text style={[p.amount,checking&&p.dim]}>{money(quote.amount)}</Text><Text style={p.sumNote}>{quote.periods} × {money(quote.price)} · {quote.unitLabel}</Text></View>{!!quote.window&&<Text style={p.window}>✦ {windowBadge(quote.window)} · обычно {money(quote.window.regular)}/час</Text>}<Text style={p.fact}>Депозит: {quote.policy.deposit?money(quote.policy.deposit)+', отдельно от проживания':'не нужен'}</Text><Text style={p.fact}>{quote.policy.auto_confirm?'Подтверждается сразу, по правилам владельца.':'Владелец отвечает в течение 30 минут.'}</Text></>
-    :error?<Text accessibilityRole="alert" style={p.error}>{error}</Text>:<View style={p.wait}><ActivityIndicator color={C.accent}/><Text style={p.fact}>Проверяю свободное время и цену…</Text></View>}
+    :error?<Text accessibilityRole="alert" style={p.error}>{error}</Text>:<View style={p.wait}><Thinking size="sm"/><Text style={p.fact}>Проверяю свободное время и цену…</Text></View>}
   </View>
   {!!quote?.policy.house_rules&&<Text style={p.note}>Правила проживания: {quote.policy.house_rules}</Text>}
   <Pressable accessibilityRole="checkbox" accessibilityState={{checked:accepted,disabled:busy||!quote}} disabled={busy||!quote||checking} onPress={()=>setAccepted(v=>!v)} style={p.consent}><View style={[p.box,accepted&&p.boxOn]}>{accepted&&<Text style={p.tick}>✓</Text>}</View><Text style={p.consentText}>Согласен с временем, ценой, депозитом и правилами проживания</Text></Pressable>

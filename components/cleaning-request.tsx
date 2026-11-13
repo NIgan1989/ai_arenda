@@ -1,9 +1,10 @@
 'use client';
+import {Thinking} from './thinking';
 import './booking-request.css';
 import {Button} from '@/components/ui/button';
 import {Textarea} from '@/components/ui/textarea';
 import {useState} from 'react';
-import {ArrowRight,Brush,LoaderCircle} from 'lucide-react';
+import {ArrowRight,Brush} from 'lucide-react';
 import {DayStrip,TimeSelect,Stepper,Segments} from './stay-picker';
 import {useActivityClock} from './activity-clock';
 import {defaultStay,settleStay,stayStamp,type StayChoice} from '../lib/stay-choice';
@@ -28,7 +29,7 @@ export function CleaningRequest({properties,busy,onSubmit}:{properties:Row[];bus
   <Stepper label="Оплата исполнителю" value={fee} min={500} max={100000} step={500} disabled={busy} format={money} onChange={setFee}/>
   <div className="pick-field"><span className="pick-label" id="cleaning-tasks">Что сделать</span><div className="stay-tasks" role="group" aria-labelledby="cleaning-tasks">{cleaningTasks.map(task=><button type="button" key={task} aria-pressed={tasks.includes(task)} disabled={busy} className={tasks.includes(task)?'is-on':undefined} onClick={()=>setTasks(tasks.includes(task)?tasks.filter(t=>t!==task):cleaningTasks.filter(t=>t===task||tasks.includes(t)))}>{task}</button>)}</div><Textarea aria-label="Что ещё важно" value={extra} disabled={busy} maxLength={1500} placeholder="Что ещё важно: где ключи, средства, особые просьбы" onChange={e=>setExtra(e.target.value)}/></div>
   <div className="stay-total"><p className="stay-span">{recordSpan(start,end)}</p><div className="stay-sum"><strong>{money(fee)}</strong><span>за выполнение</span></div></div>
-  <div className="stay-actions"><Button className="stay-send" disabled={busy||!description}>{busy?<><LoaderCircle size={17}/>Публикую…</>:<>Опубликовать задание<ArrowRight size={17}/></>}</Button></div>
+  <div className="stay-actions"><Button className="stay-send" disabled={busy||!description}>{busy?<><Thinking size="sm" tone="plain"/>Публикую…</>:<>Опубликовать задание<ArrowRight size={17}/></>}</Button></div>
   <p className="stay-note">Исполнители увидят район и условия, точный адрес — после назначения. Время Казахстана.</p>
  </form>;
 }

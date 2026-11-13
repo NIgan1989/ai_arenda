@@ -1,5 +1,6 @@
 import React,{useEffect,useRef,useState,type ReactNode} from 'react';
-import {ActivityIndicator,Animated,AppState,BackHandler,PanResponder,Platform,Pressable,ScrollView,Text,View,useWindowDimensions} from 'react-native';
+import {Thinking} from './Thinking';
+import {Animated,AppState,BackHandler,PanResponder,Platform,Pressable,ScrollView,Text,View,useWindowDimensions} from 'react-native';
 import {NO_BUDGET} from '../../lib/map-search-request';
 import {ApiError,isOffline,request} from './api';
 import {Photo} from './ListingMedia';
@@ -151,10 +152,10 @@ function GuestPanel({setScanning,accountId,data,mapData,publish,selected,setSele
   const booking=booked?(data.bookings||[]).find((b:Row)=>b.id===live?.bookingId):null;
   return <View style={h.block}>
    <Stage steps={['Условия','Владельцы','Предложение','Бронь']} current={step}/>
-   {!live&&<View style={h.row}><ActivityIndicator color={C.accent}/><Text style={h.note}>Восстанавливаем ваш подбор…</Text></View>}
+   {!live&&<View style={h.row}><Thinking size="sm"/><Text style={h.note}>Восстанавливаем ваш подбор…</Text></View>}
    {live&&status==='searching'&&<>
     <Text accessibilityRole="header" style={h.cardTitle}>Спрашиваем владельцев</Text>
-    <View style={h.row}><ActivityIndicator color={C.accent}/><Text style={h.note}>Ждём ответа: {live.pending} из {live.sent} запросов. На ответ у владельца 2 минуты.</Text></View>
+    <View style={h.row}><Thinking size="sm"/><Text style={h.note}>Ждём ответа: {live.pending} из {live.sent} запросов. На ответ у владельца 2 минуты.</Text></View>
     <Text style={h.timer} accessibilityLabel={'До конца подбора '+countdown(live.expiresAt-now)}>{countdown(live.expiresAt-now)}</Text>
     <Text style={h.note}>Квартиры, владельцы которых сейчас отвечают, отмечены на карте. Бронь на этом шаге не создаётся.</Text>
    </>}

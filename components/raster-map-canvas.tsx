@@ -1,4 +1,5 @@
 'use client';
+import {Thinking} from './thinking';
 import {useEffect,useRef,useState} from 'react';
 import type * as Leaflet from 'leaflet';
 import type {MapCanvasProps} from './map-canvas';
@@ -73,5 +74,5 @@ export function RasterMapCanvas(props:MapCanvasProps){
  },[props.routes,ready]);
  useEffect(()=>{if(ready&&props.focus&&!(props.routes||[]).length&&mapPoint(props.focus))fit([props.focus],15);},[props.focus?.[0],props.focus?.[1],ready]);
  useEffect(()=>{if(ready&&framing.current)fit(framing.current.points,framing.current.zoom);},[props.sheetSize,ready]);
- return <div className={'rental-map-canvas raster-map-canvas'+(props.pick?' picking':'')} data-map-renderer="raster"><div ref={host} aria-label="Карта недвижимости" role="region" className="map-surface"/><div className="raster-map-attribution"><a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">© OpenStreetMap</a></div>{!ready&&!error&&<p className="map-loading" role="status">Открываем карту…</p>}{error&&<p role="status" className="map-network-error">{error}</p>}</div>;
+ return <div className={'rental-map-canvas raster-map-canvas'+(props.pick?' picking':'')} data-map-renderer="raster"><div ref={host} aria-label="Карта недвижимости" role="region" className="map-surface"/><div className="raster-map-attribution"><a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">© OpenStreetMap</a></div>{!ready&&!error&&<p className="map-loading" role="status"><Thinking size="sm" lead/>Открываем карту…</p>}{error&&<p role="status" className="map-network-error">{error}</p>}</div>;
 }

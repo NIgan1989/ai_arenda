@@ -15,15 +15,28 @@
 /* ── Long-action pill ─────────────────────────────────────────── */
 /* Sits low like a toast, above the home indicator: in the middle it covered the text being read. */
 .app-loader-pill{position:fixed;bottom:calc(24px + env(safe-area-inset-bottom));left:50%;z-index:2147482001;display:flex;align-items:center;gap:8px;
-  min-height:36px;padding:8px 16px 8px 12px;border-radius:999px;transform:translate(-50%,12px);opacity:0;pointer-events:none;
+  min-height:36px;padding:8px 16px;border-radius:999px;transform:translate(-50%,12px);opacity:0;pointer-events:none;
   background:rgba(255,255,255,.88);border:1px solid rgba(255,255,255,.65);box-shadow:0 8px 24px rgba(14,19,36,.12);
   -webkit-backdrop-filter:blur(16px) saturate(1.4);backdrop-filter:blur(16px) saturate(1.4);
   font-size:14px;line-height:20px;font-weight:600;color:var(--t-ink,#0E1324);transition:opacity .2s ease,transform .25s cubic-bezier(.2,.7,.2,1)}
 .app-loader-pill[data-visible="true"]{opacity:1;transform:translate(-50%,0)}
-.app-loader-pill svg path{fill:none;stroke:var(--t-accent,#4F46E5);stroke-width:11;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:.62 .38;animation:pill-trace 1.3s linear infinite}
-@keyframes pill-trace{to{stroke-dashoffset:-1}}
+
+/* ── «Thinking» dots ──────────────────────────────────────────── */
+/* One sign for every wait inside the service; see components/thinking.tsx. */
+.thinking-dots{--dot:8px;display:inline-flex;align-items:center;gap:4px;flex:none;vertical-align:middle;height:calc(var(--dot)*2)}
+.thinking-dots[data-size="sm"]{--dot:6px;gap:2px}
+.thinking-dots[data-size="lg"]{--dot:10px}
+.thinking-dots i{width:var(--dot);height:var(--dot);border-radius:50%;background:var(--t-accent,#4F46E5);animation:thinking-wave 1.25s cubic-bezier(.45,0,.55,1) infinite}
+.thinking-dots i:nth-child(2){background:var(--t-ai-mid,#3B82F6);animation-delay:.16s}
+.thinking-dots i:nth-child(3){background:var(--t-ai-to,#06B6D4);animation-delay:.32s}
+.thinking-dots[data-tone="plain"] i{background:currentColor}
+@keyframes thinking-wave{0%,62%,100%{transform:translateY(0) scale(.82);opacity:.42}28%{transform:translateY(-60%) scale(1.12);opacity:1}}
+/* Before text in a container without its own gap. */
+.thinking-dots[data-lead]{margin-right:8px}
 
 @media (prefers-reduced-motion:reduce){
   .app-loader-bar::after{animation:none;opacity:0}
-  .app-loader-pill svg path{animation:none;stroke-dasharray:none}
+  .thinking-dots i{animation:thinking-calm 1.6s ease-in-out infinite}
+  .thinking-dots i:nth-child(n){animation-delay:0s}
 }
+@keyframes thinking-calm{0%,100%{opacity:.45}50%{opacity:1}}
