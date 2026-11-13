@@ -41,6 +41,7 @@
 -- migration 0037_media_storage.sql sha256:81d18d7c4d84874c7f88bd1667fb623d5b1eb3df583a9778156532fb20664d77
 -- migration 0038_stay_offers.sql sha256:52ed5e14d7adadec2a588fd57418ece2c9f9e906d5a8d35b10c77e5f3bdd0c56
 -- migration 0039_load_forecasts.sql sha256:26d8d5834e810de1cc8c8a8f58aa7f2043fc36bc599cedd126fdd2a86735aea2
+-- migration 0040_listing_tips.sql sha256:6daf35e84b70a92a86e2e186ee7df461cebaa20c7737a16e99cb7b250d25ecfb
 
 -- table access_receipts
 CREATE TABLE access_receipts (id TEXT PRIMARY KEY,property_id TEXT NOT NULL,entity_kind TEXT NOT NULL,entity_id TEXT NOT NULL,user_id TEXT NOT NULL,created_at INTEGER NOT NULL,expires_at INTEGER NOT NULL);
@@ -471,6 +472,26 @@ CREATE TABLE journey_sessions (
  recorded_at INTEGER,
  received_at INTEGER
 , route TEXT, route_recorded_at INTEGER);
+
+-- table listing_tips
+CREATE TABLE listing_tips (
+ id TEXT PRIMARY KEY,
+ property_id TEXT NOT NULL REFERENCES properties(id) ON DELETE CASCADE,
+ owner_id TEXT NOT NULL REFERENCES profiles(id),
+ kind TEXT NOT NULL CHECK(kind IN ('photos','amenity','hourly','checkin','text')),
+ subject TEXT NOT NULL DEFAULT '',
+ mine INTEGER NOT NULL DEFAULT 0,
+ theirs INTEGER NOT NULL DEFAULT 0,
+ count INTEGER NOT NULL DEFAULT 0,
+ leaders INTEGER NOT NULL DEFAULT 0,
+ value INTEGER NOT NULL DEFAULT 0,
+ details_version INTEGER,
+ policy_version INTEGER,
+ status TEXT NOT NULL DEFAULT 'suggested' CHECK(status IN ('suggested','accepted','declined','expired')),
+ created_at INTEGER NOT NULL,
+ expires_at INTEGER NOT NULL,
+ decided_at INTEGER
+);
 
 -- table load_forecasts
 CREATE TABLE load_forecasts (
@@ -953,6 +974,12 @@ CREATE INDEX jobs_assigned_interval ON cleaning_jobs(assigned_to,start,end);
 -- index journey_active
 CREATE INDEX journey_active ON journey_sessions(sender_id,entity_kind,entity_id,expires_at);
 
+-- index listing_tips_owner
+CREATE INDEX listing_tips_owner ON listing_tips(owner_id,status,created_at);
+
+-- index listing_tips_property
+CREATE INDEX listing_tips_property ON listing_tips(property_id,kind,subject,status);
+
 -- index load_forecasts_owner
 CREATE INDEX load_forecasts_owner ON load_forecasts(owner_id,status,expires_at);
 
@@ -1265,6 +1292,12 @@ CREATE TRIGGER account_erased_journey_sessions_insert BEFORE INSERT ON journey_s
 
 -- trigger account_erased_journey_sessions_update
 CREATE TRIGGER account_erased_journey_sessions_update BEFORE UPDATE ON journey_sessions WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.sender_id OR user_id=NEW.owner_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END;
+
+-- trigger account_erased_listing_tips_insert
+CREATE TRIGGER account_erased_listing_tips_insert BEFORE INSERT ON listing_tips WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.owner_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END;
+
+-- trigger account_erased_listing_tips_update
+CREATE TRIGGER account_erased_listing_tips_update BEFORE UPDATE ON listing_tips WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.owner_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END;
 
 -- trigger account_erased_load_forecasts_insert
 CREATE TRIGGER account_erased_load_forecasts_insert BEFORE INSERT ON load_forecasts WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.owner_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END;

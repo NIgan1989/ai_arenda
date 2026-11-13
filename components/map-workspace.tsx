@@ -18,7 +18,7 @@ import {ProcessJourney} from './process-journey';
 import {PriceTip} from './price-tip';
 type Row=Record<string,any>;
 async function mapAPI(role:string,action:string,body:Row={}){const r=await fetch('/api/operations/map/'+action,{method:'POST',headers:{'Content-Type':'application/json','X-Workspace-Role':role},body:JSON.stringify(body),cache:'no-store',keepalive:action==='journey/stop'}),v=await r.json() as Row;if(!r.ok)throw Object.assign(Error(v.error||'Нет связи с картой.'),{status:r.status});return v;}
-type MapWorkspaceInput={publicMode?:boolean;role:string;accountId:string;data:Row;onChoose:(p:Row,initial:Row)=>void;onDiscussion:(c:Row)=>void;onProcess:(kind:string,id:string)=>void;onCreate:()=>void;onAsk:(text:string)=>void;onChanged?:()=>void};
+type MapWorkspaceInput={publicMode?:boolean;role:string;accountId:string;data:Row;onChoose:(p:Row,initial:Row)=>void;onDiscussion:(c:Row)=>void;onProcess:(kind:string,id:string)=>void;onCreate:()=>void;onAsk:(text:string)=>void;onChanged?:()=>void;onEdit?:(id:string,step:string|null)=>void};
 
 // The guest's first screen is the search map. It gets the state the shell has already loaded (so it does not ask
 // the server for it again), opens a booking in the shell's task sheet and hands a question to the AI administrator.
@@ -93,7 +93,7 @@ function MapRow({ item, role, line, onOpen }: { item: Row; role: string; line: s
   );
 }
 
-function RoleMap({ role, accountId, data, onDiscussion, onProcess, onCreate, onAsk, onBack, onChanged }: RoleMapInput) {
+function RoleMap({ role, accountId, data, onDiscussion, onProcess, onCreate, onAsk, onBack, onChanged, onEdit }: RoleMapInput) {
   const qc = useQueryClient();
   // The owner sees every flat he has; the cleaner looks for jobs in one city.
   const [city, setCity] = useState<string>(role === 'cleaner' ? data.profile?.city || '' : '');
@@ -619,7 +619,7 @@ function RoleMap({ role, accountId, data, onDiscussion, onProcess, onCreate, onA
     <div className="map-concept-operations" data-role={role}>
       <section className="map-role" data-expanded={expanded ? 'true' : 'false'} aria-label="Карта">
         <h1 className="sr-only">Карта</h1>
-        {(role === 'owner' || role === 'guest') && !selected && !picking && <PriceTip role={role} cards={data.approvals || []} onChanged={onChanged} />}
+        {(role === 'owner' || role === 'guest') && !selected && !picking && <PriceTip role={role} cards={data.approvals || []} onChanged={onChanged} onEdit={onEdit} />}
         {/* MapCanvas places the pins correctly only when they are known before the map is ready and its
             camera has not been moved yet. So the map is created once the data has come, and again for another city. */}
         {(loaded || query.isError) && (

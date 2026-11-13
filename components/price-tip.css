@@ -56,3 +56,11 @@
 .forecast-days small{font-size:12px;line-height:16px;color:var(--t-muted)}
 .forecast-days .is-busy small{color:var(--t-accent);font-weight:600}
 .price-tip-why.is-summary{margin-top:var(--t-space-8);color:var(--t-ink);font-weight:500}
+.listing-compare{display:flex;align-items:stretch;gap:var(--t-space-8);margin-top:var(--t-space-12)}
+.listing-compare>span:not(.listing-compare-arrow){flex:1;min-width:0;display:flex;flex-direction:column;gap:2px;padding:var(--t-space-8) var(--t-space-12);border-radius:var(--t-radius-md);background:var(--t-surface-alt)}
+.listing-compare .listing-compare-them{background:var(--t-accent-soft);border:1px solid var(--t-accent-line)}
+.listing-compare b{font-size:22px;line-height:28px;font-weight:700;color:var(--t-ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.listing-compare-them b{color:var(--t-accent)}
+.listing-compare small{font-size:12px;line-height:16px;color:var(--t-muted)}
+.listing-compare-arrow{flex:none;align-self:center;display:grid;place-items:center;width:32px;height:32px;border-radius:var(--t-radius-full);background:var(--t-surface);border:1px solid var(--t-line);color:var(--t-accent)}
+.price-tip-why.is-full{-webkit-line-clamp:4}

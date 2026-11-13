@@ -15,9 +15,9 @@ const SAVED:Record<EditStep|'publish',string>={photos:'Фото сохранен
 
 // Editing a flat: an overview of short steps, each opened on its own small screen and saved at once.
 // After each save the AI administrator offers the next step, so the owner never scrolls a long form.
-export function PropertyEditor({property,role,api,onSave,onReview,onRemove,onClose}:{property:Row;role:string;api:API;onSave:(body:Row)=>Promise<Row|undefined>;onReview?:(body:Row)=>Promise<unknown>;onRemove?:()=>Promise<unknown>;onClose:()=>void}){
+export function PropertyEditor({property,role,api,onSave,onReview,onRemove,onClose,step}:{property:Row;role:string;api:API;onSave:(body:Row)=>Promise<Row|undefined>;onReview?:(body:Row)=>Promise<unknown>;onRemove?:()=>Promise<unknown>;onClose:()=>void;step?:EditStep|null}){
  const [p,setP]=useState(property),[base,setBase]=useState<EditBody>(()=>editBody(property)),[draft,setDraft]=useState<EditBody>(base);
- const [open,setOpen]=useState<EditStep|null>(null),[busy,setBusy]=useState(false),[uploading,setUploading]=useState(false),[error,setError]=useState(''),[done,setDone]=useState(''),[skipped,setSkipped]=useState<string[]>([]),[held,setHeld]=useState(false),[sent,setSent]=useState(false);
+ const [open,setOpen]=useState<EditStep|null>(step&&EDIT_STEPS.some(x=>x.key===step)?step:null),[busy,setBusy]=useState(false),[uploading,setUploading]=useState(false),[error,setError]=useState(''),[done,setDone]=useState(''),[skipped,setSkipped]=useState<string[]>([]),[held,setHeld]=useState(false),[sent,setSent]=useState(false);
  const [confirm,setConfirm]=useState(false),[removeError,setRemoveError]=useState(''),[calendars,setCalendars]=useState(false);
  const box=useRef<HTMLElement>(null);
  useEffect(()=>{box.current?.scrollIntoView({block:'start',behavior:'instant' as ScrollBehavior});},[open,calendars]);

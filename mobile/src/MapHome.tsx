@@ -327,11 +327,12 @@ type Props = {
   onAsk: (text: string) => void;
   onIntent: (intent: string, stay?: MapStay) => void;
   onBook: (property: Row, stay: MapStay) => void;
+  onEdit?: (id: string, step: string | null) => void;
 };
 
 // The screen itself: the map, the avatar button over it, and the sheet with its three positions
 // (0: only the head, 1: a little over half of the screen, 2: almost all of it).
-export function MapHome({ role, accountId, data, menu, onChanged, onOpenProcess, onOpenPage, onAsk, onIntent, onBook }: Props) {
+export function MapHome({ role, accountId, data, menu, onChanged, onOpenProcess, onOpenPage, onAsk, onIntent, onBook, onEdit }: Props) {
   const screen = useWindowDimensions();
   const [height, setHeight] = useState(0);
   const [top, setTop] = useState(0);
@@ -470,7 +471,7 @@ export function MapHome({ role, accountId, data, menu, onChanged, onOpenProcess,
           mapCenter.current = c;
         }}
       />
-      {(role === 'owner' || role === 'guest') && !selected && <PriceTip role={role} cards={data.approvals || []} onChanged={onChanged} />}
+      {(role === 'owner' || role === 'guest') && !selected && <PriceTip role={role} cards={data.approvals || []} onChanged={onChanged} onEdit={onEdit} />}
       {!!menu && <View style={h.menu}>{menu}</View>}
       <Animated.View style={[h.sheet, { height: sheet }]} accessibilityViewIsModal={false}>
         <View {...drag.handle.panHandlers}>
