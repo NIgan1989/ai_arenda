@@ -112,7 +112,7 @@ const CALL_JOB=['assigned','in_progress','submitted'];
 export function callAllowed(subject:Row|null,blocked:boolean,t=epoch()){
  if(blocked)return {ok:false,note:'Переписка заблокирована.'};
  if(!subject)return {ok:false,note:'Звонок недоступен.'};
- if(subject.kind==='booking')return subject.status==='confirmed'&&t<subject.end+86400?{ok:true,note:''}:{ok:false,note:subject.status==='requested'?'Позвонить можно после подтверждения брони.':'Бронь уже не действует.'};
+ if(subject.kind==='booking')return ['confirmed','completed'].includes(subject.status)&&t<subject.end+86400?{ok:true,note:''}:{ok:false,note:subject.status==='requested'?'Позвонить можно после подтверждения брони.':'Бронь уже не действует.'};
  return CALL_JOB.includes(subject.status)?{ok:true,note:''}:{ok:false,note:subject.status==='completed'?'Уборка завершена.':'Позвонить можно, когда исполнитель назначен.'};
 }
 async function discussionCall(service:RentalService,role:Role,context:Row,subject:Row|null,blocked:boolean){

@@ -59,6 +59,8 @@ test('a call opens only while the deal goes through the service, and the chat sh
  const {callAllowed}=await load('process-discussions'),t=now();
  assert.equal(callAllowed({kind:'booking',status:'confirmed',end:t+3600},false,t).ok,true);
  assert.equal(callAllowed({kind:'booking',status:'confirmed',end:t-2*86400},false,t).ok,false);
+ assert.equal(callAllowed({kind:'booking',status:'completed',end:t-3600},false,t).ok,true);
+ assert.equal(callAllowed({kind:'booking',status:'completed',end:t-2*86400},false,t).ok,false);
  assert.match(callAllowed({kind:'booking',status:'requested',end:t+3600},false,t).note,/после подтверждения/);
  assert.equal(callAllowed({kind:'booking',status:'confirmed',end:t+3600},true,t).ok,false);
  assert.equal(callAllowed({kind:'job',status:'assigned'},false,t).ok,true);
