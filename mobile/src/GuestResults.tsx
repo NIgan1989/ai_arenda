@@ -5,6 +5,7 @@ import { Photo } from './ListingMedia';
 import { Action, h } from './SheetParts';
 import { money, type Row } from './model';
 import { windowBadge } from '../../lib/window-badge';
+import { dealNote } from '../../lib/price-deal';
 import { C, type } from './styles';
 import { T } from './tokens';
 import { draftUnits, shownReasons, type GuestDraft } from './ai-request';
@@ -77,11 +78,13 @@ export function GuestResults({ preview, draft, selected, onSelect, onBook, onOpe
                 {about(chosen)}
               </Text>
             )}
+            {!!chosen.estimate.deal && <Text style={h.note}>{dealNote(chosen.estimate.deal, money)}.</Text>}
           </View>
           <View style={r.amount}>
             <Text style={h.price}>{money(chosen.estimate.amount)}</Text>
             <Text style={h.note}>за {stayWords(draft)}</Text>
             {!!windowBadge(chosen.estimate.window) && <Text style={r.window}>{windowBadge(chosen.estimate.window)}</Text>}
+            {!!chosen.estimate.deal && <Text style={r.deal}>Цена выгодная</Text>}
           </View>
         </View>
         <View onLayout={e => onBookEdge?.(Math.round(e.nativeEvent.layout.y + e.nativeEvent.layout.height))}>
@@ -122,6 +125,7 @@ export function GuestResults({ preview, draft, selected, onSelect, onBook, onOpe
             <View style={r.amount}>
               <Text style={h.rowPrice}>{money(flat.estimate.amount)}</Text>
               {!!flat.estimate.window && <Text style={r.window}>−{flat.estimate.window.percent}%</Text>}
+              {!flat.estimate.window && !!flat.estimate.deal && <Text style={r.deal}>Выгодно</Text>}
             </View>
             <Image source={chevron} style={r.rowIcon} accessibilityIgnoresInvertColors />
           </Pressable>
@@ -158,5 +162,6 @@ const r = StyleSheet.create({
   chosen: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
   amount: { alignItems: 'flex-end' },
   best: { ...type.caption, alignSelf: 'flex-start', marginBottom: 4, paddingHorizontal: 8, paddingVertical: 2, borderRadius: T.radius.full, overflow: 'hidden', backgroundColor: C.accentSoft, color: C.accent, fontWeight: '600' },
+  deal: { ...type.caption, marginTop: 4, paddingHorizontal: 8, paddingVertical: 2, borderRadius: T.radius.full, overflow: 'hidden', backgroundColor: C.successSoft, color: C.success, fontWeight: '600' },
   window: { ...type.caption, marginTop: 4, paddingHorizontal: 8, paddingVertical: 2, borderRadius: T.radius.full, overflow: 'hidden', backgroundColor: C.accentSoft, color: C.accent, fontWeight: '600' }
 });

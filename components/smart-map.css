@@ -684,4 +684,5 @@ html[data-design="unified"] .workspace-shell.release-workspace[data-section="map
 
 /* The best choice for the guest: a short label above the name; each reason stays on one line. */
 .smart-map .smart-best{width:fit-content}
-.smart-map .smart-reason{white-space:nowrap}
+.smart-map .smart-reason{display:inline-block;max-width:100%}
+.smart-map .smart-deal{width:fit-content;background:var(--t-success-soft);color:var(--t-success)}
