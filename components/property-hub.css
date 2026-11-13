@@ -1,0 +1,32 @@
+.hub{display:grid;gap:var(--t-space-12);min-width:0}
+/* The tabs share the row by the length of their words, so «Сегодня» keeps its counter without being cut. */
+.hub-tabs{display:flex;gap:var(--t-space-4);padding:var(--t-space-4);border-radius:var(--t-radius-lg);background:var(--t-surface-alt)}
+.hub-tabs>button{flex:1 1 auto;display:flex;align-items:center;justify-content:center;gap:var(--t-space-4);min-width:0;min-height:var(--t-control-compact);padding:0 var(--t-space-4);border:0;border-radius:var(--t-radius-md);background:none;color:var(--t-ink-soft);font:inherit;font-size:var(--t-font-label);line-height:var(--t-line-label);font-weight:500;white-space:nowrap;cursor:pointer}
+.hub-tabs>button[aria-selected="true"]{background:var(--t-surface);color:var(--t-accent);font-weight:600;box-shadow:0 1px 4px rgb(14 19 36 / .08)}
+.hub-tabs>button>i{display:inline-grid;place-items:center;min-width:var(--t-space-16);height:var(--t-space-16);padding:0 var(--t-space-4);border-radius:var(--t-radius-full);background:var(--t-danger);color:var(--t-on-accent);font-size:var(--t-font-caption);line-height:var(--t-line-caption);font-style:normal;font-weight:700}
+.hub-tabs>button:focus-visible,.hub-row:focus-visible,.hub-entry:focus-visible,.hub-add:focus-visible{outline:2px solid var(--t-focus);outline-offset:2px}
+.hub-panel{display:grid;gap:var(--t-space-8);min-width:0}
+.hub-heading{margin:var(--t-space-4) 0 0;color:var(--t-muted);font-size:var(--t-font-label);line-height:var(--t-line-label);font-weight:600}
+.hub-list{display:grid;gap:var(--t-space-4);margin:0;padding:0;list-style:none}
+.hub-rows{display:grid;gap:var(--t-space-4)}
+.hub-row,.hub-entry{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:var(--t-space-12);width:100%;min-height:var(--t-control-primary);padding:var(--t-space-8) var(--t-space-12);border:0;border-radius:var(--t-radius-lg);background:var(--t-surface-alt);color:var(--t-ink);font:inherit;text-align:left;text-decoration:none;cursor:pointer}
+.hub-row>svg,.hub-entry>svg{color:var(--t-muted)}
+.hub-row-icon{display:grid;place-items:center;width:var(--t-control-compact);height:var(--t-control-compact);border-radius:var(--t-radius-md);background:var(--t-surface);color:var(--t-accent)}
+.hub-entry.tone-request .hub-row-icon,.hub-entry.tone-late .hub-row-icon{background:var(--t-warning-soft);color:var(--t-warning)}
+.hub-entry.tone-cleaning .hub-row-icon{color:var(--t-success)}
+.hub-entry.tone-done .hub-row-icon{color:var(--t-muted)}
+.hub-row-text{display:grid;gap:var(--t-space-2);min-width:0}
+.hub-row-text>strong{font-size:var(--t-font-label);line-height:var(--t-line-label);font-weight:600;overflow-wrap:anywhere}
+.hub-row-text>small{color:var(--t-muted);font-size:var(--t-font-caption);line-height:var(--t-line-caption);overflow-wrap:anywhere}
+.hub-note{margin:0;color:var(--t-muted);font-size:var(--t-font-label);line-height:var(--t-line-label)}
+.hub-note.is-error{color:var(--t-danger)}
+.hub-add{display:flex;align-items:center;justify-content:center;gap:var(--t-space-8);width:100%;min-height:var(--t-control-field);margin-top:var(--t-space-4);border:1px solid var(--t-line-strong);border-radius:var(--t-radius-md);background:var(--t-surface);color:var(--t-ink);font:inherit;font-size:var(--t-font-body);line-height:var(--t-line-body);font-weight:500;cursor:pointer}
+.hub-facts{display:grid;margin:0;border:1px solid var(--t-line);border-radius:var(--t-radius-lg);overflow:hidden}
+.hub-facts>div{display:flex;align-items:baseline;justify-content:space-between;gap:var(--t-space-12);padding:var(--t-space-12) var(--t-space-16);font-size:var(--t-font-label);line-height:var(--t-line-label)}
+.hub-facts>div+div{border-top:1px solid var(--t-line)}
+.hub-facts dt{color:var(--t-muted)}
+.hub-facts dd{margin:0;color:var(--t-ink);font-weight:600;text-align:right}
+.hub-advice{display:grid;gap:var(--t-space-8);padding:var(--t-space-12) var(--t-space-16);border:1px solid var(--t-accent-line);border-radius:var(--t-radius-lg);background:var(--t-accent-soft)}
+.hub-advice>h3{display:flex;align-items:center;gap:var(--t-space-8);margin:0;color:var(--t-accent);font-size:var(--t-font-label);line-height:var(--t-line-label);font-weight:600}
+/* The calendar inside the card is as wide as the card: its own frame and side by side layout are for the page. */
+.hub-panel .cal{display:grid;grid-template-columns:minmax(0,1fr);gap:var(--t-space-12);padding:0;border:0;background:none;box-shadow:none}

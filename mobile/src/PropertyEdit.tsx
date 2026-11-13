@@ -17,10 +17,10 @@ const SAVED:Record<EditStep|'publish',string>={photos:'Фото сохранен
 
 // Editing a flat in the app: an overview of short steps, each opened on its own small screen and saved at once.
 // After each save the AI administrator offers the next step. Same rules as the site (lib/listing-edit.ts).
-export function PropertyEdit({property,onSave,onReview,onRemove,onClose,step}:{property:Row;onSave:(body:Row)=>Promise<Row|undefined>;onReview?:(body:Row)=>Promise<unknown>;onRemove?:()=>Promise<unknown>;onClose:()=>void;step?:EditStep|null}){
+export function PropertyEdit({property,onSave,onReview,onRemove,onClose,step}:{property:Row;onSave:(body:Row)=>Promise<Row|undefined>;onReview?:(body:Row)=>Promise<unknown>;onRemove?:()=>Promise<unknown>;onClose:()=>void;step?:EditStep|'calendars'|'cleaner'|null}){
  const [p,setP]=useState(property),[base,setBase]=useState<EditBody>(()=>editBody(property)),[draft,setDraft]=useState<EditBody>(base);
- const [open,setOpen]=useState<EditStep|null>(step&&EDIT_STEPS.some(x=>x.key===step)?step:null),[busy,setBusy]=useState(false),[uploading,setUploading]=useState(false),[error,setError]=useState(''),[done,setDone]=useState(''),[skipped,setSkipped]=useState<string[]>([]),[held,setHeld]=useState(false),[sent,setSent]=useState(false);
- const [confirm,setConfirm]=useState(false),[removeError,setRemoveError]=useState(''),[calendars,setCalendars]=useState(false),[cleaner,setCleaner]=useState(false);
+ const [open,setOpen]=useState<EditStep|null>(step&&EDIT_STEPS.some(x=>x.key===step)?step as EditStep:null),[busy,setBusy]=useState(false),[uploading,setUploading]=useState(false),[error,setError]=useState(''),[done,setDone]=useState(''),[skipped,setSkipped]=useState<string[]>([]),[held,setHeld]=useState(false),[sent,setSent]=useState(false);
+ const [confirm,setConfirm]=useState(false),[removeError,setRemoveError]=useState(''),[calendars,setCalendars]=useState(step==='calendars'),[cleaner,setCleaner]=useState(step==='cleaner');
  // A save that failed keeps its changes: the owner fixes what the server asked for in another step and everything is saved together.
  const fix=held&&error?stepForError(error):null;
  const advice:Advice=held&&error?{step:fix,text:'Не сохранилось: '+error+(fix?' Заполните это, и сохранится всё вместе.':''),action:fix?'Заполнить':undefined}:sent&&!base.published?{step:null,text:REVIEW_SENT}:nextAdvice(base,skipped);

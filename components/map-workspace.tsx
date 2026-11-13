@@ -11,7 +11,7 @@ import type {Role} from '../lib/domain';
 import {PropertyCover} from './property-cover';
 import {cityNearLocation,mapCities} from '../lib/map-location';
 import {browserLocationFix,locationFailure,requestBrowserLocation} from '../lib/browser-location';
-import {MapCanvas} from './map-canvas';import {PropertyListing,StatusBadge} from './property-listing';import {processStatus} from '../lib/process-status';
+import {MapCanvas} from './map-canvas';import {StatusBadge} from './property-listing';import {processStatus} from '../lib/process-status';
 import {AiLine,roleAiLine,type AiChip} from './ai-line';
 import {NowCard,nowCard,nowCardWhen,type NowCardData} from './now-card';
 import './map-workspace.css';
@@ -21,6 +21,10 @@ import {ProcessJourney} from './process-journey';
 import {PriceTip} from './price-tip';
 import {kindLabel} from '../lib/listings';
 import {guestStep,guestTrips} from '../lib/guest-trips';
+import {ownerStep,ownerStepOnMap} from '../lib/owner-steps';
+import {calendarEntries} from '../lib/calendar-days';
+import {hubLine,type HubTab} from '../lib/property-hub';
+import {PropertyHub} from './property-hub';
 import {CheckinGuide} from './checkin-guide';
 type Row=Record<string,any>;
 async function mapAPI(role:string,action:string,body:Row={}){const r=await fetch('/api/operations/map/'+action,{method:'POST',headers:{'Content-Type':'application/json','X-Workspace-Role':role},body:JSON.stringify(body),cache:'no-store',keepalive:action==='journey/stop'}),v=await r.json() as Row;if(!r.ok)throw Object.assign(Error(v.error||'Нет связи с картой.'),{status:r.status});return v;}
@@ -104,7 +108,7 @@ function RoleMap({ role, accountId, data, onDiscussion, onProcess, onCreate, onA
   const qc = useQueryClient();
   // The owner sees every flat he has; the cleaner looks for jobs in one city.
   const [city, setCity] = useState<string>(role === 'cleaner' ? data.profile?.city || '' : '');
-  const [selected, setSelected] = useState(initial), [expanded, setExpanded] = useState(false);
+  const [selected, setSelected] = useState(initial), [expanded, setExpanded] = useState(false), [hubTab, setHubTab] = useState<HubTab>('today');
   const [error, setError] = useState(''), [busy, setBusy] = useState(false);
   const [picking, setPicking] = useState(false), [picked, setPicked] = useState<[number, number] | null>(null);
   const [travelMode, setTravelMode] = useState('walking'), [session, setSession] = useState(''), [gpsStatus, setGpsStatus] = useState('');
@@ -361,7 +365,7 @@ function RoleMap({ role, accountId, data, onDiscussion, onProcess, onCreate, onA
 
   // ----- Panel -----
   function select(id: string) {
-    setError(''); setPrivateRoute(null); setSelected(id); setExpanded(false);
+    setError(''); setPrivateRoute(null); setSelected(id); setExpanded(false); setHubTab('today');
     setPicked(null); setLocalPoint(null); setPicking(false);
   }
   useEffect(() => {
@@ -532,31 +536,24 @@ function RoleMap({ role, accountId, data, onDiscussion, onProcess, onCreate, onA
 
   let flatCard: ReactNode = null, dealCard: ReactNode = null, pointEditor: ReactNode = null;
   if (chosen && !chosen.kind) {
-    const openFlat = () => onProcess('property', chosen.id);
-    const flatDeals = deals.filter(d => d.propertyId === chosen.id);
+    // A booking or a cleaning of this flat is shown on the map when it is there, in its card otherwise.
+    const openDeal = (kind: string, id: string) => { if (deals.some(d => d.mapKey === kind + ':' + id)) select(kind + ':' + id); else onProcess(kind, id); };
+    const own: Row = (data.ownProperties || []).find((p: Row) => p.id === chosen.id) || chosen;
     flatCard = (
       <>
         {back}
-        {!expanded && (
-          <div className="map-role-flat">
-            <Thumb item={chosen} role={role} />
-            <div className="map-role-flat-text">
-              <h2 className="map-role-title">{chosen.title}</h2>
-              <StatusBadge status={chosen.display_status} />
-              {!!chosen.price && <span className="map-role-when">{money(chosen.price)} за сутки</span>}
-            </div>
+        <div className="map-role-flat">
+          <Thumb item={chosen} role={role} />
+          <div className="map-role-flat-text">
+            <h2 className="map-role-title">{chosen.title}</h2>
+            <StatusBadge status={chosen.display_status} />
+            <span className="map-role-when">{hubLine(calendarEntries(data, 'owner', chosen.id, now), now)}</span>
           </div>
-        )}
-        {!expanded && <div className="map-role-actions"><button type="button" className="map-role-button" onClick={openFlat}>Действия</button></div>}
-        {more(expanded ? 'Свернуть' : 'Подробнее')}
-        <div className="map-home-details">
-          <PropertyListing property={chosen} role={role} onChoose={openFlat} actionLabel="Действия" onEdit={openFlat} onSettings={openFlat} />
-          {flatDeals.length > 0 && <><h2 className="map-role-heading">Брони и уборки</h2>{rows(flatDeals, dealLine)}</>}
-          <button type="button" className="map-role-button is-quiet" onClick={() => { setPicked(null); setPicking(true); setExpanded(false); }}>
-            <MapPin size={18} aria-hidden="true" />{point ? 'Уточнить точку на карте' : 'Указать точку на карте'}
-          </button>
-          <p className="map-role-note">{precision}</p>
         </div>
+        <PropertyHub property={own} data={data} now={now} open={expanded} tab={hubTab}
+          onTab={tab => { setExpanded(!(expanded && tab === hubTab)); setHubTab(tab); }} onOpen={openDeal}
+          onEdit={step => onEdit?.(chosen.id, step || null)} onStep={step => onProcess('property', chosen.id, step === 'preview' ? undefined : step)}
+          onPoint={() => { setPicked(null); setPicking(true); setExpanded(false); }} pointNote={precision} onChanged={onChanged} />
       </>
     );
     pointEditor = (
@@ -592,6 +589,9 @@ function RoleMap({ role, accountId, data, onDiscussion, onProcess, onCreate, onA
     const guestStay = role === 'guest' && !job ? actual : null, next = guestStep(guestStay, now, data.paymentMode);
     // The badge says what the booking waits for ("Ждёт оплаты"), as its row in the list does.
     const guestTrip = guestStay ? trips.find(trip => trip.id === chosen.id) : undefined;
+    // The owner's main button is his next step as well: a request is answered from the map, without the card in between.
+    const ownerNext = role === 'owner' && !job ? ownerStep(actual, now) : null;
+    const main = next ? { id: next.id as string, label: next.label } : ownerNext ? { id: ownerNext.id as string, label: ownerStepOnMap(ownerNext) } : null;
     dealCard = (
       <>
         {back}
@@ -604,7 +604,7 @@ function RoleMap({ role, accountId, data, onDiscussion, onProcess, onCreate, onA
           <span className="map-role-when">{period(chosen.start, chosen.end, now)}{job && actual?.fee ? ' · ' + money(actual.fee) : ''}</span>
         </div>
         <div className="map-role-actions">
-          <button type="button" className="map-role-button" onClick={() => onProcess(chosen.kind, chosen.id, next?.id)}>{next ? next.label : guestStay ? 'Открыть бронь' : 'Действия'}</button>
+          <button type="button" className="map-role-button" onClick={() => onProcess(chosen.kind, chosen.id, main?.id)}>{main ? main.label : job ? 'Действия' : 'Открыть бронь'}</button>
           <button type="button" className="map-role-button is-quiet" onClick={() => onDiscussion({ kind: chosen.kind, entityId: chosen.id, channel: job ? 'cleaning' : 'stay' })}>
             <MessagesSquare size={18} aria-hidden="true" />{role !== 'owner' ? 'Написать владельцу' : job ? 'Чат по уборке' : 'Написать гостю'}
           </button>
@@ -643,7 +643,7 @@ function RoleMap({ role, accountId, data, onDiscussion, onProcess, onCreate, onA
             </div>
           )}
           <p className="map-role-note">{precision}</p>
-          {next && <button type="button" className="map-role-button is-quiet" onClick={() => onProcess(chosen.kind, chosen.id)}>Все действия с бронью</button>}
+          {main && <button type="button" className="map-role-button is-quiet" onClick={() => onProcess(chosen.kind, chosen.id)}>Все действия с бронью</button>}
         </div>
       </>
     );
