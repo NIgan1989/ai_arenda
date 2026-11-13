@@ -470,7 +470,7 @@ export function MapHome({ role, accountId, data, menu, onChanged, onOpenProcess,
           mapCenter.current = c;
         }}
       />
-      {role === 'owner' && !selected && <PriceTip cards={data.approvals || []} onChanged={onChanged} />}
+      {(role === 'owner' || role === 'guest') && !selected && <PriceTip role={role} cards={data.approvals || []} onChanged={onChanged} />}
       {!!menu && <View style={h.menu}>{menu}</View>}
       <Animated.View style={[h.sheet, { height: sheet }]} accessibilityViewIsModal={false}>
         <View {...drag.handle.panHandlers}>

@@ -1,6 +1,7 @@
 // Reviewed deletion inventory through migration 0035. Any new application column
 // must be classified before unused-account erasure is enabled for that schema.
 export const accountDeletionColumns:Record<string,string>={
+ "stay_offers":"id,booking_id,guest_id,owner_id,kind,start,end,hours,amount,extra,billing_mode,base_version,policy_version,automatic,status,change_id,created_at,expires_at,decided_at",
  "calendar_windows":"id,property_id,owner_id,start,end,percent,hourly_from,hourly_to,status,created_at,decided_at",
  "price_suggestions":"id,property_id,owner_id,direction,percent,policy_version,from_daily,to_daily,from_hourly,to_hourly,from_nightly,to_nightly,signals,reasons,status,created_at,expires_at,decided_at",
  "platform_billing":"id,enabled,starts_at,rate_bp,min_fee,max_fee,free_bookings,version,updated_by,updated_at,ai_rate_bp",
@@ -94,6 +95,8 @@ export const accountDeletionColumns:Record<string,string>={
 };
 export const accountDeletionFenceSql:Record<string,string>={
  "account_erased_stay_reviews_insert": "CREATE TRIGGER account_erased_stay_reviews_insert BEFORE INSERT ON stay_reviews WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.guest_id OR user_id=NEW.owner_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END",
+ "account_erased_stay_offers_insert": "CREATE TRIGGER account_erased_stay_offers_insert BEFORE INSERT ON stay_offers WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.guest_id OR user_id=NEW.owner_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END",
+ "account_erased_stay_offers_update": "CREATE TRIGGER account_erased_stay_offers_update BEFORE UPDATE ON stay_offers WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.guest_id OR user_id=NEW.owner_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END",
  "account_erased_calendar_windows_insert": "CREATE TRIGGER account_erased_calendar_windows_insert BEFORE INSERT ON calendar_windows WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.owner_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END",
  "account_erased_calendar_windows_update": "CREATE TRIGGER account_erased_calendar_windows_update BEFORE UPDATE ON calendar_windows WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.owner_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END",
  "account_erased_price_suggestions_insert": "CREATE TRIGGER account_erased_price_suggestions_insert BEFORE INSERT ON price_suggestions WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.owner_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END",

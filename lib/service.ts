@@ -22,6 +22,7 @@ import {administratorSearch,isPropertySearch,isSearchRefinement,previousAdminist
 import {readAdministratorProcesses,processReadIntent} from './administrator-process-read';
 import {accrueCommission} from './platform-billing';
 import {offerPriceAdvice,ownerPriceSuggestions,decidePriceSuggestion} from './price-advice';
+import {guestStayOffers,decideStayOffer} from './stay-offers';
 import {ownerWindows,decideCalendarWindow,openWindowFor,openWindowsFor,windowQuote} from './calendar-windows';
 
 type Row = Record<string, any>;
@@ -180,6 +181,7 @@ export class RentalService {
     const result={...state,profile:state.profile?{...state.profile,display_status:cleanerStatus(state.profile.work_status,state.jobs.filter(j=>j.assigned_to===this.userId),state.serverTime)}:null,activeRole:role,properties:role==='guest'?state.properties:[],ownProperties:role==='owner'?state.ownProperties:[],bookings,jobs:jobs.map((j:Row):Row=>({...j,worker:role==='owner'?workers.get(j.assigned_to):null})),
       notifications,applications:state.applications.filter(a=>jobIds.has(a.job_id)&&(role==='owner'||a.user_id===this.userId)).map(a=>({...a,worker:role==='owner'?workers.get(a.user_id):null})),messages:state.messages.filter(m=>m.scope===role)};
     if(role==='owner'){(result as Row).priceSuggestions=await ownerPriceSuggestions(this.db,this.userId,state.serverTime);(result as Row).calendarWindows=await ownerWindows(this.db,this.userId,state.serverTime);}
+    if(role==='guest')(result as Row).stayOffers=await guestStayOffers(this.db,this.userId,state.serverTime);
     const assistantSettings={...defaultAssistantSettings};
     const administrator=await readAdministratorState(this.db,this.userId,role);
     return {...result,administrator,approvals:approvalCards(result,role,this.userId,state.serverTime),assistantSettings,assistantBrief:assistantBrief(result,role,assistantSettings,state.serverTime),workspaces:{[role]:operationOverview(result,this.userId,role,state.serverTime)}};
@@ -213,6 +215,7 @@ export class RentalService {
     if(card.kind==='change')return this.decideBookingChange(card.entityId,card.id.slice(7),role,{action:body.action});
     if(card.kind==='price')return decidePriceSuggestion(this,card.id.slice(6),accept);
     if(card.kind==='window')return decideCalendarWindow(this,card.id.slice(7),accept);
+    if(card.kind==='stay')return decideStayOffer(this,card.id.slice(5),accept);
     if(card.kind==='checkout')return this.bookingAction(card.entityId,{action:accept?'checkout':'dispute_checkout',reason:body.reason,expectedVersion:state.bookings.find(b=>b.id===card.entityId)?.terms?.version});
     const job=state.jobs.find(j=>j.id===card.entityId);
     return this.jobAction(card.entityId,{action:card.kind==='application'?(accept?'assign':'reject_application'):(accept?'approve':'revise'),applicationId:card.id.slice(12),reason:body.reason,expectedVersion:job?.version});
