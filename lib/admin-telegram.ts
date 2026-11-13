@@ -10,7 +10,7 @@ import {one,hash,type Row,type OperationConfig} from './operation-core';
 export const isAdminNotice=(dedupe:string)=>dedupe.startsWith('admin:');
 const tagOf=async(review:Row)=>(await hash(review.id+':'+review.version)).slice(0,10);
 export async function adminNotice(db:D1Database,item:Row,base:string|null):Promise<Row>{
- const open=base?[{text:'Открыть админку',url:base+'/admin?section=reviews'}]:[];
+ const section=String(item.dedupe).startsWith('admin:issue')?'operator':'reviews',open=base?[{text:'Открыть админку',url:base+'/admin?section='+section}]:[];
  const text=String(item.body||'Новое событие для администратора.').slice(0,3500);
  const reviewId=String(item.dedupe).startsWith('admin:review:')?String(item.dedupe).split(':')[2]:'';
  const review=reviewId?await one(db,"SELECT id,version FROM participant_reviews WHERE id=? AND status='pending'",reviewId):null;
