@@ -3,8 +3,9 @@ import type {RentalService} from './service';
 import {q,one,epoch,uuid,type Row} from './operation-core';
 
 // The report identifies one message. Operator access never opens the whole room.
-export async function moderateContent(s:RentalService,role:Role,action:string,b:Row,admin=false){
- await s.authorizeWorkspace(role,'account');if(!admin)throw new DomainError('Нет полномочий оператора.',403);
+export async function moderateContent(s:RentalService,role:Role,action:string,b:Row,admin=false,system=false){
+ // system: the AI administrator's own pass over open reports, which has no workspace profile.
+ if(!system)await s.authorizeWorkspace(role,'account');if(!admin)throw new DomainError('Нет полномочий оператора.',403);
  const report=await one(s.db,'SELECT * FROM content_reports WHERE id=?',required(b.reportId,'Жалоба',100)),reason=required(b.reason,'Основание действия оператора',1000);
  if(!report)throw new DomainError('Жалоба недоступна.',404);
  const kind=report.target_kind,target=report.target_id,room=report.room_id;
