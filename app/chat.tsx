@@ -99,7 +99,7 @@ export default function Chat({workspaceRole,section,accountId}:{workspaceRole:Ro
   useEffect(()=>{const close=(event:Event)=>{const result=(event as CustomEvent<Row>).detail;if(!result?.signOut)return;accountClosed.current=true;lock.current=true;void queryClient.cancelQueries().catch(()=>{});queryClient.clear();setData(empty);setMessages([]);setFlow(null);setInput('');setDiscussion(null);setAdministratorOpen(false);setMapActionOpen(false);setClosedResult(result);if(!result.receipt)window.location.replace('/signin');};window.addEventListener('rental-account-signed-out',close);return()=>window.removeEventListener('rental-account-signed-out',close);},[queryClient]);
   const user=data.user,profile=data.profile,myId=user?.id;
   const showDiscussion=(context:Row)=>{setAdministratorOpen(false);setMapActionOpen(false);window.dispatchEvent(new Event('process-discussion-open'));setDiscussion(context);};
-  const say=(text:string,block?:string,payload?:Row)=>{if(['map','chats'].includes(section))setMapActionOpen(true);const id='message-'+Date.now()+'-'+(++messageCounter.current);setMessages(v=>[...v,{id,sender:'assistant',text,block,payload}]);return id;};
+  const say=(text:string,block?:string,payload?:Row)=>{if(['map','chats'].includes(section))setMapActionOpen(true);else window.dispatchEvent(new Event('chat-step-added'));const id='message-'+Date.now()+'-'+(++messageCounter.current);setMessages(v=>[...v,{id,sender:'assistant',text,block,payload}]);return id;};
   const finish=(id:string,outcome='Сохранено')=>setMessages(v=>v.map(m=>m.id===id?{...m,done:true,outcome}:m));
   async function load(){
     if(accountClosed.current)return empty;
@@ -112,7 +112,16 @@ export default function Chat({workspaceRole,section,accountId}:{workspaceRole:Ro
   async function reconnect(){if(reconnecting)return;setReconnecting(true);try{await load();}catch(error){connectionLost(error);}finally{setReconnecting(false);}}
   useEffect(()=>{load().then(state=>{if(section==='assistant'&&state.messages?.length)setMessages(state.messages.filter((m:Row)=>['user','assistant'].includes(m.sender)).slice(-50).map((m:Row)=>({id:m.id,sender:m.sender,text:m.body})));}).catch(connectionLost).finally(()=>setReady(true));},[]);
   useEffect(()=>{const refresh=()=>{if(document.visibilityState==='visible'&&!lock.current)load().catch(connectionLost);};const timer=setInterval(refresh,30000);window.addEventListener('focus',refresh);window.addEventListener('online',refresh);return()=>{clearInterval(timer);window.removeEventListener('focus',refresh);window.removeEventListener('online',refresh);};},[]);
-  useEffect(()=>{const el=transcript.current;if(!el||!messages.length)return;const last=el.querySelector<HTMLElement>('.chat-message:last-child');const top=last&&last.offsetHeight>el.clientHeight-32?last.getBoundingClientRect().top-el.getBoundingClientRect().top+el.scrollTop-12:el.scrollHeight;el.scrollTo({top:Math.max(0,top),behavior:'instant'});},[messages.length,flow,busy]);
+  // After a button adds a step (a card, a form, an answer), the view moves to it: on the map and in chats the steps live
+  // in the sheet, which scrolls on its own, so it is the sheet that is moved there. A step taller than the screen is
+  // shown from its top; a short one together with what came before it.
+  useEffect(()=>{if(!messages.length)return;let frame=0,tries=0;
+    const move=()=>{const sheet=['map','chats'].includes(section)?document.querySelector<HTMLElement>('.task-sheet-body'):null,el=sheet||transcript.current;
+      if(!el){if(++tries<10)frame=requestAnimationFrame(move);return;}
+      const list=el.querySelectorAll<HTMLElement>('.chat-message'),last=list[list.length-1],step=last?.classList.contains('user')?null:last;
+      const top=step&&step.offsetHeight>el.clientHeight-32?step.getBoundingClientRect().top-el.getBoundingClientRect().top+el.scrollTop-12:el.scrollHeight;
+      el.scrollTo({top:Math.max(0,top),behavior:sheet&&!window.matchMedia('(prefers-reduced-motion: reduce)').matches?'smooth':'instant'});};
+    frame=requestAnimationFrame(move);return()=>cancelAnimationFrame(frame);},[messages.length,flow,busy,section,mapActionOpen]);
   useEffect(()=>{if(composer.current){composer.current.style.height='auto';composer.current.style.height=Math.min(composer.current.scrollHeight,140)+'px';}},[input]);
   async function post(path:string,body:Row={}){
     await queryClient.cancelQueries({queryKey:['workspace',accountId,workspaceRole]});
