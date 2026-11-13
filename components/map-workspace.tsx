@@ -1,7 +1,7 @@
 'use client';
 import { goWorkspace } from '../lib/workspace-go';
 import { ownerPin } from '../mobile/src/owner-map';
-import { cleanerPin, dayRoute, routeLines } from '../mobile/src/cleaner-map';
+import { cleanerPin, dayRoute, routeLines, routeSummary } from '../mobile/src/cleaner-map';
 import {useEffect,useRef,useState,type PointerEvent as ReactPointerEvent,type ReactNode} from 'react';
 import {useQuery,useQueryClient} from '@tanstack/react-query';
 import {ArrowLeft,Brush,Building2,CalendarCheck,ChevronDown,ChevronRight,LocateFixed,MapPin,MessagesSquare,Navigation,Zap} from 'lucide-react';
@@ -22,6 +22,7 @@ import {PriceTip} from './price-tip';
 import {kindLabel} from '../lib/listings';
 import {guestStep,guestTrips} from '../lib/guest-trips';
 import {ownerStep,ownerStepOnMap} from '../lib/owner-steps';
+import {cleanerLine,cleanerStep,ownerJobStep} from '../lib/job-steps';
 import {calendarEntries} from '../lib/calendar-days';
 import {hubLine,type HubTab} from '../lib/property-hub';
 import {PropertyHub} from './property-hub';
@@ -89,11 +90,11 @@ function Thumb({ item, role }: { item: Row; role: string }) {
   );
 }
 
-function MapRow({ item, role, line, onOpen }: { item: Row; role: string; line: string; onOpen: () => void }) {
+function MapRow({ item, role, line, onOpen, order }: { item: Row; role: string; line: string; onOpen: () => void; order?: number }) {
   return (
     <li>
       <button type="button" className="map-role-row" onClick={onOpen}>
-        <Thumb item={item} role={role} />
+        {order ? <span className="map-role-thumb is-icon is-order" aria-label={'Остановка ' + order}>{order}</span> : <Thumb item={item} role={role} />}
         <span className="map-role-row-text">
           <strong>{item.title}</strong>
           <span>{line}</span>
@@ -453,6 +454,10 @@ function RoleMap({ role, accountId, data, onDiscussion, onProcess, onCreate, onA
     </ul>
   );
   const pending = !loaded && !query.isError && <p className="map-role-note" role="status">Загружаем…</p>;
+  // The cleaner's day: the stops of the route in their order, and the rest of what is his (later days, reports sent, answers given).
+  const stops = route.map(r => mine.find(d => d.kind === 'job' && d.id === r.id)).filter((d): d is Row => !!d);
+  const later = role === 'cleaner' ? mine.filter(d => !stops.includes(d)) : [];
+  const daySummary = routeSummary(stops.map(d => ({ fee: Number(record(d)?.fee) || 0, point: d.location ? [Number(d.location.longitude), Number(d.location.latitude)] as [number, number] : null })));
 
   const home = (
     <>
@@ -489,8 +494,22 @@ function RoleMap({ role, accountId, data, onDiscussion, onProcess, onCreate, onA
       )}
       {role === 'cleaner' && (
         <>
-          {disclosure(<MapPin size={18} aria-hidden="true" />, city || 'Все города', !loaded ? '' : nearby.length ? plural(nearby.length, 'задание', 'задания', 'заданий') : 'нет заданий')}
+          {disclosure(<MapPin size={18} aria-hidden="true" />, stops.length ? 'Мой день' : city || 'Все города',
+            !loaded ? '' : stops.length ? plural(stops.length, 'уборка', 'уборки', 'уборок') : nearby.length ? plural(nearby.length, 'задание', 'задания', 'заданий') : 'нет заданий')}
           <div className="map-home-details">
+            {pending}
+            {/* The day first, in the order it is driven; then what is ahead, then what can be taken nearby. */}
+            {stops.length > 0 && (
+              <>
+                <p className="map-role-note">{daySummary}</p>
+                <ul className="map-role-list">
+                  {stops.map(stop => <MapRow key={stop.mapKey} item={stop} role={role} order={stop.pinOrder} line={clock(stop.start) + ' · ' + cleanerLine(record(stop) || stop)} onOpen={() => select(stop.mapKey)} />)}
+                </ul>
+              </>
+            )}
+            {later.length > 0 && <><h2 className="map-role-heading">{stops.length ? 'Дальше' : 'Мои задания'}</h2>{rows(later, dealLine)}</>}
+            {nearby.length > 0 && <><h2 className="map-role-heading">{city ? 'Задания рядом' : 'Задания'}</h2>{rows(nearby.slice(0, 20), dealLine)}</>}
+            {noJobs && !!card && noJobsLine}
             <div className="map-role-city">
               <label>
                 <span>Город</span>
@@ -501,10 +520,6 @@ function RoleMap({ role, accountId, data, onDiscussion, onProcess, onCreate, onA
               </label>
               <button type="button" className="map-role-button is-quiet" disabled={locating} onClick={() => void locateCity()}><LocateFixed size={18} aria-hidden="true" />Мой город</button>
             </div>
-            {pending}
-            {nearby.length > 0 && <><h2 className="map-role-heading">{city ? 'Задания рядом' : 'Задания'}</h2>{rows(nearby.slice(0, 20), dealLine)}</>}
-            {noJobs && !!card && noJobsLine}
-            {mine.length > 0 && <><h2 className="map-role-heading">Мои задания</h2>{rows(mine, dealLine)}</>}
             <a className="map-role-row is-link" href="/workspace/cleaner/jobs">
               <span className="map-role-row-text"><strong>Все задания</strong></span>
               <ChevronRight size={18} aria-hidden="true" />
@@ -591,20 +606,28 @@ function RoleMap({ role, accountId, data, onDiscussion, onProcess, onCreate, onA
     const guestTrip = guestStay ? trips.find(trip => trip.id === chosen.id) : undefined;
     // The owner's main button is his next step as well: a request is answered from the map, without the card in between.
     const ownerNext = role === 'owner' && !job ? ownerStep(actual, now) : null;
-    const main = next ? { id: next.id as string, label: next.label } : ownerNext ? { id: ownerNext.id as string, label: ownerStepOnMap(ownerNext) } : null;
+    // A cleaning has its one step too: the cleaner answers, starts and reports; the owner chooses and accepts.
+    const jobNext = !job ? null : role === 'cleaner' ? cleanerStep(actual || chosen, data.applications?.find((a: Row) => a.job_id === chosen.id && a.user_id === accountId), accountId)
+      : role === 'owner' ? ownerJobStep(actual, (data.applications || []).filter((a: Row) => a.job_id === chosen.id && a.status === 'pending').length) : null;
+    // The cleaner's own job says what it waits for, in the same words as its row of the day.
+    const ownJob = job && role === 'cleaner' && actual?.assigned_to === accountId && ['assigned', 'in_progress', 'submitted'].includes(actual.status) ? actual : null;
+    const main = next ? { id: next.id as string, label: next.label } : ownerNext ? { id: ownerNext.id as string, label: ownerStepOnMap(ownerNext) } : jobNext ? { id: jobNext.id as string, label: jobNext.label } : null;
     dealCard = (
       <>
         {back}
         <div className="map-role-card">
           <div className="map-role-card-head">
             <span className="map-role-eyebrow">{job ? 'Уборка' : 'Проживание'}</span>
-            <StatusBadge status={guestTrip ? { label: guestTrip.status, tone: guestTrip.tone } : status(chosen)} />
+            <StatusBadge status={guestTrip ? { label: guestTrip.status, tone: guestTrip.tone } : ownJob ? { label: cleanerLine(ownJob), tone: ownJob.status === 'submitted' ? 'neutral' : ownJob.status === 'in_progress' || ownJob.checkout_confirmed ? 'success' : 'warning' } : status(chosen)} />
           </div>
           <h2 className="map-role-title">{chosen.title}</h2>
           <span className="map-role-when">{period(chosen.start, chosen.end, now)}{job && actual?.fee ? ' · ' + money(actual.fee) : ''}</span>
         </div>
         <div className="map-role-actions">
-          <button type="button" className="map-role-button" onClick={() => onProcess(chosen.kind, chosen.id, main?.id)}>{main ? main.label : job ? 'Действия' : 'Открыть бронь'}</button>
+          {/* One main button: the step that is due; with nothing due, the way there for the one who goes; otherwise the card. */}
+          {!main && canTravel
+            ? <button type="button" className="map-role-button" aria-expanded={expanded} onClick={() => setExpanded(true)}><Navigation size={18} aria-hidden="true" />Маршрут до жилья</button>
+            : <button type="button" className="map-role-button" onClick={() => onProcess(chosen.kind, chosen.id, main?.id)}>{main ? main.label : job ? 'Открыть задание' : 'Открыть бронь'}</button>}
           <button type="button" className="map-role-button is-quiet" onClick={() => onDiscussion({ kind: chosen.kind, entityId: chosen.id, channel: job ? 'cleaning' : 'stay' })}>
             <MessagesSquare size={18} aria-hidden="true" />{role !== 'owner' ? 'Написать владельцу' : job ? 'Чат по уборке' : 'Написать гостю'}
           </button>
@@ -643,7 +666,7 @@ function RoleMap({ role, accountId, data, onDiscussion, onProcess, onCreate, onA
             </div>
           )}
           <p className="map-role-note">{precision}</p>
-          {main && <button type="button" className="map-role-button is-quiet" onClick={() => onProcess(chosen.kind, chosen.id)}>Все действия с бронью</button>}
+          {(main || canTravel) && <button type="button" className="map-role-button is-quiet" onClick={() => onProcess(chosen.kind, chosen.id)}>{job ? 'Всё о задании' : 'Все действия с бронью'}</button>}
         </div>
       </>
     );

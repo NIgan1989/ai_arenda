@@ -849,3 +849,12 @@ html[data-design="unified"] .workspace-shell .map-role .map-network-error {
     transition: none;
   }
 }
+
+/* A stop of the cleaner's day carries its number, the same one as on its pin. */
+.map-role-panel .map-role-thumb.is-order {
+  background: var(--t-accent);
+  color: var(--t-on-accent);
+  font-size: var(--t-font-body);
+  line-height: var(--t-line-body);
+  font-weight: 700;
+}
