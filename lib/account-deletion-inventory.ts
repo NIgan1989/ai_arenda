@@ -51,7 +51,7 @@ export const accountDeletionColumns:Record<string,string>={
  "calendar_exports": "hash,property_id,owner_id,created_at,expires_at,revoked_at",
  "calendar_previews": "id,user_id,source_id,source_version,content_hash,expires_at,created_at",
  "calendar_sources": "id,property_id,owner_id,label,url,enabled,last_success,last_attempt,last_error,version,created_at,provider,external_property_id,content_hash",
- "cleaning_jobs": "id,property_id,owner_id,booking_id,start,end,fee,description,status,assigned_to,checklist,report,created_at,started_at,submitted_at,completed_at,version,settled_at",
+ "cleaning_jobs": "id,property_id,owner_id,booking_id,start,end,fee,description,status,assigned_to,checklist,report,created_at,started_at,submitted_at,completed_at,version,settled_at,overdue_step",
  "cleaning_offers": "id,job_id,worker_id,job_version,start,end,fee,replacement_allowed,status,created_at,expires_at,decided_at",
  "client_conversations": "user_id,role,body,updated_at",
  "content_reports": "id,user_id,role,target_kind,target_id,room_id,reason,created_at,status,resolution",
