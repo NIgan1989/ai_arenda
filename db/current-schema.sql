@@ -51,6 +51,7 @@
 -- migration 0047_discussion_notice_text.sql sha256:d3e1b2fee1b66841cabbc359edba94784c7068377bcb199c1bf71f130ed16640
 -- migration 0048_test_payments.sql sha256:def5594e44cfe1fc2272f6766ef840ad15a8b79a7f9fe56118dd4822a6763ae9
 -- migration 0049_own_staff.sql sha256:e405114ddd056e7f4463ebbbaf4ecef3a9348be4c3e944fe4d59728171313a19
+-- migration 0050_overdue_cleaning.sql sha256:0ad1121db5460816134ccafee7b7272c8e02f0bd386caad01237f8aa25b80bb4
 
 -- table access_receipts
 CREATE TABLE access_receipts (id TEXT PRIMARY KEY,property_id TEXT NOT NULL,entity_kind TEXT NOT NULL,entity_id TEXT NOT NULL,user_id TEXT NOT NULL,created_at INTEGER NOT NULL,expires_at INTEGER NOT NULL);
@@ -452,7 +453,7 @@ CREATE TABLE `cleaning_jobs` (
 	`assigned_to` text,
 	`checklist` text DEFAULT '[]' NOT NULL,
 	`report` text DEFAULT '' NOT NULL,
-	`created_at` integer NOT NULL, started_at INTEGER, submitted_at INTEGER, completed_at INTEGER, version INTEGER NOT NULL DEFAULT 1, settled_at INTEGER,
+	`created_at` integer NOT NULL, started_at INTEGER, submitted_at INTEGER, completed_at INTEGER, version INTEGER NOT NULL DEFAULT 1, settled_at INTEGER, overdue_step INTEGER NOT NULL DEFAULT 0,
 	FOREIGN KEY (`property_id`) REFERENCES `properties`(`id`) ON UPDATE no action ON DELETE no action
 );
 

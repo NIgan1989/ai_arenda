@@ -30,6 +30,7 @@ import {guestStayOffers,decideStayOffer} from './stay-offers';
 import {ownerForecasts,decideForecast} from './load-forecast';
 import {ownerListingTips,decideListingTip} from './listing-quality';
 import {ownerCleaningTips,decideCleaningTip} from './cleaning-price';
+import {releaseStatements,releaseWindow} from './overdue-cleaning';
 import {ownerWindows,decideCalendarWindow,openWindowFor,openWindowsFor,windowQuote} from './calendar-windows';
 
 type Row = Record<string, any>;
@@ -236,6 +237,55 @@ export class RentalService {
     if(!other)throw new DomainError('У задания пока нет второго участника. Укажите проблему в состоянии жилья.',409);
     const issueId=id();
     return this.query('INSERT INTO administrator_issues(id,owner_id,property_id,entity_kind,entity_id,opened_by,opened_role,other_user,other_role,description,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)',issueId,entity.owner_id,entity.property_id,kind,entity.id,this.userId,role,other,owner?(kind==='booking'?'guest':'cleaner'):'owner',description,now());
+  }
+  // One open issue per participant and booking or cleaning: pressing «Есть проблема» again adds to it instead of
+  // opening a second one, so the other side and the AI administrator follow a single thread.
+  async issueWrite(entity:Row,kind:'booking'|'job',description:string){
+    const open=await this.one("SELECT id FROM administrator_issues WHERE entity_kind=? AND entity_id=? AND opened_by=? AND status='open' ORDER BY created_at DESC LIMIT 1",kind,entity.id,this.userId);
+    if(!open)return {added:false,statement:this.administratorIssueStatement(entity,kind,description)};
+    return {added:true,statement:this.query("UPDATE administrator_issues SET description=substr(description||char(10)||'Дополнение: '||?,1,6000),version=version+1 WHERE id=? AND status='open'",description,open.id)};
+  }
+  // An overdue cleaning (or one about to be): more time, a new cleaner, or the owner closes work that was done.
+  async overdueAction(j:Row,body:Row){
+    const owner=j.owner_id===this.userId,t=now(),title=j.title||'жильё';
+    if(!['assigned','in_progress'].includes(j.status)||!j.assigned_to)throw new DomainError('Задание уже не в работе. Обновите карточку.',409);
+    const version=body.expectedVersion===undefined?j.version:number(body.expectedVersion,'Версия задания',1,10000000);
+    if(version!==j.version)throw new DomainError('Задание уже изменилось. Обновите карточку.',409);
+    if(body.action==='extend'){
+      const minutes=Number(body.minutes);if(![30,60,120].includes(minutes))throw new DomainError('Выберите 30 минут, 1 или 2 часа.');
+      if(!owner&&j.end>t+1800)throw new DomainError('Продлить срок можно за полчаса до окончания уборки или позже.',409);
+      const end=Math.max(Number(j.end),t)+minutes*60;
+      const next=await this.one("SELECT start FROM bookings WHERE property_id=? AND status='confirmed' AND start>=? AND start<? AND (? IS NULL OR id<>?) ORDER BY start LIMIT 1",j.property_id,j.start,end,j.booking_id,j.booking_id);
+      if(next)throw new DomainError('Следующий заезд в '+new Intl.DateTimeFormat('ru-RU',{hour:'2-digit',minute:'2-digit',timeZone:'Asia/Almaty'}).format(new Date(next.start*1000))+', продлить уборку дальше нельзя.',409);
+      const label=minutes<60?minutes+' мин':minutes/60+' ч';
+      const r=await this.db.batch([
+        this.query("UPDATE cleaning_jobs SET end=?,overdue_step=0 WHERE id=? AND version=? AND status IN ('assigned','in_progress')",end,j.id,j.version),
+        this.notify(owner?j.assigned_to:j.owner_id,owner?'Владелец продлил срок уборки «'+title+'» на '+label+'.':'Исполнитель попросил ещё '+label+' на уборку «'+title+'». Срок продлён, если не согласны, найдите замену в карточке уборки.','extended:'+j.id+':'+end,owner?'cleaner':'owner'),
+        this.audit(j.id,'job.extended:'+minutes)
+      ]);
+      if(!r[0].meta.changes)throw new DomainError('Задание уже изменилось. Обновите карточку.',409);
+      return {message:'Срок продлён на '+label+'.'};
+    }
+    if(body.action==='release'){
+      if(owner&&j.end>t&&j.status==='in_progress')throw new DomainError('Исполнитель ещё в отведённом времени. Найти замену можно после срока.',409);
+      const window=await releaseWindow(this.db,j,t);if(!window)throw new DomainError('До следующего заезда меньше получаса: нового исполнителя не найти. Продлите срок или закройте уборку.',409);
+      const r=await this.db.batch([...releaseStatements(this.db,j,window,t),
+        this.notify(owner?j.assigned_to:j.owner_id,owner?'Владелец передал уборку «'+title+'» другому исполнителю.':'Исполнитель отказался от уборки «'+title+'». Уборка снова в поиске, выберите нового исполнителя из откликов.','released:'+j.id+':'+j.version,owner?'cleaner':'owner'),
+        this.audit(j.id,owner?'job.reassign_requested':'job.released_by_cleaner')]);
+      if(!r[0].meta.changes)throw new DomainError('Задание уже изменилось. Обновите карточку.',409);
+      return {message:owner?'Уборка снова в поиске. Новые отклики появятся в карточке.':'Вы отказались от задания. Владелец получит уведомление.'};
+    }
+    if(j.status!=='in_progress')throw new DomainError('Закрыть можно только начатую уборку.',409);
+    if(body.confirmed!==true)throw new DomainError('Подтвердите, что уборка выполнена.');
+    const note=typeof body.note==='string'&&body.note.trim()?body.note.trim().slice(0,500):'';
+    const r=await this.db.batch([
+      this.query("UPDATE cleaning_jobs SET status='completed',completed_at=?,report=CASE WHEN report='' THEN ? ELSE report END WHERE id=? AND version=? AND status='in_progress'",t,'Закрыто владельцем без отчёта исполнителя.'+(note?' '+note:''),j.id,j.version),
+      this.query("UPDATE property_operations SET readiness='ready',version=version+1,updated_at=? WHERE property_id=? AND readiness IN ('cleaning','inspection','awaiting_cleaning') AND active_booking_id IS NULL AND EXISTS(SELECT 1 FROM cleaning_jobs WHERE id=? AND status='completed') AND NOT EXISTS(SELECT 1 FROM cleaning_jobs WHERE property_id=? AND status IN ('in_progress','submitted'))",t,j.property_id,j.id,j.property_id),
+      this.notify(j.assigned_to,'Владелец закрыл уборку «'+title+'» как выполненную.','closed:'+j.id,'cleaner'),
+      this.audit(j.id,'job.closed_by_owner')
+    ]);
+    if(!r[0].meta.changes)throw new DomainError('Задание уже изменилось. Обновите карточку.',409);
+    return {message:'Уборка закрыта как выполненная, жильё отмечено готовым.'};
   }
   async decideApproval(roleValue:unknown,body:Row){
     const role=parseRole(roleValue),state=await this.roleState(role),card=state.approvals.find(c=>c.id===body.id);
@@ -575,8 +625,9 @@ export class RentalService {
     }
     if(body.action==='issue') {
       const issue=required(body.issue,'Описание проблемы',1500);
-      const receipt=await this.operationReceipt('booking_issue',body,[bookingId,issue]);if(receipt.previous)return receipt.previous;const result={message:'Обращение сохранено в уведомлениях получателя. Для срочной связи используйте контакт в брони.'};
-      await this.db.batch([this.administratorIssueStatement(b,'booking',issue),this.notify(owner?b.guest_id:b.owner_id,`Обращение по «${b.title}»: ${issue}`,id(),owner?'guest':'owner'),this.audit(bookingId,'booking.issue'),this.query('INSERT INTO operation_receipts VALUES (?,?,?,?,?,?)',this.userId,'booking_issue',receipt.key,receipt.digest,JSON.stringify(result),now())]);
+      const receipt=await this.operationReceipt('booking_issue',body,[bookingId,issue]);if(receipt.previous)return receipt.previous;
+      const issueWrite=await this.issueWrite(b,'booking',issue),result={message:issueWrite.added?'Дополнение записано в открытое обращение.':'Обращение сохранено в уведомлениях получателя. Для срочной связи используйте контакт в брони.'};
+      await this.db.batch([issueWrite.statement,this.notify(owner?b.guest_id:b.owner_id,`Обращение по «${b.title}»: ${issue}`,id(),owner?'guest':'owner'),this.audit(bookingId,'booking.issue'),this.query('INSERT INTO operation_receipts VALUES (?,?,?,?,?,?)',this.userId,'booking_issue',receipt.key,receipt.digest,JSON.stringify(result),now())]);
       return result;
     }
     throw new DomainError('Действие недоступно.',403);
@@ -753,11 +804,13 @@ export class RentalService {
       const advice=await this.priceAdviceAfterReady(j.property_id);
       return {message:'Работа принята. Денежные расчёты выполняются отдельно.'+(advice?' AI администратор посмотрел спрос и предлагает новую цену, решение за вами.':''),priceSuggestion:advice};
     }
-    if(body.action==='cancel'&&j.owner_id===this.userId){const reason=required(body.reason,'Причина отмены',1000);const r=await this.query("UPDATE cleaning_jobs SET status='cancelled' WHERE id=? AND status IN ('open','assigned')",jobId).run();if(!r.meta.changes)throw new DomainError('Начатую работу нельзя отменить этим действием.',409);await this.audit(jobId,'job.cancelled:'+reason).run();return {message:'Задание отменено. Готовность жилья нужно проверить отдельно.'};}
+    if(body.action==='cancel'&&j.owner_id===this.userId){const reason=required(body.reason,'Причина отмены',1000);const r=await this.query("UPDATE cleaning_jobs SET status='cancelled' WHERE id=? AND (status IN ('open','assigned') OR status='in_progress' AND end<=?)",jobId,now()).run();if(!r.meta.changes)throw new DomainError('Начатую работу нельзя отменить этим действием.',409);await this.db.batch([this.audit(jobId,'job.cancelled:'+reason),...(j.assigned_to?[this.notify(j.assigned_to,'Владелец отменил уборку «'+(j.title||'жильё')+'». Причина: '+reason,'cancelled:'+jobId,'cleaner')]:[])]);return {message:'Задание отменено. Готовность жилья нужно проверить отдельно.'};}
+    if(['extend','release','close'].includes(body.action)&&(j.owner_id===this.userId||j.assigned_to===this.userId&&body.action!=='close'))return this.overdueAction(j,body);
     if(body.action==='issue' && (j.owner_id===this.userId||j.assigned_to===this.userId)) {
       const issue=required(body.issue,'Описание',1500);
-      const receipt=await this.operationReceipt('job_issue',body,[jobId,issue]);if(receipt.previous)return receipt.previous;const result={message:'Обращение записано в уведомлениях. Статус работы не изменён.'};
-      await this.db.batch([this.administratorIssueStatement(j,'job',issue),this.notify(j.owner_id===this.userId?j.assigned_to:j.owner_id,'Проблема по уборке: '+issue,id(),j.owner_id===this.userId?'cleaner':'owner'),this.audit(jobId,'job.issue'),this.query('INSERT INTO operation_receipts VALUES (?,?,?,?,?,?)',this.userId,'job_issue',receipt.key,receipt.digest,JSON.stringify(result),now())]);
+      const receipt=await this.operationReceipt('job_issue',body,[jobId,issue]);if(receipt.previous)return receipt.previous;
+      const issueWrite=await this.issueWrite(j,'job',issue),result={message:issueWrite.added?'Дополнение записано в открытое обращение. Статус работы не изменён.':'Обращение записано в уведомлениях. Статус работы не изменён.'};
+      await this.db.batch([issueWrite.statement,this.notify(j.owner_id===this.userId?j.assigned_to:j.owner_id,'Проблема по уборке: '+issue,id(),j.owner_id===this.userId?'cleaner':'owner'),this.audit(jobId,'job.issue'),this.query('INSERT INTO operation_receipts VALUES (?,?,?,?,?,?)',this.userId,'job_issue',receipt.key,receipt.digest,JSON.stringify(result),now())]);
       return result;
     }
     throw new DomainError('Нет доступа к этому действию.',403);

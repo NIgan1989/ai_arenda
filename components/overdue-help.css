@@ -1,0 +1,16 @@
+/* An overdue cleaning: a warm box under the timer with the AI's note and the ways out. */
+.overdue-help{display:grid;gap:12px;margin:12px 0;padding:16px;border:1px solid var(--t-warning-line);border-radius:var(--t-radius-xl);background:var(--t-warning-soft);color:var(--t-ink)}
+.overdue-help p{margin:0;font-size:14px;line-height:20px;color:var(--t-ink-soft)}
+.overdue-help-head{display:flex;align-items:center;gap:8px;color:var(--t-warning)}
+.overdue-help-head strong{font-size:16px;line-height:24px;font-weight:600;color:var(--t-ink)}
+.overdue-help p.overdue-help-ai{display:flex;align-items:flex-start;gap:8px;padding:8px 12px;border-radius:var(--t-radius-md);background:var(--t-surface);font-size:12px;line-height:16px;color:var(--t-ink-soft)}
+.overdue-help-ai svg{flex:none;margin-top:1px;color:var(--t-accent)}
+.overdue-help-extend{display:grid;gap:8px}
+.overdue-help-extend>span{font-size:12px;line-height:16px;font-weight:600;color:var(--t-muted);text-transform:uppercase;letter-spacing:.6px}
+.overdue-help-chips{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.overdue-help [data-slot=button]{width:100%;min-height:44px;height:auto;padding:8px 12px;border-radius:var(--t-radius-md);font-size:16px;font-weight:600;white-space:normal;background:var(--t-surface)}
+.overdue-help-row{display:grid;gap:8px}
+.overdue-help [data-slot=button].overdue-help-main,.overdue-help [data-slot=button].overdue-help-yes{background:var(--t-accent);color:var(--t-on-accent);border:0}
+.overdue-help [data-slot=button][data-variant].overdue-help-cancel{background:transparent;color:var(--t-danger);min-height:36px}
+.overdue-help-confirm{display:grid;gap:12px;padding:12px;border-radius:var(--t-radius-md);background:var(--t-surface)}
+.overdue-help-confirm p{color:var(--t-ink)}

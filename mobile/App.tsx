@@ -30,6 +30,7 @@ import {OfflineNotice} from './src/OfflineNotice';
 import {EntrySplash} from './src/EntrySplash';
 import {LoadingBar} from './src/LoadingBar';
 import {ApplicantPick,CleanerNextBox,WorkerRow,applicantStyles} from './src/ApplicantPick';
+import {OverdueHelp} from './src/OverdueHelp';
 import {PageTransition} from './src/PageTransition';
 import {entryReady,markGesture} from './src/loading';
 
@@ -78,6 +79,16 @@ function Chat(){
   const [listed,setListed]=useState({page:'',count:12}),[allCities,setAllCities]=useState(false);
   const activeRoleRef=useRef<Role|null>(null),scrollMessage=useRef<string|null>(null);
   const userId=data.user?.id;
+  const messageY=useRef<Record<string,number>>({});
+  // «Есть проблема» pressed again: the open question is shown again instead of a second one; an issue already sent
+  // for this booking or cleaning gets an addition, not a twin.
+  function raiseIssue(kind:'job'|'booking',entityId:string,role:Role){
+    const endpoint=(kind==='job'?'jobs/':'bookings/')+entityId;
+    if(flow?.kind==='issue'&&flow.endpoint===endpoint){const q=[...messages].reverse().find(m=>m.sender==='assistant'&&m.text===flow.questions[0]?.text);if(q&&messageY.current[q.id]!==undefined)scroll.current?.scrollTo({y:Math.max(0,messageY.current[q.id]-12),animated:true});return;}
+    const open=(data.administrator?.issues||[]).find((i:Row)=>i.status==='open'&&i.entity_kind===kind&&i.entity_id===entityId&&i.opened_by===userId);
+    const text=open?'Обращение уже открыто: «'+String(open.description).slice(0,200)+'». ИИ-администратор следит за ответом. Что добавить?':kind==='job'?'Что произошло? Сообщение получит другой участник задания.':'Что произошло? Сообщение получит другая сторона бронирования.';
+    beginFlow('issue',[{key:'issue',text,label:open?'Дополнение':'Проблема'}],{},endpoint,kind==='job'?(role==='owner'?'owner-jobs':'my-jobs'):'bookings',role,{action:'issue'});
+  }
   const say=(text:string,block?:string,payload?:Row)=>{const id=uid();scrollMessage.current=id;setMessages(prev=>[...prev,{id,sender:'assistant' as const,text,block,payload}].slice(-120));};
   const processLinks=useProcessLinks({apiUrl:API_URL,ready,accountId:userId||null,blocked:busy||!!flow||!!recoveryCode||chatsActive,onError:message=>setLinkError(message),onOpen:async(link,guard)=>{
     if(locked.current||!session.current||!guard.isCurrent())return;
@@ -367,7 +378,7 @@ function Chat(){
           !owner&&confirmed&&started&&!b.terms?.actual_checkin&&!b.terms?.checkin_reported_at&&b.end>data.serverTime&&{title:'Я заселился',kind:'main',onPress:()=>confirm('bookings/'+id,{action:'report_checkin'},'Сообщить, что вы заселились; заселение подтвердится после проверки оплаты и депозита')},
           !owner&&confirmed&&started&&!b.terms?.checkout_reported_at&&{title:'Сообщить о выезде',kind:'main',onPress:()=>confirm('bookings/'+id,{action:'report_checkout'},'Сообщить владельцу о выезде; освобождение жилья потребует проверки')},
           {title:'Открыть чат',kind:'side',onPress:()=>{setChatInitial({kind:'booking',entityId:id,channel:'stay'});setPageId('chats');}},
-          confirmed&&{title:'Есть проблема',kind:'side',onPress:()=>beginFlow('issue',[{key:'issue',text:'Что произошло? Сообщение получит другая сторона бронирования.',label:'Проблема'}],{},'bookings/'+id,'bookings',actor,{action:'issue'})},
+          confirmed&&{title:'Есть проблема',kind:'side',onPress:()=>raiseIssue('booking',id,actor)},
           ['requested','confirmed'].includes(b.status)&&!b.terms?.actual_checkin&&{title:'Отменить бронь',kind:'danger',onPress:()=>confirm('bookings/'+id,{action:'cancel'},'Отменить бронирование. Возврат денег согласуется отдельно')},
         ]}/>
         <BookingChanges key={b.id+':'+b.terms?.version} booking={b} role={payload.role} busy={busy} onReview={id=>say('Предложение новых условий.','approval',{id:'change:'+id})} onQuote={body=>request('/api/bookings/'+id+'/change-quote',body)} onPropose={body=>perform('bookings/'+id+'/changes',body,uid())} onDecide={(changeId,action)=>perform('bookings/'+id+'/changes/'+changeId,{action},uid())} onReveal={reveal}/>
@@ -383,6 +394,7 @@ function Chat(){
         {owner&&!!j.worker&&<View style={applicantStyles.assigned}><WorkerRow worker={j.worker} label="Исполнитель"/></View>}
         <RecordFacts rows={[j.description&&['Что сделать',j.description],j.address&&['Адрес',j.address+(j.owner_contact?' · '+j.owner_contact:''),true],j.report&&['Отчёт',j.report]]}/>
         <ActivityTimer kind="job" item={j}/>
+        {(owner||assigned)&&<OverdueHelp job={j} role={owner?'owner':'cleaner'} busy={busy} onAction={body=>perform('jobs/'+id,body,uid(),owner?'owner-jobs':'my-jobs')}/>}
         {!owner&&<CleanerNextBox job={j} application={application} admission={application?.admission??data.profile?.admission} userId={userId||''} busy={busy} onRequestReview={()=>perform('operations/reviews/request',{reference:'Отклик на уборку: проверьте анкету исполнителя.'},uid())}/>}
         <RecordActions busy={busy} actions={[
           !owner&&j.status==='open'&&!applied&&{title:'Откликнуться',kind:'main',onPress:()=>perform('jobs/'+id,{action:'apply'},m.id)},
@@ -390,6 +402,7 @@ function Chat(){
           assigned&&j.status==='in_progress'&&{title:'Подготовить отчёт',kind:'main',onPress:()=>say('Проверьте каждый пункт. Отчёт уйдёт владельцу после вашего подтверждения.','report',{id})},
           owner&&j.status==='submitted'&&{title:'Рассмотреть отчёт',kind:'main',onPress:()=>say('Отчёт на приёмке.','approval',{id:'report:'+id})},
           (owner&&!!j.assigned_to||assigned)&&{title:'Открыть чат',kind:'side',onPress:()=>{setChatInitial({kind:'job',entityId:id,channel:'cleaning'});setPageId('chats');}},
+          (owner&&!!j.assigned_to||assigned)&&{title:'Есть проблема',kind:'side',onPress:()=>raiseIssue('job',id,owner?'owner':'cleaner')},
         ]}/>
       </View></Fragment>;
     })}{payload.role==='owner'&&<Button title="Создать уборку" secondary disabled={busy} onPress={()=>send('Создать уборку')}/>}</View>;
@@ -415,7 +428,7 @@ function Chat(){
       {pageId==='overview'&&nextTask&&<Pressable accessibilityRole="button" accessibilityLabel={'Ассистент рекомендует: '+nextTask.title} disabled={busy} onPress={()=>openAssistantTask(nextTask)} style={[s.recommendation,nextTask.priority===3&&s.urgentRecommendation]}><Text style={s.recommendationLabel}>Ассистент рекомендует</Text><Text style={s.eventTitle}>{nextTask.title}</Text></Pressable>}
       {pageId==='properties'&&<Button title="Добавить жильё" disabled={busy} onPress={()=>run('property')}/>}
       {pageId==='account'?<AccountControl onOpenPage={id=>{scrollMessage.current=null;setPageId(id);scroll.current?.scrollTo({y:0,animated:false});}} role={selectedRole} onChanged={load} onSignedOut={signedOut} key={selectedRole} onEdit={()=>run('profile')} onSwitchRole={switchRole} onLogout={()=>send('Выйти')}/>:pageId==='calendar'?<RentalCalendar data={data} role={selectedRole} busy={busy} onOpen={(kind,id)=>say('Текущий статус и доступные действия.',kind==='job'?'jobs':'bookings',{ids:[id],role:selectedRole})}/>:<>{pageId==='catalog'&&cityFlats.length>0&&cityFlats.length<data.properties.length&&<View style={s.listScope}><Text style={[s.meta,{flex:1}]}>{byCity?homeCity+' · '+allIds.length:'Все города · '+allIds.length}</Text><Pressable accessibilityRole="button" disabled={busy} onPress={()=>{setAllCities(!allCities);setListed({page:pageId,count:12});}} style={({pressed})=>[s.listScopeLink,pressed&&s.disabled]}><Text style={s.listScopeText}>{byCity?'Показать все города':'Только '+homeCity}</Text></Pressable></View>}{primary.block&&block(primary)}{!!primary.block&&pageId!=='overview'&&hidden>0&&<Button title={'Показать ещё '+Math.min(12,hidden)} secondary disabled={busy} onPress={()=>setListed({page:pageId,count:ids.length+12})}/>}</>}
-      {messages.map((m,index)=><View key={m.id} onLayout={event=>{if(index===messages.length-1&&m.sender==='assistant'&&m.id===scrollMessage.current)scroll.current?.scrollTo({y:Math.max(0,event.nativeEvent.layout.y-12),animated:true});}} style={[s.message,m.sender==='user'?s.user:s.assistant]}>{m.sender==='assistant'&&<Text style={s.sender}>AI АРЕНДА</Text>}<Text selectable style={s.text}>{m.text}</Text>{m.sender==='assistant'&&block(m)}</View>)}
+      {messages.map((m,index)=><View key={m.id} onLayout={event=>{messageY.current[m.id]=event.nativeEvent.layout.y;if(index===messages.length-1&&m.sender==='assistant'&&m.id===scrollMessage.current)scroll.current?.scrollTo({y:Math.max(0,event.nativeEvent.layout.y-12),animated:true});}} style={[s.message,m.sender==='user'?s.user:s.assistant]}>{m.sender==='assistant'&&<Text style={s.sender}>AI АРЕНДА</Text>}<Text selectable style={s.text}>{m.text}</Text>{m.sender==='assistant'&&block(m)}</View>)}
       {busy&&<Thinking label="Ожидаем ответ сервера" style={{alignSelf:'flex-start',marginBottom:20}}/>}
       {saveError&&<Text accessibilityRole="alert" style={s.error}>История ещё не сохранена. Проверьте связь; заявки хранятся на сервере.</Text>}
     </ScrollView>

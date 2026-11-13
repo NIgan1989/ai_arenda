@@ -28,14 +28,16 @@ const notice=(db:D1Database,user:string,body:string,dedupe:string,at:number)=>q(
 export async function sweepIssues(db:D1Database,config:OperationConfig&{PLATFORM_ADMIN_IDS?:string}={}){
  const at=epoch(),result={triaged:0,reminded:0,escalated:0},list=admins(config);
  // 1. New issues: a ticket with the AI's priority and answer time, and a history line both sides can read.
- const fresh=await rows(db,"SELECT i.*,p.title FROM administrator_issues i JOIN properties p ON p.id=i.property_id WHERE i.status<>'resolved' AND NOT EXISTS(SELECT 1 FROM operator_history h WHERE h.id='ai-triage:'||i.id) ORDER BY i.created_at LIMIT 30");
+ // An issue added to later (version above 1, «Есть проблема» pressed again) is triaged again: a new urgent detail
+ // raises the priority and calls the admin, a calmer one never lowers what is already set.
+ const fresh=await rows(db,"SELECT i.*,p.title FROM administrator_issues i JOIN properties p ON p.id=i.property_id WHERE i.status<>'resolved' AND NOT EXISTS(SELECT 1 FROM operator_history h WHERE h.id=CASE WHEN i.version>1 THEN 'ai-triage:'||i.id||':'||i.version ELSE 'ai-triage:'||i.id END) ORDER BY i.created_at LIMIT 30");
  for(const issue of fresh){
-  const {kind,priority}=classifyIssue(issue.description),deadline=issue.created_at+ANSWER_WITHIN[priority];
-  const body='ИИ-администратор: тема «'+KIND_LABEL[kind]+'», срочность: '+PRIORITY_LABEL[priority]+'. Ответ нужен в течение '+minutes(ANSWER_WITHIN[priority])+'.';
+  const added=issue.version>1,{kind,priority}=classifyIssue(issue.description),deadline=(added?at:issue.created_at)+ANSWER_WITHIN[priority],rank={normal:1,high:2,urgent:3}[priority];
+  const body='ИИ-администратор: '+(added?'обращение дополнено, ':'')+'тема «'+KIND_LABEL[kind]+'», срочность: '+PRIORITY_LABEL[priority]+'. Ответ нужен в течение '+minutes(ANSWER_WITHIN[priority])+'.';
   await db.batch([
    q(db,"INSERT OR IGNORE INTO operator_tickets(issue_id,status,priority,deadline,created_at,updated_at) VALUES (?,'open',?,?,?,?)",issue.id,priority,deadline,issue.created_at,at),
-   q(db,"UPDATE operator_tickets SET priority=?,deadline=?,version=version+1,updated_at=? WHERE issue_id=? AND status<>'resolved' AND assigned_to IS NULL",priority,deadline,at,issue.id),
-   q(db,"INSERT OR IGNORE INTO operator_history(id,issue_id,actor_id,actor_role,action,body,visibility,created_at) VALUES (?,?,'ai-administrator','system','triage',?,'participants',?)",'ai-triage:'+issue.id,issue.id,body,at),
+   q(db,"UPDATE operator_tickets SET priority=?,deadline=?,version=version+1,updated_at=? WHERE issue_id=? AND status<>'resolved' AND assigned_to IS NULL AND (?=0 OR (CASE priority WHEN 'urgent' THEN 3 WHEN 'high' THEN 2 ELSE 1 END)<?)",priority,deadline,at,issue.id,added?1:0,rank),
+   q(db,"INSERT OR IGNORE INTO operator_history(id,issue_id,actor_id,actor_role,action,body,visibility,created_at) VALUES (?,?,'ai-administrator','system','triage',?,'participants',?)",added?'ai-triage:'+issue.id+':'+issue.version:'ai-triage:'+issue.id,issue.id,body,at),
    ...(priority==='urgent'?list.map(admin=>notice(db,admin,'Срочное обращение по «'+(issue.title||'жильё')+'»: '+KIND_LABEL[kind]+'. Ответ нужен в течение 30 мин. Админка → Обращения.','admin:issue-urgent:'+issue.id+':'+admin,at)):[])
   ]);
   result.triaged++;if(priority==='urgent')result.escalated++;
