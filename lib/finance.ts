@@ -134,3 +134,27 @@ export async function setTestPayments(service:RentalService,body:Row){
  if(!r[0].meta.changes)throw new DomainError('Настройки оплаты не найдены. Примените обновление базы.',503);
  return {message:body.enabled?'Тестовая оплата включена: гости проходят оплату без списания денег.':'Тестовая оплата выключена. Гости платят по договорённости с владельцем, пока не подключён банк.'};
 }
+
+// While payments are simulated, the AI closes the money side of a stay for an autopilot owner once the
+// cleaning is accepted and nothing is disputed: the guest's test deposit comes back and the cleaner's
+// test payout is recorded. Nothing is touched when any money on the booking was real.
+export async function settleTestMoney(service:RentalService,propertyId:string){
+ const db=service.db,flag=await one(db,"SELECT test_payments FROM platform_billing WHERE id='global'").catch(()=>null);
+ if(!flag?.test_payments)return 0;
+ const simulated="EXISTS(SELECT 1 FROM finance_entries f WHERE f.booking_id=b.id AND f.kind IN ('payment','deposit')) AND NOT EXISTS(SELECT 1 FROM finance_entries f WHERE f.booking_id=b.id AND f.kind IN ('payment','deposit') AND f.external_reference NOT LIKE 'TEST-%')";
+ const quiet="NOT EXISTS(SELECT 1 FROM administrator_issues i WHERE i.status='open' AND ((i.entity_kind='booking' AND i.entity_id=b.id) OR (i.entity_kind='job' AND i.entity_id=j.id))) AND NOT EXISTS(SELECT 1 FROM finance_entries f WHERE f.booking_id=b.id AND f.kind='compensation')";
+ const done=await rows(db,`SELECT b.id booking,b.guest_id,j.id job,j.assigned_to,j.fee,j.settled_at,p.title,(SELECT COALESCE(SUM(CASE WHEN kind='deposit' THEN amount WHEN kind='deposit_return' THEN -amount ELSE 0 END),0) FROM finance_entries WHERE booking_id=b.id) held FROM bookings b JOIN booking_terms t ON t.booking_id=b.id JOIN properties p ON p.id=b.property_id JOIN cleaning_jobs j ON j.booking_id=b.id AND j.status='completed' WHERE b.property_id=? AND p.owner_id=? AND b.status='completed' AND t.actual_checkout IS NOT NULL AND ${simulated} AND ${quiet}`,propertyId,service.userId);
+ let n=0;const money=(v:number)=>new Intl.NumberFormat('ru-RU').format(v)+' ₸';
+ for(const d of done){
+  if(d.held>0){try{
+   await recordFinance(service,{kind:'deposit_return',bookingId:d.booking,amount:d.held,confirmed:true,note:'Тестовый возврат депозита: деньги не переводились',externalReference:'TEST-RETURN',requestKey:'ai-test-deposit-return:'+d.booking});
+   await service.notify(d.guest_id,'AI администратор вернул депозит '+money(d.held)+' за «'+d.title+'»: уборка принята, замечаний нет. Тестовый режим, деньги не переводились.','test-deposit-return:'+d.booking,'guest').run();n++;
+  }catch(e){if(!(e instanceof DomainError))throw e;}}
+  // A regular cleaner is paid by the service from the owner's reserve, not here; a reserve given back no longer backs it.
+  if(d.assigned_to&&!d.settled_at&&d.fee>0&&!await one(db,"SELECT 1 FROM cleaning_holds WHERE job_id=? AND status<>'returned'",d.job)){try{
+   await recordFinance(service,{kind:'job_payment',jobId:d.job,amount:d.fee,confirmed:true,note:'Тестовая выплата исполнителю: деньги не переводились',externalReference:'TEST-PAYOUT',requestKey:'ai-test-payout:'+d.job});
+   await service.notify(d.assigned_to,'Оплата '+money(d.fee)+' за уборку «'+d.title+'» записана. Тестовый режим, деньги не переводились.','test-payout:'+d.job,'cleaner').run();n++;
+  }catch(e){if(!(e instanceof DomainError))throw e;}}
+ }
+ return n;
+}
