@@ -1,4 +1,5 @@
 import {reliabilityFor} from './reliability';
+import {CHECKIN_LEAD_SECONDS,checkinOpensLabel} from './checkin-window';
 import {assessBookingRisk,riskSignals,saveRiskSql,riskLabel,riskFromRow} from './booking-risk';
 import { DomainError, required, number, interval, quote, roles, assistantReply, type Role } from './domain';
 import { ratingsFor } from './stay-reviews';
@@ -542,18 +543,20 @@ export class RentalService {
     }
     if(body.action==='report_checkin'){
       if(b.guest_id!==this.userId)throw new DomainError('Сообщить о заселении может гость.',403);
-      if(b.status!=='confirmed'||b.start>now()||b.end<=now()||terms?.actual_checkin)throw new DomainError('Сейчас нельзя сообщить о заселении по этой брони.',409);
+      if(b.status!=='confirmed'||b.end<=now()||terms?.actual_checkin)throw new DomainError('Сейчас нельзя сообщить о заселении по этой брони.',409);
+      if(b.start-CHECKIN_LEAD_SECONDS>now())throw new DomainError('Сообщить о заселении можно за 15 минут до заезда: '+checkinOpensLabel(b.start,now())+'.',409);
       await this.db.batch([this.query('UPDATE booking_terms SET checkin_reported_at=?,version=version+1 WHERE booking_id=? AND checkin_reported_at IS NULL AND actual_checkin IS NULL',now(),bookingId),this.notify(b.owner_id,'Гость сообщил, что заселился в «'+b.title+'».','checkin-reported:'+bookingId,'owner'),this.audit(bookingId,'booking.checkin_reported')]);
       return {message:'Спасибо! Заселение подтвердится, как только будут проверены оплата и депозит.'};
     }
     if(body.action==='checkin'){
       if(!owner)throw new DomainError('Заселение подтверждает владелец.',403);
       if(terms?.actual_checkin&&!terms.actual_checkout&&op?.active_booking_id===bookingId)return {message:'Заселение уже подтверждено.'};
-      if(b.status!=='confirmed'||b.start>now()||b.end<=now()||terms?.actual_checkout)throw new DomainError('Сейчас нельзя подтвердить заселение по этой брони.',409);
+      if(b.status!=='confirmed'||b.end<=now()||terms?.actual_checkout)throw new DomainError('Сейчас нельзя подтвердить заселение по этой брони.',409);
+      if(b.start-CHECKIN_LEAD_SECONDS>now())throw new DomainError('Подтвердить заселение можно за 15 минут до заезда: '+checkinOpensLabel(b.start,now())+'.',409);
       if(b.payment_status!=='owner_verified'||terms?.deposit_status==='pending')throw new DomainError('Сначала проверьте оплату проживания и предусмотренный депозит.',409);
       // Under execution the mandate and the guest's report are checked again inside the write.
       const checkinGate=this.execution?" AND t.checkin_reported_at IS NOT NULL AND EXISTS(SELECT 1 FROM property_policies pp WHERE pp.property_id=b.property_id AND pp.version=? AND pp.auto_confirm=1 AND pp.auto_assign=1 AND (pp.mandate_until=0 OR pp.mandate_until>?))":'';
-      const result=await this.db.batch([this.query("UPDATE property_operations SET readiness='occupied',active_booking_id=?,version=version+1,updated_at=? WHERE property_id=? AND readiness='ready' AND active_booking_id IS NULL AND EXISTS(SELECT 1 FROM bookings b JOIN booking_terms t ON t.booking_id=b.id WHERE b.id=? AND b.status='confirmed' AND b.start<=? AND b.end>? AND b.payment_status='owner_verified' AND t.deposit_status<>'pending' AND t.actual_checkout IS NULL"+checkinGate+")",bookingId,now(),b.property_id,bookingId,now(),now(),...(this.execution?[this.execution.policyVersion,now()]:[])),this.query('UPDATE booking_terms SET actual_checkin=?,version=version+1 WHERE booking_id=? AND actual_checkin IS NULL AND EXISTS(SELECT 1 FROM property_operations WHERE property_id=? AND active_booking_id=?)',now(),bookingId,b.property_id,bookingId),this.audit(bookingId,'booking.checkin_requested')]);
+      const result=await this.db.batch([this.query("UPDATE property_operations SET readiness='occupied',active_booking_id=?,version=version+1,updated_at=? WHERE property_id=? AND readiness='ready' AND active_booking_id IS NULL AND EXISTS(SELECT 1 FROM bookings b JOIN booking_terms t ON t.booking_id=b.id WHERE b.id=? AND b.status='confirmed' AND b.start-"+CHECKIN_LEAD_SECONDS+"<=? AND b.end>? AND b.payment_status='owner_verified' AND t.deposit_status<>'pending' AND t.actual_checkout IS NULL"+checkinGate+")",bookingId,now(),b.property_id,bookingId,now(),now(),...(this.execution?[this.execution.policyVersion,now()]:[])),this.query('UPDATE booking_terms SET actual_checkin=?,version=version+1 WHERE booking_id=? AND actual_checkin IS NULL AND EXISTS(SELECT 1 FROM property_operations WHERE property_id=? AND active_booking_id=?)',now(),bookingId,b.property_id,bookingId),this.audit(bookingId,'booking.checkin_requested')]);
       if(!result[0].meta.changes)throw new DomainError('Жильё не готово или в нём ещё проживает другой гость.',409);return {message:'Фактическое заселение подтверждено.'};
     }
     if(body.action==='dispute_checkout'){

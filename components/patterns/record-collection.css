@@ -61,6 +61,7 @@ html[data-design=unified] [data-slot=sheet-content].record-details-sheet:is(.kin
 .record-actions [data-slot=button].record-action.is-side{background:var(--t-surface);color:var(--t-ink);border:1px solid var(--t-line)}
 .record-actions [data-slot=button].record-action.is-danger{background:transparent;color:var(--t-danger);border:0;font-weight:500}
 .record-actions [data-slot=button].record-action.is-danger:hover{background:var(--t-danger-soft)}
+.record-actions .record-action-note{margin:0;font-size:12px;line-height:1.5;color:var(--t-muted);text-align:center}
 .record-card .booking-changes>.inline-button.secondary{width:100%}
 .record-card>.activity-timer{margin:0}
 
