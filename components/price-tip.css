@@ -45,3 +45,14 @@
 @media (prefers-reduced-motion:reduce){.price-tip{animation:none}}
 @media (max-width:400px){.price-tip-actions button{padding:0 var(--t-space-12)}.price-tip-accept svg{display:none}}
 @media (min-width:900px){.price-tip{top:var(--t-space-16);left:auto;right:72px;width:400px;margin:0}}
+.forecast-days{display:grid;grid-template-columns:repeat(7,1fr);gap:var(--t-space-4);margin:var(--t-space-12) 0 0;padding:0;list-style:none}
+.forecast-days li{display:flex;flex-direction:column;align-items:center;gap:2px;min-width:0}
+.forecast-bar{position:relative;display:block;width:100%;max-width:32px;height:56px;border-radius:var(--t-radius-sm);background:var(--t-surface-alt);overflow:hidden}
+.forecast-bar i{position:absolute;left:0;right:0;bottom:0;border-radius:var(--t-radius-sm);background:var(--t-accent-line)}
+.forecast-days .is-busy .forecast-bar i{background:linear-gradient(180deg,var(--t-ai-to),var(--t-accent))}
+.forecast-days .is-quiet .forecast-bar i{background:var(--t-line-strong)}
+.forecast-days b{font-size:12px;line-height:16px;font-weight:600;color:var(--t-ink)}
+.forecast-days .is-quiet b{color:var(--t-muted)}
+.forecast-days small{font-size:12px;line-height:16px;color:var(--t-muted)}
+.forecast-days .is-busy small{color:var(--t-accent);font-weight:600}
+.price-tip-why.is-summary{margin-top:var(--t-space-8);color:var(--t-ink);font-weight:500}

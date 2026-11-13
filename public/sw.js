@@ -3,7 +3,7 @@ const allowed=path=>/^\/workspace\/(guest|owner|cleaner)\/(assistant|map)$/.test
 self.addEventListener('push',event=>{
  let data={};try{data=event.data?.json()||{};}catch{}
  // The AI administrator's price advice is answered right from the notification: two buttons, the owner's choice.
- if(['price','window','stay'].includes(data.kind)&&data.decision&&typeof data.decision.id==='string'){
+ if(['price','window','stay','forecast'].includes(data.kind)&&data.decision&&typeof data.decision.id==='string'){
   const d=data.decision;
   event.waitUntil(self.registration.showNotification(String(data.title||'AI администратор').slice(0,120),{
    body:String(data.body||'').slice(0,300),icon:'/brand-mark.png',badge:'/brand-mark.png',tag:data.kind==='price'?'price-advice':data.kind,renotify:true,requireInteraction:true,

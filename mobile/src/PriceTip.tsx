@@ -27,6 +27,33 @@ function WindowTipBody({card,busy,onDecide,compact}:{card:Approval;busy:boolean;
  </View>;
 }
 
+// The week ahead: seven evenings of the city, the busy ones tall and bright, the quiet ones low.
+function ForecastTipBody({card,busy,onDecide,compact}:{card:Approval;busy:boolean;onDecide:(action:'accept'|'reject')=>void;compact:boolean}){
+ const f=card.forecast!,priced=f.advice==='raise'||f.advice==='lower';
+ return <View>
+  <View style={t.days} accessible accessibilityLabel={'Загрузка города по вечерам: '+f.days.map(d=>d.label+' '+d.load+'%').join(', ')}>
+   {f.days.map(d=><View key={d.label+d.date} style={t.day}>
+    <View style={t.bar}><View style={[t.fill,{height:`${Math.max(8,d.load)}%`},d.level==='busy'?t.fillBusy:d.level==='quiet'?t.fillQuiet:null]}/></View>
+    <Text style={[t.dayLabel,d.level==='quiet'&&{color:C.muted}]}>{d.label}</Text><Text style={[t.dayLoad,d.level==='busy'&&t.dayLoadBusy]}>{d.load+'%'}</Text>
+   </View>)}
+  </View>
+  <Text numberOfLines={2} style={t.summary}>{f.summary+'.'}</Text>
+  {priced&&<View style={t.priceRow} accessible accessibilityLabel={'Сейчас '+money(f.from)+', предлагаю '+money(f.to)}>
+   <Text style={t.from}>{money(f.from)}</Text><Text style={t.arrow}>→</Text><Text style={t.to}>{money(f.to)}</Text>
+   <View style={[t.delta,f.advice==='raise'?t.deltaUp:t.deltaDown]}><Text style={[t.deltaText,{color:f.advice==='raise'?C.success:C.warning}]}>{(f.advice==='raise'?'+':'−')+f.percent+'%'}</Text></View>
+  </View>}
+  {f.advice==='min_hours'&&<View style={t.priceRow} accessible accessibilityLabel={'Минимум '+f.from+' ч, предлагаю '+f.to+' ч'}>
+   <Text style={t.from}>{'от '+f.from+' ч'}</Text><Text style={t.arrow}>→</Text><Text style={t.to}>{'от '+f.to+' ч'}</Text>
+  </View>}
+  {f.advice!=='none'&&<Text numberOfLines={compact?2:4} style={t.rows}>{'«'+f.title+'» свободна в эти дни'+(compact?'':'. '+f.reasons.join(' · '))}</Text>}
+  <View style={t.actions}>
+   <Pressable accessibilityRole="button" accessibilityLabel={card.acceptLabel} disabled={busy} onPress={()=>onDecide('accept')} style={({pressed})=>[t.accept,(busy||pressed)&&t.dim]}><Text numberOfLines={1} style={t.acceptText}>{card.acceptLabel}</Text></Pressable>
+   <Pressable accessibilityRole="button" accessibilityLabel={card.rejectLabel} disabled={busy} onPress={()=>onDecide('reject')} style={({pressed})=>[t.reject,(busy||pressed)&&t.dim]}><Text style={t.rejectText}>{card.rejectLabel}</Text></Pressable>
+  </View>
+  {!compact&&f.advice!=='none'&&<Text style={t.note}>Без вашего согласия ничего не изменится.</Text>}
+ </View>;
+}
+
 // Late checkout or early check-in for the guest who asked about it in the booking chat.
 function StayTipBody({card,busy,onDecide,compact}:{card:Approval;busy:boolean;onDecide:(action:'accept'|'reject')=>void;compact:boolean}){
  const o=card.stay!;
@@ -45,6 +72,7 @@ function StayTipBody({card,busy,onDecide,compact}:{card:Approval;busy:boolean;on
 }
 
 export function PriceTipBody({card,busy,onDecide,compact=false}:{card:Approval;busy:boolean;onDecide:(action:'accept'|'reject')=>void;compact?:boolean}){
+ if(card.forecast)return <ForecastTipBody card={card} busy={busy} onDecide={onDecide} compact={compact}/>;
  if(card.stay)return <StayTipBody card={card} busy={busy} onDecide={onDecide} compact={compact}/>;
  if(card.window)return <WindowTipBody card={card} busy={busy} onDecide={onDecide} compact={compact}/>;
  const p=card.price!,up=p.direction==='up';
@@ -68,7 +96,7 @@ export function PriceTipBody({card,busy,onDecide,compact=false}:{card:Approval;b
 export function PriceTip({cards,onChanged,role='owner'}:{cards:Approval[];onChanged?:()=>unknown;role?:'owner'|'guest'}){
  const [later,setLater]=useState<string[]>([]),[busy,setBusy]=useState(false),[result,setResult]=useState<{text:string;error:boolean}|null>(null);
  const [slide]=useState(()=>new Animated.Value(0));
- const card=cards.find(c=>(c.kind==='price'&&c.price||c.kind==='window'&&c.window||c.kind==='stay'&&c.stay)&&c.canDecide&&!later.includes(c.id));
+ const card=cards.find(c=>(c.kind==='price'&&c.price||c.kind==='window'&&c.window||c.kind==='stay'&&c.stay||c.kind==='forecast'&&c.forecast)&&c.canDecide&&!later.includes(c.id));
  const visible=!!card||!!result;
  useEffect(()=>{Animated.spring(slide,{toValue:visible?1:0,useNativeDriver:true,friction:8,tension:60}).start();},[visible,card?.id]);
  useEffect(()=>{if(!result)return;const timer=setTimeout(()=>setResult(null),result.error?8000:5000);return()=>clearTimeout(timer);},[result]);
@@ -81,10 +109,10 @@ export function PriceTip({cards,onChanged,role='owner'}:{cards:Approval[];onChan
   catch(error){setResult({text:error instanceof Error?error.message:'Не получилось. Обновите экран.',error:true});}
   finally{setBusy(false);}
  }
- return <Animated.View style={[t.box,style]} accessibilityLabel={card.stay?'Предложение AI администратора по времени проживания':card.window?'Окно в календаре от AI администратора':'Совет AI администратора по цене'}>
+ return <Animated.View style={[t.box,style]} accessibilityLabel={card.forecast?'Прогноз загрузки на неделю от AI администратора':card.stay?'Предложение AI администратора по времени проживания':card.window?'Окно в календаре от AI администратора':'Совет AI администратора по цене'}>
   <View style={t.head}>
-   <View style={t.icon}><Text style={t.iconText}>✦</Text></View>
-   <View style={t.titleBox}><Text style={t.small}>{'AI администратор · '+(card.stay?(card.stay.kind==='late'?'поздний выезд':'ранний заезд'):card.window?'окно в календаре':card.price?.direction==='up'?'спрос вырос':'спрос снизился')}</Text><Text numberOfLines={1} style={t.title}>{card.subject}</Text></View>
+   <View style={t.icon}><Text style={t.iconText}>{card.forecast?'▥':'✦'}</Text></View>
+   <View style={t.titleBox}><Text style={t.small}>{'AI администратор · '+(card.forecast?'прогноз на неделю':card.stay?(card.stay.kind==='late'?'поздний выезд':'ранний заезд'):card.window?'окно в календаре':card.price?.direction==='up'?'спрос вырос':'спрос снизился')}</Text><Text numberOfLines={1} style={t.title}>{card.subject}</Text></View>
    <Pressable accessibilityRole="button" accessibilityLabel="Позже" onPress={()=>setLater(v=>[...v,card.id])} style={t.close}><Text style={t.closeText}>×</Text></Pressable>
   </View>
   <PriceTipBody card={card} busy={busy} onDecide={decide} compact/>
@@ -127,5 +155,12 @@ const t=StyleSheet.create({
  rejectText:{fontSize:F.body[0],lineHeight:F.body[1],fontWeight:'600',color:C.ink},
  note:{marginTop:8,fontSize:F.caption[0],lineHeight:F.caption[1],color:C.muted,textAlign:'center'},
  resultText:{flex:1,fontSize:F.body[0],lineHeight:F.body[1],color:C.ink},
+ days:{flexDirection:'row',gap:4,marginTop:12},
+ day:{flex:1,alignItems:'center',gap:2},
+ bar:{width:'100%',maxWidth:32,height:56,borderRadius:R.sm,backgroundColor:C.surfaceAlt,overflow:'hidden',justifyContent:'flex-end'},
+ fill:{width:'100%',borderRadius:R.sm,backgroundColor:C.accentLine},fillBusy:{backgroundColor:C.accent},fillQuiet:{backgroundColor:C.lineStrong},
+ dayLabel:{fontSize:F.caption[0],lineHeight:F.caption[1],fontWeight:'600',color:C.ink},
+ dayLoad:{fontSize:F.caption[0],lineHeight:F.caption[1],color:C.muted},dayLoadBusy:{color:C.accent,fontWeight:'600'},
+ summary:{marginTop:8,fontSize:F.label[0],lineHeight:F.label[1],fontWeight:'500',color:C.ink},
  dim:{opacity:.6},
 });
