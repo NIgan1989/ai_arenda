@@ -17,10 +17,10 @@ export function priceChange(from:number,to:number){return from>=10000&&to>=10000
 // an arrival or a cleaning within a day; otherwise its price, or the AI's price advice with the AI ring.
 export function ownerPin(property:Row,processes:Row[],now:number,advice?:{from:number;to:number}|null):OwnerPin{
  const mine=processes.filter(p=>p.propertyId===property.id),of=(kind:string,...status:string[])=>mine.filter(p=>p.kind===kind&&status.includes(p.status)).sort((a,b)=>Number(a.start)-Number(b.start));
- // Trouble first, in red: a cleaning past its deadline, then an arrival within the hour while a cleaning that began before it is not accepted.
+ // Trouble first, in red: a cleaning past its deadline, then an arrival within the hour (or already due) while a cleaning that began before it is not accepted.
  // The same rules the AI administrator uses for its reminders (lib/administrator.ts).
  if(of('job','open','assigned','in_progress').some(j=>Number(j.end)<=now))return {label:'Уборка просрочена',tone:'alert'};
- const unfinished=of('job','open','assigned','in_progress','submitted'),risky=unfinished.length?of('booking','confirmed').find(b=>Number(b.start)>now&&Number(b.start)<=now+3600&&unfinished.some(j=>Number(j.start)<Number(b.start))):undefined;
+ const unfinished=of('job','open','assigned','in_progress','submitted'),risky=unfinished.length?of('booking','confirmed').find(b=>Number(b.end)>now&&Number(b.start)<=now+3600&&unfinished.some(j=>Number(j.start)<Number(b.start))):undefined;
  if(risky)return {label:'Заезд под угрозой',tone:'alert'};
  // Cleaning under way fills a strip on the pin, from its start to the end of its window (see cleaner-map.ts).
  const working=of('job','in_progress')[0];if(working){const a=Number(working.startedAt),b=Number(working.end);return {label:'Уборка идёт',tone:'active',...(a>0&&b>a?{progress:Math.max(0,Math.min(1,(now-a)/(b-a)))}:{})};}

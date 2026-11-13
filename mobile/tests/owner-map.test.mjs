@@ -26,6 +26,8 @@ test('the most urgent state of an object wins over its price', () => {
   assert.deepEqual(ownerPin(flat, [late, booking('confirmed', at(hour + 5), at(hour + 9))], now), {label: 'Уборка просрочена', tone: 'alert'});
   const soonGuest = booking('confirmed', now + 1800, now + 9 * 3600);
   assert.deepEqual(ownerPin(flat, [{...job('submitted', now - 7200), end: now + 600}, soonGuest], now), {label: 'Заезд под угрозой', tone: 'alert'});
+  // The arrival time has come and the cleaning is still not accepted: the alarm stays.
+  assert.deepEqual(ownerPin(flat, [{...job('submitted', now - 7200), end: now + 600}, booking('confirmed', now - 600, now + 9 * 3600)], now), {label: 'Заезд под угрозой', tone: 'alert'});
   // The cleaning after that same guest is not a risk for their arrival.
   assert.deepEqual(ownerPin(flat, [{...job('open', now + 10 * 3600), end: now + 12 * 3600}, soonGuest], now).tone, 'booking');
   assert.deepEqual(ownerPin(flat, [{...job('assigned', now - 1200), end: now + 7200}], now), {label: 'Исполнитель не начал', tone: 'alert'});
