@@ -15,3 +15,6 @@ html[data-design="unified"] .property-listing.listing-compact .listing-expand{mi
 html[data-design="unified"] .property-listing.listing-compact .listing-footer{padding-top:12px;margin-top:0;align-items:center}
 html[data-design="unified"] .property-listing.listing-compact .listing-footer strong{font-size:22px;line-height:28px}
 html[data-design="unified"] .property-listing.listing-compact .listing-footer small{font-size:12px;line-height:16px}
+
+/* «Цена выгодная» next to the total for the guest's dates. */
+.listing-footer .listing-deal{display:flex;margin-block:4px;white-space:nowrap;align-self:flex-start;width:fit-content;padding:2px 8px;border-radius:var(--t-radius-full);background:var(--t-success-soft);color:var(--t-success);font-size:12px;line-height:16px;font-weight:600}

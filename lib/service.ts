@@ -1,5 +1,6 @@
 import { DomainError, required, number, interval, quote, roles, assistantReply, type Role } from './domain';
 import { ratingsFor } from './stay-reviews';
+import { markDeals } from './price-deal';
 import { generateAnswer, assistantContext, type AIConfig,type AIToolExecutor } from './ai';
 import { operationOverview } from './operations';
 import { defaultPolicy,publicPolicy,policyInput,rentalPrice,changeRentalPrice,mandateActive } from './rental-policy';
@@ -304,6 +305,8 @@ export class RentalService {
       items=items.filter(p=>!occupied.has(p.id)&&!['maintenance','blocked'].includes(p.display_status.code)&&(start>now()+60||p.display_status.code==='ready'));
       const windows=mode==='hourly'?await openWindowsFor(this.db,start,end):new Map();
       items=items.flatMap(p=>{try{const price=windowQuote(rentalPrice(p.price,p.policy,start,end,mode),p.policy.hourly_price,windows.get(p.id));return [{...p,estimate:{amount:price.amount,periods:price.periods,rate:price.price,unitLabel:price.unitLabel,...(price.window?{window:price.window}:{})}}];}catch(error){if(error instanceof DomainError)return [];throw error;}});
+      // «Цена выгодная»: compared with the other free flats of the city for the same dates, before any budget or page cuts them.
+      items=markDeals(items);
     }
     // Open calendar windows: guests see the discounted hourly price and until when it lasts.
     if(!range){const windows=await openWindowsFor(this.db,null,null);if(windows.size)items=items.map(p=>{const w=windows.get(p.id);return w&&w.hourly_to<p.policy.hourly_price?{...p,window:{percent:Math.round((1-w.hourly_to/p.policy.hourly_price)*100),start:w.start,end:w.end,hourly:w.hourly_to}}:p;});}

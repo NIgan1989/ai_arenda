@@ -6,6 +6,7 @@ import {ApiError,isOffline,request} from './api';
 import {Photo} from './ListingMedia';
 import {date,labels,money,uid,type Role,type Row} from './model';
 import {windowBadge} from '../../lib/window-badge';
+import {dealBadge} from '../../lib/price-deal';
 import {C} from './styles';
 import {T} from './tokens';
 import {TileMap,type MapPin} from './TileMap';
@@ -167,6 +168,7 @@ function GuestPanel({setScanning,accountId,data,mapData,publish,selected,setSele
      <Text style={h.cardTitle}>{offer.title}</Text><Text style={h.note}>{[offer.city,offer.district].filter(Boolean).join(' · ')}</Text>
      <Text style={h.price}>{money(offer.estimate.amount)}</Text>
      {!!windowBadge(offer.estimate.window)&&<Text style={h.reason}>✦ {windowBadge(offer.estimate.window)}</Text>}
+     {!!dealBadge(offer.estimate.deal)&&<Text style={h.reason}>✦ {dealBadge(offer.estimate.deal)}</Text>}
      <Text style={h.note}>{date(Date.parse(live.filters.start)/1000)} → {date(Date.parse(live.filters.end)/1000)} · гостей: {live.filters.guests}{'\n'}Депозит отдельно: {offer.policy?.deposit?money(offer.policy.deposit):'не требуется'}</Text>
      {shownReasons(offer.match?.reasons,{maxPrice:String(live.filters.maxPrice)===NO_BUDGET?'':String(live.filters.maxPrice||'')}).map((reason:string)=><Text key={reason} style={h.reason}>✓ {reason}</Text>)}
      {!!offer.policy?.house_rules&&<Text style={h.note}>Правила: {offer.policy.house_rules}</Text>}

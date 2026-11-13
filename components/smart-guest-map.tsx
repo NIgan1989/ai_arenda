@@ -50,6 +50,7 @@ const REASON_TEXT: Record<string, string> = { 'Готовность провер
 
 import { PriceTip } from './price-tip';
 import { windowBadge } from '../lib/window-badge';
+import { dealBadge, dealNote } from '../lib/price-deal';
 const money = (value: number) => new Intl.NumberFormat('ru-RU').format(value) + ' ₸';
 // ISO time of the server as the Kazakhstan-local string the form works with.
 const toLocal = (iso: string) => new Date(Date.parse(iso) + KZ).toISOString().slice(0, 16);
@@ -682,6 +683,7 @@ export function SmartGuestMap({ publicMode = false, onChanged, accountId, city, 
           .filter((reason: string) => limited || reason !== 'В пределах бюджета')
           .map((reason: string) => REASON_TEXT[reason] || reason),
         ...(current.ownerConfirmed ? ['Владелец подтвердил, что квартира свободна'] : []),
+        ...(current.estimate?.deal ? [dealNote(current.estimate.deal, money)] : []),
       ]
     : [];
   const canAskOwners = !requestId && candidates.some(property => property.quickRequest);
@@ -878,6 +880,7 @@ export function SmartGuestMap({ publicMode = false, onChanged, accountId, city, 
                   <h2 ref={heading} tabIndex={-1}>{current.title}</h2>
                   <strong>{priceLine(current, mode)}</strong>
                   {!!windowBadge(current.estimate?.window) && <span className="smart-window">{windowBadge(current.estimate.window)}</span>}
+                  {!!dealBadge(current.estimate?.deal) && <span className="smart-window smart-deal" title={dealNote(current.estimate.deal, money)}>{dealBadge(current.estimate.deal)}</span>}
                   <small>{current.policy.deposit ? 'Депозит ' + money(current.policy.deposit) + ' отдельно' : 'Без депозита'}</small>
                 </div>
               </div>
