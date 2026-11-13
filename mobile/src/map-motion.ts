@@ -2,15 +2,19 @@
 // The map never explains an event in words: the sheet does. The motion only says where it happened and of what kind,
 // the way a taxi app shows a car that has been found. With "reduce motion" on, none of it plays (see TileMap).
 
-export type PinTone='home'|'pending'|'offer'|'job'|'booking'|'booked'|'active';
+// alert: something is late or at risk (a cleaning past its deadline, a cleaner who has not started, an arrival in danger).
+export type PinTone='home'|'pending'|'offer'|'job'|'booking'|'booked'|'active'|'alert';
 export type PinState={tone:PinTone;label:string};
 // appear: a new pin drops onto the map; ask: a flat is asked (or an owner gets a request); answer: an owner or a job said yes;
 // celebrate: a booking is made; start: work has begun; settle: a request ended without a yes; update: the same thing, a new label.
-export type PinEvent='appear'|'ask'|'answer'|'celebrate'|'start'|'settle'|'update'|'none';
+// alarm: a thing became late or at risk; calm: the trouble is over.
+export type PinEvent='appear'|'ask'|'answer'|'celebrate'|'start'|'settle'|'update'|'alarm'|'calm'|'none';
 
 export function pinEvent(before:PinState|undefined,after:PinState):PinEvent{
  if(!before)return 'appear';
  if(before.tone===after.tone)return before.label===after.label?'none':'update';
+ if(after.tone==='alert')return 'alarm';
+ if(before.tone==='alert')return after.tone==='active'?'start':'calm';
  if(after.tone==='booked')return 'celebrate';
  if(after.tone==='pending')return 'ask';
  if(after.tone==='offer')return 'answer';
@@ -106,6 +110,8 @@ export const MAP_EVENTS:{role:'guest'|'owner'|'cleaner'|'all';event:string;motio
  {role:'guest',event:'Владелец подтвердил',motion:'Метка становится синей с подскоком и вспышкой, луч к ней сплошной'},
  {role:'guest',event:'Владелец отказал или не успел',motion:'Метка тает'},
  {role:'guest',event:'Бронь создана',motion:'Зелёная метка «Бронь» с подскоком и двойной вспышкой, лучи гаснут'},
+ {role:'guest',event:'Нужно оплатить бронь',motion:'Метка брони жёлтая «Оплатить» и дышит (на сайте)'},
+ {role:'guest',event:'Заселение открыто',motion:'За 15 минут до заезда метка брони становится зелёной «Можно заселяться» с двойной волной (на сайте)'},
  {role:'guest',event:'Подбор пуст, истёк или отменён',motion:'Метки тают, радар гаснет'},
  {role:'owner',event:'Состояние объекта',motion:'Метка объекта говорит главное: «Гость до 12:00», «Уборка идёт», «Заезд 21:00», «Уборка на приёмке», «Выезд не подтверждён» или цену'},
  {role:'owner',event:'Совет ИИ по цене',motion:'На метке «11 → 13 тыс.» в цветном кольце ИИ'},
@@ -114,6 +120,9 @@ export const MAP_EVENTS:{role:'guest'|'owner'|'cleaner'|'all';event:string;motio
  {role:'owner',event:'Пришёл быстрый запрос гостя',motion:'Объект вздрагивает, метка «Запрос» пульсирует'},
  {role:'owner',event:'Владелец ответил «Готов»',motion:'Метка «Ответ отправлен» со вспышкой'},
  {role:'owner',event:'Заявка подтверждена',motion:'Метка «Заявка» становится «Заезд 21:00» с подскоком и вспышкой, как ответ «да»'},
+ {role:'owner',event:'Уборка просрочена, исполнитель не начал или заезд под угрозой',motion:'Метка становится красной, вздрагивает и дышит, пока вопрос не решён'},
+ {role:'owner',event:'Исполнитель назначен или заменён',motion:'К метке объекта по дуге прилетает точка нового исполнителя'},
+ {role:'owner',event:'ИИ принял уборку',motion:'Метка на несколько минут зелёная «Готово к заезду» с двойной волной'},
  {role:'owner',event:'Отказ или время ответа вышло',motion:'Метка спокойно возвращается к цене'},
  {role:'cleaner',event:'Новое задание рядом',motion:'Метка «Уборка» падает на карту'},
  {role:'cleaner',event:'Отклик отправлен',motion:'Метка «Отклик ✓» коротко подпрыгивает'},
@@ -122,5 +131,6 @@ export const MAP_EVENTS:{role:'guest'|'owner'|'cleaner'|'all';event:string;motio
  {role:'cleaner',event:'Гость выехал',motion:'Метка следующей уборки меняется на «Начинайте» с подскоком'},
  {role:'cleaner',event:'Поехали',motion:'На нашей карте: маршрут по дорогам до следующей уборки, точка «Вы», в шторке ближайший поворот, остаток пути и времени'},
  {role:'cleaner',event:'Уборка началась',motion:'Метка «Уборка до 14:00» мягко дышит, полоска на ней заполняется к сроку'},
+ {role:'cleaner',event:'Пора начинать или срок уборки вышел',motion:'Метка становится красной, вздрагивает и дышит'},
  {role:'cleaner',event:'Отчёт на приёмке',motion:'Метка «На приёмке» без движения'}
 ];

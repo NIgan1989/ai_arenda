@@ -87,3 +87,16 @@ export function guestSteps(b: Row, now: number, paymentMode?: string): GuestStep
 export function guestStep(b: Row | null | undefined, now: number, paymentMode?: string): GuestStep | null {
   return b ? guestSteps(b, now, paymentMode).find(step => !step.disabled) || null : null;
 }
+
+// The guest's booking on the map: what it waits for, in one short label and a state colour.
+// Yellow while a payment is due, green from the moment the check-in opens (15 minutes before the arrival),
+// calm while the guest lives there. The step rules are guestSteps above.
+export function guestPin(b: Row, now: number, paymentMode?: string): { label: string; tone: 'pending' | 'booked' | 'booking' } | null {
+  if (b.status !== 'confirmed') return null;
+  const clock = (at: number) => { const d = new Date((at + 5 * 3600) * 1000); return String(d.getUTCHours()).padStart(2, '0') + ':' + String(d.getUTCMinutes()).padStart(2, '0'); };
+  const step = guestStep(b, now, paymentMode);
+  if (step?.id === 'pay' || step?.id === 'deposit') return { label: step.id === 'pay' ? 'Оплатить' : 'Внести депозит', tone: 'pending' };
+  if (step?.id === 'checkin') return { label: 'Можно заселяться', tone: 'booked' };
+  if (b.terms?.actual_checkin || b.terms?.checkin_reported_at) return { label: 'Вы здесь до ' + clock(b.end), tone: 'booking' };
+  return { label: 'Заезд ' + clock(b.start), tone: 'booking' };
+}

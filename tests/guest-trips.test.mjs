@@ -63,3 +63,14 @@ test('the guest reaches bookings and results from the sheet of the map, not from
  for(const source of [menu,appMenu])assert.match(source,/'catalog','bookings','calendar'/);
  assert.match(appMap,/guestTripsLabel\(trips\)/);assert.doesNotMatch(appMap,/Открыть каталог/);
 });
+
+test('the guest\'s own booking on the map says the next thing to do',async()=>{
+ const {guestPin}=await load('guest-trips');
+ assert.deepEqual(guestPin(booking('b'),now,'test'),{label:'Оплатить',tone:'pending'});
+ assert.equal(guestPin(booking('b',{status:'requested'}),now,'test'),null);
+ const paid={payment_status:'owner_verified',terms:{paid_amount:20000}};
+ assert.equal(guestPin(booking('b',paid),now,'test').tone,'booking');
+ assert.match(guestPin(booking('b',paid),now,'test').label,/^Заезд \d\d:\d\d$/);
+ assert.deepEqual(guestPin(booking('b',{...paid,start:now-hour}),now,'test'),{label:'Можно заселяться',tone:'booked'});
+ assert.match(guestPin(booking('b',{start:now-hour,terms:{paid_amount:20000,actual_checkin:now-hour}}),now,'test').label,/^Вы здесь до \d\d:\d\d$/);
+});

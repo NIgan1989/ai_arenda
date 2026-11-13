@@ -34,7 +34,10 @@ test('a job pin says what to do now', () => {
   const stop = {id: 'a', order: 2, start: at(11), end: at(14), status: 'assigned'};
   assert.deepEqual(cleanerPin(job('a', 'assigned', at(11), at(14)), stop, now, false), {label: '11:00', tone: 'offer', order: 2});
   assert.deepEqual(cleanerPin(job('a', 'assigned', at(9), at(14), {checkout_confirmed: false}), {...stop, start: at(9)}, now, false), {label: 'Ждём выезда', tone: 'offer', order: 2});
-  assert.deepEqual(cleanerPin(job('a', 'assigned', at(9), at(14), {checkout_confirmed: true}), {...stop, start: at(9)}, now, false), {label: 'Начинайте', tone: 'offer', order: 2});
+  assert.deepEqual(cleanerPin(job('a', 'assigned', at(9, 50), at(14), {checkout_confirmed: true}), {...stop, start: at(9, 50)}, now, false), {label: 'Начинайте', tone: 'offer', order: 2});
+  // A quarter of an hour late with the flat free, or past the deadline: the pin turns red.
+  assert.deepEqual(cleanerPin(job('a', 'assigned', at(9), at(14), {checkout_confirmed: true}), {...stop, start: at(9)}, now, false), {label: 'Пора начинать', tone: 'alert', order: 2});
+  assert.deepEqual(cleanerPin(job('a', 'in_progress', at(7), at(9, 30), {started_at: at(7)}), {...stop, order: 1}, now, false), {label: 'Срок вышел', tone: 'alert', order: 1});
   assert.deepEqual(cleanerPin(job('a', 'in_progress', at(9), at(11), {started_at: at(9)}), {...stop, order: 1}, now, false), {label: 'Уборка до 11:00', tone: 'active', order: 1, progress: 0.5});
   assert.deepEqual(cleanerPin(job('a', 'submitted', at(8), at(10)), undefined, now, false), {label: 'На приёмке', tone: 'booking'});
   assert.deepEqual(cleanerPin(job('a', 'assigned', at(11, 0, 1), at(14, 0, 1)), undefined, now, false), {label: 'завтра 11:00', tone: 'offer'});

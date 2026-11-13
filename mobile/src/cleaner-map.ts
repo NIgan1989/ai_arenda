@@ -30,12 +30,16 @@ export function progress(startedAt:unknown,end:unknown,now:number){
 export type CleanerPin={label:string;tone:PinTone;order?:number;progress?:number};
 export function cleanerPin(job:Row,stop:Stop|undefined,now:number,applied:boolean):CleanerPin{
  const status=String(job.status);
+ // Past the deadline: the report is due now.
+ if(status==='in_progress'&&Number(job.end)<=now)return {label:'Срок вышел',tone:'alert',order:stop?.order};
  if(status==='in_progress'){const until=soon(Number(job.end),now);return {label:until?'Уборка до '+until:'Уборка идёт',tone:'active',order:stop?.order,progress:progress(job.startedAt??job.started_at,job.end,now)};}
  if(status==='submitted')return {label:'На приёмке',tone:'booking'};
  if(status==='assigned'){
   if(!stop)return {label:soon(Number(job.start),now)||'Моё задание',tone:'offer'};
   // A guest already gone: the flat is free, the cleaning can start now.
   const ready=job.checkout_confirmed===true||job.checkout_confirmed===1;
+  // The flat is free and the start is a quarter of an hour late: the owner already sees «Исполнитель не начал».
+  if(ready&&Number(job.start)+900<=now)return {label:'Пора начинать',tone:'alert',order:stop.order};
   return {label:Number(job.start)<=now?(ready?'Начинайте':'Ждём выезда'):soon(Number(job.start),now)||'Сегодня',tone:'offer',order:stop.order};
  }
  return applied?{label:'Отклик ✓',tone:'job'}:{label:'Уборка',tone:'job'};

@@ -26,6 +26,10 @@ test('each change of a pin is one named event', () => {
   assert.equal(pinEvent(pin('job'), pin('offer')), 'answer');
   assert.equal(pinEvent(pin('offer'), pin('active')), 'start');
   assert.equal(pinEvent(pin('active'), pin('booking')), 'update');
+  // Trouble: late or at risk, then solved.
+  assert.equal(pinEvent(pin('active'), pin('alert')), 'alarm');
+  assert.equal(pinEvent(pin('alert'), pin('job')), 'calm');
+  assert.equal(pinEvent(pin('alert'), pin('active')), 'start');
 });
 
 test('a new set of pins appears as a wave from the middle, within 360ms', () => {

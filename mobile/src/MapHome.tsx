@@ -11,7 +11,7 @@ import {dealBadge} from '../../lib/price-deal';
 import {C} from './styles';
 import {T} from './tokens';
 import {LiveMap,type HeatPoint,type MapLine,type MapPin} from './LiveMap';
-import {ownerPin,travellers} from './owner-map';
+import {ownerPin,travellers,withAiResult} from './owner-map';
 import {cleanerPin,dayRoute,routeLines,routeSummary} from './cleaner-map';
 import {latestMove} from '../../lib/ai-move-marks';
 import {TripHead,useTrip} from './Navigator';
@@ -262,8 +262,8 @@ function OwnerPanel({data,mapData,publish,snap,showNow,expand,onHead,onAsk,onInt
   // Each object says its most urgent state; the AI's price advice puts the AI ring on it.
   const advice=new Map<string,{from:number;to:number}>((data.approvals||[]).filter((c:Row)=>c.kind==='price'&&c.price?.propertyId&&c.canDecide).map((c:Row)=>[c.price.propertyId,{from:Number(c.price.from),to:Number(c.price.to)}]));
   const clock=serverNow(mapData||data);
-  const own=(mapData?.properties||[]).flatMap((p:Row):MapPin[]=>{const point=pointOf(p),sent=!!answered[p.id]&&!asked.has(p.id),state=ownerPin(p,processes,clock,advice.get(p.id));
-   return point?[{key:'property:'+p.id,point,title:p.title,label:asked.has(p.id)?'Запрос':sent?'Ответ отправлен':state.label,rank:typeof p.price==='number'?p.price:0,tone:asked.has(p.id)?'pending':sent?'offer':state.tone,best:!asked.has(p.id)&&!sent&&state.best,until:asked.get(p.id),progress:asked.has(p.id)||sent?undefined:state.progress,ai:latestMove(mapData?.aiMarks,[{kind:'property',id:String(p.id)}],clock)}]:[];});
+  const own=(mapData?.properties||[]).flatMap((p:Row):MapPin[]=>{const point=pointOf(p),sent=!!answered[p.id]&&!asked.has(p.id),aiMove=latestMove(mapData?.aiMarks,[{kind:'property',id:String(p.id)}],clock),state=withAiResult(ownerPin(p,processes,clock,advice.get(p.id)),aiMove?.move);
+   return point?[{key:'property:'+p.id,point,title:p.title,label:asked.has(p.id)?'Запрос':sent?'Ответ отправлен':state.label,rank:typeof p.price==='number'?p.price:0,tone:asked.has(p.id)?'pending':sent?'offer':state.tone,best:!asked.has(p.id)&&!sent&&state.best,until:asked.get(p.id),progress:asked.has(p.id)||sent?undefined:state.progress,ai:aiMove}]:[];});
   const moving=travellers(mapData?.journeys||[]).map((t):MapPin=>({...t,title:t.label,tone:'active'}));
   // Demand: the heat of the city, and sparks over the busiest places while guests are asking owners right now.
   const cells:Row[]=mapData?.demand?.cells||[],searching=Number(mapData?.demand?.searching)||0;
