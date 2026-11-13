@@ -3,7 +3,7 @@ import { goWorkspace } from '../lib/workspace-go';
 import {Thinking} from './thinking';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { ArrowLeft, ArrowUpRight, LocateFixed, Pencil } from 'lucide-react';
+import { ArrowLeft, ArrowUpRight, ChevronRight, LocateFixed, Pencil } from 'lucide-react';
 import { MapCanvas } from './map-canvas';
 import { beams } from '../mobile/src/map-motion';
 import { pinsOf } from '../lib/map-pin-of';
@@ -12,6 +12,7 @@ import { PropertyCover } from './property-cover';
 import { BookingRequest } from './booking-request';
 import { SearchIntro, type SearchFocus, type SearchLink, type SearchNote } from './public-search-intro';
 import { nowCard, type NowCardData } from './now-card';
+import { guestTrips, guestTripsLabel } from '../lib/guest-trips';
 import { administratorChatPath, askAdministratorInChats, cleanAiText, leaveAiAsk, type AiChip } from '../lib/ai-line';
 import { mapCities, cityNearLocation } from '../lib/map-location';
 import { requestBrowserLocation, type BrowserLocationFix } from '../lib/browser-location';
@@ -30,8 +31,8 @@ type SmartGuestMapProps = {
   accountId: string;
   city?: string;
   onChoose: (property: Row, filters: Row) => void;
-  /** Part of the shell's contract. The guest's own stay is the "Сейчас" card now, so nothing here calls it. */
-  onActivity?: () => void;
+  /** Opens the guest's own bookings on the map: all of them, or the one with this id at once. */
+  onActivity?: (bookingId?: string) => void;
   /** The /api/state payload the shell has already loaded. Only without it does the map load the state itself. */
   data?: Row;
   /** Opens a booking with its actions; without it the "Сейчас" card links to the bookings page. */
@@ -172,6 +173,13 @@ function understoodLine(result: GuestSearch, before: Row) {
   return parts.length ? 'Понял: ' + parts.join(', ') + '. ' : '';
 }
 
+// One mark per row of the list: the best choice, else a good price, else a short window between two stays.
+function rowBadge(property: Row): { text: string; deal?: boolean } | null {
+  if (property.match?.best) return { text: 'Лучший выбор' };
+  const deal = dealBadge(property.estimate?.deal), gap = windowBadge(property.estimate?.window);
+  return deal ? { text: deal, deal: true } : gap ? { text: gap } : null;
+}
+
 function priceLine(property: Row, mode: string) {
   const periods = Number(property.estimate?.periods) || 1;
   const length = mode === 'hourly'
@@ -227,6 +235,8 @@ export function SmartGuestMap({ publicMode = false, onChanged, accountId, city, 
   const [preview, setPreview] = useState<Row | null>(null);
   const [requestId, setRequestId] = useState('');
   const [index, setIndex] = useState(0);
+  // Several results are a list first; one of them is opened from the list or by its pin on the map.
+  const [opened, setOpened] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [expanded, setExpanded] = useState(false);
@@ -274,6 +284,7 @@ export function SmartGuestMap({ publicMode = false, onChanged, accountId, city, 
   });
   const account = data || ownState.data;
   const card = publicMode || !account ? null : nowCard('guest', account, account.serverTime || Date.now() / 1000);
+  const trips = publicMode || !account ? [] : guestTrips(account, account.serverTime || Date.now() / 1000);
 
   const live = useQuery({
     queryKey: ['smart-matching', accountId, requestId],
@@ -288,6 +299,7 @@ export function SmartGuestMap({ publicMode = false, onChanged, accountId, city, 
   const waiting = !!requestId && (!state || state.status === 'searching' || state.status === 'booking');
   const candidates: Row[] = requestId ? state?.properties || [] : preview?.properties || [];
   const current = candidates[Math.min(index, Math.max(0, candidates.length - 1))];
+  const listed = stage === 'result' && candidates.length > 1 && !opened;
   const filters: Row | undefined = state?.filters || preview?.filters;
   const items = [...candidates, ...(state?.pendingProperties || [])].map(property => ({
     ...property, mapKey: 'property:' + property.id, matchPending: !property.ownerConfirmed && !!requestId,
@@ -480,6 +492,7 @@ export function SmartGuestMap({ publicMode = false, onChanged, accountId, city, 
     setError('');
     setNote(null);
     setIndex(0);
+    setOpened(false);
     setDraft(next);
     setStage('search');
     try {
@@ -583,6 +596,7 @@ export function SmartGuestMap({ publicMode = false, onChanged, accountId, city, 
       remember(requestStorage, result.id);
       setStage('search');
       setIndex(0);
+      setOpened(false);
     } catch (failure) {
       setError(told(failure, 'Не удалось отправить запрос. Попробуйте ещё раз.'));
     } finally {
@@ -663,8 +677,10 @@ export function SmartGuestMap({ publicMode = false, onChanged, accountId, city, 
     }
   }
 
+  // A booking opens on the map of the guest's stays: its next step, the way to the place and how to get in.
   function openCard(now: NowCardData) {
-    if (onProcess && now.entityKind && now.entityId) onProcess(now.entityKind, now.entityId);
+    if (onActivity && now.entityKind === 'booking' && now.entityId) onActivity(now.entityId);
+    else if (onProcess && now.entityKind && now.entityId) onProcess(now.entityKind, now.entityId);
     else if (now.href) goWorkspace(now.href);
   }
 
@@ -718,11 +734,12 @@ export function SmartGuestMap({ publicMode = false, onChanged, accountId, city, 
         adaptivePanel
         searching={waiting}
         items={items}
-        selected={current ? 'property:' + current.id : ''}
+        selected={current && !listed ? 'property:' + current.id : ''}
         onSelect={id => {
           const found = candidates.findIndex(property => 'property:' + property.id === id);
           if (found >= 0) {
             setIndex(found);
+            setOpened(true);
             setStage('result');
           }
         }}
@@ -769,7 +786,7 @@ export function SmartGuestMap({ publicMode = false, onChanged, accountId, city, 
           focus={focus}
           card={card}
           onOpenCard={openCard}
-          onRoute={onActivity}
+          trips={onActivity && trips.length ? { label: guestTripsLabel(trips), hint: trips[0].open ? trips[0].status : '', onOpen: () => onActivity() } : undefined}
           onText={text => void ask(text)}
           onChip={chip}
           onChange={change}
@@ -795,6 +812,7 @@ export function SmartGuestMap({ publicMode = false, onChanged, accountId, city, 
         <section
           ref={setPanel}
           className="map-home-panel smart-stage"
+          data-view={listed ? 'list' : undefined}
           data-expanded={stage === 'detail' || stage === 'book' ? 'true' : 'false'}
           aria-label="Подбор жилья"
         >
@@ -842,10 +860,16 @@ export function SmartGuestMap({ publicMode = false, onChanged, accountId, city, 
             <div className="smart-done">
               <h2 ref={heading} tabIndex={-1}>Заявка отправлена</h2>
               <p>Ответ владельца появится в бронях. Деньги не списаны.</p>
-              <a className="smart-primary" href="/workspace/guest/bookings">
-                Мои брони
-                <ArrowUpRight size={18} aria-hidden="true" />
-              </a>
+              {onActivity ? (
+                <button type="button" className="smart-primary" onClick={() => { forget(requestStorage); onActivity(state.bookingId || undefined); }}>
+                  Открыть бронь
+                </button>
+              ) : (
+                <a className="smart-primary" href="/workspace/guest/bookings">
+                  Мои брони
+                  <ArrowUpRight size={18} aria-hidden="true" />
+                </a>
+              )}
               <button type="button" className="smart-route" disabled={busy} onClick={() => void edit()}>
                 Новый поиск
               </button>
@@ -876,16 +900,51 @@ export function SmartGuestMap({ publicMode = false, onChanged, accountId, city, 
                 property={current}
                 filters={filters}
                 requestId={requestId}
-                onChanged={() => live.refetch()}
+                onChanged={async () => { await live.refetch(); onChanged?.(); }}
                 onEdit={() => void edit()}
               />
             </div>
+          ) : listed ? (
+            <div className="smart-list">
+              <h2 ref={heading} tabIndex={-1}>
+                {requestId ? 'Владельцы подтвердили: ' : ''}{candidates.length} {plural(candidates.length, 'вариант', 'варианта', 'вариантов')}
+              </h2>
+              <ul>
+                {candidates.map((property, i) => (
+                  <li key={property.id}>
+                    <button type="button" className="smart-row" onClick={() => { setIndex(i); setOpened(true); }}>
+                      <span className="smart-row-cover"><PropertyCover property={property} role="guest" publicView /></span>
+                      <span className="smart-row-text">
+                        <strong>{property.title}</strong>
+                        <span className="smart-row-price">{priceLine(property, mode)}</span>
+                        {rowBadge(property) && <span className={'smart-window' + (rowBadge(property)!.deal ? ' smart-deal' : '')}>{rowBadge(property)!.text}</span>}
+                      </span>
+                      <ChevronRight size={18} aria-hidden="true" />
+                    </button>
+                  </li>
+                ))}
+              </ul>
+              {canAskOwners && (
+                <div className="smart-list-foot">
+                  <button type="button" className="smart-button" disabled={busy} onClick={() => void askOwners()}>
+                    {busy && <Thinking size="sm" tone="plain" />}
+                    {publicMode ? 'Войти и спросить владельцев' : 'Спросить владельцев, что свободно'}
+                  </button>
+                  <small>Запрос увидят до трёх владельцев. Это ещё не бронь.</small>
+                </div>
+              )}
+            </div>
           ) : current ? (
             <div className="smart-offer">
+              {candidates.length > 1 && (
+                <button type="button" className="smart-back" onClick={() => setOpened(false)}>
+                  <ArrowLeft size={18} aria-hidden="true" />
+                  Все варианты · {candidates.length}
+                </button>
+              )}
               <div className="smart-offer-head">
                 <div className="smart-offer-cover"><PropertyCover property={current} role="guest" publicView /></div>
                 <div className="smart-offer-text">
-                  {candidates.length > 1 && <span className="smart-offer-count">Вариант {index + 1} из {candidates.length}</span>}
                   {!!current.match?.best && <span className="smart-window smart-best">Лучший выбор для вас</span>}
                   <h2 ref={heading} tabIndex={-1}>{current.title}</h2>
                   <strong>{priceLine(current, mode)}</strong>
@@ -912,9 +971,6 @@ export function SmartGuestMap({ publicMode = false, onChanged, accountId, city, 
                     ? 'Запрос увидят до трёх владельцев. Это ещё не бронь.'
                     : current.ownerConfirmed ? 'Владелец ждёт вашу заявку.' : 'Свободно по календарю. Бронь подтверждает владелец.'}
                 </small>
-                {candidates.length > 1 && (
-                  <button type="button" className="smart-next" onClick={() => setIndex((index + 1) % candidates.length)}>Другой вариант</button>
-                )}
               </div>
             </div>
           ) : (

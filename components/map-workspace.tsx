@@ -20,15 +20,18 @@ import {MatchingInbox} from './matching-inbox';
 import {ProcessJourney} from './process-journey';
 import {PriceTip} from './price-tip';
 import {kindLabel} from '../lib/listings';
+import {guestStep,guestTrips} from '../lib/guest-trips';
+import {CheckinGuide} from './checkin-guide';
 type Row=Record<string,any>;
 async function mapAPI(role:string,action:string,body:Row={}){const r=await fetch('/api/operations/map/'+action,{method:'POST',headers:{'Content-Type':'application/json','X-Workspace-Role':role},body:JSON.stringify(body),cache:'no-store',keepalive:action==='journey/stop'}),v=await r.json() as Row;if(!r.ok)throw Object.assign(Error(v.error||'Нет связи с картой.'),{status:r.status});return v;}
-type MapWorkspaceInput={publicMode?:boolean;role:string;accountId:string;data:Row;onChoose:(p:Row,initial:Row)=>void;onDiscussion:(c:Row)=>void;onProcess:(kind:string,id:string)=>void;onCreate:()=>void;onAsk:(text:string)=>void;onChanged?:()=>void;onEdit?:(id:string,step:string|null)=>void};
+type MapWorkspaceInput={publicMode?:boolean;role:string;accountId:string;data:Row;onChoose:(p:Row,initial:Row)=>void;onDiscussion:(c:Row)=>void;onProcess:(kind:string,id:string,step?:string)=>void;onCreate:()=>void;onAsk:(text:string)=>void;onChanged?:()=>void;onEdit?:(id:string,step:string|null)=>void};
 
 // The guest's first screen is the search map. It gets the state the shell has already loaded (so it does not ask
 // the server for it again), opens a booking in the shell's task sheet and hands a question to the AI administrator.
 export function MapWorkspace(props: MapWorkspaceInput) {
-  const [activity, setActivity] = useState(false);
-  if (props.role === 'guest' && !activity) {
+  // null: the search. '': the guest's own bookings on the map. 'booking:<id>': one of them, opened at once.
+  const [stay, setStay] = useState<string | null>(null);
+  if (props.role === 'guest' && stay === null) {
     const signedIn = !props.publicMode;
     return (
       <SmartGuestMap
@@ -36,7 +39,7 @@ export function MapWorkspace(props: MapWorkspaceInput) {
         accountId={props.accountId}
         city={props.data.profile?.city}
         onChoose={props.onChoose}
-        onActivity={signedIn ? () => setActivity(true) : undefined}
+        onActivity={signedIn ? id => setStay(id ? 'booking:' + id : '') : undefined}
         data={signedIn ? props.data : undefined}
         onProcess={signedIn ? props.onProcess : undefined}
         onAsk={signedIn ? props.onAsk : undefined}
@@ -44,7 +47,7 @@ export function MapWorkspace(props: MapWorkspaceInput) {
       />
     );
   }
-  return <RoleMap {...props} onBack={activity ? () => setActivity(false) : undefined} />;
+  return <RoleMap {...props} initial={stay || ''} onBack={stay !== null ? () => setStay(null) : undefined} />;
 }
 
 // ---------- First screen of the owner and of the cleaner (and "my rental" of the guest) ----------
@@ -71,7 +74,7 @@ const accuracyNote = (fix: LocationFix) =>
   (fix.accuracy > 500 ? 'Положение приблизительное' : 'Вы на карте') + ', точность ±' + Math.round(fix.accuracy) + ' м. Видно только вам.';
 
 type LocationResult = { fix: LocationFix | null; problem: string };
-type RoleMapInput = MapWorkspaceInput & { onBack?: () => void };
+type RoleMapInput = MapWorkspaceInput & { onBack?: () => void; initial?: string };
 
 function Thumb({ item, role }: { item: Row; role: string }) {
   if (!item.kind) return <span className="map-role-thumb"><PropertyCover property={item} role={role} /></span>;
@@ -97,11 +100,11 @@ function MapRow({ item, role, line, onOpen }: { item: Row; role: string; line: s
   );
 }
 
-function RoleMap({ role, accountId, data, onDiscussion, onProcess, onCreate, onAsk, onBack, onChanged, onEdit }: RoleMapInput) {
+function RoleMap({ role, accountId, data, onDiscussion, onProcess, onCreate, onAsk, onBack, onChanged, onEdit, initial = '' }: RoleMapInput) {
   const qc = useQueryClient();
   // The owner sees every flat he has; the cleaner looks for jobs in one city.
   const [city, setCity] = useState<string>(role === 'cleaner' ? data.profile?.city || '' : '');
-  const [selected, setSelected] = useState(''), [expanded, setExpanded] = useState(false);
+  const [selected, setSelected] = useState(initial), [expanded, setExpanded] = useState(false);
   const [error, setError] = useState(''), [busy, setBusy] = useState(false);
   const [picking, setPicking] = useState(false), [picked, setPicked] = useState<[number, number] | null>(null);
   const [travelMode, setTravelMode] = useState('walking'), [session, setSession] = useState(''), [gpsStatus, setGpsStatus] = useState('');
@@ -434,13 +437,25 @@ function RoleMap({ role, accountId, data, onDiscussion, onProcess, onCreate, onA
       <ChevronDown size={18} aria-hidden="true" />
     </button>
   );
+  // The guest's bookings come from the state the shell has loaded, so the list is there before the map answers.
+  // One that is still ahead opens on the map; a past one has no place there and opens its card.
+  const trips = role === 'guest' ? guestTrips(data, now) : [];
+  const tripRows = (items: typeof trips) => (
+    <ul className="map-role-list">
+      {items.map(trip => (
+        <MapRow key={trip.id} item={{ kind: 'booking', title: trip.title }} role={role} line={when(trip.start) + ' · ' + trip.status}
+          onOpen={() => { if (trip.open) select('booking:' + trip.id); else onProcess('booking', trip.id); }} />
+      ))}
+    </ul>
+  );
   const pending = !loaded && !query.isError && <p className="map-role-note" role="status">Загружаем…</p>;
 
   const home = (
     <>
       {onBack && <button type="button" className="map-role-back" onClick={onBack}><ArrowLeft size={18} aria-hidden="true" />К поиску жилья</button>}
       {role !== 'guest' && <AiLine placeholder={line.placeholder} shortPlaceholder={line.shortPlaceholder} label={line.label} chips={chips} onSubmit={onAsk} onChip={pressChip} />}
-      <NowCard card={card} onOpen={openNow} />
+      {/* The guest's list below starts with the same booking the card would name. */}
+      {role !== 'guest' && <NowCard card={card} onOpen={openNow} />}
       {noFlats && (
         <div className="map-role-empty">
           <p>Добавьте первое жильё, и оно появится на карте</p>
@@ -495,10 +510,10 @@ function RoleMap({ role, accountId, data, onDiscussion, onProcess, onCreate, onA
       )}
       {role === 'guest' && (
         <>
-          <h2 className="map-role-heading">Моя аренда</h2>
-          {pending}
-          {rows(mine, dealLine)}
-          {loaded && !mine.length && <p className="map-role-note">Броней пока нет.</p>}
+          <h2 className="map-role-heading">Мои брони</h2>
+          {tripRows(trips.filter(trip => trip.open))}
+          {!trips.some(trip => trip.open) && <p className="map-role-note">{trips.length ? 'Сейчас броней нет.' : 'Броней пока нет. Найдите жильё на карте.'}</p>}
+          {trips.some(trip => !trip.open) && <><h2 className="map-role-heading">Прошлые</h2>{tripRows(trips.filter(trip => !trip.open))}</>}
         </>
       )}
     </>
@@ -573,26 +588,31 @@ function RoleMap({ role, accountId, data, onDiscussion, onProcess, onCreate, onA
     const canTravel = role !== 'owner' && point?.precision === 'exact' && chosen.start < now + 86400 && chosen.end > now
       && (job ? actual?.assigned_to === accountId && actual?.status === 'assigned' : actual?.status === 'confirmed' && !actual?.terms?.actual_checkin);
     const hasMore = canTravel || point?.precision === 'exact' || travelers.length > 0;
+    // The guest's main button is the step that is due now (pay, check in, check out); the card with the rest is one tap further.
+    const guestStay = role === 'guest' && !job ? actual : null, next = guestStep(guestStay, now, data.paymentMode);
+    // The badge says what the booking waits for ("Ждёт оплаты"), as its row in the list does.
+    const guestTrip = guestStay ? trips.find(trip => trip.id === chosen.id) : undefined;
     dealCard = (
       <>
         {back}
         <div className="map-role-card">
           <div className="map-role-card-head">
             <span className="map-role-eyebrow">{job ? 'Уборка' : 'Проживание'}</span>
-            <StatusBadge status={status(chosen)} />
+            <StatusBadge status={guestTrip ? { label: guestTrip.status, tone: guestTrip.tone } : status(chosen)} />
           </div>
           <h2 className="map-role-title">{chosen.title}</h2>
           <span className="map-role-when">{period(chosen.start, chosen.end, now)}{job && actual?.fee ? ' · ' + money(actual.fee) : ''}</span>
         </div>
         <div className="map-role-actions">
-          <button type="button" className="map-role-button" onClick={() => onProcess(chosen.kind, chosen.id)}>Действия</button>
+          <button type="button" className="map-role-button" onClick={() => onProcess(chosen.kind, chosen.id, next?.id)}>{next ? next.label : guestStay ? 'Открыть бронь' : 'Действия'}</button>
           <button type="button" className="map-role-button is-quiet" onClick={() => onDiscussion({ kind: chosen.kind, entityId: chosen.id, channel: job ? 'cleaning' : 'stay' })}>
             <MessagesSquare size={18} aria-hidden="true" />{role !== 'owner' ? 'Написать владельцу' : job ? 'Чат по уборке' : 'Написать гостю'}
           </button>
         </div>
-        {more(expanded ? 'Свернуть' : hasMore ? 'Маршрут и подробности' : 'Подробнее')}
+        {more(expanded ? 'Свернуть' : guestStay ? 'Маршрут и заселение' : hasMore ? 'Маршрут и подробности' : 'Подробнее')}
         <div className="map-home-details">
           <ProcessJourney kind={chosen.kind} item={actual || chosen} />
+          {guestStay?.status === 'confirmed' && <CheckinGuide key={'guide:' + chosen.id} bookingId={chosen.id} />}
           {canTravel && (
             <JourneyNavigation key={chosen.mapKey} role={role} kind={chosen.kind} entityId={chosen.id} mode={travelMode} onMode={setTravelMode}
               sharingId={session || myJourney?.id}
@@ -623,6 +643,7 @@ function RoleMap({ role, accountId, data, onDiscussion, onProcess, onCreate, onA
             </div>
           )}
           <p className="map-role-note">{precision}</p>
+          {next && <button type="button" className="map-role-button is-quiet" onClick={() => onProcess(chosen.kind, chosen.id)}>Все действия с бронью</button>}
         </div>
       </>
     );
