@@ -1,6 +1,6 @@
 'use client';
 import {useEffect,useRef,useState,type ReactNode} from 'react';
-import {ArrowLeft,BedDouble,CalendarDays,Camera,Check,Clock,FileText,MapPin,Minus,Plus,ScrollText,Sparkles,Trash2,Wallet,Wifi,X} from 'lucide-react';
+import {ArrowLeft,BedDouble,CalendarDays,Camera,Check,Clock,FileText,MapPin,Minus,Plus,ScrollText,Sparkles,Trash2,UserCheck,Wallet,Wifi,X} from 'lucide-react';
 import {Photo} from './media';
 import {PhotoGrid} from './photo-grid';
 import {EDIT_STEPS,editBody,editRequest,nextAdvice,needsReview,reviewRequest,REVIEW_SENT,stepForError,stepLine,stepNeeds,type Advice,type EditBody,type EditStep} from '../lib/listing-edit';
@@ -8,6 +8,7 @@ import {amenities,checkinMethods,propertyTypes} from '../lib/listings';
 import './property-quick.css';
 import './property-editor.css';
 import {FlatCalendars} from './flat-calendars';
+import {RegularCleaner} from './regular-cleaner';
 type Row=Record<string,any>;
 type API=(path:string,body?:Row)=>Promise<any>;
 const ICONS:Record<EditStep,ReactNode>={photos:<Camera size={18}/>,flat:<BedDouble size={18}/>,place:<MapPin size={18}/>,text:<FileText size={18}/>,amenities:<Wifi size={18}/>,prices:<Wallet size={18}/>,checkin:<Clock size={18}/>,rules:<ScrollText size={18}/>};
@@ -18,9 +19,9 @@ const SAVED:Record<EditStep|'publish',string>={photos:'Фото сохранен
 export function PropertyEditor({property,role,api,onSave,onReview,onRemove,onClose,step}:{property:Row;role:string;api:API;onSave:(body:Row)=>Promise<Row|undefined>;onReview?:(body:Row)=>Promise<unknown>;onRemove?:()=>Promise<unknown>;onClose:()=>void;step?:EditStep|null}){
  const [p,setP]=useState(property),[base,setBase]=useState<EditBody>(()=>editBody(property)),[draft,setDraft]=useState<EditBody>(base);
  const [open,setOpen]=useState<EditStep|null>(step&&EDIT_STEPS.some(x=>x.key===step)?step:null),[busy,setBusy]=useState(false),[uploading,setUploading]=useState(false),[error,setError]=useState(''),[done,setDone]=useState(''),[skipped,setSkipped]=useState<string[]>([]),[held,setHeld]=useState(false),[sent,setSent]=useState(false);
- const [confirm,setConfirm]=useState(false),[removeError,setRemoveError]=useState(''),[calendars,setCalendars]=useState(false);
+ const [confirm,setConfirm]=useState(false),[removeError,setRemoveError]=useState(''),[calendars,setCalendars]=useState(false),[cleaner,setCleaner]=useState(false);
  const box=useRef<HTMLElement>(null);
- useEffect(()=>{box.current?.scrollIntoView({block:'start',behavior:'instant' as ScrollBehavior});},[open,calendars]);
+ useEffect(()=>{box.current?.scrollIntoView({block:'start',behavior:'instant' as ScrollBehavior});},[open,calendars,cleaner]);
  // A save that failed keeps its changes: the owner fixes what the server asked for in another step and everything is saved together.
  const fix=held&&error?stepForError(error):null;
  const advice:Advice=held&&error?{step:fix,text:'Не сохранилось: '+error+(fix?' Заполните это, и сохранится всё вместе.':''),action:fix?'Заполнить':undefined}:sent&&!base.published?{step:null,text:REVIEW_SENT}:nextAdvice(base,skipped);
@@ -45,6 +46,7 @@ export function PropertyEditor({property,role,api,onSave,onReview,onRemove,onClo
  const field=(label:string,value:string,on:(v:string)=>void,max=120,placeholder='')=><label className="pq-field"><span>{label}</span><input value={value} maxLength={max} placeholder={placeholder} onChange={e=>on(e.target.value)}/></label>;
 
  if(calendars&&p.id)return <div ref={box as any}><FlatCalendars propertyId={p.id} api={api} onBack={()=>setCalendars(false)}/></div>;
+ if(cleaner&&p.id)return <div ref={box as any}><RegularCleaner propertyId={p.id} api={api} onBack={()=>setCleaner(false)}/></div>;
  if(open){const title=EDIT_STEPS.find(s=>s.key===open)!.title;
   return <section ref={box} className="pq pe" aria-labelledby="pe-step-title">
    <header className="pe-bar"><button type="button" className="pq-icon" onClick={()=>{setOpen(null);if(!held)setError('');}} aria-label="Назад к списку" disabled={busy||uploading}><ArrowLeft size={20}/></button><h2 id="pe-step-title">{title}</h2></header>
@@ -105,6 +107,7 @@ export function PropertyEditor({property,role,api,onSave,onReview,onRemove,onClo
   </div>
   <ul className="pe-list">
    {EDIT_STEPS.map(s=><li key={s.key}><button type="button" onClick={()=>go(s.key)} className={stepNeeds(base,s.key)?'needs':''}><span className="pe-ico">{ICONS[s.key]}</span><span className="pe-text"><strong>{s.title}</strong><small>{stepLine(base,s.key)}</small></span>{stepNeeds(base,s.key)&&<span className="pe-dot" aria-label="Нужно заполнить"/>}</button></li>)}
+   {p.id&&<li className="pe-wide"><button type="button" onClick={()=>{setDone('');setCleaner(true);}}><span className="pe-ico"><UserCheck size={18}/></span><span className="pe-text"><strong>Постоянный исполнитель</strong><small>{p.regular_cleaner_name?p.regular_cleaner_name+': уборки приходят сначала к нему':'Закрепите свою: уборки, оплата и замена через сервис'}</small></span></button></li>}
    <li className="pe-wide"><button type="button" onClick={()=>{setDone('');setCalendars(true);}}><span className="pe-ico"><CalendarDays size={18}/></span><span className="pe-text"><strong>Календари площадок</strong><small>Airbnb, Booking, Суточно: без двойных броней</small></span></button></li>
    <li className="pe-wide"><label className="pe-switch"><span className="pe-text"><strong>Показывать гостям</strong><small>{base.published?'Объявление на карте':'Черновик, видите только вы'}</small></span><input type="checkbox" role="switch" checked={base.published} disabled={busy} onChange={e=>commit({...(held?draft:base),published:e.target.checked},'publish')}/></label></li>
   </ul>

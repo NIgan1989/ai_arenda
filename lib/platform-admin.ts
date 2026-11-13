@@ -12,6 +12,7 @@ import {publicPoint,mapCities} from './map-workspace';
 import {AI_REVIEWER,sweepReviews} from './admin-autocheck';
 import {safetyAction} from './account-safety';
 import {billingState,billingOwners,saveBillingSettings,recordBalanceEntry} from './platform-billing';
+import {markCleanerPayout} from './regular-cleaner';
 type Config=OperationConfig&{PLATFORM_ADMIN_IDS?:string;ADMINISTRATOR_RUNNER_SECRET?:string;OPENAI_API_KEY?:string;OPENAI_MODEL?:string};
 type Row=Record<string,any>;
 export function requirePlatformAdmin(userId:string,config:Config){if(!isPlatformAdmin(userId,config.PLATFORM_ADMIN_IDS))throw new DomainError('Управление сервисом доступно только администратору.',403);}
@@ -78,6 +79,7 @@ export async function writePlatformAdmin(service:RentalService,route:string,body
  if(route==='governance/ticket')return updateOperatorTicket(service,'guest',body,true);
  if(route==='billing/settings')return saveBillingSettings(service,body);
  if(route==='billing/balance')return recordBalanceEntry(service,body);
+ if(route==='billing/payout')return markCleanerPayout(service,body);
  if(route==='background/retry')return retryBackgroundJob(service,body,true);
  throw new DomainError('Операция управления не найдена.',404);
 }
