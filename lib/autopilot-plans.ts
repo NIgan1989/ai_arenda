@@ -154,7 +154,9 @@ export async function autopilotFits(db:D1Database,worker:string,job:Row,at=epoch
  if(districts.length&&!districts.some(d=>d.toLowerCase()===String(job.district||'').trim().toLowerCase()))return false;
  if(!(r.days>>weekday(job.start)&1))return false;
  const from=minuteOfDay(job.start),to=localDay(job.end-1)===localDay(job.start)?minuteOfDay(job.end-1)+1:1441;
- if(from<r.from_minute||to>r.to_minute)return false;
+ // «Весь день» (00:00–24:00) takes a job that runs past midnight too; a narrower window keeps the job inside it.
+ const allDay=r.from_minute<=0&&r.to_minute>=1440;
+ if(!allDay&&(from<r.from_minute||to>r.to_minute))return false;
  if(Number(job.fee)<r.min_fee)return false;
  const dayFrom=dayStart(job.start),load=await one(db,"SELECT (SELECT COUNT(*) FROM cleaning_jobs WHERE assigned_to=? AND status IN ('assigned','in_progress','submitted','completed') AND start>=? AND start<?)+(SELECT COUNT(*) FROM cleaning_offers o JOIN cleaning_jobs j ON j.id=o.job_id WHERE o.worker_id=? AND o.status='accepted' AND j.status='open' AND o.start>=? AND o.start<?) n",worker,dayFrom,dayFrom+DAY,worker,dayFrom,dayFrom+DAY);
  if(Number(load?.n||0)>=r.max_per_day)return false;
