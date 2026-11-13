@@ -27,14 +27,20 @@ const tg=async(config:OperationConfig,method:string,body:Row)=>{try{const r=awai
 const revisionTag=async(revision:string)=>(await hash(revision)).slice(0,10);
 // The card a notice is about: the same one-tap decision as on the map, answered from Telegram.
 export async function noticeDecision(service:RentalService,role:Role,dedupe:string):Promise<Approval|null>{
- const rest=dedupe.startsWith(role+':')?dedupe.slice(role.length+1):dedupe,ids=rest.split(':').filter(s=>/^[0-9a-f-]{8,}$/i.test(s));
- const cards=((await service.roleState(role,{catalog:false})).approvals as Approval[]).filter(c=>c.canDecide);
- const only=(list:Approval[])=>list.length===1?list[0]:null;
- return cards.find(c=>c.id===rest)||only(cards.filter(c=>ids.includes(c.id.slice(c.id.indexOf(':')+1))))||only(cards.filter(c=>ids.includes(c.entityId)))||null;
+ // Each notice kind names its own card; nothing is guessed from shared booking or job ids.
+ const [kind,first,second]=(dedupe.startsWith(role+':')?dedupe.slice(role.length+1):dedupe).split(':');let cardId='';
+ if(['booking','change','price','window','forecast','listing','stay'].includes(kind)&&first)cardId=kind+':'+first;
+ else if(kind==='checkout-reported'&&first)cardId='checkout:'+first;
+ else if(kind==='submitted'&&first)cardId='report:'+first;
+ else if(kind==='application'&&first&&second){const a=await one(service.db,"SELECT id FROM applications WHERE job_id=? AND user_id=? AND status='pending'",first,second);if(a)cardId='application:'+a.id;}
+ if(!cardId)return null;
+ return ((await service.roleState(role,{catalog:false})).approvals as Approval[]).find(c=>c.id===cardId&&c.canDecide)||null;
 }
+// Only the AI administrator's own explanations leave the service; reports and reasons people wrote stay behind «Открыть».
+const OWN_DETAIL=new Set(['price','window','forecast','listing','stay']);
 export async function decisionMessage(card:Approval,role:Role,base:string|null){
  const code=Object.keys(ROLE_CODES).find(k=>ROLE_CODES[k]===role)!,tag=await revisionTag(card.revision),data=(a:string)=>a+code+card.id+'|'+tag;
- const text=[card.title+(card.subject?' · '+card.subject:''),...card.facts.filter(([,v])=>v).map(([k,v])=>k+': '+v),card.detail||''].filter(Boolean).join('\n').slice(0,3500);
+ const text=[card.title+(card.subject?' · '+card.subject:''),...card.facts.filter(([,v])=>v).map(([k,v])=>k+': '+v),OWN_DETAIL.has(card.kind)?card.detail||'':''].filter(Boolean).join('\n').slice(0,3500);
  const open=base?[{text:'Открыть',url:base+'/workspace/'+role+'/map'}]:[];
  if(data('y').length>64)return {text,reply_markup:open.length?{inline_keyboard:[open]}:undefined};
  const answer=[{text:card.acceptLabel.slice(0,60),callback_data:data('y')},...(card.requiresReason?[]:[{text:card.rejectLabel.slice(0,60),callback_data:data('n')}])];
