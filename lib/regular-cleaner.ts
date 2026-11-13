@@ -8,7 +8,7 @@ import {cleanerStats,rankCleaners} from './cleaner-match';
 // advance, the pair pays a lower commission, and a replacement is found when she cannot come.
 
 // The owner's free service balance: top-ups minus commissions and cleaning reserves. Same formula as the
-// reserve trigger in migration 0042, so the screen and the database agree.
+// reserve trigger in migration 0044, so the screen and the database agree.
 export const availableSql=(owner:string)=>`(COALESCE((SELECT SUM(amount) FROM owner_balance_entries WHERE owner_id=${owner}),0)
  -COALESCE((SELECT SUM(c.amount) FROM platform_commissions c WHERE c.owner_id=${owner} AND c.mode='charged' AND (SELECT status FROM bookings WHERE id=c.booking_id) IN ('confirmed','completed')),0)
  -COALESCE((SELECT SUM(amount) FROM cleaning_commissions WHERE owner_id=${owner} AND mode='charged'),0)
