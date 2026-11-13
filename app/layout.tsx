@@ -5,6 +5,7 @@ import "./design-system.css";
 import "./mobile-first.css";
 import "./interface-release.css";
 import "./glass.css";
+import "./page-headers.css";
 import "./loader.css";
 import "./native-feel.css";
 import {WorkspaceProvider} from "../components/workspace-provider";

@@ -10,8 +10,10 @@ const icons:Record<string,any>={chats:require('../assets/navigation/assistant.pn
 export function WorkspaceMenuButton({open,busy,onPress,avatar=false,avatarId}:{open:boolean;busy:boolean;onPress:()=>void;avatar?:boolean;avatarId?:string|null}){
  return <Pressable accessibilityRole="button" accessibilityLabel={avatar?'Профиль и разделы':'Ещё разделы'} accessibilityState={{expanded:open,disabled:busy}} disabled={busy} onPress={onPress} style={avatar?n.menuAvatar:n.menu}>{avatar?<Photo id={avatarId} size={36} avatar alt="Профиль"/>:<Image source={icons.more} style={[n.icon,{tintColor:C.ink}]}/>}</Pressable>;
 }
+// The bottom bar's pages besides the profile. Their tab already names them, so they get no title bar.
+export const tabIds=(role:Role)=>role==='owner'?['map','properties','bookings','chats']:role==='guest'?['map','catalog','bookings','chats']:['map','jobs','assignments','chats'];
 export function WorkspaceNavigation({role,pageId,busy,onSelect,more,setMore,onSwitchRole,avatarId,name}:{avatarId?:string|null;name?:string|null;role:Role;pageId:string;busy:boolean;onSelect:(id:string)=>void;more:boolean;setMore:(value:boolean)=>void;onSwitchRole:()=>void}){
- const [focused,setFocused]=useState(''),pages=rolePages[role],ids=role==='owner'?['map','properties','bookings','chats']:role==='guest'?['map','catalog','bookings','chats']:['map','jobs','assignments','chats'];
+ const [focused,setFocused]=useState(''),pages=rolePages[role],ids=tabIds(role);
  const extra=pages.filter(p=>!ids.includes(p.id)&&p.id!=='account'),select=(id:string)=>{setMore(false);onSelect(id);};
  // The guest's first screen is a search, so its tab says «Поиск» and carries the magnifier; the catalogue takes the buildings icon.
  const icon=(id:string)=>role==='guest'&&id==='map'?icons.catalog:role==='guest'&&id==='catalog'?icons.properties:icons[id];
