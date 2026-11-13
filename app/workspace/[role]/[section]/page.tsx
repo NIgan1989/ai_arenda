@@ -4,7 +4,7 @@ import {getAppUser} from '../../../session';
 import {roles,type Role} from '../../../../lib/domain';
 import {rolePages} from '../../../../lib/access';
 import {RentalService} from '../../../../lib/service';
-import Chat from '../../../chat';
+import {MapShell} from '../../../../components/map-shell';
 export const dynamic='force-dynamic';
 export default async function Workspace({params,searchParams}:{params:Promise<{role:string;section:string}>;searchParams:Promise<Record<string,string|string[]|undefined>>}){
   const {role,section}=await params;
@@ -17,5 +17,5 @@ export default async function Workspace({params,searchParams}:{params:Promise<{r
   if(!env.DB)redirect('/');
   const profile=await new RentalService(env.DB,user.userId).profile();
   if(!profile||!JSON.parse(profile.roles).includes(role))redirect('/join/'+role+'?next='+encodeURIComponent(path));
-  return <Chat key={role+':'+section} workspaceRole={role as Role} section={section} accountId={user.userId}/>;
+  return <MapShell key={role} role={role as Role} section={section} accountId={user.userId}/>;
 }

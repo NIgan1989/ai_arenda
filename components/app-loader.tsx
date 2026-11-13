@@ -32,7 +32,8 @@ function install(){
   window.addEventListener('submit',gesture,true);
   let navTimer:ReturnType<typeof setTimeout>|undefined;
   const navigate=()=>{state.navigating=true;emit();clearTimeout(navTimer);navTimer=setTimeout(()=>{state.navigating=false;emit();},NAV_TIMEOUT);};
-  document.addEventListener('click',e=>{if(sameDocumentLink(e))queueMicrotask(()=>{if(!e.defaultPrevented)navigate();});});
+  // Checked after every other click handler has run: a link the map shell opens as a sheet is not a page load.
+  document.addEventListener('click',e=>{if(sameDocumentLink(e))setTimeout(()=>{if(!e.defaultPrevented)navigate();},0);});
   window.addEventListener('beforeunload',navigate);
   // Coming back with the browser's Back button restores the old page as it was, line included.
   window.addEventListener('pageshow',e=>{if(e.persisted){clearTimeout(navTimer);state.navigating=false;state.requests=0;emit();}});

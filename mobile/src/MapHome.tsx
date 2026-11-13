@@ -375,6 +375,7 @@ type Props = {
   accountId: string;
   data: Row;
   menu?: ReactNode;
+  chats?: ReactNode;
   onChanged: () => Promise<unknown>;
   onOpenProcess: (kind: 'booking' | 'job', id: string) => void;
   onOpenPage: (id: string) => void;
@@ -389,7 +390,7 @@ type Props = {
 
 // The screen itself: the map, the avatar button over it, and the sheet with its three positions
 // (0: only the head, 1: a little over half of the screen, 2: almost all of it).
-export function MapHome({ role, accountId, data, menu, onChanged, onOpenProcess, onOpenPage, onAsk, onIntent, onBook, onEdit, target, onTargetDone }: Props) {
+export function MapHome({ role, accountId, data, menu, chats, onChanged, onOpenProcess, onOpenPage, onAsk, onIntent, onBook, onEdit, target, onTargetDone }: Props) {
   // What the map kept from the last visit of this account in this role (map-memory.ts): the view, the chosen pin,
   // the last map answer and how each pin looked. A pin asked for by «На карте» wins over the remembered view.
   const scope = accountId + ':' + role;
@@ -628,6 +629,7 @@ export function MapHome({ role, accountId, data, menu, onChanged, onOpenProcess,
       )}
       {(role === 'owner' || role === 'guest') && !selected && <PriceTip role={role} cards={data.approvals || []} onChanged={onChanged} onEdit={onEdit} />}
       {!!menu && <View style={h.menu}>{menu}</View>}
+      {!!chats && <View style={h.chats}>{chats}</View>}
       <Animated.View style={[h.sheet, { height: sheet }]} accessibilityViewIsModal={false}>
         <View {...drag.handle.panHandlers}>
           <Pressable

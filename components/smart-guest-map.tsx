@@ -1,4 +1,5 @@
 'use client';
+import { goWorkspace } from '../lib/workspace-go';
 import {Thinking} from './thinking';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
@@ -664,7 +665,7 @@ export function SmartGuestMap({ publicMode = false, onChanged, accountId, city, 
 
   function openCard(now: NowCardData) {
     if (onProcess && now.entityKind && now.entityId) onProcess(now.entityKind, now.entityId);
-    else if (now.href) window.location.assign(now.href);
+    else if (now.href) goWorkspace(now.href);
   }
 
   // A question the search rules did not understand goes to the AI administrator only when the guest asks for it.

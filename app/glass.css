@@ -15,8 +15,6 @@ html[data-interface=release] body{background:
  var(--t-bg);background-attachment:fixed;color:var(--t-ink)}
 
 /* Bars and sheets float over content as frosted glass. */
-html[data-interface=release] .release-bottom-nav{background:var(--t-glass);-webkit-backdrop-filter:var(--g-blur);backdrop-filter:var(--g-blur);border-top:1px solid var(--t-glass-line);box-shadow:0 -8px 32px rgba(14,19,36,.06)}
-html[data-interface=release] .release-bottom-nav a[aria-current=page]{background:rgba(79,70,229,.10);color:var(--t-accent)}
 html[data-interface=release] .release-sidebar{background:var(--t-glass);-webkit-backdrop-filter:var(--g-blur);backdrop-filter:var(--g-blur);border-right:1px solid var(--t-glass-line)}
 html[data-interface=release] .release-sidebar nav a[aria-current=page]{background:rgba(79,70,229,.10);color:var(--t-accent)}
 html[data-interface=release] .chat-header{position:sticky;top:0;z-index:30;background:var(--t-glass);-webkit-backdrop-filter:var(--g-blur);backdrop-filter:var(--g-blur);border-bottom:1px solid var(--t-glass-line)}
@@ -47,10 +45,10 @@ html[data-interface=release] .orb-status{background:var(--t-ai-to)}
 html[data-interface=release] .administrator-orb-count{background:var(--t-accent)}
 
 @supports not ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){
- html[data-interface=release] .release-bottom-nav,html[data-interface=release] .chat-header,html[data-interface=release] .map-home-panel,html[data-interface=release] .inline-card{background:var(--t-surface)}
+ html[data-interface=release] .chat-header,html[data-interface=release] .map-home-panel,html[data-interface=release] .inline-card{background:var(--t-surface)}
 }
 @media(prefers-reduced-transparency:reduce){
- html[data-interface=release] .release-bottom-nav,html[data-interface=release] .chat-header,html[data-interface=release] .map-home-panel,html[data-interface=release] .inline-card,html[data-interface=release] .property-listing{background:var(--t-surface);-webkit-backdrop-filter:none;backdrop-filter:none}
+ html[data-interface=release] .chat-header,html[data-interface=release] .map-home-panel,html[data-interface=release] .inline-card,html[data-interface=release] .property-listing{background:var(--t-surface);-webkit-backdrop-filter:none;backdrop-filter:none}
 }
 
 /* AI administrator chat: as plain as possible. A living gradient orb, answers as clean text,
