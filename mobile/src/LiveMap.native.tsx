@@ -3,6 +3,7 @@ import {AccessibilityInfo,Animated,Easing,Image,Pressable,StyleSheet,Text,View,t
 import {Camera,GeoJSONSource,Layer,Map as GlMap,Marker,type CameraRef,type ViewStateChangeEvent} from '@maplibre/maplibre-react-native';
 import {MAX_ZOOM,MIN_ZOOM,fitView,groupPins,pinWidth,project,validPoint,type MapPoint} from './map-math';
 import {appearDelay,lineOrigin,type MapLine} from './map-motion';
+import {restoreStep} from './map-memory';
 import {BEAM,FRESH,HEAT,LEAVE,Leaving,Origin,Pin,Radar,Spark,controlsHeight,m,toneOrder} from './MapPins';
 import type {HeatPoint,MapPin,MapProps} from './TileMap';
 
@@ -16,13 +17,13 @@ const toGl=(zoom:number)=>zoom-1,fromGl=(zoom:number)=>zoom+1;
 const plusIcon=require('../assets/ui/plus.png'),minusIcon=require('../assets/ui/minus.png'),fitIcon=require('../assets/ui/fit.png');
 const fallback:MapPoint=[76.95,52.287];
 
-export function LiveMap({center,pins,selected,focus='',lines=[],heat=[],sparks=[],onSelect,bottomInset=0,topInset=0,focusKey='',picking=false,scanning=false,onCenter}:MapProps){
+export function LiveMap({center,pins,selected,focus='',lines=[],heat=[],sparks=[],onSelect,bottomInset=0,topInset=0,focusKey='',picking=false,scanning=false,onCenter,restore,onView}:MapProps){
  const camera=useRef<CameraRef>(null);
  const [size,setSize]=useState({w:0,h:0}),[still,setStill]=useState(false),[failed,setFailed]=useState(false);
  // The view as the map last reported it, in map-math zoom; pins are grouped by it.
- const [view,setView]=useState<{center:MapPoint;zoom:number}>({center:validPoint(center)||fallback,zoom:12});
+ const [view,setView]=useState<{center:MapPoint;zoom:number}>(restore?.view||{center:validPoint(center)||fallback,zoom:12});
  const live=useRef({view,size,still});live.current={view,size,still};
- const loop=useRef(new Animated.Value(0)).current,report=useRef(onCenter);report.current=onCenter;
+ const loop=useRef(new Animated.Value(0)).current,report=useRef(onCenter),reportView=useRef(onView);report.current=onCenter;reportView.current=onView;
  const usableHeight=Math.max(120,size.h-bottomInset-topInset),originY=topInset+usableHeight/2;
  const padding={top:topInset,bottom:bottomInset,left:0,right:0};
  useEffect(()=>{let on=true;AccessibilityInfo.isReduceMotionEnabled().then(v=>{if(on)setStill(v);}).catch(()=>{});const sub=AccessibilityInfo.addEventListener?.('reduceMotionChanged',v=>setStill(v));return()=>{on=false;sub?.remove();};},[]);
@@ -37,13 +38,19 @@ export function LiveMap({center,pins,selected,focus='',lines=[],heat=[],sparks=[
   camera.current?.flyTo({center:to.center,zoom:toGl(to.zoom),padding,duration,easing:duration?'fly':undefined});
  };
  // Reframe only when the caller announces a new set of results, never on background refreshes.
- const fitted=useRef(''),fittedHeight=useRef(0),moved=useRef(false),first=useRef(true);
+ const fitted=useRef(''),fittedHeight=useRef(0),moved=useRef(false),first=useRef(true),restoring=useRef(restore||null);
  const fit=()=>{
   const points=pins.map(p=>p.point).filter(p=>validPoint(p)),next=points.length?fitView(points,size.w-96,usableHeight-96,15):null;
   moved.current=false;fittedHeight.current=usableHeight;
   flyTo(next||{center:validPoint(center)||fallback,zoom:12},first.current);first.current=false;
  };
- useEffect(()=>{if(!size.w||fitted.current===focusKey+':'+size.w)return;fitted.current=focusKey+':'+size.w;fit();},[focusKey,size.w]);
+ useEffect(()=>{
+  if(!size.w||fitted.current===focusKey+':'+size.w)return;
+  // Back from another page: the view the person left, as long as the same pins are on the map.
+  const back=restoring.current,step=restoreStep(back,focusKey,pins.length);
+  if(back&&step!=='fit'){flyTo(back.view,true);first.current=false;moved.current=true;fittedHeight.current=usableHeight;if(step==='show'){restoring.current=null;fitted.current=focusKey+':'+size.w;}return;}
+  restoring.current=null;fitted.current=focusKey+':'+size.w;fit();
+ },[focusKey,size.w]);
  // The sheet grew or shrank: frame the same pins in what is still visible, unless the person moved the map.
  useEffect(()=>{if(!size.w||!fitted.current||moved.current||picking)return;if(Math.abs(usableHeight-fittedHeight.current)>=48)fit();},[usableHeight]);
  // A card of the carousel came into view: the map flies to its pin, at no less than a street's zoom.
@@ -56,14 +63,16 @@ export function LiveMap({center,pins,selected,focus='',lines=[],heat=[],sparks=[
  const willChange=(e:NativeSyntheticEvent<ViewStateChangeEvent>)=>{if(e.nativeEvent.userInteraction){moved.current=true;raise(true);}};
  const didChange=(e:NativeSyntheticEvent<ViewStateChangeEvent>)=>{
   const c=validPoint(e.nativeEvent.center as MapPoint);if(!c)return;
-  setView({center:c,zoom:fromGl(e.nativeEvent.zoom)});report.current?.(c);if(e.nativeEvent.userInteraction)raise(false);
+  const next={center:c,zoom:fromGl(e.nativeEvent.zoom)};setView(next);report.current?.(c);reportView.current?.(next);if(e.nativeEvent.userInteraction)raise(false);
  };
 
  // ---------- Arrivals and departures of pins ----------
- const born=useRef(new Map<string,number>()),known=useRef(new Map<string,MapPin>()),[leaving,setLeaving]=useState<(MapPin&{gone:number})[]>([]);
+ const born=useRef(new Map<string,number>()),known=useRef(new Map<string,MapPin>()),[leaving,setLeaving]=useState<(MapPin&{gone:number})[]>([]),calm=useRef(!!restore);
  const arrived=useMemo(()=>{
   const now=Date.now(),next=new Map(pins.map(p=>[p.key,p])),gone:MapPin[]=[];
-  for(const p of pins)if(!known.current.has(p.key))born.current.set(p.key,now);
+  // On a return to the map its pins are simply there: they dropped in on the first visit.
+  for(const p of pins)if(!known.current.has(p.key)&&!calm.current)born.current.set(p.key,now);
+  if(pins.length)calm.current=false;
   for(const [key,p] of known.current)if(!next.has(key)){gone.push(p);born.current.delete(key);}
   known.current=next;return gone;
  },[pins]);
@@ -93,11 +102,11 @@ export function LiveMap({center,pins,selected,focus='',lines=[],heat=[],sparks=[
  const drawn=useBeams(lines,still);
  const heatData=useMemo(()=>({type:'FeatureCollection' as const,features:heat.filter(c=>validPoint(c.point)).map((c,i)=>({type:'Feature' as const,id:i,properties:{w:Math.max(0,Math.min(1,c.weight))},geometry:{type:'Point' as const,coordinates:c.point}}))}),[heat]);
  const layout=(e:LayoutChangeEvent)=>{const {width,height}=e.nativeEvent.layout;if(Math.round(width)!==size.w||Math.round(height)!==size.h)setSize({w:Math.round(width),h:Math.round(height)});};
- const now=Date.now(),start=validPoint(center)||fallback;
+ const now=Date.now(),start=restore?.view.center||validPoint(center)||fallback;
  return <View style={m.host} onLayout={layout} accessibilityLabel={'Карта. Меток: '+placed.length}>
   <GlMap style={StyleSheet.absoluteFill} mapStyle={STYLE} logo={false} compass={false} touchRotate={false} touchPitch={false} attribution attributionPosition={{bottom:bottomInset+6,left:8}}
    onRegionWillChange={willChange} onRegionDidChange={didChange} onDidFailLoadingMap={()=>setFailed(true)} onDidFinishLoadingMap={()=>setFailed(false)}>
-   <Camera ref={camera} initialViewState={{center:start,zoom:toGl(12)}} minZoom={toGl(MIN_ZOOM)} maxZoom={toGl(MAX_ZOOM)}/>
+   <Camera ref={camera} initialViewState={{center:start,zoom:toGl(restore?.view.zoom??12)}} minZoom={toGl(MIN_ZOOM)} maxZoom={toGl(MAX_ZOOM)}/>
    <GeoJSONSource id="heat" data={heatData}>
     <Layer id="heat" type="heatmap" paint={{'heatmap-weight':['get','w'],'heatmap-intensity':1,'heatmap-opacity':.7,'heatmap-radius':['interpolate',['linear'],['zoom'],9,24,12,48,15,90],'heatmap-color':['interpolate',['linear'],['heatmap-density'],0,HEAT[0],.3,HEAT[1],.65,HEAT[2],1,HEAT[3]]}}/>
    </GeoJSONSource>
