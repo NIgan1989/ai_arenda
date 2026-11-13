@@ -1,13 +1,20 @@
 import {test} from 'node:test';import assert from 'node:assert/strict';import {mkdtempSync,writeFileSync,existsSync} from 'node:fs';import {resolve,join} from 'node:path';import {DatabaseSync} from 'node:sqlite';
 import {fixture,load,now,iso} from './helpers/platform.mjs';
 import {createLocalBackup,restoreLocalBackup} from '../scripts/local-backup.mjs';
-const {createTelegramLink,acceptTelegramLink,deliverOutbox,setDeliveryChannel,acceptDeliveryReceipt}=await load('delivery');
+const {createTelegramLink,acceptTelegramLink,telegramStatus,deliverOutbox,setDeliveryChannel,acceptDeliveryReceipt}=await load('delivery');
 const {enqueueJob,runBackgroundJobs,retryBackgroundJob}=await load('background');
 test('Telegram binding needs a private signed start event; delivery is opt-in, redacted and deduplicated',async()=>{
  const f=await fixture(),fetch=globalThis.fetch,config={TELEGRAM_BOT_TOKEN:'test-token',TELEGRAM_BOT_USERNAME:'rental_test_bot',TELEGRAM_WEBHOOK_SECRET:'test-webhook-secret',SITE_PUBLIC_URL:'https://rental.example.test'};try{
+  const replies=[];globalThis.fetch=async(_url,request)=>{replies.push(JSON.parse(request.body));return Response.json({ok:true,result:{}});};
   const link=await createTelegramLink(f.guest,'guest',config),token=new URL(link.url).searchParams.get('start'),event={message:{text:'/start '+token,chat:{type:'private',id:123},from:{id:123,is_bot:false}}};
   await assert.rejects(acceptTelegramLink(f.db,event,'wrong',config),e=>e.status===403);assert.equal((await acceptTelegramLink(f.db,{message:{...event.message,chat:{type:'group',id:123}}},config.TELEGRAM_WEBHOOK_SECRET,config)).ignored,true);
-  await acceptTelegramLink(f.db,event,config.TELEGRAM_WEBHOOK_SECRET,config);await f.owner.notify('guest','PRIVATE ADDRESS AND LOCK CODE','test-notice','guest').run();
+  await acceptTelegramLink(f.db,event,config.TELEGRAM_WEBHOOK_SECRET,config);
+  // The bot confirms in the chat; a stale link or a plain /start gets directions instead.
+  assert.match(replies.at(-1).text,/Готово/);assert.equal(replies.at(-1).chat_id,123);
+  await acceptTelegramLink(f.db,event,config.TELEGRAM_WEBHOOK_SECRET,config);assert.match(replies.at(-1).text,/устарела/);
+  await acceptTelegramLink(f.db,{message:{...event.message,text:'/start'}},config.TELEGRAM_WEBHOOK_SECRET,config);assert.match(replies.at(-1).text,/Подключить/);
+  const linked=await telegramStatus(f.guest,'guest',config);assert.deepEqual({...linked,linkedAt:linked.linkedAt>0},{configured:true,linked:true,enabled:true,linkedAt:true});assert.deepEqual(await telegramStatus(f.owner,'owner',config),{configured:true,linked:false,enabled:false,linkedAt:0});assert.equal((await telegramStatus(f.guest,'guest',{})).configured,false);
+  await f.owner.notify('guest','PRIVATE ADDRESS AND LOCK CODE','test-notice','guest').run();
   let calls=0;globalThis.fetch=async(_url,request)=>{calls++;const body=JSON.parse(request.body);assert.equal(body.chat_id,'123');assert.ok(!body.text.includes('PRIVATE ADDRESS'));assert.ok(!body.text.includes('LOCK CODE'));return Response.json({ok:true,result:{message_id:5}});};
   assert.equal((await deliverOutbox(f.db,config)).sent,1);assert.equal((await deliverOutbox(f.db,config)).sent,0);assert.equal(calls,1);
   await setDeliveryChannel(f.guest,'guest',{channel:'telegram',enabled:false},config);await f.owner.notify('guest','Another event','another-notice','guest').run();assert.equal(f.db.raw.prepare('SELECT COUNT(*) n FROM delivery_outbox').get().n,1);

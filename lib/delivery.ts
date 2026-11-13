@@ -12,16 +12,31 @@ export async function createTelegramLink(service:RentalService,role:Role,config:
  const username=config.TELEGRAM_BOT_USERNAME!;if(!/^[A-Za-z0-9_]{5,32}$/.test(username))throw new DomainError('Серверная настройка имени бота некорректна.',503);
  const token=randomToken();await q(service.db,'DELETE FROM delivery_links WHERE user_id=? AND role=?',service.userId,role).run();await q(service.db,'INSERT INTO delivery_links VALUES (?,?,?,?,NULL)',await hash(token),service.userId,role,epoch()+600).run();return {url:'https://t.me/'+username+'?start='+token,expiresAt:epoch()+600,message:'Откройте личный чат с ботом и нажмите Start. Привязка действует 10 минут.'};
 }
+const BOT_HELP='Здравствуйте! Это бот уведомлений «Ай Аренда». Чтобы получать сюда заявки и события, откройте приложение или сайт → Аккаунт → Telegram и нажмите «Подключить».';
+const ROLE_NAMES:Record<string,string>={guest:'Гость',owner:'Владелец',cleaner:'Исполнитель'};
+// The bot answers in the chat so the person sees that linking worked. A failed reply never undoes the link.
+async function botReply(config:OperationConfig,chatId:unknown,text:string){
+ if(!config.TELEGRAM_BOT_TOKEN)return;
+ try{await fetch('https://api.telegram.org/bot'+config.TELEGRAM_BOT_TOKEN+'/sendMessage',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({chat_id:chatId,text,link_preview_options:{is_disabled:true}}),redirect:'error',signal:AbortSignal.timeout(8000)});}catch{/* the link is already saved */}
+}
+// The account screen: is the bot set up, and is this role's chat linked and switched on.
+export async function telegramStatus(service:RentalService,role:Role,config:OperationConfig){
+ const c=await one(service.db,"SELECT enabled,verified_at FROM delivery_channels WHERE user_id=? AND role=? AND channel='telegram'",service.userId,role);
+ return {configured:integrationStatus(config).telegram,linked:!!c?.verified_at,enabled:!!(c?.verified_at&&c.enabled),linkedAt:Number(c?.verified_at||0)};
+}
 export async function acceptTelegramLink(db:D1Database,body:Row,providedSecret:string|null,config:OperationConfig){
  if(!config.TELEGRAM_WEBHOOK_SECRET||!safeEqual(providedSecret||'',config.TELEGRAM_WEBHOOK_SECRET))throw new DomainError('Нет доступа к событию бота.',403);
  const message=body.message,match=typeof message?.text==='string'?message.text.match(/^\/start(?:@[A-Za-z0-9_]+)? ([a-f0-9]{48})$/):null;
- if(!match||message.chat?.type!=='private'||message.from?.is_bot||String(message.chat.id)!==String(message.from?.id))return {ignored:true};
- const link=await one(db,'SELECT * FROM delivery_links WHERE hash=? AND used_at IS NULL AND expires_at>?',await hash(match[1]),epoch());if(!link)return {ignored:true};
+ const privateChat=message?.chat?.type==='private'&&!message.from?.is_bot&&String(message.chat?.id)===String(message.from?.id);
+ if(!match||!privateChat){if(privateChat)await botReply(config,message.chat.id,BOT_HELP);return {ignored:true};}
+ const link=await one(db,'SELECT * FROM delivery_links WHERE hash=? AND used_at IS NULL AND expires_at>?',await hash(match[1]),epoch());if(!link){await botReply(config,message.chat.id,'Ссылка устарела. Откройте «Ай Аренда» → Аккаунт → Telegram и нажмите «Подключить» ещё раз.');return {ignored:true};}
  const auditId=uuid(),at=epoch();await db.batch([
   q(db,'UPDATE delivery_links SET used_at=? WHERE hash=? AND used_at IS NULL AND expires_at>?',at,link.hash,at),
   q(db,'INSERT INTO audit_events SELECT ?,?,?,?,? WHERE changes()>0',auditId,link.user_id,link.user_id,'delivery.telegram_linked:'+link.role,at),
   q(db,"INSERT INTO delivery_channels SELECT ?,?,'telegram',?,1,?,? WHERE EXISTS(SELECT 1 FROM audit_events WHERE id=?) ON CONFLICT(user_id,role,channel) DO UPDATE SET address=excluded.address,enabled=1,verified_at=excluded.verified_at,updated_at=excluded.updated_at",link.user_id,link.role,String(message.chat.id),at,at,auditId)
- ]);return {linked:true};
+ ]);
+ await botReply(config,message.chat.id,'Готово! Уведомления «Ай Аренда» для роли «'+(ROLE_NAMES[link.role]||link.role)+'» будут приходить сюда: заявки, брони, уборки. Выключить можно в приложении: Аккаунт → Telegram.');
+ return {linked:true};
 }
 export async function setDeliveryChannel(service:RentalService,role:Role,body:Row,config:OperationConfig){
  const channel=required(body.channel,'Канал',20);if(!['telegram','sms','whatsapp'].includes(channel))throw new DomainError('Неизвестный канал.');
