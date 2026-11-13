@@ -74,6 +74,24 @@ function ListingTipBody({card,busy,onDecide,compact}:{card:Approval;busy:boolean
  </View>;
 }
 
+// Cleaning price: the flat's price next to what similar flats pay (or what cleaners refused), and one button.
+function CleaningTipBody({card,busy,onDecide,compact}:{card:Approval;busy:boolean;onDecide:(action:'accept'|'reject')=>void;compact:boolean}){
+ const c=card.cleaningTip!,compare=[[money(c.from),c.refused?'отказов: '+c.refused:'сейчас у вас'],[money(c.to),c.typical?'платят за похожие':'предлагаю']];
+ return <View>
+  <View style={t.compare} accessible accessibilityLabel={compare[0].join(' ')+'; '+compare[1].join(' ')}>
+   <View style={t.cmpMine}><Text numberOfLines={1} style={t.cmpValue}>{compare[0][0]}</Text><Text style={t.cmpLabel}>{compare[0][1]}</Text></View>
+   <View style={t.cmpIcon}><Text style={t.cmpIconText}>→</Text></View>
+   <View style={t.cmpThem}><Text numberOfLines={1} style={[t.cmpValue,{color:C.accent}]}>{compare[1][0]}</Text><Text style={t.cmpLabel}>{compare[1][1]}</Text></View>
+  </View>
+  <Text numberOfLines={compact?4:6} style={t.rows}>{c.text}</Text>
+  <View style={t.actions}>
+   <Pressable accessibilityRole="button" accessibilityLabel={card.acceptLabel} disabled={busy} onPress={()=>onDecide('accept')} style={({pressed})=>[t.accept,(busy||pressed)&&t.dim]}><Text numberOfLines={1} style={t.acceptText}>{card.acceptLabel}</Text></Pressable>
+   <Pressable accessibilityRole="button" accessibilityLabel={card.rejectLabel} disabled={busy} onPress={()=>onDecide('reject')} style={({pressed})=>[t.reject,(busy||pressed)&&t.dim]}><Text style={t.rejectText}>{card.rejectLabel}</Text></Pressable>
+  </View>
+  {!compact&&<Text style={t.note}>Открытые уборки уйдут исполнителям заново по новой цене. Без вашего согласия ничего не изменится.</Text>}
+ </View>;
+}
+
 // Late checkout or early check-in for the guest who asked about it in the booking chat.
 function StayTipBody({card,busy,onDecide,compact}:{card:Approval;busy:boolean;onDecide:(action:'accept'|'reject')=>void;compact:boolean}){
  const o=card.stay!;
@@ -92,6 +110,7 @@ function StayTipBody({card,busy,onDecide,compact}:{card:Approval;busy:boolean;on
 }
 
 export function PriceTipBody({card,busy,onDecide,compact=false}:{card:Approval;busy:boolean;onDecide:(action:'accept'|'reject')=>void;compact?:boolean}){
+ if(card.cleaningTip)return <CleaningTipBody card={card} busy={busy} onDecide={onDecide} compact={compact}/>;
  if(card.listing)return <ListingTipBody card={card} busy={busy} onDecide={onDecide} compact={compact}/>;
  if(card.forecast)return <ForecastTipBody card={card} busy={busy} onDecide={onDecide} compact={compact}/>;
  if(card.stay)return <StayTipBody card={card} busy={busy} onDecide={onDecide} compact={compact}/>;
@@ -117,7 +136,7 @@ export function PriceTipBody({card,busy,onDecide,compact=false}:{card:Approval;b
 export function PriceTip({cards,onChanged,onEdit,role='owner'}:{cards:Approval[];onChanged?:()=>unknown;onEdit?:(id:string,step:string|null)=>void;role?:'owner'|'guest'}){
  const [later,setLater]=useState<string[]>([]),[busy,setBusy]=useState(false),[result,setResult]=useState<{text:string;error:boolean}|null>(null);
  const [slide]=useState(()=>new Animated.Value(0));
- const card=cards.find(c=>(c.kind==='price'&&c.price||c.kind==='window'&&c.window||c.kind==='stay'&&c.stay||c.kind==='forecast'&&c.forecast||c.kind==='listing'&&c.listing)&&c.canDecide&&!later.includes(c.id));
+ const card=cards.find(c=>(c.kind==='price'&&c.price||c.kind==='window'&&c.window||c.kind==='stay'&&c.stay||c.kind==='forecast'&&c.forecast||c.kind==='listing'&&c.listing||c.kind==='cleaning-fee'&&c.cleaningTip)&&c.canDecide&&!later.includes(c.id));
  const visible=!!card||!!result;
  useEffect(()=>{Animated.spring(slide,{toValue:visible?1:0,useNativeDriver:true,friction:8,tension:60}).start();},[visible,card?.id]);
  useEffect(()=>{if(!result)return;const timer=setTimeout(()=>setResult(null),result.error?8000:5000);return()=>clearTimeout(timer);},[result]);
@@ -130,10 +149,10 @@ export function PriceTip({cards,onChanged,onEdit,role='owner'}:{cards:Approval[]
   catch(error){setResult({text:error instanceof Error?error.message:'Не получилось. Обновите экран.',error:true});}
   finally{setBusy(false);}
  }
- return <Animated.View style={[t.box,style]} accessibilityLabel={card.listing?'Совет AI администратора по объявлению':card.forecast?'Прогноз загрузки на неделю от AI администратора':card.stay?'Предложение AI администратора по времени проживания':card.window?'Окно в календаре от AI администратора':'Совет AI администратора по цене'}>
+ return <Animated.View style={[t.box,style]} accessibilityLabel={card.cleaningTip?'Совет AI администратора по цене уборки':card.listing?'Совет AI администратора по объявлению':card.forecast?'Прогноз загрузки на неделю от AI администратора':card.stay?'Предложение AI администратора по времени проживания':card.window?'Окно в календаре от AI администратора':'Совет AI администратора по цене'}>
   <View style={t.head}>
-   <View style={t.icon}><Text style={t.iconText}>{card.forecast?'▥':card.listing?'★':'✦'}</Text></View>
-   <View style={t.titleBox}><Text style={t.small}>{'AI администратор · '+(card.listing?card.listing.title.toLocaleLowerCase('ru'):card.forecast?'прогноз на неделю':card.stay?(card.stay.kind==='late'?'поздний выезд':'ранний заезд'):card.window?'окно в календаре':card.price?.direction==='up'?'спрос вырос':'спрос снизился')}</Text><Text numberOfLines={1} style={t.title}>{card.subject}</Text></View>
+   <View style={t.icon}><Text style={t.iconText}>{card.forecast?'▥':card.listing?'★':card.cleaningTip?'✧':'✦'}</Text></View>
+   <View style={t.titleBox}><Text style={t.small}>{'AI администратор · '+(card.cleaningTip?'цена уборки':card.listing?card.listing.title.toLocaleLowerCase('ru'):card.forecast?'прогноз на неделю':card.stay?(card.stay.kind==='late'?'поздний выезд':'ранний заезд'):card.window?'окно в календаре':card.price?.direction==='up'?'спрос вырос':'спрос снизился')}</Text><Text numberOfLines={1} style={t.title}>{card.subject}</Text></View>
    <Pressable accessibilityRole="button" accessibilityLabel="Позже" onPress={()=>setLater(v=>[...v,card.id])} style={t.close}><Text style={t.closeText}>×</Text></Pressable>
   </View>
   <PriceTipBody card={card} busy={busy} onDecide={decide} compact/>

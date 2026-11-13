@@ -27,6 +27,7 @@ import {offerPriceAdvice,ownerPriceSuggestions,decidePriceSuggestion} from './pr
 import {guestStayOffers,decideStayOffer} from './stay-offers';
 import {ownerForecasts,decideForecast} from './load-forecast';
 import {ownerListingTips,decideListingTip} from './listing-quality';
+import {ownerCleaningTips,decideCleaningTip} from './cleaning-price';
 import {ownerWindows,decideCalendarWindow,openWindowFor,openWindowsFor,windowQuote} from './calendar-windows';
 
 type Row = Record<string, any>;
@@ -191,7 +192,7 @@ export class RentalService {
       notifications,applications:state.applications.filter(a=>jobIds.has(a.job_id)&&(role==='owner'||a.user_id===this.userId)).map(a=>({...a,worker:role==='owner'?workers.get(a.user_id):null,
       // Training flats skip the platform check on the server, so their responses never wait for it.
       admission:a.job_demo?'not_required':role==='owner'?workers.get(a.user_id)?.admission:ownAdmission})),messages:state.messages.filter(m=>m.scope===role)};
-    if(role==='owner'){(result as Row).priceSuggestions=await ownerPriceSuggestions(this.db,this.userId,state.serverTime);(result as Row).calendarWindows=await ownerWindows(this.db,this.userId,state.serverTime);(result as Row).loadForecasts=await ownerForecasts(this.db,this.userId,state.serverTime);(result as Row).listingTips=await ownerListingTips(this.db,this.userId,state.serverTime);}
+    if(role==='owner'){(result as Row).priceSuggestions=await ownerPriceSuggestions(this.db,this.userId,state.serverTime);(result as Row).calendarWindows=await ownerWindows(this.db,this.userId,state.serverTime);(result as Row).loadForecasts=await ownerForecasts(this.db,this.userId,state.serverTime);(result as Row).listingTips=await ownerListingTips(this.db,this.userId,state.serverTime);(result as Row).cleaningTips=await ownerCleaningTips(this.db,this.userId,state.serverTime);}
     if(role==='guest')(result as Row).stayOffers=await guestStayOffers(this.db,this.userId,state.serverTime);
     const assistantSettings={...defaultAssistantSettings};
     const administrator=await readAdministratorState(this.db,this.userId,role);
@@ -228,6 +229,7 @@ export class RentalService {
     if(card.kind==='window')return decideCalendarWindow(this,card.id.slice(7),accept);
     if(card.kind==='forecast')return decideForecast(this,card.id.slice(9),accept);
     if(card.kind==='listing')return decideListingTip(this,card.id.slice(8),accept);
+    if(card.kind==='cleaning-fee')return decideCleaningTip(this,card.id.slice(13),accept);
     if(card.kind==='stay')return decideStayOffer(this,card.id.slice(5),accept);
     if(card.kind==='checkout')return this.bookingAction(card.entityId,{action:accept?'checkout':'dispute_checkout',reason:body.reason,expectedVersion:state.bookings.find(b=>b.id===card.entityId)?.terms?.version});
     const job=state.jobs.find(j=>j.id===card.entityId);
