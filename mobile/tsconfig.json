@@ -1,5 +1,20 @@
 {
-  "extends": "expo/tsconfig.base",
-  "compilerOptions": {"strict": true, "noEmit": true},
-  "include": ["App.tsx", "index.ts", "src/**/*.ts", "src/**/*.tsx"]
+  "//": "The options of expo/tsconfig.base, written out: the site's build also reads this file for the shared modules in src (map-math, map-motion, map-memory…) and runs without the app's node_modules, where that base lives.",
+  "compilerOptions": {
+    "allowJs": true,
+    "esModuleInterop": true,
+    "jsx": "react-jsx",
+    "lib": ["DOM", "ESNext"],
+    "module": "preserve",
+    "moduleDetection": "force",
+    "moduleResolution": "bundler",
+    "customConditions": ["react-native"],
+    "resolveJsonModule": true,
+    "skipLibCheck": true,
+    "target": "ESNext",
+    "strict": true,
+    "noEmit": true
+  },
+  "include": ["App.tsx", "index.ts", "src/**/*.ts", "src/**/*.tsx"],
+  "exclude": ["node_modules", "babel.config.js", "metro.config.js", "jest.config.js", "android", "ios"]
 }
