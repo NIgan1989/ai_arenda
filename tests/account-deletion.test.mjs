@@ -11,7 +11,7 @@ test('unused shared account deletion removes local data and sessions, retaining 
   const other=await authRequest(f.db,auth('register',{phone:'+77770000001',name:'Other account',password}),'register');const otherUser=await sessionUser(f.db,other.headers.get('set-cookie'));
   f.db.raw.prepare('INSERT INTO profile_preferences VALUES (?,?,?,?,?,?)').run(f.s.userId,'Private bio','Русский','participants',1,1);
   f.db.raw.prepare("INSERT INTO matching_requests(id,guest_id,request_key,filters,status,created_at,expires_at) VALUES (?,?,?,'{\"district\":\"Private search\"}','empty',?,?)").run('unused-match',f.s.userId,'unused-key',now(),now()+600);
-  f.db.raw.prepare('INSERT INTO media VALUES (?,?,?,?,?,?,?,?)').run('avatar',f.s.userId,'avatar','private-local-image',8,8,100,now());
+  f.db.raw.prepare('INSERT INTO media(id,user_id,kind,data,width,height,bytes,created_at) VALUES (?,?,?,?,?,?,?,?)').run('avatar',f.s.userId,'avatar','private-local-image',8,8,100,now());
   f.db.raw.prepare('INSERT INTO profile_details VALUES (?,?,?,?,?,?)').run(f.s.userId,'avatar','available',1,'revision',now());
   f.db.raw.prepare("INSERT INTO notifications VALUES ('notification',?,'Private notification','unique',0,?)").run(f.s.userId,now());
   f.db.raw.prepare("INSERT INTO delivery_outbox(id,notification_id,user_id,role,channel,status,attempts,available_at,created_at) VALUES ('pending','notification',?,'guest','telegram','pending',0,?,?)").run(f.s.userId,now(),now());

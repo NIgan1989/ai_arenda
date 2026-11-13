@@ -60,9 +60,14 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           CLOUDFLARE_D1_DATABASE_ID: ${{ secrets.CLOUDFLARE_D1_DATABASE_ID }}
         run: node scripts/resolve-cloudflare-ids.mjs
+      - name: Prepare photo storage
+        if: steps.configured.outputs.ready == 'true'
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: node scripts/ensure-r2-bucket.mjs
       - name: Prepare the deployment configuration
         if: steps.configured.outputs.ready == 'true'
-        run: node scripts/prepare-cloudflare.mjs --database-id "$CLOUDFLARE_D1_DATABASE_ID" --account-id "$CLOUDFLARE_ACCOUNT_ID" > /dev/null
+        run: node scripts/prepare-cloudflare.mjs --database-id "$CLOUDFLARE_D1_DATABASE_ID" --account-id "$CLOUDFLARE_ACCOUNT_ID" ${MEDIA_BUCKET:+--bucket "$MEDIA_BUCKET"} > /dev/null
       - name: Apply pending database migrations
         if: steps.configured.outputs.ready == 'true'
         env:

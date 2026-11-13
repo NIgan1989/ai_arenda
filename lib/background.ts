@@ -7,6 +7,7 @@ import {advanceMatchingRequests} from './matching-background';
 import {refreshCalendar} from './external-calendar';
 import {migrateFinanceEntity} from './finance';
 import {encryptInstructions} from './participant-security';
+import {moveMediaToBucket,sweepMediaObjects} from './media-store';
 import {epoch,uuid,q,one,rows,type Row,type OperationConfig} from './operation-core';
 
 export async function enqueueJob(db:D1Database,id:string,kind:string,scope:string,payload:Row={},repeatSeconds=0){await q(db,'INSERT OR IGNORE INTO background_jobs(id,kind,scope,payload,available_at,repeat_seconds,updated_at) VALUES (?,?,?,?,?,?,?)',id,kind,scope,JSON.stringify(payload),epoch(),repeatSeconds,epoch()).run();}
@@ -46,6 +47,7 @@ export async function runOperationalTick(db:D1Database,config:OperationConfig={}
  await enqueueJob(db,'matching-dispatch','matching-dispatch','system',{},30);
  await q(db,'UPDATE journey_sessions SET longitude=NULL,latitude=NULL,accuracy=NULL,route=NULL,route_recorded_at=NULL WHERE (expires_at<=? OR stopped_at IS NOT NULL) AND (longitude IS NOT NULL OR route IS NOT NULL)',epoch()).run();
  await enqueueJob(db,'discovery','discovery','system',{},30);await enqueueJob(db,'delivery','delivery','system',{},30);if(config.BUCKET&&config.ACCESS_ENCRYPTION_KEY)await enqueueJob(db,'cloud-backup','backup','system',{},86400);
+ if(config.BUCKET){await enqueueJob(db,'media-move','media-move','system',{},60);await enqueueJob(db,'media-sweep','media-sweep','system',{},3600);}
  const result=await runBackgroundJobs(db,async job=>{
   if(job.kind==='discovery')return discover(db,job);
   if(job.kind==='matching-dispatch')return advanceMatchingRequests(db,config);
@@ -54,6 +56,8 @@ export async function runOperationalTick(db:D1Database,config:OperationConfig={}
   if(job.kind==='calendar')return refreshCalendar(db,job.payload.sourceId,config);
   if(job.kind==='finance-history')return migrateHistory(db,job.scope);
   if(job.kind==='backup')return cloudBackup(db,config);
+  if(job.kind==='media-move')return moveMediaToBucket(db,config.BUCKET);
+  if(job.kind==='media-sweep'){const r=await sweepMediaObjects(db,config.BUCKET,String(job.payload.cursor||''));await q(db,'UPDATE background_jobs SET payload=? WHERE id=?',JSON.stringify({cursor:r.cursor}),job.id).run();return r;}
   throw new Error('Unknown background operation');
  });
  const dead=await one(db,"SELECT COUNT(*) n FROM background_jobs WHERE status='dead'");
