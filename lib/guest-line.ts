@@ -12,7 +12,14 @@ export function guestLine(b: Row | null | undefined, now: number, paymentMode?: 
   if (!step) return null;
   if (step.id === 'pay') return 'Оплатите бронь, чтобы она не снялась → Заезд ' + threadWhen(b.start, now);
   if (step.id === 'deposit') return 'Внесите депозит, он вернётся после выезда → Заезд ' + threadWhen(b.start, now);
-  if (step.id === 'checkin') return 'Всё готово → Заезд ' + threadWhen(b.start, now);
+  if (step.id === 'checkin') {
+    // The owner confirms the check-in only after the payment, the deposit and the readiness of the home:
+    // «Всё готово» is said when all three are there, otherwise the line names what is still waited for.
+    const arrive = ' → Заезд ' + threadWhen(b.start, now);
+    if (b.payment_status !== 'owner_verified') return 'Ждём, когда владелец подтвердит оплату' + arrive;
+    if (b.terms?.deposit > 0 && b.terms?.deposit_status === 'pending') return 'Ждём, когда владелец подтвердит депозит' + arrive;
+    return b.readiness === 'ready' ? 'Всё готово' + arrive : null;
+  }
   if (step.id === 'checkout') return 'Вы в жилье → Выезд ' + threadWhen(b.end, now);
   return 'Проживание завершено. Оцените его, это помогает другим гостям.';
 }
