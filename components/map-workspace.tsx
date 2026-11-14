@@ -27,7 +27,7 @@ import {guestPin,guestStep,guestTrips} from '../lib/guest-trips';
 import {ownerStep,ownerStepOnMap} from '../lib/owner-steps';
 import {cleanerLine,cleanerStep,ownerJobStep} from '../lib/job-steps';
 import {calendarEntries} from '../lib/calendar-days';
-import {hubLine,type HubTab} from '../lib/property-hub';
+import {hubLate,hubLine,type HubTab} from '../lib/property-hub';
 import {PropertyHub} from './property-hub';
 import {CheckinGuide} from './checkin-guide';
 import {JobPlace} from './job-place';
@@ -629,6 +629,7 @@ function RoleMap({ role, accountId, data, onDiscussion, onProcess, onCreate, onA
     // A booking or a cleaning of this flat is shown on the map when it is there, in its card otherwise.
     const openDeal = (kind: string, id: string) => { if (deals.some(d => d.mapKey === kind + ':' + id)) select(kind + ':' + id); else onProcess(kind, id); };
     const own: Row = (data.ownProperties || []).find((p: Row) => p.id === chosen.id) || chosen;
+    const entries = calendarEntries(data, 'owner', chosen.id, now), late = hubLate(entries, now);
     flatCard = (
       <>
         {back}
@@ -637,7 +638,8 @@ function RoleMap({ role, accountId, data, onDiscussion, onProcess, onCreate, onA
           <div className="map-role-flat-text">
             <h2 className="map-role-title">{chosen.title}</h2>
             <StatusBadge status={chosen.display_status} />
-            <span className="map-role-when">{hubLine(calendarEntries(data, 'owner', chosen.id, now), now)}</span>
+            {late ? <button type="button" className="map-role-when is-late" onClick={() => onProcess(late.kind, late.id)}>{late.status} ›</button>
+              : <span className="map-role-when">{hubLine(entries, now)}</span>}
           </div>
         </div>
         <PropertyHub property={own} data={data} now={now} open={expanded} tab={hubTab}

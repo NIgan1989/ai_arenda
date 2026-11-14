@@ -6,8 +6,11 @@ const notice=(db:D1Database,user:string,body:string,dedupe:string,at:number)=>q(
 const admins=(config:{PLATFORM_ADMIN_IDS?:string})=>typeof config.PLATFORM_ADMIN_IDS==='string'?config.PLATFORM_ADMIN_IDS.split(',').map(v=>v.trim()).filter(Boolean):[];
 
 // The cleaning goes back to the search for a new cleaner: a fresh window of the same length from now, cut at the
-// next confirmed arrival so the job never advertises time inside a stay; null when there is no room left before it.
+// next confirmed arrival so the job never advertises time inside a stay; null when there is no room left before it
+// or a later guest is already inside.
 export async function releaseWindow(db:D1Database,job:Row,at:number){
+ // Another guest already lives there: a cleaning now would run into the stay.
+ if(await q(db,"SELECT 1 FROM bookings WHERE property_id=? AND status='confirmed' AND start<=? AND id<>COALESCE(?,'')",job.property_id,at,job.booking_id).first())return null;
  const length=Math.max(3600,Number(job.end)-Number(job.start));
  const next=await q(db,"SELECT MIN(start) start FROM bookings WHERE property_id=? AND status='confirmed' AND start>=? AND id<>COALESCE(?,'')",job.property_id,at,job.booking_id).first<Row>();
  const end=next?.start?Math.min(at+length,Number(next.start)):at+length;
@@ -22,8 +25,35 @@ export function releaseStatements(db:D1Database,job:Row,window:{start:number;end
  ];
 }
 
+// Nobody took a cleaning before its end. Step 1: with the owner's autopilot on and the flat free, the AI gives the search
+// one new window of the same length and tells the owner. Step 2: still nobody (or no window) — the owner decides, told once,
+// with the reason when there is simply no other cleaner in the city.
+async function sweepUnclaimed(db:D1Database,at:number,result:Row){
+ const list=await rows(db,"SELECT j.*,p.title,p.city,COALESCE(r.auto_offers,0) auto_offers,(SELECT COUNT(*) FROM profiles c WHERE c.city=p.city AND c.id<>j.owner_id AND EXISTS(SELECT 1 FROM json_each(c.roles) WHERE value='cleaner')) cleaners FROM cleaning_jobs j JOIN properties p ON p.id=j.property_id LEFT JOIN operation_rules r ON r.property_id=j.property_id WHERE j.status='open' AND j.assigned_to IS NULL AND j.overdue_step<2 AND j.end<=? ORDER BY j.end LIMIT 50",at);
+ for(const j of list){
+  const title=j.title||'жильё',step=Number(j.overdue_step)||0,vacant=!j.booking_id||await q(db,"SELECT 1 FROM bookings WHERE id=? AND status='completed'",j.booking_id).first();
+  const window=step<1&&Number(j.auto_offers)&&vacant?await releaseWindow(db,j,at):null;
+  const why=Number(j.cleaners)?'':' В городе '+(j.city||'')+' пока нет других исполнителей.';
+  if(window){
+   const until=new Intl.DateTimeFormat('ru-RU',{hour:'2-digit',minute:'2-digit',timeZone:'Asia/Almaty'}).format(new Date(window.end*1000));
+   const r=await db.batch([
+    q(db,"UPDATE cleaning_jobs SET start=?,end=?,overdue_step=1 WHERE id=? AND version=? AND status='open' AND assigned_to IS NULL AND overdue_step=0",window.start,window.end,j.id,j.version),
+    // Answers to the old time do not count for the new one: cleaners answer again.
+    q(db,"UPDATE applications SET status='rejected' WHERE job_id=? AND status='pending' AND EXISTS(SELECT 1 FROM cleaning_jobs WHERE id=? AND overdue_step=1 AND end=?)",j.id,j.id,window.end),
+    q(db,"INSERT OR IGNORE INTO notifications SELECT ?,?,?,?,0,? WHERE EXISTS(SELECT 1 FROM cleaning_jobs WHERE id=? AND overdue_step=1 AND end=?)",uuid(),j.owner_id,'ИИ-администратор: никто не взял уборку «'+title+'» вовремя. Я продлил поиск до '+until+'.'+why,'owner:unclaimed-reposted:'+j.id+':'+j.end,at,j.id,window.end),
+    q(db,"INSERT INTO audit_events SELECT ?,'ai-administrator',?,'job.unclaimed_reposted',? WHERE EXISTS(SELECT 1 FROM cleaning_jobs WHERE id=? AND overdue_step=1 AND end=?)",uuid(),j.id,at,j.id,window.end)]);
+   if(r[0].meta.changes)result.reposted++;continue;
+  }
+  const r=await db.batch([
+   q(db,'UPDATE cleaning_jobs SET overdue_step=2 WHERE id=? AND overdue_step=? AND end=?',j.id,step,j.end),
+   q(db,"INSERT OR IGNORE INTO notifications SELECT ?,?,?,?,0,? WHERE changes()>0",uuid(),j.owner_id,'ИИ-администратор: срок уборки «'+title+'» прошёл, исполнителя нет.'+why+' Откройте уборку: искать на новое время, закрыть, если убрали сами, или отменить.','owner:unclaimed:'+j.id+':'+j.end,at)]);
+  if(r[0].meta.changes)result.unclaimed++;
+ }
+}
+
 export async function sweepOverdueJobs(db:D1Database,config:OperationConfig&{PLATFORM_ADMIN_IDS?:string}={}){
- const at=epoch(),result={reminded:0,warned:0,released:0,escalated:0},list=admins(config);
+ const at=epoch(),result={reminded:0,warned:0,released:0,escalated:0,reposted:0,unclaimed:0},list=admins(config);
+ await sweepUnclaimed(db,at,result);
  const late=await rows(db,"SELECT j.*,p.title,(j.booking_id IS NULL OR EXISTS(SELECT 1 FROM bookings b WHERE b.id=j.booking_id AND b.status='completed')) vacant FROM cleaning_jobs j JOIN properties p ON p.id=j.property_id WHERE j.status IN ('assigned','in_progress') AND j.assigned_to IS NOT NULL AND (j.overdue_step=0 AND j.end<=? OR j.overdue_step=1 AND j.end<=? OR j.overdue_step=2 AND j.status='in_progress' AND j.end<=?) ORDER BY j.end LIMIT 50",at,at-OVERDUE_SILENT,at-OVERDUE_ESCALATE);
  for(const j of late){
   const title=j.title||'жильё',step=Number(j.overdue_step)||0,started=j.status==='in_progress',mark=(to:number)=>q(db,'UPDATE cleaning_jobs SET overdue_step=? WHERE id=? AND overdue_step=? AND end=?',to,j.id,step,j.end);

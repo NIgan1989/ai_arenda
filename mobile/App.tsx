@@ -37,6 +37,7 @@ import {JobPlace} from './src/JobPlace';
 import {OwnerResponses} from './src/OwnerResponses';
 import {autopilotPick,ownerResponses} from '../lib/now-card';
 import {OverdueHelp} from './src/OverdueHelp';
+import {isUnclaimed} from '../lib/overdue-text';
 import {CheckinGuide} from './src/CheckinGuide';
 import {PageTransition} from './src/PageTransition';
 import {entryReady,markGesture} from './src/loading';
@@ -423,7 +424,7 @@ function Chat(){
       const applied=data.applications.some((a:Row)=>a.job_id===id&&a.user_id===userId&&a.status!=='rejected');
       const application=data.applications.find((a:Row)=>a.job_id===id&&a.user_id===userId);
       return <Fragment key={id}>{!!title&&<Text accessibilityRole="header" style={s.groupTitle}>{title}</Text>}<View style={recordStyles.card}><RecordHead kind="job" item={j} role={payload.role} userId={userId||''} application={application} onMap={onMap('job',id)}/>{!owner&&<JobPlace job={j}/>}<RecordJourney kind="job" item={j}/>
-        {owner&&j.status==='open'&&<ApplicantPick applications={data.applications.filter((a:Row)=>a.job_id===id&&a.status==='pending')} approvals={data.approvals||[]} busy={busy} onDecide={body=>perform('approvals',body,uid())}/>}
+        {owner&&j.status==='open'&&!isUnclaimed(j,Date.now()/1000)&&<ApplicantPick applications={data.applications.filter((a:Row)=>a.job_id===id&&a.status==='pending')} approvals={data.approvals||[]} busy={busy} onDecide={body=>perform('approvals',body,uid())}/>}
         {owner&&!!j.worker&&<View style={applicantStyles.assigned}><WorkerRow worker={j.worker} label="Исполнитель"/></View>}
         <RecordFacts rows={[owner&&j.description&&['Что сделать',j.description],j.address&&['Адрес',j.address+(j.owner_contact?' · '+j.owner_contact:''),true],j.report&&['Отчёт',j.report]]}/>
         <ActivityTimer kind="job" item={j}/>

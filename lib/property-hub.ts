@@ -24,8 +24,15 @@ export function hubLine(entries: CalendarEntry[], now: number) {
   const view = hubToday(entries, now);
   if (view.waiting.length === 1) return view.waiting[0].kind === 'job' ? 'Уборка: ' + view.waiting[0].status.toLocaleLowerCase('ru') : 'Заявка ждёт ответа';
   if (view.waiting.length) return 'Ждут ответа: ' + view.waiting.length;
-  const late = view.today.find(e => e.tone === 'late');
+  const late = hubLate(entries, now);
   if (late) return late.status;
   if (view.today.length) return view.today[0].status + (view.today.length > 1 ? ' · ещё ' + (view.today.length - 1) : '');
   return view.next.length ? 'Сегодня свободно' : 'Броней и уборок нет';
+}
+
+// What went wrong today (a cleaning past its time, a departure nobody confirmed), when nothing waits for an answer:
+// its line under the flat's name is red and opens it, so the way out is one tap from the map.
+export function hubLate(entries: CalendarEntry[], now: number) {
+  const view = hubToday(entries, now);
+  return view.waiting.length ? undefined : view.today.find(e => e.tone === 'late');
 }

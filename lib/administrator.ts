@@ -53,7 +53,8 @@ export function planAdministrator(data:Row,t:number):AdministratorTask[]{
  }
  for(const j of data.jobs||[]){
   const subject=properties.get(j.property_id)?.title||'Жильё',base=data.bookings.find((b:Row)=>b.id===j.booking_id);
-  if(j.status==='open'){
+  // Past its end an open cleaning is an overdue one (below), not a second reminder to find a cleaner.
+  if(j.status==='open'&&j.end>t){
    const applicants=(data.applications||[]).filter((a:Row)=>a.job_id===j.id&&a.status==='pending');
    add(j,'job','assignment',owner,'owner',applicants.length?'Выбрать исполнителя из откликов':'Найти исполнителя уборки',subject+' · '+(applicants.length?'есть отклики; назначение ещё не выполнено':'откликов пока нет'),j.start,j.start<=t?3:due(j.start,owner,'owner')?2:1);
   }
@@ -63,12 +64,12 @@ export function planAdministrator(data:Row,t:number):AdministratorTask[]{
    if(j.start+900<=t)add(j,'job','no-start',owner,'owner','Исполнитель не отметил начало',subject+' · свяжитесь с исполнителем и проверьте необходимость замены',j.start+900,3);
   }
   if(['open','assigned','in_progress'].includes(j.status)&&j.end<=t){
-   add(j,'job','overdue',owner,'owner','Уборка просрочена',subject+' · срок истёк, результат ещё не передан',j.end,3);
+   add(j,'job','overdue',owner,'owner','Уборка просрочена',subject+(j.status==='open'?' · срок истёк, исполнителя нет':' · срок истёк, результат ещё не передан'),j.end,3);
    if(j.assigned_to)add(j,'job','overdue',j.assigned_to,'cleaner','Передать результат или сообщить о задержке',subject+' · срок уборки истёк',j.end,3);
   }else if(j.status==='in_progress'&&due(j.end,j.assigned_to,'cleaner'))add(j,'job','report',j.assigned_to,'cleaner','Завершить уборку и передать отчёт',subject+' · заполните чек-лист и опишите результат',j.end,2);
   if(j.status==='submitted')add(j,'job','review',owner,'owner','Принять уборку или вернуть на доработку',subject+' · исполнитель передал отчёт; готовность ожидает проверки',(j.submitted_at||j.end)+1800,t>=(j.submitted_at||j.end)+1800?3:2);
   // A cleaning paid from the reserve is settled by the service, the owner owes nothing more.
-  if(j.status==='completed'&&!j.settled_at&&!j.guarantee)add(j,'job','settlement',owner,'owner','Рассчитаться с исполнителем',subject+' · работа принята; отметьте фактическую оплату после расчёта',j.end+86400,j.end+86400<=t?3:2);
+  if(j.status==='completed'&&j.assigned_to&&!j.settled_at&&!j.guarantee)add(j,'job','settlement',owner,'owner','Рассчитаться с исполнителем',subject+' · работа принята; отметьте фактическую оплату после расчёта',j.end+86400,j.end+86400<=t?3:2);
   if(['open','assigned','in_progress','submitted'].includes(j.status)){
    const next=data.bookings.filter((b:Row)=>b.property_id===j.property_id&&b.id!==j.booking_id&&b.status==='confirmed'&&!b.terms?.actual_checkin&&!b.terms?.actual_checkout&&b.start>=j.start).sort((a:Row,b:Row)=>a.start-b.start)[0];
    if(next&&(j.end>next.start||next.start<=t+3600))add(j,'job','next-arrival',owner,'owner','Под угрозой следующий заезд',subject+' · уборка и проверка ещё не завершены; согласуйте подготовку и предупредите следующего гостя',next.start,3);

@@ -9,14 +9,16 @@ const clock=(t:number)=>{const m=Math.floor(((t+SHIFT)%DAY)/60);return String(Ma
 // A confirmed stay whose checkout nobody confirmed and a cleaning nobody accepted still occupy the flat,
 // so they run on until now and never silently end at the planned time.
 // An open cleaning that cleaners answered waits for the owner, like a guest's request: it says how many answered.
-function jobAnswers(j:Row,applications:Row[]|undefined,now:number):{status:string;waiting?:boolean}{
+function jobAnswers(j:Row,applications:Row[]|undefined,now:number):{status:string;waiting?:boolean;late?:boolean}{
  const count=j.status==='open'&&!j.assigned_to&&j.end>now?(applications||[]).filter((a:Row)=>a.job_id===j.id&&a.status==='pending').length:0;
  if(count)return {status:count===1?'Откликнулся исполнитель':'Откликов: '+count,waiting:true};
+ // Past its end without a result: the flat card says so first, not «Нужен исполнитель».
+ if(['open','assigned','in_progress'].includes(j.status)&&j.end<=now)return {status:'Уборка просрочена',late:true};
  return {status:j.status==='completed'?'Уборка принята':j.status==='submitted'?'Ждёт приёмки':j.status==='in_progress'?'Уборка идёт':j.assigned_to?'Исполнитель назначен':'Нужен исполнитель'};
 }
 export function calendarEntries(data:Row,role:string,property:string,now:number):CalendarEntry[]{
  const stays:CalendarEntry[]=(data.bookings||[]).filter((b:Row)=>['confirmed','requested','completed'].includes(b.status)&&(!property||b.property_id===property)).map((b:Row)=>{const late=b.status==='confirmed'&&!b.terms?.actual_checkout&&b.end<=now;return {key:'booking:'+b.id,kind:'booking' as const,id:b.id,title:b.title,start:b.start,planned:b.terms?.actual_checkout||b.end,end:b.terms?.actual_checkout||(b.status==='confirmed'?Math.max(b.end,now+1):b.end),tone:late?'late' as const:b.status==='requested'?'request' as const:b.status==='completed'?'done' as const:'stay' as const,status:late?'Выезд не подтверждён':b.status==='requested'?'Заявка ждёт ответа':b.status==='completed'?'Выезд подтверждён':b.terms?.actual_checkin?'Гость заселён':'Бронь подтверждена'};});
- const jobs:CalendarEntry[]=(role==='guest'?[]:data.jobs||[]).filter((j:Row)=>j.status!=='cancelled'&&(!property||j.property_id===property)&&(role!=='cleaner'||j.assigned_to===data.user?.id)).map((j:Row)=>({key:'job:'+j.id,kind:'job' as const,id:j.id,title:j.title,start:j.start,planned:j.end,end:j.status==='completed'?j.end:Math.max(j.end,now+1),tone:j.status==='completed'?'done' as const:'cleaning' as const,...jobAnswers(j,data.applications,now)}));
+ const jobs:CalendarEntry[]=(role==='guest'?[]:data.jobs||[]).filter((j:Row)=>j.status!=='cancelled'&&(!property||j.property_id===property)&&(role!=='cleaner'||j.assigned_to===data.user?.id)).map((j:Row)=>({key:'job:'+j.id,kind:'job' as const,id:j.id,title:j.title,start:j.start,planned:j.end,end:j.status==='completed'?j.end:Math.max(j.end,now+1),...(({late,...answer})=>({tone:late?'late' as const:j.status==='completed'?'done' as const:'cleaning' as const,...answer}))(jobAnswers(j,data.applications,now))}));
  return [...stays,...jobs].sort((a,b)=>a.start-b.start||a.key.localeCompare(b.key));
 }
 export const entriesOn=(entries:CalendarEntry[],day:number)=>entries.filter(e=>e.start<day+DAY&&e.end>day);

@@ -7,8 +7,11 @@ type Row=Record<string,any>;
 export const extendChoices=[30,60,120] as const;
 export const OVERDUE_SILENT=30*60,OVERDUE_ESCALATE=2*3600;
 export function isOverdue(job:Row,t:number){return ['assigned','in_progress'].includes(job.status)&&!!job.assigned_to&&Number(job.end)<=t;}
+// Nobody took the cleaning and its time is over: only the owner can move it on.
+export function isUnclaimed(job:Row,t:number){return job.status==='open'&&!job.assigned_to&&Number(job.end)<=t;}
 export function extendLabel(minutes:number){return minutes<60?minutes+' мин':minutes/60+' ч';}
 export function overdueNote(job:Row,role:'owner'|'cleaner',t:number):{title:string;text:string;ai:string}|null{
+ if(role==='owner'&&isUnclaimed(job,t))return {title:'Срок уборки прошёл',text:'Никто не взял уборку вовремя. Найдите исполнителя на новое время, закройте её, если убрали сами, или отмените.',ai:Number(job.overdue_step)>=2?'ИИ-администратор не нашёл исполнителя и ждёт вашего решения.':'ИИ-администратор сам перенесёт поиск на новое время, если жильё свободно и включён автопилот.'};
  if(!isOverdue(job,t))return null;
  const step=Number(job.overdue_step)||0,started=job.status==='in_progress',blocked=!started&&job.checkout_confirmed===false;
  if(role==='cleaner'){
