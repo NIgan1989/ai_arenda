@@ -8,7 +8,7 @@ import {CheckCircle2,CheckCheck,CircleDot,Landmark,ArrowLeft,Bell,ChevronRight,S
 import {roleNames,rolePages} from '../lib/access';
 import {pageIcon} from './workspace-navigation';
 import type {Role} from '../lib/domain';
-import {experienceFor} from '../lib/role-experience';
+import {experienceFor,joinTitle} from '../lib/role-experience';
 import {Photo} from './media';
 import {ProfileEditor} from './profile-editor';
 import {logout} from './auth-form';
@@ -62,7 +62,7 @@ export function AccountControl({role,onChanged,onAdministrator}:{role:string;onA
  {view==='profile'&&<>
  <section className="acct-group">{row(UserRound,'О себе',profile.bio)}{row(Languages,'Языки общения',profile.languages)}{row(MapPin,experience.cityLabel,profile.city)}{worker&&<>{row(MapIcon,'Районы работы',profile.districts)}{row(Clock,'График',profile.availability)}{row(BadgeCheck,'Опыт и услуги',profile.experience)}</>}{row(Phone,'Телефон',profile.contact)}</section></>}
  {/* On a phone the map is the only screen, so the menu lists the role's sections (the desktop sidebar lists them), and joining another role, which no other workspace screen offers. The guest has none left: the search, its results and the bookings all live in the sheet of the map; so do the owner's objects and the cleaner's search for jobs. */}
- {!view&&(()=>{const r=role as Role,more=(rolePages[r]||[]).filter(p=>!['map','account','chats','operations',...(r==='guest'?['catalog','bookings','calendar']:r==='owner'?['properties']:['jobs'])].includes(p.id)),join=(['owner','cleaner'] as Role[]).filter(v=>v!==r&&!roles.includes(v));return more.length+join.length>0&&<><h3 className={'acct-label'+(join.length?'':' acct-phone-only')}>Разделы</h3><section className={'acct-group'+(join.length?'':' acct-phone-only')}>{more.map(p=>{const Icon=pageIcon(r,p.id);return <a key={p.id} className="acct-row acct-phone-only" href={base+p.id}><Icon size={20}/><span>{p.title}</span><ChevronRight size={16}/></a>;})}{join.map(v=><a key={v} className="acct-row" href={'/join/'+v}><Plus size={20}/><span>{v==='owner'?'Сдавать жильё':'Работать на уборках'}</span><ChevronRight size={16}/></a>)}</section></>;})()}
+ {!view&&(()=>{const r=role as Role,more=(rolePages[r]||[]).filter(p=>!['map','account','chats','operations',...(r==='guest'?['catalog','bookings','calendar']:r==='owner'?['properties']:['jobs'])].includes(p.id)),join=(['guest','owner','cleaner'] as Role[]).filter(v=>v!==r&&!roles.includes(v));return more.length+join.length>0&&<><h3 className={'acct-label'+(join.length?'':' acct-phone-only')}>Разделы</h3><section className={'acct-group'+(join.length?'':' acct-phone-only')}>{more.map(p=>{const Icon=pageIcon(r,p.id);return <a key={p.id} className="acct-row acct-phone-only" href={base+p.id}><Icon size={20}/><span>{p.title}</span><ChevronRight size={16}/></a>;})}{join.map(v=><a key={v} className="acct-row" href={'/join/'+v}><Plus size={20}/><span>{joinTitle(v)}</span><ChevronRight size={16}/></a>)}</section></>;})()}
  {view==='settings'&&<>
  <h3 className="acct-label">Уведомления</h3>
  <section className="acct-group"><WebPushSettings key={'push:'+role} role={role} compact/><TelegramSettings key={'tg:'+role} role={role} compact/>{toggle(Wallet,'О расчётах и выплатах',!!account.settings.payment_notifications,v=>settings({payment_notifications:v?1:0}))}</section>

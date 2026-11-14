@@ -26,3 +26,5 @@ export function managementMenu(role:string,state:Record<string,any>|null){const 
 // Minutes an executor gets to answer an offer: the steps a person would actually pick.
 export const offerSteps=[2,5,10,15,20,30,45,60,90,120];
 export function offerStep(value:number,direction:1|-1){const i=offerSteps.findIndex(step=>step>=value),at=i<0?offerSteps.length-1:i;return direction>0?offerSteps[Math.min(offerSteps.length-1,offerSteps[at]===value?at+1:at)]:offerSteps[Math.max(0,at-1)];}
+/** The menu row that adds a role the account does not have yet: the same words on the site and in the app. */
+export function joinTitle(role:string){return role==='owner'?'Сдавать жильё':role==='cleaner'?'Работать на уборках':'Искать жильё';}
