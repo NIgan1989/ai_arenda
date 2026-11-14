@@ -200,7 +200,7 @@ export class RentalService {
   async roleState(value:unknown,options:{catalog?:boolean}={}){
     const role=await this.authorizeWorkspace(value,'state'),state=await this.state(options.catalog!==false);
     const bookings=state.bookings.filter((b:Row)=>role==='owner'?b.owner_id===this.userId:role==='guest'&&b.guest_id===this.userId).map((b:Row)=>role==='owner'?b:{...b,address:b.status==='confirmed'?b.address:null,owner_contact:b.status==='confirmed'?b.owner_contact:null,guest_name:null,guest_contact:null});
-    const jobs=role==='guest'?[]:state.jobs.filter((j:Row)=>role==='owner'?j.owner_id===this.userId:j.assigned_to===this.userId||(j.status==='open'&&j.end>state.serverTime)).map((j:Row)=>role==='owner'||j.assigned_to===this.userId?j:{...j,address:null,owner_contact:null,report:'',checklist:'[]'});
+    const jobs=role==='guest'?[]:state.jobs.filter((j:Row)=>role==='owner'?j.owner_id===this.userId:j.assigned_to===this.userId||(j.status==='open'&&j.end>state.serverTime)).map((j:Row)=>role==='owner'||j.assigned_to===this.userId&&j.status!=='cancelled'?j:{...j,address:null,owner_contact:null,report:'',checklist:'[]'});
     const jobIds=new Set(jobs.map((j:Row)=>j.id));
     const entityIds=[...bookings,...jobs].map((item:Row)=>item.id);
     const accountPreference=await this.one('SELECT payment_notifications FROM account_preferences WHERE user_id=?',this.userId);
