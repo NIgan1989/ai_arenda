@@ -14,7 +14,7 @@ const hhmm=(m:number)=>String(Math.floor(m/60)).padStart(2,'0')+':'+String(m%60)
 const toMinutes=(v:string)=>{const [h,m]=v.split(':').map(Number);return Math.max(0,Math.min(1440,(h||0)*60+(m||0)));};
 const plural=(n:number,one:string,few:string,many:string)=>n%10===1&&n%100!==11?one:[2,3,4].includes(n%10)&&![12,13,14].includes(n%100)?few:many;
 export const planFeatures:Record<'owner'|'cleaner',string[]>={
- owner:['Принимает брони и отвечает гостям за вас, днём и ночью','Заказывает уборку, назначает исполнителя и находит замену','Принимает уборку по фотоотчёту и отмечает выезд гостя','Объект выше в подборе для гостей','Комиссия с брони обычная, без надбавки за ИИ','Итоги недели по понедельникам'],
+ owner:['Принимает брони и отвечает гостям за вас, днём и ночью','Заказывает уборку, назначает исполнителя и находит замену','Принимает уборку по фотоотчёту и отмечает выезд гостя','Жильё выше в подборе для гостей','Комиссия с брони обычная, без надбавки за ИИ','Итоги недели по понедельникам'],
  cleaner:['Берёт уборки сам по вашим правилам: районы, дни, часы, оплата','Подходящие уборки приходят вам раньше остальных','План дня в 8:00: адреса по порядку и время','«Не могу сегодня»: ИИ вернёт уборки и найдёт замену','Итоги недели в профиле']
 };
 export const planSteps:Record<'owner'|'cleaner',string[]>={owner:['Объекты','Уборка','Итог'],cleaner:['Где и когда','Оплата','Итог']};
@@ -97,7 +97,7 @@ export function AutopilotPlan({role,api}:{role:'owner'|'cleaner';api:(path:strin
   {!live?<>
    <section className="acct-group plan-current"><div className="acct-row"><Sparkles size={20}/><span>{owner?'Сам':'Обычный'}<small>{owner?'Брони и уборки подтверждаете вы. ИИ подсказывает.':'На каждое предложение уборки отвечаете вы.'}</small></span><em className="plan-free">Бесплатно</em></div></section>
    <section className="plan-card">
-    <span className="plan-badge"><Sparkles size={14}/>AI администратор</span>
+    <span className="plan-badge"><Sparkles size={14}/>ИИ-администратор</span>
     <label className="plan-head"><span><strong>{owner?'Автопилот':'Автопилот исполнителя'}</strong><small><b>{money(s.price)}</b> {owner?'в месяц за объект':'в месяц'}{s.trialDays>0&&!plan?`, первые ${s.trialDays} дней бесплатно`:''}</small></span><input type="checkbox" role="switch" className="acct-switch plan-toggle" aria-label="Автопилот" checked={open} disabled={busy} onChange={e=>e.target.checked?start():(setOpen(false),setStep(0))}/></label>
     {plan?.status==='paused'&&<p className="plan-paused"><CircleAlert size={16}/>Автопилот на паузе. Принятые брони и уборки в силе.</p>}
     {open?wizard:<>

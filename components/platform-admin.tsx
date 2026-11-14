@@ -12,7 +12,7 @@ import {AdminReports} from './admin-reports';
 import {AdminPolicy} from './admin-policy';
 import {AdminRevenue} from './admin-revenue';
 import {AdminReviews} from './admin-reviews';
-import {AccountSafety} from './safety-controls';
+import {AdminDeletionRequests} from './safety-controls';
 import {logout} from './auth-form';
 import {roleNames} from '../lib/access';
 import {adminSection,adminSectionPath,type AdminSection} from '../lib/admin-navigation';
@@ -84,7 +84,7 @@ export function PlatformAdmin({name}:{name:string}){
  {tab==='reviews'&&<AdminReviews data={data} busy={busy} save={save}/>}
  {tab==='operator'&&<AdminIssues state={data} busy={busy} save={save}/>}
  {tab==='policy'&&<AdminPolicy state={data} busy={busy} save={save}/>}
- {tab==='moderation'&&<><AdminReports data={data} busy={busy} save={save}/><details className="reviews-rules"><summary>Удаление аккаунтов и ваши сеансы<ChevronRight size={16}/></summary><div className="admin-safety-extra"><AccountSafety role="guest" admin/></div></details></>}
+ {tab==='moderation'&&<><AdminReports data={data} busy={busy} save={save}/><details className="reviews-rules"><summary>Запросы на удаление аккаунтов<ChevronRight size={16}/></summary><div className="admin-safety-extra"><AdminDeletionRequests role="guest"/></div></details></>}
  {tab==='revenue'&&<AdminRevenue data={data} busy={busy} save={save}/>}
  {tab==='health'&&<AdminHealth data={data} busy={busy} save={save}/>}
  </>}

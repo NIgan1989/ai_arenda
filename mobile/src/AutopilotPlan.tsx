@@ -14,7 +14,7 @@ const hhmm=(m:number)=>String(Math.floor(m/60)).padStart(2,'0')+':'+String(m%60)
 const toMinutes=(v:string)=>{const [h,m]=v.split(':').map(Number);return Math.max(0,Math.min(1440,(h||0)*60+(m||0)));};
 const plural=(n:number,one:string,few:string,many:string)=>n%10===1&&n%100!==11?one:[2,3,4].includes(n%10)&&![12,13,14].includes(n%100)?few:many;
 const FEATURES={
- owner:['Принимает брони и отвечает гостям за вас, днём и ночью','Заказывает уборку, назначает исполнителя и находит замену','Принимает уборку по фотоотчёту и отмечает выезд гостя','Объект выше в подборе для гостей','Комиссия с брони обычная, без надбавки за ИИ','Итоги недели по понедельникам'],
+ owner:['Принимает брони и отвечает гостям за вас, днём и ночью','Заказывает уборку, назначает исполнителя и находит замену','Принимает уборку по фотоотчёту и отмечает выезд гостя','Жильё выше в подборе для гостей','Комиссия с брони обычная, без надбавки за ИИ','Итоги недели по понедельникам'],
  cleaner:['Берёт уборки сам по вашим правилам: районы, дни, часы, оплата','Подходящие уборки приходят вам раньше остальных','План дня в 8:00: адреса по порядку и время','«Не могу сегодня»: ИИ вернёт уборки и найдёт замену','Итоги недели в профиле']
 };
 const STEPS={owner:['Объекты','Уборка','Итог'],cleaner:['Где и когда','Оплата','Итог']};
@@ -100,7 +100,7 @@ export function NativeAutopilotPlan({role}:{role:'owner'|'cleaner'}){
   <Group title="Тариф"><View style={a.row}><View style={a.wide}><Text style={a.title}>{owner?'Сам':'Обычный'}</Text><Text style={a.note}>{owner?'Брони и уборки подтверждаете вы. ИИ подсказывает.':'На каждое предложение уборки отвечаете вы.'}</Text></View><Text style={p.free}>Бесплатно</Text></View></Group>
   {notice}
   <View style={p.card}>
-   <Text style={p.badge}>✦ AI администратор</Text>
+   <Text style={p.badge}>✦ ИИ-администратор</Text>
    <View style={p.head}><View style={{flex:1,gap:4}}><Text style={p.h3}>{owner?'Автопилот':'Автопилот исполнителя'}</Text><Text style={p.price}><Text style={p.priceBig}>{money(st.price)}</Text> {owner?'в месяц за объект':'в месяц'}{st.trialDays>0&&!plan?`, первые ${st.trialDays} дней бесплатно`:''}</Text></View><Switch accessibilityLabel="Автопилот" value={open} disabled={busy} onValueChange={v=>v?begin():(setOpen(false),setStep(0))} trackColor={{false:C.lineStrong,true:C.accent}} thumbColor={C.surface}/></View>
    {plan?.status==='paused'&&<Text style={p.paused}>Автопилот на паузе. Принятые брони и уборки в силе.</Text>}
    {open?wizard:<>
