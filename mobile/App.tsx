@@ -362,7 +362,7 @@ function Chat(){
    if(open.kind==='room')return()=>{setChatInitial({roomId:open.id});setPageId('chats');};
    if(open.kind==='property')return onMap('property',open.id);
    const list:Row[]=open.kind==='job'?data.jobs:data.bookings;
-   return list.some(r=>r.id===open.id)?()=>{scrollMessage.current=null;setPageId('overview');say('Текущий статус и доступные действия.',open.kind==='job'?'jobs':'bookings',{ids:[open.id],role:selectedRole});}:undefined;
+   return list.some(r=>r.id===open.id)?()=>{scrollMessage.current=null;setPageId('overview');say(open.kind==='job'?'Уборка: что с ней сейчас и что можно сделать.':'Бронь: что с ней сейчас и что можно сделать.',open.kind==='job'?'jobs':'bookings',{ids:[open.id],role:selectedRole});}:undefined;
   };
   const onMap=(kind:MapTarget['kind'],id:string)=>selectedRole&&targetPin(selectedRole,{kind,id},data)?()=>{setMapTarget({kind,id});setMapSeq(v=>v+1);setChatsActive(false);scrollMessage.current=null;setPageId('map');}:undefined;
   function block(m:Message){

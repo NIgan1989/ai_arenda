@@ -2,7 +2,7 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {loadPure} from './helpers/pure.mjs';
 
-const {aiMarkOf, latestMove, AI_SAYS, AI_WINDOW, aiNoteOf, journalWhen, journalToday, journalHref, mergeJournal} = await loadPure('lib/ai-move-marks.ts');
+const {aiMarkOf, latestMove, AI_SAYS, AI_WINDOW, aiNoteOf, journalClock, journalDay, journalMeta, journalGroups, journalToday, journalHref, mergeJournal} = await loadPure('lib/ai-move-marks.ts');
 
 test('the notices the AI leaves are read as moves on what they are about', () => {
   assert.deepEqual(aiMarkOf('owner:administrator-confirmed:b1', 100), {kind: 'booking', id: 'b1', move: 'confirmed', at: 100});
@@ -55,9 +55,14 @@ test('the journal keeps every step of the AI as one short line, also those witho
 
 test('journal times read as today, yesterday or a date, in Kazakhstan time', () => {
   const noon = Date.UTC(2026, 10, 13, 7, 0) / 1000; // 12:00 in UTC+5
-  assert.equal(journalWhen(noon - 3600, noon), 'сегодня 11:00');
-  assert.equal(journalWhen(noon - 86400, noon), 'вчера 12:00');
-  assert.equal(journalWhen(noon - 3 * 86400, noon), '10.11 12:00');
+  assert.equal(journalClock(noon - 3600), '11:00');
+  assert.deepEqual([journalDay(noon - 3600, noon), journalDay(noon - 86400, noon), journalDay(noon - 3 * 86400, noon)], ['Сегодня', 'Вчера', '10 ноября']);
+  // Lines stand under the heads of their days, in the order they came.
+  assert.deepEqual(journalGroups([{at: noon - 60}, {at: noon - 3600}, {at: noon - 86400}], noon).map(g => [g.day, g.lines.length]), [['Сегодня', 2], ['Вчера', 1]]);
+  // The second line: who and when, only for a cleaning or a stay.
+  assert.equal(journalMeta({at: noon, text: '', title: '', who: 'Айгуль', start: noon + 3600, open: {kind: 'job', id: 'j1'}}), 'Айгуль · уборка 13 ноября, 13:00');
+  assert.equal(journalMeta({at: noon, text: '', title: '', start: noon + 86400, open: {kind: 'booking', id: 'b1'}}), 'заезд 14 ноября, 12:00');
+  assert.equal(journalMeta({at: noon, text: '', title: '', start: noon, open: {kind: 'property', id: 'p1'}}), '');
   assert.equal(journalToday([{at: noon - 60}, {at: noon - 13 * 3600}, {at: noon - 86400}], noon), 1);
 });
 

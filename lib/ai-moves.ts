@@ -23,32 +23,32 @@ export async function recentAiMarks(db:D1Database,userId:string,role:Role,now=ep
 export const JOURNAL_DAYS=14,JOURNAL_LIMIT=30;
 export type JournalEntry=JournalLine;
 const HOME:Record<string,string>={
- booking:"SELECT p.title,'booking' kind,b.id FROM bookings b JOIN properties p ON p.id=b.property_id WHERE b.id=?",
- job:"SELECT p.title,'job' kind,j.id FROM cleaning_jobs j JOIN properties p ON p.id=j.property_id WHERE j.id=?",
+ booking:"SELECT p.title,'booking' kind,b.id,b.start FROM bookings b JOIN properties p ON p.id=b.property_id WHERE b.id=?",
+ job:"SELECT p.title,'job' kind,j.id,j.start,(SELECT name FROM profiles WHERE id=j.assigned_to) who FROM cleaning_jobs j JOIN properties p ON p.id=j.property_id WHERE j.id=?",
  property:"SELECT title,'property' kind,id FROM properties WHERE id=?",
  'matching-offer':"SELECT p.title,'property' kind,p.id FROM matching_offers o JOIN properties p ON p.id=o.property_id WHERE o.id=?",
- 'cleaning-offer':"SELECT p.title,'job' kind,j.id FROM cleaning_offers o JOIN cleaning_jobs j ON j.id=o.job_id JOIN properties p ON p.id=j.property_id WHERE o.id=?",
- application:"SELECT p.title,'job' kind,j.id FROM applications a JOIN cleaning_jobs j ON j.id=a.job_id JOIN properties p ON p.id=j.property_id WHERE a.id=?",
+ 'cleaning-offer':"SELECT p.title,'job' kind,j.id,j.start FROM cleaning_offers o JOIN cleaning_jobs j ON j.id=o.job_id JOIN properties p ON p.id=j.property_id WHERE o.id=?",
+ application:"SELECT p.title,'job' kind,j.id,j.start,(SELECT name FROM profiles WHERE id=a.user_id) who FROM applications a JOIN cleaning_jobs j ON j.id=a.job_id JOIN properties p ON p.id=j.property_id WHERE a.id=?",
  price:"SELECT p.title,'property' kind,p.id FROM price_suggestions x JOIN properties p ON p.id=x.property_id WHERE x.id=?",
  window:"SELECT p.title,'property' kind,p.id FROM calendar_windows x JOIN properties p ON p.id=x.property_id WHERE x.id=?",
  forecast:"SELECT p.title,'property' kind,p.id FROM load_forecasts x JOIN properties p ON p.id=x.property_id WHERE x.id=?",
- stay:"SELECT p.title,'booking' kind,b.id FROM stay_offers x JOIN bookings b ON b.id=x.booking_id JOIN properties p ON p.id=b.property_id WHERE x.id=?",
+ stay:"SELECT p.title,'booking' kind,b.id,b.start FROM stay_offers x JOIN bookings b ON b.id=x.booking_id JOIN properties p ON p.id=b.property_id WHERE x.id=?",
  // The chat of a booking or of a cleaning: the line opens the chat itself.
  room:"SELECT COALESCE((SELECT p.title FROM bookings b JOIN properties p ON p.id=b.property_id WHERE r.entity_kind='booking' AND b.id=r.entity_id),(SELECT p.title FROM cleaning_jobs j JOIN properties p ON p.id=j.property_id WHERE r.entity_kind='job' AND j.id=r.entity_id),'') title,'room' kind,r.id FROM discussion_rooms r WHERE r.id=?"
 };
 export async function aiJournal(db:D1Database,userId:string,role:Role,now=epoch()):Promise<JournalEntry[]>{
  const notices=await rows(db,'SELECT dedupe,body,created_at FROM notifications WHERE user_id=? AND created_at>? AND dedupe LIKE ? ORDER BY created_at DESC,id LIMIT 200',userId,now-JOURNAL_DAYS*86400,role+':%');
  const notes=notices.map((n:Row)=>aiNoteOf(n.dedupe,Number(n.created_at),n.body)).filter((n):n is AiNote=>!!n);
- const found=new Map<string,{title:string;open?:JournalOpen}>(),out:JournalEntry[]=[],seen=new Set<string>();
+ const found=new Map<string,{title:string;open?:JournalOpen;who?:string;start?:number}>(),out:JournalEntry[]=[],seen=new Set<string>();
  for(const n of notes){
   if(out.length>=JOURNAL_LIMIT)break;
   const key=n.kind+':'+n.id;
   if(n.kind&&!found.has(key)){
    const hit=(await rows(db,HOME[n.kind],n.id))[0];
-   found.set(key,hit?{title:String(hit.title||''),open:{kind:hit.kind,id:String(hit.id)}}:{title:''});
+   found.set(key,hit?{title:String(hit.title||''),open:{kind:hit.kind,id:String(hit.id)},...(role==='owner'&&hit.who?{who:String(hit.who)}:{}),...(Number(hit.start)>0?{start:Number(hit.start)}:{})}:{title:''});
   }
   const about=n.kind?found.get(key):undefined;
-  const line:JournalEntry={at:n.at,text:n.text,title:about?.title||'',...(about?.open?{open:about.open}:{})},k=journalKey(line);
+  const line:JournalEntry={at:n.at,text:n.text,title:about?.title||'',...(about?.open?{open:about.open}:{}),...(about?.who?{who:about.who}:{}),...(about?.start?{start:about.start}:{})},k=journalKey(line);
   if(seen.has(k))continue;
   seen.add(k);out.push(line);
  }

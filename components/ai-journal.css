@@ -1,14 +1,22 @@
-/* The AI journal in the menu (ai-journal.tsx): short lines, time on the left. */
-.ai-journal ul{list-style:none;margin:0;padding:0}
-.ai-journal-line{display:grid;grid-template-columns:96px minmax(0,1fr) 16px;gap:8px;align-items:baseline;width:100%;min-height:44px;padding:8px 16px;border:0;background:none;color:inherit;font:inherit;font-size:14px;line-height:20px;text-align:left}
+/* The AI journal in the menu (ai-journal.tsx): a timeline. A dot and a thread on the left, the step, the home,
+   who and when in the middle, the clock on the right. */
+.ai-journal h4{margin:0;padding:12px 16px 4px;font-size:12px;line-height:16px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--t-muted)}
+.ai-journal ul{list-style:none;margin:0;padding:0 0 4px}
+.ai-journal-line{position:relative;display:grid;grid-template-columns:12px minmax(0,1fr) 16px;column-gap:12px;align-items:start;width:100%;min-height:56px;padding:8px 16px;border:0;background:none;color:inherit;font:inherit;text-align:left}
+div.ai-journal-line{grid-template-columns:12px minmax(0,1fr)}
 button.ai-journal-line{cursor:pointer}
 button.ai-journal-line:active{background:var(--t-accent-soft)}
 button.ai-journal-line:focus-visible{outline:2px solid var(--t-focus);outline-offset:-2px}
+/* The dot of a step, and the thread to the next step of the same day. */
+.ai-journal-line>i{width:12px;height:12px;margin-top:4px;border-radius:999px;border:2px solid var(--t-surface);background:linear-gradient(135deg,var(--t-ai-from),var(--t-ai-to));box-shadow:0 0 0 2px var(--t-accent-soft);z-index:1}
+.ai-journal li:not(:last-child) .ai-journal-line::after{content:"";position:absolute;left:21px;top:24px;bottom:-12px;width:2px;background:var(--t-accent-line)}
+.ai-journal-text{display:grid;gap:2px;min-width:0}
+.ai-journal-head{display:flex;gap:8px;align-items:baseline;justify-content:space-between}
+.ai-journal-text b{min-width:0;font-size:16px;line-height:20px;font-weight:600;color:var(--t-ink)}
+.ai-journal-text>span:not(.ai-journal-head){font-size:14px;line-height:20px;color:var(--t-ink-soft);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ai-journal-text small{font-size:12px;line-height:16px;color:var(--t-muted);overflow-wrap:anywhere}
+.ai-journal time{flex:none;font-size:12px;line-height:20px;color:var(--t-muted);font-variant-numeric:tabular-nums}
 .ai-journal-line svg{align-self:center;color:var(--t-muted)}
-.ai-journal li+li{border-top:1px solid var(--t-line)}
-.ai-journal time{font-size:12px;line-height:16px;color:var(--t-muted);font-variant-numeric:tabular-nums}
-.ai-journal b{font-weight:600;color:var(--t-ink)}
-.ai-journal small{font-size:inherit;color:var(--t-muted);overflow-wrap:anywhere}
 .ai-journal-more{display:block;width:100%;min-height:44px;border:0;border-top:1px solid var(--t-line);background:none;color:var(--t-accent);font:inherit;font-size:14px;font-weight:600;cursor:pointer}
 .ai-journal-more:focus-visible{outline:2px solid var(--t-focus);outline-offset:-2px}
 .ai-journal-empty{margin:0;padding:12px 16px;font-size:14px;line-height:20px;color:var(--t-muted)}

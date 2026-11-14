@@ -93,19 +93,35 @@ export function aiNoteOf(dedupe:unknown,at:unknown,body?:unknown):AiNote|null{
  for(const [prefix,kind,text] of NOTES)if(dedupe.startsWith(prefix)){const id=dedupe.slice(prefix.length).split(':')[0];return {kind,id:kind?id:'',text,at};}
  return null;
 }
-// «сегодня 14:05», «вчера 09:30», «12.11 18:40», in Kazakhstan time (UTC+5) as everywhere in the service.
-export function journalWhen(at:number,now:number){
- const zone=5*3600,d=new Date((at+zone)*1000),day=(t:number)=>Math.floor((t+zone)/86400),two=(n:number)=>String(n).padStart(2,'0');
- const clock=two(d.getUTCHours())+':'+two(d.getUTCMinutes()),ago=day(now)-day(at);
- return ago===0?'сегодня '+clock:ago===1?'вчера '+clock:two(d.getUTCDate())+'.'+two(d.getUTCMonth()+1)+' '+clock;
-}
 // How many of these lines are from today: the number next to the row of the menu.
 export function journalToday(entries:{at:number}[],now:number){const zone=5*3600,day=(t:number)=>Math.floor((t+zone)/86400);return entries.filter(e=>day(e.at)===day(now)).length;}
 
 // ---------- A line of the journal opens what it is about ----------
 // open: the booking, the cleaning, the home or the chat of the line. The same addresses a push opens (lib/web-push.ts).
 export type JournalOpen={kind:'booking'|'job'|'property'|'room';id:string};
-export type JournalLine={at:number;text:string;title:string;open?:JournalOpen};
+// who: the person the step was about (the worker of a cleaning, for its owner). start: when that cleaning or stay begins.
+export type JournalLine={at:number;text:string;title:string;open?:JournalOpen;who?:string;start?:number};
+const J_ZONE=5*3600,J_MONTHS=['января','февраля','марта','апреля','мая','июня','июля','августа','сентября','октября','ноября','декабря'];
+const jTwo=(n:number)=>String(n).padStart(2,'0'),jDate=(at:number)=>new Date((at+J_ZONE)*1000);
+// «14:05» of a line, and the day that heads its group: «Сегодня», «Вчера», «12 ноября».
+export function journalClock(at:number){const d=jDate(at);return jTwo(d.getUTCHours())+':'+jTwo(d.getUTCMinutes());}
+export function journalDay(at:number,now:number){
+ const day=(t:number)=>Math.floor((t+J_ZONE)/86400),ago=day(now)-day(at),d=jDate(at);
+ return ago===0?'Сегодня':ago===1?'Вчера':d.getUTCDate()+' '+J_MONTHS[d.getUTCMonth()];
+}
+// The second line of an entry: who and when, so the step reads whole without opening it.
+// «Айгуль · уборка 14 ноября, 06:30», «заезд 15 ноября, 14:00».
+export function journalMeta(l:JournalLine){
+ const parts:string[]=[];if(l.who)parts.push(l.who);
+ if(typeof l.start==='number'&&l.start>0&&(l.open?.kind==='job'||l.open?.kind==='booking')){const d=jDate(l.start);parts.push((l.open.kind==='job'?'уборка ':'заезд ')+d.getUTCDate()+' '+J_MONTHS[d.getUTCMonth()]+', '+journalClock(l.start));}
+ return parts.join(' · ');
+}
+// Lines under the heads of their days, in the order they came (the newest first).
+export function journalGroups<T extends JournalLine>(lines:T[],now:number):{day:string;lines:T[]}[]{
+ const out:{day:string;lines:T[]}[]=[];
+ for(const l of lines){const day=journalDay(l.at,now),last=out[out.length-1];if(last&&last.day===day)last.lines.push(l);else out.push({day,lines:[l]});}
+ return out;
+}
 export function journalHref(role:string,open?:JournalOpen|null):string|null{
  if(!open||!/^[A-Za-z0-9_-]{1,100}$/.test(open.id)||!['guest','owner','cleaner'].includes(role))return null;
  const base='/workspace/'+role+'/';

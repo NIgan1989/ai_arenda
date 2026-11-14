@@ -220,9 +220,9 @@ export default function Chat({workspaceRole,section,accountId,sheet=false}:{work
     const room=params.get('room'),entity=params.get('entity'),validId=(v:string|null)=>!!v&&/^[A-Za-z0-9_-]{1,100}$/.test(v);
     if(section==='chats'&&validId(room)){showDiscussion({roomId:room});return;}
     if(validId(entity)&&['bookings','cleaning','jobs','assignments','properties'].includes(section)){
-      if(section==='properties'){const p=data.ownProperties.find((p:Row)=>p.id===entity);if(p)say('Жильё из уведомления.','property-settings',{id:p.id});else say('Это жильё больше недоступно.');return;}
+      if(section==='properties'){const p=data.ownProperties.find((p:Row)=>p.id===entity);if(p)say('Жильё: как оно сейчас и что можно настроить.','properties',{items:[p],actor:role,direct:true});else say('Это жильё больше недоступно.');return;}
       const job=section!=='bookings',items=(job?data.jobs:data.bookings).filter((item:Row)=>item.id===entity);
-      if(items.length)say(job?'Уборка из уведомления: что с ней сейчас и что можно сделать.':'Бронь из уведомления: что с ней сейчас и что можно сделать.',job?'jobs':'bookings',{items,actor:role,applications:data.applications,direct:true});
+      if(items.length)say(job?'Уборка: что с ней сейчас и что можно сделать.':'Бронь: что с ней сейчас и что можно сделать.',job?'jobs':'bookings',{items,actor:role,applications:data.applications,direct:true});
       else say(job?'Эта уборка больше недоступна. Актуальный список — выше.':'Эта бронь больше недоступна. Актуальный список — выше.');
       return;
     }
