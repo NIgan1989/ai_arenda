@@ -82,10 +82,14 @@ export function AutopilotThreads({ role, data, now, paymentMode, needs = [], cal
   const threads = useMemo(() => role === 'owner' ? ownerThreads(data, now) : role === 'guest' ? guestThreads(data, now, paymentMode) : cleanerThreads(data, now), [role, data, now, paymentMode]);
   const week = useMemo(() => role === 'cleaner' ? cleanerWeek(data, now) : [], [role, data, now]);
   const [width, setWidth] = useState(0);
-  if (!data?.user?.id || (!threads.length && !needs.length && role !== 'cleaner')) return null;
+  if (!data?.user?.id) return null;
+  // Nothing goes on now: the guest still reaches the past bookings from here, the others see no block.
+  if (!threads.length && !needs.length && role !== 'cleaner') return onAll ? <View style={a.box}><Pressable accessibilityRole="button" accessibilityLabel="Все брони" onPress={onAll} style={a.moreButton}><Text style={a.moreText}>Все брони ›</Text></Pressable></View> : null;
   const dayKey = day ?? week[0]?.key ?? 0;
   const yours = threads.filter(t => t.yours), calm = threads.filter(t => !t.yours);
-  const shown = calm.filter(t => filter === 'all' || t.kind === filter);
+  // The filter works only while its buttons are on the screen: with three rows or fewer everything is shown.
+  const tabs = role === 'owner' && calm.length > FOLDED, kind = tabs ? filter : 'all';
+  const shown = calm.filter(t => kind === 'all' || t.kind === kind);
   const rows = all ? shown : shown.slice(0, FOLDED);
   const last = role === 'guest' ? null : lastAiMove(data, role, now);
   const count = (kind: 'booking' | 'job') => calm.filter(t => t.kind === kind && !t.finished).length;
@@ -118,7 +122,7 @@ export function AutopilotThreads({ role, data, now, paymentMode, needs = [], cal
           <Pressable accessibilityRole="button" accessibilityLabel={'Решить: ' + t.tag + ' ' + t.title} onPress={() => onOpen(t.kind, t.id)} style={({ pressed }) => [a.needButton, pressed && a.pressed]}><Text style={a.needButtonText}>Решить</Text></Pressable>
         </View>
       ))}
-      {role === 'owner' && calm.length > FOLDED && <View style={a.tabs}>{tab('all', 'Всё')}{tab('booking', 'Брони', count('booking'))}{tab('job', 'Уборки', count('job'))}</View>}
+      {tabs && <View style={a.tabs}>{tab('all', 'Всё')}{tab('booking', 'Брони', count('booking'))}{tab('job', 'Уборки', count('job'))}</View>}
       {role === 'cleaner' && calendar && <>
         <View style={a.week}>
           {week.map(d => (
@@ -165,7 +169,7 @@ export function AutopilotThreads({ role, data, now, paymentMode, needs = [], cal
           </View>
         );
       })}
-      {!rows.length && !yours.length && !needs.length && <Text style={a.empty}>{role === 'owner' ? (filter === 'job' ? 'Уборок сейчас нет' : 'Броней сейчас нет') : role === 'guest' ? 'Броней сейчас нет' : 'Когда вас назначат на уборку, она появится здесь'}</Text>}
+      {!rows.length && !yours.length && !needs.length && <Text style={a.empty}>{role === 'owner' ? (kind === 'job' ? 'Уборок сейчас нет' : 'Броней сейчас нет') : role === 'guest' ? 'Броней сейчас нет' : 'Когда вас назначат на уборку, она появится здесь'}</Text>}
       {!!onAll && <Pressable accessibilityRole="button" accessibilityLabel="Все брони" onPress={onAll} style={a.moreButton}><Text style={a.moreText}>Все брони ›</Text></Pressable>}
       {shown.length > FOLDED && <Pressable accessibilityRole="button" onPress={() => setAll(v => !v)} style={a.moreButton}><Text style={a.moreText}>{all ? 'Свернуть' : 'Ещё ' + (shown.length - FOLDED)}</Text></Pressable>}
     </View>

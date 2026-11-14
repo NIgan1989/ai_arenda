@@ -61,7 +61,7 @@ test('the guest reaches bookings and results from the sheet of the map, not from
  assert.match(role,/guestStep\(guestStay/);assert.match(role,/CheckinGuide/);assert.match(role,/Мои брони/);
  assert.match(chat,/runGuestStep\(stay,step/);assert.match(chat,/<CheckinGuide/);
  for(const source of [menu,appMenu])assert.match(source,/'catalog','bookings','calendar'/);
- assert.match(appMap,/guestTripsLabel\(trips\)/);assert.doesNotMatch(appMap,/Открыть каталог/);
+ assert.match(appMap,/<AutopilotThreads role="guest"/);assert.match(appMap,/onAll=\{trips\.length\?\(\)=>onOpenPage\('bookings'\)/);assert.doesNotMatch(appMap,/Открыть каталог/);
 });
 
 test('the guest\'s own booking on the map says the next thing to do',async()=>{

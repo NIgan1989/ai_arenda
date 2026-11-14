@@ -69,6 +69,10 @@ test('у гостя бронь идёт той же нитью: его шаги 
  assert.equal(inside.status,'Проживание · 50%');assert.equal(inside.yours,false);
  const leave=tripThread({...paid,start:now-5*H,end:now-600,terms:{paid_amount:20000,actual_checkin:now-5*H}},now,'test');
  assert.equal(leave.status,'Выезд');assert.equal(leave.yours,true);
+ // Срок брони вышел, а заезд так и не отмечен: «Я заселился» уже недоступно, гостя ведём к выезду.
+ const missed=tripThread({...paid,start:now-5*H,end:now-600},now,'test');
+ assert.equal(missed.status,'Выезд');assert.equal(missed.yours,true);assert.equal(missed.steps[2].state,'done');
+ assert.equal(tripThread({...paid,start:now-5*H,end:now-600,terms:{paid_amount:20000,checkout_reported_at:now-60}},now,'test').yours,false);
  const done=trip('done',{status:'completed',payment_status:'owner_verified',start:now-30*H,end:now-20*H,terms:{paid_amount:20000,actual_checkin:now-30*H,actual_checkout:now-20*H}});
  assert.equal(tripThread(done,now,'test').yours,true);assert.equal(tripThread(done,now,'test').status,'Оцените');
  const state={user:{id:'g'},bookings:[done,{...done,id:'rated',review_rating:5},trip('pay'),trip('asked',{status:'requested',start:now+50*H,end:now+60*H}),trip('other',{guest_id:'x'}),trip('off',{status:'cancelled'})]};
