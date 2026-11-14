@@ -25,7 +25,8 @@ import {NowCard as NowCardView} from './NowCard';
 import {PAST_TEXT,chipDraft,freshDraft,guestRequestFromText,guestSummary,matchingBody,newDraft,shownReasons,type GuestDraft} from './ai-request';
 import type {HeadAction} from './head-line';
 import {nowCard,when,type NowCard} from './now-card';
-import {Action,Stage,h,handleHeight,topInset} from './SheetParts';
+import {Action,SheetHeading,SheetRow,Stage,h,handleHeight,topInset} from './SheetParts';
+import {processStatus} from '../../lib/process-status';
 import {GuestForm} from './GuestForm';
 import {GuestResults} from './GuestResults';
 import {GuestMode} from './GuestMode';
@@ -51,6 +52,7 @@ export type MapStay={mode:'daily'|'hourly';start:string;end:string;guests:number
 // showNow: whether the "Сейчас" card has its place in the sheet as it is now (see MapHome).
 type Common={setScanning:(on:boolean)=>void;accountId:string;data:Row;mapData:Row|null;city:string;publish:Publish;selected:string;setSelected:(key:string)=>void;focus:string;setFocus:(key:string)=>void;snap:number;showNow:boolean;expand:(snap:number)=>void;onHead:(height:number)=>void;onReach:(bottom:number)=>void;onAsk:(text:string)=>void;onIntent:(intent:string,stay?:MapStay)=>void;onBook:(property:Row,stay:MapStay)=>void;onChanged:()=>Promise<unknown>;onOpenProcess:(kind:'booking'|'job',id:string)=>void;onOpenPage:(id:string)=>void;onEdit?:(id:string,step:string|null)=>void};
 const liveRequests=new Map<string,string>();
+const capital=(text:string)=>text.charAt(0).toUpperCase()+text.slice(1);
 const NOT_ON_MAP='Этого нет на карте сейчас: у объекта не отмечено место или он в другом городе.';
 // What the guest searched for outlives a visit to another page (a flat's details, the check of a booking):
 // coming back to the map within ten minutes shows the same conditions and the same list.
@@ -286,7 +288,7 @@ function GuestPanel({setScanning,accountId,data,mapData,publish,selected,setSele
 }
 
 function OwnerPanel({data,mapData,publish,snap,showNow,expand,onHead,onAsk,onIntent,onChanged,onOpenProcess,onOpenPage,onEdit,selected,setSelected}:Common){
- const [asked,setAsked]=useState(''),[tab,setTab]=useState<HubTab>('today');
+ const [asked,setAsked]=useState(''),[tab,setTab]=useState<HubTab>('today'),[quick,setQuick]=useState(false);
  const [inbox,setInbox]=useState<Row|null>(null),[error,setError]=useState(''),[working,setWorking]=useState(false),[skew,setSkew]=useState(0);
  const lock=useRef(false),seen=useRef(0),now=useNow(!!inbox?.offers?.length)+skew;
  // An answer just sent shows on the flat's pin for a few seconds: «Ответ отправлен» after «Готов», the price again after a refusal.
@@ -310,7 +312,7 @@ function OwnerPanel({data,mapData,publish,snap,showNow,expand,onHead,onAsk,onInt
   publish([...own,...moving],'owner:'+(mapData?.properties?.length||0),{heat:cells.map(c=>({point:[c.longitude,c.latitude] as MapPoint,weight:c.weight})),sparks:searching?cells.slice(0,Math.min(3,searching)).map(c=>[c.longitude,c.latitude] as MapPoint):[]});
  },[mapData,inbox,answered,data.approvals]);
  const searching=Number(mapData?.demand?.searching)||0;
- const clock=Date.now()/1000+skew,flats:Row[]=data.ownProperties||[];
+ const clock=Date.now()/1000+skew,flats:Row[]=data.ownProperties||[],quickOn=(inbox?.preferences||[]).filter((p:Row)=>p.enabled).length;
  const card=showNow?nowCard('owner',data,clock,{quickOffers:inbox?.offers||[]}):null;
  // A flat chosen by its pin or its row: its card of four tabs takes the sheet, the map keeps the flat in view.
  const flat=selected.startsWith('property:')?flats.find(p=>'property:'+p.id===selected):undefined;
@@ -338,29 +340,21 @@ function OwnerPanel({data,mapData,publish,snap,showNow,expand,onHead,onAsk,onInt
     <Action secondary title="Отказать" disabled={working} onPress={()=>act('respond',{offerId:o.id,decision:'decline'})}/>
     <Text style={h.note}>Ответ не создаёт бронь и не меняет цену. Если гость выберет ваше жильё, заявка придёт в «Заявки гостей».</Text>
    </View>)}
-   {processes.length>0&&<View style={h.card}>
-    <Text accessibilityRole="header" style={h.label}>Сейчас в работе</Text>
-    {processes.slice(0,6).map(p=><Pressable key={p.kind+p.id} accessibilityRole="button" onPress={()=>onOpenProcess(p.kind,p.id)} style={h.listRow}>
-     <View style={h.grow}><Text numberOfLines={1} style={h.eventTitle}>{p.kind==='job'?'Уборка':'Заезд'} {when(p.start,clock)}</Text><Text numberOfLines={2} style={h.note}>{p.title} · {labels[p.status]||p.status}</Text></View>
-     <Text style={h.rowPrice}>→</Text>
-    </Pressable>)}
-   </View>}
-   <View style={h.card}>
-    <Text accessibilityRole="header" style={h.label}>Мои объекты</Text>
-    {flats.slice(0,6).map(p=><Pressable key={p.id} accessibilityRole="button" accessibilityLabel={'Мои объекты: '+p.title} onPress={()=>{setSelected('property:'+p.id);expand(1);}} style={h.listRow}>
-     <View style={h.grow}><Text numberOfLines={1} style={h.eventTitle}>{p.title}</Text><Text numberOfLines={1} style={h.note}>{[kindLabel(p.details?.type),typeof p.price==='number'?money(p.price)+' за сутки':'',p.district].filter(Boolean).join(' · ')}</Text></View>
-     <Text style={h.rowPrice}>→</Text>
-    </Pressable>)}
-    {!flats.length&&<Text style={h.note}>Объектов пока нет.</Text>}
-    <Action secondary title="Добавить жильё" onPress={()=>onIntent('add-property')}/>
-   </View>
-   <View style={h.card}>
+   {/* As on the site (components/map-workspace.tsx): the objects with their photo and state, then the bookings and
+       cleanings under way, then «Быстрые запросы гостей», which opens who answers guests for each object. */}
+   <SheetHeading icon="building" title="Мои объекты" count={String(flats.length)}/>
+   {flats.map(p=>{const m=(mapData?.properties||[]).find((x:Row)=>x.id===p.id)||p;return <SheetRow key={p.id} label={'Мои объекты: '+p.title} title={p.title} photo={(m.photos||p.photos||[])[0]} line={[kindLabel((m.details||p.details)?.type),m.display_status?.label||p.display_status?.label||'Статус уточняется',m.city||p.city].filter(Boolean).join(' · ')+(m.location?'':' · нет точки на карте')} onPress={()=>{setSelected('property:'+p.id);expand(1);}}/>;})}
+   {!flats.length&&<Text style={h.note}>Объектов пока нет.</Text>}
+   {processes.length>0&&<Text accessibilityRole="header" style={[h.note,{fontWeight:'600',marginTop:4}]}>Брони и уборки</Text>}
+   {processes.map(p=>{const item=(p.kind==='job'?data.jobs:data.bookings)?.find((e:Row)=>e.id===p.id)||p;return <SheetRow key={p.kind+p.id} icon={p.kind==='job'?'cleaning':'bookings'} title={p.title} line={capital(when(p.start,clock))+' · '+processStatus(p.kind,item,'owner',data.user?.id||'').label} onPress={()=>onOpenProcess(p.kind,p.id)}/>;})}
+   {!!inbox&&<SheetRow icon="zap" title="Быстрые запросы гостей" line={quickOn?'Включены: '+quickOn+' '+plural(quickOn,'объект','объекта','объектов'):'Выключены'} onPress={()=>setQuick(v=>!v)}/>}
+   {quick&&!!inbox&&<View style={h.card}>
     <Text accessibilityRole="header" style={h.label}>Кто отвечает гостям</Text>
-    <Text style={h.note}>{!inbox?'Загружаем…':'ИИ — это автопилот: сразу отвечает гостю, подтверждает бронь, заказывает уборку и назначает исполнителя по вашим тарифам. Оплату и депозит проверяете вы.'}</Text>
+    <Text style={h.note}>ИИ — это автопилот: сразу отвечает гостю, подтверждает бронь, заказывает уборку и назначает исполнителя по вашим тарифам. Оплату и депозит проверяете вы.</Text>
     {!!saved&&<Text accessibilityLiveRegion="polite" style={h.note}>{saved}</Text>}
-    {(inbox?.preferences||[]).map((p:Row)=><GuestMode key={p.id} flat={p} busy={working} onChange={body=>act('preference',body)}/>)}
-    {!!inbox&&!inbox.preferences.length&&<Text style={h.note}>Включить можно после добавления жилья.</Text>}
-   </View>
+    {(inbox.preferences||[]).map((p:Row)=><GuestMode key={p.id} flat={p} busy={working} onChange={body=>act('preference',body)}/>)}
+    {!inbox.preferences.length&&<Text style={h.note}>Включить можно после добавления жилья.</Text>}
+   </View>}
   </>}
  </View>;
 }

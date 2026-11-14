@@ -1,5 +1,7 @@
 import React from 'react';
-import {Pressable,ScrollView,StyleSheet,Text,View} from 'react-native';
+import {Image,Pressable,ScrollView,StyleSheet,Text,View} from 'react-native';
+import {Photo} from './ListingMedia';
+import {menuIcons,type MenuIcon} from './AccountRows';
 import {C,type} from './styles';
 import {T} from './tokens';
 
@@ -45,4 +47,27 @@ export const h=StyleSheet.create({
  listRow:{flexDirection:'row',alignItems:'center',gap:12,minHeight:H.field},eventTitle:{...type.body,color:C.ink,fontWeight:'500'},rowPrice:{...type.body,color:C.ink,fontWeight:'600'},picked:{gap:8},
  error:{...type.label,color:C.danger,backgroundColor:C.dangerSoft,borderRadius:R.md,padding:12},
  stages:{flexDirection:'row',gap:4},stage:{flex:1,gap:4},stageBar:{height:4,borderRadius:R.xs,backgroundColor:C.line},stageBarOn:{backgroundColor:C.accent},stageText:{...type.caption,color:C.muted},stageTextOn:{color:C.ink,fontWeight:'600'}
+});
+
+// A row of the sheet's lists, as on the site (components/map-workspace.tsx, MapRow): a photo of the place, an icon of the
+// process or the number of the stop, the name and one line of state, a chevron. Names and lines take up to two lines.
+export function SheetRow({title,line,photo,icon,order,onPress,label}:{title:string;line?:string;photo?:string|null;icon?:MenuIcon;order?:number;onPress:()=>void;label?:string}){
+ return <Pressable accessibilityRole="button" accessibilityLabel={label} onPress={onPress} style={({pressed})=>[r.row,pressed&&{backgroundColor:C.bg}]}>
+  {order?<View style={[r.thumb,r.order]}><Text style={r.orderText}>{order}</Text></View>
+   :icon?<View style={[r.thumb,r.icon]}><Image source={menuIcons[icon]} style={{width:20,height:20,tintColor:C.accent}}/></View>
+   :<View style={r.thumb}><Photo id={photo} fill alt={'Фото: '+title}/></View>}
+  <View style={r.text}><Text numberOfLines={2} style={r.title}>{title}</Text>{!!line&&<Text numberOfLines={2} style={r.line}>{line}</Text>}</View>
+  <Image source={menuIcons.chevron} style={{width:18,height:18,tintColor:C.muted}}/>
+ </Pressable>;
+}
+// The heading of a list in the sheet: an icon, the name and a counter, as the site's «Мои объекты · 1».
+export function SheetHeading({icon,title,count}:{icon:MenuIcon;title:string;count?:string}){
+ return <View accessibilityRole="header" style={r.heading}><Image source={menuIcons[icon]} style={{width:18,height:18,tintColor:C.ink}}/><Text style={[r.title,{flex:1,fontSize:T.font.label[0],lineHeight:T.font.label[1]}]}>{title}</Text>{!!count&&<Text style={r.line}>{count}</Text>}</View>;
+}
+const r=StyleSheet.create({
+ row:{flexDirection:'row',alignItems:'center',gap:12,minHeight:64,paddingVertical:8,paddingHorizontal:4,borderRadius:T.radius.md},
+ thumb:{width:T.control.field,height:T.control.field,borderRadius:T.radius.md,overflow:'hidden',backgroundColor:C.surfaceAlt,alignItems:'center',justifyContent:'center'},
+ icon:{backgroundColor:C.accentSoft},order:{backgroundColor:C.accent},orderText:{...type.body,color:C.onAccent,fontWeight:'700'},
+ text:{flex:1,minWidth:0,gap:2},title:{...type.body,color:C.ink,fontWeight:'600'},line:{...type.label,color:C.muted},
+ heading:{flexDirection:'row',alignItems:'center',gap:8,minHeight:T.control.touch,paddingHorizontal:4},
 });

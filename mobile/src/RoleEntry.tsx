@@ -1,4 +1,4 @@
-import React,{useState,type ReactNode} from 'react';
+import React,{useEffect,useState,type ReactNode} from 'react';
 import {ThinkingLine} from './Thinking';
 import {Pressable,ScrollView,Text,TextInput,View} from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
@@ -15,8 +15,9 @@ export function intentRole(intent:string):Role|null{
   if(intent.startsWith('job:')||['property','own-properties','owner-bookings','owner-jobs','job'].includes(intent))return 'owner';
   if(['jobs','my-jobs','cleaner-profile'].includes(intent))return 'cleaner';return null;
 }
-export function RoleEntry({ready,profile,user,auth,busy,onChoose,onSave,onLogout,notice,banner}:{banner?:ReactNode;notice?:string;ready:boolean;profile:Row|null;user:Row|null;auth:ReactNode;busy:boolean;onChoose:(role:Role)=>Promise<void>;onSave:(body:Row,role:Role)=>Promise<void>;onLogout:()=>void}){
-  const [target,setTarget]=useState<Role|null>(null),[values,setValues]=useState<Row>({}),[error,setError]=useState('');
+export function RoleEntry({ready,profile,user,auth,busy,onChoose,onSave,onLogout,notice,banner,start,onStarted}:{start?:Role|null;onStarted?:()=>void;banner?:ReactNode;notice?:string;ready:boolean;profile:Row|null;user:Row|null;auth:ReactNode;busy:boolean;onChoose:(role:Role)=>Promise<void>;onSave:(body:Row,role:Role)=>Promise<void>;onLogout:()=>void}){
+  const [target,setTarget]=useState<Role|null>(start||null),[values,setValues]=useState<Row>(start?{...profile}:{}),[error,setError]=useState('');
+  useEffect(()=>{if(start)onStarted?.();},[]);
   const connected:Role[]=profile?.roles?JSON.parse(profile.roles):[];
   const button=(title:string,onPress:()=>void,secondary=false)=><Pressable accessibilityRole="button" disabled={busy} style={[s.button,secondary&&s.secondary,busy&&s.disabled]} onPress={onPress}><Text style={[s.buttonText,secondary&&s.secondaryText]}>{title}</Text></Pressable>;
   const choose=async(role:Role)=>{setError('');if(connected.includes(role)){try{await onChoose(role);}catch(e:any){setError(e.message);}}else{setValues({...profile});setTarget(role);}};
