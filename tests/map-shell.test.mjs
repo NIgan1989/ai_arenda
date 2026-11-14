@@ -32,10 +32,12 @@ test('a phone has no bottom bar and no floating AI button: the map carries the m
  assert.match(chrome,/\/account/);assert.match(chrome,/\/chats/);
 });
 
-test('the menu is short: five rows open their own screens, the rest stays one tap away', async () => {
+test('the menu is short: a few rows open their own screens, the rest stays one tap away', async () => {
   const { readFileSync } = await import('node:fs');
   const read = path => readFileSync(new URL('../' + path, import.meta.url), 'utf8');
-  for (const text of [read('components/account-control.tsx'), read('mobile/src/AccountControl.tsx')]) {
+  {
+    // The site.
+    const text = read('components/account-control.tsx');
     // «journal» is the short row «Что сделал ИИ» of the guest and the owner; the cleaner reads the same journal inside «plan».
     // The owner's plan is paid per flat, so it is switched in the flat's settings, not in the menu.
     // «decisions» is «Автопилот: решения и сроки» of the guest and the owner: what the AI decides alone and how long it waits.
@@ -45,6 +47,26 @@ test('the menu is short: five rows open their own screens, the rest stays one ta
     assert.match(text, /worker&&(open\(Sparkles,|<Row (?:[^<>]*? )?title=)["']Тариф и автопилот/, 'only the cleaner has the plan in the menu');
     for (const view of ['profile', 'trust', 'plan', 'decisions', 'settings', 'safety']) assert.ok(text.includes("view==='" + view + "'"), view);
     assert.match(text, /'properties'\]:\['jobs'\]/, "the owner's objects and the cleaner's search for jobs live on the map");
+  }
+  {
+    // The app is shorter still: three rows about what goes on (notices, the autopilot, the profile), then settings and help.
+    // «autopilot» holds the journal for every role, the decision rules of the guest and the owner, the plan of the cleaner.
+    // Reliability is read inside the profile; the data pages and joining another role are inside the settings.
+    const text = read('mobile/src/AccountControl.tsx');
+    assert.match(text, /type MenuView=''\|'notices'\|'autopilot'\|'profile'\|'settings'\|'safety'/);
+    for (const view of ['notices', 'autopilot', 'profile', 'settings']) assert.ok(text.includes("view==='" + view + "'"), view);
+    for (const title of ['Уведомления', 'Автопилот', 'Настройки', 'Помощь']) assert.match(text, new RegExp('<Row (?:[^<>]*? )?title="' + title + '"'), title);
+    assert.doesNotMatch(text, /title="(Надёжность|Что сделал ИИ|Тариф и автопилот)"[^\n]*onPress=\{\(\)=>go/, 'no separate rows for what the three rows hold');
+    assert.match(text, /view==='autopilot'&&[^\n]*<AiJournal [^\n]*worker\?<NativeAutopilotPlan [^\n]*:<NativeDecisionRules /);
+    assert.match(text, /view==='profile'&&[^\n]*<ReliabilityBadge /);
+    assert.match(text, /view==='settings'&&[\s\S]*title="Данные и безопасность" onPress=\{\(\)=>go\('safety'\)\}\/>\{join\.map/);
+    assert.match(text, /'properties'\]:\['jobs'\]/, "the owner's objects and the cleaner's search for jobs live on the map");
+    // The notices of the menu are the events of the role; a new one is said over the map, not written into the chat.
+    assert.match(text, /roleEvents\(notices,active\)/);
+    const app = read('mobile/App.tsx');
+    assert.match(app, /freshEvents\(state\.notifications as Row\[\],seen\.current,selectedRole!\)/);
+    assert.match(app, /<NoticeToast /);
+    assert.doesNotMatch(app, /Появились новые события/);
   }
   assert.match(read('mobile/src/WorkspaceNavigation.tsx'), /Чаты, непрочитанных: /);
   assert.match(read('mobile/App.tsx'), /<MapChatsButton busy=\{busy\} unread=\{unread\}/);
