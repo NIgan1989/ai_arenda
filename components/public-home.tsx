@@ -2,6 +2,7 @@
 import { useEffect, useState } from 'react';
 import { X } from 'lucide-react';
 import { SmartGuestMap } from './smart-guest-map';
+import { Wordmark } from './brand';
 import type { SearchLink } from './public-search-intro';
 import { bookingEntryPath } from '../lib/entry';
 import '../app/chat.css';
@@ -77,9 +78,9 @@ export default function PublicHome() {
   return (
     <div className="chat-app workspace-shell public-map-shell smart-public" data-section="map">
       <header className="public-top">
-        <a className="public-top-brand" href="/" aria-label="AI Аренда — главная">
+        <a className="public-top-brand" href="/" aria-label="AiQonaq — главная">
           <img src="/brand-mark.png" width={28} height={28} alt="" />
-          <span>AI Аренда</span>
+          <Wordmark />
         </a>
         <nav className="public-top-nav" aria-label="Вход и разделы сервиса">
           {JOIN_LINKS.map(link => <a key={link.href} className="public-top-link" href={link.href}>{link.label}</a>)}

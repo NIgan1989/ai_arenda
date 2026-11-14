@@ -59,10 +59,28 @@
 
 .map-home-panel .map-home-handle::after {
   content: "";
-  width: 36px;
+  width: 40px;
   height: 4px;
+  /* The grip stands in the upper part of its strip: under it runs the ornament. */
+  margin-bottom: var(--t-space-16);
   border-radius: var(--t-radius-full);
   background: var(--t-line-strong);
+}
+
+/* One thin line of the ornament under the grip (lib/brand.ts, app/brand-images.css): the only decoration of the sheet.
+   The app draws the same strip: mobile/src/SheetParts.tsx. */
+.map-home-panel .map-home-handle::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: 8px;
+  width: var(--brand-ornament-width);
+  max-width: 100%;
+  height: 12px;
+  transform: translateX(-50%);
+  background: var(--brand-ornament) center / auto 100% no-repeat;
+  opacity: 0.5;
+  pointer-events: none;
 }
 
 .map-home-panel .map-home-refine {

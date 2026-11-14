@@ -27,6 +27,11 @@ export function Stage({steps,current}:{steps:string[];current:number}){
 // The screen sits inside the app's safe area, so offsets start at its own top edge.
 // The grip is thin, but the strip that takes a tap or a drag is a full 44px.
 export const handleHeight=T.control.touch,topInset=64;
+// Under the grip runs one thin line of the ornament (lib/brand.ts): the only decoration of the sheet.
+const ornament=require('../assets/brand/ornament.png');
+export function Grip(){
+ return <><View style={h.handle}/><Image source={ornament} resizeMode="contain" accessibilityIgnoresInvertColors style={h.ornament}/></>;
+}
 const R=T.radius,H=T.control,shadow={shadowColor:C.ink,shadowOffset:{width:0,height:2},shadowOpacity:.12,shadowRadius:8,elevation:3};
 export const h=StyleSheet.create({
  host:{flex:1,backgroundColor:C.bg},
@@ -35,7 +40,7 @@ export const h=StyleSheet.create({
  menu:{position:'absolute',top:12,left:12,width:H.touch,height:H.touch,borderRadius:R.full,backgroundColor:C.glassStrong,borderWidth:1,borderColor:C.glassLine,alignItems:'center',justifyContent:'center',...shadow},
  chats:{position:'absolute',top:12,right:12,width:H.touch,height:H.touch,borderRadius:R.full,backgroundColor:C.glassStrong,borderWidth:1,borderColor:C.glassLine,alignItems:'center',justifyContent:'center',...shadow},
  sheet:{position:'absolute',left:0,right:0,bottom:0,backgroundColor:C.glassStrong,borderTopLeftRadius:R.xl,borderTopRightRadius:R.xl,borderTopWidth:1,borderColor:C.glassLine,shadowColor:C.ink,shadowOffset:{width:0,height:-4},shadowOpacity:.1,shadowRadius:12,elevation:12},
- handleArea:{height:handleHeight,alignItems:'center',justifyContent:'center'},handle:{width:40,height:4,borderRadius:R.xs,backgroundColor:C.lineStrong},sheetContent:{paddingHorizontal:16,paddingBottom:16},
+ handleArea:{height:handleHeight,alignItems:'center',paddingTop:12,gap:8},handle:{width:40,height:4,borderRadius:R.xs,backgroundColor:C.lineStrong},ornament:{width:264,maxWidth:'100%',height:12,tintColor:C.accent,opacity:.5},sheetContent:{paddingHorizontal:16,paddingBottom:16},
  block:{gap:12},head:{},grow:{flex:1,minWidth:0},title:{...type.title,color:C.ink,fontWeight:'600',letterSpacing:-.3},note:{...type.label,color:C.muted},label:{...type.caption,color:C.muted,marginBottom:4},
  field:{gap:0},chipsScroll:{marginHorizontal:-16,flexGrow:0},chips:{gap:8,paddingHorizontal:16},chip:{minHeight:H.touch,paddingHorizontal:16,borderRadius:R.full,borderWidth:1,borderColor:C.accentLine,backgroundColor:C.glassStrong,justifyContent:'center'},chipOn:{backgroundColor:C.accent,borderColor:C.accent},chipText:{...type.label,color:C.ink},chipTextOn:{color:C.onAccent,fontWeight:'600'},
  pair:{flexDirection:'row',gap:8},stepper:{flex:1},stepperRow:{flexDirection:'row',alignItems:'center',borderWidth:1,borderColor:C.line,borderRadius:R.md,backgroundColor:C.surface,height:H.field},step:{width:H.touch,height:H.touch,alignItems:'center',justifyContent:'center'},stepText:{...type.title,color:C.ink},stepValue:{flex:1,textAlign:'center',...type.body,color:C.ink,fontWeight:'600'},

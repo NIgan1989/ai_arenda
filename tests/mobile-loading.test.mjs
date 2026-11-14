@@ -36,7 +36,7 @@ test('the site shows the splash once per session and the loading line from the f
  assert.match(loader,/useState\(true\)/);assert.match(loader,/beforeunload/);assert.match(loader,/GESTURE_WINDOW/);
 });
 
-test('while a screen shows its own «thinking» dots the long-action pill stays away',()=>{
+test('while a screen shows its own waiting sign the long-action pill stays away',()=>{
  assert.equal(loading.localThinking(),false);
  const first=loading.thinkingShown(),second=loading.thinkingShown();assert.equal(loading.localThinking(),true);
  first();first();assert.equal(loading.localThinking(),true);second();assert.equal(loading.localThinking(),false);
@@ -47,7 +47,7 @@ test('every wait in the product uses the one «thinking» sign, not a spinner of
  for(const file of [...sources('components'),'app/chat.tsx'])assert.doesNotMatch(readFileSync(file,'utf8'),/<LoaderCircle\b/,file+' shows its own spinner; use <Thinking/> from components/thinking.tsx');
  for(const file of [...sources('mobile/src'),'mobile/App.tsx'])assert.doesNotMatch(readFileSync(file,'utf8'),/<ActivityIndicator\b/,file+' shows the system spinner; use <Thinking/> from mobile/src/Thinking.tsx');
  const loader=readFileSync('components/app-loader.tsx','utf8'),css=readFileSync('app/loader.css','utf8');
- assert.match(loader,/<Thinking size="sm"\/>/);assert.match(loader,/localThinking\(\)/);assert.match(css,/@keyframes thinking-wave/);
+ assert.match(loader,/<Thinking size="sm"\/>/);assert.match(loader,/localThinking\(\)/);assert.match(css,/@keyframes thinking-turn/);assert.match(loader,/querySelectorAll\('\.thinking-sign'\)/);assert.match(readFileSync('components/thinking.tsx','utf8'),/'thinking-sign'/);
 });
 
 test('the entry story is long enough to be watched and still releases itself',()=>{

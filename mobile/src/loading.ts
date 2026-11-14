@@ -2,7 +2,7 @@
 // so background refreshes (inbox, map, autosave) never light the line. The entry splash waits for `entryReady`.
 const GESTURE_WINDOW=1500;
 type Listener=()=>void;
-const state={requests:0,lastGesture:0,entryReady:false,thinking:0,listeners:new Set<Listener>()};
+const state={requests:0,lastGesture:0,entryReady:false,entryCovered:true,thinking:0,listeners:new Set<Listener>()};
 const emit=()=>state.listeners.forEach(listener=>listener());
 
 export function markGesture(){state.lastGesture=Date.now();return false;}
@@ -10,6 +10,9 @@ export function subscribeLoading(listener:Listener){state.listeners.add(listener
 export const loadingBusy=()=>state.requests>0;
 export const isEntryReady=()=>state.entryReady;
 export function entryReady(){if(state.entryReady)return;state.entryReady=true;emit();}
+// Until the entry splash opens, its night plate covers the screen, and the status bar is drawn for that plate.
+export const isEntryCovered=()=>state.entryCovered;
+export function entryUncovered(){if(!state.entryCovered)return;state.entryCovered=false;emit();}
 
 /** Wraps one request; returns the function that closes it, or null when the request runs in the background. */
 export function trackRequest():(()=>void)|null{
@@ -23,6 +26,6 @@ export function trackRequest():(()=>void)|null{
   };
 }
 
-// «Thinking» dots that a screen shows by itself. While any are up, the long-action pill stays away: one sign is enough.
+// Waiting signs (Thinking.tsx) that a screen shows by itself. While any are up, the long-action pill stays away: one sign is enough.
 export function thinkingShown(){state.thinking++;emit();let closed=false;return()=>{if(closed)return;closed=true;state.thinking--;emit();};}
 export const localThinking=()=>state.thinking>0;

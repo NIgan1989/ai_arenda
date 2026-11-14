@@ -19,7 +19,7 @@ export const s=StyleSheet.create({
   header:{minHeight:H.primary,paddingVertical:4,paddingLeft:16,paddingRight:8,flexDirection:'row',alignItems:'center',gap:8},
   headerTitle:{...title,color:C.ink,fontWeight:'600',letterSpacing:-.3},
   headerAI:{width:H.touch,height:H.touch,borderRadius:R.full,backgroundColor:C.accent,alignItems:'center',justifyContent:'center'},headerAIText:{...label,color:C.onAccent,fontWeight:'700'},
-  logo:{width:H.compact,height:H.compact,backgroundColor:C.accent,borderRadius:R.md,alignItems:'center',justifyContent:'center'},logoText:{...subtitle,color:C.onAccent,fontWeight:'600'},brand:{...subtitle,color:C.ink,fontWeight:'600',letterSpacing:-.3},subtitle:{...caption,color:C.muted},
+  logo:{width:H.compact,height:H.compact,backgroundColor:C.accent,borderRadius:R.md,alignItems:'center',justifyContent:'center'},logoText:{...subtitle,color:C.onAccent,fontWeight:'600'},subtitle:{...caption,color:C.muted},
   status:{width:8,height:8,borderRadius:R.xs},connection:{alignItems:'center',flexDirection:'row',gap:8},connectionText:{...caption,color:C.muted},
   transcript:{paddingHorizontal:16,paddingTop:8,paddingBottom:24,flexGrow:1},
   welcome:{paddingTop:8,paddingBottom:16},eyebrow:{...caption,color:C.muted,letterSpacing:1.2,marginBottom:12},hero:{...heading,color:C.ink,fontWeight:'600',letterSpacing:-.6},lead:{...body,color:C.muted,marginTop:8,maxWidth:440},

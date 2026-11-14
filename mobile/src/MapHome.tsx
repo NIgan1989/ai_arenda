@@ -25,7 +25,7 @@ import {NowCard as NowCardView} from './NowCard';
 import {PAST_TEXT,chipDraft,freshDraft,guestRequestFromText,guestSummary,matchingBody,newDraft,shownReasons,type GuestDraft} from './ai-request';
 import type {HeadAction} from './head-line';
 import {nowCard,when,type NowCard} from './now-card';
-import {Action,SheetHeading,SheetRow,Stage,h,handleHeight,topInset} from './SheetParts';
+import {Action,Grip,SheetHeading,SheetRow,Stage,h,handleHeight,topInset} from './SheetParts';
 import {processStatus} from '../../lib/process-status';
 import {GuestForm} from './GuestForm';
 import {GuestResults} from './GuestResults';
@@ -699,7 +699,7 @@ export function MapHome({ role, accountId, data, menu, chats, onChanged, onOpenP
             onPress={() => setSnap(snap === 0 ? 1 : 0)}
             style={h.handleArea}
           >
-            <View style={h.handle} />
+            <Grip />
           </Pressable>
         </View>
         <View style={h.grow} {...drag.body.panHandlers}>

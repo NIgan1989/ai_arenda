@@ -21,22 +21,35 @@
   font-size:14px;line-height:20px;font-weight:600;color:var(--t-ink,#0E1324);transition:opacity .2s ease,transform .25s cubic-bezier(.2,.7,.2,1)}
 .app-loader-pill[data-visible="true"]{opacity:1;transform:translate(-50%,0)}
 
-/* ── «Thinking» dots ──────────────────────────────────────────── */
-/* One sign for every wait inside the service; see components/thinking.tsx. */
-.thinking-dots{--dot:8px;display:inline-flex;align-items:center;gap:4px;flex:none;vertical-align:middle;height:calc(var(--dot)*2)}
-.thinking-dots[data-size="sm"]{--dot:6px;gap:2px}
-.thinking-dots[data-size="lg"]{--dot:10px}
-.thinking-dots i{width:var(--dot);height:var(--dot);border-radius:50%;background:var(--t-accent,#4F46E5);animation:thinking-wave 1.25s cubic-bezier(.45,0,.55,1) infinite}
-.thinking-dots i:nth-child(2){background:var(--t-ai-mid,#3B82F6);animation-delay:.16s}
-.thinking-dots i:nth-child(3){background:var(--t-ai-to,#06B6D4);animation-delay:.32s}
-.thinking-dots[data-tone="plain"] i{background:currentColor}
-@keyframes thinking-wave{0%,62%,100%{transform:translateY(0) scale(.82);opacity:.42}28%{transform:translateY(-60%) scale(1.12);opacity:1}}
+/* ── The waiting sign ─────────────────────────────────────────── */
+/* One sign for every wait inside the service; see components/thinking.tsx. It is the crown of the yurt from the logo
+   (the mask --brand-sign of app/brand-images.css), drawn faintly, and a light that runs round its ring. */
+.thinking-sign{--sign:20px;--ink:var(--t-accent,#4F46E5);--light:var(--t-ai-to,#06B6D4);position:relative;display:inline-block;flex:none;vertical-align:middle;width:var(--sign);height:var(--sign)}
+.thinking-sign[data-size="sm"]{--sign:16px}
+.thinking-sign[data-size="lg"]{--sign:40px}
+.thinking-sign[data-tone="plain"]{--ink:currentColor;--light:currentColor}
+.thinking-sign::before,.thinking-sign::after{content:"";position:absolute;inset:0;border-radius:50%}
+.thinking-sign::before{background:var(--ink);opacity:.3;-webkit-mask:var(--brand-sign) center/100% 100% no-repeat;mask:var(--brand-sign) center/100% 100% no-repeat}
+/* The light: a tail that grows into a bright head, seen only through the ring of the crown,
+   whose line lies between 73% and 91% of the radius. */
+.thinking-sign::after{background:conic-gradient(transparent 0 50%,var(--ink) 82%,var(--light));
+  -webkit-mask:radial-gradient(farthest-side,transparent 71%,#000 73%,#000 91%,transparent 93%);mask:radial-gradient(farthest-side,transparent 71%,#000 73%,#000 91%,transparent 93%);
+  animation:thinking-turn 1.1s linear infinite}
+/* The large sign stands alone on a page, so it has the rays of the logo too: twelve short ones on a slow turn. */
+.thinking-sign i{display:none}
+.thinking-sign[data-size="lg"]::before,.thinking-sign[data-size="lg"]::after{inset:20%}
+.thinking-sign[data-size="lg"] i{display:block;position:absolute;inset:0;border-radius:50%;background:repeating-conic-gradient(from -3deg,var(--t-gold,#E8B44C) 0 6deg,transparent 6deg 30deg);
+  -webkit-mask:radial-gradient(farthest-side,transparent 74%,#000 76%,#000 97%,transparent 100%);mask:radial-gradient(farthest-side,transparent 74%,#000 76%,#000 97%,transparent 100%);
+  animation:thinking-turn 8s linear infinite}
+@keyframes thinking-turn{to{transform:rotate(360deg)}}
 /* Before text in a container without its own gap. */
-.thinking-dots[data-lead]{margin-right:8px}
+.thinking-sign[data-lead]{margin-right:8px}
 
 @media (prefers-reduced-motion:reduce){
   .app-loader-bar::after{animation:none;opacity:0}
-  .thinking-dots i{animation:thinking-calm 1.6s ease-in-out infinite}
-  .thinking-dots i:nth-child(n){animation-delay:0s}
+  /* Nothing turns: the crown itself slowly brightens and dims. */
+  .thinking-sign::after{display:none}
+  .thinking-sign i{animation:none}
+  .thinking-sign::before{animation:thinking-calm 1.6s ease-in-out infinite}
 }
 @keyframes thinking-calm{0%,100%{opacity:.45}50%{opacity:1}}

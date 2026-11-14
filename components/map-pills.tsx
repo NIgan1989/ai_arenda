@@ -1,7 +1,7 @@
 'use client';
 import {useEffect,useMemo,useRef,useState} from 'react';
 import type {Map as MapType} from 'maplibre-gl';
-import {groupPins,pinWidth} from '../mobile/src/map-math';
+import {groupPins,pinBoxWidth} from '../mobile/src/map-math';
 import {ANSWER_WINDOW,answerLeft,appearDelay,pinEvent,type PinEvent,type PinState,type PinTone} from '../mobile/src/map-motion';
 import type {WebPin} from '../lib/map-pin-of';
 import {AI_SAYS,AI_WINDOW} from '../lib/ai-move-marks';
@@ -9,8 +9,11 @@ import './map-pills.css';
 
 // The pins of the site's map, drawn like the app's (mobile/src/MapPins.tsx): «таблетки» with a price or a state,
 // one colour per state, and one motion per event: a new pin drops in, an asked flat shakes, an answer flashes, a booking
-// sends two waves, work that starts flashes, a request that ends without a yes settles. Pins that would cover each other
-// fold into one with «+N»; a tap on it flies in. With «reduce motion» nothing moves.
+// sends two waves and the gold rays of the sign, work that starts flashes, a request that ends without a yes settles.
+// Before the label stands the small sign of the service, the crown of the yurt (lib/brand.ts); the number of a stop on a
+// route and the ✦ of the AI's best choice stand there instead of it. Pins that would cover each other fold into one
+// with «+N»; a tap on it flies in.
+// With «reduce motion» nothing moves.
 // They are HTML over the MapLibre map: each frame of a move puts them where the map projects their points.
 const toneOrder:Record<PinTone,number>={alert:0,offer:0,booked:0,pending:1,active:1,booking:2,job:3,home:3};
 const FRESH=900,LEAVE=260,ECHO_DELAY=450,AI_PLAY=2600;
@@ -42,7 +45,7 @@ export function MapPills({map,pins,selected,onSelect,onGroup,bottom=0,picking=fa
  const byKey=new Map(placed.map(p=>[p.pin.key,p]));
  const rank=(pin:WebPin)=>pin.key===selected?-1:pin.order?-1+pin.order/1000:toneOrder[pin.tone]*1e9+(pin.best?0:1);
  // The stops of a cleaner's route rank first: a stop is never hidden under another job, a job next to it folds into its «+N».
- const shown=groupPins(placed.map(({pin,x,y})=>({key:pin.key,x,y,width:pinWidth(pin.label)+(pin.order?22:0),height:32,rank:rank(pin)}))).map(g=>({...byKey.get(g.key)!,members:g.members}));
+ const shown=groupPins(placed.map(({pin,x,y})=>({key:pin.key,x,y,width:pinBoxWidth(pin.label,pin.order),height:32,rank:rank(pin)}))).map(g=>({...byKey.get(g.key)!,members:g.members}));
  const open=(members:string[])=>{
   if(map.getZoom()>=map.getMaxZoom()-.5){onSelect(members[(members.indexOf(selected)+1)%members.length]);return;}
   onGroup(members.map(k=>byKey.get(k)!.pin.point));
@@ -51,14 +54,14 @@ export function MapPills({map,pins,selected,onSelect,onGroup,bottom=0,picking=fa
  return <div className={'map-pills'+(picking?' picking':'')} aria-label={'Меток на карте: '+placed.length}>
   {sparks.map((p,i)=>{const at=map.project(p);return <span key={'spark:'+i} className="map-spark" style={{left:at.x,top:at.y,animationDelay:i*500+'ms'}} aria-hidden="true"><i/></span>;})}
   {origin&&(at=><span className="map-origin" style={{left:at.x,top:at.y}} aria-hidden="true"><i/></span>)(map.project(origin))}
-  {leaving.map(p=>{const at=map.project(p.point);return <span key={'gone:'+p.key+':'+p.gone} className={'map-pill tone-'+p.tone+' leaving'} style={{left:at.x,top:at.y}} aria-hidden="true"><span className="map-pill-body">{p.label}</span></span>;})}
+  {leaving.map(p=>{const at=map.project(p.point);return <span key={'gone:'+p.key+':'+p.gone} className={'map-pill tone-'+p.tone+' leaving'} style={{left:at.x,top:at.y}} aria-hidden="true"><span className="map-pill-body">{!p.order&&!p.best&&<i className="map-pill-sign"/>}{p.label}</span></span>;})}
   {shown.map(({pin,x,y,members})=>{const b=born.current.get(pin.key)||0;
    return <Pill key={pin.key} pin={pin} x={x} y={y} more={members.length-1} active={pin.key===selected} born={now-b<FRESH?b:0} delay={appearDelay(x,y,cx,cy)} onPress={()=>members.length>1?open(members):onSelect(pin.key)}/>;})}
  </div>;
 }
 
 function Pill({pin,x,y,more,active,born,delay,onPress}:{pin:WebPin;x:number;y:number;more:number;active:boolean;born:number;delay:number;onPress:()=>void}){
- const body=useRef<HTMLButtonElement>(null),ring=useRef<HTMLSpanElement>(null),ring2=useRef<HTMLSpanElement>(null),echoRing=useRef<HTMLSpanElement>(null),wrap=useRef<HTMLSpanElement>(null);
+ const body=useRef<HTMLButtonElement>(null),ring=useRef<HTMLSpanElement>(null),ring2=useRef<HTMLSpanElement>(null),rays=useRef<HTMLSpanElement>(null),echoRing=useRef<HTMLSpanElement>(null),wrap=useRef<HTMLSpanElement>(null);
  // While the map has just come back (map-memory.ts ECHO_WINDOW), a change against how the pin looked when the person left
  // carries pin.was too: a stale first answer that is then refreshed still echoes.
  // A pin that comes back changed (pin.was) starts from how it looked then and plays the change after the page has turned.
@@ -71,7 +74,7 @@ function Pill({pin,x,y,more,active,born,delay,onPress}:{pin:WebPin;x:number;y:nu
   const bounce=(to:number)=>el.animate([{transform:'scale(1)'},{transform:`scale(${1+to})`,offset:.25},{transform:`scale(${1-to/3})`,offset:.6},{transform:'scale(1)'}],{duration:520,delay:wait,easing:'ease-out'});
   const burst=()=>ring.current?.animate([{opacity:0,transform:'scale(.5)'},{opacity:.6,offset:.05},{opacity:0,transform:'scale(2.6)'}],{duration:700,delay:wait,easing:'cubic-bezier(.2,.7,.3,1)'});
   const wiggle=()=>el.animate([{transform:'rotate(0)'},{transform:'rotate(-9deg)',offset:.2},{transform:'rotate(8deg)',offset:.4},{transform:'rotate(-5deg)',offset:.6},{transform:'rotate(3deg)',offset:.8},{transform:'rotate(0)'}],{duration:420,delay:wait});
-  ({ask:()=>{wiggle();},answer:()=>{burst();bounce(.28);},celebrate:()=>{burst();bounce(.4);ring2.current?.animate([{opacity:0,transform:'scale(.6)'},{opacity:.8,offset:.05},{opacity:0,transform:'scale(3.4)'}],{duration:900,delay:wait+240,easing:'cubic-bezier(.2,.7,.3,1)'});},start:()=>{burst();bounce(.16);},settle:()=>{bounce(-.12);},alarm:()=>{wiggle();burst();},calm:()=>{bounce(-.12);},update:()=>{bounce(.16);}} as Record<string,()=>void>)[event]?.();
+  ({ask:()=>{wiggle();},answer:()=>{burst();bounce(.28);},celebrate:()=>{burst();bounce(.4);ring2.current?.animate([{opacity:0,transform:'scale(.6)'},{opacity:.8,offset:.05},{opacity:0,transform:'scale(3.4)'}],{duration:900,delay:wait+240,easing:'cubic-bezier(.2,.7,.3,1)'});rays.current?.animate([{opacity:0,transform:'scale(1.2) rotate(-8deg)'},{opacity:1,offset:.1},{opacity:1,offset:.55},{opacity:0,transform:'scale(2.6) rotate(4deg)'}],{duration:900,delay:wait+240,easing:'cubic-bezier(.2,.7,.3,1)'});},start:()=>{burst();bounce(.16);},settle:()=>{bounce(-.12);},alarm:()=>{wiggle();burst();},calm:()=>{bounce(-.12);},update:()=>{bounce(.16);}} as Record<string,()=>void>)[event]?.();
   // The echo: two wide waves of the accent colour go out from a pin that changed while the person was elsewhere.
   if(echoed)echoRing.current?.animate([{opacity:0,transform:'scale(.8)'},{opacity:1,offset:.08},{opacity:.5,offset:.7},{opacity:0,transform:'scale(2.8)'}],{duration:900,delay:wait,iterations:2,easing:'ease-out'});
  },[pin.tone,pin.label]);
@@ -98,12 +101,13 @@ function Pill({pin,x,y,more,active,born,delay,onPress}:{pin:WebPin;x:number;y:nu
   {(pin.tone==='pending'||pin.tone==='active'||pin.tone==='alert')&&<span className="map-pill-breath" aria-hidden="true"/>}
   <span ref={ring} className="map-pill-ring" aria-hidden="true"/>
   <span ref={ring2} className="map-pill-ring wave" aria-hidden="true"/>
+  {pin.tone==='booked'&&<span ref={rays} className="map-pill-rays" aria-hidden="true"/>}
   <span ref={echoRing} className="map-pill-ring echo" aria-hidden="true"/>
-  {!!aiText&&<span ref={aiRing} className="map-pill-ai" style={{['--ai-w' as string]:pinWidth(pin.label)+(pin.order?22:0)+12+'px'}} aria-hidden="true"/>}
+  {!!aiText&&<span ref={aiRing} className="map-pill-ai" style={{['--ai-w' as string]:pinBoxWidth(pin.label,pin.order)+12+'px'}} aria-hidden="true"/>}
   {coming&&<span ref={comer} className="map-pill-comer" aria-hidden="true"/>}
   {!!aiText&&<span ref={aiSays} className="map-pill-ai-says" role="status">✦ {aiText}</span>}
   <button ref={body} type="button" className="map-pill-body" aria-label={label} aria-pressed={active} onClick={e=>{e.stopPropagation();onPress();}}>
-   {!!pin.order&&<b className="map-pill-order">{pin.order}</b>}
+   {pin.order?<b className="map-pill-order">{pin.order}</b>:!pin.best&&<i className="map-pill-sign" aria-hidden="true"/>}
    {pin.best&&<i className="map-pill-star" aria-hidden="true">✦ </i>}{pin.label}{more>0&&<small> +{more}</small>}
    {left>0&&<span className="map-pill-strip" aria-hidden="true"><span style={{transform:`scaleX(${left})`,animationDuration:Math.round(left*ANSWER_WINDOW)+'s'}}/></span>}
    {pin.progress!=null&&<span className="map-pill-strip work" aria-hidden="true"><span style={{transform:`scaleX(${pin.progress})`}}/></span>}

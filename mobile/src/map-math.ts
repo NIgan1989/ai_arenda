@@ -57,6 +57,11 @@ export function pinWidth(label: string) {
   return Math.max(44, Math.round(label.length * 8 + 24));
 }
 
+/** The width of a whole pin: before its label stands the small sign of the service (or the ✦ of the best choice, as wide) or, on a route, the number of the stop. */
+export function pinBoxWidth(label: string, order?: number) {
+  return pinWidth(label) + (order ? 22 : 16);
+}
+
 export function groupPins(boxes: PinBox[], gap = 6): PinGroup[] {
   const ordered = boxes
     .map((box, index) => ({ box, index }))

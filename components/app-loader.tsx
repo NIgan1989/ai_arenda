@@ -3,7 +3,7 @@ import {useEffect,useRef,useState} from 'react';
 import {Thinking} from './thinking';
 
 // One loading signal for the whole site: a thin gradient line along the top edge, and for a wait longer than
-// a second and a half a small glass pill with the «thinking» dots. It covers three cases without touching any page:
+// a second and a half a small glass pill with the waiting sign. It covers three cases without touching any page:
 // the page is opening or reloading (it is on from the server's first byte until the page has loaded),
 // a move to another page (a click on a link, a reload, a redirect from code), and a long action — any request
 // that starts within a moment after a tap, a key or a form send. Background refreshes never show it.
@@ -49,9 +49,9 @@ function install(){
   };
 }
 
-// True while some «thinking» dots are already on the screen outside the pill.
+// True while a waiting sign is already on the screen outside the pill.
 function localThinking(){
-  for(const dots of document.querySelectorAll('.thinking-dots'))if(!dots.closest('.app-loader-pill')&&dots.getClientRects().length)return true;
+  for(const sign of document.querySelectorAll('.thinking-sign'))if(!sign.closest('.app-loader-pill')&&sign.getClientRects().length)return true;
   return false;
 }
 
@@ -66,7 +66,7 @@ export function AppLoader(){
     const start=(now:boolean)=>{
       clear();running.current=true;setBusy(true);
       show=setTimeout(()=>setVisible(true),now?0:SHOW_AFTER);
-      // The pill is for waits that show nothing of their own: where the page already has its dots, they are enough.
+      // The pill is for waits that show nothing of their own: where the page already has its waiting sign, that is enough.
       showPill=setTimeout(()=>{setPill(!localThinking());watch=setInterval(()=>setPill(!localThinking()),400);},PILL_AFTER);
       // The line creeps forward ever slower and never reaches the end on its own.
       creep=setInterval(()=>setProgress(p=>p+(0.92-p)*0.07),180);

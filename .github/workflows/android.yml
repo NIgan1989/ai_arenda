@@ -151,7 +151,7 @@ jobs:
         run: |
           apk=ai-arenda.apk
           test -s "$apk"
-          title='AI Аренда для Android: тестовая сборка'
+          title='AiQonaq для Android: тестовая сборка'
           {
             echo 'Тестовая сборка для пилота. Не для Google Play.'
             echo

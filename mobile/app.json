@@ -1,8 +1,9 @@
 {
   "expo": {
-    "name": "AI Аренда",
+    "name": "AiQonaq",
     "slug": "ai-arenda",
     "version": "0.1.0",
+    "icon": "./assets/brand/icon.png",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
     "scheme": "aiarenda",
@@ -12,10 +13,15 @@
     },
     "android": {
       "package": "app.aiarenda.assistant",
-      "softwareKeyboardLayoutMode": "resize"
+      "softwareKeyboardLayoutMode": "resize",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/brand/adaptive-foreground.png",
+        "backgroundImage": "./assets/brand/adaptive-background.png",
+        "monochromeImage": "./assets/brand/adaptive-monochrome.png"
+      }
     },
     "web": {
-      "name": "AI Аренда — мобильное приложение",
+      "name": "AiQonaq — мобильное приложение",
       "bundler": "metro",
       "output": "single"
     },
@@ -36,7 +42,15 @@
           "isIosBackgroundLocationEnabled": false
         }
       ],
-      "@maplibre/maplibre-react-native"
+      "@maplibre/maplibre-react-native",
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#1E1B4B",
+          "image": "./assets/brand/launch-blank.png",
+          "imageWidth": 8
+        }
+      ]
     ]
   }
 }

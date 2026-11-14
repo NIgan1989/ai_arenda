@@ -9,7 +9,7 @@
 .map-pill.tone-booked{--pill-bg:var(--t-success);--pill-fg:var(--t-on-accent);--pill-line:var(--t-success);--pill-glow:var(--t-success)}
 .map-pill.tone-active{--pill-bg:var(--t-info);--pill-fg:var(--t-on-accent);--pill-line:var(--t-info);--pill-glow:var(--t-info)}
 .map-pill.tone-alert{--pill-bg:var(--t-danger);--pill-fg:var(--t-on-accent);--pill-line:var(--t-danger);--pill-glow:var(--t-danger)}
-.map-pill-body{position:relative;pointer-events:auto;flex:none;display:inline-flex;align-items:center;gap:4px;white-space:nowrap;min-height:32px;min-width:44px;padding:0 12px;
+.map-pill-body{position:relative;pointer-events:auto;flex:none;display:inline-flex;align-items:center;gap:4px;white-space:nowrap;min-height:32px;min-width:44px;padding:0 12px 0 8px;
  border-radius:16px;border:1px solid var(--pill-line);background:var(--pill-bg);color:var(--pill-fg);font-family:inherit;font-size:14px;font-weight:600;line-height:1;
  box-shadow:0 2px 6px rgba(14,19,36,.14);cursor:pointer;transition:transform var(--t-motion-fast,150ms) ease,background-color var(--t-motion-fast,150ms),color var(--t-motion-fast,150ms)}
 .map-pill-body small{font-weight:500;opacity:.7;font-size:inherit}
@@ -19,6 +19,10 @@
 .map-pill-star{font-style:normal;color:var(--t-ai-from)}
 .map-pill.active .map-pill-star{color:var(--t-ai-to)}
 .map-pill.ordered .map-pill-body{padding-left:4px}
+/* The small sign of the service before the label (lib/brand.ts): in the accent colour on a light pin, in the colour of the text on a filled one. */
+.map-pill-sign{flex:none;width:16px;height:16px;background:var(--pill-sign,currentColor);-webkit-mask:var(--brand-sign) center/100% 100% no-repeat;mask:var(--brand-sign) center/100% 100% no-repeat}
+.map-pill.tone-home,.map-pill.tone-booking{--pill-sign:var(--t-accent)}
+.map-pill.active{--pill-sign:currentColor}
 .map-pill-order{display:inline-grid;place-items:center;width:24px;height:24px;border-radius:12px;background:var(--pill-fg);color:var(--pill-bg);font-size:12px;font-weight:700}
 .map-pill-strip{position:absolute;left:8px;right:8px;bottom:3px;height:3px;border-radius:2px;background:var(--t-warning-line);overflow:hidden}
 .map-pill-strip>span{display:block;height:100%;background:var(--t-warning);transform-origin:left;animation:map-pill-run linear forwards}
@@ -28,6 +32,9 @@
 .map-pill-ring,.map-pill-breath{position:absolute;width:56px;height:56px;left:-28px;top:-28px;border-radius:50%;pointer-events:none;opacity:0;background:var(--pill-glow)}
 .map-pill-ring.wave{background:transparent;border:3px solid var(--t-success)}
 .map-pill-ring.echo{background:var(--t-accent-soft);border:3px solid var(--t-accent)}
+/* A booking made: the gold rays of the sign flash out round the pin (map-pills.tsx, celebrate). */
+.map-pill-rays{position:absolute;width:56px;height:56px;left:-28px;top:-28px;border-radius:50%;pointer-events:none;opacity:0;background:repeating-conic-gradient(from -2deg,var(--t-gold) 0 4deg,transparent 4deg 22.5deg);
+ -webkit-mask:radial-gradient(closest-side,transparent 69%,#000 71%,#000 98%,transparent 100%);mask:radial-gradient(closest-side,transparent 69%,#000 71%,#000 98%,transparent 100%)}
 .map-pill-breath{animation:map-pill-breath 1.6s ease-out infinite}
 .map-pill.tone-active .map-pill-breath{animation-name:map-pill-breath-soft}
 @keyframes map-pill-breath{from{opacity:.55;transform:scale(.6)}to{opacity:0;transform:scale(1.9)}}
