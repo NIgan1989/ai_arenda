@@ -12,7 +12,7 @@ const money=(n:number)=>new Intl.NumberFormat('ru-RU').format(n)+'\u00a0₸';
 
 // Same as components/owner-responses.tsx: on the owner's «Заявки», cleaners who answered his open cleanings come first,
 // each cleaning in one line with «Назначить» / «Отклонить» on every response under it.
-export function OwnerResponses({rows,approvals,busy,onDecide,onOpen}:{rows:{job:Row;applications:Row[]}[];approvals:Row[];busy:boolean;onDecide:(body:Row)=>void;onOpen:(jobId:string)=>void}){
+export function OwnerResponses({rows,approvals,busy,onDecide,onOpen,autopilot}:{autopilot?:(job:Row,applications:Row[])=>string;rows:{job:Row;applications:Row[]}[];approvals:Row[];busy:boolean;onDecide:(body:Row)=>void;onOpen:(jobId:string)=>void}){
  if(!rows.length)return null;
  const total=rows.reduce((n,r)=>n+r.applications.length,0);
  return <View style={o.block} accessibilityLabel="Отклики исполнителей">
@@ -23,6 +23,7 @@ export function OwnerResponses({rows,approvals,busy,onDecide,onOpen}:{rows:{job:
     <View style={{flex:1,minWidth:0,gap:2}}><Text numberOfLines={1} style={o.jobTitle}>{job.title}</Text><Text style={o.jobNote}>Уборка · {when(job.start)} · {money(job.fee)}</Text></View>
     <Text style={o.chevron}>›</Text>
    </Pressable>
+   {!!autopilot?.(job,applications)&&<Text style={o.autopilot}>{autopilot(job,applications)}</Text>}
    <ApplicantPick bare applications={applications} approvals={approvals} busy={busy} onDecide={onDecide}/>
   </View>)}
  </View>;
@@ -34,5 +35,6 @@ const o=StyleSheet.create({
  card:{overflow:'hidden',borderRadius:R.xl,borderWidth:1,borderColor:C.accentLine,backgroundColor:C.surface},
  job:{flexDirection:'row',alignItems:'center',gap:12,paddingHorizontal:16,paddingVertical:12,borderBottomWidth:1,borderBottomColor:C.line},
  thumb:{width:56,height:56,borderRadius:R.md,overflow:'hidden',backgroundColor:C.surfaceAlt},
+ autopilot:{...type.caption,color:C.accentPressed,backgroundColor:C.accentSoft,paddingHorizontal:16,paddingVertical:8},
  jobTitle:{...type.body,fontWeight:'600',color:C.ink},jobNote:{...type.caption,color:C.muted},chevron:{fontSize:22,lineHeight:28,color:C.muted},
 });

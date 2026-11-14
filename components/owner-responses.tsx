@@ -1,5 +1,5 @@
 'use client';
-import {Brush,ChevronRight} from 'lucide-react';
+import {Bot,Brush,ChevronRight} from 'lucide-react';
 import {ApplicantPick} from './applicant-pick';
 import {PropertyCover} from './property-cover';
 import {jobPlace} from '../lib/job-place';
@@ -10,7 +10,7 @@ const money=(n:number)=>new Intl.NumberFormat('ru-RU').format(n)+'\u00a0₸';
 
 // «Заявки» of the owner: cleaners who answered his open cleanings, on top of the guests' requests. Each cleaning is one
 // line (photo, when, fee) with its responses right under it, and «Назначить» / «Отклонить» on each response.
-export function OwnerResponses({rows,approvals,role,busy,platformAdmin,onDecide,onOpen}:{rows:{job:Row;applications:Row[]}[];approvals:Row[];role:string;busy:boolean;platformAdmin?:boolean;onDecide:(body:Row)=>void;onOpen:(jobId:string)=>void}){
+export function OwnerResponses({rows,approvals,role,busy,platformAdmin,onDecide,onOpen,autopilot}:{autopilot?:(job:Row,applications:Row[])=>string;rows:{job:Row;applications:Row[]}[];approvals:Row[];role:string;busy:boolean;platformAdmin?:boolean;onDecide:(body:Row)=>void;onOpen:(jobId:string)=>void}){
  if(!rows.length)return null;
  const total=rows.reduce((n,r)=>n+r.applications.length,0);
  return <section className="owner-responses" aria-label="Отклики исполнителей">
@@ -21,6 +21,7 @@ export function OwnerResponses({rows,approvals,role,busy,platformAdmin,onDecide,
     <span className="owner-response-text"><strong>{job.title}</strong><small>Уборка · {when(job.start)} · {money(job.fee)}</small></span>
     <ChevronRight size={18} aria-hidden="true"/>
    </button>
+   {autopilot?.(job,applications)&&<p className="owner-response-autopilot"><Bot size={16} aria-hidden="true"/>{autopilot(job,applications)}</p>}
    <ApplicantPick applications={applications} approvals={approvals} role={role} busy={busy} platformAdmin={platformAdmin} onDecide={onDecide}/>
   </article>)}
  </section>;

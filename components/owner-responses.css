@@ -14,3 +14,5 @@
 .owner-response .applicant-pick{border:0;border-radius:0;box-shadow:none}
 .owner-response .applicant-pick>h3{display:none}
 .owner-responses-guests{margin:0 0 8px;font-size:18px;line-height:24px;font-weight:650;color:var(--t-ink)}
+.owner-response-autopilot{display:flex;align-items:center;gap:8px;margin:0;padding:8px 16px;background:var(--t-accent-soft);color:var(--t-accent-pressed);font-size:14px;line-height:20px}
+.owner-response-autopilot svg{flex:none}

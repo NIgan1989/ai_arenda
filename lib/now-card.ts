@@ -64,6 +64,21 @@ export function ownerResponses(data: Row | null | undefined, userId: string, now
     .sort((a: { job: Row }, b: { job: Row }) => a.job.start - b.job.start);
 }
 
+// The owner's autopilot (auto_assign of the flat, lib/administrator-runtime.ts) takes a response by itself: it proposes the
+// first who applied and assigns him 30 minutes after the proposal, or at once when the cleaning starts within the hour.
+// Said under the response so the owner knows what happens if he does nothing.
+export function autopilotPick(data: Row | null | undefined, job: Row, applications: Row[], now: number): string {
+  const flat = (data?.ownProperties || []).find((p: Row) => p.id === job.property_id), policy = flat?.policy || {};
+  if (!Number(policy.auto_assign) || Number(job.fee) > Number(policy.cleaning_budget || 0)) return '';
+  const first = [...applications].sort((a, b) => a.created_at - b.created_at || String(a.id).localeCompare(String(b.id)))[0];
+  if (!first) return '';
+  const name = first.worker?.name || first.name || 'первый откликнувшийся';
+  if (job.start <= now + 3600) return 'Если не выберете сами, автопилот в ближайшие минуты назначит: ' + name;
+  const asked = (data?.notifications || []).find((n: Row) => n.dedupe === 'owner:administrator-propose:' + first.id);
+  const at = asked ? asked.created_at + 1800 : 0;
+  return 'Если не выберете сами, автопилот ' + (at > now ? 'в ' + timeFormat.format(new Date(at * 1000)) : 'через 30 минут') + ' назначит: ' + name;
+}
+
 // What waits for the owner on «Заявки»: guests' requests not answered yet and cleaners' responses. The chip says the number.
 export function ownerWaiting(data: Row | null | undefined, userId: string, now: number) {
   const requests = (data?.bookings || []).filter((b: Row) => b.owner_id === userId && b.status === 'requested' && b.expires_at > now).length;

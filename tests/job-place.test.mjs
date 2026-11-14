@@ -3,7 +3,7 @@ import test from 'node:test';
 import { load } from './helpers/platform.mjs';
 
 const { jobPlace, cleaningTasks, cleaningTime, streetAddress } = await load('job-place');
-const { nowCard, ownerResponses, ownerWaiting } = await load('now-card');
+const { nowCard, ownerResponses, ownerWaiting, autopilotPick } = await load('now-card');
 const { calendarEntries } = await load('calendar-days');
 const { hubLine, hubToday } = await load('property-hub');
 
@@ -61,4 +61,14 @@ test("a cleaner's response reaches the owner: «Заявки», the card «Се�
   // Someone else's cleaning, or one that has ended, waits for nobody.
   assert.equal(ownerWaiting(data, 'x', now), 0);
   assert.equal(ownerWaiting({ ...data, jobs: [{ ...job, end: now - 1 }] }, 'o', now), 0);
+});
+
+test('with the autopilot on, the owner is told who will be assigned and when, if he does nothing', () => {
+  const job = { id: 'j1', property_id: 'p', start: now + DAY, fee: 6000 };
+  const apps = [{ id: 'a2', created_at: now - 60, worker: { name: 'Айгуль' } }, { id: 'a1', created_at: now - 600, name: 'Ерлан' }];
+  const data = { ownProperties: [{ id: 'p', policy: { auto_assign: 1, cleaning_budget: 8000 } }], notifications: [{ dedupe: 'owner:administrator-propose:a1', created_at: now - 600 }] };
+  assert.match(autopilotPick(data, job, apps, now), /^Если не выберете сами, автопилот в \d\d:\d\d назначит: Ерлан$/);
+  assert.equal(autopilotPick(data, { ...job, start: now + 600 }, apps, now), 'Если не выберете сами, автопилот в ближайшие минуты назначит: Ерлан');
+  assert.equal(autopilotPick(data, { ...job, fee: 9000 }, apps, now), '');
+  assert.equal(autopilotPick({ ...data, ownProperties: [{ id: 'p', policy: {} }] }, job, apps, now), '');
 });
