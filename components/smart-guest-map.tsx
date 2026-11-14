@@ -5,7 +5,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { ArrowLeft, ArrowUpRight, ChevronRight, LocateFixed, Pencil } from 'lucide-react';
 import { MapCanvas } from './map-canvas';
-import { beams } from '../mobile/src/map-motion';
+import { ROAD_BEAMS, beamOrigin, beams, roadBeams, roadKey, type BeamRoads } from '../mobile/src/map-motion';
 import { pinsOf } from '../lib/map-pin-of';
 import { PropertyListing } from './property-listing';
 import { PropertyCover } from './property-cover';
@@ -304,11 +304,35 @@ export function SmartGuestMap({ publicMode = false, onChanged, accountId, city, 
   const items = [...candidates, ...(state?.pendingProperties || [])].map(property => ({
     ...property, mapKey: 'property:' + property.id, matchPending: !property.ownerConfirmed && !!requestId,
   }));
-  // While owners are asked, beams run from the searched point (or the middle of the city) to each asked flat,
+  // While owners are asked, beams run from where the guest is (or the zone they picked) to each asked flat,
   // dashed yellow while it waits, indigo once its owner said yes (as in the app, mobile/src/map-motion.ts beams).
   const near = filters?.near;
-  const beamFrom: [number, number] | null = near && Number.isFinite(Number(near.longitude)) ? [Number(near.longitude), Number(near.latitude)] : mapCities[draft.city] || null;
-  const lines = active ? beams(beamFrom, pinsOf(items)) : [];
+  // Without the guest's place or a picked zone there are no beams: the middle of the city is not where the guest is.
+  const beamFrom = beamOrigin(near ? [Number(near.longitude), Number(near.latitude)] : null, me ? [me.longitude, me.latitude] : null);
+  const straight = active ? beams(beamFrom, pinsOf(items)) : [];
+  // Each beam goes along the roads, like a route: the first few are asked from the server one by one, the rest stay straight.
+  const [roads, setRoads] = useState<BeamRoads>({}), roadAsked = useRef(new Set<string>()), roadKeys = straight.map(roadKey).join();
+  useEffect(() => {
+    void (async () => {
+      for (const [i, line] of straight.entries()) {
+        const key = roadKey(line);
+        if (roadAsked.current.has(key)) continue;
+        roadAsked.current.add(key);
+        let path: [number, number][] | null = null;
+        if (i < ROAD_BEAMS) {
+          try {
+            const response = await fetch('/api/operations/map/beam', {
+              method: 'POST', cache: 'no-store', headers: { 'Content-Type': 'application/json', 'X-Workspace-Role': 'guest' },
+              body: JSON.stringify({ propertyId: line.key.replace(/^beam:(property:)?/, ''), longitude: line.from[0], latitude: line.from[1] }),
+            });
+            if (response.ok) path = ((await response.json()) as { path?: [number, number][] }).path || null;
+          } catch { /* The beam stays straight. */ }
+        }
+        setRoads(known => ({ ...known, [key]: path }));
+      }
+    })();
+  }, [roadKeys]);
+  const lines = roadBeams(straight, roads);
   const center = mapCities[draft.city] || preview?.center || DEFAULT_CENTER;
   const queryError = live.error ? told(live.error, 'Не удалось обновить подбор. Попробуйте ещё раз.') : '';
 

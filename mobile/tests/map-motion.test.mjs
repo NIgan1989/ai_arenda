@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {loadPure} from './helpers/pure.mjs';
 import {readFileSync} from 'node:fs';
 
-const {pinEvent, appearDelay, flight, flightFrame, answerLeft, ANSWER_WINDOW, FLIGHT_MIN_MS, FLIGHT_MAX_MS, MAP_EVENTS, beams, carouselIndex, beamBox} = await loadPure('mobile/src/map-motion.ts');
+const {pinEvent, appearDelay, flight, flightFrame, answerLeft, ANSWER_WINDOW, FLIGHT_MIN_MS, FLIGHT_MAX_MS, MAP_EVENTS, beams, beamOrigin, roadBeams, roadKey, carouselIndex, beamBox} = await loadPure('mobile/src/map-motion.ts');
 const {project} = await loadPure('mobile/src/map-math.ts');
 const pin = (tone, label = 'x') => ({tone, label});
 
@@ -120,4 +120,24 @@ test('the list of map events covers every role, and the doc lists each of them',
   for (const role of ['all', 'guest', 'owner', 'cleaner']) assert.ok(MAP_EVENTS.some(e => e.role === role));
   const doc = readFileSync(new URL('../../docs/MAP_MOTION.md', import.meta.url), 'utf8');
   for (const e of MAP_EVENTS) assert.ok(doc.includes(e.event), 'docs/MAP_MOTION.md misses: ' + e.event);
+});
+
+test('beams start where the guest is, or at a zone picked elsewhere, never at the middle of the city', () => {
+  const me = [76.9512, 52.2731];
+  assert.deepEqual(beamOrigin([76.95, 52.27], me), me);
+  assert.deepEqual(beamOrigin([77.05, 52.33], me), [77.05, 52.33]);
+  assert.deepEqual(beamOrigin([76.95, 52.27], null), [76.95, 52.27]);
+  assert.deepEqual(beamOrigin(null, me), me);
+  assert.equal(beamOrigin(null, null), null);
+  assert.equal(beamOrigin([NaN, 52], undefined), null);
+});
+
+test('a beam waits for its road, follows it between its two ends, and stays straight when there is none', () => {
+  const line = {key: 'beam:a', from: [76.9512, 52.2731], to: [76.965, 52.295], tone: 'ask'}, route = {key: 'r', from: [1, 1], to: [2, 2], tone: 'route'};
+  assert.equal(roadKey(line), 'beam:a@76.951,52.273');
+  assert.deepEqual(roadBeams([line, route], {}), [route]);
+  assert.deepEqual(roadBeams([line], {[roadKey(line)]: null}), [line]);
+  const road = [[76.952, 52.274], [76.96, 52.29]];
+  assert.deepEqual(roadBeams([line], {[roadKey(line)]: road})[0].path, [line.from, ...road, line.to]);
+  assert.deepEqual(roadBeams([line], {[roadKey(line)]: [[1, 2]]}), [line]);
 });

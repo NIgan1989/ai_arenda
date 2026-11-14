@@ -81,6 +81,30 @@ export function beams(origin:unknown,pins:{key:string;point:unknown;tone?:PinTon
  if(!okPoint(origin))return [];
  return pins.flatMap(p=>{const tone:BeamTone|null=p.tone==='pending'?'ask':p.tone==='offer'?'answer':null;return tone&&okPoint(p.point)?[{key:'beam:'+p.key,from:origin,to:p.point,tone}]:[];});
 }
+// Where the beams start: where the guest really is. The searched zone is rounded for privacy (about a kilometre),
+// so with the guest's own place known and the zone around it, the place wins; a zone picked elsewhere stays the start.
+// With neither known there are no beams: a line from the middle of the city would point to a place the guest is not at.
+export function beamOrigin(near:unknown,me:unknown):[number,number]|null{
+ if(!okPoint(near))return okPoint(me)?me:null;
+ if(!okPoint(me))return near;
+ const dy=(near[1]-me[1])*111000,dx=(near[0]-me[0])*111000*Math.cos(me[1]*Math.PI/180);
+ return Math.hypot(dx,dy)<=1500?me:near;
+}
+// A beam follows the roads, like a route: the server gives the road between its two ends (lib/journey-routing.ts buildBeamRoute).
+// roads holds what is known for each beam: a path, null when the road could not be built (the beam stays straight),
+// nothing yet while it is being asked (the beam waits, so a straight line never flashes first).
+export type BeamRoads=Record<string,[number,number][]|null|undefined>;
+export const ROAD_BEAMS=4;
+// One road per beam and per place of the guest, to about a hundred metres: a small move does not ask again.
+export function roadKey(line:MapLine){return line.key+'@'+line.from[0].toFixed(3)+','+line.from[1].toFixed(3);}
+export function roadBeams(lines:MapLine[],roads:BeamRoads):MapLine[]{
+ return lines.flatMap(l=>{
+  if(l.tone!=='ask'&&l.tone!=='answer')return [l];
+  const road=roads[roadKey(l)];
+  if(road===undefined)return [];
+  return [road&&road.length>1&&road.every(okPoint)?{...l,path:[l.from,...road,l.to]}:l];
+ });
+}
 // Where the round search-point mark stands: the start of the beams; a route has none.
 export function lineOrigin(lines:MapLine[]):[number,number]|null{const beam=lines.find(l=>l.tone==='ask'||l.tone==='answer');return beam&&okPoint(beam.from)?beam.from:null;}
 // The card of the carousel that a swipe stopped on: the nearest one, never outside the list.

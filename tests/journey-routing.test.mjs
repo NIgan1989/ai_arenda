@@ -1,5 +1,5 @@
 import {test} from 'node:test';import assert from 'node:assert/strict';import {fixture,load,now} from './helpers/platform.mjs';
-const {buildJourneyRoute}=await load('journey-routing'),{mapSearch,journeyAction}=await load('map-workspace'),{readRouteGeometry,decodePolyline,stepText}=await load('route-geometry');
+const {buildJourneyRoute,buildBeamRoute}=await load('journey-routing'),{mapSearch,journeyAction}=await load('map-workspace'),{readRouteGeometry,decodePolyline,stepText}=await load('route-geometry');
 async function ready(){const f=await fixture();f.db.raw.prepare('INSERT INTO property_locations VALUES (?,?,?,?,?,?,?)').run(f.property,76.95,52.287,'fixture','Павлодар|Центр|PRIVATE ADDRESS',1,now());return f;}
 const body=(f,extra={})=>({kind:'booking',entityId:f.booking,mode:'walking',longitude:76.94,latitude:52.287,accuracy:15,recordedAt:now(),routingConsent:true,...extra});
 const payload={code:'Ok',routes:[{distance:900,duration:700,geometry:{type:'LineString',coordinates:[[76.94,52.287],[76.945,52.288],[76.95,52.287]]}}]};
@@ -59,4 +59,22 @@ test('the public router is asked for steps, and steps without the router\'s word
  assert.equal(stepText('continue','straight','улица Кутузова'),'Продолжайте прямо по улица Кутузова');
  assert.equal(stepText('turn','uturn'),'Развернитесь');
  assert.equal(stepText('depart',undefined,''),'Начните движение');
+});
+
+test('a search beam follows the roads to the public point of a published home, from a rounded place, and stores nothing',async()=>{
+ const f=await ready(),original=globalThis.fetch;let asked=[];
+ globalThis.fetch=async url=>{asked.push(String(url));return Response.json({code:'Ok',routes:[{distance:1500,duration:300,geometry:{type:'LineString',coordinates:[[76.941,52.281],[76.95,52.284],[76.955,52.285]]}}]});};
+ try{
+  f.db.raw.prepare('UPDATE properties SET published=1 WHERE id=?').run(f.property);
+  await assert.rejects(buildBeamRoute(f.owner,'owner',{propertyId:f.property,longitude:76.94123,latitude:52.28144}),e=>e.status===403);
+  await assert.rejects(buildBeamRoute(f.guest,'guest',{propertyId:'nothing',longitude:76.94123,latitude:52.28144}),e=>e.status===404);
+  assert.equal(asked.length,0);
+  const result=await buildBeamRoute(f.guest,'guest',{propertyId:f.property,longitude:76.94123,latitude:52.28144});
+  assert.deepEqual(result.path,[[76.941,52.281],[76.95,52.284],[76.955,52.285]]);assert.equal(result.distance,1500);
+  // The guest's place goes out rounded; the home's point is the middle of its public cell, not its address.
+  assert.match(asked[0],/76\.94100,52\.28100;76\.95500,52\.28500/);
+  assert.equal(f.db.raw.prepare('SELECT COUNT(*) n FROM journey_sessions').get().n,0);
+  f.db.raw.prepare('UPDATE properties SET published=0 WHERE id=?').run(f.property);
+  await assert.rejects(buildBeamRoute(f.guest,'guest',{propertyId:f.property,longitude:76.94123,latitude:52.28144}),e=>e.status===404);
+ }finally{globalThis.fetch=original;f.db.close();}
 });

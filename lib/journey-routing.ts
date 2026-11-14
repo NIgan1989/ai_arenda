@@ -1,7 +1,7 @@
 import {DomainError,type Role} from './domain';
 import type {RentalService} from './service';
 import {q,one,epoch,httpsEndpoint,type Row,type OperationConfig} from './operation-core';
-import {journeyContext,journeyAction,coordinate} from './map-workspace';
+import {journeyContext,journeyAction,coordinate,publicPoint} from './map-workspace';
 import {geoDistance} from './map-location';
 import {readRouteGeometry,type JourneyRoute} from './route-geometry';
 async function destination(s:RentalService,context:Row){const p=await one(s.db,'SELECT p.*,l.longitude,l.latitude,l.address_fingerprint FROM properties p JOIN property_locations l ON l.property_id=p.id WHERE p.id=?',context.entity.property_id);if(!p||p.address_fingerprint!==[p.city,p.district,p.address].join('|'))throw new DomainError('Владелец ещё не подтвердил точку объекта.',409);return [p.longitude,p.latitude] as [number,number];}
@@ -31,4 +31,37 @@ export async function buildJourneyRoute(s:RentalService,role:Role,b:Row,config:O
  const route:JourneyRoute={...parsed,mode:b.mode,createdAt:epoch(),kind:b.kind,entityId:b.entityId,source:stadia?'stadia':'fossgis'};let sharing:Row|null=null;
  if(b.shareWithOwner===true){sharing=await journeyAction(s,role,'start',{kind:b.kind,entityId:b.entityId,mode:b.mode,consent:true});await journeyAction(s,role,'point',{id:sharing.id,longitude:origin[0],latitude:origin[1],accuracy,recordedAt});const stored=await q(s.db,'UPDATE journey_sessions SET route=?,route_recorded_at=? WHERE id=? AND stopped_at IS NULL AND expires_at>?',JSON.stringify(route),route.createdAt,sharing.id,epoch()).run();if(!stored.meta.changes)throw new DomainError('Передача уже завершена.',409);}
  return {route,sharing};
+}
+
+// The beam of a search drawn along the roads: from about where the guest is to the public point of a home being asked.
+// The guest's place comes rounded to 0.001° (about a hundred metres) and nothing is stored; the home's point is the public
+// one (the middle of its 0.01° cell), never its address. Counted apart from the routes of a trip.
+export async function buildBeamRoute(s:RentalService,role:Role,b:Row,config:OperationConfig={}){
+ await s.authorizeWorkspace(role,'operations');
+ if(role!=='guest')throw new DomainError('Маршрут недоступен.',403);
+ const round=(v:number)=>Math.round(v*1000)/1000,origin:[number,number]=[round(coordinate(b.longitude,-180,180)),round(coordinate(b.latitude,-85,85))];
+ const p=await one(s.db,'SELECT p.city,p.district,p.address,l.longitude,l.latitude,l.address_fingerprint,l.source FROM properties p JOIN property_locations l ON l.property_id=p.id WHERE p.id=? AND p.published=1',String(b.propertyId||''));
+ if(!p||p.address_fingerprint!==[p.city,p.district,p.address].join('|'))throw new DomainError('Жильё недоступно.',404);
+ const shown=publicPoint(p),target:[number,number]=[shown.longitude,shown.latitude];
+ if(geoDistance(origin,target)>60000)throw new DomainError('Жильё слишком далеко для линии по дорогам.',400);
+ const stadia=typeof config.STADIA_API_KEY==='string'&&/^[A-Za-z0-9-]{8,128}$/.test(config.STADIA_API_KEY)?config.STADIA_API_KEY:'';
+ await reserve(s,'beam:user:'+s.userId,3600,40);if(!stadia)await reserve(s,'route:global',2,1);
+ let url:URL,init:RequestInit;
+ if(stadia){
+  url=new URL('https://api.stadiamaps.com/route/v1');url.searchParams.set('api_key',stadia);
+  init={method:'POST',headers:{'Content-Type':'application/json','Accept':'application/json'},body:JSON.stringify({locations:[{lon:origin[0],lat:origin[1],type:'break'},{lon:target[0],lat:target[1],type:'break'}],costing:'auto',format:'osrm',shape_format:'polyline6',units:'kilometers'})};
+ }else{
+  const base=httpsEndpoint(config.ROUTING_CAR_URL||'https://routing.openstreetmap.de/routed-car/route/v1');
+  url=new URL(base.href.replace(/\/$/,'')+'/driving/'+origin.map(v=>v.toFixed(5)).join(',')+';'+target.map(v=>v.toFixed(5)).join(','));url.search=new URLSearchParams({overview:'full',geometries:'geojson',steps:'false',alternatives:'false'}).toString();
+  init={headers:{'Accept':'application/json','User-Agent':'AIArenda-Pilot/1.0'}};
+ }
+ try{
+  const response=await fetch(url,{...init,signal:AbortSignal.timeout(8000),redirect:'manual'});if(!response.ok)throw Error();const raw=await response.text();if(raw.length>2000000)throw Error();
+  const parsed=readRouteGeometry(JSON.parse(raw),stadia?6:5),line=parsed.geometry.coordinates;
+  // A road that starts or ends far from the two points is not the way between them.
+  if(geoDistance(origin,line[0])>1000||geoDistance(target,line.at(-1)!)>1000)throw Error();
+  // The line is only drawn, so a few hundred points are enough.
+  const step=Math.max(1,Math.ceil(line.length/300)),path=line.filter((_,i)=>i%step===0||i===line.length-1).map(c=>[Math.round(c[0]*1e5)/1e5,Math.round(c[1]*1e5)/1e5]);
+  return {path,distance:parsed.distance,duration:parsed.duration};
+ }catch{throw new DomainError('Не удалось построить линию по дорогам.',503);}
 }

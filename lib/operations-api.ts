@@ -1,7 +1,7 @@
 import {safetyState,safetyAction} from './account-safety';
 import {matchingAction} from './smart-matching';
 import {aiDataPermission,saveAIDataPermission} from './ai-data-permission';
-import {buildJourneyRoute} from './journey-routing';
+import {buildBeamRoute,buildJourneyRoute} from './journey-routing';
 import {mapSearch,saveMapPoint,journeyAction,geocodeFlat,placeFlatByAddress} from './map-workspace';
 import {administratorConversation} from './administrator-conversation';
 import {DomainError,required,type Role} from './domain';
@@ -51,6 +51,7 @@ export async function writeOperations(service:RentalService,role:Role,path:strin
  if(path[0]==='safety')return safetyAction(service,role,path[1],body,platformAdmin);
  if(route==='administrator/history')return administratorConversation(service,role,body.before);
  if(route==='map/route')return buildJourneyRoute(service,role,body,config);
+ if(route==='map/beam')return buildBeamRoute(service,role,body,config);
  if(route==='map/search')return mapSearch(service,role,body,config);
  if(route==='map/location')return saveMapPoint(service,role,body);
  if(route==='map/geocode')return geocodeFlat(service,role,body);
