@@ -5,6 +5,7 @@ import {mandateActive} from './rental-policy';
 import type {Role} from './domain';
 import {coordinateDispatch} from './dispatch';
 import {askForReviews} from './stay-reviews';
+import {similarFree,similarText} from './stay-watch';
 import {reviewCleaning,OWNER_REVIEW_SECONDS} from './cleaning-review';
 import {offerCalendarWindows} from './calendar-windows';
 import {offerWeeklyForecast} from './load-forecast';
@@ -121,9 +122,11 @@ export async function checkAdministratorOwner(db:D1Database,ownerId:string){
   // Expiry is a calendar fact; it never implies a physical checkout or completed work.
   const expired=await service.all("SELECT b.id,b.guest_id FROM bookings b JOIN properties p ON p.id=b.property_id WHERE p.owner_id=? AND b.status='requested' AND b.expires_at<=?",ownerId,t);
   for(const b of expired){
+   // The guest is not left with nothing: up to three similar homes free on the same dates.
+   const others=similarText(await similarFree(db,b.id).catch(()=>[]));
    await db.batch([
     service.query("UPDATE bookings SET status='expired' WHERE id=? AND status='requested' AND expires_at<=?",b.id,t),
-    service.notify(b.guest_id,'AI администратор: срок заявки истёк. Интервал больше не удерживается; выберите даты заново.','expired:'+b.id,'guest'),
+    service.notify(b.guest_id,'AI администратор: владелец не ответил вовремя, заявка истекла.'+(others||' Выберите другое жильё или даты на карте.'),'expired:'+b.id,'guest'),
     service.notify(ownerId,'AI администратор: заявка истекла без решения. Проверьте новые обращения.','expired:'+b.id,'owner')
    ]);
   }

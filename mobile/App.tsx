@@ -2,6 +2,9 @@ import React,{Fragment,useEffect,useRef,useState} from 'react';
 import {Thinking} from './src/Thinking';
 import {groupRecords,recordGroupLabels} from '../lib/record-groups';
 import {checkinOpen,checkinOpensLabel} from '../lib/checkin-window';
+import {lateOpen,lateNote,lateLabel} from '../lib/late-arrival';
+// The stay as «Задерживаюсь на час» reads it (lib/late-arrival.ts).
+const lateStay=(b:Record<string,any>)=>({start:b.start,end:b.end,arrival_eta:b.terms?.arrival_eta,late_count:b.terms?.late_count});
 import { AppState,BackHandler,KeyboardAvoidingView,Linking,Platform,Pressable,ScrollView,StatusBar,Text,TextInput,View } from 'react-native';
 import { SafeAreaProvider,SafeAreaView } from 'react-native-safe-area-context';
 import {NativeChats,type NativeChatInitial} from './src/NativeChats';
@@ -410,6 +413,7 @@ function Chat(){
           !owner&&confirmed&&data.paymentMode==='test'&&left>0&&{title:'Оплатить '+money(left),kind:'main',onPress:()=>say('Оплата брони. Это тестовая оплата: банк ещё не подключён, деньги не списываются.','confirm',{path:'operations/payment-test',body:{bookingId:id,kind:'payment'},title:'Оплатить '+money(left)+' (тест)',subject:b.title,dates:date(b.start)+' → '+date(b.end),amount:left})},
           !owner&&confirmed&&data.paymentMode==='test'&&b.terms?.deposit>0&&b.terms?.deposit_status==='pending'&&{title:'Внести депозит '+money(b.terms.deposit),kind:'main',onPress:()=>say('Депозит по брони. Это тестовая оплата: деньги не списываются.','confirm',{path:'operations/payment-test',body:{bookingId:id,kind:'deposit'},title:'Внести депозит '+money(b.terms.deposit)+' (тест)',subject:b.title,dates:date(b.start)+' → '+date(b.end),amount:b.terms.deposit})},
           !owner&&confirmed&&!b.terms?.actual_checkin&&!b.terms?.checkin_reported_at&&b.end>data.serverTime&&{title:'Я заселился',kind:'main',onPress:()=>confirm('bookings/'+id,{action:'report_checkin'},'Сообщить, что вы заселились; заселение подтвердится после проверки оплаты и депозита'),...(checkinOpen(b.start,data.serverTime)?{}:{disabled:true,note:'Кнопка станет активной за 15 минут до заезда: '+checkinOpensLabel(b.start,data.serverTime)+'.'})},
+          !owner&&confirmed&&!b.terms?.actual_checkin&&!b.terms?.checkin_reported_at&&lateOpen(lateStay(b),data.serverTime)&&{title:lateLabel(lateStay(b)),kind:'main',onPress:()=>confirm('bookings/'+id,{action:'report_late'},'Предупредить владельца, что вы приедете на час позже; бронь сохранится'),...(lateNote(lateStay(b),data.serverTime)?{note:lateNote(lateStay(b),data.serverTime)}:{})},
           !owner&&confirmed&&started&&!b.terms?.checkout_reported_at&&{title:'Сообщить о выезде',kind:'main',onPress:()=>confirm('bookings/'+id,{action:'report_checkout'},'Сообщить владельцу о выезде; освобождение жилья потребует проверки')},
           {title:'Открыть чат',kind:'side',onPress:()=>{setChatInitial({kind:'booking',entityId:id,channel:'stay'});setPageId('chats');}},
           confirmed&&{title:'Есть проблема',kind:'side',onPress:()=>raiseIssue('booking',id,actor)},

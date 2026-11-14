@@ -33,11 +33,13 @@ import {ownerForecasts,decideForecast} from './load-forecast';
 import {ownerListingTips,decideListingTip} from './listing-quality';
 import {ownerCleaningTips,decideCleaningTip} from './cleaning-price';
 import {releaseStatements,releaseWindow} from './overdue-cleaning';
+import {lateUntil,LATE_OPENS} from './late-arrival';
 import {ownerWindows,decideCalendarWindow,openWindowFor,openWindowsFor,windowQuote} from './calendar-windows';
 
 type Row = Record<string, any>;
 const now = () => Math.floor(Date.now() / 1000);
 const id = () => crypto.randomUUID();
+const clockLabel=(at:number)=>new Intl.DateTimeFormat('ru-RU',{hour:'2-digit',minute:'2-digit',timeZone:'Asia/Almaty'}).format(new Date(at*1000));
 const HISTORY_TABLES=['bookings','cleaning_jobs','finance_entries','platform_commissions','access_receipts','administrator_issues','administrator_tasks','matching_offers','review_property_bindings'];
 const SETTINGS_TABLES=['property_details','property_locations','property_operations','property_policies','operation_rules','matching_preferences','property_access','calendar_exports','property_import_links'];
 export class RentalService {
@@ -567,6 +569,21 @@ export class RentalService {
       if(b.guest_id!==this.userId)throw new DomainError('Сообщить о выезде может гость.',403);
       if(b.status!=='confirmed'||b.start>now())throw new DomainError('Проживание ещё не началось или уже завершено.',409);
       await this.db.batch([this.query('UPDATE booking_terms SET checkout_reported_at=?,version=version+1 WHERE booking_id=? AND checkout_reported_at IS NULL',now(),bookingId),this.notify(b.owner_id,'Гость сообщил о выезде. Проверьте освобождение жилья.','checkout-reported:'+bookingId,'owner'),this.audit(bookingId,'booking.checkout_reported')]);return {message:'Сообщение о выезде сохранено. Ожидаем подтверждения освобождения жилья.'};
+    }
+    if(body.action==='report_late'){
+      if(b.guest_id!==this.userId)throw new DomainError('Сообщить о задержке может гость.',403);
+      if(b.status!=='confirmed'||terms?.actual_checkin||terms?.checkin_reported_at||b.end<=now())throw new DomainError('Сейчас нельзя перенести заезд по этой брони.',409);
+      if(b.start-LATE_OPENS>now())throw new DomainError('Сообщить о задержке можно за 3 часа до заезда.',409);
+      const until=lateUntil({start:b.start,end:b.end,arrival_eta:terms?.arrival_eta,late_count:terms?.late_count},now());
+      if(!until)throw new DomainError('Больше переносить заезд нельзя. Напишите владельцу в чате брони.',409);
+      const r=await this.db.batch([
+        this.query('UPDATE booking_terms SET arrival_eta=?,late_count=late_count+1,version=version+1 WHERE booking_id=? AND late_count=? AND actual_checkin IS NULL',until,bookingId,terms?.late_count||0),
+        // A new arrival time starts the AI's questions about the arrival over.
+        this.query('UPDATE stay_watch SET arrival_step=0,updated_at=? WHERE booking_id=? AND changes()>0',now(),bookingId),
+        this.notify(b.owner_id,'Гость задерживается: приедет в «'+b.title+'» к '+clockLabel(until)+'. Бронь сохраняется.','guest-late:'+bookingId+':'+((terms?.late_count||0)+1),'owner'),
+        this.audit(bookingId,'booking.guest_late')]);
+      if(!r[0].meta.changes)throw new DomainError('Бронь изменилась. Обновите карточку.',409);
+      return {message:'Владелец предупреждён: вы приедете к '+clockLabel(until)+'. Бронь сохраняется.'};
     }
     if(body.action==='report_checkin'){
       if(b.guest_id!==this.userId)throw new DomainError('Сообщить о заселении может гость.',403);

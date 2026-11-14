@@ -52,6 +52,7 @@
 -- migration 0048_test_payments.sql sha256:def5594e44cfe1fc2272f6766ef840ad15a8b79a7f9fe56118dd4822a6763ae9
 -- migration 0049_own_staff.sql sha256:e405114ddd056e7f4463ebbbaf4ecef3a9348be4c3e944fe4d59728171313a19
 -- migration 0050_overdue_cleaning.sql sha256:0ad1121db5460816134ccafee7b7272c8e02f0bd386caad01237f8aa25b80bb4
+-- migration 0051_stay_watch.sql sha256:d990bed012b52bf2f13f6cb89fc5f229c82bb7e6341dfea66c6eb361d1a4eb06
 
 -- table access_receipts
 CREATE TABLE access_receipts (id TEXT PRIMARY KEY,property_id TEXT NOT NULL,entity_kind TEXT NOT NULL,entity_id TEXT NOT NULL,user_id TEXT NOT NULL,created_at INTEGER NOT NULL,expires_at INTEGER NOT NULL);
@@ -330,7 +331,7 @@ CREATE TABLE booking_terms (
  deposit_status TEXT NOT NULL DEFAULT 'not_required' CHECK(deposit_status IN ('not_required','pending','owner_verified')),
  house_rules TEXT NOT NULL DEFAULT '', policy_version INTEGER NOT NULL DEFAULT 0,
  actual_checkin INTEGER, actual_checkout INTEGER, checkout_reported_at INTEGER
-, version INTEGER NOT NULL DEFAULT 1, discount_percent INTEGER NOT NULL DEFAULT 0, paid_amount INTEGER NOT NULL DEFAULT 0, original_end INTEGER NOT NULL DEFAULT 0, deposit_returned_at INTEGER, refund_recorded_at INTEGER, checkin_reported_at INTEGER);
+, version INTEGER NOT NULL DEFAULT 1, discount_percent INTEGER NOT NULL DEFAULT 0, paid_amount INTEGER NOT NULL DEFAULT 0, original_end INTEGER NOT NULL DEFAULT 0, deposit_returned_at INTEGER, refund_recorded_at INTEGER, checkin_reported_at INTEGER, arrival_eta INTEGER, late_count INTEGER NOT NULL DEFAULT 0);
 
 -- table bookings
 CREATE TABLE `bookings` (
@@ -1005,6 +1006,15 @@ CREATE TABLE stay_reviews (
  rating INTEGER NOT NULL CHECK(rating BETWEEN 1 AND 5),
  body TEXT NOT NULL DEFAULT '' CHECK(length(body)<=1000),
  created_at INTEGER NOT NULL
+);
+
+-- table stay_watch
+CREATE TABLE stay_watch (
+ booking_id TEXT PRIMARY KEY REFERENCES bookings(id),
+ pay_step INTEGER NOT NULL DEFAULT 0,
+ arrival_step INTEGER NOT NULL DEFAULT 0,
+ checkout_step INTEGER NOT NULL DEFAULT 0,
+ updated_at INTEGER NOT NULL
 );
 
 -- table worker_dispatch
