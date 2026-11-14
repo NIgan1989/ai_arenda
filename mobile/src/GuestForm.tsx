@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Action, Chips, Stepper, h } from './SheetParts';
 import { C, type } from './styles';
@@ -24,6 +24,9 @@ export function GuestForm({ draft, onChange, onPickPoint, onSubmit, busy }: Prop
   const hourly = draft.mode === 'hourly';
   const startMinutes = Number(draft.start.slice(11, 13)) * 60 + Number(draft.start.slice(14, 16));
   const units = draftUnits(draft);
+  // District, wishes, priority and the point on the map: how many of them are set.
+  const set = Number(!!draft.district) + draft.features.length + Number(draft.priority !== 'balanced') + Number(!!draft.near);
+  const [more, setMore] = useState(set > 0), extra = more;
   const toggleWish = (id: string) =>
     onChange({ ...draft, features: draft.features.includes(id) ? draft.features.filter(v => v !== id) : [...draft.features, id] });
 
@@ -93,6 +96,11 @@ export function GuestForm({ draft, onChange, onPickPoint, onSubmit, busy }: Prop
           />
         </View>
       </View>
+      {/* The rest narrows the search and is rarely needed: one row opens it, and it is open when something is set there. */}
+      <Pressable accessibilityRole="button" accessibilityState={{ expanded: extra }} disabled={busy} onPress={() => setMore(v => !v)} style={({ pressed }) => [f.more, pressed && h.dim]}>
+        <Text style={f.linkText}>{extra ? 'Свернуть условия' : 'Ещё условия' + (set ? ' · ' + set : '')}</Text>
+      </Pressable>
+      {extra && <>
       <View>
         <Text style={h.label}>Район</Text>
         <TextInput
@@ -152,6 +160,7 @@ export function GuestForm({ draft, onChange, onPickPoint, onSubmit, busy }: Prop
           <Text style={f.linkText}>{draft.near ? 'Убрать точку' : 'Указать точку на карте'}</Text>
         </Pressable>
       </View>
+      </>}
       <Text style={h.note}>{hourly ? '' : 'Выезд до 12:00. '}Депозит оплачивается отдельно.</Text>
       <Action title={busy ? 'Ищем…' : 'Показать варианты'} disabled={busy} onPress={onSubmit} />
     </>
@@ -161,5 +170,6 @@ export function GuestForm({ draft, onChange, onPickPoint, onSubmit, busy }: Prop
 const f = StyleSheet.create({
   wishes: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   link: { minHeight: T.control.touch, justifyContent: 'center', paddingLeft: 8 },
+  more: { minHeight: T.control.touch, justifyContent: 'center', alignSelf: 'flex-start', paddingRight: 12 },
   linkText: { ...type.label, color: C.accent, fontWeight: '600' }
 });

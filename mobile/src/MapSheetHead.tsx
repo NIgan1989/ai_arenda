@@ -16,6 +16,8 @@ type Props = {
   onText: (text: string) => void;
   onSend: (text: string) => void;
   onChip: (action: HeadAction) => void;
+  // false: the quick chips give their place to what is under the line (the guest's results).
+  chips?: boolean;
   busy?: boolean;
   // Guest only: the conditions the search will use, and the way to the full form.
   summary?: string;
@@ -34,13 +36,13 @@ type Props = {
 const unbroken = (line: string) => line.replace(/ ·/g, '\u00a0·').replace(/(\d) (?=[\d₸а-яё])/gi, '$1\u00a0').replace(/(^|[ \u00a0])до (?=\d)/g, '$1до\u00a0').replace(/–/g, '–\u2060');
 
 // The default state of the bottom sheet: one AI line, a row of chips and the "Сейчас" card when there is one.
-export function MapSheetHead({ role, text, onText, onSend, onChip, busy = false, summary, onRefine, refining = false, now, onNow, counts, children }: Props) {
+export function MapSheetHead({ role, text, onText, onSend, onChip, chips = true, busy = false, summary, onRefine, refining = false, now, onNow, counts, children }: Props) {
   const line = headLine(role);
   return (
     <View style={s.head}>
       <AiLine value={text} onChangeText={onText} onSend={onSend} busy={busy} placeholder={line.placeholder} shortPlaceholder={line.shortPlaceholder} label={line.label} />
       {/* The chips of every role fit one row of a 360px phone; the row still scrolls for a larger system font. */}
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="handled" style={s.chipsScroll} contentContainerStyle={s.chips}>
+      {chips && <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="handled" style={s.chipsScroll} contentContainerStyle={s.chips}>
         {line.chips.map(chip => (
           <Pressable
             key={chip.id}
@@ -54,7 +56,7 @@ export function MapSheetHead({ role, text, onText, onSend, onChip, busy = false,
             {!!counts?.[chip.action] && <Text style={s.chipCount}>{counts[chip.action]}</Text>}
           </Pressable>
         ))}
-      </ScrollView>
+      </ScrollView>}
       {!!summary && !!onRefine && (
         <Pressable
           accessibilityRole="button"

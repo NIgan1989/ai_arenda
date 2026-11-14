@@ -254,14 +254,16 @@ function GuestPanel({setScanning,accountId,data,mapData,publish,selected,setSele
  // The guest's own stay tapped on the map, or the nearest one that can be reached now.
  const stay=snap===0&&!preview?stays.find(v=>v.key===selected)||null:null,near=stays.find(v=>v.canGo)||null;
  const trips=guestTrips(data,serverNow(data));
- const head=<MapSheetHead role="guest" text={asked} onText={setAsked} onSend={ask} onChip={chip} busy={working} summary={guestSummary(freshDraft(draft))} onRefine={toggleRefine} refining={refining} now={null} onNow={()=>{}}>
+ // «Уточнить» was tapped: the sheet is the form alone, the bookings and the quick chips wait under the collapsed sheet.
+ const formOnly=refine&&snap>0;
+ const head=<MapSheetHead role="guest" text={asked} onText={setAsked} onSend={ask} onChip={chip} chips={!preview&&!formOnly} busy={working} summary={guestSummary(freshDraft(draft))} onRefine={toggleRefine} refining={refining} now={null} onNow={()=>{}}>
   {!!hint&&<View style={h.picked}><Text accessibilityRole={hint.error?'alert':undefined} accessibilityLiveRegion="polite" style={hint.error?h.error:h.note}>{hint.text}</Text>{!!hint.ask&&<Action secondary title="Спросить AI администратора" onPress={()=>onAsk(hint.ask!)}/>}</View>}
   {!!error&&<Text accessibilityRole="alert" style={h.error}>{error}</Text>}
   {!!nav.error&&<Text accessibilityRole="alert" style={h.error}>{nav.error}</Text>}
   {stay&&<View style={h.listRow}><View style={h.grow}><Text numberOfLines={1} style={h.eventTitle}>{stay.title}</Text><Text numberOfLines={1} style={h.note}>{stay.label}</Text></View>{stay.canGo&&<Action title="Маршрут" onPress={()=>go(stay)}/>}<Action secondary title="Открыть" onPress={()=>onOpenProcess('booking',stay.id)}/></View>}
-  {!stay&&near&&!preview&&!picked&&<View style={h.listRow}><View style={h.grow}><Text numberOfLines={1} style={h.eventTitle}>{near.title}</Text><Text numberOfLines={1} style={h.note}>{near.label}</Text></View><Action secondary title="Маршрут" onPress={()=>go(near)}/></View>}
+  {!stay&&near&&!preview&&!picked&&!formOnly&&<View style={h.listRow}><View style={h.grow}><Text numberOfLines={1} style={h.eventTitle}>{near.title}</Text><Text numberOfLines={1} style={h.note}>{near.label}</Text></View><Action secondary title="Маршрут" onPress={()=>go(near)}/></View>}
   {/* The guest's own stays as the same feed: what waits for the guest on top, a row for every other booking. */}
-  {!preview&&!picked&&!stay&&<AutopilotThreads role="guest" data={data} now={serverNow(data)} paymentMode={data.paymentMode} onOpen={(kind,id)=>onOpenProcess(kind,id)} onAll={trips.length?()=>onOpenPage('bookings'):undefined}/>}
+  {!preview&&!picked&&!stay&&!formOnly&&<AutopilotThreads role="guest" data={data} now={serverNow(data)} paymentMode={data.paymentMode} onOpen={(kind,id)=>onOpenProcess(kind,id)} onAll={trips.length?()=>onOpenPage('bookings'):undefined}/>}
   {picked&&<View style={h.listRow}><View style={h.grow}><Text numberOfLines={1} style={h.eventTitle}>{picked.title}</Text><Text numberOfLines={1} style={h.note}>{[typeof picked.price==='number'?money(picked.price)+' за сутки':'',picked.district].filter(Boolean).join(' · ')}</Text></View><Action secondary title="Открыть" onPress={()=>onIntent('property:'+picked.id)}/></View>}
  </MapSheetHead>;
  // The form and the results live in the opened sheet only; a running request to owners keeps its place in any state.
