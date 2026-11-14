@@ -1,14 +1,17 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { AccessibilityInfo, Animated, Pressable, StyleSheet, Text, View } from 'react-native';
 import {
-  THREAD_BY, cleanerThreads, cleanerWeek, dayRibbon, lastAiMove, ownerThreads, ribbonX, threadClock, threadWhen, threadsSummary,
+  THREAD_BY, cleanerThreads, cleanerWeek, dayRibbon, guestThreads, lastAiMove, ownerThreads, ribbonX, threadClock, threadWhen, threadsSummary,
   type ProcessThread, type ThreadStep
 } from '../../lib/process-threads';
 import { C, type } from './styles';
 import { T } from './tokens';
 
 type Row = Record<string, any>;
-type Props = { role: 'owner' | 'cleaner'; data: Row; now: number; onOpen: (kind: 'booking' | 'job', id: string) => void };
+// «Ждёт вас» from outside the threads: a guest waiting for a quick answer, the AI's advice that needs a decision.
+export type FeedNeed = { key: string; title: string; line: string; action: string; onPress: () => void };
+// calendar: the performer's week and the ribbon of the day, shown with the opened sheet only.
+type Props = { role: 'owner' | 'cleaner' | 'guest'; data: Row; now: number; paymentMode?: string; needs?: FeedNeed[]; calendar?: boolean; onAll?: () => void; onOpen: (kind: 'booking' | 'job', id: string) => void };
 
 const FOLDED = 3;
 const pct = (n: number) => `${n}%` as `${number}%`;
@@ -68,23 +71,29 @@ function Step({ s, last, now }: { s: ThreadStep; last: boolean; now: number }) {
   );
 }
 
-// The block «Автопилот» of the map sheet: every booking and cleaning of the owner (the cleaner's jobs) from start to end,
-// and the step each one is at. The cleaner also has the week and the ribbon of the chosen day. The same as on the site.
-export function AutopilotThreads({ role, data, now, onOpen }: Props) {
+// The feed «Автопилот» of the map sheet. On top, what waits for the person, each with one button. Under it one row for
+// every booking and cleaning (the performer's jobs, the guest's stays): what it is and what happens now. A row opens
+// into its steps from start to end. The performer also has the week and the ribbon of the chosen day.
+export function AutopilotThreads({ role, data, now, paymentMode, needs = [], calendar = true, onAll, onOpen }: Props) {
   const [filter, setFilter] = useState<'all' | 'booking' | 'job'>('all');
   const [open, setOpen] = useState('');
   const [all, setAll] = useState(false);
   const [day, setDay] = useState<number | null>(null);
-  const threads = useMemo(() => role === 'owner' ? ownerThreads(data, now) : cleanerThreads(data, now), [role, data, now]);
+  const threads = useMemo(() => role === 'owner' ? ownerThreads(data, now) : role === 'guest' ? guestThreads(data, now, paymentMode) : cleanerThreads(data, now), [role, data, now, paymentMode]);
   const week = useMemo(() => role === 'cleaner' ? cleanerWeek(data, now) : [], [role, data, now]);
   const [width, setWidth] = useState(0);
-  if (!data?.user?.id || (!threads.length && role === 'owner')) return null;
+  if (!data?.user?.id) return null;
+  // Nothing goes on now: the guest still reaches the past bookings from here, the others see no block.
+  if (!threads.length && !needs.length && role !== 'cleaner') return onAll ? <View style={a.box}><Pressable accessibilityRole="button" accessibilityLabel="Все брони" onPress={onAll} style={a.moreButton}><Text style={a.moreText}>Все брони ›</Text></Pressable></View> : null;
   const dayKey = day ?? week[0]?.key ?? 0;
-  const shown = threads.filter(t => filter === 'all' || t.kind === filter);
+  const yours = threads.filter(t => t.yours), calm = threads.filter(t => !t.yours);
+  // The filter works only while its buttons are on the screen: with three rows or fewer everything is shown.
+  const tabs = role === 'owner' && calm.length > FOLDED, kind = tabs ? filter : 'all';
+  const shown = calm.filter(t => kind === 'all' || t.kind === kind);
   const rows = all ? shown : shown.slice(0, FOLDED);
-  const last = lastAiMove(data, role, now);
-  const count = (kind: 'booking' | 'job') => threads.filter(t => t.kind === kind && !t.finished).length;
-  const ribbon = role === 'cleaner' ? dayRibbon(cleanerThreads(data, now, true), data, dayKey, now) : null;
+  const last = role === 'guest' ? null : lastAiMove(data, role, now);
+  const count = (kind: 'booking' | 'job') => calm.filter(t => t.kind === kind && !t.finished).length;
+  const ribbon = role === 'cleaner' && calendar ? dayRibbon(cleanerThreads(data, now, true), data, dayKey, now) : null;
   const tab = (id: 'all' | 'booking' | 'job', title: string, n?: number) => (
     <Pressable key={id} accessibilityRole="button" accessibilityState={{ selected: filter === id }} onPress={() => setFilter(id)} style={[a.tab, filter === id && a.tabOn]}>
       <Text style={[a.tabText, filter === id && a.tabTextOn]}>{title}</Text>
@@ -94,13 +103,27 @@ export function AutopilotThreads({ role, data, now, onOpen }: Props) {
   return (
     <View style={a.box} accessibilityLabel="Автопилот">
       <View style={a.head}>
-        <Text style={a.badge}>✦ Автопилот</Text>
+        <Text style={a.badge}>{role === 'guest' ? '✦ Мои брони' : '✦ Автопилот'}</Text>
         <Text style={a.sum}>{threadsSummary(role, threads)}</Text>
         <Text style={a.clock}>{threadClock(now)}</Text>
       </View>
       {last && <View style={a.last}><Text style={a.lastTime}>✦ {threadClock(last.at)}</Text><Text numberOfLines={1} style={a.lastText}>{last.text}{last.title ? ' · ' + last.title : ''}</Text></View>}
-      {role === 'owner' && <View style={a.tabs}>{tab('all', 'Всё')}{tab('booking', 'Брони', count('booking'))}{tab('job', 'Уборки', count('job'))}</View>}
-      {role === 'cleaner' && <>
+      {needs.map(n => (
+        <View key={n.key} style={a.need} accessibilityLabel={'Ждёт вас: ' + n.title + '. ' + n.line}>
+          <View style={a.needDot}><Text style={a.needMark}>!</Text></View>
+          <View style={a.rowText}><Text numberOfLines={2} style={a.title}>{n.title}</Text><Text numberOfLines={2} style={a.rowLine}>{n.line}</Text></View>
+          <Pressable accessibilityRole="button" accessibilityLabel={n.action + ': ' + n.title} onPress={n.onPress} style={({ pressed }) => [a.needButton, pressed && a.pressed]}><Text style={a.needButtonText}>{n.action}</Text></Pressable>
+        </View>
+      ))}
+      {yours.map(t => (
+        <View key={t.kind + t.id} style={a.need} accessibilityLabel={'Ждёт вас: ' + t.tag + ' ' + t.title + '. ' + t.line}>
+          <View style={a.needDot}><Text style={a.needMark}>!</Text></View>
+          <Pressable accessibilityRole="button" accessibilityLabel={t.tag + ' ' + t.title + '. ' + t.status + '. ' + t.line} onPress={() => onOpen(t.kind, t.id)} style={a.rowText}><Text numberOfLines={2} style={a.title}>{t.tag} · {t.title}</Text><Text numberOfLines={2} style={a.rowLine}>{t.line}</Text></Pressable>
+          <Pressable accessibilityRole="button" accessibilityLabel={'Решить: ' + t.tag + ' ' + t.title} onPress={() => onOpen(t.kind, t.id)} style={({ pressed }) => [a.needButton, pressed && a.pressed]}><Text style={a.needButtonText}>Решить</Text></Pressable>
+        </View>
+      ))}
+      {tabs && <View style={a.tabs}>{tab('all', 'Всё')}{tab('booking', 'Брони', count('booking'))}{tab('job', 'Уборки', count('job'))}</View>}
+      {role === 'cleaner' && calendar && <>
         <View style={a.week}>
           {week.map(d => (
             <Pressable key={d.key} accessibilityRole="button" accessibilityState={{ selected: d.key === dayKey }} accessibilityLabel={(d.today ? 'Сегодня, ' : '') + d.week + ' ' + d.date + ': уборок ' + d.count} onPress={() => setDay(d.key)} style={[a.day, d.key === dayKey && a.dayOn]}>
@@ -127,15 +150,17 @@ export function AutopilotThreads({ role, data, now, onOpen }: Props) {
         return (
           <View key={t.kind + t.id} style={[a.item, isOpen && a.itemOpen]}>
             <Pressable accessibilityRole="button" accessibilityState={{ expanded: isOpen }} accessibilityLabel={t.tag + ' ' + t.title + '. ' + t.status + '. ' + t.line} onPress={() => setOpen(isOpen ? '' : t.id)} style={a.row}>
-              <View style={a.rowTop}>
-                <Text style={[a.tag, t.kind === 'job' && a.tagJob]}>{t.tag}</Text>
-                <Text numberOfLines={1} style={a.title}>{t.title}</Text>
-                <Text style={[a.status, t.finished && a.statusDone, t.yours && a.statusYours]}>{t.status}</Text>
+              {t.finished ? <View style={[a.mark, a.markDone]}><Text style={[a.markText, a.markTextDone]}>✓</Text></View>
+                : t.steps[t.current]?.by === 'ai' ? <View style={a.mark}><Text style={a.markText}>✦</Text></View>
+                : <View style={[a.mark, a.markWait]}><View style={a.markRing} /></View>}
+              <View style={a.rowText}>
+                <Text numberOfLines={1} style={a.title}>{t.tag} · {t.title}</Text>
+                <Text numberOfLines={isOpen ? 3 : 1} style={a.rowLine}>{t.line}</Text>
               </View>
-              <Rail t={t} />
-              <Text numberOfLines={1} style={a.rowLine}>{t.line}</Text>
+              <Text style={a.chevron}>{isOpen ? '⌃' : '›'}</Text>
             </Pressable>
             {isOpen && <View style={a.more}>
+              <Rail t={t} />
               {t.steps.map((s, i) => <Step key={s.key} s={s} last={i === t.steps.length - 1} now={now} />)}
               <Pressable accessibilityRole="button" onPress={() => onOpen(t.kind, t.id)} style={({ pressed }) => [a.open, pressed && a.openPressed]}>
                 <Text style={a.openText}>{t.kind === 'booking' ? 'Открыть бронь' : t.tag === 'Задание' ? 'Открыть задание' : 'Открыть уборку'}</Text>
@@ -144,7 +169,8 @@ export function AutopilotThreads({ role, data, now, onOpen }: Props) {
           </View>
         );
       })}
-      {!rows.length && <Text style={a.empty}>{role === 'owner' ? (filter === 'job' ? 'Уборок сейчас нет' : 'Броней сейчас нет') : 'Когда вас назначат на уборку, она появится здесь'}</Text>}
+      {!rows.length && !yours.length && !needs.length && <Text style={a.empty}>{role === 'owner' ? (kind === 'job' ? 'Уборок сейчас нет' : 'Броней сейчас нет') : role === 'guest' ? 'Броней сейчас нет' : 'Когда вас назначат на уборку, она появится здесь'}</Text>}
+      {!!onAll && <Pressable accessibilityRole="button" accessibilityLabel="Все брони" onPress={onAll} style={a.moreButton}><Text style={a.moreText}>Все брони ›</Text></Pressable>}
       {shown.length > FOLDED && <Pressable accessibilityRole="button" onPress={() => setAll(v => !v)} style={a.moreButton}><Text style={a.moreText}>{all ? 'Свернуть' : 'Ещё ' + (shown.length - FOLDED)}</Text></Pressable>}
     </View>
   );
@@ -167,14 +193,22 @@ const a = StyleSheet.create({
   tabTextOn: { color: C.surface },
   item: { borderRadius: T.radius.md },
   itemOpen: { backgroundColor: C.accentSoft },
-  row: { gap: 8, padding: 8 },
-  rowTop: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  tag: { ...type.caption, fontWeight: '600', color: C.accent, backgroundColor: C.accentSoft, paddingHorizontal: 4, borderRadius: T.radius.xs, overflow: 'hidden' },
-  tagJob: { color: C.success, backgroundColor: C.successSoft },
-  title: { ...type.label, flex: 1, minWidth: 0, color: C.ink, fontWeight: '600' },
-  status: { ...type.caption, color: C.accent, fontWeight: '600' },
-  statusDone: { color: C.success },
-  statusYours: { color: C.warning },
+  row: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 8, minHeight: T.control.touch },
+  rowText: { flex: 1, minWidth: 0, gap: 2 },
+  mark: { width: 28, height: 28, borderRadius: T.radius.sm, alignItems: 'center', justifyContent: 'center', backgroundColor: C.accentSoft },
+  markDone: { backgroundColor: C.successSoft },
+  markWait: { backgroundColor: C.surfaceAlt },
+  markText: { ...type.label, color: C.accent, fontWeight: '700' },
+  markTextDone: { color: C.success },
+  markRing: { width: 12, height: 12, borderRadius: T.radius.full, borderWidth: 2, borderColor: C.muted },
+  chevron: { ...type.body, color: C.muted },
+  need: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 12, borderRadius: T.radius.md, borderWidth: 1, borderColor: C.warningLine, backgroundColor: C.warningSoft },
+  needDot: { width: 28, height: 28, borderRadius: T.radius.sm, alignItems: 'center', justifyContent: 'center', backgroundColor: C.surface },
+  needMark: { ...type.label, color: C.warning, fontWeight: '700' },
+  needButton: { minHeight: 36, paddingHorizontal: 16, borderRadius: T.radius.full, alignItems: 'center', justifyContent: 'center', backgroundColor: C.accent },
+  needButtonText: { ...type.label, color: C.onAccent, fontWeight: '600' },
+  pressed: { opacity: 0.6 },
+  title: { ...type.label, color: C.ink, fontWeight: '600' },
   rowLine: { ...type.caption, color: C.muted },
   rail: { flexDirection: 'row', alignItems: 'center', height: 16 },
   railPart: { flex: 1, flexDirection: 'row', alignItems: 'center' },
