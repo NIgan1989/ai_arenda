@@ -77,3 +77,10 @@
 .acct-form>label:not(.acct-check){display:grid;gap:8px;font-size:14px;color:var(--t-muted)}.acct-form>.acct-check{margin:0}
 .acct-form p,.acct-done p,.acct-done h3{margin:0!important}
 .acct-request>span{display:grid;gap:4px}
+/* A choice of two or three short options inside a row. */
+.acct-seg-row{flex-wrap:wrap;row-gap:8px}
+.acct-seg{display:flex;flex:none;margin-left:auto;padding:2px;border-radius:12px;background:var(--t-surface-alt)}
+.acct-seg>button{min-height:32px;padding:0 8px;border:0;border-radius:8px;background:none;font:inherit;font-size:14px;font-weight:550;color:var(--t-muted);cursor:pointer}
+.acct-seg>button[aria-checked=true]{background:var(--t-surface);color:var(--t-ink);box-shadow:0 1px 3px var(--t-glass-ink,#0e132414)}
+.acct-seg>button:disabled{cursor:default}
+.acct-seg-row>span{white-space:nowrap}

@@ -11,6 +11,10 @@ export function Row({title,value,note,onPress,open,danger=false,disabled=false,e
 export function SwitchRow({title,note,checked,onChange,disabled=false}:{title:string;note?:string;checked:boolean;onChange:(value:boolean)=>void;disabled?:boolean}){
  return <View style={a.row}><View style={a.wide}><Text style={a.title}>{title}</Text>{!!note&&<Text style={a.note}>{note}</Text>}</View><Switch accessibilityLabel={title} value={checked} disabled={disabled} onValueChange={onChange} trackColor={{false:C.lineStrong,true:C.accent}} thumbColor={C.surface} {...({activeThumbColor:C.surface} as object)}/></View>;
 }
+// A choice of two or three short options inside a row.
+export function Choice({title,value,options,onChange,disabled=false}:{title:string;value:string;options:[string,string][];onChange:(value:string)=>void;disabled?:boolean}){
+ return <View style={a.row}><Text style={[a.title,a.wide]}>{title}</Text><View accessibilityRole="radiogroup" style={a.seg}>{options.map(([v,label])=><Pressable key={v} accessibilityRole="radio" accessibilityState={{checked:value===v,disabled}} disabled={disabled} onPress={()=>onChange(v)} style={[a.segItem,value===v&&a.segOn]}><Text style={[a.segText,value===v&&a.segTextOn]}>{label}</Text></Pressable>)}</View></View>;
+}
 export const a=StyleSheet.create({
  label:{...type.caption,color:C.muted,fontWeight:'600',letterSpacing:.4,textTransform:'uppercase',marginTop:20,marginBottom:8,marginHorizontal:4},
  group:{borderWidth:1,borderColor:C.line,backgroundColor:C.surface,borderTopWidth:0,borderRadius:T.radius.lg,overflow:'hidden'},
@@ -24,4 +28,5 @@ export const a=StyleSheet.create({
  edit:{minHeight:T.control.touch,paddingHorizontal:16,borderRadius:T.radius.full,borderWidth:1,borderColor:C.line,backgroundColor:C.surface,justifyContent:'center'},editText:{...type.label,color:C.ink,fontWeight:'600'},
  track:{height:4,borderRadius:T.radius.full,backgroundColor:C.line,marginTop:12,overflow:'hidden'},fill:{height:4,borderRadius:T.radius.full,backgroundColor:C.accent},
  next:{minHeight:T.control.primary,flexDirection:'row',alignItems:'center',gap:12,paddingHorizontal:16,paddingVertical:8,marginTop:16,borderRadius:T.radius.lg,borderWidth:1,borderColor:C.aiTo,backgroundColor:C.surface},spark:{...type.subtitle,color:C.aiTo},
- saved:{...type.label,color:C.success,marginTop:12},footnote:{...type.caption,color:C.muted,marginTop:12,marginHorizontal:4}});
+ saved:{...type.label,color:C.success,marginTop:12},
+ seg:{flexDirection:'row',padding:2,borderRadius:T.radius.md,backgroundColor:C.surfaceAlt},segItem:{minHeight:32,paddingHorizontal:12,borderRadius:T.radius.sm,justifyContent:'center'},segOn:{backgroundColor:C.surface},segText:{...type.label,color:C.muted,fontWeight:'500'},segTextOn:{color:C.ink,fontWeight:'600'},footnote:{...type.caption,color:C.muted,marginTop:12,marginHorizontal:4}});

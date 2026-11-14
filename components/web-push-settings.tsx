@@ -7,7 +7,7 @@ import './account-list.css';
 
 type PushState={configured:boolean;publicKey:string;enabled:boolean};
 function keyBytes(value:string){return Uint8Array.from(atob(value.replace(/-/g,'+').replace(/_/g,'/')),c=>c.charCodeAt(0));}
-export function WebPushSettings({role}:{role:string}){
+export function WebPushSettings({role,compact=false}:{role:string;compact?:boolean}){
  const [state,setState]=useState<PushState|null>(null),[supported,setSupported]=useState(false),[busy,setBusy]=useState(false),[message,setMessage]=useState(''),[error,setError]=useState('');
  async function api(body?:object){const response=await fetch('/api/push',{cache:'no-store',method:body?'POST':'GET',headers:{'X-Workspace-Role':role,...(body?{'Content-Type':'application/json'}:{})},...(body?{body:JSON.stringify(body)}:{})});const result=await response.json() as PushState&{error?:string;message?:string};if(!response.ok)throw Error(result.error||'Не удалось сохранить настройки.');return result;}
  useEffect(()=>{let active=true;setState(null);setMessage('');setError('');setSupported(window.isSecureContext&&'serviceWorker' in navigator&&'PushManager' in window&&'Notification' in window);api().then(value=>{if(active)setState(value);}).catch(e=>{if(active)setError(e.message);});return()=>{active=false;};},[role]);
@@ -28,6 +28,11 @@ export function WebPushSettings({role}:{role:string}){
    const result=await api(body);setState(await api());setMessage(result.message||'Настройки сохранены.');
    // Removing one role keeps other opted-in roles on this browser intact.
   }catch(e){setError(e instanceof Error?e.message:'Не удалось настроить уведомления.');}finally{setBusy(false);}
+ }
+ // In the menu: one row with a switch; the long explanation stays on the management page.
+ if(compact){
+  if(state&&!state.configured)return null;
+  return <><label className="acct-row"><Bell size={20}/><span>На этом устройстве<small>{!supported?'На iPhone сначала добавьте сайт на экран «Домой»':!state?'Проверяю…':state.enabled?'Заявки и брони приходят сразу':'Включите, чтобы не пропускать заявки'}</small></span><input type="checkbox" role="switch" className="acct-switch" checked={!!state?.enabled} disabled={busy||!supported||!state} onChange={e=>void change(e.target.checked?'subscribe':'remove')}/></label>{error&&<p className="acct-row acct-static form-error" role="alert">{error}</p>}</>;
  }
  return <details className="acct-details"><summary><Bell size={20}/><span>Уведомления</span><em>{!supported?'Недоступны здесь':!state?'Проверяю…':!state.configured?'Не подключены':state.enabled?'Включены':'Выключены'}</em><ChevronRight size={16}/></summary><div className="acct-body"><p>Заявки, изменения брони и другие события вашей роли, даже когда страница закрыта.</p><small>В сообщении нет адресов, кодов доступа и платёжных данных. После выхода из аккаунта доставка прекращается. Настройка отдельная для каждой роли и каждого устройства.</small>
  {!supported?<p>Откройте сайт в браузере с поддержкой push. На iPhone или iPad добавьте сайт на экран «Домой» через меню «Поделиться» и откройте его оттуда.</p>:!state?<p role="status"><Thinking size="sm" lead/>Проверяю настройки…</p>:!state.configured?<p>Сервер push-уведомлений ещё не подключён.</p>:<><p>{state.enabled?'Включены для этой роли':'Выключены для этой роли'}</p><div className="inline-actions" style={{flexWrap:'wrap'}}><Button disabled={busy} onClick={()=>change('subscribe')}>{state.enabled?'Обновить разрешение':'Включить уведомления'}</Button>{state.enabled&&<><Button variant="outline" disabled={busy} onClick={()=>change('test')}>Проверить доставку</Button><Button variant="ghost" disabled={busy} onClick={()=>change('remove')}>Отключить</Button></>}</div></>}

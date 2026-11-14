@@ -6,7 +6,7 @@ import './account-list.css';
 
 type State={configured:boolean;linked:boolean;enabled:boolean;linkedAt:number};
 // Notifications of this role in a personal Telegram chat: one tap opens the bot, Start links it.
-export function TelegramSettings({role}:{role:string}){
+export function TelegramSettings({role,compact=false}:{role:string;compact?:boolean}){
  const [state,setState]=useState<State|null>(null),[busy,setBusy]=useState(false),[waiting,setWaiting]=useState<number|null>(null),[message,setMessage]=useState(''),[error,setError]=useState('');
  async function api(path:string,body:object={}):Promise<any>{const r=await fetch('/api/operations/'+path,{method:'POST',cache:'no-store',headers:{'X-Workspace-Role':role,'Content-Type':'application/json'},body:JSON.stringify(body)});const v:any=await r.json();if(!r.ok)throw Error(v.error||'Не получилось.');return v;}
  async function load(){try{const s=await api('delivery/status');setState(s);return s as State;}catch(e:any){setError(e.message);return null;}}
@@ -16,6 +16,13 @@ export function TelegramSettings({role}:{role:string}){
  async function connect(){const tab=window.open('','_blank');setBusy(true);setError('');setMessage('');try{const r=await api('delivery/telegram');if(tab)tab.location.href=r.url;else window.location.href=r.url;setWaiting(state?.linkedAt||0);}catch(e:any){tab?.close();setError(e.message);}finally{setBusy(false);}}
  async function toggle(on:boolean){setBusy(true);setError('');setMessage('');try{const r=await api('delivery/channel',{channel:'telegram',enabled:on});setMessage(r.message);await load();}catch(e:any){setError(e.message);}finally{setBusy(false);}}
  const status=!state?'Проверяю…':!state.configured?'Скоро':state.enabled?'Включён':state.linked?'Выключен':'Не подключён';
+ // In the menu: one row; nothing at all until the bot works.
+ if(compact){
+  if(!state||!state.configured)return null;
+  return <>{state.linked&&waiting===null?<label className="acct-row"><Send size={20}/><span>Telegram<small>Личный чат с ботом «Ай Аренда»</small></span><input type="checkbox" role="switch" className="acct-switch" checked={state.enabled} disabled={busy} onChange={e=>void toggle(e.target.checked)}/></label>
+   :<div className="acct-row acct-static"><Send size={20}/><span>Telegram<small>{waiting!==null?'Нажмите «Start» в чате с ботом':'Уведомления в личный чат'}</small></span><button type="button" className="acct-pill" disabled={busy} onClick={connect}>{waiting!==null?'Ещё раз':'Подключить'}</button></div>}
+   {error&&<p className="acct-row acct-static form-error" role="alert">{error}</p>}</>;
+ }
  return <details className="acct-details"><summary><Send size={20}/><span>Telegram</span><em>{status}</em><ChevronRight size={16}/></summary><div className="acct-body">
   <p>Заявки, брони и уборки будут приходить в личный чат с ботом «Ай Аренда». Одно подключение работает для всех ваших ролей.</p>
   {!state?<p role="status">Проверяю…</p>:!state.configured?<p>Бот уведомлений скоро заработает. Пока события приходят в приложение.</p>
