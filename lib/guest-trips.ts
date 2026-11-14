@@ -1,5 +1,6 @@
 import { checkinOpen, checkinOpensLabel } from './checkin-window';
 import { recordSpan } from './record-span';
+import { lateOpen, lateNote, lateLabel } from './late-arrival';
 
 type Row = Record<string, any>;
 
@@ -59,7 +60,7 @@ export function guestTripsLabel(trips: GuestTrip[]) {
   return open ? 'Мои брони · ' + open : 'Мои брони';
 }
 
-export type GuestStepId = 'pay' | 'deposit' | 'checkin' | 'checkout' | 'review';
+export type GuestStepId = 'pay' | 'deposit' | 'late' | 'checkin' | 'checkout' | 'review';
 export type GuestStep = { id: GuestStepId; label: string; disabled?: boolean; note?: string };
 
 const money = (value: number) => new Intl.NumberFormat('ru-RU').format(value) + ' ₸';
@@ -80,12 +81,17 @@ export function guestSteps(b: Row, now: number, paymentMode?: string): GuestStep
       ...(checkinOpen(b.start, now) ? {} : { disabled: true, note: 'Кнопка станет активной за 15 минут до заезда: ' + checkinOpensLabel(b.start, now) + '.' }),
     });
   }
+  // «Задерживаюсь на час»: the guest warns the owner before the AI has to ask (lib/late-arrival.ts).
+  const late = { start: b.start, end: b.end, arrival_eta: b.terms?.arrival_eta, late_count: b.terms?.late_count };
+  if (!b.terms?.actual_checkin && !b.terms?.checkin_reported_at && lateOpen(late, now)) {
+    steps.push({ id: 'late', label: lateLabel(late), note: lateNote(late, now) || undefined });
+  }
   if (b.start <= now && !b.terms?.checkout_reported_at) steps.push({ id: 'checkout', label: 'Сообщить о выезде' });
   return steps;
 }
 
 export function guestStep(b: Row | null | undefined, now: number, paymentMode?: string): GuestStep | null {
-  return b ? guestSteps(b, now, paymentMode).find(step => !step.disabled) || null : null;
+  return b ? guestSteps(b, now, paymentMode).find(step => !step.disabled && step.id !== 'late') || null : null;
 }
 
 // The guest's booking on the map: what it waits for, in one short label and a state colour.

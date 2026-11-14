@@ -85,7 +85,25 @@ const NOTES:[string,AiNote['kind'],string][]=[
  ['guest:stay:','stay','ИИ предложил изменить проживание'],
  ['guest:review-request:','booking','ИИ спросил, как прошло'],
  ['cleaner:day-plan:','','ИИ составил план дня'],
- ['cleaner:offer:','cleaning-offer','ИИ предложил уборку']
+ ['cleaner:offer:','cleaning-offer','ИИ предложил уборку'],
+ // A stay waiting for a person (lib/stay-watch.ts): payment, arrival, checkout, a request left without an answer.
+ ['guest:stay-pay-remind:','booking','ИИ напомнил об оплате'],
+ ['guest:stay-pay-warn:','booking','ИИ предупредил: бронь не оплачена'],
+ ['owner:stay-pay-warn:','booking','ИИ предупредил: гость не оплатил'],
+ ['owner:stay-pay-part:','booking','ИИ передал вам неполную оплату'],
+ ['owner:stay-unpaid-ask:','booking','ИИ передал вам неоплаченную бронь'],
+ ['guest:stay-unpaid-released:','booking','ИИ снял неоплаченную бронь'],
+ ['owner:stay-unpaid-released:','booking','ИИ снял неоплаченную бронь'],
+ ['guest:stay-arrival-ask:','booking','ИИ спросил, едете ли вы'],
+ ['owner:stay-arrival-ask:','booking','ИИ спросил гостя, едет ли он'],
+ ['owner:stay-no-show-ask:','booking','ИИ передал вам неявку гостя'],
+ ['guest:stay-no-show:','booking','ИИ снял бронь: вы не приехали'],
+ ['owner:stay-no-show:','booking','ИИ отметил неявку и освободил жильё'],
+ ['guest:stay-checkout-remind:','booking','ИИ напомнил о выезде'],
+ ['owner:stay-checkout-late:','booking','ИИ сообщил: гость не выехал'],
+ ['owner:stay-checkout-escalated:','booking','ИИ передал задержку выезда администратору'],
+ ['cleaner:stay-checkout-late:','job','ИИ предупредил: гость ещё в жилье'],
+ ['guest:expired:','booking','ИИ сообщил, что заявка истекла']
 ];
 export function aiNoteOf(dedupe:unknown,at:unknown,body?:unknown):AiNote|null{
  const mark=aiMarkOf(dedupe,at,body);if(mark)return {kind:mark.kind,id:mark.id,text:AI_SAYS[mark.move],at:mark.at};

@@ -84,3 +84,5 @@
 .acct-seg>button[aria-checked=true]{background:var(--t-surface);color:var(--t-ink);box-shadow:0 1px 3px var(--t-glass-ink,#0e132414)}
 .acct-seg>button:disabled{cursor:default}
 .acct-seg-row>span{white-space:nowrap}
+.acct-group>.acct-rule-note{padding:8px 16px 12px}
+.acct-rule-time>span{white-space:normal!important;flex:1 1 140px}

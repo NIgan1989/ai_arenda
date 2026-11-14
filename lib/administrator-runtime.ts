@@ -5,7 +5,9 @@ import {mandateActive} from './rental-policy';
 import type {Role} from './domain';
 import {coordinateDispatch} from './dispatch';
 import {askForReviews} from './stay-reviews';
-import {reviewCleaning,OWNER_REVIEW_SECONDS} from './cleaning-review';
+import {similarFree,similarText} from './stay-watch';
+import {ruleFor,minutesLabel} from './decision-rules';
+import {reviewCleaning} from './cleaning-review';
 import {offerCalendarWindows} from './calendar-windows';
 import {offerWeeklyForecast} from './load-forecast';
 import {offerListingTip} from './listing-quality';
@@ -41,6 +43,8 @@ async function ownerData(service:RentalService){
 
 async function automaticActions(service:RentalService){
  const policies=await service.all('SELECT pp.* FROM property_policies pp JOIN properties p ON p.id=pp.property_id WHERE p.owner_id=?',service.userId);
+ // The owner's own choices in «Автопилот: решения и сроки»: whether the AI decides and how long it waits.
+ const accept=await ruleFor(service.db,service.userId,'accept'),assign=await ruleFor(service.db,service.userId,'assign');
  let actions=0;
  for(const policy of policies){
   if(!mandateActive(policy))continue;
@@ -71,16 +75,16 @@ async function automaticActions(service:RentalService){
     }
    }
    // The AI checks each submitted cleaning report. A clean report is offered to the owner for one-tap acceptance;
-   // without an answer in OWNER_REVIEW_SECONDS, or when the next guest arrives within two hours, the AI accepts it.
+   // without an answer in the owner's «accept» time, or when the next guest arrives within two hours, the AI accepts it.
    const submitted=await service.all("SELECT j.*,p.title FROM cleaning_jobs j JOIN properties p ON p.id=j.property_id WHERE j.property_id=? AND j.status='submitted' ORDER BY j.end,j.id",policy.property_id);
    for(const job of submitted){
     const t=now(),review=await reviewCleaning(service.db,job),title=job.title||'жильё';
     if(!review.ok){await service.notify(service.userId,'AI администратор проверил отчёт об уборке «'+title+'» и нашёл замечания: '+review.findings.join('; ')+'. Проверьте фото и примите уборку или верните на доработку.','administrator-review-issue:'+job.id+':'+job.version,'owner').run();continue;}
     const nextGuest=await service.one("SELECT id FROM bookings WHERE property_id=? AND status IN ('requested','confirmed') AND start>? AND start<=?",policy.property_id,t-3600,t+7200);
-    if(!nextGuest){
+    if(!nextGuest||!accept.on){
      const asked=await service.one('SELECT created_at FROM notifications WHERE user_id=? AND dedupe=?',service.userId,'owner:administrator-review:'+job.id+':'+job.version);
-     if(!asked){await service.notify(service.userId,'AI администратор проверил отчёт об уборке «'+title+'»: фото до ('+review.before+') и после ('+review.after+') сделаны во время уборки, чек-лист выполнен, проблем не указано. Примите уборку в карточке, или через час ИИ примет сам.','administrator-review:'+job.id+':'+job.version,'owner').run();continue;}
-     if(asked.created_at+OWNER_REVIEW_SECONDS>t)continue;
+     if(!asked){await service.notify(service.userId,'AI администратор проверил отчёт об уборке «'+title+'»: фото до ('+review.before+') и после ('+review.after+') сделаны во время уборки, чек-лист выполнен, проблем не указано. Примите уборку в карточке'+(accept.on?', или через '+minutesLabel(accept.minutes)+' ИИ примет сам.':'.'),'administrator-review:'+job.id+':'+job.version,'owner').run();continue;}
+     if(!accept.on||asked.created_at+accept.minutes*60>t)continue;
     }
     try{await delegated.jobAction(job.id,{action:'approve',expectedVersion:job.version});await service.notify(service.userId,'AI администратор принял уборку «'+title+'» по фотоотчёту. Жильё готово к заселению.','administrator-approved:'+job.id,'owner').run();actions++;}catch(error){if(!expectedConflict(error))throw error;}
    }
@@ -96,13 +100,13 @@ async function automaticActions(service:RentalService){
      AND NOT EXISTS(SELECT 1 FROM cleaning_jobs j WHERE j.assigned_to=a.user_id AND j.status IN ('assigned','in_progress','submitted') AND j.start<? AND j.end>?)
      ORDER BY a.created_at,a.id`,job.id,job.end,job.start);
     // The owner agrees the cleaner: the AI proposes the first one who applied and assigns by itself
-    // only if the owner has not answered OWNER_ANSWER_SECONDS after the proposal, or the cleaning starts within the hour.
+    // only if the owner has not answered within the owner's «assign» time after the proposal, or the cleaning starts within the hour.
     // The proposal notification is the record of when the owner was asked, however old the application is.
     const first=candidates[0],t=now();
-    if(first&&job.start>t+3600){
+    if(first&&(job.start>t+3600||!assign.on)){
      const proposed=await service.one('SELECT created_at FROM notifications WHERE user_id=? AND dedupe=?',service.userId,'owner:administrator-propose:'+first.id);
-     if(!proposed){await service.notify(service.userId,'AI администратор предлагает исполнителя '+first.name+' на уборку «'+(job.title||'жильё')+'». Назначьте исполнителя в карточке уборки, или через 15 минут ИИ назначит сам.','administrator-propose:'+first.id,'owner').run();continue;}
-     if(proposed.created_at+OWNER_ANSWER_SECONDS>t)continue;
+     if(!proposed){await service.notify(service.userId,'AI администратор предлагает исполнителя '+first.name+' на уборку «'+(job.title||'жильё')+'». Назначьте исполнителя в карточке уборки'+(assign.on?', или через '+minutesLabel(assign.minutes)+' ИИ назначит сам.':'.'),'administrator-propose:'+first.id,'owner').run();continue;}
+     if(!assign.on||proposed.created_at+assign.minutes*60>t)continue;
     }
     for(const candidate of candidates){try{await delegated.jobAction(job.id,{action:'assign',applicationId:candidate.id,expectedVersion:job.version});await service.notify(service.userId,'AI администратор назначил свободного исполнителя из откликнувшихся в пределах вашего лимита уборки.','administrator-assigned:'+job.id+':'+job.version,'owner').run();actions++;break;}catch(error){if(!expectedConflict(error))throw error;}}
    }
@@ -121,9 +125,11 @@ export async function checkAdministratorOwner(db:D1Database,ownerId:string){
   // Expiry is a calendar fact; it never implies a physical checkout or completed work.
   const expired=await service.all("SELECT b.id,b.guest_id FROM bookings b JOIN properties p ON p.id=b.property_id WHERE p.owner_id=? AND b.status='requested' AND b.expires_at<=?",ownerId,t);
   for(const b of expired){
+   // The guest is not left with nothing: up to three similar homes free on the same dates.
+   const others=similarText(await similarFree(db,b.id).catch(()=>[]));
    await db.batch([
     service.query("UPDATE bookings SET status='expired' WHERE id=? AND status='requested' AND expires_at<=?",b.id,t),
-    service.notify(b.guest_id,'AI администратор: срок заявки истёк. Интервал больше не удерживается; выберите даты заново.','expired:'+b.id,'guest'),
+    service.notify(b.guest_id,'AI администратор: владелец не ответил вовремя, заявка истекла.'+(others||' Выберите другое жильё или даты на карте.'),'expired:'+b.id,'guest'),
     service.notify(ownerId,'AI администратор: заявка истекла без решения. Проверьте новые обращения.','expired:'+b.id,'owner')
    ]);
   }

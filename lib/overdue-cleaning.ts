@@ -1,5 +1,8 @@
 import {epoch,uuid,q,rows,type OperationConfig} from './operation-core';
-import {OVERDUE_ESCALATE,OVERDUE_SILENT} from './overdue-text';
+import {OVERDUE_ESCALATE} from './overdue-text';
+import {ruleFor,minutesLabel,DECISION_RULES} from './decision-rules';
+// The shortest wait an owner can choose: the sweep picks the job up then and checks the owner's own time.
+const SILENT_MIN=Math.min(...DECISION_RULES.find(r=>r.key==='overdue_job')!.options)*60;
 type Row=Record<string,any>;
 
 const notice=(db:D1Database,user:string,body:string,dedupe:string,at:number)=>q(db,'INSERT OR IGNORE INTO notifications(id,user_id,body,dedupe,read,created_at) VALUES (?,?,?,?,0,?)',uuid(),user,body,dedupe,at);
@@ -54,7 +57,7 @@ async function sweepUnclaimed(db:D1Database,at:number,result:Row){
 export async function sweepOverdueJobs(db:D1Database,config:OperationConfig&{PLATFORM_ADMIN_IDS?:string}={}){
  const at=epoch(),result={reminded:0,warned:0,released:0,escalated:0,reposted:0,unclaimed:0},list=admins(config);
  await sweepUnclaimed(db,at,result);
- const late=await rows(db,"SELECT j.*,p.title,(j.booking_id IS NULL OR EXISTS(SELECT 1 FROM bookings b WHERE b.id=j.booking_id AND b.status='completed')) vacant FROM cleaning_jobs j JOIN properties p ON p.id=j.property_id WHERE j.status IN ('assigned','in_progress') AND j.assigned_to IS NOT NULL AND (j.overdue_step=0 AND j.end<=? OR j.overdue_step=1 AND j.end<=? OR j.overdue_step=2 AND j.status='in_progress' AND j.end<=?) ORDER BY j.end LIMIT 50",at,at-OVERDUE_SILENT,at-OVERDUE_ESCALATE);
+ const late=await rows(db,"SELECT j.*,p.title,(j.booking_id IS NULL OR EXISTS(SELECT 1 FROM bookings b WHERE b.id=j.booking_id AND b.status='completed')) vacant FROM cleaning_jobs j JOIN properties p ON p.id=j.property_id WHERE j.status IN ('assigned','in_progress') AND j.assigned_to IS NOT NULL AND (j.overdue_step=0 AND j.end<=? OR j.overdue_step=1 AND j.end<=? OR j.overdue_step=2 AND j.status='in_progress' AND j.end<=?) ORDER BY j.end LIMIT 50",at,at-SILENT_MIN,at-OVERDUE_ESCALATE);
  for(const j of late){
   const title=j.title||'жильё',step=Number(j.overdue_step)||0,started=j.status==='in_progress',mark=(to:number)=>q(db,'UPDATE cleaning_jobs SET overdue_step=? WHERE id=? AND overdue_step=? AND end=?',to,j.id,step,j.end);
   if(step<1){
@@ -63,9 +66,11 @@ export async function sweepOverdueJobs(db:D1Database,config:OperationConfig&{PLA
     notice(db,j.owner_id,'ИИ-администратор: уборка «'+title+'» просрочена. Я напомнил исполнителю. В карточке уборки можно продлить срок или найти замену.','owner:overdue-remind:'+j.id+':'+j.end,at)]);
    result.reminded++;continue;
   }
-  if(step<2&&at-j.end>=OVERDUE_SILENT){
-   // The cleaner never started although the flat is free: the AI does not wait for the owner and looks for someone else.
-   const window=!started&&j.vacant?await releaseWindow(db,j,at):null;
+  const rule=step<2?await ruleFor(db,j.owner_id,'overdue_job'):null;
+  if(rule&&at-j.end>=rule.minutes*60){
+   // The cleaner never started although the flat is free: the AI does not wait for the owner and looks for someone else,
+   // unless the owner switched this off in «Автопилот: решения и сроки».
+   const window=rule.on&&!started&&j.vacant?await releaseWindow(db,j,at):null;
    if(window){
     const r=await db.batch([...releaseStatements(db,j,window,at),
      q(db,"INSERT OR IGNORE INTO notifications SELECT ?,?,?,?,0,? WHERE EXISTS(SELECT 1 FROM cleaning_jobs WHERE id=? AND status='open')",uuid(),j.assigned_to,'ИИ-администратор снял вас с уборки «'+title+'»: работа не начата в срок.','cleaner:overdue-released:'+j.id+':'+j.end,at,j.id),
@@ -73,7 +78,7 @@ export async function sweepOverdueJobs(db:D1Database,config:OperationConfig&{PLA
      q(db,"INSERT INTO audit_events SELECT ?,'ai-administrator',?,'job.overdue_released',? WHERE EXISTS(SELECT 1 FROM cleaning_jobs WHERE id=? AND status='open')",uuid(),j.id,at,j.id)]);
     if(r[0].meta.changes)result.released++;continue;
    }
-   await db.batch([mark(2),notice(db,j.owner_id,'ИИ-администратор: исполнитель не ответил 30 минут по уборке «'+title+'». '+(started?'Продлите срок, закройте уборку, если она сделана, или найдите другого исполнителя.':'Подтвердите выезд гостя или продлите срок.'),'owner:overdue-silent:'+j.id+':'+j.end,at)]);
+   await db.batch([mark(2),notice(db,j.owner_id,'ИИ-администратор: исполнитель не ответил '+minutesLabel(rule.minutes)+' по уборке «'+title+'». '+(started?'Продлите срок, закройте уборку, если она сделана, или найдите другого исполнителя.':'Подтвердите выезд гостя или продлите срок.'),'owner:overdue-silent:'+j.id+':'+j.end,at)]);
    result.warned++;continue;
   }
   if(step===2&&started&&at-j.end>=OVERDUE_ESCALATE){

@@ -3,7 +3,7 @@ type Row=Record<string,any>;
 // A cleaning whose agreed end has passed while the work is not handed over. Both sides get a way out right in the
 // card: the cleaner sends the report, asks for more time or gives the task back; the owner adds time, finds another
 // cleaner, closes a cleaning that was in fact done, or cancels it. The AI administrator moves the steps on its own:
-// 1 — reminded both sides at the deadline, 2 — 30 minutes without an answer, 3 — two hours: the service administrator.
+// 1 — reminded both sides at the deadline, 2 — no answer within the owner's «overdue_job» time (30 minutes by default), 3 — two hours: the service administrator.
 export const extendChoices=[30,60,120] as const;
 export const OVERDUE_SILENT=30*60,OVERDUE_ESCALATE=2*3600;
 export function isOverdue(job:Row,t:number){return ['assigned','in_progress'].includes(job.status)&&!!job.assigned_to&&Number(job.end)<=t;}
@@ -20,6 +20,6 @@ export function overdueNote(job:Row,role:'owner'|'cleaner',t:number):{title:stri
   return {title:'Срок уборки истёк',text,ai};
  }
  const text=blocked?'Исполнитель не может начать: выезд гостя не подтверждён. Подтвердите выезд в брони или продлите срок.':started?'Продлите срок, если исполнителю нужно время. Если уборка уже сделана, закройте её сами. Можно и найти другого исполнителя.':'Исполнитель так и не начал. Продлите срок или найдите другого исполнителя.';
- const ai=step>=3?'ИИ-администратор передал ситуацию администратору сервиса, с вами свяжутся.':step>=2?'Исполнитель не ответил 30 минут после напоминания.'+(started?' Через 2 часа после срока ИИ-администратор подключит администратора сервиса.':''):'ИИ-администратор напомнил исполнителю о сроке.'+(!started&&!blocked?' Если он не ответит за 30 минут, ИИ сам вернёт уборку в поиск.':'');
+ const ai=step>=3?'ИИ-администратор передал ситуацию администратору сервиса, с вами свяжутся.':step>=2?'Исполнитель не ответил на напоминание.'+(started?' Через 2 часа после срока ИИ-администратор подключит администратора сервиса.':''):'ИИ-администратор напомнил исполнителю о сроке.'+(!started&&!blocked?' Если он не ответит, ИИ сам вернёт уборку в поиск в срок из настроек автопилота.':'');
  return {title:'Уборка просрочена',text,ai};
 }
