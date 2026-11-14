@@ -181,7 +181,7 @@ test('the AI line of each role: the same words as in the app, shortcuts that fit
   assert.deepEqual(roleAiLine('guest').chips.map(chip => chip.label), ['На сутки', 'На часы', 'На выходные']);
   assert.equal(roleAiLine('guest').placeholder, 'На 3 часа сегодня в центре');
   assert.deepEqual(roleAiLine('owner').chips.map(chip => chip.label), ['Заявки', 'Календарь', '+ Жильё']);
-  assert.deepEqual(roleAiLine('owner').chips.map(chip => chip.hint || chip.label), ['Заявки гостей', 'Календарь', 'Добавить жильё']);
+  assert.deepEqual(roleAiLine('owner').chips.map(chip => chip.hint || chip.label), ['Заявки гостей и отклики исполнителей', 'Календарь', 'Добавить жильё']);
   assert.equal(roleAiLine('owner').placeholder, 'Что сегодня требует внимания?');
   assert.deepEqual(roleAiLine('cleaner').chips.map(chip => chip.label), ['Задания рядом', 'Мой график']);
   assert.equal(roleAiLine('cleaner').placeholder, 'Есть уборки рядом на сегодня?');

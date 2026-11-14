@@ -23,6 +23,8 @@ type Props = {
   refining?: boolean;
   now: NowCardModel | null;
   onNow: () => void;
+  // A number on a chip: what waits behind it (the owner's «Заявки»: guests' requests and cleaners' responses).
+  counts?: Partial<Record<HeadAction, number>>;
   children?: ReactNode;
 };
 
@@ -32,7 +34,7 @@ type Props = {
 const unbroken = (line: string) => line.replace(/ ·/g, '\u00a0·').replace(/(\d) (?=[\d₸а-яё])/gi, '$1\u00a0').replace(/(^|[ \u00a0])до (?=\d)/g, '$1до\u00a0').replace(/–/g, '–\u2060');
 
 // The default state of the bottom sheet: one AI line, a row of chips and the "Сейчас" card when there is one.
-export function MapSheetHead({ role, text, onText, onSend, onChip, busy = false, summary, onRefine, refining = false, now, onNow, children }: Props) {
+export function MapSheetHead({ role, text, onText, onSend, onChip, busy = false, summary, onRefine, refining = false, now, onNow, counts, children }: Props) {
   const line = headLine(role);
   return (
     <View style={s.head}>
@@ -43,12 +45,13 @@ export function MapSheetHead({ role, text, onText, onSend, onChip, busy = false,
           <Pressable
             key={chip.id}
             accessibilityRole="button"
-            accessibilityLabel={chip.hint}
+            accessibilityLabel={chip.hint + (counts?.[chip.action] ? ', ждут ответа: ' + counts[chip.action] : '')}
             disabled={busy}
             onPress={() => onChip(chip.action)}
-            style={({ pressed }) => [s.chip, pressed && s.chipPressed]}
+            style={({ pressed }) => [s.chip, !!counts?.[chip.action] && s.chipActive, pressed && s.chipPressed]}
           >
-            <Text style={s.chipText}>{chip.title}</Text>
+            <Text style={[s.chipText, !!counts?.[chip.action] && s.chipTextActive]}>{chip.title}</Text>
+            {!!counts?.[chip.action] && <Text style={s.chipCount}>{counts[chip.action]}</Text>}
           </Pressable>
         ))}
       </ScrollView>
@@ -82,9 +85,15 @@ const s = StyleSheet.create({
     paddingHorizontal: 16,
     borderRadius: T.radius.full,
     backgroundColor: C.surfaceAlt,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
     justifyContent: 'center'
   },
   chipPressed: { backgroundColor: C.line },
+  chipActive: { backgroundColor: C.accentSoft },
+  chipTextActive: { color: C.accentPressed, fontWeight: '600' },
+  chipCount: { ...type.caption, fontWeight: '700', color: C.onAccent, backgroundColor: C.accent, minWidth: 20, paddingHorizontal: 6, borderRadius: 999, overflow: 'hidden', textAlign: 'center' },
   chipText: { ...type.label, color: C.ink, fontWeight: '500' },
   // One row: what the search will use on the left, the way to the full form on the right.
   refine: { minHeight: T.control.touch, flexDirection: 'row', alignItems: 'center', gap: 4 },

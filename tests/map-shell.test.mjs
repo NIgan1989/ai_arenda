@@ -21,7 +21,7 @@ test('another role, another site and unknown addresses are left to the browser',
 test('every section of every role has a name for the head of its sheet',()=>{
  for(const role of ['guest','owner','cleaner'])for(const page of rolePages[role])if(page.id!=='map')assert.ok(sheetTitle(role,page.id),role+'/'+page.id);
  assert.equal(sheetTitle('owner','account'),'Меню');
- assert.equal(sheetTitle('owner','bookings'),'Заявки гостей');
+ assert.equal(sheetTitle('owner','bookings'),'Заявки');
  assert.equal(sheetTitle('guest','bookings'),'Мои брони');
 });
 

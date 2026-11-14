@@ -15,6 +15,7 @@ import {browserLocationFix,locationFailure,requestBrowserLocation} from '../lib/
 import {MapCanvas} from './map-canvas';import {StatusBadge} from './property-listing';import {processStatus} from '../lib/process-status';
 import {AiLine,roleAiLine,type AiChip} from './ai-line';
 import {NowCard,nowCard,nowCardWhen,type NowCardData} from './now-card';
+import {ownerWaiting} from '../lib/now-card';
 import './map-workspace.css';
 import {SmartGuestMap,matchingAPI} from './smart-guest-map';
 import {MatchingInbox} from './matching-inbox';
@@ -28,6 +29,8 @@ import {calendarEntries} from '../lib/calendar-days';
 import {hubLine,type HubTab} from '../lib/property-hub';
 import {PropertyHub} from './property-hub';
 import {CheckinGuide} from './checkin-guide';
+import {JobPlace} from './job-place';
+import {jobPlace} from '../lib/job-place';
 type Row=Record<string,any>;
 async function mapAPI(role:string,action:string,body:Row={}){const r=await fetch('/api/operations/map/'+action,{method:'POST',headers:{'Content-Type':'application/json','X-Workspace-Role':role},body:JSON.stringify(body),cache:'no-store',keepalive:action==='journey/stop'}),v=await r.json() as Row;if(!r.ok)throw Object.assign(Error(v.error||'Нет связи с картой.'),{status:r.status});return v;}
 type MapWorkspaceInput={publicMode?:boolean;role:string;accountId:string;data:Row;onChoose:(p:Row,initial:Row)=>void;onDiscussion:(c:Row)=>void;onProcess:(kind:string,id:string,step?:string)=>void;onCreate:()=>void;onAsk:(text:string)=>void;onChanged?:()=>void;onEdit?:(id:string,step:string|null)=>void};
@@ -84,6 +87,8 @@ type RoleMapInput = MapWorkspaceInput & { onBack?: () => void; initial?: string 
 
 function Thumb({ item, role }: { item: Row; role: string }) {
   if (!item.kind) return <span className="map-role-thumb"><PropertyCover property={item} role={role} /></span>;
+  // A cleaning shows the photo of its place, so the cleaner recognises the housing in the list.
+  if (item.kind === 'job' && item.placePhotos?.length) return <span className="map-role-thumb"><PropertyCover property={{ photos: item.placePhotos, title: item.title }} role={role} /></span>;
   return (
     <span className="map-role-thumb is-icon" aria-hidden="true">
       {item.kind === 'job' ? <Brush size={20} /> : <CalendarCheck size={20} />}
@@ -153,7 +158,7 @@ function RoleMap({ role, accountId, data, onDiscussion, onProcess, onCreate, onA
     if (role !== 'cleaner' || p.kind !== 'job') return { ...p, mapKey: p.kind + ':' + p.id };
     const job = (data.jobs || []).find((j: Row) => j.id === p.id), applied = (data.applications || []).some((a: Row) => a.job_id === p.id && a.user_id === accountId && a.status !== 'rejected');
     const pin = cleanerPin({ ...job, ...p }, route.find(r => r.id === p.id), now, applied);
-    return { ...p, mapKey: p.kind + ':' + p.id, pinTone: pin.tone, pinLabel: pin.label, pinProgress: pin.progress, pinOrder: pin.order, pinAi: latestMove(query.data?.aiMarks, [{ kind: 'job', id: String(p.id) }], now) };
+    return { ...p, mapKey: p.kind + ':' + p.id, placePhotos: jobPlace(job).photos, pinTone: pin.tone, pinLabel: pin.label, pinProgress: pin.progress, pinOrder: pin.order, pinAi: latestMove(query.data?.aiMarks, [{ kind: 'job', id: String(p.id) }], now) };
   }).sort((a: Row, b: Row) => a.start - b.start);
   // Demand around the owner's objects glows, with sparks over the busiest places while guests are asking right now;
   // the cleaner's stops of the day are joined by the route line in their order.
@@ -422,8 +427,11 @@ function RoleMap({ role, accountId, data, onDiscussion, onProcess, onCreate, onA
   }
 
   const line = roleAiLine(role as Role);
+  // Guests' requests and cleaners' responses: the chip «Заявки» says how many wait, so they are seen on a folded sheet too.
+  const waiting = role === 'owner' ? ownerWaiting(data, accountId, now) : 0;
   const chips: AiChip[] = noFlats ? [] : line.chips.map(chip =>
     chip.id === 'requests' && offers.length ? { ...chip, hint: 'Запросы гостей без ответа: ' + offers.length, active: true }
+      : chip.id === 'requests' && waiting ? { ...chip, label: chip.label + ' · ' + waiting, hint: 'Ждут ответа: ' + waiting + '. ' + chip.hint, active: true }
       : chip.id === 'jobs-nearby' ? { ...chip, active: expanded }
         : chip);
   const offer = offers[0];
@@ -629,6 +637,12 @@ function RoleMap({ role, accountId, data, onDiscussion, onProcess, onCreate, onA
           <h2 className="map-role-title">{chosen.title}</h2>
           <span className="map-role-when">{period(chosen.start, chosen.end, now)}{job && actual?.fee ? ' · ' + money(actual.fee) : ''}</span>
         </div>
+        {/* The cleaner sees the place itself at once: photo, kind, size, what to clean. A tap opens the whole card. */}
+        {job && role === 'cleaner' && actual && (
+          <button type="button" className="map-role-place" aria-label="Посмотреть жильё и задание" onClick={() => onProcess(chosen.kind, chosen.id)}>
+            <JobPlace job={actual} role={role} compact />
+          </button>
+        )}
         <div className="map-role-actions">
           {/* One main button: the step that is due; with nothing due, the way there for the one who goes; otherwise the card. */}
           {!main && canTravel

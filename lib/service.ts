@@ -21,6 +21,7 @@ import {assertCalendarAvailable} from './external-calendar';
 import {assertPilotAllowed,cleanerAdmission,readPilotPolicy,pilotPropertyVisibleSql} from './pilot-governance';
 import {mapCities} from './map-location';
 import {publicPoint} from './map-workspace';
+import {streetAddress} from './job-place';
 import {createAIBudgetLifecycle} from './ai-budget';
 import {aiDataPermission} from './ai-data-permission';
 import {administratorSearch,isPropertySearch,isSearchRefinement,previousAdministratorSearch} from './administrator-search';
@@ -57,11 +58,11 @@ export class RentalService {
   }
   async readMedia(mediaId:string,activeRole?:Role,bucket?:R2Bucket){
     const role=activeRole||(JSON.parse((await this.profile())?.roles||'[]').includes('owner')?'owner':JSON.parse((await this.profile())?.roles||'[]').includes('cleaner')?'cleaner':'guest');
-    const m=await this.one(`SELECT m.data,m.object_key,m.width,m.height FROM media m WHERE m.id=? AND (m.user_id=? OR (m.kind='property' AND EXISTS(SELECT 1 FROM property_details d JOIN properties p ON p.id=d.property_id,json_each(d.photos) f WHERE f.value=m.id AND p.published=1 AND (p.demo_owner IS NULL OR p.demo_owner=?) AND ${pilotPropertyVisibleSql('p')})) OR (m.kind='avatar' AND EXISTS(SELECT 1 FROM profile_details d LEFT JOIN profile_preferences x ON x.user_id=d.user_id WHERE d.avatar_id=m.id AND COALESCE(x.avatar_visibility,'participants')='participants' AND (
+    const m=await this.one(`SELECT m.data,m.object_key,m.width,m.height FROM media m WHERE m.id=? AND (m.user_id=? OR (m.kind='property' AND EXISTS(SELECT 1 FROM property_details d JOIN properties p ON p.id=d.property_id,json_each(d.photos) f WHERE f.value=m.id AND (p.demo_owner IS NULL OR p.demo_owner=?) AND ((p.published=1 AND ${pilotPropertyVisibleSql('p')}) OR (?='cleaner' AND EXISTS(SELECT 1 FROM cleaning_jobs j WHERE j.property_id=p.id AND (j.assigned_to=? OR (j.status='open' AND j.end>?))))))) OR (m.kind='avatar' AND EXISTS(SELECT 1 FROM profile_details d LEFT JOIN profile_preferences x ON x.user_id=d.user_id WHERE d.avatar_id=m.id AND COALESCE(x.avatar_visibility,'participants')='participants' AND (
       (?='owner' AND (EXISTS(SELECT 1 FROM applications a JOIN cleaning_jobs j ON j.id=a.job_id WHERE a.user_id=d.user_id AND j.owner_id=?) OR EXISTS(SELECT 1 FROM cleaning_jobs j WHERE j.assigned_to=d.user_id AND j.owner_id=?))) OR
       (?='guest' AND EXISTS(SELECT 1 FROM bookings b JOIN properties p ON p.id=b.property_id WHERE b.guest_id=? AND p.owner_id=d.user_id AND b.status='confirmed')) OR
       (?='cleaner' AND EXISTS(SELECT 1 FROM cleaning_jobs j WHERE j.assigned_to=? AND j.owner_id=d.user_id))
-    ))))`,mediaId,this.userId,this.userId,role,this.userId,this.userId,role,this.userId,role,this.userId);
+    ))))`,mediaId,this.userId,this.userId,role,this.userId,now(),role,this.userId,this.userId,role,this.userId,role,this.userId);
     if(!m)throw new DomainError('Фотография недоступна.',404);return this.mediaBody(m,bucket);
   }
   async mediaBody(m:Row,bucket?:R2Bucket){
@@ -334,7 +335,7 @@ export class RentalService {
         CASE WHEN p.owner_id=? THEN (SELECT json_object('level',level,'score',score,'reasons',reasons,'deposit_advice',deposit_advice,'phone_verified',phone_verified,'held',held) FROM booking_risks WHERE booking_id=b.id) ELSE NULL END risk_row
         FROM bookings b JOIN properties p ON p.id=b.property_id LEFT JOIN profiles o ON o.id=p.owner_id LEFT JOIN profiles g ON g.id=b.guest_id
         WHERE b.guest_id=? OR p.owner_id=? ORDER BY b.start DESC`, ...Array(9).fill(this.userId)),
-      this.all(`SELECT j.*,EXISTS(SELECT 1 FROM regular_cleaners rc WHERE rc.property_id=j.property_id AND rc.cleaner_id=COALESCE(j.assigned_to,?)) regular,CASE WHEN j.owner_id=? OR j.assigned_to=? THEN (SELECT status FROM cleaning_holds h WHERE h.job_id=j.id AND h.cleaner_id=j.assigned_to AND h.status<>'returned') END guarantee,EXISTS(SELECT 1 FROM booking_terms t WHERE t.booking_id=j.booking_id AND t.actual_checkout IS NOT NULL) checkout_confirmed,p.title,p.city,p.district,p.rooms,p.demo_owner,(SELECT photos FROM property_details WHERE property_id=p.id) property_photos,
+      this.all(`SELECT j.*,EXISTS(SELECT 1 FROM regular_cleaners rc WHERE rc.property_id=j.property_id AND rc.cleaner_id=COALESCE(j.assigned_to,?)) regular,CASE WHEN j.owner_id=? OR j.assigned_to=? THEN (SELECT status FROM cleaning_holds h WHERE h.job_id=j.id AND h.cleaner_id=j.assigned_to AND h.status<>'returned') END guarantee,EXISTS(SELECT 1 FROM booking_terms t WHERE t.booking_id=j.booking_id AND t.actual_checkout IS NOT NULL) checkout_confirmed,p.title,p.city,p.district,p.rooms,p.capacity,p.cleaning_minutes,p.demo_owner,(SELECT photos FROM property_details WHERE property_id=p.id) property_photos,(SELECT details FROM property_details WHERE property_id=p.id) property_details,CASE WHEN j.status='open' THEN p.address END open_address,
         CASE WHEN j.owner_id=? OR j.assigned_to=? THEN p.address ELSE NULL END address,
         CASE WHEN j.owner_id=? OR j.assigned_to=? THEN o.contact ELSE NULL END owner_contact
         FROM cleaning_jobs j JOIN properties p ON p.id=j.property_id LEFT JOIN profiles o ON o.id=j.owner_id
@@ -352,7 +353,7 @@ export class RentalService {
     const enrichedTerms:Row[]=terms.map(t=>{const f=financeBalances.find(f=>f.booking_id===t.booking_id),received=f?.deposit_received??(t.deposit_status==='owner_verified'?t.deposit:0),returned=f?.deposit_returned??(t.deposit_returned_at?t.deposit:0);return {...t,deposit_received_amount:received,deposit_returned_amount:returned,deposit_balance:Math.max(0,received-returned)};});
     const policyFor=(p:Row)=>policies.find(v=>v.property_id===p.id)||defaultPolicy;
     const guests=await reliabilityFor(this.db,'guest',bookings.filter(b=>b.owner_id===this.userId&&b.status==='requested').map(b=>b.guest_id));
-    const state={ profile, properties:await this.enrichProperties(properties.map(p=>({...p,policy:publicPolicy(policyFor(p))}))), ownProperties:await this.enrichProperties(ownProperties.map(p=>({...p,policy:policyFor(p),operation:operations.find(v=>v.property_id===p.id)})),true), bookings:bookings.map(({risk_row,...b}) => ({...b,risk:riskFromRow(risk_row?JSON.parse(risk_row):null),...(b.owner_id===this.userId?{guest_reliability:guests.get(b.guest_id)}:{}),status:b.status==='requested' && b.expires_at<=serverTime?'expired':b.status,terms:enrichedTerms.find(t=>t.booking_id===b.id),changes:changes.filter(c=>c.booking_id===b.id).map(c=>({...c,status:c.status==='pending'&&c.expires_at<=serverTime?'expired':c.status})),readiness:operations.find(o=>o.property_id===b.property_id)?.readiness})), jobs:jobs.map((j:Row):Row=>({...j,settlement_paid:jobPayments.find(p=>p.job_id===j.id)?.paid??(j.settled_at?j.fee:0),checkout_confirmed:!j.booking_id||!!j.checkout_confirmed})), applications, notifications, messages, serverTime, integrations:{ai:false,telegram:false,whatsapp:false,payments:false} };
+    const state={ profile, properties:await this.enrichProperties(properties.map(p=>({...p,policy:publicPolicy(policyFor(p))}))), ownProperties:await this.enrichProperties(ownProperties.map(p=>({...p,policy:policyFor(p),operation:operations.find(v=>v.property_id===p.id)})),true), bookings:bookings.map(({risk_row,...b}) => ({...b,risk:riskFromRow(risk_row?JSON.parse(risk_row):null),...(b.owner_id===this.userId?{guest_reliability:guests.get(b.guest_id)}:{}),status:b.status==='requested' && b.expires_at<=serverTime?'expired':b.status,terms:enrichedTerms.find(t=>t.booking_id===b.id),changes:changes.filter(c=>c.booking_id===b.id).map(c=>({...c,status:c.status==='pending'&&c.expires_at<=serverTime?'expired':c.status})),readiness:operations.find(o=>o.property_id===b.property_id)?.readiness})), jobs:jobs.map(({open_address,...j}:Row):Row=>({...j,street:streetAddress(open_address),settlement_paid:jobPayments.find(p=>p.job_id===j.id)?.paid??(j.settled_at?j.fee:0),checkout_confirmed:!j.booking_id||!!j.checkout_confirmed})), applications, notifications, messages, serverTime, integrations:{ai:false,telegram:false,whatsapp:false,payments:false} };
     return {...state,workspaces:Object.fromEntries(roles.map(role=>[role,operationOverview(state,this.userId,role,serverTime)]))};
   }
   async publicCatalog(options:{syntheticPreview?:boolean}={}) {
@@ -490,9 +491,9 @@ export class RentalService {
     // Under autopilot a high risk is not confirmed automatically: the owner decides.
     risk.held=autoConfirm&&risk.level==='high';
     await this.db.batch([
-      this.query('INSERT INTO bookings(id,property_id,guest_id,start,end,occupied_until,guests,amount,status,expires_at,payment_status,request_key,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)',bookingId,p.id,this.userId,start,end,end+p.cleaning_minutes*60,guests,amount,'requested',now()+1800,'unpaid',key,now()),
+      this.query('INSERT INTO bookings(id,property_id,guest_id,start,end,occupied_until,guests,amount,status,expires_at,payment_status,request_key,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)',bookingId,p.id,this.userId,start,end,end+p.cleaning_minutes*60,guests,amount,'requested',now()+900,'unpaid',key,now()),
       this.query('INSERT INTO booking_terms(booking_id,billing_mode,rate,units,amount,deposit,deposit_status,house_rules,policy_version,original_end) VALUES (?,?,?,?,?,?,?,?,?,?)',bookingId,checked.billingMode,checked.price,checked.periods,amount,checked.policy.deposit,checked.policy.deposit?'pending':'not_required',checked.policy.house_rules,checked.policy.version,end),
-      this.notify(owner!.owner_id,risk.held?`AI администратор не подтвердил заявку на «${checked.title}» автоматически: ${riskLabel.high.toLowerCase()} (${risk.reasons.slice(0,2).join(', ')}). Решите в течение 30 минут.`:autoConfirm?`AI администратор принял бронь на «${checked.title}» по вашим правилам. ${riskLabel[risk.level]}.`:`Новая заявка на «${checked.title}». ${riskLabel[risk.level]}. Подтвердите её в течение 30 минут.`,`booking:${bookingId}`,'owner'),this.audit(bookingId,'booking.requested'),
+      this.notify(owner!.owner_id,risk.held?`AI администратор не подтвердил заявку на «${checked.title}» автоматически: ${riskLabel.high.toLowerCase()} (${risk.reasons.slice(0,2).join(', ')}). Решите в течение 15 минут.`:autoConfirm?`AI администратор принял бронь на «${checked.title}» по вашим правилам. ${riskLabel[risk.level]}.`:`Новая заявка на «${checked.title}». ${riskLabel[risk.level]}. Подтвердите её в течение 15 минут.`,`booking:${bookingId}`,'owner'),this.audit(bookingId,'booking.requested'),
       saveRiskSql(this.db,bookingId,p.id,this.userId,owner!.owner_id,risk),
       ...(!risk.phone&&risk.level!=='low'&&!(autoConfirm&&!risk.held)?[this.notify(this.userId,'Подтвердите телефон в профиле: владельцу так спокойнее, и заявку на «'+checked.title+'» подтвердят быстрее.','phone-ask:'+bookingId,'guest')]:[])
     ]);
@@ -500,9 +501,9 @@ export class RentalService {
     if(autoConfirm&&!risk.held){
       // The owner was told the AI accepted it; if the confirmation fails after all, the owner decides and is told so.
       try{await new RentalService(this.db,owner!.owner_id,{propertyId:p.id,policyVersion:policy.version}).bookingAction(bookingId,{action:'confirm',cleaningFee:policy.cleaning_fee});}
-      catch(error){if(!(error instanceof DomainError))throw error;await this.notify(owner!.owner_id,`AI администратор не смог подтвердить заявку на «${checked.title}» сам: ${error.message} Решите в течение 30 минут.`,`booking-held:${bookingId}`,'owner').run();return {id:bookingId,amount,message:'Заявка отправлена. Интервал зарезервирован на 30 минут до решения владельца.'};}
+      catch(error){if(!(error instanceof DomainError))throw error;await this.notify(owner!.owner_id,`AI администратор не смог подтвердить заявку на «${checked.title}» сам: ${error.message} Решите в течение 15 минут.`,`booking-held:${bookingId}`,'owner').run();return {id:bookingId,amount,message:'Заявка отправлена. Интервал зарезервирован на 15 минут до решения владельца.'};}
       return {id:bookingId,amount,message:'Бронь подтверждена автоматически по правилам владельца. Оплата и депозит учитываются отдельно.'};}
-    return {id:bookingId,amount,message:'Заявка отправлена. Интервал зарезервирован на 30 минут до решения владельца.'};
+    return {id:bookingId,amount,message:'Заявка отправлена. Интервал зарезервирован на 15 минут до решения владельца.'};
   }
   async bookingAction(bookingId:string,body:Row) {
     const b=await this.one('SELECT b.*,p.owner_id,p.cleaning_minutes,p.title FROM bookings b JOIN properties p ON p.id=b.property_id WHERE b.id=? AND (b.guest_id=? OR p.owner_id=?)',bookingId,this.userId,this.userId);
@@ -678,11 +679,11 @@ export class RentalService {
     if(body.acceptTerms!==true)throw new DomainError('Подтвердите согласие с рассчитанными условиями.');
     const reason=required(body.reason,'Причина изменения',1000),changeId=id(),{b}=await this.changeContext(bookingId,role);
     await this.db.batch([
-      this.query('INSERT INTO booking_changes(id,booking_id,proposed_by,proposer_role,request_key,base_version,policy_version,start,end,occupied_until,billing_mode,rate,units,discount_percent,amount,reason,expires_at,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',changeId,bookingId,this.userId,role,key,q.baseVersion,q.policyVersion,q.start,q.end,q.occupiedUntil,q.billingMode,q.rate,q.units,q.discountPercent,q.amount,reason,now()+1800,now()),
+      this.query('INSERT INTO booking_changes(id,booking_id,proposed_by,proposer_role,request_key,base_version,policy_version,start,end,occupied_until,billing_mode,rate,units,discount_percent,amount,reason,expires_at,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',changeId,bookingId,this.userId,role,key,q.baseVersion,q.policyVersion,q.start,q.end,q.occupiedUntil,q.billingMode,q.rate,q.units,q.discountPercent,q.amount,reason,now()+900,now()),
       this.notify(role==='owner'?b.guest_id:b.owner_id,'Предложено изменение проживания. Проверьте даты и стоимость в брони.','change:'+changeId,role==='owner'?'guest':'owner'),this.audit(bookingId,'booking.change_proposed:'+changeId)
     ]);
     if(q.automatic){try{const result=await new RentalService(this.db,b.owner_id).decideBookingChange(bookingId,changeId,'owner',{action:'accept'},true);return {id:changeId,...result};}catch(error){if(!(error instanceof DomainError))throw error;}}
-    return {id:changeId,message:'Предложение сохранено на 30 минут. Текущие даты действуют до согласия второй стороны; новый интервал пока не зарезервирован.'};
+    return {id:changeId,message:'Предложение сохранено на 15 минут. Текущие даты действуют до согласия второй стороны; новый интервал пока не зарезервирован.'};
   }
   async decideBookingChange(bookingId:string,changeId:string,roleValue:unknown,body:Row,automatic=false){
     const {role,b,terms,policy}=await this.changeContext(bookingId,roleValue),c=await this.one('SELECT * FROM booking_changes WHERE id=? AND booking_id=?',changeId,bookingId);

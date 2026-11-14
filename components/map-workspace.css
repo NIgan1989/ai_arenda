@@ -858,3 +858,5 @@ html[data-design="unified"] .workspace-shell .map-role .map-network-error {
   line-height: var(--t-line-body);
   font-weight: 700;
 }
+.map-role-place{display:block;width:100%;padding:0;border:0;background:none;text-align:left;cursor:pointer;border-radius:var(--t-radius-lg)}
+.map-role-place:focus-visible{outline:2px solid var(--t-focus);outline-offset:2px}

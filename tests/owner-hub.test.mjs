@@ -40,7 +40,7 @@ test('the «Сегодня» tab of a flat: requests first, then today, then wha
   assert.equal(hubLine(entries.slice(1), now), 'Гость проживает');
   assert.equal(hubLine(entries.slice(3), now), 'Сегодня свободно');
   assert.equal(hubLine([], now), 'Броней и уборок нет');
-  assert.equal(hubLine([entries[0], { ...entries[0], key: 'second' }], now), 'Заявок ждут ответа: 2');
+  assert.equal(hubLine([entries[0], { ...entries[0], key: 'second' }], now), 'Ждут ответа: 2');
 });
 
 test('the card of a flat on the map is the hub of four tabs, on the site and in the app', () => {
