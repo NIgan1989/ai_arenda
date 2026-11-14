@@ -6,8 +6,13 @@ const n=(dedupe,body='',created_at=now)=>({id:dedupe,dedupe,body,created_at});
 test('шаг, который ИИ сделал сам, остаётся в журнале; всё, что требует человека, — событие',()=>{
  assert.equal(noticeTone(n('owner:administrator-approved:j1')),'calm');
  assert.equal(noticeTone(n('owner:administrator-assigned:j1')),'calm');
- assert.equal(noticeTone(n('owner:administrator-confirmed:b1')),'calm');
- assert.equal(noticeTone(n('cleaner:autopilot-took:o1')),'calm');
+ assert.equal(noticeTone(n('owner:matching-auto:o1')),'calm');
+ // Бронь, заезд и выезд, проведённые ИИ, — про деньги и жильё; взятая автопилотом уборка — работа, на которую ехать.
+ assert.equal(noticeTone(n('owner:administrator-confirmed:b1')),'event');
+ assert.equal(noticeTone(n('owner:administrator-checkin:b1')),'event');
+ assert.equal(noticeTone(n('cleaner:autopilot-took:o1')),'event');
+ // Поздний выезд снял назначение: исполнителю нужно откликнуться заново.
+ assert.equal(noticeTone(n('cleaner:checkout-reschedule:j1:4')),'event');
  // ИИ напомнил о сроке, передал задержку, снял назначение: это всё ещё требует внимания.
  assert.equal(noticeTone(n('owner:overdue-escalated:j1')),'event');
  assert.equal(noticeTone(n('cleaner:overdue-remind:j1')),'event');
@@ -16,7 +21,7 @@ test('шаг, который ИИ сделал сам, остаётся в жу�
  assert.equal(noticeTone(n('owner:administrator-review:j1:3')),'event');
  // Заявка гостя, оплата, отчёт с замечаниями и сообщения людей — события.
  assert.equal(noticeTone(n('owner:booking:b1','Новая заявка на «Студию»')),'event');
- assert.equal(noticeTone(n('owner:booking:b1','AI администратор принял бронь на «Студию»')),'calm');
+ assert.equal(noticeTone(n('owner:booking:b1','AI администратор принял бронь на «Студию»')),'event');
  assert.equal(noticeTone(n('owner:administrator-review-issue:j1:3')),'event');
  assert.equal(noticeTone(n('guest:payment:b1')),'event');
  assert.equal(noticeTone({}),'event');
@@ -58,6 +63,12 @@ test('события одной роли, новые первыми, и что �
  assert.equal(noticeOpen('owner:booking:b9',data),null);
  assert.equal(noticeOpen('owner:price:p1',data),null);
  assert.equal(noticeOpen(undefined,data),null);
+ // Предложенное изменение брони открывает саму бронь: ответ дают в её карточке. Отклик открывает свою уборку.
+ const held={bookings:[{id:'b1',changes:[{id:'c1'}]},{id:'b2',changes:null}],jobs:[{id:'j1'}],applications:[{id:'a1',job_id:'j1'},{id:'a2',job_id:'j9'}]};
+ assert.deepEqual(noticeOpen('guest:change:c1',held),{kind:'booking',id:'b1'});
+ assert.equal(noticeOpen('guest:change:c9',held),null);
+ assert.deepEqual(noticeOpen('owner:application:a1',held),{kind:'job',id:'j1'});
+ assert.equal(noticeOpen('owner:application:a2',held),null);
  // Задача ИИ-администратора несёт свои номера списком внутри ключа.
  assert.deepEqual(noticeOpen('owner:administrator:["o","booking","b1","checkin","o","owner"]:2',data),{kind:'booking',id:'b1'});
  // Вслух над картой: только новое с прошлого взгляда и только события этой роли.
