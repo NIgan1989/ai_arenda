@@ -503,3 +503,61 @@
 .map-home-panel .map-home-refine.request-trips > .request-trips-label + svg:last-child {
   margin-left: auto;
 }
+
+/* ---------- Choices as buttons, as in the app (mobile/src/SheetParts.tsx Chips) ---------- */
+.request-form .request-chips {
+  display: flex;
+  gap: var(--t-space-8);
+  overflow-x: auto;
+  scrollbar-width: none;
+  padding-bottom: var(--t-space-2);
+}
+
+.request-form .request-chips::-webkit-scrollbar { display: none; }
+.request-form .request-chips.is-wrap { flex-wrap: wrap; overflow: visible; }
+
+.request-form .request-chips button {
+  flex: none;
+  min-height: var(--t-control-touch);
+  padding: 0 var(--t-space-16);
+  border: 1px solid var(--t-accent-line);
+  border-radius: var(--t-radius-full);
+  background: var(--t-glass-strong);
+  color: var(--t-ink);
+  font-size: var(--t-font-label);
+  line-height: var(--t-line-label);
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.request-form .request-chips button[aria-checked="true"] {
+  border-color: var(--t-accent);
+  background: var(--t-accent);
+  color: var(--t-on-accent);
+  font-weight: 600;
+}
+
+.request-form .request-chips button:focus-visible {
+  outline: 3px solid var(--t-focus);
+  outline-offset: 2px;
+}
+
+.request-form .request-zone { align-items: center; justify-content: space-between; }
+.request-form .request-zone > span {
+  flex: 1;
+  min-width: 0;
+  color: var(--t-muted);
+  font-size: var(--t-font-label);
+  line-height: var(--t-line-label);
+}
+
+/* The app's stepper: one box with − and + at its ends. */
+.request-form .request-stepper.is-box {
+  justify-content: space-between;
+  border: 1px solid var(--t-line);
+  border-radius: var(--t-radius-md);
+  background: var(--t-surface);
+}
+.request-form .request-stepper.is-box button { border-color: transparent; background: none; }
+.request-form .request-stepper.is-box button:disabled { border-color: transparent; }

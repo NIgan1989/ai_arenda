@@ -860,3 +860,71 @@ html[data-design="unified"] .workspace-shell .map-role .map-network-error {
 }
 .map-role-place{display:block;width:100%;padding:0;border:0;background:none;text-align:left;cursor:pointer;border-radius:var(--t-radius-lg)}
 .map-role-place:focus-visible{outline:2px solid var(--t-focus);outline-offset:2px}
+
+/* ---------- The cleaner's cards in the sheet, as in the app (mobile/src/MapHome.tsx CleanerPanel) ---------- */
+.map-role-panel .map-job-card {
+  display: grid;
+  gap: var(--t-space-8);
+  min-width: 0;
+  padding: var(--t-space-16);
+  border: 1px solid var(--t-glass-line);
+  border-radius: var(--t-radius-lg);
+  background: var(--t-glass-strong);
+}
+
+.map-role-panel .map-job-card.is-urgent {
+  border-color: var(--t-warning-line);
+  background: var(--t-warning-soft);
+}
+
+.map-role-panel .map-job-head {
+  display: flex;
+  align-items: center;
+  gap: var(--t-space-8);
+}
+
+.map-role-panel .map-job-title {
+  flex: 1;
+  min-width: 0;
+  color: var(--t-ink);
+  font-size: var(--t-font-subtitle);
+  line-height: var(--t-line-subtitle);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.map-role-panel .map-job-fee {
+  color: var(--t-ink);
+  font-size: var(--t-font-body);
+  line-height: var(--t-line-body);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.map-role-panel .map-job-stage {
+  display: flex;
+  gap: var(--t-space-4);
+}
+
+.map-role-panel .map-job-stage > span {
+  display: grid;
+  flex: 1;
+  gap: var(--t-space-4);
+  min-width: 0;
+  overflow: hidden;
+  color: var(--t-muted);
+  font-size: var(--t-font-caption);
+  line-height: var(--t-line-caption);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.map-role-panel .map-job-stage i {
+  height: 4px;
+  border-radius: var(--t-radius-xs);
+  background: var(--t-line);
+}
+
+.map-role-panel .map-job-stage .is-done i { background: var(--t-accent); }
+.map-role-panel .map-job-stage .is-current { color: var(--t-ink); font-weight: 600; }
+.map-role-panel .map-job-fee.is-big { font-size: var(--t-font-title); line-height: var(--t-line-title); font-weight: 700; }

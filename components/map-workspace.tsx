@@ -97,6 +97,16 @@ function Thumb({ item, role }: { item: Row; role: string }) {
   );
 }
 
+// The four steps of a cleaning, the same strip as on the app's cards (mobile/src/SheetParts.tsx Stage).
+const JOB_STAGES = ['Назначено', 'Выезд', 'Уборка', 'Приёмка'];
+function JobStage({ current }: { current: number }) {
+  return (
+    <div className="map-job-stage" role="img" aria-label={'Этап ' + (current + 1) + ' из ' + JOB_STAGES.length + ': ' + JOB_STAGES[current]}>
+      {JOB_STAGES.map((step, i) => <span key={step} className={(i <= current ? 'is-done' : '') + (i === current ? ' is-current' : '')}><i />{step}</span>)}
+    </div>
+  );
+}
+
 function MapRow({ item, role, line, onOpen, order }: { item: Row; role: string; line: string; onOpen: () => void; order?: number }) {
   return (
     <li>
@@ -357,6 +367,19 @@ function RoleMap({ role, accountId, data, onDiscussion, onProcess, onCreate, onA
     catch (e: any) { setError(e.message); return null; }
     finally { setBusy(false); }
   }
+  // The step of a job taken right in the sheet: an answer to an open one, the start of the one the guest has left.
+  const [working, setWorking] = useState('');
+  async function jobAction(id: string, action: 'apply' | 'start') {
+    if (working) return;
+    setWorking(id); setError('');
+    try {
+      const response = await fetch('/api/jobs/' + id, { method: 'POST', cache: 'no-store', headers: { 'Content-Type': 'application/json', 'X-Workspace-Role': role }, body: JSON.stringify({ action }) });
+      const value = await response.json().catch(() => ({})) as Row;
+      if (!response.ok) throw Error(value.error || 'Сервер не подтвердил действие.');
+      await query.refetch(); onChanged?.();
+    } catch (e: any) { setError(e.message); }
+    finally { setWorking(''); }
+  }
   async function startSharing() {
     if (!chosen) return;
     if (!navigator.geolocation) { setError('Геолокация недоступна. Маршрут можно открыть и без неё.'); return; }
@@ -472,6 +495,9 @@ function RoleMap({ role, accountId, data, onDiscussion, onProcess, onCreate, onA
   // The cleaner's day: the stops of the route in their order, and the rest of what is his (later days, reports sent, answers given).
   const stops = route.map(r => mine.find(d => d.kind === 'job' && d.id === r.id)).filter((d): d is Row => !!d);
   const later = role === 'cleaner' ? mine.filter(d => !stops.includes(d)) : [];
+  // The first stop still to drive to is where «Поехали» leads, as in the app.
+  const nextStop = stops.find(d => record(d)?.status === 'assigned' && d.location)?.id;
+  const applied = (id: string) => (data.applications || []).some((a: Row) => a.job_id === id && a.user_id === accountId && a.status !== 'rejected');
   const daySummary = routeSummary(stops.map(d => ({ fee: Number(record(d)?.fee) || 0, point: d.location ? [Number(d.location.longitude), Number(d.location.latitude)] as [number, number] : null })));
 
   const home = (
@@ -519,13 +545,45 @@ function RoleMap({ role, accountId, data, onDiscussion, onProcess, onCreate, onA
             {stops.length > 0 && (
               <>
                 <p className="map-role-note">{daySummary}</p>
-                <ul className="map-role-list">
-                  {stops.map(stop => <MapRow key={stop.mapKey} item={stop} role={role} order={stop.pinOrder} line={clock(stop.start) + ' · ' + cleanerLine(record(stop) || stop)} onOpen={() => select(stop.mapKey)} />)}
-                </ul>
+                {stops.map(stop => {
+                  // One main button a stop, as in the app: the step that is due (start, report); before it, the way there.
+                  const job = record(stop) || stop, step = cleanerStep(job, undefined, accountId), isNext = stop.id === nextStop;
+                  return (
+                    <div key={stop.mapKey} className={'map-job-card' + (isNext || job.status === 'in_progress' ? ' is-urgent' : '')}>
+                      <JobStage current={job.status === 'submitted' ? 3 : job.status === 'in_progress' ? 2 : job.checkout_confirmed ? 1 : 0} />
+                      <strong className="map-job-title">{stop.pinOrder ? stop.pinOrder + '. ' : ''}{stop.title}</strong>
+                      <span className="map-role-note">{period(stop.start, stop.end, now)}{job.address ? ' · ' + job.address : ''}</span>
+                      {!!job.fee && <span className="map-job-fee is-big">{money(job.fee)}</span>}
+                      <span className="map-role-note">{cleanerLine(job)}.</span>
+                      {step?.id === 'start' && <button type="button" className="map-role-button" disabled={!!working} onClick={() => void jobAction(stop.id, 'start')}>{working === stop.id ? 'Начинаем…' : step.label}</button>}
+                      {step?.id === 'report' && <button type="button" className="map-role-button" onClick={() => onProcess('job', stop.id, 'report')}>{step.label}</button>}
+                      {isNext && <>
+                        <button type="button" className={'map-role-button' + (step ? ' is-quiet' : '')} onClick={() => { select(stop.mapKey); setExpanded(true); }}><Navigation size={18} aria-hidden="true" />Поехали</button>
+                        <span className="map-role-note">Поведём по нашей карте. Пока вы в пути, владелец видит вашу точку.</span>
+                      </>}
+                      {step?.id !== 'report' && <button type="button" className={'map-role-button' + (step || isNext ? ' is-quiet' : '')} onClick={() => onProcess('job', stop.id)}>Открыть задание</button>}
+                    </div>
+                  );
+                })}
               </>
             )}
             {later.length > 0 && <><h2 className="map-role-heading">{stops.length ? 'Дальше' : 'Мои задания'}</h2>{rows(later, dealLine)}</>}
-            {nearby.length > 0 && <><h2 className="map-role-heading">{city ? 'Задания рядом' : 'Задания'}</h2>{rows(nearby.slice(0, 20), dealLine)}</>}
+            {nearby.length > 0 && <><h2 className="map-role-heading">{city ? 'Задания рядом · ' + city : 'Задания'}</h2>
+              {nearby.slice(0, 8).map(item => {
+                // An open job is answered right here, as in the app; the place itself is one tap further.
+                const job = record(item) || item, sent = applied(item.id);
+                return (
+                  <div key={item.mapKey} className="map-job-card">
+                    <div className="map-job-head"><strong className="map-job-title">{item.title}</strong>{!!job.fee && <span className="map-job-fee">{money(job.fee)}</span>}</div>
+                    <button type="button" className="map-role-place" aria-label={'Посмотреть жильё: ' + item.title} onClick={() => onProcess('job', item.id)}><JobPlace job={job} role={role} compact /></button>
+                    <span className="map-role-note">{job.district ? job.district + ' · ' : ''}{period(item.start, item.end, now)}</span>
+                    <div className="map-role-actions">
+                      <button type="button" className="map-role-button" disabled={!!working || sent} onClick={() => void jobAction(item.id, 'apply')}>{sent ? 'Отклик отправлен' : working === item.id ? 'Отправляем…' : 'Откликнуться'}</button>
+                      <button type="button" className="map-role-button is-quiet" onClick={() => select(item.mapKey)}>Подробнее</button>
+                    </div>
+                  </div>
+                );
+              })}</>}
             {noJobs && !!card && noJobsLine}
             <div className="map-role-city">
               <label>
