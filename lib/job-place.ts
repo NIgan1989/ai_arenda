@@ -23,6 +23,8 @@ export type JobPlaceView = {
   minutes: number;
   /** The address is known: the cleaner is assigned (or it is the owner). */
   exact: boolean;
+  /** Before the assignment: the street and the house, without the flat. */
+  street: string;
 };
 
 const parse = <T,>(value: unknown, fallback: T): T => {
@@ -47,6 +49,22 @@ export function cleaningTasks(text: unknown): string[] {
     .filter(Boolean);
   if (parts.length < 2 || parts.length > 10 || parts.some(part => part.length < 3)) return [value];
   return parts.map(part => part[0].toLocaleUpperCase('ru') + part.slice(1));
+}
+
+// The street and the house, without the flat, entrance, floor or code: the cleaner sees how far it is before answering,
+// the rest of the address comes with the assignment. «ул. Абая 12, кв. 45» → «ул. Абая 12».
+const PRIVATE_PART = /^(кв|квартира|комн|комната|оф|офис|подъезд|под|этаж|эт|домофон|код|апарт|apt|room|ap)(?=[\s.\d№]|$)/iu;
+export function streetAddress(address: unknown): string {
+  const text = typeof address === 'string' ? address.trim() : '';
+  if (!text) return '';
+  const kept: string[] = [];
+  for (const part of text.split(/\s*[,;]\s*/)) {
+    if (!part || PRIVATE_PART.test(part)) break;
+    const cut = part.split(/\s+(?=(?:кв|квартира|оф|офис|подъезд|этаж)(?=[\s.\d№]|$))/iu)[0];
+    kept.push(cut);
+    if (cut !== part) break;
+  }
+  return kept.join(', ');
 }
 
 export function cleaningTime(minutes: number) {
@@ -80,5 +98,6 @@ export function jobPlace(job: Row | null | undefined): JobPlaceView {
     tasks: cleaningTasks(j.description),
     minutes: Number(j.cleaning_minutes) || 0,
     exact: !!j.address,
+    street: j.address ? '' : String(j.street || ''),
   };
 }

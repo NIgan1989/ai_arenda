@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { load } from './helpers/platform.mjs';
 
-const { jobPlace, cleaningTasks, cleaningTime } = await load('job-place');
+const { jobPlace, cleaningTasks, cleaningTime, streetAddress } = await load('job-place');
 const { nowCard, ownerResponses, ownerWaiting } = await load('now-card');
 const { calendarEntries } = await load('calendar-days');
 const { hubLine, hubToday } = await load('property-hub');
@@ -25,6 +25,11 @@ test('the cleaner sees the place: kind, area of the city, size and what to clean
   assert.deepEqual(v.kit, ['Стиральная машина', 'Утюг']);
   assert.deepEqual(v.tasks, ['Сменить бельё', 'Помыть ванную и кухню', 'Вынести мусор']);
   assert.equal(v.exact, false);
+  assert.equal(jobPlace({ street: 'ул. Абая 12', city: 'Павлодар' }).street, 'ул. Абая 12');
+  assert.equal(jobPlace({ street: 'ул. Абая 12', address: 'ул. Абая 12, кв. 45' }).street, '');
+  assert.equal(streetAddress('ул. Абая 12, кв. 45'), 'ул. Абая 12');
+  assert.equal(streetAddress('Павлодар, ул. Ленина 5 кв 3'), 'Павлодар, ул. Ленина 5');
+  assert.equal(streetAddress('пр. Назарбаева 101, подъезд 2, этаж 5'), 'пр. Назарбаева 101');
   assert.equal(cleaningTime(90), '≈ 1 ч 30 мин');
 });
 

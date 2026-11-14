@@ -14,7 +14,7 @@ export function JobPlace({job,compact=false}:{job:Row;compact?:boolean}){
  const v=jobPlace(job),alt='Фото жилья: '+(job.title||v.kind),[width,setWidth]=useState(0),[page,setPage]=useState(0);
  if(compact)return <View style={p.row}>
   <View style={p.thumb}><Photo id={v.photos[0]} fill alt={alt}/>{v.photos.length>1&&<Text style={p.thumbCount}>{v.photos.length}</Text>}</View>
-  <View style={p.rowText}><Text numberOfLines={1} style={p.rowTitle}>{v.summary}</Text>{!!v.tasks.length&&<Text numberOfLines={1} style={p.rowNote}>{v.tasks.join(' · ')}</Text>}</View>
+  <View style={p.rowText}><Text numberOfLines={1} style={p.rowTitle}>{v.summary}</Text>{!!(v.street||v.where)&&<Text numberOfLines={1} style={p.rowNote}>{v.street||v.where}</Text>}{!!v.tasks.length&&<Text numberOfLines={1} style={p.rowNote}>{v.tasks.join(' · ')}</Text>}</View>
  </View>;
  const shown=v.photos.slice(0,8),onScroll=(e:NativeSyntheticEvent<NativeScrollEvent>)=>{if(width)setPage(Math.round(e.nativeEvent.contentOffset.x/width));};
  return <View style={p.card} accessibilityLabel="Жильё для уборки">
@@ -27,7 +27,7 @@ export function JobPlace({job,compact=false}:{job:Row;compact?:boolean}){
    {shown.length>1&&<View style={p.dots}>{shown.map((id,i)=><View key={id} style={[p.dot,i===page&&p.dotOn]}/>)}</View>}
   </View>
   <View style={p.body}>
-   <View style={{gap:2}}><Text style={p.where}>{v.where||'Район не указан'}</Text>{!!v.floor&&<Text style={p.lock}>{v.floor}</Text>}{!v.exact&&<Text style={p.lock}>Точный адрес откроется после назначения</Text>}</View>
+   <View style={{gap:2}}><Text style={p.where}>{v.street||v.where||'Район не указан'}</Text>{(v.street?[v.where,v.floor]:[v.floor]).filter(Boolean).length>0&&<Text style={p.lock}>{(v.street?[v.where,v.floor]:[v.floor]).filter(Boolean).join(' · ')}</Text>}{!v.exact&&<Text style={p.lock}>{v.street?'Квартира и контакт откроются после назначения':'Точный адрес откроется после назначения'}</Text>}</View>
    {v.facts.length>0&&<View style={p.facts}>{v.facts.map(f=><View key={f.id} style={p.fact}><Text numberOfLines={1} style={p.factValue}>{f.value}</Text><Text numberOfLines={1} style={[p.factLabel,{flexShrink:1}]}>{f.label}</Text></View>)}</View>}
    {v.tasks.length>0&&<View style={{gap:8}}>
     <View style={p.todoHead}><Text style={p.todoTitle}>Что убрать</Text>{v.minutes>0&&<Text style={p.time}>{cleaningTime(v.minutes)}</Text>}</View>
