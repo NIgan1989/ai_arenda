@@ -26,7 +26,7 @@
    the steps follow, then the facts and the actions. New class names keep the older layers of .inline-card away. */
 html[data-design=unified] [data-slot=sheet-content].record-details-sheet:is(.kind-booking,.kind-job) [data-slot=sheet-header]{padding:16px 20px 8px}
 html[data-design=unified] [data-slot=sheet-content].record-details-sheet:is(.kind-booking,.kind-job) [data-slot=sheet-title]{font-size:var(--t-font-label);line-height:var(--t-line-label);font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--t-muted)}
-.record-details-sheet:is(.kind-booking,.kind-job) .record-details-body{display:grid;grid-template-columns:minmax(0,1fr);align-content:start;gap:12px}
+.record-details-sheet:is(.kind-booking,.kind-job) .record-details-body{display:grid;grid-template-columns:minmax(0,1fr);grid-auto-rows:max-content;align-content:start;gap:12px}
 .record-details-body>.process-journey,.record-entry>.process-journey{margin:0}
 .record-head{display:grid;gap:8px;min-width:0}
 .record-head>.record-property-photo{height:160px;overflow:hidden;border-radius:var(--t-radius-lg);margin:0 0 4px;background:var(--t-surface-alt)}

@@ -23,7 +23,7 @@ import {AiJournal} from './ai-journal';
 import {menuFromSearch,searchWithMenu} from '../lib/menu-address';
 import {journalToday} from '../lib/ai-move-marks';
 type Row=Record<string,any>;
-const shortRole:Row={guest:'Гость',owner:'Владелец',cleaner:'Уборка'},banks:Row={undecided:'Не выбран',kaspi:'Kaspi',halyk:'Halyk Bank'};
+const shortRole:Row={guest:'Гость',owner:'Владелец',cleaner:'Исполнитель'},banks:Row={undecided:'Не выбран',kaspi:'Kaspi',halyk:'Halyk Bank'};
 // The menu is short: who I am, the sections of my role, and five rows that each open their own screen
 // (profile, reliability, plan, settings, data). Every row shows its current value, switches save at once.
 type MenuView=''|'profile'|'trust'|'plan'|'journal'|'settings'|'safety'|`safety:${Exclude<SafetyPage,''>}`;
