@@ -15,6 +15,7 @@ import {browserLocationFix,locationFailure,requestBrowserLocation} from '../lib/
 import {MapCanvas} from './map-canvas';import {StatusBadge} from './property-listing';import {processStatus} from '../lib/process-status';
 import {AiLine,roleAiLine,type AiChip} from './ai-line';
 import {NowCard,nowCard,nowCardWhen,type NowCardData} from './now-card';
+import {AutopilotThreads} from './autopilot-threads';
 import {ownerWaiting} from '../lib/now-card';
 import './map-workspace.css';
 import {SmartGuestMap,matchingAPI} from './smart-guest-map';
@@ -477,6 +478,8 @@ function RoleMap({ role, accountId, data, onDiscussion, onProcess, onCreate, onA
     <>
       {onBack && <button type="button" className="map-role-back" onClick={onBack}><ArrowLeft size={18} aria-hidden="true" />К поиску жилья</button>}
       {role !== 'guest' && <AiLine placeholder={line.placeholder} shortPlaceholder={line.shortPlaceholder} label={line.label} chips={chips} onSubmit={onAsk} onChip={pressChip} />}
+      {/* All bookings and cleanings (the cleaner's jobs and his week) from start to end, and the step each one is at. */}
+      {(role === 'owner' || role === 'cleaner') && !noFlats && <AutopilotThreads role={role} data={data} now={now} onOpen={(kind, id) => onProcess(kind, id)} />}
       {/* The guest's list below starts with the same booking the card would name. */}
       {role !== 'guest' && <NowCard card={card} onOpen={openNow} />}
       {noFlats && (
