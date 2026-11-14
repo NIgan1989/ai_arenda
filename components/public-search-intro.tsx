@@ -1,12 +1,11 @@
 'use client';
 import {Thinking} from './thinking';
-import { useEffect, useId, useRef, useState, type FormEvent, type PointerEvent, type Ref } from 'react';
-import { CalendarCheck, ChevronDown, ChevronRight, LocateFixed, MapPin, Minus, Plus, SlidersHorizontal, Sparkles } from 'lucide-react';
+import { useEffect, useRef, type FormEvent, type PointerEvent, type Ref } from 'react';
+import { CalendarCheck, ChevronDown, ChevronRight, Minus, Plus, SlidersHorizontal, Sparkles } from 'lucide-react';
 import { AiLine, roleAiLine, type AiChip } from './ai-line';
 import { NowCard, type NowCardData } from './now-card';
-import {
-  CHECKOUT_TIME, HOUR_CHOICES, MAX_GUESTS, addDays, dailyStay, hourlyStay, kzToday, startTimes, stayHours, stayLine, switchStay,
-} from '../lib/map-search-request';
+import { MAX_GUESTS, stayLine, switchStay } from '../lib/map-search-request';
+import { WISHES, dayChoices, draftUnits, withDay, withTime, withUnits, type GuestDraft } from '../mobile/src/ai-request';
 import './public-search-intro.css';
 
 type Row = Record<string, any>;
@@ -51,14 +50,8 @@ type SearchIntroProps = {
   panelRef?: Ref<HTMLElement>;
 };
 
-const WISHES: [string, string][] = [['parking', 'Парковка'], ['wifi', 'Wi-Fi'], ['kitchen', 'Кухня'], ['workspace', 'Рабочее место']];
-const DAY = 86400000;
-// How far ahead a stay can start, and how long it can be, in days. The service takes stays of up to 90 days.
-const FAR_AHEAD = 365;
-const LONGEST_STAY = 90;
-
 // The first thing a guest or a visitor sees over the map: one line for a free request, three shortcuts,
-// the "Сейчас" card and, behind "Уточнить", the same request as ordinary fields.
+// the "Сейчас" card and, behind "Уточнить", the same request as buttons, as in the app.
 export function SearchIntro(props: SearchIntroProps) {
   const { expanded, onExpanded, note, busy } = props;
   const line = roleAiLine('guest');
@@ -133,153 +126,71 @@ export function SearchIntro(props: SearchIntroProps) {
   );
 }
 
-function RequestForm({ draft, cities, busy, focus, onChange, onSubmit, zoneNotice, onLocate, onPick, onClearZone, fine }: SearchIntroProps) {
-  const id = useId();
-  const city = useRef<HTMLInputElement>(null), when = useRef<HTMLInputElement>(null);
+// The same form as in the app (mobile/src/GuestForm.tsx): choices are buttons, numbers are steppers, the day is
+// one of the week ahead. Free text in the line above fills the same conditions, so a day it named is chosen here too.
+function RequestForm({ draft, cities, busy, focus, onChange, onSubmit, zoneNotice, onPick, onClearZone, fine }: SearchIntroProps) {
+  const city = useRef<HTMLDivElement>(null), when = useRef<HTMLDivElement>(null);
   const hourly = draft.mode === 'hourly', guests = Math.max(1, Math.min(MAX_GUESTS, Number(draft.guests) || 1));
   const features: string[] = Array.isArray(draft.features) ? draft.features : [];
-  // District, budget and wishes stay folded until one of them is set.
-  const extras = !!(draft.near || draft.district || draft.maxPrice || features.length || draft.priority !== 'balanced');
-  const [more, setMore] = useState(extras);
-  // Read once per render: the fields only need "now" to hide times that have passed.
   const now = Date.now();
+  const stay = draft as GuestDraft, units = draftUnits(stay);
+  const startMinutes = Number(draft.start.slice(11, 13)) * 60 + Number(draft.start.slice(14, 16));
+  const cityChoices = cities.includes(draft.city) || !draft.city ? cities : [draft.city, ...cities];
 
   useEffect(() => {
     if (!focus) return;
-    (focus.field === 'city' ? city.current : when.current)?.focus({ preventScroll: false });
+    (focus.field === 'city' ? city.current : when.current)?.querySelector<HTMLButtonElement>('button')?.focus({ preventScroll: false });
   }, [focus?.id]);
-
-  useEffect(() => {
-    if (extras) setMore(true);
-  }, [extras]);
 
   function submit(event: FormEvent) {
     event.preventDefault();
     if (!busy) onSubmit();
   }
+  const stayPatch = (next: GuestDraft) => ({ mode: next.mode, start: next.start, end: next.end });
 
   return (
     <form className="request-form" onSubmit={submit}>
-      <div className="request-segment" role="group" aria-label="Срок аренды">
-        {([['daily', 'На сутки'], ['hourly', 'На часы']] as const).map(([mode, label]) => (
-          <button
-            key={mode}
-            type="button"
-            aria-pressed={draft.mode === mode}
-            onClick={() => draft.mode !== mode && onChange(switchStay(mode, draft.start, now))}
-          >
-            {label}
-          </button>
-        ))}
+      <Chips name="Срок аренды" value={draft.mode} options={[['daily', 'На сутки'], ['hourly', 'На часы']]} onChange={mode => draft.mode !== mode && onChange(switchStay(mode, draft.start, now))} />
+      <Chips label="Город" value={draft.city} options={cityChoices.map(name => [name, name])} onChange={name => name !== draft.city && onChange({ city: name, district: '', near: null })} groupRef={city} />
+      <Chips label="Когда" value={draft.start.slice(0, 10)} options={dayChoices(stay, now)} onChange={day => onChange(stayPatch(withDay(stay, day, now)))} groupRef={when} />
+      <div className="request-pair">
+        <Stepper label={hourly ? 'Начало' : 'Заезд'} value={startMinutes} text={clock(startMinutes)} min={0} max={1410} step={30} onChange={minutes => onChange(stayPatch(withTime(stay, clock(minutes), now)))} />
+        <Stepper label={hourly ? 'Часов' : 'Суток'} value={units} text={String(units)} min={1} max={hourly ? 23 : 30} onChange={value => onChange(stayPatch(withUnits(stay, value, now)))} />
       </div>
-
+      <p className="request-when-line" aria-live="polite">{stayLine(draft.start, draft.end, draft.mode)}</p>
+      <div className="request-pair">
+        <Stepper label="Гостей" value={guests} text={String(guests)} min={1} max={MAX_GUESTS} onChange={value => onChange({ guests: String(value) })} />
+        <label className="request-field">
+          <span>Бюджет на весь срок, ₸</span>
+          <input className="request-input" name="maxPrice" inputMode="numeric" value={draft.maxPrice || ''} maxLength={9} placeholder="Любой" onChange={event => onChange({ maxPrice: event.target.value.replace(/\D/g, '') })} />
+        </label>
+      </div>
       <label className="request-field">
-        <span>Город</span>
-        <input
-          ref={city}
-          className="request-input"
-          name="city"
-          value={draft.city}
-          maxLength={80}
-          required
-          autoComplete="address-level2"
-          list={id + 'cities'}
-          onChange={event => onChange({ city: event.target.value })}
-        />
-        <datalist id={id + 'cities'}>{cities.map(name => <option key={name}>{name}</option>)}</datalist>
+        <span>Район</span>
+        <input className="request-input" name="district" value={draft.district || ''} maxLength={120} placeholder="Любой" onChange={event => onChange({ district: event.target.value })} />
       </label>
-
-      <fieldset className="request-when">
-        <legend>Когда</legend>
-        {hourly
-          ? <HourlyFields draft={draft} now={now} onChange={onChange} first={when} />
-          : <DailyFields draft={draft} now={now} onChange={onChange} first={when} />}
-        <p className="request-when-line" aria-live="polite">{stayLine(draft.start, draft.end, draft.mode)}</p>
-      </fieldset>
-
-      <div className="request-guests" role="group" aria-labelledby={id + 'guests'}>
-        <span id={id + 'guests'}>Гостей</span>
-        <div className="request-stepper">
-          <button type="button" aria-label="Меньше гостей" disabled={guests <= 1} onClick={() => onChange({ guests: String(guests - 1) })}>
-            <Minus size={18} aria-hidden="true" />
-          </button>
-          <output aria-live="polite">{guests}</output>
-          <button type="button" aria-label="Больше гостей" disabled={guests >= MAX_GUESTS} onClick={() => onChange({ guests: String(guests + 1) })}>
-            <Plus size={18} aria-hidden="true" />
-          </button>
+      <div className="request-field">
+        <span>Обязательно в жилье</span>
+        <div className="request-chips is-wrap" role="group" aria-label="Обязательно в жилье">
+          {WISHES.map(([feature, label]) => {
+            const on = features.includes(feature);
+            return <button key={feature} type="button" role="checkbox" aria-checked={on} onClick={() => onChange({ features: on ? features.filter(value => value !== feature) : [...features, feature] })}>{label}</button>;
+          })}
         </div>
       </div>
-
-      <button type="button" className="request-more" aria-expanded={more} onClick={() => setMore(!more)}>
-        Район, бюджет и пожелания
-        <ChevronDown size={18} aria-hidden="true" />
-      </button>
-      {more && (
-        <div className="request-extras">
-          <div className="request-pair">
-            <label className="request-field">
-              <span>Район</span>
-              <input
-                className="request-input"
-                name="district"
-                value={draft.district || ''}
-                maxLength={120}
-                placeholder="Любой"
-                onChange={event => onChange({ district: event.target.value })}
-              />
-            </label>
-            <label className="request-field">
-              <span>Бюджет на весь срок, ₸</span>
-              <input
-                className="request-input"
-                name="maxPrice"
-                inputMode="numeric"
-                value={draft.maxPrice || ''}
-                maxLength={9}
-                placeholder="Любой"
-                onChange={event => onChange({ maxPrice: event.target.value.replace(/\D/g, '') })}
-              />
-            </label>
-          </div>
-          <label className="request-field">
-            <span>Что важнее</span>
-            <select className="request-input" value={draft.priority} onChange={event => onChange({ priority: event.target.value })}>
-              <option value="balanced">Цена и расположение</option>
-              <option value="cheaper">Дешевле</option>
-              <option value="closer">Ближе к выбранному месту</option>
-            </select>
-          </label>
-          <div className="request-checks" role="group" aria-label="Что должно быть в жилье">
-            {WISHES.map(([feature, label]) => (
-              <label key={feature}>
-                <input
-                  type="checkbox"
-                  checked={features.includes(feature)}
-                  onChange={event => onChange({ features: event.target.checked ? [...features, feature] : features.filter(value => value !== feature) })}
-                />
-                {label}
-              </label>
-            ))}
-          </div>
-          <div className="request-zone">
-            <button type="button" disabled={busy} onClick={onLocate}>
-              <LocateFixed size={18} aria-hidden="true" />
-              Рядом со мной
-            </button>
-            <button type="button" onClick={onPick}>
-              <MapPin size={18} aria-hidden="true" />
-              Указать на карте
-            </button>
-            {draft.near && <button type="button" className="is-plain" onClick={onClearZone}>Убрать место</button>}
-          </div>
-          {zoneNotice && <p className="request-zone-note" role="status">{zoneNotice}</p>}
-        </div>
-      )}
-
+      <Chips label="Что важнее" value={draft.priority || 'balanced'} options={[['balanced', 'Баланс'], ['cheaper', 'Дешевле'], ['closer', 'Ближе']]} onChange={priority => onChange({ priority })} />
+      <div className="request-zone">
+        <span>{zoneNotice || 'Ищем по всему городу.'}</span>
+        <button type="button" className="is-plain" disabled={busy} onClick={() => {
+          if (draft.near) { onClearZone(); if (draft.priority === 'closer') onChange({ priority: 'balanced' }); }
+          else onPick();
+        }}>{draft.near ? 'Убрать точку' : 'Указать точку на карте'}</button>
+      </div>
       <div className="request-submit">
+        <p className="request-fine">{hourly ? '' : 'Выезд до 12:00. '}Депозит оплачивается отдельно.</p>
         <button type="submit" className="request-primary" disabled={busy} aria-busy={busy}>
           {busy && <Thinking size="sm" tone="plain" />}
-          Подобрать жильё
+          {busy ? 'Ищем…' : 'Показать варианты'}
         </button>
         <p className="request-fine">{fine}</p>
       </div>
@@ -287,115 +198,32 @@ function RequestForm({ draft, cities, busy, focus, onChange, onSubmit, zoneNotic
   );
 }
 
-type WhenProps = { draft: Row; now: number; onChange: (patch: Row) => void; first: Ref<HTMLInputElement> };
+const two = (value: number) => String(value).padStart(2, '0');
+const clock = (minutes: number) => two(Math.floor(minutes / 60)) + ':' + two(minutes % 60);
 
-type DateInputProps = {
-  name: string;
-  value: string;
-  min: string;
-  max: string;
-  onDate: (date: string) => void;
-  inputRef?: Ref<HTMLInputElement>;
-};
-
-// A date that can be picked and can be typed. While it is typed the browser reports every step on the way
-// ("02" before "20", the year "0002" before "2026"). The field keeps such a step on the screen and passes on only
-// a whole date between min and max, so a day that has passed is never turned into another one behind the guest's
-// back. Leaving the field with anything else brings back the last date that was taken.
-function DateInput({ name, value, min, max, onDate, inputRef }: DateInputProps) {
-  const [typed, setTyped] = useState<string | null>(null);
+// One choice of a few, as a row of buttons that scrolls sideways (the app's Chips).
+function Chips<T extends string>({ label, name, value, options, onChange, groupRef }: { label?: string; name?: string; value: T; options: [T, string][]; onChange: (value: T) => void; groupRef?: Ref<HTMLDivElement> }) {
   return (
-    <input
-      ref={inputRef}
-      className="request-input"
-      type="date"
-      lang="ru"
-      name={name}
-      required
-      min={min}
-      max={max}
-      value={typed ?? value}
-      onChange={event => {
-        const date = event.target.value;
-        if (/^\d{4}-\d{2}-\d{2}$/.test(date) && date >= min && date <= max) {
-          setTyped(null);
-          onDate(date);
-        } else {
-          setTyped(date);
-        }
-      }}
-      onBlur={() => setTyped(null)}
-    />
-  );
-}
-
-// A daily stay is two dates: in at 14:00, out at 12:00 (see dailyStay).
-function DailyFields({ draft, now, onChange, first }: WhenProps) {
-  const today = kzToday(now), checkin = draft.start.slice(0, 10), checkout = draft.end.slice(0, 10);
-  const nights = Math.max(1, Math.round((Date.parse(checkout) - Date.parse(checkin)) / DAY));
-  // Check-out is at noon: the same day only for a check-in after midnight, otherwise the next day at the earliest.
-  const firstCheckout = draft.start.slice(11) < CHECKOUT_TIME ? checkin : addDays(checkin, 1);
-  return (
-    <div className="request-pair">
-      <label className="request-field">
-        <span>Заезд</span>
-        <DateInput
-          inputRef={first}
-          name="checkin"
-          min={today}
-          max={addDays(today, FAR_AHEAD)}
-          value={checkin}
-          onDate={date => onChange(dailyStay(date, addDays(date, nights), now))}
-        />
-      </label>
-      <label className="request-field">
-        <span>Выезд</span>
-        <DateInput
-          name="checkout"
-          min={firstCheckout}
-          max={addDays(checkin, LONGEST_STAY)}
-          value={checkout}
-          onDate={date => onChange(dailyStay(checkin, date, now, draft.start.slice(11)))}
-        />
-      </label>
+    <div className="request-field">
+      {label && <span>{label}</span>}
+      <div ref={groupRef} className="request-chips" role="radiogroup" aria-label={label || name}>
+        {options.map(([id, title]) => <button key={id} type="button" role="radio" aria-checked={id === value} onClick={() => onChange(id)}>{title}</button>)}
+      </div>
     </div>
   );
 }
 
-// An hourly stay is a date, a start time and a length: nobody types the end.
-function HourlyFields({ draft, now, onChange, first }: WhenProps) {
-  const today = kzToday(now), date = draft.start.slice(0, 10), time = draft.start.slice(11);
-  const hours = stayHours(draft.start, draft.end);
-  const lengths = HOUR_CHOICES.includes(hours) ? HOUR_CHOICES : [...HOUR_CHOICES, hours].sort((a, b) => a - b);
-
-  function moveTo(nextDate: string) {
-    // The same hour on the new day, or the first one still ahead.
-    const ahead = startTimes(nextDate, now);
-    onChange(hourlyStay(nextDate, ahead.includes(time) ? time : ahead[0] || time, hours));
-  }
-
+// A number changed by − and + (the app's Stepper).
+function Stepper({ label, value, text, min, max, step = 1, onChange }: { label: string; value: number; text: string; min: number; max: number; step?: number; onChange: (value: number) => void }) {
   return (
-    <>
-      <div className="request-pair">
-        <label className="request-field">
-          <span>Дата</span>
-          <DateInput inputRef={first} name="date" min={today} max={addDays(today, FAR_AHEAD)} value={date} onDate={moveTo} />
-        </label>
-        <label className="request-field">
-          <span>Начало</span>
-          <select className="request-input" name="time" value={time} onChange={event => onChange(hourlyStay(date, event.target.value, hours))}>
-            {startTimes(date, now, time).map(value => <option key={value}>{value}</option>)}
-          </select>
-        </label>
+    <div className="request-field" role="group" aria-label={label}>
+      <span>{label}</span>
+      <div className="request-stepper is-box">
+        <button type="button" aria-label={label + ': меньше'} disabled={value <= min} onClick={() => onChange(Math.max(min, value - step))}><Minus size={18} aria-hidden="true" /></button>
+        <output aria-live="polite">{text}</output>
+        <button type="button" aria-label={label + ': больше'} disabled={value >= max} onClick={() => onChange(Math.min(max, value + step))}><Plus size={18} aria-hidden="true" /></button>
       </div>
-      <div className="request-hours" role="group" aria-label="На сколько часов">
-        {lengths.map(length => (
-          <button key={length} type="button" aria-pressed={length === hours} onClick={() => onChange(hourlyStay(date, time, length))}>
-            {length} ч
-          </button>
-        ))}
-      </div>
-    </>
+    </div>
   );
 }
 

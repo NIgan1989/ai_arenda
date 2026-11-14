@@ -11,7 +11,7 @@ export type SafetyPage=''|'devices'|'ai'|'delete'|'reports'|'requests';
 export const safetyTitles:Record<Exclude<SafetyPage,''>,string>={devices:'Вход и устройства',ai:'ИИ-помощник',delete:'Удаление аккаунта',reports:'Мои жалобы',requests:'Запросы на удаление'};
 const day=(t:number)=>new Date(t*1000).toLocaleDateString('ru-RU',{day:'numeric',month:'long'});
 const devices=(n:number)=>n+' '+(n%10===1&&n%100!==11?'устройство':n%10>=2&&n%10<=4&&(n%100<12||n%100>14)?'устройства':'устройств');
-export function NativeAccountSafety({role,page,go,admin=false,onSignedOut}:{role:string;page:SafetyPage;go:(page:SafetyPage)=>void;admin?:boolean;onSignedOut:(result?:Record<string,any>)=>void|Promise<void>}){
+export function NativeAccountSafety({role,page,go,admin=false,onSignedOut,tint}:{tint?:string;role:string;page:SafetyPage;go:(page:SafetyPage)=>void;admin?:boolean;onSignedOut:(result?:Record<string,any>)=>void|Promise<void>}){
  const [state,setState]=useState<any>(null),[sessions,setSessions]=useState<any[]|null>(null),[permission,setPermission]=useState<any>(null),[confirmed,setConfirmed]=useState(false),[busy,setBusy]=useState(false),[notice,setNotice]=useState(''),[loading,setLoading]=useState(true),[loadError,setLoadError]=useState('');
  const alive=useRef(false),sequence=useRef(0);
  const current=(id:number)=>alive.current&&sequence.current===id;
@@ -22,7 +22,7 @@ export function NativeAccountSafety({role,page,go,admin=false,onSignedOut}:{role
  const choose=(allowed:boolean)=>permission&&act('/api/operations/ai-data-permission',{allowed,policyVersion:permission.policyVersion,expectedVersion:permission.version});
  const wide=(title:string,fn:()=>void,disabled=busy,danger=false)=><Pressable accessibilityRole="button" disabled={disabled} onPress={fn} style={[s.button,danger?{backgroundColor:C.danger}:s.secondary,{marginTop:12},disabled&&s.disabled]}><Text style={[s.buttonText,!danger&&s.secondaryText]}>{title}</Text></Pressable>;
  const lead=(text:string)=><Text style={[a.note,{marginTop:12,marginHorizontal:4,fontSize:14,lineHeight:20}]}>{text}</Text>;
- const link=(title:string,path:string)=><Row title={title} onPress={()=>void Linking.openURL(API_URL+path+'?from=app').catch(()=>undefined)}/>;
+ const link=(title:string,path:string)=><Row icon="file" tint={tint} title={title} onPress={()=>void Linking.openURL(API_URL+path+'?from=app').catch(()=>undefined)}/>;
  const missing=(what:string)=><View>{lead('Не удалось загрузить '+what+'. Проверьте интернет.')}{wide('Повторить',()=>void load(),loading)}</View>;
  const shown=!!notice&&<Text accessibilityRole="alert" style={[a.note,{marginTop:12,marginHorizontal:4}]}>{notice}</Text>;
  if(!state)return loading?<ThinkingLine style={s.meta} text="Загружаем…"/>:<View><Text accessibilityRole="alert" style={s.error}>{loadError}</Text>{wide('Повторить',()=>void load(),false)}</View>;
@@ -35,7 +35,7 @@ export function NativeAccountSafety({role,page,go,admin=false,onSignedOut}:{role
   <Group>{(sessions||[]).map(v=><View key={v.kind+v.id} style={a.row}><View style={a.wide}><Text style={a.title}>{v.kind==='mobile'?'Приложение':'Браузер'}</Text><Text style={a.note}>{v.current?'Это устройство':'Вход действует до '+day(v.expires_at)}</Text></View>{!v.current&&<Pressable accessibilityRole="button" accessibilityLabel={'Выйти: '+(v.kind==='mobile'?'приложение':'браузер')} disabled={busy} onPress={()=>void act('/api/sessions',{action:'one',kind:v.kind,id:v.id})} style={[a.edit,busy&&s.disabled]}><Text style={a.editText}>Выйти</Text></Pressable>}</View>)}{sessions&&!sessions.length&&<View style={a.row}><Text style={a.note}>Других входов нет.</Text></View>}</Group>
   {others&&wide('Выйти на всех других устройствах',()=>void act('/api/sessions',{action:'others'}))}{shown}</View>;}
  if(page==='ai')return <View>
-  <Group><SwitchRow title="Разрешить ИИ видеть мои данные" note={aiValue==='Не выбрано'?'Вы ещё не выбрали':aiValue==='Включён'?'ИИ отвечает с учётом ваших броней и жилья':'ИИ отвечает только по правилам сервиса'} checked={!!permission?.allowed} disabled={busy||!permission} onChange={v=>void choose(v)}/></Group>
+  <Group><SwitchRow icon="sparkles" tint={tint} title="Разрешить ИИ видеть мои данные" note={aiValue==='Не выбрано'?'Вы ещё не выбрали':aiValue==='Включён'?'ИИ отвечает с учётом ваших броней и жилья':'ИИ отвечает только по правилам сервиса'} checked={!!permission?.allowed} disabled={busy||!permission} onChange={v=>void choose(v)}/></Group>
   {lead('Так ИИ-администратор отвечает точнее: он видит ваш вопрос, несколько последних сообщений и данные вашей роли. Фото, личные чаты и коды от замков он не видит.')}
   {lead('Ответы готовит внешний сервис OpenAI, данные могут обрабатываться за рубежом. Выключить можно в любой момент. Без разрешения ИИ всё равно ищет жильё и подсказывает по правилам.')}
   {permission&&!permission.decided&&wide('Оставить выключенным',()=>void choose(false))}
@@ -51,9 +51,9 @@ export function NativeAccountSafety({role,page,go,admin=false,onSignedOut}:{role
   {wide('Запросить удаление',()=>void act('/api/operations/safety/deletion',{action:'request'}),busy||loading||!confirmed,true)}</>}
   <Group space>{link('Что удаляется и что остаётся','/data-deletion')}</Group>{shown}</View>;
  return <View>
-  <Group><Row title="Вход и устройства" value={sessions?devices(sessions.length):undefined} onPress={()=>go('devices')}/><Row title="ИИ-помощник" value={aiValue} onPress={()=>go('ai')}/>{reports.length>0&&<Row title="Мои жалобы" value={reports.length} onPress={()=>go('reports')}/>}</Group>
+  <Group><Row icon="key" tint={tint} title="Вход и устройства" value={sessions?devices(sessions.length):undefined} onPress={()=>go('devices')}/><Row icon="sparkles" tint={tint} title="ИИ-помощник" value={aiValue} onPress={()=>go('ai')}/>{reports.length>0&&<Row icon="flag" tint={tint} title="Мои жалобы" value={reports.length} onPress={()=>go('reports')}/>}</Group>
   <Group space>{link('Политика конфиденциальности','/privacy')}{link('Условия сервиса','/terms')}</Group>
-  {admin&&<Group space><Row title="Запросы на удаление" value={deletions.length||'нет'} onPress={()=>go('requests')}/></Group>}
-  <Group space><Row title="Удалить аккаунт" value={requested?'запрос отправлен':undefined} danger onPress={()=>go('delete')}/></Group>
+  {admin&&<Group space><Row icon="alert" tint={tint} title="Запросы на удаление" value={deletions.length||'нет'} onPress={()=>go('requests')}/></Group>}
+  <Group space><Row icon="trash" title="Удалить аккаунт" value={requested?'запрос отправлен':undefined} danger onPress={()=>go('delete')}/></Group>
  </View>;
 }

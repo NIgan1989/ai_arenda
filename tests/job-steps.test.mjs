@@ -40,7 +40,7 @@ test('the card of the job, the map of the site and the map of the app share the 
   assert.match(chat, /runJobStep\(work,step as JobStepId\)/);
   assert.match(map, /cleanerStep\(actual \|\| chosen/);
   assert.match(map, /Маршрут до жилья/);
-  assert.ok(map.indexOf('{daySummary}') < map.indexOf("'Задания рядом'"), 'the day comes before the jobs nearby');
+  assert.ok(map.indexOf('{daySummary}') < map.indexOf("'Задания рядом"), 'the day comes before the jobs nearby');
   assert.match(app, /cleanerStep\(j,undefined,userId\)/);
   assert.match(app, /act\(j\.id,'start'\)/);
 });
