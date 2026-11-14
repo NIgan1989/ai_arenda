@@ -145,7 +145,7 @@ jobs:
         run: |
           ipa=ai-arenda-unsigned.ipa
           test -s "$ipa"
-          title='AI Аренда для iPhone: тестовая сборка без подписи'
+          title='AiQonaq для iPhone: тестовая сборка без подписи'
           {
             echo 'Тестовая сборка для пилота. Без подписи Apple: перед установкой её нужно подписать своим Apple ID. Не для App Store.'
             echo

@@ -8,8 +8,8 @@ import {Thinking} from './Thinking';
 const SHOW_AFTER=250,PILL_AFTER=1500;
 const native=Platform.OS!=='web';
 
-// A thin AI-gradient line along the top edge while a long action runs; after a second and a half also a glass pill with the «thinking» dots, low like a toast.
-// The pill stays away while the screen shows dots of its own.
+// A thin AI-gradient line along the top edge while a long action runs; after a second and a half also a glass pill with the waiting sign, low like a toast.
+// The pill stays away while the screen shows a waiting sign of its own.
 export function LoadingBar(){
   const insets=useSafeAreaInsets();
   const [busy,setBusy]=useState(loadingBusy()),[shown,setShown]=useState(false),[pill,setPill]=useState(false),[width,setWidth]=useState(0),[calm,setCalm]=useState(false);

@@ -1,0 +1,8 @@
+/* The name of the service as a drawing (components/brand.tsx). It takes its size from the text it stands in:
+   a capital letter of that text and a capital of the drawing are the same height. */
+.wordmark{display:block;flex:none;height:.96em;width:auto;overflow:visible}
+.wordmark-from{stop-color:var(--t-accent,#4F46E5)}
+.wordmark-to{stop-color:var(--t-ai-to,#06B6D4)}
+.wordmark[data-tone="night"]{color:#fff}
+.wordmark[data-tone="night"] .wordmark-from{stop-color:var(--t-dome-from,#A5B4FC)}
+.wordmark[data-tone="night"] .wordmark-to{stop-color:var(--t-dome-to,#22D3EE)}

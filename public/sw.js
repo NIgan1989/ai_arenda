@@ -15,7 +15,7 @@ self.addEventListener('push',event=>{
  }
  const path=allowed(data.url);
  // The notice itself says what happened: who, where and what.
- event.waitUntil(self.registration.showNotification(String(data.title||'AI Аренда').slice(0,120),{
+ event.waitUntil(self.registration.showNotification(String(data.title||'AiQonaq').slice(0,120),{
   body:String(data.body||'Есть новое событие.').slice(0,300),
   icon:'/brand-mark.png',badge:'/brand-mark.png',data:{url:path},tag:path,renotify:true
  }));

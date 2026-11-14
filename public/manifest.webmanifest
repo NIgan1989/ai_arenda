@@ -1,6 +1,10 @@
 {
- "id":"/", "name":"AI Аренда", "short_name":"AI Аренда", "lang":"ru",
+ "id":"/", "name":"AiQonaq", "short_name":"AiQonaq", "lang":"ru",
  "start_url":"/", "scope":"/", "display":"standalone",
- "background_color":"#f2f4f8", "theme_color":"#4f46e5",
- "icons":[{"src":"/brand-mark.png","sizes":"1254x1254","type":"image/png","purpose":"any"}]
+ "background_color":"#1e1b4b", "theme_color":"#4f46e5",
+ "icons":[
+  {"src":"/icon-192.png","sizes":"192x192","type":"image/png","purpose":"any"},
+  {"src":"/icon-512.png","sizes":"512x512","type":"image/png","purpose":"any"},
+  {"src":"/icon-maskable-512.png","sizes":"512x512","type":"image/png","purpose":"maskable"}
+ ]
 }
