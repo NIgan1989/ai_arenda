@@ -118,6 +118,33 @@ export function beamBox(a:{x:number;y:number},b:{x:number;y:number}){
  return {cx:(a.x+b.x)/2,cy:(a.y+b.y)/2,length:Math.hypot(dx,dy),angle:Math.atan2(dy,dx)*180/Math.PI};
 }
 
+// ---------- Stage 5 of the simple app: the mood of the map ----------
+// The pins say what happens at each place; the mood says how it all stands, in one soft light over the sheet.
+// alert: something is late or at risk; wait: an answer or a payment is awaited; lead: things are under way and led
+// (a booking ahead, a stay, a cleaning, an answer that came); calm: only prices and free jobs, and then there is no light at all.
+export type Mood='calm'|'lead'|'wait'|'alert';
+export function mapMood(pins:{tone?:PinTone}[]):Mood{
+ let mood:Mood='calm';
+ for(const p of pins){
+  if(p.tone==='alert')return 'alert';
+  if(p.tone==='pending')mood='wait';
+  else if(mood==='calm'&&(p.tone==='active'||p.tone==='offer'||p.tone==='booked'||p.tone==='booking'))mood='lead';
+ }
+ return mood;
+}
+// One breath of the light, in ms: the more it needs the person, the faster it breathes. Calm has none.
+export const MOOD_BEAT:Record<Mood,number>={calm:0,lead:4200,wait:2600,alert:1300};
+// A thing has come to a happy end (a booking is made, a cleaning is accepted): the key of the pin that turned green
+// since the last look. A pin that is green from the start says nothing: only the turn is the event.
+export function moodJoy(before:Record<string,PinTone>,after:{key:string;tone?:PinTone;was?:PinState}[]):string|null{
+ for(const p of after){
+  if(p.tone!=='booked')continue;
+  const was=before[p.key]??p.was?.tone;
+  if(was&&was!=='booked')return p.key;
+ }
+ return null;
+}
+
 // Every event the map shows, by role, for the documentation and the preview.
 export const MAP_EVENTS:{role:'guest'|'owner'|'cleaner'|'all';event:string;motion:string}[]=[
  {role:'all',event:'Новый набор меток (город, результаты, задания)',motion:'Метки падают на карту волной от центра'},
@@ -126,6 +153,9 @@ export const MAP_EVENTS:{role:'guest'|'owner'|'cleaner'|'all';event:string;motio
  {role:'all',event:'Метка больше не нужна',motion:'Метка тает и опускается'},
  {role:'all',event:'Ждём ответа владельца',motion:'Под меткой убывает полоска времени на ответ'},
  {role:'all',event:'ИИ-администратор сделал шаг сам',motion:'Цветное кольцо ИИ обегает метку, над ней на пару секунд поднимается строка «✦ ИИ подтвердил бронь»'},
+ {role:'all',event:'Общее настроение карты',motion:'Над шторкой мягкий свет: цвета ИИ, пока дела идут сами; янтарный, пока ждём ответа или оплаты; красный и частый, пока что-то просрочено; в покое света нет. Узор на шторке того же цвета'},
+ {role:'all',event:'Дело пришло к хорошему концу',motion:'Над шторкой поднимается золотой шаңырақ с лучами, поворачивается и гаснет'},
+ {role:'all',event:'Открыта карточка брони или уборки',motion:'Карта перелетает к жилью этого дела, метка приподнимается над карточкой'},
  {role:'guest',event:'Идёт поиск жилья',motion:'Волны радара из центра карты'},
  {role:'guest',event:'Выбор точки «рядом»',motion:'Метка-булавка поднимается, пока карту двигают, и ставится с кругом'},
  {role:'guest',event:'Найдены варианты',motion:'Лучший выбор ИИ отмечен на карте значком ✦ и цветным кольцом'},

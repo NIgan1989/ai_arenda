@@ -16,7 +16,8 @@ import {cleanerPin,dayRoute,routeLines,routeSummary} from './cleaner-map';
 import {latestMove} from '../../lib/ai-move-marks';
 import {TripHead,useTrip} from './Navigator';
 import {SwipeConfirm} from './SwipeConfirm';
-import {ROAD_BEAMS,beamOrigin,beams,roadBeams,roadKey,type BeamRoads} from './map-motion';
+import {ROAD_BEAMS,beamOrigin,beams,mapMood,moodJoy,roadBeams,roadKey,type BeamRoads,type PinTone} from './map-motion';
+import {MOOD_COLOR,MapMood} from './MapMood';
 import * as Location from 'expo-location';
 import {countdown,mapCities,validPoint,type MapPoint} from './map-math';
 import {MapSheetHead} from './MapSheetHead';
@@ -435,11 +436,15 @@ type Props = {
   // «На карте» on a page: the pin to bring into view and choose; onTargetDone when it was shown (or cannot be).
   target?: MapTarget | null;
   onTargetDone?: () => void;
+  // The card of one booking or cleaning is open over the map: the map shows where it is. cover: how much of the
+  // map that card hides, from the bottom, so the pin stands in the part that is still seen.
+  spot?: MapTarget | null;
+  cover?: number;
 };
 
 // The screen itself: the map, the avatar button over it, and the sheet with its three positions
 // (0: only the head, 1: a little over half of the screen, 2: almost all of it).
-export function MapHome({ role, accountId, data, menu, chats, onChanged, onOpenProcess, onOpenPage, onAsk, onIntent, onBook, onEdit, target, onTargetDone }: Props) {
+export function MapHome({ role, accountId, data, menu, chats, onChanged, onOpenProcess, onOpenPage, onAsk, onIntent, onBook, onEdit, target, onTargetDone, spot, cover = 0 }: Props) {
   // What the map kept from the last visit of this account in this role (map-memory.ts): the view, the chosen pin,
   // the last map answer and how each pin looked. A pin asked for by «На карте» wins over the remembered view.
   const scope = accountId + ':' + role;
@@ -639,6 +644,26 @@ export function MapHome({ role, accountId, data, menu, chats, onChanged, onOpenP
     const timer = setTimeout(() => setNotice(''), 4000);
     return () => clearTimeout(timer);
   }, [notice]);
+  // The mood of the map: what its pins say taken together (map-motion.ts). A pin that turns green plays the joy once.
+  const mood = mapMood(pins);
+  const [joy, setJoy] = useState(0);
+  const tones = useRef<Record<string, PinTone>>({});
+  useEffect(() => {
+    if (moodJoy(tones.current, pins)) setJoy(n => n + 1);
+    tones.current = Object.fromEntries(pins.map(p => [p.key, p.tone || 'home']));
+  }, [pins]);
+  // The pin of the booking or cleaning whose card is open: the map flies to it and lifts it, without choosing it.
+  // Its own pin first (the guest's booking, the performer's job), then the pin of its home.
+  const spotKey = (spot ? [spot.kind + ':' + spot.id, targetPin(role, spot, data)?.key || ''] : []).find(key => key && pins.some(p => p.key === key)) || '';
+  const spotted = !!spotKey;
+  // That card stands in place of this sheet: the sheet steps back, so its edge never shows from behind a shorter card,
+  // and the light of the mood moves to the top edge of the card.
+  const covered = !!spot && cover > 0;
+  const veil = useRef(new Animated.Value(1)).current, cardEdge = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    if (covered) cardEdge.setValue(cover);
+    Animated.timing(veil, { toValue: covered ? 0 : 1, duration: calmRef.current ? 0 : T.motion.base, useNativeDriver: false }).start();
+  }, [covered, cover]);
   const common: Common = { setScanning, accountId, data, mapData, city, publish, selected, setSelected, focus, setFocus, snap, showNow, expand: setSnap, onHead: setHead, onReach: setReach, onAsk, onIntent, onBook, onChanged, onOpenProcess, onOpenPage, onEdit };
   const center = mapCities[city] || validPoint(mapData?.center) || mapCities['Павлодар'];
 
@@ -655,12 +680,12 @@ export function MapHome({ role, accountId, data, menu, chats, onChanged, onOpenP
         center={center}
         pins={pins}
         selected={selected}
-        focus={focus}
+        focus={spotted ? spotKey : focus}
         lines={lines}
         heat={heat}
         sparks={sparks}
         onSelect={setSelected}
-        bottomInset={Math.min(sheetHeight, Math.round(height * 0.5))}
+        bottomInset={spotted && cover ? Math.min(cover, Math.round(height * 0.7)) : Math.min(sheetHeight, Math.round(height * 0.5))}
         topInset={topInset}
         focusKey={focusKey}
         picking={picking}
@@ -679,7 +704,8 @@ export function MapHome({ role, accountId, data, menu, chats, onChanged, onOpenP
       {(role === 'owner' || role === 'guest') && !selected && <PriceTip role={role} cards={data.approvals || []} onChanged={onChanged} onEdit={onEdit} />}
       {!!menu && <View style={h.menu}>{menu}</View>}
       {!!chats && <View style={h.chats}>{chats}</View>}
-      <Animated.View style={[h.sheet, { height: sheet }]} accessibilityViewIsModal={false}>
+      {!picking && <MapMood mood={mood} joy={joy} still={calm} bottom={covered ? cardEdge : sheet} />}
+      <Animated.View style={[h.sheet, { height: sheet, opacity: veil }]} accessibilityViewIsModal={false}>
         <View {...drag.handle.panHandlers}>
           <Pressable
             accessibilityRole="button"
@@ -687,7 +713,7 @@ export function MapHome({ role, accountId, data, menu, chats, onChanged, onOpenP
             onPress={() => setSnap(snap === 0 ? 1 : 0)}
             style={h.handleArea}
           >
-            <Grip />
+            <Grip color={mood === 'calm' ? undefined : MOOD_COLOR[mood]} />
           </Pressable>
         </View>
         <View style={h.grow} {...drag.body.panHandlers}>

@@ -13,6 +13,8 @@ export const s=StyleSheet.create({
   recommendationLabel:{...caption,color:C.muted},
   screen:{flex:1,backgroundColor:C.bg},shell:{flex:1,width:'100%',maxWidth:760,alignSelf:'center'},
   stage:{flex:1,minHeight:0},sheetLayer:{position:'absolute',top:0,right:0,bottom:0,left:0},sheetScrim:{position:'absolute',top:0,right:0,bottom:0,left:0,backgroundColor:C.scrim},
+  // Over the map with the card of one deal: the map stays bright, so the pin of that deal and its mood are seen.
+  sheetScrimDeal:{opacity:.4},
   pageSheet:{flex:1,minHeight:0,marginTop:44,backgroundColor:C.bg,borderTopLeftRadius:R.xl,borderTopRightRadius:R.xl,overflow:'hidden'},pageSheetFull:{marginTop:0,borderTopLeftRadius:0,borderTopRightRadius:0},
   // One opened booking or cleaning: the sheet is as tall as its card, so the map stays in view above it.
   pageSheetFit:{flexGrow:0,flexShrink:1,flexBasis:'auto',marginTop:'auto',maxHeight:'92%'},fitScroll:{flexGrow:0,flexShrink:1,flexBasis:'auto'},fitContent:{flexGrow:0},
