@@ -6,6 +6,7 @@ import {calendarEntries,dayLine,dayStart,type CalendarEntry} from '../lib/calend
 import {HUB_TABS,hubToday,type HubTab} from '../lib/property-hub';
 import {PriceTipBody} from './price-tip';
 import {RentalCalendar} from './rental-calendar';
+import {FlatAutopilotRow} from './flat-autopilot';
 import './property-hub.css';
 type Row=Record<string,any>;
 const money=(n:number)=>new Intl.NumberFormat('ru-RU').format(n)+' ₸';
@@ -38,6 +39,7 @@ export function PropertyHub({property,data,now,tab,open,onTab,onOpen,onEdit,onSt
    </>}
    {tab==='price'&&<Prices property={property} cards={(data.approvals||[]) as Approval[]} onEdit={onEdit} onChanged={onChanged}/>}
    {tab==='settings'&&<div className="hub-rows">
+    <FlatAutopilotRow propertyId={property.id} onChanged={onChanged}/>
     {row(<Pencil size={20}/>,'Объявление','Фото, описание, удобства, заезд',()=>onEdit())}
     {row(<ScrollText size={20}/>,'Правила и готовность','Автоподтверждение, депозит, готовность к заселению',()=>onStep('settings'))}
     {!Number(property.own_staff)&&row(<UserCheck size={20}/>,'Постоянный исполнитель',property.regular_cleaner_name||'Закрепите своего: уборки приходят сначала к нему',()=>onEdit('cleaner'))}

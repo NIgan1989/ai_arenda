@@ -56,3 +56,24 @@
 /* A screen opened from the menu: the way back to the menu sits where its title was. */
 .acct-back{display:inline-flex;justify-self:start;align-self:flex-start;align-items:center;gap:8px;min-height:44px;padding:0 12px 0 0;border:0;background:none;color:var(--t-ink-soft);font:inherit;font-size:14px;line-height:20px;font-weight:500;cursor:pointer}
 .acct-back:focus-visible{outline:2px solid var(--t-focus);outline-offset:2px}
+
+/* A screen opened from the menu: back arrow and the screen's name in one line. */
+.acct-top{display:flex;align-items:center;gap:4px;min-height:44px;margin:-4px 0 4px}
+.acct .acct-top h3{margin:0!important;font-size:22px!important;line-height:28px!important;font-weight:700!important;letter-spacing:-.2px;min-width:0;overflow-wrap:break-word}
+.acct-top .acct-back{width:44px;justify-content:center;padding:0;margin-left:-8px;border-radius:999px;color:var(--t-ink)}
+.acct-top .acct-back:hover{background:var(--t-glass-ink,#0e13240f)}
+.acct-stack{display:grid;gap:12px;min-width:0}
+.acct .acct-lead{margin:0 4px!important;font-size:14px!important;line-height:20px!important;color:var(--t-muted)}
+.acct-lead a{color:var(--t-accent)}
+.acct-static{cursor:default}.acct-static:hover{background:none!important}
+.acct-pill{flex:none;min-height:36px;padding:0 12px;border:1px solid var(--t-line);border-radius:999px;background:var(--t-surface);color:var(--t-ink);font:inherit;font-size:14px;font-weight:550;cursor:pointer}
+.acct-pill:disabled,.acct-wide:disabled{opacity:.5;cursor:default}
+.acct-wide{display:flex;align-items:center;justify-content:center;width:100%;min-height:48px;padding:8px 16px;border:1px solid var(--t-line);border-radius:16px;background:var(--t-surface);color:var(--t-ink);font:inherit;font-size:16px;font-weight:600;cursor:pointer}
+.acct-wide-danger{border-color:transparent;background:var(--t-danger);color:#fff}
+.acct-check{display:flex;align-items:center;gap:12px;min-height:44px;margin:0 4px;font-size:14px;line-height:20px;color:var(--t-ink);cursor:pointer}
+.acct-check>input{flex:none;width:20px;height:20px;margin:0;accent-color:var(--t-accent)}
+.acct .acct-link{padding:0 4px}
+.acct-form,.acct-done{display:grid;gap:12px;padding:16px}
+.acct-form>label:not(.acct-check){display:grid;gap:8px;font-size:14px;color:var(--t-muted)}.acct-form>.acct-check{margin:0}
+.acct-form p,.acct-done p,.acct-done h3{margin:0!important}
+.acct-request>span{display:grid;gap:4px}

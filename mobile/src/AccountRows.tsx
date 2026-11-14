@@ -3,7 +3,7 @@ import {View,Text,Pressable,Switch,StyleSheet} from 'react-native';
 import {C,type} from './styles';
 import {T} from './tokens';
 // The account screen is one grouped list: a row names a setting and shows its current value.
-export function Group({title,children}:{title?:string;children:ReactNode}){return <>{!!title&&<Text accessibilityRole="header" style={a.label}>{title}</Text>}<View style={a.group}>{children}</View></>;}
+export function Group({title,children,space=false}:{title?:string;children:ReactNode;space?:boolean}){return <>{!!title&&<Text accessibilityRole="header" style={a.label}>{title}</Text>}<View style={[a.group,space&&!title&&{marginTop:16}]}>{children}</View></>;}
 export function Row({title,value,note,onPress,open,danger=false,disabled=false,empty=false}:{title:string;value?:string|number|null;note?:string;onPress:()=>void;open?:boolean;danger?:boolean;disabled?:boolean;empty?:boolean}){
  const shown=value!==undefined&&value!==null&&value!=='';
  return <Pressable accessibilityRole="button" accessibilityState={open===undefined?{disabled}:{expanded:open,disabled}} disabled={disabled} onPress={onPress} style={({pressed})=>[a.row,pressed&&a.pressed]}><View style={shown?a.grow:a.wide}><Text style={[a.title,danger&&a.danger]}>{title}</Text>{!!note&&<Text style={a.note}>{note}</Text>}</View>{shown&&<Text numberOfLines={1} style={[a.value,empty&&a.empty]}>{value}</Text>}{!danger&&<Text style={a.chevron}>{open?'⌄':'›'}</Text>}</Pressable>;

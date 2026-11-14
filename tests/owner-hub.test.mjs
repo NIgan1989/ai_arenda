@@ -50,6 +50,9 @@ test('the card of a flat on the map is the hub of four tabs, on the site and in 
   assert.match(map, /ownerStepOnMap\(ownerNext\)/);
   for (const label of ['Календари площадок', 'Правила и готовность', 'Постоянный исполнитель', 'Точка на карте', 'Как видят гости', 'Создать уборку', 'Изменить цены']) assert.ok(hub.includes(label), label);
   assert.match(chat, /runOwnerStep\(stay,step as OwnerStepId\)/);
+  // The «Автопилот» plan is paid per flat: its switch is the first row of the flat's settings, on the site and in the app.
+  assert.match(hub, /tab==='settings'&&<div className="hub-rows">\s*<FlatAutopilotRow propertyId=\{property\.id\}/);
+  assert.match(read('mobile/src/FlatHub.tsx'), /<FlatAutopilotRow propertyId=\{flat\.id\}/);
   assert.match(chat, /ownerSteps\(b,data\.serverTime\)/, 'the card of the booking and the map share one rule');
   const app = read('mobile/src/MapHome.tsx'), flat = read('mobile/src/FlatHub.tsx');
   assert.match(app, /<FlatHubHead /);
