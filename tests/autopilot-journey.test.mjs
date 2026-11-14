@@ -38,6 +38,11 @@ test('autopilot journey: booking, test payment, check-in, chat, checkout, cleani
   assert.ok(ownerLog.some(e=>e.text==='ИИ подтвердил бронь'&&e.title)&&ownerLog.some(e=>e.text==='ИИ назначил исполнителя'),'the owner reads what the AI did, with the object');
   assert.ok(cleanerLog.some(e=>e.text==='Автопилот взял уборку'&&e.title),'the cleaner reads what the autopilot took');
   assert.ok(ownerLog.every((e,i)=>!i||ownerLog[i-1].at>=e.at),'the newest first');
+  // Each line opens what it is about: the booking, the cleaning.
+  assert.deepEqual(ownerLog.find(e=>e.text==='ИИ подтвердил бронь').open,{kind:'booking',id});assert.deepEqual(ownerLog.find(e=>e.text==='ИИ назначил исполнителя').open,{kind:'job',id:job.id});
+  assert.deepEqual(cleanerLog.find(e=>e.text==='Автопилот взял уборку').open,{kind:'job',id:job.id});
+  assert.ok(ownerLog.some(e=>e.text==='ИИ назначил исполнителя'&&e.who&&e.start>0)&&cleanerLog.every(e=>!e.who),'the owner reads who was assigned and when; a worker\'s own line carries no name');
+  assert.ok(ownerLog.filter(e=>e.kind!==undefined).length===0&&ownerLog.every(e=>!e.open||e.title),'a line that opens something names the home');
   assert.ok(!ownerMarks.some(m=>m.move==='took')&&!cleanerMarks.some(m=>m.move==='confirmed'),'each person sees only their own notices');
   // Arrival day. The guest arrives before paying: they are asked to pay in the card, not the owner to check a transfer.
   move(id,job.id,-(86400+600));

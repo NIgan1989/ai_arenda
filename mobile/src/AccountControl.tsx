@@ -1,4 +1,5 @@
 import {AiJournal,type JournalEntry} from './AiJournal';
+import type {JournalOpen} from '../../lib/ai-move-marks';
 import {journalToday} from '../../lib/ai-move-marks';
 import {ThinkingLine} from './Thinking';
 import {NativeAccountSafety,safetyTitles,type SafetyPage} from './AccountSafety';
@@ -19,7 +20,7 @@ const banks:[string,string][]=[['undecided','Не выбран'],['kaspi','Kaspi
 // The menu is short: who I am, the sections of my role, and five rows that each open their own screen
 // (profile, reliability, plan, settings, data). Each row shows its current value; switches and the bank choice save at once.
 type MenuView=''|'profile'|'trust'|'plan'|'journal'|'settings'|'safety'|`safety:${Exclude<SafetyPage,''>}`;
-export function AccountControl({role:active,onChanged,onSignedOut,onSwitchRole,onLogout,onOpenPage}:{onOpenPage?:(id:string)=>void;role:Role;onEdit:()=>void;onChanged?:()=>Promise<unknown>;onSignedOut:(result?:Row_)=>void|Promise<void>;onSwitchRole?:()=>void;onLogout?:()=>void}){
+export function AccountControl({role:active,onChanged,onSignedOut,onSwitchRole,onLogout,onOpenPage,onOpenEntry}:{onOpenPage?:(id:string)=>void;onOpenEntry?:(open:JournalOpen)=>(()=>void)|undefined;role:Role;onEdit:()=>void;onChanged?:()=>Promise<unknown>;onSignedOut:(result?:Row_)=>void|Promise<void>;onSwitchRole?:()=>void;onLogout?:()=>void}){
  const [view,setView]=useState<MenuView>(''),[editing,setEditing]=useState(false);
  const [account,setAccount]=useState<Row_|null>(null),[busy,setBusy]=useState(false),[error,setError]=useState(''),[message,setMessage]=useState(''),[users,setUsers]=useState<Row_|null>(null),[role,setRole]=useState(''),[search,setSearch]=useState('');
  useEffect(()=>{let live=true;request('/api/account').then(v=>{if(live)setAccount(v);}).catch(e=>{if(live)setError(e.message);});return()=>{live=false;};},[]);
@@ -47,7 +48,7 @@ export function AccountControl({role:active,onChanged,onSignedOut,onSwitchRole,o
   {!!error&&<Text accessibilityRole="alert" style={s.error}>{error}</Text>}{!!message&&<Text accessibilityLiveRegion="polite" style={a.saved}>{message}</Text>}
   {!view&&<Group>{worker&&<SwitchRow title="Принимаю предложения" note={/^(Принимает|Не принимает)/.test(account.workerStatus?.label||'')?undefined:account.workerStatus?.label} checked={(p.work_status||'available')==='available'} disabled={busy} onChange={work}/>}<Row title="Профиль" value={completion<100?completion+'%':'заполнен'} onPress={()=>go('profile')}/>{!!account.reliability&&<Row title="Надёжность" value={String(account.reliability.label||'').replace(/^Надёжность\s+/,'')} onPress={()=>go('trust')}/>}{!worker&&journal.length>0&&<Row title="Что сделал ИИ" value={today?today+' сегодня':undefined} onPress={()=>go('journal')}/>}{worker&&<Row title="Тариф и автопилот" value={today?'ИИ: '+today+' сегодня':undefined} onPress={()=>go('plan')}/>}</Group>}
   {view==='trust'&&!!account.reliability&&<><ReliabilityBadge value={account.reliability} title={owner?'Как вас видят гости':'Как вас видят владельцы'}/><Group title="Как повысить">{(reliabilityHints[active]||[]).map(h=><View key={h} style={a.row}><Text style={[a.title,{color:C.success}]}>✓</Text><Text style={[a.title,a.wide]}>{h}</Text></View>)}</Group></>}
-  {(view==='journal'||view==='plan'&&worker&&journal.length>0)&&<Group title={view==='plan'?'Что сделал ИИ':undefined}><AiJournal entries={journal} now={account.serverTime||Date.now()/1000}/></Group>}
+  {(view==='journal'||view==='plan'&&worker&&journal.length>0)&&<Group title={view==='plan'?'Что сделал ИИ':undefined}><AiJournal entries={journal} now={account.serverTime||Date.now()/1000} onOpen={onOpenEntry}/></Group>}
   {view==='plan'&&worker&&<NativeAutopilotPlan key={'plan:'+active} role="cleaner"/>}
   {view==='profile'&&<Group>{item('О себе',p.bio)}{item('Языки общения',p.languages)}{item(worker?'Город работы':owner?'Город объектов':'Город поиска',p.city)}{worker&&<>{item('Районы работы',p.districts)}{item('График',p.availability)}{item('Опыт и услуги',p.experience)}</>}{item('Телефон',p.contact)}</Group>}
   {view==='settings'&&<>

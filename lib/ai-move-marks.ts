@@ -64,23 +64,26 @@ export function latestMove(marks:unknown,about:{kind:string;id:string}[],now:num
 // ---------- The journal: everything the AI did for this person, one short line each ----------
 // Wider than the map: it also keeps what has no pin (a price advice, a forecast, a deposit returned).
 // Shown in the menu: under «Тариф и автопилот» for the cleaner, as its own short row for the guest and the owner.
-export type AiNote={kind:AiMark['kind']|'';id:string;text:string;at:number};
+// kind: what the id of the notice names. Besides the things a mark has, a note can name an application for a cleaning,
+// a price advice, a calendar window, a forecast, an offer to change a stay or a chat: the server turns each into the
+// booking, cleaning or home it is about (lib/ai-moves.ts), so every line says where it happened and opens it.
+export type AiNote={kind:AiMark['kind']|''|'application'|'price'|'window'|'forecast'|'stay'|'room';id:string;text:string;at:number};
 const NOTES:[string,AiNote['kind'],string][]=[
- ['owner:administrator-propose:','','ИИ предложил исполнителя'],
+ ['owner:administrator-propose:','application','ИИ предложил исполнителя'],
  ['owner:administrator-review-issue:','job','ИИ нашёл замечания в отчёте'],
  ['owner:administrator-checkin-payment:','booking','ИИ попросил гостя оплатить'],
  ['owner:administrator-checkin-ready:','booking','ИИ ждёт готовности жилья'],
- ['owner:price:','','ИИ посоветовал цену'],
- ['owner:window:','','ИИ нашёл окно в календаре'],
- ['owner:forecast:','','ИИ составил прогноз загрузки'],
+ ['owner:price:','price','ИИ посоветовал цену'],
+ ['owner:window:','window','ИИ нашёл окно в календаре'],
+ ['owner:forecast:','forecast','ИИ составил прогноз загрузки'],
  ['owner:autopilot-week:','','ИИ подвёл итоги недели'],
- ['owner:guest-question:','','ИИ передал вопрос гостя'],
+ ['owner:guest-question:','room','ИИ передал вопрос гостя'],
  ['guest:administrator-checkin-pay:','booking','ИИ попросил оплатить на месте'],
  ['owner:offer:','cleaning-offer','ИИ предложил уборку исполнителю'],
  // Payments are an imitation until the launch: the line says so, as the notice does.
  ['guest:test-deposit-return:','booking','ИИ вернул депозит (тест, без перевода)'],
- ['guest:stay:','','ИИ предложил изменить проживание'],
- ['guest:review-request:','','ИИ спросил, как прошло'],
+ ['guest:stay:','stay','ИИ предложил изменить проживание'],
+ ['guest:review-request:','booking','ИИ спросил, как прошло'],
  ['cleaner:day-plan:','','ИИ составил план дня'],
  ['cleaner:offer:','cleaning-offer','ИИ предложил уборку']
 ];
@@ -90,11 +93,47 @@ export function aiNoteOf(dedupe:unknown,at:unknown,body?:unknown):AiNote|null{
  for(const [prefix,kind,text] of NOTES)if(dedupe.startsWith(prefix)){const id=dedupe.slice(prefix.length).split(':')[0];return {kind,id:kind?id:'',text,at};}
  return null;
 }
-// «сегодня 14:05», «вчера 09:30», «12.11 18:40», in Kazakhstan time (UTC+5) as everywhere in the service.
-export function journalWhen(at:number,now:number){
- const zone=5*3600,d=new Date((at+zone)*1000),day=(t:number)=>Math.floor((t+zone)/86400),two=(n:number)=>String(n).padStart(2,'0');
- const clock=two(d.getUTCHours())+':'+two(d.getUTCMinutes()),ago=day(now)-day(at);
- return ago===0?'сегодня '+clock:ago===1?'вчера '+clock:two(d.getUTCDate())+'.'+two(d.getUTCMonth()+1)+' '+clock;
-}
 // How many of these lines are from today: the number next to the row of the menu.
 export function journalToday(entries:{at:number}[],now:number){const zone=5*3600,day=(t:number)=>Math.floor((t+zone)/86400);return entries.filter(e=>day(e.at)===day(now)).length;}
+
+// ---------- A line of the journal opens what it is about ----------
+// open: the booking, the cleaning, the home or the chat of the line. The same addresses a push opens (lib/web-push.ts).
+export type JournalOpen={kind:'booking'|'job'|'property'|'room';id:string};
+// who: the person the step was about (the worker of a cleaning, for its owner). start: when that cleaning or stay begins.
+export type JournalLine={at:number;text:string;title:string;open?:JournalOpen;who?:string;start?:number};
+const J_ZONE=5*3600,J_MONTHS=['января','февраля','марта','апреля','мая','июня','июля','августа','сентября','октября','ноября','декабря'];
+const jTwo=(n:number)=>String(n).padStart(2,'0'),jDate=(at:number)=>new Date((at+J_ZONE)*1000);
+// «14:05» of a line, and the day that heads its group: «Сегодня», «Вчера», «12 ноября».
+export function journalClock(at:number){const d=jDate(at);return jTwo(d.getUTCHours())+':'+jTwo(d.getUTCMinutes());}
+export function journalDay(at:number,now:number){
+ const day=(t:number)=>Math.floor((t+J_ZONE)/86400),ago=day(now)-day(at),d=jDate(at);
+ return ago===0?'Сегодня':ago===1?'Вчера':d.getUTCDate()+' '+J_MONTHS[d.getUTCMonth()];
+}
+// The second line of an entry: who and when, so the step reads whole without opening it.
+// «Айгуль · уборка 14 ноября, 06:30», «заезд 15 ноября, 14:00».
+export function journalMeta(l:JournalLine){
+ const parts:string[]=[];if(l.who)parts.push(l.who);
+ if(typeof l.start==='number'&&l.start>0&&(l.open?.kind==='job'||l.open?.kind==='booking')){const d=jDate(l.start);parts.push((l.open.kind==='job'?'уборка ':'заезд ')+d.getUTCDate()+' '+J_MONTHS[d.getUTCMonth()]+', '+journalClock(l.start));}
+ return parts.join(' · ');
+}
+// Lines under the heads of their days, in the order they came (the newest first).
+export function journalGroups<T extends JournalLine>(lines:T[],now:number):{day:string;lines:T[]}[]{
+ const out:{day:string;lines:T[]}[]=[];
+ for(const l of lines){const day=journalDay(l.at,now),last=out[out.length-1];if(last&&last.day===day)last.lines.push(l);else out.push({day,lines:[l]});}
+ return out;
+}
+export function journalHref(role:string,open?:JournalOpen|null):string|null{
+ if(!open||!/^[A-Za-z0-9_-]{1,100}$/.test(open.id)||!['guest','owner','cleaner'].includes(role))return null;
+ const base='/workspace/'+role+'/';
+ if(open.kind==='room')return base+'chats?room='+open.id;
+ if(open.kind==='booking')return role==='cleaner'?null:base+'bookings?entity='+open.id;
+ if(open.kind==='job')return role==='owner'?base+'cleaning?entity='+open.id:role==='cleaner'?base+'assignments?entity='+open.id:null;
+ return role==='owner'?base+'properties?entity='+open.id:null;
+}
+// Two notices about one step (the owner is told twice, by two rules) read as one line: the same words about
+// the same thing within the same minute are kept once. Lines come newest first.
+export const journalKey=(l:JournalLine)=>[l.text,l.title,l.open?.kind||'',l.open?.id||'',Math.floor(l.at/60)].join('\u0001');
+export function mergeJournal<T extends JournalLine>(lines:T[]):T[]{
+ const seen=new Set<string>();
+ return lines.filter(l=>{const k=journalKey(l);if(seen.has(k))return false;seen.add(k);return true;});
+}
