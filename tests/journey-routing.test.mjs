@@ -62,19 +62,24 @@ test('the public router is asked for steps, and steps without the router\'s word
 });
 
 test('a search beam follows the roads to the public point of a published home, from a rounded place, and stores nothing',async()=>{
- const f=await ready(),original=globalThis.fetch;let asked=[];
- globalThis.fetch=async url=>{asked.push(String(url));return Response.json({code:'Ok',routes:[{distance:1500,duration:300,geometry:{type:'LineString',coordinates:[[76.941,52.281],[76.95,52.284],[76.955,52.285]]}}]});};
+ const f=await ready(),original=globalThis.fetch;let asked=[];const key={STADIA_API_KEY:'test-key-12345'},place={longitude:76.94023,latitude:52.28744};
+ // [76.94,52.287] → [76.95,52.287] as polyline6.
+ globalThis.fetch=async (url,init)=>{asked.push(JSON.parse(init.body));return Response.json({code:'Ok',routes:[{distance:700,duration:120,geometry:'o`jvbB_m`wqC?_pR'}]});};
  try{
   f.db.raw.prepare('UPDATE properties SET published=1 WHERE id=?').run(f.property);
-  await assert.rejects(buildBeamRoute(f.owner,'owner',{propertyId:f.property,longitude:76.94123,latitude:52.28144}),e=>e.status===403);
-  await assert.rejects(buildBeamRoute(f.guest,'guest',{propertyId:'nothing',longitude:76.94123,latitude:52.28144}),e=>e.status===404);
+  await assert.rejects(buildBeamRoute(f.owner,'owner',{propertyId:f.property,...place},key),e=>e.status===403);
+  await assert.rejects(buildBeamRoute(f.guest,'guest',{propertyId:'nothing',...place},key),e=>e.status===404);
+  // Without the paid router there is no road and the public router is left to the trips.
+  await assert.rejects(buildBeamRoute(f.guest,'guest',{propertyId:f.property,...place}),e=>e.status===503);
   assert.equal(asked.length,0);
-  const result=await buildBeamRoute(f.guest,'guest',{propertyId:f.property,longitude:76.94123,latitude:52.28144});
-  assert.deepEqual(result.path,[[76.941,52.281],[76.95,52.284],[76.955,52.285]]);assert.equal(result.distance,1500);
+  const result=await buildBeamRoute(f.guest,'guest',{propertyId:f.property,...place},key);
+  assert.deepEqual(result.path,[[76.94,52.287],[76.95,52.287]]);assert.equal(result.distance,700);
   // The guest's place goes out rounded; the home's point is the middle of its public cell, not its address.
-  assert.match(asked[0],/76\.94100,52\.28100;76\.95500,52\.28500/);
+  assert.deepEqual(asked[0].locations.map(l=>[l.lon,l.lat].map(v=>Math.round(v*1000)/1000)),[[76.94,52.287],[76.955,52.285]]);
   assert.equal(f.db.raw.prepare('SELECT COUNT(*) n FROM journey_sessions').get().n,0);
+  // A trip's route is not held back by the beams.
+  await buildJourneyRoute(f.guest,'guest',body(f),key);
   f.db.raw.prepare('UPDATE properties SET published=0 WHERE id=?').run(f.property);
-  await assert.rejects(buildBeamRoute(f.guest,'guest',{propertyId:f.property,longitude:76.94123,latitude:52.28144}),e=>e.status===404);
+  await assert.rejects(buildBeamRoute(f.guest,'guest',{propertyId:f.property,...place},key),e=>e.status===404);
  }finally{globalThis.fetch=original;f.db.close();}
 });

@@ -45,19 +45,15 @@ export async function buildBeamRoute(s:RentalService,role:Role,b:Row,config:Oper
  const shown=publicPoint(p),target:[number,number]=[shown.longitude,shown.latitude];
  if(geoDistance(origin,target)>60000)throw new DomainError('Жильё слишком далеко для линии по дорогам.',400);
  const stadia=typeof config.STADIA_API_KEY==='string'&&/^[A-Za-z0-9-]{8,128}$/.test(config.STADIA_API_KEY)?config.STADIA_API_KEY:'';
- await reserve(s,'beam:user:'+s.userId,3600,40);if(!stadia)await reserve(s,'route:global',2,1);
- let url:URL,init:RequestInit;
- if(stadia){
-  url=new URL('https://api.stadiamaps.com/route/v1');url.searchParams.set('api_key',stadia);
-  init={method:'POST',headers:{'Content-Type':'application/json','Accept':'application/json'},body:JSON.stringify({locations:[{lon:origin[0],lat:origin[1],type:'break'},{lon:target[0],lat:target[1],type:'break'}],costing:'auto',format:'osrm',shape_format:'polyline6',units:'kilometers'})};
- }else{
-  const base=httpsEndpoint(config.ROUTING_CAR_URL||'https://routing.openstreetmap.de/routed-car/route/v1');
-  url=new URL(base.href.replace(/\/$/,'')+'/driving/'+origin.map(v=>v.toFixed(5)).join(',')+';'+target.map(v=>v.toFixed(5)).join(','));url.search=new URLSearchParams({overview:'full',geometries:'geojson',steps:'false',alternatives:'false'}).toString();
-  init={headers:{'Accept':'application/json','User-Agent':'AIArenda-Pilot/1.0'}};
- }
+ // Only the paid router draws beams: the public one allows a route every two seconds for the whole service,
+ // and that is kept for the way of a trip. Without the key the beam stays straight.
+ if(!stadia)throw new DomainError('Линия по дорогам недоступна.',503);
+ await reserve(s,'beam:user:'+s.userId,3600,40);
+ const url=new URL('https://api.stadiamaps.com/route/v1');url.searchParams.set('api_key',stadia);
+ const init:RequestInit={method:'POST',headers:{'Content-Type':'application/json','Accept':'application/json'},body:JSON.stringify({locations:[{lon:origin[0],lat:origin[1],type:'break'},{lon:target[0],lat:target[1],type:'break'}],costing:'auto',format:'osrm',shape_format:'polyline6',units:'kilometers'})};
  try{
   const response=await fetch(url,{...init,signal:AbortSignal.timeout(8000),redirect:'manual'});if(!response.ok)throw Error();const raw=await response.text();if(raw.length>2000000)throw Error();
-  const parsed=readRouteGeometry(JSON.parse(raw),stadia?6:5),line=parsed.geometry.coordinates;
+  const parsed=readRouteGeometry(JSON.parse(raw),6),line=parsed.geometry.coordinates;
   // A road that starts or ends far from the two points is not the way between them.
   if(geoDistance(origin,line[0])>1000||geoDistance(target,line.at(-1)!)>1000)throw Error();
   // The line is only drawn, so a few hundred points are enough.
