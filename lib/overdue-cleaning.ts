@@ -38,6 +38,8 @@ async function sweepUnclaimed(db:D1Database,at:number,result:Row){
    const until=new Intl.DateTimeFormat('ru-RU',{hour:'2-digit',minute:'2-digit',timeZone:'Asia/Almaty'}).format(new Date(window.end*1000));
    const r=await db.batch([
     q(db,"UPDATE cleaning_jobs SET start=?,end=?,overdue_step=1 WHERE id=? AND version=? AND status='open' AND assigned_to IS NULL AND overdue_step=0",window.start,window.end,j.id,j.version),
+    // Answers to the old time do not count for the new one: cleaners answer again.
+    q(db,"UPDATE applications SET status='rejected' WHERE job_id=? AND status='pending' AND EXISTS(SELECT 1 FROM cleaning_jobs WHERE id=? AND overdue_step=1 AND end=?)",j.id,j.id,window.end),
     q(db,"INSERT OR IGNORE INTO notifications SELECT ?,?,?,?,0,? WHERE EXISTS(SELECT 1 FROM cleaning_jobs WHERE id=? AND overdue_step=1 AND end=?)",uuid(),j.owner_id,'ИИ-администратор: никто не взял уборку «'+title+'» вовремя. Я продлил поиск до '+until+'.'+why,'owner:unclaimed-reposted:'+j.id+':'+j.end,at,j.id,window.end),
     q(db,"INSERT INTO audit_events SELECT ?,'ai-administrator',?,'job.unclaimed_reposted',? WHERE EXISTS(SELECT 1 FROM cleaning_jobs WHERE id=? AND overdue_step=1 AND end=?)",uuid(),j.id,at,j.id,window.end)]);
    if(r[0].meta.changes)result.reposted++;continue;

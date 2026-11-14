@@ -146,3 +146,15 @@ test('the owner looks again on a new window or closes a cleaning done without a 
   assert.equal(f.db.raw.prepare('SELECT COUNT(*) n FROM cleaning_holds WHERE job_id=?').get(f.job.id).n,0);
  }finally{f.db.close();}
 });
+test('answers to the old time do not count after a repost, and a cleaning closed without a cleaner owes nobody',async()=>{
+ const f=await fixture();try{
+  unclaimed(f,now()-60);
+  f.db.raw.prepare("INSERT INTO applications(id,job_id,user_id,status,created_at) VALUES ('old-answer',?,'cleaner','pending',?)").run(f.job.id,now()-9000);
+  await f.owner.jobAction(f.job.id,{action:'repost'});
+  assert.equal(f.db.raw.prepare("SELECT status FROM applications WHERE id='old-answer'").get().status,'rejected');
+  f.db.raw.prepare('UPDATE cleaning_jobs SET end=? WHERE id=?').run(now()-60,f.job.id);
+  await f.owner.jobAction(f.job.id,{action:'close',confirmed:true});
+  const {recordFinance}=await load('finance');
+  await assert.rejects(recordFinance(f.owner,{kind:'job_payment',jobId:f.job.id,amount:2000,confirmed:true,note:'Оплата исполнителю',requestKey:'pay'}),/платить некому/);
+ }finally{f.db.close();}
+});

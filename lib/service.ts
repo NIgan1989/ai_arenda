@@ -258,6 +258,8 @@ export class RentalService {
       if(!window)throw new DomainError('Новое время не найти: гость уже в жилье или следующий заезд меньше чем через полчаса. Закройте уборку, если убрали, или отмените её.',409);
       const r=await this.db.batch([
         this.query("UPDATE cleaning_jobs SET start=?,end=?,overdue_step=0 WHERE id=? AND version=? AND status='open' AND assigned_to IS NULL",window.start,window.end,j.id,j.version),
+        // Cleaners answered the old time, not this one: they answer again, nobody is assigned to dates they did not agree to.
+        this.query("UPDATE applications SET status='rejected' WHERE job_id=? AND status='pending' AND EXISTS(SELECT 1 FROM cleaning_jobs WHERE id=? AND start=? AND end=?)",j.id,j.id,window.start,window.end),
         this.audit(j.id,'job.reposted')]);
       if(!r[0].meta.changes)throw new DomainError('Задание уже изменилось. Обновите карточку.',409);
       return {message:'Уборка снова в поиске до '+new Intl.DateTimeFormat('ru-RU',{hour:'2-digit',minute:'2-digit',timeZone:'Asia/Almaty'}).format(new Date(window.end*1000))+'. Отклики появятся в карточке.'};

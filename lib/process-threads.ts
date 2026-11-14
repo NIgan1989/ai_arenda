@@ -124,7 +124,7 @@ export function cleaningThread(j: Row, data: Row, now: number): ProcessThread {
   const did = aiDid(data, 'owner', 'job', j.id), userId = data?.user?.id;
   const assigned = !!j.assigned_to && j.status !== 'open', working = j.status === 'in_progress';
   const reported = ['submitted', 'completed'].includes(j.status), accepted = j.status === 'completed';
-  const paid = accepted && (Number(j.settlement_paid) >= Number(j.fee) || !!j.settled_at || j.guarantee === 'paid');
+  const paid = accepted && (!j.assigned_to || Number(j.settlement_paid) >= Number(j.fee) || !!j.settled_at || j.guarantee === 'paid');
   // С резервом (гарантия оплаты) платит сервис; без него владелец рассчитывается сам и отмечает оплату.
   const service = !!j.guarantee || !Number(j.fee);
   const pending = (data?.applications || []).filter((a: Row) => a.job_id === j.id && a.status === 'pending').length;
@@ -142,7 +142,7 @@ export function cleaningThread(j: Row, data: Row, now: number): ProcessThread {
       note: working ? (j.end > now ? 'Исполнитель убирает · ещё ' + left(j.end - now) : 'Срок уборки прошёл') : 'Уборка в ' + threadWhen(j.start, now) },
     { key: 'check', label: 'Приёмка', by: accepted ? (aiAccepts ? 'ai' : 'owner') : auto ? 'ai' : 'you', at: j.submitted_at || j.end,
       note: accepted ? (aiAccepts ? 'ИИ принял уборку' : 'Уборка принята') : auto ? 'ИИ проверяет фото' : 'Отчёт ждёт вашей проверки' },
-    { key: 'pay', label: 'Оплата', by: service ? 'ai' : 'you', at: j.settled_at || undefined, note: paid ? 'Исполнителю заплачено' : service ? 'Сервис заплатит из резерва' : 'Рассчитайтесь с исполнителем и отметьте оплату' },
+    { key: 'pay', label: 'Оплата', by: service ? 'ai' : 'you', at: j.settled_at || undefined, note: accepted && !j.assigned_to ? 'Убрано без исполнителя' : paid ? 'Исполнителю заплачено' : service ? 'Сервис заплатит из резерва' : 'Рассчитайтесь с исполнителем и отметьте оплату' },
   ];
   const done = [assigned, !!j.checkout_confirmed && assigned, reported, accepted, paid];
   const t = place(steps, done, i => i === 0 || i === 3 || i === 4 || (i === 1 ? now >= j.start - 3600 : working));
