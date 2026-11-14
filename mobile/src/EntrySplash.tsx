@@ -26,6 +26,8 @@ const values=()=>({
 });
 
 // The status bar belongs to whatever is on the screen: light signs over the night plate, dark ones over the app.
+// It is mounted once, at the root of the app (App.tsx), and never inside the splash: when the last status bar of the
+// app unmounts, Android goes back to its own white signs, which are lost on a light screen.
 export function EntryStatusBar(){
   const covered=useSyncExternalStore(subscribeLoading,isEntryCovered,isEntryCovered);
   return <StatusBar barStyle={covered?'light-content':'dark-content'} backgroundColor={covered?C.night:C.bg}/>;
@@ -81,7 +83,6 @@ export function EntrySplash(){
   const grow=(from:number,till:number)=>a.open.interpolate({inputRange:[0,1],outputRange:[from,till]});
   const up=(value:Animated.Value)=>({opacity:value,transform:[{translateY:value.interpolate({inputRange:[0,1],outputRange:[12,0]})}]});
   return <Animated.View pointerEvents={opening?'none':'auto'} accessibilityLabel={BRAND_NAME} accessibilityRole="image" style={[st.screen,{opacity:a.fade}]}>
-    <EntryStatusBar/>
     <View style={st.stage}>
       <View style={st.sign}>
         <Animated.View style={[st.lid,{opacity:a.lid}]}/>
