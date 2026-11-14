@@ -10,7 +10,8 @@ export function guestLine(b: Row | null | undefined, now: number, paymentMode?: 
   if (b.status === 'requested') return 'Ждём ответа владельца.';
   const step = guestSteps(b, now, paymentMode).find(s => s.id !== 'late');
   if (!step) return null;
-  if (step.id === 'pay') return 'Оплатите бронь, чтобы она не снялась → Заезд ' + threadWhen(b.start, now);
+  // One payment covers the stay and the refundable deposit.
+  if (step.id === 'pay') return (b.terms?.deposit > 0 && b.terms?.deposit_status === 'pending' ? 'Оплатите бронь и депозит одним платежом' : 'Оплатите бронь, чтобы она не снялась') + ' → Заезд ' + threadWhen(b.start, now);
   if (step.id === 'deposit') return 'Внесите депозит, он вернётся после выезда → Заезд ' + threadWhen(b.start, now);
   if (step.id === 'checkin') {
     // The owner confirms the check-in only after the payment, the deposit and the readiness of the home:
