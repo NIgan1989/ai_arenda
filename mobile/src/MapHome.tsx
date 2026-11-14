@@ -20,6 +20,7 @@ import {ROAD_BEAMS,beamOrigin,beams,roadBeams,roadKey,type BeamRoads} from './ma
 import * as Location from 'expo-location';
 import {countdown,mapCities,validPoint,type MapPoint} from './map-math';
 import {MapSheetHead} from './MapSheetHead';
+import {AutopilotThreads} from './AutopilotThreads';
 import {NowCard as NowCardView} from './NowCard';
 import {PAST_TEXT,chipDraft,freshDraft,guestRequestFromText,guestSummary,matchingBody,newDraft,shownReasons,type GuestDraft} from './ai-request';
 import type {HeadAction} from './head-line';
@@ -320,6 +321,8 @@ function OwnerPanel({data,mapData,publish,snap,showNow,expand,onHead,onAsk,onInt
  </View>;
  return <View style={h.block}>
   <HeadSlot onHeight={onHead}><MapSheetHead role="owner" counts={{requests:ownerWaiting(data,data.user?.id||'',clock)}} text={asked} onText={setAsked} onSend={text=>{setAsked('');onAsk(text);}} onChip={action=>{/* A guest waiting for a quick answer is in this sheet; other requests are on their page. */if(action==='requests'){if(offers.length)expand(1);else onOpenPage('bookings');}else if(action==='calendar')onOpenPage('calendar');else if(action==='add-property')onIntent('add-property');}} now={card} onNow={()=>openNow(card,{expand,onOpenProcess,onOpenPage})}>
+   {/* Every booking and cleaning from start to end and the step it is at: the autopilot at work, seen on entering. */}
+   {flats.length>0&&<AutopilotThreads role="owner" data={data} now={serverNow(data)} onOpen={(kind,id)=>onOpenProcess(kind,id)}/>}
    {snap===0&&!card&&Array.isArray(data.ownProperties)&&!flats.length&&<Text style={h.note}>Добавьте первое жильё, и оно появится на карте.</Text>}
    {snap===0&&!card&&searching>0&&<Text style={h.note}>Сейчас {searching} {plural(searching,'гость ищет','гостя ищут','гостей ищут')} жильё в городе. Где спрос выше, карта светится ярче.</Text>}
   </MapSheetHead></HeadSlot>
@@ -400,6 +403,7 @@ function CleanerPanel({data,mapData,city,publish,snap,showNow,expand,onHead,onAs
  return <View style={h.block}>
   <HeadSlot onHeight={onHead}>{nav.trip?<TripHead nav={nav} onOpen={()=>{const id=nav.trip!.id;nav.close();onOpenProcess('job',id);}}/>:<MapSheetHead role="cleaner" text={asked} onText={setAsked} onSend={text=>{setAsked('');onAsk(text);}} onChip={action=>{if(action==='nearby')expand(1);else if(action==='schedule')onOpenPage('calendar');}} now={card} onNow={()=>openNow(card,{expand,onOpenProcess,onOpenPage})}>
    {!!nav.error&&<Text accessibilityRole="alert" style={h.error}>{nav.error}</Text>}
+   <AutopilotThreads role="cleaner" data={data} now={clock} onOpen={(kind,id)=>onOpenProcess(kind,id)}/>
   </MapSheetHead>}</HeadSlot>
   {snap>0&&<>
    {mine.length>0&&<Text accessibilityRole="header" style={h.cardTitle}>{route.length?'Маршрут дня':'Ваше задание'}</Text>}
