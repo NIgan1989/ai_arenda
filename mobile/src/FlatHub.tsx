@@ -7,6 +7,7 @@ import {request} from './api';
 import {money,uid,type Row} from './model';
 import {PriceTipBody} from './PriceTip';
 import {RentalCalendar} from './RentalCalendar';
+import {FlatAutopilotRow} from './FlatAutopilot';
 import {Action,h} from './SheetParts';
 import {C,type} from './styles';
 import {T} from './tokens';
@@ -74,6 +75,7 @@ export function FlatHub({flat,data,now,tab,onOpen,onEdit,onChanged}:Omit<Props,'
   </View>;
  }
  return <View style={f.panel}>
+  <FlatAutopilotRow propertyId={flat.id} onChanged={onChanged}/>
   {row('Объявление','Фото, описание, удобства, заезд',()=>onEdit(null))}
   {row('Правила и готовность','Автоподтверждение, депозит, готовность к заселению',()=>onEdit('settings'))}
   {!Number(flat.own_staff)&&row('Постоянный исполнитель',flat.regular_cleaner_name||'Закрепите своего: уборки приходят сначала к нему',()=>onEdit('cleaner'))}

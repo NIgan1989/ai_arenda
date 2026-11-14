@@ -63,7 +63,7 @@ export function latestMove(marks:unknown,about:{kind:string;id:string}[],now:num
 
 // ---------- The journal: everything the AI did for this person, one short line each ----------
 // Wider than the map: it also keeps what has no pin (a price advice, a forecast, a deposit returned).
-// Shown in the menu, under «Тариф и автопилот» for the owner and the cleaner and as its own short row for the guest.
+// Shown in the menu: under «Тариф и автопилот» for the cleaner, as its own short row for the guest and the owner.
 export type AiNote={kind:AiMark['kind']|'';id:string;text:string;at:number};
 const NOTES:[string,AiNote['kind'],string][]=[
  ['owner:administrator-propose:','','ИИ предложил исполнителя'],

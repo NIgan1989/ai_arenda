@@ -36,9 +36,11 @@ test('the menu is short: five rows open their own screens, the rest stays one ta
   const { readFileSync } = await import('node:fs');
   const read = path => readFileSync(new URL('../' + path, import.meta.url), 'utf8');
   for (const text of [read('components/account-control.tsx'), read('mobile/src/AccountControl.tsx')]) {
-    // «journal» is the guest's short row «Что сделал ИИ»; the owner and the cleaner read the same journal inside «plan».
+    // «journal» is the short row «Что сделал ИИ» of the guest and the owner; the cleaner reads the same journal inside «plan».
+    // The owner's plan is paid per flat, so it is switched in the flat's settings, not in the menu.
     assert.match(text, /type MenuView=''\|'profile'\|'trust'\|'plan'\|'journal'\|'settings'\|'safety'/);
-    assert.match(text, /!owner&&!worker&&[^<]*'Что сделал ИИ'|!owner&&!worker&&journal\.length>0&&<Row title="Что сделал ИИ"/, 'the journal row is only the guest\'s');
+    assert.match(text, /!worker&&[^<]*'Что сделал ИИ'|!worker&&journal\.length>0&&<Row title="Что сделал ИИ"/, 'the journal row is the guest\'s and the owner\'s');
+    assert.match(text, /worker&&(open\(Sparkles,|<Row title=)["']Тариф и автопилот/, 'only the cleaner has the plan in the menu');
     for (const view of ['profile', 'trust', 'plan', 'settings', 'safety']) assert.ok(text.includes("view==='" + view + "'"), view);
     assert.match(text, /'properties'\]:\['jobs'\]/, "the owner's objects and the cleaner's search for jobs live on the map");
   }

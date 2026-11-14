@@ -89,7 +89,7 @@ export async function stopPlan(service:RentalService,role:PlanRole){
  const at=epoch(),plan=await planOf(service.db,service.userId,role);
  if(!plan||plan.status==='paused')return {message:'Автопилот уже выключен.'};
  const s=await planSettings(service.db);
- if(plan.status==='active'&&s.charge){await q(service.db,'UPDATE autopilot_plans SET auto_renew=0,version=version+1,updated_at=? WHERE user_id=? AND role=?',at,service.userId,role).run();return {message:`Автопилот работает до ${dateText(plan.period_end)} и не продлится. Включить снова можно в профиле.`};}
+ if(plan.status==='active'&&s.charge){await q(service.db,'UPDATE autopilot_plans SET auto_renew=0,version=version+1,updated_at=? WHERE user_id=? AND role=?',at,service.userId,role).run();return {message:`Автопилот работает до ${dateText(plan.period_end)} и не продлится. Включить снова можно ${role==='owner'?'в настройках жилья':'в меню'}.`};}
  await pause(service.db,plan,at,role==='owner'?'Автопилот выключен. Объекты в режиме «Я сам»: запросы гостей приходят вам.':'Автопилот выключен. Предложения уборок снова приходят вам на решение.');
  return {message:role==='owner'?'Автопилот выключен. Объекты переведены в режим «Я сам».':'Автопилот выключен.'};
 }
@@ -190,7 +190,7 @@ export async function sweepPlans(db:D1Database,at=epoch()){
  const s=await planSettings(db),result={renewed:0,grace:0,paused:0,reminded:0,dayPlans:0,reports:0};
  const due=await rows(db,`SELECT * FROM autopilot_plans WHERE (status IN ('trial','active') AND period_end<=?) OR status='grace' ORDER BY period_end LIMIT 100`,at);
  for(const plan of due){
-  if(plan.status!=='grace'&&!plan.auto_renew){if(await pause(db,plan,at,'Автопилот выключен: оплаченный месяц закончился. Включить снова можно в профиле.'))result.paused++;continue;}
+  if(plan.status!=='grace'&&!plan.auto_renew){if(await pause(db,plan,at,'Автопилот выключен: оплаченный месяц закончился. Включить снова можно '+(plan.role==='owner'?'в настройках жилья.':'в меню.')))result.paused++;continue;}
   const from=plan.status==='grace'?at:Math.max(plan.period_end,at-DAY),paid=await chargeMonth(db,plan,s,at,from);
   if(paid.ok){
    const r=await q(db,"UPDATE autopilot_plans SET status='active',period_end=?,grace_until=NULL,version=version+1,updated_at=? WHERE user_id=? AND role=? AND version=?",from+MONTH,at,plan.user_id,plan.role,plan.version).run();
@@ -201,7 +201,7 @@ export async function sweepPlans(db:D1Database,at=epoch()){
    const until=at+s.graceDays*DAY;
    const r=await q(db,"UPDATE autopilot_plans SET status='grace',grace_until=?,version=version+1,updated_at=? WHERE user_id=? AND role=? AND version=?",until,at,plan.user_id,plan.role,plan.version).run();
    if(r.meta.changes){result.grace++;await notice(db,plan.user_id,plan.role==='owner'?`Не хватает ${money(paid.amount)} на балансе для автопилота. Пополните до ${dateText(until)}, иначе объекты перейдут в режим «Я сам».`:`Для автопилота нужно ${money(paid.amount)} в ожидающих выплатах. До ${dateText(until)} он работает, потом встанет на паузу.`,plan.role+':autopilot-grace:'+plan.user_id+':'+plan.period_end,at).run();}
-  }else if(plan.grace_until<=at){if(await pause(db,plan,at,plan.role==='owner'?'Автопилот на паузе: оплата не прошла. Объекты в режиме «Я сам», принятые брони и уборки в силе. Пополните баланс и включите в профиле.':'Автопилот на паузе: оплата не прошла. Принятые уборки в силе. Включите снова в профиле.'))result.paused++;}
+  }else if(plan.grace_until<=at){if(await pause(db,plan,at,plan.role==='owner'?'Автопилот на паузе: оплата не прошла. Объекты в режиме «Я сам», принятые брони и уборки в силе. Пополните баланс и включите в настройках жилья.':'Автопилот на паузе: оплата не прошла. Принятые уборки в силе. Включите снова в профиле.'))result.paused++;}
  }
  if(s.charge){
   const soon=await rows(db,"SELECT * FROM autopilot_plans WHERE status IN ('trial','active') AND auto_renew=1 AND period_end>? AND period_end<=? LIMIT 200",at,at+3*DAY);
