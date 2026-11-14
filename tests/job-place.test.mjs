@@ -20,7 +20,8 @@ test('the cleaner sees the place: kind, area of the city, size and what to clean
   assert.equal(v.where, 'Павлодар, Центр');
   assert.equal(v.summary, 'Квартира · 2 комнаты · 54 м²');
   assert.deepEqual(v.photos, ['a', 'b']);
-  assert.deepEqual(v.facts.map(f => f.value + ' ' + f.label), ['2 комнаты', '54 м² площадь', '2 спальных места', '1 санузел', '2 из 9 этаж']);
+  assert.deepEqual(v.facts.map(f => f.value + ' ' + f.label), ['2 комнаты', '54 м² площадь', '2 спальных места', '1 санузел']);
+  assert.equal(v.floor, '2 этаж из 9');
   assert.deepEqual(v.kit, ['Стиральная машина', 'Утюг']);
   assert.deepEqual(v.tasks, ['Сменить бельё', 'Помыть ванную и кухню', 'Вынести мусор']);
   assert.equal(v.exact, false);

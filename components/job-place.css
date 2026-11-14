@@ -18,7 +18,7 @@
 .job-place-where>span{display:grid;gap:2px}
 .job-place-where strong{font-size:16px;line-height:24px;font-weight:600;color:var(--t-ink)}
 .job-place-where small{display:inline-flex;align-items:center;gap:4px;font-size:12px;line-height:16px;color:var(--t-muted)}
-.job-place-facts{display:grid;grid-template-columns:repeat(auto-fit,minmax(76px,1fr));gap:8px;margin:0;padding:0;list-style:none}
+.job-place-facts{display:grid;grid-template-columns:repeat(auto-fit,minmax(64px,1fr));gap:8px;margin:0;padding:0;list-style:none}
 .job-place-facts li{display:grid;justify-items:start;gap:2px;padding:12px;border-radius:var(--t-radius-md);background:var(--t-surface-alt)}
 .job-place-facts li>span{display:flex;color:var(--t-accent);margin-bottom:4px}
 .job-place-facts strong{font-size:16px;line-height:20px;font-weight:650;color:var(--t-ink);white-space:nowrap}

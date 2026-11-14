@@ -5,11 +5,13 @@ type Row = Record<string, any>;
 // of the city, its size and what there is to clean. The exact address stays hidden until the owner assigns the cleaner.
 // The site (components/job-place.tsx) and the app (mobile/src/JobPlace.tsx) draw the same facts.
 
-export type PlaceFact = { id: 'rooms' | 'area' | 'beds' | 'bath' | 'floor'; value: string; label: string };
+export type PlaceFact = { id: 'rooms' | 'area' | 'beds' | 'bath'; value: string; label: string };
 export type JobPlaceView = {
   photos: string[];
   kind: string;
   where: string;
+  /** «2 этаж из 9»: said next to the area of the city, so the size tiles stay in one row. */
+  floor: string;
   /** Short line for a list row or the map: «Квартира · 1 комната · 45 м²». */
   summary: string;
   facts: PlaceFact[];
@@ -63,8 +65,7 @@ export function jobPlace(job: Row | null | undefined): JobPlaceView {
   if (area) facts.push({ id: 'area', value: area + ' м²', label: 'площадь' });
   if (beds) facts.push({ id: 'beds', value: String(beds), label: plural(beds, ['спальное место', 'спальных места', 'спальных мест']) });
   if (bath) facts.push({ id: 'bath', value: String(bath), label: plural(bath, ['санузел', 'санузла', 'санузлов']) });
-  if (Number.isFinite(floor) && d.floor !== undefined && d.floor !== null && d.type !== 'house')
-    facts.push({ id: 'floor', value: floor === 0 ? 'цоколь' : floors ? floor + ' из ' + floors : String(floor), label: 'этаж' });
+  const hasFloor = Number.isFinite(floor) && d.floor !== undefined && d.floor !== null && d.type !== 'house';
   const kind = kindLabel(d.type);
   const size = [rooms && d.type !== 'room' ? rooms + ' ' + plural(rooms, ['комната', 'комнаты', 'комнат']) : '', area ? area + ' м²' : ''].filter(Boolean);
   const list: string[] = Array.isArray(d.amenities) ? d.amenities : [];
@@ -72,6 +73,7 @@ export function jobPlace(job: Row | null | undefined): JobPlaceView {
     photos,
     kind,
     where: [j.city, j.district].filter(Boolean).join(', '),
+    floor: !hasFloor ? '' : floor === 0 ? 'цокольный этаж' : floor + ' этаж' + (floors ? ' из ' + floors : ''),
     summary: [kind, ...size].join(' · '),
     facts,
     kit: KIT.filter(key => list.includes(key)).map(key => amenities[key]),

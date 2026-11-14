@@ -27,8 +27,8 @@ export function JobPlace({job,compact=false}:{job:Row;compact?:boolean}){
    {shown.length>1&&<View style={p.dots}>{shown.map((id,i)=><View key={id} style={[p.dot,i===page&&p.dotOn]}/>)}</View>}
   </View>
   <View style={p.body}>
-   <View style={{gap:2}}><Text style={p.where}>{v.where||'Район не указан'}</Text>{!v.exact&&<Text style={p.lock}>Точный адрес откроется после назначения</Text>}</View>
-   {v.facts.length>0&&<View style={p.facts}>{v.facts.map(f=><View key={f.id} style={p.fact}><Text numberOfLines={1} style={p.factValue}>{f.value}</Text><Text numberOfLines={2} style={p.factLabel}>{f.label}</Text></View>)}</View>}
+   <View style={{gap:2}}><Text style={p.where}>{v.where||'Район не указан'}</Text>{!!v.floor&&<Text style={p.lock}>{v.floor}</Text>}{!v.exact&&<Text style={p.lock}>Точный адрес откроется после назначения</Text>}</View>
+   {v.facts.length>0&&<View style={p.facts}>{v.facts.map(f=><View key={f.id} style={p.fact}><Text numberOfLines={1} style={p.factValue}>{f.value}</Text><Text numberOfLines={1} style={[p.factLabel,{flexShrink:1}]}>{f.label}</Text></View>)}</View>}
    {v.tasks.length>0&&<View style={{gap:8}}>
     <View style={p.todoHead}><Text style={p.todoTitle}>Что убрать</Text>{v.minutes>0&&<Text style={p.time}>{cleaningTime(v.minutes)}</Text>}</View>
     {v.tasks.map(t=><View key={t} style={p.task}><View style={p.check}><View style={p.checkMark}/></View><Text style={p.taskText}>{t}</Text></View>)}
@@ -47,7 +47,7 @@ const p=StyleSheet.create({
  body:{gap:16,padding:16},
  where:{...type.body,fontWeight:'600',color:C.ink},lock:{...type.caption,color:C.muted},
  facts:{flexDirection:'row',flexWrap:'wrap',gap:8},
- fact:{flexGrow:1,flexBasis:'22%',minWidth:72,gap:2,padding:12,borderRadius:R.md,backgroundColor:C.surfaceAlt},
+ fact:{flexGrow:1,flexBasis:'40%',flexDirection:'row',alignItems:'baseline',gap:8,paddingVertical:12,paddingHorizontal:12,borderRadius:R.md,backgroundColor:C.surfaceAlt},
  factValue:{...type.body,fontWeight:'700',color:C.ink},factLabel:{...type.caption,color:C.muted},
  todoHead:{flexDirection:'row',alignItems:'center',justifyContent:'space-between',gap:8},todoTitle:{...type.label,fontWeight:'600',color:C.ink},
  time:{...type.caption,fontWeight:'600',color:C.accentPressed,backgroundColor:C.accentSoft,paddingHorizontal:8,paddingVertical:2,borderRadius:R.full,overflow:'hidden'},
