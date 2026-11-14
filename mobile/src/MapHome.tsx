@@ -16,7 +16,8 @@ import {cleanerPin,dayRoute,routeLines,routeSummary} from './cleaner-map';
 import {latestMove} from '../../lib/ai-move-marks';
 import {TripHead,useTrip} from './Navigator';
 import {SwipeConfirm} from './SwipeConfirm';
-import {beams} from './map-motion';
+import {ROAD_BEAMS,beamOrigin,beams,roadBeams,roadKey,type BeamRoads} from './map-motion';
+import * as Location from 'expo-location';
 import {countdown,mapCities,validPoint,type MapPoint} from './map-math';
 import {MapSheetHead} from './MapSheetHead';
 import {NowCard as NowCardView} from './NowCard';
@@ -129,7 +130,9 @@ function GuestPanel({setScanning,accountId,data,mapData,publish,selected,setSele
  useEffect(()=>{if(!picking)pickThenFind.current=false;},[picking]);
  const begin=()=>guarded(async()=>{
   requestKey.current||=uid();
-  askedFrom.current=draft.near?[draft.near.longitude,draft.near.latitude]:mapCenter.current;
+  // The beams start where the guest is. The phone is asked only if the guest has already allowed it: no new prompt here.
+  askedFrom.current=null;
+  void (async()=>{try{if((await Location.getForegroundPermissionsAsync()).status!=='granted')return;const pos=await Location.getLastKnownPositionAsync({maxAge:600000,requiredAccuracy:500});if(pos)askedFrom.current=[pos.coords.longitude,pos.coords.latitude];}catch{/* No place known: no beams. */}})();
   const result=await request('/api/operations/matching/begin',{...matchingBody(freshDraft(draft)),requestKey:requestKey.current,consent:true},undefined,undefined,'guest');
   liveRequests.set(accountId,result.id);setSkew(result.serverTime-Date.now()/1000);setLive(result);setRequestId(result.id);setIndex(0);setAccepted(false);expand(1);
  });
@@ -158,6 +161,17 @@ function GuestPanel({setScanning,accountId,data,mapData,publish,selected,setSele
  }).sort((a:{start:number},b:{start:number})=>a.start-b.start);
  const staysKey=stays.map(v=>v.key+v.label).join();
  const go=(stay:{id:string;title?:string;point:MapPoint})=>{setSelected('');expand(0);void nav.start({kind:'booking',id:stay.id,title:stay.title||'Жильё',target:stay.point});};
+ // Each beam goes along the roads, like a route: the first few are asked from the server one by one, the rest stay straight.
+ const [roads,setRoads]=useState<BeamRoads>({}),roadAsked=useRef(new Set<string>());
+ const askRoads=(lines:MapLine[])=>{
+  const fresh=lines.map((line,i)=>({line,i,key:roadKey(line)})).filter(v=>!roadAsked.current.has(v.key));if(!fresh.length)return;
+  for(const v of fresh)roadAsked.current.add(v.key);
+  void (async()=>{for(const v of fresh){
+   let path:[number,number][]|null=null;
+   if(v.i<ROAD_BEAMS)try{path=(await request('/api/operations/map/beam',{propertyId:v.line.key.replace(/^beam:/,''),longitude:v.line.from[0],latitude:v.line.from[1]},undefined,undefined,'guest')).path||null;}catch{/* The beam stays straight. */}
+   setRoads(known=>({...known,[v.key]:path}));
+  }})();
+ };
  // Pins follow the stage: catalogue, checked candidates, then owners who are answering.
  const stageKey=requestId?'live':preview?'preview:'+preview.serverTime:'base:'+draft.city;
  useEffect(()=>{
@@ -173,13 +187,15 @@ function GuestPanel({setScanning,accountId,data,mapData,publish,selected,setSele
   // A flat being asked carries the end of its owner's time to answer, moved to this phone's clock.
   else if(requestId&&live){
    // Beams start at the searched point; a request restored after a restart starts them at the middle of the map.
-   const near=live.filters?.near,from=validPoint(near?[near.longitude,near.latitude]:null)||(askedFrom.current||=mapCenter.current);
+   const near=live.filters?.near,from=beamOrigin(near?[Number(near.longitude),Number(near.latitude)]:null,askedFrom.current);
    const asked=[...(live.pendingProperties||[]).flatMap((p:Row)=>pin(p,'pending').map(m=>Number(p.askExpiresAt)?{...m,until:Number(p.askExpiresAt)-skew}:m)),...offers.flatMap(p=>pin(p,'offer'))];
-   publish(asked,'live:'+live.id+':'+offers.length+':'+(live.pendingProperties||[]).length,{lines:live.status==='searching'||live.status==='ready'||live.status==='booking'?beams(from,asked):[]});
+   const straight=live.status==='searching'||live.status==='ready'||live.status==='booking'?beams(from,asked):[];
+   askRoads(straight);
+   publish(asked,'live:'+live.id+':'+offers.length+':'+(live.pendingProperties||[]).length,{lines:roadBeams(straight,roads)});
   }
   else if(preview)publish(preview.properties.flatMap((p:Row)=>pin(p,p.quickRequest?'booking':'home').map(m=>p.match?.best?{...m,best:true}:m)),stageKey);
   else publish([...(mapData?.properties||[]).flatMap((p:Row)=>pin(p,'home')),...stays.map(({id,start,canGo,...m})=>m)],stageKey+':'+(mapData?.properties?.length||0));
- },[requestId,live,preview,mapData,draft.city,staysKey,nav.trip,nav.here,nav.route,nav.rerouted]);
+ },[requestId,live,preview,mapData,draft.city,staysKey,nav.trip,nav.here,nav.route,nav.rerouted,roads]);
  // The radar on the map runs while flats are searched and while owners are being asked.
  const scanning=(working&&!requestId)||(!!requestId&&(!live||live.status==='searching'));
  useEffect(()=>{setScanning(scanning);return()=>setScanning(false);},[scanning]);

@@ -40,6 +40,10 @@ test('a cleaning never started is returned to the search by the AI after 30 minu
 test('the owner and the cleaner get a way out of an overdue cleaning',async()=>{
  const f=await fixture();try{
   late(f,'in_progress',now()-60);f.db.raw.prepare('UPDATE cleaning_jobs SET overdue_step=2 WHERE id=?').run(f.job.id);
+  // The next guest arrives an hour after the fixture was made: two more hours would run into that arrival.
+  await assert.rejects(f.cleaner.jobAction(f.job.id,{action:'extend',minutes:120}),/Следующий заезд/);
+  // One hour would end exactly at the arrival, or inside it after a tick of the clock: the arrival is moved clear.
+  f.db.raw.prepare('UPDATE bookings SET start=start+3600,end=end+3600').run();
   assert.match((await f.cleaner.jobAction(f.job.id,{action:'extend',minutes:60})).message,/1 ч/);
   let j=job(f);assert.equal(j.overdue_step,0);assert.ok(j.end>=now()+3500);
   await assert.rejects(f.cleaner.jobAction(f.job.id,{action:'close',confirmed:true}),/Нет доступа/);
