@@ -52,7 +52,7 @@
 -- migration 0048_test_payments.sql sha256:def5594e44cfe1fc2272f6766ef840ad15a8b79a7f9fe56118dd4822a6763ae9
 -- migration 0049_own_staff.sql sha256:e405114ddd056e7f4463ebbbaf4ecef3a9348be4c3e944fe4d59728171313a19
 -- migration 0050_overdue_cleaning.sql sha256:0ad1121db5460816134ccafee7b7272c8e02f0bd386caad01237f8aa25b80bb4
--- migration 0051_stay_watch.sql sha256:d990bed012b52bf2f13f6cb89fc5f229c82bb7e6341dfea66c6eb361d1a4eb06
+-- migration 0051_stay_watch.sql sha256:32b05c947b9ecd0afe44baaecc4340943120df246b7a2aeca82b23c9cf72e7c1
 
 -- table access_receipts
 CREATE TABLE access_receipts (id TEXT PRIMARY KEY,property_id TEXT NOT NULL,entity_kind TEXT NOT NULL,entity_id TEXT NOT NULL,user_id TEXT NOT NULL,created_at INTEGER NOT NULL,expires_at INTEGER NOT NULL);
@@ -1014,6 +1014,7 @@ CREATE TABLE stay_watch (
  pay_step INTEGER NOT NULL DEFAULT 0,
  arrival_step INTEGER NOT NULL DEFAULT 0,
  checkout_step INTEGER NOT NULL DEFAULT 0,
+ pay_for INTEGER, arrival_for INTEGER, checkout_for INTEGER,
  updated_at INTEGER NOT NULL
 );
 
