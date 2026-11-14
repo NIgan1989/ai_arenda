@@ -118,7 +118,8 @@ function Chat(){
   // A booking, a cleaning or a task opened from the map, the calendar or a link: the sheet shows that one card and what
   // was done from it, not the whole overview. `after` is the last message before it was opened.
   const [deal,setDeal]=useState<{kind:'booking'|'job'|'review';id:string;after:string}|null>(null),dealRef=useRef('');
-  // How tall the open card of a deal is: the map puts the pin of that deal above it (MapHome cover).
+  // How tall the open card of a deal is: the map puts the pin of that deal above it (MapHome cover). Opening a deal
+  // forgets the height of the sheet that was open before, so the map waits for this card to be measured.
   const [dealCover,setDealCover]=useState(0);
   useEffect(()=>{if(pageId!=='overview')setDeal(null);},[pageId]);
   useEffect(()=>{dealRef.current=deal&&pageId==='overview'?deal.kind:'';},[deal,pageId]);
@@ -377,7 +378,7 @@ function Chat(){
     if(Date.parse(stayISO(stay).start)<Date.now()){run('book:'+property.id);return;}
     const next:Flow={kind:'booking',questions,index:questions.length,answers:{billingMode:stay.mode,...stayISO(stay),guests:stay.guests},endpoint:'bookings',after:'bookings',role:'guest',extra:{propertyId:property.id,requestKey:uid()}};
     // The check of the booking is a sheet of its own: one card, the map behind it, nothing of the earlier talk.
-    setDeal({kind:'review',id:property.id,after:messages.length?messages[messages.length-1].id:''});
+    setDealCover(0);setDeal({kind:'review',id:property.id,after:messages.length?messages[messages.length-1].id:''});
     setActor('guest');say('','review',{flow:next,back:true});
   }
   // From a flat or a booking check opened on the map: back to the map, where the list of found flats is kept.
@@ -387,7 +388,7 @@ function Chat(){
     const above=sy-y,below=y+h-(sy+sh),target=h>sh-24||above>0?scrollY.current+y-sy-12:below>0?scrollY.current+below+16:null;
     if(target!==null)scroll.current?.scrollTo({y:Math.max(0,target),animated:true});}));
   const backToMap=()=>{scrollMessage.current=null;setPageId('map');};
-  const openDeal=(kind:'booking'|'job',id:string)=>{scrollMessage.current=null;setDeal({kind,id,after:messages.length?messages[messages.length-1].id:''});setPageId('overview');scroll.current?.scrollTo({y:0,animated:false});};
+  const openDeal=(kind:'booking'|'job',id:string)=>{scrollMessage.current=null;setDealCover(0);setDeal({kind,id,after:messages.length?messages[messages.length-1].id:''});setPageId('overview');scroll.current?.scrollTo({y:0,animated:false});};
   const openPage=(id:string)=>{scrollMessage.current=null;setPageId(id);};
   function renderAssistantBrief(){const brief=data.assistantBrief;if(!brief)return null;return <View style={s.card}><Text style={s.eyebrow}>ПЛАН АССИСТЕНТА</Text><Text style={s.cardTitle}>{brief.summary}</Text>{brief.tasks.map((task:Row)=><View key={task.id} style={s.event}><Text style={s.eventTitle}>{task.title}</Text><Text style={s.meta}>{task.reason}</Text><Button title="Открыть задачу" secondary disabled={busy} onPress={()=>openAssistantTask(task)}/></View>)}<Text style={s.meta}>Сроки и согласования проверяются сервером. Внешние каналы подключаются отдельно.</Text></View>;}
   function approval(id:string){const card=(data.approvals||[]).find((c:Row)=>c.id===id);return card?<ApprovalCard key={card.id+card.revision} card={card} busy={busy} onDecide={body=>perform('approvals',body,uid())}/>:<Text style={s.meta}>Согласование закрыто или срок истёк. Проверьте статус задачи.</Text>;}

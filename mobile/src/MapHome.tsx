@@ -50,6 +50,8 @@ export type MapStay={mode:'daily'|'hourly';start:string;end:string;guests:number
 // showNow: whether the "Сейчас" card has its place in the sheet as it is now (see MapHome).
 type Common={setScanning:(on:boolean)=>void;accountId:string;data:Row;mapData:Row|null;city:string;publish:Publish;selected:string;setSelected:(key:string)=>void;focus:string;setFocus:(key:string)=>void;snap:number;showNow:boolean;expand:(snap:number)=>void;onHead:(height:number)=>void;onReach:(bottom:number)=>void;onAsk:(text:string)=>void;onIntent:(intent:string,stay?:MapStay)=>void;onBook:(property:Row,stay:MapStay)=>void;onChanged:()=>Promise<unknown>;onOpenProcess:(kind:'booking'|'job',id:string)=>void;onOpenPage:(id:string)=>void;onEdit?:(id:string,step:string|null)=>void};
 const liveRequests=new Map<string,string>();
+// The least room above an open card of a deal, under the buttons of the map, in which the pin of that deal is shown.
+const SPOT_ROOM=72;
 const NOT_ON_MAP='Этого нет на карте сейчас: у объекта не отмечено место или он в другом городе.';
 // What the guest searched for outlives a visit to another page (a flat's details, the check of a booking):
 // coming back to the map within ten minutes shows the same conditions and the same list.
@@ -655,7 +657,9 @@ export function MapHome({ role, accountId, data, menu, chats, onChanged, onOpenP
   // The pin of the booking or cleaning whose card is open: the map flies to it and lifts it, without choosing it.
   // Its own pin first (the guest's booking, the performer's job), then the pin of its home.
   const spotKey = (spot ? [spot.kind + ':' + spot.id, targetPin(role, spot, data)?.key || ''] : []).find(key => key && pins.some(p => p.key === key)) || '';
-  const spotted = !!spotKey;
+  // The map waits for the measured height of the card, so it flies once, to the place that stays in view. A card that
+  // leaves no room above it for a pin (it may take up to 92% of the screen) is not flown to: the pin would be under it.
+  const spotted = !!spotKey && cover > 0 && height - cover - topInset >= SPOT_ROOM;
   // That card stands in place of this sheet: the sheet steps back, so its edge never shows from behind a shorter card,
   // and the light of the mood moves to the top edge of the card.
   const covered = !!spot && cover > 0;
@@ -685,7 +689,7 @@ export function MapHome({ role, accountId, data, menu, chats, onChanged, onOpenP
         heat={heat}
         sparks={sparks}
         onSelect={setSelected}
-        bottomInset={spotted && cover ? Math.min(cover, Math.round(height * 0.7)) : Math.min(sheetHeight, Math.round(height * 0.5))}
+        bottomInset={spotted ? cover : Math.min(sheetHeight, Math.round(height * 0.5))}
         topInset={topInset}
         focusKey={focusKey}
         picking={picking}
