@@ -2,7 +2,7 @@
 // bookings, cleanings and objects they are about (lib/ai-move-marks.ts). Only the person's own notices are read,
 // so nothing about other people leaks. An answer to a guest is shown on the object, a cleaning the autopilot took on its job.
 import {rows,epoch,type Row} from './operation-core';
-import {aiMarkOf,aiNoteOf,mergeJournal,AI_WINDOW,type AiMark,type AiNote,type JournalLine,type JournalOpen} from './ai-move-marks';
+import {aiMarkOf,aiNoteOf,journalKey,AI_WINDOW,type AiMark,type AiNote,type JournalLine,type JournalOpen} from './ai-move-marks';
 import type {Role} from './domain';
 
 export async function recentAiMarks(db:D1Database,userId:string,role:Role,now=epoch()):Promise<AiMark[]>{
@@ -39,15 +39,18 @@ const HOME:Record<string,string>={
 export async function aiJournal(db:D1Database,userId:string,role:Role,now=epoch()):Promise<JournalEntry[]>{
  const notices=await rows(db,'SELECT dedupe,body,created_at FROM notifications WHERE user_id=? AND created_at>? AND dedupe LIKE ? ORDER BY created_at DESC,id LIMIT 200',userId,now-JOURNAL_DAYS*86400,role+':%');
  const notes=notices.map((n:Row)=>aiNoteOf(n.dedupe,Number(n.created_at),n.body)).filter((n):n is AiNote=>!!n);
- const found=new Map<string,{title:string;open?:JournalOpen}>(),out:JournalEntry[]=[];
+ const found=new Map<string,{title:string;open?:JournalOpen}>(),out:JournalEntry[]=[],seen=new Set<string>();
  for(const n of notes){
+  if(out.length>=JOURNAL_LIMIT)break;
   const key=n.kind+':'+n.id;
   if(n.kind&&!found.has(key)){
    const hit=(await rows(db,HOME[n.kind],n.id))[0];
    found.set(key,hit?{title:String(hit.title||''),open:{kind:hit.kind,id:String(hit.id)}}:{title:''});
   }
   const about=n.kind?found.get(key):undefined;
-  out.push({at:n.at,text:n.text,title:about?.title||'',...(about?.open?{open:about.open}:{})});
+  const line:JournalEntry={at:n.at,text:n.text,title:about?.title||'',...(about?.open?{open:about.open}:{})},k=journalKey(line);
+  if(seen.has(k))continue;
+  seen.add(k);out.push(line);
  }
- return mergeJournal(out).slice(0,JOURNAL_LIMIT);
+ return out;
 }

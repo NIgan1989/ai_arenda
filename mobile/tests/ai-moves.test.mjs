@@ -80,4 +80,6 @@ test('the same step told twice within a minute is one line; different cleanings 
   const line = (at, id, text = 'ИИ назначил исполнителя') => ({at, text, title: 'Жильё', open: {kind: 'job', id}});
   assert.deepEqual(mergeJournal([line(125, 'j1'), line(121, 'j1'), line(120, 'j2'), line(59, 'j2'), line(58, 'j2', 'ИИ напомнил о сроке')]).map(l => [l.at, l.open.id]),
     [[125, 'j1'], [120, 'j2'], [59, 'j2'], [58, 'j2']]);
+  // Another line between two same notices does not let the repeat through.
+  assert.deepEqual(mergeJournal([line(125, 'j1'), line(123, 'j2'), line(121, 'j1')]).map(l => [l.at, l.open.id]), [[125, 'j1'], [123, 'j2']]);
 });

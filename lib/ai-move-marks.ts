@@ -116,12 +116,8 @@ export function journalHref(role:string,open?:JournalOpen|null):string|null{
 }
 // Two notices about one step (the owner is told twice, by two rules) read as one line: the same words about
 // the same thing within the same minute are kept once. Lines come newest first.
+export const journalKey=(l:JournalLine)=>[l.text,l.title,l.open?.kind||'',l.open?.id||'',Math.floor(l.at/60)].join('\u0001');
 export function mergeJournal<T extends JournalLine>(lines:T[]):T[]{
- const out:T[]=[];
- for(const l of lines){
-  const last=out[out.length-1];
-  if(last&&last.text===l.text&&last.title===l.title&&(last.open?.kind||'')===(l.open?.kind||'')&&(last.open?.id||'')===(l.open?.id||'')&&Math.floor(last.at/60)===Math.floor(l.at/60))continue;
-  out.push(l);
- }
- return out;
+ const seen=new Set<string>();
+ return lines.filter(l=>{const k=journalKey(l);if(seen.has(k))return false;seen.add(k);return true;});
 }
