@@ -14,6 +14,8 @@ export const s=StyleSheet.create({
   screen:{flex:1,backgroundColor:C.bg},shell:{flex:1,width:'100%',maxWidth:760,alignSelf:'center'},
   stage:{flex:1,minHeight:0},sheetLayer:{position:'absolute',top:0,right:0,bottom:0,left:0},sheetScrim:{position:'absolute',top:0,right:0,bottom:0,left:0,backgroundColor:C.scrim},
   pageSheet:{flex:1,minHeight:0,marginTop:44,backgroundColor:C.bg,borderTopLeftRadius:R.xl,borderTopRightRadius:R.xl,overflow:'hidden'},pageSheetFull:{marginTop:0,borderTopLeftRadius:0,borderTopRightRadius:0},
+  // One opened booking or cleaning: the sheet is as tall as its card, so the map stays in view above it.
+  pageSheetFit:{flexGrow:0,flexShrink:1,flexBasis:'auto',marginTop:'auto',maxHeight:'92%'},fitScroll:{flexGrow:0,flexShrink:1,flexBasis:'auto'},fitContent:{flexGrow:0},
   sheetHead:{minHeight:H.primary,paddingTop:16,paddingBottom:4,paddingLeft:20,paddingRight:8,flexDirection:'row',alignItems:'center',gap:8},sheetGrab:{position:'absolute',top:8,left:'50%',marginLeft:-20,width:40,height:4,borderRadius:R.xs,backgroundColor:C.lineStrong},
   sheetClose:{width:H.touch,height:H.touch,borderRadius:R.full,alignItems:'center',justifyContent:'center'},sheetCloseText:{width:32,height:32,borderRadius:R.full,backgroundColor:C.surfaceAlt,color:C.ink,textAlign:'center',lineHeight:32,fontSize:16,overflow:'hidden'},
   header:{minHeight:H.primary,paddingVertical:4,paddingLeft:16,paddingRight:8,flexDirection:'row',alignItems:'center',gap:8},
