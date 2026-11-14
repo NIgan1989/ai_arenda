@@ -141,3 +141,23 @@ test('a beam waits for its road, follows it between its two ends, and stays stra
   assert.deepEqual(roadBeams([line], {[roadKey(line)]: road})[0].path, [line.from, ...road, line.to]);
   assert.deepEqual(roadBeams([line], {[roadKey(line)]: [[1, 2]]}), [line]);
 });
+
+test('the mood of the map comes from its pins: the most pressing thing wins', async () => {
+  const {mapMood, moodJoy, MOOD_BEAT} = await loadPure('mobile/src/map-motion.ts');
+  assert.equal(mapMood([]), 'calm');
+  assert.equal(mapMood([{tone: 'home'}, {tone: 'job'}, {}]), 'calm');
+  assert.equal(mapMood([{tone: 'home'}, {tone: 'booking'}]), 'lead');
+  assert.equal(mapMood([{tone: 'home'}, {tone: 'active'}]), 'lead');
+  assert.equal(mapMood([{tone: 'booked'}, {tone: 'pending'}, {tone: 'active'}]), 'wait');
+  assert.equal(mapMood([{tone: 'pending'}, {tone: 'alert'}, {tone: 'active'}]), 'alert');
+  // The more the map needs the person, the faster the light breathes; calm has no light.
+  assert.ok(MOOD_BEAT.alert < MOOD_BEAT.wait && MOOD_BEAT.wait < MOOD_BEAT.lead);
+  assert.equal(MOOD_BEAT.calm, 0);
+  // Joy is the turn to green, not green itself.
+  assert.equal(moodJoy({}, [{key: 'a', tone: 'booked'}]), null);
+  assert.equal(moodJoy({a: 'booked'}, [{key: 'a', tone: 'booked'}]), null);
+  assert.equal(moodJoy({a: 'pending', b: 'home'}, [{key: 'b', tone: 'home'}, {key: 'a', tone: 'booked'}]), 'a');
+  // A pin that turned green while the person was away (map-memory.ts) still counts when the map comes back.
+  assert.equal(moodJoy({}, [{key: 'a', tone: 'booked', was: {tone: 'offer', label: 'x'}}]), 'a');
+  assert.equal(moodJoy({}, [{key: 'a', tone: 'booked', was: {tone: 'booked', label: 'old'}}]), null);
+});

@@ -54,7 +54,9 @@ export function LiveMap({center,pins,selected,focus='',lines=[],heat=[],sparks=[
  // The sheet grew or shrank: frame the same pins in what is still visible, unless the person moved the map.
  useEffect(()=>{if(!size.w||!fitted.current||moved.current||picking)return;if(Math.abs(usableHeight-fittedHeight.current)>=48)fit();},[usableHeight]);
  // A card of the carousel came into view: the map flies to its pin, at no less than a street's zoom.
- useEffect(()=>{const pin=focus&&pins.find(p=>p.key===focus),point=pin&&validPoint(pin.point);if(!point||!size.w)return;moved.current=true;flyTo({center:point,zoom:Math.max(live.current.view.zoom,13)});},[focus]);
+ // The camera keeps the padding it flew with, so when what covers the map changes its height (the card of a deal is
+ // measured, or grows), the pin in focus is brought back into the part that is seen.
+ useEffect(()=>{const pin=focus&&pins.find(p=>p.key===focus),point=pin&&validPoint(pin.point);if(!point||!size.w)return;moved.current=true;flyTo({center:point,zoom:Math.max(live.current.view.zoom,13)});},[focus,focus?bottomInset:0]);
  const zoomBy=(delta:number)=>{moved.current=true;flyTo({center:view.center,zoom:Math.max(MIN_ZOOM,Math.min(MAX_ZOOM,view.zoom+delta))});};
 
  // ---------- Picking a point: the marker lifts while the map moves under it and lands with a ring ----------

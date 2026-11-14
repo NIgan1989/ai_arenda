@@ -29,8 +29,9 @@ export function Stage({steps,current}:{steps:string[];current:number}){
 export const handleHeight=T.control.touch,topInset=64;
 // Under the grip runs one thin line of the ornament (lib/brand.ts): the only decoration of the sheet.
 const ornament=require('../assets/brand/ornament.png');
-export function Grip(){
- return <><View style={h.handle}/><Image source={ornament} resizeMode="contain" accessibilityIgnoresInvertColors style={h.ornament}/></>;
+// color: the mood of the map (MapMood.tsx) paints the line; without it the line is the calm accent.
+export function Grip({color}:{color?:string}){
+ return <><View style={h.handle}/><Image source={ornament} resizeMode="contain" accessibilityIgnoresInvertColors style={[h.ornament,!!color&&{tintColor:color,opacity:.8}]}/></>;
 }
 const R=T.radius,H=T.control,shadow={shadowColor:C.ink,shadowOffset:{width:0,height:2},shadowOpacity:.12,shadowRadius:8,elevation:3};
 export const h=StyleSheet.create({
