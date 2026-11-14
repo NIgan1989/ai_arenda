@@ -7,7 +7,7 @@ import {epoch,uuid,q,one,rows,type Row} from './operation-core';
 // and answers with one button. The button goes through the usual change of the stay: within the owner's
 // rules (mode «ИИ» with automatic extension) it applies at once, otherwise the owner confirms it.
 
-export const STAY_OFFER_TTL=1800,LATE_MAX_HOURS=3,EARLY_MAX_HOURS=3;
+export const STAY_OFFER_TTL=900,LATE_MAX_HOURS=3,EARLY_MAX_HOURS=3;
 const HOUR=3600,ceilHour=(t:number)=>Math.ceil(t/HOUR)*HOUR;
 const money=(n:number)=>new Intl.NumberFormat('ru-RU').format(n)+' ₸';
 const clock=(t:number)=>new Date(t*1000).toLocaleTimeString('ru-RU',{timeZone:'Asia/Almaty',hour:'2-digit',minute:'2-digit'});
@@ -91,7 +91,7 @@ export function stayOfferText(o:Row){
 
 // The chat answer for «можно продлить?» / «можно заехать раньше?».
 export function stayOfferAnswer(result:{offer:Row|null;reason:string},kind:'late'|'early'){
- if(result.offer)return stayOfferText(result.offer)+' Кнопка в уведомлении и на карте, предложение действует 30 минут.';
+ if(result.offer)return stayOfferText(result.offer)+' Кнопка в уведомлении и на карте, предложение действует 15 минут.';
  const word=kind==='late'?'Продлить':'Заехать раньше';
  if(result.reason==='busy')return word+' сейчас не получится: '+(kind==='late'?'после вас':'до вас')+' в жилье другой гость или уборка.';
  if(result.reason==='daily'||result.reason==='no_hourly')return word+' на несколько часов можно по договорённости с владельцем: нажмите «Изменить даты или продлить» в карточке брони, я покажу сумму.';

@@ -14,7 +14,7 @@ import {settleTestMoney} from './finance';
 
 type Row=Record<string,any>;
 // How long the owner has to agree the cleaner the AI proposes before it assigns her itself.
-export const OWNER_ANSWER_SECONDS=1800;
+export const OWNER_ANSWER_SECONDS=900;
 const now=()=>Math.floor(Date.now()/1000);
 const all=async(db:D1Database,sql:string,...args:any[])=>(await db.prepare(sql).bind(...args).all<Row>()).results;
 
@@ -101,7 +101,7 @@ async function automaticActions(service:RentalService){
     const first=candidates[0],t=now();
     if(first&&job.start>t+3600){
      const proposed=await service.one('SELECT created_at FROM notifications WHERE user_id=? AND dedupe=?',service.userId,'owner:administrator-propose:'+first.id);
-     if(!proposed){await service.notify(service.userId,'AI администратор предлагает исполнителя '+first.name+' на уборку «'+(job.title||'жильё')+'». Назначьте исполнителя в карточке уборки, или через 30 минут ИИ назначит сам.','administrator-propose:'+first.id,'owner').run();continue;}
+     if(!proposed){await service.notify(service.userId,'AI администратор предлагает исполнителя '+first.name+' на уборку «'+(job.title||'жильё')+'». Назначьте исполнителя в карточке уборки, или через 15 минут ИИ назначит сам.','administrator-propose:'+first.id,'owner').run();continue;}
      if(proposed.created_at+OWNER_ANSWER_SECONDS>t)continue;
     }
     for(const candidate of candidates){try{await delegated.jobAction(job.id,{action:'assign',applicationId:candidate.id,expectedVersion:job.version});await service.notify(service.userId,'AI администратор назначил свободного исполнителя из откликнувшихся в пределах вашего лимита уборки.','administrator-assigned:'+job.id+':'+job.version,'owner').run();actions++;break;}catch(error){if(!expectedConflict(error))throw error;}}

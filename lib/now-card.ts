@@ -75,8 +75,8 @@ export function autopilotPick(data: Row | null | undefined, job: Row, applicatio
   const name = first.worker?.name || first.name || 'первый откликнувшийся';
   if (job.start <= now + 3600) return 'Если не выберете сами, автопилот в ближайшие минуты назначит: ' + name;
   const asked = (data?.notifications || []).find((n: Row) => n.dedupe === 'owner:administrator-propose:' + first.id);
-  const at = asked ? asked.created_at + 1800 : 0;
-  return 'Если не выберете сами, автопилот ' + (at > now ? 'в ' + timeFormat.format(new Date(at * 1000)) : 'через 30 минут') + ' назначит: ' + name;
+  const at = asked ? asked.created_at + 900 : 0;
+  return 'Если не выберете сами, автопилот ' + (at > now ? 'в ' + timeFormat.format(new Date(at * 1000)) : 'через 15 минут') + ' назначит: ' + name;
 }
 
 // What waits for the owner on «Заявки»: guests' requests not answered yet and cleaners' responses. The chip says the number.
