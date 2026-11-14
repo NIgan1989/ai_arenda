@@ -247,6 +247,30 @@ export class RentalService {
     if(!open)return {added:false,statement:this.administratorIssueStatement(entity,kind,description)};
     return {added:true,statement:this.query("UPDATE administrator_issues SET description=substr(description||char(10)||'Дополнение: '||?,1,6000),version=version+1 WHERE id=? AND status='open'",description,open.id)};
   }
+  // Nobody took the cleaning in its time: the owner looks again on a new window, or says the flat was cleaned without a cleaner.
+  async unclaimedAction(j:Row,body:Row){
+    const t=now();
+    if(j.status!=='open'||j.assigned_to||Number(j.end)>t)throw new DomainError('Срок уборки ещё не прошёл или исполнитель уже есть. Обновите карточку.',409);
+    const version=body.expectedVersion===undefined?j.version:number(body.expectedVersion,'Версия задания',1,10000000);
+    if(version!==j.version)throw new DomainError('Задание уже изменилось. Обновите карточку.',409);
+    if(body.action==='repost'){
+      const window=await releaseWindow(this.db,j,t);
+      if(!window)throw new DomainError('Новое время не найти: гость уже в жилье или следующий заезд меньше чем через полчаса. Закройте уборку, если убрали, или отмените её.',409);
+      const r=await this.db.batch([
+        this.query("UPDATE cleaning_jobs SET start=?,end=?,overdue_step=0 WHERE id=? AND version=? AND status='open' AND assigned_to IS NULL",window.start,window.end,j.id,j.version),
+        this.audit(j.id,'job.reposted')]);
+      if(!r[0].meta.changes)throw new DomainError('Задание уже изменилось. Обновите карточку.',409);
+      return {message:'Уборка снова в поиске до '+new Intl.DateTimeFormat('ru-RU',{hour:'2-digit',minute:'2-digit',timeZone:'Asia/Almaty'}).format(new Date(window.end*1000))+'. Отклики появятся в карточке.'};
+    }
+    if(body.confirmed!==true)throw new DomainError('Подтвердите, что уборка выполнена.');
+    const r=await this.db.batch([
+      this.query("UPDATE cleaning_jobs SET status='completed',completed_at=?,report=CASE WHEN report='' THEN ? ELSE report END WHERE id=? AND version=? AND status='open' AND assigned_to IS NULL",t,'Убрано без исполнителя, закрыто владельцем.',j.id,j.version),
+      this.query("UPDATE property_operations SET readiness='ready',version=version+1,updated_at=? WHERE property_id=? AND readiness IN ('cleaning','inspection','awaiting_cleaning') AND active_booking_id IS NULL AND EXISTS(SELECT 1 FROM cleaning_jobs WHERE id=? AND status='completed') AND NOT EXISTS(SELECT 1 FROM cleaning_jobs WHERE property_id=? AND status IN ('in_progress','submitted'))",t,j.property_id,j.id,j.property_id),
+      this.query("UPDATE applications SET status='rejected' WHERE job_id=? AND status='pending' AND EXISTS(SELECT 1 FROM cleaning_jobs WHERE id=? AND status='completed')",j.id,j.id),
+      this.audit(j.id,'job.closed_without_cleaner')]);
+    if(!r[0].meta.changes)throw new DomainError('Задание уже изменилось. Обновите карточку.',409);
+    return {message:'Уборка закрыта.'+(r[1].meta.changes?' Жильё отмечено готовым.':'')};
+  }
   // An overdue cleaning (or one about to be): more time, a new cleaner, or the owner closes work that was done.
   async overdueAction(j:Row,body:Row){
     const owner=j.owner_id===this.userId,t=now(),title=j.title||'жильё';
@@ -809,6 +833,7 @@ export class RentalService {
       return {message:'Работа принята. Денежные расчёты выполняются отдельно.'+(advice?' AI администратор посмотрел спрос и предлагает новую цену, решение за вами.':''),priceSuggestion:advice};
     }
     if(body.action==='cancel'&&j.owner_id===this.userId){const reason=required(body.reason,'Причина отмены',1000);const r=await this.query("UPDATE cleaning_jobs SET status='cancelled' WHERE id=? AND (status IN ('open','assigned') OR status='in_progress' AND end<=?)",jobId,now()).run();if(!r.meta.changes)throw new DomainError('Начатую работу нельзя отменить этим действием.',409);await this.db.batch([this.audit(jobId,'job.cancelled:'+reason),...(j.assigned_to?[this.notify(j.assigned_to,'Владелец отменил уборку «'+(j.title||'жильё')+'». Причина: '+reason,'cancelled:'+jobId,'cleaner')]:[])]);return {message:'Задание отменено. Готовность жилья нужно проверить отдельно.'};}
+    if(body.action==='repost'&&j.owner_id===this.userId||j.status==='open'&&body.action==='close'&&j.owner_id===this.userId)return this.unclaimedAction(j,body);
     if(['extend','release','close'].includes(body.action)&&(j.owner_id===this.userId||j.assigned_to===this.userId&&body.action!=='close'))return this.overdueAction(j,body);
     if(body.action==='issue' && (j.owner_id===this.userId||j.assigned_to===this.userId)) {
       const issue=required(body.issue,'Описание',1500);

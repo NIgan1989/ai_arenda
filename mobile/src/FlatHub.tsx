@@ -2,7 +2,7 @@ import React,{useState,type ReactNode} from 'react';
 import {Pressable,StyleSheet,Text,View} from 'react-native';
 import type {Approval} from '../../lib/approvals';
 import {calendarEntries,dayLine,dayStart,type CalendarEntry} from '../../lib/calendar-days';
-import {HUB_TABS,hubLine,hubToday,type HubTab} from '../../lib/property-hub';
+import {HUB_TABS,hubLate,hubLine,hubToday,type HubTab} from '../../lib/property-hub';
 import {request} from './api';
 import {money,uid,type Row} from './model';
 import {PriceTipBody} from './PriceTip';
@@ -25,12 +25,12 @@ type Props={
 
 // The head of the owner's flat in the sheet of the map: its name, the most pressing thing about it and the four tabs.
 // It stays visible while the sheet is folded; a tap on a tab unfolds the sheet on that tab.
-export function FlatHubHead({flat,data,now,tab,open,onTab,onBack}:Pick<Props,'flat'|'data'|'now'|'tab'|'onTab'|'onBack'>&{open:boolean}){
- const entries=calendarEntries(data,'owner',flat.id,now),waiting=hubToday(entries,now).waiting.length;
+export function FlatHubHead({flat,data,now,tab,open,onTab,onBack,onOpen}:Pick<Props,'flat'|'data'|'now'|'tab'|'onTab'|'onBack'|'onOpen'>&{open:boolean}){
+ const entries=calendarEntries(data,'owner',flat.id,now),waiting=hubToday(entries,now).waiting.length,late=hubLate(entries,now);
  return <View style={f.head}>
   <Pressable accessibilityRole="button" accessibilityLabel="Назад к карте" onPress={onBack} style={f.back}><Text style={f.backText}>‹ Назад</Text></Pressable>
   <Text accessibilityRole="header" numberOfLines={2} style={h.cardTitle}>{flat.title}</Text>
-  <Text numberOfLines={1} style={h.note}>{hubLine(entries,now)}</Text>
+  {late?<Pressable accessibilityRole="button" accessibilityLabel={late.status+', открыть'} onPress={()=>onOpen(late.kind,late.id)} hitSlop={8}><Text numberOfLines={1} style={[h.note,f.late]}>{late.status} ›</Text></Pressable>:<Text numberOfLines={1} style={h.note}>{hubLine(entries,now)}</Text>}
   <View accessibilityRole="tablist" style={f.tabs}>{HUB_TABS.map(([id,label])=><Pressable key={id} accessibilityRole="tab" accessibilityState={{selected:open&&tab===id}} accessibilityLabel={label+(id==='today'&&waiting?', ждут ответа: '+waiting:'')} onPress={()=>onTab(id)} style={[f.tab,open&&tab===id&&f.tabOn]}>
    <Text numberOfLines={1} style={[f.tabText,open&&tab===id&&f.tabTextOn]}>{label}</Text>{id==='today'&&waiting>0&&<View style={f.count}><Text style={f.countText}>{waiting}</Text></View>}
   </Pressable>)}</View>
@@ -84,6 +84,7 @@ export function FlatHub({flat,data,now,tab,onOpen,onEdit,onChanged}:Omit<Props,'
 
 const R=T.radius,H=T.control;
 const f=StyleSheet.create({
+ late:{color:T.color.danger,fontWeight:'600'},
  head:{gap:4},back:{minHeight:H.touch,justifyContent:'center',alignSelf:'flex-start',paddingRight:16},backText:{...type.label,color:C.inkSoft,fontWeight:'500'},
  tabs:{flexDirection:'row',gap:4,padding:4,marginTop:8,borderRadius:R.lg,backgroundColor:C.surfaceAlt},
  // The tabs share the row by the length of their words, so «Сегодня» keeps its counter without being cut.

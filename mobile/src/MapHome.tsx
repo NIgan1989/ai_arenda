@@ -318,7 +318,7 @@ function OwnerPanel({data,mapData,publish,snap,showNow,expand,onHead,onAsk,onInt
  const flat=selected.startsWith('property:')?flats.find(p=>'property:'+p.id===selected):undefined;
  useEffect(()=>{setTab('today');},[flat?.id]);
  if(flat)return <View style={h.block}>
-  <HeadSlot onHeight={onHead}><FlatHubHead flat={flat} data={data} now={serverNow(data)} tab={tab} open={snap>0} onTab={next=>{setTab(next);if(snap===0)expand(1);}} onBack={()=>{setSelected('');expand(0);}}/></HeadSlot>
+  <HeadSlot onHeight={onHead}><FlatHubHead flat={flat} data={data} now={serverNow(data)} tab={tab} open={snap>0} onTab={next=>{setTab(next);if(snap===0)expand(1);}} onBack={()=>{setSelected('');expand(0);}} onOpen={onOpenProcess}/></HeadSlot>
   {snap>0&&<FlatHub flat={flat} data={data} now={serverNow(data)} tab={tab} onOpen={onOpenProcess} onEdit={step=>step==='job'?onIntent('job'):onEdit?.(flat.id,step)} onChanged={onChanged}/>}
  </View>;
  return <View style={h.block}>

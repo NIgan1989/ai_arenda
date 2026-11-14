@@ -715,6 +715,18 @@ html[data-design="unified"] .workspace-shell .map-role .map-network-error {
   line-height: var(--t-line-label);
 }
 
+/* Something went wrong today: the line is red and opens it. */
+.map-role-panel .map-role-when.is-late {
+  align-self: flex-start;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--t-danger);
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+
 .map-role-panel .map-role-flat {
   display: flex;
   align-items: center;

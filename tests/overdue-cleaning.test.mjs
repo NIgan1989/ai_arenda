@@ -100,3 +100,49 @@ test('a cleaning back in the search never runs into the next confirmed arrival',
   await assert.rejects(f.owner.jobAction(f.job.id,{action:'release'}),/меньше получаса/);
  }finally{f.db.close();}
 });
+
+// Nobody took the cleaning before its end (the case from 14 November: an open cleaning past its time, no buttons, the AI silent).
+const unclaimed=(f,end)=>{f.db.raw.prepare("UPDATE cleaning_jobs SET status='open',assigned_to=NULL,booking_id=NULL,overdue_step=0,start=?,end=? WHERE id=?").run(end-5400,end,f.job.id);f.db.raw.prepare("UPDATE bookings SET status='cancelled' WHERE id=?").run(f.booking);};
+test('an open cleaning past its time gives the owner a way out',()=>{
+ const t=now(),j={status:'open',assigned_to:null,end:t-10,overdue_step:0};
+ assert.match(overdueNote(j,'owner',t).title,/Срок уборки прошёл/);
+ assert.match(overdueNote({...j,overdue_step:2},'owner',t).ai,/ждёт вашего решения/);
+ assert.equal(overdueNote(j,'cleaner',t),null);
+ assert.equal(overdueNote({...j,end:t+60},'owner',t),null);
+});
+test('with the autopilot on, the AI gives an unclaimed cleaning one new window, then hands it to the owner',async()=>{
+ const f=await fixture();try{
+  unclaimed(f,now()-60);
+  f.db.raw.prepare('INSERT INTO operation_rules(property_id,auto_offers,auto_replace,require_photos,offer_minutes,version,updated_at) VALUES (?,1,0,0,10,1,?) ON CONFLICT(property_id) DO UPDATE SET auto_offers=1').run(f.property,now());
+  assert.equal((await sweepOverdueJobs(f.db,{})).reposted,1);
+  let j=job(f);assert.equal(j.status,'open');assert.equal(j.overdue_step,1);assert.ok(j.end>now());
+  assert.ok(f.db.raw.prepare("SELECT 1 FROM notifications WHERE user_id='owner' AND dedupe LIKE 'owner:unclaimed-reposted:%'").get());
+  f.db.raw.prepare('UPDATE cleaning_jobs SET end=? WHERE id=?').run(now()-60,f.job.id);
+  const second=await sweepOverdueJobs(f.db,{});assert.equal(second.reposted,0);assert.equal(second.unclaimed,1);
+  assert.equal(job(f).overdue_step,2);assert.equal((await sweepOverdueJobs(f.db,{})).unclaimed,0);
+  assert.ok(f.db.raw.prepare("SELECT 1 FROM notifications WHERE user_id='owner' AND dedupe LIKE 'owner:unclaimed:%'").get());
+ }finally{f.db.close();}
+});
+test('without the autopilot, or with a guest already inside, the AI only tells the owner',async()=>{
+ const f=await fixture();try{
+  unclaimed(f,now()-700);
+  f.db.raw.prepare("UPDATE bookings SET status='confirmed',start=?,end=? WHERE id=?").run(now()-600,now()+3600,f.booking);
+  f.db.raw.prepare('INSERT INTO operation_rules(property_id,auto_offers,auto_replace,require_photos,offer_minutes,version,updated_at) VALUES (?,1,0,0,10,1,?) ON CONFLICT(property_id) DO UPDATE SET auto_offers=1').run(f.property,now());
+  const r=await sweepOverdueJobs(f.db,{});assert.equal(r.reposted,0);assert.equal(r.unclaimed,1);
+  await assert.rejects(f.owner.jobAction(f.job.id,{action:'repost'}),/гость уже в жилье/);
+ }finally{f.db.close();}
+});
+test('the owner looks again on a new window or closes a cleaning done without a cleaner',async()=>{
+ const f=await fixture();try{
+  unclaimed(f,now()-60);
+  await assert.rejects(f.cleaner.jobAction(f.job.id,{action:'repost'}));
+  assert.match((await f.owner.jobAction(f.job.id,{action:'repost'})).message,/снова в поиске/);
+  let j=job(f);assert.ok(j.end>now());assert.equal(j.status,'open');
+  await assert.rejects(f.owner.jobAction(f.job.id,{action:'repost'}),/ещё не прошёл/);
+  f.db.raw.prepare('UPDATE cleaning_jobs SET end=? WHERE id=?').run(now()-60,f.job.id);
+  await assert.rejects(f.owner.jobAction(f.job.id,{action:'close'}),/Подтвердите/);
+  assert.match((await f.owner.jobAction(f.job.id,{action:'close',confirmed:true})).message,/закрыта/);
+  j=job(f);assert.equal(j.status,'completed');assert.match(j.report,/без исполнителя/);
+  assert.equal(f.db.raw.prepare('SELECT COUNT(*) n FROM cleaning_holds WHERE job_id=?').get(f.job.id).n,0);
+ }finally{f.db.close();}
+});

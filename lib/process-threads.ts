@@ -130,9 +130,11 @@ export function cleaningThread(j: Row, data: Row, now: number): ProcessThread {
   const pending = (data?.applications || []).filter((a: Row) => a.job_id === j.id && a.status === 'pending').length;
   const policy = data?.ownProperties?.find((p: Row) => p.id === j.property_id)?.policy || {}, auto = !!Number(policy.auto_assign);
   const aiAccepts = did('ИИ принял уборку', 'ИИ проверил отчёт');
+  // Nobody took it and its time is over: the owner decides in the card (new time, cleaned without a cleaner, cancel).
+  const late = j.status === 'open' && !j.assigned_to && Number(j.end) <= now;
   const steps: Omit<ThreadStep, 'state'>[] = [
-    { key: 'pick', label: 'Подбор', by: assigned ? (did('ИИ назначил исполнителя') ? 'ai' : 'owner') : auto ? 'ai' : 'you', at: j.created_at,
-      note: assigned ? (did('ИИ назначил исполнителя') ? 'ИИ назначил исполнителя' : 'Исполнитель назначен')
+    { key: 'pick', label: late ? 'Срок прошёл' : 'Подбор', by: assigned ? (did('ИИ назначил исполнителя') ? 'ai' : 'owner') : auto && !late ? 'ai' : 'you', at: j.created_at,
+      note: late ? 'Никто не взял уборку · решите в карточке' : assigned ? (did('ИИ назначил исполнителя') ? 'ИИ назначил исполнителя' : 'Исполнитель назначен')
         : pending ? (auto ? 'Откликнулись: ' + pending + ' · ИИ выберет сам' : 'Откликнулись: ' + pending + ' · выберите исполнителя')
           : auto ? 'ИИ ищет исполнителя' : 'Ждём откликов исполнителей' },
     { key: 'checkout', label: 'Выезд гостя', by: 'guest', at: j.start, note: j.checkout_confirmed ? 'Гость выехал' : 'Ждём выезда гостя' },
@@ -145,7 +147,7 @@ export function cleaningThread(j: Row, data: Row, now: number): ProcessThread {
   const done = [assigned, !!j.checkout_confirmed && assigned, reported, accepted, paid];
   const t = place(steps, done, i => i === 0 || i === 3 || i === 4 || (i === 1 ? now >= j.start - 3600 : working));
   const mine = j.owner_id === userId;
-  const yours = mine && !t.finished && t.steps[t.current].by === 'you' && (t.current !== 0 || pending > 0);
+  const yours = mine && !t.finished && t.steps[t.current].by === 'you' && (t.current !== 0 || pending > 0 || late);
   return { id: j.id, kind: 'job', tag: 'Уборка', title: j.title || 'Уборка', propertyId: j.property_id, ...t, yours,
     status: statusOf(t, now, 'Готово'), line: lineOf(t, now, paid ? 'Уборка принята и оплачена' : 'Уборка принята'), at: j.start };
 }
