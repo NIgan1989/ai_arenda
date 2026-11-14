@@ -52,7 +52,7 @@
 -- migration 0048_test_payments.sql sha256:def5594e44cfe1fc2272f6766ef840ad15a8b79a7f9fe56118dd4822a6763ae9
 -- migration 0049_own_staff.sql sha256:e405114ddd056e7f4463ebbbaf4ecef3a9348be4c3e944fe4d59728171313a19
 -- migration 0050_overdue_cleaning.sql sha256:0ad1121db5460816134ccafee7b7272c8e02f0bd386caad01237f8aa25b80bb4
--- migration 0051_stay_watch.sql sha256:32b05c947b9ecd0afe44baaecc4340943120df246b7a2aeca82b23c9cf72e7c1
+-- migration 0051_stay_watch.sql sha256:9981630cafef6d62625613245a56085fad063b159e04e500d757b4bac75b03a3
 
 -- table access_receipts
 CREATE TABLE access_receipts (id TEXT PRIMARY KEY,property_id TEXT NOT NULL,entity_kind TEXT NOT NULL,entity_id TEXT NOT NULL,user_id TEXT NOT NULL,created_at INTEGER NOT NULL,expires_at INTEGER NOT NULL);
@@ -481,6 +481,17 @@ CREATE TABLE content_reports (
  target_id TEXT NOT NULL,room_id TEXT NOT NULL DEFAULT '',reason TEXT NOT NULL,created_at INTEGER NOT NULL,
  status TEXT NOT NULL DEFAULT 'open' CHECK(status IN ('open','reviewing','resolved')),resolution TEXT NOT NULL DEFAULT '',
  UNIQUE(user_id,role,target_kind,target_id,room_id)
+);
+
+-- table decision_rules
+CREATE TABLE decision_rules (
+ user_id TEXT NOT NULL REFERENCES profiles(id),
+ role TEXT NOT NULL CHECK(role IN ('guest','owner','cleaner')),
+ rule TEXT NOT NULL,
+ auto INTEGER NOT NULL DEFAULT 1 CHECK(auto IN (0,1)),
+ minutes INTEGER NOT NULL CHECK(minutes BETWEEN 1 AND 1440),
+ updated_at INTEGER NOT NULL,
+ PRIMARY KEY(user_id,role,rule)
 );
 
 -- table deletion_requests

@@ -34,6 +34,7 @@ import {ownerListingTips,decideListingTip} from './listing-quality';
 import {ownerCleaningTips,decideCleaningTip} from './cleaning-price';
 import {releaseStatements,releaseWindow} from './overdue-cleaning';
 import {lateUntil,LATE_OPENS} from './late-arrival';
+import {ruleFor,minutesLabel} from './decision-rules';
 import {ownerWindows,decideCalendarWindow,openWindowFor,openWindowsFor,windowQuote} from './calendar-windows';
 
 type Row = Record<string, any>;
@@ -515,13 +516,15 @@ export class RentalService {
     const bookingId=id(), p={id:checked.propertyId,cleaning_minutes:checked.cleaningMinutes};
     const owner=await this.one('SELECT owner_id,price FROM properties WHERE id=?',p.id);
     const policyNow=await this.one('SELECT * FROM property_policies WHERE property_id=?',p.id),autoConfirm=!!policyNow?.auto_confirm&&mandateActive(policyNow)&&policyNow.version===checked.policy.version;
+    // The owner's own time to answer a request («Автопилот: решения и сроки»).
+    const answer=(await ruleFor(this.db,owner!.owner_id,'request')).minutes;
     const risk=assessBookingRisk(await riskSignals(this.db,this.userId,{start,end,billingMode:checked.billingMode,price:Number(owner!.price||0),deposit:checked.policy.deposit}));
     // Under autopilot a high risk is not confirmed automatically: the owner decides.
     risk.held=autoConfirm&&risk.level==='high';
     await this.db.batch([
-      this.query('INSERT INTO bookings(id,property_id,guest_id,start,end,occupied_until,guests,amount,status,expires_at,payment_status,request_key,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)',bookingId,p.id,this.userId,start,end,end+p.cleaning_minutes*60,guests,amount,'requested',now()+900,'unpaid',key,now()),
+      this.query('INSERT INTO bookings(id,property_id,guest_id,start,end,occupied_until,guests,amount,status,expires_at,payment_status,request_key,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)',bookingId,p.id,this.userId,start,end,end+p.cleaning_minutes*60,guests,amount,'requested',now()+answer*60,'unpaid',key,now()),
       this.query('INSERT INTO booking_terms(booking_id,billing_mode,rate,units,amount,deposit,deposit_status,house_rules,policy_version,original_end) VALUES (?,?,?,?,?,?,?,?,?,?)',bookingId,checked.billingMode,checked.price,checked.periods,amount,checked.policy.deposit,checked.policy.deposit?'pending':'not_required',checked.policy.house_rules,checked.policy.version,end),
-      this.notify(owner!.owner_id,risk.held?`AI администратор не подтвердил заявку на «${checked.title}» автоматически: ${riskLabel.high.toLowerCase()} (${risk.reasons.slice(0,2).join(', ')}). Решите в течение 15 минут.`:autoConfirm?`AI администратор принял бронь на «${checked.title}» по вашим правилам. ${riskLabel[risk.level]}.`:`Новая заявка на «${checked.title}». ${riskLabel[risk.level]}. Подтвердите её в течение 15 минут.`,`booking:${bookingId}`,'owner'),this.audit(bookingId,'booking.requested'),
+      this.notify(owner!.owner_id,risk.held?`AI администратор не подтвердил заявку на «${checked.title}» автоматически: ${riskLabel.high.toLowerCase()} (${risk.reasons.slice(0,2).join(', ')}). Решите в течение ${minutesLabel(answer)}.`:autoConfirm?`AI администратор принял бронь на «${checked.title}» по вашим правилам. ${riskLabel[risk.level]}.`:`Новая заявка на «${checked.title}». ${riskLabel[risk.level]}. Подтвердите её в течение ${minutesLabel(answer)}.`,`booking:${bookingId}`,'owner'),this.audit(bookingId,'booking.requested'),
       saveRiskSql(this.db,bookingId,p.id,this.userId,owner!.owner_id,risk),
       ...(!risk.phone&&risk.level!=='low'&&!(autoConfirm&&!risk.held)?[this.notify(this.userId,'Подтвердите телефон в профиле: владельцу так спокойнее, и заявку на «'+checked.title+'» подтвердят быстрее.','phone-ask:'+bookingId,'guest')]:[])
     ]);
@@ -529,9 +532,9 @@ export class RentalService {
     if(autoConfirm&&!risk.held){
       // The owner was told the AI accepted it; if the confirmation fails after all, the owner decides and is told so.
       try{await new RentalService(this.db,owner!.owner_id,{propertyId:p.id,policyVersion:policy.version}).bookingAction(bookingId,{action:'confirm',cleaningFee:policy.cleaning_fee});}
-      catch(error){if(!(error instanceof DomainError))throw error;await this.notify(owner!.owner_id,`AI администратор не смог подтвердить заявку на «${checked.title}» сам: ${error.message} Решите в течение 15 минут.`,`booking-held:${bookingId}`,'owner').run();return {id:bookingId,amount,message:'Заявка отправлена. Интервал зарезервирован на 15 минут до решения владельца.'};}
+      catch(error){if(!(error instanceof DomainError))throw error;await this.notify(owner!.owner_id,`AI администратор не смог подтвердить заявку на «${checked.title}» сам: ${error.message} Решите в течение ${minutesLabel(answer)}.`,`booking-held:${bookingId}`,'owner').run();return {id:bookingId,amount,message:'Заявка отправлена. Интервал зарезервирован на '+minutesLabel(answer)+' до решения владельца.'};}
       return {id:bookingId,amount,message:'Бронь подтверждена автоматически по правилам владельца. Оплата и депозит учитываются отдельно.'};}
-    return {id:bookingId,amount,message:'Заявка отправлена. Интервал зарезервирован на 15 минут до решения владельца.'};
+    return {id:bookingId,amount,message:'Заявка отправлена. Интервал зарезервирован на '+minutesLabel(answer)+' до решения владельца.'};
   }
   async bookingAction(bookingId:string,body:Row) {
     const b=await this.one('SELECT b.*,p.owner_id,p.cleaning_minutes,p.title FROM bookings b JOIN properties p ON p.id=b.property_id WHERE b.id=? AND (b.guest_id=? OR p.owner_id=?)',bookingId,this.userId,this.userId);

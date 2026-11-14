@@ -1,6 +1,7 @@
 import {epoch,uuid,q,rows,type OperationConfig} from './operation-core';
 import {arrivalDue} from './late-arrival';
 import {assertCalendarAvailable} from './external-calendar';
+import {ruleFor,minutesLabel,type RuleKey,type RuleValue} from './decision-rules';
 type Row=Record<string,any>; // eslint-disable-line @typescript-eslint/no-explicit-any
 
 // The AI administrator keeps a stay moving when a person is silent past a deadline. Every deadline follows the same
@@ -15,9 +16,10 @@ type Row=Record<string,any>; // eslint-disable-line @typescript-eslint/no-explic
 // Checkout: at the end of the stay the guest is reminded, thirty minutes later the owner and the cleaner hear the
 // guest is still there (the service admin too when the next guest is close), two hours later the service admin.
 
-export const PAY_REMIND=3*3600,PAY_GRACE=1800,PAY_MIN_WINDOW=1800;
+// The waits and the reminder lead are each person's choice (lib/decision-rules.ts); these are the fixed parts.
+export const PAY_MIN_WINDOW=1800;
 export const ARRIVAL_ASK={hourly:900,daily:3600},ARRIVAL_ACT={hourly:1800,daily:7200};
-export const CHECKOUT_WARN=1800,CHECKOUT_ESCALATE=7200,NEXT_CLOSE=3*3600;
+export const CHECKOUT_WARN=1800,NEXT_CLOSE=3*3600;
 
 const clock=(at:number)=>new Intl.DateTimeFormat('ru-RU',{hour:'2-digit',minute:'2-digit',timeZone:'Asia/Almaty'}).format(new Date(at*1000));
 const notice=(db:D1Database,user:string,body:string,dedupe:string,at:number)=>q(db,'INSERT OR IGNORE INTO notifications(id,user_id,body,dedupe,read,created_at) VALUES (?,?,?,?,0,?)',uuid(),user,body,dedupe,at);
@@ -43,16 +45,28 @@ const step=(db:D1Database,id:string,field:Field,deadline:number,from:number,to:n
  `INSERT INTO stay_watch(booking_id,${field}_step,${field}_for,updated_at) VALUES (?1,?3,?5,?4) ON CONFLICT(booking_id) DO UPDATE SET ${field}_step=?3,${field}_for=?5,updated_at=?4
   WHERE (stay_watch.${field}_for=?5 AND stay_watch.${field}_step=?2) OR (COALESCE(stay_watch.${field}_for,-1)<>?5 AND ?2=0)`,id,from,to,at,deadline);
 const moved=(r:D1Result[])=>!!r[0]?.meta?.changes;
+// Each person's choices in «Автопилот: решения и сроки», read once per sweep.
+type Rules=(user:string,key:RuleKey)=>Promise<RuleValue>;
+function rulesOf(db:D1Database):Rules{
+ const seen=new Map<string,Promise<RuleValue>>();
+ return (user,key)=>{const k=user+':'+key;if(!seen.has(k))seen.set(k,ruleFor(db,user,key));return seen.get(k)!;};
+}
 
-async function payments(db:D1Database,at:number,result:Row){
+async function payments(db:D1Database,at:number,result:Row,rule:Rules){
  const list:Row[]=await rows(db,STAY_SQL+` WHERE b.status='confirmed' AND b.payment_status<>'owner_verified' AND t.actual_checkin IS NULL AND b.end>?1
   AND ${PAY_STEP}<3 ORDER BY b.start LIMIT 50`,at);
  for(const b of list){
   const due=payDue({start:b.start,created_at:b.created_at}),title=b.title||'жильё',s=Number(b.pay_step);
-  if(at>=due+PAY_GRACE){
+  const unpaid=await rule(b.owner_id,'unpaid'),remind=await rule(b.guest_id,'pay_remind'),grace=unpaid.minutes*60;
+  if(at>=due+grace){
    if(Number(b.paid_amount)>0||b.checkin_reported_at){
     // Paid in part, or the guest says they are already inside: never released by the AI, the owner settles it.
     if(moved(await db.batch([step(db,b.id,'pay',due,s,3,at),q(db,"INSERT OR IGNORE INTO notifications SELECT ?,?,?,?,0,? WHERE changes()>0",uuid(),b.owner_id,(b.checkin_reported_at?'ИИ-администратор: гость сообщил, что заселился в «'+title+'», но оплата не отмечена. Отметьте оплату или договоритесь с гостем в чате брони.':'ИИ-администратор: бронь «'+title+'» оплачена не полностью. Отметьте остаток оплаты или договоритесь с гостем в чате брони.'),'owner:stay-pay-part:'+b.id+':'+due,at)])))result.warned++;
+    continue;
+   }
+   if(!unpaid.on){
+    // The owner keeps this decision: the AI only says the time is over.
+    if(moved(await db.batch([step(db,b.id,'pay',due,s,3,at),q(db,"INSERT OR IGNORE INTO notifications SELECT ?,?,?,?,0,? WHERE changes()>0",uuid(),b.owner_id,'ИИ-администратор: срок оплаты брони «'+title+'» прошёл, оплаты нет. Отметьте оплату, если она получена, или отмените бронь в карточке.','owner:stay-unpaid-ask:'+b.id+':'+due,at)])))result.warned++;
     continue;
    }
    const r=await db.batch([
@@ -67,25 +81,29 @@ async function payments(db:D1Database,at:number,result:Row){
   }
   if(at>=due&&s<2){
    if(moved(await db.batch([step(db,b.id,'pay',due,s,2,at),
-    q(db,"INSERT OR IGNORE INTO notifications SELECT ?,?,?,?,0,? WHERE changes()>0",uuid(),b.guest_id,'ИИ-администратор: бронь «'+title+'» не оплачена. Оплатите до '+clock(due+PAY_GRACE)+', иначе бронь снимется и жильё станет свободным.','guest:stay-pay-warn:'+b.id+':'+due,at),
-    notice(db,b.owner_id,'ИИ-администратор: гость не оплатил бронь «'+title+'». Если оплата получена, отметьте её в брони. Иначе в '+clock(due+PAY_GRACE)+' я сниму бронь.','owner:stay-pay-warn:'+b.id+':'+due,at)])))result.warned++;
+    q(db,"INSERT OR IGNORE INTO notifications SELECT ?,?,?,?,0,? WHERE changes()>0",uuid(),b.guest_id,'ИИ-администратор: бронь «'+title+'» не оплачена. Оплатите до '+clock(due+grace)+(unpaid.on?', иначе бронь снимется и жильё станет свободным.':', иначе владелец может отменить бронь.'),'guest:stay-pay-warn:'+b.id+':'+due,at),
+    notice(db,b.owner_id,'ИИ-администратор: гость не оплатил бронь «'+title+'». Если оплата получена, отметьте её в брони. '+(unpaid.on?'Иначе в '+clock(due+grace)+' я сниму бронь.':'Решение о брони за вами: в '+clock(due+grace)+' я напомню.'),'owner:stay-pay-warn:'+b.id+':'+due,at)])))result.warned++;
    continue;
   }
   // The reminder makes sense only when there is time left to pay before the warning.
-  if(at>=due-PAY_REMIND&&at<due&&s<1&&due-PAY_REMIND>Number(b.created_at)){
+  const lead=remind.minutes*60;
+  if(remind.on&&at>=due-lead&&at<due&&s<1&&due-lead>Number(b.created_at)){
    if(moved(await db.batch([step(db,b.id,'pay',due,s,1,at),
-    q(db,"INSERT OR IGNORE INTO notifications SELECT ?,?,?,?,0,? WHERE changes()>0",uuid(),b.guest_id,'ИИ-администратор: оплатите бронь «'+title+'» до '+clock(due)+'. Без оплаты бронь снимется через 30 минут после этого времени.','guest:stay-pay-remind:'+b.id+':'+due,at)])))result.reminded++;
+    q(db,"INSERT OR IGNORE INTO notifications SELECT ?,?,?,?,0,? WHERE changes()>0",uuid(),b.guest_id,'ИИ-администратор: оплатите бронь «'+title+'» до '+clock(due)+(unpaid.on?'. Без оплаты бронь снимется через '+minutesLabel(unpaid.minutes)+' после этого времени.':'.'),'guest:stay-pay-remind:'+b.id+':'+due,at)])))result.reminded++;
   }
  }
 }
 
-async function arrivals(db:D1Database,at:number,result:Row){
+async function arrivals(db:D1Database,at:number,result:Row,rule:Rules){
  const list:Row[]=await rows(db,STAY_SQL+` WHERE b.status='confirmed' AND b.payment_status='owner_verified' AND t.actual_checkin IS NULL AND t.checkin_reported_at IS NULL
   AND t.actual_checkout IS NULL AND b.end>?1 AND MAX(b.start,COALESCE(t.arrival_eta,0))<=?1 AND ${ARRIVAL_STEP}<2 ORDER BY b.start LIMIT 50`,at);
  for(const b of list){
-  const due=arrivalDue({start:b.start,arrival_eta:b.arrival_eta}),kind=hourly(b),title=b.title||'жильё',s=Number(b.arrival_step),actAt=due+ARRIVAL_ACT[kind];
+  const due=arrivalDue({start:b.start,arrival_eta:b.arrival_eta}),kind=hourly(b),title=b.title||'жильё',s=Number(b.arrival_step);
+  // The owner's wait, but never more than half an hour for an hourly stay; the guest is asked halfway at the latest.
+  const noShow=await rule(b.owner_id,'no_show'),act=kind==='hourly'?Math.min(noShow.minutes*60,ARRIVAL_ACT.hourly):noShow.minutes*60;
+  const actAt=due+act,askAt=due+Math.min(ARRIVAL_ASK[kind],Math.floor(act/2)),releases=noShow.on&&Number(b.autopilot)>0;
   if(at>=actAt){
-   if(Number(b.autopilot)){
+   if(releases){
     const r=await db.batch([
      q(db,"UPDATE bookings SET status='cancelled' WHERE id=? AND status='confirmed' AND NOT EXISTS(SELECT 1 FROM booking_terms WHERE booking_id=? AND (actual_checkin IS NOT NULL OR checkin_reported_at IS NOT NULL OR COALESCE(arrival_eta,0)<>?)) AND NOT EXISTS(SELECT 1 FROM property_operations WHERE property_id=? AND active_booking_id=?)",b.id,b.id,Number(b.arrival_eta)||0,b.property_id,b.id),
      q(db,"UPDATE cleaning_jobs SET status='cancelled' WHERE booking_id=? AND status IN ('open','assigned') AND EXISTS(SELECT 1 FROM bookings WHERE id=? AND status='cancelled')",b.id,b.id),
@@ -100,22 +118,27 @@ async function arrivals(db:D1Database,at:number,result:Row){
     q(db,"INSERT OR IGNORE INTO notifications SELECT ?,?,?,?,0,? WHERE changes()>0",uuid(),b.owner_id,'ИИ-администратор: гость так и не заселился в «'+title+'» и не ответил. Если он на месте, подтвердите заселение; если не приедет, отмените бронь в карточке.','owner:stay-no-show-ask:'+b.id+':'+due,at)])))result.warned++;
    continue;
   }
-  if(at>=due+ARRIVAL_ASK[kind]&&s<1){
+  if(at>=askAt&&s<1){
    if(moved(await db.batch([step(db,b.id,'arrival',due,s,1,at),
-    q(db,"INSERT OR IGNORE INTO notifications SELECT ?,?,?,?,0,? WHERE changes()>0",uuid(),b.guest_id,'ИИ-администратор: вы едете в «'+title+'»? Если задерживаетесь, нажмите «Задерживаюсь на час» в брони; если уже на месте, нажмите «Я заселился». Без ответа до '+clock(actAt)+' бронь может быть снята.','guest:stay-arrival-ask:'+b.id+':'+due,at),
+    q(db,"INSERT OR IGNORE INTO notifications SELECT ?,?,?,?,0,? WHERE changes()>0",uuid(),b.guest_id,'ИИ-администратор: вы едете в «'+title+'»? Если задерживаетесь, нажмите «Задерживаюсь на час» в брони; если уже на месте, нажмите «Я заселился».'+(releases?' Без ответа до '+clock(actAt)+' бронь может быть снята.':''),'guest:stay-arrival-ask:'+b.id+':'+due,at),
     notice(db,b.owner_id,'ИИ-администратор: гость ещё не заселился в «'+title+'». Я спросил, едет ли он.','owner:stay-arrival-ask:'+b.id+':'+due,at)])))result.reminded++;
   }
  }
 }
 
-async function checkouts(db:D1Database,at:number,result:Row,admin:string[]){
+async function checkouts(db:D1Database,at:number,result:Row,admin:string[],rule:Rules){
  const list:Row[]=await rows(db,STAY_SQL+` WHERE b.status='confirmed' AND b.end<=?1 AND t.actual_checkout IS NULL AND t.checkout_reported_at IS NULL AND ${CHECKOUT_STEP}<3 ORDER BY b.end LIMIT 50`,at);
  for(const b of list){
   const title=b.title||'жильё',s=Number(b.checkout_step),late=at-Number(b.end);
-  if(late>=CHECKOUT_ESCALATE&&s<3){
+  const handover=await rule(b.owner_id,'checkout');
+  if(late>=handover.minutes*60&&s>=2&&s<3&&!handover.on){
+   // The owner keeps the delay to themselves: the step closes without the service admin.
+   await step(db,b.id,'checkout',Number(b.end),s,3,at).run();continue;
+  }
+  if(late>=handover.minutes*60&&s<3&&handover.on){
    if(moved(await db.batch([step(db,b.id,'checkout',Number(b.end),s,3,at),
     q(db,"INSERT OR IGNORE INTO notifications SELECT ?,?,?,?,0,? WHERE changes()>0",uuid(),b.owner_id,'ИИ-администратор передал задержку выезда из «'+title+'» администратору сервиса. Подтвердите выезд, как только жильё освободится.','owner:stay-checkout-escalated:'+b.id+':'+b.end,at),
-    ...admin.map(a=>notice(db,a,'Гость не выехал из «'+title+'» больше 2 часов после конца брони и не ответил. Свяжитесь с владельцем и гостем.','admin:stay-checkout:'+b.id+':'+b.end+':'+a,at))])))result.escalated++;
+    ...admin.map(a=>notice(db,a,'Гость не выехал из «'+title+'» больше '+minutesLabel(handover.minutes)+' после конца брони и не ответил. Свяжитесь с владельцем и гостем.','admin:stay-checkout:'+b.id+':'+b.end+':'+a,at))])))result.escalated++;
    continue;
   }
   if(late>=CHECKOUT_WARN&&s<2){
@@ -134,10 +157,10 @@ async function checkouts(db:D1Database,at:number,result:Row,admin:string[]){
 }
 
 export async function sweepStays(db:D1Database,config:OperationConfig&{PLATFORM_ADMIN_IDS?:string}={}){
- const at=epoch(),result={reminded:0,warned:0,released:0,escalated:0};
- await payments(db,at,result);
- await arrivals(db,at,result);
- await checkouts(db,at,result,admins(config));
+ const at=epoch(),result={reminded:0,warned:0,released:0,escalated:0},rule=rulesOf(db);
+ await payments(db,at,result,rule);
+ await arrivals(db,at,result,rule);
+ await checkouts(db,at,result,admins(config),rule);
  return result;
 }
 

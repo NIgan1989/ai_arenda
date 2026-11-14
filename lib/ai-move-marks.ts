@@ -91,6 +91,7 @@ const NOTES:[string,AiNote['kind'],string][]=[
  ['guest:stay-pay-warn:','booking','ИИ предупредил: бронь не оплачена'],
  ['owner:stay-pay-warn:','booking','ИИ предупредил: гость не оплатил'],
  ['owner:stay-pay-part:','booking','ИИ передал вам неполную оплату'],
+ ['owner:stay-unpaid-ask:','booking','ИИ передал вам неоплаченную бронь'],
  ['guest:stay-unpaid-released:','booking','ИИ снял неоплаченную бронь'],
  ['owner:stay-unpaid-released:','booking','ИИ снял неоплаченную бронь'],
  ['guest:stay-arrival-ask:','booking','ИИ спросил, едете ли вы'],
