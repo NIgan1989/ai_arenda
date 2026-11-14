@@ -5,7 +5,6 @@ import { Photo } from './ListingMedia';
 import { Action, h } from './SheetParts';
 import { money, type Row } from './model';
 import { windowBadge } from '../../lib/window-badge';
-import { dealNote } from '../../lib/price-deal';
 import { C, type } from './styles';
 import { T } from './tokens';
 import { ReliabilityBadge } from './Reliability';
@@ -36,6 +35,7 @@ type Props = {
 };
 
 // The carousel: a card is a little narrower than the screen, so the next one peeks out and says «swipe».
+const TOP = 3;
 const GAP = 12,
   CARD_MAX = 300;
 
@@ -74,6 +74,10 @@ export function GuestResults({ preview, draft, selected, onSelect, onFocus, onBo
   // index: the card in view; seen: the farthest card reached, so photos load only near what the guest has looked at.
   const [index, setIndex] = useState(0),
     [seen, setSeen] = useState(0);
+  // The guest sees the three best first: the rest is one tap away, on the last card of the strip.
+  const [all, setAll] = useState(false);
+  useEffect(() => { setAll(false); }, [preview]);
+  const list = all || flats.length <= TOP + 1 ? flats : flats.slice(0, TOP), rest = flats.length - list.length;
   const settle = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const strip = useRef<ScrollView>(null);
   // Back from a result: the carousel opens again on the card the guest was looking at, as the counter and the map say.
@@ -89,12 +93,12 @@ export function GuestResults({ preview, draft, selected, onSelect, onFocus, onBo
   useEffect(() => () => clearTimeout(settle.current), []);
   // The map follows once the swipe has stopped, not on every card that passes by.
   const scrolled = (x: number) => {
-    const at = carouselIndex(x, step, flats.length);
+    const at = carouselIndex(x, step, list.length);
     if (at !== index) setIndex(at);
     if (at > seen) setSeen(at);
     clearTimeout(settle.current);
     settle.current = setTimeout(() => {
-      if (flats[at]) onFocus?.(flats[at].id);
+      if (list[at]) onFocus?.(list[at].id);
     }, 160);
   };
   const about = (flat: Row) => [flat.district, ...shownReasons(flat.match?.reasons, draft)].filter(Boolean).join(' · ');
@@ -128,11 +132,10 @@ export function GuestResults({ preview, draft, selected, onSelect, onFocus, onBo
               {chosen.title}
             </Text>
             {!!about(chosen) && (
-              <Text style={h.note}>
+              <Text numberOfLines={2} style={h.note}>
                 {about(chosen)}
               </Text>
             )}
-            {!!chosen.estimate.deal && <Text style={h.note}>{dealNote(chosen.estimate.deal, money)}.</Text>}
           </View>
           <View style={r.amount}>
             <Text style={h.price}>{money(chosen.estimate.amount)}</Text>
@@ -147,7 +150,6 @@ export function GuestResults({ preview, draft, selected, onSelect, onFocus, onBo
         </View>
         {!!chosen.photos?.[0] && <Photo id={chosen.photos[0]} alt={chosen.title + ', фото'} />}
         <Action secondary title="Подробнее о жилье" disabled={busy} onPress={() => onOpen(chosen)} />
-        <Text style={h.note}>Перед отправкой заявки вы увидите даты, сумму и правила. Деньги в приложении не списываются.</Text>
       </Rise>
     );
   }
@@ -155,10 +157,7 @@ export function GuestResults({ preview, draft, selected, onSelect, onFocus, onBo
   return (
     <>
       <Text accessibilityRole="header" style={h.cardTitle}>
-        Свободно на {stayWords(draft)}: {flats.length}
-      </Text>
-      <Text style={h.note}>
-        {flats.length > 1 ? 'Листайте варианты: метка на карте покажет, где каждый. ' + (index + 1) + ' из ' + flats.length + '.' : 'Нажмите, чтобы посмотреть и забронировать.'}
+        {rest ? list.length + ' лучших из ' + flats.length + ' на ' + stayWords(draft) : 'Свободно на ' + stayWords(draft) + ': ' + flats.length}
       </Text>
       <ScrollView
         ref={strip}
@@ -172,7 +171,7 @@ export function GuestResults({ preview, draft, selected, onSelect, onFocus, onBo
         style={r.carousel}
         contentContainerStyle={r.carouselContent}
       >
-        {flats.map((flat, i) => (
+        {list.map((flat, i) => (
           <Pressable
             key={flat.id}
             accessibilityRole="button"
@@ -206,15 +205,23 @@ export function GuestResults({ preview, draft, selected, onSelect, onFocus, onBo
                   {!!flat.estimate.deal && <Text style={r.deal}>Цена выгодная</Text>}
                 </View>
               )}
+              {/* Two taps to a booking: this button, then «Отправить заявку» on the check of the booking. */}
+              <Pressable accessibilityRole="button" accessibilityLabel={'Забронировать: ' + flat.title} disabled={busy} onPress={() => onBook(flat)} style={({ pressed }) => [r.book, (pressed || busy) && h.dim]}>
+                <Text style={r.bookText}>Забронировать</Text>
+              </Pressable>
             </View>
           </Pressable>
         ))}
+        {rest > 0 && (
+          <Pressable accessibilityRole="button" accessibilityLabel={'Показать ещё ' + rest} onPress={() => setAll(true)} style={({ pressed }) => [r.card, r.moreCard, pressed && r.cardPressed]}>
+            <Text style={r.moreCount}>+{rest}</Text>
+            <Text style={r.moreText}>Ещё {rest} {rest % 10 === 1 && rest % 100 !== 11 ? 'вариант' : rest % 10 > 1 && rest % 10 < 5 && !(rest % 100 > 11 && rest % 100 < 15) ? 'варианта' : 'вариантов'}</Text>
+          </Pressable>
+        )}
       </ScrollView>
       {!!onAskOwners && (
         <>
-          <Text style={h.note}>
-            Можно спросить владельцев, свободно ли жильё прямо сейчас. Они получат даты, число гостей и сумму. Имя, телефон и точка поиска не передаются.
-          </Text>
+          <Text style={h.note}>Владельцы получат даты, число гостей и сумму, без вашего имени и телефона.</Text>
           <Action secondary title={busy ? 'Отправляем…' : 'Спросить владельцев'} disabled={busy} onPress={onAskOwners} />
         </>
       )}
@@ -241,5 +248,10 @@ const r = StyleSheet.create({
   amount: { alignItems: 'flex-end' },
   best: { ...type.caption, alignSelf: 'flex-start', marginBottom: 4, paddingHorizontal: 8, paddingVertical: 2, borderRadius: T.radius.full, overflow: 'hidden', backgroundColor: C.accentSoft, color: C.accent, fontWeight: '600' },
   deal: { ...type.caption, marginTop: 4, paddingHorizontal: 8, paddingVertical: 2, borderRadius: T.radius.full, overflow: 'hidden', backgroundColor: C.successSoft, color: C.success, fontWeight: '600' },
-  window: { ...type.caption, marginTop: 4, paddingHorizontal: 8, paddingVertical: 2, borderRadius: T.radius.full, overflow: 'hidden', backgroundColor: C.accentSoft, color: C.accent, fontWeight: '600' }
+  window: { ...type.caption, marginTop: 4, paddingHorizontal: 8, paddingVertical: 2, borderRadius: T.radius.full, overflow: 'hidden', backgroundColor: C.accentSoft, color: C.accent, fontWeight: '600' },
+  book: { minHeight: 36, marginTop: 8, borderRadius: T.radius.full, alignItems: 'center', justifyContent: 'center', backgroundColor: C.accent },
+  bookText: { ...type.label, color: C.onAccent, fontWeight: '600' },
+  moreCard: { width: 132, alignItems: 'center', justifyContent: 'center', gap: 4, padding: 12, backgroundColor: C.accentSoft, borderColor: C.accentLine },
+  moreCount: { ...type.title, color: C.accent, fontWeight: '700' },
+  moreText: { ...type.label, color: C.accent, fontWeight: '600', textAlign: 'center' }
 });
