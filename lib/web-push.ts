@@ -4,6 +4,7 @@ import type {RentalService} from './service';
 import {epoch,uuid,q,one,rows,hash,type OperationConfig,type Row} from './operation-core';
 import {encryptInstructions,decryptInstructions} from './participant-security';
 import {quietNow} from './administrator';
+import {silentNotice} from './notice-feed';
 import {defaultAssistantSettings} from './assistant';
 import {priceRevision,windowRevision,stayRevision,forecastRevision} from './approvals';
 import {weekSummary,adviceSentence} from './forecast-text';
@@ -117,6 +118,8 @@ export async function deliverWebPush(db:D1Database,config:OperationConfig,limit=
  let sent=0,failed=0;
  const deadline=Date.now()+19000;
  for(const item of due){if(Date.now()>deadline)break;
+  // A step the AI made alone that asks nothing of the owner is not pushed: it is in the journal (lib/notice-feed.ts).
+  if(item.notification_id&&silentNotice(item.dedupe,item.notice_body)){await q(db,"UPDATE push_deliveries SET status='dead',last_error='silent',lease_until=0 WHERE id=? AND (status='pending' OR (status='sending' AND lease_until<=?))",item.id,epoch()).run();continue;}
   let settings=defaultAssistantSettings;try{settings={...settings,...JSON.parse(item.settings||'{}')};}catch{}
   if(item.notification_id&&quietNow(settings,epoch())){await q(db,"UPDATE push_deliveries SET available_at=?,status='pending',lease_until=0 WHERE id=? AND (status='pending' OR (status='sending' AND lease_until<=?))",epoch()+300,item.id,epoch()).run();continue;}
   const token=uuid(),claim=await q(db,"UPDATE push_deliveries SET status='sending',attempts=attempts+1,lease_token=?,lease_until=? WHERE id=? AND ((status='pending' AND available_at<=?) OR (status='sending' AND lease_until<=?)) RETURNING attempts",token,epoch()+90,item.id,epoch(),epoch()).first<Row>();if(!claim)continue;
