@@ -71,10 +71,10 @@ export function pushPayload(role:Role,test=false,matching=false,price?:Row|null,
  if(forecast&&role==='owner'&&forecast.status==='suggested'){const days=typeof forecast.days==='string'?JSON.parse(forecast.days||'[]'):forecast.days||[],sum=(n:number)=>new Intl.NumberFormat('ru-RU').format(n)+' ₸',none=forecast.advice==='none';
   return JSON.stringify({kind:'forecast',title:'Прогноз на неделю',body:weekSummary(days)+'. '+(none?'Менять ничего не нужно.':adviceSentence(forecast)),url:'/workspace/owner/map',
    decision:{id:'forecast:'+forecast.id,revision:forecastRevision(forecast),accept:none?'Понятно':forecast.advice==='min_hours'?'От '+forecast.to_value+' ч':(forecast.advice==='raise'?'Поднять до ':'Снизить до ')+sum(forecast.to_value),reject:none?'Скрыть':'Оставить',done:{accept:none?'Прогноз прочитан':'Готово',reject:'Оставляем как есть'}}});}
- if(test)return JSON.stringify({title:'AI Аренда',body:'Уведомления на этом устройстве работают.',url:'/workspace/'+role+'/map'});
+ if(test)return JSON.stringify({title:'AiQonaq',body:'Уведомления на этом устройстве работают.',url:'/workspace/'+role+'/map'});
  // Any other notice says what happened (the notice's own text) and opens the screen it is about.
  const body=String(notice?.body||'').trim();
- return JSON.stringify({title:target?.title||'AI Аренда',body:body?(body.length>300?body.slice(0,299)+'…':body):'Есть новое событие.',url:target?.url||'/workspace/'+role+(matching?'/map':'/chats')});
+ return JSON.stringify({title:target?.title||'AiQonaq',body:body?(body.length>300?body.slice(0,299)+'…':body):'Есть новое событие.',url:target?.url||'/workspace/'+role+(matching?'/map':'/chats')});
 }
 export type PushTarget={url:string;title:string};
 const pushId=/^[A-Za-z0-9_-]{1,100}$/;

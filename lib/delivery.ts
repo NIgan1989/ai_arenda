@@ -112,7 +112,7 @@ export async function deliverOutbox(db:D1Database,config:OperationConfig,limit=3
   try{
    const base=config.SITE_PUBLIC_URL?httpsEndpoint(config.SITE_PUBLIC_URL).origin:null;
    // External notices contain no addresses, access codes or issue descriptions.
-   const text='AI Аренда: новое событие в рабочей роли. '+(base?base+'/workspace/'+item.role+'/assistant':'Откройте сервис и проверьте задачи.');
+   const text='AiQonaq: новое событие в рабочей роли. '+(base?base+'/workspace/'+item.role+'/assistant':'Откройте сервис и проверьте задачи.');
    let response:Response;
    if(item.channel==='telegram'){
     if(!config.TELEGRAM_BOT_TOKEN)throw new Error('channel_not_configured');

@@ -5,9 +5,9 @@ import {C} from './styles';
 import {T} from './tokens';
 import {API_URL} from './api';
 import {restoreStep} from './map-memory';
-import {MAX_ZOOM,MIN_ZOOM,TILE,fitView,groupPins,pinWidth,project,unproject,validPoint,visibleTiles,type MapPoint} from './map-math';
+import {MAX_ZOOM,MIN_ZOOM,TILE,fitView,groupPins,pinBoxWidth,project,unproject,validPoint,visibleTiles,type MapPoint} from './map-math';
 import {appearDelay,flight,flightSteps,lineOrigin,type Flight,type MapLine,type PinState,type PinTone} from './map-motion';
-import {Beam,FRESH,HeatBlob,LEAVE,Leaving,Origin,Pin,Radar,Spark,controlsHeight,m,toneOrder} from './MapPins';
+import {Beam,CrossHead,FRESH,HeatBlob,LEAVE,Leaving,Origin,Pin,Radar,Spark,controlsHeight,m,toneOrder} from './MapPins';
 
 // rank: among pins of one tone, the lower one stays visible when their boxes meet (the price, for flats).
 // until: for a waiting pin, when the owner's time to answer ends, in seconds by this phone's clock; a strip under the label runs down to it.
@@ -116,7 +116,7 @@ export function TileMap({center,pins,selected,focus='',lines=[],heat=[],sparks=[
  const byKey=new Map(placed.map(p=>[p.pin.key,p]));
  // The stops of a cleaner's route never fold into other pins; stops that meet each other fold into the first of them with «+N»,
  // and a tap opens them as for any group (at the closest zoom each tap shows the next stop).
- const box=(selectedRank:(pin:MapPin)=>number)=>({pin,x,y}:{pin:MapPin;x:number;y:number})=>({key:pin.key,x,y,width:pinWidth(pin.label)+(pin.order?22:0),height:32,rank:pin.key===selected||pin.key===focus?-1:selectedRank(pin)});
+ const box=(selectedRank:(pin:MapPin)=>number)=>({pin,x,y}:{pin:MapPin;x:number;y:number})=>({key:pin.key,x,y,width:pinBoxWidth(pin.label,pin.order),height:32,rank:pin.key===selected||pin.key===focus?-1:selectedRank(pin)});
  const shown=[false,true].flatMap(stops=>groupPins(placed.filter(p=>!!p.pin.order===stops).map(box(pin=>stops?pin.order!:toneOrder[pin.tone||'home']*1e9+(pin.best?0:Math.max(0,Math.min(pin.rank??0,1e9-1))))))).map(g=>({...byKey.get(g.key)!,members:g.members}));
  const openGroup=(keys:string[])=>{
   const {view:v}=state.current;
@@ -144,7 +144,7 @@ export function TileMap({center,pins,selected,focus='',lines=[],heat=[],sparks=[
   {picking&&<View pointerEvents="none" style={[m.cross,{left:size.w/2-28,top:originY-28}]}>
    <Animated.View style={[m.landing,{opacity:land.interpolate({inputRange:[0,1],outputRange:[.6,0]}),transform:[{scale:land.interpolate({inputRange:[0,1],outputRange:[.2,1.4]})}]}]}/>
    <Animated.View style={[m.crossShadow,{opacity:lift.interpolate({inputRange:[0,1],outputRange:[.25,.12]}),transform:[{scale:lift.interpolate({inputRange:[0,1],outputRange:[1,.6]})}]}]}/>
-   <Animated.View style={{alignItems:'center',position:'absolute',bottom:28,transform:[{translateY:lift.interpolate({inputRange:[0,1],outputRange:[0,-14]})}]}}><View style={m.crossHead}/><View style={m.crossStem}/></Animated.View>
+   <Animated.View style={{alignItems:'center',position:'absolute',bottom:28,transform:[{translateY:lift.interpolate({inputRange:[0,1],outputRange:[0,-14]})}]}}><CrossHead/><View style={m.crossStem}/></Animated.View>
   </View>}
   <View style={[m.controls,{top:Math.max(topInset+12,Math.round(originY-controlsHeight/2))}]}>
    <Pressable accessibilityRole="button" accessibilityLabel="Приблизить" disabled={view.zoom>=MAX_ZOOM} onPress={()=>zoomBy(1)} style={m.control}><Image source={plusIcon} style={m.controlIcon} accessibilityIgnoresInvertColors/></Pressable>

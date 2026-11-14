@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import "./tokens.css";
+import "./brand-images.css";
 import "./design-system.css";
 import "./mobile-first.css";
 import "./interface-release.css";
@@ -14,14 +15,14 @@ import {AppLoader} from "../components/app-loader";
 import {NativeFeel} from "../components/native-feel";
 
 export const metadata: Metadata = {
-  title: "AI Аренда — всё складывается",
+  title: "AiQonaq — всё складывается",
   description: "Единый ассистент для аренды жилья, управления жильём и работы по уборке.",
   manifest: '/manifest.webmanifest',
-  appleWebApp: {capable:true,title:'AI Аренда',statusBarStyle:'default'},
+  appleWebApp: {capable:true,title:'AiQonaq',statusBarStyle:'default'},
   icons: {
-    icon: "/brand-mark.png",
-    shortcut: "/brand-mark.png",
-    apple: '/brand-mark.png',
+    icon: [{url:'/favicon.svg',type:'image/svg+xml'},{url:'/icon-192.png',sizes:'192x192',type:'image/png'}],
+    shortcut: '/icon-192.png',
+    apple: '/apple-touch-icon.png',
   },
 };
 

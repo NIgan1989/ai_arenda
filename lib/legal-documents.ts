@@ -13,7 +13,7 @@ export const OPERATOR={
  phone:'',         // телефон поддержки
  bank:'',          // банк, ИИК (IBAN), БИК — для пополнения баланса владельцами
  site:'https://ai-arenda.ai-arenda-kz.workers.dev',
- service:'AI Аренда',
+ service:'AiQonaq',
 };
 export const OPERATOR_GAPS:Record<keyof typeof OPERATOR,string>={name:'наименование оператора',bin:'БИН/ИИН',address:'юридический адрес',email:'эл. почта поддержки',phone:'телефон поддержки',bank:'банковские реквизиты',site:'адрес сайта',service:'название сервиса'};
 
