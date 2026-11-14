@@ -5,7 +5,7 @@ export function legalReturn(value?:unknown){
  const from=typeof value==='string'?value:'';
  if(from==='app')return {href:APP_RETURN,label:'В приложение'};
  if(from&&/^\/(?![/\\])[^\s\\]*$/.test(from)){
-  try{const url=new URL(from,'https://x.invalid');if(url.origin==='https://x.invalid'&&!/^\/(privacy|terms|data-deletion)(\/|$)/.test(url.pathname))return {href:url.pathname+url.search+url.hash,label:'Назад'};}catch{}
+  try{const url=new URL(from,'https://x.invalid');const href=url.pathname+url.search+url.hash;if(url.origin==='https://x.invalid'&&/^\/(?![/\\])/.test(href)&&!/^\/(privacy|terms|data-deletion)(\/|$)/.test(url.pathname))return {href,label:'Назад'};}catch{}
  }
  return {href:'/',label:'На карту'};
 }

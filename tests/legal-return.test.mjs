@@ -10,7 +10,7 @@ const read = path => readFileSync(new URL('../' + path, import.meta.url), 'utf8'
 test('a document returns to the screen it was opened from', () => {
   assert.deepEqual(legalReturn('/workspace/owner/account?menu=safety'), { href: '/workspace/owner/account?menu=safety', label: 'Назад' });
   assert.deepEqual(legalReturn('app'), { href: 'aiarenda://', label: 'В приложение' });
-  for (const bad of [undefined, '', 'https://evil.example', '//evil.example', '/\\evil.example', 'javascript:alert(1)', '/privacy', '/terms/owner', ['/a']])
+  for (const bad of [undefined, '', 'https://evil.example', '//evil.example', '/\\evil.example', 'javascript:alert(1)', '/privacy', '/terms/owner', '/a/..//evil.example', '/a/../\\evil.example', ['/a']])
     assert.deepEqual(legalReturn(bad), { href: '/', label: 'На карту' }, String(bad));
   assert.equal(legalLink('/terms', '/workspace/guest/account?menu=safety'), '/terms?from=%2Fworkspace%2Fguest%2Faccount%3Fmenu%3Dsafety');
   assert.equal(legalLink('/terms', ''), '/terms');
