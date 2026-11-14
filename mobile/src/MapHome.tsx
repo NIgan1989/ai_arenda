@@ -314,7 +314,7 @@ function OwnerPanel({accountId,data,mapData,publish,snap,showNow,expand,onHead,o
    {/* The feed: what waits for the owner on top, then a row for every booking and cleaning the autopilot leads. */}
    {(flats.length>0||needs.length>0)&&<AutopilotThreads role="owner" data={data} now={serverNow(data)} needs={needs} onOpen={(kind,id)=>onOpenProcess(kind,id)}/>}
    {/* What the owner still does by hand and the AI can take: one row, one tap. */}
-   {flats.length>0&&<AutopilotHandoff role="owner" accountId={accountId} compact={snap===0} onExpand={()=>expand(2)} onChanged={onChanged} onSetup={id=>{if(id)onEdit?.(id,'prices');}}/>}
+   {flats.length>0&&<AutopilotHandoff role="owner" accountId={accountId} stamp={flats.map(p=>p.id+':'+(p.policy?.version??'')+':'+(p.policy?.cleaning_fee??'')+':'+(p.policy?.auto_confirm??'')).join('|')} tick={Number(data.serverTime)||0} compact={snap===0} onExpand={()=>expand(2)} onChanged={onChanged} onSetup={id=>{if(id)onEdit?.(id,'prices');}}/>}
    {snap===0&&Array.isArray(data.ownProperties)&&!flats.length&&<Text style={h.note}>Добавьте первое жильё, и оно появится на карте.</Text>}
    {snap===0&&!needs.length&&searching>0&&<Text style={h.note}>Сейчас {searching} {plural(searching,'гость ищет','гостя ищут','гостей ищут')} жильё в городе. Где спрос выше, карта светится ярче.</Text>}
   </MapSheetHead></HeadSlot>
@@ -386,7 +386,7 @@ function CleanerPanel({accountId,data,mapData,city,publish,snap,showNow,expand,o
   <HeadSlot onHeight={onHead}>{nav.trip?<TripHead nav={nav} onOpen={()=>{const id=nav.trip!.id;nav.close();onOpenProcess('job',id);}}/>:<MapSheetHead role="cleaner" text={asked} onText={setAsked} onSend={text=>{setAsked('');onAsk(text);}} onChip={action=>{if(action==='nearby')expand(1);else if(action==='schedule')onOpenPage('calendar');}} now={null} onNow={()=>{}}>
    {!!nav.error&&<Text accessibilityRole="alert" style={h.error}>{nav.error}</Text>}
    <AutopilotThreads role="cleaner" data={data} now={clock} calendar={snap>0} onOpen={(kind,id)=>onOpenProcess(kind,id)}/>
-   <AutopilotHandoff role="cleaner" accountId={accountId} compact={snap===0} onExpand={()=>expand(2)} onChanged={onChanged} onSetup={()=>onOpenPage('account')}/>
+   <AutopilotHandoff role="cleaner" accountId={accountId} tick={Number(data.serverTime)||0} compact={snap===0} onExpand={()=>expand(2)} onChanged={onChanged} onSetup={()=>onOpenPage('account')}/>
   </MapSheetHead>}</HeadSlot>
   {snap>0&&<>
    {mine.length>0&&<Text accessibilityRole="header" style={h.cardTitle}>{route.length?'Маршрут дня':'Ваше задание'}</Text>}

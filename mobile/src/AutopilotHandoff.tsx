@@ -7,7 +7,8 @@ import { T } from './tokens';
 import type { Row } from './model';
 
 // compact: the sheet is collapsed, so the offer is one line; a tap opens the sheet (onExpand) and the offer with it.
-type Props = { role: 'owner' | 'cleaner'; accountId: string; compact?: boolean; onExpand?: () => void; onChanged: () => Promise<unknown> | void; onSetup: (flatId?: string) => void };
+// stamp: what the offer depends on in the workspace data (the owner's prices and rules); tick: the time of the last refresh of that data.
+type Props = { role: 'owner' | 'cleaner'; accountId: string; stamp?: string; tick?: number; compact?: boolean; onExpand?: () => void; onChanged: () => Promise<unknown> | void; onSetup: (flatId?: string) => void };
 
 // «Не сейчас» holds until the app is opened again: the offer is one row, not a banner that comes back on every screen.
 const later = new Set<string>();
@@ -16,13 +17,17 @@ const money = (n: number) => new Intl.NumberFormat('ru-RU').format(n || 0) + ' �
 // «Передать ИИ» in the feed of the map sheet. The owner who leads a home by hand and the performer who takes cleanings
 // by hand see one row; a tap opens what the AI will do, the price and one button. Nothing is asked that the service
 // already knows: only the cleaning price of a home that has none.
-export function AutopilotHandoff({ role, accountId, compact, onExpand, onChanged, onSetup }: Props) {
+export function AutopilotHandoff({ role, accountId, stamp = '', tick = 0, compact, onExpand, onChanged, onSetup }: Props) {
   const key = role + ':' + accountId;
   const [state, setState] = useState<Row | null>(null), [open, setOpen] = useState(false), [busy, setBusy] = useState(false);
   const [fees, setFees] = useState<Record<string, string>>({}), [notice, setNotice] = useState(''), [hidden, setHidden] = useState(later.has(key));
   const live = useRef(true);
   const load = () => request('/api/operations/autopilot/state', undefined, undefined, undefined, role).then(v => { if (live.current) setState(v); }).catch(() => { /* No offer without the state: the feed stays as it is. */ });
-  useEffect(() => { live.current = true; void load(); return () => { live.current = false; }; }, [key]);
+  useEffect(() => { live.current = true; void load(); return () => { live.current = false; }; }, [key, stamp]);
+  // The person went to fill the prices or the rules: the offer is read again with the next refresh of the workspace.
+  const stale = useRef(false);
+  useEffect(() => { if (stale.current) { stale.current = false; void load(); } }, [tick]);
+  const setup = (flatId?: string) => { stale.current = true; onSetup(flatId); };
   const owner = role === 'owner' ? ownerHandoff(state) : null, cleaner = role === 'cleaner' ? cleanerHandoff(state) : null, offer = owner || cleaner;
   if (!offer || hidden) return notice ? <Text accessibilityLiveRegion="polite" style={a.done}>✦ {notice}</Text> : null;
   const missing = owner ? owner.needFee.some(f => Number(fees[f.id] || 0) < 100) : false, none = owner ? !owner.ready.length : false;
@@ -34,8 +39,11 @@ export function AutopilotHandoff({ role, accountId, compact, onExpand, onChanged
         : cleaner!.rules;
       const result = await request('/api/operations/autopilot/start', body, undefined, undefined, role);
       if (!live.current) return;
-      setNotice(result?.failed?.length && !result?.done?.length ? result.failed[0].error : result?.message || 'Автопилот включён.');
-      setOpen(false); setState(result?.state || null); if (!result?.state) await load();
+      // A home the server refused (an expired mandate, a tariff under the minimum) keeps the offer open with the reason.
+      const failed: Row[] = result?.failed || [];
+      setNotice(failed.length ? failed.map(f => f.error).join(' ') : result?.message || 'Автопилот включён.');
+      if (!failed.length) setOpen(false);
+      setState(result?.state || null); if (!result?.state) await load();
       await onChanged();
     } catch (e: any) { if (live.current) setNotice(e?.message || 'Не получилось включить. Попробуйте ещё раз.'); }
     finally { if (live.current) setBusy(false); }
@@ -63,7 +71,7 @@ export function AutopilotHandoff({ role, accountId, compact, onExpand, onChanged
         {owner?.notReady.map(f => (
           <View key={f.id} style={a.setup}>
             <Text style={[a.fact, a.text]}>{f.title}: сначала укажите цены и правила, по ним ИИ отвечает гостям</Text>
-            <Pressable accessibilityRole="button" accessibilityLabel={'Заполнить: ' + f.title} onPress={() => onSetup(f.id)} style={a.link}><Text style={a.linkText}>Заполнить</Text></Pressable>
+            <Pressable accessibilityRole="button" accessibilityLabel={'Заполнить: ' + f.title} onPress={() => setup(f.id)} style={a.link}><Text style={a.linkText}>Заполнить</Text></Pressable>
           </View>
         ))}
         {cleaner && <Text style={a.fact}>{cleaner.rulesText}. О новом владельце ИИ спросит вас.</Text>}
@@ -71,7 +79,7 @@ export function AutopilotHandoff({ role, accountId, compact, onExpand, onChanged
         {!!notice && <Text accessibilityRole="alert" style={a.error}>{notice}</Text>}
         <View style={a.actions}>
           {!none && <Pressable accessibilityRole="button" accessibilityLabel="Включить автопилот" disabled={busy || missing} onPress={() => void start()} style={({ pressed }) => [a.button, a.grow, (busy || missing) && a.off, pressed && a.pressed]}><Text style={a.buttonText}>{busy ? 'Включаю…' : 'Включить'}</Text></Pressable>}
-          {cleaner && <Pressable accessibilityRole="button" disabled={busy} onPress={() => onSetup()} style={a.link}><Text style={a.linkText}>Изменить правила</Text></Pressable>}
+          {cleaner && <Pressable accessibilityRole="button" disabled={busy} onPress={() => setup()} style={a.link}><Text style={a.linkText}>Изменить правила</Text></Pressable>}
           <Pressable accessibilityRole="button" disabled={busy} onPress={() => { later.add(key); setHidden(true); }} style={a.link}><Text style={a.linkMuted}>Не сейчас</Text></Pressable>
         </View>
       </>}
