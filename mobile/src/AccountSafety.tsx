@@ -22,7 +22,7 @@ export function NativeAccountSafety({role,page,go,admin=false,onSignedOut}:{role
  const choose=(allowed:boolean)=>permission&&act('/api/operations/ai-data-permission',{allowed,policyVersion:permission.policyVersion,expectedVersion:permission.version});
  const wide=(title:string,fn:()=>void,disabled=busy,danger=false)=><Pressable accessibilityRole="button" disabled={disabled} onPress={fn} style={[s.button,danger?{backgroundColor:C.danger}:s.secondary,{marginTop:12},disabled&&s.disabled]}><Text style={[s.buttonText,!danger&&s.secondaryText]}>{title}</Text></Pressable>;
  const lead=(text:string)=><Text style={[a.note,{marginTop:12,marginHorizontal:4,fontSize:14,lineHeight:20}]}>{text}</Text>;
- const link=(title:string,path:string)=><Row title={title} onPress={()=>void Linking.openURL(API_URL+path).catch(()=>undefined)}/>;
+ const link=(title:string,path:string)=><Row title={title} onPress={()=>void Linking.openURL(API_URL+path+'?from=app').catch(()=>undefined)}/>;
  const missing=(what:string)=><View>{lead('Не удалось загрузить '+what+'. Проверьте интернет.')}{wide('Повторить',()=>void load(),loading)}</View>;
  const shown=!!notice&&<Text accessibilityRole="alert" style={[a.note,{marginTop:12,marginHorizontal:4}]}>{notice}</Text>;
  if(!state)return loading?<ThinkingLine style={s.meta} text="Загружаем…"/>:<View><Text accessibilityRole="alert" style={s.error}>{loadError}</Text>{wide('Повторить',()=>void load(),false)}</View>;

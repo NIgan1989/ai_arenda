@@ -55,7 +55,7 @@ function BookingReview({flow,busy,done,result,onConfirm,onEdit}:{flow:Flow;busy:
 }
 function Auth({onSubmit,busy,titled=true}:{titled?:boolean;onSubmit:(mode:string,phone:string,password:string,name?:string,city?:string,recovery?:string)=>Promise<void>;busy:boolean}){
   const [mode,setMode]=useState('login'),[phone,setPhone]=useState(''),[password,setPassword]=useState(''),[name,setName]=useState(''),[city,setCity]=useState('Павлодар'),[recovery,setRecovery]=useState(''),[error,setError]=useState('');
-  const [accepted,setAccepted]=useState(false);const legal=(path:string)=>void Linking.openURL(API_URL+path).catch(()=>setError('Не удалось открыть документ.'));
+  const [accepted,setAccepted]=useState(false);const legal=(path:string)=>void Linking.openURL(API_URL+path+'?from=app').catch(()=>setError('Не удалось открыть документ.'));
   return <View style={s.card}>
     {(titled||mode!=='login')&&<Text style={s.cardTitle}>{mode==='register'?'Один аккаунт для всех устройств':mode==='recover'?'Восстановить доступ':'С возвращением'}</Text>}
     <Text style={s.meta}>Номер телефона и пароль те же, что на сайте. Брони и чаты общие.</Text>
