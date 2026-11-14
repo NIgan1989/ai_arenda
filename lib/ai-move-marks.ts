@@ -64,23 +64,26 @@ export function latestMove(marks:unknown,about:{kind:string;id:string}[],now:num
 // ---------- The journal: everything the AI did for this person, one short line each ----------
 // Wider than the map: it also keeps what has no pin (a price advice, a forecast, a deposit returned).
 // Shown in the menu: under «Тариф и автопилот» for the cleaner, as its own short row for the guest and the owner.
-export type AiNote={kind:AiMark['kind']|'';id:string;text:string;at:number};
+// kind: what the id of the notice names. Besides the things a mark has, a note can name an application for a cleaning,
+// a price advice, a calendar window, a forecast, an offer to change a stay or a chat: the server turns each into the
+// booking, cleaning or home it is about (lib/ai-moves.ts), so every line says where it happened and opens it.
+export type AiNote={kind:AiMark['kind']|''|'application'|'price'|'window'|'forecast'|'stay'|'room';id:string;text:string;at:number};
 const NOTES:[string,AiNote['kind'],string][]=[
- ['owner:administrator-propose:','','ИИ предложил исполнителя'],
+ ['owner:administrator-propose:','application','ИИ предложил исполнителя'],
  ['owner:administrator-review-issue:','job','ИИ нашёл замечания в отчёте'],
  ['owner:administrator-checkin-payment:','booking','ИИ попросил гостя оплатить'],
  ['owner:administrator-checkin-ready:','booking','ИИ ждёт готовности жилья'],
- ['owner:price:','','ИИ посоветовал цену'],
- ['owner:window:','','ИИ нашёл окно в календаре'],
- ['owner:forecast:','','ИИ составил прогноз загрузки'],
+ ['owner:price:','price','ИИ посоветовал цену'],
+ ['owner:window:','window','ИИ нашёл окно в календаре'],
+ ['owner:forecast:','forecast','ИИ составил прогноз загрузки'],
  ['owner:autopilot-week:','','ИИ подвёл итоги недели'],
- ['owner:guest-question:','','ИИ передал вопрос гостя'],
+ ['owner:guest-question:','room','ИИ передал вопрос гостя'],
  ['guest:administrator-checkin-pay:','booking','ИИ попросил оплатить на месте'],
  ['owner:offer:','cleaning-offer','ИИ предложил уборку исполнителю'],
  // Payments are an imitation until the launch: the line says so, as the notice does.
  ['guest:test-deposit-return:','booking','ИИ вернул депозит (тест, без перевода)'],
- ['guest:stay:','','ИИ предложил изменить проживание'],
- ['guest:review-request:','','ИИ спросил, как прошло'],
+ ['guest:stay:','stay','ИИ предложил изменить проживание'],
+ ['guest:review-request:','booking','ИИ спросил, как прошло'],
  ['cleaner:day-plan:','','ИИ составил план дня'],
  ['cleaner:offer:','cleaning-offer','ИИ предложил уборку']
 ];
@@ -98,3 +101,27 @@ export function journalWhen(at:number,now:number){
 }
 // How many of these lines are from today: the number next to the row of the menu.
 export function journalToday(entries:{at:number}[],now:number){const zone=5*3600,day=(t:number)=>Math.floor((t+zone)/86400);return entries.filter(e=>day(e.at)===day(now)).length;}
+
+// ---------- A line of the journal opens what it is about ----------
+// open: the booking, the cleaning, the home or the chat of the line. The same addresses a push opens (lib/web-push.ts).
+export type JournalOpen={kind:'booking'|'job'|'property'|'room';id:string};
+export type JournalLine={at:number;text:string;title:string;open?:JournalOpen};
+export function journalHref(role:string,open?:JournalOpen|null):string|null{
+ if(!open||!/^[A-Za-z0-9_-]{1,100}$/.test(open.id)||!['guest','owner','cleaner'].includes(role))return null;
+ const base='/workspace/'+role+'/';
+ if(open.kind==='room')return base+'chats?room='+open.id;
+ if(open.kind==='booking')return role==='cleaner'?null:base+'bookings?entity='+open.id;
+ if(open.kind==='job')return role==='owner'?base+'cleaning?entity='+open.id:role==='cleaner'?base+'assignments?entity='+open.id:null;
+ return role==='owner'?base+'properties?entity='+open.id:null;
+}
+// Two notices about one step (the owner is told twice, by two rules) read as one line: the same words about
+// the same thing within the same minute are kept once. Lines come newest first.
+export function mergeJournal<T extends JournalLine>(lines:T[]):T[]{
+ const out:T[]=[];
+ for(const l of lines){
+  const last=out[out.length-1];
+  if(last&&last.text===l.text&&last.title===l.title&&(last.open?.kind||'')===(l.open?.kind||'')&&(last.open?.id||'')===(l.open?.id||'')&&Math.floor(last.at/60)===Math.floor(l.at/60))continue;
+  out.push(l);
+ }
+ return out;
+}

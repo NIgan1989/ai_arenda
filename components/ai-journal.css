@@ -1,6 +1,10 @@
 /* The AI journal in the menu (ai-journal.tsx): short lines, time on the left. */
 .ai-journal ul{list-style:none;margin:0;padding:0}
-.ai-journal li{display:grid;grid-template-columns:96px minmax(0,1fr);gap:8px;align-items:baseline;padding:8px 16px;font-size:14px;line-height:20px}
+.ai-journal-line{display:grid;grid-template-columns:96px minmax(0,1fr) 16px;gap:8px;align-items:baseline;width:100%;min-height:44px;padding:8px 16px;border:0;background:none;color:inherit;font:inherit;font-size:14px;line-height:20px;text-align:left}
+button.ai-journal-line{cursor:pointer}
+button.ai-journal-line:active{background:var(--t-accent-soft)}
+button.ai-journal-line:focus-visible{outline:2px solid var(--t-focus);outline-offset:-2px}
+.ai-journal-line svg{align-self:center;color:var(--t-muted)}
 .ai-journal li+li{border-top:1px solid var(--t-line)}
 .ai-journal time{font-size:12px;line-height:16px;color:var(--t-muted);font-variant-numeric:tabular-nums}
 .ai-journal b{font-weight:600;color:var(--t-ink)}
