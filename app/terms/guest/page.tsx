@@ -1,2 +1,2 @@
 import {LegalInformation} from '../../../components/legal-information';
-export default function Page(){return <LegalInformation kind="guest"/>;}
+export default async function Page({searchParams}:{searchParams:Promise<{from?:string}>}){const {from}=await searchParams;return <LegalInformation kind="guest" from={from}/>;}

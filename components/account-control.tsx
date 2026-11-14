@@ -3,7 +3,7 @@ import {Thinking} from './thinking';
 import {Button} from './ui/button';
 import {NativeSelect} from './ui/native-select';
 import {Input} from './ui/input';
-import {useEffect,useState,type ReactNode} from 'react';
+import {useEffect,useRef,useState,type ReactNode} from 'react';
 import {CheckCircle2,CheckCheck,CircleDot,Landmark,ArrowLeft,Bell,ChevronRight,ShieldCheck,Star,Wallet,MessagesSquare,SlidersHorizontal,LockKeyhole,Camera,Users,Sparkles,UserRound,Languages,MapPin,Phone,Map as MapIcon,Clock,BadgeCheck,Eye,LogOut,BriefcaseBusiness,Plus} from 'lucide-react';
 import {roleNames,rolePages} from '../lib/access';
 import {pageIcon} from './workspace-navigation';
@@ -20,6 +20,7 @@ import {WebPushSettings} from './web-push-settings';
 import {TelegramSettings} from './telegram-settings';
 import {AutopilotPlan} from './autopilot-plan';
 import {AiJournal} from './ai-journal';
+import {menuFromSearch,searchWithMenu} from '../lib/menu-address';
 import {journalToday} from '../lib/ai-move-marks';
 type Row=Record<string,any>;
 const shortRole:Row={guest:'Гость',owner:'Владелец',cleaner:'Уборка'},banks:Row={undecided:'Не выбран',kaspi:'Kaspi',halyk:'Halyk Bank'};
@@ -33,7 +34,9 @@ export function AccountControl({role,onChanged,onAdministrator}:{role:string;onA
  const steps=[!profile.avatar_id&&'Добавьте фото профиля',!profile.bio&&(worker?'Опишите свою работу и услуги':owner?'Расскажите, как вы принимаете гостей':'Добавьте пару слов о себе для владельцев'),!profile.languages&&'Укажите языки общения'].filter(Boolean) as string[];
  let roles:string[]=[];try{roles=JSON.parse(profile.roles||'[]');}catch{}
  async function api(path:string,body?:Row){const response=await fetch('/api/'+path,{cache:'no-store',method:body?'POST':'GET',headers:{'X-Workspace-Role':role,...(body?{'Content-Type':'application/json'}:{})},...(body?{body:JSON.stringify(body)}:{})});const value=await response.json() as Row;if(!response.ok)throw Error(value.error||'Сервер не подтвердил действие.');return value;}
- useEffect(()=>{let active=true;setAccount(null);setView('');setEditing(false);setUsers(null);setMessage('');setError('');api('account').then(value=>{if(active)setAccount(value);}).catch(e=>{if(active)setError(e.message);});return()=>{active=false;};},[role]);
+ const restoring=useRef(false);
+ useEffect(()=>{let active=true;setAccount(null);restoring.current=true;{const v=menuFromSearch(window.location.search);setView((v==='plan'&&role!=='cleaner'?'':v) as MenuView);}setEditing(false);setUsers(null);setMessage('');setError('');api('account').then(value=>{if(active)setAccount(value);}).catch(e=>{if(active)setError(e.message);});return()=>{active=false;};},[role]);
+ useEffect(()=>{if(restoring.current){restoring.current=false;return;}const {pathname,search,hash}=window.location;if(!/\/account\/?$/.test(pathname))return;const next=searchWithMenu(search,view);if(next!==search)window.history.replaceState(window.history.state,'',pathname+next+hash);},[view]);
  // Instant save: the control shows the new value at once and rolls back if the server refuses.
  async function instant(change:(a:Row)=>Row,send:()=>Promise<Row>,done:string){if(busy||!account)return;const before=account;setBusy(true);setError('');setMessage('');setAccount(change(account));try{await send();setAccount(await api('account'));setMessage(done);}catch(e:any){setAccount(before);setError(e.message);}finally{setBusy(false);}}
  const settings=(patch:Row)=>instant(a=>({...a,settings:{...a.settings,...patch}}),()=>api('account',{paymentProvider:patch.payment_provider??account!.settings.payment_provider,paymentNotifications:!!(patch.payment_notifications??account!.settings.payment_notifications),expectedVersion:account!.settings.version}),'Сохранено.');

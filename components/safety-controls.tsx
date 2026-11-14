@@ -1,4 +1,5 @@
 'use client';
+import {legalFromHere} from '../lib/legal-return';
 import {Thinking} from './thinking';
 import {AccountDeletion,DeletionReview} from './account-deletion';
 import {useEffect,useRef,useState,type FormEvent,type ReactNode} from 'react';
@@ -54,7 +55,7 @@ export function AccountSafety({role,admin=false,page='',go}:{role:string;admin?:
   <p className="acct-lead">Так ИИ-администратор отвечает точнее: он видит ваш вопрос, несколько последних сообщений и данные вашей роли. Фото, личные чаты и коды от замков он не видит.</p>
   <p className="acct-lead">Ответы готовит внешний сервис OpenAI, данные могут обрабатываться за рубежом. Выключить можно в любой момент. Без разрешения ИИ всё равно ищет жильё и подсказывает по правилам.</p>
   {permission&&!permission.decided&&<button type="button" className="acct-wide" disabled={busy} onClick={()=>void choose(false)}>Оставить выключенным</button>}
-  <a className="acct-link" href="/privacy" target="_blank" rel="noreferrer">Как мы обращаемся с данными<ChevronRight size={16}/></a>{note}</div>;
+  <a className="acct-link" {...legalFromHere('/privacy')}>Как мы обращаемся с данными<ChevronRight size={16}/></a>{note}</div>;
  if(page==='reports')return <div className="acct-stack"><section className="acct-group">{reports.map(r=><div key={r.id} className="acct-row acct-static"><Flag size={20}/><span>{r.target_kind==='ai'?'Ответ ИИ':'Сообщение'}<small>{r.resolution||(r.created_at?'Отправлена '+day(r.created_at):'')}</small></span><em>{r.status==='resolved'?'Рассмотрена':r.status==='reviewing'?'Рассматриваем':'Отправлена'}</em></div>)}{!reports.length&&<p className="acct-row acct-static">Жалоб нет.</p>}</section><p className="acct-lead">Пожаловаться можно прямо в чате: под сообщением есть кнопка «Пожаловаться».</p></div>;
  if(page==='requests'&&admin)return <div className="acct-stack"><p className="acct-lead">Видите только вы как администратор. Жалобы на сообщения — в «Управление сервисом», раздел «Жалобы и безопасность».</p><section className="acct-group">{deletions.map(r=><div key={r.id} className="acct-row acct-static acct-request"><Trash2 size={20}/><span>Запрос №{r.id} от {day(r.requested_at)}<DeletionReview role={role} requestId={r.id} onChanged={load}/></span></div>)}{!deletions.length&&<p className="acct-row acct-static">Новых запросов нет.</p>}</section></div>;
  if(page==='delete')return <div className="acct-stack">{requested?<>
@@ -64,10 +65,10 @@ export function AccountSafety({role,admin=false,page='',go}:{role:string;admin?:
   <p className="acct-lead">Удалим аккаунт целиком, со всеми ролями: гостя, владельца и исполнителя. Сначала проверим, что нет незавершённых броней, уборок и расчётов, и напишем вам результат.</p>
   <label className="acct-check"><input type="checkbox" checked={confirmed} disabled={busy||loading} onChange={e=>setConfirmed(e.target.checked)}/>Понимаю, что удалятся все мои роли</label>
   <button type="button" className="acct-wide acct-wide-danger" disabled={busy||loading||!confirmed} onClick={()=>void act(()=>safety(role,'deletion',{action:'request',confirmed:true}))}>Запросить удаление</button></>}
-  <a className="acct-link" href="/data-deletion" target="_blank" rel="noreferrer">Что удаляется и что остаётся<ChevronRight size={16}/></a>{note}</div>;
+  <a className="acct-link" {...legalFromHere('/data-deletion')}>Что удаляется и что остаётся<ChevronRight size={16}/></a>{note}</div>;
  return <div className="acct-stack">
   <section className="acct-group">{open(KeyRound,'Вход и устройства','devices',sessions?devices(sessions.length):undefined)}{open(Sparkles,'ИИ-помощник','ai',aiValue)}{reports.length>0&&open(Flag,'Мои жалобы','reports',reports.length)}</section>
-  <section className="acct-group"><a className="acct-row" href="/privacy" target="_blank" rel="noreferrer"><FileText size={20}/><span>Политика конфиденциальности</span><ChevronRight size={16}/></a><a className="acct-row" href="/terms" target="_blank" rel="noreferrer"><FileText size={20}/><span>Условия сервиса</span><ChevronRight size={16}/></a></section>
+  <section className="acct-group"><a className="acct-row" {...legalFromHere('/privacy')}><FileText size={20}/><span>Политика конфиденциальности</span><ChevronRight size={16}/></a><a className="acct-row" {...legalFromHere('/terms')}><FileText size={20}/><span>Условия сервиса</span><ChevronRight size={16}/></a></section>
   {admin&&<section className="acct-group">{open(ShieldAlert,'Запросы на удаление','requests',deletions.length?deletions.length:'нет')}</section>}
   <section className="acct-group"><button type="button" className="acct-row acct-danger" onClick={()=>go('delete')}><Trash2 size={20}/><span>Удалить аккаунт</span>{requested&&<em>запрос отправлен</em>}<ChevronRight size={16}/></button></section></div>;
 }
