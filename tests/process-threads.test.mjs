@@ -23,6 +23,15 @@ test('у владельца брони и уборки идут нитями, п
  assert.equal(threadsSummary('owner',t),'Ведёт 2 брони и 1 уборку · ждут вас: 1');
 });
 
+test('выезд становится текущим шагом, когда время пришло; оплату отмечает владелец',()=>{
+ const due={...owner,bookings:[{id:'b5',owner_id:'o',property_id:'p1',title:'Лофт',status:'confirmed',payment_status:'owner_verified',start:now-5*H,end:now-600,created_at:now-9*H,terms:{actual_checkin:now-5*H}}],jobs:[]};
+ const [b]=ownerThreads(due,now);assert.equal(b.steps[3].state,'done');assert.equal(b.steps[4].state,'now');assert.equal(b.status,'Выезд');
+ const unpaid={...owner,bookings:[{...owner.bookings[1],payment_status:'unpaid'}],jobs:[{id:'j9',owner_id:'o',property_id:'p2',title:'Дом',status:'completed',assigned_to:'c',checkout_confirmed:true,start:now-3*H,end:now-H,fee:5000,created_at:now-5*H}]};
+ const t=ownerThreads(unpaid,now);assert.equal(t.find(x=>x.id==='b2').yours,true);
+ const job=t.find(x=>x.id==='j9');assert.equal(job.yours,true);assert.equal(job.steps[4].by,'you');
+ const held=ownerThreads({...unpaid,jobs:[{...unpaid.jobs[0],guarantee:'due'}]},now).find(x=>x.id==='j9');assert.equal(held.yours,false);assert.equal(held.steps[4].by,'ai');
+});
+
 test('исполнитель видит своё задание до оплаты и неделю',()=>{
  const data={user:{id:'c'},jobs:[{...owner.jobs[0]},{id:'j2',owner_id:'o',property_id:'p2',title:'Дом',status:'open',start:now+26*H,end:now+28*H,fee:5000}],applications:[{job_id:'j2',user_id:'c',status:'pending',created_at:now-60}],aiJournal:[{at:now-600,text:'Автопилот взял уборку',title:'Дом',open:{kind:'job',id:'j2'}}]};
  const t=cleanerThreads(data,now);
@@ -30,6 +39,8 @@ test('исполнитель видит своё задание до оплат�
  assert.equal(t[0].yours,true);assert.equal(t[0].steps[3].state,'now');
  assert.equal(t[1].steps[0].by,'ai');assert.equal(t[1].steps[1].state,'now');assert.equal(t[1].yours,false);
  const week=cleanerWeek(data,now);assert.equal(week.length,7);assert.equal(week[0].today,true);assert.equal(week[0].count,1);assert.equal(week[0].week,'Сб');
+ const later={...data,jobs:[...data.jobs,{id:'j7',owner_id:'o',property_id:'p2',title:'Дача',status:'assigned',assigned_to:'c',start:now+5*24*H,end:now+5*24*H+2*H,fee:4000}]};
+ assert.equal(cleanerThreads(later,now).some(x=>x.id==='j7'),false);assert.equal(dayRibbon(cleanerThreads(later,now,true),later,week[5].key,now).bars.length,1);
  const r=dayRibbon(t,data,week[0].key,now);assert.equal(r.bars.length,1);assert.equal(r.bars[0].state,'now');assert.ok(r.now);
 });
 

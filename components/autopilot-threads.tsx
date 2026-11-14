@@ -68,7 +68,7 @@ export function AutopilotThreads({ role, data, now, onOpen }: Props) {
   const rows = all ? shown : shown.slice(0, FOLDED);
   const last = lastAiMove(data, role, now);
   const count = (kind: 'booking' | 'job') => threads.filter(t => t.kind === kind && !t.finished).length;
-  const ribbon = role === 'cleaner' ? dayRibbon(threads, data, dayKey, now) : null;
+  const ribbon = role === 'cleaner' ? dayRibbon(cleanerThreads(data, now, true), data, dayKey, now) : null;
 
   return (
     <section className="ap" aria-label="Автопилот">

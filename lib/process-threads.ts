@@ -103,15 +103,16 @@ export function bookingThread(b: Row, data: Row, now: number): ProcessThread {
   const steps: Omit<ThreadStep, 'state'>[] = [
     { key: 'request', label: 'Заявка', by: confirmed ? (did('ИИ подтвердил бронь') ? 'ai' : 'owner') : auto ? 'ai' : 'you', at: b.created_at,
       note: confirmed ? (did('ИИ подтвердил бронь') ? 'ИИ подтвердил бронь' : 'Бронь подтверждена') : auto ? 'ИИ проверяет заявку' : 'Заявка ждёт вашего ответа' },
-    { key: 'pay', label: 'Оплата', by: 'guest', note: paid ? 'Оплата подтверждена' : 'Ждём оплату гостя' },
+    { key: 'pay', label: 'Оплата', by: paid ? 'guest' : 'you', note: paid ? 'Оплата подтверждена' : 'Отметьте оплату, когда гость заплатит' },
     { key: 'checkin', label: 'Заезд', by: did('ИИ заселил гостя') ? 'ai' : 'guest', at: b.start,
       note: inside ? (did('ИИ заселил гостя') ? 'ИИ заселил гостя' : 'Гость заселился') : 'Заезд в ' + threadWhen(b.start, now) },
     { key: 'stay', label: 'Проживание', by: 'guest', at: b.start, progress: inside && !out ? part(b.start, b.end, now) : undefined,
-      note: now >= b.end ? 'Время выезда прошло' : 'Гость в жилье' },
+      note: 'Гость в жилье' },
     { key: 'checkout', label: 'Выезд', by: did('ИИ подтвердил выезд') ? 'ai' : 'guest', at: b.end,
-      note: out ? (did('ИИ подтвердил выезд') ? 'ИИ подтвердил выезд' : 'Выезд подтверждён') : terms.checkout_reported_at ? 'Гость сообщил о выезде' : 'Выезд в ' + threadWhen(b.end, now) },
+      note: out ? (did('ИИ подтвердил выезд') ? 'ИИ подтвердил выезд' : 'Выезд подтверждён') : terms.checkout_reported_at ? 'Гость сообщил о выезде · подтвердите' : now >= b.end ? 'Время выезда прошло · подтвердите выезд' : 'Выезд в ' + threadWhen(b.end, now) },
   ];
-  const done = [confirmed, paid, inside, out, out];
+  const leaving = out || !!terms.checkout_reported_at || now >= b.end;
+  const done = [confirmed, paid, inside, inside && leaving, out];
   const t = place(steps, done, i => i === 0 || i === 1 || i === 3 || (i === 2 ? now >= b.start - 15 * 60 : now >= b.end));
   const yours = !t.finished && t.steps[t.current].by === 'you';
   return { id: b.id, kind: 'booking', tag: 'Бронь', title: b.title || 'Бронь', propertyId: b.property_id, ...t, yours,
@@ -123,7 +124,9 @@ export function cleaningThread(j: Row, data: Row, now: number): ProcessThread {
   const did = aiDid(data, 'owner', 'job', j.id), userId = data?.user?.id;
   const assigned = !!j.assigned_to && j.status !== 'open', working = j.status === 'in_progress';
   const reported = ['submitted', 'completed'].includes(j.status), accepted = j.status === 'completed';
-  const paid = accepted && (Number(j.settlement_paid) >= Number(j.fee) || !!j.settled_at);
+  const paid = accepted && (Number(j.settlement_paid) >= Number(j.fee) || !!j.settled_at || j.guarantee === 'paid');
+  // С резервом (гарантия оплаты) платит сервис; без него владелец рассчитывается сам и отмечает оплату.
+  const service = !!j.guarantee || !Number(j.fee);
   const pending = (data?.applications || []).filter((a: Row) => a.job_id === j.id && a.status === 'pending').length;
   const policy = data?.ownProperties?.find((p: Row) => p.id === j.property_id)?.policy || {}, auto = !!Number(policy.auto_assign);
   const aiAccepts = did('ИИ принял уборку', 'ИИ проверил отчёт');
@@ -137,7 +140,7 @@ export function cleaningThread(j: Row, data: Row, now: number): ProcessThread {
       note: working ? (j.end > now ? 'Исполнитель убирает · ещё ' + left(j.end - now) : 'Срок уборки прошёл') : 'Уборка в ' + threadWhen(j.start, now) },
     { key: 'check', label: 'Приёмка', by: accepted ? (aiAccepts ? 'ai' : 'owner') : auto ? 'ai' : 'you', at: j.submitted_at || j.end,
       note: accepted ? (aiAccepts ? 'ИИ принял уборку' : 'Уборка принята') : auto ? 'ИИ проверяет фото' : 'Отчёт ждёт вашей проверки' },
-    { key: 'pay', label: 'Оплата', by: 'ai', at: j.settled_at || undefined, note: paid ? 'Исполнителю заплачено' : 'Оплата исполнителю' },
+    { key: 'pay', label: 'Оплата', by: service ? 'ai' : 'you', at: j.settled_at || undefined, note: paid ? 'Исполнителю заплачено' : service ? 'Сервис заплатит из резерва' : 'Рассчитайтесь с исполнителем и отметьте оплату' },
   ];
   const done = [assigned, !!j.checkout_confirmed && assigned, reported, accepted, paid];
   const t = place(steps, done, i => i === 0 || i === 3 || i === 4 || (i === 1 ? now >= j.start - 3600 : working));
@@ -153,7 +156,7 @@ export function jobThread(j: Row, data: Row, now: number): ProcessThread {
   const application = (data?.applications || []).find((a: Row) => a.job_id === j.id && a.user_id === userId);
   const isMine = j.assigned_to === userId && j.status !== 'open';
   const working = isMine && j.status === 'in_progress', reported = isMine && ['submitted', 'completed'].includes(j.status);
-  const accepted = isMine && j.status === 'completed', paid = accepted && (Number(j.settlement_paid) >= Number(j.fee) || !!j.settled_at);
+  const accepted = isMine && j.status === 'completed', paid = accepted && (Number(j.settlement_paid) >= Number(j.fee) || !!j.settled_at || j.guarantee === 'paid');
   const took = did('Автопилот взял уборку');
   const steps: Omit<ThreadStep, 'state'>[] = [
     { key: 'apply', label: 'Отклик', by: took ? 'ai' : 'you', at: application?.created_at, note: application || isMine ? (took ? 'Автопилот откликнулся за вас' : 'Отклик отправлен') : 'Можно откликнуться' },
@@ -163,7 +166,7 @@ export function jobThread(j: Row, data: Row, now: number): ProcessThread {
       note: working ? (j.end > now ? 'Идёт уборка · ещё ' + left(j.end - now) + ' · затем отчёт' : 'Срок прошёл · отправьте отчёт') : 'Начать уборку' },
     { key: 'check', label: 'Приёмка', by: did('ИИ принял уборку', 'ИИ проверил отчёт') ? 'ai' : 'owner', at: j.submitted_at || undefined,
       note: accepted ? 'Уборка принята' : 'Отчёт на приёмке' },
-    { key: 'pay', label: 'Оплата', by: 'ai', at: j.settled_at || undefined, note: paid ? 'Оплата получена' : 'Оплата после приёмки' },
+    { key: 'pay', label: 'Оплата', by: j.guarantee || !Number(j.fee) ? 'ai' : 'owner', at: j.settled_at || undefined, note: paid ? 'Оплата получена' : j.guarantee ? 'Сервис заплатит из резерва' : 'Владелец рассчитается после приёмки' },
   ];
   const done = [!!application || isMine, isMine, isMine && !!j.checkout_confirmed, reported, accepted, paid];
   const t = place(steps, done, i => i === 0 || i === 1 || i === 4 || i === 5 || (i === 2 ? now >= j.start - 3600 : i === 3 ? !!j.checkout_confirmed : false));
@@ -191,14 +194,15 @@ export function ownerThreads(data: Row | null | undefined, now: number): Process
   return [...bookings, ...jobs].sort(order);
 }
 
-export function cleanerThreads(data: Row | null | undefined, now: number): ProcessThread[] {
+// week: без трёхдневного горизонта — для ленты дня, где можно выбрать любой день недели.
+export function cleanerThreads(data: Row | null | undefined, now: number, week = false): ProcessThread[] {
   const userId = data?.user?.id;
   if (!userId) return [];
   const applied = new Set((data!.applications || []).filter((a: Row) => a.user_id === userId && a.status === 'pending').map((a: Row) => a.job_id));
   return (data!.jobs || [])
     .filter((j: Row) => j.status !== 'cancelled' && (j.assigned_to === userId && j.status !== 'open' || j.status === 'open' && applied.has(j.id) && j.end > now))
     .map((j: Row) => ({ j, t: jobThread(j, data!, now) }))
-    .filter(({ j, t }: Row) => visible(j.start, Number(j.completed_at) || j.end, t.finished, now)).map(({ t }: Row) => t).sort(order);
+    .filter(({ j, t }: Row) => week ? j.start < now + 7 * DAY : visible(j.start, Number(j.completed_at) || j.end, t.finished, now)).map(({ t }: Row) => t).sort(order);
 }
 
 // Итог в шапке блока: «ведёт 2 брони и 1 уборку · от вас ничего не нужно».
