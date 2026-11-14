@@ -127,3 +127,33 @@ test('the guest card offers «Задерживаюсь на час» and every s
  assert.ok(!guestSteps({...b,terms:{...b.terms,actual_checkin:t}},t).some(s=>s.id==='late'));
  for(const key of ['guest:stay-pay-remind:x','owner:stay-unpaid-released:x','guest:stay-arrival-ask:x:1','owner:stay-no-show:x','owner:stay-checkout-late:x','cleaner:stay-checkout-late:x'])assert.ok(aiNoteOf(key,t),key);
 });
+
+test('a guest who says they are inside is never released for an unrecorded payment',async()=>{
+ const f=await fixture();try{
+  at(f,-1900);f.db.raw.prepare('UPDATE booking_terms SET checkin_reported_at=? WHERE booking_id=?').run(now()-1800,f.booking);
+  await sweepStays(f.db,{});
+  assert.equal(booking(f).status,'confirmed');assert.equal(notes(f,'owner','owner:stay-pay-part:%'),1);
+ }finally{f.db.close();}
+});
+
+test('a stay extended after its checkout was escalated is watched again from the new end',async()=>{
+ const f=await fixture();try{
+  paid(f);at(f,-4*3600,4);
+  f.db.raw.prepare("UPDATE booking_terms SET actual_checkin=? WHERE booking_id=?").run(now()-4*3600,f.booking);
+  f.db.raw.prepare('UPDATE bookings SET end=? WHERE id=?').run(now()-7300,f.booking);
+  await sweepStays(f.db,{});await sweepStays(f.db,{});assert.equal(watch(f).checkout_step,3);
+  // The stay is extended, and the new end passes too: the guest is reminded again.
+  f.db.raw.prepare('UPDATE bookings SET end=? WHERE id=?').run(now()-60,f.booking);
+  assert.equal((await sweepStays(f.db,{})).reminded,1);assert.equal(notes(f,'guest','guest:stay-checkout-remind:%'),1);
+ }finally{f.db.close();}
+});
+
+test('a home busy in its external calendar is not offered as free',async()=>{
+ const f=await fixture();try{
+  const other=(await f.other.createProperty({title:'Second home',city:'Павлодар',district:'Центр',address:'X',description:'Test',price:11000,rooms:1,capacity:2,cleaningMinutes:90})).id;
+  const b=booking(f);
+  f.db.raw.prepare("INSERT INTO calendar_sources(id,property_id,owner_id,label,url,enabled,last_success,created_at) VALUES ('src',?,'other','Booking','',1,?,?)").run(other,now(),now());
+  f.db.raw.prepare("INSERT INTO external_blocks(id,source_id,property_id,event_uid,start,end) VALUES ('blk','src',?,'e1',?,?)").run(other,b.start-60,b.end+60);
+  assert.deepEqual(await similarFree(f.db,f.booking),[]);
+ }finally{f.db.close();}
+});
