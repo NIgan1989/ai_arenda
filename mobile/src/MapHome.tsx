@@ -21,6 +21,7 @@ import * as Location from 'expo-location';
 import {countdown,mapCities,validPoint,type MapPoint} from './map-math';
 import {MapSheetHead} from './MapSheetHead';
 import {AutopilotThreads,type FeedNeed} from './AutopilotThreads';
+import {AutopilotHandoff} from './AutopilotHandoff';
 import {PAST_TEXT,chipDraft,freshDraft,guestRequestFromText,guestSummary,matchingBody,newDraft,shownReasons,type GuestDraft} from './ai-request';
 import type {HeadAction} from './head-line';
 import {Action,Grip,SheetHeading,SheetRow,Stage,h,handleHeight,topInset} from './SheetParts';
@@ -273,7 +274,7 @@ function GuestPanel({setScanning,accountId,data,mapData,publish,selected,setSele
  </View>;
 }
 
-function OwnerPanel({data,mapData,publish,snap,showNow,expand,onHead,onAsk,onIntent,onChanged,onOpenProcess,onOpenPage,onEdit,selected,setSelected}:Common){
+function OwnerPanel({accountId,data,mapData,publish,snap,showNow,expand,onHead,onAsk,onIntent,onChanged,onOpenProcess,onOpenPage,onEdit,selected,setSelected}:Common){
  const [asked,setAsked]=useState(''),[tab,setTab]=useState<HubTab>('today'),[quick,setQuick]=useState(false);
  const [inbox,setInbox]=useState<Row|null>(null),[error,setError]=useState(''),[working,setWorking]=useState(false),[skew,setSkew]=useState(0);
  const lock=useRef(false),seen=useRef(0),now=useNow(!!inbox?.offers?.length)+skew;
@@ -312,6 +313,8 @@ function OwnerPanel({data,mapData,publish,snap,showNow,expand,onHead,onAsk,onInt
   <HeadSlot onHeight={onHead}><MapSheetHead role="owner" counts={{requests:ownerWaiting(data,data.user?.id||'',clock)}} text={asked} onText={setAsked} onSend={text=>{setAsked('');onAsk(text);}} onChip={action=>{/* A guest waiting for a quick answer is in this sheet; other requests are on their page. */if(action==='requests'){if(offers.length)expand(1);else onOpenPage('bookings');}else if(action==='calendar')onOpenPage('calendar');else if(action==='add-property')onIntent('add-property');}} now={null} onNow={()=>{}}>
    {/* The feed: what waits for the owner on top, then a row for every booking and cleaning the autopilot leads. */}
    {(flats.length>0||needs.length>0)&&<AutopilotThreads role="owner" data={data} now={serverNow(data)} needs={needs} onOpen={(kind,id)=>onOpenProcess(kind,id)}/>}
+   {/* What the owner still does by hand and the AI can take: one row, one tap. */}
+   {flats.length>0&&<AutopilotHandoff role="owner" accountId={accountId} stamp={flats.map(p=>p.id+':'+(p.policy?.version??'')+':'+(p.policy?.cleaning_fee??'')+':'+(p.policy?.auto_confirm??'')).join('|')} tick={Number(data.serverTime)||0} compact={snap===0} onExpand={()=>expand(2)} onChanged={onChanged} onSetup={id=>{if(id)onEdit?.(id,'prices');}}/>}
    {snap===0&&Array.isArray(data.ownProperties)&&!flats.length&&<Text style={h.note}>Добавьте первое жильё, и оно появится на карте.</Text>}
    {snap===0&&!needs.length&&searching>0&&<Text style={h.note}>Сейчас {searching} {plural(searching,'гость ищет','гостя ищут','гостей ищут')} жильё в городе. Где спрос выше, карта светится ярче.</Text>}
   </MapSheetHead></HeadSlot>
@@ -344,7 +347,7 @@ function OwnerPanel({data,mapData,publish,snap,showNow,expand,onHead,onAsk,onInt
  </View>;
 }
 
-function CleanerPanel({data,mapData,city,publish,snap,showNow,expand,onHead,onAsk,onChanged,onOpenProcess,onOpenPage}:Common){
+function CleanerPanel({accountId,data,mapData,city,publish,snap,showNow,expand,onHead,onAsk,onChanged,onOpenProcess,onOpenPage}:Common){
  const [asked,setAsked]=useState(''),clock=serverNow(data);
  const [error,setError]=useState(''),[working,setWorking]=useState(''),lock=useRef(false);
  const userId=data.user?.id,jobs:Row[]=data.jobs||[],applications:Row[]=data.applications||[];
@@ -383,6 +386,7 @@ function CleanerPanel({data,mapData,city,publish,snap,showNow,expand,onHead,onAs
   <HeadSlot onHeight={onHead}>{nav.trip?<TripHead nav={nav} onOpen={()=>{const id=nav.trip!.id;nav.close();onOpenProcess('job',id);}}/>:<MapSheetHead role="cleaner" text={asked} onText={setAsked} onSend={text=>{setAsked('');onAsk(text);}} onChip={action=>{if(action==='nearby')expand(1);else if(action==='schedule')onOpenPage('calendar');}} now={null} onNow={()=>{}}>
    {!!nav.error&&<Text accessibilityRole="alert" style={h.error}>{nav.error}</Text>}
    <AutopilotThreads role="cleaner" data={data} now={clock} calendar={snap>0} onOpen={(kind,id)=>onOpenProcess(kind,id)}/>
+   <AutopilotHandoff role="cleaner" accountId={accountId} tick={Number(data.serverTime)||0} compact={snap===0} onExpand={()=>expand(2)} onChanged={onChanged} onSetup={()=>onOpenPage('account')}/>
   </MapSheetHead>}</HeadSlot>
   {snap>0&&<>
    {mine.length>0&&<Text accessibilityRole="header" style={h.cardTitle}>{route.length?'Маршрут дня':'Ваше задание'}</Text>}

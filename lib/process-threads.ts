@@ -101,10 +101,12 @@ export function bookingThread(b: Row, data: Row, now: number): ProcessThread {
   // After the end of the stay the check-in can no longer be reported (lib/guest-trips.ts): the guest is led to the checkout.
   const inside = !!terms.actual_checkin, out = !!terms.actual_checkout || b.status === 'completed', over = !inside && now >= b.end;
   const auto = !!Number(data?.ownProperties?.find((p: Row) => p.id === b.property_id)?.policy?.auto_confirm);
+  const inApp = data?.paymentMode === 'test' || data?.paymentMode === 'live';
   const steps: Omit<ThreadStep, 'state'>[] = [
     { key: 'request', label: 'Заявка', by: confirmed ? (did('ИИ подтвердил бронь') ? 'ai' : 'owner') : auto ? 'ai' : 'you', at: b.created_at,
       note: confirmed ? (did('ИИ подтвердил бронь') ? 'ИИ подтвердил бронь' : 'Бронь подтверждена') : auto ? 'ИИ проверяет заявку' : 'Заявка ждёт вашего ответа' },
-    { key: 'pay', label: 'Оплата', by: paid ? 'guest' : 'you', note: paid ? 'Оплата подтверждена' : 'Отметьте оплату, когда гость заплатит' },
+    // The guest pays in the app (data.paymentMode): the payment confirms itself and the AI reminds the guest, the owner marks nothing.
+    { key: 'pay', label: 'Оплата', by: paid || inApp ? 'guest' : 'you', note: paid ? 'Оплата подтверждена' : inApp ? 'Ждём оплату гостя · ИИ напомнит' : 'Отметьте оплату, когда гость заплатит' },
     { key: 'checkin', label: 'Заезд', by: did('ИИ заселил гостя') ? 'ai' : 'guest', at: b.start,
       note: inside ? (did('ИИ заселил гостя') ? 'ИИ заселил гостя' : 'Гость заселился') : 'Заезд в ' + threadWhen(b.start, now) },
     { key: 'stay', label: 'Проживание', by: 'guest', at: b.start, progress: inside && !out ? part(b.start, b.end, now) : undefined,
@@ -221,7 +223,7 @@ export function tripThread(b: Row, now: number, paymentMode?: string): ProcessTh
   const steps: Omit<ThreadStep, 'state'>[] = [
     { key: 'request', label: 'Заявка', by: 'owner', at: b.created_at, note: confirmed ? 'Бронь подтверждена' : 'Ждём ответа владельца' },
     { key: 'pay', label: 'Оплата', by: canPay ? 'you' : 'owner',
-      note: paid && !depositDue ? 'Оплата подтверждена' : canPay && left > 0 ? 'Оплатите бронь, чтобы она не снялась' : canPay ? 'Внесите депозит, он вернётся после выезда' : 'Владелец подтверждает оплату' },
+      note: paid && !depositDue ? 'Оплата подтверждена' : canPay && left > 0 ? (depositDue ? 'Оплатите бронь и депозит одним платежом' : 'Оплатите бронь, чтобы она не снялась') : canPay ? 'Внесите депозит, он вернётся после выезда' : 'Владелец подтверждает оплату' },
     { key: 'checkin', label: 'Заезд', by: 'you', at: b.start,
       note: inside ? 'Вы заселились' : over ? 'Срок брони закончился' : terms.checkin_reported_at ? 'Владелец подтверждает заселение' : 'Заезд в ' + threadWhen(b.start, now) },
     { key: 'stay', label: 'Проживание', by: 'you', at: b.start, progress: inside && !out ? part(b.start, b.end, now) : undefined, note: 'Вы в жилье' },

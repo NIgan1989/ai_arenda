@@ -28,3 +28,19 @@ test('test payments take a booking through payment and deposit without money, on
   await setTestPayments(f.owner,{enabled:false});assert.equal(await paymentMode(f.db,{}),'off');
  }finally{f.db.close();}
 });
+
+test('«Оплатить всё» records the stay and the deposit in one tap, and the remaining part alone when one is already paid',async()=>{
+ const f=await fixture(),{RentalService}=await load('service'),owner=id=>new RentalService(f.db,id);try{
+  const all=await testPayment(f.guest,{bookingId:f.booking,kind:'all'},{},owner);
+  assert.match(all.message,/^Оплачено .* в тестовом режиме: проживание .* и депозит .*\. Деньги не списывались\.$/);
+  assert.equal(f.db.raw.prepare('SELECT payment_status FROM bookings WHERE id=?').get(f.booking).payment_status,'owner_verified');
+  assert.equal(f.db.raw.prepare('SELECT deposit_status FROM booking_terms WHERE booking_id=?').get(f.booking).deposit_status,'owner_verified');
+  assert.equal(f.db.raw.prepare("SELECT COUNT(*) n FROM finance_entries WHERE booking_id=? AND kind IN ('payment','deposit')").get(f.booking).n,2);
+  await assert.rejects(testPayment(f.guest,{bookingId:f.booking,kind:'all'},{},owner),e=>e.status===409&&/уже оплачена/.test(e.message));
+  await assert.rejects(testPayment(f.guest,{bookingId:f.booking,kind:'all'},{PAYMENT_GATEWAY_URL:'https://pay.example',PAYMENT_GATEWAY_TOKEN:'t',PAYMENT_WEBHOOK_SECRET:'s'},owner),e=>e.status===409&&/выключена/.test(e.message));
+ }finally{f.db.close();}
+ const g=await fixture(),owner2=id=>new RentalService(g.db,id);try{
+  await testPayment(g.guest,{bookingId:g.booking,kind:'payment'},{},owner2);
+  assert.match((await testPayment(g.guest,{bookingId:g.booking,kind:'all'},{},owner2)).message,/^Депозит .* в тестовом режиме/);
+ }finally{g.db.close();}
+});

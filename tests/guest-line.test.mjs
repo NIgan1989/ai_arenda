@@ -7,6 +7,8 @@ test('the line under the guest booking says the step the guest takes now',()=>{
  assert.equal(guestLine(booking({status:'requested'}),now,'test'),'Ждём ответа владельца.');
  assert.match(guestLine(booking(),now,'test'),/^Оплатите бронь.*→ Заезд завтра \d\d:\d\d$/);
  assert.match(guestLine(booking({terms:{paid_amount:20000,deposit:5000,deposit_status:'pending'}}),now,'test'),/^Внесите депозит/);
+ // The stay and the deposit are one payment.
+ assert.match(guestLine(booking({terms:{paid_amount:0,deposit:5000,deposit_status:'pending'}}),now,'test'),/^Оплатите бронь и депозит одним платежом → Заезд/);
  assert.match(guestLine(booking({payment_status:'owner_verified',readiness:'ready',terms:{paid_amount:20000,deposit:0}}),now,'test'),/^Всё готово → Заезд/);
  // «Всё готово» waits for the payment, the deposit and the readiness: the owner cannot confirm the check-in without them.
  assert.match(guestLine(booking({readiness:'ready',terms:{paid_amount:20000,deposit:0}}),now,'test'),/^Ждём, когда владелец подтвердит оплату/);

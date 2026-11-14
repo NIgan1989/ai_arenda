@@ -107,8 +107,16 @@ export async function paymentMode(db:D1Database,config:OperationConfig):Promise<
  const s=await one(db,"SELECT test_payments FROM platform_billing WHERE id='global'").catch(()=>null);
  return s?.test_payments?'test':'off';
 }
-export async function testPayment(service:RentalService,body:Row,config:OperationConfig,serviceForOwner:(id:string)=>RentalService){
+export async function testPayment(service:RentalService,body:Row,config:OperationConfig,serviceForOwner:(id:string)=>RentalService):Promise<Row>{
  if(await paymentMode(service.db,config)!=='test')throw new DomainError('Тестовая оплата выключена.',409);
+ // «Оплатить всё»: the stay and the refundable deposit in one tap. Each part is still its own journal entry and attempt.
+ if(body.kind==='all'){
+  const done:Row[]=[];
+  for(const kind of ['payment','deposit']){try{done.push(await testPayment(service,{...body,kind},config,serviceForOwner));}catch(e){if(!(e instanceof DomainError)||e.status!==409)throw e;}}
+  if(!done.length)throw new DomainError('Бронь уже оплачена.',409);
+  const sum=(n:number)=>new Intl.NumberFormat('ru-RU').format(n)+' ₸',paid=done.filter(d=>d.amount);
+  return paid.length<2?{message:done[0].message}:{message:'Оплачено '+sum(paid[0].amount+paid[1].amount)+' в тестовом режиме: проживание '+sum(paid[0].amount)+' и депозит '+sum(paid[1].amount)+'. Деньги не списывались.'};
+ }
  await service.requireRole('guest');const bookingId=required(body.bookingId,'Бронь',100),kind=body.kind==='deposit'?'deposit':'payment';
  const b=await one(service.db,"SELECT b.*,p.owner_id,t.paid_amount,t.deposit FROM bookings b JOIN properties p ON p.id=b.property_id JOIN booking_terms t ON t.booking_id=b.id WHERE b.id=? AND b.guest_id=? AND b.status='confirmed'",bookingId,service.userId);if(!b)throw new DomainError('Подтверждённая бронь недоступна.',403);
  await migrateFinanceEntity({db:service.db,userId:b.owner_id},'booking',bookingId);
@@ -124,7 +132,7 @@ export async function testPayment(service:RentalService,body:Row,config:Operatio
  const what=kind==='payment'?'Оплата':'Депозит';
  if(intent.status==='paid')return {message:what+' уже учтён'+(kind==='payment'?'а':'')+'.'};
  await recordFinance(serviceForOwner(b.owner_id),{kind,bookingId,amount,note:'Тестовая оплата: деньги не списывались',externalReference:'TEST-'+String(intent.id).slice(0,8),requestKey:'provider:'+intent.id},{eventId:'test:'+intent.id,intentId:intent.id,payloadHash:'test'});
- return {message:what+' '+new Intl.NumberFormat('ru-RU').format(amount)+' ₸ учтен'+(kind==='payment'?'а':'')+' в тестовом режиме. Деньги не списывались.'};
+ return {amount,message:what+' '+new Intl.NumberFormat('ru-RU').format(amount)+' ₸ учтен'+(kind==='payment'?'а':'')+' в тестовом режиме. Деньги не списывались.'};
 }
 export async function setTestPayments(service:RentalService,body:Row){
  if(typeof body.enabled!=='boolean')throw new DomainError('Укажите, включена ли тестовая оплата.');

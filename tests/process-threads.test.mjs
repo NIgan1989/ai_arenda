@@ -28,6 +28,9 @@ test('выезд становится текущим шагом, когда вр
  const [b]=ownerThreads(due,now);assert.equal(b.steps[3].state,'done');assert.equal(b.steps[4].state,'now');assert.equal(b.status,'Выезд');
  const unpaid={...owner,bookings:[{...owner.bookings[1],payment_status:'unpaid'}],jobs:[{id:'j9',owner_id:'o',property_id:'p2',title:'Дом',status:'completed',assigned_to:'c',checkout_confirmed:true,start:now-3*H,end:now-H,fee:5000,created_at:now-5*H}]};
  const t=ownerThreads(unpaid,now);assert.equal(t.find(x=>x.id==='b2').yours,true);
+ // Гость платит в приложении: оплата подтверждается сама, владельцу отмечать нечего.
+ const inApp=ownerThreads({...unpaid,paymentMode:'test'},now).find(x=>x.id==='b2');
+ assert.equal(inApp.yours,false);assert.equal(inApp.steps[1].by,'guest');assert.match(inApp.line,/^Ждём оплату гостя · ИИ напомнит/);
  const job=t.find(x=>x.id==='j9');assert.equal(job.yours,true);assert.equal(job.steps[4].by,'you');
  const held=ownerThreads({...unpaid,jobs:[{...unpaid.jobs[0],guarantee:'due'}]},now).find(x=>x.id==='j9');assert.equal(held.yours,false);assert.equal(held.steps[4].by,'ai');
 });
