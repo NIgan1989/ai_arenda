@@ -58,7 +58,7 @@ const link=(icon:ReactNode,title:string,note:string,href:string)=><a className="
 function Today({view,today,onOpen,onJob,ownStaff}:{view:ReturnType<typeof hubToday>;today:number;onOpen:(kind:string,id:string)=>void;onJob:()=>void;ownStaff:boolean}){
  const entry=(e:CalendarEntry,line:string)=><li key={e.key}><button type="button" className={'hub-entry tone-'+e.tone} onClick={()=>onOpen(e.kind,e.id)}><span className="hub-row-icon" aria-hidden="true">{e.kind==='job'?<Brush size={20}/>:<KeyRound size={20}/>}</span><span className="hub-row-text"><strong>{line}</strong><small>{e.kind==='job'?'Уборка · ':''}{e.status}</small></span><ChevronRight size={18} aria-hidden="true"/></button></li>;
  return <>
-  {view.waiting.length>0&&<><h3 className="hub-heading">Ждут ответа</h3><ul className="hub-list">{view.waiting.map(e=>entry(e,'Заезд '+dateWords(e.start)))}</ul></>}
+  {view.waiting.length>0&&<><h3 className="hub-heading">Ждут ответа</h3><ul className="hub-list">{view.waiting.map(e=>entry(e,(e.kind==='job'?'Уборка ':'Заезд ')+dateWords(e.start)))}</ul></>}
   <h3 className="hub-heading">Сегодня</h3>
   {view.today.length>0?<ul className="hub-list">{view.today.map(e=>entry(e,dayLine(e,today)))}</ul>:<p className="hub-note">Сегодня ничего не запланировано.</p>}
   {view.next.length>0&&<><h3 className="hub-heading">Дальше</h3><ul className="hub-list">{view.next.map(e=>entry(e,dateWords(e.start)+' · '+dayLine(e,dayStart(e.start))))}</ul></>}

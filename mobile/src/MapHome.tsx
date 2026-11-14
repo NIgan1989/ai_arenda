@@ -33,6 +33,8 @@ import {kindLabel} from '../../lib/listings';
 import {guestPin,guestTrips,guestTripsLabel} from '../../lib/guest-trips';
 import type {HubTab} from '../../lib/property-hub';
 import {cleanerLine,cleanerStep} from '../../lib/job-steps';
+import {JobPlace} from './JobPlace';
+import {ownerWaiting} from '../../lib/now-card';
 import {FlatHub,FlatHubHead} from './FlatHub';
 import {ECHO_WINDOW,pinStates,recallMap,rememberMap,stageOf,targetPin,withEchoes,type MapTarget} from './map-memory';
 
@@ -317,7 +319,7 @@ function OwnerPanel({data,mapData,publish,snap,showNow,expand,onHead,onAsk,onInt
   {snap>0&&<FlatHub flat={flat} data={data} now={serverNow(data)} tab={tab} onOpen={onOpenProcess} onEdit={step=>step==='job'?onIntent('job'):onEdit?.(flat.id,step)} onChanged={onChanged}/>}
  </View>;
  return <View style={h.block}>
-  <HeadSlot onHeight={onHead}><MapSheetHead role="owner" text={asked} onText={setAsked} onSend={text=>{setAsked('');onAsk(text);}} onChip={action=>{/* A guest waiting for a quick answer is in this sheet; other requests are on their page. */if(action==='requests'){if(offers.length)expand(1);else onOpenPage('bookings');}else if(action==='calendar')onOpenPage('calendar');else if(action==='add-property')onIntent('add-property');}} now={card} onNow={()=>openNow(card,{expand,onOpenProcess,onOpenPage})}>
+  <HeadSlot onHeight={onHead}><MapSheetHead role="owner" counts={{requests:ownerWaiting(data,data.user?.id||'',clock)}} text={asked} onText={setAsked} onSend={text=>{setAsked('');onAsk(text);}} onChip={action=>{/* A guest waiting for a quick answer is in this sheet; other requests are on their page. */if(action==='requests'){if(offers.length)expand(1);else onOpenPage('bookings');}else if(action==='calendar')onOpenPage('calendar');else if(action==='add-property')onIntent('add-property');}} now={card} onNow={()=>openNow(card,{expand,onOpenProcess,onOpenPage})}>
    {snap===0&&!card&&Array.isArray(data.ownProperties)&&!flats.length&&<Text style={h.note}>Добавьте первое жильё, и оно появится на карте.</Text>}
    {snap===0&&!card&&searching>0&&<Text style={h.note}>Сейчас {searching} {plural(searching,'гость ищет','гостя ищут','гостей ищут')} жильё в городе. Где спрос выше, карта светится ярче.</Text>}
   </MapSheetHead></HeadSlot>
@@ -422,6 +424,7 @@ function CleanerPanel({data,mapData,city,publish,snap,showNow,expand,onHead,onAs
    <Text accessibilityRole="header" style={h.cardTitle}>Задания рядом · {city}</Text>
    {nearby.slice(0,8).map(j=><View key={j.id} style={h.card}>
     <View style={h.row}><Text style={[h.cardTitle,h.grow]}>{j.title}</Text><Text style={h.rowPrice}>{money(j.fee)}</Text></View>
+    <Pressable accessibilityRole="button" accessibilityLabel={'Посмотреть жильё: '+j.title} onPress={()=>onOpenProcess('job',j.id)}><JobPlace job={j} compact/></Pressable>
     <Text style={h.note}>{j.district?j.district+'\n':''}{date(j.start)} → {date(j.end)}</Text>
     <View style={h.pair}><View style={h.grow}><Action title={applied(j.id)?'Отклик отправлен':working===j.id?'Отправляем…':'Откликнуться'} disabled={!!working||applied(j.id)} onPress={()=>apply(j.id)}/></View><View style={h.grow}><Action secondary title="Подробнее" onPress={()=>onOpenProcess('job',j.id)}/></View></View>
    </View>)}

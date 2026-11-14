@@ -53,6 +53,23 @@ const byAt = (a: Row, b: Row) => a.at - b.at;
 const section = (role: Role, kind: string) =>
   kind === 'job' ? (role === 'owner' ? 'cleaning' : 'assignments') : kind === 'property' ? 'properties' : 'bookings';
 
+// The owner's open cleanings that cleaners have answered, the soonest first, with the number of responses waiting.
+// The «Заявки» page, the card «Сейчас» and the «Сегодня» tab of a flat use the same list.
+export function ownerResponses(data: Row | null | undefined, userId: string, now: number): { job: Row; count: number; applications: Row[] }[] {
+  const pending: Row[] = (data?.applications || []).filter((a: Row) => a.status === 'pending');
+  return (data?.jobs || [])
+    .filter((j: Row) => j.owner_id === userId && j.status === 'open' && j.end > now)
+    .map((job: Row) => { const applications = pending.filter(a => a.job_id === job.id); return { job, count: applications.length, applications }; })
+    .filter((r: { count: number }) => r.count > 0)
+    .sort((a: { job: Row }, b: { job: Row }) => a.job.start - b.job.start);
+}
+
+// What waits for the owner on «Заявки»: guests' requests not answered yet and cleaners' responses. The chip says the number.
+export function ownerWaiting(data: Row | null | undefined, userId: string, now: number) {
+  const requests = (data?.bookings || []).filter((b: Row) => b.owner_id === userId && b.status === 'requested' && b.expires_at > now).length;
+  return requests + ownerResponses(data, userId, now).reduce((n, r) => n + r.count, 0);
+}
+
 export function nowCard(role: Role, data: Row | null | undefined, nowSeconds: number): NowCard | null {
   if (!data?.user?.id) return null;
   const userId = data.user.id, now = nowSeconds;
@@ -122,6 +139,10 @@ export function nowCard(role: Role, data: Row | null | undefined, nowSeconds: nu
     const request = requests.sort((a, b) => a.expires_at - b.expires_at)[0];
     if (request) return about('request', 'booking', request, 'Заявка ждёт ответа',
       line('заезд ' + when(request.start), request.title), request.expires_at, 'Ответить', true);
+    // A cleaner answered an open cleaning: the owner chooses right from this card, the responses wait for nobody else.
+    const answered = ownerResponses(data, userId, now)[0];
+    if (answered) return about('application', 'job', answered.job, answered.count > 1 ? 'Откликнулись исполнители · ' + answered.count : 'Откликнулся исполнитель',
+      line('уборка ' + when(answered.job.start), answered.job.title), answered.job.start, 'Выбрать', true);
     const urgent = attention.find(event => event.urgent);
     if (urgent) return fromEvent(urgent);
     const today = day(now), moves: { booking: Row; kind: 'checkin' | 'checkout'; at: number }[] = [];

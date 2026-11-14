@@ -1,0 +1,44 @@
+/* The place to clean: photos first, then where, how big and what to clean. Same order in the app (mobile/src/JobPlace.tsx). */
+.job-place{display:grid;overflow:hidden;border:1px solid var(--t-line);border-radius:var(--t-radius-xl);background:var(--t-surface);box-shadow:0 8px 24px rgba(14,19,36,.06)}
+.job-place-gallery{position:relative;display:flex;overflow-x:auto;scroll-snap-type:x mandatory;scrollbar-width:none;background:var(--t-surface-alt);aspect-ratio:16/10}
+.job-place-gallery::-webkit-scrollbar{display:none}
+.job-place-gallery figure{flex:0 0 100%;margin:0;scroll-snap-align:start;display:grid;place-items:center;color:var(--t-muted)}
+.job-place-gallery[data-count]:not([data-count="0"]):not([data-count="1"]) figure{flex-basis:88%}
+.job-place-gallery[data-count]:not([data-count="0"]):not([data-count="1"]) figure+figure{margin-left:4px}
+.job-place-gallery figure .listing-photo{width:100%;height:100%;object-fit:cover;border-radius:0;aspect-ratio:auto}
+.job-place-gallery figure .photo-placeholder{width:100%;height:100%;border-radius:0;display:grid;place-items:center;background:transparent}
+.job-place-gallery figure.is-empty{gap:8px;align-content:center;background:linear-gradient(135deg,var(--t-accent-soft),var(--t-surface-alt))}
+.job-place-gallery figure.is-empty small{font-size:12px;line-height:16px}
+.job-place-kind,.job-place-count{position:absolute;display:inline-flex;align-items:center;min-height:28px;padding:4px 12px;border-radius:var(--t-radius-full);font-size:12px;line-height:16px;font-weight:600;backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px)}
+.job-place-kind{left:12px;top:12px;background:var(--t-glass-strong);color:var(--t-ink)}
+.job-place-count{right:12px;bottom:12px;background:rgba(14,19,36,.55);color:#fff;font-weight:500}
+.job-place-body{display:grid;gap:16px;padding:16px}
+.job-place-where{display:grid;grid-template-columns:auto 1fr;gap:8px;align-items:start;margin:0}
+.job-place-where>svg{color:var(--t-accent);margin-top:4px}
+.job-place-where>span{display:grid;gap:2px}
+.job-place-where strong{font-size:16px;line-height:24px;font-weight:600;color:var(--t-ink)}
+.job-place-where small{display:inline-flex;align-items:center;gap:4px;font-size:12px;line-height:16px;color:var(--t-muted)}
+.job-place-facts{display:grid;grid-template-columns:repeat(auto-fit,minmax(76px,1fr));gap:8px;margin:0;padding:0;list-style:none}
+.job-place-facts li{display:grid;justify-items:start;gap:2px;padding:12px;border-radius:var(--t-radius-md);background:var(--t-surface-alt)}
+.job-place-facts li>span{display:flex;color:var(--t-accent);margin-bottom:4px}
+.job-place-facts strong{font-size:16px;line-height:20px;font-weight:650;color:var(--t-ink);white-space:nowrap}
+.job-place-facts small{font-size:12px;line-height:16px;color:var(--t-muted)}
+.job-place-todo{display:grid;gap:8px}
+.job-place-todo h4{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:0;font-size:14px;line-height:20px;font-weight:600;color:var(--t-ink)}
+.job-place-todo h4 span{display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:var(--t-radius-full);background:var(--t-accent-soft);color:var(--t-accent);font-size:12px;line-height:16px;font-weight:600}
+.job-place-todo ul{display:grid;gap:8px;margin:0;padding:0;list-style:none}
+.job-place-todo li{display:grid;grid-template-columns:auto 1fr;gap:8px;align-items:start;font-size:16px;line-height:22px;color:var(--t-ink-soft)}
+.job-place-todo li svg{color:var(--t-success);margin-top:2px}
+.job-place-kit{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.job-place-kit small{font-size:12px;line-height:16px;color:var(--t-muted);margin-right:4px}
+.job-place-kit span{display:inline-flex;align-items:center;min-height:28px;padding:4px 12px;border-radius:var(--t-radius-full);border:1px solid var(--t-line);font-size:12px;line-height:16px;color:var(--t-ink-soft)}
+/* One row on the map card: the first photo, the short line, what to clean. */
+.job-place.is-compact{display:grid;grid-template-columns:72px minmax(0,1fr);gap:12px;align-items:center;padding:8px;border-radius:var(--t-radius-lg);box-shadow:none}
+.job-place-thumb{position:relative;width:72px;height:72px;overflow:hidden;border-radius:var(--t-radius-md);background:var(--t-surface-alt);display:grid;place-items:center;color:var(--t-muted)}
+.job-place-thumb .listing-photo,.job-place-thumb .photo-placeholder{width:100%;height:100%;object-fit:cover;border-radius:0;aspect-ratio:auto;display:grid;place-items:center;background:transparent}
+.job-place-thumb>span{position:absolute;right:4px;bottom:4px;min-width:20px;padding:0 8px;border-radius:var(--t-radius-full);background:rgba(14,19,36,.6);color:#fff;font-size:12px;line-height:18px;text-align:center}
+.job-place-line{display:grid;gap:2px;min-width:0}
+.job-place-line strong{font-size:16px;line-height:20px;font-weight:600;color:var(--t-ink)}
+.job-place-line small{display:flex;align-items:center;gap:4px;font-size:14px;line-height:18px;color:var(--t-muted);min-width:0}
+.job-place-line small svg{flex:none}
+.job-place-line-todo{display:block!important;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}

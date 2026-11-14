@@ -18,10 +18,11 @@ export function WorkerRow({worker:w,label}:{worker:Row;label?:string}){
   {(tags.length>0||!label&&!!w.display_status)&&<View style={a.tags}>{!label&&<Badge status={w.display_status}/>}{tags.map(t=><Text key={t} style={a.tag}>{t}</Text>)}</View>}
  </View>;
 }
-export function ApplicantPick({applications,approvals,busy,onDecide}:{applications:Row[];approvals:Row[];busy:boolean;onDecide:(body:Row)=>void}){
+// bare: inside another card (the owner's «Заявки»), without its own frame and title.
+export function ApplicantPick({applications,approvals,busy,onDecide,bare=false}:{applications:Row[];approvals:Row[];busy:boolean;onDecide:(body:Row)=>void;bare?:boolean}){
  if(!applications.length)return <View style={[a.box,a.empty]}><Text style={a.emptyTitle}>Откликов пока нет</Text><Text style={a.note}>Исполнитель появится здесь, как только откликнется. Назначить можно одной кнопкой.</Text></View>;
- return <View style={a.box} accessibilityLabel="Отклики исполнителей">
-  <Text accessibilityRole="header" style={a.title}>{applications.length===1?'Откликнулся исполнитель':'Отклики · '+applications.length}</Text>
+ return <View style={[a.box,bare&&a.bare]} accessibilityLabel="Отклики исполнителей">
+  {!bare&&<Text accessibilityRole="header" style={a.title}>{applications.length===1?'Откликнулся исполнитель':'Отклики · '+applications.length}</Text>}
   {applications.map((x,i)=>{const card=approvals.find(c=>c.id==='application:'+x.id),admission=x.admission??x.worker?.admission,blocked=!!admission&&admission in admissionNotes,off=busy||!card,decide=(action:string)=>card&&onDecide({id:card.id,revision:card.revision,action}),name=x.worker?.name||x.name||'исполнитель';
    return <View key={x.id} style={[a.option,i>0&&a.optionLine]}><WorkerRow worker={{...x,...(x.worker||{}),experience:x.worker?.experience||x.experience}}/>{!!x.worker?.reliability&&<View style={{marginTop:8}}><ReliabilityBadge value={x.worker.reliability} title="Исполнитель"/></View>}
     <View style={a.decide}>
@@ -47,7 +48,7 @@ const a=StyleSheet.create({
  row:{gap:12},who:{flexDirection:'row',alignItems:'center',gap:12},
  label:{...type.caption,color:C.muted,fontWeight:'600',letterSpacing:.6},name:{...type.body,color:C.ink,fontWeight:'600'},where:{...type.caption,color:C.muted},
  tags:{flexDirection:'row',flexWrap:'wrap',gap:8,alignItems:'center'},tag:{...type.caption,color:C.inkSoft,backgroundColor:C.surfaceAlt,paddingHorizontal:12,paddingVertical:4,borderRadius:R.full,overflow:'hidden'},
- box:{gap:12,padding:16,borderRadius:R.xl,borderWidth:1,borderColor:C.accentLine,backgroundColor:C.surface},
+ box:{gap:12,padding:16,borderRadius:R.xl,borderWidth:1,borderColor:C.accentLine,backgroundColor:C.surface},bare:{borderWidth:0,borderRadius:0},
  empty:{borderStyle:'dashed',borderColor:C.line,backgroundColor:C.surfaceAlt,gap:4},emptyTitle:{...type.label,color:C.ink,fontWeight:'600'},
  title:{...type.body,color:C.ink,fontWeight:'600'},
  option:{gap:12},optionLine:{paddingTop:12,borderTopWidth:1,borderTopColor:C.line},

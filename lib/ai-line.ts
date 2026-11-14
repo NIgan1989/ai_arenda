@@ -18,7 +18,7 @@ export function roleAiLine(role: Role): RoleAiLine {
     shortPlaceholder: 'Что требует внимания?',
     label: 'Вопрос AI администратору',
     chips: [
-      { id: 'requests', label: 'Заявки', hint: 'Заявки гостей', href: '/workspace/owner/bookings' },
+      { id: 'requests', label: 'Заявки', hint: 'Заявки гостей и отклики исполнителей', href: '/workspace/owner/bookings' },
       { id: 'free-dates', label: 'Календарь', href: '/workspace/owner/calendar' },
       { id: 'add-property', label: '+ Жильё', hint: 'Добавить жильё', href: '/workspace/owner/properties?new=1' },
     ],

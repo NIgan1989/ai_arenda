@@ -16,7 +16,7 @@ export function MapLink({onPress,label='Показать на карте'}:{onPr
  return <Pressable accessibilityRole="button" accessibilityLabel={label} hitSlop={8} onPress={onPress} style={({pressed})=>[r.mapLink,pressed&&r.dim]}><View style={r.mapPin}><View style={r.mapPinDot}/></View><Text style={r.mapLinkText}>На карте</Text></Pressable>;
 }
 export function RecordHead({kind,item,role,userId,application,onMap}:{kind:'booking'|'job';item:Row;role:string;userId:string;application?:Row;onMap?:()=>void}){
- const status=processStatus(kind,item,role,userId,application),[bg,ink]=tones[status.tone]||tones.neutral,paid=item.payment_status==='owner_verified',place=[item.city,item.district].filter(Boolean).join(', ');
+ const status=processStatus(kind,item,role,userId,application),[bg,ink]=tones[status.tone]||tones.neutral,paid=item.payment_status==='owner_verified',place=kind==='job'&&role==='cleaner'?'':[item.city,item.district].filter(Boolean).join(', ');
  return <View style={r.head}>
   <View style={r.tags}><Text style={[r.status,{backgroundColor:bg,color:ink}]}>{status.label}</Text>{!!item.demo_owner&&<Text style={[r.status,{backgroundColor:C.surfaceAlt,color:C.muted}]}>{kind==='job'?'Учебное':'Учебная'}</Text>}{kind==='job'&&!!item.regular&&<Text style={[r.status,{backgroundColor:C.accentSoft,color:C.accentPressed}]}>Постоянный исполнитель</Text>}</View>
   <Text accessibilityRole="header" style={r.title}>{item.title}</Text>

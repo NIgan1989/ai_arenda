@@ -55,7 +55,7 @@ export function FlatHub({flat,data,now,tab,onOpen,onEdit,onChanged}:Omit<Props,'
   <View style={h.grow}><Text numberOfLines={1} style={h.eventTitle}>{title}</Text><Text numberOfLines={2} style={h.note}>{note}</Text></View><Text style={f.arrow}>›</Text>
  </Pressable>;
  if(tab==='today')return <View style={f.panel}>
-  {view.waiting.length>0&&<><Text accessibilityRole="header" style={f.heading}>Ждут ответа</Text>{view.waiting.map(e=>entry(e,'Заезд '+words(e.start)))}</>}
+  {view.waiting.length>0&&<><Text accessibilityRole="header" style={f.heading}>Ждут ответа</Text>{view.waiting.map(e=>entry(e,(e.kind==='job'?'Уборка ':'Заезд ')+words(e.start)))}</>}
   <Text accessibilityRole="header" style={f.heading}>Сегодня</Text>
   {view.today.length>0?view.today.map(e=>entry(e,dayLine(e,today))):<Text style={h.note}>Сегодня ничего не запланировано.</Text>}
   {view.next.length>0&&<><Text accessibilityRole="header" style={f.heading}>Дальше</Text>{view.next.map(e=>entry(e,words(e.start)+' · '+dayLine(e,dayStart(e.start))))}</>}
