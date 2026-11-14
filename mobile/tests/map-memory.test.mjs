@@ -64,8 +64,8 @@ test('a remembered view is shown while the same pins are on the map', () => {
 
 test('the pages, the chat and both maps are wired to the memory', () => {
   const app = source('App.tsx'), home = source('src/MapHome.tsx'), chats = source('src/NativeChats.tsx'), pins = source('src/MapPins.tsx');
-  assert.match(app, /RecordHead kind="booking"[^>]*onMap=\{onMap\('booking',id\)\}/);
-  assert.match(app, /RecordHead kind="job"[^>]*onMap=\{onMap\('job',id\)\}/);
+  assert.match(app, /DealCard kind="booking"[^>]*onMap=\{onMap\('booking',id\)\}/);
+  assert.match(app, /DealCard kind="job"[^>]*onMap=\{onMap\('job',id\)\}/);
   assert.match(app, /onMap=\{onMap\('property',id\)\}/);
   assert.match(app, /mapLink=\{onMap\}/);
   assert.match(app, /target=\{mapTarget\} onTargetDone=/);
