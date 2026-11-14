@@ -50,3 +50,31 @@ test('время по Алматы и последнее действие ИИ �
  const fromNotices={user:{id:'o'},bookings:[{id:'b9',title:'Студия'}],notifications:[{dedupe:'owner:administrator-checkin:b9',body:'',created_at:now-60},{dedupe:'cleaner:overdue-remind:j1',body:'',created_at:now-30}]};
  assert.deepEqual(lastAiMove(fromNotices,'owner',now),{at:now-60,text:'ИИ заселил гостя',title:'Студия'});
 });
+
+test('у гостя бронь идёт той же нитью: его шаги — оплата, заезд, выезд и оценка',async()=>{
+ const {guestThreads,tripThread}=await load('process-threads');
+ const trip=(id,patch={})=>({id,guest_id:'g',property_id:'p1',title:'Студия',status:'confirmed',payment_status:'pending',amount:20000,start:now+2*H,end:now+26*H,created_at:now-3*H,terms:{paid_amount:0},...patch});
+ const pay=tripThread(trip('pay'),now,'test');
+ assert.equal(pay.yours,true);assert.equal(pay.steps[1].state,'now');assert.equal(pay.status,'Оплата');assert.match(pay.line,/^Оплатите бронь.*→ Заезд 14:00$/);
+ // Без оплаты в приложении гость ждёт владельца: шаг не его.
+ const live=tripThread(trip('live'),now,'live');assert.equal(live.yours,false);assert.equal(live.steps[1].by,'owner');assert.match(live.line,/^Владелец подтверждает оплату/);
+ const deposit=tripThread(trip('dep',{payment_status:'owner_verified',terms:{paid_amount:20000,deposit:5000,deposit_status:'pending'}}),now,'test');
+ assert.equal(deposit.yours,true);assert.match(deposit.line,/^Внесите депозит/);
+ // Оплачено, до заезда ещё два часа: от гостя ничего не нужно; за 15 минут до заезда шаг становится его.
+ const paid=trip('paid',{payment_status:'owner_verified',terms:{paid_amount:20000}});
+ assert.equal(tripThread(paid,now,'test').yours,false);assert.equal(tripThread(paid,now,'test').status,'Заезд · 14:00');
+ assert.equal(tripThread(paid,now+2*H-600,'test').yours,true);
+ assert.equal(tripThread({...paid,terms:{paid_amount:20000,checkin_reported_at:now}},now+2*H,'test').yours,false);
+ const inside=tripThread({...paid,start:now-H,end:now+H,terms:{paid_amount:20000,actual_checkin:now-H}},now,'test');
+ assert.equal(inside.status,'Проживание · 50%');assert.equal(inside.yours,false);
+ const leave=tripThread({...paid,start:now-5*H,end:now-600,terms:{paid_amount:20000,actual_checkin:now-5*H}},now,'test');
+ assert.equal(leave.status,'Выезд');assert.equal(leave.yours,true);
+ const done=trip('done',{status:'completed',payment_status:'owner_verified',start:now-30*H,end:now-20*H,terms:{paid_amount:20000,actual_checkin:now-30*H,actual_checkout:now-20*H}});
+ assert.equal(tripThread(done,now,'test').yours,true);assert.equal(tripThread(done,now,'test').status,'Оцените');
+ const state={user:{id:'g'},bookings:[done,{...done,id:'rated',review_rating:5},trip('pay'),trip('asked',{status:'requested',start:now+50*H,end:now+60*H}),trip('other',{guest_id:'x'}),trip('off',{status:'cancelled'})]};
+ const t=guestThreads(state,now,'test');
+ // Оценённая бронь суточной давности ушла, чужая и отменённая не показаны; первым идёт то, что ждёт гостя.
+ assert.deepEqual(t.map(x=>x.id),['pay','done','asked']);
+ assert.equal(threadsSummary('guest',t),'Ваши брони: 2 · ждут вас: 2');
+ assert.equal(threadsSummary('guest',[]),'Броней сейчас нет');
+});

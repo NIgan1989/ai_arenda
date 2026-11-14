@@ -207,10 +207,55 @@ export function cleanerThreads(data: Row | null | undefined, now: number, week =
     .filter(({ j, t }: Row) => week ? j.start < now + 7 * DAY : visible(j.start, Number(j.completed_at) || j.end, t.finished, now)).map(({ t }: Row) => t).sort(order);
 }
 
+// ---------- Бронь глазами гостя ----------
+// «Вы» здесь гость: оплата (пока она тестовая и её можно внести в приложении), заезд и выезд — его шаги,
+// подтверждает их владелец или ИИ. Законченная бронь без оценки ещё ждёт гостя: «Оцените проживание».
+export function tripThread(b: Row, now: number, paymentMode?: string): ProcessThread {
+  const terms: Row = b.terms || {};
+  const confirmed = ['confirmed', 'completed'].includes(b.status), paid = b.payment_status === 'owner_verified';
+  const left = Number(b.amount) - (Number(terms.paid_amount) || 0), depositDue = Number(terms.deposit) > 0 && terms.deposit_status === 'pending';
+  const canPay = paymentMode === 'test' && (left > 0 || depositDue);
+  const inside = !!terms.actual_checkin, out = !!terms.actual_checkout || b.status === 'completed';
+  const steps: Omit<ThreadStep, 'state'>[] = [
+    { key: 'request', label: 'Заявка', by: 'owner', at: b.created_at, note: confirmed ? 'Бронь подтверждена' : 'Ждём ответа владельца' },
+    { key: 'pay', label: 'Оплата', by: canPay ? 'you' : 'owner',
+      note: paid && !depositDue ? 'Оплата подтверждена' : canPay && left > 0 ? 'Оплатите бронь, чтобы она не снялась' : canPay ? 'Внесите депозит, он вернётся после выезда' : 'Владелец подтверждает оплату' },
+    { key: 'checkin', label: 'Заезд', by: 'you', at: b.start,
+      note: inside ? 'Вы заселились' : terms.checkin_reported_at ? 'Владелец подтверждает заселение' : 'Заезд в ' + threadWhen(b.start, now) },
+    { key: 'stay', label: 'Проживание', by: 'you', at: b.start, progress: inside && !out ? part(b.start, b.end, now) : undefined, note: 'Вы в жилье' },
+    { key: 'checkout', label: 'Выезд', by: 'you', at: b.end,
+      note: out ? 'Выезд подтверждён' : terms.checkout_reported_at ? 'Владелец подтверждает выезд' : 'Сообщите о выезде, когда уйдёте' },
+  ];
+  const leaving = out || !!terms.checkout_reported_at || now >= b.end;
+  const t = place(steps, [confirmed, paid && !depositDue, inside, inside && leaving, out], i => i === 0 || i === 1 || i === 3 || (i === 2 ? now >= b.start - 15 * 60 : true));
+  const review = b.status === 'completed' && !b.review_rating;
+  const yours = t.finished ? review
+    : t.current === 1 ? canPay
+    : t.current === 2 ? t.steps[2].state === 'now' && !terms.checkin_reported_at
+    : t.current === 4 && !terms.checkout_reported_at;
+  return { id: b.id, kind: 'booking', tag: 'Бронь', title: b.title || 'Бронь', propertyId: b.property_id, ...t, yours,
+    status: review ? 'Оцените' : statusOf(t, now, 'Завершено'), line: review ? 'Проживание завершено. Оцените его, это помогает другим гостям' : lineOf(t, now, 'Проживание завершено'), at: b.start };
+}
+
+const REVIEW = 3 * DAY;
+// Все брони гостя, которые ещё идут или впереди, и законченные: без оценки три дня, с оценкой шесть часов.
+export function guestThreads(data: Row | null | undefined, now: number, paymentMode?: string): ProcessThread[] {
+  const userId = data?.user?.id;
+  if (!userId) return [];
+  return (data!.bookings || []).filter((b: Row) => b.guest_id === userId && ['requested', 'confirmed', 'completed'].includes(b.status))
+    .map((b: Row) => ({ b, t: tripThread(b, now, paymentMode) }))
+    .filter(({ b, t }: Row) => !t.finished || (Number(b.terms?.actual_checkout) || b.end) > now - (t.yours ? REVIEW : RECENT))
+    .map(({ t }: Row) => t).sort(order);
+}
+
 // Итог в шапке блока: «ведёт 2 брони и 1 уборку · от вас ничего не нужно».
 const plural = (n: number, one: string, few: string, many: string) => { const a = n % 100, b = n % 10; return a > 10 && a < 20 ? many : b > 1 && b < 5 ? few : b === 1 ? one : many; };
-export function threadsSummary(role: 'owner' | 'cleaner', threads: ProcessThread[]) {
+export function threadsSummary(role: 'owner' | 'cleaner' | 'guest', threads: ProcessThread[]) {
   const going = threads.filter(t => !t.finished), yours = threads.filter(t => t.yours).length;
+  if (role === 'guest') {
+    if (!going.length) return yours ? 'Оцените проживание' : 'Броней сейчас нет';
+    return (going.length === 1 ? 'Ваша бронь' : 'Ваши брони: ' + going.length) + (yours ? ' · ждут вас: ' + yours : ' · от вас ничего не нужно');
+  }
   const tail = yours ? ' · ждут вас: ' + yours : ' · от вас ничего не нужно';
   if (role === 'owner') {
     const b = going.filter(t => t.kind === 'booking').length, u = going.filter(t => t.kind === 'job').length;

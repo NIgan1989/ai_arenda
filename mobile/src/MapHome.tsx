@@ -20,22 +20,18 @@ import {ROAD_BEAMS,beamOrigin,beams,roadBeams,roadKey,type BeamRoads} from './ma
 import * as Location from 'expo-location';
 import {countdown,mapCities,validPoint,type MapPoint} from './map-math';
 import {MapSheetHead} from './MapSheetHead';
-import {AutopilotThreads} from './AutopilotThreads';
-import {NowCard as NowCardView} from './NowCard';
+import {AutopilotThreads,type FeedNeed} from './AutopilotThreads';
 import {PAST_TEXT,chipDraft,freshDraft,guestRequestFromText,guestSummary,matchingBody,newDraft,shownReasons,type GuestDraft} from './ai-request';
 import type {HeadAction} from './head-line';
-import {nowCard,when,type NowCard} from './now-card';
 import {Action,Grip,SheetHeading,SheetRow,Stage,h,handleHeight,topInset} from './SheetParts';
-import {processStatus} from '../../lib/process-status';
 import {GuestForm} from './GuestForm';
 import {GuestResults} from './GuestResults';
 import {GuestMode} from './GuestMode';
 import {PriceTip} from './PriceTip';
 import {kindLabel} from '../../lib/listings';
-import {guestPin,guestTrips,guestTripsLabel} from '../../lib/guest-trips';
+import {guestPin,guestTrips} from '../../lib/guest-trips';
 import type {HubTab} from '../../lib/property-hub';
 import {cleanerLine,cleanerStep} from '../../lib/job-steps';
-import {JobPlace} from './JobPlace';
 import {ownerWaiting} from '../../lib/now-card';
 import {FlatHub,FlatHubHead} from './FlatHub';
 import {ECHO_WINDOW,pinStates,recallMap,rememberMap,stageOf,targetPin,withEchoes,type MapTarget} from './map-memory';
@@ -52,7 +48,6 @@ export type MapStay={mode:'daily'|'hourly';start:string;end:string;guests:number
 // showNow: whether the "Сейчас" card has its place in the sheet as it is now (see MapHome).
 type Common={setScanning:(on:boolean)=>void;accountId:string;data:Row;mapData:Row|null;city:string;publish:Publish;selected:string;setSelected:(key:string)=>void;focus:string;setFocus:(key:string)=>void;snap:number;showNow:boolean;expand:(snap:number)=>void;onHead:(height:number)=>void;onReach:(bottom:number)=>void;onAsk:(text:string)=>void;onIntent:(intent:string,stay?:MapStay)=>void;onBook:(property:Row,stay:MapStay)=>void;onChanged:()=>Promise<unknown>;onOpenProcess:(kind:'booking'|'job',id:string)=>void;onOpenPage:(id:string)=>void;onEdit?:(id:string,step:string|null)=>void};
 const liveRequests=new Map<string,string>();
-const capital=(text:string)=>text.charAt(0).toUpperCase()+text.slice(1);
 const NOT_ON_MAP='Этого нет на карте сейчас: у объекта не отмечено место или он в другом городе.';
 // What the guest searched for outlives a visit to another page (a flat's details, the check of a booking):
 // coming back to the map within ten minutes shows the same conditions and the same list.
@@ -75,10 +70,6 @@ function usePoll(task:()=>Promise<unknown>,ms:number,enabled:boolean){
 function HeadSlot({onHeight,children}:{onHeight:(height:number)=>void;children:ReactNode}){
  useEffect(()=>()=>onHeight(0),[]);
  return <View style={h.head} onLayout={e=>onHeight(Math.round(e.nativeEvent.layout.height))}>{children}</View>;
-}
-function openNow(card:NowCard|null,c:Pick<Common,'expand'|'onOpenProcess'|'onOpenPage'>){
- if(!card)return;const target=card.target;
- if(target.type==='process')c.onOpenProcess(target.kind,target.id);else if(target.type==='page')c.onOpenPage(target.id);else c.expand(1);
 }
 function useNow(active:boolean){const [now,setNow]=useState(Date.now()/1000);useEffect(()=>{if(!active)return;const timer=setInterval(()=>setNow(Date.now()/1000),1000);return()=>clearInterval(timer);},[active]);return now;}
 
@@ -261,19 +252,15 @@ function GuestPanel({setScanning,accountId,data,mapData,publish,selected,setSele
  const picked=snap===0&&!preview&&selected?(mapData?.properties||[]).find((p:Row)=>p.id===selected):null;
  // The guest's own stay tapped on the map, or the nearest one that can be reached now.
  const stay=snap===0&&!preview?stays.find(v=>v.key===selected)||null:null,near=stays.find(v=>v.canGo)||null;
- const card=showNow&&!picked&&!stay&&!hint&&!error?nowCard('guest',data,serverNow(data)):null;
- // On a short phone the card lives in the opened sheet, but never above what the person has just asked for:
- // with the list of flats or the form opened by "Уточнить" on screen it goes under them.
  const trips=guestTrips(data,serverNow(data));
- const cardBelow=snap>0&&(!!preview||refine),openCard=()=>openNow(card,{expand,onOpenProcess,onOpenPage});
- const head=<MapSheetHead role="guest" text={asked} onText={setAsked} onSend={ask} onChip={chip} busy={working} summary={guestSummary(freshDraft(draft))} onRefine={toggleRefine} refining={refining} now={cardBelow?null:card} onNow={openCard}>
+ const head=<MapSheetHead role="guest" text={asked} onText={setAsked} onSend={ask} onChip={chip} busy={working} summary={guestSummary(freshDraft(draft))} onRefine={toggleRefine} refining={refining} now={null} onNow={()=>{}}>
   {!!hint&&<View style={h.picked}><Text accessibilityRole={hint.error?'alert':undefined} accessibilityLiveRegion="polite" style={hint.error?h.error:h.note}>{hint.text}</Text>{!!hint.ask&&<Action secondary title="Спросить AI администратора" onPress={()=>onAsk(hint.ask!)}/>}</View>}
   {!!error&&<Text accessibilityRole="alert" style={h.error}>{error}</Text>}
   {!!nav.error&&<Text accessibilityRole="alert" style={h.error}>{nav.error}</Text>}
   {stay&&<View style={h.listRow}><View style={h.grow}><Text numberOfLines={1} style={h.eventTitle}>{stay.title}</Text><Text numberOfLines={1} style={h.note}>{stay.label}</Text></View>{stay.canGo&&<Action title="Маршрут" onPress={()=>go(stay)}/>}<Action secondary title="Открыть" onPress={()=>onOpenProcess('booking',stay.id)}/></View>}
   {!stay&&near&&!preview&&!picked&&<View style={h.listRow}><View style={h.grow}><Text numberOfLines={1} style={h.eventTitle}>{near.title}</Text><Text numberOfLines={1} style={h.note}>{near.label}</Text></View><Action secondary title="Маршрут" onPress={()=>go(near)}/></View>}
-  {/* The guest's own bookings are one row away from the search; the row says what the nearest one waits for. */}
-  {trips.length>0&&!preview&&!picked&&!stay&&<Pressable accessibilityRole="button" accessibilityLabel={guestTripsLabel(trips)+(trips[0].open?'. '+trips[0].status:'')} onPress={()=>onOpenPage('bookings')} style={h.listRow}><Text style={[h.eventTitle,h.grow]}>{guestTripsLabel(trips)}</Text>{trips[0].open&&<Text numberOfLines={1} style={h.note}>{trips[0].status}</Text>}<Text style={h.note}>›</Text></Pressable>}
+  {/* The guest's own stays as the same feed: what waits for the guest on top, a row for every other booking. */}
+  {!preview&&!picked&&!stay&&<AutopilotThreads role="guest" data={data} now={serverNow(data)} paymentMode={data.paymentMode} onOpen={(kind,id)=>onOpenProcess(kind,id)} onAll={trips.length?()=>onOpenPage('bookings'):undefined}/>}
   {picked&&<View style={h.listRow}><View style={h.grow}><Text numberOfLines={1} style={h.eventTitle}>{picked.title}</Text><Text numberOfLines={1} style={h.note}>{[typeof picked.price==='number'?money(picked.price)+' за сутки':'',picked.district].filter(Boolean).join(' · ')}</Text></View><Action secondary title="Открыть" onPress={()=>onIntent('property:'+picked.id)}/></View>}
  </MapSheetHead>;
  // The form and the results live in the opened sheet only; a running request to owners keeps its place in any state.
@@ -283,7 +270,6 @@ function GuestPanel({setScanning,accountId,data,mapData,publish,selected,setSele
  return <View style={h.block}>
   <HeadSlot onHeight={onHead}>{picking?pickView:nav.trip?<TripHead nav={nav} onOpen={()=>{const id=nav.trip!.id;nav.close();onOpenProcess('booking',id);}}/>:requestId?null:head}</HeadSlot>
   {!picking&&body}
-  {!picking&&!requestId&&cardBelow&&!!card&&<NowCardView card={card} onOpen={openCard}/>}
  </View>;
 }
 
@@ -313,7 +299,8 @@ function OwnerPanel({data,mapData,publish,snap,showNow,expand,onHead,onAsk,onInt
  },[mapData,inbox,answered,data.approvals]);
  const searching=Number(mapData?.demand?.searching)||0;
  const clock=Date.now()/1000+skew,flats:Row[]=data.ownProperties||[],quickOn=(inbox?.preferences||[]).filter((p:Row)=>p.enabled).length;
- const card=showNow?nowCard('owner',data,clock,{quickOffers:inbox?.offers||[]}):null;
+ // A guest waiting for a quick answer is the first thing that waits for the owner; the answer is in the opened sheet.
+ const needs:FeedNeed[]=snap===0&&offers[0]?[{key:'offer:'+offers[0].id,title:'Гость ждёт ответа',line:offers[0].title+' · осталось '+countdown(offers[0].expires_at-now),action:'Ответить',onPress:()=>expand(1)}]:[];
  // A flat chosen by its pin or its row: its card of four tabs takes the sheet, the map keeps the flat in view.
  const flat=selected.startsWith('property:')?flats.find(p=>'property:'+p.id===selected):undefined;
  useEffect(()=>{setTab('today');},[flat?.id]);
@@ -322,11 +309,11 @@ function OwnerPanel({data,mapData,publish,snap,showNow,expand,onHead,onAsk,onInt
   {snap>0&&<FlatHub flat={flat} data={data} now={serverNow(data)} tab={tab} onOpen={onOpenProcess} onEdit={step=>step==='job'?onIntent('job'):onEdit?.(flat.id,step)} onChanged={onChanged}/>}
  </View>;
  return <View style={h.block}>
-  <HeadSlot onHeight={onHead}><MapSheetHead role="owner" counts={{requests:ownerWaiting(data,data.user?.id||'',clock)}} text={asked} onText={setAsked} onSend={text=>{setAsked('');onAsk(text);}} onChip={action=>{/* A guest waiting for a quick answer is in this sheet; other requests are on their page. */if(action==='requests'){if(offers.length)expand(1);else onOpenPage('bookings');}else if(action==='calendar')onOpenPage('calendar');else if(action==='add-property')onIntent('add-property');}} now={card} onNow={()=>openNow(card,{expand,onOpenProcess,onOpenPage})}>
-   {/* Every booking and cleaning from start to end and the step it is at: the autopilot at work, seen on entering. */}
-   {flats.length>0&&<AutopilotThreads role="owner" data={data} now={serverNow(data)} onOpen={(kind,id)=>onOpenProcess(kind,id)}/>}
-   {snap===0&&!card&&Array.isArray(data.ownProperties)&&!flats.length&&<Text style={h.note}>Добавьте первое жильё, и оно появится на карте.</Text>}
-   {snap===0&&!card&&searching>0&&<Text style={h.note}>Сейчас {searching} {plural(searching,'гость ищет','гостя ищут','гостей ищут')} жильё в городе. Где спрос выше, карта светится ярче.</Text>}
+  <HeadSlot onHeight={onHead}><MapSheetHead role="owner" counts={{requests:ownerWaiting(data,data.user?.id||'',clock)}} text={asked} onText={setAsked} onSend={text=>{setAsked('');onAsk(text);}} onChip={action=>{/* A guest waiting for a quick answer is in this sheet; other requests are on their page. */if(action==='requests'){if(offers.length)expand(1);else onOpenPage('bookings');}else if(action==='calendar')onOpenPage('calendar');else if(action==='add-property')onIntent('add-property');}} now={null} onNow={()=>{}}>
+   {/* The feed: what waits for the owner on top, then a row for every booking and cleaning the autopilot leads. */}
+   {(flats.length>0||needs.length>0)&&<AutopilotThreads role="owner" data={data} now={serverNow(data)} needs={needs} onOpen={(kind,id)=>onOpenProcess(kind,id)}/>}
+   {snap===0&&Array.isArray(data.ownProperties)&&!flats.length&&<Text style={h.note}>Добавьте первое жильё, и оно появится на карте.</Text>}
+   {snap===0&&!needs.length&&searching>0&&<Text style={h.note}>Сейчас {searching} {plural(searching,'гость ищет','гостя ищут','гостей ищут')} жильё в городе. Где спрос выше, карта светится ярче.</Text>}
   </MapSheetHead></HeadSlot>
   {snap>0&&<>
    {!!error&&<Text accessibilityRole="alert" style={h.error}>{error}</Text>}
@@ -345,8 +332,6 @@ function OwnerPanel({data,mapData,publish,snap,showNow,expand,onHead,onAsk,onInt
    <SheetHeading icon="building" title="Мои объекты" count={String(flats.length)}/>
    {flats.map(p=>{const m=(mapData?.properties||[]).find((x:Row)=>x.id===p.id)||p;return <SheetRow key={p.id} label={'Мои объекты: '+p.title} title={p.title} photo={(m.photos||p.photos||[])[0]} line={[kindLabel((m.details||p.details)?.type),m.display_status?.label||p.display_status?.label||'Статус уточняется',m.city||p.city].filter(Boolean).join(' · ')+(m.location?'':' · нет точки на карте')} onPress={()=>{setSelected('property:'+p.id);expand(1);}}/>;})}
    {!flats.length&&<Text style={h.note}>Объектов пока нет.</Text>}
-   {processes.length>0&&<Text accessibilityRole="header" style={[h.note,{fontWeight:'600',marginTop:4}]}>Брони и уборки</Text>}
-   {processes.map(p=>{const item=(p.kind==='job'?data.jobs:data.bookings)?.find((e:Row)=>e.id===p.id)||p;return <SheetRow key={p.kind+p.id} icon={p.kind==='job'?'cleaning':'bookings'} title={p.title} line={capital(when(p.start,clock))+' · '+processStatus(p.kind,item,'owner',data.user?.id||'').label} onPress={()=>onOpenProcess(p.kind,p.id)}/>;})}
    {!!inbox&&<SheetRow icon="zap" title="Быстрые запросы гостей" line={quickOn?'Включены: '+quickOn+' '+plural(quickOn,'объект','объекта','объектов'):'Выключены'} onPress={()=>setQuick(v=>!v)}/>}
    {quick&&!!inbox&&<View style={h.card}>
     <Text accessibilityRole="header" style={h.label}>Кто отвечает гостям</Text>
@@ -360,7 +345,7 @@ function OwnerPanel({data,mapData,publish,snap,showNow,expand,onHead,onAsk,onInt
 }
 
 function CleanerPanel({data,mapData,city,publish,snap,showNow,expand,onHead,onAsk,onChanged,onOpenProcess,onOpenPage}:Common){
- const [asked,setAsked]=useState(''),clock=serverNow(data),card=showNow?nowCard('cleaner',data,clock):null;
+ const [asked,setAsked]=useState(''),clock=serverNow(data);
  const [error,setError]=useState(''),[working,setWorking]=useState(''),lock=useRef(false);
  const userId=data.user?.id,jobs:Row[]=data.jobs||[],applications:Row[]=data.applications||[];
  const mine=jobs.filter(j=>j.assigned_to===userId&&['assigned','in_progress','submitted'].includes(j.status)).sort((a,b)=>a.start-b.start);
@@ -395,9 +380,9 @@ function CleanerPanel({data,mapData,city,publish,snap,showNow,expand,onHead,onAs
  async function act(id:string,action:'apply'|'start'){if(lock.current)return;lock.current=true;setWorking(id);setError('');try{await request('/api/jobs/'+id,{action},undefined,'map-'+action+':'+id,'cleaner');await onChanged();}catch(e){setError(message(e));}finally{lock.current=false;setWorking('');}}
  const apply=(id:string)=>act(id,'apply');
  return <View style={h.block}>
-  <HeadSlot onHeight={onHead}>{nav.trip?<TripHead nav={nav} onOpen={()=>{const id=nav.trip!.id;nav.close();onOpenProcess('job',id);}}/>:<MapSheetHead role="cleaner" text={asked} onText={setAsked} onSend={text=>{setAsked('');onAsk(text);}} onChip={action=>{if(action==='nearby')expand(1);else if(action==='schedule')onOpenPage('calendar');}} now={card} onNow={()=>openNow(card,{expand,onOpenProcess,onOpenPage})}>
+  <HeadSlot onHeight={onHead}>{nav.trip?<TripHead nav={nav} onOpen={()=>{const id=nav.trip!.id;nav.close();onOpenProcess('job',id);}}/>:<MapSheetHead role="cleaner" text={asked} onText={setAsked} onSend={text=>{setAsked('');onAsk(text);}} onChip={action=>{if(action==='nearby')expand(1);else if(action==='schedule')onOpenPage('calendar');}} now={null} onNow={()=>{}}>
    {!!nav.error&&<Text accessibilityRole="alert" style={h.error}>{nav.error}</Text>}
-   <AutopilotThreads role="cleaner" data={data} now={clock} onOpen={(kind,id)=>onOpenProcess(kind,id)}/>
+   <AutopilotThreads role="cleaner" data={data} now={clock} calendar={snap>0} onOpen={(kind,id)=>onOpenProcess(kind,id)}/>
   </MapSheetHead>}</HeadSlot>
   {snap>0&&<>
    {mine.length>0&&<Text accessibilityRole="header" style={h.cardTitle}>{route.length?'Маршрут дня':'Ваше задание'}</Text>}
@@ -406,14 +391,12 @@ function CleanerPanel({data,mapData,city,publish,snap,showNow,expand,onHead,onAs
     // One main button a stop: the step that is due (start, report); before it, the way there.
     const step=cleanerStep(j,undefined,userId),isNext=j.id===next;
     return <View key={j.id} style={[h.card,isNext||j.status==='in_progress'?h.urgent:null]}>
-     <Stage steps={['Назначено','Выезд','Уборка','Приёмка']} current={j.status==='submitted'?3:j.status==='in_progress'?2:j.checkout_confirmed?1:0}/>
      <Text style={h.cardTitle}>{order.get(j.id)?order.get(j.id)+'. ':''}{j.title}</Text><Text style={h.note}>{date(j.start)} → {date(j.end)}{j.address?'\n'+j.address:''}</Text><Text style={h.price}>{money(j.fee)}</Text>
      <Text style={h.note}>{cleanerLine(j)}.</Text>
      {step?.id==='start'&&<Action title={working===j.id?'Начинаем…':step.label} disabled={!!working} onPress={()=>act(j.id,'start')}/>}
      {step?.id==='report'&&<Action title={step.label} onPress={()=>onOpenProcess('job',j.id)}/>}
      {isNext&&<>
       <Action secondary={!!step} title="Поехали" disabled={!!nav.trip} onPress={()=>go(j)}/>
-      <Text style={h.note}>Поведём по нашей карте. Пока вы в пути, владелец видит вашу точку.</Text>
      </>}
      {step?.id!=='report'&&<Action secondary={!!step||isNext} title="Открыть задание" onPress={()=>onOpenProcess('job',j.id)}/>}
     </View>;
@@ -422,8 +405,7 @@ function CleanerPanel({data,mapData,city,publish,snap,showNow,expand,onHead,onAs
    <Text accessibilityRole="header" style={h.cardTitle}>Задания рядом · {city}</Text>
    {nearby.slice(0,8).map(j=><View key={j.id} style={h.card}>
     <View style={h.row}><Text style={[h.cardTitle,h.grow]}>{j.title}</Text><Text style={h.rowPrice}>{money(j.fee)}</Text></View>
-    <Pressable accessibilityRole="button" accessibilityLabel={'Посмотреть жильё: '+j.title} onPress={()=>onOpenProcess('job',j.id)}><JobPlace job={j} compact/></Pressable>
-    <Text style={h.note}>{j.district?j.district+'\n':''}{date(j.start)} → {date(j.end)}</Text>
+    <Text style={h.note}>{[date(j.start)+' → '+date(j.end),j.district].filter(Boolean).join(' · ')}</Text>
     <View style={h.pair}><View style={h.grow}><Action title={applied(j.id)?'Отклик отправлен':working===j.id?'Отправляем…':'Откликнуться'} disabled={!!working||applied(j.id)} onPress={()=>apply(j.id)}/></View><View style={h.grow}><Action secondary title="Подробнее" onPress={()=>onOpenProcess('job',j.id)}/></View></View>
    </View>)}
    {!nearby.length&&<Text style={h.note}>{city}: открытых заданий сейчас нет. Адрес виден только назначенному исполнителю.</Text>}
