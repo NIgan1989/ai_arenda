@@ -7,7 +7,7 @@ const {placeNow} = await loadPure('mobile/src/own-place.ts');
 const now = Date.UTC(2026, 10, 15, 7, 0) / 1000, h = 3600;
 
 test('guests inside: until when', () => {
-  const r = placeNow('p1', [{property_id: 'p1', status: 'confirmed', start: now - 2 * h, end: now + 22 * h}], now);
+  const r = placeNow('p1', [{property_id: 'p1', status: 'confirmed', start: now - 2 * h, end: now + 22 * h, terms: {actual_checkin: now - h}}], now);
   assert.equal(r.busy, true);
   assert.equal(r.line, 'Гости до завтра 10:00');
 });
@@ -29,4 +29,15 @@ test('free when every booking is over or cancelled', () => {
     {property_id: 'p1', status: 'cancelled', start: now + h, end: now + 5 * h}
   ], now);
   assert.equal(r.line, 'Свободно, броней впереди нет');
+});
+
+test('a guest past the planned end is still inside; a missed arrival is awaited', () => {
+  const late = placeNow('p1', [{property_id: 'p1', status: 'confirmed', start: now - 26 * h, end: now - 2 * h, terms: {actual_checkin: now - 25 * h}}], now);
+  assert.equal(late.busy, true);
+  assert.equal(late.line, 'Гости ещё не выехали, выезд был сегодня 10:00');
+  const waiting = placeNow('p1', [{property_id: 'p1', status: 'confirmed', start: now - h, end: now + 20 * h}], now);
+  assert.equal(waiting.busy, false);
+  assert.equal(waiting.line, 'Ждём гостя, заезд сегодня 11:00');
+  const gone = placeNow('p1', [{property_id: 'p1', status: 'confirmed', start: now - 26 * h, end: now - 2 * h, terms: {actual_checkin: now - 25 * h, actual_checkout: now - 3 * h}}], now);
+  assert.equal(gone.line, 'Свободно, броней впереди нет');
 });
