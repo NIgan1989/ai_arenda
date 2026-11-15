@@ -28,7 +28,17 @@ export function offerFix(pos:Location.LocationObject,rough=false){
  const fix:HereFix={point:[longitude,latitude],accuracy:Math.max(1,Math.round(accuracy??(rough?1000:100))),at:pos.timestamp||Date.now(),rough};
  if(betterFix(here.fix,fix))set({fix});
 }
-const within=<T,>(task:Promise<T>,ms:number)=>new Promise<T>((done,fail)=>{const timer=setTimeout(()=>fail(Error('timeout')),ms);task.then(v=>{clearTimeout(timer);done(v);},e=>{clearTimeout(timer);fail(e);});});
+// One fresh point within a time limit. A watch, not getCurrentPositionAsync: a watch can be stopped when the time is up,
+// so a stalled request never keeps the GPS on behind the next attempt.
+function firstFix(accuracy:Location.Accuracy,ms:number){
+ return new Promise<Location.LocationObject>((done,fail)=>{
+  let sub:Location.LocationSubscription|null=null,over=false;
+  const end=()=>{over=true;clearTimeout(timer);sub?.remove();sub=null;};
+  const timer=setTimeout(()=>{end();fail(Error('timeout'));},ms);
+  Location.watchPositionAsync({accuracy,timeInterval:1000,distanceInterval:0},pos=>{if(over)return;end();done(pos);})
+   .then(s=>{if(over)s.remove();else sub=s;},e=>{if(!over){end();fail(e);}});
+ });
+}
 
 let running:{task:Promise<Here>;ask:LocateOptions['ask'];precise:boolean}|null=null;
 export function locate(options:LocateOptions={}):Promise<Here>{
@@ -67,7 +77,7 @@ async function find(ask:NonNullable<LocateOptions['ask']>,precise:boolean):Promi
   const steps:[Location.Accuracy,number][]=precise?[[Location.Accuracy.High,15000],[Location.Accuracy.Balanced,8000]]:[[Location.Accuracy.Balanced,10000],[Location.Accuracy.Low,8000]];
   let fresh:Location.LocationObject|null=null;
   for(const [accuracy,ms] of steps){
-   try{fresh=await within(Location.getCurrentPositionAsync({accuracy}),ms);break;}catch{/* The next, coarser way. */}
+   try{fresh=await firstFix(accuracy,ms);break;}catch{/* The next, coarser way. */}
   }
   if(fresh)offerFix(fresh);
   else if(!here.fix){const old=await Location.getLastKnownPositionAsync().catch(()=>null);if(old)offerFix(old,true);}

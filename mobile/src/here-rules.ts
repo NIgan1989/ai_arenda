@@ -14,6 +14,8 @@ export type HereNote={text:string;actions:HereAction[]};
 export const FRESH_FIX=10*60000;
 // A route needs to know the street: an approximate point (iOS «Приблизительно», a cell tower) is not enough for it.
 export const ROUTE_ACCURACY=1500;
+// The route server takes positions measured within the last 60 seconds (lib/journey-routing.ts); a margin for the trip there.
+export const ROUTE_MAX_AGE=45000;
 
 export function distanceKm(a:MapPoint,b:MapPoint){
  const rad=Math.PI/180,dLat=(b[1]-a[1])*rad,dLon=(b[0]-a[0])*rad;

@@ -8,7 +8,7 @@ import {Action,h} from './SheetParts';
 import {arrived,distanceText,minutesText,navState,offRoute,turnArrow,type NavRoute,type NavState} from './navigation';
 import type {MapPoint} from './map-math';
 import {locate,offerFix,openLocationSettings} from './here';
-import {ROUTE_ACCURACY,type HereFix} from './here-rules';
+import {ROUTE_ACCURACY,ROUTE_MAX_AGE,type HereFix} from './here-rules';
 
 // Navigation on our own map, like a taxi app: the road route from where the person is to the object,
 // their point on the map, the next turn and what is left. The route comes from our server (Stadia Maps or the test router);
@@ -54,6 +54,8 @@ export function useTrip(role:'cleaner'|'guest',skew:number){
    if(found.status==='denied'||found.status==='idle')throw Error('Разрешите доступ к геопозиции, чтобы мы вели вас по карте.');
    if(found.status==='off')throw Error('Геолокация на телефоне выключена. Включите её и нажмите «Маршрут» ещё раз.');
    if(!fix)throw Error('Телефон пока не знает, где вы. Выйдите ближе к окну или на улицу и попробуйте ещё раз.');
+   // The server takes a position measured within the last minute: an older remembered one is not sent.
+   if(Date.now()-fix.at>ROUTE_MAX_AGE)throw Error('Телефон пока не уточнил, где вы. Выйдите ближе к окну или на улицу и нажмите «Маршрут» ещё раз.');
    if(fix.accuracy>ROUTE_ACCURACY)throw Error(found.reduced?'Телефон даёт только примерное место. Включите «Точная геопозиция» для AiQonaq в настройках.':'Телефон знает место только примерно. Выйдите на открытое место и попробуйте ещё раз.');
    const pos=asPosition(fix);
    setHere({point:[pos.coords.longitude,pos.coords.latitude],accuracy:pos.coords.accuracy??50});setStatus('routing');
