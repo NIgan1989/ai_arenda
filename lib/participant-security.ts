@@ -49,12 +49,12 @@ export async function decideParticipantReview(service:RentalService,body:Row,pla
  ]);if(!result[0].meta.changes)throw new DomainError('Проверка уже рассмотрена.',409);
  // A flat sent for review from «Показать гостям» goes on the map as soon as it is approved, and the owner hears the result either way.
  if(review?.role==='owner'&&review.property_id){
-  const title=(await one(service.db,'SELECT title FROM properties WHERE id=?',review.property_id))?.title||'жильё',wanted=String(review.reference||'').startsWith(PUBLISH_REVIEW);
+  const title=(await one(service.db,'SELECT title FROM properties WHERE id=?',review.property_id))?.title||'жильё',wanted=body.show===true||String(review.reference||'').startsWith(PUBLISH_REVIEW);
   let shown=false;
   if(body.status==='approved'&&wanted){const r=await service.db.batch([
    q(service.db,"UPDATE properties SET published=1 WHERE id=? AND published=0 AND length(description)>=80 AND EXISTS(SELECT 1 FROM property_details d WHERE d.property_id=properties.id AND json_array_length(d.photos)>0)",review.property_id),
    q(service.db,'UPDATE property_details SET version=version+1 WHERE property_id=? AND changes()>0',review.property_id)]);shown=!!r[0].meta.changes;}
-  const text=body.status==='approved'?'Администратор проверил «'+title+'».'+(shown?' Жильё показано гостям на карте.':' Теперь её можно показать гостям.'):'Проверка «'+title+'» не пройдена: '+notes;
+  const text=body.status==='approved'?'Администратор проверил «'+title+'».'+(shown?' Жильё показано гостям на карте.':' Теперь его можно показать гостям.'):'Проверка «'+title+'» не пройдена: '+notes;
   await q(service.db,'INSERT OR IGNORE INTO notifications(id,user_id,body,dedupe,read,created_at) VALUES (?,?,?,?,0,?)',uuid(),review.user_id,text,'owner:review:'+id+':'+body.status,at).run();
  }
  // A cleaner hears the result, and so does every owner whose open cleaning is waiting on this cleaner's response.
@@ -66,6 +66,32 @@ export async function decideParticipantReview(service:RentalService,body:Row,pla
   ]);
  }
  return {message:'Результат фактической проверки сохранён.'};
+}
+// A draft is ready for guests when it has photos and a full description: what the catalogue itself requires.
+const READY_SQL="length(p.description)>=80 AND COALESCE((SELECT json_array_length(d.photos) FROM property_details d WHERE d.property_id=p.id),0)>0";
+const CURRENT_REVISION='COALESCE((SELECT revision FROM review_property_bindings b WHERE b.property_id=r.property_id),0)';
+// The owner never has to ask for the check by hand: as soon as a saved draft is ready for guests and the platform
+// requires the check, the request goes to the administrator (and the AI administrator) from the server itself,
+// whatever app version the owner uses. Approving it shows the flat on the map at once.
+export async function ensurePublishReview(service:RentalService,propertyId:string,config:OperationConfig&{PLATFORM_ADMIN_IDS?:string}={}){
+ const policy=await one(service.db,"SELECT require_owner_review FROM pilot_policy WHERE id='global'");if(!policy?.require_owner_review)return null;
+ const p=await one(service.db,`SELECT p.id,p.title,p.city,p.address FROM properties p WHERE p.id=? AND p.owner_id=? AND p.published=0 AND p.demo_owner IS NULL AND p.archived_at IS NULL AND ${READY_SQL}`,propertyId,service.userId);if(!p)return null;
+ const known=await one(service.db,`SELECT r.status FROM participant_reviews r WHERE r.property_id=? AND r.user_id=? AND r.role='owner' AND r.property_revision=${CURRENT_REVISION} AND (r.status='pending' OR (r.status='approved' AND (r.valid_until IS NULL OR r.valid_until>?))) LIMIT 1`,propertyId,service.userId,epoch());
+ if(known)return null;
+ return requestParticipantReview(service,'owner',{propertyId,reference:PUBLISH_REVIEW+': «'+(p.title||'жильё')+'», '+[p.city,p.address].filter(Boolean).join(', ')},config);
+}
+// The administrator approves a flat straight from «Недвижимость»: the owner's open request is used when there is one,
+// otherwise the check is recorded on the owner's behalf. Approval shows a ready flat to guests at once.
+export async function adminApproveProperty(service:RentalService,body:Row){
+ const propertyId=required(body.propertyId,'Жильё',100);
+ const p=await one(service.db,`SELECT p.id,p.owner_id,p.title,p.city,p.address,p.published,(${READY_SQL}) ready,length(p.description) text_length,COALESCE((SELECT json_array_length(d.photos) FROM property_details d WHERE d.property_id=p.id),0) photos FROM properties p WHERE p.id=? AND p.demo_owner IS NULL AND p.archived_at IS NULL`,propertyId);
+ if(!p)throw new DomainError('Жильё не найдено.',404);
+ let review=await one(service.db,`SELECT r.id,r.version FROM participant_reviews r WHERE r.property_id=? AND r.user_id=? AND r.role='owner' AND r.status='pending' AND r.property_revision=${CURRENT_REVISION} ORDER BY r.created_at DESC,r.rowid DESC LIMIT 1`,propertyId,p.owner_id);
+ if(!review){const id=uuid();await q(service.db,'INSERT INTO participant_reviews(id,user_id,role,property_id,reference,created_at) VALUES (?,?,?,?,?,?)',id,p.owner_id,'owner',propertyId,PUBLISH_REVIEW+': «'+(p.title||'жильё')+'», '+[p.city,p.address].filter(Boolean).join(', '),epoch()).run();review={id,version:1};}
+ await decideParticipantReview(service,{id:review.id,status:'approved',show:true,method:'Администратор в разделе «Недвижимость»',notes:String(body.notes||'').trim()||'Объект и владелец проверены администратором.',expectedVersion:review.version},true);
+ const shown=(await one(service.db,'SELECT published FROM properties WHERE id=?',propertyId))?.published===1;
+ const missing=[!p.photos&&'фото',p.text_length<80&&'описание от 80 символов'].filter(Boolean).join(' и ');
+ return {message:shown?'«'+p.title+'» одобрено и показано гостям на карте. Владелец получил уведомление.':'«'+p.title+'» одобрено. Гостям покажется, когда владелец добавит '+(missing||'недостающие сведения')+'.',shown};
 }
 async function accessKey(config:OperationConfig){if(!config.ACCESS_ENCRYPTION_KEY||config.ACCESS_ENCRYPTION_KEY.length<32)throw new DomainError('Серверное шифрование инструкций ещё не настроено.',503);const bytes=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(config.ACCESS_ENCRYPTION_KEY));return crypto.subtle.importKey('raw',bytes,{name:'AES-GCM'},false,['encrypt','decrypt']);}
 const base64=(bytes:Uint8Array)=>{let text='';for(const byte of bytes)text+=String.fromCharCode(byte);return btoa(text);};

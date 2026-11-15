@@ -5,7 +5,7 @@ import {one,type OperationConfig} from './operation-core';
 import {setTestPayments} from './finance';
 import {buildRuntimeHealth} from './runtime-health';
 import {integrationStatus} from './delivery';
-import {securityState,decideParticipantReview} from './participant-security';
+import {securityState,decideParticipantReview,adminApproveProperty} from './participant-security';
 import {governanceState,savePilotPolicy,updateOperatorTicket} from './pilot-governance';
 import {operationalHealth,retryBackgroundJob} from './background';
 import {aiBudgetState} from './ai-budget';
@@ -71,6 +71,7 @@ export async function writePlatformAdmin(service:RentalService,route:string,body
   if(body.enabled)await sweepReviews(service.db,config);
   return {message:body.enabled?'Теперь заявки проверяет ИИ-администратор, спорные приходят вам.':'Теперь все заявки решаете вы. ИИ только показывает свои проверки.'};
  }
+ if(route==='properties/approve'){if(body.confirmed!==true)throw new DomainError('Подтвердите, что проверили жильё и владельца.');return adminApproveProperty(service,body);}
  if(route==='reviews/decide'){if(body.confirmed!==true)throw new DomainError('Подтвердите фактическую проверку сведений.');return decideParticipantReview(service,body,true);}
  if(route==='governance/policy'){
   if(config.TEST_DATA_ONLY==='1'&&[body.requireOwnerReview,body.requireCleanerReview,body.requirePhone].some(v=>v===true))throw new DomainError('Правила рабочего сервиса настраиваются вне учебного стенда.',409);

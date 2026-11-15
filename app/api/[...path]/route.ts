@@ -22,8 +22,16 @@ import {accountSessions} from '../../../lib/account-sessions';
 import {paymentMode} from '../../../lib/finance';
 import {readPlatformAdmin,writePlatformAdmin} from '../../../lib/platform-admin';
 import {requestCleanerAdmission} from '../../../lib/pilot-governance';
+import {ensurePublishReview} from '../../../lib/participant-security';
 export const dynamic='force-dynamic';
 const json=(data:unknown,status=200)=>Response.json(data,{status,headers:{'Cache-Control':'no-store','X-Content-Type-Options':'nosniff'}});
+// A saved draft that is ready for guests goes to the administrator's check by itself; a failed request never fails the save.
+async function withPublishReview(service:RentalService,result:{id?:string;message?:string}&Record<string,unknown>,config:object){
+ if(!result?.id)return result;
+ try{const review=await ensurePublishReview(service,result.id,config as never);if(review){const shown=(await service.one('SELECT published FROM properties WHERE id=?',result.id))?.published===1;return {...result,review:shown?'approved':'pending',message:result.message+' '+(shown?'ИИ-администратор проверил жильё и показал его гостям.':'Отправили жильё на проверку администратору: после проверки оно появится на карте само.')};}}
+ catch{console.error('AI Arenda API: publish review request failed');}
+ return result;
+}
 async function handle(request:Request, context:{params:Promise<{path:string[]}>}) {
   const env=isolateTestConfig(workerEnv);
   try {
@@ -101,7 +109,7 @@ async function handle(request:Request, context:{params:Promise<{path:string[]}>}
         case 'quote':return json(await service.bookingQuote(body));
         case 'profile':return json(await service.saveProfile(body));
         case 'media':return json(await service.uploadMedia(body,env.BUCKET));
-        case 'listings':return json(await service.saveListing(null,body));
+        case 'listings':return json(await withPublishReview(service,await service.saveListing(null,body),env));
         case 'properties':return json(await service.createProperty(body));
         case 'bookings':return json(await service.createBooking(body));
         case 'jobs':return json(await service.createJob(body));
@@ -114,7 +122,7 @@ async function handle(request:Request, context:{params:Promise<{path:string[]}>}
     if(route.length===2&&route[0]==='profile'&&route[1]==='edit')return json(await service.editProfile(body));
     if(route.length===2&&route[0]==='media'&&body.action==='remove')return json(await service.deleteMedia(route[1],env.BUCKET));
     if(route.length===3&&route[0]==='listings'&&route[2]==='remove')return json(await service.removeProperty(route[1]));
-    if(route.length===2&&route[0]==='listings')return json(await service.saveListing(route[1],body));
+    if(route.length===2&&route[0]==='listings')return json(await withPublishReview(service,await service.saveListing(route[1],body),env));
     if(route.length===2 && route[0]==='bookings') return json(await service.bookingAction(route[1],body));
     if(route.length===2 && route[0]==='jobs'){const result=await service.jobAction(route[1],body);if(body.action!=='apply')return json(result);
       // The response itself sends the cleaner's profile to the platform check that assignment needs, and says so.
@@ -136,7 +144,9 @@ async function handle(request:Request, context:{params:Promise<{path:string[]}>}
     if(/property_cleaning_busy/.test(msg))return json({error:'В этом жилье уже выполняется или проверяется другая уборка.'},409);
     if(/booking_overlap|external_calendar_overlap/.test(msg)) return json({error:'Этот интервал уже занят, включая время уборки и внешние календари. Выберите другое время.'},409);
     if(/external_calendar_stale/.test(msg))return json({error:'Актуальность внешнего календаря не подтверждена. Обновите источник перед новым бронированием.'},409);
-    if(/pilot_owner_review_required|pilot_cleaner_review_required|pilot_phone_required|pilot_review_stale/.test(msg))return json({error:'Операция ожидает проверки участника или телефона. Откройте «Управление → Допуск».'},409);
+    if(/pilot_owner_review_required|pilot_review_stale/.test(msg))return json({error:'Жильё ждёт проверки администратора. Как только он подтвердит, оно станет доступно гостям.'},409);
+    if(/pilot_cleaner_review_required/.test(msg))return json({error:'Исполнитель ждёт проверки администратора.'},409);
+    if(/pilot_phone_required/.test(msg))return json({error:'Нужно подтвердить номер телефона в «Управление → Допуск».'},409);
     if(/cleaner_overlap/.test(msg)) return json({error:'У исполнителя уже есть задание в это время.'},409);
     if(/UNIQUE/.test(msg)) return json({error:'Запись уже существует. Обновите страницу.'},409);
     console.error('AI Arenda API:', msg.replace(/\b[\w.+-]+@[\w.-]+\.[\w]+\b/g,'[email]'));
