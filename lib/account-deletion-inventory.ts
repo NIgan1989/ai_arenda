@@ -43,6 +43,7 @@ export const accountDeletionColumns:Record<string,string>={
  "auth_accounts": "id,phone,name,password_hash,recovery_hash,credential_version,created_at",
  "auth_attempt_limits": "key,attempts,expires_at",
  "auth_mobile_sessions": "hash,user_id,credential_version,expires_at",
+ "auth_reset_codes": "user_id,code_hash,attempts,sent_at,expires_at",
  "auth_sessions": "hash,user_id,credential_version,expires_at",
  "background_jobs": "id,kind,scope,payload,status,attempts,max_attempts,available_at,lease_until,lease_token,repeat_seconds,last_completed,last_error,updated_at",
  "booking_changes": "id,booking_id,proposed_by,proposer_role,request_key,base_version,policy_version,start,end,occupied_until,billing_mode,rate,units,discount_percent,amount,reason,status,expires_at,created_at,decided_at",
