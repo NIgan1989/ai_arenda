@@ -36,6 +36,11 @@ appId: app.aiarenda.assistant
 - tapOn: "Уборка .*"
 - waitForAnimationToEnd
 - takeScreenshot: 04-thread-open
+- scrollUntilVisible:
+    element: "Открыть уборку"
+    direction: DOWN
+    timeout: 20000
+- takeScreenshot: 04b-button
 - tapOn: "Открыть уборку"
 - takeScreenshot: 05-after-tap
 - extendedWaitUntil:
@@ -45,9 +50,20 @@ appId: app.aiarenda.assistant
 - tapOn: "Закрыть и вернуться на карту"
 - waitForAnimationToEnd
 - takeScreenshot: 07-back-on-map
+- tapOn: "Развернуть панель"
+- waitForAnimationToEnd
+- scrollUntilVisible:
+    element: "Бронь .*"
+    direction: DOWN
+    timeout: 20000
 - tapOn: "Бронь .*"
 - waitForAnimationToEnd
+- scrollUntilVisible:
+    element: "Открыть бронь"
+    direction: DOWN
+    timeout: 20000
 - tapOn: "Открыть бронь"
+- takeScreenshot: 08a-after-tap
 - extendedWaitUntil:
     visible: "Закрыть и вернуться на карту"
     timeout: 20000
