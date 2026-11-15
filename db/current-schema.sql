@@ -53,6 +53,7 @@
 -- migration 0049_own_staff.sql sha256:e405114ddd056e7f4463ebbbaf4ecef3a9348be4c3e944fe4d59728171313a19
 -- migration 0050_overdue_cleaning.sql sha256:0ad1121db5460816134ccafee7b7272c8e02f0bd386caad01237f8aa25b80bb4
 -- migration 0051_stay_watch.sql sha256:9981630cafef6d62625613245a56085fad063b159e04e500d757b4bac75b03a3
+-- migration 0052_password_reset.sql sha256:2d28c38105f5a7deee30ce46fae9129284eb57f2b46803810eedf808667c7124
 
 -- table access_receipts
 CREATE TABLE access_receipts (id TEXT PRIMARY KEY,property_id TEXT NOT NULL,entity_kind TEXT NOT NULL,entity_id TEXT NOT NULL,user_id TEXT NOT NULL,created_at INTEGER NOT NULL,expires_at INTEGER NOT NULL);
@@ -244,6 +245,15 @@ CREATE TABLE auth_mobile_sessions (
  hash TEXT PRIMARY KEY,
  user_id TEXT NOT NULL REFERENCES auth_accounts(id) ON DELETE CASCADE,
  credential_version INTEGER NOT NULL,
+ expires_at INTEGER NOT NULL
+);
+
+-- table auth_reset_codes
+CREATE TABLE auth_reset_codes (
+ user_id TEXT PRIMARY KEY REFERENCES auth_accounts(id) ON DELETE CASCADE,
+ code_hash TEXT NOT NULL,
+ attempts INTEGER NOT NULL DEFAULT 0,
+ sent_at INTEGER NOT NULL,
  expires_at INTEGER NOT NULL
 );
 

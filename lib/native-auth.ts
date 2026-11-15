@@ -57,7 +57,31 @@ async function limit(db:D1Database,key:string,max:number){
  if(!value||value.attempts>max)throw new DomainError('Слишком много попыток. Попробуйте через 15 минут.',429);
 }
 
-export type AdminLoginConfig={ADMIN_LOGIN_EMAIL?:string;ADMIN_LOGIN_PHONE?:string};
+export type AdminLoginConfig={ADMIN_LOGIN_EMAIL?:string;ADMIN_LOGIN_PHONE?:string;TELEGRAM_BOT_TOKEN?:string;SMS_GATEWAY_URL?:string;SMS_GATEWAY_TOKEN?:string;PLATFORM_ADMIN_IDS?:string;
+ // Tests replace the outside world; the service sends through Telegram, SMS or the administrator.
+ sendResetCode?:(account:{id:string;name:string;phone:string},code:string)=>Promise<boolean>};
+const RESET_LIFETIME=1800;
+const resetText=(code:string)=>'Код для смены пароля AiQonaq: '+code+'. Действует 30 минут. Никому его не сообщайте. Если вы не просили смену пароля, просто ничего не делайте.';
+async function telegramSend(token:string,chatId:string,text:string){
+ try{const r=await fetch('https://api.telegram.org/bot'+token+'/sendMessage',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({chat_id:chatId,text}),redirect:'manual',signal:AbortSignal.timeout(8000)});return r.ok;}
+ catch{console.error('Password reset Telegram send failed');return false;}
+}
+const chatsOf=async(db:D1Database,ids:string[])=>ids.length?(await query(db,`SELECT DISTINCT address FROM delivery_channels WHERE channel='telegram' AND verified_at IS NOT NULL AND user_id IN (${ids.map(()=>'?').join(',')})`,...ids).all<{address:string}>()).results.map(r=>r.address):[];
+// The code goes to the person first: their own Telegram chat with the bot, then SMS when a provider is connected.
+// Without either, the platform administrator gets it with the instruction to call the number and dictate it only to its owner.
+async function sendResetCode(db:D1Database,config:AdminLoginConfig,account:{id:string;name:string;phone:string},code:string){
+ if(config.sendResetCode)return config.sendResetCode(account,code);
+ const bot=config.TELEGRAM_BOT_TOKEN;let sent=false;
+ if(bot)for(const chat of await chatsOf(db,[account.id]))sent=await telegramSend(bot,chat,resetText(code))||sent;
+ if(sent)return true;
+ if(config.SMS_GATEWAY_URL&&config.SMS_GATEWAY_TOKEN&&/^https:\/\//.test(config.SMS_GATEWAY_URL)){
+  try{const r=await fetch(config.SMS_GATEWAY_URL,{method:'POST',headers:{Authorization:'Bearer '+config.SMS_GATEWAY_TOKEN,'Content-Type':'application/json'},body:JSON.stringify({id:'reset:'+account.id+':'+now(),to:account.phone,text:resetText(code),category:'verification'}),redirect:'manual',signal:AbortSignal.timeout(15000)});if(r.ok)return true;}
+  catch{console.error('Password reset SMS failed');}
+ }
+ const admins=String(config.PLATFORM_ADMIN_IDS||'').split(',').map(v=>v.trim()).filter(Boolean);
+ if(bot)for(const chat of await chatsOf(db,admins))sent=await telegramSend(bot,chat,'🔑 Восстановление доступа\n'+account.name+', '+account.phone+' забыл(а) пароль.\n\nПозвоните на этот номер и убедитесь, что говорите с владельцем аккаунта. Только тогда продиктуйте код: '+code+'\nКод действует 30 минут.')||sent;
+ return sent;
+}
 export async function authRequest(db:D1Database,request:Request,action:string,client:'web'|'mobile'='web',config:AdminLoginConfig={}){
  if(request.method!=='POST')return response({error:'Используйте POST.'},undefined,405);
  const origin=request.headers.get('origin');
@@ -71,12 +95,29 @@ export async function authRequest(db:D1Database,request:Request,action:string,cl
   if(token)await query(db,`DELETE FROM ${client==='mobile'?'auth_mobile_sessions':'auth_sessions'} WHERE hash=?`,await digest(token)).run();
   return response({message:'Вы вышли из аккаунта.'},client==='web'?cookie('',request,0):undefined);
  }
- if(!['register','login','recover'].includes(action))return response({error:'Маршрут не найден.'},undefined,404);
+ if(!['register','login','recover','reset-request','reset'].includes(action))return response({error:'Маршрут не найден.'},undefined,404);
  const ip=request.headers.get('cf-connecting-ip')||'local';
  await limit(db,'ip:'+await digest(ip),60);
  const identifier=String(body.phone??'').trim(),emailLogin=action==='login'&&identifier.includes('@');
  // An optional operator email is a server-configured login alias, never an admin grant.
- const phone=emailLogin?(config.ADMIN_LOGIN_EMAIL?.trim().toLowerCase()===identifier.toLowerCase()&&config.ADMIN_LOGIN_PHONE?normalizePhone(config.ADMIN_LOGIN_PHONE):null):normalizePhone(identifier),password=passwordInput(body.password);
+ const phone=emailLogin?(config.ADMIN_LOGIN_EMAIL?.trim().toLowerCase()===identifier.toLowerCase()&&config.ADMIN_LOGIN_PHONE?normalizePhone(config.ADMIN_LOGIN_PHONE):null):normalizePhone(identifier);
+ if(action==='reset-request'){
+  await limit(db,'reset-request:phone:'+await digest(phone!),3);
+  const account=await query(db,'SELECT id,name,phone FROM auth_accounts WHERE phone=?',phone).first<{id:string;name:string;phone:string}>();
+  // The answer is the same for any number, so nobody learns from it who has an account.
+  const answer={message:'Если этот номер зарегистрирован, код уже в пути: он придёт в Telegram от бота AiQonaq или вам позвонит администратор сервиса и продиктует его.',expiresIn:RESET_LIFETIME};
+  if(!account)return response(answer);
+  const current=await query(db,'SELECT sent_at FROM auth_reset_codes WHERE user_id=?',account.id).first<{sent_at:number}>();
+  if(current&&current.sent_at>now()-60)throw new DomainError('Код уже отправлен. Новый можно запросить через минуту.',429);
+  const code=String(crypto.getRandomValues(new Uint32Array(1))[0]%1000000).padStart(6,'0'),salt=random(8);
+  await query(db,'INSERT INTO auth_reset_codes(user_id,code_hash,attempts,sent_at,expires_at) VALUES (?,?,0,?,?) ON CONFLICT(user_id) DO UPDATE SET code_hash=excluded.code_hash,attempts=0,sent_at=excluded.sent_at,expires_at=excluded.expires_at',account.id,salt+':'+await digest(salt+':'+code),now(),now()+RESET_LIFETIME).run();
+  if(!await sendResetCode(db,config,account,code)){
+   await query(db,'DELETE FROM auth_reset_codes WHERE user_id=?',account.id).run();
+   throw new DomainError('Сейчас не получилось отправить код. Попробуйте через несколько минут или войдите с резервным кодом.',503);
+  }
+  return response(answer);
+ }
+ const password=passwordInput(body.password);
  await limit(db,action+':phone:'+await digest(phone||identifier.toLowerCase()),action==='register'?5:10);
  await query(db,'DELETE FROM auth_attempt_limits WHERE expires_at<?',now()-86400).run();
  await query(db,'DELETE FROM auth_sessions WHERE expires_at<?',now()).run();
@@ -100,6 +141,27 @@ export async function authRequest(db:D1Database,request:Request,action:string,cl
   await query(db,'DELETE FROM auth_sessions WHERE user_id=? AND credential_version<=?',account.id,account.credential_version).run();
   await query(db,'DELETE FROM auth_mobile_sessions WHERE user_id=? AND credential_version<=?',account.id,account.credential_version).run();
   return response({message:'Пароль изменён. Войдите с новым паролем.',recoveryCode:code},client==='web'?cookie('',request,0):undefined);
+ }
+ if(action==='reset'){
+  const code=String(body.code??'').replace(/\D/g,'');
+  if(code.length!==6)throw new DomainError('Введите шесть цифр кода.');
+  const row=account?await query(db,'SELECT * FROM auth_reset_codes WHERE user_id=?',account.id).first<{code_hash:string;attempts:number;expires_at:number}>():null;
+  if(!account||!row||row.expires_at<=now()||row.attempts>=5)throw new DomainError('Код истёк или не запрашивался. Запросите новый.',409);
+  const [salt,expected]=row.code_hash.split(':');
+  if(!equal(await digest(salt+':'+code),expected)){
+   await query(db,'UPDATE auth_reset_codes SET attempts=attempts+1 WHERE user_id=? AND code_hash=?',account.id,row.code_hash).run();
+   throw new DomainError(row.attempts>=4?'Код больше не действует. Запросите новый.':'Код не подходит. Проверьте цифры.',401);
+  }
+  const used=await query(db,'DELETE FROM auth_reset_codes WHERE user_id=? AND code_hash=?',account.id,row.code_hash).run();
+  if(used.meta.changes!==1)throw new DomainError('Код уже использован. Запросите новый.',409);
+  const version=account.credential_version+1,token=random();
+  const updated=await query(db,'UPDATE auth_accounts SET password_hash=?,credential_version=? WHERE id=? AND credential_version=?',await hashPassword(password),version,account.id,account.credential_version).run();
+  if(updated.meta.changes!==1)throw new DomainError('Пароль только что изменили. Запросите новый код.',409);
+  // Every old session ends; this device is signed in with the new password straight away.
+  await query(db,'DELETE FROM auth_sessions WHERE user_id=? AND credential_version<?',account.id,version).run();
+  await query(db,'DELETE FROM auth_mobile_sessions WHERE user_id=? AND credential_version<?',account.id,version).run();
+  await db.batch([guestProfile(db,account.id,account.name,account.phone),query(db,`INSERT INTO ${sessions} VALUES (?,?,?,?)`,await digest(token),account.id,version,now()+lifetime)]);
+  return response({message:'Пароль изменён. Вы вошли.',...(client==='mobile'?{token,user:{id:account.id,name:account.name,phone:account.phone}}:{})},client==='web'?cookie(token,request):undefined);
  }
  // Perform the expensive derivation for absent accounts too.
  const valid=await verifyPassword(password,account?.password_hash||'pbkdf2-sha512$100000$00000000000000000000000000000000$'+ '0'.repeat(128));

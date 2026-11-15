@@ -8,7 +8,7 @@ mkdirSync('outputs/auth-test',{recursive:true});
 for(const name of ['domain','request-body','native-auth'])writeFileSync(`outputs/auth-test/${name}.js`,ts.transpileModule(readFileSync(`lib/${name}.ts`,'utf8'),{compilerOptions:{module:ts.ModuleKind.ES2022,target:ts.ScriptTarget.ES2022}}).outputText.replace(/from '(\.\/[^']+)'/g,(_,name)=>`from '${name}.js'`));
 const {authRequest,sessionUser,normalizePhone,digest}=await import(pathToFileURL(process.cwd()+'/outputs/auth-test/native-auth.js'));
 function fixture(){
- const raw=new DatabaseSync(':memory:');raw.exec(readFileSync('drizzle/0000_boring_unus.sql','utf8'));raw.exec(readFileSync('drizzle/0007_native_auth.sql','utf8'));raw.exec(readFileSync('drizzle/0027_shared_mobile_api.sql','utf8'));
+ const raw=new DatabaseSync(':memory:');raw.exec(readFileSync('drizzle/0000_boring_unus.sql','utf8'));raw.exec(readFileSync('drizzle/0007_native_auth.sql','utf8'));raw.exec(readFileSync('drizzle/0027_shared_mobile_api.sql','utf8'));raw.exec(readFileSync('drizzle/0052_password_reset.sql','utf8'));
  const db={prepare(sql){let values=[];return {bind(...args){values=args;return this;},async first(){return raw.prepare(sql).get(...values)||null;},async run(){return {meta:{changes:raw.prepare(sql).run(...values).changes}};}};},async batch(statements){raw.exec('BEGIN');try{const results=[];for(const statement of statements)results.push(await statement.run());raw.exec('COMMIT');return results;}catch(error){raw.exec('ROLLBACK');throw error;}}};
  const call=(action,body={},headers={})=>authRequest(db,new Request('http://localhost/api/auth/'+action,{method:'POST',headers:{origin:'http://localhost','content-type':'application/json',...headers},body:JSON.stringify(body)}),action);
  return {db,raw,call};
@@ -78,5 +78,46 @@ test('login adds the base guest profile without overwriting existing roles or pr
   await f.call('login',user);const profile=f.raw.prepare('SELECT * FROM profiles WHERE id=?').get(account.id);
   assert.deepEqual(new Set(JSON.parse(profile.roles)),new Set(['owner','guest']));assert.equal(profile.name,'Saved name');assert.equal(profile.city,'Астана');assert.equal(profile.contact,'Saved contact');
   await f.call('login',user);assert.equal(JSON.parse(f.raw.prepare('SELECT roles FROM profiles').get().roles).length,2);
+ }finally{f.raw.close();}
+});
+
+test('forgotten password: a six-digit code, a new password, old sessions end and this device signs in',async()=>{
+ const f=fixture();try{
+  const user={name:'Forgetful',phone:'+77771234568',password:'Old password 2026'};
+  const first=await f.call('register',user),oldCookie=first.headers.get('set-cookie');
+  const sent=[];const config={sendResetCode:async(account,code)=>{sent.push({account,code});return true;}};
+  const call=(action,body)=>authRequest(f.db,new Request('http://localhost/api/mobile/auth/'+action,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)}),action,'mobile',config);
+  const unknown=await (await call('reset-request',{phone:'+77770000000'})).json();
+  const known=await (await call('reset-request',{phone:'8 777 123 45 68'})).json();
+  assert.equal(unknown.message,known.message);assert.equal(sent.length,1);assert.match(sent[0].code,/^\d{6}$/);
+  await assert.rejects(call('reset-request',{phone:user.phone}),e=>e.status===429);
+  const wrong=sent[0].code==='000000'?'111111':'000000';
+  await assert.rejects(call('reset',{phone:user.phone,code:wrong,password:'New password 2026'}),e=>e.status===401);
+  const done=await call('reset',{phone:user.phone,code:sent[0].code,password:'New password 2026'});
+  const body=await done.json();assert.equal(done.status,200);assert.match(body.token,/^[a-f0-9]{64}$/);
+  assert.equal((await sessionUser(f.db,null,'Bearer '+body.token)).phone,user.phone);
+  assert.equal(await sessionUser(f.db,oldCookie),null);
+  await assert.rejects(call('reset',{phone:user.phone,code:sent[0].code,password:'Another password 2026'}),e=>e.status===409);
+  await assert.rejects(f.call('login',user),e=>e.status===401);
+  assert.equal((await f.call('login',{...user,password:'New password 2026'})).status,200);
+ }finally{f.raw.close();}
+});
+test('forgotten password: five wrong codes end the code',async()=>{
+ const f=fixture();try{
+  await f.call('register',{name:'Guessed',phone:'+77771234569',password:'Old password 2026'});
+  let code='';const config={sendResetCode:async(_,c)=>{code=c;return true;}};
+  const call=(action,body)=>authRequest(f.db,new Request('http://localhost/api/mobile/auth/'+action,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)}),action,'mobile',config);
+  await call('reset-request',{phone:'+77771234569'});
+  const wrong=code==='000000'?'111111':'000000';
+  for(let i=0;i<5;i++)await assert.rejects(call('reset',{phone:'+77771234569',code:wrong,password:'New password 2026'}),e=>e.status===401);
+  await assert.rejects(call('reset',{phone:'+77771234569',code,password:'New password 2026'}),e=>e.status===409);
+ }finally{f.raw.close();}
+});
+test('forgotten password: when nothing could deliver the code, the person is told and no code stays behind',async()=>{
+ const f=fixture();try{
+  await f.call('register',{name:'Nobody',phone:'+77771234570',password:'Old password 2026'});
+  const config={sendResetCode:async()=>false};
+  await assert.rejects(authRequest(f.db,new Request('http://localhost/api/mobile/auth/reset-request',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({phone:'+77771234570'})}),'reset-request','mobile',config),e=>e.status===503);
+  assert.equal(f.raw.prepare('SELECT count(*) n FROM auth_reset_codes').get().n,0);
  }finally{f.raw.close();}
 });
