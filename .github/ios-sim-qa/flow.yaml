@@ -27,13 +27,14 @@ appId: app.aiarenda.assistant
 - takeScreenshot: 02-roles
 - waitForAnimationToEnd
 - tapOn:
-    text: "Владелец.*"
-    retryTapIfNoChange: true
+    text: "(?s).*Владел.*"
+    optional: true
 - runFlow:
     when:
-      visible: "В какой роли продолжим.*"
+      visible: "(?s).*В какой роли продолжим.*"
     commands:
-      - tapOn: "Жильё, заявки гостей и уборки"
+      - tapOn:
+          point: "50%,46%"
 - extendedWaitUntil:
     visible: "Развернуть панель"
     timeout: 60000
