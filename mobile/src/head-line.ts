@@ -1,15 +1,17 @@
 // The words of the one AI line and of the shortcuts under it. They are the site's own (lib/ai-line.ts),
 // so the app and the browser never show different examples or different chips. This file only says what
 // a tap on each shortcut does in the app. Covered by mobile/tests/head-line.test.mjs.
+// One shortcut is the app's own: the owner's «+ Жильё» of the site is «Жильё» here and opens the list of
+// the owner's objects, where adding one is the first button (the app only, since 2026-11-15).
 import { roleAiLine } from '../../lib/ai-line';
 
 export type HeadRole = 'guest' | 'owner' | 'cleaner';
 // What the app does for a shortcut: a guest search, a page of the role, or the opened sheet.
-export type HeadAction = 'daily' | 'hourly' | 'weekend' | 'requests' | 'calendar' | 'add-property' | 'nearby' | 'schedule';
+export type HeadAction = 'daily' | 'hourly' | 'weekend' | 'requests' | 'calendar' | 'properties' | 'nearby' | 'schedule';
 export type HeadChip = {
   id: string;
   title: string; // the short label on the chip
-  hint: string; // the full name for a screen reader: "Добавить жильё" for "+ Жильё"
+  hint: string; // the full name for a screen reader: «Моё жильё: посмотреть, изменить, добавить» for «Жильё»
   action: HeadAction;
 };
 export type HeadLine = {
@@ -27,9 +29,13 @@ const ACTIONS: Record<string, HeadAction> = {
   weekend: 'weekend',
   requests: 'requests',
   'free-dates': 'calendar',
-  'add-property': 'add-property',
+  'add-property': 'properties',
   'jobs-nearby': 'nearby',
   schedule: 'schedule'
+};
+// The words of the app where they differ from the site's.
+const OWN: Record<string, { title: string; hint: string }> = {
+  'add-property': { title: 'Жильё', hint: 'Моё жильё: посмотреть, изменить, добавить' }
 };
 
 export function headLine(role: HeadRole): HeadLine {
@@ -39,6 +45,6 @@ export function headLine(role: HeadRole): HeadLine {
     shortPlaceholder: line.shortPlaceholder,
     label: line.label,
     // A shortcut the app has no action for is not shown: a chip that does nothing would be a lie.
-    chips: line.chips.flatMap(chip => (ACTIONS[chip.id] ? [{ id: chip.id, title: chip.label, hint: chip.hint || chip.label, action: ACTIONS[chip.id] }] : []))
+    chips: line.chips.flatMap(chip => (ACTIONS[chip.id] ? [{ id: chip.id, title: OWN[chip.id]?.title || chip.label, hint: OWN[chip.id]?.hint || chip.hint || chip.label, action: ACTIONS[chip.id] }] : []))
   };
 }

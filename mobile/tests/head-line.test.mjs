@@ -12,15 +12,17 @@ test('the line and the chips say what the site says', () => {
     assert.equal(mine.placeholder, theirs.placeholder);
     assert.equal(mine.shortPlaceholder, theirs.shortPlaceholder);
     assert.equal(mine.label, theirs.label);
-    // Every chip of the site is in the app, in the same order and with the same words.
-    assert.deepEqual(mine.chips.map(chip => chip.title), theirs.chips.map(chip => chip.label), role);
+    // Every chip of the site is in the app, in the same order and with the same words,
+    // except the owner's «+ Жильё», which is «Жильё» in the app: it opens the list of objects, adding is inside.
+    assert.deepEqual(mine.chips.map(chip => chip.id), theirs.chips.map(chip => chip.id), role);
+    assert.deepEqual(mine.chips.map(chip => chip.title), theirs.chips.map(chip => chip.id === 'add-property' ? 'Жильё' : chip.label), role);
   }
 });
 
 test('every chip does something in the app', () => {
   const actions = {
     guest: ['daily', 'hourly', 'weekend'],
-    owner: ['requests', 'calendar', 'add-property'],
+    owner: ['requests', 'calendar', 'properties'],
     cleaner: ['nearby', 'schedule']
   };
   for (const role of roles) {

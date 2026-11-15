@@ -316,7 +316,7 @@ function OwnerPanel({accountId,data,mapData,publish,snap,showNow,expand,onHead,o
   {snap>0&&<FlatHub flat={flat} data={data} now={serverNow(data)} tab={tab} onOpen={onOpenProcess} onEdit={step=>step==='job'?onIntent('job'):onEdit?.(flat.id,step)} onChanged={onChanged}/>}
  </View>;
  return <View style={h.block}>
-  <HeadSlot onHeight={onHead}><MapSheetHead role="owner" counts={{requests:ownerWaiting(data,data.user?.id||'',clock)}} text={asked} onText={setAsked} onSend={text=>{setAsked('');onAsk(text);}} onChip={action=>{/* A guest waiting for a quick answer is in this sheet; other requests are on their page. */if(action==='requests'){if(offers.length)expand(1);else onOpenPage('bookings');}else if(action==='calendar')onOpenPage('calendar');else if(action==='add-property')onIntent('add-property');}} now={null} onNow={()=>{}}>
+  <HeadSlot onHeight={onHead}><MapSheetHead role="owner" counts={{requests:ownerWaiting(data,data.user?.id||'',clock)}} text={asked} onText={setAsked} onSend={text=>{setAsked('');onAsk(text);}} onChip={action=>{/* A guest waiting for a quick answer is in this sheet; other requests are on their page. */if(action==='requests'){if(offers.length)expand(1);else onOpenPage('bookings');}else if(action==='calendar')onOpenPage('calendar');else if(action==='properties')onOpenPage('properties');}} now={null} onNow={()=>{}}>
    {/* The feed: what waits for the owner on top, then a row for every booking and cleaning the autopilot leads. */}
    {(flats.length>0||needs.length>0)&&<AutopilotThreads role="owner" data={data} now={serverNow(data)} needs={needs} onOpen={(kind,id)=>onOpenProcess(kind,id)}/>}
    {/* What the owner still does by hand and the AI can take: one row, one tap. */}
