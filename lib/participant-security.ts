@@ -51,9 +51,11 @@ export async function decideParticipantReview(service:RentalService,body:Row,pla
  if(review?.role==='owner'&&review.property_id){
   const title=(await one(service.db,'SELECT title FROM properties WHERE id=?',review.property_id))?.title||'жильё',wanted=body.show===true||String(review.reference||'').startsWith(PUBLISH_REVIEW);
   let shown=false;
-  if(body.status==='approved'&&wanted){const r=await service.db.batch([
+  // The decision is already saved: another platform rule (a phone check, say) may still hold publication back,
+  // and then the flat simply stays a draft the owner can show later.
+  if(body.status==='approved'&&wanted){try{const r=await service.db.batch([
    q(service.db,"UPDATE properties SET published=1 WHERE id=? AND published=0 AND length(description)>=80 AND EXISTS(SELECT 1 FROM property_details d WHERE d.property_id=properties.id AND json_array_length(d.photos)>0)",review.property_id),
-   q(service.db,'UPDATE property_details SET version=version+1 WHERE property_id=? AND changes()>0',review.property_id)]);shown=!!r[0].meta.changes;}
+   q(service.db,'UPDATE property_details SET version=version+1 WHERE property_id=? AND changes()>0',review.property_id)]);shown=!!r[0].meta.changes;}catch(e){if(!/pilot_|property_archived/.test(String((e as Error)?.message)))throw e;}}
   const text=body.status==='approved'?'Администратор проверил «'+title+'».'+(shown?' Жильё показано гостям на карте.':' Теперь его можно показать гостям.'):'Проверка «'+title+'» не пройдена: '+notes;
   await q(service.db,'INSERT OR IGNORE INTO notifications(id,user_id,body,dedupe,read,created_at) VALUES (?,?,?,?,0,?)',uuid(),review.user_id,text,'owner:review:'+id+':'+body.status,at).run();
  }
@@ -90,8 +92,9 @@ export async function adminApproveProperty(service:RentalService,body:Row){
  if(!review){const id=uuid();await q(service.db,'INSERT INTO participant_reviews(id,user_id,role,property_id,reference,created_at) VALUES (?,?,?,?,?,?)',id,p.owner_id,'owner',propertyId,PUBLISH_REVIEW+': «'+(p.title||'жильё')+'», '+[p.city,p.address].filter(Boolean).join(', '),epoch()).run();review={id,version:1};}
  await decideParticipantReview(service,{id:review.id,status:'approved',show:true,method:'Администратор в разделе «Недвижимость»',notes:String(body.notes||'').trim()||'Объект и владелец проверены администратором.',expectedVersion:review.version},true);
  const shown=(await one(service.db,'SELECT published FROM properties WHERE id=?',propertyId))?.published===1;
- const missing=[!p.photos&&'фото',p.text_length<80&&'описание от 80 символов'].filter(Boolean).join(' и ');
- return {message:shown?'«'+p.title+'» одобрено и показано гостям на карте. Владелец получил уведомление.':'«'+p.title+'» одобрено. Гостям покажется, когда владелец добавит '+(missing||'недостающие сведения')+'.',shown};
+ const phoneMissing=!!(await one(service.db,"SELECT 1 FROM pilot_policy WHERE id='global' AND require_phone=1"))&&!await one(service.db,'SELECT 1 FROM phone_verifications WHERE user_id=? AND verified_at IS NOT NULL',p.owner_id);
+ const missing=[!p.photos&&'добавить фото',p.text_length<80&&'дописать описание до 80 символов',phoneMissing&&'подтвердить телефон'].filter(Boolean).join(', ');
+ return {message:shown||p.published?'«'+p.title+'» одобрено'+(p.published?'':' и показано гостям на карте')+'. Владелец получил уведомление.':'«'+p.title+'» одобрено, владелец получил уведомление. Чтобы показать его гостям, владельцу осталось '+(missing||'включить показ')+', после этого он опубликует его сам.',shown};
 }
 async function accessKey(config:OperationConfig){if(!config.ACCESS_ENCRYPTION_KEY||config.ACCESS_ENCRYPTION_KEY.length<32)throw new DomainError('Серверное шифрование инструкций ещё не настроено.',503);const bytes=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(config.ACCESS_ENCRYPTION_KEY));return crypto.subtle.importKey('raw',bytes,{name:'AES-GCM'},false,['encrypt','decrypt']);}
 const base64=(bytes:Uint8Array)=>{let text='';for(const byte of bytes)text+=String.fromCharCode(byte);return btoa(text);};

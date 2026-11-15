@@ -53,3 +53,15 @@ test('an open owner request is used instead of a second one',async()=>{
   assert.deepEqual(rows.map(r=>r.status),['approved']);
  }finally{f.db.close();}
 });
+
+test('approval is kept and reported honestly when another rule holds publication back',async()=>{
+ const f=await fixture();try{
+  const current=await readPilotPolicy(f.db);await savePilotPolicy(f.owner,{expectedVersion:current.version,requireOwnerReview:true,requireCleanerReview:false,requirePhone:true,confirmed:true},true);
+  readyDraft(f);const admin={PLATFORM_ADMIN_IDS:f.guest.userId};
+  const result=await writePlatformAdmin(f.guest,'properties/approve',{propertyId:f.property,confirmed:true},admin);
+  assert.equal(result.shown,false);assert.match(result.message,/подтвердить телефон/);
+  assert.equal(f.db.raw.prepare('SELECT published FROM properties WHERE id=?').get(f.property).published,0);
+  assert.equal(f.db.raw.prepare("SELECT status FROM participant_reviews WHERE property_id=?").get(f.property).status,'approved');
+  assert.ok(f.db.raw.prepare("SELECT 1 FROM notifications WHERE user_id='owner' AND body LIKE '%можно показать гостям%'").get());
+ }finally{f.db.close();}
+});
