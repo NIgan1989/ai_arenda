@@ -2,7 +2,7 @@
 // so background refreshes (inbox, map, autosave) never light the line. The entry splash waits for `entryReady`.
 const GESTURE_WINDOW=1500;
 type Listener=()=>void;
-const state={requests:0,lastGesture:0,entryReady:false,entryCovered:true,thinking:0,listeners:new Set<Listener>()};
+const state={requests:0,quiet:0,lastGesture:0,entryReady:false,entryCovered:true,thinking:0,listeners:new Set<Listener>()};
 const emit=()=>state.listeners.forEach(listener=>listener());
 
 export function markGesture(){state.lastGesture=Date.now();return false;}
@@ -16,7 +16,7 @@ export function entryUncovered(){if(!state.entryCovered)return;state.entryCovere
 
 /** Wraps one request; returns the function that closes it, or null when the request runs in the background. */
 export function trackRequest():(()=>void)|null{
-  if(Date.now()-state.lastGesture>=GESTURE_WINDOW)return null;
+  if(state.quiet>0||Date.now()-state.lastGesture>=GESTURE_WINDOW)return null;
   state.requests++;emit();
   let closed=false;
   return()=>{
@@ -25,6 +25,10 @@ export function trackRequest():(()=>void)|null{
     state.lastGesture=Math.max(state.lastGesture,Date.now()-GESTURE_WINDOW+300);emit();
   };
 }
+
+/** Runs a refresh the person did not ask for (a poll, a timer): its requests never light the line, even right after a tap.
+ *  `request` decides synchronously, before its first await, so only the requests started inside `run` itself are quiet. */
+export function background<T>(run:()=>Promise<T>):Promise<T>{state.quiet++;try{return run();}finally{state.quiet--;}}
 
 // Waiting signs (Thinking.tsx) that a screen shows by itself. While any are up, the long-action pill stays away: one sign is enough.
 export function thinkingShown(){state.thinking++;emit();let closed=false;return()=>{if(closed)return;closed=true;state.thinking--;emit();};}
