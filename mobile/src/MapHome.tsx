@@ -1,3 +1,4 @@
+import {background} from './loading';
 import {ReliabilityBadge} from './Reliability';
 import React,{useEffect,useRef,useState,type ReactNode} from 'react';
 import {Thinking} from './Thinking';
@@ -66,7 +67,7 @@ function usePoll(task:()=>Promise<unknown>,ms:number,enabled:boolean){
  const latest=useRef(task);latest.current=task;
  useEffect(()=>{
   if(!enabled)return;let live=true,timer:ReturnType<typeof setTimeout>|undefined;
-  const tick=async()=>{if(AppState.currentState==='active'){try{await latest.current();}catch{/* The panel shows its own error state. */}}if(live)timer=setTimeout(tick,ms);};
+  const tick=async()=>{if(AppState.currentState==='active'){try{await background(()=>latest.current());}catch{/* The panel shows its own error state. */}}if(live)timer=setTimeout(tick,ms);};
   void tick();return()=>{live=false;if(timer)clearTimeout(timer);};
  },[enabled,ms]);
 }

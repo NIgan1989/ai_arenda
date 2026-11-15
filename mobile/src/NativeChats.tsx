@@ -1,3 +1,4 @@
+import {background} from './loading';
 import React,{useCallback,useEffect,useRef,useState} from 'react';
 import {MapLink} from './RecordCard';
 import {Thinking} from './Thinking';
@@ -75,7 +76,7 @@ export function NativeChats(props:Props){
  useEffect(()=>{if(Platform.OS!=='android'||!selection)return;const back=BackHandler.addEventListener('hardwareBackPress',()=>{if(sendLock.current)return true;if(details)setDetails(false);else leave();return true;});return()=>back.remove();},[!!selection,details,fromMap]);
  useEffect(()=>{if(selectionKey&&draftSelection.current===selectionKey)drafts.current.set(selectionKey,draft);},[selectionKey,draft]);
  const refreshInbox=useCallback(async()=>{if(!mounted.current)return;const expectedScope=scope;try{const value=ownerOf(await call('operations/discussion/inbox'));if(mounted.current&&callbacks.current.role+':'+callbacks.current.accountId===expectedScope)setInbox(value);}catch(e){if(callbacks.current.role+':'+callbacks.current.accountId===expectedScope)await fail(e,generation.current,true);}},[role,accountId]);
- useEffect(()=>{void refreshInbox();const refresh=()=>{if(AppState.currentState==='active')void refreshInbox();},timer=setInterval(refresh,10000),subscription=AppState.addEventListener('change',state=>{if(state==='active')refresh();});return()=>{clearInterval(timer);subscription.remove();};},[refreshInbox]);
+ useEffect(()=>{void refreshInbox();const refresh=()=>{if(AppState.currentState==='active')void background(refreshInbox);},timer=setInterval(refresh,10000),subscription=AppState.addEventListener('change',state=>{if(state==='active')refresh();});return()=>{clearInterval(timer);subscription.remove();};},[refreshInbox]);
  async function refreshConversation(more=false){
   if(!mounted.current||!selection||pollLock.current||sendLock.current&&!more)return;
   const at=generation.current,selected=selection,oldest=conversation?.messages?.[0],pollKey=uid();pollLock.current=pollKey;
@@ -95,7 +96,7 @@ export function NativeChats(props:Props){
   const at=generation.current,first='administrator' in selection?firstText.current:'';firstText.current='';setLoading(true);if(first)setDraft(d=>({...d,text:first}));
   void refreshRef.current().finally(()=>{if(still(at))setLoading(false);}).then(()=>{if(first&&still(at))void sendRef.current(first);});
   if(roomId)void call('operations/discussion/blocks').then(value=>{const state=ownerOf(value);if(still(at))setBlocked(state.blocks.some((b:Row)=>b.room_id===roomId));}).catch(e=>void fail(e,at));
-  const refresh=()=>{if(AppState.currentState==='active')void refreshRef.current();},timer=setInterval(refresh,4000),subscription=AppState.addEventListener('change',state=>{if(state==='active')refresh();});
+  const refresh=()=>{if(AppState.currentState==='active')void background(()=>refreshRef.current());},timer=setInterval(refresh,4000),subscription=AppState.addEventListener('change',state=>{if(state==='active')refresh();});
   return()=>{clearInterval(timer);subscription.remove();};
  },[selectionKey,scope]);
  function choose(next:Selection|null,map=false){if(sendLock.current)return;setFromMap(map);setSelection(next);setSearch('');}
