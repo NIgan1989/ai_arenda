@@ -7,7 +7,8 @@ import {API_URL} from './api';
 import {restoreStep} from './map-memory';
 import {MAX_ZOOM,MIN_ZOOM,TILE,fitView,groupPins,pinBoxWidth,project,unproject,validPoint,visibleTiles,type MapPoint} from './map-math';
 import {appearDelay,flight,flightSteps,lineOrigin,type Flight,type MapLine,type PinState,type PinTone} from './map-motion';
-import {Beam,CrossHead,FRESH,HeatBlob,LEAVE,Leaving,Origin,Pin,Radar,Spark,controlsHeight,m,toneOrder} from './MapPins';
+import {Beam,CrossHead,FRESH,HeatBlob,LEAVE,Leaving,LocateIcon,MeDot,Origin,Pin,Radar,Spark,controlsHeight,m,toneOrder} from './MapPins';
+import {accuracyRadius,type HereFix} from './here-rules';
 
 // rank: among pins of one tone, the lower one stays visible when their boxes meet (the price, for flats).
 // until: for a waiting pin, when the owner's time to answer ends, in seconds by this phone's clock; a strip under the label runs down to it.
@@ -24,12 +25,14 @@ export type {MapLine};
 // (key, the focusKey of then) is on the map, and the pins of that return do not drop in again. onView: each settled view.
 export type HeatPoint={point:MapPoint;weight:number};
 export type MapRestore={view:{center:MapPoint;zoom:number};key:string};
-export type MapProps={center:MapPoint;pins:MapPin[];selected?:string;focus?:string;lines?:MapLine[];heat?:HeatPoint[];sparks?:MapPoint[];onSelect?:(key:string)=>void;bottomInset?:number;topInset?:number;focusKey?:string;picking?:boolean;scanning?:boolean;onCenter?:(center:MapPoint)=>void;restore?:MapRestore|null;onView?:(view:{center:MapPoint;zoom:number})=>void};
+export type MapProps={center:MapPoint;pins:MapPin[];selected?:string;focus?:string;lines?:MapLine[];heat?:HeatPoint[];sparks?:MapPoint[];onSelect?:(key:string)=>void;bottomInset?:number;topInset?:number;focusKey?:string;picking?:boolean;scanning?:boolean;onCenter?:(center:MapPoint)=>void;restore?:MapRestore|null;onView?:(view:{center:MapPoint;zoom:number})=>void;me?:HereFix|null;locating?:boolean;onLocate?:()=>void;meFly?:number};
+// me: where the person is (here.ts), a blue dot; onLocate: the «Где я» button; locating: the phone is being asked;
+// meFly: each new value flies the map to the person.
 type View2={center:MapPoint;zoom:number};
 // The tile service asks clients to identify themselves; no account or device data is sent.
 const tileHeaders={'User-Agent':'AIArenda-mobile/0.1 (+'+API_URL+')'};
 const plusIcon=require('../assets/ui/plus.png'),minusIcon=require('../assets/ui/minus.png'),fitIcon=require('../assets/ui/fit.png');
-export function TileMap({center,pins,selected,focus='',lines=[],heat=[],sparks=[],onSelect,bottomInset=0,topInset=0,focusKey='',picking=false,scanning=false,onCenter,restore,onView}:MapProps){
+export function TileMap({center,pins,selected,focus='',lines=[],heat=[],sparks=[],onSelect,bottomInset=0,topInset=0,focusKey='',picking=false,scanning=false,onCenter,restore,onView,me=null,locating=false,onLocate,meFly=0}:MapProps){
  const [size,setSize]=useState({w:0,h:0}),[view,setViewNow]=useState<View2>(restore?.view||{center,zoom:12}),[drag,setDrag]=useState({x:0,y:0}),[still,setStill]=useState(false);
  const state=useRef({view,size,bottomInset,topInset,picking});state.current={view,size,bottomInset,topInset,picking};
  const loop=useRef(new Animated.Value(0)).current,report=useRef(onCenter),reportView=useRef(onView);report.current=onCenter;reportView.current=onView;
@@ -95,6 +98,8 @@ export function TileMap({center,pins,selected,focus='',lines=[],heat=[],sparks=[
  // A card of the carousel came into view: the map flies to its pin, at no less than a street's zoom.
  useEffect(()=>{const pin=focus&&pins.find(p=>p.key===focus),point=pin&&validPoint(pin.point);if(!point||!size.w)return;moved.current=true;setView(v=>({center:point,zoom:Math.max(v.zoom,13)}));},[focus]);
 
+ useEffect(()=>{const point=me&&validPoint(me.point);if(!meFly||!point||!size.w)return;moved.current=true;setView(v=>({center:point,zoom:Math.max(v.zoom,15)}));},[meFly]);
+
  // ---------- Picking a point: the marker lifts while the map moves under it and lands with a ring ----------
  const lift=useRef(new Animated.Value(0)).current,land=useRef(new Animated.Value(1)).current;
  const raise=(up:boolean)=>{if(!state.current.picking||still)return;Animated.spring(lift,{toValue:up?1:0,friction:5,tension:120,useNativeDriver:true}).start();if(!up){land.setValue(0);Animated.timing(land,{toValue:1,duration:600,easing:Easing.out(Easing.cubic),useNativeDriver:true}).start();}};
@@ -135,6 +140,7 @@ export function TileMap({center,pins,selected,focus='',lines=[],heat=[],sparks=[
     {!still&&sparks.map((p,i)=><Spark key={'spark:'+i} delay={i*500} {...at(p)}/>)}
     {lines.flatMap(l=>l.path&&l.path.length>1?l.path.slice(1).map((q,i)=><Beam key={l.key+':'+i} a={at(l.path![i])} b={at(q)} tone={l.tone} still/>):[<Beam key={l.key} a={at(l.from)} b={at(l.to)} tone={l.tone} still={still}/>])}
     {(origin=>origin?<Origin {...at(origin)}/>:null)(lineOrigin(lines))}
+    {!!me&&!!validPoint(me.point)&&<MeDot {...at(me.point)} radius={accuracyRadius(me.accuracy,me.point[1],view.zoom)} rough={me.rough} still={still}/>}
     {!still&&leaving.filter(p=>validPoint(p.point)).map(p=><Leaving key={'gone:'+p.key+':'+p.gone} pin={p} {...at(p.point)}/>)}
     {shown.map(({pin,x,y,members})=>{const more=members.length-1,b=born.current.get(pin.key)||0;
      return <Pin key={pin.key} pin={pin} x={x} y={y} more={more} active={pin.key===selected||pin.key===focus} still={still} picking={picking} loop={loop}
@@ -150,6 +156,7 @@ export function TileMap({center,pins,selected,focus='',lines=[],heat=[],sparks=[
    <Pressable accessibilityRole="button" accessibilityLabel="Приблизить" disabled={view.zoom>=MAX_ZOOM} onPress={()=>zoomBy(1)} style={m.control}><Image source={plusIcon} style={m.controlIcon} accessibilityIgnoresInvertColors/></Pressable>
    <Pressable accessibilityRole="button" accessibilityLabel="Отдалить" disabled={view.zoom<=MIN_ZOOM} onPress={()=>zoomBy(-1)} style={m.control}><Image source={minusIcon} style={m.controlIcon} accessibilityIgnoresInvertColors/></Pressable>
    <Pressable accessibilityRole="button" accessibilityLabel="Показать всё на карте" onPress={fit} style={m.control}><Image source={fitIcon} style={m.controlIcon} accessibilityIgnoresInvertColors/></Pressable>
+   {!!onLocate&&<Pressable accessibilityRole="button" accessibilityLabel={locating?'Ищем вас на карте':'Где я'} accessibilityState={{busy:locating}} onPress={onLocate} style={m.control}><LocateIcon known={!!me} busy={locating} still={still}/></Pressable>}
   </View>
   <Text style={[m.credit,{bottom:bottomInset+6}]}>© OpenStreetMap</Text>
  </View>;

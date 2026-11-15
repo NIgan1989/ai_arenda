@@ -2,7 +2,7 @@ import {background} from './loading';
 import {ReliabilityBadge} from './Reliability';
 import React,{useEffect,useRef,useState,type ReactNode} from 'react';
 import {Thinking} from './Thinking';
-import {AccessibilityInfo,Animated,AppState,BackHandler,PanResponder,Platform,Pressable,ScrollView,Text,View,useWindowDimensions} from 'react-native';
+import {AccessibilityInfo,Animated,AppState,BackHandler,PanResponder,Platform,Pressable,ScrollView,StyleSheet,Text,View,useWindowDimensions} from 'react-native';
 import {NO_BUDGET,plural} from '../../lib/map-search-request';
 import {ApiError,isOffline,request} from './api';
 import {Photo} from './ListingMedia';
@@ -19,7 +19,8 @@ import {TripHead,useTrip} from './Navigator';
 import {SwipeConfirm} from './SwipeConfirm';
 import {ROAD_BEAMS,beamOrigin,beams,mapMood,moodJoy,roadBeams,roadKey,type BeamRoads,type PinTone} from './map-motion';
 import {MOOD_COLOR,MapMood} from './MapMood';
-import * as Location from 'expo-location';
+import {getHere,locate,openLocationSettings,useHere} from './here';
+import {hereNote,isFresh,nearestCity,type HereAction,type HereNote} from './here-rules';
 import {countdown,mapCities,validPoint,type MapPoint} from './map-math';
 import {MapSheetHead} from './MapSheetHead';
 import {AutopilotThreads,type FeedNeed} from './AutopilotThreads';
@@ -49,7 +50,7 @@ type Publish=(pins:MapPin[],focusKey:string,extra?:MapExtra)=>void;
 // The stay a guest books from the map: Kazakhstan time, as the request form keeps it.
 export type MapStay={mode:'daily'|'hourly';start:string;end:string;guests:number};
 // showNow: whether the "Сейчас" card has its place in the sheet as it is now (see MapHome).
-type Common={setScanning:(on:boolean)=>void;accountId:string;data:Row;mapData:Row|null;city:string;publish:Publish;selected:string;setSelected:(key:string)=>void;focus:string;setFocus:(key:string)=>void;snap:number;showNow:boolean;expand:(snap:number)=>void;onHead:(height:number)=>void;onReach:(bottom:number)=>void;onAsk:(text:string)=>void;onIntent:(intent:string,stay?:MapStay)=>void;onBook:(property:Row,stay:MapStay)=>void;onChanged:()=>Promise<unknown>;onOpenProcess:(kind:'booking'|'job',id:string)=>void;onOpenPage:(id:string)=>void;onEdit?:(id:string,step:string|null)=>void};
+type Common={setScanning:(on:boolean)=>void;accountId:string;data:Row;mapData:Row|null;city:string;publish:Publish;selected:string;setSelected:(key:string)=>void;focus:string;setFocus:(key:string)=>void;snap:number;showNow:boolean;expand:(snap:number)=>void;onHead:(height:number)=>void;onReach:(bottom:number)=>void;onAsk:(text:string)=>void;onIntent:(intent:string,stay?:MapStay)=>void;onBook:(property:Row,stay:MapStay)=>void;onChanged:()=>Promise<unknown>;onOpenProcess:(kind:'booking'|'job',id:string)=>void;onOpenPage:(id:string)=>void;onEdit?:(id:string,step:string|null)=>void;flyMe:()=>void;notify:(text:string)=>void};
 const liveRequests=new Map<string,string>();
 // The least room above an open card of a deal, under the buttons of the map, in which the pin of that deal is shown.
 const SPOT_ROOM=72;
@@ -59,6 +60,8 @@ const NOT_ON_MAP='Этого нет на карте сейчас: у объек�
 const guestSearches=new Map<string,{draft:GuestDraft;preview:Row|null;foundAt:number}>(),SEARCH_KEEP=600000;
 const short=(amount:unknown)=>typeof amount==='number'&&amount>0?(amount>=10000?Math.round(amount/1000)+' тыс.':money(amount)):'Жильё';
 const pointOf=(item:Row):MapPoint|null=>validPoint([item.location?.longitude,item.location?.latitude]);
+// The guest's point, rounded as a picked one is: owners never get it, the search gets it to about a kilometre.
+const nearOf=(point:MapPoint)=>({longitude:Math.round(point[0]*100)/100,latitude:Math.round(point[1]*100)/100,radius:5000});
 const message=(error:unknown)=>error instanceof Error?error.message:'Действие не подтверждено. Обновите данные.';
 // The server's clock, as of the last refresh of the state: a wrong clock on the phone must not change what is "now".
 const serverNow=(data:Row)=>Number(data.serverTime)||Date.now()/1000;
@@ -78,7 +81,7 @@ function HeadSlot({onHeight,children}:{onHeight:(height:number)=>void;children:R
 }
 function useNow(active:boolean){const [now,setNow]=useState(Date.now()/1000);useEffect(()=>{if(!active)return;const timer=setInterval(()=>setNow(Date.now()/1000),1000);return()=>clearInterval(timer);},[active]);return now;}
 
-function GuestPanel({setScanning,accountId,data,mapData,publish,selected,setSelected,setFocus,snap,showNow,expand,onHead,onReach,onAsk,onIntent,onBook,onChanged,onOpenProcess,onOpenPage,picking,setPicking,mapCenter,city,setCity,aimed}:Common&{aimed:boolean;picking:boolean;setPicking:(value:boolean)=>void;mapCenter:React.RefObject<MapPoint|null>;setCity:(city:string)=>void}){
+function GuestPanel({setScanning,accountId,data,mapData,publish,selected,setSelected,setFocus,snap,showNow,expand,onHead,onReach,onAsk,onIntent,onBook,onChanged,onOpenProcess,onOpenPage,picking,setPicking,mapCenter,city,setCity,aimed,flyMe,notify}:Common&{aimed:boolean;picking:boolean;setPicking:(value:boolean)=>void;mapCenter:React.RefObject<MapPoint|null>;setCity:(city:string)=>void}){
  // «На карте» from a page wins over the search the guest left: the panel starts clean in the target's city.
  const kept=useRef(aimed?undefined:guestSearches.get(accountId)).current,foundAt=useRef(kept?.foundAt||0),recent=!!kept?.preview&&Date.now()-kept.foundAt<SEARCH_KEEP;
  const [draft,setDraft]=useState<GuestDraft>(()=>kept?.draft||newDraft(city));
@@ -112,6 +115,9 @@ function GuestPanel({setScanning,accountId,data,mapData,publish,selected,setSele
   // A day or an hour that has passed is never moved to another one: the guest is asked for the date.
   if(parsed.past){setHint({text:[PAST_TEXT[parsed.past],parsed.note,'Укажите, когда нужно жильё.'].filter(Boolean).join(' '),error:true});setRefine(true);expand(2);return;}
   setHint(parsed.note?{text:parsed.note}:null);
+  // «Рядом»: where the guest is, if the phone knows it and it is in the searched city; otherwise the guest shows it on the map.
+  const fix=getHere().fix;
+  if(parsed.nearby&&!parsed.draft.near&&fix&&nearestCity(fix.point)===parsed.draft.city){void find({...parsed.draft,near:nearOf(fix.point)});return;}
   if(parsed.nearby&&!parsed.draft.near){pickThenFind.current=true;setPicking(true);expand(0);return;}
   void find(parsed.draft);
  };
@@ -131,9 +137,10 @@ function GuestPanel({setScanning,accountId,data,mapData,publish,selected,setSele
  useEffect(()=>{if(!picking)pickThenFind.current=false;},[picking]);
  const begin=()=>guarded(async()=>{
   requestKey.current||=uid();
-  // The beams start where the guest is. The phone is asked only if the guest has already allowed it: no new prompt here.
+  // The beams start where the guest is, if the phone told us (here.ts): no new prompt here.
   askedFrom.current=null;
-  void (async()=>{try{if((await Location.getForegroundPermissionsAsync()).status!=='granted')return;const pos=await Location.getLastKnownPositionAsync({maxAge:600000,requiredAccuracy:500});if(pos)askedFrom.current=[pos.coords.longitude,pos.coords.latitude];}catch{/* No place known: no beams. */}})();
+  const fix=getHere().fix;
+  if(fix&&fix.accuracy<=1500)askedFrom.current=fix.point;
   const result=await request('/api/operations/matching/begin',{...matchingBody(freshDraft(draft)),requestKey:requestKey.current,consent:true},undefined,undefined,'guest');
   liveRequests.set(accountId,result.id);setSkew(result.serverTime-Date.now()/1000);setLive(result);setRequestId(result.id);setIndex(0);setAccepted(false);expand(1);
  });
@@ -197,6 +204,20 @@ function GuestPanel({setScanning,accountId,data,mapData,publish,selected,setSele
   else if(preview)publish(preview.properties.flatMap((p:Row)=>pin(p,p.quickRequest?'booking':'home').map(m=>p.match?.best?{...m,best:true}:m)),stageKey);
   else publish([...(mapData?.properties||[]).flatMap((p:Row)=>pin(p,'home')),...stays.map(({id,start,canGo,...m})=>m)],stageKey+':'+(mapData?.properties?.length||0));
  },[requestId,live,preview,mapData,draft.city,staysKey,nav.trip,nav.here,nav.route,nav.rerouted,roads]);
+ // Where the guest is: on the first point from the phone the search moves to the guest's city, and once that city's
+ // homes are on the map, the map flies to the guest. Anything the guest is already doing (a search, a request, a trip,
+ // «На карте» from a page) wins: then the point is only a dot on the map.
+ const here=useHere(),placed=useRef<'no'|'city'|'done'>('no');
+ useEffect(()=>{
+  if(placed.current==='done'||!here.fix)return;
+  if(aimed||recent||requestId||preview||draft.near||nav.trip){placed.current='done';return;}
+  const near=nearestCity(here.fix.point);
+  if(!near){placed.current='done';return;}
+  // The city moves only once the map of the current one has answered, and never away from the guest's own stays there.
+  if(placed.current==='no'){if(!mapData)return;placed.current='city';if(near!==draft.city){if(stays.length){placed.current='done';return;}change({...draft,city:near,district:'',near:null});notify('Вы в городе '+near+'. Показываем жильё здесь.');return;}}
+  if(mapData&&mapData.city===near){placed.current='done';flyMe();}
+ },[here.fix,mapData]);
+ const meInCity=!!here.fix&&nearestCity(here.fix.point)===draft.city;
  // The radar on the map runs while flats are searched and while owners are being asked.
  const scanning=(working&&!requestId)||(!!requestId&&(!live||live.status==='searching'));
  useEffect(()=>{setScanning(scanning);return()=>setScanning(false);},[scanning]);
@@ -273,7 +294,7 @@ function GuestPanel({setScanning,accountId,data,mapData,publish,selected,setSele
  // The form and the results live in the opened sheet only; a running request to owners keeps its place in any state.
  const body=requestId?renderLive():snap===0?null:preview&&!refine
   ?<GuestResults preview={preview} draft={draft} selected={selected} onSelect={setSelected} onFocus={setFocus} onBook={bookFlat} onOpen={property=>onIntent('property:'+property.id,{mode:draft.mode,start:draft.start,end:draft.end,guests:draft.guests})} onRefine={toggleRefine} onWiden={narrowed?widen:undefined} onAskOwners={quick>0?()=>void begin():undefined} onBookEdge={onReach} busy={working}/>
-  :<GuestForm draft={draft} onChange={change} onPickPoint={()=>{setPicking(true);expand(0);}} onSubmit={()=>void find()} busy={working}/>;
+  :<GuestForm draft={draft} onChange={change} onNearMe={meInCity?()=>change({...draft,near:nearOf(here.fix!.point)}):undefined} onPickPoint={()=>{setPicking(true);expand(0);}} onSubmit={()=>void find()} busy={working}/>;
  return <View style={h.block}>
   <HeadSlot onHeight={onHead}>{picking?pickView:nav.trip?<TripHead nav={nav} onOpen={()=>{const id=nav.trip!.id;nav.close();onOpenProcess('booking',id);}}/>:requestId?null:head}</HeadSlot>
   {!picking&&body}
@@ -669,8 +690,60 @@ export function MapHome({ role, accountId, data, menu, chats, onChanged, onOpenP
     if (covered) cardEdge.setValue(cover);
     Animated.timing(veil, { toValue: covered ? 0 : 1, duration: calmRef.current ? 0 : T.motion.base, useNativeDriver: false }).start();
   }, [covered, cover]);
-  const common: Common = { setScanning, accountId, data, mapData, city, publish, selected, setSelected, focus, setFocus, snap, showNow, expand: setSnap, onHead: setHead, onReach: setReach, onAsk, onIntent, onBook, onChanged, onOpenProcess, onOpenPage, onEdit };
+  const common: Common = { setScanning, accountId, data, mapData, city, publish, selected, setSelected, focus, setFocus, snap, showNow, expand: setSnap, onHead: setHead, onReach: setReach, onAsk, onIntent, onBook, onChanged, onOpenProcess, onOpenPage, onEdit, flyMe: () => setMeFly(n => n + 1), notify: setNotice };
   const center = mapCities[city] || validPoint(mapData?.center) || mapCities['Павлодар'];
+
+  // Where the person is (here.ts). The first visit of the map asks the phone (the system prompt appears only if it was
+  // never shown); «Где я» asks again and flies to the person. What the phone could not tell is said over the map with
+  // a way out: Settings, another try, or (for a guest) the point put on the map by hand. Meanwhile the map shows the city.
+  const here = useHere();
+  const [meFly, setMeFly] = useState(0);
+  const [seeking, setSeeking] = useState(false);
+  const [hereTip, setHereTip] = useState<HereNote | null>(null);
+  useEffect(() => {
+    if (isFresh(getHere().fix)) return;
+    setSeeking(true);
+    void locate({ ask: 'first' }).finally(() => setSeeking(false));
+  }, []);
+  const findMe = async () => {
+    setHereTip(null);
+    setSeeking(true);
+    try {
+      const found = await locate({ ask: 'always' });
+      if (found.fix) {
+        setMeFly(n => n + 1);
+        if (found.status !== 'found') setNotice('Показываем место, где телефон видел вас недавно. Уточняем…');
+      } else setHereTip(hereNote(found.status, city, role === 'guest', Platform.OS));
+    } finally {
+      setSeeking(false);
+    }
+  };
+  // Back from Settings with access allowed: the tip goes and the map flies to the person.
+  useEffect(() => {
+    if (here.fix && hereTip) {
+      setHereTip(null);
+      setMeFly(n => n + 1);
+    }
+  }, [here.fix]);
+  useEffect(() => {
+    if (!hereTip) return;
+    const timer = setTimeout(() => setHereTip(null), 12000);
+    return () => clearTimeout(timer);
+  }, [hereTip]);
+  // Picking a point starts where the guest is, when that is in the searched city.
+  useEffect(() => {
+    if (picking && here.fix && nearestCity(here.fix.point) === city) setMeFly(n => n + 1);
+  }, [picking]);
+  const hereAct = (action: HereAction) => {
+    setHereTip(null);
+    if (action === 'settings') openLocationSettings();
+    else if (action === 'retry') void findMe();
+    else {
+      setPicking(true);
+      setSnap(0);
+    }
+  };
+  const HERE_LABEL: Record<HereAction, string> = { settings: 'Открыть настройки', retry: 'Ещё раз', pick: 'Указать на карте' };
 
   return (
     <View
@@ -699,8 +772,30 @@ export function MapHome({ role, accountId, data, menu, chats, onChanged, onOpenP
           mapCenter.current = c;
         }}
         restore={restore}
+        me={here.fix}
+        locating={seeking}
+        onLocate={() => void findMe()}
+        meFly={meFly}
         onView={view => rememberMap(scope, shownKey.current ? { view, viewKey: shownKey.current } : { view })}
       />
+      {seeking && !here.fix && !notice && !picking && (
+        <View accessibilityLiveRegion="polite" style={w.seek}>
+          <Thinking size="sm" />
+          <Text style={w.seekText}>Ищем вас на карте…</Text>
+        </View>
+      )}
+      {!!hereTip && !picking && (
+        <View accessibilityLiveRegion="polite" style={w.tip}>
+          <Text style={w.tipText}>{hereTip.text}</Text>
+          <View style={w.tipRow}>
+            {hereTip.actions.map(a => (
+              <Pressable key={a} accessibilityRole="button" onPress={() => hereAct(a)} style={({ pressed }) => [w.tipButton, pressed && { opacity: 0.6 }]}>
+                <Text style={w.tipButtonText}>{HERE_LABEL[a]}</Text>
+              </Pressable>
+            ))}
+          </View>
+        </View>
+      )}
       {!!notice && (
         <Text accessibilityLiveRegion="polite" style={h.mapNotice}>
           {notice}
@@ -736,3 +831,13 @@ export function MapHome({ role, accountId, data, menu, chats, onChanged, onOpenP
     </View>
   );
 }
+
+const w = StyleSheet.create({
+  seek: { position: 'absolute', top: 68, alignSelf: 'center', flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 8, paddingHorizontal: 16, borderRadius: T.radius.full, backgroundColor: C.glassStrong, borderWidth: 1, borderColor: C.glassLine, shadowColor: C.ink, shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.12, shadowRadius: 8, elevation: 3 },
+  seekText: { fontSize: T.font.label[0], lineHeight: T.font.label[1], color: C.ink, fontWeight: '600' },
+  tip: { position: 'absolute', top: 68, left: 16, right: 68, gap: 8, padding: 12, borderRadius: T.radius.lg, backgroundColor: C.glassStrong, borderWidth: 1, borderColor: C.glassLine, shadowColor: C.ink, shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.12, shadowRadius: 8, elevation: 3 },
+  tipText: { fontSize: T.font.label[0], lineHeight: T.font.label[1], color: C.ink },
+  tipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  tipButton: { minHeight: T.control.compact, paddingHorizontal: 12, borderRadius: T.radius.full, backgroundColor: C.accentSoft, borderWidth: 1, borderColor: C.accentLine, alignItems: 'center', justifyContent: 'center' },
+  tipButtonText: { fontSize: T.font.label[0], lineHeight: T.font.label[1], color: C.accent, fontWeight: '600' }
+});

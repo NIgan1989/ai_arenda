@@ -7,6 +7,8 @@ import {T} from './tokens';
 import {Action,h} from './SheetParts';
 import {arrived,distanceText,minutesText,navState,offRoute,turnArrow,type NavRoute,type NavState} from './navigation';
 import type {MapPoint} from './map-math';
+import {locate,offerFix,openLocationSettings} from './here';
+import {ROUTE_ACCURACY,type HereFix} from './here-rules';
 
 // Navigation on our own map, like a taxi app: the road route from where the person is to the object,
 // their point on the map, the next turn and what is left. The route comes from our server (Stadia Maps or the test router);
@@ -15,6 +17,7 @@ import type {MapPoint} from './map-math';
 export type Trip={kind:'job'|'booking';id:string;title:string;target:MapPoint};
 type Status='idle'|'locating'|'routing'|'driving'|'arrived';
 const REROUTE_AFTER=30000,POINT_EVERY=5000;
+const asPosition=(fix:HereFix)=>({coords:{longitude:fix.point[0],latitude:fix.point[1],accuracy:fix.accuracy,altitude:null,altitudeAccuracy:null,heading:null,speed:null},timestamp:fix.at}) as Location.LocationObject;
 const fail=(e:unknown)=>e instanceof Error&&e.message?e.message:'Не удалось построить маршрут. Попробуйте ещё раз.';
 
 // skew: the server's clock minus the phone's, in seconds, so positions carry the server's time.
@@ -35,6 +38,7 @@ export function useTrip(role:'cleaner'|'guest',skew:number){
  }
  function onPosition(pos:Location.LocationObject){
   const t=live.current.trip;if(!t)return;
+  offerFix(pos);
   const point:MapPoint=[pos.coords.longitude,pos.coords.latitude],accuracy=pos.coords.accuracy??50;setHere({point,accuracy});
   if(arrived(point,t.target)){void finish(true);return;}
   const r=live.current.route;
@@ -44,10 +48,14 @@ export function useTrip(role:'cleaner'|'guest',skew:number){
  async function start(t:Trip){
   setTrip(t);live.current.trip=t;setRoute(null);setError('');setStatus('locating');
   try{
-   const permission=await Location.requestForegroundPermissionsAsync();
-   if(permission.status!=='granted')throw Error('Разрешите доступ к геопозиции, чтобы мы вели вас по карте.');
-   const pos=await Location.getCurrentPositionAsync({accuracy:Location.Accuracy.High});
-   if((pos.coords.accuracy??0)>500)throw Error('Телефон пока не знает, где вы. Выйдите на открытое место и попробуйте ещё раз.');
+   // The shared search (here.ts): a remembered point at once, a fresh one with a time limit, never an endless wait.
+   const found=await locate({ask:'always',precise:true}),fix=found.fix;
+   if(found.status==='blocked'){openLocationSettings();throw Error('Разрешите доступ к геопозиции в настройках, чтобы мы вели вас по карте.');}
+   if(found.status==='denied'||found.status==='idle')throw Error('Разрешите доступ к геопозиции, чтобы мы вели вас по карте.');
+   if(found.status==='off')throw Error('Геолокация на телефоне выключена. Включите её и нажмите «Маршрут» ещё раз.');
+   if(!fix)throw Error('Телефон пока не знает, где вы. Выйдите ближе к окну или на улицу и попробуйте ещё раз.');
+   if(fix.accuracy>ROUTE_ACCURACY)throw Error(found.reduced?'Телефон даёт только примерное место. Включите «Точная геопозиция» для AiQonaq в настройках.':'Телефон знает место только примерно. Выйдите на открытое место и попробуйте ещё раз.');
+   const pos=asPosition(fix);
    setHere({point:[pos.coords.longitude,pos.coords.latitude],accuracy:pos.coords.accuracy??50});setStatus('routing');
    await reroute(t,pos);
    stopWatch();watch.current=await Location.watchPositionAsync({accuracy:Location.Accuracy.High,timeInterval:4000,distanceInterval:8},onPosition);

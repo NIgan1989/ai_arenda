@@ -4,7 +4,8 @@ import {Camera,GeoJSONSource,Layer,Map as GlMap,Marker,type CameraRef,type ViewS
 import {MAX_ZOOM,MIN_ZOOM,fitView,groupPins,pinBoxWidth,project,validPoint,type MapPoint} from './map-math';
 import {appearDelay,lineOrigin,type MapLine} from './map-motion';
 import {restoreStep} from './map-memory';
-import {BEAM,CrossHead,FRESH,HEAT,LEAVE,Leaving,Origin,Pin,Radar,Spark,controlsHeight,m,toneOrder} from './MapPins';
+import {BEAM,CrossHead,FRESH,HEAT,LEAVE,Leaving,LocateIcon,MeDot,Origin,Pin,Radar,Spark,controlsHeight,m,toneOrder} from './MapPins';
+import {accuracyRadius} from './here-rules';
 import type {HeatPoint,MapPin,MapProps} from './TileMap';
 
 // The home map on a phone: MapLibre with the same OpenFreeMap style as the site, so both look alike and the vector map
@@ -17,7 +18,7 @@ const toGl=(zoom:number)=>zoom-1,fromGl=(zoom:number)=>zoom+1;
 const plusIcon=require('../assets/ui/plus.png'),minusIcon=require('../assets/ui/minus.png'),fitIcon=require('../assets/ui/fit.png');
 const fallback:MapPoint=[76.95,52.287];
 
-export function LiveMap({center,pins,selected,focus='',lines=[],heat=[],sparks=[],onSelect,bottomInset=0,topInset=0,focusKey='',picking=false,scanning=false,onCenter,restore,onView}:MapProps){
+export function LiveMap({center,pins,selected,focus='',lines=[],heat=[],sparks=[],onSelect,bottomInset=0,topInset=0,focusKey='',picking=false,scanning=false,onCenter,restore,onView,me=null,locating=false,onLocate,meFly=0}:MapProps){
  const camera=useRef<CameraRef>(null);
  const [size,setSize]=useState({w:0,h:0}),[still,setStill]=useState(false),[failed,setFailed]=useState(false);
  // The view as the map last reported it, in map-math zoom; pins are grouped by it.
@@ -57,6 +58,7 @@ export function LiveMap({center,pins,selected,focus='',lines=[],heat=[],sparks=[
  // The camera keeps the padding it flew with, so when what covers the map changes its height (the card of a deal is
  // measured, or grows), the pin in focus is brought back into the part that is seen.
  useEffect(()=>{const pin=focus&&pins.find(p=>p.key===focus),point=pin&&validPoint(pin.point);if(!point||!size.w)return;moved.current=true;flyTo({center:point,zoom:Math.max(live.current.view.zoom,13)});},[focus,focus?bottomInset:0]);
+ useEffect(()=>{const point=me&&validPoint(me.point);if(!meFly||!point||!size.w)return;moved.current=true;flyTo({center:point,zoom:Math.max(live.current.view.zoom,15)});},[meFly]);
  const zoomBy=(delta:number)=>{moved.current=true;flyTo({center:view.center,zoom:Math.max(MIN_ZOOM,Math.min(MAX_ZOOM,view.zoom+delta))});};
 
  // ---------- Picking a point: the marker lifts while the map moves under it and lands with a ring ----------
@@ -120,6 +122,7 @@ export function LiveMap({center,pins,selected,focus='',lines=[],heat=[],sparks=[
     <Layer id="beams-nav" type="line" filter={['==',['get','tone'],'nav']} layout={{'line-cap':'round','line-join':'round'}} paint={{'line-color':BEAM.nav,'line-width':6}}/>
     <Layer id="beams-route" type="line" filter={['==',['get','tone'],'route']} layout={{'line-cap':'round','line-join':'round'}} paint={{'line-color':BEAM.route,'line-width':4,'line-opacity':.7}}/>
    </GeoJSONSource>
+   {!!me&&!!validPoint(me.point)&&<Marker id="me" lngLat={me.point} anchor="center"><MeDot radius={accuracyRadius(me.accuracy,me.point[1],view.zoom)} rough={me.rough} still={still}/></Marker>}
    {(origin=>origin?<Marker id="beam-origin" lngLat={origin} anchor="center"><Origin/></Marker>:null)(lineOrigin(lines))}
    {!still&&leaving.filter(p=>validPoint(p.point)).map(p=><Marker key={'gone:'+p.key+':'+p.gone} id={'gone:'+p.key+':'+p.gone} lngLat={p.point} anchor="center"><Leaving pin={p}/></Marker>)}
    {shown.map(({pin,x,y,members})=>{const more=members.length-1,b=born.current.get(pin.key)||0;
@@ -138,6 +141,7 @@ export function LiveMap({center,pins,selected,focus='',lines=[],heat=[],sparks=[
    <Pressable accessibilityRole="button" accessibilityLabel="Приблизить" disabled={view.zoom>=MAX_ZOOM} onPress={()=>zoomBy(1)} style={m.control}><Image source={plusIcon} style={m.controlIcon} accessibilityIgnoresInvertColors/></Pressable>
    <Pressable accessibilityRole="button" accessibilityLabel="Отдалить" disabled={view.zoom<=MIN_ZOOM} onPress={()=>zoomBy(-1)} style={m.control}><Image source={minusIcon} style={m.controlIcon} accessibilityIgnoresInvertColors/></Pressable>
    <Pressable accessibilityRole="button" accessibilityLabel="Показать всё на карте" onPress={fit} style={m.control}><Image source={fitIcon} style={m.controlIcon} accessibilityIgnoresInvertColors/></Pressable>
+   {!!onLocate&&<Pressable accessibilityRole="button" accessibilityLabel={locating?'Ищем вас на карте':'Где я'} accessibilityState={{busy:locating}} onPress={onLocate} style={m.control}><LocateIcon known={!!me} busy={locating} still={still}/></Pressable>}
   </View>
   {failed&&<Text accessibilityLiveRegion="polite" style={[m.credit,{bottom:bottomInset+30}]}>Карта временно не загружается. Список и действия работают.</Text>}
  </View>;
