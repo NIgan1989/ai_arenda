@@ -102,18 +102,21 @@ export async function authRequest(db:D1Database,request:Request,action:string,cl
  // An optional operator email is a server-configured login alias, never an admin grant.
  const phone=emailLogin?(config.ADMIN_LOGIN_EMAIL?.trim().toLowerCase()===identifier.toLowerCase()&&config.ADMIN_LOGIN_PHONE?normalizePhone(config.ADMIN_LOGIN_PHONE):null):normalizePhone(identifier);
  if(action==='reset-request'){
-  await limit(db,'reset-request:phone:'+await digest(phone!),3);
+  const phoneKey=await digest(phone!);
+  await limit(db,'reset-request:phone:'+phoneKey,3);
+  // One request a minute for any number, registered or not, so the pause tells nothing about who has an account.
+  const pause=await query(db,`INSERT INTO auth_attempt_limits(key,attempts,expires_at) VALUES (?,1,?) ON CONFLICT(key) DO UPDATE SET attempts=CASE WHEN expires_at<=? THEN 1 ELSE attempts+1 END,expires_at=CASE WHEN expires_at<=? THEN excluded.expires_at ELSE expires_at END RETURNING attempts`,'reset-pause:phone:'+phoneKey,now()+60,now(),now()).first<{attempts:number}>();
+  if(!pause||pause.attempts>1)throw new DomainError('Код уже отправлен. Новый можно запросить через минуту.',429);
   const account=await query(db,'SELECT id,name,phone FROM auth_accounts WHERE phone=?',phone).first<{id:string;name:string;phone:string}>();
   // The answer is the same for any number, so nobody learns from it who has an account.
   const answer={message:'Если этот номер зарегистрирован, код уже в пути: он придёт в Telegram от бота AiQonaq или вам позвонит администратор сервиса и продиктует его.',expiresIn:RESET_LIFETIME};
   if(!account)return response(answer);
-  const current=await query(db,'SELECT sent_at FROM auth_reset_codes WHERE user_id=?',account.id).first<{sent_at:number}>();
-  if(current&&current.sent_at>now()-60)throw new DomainError('Код уже отправлен. Новый можно запросить через минуту.',429);
   const code=String(crypto.getRandomValues(new Uint32Array(1))[0]%1000000).padStart(6,'0'),salt=random(8);
   await query(db,'INSERT INTO auth_reset_codes(user_id,code_hash,attempts,sent_at,expires_at) VALUES (?,?,0,?,?) ON CONFLICT(user_id) DO UPDATE SET code_hash=excluded.code_hash,attempts=0,sent_at=excluded.sent_at,expires_at=excluded.expires_at',account.id,salt+':'+await digest(salt+':'+code),now(),now()+RESET_LIFETIME).run();
+  // A code nobody received is dropped; the answer stays the same, so a failed delivery does not reveal the account either.
   if(!await sendResetCode(db,config,account,code)){
    await query(db,'DELETE FROM auth_reset_codes WHERE user_id=?',account.id).run();
-   throw new DomainError('Сейчас не получилось отправить код. Попробуйте через несколько минут или войдите с резервным кодом.',503);
+   console.error('Password reset code could not be delivered');
   }
   return response(answer);
  }
@@ -138,6 +141,8 @@ export async function authRequest(db:D1Database,request:Request,action:string,cl
   const code=recoveryCode();
   const updated=await query(db,'UPDATE auth_accounts SET password_hash=?,recovery_hash=?,credential_version=credential_version+1 WHERE id=? AND recovery_hash=? AND credential_version=?',await hashPassword(password),await recoveryDigest(code),account.id,codeHash,account.credential_version).run();
   if(updated.meta.changes!==1)throw new DomainError('Код уже использован. Повторите вход.',409);
+  // Recovery revokes every credential issued before it, including a reset code still on its way.
+  await query(db,'DELETE FROM auth_reset_codes WHERE user_id=?',account.id).run();
   await query(db,'DELETE FROM auth_sessions WHERE user_id=? AND credential_version<=?',account.id,account.credential_version).run();
   await query(db,'DELETE FROM auth_mobile_sessions WHERE user_id=? AND credential_version<=?',account.id,account.credential_version).run();
   return response({message:'Пароль изменён. Войдите с новым паролем.',recoveryCode:code},client==='web'?cookie('',request,0):undefined);

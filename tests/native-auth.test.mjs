@@ -91,6 +91,7 @@ test('forgotten password: a six-digit code, a new password, old sessions end and
   const known=await (await call('reset-request',{phone:'8 777 123 45 68'})).json();
   assert.equal(unknown.message,known.message);assert.equal(sent.length,1);assert.match(sent[0].code,/^\d{6}$/);
   await assert.rejects(call('reset-request',{phone:user.phone}),e=>e.status===429);
+  await assert.rejects(call('reset-request',{phone:'+77770000000'}),e=>e.status===429);
   const wrong=sent[0].code==='000000'?'111111':'000000';
   await assert.rejects(call('reset',{phone:user.phone,code:wrong,password:'New password 2026'}),e=>e.status===401);
   const done=await call('reset',{phone:user.phone,code:sent[0].code,password:'New password 2026'});
@@ -113,11 +114,24 @@ test('forgotten password: five wrong codes end the code',async()=>{
   await assert.rejects(call('reset',{phone:'+77771234569',code,password:'New password 2026'}),e=>e.status===409);
  }finally{f.raw.close();}
 });
-test('forgotten password: when nothing could deliver the code, the person is told and no code stays behind',async()=>{
+test('forgotten password: an undelivered code answers like any number and leaves nothing behind',async()=>{
  const f=fixture();try{
   await f.call('register',{name:'Nobody',phone:'+77771234570',password:'Old password 2026'});
   const config={sendResetCode:async()=>false};
-  await assert.rejects(authRequest(f.db,new Request('http://localhost/api/mobile/auth/reset-request',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({phone:'+77771234570'})}),'reset-request','mobile',config),e=>e.status===503);
+  const ask=phone=>authRequest(f.db,new Request('http://localhost/api/mobile/auth/reset-request',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({phone})}),'reset-request','mobile',config);
+  const failed=await ask('+77771234570'),unknown=await ask('+77770000001');
+  assert.equal(failed.status,unknown.status);assert.deepEqual(await failed.json(),await unknown.json());
   assert.equal(f.raw.prepare('SELECT count(*) n FROM auth_reset_codes').get().n,0);
+ }finally{f.raw.close();}
+});
+test('forgotten password: recovery with the backup code revokes a reset code already sent',async()=>{
+ const f=fixture();try{
+  const user={name:'Twice',phone:'+77771234571',password:'Old password 2026'};
+  const backup=(await (await f.call('register',user)).json()).recoveryCode;
+  let code='';const config={sendResetCode:async(_,c)=>{code=c;return true;}};
+  const call=(action,body)=>authRequest(f.db,new Request('http://localhost/api/mobile/auth/'+action,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)}),action,'mobile',config);
+  await call('reset-request',{phone:user.phone});
+  assert.equal((await f.call('recover',{phone:user.phone,recoveryCode:backup,password:'Owner password 2026'})).status,200);
+  await assert.rejects(call('reset',{phone:user.phone,code,password:'Thief password 2026'}),e=>e.status===409);
  }finally{f.raw.close();}
 });
