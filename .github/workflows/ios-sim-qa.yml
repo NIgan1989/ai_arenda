@@ -51,6 +51,7 @@ jobs:
           grep -q "(url.protocol!=='http:')" src/api.ts
           # An unsigned simulator build has no Keychain entitlement: keep the session in memory, as the web preview does.
           sed -i '' "s/Platform.OS==='web'/true/g; s/Platform.OS!=='web'/false/g" src/api.ts
+          python3 ../.github/ios-sim-qa/diag.py
           npx expo prebuild --platform ios
           plist="$(ls ios/*/Info.plist | grep -v Pods | head -n 1)"
           /usr/libexec/PlistBuddy -c 'Delete :NSAppTransportSecurity' "$plist" || true
@@ -99,7 +100,8 @@ jobs:
         if: always()
         run: |
           cd "$RUNNER_TEMP/out"
-          grep -iE 'ReactNativeJS|error|exception|warn' app.log | tail -n 80 || true
+          grep -E 'DIAG' app.log | sed -E 's/.*DIAG/DIAG/' | tail -n 150 || true
+          grep -iE 'exception|fatal|unhandled|TypeError|ReferenceError' app.log | grep -v XCTAutomation | tail -n 30 || true
           for f in $(find . -name '*.png' | sort); do
             sips -s format jpeg -s formatOptions 45 -Z 700 "$f" --out "${f%.png}.jpg" > /dev/null
             echo "=====SHOT $f"; base64 -i "${f%.png}.jpg" | tr -d '\n'; echo; echo "=====END"
