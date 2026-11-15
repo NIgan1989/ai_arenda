@@ -88,6 +88,7 @@ jobs:
           MAESTRO_CLI_NO_ANALYTICS: '1'
         run: |
           nohup xcrun simctl spawn "$UDID" log stream --level debug --predicate 'process == "AiQonaq"' > "$RUNNER_TEMP/out/app.log" 2>&1 &
+          node .github/ios-sim-qa/warm.mjs
           python3 .github/ios-sim-qa/scenario.py --clear-limits
           cd "$RUNNER_TEMP/out" && maestro --device "$UDID" test "$GITHUB_WORKSPACE/.github/ios-sim-qa/flow.yaml" --format junit --output report.xml --test-output-dir maestro 2>&1 | tee maestro.log
       - name: Final screenshot

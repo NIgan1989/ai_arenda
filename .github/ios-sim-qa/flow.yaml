@@ -16,6 +16,11 @@ appId: app.aiarenda.assistant
 - inputText: "Browser-fixture-2026"
 - hideKeyboard
 - tapOn: "Войти"
+- runFlow:
+    when:
+      visible: "Нет связи.*"
+    commands:
+      - tapOn: "Войти"
 - extendedWaitUntil:
     visible: ".*Владел.*"
     timeout: 30000
