@@ -49,6 +49,7 @@ import {isUnclaimed} from '../lib/overdue-text';
 import {CheckinGuide} from './src/CheckinGuide';
 import {PageTransition} from './src/PageTransition';
 import {background,entryReady,markGesture} from './src/loading';
+import {startHere} from './src/here';
 
 function Button({title,onPress,secondary=false,disabled=false}:{title:string;onPress:()=>void;secondary?:boolean;disabled?:boolean}){
   const [focused,setFocused]=useState(false);
@@ -107,6 +108,8 @@ function Auth({onSubmit,busy,titled=true}:{titled?:boolean;onSubmit:(mode:string
 }
 
 function Chat(){
+  // Where the person is starts being known at launch, before sign-in, if they allowed it before (no prompt here).
+  useEffect(()=>{startHere();},[]);
   const [data,setData]=useState<Row>(empty),[messages,setMessages]=useState<Message[]>([]),[flow,setFlow]=useState<Flow|null>(null),[actor,setActor]=useState<Role>('guest');
   const [input,setInput]=useState(''),[busy,setBusy]=useState(false),[ready,setReady]=useState(false),[online,setOnline]=useState(false),[historyReady,setHistoryReady]=useState(false),[saveError,setSaveError]=useState(false);
   const scrollY=useRef(0),scroll=useRef<ScrollView>(null),composer=useRef<TextInput>(null),locked=useRef(false),session=useRef(false),pending=useRef(''),seen=useRef(new Set<string>());
@@ -552,4 +555,5 @@ function byTime(ids:string[],items:Row[]):{id:string;title:string}[]{
 }
 // The status bar is set once, here, for every screen: a screen that set none (the sign-in one) was left with the
 // system's white signs on a light page after the splash had gone.
+// Where the person is starts being known at launch, before sign-in, if they allowed it before (no prompt here).
 export default function App(){return <SafeAreaProvider><View style={{flex:1}} onStartShouldSetResponderCapture={markGesture}><EntryStatusBar/><Chat/><LoadingBar/><EntrySplash/></View></SafeAreaProvider>;}

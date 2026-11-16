@@ -11,6 +11,8 @@ type Props = {
   onChange: (next: GuestDraft) => void;
   // Opens the point picker on the map; the point comes back through onChange.
   onPickPoint: () => void;
+  // Shown when the phone knows where the guest is and it is in the searched city.
+  onNearMe?: () => void;
   onSubmit: () => void;
   busy: boolean;
 };
@@ -20,7 +22,7 @@ const clock = (minutes: number) => two(Math.floor(minutes / 60)) + ':' + two(min
 
 // The structured request for those who prefer fields to free text. The AI line fills the same conditions,
 // so what was typed there is already chosen here.
-export function GuestForm({ draft, onChange, onPickPoint, onSubmit, busy }: Props) {
+export function GuestForm({ draft, onChange, onPickPoint, onNearMe, onSubmit, busy }: Props) {
   const hourly = draft.mode === 'hourly';
   const startMinutes = Number(draft.start.slice(11, 13)) * 60 + Number(draft.start.slice(14, 16));
   const units = draftUnits(draft);
@@ -160,6 +162,11 @@ export function GuestForm({ draft, onChange, onPickPoint, onSubmit, busy }: Prop
           <Text style={f.linkText}>{draft.near ? 'Убрать точку' : 'Указать точку на карте'}</Text>
         </Pressable>
       </View>
+      {!draft.near && !!onNearMe && (
+        <Pressable accessibilityRole="button" disabled={busy} onPress={onNearMe} style={({ pressed }) => [f.link, { alignSelf: 'flex-end' }, (pressed || busy) && h.dim]}>
+          <Text style={f.linkText}>Рядом со мной</Text>
+        </Pressable>
+      )}
       </>}
       <Text style={h.note}>{hourly ? '' : 'Выезд до 12:00. '}Депозит оплачивается отдельно.</Text>
       <Action title={busy ? 'Ищем…' : 'Показать варианты'} disabled={busy} onPress={onSubmit} />

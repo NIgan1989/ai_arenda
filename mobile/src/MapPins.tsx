@@ -9,7 +9,7 @@ import {AI_SAYS,AI_WINDOW} from '../../lib/ai-move-marks';
 
 // The pins, their events and the radar, shared by both maps of the app: the MapLibre map on a phone (LiveMap.native.tsx)
 // and the tile map of the web preview (TileMap.tsx). The map decides where a pin stands; the pin decides how it moves.
-// Three round controls on the right edge, centred on the visible part of the map.
+// Three round controls on the right edge: closer, farther and «Где я», which finds the person, centred on the visible part of the map.
 export const controlsHeight=3*T.control.touch+2*8;
 // When pin boxes meet, one stays visible: the selected one, then an answering or waiting flat, then the AI's best choice, then the cheapest.
 export const toneOrder:Record<PinTone,number>={alert:0,offer:0,booked:0,pending:1,active:1,booking:2,job:3,home:3};
@@ -116,6 +116,24 @@ export function Beam({a,b,tone,still}:{a:{x:number;y:number};b:{x:number;y:numbe
 export function Origin({x,y}:{x?:number;y?:number}){
  return <View pointerEvents="none" style={[m.origin,x==null||y==null?m.pinInMarker:{left:x-11,top:y-11}]}><View style={m.radarDot}/></View>;
 }
+// The person on the map, as in a taxi app: a blue dot with a white rim that breathes softly, and a pale circle as wide
+// as the phone's uncertainty (radius in screen points). rough: a remembered or approximate point, drawn paler.
+export function MeDot({x,y,radius=0,rough=false,still}:{x?:number;y?:number;radius?:number;rough?:boolean;still:boolean}){
+ const v=useRef(new Animated.Value(0)).current;
+ useEffect(()=>{if(still)return;const l=Animated.loop(Animated.timing(v,{toValue:1,duration:2200,easing:Easing.out(Easing.quad),useNativeDriver:true}));l.start();return()=>l.stop();},[still]);
+ const r=Math.max(14,Math.round(radius)),box=2*r;
+ return <View pointerEvents="none" accessibilityLabel="Вы здесь" style={[m.me,{width:box,height:box},x==null||y==null?m.pinInMarker:{left:x-r,top:y-r}]}>
+  <View style={[m.meHalo,{width:box,height:box,borderRadius:r}]}/>
+  {!still&&<Animated.View style={[m.mePulse,{opacity:v.interpolate({inputRange:[0,.2,1],outputRange:[0,.45,0]}),transform:[{scale:v.interpolate({inputRange:[0,1],outputRange:[.6,2.2]})}]}]}/>}
+  <View style={[m.meDot,rough&&m.meRough]}/>
+ </View>;
+}
+// The «Где я» button's icon, drawn: a ring with a dot, filled while the map knows where the person is.
+export function LocateIcon({known,busy,still}:{known:boolean;busy:boolean;still:boolean}){
+ const v=useRef(new Animated.Value(0)).current;
+ useEffect(()=>{if(!busy||still){v.setValue(0);return;}const l=Animated.loop(Animated.sequence([Animated.timing(v,{toValue:1,duration:600,useNativeDriver:true}),Animated.timing(v,{toValue:0,duration:600,useNativeDriver:true})]));l.start();return()=>l.stop();},[busy,still]);
+ return <Animated.View style={[m.locate,known&&m.locateKnown,{opacity:v.interpolate({inputRange:[0,1],outputRange:[1,.35]}),transform:[{scale:v.interpolate({inputRange:[0,1],outputRange:[1,.82]})}]}]}><View style={[m.locateDot,known&&m.locateDotKnown]}/></Animated.View>;
+}
 // Demand on the web preview map: a soft spot, larger and stronger where guests ask and book more.
 // On a phone it is a heatmap layer of MapLibre (LiveMap.native.tsx) in the same colours.
 export const HEAT=['rgba(99,102,241,0)','rgba(99,102,241,0.30)','rgba(6,182,212,0.45)','rgba(245,158,11,0.55)'] as const;
@@ -154,5 +172,7 @@ export const m=StyleSheet.create({
  cross:{position:'absolute',width:56,height:56,alignItems:'center',justifyContent:'flex-end'},landing:{position:'absolute',bottom:-12,width:56,height:24,borderRadius:999,borderWidth:2,borderColor:C.accent},crossShadow:{position:'absolute',bottom:-3,width:14,height:6,borderRadius:999,backgroundColor:C.ink},
  crossHead:{width:32,height:32,borderRadius:16,backgroundColor:C.accent,borderWidth:2,borderColor:C.surface,alignItems:'center',justifyContent:'center'},crossSign:{width:18,height:18,tintColor:C.surface},crossStem:{width:3,height:10,backgroundColor:C.accent},
  controls:{position:'absolute',right:12,gap:8},control:{width:44,height:44,borderRadius:T.radius.full,backgroundColor:C.surface,borderWidth:1,borderColor:C.line,alignItems:'center',justifyContent:'center',shadowColor:C.ink,shadowOffset:{width:0,height:2},shadowOpacity:.12,shadowRadius:8,elevation:3},controlIcon:{width:20,height:20,tintColor:C.ink},
+ me:{position:'absolute',alignItems:'center',justifyContent:'center'},meHalo:{position:'absolute',backgroundColor:'rgba(29,78,216,0.12)',borderWidth:1,borderColor:'rgba(29,78,216,0.35)'},mePulse:{position:'absolute',width:28,height:28,borderRadius:16,backgroundColor:'rgba(29,78,216,0.5)'},meDot:{width:16,height:16,borderRadius:8,backgroundColor:C.info,borderWidth:3,borderColor:C.surface,shadowColor:C.ink,shadowOffset:{width:0,height:1},shadowOpacity:.3,shadowRadius:3,elevation:4},meRough:{backgroundColor:C.infoLine},
+ locate:{width:20,height:20,borderRadius:12,borderWidth:2,borderColor:C.ink,alignItems:'center',justifyContent:'center'},locateKnown:{borderColor:C.info},locateDot:{width:6,height:6,borderRadius:4,backgroundColor:C.ink},locateDotKnown:{width:8,height:8,borderRadius:4,backgroundColor:C.info},
  credit:{position:'absolute',left:8,fontSize:12,color:C.inkSoft,backgroundColor:C.glass,paddingHorizontal:4,borderRadius:4}
 });
