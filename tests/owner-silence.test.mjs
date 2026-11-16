@@ -90,9 +90,12 @@ test('unpaid accepted cleaning: the cleaner hears after a day, the service admin
   assert.match(notes(f,'cleaner','cleaner:silence-pay:%')[0],/3 000 ₸.*Не получил оплату/);
   // The button in the app: an issue from the cleaner, no text to type.
   assert.ok((await f.cleaner.jobAction(f.job.id,{action:'issue',issue:'Исполнитель не получил оплату 3 000 ₸ за уборку.'})).message);
+  // A part the owner already paid is not asked for again.
+  f.db.raw.prepare("INSERT INTO finance_entries(id,owner_id,property_id,booking_id,job_id,kind,amount,currency,source,external_reference,note,actor_id,request_key,created_at) VALUES ('part','owner',?,NULL,?,'job_payment',1000,'KZT','owner','','','owner','part',?)").run(f.property,f.job.id,now());
   f.db.raw.prepare('UPDATE cleaning_jobs SET completed_at=?,end=? WHERE id=?').run(now()-PAY_HANDOVER-5,now()-PAY_HANDOVER-5,f.job.id);
   assert.deepEqual(await sweepSilence(f.db,config),{checkedIn:0,accepted:0,told:0,escalated:1});
-  assert.equal(notes(f,'admin','admin:silence-pay:%').length,1);assert.equal(notes(f,'owner','owner:silence-pay-escalated:%').length,1);
+  assert.equal(notes(f,'admin','admin:silence-pay:%').length,1);assert.match(notes(f,'owner','owner:silence-pay-escalated:%')[0],/Переведите исполнителю 2 000 ₸/);
+  assert.deepEqual(await sweepSilence(f.db,config),{checkedIn:0,accepted:0,told:0,escalated:0},'handed over once');
   await f.owner.jobAction(f.job.id,{action:'record_job_payment',confirmed:true,expectedVersion:f.db.raw.prepare('SELECT version FROM cleaning_jobs WHERE id=?').get(f.job.id).version});
   f.db.raw.prepare("DELETE FROM notifications WHERE dedupe LIKE '%silence-pay%'").run();
   assert.deepEqual(await sweepSilence(f.db,config),{checkedIn:0,accepted:0,told:0,escalated:0},'a paid cleaning is not asked about');
