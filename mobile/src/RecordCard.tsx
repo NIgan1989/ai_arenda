@@ -3,6 +3,7 @@ import React,{useState} from 'react';
 import {View,Text,Pressable,StyleSheet,Platform} from 'react-native';
 import {C,type} from './styles';
 import {T} from './tokens';
+import {SwipeConfirm} from './SwipeConfirm';
 import {money,type Row} from './model';
 import {processJourney} from '../../lib/process-journey';
 import {processStatus} from '../../lib/process-status';
@@ -18,12 +19,15 @@ export function RecordFacts({rows}:{rows:(readonly [string,string,boolean?]|fals
  const shown=rows.filter(Boolean) as (readonly [string,string,boolean?])[];if(!shown.length)return null;
  return <View style={r.facts}>{shown.map(([label,value,secret],index)=><View key={label} style={[r.fact,index>0&&r.factLine,secret&&r.factPrivate]}><Text style={r.factLabel}>{label}</Text><Text style={r.factValue}>{value}</Text></View>)}</View>;
 }
-export type RecordAction={title:string;onPress:()=>void;kind:'main'|'side'|'danger';disabled?:boolean;note?:string};
+// `swipe`: the action confirms a fact or a promise, so as the main action of a card it is a track to swipe; the words on the
+// track say what is confirmed, and `onSwipe` (when given) sends it at once, without the «Подтвердите действие» card.
+// Under «Ещё» the same action stays an ordinary button with its confirmation card.
+export type RecordAction={title:string;onPress:()=>void;kind:'main'|'side'|'danger';disabled?:boolean;note?:string;swipe?:string;onSwipe?:()=>void};
 export function RecordActions({actions,busy,soft=false}:{actions:(RecordAction|false|null|undefined|''|0)[];busy:boolean;soft?:boolean}){
  const [focused,setFocused]=useState(''),all=actions.filter(Boolean) as RecordAction[],mains=all.filter(a=>a.kind==='main'),side=all.filter(a=>a.kind==='side'),danger=all.filter(a=>a.kind==='danger');
  if(!all.length)return null;
  const button=(a:RecordAction,box:any,text:any)=><Pressable key={a.title} accessibilityRole="button" accessibilityLabel={a.title} accessibilityState={{disabled:busy||!!a.disabled}} disabled={busy||!!a.disabled} onPress={a.onPress} onFocus={(e:any)=>{if(Platform.OS!=='web'||e?.target?.matches?.(':focus-visible'))setFocused(a.title);}} onBlur={()=>setFocused('')} style={({pressed})=>[r.action,box,focused===a.title&&r.focus,(pressed||busy||a.disabled)&&r.dim]}><Text style={[r.actionText,text]}>{a.title}</Text></Pressable>;
- return <View style={r.actions}>{mains.map((a,i)=><React.Fragment key={a.title}>{button(a,i||soft?r.next:r.main,i||soft?r.nextText:r.mainText)}{!!a.note&&<Text style={r.actionNote}>{a.note}</Text>}</React.Fragment>)}{side.length>0&&<View style={r.sideRow}>{side.map(a=>button(a,r.side,r.sideText))}</View>}{danger.map(a=>button(a,r.danger,r.dangerText))}</View>;
+ return <View style={r.actions}>{mains.map((a,i)=><React.Fragment key={a.title}>{a.swipe&&!i&&!soft?<SwipeConfirm key={a.swipe} label={a.swipe} disabled={busy||!!a.disabled} onConfirm={a.onSwipe||a.onPress}/>:button(a,i||soft?r.next:r.main,i||soft?r.nextText:r.mainText)}{!!a.note&&<Text style={r.actionNote}>{a.note}</Text>}</React.Fragment>)}{side.length>0&&<View style={r.sideRow}>{side.map(a=>button(a,r.side,r.sideText))}</View>}{danger.map(a=>button(a,r.danger,r.dangerText))}</View>;
 }
 // A booking, a cleaning or a task in short: what, when, how much, the step it is at and one line on what happens now.
 // One big button, and only for the step a person has to take; the facts open by «Подробнее», every other action by «Ещё».
