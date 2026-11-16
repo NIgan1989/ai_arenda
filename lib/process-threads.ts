@@ -1,11 +1,13 @@
 // «Нити» автопилота: каждая бронь, уборка и задание — нить шагов от начала до конца и шаг, на котором дело сейчас.
 // Блок «Автопилот» в шторке карты показывает их при входе, чтобы было видно, как дела идут без человека.
-// Чистая логика (только lib/ai-move-marks.ts): её берут и сайт (components/autopilot-threads.tsx), и приложение (mobile/src/AutopilotThreads.tsx).
+// Чистая логика (только lib/ai-move-marks.ts и lib/cancellation.ts): её берут и сайт (components/autopilot-threads.tsx), и приложение (mobile/src/AutopilotThreads.tsx).
 // Тесты: tests/process-threads.test.mjs.
 
 import { aiNoteOf } from './ai-move-marks';
+import { refundLeft } from './cancellation';
 
 type Row = Record<string, any>;
+const tenge = (n: number) => Number(n).toLocaleString('ru-RU').replace(/\u00a0|\u202f/g, ' ') + ' ₸';
 
 // done — шаг пройден; now — идёт сейчас; next — следующий, ждёт своего времени; wait — впереди.
 export type ThreadState = 'done' | 'now' | 'next' | 'wait';
@@ -15,7 +17,7 @@ export type ThreadStep = { key: string; label: string; state: ThreadState; by: T
 export type ProcessThread = {
   id: string;
   kind: 'booking' | 'job';
-  tag: 'Бронь' | 'Уборка' | 'Задание';
+  tag: 'Бронь' | 'Уборка' | 'Задание' | 'Возврат';
   title: string;
   propertyId?: string;
   steps: ThreadStep[];
@@ -114,12 +116,25 @@ export function bookingThread(b: Row, data: Row, now: number): ProcessThread {
     { key: 'checkout', label: 'Выезд', by: did('ИИ подтвердил выезд') ? 'ai' : 'guest', at: b.end,
       note: out ? (did('ИИ подтвердил выезд') ? 'ИИ подтвердил выезд' : 'Выезд подтверждён') : terms.checkout_reported_at ? 'Гость сообщил о выезде · подтвердите' : now >= b.end ? 'Время выезда прошло · подтвердите выезд' : 'Выезд в ' + threadWhen(b.end, now) },
   ];
+  // A deposit the owner received is a last step of its own: the stay is not closed until it is back with the guest.
+  const held = terms.deposit_status === 'owner_verified' && Number(terms.deposit) > 0, owed = Number(terms.deposit_balance) || 0;
+  if (held) steps.push({ key: 'deposit', label: 'Депозит', by: 'you', at: terms.deposit_returned_at || undefined,
+    note: owed ? 'Верните гостю депозит ' + tenge(owed) + ' и отметьте возврат' : 'Депозит возвращён' });
   const leaving = out || !!terms.checkout_reported_at || now >= b.end;
-  const done = [confirmed, paid, inside, inside && leaving, out];
-  const t = place(steps, done, i => i === 0 || i === 1 || i === 3 || (i === 2 ? now >= b.start - 15 * 60 : now >= b.end));
+  const done = [confirmed, paid, inside, inside && leaving, out, ...(held ? [out && !owed] : [])];
+  const t = place(steps, done, i => i === 0 || i === 1 || i === 3 || i === 5 || (i === 2 ? now >= b.start - 15 * 60 : now >= b.end));
   const yours = !t.finished && t.steps[t.current].by === 'you';
   return { id: b.id, kind: 'booking', tag: 'Бронь', title: b.title || 'Бронь', propertyId: b.property_id, ...t, yours,
     status: statusOf(t, now, 'Завершено'), line: lineOf(t, now, did('ИИ подтвердил выезд') ? 'ИИ подтвердил выезд' : 'Гость выехал'), at: b.start };
+}
+
+// ---------- Отменённая бронь, по которой владелец ещё должен гостю ----------
+export function refundThread(b: Row, now: number): ProcessThread | null {
+  const refund = refundLeft(b), deposit = b.terms?.deposit_status === 'owner_verified' ? Number(b.terms?.deposit_balance) || 0 : 0;
+  if (!['cancelled', 'expired'].includes(b.status) || !(refund || deposit)) return null;
+  const what = [refund && tenge(refund), deposit && 'депозит ' + tenge(deposit)].filter(Boolean).join(' и ');
+  const t = place([{ key: 'cancel', label: 'Отмена', by: 'guest', note: 'Бронь отменена' }, { key: 'refund', label: 'Возврат', by: 'you', note: 'Верните гостю ' + what + ' и отметьте возврат' }], [true, false], () => true);
+  return { id: b.id, kind: 'booking', tag: 'Возврат', title: b.title || 'Бронь', propertyId: b.property_id, ...t, yours: true, status: statusOf(t, now, 'Возвращено'), line: lineOf(t, now, 'Возвращено'), at: b.start };
 }
 
 // ---------- Уборка глазами владельца ----------
@@ -196,7 +211,9 @@ export function ownerThreads(data: Row | null | undefined, now: number): Process
     .map((b: Row) => ({ b, t: bookingThread(b, data!, now) })).filter(({ b, t }: Row) => visible(b.start, Number(b.terms?.actual_checkout) || b.end, t.finished, now)).map(({ t }: Row) => t);
   const jobs = (data!.jobs || []).filter((j: Row) => j.owner_id === userId && j.status !== 'cancelled')
     .map((j: Row) => ({ j, t: cleaningThread(j, data!, now) })).filter(({ j, t }: Row) => visible(j.start, Number(j.completed_at) || j.end, t.finished, now)).map(({ t }: Row) => t);
-  return [...bookings, ...jobs].sort(order);
+  // Money owed to a guest after a cancellation stays in front of the owner until it is marked returned.
+  const refunds = (data!.bookings || []).filter((b: Row) => b.owner_id === userId).map((b: Row) => refundThread(b, now)).filter(Boolean) as ProcessThread[];
+  return [...refunds, ...bookings, ...jobs].sort(order);
 }
 
 // week: без трёхдневного горизонта — для ленты дня, где можно выбрать любой день недели.
