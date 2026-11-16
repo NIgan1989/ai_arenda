@@ -22,7 +22,7 @@ export function planAdministrator(data:Row,t:number):AdministratorTask[]{
  const bookingTask=(b:Row,stage:string,title:string,reason:string,at:number,roles:Role[]= ['owner','guest'],urgent=false)=>{
   // The guest reads their own part in plain words: what to do and where, not the owner's checklist.
   const guestTitles:Record<string,string>={payment:'Оплатить проживание',deposit:'Оплатить депозит',checkin:'Заселиться',checkout:'Сообщить о выезде'};
-  const guestReasons:Record<string,string>={payment:'оплатите в карточке брони',deposit:'оплатите в карточке брони, после выезда депозит вернут',checkin:'на месте отметьте заезд в карточке брони',checkout:'когда освободите жильё, нажмите «Сообщить о выезде»'};
+  const guestReasons:Record<string,string>={payment:'как оплатить, написано в карточке брони',deposit:'как передать депозит, написано в карточке брони; после выезда его вернут',checkin:'на месте отметьте заезд в карточке брони',checkout:'когда освободите жильё, нажмите «Сообщить о выезде»'};
   const subject=reason.split(' · ')[0];
   for(const role of roles){const user=role==='owner'?owner:b.guest_id;if(due(at,user,role))add(b,'booking',stage,user,role,role==='guest'?guestTitles[stage]||title:title,role==='guest'&&guestReasons[stage]?subject+' · '+guestReasons[stage]:reason,at,urgent||at<=t?3:2);}
  };

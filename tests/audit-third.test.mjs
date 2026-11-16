@@ -91,3 +91,19 @@ test('the autopilot does not confirm such a request alone, and confirms it once 
   await checkAdministratorOwner(f.db,'owner');assert.equal(status(),'confirmed');
  }finally{f.db.close();}
 });
+
+test('a guest the autopilot would confirm at once is not confirmed while the home is not ready',async()=>{
+ const f=await fixture();try{
+  f.db.raw.prepare('UPDATE property_policies SET auto_confirm=1,auto_assign=1').run();
+  f.db.raw.prepare("INSERT INTO phone_verifications VALUES ('guest','+77000000009','x',0,0,0,?)").run(now());
+  f.db.raw.prepare("UPDATE profiles SET created_at=? WHERE id='guest'").run(now()-90*86400);
+  const id=await request(f,5*3600);
+  assert.notEqual(f.db.raw.prepare('SELECT level FROM booking_risks WHERE booking_id=?').get(id).level,'high');
+  assert.equal(f.db.raw.prepare('SELECT status FROM bookings WHERE id=?').get(id).status,'requested');
+  assert.match(notes(f,'owner','%booking:'+id+'%')[0],/не подтвердил заявку .* сам: жильё не отмечено готовым/);
+  // The same guest and a ready home: confirmed at once, as before.
+  await f.owner.bookingAction(id,{action:'cancel',reason:'Тест'});f.db.raw.prepare("UPDATE property_operations SET readiness='ready'").run();
+  const again=(await f.guest.createBooking({propertyId:f.property,start:iso(now()+5*3600),end:iso(now()+7*3600),guests:1,billingMode:'hourly',requestKey:'third',acceptTerms:true})).id;
+  assert.equal(f.db.raw.prepare('SELECT status FROM bookings WHERE id=?').get(again).status,'confirmed');
+ }finally{f.db.close();}
+});
