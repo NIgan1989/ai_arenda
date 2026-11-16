@@ -512,6 +512,8 @@ function Chat(){
 
 
 
+          // Accepted and still not paid by the owner: one tap opens an issue the service administrator sees too.
+          assigned&&j.status==='completed'&&!j.settled_at&&!j.guarantee&&j.fee>(j.settlement_paid||0)&&{title:'Не получил оплату',kind:'side',onPress:()=>confirm('jobs/'+id,{action:'issue',issue:'Исполнитель не получил оплату '+money(j.fee-(j.settlement_paid||0))+' за уборку.'},'Сообщить, что оплата за уборку не пришла','my-jobs','Владелец и администратор сервиса получат сообщение.')},
           !owner&&j.status==='open'&&!applied&&{title:'Откликнуться',kind:'main',onPress:()=>perform('jobs/'+id,{action:'apply'},m.id)},
           !owner&&j.status==='open'&&application?.status==='pending'&&{title:'Отозвать отклик',kind:'side',onPress:()=>confirm('jobs/'+id,{action:'withdraw'},'Отозвать отклик на эту уборку','jobs')},
           // The guest left without a word: the cleaner at the door says so, and the owner (or the autopilot) confirms the checkout.

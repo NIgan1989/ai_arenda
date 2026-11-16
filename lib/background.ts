@@ -12,6 +12,7 @@ import {deliverOutbox} from './delivery';
 import {deliverWebPush} from './web-push';
 import {advanceMatchingRequests} from './matching-background';
 import {refreshCalendar} from './external-calendar';
+import {sweepSilence} from './owner-silence';
 import {migrateFinanceEntity} from './finance';
 import {encryptInstructions} from './participant-security';
 import {moveMediaToBucket,sweepMediaObjects} from './media-store';
@@ -84,7 +85,7 @@ export async function runOperationalTick(db:D1Database,config:OperationConfig={}
  const result=await runBackgroundJobs(db,async job=>{
   if(job.kind==='discovery')return discover(db,job);
   if(job.kind==='autopilot-plans')return sweepPlans(db);
-  if(job.kind==='admin-issues')return {issues:await sweepIssues(db,config as OperationConfig&{PLATFORM_ADMIN_IDS?:string}),overdue:await sweepOverdueJobs(db,config as OperationConfig&{PLATFORM_ADMIN_IDS?:string}),stays:await sweepStays(db,config as OperationConfig&{PLATFORM_ADMIN_IDS?:string}),reports:await sweepReports(db),digest:await sendDigest(db,config as OperationConfig&{PLATFORM_ADMIN_IDS?:string})};
+  if(job.kind==='admin-issues')return {issues:await sweepIssues(db,config as OperationConfig&{PLATFORM_ADMIN_IDS?:string}),overdue:await sweepOverdueJobs(db,config as OperationConfig&{PLATFORM_ADMIN_IDS?:string}),stays:await sweepStays(db,config as OperationConfig&{PLATFORM_ADMIN_IDS?:string}),silence:await sweepSilence(db,config as OperationConfig&{PLATFORM_ADMIN_IDS?:string}),reports:await sweepReports(db),digest:await sendDigest(db,config as OperationConfig&{PLATFORM_ADMIN_IDS?:string})};
   if(job.kind==='admin-autocheck')return sweepReviews(db,config as OperationConfig&{PLATFORM_ADMIN_IDS?:string});
   if(job.kind==='matching-dispatch')return advanceMatchingRequests(db,config);
   if(job.kind==='owner')return checkAdministratorOwner(db,job.scope);
