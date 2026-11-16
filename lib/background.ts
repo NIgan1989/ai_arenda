@@ -18,8 +18,10 @@ import {moveMediaToBucket,sweepMediaObjects} from './media-store';
 import {epoch,uuid,q,one,rows,type Row,type OperationConfig} from './operation-core';
 
 export async function enqueueJob(db:D1Database,id:string,kind:string,scope:string,payload:Row={},repeatSeconds=0){await q(db,'INSERT OR IGNORE INTO background_jobs(id,kind,scope,payload,available_at,repeat_seconds,updated_at) VALUES (?,?,?,?,?,?,?)',id,kind,scope,JSON.stringify(payload),epoch(),repeatSeconds,epoch()).run();}
+// Jobs of the service itself (delivery, the administrator's sweeps, matching) go before the per-owner ones, so that a
+// growing number of owners cannot push a guest's notification or an overdue cleaning to a later minute.
 export async function runBackgroundJobs(db:D1Database,handler:(job:Row)=>Promise<unknown>,limit=12){
- const due=await rows(db,"SELECT id FROM background_jobs WHERE status='pending' AND available_at<=? OR status='running' AND lease_until<=? ORDER BY available_at,id LIMIT ?",epoch(),epoch(),limit);let completed=0,failures=0;
+ const due=await rows(db,"SELECT id FROM background_jobs WHERE status='pending' AND available_at<=? OR status='running' AND lease_until<=? ORDER BY scope<>'system',available_at,id LIMIT ?",epoch(),epoch(),limit);let completed=0,failures=0;
  const deadline=Date.now()+35000;
  for(const candidate of due){
   if(Date.now()>deadline)break;const token=uuid(),job=await q(db,"UPDATE background_jobs SET status='running',lease_token=?,lease_until=?,attempts=attempts+1,updated_at=? WHERE id=? AND ((status='pending' AND available_at<=?) OR (status='running' AND lease_until<=?)) RETURNING *",token,epoch()+120,epoch(),candidate.id,epoch(),epoch()).first<Row>();if(!job)continue;
@@ -41,15 +43,37 @@ async function migrateHistory(db:D1Database,ownerId:string){
  const bookings=await rows(db,"SELECT b.id FROM bookings b JOIN properties p ON p.id=b.property_id WHERE p.owner_id=? AND NOT EXISTS(SELECT 1 FROM finance_backfill_receipts WHERE entity_key='booking:'||b.id) ORDER BY b.created_at,b.id LIMIT 20",ownerId);
  const jobs=await rows(db,"SELECT id FROM cleaning_jobs j WHERE owner_id=? AND NOT EXISTS(SELECT 1 FROM finance_backfill_receipts WHERE entity_key='job:'||j.id) ORDER BY created_at,id LIMIT 20",ownerId),service=new RentalService(db,ownerId);
  for(const b of bookings)await migrateFinanceEntity(service,'booking',b.id);for(const j of jobs)await migrateFinanceEntity(service,'job',j.id);
+ // With the history moved there is nothing to do every minute: the owner's job comes back once a day.
+ await q(db,"UPDATE background_jobs SET repeat_seconds=? WHERE id=?",bookings.length||jobs.length?60:86400,'finance-history:'+ownerId).run();
  return {bookings:bookings.length,jobs:jobs.length};
 }
-async function cloudBackup(db:D1Database,config:OperationConfig){
+// The nightly snapshot of every table, encrypted, in the private bucket. A small database is one object, as before
+// (private-backups/DATE.snapshot.enc). A table is read in pages and a big database is written as numbered parts
+// (private-backups/DATE/part-001.snapshot.enc …), each a complete JSON of the same shape; the last one says how many there are.
+export const BACKUP_PAGE=2000,BACKUP_PART_BYTES=2*1024*1024;
+export async function cloudBackup(db:D1Database,config:OperationConfig,page=BACKUP_PAGE,partBytes=BACKUP_PART_BYTES){
  if(!config.BUCKET||!config.ACCESS_ENCRYPTION_KEY)return {configured:false};
- const tables=await rows(db,"SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE '_cf_%' ORDER BY name"),data:Row={schemaVersion:22,createdAt:epoch(),tables:{}};
- for(const table of tables){if(!/^[A-Za-z_][A-Za-z0-9_]*$/.test(table.name))throw new Error('Unknown table');const values=table.name==='journey_sessions'?[]:await rows(db,'SELECT * FROM "'+table.name+'" LIMIT 5001');if(values.length>5000)throw new Error('Backup requires chunked export at this database size');data.tables[table.name]=values;}
- const encoded=JSON.stringify(data);if(encoded.length>4*1024*1024)throw new Error('Backup too large for the pilot snapshot');
- const sealed=await encryptInstructions(encoded,config),key='private-backups/'+new Date().toISOString().slice(0,10)+'.snapshot.enc';await config.BUCKET.put(key,sealed,{httpMetadata:{contentType:'application/octet-stream'}});return {key};
+ const tables=await rows(db,"SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE '_cf_%' ORDER BY name"),createdAt=epoch(),day=new Date().toISOString().slice(0,10);
+ const parts:string[]=[];let held:Row={},size=0;
+ const flush=()=>{if(Object.keys(held).length||!parts.length){parts.push(JSON.stringify({schemaVersion:22,createdAt,part:parts.length+1,tables:held}));held={};size=0;}};
+ for(const table of tables){
+  if(!/^[A-Za-z_][A-Za-z0-9_]*$/.test(table.name))throw new Error('Unknown table');
+  held[table.name]=held[table.name]||[];
+  if(table.name==='journey_sessions')continue;
+  for(let offset=0;;offset+=page){
+   const values=await rows(db,'SELECT * FROM "'+table.name+'" LIMIT ? OFFSET ?',page,offset);
+   for(const value of values){const text=JSON.stringify(value);if(size&&size+text.length>partBytes){flush();held[table.name]=[];}held[table.name].push(value);size+=text.length+1;}
+   if(values.length<page)break;
+  }
+ }
+ flush();
+ const put=async(key:string,body:string)=>config.BUCKET!.put(key,await encryptInstructions(body,config),{httpMetadata:{contentType:'application/octet-stream'}});
+ if(parts.length===1){const key='private-backups/'+day+'.snapshot.enc';await put(key,parts[0]);return {key,parts:1};}
+ for(let i=0;i<parts.length;i++)await put('private-backups/'+day+'/part-'+String(i+1).padStart(3,'0')+'.snapshot.enc',i===parts.length-1?parts[i].replace('{"schemaVersion":22,','{"schemaVersion":22,"parts":'+parts.length+','):parts[i]);
+ return {key:'private-backups/'+day+'/',parts:parts.length};
 }
+// One tick a minute; the 35-second deadline inside runBackgroundJobs is what really bounds it.
+export const TICK_JOBS=40;
 export async function runOperationalTick(db:D1Database,config:OperationConfig={}){
  await enqueueJob(db,'matching-dispatch','matching-dispatch','system',{},30);
  await q(db,'UPDATE journey_sessions SET longitude=NULL,latitude=NULL,accuracy=NULL,route=NULL,route_recorded_at=NULL WHERE (expires_at<=? OR stopped_at IS NOT NULL) AND (longitude IS NOT NULL OR route IS NOT NULL)',epoch()).run();
@@ -69,7 +93,7 @@ export async function runOperationalTick(db:D1Database,config:OperationConfig={}
   if(job.kind==='media-move')return moveMediaToBucket(db,config.BUCKET);
   if(job.kind==='media-sweep'){const r=await sweepMediaObjects(db,config.BUCKET,String(job.payload.cursor||''));await q(db,'UPDATE background_jobs SET payload=? WHERE id=?',JSON.stringify({cursor:r.cursor}),job.id).run();return r;}
   throw new Error('Unknown background operation');
- });
+ },TICK_JOBS);
  const dead=await one(db,"SELECT COUNT(*) n FROM background_jobs WHERE status='dead'");
  await q(db,"INSERT INTO administrator_runs(id,last_success,checked_at) VALUES ('scheduler',?,?) ON CONFLICT(id) DO UPDATE SET last_success=excluded.last_success,checked_at=excluded.checked_at,last_error=?",epoch(),epoch(),result.failures||dead?.n?'Есть ошибки отдельных фоновых операций':'').run();
  return result;
