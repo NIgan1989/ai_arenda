@@ -59,12 +59,12 @@ async function findSpot(p:Row,lookup:typeof fetch,config:GeoConfig):Promise<Spot
  const ask=async(url:string)=>{const signal=AbortSignal.timeout?AbortSignal.timeout(6000):undefined;const r=await lookup(url,{headers:{'User-Agent':'ai-arenda/1.0 (rental map)','Accept':'application/json'},signal});return r.ok?await r.json() as Row:null;};
  for(const text of geocodeQueries(p)){
   try{
-   if(stadia){
+   if(stadia)try{
     const url=new URL('https://api.stadiamaps.com/geocoding/v1/search');url.searchParams.set('text',text);url.searchParams.set('boundary.country','KZ');url.searchParams.set('focus.point.lon',String(centre[0]));url.searchParams.set('focus.point.lat',String(centre[1]));url.searchParams.set('lang','ru');url.searchParams.set('size','1');url.searchParams.set('api_key',stadia);
     const hit=(await ask(url.toString()))?.features?.[0],[lon,lat]=(hit?.geometry?.coordinates||[]).map(Number);
     // Only a house, a street or a named place counts: the city itself is no pin for a flat.
     if(hit&&['address','street','venue'].includes(hit.properties?.layer)&&near(lon,lat))return {longitude:Number(lon.toFixed(6)),latitude:Number(lat.toFixed(6)),found:true};
-   }
+   }catch{/* Stadia did not answer: the public search below still tries the same words */}
    const list=await ask('https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&countrycodes=kz&accept-language=ru&q='+encodeURIComponent(text)) as Row[]|null,hit=Array.isArray(list)?list[0]:null,lon=Number(hit?.lon),lat=Number(hit?.lat);
    if(near(lon,lat))return {longitude:Number(lon.toFixed(6)),latitude:Number(lat.toFixed(6)),found:true};
   }catch{/* try the next way of saying it */}

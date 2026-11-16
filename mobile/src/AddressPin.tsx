@@ -22,6 +22,8 @@ export function AddressPin({propertyId,city,district,address,call,onChoice}:{pro
  // Ask again a moment after the owner stops typing; an older answer never overwrites a newer one.
  useEffect(()=>{
   let live=true;
+  // A pin chosen for the old address is forgotten at once: until the new one is found, «Сохранить» keeps the service's own pin.
+  report.current({point:null,moved:false,saved:false});
   const timer=setTimeout(async()=>{
    try{const next=await call('map/spot',{propertyId,city,district,address}) as Spot;if(!live)return;
     setSpot(next);setFailed(false);setMoved(false);setRound(n=>n+1);
@@ -34,7 +36,8 @@ export function AddressPin({propertyId,city,district,address,call,onChoice}:{pro
  },[propertyId,asked]);
  // The map reports its middle after every move: a move of more than a few metres from the found house is the owner's own choice.
  const onCenter=(c:MapPoint)=>{
-  if(!spot)return;const away=geoDistance(c,[spot.longitude,spot.latitude])>4;
+  // The map of the old address can still report while the new one is looked up: that is not the owner's choice.
+  if(!spot||looking)return;const away=geoDistance(c,[spot.longitude,spot.latitude])>4;
   if(away!==moved)setMoved(away);
   report.current(away?{point:[Number(c[0].toFixed(6)),Number(c[1].toFixed(6))],moved:true,saved:false}:{point:spot.found?[spot.longitude,spot.latitude]:null,moved:false,saved:spot.saved});
  };

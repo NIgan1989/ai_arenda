@@ -39,3 +39,8 @@ test('the pin follows a changed address: a complex name is skipped, a typed draf
  const city=await flatSpot(f.owner,'owner',{propertyId:f.property,address:'Абая 10'},async url=>new Response(JSON.stringify(String(url).includes('stadiamaps')?{features:[{geometry:{coordinates:[76.89,43.24]},properties:{layer:'locality'}}]}:[])),{STADIA_API_KEY:'key-12345678'});
  assert.equal(city.found,false);
 }finally{f.db.close();}});
+test('when Stadia fails the public search still tries the same address',async()=>{const f=await fixture();try{
+ const {flatSpot}=await load('map-workspace');f.db.raw.prepare("UPDATE properties SET city='Павлодар',address='Торайгырова 64' WHERE id=?").run(f.property);
+ const spot=await flatSpot(f.owner,'owner',{propertyId:f.property},async url=>{if(String(url).includes('stadiamaps'))throw new Error('down');return new Response(JSON.stringify([{lon:'76.96',lat:'52.28'}]));},{STADIA_API_KEY:'key-12345678'});
+ assert.equal(spot.found,true);
+}finally{f.db.close();}});
