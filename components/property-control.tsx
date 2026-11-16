@@ -6,7 +6,7 @@ import {Input} from '@/components/ui/input';
 import type {FormEvent} from 'react';
 type Row=Record<string,any>;
 const clock=(n:number)=>String(Math.floor(n/60)).padStart(2,'0')+':'+String(n%60).padStart(2,'0');
-export const readinessLabels:Row={ready:'Готова к заселению',inspection:'Ожидает проверки',occupied:'Гость проживает',awaiting_cleaning:'Ожидает уборки',cleaning:'Выполняется уборка',maintenance:'На ремонте',blocked:'Заезды закрыты'};
+export const readinessLabels:Row={ready:'Готово к заселению',inspection:'Ожидает проверки',occupied:'Гость проживает',awaiting_cleaning:'Ожидает уборки',cleaning:'Выполняется уборка',maintenance:'На ремонте',blocked:'Заезды закрыты'};
 export function PropertyControl({property,busy,onSave,onReadiness}:{property:Row;busy:boolean;onSave:(body:Row)=>void;onReadiness:(body:Row)=>void}){
  const p=property.policy||{},op=property.operation||{};
  function save(e:FormEvent<HTMLFormElement>){e.preventDefault();const data=Object.fromEntries(new FormData(e.currentTarget));onSave({...data,expectedVersion:p.version||0,autoConfirm:data.autoConfirm==='on',autoAssign:data.autoAssign==='on',autoExtension:data.autoExtension==='on',mandateUntil:data.mandateUntil?data.mandateUntil+'+05:00':''});}

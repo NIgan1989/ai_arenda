@@ -75,6 +75,12 @@ export function planAdministrator(data:Row,t:number):AdministratorTask[]{
    if(next&&(j.end>next.start||next.start<=t+3600))add(j,'job','next-arrival',owner,'owner','Под угрозой следующий заезд',subject+' · уборка и проверка ещё не завершены; согласуйте подготовку и предупредите следующего гостя',next.start,3);
   }
  }
+ // After a checkout the home waits for a cleaning; when no cleaning is on the way (cancelled, never created), nobody
+ // would ever make it ready again, so the owner is told what to do.
+ for(const p of data.properties||[]){
+  if(p.readiness!=='awaiting_cleaning'||(data.jobs||[]).some((j:Row)=>j.property_id===p.id&&['open','assigned','in_progress','submitted'].includes(j.status)))continue;
+  add({id:p.id,property_id:p.id},'property','not-ready',owner,'owner','Отметить жильё готовым',(p.title||'Жильё')+' · ждёт уборки, а задания на уборку нет. Создайте уборку или нажмите «Жильё готово» в правилах жилья',t,2);
+ }
  for(const issue of data.issues||[]){
   if(issue.status!=='open')continue;
   const item={id:issue.id,property_id:issue.property_id};

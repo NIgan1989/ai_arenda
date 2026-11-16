@@ -59,6 +59,7 @@
 -- migration 0055_booking_through_address_check.sql sha256:9c4d75399e950fec1588cacea66cae48d7752ed51be040ecb8b302c077c5dc0e
 -- migration 0056_notice_count.sql sha256:607e8fb427c4e6db05fff35296ab39f3e370f423e86fcc516ae1a18dc73109e6
 -- migration 0057_deposit_kept.sql sha256:b2ad5f39474842083f0452275189833860ca09f7f41871b5fd7bc2af135c2fd7
+-- migration 0058_own_booking_refunds.sql sha256:9023de48d2a0b36a76ba8b9e89e12c2c0f48042d7b30442ed852c3c06eee1b4c
 
 -- table access_receipts
 CREATE TABLE access_receipts (id TEXT PRIMARY KEY,property_id TEXT NOT NULL,entity_kind TEXT NOT NULL,entity_id TEXT NOT NULL,user_id TEXT NOT NULL,created_at INTEGER NOT NULL,expires_at INTEGER NOT NULL);

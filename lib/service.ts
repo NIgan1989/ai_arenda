@@ -541,6 +541,10 @@ export class RentalService {
     if(checked.policy.version>0&&body.acceptTerms!==true)throw new DomainError('Подтвердите согласие с показанными правилами проживания.');
     const bookingId=id(), p={id:checked.propertyId,cleaning_minutes:checked.cleaningMinutes};
     const owner=await this.one('SELECT owner_id,price FROM properties WHERE id=?',p.id);
+    if(owner?.owner_id===this.userId)throw new DomainError('Это ваше жильё: забронировать его как гость нельзя. Чтобы закрыть даты, нажмите «Закрыть заезды» в правилах жилья.',403);
+    // One guest does not hold the same time in two homes without paying: the first request is paid or cancelled first.
+    const held=await this.one("SELECT p.title FROM bookings b JOIN properties p ON p.id=b.property_id WHERE b.guest_id=? AND b.property_id<>? AND b.start<? AND b.end>? AND ((b.status='requested' AND b.expires_at>?) OR (b.status='confirmed' AND b.payment_status<>'owner_verified')) LIMIT 1",this.userId,p.id,end,start,now());
+    if(held)throw new DomainError('На это время у вас уже есть неоплаченная бронь: «'+held.title+'». Оплатите или отмените её, затем бронируйте другое жильё.',409);
     const policyNow=await this.one('SELECT * FROM property_policies WHERE property_id=?',p.id),autoConfirm=!!policyNow?.auto_confirm&&mandateActive(policyNow)&&policyNow.version===checked.policy.version;
     // The owner's own time to answer a request («Автопилот: решения и сроки»).
     const answer=(await ruleFor(this.db,owner!.owner_id,'request')).minutes;
@@ -885,6 +889,15 @@ export class RentalService {
       const results=await this.db.batch([this.query("INSERT INTO applications SELECT ?,id,?,'pending',? FROM cleaning_jobs WHERE id=? AND status='open' AND end>? AND NOT EXISTS(SELECT 1 FROM profile_details WHERE user_id=? AND work_status='away') ON CONFLICT(job_id,user_id) DO UPDATE SET status='pending',created_at=excluded.created_at WHERE applications.status='rejected'",id(),this.userId,now(),jobId,now(),this.userId),this.notify(j.owner_id,'Новый отклик на уборку «'+j.title+'». Посмотрите анкету исполнителя.','application:'+jobId+':'+this.userId+':'+j.start,'owner'),this.audit(jobId,'job.application')]);
       if(!results[0].meta.changes && !await this.one('SELECT id FROM applications WHERE job_id=? AND user_id=?',jobId,this.userId)) throw new DomainError('Задание больше недоступно.',409);
       return {message:'Отклик отправлен. Назначение появится после подтверждения заказчиком.'};
+    }
+    // Changed their mind before the owner answered: the application is taken back, nothing counts against the cleaner.
+    if(body.action==='withdraw'){
+      const r=await this.db.batch([
+        this.query("UPDATE applications SET status='rejected' WHERE job_id=? AND user_id=? AND status='pending' AND EXISTS(SELECT 1 FROM cleaning_jobs WHERE id=? AND status='open')",jobId,this.userId,jobId),
+        this.query("INSERT OR IGNORE INTO notifications SELECT ?,?,?,?,0,? WHERE changes()>0",id(),j.owner_id,'Исполнитель отозвал отклик на уборку «'+j.title+'». Остальные отклики на месте.','owner:application-withdrawn:'+jobId+':'+this.userId+':'+now(),now()),
+        this.audit(jobId,'job.application_withdrawn')]);
+      if(!r[0].meta.changes)throw new DomainError(j.assigned_to===this.userId?'Вас уже назначили. Если не сможете прийти, откажитесь от задания.':'Отклик уже рассмотрен или отозван.',409);
+      return {message:'Отклик отозван.'};
     }
     if(body.action==='reject_application'&&j.owner_id===this.userId){
       const a=await this.one("SELECT * FROM applications WHERE id=? AND job_id=? AND status='pending'",required(body.applicationId,'Отклик',100),jobId);

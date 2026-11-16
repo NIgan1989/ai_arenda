@@ -9,7 +9,7 @@ type Row=Record<string,any>; // eslint-disable-line @typescript-eslint/no-explic
 // ladder: remind → ask → act by the rule → hand over to a person. Each step is said once (stay_watch keeps how far it
 // went), each notice goes to the AI journal of the person who gets it (lib/ai-move-marks.ts reads its key).
 //
-// Payment: three hours before it is due the guest is reminded, at the due time both sides are warned, thirty minutes
+// Payment (due at the arrival, at most a day after the request): three hours before it is due the guest is reminded, at the due time both sides are warned, thirty minutes
 // later an unpaid stay is released and the home is free again. Payments are an imitation until the launch, so
 // releasing takes no money and returns none; a stay paid in part is never released, the owner decides.
 // Arrival: a paid guest who has not checked in is asked whether they are coming; with no answer the owner's
@@ -18,7 +18,7 @@ type Row=Record<string,any>; // eslint-disable-line @typescript-eslint/no-explic
 // guest is still there (the service admin too when the next guest is close), two hours later the service admin.
 
 // The waits and the reminder lead are each person's choice (lib/decision-rules.ts); these are the fixed parts.
-export const PAY_MIN_WINDOW=1800;
+export const PAY_MIN_WINDOW=1800,PAY_HOLD=24*3600;
 export const ARRIVAL_ASK={hourly:900,daily:3600},ARRIVAL_ACT={hourly:1800,daily:7200};
 export const CHECKOUT_WARN=1800,NEXT_CLOSE=3*3600;
 
@@ -27,11 +27,12 @@ const notice=(db:D1Database,user:string,body:string,dedupe:string,at:number)=>q(
 const admins=(config:{PLATFORM_ADMIN_IDS?:string})=>typeof config.PLATFORM_ADMIN_IDS==='string'?config.PLATFORM_ADMIN_IDS.split(',').map(v=>v.trim()).filter(Boolean):[];
 const hourly=(b:Row)=>b.billing_mode==='hourly'?'hourly':'daily';
 
-// When the stay has to be paid: the arrival, but never sooner than half an hour after the request, so a stay booked
-// for right now still leaves the guest time to pay.
-export function payDue(b:{start:number;created_at:number}){return Math.max(Number(b.start),Number(b.created_at)+PAY_MIN_WINDOW);}
+// When the stay has to be paid: the arrival, but never sooner than half an hour after the request (a stay booked for
+// right now still leaves the guest time to pay) and never later than a day after it, so that a stay booked far ahead
+// does not hold the dates unpaid until the arrival.
+export function payDue(b:{start:number;created_at:number}){return Math.max(Number(b.created_at)+PAY_MIN_WINDOW,Math.min(Number(b.start),Number(b.created_at)+PAY_HOLD));}
 // A step counts only for the deadline it was taken for: a stay moved to other dates or times starts over.
-const PAY_FOR='MAX(b.start,b.created_at+'+PAY_MIN_WINDOW+')',ARRIVAL_FOR='MAX(b.start,COALESCE(t.arrival_eta,0))',CHECKOUT_FOR='b.end';
+const PAY_FOR='MAX(b.created_at+'+PAY_MIN_WINDOW+',MIN(b.start,b.created_at+'+PAY_HOLD+'))',ARRIVAL_FOR='MAX(b.start,COALESCE(t.arrival_eta,0))',CHECKOUT_FOR='b.end';
 const PAY_STEP=`CASE WHEN w.pay_for=${PAY_FOR} THEN w.pay_step ELSE 0 END`,ARRIVAL_STEP=`CASE WHEN w.arrival_for=${ARRIVAL_FOR} THEN w.arrival_step ELSE 0 END`,CHECKOUT_STEP=`CASE WHEN w.checkout_for=${CHECKOUT_FOR} THEN w.checkout_step ELSE 0 END`;
 const STAY_SQL=`SELECT b.id,b.property_id,b.guest_id,b.start,b.end,b.created_at,b.payment_status,b.amount,p.owner_id,p.title,
  t.rate,t.units,t.deposit,t.deposit_status,COALESCE(t.min_hours,(SELECT pp.min_hours FROM property_policies pp WHERE pp.property_id=b.property_id),1) min_hours,

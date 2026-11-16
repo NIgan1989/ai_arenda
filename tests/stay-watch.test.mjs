@@ -19,6 +19,8 @@ test('the time to pay and to arrive',()=>{
  assert.equal(payDue({start:t+7200,created_at:t}),t+7200);
  // A stay booked for right now still leaves half an hour to pay.
  assert.equal(payDue({start:t+60,created_at:t}),t+1800);
+ // A stay booked far ahead is paid within a day, not at the arrival.
+ assert.equal(payDue({start:t+10*86400,created_at:t}),t+86400);
  assert.equal(arrivalDue({start:t,arrival_eta:t+3600}),t+3600);
  assert.equal(lateUntil({start:t+600,end:t+10800},t),t+4200);
  assert.equal(lateUntil({start:t+600,end:t+10800,late_count:3},t),null);
