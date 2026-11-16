@@ -633,7 +633,7 @@ export class RentalService {
     if(body.action==='report_checkout'){
       if(b.guest_id!==this.userId)throw new DomainError('Сообщить о выезде может гость.',403);
       if(b.status!=='confirmed'||b.start>now())throw new DomainError('Проживание ещё не началось или уже завершено.',409);
-      await this.db.batch([this.query('UPDATE booking_terms SET checkout_reported_at=?,version=version+1 WHERE booking_id=? AND checkout_reported_at IS NULL',now(),bookingId),this.notify(b.owner_id,'Гость сообщил о выезде. Проверьте освобождение жилья.','checkout-reported:'+bookingId,'owner'),this.audit(bookingId,'booking.checkout_reported')]);return {message:'Сообщение о выезде сохранено. Ожидаем подтверждения освобождения жилья.'};
+      await this.db.batch([this.query('UPDATE booking_terms SET checkout_reported_at=?,version=version+1 WHERE booking_id=? AND checkout_reported_at IS NULL',now(),bookingId),this.notify(b.owner_id,'Гость сообщил о выезде. Проверьте освобождение жилья.','checkout-reported:'+bookingId,'owner'),this.audit(bookingId,'booking.checkout_reported')]);return {message:'Спасибо, выезд отмечен. Владелец подтвердит его; если он не ответит за полчаса, ИИ-администратор подтвердит сам.'};
     }
     if(body.action==='report_late'){
       if(b.guest_id!==this.userId)throw new DomainError('Сообщить о задержке может гость.',403);

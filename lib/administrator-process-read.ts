@@ -119,9 +119,9 @@ function guestToday({state, userId, now, when}: View) {
       continue;
     }
     if (b.status !== 'confirmed' || b.terms?.actual_checkout) continue;
-    if (b.end <= now) urgent.push(b.terms?.checkout_reported_at
-      ? `Владелец ещё не подтвердил выезд: ${b.title}`
-      : `Сообщите о выезде: ${b.title} · время выезда было ${when(b.end)}`);
+    // The guest who said they left has nothing more to do: the owner or the AI administrator confirms it.
+    if (b.terms?.checkout_reported_at) plan.push(`Выезд отмечен: ${b.title} · подтверждение придёт само`);
+    else if (b.end <= now) urgent.push(`Сообщите о выезде: ${b.title} · время выезда было ${when(b.end)}`);
     else if (b.start <= now) plan.push(`${b.terms?.actual_checkin ? 'Вы заселены' : 'Время заезда наступило'}: ${b.title} · выезд ${when(b.end)}`);
     else if (day(b.start) === today) plan.push(`Заезд ${when(b.start)}: ${b.title}`);
     else ahead.push({at: b.start, text: `заезд ${when(b.start)}, ${b.title}`});

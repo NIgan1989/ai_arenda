@@ -2,7 +2,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {fixture,load,now} from './helpers/platform.mjs';
-const {sweepSilence,CHECKIN_WAIT,CHECKIN_HANDOVER,ACCEPT_WAIT,PAY_TELL,PAY_HANDOVER}=await load('owner-silence');
+const {sweepSilence,CHECKIN_WAIT,CHECKIN_HANDOVER,ACCEPT_WAIT,PAY_TELL,PAY_HANDOVER,CHECKOUT_WAIT,CHECKOUT_HANDOVER,MONEY_TELL,MONEY_HANDOVER}=await load('owner-silence');
 const config={PLATFORM_ADMIN_IDS:'admin'};
 const notes=(f,user,like)=>f.db.raw.prepare('SELECT body FROM notifications WHERE user_id=? AND dedupe LIKE ?').all(user,like).map(n=>n.body);
 async function arrived(f,ready,ago){
@@ -31,14 +31,14 @@ test('a guest who has not paid is told to pay, and is not checked in',async()=>{
   f.db.raw.prepare('UPDATE bookings SET start=? WHERE id=?').run(now()-60,f.booking);
   assert.match((await f.guest.bookingAction(f.booking,{action:'report_checkin'})).message,/Осталось оплатить проживание/);
   f.db.raw.prepare('UPDATE booking_terms SET checkin_reported_at=? WHERE booking_id=?').run(now()-3600,f.booking);
-  assert.deepEqual(await sweepSilence(f.db,config),{checkedIn:0,accepted:0,told:0,escalated:0});
+  assert.deepEqual(await sweepSilence(f.db,config),{checkedIn:0,checkedOut:0,accepted:0,told:0,escalated:0});
  }finally{f.db.close();}
 });
 
 test('a home not marked ready: the owner is asked at once, the service administrator after half an hour',async()=>{
  const f=await fixture();try{
   await arrived(f,false,CHECKIN_WAIT+5);
-  assert.deepEqual(await sweepSilence(f.db,config),{checkedIn:0,accepted:0,told:0,escalated:0});
+  assert.deepEqual(await sweepSilence(f.db,config),{checkedIn:0,checkedOut:0,accepted:0,told:0,escalated:0});
   assert.match(notes(f,'owner','owner:silence-checkin-ask:%')[0],/Жильё готово/);assert.equal(notes(f,'guest','guest:silence-checkin-ask:%').length,1);
   f.db.raw.prepare('UPDATE booking_terms SET checkin_reported_at=? WHERE booking_id=?').run(now()-CHECKIN_HANDOVER-5,f.booking);
   assert.equal((await sweepSilence(f.db,config)).escalated,1);assert.equal(notes(f,'admin','admin:silence-checkin:%').length,1);
@@ -86,18 +86,105 @@ test('unpaid accepted cleaning: the cleaner hears after a day, the service admin
   await submitted(f,3600);await f.owner.jobAction(f.job.id,{action:'approve'});
   assert.equal((await sweepSilence(f.db,config)).told,0);
   f.db.raw.prepare('UPDATE cleaning_jobs SET completed_at=?,end=? WHERE id=?').run(now()-PAY_TELL-5,now()-PAY_TELL-5,f.job.id);
-  assert.deepEqual(await sweepSilence(f.db,config),{checkedIn:0,accepted:0,told:1,escalated:0});
+  assert.deepEqual(await sweepSilence(f.db,config),{checkedIn:0,checkedOut:0,accepted:0,told:1,escalated:0});
   assert.match(notes(f,'cleaner','cleaner:silence-pay:%')[0],/3 000 ₸.*Не получил оплату/);
   // The button in the app: an issue from the cleaner, no text to type.
   assert.ok((await f.cleaner.jobAction(f.job.id,{action:'issue',issue:'Исполнитель не получил оплату 3 000 ₸ за уборку.'})).message);
   // A part the owner already paid is not asked for again.
   f.db.raw.prepare("INSERT INTO finance_entries(id,owner_id,property_id,booking_id,job_id,kind,amount,currency,source,external_reference,note,actor_id,request_key,created_at) VALUES ('part','owner',?,NULL,?,'job_payment',1000,'KZT','owner','','','owner','part',?)").run(f.property,f.job.id,now());
   f.db.raw.prepare('UPDATE cleaning_jobs SET completed_at=?,end=? WHERE id=?').run(now()-PAY_HANDOVER-5,now()-PAY_HANDOVER-5,f.job.id);
-  assert.deepEqual(await sweepSilence(f.db,config),{checkedIn:0,accepted:0,told:0,escalated:1});
+  assert.deepEqual(await sweepSilence(f.db,config),{checkedIn:0,checkedOut:0,accepted:0,told:0,escalated:1});
   assert.equal(notes(f,'admin','admin:silence-pay:%').length,1);assert.match(notes(f,'owner','owner:silence-pay-escalated:%')[0],/Переведите исполнителю 2 000 ₸/);
-  assert.deepEqual(await sweepSilence(f.db,config),{checkedIn:0,accepted:0,told:0,escalated:0},'handed over once');
+  assert.deepEqual(await sweepSilence(f.db,config),{checkedIn:0,checkedOut:0,accepted:0,told:0,escalated:0},'handed over once');
   await f.owner.jobAction(f.job.id,{action:'record_job_payment',confirmed:true,expectedVersion:f.db.raw.prepare('SELECT version FROM cleaning_jobs WHERE id=?').get(f.job.id).version});
   f.db.raw.prepare("DELETE FROM notifications WHERE dedupe LIKE '%silence-pay%'").run();
-  assert.deepEqual(await sweepSilence(f.db,config),{checkedIn:0,accepted:0,told:0,escalated:0},'a paid cleaning is not asked about');
+  assert.deepEqual(await sweepSilence(f.db,config),{checkedIn:0,checkedOut:0,accepted:0,told:0,escalated:0},'a paid cleaning is not asked about');
+ }finally{f.db.close();}
+});
+
+// The guest left, the money the owner holds for the guest.
+const terms=f=>f.db.raw.prepare('SELECT * FROM booking_terms WHERE booking_id=?').get(f.booking);
+async function left(f,ago){
+ await arrived(f,true,7200);await f.owner.bookingAction(f.booking,{action:'checkin'});
+ const said=await f.guest.bookingAction(f.booking,{action:'report_checkout'});
+ f.db.raw.prepare('UPDATE booking_terms SET checkout_reported_at=? WHERE booking_id=?').run(now()-ago,f.booking);
+ return said;
+}
+
+test('a guest who said they left is checked out after half an hour of the owner\'s silence',async()=>{
+ const f=await fixture();try{
+  assert.match((await left(f,CHECKOUT_WAIT-60)).message,/ИИ-администратор подтвердит сам/);
+  assert.equal((await sweepSilence(f.db,config)).checkedOut,0,'the owner still has time');
+  f.db.raw.prepare('UPDATE booking_terms SET checkout_reported_at=? WHERE booking_id=?').run(now()-CHECKOUT_WAIT-5,f.booking);
+  assert.equal((await sweepSilence(f.db,config)).checkedOut,1);
+  assert.ok(terms(f).actual_checkout);assert.equal(f.db.raw.prepare('SELECT status FROM bookings WHERE id=?').get(f.booking).status,'completed');
+  assert.notEqual(f.db.raw.prepare('SELECT readiness FROM property_operations').get().readiness,'occupied');
+  assert.match(notes(f,'owner','owner:silence-checkout-done:%')[0],/верните депозит/);assert.equal(notes(f,'guest','guest:silence-checkout-done:%').length,1);
+  assert.equal((await sweepSilence(f.db,config)).checkedOut,0);
+ }finally{f.db.close();}
+});
+
+test('a checkout the owner disputed is left alone',async()=>{
+ const f=await fixture();try{
+  await left(f,CHECKOUT_WAIT+5);await f.owner.bookingAction(f.booking,{action:'dispute_checkout',reason:'Гость ещё в жилье'});
+  assert.equal((await sweepSilence(f.db,config)).checkedOut,0);assert.equal(terms(f).actual_checkout,null);
+ }finally{f.db.close();}
+});
+
+test('a checkout that cannot be confirmed goes to the service administrator after two hours',async()=>{
+ const f=await fixture();try{
+  await left(f,CHECKOUT_WAIT+5);f.db.raw.exec("PRAGMA foreign_keys=OFF;UPDATE property_operations SET active_booking_id='other';PRAGMA foreign_keys=ON");
+  assert.deepEqual(await sweepSilence(f.db,config),{checkedIn:0,checkedOut:0,accepted:0,told:0,escalated:0});
+  f.db.raw.prepare('UPDATE booking_terms SET checkout_reported_at=? WHERE booking_id=?').run(now()-CHECKOUT_HANDOVER-5,f.booking);
+  assert.equal((await sweepSilence(f.db,config)).escalated,1);assert.equal(notes(f,'admin','admin:silence-checkout:%').length,1);
+  assert.equal((await sweepSilence(f.db,config)).escalated,0,'handed over once');
+ }finally{f.db.close();}
+});
+
+test('a deposit not returned: the guest hears after a day, the service administrator after three',async()=>{
+ const f=await fixture();try{
+  await left(f,60);await f.owner.bookingAction(f.booking,{action:'checkout'});
+  assert.equal((await sweepSilence(f.db,config)).told,0,'the owner has a day');
+  f.db.raw.prepare('UPDATE booking_terms SET actual_checkout=? WHERE booking_id=?').run(now()-MONEY_TELL-5,f.booking);
+  assert.equal((await sweepSilence(f.db,config)).told,1);
+  assert.match(notes(f,'guest','guest:silence-deposit:%')[0],/возврат депозита .*₸/);assert.match(notes(f,'owner','owner:silence-deposit:%')[0],/«Вернул депозит»/);
+  assert.equal((await sweepSilence(f.db,config)).told,0);
+  f.db.raw.prepare('UPDATE booking_terms SET actual_checkout=? WHERE booking_id=?').run(now()-MONEY_HANDOVER-5,f.booking);
+  assert.equal((await sweepSilence(f.db,config)).escalated,1);assert.equal(notes(f,'admin','admin:silence-deposit:%').length,1);
+  assert.deepEqual(await sweepSilence(f.db,config),{checkedIn:0,checkedOut:0,accepted:0,told:0,escalated:0});
+ }finally{f.db.close();}
+});
+
+test('a returned deposit is never asked about',async()=>{
+ const f=await fixture();try{
+  await left(f,60);await f.owner.bookingAction(f.booking,{action:'checkout'});
+  await f.owner.bookingAction(f.booking,{action:'record_deposit_return',confirmed:true,expectedVersion:terms(f).version});
+  f.db.raw.prepare('UPDATE booking_terms SET actual_checkout=? WHERE booking_id=?').run(now()-MONEY_HANDOVER-5,f.booking);
+  assert.deepEqual(await sweepSilence(f.db,config),{checkedIn:0,checkedOut:0,accepted:0,told:0,escalated:0});
+ }finally{f.db.close();}
+});
+
+test('a refund after a cancellation counts from the first sweep that saw it',async()=>{
+ const f=await fixture();try{
+  await f.owner.bookingAction(f.booking,{action:'paid'});
+  await f.owner.bookingAction(f.booking,{action:'cancel',reason:'Ремонт'});
+  assert.equal(terms(f).refund_recorded_at,null);
+  assert.equal((await sweepSilence(f.db,config)).told,0);assert.equal((await sweepSilence(f.db,config)).told,0);
+  assert.equal(f.db.raw.prepare("SELECT COUNT(*) n FROM audit_events WHERE action='silence.money_seen'").get().n,1);
+  f.db.raw.prepare("UPDATE audit_events SET created_at=? WHERE action='silence.money_seen'").run(now()-MONEY_TELL-5);
+  assert.equal((await sweepSilence(f.db,config)).told,1);assert.match(notes(f,'guest','guest:silence-refund:%')[0],/возврат оплаты по отменённой брони/);
+  f.db.raw.prepare("UPDATE audit_events SET created_at=? WHERE action='silence.money_seen'").run(now()-MONEY_HANDOVER-5);
+  assert.equal((await sweepSilence(f.db,config)).escalated,1);assert.equal(notes(f,'admin','admin:silence-refund:%').length,1);
+  await f.owner.bookingAction(f.booking,{action:'record_refund',confirmed:true,expectedVersion:terms(f).version});
+  assert.deepEqual(await sweepSilence(f.db,config),{checkedIn:0,checkedOut:0,accepted:0,told:0,escalated:0});
+ }finally{f.db.close();}
+});
+
+test('with no service administrator the cleaner is not told the report was handed over, and it is handed over once one is set',async()=>{
+ const f=await fixture();try{
+  await submitted(f,ACCEPT_WAIT+60,false);
+  assert.equal((await sweepSilence(f.db,{})).escalated,0);
+  assert.match(notes(f,'cleaner','cleaner:silence-report-wait:%')[0],/напомнил/);assert.equal(notes(f,'cleaner','cleaner:silence-report:%').length,0);
+  assert.equal((await sweepSilence(f.db,config)).escalated,1);assert.equal(notes(f,'cleaner','cleaner:silence-report:%').length,1);
  }finally{f.db.close();}
 });
