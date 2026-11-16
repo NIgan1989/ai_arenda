@@ -4,7 +4,7 @@ import type {Approval} from './approvals';
 import {defaultAssistantSettings} from './assistant';
 import {quietNow} from './administrator';
 import {silentNotice} from './notice-feed';
-import {pushConfigured} from './web-push';
+import {pushConfigured,pushTarget} from './web-push';
 import {isAdminNotice,adminNotice,adminDecide} from './admin-telegram';
 import {epoch,uuid,q,one,rows,hash,randomToken,httpsEndpoint,safeEqual,type Row,type OperationConfig} from './operation-core';
 
@@ -43,11 +43,11 @@ export async function noticeDecision(service:RentalService,role:Role,dedupe:stri
 const OWN_DETAIL=new Set(['price','window','forecast','listing','stay']);
 export async function decisionMessage(card:Approval,role:Role,base:string|null){
  const code=Object.keys(ROLE_CODES).find(k=>ROLE_CODES[k]===role)!,tag=await revisionTag(card.revision),data=(a:string)=>a+code+card.id+'|'+tag;
- const text=[card.title+(card.subject?' · '+card.subject:''),...card.facts.filter(([,v])=>v).map(([k,v])=>k+': '+v),OWN_DETAIL.has(card.kind)?card.detail||'':''].filter(Boolean).join('\n').slice(0,3500);
+ const text='<b>'+html(clip(card.title+(card.subject?' · '+card.subject:''),200))+'</b>\n'+[...card.facts.filter(([,v])=>v).map(([k,v])=>k+': '+v),OWN_DETAIL.has(card.kind)?card.detail||'':''].filter(Boolean).map(line=>html(clip(line,1200))).join('\n');
  const open=base?[{text:'Открыть',url:base+'/workspace/'+role+'/map'}]:[];
- if(data('y').length>64)return {text,reply_markup:open.length?{inline_keyboard:[open]}:undefined};
+ if(data('y').length>64)return {text,parse_mode:'HTML',reply_markup:open.length?{inline_keyboard:[open]}:undefined};
  const answer=[{text:card.acceptLabel.slice(0,60),callback_data:data('y')},...(card.requiresReason?[]:[{text:card.rejectLabel.slice(0,60),callback_data:data('n')}])];
- return {text,reply_markup:{inline_keyboard:[answer,...(open.length?[open]:[])]}};
+ return {text,parse_mode:'HTML',reply_markup:{inline_keyboard:[answer,...(open.length?[open]:[])]}};
 }
 async function telegramDecide(db:D1Database,query:Row,config:OperationConfig,serviceFor:ServiceFor){
  const chat=query.message?.chat,match=typeof query.data==='string'?query.data.match(/^([yn])([goca])(.+)\|([0-9a-f]{10})$/):null;
@@ -114,8 +114,8 @@ export async function deliverOutbox(db:D1Database,config:OperationConfig,limit=3
   const token=uuid(),claim=await q(db,"UPDATE delivery_outbox SET status='sending',lease_token=?,lease_until=?,attempts=attempts+1 WHERE id=? AND ((status='pending' AND available_at<=?) OR (status='sending' AND lease_until<=?)) RETURNING attempts",token,epoch()+90,item.id,epoch(),epoch()).first<Row>();if(!claim)continue;
   try{
    const base=config.SITE_PUBLIC_URL?httpsEndpoint(config.SITE_PUBLIC_URL).origin:null;
-   // External notices contain no addresses, access codes or issue descriptions.
-   const text='AiQonaq: новое событие в рабочей роли. '+(base?base+'/workspace/'+item.role+'/assistant':'Откройте сервис и проверьте задачи.');
+   // The notice's own text says what happened (it is written without addresses or access codes); SMS and WhatsApp add the link.
+   const text=clip(plainNotice(item),300)+(base?' '+base+'/workspace/'+item.role+'/map':'');
    let response:Response;
    if(item.channel==='telegram'){
     if(!config.TELEGRAM_BOT_TOKEN)throw new Error('channel_not_configured');
@@ -143,10 +143,25 @@ export async function acceptDeliveryReceipt(db:D1Database,raw:string){
  ]);return {recorded:true};
 }
 
-// A notice that asks for a decision carries the card and its buttons; anything else stays a short pointer.
+const clip=(value:string,max:number)=>value.length>max?value.slice(0,max-1)+'…':value;
+const html=(value:string)=>value.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+// What a chat message notice quotes: someone may type a door code or a phone number, so long digit runs are hidden.
+const plainNotice=(item:Row)=>{
+ const body=String(item.body||'').trim()||'Есть новое событие. Откройте сервис, чтобы посмотреть.';
+ return String(item.dedupe||'').split(':')[1]==='discussion'?body.replace(/\+?\d[\d\s()-]{8,}\d|\d{4,}/g,'••••'):body;
+};
+const ICONS:[RegExp,string][]=[[/^Бронь/,'📅'],[/^Уборка/,'🧹'],[/^Жильё/,'🏠'],[/^(Сообщение|Новое сообщение)/,'💬'],[/^AI администратор/,'🤖']];
+const ROLE_TITLES:Record<string,string>={guest:'Для гостя',owner:'Для владельца',cleaner:'Для исполнителя'};
+// What happened, with what, and one button to the very card or chat. A notice that asks for a decision carries its buttons.
+export async function plainTelegramNotice(item:Row,base:string|null,target:{url:string;title:string}|null):Promise<Row>{
+ const title=target?.title||'AiQonaq · '+(ROLE_TITLES[item.role]||'событие'),icon=ICONS.find(([re])=>re.test(title))?.[1]||'🔔';
+ const text=icon+' <b>'+html(clip(title,200))+'</b>\n\n'+html(clip(plainNotice(item),3500));
+ const open=base?[{text:target?'Открыть':'Открыть AiQonaq',url:base+(target?.url||'/workspace/'+item.role+'/map')}]:[];
+ return {text,parse_mode:'HTML',...(open.length?{reply_markup:{inline_keyboard:[open]}}:{})};
+}
 async function telegramNotice(item:Row,text:string,base:string|null,serviceFor?:ServiceFor):Promise<Row>{
  if(isAdminNotice(String(item.dedupe||'')))return serviceFor?adminNotice(serviceFor(item.user_id).db,item,base):{text:String(item.body||text)};
- if(!serviceFor)return {text};
- try{const card=await noticeDecision(serviceFor(item.user_id),item.role,item.dedupe);if(card)return decisionMessage(card,item.role,base);}catch{/* the plain notice still goes out */}
- return {text};
+ if(serviceFor)try{const card=await noticeDecision(serviceFor(item.user_id),item.role,item.dedupe);if(card)return decisionMessage(card,item.role,base);}catch{/* the plain notice still goes out */}
+ const target=serviceFor?await pushTarget(serviceFor(item.user_id).db,item.user_id,item.role,String(item.dedupe||'')).catch(()=>null):null;
+ return plainTelegramNotice(item,base,target);
 }
