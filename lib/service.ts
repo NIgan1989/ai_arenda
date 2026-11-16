@@ -643,7 +643,9 @@ export class RentalService {
       if(b.status!=='confirmed'||b.end<=now()||terms?.actual_checkin)throw new DomainError('Сейчас нельзя сообщить о заселении по этой брони.',409);
       if(b.start-CHECKIN_LEAD_SECONDS>now())throw new DomainError('Сообщить о заселении можно за 15 минут до заезда: '+checkinOpensLabel(b.start,now())+'.',409);
       await this.db.batch([this.query('UPDATE booking_terms SET checkin_reported_at=?,version=version+1 WHERE booking_id=? AND checkin_reported_at IS NULL AND actual_checkin IS NULL',now(),bookingId),this.notify(b.owner_id,'Гость сообщил, что заселился в «'+b.title+'».','checkin-reported:'+bookingId,'owner'),this.audit(bookingId,'booking.checkin_reported')]);
-      return {message:'Спасибо! Заселение подтвердится, как только будут проверены оплата и депозит.'};
+      // The answer says what is really awaited: the guest's payment, or only the owner's word (the AI gives it after ten minutes).
+      const unpaid=b.payment_status!=='owner_verified'?'проживание':terms?.deposit_status==='pending'?'депозит':'';
+      return {message:unpaid?'Спасибо! Осталось оплатить '+unpaid+' в карточке брони: после оплаты заселение подтвердится.':'Спасибо! Владелец подтвердит заселение. Если он не ответит за 10 минут, ИИ-администратор подтвердит сам.'};
     }
     if(body.action==='checkin'){
       if(!owner)throw new DomainError('Заселение подтверждает владелец.',403);
