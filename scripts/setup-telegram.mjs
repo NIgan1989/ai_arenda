@@ -7,8 +7,18 @@ import {resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 
 export const webhookSecret=token=>createHash('sha256').update('ai-arenda-telegram-webhook:'+token).digest('hex').slice(0,48);
-export async function setupTelegram({token,account,cfToken,site,worker='ai-arenda',fetcher=fetch}){
- const tg=async(method,body)=>{const r=await fetcher('https://api.telegram.org/bot'+token+'/'+method,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body||{})});const v=await r.json().catch(()=>({}));if(!v.ok)throw new Error('Telegram '+method+' failed: '+(v.description||r.status));return v.result;};
+export async function setupTelegram({token,account,cfToken,site,worker='ai-arenda',fetcher=fetch,wait=ms=>new Promise(done=>setTimeout(done,ms))}){
+ // Telegram sometimes answers 502 or 429 for a moment; one bad minute there must not turn a finished publication red.
+ const tg=async(method,body)=>{
+  for(let attempt=1;;attempt++){
+   let r=null,v={};
+   try{r=await fetcher('https://api.telegram.org/bot'+token+'/'+method,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body||{})});v=await r.json().catch(()=>({}));}catch{}
+   if(v.ok)return v.result;
+   const passing=!r||r.status>=500||r.status===429;
+   if(!passing||attempt>=4)throw new Error('Telegram '+method+' failed: '+(v.description||r?.status||'no answer'));
+   await wait(attempt*5000);
+  }
+ };
  const me=await tg('getMe');if(!/^[A-Za-z0-9_]{5,32}$/.test(me?.username||''))throw new Error('Telegram returned no bot name');
  const secret=webhookSecret(token);
  for(const [name,text] of [['TELEGRAM_BOT_TOKEN',token],['TELEGRAM_BOT_USERNAME',me.username],['TELEGRAM_WEBHOOK_SECRET',secret]]){
