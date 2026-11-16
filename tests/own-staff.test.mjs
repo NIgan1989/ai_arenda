@@ -5,7 +5,7 @@ const listing=(extra={})=>({title:'Отель у парка',city:'Павлод�
  details:{type:'hotel',area:20,beds:2,bathrooms:1,floor:1,floors:3,checkinMethod:'reception',amenities:['wifi'],pets:false,smoking:false,parties:false},
  rental:{hourlyPrice:0,minHours:2,nightlyPrice:0,checkinTime:'14:00',checkoutTime:'12:00',deposit:0,houseRules:'Тишина после 23:00.'},...extra});
 
-test('a hotel cleans with its own staff by default: no cleaning job, no fee, ready right after checkout',async()=>{
+test('a hotel cleans with its own staff by default: no cleaning job, no fee, ready after one tap of the owner',async()=>{
  const f=await fixture();try{
   const id=(await f.owner.saveListing(null,listing())).id,row=()=>f.db.raw.prepare('SELECT own_staff FROM properties WHERE id=?').get(id);
   assert.equal(row().own_staff,1);
@@ -23,7 +23,10 @@ test('a hotel cleans with its own staff by default: no cleaning job, no fee, rea
   await f.owner.bookingAction(booking,{action:'paid'});
   f.db.raw.prepare('UPDATE bookings SET start=?,"end"=? WHERE id=?').run(now()-60,now()+3600,booking);
   await f.owner.bookingAction(booking,{action:'checkin'});assert.equal(op().readiness,'occupied');
-  await f.owner.bookingAction(booking,{action:'checkout'});assert.equal(op().readiness,'ready');
+  // Nobody reports the staff's cleaning in the service: the flat waits for the owner's «Жильё готово», one tap, no text.
+  await f.owner.bookingAction(booking,{action:'checkout'});assert.equal(op().readiness,'awaiting_cleaning');
+  assert.ok(f.db.raw.prepare("SELECT 1 FROM notifications WHERE user_id='owner' AND dedupe=?").get('owner:own-staff-clean:'+booking));
+  await f.owner.readinessAction(id,{readiness:'ready',inspected:true});assert.equal(op().readiness,'ready');
   await assert.rejects(f.owner.createJob({propertyId:id,start:iso(now()+3*86400),end:iso(now()+3*86400+3600),fee:3000,description:'Уборка'}),/свой персонал/i);
   // The AI can run a hotel without a cleaning fee.
   const {setGuestMode}=await load('autopilot');

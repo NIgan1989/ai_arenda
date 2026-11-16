@@ -22,6 +22,8 @@ export function PropertyEdit({property,onSave,onReview,onRemove,onClose,step,cal
  const [p,setP]=useState(property),[base,setBase]=useState<EditBody>(()=>editBody(property)),[draft,setDraft]=useState<EditBody>(base);
  const [open,setOpen]=useState<EditStep|null>(step&&EDIT_STEPS.some(x=>x.key===step)?step as EditStep:null),[busy,setBusy]=useState(false),[uploading,setUploading]=useState(false),[error,setError]=useState(''),[done,setDone]=useState(''),[skipped,setSkipped]=useState<string[]>([]),[held,setHeld]=useState(false),[sent,setSent]=useState(false);
  const pick=useRef<PinChoice|null>(null);
+ const [access,setAccess]=useState(''),[accessState,setAccessState]=useState('');
+ async function saveAccess(){if(!call||!p.id||!access.trim())return;setAccessState('…');try{await call('access/save',{propertyId:p.id,instructions:access.trim(),expectedVersion:p.access_version||0});setP((o:Row)=>({...o,access_version:(o.access_version||0)+1}));setAccess('');setAccessState('Инструкция сохранена. Гость увидит её перед заездом, исполнитель — когда начнёт уборку.');}catch(r:any){setAccessState(r?.message||'Не удалось сохранить инструкцию.');}}
  const [confirm,setConfirm]=useState(false),[removeError,setRemoveError]=useState(''),[calendars,setCalendars]=useState(step==='calendars'),[cleaner,setCleaner]=useState(step==='cleaner');
  // A save that failed keeps its changes: the owner fixes what the server asked for in another step and everything is saved together.
  const fix=held&&error?stepForError(error):null;
@@ -96,6 +98,12 @@ export function PropertyEdit({property,onSave,onReview,onRemove,onClose,step,cal
     <Text style={e.label}>Как гость получит ключи</Text>
     <View style={e.chips}>{Object.entries(checkinMethods).map(([id,label])=>chip(id,label,d.checkinMethod===id,()=>setD({checkinMethod:id}),true))}</View>
     <View style={e.row}>{num('Уборка между гостями, мин',draft.cleaningMinutes,n=>set({cleaningMinutes:n}),1440)}</View>
+    {!!call&&!!p.id&&<>
+     {text('Инструкция для заселения',access,setAccess,2500,'Подъезд 2, код домофона 45, ключ в сейфе у двери, код 1234',true)}
+     <Text style={e.hint}>{p.access_version>0?'Инструкция уже сохранена. Новая заменит её.':'Её увидят только гость перед заездом и исполнитель на уборке. Хранится зашифрованной.'}</Text>
+     {!!accessState&&accessState!=='…'&&<Text accessibilityLiveRegion="polite" style={e.hint}>{accessState}</Text>}
+     <Pressable accessibilityRole="button" disabled={!access.trim()||accessState==='…'} onPress={saveAccess} style={[e.go,(!access.trim()||accessState==='…')&&e.off]}><Text style={e.goText}>{accessState==='…'?'Сохраняю…':'Сохранить инструкцию'}</Text></Pressable>
+    </>}
    </>}
    {open==='rules'&&<>
     <View style={e.chips}>{([['pets','Можно с питомцами'],['smoking','Можно курить'],['parties','Можно вечеринки']] as const).map(([k,label])=>chip(k,label,d[k],()=>setD({[k]:!d[k]})))}</View>

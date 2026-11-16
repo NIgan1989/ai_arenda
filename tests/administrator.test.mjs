@@ -138,13 +138,14 @@ test('background endpoint accepts only its server secret on POST',async()=>{
  assert.equal(await administratorRunnerAuthorized(new Request(url,{method:'POST',headers:{Authorization:'Bearer '+'z'.repeat(64)}}),secret),false);
  assert.equal(await administratorRunnerAuthorized(new Request(url,{method:'POST',headers:{Authorization:'Bearer '+secret}}),secret),true);
 });
-test('early checkout preserves accepted cleaning time; late checkout revokes the old application',async()=>{
+test('early checkout preserves accepted cleaning time; a checkout hours late revokes the old application',async()=>{
+ // A checkout up to three hours late keeps the cleaner (tests/stay-cleaning-chain.test.mjs); later than that the time is negotiated again.
  for(const late of [false,true]){
   const f=await fixture();try{
    const job=await confirm(f);await f.cleaner.jobAction(job.id,{action:'apply'});
    const app=f.db.raw.prepare('SELECT * FROM applications WHERE job_id=?').get(job.id);await f.owner.jobAction(job.id,{action:'assign',applicationId:app.id});
    const t=now();f.db.raw.prepare('UPDATE bookings SET start=? WHERE id=?').run(t-7200,f.booking);
-   if(late)f.db.raw.prepare('UPDATE cleaning_jobs SET start=?,end=? WHERE id=?').run(t-600,t+4800,job.id);
+   if(late)f.db.raw.prepare('UPDATE cleaning_jobs SET start=?,end=? WHERE id=?').run(t-4*3600,t-4*3600+5400,job.id);
    await f.owner.bookingAction(f.booking,{action:'checkout'});
    const saved=f.db.raw.prepare('SELECT * FROM cleaning_jobs WHERE id=?').get(job.id);
    assert.equal(saved.status,late?'open':'assigned');assert.equal(saved.assigned_to,late?null:'cleaner');
