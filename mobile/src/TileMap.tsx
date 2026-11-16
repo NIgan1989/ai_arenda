@@ -25,14 +25,15 @@ export type {MapLine};
 // (key, the focusKey of then) is on the map, and the pins of that return do not drop in again. onView: each settled view.
 export type HeatPoint={point:MapPoint;weight:number};
 export type MapRestore={view:{center:MapPoint;zoom:number};key:string};
-export type MapProps={center:MapPoint;pins:MapPin[];selected?:string;focus?:string;lines?:MapLine[];heat?:HeatPoint[];sparks?:MapPoint[];onSelect?:(key:string)=>void;bottomInset?:number;topInset?:number;focusKey?:string;picking?:boolean;scanning?:boolean;onCenter?:(center:MapPoint)=>void;restore?:MapRestore|null;onView?:(view:{center:MapPoint;zoom:number})=>void;me?:HereFix|null;locating?:boolean;onLocate?:()=>void;meFly?:number};
+export type MapProps={center:MapPoint;pins:MapPin[];selected?:string;focus?:string;lines?:MapLine[];heat?:HeatPoint[];sparks?:MapPoint[];onSelect?:(key:string)=>void;bottomInset?:number;topInset?:number;focusKey?:string;picking?:boolean;scanning?:boolean;onCenter?:(center:MapPoint)=>void;restore?:MapRestore|null;onView?:(view:{center:MapPoint;zoom:number})=>void;me?:HereFix|null;locating?:boolean;onLocate?:()=>void;meFly?:number;onLongPress?:(point:MapPoint)=>void};
+// onLongPress: a finger held on the map puts a point there (the guest's search «рядом с этой точкой»).
 // me: where the person is (here.ts), a blue dot; onLocate: the «Где я» button; locating: the phone is being asked;
 // meFly: each new value flies the map to the person.
 type View2={center:MapPoint;zoom:number};
 // The tile service asks clients to identify themselves; no account or device data is sent.
 const tileHeaders={'User-Agent':'AIArenda-mobile/0.1 (+'+API_URL+')'};
 const plusIcon=require('../assets/ui/plus.png'),minusIcon=require('../assets/ui/minus.png');
-export function TileMap({center,pins,selected,focus='',lines=[],heat=[],sparks=[],onSelect,bottomInset=0,topInset=0,focusKey='',picking=false,scanning=false,onCenter,restore,onView,me=null,locating=false,onLocate,meFly=0}:MapProps){
+export function TileMap({center,pins,selected,focus='',lines=[],heat=[],sparks=[],onSelect,bottomInset=0,topInset=0,focusKey='',picking=false,scanning=false,onCenter,restore,onView,me=null,locating=false,onLocate,meFly=0,onLongPress}:MapProps){
  const [size,setSize]=useState({w:0,h:0}),[view,setViewNow]=useState<View2>(restore?.view||{center,zoom:12}),[drag,setDrag]=useState({x:0,y:0}),[still,setStill]=useState(false);
  const state=useRef({view,size,bottomInset,topInset,picking});state.current={view,size,bottomInset,topInset,picking};
  const loop=useRef(new Animated.Value(0)).current,report=useRef(onCenter),reportView=useRef(onView);report.current=onCenter;reportView.current=onView;
@@ -130,9 +131,12 @@ export function TileMap({center,pins,selected,focus='',lines=[],heat=[],sparks=[
   const next=fitView(keys.map(key=>byKey.get(key)!.pin.point),size.w-96,usableHeight-96,MAX_ZOOM);
   moved.current=true;setView({center:next?.center||v.center,zoom:Math.min(MAX_ZOOM,Math.max(v.zoom+1,Math.min(next?.zoom??v.zoom+1,v.zoom+2)))});
  };
+ // Where the map stands on the screen, so a held finger (pageX/pageY) is turned into a place on the map.
+ const host=useRef<View>(null),hostAt=useRef({x:0,y:0});
  const now=Date.now();
- return <View style={m.host} onLayout={layout} accessibilityLabel={'Карта. Меток на экране: '+placed.length}>
+ return <View ref={host} style={m.host} onLayout={e=>{layout(e);host.current?.measureInWindow((x,y)=>{hostAt.current={x,y};});}} accessibilityLabel={'Карта. Меток на экране: '+placed.length}>
   <View style={[StyleSheet.absoluteFill,{transform:[{translateX:drag.x},{translateY:drag.y}]}]} {...pan.panHandlers}>
+   <Pressable accessible={false} disabled={!onLongPress} delayLongPress={450} style={StyleSheet.absoluteFill} onLongPress={e=>{const x=e.nativeEvent.pageX-hostAt.current.x,y=e.nativeEvent.pageY-hostAt.current.y,{view:v,size:s}=state.current,c0=project(v.center,v.zoom);onLongPress?.(unproject(c0.x+x-s.w/2,c0.y+y-originY,v.zoom));}}>
    <Animated.View style={[StyleSheet.absoluteFill,camera?{transform:camera}:null]}>
     {tiles.map(t=><Image key={t.key} fadeDuration={0} accessibilityIgnoresInvertColors source={{uri:'https://tile.openstreetmap.org/'+view.zoom+'/'+t.x+'/'+t.y+'.png',headers:tileHeaders}} style={[m.tile,{left:t.left,top:t.top}]}/>)}
     {scanning&&!still&&<Radar x={size.w/2} y={originY}/>}
@@ -146,6 +150,7 @@ export function TileMap({center,pins,selected,focus='',lines=[],heat=[],sparks=[
      return <Pin key={pin.key} pin={pin} x={x} y={y} more={more} active={pin.key===selected||pin.key===focus} still={still} picking={picking} loop={loop}
       born={now-b<FRESH?b:0} delay={appearDelay(x,y,size.w/2,originY)} onPress={onSelect?()=>more?openGroup(members):onSelect(pin.key):undefined}/>;})}
    </Animated.View>
+   </Pressable>
   </View>
   {picking&&<View pointerEvents="none" style={[m.cross,{left:size.w/2-28,top:originY-28}]}>
    <Animated.View style={[m.landing,{opacity:land.interpolate({inputRange:[0,1],outputRange:[.6,0]}),transform:[{scale:land.interpolate({inputRange:[0,1],outputRange:[.2,1.4]})}]}]}/>
