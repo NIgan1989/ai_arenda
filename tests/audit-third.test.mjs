@@ -56,3 +56,38 @@ test('a stay paid for more than the new price is not shortened: the guest hears 
   assert.equal(f.db.raw.prepare("SELECT COUNT(*) n FROM booking_changes WHERE status='pending'").get().n,0);
  }finally{f.db.close();}
 });
+
+// The fourth audit: a request for a home that is not ready, with the arrival close.
+const {unreadyNote,SOON}=await load('unready');
+async function request(f,inSeconds){
+ await f.owner.bookingAction(f.booking,{action:'cancel',reason:'Тест'});
+ return (await f.guest.createBooking({propertyId:f.property,start:iso(now()+inSeconds),end:iso(now()+inSeconds+7200),guests:1,billingMode:'hourly',requestKey:'second',acceptTerms:true})).id;
+}
+
+test('the note names the state and the time, and is empty for a ready home or a far arrival',()=>{
+ assert.equal(unreadyNote('awaiting_cleaning',1000+7200,1000),'Жильё ждёт уборки, а заезд через 2 ч');
+ assert.equal(unreadyNote('inspection',1000+1500,1000),'Жильё не отмечено готовым, а заезд через 25 мин');
+ assert.equal(unreadyNote('ready',1000+60,1000),'');assert.equal(unreadyNote('occupied',1000+60,1000),'');
+ assert.equal(unreadyNote('cleaning',1000+SOON+60,1000),'');
+});
+
+test('a request for a home not ready soon tells the owner so, in the notice and in the card',async()=>{
+ const f=await fixture();try{
+  const id=await request(f,2*3600);
+  assert.match(notes(f,'owner','%booking:'+id+'%')[0],/Жильё не отмечено готовым, а заезд через 2 ч\. Подтвердите/);
+  const {approvalCards}=await load('approvals'),card=approvalCards(await f.owner.state(),'owner','owner',now()).find(c=>c.entityId===id);
+  assert.match(card.unready,/не отмечено готовым/);assert.ok(card.facts.some(([l])=>l==='Готовность'));
+ }finally{f.db.close();}
+});
+
+test('the autopilot does not confirm such a request alone, and confirms it once the home is ready',async()=>{
+ const f=await fixture();try{
+  f.db.raw.prepare('UPDATE property_policies SET auto_confirm=1,auto_assign=1').run();
+  const id=await request(f,2*3600),status=()=>f.db.raw.prepare('SELECT status FROM bookings WHERE id=?').get(id).status;
+  assert.match(notes(f,'owner','%booking:'+id+'%')[0],/ИИ-администратор не подтвердил заявку .* сам: .*Жильё не отмечено готовым/i);
+  f.db.raw.prepare('DELETE FROM booking_risks').run(); // only the readiness holds it now
+  await checkAdministratorOwner(f.db,'owner');assert.equal(status(),'requested');
+  f.db.raw.prepare("UPDATE property_operations SET readiness='ready'").run();f.release();
+  await checkAdministratorOwner(f.db,'owner');assert.equal(status(),'confirmed');
+ }finally{f.db.close();}
+});

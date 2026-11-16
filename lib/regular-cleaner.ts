@@ -89,7 +89,7 @@ export async function unpinRegular(service:RentalService,role:string,body:Row){
  await service.db.batch([
   q(service.db,'DELETE FROM regular_cleaners WHERE property_id=? AND cleaner_id=?',propertyId,r.cleaner_id),
   service.audit(propertyId,JSON.stringify({action:'regular_cleaner.unpinned',by:role,cleanerId:r.cleaner_id})),
-  service.notify(other,role==='owner'?`Владелец снял закрепление объекта «${r.title}». Уже назначенные уборки остаются за вами.`:`${r.name} больше не постоянный исполнитель «${r.title}». Уборки этого жилья AI администратор будет предлагать лучшим свободным исполнителям.`,'regular-ended:'+propertyId+':'+at,role==='owner'?'cleaner':'owner'),
+  service.notify(other,role==='owner'?`Владелец снял закрепление объекта «${r.title}». Уже назначенные уборки остаются за вами.`:`${r.name} больше не постоянный исполнитель «${r.title}». Уборки этого жилья ИИ-администратор будет предлагать лучшим свободным исполнителям.`,'regular-ended:'+propertyId+':'+at,role==='owner'?'cleaner':'owner'),
  ]);
  return {message:role==='owner'?'Закрепление снято.':'Вы больше не постоянный исполнитель этого объекта.'};
 }

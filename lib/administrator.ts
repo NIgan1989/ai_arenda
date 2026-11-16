@@ -1,3 +1,4 @@
+import {unreadyNote} from './unready';
 import type {Role} from './domain';
 
 type Row=Record<string,any>;
@@ -19,14 +20,17 @@ export function planAdministrator(data:Row,t:number):AdministratorTask[]{
  const setting=(user:string,role:Role)=>data.settings?.[user+':'+role]||{leadMinutes:60};
  const due=(at:number,user:string,role:Role)=>at<=t+setting(user,role).leadMinutes*60;
  const bookingTask=(b:Row,stage:string,title:string,reason:string,at:number,roles:Role[]= ['owner','guest'],urgent=false)=>{
-  const guestTitles:Record<string,string>={payment:'Согласовать оплату и дождаться проверки',deposit:'Передать депозит и дождаться проверки',checkin:'Уточнить готовность к заселению',checkout:'Сообщить о фактическом выезде'};
-  for(const role of roles){const user=role==='owner'?owner:b.guest_id;if(due(at,user,role))add(b,'booking',stage,user,role,role==='guest'?guestTitles[stage]||title:title,reason,at,urgent||at<=t?3:2);}
+  // The guest reads their own part in plain words: what to do and where, not the owner's checklist.
+  const guestTitles:Record<string,string>={payment:'Оплатить проживание',deposit:'Оплатить депозит',checkin:'Заселиться',checkout:'Сообщить о выезде'};
+  const guestReasons:Record<string,string>={payment:'оплатите в карточке брони',deposit:'оплатите в карточке брони, после выезда депозит вернут',checkin:'на месте отметьте заезд в карточке брони',checkout:'когда освободите жильё, нажмите «Сообщить о выезде»'};
+  const subject=reason.split(' · ')[0];
+  for(const role of roles){const user=role==='owner'?owner:b.guest_id;if(due(at,user,role))add(b,'booking',stage,user,role,role==='guest'?guestTitles[stage]||title:title,role==='guest'&&guestReasons[stage]?subject+' · '+guestReasons[stage]:reason,at,urgent||at<=t?3:2);}
  };
  for(const b of data.bookings||[]){
   const p=properties.get(b.property_id),terms=b.terms||{},subject=p?.title||b.title||'Жильё';
   if(b.status==='requested'&&b.expires_at>t){
-   add(b,'booking','request',owner,'owner','Рассмотреть заявку',subject+' · ожидается решение владельца',b.expires_at,b.expires_at-t<=600?3:2);
-   add(b,'booking','request',b.guest_id,'guest','Ожидается решение по заявке',subject+' · резерв действует до срока в карточке',b.expires_at,1);
+   add(b,'booking','request',owner,'owner','Рассмотреть заявку',subject+' · '+(unreadyNote(p?.readiness,b.start,t)||'ожидается решение владельца'),b.expires_at,b.expires_at-t<=600?3:2);
+   add(b,'booking','request',b.guest_id,'guest','Ждём ответа владельца',subject+' · ответ придёт до срока в карточке брони',b.expires_at,1);
   }
   for(const c of b.changes||[])if(c.status==='pending'&&c.expires_at>t){
    const role=c.proposer_role==='owner'?'guest':'owner',user=role==='owner'?owner:b.guest_id;
@@ -97,5 +101,5 @@ export async function readAdministratorState(db:D1Database,userId:string,role:Ro
  const issues=(await db.prepare("SELECT i.* FROM administrator_issues i WHERE (i.owner_id=? AND ?='owner') OR (i.opened_by=? AND i.opened_role=?) OR (i.other_user=? AND i.other_role=?) ORDER BY i.status='open' DESC,i.created_at DESC LIMIT 50").bind(userId,role,userId,role,userId,role).all<Row>()).results;
  const run=await db.prepare("SELECT checked_at,last_success,last_error FROM administrator_runs WHERE id=?").bind('owner:'+userId).first<Row>();
  const heartbeat=await db.prepare("SELECT last_success,last_error FROM administrator_runs WHERE id='scheduler'").first<Row>();
- return {name:'AI администратор',stages:administratorStages,tasks,total:counts?.total||0,urgent:counts?.urgent||0,issues,checkedAt:role==='owner'?run?.last_success||null:tasks.reduce((at,n)=>Math.max(at,n.updated_at),0)||null,backgroundAlive:!!heartbeat?.last_success&&heartbeat.last_success>Math.floor(Date.now()/1000)-180,backgroundError:heartbeat?.last_error?true:false};
+ return {name:'ИИ-администратор',stages:administratorStages,tasks,total:counts?.total||0,urgent:counts?.urgent||0,issues,checkedAt:role==='owner'?run?.last_success||null:tasks.reduce((at,n)=>Math.max(at,n.updated_at),0)||null,backgroundAlive:!!heartbeat?.last_success&&heartbeat.last_success>Math.floor(Date.now()/1000)-180,backgroundError:heartbeat?.last_error?true:false};
 }

@@ -33,7 +33,7 @@ export function roleEvents<T extends {dedupe?:unknown;body?:unknown;created_at?:
 }
 // The words of a notice in a list of notices: the service is the one speaking there, so its name is not repeated.
 export function noticeText(body:unknown){
- const text=String(body||'').replace(/^AI администратор:\s*/,'').replace(/^Требует внимания\.\s*/,'').trim();
+ const text=String(body||'').replace(/^ИИ-администратор:\s*/,'').replace(/^Требует внимания\.\s*/,'').trim();
  return text?text[0].toUpperCase()+text.slice(1):'';
 }
 // The booking or the cleaning a notice is about, when the person has it in their data: its card opens by a tap.

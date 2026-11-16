@@ -37,7 +37,7 @@ const KEYS:[string,AiMark['kind'],AiMove][]=[
 export function aiMarkOf(dedupe:unknown,at:unknown,body?:unknown):AiMark|null{
  if(typeof dedupe!=='string'||typeof at!=='number'||!Number.isFinite(at))return null;
  // A booking the AI confirmed at once shares its notice with a new request; only its words tell them apart.
- if(dedupe.startsWith('owner:booking:')){const id=dedupe.slice(14).split(':')[0];return id&&typeof body==='string'&&body.startsWith('AI администратор принял бронь')?{kind:'booking',id,move:'confirmed',at}:null;}
+ if(dedupe.startsWith('owner:booking:')){const id=dedupe.slice(14).split(':')[0];return id&&typeof body==='string'&&body.startsWith('ИИ-администратор принял бронь')?{kind:'booking',id,move:'confirmed',at}:null;}
  for(const [prefix,kind,move] of KEYS)if(dedupe.startsWith(prefix)){const id=dedupe.slice(prefix.length).split(':')[0];return id?{kind,id,move,at}:null;}
  return null;
 }

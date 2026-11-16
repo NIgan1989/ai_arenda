@@ -40,7 +40,7 @@ export async function decideOffer(service:RentalService,body:Row){
  ]);
  if(!result[0].meta.changes)throw new DomainError('Условия изменились или у вас пересекается другая работа.',409);
  if(regular&&result[3]?.meta.changes)return {message:'Уборка ваша. Адрес и контакт владельца в задании.',assigned:true};
- return {message:'Согласие на условия сохранено. Владелец или AI администратор назначит исполнителя в пределах полномочий.'};
+ return {message:'Согласие на условия сохранено. Владелец или ИИ-администратор назначит исполнителя в пределах полномочий.'};
 }
 export async function declineAssignment(service:RentalService,body:Row){
  await service.requireRole('cleaner');const job=await one(service.db,"SELECT * FROM cleaning_jobs WHERE id=? AND assigned_to=? AND status='assigned'",required(body.jobId,'Задание',100),service.userId);if(!job)throw new DomainError('Отказ доступен до начала назначенной работы.',409);
@@ -65,7 +65,7 @@ export async function coordinateDispatch(service:RentalService){
    q(db,`UPDATE applications SET status='rejected' WHERE job_id=? AND user_id=? AND ${gate}`,job.id,job.assigned_to,token),
    q(db,`UPDATE cleaning_offers SET status='expired',decided_at=? WHERE job_id=? AND worker_id=? AND status='accepted' AND ${gate}`,at,job.id,job.assigned_to,token),
    q(db,`INSERT OR IGNORE INTO notifications SELECT ?,?,?,?,?,? WHERE ${gate}`,uuid(),job.assigned_to,'Назначение снято: начало уборки не отмечено в согласованный срок. Если это ошибка, свяжитесь с владельцем.','cleaner:no-show:'+job.id+':'+job.version,0,at,token),
-   q(db,`INSERT OR IGNORE INTO notifications SELECT ?,?,?,?,?,? WHERE ${gate}`,uuid(),service.userId,'AI администратор снял назначение по принятому правилу невыхода и ищет замену.','owner:no-show:'+job.id+':'+job.version,0,at,token)
+   q(db,`INSERT OR IGNORE INTO notifications SELECT ?,?,?,?,?,? WHERE ${gate}`,uuid(),service.userId,'ИИ-администратор снял назначение по принятому правилу невыхода и ищет замену.','owner:no-show:'+job.id+':'+job.version,0,at,token)
   ]);
  }
  // Open cleanings to offer: flats where the owner turned on offers within the AI budget, and every flat with a regular cleaner.
@@ -90,8 +90,8 @@ export async function coordinateDispatch(service:RentalService){
   if(!worker)continue;
   const gate=regular?'EXISTS(SELECT 1 FROM regular_cleaners WHERE property_id=cleaning_jobs.property_id AND cleaner_id=?)':'(EXISTS(SELECT 1 FROM operation_rules r JOIN property_policies p ON p.property_id=r.property_id WHERE r.property_id=cleaning_jobs.property_id AND r.auto_offers=1 AND p.version=? AND cleaning_jobs.fee<=p.cleaning_budget AND (p.mandate_until=0 OR p.mandate_until>?)) OR EXISTS(SELECT 1 FROM regular_cleaners WHERE property_id=cleaning_jobs.property_id))';
   const id=uuid(),expires=Math.min(job.end,at+job.offer_minutes*60),until=new Date(expires*1000).toLocaleTimeString('ru-RU',{timeZone:'Asia/Qyzylorda',hour:'2-digit',minute:'2-digit'});
-  const workerText=regular?`Уборка вашего постоянного объекта «${job.title}». Ответьте до ${until}: ваше «да» сразу назначает вас, иначе AI администратор предложит её другому исполнителю.`:'AI администратор предлагает уборку «'+job.title+'». Проверьте время, оплату и правило замены в предложении.';
-  const ownerText=regular?`AI администратор предложил уборку «${job.title}» вашему постоянному исполнителю ${worker.name||''}. Если он не сможет, найдёт замену.`:(job.regular_id?`Постоянный исполнитель не может взять уборку «${job.title}». AI администратор предложил её исполнителю `:'AI администратор предложил уборку «'+job.title+'» исполнителю ')+(worker.name||'из вашего города')+': '+worker.reasons.join(', ')+'.';
+  const workerText=regular?`Уборка вашего постоянного объекта «${job.title}». Ответьте до ${until}: ваше «да» сразу назначает вас, иначе ИИ-администратор предложит её другому исполнителю.`:'ИИ-администратор предлагает уборку «'+job.title+'». Проверьте время, оплату и правило замены в предложении.';
+  const ownerText=regular?`ИИ-администратор предложил уборку «${job.title}» вашему постоянному исполнителю ${worker.name||''}. Если он не сможет, найдёт замену.`:(job.regular_id?`Постоянный исполнитель не может взять уборку «${job.title}». ИИ-администратор предложил её исполнителю `:'ИИ-администратор предложил уборку «'+job.title+'» исполнителю ')+(worker.name||'из вашего города')+': '+worker.reasons.join(', ')+'.';
   const results=await db.batch([
    q(db,`INSERT OR IGNORE INTO cleaning_offers SELECT ?,id,?,version,start,end,fee,?,'offered',?,?,NULL FROM cleaning_jobs WHERE id=? AND status='open' AND version=? AND ${gate}`,id,worker.id,job.auto_replace,at,expires,job.id,job.version,...(regular?[worker.id]:[job.policy_version,at])),
    // A cleaner on autopilot does not get the question: the AI answers for her right after this.
@@ -113,7 +113,7 @@ async function autopilotAccept(service:RentalService,offerId:string,workerId:str
   const when=new Date(job.start*1000).toLocaleString('ru-RU',{timeZone:'Asia/Qyzylorda',day:'numeric',month:'long',hour:'2-digit',minute:'2-digit'});
   await db.batch([
    q(db,'INSERT INTO audit_events VALUES (?,?,?,?,?)',uuid(),'system:cleaner-autopilot',offerId,JSON.stringify({action:'cleaning.autopilot_accepted',worker:workerId,jobId:job.id,assigned:!!(r as Row).assigned}),at),
-   q(db,'INSERT OR IGNORE INTO notifications(id,user_id,body,dedupe,read,created_at) VALUES (?,?,?,?,0,?)',uuid(),workerId,`AI администратор взял для вас уборку «${job.title}» по вашим правилам: ${when}, ${new Intl.NumberFormat('ru-RU').format(job.fee)} ₸.${(r as Row).assigned?' Вы назначены.':' Владелец подтвердит назначение.'} Если не сможете, откажитесь в задании.`,'cleaner:autopilot-took:'+offerId,at)
+   q(db,'INSERT OR IGNORE INTO notifications(id,user_id,body,dedupe,read,created_at) VALUES (?,?,?,?,0,?)',uuid(),workerId,`ИИ-администратор взял для вас уборку «${job.title}» по вашим правилам: ${when}, ${new Intl.NumberFormat('ru-RU').format(job.fee)} ₸.${(r as Row).assigned?' Вы назначены.':' Владелец подтвердит назначение.'} Если не сможете, откажитесь в задании.`,'cleaner:autopilot-took:'+offerId,at)
   ]);
  }catch(e){
   if(!(e instanceof DomainError))throw e;

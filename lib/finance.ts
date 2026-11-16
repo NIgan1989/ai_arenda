@@ -158,7 +158,7 @@ export async function settleTestMoney(service:RentalService,propertyId:string){
  for(const d of done){
   if(d.held>0){try{
    await recordFinance(service,{kind:'deposit_return',bookingId:d.booking,amount:d.held,confirmed:true,note:'Тестовый возврат депозита: деньги не переводились',externalReference:'TEST-RETURN',requestKey:'ai-test-deposit-return:'+d.booking});
-   await service.notify(d.guest_id,'AI администратор вернул '+(d.kept?'остаток депозита ':'депозит ')+money(d.held)+' за «'+d.title+'»: уборка принята'+(d.kept?'':', замечаний нет')+'. Тестовый режим, деньги не переводились.','test-deposit-return:'+d.booking,'guest').run();n++;
+   await service.notify(d.guest_id,'ИИ-администратор вернул '+(d.kept?'остаток депозита ':'депозит ')+money(d.held)+' за «'+d.title+'»: уборка принята'+(d.kept?'':', замечаний нет')+'. Тестовый режим, деньги не переводились.','test-deposit-return:'+d.booking,'guest').run();n++;
   }catch(e){if(!(e instanceof DomainError))throw e;}}
   // A regular cleaner is paid by the service from the owner's reserve, not here; a reserve given back no longer backs it.
   if(d.assigned_to&&!d.settled_at&&d.fee>0&&!await one(db,"SELECT 1 FROM cleaning_holds WHERE job_id=? AND status<>'returned'",d.job)){try{

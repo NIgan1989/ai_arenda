@@ -29,7 +29,7 @@
   color: var(--t-danger);
 }
 
-/* "Спросить AI администратора": the one way on for a text the search rules did not understand. */
+/* "Спросить ИИ-администратора": the one way on for a text the search rules did not understand. */
 .request-sheet .request-note button {
   display: inline-flex;
   align-items: center;

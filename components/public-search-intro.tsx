@@ -89,7 +89,7 @@ export function SearchIntro(props: SearchIntroProps) {
           {note.ask && props.onAsk && (
             <button type="button" onClick={() => props.onAsk?.(note.ask as string)}>
               <Sparkles size={18} aria-hidden="true" />
-              {props.askLabel || 'Спросить AI администратора'}
+              {props.askLabel || 'Спросить ИИ-администратора'}
             </button>
           )}
         </div>

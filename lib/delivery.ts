@@ -160,7 +160,7 @@ const plainNotice=(item:Row)=>{
  if(String(item.dedupe||'').split(':')[1]==='discussion')return body.replace(/\+?\d[\d\s()-]{8,}\d|\d{4,}/g,'••••');
  const rule=PERSON_WRITTEN.find(([re])=>re.test(body));return rule?body.replace(rule[0],rule[1]):body;
 };
-const ICONS:[RegExp,string][]=[[/^Бронь/,'📅'],[/^Уборка/,'🧹'],[/^Жильё/,'🏠'],[/^(Сообщение|Новое сообщение)/,'💬'],[/^AI администратор/,'🤖']];
+const ICONS:[RegExp,string][]=[[/^Бронь/,'📅'],[/^Уборка/,'🧹'],[/^Жильё/,'🏠'],[/^(Сообщение|Новое сообщение)/,'💬'],[/^ИИ-администратор/,'🤖']];
 const ROLE_TITLES:Record<string,string>={guest:'Для гостя',owner:'Для владельца',cleaner:'Для исполнителя'};
 // What happened, with what, and one button to the very card or chat. A notice that asks for a decision carries its buttons.
 export async function plainTelegramNotice(item:Row,base:string|null,target:{url:string;title:string}|null):Promise<Row>{
