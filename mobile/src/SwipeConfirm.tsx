@@ -1,5 +1,5 @@
 import React,{useEffect,useRef,useState} from 'react';
-import {AccessibilityInfo,Animated,Easing,PanResponder,StyleSheet,Text,View} from 'react-native';
+import {AccessibilityInfo,Animated,Easing,PanResponder,Platform,StyleSheet,Text,View} from 'react-native';
 import * as Haptics from 'expo-haptics';
 import {C,type} from './styles';
 import {T} from './tokens';
@@ -43,7 +43,9 @@ export function SwipeConfirm({label,onConfirm,disabled=false}:{label:string;onCo
   const loop=Animated.loop(Animated.sequence([Animated.timing(glow,{toValue:1,duration:1500,easing:Easing.inOut(Easing.quad),useNativeDriver:true}),Animated.delay(1300)]));
   nudge.start();loop.start();return()=>{nudge.stop();loop.stop();};},[idle]);
  const s=Math.max(1,width-KNOB-2*PAD),at=(out:number[])=>x.interpolate({inputRange:[0,s],outputRange:out,extrapolate:'clamp'});
- return <View accessible accessibilityRole="button" accessibilityLabel={label} accessibilityState={{disabled,busy:done}} accessibilityActions={[{name:'activate'}]} onAccessibilityAction={e=>{if(e.nativeEvent.actionName==='activate'&&!disabled&&!done)onConfirm();}}
+ // In the browser preview a keyboard has no finger: Enter or Space on the focused track confirms, as a button would.
+ const keys=Platform.OS==='web'?{tabIndex:disabled?-1:0,onKeyDown:(e:any)=>{if((e.key==='Enter'||e.key===' ')&&!live.current.disabled&&!live.current.done){e.preventDefault?.();live.current.onConfirm();}}} as object:null;
+ return <View {...keys} accessible accessibilityRole="button" accessibilityLabel={label} accessibilityState={{disabled,busy:done}} accessibilityActions={[{name:'activate'}]} onAccessibilityAction={e=>{if(e.nativeEvent.actionName==='activate'&&!disabled&&!done)onConfirm();}}
   onLayout={e=>setWidth(Math.round(e.nativeEvent.layout.width))} style={[sw.track,disabled&&!done&&sw.off]}>
   <Animated.View pointerEvents="none" style={[sw.fill,{opacity:width?at([0,1]):0,transform:[{translateX:x}]}]}/>
   <Animated.Text numberOfLines={2} style={[sw.text,{opacity:width?at([1,0]):1}]}>{label}</Animated.Text>
