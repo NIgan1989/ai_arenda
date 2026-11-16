@@ -14,8 +14,9 @@ test('Telegram binding needs a private signed start event; delivery is opt-in, r
   await acceptTelegramLink(f.db,event,config.TELEGRAM_WEBHOOK_SECRET,config);assert.match(replies.at(-1).text,/устарела/);
   await acceptTelegramLink(f.db,{message:{...event.message,text:'/start'}},config.TELEGRAM_WEBHOOK_SECRET,config);assert.match(replies.at(-1).text,/Подключить/);
   const linked=await telegramStatus(f.guest,'guest',config);assert.deepEqual({...linked,linkedAt:linked.linkedAt>0},{configured:true,linked:true,enabled:true,linkedAt:true});assert.deepEqual(await telegramStatus(f.owner,'owner',config),{configured:true,linked:false,enabled:false,linkedAt:0});assert.equal((await telegramStatus(f.guest,'guest',{})).configured,false);
-  await f.owner.notify('guest','PRIVATE ADDRESS AND LOCK CODE','test-notice','guest').run();
-  let calls=0;globalThis.fetch=async(_url,request)=>{calls++;const body=JSON.parse(request.body);assert.equal(body.chat_id,'123');assert.ok(!body.text.includes('PRIVATE ADDRESS'));assert.ok(!body.text.includes('LOCK CODE'));return Response.json({ok:true,result:{message_id:5}});};
+  // The message says what happened in the notice's own words, with a button to the service instead of a bare link.
+  await f.owner.notify('guest','Владелец подтвердил бронь <жилья> на завтра.','test-notice','guest').run();
+  let calls=0;globalThis.fetch=async(_url,request)=>{calls++;const body=JSON.parse(request.body);assert.equal(body.chat_id,'123');assert.equal(body.parse_mode,'HTML');assert.match(body.text,/Владелец подтвердил бронь &lt;жилья&gt; на завтра\./);assert.ok(!body.text.includes('https://'));assert.equal(body.reply_markup.inline_keyboard[0][0].url,'https://rental.example.test/workspace/guest/map');return Response.json({ok:true,result:{message_id:5}});};
   assert.equal((await deliverOutbox(f.db,config)).sent,1);assert.equal((await deliverOutbox(f.db,config)).sent,0);assert.equal(calls,1);
   await setDeliveryChannel(f.guest,'guest',{channel:'telegram',enabled:false},config);await f.owner.notify('guest','Another event','another-notice','guest').run();assert.equal(f.db.raw.prepare('SELECT COUNT(*) n FROM delivery_outbox').get().n,1);
  }finally{globalThis.fetch=fetch;f.db.close();}
@@ -104,4 +105,18 @@ test('a step the AI made alone that asks nothing of the owner is not sent out; a
   // The step itself is not lost: it stays among the owner's notices, where the journal reads it.
   assert.equal(f.db.raw.prepare("SELECT COUNT(*) n FROM notifications WHERE dedupe='owner:administrator-approved:job-1'").get().n,1);
  }finally{globalThis.fetch=fetch;f.db.close();}
+});
+
+test('a Telegram notice names what happened and where, opens that card, and hides codes typed in a chat',async()=>{
+ const {plainTelegramNotice}=await load('delivery');
+ const job=await plainTelegramNotice({role:'cleaner',dedupe:'cleaner:assigned:j1',body:'Вас назначили на уборку «Дом у реки».'},'https://rental.example.test',{url:'/workspace/cleaner/assignments?entity=j1',title:'Уборка · Дом у реки'});
+ assert.equal(job.text,'🧹 <b>Уборка · Дом у реки</b>\n\nВас назначили на уборку «Дом у реки».');
+ assert.deepEqual(job.reply_markup.inline_keyboard,[[{text:'Открыть',url:'https://rental.example.test/workspace/cleaner/assignments?entity=j1'}]]);
+ const chat=await plainTelegramNotice({role:'guest',dedupe:'guest:discussion:r1:3',body:'Айгуль (владелец) в чате «Дом у реки»: код двери 4821, звоните +7 701 123 45 67, оплата 15 000 ₸'},null,{url:'/workspace/guest/chats?room=r1',title:'Сообщение · Дом у реки'});
+ assert.match(chat.text,/^💬 <b>Сообщение · Дом у реки<\/b>/);assert.ok(!chat.text.includes('4821'));assert.ok(!chat.text.includes('123 45'));assert.match(chat.text,/15 000 ₸/);assert.equal(chat.reply_markup,undefined);
+ for(const [body,shown,hidden] of [['Обращение по «Дом у реки»: код от двери 4821, ул. Ленина 5','Обращение по «Дом у реки». Текст обращения в сервисе.','Ленина'],['Проблема по уборке: ключ под ковриком','Сообщили о проблеме по уборке','коврик'],['Выезд пока не подтверждён: ключи не оставлены у соседа, кв. 12','Выезд пока не подтверждён. Причина в брони.','сосед'],['Доработайте уборку: код сейфа 1234','Владелец просит доработать уборку','1234'],['Владелец отменил уборку «Дом у реки». Причина: замок 777','Владелец отменил уборку «Дом у реки». Причина в задании.','777'],['Гость оценил проживание в «Дом у реки»: ★★★★☆ «код 5555 не сработал»','★★★★☆. Отзыв в сервисе.','5555']]){
+  const notice=await plainTelegramNotice({role:'owner',dedupe:'owner:x1',body},null,null);assert.ok(notice.text.includes(shown),body);assert.ok(!notice.text.includes(hidden),body);
+ }
+ const empty=await plainTelegramNotice({role:'owner',dedupe:'owner:x',body:''},'https://rental.example.test',null);
+ assert.match(empty.text,/AiQonaq · Для владельца/);assert.match(empty.text,/Есть новое событие/);
 });
