@@ -2,6 +2,8 @@ import {DomainError} from './domain';
 import {epoch,uuid,q,one,rows,hash,type Row,type OperationConfig} from './operation-core';
 import {decideParticipantReview} from './participant-security';
 import type {RentalService} from './service';
+import {hasContacts,MIN_PHOTOS} from './listing-rules';
+export {hasContacts,MIN_PHOTOS};
 
 // The AI administrator's check of a participant review. Every rule is plain and visible to the platform
 // administrator: when all of them pass the AI approves by itself, when the participant only has to add
@@ -14,11 +16,8 @@ export type ReviewCheck={key:string;label:string;state:CheckState;note:string};
 export type Verdict='approve'|'fix'|'escalate';
 export const AI_REVIEWER='ai-administrator';
 export const AI_METHOD='ИИ-администратор: проверка по правилам';
-export const MIN_PHOTOS=3,MIN_DESCRIPTION=80,PRICE_LOW=0.4,PRICE_HIGH=2.5,HISTORY=180*86400,CLEANER_VALID=180*86400,RECHECK=600;
+export const MIN_DESCRIPTION=80,PRICE_LOW=0.4,PRICE_HIGH=2.5,HISTORY=180*86400,CLEANER_VALID=180*86400,RECHECK=600;
 
-const CONTACT=/(?:\+?[78])[\s\-()]*\d{3}[\s\-()]*\d{3}[\s\-]*\d{2}[\s\-]*\d{2}|https?:\/\/|www\.|t\.me\/|wa\.me|whatsapp|ватсап|вотсап|телеграм|telegram|инстаграм|instagram/i;
-const DIRECT_PAY=/перевод(ом)? на карту|переведите|оплат[аиу] напрямую|предоплат|kaspi\s*(gold|перевод)|каспи\s*(голд|перевод)/i;
-export function hasContacts(text:string){return CONTACT.test(text)||DIRECT_PAY.test(text);}
 const STREET_WORDS=new Set(['ул','улица','пр','проспект','мкр','микрорайон','д','дом','г','город']);
 export function normalAddress(city:string,address:string){
  const clean=(s:string)=>s.toLowerCase().replace(/ё/g,'е').split(/[^a-zа-я0-9]+/).filter(w=>w&&!STREET_WORDS.has(w)).join(' ');

@@ -103,7 +103,7 @@ test('image upload strips EXIF, rejects scripts and enforces decoded dimensions 
 });
 test('presentation statuses follow operations and worker activity, not a simulated online flag',async()=>{
  const {propertyStatus,cleanerStatus}=await import(pathToFileURL(process.cwd()+'/outputs/test-lib/listings.js'));
- for(const [code,label] of [['ready','Готова к заселению'],['cleaning','На уборке'],['occupied','Проживают гости'],['maintenance','На ремонте']])assert.equal(propertyStatus({published:1},{readiness:code}).label,label);
+ for(const [code,label] of [['ready','Готово к заселению'],['cleaning','На уборке'],['occupied','Проживают гости'],['maintenance','На ремонте']])assert.equal(propertyStatus({published:1},{readiness:code}).label,label);
  assert.equal(propertyStatus({published:0},{readiness:'ready'}).code,'draft');
  assert.equal(propertyStatus({published:1},{readiness:'ready',active_booking_id:'b'}).code,'occupied');
  assert.equal(cleanerStatus('available',[{status:'in_progress'}],100).code,'working');

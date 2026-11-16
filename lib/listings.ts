@@ -24,7 +24,7 @@ export function listingInput(b:Row){
 }
 export function propertyStatus(p:Row,operation?:Row,busy=false){
  if(p.published===0)return {code:'draft',label:'Черновик',tone:'muted'};
- const map:Record<string,string>={ready:'Готова к заселению',inspection:'Требует проверки',occupied:'Проживают гости',awaiting_cleaning:'Ожидает уборки',cleaning:'На уборке',maintenance:'На ремонте',blocked:'Временно недоступна'};
+ const map:Record<string,string>={ready:'Готово к заселению',inspection:'Требует проверки',occupied:'Проживают гости',awaiting_cleaning:'Ожидает уборки',cleaning:'На уборке',maintenance:'На ремонте',blocked:'Временно недоступно'};
  const code=operation?.active_booking_id?'occupied':operation?.readiness||'inspection';
  return {code,label:map[code]||map.inspection,tone:code==='ready'?'good':['maintenance','blocked'].includes(code)?'danger':'warning',reservedNow:busy};
 }

@@ -37,14 +37,21 @@ async function verifiedPhone(service:RentalService,userId:string){
  // Phone verification belongs to the web login identity, never an editable profile contact.
  try{const account=await one(service.db,'SELECT phone FROM auth_accounts WHERE id=?',userId);return !!account&&account.phone===verification.phone;}catch{return false;}
 }
-export async function assertPilotAllowed(service:RentalService,capability:'publish'|'booking'|'assignment',propertyId?:string,workerId?:string){
+// A flat approved before whose new address is being checked (and has not been refused): bookings made earlier go on.
+// The same rule guards direct writes in the trigger pilot_booking_update.
+async function addressRecheck(service:RentalService,propertyId:string){
+ const current='COALESCE((SELECT revision FROM review_property_bindings b WHERE b.property_id=r.property_id),0)';
+ return !!await one(service.db,`SELECT 1 FROM participant_reviews r JOIN properties p ON p.id=r.property_id AND p.owner_id=r.user_id WHERE r.property_id=? AND r.role='owner' AND r.status='approved' AND (r.valid_until IS NULL OR r.valid_until>?) AND r.property_revision<${current}
+  AND NOT EXISTS(SELECT 1 FROM participant_reviews x WHERE x.property_id=r.property_id AND x.role='owner' AND x.status='rejected' AND x.property_revision=${current}) LIMIT 1`,propertyId,epoch());
+}
+export async function assertPilotAllowed(service:RentalService,capability:'publish'|'booking'|'assignment',propertyId?:string,workerId?:string,existing=false){
  if(!['publish','booking','assignment'].includes(capability))throw new DomainError('Неизвестный вид допуска.');
  const property=propertyId?await one(service.db,'SELECT id,owner_id,demo_owner FROM properties WHERE id=?',propertyId):null;
  if(!property)throw new DomainError('Жильё недоступно.',403);
  if(capability==='publish'&&property.owner_id!==service.userId)throw new DomainError('Жильё недоступно.',403);
  if(property.demo_owner){if(property.demo_owner!==service.userId&&capability!=='assignment')throw new DomainError('Учебное жильё недоступно.',403);return;}
  const policy=await pilotPolicy(service);
- if(['publish','booking'].includes(capability)&&policy.require_owner_review&&!await reviewed(service,property.owner_id,'owner',property.id))throw new DomainError('Публикация и новые брони доступны после действующей проверки владельца и этого объекта.',409);
+ if(['publish','booking'].includes(capability)&&policy.require_owner_review&&!await reviewed(service,property.owner_id,'owner',property.id)&&!(existing&&capability==='booking'&&await addressRecheck(service,property.id)))throw new DomainError('Публикация и новые брони доступны после действующей проверки владельца и этого объекта.',409);
  if(capability==='assignment'){
   const worker=workerId?await one(service.db,"SELECT id FROM profiles WHERE id=? AND EXISTS(SELECT 1 FROM json_each(roles) WHERE value='cleaner')",workerId):null;
   if(!worker)throw new DomainError('Исполнитель недоступен.',403);

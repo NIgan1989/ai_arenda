@@ -44,7 +44,7 @@ function PropertyCard({property:p,bookings,busy,open,onToggle,onEdit,onSettings,
    <View style={o.grow}>
     <Text numberOfLines={1} style={o.title}>{p.title}</Text>
     <Text numberOfLines={1} style={o.meta}>{kind} · {money(p.price)} / сутки</Text>
-    <View style={o.tags}><Text style={[o.status,{backgroundColor:bg,color:ink}]}>{status.label}</Text>{!!p.demo_owner&&<Text style={[o.status,{backgroundColor:C.surfaceAlt,color:C.muted}]}>Учебный</Text>}</View>
+    <View style={o.tags}><Text style={[o.status,{backgroundColor:bg,color:ink}]}>{status.label}</Text>{!!p.address_check&&<Text style={[o.status,{backgroundColor:C.warningSoft,color:C.warning}]}>Адрес на проверке</Text>}{!!p.demo_owner&&<Text style={[o.status,{backgroundColor:C.surfaceAlt,color:C.muted}]}>Учебный</Text>}</View>
    </View>
    <Text style={[o.chevron,open&&o.chevronOpen]}>›</Text>
   </Pressable>

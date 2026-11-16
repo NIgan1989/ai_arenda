@@ -61,7 +61,7 @@ export async function decideParticipantReview(service:RentalService,body:Row,pla
   // A new flat starts as «Ожидает проверки»; the platform's approval is that check, so the first guest can move in
   // without the owner hunting for a readiness form. A flat in the middle of a cleaning keeps its state.
   if(body.status==='approved')await q(service.db,"UPDATE property_operations SET readiness='ready',version=version+1,updated_at=? WHERE property_id=? AND readiness='inspection' AND active_booking_id IS NULL AND NOT EXISTS(SELECT 1 FROM cleaning_jobs WHERE property_id=? AND status IN ('in_progress','submitted'))",at,review.property_id,review.property_id).run();
-  const text=body.status==='approved'?'Администратор проверил «'+title+'».'+(shown?' Жильё показано гостям на карте.':' Теперь его можно показать гостям.'):'Проверка «'+title+'» не пройдена: '+notes;
+  const again=String(review.reference||'').startsWith(ADDRESS_REVIEW),text=body.status==='approved'?'Администратор проверил «'+title+'».'+(again?' Новый адрес подтверждён, гости снова видят жильё.':shown?' Жильё показано гостям на карте.':' Теперь его можно показать гостям.'):'Проверка «'+title+'» не пройдена: '+notes;
   await q(service.db,'INSERT OR IGNORE INTO notifications(id,user_id,body,dedupe,read,created_at) VALUES (?,?,?,?,0,?)',uuid(),review.user_id,text,'owner:review:'+id+':'+body.status,at).run();
  }
  // A cleaner hears the result, and so does every owner whose open cleaning is waiting on this cleaner's response.
@@ -75,6 +75,7 @@ export async function decideParticipantReview(service:RentalService,body:Row,pla
  return {message:'Результат фактической проверки сохранён.'};
 }
 // A draft is ready for guests when it has photos and a full description: what the catalogue itself requires.
+export const ADDRESS_REVIEW='Проверка нового адреса';
 const READY_SQL="length(p.description)>=80 AND COALESCE((SELECT json_array_length(d.photos) FROM property_details d WHERE d.property_id=p.id),0)>0";
 const CURRENT_REVISION='COALESCE((SELECT revision FROM review_property_bindings b WHERE b.property_id=r.property_id),0)';
 // The owner never has to ask for the check by hand: as soon as a saved draft is ready for guests and the platform
@@ -88,10 +89,11 @@ export async function placeQuietly(service:RentalService,propertyId:string,confi
 export async function ensurePublishReview(service:RentalService,propertyId:string,config:OperationConfig&{PLATFORM_ADMIN_IDS?:string}={}){
  await placeQuietly(service,propertyId,config);
  const policy=await one(service.db,"SELECT require_owner_review FROM pilot_policy WHERE id='global'");if(!policy?.require_owner_review)return null;
- const p=await one(service.db,`SELECT p.id,p.title,p.city,p.address FROM properties p WHERE p.id=? AND p.owner_id=? AND p.published=0 AND p.demo_owner IS NULL AND p.archived_at IS NULL AND ${READY_SQL}`,propertyId,service.userId);if(!p)return null;
+ const p=await one(service.db,`SELECT p.id,p.title,p.city,p.address,p.published FROM properties p WHERE p.id=? AND p.owner_id=? AND p.demo_owner IS NULL AND p.archived_at IS NULL AND ${READY_SQL}`,propertyId,service.userId);if(!p)return null;
  const known=await one(service.db,`SELECT r.status FROM participant_reviews r WHERE r.property_id=? AND r.user_id=? AND r.role='owner' AND r.property_revision=${CURRENT_REVISION} AND (r.status='pending' OR (r.status='approved' AND (r.valid_until IS NULL OR r.valid_until>?))) LIMIT 1`,propertyId,service.userId,epoch());
  if(known)return null;
- return requestParticipantReview(service,'owner',{propertyId,reference:PUBLISH_REVIEW+': «'+(p.title||'жильё')+'», '+[p.city,p.address].filter(Boolean).join(', ')},config);
+ // A shown flat comes here after an address change: the same check, asked for the new address.
+ return requestParticipantReview(service,'owner',{propertyId,reference:(p.published?ADDRESS_REVIEW:PUBLISH_REVIEW)+': «'+(p.title||'жильё')+'», '+[p.city,p.address].filter(Boolean).join(', ')},config);
 }
 // The administrator approves a flat straight from «Недвижимость»: the owner's open request is used when there is one,
 // otherwise the check is recorded on the owner's behalf. Approval shows a ready flat to guests at once.

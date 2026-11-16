@@ -56,6 +56,7 @@
 -- migration 0052_password_reset.sql sha256:2d28c38105f5a7deee30ce46fae9129284eb57f2b46803810eedf808667c7124
 -- migration 0053_ready_after_review.sql sha256:2416de72aefbfe10aa723eedc9b8907124af9329a201f0e016af4bc77877e6ea
 -- migration 0054_refund_due.sql sha256:42a51d984bbe87d13fd08a774f9969d288e3c9161c5f7634350ab3a5d113f358
+-- migration 0055_booking_through_address_check.sql sha256:9c4d75399e950fec1588cacea66cae48d7752ed51be040ecb8b302c077c5dc0e
 
 -- table access_receipts
 CREATE TABLE access_receipts (id TEXT PRIMARY KEY,property_id TEXT NOT NULL,entity_kind TEXT NOT NULL,entity_id TEXT NOT NULL,user_id TEXT NOT NULL,created_at INTEGER NOT NULL,expires_at INTEGER NOT NULL);
@@ -1923,6 +1924,10 @@ END;
 -- trigger pilot_booking_update
 CREATE TRIGGER pilot_booking_update BEFORE UPDATE OF status,start,end ON bookings WHEN NEW.status IN ('requested','confirmed') AND EXISTS(SELECT 1 FROM properties WHERE id=NEW.property_id AND demo_owner IS NULL) BEGIN
  SELECT CASE WHEN (SELECT require_owner_review FROM pilot_policy WHERE id='global')=1 AND NOT EXISTS(SELECT 1 FROM pilot_property_admissions WHERE id=NEW.property_id AND owner_reviewed=1)
+  AND NOT (EXISTS(SELECT 1 FROM participant_reviews r JOIN properties p ON p.id=r.property_id AND p.owner_id=r.user_id WHERE r.property_id=NEW.property_id AND r.role='owner' AND r.status='approved' AND (r.valid_until IS NULL OR r.valid_until>unixepoch())
+    AND r.property_revision<COALESCE((SELECT revision FROM review_property_bindings b WHERE b.property_id=r.property_id),0))
+   AND NOT EXISTS(SELECT 1 FROM participant_reviews r WHERE r.property_id=NEW.property_id AND r.role='owner' AND r.status='rejected'
+    AND r.property_revision=COALESCE((SELECT revision FROM review_property_bindings b WHERE b.property_id=r.property_id),0)))
   THEN RAISE(ABORT,'pilot_owner_review_required') END;
  SELECT CASE WHEN (SELECT require_phone FROM pilot_policy WHERE id='global')=1 AND
   (NOT EXISTS(SELECT 1 FROM pilot_property_admissions WHERE id=NEW.property_id AND owner_phone_verified=1) OR NOT EXISTS(SELECT 1 FROM phone_verifications WHERE user_id=NEW.guest_id AND verified_at IS NOT NULL))
