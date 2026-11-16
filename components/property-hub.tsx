@@ -81,7 +81,7 @@ function Prices({property,cards,onEdit,onChanged}:{property:Row;cards:Approval[]
  return <>
   <dl className="hub-facts">{facts.map(([label,value])=><div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>
   {said&&<p className={'hub-note'+(said.error?' is-error':'')} role={said.error?'alert':'status'}>{said.text}</p>}
-  {card&&<section className="hub-advice" aria-label="Совет AI администратора"><h3><Sparkles size={16} aria-hidden="true"/>{card.kind==='window'?'Окно в календаре':'Совет AI администратора'}</h3><PriceTipBody card={card} busy={busy} onDecide={decide}/></section>}
+  {card&&<section className="hub-advice" aria-label="Совет ИИ-администратора"><h3><Sparkles size={16} aria-hidden="true"/>{card.kind==='window'?'Окно в календаре':'Совет ИИ-администратора'}</h3><PriceTipBody card={card} busy={busy} onDecide={decide}/></section>}
   <button type="button" className="hub-add" onClick={()=>onEdit('prices')}><Wallet size={18} aria-hidden="true"/>Изменить цены</button>
  </>;
 }

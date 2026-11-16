@@ -161,7 +161,9 @@ test('turning the plan on checks the flats first: nothing is charged when none c
 test('«Не могу сегодня» also takes back today\'s accepted offers that are not assigned yet',async()=>{
  const f=await fixture();try{
   await auto(f);await startCleanerPlan(f.cleaner,openRules);
-  f.db.raw.prepare('UPDATE cleaning_jobs SET start=?,end=? WHERE id=?').run(now()+600,now()+1800,f.job.id);
+  // The job has to start today (the service's day, UTC+5), also when the test runs in the last minutes before midnight.
+  const lead=Math.max(1,Math.min(600,Math.floor((86400-(now()+5*3600)%86400)/2)));
+  f.db.raw.prepare('UPDATE cleaning_jobs SET start=?,end=? WHERE id=?').run(now()+lead,now()+lead+1200,f.job.id);
   await coordinateDispatch(f.owner);
   assert.equal(f.db.raw.prepare("SELECT status FROM cleaning_offers WHERE worker_id='cleaner'").get().status,'accepted');
   await awayToday(f.cleaner);

@@ -70,7 +70,7 @@ export function FlatHub({flat,data,now,tab,onOpen,onEdit,onChanged}:Omit<Props,'
   return <View style={f.panel}>
    <View style={f.facts}>{facts.map(([label,value],i)=><View key={label} style={[f.fact,i>0&&f.factLine]}><Text style={h.note}>{label}</Text><Text style={f.factValue}>{value}</Text></View>)}</View>
    {!!said&&<Text accessibilityLiveRegion="polite" style={said.error?h.error:h.note}>{said.text}</Text>}
-   {!!card&&<View style={f.advice}><Text accessibilityRole="header" style={f.adviceTitle}>{card.kind==='window'?'Окно в календаре':'Совет AI администратора'}</Text><PriceTipBody card={card} busy={busy} onDecide={decide}/></View>}
+   {!!card&&<View style={f.advice}><Text accessibilityRole="header" style={f.adviceTitle}>{card.kind==='window'?'Окно в календаре':'Совет ИИ-администратора'}</Text><PriceTipBody card={card} busy={busy} onDecide={decide}/></View>}
    <Action secondary title="Изменить цены" onPress={()=>onEdit('prices')}/>
   </View>;
  }

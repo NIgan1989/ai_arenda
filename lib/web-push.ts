@@ -89,7 +89,7 @@ export async function pushTarget(db:D1Database,userId:string,role:Role,dedupe:st
   const room=await one(db,"SELECT r.id,r.title FROM discussion_rooms r,json_each(r.members) m WHERE r.id=? AND json_extract(m.value,'$.id')=?",ids[0],userId);
   return room?{url:base+'chats?room='+room.id,title:'Сообщение · '+room.title}:{url:base+'chats',title:'Новое сообщение'};
  }
- if(ownerMapKinds.has(kind)||kind==='matching-response'||kind==='stay')return {url:base+'map',title:'AI администратор'};
+ if(ownerMapKinds.has(kind)||kind==='matching-response'||kind==='stay')return {url:base+'map',title:'ИИ-администратор'};
  if(!ids.length)return null;
  const marks=ids.map(()=>'?').join(','),found=await rows(db,`SELECT 0 o,'booking' kind,b.id,p.title,b.guest_id a,p.owner_id b FROM bookings b JOIN properties p ON p.id=b.property_id WHERE b.id IN (${marks})
   UNION ALL SELECT 1,'booking',b.id,p.title,b.guest_id,p.owner_id FROM booking_changes c JOIN bookings b ON b.id=c.booking_id JOIN properties p ON p.id=b.property_id WHERE c.id IN (${marks})

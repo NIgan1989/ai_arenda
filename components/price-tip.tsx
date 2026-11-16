@@ -177,10 +177,10 @@ export function PriceTip({cards,onChanged,onEdit,role='owner'}:{cards:Approval[]
   finally{setBusy(false);}
  }
  function hide(){if(!card)return;const next=[...later,card.id];setLater(next);try{sessionStorage.setItem(hiddenKey,JSON.stringify(next));}catch{}}
- return <aside className={'price-tip '+kind} aria-label={card.risk?'Новая заявка на бронирование':card.cleaningTip?'Совет AI администратора по цене уборки':card.listing?'Совет AI администратора по объявлению':card.forecast?'Прогноз загрузки на неделю от AI администратора':card.stay?'Предложение AI администратора по времени проживания':card.window?'Окно в календаре от AI администратора':'Совет AI администратора по цене'}>
+ return <aside className={'price-tip '+kind} aria-label={card.risk?'Новая заявка на бронирование':card.cleaningTip?'Совет ИИ-администратора по цене уборки':card.listing?'Совет ИИ-администратора по объявлению':card.forecast?'Прогноз загрузки на неделю от ИИ-администратора':card.stay?'Предложение ИИ-администратора по времени проживания':card.window?'Окно в календаре от ИИ-администратора':'Совет ИИ-администратора по цене'}>
   <header className="price-tip-head">
    <span className="price-tip-icon" aria-hidden="true">{card.risk?<CalendarClock size={18}/>:card.forecast?<CalendarDays size={18}/>:card.cleaningTip?<Brush size={18}/>:<Sparkles size={18}/>}</span>
-   <span className="price-tip-title"><small>AI администратор · {card.risk?'новая заявка':card.cleaningTip?'цена уборки':card.listing?card.listing.title.toLocaleLowerCase('ru'):card.forecast?'прогноз на неделю':card.stay?(card.stay.kind==='late'?'поздний выезд':'ранний заезд'):card.window?'окно в календаре':up?'спрос вырос':'спрос снизился'}</small><strong>{card.subject}</strong></span>
+   <span className="price-tip-title"><small>ИИ-администратор · {card.risk?'новая заявка':card.cleaningTip?'цена уборки':card.listing?card.listing.title.toLocaleLowerCase('ru'):card.forecast?'прогноз на неделю':card.stay?(card.stay.kind==='late'?'поздний выезд':'ранний заезд'):card.window?'окно в календаре':up?'спрос вырос':'спрос снизился'}</small><strong>{card.subject}</strong></span>
    <button type="button" className="price-tip-close" aria-label="Позже" title="Позже" onClick={hide}><X size={18}/></button>
   </header>
   <PriceTipBody card={card} busy={busy} onDecide={decide} compact/>

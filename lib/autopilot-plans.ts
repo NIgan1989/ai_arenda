@@ -141,8 +141,8 @@ export async function awayToday(service:RentalService){
  ]);
  const jobs=await rows(service.db,"SELECT id FROM cleaning_jobs WHERE assigned_to=? AND status='assigned' AND start<? AND end>?",service.userId,end,at);
  let released=0;
- for(const j of jobs){try{await declineAssignment(service,{jobId:j.id,reason:'Исполнитель не может выйти сегодня. AI администратор ищет замену.'});released++;}catch(e){if(!(e instanceof DomainError))throw e;}}
- return {message:released?`Сегодняшние уборки (${released}) возвращены владельцам, AI администратор ищет замену. До завтра новые уборки не берём.`:'До завтра ИИ не берёт для вас новые уборки.',released};
+ for(const j of jobs){try{await declineAssignment(service,{jobId:j.id,reason:'Исполнитель не может выйти сегодня. ИИ-администратор ищет замену.'});released++;}catch(e){if(!(e instanceof DomainError))throw e;}}
+ return {message:released?`Сегодняшние уборки (${released}) возвращены владельцам, ИИ-администратор ищет замену. До завтра новые уборки не берём.`:'До завтра ИИ не берёт для вас новые уборки.',released};
 }
 
 // Does this cleaning fit the cleaner's autopilot? Rules, the plan and today's load; a new owner is asked

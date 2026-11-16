@@ -21,7 +21,7 @@ test('шаг, который ИИ сделал сам, остаётся в жу�
  assert.equal(noticeTone(n('owner:administrator-review:j1:3')),'event');
  // Заявка гостя, оплата, отчёт с замечаниями и сообщения людей — события.
  assert.equal(noticeTone(n('owner:booking:b1','Новая заявка на «Студию»')),'event');
- assert.equal(noticeTone(n('owner:booking:b1','AI администратор принял бронь на «Студию»')),'event');
+ assert.equal(noticeTone(n('owner:booking:b1','ИИ-администратор принял бронь на «Студию»')),'event');
  assert.equal(noticeTone(n('owner:administrator-review-issue:j1:3')),'event');
  assert.equal(noticeTone(n('guest:payment:b1')),'event');
  assert.equal(noticeTone({}),'event');
@@ -52,8 +52,8 @@ test('события одной роли, новые первыми, и что �
  // Новая редакция той же задачи заменяет прежнюю: в списке одна строка.
  const task='owner:administrator:["o","booking","b1","checkin","o","owner"]';
  assert.deepEqual(roleEvents([n(task+':1','',now-900),n(task+':2','',now-30),n('owner:booking:b1','',now-600)],'owner').map(v=>v.dedupe),[task+':2','owner:booking:b1']);
- assert.equal(noticeText('AI администратор: Требует внимания. Проверить заселение. Студия'),'Проверить заселение. Студия');
- assert.equal(noticeText('AI администратор: заявка истекла без решения.'),'Заявка истекла без решения.');
+ assert.equal(noticeText('ИИ-администратор: Требует внимания. Проверить заселение. Студия'),'Проверить заселение. Студия');
+ assert.equal(noticeText('ИИ-администратор: заявка истекла без решения.'),'Заявка истекла без решения.');
  assert.equal(noticeText('Новая заявка на «Студию»'),'Новая заявка на «Студию»');assert.equal(noticeText(null),'');
  assert.equal(eventsToday(roleEvents(list,'owner'),now),2);
  const data={bookings:[{id:'b1'}],jobs:[{id:'j1'}]};

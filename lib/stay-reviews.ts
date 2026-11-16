@@ -38,6 +38,6 @@ export async function askForReviews(s:RentalService){
  const due=await rows(s.db,`SELECT b.id,b.guest_id,p.title FROM bookings b JOIN properties p ON p.id=b.property_id JOIN booking_terms t ON t.booking_id=b.id
   WHERE p.owner_id=? AND b.status='completed' AND t.actual_checkout BETWEEN ? AND ? AND NOT EXISTS(SELECT 1 FROM stay_reviews r WHERE r.booking_id=b.id)
   AND NOT EXISTS(SELECT 1 FROM notifications n WHERE n.user_id=b.guest_id AND n.dedupe='guest:review-request:'||b.id)`,s.userId,t-REVIEW_WINDOW+86400,t-REVIEW_ASK_AFTER);
- for(const b of due)await s.notify(b.guest_id,'AI администратор: как прошло проживание в «'+b.title+'»? Оцените его в карточке брони, это займёт пару секунд.','review-request:'+b.id,'guest').run();
+ for(const b of due)await s.notify(b.guest_id,'ИИ-администратор: как прошло проживание в «'+b.title+'»? Оцените его в карточке брони, это займёт пару секунд.','review-request:'+b.id,'guest').run();
  return due.length;
 }

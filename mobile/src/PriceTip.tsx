@@ -124,6 +124,7 @@ function BookingTipBody({card,busy,onDecide}:{card:Approval;busy:boolean;onDecid
    <View style={t.riskHead}><View style={[t.riskDot,{backgroundColor:fg}]}/><Text style={t.riskTitle}>{r.label}</Text>{r.held&&<Text style={t.small}>автоподтверждение остановлено</Text>}</View>
    <Text style={t.riskLine}>{r.reasons.join(' · ')}</Text>
   </View>
+  {!!card.unready&&<Text accessibilityLabel={card.unready} style={[t.riskLine,{color:C.warning}]}>{card.unready}. Подтверждайте, если успеете подготовить.</Text>}
   {card.depositLabel?<><View style={t.actions}>{btn(card.depositLabel,'deposit',true)}</View><View style={[t.actions,{marginTop:8}]}>{btn('Без депозита','accept',false)}{btn(card.rejectLabel,'reject',false)}</View></>
    :<View style={t.actions}>{btn(card.acceptLabel,'accept',true)}<Pressable accessibilityRole="button" accessibilityLabel={card.rejectLabel} disabled={busy} onPress={()=>onDecide('reject')} style={({pressed})=>[t.reject,(busy||pressed)&&t.dim]}><Text style={t.rejectText}>{card.rejectLabel}</Text></Pressable></View>}
  </View>;
@@ -170,10 +171,10 @@ export function PriceTip({cards,onChanged,onEdit,role='owner'}:{cards:Approval[]
   catch(error){setResult({text:error instanceof Error?error.message:'Не получилось. Обновите экран.',error:true});}
   finally{setBusy(false);}
  }
- return <Animated.View style={[t.box,style]} accessibilityLabel={card.risk?'Новая заявка на бронирование':card.cleaningTip?'Совет AI администратора по цене уборки':card.listing?'Совет AI администратора по объявлению':card.forecast?'Прогноз загрузки на неделю от AI администратора':card.stay?'Предложение AI администратора по времени проживания':card.window?'Окно в календаре от AI администратора':'Совет AI администратора по цене'}>
+ return <Animated.View style={[t.box,style]} accessibilityLabel={card.risk?'Новая заявка на бронирование':card.cleaningTip?'Совет ИИ-администратора по цене уборки':card.listing?'Совет ИИ-администратора по объявлению':card.forecast?'Прогноз загрузки на неделю от ИИ-администратора':card.stay?'Предложение ИИ-администратора по времени проживания':card.window?'Окно в календаре от ИИ-администратора':'Совет ИИ-администратора по цене'}>
   <View style={t.head}>
    <View style={t.icon}><Text style={t.iconText}>{card.risk?'◷':card.forecast?'▥':card.listing?'★':card.cleaningTip?'✧':'✦'}</Text></View>
-   <View style={t.titleBox}><Text style={t.small}>{'AI администратор · '+(card.risk?'новая заявка':card.cleaningTip?'цена уборки':card.listing?card.listing.title.toLocaleLowerCase('ru'):card.forecast?'прогноз на неделю':card.stay?(card.stay.kind==='late'?'поздний выезд':'ранний заезд'):card.window?'окно в календаре':card.price?.direction==='up'?'спрос вырос':'спрос снизился')}</Text><Text numberOfLines={1} style={t.title}>{card.subject}</Text></View>
+   <View style={t.titleBox}><Text style={t.small}>{'ИИ-администратор · '+(card.risk?'новая заявка':card.cleaningTip?'цена уборки':card.listing?card.listing.title.toLocaleLowerCase('ru'):card.forecast?'прогноз на неделю':card.stay?(card.stay.kind==='late'?'поздний выезд':'ранний заезд'):card.window?'окно в календаре':card.price?.direction==='up'?'спрос вырос':'спрос снизился')}</Text><Text numberOfLines={1} style={t.title}>{card.subject}</Text></View>
    <Pressable accessibilityRole="button" accessibilityLabel="Позже" onPress={()=>setLater(v=>[...v,card.id])} style={t.close}><Text style={t.closeText}>×</Text></Pressable>
   </View>
   <PriceTipBody card={card} busy={busy} onDecide={decide} compact/>

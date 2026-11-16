@@ -816,7 +816,7 @@ export function SmartGuestMap({ publicMode = false, onChanged, accountId, city, 
           onChange={change}
           onSubmit={submit}
           onAsk={askAdministrator}
-          askLabel={publicMode ? 'Войти и спросить AI' : 'Спросить AI администратора'}
+          askLabel={publicMode ? 'Войти и спросить AI' : 'Спросить ИИ-администратора'}
           ai={!publicMode}
           zoneNotice={draft.near ? zoneNotice || 'Ищем в 5 км от выбранного места.' : ''}
           onLocate={() => void locateZone()}

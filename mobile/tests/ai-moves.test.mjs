@@ -12,7 +12,7 @@ test('the notices the AI leaves are read as moves on what they are about', () =>
   assert.deepEqual(aiMarkOf('cleaner:autopilot-took:c1', 100), {kind: 'cleaning-offer', id: 'c1', move: 'took', at: 100});
   assert.deepEqual(aiMarkOf('cleaner:overdue-remind:j3:999', 100), {kind: 'job', id: 'j3', move: 'reminded', at: 100});
   // A booking the AI confirmed at once, told apart from a new request by its words.
-  assert.deepEqual(aiMarkOf('owner:booking:b7', 100, 'AI администратор принял бронь на «Студия» по вашим правилам.'), {kind: 'booking', id: 'b7', move: 'confirmed', at: 100});
+  assert.deepEqual(aiMarkOf('owner:booking:b7', 100, 'ИИ-администратор принял бронь на «Студия» по вашим правилам.'), {kind: 'booking', id: 'b7', move: 'confirmed', at: 100});
   assert.equal(aiMarkOf('owner:booking:b7', 100, 'Новая заявка на «Студия».'), null);
   // A notice of a person, not of the AI, is not a move.
   assert.equal(aiMarkOf('owner:released:j1:2', 100), null);

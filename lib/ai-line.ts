@@ -16,7 +16,7 @@ export function roleAiLine(role: Role): RoleAiLine {
   if (role === 'owner') return {
     placeholder: 'Что сегодня требует внимания?',
     shortPlaceholder: 'Что требует внимания?',
-    label: 'Вопрос AI администратору',
+    label: 'Вопрос ИИ-администратору',
     chips: [
       { id: 'requests', label: 'Заявки', hint: 'Заявки гостей и отклики исполнителей', href: '/workspace/owner/bookings' },
       { id: 'free-dates', label: 'Календарь', href: '/workspace/owner/calendar' },
@@ -26,7 +26,7 @@ export function roleAiLine(role: Role): RoleAiLine {
   if (role === 'cleaner') return {
     placeholder: 'Есть уборки рядом на сегодня?',
     shortPlaceholder: 'Уборки рядом сегодня?',
-    label: 'Вопрос AI администратору',
+    label: 'Вопрос ИИ-администратору',
     chips: [
       { id: 'jobs-nearby', label: 'Задания рядом', href: '/workspace/cleaner/jobs' },
       { id: 'schedule', label: 'Мой график', href: '/workspace/cleaner/calendar' },

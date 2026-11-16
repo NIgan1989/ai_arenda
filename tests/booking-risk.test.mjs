@@ -60,7 +60,7 @@ test('under autopilot a high risk is not confirmed automatically and goes to the
   const start=now()+3600,r=await f.guest.createBooking({propertyId:f.property,start:iso(start),end:iso(start+7200),guests:1,billingMode:'hourly',requestKey:'risk3',acceptTerms:true,expectedPolicyVersion:policyVersion(f)});
   assert.equal(f.db.raw.prepare('SELECT status FROM bookings WHERE id=?').get(r.id).status,'requested');
   const row=f.db.raw.prepare('SELECT level,held FROM booking_risks WHERE booking_id=?').get(r.id);assert.deepEqual([row.level,row.held],['high',1]);
-  assert.match(f.db.raw.prepare("SELECT body FROM notifications WHERE dedupe=?").get('owner:booking:'+r.id).body,/не подтвердил заявку .* автоматически: риск высокий/);
+  assert.match(f.db.raw.prepare("SELECT body FROM notifications WHERE dedupe=?").get('owner:booking:'+r.id).body,/не подтвердил заявку .* сам: риск высокий/);
   const card=(await f.owner.roleState('owner')).approvals.find(c=>c.id==='booking:'+r.id);assert.equal(card.risk.held,true);
   // The background administrator does not confirm it either, even on a direct delegated call.
   const {RentalService}=await load('service'),pv=policyVersion(f),fee=f.db.raw.prepare('SELECT cleaning_fee FROM property_policies WHERE property_id=?').get(f.property).cleaning_fee;

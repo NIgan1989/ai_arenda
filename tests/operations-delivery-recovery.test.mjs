@@ -96,7 +96,7 @@ test('each Telegram notice gets the buttons of its own card; reports people wrot
 test('a step the AI made alone that asks nothing of the owner is not sent out; a request from a guest is',async()=>{
  const f=await fixture(),fetch=globalThis.fetch,config={WHATSAPP_GATEWAY_URL:'https://gateway.example.test/send',WHATSAPP_GATEWAY_TOKEN:'gateway-token'};try{
   f.db.raw.prepare("INSERT INTO delivery_channels VALUES ('owner','owner','whatsapp','+77770000001',1,?,?)").run(now(),now());
-  await f.owner.notify('owner','AI администратор принял уборку «Студия» по фотоотчёту. Жильё готово к заселению.','administrator-approved:job-1','owner').run();
+  await f.owner.notify('owner','ИИ-администратор принял уборку «Студия» по фотоотчёту. Жильё готово к заселению.','administrator-approved:job-1','owner').run();
   await f.owner.notify('owner','Новая заявка на «Студия».','booking:booking-1','owner').run();
   let calls=0;globalThis.fetch=async()=>{calls++;return Response.json({id:'accepted'});};
   assert.equal((await deliverOutbox(f.db,config)).sent,1);assert.equal(calls,1);

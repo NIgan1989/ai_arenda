@@ -62,7 +62,7 @@ test('a push says what happened and opens the booking, cleaning, flat or chat it
   assert.deepEqual(await pushTarget(f.db,'owner','owner','owner:checkout-reported:'+f.booking),{url:'/workspace/owner/bookings?entity='+f.booking,title:'Бронь · Test apartment'});
   assert.deepEqual(await pushTarget(f.db,'owner','owner','owner:submitted:'+job+':3'),{url:'/workspace/owner/cleaning?entity='+job,title:'Уборка · Test apartment'});
   assert.equal((await pushTarget(f.db,'cleaner','cleaner','cleaner:offer:'+job))?.url,'/workspace/cleaner/jobs?entity='+job);
-  assert.deepEqual(await pushTarget(f.db,'owner','owner','owner:listing:x'),{url:'/workspace/owner/map',title:'AI администратор'});
+  assert.deepEqual(await pushTarget(f.db,'owner','owner','owner:listing:x'),{url:'/workspace/owner/map',title:'ИИ-администратор'});
   assert.equal((await pushTarget(f.db,'owner','owner','owner:stay-review:'+f.property))?.url,'/workspace/owner/properties?entity='+f.property);
   // Someone else's booking, a key of another role or an unknown id never becomes a link.
   assert.equal(await pushTarget(f.db,'other','owner','owner:confirmed:'+f.booking),null);

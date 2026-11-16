@@ -1,3 +1,4 @@
+import {unreadyNote} from './unready';
 import {reliabilityFor} from './reliability';
 import {CHECKIN_LEAD_SECONDS,checkinOpensLabel} from './checkin-window';
 import {assessBookingRisk,riskSignals,saveRiskSql,riskLabel,riskFromRow} from './booking-risk';
@@ -255,7 +256,7 @@ export class RentalService {
     const auditId=id(),r=await this.db.batch([
       this.query("UPDATE administrator_issues SET status='resolved',resolution=?,resolved_at=?,version=version+1 WHERE id=? AND status='open' AND version=?",resolution,now(),issue.id,version),
       this.query('INSERT INTO audit_events SELECT ?,?,?,?,? WHERE changes()>0',auditId,this.userId,issue.entity_id,JSON.stringify({action:'administrator.issue_resolved',issueId:issue.id,resolution}),now()),
-      this.query('INSERT OR IGNORE INTO notifications SELECT ?,?,?,?,?,? WHERE EXISTS(SELECT 1 FROM audit_events WHERE id=?)',id(),issue.opened_by,'AI администратор: по вашему обращению записано решение: '+resolution,issue.opened_role+':issue-resolved:'+issue.id,0,now(),auditId)
+      this.query('INSERT OR IGNORE INTO notifications SELECT ?,?,?,?,?,? WHERE EXISTS(SELECT 1 FROM audit_events WHERE id=?)',id(),issue.opened_by,'ИИ-администратор: по вашему обращению записано решение: '+resolution,issue.opened_role+':issue-resolved:'+issue.id,0,now(),auditId)
     ]);
     if(!r[0].meta.changes)throw new DomainError('Обращение уже изменилось. Обновите карточку.',409);
     return {message:'Решение сохранено, участник получит уведомление внутри сервиса.'};
@@ -512,7 +513,7 @@ export class RentalService {
       return {message:'Состояние жилья сохранено.'+(cancelled?' Отменено броней: '+cancelled+', гости получили сообщение о полном возврате.':'')+(kept?' Броней в силе: '+kept+'. К заезду '+day(upcoming.find((_,i)=>i>=cancelled)?.start||upcoming[0].start)+' снова отметьте «Жильё готово», иначе гость не сможет заселиться.':''),priceSuggestion:null};
     }
     const advice=readiness==='ready'?await this.priceAdviceAfterReady(propertyId):null;
-    return {message:readiness==='ready'?'Готовность жилья подтверждена.'+(advice?' AI администратор предлагает новую цену, решение за вами.':''):'Состояние жилья сохранено.',priceSuggestion:advice};
+    return {message:readiness==='ready'?'Готовность жилья подтверждена.'+(advice?' ИИ-администратор предлагает новую цену, решение за вами.':''):'Состояние жилья сохранено.',priceSuggestion:advice};
   }
   // The flat is ready for the next guest: the moment for the AI administrator's price advice.
   // The advice is optional, so a failure here never undoes the owner's action.
@@ -568,18 +569,20 @@ export class RentalService {
     const risk=assessBookingRisk(await riskSignals(this.db,this.userId,{start,end,billingMode:checked.billingMode,price:Number(owner!.price||0),deposit:checked.policy.deposit}));
     // Under autopilot a high risk is not confirmed automatically: the owner decides.
     risk.held=autoConfirm&&risk.level==='high';
+    // A home not ready with the arrival close: the owner is told in the request, the autopilot leaves the decision to them.
+    const unready=unreadyNote((await this.one('SELECT readiness FROM property_operations WHERE property_id=?',p.id))?.readiness,start,now());
     await this.db.batch([
       this.query('INSERT INTO bookings(id,property_id,guest_id,start,end,occupied_until,guests,amount,status,expires_at,payment_status,request_key,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)',bookingId,p.id,this.userId,start,end,end+p.cleaning_minutes*60,guests,amount,'requested',now()+answer*60,'unpaid',key,now()),
       this.query('INSERT INTO booking_terms(booking_id,billing_mode,rate,units,amount,deposit,deposit_status,house_rules,policy_version,original_end,min_hours) VALUES (?,?,?,?,?,?,?,?,?,?,?)',bookingId,checked.billingMode,checked.price,checked.periods,amount,checked.policy.deposit,checked.policy.deposit?'pending':'not_required',checked.policy.house_rules,checked.policy.version,end,Math.max(1,Number(checked.policy.min_hours)||1)),
-      this.notify(owner!.owner_id,risk.held?`AI администратор не подтвердил заявку на «${checked.title}» автоматически: ${riskLabel.high.toLowerCase()} (${risk.reasons.slice(0,2).join(', ')}). Решите в течение ${minutesLabel(answer)}.`:autoConfirm?`AI администратор принял бронь на «${checked.title}» по вашим правилам. ${riskLabel[risk.level]}.`:`Новая заявка на «${checked.title}». ${riskLabel[risk.level]}. Подтвердите её в течение ${minutesLabel(answer)}.`,`booking:${bookingId}`,'owner'),this.audit(bookingId,'booking.requested'),
+      this.notify(owner!.owner_id,risk.held?`ИИ-администратор не подтвердил заявку на «${checked.title}» сам: ${riskLabel.high.toLowerCase()} (${risk.reasons.slice(0,2).join(', ')}).${unready?' '+unready+'.':''} Решите в течение ${minutesLabel(answer)}.`:autoConfirm&&unready?`ИИ-администратор не подтвердил заявку на «${checked.title}» сам: ${unready[0].toLowerCase()+unready.slice(1)}. Отметьте «Жильё готово», если успеете, или решите сами в течение ${minutesLabel(answer)}.`:autoConfirm?`ИИ-администратор принял бронь на «${checked.title}» по вашим правилам. ${riskLabel[risk.level]}.`:`Новая заявка на «${checked.title}». ${riskLabel[risk.level]}.${unready?' '+unready+'.':''} Подтвердите её в течение ${minutesLabel(answer)}.`,`booking:${bookingId}`,'owner'),this.audit(bookingId,'booking.requested'),
       saveRiskSql(this.db,bookingId,p.id,this.userId,owner!.owner_id,risk),
-      ...(!risk.phone&&risk.level!=='low'&&!(autoConfirm&&!risk.held)?[this.notify(this.userId,'Подтвердите телефон в профиле: владельцу так спокойнее, и заявку на «'+checked.title+'» подтвердят быстрее.','phone-ask:'+bookingId,'guest')]:[])
+      ...(!risk.phone&&risk.level!=='low'&&!(autoConfirm&&!risk.held&&!unready)?[this.notify(this.userId,'Подтвердите телефон в профиле: владельцу так спокойнее, и заявку на «'+checked.title+'» подтвердят быстрее.','phone-ask:'+bookingId,'guest')]:[])
     ]);
     const policy=policyNow!;
-    if(autoConfirm&&!risk.held){
+    if(autoConfirm&&!risk.held&&!unready){
       // The owner was told the AI accepted it; if the confirmation fails after all, the owner decides and is told so.
       try{await new RentalService(this.db,owner!.owner_id,{propertyId:p.id,policyVersion:policy.version}).bookingAction(bookingId,{action:'confirm',cleaningFee:policy.cleaning_fee});}
-      catch(error){if(!(error instanceof DomainError))throw error;await this.notify(owner!.owner_id,`AI администратор не смог подтвердить заявку на «${checked.title}» сам: ${error.message} Решите в течение ${minutesLabel(answer)}.`,`booking-held:${bookingId}`,'owner').run();return {id:bookingId,amount,message:'Заявка отправлена. Интервал зарезервирован на '+minutesLabel(answer)+' до решения владельца.'};}
+      catch(error){if(!(error instanceof DomainError))throw error;await this.notify(owner!.owner_id,`ИИ-администратор не смог подтвердить заявку на «${checked.title}» сам: ${error.message} Решите в течение ${minutesLabel(answer)}.`,`booking-held:${bookingId}`,'owner').run();return {id:bookingId,amount,message:'Заявка отправлена. Интервал зарезервирован на '+minutesLabel(answer)+' до решения владельца.'};}
       return {id:bookingId,amount,message:'Бронь подтверждена автоматически по правилам владельца. Оплата и депозит учитываются отдельно.'};}
     return {id:bookingId,amount,message:'Заявка отправлена. Интервал зарезервирован на '+minutesLabel(answer)+' до решения владельца.'};
   }
@@ -703,7 +706,7 @@ export class RentalService {
         // assignment released below, as before.
         this.query(`INSERT OR IGNORE INTO notifications SELECT ?||id,assigned_to,?,'cleaner:checkout-shift:'||id||':'||version,0,? FROM cleaning_jobs WHERE ${keepCleaner}`,id()+':','Гость освободил «'+b.title+'» позже плана. Уборка остаётся за вами и начинается сейчас. Если не успеваете, откажитесь в карточке задания.',t,...keepArgs),
         this.query(`UPDATE cleaning_jobs SET end=?+(end-start),start=? WHERE ${keepCleaner}`,t,t,...keepArgs),
-        this.query("INSERT OR IGNORE INTO notifications SELECT ?,assigned_to,?,'cleaner:checkout-reschedule:'||id||':'||version,0,? FROM cleaning_jobs WHERE booking_id=? AND status='assigned' AND start<? AND EXISTS(SELECT 1 FROM booking_terms bt JOIN bookings b ON b.id=bt.booking_id WHERE b.id=? AND b.status='completed' AND bt.actual_checkout IS NULL)",id(),'AI администратор: гость освободил жильё позже начала уборки. Прежнее назначение снято; проверьте новое время и откликнитесь заново.',t,bookingId,t-60,bookingId),
+        this.query("INSERT OR IGNORE INTO notifications SELECT ?,assigned_to,?,'cleaner:checkout-reschedule:'||id||':'||version,0,? FROM cleaning_jobs WHERE booking_id=? AND status='assigned' AND start<? AND EXISTS(SELECT 1 FROM booking_terms bt JOIN bookings b ON b.id=bt.booking_id WHERE b.id=? AND b.status='completed' AND bt.actual_checkout IS NULL)",id(),'ИИ-администратор: гость освободил жильё позже начала уборки. Прежнее назначение снято; проверьте новое время и откликнитесь заново.',t,bookingId,t-60,bookingId),
         this.query("UPDATE applications SET status='rejected' WHERE job_id IN(SELECT id FROM cleaning_jobs WHERE booking_id=? AND status IN ('open','assigned') AND start<?) AND EXISTS(SELECT 1 FROM booking_terms bt JOIN bookings b ON b.id=bt.booking_id WHERE b.id=? AND b.status='completed' AND bt.actual_checkout IS NULL)",bookingId,t-60,bookingId),
         this.query("UPDATE cleaning_jobs SET start=?,end=?,assigned_to=NULL,status='open' WHERE booking_id=? AND status IN ('open','assigned') AND start<? AND EXISTS(SELECT 1 FROM booking_terms bt JOIN bookings b ON b.id=bt.booking_id WHERE b.id=? AND b.status='completed' AND bt.actual_checkout IS NULL)",t,t+b.cleaning_minutes*60,bookingId,t-60,bookingId),
         this.query('UPDATE booking_terms SET actual_checkout=? WHERE booking_id=? AND actual_checkout IS NULL AND EXISTS(SELECT 1 FROM bookings WHERE id=? AND status=\'completed\')',t,bookingId,bookingId),this.audit(bookingId,'booking.checkout_confirmed')]);
@@ -1009,10 +1012,10 @@ export class RentalService {
     if(body.action==='approve' && j.owner_id===this.userId) {
       await requireEvidence(this,jobId);
       const approveGate=this.execution?" AND EXISTS(SELECT 1 FROM property_policies WHERE property_id=cleaning_jobs.property_id AND version=? AND auto_assign=1 AND auto_confirm=1 AND (mandate_until=0 OR mandate_until>?))":'';
-      const r=await this.db.batch([this.query("UPDATE cleaning_jobs SET status='completed' WHERE id=? AND status='submitted' AND version=?"+approveGate,jobId,j.version,...(this.execution?[this.execution.policyVersion,now()]:[])),this.query("UPDATE property_operations SET readiness='ready',version=version+1,updated_at=? WHERE property_id=? AND readiness='inspection' AND active_booking_id IS NULL AND EXISTS(SELECT 1 FROM cleaning_jobs WHERE id=? AND status='completed') AND NOT EXISTS(SELECT 1 FROM cleaning_jobs WHERE property_id=? AND (status IN ('in_progress','submitted') OR (status IN ('open','assigned') AND start<=?)))",now(),j.property_id,jobId,j.property_id,now()),this.notify(j.assigned_to,this.execution?'AI администратор принял уборку по фотоотчёту. Расчёт производится с заказчиком отдельно.':'Заказчик принял уборку. Расчёт производится с заказчиком отдельно.','approved:'+jobId,'cleaner'),this.audit(jobId,'job.completed')]);
+      const r=await this.db.batch([this.query("UPDATE cleaning_jobs SET status='completed' WHERE id=? AND status='submitted' AND version=?"+approveGate,jobId,j.version,...(this.execution?[this.execution.policyVersion,now()]:[])),this.query("UPDATE property_operations SET readiness='ready',version=version+1,updated_at=? WHERE property_id=? AND readiness='inspection' AND active_booking_id IS NULL AND EXISTS(SELECT 1 FROM cleaning_jobs WHERE id=? AND status='completed') AND NOT EXISTS(SELECT 1 FROM cleaning_jobs WHERE property_id=? AND (status IN ('in_progress','submitted') OR (status IN ('open','assigned') AND start<=?)))",now(),j.property_id,jobId,j.property_id,now()),this.notify(j.assigned_to,this.execution?'ИИ-администратор принял уборку по фотоотчёту. Расчёт производится с заказчиком отдельно.':'Заказчик принял уборку. Расчёт производится с заказчиком отдельно.','approved:'+jobId,'cleaner'),this.audit(jobId,'job.completed')]);
       if(!r[0].meta.changes) throw new DomainError('Нет отчёта для приёмки.',409);
       const advice=await this.priceAdviceAfterReady(j.property_id);
-      return {message:'Работа принята. Денежные расчёты выполняются отдельно.'+(advice?' AI администратор посмотрел спрос и предлагает новую цену, решение за вами.':''),priceSuggestion:advice};
+      return {message:'Работа принята. Денежные расчёты выполняются отдельно.'+(advice?' ИИ-администратор посмотрел спрос и предлагает новую цену, решение за вами.':''),priceSuggestion:advice};
     }
     if(body.action==='cancel'&&j.owner_id===this.userId){const reason=required(body.reason,'Причина отмены',1000);const r=await this.query("UPDATE cleaning_jobs SET status='cancelled' WHERE id=? AND (status IN ('open','assigned') OR status='in_progress' AND end<=?)",jobId,now()).run();if(!r.meta.changes)throw new DomainError('Начатую работу нельзя отменить этим действием.',409);await this.db.batch([this.audit(jobId,'job.cancelled:'+reason),...(j.assigned_to?[this.notify(j.assigned_to,'Владелец отменил уборку «'+(j.title||'жильё')+'». Причина: '+reason,'cancelled:'+jobId,'cleaner')]:[])]);return {message:'Задание отменено. Готовность жилья нужно проверить отдельно.'};}
     if(body.action==='repost'&&j.owner_id===this.userId||j.status==='open'&&body.action==='close'&&j.owner_id===this.userId)return this.unclaimedAction(j,body);

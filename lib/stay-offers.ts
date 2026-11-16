@@ -115,7 +115,7 @@ export async function decideStayOffer(s:RentalService,offerId:string,accept:bool
   return {message:'Хорошо, время остаётся прежним.'};
  }
  const result=await s.proposeBookingChange(o.booking_id,'guest',{start:iso(o.start),end:iso(o.end),billingMode:o.billing_mode,requestKey:'stay-offer:'+id,expectedAmount:o.amount,baseVersion:o.base_version,policyVersion:o.policy_version,acceptTerms:true,
-  reason:(o.kind==='late'?'Поздний выезд до ':'Ранний заезд с ')+clock(o.kind==='late'?o.end:o.start)+', предложение AI администратора'});
+  reason:(o.kind==='late'?'Поздний выезд до ':'Ранний заезд с ')+clock(o.kind==='late'?o.end:o.start)+', предложение ИИ-администратора'});
  await q(s.db,"UPDATE stay_offers SET status='accepted',decided_at=?,change_id=? WHERE id=? AND status='suggested'",t,result.id,id).run();
  const applied=await one(s.db,"SELECT 1 FROM booking_changes WHERE id=? AND status='accepted'",result.id);
  return {message:applied?(o.kind==='late'?'Готово: выезд до '+clock(o.end)+'. Доплата '+money(o.extra)+'.':'Готово: заезд с '+clock(o.start)+'. Доплата '+money(o.extra)+'.'):'Запрос отправлен владельцу. Как только он подтвердит, время изменится.'};
