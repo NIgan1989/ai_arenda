@@ -79,3 +79,30 @@ test('money owed to the guest stays in front of the owner until it is marked ret
   assert.equal((await threads()).find(x=>x.tag==='Возврат'),undefined);
  }finally{f.db.close();}
 });
+
+test('a refund made before the cancellation is not subtracted twice',async()=>{
+ const {recordFinance}=await load('finance');
+ const f=await fixture();try{
+  await paid(f);
+  await recordFinance(f.owner,{kind:'refund',bookingId:f.booking,amount:1000,confirmed:true,note:'Скидка за неудобство',requestKey:'early-refund'});
+  const r=await f.owner.bookingAction(f.booking,{action:'cancel'});assert.equal(r.cancel.refund,3000);
+  assert.equal(terms(f).refund_due,4000);assert.equal(terms(f).refund_recorded_at,null);
+  await f.owner.bookingAction(f.booking,{action:'record_refund',confirmed:true,expectedVersion:terms(f).version});
+  assert.equal(f.db.raw.prepare("SELECT SUM(amount) n FROM finance_entries WHERE booking_id=? AND kind='refund'").get(f.booking).n,4000);
+  assert.ok(terms(f).refund_recorded_at);
+ }finally{f.db.close();}
+});
+
+test('a late cancellation that leaves nothing to return is settled at once and keeps the agreed minimum hours',async()=>{
+ const f=await fixture();try{
+  await paid(f);
+  // The owner raises the minimum for new requests; this booking was made with two hours.
+  f.db.raw.prepare('UPDATE property_policies SET min_hours=1 WHERE property_id=?').run(f.property);
+  assert.equal(terms(f).min_hours,2);
+  const r=await f.guest.bookingAction(f.booking,{action:'cancel'});assert.equal(r.cancel.withheld,4000);assert.equal(r.cancel.refund,0);
+  assert.equal(terms(f).refund_due,0);assert.ok(terms(f).refund_recorded_at);
+  // Returning the deposit afterwards does not reopen the settled refund.
+  await f.owner.bookingAction(f.booking,{action:'record_deposit_return',confirmed:true,expectedVersion:terms(f).version});
+  assert.ok(terms(f).refund_recorded_at);
+ }finally{f.db.close();}
+});

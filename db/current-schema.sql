@@ -55,7 +55,7 @@
 -- migration 0051_stay_watch.sql sha256:9981630cafef6d62625613245a56085fad063b159e04e500d757b4bac75b03a3
 -- migration 0052_password_reset.sql sha256:2d28c38105f5a7deee30ce46fae9129284eb57f2b46803810eedf808667c7124
 -- migration 0053_ready_after_review.sql sha256:2416de72aefbfe10aa723eedc9b8907124af9329a201f0e016af4bc77877e6ea
--- migration 0054_refund_due.sql sha256:caa9406fee89d5eef6473d5b71062b899d6e6429bbc2728609850dbc83d3bab1
+-- migration 0054_refund_due.sql sha256:42a51d984bbe87d13fd08a774f9969d288e3c9161c5f7634350ab3a5d113f358
 
 -- table access_receipts
 CREATE TABLE access_receipts (id TEXT PRIMARY KEY,property_id TEXT NOT NULL,entity_kind TEXT NOT NULL,entity_id TEXT NOT NULL,user_id TEXT NOT NULL,created_at INTEGER NOT NULL,expires_at INTEGER NOT NULL);
@@ -343,7 +343,7 @@ CREATE TABLE booking_terms (
  deposit_status TEXT NOT NULL DEFAULT 'not_required' CHECK(deposit_status IN ('not_required','pending','owner_verified')),
  house_rules TEXT NOT NULL DEFAULT '', policy_version INTEGER NOT NULL DEFAULT 0,
  actual_checkin INTEGER, actual_checkout INTEGER, checkout_reported_at INTEGER
-, version INTEGER NOT NULL DEFAULT 1, discount_percent INTEGER NOT NULL DEFAULT 0, paid_amount INTEGER NOT NULL DEFAULT 0, original_end INTEGER NOT NULL DEFAULT 0, deposit_returned_at INTEGER, refund_recorded_at INTEGER, checkin_reported_at INTEGER, arrival_eta INTEGER, late_count INTEGER NOT NULL DEFAULT 0, refund_due INTEGER);
+, version INTEGER NOT NULL DEFAULT 1, discount_percent INTEGER NOT NULL DEFAULT 0, paid_amount INTEGER NOT NULL DEFAULT 0, original_end INTEGER NOT NULL DEFAULT 0, deposit_returned_at INTEGER, refund_recorded_at INTEGER, checkin_reported_at INTEGER, arrival_eta INTEGER, late_count INTEGER NOT NULL DEFAULT 0, refund_due INTEGER, min_hours INTEGER);
 
 -- table bookings
 CREATE TABLE `bookings` (
