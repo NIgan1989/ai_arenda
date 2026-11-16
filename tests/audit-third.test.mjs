@@ -1,0 +1,58 @@
+// The third audit: closing a home that guests already booked, and a proposal to change the stay nobody answered.
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import {fixture,load,now,iso} from './helpers/platform.mjs';
+const {checkAdministratorOwner}=await load('administrator-runtime');
+const notes=(f,user,like)=>f.db.raw.prepare('SELECT body FROM notifications WHERE user_id=? AND dedupe LIKE ?').all(user,like).map(n=>n.body);
+
+test('closing a home with a booked stay asks the owner what to do with it',async()=>{
+ const f=await fixture();try{
+  await f.owner.bookingAction(f.booking,{action:'paid'});
+  await assert.rejects(f.owner.readinessAction(f.property,{readiness:'maintenance',note:'Ремонт'}),e=>e.status===409&&/есть брони: 1, ближайший заезд/.test(e.message));
+  assert.equal(f.db.raw.prepare('SELECT readiness FROM property_operations').get().readiness,'inspection','nothing changed without the decision');
+  const kept=await f.owner.readinessAction(f.property,{readiness:'maintenance',note:'Ремонт',bookings:'keep'});
+  assert.match(kept.message,/Броней в силе: 1.*Жильё готово/);
+  assert.equal(f.db.raw.prepare('SELECT status FROM bookings WHERE id=?').get(f.booking).status,'confirmed');
+ }finally{f.db.close();}
+});
+
+test('closing with «cancel» cancels the stays by the owner\'s rule: the guest gets everything back and hears it',async()=>{
+ const f=await fixture();try{
+  await f.owner.bookingAction(f.booking,{action:'paid'});
+  const r=await f.owner.readinessAction(f.property,{readiness:'blocked',note:'Владелец временно закрыл заезды.',bookings:'cancel'});
+  assert.match(r.message,/Отменено броней: 1/);
+  assert.equal(f.db.raw.prepare('SELECT status FROM bookings WHERE id=?').get(f.booking).status,'cancelled');
+  assert.equal(f.db.raw.prepare('SELECT refund_due FROM booking_terms WHERE booking_id=?').get(f.booking).refund_due,4000);
+  assert.ok(f.db.raw.prepare("SELECT body FROM notifications WHERE user_id='guest'").all().some(n=>/Владелец отменил бронь.*вернут всю оплату: 4 000 ₸/.test(n.body)));
+  assert.equal(f.db.raw.prepare('SELECT readiness FROM property_operations').get().readiness,'blocked');
+  // A home with no stays ahead closes in one tap, as before.
+  await f.owner.readinessAction(f.property,{readiness:'maintenance',note:'Ремонт'});
+ }finally{f.db.close();}
+});
+
+async function propose(f,hours,key){
+ const body={start:iso(f.db.raw.prepare('SELECT start FROM bookings WHERE id=?').get(f.booking).start),end:iso(f.db.raw.prepare('SELECT start FROM bookings WHERE id=?').get(f.booking).start+hours*3600),billingMode:'hourly'};
+ const q=await f.guest.bookingChangeQuote(f.booking,'guest',body);
+ return f.guest.proposeBookingChange(f.booking,'guest',{...body,requestKey:key,expectedAmount:q.amount,baseVersion:q.baseVersion,policyVersion:q.policyVersion,acceptTerms:true,reason:'Планы изменились'});
+}
+
+test('a proposal nobody answered expires with a word to both sides',async()=>{
+ const f=await fixture();try{
+  const r=await propose(f,3,'longer');assert.match(r.message,/ответ ждём 15 мин/);
+  const row=f.db.raw.prepare('SELECT expires_at-created_at ttl FROM booking_changes WHERE id=?').get(r.id);assert.equal(row.ttl,900);
+  f.db.raw.prepare('UPDATE booking_changes SET expires_at=? WHERE id=?').run(now()-5,r.id);
+  await checkAdministratorOwner(f.db,'owner');
+  assert.equal(f.db.raw.prepare('SELECT status FROM booking_changes WHERE id=?').get(r.id).status,'expired');
+  assert.match(notes(f,'guest','%change-expired:%')[0],/не ответили вовремя.*прежние даты/);
+  assert.match(notes(f,'owner','%change-expired:%')[0],/истекло без ответа/);
+ }finally{f.db.close();}
+});
+
+test('a stay paid for more than the new price is not shortened: the guest hears why before the owner is asked (as before)',async()=>{
+ const f=await fixture();try{
+  const longer=await propose(f,3,'longer');await f.owner.decideBookingChange(f.booking,longer.id,'owner',{action:'accept'});
+  f.db.raw.prepare("UPDATE booking_terms SET paid_amount=6000 WHERE booking_id=?").run(f.booking);
+  await assert.rejects(propose(f,2,'shorter'),e=>e.status===409&&/Новая сумма меньше подтверждённой оплаты/.test(e.message));
+  assert.equal(f.db.raw.prepare("SELECT COUNT(*) n FROM booking_changes WHERE status='pending'").get().n,0);
+ }finally{f.db.close();}
+});

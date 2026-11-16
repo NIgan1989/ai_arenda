@@ -20,7 +20,7 @@ import { baseQuestions,cleanerQuestions,date,empty,labels,money,parseDate,proper
 import { C,s } from './src/styles';
 import {ActivityClockProvider,ActivityTimer} from './src/ActivityTimer';
 import {ApprovalCard,ApprovalInbox} from './src/ApprovalCard';
-import {PropertyControl,readinessLabels} from './src/PropertyControl';
+import {PropertyControl,upcomingStays,readinessLabels} from './src/PropertyControl';
 import {BookingChanges} from './src/BookingChanges';
 import {StayReview} from './src/StayReview';
 import {StayHandover,CheckinPhotos,StayEvidence,handoverLine} from './src/StayHandover';
@@ -443,7 +443,7 @@ function Chat(){
     const payload=m.payload||{};
     if(m.block==='approval')return approval(payload.id);
     if(m.block==='assistant-brief')return renderAssistantBrief();
-    if(m.block==='property-settings'){const property=data.ownProperties.find((p:Row)=>p.id===payload.id);return property?<PropertyControl key={property.id+':'+property.policy.version} property={property} busy={busy} onSave={body=>perform('properties/'+property.id+'/policy',body,m.id)} onReadiness={body=>perform('properties/'+property.id+'/readiness',body,m.id)}/>:null;}
+    if(m.block==='property-settings'){const property=data.ownProperties.find((p:Row)=>p.id===payload.id);return property?<PropertyControl key={property.id+':'+property.policy.version} property={property} busy={busy} onSave={body=>perform('properties/'+property.id+'/policy',body,m.id)} upcoming={upcomingStays(data.bookings,property.id,data.serverTime||Date.now()/1000)} onReadiness={body=>perform('properties/'+property.id+'/readiness',body,m.id)}/>:null;}
     if(m.block==='workspace'){
       const target=payload.role||actor,workspace=data.workspaces?.[target];
       if(!workspace)return <View style={s.card}><Text style={s.meta}>Обновите данные, чтобы увидеть ближайшие события.</Text><Button title="Обновить" secondary disabled={busy} onPress={()=>send('Ближайшие события')}/></View>;
@@ -487,7 +487,7 @@ function Chat(){
           !owner&&confirmed&&data.paymentMode==='test'&&due>0&&{title:'Оплатить '+money(due),kind:'main',onPress:()=>perform('operations/payment-test',{bookingId:id,kind:'all'},uid())},
           !owner&&confirmed&&!b.terms?.actual_checkin&&!b.terms?.checkin_reported_at&&b.end>data.serverTime&&{title:'Я заселился',kind:'main',onPress:()=>confirm('bookings/'+id,{action:'report_checkin'},'Сообщить, что вы заселились; заселение подтвердится после проверки оплаты и депозита'),...(checkinOpen(b.start,data.serverTime)?{}:{disabled:true,note:'Кнопка станет активной за 15 минут до заезда: '+checkinOpensLabel(b.start,data.serverTime)+'.'})},
           !owner&&confirmed&&!b.terms?.actual_checkin&&!b.terms?.checkin_reported_at&&lateOpen(lateStay(b),data.serverTime)&&{title:lateLabel(lateStay(b)),kind:'main',onPress:()=>confirm('bookings/'+id,{action:'report_late'},'Предупредить владельца, что вы приедете на час позже; бронь сохранится'),...(lateNote(lateStay(b),data.serverTime)?{note:lateNote(lateStay(b),data.serverTime)}:{})},
-          !owner&&confirmed&&started&&!b.terms?.checkout_reported_at&&{title:'Сообщить о выезде',kind:'main',onPress:()=>confirm('bookings/'+id,{action:'report_checkout'},'Сообщить владельцу о выезде; освобождение жилья потребует проверки')},
+          !owner&&confirmed&&started&&!b.terms?.checkout_reported_at&&{title:'Сообщить о выезде',kind:'main',onPress:()=>confirm('bookings/'+id,{action:'report_checkout'},'Сообщить о выезде? Владелец или ИИ-администратор подтвердит его.')},
           {title:'Открыть чат',kind:'side',onPress:()=>{setChatInitial({kind:'booking',entityId:id,channel:'stay'});setPageId('chats');}},
           (confirmed||b.status==='completed'&&(owner||!!b.terms?.deposit_kept||b.handover?.verdict==='issues'))&&{title:'Есть проблема',kind:'side',onPress:()=>raiseIssue('booking',id,actor)},
           ['requested','confirmed'].includes(b.status)&&!b.terms?.actual_checkin&&{title:'Отменить бронь',kind:'danger',onPress:()=>confirm('bookings/'+id,{action:'cancel'},'Отменить бронь',undefined,cancelLine(b.cancel_terms,owner,b.terms?.paid_amount||0)+'.')},

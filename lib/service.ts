@@ -495,10 +495,22 @@ export class RentalService {
     if(!['ready','inspection','maintenance','blocked'].includes(readiness))throw new DomainError('Недопустимое состояние.');
     if((readiness==='ready'||readiness==='inspection')&&op.active_booking_id)throw new DomainError('Сначала подтвердите выезд проживающего гостя.',409);
     if(readiness==='ready'&&body.inspected!==true)throw new DomainError('Подтвердите, что уборка и проверка жилья выполнены.');
+    // Closing a home that guests already booked: the owner decides about those stays first. Kept stays remain valid
+    // (the home has to be ready again by the arrival); cancelled ones follow the owner's cancellation rule, a full refund.
+    const closing=readiness==='maintenance'||readiness==='blocked';
+    const upcoming=closing?await this.all("SELECT b.id,b.start FROM bookings b LEFT JOIN booking_terms t ON t.booking_id=b.id WHERE b.property_id=? AND (b.status='confirmed' OR (b.status='requested' AND b.expires_at>?)) AND b.end>? AND t.actual_checkin IS NULL ORDER BY b.start",propertyId,now(),now()):[];
+    const day=(v:number)=>new Intl.DateTimeFormat('ru-RU',{day:'numeric',month:'long',hour:'2-digit',minute:'2-digit',timeZone:'Asia/Almaty'}).format(new Date(v*1000));
+    if(upcoming.length&&body.bookings!=='keep'&&body.bookings!=='cancel')throw new DomainError('У жилья есть брони: '+upcoming.length+', ближайший заезд '+day(upcoming[0].start)+'. Решите, оставить их в силе или отменить с полным возвратом гостям.',409);
     const pending=await this.one("SELECT id FROM cleaning_jobs WHERE property_id=? AND (status IN ('in_progress','submitted') OR (status IN ('open','assigned') AND start<=?))",propertyId,now());
     if(readiness==='ready'&&pending)throw new DomainError('Сначала завершите и примите запланированную уборку.',409);
     const result=await this.db.batch([this.query('UPDATE property_operations SET readiness=?,note=?,version=version+1,updated_at=? WHERE property_id=? AND version=?',readiness,note,now(),propertyId,body.expectedVersion===undefined?op.version:number(body.expectedVersion,'Версия состояния',1,10000000)),this.audit(propertyId,'property.readiness_requested')]);
     if(!result[0].meta.changes)throw new DomainError('Состояние уже изменилось. Обновите карточку.',409);
+    if(upcoming.length){
+      let cancelled=0;
+      if(body.bookings==='cancel')for(const b of upcoming){try{await this.bookingAction(b.id,{action:'cancel',reason:note});cancelled++;}catch(error){if(!(error instanceof DomainError))throw error;}}
+      const kept=upcoming.length-cancelled;
+      return {message:'Состояние жилья сохранено.'+(cancelled?' Отменено броней: '+cancelled+', гости получили сообщение о полном возврате.':'')+(kept?' Броней в силе: '+kept+'. К заезду '+day(upcoming.find((_,i)=>i>=cancelled)?.start||upcoming[0].start)+' снова отметьте «Жильё готово», иначе гость не сможет заселиться.':''),priceSuggestion:null};
+    }
     const advice=readiness==='ready'?await this.priceAdviceAfterReady(propertyId):null;
     return {message:readiness==='ready'?'Готовность жилья подтверждена.'+(advice?' AI администратор предлагает новую цену, решение за вами.':''):'Состояние жилья сохранено.',priceSuggestion:advice};
   }
@@ -626,7 +638,7 @@ export class RentalService {
     if(body.action==='report_checkout'){
       if(b.guest_id!==this.userId)throw new DomainError('Сообщить о выезде может гость.',403);
       if(b.status!=='confirmed'||b.start>now())throw new DomainError('Проживание ещё не началось или уже завершено.',409);
-      await this.db.batch([this.query('UPDATE booking_terms SET checkout_reported_at=?,version=version+1 WHERE booking_id=? AND checkout_reported_at IS NULL',now(),bookingId),this.notify(b.owner_id,'Гость сообщил о выезде. Проверьте освобождение жилья.','checkout-reported:'+bookingId,'owner'),this.audit(bookingId,'booking.checkout_reported')]);return {message:'Сообщение о выезде сохранено. Ожидаем подтверждения освобождения жилья.'};
+      await this.db.batch([this.query('UPDATE booking_terms SET checkout_reported_at=?,version=version+1 WHERE booking_id=? AND checkout_reported_at IS NULL',now(),bookingId),this.notify(b.owner_id,'Гость сообщил о выезде. Проверьте освобождение жилья.','checkout-reported:'+bookingId,'owner'),this.audit(bookingId,'booking.checkout_reported')]);return {message:'Спасибо, выезд отмечен. Владелец подтвердит его; если он не ответит за полчаса, ИИ-администратор подтвердит сам.'};
     }
     if(body.action==='report_late'){
       if(b.guest_id!==this.userId)throw new DomainError('Сообщить о задержке может гость.',403);
@@ -816,12 +828,14 @@ export class RentalService {
     if(body.expectedAmount!==q.amount||body.baseVersion!==q.baseVersion||body.policyVersion!==q.policyVersion)throw new DomainError('Условия изменились. Повторите расчёт.',409);
     if(body.acceptTerms!==true)throw new DomainError('Подтвердите согласие с рассчитанными условиями.');
     const reason=required(body.reason,'Причина изменения',1000),changeId=id(),{b}=await this.changeContext(bookingId,role);
+    // The other side gets the same time to answer as the owner has for a booking request (15 minutes unless the owner chose another).
+    const wait=(await ruleFor(this.db,b.owner_id,'request')).minutes;
     await this.db.batch([
-      this.query('INSERT INTO booking_changes(id,booking_id,proposed_by,proposer_role,request_key,base_version,policy_version,start,end,occupied_until,billing_mode,rate,units,discount_percent,amount,reason,expires_at,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',changeId,bookingId,this.userId,role,key,q.baseVersion,q.policyVersion,q.start,q.end,q.occupiedUntil,q.billingMode,q.rate,q.units,q.discountPercent,q.amount,reason,now()+900,now()),
+      this.query('INSERT INTO booking_changes(id,booking_id,proposed_by,proposer_role,request_key,base_version,policy_version,start,end,occupied_until,billing_mode,rate,units,discount_percent,amount,reason,expires_at,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',changeId,bookingId,this.userId,role,key,q.baseVersion,q.policyVersion,q.start,q.end,q.occupiedUntil,q.billingMode,q.rate,q.units,q.discountPercent,q.amount,reason,now()+wait*60,now()),
       this.notify(role==='owner'?b.guest_id:b.owner_id,'Предложено изменение проживания. Проверьте даты и стоимость в брони.','change:'+changeId,role==='owner'?'guest':'owner'),this.audit(bookingId,'booking.change_proposed:'+changeId)
     ]);
     if(q.automatic){try{const result=await new RentalService(this.db,b.owner_id).decideBookingChange(bookingId,changeId,'owner',{action:'accept'},true);return {id:changeId,...result};}catch(error){if(!(error instanceof DomainError))throw error;}}
-    return {id:changeId,message:'Предложение сохранено на 15 минут. Текущие даты действуют до согласия второй стороны; новый интервал пока не зарезервирован.'};
+    return {id:changeId,message:'Предложение отправлено, ответ ждём '+minutesLabel(wait)+'. Пока вторая сторона не согласилась, действуют прежние даты.'};
   }
   async decideBookingChange(bookingId:string,changeId:string,roleValue:unknown,body:Row,automatic=false){
     const {role,b,terms,policy}=await this.changeContext(bookingId,roleValue),c=await this.one('SELECT * FROM booking_changes WHERE id=? AND booking_id=?',changeId,bookingId);

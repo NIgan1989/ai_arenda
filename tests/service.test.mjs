@@ -210,7 +210,7 @@ test('checkout report, maintenance and missing consent block changes without fre
   const f=await changeFixture();try{
     const q=await f.g.bookingChangeQuote(f.b.id,'guest',{...f.request,end:iso(start+90000000)});
     await assert.rejects(f.g.proposeBookingChange(f.b.id,'guest',{...f.request,acceptTerms:false,end:iso(start+90000000),requestKey:'no-consent',expectedAmount:q.amount,baseVersion:q.baseVersion,policyVersion:q.policyVersion,reason:'Test'}),/согласие/);
-    await f.o.readinessAction(f.propertyId,{expectedVersion:1,readiness:'maintenance',note:'Lock repair'});
+    await f.o.readinessAction(f.propertyId,{expectedVersion:1,readiness:'maintenance',note:'Lock repair',bookings:'keep'});
     await assert.rejects(f.g.bookingChangeQuote(f.b.id,'guest',{...f.request,end:iso(start+90000000)}),/закрыты/);
     f.database.db.prepare('UPDATE booking_terms SET checkout_reported_at=unixepoch() WHERE booking_id=?').run(f.b.id);
     await assert.rejects(f.g.bookingChangeQuote(f.b.id,'guest',{...f.request,end:iso(start+90000000)}),/сообщения о выезде/);
