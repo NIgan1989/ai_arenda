@@ -402,7 +402,7 @@ export class RentalService {
       this.all("SELECT f.booking_id,SUM(CASE WHEN f.kind='deposit' THEN f.amount ELSE 0 END) deposit_received,SUM(CASE WHEN f.kind='deposit_return' THEN f.amount ELSE 0 END) deposit_returned,SUM(CASE WHEN f.kind='refund' THEN f.amount ELSE 0 END) refunded FROM finance_entries f JOIN bookings b ON b.id=f.booking_id JOIN properties p ON p.id=b.property_id WHERE b.guest_id=? OR p.owner_id=? GROUP BY f.booking_id",this.userId,this.userId),
       this.all("SELECT f.job_id,SUM(f.amount) paid FROM finance_entries f JOIN cleaning_jobs j ON j.id=f.job_id WHERE f.kind='job_payment' AND (j.owner_id=? OR j.assigned_to=?) GROUP BY f.job_id",this.userId,this.userId)
     ]);
-    const enrichedTerms:Row[]=terms.map(t=>{const f=financeBalances.find(f=>f.booking_id===t.booking_id),received=f?.deposit_received??(t.deposit_status==='owner_verified'?t.deposit:0),returned=f?.deposit_returned??(t.deposit_returned_at?t.deposit:0);return {...t,deposit_received_amount:received,deposit_returned_amount:returned,deposit_balance:Math.max(0,received-returned),refunded_amount:f?.refunded||0};});
+    const enrichedTerms:Row[]=terms.map(t=>{const f=financeBalances.find(f=>f.booking_id===t.booking_id),received=f?.deposit_received??(t.deposit_status==='owner_verified'?t.deposit:0),returned=f?.deposit_returned??(t.deposit_returned_at?t.deposit:0);return {...t,deposit_received_amount:received,deposit_returned_amount:returned,deposit_balance:Math.max(0,received-returned-(Number(t.deposit_kept)||0)),refunded_amount:f?.refunded||0};});
     const policyFor=(p:Row)=>policies.find(v=>v.property_id===p.id)||defaultPolicy;
     // What cancelling right now would cost, for the card: the same rule the cancel action applies.
     const cancelFor=(b:Row)=>{const t=enrichedTerms.find(v=>v.booking_id===b.id);if(!t||!['requested','confirmed'].includes(b.status)||t.actual_checkin)return null;return cancellationTerms({by:b.owner_id===this.userId?'owner':'guest',status:b.status,mode:t.billing_mode,rate:t.rate,units:t.units,amount:b.amount,paid:t.paid_amount,deposit:t.deposit_status==='owner_verified'?t.deposit:0,start:b.start,minHours:t.min_hours||policies.find(v=>v.property_id===b.property_id)?.min_hours||1,at:serverTime});};
@@ -587,9 +587,26 @@ export class RentalService {
       const balance=await this.one("SELECT COALESCE(SUM(CASE WHEN kind=? THEN amount WHEN kind=? THEN -amount ELSE 0 END),0) n FROM finance_entries WHERE booking_id=?",deposit?'deposit':'payment',deposit?'deposit_return':'refund',bookingId),remaining=balance?.n||0;
       // After a cancellation the guest is owed what the offer's rules left, not always everything paid.
       const refunded=deposit||terms?.refund_due==null?0:(await this.one("SELECT COALESCE(SUM(amount),0) n FROM finance_entries WHERE booking_id=? AND kind='refund'",bookingId))?.n||0;
-      const due=deposit||terms?.refund_due==null?remaining:Math.min(remaining,Math.max(0,terms.refund_due-refunded));
+      const due=deposit?Math.max(0,remaining-(Number(terms?.deposit_kept)||0)):terms?.refund_due==null?remaining:Math.min(remaining,Math.max(0,terms.refund_due-refunded));
       if(!due)return {message:'Расчёт уже полностью отмечен.'};
       return recordFinance(this,{kind:deposit?'deposit_return':'refund',bookingId,amount:due,confirmed:true,note,requestKey:body.action+':'+bookingId+':'+terms?.version});
+    }
+    // Damage found after the stay: the owner keeps a part of the deposit once, says why, and returns the rest.
+    // The guest sees the sum and the reason and can object through «Есть проблема».
+    if(body.action==='keep_deposit'){
+      if(!owner)throw new DomainError('Удержание из депозита отмечает владелец.',403);
+      if(b.status!=='completed'||terms?.deposit_status!=='owner_verified')throw new DomainError('Удержать часть депозита можно после выезда гостя, пока депозит у вас.',409);
+      if(terms.deposit_kept)throw new DomainError('Удержание по этой брони уже отмечено.',409);
+      await migrateFinanceEntity(this,'booking',bookingId);
+      const left=(await this.one("SELECT COALESCE(SUM(CASE WHEN kind='deposit' THEN amount WHEN kind='deposit_return' THEN -amount ELSE 0 END),0) n FROM finance_entries WHERE booking_id=?",bookingId))?.n||0;
+      if(!left)throw new DomainError('Депозит уже возвращён полностью.',409);
+      const amount=number(body.amount,'Сумма удержания',1,left),reason=required(body.reason,'Причина удержания',1000),t=now(),money=(n:number)=>n.toLocaleString('ru-RU').replace(/\u00a0|\u202f/g,' ')+' ₸';
+      const r=await this.db.batch([
+        this.query("UPDATE booking_terms SET deposit_kept=?,deposit_kept_note=?,deposit_returned_at=CASE WHEN ?>=? THEN ? ELSE deposit_returned_at END,version=version+1 WHERE booking_id=? AND deposit_kept=0 AND version=?",amount,reason,amount,left,t,bookingId,terms.version),
+        this.notify(b.guest_id,'Владелец удержал из депозита за «'+b.title+'» '+money(amount)+'. Причина: '+reason+(left>amount?' Остальное, '+money(left-amount)+', он вернёт.':'')+' Если не согласны, нажмите «Есть проблема» в брони.',`deposit-kept:${bookingId}`,'guest'),
+        this.audit(bookingId,'booking.deposit_kept:'+amount)]);
+      if(!r[0].meta.changes)throw new DomainError('Бронь изменилась. Обновите карточку.',409);
+      return {message:'Удержание '+money(amount)+' отмечено, гость видит причину.'+(left>amount?' Верните гостю остаток: '+money(left-amount)+'.':'')};
     }
     if(body.action==='deposit_received'){
       if(!owner)throw new DomainError('Депозит подтверждает владелец.',403);

@@ -2,6 +2,7 @@ import {epoch,uuid,q,rows,type OperationConfig} from './operation-core';
 import {arrivalDue} from './late-arrival';
 import {assertCalendarAvailable} from './external-calendar';
 import {ruleFor,minutesLabel,type RuleKey,type RuleValue} from './decision-rules';
+import {cancellationTerms} from './cancellation';
 type Row=Record<string,any>; // eslint-disable-line @typescript-eslint/no-explicit-any
 
 // The AI administrator keeps a stay moving when a person is silent past a deadline. Every deadline follows the same
@@ -32,12 +33,19 @@ export function payDue(b:{start:number;created_at:number}){return Math.max(Numbe
 // A step counts only for the deadline it was taken for: a stay moved to other dates or times starts over.
 const PAY_FOR='MAX(b.start,b.created_at+'+PAY_MIN_WINDOW+')',ARRIVAL_FOR='MAX(b.start,COALESCE(t.arrival_eta,0))',CHECKOUT_FOR='b.end';
 const PAY_STEP=`CASE WHEN w.pay_for=${PAY_FOR} THEN w.pay_step ELSE 0 END`,ARRIVAL_STEP=`CASE WHEN w.arrival_for=${ARRIVAL_FOR} THEN w.arrival_step ELSE 0 END`,CHECKOUT_STEP=`CASE WHEN w.checkout_for=${CHECKOUT_FOR} THEN w.checkout_step ELSE 0 END`;
-const STAY_SQL=`SELECT b.id,b.property_id,b.guest_id,b.start,b.end,b.created_at,b.payment_status,p.owner_id,p.title,
+const STAY_SQL=`SELECT b.id,b.property_id,b.guest_id,b.start,b.end,b.created_at,b.payment_status,b.amount,p.owner_id,p.title,
+ t.rate,t.units,t.deposit,t.deposit_status,COALESCE(t.min_hours,(SELECT pp.min_hours FROM property_policies pp WHERE pp.property_id=b.property_id),1) min_hours,
  t.billing_mode,t.paid_amount,t.actual_checkin,t.actual_checkout,t.checkin_reported_at,t.checkout_reported_at,t.arrival_eta,t.late_count,
  ${PAY_STEP} pay_step,${ARRIVAL_STEP} arrival_step,${CHECKOUT_STEP} checkout_step,
  EXISTS(SELECT 1 FROM property_policies pp WHERE pp.property_id=b.property_id AND pp.auto_confirm=1 AND pp.auto_assign=1 AND (pp.mandate_until=0 OR pp.mandate_until>?1)) autopilot
  FROM bookings b JOIN properties p ON p.id=b.property_id JOIN booking_terms t ON t.booking_id=b.id LEFT JOIN stay_watch w ON w.booking_id=b.id`;
 
+// A stay the AI released is settled like a cancellation (lib/cancellation.ts): how much the guest gets back is written
+// once, so the owner is asked to return exactly that and not everything paid. Nothing to return closes the matter.
+const REFUNDS="COALESCE((SELECT SUM(amount) FROM finance_entries WHERE booking_id=booking_terms.booking_id AND kind='refund'),0)";
+const settle=(db:D1Database,id:string,refund:number,at:number)=>q(db,`UPDATE booking_terms SET refund_due=?+${REFUNDS},refund_recorded_at=CASE WHEN ?=0 THEN ? ELSE NULL END
+ WHERE booking_id=? AND refund_due IS NULL AND EXISTS(SELECT 1 FROM bookings WHERE id=? AND status='cancelled')`,refund,refund,at,id,id);
+const tenge=(n:number)=>n.toLocaleString('ru-RU').replace(/\u00a0|\u202f/g,' ')+' ₸';
 // The step is kept in one row per stay with the deadline it was taken for; a step is taken only by the sweep that
 // moves it on, and a new deadline starts the step over from 0.
 type Field='pay'|'arrival'|'checkout';
@@ -72,7 +80,7 @@ async function payments(db:D1Database,at:number,result:Row,rule:Rules){
    const r=await db.batch([
     q(db,"UPDATE bookings SET status='cancelled' WHERE id=? AND status='confirmed' AND payment_status<>'owner_verified' AND NOT EXISTS(SELECT 1 FROM booking_terms WHERE booking_id=? AND (actual_checkin IS NOT NULL OR checkin_reported_at IS NOT NULL OR paid_amount>0)) AND NOT EXISTS(SELECT 1 FROM property_operations WHERE property_id=? AND active_booking_id=?)",b.id,b.id,b.property_id,b.id),
     q(db,"UPDATE cleaning_jobs SET status='cancelled' WHERE booking_id=? AND status IN ('open','assigned') AND EXISTS(SELECT 1 FROM bookings WHERE id=? AND status='cancelled')",b.id,b.id),
-    step(db,b.id,'pay',due,s,3,at),
+    step(db,b.id,'pay',due,s,3,at),settle(db,b.id,0,at),
     q(db,"INSERT OR IGNORE INTO notifications SELECT ?,?,?,?,0,? WHERE EXISTS(SELECT 1 FROM bookings WHERE id=? AND status='cancelled')",uuid(),b.guest_id,'ИИ-администратор снял бронь «'+title+'»: оплата не поступила в срок. Если жильё ещё свободно, его можно забронировать заново.','guest:stay-unpaid-released:'+b.id+':'+due,at,b.id),
     q(db,"INSERT OR IGNORE INTO notifications SELECT ?,?,?,?,0,? WHERE EXISTS(SELECT 1 FROM bookings WHERE id=? AND status='cancelled')",uuid(),b.owner_id,'ИИ-администратор снял неоплаченную бронь «'+title+'». Жильё снова свободно на эти даты.','owner:stay-unpaid-released:'+b.id+':'+due,at,b.id),
     q(db,"INSERT INTO audit_events SELECT ?,'ai-administrator',?,'booking.unpaid_released',? WHERE EXISTS(SELECT 1 FROM bookings WHERE id=? AND status='cancelled')",uuid(),b.id,at,b.id)]);
@@ -94,6 +102,34 @@ async function payments(db:D1Database,at:number,result:Row,rule:Rules){
  }
 }
 
+// Not coming is a late cancellation by the guest: the owner keeps the first day, night or the minimum hours.
+function noShowTerms(b:Row,at:number){
+ const c=cancellationTerms({by:'guest',status:'confirmed',mode:b.billing_mode||'daily',rate:Number(b.rate)||0,units:Number(b.units)||1,amount:Number(b.amount)||0,paid:Number(b.paid_amount)||0,deposit:b.deposit_status==='owner_verified'?Number(b.deposit)||0:0,start:b.start,minHours:Number(b.min_hours)||1,at});
+ const deposit=c.deposit?' Депозит '+tenge(c.deposit)+' возвращается полностью.':'';
+ const forGuest=c.withheld?'По правилам отмены владельцу остаётся '+tenge(c.withheld)+(c.refund?', вам вернут '+tenge(c.refund):'')+'.'+deposit:c.refund?'Вам вернут всю оплату: '+tenge(c.refund)+'.'+deposit:deposit.trim();
+ const forOwner=c.withheld?'По правилам отмены у вас остаётся '+tenge(c.withheld)+(c.refund?', гостю нужно вернуть '+tenge(c.refund):'')+'.'+deposit:c.refund?'Верните гостю всю оплату: '+tenge(c.refund)+'.'+deposit:deposit.trim();
+ return {c,forGuest,forOwner};
+}
+
+// The time of a stay is over and nobody checked in or said they were inside: there is nothing left to wait for, with
+// or without the autopilot. The stay is closed as a no-show, its cleaning is not needed, the money follows the rules.
+async function emptyEnded(db:D1Database,at:number,result:Row){
+ const list:Row[]=await rows(db,STAY_SQL+` WHERE b.status='confirmed' AND t.actual_checkin IS NULL AND t.checkin_reported_at IS NULL AND t.actual_checkout IS NULL AND b.end<=?1
+  AND NOT EXISTS(SELECT 1 FROM property_operations o WHERE o.property_id=b.property_id AND o.active_booking_id=b.id) ORDER BY b.end LIMIT 50`,at);
+ for(const b of list){
+  const title=b.title||'жильё',{c,forGuest,forOwner}=noShowTerms(b,at),done="EXISTS(SELECT 1 FROM bookings WHERE id=? AND status='cancelled')";
+  const r=await db.batch([
+   q(db,"UPDATE bookings SET status='cancelled' WHERE id=? AND status='confirmed' AND end<=? AND NOT EXISTS(SELECT 1 FROM booking_terms WHERE booking_id=? AND (actual_checkin IS NOT NULL OR checkin_reported_at IS NOT NULL)) AND NOT EXISTS(SELECT 1 FROM property_operations WHERE property_id=? AND active_booking_id=?)",b.id,at,b.id,b.property_id,b.id),
+   q(db,`INSERT OR IGNORE INTO notifications SELECT ?||j.id,j.assigned_to,?,'cleaner:booking-cancelled:'||j.id,0,? FROM cleaning_jobs j WHERE j.booking_id=? AND j.status='assigned' AND j.assigned_to IS NOT NULL AND ${done}`,uuid()+':','Гость не приехал в «'+title+'», уборка после этой брони не нужна. Задание снято.',at,b.id,b.id),
+   q(db,`UPDATE cleaning_jobs SET status='cancelled' WHERE booking_id=? AND status IN ('open','assigned') AND ${done}`,b.id,b.id),
+   settle(db,b.id,c.refund,at),
+   q(db,`INSERT OR IGNORE INTO notifications SELECT ?,?,?,?,0,? WHERE ${done}`,uuid(),b.guest_id,('ИИ-администратор: время брони «'+title+'» прошло, заселения не было. Бронь закрыта. '+forGuest).trim(),'guest:stay-no-show:'+b.id,at,b.id),
+   q(db,`INSERT OR IGNORE INTO notifications SELECT ?,?,?,?,0,? WHERE ${done}`,uuid(),b.owner_id,('ИИ-администратор: время брони «'+title+'» прошло, гость не заселился. Я закрыл бронь как неявку, уборка после неё не нужна. '+forOwner).trim(),'owner:stay-no-show:'+b.id,at,b.id),
+   q(db,`INSERT INTO audit_events SELECT ?,'ai-administrator',?,'booking.no_show_closed',? WHERE ${done}`,uuid(),b.id,at,b.id)]);
+  if(r[0].meta.changes)result.released++;
+ }
+}
+
 async function arrivals(db:D1Database,at:number,result:Row,rule:Rules){
  const list:Row[]=await rows(db,STAY_SQL+` WHERE b.status='confirmed' AND b.payment_status='owner_verified' AND t.actual_checkin IS NULL AND t.checkin_reported_at IS NULL
   AND t.actual_checkout IS NULL AND b.end>?1 AND MAX(b.start,COALESCE(t.arrival_eta,0))<=?1 AND ${ARRIVAL_STEP}<2 ORDER BY b.start LIMIT 50`,at);
@@ -104,12 +140,13 @@ async function arrivals(db:D1Database,at:number,result:Row,rule:Rules){
   const actAt=due+act,askAt=due+Math.min(ARRIVAL_ASK[kind],Math.floor(act/2)),releases=noShow.on&&Number(b.autopilot)>0;
   if(at>=actAt){
    if(releases){
+    const {c,forGuest,forOwner}=noShowTerms(b,at);
     const r=await db.batch([
      q(db,"UPDATE bookings SET status='cancelled' WHERE id=? AND status='confirmed' AND NOT EXISTS(SELECT 1 FROM booking_terms WHERE booking_id=? AND (actual_checkin IS NOT NULL OR checkin_reported_at IS NOT NULL OR COALESCE(arrival_eta,0)<>?)) AND NOT EXISTS(SELECT 1 FROM property_operations WHERE property_id=? AND active_booking_id=?)",b.id,b.id,Number(b.arrival_eta)||0,b.property_id,b.id),
      q(db,"UPDATE cleaning_jobs SET status='cancelled' WHERE booking_id=? AND status IN ('open','assigned') AND EXISTS(SELECT 1 FROM bookings WHERE id=? AND status='cancelled')",b.id,b.id),
-     step(db,b.id,'arrival',due,s,2,at),
-     q(db,"INSERT OR IGNORE INTO notifications SELECT ?,?,?,?,0,? WHERE EXISTS(SELECT 1 FROM bookings WHERE id=? AND status='cancelled')",uuid(),b.guest_id,'ИИ-администратор: вы не заселились в «'+title+'» и не ответили, бронь снята. Возврат оплаты решается по правилам отмены, напишите владельцу в чате брони.','guest:stay-no-show:'+b.id,at,b.id),
-     q(db,"INSERT OR IGNORE INTO notifications SELECT ?,?,?,?,0,? WHERE EXISTS(SELECT 1 FROM bookings WHERE id=? AND status='cancelled')",uuid(),b.owner_id,'ИИ-администратор: гость не приехал в «'+title+'» и не ответил. Я отметил неявку и освободил жильё. Возврат оплаты решаете вы по правилам отмены.','owner:stay-no-show:'+b.id,at,b.id),
+     step(db,b.id,'arrival',due,s,2,at),settle(db,b.id,c.refund,at),
+     q(db,"INSERT OR IGNORE INTO notifications SELECT ?,?,?,?,0,? WHERE EXISTS(SELECT 1 FROM bookings WHERE id=? AND status='cancelled')",uuid(),b.guest_id,'ИИ-администратор: вы не заселились в «'+title+'» и не ответили, бронь снята. '+forGuest,'guest:stay-no-show:'+b.id,at,b.id),
+     q(db,"INSERT OR IGNORE INTO notifications SELECT ?,?,?,?,0,? WHERE EXISTS(SELECT 1 FROM bookings WHERE id=? AND status='cancelled')",uuid(),b.owner_id,'ИИ-администратор: гость не приехал в «'+title+'» и не ответил. Я отметил неявку и освободил жильё. '+forOwner,'owner:stay-no-show:'+b.id,at,b.id),
      q(db,"INSERT INTO audit_events SELECT ?,'ai-administrator',?,'booking.no_show_released',? WHERE EXISTS(SELECT 1 FROM bookings WHERE id=? AND status='cancelled')",uuid(),b.id,at,b.id)]);
     if(r[0].meta.changes){result.released++;continue;}
    }
@@ -160,6 +197,7 @@ export async function sweepStays(db:D1Database,config:OperationConfig&{PLATFORM_
  const at=epoch(),result={reminded:0,warned:0,released:0,escalated:0},rule=rulesOf(db);
  await payments(db,at,result,rule);
  await arrivals(db,at,result,rule);
+ await emptyEnded(db,at,result);
  await checkouts(db,at,result,admins(config),rule);
  return result;
 }

@@ -485,11 +485,13 @@ function Chat(){
           !owner&&confirmed&&!b.terms?.actual_checkin&&!b.terms?.checkin_reported_at&&lateOpen(lateStay(b),data.serverTime)&&{title:lateLabel(lateStay(b)),kind:'main',onPress:()=>confirm('bookings/'+id,{action:'report_late'},'Предупредить владельца, что вы приедете на час позже; бронь сохранится'),...(lateNote(lateStay(b),data.serverTime)?{note:lateNote(lateStay(b),data.serverTime)}:{})},
           !owner&&confirmed&&started&&!b.terms?.checkout_reported_at&&{title:'Сообщить о выезде',kind:'main',onPress:()=>confirm('bookings/'+id,{action:'report_checkout'},'Сообщить владельцу о выезде; освобождение жилья потребует проверки')},
           {title:'Открыть чат',kind:'side',onPress:()=>{setChatInitial({kind:'booking',entityId:id,channel:'stay'});setPageId('chats');}},
-          confirmed&&{title:'Есть проблема',kind:'side',onPress:()=>raiseIssue('booking',id,actor)},
+          (confirmed||b.status==='completed'&&(owner||!!b.terms?.deposit_kept))&&{title:'Есть проблема',kind:'side',onPress:()=>raiseIssue('booking',id,actor)},
           ['requested','confirmed'].includes(b.status)&&!b.terms?.actual_checkin&&{title:'Отменить бронь',kind:'danger',onPress:()=>confirm('bookings/'+id,{action:'cancel'},'Отменить бронь',undefined,cancelLine(b.cancel_terms,owner,b.terms?.paid_amount||0)+'.')},
           // Money after the stay or a cancellation: the owner marks each transfer in one tap, the amount is on the button.
           owner&&['cancelled','expired'].includes(b.status)&&refundLeft(b)>0&&{title:'Вернул гостю '+money(refundLeft(b)),kind:'main',onPress:()=>confirm('bookings/'+id,{action:'record_refund',confirmed:true},'Вернул гостю '+money(refundLeft(b)),'owner-bookings','Подтверждаю, что уже перевёл гостю эту сумму за отменённую бронь.')},
           owner&&['completed','cancelled','expired'].includes(b.status)&&b.terms?.deposit_status==='owner_verified'&&b.terms?.deposit_balance>0&&{title:'Вернул депозит '+money(b.terms.deposit_balance),kind:'main',onPress:()=>confirm('bookings/'+id,{action:'record_deposit_return',confirmed:true},'Вернул депозит '+money(b.terms.deposit_balance),'owner-bookings','Подтверждаю, что уже перевёл гостю депозит.')},
+          // Damage after the stay: the owner keeps a part of the deposit once, with a reason the guest sees.
+          owner&&b.status==='completed'&&b.terms?.deposit_status==='owner_verified'&&b.terms?.deposit_balance>0&&!b.terms?.deposit_kept&&{title:'Удержать часть депозита',kind:'side',onPress:()=>beginFlow('keep-deposit',[{key:'amount',text:'Какую сумму удержать из депозита '+money(b.terms.deposit_balance)+'? Гость увидит сумму и причину.',label:'Удержать, ₸',min:1,max:b.terms.deposit_balance},{key:'reason',text:'За что удерживаете? Напишите коротко, что повреждено или пропало.',label:'Причина'}],{},'bookings/'+id,'owner-bookings','owner',{action:'keep_deposit'})},
         ]}/>
 
 
