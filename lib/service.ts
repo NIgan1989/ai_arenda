@@ -43,6 +43,8 @@ const id = () => crypto.randomUUID();
 const clockLabel=(at:number)=>new Intl.DateTimeFormat('ru-RU',{hour:'2-digit',minute:'2-digit',timeZone:'Asia/Almaty'}).format(new Date(at*1000));
 const HISTORY_TABLES=['bookings','cleaning_jobs','finance_entries','platform_commissions','access_receipts','administrator_issues','administrator_tasks','matching_offers','review_property_bindings'];
 const SETTINGS_TABLES=['property_details','property_locations','property_operations','property_policies','operation_rules','matching_preferences','property_access','calendar_exports','property_import_links'];
+// How far a stay may move its cleaning while the assigned cleaner keeps it: a late checkout or a few extra hours, not another day.
+const KEEP_SHIFT=3*3600;
 export class RentalService {
   constructor(public db: D1Database, public userId: string, private execution?:{propertyId:string;policyVersion:number}) {}
   query(sql: string, ...args: any[]) { return this.db.prepare(sql).bind(...args); }
@@ -172,7 +174,9 @@ export class RentalService {
     const [ratings,details,operations,busy]=await Promise.all([ratingsFor(this.db,items.map(p=>p.id)),this.all('SELECT * FROM property_details'),this.all('SELECT * FROM property_operations'),this.all("SELECT DISTINCT property_id FROM bookings WHERE (status='confirmed' OR (status='requested' AND expires_at>?)) AND start<=? AND occupied_until>?",now(),now(),now())]);
     // The owner sees whether the flat's pin still matches its address (a pin from an old address does not count).
     const pins=owner?await this.all('SELECT property_id,address_fingerprint FROM property_locations WHERE property_id IN (SELECT value FROM json_each(?))',JSON.stringify(items.slice(0,500).map(p=>p.id))):[];
-    return items.map(p=>{const d=details.find(d=>d.property_id===p.id),op=operations.find(o=>o.property_id===p.id);return {...p,...(owner?{mapped:pins.some(l=>l.property_id===p.id&&l.address_fingerprint===[p.city,p.district,p.address].join('|'))}:{host:hostOf(p.id)||null}),details:d?JSON.parse(d.details):{},photos:d?JSON.parse(d.photos):[],listing_version:d?.version||0,rating:ratings.get(p.id)||null,display_status:propertyStatus(p,op,busy.some(b=>b.property_id===p.id)),...(owner?{}:{published:undefined})};});
+    // Only the version of the check-in instruction travels to the owner (it says whether one is saved); the text stays encrypted.
+    const access=owner?await this.all('SELECT property_id,version FROM property_access WHERE property_id IN (SELECT value FROM json_each(?))',JSON.stringify(items.slice(0,500).map(p=>p.id))):[];
+    return items.map(p=>{const d=details.find(d=>d.property_id===p.id),op=operations.find(o=>o.property_id===p.id);return {...p,...(owner?{mapped:pins.some(l=>l.property_id===p.id&&l.address_fingerprint===[p.city,p.district,p.address].join('|')),access_version:access.find(a=>a.property_id===p.id)?.version||0}:{host:hostOf(p.id)||null}),details:d?JSON.parse(d.details):{},photos:d?JSON.parse(d.photos):[],listing_version:d?.version||0,rating:ratings.get(p.id)||null,display_status:propertyStatus(p,op,busy.some(b=>b.property_id===p.id)),...(owner?{}:{published:undefined})};});
   }
   async workerCard(userId:string){
     const p=await this.one('SELECT p.name,p.city,p.districts,p.experience,p.availability,d.avatar_id,d.work_status FROM profiles p LEFT JOIN profile_details d ON d.user_id=p.id WHERE p.id=?',userId);
@@ -462,13 +466,14 @@ export class RentalService {
   }
   async readinessAction(propertyId:string,body:Row){
     const op=await this.one('SELECT o.* FROM property_operations o JOIN properties p ON p.id=o.property_id WHERE p.id=? AND p.owner_id=?',propertyId,this.userId);if(!op)throw new DomainError('Жильё не найдено.',404);
-    const readiness=required(body.readiness,'Состояние',30),note=required(body.note,'Результат проверки или причина',1000);
+    // «Жильё готово» in one tap: the owner's confirmation is the note, no text to type.
+    const readiness=required(body.readiness,'Состояние',30),note=readiness==='ready'&&!String(body.note||'').trim()?'Владелец отметил: жильё убрано и готово к заезду.':required(body.note,'Результат проверки или причина',1000);
     if(!['ready','inspection','maintenance','blocked'].includes(readiness))throw new DomainError('Недопустимое состояние.');
     if((readiness==='ready'||readiness==='inspection')&&op.active_booking_id)throw new DomainError('Сначала подтвердите выезд проживающего гостя.',409);
     if(readiness==='ready'&&body.inspected!==true)throw new DomainError('Подтвердите, что уборка и проверка жилья выполнены.');
     const pending=await this.one("SELECT id FROM cleaning_jobs WHERE property_id=? AND (status IN ('in_progress','submitted') OR (status IN ('open','assigned') AND start<=?))",propertyId,now());
     if(readiness==='ready'&&pending)throw new DomainError('Сначала завершите и примите запланированную уборку.',409);
-    const result=await this.db.batch([this.query('UPDATE property_operations SET readiness=?,note=?,version=version+1,updated_at=? WHERE property_id=? AND version=?',readiness,note,now(),propertyId,number(body.expectedVersion,'Версия состояния',1,10000000)),this.audit(propertyId,'property.readiness_requested')]);
+    const result=await this.db.batch([this.query('UPDATE property_operations SET readiness=?,note=?,version=version+1,updated_at=? WHERE property_id=? AND version=?',readiness,note,now(),propertyId,body.expectedVersion===undefined?op.version:number(body.expectedVersion,'Версия состояния',1,10000000)),this.audit(propertyId,'property.readiness_requested')]);
     if(!result[0].meta.changes)throw new DomainError('Состояние уже изменилось. Обновите карточку.',409);
     const advice=readiness==='ready'?await this.priceAdviceAfterReady(propertyId):null;
     return {message:readiness==='ready'?'Готовность жилья подтверждена.'+(advice?' AI администратор предлагает новую цену, решение за вами.':''):'Состояние жилья сохранено.',priceSuggestion:advice};
@@ -620,11 +625,22 @@ export class RentalService {
       if(!owner)throw new DomainError('Освобождение жилья подтверждает владелец.',403);
       if(terms?.actual_checkout)return {message:'Выезд уже подтверждён.'};
       if(b.status!=='confirmed'||b.start>now()||(op?.active_booking_id&&op.active_booking_id!==bookingId))throw new DomainError('Сейчас нельзя подтвердить выезд по этой брони.',409);
-      const t=now(),result=await this.db.batch([
+      const t=now(),checkedOut="EXISTS(SELECT 1 FROM booking_terms bt JOIN bookings b ON b.id=bt.booking_id WHERE b.id=? AND b.status='completed' AND bt.actual_checkout IS NULL)";
+      const keepCleaner=`booking_id=? AND status='assigned' AND assigned_to IS NOT NULL AND start<? AND start>=? AND NOT EXISTS(SELECT 1 FROM cleaning_jobs o WHERE o.id<>cleaning_jobs.id AND o.assigned_to=cleaning_jobs.assigned_to AND o.status IN ('assigned','in_progress','submitted') AND o.start<?+(cleaning_jobs.end-cleaning_jobs.start) AND o.end>?) AND NOT EXISTS(SELECT 1 FROM bookings nb WHERE nb.property_id=cleaning_jobs.property_id AND nb.id<>? AND (nb.status='confirmed' OR (nb.status='requested' AND nb.expires_at>?)) AND nb.start<?+(cleaning_jobs.end-cleaning_jobs.start) AND nb.occupied_until>?) AND ${checkedOut}`;
+      const keepArgs=[bookingId,t-60,t-KEEP_SHIFT,t,t,bookingId,t,t,t,bookingId];
+      const result=await this.db.batch([
         // Under execution the mandate and the guest's report are checked again inside the batch,
         // so a revoked autopilot or a disputed report stops the automatic checkout.
         this.query("UPDATE bookings SET status='completed' WHERE id=? AND status='confirmed' AND EXISTS(SELECT 1 FROM booking_terms WHERE booking_id=? AND actual_checkout IS NULL AND version=? AND (?=0 OR checkout_reported_at IS NOT NULL)) AND (?=0 OR EXISTS(SELECT 1 FROM property_policies WHERE property_id=? AND version=? AND auto_confirm=1 AND auto_assign=1 AND (mandate_until=0 OR mandate_until>?)))",bookingId,bookingId,body.expectedVersion??terms?.version,this.execution?1:0,this.execution?1:0,b.property_id,this.execution?.policyVersion??0,t),
-        this.query("UPDATE property_operations SET readiness=CASE WHEN readiness IN ('maintenance','blocked') THEN readiness WHEN EXISTS(SELECT 1 FROM properties WHERE id=property_operations.property_id AND own_staff=1) THEN 'ready' ELSE 'awaiting_cleaning' END,active_booking_id=NULL,version=version+1,updated_at=? WHERE property_id=? AND (active_booking_id IS NULL OR active_booking_id=?) AND EXISTS(SELECT 1 FROM booking_terms t JOIN bookings b ON b.id=t.booking_id WHERE b.id=? AND b.status='completed' AND t.actual_checkout IS NULL)",t,b.property_id,bookingId,bookingId),
+        this.query("UPDATE property_operations SET readiness=CASE WHEN readiness IN ('maintenance','blocked') THEN readiness ELSE 'awaiting_cleaning' END,active_booking_id=NULL,version=version+1,updated_at=? WHERE property_id=? AND (active_booking_id IS NULL OR active_booking_id=?) AND EXISTS(SELECT 1 FROM booking_terms t JOIN bookings b ON b.id=t.booking_id WHERE b.id=? AND b.status='completed' AND t.actual_checkout IS NULL)",t,b.property_id,bookingId,bookingId),
+        // Own staff cleans here: nobody reports the cleaning in the service, so the flat is ready only when the owner says so
+        // (one tap, «Жильё готово»), never by itself right after the guest leaves.
+        this.query(`INSERT OR IGNORE INTO notifications SELECT ?,owner_id,?,'owner:own-staff-clean:'||?,0,? FROM properties WHERE id=? AND own_staff=1 AND ${checkedOut}`,id(),'Гость выехал из «'+b.title+'». Когда ваш персонал уберёт, нажмите «Жильё готово», и следующего гостя можно будет заселить.',bookingId,t,b.property_id,bookingId),
+        // The guest left after the cleaning's planned start: the assigned cleaner keeps the job and it simply moves to now,
+        // with the same length. Only when the new time clashes with the cleaner's other work or the next stay is the
+        // assignment released below, as before.
+        this.query(`INSERT OR IGNORE INTO notifications SELECT ?||id,assigned_to,?,'cleaner:checkout-shift:'||id||':'||version,0,? FROM cleaning_jobs WHERE ${keepCleaner}`,id()+':','Гость освободил «'+b.title+'» позже плана. Уборка остаётся за вами и начинается сейчас. Если не успеваете, откажитесь в карточке задания.',t,...keepArgs),
+        this.query(`UPDATE cleaning_jobs SET end=?+(end-start),start=? WHERE ${keepCleaner}`,t,t,...keepArgs),
         this.query("INSERT OR IGNORE INTO notifications SELECT ?,assigned_to,?,'cleaner:checkout-reschedule:'||id||':'||version,0,? FROM cleaning_jobs WHERE booking_id=? AND status='assigned' AND start<? AND EXISTS(SELECT 1 FROM booking_terms bt JOIN bookings b ON b.id=bt.booking_id WHERE b.id=? AND b.status='completed' AND bt.actual_checkout IS NULL)",id(),'AI администратор: гость освободил жильё позже начала уборки. Прежнее назначение снято; проверьте новое время и откликнитесь заново.',t,bookingId,t-60,bookingId),
         this.query("UPDATE applications SET status='rejected' WHERE job_id IN(SELECT id FROM cleaning_jobs WHERE booking_id=? AND status IN ('open','assigned') AND start<?) AND EXISTS(SELECT 1 FROM booking_terms bt JOIN bookings b ON b.id=bt.booking_id WHERE b.id=? AND b.status='completed' AND bt.actual_checkout IS NULL)",bookingId,t-60,bookingId),
         this.query("UPDATE cleaning_jobs SET start=?,end=?,assigned_to=NULL,status='open' WHERE booking_id=? AND status IN ('open','assigned') AND start<? AND EXISTS(SELECT 1 FROM booking_terms bt JOIN bookings b ON b.id=bt.booking_id WHERE b.id=? AND b.status='completed' AND bt.actual_checkout IS NULL)",t,t+b.cleaning_minutes*60,bookingId,t-60,bookingId),
@@ -686,7 +702,7 @@ export class RentalService {
   }
   async changeContext(bookingId:string,roleValue:unknown){
     const role=parseRole(roleValue);if(role==='cleaner')throw new DomainError('Изменения проживания доступны гостю и владельцу.',403);await this.requireRole(role);
-    const b=await this.one(`SELECT b.*,p.owner_id,p.price,p.cleaning_minutes FROM bookings b JOIN properties p ON p.id=b.property_id WHERE b.id=? AND ${role==='owner'?'p.owner_id':'b.guest_id'}=?`,bookingId,this.userId);
+    const b=await this.one(`SELECT b.*,p.owner_id,p.price,p.cleaning_minutes,p.title FROM bookings b JOIN properties p ON p.id=b.property_id WHERE b.id=? AND ${role==='owner'?'p.owner_id':'b.guest_id'}=?`,bookingId,this.userId);
     if(!b)throw new DomainError('Бронь не найдена.',404);
     const terms=await this.one('SELECT * FROM booking_terms WHERE booking_id=?',bookingId),policy=await this.one('SELECT * FROM property_policies WHERE property_id=?',b.property_id);
     if(b.status!=='confirmed'||!terms||terms.actual_checkout||terms.checkout_reported_at)throw new DomainError('Изменение доступно только для действующего проживания до сообщения о выезде.',409);
@@ -716,7 +732,7 @@ export class RentalService {
     const op=await this.one('SELECT * FROM property_operations WHERE property_id=?',b.property_id);
     if(op&&['maintenance','blocked'].includes(op.readiness))throw new DomainError('Заезды в это жильё закрыты.',409);
     const automatic=role==='guest'&&!!policy.auto_extension&&mandateActive(policy)&&terms.policy_version===policy.version&&start===b.start&&end>b.end&&end-(terms.original_end||b.end)<=policy.max_extension_hours*3600&&mode===terms.billing_mode&&discount===(terms.discount_percent||0);
-    return {bookingId,start,end,occupiedUntil,billingMode:pricing.billingMode,rate:pricing.price,units:pricing.periods,extraHours:pricing.extraHours,extraRate:pricing.extraRate,discountPercent:discount,amount,previousAmount:b.amount,paidAmount:terms.paid_amount,amountDue:Math.max(0,amount-terms.paid_amount),baseVersion:terms.version,policyVersion:policy.version,automatic,cleanerReconfirmation:end!==b.end&&!!await this.one("SELECT id FROM cleaning_jobs WHERE booking_id=? AND assigned_to IS NOT NULL AND status='assigned'",bookingId),currency:'KZT'};
+    return {bookingId,start,end,occupiedUntil,billingMode:pricing.billingMode,rate:pricing.price,units:pricing.periods,extraHours:pricing.extraHours,extraRate:pricing.extraRate,discountPercent:discount,amount,previousAmount:b.amount,paidAmount:terms.paid_amount,amountDue:Math.max(0,amount-terms.paid_amount),baseVersion:terms.version,policyVersion:policy.version,automatic,cleanerReconfirmation:end!==b.end&&!!await this.one("SELECT id FROM cleaning_jobs WHERE booking_id=? AND assigned_to IS NOT NULL AND status='assigned' AND abs(start-?)>?",bookingId,end,KEEP_SHIFT),currency:'KZT'};
   }
   async proposeBookingChange(bookingId:string,roleValue:unknown,body:Row){
     const role=parseRole(roleValue);await this.changeContext(bookingId,role);
@@ -752,16 +768,23 @@ export class RentalService {
       this.query("UPDATE booking_changes SET status='accepted',decided_at=? WHERE id=? AND status='pending' AND expires_at>? AND EXISTS(SELECT 1 FROM booking_terms WHERE booking_id=? AND version=? AND actual_checkout IS NULL AND checkout_reported_at IS NULL AND paid_amount<=?) AND EXISTS(SELECT 1 FROM property_policies WHERE property_id=? AND version=? AND (?=0 OR mandate_until=0 OR mandate_until>?)) AND EXISTS(SELECT 1 FROM bookings WHERE id=? AND status='confirmed')",now(),changeId,now(),bookingId,c.base_version,c.amount,b.property_id,c.policy_version,automatic?1:0,now(),bookingId),
       this.query(`UPDATE bookings SET start=?,end=?,occupied_until=?,amount=?,payment_status=CASE WHEN ?>=(SELECT paid_amount FROM booking_terms WHERE booking_id=?) AND ?>(SELECT paid_amount FROM booking_terms WHERE booking_id=?) THEN 'unpaid' ELSE payment_status END WHERE id=? AND ${gate}`,c.start,c.end,c.occupied_until,c.amount,c.amount,bookingId,c.amount,bookingId,bookingId,changeId)
     ];
-    if(job&&movesCleaning){
+    // The assigned cleaner keeps the job at its new time unless that time clashes with the cleaner's other work;
+    // the cleaner is told and can step back in the job card. A clash, or a move of more than three hours, still asks again.
+    const keeps=!!job?.assigned_to&&movesCleaning&&job.status==='assigned'&&Math.abs(c.end-job.start)<=KEEP_SHIFT&&!await this.one("SELECT id FROM cleaning_jobs WHERE id<>? AND assigned_to=? AND status IN ('assigned','in_progress','submitted') AND start<? AND end>?",job.id,job.assigned_to,c.occupied_until,c.end);
+    if(job&&movesCleaning&&keeps){
+      const at=(v:number)=>new Intl.DateTimeFormat('ru-RU',{day:'numeric',month:'long',hour:'2-digit',minute:'2-digit',timeZone:'Asia/Almaty'}).format(new Date(v*1000));
+      statements.push(this.query(`UPDATE cleaning_jobs SET start=?,end=? WHERE id=? AND status='assigned' AND assigned_to=? AND ${gate}`,c.end,c.occupied_until,job.id,job.assigned_to,changeId),
+        this.query(`INSERT OR IGNORE INTO notifications SELECT ?,?,?,?,?,? WHERE ${gate}`,id(),job.assigned_to,'Гость изменил даты: уборка «'+(b.title||'жильё')+'» теперь с '+at(c.end)+' до '+at(c.occupied_until)+'. Вы остаётесь назначены. Если время не подходит, откажитесь в карточке задания.','cleaner:reschedule:'+changeId,0,now(),changeId));
+    }else if(job&&movesCleaning){
       statements.push(this.query(`UPDATE cleaning_jobs SET start=?,end=?,assigned_to=NULL,status='open' WHERE id=? AND status IN ('open','assigned') AND ${gate}`,c.end,c.occupied_until,job.id,changeId),this.query(`UPDATE applications SET status='rejected' WHERE job_id=? AND ${gate}`,job.id,changeId));
-      if(job.assigned_to)statements.push(this.query(`INSERT OR IGNORE INTO notifications SELECT ?,?,?,?,?,? WHERE ${gate}`,id(),job.assigned_to,'Время уборки изменилось. Назначение снято: проверьте новое время и откликнитесь повторно.','cleaner:reschedule:'+changeId,0,now(),changeId));
+      if(job.assigned_to)statements.push(this.query(`INSERT OR IGNORE INTO notifications SELECT ?,?,?,?,?,? WHERE ${gate}`,id(),job.assigned_to,'Время уборки изменилось и совпало с другой вашей уборкой. Назначение снято: проверьте новое время и откликнитесь повторно.','cleaner:reschedule:'+changeId,0,now(),changeId));
     }
     statements.push(
       this.query(`INSERT INTO audit_events SELECT ?,?,?,?,? WHERE ${gate}`,id(),automatic?'system:rental-policy':this.userId,bookingId,JSON.stringify({action:'booking.change_accepted',changeId,onBehalfOf:automatic?b.owner_id:null,policyVersion:policy.version,pricing:{rate:q.rate,units:q.units,extraHours:q.extraHours,extraRate:q.extraRate,discountPercent:q.discountPercent,amount:q.amount}}),now(),changeId),
       this.query(`UPDATE booking_terms SET amount=?,rate=?,units=?,billing_mode=?,discount_percent=?,version=version+1 WHERE booking_id=? AND ${gate}`,c.amount,c.rate,c.units,c.billing_mode,c.discount_percent,bookingId,changeId)
     );
     const result=await this.db.batch(statements);if(!result[0].meta.changes||!result[1].meta.changes)throw new DomainError('Предложение уже изменилось. Обновите данные.',409);
-    await this.db.batch([this.notify(b.guest_id,'Изменение проживания согласовано. Проверьте новые даты и остаток к оплате.','change-accepted:'+changeId,'guest'),this.notify(b.owner_id,'Календарь обновлён по согласованному изменению проживания.'+(job&&movesCleaning?' Исполнителя уборки нужно согласовать заново.':''),'change-accepted:'+changeId,'owner')]);
+    await this.db.batch([this.notify(b.guest_id,'Изменение проживания согласовано. Проверьте новые даты и остаток к оплате.','change-accepted:'+changeId,'guest'),this.notify(b.owner_id,'Календарь обновлён по согласованному изменению проживания.'+(job&&movesCleaning?(keeps?' Уборка перенесена, исполнитель остаётся тот же.':' Исполнителя уборки нужно согласовать заново.'):''),'change-accepted:'+changeId,'owner')]);
     return {id:changeId,message:automatic?'Продление применено автоматически в пределах полномочий владельца. Доплата учитывается отдельно.':'Изменение согласовано и применено. Проверьте остаток к оплате.'};
   }
   async createJob(body:Row) {
@@ -825,6 +848,44 @@ export class RentalService {
       ]);
       if(!results[0].meta.changes) throw new DomainError('Исполнитель уже назначен или задание истекло.',409);
       return {message:'Исполнитель назначен.'};
+    }
+    // The cleaner is at the door and the guest is gone, but nobody pressed «Я выехал»: the cleaner says so. It counts as a
+    // report of leaving: the owner's autopilot confirms the checkout at once, without it the owner confirms in one tap.
+    if(body.action==='vacant'&&j.assigned_to===this.userId){
+      if(j.status!=='assigned'||!j.booking_id)throw new DomainError('Сообщить, что жильё свободно, можно по назначенной уборке после выезда гостя.',409);
+      const b=await this.one('SELECT b.id,b.guest_id,b.end,b.status,t.checkout_reported_at,t.actual_checkout FROM bookings b JOIN booking_terms t ON t.booking_id=b.id WHERE b.id=?',j.booking_id);
+      if(b?.status==='completed'||b?.actual_checkout)return {message:'Выезд уже подтверждён, можно начинать уборку.'};
+      if(!b||b.status!=='confirmed')throw new DomainError('Бронь уже закрыта. Обновите задание.',409);
+      if(now()<Number(b.end)-1800)throw new DomainError('Гость живёт до '+clockLabel(Number(b.end))+'. Сообщить, что жильё свободно, можно за полчаса до этого времени.',409);
+      if(b.checkout_reported_at)return {message:'Выезд уже отмечен, ждём подтверждения. Начните уборку, как только кнопка станет активной.'};
+      const r=await this.db.batch([
+        this.query('UPDATE booking_terms SET checkout_reported_at=?,version=version+1 WHERE booking_id=? AND checkout_reported_at IS NULL AND actual_checkout IS NULL',now(),b.id),
+        this.notify(j.owner_id,'Исполнитель на месте в «'+(j.title||'жильё')+'»: гостя нет, жильё свободно. Подтвердите выезд, чтобы началась уборка.','cleaner-vacant:'+b.id,'owner'),
+        this.notify(b.guest_id,'Исполнитель пришёл на уборку «'+(j.title||'жильё')+'» и отметил, что вы выехали. Если вы ещё в жилье, напишите в чат брони.','cleaner-vacant:'+b.id,'guest'),
+        this.audit(b.id,'booking.checkout_reported_by_cleaner')]);
+      if(!r[0].meta.changes)throw new DomainError('Бронь изменилась. Обновите задание.',409);
+      return {message:'Владелец получил сообщение. Как только выезд подтвердится, кнопка «Начать уборку» станет активной.'};
+    }
+    // «Опаздываю на 30 минут»: once per cleaning, before the cleaner is overdue to start; the job moves by half an hour
+    // when the next guest leaves room for it, and the owner is told the new time.
+    if(body.action==='late'&&j.assigned_to===this.userId){
+      const t=now(),shift=1800;
+      if(j.status!=='assigned')throw new DomainError('Предупредить об опоздании можно до начала уборки.',409);
+      if(t<Number(j.start)-3*3600||t>Number(j.start)+45*60)throw new DomainError('Предупредить об опоздании можно за 3 часа до начала уборки и до 45 минут после.',409);
+      if(await this.one('SELECT id FROM notifications WHERE dedupe=?','owner:cleaner-late:'+jobId))throw new DomainError('Об опоздании на эту уборку вы уже предупреждали. Если не успеваете, откажитесь от задания.',409);
+      const start=Math.max(Number(j.start),t)+shift,end=start+(Number(j.end)-Number(j.start));
+      const next=await this.one("SELECT start FROM bookings WHERE property_id=? AND id<>COALESCE(?,'') AND (status='confirmed' OR (status='requested' AND expires_at>?)) AND start<? AND occupied_until>? ORDER BY start LIMIT 1",j.property_id,j.booking_id,t,end,start);
+      if(next)throw new DomainError('Следующий гость заезжает в '+clockLabel(Number(next.start))+': опоздать на полчаса нельзя. Если не успеваете, откажитесь от задания, и ИИ найдёт замену.',409);
+      // A stay from another site's calendar counts as a next guest too (only the stretch the cleaning moves into).
+      if(await this.one('SELECT x.id FROM external_blocks x JOIN calendar_sources c ON c.id=x.source_id WHERE x.property_id=? AND c.enabled=1 AND x.start<? AND x.end>? LIMIT 1',j.property_id,end,Number(j.end)))throw new DomainError('Следующий гость по внешнему календарю заезжает раньше: опоздать на полчаса нельзя. Если не успеваете, откажитесь от задания, и ИИ найдёт замену.',409);
+      let r;
+      try{r=await this.db.batch([
+        this.query("UPDATE cleaning_jobs SET start=?,end=?,overdue_step=0 WHERE id=? AND version=? AND status='assigned' AND assigned_to=?",start,end,jobId,j.version,this.userId),
+        this.notify(j.owner_id,'Исполнитель опаздывает на уборку «'+(j.title||'жильё')+'»: начнёт к '+clockLabel(start)+'. Время уборки сдвинуто.','cleaner-late:'+jobId,'owner'),
+        this.audit(jobId,'job.cleaner_late')]);}
+      catch(error){if(/cleaner_overlap/.test(String((error as Error)?.message)))throw new DomainError('Новое время совпадает с другой вашей уборкой. Если не успеваете, откажитесь от одного задания.',409);throw error;}
+      if(!r[0].meta.changes)throw new DomainError('Задание изменилось. Обновите карточку.',409);
+      return {message:'Владелец предупреждён: вы начнёте к '+clockLabel(start)+'.'};
     }
     if(body.action==='start' && j.assigned_to===this.userId) {
       if(j.start>now()+3600) throw new DomainError('Начать работу можно не раньше чем за час до задания.');

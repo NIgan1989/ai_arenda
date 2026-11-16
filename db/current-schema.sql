@@ -54,6 +54,7 @@
 -- migration 0050_overdue_cleaning.sql sha256:0ad1121db5460816134ccafee7b7272c8e02f0bd386caad01237f8aa25b80bb4
 -- migration 0051_stay_watch.sql sha256:9981630cafef6d62625613245a56085fad063b159e04e500d757b4bac75b03a3
 -- migration 0052_password_reset.sql sha256:2d28c38105f5a7deee30ce46fae9129284eb57f2b46803810eedf808667c7124
+-- migration 0053_ready_after_review.sql sha256:2416de72aefbfe10aa723eedc9b8907124af9329a201f0e016af4bc77877e6ea
 
 -- table access_receipts
 CREATE TABLE access_receipts (id TEXT PRIMARY KEY,property_id TEXT NOT NULL,entity_kind TEXT NOT NULL,entity_id TEXT NOT NULL,user_id TEXT NOT NULL,created_at INTEGER NOT NULL,expires_at INTEGER NOT NULL);

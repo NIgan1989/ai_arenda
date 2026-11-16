@@ -58,6 +58,9 @@ export async function decideParticipantReview(service:RentalService,body:Row,pla
   if(body.status==='approved'&&wanted){try{const r=await service.db.batch([
    q(service.db,"UPDATE properties SET published=1 WHERE id=? AND published=0 AND length(description)>=80 AND EXISTS(SELECT 1 FROM property_details d WHERE d.property_id=properties.id AND json_array_length(d.photos)>0)",review.property_id),
    q(service.db,'UPDATE property_details SET version=version+1 WHERE property_id=? AND changes()>0',review.property_id)]);shown=!!r[0].meta.changes;}catch(e){if(!/pilot_|property_archived/.test(String((e as Error)?.message)))throw e;}}
+  // A new flat starts as «Ожидает проверки»; the platform's approval is that check, so the first guest can move in
+  // without the owner hunting for a readiness form. A flat in the middle of a cleaning keeps its state.
+  if(body.status==='approved')await q(service.db,"UPDATE property_operations SET readiness='ready',version=version+1,updated_at=? WHERE property_id=? AND readiness='inspection' AND active_booking_id IS NULL AND NOT EXISTS(SELECT 1 FROM cleaning_jobs WHERE property_id=? AND status IN ('in_progress','submitted'))",at,review.property_id,review.property_id).run();
   const text=body.status==='approved'?'Администратор проверил «'+title+'».'+(shown?' Жильё показано гостям на карте.':' Теперь его можно показать гостям.'):'Проверка «'+title+'» не пройдена: '+notes;
   await q(service.db,'INSERT OR IGNORE INTO notifications(id,user_id,body,dedupe,read,created_at) VALUES (?,?,?,?,0,?)',uuid(),review.user_id,text,'owner:review:'+id+':'+body.status,at).run();
  }

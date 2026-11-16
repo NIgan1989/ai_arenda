@@ -199,7 +199,7 @@ test('automatic extension is audited and its limit is cumulative from the origin
 test('rescheduling cleaning revokes old availability and requires a new worker application',async()=>{
   const f=await changeFixture();try{
     let state=await f.o.state(),j=state.jobs[0];await f.w.jobAction(j.id,{action:'apply'});state=await f.o.state();await f.o.jobAction(j.id,{action:'assign',applicationId:state.applications[0].id});
-    const change=await proposal(f,f.g,'guest',{end:iso(start+90000000)});assert.equal(change.q.cleanerReconfirmation,true);await f.o.decideBookingChange(f.b.id,change.id,'owner',{action:'accept'});
+    const change=await proposal(f,f.g,'guest',{end:iso(start+2*86400000)});assert.equal(change.q.cleanerReconfirmation,true);await f.o.decideBookingChange(f.b.id,change.id,'owner',{action:'accept'});
     state=await f.o.state();j=state.jobs[0];assert.equal(j.status,'open');assert.equal(j.assigned_to,null);assert.equal(j.start,change.q.end);assert.equal(state.applications[0].status,'rejected');
     const publicJob=(await f.w.roleState('cleaner')).jobs[0];assert.equal(publicJob.address,null);
     await assert.rejects(f.o.jobAction(j.id,{action:'assign',applicationId:state.applications[0].id}),/недоступен/);

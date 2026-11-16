@@ -13,23 +13,30 @@ const WHY:Record<number,string>={
  404:'Владелец ещё не добавил инструкцию. Напишите ему в чат брони.',
  503:'Инструкции сейчас недоступны. Попробуйте позже или напишите владельцу.',
 };
-export function CheckinGuide({bookingId}:{bookingId:string}){
+// The cleaner opens the same instruction from the assigned cleaning («Как попасть»), once the guest has left.
+const CLEANER_WHY:Record<number,string>={
+ 403:'Инструкция откроется за час до уборки, когда выезд гостя подтверждён.',
+ 404:'Владелец ещё не добавил инструкцию. Напишите ему в чат уборки.',
+ 503:WHY[503],
+};
+export function CheckinGuide({bookingId,role='guest'}:{bookingId:string;role?:'guest'|'cleaner'}){
+ const why=role==='cleaner'?CLEANER_WHY:WHY,title=role==='cleaner'?'Как попасть в жильё':'Как заселиться';
  const [state,setState]=useState<{text:string;closed?:boolean}|null>(null),[busy,setBusy]=useState(false);
  async function open(){
   if(busy)return;setBusy(true);
   try{
-   const value=await request('/api/operations/access/open',{entityId:bookingId},undefined,undefined,'guest');
-   setState(value?.instructions?{text:value.instructions}:{text:WHY[503],closed:true});
-  }catch(e){setState({text:e instanceof ApiError?WHY[e.status]||WHY[503]:'Нет связи. Проверьте интернет и попробуйте ещё раз.',closed:true});}
+   const value=await request('/api/operations/access/open',{entityId:bookingId},undefined,undefined,role);
+   setState(value?.instructions?{text:value.instructions}:{text:why[503],closed:true});
+  }catch(e){setState({text:e instanceof ApiError?why[e.status]||why[503]:'Нет связи. Проверьте интернет и попробуйте ещё раз.',closed:true});}
   finally{setBusy(false);}
  }
- return <View accessibilityLabel="Как заселиться" style={g.box}>
+ return <View accessibilityLabel={title} style={g.box}>
   {(!state||state.closed)&&<Pressable accessibilityRole="button" accessibilityState={{busy,disabled:busy}} disabled={busy} onPress={()=>void open()} style={({pressed})=>[g.open,pressed&&{backgroundColor:C.surfaceAlt}]}>
-   <Image source={menuIcons.key} style={[g.icon,{tintColor:C.accent}]}/><Text style={g.title}>Как заселиться</Text>{busy?<Thinking size="sm"/>:<Text style={g.chevron}>›</Text>}
+   <Image source={menuIcons.key} style={[g.icon,{tintColor:C.accent}]}/><Text style={g.title}>{title}</Text>{busy?<Thinking size="sm"/>:<Text style={g.chevron}>›</Text>}
   </Pressable>}
   {!!state&&(state.closed
    ?<Text accessibilityLiveRegion="polite" style={g.note}>{state.text}</Text>
-   :<View accessibilityLiveRegion="polite" style={g.text}><View style={g.head}><Image source={menuIcons.key} style={[g.small,{tintColor:C.ink}]}/><Text style={g.title}>Как заселиться</Text></View><Text selectable style={g.body}>{state.text}</Text></View>)}
+   :<View accessibilityLiveRegion="polite" style={g.text}><View style={g.head}><Image source={menuIcons.key} style={[g.small,{tintColor:C.ink}]}/><Text style={g.title}>{title}</Text></View><Text selectable style={g.body}>{state.text}</Text></View>)}
  </View>;
 }
 const g=StyleSheet.create({
