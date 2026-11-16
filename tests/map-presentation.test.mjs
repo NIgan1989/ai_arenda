@@ -9,7 +9,7 @@ test('city detection stays local, recognises covered cities and does not guess f
  assert.equal(cityNearLocation(71.44,51.14),'Астана');
  for(const point of [[0,0],[37.6,55.75],[NaN,52],[181,40],[76,91]])assert.equal(cityNearLocation(...point),null);
  assert.ok(geoDistance([76.95,52.287],[76.96,52.287])<1000);
- assert.equal(processStatus('property',{display_status:{label:'Готова к заселению',tone:'good'}},'guest','g').tone,'success');
+ assert.equal(processStatus('property',{display_status:{label:'Готово к заселению',tone:'good'}},'guest','g').tone,'success');
  assert.equal(processStatus('property',{display_status:{label:'На ремонте',tone:'danger'}},'owner','o').tone,'danger');
 });
 test('map process photos stay within the authorised process projection',async()=>{
