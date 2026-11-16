@@ -21,9 +21,12 @@ export function controlRequest(property:Row,v:Values):Row{const p=property.polic
 export const pricesLine=(v:Values)=>[money(v.dailyPrice)+' / сутки',v.hourlyPrice>0&&money(v.hourlyPrice)+' / час',v.nightlyPrice>0&&money(v.nightlyPrice)+' / ночь',v.deposit>0&&'депозит '+money(v.deposit)].filter(Boolean).join(' · ');
 export const aiLine=(v:Values)=>[v.autoConfirm?'подтверждает брони':'брони подтверждаете вы',v.autoExtension&&'продлевает до '+Math.max(1,v.maxExtensionHours)+' ч',v.maxDiscountPercent>0&&'скидка до '+v.maxDiscountPercent+'%'].filter(Boolean).join(' · ');
 
-export function PropertyControl({property,busy,onSave,onReadiness}:{property:Row;busy:boolean;onSave:(data:Row)=>void;onReadiness:(data:Row)=>void}){
+// Stays that are booked and not yet lived in: closing the home asks what to do with them.
+export function upcomingStays(bookings:Row[],propertyId:string,at:number){const list=(bookings||[]).filter(b=>b.property_id===propertyId&&b.status==='confirmed'&&b.end>at&&!b.terms?.actual_checkin).sort((a,b)=>a.start-b.start);return {count:list.length,next:list[0]?.start||0};}
+export const closeQuestion=(u:{count:number;next:number})=>'Есть брони: '+u.count+'. Ближайший заезд '+new Intl.DateTimeFormat('ru-RU',{day:'numeric',month:'long',hour:'2-digit',minute:'2-digit',timeZone:'Asia/Almaty'}).format(new Date(u.next*1000))+'. Что с ними сделать?';
+export function PropertyControl({property,busy,onSave,onReadiness,upcoming}:{property:Row;busy:boolean;onSave:(data:Row)=>void;onReadiness:(data:Row)=>void;upcoming?:{count:number;next:number}}){
  const op=property.operation||{},start=controlValues(property),staff=!!Number(property.own_staff);
- const [v,setV]=useState<Values>(start),[open,setOpen]=useState<'prices'|'ai'|null>(null);
+ const [v,setV]=useState<Values>(start),[open,setOpen]=useState<'prices'|'ai'|null>(null),[closing,setClosing]=useState<[string,string]|null>(null);
  const set=(x:Partial<Values>)=>setV(o=>({...o,...x})),dirty=JSON.stringify(v)!==JSON.stringify(start);
  const living=op.readiness==='occupied'||!!op.active_booking_id,cleaning=op.readiness==='cleaning',ready=op.readiness==='ready';
  const num=(label:string,key:keyof Values,max=10000000,hint='')=><View style={c.tile} key={key}><Text style={c.label}>{label}</Text><TextInput accessibilityLabel={label} style={c.value} keyboardType="number-pad" editable={!busy} value={v[key]?String(v[key]):''} placeholder="0" placeholderTextColor={C.muted} onChangeText={t=>set({[key]:Math.min(max,Number(t.replace(/[^\d]/g,''))||0)} as Partial<Values>)}/>{!!hint&&<Text style={c.hint}>{hint}</Text>}</View>;
@@ -38,8 +41,14 @@ export function PropertyControl({property,busy,onSave,onReadiness}:{property:Row
    :cleaning?<Text style={c.hint}>Идёт уборка. После приёмки жильё станет готовым само.</Text>
    :<View style={c.actions}>
     {!ready&&<Pressable accessibilityRole="button" disabled={busy} onPress={()=>onReadiness({readiness:'ready',inspected:true,expectedVersion:op.version})} style={[c.go,busy&&c.off]}><Text style={c.goText}>✓  Жильё готово</Text></Pressable>}
-    {CLOSE.filter(([code])=>code!==op.readiness).map(([code,title,note])=><Pressable key={code} accessibilityRole="button" disabled={busy} onPress={()=>onReadiness({readiness:code,note,expectedVersion:op.version})} style={[c.side,busy&&c.dim]}><Text style={c.sideText}>{title}</Text></Pressable>)}
+    {CLOSE.filter(([code])=>code!==op.readiness).map(([code,title,note])=><Pressable key={code} accessibilityRole="button" disabled={busy} onPress={()=>upcoming?.count?setClosing([code,note]):onReadiness({readiness:code,note,expectedVersion:op.version})} style={[c.side,busy&&c.dim]}><Text style={c.sideText}>{title}</Text></Pressable>)}
    </View>}
+  {!!closing&&!!upcoming?.count&&<View style={c.ask}>
+   <Text accessibilityRole="alert" style={c.askText}>{closeQuestion(upcoming)}</Text>
+   <Pressable accessibilityRole="button" disabled={busy} onPress={()=>{onReadiness({readiness:closing[0],note:closing[1],bookings:'keep',expectedVersion:op.version});setClosing(null);}} style={[c.side,busy&&c.dim]}><Text style={c.sideText}>Оставить брони в силе</Text></Pressable>
+   <Pressable accessibilityRole="button" disabled={busy} onPress={()=>{onReadiness({readiness:closing[0],note:closing[1],bookings:'cancel',expectedVersion:op.version});setClosing(null);}} style={[c.side,busy&&c.dim]}><Text style={[c.sideText,{color:C.danger}]}>Отменить с полным возвратом</Text></Pressable>
+   <Pressable accessibilityRole="button" onPress={()=>setClosing(null)} style={c.side}><Text style={c.sideText}>Не закрывать</Text></Pressable>
+  </View>}
   {head('prices','₸','Цены и депозит',pricesLine(v))}
   {open==='prices'&&<>
    <View style={c.row}>{num('Сутки, ₸','dailyPrice')}{num('Час, ₸','hourlyPrice',10000000,'0, если не сдаёте по часам')}</View>
@@ -72,6 +81,7 @@ const c=StyleSheet.create({
  row:{flexDirection:'row',gap:8},
  tile:{flex:1,minHeight:76,padding:12,borderRadius:R.md,borderWidth:1,borderColor:C.line,backgroundColor:C.surface,gap:4},
  label:{color:C.muted,...type.caption,fontWeight:'600'},value:{color:C.ink,...type.subtitle,fontWeight:'700',padding:0},hint:{color:C.muted,...type.caption},
+ ask:{gap:8,padding:12,borderRadius:R.md,backgroundColor:C.surfaceAlt},askText:{color:C.ink,...type.body},
  switchRow:{flexDirection:'row',alignItems:'center',gap:12,minHeight:56,paddingHorizontal:12,paddingVertical:8,borderRadius:R.md,borderWidth:1,borderColor:C.line},
  primary:{minHeight:H.primary,borderRadius:R.full,backgroundColor:C.aiFrom,alignItems:'center',justifyContent:'center',paddingHorizontal:24,marginTop:4},primaryText:{color:C.onAccent,...type.label,fontWeight:'700'},
  off:{backgroundColor:C.lineStrong},dim:{opacity:.5},

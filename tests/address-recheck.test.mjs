@@ -87,7 +87,7 @@ test('the short «Правила» form of the app keeps everything it does not 
   assert.equal(f.db.raw.prepare('SELECT price FROM properties WHERE id=?').get(f.property).price,12000);
   // «На ремонте» and «Закрыть заезды» are one tap with a ready reason; «Жильё готово» needs none.
   f.db.raw.prepare("UPDATE cleaning_jobs SET status='cancelled' WHERE property_id=?").run(f.property);
-  await f.owner.readinessAction(f.property,{readiness:'blocked',note:'Владелец временно закрыл заезды.'});
+  await f.owner.readinessAction(f.property,{readiness:'blocked',note:'Владелец временно закрыл заезды.',bookings:'keep'});
   await f.owner.readinessAction(f.property,{readiness:'ready',inspected:true});
   assert.equal(f.db.raw.prepare('SELECT readiness FROM property_operations WHERE property_id=?').get(f.property).readiness,'ready');
  }finally{f.db.close();}

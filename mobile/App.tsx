@@ -20,7 +20,7 @@ import { baseQuestions,cleanerQuestions,date,empty,labels,money,parseDate,proper
 import { C,s } from './src/styles';
 import {ActivityClockProvider,ActivityTimer} from './src/ActivityTimer';
 import {ApprovalCard,ApprovalInbox} from './src/ApprovalCard';
-import {PropertyControl,readinessLabels} from './src/PropertyControl';
+import {PropertyControl,upcomingStays,readinessLabels} from './src/PropertyControl';
 import {BookingChanges} from './src/BookingChanges';
 import {StayReview} from './src/StayReview';
 import {WorkspaceMenuButton,MapChatsButton} from './src/WorkspaceNavigation';
@@ -441,7 +441,7 @@ function Chat(){
     const payload=m.payload||{};
     if(m.block==='approval')return approval(payload.id);
     if(m.block==='assistant-brief')return renderAssistantBrief();
-    if(m.block==='property-settings'){const property=data.ownProperties.find((p:Row)=>p.id===payload.id);return property?<PropertyControl key={property.id+':'+property.policy.version} property={property} busy={busy} onSave={body=>perform('properties/'+property.id+'/policy',body,m.id)} onReadiness={body=>perform('properties/'+property.id+'/readiness',body,m.id)}/>:null;}
+    if(m.block==='property-settings'){const property=data.ownProperties.find((p:Row)=>p.id===payload.id);return property?<PropertyControl key={property.id+':'+property.policy.version} property={property} busy={busy} onSave={body=>perform('properties/'+property.id+'/policy',body,m.id)} upcoming={upcomingStays(data.bookings,property.id,data.serverTime||Date.now()/1000)} onReadiness={body=>perform('properties/'+property.id+'/readiness',body,m.id)}/>:null;}
     if(m.block==='workspace'){
       const target=payload.role||actor,workspace=data.workspaces?.[target];
       if(!workspace)return <View style={s.card}><Text style={s.meta}>Обновите данные, чтобы увидеть ближайшие события.</Text><Button title="Обновить" secondary disabled={busy} onPress={()=>send('Ближайшие события')}/></View>;

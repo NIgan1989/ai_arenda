@@ -138,7 +138,16 @@ export async function checkAdministratorOwner(db:D1Database,ownerId:string,at=no
     service.notify(ownerId,'AI администратор: заявка истекла без решения. Проверьте новые обращения.','expired:'+b.id,'owner')
    ]);
   }
-  await service.query("UPDATE booking_changes SET status='expired',decided_at=? WHERE status='pending' AND expires_at<=? AND booking_id IN(SELECT b.id FROM bookings b JOIN properties p ON p.id=b.property_id WHERE p.owner_id=?)",t,t,ownerId).run();
+  // A proposal to change the stay that nobody answered: both sides hear that the old dates stand.
+  const stale=await service.all("SELECT c.id,c.proposed_by,c.proposer_role,b.guest_id,p.title FROM booking_changes c JOIN bookings b ON b.id=c.booking_id JOIN properties p ON p.id=b.property_id WHERE c.status='pending' AND c.expires_at<=? AND p.owner_id=?",t,ownerId);
+  for(const c of stale){
+   const other=c.proposer_role==='owner'?c.guest_id:ownerId,title=c.title||'жильё';
+   await db.batch([
+    service.query("UPDATE booking_changes SET status='expired',decided_at=? WHERE id=? AND status='pending' AND expires_at<=?",t,c.id,t),
+    service.notify(c.proposed_by,'ИИ-администратор: на предложение изменить даты в «'+title+'» не ответили вовремя. Действуют прежние даты. Предложение можно отправить ещё раз.','change-expired:'+c.id,c.proposer_role),
+    service.notify(other,'ИИ-администратор: предложение изменить даты в «'+title+'» истекло без ответа. Действуют прежние даты.','change-expired:'+c.id,c.proposer_role==='owner'?'guest':'owner')
+   ]);
+  }
   await coordinateDispatch(service);
   await askForReviews(service);
   // Gaps between stays: optional advice, a failure never stops the owner's check.
