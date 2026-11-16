@@ -11,6 +11,7 @@ import { parseRole,commandRole } from './access';
 import {assistantBrief,defaultAssistantSettings} from './assistant';
 import {defaultAccountSettings,accountSettingsInput,userSearchInput} from './account';
 import {approvalCards} from './approvals';
+import {hasContacts,MIN_PHOTOS} from './listing-rules';
 import {listingInput,jpegInput,propertyStatus,cleanerStatus} from './listings';
 import {mediaKey,dataUrlBytes,mediaData} from './media-store';
 import {readAdministratorState} from './administrator';
@@ -110,10 +111,19 @@ export class RentalService {
     const currentPolicy=propertyId?await this.one('SELECT * FROM property_policies WHERE property_id=?',propertyId):null;
     const policyVersion=number(body.policyVersion??0,'Версия тарифов',0,10000000);
     if((currentPolicy?.version||0)!==policyVersion)throw new DomainError('Тарифы уже изменились. Обновите форму.',409);
+    const shownBefore=!!current&&Number(current.published)===1&&!!published,moved=!!current&&(current.address!==p.address||current.city!==p.city||current.district!==p.district);
+    // What guests read is checked on every save of a shown flat, by the same rules as the first review.
+    if(shownBefore){
+      const rules=String(body.rental?.houseRules||'');
+      if((p.title!==current.title||p.description!==current.description||rules!==String(currentPolicy?.house_rules||''))&&hasContacts(p.title+' '+p.description+' '+rules))throw new DomainError('Уберите из названия, описания и правил телефон, ссылки и просьбы оплатить напрямую: гости бронируют и платят через сервис.',409);
+      const before=JSON.parse((await this.one('SELECT photos FROM property_details WHERE property_id=?',propertyId))?.photos||'[]').length;
+      if(photos.length<MIN_PHOTOS&&photos.length<before)throw new DomainError('Гости видят это жильё: оставьте не меньше '+MIN_PHOTOS+' фото или сначала скройте жильё.',409);
+    }
     if(published){
       const admission=await readPilotPolicy(this.db);
-      if(current&&admission.require_owner_review&&(current.address!==p.address||current.city!==p.city||current.district!==p.district))throw new DomainError('Сохраните изменение адреса черновиком и пройдите новую проверку объекта.',409);
-      if(propertyId)await assertPilotAllowed(this,'publish',propertyId);else if(admission.require_owner_review||admission.require_phone)throw new DomainError('Сначала сохраните черновик, затем пройдите проверку в разделе «Управление → Допуск».',409);
+      // A flat guests already see stays «shown» through an address change: the catalogue hides it by itself until the new
+      // address is checked, and the request for that check is sent from the server. Only a first publication needs the pass.
+      if(propertyId){if(!shownBefore)await assertPilotAllowed(this,'publish',propertyId);}else if(admission.require_owner_review||admission.require_phone)throw new DomainError('Сначала сохраните черновик, затем пройдите проверку в разделе «Управление → Допуск».',409);
     }
     // An older app does not send «Свой персонал»: the property keeps what it had.
     if(typeof body.ownStaff!=='boolean'&&current)p.ownStaff=Number(current.own_staff)?1:0;
@@ -130,7 +140,7 @@ export class RentalService {
     if(!propertyId)statements.push(this.query('INSERT INTO properties(id,owner_id,demo_owner,title,city,district,address,description,price,rooms,capacity,cleaning_minutes,published,created_at,own_staff) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',key,this.userId,null,p.title,p.city,p.district,p.address,p.description,p.price,p.rooms,p.capacity,p.cleaningMinutes,published,now(),p.ownStaff),this.query('INSERT INTO property_operations(property_id,updated_at) VALUES (?,?)',key,now()));
     statements.push(this.query('INSERT INTO property_details SELECT ?,?,?,?,?,? WHERE COALESCE((SELECT version FROM property_policies WHERE property_id=?),0)=? ON CONFLICT(property_id) DO UPDATE SET details=excluded.details,photos=excluded.photos,version=excluded.version,revision=excluded.revision,updated_at=excluded.updated_at WHERE property_details.version=?',key,JSON.stringify(details),JSON.stringify(photos),expectedVersion+1,revision,now(),key,policyVersion,expectedVersion));
     if(propertyId){
-      statements.push(this.query(`UPDATE properties SET title=?,city=?,district=?,address=?,description=?,price=?,rooms=?,capacity=?,cleaning_minutes=?,published=?,own_staff=? WHERE id=? AND owner_id=? AND ${gate}`,p.title,p.city,p.district,p.address,p.description,p.price,p.rooms,p.capacity,p.cleaningMinutes,published,p.ownStaff,key,this.userId,key,revision));
+      statements.push(this.query(`UPDATE properties SET title=?,city=?,district=?,address=?,description=?,price=?,rooms=?,capacity=?,cleaning_minutes=?,${shownBefore?'':'published=?,'}own_staff=? WHERE id=? AND owner_id=? AND ${gate}`,p.title,p.city,p.district,p.address,p.description,p.price,p.rooms,p.capacity,p.cleaningMinutes,...(shownBefore?[]:[published]),p.ownStaff,key,this.userId,key,revision));
       // «Свой персонал» switched on: planned cleanings by executors are cancelled and the assigned executor is told.
       if(staffOn){
         statements.push(this.query(`INSERT OR IGNORE INTO notifications SELECT ?||id,assigned_to,?,'cleaner:own-staff:'||id,0,? FROM cleaning_jobs WHERE property_id=? AND status='assigned' AND assigned_to IS NOT NULL AND ${gate}`,id()+':','Владелец перевёл «'+p.title+'» на свой персонал. Назначенная уборка отменена, оплата за неё не удерживается.',now(),key,key,revision));
@@ -143,7 +153,10 @@ export class RentalService {
     statements.push(this.query(`INSERT INTO audit_events SELECT ?,?,?,?,? WHERE ${gate}`,id(),this.userId,key,propertyId?'property.listing_updated':'property.listing_created',now(),key,revision));
     const results=await this.db.batch(statements);if(!results[propertyId?0:2].meta.changes)throw new DomainError('Объявление уже изменилось. Обновите форму.',409);
     const paused=staffOff&&!!currentPolicy?.auto_confirm?' Автопилот приостановлен: укажите цену уборки и снова включите «ИИ».':'';
-    return {id:key,message:(published?'Объявление опубликовано. Готовность и даты проверяются отдельно.':'Черновик сохранён. Гости его не видят.')+paused};
+    // Guests who already booked hear about the new address; their bookings stay in force.
+    if(shownBefore&&moved){const ahead=await this.all("SELECT id,guest_id FROM bookings WHERE property_id=? AND (status='confirmed' OR (status='requested' AND expires_at>?)) AND occupied_until>?",key,now(),now());
+      if(ahead.length)await this.db.batch(ahead.map((b:Row)=>this.query('INSERT OR IGNORE INTO notifications(id,user_id,body,dedupe,read,created_at) VALUES (?,?,?,?,0,?)',id(),b.guest_id,'Владелец уточнил адрес «'+p.title+'»: '+[p.city,p.address].filter(Boolean).join(', ')+'. Ваша бронь в силе.','guest:address:'+b.id+':'+revision,now())));}
+    return {id:key,moved:shownBefore&&moved,message:(shownBefore&&moved?'Адрес изменён. Действующие брони в силе.':published?'Объявление опубликовано. Готовность и даты проверяются отдельно.':'Черновик сохранён. Гости его не видят.')+paused};
   }
   // Removing a flat: one with no history at all is deleted; otherwise it is archived (hidden from guests and
   // from the owner's lists) so bookings, cleanings and money records keep pointing at it.
@@ -177,7 +190,9 @@ export class RentalService {
     const pins=owner?await this.all('SELECT property_id,address_fingerprint FROM property_locations WHERE property_id IN (SELECT value FROM json_each(?))',JSON.stringify(items.slice(0,500).map(p=>p.id))):[];
     // Only the version of the check-in instruction travels to the owner (it says whether one is saved); the text stays encrypted.
     const access=owner?await this.all('SELECT property_id,version FROM property_access WHERE property_id IN (SELECT value FROM json_each(?))',JSON.stringify(items.slice(0,500).map(p=>p.id))):[];
-    return items.map(p=>{const d=details.find(d=>d.property_id===p.id),op=operations.find(o=>o.property_id===p.id);return {...p,...(owner?{mapped:pins.some(l=>l.property_id===p.id&&l.address_fingerprint===[p.city,p.district,p.address].join('|')),access_version:access.find(a=>a.property_id===p.id)?.version||0}:{host:hostOf(p.id)||null}),details:d?JSON.parse(d.details):{},photos:d?JSON.parse(d.photos):[],listing_version:d?.version||0,rating:ratings.get(p.id)||null,display_status:propertyStatus(p,op,busy.some(b=>b.property_id===p.id)),...(owner?{}:{published:undefined})};});
+    // A shown flat waiting for the check of a new address: the owner sees why new guests do not find it yet.
+    const unchecked=owner?await this.all("SELECT a.id FROM pilot_property_admissions a WHERE a.owner_reviewed=0 AND COALESCE((SELECT require_owner_review FROM pilot_policy WHERE id='global'),0)=1 AND a.id IN (SELECT value FROM json_each(?))",JSON.stringify(items.slice(0,500).map(p=>p.id))):[];
+    return items.map(p=>{const d=details.find(d=>d.property_id===p.id),op=operations.find(o=>o.property_id===p.id);return {...p,...(owner?{address_check:Number(p.published)===1&&!p.demo_owner&&unchecked.some(u=>u.id===p.id),mapped:pins.some(l=>l.property_id===p.id&&l.address_fingerprint===[p.city,p.district,p.address].join('|')),access_version:access.find(a=>a.property_id===p.id)?.version||0}:{host:hostOf(p.id)||null}),details:d?JSON.parse(d.details):{},photos:d?JSON.parse(d.photos):[],listing_version:d?.version||0,rating:ratings.get(p.id)||null,display_status:propertyStatus(p,op,busy.some(b=>b.property_id===p.id)),...(owner?{}:{published:undefined})};});
   }
   async workerCard(userId:string){
     const p=await this.one('SELECT p.name,p.city,p.districts,p.experience,p.availability,d.avatar_id,d.work_status FROM profiles p LEFT JOIN profile_details d ON d.user_id=p.id WHERE p.id=?',userId);
@@ -654,7 +669,7 @@ export class RentalService {
       if(!result[0].meta.changes)throw new DomainError('Выезд уже обрабатывается. Обновите данные.',409);await this.notify(b.guest_id,this.execution?'Выезд подтверждён. Спасибо, что выбрали нас.':'Владелец подтвердил освобождение жилья. Проживание завершено.','checkout-confirmed:'+bookingId,'guest').run();return {message:'Выезд подтверждён. Жильё ожидает уборки и проверки.'};
     }
     if(body.action==='confirm') {
-      await assertPilotAllowed(this,'booking',b.property_id);
+      await assertPilotAllowed(this,'booking',b.property_id,undefined,true);
       if(!owner) throw new DomainError('Подтвердить может только владелец.',403);
       await assertCalendarAvailable(this.db,b.property_id,b.start,b.occupied_until);
       // Own staff cleans this property: no cleaning job for executors after the stay.

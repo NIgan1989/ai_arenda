@@ -28,7 +28,8 @@ const json=(data:unknown,status=200)=>Response.json(data,{status,headers:{'Cache
 // A saved draft that is ready for guests goes to the administrator's check by itself; a failed request never fails the save.
 async function withPublishReview(service:RentalService,result:{id?:string;message?:string}&Record<string,unknown>,config:object){
  if(!result?.id)return result;
- try{const review=await ensurePublishReview(service,result.id,config as never);if(review){const shown=(await service.one('SELECT published FROM properties WHERE id=?',result.id))?.published===1;return {...result,review:shown?'approved':'pending',message:result.message+' '+(shown?'ИИ-администратор проверил жильё и показал его гостям.':'Отправили жильё на проверку администратору: после проверки оно появится на карте само.')};}}
+ try{const review=await ensurePublishReview(service,result.id,config as never);if(review){const shown=(await service.one('SELECT published FROM properties WHERE id=?',result.id))?.published===1&&(!result.moved||(review as {verdict?:string}).verdict==='approve');
+  return {...result,review:shown?'approved':'pending',message:result.message+' '+(result.moved?(shown?'ИИ-администратор проверил новый адрес: гости по-прежнему видят жильё.':'Новые гости увидят жильё после проверки адреса администратором, обычно это быстро.'):shown?'ИИ-администратор проверил жильё и показал его гостям.':'Отправили жильё на проверку администратору: после проверки оно появится на карте само.')};}}
  catch{console.error('AI Arenda API: publish review request failed');}
  return result;
 }

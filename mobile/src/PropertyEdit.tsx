@@ -49,7 +49,7 @@ export function PropertyEdit({property,onSave,onReview,onRemove,onClose,step,cal
   try{const fresh=await onSave(editRequest(next,p));let saved=fresh||{...p,listing_version:(p.listing_version||0)+1};const b=fresh?editBody(fresh):next;
    const pinned=what==='place'?await savePin(saved):null;if(pinned!==null)saved={...saved,mapped:pinned||saved.mapped};
    setP(saved);setBase(b);setDraft(b);setOpen(null);setHeld(false);setError('');
-   setDone(what==='place'?(saved.mapped?'Адрес и метка на карте сохранены.':'Адрес сохранён, а дом на карте не нашёлся: откройте «Адрес» и передвиньте карту к дому.'):SAVED[what]);}
+   setDone(what==='place'?(saved.address_check?'Адрес сохранён и отправлен на проверку. Действующие брони в силе, новые гости увидят жильё после проверки.':saved.mapped?'Адрес и метка на карте сохранены.':'Адрес сохранён, а дом на карте не нашёлся: откройте «Адрес» и передвиньте карту к дому.'):SAVED[what]);}
   catch(e:any){const message=e?.message||'Не удалось сохранить.';
    // Publishing waits for the administrator: the flat is sent for review instead of failing, and is shown once approved.
    if(what==='publish'&&next.published&&onReview&&needsReview(message)){try{const kept={...next,published:false};if(held){const fresh=await onSave(editRequest(kept,p));setP(fresh||p);const b=fresh?editBody(fresh):kept;setBase(b);setDraft(b);}await onReview(reviewRequest({id:p.id,title:next.title,city:next.city,address:next.address}));if(call&&p.id){try{const now=await call('map/spot',{propertyId:p.id});setP((o:Row)=>({...o,mapped:!!now.saved}));}catch{}}setSent(true);setHeld(false);setDone('');setError('');setOpen(null);return;}catch(r:any){setError(r?.message||message);setHeld(true);setOpen(null);return;}}
@@ -80,6 +80,7 @@ export function PropertyEdit({property,onSave,onReview,onRemove,onClose,step,cal
     <View style={e.row}>{half(text('Город',draft.city,v=>set({city:v}),80))}{half(text('Район',draft.district,v=>set({district:v}),120,'Например, Центр'))}</View>
     {text('Точный адрес',draft.address,v=>set({address:v}),300,'Улица, дом, номер')}
     <Text style={e.hint}>Адрес видит только гость с подтверждённой бронью. Метку на карте ставим по нему.</Text>
+    {base.published&&(draft.address!==base.address||draft.city!==base.city||draft.district!==base.district)&&<Text accessibilityLiveRegion="polite" style={e.note}>Новый адрес проверит администратор, обычно это быстро. До проверки новые гости не увидят жильё, а действующие брони останутся в силе.</Text>}
     {!!call&&!!p.id&&<AddressPin propertyId={p.id} city={draft.city} district={draft.district} address={draft.address} call={call} onChoice={c=>{pick.current=c;}}/>}
    </>}
    {open==='text'&&<>
@@ -118,7 +119,7 @@ export function PropertyEdit({property,onSave,onReview,onRemove,onClose,step,cal
  return <View style={e.sheet}>
   <View style={e.bar}>
    <View style={e.thumb}>{base.photos[0]?<Photo id={base.photos[0]} alt="Обложка" fill/>:<Text style={e.ico}>📷</Text>}</View>
-   <View style={{flex:1,minWidth:0}}><Text accessibilityRole="header" numberOfLines={1} style={e.name}>{base.title||'Без названия'}</Text><Text style={[e.state,base.published&&e.stateOn]}>{base.published?'Гости видят на карте':'Скрыто от гостей'}</Text></View>
+   <View style={{flex:1,minWidth:0}}><Text accessibilityRole="header" numberOfLines={1} style={e.name}>{base.title||'Без названия'}</Text><Text style={[e.state,base.published&&(p.address_check?e.warn:e.stateOn)]}>{base.published?(p.address_check?'Адрес на проверке: новые гости пока не видят':'Гости видят на карте'):'Скрыто от гостей'}</Text></View>
    <Pressable accessibilityRole="button" accessibilityLabel="Закрыть" onPress={onClose} disabled={busy} style={e.round}><Text style={e.roundText}>✕</Text></Pressable>
   </View>
   <View style={[e.advice,held&&e.adviceHeld]} accessibilityLiveRegion="polite">
@@ -139,13 +140,13 @@ export function PropertyEdit({property,onSave,onReview,onRemove,onClose,step,cal
   </Pressable>;})}</View>
   {!!p.id&&!base.ownStaff&&<Pressable accessibilityRole="button" accessibilityLabel="Постоянный исполнитель" onPress={()=>{setDone('');setCleaner(true);}} style={({pressed})=>[e.step,{width:'100%'},pressed&&e.pressed]}>
    <View style={e.icoBox}><Text style={e.ico}>🧹</Text></View>
-   <View style={{flex:1,minWidth:0}}><Text style={e.stepTitle} numberOfLines={1}>Постоянный исполнитель</Text><Text style={e.stepLine} numberOfLines={1}>{p.regular_cleaner_name?p.regular_cleaner_name+': уборки приходят сначала к нему':'Закрепите свою: уборки, оплата и замена через сервис'}</Text></View>
+   <View style={{flex:1,minWidth:0}}><Text style={e.stepTitle} numberOfLines={1}>Постоянный исполнитель</Text><Text style={e.stepLine} numberOfLines={1}>{p.regular_cleaner_name?p.regular_cleaner_name+': уборки приходят сначала к нему':'Закрепите своего: уборки, оплата и замена через сервис'}</Text></View>
   </Pressable>}
   <Pressable accessibilityRole="button" accessibilityLabel="Календари площадок: Airbnb, Booking, Суточно" onPress={()=>{setDone('');setCalendars(true);}} style={({pressed})=>[e.step,{width:'100%'},pressed&&e.pressed]}>
    <View style={e.icoBox}><Text style={e.ico}>📅</Text></View>
    <View style={{flex:1,minWidth:0}}><Text style={e.stepTitle} numberOfLines={1}>Календари площадок</Text><Text style={e.stepLine} numberOfLines={1}>Airbnb, Booking, Суточно: без двойных броней</Text></View>
   </Pressable>
-  <View style={e.switchRow}><View style={{flex:1}}><Text style={e.stepTitle}>Показывать гостям</Text><Text style={e.stepLine}>{base.published?'Объявление на карте':'Черновик, видите только вы'}</Text></View><Switch accessibilityLabel="Показывать гостям" value={base.published} disabled={busy} onValueChange={v=>commit({...(held?draft:base),published:v},'publish')} trackColor={{true:C.success,false:C.lineStrong}} thumbColor={C.surface}/></View>
+  <View style={e.switchRow}><View style={{flex:1}}><Text style={e.stepTitle}>Показывать гостям</Text><Text style={e.stepLine}>{base.published?(p.address_check?'Появится на карте после проверки адреса':'Объявление на карте'):'Черновик, видите только вы'}</Text></View><Switch accessibilityLabel="Показывать гостям" value={base.published} disabled={busy} onValueChange={v=>commit({...(held?draft:base),published:v},'publish')} trackColor={{true:C.success,false:C.lineStrong}} thumbColor={C.surface}/></View>
   {onRemove&&(confirm?<View style={e.remove}>
    <Text style={e.adviceText}><Text style={{fontWeight:'700'}}>Удалить «{base.title||'жильё'}»? </Text>Гости больше его не увидят. Если по нему были брони, история броней и оплат сохранится.</Text>
    {!!removeError&&<Text accessibilityRole="alert" style={e.errorText}>{removeError}</Text>}
@@ -185,7 +186,7 @@ const e=StyleSheet.create({
  label:{color:C.muted,...type.caption,fontWeight:'600'},value:{color:C.ink,...type.subtitle,fontWeight:'700',padding:0},
  field:{gap:4},input:{minHeight:H.field,borderRadius:R.md,borderWidth:1,borderColor:C.line,backgroundColor:C.surface,paddingHorizontal:16,paddingVertical:12,color:C.ink,...type.body},
  area:{minHeight:128,...type.label},
- hint:{color:C.muted,...type.caption},warn:{color:C.warning,fontWeight:'600'},
+ hint:{color:C.muted,...type.caption},warn:{color:C.warning,fontWeight:'600'},note:{color:C.warning,backgroundColor:C.warningSoft,borderRadius:R.md,padding:12,...type.label},
  error:{color:C.danger,backgroundColor:C.dangerSoft,borderRadius:R.md,padding:12,...type.label},
  primary:{minHeight:H.primary,borderRadius:R.full,backgroundColor:C.aiFrom,alignItems:'center',justifyContent:'center',paddingHorizontal:24,marginTop:4},off:{backgroundColor:C.lineStrong},
  primaryText:{color:C.onAccent,...type.body,fontWeight:'700'}
