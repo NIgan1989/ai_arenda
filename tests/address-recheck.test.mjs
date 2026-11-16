@@ -46,6 +46,9 @@ test('bookings made before the address change keep working while the new address
   const ids=await shown(f);
   const request=(await f.guest.createBooking({propertyId:f.property,start:iso(now()+5*86400),end:iso(now()+5*86400+7200),guests:1,billingMode:'hourly',requestKey:'second',acceptTerms:true})).id;
   await f.owner.saveListing(f.property,body(f,{photos:ids,address:'Новая улица, 5'}));
+  // A guest whose request is not confirmed yet hears about the change without the exact address.
+  const notes=f.db.raw.prepare("SELECT body FROM notifications WHERE user_id='guest' AND dedupe LIKE 'guest:address:%'").all().map(n=>n.body);
+  assert.equal(notes.length,2);assert.equal(notes.filter(n=>/Новая улица/.test(n)).length,1);assert.equal(notes.filter(n=>/после подтверждения брони/.test(n)).length,1);
   // New guests cannot book until the check passes.
   await assert.rejects(f.other.createBooking({propertyId:f.property,start:iso(now()+9*86400),end:iso(now()+9*86400+7200),guests:1,billingMode:'hourly',requestKey:'third',acceptTerms:true}));
   await f.owner.bookingAction(request,{action:'confirm',cleaningFee:3000});

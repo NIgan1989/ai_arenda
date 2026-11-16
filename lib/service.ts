@@ -154,8 +154,9 @@ export class RentalService {
     const results=await this.db.batch(statements);if(!results[propertyId?0:2].meta.changes)throw new DomainError('Объявление уже изменилось. Обновите форму.',409);
     const paused=staffOff&&!!currentPolicy?.auto_confirm?' Автопилот приостановлен: укажите цену уборки и снова включите «ИИ».':'';
     // Guests who already booked hear about the new address; their bookings stay in force.
-    if(shownBefore&&moved){const ahead=await this.all("SELECT id,guest_id FROM bookings WHERE property_id=? AND (status='confirmed' OR (status='requested' AND expires_at>?)) AND occupied_until>?",key,now(),now());
-      if(ahead.length)await this.db.batch(ahead.map((b:Row)=>this.query('INSERT OR IGNORE INTO notifications(id,user_id,body,dedupe,read,created_at) VALUES (?,?,?,?,0,?)',id(),b.guest_id,'Владелец уточнил адрес «'+p.title+'»: '+[p.city,p.address].filter(Boolean).join(', ')+'. Ваша бронь в силе.','guest:address:'+b.id+':'+revision,now())));}
+    // The exact address goes to confirmed guests only, as everywhere else.
+    if(shownBefore&&moved){const ahead=await this.all("SELECT id,guest_id,status FROM bookings WHERE property_id=? AND (status='confirmed' OR (status='requested' AND expires_at>?)) AND occupied_until>?",key,now(),now());
+      if(ahead.length)await this.db.batch(ahead.map((b:Row)=>this.query('INSERT OR IGNORE INTO notifications(id,user_id,body,dedupe,read,created_at) VALUES (?,?,?,?,0,?)',id(),b.guest_id,b.status==='confirmed'?'Владелец уточнил адрес «'+p.title+'»: '+[p.city,p.address].filter(Boolean).join(', ')+'. Ваша бронь в силе.':'Владелец уточнил адрес «'+p.title+'». Ваша заявка в силе, точный адрес откроется после подтверждения брони.','guest:address:'+b.id+':'+revision,now())));}
     return {id:key,moved:shownBefore&&moved,message:(shownBefore&&moved?'Адрес изменён. Действующие брони в силе.':published?'Объявление опубликовано. Готовность и даты проверяются отдельно.':'Черновик сохранён. Гости его не видят.')+paused};
   }
   // Removing a flat: one with no history at all is deleted; otherwise it is archived (hidden from guests and
