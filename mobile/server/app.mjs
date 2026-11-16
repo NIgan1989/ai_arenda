@@ -23,7 +23,7 @@ export function createApp({filename=':memory:',origins=['http://localhost:8081',
     if(!['POST','PUT'].includes(req.method)) return {};
     if(!req.headers['content-type']?.startsWith('application/json'))throw new HttpError('Нужен JSON.',415);
     let size=0;const chunks=[];
-    const pathname=new URL(req.url,'http://local').pathname,max=pathname==='/api/operations/evidence'?11500000:/^\/api\/operations\/(discussion\/send|evidence|calendar\/(source|import|preview)|import\/preview)$/.test(pathname)?700000:pathname==='/api/media'?510000:262144;
+    const pathname=new URL(req.url,'http://local').pathname,max=pathname==='/api/operations/evidence'?11500000:/^\/api\/operations\/(discussion\/send|evidence|stay-photo|calendar\/(source|import|preview)|import\/preview)$/.test(pathname)?700000:pathname==='/api/media'?510000:262144;
     for await(const chunk of req){size+=chunk.length;if(size>max)throw new HttpError('Слишком большой запрос.',413);chunks.push(chunk);}
     try {const raw=Buffer.concat(chunks).toString('utf8');rawBodies.set(req,raw);const data=JSON.parse(raw);if(!data||typeof data!=='object'||Array.isArray(data))throw 0;return data;}
     catch {throw new HttpError('Некорректный запрос.');}
