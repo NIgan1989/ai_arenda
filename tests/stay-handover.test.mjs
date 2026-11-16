@@ -42,7 +42,7 @@ test('after checkout the owner hands the home over once: issues need a photo or 
   assert.match(note(f,'guest','guest:handover:'+f.booking),/владелец отметил: курение, поломка или порча\. «Прожжён диван»\. Если не согласны, нажмите «Есть проблема»/);
   assert.equal(f.db.raw.prepare('SELECT read FROM notifications WHERE user_id=? AND dedupe=?').get('owner','owner:handover-ask:'+f.booking).read,1);
   const seen=(await f.guest.roleState('guest',{catalog:false})).bookings.find(b=>b.id===f.booking);
-  assert.deepEqual(seen.handover.issues,['smoking','damage']);assert.equal(seen.handover.note,'Прожжён диван');assert.equal(handoverState(seen,now()),'done');
+  assert.deepEqual(seen.handover.issues,['smoking','damage']);assert.equal(seen.handover_photos,1);assert.equal(seen.handover.note,'Прожжён диван');assert.equal(handoverState(seen,now()),'done');
  }finally{f.db.close();}
 });
 

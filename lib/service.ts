@@ -383,6 +383,7 @@ export class RentalService {
         (SELECT rating FROM stay_reviews r WHERE r.booking_id=b.id) review_rating,
         (SELECT json_object('verdict',verdict,'issues',json(issues),'note',note,'cleaner_photos',cleaner_photos,'created_at',created_at) FROM stay_handovers h WHERE h.booking_id=b.id) handover_row,
         (SELECT COUNT(*) FROM stay_photos f WHERE f.booking_id=b.id AND f.phase='checkin') checkin_photos,
+        (SELECT COUNT(*) FROM stay_photos f WHERE f.booking_id=b.id AND f.phase='handover' AND EXISTS(SELECT 1 FROM stay_handovers x WHERE x.booking_id=b.id)) handover_photos,
         CASE WHEN p.owner_id=? THEN (SELECT COUNT(*) FROM job_evidence e JOIN cleaning_jobs j ON j.id=e.job_id WHERE j.booking_id=b.id AND e.phase IN ('before','damage')) ELSE 0 END cleaner_photos,
         CASE WHEN p.owner_id=? THEN (SELECT COUNT(*) FROM job_evidence e JOIN cleaning_jobs j ON j.id=e.job_id WHERE j.booking_id=b.id AND e.phase='damage') ELSE 0 END cleaner_damage,
         CASE WHEN p.owner_id=? OR (b.guest_id=? AND b.status='confirmed') THEN o.contact ELSE NULL END owner_contact,
