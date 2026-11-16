@@ -114,6 +114,9 @@ test('a Telegram notice names what happened and where, opens that card, and hide
  assert.deepEqual(job.reply_markup.inline_keyboard,[[{text:'Открыть',url:'https://rental.example.test/workspace/cleaner/assignments?entity=j1'}]]);
  const chat=await plainTelegramNotice({role:'guest',dedupe:'guest:discussion:r1:3',body:'Айгуль (владелец) в чате «Дом у реки»: код двери 4821, звоните +7 701 123 45 67, оплата 15 000 ₸'},null,{url:'/workspace/guest/chats?room=r1',title:'Сообщение · Дом у реки'});
  assert.match(chat.text,/^💬 <b>Сообщение · Дом у реки<\/b>/);assert.ok(!chat.text.includes('4821'));assert.ok(!chat.text.includes('123 45'));assert.match(chat.text,/15 000 ₸/);assert.equal(chat.reply_markup,undefined);
+ for(const [body,shown,hidden] of [['Обращение по «Дом у реки»: код от двери 4821, ул. Ленина 5','Обращение по «Дом у реки». Текст обращения в сервисе.','Ленина'],['Проблема по уборке: ключ под ковриком','Сообщили о проблеме по уборке','коврик'],['Выезд пока не подтверждён: ключи не оставлены у соседа, кв. 12','Выезд пока не подтверждён. Причина в брони.','сосед'],['Доработайте уборку: код сейфа 1234','Владелец просит доработать уборку','1234'],['Владелец отменил уборку «Дом у реки». Причина: замок 777','Владелец отменил уборку «Дом у реки». Причина в задании.','777'],['Гость оценил проживание в «Дом у реки»: ★★★★☆ «код 5555 не сработал»','★★★★☆. Отзыв в сервисе.','5555']]){
+  const notice=await plainTelegramNotice({role:'owner',dedupe:'owner:x1',body},null,null);assert.ok(notice.text.includes(shown),body);assert.ok(!notice.text.includes(hidden),body);
+ }
  const empty=await plainTelegramNotice({role:'owner',dedupe:'owner:x',body:''},'https://rental.example.test',null);
  assert.match(empty.text,/AiQonaq · Для владельца/);assert.match(empty.text,/Есть новое событие/);
 });

@@ -145,10 +145,20 @@ export async function acceptDeliveryReceipt(db:D1Database,raw:string){
 
 const clip=(value:string,max:number)=>value.length>max?value.slice(0,max-1)+'…':value;
 const html=(value:string)=>value.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-// What a chat message notice quotes: someone may type a door code or a phone number, so long digit runs are hidden.
+// Words a person typed (an issue, a reason, a review) may hold an address or an access code, so they stay in the
+// service: the notice keeps the service's own part and says where the rest is. Chat quotes hide long digit runs.
+const PERSON_WRITTEN:[RegExp,string][]=[
+ [/^(Обращение по «[^»]*»): [\s\S]*$/,'$1. Текст обращения в сервисе.'],
+ [/^Проблема по уборке: [\s\S]*$/,'Сообщили о проблеме по уборке. Подробности в сервисе.'],
+ [/^Выезд пока не подтверждён: [\s\S]*$/,'Выезд пока не подтверждён. Причина в брони.'],
+ [/^Доработайте уборку: [\s\S]*$/,'Владелец просит доработать уборку. Что исправить, написано в задании.'],
+ [/^(Владелец отменил уборку «[^»]*»)\. Причина: [\s\S]*$/,'$1. Причина в задании.'],
+ [/^(Гость оценил проживание в «[^»]*»: [★☆]+) «[\s\S]*$/,'$1. Отзыв в сервисе.']
+];
 const plainNotice=(item:Row)=>{
  const body=String(item.body||'').trim()||'Есть новое событие. Откройте сервис, чтобы посмотреть.';
- return String(item.dedupe||'').split(':')[1]==='discussion'?body.replace(/\+?\d[\d\s()-]{8,}\d|\d{4,}/g,'••••'):body;
+ if(String(item.dedupe||'').split(':')[1]==='discussion')return body.replace(/\+?\d[\d\s()-]{8,}\d|\d{4,}/g,'••••');
+ const rule=PERSON_WRITTEN.find(([re])=>re.test(body));return rule?body.replace(rule[0],rule[1]):body;
 };
 const ICONS:[RegExp,string][]=[[/^Бронь/,'📅'],[/^Уборка/,'🧹'],[/^Жильё/,'🏠'],[/^(Сообщение|Новое сообщение)/,'💬'],[/^AI администратор/,'🤖']];
 const ROLE_TITLES:Record<string,string>={guest:'Для гостя',owner:'Для владельца',cleaner:'Для исполнителя'};
