@@ -45,3 +45,16 @@ test('a passing Telegram outage does not fail the bot setup after a publication'
  assert.equal(r.username,'aiqonaq_bot');assert.equal(waits,2);
  await assert.rejects(setupTelegram({token:'1:x',account:'a',cfToken:'c',site:'https://x.dev',fetcher:async()=>new Response('Bad Gateway',{status:502}),wait:async()=>{}}),/getMe failed: 502/);
 });
+
+test('a row deleted between two pages of a backup does not push later rows out of it',async()=>{
+ const f=await fixture();try{
+  f.db.raw.prepare('DELETE FROM notifications').run();
+  const add=f.db.raw.prepare('INSERT INTO notifications VALUES (?,?,?,?,0,0)');for(let i=1;i<=5;i++)add.run('k'+i,'owner','Сообщение '+i,'keyset:'+i);
+  // The first row disappears right after the first page of this table is read.
+  const real=f.db.prepare.bind(f.db);let pages=0;
+  f.db.prepare=sql=>{const s=real(sql);if(/FROM "notifications" WHERE rowid>/.test(sql)){const all=s.all.bind(s);s.all=async()=>{const r=await all();if(++pages===1)f.db.raw.prepare("DELETE FROM notifications WHERE id='k1'").run();return r;};}return s;};
+  const c=config(),r=await cloudBackup(f.db,c,2,1e9);f.db.prepare=real;
+  const saved=JSON.parse(await decryptInstructions(c.store.get(r.key),c)).tables.notifications.map(n=>n.id);
+  assert.deepEqual(saved,['k1','k2','k3','k4','k5']);assert.ok(!('__rowid' in JSON.parse(await decryptInstructions(c.store.get(r.key),c)).tables.notifications[0]));
+ }finally{f.db.close();}
+});

@@ -60,9 +60,11 @@ export async function cloudBackup(db:D1Database,config:OperationConfig,page=BACK
   if(!/^[A-Za-z_][A-Za-z0-9_]*$/.test(table.name))throw new Error('Unknown table');
   held[table.name]=held[table.name]||[];
   if(table.name==='journey_sessions')continue;
-  for(let offset=0;;offset+=page){
-   const values=await rows(db,'SELECT * FROM "'+table.name+'" LIMIT ? OFFSET ?',page,offset);
-   for(const value of values){const text=JSON.stringify(value);if(size&&size+text.length>partBytes){flush();held[table.name]=[];}held[table.name].push(value);size+=text.length+1;}
+  // Pages go by rowid, not by offset: a row deleted meanwhile (expired sign-ins, a removed account) cannot shift
+  // the rows after it out of the copy.
+  for(let after=0;;){
+   const values=await rows(db,'SELECT rowid AS __rowid,* FROM "'+table.name+'" WHERE rowid>? ORDER BY rowid LIMIT ?',after,page);
+   for(const {__rowid,...value} of values){after=Number(__rowid);const text=JSON.stringify(value);if(size&&size+text.length>partBytes){flush();held[table.name]=[];}held[table.name].push(value);size+=text.length+1;}
    if(values.length<page)break;
   }
  }
