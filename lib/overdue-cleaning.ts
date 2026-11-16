@@ -62,9 +62,10 @@ export const LATE_ASK=900,LATE_RELEASE=2700;
 const clockOf=(at:number)=>new Intl.DateTimeFormat('ru-RU',{hour:'2-digit',minute:'2-digit',timeZone:'Asia/Almaty'}).format(new Date(at*1000));
 async function sweepLateStart(db:D1Database,at:number,result:Row){
  // The clock runs from the latest of: the planned start, the guest's confirmed checkout, the last change of the job
- // (an assignment made after the start counts from the assignment, not from the start).
+ // (an assignment made after the start counts from the assignment, not from the start). A short cleaning stays on this
+ // clock after its window ends, so the 45-minute promise holds; an hour past it the end-based sweep below takes over.
  const since="MAX(j.start,COALESCE((SELECT t.actual_checkout FROM booking_terms t WHERE t.booking_id=j.booking_id),0),COALESCE((SELECT MAX(a.created_at) FROM audit_events a WHERE a.entity_id=j.id),0))";
- const list=await rows(db,`SELECT j.*,p.title,${since} since FROM cleaning_jobs j JOIN properties p ON p.id=j.property_id WHERE j.status='assigned' AND j.assigned_to IS NOT NULL AND j.end>? AND j.start<=? AND ${since}<=? AND (j.booking_id IS NULL OR EXISTS(SELECT 1 FROM bookings b WHERE b.id=j.booking_id AND b.status='completed')) ORDER BY j.start LIMIT 50`,at,at-LATE_ASK,at-LATE_ASK);
+ const list=await rows(db,`SELECT j.*,p.title,${since} since FROM cleaning_jobs j JOIN properties p ON p.id=j.property_id WHERE j.status='assigned' AND j.assigned_to IS NOT NULL AND ${since}>? AND j.start<=? AND ${since}<=? AND (j.booking_id IS NULL OR EXISTS(SELECT 1 FROM bookings b WHERE b.id=j.booking_id AND b.status='completed')) ORDER BY j.start LIMIT 50`,at-LATE_RELEASE-3600,at-LATE_ASK,at-LATE_ASK);
  for(const j of list){
   const title=j.title||'жильё',start=Number(j.since),rule=await ruleFor(db,j.owner_id,'overdue_job');
   if(at>=start+LATE_RELEASE&&rule.on){

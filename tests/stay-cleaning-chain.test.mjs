@@ -119,3 +119,24 @@ test('a stay extension keeps the assigned cleaner at the new time',async()=>{
   assert.match(note(f,'cleaner','cleaner:reschedule:%').body,/остаётесь назначены/);
  }finally{f.db.close();}
 });
+
+test('«Опаздываю» is refused when another site\'s guest arrives right after the cleaning',async()=>{
+ const f=await fixture();try{
+  endedStay(f,LATE_ASK+60);const j=job(f);
+  f.db.raw.prepare("INSERT INTO calendar_sources(id,property_id,owner_id,label,created_at) VALUES ('src',?,'owner','Другая площадка',?)").run(f.property,now());
+  f.db.raw.prepare("INSERT INTO external_blocks VALUES ('blk','src',?,'uid-1',?,?)").run(f.property,j.end,j.end+86400);
+  await assert.rejects(f.cleaner.jobAction(f.job.id,{action:'late'}),/внешнему календарю/);
+  assert.equal(job(f).start,j.start);
+ }finally{f.db.close();}
+});
+
+test('a short cleaning is still replaced 45 minutes after its start, though its window has ended',async()=>{
+ const f=await fixture();try{
+  endedStay(f,0);const back=LATE_RELEASE+60;
+  f.db.raw.prepare("UPDATE bookings SET status='completed' WHERE id=?").run(f.booking);
+  f.db.raw.prepare('UPDATE cleaning_jobs SET start=?,end=? WHERE id=?').run(now()-back,now()-back+1800,f.job.id);
+  f.db.raw.prepare('UPDATE booking_terms SET actual_checkout=? WHERE booking_id=?').run(now()-back,f.booking);
+  assert.equal((await sweepOverdueJobs(f.db,{})).released,1);
+  const j=job(f);assert.equal(j.status,'open');assert.equal(j.assigned_to,null);
+ }finally{f.db.close();}
+});

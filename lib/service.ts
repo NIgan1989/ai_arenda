@@ -876,6 +876,8 @@ export class RentalService {
       const start=Math.max(Number(j.start),t)+shift,end=start+(Number(j.end)-Number(j.start));
       const next=await this.one("SELECT start FROM bookings WHERE property_id=? AND id<>COALESCE(?,'') AND (status='confirmed' OR (status='requested' AND expires_at>?)) AND start<? AND occupied_until>? ORDER BY start LIMIT 1",j.property_id,j.booking_id,t,end,start);
       if(next)throw new DomainError('Следующий гость заезжает в '+clockLabel(Number(next.start))+': опоздать на полчаса нельзя. Если не успеваете, откажитесь от задания, и ИИ найдёт замену.',409);
+      // A stay from another site's calendar counts as a next guest too (only the stretch the cleaning moves into).
+      if(await this.one('SELECT x.id FROM external_blocks x JOIN calendar_sources c ON c.id=x.source_id WHERE x.property_id=? AND c.enabled=1 AND x.start<? AND x.end>? LIMIT 1',j.property_id,end,Number(j.end)))throw new DomainError('Следующий гость по внешнему календарю заезжает раньше: опоздать на полчаса нельзя. Если не успеваете, откажитесь от задания, и ИИ найдёт замену.',409);
       let r;
       try{r=await this.db.batch([
         this.query("UPDATE cleaning_jobs SET start=?,end=?,overdue_step=0 WHERE id=? AND version=? AND status='assigned' AND assigned_to=?",start,end,jobId,j.version,this.userId),
