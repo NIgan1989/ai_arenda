@@ -18,7 +18,7 @@ const toGl=(zoom:number)=>zoom-1,fromGl=(zoom:number)=>zoom+1;
 const plusIcon=require('../assets/ui/plus.png'),minusIcon=require('../assets/ui/minus.png');
 const fallback:MapPoint=[76.95,52.287];
 
-export function LiveMap({center,pins,selected,focus='',lines=[],heat=[],sparks=[],onSelect,bottomInset=0,topInset=0,focusKey='',picking=false,scanning=false,onCenter,restore,onView,me=null,locating=false,onLocate,meFly=0}:MapProps){
+export function LiveMap({center,pins,selected,focus='',lines=[],heat=[],sparks=[],onSelect,bottomInset=0,topInset=0,focusKey='',picking=false,scanning=false,onCenter,restore,onView,me=null,locating=false,onLocate,meFly=0,onLongPress}:MapProps){
  const camera=useRef<CameraRef>(null);
  const [size,setSize]=useState({w:0,h:0}),[still,setStill]=useState(false),[failed,setFailed]=useState(false);
  // The view as the map last reported it, in map-math zoom; pins are grouped by it.
@@ -109,7 +109,7 @@ export function LiveMap({center,pins,selected,focus='',lines=[],heat=[],sparks=[
  const now=Date.now(),start=restore?.view.center||validPoint(center)||fallback;
  return <View style={m.host} onLayout={layout} accessibilityLabel={'Карта. Меток: '+placed.length}>
   <GlMap style={StyleSheet.absoluteFill} mapStyle={STYLE} logo={false} compass={false} touchRotate={false} touchPitch={false} attribution attributionPosition={{bottom:bottomInset+6,left:8}}
-   onRegionWillChange={willChange} onRegionDidChange={didChange} onDidFailLoadingMap={()=>setFailed(true)} onDidFinishLoadingMap={()=>setFailed(false)}>
+   onRegionWillChange={willChange} onRegionDidChange={didChange} onLongPress={onLongPress?e=>{const p=validPoint(e.nativeEvent.lngLat as MapPoint);if(p)onLongPress(p);}:undefined} onDidFailLoadingMap={()=>setFailed(true)} onDidFinishLoadingMap={()=>setFailed(false)}>
    <Camera ref={camera} initialViewState={{center:start,zoom:toGl(restore?.view.zoom??12)}} minZoom={toGl(MIN_ZOOM)} maxZoom={toGl(MAX_ZOOM)}/>
    <GeoJSONSource id="heat" data={heatData}>
     <Layer id="heat" type="heatmap" paint={{'heatmap-weight':['get','w'],'heatmap-intensity':1,'heatmap-opacity':.7,'heatmap-radius':['interpolate',['linear'],['zoom'],9,24,12,48,15,90],'heatmap-color':['interpolate',['linear'],['heatmap-density'],0,HEAT[0],.3,HEAT[1],.65,HEAT[2],1,HEAT[3]]}}/>

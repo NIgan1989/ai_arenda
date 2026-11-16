@@ -83,7 +83,7 @@ function HeadSlot({onHeight,children}:{onHeight:(height:number)=>void;children:R
 }
 function useNow(active:boolean){const [now,setNow]=useState(Date.now()/1000);useEffect(()=>{if(!active)return;const timer=setInterval(()=>setNow(Date.now()/1000),1000);return()=>clearInterval(timer);},[active]);return now;}
 
-function GuestPanel({setScanning,accountId,data,mapData,publish,selected,setSelected,setFocus,snap,showNow,expand,onHead,onReach,onAsk,onIntent,onBook,onChanged,onOpenProcess,onOpenPage,picking,setPicking,mapCenter,city,setCity,aimed,flyMe,notify}:Common&{aimed:boolean;picking:boolean;setPicking:(value:boolean)=>void;mapCenter:React.RefObject<MapPoint|null>;setCity:(city:string)=>void}){
+function GuestPanel({setScanning,accountId,data,mapData,publish,selected,setSelected,setFocus,snap,showNow,expand,onHead,onReach,onAsk,onIntent,onBook,onChanged,onOpenProcess,onOpenPage,picking,setPicking,mapCenter,city,setCity,aimed,flyMe,notify,held}:Common&{held:{point:MapPoint;n:number}|null;aimed:boolean;picking:boolean;setPicking:(value:boolean)=>void;mapCenter:React.RefObject<MapPoint|null>;setCity:(city:string)=>void}){
  // «На карте» from a page wins over the search the guest left: the panel starts clean in the target's city.
  const kept=useRef(aimed?undefined:guestSearches.get(accountId)).current,foundAt=useRef(kept?.foundAt||0),recent=!!kept?.preview&&Date.now()-kept.foundAt<SEARCH_KEEP;
  const [draft,setDraft]=useState<GuestDraft>(()=>kept?.draft||newDraft(city));
@@ -203,7 +203,12 @@ function GuestPanel({setScanning,accountId,data,mapData,publish,selected,setSele
    askRoads(straight);
    publish(asked,'live:'+live.id+':'+offers.length+':'+(live.pendingProperties||[]).length,{lines:roadBeams(straight,roads)});
   }
-  else if(preview)publish(preview.properties.flatMap((p:Row)=>pin(p,p.quickRequest?'booking':'home').map(m=>p.match?.best?{...m,best:true}:m)),stageKey);
+  else if(preview){
+   const found:MapPin[]=preview.properties.flatMap((p:Row)=>pin(p,p.quickRequest?'booking':'home').map(m=>p.match?.best?{...m,best:true}:m));
+   // Searched around a point held on the map: thin beams from that point to what was found, so the guest sees the zone.
+   const held0=heldAt.current,from=held0&&draft.near&&nearOf(held0).longitude===draft.near.longitude&&nearOf(held0).latitude===draft.near.latitude?held0:null;
+   publish(found,stageKey,{lines:from?found.slice(0,8).map(m=>({key:'beam:'+m.key,from,to:m.point,tone:'answer' as const})):[]});
+  }
   else publish([...(mapData?.properties||[]).flatMap((p:Row)=>pin(p,'home')),...stays.map(({id,start,canGo,...m})=>m)],stageKey+':'+(mapData?.properties?.length||0));
  },[requestId,live,preview,mapData,draft.city,staysKey,nav.trip,nav.here,nav.route,nav.rerouted,roads]);
  // Where the guest is: on the first point from the phone the search moves to the guest's city, and once that city's
@@ -220,12 +225,25 @@ function GuestPanel({setScanning,accountId,data,mapData,publish,selected,setSele
   if(mapData&&mapData.city===near){placed.current='done';flyMe();}
  },[here.fix,mapData]);
  const meInCity=!!here.fix&&nearestCity(here.fix.point)===draft.city;
+ // A finger held on the map: the search runs around that point (5 km), in the city it lies in. The exact point is only
+ // drawn on this phone; the search gets it rounded, as a point picked under the marker.
+ const heldAt=useRef<MapPoint|null>(null);
+ useEffect(()=>{
+  if(!held)return;
+  if(requestId||nav.trip){notify('Сначала завершите текущий подбор или поездку.');return;}
+  const where=nearestCity(held.point);
+  if(!where){notify('Здесь пока нет жилья сервиса. Удерживайте палец на месте в городе.');return;}
+  if(where!==draft.city){setCity(where);chosenCity.add(accountId);}
+  heldAt.current=held.point;
+  notify('Ищем жильё в 5 км от этой точки.');
+  void find({...draft,city:where,district:where===draft.city?draft.district:'',near:nearOf(held.point)});
+ },[held?.n]);
  // The radar on the map runs while flats are searched and while owners are being asked.
  const scanning=(working&&!requestId)||(!!requestId&&(!live||live.status==='searching'));
  useEffect(()=>{setScanning(scanning);return()=>setScanning(false);},[scanning]);
  useEffect(()=>{if(offers.length&&selected){const at=offers.findIndex(p=>p.id===selected);if(at>=0&&at!==index){setIndex(at);setAccepted(false);}}},[selected]);
 
- const pickView=<View style={h.block}><Text style={h.title}>Где ищем?</Text><Text style={h.note}>Передвиньте карту так, чтобы метка стояла в нужном месте. Владельцам точка не передаётся, для подбора она округляется.</Text>
+ const pickView=<View style={h.block}><Text style={h.title}>Где ищем?</Text><Text style={h.note}>Передвиньте карту так, чтобы метка стояла в нужном месте. Или просто удерживайте палец на нужном месте карты. Владельцам точка не передаётся, для подбора она округляется.</Text>
   <Action title="Искать рядом с этой точкой" onPress={()=>{const c=mapCenter.current,near=c?{longitude:Math.round(c[0]*100)/100,latitude:Math.round(c[1]*100)/100,radius:5000}:null,search=pickThenFind.current&&!!near;pickThenFind.current=false;if(near)change({...draft,near});setPicking(false);if(search)void find({...draft,near});else expand(1);}}/>
   <Action secondary title="Отмена" onPress={()=>{const fromLine=pickThenFind.current;pickThenFind.current=false;setPicking(false);expand(fromLine?0:1);}}/></View>;
 
@@ -702,6 +720,8 @@ export function MapHome({ role, accountId, data, menu, chats, onChanged, onOpenP
   const [meFly, setMeFly] = useState(0);
   const [seeking, setSeeking] = useState(false);
   const [hereTip, setHereTip] = useState<HereNote | null>(null);
+  // A finger held on the map (guest only): GuestPanel searches around that point.
+  const [held, setHeld] = useState<{ point: MapPoint; n: number } | null>(null);
   useEffect(() => {
     if (isFresh(getHere().fix)) return;
     setSeeking(true);
@@ -778,6 +798,7 @@ export function MapHome({ role, accountId, data, menu, chats, onChanged, onOpenP
         locating={seeking}
         onLocate={() => void findMe()}
         meFly={meFly}
+        onLongPress={role === 'guest' && !picking ? point => { setHeld({ point, n: Date.now() }); setSnap(1); } : undefined}
         onView={view => rememberMap(scope, shownKey.current ? { view, viewKey: shownKey.current } : { view })}
       />
       {seeking && !here.fix && !notice && !picking && (
@@ -821,7 +842,7 @@ export function MapHome({ role, accountId, data, menu, chats, onChanged, onOpenP
         <View style={h.grow} {...drag.body.panHandlers}>
           <ScrollView ref={scroll} scrollEnabled={scrollable} keyboardShouldPersistTaps="handled" contentContainerStyle={h.sheetContent} showsVerticalScrollIndicator={false}>
             {role === 'guest' ? (
-              <GuestPanel {...common} aimed={!!aim.current} picking={picking} setPicking={setPicking} mapCenter={mapCenter} setCity={setCity} />
+              <GuestPanel {...common} held={held} aimed={!!aim.current} picking={picking} setPicking={setPicking} mapCenter={mapCenter} setCity={setCity} />
             ) : role === 'owner' ? (
               <OwnerPanel {...common} />
             ) : (
