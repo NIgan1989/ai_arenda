@@ -231,10 +231,13 @@ function GuestPanel({setScanning,accountId,data,mapData,publish,selected,setSele
  useEffect(()=>{
   if(!held)return;
   if(requestId||nav.trip){notify('Сначала завершите текущий подбор или поездку.');return;}
+  if(lock.current){notify('Секунду: ещё ищем по прошлой точке.');return;}
   const where=nearestCity(held.point);
   if(!where){notify('Здесь пока нет жилья сервиса. Удерживайте палец на месте в городе.');return;}
   if(where!==draft.city){setCity(where);chosenCity.add(accountId);}
   heldAt.current=held.point;
+  // A point held in «Где ищем?» answers that question: the marker mode ends here.
+  if(picking){pickThenFind.current=false;setPicking(false);}
   notify('Ищем жильё в 5 км от этой точки.');
   void find({...draft,city:where,district:where===draft.city?draft.district:'',near:nearOf(held.point)});
  },[held?.n]);
@@ -798,7 +801,7 @@ export function MapHome({ role, accountId, data, menu, chats, onChanged, onOpenP
         locating={seeking}
         onLocate={() => void findMe()}
         meFly={meFly}
-        onLongPress={role === 'guest' && !picking ? point => { setHeld({ point, n: Date.now() }); setSnap(1); } : undefined}
+        onLongPress={role === 'guest' ? point => { setHeld({ point, n: Date.now() }); setSnap(1); } : undefined}
         onView={view => rememberMap(scope, shownKey.current ? { view, viewKey: shownKey.current } : { view })}
       />
       {seeking && !here.fix && !notice && !picking && (
