@@ -117,9 +117,9 @@ export function bookingThread(b: Row, data: Row, now: number): ProcessThread {
       note: out ? (did('ИИ подтвердил выезд') ? 'ИИ подтвердил выезд' : 'Выезд подтверждён') : terms.checkout_reported_at ? 'Гость сообщил о выезде · подтвердите' : now >= b.end ? 'Время выезда прошло · подтвердите выезд' : 'Выезд в ' + threadWhen(b.end, now) },
   ];
   // A deposit the owner received is a last step of its own: the stay is not closed until it is back with the guest.
-  const held = terms.deposit_status === 'owner_verified' && Number(terms.deposit) > 0, owed = Number(terms.deposit_balance) || 0;
+  const held = terms.deposit_status === 'owner_verified' && Number(terms.deposit) > 0, owed = Number(terms.deposit_balance) || 0, kept = Number(terms.deposit_kept) || 0;
   if (held) steps.push({ key: 'deposit', label: 'Депозит', by: 'you', at: terms.deposit_returned_at || undefined,
-    note: owed ? 'Верните гостю депозит ' + tenge(owed) + ' и отметьте возврат' : 'Депозит возвращён' });
+    note: owed ? 'Верните гостю ' + (kept ? 'остаток депозита ' : 'депозит ') + tenge(owed) + ' и отметьте возврат' : kept ? 'Удержано ' + tenge(kept) + (kept < Number(terms.deposit) ? ', остальное возвращено' : '') : 'Депозит возвращён' });
   const leaving = out || !!terms.checkout_reported_at || now >= b.end;
   const done = [confirmed, paid, inside, inside && leaving, out, ...(held ? [out && !owed] : [])];
   const t = place(steps, done, i => i === 0 || i === 1 || i === 3 || i === 5 || (i === 2 ? now >= b.start - 15 * 60 : now >= b.end));

@@ -159,7 +159,7 @@ test('the form offers a week of days and keeps a later day the text named', () =
 
 test('reasons are shown in plain words, and the budget only when one was named', () => {
   const reasons = ['В пределах бюджета', 'Готовность проверена', 'Примерно 1.2 км от выбранной зоны'];
-  assert.deepEqual(shownReasons(reasons, draft), ['Готова к заселению', 'Примерно 1.2 км от выбранной зоны']);
+  assert.deepEqual(shownReasons(reasons, draft), ['Готово к заселению', 'Примерно 1.2 км от выбранной зоны']);
   assert.deepEqual(shownReasons(reasons, {maxPrice: '20000'})[0], 'В пределах бюджета');
   assert.deepEqual(shownReasons(undefined, draft), []);
 });

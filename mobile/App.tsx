@@ -485,11 +485,13 @@ function Chat(){
           !owner&&confirmed&&!b.terms?.actual_checkin&&!b.terms?.checkin_reported_at&&lateOpen(lateStay(b),data.serverTime)&&{title:lateLabel(lateStay(b)),kind:'main',onPress:()=>confirm('bookings/'+id,{action:'report_late'},'Предупредить владельца, что вы приедете на час позже; бронь сохранится'),...(lateNote(lateStay(b),data.serverTime)?{note:lateNote(lateStay(b),data.serverTime)}:{})},
           !owner&&confirmed&&started&&!b.terms?.checkout_reported_at&&{title:'Сообщить о выезде',kind:'main',onPress:()=>confirm('bookings/'+id,{action:'report_checkout'},'Сообщить владельцу о выезде; освобождение жилья потребует проверки')},
           {title:'Открыть чат',kind:'side',onPress:()=>{setChatInitial({kind:'booking',entityId:id,channel:'stay'});setPageId('chats');}},
-          confirmed&&{title:'Есть проблема',kind:'side',onPress:()=>raiseIssue('booking',id,actor)},
+          (confirmed||b.status==='completed'&&(owner||!!b.terms?.deposit_kept))&&{title:'Есть проблема',kind:'side',onPress:()=>raiseIssue('booking',id,actor)},
           ['requested','confirmed'].includes(b.status)&&!b.terms?.actual_checkin&&{title:'Отменить бронь',kind:'danger',onPress:()=>confirm('bookings/'+id,{action:'cancel'},'Отменить бронь',undefined,cancelLine(b.cancel_terms,owner,b.terms?.paid_amount||0)+'.')},
           // Money after the stay or a cancellation: the owner marks each transfer in one tap, the amount is on the button.
           owner&&['cancelled','expired'].includes(b.status)&&refundLeft(b)>0&&{title:'Вернул гостю '+money(refundLeft(b)),kind:'main',onPress:()=>confirm('bookings/'+id,{action:'record_refund',confirmed:true},'Вернул гостю '+money(refundLeft(b)),'owner-bookings','Подтверждаю, что уже перевёл гостю эту сумму за отменённую бронь.')},
           owner&&['completed','cancelled','expired'].includes(b.status)&&b.terms?.deposit_status==='owner_verified'&&b.terms?.deposit_balance>0&&{title:'Вернул депозит '+money(b.terms.deposit_balance),kind:'main',onPress:()=>confirm('bookings/'+id,{action:'record_deposit_return',confirmed:true},'Вернул депозит '+money(b.terms.deposit_balance),'owner-bookings','Подтверждаю, что уже перевёл гостю депозит.')},
+          // Damage after the stay: the owner keeps a part of the deposit once, with a reason the guest sees.
+          owner&&b.status==='completed'&&b.terms?.deposit_status==='owner_verified'&&b.terms?.deposit_balance>0&&!b.terms?.deposit_kept&&{title:'Удержать часть депозита',kind:'side',onPress:()=>beginFlow('keep-deposit',[{key:'amount',text:'Какую сумму удержать из депозита '+money(b.terms.deposit_balance)+'? Гость увидит сумму и причину.',label:'Удержать, ₸',min:1,max:b.terms.deposit_balance},{key:'reason',text:'За что удерживаете? Напишите коротко, что повреждено или пропало.',label:'Причина'}],{},'bookings/'+id,'owner-bookings','owner',{action:'keep_deposit'})},
         ]}/>
 
 
@@ -511,10 +513,13 @@ function Chat(){
 
 
           !owner&&j.status==='open'&&!applied&&{title:'Откликнуться',kind:'main',onPress:()=>perform('jobs/'+id,{action:'apply'},m.id)},
+          !owner&&j.status==='open'&&application?.status==='pending'&&{title:'Отозвать отклик',kind:'side',onPress:()=>confirm('jobs/'+id,{action:'withdraw'},'Отозвать отклик на эту уборку','jobs')},
           // The guest left without a word: the cleaner at the door says so, and the owner (or the autopilot) confirms the checkout.
           assigned&&j.status==='assigned'&&!!j.booking_id&&!j.checkout_confirmed&&clock>=j.start-1800&&{title:'Гостя нет, жильё свободно',kind:'main',onPress:()=>confirm('jobs/'+id,{action:'vacant'},'Сообщить владельцу, что гость ушёл и жильё свободно','my-jobs')},
           assigned&&j.status==='assigned'&&{title:'Начать уборку',kind:'main',disabled:!j.checkout_confirmed,onPress:()=>confirm('jobs/'+id,{action:'start'},'Отметить начало работы','my-jobs')},
           assigned&&j.status==='assigned'&&clock>=j.start-3*3600&&clock<=j.start+2700&&{title:'Опаздываю',kind:'side',onPress:()=>confirm('jobs/'+id,{action:'late'},'Предупредить владельца: вы начнёте на полчаса позже, время уборки сдвинется','my-jobs')},
+          // Cannot come after all: said in advance, the cleaning goes back to the search and the owner hears at once.
+          assigned&&j.status==='assigned'&&{title:'Отказаться от задания',kind:'danger',onPress:()=>confirm('jobs/'+id,{action:'release'},'Отказаться от задания','my-jobs','Уборка вернётся в поиск, владелец сразу узнает.')},
           assigned&&j.status==='in_progress'&&{title:'Подготовить отчёт',kind:'main',onPress:()=>say('Проверьте каждый пункт. Отчёт уйдёт владельцу после вашего подтверждения.','report',{id})},
           owner&&j.status==='submitted'&&{title:'Рассмотреть отчёт',kind:'main',onPress:()=>say('Отчёт на приёмке.','approval',{id:'report:'+id})},
           (owner&&!!j.assigned_to||assigned)&&{title:'Открыть чат',kind:'side',onPress:()=>{setChatInitial({kind:'job',entityId:id,channel:'cleaning'});setPageId('chats');}},

@@ -19,6 +19,8 @@ test('the time to pay and to arrive',()=>{
  assert.equal(payDue({start:t+7200,created_at:t}),t+7200);
  // A stay booked for right now still leaves half an hour to pay.
  assert.equal(payDue({start:t+60,created_at:t}),t+1800);
+ // A stay booked far ahead is paid within a day, not at the arrival.
+ assert.equal(payDue({start:t+10*86400,created_at:t}),t+86400);
  assert.equal(arrivalDue({start:t,arrival_eta:t+3600}),t+3600);
  assert.equal(lateUntil({start:t+600,end:t+10800},t),t+4200);
  assert.equal(lateUntil({start:t+600,end:t+10800,late_count:3},t),null);
@@ -43,6 +45,7 @@ test('an unpaid stay: reminded, warned, then released and the home is free',asyn
   assert.equal(booking(f).status,'cancelled');
   assert.equal(f.db.raw.prepare('SELECT status FROM cleaning_jobs WHERE booking_id=?').get(f.booking).status,'cancelled');
   assert.equal(notes(f,'guest','guest:stay-unpaid-released:%'),1);assert.equal(notes(f,'owner','owner:stay-unpaid-released:%'),1);
+  assert.ok(f.db.raw.prepare('SELECT refund_recorded_at r FROM booking_terms WHERE booking_id=?').get(f.booking).r,'nothing to return: the matter is closed');
   assert.equal((await sweepStays(f.db,{})).released,0);
  }finally{f.db.close();}
 });
@@ -78,8 +81,25 @@ test('with the autopilot a no-show is released; «Задерживаюсь на 
   // Still nobody an hour and a half after the new time: the stay is released.
   f.db.raw.prepare('UPDATE bookings SET start=? WHERE id=?').run(now()-3000,f.booking);
   f.db.raw.prepare('UPDATE booking_terms SET arrival_eta=? WHERE booking_id=?').run(now()-1900,f.booking);
+  f.db.raw.prepare('UPDATE booking_terms SET paid_amount=(SELECT amount FROM bookings WHERE id=booking_id) WHERE booking_id=?').run(f.booking);
   assert.equal((await sweepStays(f.db,{})).released,1);
   assert.equal(booking(f).status,'cancelled');assert.equal(notes(f,'owner','owner:stay-no-show:%'),1);
+  // Not coming is a late cancellation: the owner is asked to return only what the rules leave to the guest.
+  const terms=f.db.raw.prepare('SELECT paid_amount,refund_due,refund_recorded_at FROM booking_terms WHERE booking_id=?').get(f.booking);
+  assert.ok(terms.refund_due!=null&&terms.refund_due<terms.paid_amount,'refund_due '+terms.refund_due+' of '+terms.paid_amount);
+  assert.match(f.db.raw.prepare("SELECT body FROM notifications WHERE dedupe LIKE 'owner:stay-no-show:%'").get().body,/у вас остаётся/);
+ }finally{f.db.close();}
+});
+
+test('a stay that ended with no check-in is closed without the autopilot, and its cleaning is not needed',async()=>{
+ const f=await fixture();try{
+  paid(f);at(f,-4*3600,3);
+  f.db.raw.prepare('UPDATE booking_terms SET paid_amount=(SELECT amount FROM bookings WHERE id=booking_id) WHERE booking_id=?').run(f.booking);
+  assert.equal((await sweepStays(f.db,{})).released,1);
+  assert.equal(booking(f).status,'cancelled');assert.equal(notes(f,'owner','owner:stay-no-show:%'),1);assert.equal(notes(f,'guest','guest:stay-no-show:%'),1);
+  assert.equal(f.db.raw.prepare("SELECT COUNT(*) n FROM cleaning_jobs WHERE booking_id=? AND status IN ('open','assigned')").get(f.booking).n,0);
+  assert.ok(f.db.raw.prepare('SELECT refund_due r FROM booking_terms WHERE booking_id=?').get(f.booking).r!=null);
+  assert.equal((await sweepStays(f.db,{})).released,0);
  }finally{f.db.close();}
 });
 

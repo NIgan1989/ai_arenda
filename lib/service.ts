@@ -402,7 +402,7 @@ export class RentalService {
       this.all("SELECT f.booking_id,SUM(CASE WHEN f.kind='deposit' THEN f.amount ELSE 0 END) deposit_received,SUM(CASE WHEN f.kind='deposit_return' THEN f.amount ELSE 0 END) deposit_returned,SUM(CASE WHEN f.kind='refund' THEN f.amount ELSE 0 END) refunded FROM finance_entries f JOIN bookings b ON b.id=f.booking_id JOIN properties p ON p.id=b.property_id WHERE b.guest_id=? OR p.owner_id=? GROUP BY f.booking_id",this.userId,this.userId),
       this.all("SELECT f.job_id,SUM(f.amount) paid FROM finance_entries f JOIN cleaning_jobs j ON j.id=f.job_id WHERE f.kind='job_payment' AND (j.owner_id=? OR j.assigned_to=?) GROUP BY f.job_id",this.userId,this.userId)
     ]);
-    const enrichedTerms:Row[]=terms.map(t=>{const f=financeBalances.find(f=>f.booking_id===t.booking_id),received=f?.deposit_received??(t.deposit_status==='owner_verified'?t.deposit:0),returned=f?.deposit_returned??(t.deposit_returned_at?t.deposit:0);return {...t,deposit_received_amount:received,deposit_returned_amount:returned,deposit_balance:Math.max(0,received-returned),refunded_amount:f?.refunded||0};});
+    const enrichedTerms:Row[]=terms.map(t=>{const f=financeBalances.find(f=>f.booking_id===t.booking_id),received=f?.deposit_received??(t.deposit_status==='owner_verified'?t.deposit:0),returned=f?.deposit_returned??(t.deposit_returned_at?t.deposit:0);return {...t,deposit_received_amount:received,deposit_returned_amount:returned,deposit_balance:Math.max(0,received-returned-(Number(t.deposit_kept)||0)),refunded_amount:f?.refunded||0};});
     const policyFor=(p:Row)=>policies.find(v=>v.property_id===p.id)||defaultPolicy;
     // What cancelling right now would cost, for the card: the same rule the cancel action applies.
     const cancelFor=(b:Row)=>{const t=enrichedTerms.find(v=>v.booking_id===b.id);if(!t||!['requested','confirmed'].includes(b.status)||t.actual_checkin)return null;return cancellationTerms({by:b.owner_id===this.userId?'owner':'guest',status:b.status,mode:t.billing_mode,rate:t.rate,units:t.units,amount:b.amount,paid:t.paid_amount,deposit:t.deposit_status==='owner_verified'?t.deposit:0,start:b.start,minHours:t.min_hours||policies.find(v=>v.property_id===b.property_id)?.min_hours||1,at:serverTime});};
@@ -541,6 +541,10 @@ export class RentalService {
     if(checked.policy.version>0&&body.acceptTerms!==true)throw new DomainError('Подтвердите согласие с показанными правилами проживания.');
     const bookingId=id(), p={id:checked.propertyId,cleaning_minutes:checked.cleaningMinutes};
     const owner=await this.one('SELECT owner_id,price FROM properties WHERE id=?',p.id);
+    if(owner?.owner_id===this.userId)throw new DomainError('Это ваше жильё: забронировать его как гость нельзя. Чтобы закрыть даты, нажмите «Закрыть заезды» в правилах жилья.',403);
+    // One guest does not hold the same time in two homes without paying: the first request is paid or cancelled first.
+    const held=await this.one("SELECT p.title FROM bookings b JOIN properties p ON p.id=b.property_id WHERE b.guest_id=? AND b.property_id<>? AND b.start<? AND b.end>? AND ((b.status='requested' AND b.expires_at>?) OR (b.status='confirmed' AND b.payment_status<>'owner_verified')) LIMIT 1",this.userId,p.id,end,start,now());
+    if(held)throw new DomainError('На это время у вас уже есть неоплаченная бронь: «'+held.title+'». Оплатите или отмените её, затем бронируйте другое жильё.',409);
     const policyNow=await this.one('SELECT * FROM property_policies WHERE property_id=?',p.id),autoConfirm=!!policyNow?.auto_confirm&&mandateActive(policyNow)&&policyNow.version===checked.policy.version;
     // The owner's own time to answer a request («Автопилот: решения и сроки»).
     const answer=(await ruleFor(this.db,owner!.owner_id,'request')).minutes;
@@ -587,9 +591,26 @@ export class RentalService {
       const balance=await this.one("SELECT COALESCE(SUM(CASE WHEN kind=? THEN amount WHEN kind=? THEN -amount ELSE 0 END),0) n FROM finance_entries WHERE booking_id=?",deposit?'deposit':'payment',deposit?'deposit_return':'refund',bookingId),remaining=balance?.n||0;
       // After a cancellation the guest is owed what the offer's rules left, not always everything paid.
       const refunded=deposit||terms?.refund_due==null?0:(await this.one("SELECT COALESCE(SUM(amount),0) n FROM finance_entries WHERE booking_id=? AND kind='refund'",bookingId))?.n||0;
-      const due=deposit||terms?.refund_due==null?remaining:Math.min(remaining,Math.max(0,terms.refund_due-refunded));
+      const due=deposit?Math.max(0,remaining-(Number(terms?.deposit_kept)||0)):terms?.refund_due==null?remaining:Math.min(remaining,Math.max(0,terms.refund_due-refunded));
       if(!due)return {message:'Расчёт уже полностью отмечен.'};
       return recordFinance(this,{kind:deposit?'deposit_return':'refund',bookingId,amount:due,confirmed:true,note,requestKey:body.action+':'+bookingId+':'+terms?.version});
+    }
+    // Damage found after the stay: the owner keeps a part of the deposit once, says why, and returns the rest.
+    // The guest sees the sum and the reason and can object through «Есть проблема».
+    if(body.action==='keep_deposit'){
+      if(!owner)throw new DomainError('Удержание из депозита отмечает владелец.',403);
+      if(b.status!=='completed'||terms?.deposit_status!=='owner_verified')throw new DomainError('Удержать часть депозита можно после выезда гостя, пока депозит у вас.',409);
+      if(terms.deposit_kept)throw new DomainError('Удержание по этой брони уже отмечено.',409);
+      await migrateFinanceEntity(this,'booking',bookingId);
+      const left=(await this.one("SELECT COALESCE(SUM(CASE WHEN kind='deposit' THEN amount WHEN kind='deposit_return' THEN -amount ELSE 0 END),0) n FROM finance_entries WHERE booking_id=?",bookingId))?.n||0;
+      if(!left)throw new DomainError('Депозит уже возвращён полностью.',409);
+      const amount=number(body.amount,'Сумма удержания',1,left),reason=required(body.reason,'Причина удержания',1000),t=now(),money=(n:number)=>n.toLocaleString('ru-RU').replace(/\u00a0|\u202f/g,' ')+' ₸';
+      const r=await this.db.batch([
+        this.query("UPDATE booking_terms SET deposit_kept=?,deposit_kept_note=?,deposit_returned_at=CASE WHEN ?>=? THEN ? ELSE deposit_returned_at END,version=version+1 WHERE booking_id=? AND deposit_kept=0 AND version=?",amount,reason,amount,left,t,bookingId,terms.version),
+        this.notify(b.guest_id,'Владелец удержал из депозита за «'+b.title+'» '+money(amount)+'. Причина: '+reason+(left>amount?' Остальное, '+money(left-amount)+', он вернёт.':'')+' Если не согласны, нажмите «Есть проблема» в брони.',`deposit-kept:${bookingId}`,'guest'),
+        this.audit(bookingId,'booking.deposit_kept:'+amount)]);
+      if(!r[0].meta.changes)throw new DomainError('Бронь изменилась. Обновите карточку.',409);
+      return {message:'Удержание '+money(amount)+' отмечено, гость видит причину.'+(left>amount?' Верните гостю остаток: '+money(left-amount)+'.':'')};
     }
     if(body.action==='deposit_received'){
       if(!owner)throw new DomainError('Депозит подтверждает владелец.',403);
@@ -868,6 +889,15 @@ export class RentalService {
       const results=await this.db.batch([this.query("INSERT INTO applications SELECT ?,id,?,'pending',? FROM cleaning_jobs WHERE id=? AND status='open' AND end>? AND NOT EXISTS(SELECT 1 FROM profile_details WHERE user_id=? AND work_status='away') ON CONFLICT(job_id,user_id) DO UPDATE SET status='pending',created_at=excluded.created_at WHERE applications.status='rejected'",id(),this.userId,now(),jobId,now(),this.userId),this.notify(j.owner_id,'Новый отклик на уборку «'+j.title+'». Посмотрите анкету исполнителя.','application:'+jobId+':'+this.userId+':'+j.start,'owner'),this.audit(jobId,'job.application')]);
       if(!results[0].meta.changes && !await this.one('SELECT id FROM applications WHERE job_id=? AND user_id=?',jobId,this.userId)) throw new DomainError('Задание больше недоступно.',409);
       return {message:'Отклик отправлен. Назначение появится после подтверждения заказчиком.'};
+    }
+    // Changed their mind before the owner answered: the application is taken back, nothing counts against the cleaner.
+    if(body.action==='withdraw'){
+      const r=await this.db.batch([
+        this.query("UPDATE applications SET status='rejected' WHERE job_id=? AND user_id=? AND status='pending' AND EXISTS(SELECT 1 FROM cleaning_jobs WHERE id=? AND status='open')",jobId,this.userId,jobId),
+        this.query("INSERT OR IGNORE INTO notifications SELECT ?,?,?,?,0,? WHERE changes()>0",id(),j.owner_id,'Исполнитель отозвал отклик на уборку «'+j.title+'». Остальные отклики на месте.','owner:application-withdrawn:'+jobId+':'+this.userId+':'+now(),now()),
+        this.audit(jobId,'job.application_withdrawn')]);
+      if(!r[0].meta.changes)throw new DomainError(j.assigned_to===this.userId?'Вас уже назначили. Если не сможете прийти, откажитесь от задания.':'Отклик уже рассмотрен или отозван.',409);
+      return {message:'Отклик отозван.'};
     }
     if(body.action==='reject_application'&&j.owner_id===this.userId){
       const a=await this.one("SELECT * FROM applications WHERE id=? AND job_id=? AND status='pending'",required(body.applicationId,'Отклик',100),jobId);

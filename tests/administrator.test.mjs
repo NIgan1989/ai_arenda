@@ -51,9 +51,26 @@ test('retries and simultaneous checks acquire one lease; delayed work escalates 
  const f=await fixture();try{
   const results=await Promise.all([checkAdministratorOwner(f.db,'owner'),checkAdministratorOwner(f.db,'owner')]);assert.equal(results.filter(r=>r.checked).length,1);
   f.db.raw.prepare("UPDATE administrator_tasks SET first_seen=?,last_notified=?,priority=2,notified_priority=2 WHERE role='owner'").run(now()-8000,now()-4000);
+  f.db.raw.prepare("UPDATE administrator_tasks SET notice_count=0 WHERE role='owner'").run();
   f.release();await checkAdministratorOwner(f.db,'owner');
   const task=f.db.raw.prepare("SELECT * FROM administrator_tasks WHERE role='owner' AND stage='request'").get();assert.equal(task.priority,3);assert.equal(task.notice_revision,2);
   f.release();await checkAdministratorOwner(f.db,'owner');assert.equal(f.db.raw.prepare('SELECT notice_revision FROM administrator_tasks WHERE id=?').get(task.id).notice_revision,2);
+ }finally{f.db.close();}
+});
+test('a reminder about one matter comes later each time, never at night and at most five times',async()=>{
+ const f=await fixture();try{
+  const day=Date.parse('2026-11-02T20:00:00+05:00')/1000,h=3600,count=()=>f.db.raw.prepare("SELECT notice_count n FROM administrator_tasks WHERE role='owner' AND stage='request'").get().n;
+  const check=async at=>{f.release();await checkAdministratorOwner(f.db,'owner',at);};
+  await check(day);assert.equal(count(),1);
+  await check(day+h/2);assert.equal(count(),1,'not sooner than in an hour');
+  await check(day+h);assert.equal(count(),2);
+  await check(day+3*h);assert.equal(count(),2,'the third one only four hours after the second');
+  await check(day+6*h);assert.equal(count(),2,'02:00 is night: a repeat waits for the morning');
+  await check(day+12*h);assert.equal(count(),3);
+  await check(day+30*h);assert.equal(count(),3,'then once a day');
+  await check(day+36*h);assert.equal(count(),4);await check(day+60*h);assert.equal(count(),5);
+  await check(day+84*h);await check(day+108*h);assert.equal(count(),5,'no sixth reminder');
+  assert.equal(f.db.raw.prepare("SELECT status FROM administrator_tasks WHERE role='owner' AND stage='request'").get().status,'open');
  }finally{f.db.close();}
 });
 test('legacy reactive and quiet settings cannot disable the system coordinator',async()=>{

@@ -189,7 +189,7 @@ export function dayChoices(draft: GuestDraft, now = Date.now()): [string, string
 
 // ---------- Search results ----------
 
-const REASON_TEXT: Record<string, string> = { 'Готовность проверена': 'Готова к заселению' };
+const REASON_TEXT: Record<string, string> = { 'Готовность проверена': 'Готово к заселению' };
 
 /** The server's reasons as the guest reads them: no "в пределах бюджета" when no budget was named. */
 export function shownReasons(reasons: unknown, draft: Pick<GuestDraft, 'maxPrice'>): string[] {

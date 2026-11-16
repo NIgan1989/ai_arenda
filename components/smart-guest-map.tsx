@@ -50,7 +50,7 @@ const DEFAULT_CENTER: [number, number] = [76.9674, 52.2856];
 const DRAFT_STORAGE = 'smart-match-draft';
 const KZ = 5 * 3600000;
 // The server's reason in the words the listing itself uses for the same state.
-const REASON_TEXT: Record<string, string> = { 'Готовность проверена': 'Готова к заселению' };
+const REASON_TEXT: Record<string, string> = { 'Готовность проверена': 'Готово к заселению' };
 
 import { PriceTip } from './price-tip';
 import { windowBadge } from '../lib/window-badge';

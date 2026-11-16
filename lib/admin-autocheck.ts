@@ -95,10 +95,12 @@ export async function autoReview(db:D1Database,reviewId:string,config:OperationC
    return 'escalate';
   }
  }
- if(auto&&verdict==='fix'){
+ // What is missing is told to the person in any case: with the automatic check off, an admin decides, but the owner
+ // should not wait in silence for something only they can add.
+ if(verdict==='fix'){
   const missing=checks.filter(c=>c.state==='fix'),tag=(await hash(missing.map(c=>c.key).join(','))).slice(0,8);
-  await note(db,review.user_id,'Чтобы пройти проверку, осталось: '+missing.map(c=>c.note.charAt(0).toLowerCase()+c.note.slice(1)).join('; ')+'. ИИ-администратор проверит снова сам.',review.role+':review-fix:'+reviewId+':'+tag,at).run();
-  return verdict;
+  await note(db,review.user_id,'Чтобы пройти проверку, осталось: '+missing.map(c=>c.note.charAt(0).toLowerCase()+c.note.slice(1)).join('; ')+(auto?'. ИИ-администратор проверит снова сам.':'. После правки заявку посмотрит администратор.'),review.role+':review-fix:'+reviewId+':'+tag,at).run();
+  if(auto)return verdict;
  }
  const list=admins(config);if(list.length){
   const reason=verdict==='escalate'?'ИИ просит вашего решения: '+checksSummary(checks,['risk']):verdict==='fix'?'Не хватает: '+checksSummary(checks,['fix']):'Правила пройдены, решение за вами.';

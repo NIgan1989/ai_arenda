@@ -106,3 +106,24 @@ test('a late cancellation that leaves nothing to return is settled at once and k
   assert.ok(terms(f).refund_recorded_at);
  }finally{f.db.close();}
 });
+
+test('after the stay the owner keeps a part of the deposit once, with a reason, and returns only the rest',async()=>{
+ const f=await fixture();try{
+  await paid(f);
+  await assert.rejects(f.owner.bookingAction(f.booking,{action:'keep_deposit',amount:3000,reason:'Разбита лампа'}),e=>e.status===409);
+  f.db.raw.prepare("UPDATE bookings SET status='completed' WHERE id=?").run(f.booking);
+  await assert.rejects(f.guest.bookingAction(f.booking,{action:'keep_deposit',amount:3000,reason:'x'}),e=>e.status===403);
+  await assert.rejects(f.owner.bookingAction(f.booking,{action:'keep_deposit',amount:10001,reason:'Разбита лампа'}));
+  await assert.rejects(f.owner.bookingAction(f.booking,{action:'keep_deposit',amount:3000}));
+  const r=await f.owner.bookingAction(f.booking,{action:'keep_deposit',amount:3000,reason:'Разбита лампа'});assert.match(r.message,/остаток: 7 000 ₸/);
+  assert.match(note(f,'guest','guest:deposit-kept:%').body,/удержал из депозита.*3 000 ₸.*Разбита лампа.*7 000 ₸/);
+  await assert.rejects(f.owner.bookingAction(f.booking,{action:'keep_deposit',amount:1000,reason:'Ещё'}),e=>e.status===409);
+  const state=await f.owner.state();assert.equal(state.bookings[0].terms.deposit_balance,7000);assert.ok(!terms(f).deposit_returned_at);
+  // Neither a hand-made entry nor the automatic settlement returns what was kept.
+  const {recordFinance}=await load('finance');
+  await assert.rejects(recordFinance(f.owner,{kind:'deposit_return',bookingId:f.booking,amount:10000,confirmed:true,note:'all',requestKey:'too-much'}),e=>e.status===409);
+  await f.owner.bookingAction(f.booking,{action:'record_deposit_return',confirmed:true,expectedVersion:terms(f).version});
+  assert.equal(f.db.raw.prepare("SELECT SUM(amount) n FROM finance_entries WHERE booking_id=? AND kind='deposit_return'").get(f.booking).n,7000);
+  assert.ok(terms(f).deposit_returned_at);
+ }finally{f.db.close();}
+});
