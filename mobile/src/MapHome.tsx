@@ -277,7 +277,7 @@ function GuestPanel({setScanning,accountId,data,mapData,publish,selected,setSele
      {!!offer.policy?.house_rules&&<Text style={h.note}>Правила: {offer.policy.house_rules}</Text>}
      <Text style={h.timerSmall}>Предложение действует ещё {countdown(offer.offerExpiresAt-now)}</Text>
      <Pressable accessibilityRole="checkbox" accessibilityState={{checked:accepted}} onPress={()=>setAccepted(v=>!v)} style={h.check}><Text style={h.checkBox}>{accepted?'☑':'☐'}</Text><Text style={h.checkText}>Принимаю стоимость, депозит и правила этого жилья</Text></Pressable>
-     <Action title={status==='booking'?'Оформляем…':'Забронировать'} disabled={working||!accepted||status==='booking'} onPress={book}/>
+     <SwipeConfirm label={status==='booking'?'Оформляем…':'Проведите: забронировать'} disabled={working||!accepted||status==='booking'} onConfirm={book}/>
     </View>
     <Text style={h.note}>Оплата в приложении не списывается. {offer.policy?.auto_confirm?'Бронь подтвердится по правилам владельца.':'Владелец подтвердит заявку отдельно.'}</Text>
    </>}
