@@ -501,7 +501,7 @@ function Chat(){
           // The guest left without a word: the cleaner at the door says so, and the owner (or the autopilot) confirms the checkout.
           assigned&&j.status==='assigned'&&!!j.booking_id&&!j.checkout_confirmed&&clock>=j.start-1800&&{title:'Гостя нет, жильё свободно',kind:'main',onPress:()=>confirm('jobs/'+id,{action:'vacant'},'Сообщить владельцу, что гость ушёл и жильё свободно','my-jobs')},
           assigned&&j.status==='assigned'&&{title:'Начать уборку',kind:'main',disabled:!j.checkout_confirmed,onPress:()=>confirm('jobs/'+id,{action:'start'},'Отметить начало работы','my-jobs')},
-          assigned&&j.status==='assigned'&&clock>=j.start-3*3600&&clock<=j.start+2700&&{title:'Опаздываю на 30 минут',kind:'side',onPress:()=>confirm('jobs/'+id,{action:'late'},'Предупредить владельца: вы начнёте на полчаса позже, время уборки сдвинется','my-jobs')},
+          assigned&&j.status==='assigned'&&clock>=j.start-3*3600&&clock<=j.start+2700&&{title:'Опаздываю',kind:'side',onPress:()=>confirm('jobs/'+id,{action:'late'},'Предупредить владельца: вы начнёте на полчаса позже, время уборки сдвинется','my-jobs')},
           assigned&&j.status==='in_progress'&&{title:'Подготовить отчёт',kind:'main',onPress:()=>say('Проверьте каждый пункт. Отчёт уйдёт владельцу после вашего подтверждения.','report',{id})},
           owner&&j.status==='submitted'&&{title:'Рассмотреть отчёт',kind:'main',onPress:()=>say('Отчёт на приёмке.','approval',{id:'report:'+id})},
           (owner&&!!j.assigned_to||assigned)&&{title:'Открыть чат',kind:'side',onPress:()=>{setChatInitial({kind:'job',entityId:id,channel:'cleaning'});setPageId('chats');}},
