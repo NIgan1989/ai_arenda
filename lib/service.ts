@@ -18,6 +18,7 @@ import {recordFinance,migrateFinanceEntity} from './finance';
 import {requireEvidence} from './evidence';
 import {hash as operationHash} from './operation-core';
 import {assertCalendarAvailable} from './external-calendar';
+import {cancellationTerms} from './cancellation';
 import {assertPilotAllowed,cleanerAdmission,readPilotPolicy,pilotPropertyVisibleSql} from './pilot-governance';
 import {mapCities} from './map-location';
 import {publicPoint} from './map-workspace';
@@ -382,13 +383,15 @@ export class RentalService {
     const serverTime=now();
     const [policies,operations,terms,changes]=await Promise.all([this.all('SELECT * FROM property_policies'),this.all('SELECT * FROM property_operations'),this.all('SELECT t.* FROM booking_terms t JOIN bookings b ON b.id=t.booking_id JOIN properties p ON p.id=b.property_id WHERE b.guest_id=? OR p.owner_id=?',this.userId,this.userId),this.all('SELECT c.* FROM booking_changes c JOIN bookings b ON b.id=c.booking_id JOIN properties p ON p.id=b.property_id WHERE b.guest_id=? OR p.owner_id=? ORDER BY c.created_at DESC',this.userId,this.userId)]);
     const [financeBalances,jobPayments]=await Promise.all([
-      this.all("SELECT f.booking_id,SUM(CASE WHEN f.kind='deposit' THEN f.amount ELSE 0 END) deposit_received,SUM(CASE WHEN f.kind='deposit_return' THEN f.amount ELSE 0 END) deposit_returned FROM finance_entries f JOIN bookings b ON b.id=f.booking_id JOIN properties p ON p.id=b.property_id WHERE b.guest_id=? OR p.owner_id=? GROUP BY f.booking_id",this.userId,this.userId),
+      this.all("SELECT f.booking_id,SUM(CASE WHEN f.kind='deposit' THEN f.amount ELSE 0 END) deposit_received,SUM(CASE WHEN f.kind='deposit_return' THEN f.amount ELSE 0 END) deposit_returned,SUM(CASE WHEN f.kind='refund' THEN f.amount ELSE 0 END) refunded FROM finance_entries f JOIN bookings b ON b.id=f.booking_id JOIN properties p ON p.id=b.property_id WHERE b.guest_id=? OR p.owner_id=? GROUP BY f.booking_id",this.userId,this.userId),
       this.all("SELECT f.job_id,SUM(f.amount) paid FROM finance_entries f JOIN cleaning_jobs j ON j.id=f.job_id WHERE f.kind='job_payment' AND (j.owner_id=? OR j.assigned_to=?) GROUP BY f.job_id",this.userId,this.userId)
     ]);
-    const enrichedTerms:Row[]=terms.map(t=>{const f=financeBalances.find(f=>f.booking_id===t.booking_id),received=f?.deposit_received??(t.deposit_status==='owner_verified'?t.deposit:0),returned=f?.deposit_returned??(t.deposit_returned_at?t.deposit:0);return {...t,deposit_received_amount:received,deposit_returned_amount:returned,deposit_balance:Math.max(0,received-returned)};});
+    const enrichedTerms:Row[]=terms.map(t=>{const f=financeBalances.find(f=>f.booking_id===t.booking_id),received=f?.deposit_received??(t.deposit_status==='owner_verified'?t.deposit:0),returned=f?.deposit_returned??(t.deposit_returned_at?t.deposit:0);return {...t,deposit_received_amount:received,deposit_returned_amount:returned,deposit_balance:Math.max(0,received-returned),refunded_amount:f?.refunded||0};});
     const policyFor=(p:Row)=>policies.find(v=>v.property_id===p.id)||defaultPolicy;
+    // What cancelling right now would cost, for the card: the same rule the cancel action applies.
+    const cancelFor=(b:Row)=>{const t=enrichedTerms.find(v=>v.booking_id===b.id);if(!t||!['requested','confirmed'].includes(b.status)||t.actual_checkin)return null;return cancellationTerms({by:b.owner_id===this.userId?'owner':'guest',status:b.status,mode:t.billing_mode,rate:t.rate,units:t.units,amount:b.amount,paid:t.paid_amount,deposit:t.deposit_status==='owner_verified'?t.deposit:0,start:b.start,minHours:policies.find(v=>v.property_id===b.property_id)?.min_hours||1,at:serverTime});};
     const guests=await reliabilityFor(this.db,'guest',bookings.filter(b=>b.owner_id===this.userId&&b.status==='requested').map(b=>b.guest_id));
-    const state={ profile, properties:await this.enrichProperties(properties.map(p=>({...p,policy:publicPolicy(policyFor(p))}))), ownProperties:await this.enrichProperties(ownProperties.map(p=>({...p,policy:policyFor(p),operation:operations.find(v=>v.property_id===p.id)})),true), bookings:bookings.map(({risk_row,...b}) => ({...b,risk:riskFromRow(risk_row?JSON.parse(risk_row):null),...(b.owner_id===this.userId?{guest_reliability:guests.get(b.guest_id)}:{}),status:b.status==='requested' && b.expires_at<=serverTime?'expired':b.status,terms:enrichedTerms.find(t=>t.booking_id===b.id),changes:changes.filter(c=>c.booking_id===b.id).map(c=>({...c,status:c.status==='pending'&&c.expires_at<=serverTime?'expired':c.status})),readiness:operations.find(o=>o.property_id===b.property_id)?.readiness})), jobs:jobs.map(({open_address,...j}:Row):Row=>({...j,street:streetAddress(open_address),settlement_paid:jobPayments.find(p=>p.job_id===j.id)?.paid??(j.settled_at?j.fee:0),checkout_confirmed:!j.booking_id||!!j.checkout_confirmed})), applications, notifications, messages, serverTime, integrations:{ai:false,telegram:false,whatsapp:false,payments:false} };
+    const state={ profile, properties:await this.enrichProperties(properties.map(p=>({...p,policy:publicPolicy(policyFor(p))}))), ownProperties:await this.enrichProperties(ownProperties.map(p=>({...p,policy:policyFor(p),operation:operations.find(v=>v.property_id===p.id)})),true), bookings:bookings.map(({risk_row,...b}) => ({...b,risk:riskFromRow(risk_row?JSON.parse(risk_row):null),...(b.owner_id===this.userId?{guest_reliability:guests.get(b.guest_id)}:{}),status:b.status==='requested' && b.expires_at<=serverTime?'expired':b.status,terms:enrichedTerms.find(t=>t.booking_id===b.id),cancel_terms:cancelFor(b),changes:changes.filter(c=>c.booking_id===b.id).map(c=>({...c,status:c.status==='pending'&&c.expires_at<=serverTime?'expired':c.status})),readiness:operations.find(o=>o.property_id===b.property_id)?.readiness})), jobs:jobs.map(({open_address,...j}:Row):Row=>({...j,street:streetAddress(open_address),settlement_paid:jobPayments.find(p=>p.job_id===j.id)?.paid??(j.settled_at?j.fee:0),checkout_confirmed:!j.booking_id||!!j.checkout_confirmed})), applications, notifications, messages, serverTime, integrations:{ai:false,telegram:false,whatsapp:false,payments:false} };
     return {...state,workspaces:Object.fromEntries(roles.map(role=>[role,operationOverview(state,this.userId,role,serverTime)]))};
   }
   async publicCatalog(options:{syntheticPreview?:boolean}={}) {
@@ -563,11 +566,14 @@ export class RentalService {
       if(body.confirmed!==true)throw new DomainError('Подтвердите, что перевод уже выполнен вне сервиса.');
       number(body.expectedVersion,'Версия брони',1,10000000);
       const deposit=body.action==='record_deposit_return';
-      if(deposit?b.status!=='completed'||terms?.deposit_status!=='owner_verified':!['cancelled','expired'].includes(b.status)||!terms?.paid_amount)throw new DomainError('Для этой брони такой расчёт не ожидается.',409);
-      const note=required(body.note,'Основание отметки расчёта',1000);await migrateFinanceEntity(this,'booking',bookingId);
+      if(deposit?!['completed','cancelled','expired'].includes(b.status)||terms?.deposit_status!=='owner_verified':!['cancelled','expired'].includes(b.status)||!terms?.paid_amount)throw new DomainError('Для этой брони такой расчёт не ожидается.',409);
+      const note=required(body.note||(deposit?'Владелец отметил возврат депозита':'Владелец отметил возврат оплаты'),'Основание отметки расчёта',1000);await migrateFinanceEntity(this,'booking',bookingId);
       const balance=await this.one("SELECT COALESCE(SUM(CASE WHEN kind=? THEN amount WHEN kind=? THEN -amount ELSE 0 END),0) n FROM finance_entries WHERE booking_id=?",deposit?'deposit':'payment',deposit?'deposit_return':'refund',bookingId),remaining=balance?.n||0;
-      if(!remaining)return {message:'Расчёт уже полностью отмечен.'};
-      return recordFinance(this,{kind:deposit?'deposit_return':'refund',bookingId,amount:remaining,confirmed:true,note,requestKey:body.action+':'+bookingId+':'+terms?.version});
+      // After a cancellation the guest is owed what the offer's rules left, not always everything paid.
+      const refunded=deposit||terms?.refund_due==null?0:(await this.one("SELECT COALESCE(SUM(amount),0) n FROM finance_entries WHERE booking_id=? AND kind='refund'",bookingId))?.n||0;
+      const due=deposit||terms?.refund_due==null?remaining:Math.min(remaining,Math.max(0,terms.refund_due-refunded));
+      if(!due)return {message:'Расчёт уже полностью отмечен.'};
+      return recordFinance(this,{kind:deposit?'deposit_return':'refund',bookingId,amount:due,confirmed:true,note,requestKey:body.action+':'+bookingId+':'+terms?.version});
     }
     if(body.action==='deposit_received'){
       if(!owner)throw new DomainError('Депозит подтверждает владелец.',403);
@@ -682,8 +688,27 @@ export class RentalService {
     }
     if(body.action==='cancel') {
       if(op?.active_booking_id===bookingId)throw new DomainError('Сначала подтвердите фактический выезд гостя.',409);
-      await this.db.batch([this.query("UPDATE bookings SET status='cancelled' WHERE id=? AND status IN ('requested','confirmed')",bookingId),this.query("UPDATE cleaning_jobs SET status='cancelled' WHERE booking_id=? AND status IN ('open','assigned')",bookingId),this.notify(owner?b.guest_id:b.owner_id,`Бронь «${b.title}» отменена. Если была оплата, согласуйте возврат.`,`cancelled:${bookingId}`,owner?'guest':'owner'),this.audit(bookingId,'booking.cancelled')]);
-      return {message:'Бронь отменена. Возврат средств, если необходим, согласуется отдельно.'};
+      if(!['requested','confirmed'].includes(b.status))throw new DomainError('Эта бронь уже закрыта.',409);
+      // The money side is fixed by the guest offer at the moment of cancelling and told to both sides in tenge.
+      const policy=await this.one('SELECT min_hours FROM property_policies WHERE property_id=?',b.property_id),t=now();
+      const c=cancellationTerms({by:owner?'owner':'guest',status:b.status,mode:terms?.billing_mode||'daily',rate:terms?.rate||0,units:terms?.units||1,amount:b.amount,paid:terms?.paid_amount||0,deposit:terms?.deposit_status==='owner_verified'?terms.deposit:0,start:b.start,minHours:policy?.min_hours||1,at:t});
+      const money=(n:number)=>n.toLocaleString('ru-RU').replace(/\u00a0|\u202f/g,' ')+' ₸',deposit=c.deposit?' Депозит '+money(c.deposit)+' возвращается полностью.':'';
+      const who=owner?'Владелец отменил бронь':'Гость отменил бронь',title='«'+b.title+'»';
+      const forGuest=!terms?.paid_amount&&!c.deposit?'Оплаты не было, возвращать нечего.':c.withheld?'Отмена позже бесплатного срока: по правилам сервиса владельцу остаётся '+money(c.withheld)+', вам вернут '+money(c.refund)+'.'+deposit:'Вам вернут всю оплату: '+money(c.refund)+'.'+deposit;
+      const forOwner=!terms?.paid_amount&&!c.deposit?'Оплаты не было, возвращать нечего.':c.withheld?'По правилам отмены у вас остаётся '+money(c.withheld)+(c.refund?', гостю нужно вернуть '+money(c.refund):'')+'.'+deposit:'Верните гостю всю оплату: '+money(c.refund)+'.'+deposit;
+      const jobText='Бронь '+title+' отменена, уборка после неё не нужна. Задание снято.';
+      const r=await this.db.batch([
+        this.query("UPDATE bookings SET status='cancelled' WHERE id=? AND status IN ('requested','confirmed')",bookingId),
+        this.query("UPDATE booking_terms SET refund_due=? WHERE booking_id=? AND EXISTS(SELECT 1 FROM bookings WHERE id=? AND status='cancelled')",c.refund,bookingId,bookingId),
+        // Whoever was going to clean after this stay hears about it: the assigned cleaner and everyone still waiting for an answer.
+        this.query("INSERT OR IGNORE INTO notifications SELECT ?||j.id,j.assigned_to,?,'cleaner:booking-cancelled:'||j.id,0,? FROM cleaning_jobs j WHERE j.booking_id=? AND j.status='assigned' AND j.assigned_to IS NOT NULL",id()+':',jobText,t,bookingId),
+        this.query("INSERT OR IGNORE INTO notifications SELECT ?||a.id,a.user_id,?,'cleaner:booking-cancelled:'||j.id||':'||a.user_id,0,? FROM applications a JOIN cleaning_jobs j ON j.id=a.job_id WHERE j.booking_id=? AND j.status='open' AND a.status='pending'",id()+':',jobText,t,bookingId),
+        this.query("UPDATE cleaning_jobs SET status='cancelled' WHERE booking_id=? AND status IN ('open','assigned')",bookingId),
+        this.notify(b.guest_id,(owner?who+' '+title+'. ':'Бронь '+title+' отменена. ')+forGuest,`cancelled:${bookingId}`,'guest'),
+        this.notify(b.owner_id,(owner?'Бронь '+title+' отменена. ':who+' '+title+'. ')+forOwner,`cancelled:${bookingId}`,'owner'),
+        this.audit(bookingId,'booking.cancelled')]);
+      if(!r[0].meta.changes)throw new DomainError('Бронь изменилась. Обновите карточку.',409);
+      return {message:'Бронь отменена. '+(owner?forOwner:forGuest),cancel:c};
     }
     if(body.action==='paid'&&owner) {
       if(b.status!=='confirmed') throw new DomainError('Сначала подтвердите бронь.');
@@ -815,7 +840,7 @@ export class RentalService {
       if(j.status!=='completed'||body.confirmed!==true)throw new DomainError('Сначала примите работу и подтвердите выполненный перевод.',409);
       number(body.expectedVersion,'Версия задания',1,10000000);await migrateFinanceEntity(this,'job',jobId);
       const balance=await this.one("SELECT COALESCE(SUM(amount),0) n FROM finance_entries WHERE job_id=? AND kind='job_payment'",jobId),remaining=Math.max(0,j.fee-(balance?.n||0));if(!remaining)return {message:'Оплата уборки уже полностью отмечена.'};
-      return recordFinance(this,{kind:'job_payment',jobId,amount:remaining,confirmed:true,note:required(body.note,'Основание отметки расчёта',1000),requestKey:'job-paid:'+jobId+':'+j.version});
+      return recordFinance(this,{kind:'job_payment',jobId,amount:remaining,confirmed:true,note:required(body.note||'Владелец отметил оплату уборки','Основание отметки расчёта',1000),requestKey:'job-paid:'+jobId+':'+j.version});
     }
     if(body.action==='apply') {
       await this.requireRole('cleaner');

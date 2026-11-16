@@ -32,7 +32,7 @@ export function planAdministrator(data:Row,t:number):AdministratorTask[]{
    const role=c.proposer_role==='owner'?'guest':'owner',user=role==='owner'?owner:b.guest_id;
    add(b,'booking','change:'+c.id,user,role,'Согласовать новые условия',subject+' · действуют прежние даты до принятия предложения',c.expires_at,c.expires_at-t<=600?3:2);
   }
-  if(['cancelled','expired'].includes(b.status)&&terms.paid_amount>0&&!terms.refund_recorded_at)add(b,'booking','refund',owner,'owner','Проверить возврат оплаты',subject+' · бронь закрыта, возврат фактически полученной оплаты ещё не отмечен',b.created_at,2);
+  if(['cancelled','expired'].includes(b.status)&&terms.paid_amount>0&&!terms.refund_recorded_at&&terms.refund_due!==0)add(b,'booking','refund',owner,'owner','Проверить возврат оплаты',subject+' · бронь закрыта, возврат фактически полученной оплаты ещё не отмечен',b.created_at,2);
   if(b.status==='completed'){
    if(terms.deposit_status==='owner_verified'&&!terms.deposit_returned_at)add(b,'booking','deposit-return',owner,'owner','Закрыть расчёт по депозиту',subject+' · после проверки жилья отметьте фактический возврат или разберите спор',(terms.actual_checkout||b.end)+86400,t>=(terms.actual_checkout||b.end)+86400?3:2);
    continue;

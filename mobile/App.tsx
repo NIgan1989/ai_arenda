@@ -50,6 +50,15 @@ import {CheckinGuide} from './src/CheckinGuide';
 import {PageTransition} from './src/PageTransition';
 import {background,entryReady,markGesture} from './src/loading';
 import {startHere} from './src/here';
+import {refundLeft} from '../lib/cancellation';
+
+// What cancelling costs, in the words of the confirmation: the server counts it by the guest offer (lib/cancellation.ts).
+function cancelLine(c:Row|null|undefined,owner:boolean,paid:number){
+ if(!c||(!paid&&!c.deposit))return 'Оплаты не было, возвращать нечего';
+ const deposit=c.deposit?'. Депозит '+money(c.deposit)+' возвращается полностью':'';
+ if(c.withheld)return owner?'У вас остаётся '+money(c.withheld)+(c.refund?', гостю нужно вернуть '+money(c.refund):'')+deposit:'Бесплатная отмена уже закончилась: владельцу остаётся '+money(c.withheld)+', вам вернут '+money(c.refund)+deposit;
+ return (owner?'Гостю нужно вернуть всю оплату: ':'Вам вернут всю оплату: ')+money(c.refund)+deposit;
+}
 
 function Button({title,onPress,secondary=false,disabled=false}:{title:string;onPress:()=>void;secondary?:boolean;disabled?:boolean}){
   const [focused,setFocused]=useState(false);
@@ -367,7 +376,7 @@ function Chat(){
       say('Уточните вашу задачу: хотите снять жильё, сдавать жильё или работать на уборке?','help');
     }catch(e){await handleError(e);}finally{locked.current=false;setBusy(false);composer.current?.focus();}
   }
-  function confirm(path:string,body:Row,title:string,after?:string){const id=path.split('/')[1],item=(path.startsWith('bookings/')?data.bookings:data.jobs).find((v:Row)=>v.id===id);say('Подтвердите действие: '+title.toLowerCase()+'.','confirm',{path,body:{...body,expectedVersion:path.startsWith('bookings/')?item?.terms?.version:item?.version},title,subject:item?.title,dates:item?date(item.start)+' → '+date(item.end):'',amount:item?.amount??item?.fee,after});}
+  function confirm(path:string,body:Row,title:string,after?:string,note?:string){const id=path.split('/')[1],item=(path.startsWith('bookings/')?data.bookings:data.jobs).find((v:Row)=>v.id===id);say('Подтвердите действие: '+title.toLowerCase()+'.','confirm',{path,body:{...body,expectedVersion:path.startsWith('bookings/')?item?.terms?.version:item?.version},title,note,subject:item?.title,dates:item?date(item.start)+' → '+date(item.end):'',amount:item?.amount??item?.fee,after});}
   function review(m:Message){
     const f=m.payload!.flow as Flow;
     if(f.kind==='booking')return <><BookingReview flow={f} busy={busy} done={m.done} result={m.result} onConfirm={quote=>perform(f.endpoint,{...f.answers,...f.extra,expectedAmount:quote.amount,expectedPolicyVersion:quote.policy.version,acceptTerms:true},m.id,f.after)} onEdit={()=>{finish(m.id,'Изменено');const next={...f,index:0};setFlow(next);say(next.questions[0].text);}}/>{!!m.payload!.back&&!m.done&&!dealOpen&&<Button title="Назад к вариантам" secondary disabled={busy} onPress={backToMap}/>}</>;
@@ -445,7 +454,7 @@ function Chat(){
     if(m.block==='review')return review(m);
     if(m.block==='stay-form'){const property=data.properties.find((p:Row)=>p.id===payload.propertyId);return property?<StayRequest property={property} busy={busy} done={m.done} result={m.result} onQuote={body=>request('/api/quote',body)} onConfirm={body=>perform('bookings',{...body,requestKey:payload.requestKey},m.id,'bookings')}/>:<Text style={s.meta}>Жильё больше недоступно.</Text>;}
     if(m.block==='job-form'){const property=data.ownProperties.find((p:Row)=>p.id===payload.propertyId);return property?<CleaningRequest property={property} busy={busy} done={m.done} result={m.result} onSubmit={body=>perform('jobs',body,m.id,'owner-jobs')}/>:<Text style={s.meta}>Жильё недоступно.</Text>;}
-    if(m.block==='confirm')return <View style={s.card}><Text accessibilityRole="header" style={s.cardTitle}>{payload.title}</Text><Text style={s.text}>{payload.subject||'Подтверждение действия'}</Text><Text style={s.meta}>{payload.dates}{payload.amount!==undefined?' · '+money(payload.amount):''}</Text><Button title={m.done?(m.result||'Действие закрыто'):payload.title} disabled={busy||m.done} onPress={()=>perform(payload.path,payload.body,m.id,payload.after)}/>{!m.done&&<Button title="Отменить" secondary disabled={busy} onPress={()=>finish(m.id,'Отменено')}/>}</View>;
+    if(m.block==='confirm')return <View style={s.card}><Text accessibilityRole="header" style={s.cardTitle}>{payload.title}</Text><Text style={s.text}>{payload.subject||'Подтверждение действия'}</Text>{!!payload.note&&<Text style={s.text}>{payload.note}</Text>}<Text style={s.meta}>{payload.dates}{payload.amount!==undefined?' · '+money(payload.amount):''}</Text><Button title={m.done?(m.result||'Действие закрыто'):payload.title} disabled={busy||m.done} onPress={()=>perform(payload.path,payload.body,m.id,payload.after)}/>{!m.done&&<Button title={payload.body?.action==='cancel'?'Не отменять':'Отменить'} secondary disabled={busy} onPress={()=>finish(m.id,'Отменено')}/>}</View>;
     if(m.block==='help')return <View style={s.suggestions}>{['Хочу снять жильё','Хочу сдать жильё','Хочу работать на уборке','Мои брони','Что нового'].map(t=><Button key={t} title={t} secondary disabled={busy} onPress={()=>send(t)}/>)}</View>;
     if(m.block==='property-quick')return m.done?<Text style={s.meta}>{m.result||'Готово'}</Text>:<PropertyQuick city={data.profile?.city||'Павлодар'} onSave={body=>request('/api/listings',body)} onGuestMode={body=>request('/api/operations/matching/preference',body,undefined,undefined,'owner')} onReview={body=>request('/api/operations/reviews/request',body,undefined,undefined,'owner')} onPlace={body=>request('/api/operations/map/place',body,undefined,undefined,'owner')} onClose={()=>finish(m.id,'Добавление отменено')} onMap={async()=>{finish(m.id,'Жильё добавлено');await load();setPageId('map');}} onDone={async saved=>{finish(m.id,'Жильё добавлено');const state=await load();say(saved.message);catalog(state,'owner');}}/>;
     if(m.block==='property-editor'){const property=data.ownProperties.find((p:Row)=>p.id===payload.id);return m.done||!property?<Text style={s.meta}>{m.result||'Форма закрыта'}</Text>:<PropertyEdit key={property.id} property={property} step={payload.step} call={(path,body)=>request('/api/operations/'+path,body,undefined,undefined,'owner')} onClose={()=>{finish(m.id,'Изменения сохранены');void load().then(state=>{if(state)catalog(state,'owner');});}} onReview={body=>request('/api/operations/reviews/request',body,undefined,undefined,'owner')} onRemove={async()=>{const r=await request('/api/listings/'+property.id+'/remove',{},undefined,undefined,'owner');finish(m.id,r?.message||'Жильё удалено');const state=await load();if(state)catalog(state,'owner');}} onSave={async body=>{await request('/api/listings/'+property.id,body);const state=await load();return state?.ownProperties?.find((p:Row)=>p.id===property.id);}}/>;}
@@ -477,7 +486,10 @@ function Chat(){
           !owner&&confirmed&&started&&!b.terms?.checkout_reported_at&&{title:'Сообщить о выезде',kind:'main',onPress:()=>confirm('bookings/'+id,{action:'report_checkout'},'Сообщить владельцу о выезде; освобождение жилья потребует проверки')},
           {title:'Открыть чат',kind:'side',onPress:()=>{setChatInitial({kind:'booking',entityId:id,channel:'stay'});setPageId('chats');}},
           confirmed&&{title:'Есть проблема',kind:'side',onPress:()=>raiseIssue('booking',id,actor)},
-          ['requested','confirmed'].includes(b.status)&&!b.terms?.actual_checkin&&{title:'Отменить бронь',kind:'danger',onPress:()=>confirm('bookings/'+id,{action:'cancel'},'Отменить бронирование. Возврат денег согласуется отдельно')},
+          ['requested','confirmed'].includes(b.status)&&!b.terms?.actual_checkin&&{title:'Отменить бронь',kind:'danger',onPress:()=>confirm('bookings/'+id,{action:'cancel'},'Отменить бронь',undefined,cancelLine(b.cancel_terms,owner,b.terms?.paid_amount||0)+'.')},
+          // Money after the stay or a cancellation: the owner marks each transfer in one tap, the amount is on the button.
+          owner&&['cancelled','expired'].includes(b.status)&&refundLeft(b)>0&&{title:'Вернул гостю '+money(refundLeft(b)),kind:'main',onPress:()=>confirm('bookings/'+id,{action:'record_refund',confirmed:true},'Вернул гостю '+money(refundLeft(b)),'owner-bookings','Подтверждаю, что уже перевёл гостю эту сумму за отменённую бронь.')},
+          owner&&['completed','cancelled','expired'].includes(b.status)&&b.terms?.deposit_status==='owner_verified'&&b.terms?.deposit_balance>0&&{title:'Вернул депозит '+money(b.terms.deposit_balance),kind:'main',onPress:()=>confirm('bookings/'+id,{action:'record_deposit_return',confirmed:true},'Вернул депозит '+money(b.terms.deposit_balance),'owner-bookings','Подтверждаю, что уже перевёл гостю депозит.')},
         ]}/>
 
 
@@ -493,6 +505,7 @@ function Chat(){
         always={<>{owner&&j.status==='open'&&!isUnclaimed(j,Date.now()/1000)&&<ApplicantPick applications={data.applications.filter((a:Row)=>a.job_id===id&&a.status==='pending')} approvals={data.approvals||[]} busy={busy} onDecide={body=>perform('approvals',body,uid())}/>}{running&&<ActivityTimer kind="job" item={j}/>}{(owner||assigned)&&<OverdueHelp job={j} role={owner?'owner':'cleaner'} busy={busy} onAction={body=>perform('jobs/'+id,body,uid(),owner?'owner-jobs':'my-jobs')}/>}{!owner&&!thread&&nextBox}</>}
         details={<>{!owner&&<JobPlace job={j}/>}{assigned&&['assigned','in_progress'].includes(j.status)&&<CheckinGuide key={'access:'+id} bookingId={id} role="cleaner"/>}{owner&&!!j.worker&&<View style={applicantStyles.assigned}><WorkerRow worker={j.worker} label="Исполнитель"/></View>}<RecordFacts rows={[owner&&j.description&&['Что сделать',j.description],j.address&&['Адрес',j.address+(j.owner_contact?' · '+j.owner_contact:''),true],j.report&&['Отчёт',j.report]]}/>{!running&&<ActivityTimer kind="job" item={j}/>}{!owner&&!!thread&&nextBox}</>}
         actions={[
+          owner&&j.status==='completed'&&!!j.assigned_to&&j.fee>(j.settlement_paid||0)&&{title:'Оплатил уборку '+money(j.fee-(j.settlement_paid||0)),kind:'main',onPress:()=>confirm('jobs/'+id,{action:'record_job_payment',confirmed:true},'Оплатил уборку '+money(j.fee-(j.settlement_paid||0)),'owner-jobs','Подтверждаю, что уже перевёл исполнителю эту сумму.')},
 
 
 
