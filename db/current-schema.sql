@@ -60,6 +60,7 @@
 -- migration 0056_notice_count.sql sha256:607e8fb427c4e6db05fff35296ab39f3e370f423e86fcc516ae1a18dc73109e6
 -- migration 0057_deposit_kept.sql sha256:b2ad5f39474842083f0452275189833860ca09f7f41871b5fd7bc2af135c2fd7
 -- migration 0058_own_booking_refunds.sql sha256:9023de48d2a0b36a76ba8b9e89e12c2c0f48042d7b30442ed852c3c06eee1b4c
+-- migration 0059_stay_handover.sql sha256:564a9430097ab88e7599ae76fb418590e99a521c70255a33cf3dcdb10c7e376d
 
 -- table access_receipts
 CREATE TABLE access_receipts (id TEXT PRIMARY KEY,property_id TEXT NOT NULL,entity_kind TEXT NOT NULL,entity_id TEXT NOT NULL,user_id TEXT NOT NULL,created_at INTEGER NOT NULL,expires_at INTEGER NOT NULL);
@@ -1001,6 +1002,19 @@ CREATE TABLE review_property_bindings (
  property_id TEXT PRIMARY KEY REFERENCES properties(id),revision INTEGER NOT NULL DEFAULT 0
 );
 
+-- table stay_handovers
+CREATE TABLE stay_handovers (
+ booking_id TEXT PRIMARY KEY REFERENCES bookings(id),
+ property_id TEXT NOT NULL REFERENCES properties(id),
+ owner_id TEXT NOT NULL REFERENCES profiles(id),
+ guest_id TEXT NOT NULL REFERENCES profiles(id),
+ verdict TEXT NOT NULL CHECK(verdict IN ('ok','issues')),
+ issues TEXT NOT NULL DEFAULT '[]',
+ note TEXT NOT NULL DEFAULT '',
+ cleaner_photos INTEGER NOT NULL DEFAULT 0,
+ created_at INTEGER NOT NULL
+);
+
 -- table stay_offers
 CREATE TABLE stay_offers (
  id TEXT PRIMARY KEY,
@@ -1022,6 +1036,20 @@ CREATE TABLE stay_offers (
  created_at INTEGER NOT NULL,
  expires_at INTEGER NOT NULL,
  decided_at INTEGER
+);
+
+-- table stay_photos
+CREATE TABLE stay_photos (
+ id TEXT PRIMARY KEY,
+ booking_id TEXT NOT NULL REFERENCES bookings(id),
+ user_id TEXT NOT NULL REFERENCES profiles(id),
+ phase TEXT NOT NULL CHECK(phase IN ('checkin','handover')),
+ data TEXT NOT NULL DEFAULT '',
+ object_key TEXT NOT NULL DEFAULT '',
+ width INTEGER NOT NULL,
+ height INTEGER NOT NULL,
+ bytes INTEGER NOT NULL,
+ created_at INTEGER NOT NULL
 );
 
 -- table stay_reviews
@@ -1237,11 +1265,17 @@ CREATE INDEX push_due ON push_deliveries(status,available_at,lease_until);
 -- index regular_cleaners_cleaner
 CREATE INDEX regular_cleaners_cleaner ON regular_cleaners(cleaner_id);
 
+-- index stay_handovers_guest
+CREATE INDEX stay_handovers_guest ON stay_handovers(guest_id,created_at);
+
 -- index stay_offers_booking
 CREATE INDEX stay_offers_booking ON stay_offers(booking_id,status);
 
 -- index stay_offers_guest
 CREATE INDEX stay_offers_guest ON stay_offers(guest_id,status,expires_at);
+
+-- index stay_photos_booking
+CREATE INDEX stay_photos_booking ON stay_photos(booking_id,phase,created_at);
 
 -- index stay_reviews_property
 CREATE INDEX stay_reviews_property ON stay_reviews(property_id,created_at);
@@ -1701,11 +1735,17 @@ CREATE TRIGGER account_erased_regular_cleaners_insert BEFORE INSERT ON regular_c
 -- trigger account_erased_regular_cleaners_update
 CREATE TRIGGER account_erased_regular_cleaners_update BEFORE UPDATE ON regular_cleaners WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.owner_id OR user_id=NEW.cleaner_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END;
 
+-- trigger account_erased_stay_handovers_insert
+CREATE TRIGGER account_erased_stay_handovers_insert BEFORE INSERT ON stay_handovers WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.guest_id OR user_id=NEW.owner_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END;
+
 -- trigger account_erased_stay_offers_insert
 CREATE TRIGGER account_erased_stay_offers_insert BEFORE INSERT ON stay_offers WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.guest_id OR user_id=NEW.owner_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END;
 
 -- trigger account_erased_stay_offers_update
 CREATE TRIGGER account_erased_stay_offers_update BEFORE UPDATE ON stay_offers WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.guest_id OR user_id=NEW.owner_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END;
+
+-- trigger account_erased_stay_photos_insert
+CREATE TRIGGER account_erased_stay_photos_insert BEFORE INSERT ON stay_photos WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.user_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END;
 
 -- trigger account_erased_stay_reviews_insert
 CREATE TRIGGER account_erased_stay_reviews_insert BEFORE INSERT ON stay_reviews WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.guest_id OR user_id=NEW.owner_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END;

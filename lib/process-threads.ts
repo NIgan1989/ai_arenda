@@ -1,9 +1,10 @@
 // «Нити» автопилота: каждая бронь, уборка и задание — нить шагов от начала до конца и шаг, на котором дело сейчас.
 // Блок «Автопилот» в шторке карты показывает их при входе, чтобы было видно, как дела идут без человека.
-// Чистая логика (только lib/ai-move-marks.ts и lib/cancellation.ts): её берут и сайт (components/autopilot-threads.tsx), и приложение (mobile/src/AutopilotThreads.tsx).
+// Чистая логика (только lib/ai-move-marks.ts, lib/cancellation.ts и lib/stay-handover-text.ts): её берут и сайт (components/autopilot-threads.tsx), и приложение (mobile/src/AutopilotThreads.tsx).
 // Тесты: tests/process-threads.test.mjs.
 
 import { aiNoteOf } from './ai-move-marks';
+import {handoverState} from './stay-handover-text';
 import { refundLeft } from './cancellation';
 
 type Row = Record<string, any>;
@@ -119,7 +120,7 @@ export function bookingThread(b: Row, data: Row, now: number): ProcessThread {
   // A deposit the owner received is a last step of its own: the stay is not closed until it is back with the guest.
   const held = terms.deposit_status === 'owner_verified' && Number(terms.deposit) > 0, owed = Number(terms.deposit_balance) || 0, kept = Number(terms.deposit_kept) || 0;
   if (held) steps.push({ key: 'deposit', label: 'Депозит', by: 'you', at: terms.deposit_returned_at || undefined,
-    note: owed ? 'Верните гостю ' + (kept ? 'остаток депозита ' : 'депозит ') + tenge(owed) + ' и отметьте возврат' : kept ? 'Удержано ' + tenge(kept) + (kept < Number(terms.deposit) ? ', остальное возвращено' : '') : 'Депозит возвращён' });
+    note: owed && handoverState(b as Parameters<typeof handoverState>[0], now) === 'ask' ? 'Отметьте, как гость оставил жильё, потом верните депозит' : owed ? 'Верните гостю ' + (kept ? 'остаток депозита ' : 'депозит ') + tenge(owed) + ' и отметьте возврат' : kept ? 'Удержано ' + tenge(kept) + (kept < Number(terms.deposit) ? ', остальное возвращено' : '') : 'Депозит возвращён' });
   const leaving = out || !!terms.checkout_reported_at || now >= b.end;
   const done = [confirmed, paid, inside, inside && leaving, out, ...(held ? [out && !owed] : [])];
   const t = place(steps, done, i => i === 0 || i === 1 || i === 3 || i === 5 || (i === 2 ? now >= b.start - 15 * 60 : now >= b.end));

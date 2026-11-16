@@ -21,6 +21,10 @@ export async function pickImages(camera=false,limit=1):Promise<ImagePicker.Image
 }
 // Shrinks one picked photo and saves it; returns the stored photo id.
 export async function uploadImage(image:ImagePicker.ImagePickerAsset,kind:'property'|'avatar'):Promise<string>{
+ return (await request('/api/media',{kind,data:await jpegData(image,kind)})).id;
+}
+// Shrinks one picked photo to a JPEG data URL the server accepts (lib/listings.ts jpegInput).
+export async function jpegData(image:ImagePicker.ImagePickerAsset,kind:'property'|'avatar'='property'):Promise<string>{
  const limit=kind==='avatar'?105000:475000,sides=kind==='avatar'?[512,400,320]:[1600,1280,1024,800,640];let data='';
  // Large phone shots: if the best quality is still too heavy, try a smaller side before giving up.
  for(const side of sides){const context=ImageManipulator.manipulate(image.uri);
@@ -29,7 +33,7 @@ export async function uploadImage(image:ImagePicker.ImagePickerAsset,kind:'prope
   for(const compress of [.82,.7,.56,.42]){const r=await resized.saveAsync({format:SaveFormat.JPEG,compress,base64:true});data='data:image/jpeg;base64,'+r.base64;if(data.length<limit)break;}
   if(data.length<limit)break;}
  if(data.length>=limit)throw new Error('Не удалось подготовить фото. Снимите ещё раз или выберите другой снимок.');
- return (await request('/api/media',{kind,data})).id;
+ return data;
 }
 export function PhotoUpload({kind,onAdd,disabled=false,onBusy}:{onBusy?:(v:boolean)=>void;kind:'property'|'avatar';onAdd:(id:string)=>void;disabled?:boolean}){
  const [busy,setBusy]=useState(false),[error,setError]=useState('');
