@@ -57,6 +57,8 @@ const SPOT_ROOM=72;
 const NOT_ON_MAP='Этого нет на карте сейчас: у объекта не отмечено место или он в другом городе.';
 // What the guest searched for outlives a visit to another page (a flat's details, the check of a booking):
 // coming back to the map within ten minutes shows the same conditions and the same list.
+// A city the guest chose themselves (in the line, in «Уточнить») is never moved to where the phone is.
+const chosenCity=new Set<string>();
 const guestSearches=new Map<string,{draft:GuestDraft;preview:Row|null;foundAt:number}>(),SEARCH_KEEP=600000;
 const short=(amount:unknown)=>typeof amount==='number'&&amount>0?(amount>=10000?Math.round(amount/1000)+' тыс.':money(amount)):'Жильё';
 const pointOf=(item:Row):MapPoint|null=>validPoint([item.location?.longitude,item.location?.latitude]);
@@ -92,7 +94,7 @@ function GuestPanel({setScanning,accountId,data,mapData,publish,selected,setSele
  const lock=useRef(false),requestKey=useRef(''),pickThenFind=useRef(false),bookedFlat=useRef<Row|null>(null),askedFrom=useRef<MapPoint|null>(null);
  const active=!!requestId&&(!live||['searching','ready','booking'].includes(live.status)),now=useNow(active)+skew;
  // Any change of the conditions makes the shown results stale.
- const change=(next:GuestDraft)=>{if(next.city!==draft.city)setCity(next.city);setDraft(next);setPreview(null);setError('');setHint(null);};
+ const change=(next:GuestDraft,own=true)=>{if(next.city!==draft.city){setCity(next.city);if(own)chosenCity.add(accountId);}setDraft(next);setPreview(null);setError('');setHint(null);};
  // A lost connection is already said by the line at the top of the screen; the sheet does not repeat it.
  async function guarded(task:()=>Promise<void>){if(lock.current)return;lock.current=true;setWorking(true);setError('');try{await task();}catch(e){if(!isOffline(e))setError(message(e));}finally{lock.current=false;setWorking(false);}}
  // A search never starts in the past: a stay left from an earlier hour moves forward first.
@@ -111,7 +113,7 @@ function GuestPanel({setScanning,accountId,data,mapData,publish,selected,setSele
   setError('');
   if(!parsed.understood){setHint({text:'Не понял запрос. Назовите день и срок, например: «завтра на сутки на двоих».',ask:text});return;}
   // Understood: the conditions line now says it, so the line is free for the next request (as on the site).
-  setPreview(null);setAsked('');if(parsed.draft.city!==draft.city)setCity(parsed.draft.city);setDraft(parsed.draft);
+  setPreview(null);setAsked('');if(parsed.draft.city!==draft.city){setCity(parsed.draft.city);chosenCity.add(accountId);}setDraft(parsed.draft);
   // A day or an hour that has passed is never moved to another one: the guest is asked for the date.
   if(parsed.past){setHint({text:[PAST_TEXT[parsed.past],parsed.note,'Укажите, когда нужно жильё.'].filter(Boolean).join(' '),error:true});setRefine(true);expand(2);return;}
   setHint(parsed.note?{text:parsed.note}:null);
@@ -210,11 +212,11 @@ function GuestPanel({setScanning,accountId,data,mapData,publish,selected,setSele
  const here=useHere(),placed=useRef<'no'|'city'|'done'>('no');
  useEffect(()=>{
   if(placed.current==='done'||!here.fix)return;
-  if(aimed||recent||requestId||preview||draft.near||nav.trip){placed.current='done';return;}
+  if(aimed||recent||requestId||preview||draft.near||nav.trip||chosenCity.has(accountId)){placed.current='done';return;}
   const near=nearestCity(here.fix.point);
   if(!near){placed.current='done';return;}
   // The city moves only once the map of the current one has answered, and never away from the guest's own stays there.
-  if(placed.current==='no'){if(!mapData)return;placed.current='city';if(near!==draft.city){if(stays.length){placed.current='done';return;}change({...draft,city:near,district:'',near:null});notify('Вы в городе '+near+'. Показываем жильё здесь.');return;}}
+  if(placed.current==='no'){if(!mapData)return;placed.current='city';if(near!==draft.city){if(stays.length){placed.current='done';return;}change({...draft,city:near,district:'',near:null},false);notify('Вы в городе '+near+'. Нужен другой город — напишите его в строке, например «Астана завтра».');return;}}
   if(mapData&&mapData.city===near){placed.current='done';flyMe();}
  },[here.fix,mapData]);
  const meInCity=!!here.fix&&nearestCity(here.fix.point)===draft.city;

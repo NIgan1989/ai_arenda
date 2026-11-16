@@ -31,7 +31,7 @@ export type MapProps={center:MapPoint;pins:MapPin[];selected?:string;focus?:stri
 type View2={center:MapPoint;zoom:number};
 // The tile service asks clients to identify themselves; no account or device data is sent.
 const tileHeaders={'User-Agent':'AIArenda-mobile/0.1 (+'+API_URL+')'};
-const plusIcon=require('../assets/ui/plus.png'),minusIcon=require('../assets/ui/minus.png'),fitIcon=require('../assets/ui/fit.png');
+const plusIcon=require('../assets/ui/plus.png'),minusIcon=require('../assets/ui/minus.png');
 export function TileMap({center,pins,selected,focus='',lines=[],heat=[],sparks=[],onSelect,bottomInset=0,topInset=0,focusKey='',picking=false,scanning=false,onCenter,restore,onView,me=null,locating=false,onLocate,meFly=0}:MapProps){
  const [size,setSize]=useState({w:0,h:0}),[view,setViewNow]=useState<View2>(restore?.view||{center,zoom:12}),[drag,setDrag]=useState({x:0,y:0}),[still,setStill]=useState(false);
  const state=useRef({view,size,bottomInset,topInset,picking});state.current={view,size,bottomInset,topInset,picking};
@@ -155,7 +155,6 @@ export function TileMap({center,pins,selected,focus='',lines=[],heat=[],sparks=[
   <View style={[m.controls,{top:Math.max(topInset+12,Math.round(originY-controlsHeight/2))}]}>
    <Pressable accessibilityRole="button" accessibilityLabel="Приблизить" disabled={view.zoom>=MAX_ZOOM} onPress={()=>zoomBy(1)} style={m.control}><Image source={plusIcon} style={m.controlIcon} accessibilityIgnoresInvertColors/></Pressable>
    <Pressable accessibilityRole="button" accessibilityLabel="Отдалить" disabled={view.zoom<=MIN_ZOOM} onPress={()=>zoomBy(-1)} style={m.control}><Image source={minusIcon} style={m.controlIcon} accessibilityIgnoresInvertColors/></Pressable>
-   <Pressable accessibilityRole="button" accessibilityLabel="Показать всё на карте" onPress={fit} style={m.control}><Image source={fitIcon} style={m.controlIcon} accessibilityIgnoresInvertColors/></Pressable>
    {!!onLocate&&<Pressable accessibilityRole="button" accessibilityLabel={locating?'Ищем вас на карте':'Где я'} accessibilityState={{busy:locating}} onPress={onLocate} style={m.control}><LocateIcon known={!!me} busy={locating} still={still}/></Pressable>}
   </View>
   <Text style={[m.credit,{bottom:bottomInset+6}]}>© OpenStreetMap</Text>

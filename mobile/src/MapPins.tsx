@@ -9,8 +9,8 @@ import {AI_SAYS,AI_WINDOW} from '../../lib/ai-move-marks';
 
 // The pins, their events and the radar, shared by both maps of the app: the MapLibre map on a phone (LiveMap.native.tsx)
 // and the tile map of the web preview (TileMap.tsx). The map decides where a pin stands; the pin decides how it moves.
-// Four round controls on the right edge (the fourth, «Где я», finds the person), centred on the visible part of the map.
-export const controlsHeight=4*T.control.touch+3*8;
+// Three round controls on the right edge: closer, farther and «Где я», which finds the person, centred on the visible part of the map.
+export const controlsHeight=3*T.control.touch+2*8;
 // When pin boxes meet, one stays visible: the selected one, then an answering or waiting flat, then the AI's best choice, then the cheapest.
 export const toneOrder:Record<PinTone,number>={alert:0,offer:0,booked:0,pending:1,active:1,booking:2,job:3,home:3};
 const tones:Record<PinTone,{bg:string;fg:string;line:string}>={home:{bg:C.surface,fg:C.ink,line:C.line},pending:{bg:C.warningSoft,fg:C.warning,line:C.warningLine},offer:{bg:C.accent,fg:C.surface,line:C.accent},job:{bg:C.infoSoft,fg:C.info,line:C.infoLine},booking:{bg:C.accentSoft,fg:C.ink,line:C.accentLine},booked:{bg:C.success,fg:C.surface,line:C.success},active:{bg:C.info,fg:C.surface,line:C.info},alert:{bg:C.danger,fg:C.surface,line:C.danger}};

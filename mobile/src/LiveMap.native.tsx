@@ -15,7 +15,7 @@ export type {HeatPoint,MapLine,MapPin,MapProps};
 const STYLE='https://tiles.openfreemap.org/styles/positron';
 // MapLibre counts zoom for 512px tiles, map-math for 256px ones: the same picture is one level lower here.
 const toGl=(zoom:number)=>zoom-1,fromGl=(zoom:number)=>zoom+1;
-const plusIcon=require('../assets/ui/plus.png'),minusIcon=require('../assets/ui/minus.png'),fitIcon=require('../assets/ui/fit.png');
+const plusIcon=require('../assets/ui/plus.png'),minusIcon=require('../assets/ui/minus.png');
 const fallback:MapPoint=[76.95,52.287];
 
 export function LiveMap({center,pins,selected,focus='',lines=[],heat=[],sparks=[],onSelect,bottomInset=0,topInset=0,focusKey='',picking=false,scanning=false,onCenter,restore,onView,me=null,locating=false,onLocate,meFly=0}:MapProps){
@@ -140,7 +140,6 @@ export function LiveMap({center,pins,selected,focus='',lines=[],heat=[],sparks=[
   <View style={[m.controls,{top:Math.max(topInset+12,Math.round(originY-controlsHeight/2))}]}>
    <Pressable accessibilityRole="button" accessibilityLabel="Приблизить" disabled={view.zoom>=MAX_ZOOM} onPress={()=>zoomBy(1)} style={m.control}><Image source={plusIcon} style={m.controlIcon} accessibilityIgnoresInvertColors/></Pressable>
    <Pressable accessibilityRole="button" accessibilityLabel="Отдалить" disabled={view.zoom<=MIN_ZOOM} onPress={()=>zoomBy(-1)} style={m.control}><Image source={minusIcon} style={m.controlIcon} accessibilityIgnoresInvertColors/></Pressable>
-   <Pressable accessibilityRole="button" accessibilityLabel="Показать всё на карте" onPress={fit} style={m.control}><Image source={fitIcon} style={m.controlIcon} accessibilityIgnoresInvertColors/></Pressable>
    {!!onLocate&&<Pressable accessibilityRole="button" accessibilityLabel={locating?'Ищем вас на карте':'Где я'} accessibilityState={{busy:locating}} onPress={onLocate} style={m.control}><LocateIcon known={!!me} busy={locating} still={still}/></Pressable>}
   </View>
   {failed&&<Text accessibilityLiveRegion="polite" style={[m.credit,{bottom:bottomInset+30}]}>Карта временно не загружается. Список и действия работают.</Text>}
