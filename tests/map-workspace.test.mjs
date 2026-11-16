@@ -22,3 +22,20 @@ test('a new flat goes on the map by its address: only street and city leave, a f
  f.db.raw.prepare('UPDATE properties SET city=? WHERE id=?').run(' алматы ',f.property);const almaty=await geocodeFlat(f.owner,'owner',{propertyId:f.property},async()=>new Response(JSON.stringify([{lon:'76.92',lat:'43.25'}])));assert.equal(almaty.found,true);
 }finally{f.db.close();}});
 test('a cleaning under way tells the map when it started, so its pin can fill towards the deadline',async()=>{const f=await fixture();try{await pin(f);await assign(f);const started=now()-600;f.db.raw.prepare("UPDATE bookings SET status='completed' WHERE id=?").run(f.booking);f.db.raw.prepare("UPDATE property_operations SET active_booking_id=NULL,readiness='cleaning' WHERE property_id=?").run(f.property);f.db.raw.prepare("UPDATE cleaning_jobs SET status='in_progress',started_at=? WHERE id=?").run(started,f.job.id);const owner=await mapSearch(f.owner,'owner',{});const job=owner.processes.find(p=>p.kind==='job');assert.equal(job.startedAt,started);f.db.raw.prepare("UPDATE cleaning_jobs SET status='assigned',started_at=NULL WHERE id=?").run(f.job.id);assert.equal((await mapSearch(f.owner,'owner',{})).processes.find(p=>p.kind==='job').startedAt,undefined);}finally{f.db.close();}});
+test('the pin follows a changed address: a complex name is skipped, a typed draft is searched, an old pin is replaced',async()=>{const f=await fixture();try{
+ const {geocodeQueries,flatSpot,placeFlatByAddress,saveMapPoint}=await load('map-workspace');
+ assert.deepEqual(geocodeQueries({address:'Nexpo city, Рыскулова 5, кв. 7',city:'Алматы'}),['Nexpo city, Рыскулова 5, Алматы, Казахстан','Рыскулова 5, Алматы, Казахстан']);
+ f.db.raw.prepare("UPDATE properties SET city='Павлодар',district='Центр',address='ул. Торайгырова 64' WHERE id=?").run(f.property);
+ await saveMapPoint(f.owner,'owner',{propertyId:f.property,longitude:76.95,latitude:52.28,confirmed:true,version:0});
+ const asked=[];const almaty=async url=>{asked.push(decodeURIComponent(String(url)));return new Response(JSON.stringify(asked.length<2?[]:[{lon:'76.93',lat:'43.24'}]));};
+ const kept=await flatSpot(f.owner,'owner',{propertyId:f.property},almaty);assert.equal(kept.saved,true);assert.equal(asked.length,0);
+ const draft=await flatSpot(f.owner,'owner',{propertyId:f.property,city:'Алматы',district:'Бостандыкский',address:'Nexpo city, Рыскулова 5'},almaty);
+ assert.equal(draft.found,true);assert.equal(draft.saved,false);assert.equal(draft.version,1);assert.ok(asked[1].includes('q=Рыскулова 5, Алматы'));
+ f.db.raw.prepare("UPDATE properties SET city='Алматы',district='Бостандыкский',address='Nexpo city, Рыскулова 5' WHERE id=?").run(f.property);
+ asked.length=0;const placed=await placeFlatByAddress(f.owner,'owner',{propertyId:f.property},almaty);assert.equal(placed.saved,true);
+ const row=f.db.raw.prepare('SELECT longitude,latitude,version FROM property_locations WHERE property_id=?').get(f.property);assert.deepEqual({...row},{longitude:76.93,latitude:43.24,version:1});
+ const stadia=[];const viaStadia=await flatSpot(f.owner,'owner',{propertyId:f.property,address:'Абая 10'},async url=>{stadia.push(String(url));return new Response(JSON.stringify({features:[{geometry:{coordinates:[76.9,43.25]},properties:{layer:'address'}}]}));},{STADIA_API_KEY:'key-12345678'});
+ assert.equal(viaStadia.found,true);assert.ok(stadia[0].startsWith('https://api.stadiamaps.com/geocoding/v1/search'));
+ const city=await flatSpot(f.owner,'owner',{propertyId:f.property,address:'Абая 10'},async url=>new Response(JSON.stringify(String(url).includes('stadiamaps')?{features:[{geometry:{coordinates:[76.89,43.24]},properties:{layer:'locality'}}]}:[])),{STADIA_API_KEY:'key-12345678'});
+ assert.equal(city.found,false);
+}finally{f.db.close();}});

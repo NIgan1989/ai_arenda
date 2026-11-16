@@ -34,30 +34,66 @@ export async function mapSearch(s:RentalService,role:Role,b:Row,config:Operation
  return {...result,properties,processes,journeys,aiMarks,...(demand?{demand}:{}),center:mapCities[Object.keys(mapCities).find(c=>c.toLocaleLowerCase('ru')===String(filters.city||(state.profile as Row)?.city||'').trim().toLocaleLowerCase('ru'))||'']||[67,48],serverTime:epoch()};
 }
 
-// The owner's own address, as he typed it, turned into a point on the map (OpenStreetMap search).
+// The owner's own address, as he typed it, turned into a point on the map.
 // Only the owner of the flat can ask, and only the street and city leave the service: the flat number is cut off.
-// When nothing is found the city centre comes back with found:false, so the owner taps the house himself.
-export function geocodeQuery(p:Row){const street=String(p.address||'').replace(/,?\s*(?:кв\.?|квартира|офис|подъезд|эт\.?|этаж)\s*\d.*$/i,'').trim();return [street,p.city,'Казахстан'].filter(Boolean).join(', ');}
-export async function geocodeFlat(s:RentalService,role:Role,b:Row,lookup:typeof fetch=fetch){
- await s.authorizeWorkspace(role,'operations');if(role!=='owner')throw new DomainError('Точку указывает владелец.',403);
- const p=await one(s.db,'SELECT * FROM properties WHERE id=? AND owner_id=?',b.propertyId,s.userId);if(!p)throw new DomainError('Объект недоступен.',404);
- const city=String(p.city||'').trim().toLocaleLowerCase('ru'),centre=mapCities[Object.keys(mapCities).find(c=>c.toLocaleLowerCase('ru')===city)||'']||mapCities['Павлодар'],fallback={longitude:centre[0],latitude:centre[1],found:false};
- if(!String(p.address||'').trim())return fallback;
- const url='https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&countrycodes=kz&accept-language=ru&q='+encodeURIComponent(geocodeQuery(p));
- try{
-  const signal=AbortSignal.timeout?AbortSignal.timeout(6000):undefined;
-  const r=await lookup(url,{headers:{'User-Agent':'ai-arenda/1.0 (rental map)','Accept':'application/json'},signal});if(!r.ok)return fallback;
-  const hit=(await r.json() as Row[])[0],lon=Number(hit?.lon),lat=Number(hit?.lat);
-  // A result far from the flat's city is somebody else's street with the same name.
-  if(!Number.isFinite(lon)||!Number.isFinite(lat)||geoDistance([lon,lat],centre)>60000)return fallback;
-  return {longitude:Number(lon.toFixed(6)),latitude:Number(lat.toFixed(6)),found:true};
- }catch{return fallback;}
+// When nothing is found the city centre comes back with found:false, so the owner moves the map to the house himself.
+const cutFlat=(address:unknown)=>String(address||'').replace(/,?\s*(?:кв\.?|квартира|офис|подъезд|эт\.?|этаж)\s*\d.*$/i,'').trim();
+export function geocodeQuery(p:Row){return [cutFlat(p.address),p.city,'Казахстан'].filter(Boolean).join(', ');}
+// A few ways to say the same address: as typed, then without a leading complex name («Nexpo City, Рыскулова 5»),
+// then only the part with the house number. Searches often miss the first and find one of the others.
+export function geocodeQueries(p:Row){
+ const street=cutFlat(p.address),parts=street.split(',').map(x=>x.trim()).filter(Boolean),tail=[p.city,'Казахстан'].filter(Boolean);
+ const ways=[street,parts.length>1?parts.slice(1).join(', '):'',parts.find(x=>/\d/.test(x))||''].filter(Boolean).map(w=>[w,...tail].join(', '));
+ return [...new Set(ways)].slice(0,3);
 }
-// Right after a flat is added: put it on the map by its address, unless the owner already placed it.
-export async function placeFlatByAddress(s:RentalService,role:Role,b:Row,lookup:typeof fetch=fetch){
- const spot=await geocodeFlat(s,role,b,lookup);
- const current=await one(s.db,'SELECT version FROM property_locations WHERE property_id=?',b.propertyId);
- if(!spot.found||current)return {...spot,saved:false};
- await saveMapPoint(s,role,{propertyId:b.propertyId,longitude:spot.longitude,latitude:spot.latitude,version:0,confirmed:true});
+type Spot={longitude:number;latitude:number;found:boolean};
+type GeoConfig={STADIA_API_KEY?:string};
+// The owner may pass the address he is still typing (city, district, address), so the pin moves before he saves.
+function draftOf(p:Row,b:Row){const take=(k:string,max:number)=>typeof b[k]==='string'?b[k].slice(0,max):p[k];return {...p,city:take('city',80),district:take('district',120),address:take('address',300)};}
+async function findSpot(p:Row,lookup:typeof fetch,config:GeoConfig):Promise<Spot>{
+ const city=String(p.city||'').trim().toLocaleLowerCase('ru'),centre=mapCities[Object.keys(mapCities).find(c=>c.toLocaleLowerCase('ru')===city)||'']||mapCities['Павлодар'],fallback={longitude:centre[0],latitude:centre[1],found:false};
+ if(!cutFlat(p.address))return fallback;
+ const stadia=typeof config.STADIA_API_KEY==='string'&&/^[A-Za-z0-9-]{8,128}$/.test(config.STADIA_API_KEY)?config.STADIA_API_KEY:'';
+ // A result far from the flat's city is somebody else's street with the same name.
+ const near=(lon:number,lat:number)=>Number.isFinite(lon)&&Number.isFinite(lat)&&geoDistance([lon,lat],centre)<=60000;
+ const ask=async(url:string)=>{const signal=AbortSignal.timeout?AbortSignal.timeout(6000):undefined;const r=await lookup(url,{headers:{'User-Agent':'ai-arenda/1.0 (rental map)','Accept':'application/json'},signal});return r.ok?await r.json() as Row:null;};
+ for(const text of geocodeQueries(p)){
+  try{
+   if(stadia){
+    const url=new URL('https://api.stadiamaps.com/geocoding/v1/search');url.searchParams.set('text',text);url.searchParams.set('boundary.country','KZ');url.searchParams.set('focus.point.lon',String(centre[0]));url.searchParams.set('focus.point.lat',String(centre[1]));url.searchParams.set('lang','ru');url.searchParams.set('size','1');url.searchParams.set('api_key',stadia);
+    const hit=(await ask(url.toString()))?.features?.[0],[lon,lat]=(hit?.geometry?.coordinates||[]).map(Number);
+    // Only a house, a street or a named place counts: the city itself is no pin for a flat.
+    if(hit&&['address','street','venue'].includes(hit.properties?.layer)&&near(lon,lat))return {longitude:Number(lon.toFixed(6)),latitude:Number(lat.toFixed(6)),found:true};
+   }
+   const list=await ask('https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&countrycodes=kz&accept-language=ru&q='+encodeURIComponent(text)) as Row[]|null,hit=Array.isArray(list)?list[0]:null,lon=Number(hit?.lon),lat=Number(hit?.lat);
+   if(near(lon,lat))return {longitude:Number(lon.toFixed(6)),latitude:Number(lat.toFixed(6)),found:true};
+  }catch{/* try the next way of saying it */}
+ }
+ return fallback;
+}
+async function ownFlat(s:RentalService,role:Role,id:unknown){
+ await s.authorizeWorkspace(role,'operations');if(role!=='owner')throw new DomainError('Точку указывает владелец.',403);
+ const p=await one(s.db,'SELECT * FROM properties WHERE id=? AND owner_id=?',id,s.userId);if(!p)throw new DomainError('Объект недоступен.',404);return p;
+}
+export async function geocodeFlat(s:RentalService,role:Role,b:Row,lookup:typeof fetch=fetch,config:GeoConfig={}){
+ const p=await ownFlat(s,role,b.propertyId);return findSpot(draftOf(p,b),lookup,config);
+}
+// The pin of the flat as the owner sees it in «Адрес»: his own pin while it still matches the address,
+// otherwise where the address is (or the city centre, found:false). saved tells which one it is; version is for saving.
+export async function flatSpot(s:RentalService,role:Role,b:Row,lookup:typeof fetch=fetch,config:GeoConfig={}){
+ const p=await ownFlat(s,role,b.propertyId),draft=draftOf(p,b),l=await one(s.db,'SELECT * FROM property_locations WHERE property_id=?',p.id),version=Number(l?.version||0);
+ if(l&&l.address_fingerprint===fingerprint(draft))return {longitude:l.longitude,latitude:l.latitude,found:true,saved:true,version};
+ return {...await findSpot(draft,lookup,config),saved:false,version};
+}
+// After a flat is added or its address changes: put it on the map by its address, unless the owner's own pin still
+// matches the address. A pin left from the old address (another city, another street) is replaced.
+export async function placeFlatByAddress(s:RentalService,role:Role,b:Row,lookup:typeof fetch=fetch,config:GeoConfig={}){
+ const p=await ownFlat(s,role,b.propertyId),l=await one(s.db,'SELECT * FROM property_locations WHERE property_id=?',p.id);
+ if(l&&l.address_fingerprint===fingerprint(p))return {longitude:l.longitude,latitude:l.latitude,found:true,saved:false,current:true};
+ const spot=await findSpot(p,lookup,config);
+ if(!spot.found)return {...spot,saved:false};
+ await saveMapPoint(s,role,{propertyId:p.id,longitude:spot.longitude,latitude:spot.latitude,version:Number(l?.version||0),confirmed:true});
  return {...spot,saved:true};
 }
+// Whether the flat has a pin that matches its address now (a pin from an old address does not count).
+export async function hasFreshPoint(db:D1Database,p:Row){const l=await one(db,'SELECT address_fingerprint FROM property_locations WHERE property_id=?',p.id);return !!l&&l.address_fingerprint===fingerprint(p);}

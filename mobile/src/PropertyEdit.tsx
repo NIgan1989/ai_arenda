@@ -1,4 +1,4 @@
-import React,{useState} from 'react';
+import React,{useRef,useState} from 'react';
 import {Pressable,StyleSheet,Switch,Text,TextInput,View} from 'react-native';
 import {C,type} from './styles';
 import {T} from './tokens';
@@ -10,6 +10,7 @@ import {RegularCleaner} from './RegularCleaner';
 import {EDIT_STEPS,editBody,editRequest,nextAdvice,needsReview,reviewRequest,REVIEW_SENT,stepForError,stepLine,stepNeeds,type Advice,type EditBody,type EditStep} from '../../lib/listing-edit';
 import {amenities,checkinMethods} from '../../lib/listings';
 import {KindPicker} from './KindPicker';
+import {AddressPin,type PinChoice} from './AddressPin';
 type Row=Record<string,any>;
 const R=T.radius,H=T.control;
 const ICONS:Record<EditStep,string>={photos:'📷',flat:'🏠',place:'📍',text:'📝',amenities:'📶',prices:'₸',checkin:'🕑',rules:'📜'};
@@ -17,22 +18,39 @@ const SAVED:Record<EditStep|'publish',string>={photos:'Фото сохранен
 
 // Editing a flat in the app: an overview of short steps, each opened on its own small screen and saved at once.
 // After each save the AI administrator offers the next step. Same rules as the site (lib/listing-edit.ts).
-export function PropertyEdit({property,onSave,onReview,onRemove,onClose,step}:{property:Row;onSave:(body:Row)=>Promise<Row|undefined>;onReview?:(body:Row)=>Promise<unknown>;onRemove?:()=>Promise<unknown>;onClose:()=>void;step?:EditStep|'calendars'|'cleaner'|null}){
+export function PropertyEdit({property,onSave,onReview,onRemove,onClose,step,call}:{property:Row;onSave:(body:Row)=>Promise<Row|undefined>;onReview?:(body:Row)=>Promise<unknown>;onRemove?:()=>Promise<unknown>;onClose:()=>void;step?:EditStep|'calendars'|'cleaner'|null;call?:(path:string,body:Row)=>Promise<Row>}){
  const [p,setP]=useState(property),[base,setBase]=useState<EditBody>(()=>editBody(property)),[draft,setDraft]=useState<EditBody>(base);
  const [open,setOpen]=useState<EditStep|null>(step&&EDIT_STEPS.some(x=>x.key===step)?step as EditStep:null),[busy,setBusy]=useState(false),[uploading,setUploading]=useState(false),[error,setError]=useState(''),[done,setDone]=useState(''),[skipped,setSkipped]=useState<string[]>([]),[held,setHeld]=useState(false),[sent,setSent]=useState(false);
+ const pick=useRef<PinChoice|null>(null);
  const [confirm,setConfirm]=useState(false),[removeError,setRemoveError]=useState(''),[calendars,setCalendars]=useState(step==='calendars'),[cleaner,setCleaner]=useState(step==='cleaner');
  // A save that failed keeps its changes: the owner fixes what the server asked for in another step and everything is saved together.
  const fix=held&&error?stepForError(error):null;
- const advice:Advice=held&&error?{step:fix,text:'Не сохранилось: '+error+(fix?' Заполните это, и сохранится всё вместе.':''),action:fix?'Заполнить':undefined}:sent&&!base.published?{step:null,text:REVIEW_SENT}:nextAdvice(base,skipped);
- function go(step:EditStep){if(!held)setDraft(base);setError(held?error:'');setDone('');setOpen(step);}
+ // Without a pin that matches the address the review cannot pass, so the AI says it first and leads straight to «Адрес».
+ const unmapped=!!p.id&&p.mapped===false&&!!base.address.trim();
+ const advice:Advice=held&&error?{step:fix,text:'Не сохранилось: '+error+(fix?' Заполните это, и сохранится всё вместе.':''),action:fix?'Заполнить':undefined}
+  :unmapped&&!skipped.includes('pin')?{step:'place',text:'Метки жилья на карте нет: без неё проверка не пройдёт. Откройте «Адрес» и проверьте, что метка стоит на доме.',action:'Поставить метку'}
+  :sent&&!base.published?{step:null,text:REVIEW_SENT}:nextAdvice(base,skipped);
+ function go(step:EditStep){pick.current=null;if(!held)setDraft(base);setError(held?error:'');setDone('');setOpen(step);}
  // Removing asks once more right here; the server deletes a flat without history and archives one with bookings.
  async function remove(){if(!onRemove||busy)return;setBusy(true);setRemoveError('');try{await onRemove();}catch(x:any){setRemoveError(x?.message||'Не удалось удалить жильё.');}finally{setBusy(false);}}
+ // After the address is saved the service has already moved the pin by the new address when it found the house.
+ // The owner's own choice on the map (or a house found while he typed) is saved on top; true when a pin now matches the address.
+ async function savePin(saved:Row):Promise<boolean|null>{
+  if(!call||!p.id)return null;
+  try{const now=await call('map/spot',{propertyId:p.id}),choice=pick.current;
+   if(choice?.point&&(choice.moved||!now.saved)){await call('map/location',{propertyId:p.id,longitude:choice.point[0],latitude:choice.point[1],version:now.version||0,confirmed:true});return true;}
+   return !!now.saved||!!saved.mapped;}
+  catch{return null;}
+ }
  async function commit(next:EditBody,what:EditStep|'publish'){
   if(busy||uploading)return;setBusy(true);setError('');
-  try{const fresh=await onSave(editRequest(next,p));setP(fresh||{...p,listing_version:(p.listing_version||0)+1});const b=fresh?editBody(fresh):next;setBase(b);setDraft(b);setOpen(null);setHeld(false);setError('');setDone(SAVED[what]);}
+  try{const fresh=await onSave(editRequest(next,p));let saved=fresh||{...p,listing_version:(p.listing_version||0)+1};const b=fresh?editBody(fresh):next;
+   const pinned=what==='place'?await savePin(saved):null;if(pinned!==null)saved={...saved,mapped:pinned||saved.mapped};
+   setP(saved);setBase(b);setDraft(b);setOpen(null);setHeld(false);setError('');
+   setDone(what==='place'?(saved.mapped?'Адрес и метка на карте сохранены.':'Адрес сохранён, а дом на карте не нашёлся: откройте «Адрес» и передвиньте карту к дому.'):SAVED[what]);}
   catch(e:any){const message=e?.message||'Не удалось сохранить.';
    // Publishing waits for the administrator: the flat is sent for review instead of failing, and is shown once approved.
-   if(what==='publish'&&next.published&&onReview&&needsReview(message)){try{const kept={...next,published:false};if(held){const fresh=await onSave(editRequest(kept,p));setP(fresh||p);const b=fresh?editBody(fresh):kept;setBase(b);setDraft(b);}await onReview(reviewRequest({id:p.id,title:next.title,city:next.city,address:next.address}));setSent(true);setHeld(false);setDone('');setError('');setOpen(null);return;}catch(r:any){setError(r?.message||message);setHeld(true);setOpen(null);return;}}
+   if(what==='publish'&&next.published&&onReview&&needsReview(message)){try{const kept={...next,published:false};if(held){const fresh=await onSave(editRequest(kept,p));setP(fresh||p);const b=fresh?editBody(fresh):kept;setBase(b);setDraft(b);}await onReview(reviewRequest({id:p.id,title:next.title,city:next.city,address:next.address}));if(call&&p.id){try{const now=await call('map/spot',{propertyId:p.id});setP((o:Row)=>({...o,mapped:!!now.saved}));}catch{}}setSent(true);setHeld(false);setDone('');setError('');setOpen(null);return;}catch(r:any){setError(r?.message||message);setHeld(true);setOpen(null);return;}}
    setError(message);setHeld(true);setOpen(null);}finally{setBusy(false);}
  }
  const d=draft.details,r=draft.rental;
@@ -60,6 +78,7 @@ export function PropertyEdit({property,onSave,onReview,onRemove,onClose,step}:{p
     <View style={e.row}>{half(text('Город',draft.city,v=>set({city:v}),80))}{half(text('Район',draft.district,v=>set({district:v}),120,'Например, Центр'))}</View>
     {text('Точный адрес',draft.address,v=>set({address:v}),300,'Улица, дом, номер')}
     <Text style={e.hint}>Адрес видит только гость с подтверждённой бронью. Метку на карте ставим по нему.</Text>
+    {!!call&&!!p.id&&<AddressPin propertyId={p.id} city={draft.city} district={draft.district} address={draft.address} call={call} onChoice={c=>{pick.current=c;}}/>}
    </>}
    {open==='text'&&<>
     {text('Название',draft.title,v=>set({title:v}),120)}
@@ -101,13 +120,13 @@ export function PropertyEdit({property,onSave,onReview,onRemove,onClose,step}:{p
     
     {!!advice.step&&<View style={e.adviceRow}>
      <Pressable accessibilityRole="button" disabled={busy} onPress={()=>advice.step==='publish'?commit({...(held?draft:base),published:true},'publish'):go(advice.step as EditStep)} style={e.go}><Text style={e.goText}>{busy&&advice.step==='publish'?'Сохраняю…':advice.action}</Text></Pressable>
-     {!held&&<Pressable accessibilityRole="button" onPress={()=>{setSkipped(v=>[...v,advice.step as string]);setDone('');}} style={e.later}><Text style={e.laterText}>Не сейчас</Text></Pressable>}
+     {!held&&<Pressable accessibilityRole="button" onPress={()=>{setSkipped(v=>[...v,unmapped&&advice.step==='place'?'pin':advice.step as string]);setDone('');}} style={e.later}><Text style={e.laterText}>Не сейчас</Text></Pressable>}
     </View>}
    </View>
   </View>
-  <View style={e.grid}>{EDIT_STEPS.map(s=>{const needs=stepNeeds(base,s.key);return <Pressable key={s.key} accessibilityRole="button" accessibilityLabel={s.title+': '+stepLine(base,s.key)+(needs?', нужно заполнить':'')} onPress={()=>go(s.key)} style={({pressed})=>[e.step,needs&&e.stepNeeds,pressed&&e.pressed]}>
+  <View style={e.grid}>{EDIT_STEPS.map(s=>{const needs=stepNeeds(base,s.key)||(s.key==='place'&&unmapped);return <Pressable key={s.key} accessibilityRole="button" accessibilityLabel={s.title+': '+stepLine(base,s.key)+(s.key==='place'&&unmapped?', нет метки на карте':needs?', нужно заполнить':'')} onPress={()=>go(s.key)} style={({pressed})=>[e.step,needs&&e.stepNeeds,pressed&&e.pressed]}>
    <View style={[e.icoBox,needs&&e.icoNeeds]}><Text style={e.ico}>{ICONS[s.key]}</Text></View>
-   <View style={{flex:1,minWidth:0}}><Text style={e.stepTitle} numberOfLines={1}>{s.title}</Text><Text style={e.stepLine} numberOfLines={1}>{stepLine(base,s.key)}</Text></View>
+   <View style={{flex:1,minWidth:0}}><Text style={e.stepTitle} numberOfLines={1}>{s.title}</Text><Text style={e.stepLine} numberOfLines={1}>{s.key==='place'&&unmapped?'Нет метки на карте':stepLine(base,s.key)}</Text></View>
    {needs&&<View style={e.dot}/>}
   </Pressable>;})}</View>
   {!!p.id&&!base.ownStaff&&<Pressable accessibilityRole="button" accessibilityLabel="Постоянный исполнитель" onPress={()=>{setDone('');setCleaner(true);}} style={({pressed})=>[e.step,{width:'100%'},pressed&&e.pressed]}>

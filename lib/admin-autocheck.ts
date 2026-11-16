@@ -34,7 +34,7 @@ export function flatChecks(f:FlatFacts):ReviewCheck[]{
  const len=f.description.trim().length;
  checks.push({key:'description',label:'Описание',state:len>=MIN_DESCRIPTION?'ok':'fix',note:len>=MIN_DESCRIPTION?'Описание есть':'Описание короче '+MIN_DESCRIPTION+' знаков, допишите пару предложений о жилье'});
  checks.push({key:'photos',label:'Фото',state:f.photos>=MIN_PHOTOS?'ok':'fix',note:f.photos>=MIN_PHOTOS?'Фото: '+f.photos:'Фото: '+f.photos+', нужно не меньше '+MIN_PHOTOS});
- checks.push({key:'map',label:'Точка на карте',state:f.mapped?'ok':'fix',note:f.mapped?'Точка на карте есть':'Поставьте точку жилья на карте'});
+ checks.push({key:'map',label:'Точка на карте',state:f.mapped?'ok':'fix',note:f.mapped?'Точка на карте есть':'Не нашли дом по адресу на карте: откройте «Моё жильё» → «Адрес», проверьте адрес и передвиньте карту так, чтобы метка стояла на доме'});
  if(f.comparable.length>=3){const m=median(f.comparable),ratio=f.price/m,odd=ratio<PRICE_LOW||ratio>PRICE_HIGH;
   checks.push({key:'price',label:'Цена',state:odd?'risk':'ok',note:(odd?'Цена '+money(f.price)+' сильно '+(ratio<1?'ниже':'выше')+' обычной в городе':'Цена '+money(f.price)+' в пределах рынка')+' (обычно '+money(m)+')'});}
  else checks.push({key:'price',label:'Цена',state:f.price>0?'ok':'risk',note:f.price>0?'Цена указана, сравнить пока не с чем':'Цена не указана'});
@@ -58,7 +58,7 @@ export function verdictOf(checks:ReviewCheck[]):Verdict{return checks.some(c=>c.
 export function checksSummary(checks:ReviewCheck[],states:CheckState[]){return checks.filter(c=>states.includes(c.state)).map(c=>c.note).join('; ');}
 
 async function flatFacts(db:D1Database,review:Row):Promise<FlatFacts|null>{
- const p=await one(db,'SELECT p.*,COALESCE(json_array_length(d.photos),0) photos,EXISTS(SELECT 1 FROM property_locations l WHERE l.property_id=p.id) mapped FROM properties p LEFT JOIN property_details d ON d.property_id=p.id WHERE p.id=?',review.property_id);
+ const p=await one(db,`SELECT p.*,COALESCE(json_array_length(d.photos),0) photos,EXISTS(SELECT 1 FROM property_locations l WHERE l.property_id=p.id AND l.address_fingerprint=COALESCE(p.city,'')||'|'||COALESCE(p.district,'')||'|'||COALESCE(p.address,'')) mapped FROM properties p LEFT JOIN property_details d ON d.property_id=p.id WHERE p.id=?`,review.property_id);
  if(!p)return null;
  let comparable=(await rows(db,'SELECT price FROM properties WHERE city=? AND rooms=? AND published=1 AND demo_owner IS NULL AND archived_at IS NULL AND id<>? AND price>0 LIMIT 200',p.city,p.rooms,p.id)).map(r=>r.price);
  if(comparable.length<3)comparable=(await rows(db,'SELECT price FROM properties WHERE city=? AND published=1 AND demo_owner IS NULL AND archived_at IS NULL AND id<>? AND price>0 LIMIT 200',p.city,p.id)).map(r=>r.price);

@@ -2,6 +2,7 @@ import {DomainError,required,number,type Role} from './domain';
 import type {RentalService} from './service';
 import {PUBLISH_REVIEW} from './listing-edit';
 import {autoReview} from './admin-autocheck';
+import {placeFlatByAddress} from './map-workspace';
 import {epoch,uuid,q,one,rows,hash,httpsEndpoint,safeEqual,type Row,type OperationConfig} from './operation-core';
 
 export async function securityState(service:RentalService,role:Role,platformAdmin=false){
@@ -27,6 +28,7 @@ export async function requestParticipantReview(service:RentalService,role:Role,b
  if(role==='guest')throw new DomainError('В этой форме проверяются владельцы и исполнители.',403);
  const reference=required(body.reference,'Основание проверки',500),propertyId=role==='owner'?required(body.propertyId,'Жильё',100):null;
  if(propertyId&&!await service.one('SELECT id FROM properties WHERE id=? AND owner_id=?',propertyId,service.userId))throw new DomainError('Жильё недоступно.',403);
+ if(propertyId)await placeQuietly(service,propertyId,config);
  const waiting=await one(service.db,"SELECT id FROM participant_reviews WHERE user_id=? AND role=? AND COALESCE(property_id,'')=COALESCE(?,'') AND status='pending' AND (role<>'owner' OR property_revision=COALESCE((SELECT revision FROM review_property_bindings WHERE property_id=participant_reviews.property_id),0))",service.userId,role,propertyId);
  if(waiting){if(await autoReview(service.db,waiting.id,config)==='approve')return {message:'ИИ-администратор проверил: всё в порядке.',verdict:'approve'};return {message:'Заявка уже ожидает проверки.'};}
  const reviewId=uuid(),at=epoch();await q(service.db,'INSERT INTO participant_reviews(id,user_id,role,property_id,reference,created_at) VALUES (?,?,?,?,?,?)',reviewId,service.userId,role,propertyId,reference,at).run();
@@ -75,7 +77,13 @@ const CURRENT_REVISION='COALESCE((SELECT revision FROM review_property_bindings 
 // The owner never has to ask for the check by hand: as soon as a saved draft is ready for guests and the platform
 // requires the check, the request goes to the administrator (and the AI administrator) from the server itself,
 // whatever app version the owner uses. Approving it shows the flat on the map at once.
+// The flat's pin follows its address: a new address (another city, another street) moves the pin by itself,
+// so neither the owner nor the review is left with a pin from the old place. A failed search never fails the save.
+export async function placeQuietly(service:RentalService,propertyId:string,config:OperationConfig={}){
+ try{return await placeFlatByAddress(service,'owner',{propertyId},(url,init)=>globalThis.fetch(url,init),config);}catch{return null;}
+}
 export async function ensurePublishReview(service:RentalService,propertyId:string,config:OperationConfig&{PLATFORM_ADMIN_IDS?:string}={}){
+ await placeQuietly(service,propertyId,config);
  const policy=await one(service.db,"SELECT require_owner_review FROM pilot_policy WHERE id='global'");if(!policy?.require_owner_review)return null;
  const p=await one(service.db,`SELECT p.id,p.title,p.city,p.address FROM properties p WHERE p.id=? AND p.owner_id=? AND p.published=0 AND p.demo_owner IS NULL AND p.archived_at IS NULL AND ${READY_SQL}`,propertyId,service.userId);if(!p)return null;
  const known=await one(service.db,`SELECT r.status FROM participant_reviews r WHERE r.property_id=? AND r.user_id=? AND r.role='owner' AND r.property_revision=${CURRENT_REVISION} AND (r.status='pending' OR (r.status='approved' AND (r.valid_until IS NULL OR r.valid_until>?))) LIMIT 1`,propertyId,service.userId,epoch());
