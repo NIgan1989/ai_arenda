@@ -116,10 +116,15 @@ async function automaticActions(service:RentalService){
 }
 function expectedConflict(error:unknown){return [400,403,404,409].includes((error as Row)?.status)||/cleaner_overlap|booking_overlap/.test(String(error));}
 
-export async function checkAdministratorOwner(db:D1Database,ownerId:string){
+// A reminder about the same matter comes at most NOTICE_LIMIT times, each later than the one before
+// (an hour, four hours, then once a day), and a repeat never comes at night. The matter itself stays in the feed.
+export const NOTICE_LIMIT=5;
+export const noticeGap=(sent:number,repeatMinutes:number)=>repeatMinutes*60*(sent<=1?1:sent===2?4:24);
+const NIGHT={quietEnabled:true,quietStart:'22:00',quietEnd:'08:00'};
+export async function checkAdministratorOwner(db:D1Database,ownerId:string,at=now()){
  const key='owner:'+ownerId,token=await acquire(db,key,120);
  if(!token)return {checked:false,actions:0};
- const service=new RentalService(db,ownerId),t=now();
+ const service=new RentalService(db,ownerId),t=at;
  try{
   if(!await service.one('SELECT id FROM properties WHERE owner_id=? LIMIT 1',ownerId))return {checked:false,actions:0};
   // Expiry is a calendar fact; it never implies a physical checkout or completed work.
@@ -149,7 +154,7 @@ export async function checkAdministratorOwner(db:D1Database,ownerId:string){
   for(const task of tasks){
    if(processed++%20===0)await renew();
    await service.query(`INSERT INTO administrator_tasks(id,owner_id,user_id,role,property_id,entity_kind,entity_id,stage,title,reason,section,deadline,priority,first_seen,updated_at,seen_run)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET title=excluded.title,reason=excluded.reason,section=excluded.section,deadline=excluded.deadline,priority=excluded.priority,status='open',resolved_at=NULL,first_seen=CASE WHEN administrator_tasks.status='resolved' THEN excluded.first_seen ELSE administrator_tasks.first_seen END,last_notified=CASE WHEN administrator_tasks.status='resolved' THEN 0 ELSE administrator_tasks.last_notified END,notified_priority=CASE WHEN administrator_tasks.status='resolved' THEN 0 ELSE administrator_tasks.notified_priority END,updated_at=excluded.updated_at,seen_run=excluded.seen_run`,task.id,task.owner_id,task.user_id,task.role,task.property_id,task.entity_kind,task.entity_id,task.stage,task.title,task.reason,task.section,task.deadline,task.priority,t,t,token).run();
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET title=excluded.title,reason=excluded.reason,section=excluded.section,deadline=excluded.deadline,priority=excluded.priority,status='open',resolved_at=NULL,first_seen=CASE WHEN administrator_tasks.status='resolved' THEN excluded.first_seen ELSE administrator_tasks.first_seen END,last_notified=CASE WHEN administrator_tasks.status='resolved' THEN 0 ELSE administrator_tasks.last_notified END,notice_count=CASE WHEN administrator_tasks.status='resolved' THEN 0 ELSE administrator_tasks.notice_count END,notified_priority=CASE WHEN administrator_tasks.status='resolved' THEN 0 ELSE administrator_tasks.notified_priority END,updated_at=excluded.updated_at,seen_run=excluded.seen_run`,task.id,task.owner_id,task.user_id,task.role,task.property_id,task.entity_kind,task.entity_id,task.stage,task.title,task.reason,task.section,task.deadline,task.priority,t,t,token).run();
   }
   // Only a complete successful scan can close tasks that no longer have a factual cause.
   await renew();await service.query("UPDATE administrator_tasks SET status='resolved',resolved_at=?,updated_at=? WHERE owner_id=? AND status='open' AND seen_run<>? AND EXISTS(SELECT 1 FROM administrator_runs WHERE id=? AND token=?)",t,t,ownerId,token,key,token).run();
@@ -158,11 +163,13 @@ export async function checkAdministratorOwner(db:D1Database,ownerId:string){
    const settings=data.settings[task.user_id+':'+task.role]||defaultAssistantSettings;
    const priority=task.priority>=2&&task.first_seen+settings.repeatMinutes*120<=t?3:task.priority;
    if(priority!==task.priority)await service.query('UPDATE administrator_tasks SET priority=? WHERE id=?',priority,task.id).run();
-   if(priority<2||settings.mode==='reactive'||quietNow(settings,t)&&!(settings.urgentInQuiet&&priority===3))continue;
-   if(task.last_notified&&task.last_notified+settings.repeatMinutes*60>t&&task.notified_priority>=priority)continue;
+   if(priority<2||settings.mode==='reactive')continue;
+   const sent=Number(task.notice_count)||0,gap=noticeGap(sent,settings.repeatMinutes),raised=task.notified_priority<task.priority;
+   if(sent>=NOTICE_LIMIT||sent&&quietNow(NIGHT,t))continue;
+   if(task.last_notified&&task.last_notified+gap>t&&!raised)continue;
    const noticeToken=crypto.randomUUID();
    await db.batch([
-    service.query('UPDATE administrator_tasks SET last_notified=?,notified_priority=?,notice_revision=notice_revision+1,notice_run=? WHERE id=? AND status=\'open\' AND (last_notified=0 OR last_notified+?<=? OR notified_priority<?)',t,priority,noticeToken,task.id,settings.repeatMinutes*60,t,priority),
+    service.query('UPDATE administrator_tasks SET last_notified=?,notified_priority=?,notice_revision=notice_revision+1,notice_count=notice_count+1,notice_run=? WHERE id=? AND status=\'open\' AND notice_count<? AND (last_notified=0 OR last_notified+?<=? OR notified_priority<?)',t,priority,noticeToken,task.id,NOTICE_LIMIT,gap,t,task.priority),
     service.query(`INSERT OR IGNORE INTO notifications SELECT ?,user_id,?,role||':administrator:'||id||':'||notice_revision,0,? FROM administrator_tasks WHERE id=? AND notice_run=?`,crypto.randomUUID(),'AI администратор: '+(priority===3?'Требует внимания. ':'')+task.title+'. '+task.reason,t,task.id,noticeToken)
    ]);
   }

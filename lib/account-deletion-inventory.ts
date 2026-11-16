@@ -32,7 +32,7 @@ export const accountDeletionColumns:Record<string,string>={
  "administrator_issues": "id,owner_id,property_id,entity_kind,entity_id,opened_by,opened_role,other_user,other_role,description,status,resolution,created_at,resolved_at,version",
  "administrator_runs": "id,token,lease_until,checked_at,last_success,last_error,cursor",
  "administrator_search_results": "message_id,result",
- "administrator_tasks": "id,owner_id,user_id,role,property_id,entity_kind,entity_id,stage,title,reason,section,deadline,priority,status,first_seen,updated_at,resolved_at,seen_run,last_notified,notified_priority,notice_revision,notice_run",
+ "administrator_tasks": "id,owner_id,user_id,role,property_id,entity_kind,entity_id,stage,title,reason,section,deadline,priority,status,first_seen,updated_at,resolved_at,seen_run,last_notified,notified_priority,notice_revision,notice_run,notice_count",
  "ai_budget_preferences": "user_id,enabled,daily_request_limit,daily_token_limit,daily_usd_cap_micros,version,updated_at",
  "ai_data_permission_events": "id,user_id,allowed,policy_version,version,created_at",
  "ai_data_permissions": "user_id,allowed,policy_version,version,updated_at",

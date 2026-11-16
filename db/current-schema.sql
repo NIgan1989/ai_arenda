@@ -57,6 +57,7 @@
 -- migration 0053_ready_after_review.sql sha256:2416de72aefbfe10aa723eedc9b8907124af9329a201f0e016af4bc77877e6ea
 -- migration 0054_refund_due.sql sha256:42a51d984bbe87d13fd08a774f9969d288e3c9161c5f7634350ab3a5d113f358
 -- migration 0055_booking_through_address_check.sql sha256:9c4d75399e950fec1588cacea66cae48d7752ed51be040ecb8b302c077c5dc0e
+-- migration 0056_notice_count.sql sha256:607e8fb427c4e6db05fff35296ab39f3e370f423e86fcc516ae1a18dc73109e6
 
 -- table access_receipts
 CREATE TABLE access_receipts (id TEXT PRIMARY KEY,property_id TEXT NOT NULL,entity_kind TEXT NOT NULL,entity_id TEXT NOT NULL,user_id TEXT NOT NULL,created_at INTEGER NOT NULL,expires_at INTEGER NOT NULL);
@@ -160,7 +161,7 @@ CREATE TABLE administrator_tasks (
  notified_priority INTEGER NOT NULL DEFAULT 0,
  notice_revision INTEGER NOT NULL DEFAULT 0,
  notice_run TEXT NOT NULL DEFAULT ''
-);
+, notice_count INTEGER NOT NULL DEFAULT 0);
 
 -- table ai_budget_preferences
 CREATE TABLE ai_budget_preferences (
