@@ -5,6 +5,8 @@ import ts from 'typescript';
 const output=process.cwd()+'/outputs/platform-tests-'+process.pid;mkdirSync(output,{recursive:true});
 for(const file of readdirSync('lib').filter(f=>f.endsWith('.ts')&&!f.endsWith('.d.ts'))){const js=ts.transpileModule(readFileSync('lib/'+file,'utf8'),{compilerOptions:{module:ts.ModuleKind.ES2022,target:ts.ScriptTarget.ES2022}}).outputText.replace(/from '(\.\/[^']+)'/g,(_,name)=>`from '${/\.(js|mjs)$/.test(name)?name:name+'.js'}'`);writeFileSync(output+'/'+file.replace(/\.ts$/,'.js'),js);}
 export const load=name=>import(pathToFileURL(output+'/'+name+'.js'));
+// The map's address search never leaves the tests: by default it finds nothing, a test that needs a find stubs it itself.
+{const real=globalThis.fetch;globalThis.fetch=async(url,init)=>/nominatim\.openstreetmap\.org|api\.stadiamaps\.com\/geocoding/.test(String(url))?new Response('[]',{headers:{'content-type':'application/json'}}):real(url,init);}
 export class TestDatabase{
  constructor(filename=':memory:'){this.raw=new DatabaseSync(filename);this.db=this.raw;this.raw.exec('PRAGMA foreign_keys=ON');for(const file of readdirSync('drizzle').filter(f=>/^\d+.*\.sql$/.test(f)).sort())this.raw.exec(readFileSync('drizzle/'+file,'utf8'));}
  prepare(sql){const db=this.raw;let args=[];return {bind(...values){args=values;return this;},async first(){return db.prepare(sql).get(...args)||null;},async all(){return {results:db.prepare(sql).all(...args)};},execute(){const r=db.prepare(sql).run(...args);return {meta:{changes:Number(r.changes)}};},async run(){return this.execute();}};}

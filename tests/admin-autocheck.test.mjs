@@ -123,3 +123,17 @@ test('a doubtful request reaches the administrator in Telegram with buttons; onl
   assert.equal((await tap(no.callback_data,321)).decided,true);assert.equal(f.db.raw.prepare('SELECT status FROM participant_reviews WHERE property_id=?').get(f.property).status,'approved');
  }finally{globalThis.fetch=fetch;f.db.close();}
 });
+test('after the city changes the old pin does not count, and the review request moves the pin by the new address',async()=>{
+ const f=await fixture(),original=globalThis.fetch;try{
+  const {PUBLISH_REVIEW}=await load('listing-edit');await strict(f);readyFlat(f);
+  f.db.raw.prepare("UPDATE properties SET city='Алматы',address='Nexpo city, Рыскулова 5' WHERE id=?").run(f.property);
+  globalThis.fetch=async()=>new Response('[]');
+  const missed=await requestParticipantReview(f.owner,'owner',{propertyId:f.property,reference:PUBLISH_REVIEW+': fixture'},{PLATFORM_ADMIN_IDS:'admin'});
+  assert.notEqual(missed.verdict,'approve');
+  const notified=f.db.raw.prepare("SELECT body FROM notifications WHERE user_id=? ORDER BY created_at DESC").all(f.ownerId||f.owner.userId).map(n=>n.body).join(' ');
+  assert.match(notified,/«Адрес»/);
+  globalThis.fetch=async url=>new Response(JSON.stringify(String(url).includes('nominatim')?[{lon:'76.93',lat:'43.24'}]:[]));
+  const placed=await requestParticipantReview(f.owner,'owner',{propertyId:f.property,reference:PUBLISH_REVIEW+': fixture'},{PLATFORM_ADMIN_IDS:'admin'});
+  assert.equal(placed.verdict,'approve');
+ }finally{globalThis.fetch=original;f.db.close();}
+});
