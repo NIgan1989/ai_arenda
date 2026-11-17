@@ -5,13 +5,12 @@ import { NowCard } from './NowCard';
 import type { NowCard as NowCardModel } from './now-card';
 import type { Role } from './model';
 import { headLine, type HeadAction } from './head-line';
-import { CATEGORIES, KIND_ICONS, categoryKinds, type Category } from './ai-request';
+import { CATEGORIES, categoryKinds, type Category } from './ai-request';
+import { KindIcon } from './KindIcon';
 import { C, type } from './styles';
 import { T } from './tokens';
 
 const chevron = require('../assets/ui/chevron.png');
-// A tile is a third of a narrow sheet: the long names are said shorter there, in full to a screen reader.
-const SHORT: Record<string, string> = { guesthouse: 'Гостевой', hotel: 'Отель', aparthotel: 'Апарт' };
 
 type Props = {
   role: Role;
@@ -34,8 +33,10 @@ type Props = {
   category?: Category;
   // The one type that is chosen and what the button says; no kind is the whole category.
   kind?: string;
-  choice?: { icon: string; title: string };
+  choice?: { id: string; title: string };
   onKind?: (category: Category, kind: string | null) => void;
+  // The picker opened or closed: the sheet makes room for it and returns to where it was.
+  onPicker?: (open: boolean) => void;
   children?: ReactNode;
 };
 
@@ -45,45 +46,47 @@ type Props = {
 const unbroken = (line: string) => line.replace(/ ·/g, '\u00a0·').replace(/(\d) (?=[\d₸а-яё])/gi, '$1\u00a0').replace(/(^|[ \u00a0])до (?=\d)/g, '$1до\u00a0').replace(/–/g, '–\u2060');
 
 // The default state of the bottom sheet: one AI line, a row of chips and the "Сейчас" card when there is one.
-export function MapSheetHead({ role, text, onText, onSend, onChip, chips = true, busy = false, summary, onRefine, refining = false, now, onNow, counts, category = 'stay', kind = '', choice, onKind, children }: Props) {
+export function MapSheetHead({ role, text, onText, onSend, onChip, chips = true, busy = false, summary, onRefine, refining = false, now, onNow, counts, category = 'stay', kind = '', choice, onKind, onPicker, children }: Props) {
   const line = headLine(role, Date.now(), category);
-  // The picker opens on the category that is chosen; a tab only shows another category, a tile chooses.
-  const [picking, setPicking] = useState(false), [tab, setTab] = useState<Category>(category);
-  const picker = !!onKind && chips && picking, shown = CATEGORIES.find(c => c.id === tab)!;
-  const pick = (id: string | null) => { setPicking(false); onKind?.(tab, id); };
+  // The picker takes the place of the chips: every category with its types at once, one tap chooses and closes.
+  const [picking, setPicking] = useState(false);
+  const picker = !!onKind && chips && picking;
+  const show = (open: boolean) => { setPicking(open); onPicker?.(open); };
+  const pick = (to: Category, id: string | null) => { show(false); onKind?.(to, id); };
   return (
     <View style={s.head}>
       <AiLine value={text} onChangeText={onText} onSend={onSend} busy={busy} placeholder={line.placeholder} shortPlaceholder={line.shortPlaceholder} label={line.label} />
       {/* The chips of every role fit one row of a 360px phone; the row still scrolls for a larger system font. */}
       {picker && <View style={s.picker}>
-        <View style={s.tabs} accessibilityRole="tablist" accessibilityLabel="Категория">
-          {CATEGORIES.map(c => {
-            const on = c.id === tab;
-            return (
-              <Pressable key={c.id} accessibilityRole="tab" accessibilityLabel={c.hint} accessibilityState={{ selected: on }} onPress={() => setTab(c.id)} style={[s.tab, on && s.tabOn]}>
-                <Text style={s.tabIcon}>{c.icon}</Text>
-                <Text style={[s.tabText, on && s.tabTextOn]}>{c.title}</Text>
-              </Pressable>
-            );
-          })}
-          <Pressable accessibilityRole="button" accessibilityLabel="Закрыть выбор категории" onPress={() => setPicking(false)} style={s.pickerClose}><Text style={s.pickerCloseText}>✕</Text></Pressable>
+        <View style={s.pickerHead}>
+          <Text accessibilityRole="header" style={s.pickerTitle}>Что ищете</Text>
+          <Pressable accessibilityRole="button" accessibilityLabel="Закрыть выбор категории" onPress={() => show(false)} hitSlop={8} style={s.pickerClose}><Text style={s.pickerCloseText}>✕</Text></Pressable>
         </View>
-        <View style={s.tiles} accessibilityRole="radiogroup" accessibilityLabel={shown.title + ': тип'}>
-          {[['', tab === 'bath' ? 'Любая' : 'Любое'] as [string, string], ...categoryKinds(tab)].map(([id, title]) => {
-            const on = tab === category && id === kind;
-            return (
-              <Pressable key={id || 'any'} accessibilityRole="radio" accessibilityLabel={id ? title : shown.title + ': ' + title.toLowerCase()} accessibilityState={{ checked: on }} disabled={busy} onPress={() => pick(id || null)} style={({ pressed }) => [s.tile, on && s.tileOn, pressed && !on && s.chipPressed]}>
-                <Text style={s.tileIcon}>{id ? KIND_ICONS[id] : '✦'}</Text>
-                <Text numberOfLines={1} style={[s.tileText, on && s.tileTextOn]}>{SHORT[id] || title}</Text>
-              </Pressable>
-            );
-          })}
-        </View>
+        {CATEGORIES.map((c, at) => (
+          <View key={c.id} style={[s.group, at > 0 && s.groupNext]} accessibilityRole="radiogroup" accessibilityLabel={c.title + ': ' + c.hint}>
+            <View style={s.groupHead}>
+              <KindIcon id={c.id} size={16} color={C.muted} />
+              <Text style={s.groupTitle}>{c.title}</Text>
+              <Text numberOfLines={1} style={s.groupHint}>{c.hint}</Text>
+            </View>
+            <View style={s.kinds}>
+              {[['', c.any] as [string, string], ...categoryKinds(c.id)].map(([id, title]) => {
+                const on = c.id === category && id === kind;
+                return (
+                  <Pressable key={id || 'any'} accessibilityRole="radio" accessibilityLabel={title} accessibilityState={{ checked: on }} disabled={busy} onPress={() => pick(c.id, id || null)} style={({ pressed }) => [s.kind, on && s.kindOn, pressed && !on && s.kindPressed]}>
+                    <KindIcon id={id || 'any'} size={18} color={on ? C.onAccent : C.inkSoft} />
+                    <Text style={[s.kindText, on && s.kindTextOn]}>{title}</Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+          </View>
+        ))}
       </View>}
       {chips && !picker && <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="handled" style={s.chipsScroll} contentContainerStyle={s.chips}>
         {!!onKind && !!choice && (
-          <Pressable accessibilityRole="button" accessibilityLabel={'Категория: ' + choice.title + '. Выбрать'} accessibilityState={{ expanded: false }} disabled={busy} onPress={() => { setTab(category); setPicking(true); }} style={({ pressed }) => [s.chip, s.catChip, pressed && s.chipPressed]}>
-            <Text style={s.catIcon}>{choice.icon}</Text>
+          <Pressable accessibilityRole="button" accessibilityLabel={'Категория: ' + choice.title + '. Выбрать'} accessibilityState={{ expanded: false }} disabled={busy} onPress={() => show(true)} style={({ pressed }) => [s.chip, s.catChip, pressed && s.chipPressed]}>
+            <KindIcon id={choice.id} size={18} color={C.accentPressed} />
             <Text style={s.catText}>{choice.title}</Text>
             <Image source={chevron} style={s.catChevron} accessibilityIgnoresInvertColors />
           </Pressable>
@@ -126,25 +129,25 @@ const s = StyleSheet.create({
   head: { gap: 12 },
   // The category button: the first chip of the row, in the soft accent, with what is chosen.
   catChip: { backgroundColor: C.accentSoft, paddingLeft: 12, paddingRight: 10 },
-  catIcon: { fontSize: 16, lineHeight: 20 },
   catText: { ...type.label, color: C.accentPressed, fontWeight: '700' },
   catChevron: { width: 14, height: 14, tintColor: C.accentPressed, transform: [{ rotate: '90deg' }] },
-  // The picker takes the place of the chips: the categories as tabs, the types of one as tiles of three in a row.
-  picker: { gap: 10, padding: 10, borderRadius: T.radius.lg, backgroundColor: C.surfaceAlt },
-  tabs: { flexDirection: 'row', gap: 6, alignItems: 'center' },
-  tab: { flex: 1, minHeight: 40, borderRadius: T.radius.md, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
-  tabOn: { backgroundColor: C.surface },
-  tabIcon: { fontSize: 16, lineHeight: 20 },
-  tabText: { ...type.label, color: C.inkSoft, fontWeight: '600' },
-  tabTextOn: { color: C.ink, fontWeight: '700' },
-  pickerClose: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
-  pickerCloseText: { ...type.label, color: C.muted },
-  tiles: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
-  tile: { flexGrow: 1, flexBasis: '30%', maxWidth: '33%', minHeight: 48, paddingHorizontal: 10, borderRadius: T.radius.md, backgroundColor: C.surface, flexDirection: 'row', alignItems: 'center', gap: 6 },
-  tileOn: { backgroundColor: C.accent },
-  tileIcon: { fontSize: 18, lineHeight: 22 },
-  tileText: { flex: 1, minWidth: 0, ...type.caption, color: C.ink, fontWeight: '600' },
-  tileTextOn: { color: C.onAccent },
+  // The picker: a title, then each category as a named group of outlined chips, a hairline between the groups.
+  picker: { gap: 12 },
+  pickerHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  pickerTitle: { ...type.label, color: C.ink, fontWeight: '700' },
+  pickerClose: { width: 32, height: 32, borderRadius: T.radius.full, backgroundColor: C.surfaceAlt, alignItems: 'center', justifyContent: 'center' },
+  pickerCloseText: { ...type.caption, color: C.inkSoft },
+  group: { gap: 8 },
+  groupNext: { paddingTop: 12, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: C.lineStrong },
+  groupHead: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  groupTitle: { ...type.caption, color: C.ink, fontWeight: '700' },
+  groupHint: { flex: 1, minWidth: 0, ...type.caption, color: C.muted },
+  kinds: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  kind: { minHeight: 40, paddingLeft: 10, paddingRight: 14, borderRadius: T.radius.full, borderWidth: 1, borderColor: C.line, backgroundColor: C.surface, flexDirection: 'row', alignItems: 'center', gap: 6 },
+  kindOn: { borderColor: C.accent, backgroundColor: C.accent },
+  kindPressed: { backgroundColor: C.surfaceAlt },
+  kindText: { ...type.label, color: C.ink, fontWeight: '500' },
+  kindTextOn: { color: C.onAccent, fontWeight: '600' },
   // The row scrolls to the screen edge, past the sheet padding.
   chipsScroll: { marginHorizontal: -16, flexGrow: 0 },
   chips: { gap: 8, paddingHorizontal: 16 },
