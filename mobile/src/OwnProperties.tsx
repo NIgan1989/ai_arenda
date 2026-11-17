@@ -1,17 +1,18 @@
 // «Моё жильё»: the owner's objects as short cards, opened from the «Жильё» shortcut of the home sheet.
 // A card says what it is, its state, its price and what is happening there now; a tap opens the facts and
 // the actions. Changing an object is the step editor (PropertyEdit), adding one is the AI form (PropertyQuick).
-import React,{useState} from 'react';
+import React,{useEffect,useState} from 'react';
 import {View,Text,Pressable,StyleSheet} from 'react-native';
 import {C,type} from './styles';
 import {T} from './tokens';
 import {money,type Row} from './model';
 import {Photo} from './ListingMedia';
 import {RecordFacts,RecordActions,type RecordAction} from './RecordCard';
-import {propertyTypes} from '../../lib/listings';
+import {propertyTypes,isBath} from '../../lib/listings';
 import {processStatus} from '../../lib/process-status';
 import {clock} from '../../lib/rental-policy';
 import {placeNow} from './own-place';
+import {BusyMark,busyNow,hhmm} from './BusyMark';
 
 const tones:Record<string,[string,string]>={success:[C.successSoft,C.success],warning:[C.warningSoft,C.warning],active:[C.accentSoft,C.accentPressed],neutral:[C.surfaceAlt,C.muted],danger:[C.dangerSoft,C.danger]};
 
@@ -30,21 +31,27 @@ export function OwnProperties({properties,bookings,busy,onAdd,onEdit,onSettings,
 }
 
 function PropertyCard({property:p,bookings,busy,open,onToggle,onEdit,onSettings,onCleaning,onMap}:{property:Row;bookings:Row[];busy:boolean;open:boolean;onToggle:()=>void;onEdit:()=>void;onSettings:()=>void;onCleaning:()=>void;onMap?:()=>void}){
- const d=p.details||{},policy=p.policy||{},status=processStatus('property',p,'owner',''),[bg,ink]=tones[status.tone]||tones.neutral,now=placeNow(p.id,bookings);
+ const d=p.details||{},policy=p.policy||{},found=processStatus('property',p,'owner',''),status=isBath((p.details||{}).type)?{...found,label:found.label.replace('к заселению','к приёму гостей')}:found,[bg,ink]=tones[status.tone]||tones.neutral,bath=isBath(d.type),now=placeNow(p.id,bookings,undefined,bath);
  const kind=propertyTypes[d.type]||'Жильё';
+ // «Занято»: guests who came without the service. The card keeps the mark it was given until the state is read again.
+ const [marked,setMarked]=useState<Row[]|null>(null),[busyOpen,setBusyOpen]=useState(false),[busyNote,setBusyNote]=useState('');
+ // A fresh state of the object wins over the local mark: the person on shift may have marked or freed it meanwhile.
+ useEffect(()=>{setMarked(null);},[p.busy_until]);
+ const blocks=marked??(Number(p.busy_until)>Date.now()/1000?[{start:0,end:Number(p.busy_until)}]:[]),held=busyNow(blocks);
  const actions:(RecordAction|false)[]=[
   {title:'Изменить',kind:'main',onPress:onEdit},
   !Number(p.own_staff)&&{title:'Уборка',kind:'side',onPress:onCleaning},
   {title:'Правила',kind:'side',onPress:onSettings},
   !!onMap&&{title:'На карте',kind:'side',onPress:onMap},
+  !now.busy&&{title:'Занято',kind:'side',onPress:()=>{setBusyNote('');setBusyOpen(v=>!v);}},
  ];
  return <View style={[o.card,open&&o.cardOpen]}>
   <Pressable accessibilityRole="button" accessibilityState={{expanded:open}} accessibilityLabel={p.title+'. '+status.label+'. '+now.line+(open?'. Свернуть':'. Подробнее')} onPress={onToggle} style={({pressed})=>[o.row,pressed&&o.dim]}>
    <View style={o.thumb}><Photo id={p.photos?.[0]} alt={p.title} fill/></View>
    <View style={o.grow}>
     <Text numberOfLines={1} style={o.title}>{p.title}</Text>
-    <Text numberOfLines={1} style={o.meta}>{kind} · {money(p.price)} / сутки</Text>
-    <View style={o.tags}><Text style={[o.status,{backgroundColor:bg,color:ink}]}>{status.label}</Text>{!!p.address_check&&<Text style={[o.status,{backgroundColor:C.warningSoft,color:C.warning}]}>Адрес на проверке</Text>}{!!p.demo_owner&&<Text style={[o.status,{backgroundColor:C.surfaceAlt,color:C.muted}]}>Учебный</Text>}</View>
+    <Text numberOfLines={1} style={o.meta}>{kind} · {bath&&policy.hourly_price?money(policy.hourly_price)+' / час':money(p.price)+' / сутки'}</Text>
+    <View style={o.tags}><Text style={[o.status,{backgroundColor:bg,color:ink}]}>{status.label}</Text>{!!p.address_check&&<Text style={[o.status,{backgroundColor:C.warningSoft,color:C.warning}]}>Адрес на проверке</Text>}{!!held&&<Text style={[o.status,{backgroundColor:C.warningSoft,color:C.warning}]}>Занято до {hhmm(Number(held.end))}</Text>}{!!p.demo_owner&&<Text style={[o.status,{backgroundColor:C.surfaceAlt,color:C.muted}]}>Учебный</Text>}</View>
    </View>
    <Text style={[o.chevron,open&&o.chevronOpen]}>›</Text>
   </Pressable>
@@ -52,13 +59,15 @@ function PropertyCard({property:p,bookings,busy,open,onToggle,onEdit,onSettings,
   {open&&<>
    <RecordFacts rows={[
     ['Адрес',[p.city,p.district,p.address].filter(Boolean).join(', ')],
-    ['Гостей',(p.capacity||1)+' · '+(p.rooms||1)+' комн.'+(d.area?' · '+d.area+' м²':'')],
-    ['Цена',money(p.price)+' / сутки'+(policy.hourly_price?' · '+money(policy.hourly_price)+' / ч':'')],
-    ['Заезд',clock(policy.checkin_minutes??840)+' · выезд '+clock(policy.checkout_minutes??720)],
+    ['Гостей',bath?'до '+(p.capacity||1)+(d.area?' · '+d.area+' м²':''):(p.capacity||1)+' · '+(p.rooms||1)+' комн.'+(d.area?' · '+d.area+' м²':'')],
+    ['Цена',bath&&policy.hourly_price?money(policy.hourly_price)+' / ч'+(policy.min_hours?' · от '+policy.min_hours+' ч':''):money(p.price)+' / сутки'+(policy.hourly_price?' · '+money(policy.hourly_price)+' / ч':'')],
+    !bath&&['Заезд',clock(policy.checkin_minutes??840)+' · выезд '+clock(policy.checkout_minutes??720)],
     ['Фото',p.photos?.length?String(p.photos.length):'нет, добавьте, чтобы показать гостям'],
     p.rating?.count>0&&['Оценка','★ '+String(p.rating.average).replace('.',',')+' ('+p.rating.count+')'],
    ]}/>
    <RecordActions busy={busy} actions={actions}/>
+   {busyOpen&&!now.busy&&<BusyMark propertyId={p.id} busy={blocks} onChange={(next,message)=>{setMarked(next);setBusyNote(message);}}/>}
+   {!!busyNote&&!held&&<Text accessibilityLiveRegion="polite" style={o.note}>{busyNote}</Text>}
   </>}
  </View>;
 }
@@ -69,7 +78,7 @@ const o=StyleSheet.create({
  add:{flexDirection:'row',alignItems:'center',gap:12,minHeight:H.primary,padding:12,borderRadius:R.xl,backgroundColor:C.accentSoft,borderWidth:1,borderColor:C.glassLine},
  addOrb:{width:40,height:40,borderRadius:R.full,backgroundColor:C.accent,alignItems:'center',justifyContent:'center'},addPlus:{...type.title,color:C.onAccent,fontWeight:'600',marginTop:-2},
  addTitle:{...type.body,color:C.accentPressed,fontWeight:'700'},addSub:{...type.caption,color:C.inkSoft},
- empty:{...type.label,color:C.muted,textAlign:'center',paddingVertical:16},
+ empty:{...type.label,color:C.muted,textAlign:'center',paddingVertical:16},note:{...type.caption,color:C.inkSoft,paddingHorizontal:4},
  card:{gap:12,padding:12,borderRadius:R.xl,borderWidth:1,borderColor:C.glassLine,backgroundColor:C.glassStrong},cardOpen:{borderColor:C.accentSoft},
  row:{flexDirection:'row',alignItems:'center',gap:12},
  thumb:{width:72,height:72,borderRadius:R.lg,overflow:'hidden',backgroundColor:C.surfaceAlt},

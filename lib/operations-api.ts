@@ -22,6 +22,7 @@ import {aiBudgetState,saveAIBudget} from './ai-budget';
 import {boundedRequestText} from './request-body';
 import {saveStayReview} from './stay-reviews';
 import {setFavorite} from './favorites';
+import {staffState,assignStaff,removeStaff,markBusy,freeBusy,staffToday,staffMark} from './staff';
 import {understandSearch} from './search-understand';
 import {saveStayPhoto,listStayPhotos,readStayPhoto,saveHandover} from './stay-handover';
 import {rulesState,saveRule,type RuleRole} from './decision-rules';
@@ -84,6 +85,14 @@ export async function writeOperations(service:RentalService,role:Role,path:strin
  if(route==='search/understand'){active(role,['guest']);return understandSearch(service,body,config);}
  if(route==='search/place'){active(role,['guest']);return findPlace(service,body,fetch,config);}
  if(route==='favorite'){active(role,['guest']);return setFavorite(service,body);}
+ // «Сотрудник» и «Занято» (lib/staff.ts). The owner names the person; the marks are open to the owner and to that person in any role.
+ if(route==='staff/state'){active(role,['owner']);return staffState(service,required(body.propertyId,'Объект',100));}
+ if(route==='staff/assign'){active(role,['owner']);return assignStaff(service,body);}
+ if(route==='staff/remove'){active(role,['owner']);return removeStaff(service,body);}
+ if(route==='staff/today')return staffToday(service);
+ if(route==='staff/mark')return staffMark(service,body);
+ if(route==='staff/busy')return markBusy(service,body);
+ if(route==='staff/free')return freeBusy(service,body);
  if(route==='handover'){active(role,['owner']);return saveHandover(service,body);}
  if(route==='finance'){active(role,['owner']);return recordFinance(service,body);}
  if(route==='payment-intent'){active(role,['guest']);return createPaymentIntent(service,body,config);}

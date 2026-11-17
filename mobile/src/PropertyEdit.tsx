@@ -1,5 +1,5 @@
 import React,{useRef,useState} from 'react';
-import {Pressable,StyleSheet,Switch,Text,TextInput,View} from 'react-native';
+import {Image,Pressable,StyleSheet,Switch,Text,TextInput,View} from 'react-native';
 import {C,type} from './styles';
 import {T} from './tokens';
 import {Photo} from './ListingMedia';
@@ -7,6 +7,8 @@ import {PhotoGrid} from './PhotoGrid';
 import {Stepper} from './SheetParts';
 import {FlatCalendars} from './FlatCalendars';
 import {RegularCleaner} from './RegularCleaner';
+import {PropertyStaff} from './PropertyStaff';
+import {menuIcons} from './AccountRows';
 import {EDIT_STEPS,editBody,editRequest,nextAdvice,needsReview,reviewRequest,REVIEW_SENT,stepForError,stepLine,stepNeeds,stepTitle,type Advice,type EditBody,type EditStep} from '../../lib/listing-edit';
 import {amenities,categoryAmenities,checkinMethods,isBath,kindCategory} from '../../lib/listings';
 import {KindPicker} from './KindPicker';
@@ -18,13 +20,13 @@ const SAVED:Record<EditStep|'publish',string>={photos:'Фото сохранен
 
 // Editing a flat in the app: an overview of short steps, each opened on its own small screen and saved at once.
 // After each save the AI administrator offers the next step. Same rules as the site (lib/listing-edit.ts).
-export function PropertyEdit({property,onSave,onReview,onRemove,onClose,step,call}:{property:Row;onSave:(body:Row)=>Promise<Row|undefined>;onReview?:(body:Row)=>Promise<unknown>;onRemove?:()=>Promise<unknown>;onClose:()=>void;step?:EditStep|'calendars'|'cleaner'|null;call?:(path:string,body:Row)=>Promise<Row>}){
+export function PropertyEdit({property,onSave,onReview,onRemove,onClose,step,call}:{property:Row;onSave:(body:Row)=>Promise<Row|undefined>;onReview?:(body:Row)=>Promise<unknown>;onRemove?:()=>Promise<unknown>;onClose:()=>void;step?:EditStep|'calendars'|'cleaner'|'staff'|null;call?:(path:string,body:Row)=>Promise<Row>}){
  const [p,setP]=useState(property),[base,setBase]=useState<EditBody>(()=>editBody(property)),[draft,setDraft]=useState<EditBody>(base);
  const [open,setOpen]=useState<EditStep|null>(step&&EDIT_STEPS.some(x=>x.key===step)?step as EditStep:null),[busy,setBusy]=useState(false),[uploading,setUploading]=useState(false),[error,setError]=useState(''),[done,setDone]=useState(''),[skipped,setSkipped]=useState<string[]>([]),[held,setHeld]=useState(false),[sent,setSent]=useState(false);
  const pick=useRef<PinChoice|null>(null);
  const [access,setAccess]=useState(''),[accessState,setAccessState]=useState('');
  async function saveAccess(){if(!call||!p.id||!access.trim())return;setAccessState('…');try{await call('access/save',{propertyId:p.id,instructions:access.trim(),expectedVersion:p.access_version||0});setP((o:Row)=>({...o,access_version:(o.access_version||0)+1}));setAccess('');setAccessState('Инструкция сохранена. Гость увидит её перед заездом, исполнитель — когда начнёт уборку.');}catch(r:any){setAccessState(r?.message||'Не удалось сохранить инструкцию.');}}
- const [confirm,setConfirm]=useState(false),[removeError,setRemoveError]=useState(''),[calendars,setCalendars]=useState(step==='calendars'),[cleaner,setCleaner]=useState(step==='cleaner');
+ const [confirm,setConfirm]=useState(false),[removeError,setRemoveError]=useState(''),[calendars,setCalendars]=useState(step==='calendars'),[cleaner,setCleaner]=useState(step==='cleaner'),[staff,setStaff]=useState(step==='staff');
  // A save that failed keeps its changes: the owner fixes what the server asked for in another step and everything is saved together.
  const fix=held&&error?stepForError(error):null;
  // Without a pin that matches the address the review cannot pass, so the AI says it first and leads straight to «Адрес».
@@ -66,6 +68,7 @@ export function PropertyEdit({property,onSave,onReview,onRemove,onClose,step,cal
 
  if(calendars&&p.id)return <FlatCalendars propertyId={p.id} onBack={()=>setCalendars(false)}/>;
  if(cleaner&&p.id)return <RegularCleaner propertyId={p.id} onBack={()=>setCleaner(false)}/>;
+ if(staff&&p.id)return <PropertyStaff propertyId={p.id} kind={base.details.type} onBack={()=>setStaff(false)} onChanged={name=>setP((o:Row)=>({...o,staff_name:name}))}/>;
  if(open){const title=stepTitle(draft.details.type,open);
   return <View style={e.sheet}>
    <View style={e.bar}><Pressable accessibilityRole="button" accessibilityLabel="Назад к списку" onPress={()=>{setOpen(null);if(!held)setError('');}} disabled={busy||uploading} style={e.round}><Text style={e.roundText}>←</Text></Pressable><Text accessibilityRole="header" style={e.title}>{title}</Text></View>
@@ -150,6 +153,11 @@ export function PropertyEdit({property,onSave,onReview,onRemove,onClose,step,cal
   {!!p.id&&!base.ownStaff&&<Pressable accessibilityRole="button" accessibilityLabel="Постоянный исполнитель" onPress={()=>{setDone('');setCleaner(true);}} style={({pressed})=>[e.step,{width:'100%'},pressed&&e.pressed]}>
    <View style={e.icoBox}><Text style={e.ico}>🧹</Text></View>
    <View style={{flex:1,minWidth:0}}><Text style={e.stepTitle} numberOfLines={1}>Постоянный исполнитель</Text><Text style={e.stepLine} numberOfLines={1}>{p.regular_cleaner_name?p.regular_cleaner_name+': уборки приходят сначала к нему':'Закрепите своего: уборки, оплата и замена через сервис'}</Text></View>
+  </Pressable>}
+  {/* The person on shift is named here, in the settings of the object, and nowhere else. */}
+  {!!p.id&&<Pressable accessibilityRole="button" accessibilityLabel={'Сотрудник: '+(p.staff_name||'не назначен')} onPress={()=>{setDone('');setStaff(true);}} style={({pressed})=>[e.step,{width:'100%'},pressed&&e.pressed]}>
+   <View style={e.icoBox}><Image source={menuIcons.users} style={{width:16,height:16,tintColor:C.accent}}/></View>
+   <View style={{flex:1,minWidth:0}}><Text style={e.stepTitle} numberOfLines={1}>Сотрудник</Text><Text style={e.stepLine} numberOfLines={1}>{p.staff_name?p.staff_name+': отмечает гостей и «Занято»':'Назначьте того, кто встречает гостей'}</Text></View>
   </Pressable>}
   <Pressable accessibilityRole="button" accessibilityLabel="Календари площадок: Airbnb, Booking, Суточно" onPress={()=>{setDone('');setCalendars(true);}} style={({pressed})=>[e.step,{width:'100%'},pressed&&e.pressed]}>
    <View style={e.icoBox}><Text style={e.ico}>📅</Text></View>
