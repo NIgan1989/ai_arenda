@@ -9,7 +9,7 @@ import {autoAnswerOffers,setGuestMode,guestModeSql,guestModeJoins} from './autop
 export function matchingInput(body:Row){
  if(!body||typeof body!=='object'||Array.isArray(body))throw new DomainError('Проверьте условия поиска.');
  const mode=body.mode||'daily',priority=body.priority||'balanced';
- if(!['daily','hourly'].includes(mode)||!['balanced','cheaper','closer'].includes(priority))throw new DomainError('Проверьте тариф и приоритет.');
+ if(!['daily','hourly','night'].includes(mode)||!['balanced','cheaper','closer'].includes(priority))throw new DomainError('Проверьте тариф и приоритет.');
  const {start,end}=interval(body.start,body.end),features=Array.isArray(body.features)?body.features:[];
  if(features.length>8||features.some(v=>typeof v!=='string'||!Object.hasOwn(amenities,v)))throw new DomainError('Проверьте обязательные удобства.');
  // The type of home and its rooms: '2' exactly two, '2+' at least two. Both optional, as older apps send neither.
@@ -19,7 +19,7 @@ export function matchingInput(body:Row){
  let near:Row|null=null;
  if(body.near){const {longitude,latitude}=body.near;if(typeof longitude!=='number'||!Number.isFinite(longitude)||Math.abs(longitude)>180||typeof latitude!=='number'||!Number.isFinite(latitude)||Math.abs(latitude)>85)throw new DomainError('Проверьте точку поиска.');near={longitude:Math.round(longitude*100)/100,latitude:Math.round(latitude*100)/100,radius:number(body.near.radius||5000,'Радиус',1000,20000)};}
  if(priority==='closer'&&!near)throw new DomainError('Для приоритета «Ближе» выберите точку на карте или зону рядом с вами.');
- return {city:required(body.city,'Город',80),district:String(body.district||'').trim().slice(0,120),start:new Date(start*1000).toISOString(),end:new Date(end*1000).toISOString(),guests:String(number(body.guests,'Гости',1,50)),mode,maxPrice:String(number(body.maxPrice,'Бюджет за период',100,100000000)),priority,features:[...new Set(features)],near,kinds:[...new Set(kinds as string[])],rooms};
+ return {city:required(body.city,'Город',80),district:String(body.district||'').trim().slice(0,120),start:new Date(start*1000).toISOString(),end:new Date(end*1000).toISOString(),guests:String(number(body.guests,'Гости',1,50)),mode,maxPrice:String(number(body.maxPrice,'Бюджет за период',100,100000000)),priority,features:[...new Set(features)],near,kinds:[...new Set(kinds as string[])],rooms,now:body.now===true};
 }
 // The chance a guest books a flat, from what we know before they ask: the price against their budget,
 // the distance to their place, what earlier guests said and how fast the owner answers. Pure parts, so
@@ -36,9 +36,12 @@ export function responseFit(seconds:number|null|undefined,instant=false){
  return seconds<=900?1:seconds<=3600?.8:seconds<=4*3600?.5:.2;
 }
 export function responseText(seconds:number){return 'Отвечает в среднем за '+(seconds<3600?plural(Math.max(1,Math.round(seconds/60)),'минуту','минуты','минут'):plural(Math.round(seconds/3600),'час','часа','часов'));}
+// Minutes by car across a city: the straight line times 1.3 for the streets, at 30 km/h, at least 3.
+export const driveMinutes=(metres:number)=>Math.max(3,Math.round(metres*1.3/500));
 export function rankMatches(properties:Row[],filters:Row):Row[]{
  const budget=Number(filters.maxPrice),district=filters.district.toLocaleLowerCase('ru'),kinds:string[]=filters.kinds||[],rooms=String(filters.rooms||''),least=rooms.endsWith('+'),count=parseInt(rooms);
- const home=(p:Row)=>(!kinds.length||kinds.includes(p.details?.type))&&(!rooms||(least?Number(p.rooms)>=count:Number(p.rooms)===count));
+ // «Сейчас»: only a home that is ready and confirms at once, so the guest can go there right away.
+ const home=(p:Row)=>(!filters.now||(p.display_status?.code==='ready'&&!!p.instant))&&(!kinds.length||kinds.includes(p.details?.type))&&(!rooms||(least?Number(p.rooms)>=count:Number(p.rooms)===count));
  const ranked=properties.filter(p=>!p.test_preview&&home(p)&&(!district||String(p.district).toLocaleLowerCase('ru').includes(district))&&filters.features.every((a:string)=>(p.details?.amenities||[]).includes(a))).flatMap<Row>(p=>{
   const amount=p.estimate?.amount;if(!Number.isInteger(amount)||amount>budget)return [];
   const distance=filters.near&&p.location?geoDistance([filters.near.longitude,filters.near.latitude],[p.location.longitude,p.location.latitude]):null;
@@ -49,7 +52,7 @@ export function rankMatches(properties:Row[],filters:Row):Row[]{
   const chance=.3*saving+(filters.near?.2*proximity:0)+.2*ratingFit(p.rating)+.2*responseFit(answered?p.response:null,instant)+.1*Number(ready);
   const score=filters.priority==='cheaper'?saving:filters.priority==='closer'&&filters.near?proximity:chance;
   // What tells this flat apart comes first, so a one-line list still shows it.
-  const reasons=[...(distance!==null?['Примерно '+Math.max(.1,distance/1000).toFixed(1).replace('.',',')+' км от выбранного места']:[]),
+  const reasons=[...(distance!==null?[filters.now?'Около '+plural(driveMinutes(distance),'минуты','минут','минут')+' на машине':'Примерно '+Math.max(.1,distance/1000).toFixed(1).replace('.',',')+' км от выбранного места']:[]),
    ...(rated?['Оценка '+String(p.rating.average).replace('.',',')+' из 5 · '+plural(Number(p.rating.count),'отзыв','отзыва','отзывов')]:[]),
    ...(instant?['Отвечает и подтверждает сразу']:answered?[responseText(p.response)]:[]),'В пределах бюджета',...(ready?['Готовность проверена']:[]),...(filters.features.length?['Нужные удобства есть']:[])];
   return [{...p,match:{score,chance:Math.round(chance*100),distance,reasons}}];
@@ -96,15 +99,17 @@ export async function emptyHint(s:RentalService,f:Row):Promise<Row>{
  if(maxGuests<Number(f.guests))return {reason:'guests',maxGuests};
  if(f.mode==='hourly'&&!all.some((p:Row)=>Number(p.policy?.hourly_price)>0))return {reason:'hourly'};
  const free=async(start:string,end:string)=>(await s.publicSearch({city:f.city,start,end,guests:f.guests,mode:f.mode,map:'1',limit:'60'},{matching:true})).properties.filter((p:Row)=>!p.test_preview);
- const now=await free(f.start,f.end);
- if(!now.length){
+ const open=await free(f.start,f.end);
+ // «Сейчас» left out the homes that are not ready yet or confirm only after the owner answers.
+ if(f.now&&open.length){const later=rankMatches(open,{...f,now:false});if(later.length)return {reason:'now',count:later.length};}
+ if(!open.length){
   const start=Date.parse(f.start),length=Date.parse(f.end)-start;
-  for(let day=1;day<=7;day++){const from=start+day*86400000,found=rankMatches(await free(new Date(from).toISOString(),new Date(from+length).toISOString()),{...f,start:new Date(from).toISOString(),end:new Date(from+length).toISOString()});if(found.length)return {reason:'busy',next:{start:new Date(from).toISOString(),end:new Date(from+length).toISOString(),count:found.length}};}
+  for(let day=1;day<=7;day++){const from=start+day*86400000,found=rankMatches(await free(new Date(from).toISOString(),new Date(from+length).toISOString()),{...f,now:false,start:new Date(from).toISOString(),end:new Date(from+length).toISOString()});if(found.length)return {reason:'busy',next:{start:new Date(from).toISOString(),end:new Date(from+length).toISOString(),count:found.length}};}
   return {reason:'busy'};
  }
- const anyPrice=rankMatches(now,{...f,maxPrice:'100000000'});
+ const anyPrice=rankMatches(open,{...f,maxPrice:'100000000'});
  if(anyPrice.length)return {reason:'budget',cheapest:Math.min(...anyPrice.map(p=>p.estimate.amount)),count:anyPrice.length};
- return {reason:'filters',count:rankMatches(now,{...f,district:'',features:[],near:null,kinds:[],rooms:'',priority:f.priority==='closer'?'balanced':f.priority}).length};
+ return {reason:'filters',count:rankMatches(open,{...f,now:false,district:'',features:[],near:null,kinds:[],rooms:'',priority:f.priority==='closer'?'balanced':f.priority}).length};
 }
 async function expire(s:RentalService){const t=epoch();await s.db.batch([q(s.db,"UPDATE matching_requests SET status='expired' WHERE expires_at<=? AND status IN ('searching','ready')",t),q(s.db,"UPDATE matching_offers SET status='expired' WHERE expires_at<=? AND status IN ('pending','accepted')",t)]);}
 async function guestRequest(s:RentalService,id:unknown){await s.requireRole('guest');const r=await one(s.db,'SELECT * FROM matching_requests WHERE id=? AND guest_id=?',required(id,'Запрос',100),s.userId);if(!r)throw new DomainError('Запрос недоступен.',404);return r;}

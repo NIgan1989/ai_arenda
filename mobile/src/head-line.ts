@@ -7,7 +7,7 @@ import { roleAiLine } from '../../lib/ai-line';
 
 export type HeadRole = 'guest' | 'owner' | 'cleaner';
 // What the app does for a shortcut: a guest search, a page of the role, or the opened sheet.
-export type HeadAction = 'daily' | 'hourly' | 'weekend' | 'requests' | 'calendar' | 'properties' | 'nearby' | 'schedule';
+export type HeadAction = 'now' | 'night' | 'daily' | 'hourly' | 'weekend' | 'requests' | 'calendar' | 'properties' | 'nearby' | 'schedule';
 export type HeadChip = {
   id: string;
   title: string; // the short label on the chip
@@ -38,8 +38,24 @@ const OWN: Record<string, { title: string; hint: string }> = {
   'add-property': { title: 'Жильё', hint: 'Моё жильё: посмотреть, изменить, добавить' }
 };
 
-export function headLine(role: HeadRole): HeadLine {
+// The guest's chips are the app's own (since 2026-11-17): «Сейчас» first, then what fits the hour. In the evening
+// and at night «На ночь» and «На часы», in the day «На часы» and «На сутки». «На выходные» is said in the line.
+const GUEST_DAY: HeadChip[] = [
+  { id: 'now', title: 'Сейчас', hint: 'Сейчас: готовое жильё рядом с мгновенным подтверждением', action: 'now' },
+  { id: 'hourly', title: 'На часы', hint: 'На часы: ближайшие три часа', action: 'hourly' },
+  { id: 'daily', title: 'На сутки', hint: 'На сутки: с сегодняшнего дня', action: 'daily' }
+];
+const GUEST_NIGHT: HeadChip[] = [
+  GUEST_DAY[0],
+  { id: 'night', title: 'На ночь', hint: 'На ночь: до 12:00, по ночной цене, где она есть', action: 'night' },
+  GUEST_DAY[1]
+];
+/** Evening and night in Kazakhstan: from 18:00 to 06:00. */
+export const isEvening = (now = Date.now()) => { const hour = new Date(now + 5 * 3600000).getUTCHours(); return hour >= 18 || hour < 6; };
+
+export function headLine(role: HeadRole, now = Date.now()): HeadLine {
   const line = roleAiLine(role);
+  if (role === 'guest') return { placeholder: line.placeholder, shortPlaceholder: line.shortPlaceholder, label: line.label, chips: isEvening(now) ? GUEST_NIGHT : GUEST_DAY };
   return {
     placeholder: line.placeholder,
     shortPlaceholder: line.shortPlaceholder,

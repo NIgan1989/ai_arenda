@@ -16,7 +16,17 @@ export function policyInput(body:Row){
   if(body.autoAssign===true&&mandate.mandate_until&&!mandateActive(mandate))throw new DomainError('Срок автоматических полномочий уже истёк.');
   return {...policy,...mandate,auto_assign:body.autoAssign===true?1:0};
 }
-export function rentalPrice(dailyPrice:number,policy:Row,start:number,end:number,mode:unknown='daily'){
+// The night a nightly stay starts on, as a Kazakhstan day number: from the check-in time to midnight it is that
+// day's night, and a late arrival after midnight, before the check-out time, still belongs to the night before.
+// null between the check-out and the check-in time: that is an early check-in, not a night.
+function nightOf(policy:Row,start:number){
+  const local=start+18000,day=Math.floor(local/86400),time=local%86400;
+  if(time>=policy.checkin_minutes*60)return day;
+  if(time<policy.checkout_minutes*60&&policy.checkout_minutes<policy.checkin_minutes)return day-1;
+  return null;
+}
+export type RentalPrice={billingMode:string;periods:number;price:number;amount:number;unitLabel:string};
+export function rentalPrice(dailyPrice:number,policy:Row,start:number,end:number,mode:unknown='daily'):RentalPrice{
   let units:number,price:number,label:string;
   if(mode==='daily'){units=Math.ceil((end-start)/86400);price=dailyPrice;label='начатые сутки (24 часа)';}
   else if(mode==='hourly'){
@@ -25,17 +35,23 @@ export function rentalPrice(dailyPrice:number,policy:Row,start:number,end:number
     units=Math.ceil((end-start)/3600);price=policy.hourly_price;label='начатый час';
   }else if(mode==='nightly'){
     if(!policy.nightly_price)throw new DomainError('Тариф по ночам для этого жилья выключен.');
-    const localStart=start+18000,localEnd=end+18000;
-    if(localStart%86400!==policy.checkin_minutes*60||localEnd%86400!==policy.checkout_minutes*60)throw new DomainError(`По тарифу за ночь заезд в ${clock(policy.checkin_minutes)}, выезд в ${clock(policy.checkout_minutes)}. Время Казахстана.`);
-    units=Math.floor(localEnd/86400)-Math.floor(localStart/86400);if(units<1)throw new DomainError('По тарифу за ночь нужен выезд на следующий день или позже.');
+    const localEnd=end+18000,night=nightOf(policy,start);
+    if(night===null||localEnd%86400!==policy.checkout_minutes*60)throw new DomainError(`По тарифу за ночь заезд с ${clock(policy.checkin_minutes)}, выезд в ${clock(policy.checkout_minutes)}. Время Казахстана.`);
+    units=Math.floor(localEnd/86400)-night;if(units<1)throw new DomainError('По тарифу за ночь нужен выезд на следующий день или позже.');
     price=policy.nightly_price;label='ночь';
+  }else if(mode==='night'){
+    // «На ночь»: the owner's nightly tariff where it applies and is cheaper, otherwise started days.
+    const daily=rentalPrice(dailyPrice,policy,start,end,'daily');
+    if(!(policy.nightly_price>0))return daily;
+    try{const nightly=rentalPrice(dailyPrice,policy,start,end,'nightly');return nightly.amount<=daily.amount?nightly:daily;}catch(error){if(error instanceof DomainError)return daily;throw error;}
   }else throw new DomainError('Выберите доступный тариф.');
   return {billingMode:String(mode),periods:units,price,amount:units*price,unitLabel:label};
 }
 // Amendments keep the nightly tariff and add started hours outside its clock times.
 export function changeRentalPrice(dailyPrice:number,policy:Row,start:number,end:number,mode:unknown){
   if(mode!=='nightly')return {...rentalPrice(dailyPrice,policy,start,end,mode),extraHours:0,extraRate:0};
-  const coreStart=Math.floor((start+18000)/86400)*86400-18000+policy.checkin_minutes*60;
+  // A late arrival keeps its night; only a check-in before the check-in time adds hours.
+  const night=nightOf(policy,start),coreStart=night===null?Math.floor((start+18000)/86400)*86400-18000+policy.checkin_minutes*60:start;
   const coreEnd=Math.floor((end+18000)/86400)*86400-18000+policy.checkout_minutes*60;
   const base=rentalPrice(dailyPrice,policy,coreStart,coreEnd,'nightly');
   const earlyHours=Math.max(0,Math.ceil((coreStart-start)/3600)),lateHours=Math.max(0,Math.ceil((end-coreEnd)/3600)),extraHours=earlyHours+lateHours;

@@ -1,5 +1,5 @@
 import {test} from 'node:test';import assert from 'node:assert/strict';import {fixture,load,now,iso} from './helpers/platform.mjs';
-const {matchingInput,rankMatches,previewMatches,matchingAction,matchingState}=await load('smart-matching');
+const {matchingInput,rankMatches,previewMatches,matchingAction,matchingState,driveMinutes}=await load('smart-matching');
 // Booking must repeat the requested dates exactly. Fix them once: recomputing from the clock made a test fail whenever a second passed between the request and the booking.
 const base=now();
 const input=()=>({city:'Павлодар',start:iso(base+86400),end:iso(base+172800),guests:'2',mode:'daily',maxPrice:'11000',priority:'balanced',features:[]});
@@ -171,5 +171,20 @@ test('all taken: the empty answer names the nearest free stay of the same length
   assert.ok(Date.parse(busy.empty.next.start)>Date.parse(input().start));assert.equal(Date.parse(busy.empty.next.end)-Date.parse(busy.empty.next.start),Date.parse(input().end)-Date.parse(input().start));assert.equal(busy.empty.next.count,1);
   // Another day is offered only for a home that also passes the rest of the request.
   const busyHostel=await previewMatches(f.other,{...input(),kinds:['hostel']});assert.equal(busyHostel.empty.reason,'busy');assert.equal(busyHostel.empty.next,undefined);
+ }finally{f.db.close();}
+});
+test('«Сейчас»: only homes ready now that confirm at once, the nearest first, with the time by car',()=>{
+ assert.equal(matchingInput({...input(),now:true}).now,true);assert.equal(matchingInput(input()).now,false);assert.equal(matchingInput({...input(),mode:'night'}).mode,'night');
+ const f={...matchingInput({...input(),near:{longitude:77,latitude:52,radius:15000},priority:'closer'}),now:true};
+ const home=(id,lon,code,instant)=>({id,district:'Центр',estimate:{amount:9000},location:{longitude:lon,latitude:52},details:{amenities:[]},display_status:{code},instant});
+ const found=rankMatches([home('far',77.05,'ready',true),home('near',77.01,'ready',true),home('cleaning',77,'cleaning',true),home('asks',77,'ready',false)],f);
+ assert.deepEqual(found.map(p=>p.id),['near','far']);
+ assert.match(found[0].match.reasons[0],/^Около \d+ минут на машине$/);
+ assert.equal(driveMinutes(500),3);assert.equal(driveMinutes(5000),13);
+});
+test('«Сейчас» with nothing ready says how many would fit after the owner answers',async()=>{
+ const f=await fixture();try{
+  const soon=await previewMatches(f.guest,{...input(),now:true});
+  assert.equal(soon.properties.length,0);assert.deepEqual(soon.empty,{reason:'now',count:1});
  }finally{f.db.close();}
 });

@@ -33,7 +33,7 @@ export function GuestForm({ draft, onChange, onPickPoint, onNearMe, onSubmit, bu
   const roomOptions: [string, string][] = [['', 'Любое'], ['1', '1'], ['2', '2'], ['3+', '3+']];
   if (draft.rooms && !roomOptions.some(([id]) => id === draft.rooms)) roomOptions.push([draft.rooms, draft.rooms.endsWith('+') ? 'от ' + draft.rooms.slice(0, -1) : draft.rooms]);
   // The budget is a price per day (per hour on the hourly tariff); a total named in the line keeps its own label.
-  const budgetLabel = draft.perUnit || !draft.maxPrice ? (hourly ? 'Цена за час до, ₸' : 'Цена за сутки до, ₸') : 'Бюджет на весь срок, ₸';
+  const budgetLabel = draft.perUnit || !draft.maxPrice ? (hourly ? 'Цена за час до, ₸' : draft.mode === 'night' ? 'Цена за ночь до, ₸' : 'Цена за сутки до, ₸') : 'Бюджет на весь срок, ₸';
   const [more, setMore] = useState(set > 0), extra = more;
   const toggleWish = (id: string) =>
     onChange({ ...draft, features: draft.features.includes(id) ? draft.features.filter(v => v !== id) : [...draft.features, id] });
@@ -45,6 +45,7 @@ export function GuestForm({ draft, onChange, onPickPoint, onNearMe, onSubmit, bu
         value={draft.mode}
         options={[
           ['daily', 'На сутки'],
+          ['night', 'На ночь'],
           ['hourly', 'На часы']
         ]}
         onChange={mode => onChange(withMode(draft, mode))}
@@ -70,7 +71,7 @@ export function GuestForm({ draft, onChange, onPickPoint, onNearMe, onSubmit, bu
           disabled={busy}
         />
         <Stepper
-          label={hourly ? 'Часов' : 'Суток'}
+          label={hourly ? 'Часов' : draft.mode === 'night' ? 'Ночей' : 'Суток'}
           value={units}
           text={String(units)}
           min={1}

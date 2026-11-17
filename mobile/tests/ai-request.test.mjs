@@ -18,7 +18,7 @@ const parse = (text, now = morning, from = draft) => guestRequestFromText(text, 
 const stay = result => [result.draft.mode, result.draft.start, result.draft.end];
 
 test('a new request is a day from today for two guests, with no budget', () => {
-  assert.deepEqual(draft, {city: 'Павлодар', district: '', mode: 'daily', start: '2026-11-11T14:00', end: '2026-11-12T12:00', guests: 2, maxPrice: '', perUnit: true, priority: 'balanced', features: [], near: null, kinds: [], rooms: ''});
+  assert.deepEqual(draft, {city: 'Павлодар', district: '', mode: 'daily', start: '2026-11-11T14:00', end: '2026-11-12T12:00', guests: 2, maxPrice: '', perUnit: true, priority: 'balanced', features: [], near: null, kinds: [], rooms: '', now: false});
   assert.equal(guestSummary(draft, morning), 'Павлодар · 11–12 ноября · 2 гостя');
   // The server needs a number: the largest budget it accepts stands for "no limit".
   const body = matchingBody(draft);
@@ -54,7 +54,8 @@ test('calendar dates, ranges and word counts are read the way the site reads the
   assert.deepEqual(stay(parse('на двое суток')), ['daily', '2026-11-11T14:00', '2026-11-13T12:00']);
   assert.equal(parse('на двое суток').draft.guests, 2);
   assert.deepEqual(stay(parse('послезавтра на неделю')), ['daily', '2026-11-13T14:00', '2026-11-20T12:00']);
-  assert.deepEqual(stay(parse('в пятницу вечером на две ночи')), ['daily', '2026-11-13T19:00', '2026-11-15T12:00']);
+  // Nights are the «На ночь» tariff: the owner's nightly price where it is cheaper.
+  assert.deepEqual(stay(parse('в пятницу вечером на две ночи')), ['night', '2026-11-13T19:00', '2026-11-15T12:00']);
 });
 
 test('a time range is a start and a length, not a daily stay', () => {
@@ -266,4 +267,27 @@ test('an hour that has passed today is searched tomorrow, and the guest is told'
   const late = parse('в 22:00', Date.parse('2026-11-11T18:10:00Z'));
   assert.equal(late.draft.start.slice(0, 10), '2026-11-12');
   assert.match(late.note, /Сегодня 22:00 уже прошло, ищу на завтра\./);
+});
+
+test('«Сейчас» and «На ночь» chips', () => {
+  const at = local => Date.parse(local + ':00+05:00');
+  const now = chipDraft('now', draft, at('2026-11-17T13:05'));
+  assert.deepEqual([now.mode, now.start, now.end, now.now], ['daily', '2026-11-17T13:30', '2026-11-18T12:00', true]);
+  assert.equal(matchingBody(now).now, true);
+  assert.equal(guestSummary(now, at('2026-11-17T13:05')), 'Павлодар · 17–18 ноября · 2 гостя · заезд с 13:30 · готово сейчас');
+  assert.equal(guestSummary({ ...now, near: { longitude: 77, latitude: 52, radius: 15000 }, priority: 'closer' }, at('2026-11-17T13:05')), 'Павлодар · 17–18 ноября · 2 гостя · заезд с 13:30 · готово сейчас, рядом с вами');
+  // On the hourly tariff «Сейчас» is the nearest three hours; after midnight it is the night under way.
+  const hourly = chipDraft('now', { ...draft, mode: 'hourly' }, at('2026-11-17T13:05'));
+  assert.deepEqual([hourly.mode, hourly.start, hourly.end], ['hourly', '2026-11-17T13:30', '2026-11-17T16:30']);
+  const late = chipDraft('now', draft, at('2026-11-18T01:10'));
+  assert.deepEqual([late.start, late.end], ['2026-11-18T01:30', '2026-11-18T12:00']);
+  // «На ночь» leaves «Сейчас» and the point it took from the phone.
+  const night = chipDraft('night', { ...now, near: { longitude: 77, latitude: 52, radius: 15000 }, priority: 'closer' }, at('2026-11-17T21:00'));
+  assert.deepEqual([night.mode, night.start, night.end, night.now, night.near, night.priority], ['night', '2026-11-17T21:30', '2026-11-18T12:00', false, null, 'balanced']);
+  assert.equal(matchingBody(night).mode, 'night');
+  assert.match(guestSummary({ ...night, maxPrice: '9000' }, at('2026-11-17T21:00')), /до 9 000 ₸ за ночь/);
+  // A phrase with «сейчас» asks for the same, a later phrase without it does not.
+  assert.equal(parse('сейчас на двоих', at('2026-11-17T13:05')).draft.now, true);
+  assert.equal(parse('завтра на сутки', at('2026-11-17T13:05'), now).draft.now, false);
+  assert.equal(parse('на ночь', at('2026-11-17T21:00')).draft.mode, 'night');
 });

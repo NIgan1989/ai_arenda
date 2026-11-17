@@ -39,7 +39,8 @@ export function mapSearchRequest(text:string,current:Filters,cities:string[],now
 
 type Row = Record<string, any>;
 
-export type GuestStay = { mode: 'daily' | 'hourly'; start: string; end: string };
+// 'night' is a daily stay priced by the owner's nightly tariff where it is cheaper («На ночь»).
+export type GuestStay = { mode: 'daily' | 'hourly' | 'night'; start: string; end: string };
 
 export type GuestSearch = {
   /** The current conditions with everything the text says applied. */
@@ -194,16 +195,25 @@ export function plural(count: number, one: string, few: string, many: string) {
 export const stayNights = (start: string, end: string) => Math.max(1, Math.ceil((localTime(end) - localTime(start)) / DAY));
 export const stayHours = (start: string, end: string) => Math.max(1, Math.ceil((localTime(end) - localTime(start)) / HOUR));
 
+/** Before this hour a stay "today" is the night that has already begun: from now until the morning's check-out. */
+export const NIGHT_UNTIL = '06:00';
+
 /**
  * A check-in date and a check-out date as a stay: in at 14:00 (or at `time`), out at 12:00.
  * A check-in date that has passed means today until at least tomorrow. A check-in hour that has passed
- * today moves to the nearest half-hour; a check-out that is not later than the check-in moves to the
- * first noon after it.
+ * today moves to the nearest half-hour that leaves `lead` minutes; a check-out that is not later than the
+ * check-in moves to the first noon after it. `nights`: the stay was asked as a number of nights from today, not
+ * as dates; then today before 06:00 without a later hour is the night under way: in at the nearest half-hour,
+ * and the first of the nights ends at this morning's noon (a guest at 01:00 wants a bed now, not at 14:00).
  */
-export function dailyStay(checkin: string, checkout: string, now = Date.now(), time = CHECKIN_TIME): { start: string; end: string } {
+export function dailyStay(checkin: string, checkout: string, now = Date.now(), time?: string, lead = 30, nights = false): { start: string; end: string } {
   const today = kzToday(now);
-  if (checkin < today) return dailyStay(today, checkout > today ? checkout : addDays(today, 1), now, time);
-  const start = Math.max(localTime(checkin + 'T' + time), nextSlot(now)), from = localISO(start);
+  if (checkin < today) return dailyStay(today, checkout > today ? checkout : addDays(today, 1), now, time ?? CHECKIN_TIME, lead);
+  // A named hour that is the nearest one anyway («сейчас» at 01:10) is the same night.
+  const tonight = nights && checkin === today && localISO(now).slice(11) < NIGHT_UNTIL && checkout > today
+    && (time === undefined || localTime(today + 'T' + time) <= nextSlot(now, lead));
+  if (tonight) return { start: localISO(nextSlot(now, lead)), end: addDays(checkout, -1) + 'T' + CHECKOUT_TIME };
+  const start = Math.max(localTime(checkin + 'T' + (time ?? CHECKIN_TIME)), nextSlot(now, lead)), from = localISO(start);
   let end = localTime(checkout + 'T' + CHECKOUT_TIME);
   if (!(end > start)) end = localTime(addDays(from.slice(0, 10), from.slice(11) < CHECKOUT_TIME ? 0 : 1) + 'T' + CHECKOUT_TIME);
   return { start: from, end: localISO(end) };
@@ -222,19 +232,19 @@ export function defaultStay(mode: string, now = Date.now(), hours = 3): GuestSta
     return { mode: 'hourly', ...hourlyStay(start.slice(0, 10), start.slice(11), hours) };
   }
   const today = kzToday(now);
-  return { mode: 'daily', ...dailyStay(today, addDays(today, 1), now) };
+  return { mode: mode === 'night' ? 'night' : 'daily', ...dailyStay(today, addDays(today, 1), now, undefined, 30, true) };
 }
 
 /** The nearest Saturday to Sunday: today when it is Saturday, the next weekend when it is Sunday. */
 export function weekendStay(now = Date.now()): GuestStay {
   const weekday = new Date(now + KZ).getUTCDay(), saturday = addDays(kzToday(now), (6 - weekday + 7) % 7);
-  return { mode: 'daily', ...dailyStay(saturday, addDays(saturday, 1), now) };
+  return { mode: 'daily', ...dailyStay(saturday, addDays(saturday, 1), now, CHECKIN_TIME) };
 }
 
 /** The stay for the other tariff on the same day: a day from 14:00, or three hours. */
 export function switchStay(mode: string, start: string, now = Date.now()): GuestStay {
   const today = kzToday(now), date = start && start.slice(0, 10) > today ? start.slice(0, 10) : today;
-  if (mode !== 'hourly') return { mode: 'daily', ...dailyStay(date, addDays(date, 1), now) };
+  if (mode !== 'hourly') return { mode: mode === 'night' ? 'night' : 'daily', ...dailyStay(date, addDays(date, 1), now, undefined, 30, true) };
   return date === today ? defaultStay('hourly', now) : { mode: 'hourly', ...hourlyStay(date, CHECKIN_TIME, 3) };
 }
 
@@ -445,7 +455,7 @@ function statedHours(text: string): { time: string; hours: number } | null {
 
 // "на 3 часа", "на сутки", "на двое суток", "на неделю", "почасовая".
 // A stay longer than the line searches for is cut to the longest one, and `remarks` says so.
-function statedLength(text: string, remarks: string[]): { mode: 'daily' | 'hourly' | null; units: number | null } {
+function statedLength(text: string, remarks: string[]): { mode: 'daily' | 'hourly' | 'night' | null; units: number | null } {
   const stay = text.match(/на\s+(?:(\d{1,3}|один|одну|одни|два|две|двое|пару|три|трое|четыре|пять|шесть|семь|несколько)\s+)?(час|сутк|суток|ноч|дн|день|недел)/);
   if (stay) {
     const count = Math.max(1, stay[1] ? COUNT[stay[1]] ?? Number(stay[1]) : 1);
@@ -455,8 +465,9 @@ function statedLength(text: string, remarks: string[]): { mode: 'daily' | 'hourl
     }
     const days = stay[2] === 'недел' ? count * 7 : count;
     if (days > MAX_DAYS) remarks.push('Максимум ' + MAX_DAYS + ' суток, ищу на ' + MAX_DAYS + '.');
-    return { mode: 'daily', units: Math.min(days, MAX_DAYS) };
+    return { mode: stay[2] === 'ноч' ? 'night' : 'daily', units: Math.min(days, MAX_DAYS) };
   }
+  if (/переночевать|ночл[её]г|до утра/.test(text)) return { mode: 'night', units: 1 };
   if (/почас/.test(text)) return { mode: 'hourly', units: null };
   if (/посуточ|сутк|суток/.test(text)) return { mode: 'daily', units: null };
   return { mode: null, units: null };
@@ -536,12 +547,15 @@ export function guestSearchRequest(text: string, current: Row, cities: string[],
     stated.wishes = true;
   }
 
-  const soon = nextSlot(now), today = kzToday(now);
+  // «Сейчас»: the nearest half-hour that leaves 15 minutes, the time the check-in window opens.
+  const urgent = /сейчас|срочно/.test(request), lead = urgent ? 15 : 30, soon = nextSlot(now, lead), today = kzToday(now);
   const dates = statedDates(request, now), hours = statedHours(request);
   const length = hours ? { mode: 'hourly' as const, units: hours.hours } : statedLength(request, remarks);
   const clock: StatedTime | null = hours ? { time: hours.time, exact: true, until: 24 } : statedTime(request);
-  const urgent = /сейчас|срочно/.test(request), time = urgent ? localISO(soon).slice(11) : clock?.time || null;
-  const mode: 'daily' | 'hourly' = length.mode ?? (dates?.to || dates?.weekend ? 'daily' : current.mode === 'hourly' ? 'hourly' : 'daily');
+  const time = urgent ? localISO(soon).slice(11) : clock?.time || null;
+  const kept = current.mode === 'hourly' || current.mode === 'night' ? current.mode : 'daily';
+  const mode: 'daily' | 'hourly' | 'night' = length.mode ?? (dates?.to || dates?.weekend ? (kept === 'night' ? 'night' : 'daily') : kept);
+  if (urgent) filters.now = true;
   if (mode !== current.mode) filters.mode = mode;
 
   // Whether the hour the text names is still ahead today: a named hour until it strikes,
@@ -570,8 +584,8 @@ export function guestSearchRequest(text: string, current: Row, cities: string[],
       const from = localISO(Math.max(wanted, soon));
       Object.assign(filters, hourlyStay(from.slice(0, 10), from.slice(11), length.units ?? kept));
     } else {
-      const checkout = length.units === null && dates?.to ? dates.to : addDays(day, length.units ?? 1);
-      Object.assign(filters, dailyStay(day, checkout, now, time || CHECKIN_TIME));
+      const byDates = length.units === null && !!dates?.to, checkout = byDates ? dates!.to! : addDays(day, length.units ?? 1);
+      Object.assign(filters, dailyStay(day, checkout, now, time || undefined, lead, !byDates));
     }
   }
 

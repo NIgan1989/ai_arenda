@@ -63,6 +63,7 @@ function Rise({ children, onTop }: { children: React.ReactNode; onTop: (y: numbe
 
 function stayWords(draft: GuestDraft) {
   const units = draftUnits(draft);
+  if (draft.mode === 'night') return units + ' ' + plural(units, 'ночь', 'ночи', 'ночей');
   return draft.mode === 'hourly' ? units + ' ' + plural(units, 'час', 'часа', 'часов') : units + ' ' + plural(units, 'сутки', 'суток', 'суток');
 }
 
@@ -79,14 +80,22 @@ export function emptyAnswer(empty: Row | undefined, draft: GuestDraft, narrowed:
     return { title: 'Нет жилья на ' + guests(draft.guests), note: 'Самое большое жильё здесь — до ' + guests(most) + '. Можно снять два объекта рядом.', action: { title: 'Искать на ' + guests(most), patch: { guests: most } } };
   }
   if (empty?.reason === 'hourly') return { title: 'На часы здесь пока не сдают', note: 'Есть жильё на сутки.', action: { title: 'Искать на сутки', patch: withMode(draft, 'daily') } };
+  if (empty?.reason === 'now') {
+    const count = Number(empty.count) || 0;
+    return {
+      title: 'Готового жилья с мгновенным подтверждением сейчас нет',
+      note: 'Свободно ещё ' + count + ' ' + plural(count, 'вариант', 'варианта', 'вариантов') + ': там владелец отвечает до 15 минут или жильё ещё готовят к заезду.',
+      action: { title: 'Показать все варианты', patch: { now: false } }
+    };
+  }
   if (empty?.reason === 'busy') {
     const next = empty.next;
     if (!next) return { title: 'На это время всё занято', note: 'Свободного нет и в ближайшую неделю. Попробуйте другие даты.' };
     const start = kzLocal(next.start), end = kzLocal(next.end), when = stayWhen(start, end, draft.mode);
-    return { title: 'На это время всё занято', note: 'Ближайшее свободное на тот же срок — ' + when + '.', action: { title: 'Показать на ' + when, patch: { start, end } } };
+    return { title: 'На это время всё занято', note: 'Ближайшее свободное на тот же срок — ' + when + '.', action: { title: 'Показать на ' + when, patch: { start, end, now: false } } };
   }
   if (empty?.reason === 'budget') {
-    const cheapest = Number(empty.cheapest), units = draftUnits(draft), unit = draft.mode === 'hourly' ? 'час' : 'сутки';
+    const cheapest = Number(empty.cheapest), units = draftUnits(draft), unit = draft.mode === 'hourly' ? 'час' : draft.mode === 'night' ? 'ночь' : 'сутки';
     const limit = draft.perUnit ? Math.ceil(cheapest / units / 100) * 100 : Math.ceil(cheapest / 100) * 100;
     return {
       title: 'В пределах бюджета свободного нет',
@@ -143,7 +152,11 @@ export function GuestResults({ preview, draft, selected, onSelect, onFocus, onBo
       if (list[at]) onFocus?.(list[at].id);
     }, 160);
   };
-  const about = (flat: Row) => [homeLine(flat), flat.district, ...shownReasons(flat.match?.reasons, draft)].filter(Boolean).join(' · ');
+  // «Сейчас»: the time on the way comes first, it is what the guest decides by.
+  const about = (flat: Row) => {
+    const reasons = shownReasons(flat.match?.reasons, draft);
+    return (draft.now ? [...reasons.slice(0, 1), homeLine(flat), flat.district, ...reasons.slice(1)] : [homeLine(flat), flat.district, ...reasons]).filter(Boolean).join(' · ');
+  };
 
   if (!flats.length) {
     const answer = emptyAnswer(preview.empty, draft, !!onWiden), way = answer.action;
@@ -183,7 +196,7 @@ export function GuestResults({ preview, draft, selected, onSelect, onFocus, onBo
           </View>
           <View style={r.amount}>
             <Text style={h.price}>{money(chosen.estimate.amount)}</Text>
-            <Text style={h.note}>за {stayWords(draft)}</Text>
+            <Text style={h.note}>за {stayWords(draft)}{chosen.estimate.billingMode === 'nightly' ? ' · ночная цена' : ''}</Text>
             {!!windowBadge(chosen.estimate.window) && <Text style={r.window}>{windowBadge(chosen.estimate.window)}</Text>}
             {!!chosen.estimate.deal && <Text style={r.deal}>Цена выгодная</Text>}
           </View>

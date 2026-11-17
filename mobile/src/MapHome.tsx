@@ -48,7 +48,7 @@ import {ECHO_WINDOW,pinStates,recallMap,rememberMap,stageOf,targetPin,withEchoes
 type MapExtra={lines?:MapLine[];heat?:HeatPoint[];sparks?:MapPoint[]};
 type Publish=(pins:MapPin[],focusKey:string,extra?:MapExtra)=>void;
 // The stay a guest books from the map: Kazakhstan time, as the request form keeps it.
-export type MapStay={mode:'daily'|'hourly';start:string;end:string;guests:number};
+export type MapStay={mode:'daily'|'hourly'|'nightly';start:string;end:string;guests:number};
 // showNow: whether the "Сейчас" card has its place in the sheet as it is now (see MapHome).
 type Common={setScanning:(on:boolean)=>void;accountId:string;data:Row;mapData:Row|null;city:string;publish:Publish;selected:string;setSelected:(key:string)=>void;focus:string;setFocus:(key:string)=>void;snap:number;showNow:boolean;expand:(snap:number)=>void;onHead:(height:number)=>void;onReach:(bottom:number)=>void;onAsk:(text:string)=>void;onIntent:(intent:string,stay?:MapStay)=>void;onBook:(property:Row,stay:MapStay)=>void;onChanged:()=>Promise<unknown>;onOpenProcess:(kind:'booking'|'job',id:string)=>void;onOpenPage:(id:string)=>void;onEdit?:(id:string,step:string|null)=>void;flyMe:()=>void;notify:(text:string)=>void};
 const liveRequests=new Map<string,string>();
@@ -61,6 +61,8 @@ const NOT_ON_MAP='Этого нет на карте сейчас: у объек�
 const chosenCity=new Set<string>();
 const guestSearches=new Map<string,{draft:GuestDraft;preview:Row|null;foundAt:number}>(),SEARCH_KEEP=600000;
 const short=(amount:unknown)=>typeof amount==='number'&&amount>0?(amount>=10000?Math.round(amount/1000)+' тыс.':money(amount)):'Жильё';
+// «На ночь» books the tariff the search priced the home by: the owner's nightly price, or started days.
+const tariffOf=(draft:GuestDraft,property:Row):MapStay['mode']=>draft.mode==='night'?(property.estimate?.billingMode==='nightly'?'nightly':'daily'):draft.mode;
 const pointOf=(item:Row):MapPoint|null=>validPoint([item.location?.longitude,item.location?.latitude]);
 // The guest's point, rounded as a picked one is: owners never get it, the search gets it to about a kilometre.
 const nearOf=(point:MapPoint)=>({longitude:Math.round(point[0]*100)/100,latitude:Math.round(point[1]*100)/100,radius:5000});
@@ -121,15 +123,17 @@ function GuestPanel({setScanning,accountId,data,mapData,publish,selected,setSele
   const fix=getHere().fix;
   if(parsed.nearby&&!parsed.draft.near&&fix&&nearestCity(fix.point)===parsed.draft.city){void find({...parsed.draft,near:nearOf(fix.point)});return;}
   if(parsed.nearby&&!parsed.draft.near){pickThenFind.current=true;setPicking(true);expand(0);return;}
-  void find(parsed.draft);
+  void find(nearNow(parsed.draft));
  };
- const chip=(action:HeadAction)=>{if(action!=='daily'&&action!=='hourly'&&action!=='weekend')return;const next=chipDraft(action,draft);setAsked('');setHint(null);setError('');setDraft(next);setPreview(null);void find(next);};
+ // «Сейчас»: the nearest first, counted from where the guest is when the phone knows it and it is in the searched city.
+ const nearNow=(next:GuestDraft):GuestDraft=>{const fix=getHere().fix;return next.now&&!next.near&&fix&&nearestCity(fix.point)===next.city?{...next,near:{...nearOf(fix.point),radius:15000},priority:'closer'}:next;};
+ const chip=(action:HeadAction)=>{if(action!=='now'&&action!=='night'&&action!=='daily'&&action!=='hourly'&&action!=='weekend')return;const next=nearNow(chipDraft(action,draft));setAsked('');setHint(null);setError('');setDraft(next);setPreview(null);void find(next);};
  // «Забронировать»: the price in the list is for the searched time. If that time has passed while the list was open, the search runs again first.
- const bookFlat=(property:Row)=>{if(freshDraft(draft).start!==draft.start){setHint({text:'Время начала уже прошло. Обновил варианты на ближайшее время.'});setSelected('');void find(draft);return;}onBook(property,{mode:draft.mode,start:draft.start,end:draft.end,guests:draft.guests});};
+ const bookFlat=(property:Row)=>{if(freshDraft(draft).start!==draft.start){setHint({text:'Время начала уже прошло. Обновил варианты на ближайшее время.'});setSelected('');void find(draft);return;}onBook(property,{mode:tariffOf(draft,property),start:draft.start,end:draft.end,guests:draft.guests});};
  // What narrows a search beyond the place, the time and the guests. An empty result offers to drop these and look again.
- const narrowed=!!(draft.district||draft.maxPrice||draft.features.length||draft.priority!=='balanced'||draft.near||draft.kinds.length||draft.rooms);
+ const narrowed=!!(draft.district||draft.maxPrice||draft.features.length||draft.priority!=='balanced'||draft.near||draft.kinds.length||draft.rooms||draft.now);
  const retry=(next:GuestDraft)=>{setHint(null);setError('');setDraft(next);setPreview(null);void find(next);};
- const widen=()=>retry({...draft,district:'',maxPrice:'',features:[],priority:'balanced',near:null,kinds:[],rooms:''});
+ const widen=()=>retry({...draft,district:'',maxPrice:'',features:[],priority:'balanced',near:null,kinds:[],rooms:'',now:false});
  const refining=snap>0&&(refine||!preview),toggleRefine=()=>{if(refining){setRefine(false);expand(preview?1:0);}else{setRefine(true);expand(2);}};
  useEffect(()=>{if(requestId||preview)expand(1);if(kept&&kept.draft.city!==city)setCity(kept.draft.city);},[]);
  useEffect(()=>{guestSearches.set(accountId,{draft,preview,foundAt:foundAt.current});},[draft,preview]);
@@ -318,7 +322,7 @@ function GuestPanel({setScanning,accountId,data,mapData,publish,selected,setSele
  </MapSheetHead>;
  // The form and the results live in the opened sheet only; a running request to owners keeps its place in any state.
  const body=requestId?renderLive():snap===0?null:preview&&!refine
-  ?<GuestResults preview={preview} draft={draft} selected={selected} onSelect={setSelected} onFocus={setFocus} onBook={bookFlat} onOpen={property=>onIntent('property:'+property.id,{mode:draft.mode,start:draft.start,end:draft.end,guests:draft.guests})} onRefine={toggleRefine} onWiden={narrowed?widen:undefined} onTry={patch=>retry({...draft,...patch})} onAskOwners={quick>0?()=>void begin():undefined} onBookEdge={onReach} busy={working}/>
+  ?<GuestResults preview={preview} draft={draft} selected={selected} onSelect={setSelected} onFocus={setFocus} onBook={bookFlat} onOpen={property=>onIntent('property:'+property.id,{mode:tariffOf(draft,property),start:draft.start,end:draft.end,guests:draft.guests})} onRefine={toggleRefine} onWiden={narrowed?widen:undefined} onTry={patch=>retry({...draft,...patch})} onAskOwners={quick>0?()=>void begin():undefined} onBookEdge={onReach} busy={working}/>
   :<GuestForm draft={draft} onChange={change} onNearMe={meInCity?()=>change({...draft,near:nearOf(here.fix!.point)}):undefined} onPickPoint={()=>{setPicking(true);expand(0);}} onSubmit={()=>void find()} busy={working}/>;
  return <View style={h.block}>
   <HeadSlot onHeight={onHead}>{picking?pickView:nav.trip?<TripHead nav={nav} onOpen={()=>{const id=nav.trip!.id;nav.close();onOpenProcess('booking',id);}}/>:requestId?null:head}</HeadSlot>
@@ -375,7 +379,7 @@ function OwnerPanel({accountId,data,mapData,publish,snap,showNow,expand,onHead,o
    {offers.length>0&&<Text accessibilityRole="header" style={h.cardTitle}>Гость ждёт ответа</Text>}
    {offers.map(o=><View key={o.id} style={[h.card,h.urgent]}>
     <View style={h.row}><Text style={[h.cardTitle,h.grow]}>{o.title}</Text><Text style={h.timerSmall} accessibilityLabel={'На ответ осталось '+countdown(o.expires_at-now)}>{countdown(o.expires_at-now)}</Text></View>
-    <Text style={h.note}>{date(Date.parse(o.filters.start)/1000)} → {date(Date.parse(o.filters.end)/1000)}{'\n'}{o.filters.mode==='hourly'?'На часы':'На сутки'} · гостей: {o.filters.guests}</Text>
+    <Text style={h.note}>{date(Date.parse(o.filters.start)/1000)} → {date(Date.parse(o.filters.end)/1000)}{'\n'}{o.filters.mode==='hourly'?'На часы':o.filters.mode==='night'?'На ночь':'На сутки'} · гостей: {o.filters.guests}</Text>
     <Text style={h.price}>{money(o.amount)}</Text>
     {/* One swipe answers «Готов»; the words on the track are the promise the owner gives with it. */}
     <SwipeConfirm label="Проведите: свободно и готово" disabled={working} onConfirm={()=>act('respond',{offerId:o.id,decision:'accept',ready:true})}/>

@@ -175,7 +175,7 @@ function understoodLine(result: GuestSearch, before: Row) {
   const parts = [
     stated.city && filters.city,
     stated.district && filters.district,
-    filters.mode !== before.mode && (filters.mode === 'hourly' ? 'на часы' : 'на сутки'),
+    filters.mode !== before.mode && (filters.mode === 'hourly' ? 'на часы' : filters.mode === 'night' ? 'на ночь' : 'на сутки'),
     stated.guests && guests + ' ' + plural(guests, 'гость', 'гостя', 'гостей'),
     stated.budget && 'до ' + money(Number(filters.maxPrice)),
     stated.home && homeWords(filters),
