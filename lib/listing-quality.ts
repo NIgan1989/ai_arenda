@@ -42,11 +42,12 @@ export function listingTip(mine:ListingStats,leaders:ListingStats[],skip:Set<str
  return tips[0]||null;
 }
 
+// A banquet hall is neither advised nor a leader here: these tips compare homes (hourly price, a key safe, Wi-Fi).
 async function statsFor(db:D1Database,where:string,args:unknown[],t:number):Promise<ListingStats[]>{
  return (await rows(db,`SELECT p.id,p.title,p.price,p.description,COALESCE(pp.hourly_price,0) hourly,COALESCE(pp.minimum_rate,0) minimum_rate,COALESCE(d.details,'{}') details,COALESCE(d.photos,'[]') photos,
   (SELECT COUNT(*) FROM bookings b WHERE b.property_id=p.id AND b.status IN ('confirmed','completed') AND b.created_at>?) bookings
   FROM properties p LEFT JOIN property_policies pp ON pp.property_id=p.id LEFT JOIN property_details d ON d.property_id=p.id
-  WHERE p.published=1 AND p.archived_at IS NULL AND p.demo_owner IS NULL AND `+where,t-TIP_LOOKBACK,...args)).map(r=>{
+  WHERE p.published=1 AND p.archived_at IS NULL AND p.demo_owner IS NULL AND COALESCE(json_extract(d.details,'$.type'),'apartment') NOT IN ('banquet','cafe') AND `+where,t-TIP_LOOKBACK,...args)).map(r=>{
   let details:Row={},photos:unknown[]=[];try{details=JSON.parse(r.details);}catch{}try{photos=JSON.parse(r.photos);}catch{}
   return {id:String(r.id),title:String(r.title),price:Number(r.price),hourly:Number(r.hourly),minimumRate:Number(r.minimum_rate),photos:Array.isArray(photos)?photos.length:0,description:String(r.description||'').trim().length,amenities:Array.isArray(details.amenities)?details.amenities:[],checkin:String(details.checkinMethod||'meet'),bookings:Number(r.bookings)};
  });

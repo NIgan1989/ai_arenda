@@ -2,9 +2,8 @@ import {DomainError,required,number,interval,type Role} from './domain';
 import type {RentalService} from './service';
 import {epoch,uuid,q,one,rows,type Row} from './operation-core';
 import {geoDistance} from './map-location';
-import {amenities,propertyTypes,categories,kindCategory} from './listings';
-// The category a search is in: «Баня» when every type asked for is a bath, «Жильё» otherwise, also when no type is named.
-export const searchCategory=(kinds:string[]=[])=>kinds.length&&kinds.every(k=>kindCategory(k)==='bath')?'bath':'stay';
+import {amenities,propertyTypes,categories,occasions,searchCategory} from './listings';
+export {searchCategory};
 import {autoAnswerOffers,setGuestMode,guestModeSql,guestModeJoins} from './autopilot';
 import {guestFavorites,favouredFirst} from './favorites';
 
@@ -22,8 +21,10 @@ export function matchingInput(body:Row){
  let near:Row|null=null;
  if(body.near){const {longitude,latitude}=body.near;if(typeof longitude!=='number'||!Number.isFinite(longitude)||Math.abs(longitude)>180||typeof latitude!=='number'||!Number.isFinite(latitude)||Math.abs(latitude)>85)throw new DomainError('Проверьте точку поиска.');near={longitude:Math.round(longitude*100)/100,latitude:Math.round(latitude*100)/100,radius:number(body.near.radius||5000,'Радиус',1000,20000)};}
  if(priority==='closer'&&!near)throw new DomainError('Для приоритета «Ближе» выберите точку на карте или зону рядом с вами.');
- return {city:required(body.city,'Город',80),district:String(body.district||'').trim().slice(0,120),start:new Date(start*1000).toISOString(),end:new Date(end*1000).toISOString(),guests:String(number(body.guests,'Гости',1,50)),mode,maxPrice:String(number(body.maxPrice,'Бюджет за период',100,100000000)),priority,features:[...new Set(features)],near,kinds:[...new Set(kinds as string[])],rooms,now:body.now===true,
+ return {city:required(body.city,'Город',80),district:String(body.district||'').trim().slice(0,120),start:new Date(start*1000).toISOString(),end:new Date(end*1000).toISOString(),guests:String(number(body.guests,'Гости',1,searchCategory(kinds)==='banquet'?1000:50)),mode,maxPrice:String(number(body.maxPrice,'Бюджет за период',100,100000000)),priority,features:[...new Set(features)],near,kinds:[...new Set(kinds as string[])],rooms,now:body.now===true,
   // «Забронировать» on a home that needs its owner's answer: that home is asked first, the next best with it.
+  // What a banquet hall is taken for; the owner reads it in the request.
+  ...(searchCategory(kinds)==='banquet'&&typeof body.occasion==='string'&&Object.hasOwn(occasions,body.occasion)?{occasion:body.occasion}:{}),
   ...(typeof body.prefer==='string'&&/^[\w-]{1,100}$/.test(body.prefer)?{prefer:body.prefer}:{})};
 }
 // The chance a guest books a flat, from what we know before they ask: the price against their budget,

@@ -40,7 +40,8 @@ import {RentalCalendar} from './src/RentalCalendar';
 import {RoleEntry,roleNames,rolePages,intentRole} from './src/RoleEntry';
 import {useFavorites} from './src/Favorites';
 import {MapHome,type MapStay} from './src/MapHome';
-import {stayISO} from './src/ai-request';
+import {stayISO,occasionTitle} from './src/ai-request';
+import {banquetWhen} from '../lib/map-search-request';
 import {OfflineNotice} from './src/OfflineNotice';
 import {EntrySplash,EntryStatusBar} from './src/EntrySplash';
 import {LoadingBar} from './src/LoadingBar';
@@ -77,20 +78,24 @@ function BookingReview({flow,busy,done,result,onConfirm,onEdit}:{flow:Flow;busy:
   // on the card; the calculation and the rules of the home open by «Правила и расчёт». The swipe itself is the consent.
   // A home that confirms by itself still leaves a risky request to its owner (lib/service.ts risk.held), so «сразу» is not promised.
   const guests=Number(quote?.guests)||1,tens=guests%100,units=guests%10,auto=!!quote?.policy?.auto_confirm,deposit=Number(quote?.policy?.deposit)||0;
-  const bath=['banya','sauna'].includes(quote?.kind),extra=Number(quote?.extraGuests)||0;
+  const hall=['banquet','cafe'].includes(quote?.kind),bath=hall||['banya','sauna'].includes(quote?.kind),extra=Number(quote?.extraGuests)||0;
+  // A banquet hall: the slot of the day, what it is for, the price per guest and the least order.
+  const perGuest=Number(quote?.policy?.extra_guest_price)||0,least=Number(quote?.policy?.included_guests)||0,occasion=hall?occasionTitle(String(flow.answers.occasion||'')):'';
+  const guestWord=tens>10&&tens<20?'гостей':units===1?'гость':units>1&&units<5?'гостя':'гостей';
   return <View style={s.card}><Text accessibilityRole="header" style={s.cardTitle}>{quote?.title||'Проживание'}</Text>
     {checking&&<View style={s.progressRow}><Thinking size="sm"/><Text style={s.meta}>Проверяю стоимость и свободный интервал…</Text></View>}
     {!!error&&<><Text accessibilityRole="alert" style={s.error}>{error}</Text><Button title="Проверить ещё раз" secondary disabled={busy||checking} onPress={()=>setAttempt(v=>v+1)}/></>}
     {quote&&!error&&!checking&&<>
-      <Text style={s.text}>{date(quote.start)} → {date(quote.end)} · {guests} {tens>10&&tens<20?'гостей':units===1?'гость':units>1&&units<5?'гостя':'гостей'}</Text>
+      <Text style={s.text}>{hall?[occasion&&occasion!=='Другое'?occasion:'',banquetWhen(new Date((Number(quote.start)+18000)*1000).toISOString().slice(0,16)),guests+' '+guestWord].filter(Boolean).join(' · '):date(quote.start)+' → '+date(quote.end)+' · '+guests+' '+guestWord}</Text>
       <View style={s.quoteTotal}><Text style={s.key}>{bath?'Стоимость':'Стоимость проживания'}</Text><Text style={s.price}>{money(quote.amount)}</Text></View>
-      <Text style={s.meta}>{deposit?'Депозит '+money(deposit)+(bath?' вернётся после ухода. ':' вернётся после выезда. '):''}{auto?'Обычно бронь подтверждается сразу, иначе владелец ответит за 15 минут.':'Владелец ответит за 15 минут.'} Сейчас деньги не списываются.</Text>
-      {bath&&extra>0&&<Text style={s.meta}>В цене гостей: {guests-extra}. Доплата за ещё {extra}: {money(Number(quote.guestSurcharge)*Number(quote.periods))}.</Text>}
-      {more&&<><Text style={s.meta}>{quote.periods} × {money(quote.price)} · {quote.unitLabel}. {bath?'После вас':'После выезда'} {quote.cleaningMinutes} мин. на {bath?'уборку':'подготовку жилья'}.</Text>{!!quote.policy.house_rules&&<Text style={s.meta}>{quote.policy.house_rules}</Text>}</>}
+      <Text style={s.meta}>{deposit?'Депозит '+money(deposit)+(hall?' вернётся после мероприятия. ':bath?' вернётся после ухода. ':' вернётся после выезда. '):''}{auto?'Обычно бронь подтверждается сразу, иначе владелец ответит за 15 минут.':'Владелец ответит за 15 минут.'} Сейчас деньги не списываются.</Text>
+      {hall&&perGuest>0&&<Text style={s.meta}>{money(perGuest)} за гостя × {Math.max(guests,least)}.{guests<least?' Наименьший заказ зала: '+least+' гостей.':''} При отмене вся оплата возвращается: заведение может заявить только расходы на ваш заказ, подтверждённые документами.</Text>}
+      {bath&&!hall&&extra>0&&<Text style={s.meta}>В цене гостей: {guests-extra}. Доплата за ещё {extra}: {money(Number(quote.guestSurcharge)*Number(quote.periods))}.</Text>}
+      {more&&<>{!hall&&<Text style={s.meta}>{quote.periods} × {money(quote.price)} · {quote.unitLabel}. {bath?'После вас':'После выезда'} {quote.cleaningMinutes} мин. на {bath?'уборку':'подготовку жилья'}.</Text>}{!!quote.policy.house_rules&&<Text style={s.meta}>{quote.policy.house_rules}</Text>}</>}
       <SwipeConfirm label={auto?'Проведите: забронировать за '+money(quote.amount):'Проведите: отправить заявку владельцу'} disabled={busy} onConfirm={()=>onConfirm(quote)}/>
-      <Text style={s.meta}>Проводя, вы соглашаетесь с датами, тарифом, депозитом и правилами {bath?'объекта':'жилья'}.</Text>
+      <Text style={s.meta}>Проводя, вы соглашаетесь с {hall?'датой, ценой на гостя':'датами, тарифом'}, депозитом и правилами {hall?'зала':bath?'объекта':'жилья'}.</Text>
     </>}
-    <View style={s.buttonRow}>{quote&&!error&&!checking&&<Button title={more?'Свернуть':'Правила и расчёт'} secondary disabled={busy} onPress={()=>setMore(v=>!v)}/>}<Button title="Изменить даты" secondary disabled={busy||checking} onPress={onEdit}/></View>
+    <View style={s.buttonRow}>{quote&&!error&&!checking&&<Button title={more?'Свернуть':'Правила и расчёт'} secondary disabled={busy} onPress={()=>setMore(v=>!v)}/>}<Button title={hall?'Изменить':'Изменить даты'} secondary disabled={busy||checking} onPress={onEdit}/></View>
   </View>;
 }
 function Auth({onSubmit,busy,titled=true}:{titled?:boolean;onSubmit:(mode:string,phone:string,password:string,name?:string,city?:string,recovery?:string)=>Promise<void>;busy:boolean}){
@@ -420,7 +425,7 @@ function Chat(){
     const property=data.properties.find((p:Row)=>p.id===found.id)||found,questions=bookingQuestions(property);
     // A stay kept from an earlier visit may already be behind: the dates are asked again instead of sending the past.
     if(Date.parse(stayISO(stay).start)<Date.now()){run('book:'+property.id);return;}
-    const next:Flow={kind:'booking',questions,index:questions.length,answers:{billingMode:stay.mode,...stayISO(stay),guests:stay.guests},endpoint:'bookings',after:'bookings',role:'guest',extra:{propertyId:property.id,requestKey:uid()}};
+    const next:Flow={kind:'booking',questions,index:questions.length,answers:{billingMode:stay.mode,...stayISO(stay),guests:stay.guests,...(stay.occasion?{occasion:stay.occasion}:{})},endpoint:'bookings',after:'bookings',role:'guest',extra:{propertyId:property.id,requestKey:uid()}};
     // The check of the booking is a sheet of its own: one card, the map behind it, nothing of the earlier talk.
     setDealCover(0);setDeal({kind:'review',id:property.id,after:messages.length?messages[messages.length-1].id:''});
     setActor('guest');say('','review',{flow:next,back:true});

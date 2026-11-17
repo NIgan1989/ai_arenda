@@ -2,7 +2,7 @@ import React from 'react';
 import { Image, type ImageSourcePropType } from 'react-native';
 import { C } from './styles';
 
-// One line icon for every type of object and for the two categories, drawn from the same library as the menu
+// One line icon for every type of object and for the categories, drawn from the same library as the menu
 // (scripts/export-navigation-icons.mjs). The pictures are black on clear and take the colour given here.
 const ICONS: Record<string, ImageSourcePropType> = {
   any: require('../assets/kinds/any.png'),
@@ -17,7 +17,9 @@ const ICONS: Record<string, ImageSourcePropType> = {
   hotel: require('../assets/kinds/hotel.png'),
   aparthotel: require('../assets/kinds/aparthotel.png'),
   banya: require('../assets/kinds/banya.png'),
-  sauna: require('../assets/kinds/sauna.png')
+  sauna: require('../assets/kinds/sauna.png'),
+  banquet: require('../assets/kinds/banquet.png'),
+  cafe: require('../assets/kinds/cafe.png')
 };
 
 export function KindIcon({ id, size = 20, color = C.inkSoft }: { id: string; size?: number; color?: string }) {

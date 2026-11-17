@@ -8,7 +8,7 @@ import {T} from './tokens';
 import {money,type Row} from './model';
 import {Photo} from './ListingMedia';
 import {RecordFacts,RecordActions,type RecordAction} from './RecordCard';
-import {propertyTypes,isBath} from '../../lib/listings';
+import {propertyTypes,isBath,isBanquet,isVenue} from '../../lib/listings';
 import {processStatus} from '../../lib/process-status';
 import {clock} from '../../lib/rental-policy';
 import {placeNow} from './own-place';
@@ -31,7 +31,8 @@ export function OwnProperties({properties,bookings,busy,onAdd,onEdit,onSettings,
 }
 
 function PropertyCard({property:p,bookings,busy,open,onToggle,onEdit,onSettings,onCleaning,onMap}:{property:Row;bookings:Row[];busy:boolean;open:boolean;onToggle:()=>void;onEdit:()=>void;onSettings:()=>void;onCleaning:()=>void;onMap?:()=>void}){
- const d=p.details||{},policy=p.policy||{},found=processStatus('property',p,'owner',''),status=isBath((p.details||{}).type)?{...found,label:found.label.replace('к заселению','к приёму гостей')}:found,[bg,ink]=tones[status.tone]||tones.neutral,bath=isBath(d.type),now=placeNow(p.id,bookings,undefined,bath);
+ const d=p.details||{},policy=p.policy||{},found=processStatus('property',p,'owner',''),status=isVenue((p.details||{}).type)?{...found,label:found.label.replace('к заселению','к приёму гостей')}:found,[bg,ink]=tones[status.tone]||tones.neutral,hall=isBanquet(d.type),bath=isBath(d.type),now=placeNow(p.id,bookings,undefined,bath||hall);
+ const perGuest=hall?Number(policy.extra_guest_price)||0:0,least=Number(policy.included_guests)||1;
  const kind=propertyTypes[d.type]||'Жильё';
  // «Занято»: guests who came without the service. The card keeps the mark it was given until the state is read again.
  const [marked,setMarked]=useState<Row[]|null>(null),[busyOpen,setBusyOpen]=useState(false),[busyNote,setBusyNote]=useState('');
@@ -50,7 +51,7 @@ function PropertyCard({property:p,bookings,busy,open,onToggle,onEdit,onSettings,
    <View style={o.thumb}><Photo id={p.photos?.[0]} alt={p.title} fill/></View>
    <View style={o.grow}>
     <Text numberOfLines={1} style={o.title}>{p.title}</Text>
-    <Text numberOfLines={1} style={o.meta}>{p.venue&&p.venue.title!==p.title?p.venue.title:kind} · {bath&&policy.hourly_price?money(policy.hourly_price)+' / час':money(p.price)+' / сутки'}</Text>
+    <Text numberOfLines={1} style={o.meta}>{p.venue&&p.venue.title!==p.title?p.venue.title:kind} · {hall?(perGuest?money(perGuest)+' за гостя':'цена не задана'):bath&&policy.hourly_price?money(policy.hourly_price)+' / час':money(p.price)+' / сутки'}</Text>
     <View style={o.tags}><Text style={[o.status,{backgroundColor:bg,color:ink}]}>{status.label}</Text>{!!p.address_check&&<Text style={[o.status,{backgroundColor:C.warningSoft,color:C.warning}]}>Адрес на проверке</Text>}{!!held&&<Text style={[o.status,{backgroundColor:C.warningSoft,color:C.warning}]}>Занято до {hhmm(Number(held.end))}</Text>}{!!p.demo_owner&&<Text style={[o.status,{backgroundColor:C.surfaceAlt,color:C.muted}]}>Учебный</Text>}</View>
    </View>
    <Text style={[o.chevron,open&&o.chevronOpen]}>›</Text>
@@ -59,9 +60,10 @@ function PropertyCard({property:p,bookings,busy,open,onToggle,onEdit,onSettings,
   {open&&<>
    <RecordFacts rows={[
     ['Адрес',[p.city,p.district,p.address].filter(Boolean).join(', ')],
-    ['Гостей',bath?'до '+(p.capacity||1)+(d.area?' · '+d.area+' м²':''):(p.capacity||1)+' · '+(p.rooms||1)+' комн.'+(d.area?' · '+d.area+' м²':'')],
-    ['Цена',bath&&policy.hourly_price?money(policy.hourly_price)+' / ч'+(policy.min_hours?' · от '+policy.min_hours+' ч':''):money(p.price)+' / сутки'+(policy.hourly_price?' · '+money(policy.hourly_price)+' / ч':'')],
-    !bath&&['Заезд',clock(policy.checkin_minutes??840)+' · выезд '+clock(policy.checkout_minutes??720)],
+    ['Гостей',bath||hall?'до '+(p.capacity||1)+(d.area?' · '+d.area+' м²':''):(p.capacity||1)+' · '+(p.rooms||1)+' комн.'+(d.area?' · '+d.area+' м²':'')],
+    ['Цена',hall?(perGuest?money(perGuest)+' за гостя · от '+least+' гост.':'не задана'):bath&&policy.hourly_price?money(policy.hourly_price)+' / ч'+(policy.min_hours?' · от '+policy.min_hours+' ч':''):money(p.price)+' / сутки'+(policy.hourly_price?' · '+money(policy.hourly_price)+' / ч':'')],
+    hall&&['Время','обед 12:00–17:00 · вечер 18:00–00:00'],
+    !bath&&!hall&&['Заезд',clock(policy.checkin_minutes??840)+' · выезд '+clock(policy.checkout_minutes??720)],
     ['Фото',p.photos?.length?String(p.photos.length):'нет, добавьте, чтобы показать гостям'],
     p.rating?.count>0&&['Оценка','★ '+String(p.rating.average).replace('.',',')+' ('+p.rating.count+')'],
    ]}/>

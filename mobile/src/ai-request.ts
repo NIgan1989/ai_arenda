@@ -3,7 +3,13 @@
 // "14 ноября на двоих" means the same thing in the app and in the browser. This file keeps the app's form
 // in step with those rules. No model is called here. Covered by mobile/tests/ai-request.test.mjs.
 import {
+  BANQUET_KINDS,
   BATH_KINDS,
+  MAX_BANQUET_GUESTS,
+  banquetSlot,
+  banquetStay,
+  defaultBanquet,
+  type BanquetSlot,
   CHECKIN_TIME,
   CHECKOUT_TIME,
   MAX_GUESTS as SHARED_MAX_GUESTS,
@@ -40,6 +46,7 @@ export type GuestDraft = {
   kinds: string[]; // types of home (lib/listings.ts propertyTypes); [] for any
   rooms: string; // '2' exactly two rooms, '2+' at least two; '' for any
   now: boolean; // «Сейчас»: only homes ready now that confirm at once, the nearest first
+  occasion?: string; // «Банкет» only: what the hall is taken for (OCCASIONS); 'memorial' keeps every word quiet
 };
 export type ParsedRequest = {
   draft: GuestDraft; // the conditions with everything the text says applied
@@ -52,28 +59,41 @@ export type ParsedRequest = {
   // What was cut or could not be taken as written ("Максимум 23 часа, ищу на 23."); '' when nothing was.
   note: string;
 };
-export type ChipId = 'now' | 'night' | 'daily' | 'hourly' | 'weekend' | 'evening' | 'tomorrow';
+export type ChipId = 'now' | 'night' | 'daily' | 'hourly' | 'weekend' | 'evening' | 'tomorrow' | 'toi' | 'party' | 'memorial';
 
 // Types of home a guest can ask for, as lib/listings.ts names them (propertyTypes). Kept here so this file stays
 // free of server code; mobile/tests/ai-request.test.mjs checks that the two lists match.
 export const HOME_KINDS: Record<string, string> = {
   apartment: 'Квартира', studio: 'Студия', room: 'Комната', house: 'Дом',
   guesthouse: 'Гостевой дом', hostel: 'Хостел', hotel: 'Гостиница', aparthotel: 'Апарт-отель',
-  banya: 'Баня', sauna: 'Сауна'
+  banya: 'Баня', sauna: 'Сауна',
+  banquet: 'Банкетный зал', cafe: 'Кафе'
 };
 
 // What the guest looks for, chosen above the line like a tariff in a taxi (lib/listings.ts categories).
 // «Баня» is a bath or a sauna taken whole for a few hours. The category is kept in the types of the request:
 // only bath types named means «Баня», anything else «Жильё».
-export type Category = 'stay' | 'bath';
+export type Category = 'stay' | 'bath' | 'banquet';
 export const BATH_TYPES: string[] = BATH_KINDS;
+export const BANQUET_TYPES: string[] = BANQUET_KINDS;
 export const CATEGORIES: { id: Category; title: string; any: string; hint: string }[] = [
   { id: 'stay', title: 'Жильё', any: 'Любое жильё', hint: 'на сутки, на ночь или на часы' },
-  { id: 'bath', title: 'Баня', any: 'Любая баня', hint: 'на несколько часов' }
+  { id: 'bath', title: 'Баня', any: 'Любая баня', hint: 'на несколько часов' },
+  { id: 'banquet', title: 'Банкет', any: 'Любой зал', hint: 'той, юбилей, поминки' }
 ];
-export const categoryOf = (draft: Pick<GuestDraft, 'kinds'>): Category => (draft.kinds.length && draft.kinds.every(id => BATH_KINDS.includes(id)) ? 'bath' : 'stay');
+// What a hall is taken for (lib/listings.ts occasions). A memorial meal is spoken of quietly on every screen.
+export const OCCASIONS: [string, string][] = [['toi', 'Той, свадьба'], ['party', 'Юбилей, праздник'], ['memorial', 'Поминки, ас'], ['other', 'Другое']];
+export const occasionTitle = (id?: string) => OCCASIONS.find(([known]) => known === id)?.[1] || '';
+export const isQuiet = (draft: { occasion?: string }) => draft.occasion === 'memorial';
+/** Every type of a category; none for «Жильё», where no type named is any home. */
+export const allKinds = (category: Category): string[] => (category === 'bath' ? [...BATH_KINDS] : category === 'banquet' ? [...BANQUET_KINDS] : []);
+const every = (kinds: string[], of: string[]) => kinds.length > 0 && kinds.every(id => of.includes(id));
+export const categoryOf = (draft: Pick<GuestDraft, 'kinds'>): Category => (every(draft.kinds, BATH_KINDS) ? 'bath' : every(draft.kinds, BANQUET_KINDS) ? 'banquet' : 'stay');
+export const kindCategoryOf = (kind?: string): Category => categoryOf({ kinds: kind ? [kind] : [] });
+/** The largest party of a category: fifty, a thousand in a banquet hall. */
+export const maxGuestsOf = (category: Category) => (category === 'banquet' ? MAX_BANQUET_GUESTS : SHARED_MAX_GUESTS);
 /** The types a category offers in the form, with their names. */
-export const categoryKinds = (category: Category): [string, string][] => Object.entries(HOME_KINDS).filter(([id]) => BATH_KINDS.includes(id) === (category === 'bath'));
+export const categoryKinds = (category: Category): [string, string][] => Object.entries(HOME_KINDS).filter(([id]) => kindCategoryOf(id) === category);
 /** What the category button says: the one type that is chosen, or the category itself. `id` names the icon (KindIcon). */
 export function kindChoice(draft: Pick<GuestDraft, 'kinds'>): { id: string; title: string } {
   const category = CATEGORIES.find(c => c.id === categoryOf(draft))!, one = draft.kinds.length === 1 ? draft.kinds[0] : '';
@@ -82,14 +102,19 @@ export function kindChoice(draft: Pick<GuestDraft, 'kinds'>): { id: string; titl
 /** A type chosen in the category picker: the category changes with it; no type is the whole category. */
 export function withKind(draft: GuestDraft, category: Category, kind: string | null, now = Date.now()): GuestDraft {
   const next = withCategory(draft, category, now);
-  return { ...next, kinds: kind ? [kind] : category === 'bath' ? [...BATH_KINDS] : [] };
+  return { ...next, kinds: kind ? [kind] : allKinds(category) };
 }
-/** Another category is another request: the place stays, what narrowed the search starts over, a bath is by the hour. */
+/**
+ * Another category is another request: the place stays, what narrowed the search starts over. A bath is by the
+ * hour; a banquet is a slot of one day for a large party, the nearest Saturday evening to begin with.
+ */
 export function withCategory(draft: GuestDraft, category: Category, now = Date.now()): GuestDraft {
   if (categoryOf(draft) === category) return draft;
-  const clean = { ...draft, district: '', maxPrice: '', perUnit: true, priority: 'balanced' as const, features: [], near: null, rooms: '', now: false };
+  const { occasion: _left, ...rest } = draft;
+  const clean = { ...rest, district: '', maxPrice: '', perUnit: true, priority: 'balanced' as const, features: [], near: null, rooms: '', now: false };
+  if (category === 'banquet') return { ...clean, ...defaultBanquet(now), guests: 50, kinds: [...BANQUET_KINDS] };
   return category === 'bath'
-    ? { ...clean, ...defaultStay('hourly', now), guests: Math.max(draft.guests, 4), kinds: [...BATH_KINDS] }
+    ? { ...clean, ...defaultStay('hourly', now), guests: Math.min(Math.max(draft.guests, 4), SHARED_MAX_GUESTS), kinds: [...BATH_KINDS] }
     : { ...clean, ...defaultStay('daily', now), guests: 2, kinds: [] };
 }
 
@@ -119,6 +144,19 @@ export const BATH_WISHES: [string, string][] = [
   ['grill', 'Мангал'],
   ['parking', 'Парковка']
 ];
+// What is asked of a banquet hall; the ids are the shared amenities.
+export const BANQUET_WISHES: [string, string][] = [
+  ['halal', 'Халяль'],
+  ['prayer', 'Комната для намаза'],
+  ['stage', 'Сцена'],
+  ['sound', 'Звук и микрофон'],
+  ['dancefloor', 'Танцпол'],
+  ['karaoke', 'Караоке'],
+  ['ownfood', 'Свои продукты'],
+  ['kidsroom', 'Детская комната'],
+  ['parking', 'Парковка']
+];
+export const wishesOf = (category: Category) => (category === 'bath' ? BATH_WISHES : category === 'banquet' ? BANQUET_WISHES : WISHES);
 // The largest party the service accepts; the form and the text stop at the same number.
 export const MAX_GUESTS = SHARED_MAX_GUESTS;
 // What the screen says when the text names a day or an hour that is behind, in the words of the site.
@@ -135,6 +173,8 @@ export function newDraft(city: string, now = Date.now()): GuestDraft {
 
 /** The same conditions with the stay moved out of the past, for a screen that stayed open. */
 export function freshDraft(draft: GuestDraft, now = Date.now()): GuestDraft {
+  // A banquet slot that has begun gives way to the usual one; a slot is never cut short.
+  if (categoryOf(draft) === 'banquet') return new Date(draft.start + ':00+05:00').getTime() >= now + 30 * 60000 ? draft : { ...draft, ...defaultBanquet(now, draft.occasion) };
   return { ...draft, ...freshStay(draft, now) };
 }
 
@@ -153,36 +193,43 @@ export function guestRequestFromText(text: string, draft: GuestDraft, cities: st
   // «Квартира» names no type of home (any home will do), but said in «Баня» it leaves that category.
   const home = /квартир|жиль[её]|однушк|двушк|тр[её]шк/.test(text.toLocaleLowerCase('ru'));
   const fresh = freshDraft(draft, now);
-  const kept = home && categoryOf(fresh) === 'bath' ? withCategory(fresh, 'stay', now) : fresh;
-  // The category chosen in the sheet stays: in «Баня» a new phrase is still about a bath, by the hour, and keeps the party.
-  const bath = categoryOf(kept) === 'bath';
-  const refining = REFINE.test(text.trim().toLocaleLowerCase('ru')), usual = defaultStay(bath ? 'hourly' : 'daily', now);
+  const kept = home && categoryOf(fresh) !== 'stay' ? withCategory(fresh, 'stay', now) : fresh;
+  // The category chosen in the sheet stays: in «Баня» a new phrase is still about a bath, by the hour, and keeps the
+  // party; in «Банкет» it is still about a hall, its guests and what it is for.
+  const category = categoryOf(kept), bath = category === 'bath', venue = category !== 'stay';
+  const refining = REFINE.test(text.trim().toLocaleLowerCase('ru'));
+  const usual = category === 'banquet' ? defaultBanquet(now, kept.occasion) : defaultStay(bath ? 'hourly' : 'daily', now);
   const base: GuestDraft = refining
     ? kept
-    : { ...kept, ...usual, district: '', guests: bath ? kept.guests : 2, maxPrice: '', perUnit: true, priority: 'balanced', features: [], near: null, kinds: bath ? [...BATH_KINDS] : [], rooms: '', now: false };
+    : { ...kept, ...usual, district: '', guests: venue ? kept.guests : 2, maxPrice: '', perUnit: true, priority: 'balanced', features: [], near: null, kinds: allKinds(category), rooms: '', now: false };
   const result = guestSearchRequest(text, base, cities, now, { places: true });
   const filters = result.filters;
+  const kinds: string[] = Array.isArray(filters.kinds) ? filters.kinds.filter((id: unknown) => typeof id === 'string' && Object.prototype.hasOwnProperty.call(HOME_KINDS, id)) : [];
+  const to = categoryOf({ kinds }), hall = to === 'banquet';
+  const { occasion: _before, ...plain } = base;
   const next: GuestDraft = {
-    ...base,
+    ...plain,
+    // A hall named in «Жильё» or «Баня» without its guests starts at fifty, the party a hall is taken for.
+    ...(hall ? { occasion: typeof filters.occasion === 'string' && filters.occasion ? filters.occasion : category === 'banquet' ? base.occasion || '' : '' } : {}),
     city: String(filters.city || base.city),
     district: String(filters.district || ''),
     mode: filters.mode === 'hourly' || filters.mode === 'night' ? filters.mode : 'daily',
     start: String(filters.start),
     end: String(filters.end),
-    guests: clamp(Number(filters.guests) || base.guests, 1, MAX_GUESTS),
+    guests: hall && category !== 'banquet' && !result.stated.guests ? 50 : clamp(Number(filters.guests) || base.guests, 1, maxGuestsOf(to)),
     maxPrice: String(filters.maxPrice || ''),
     perUnit: typeof filters.perUnit === 'boolean' ? filters.perUnit : base.perUnit,
     priority: filters.priority === 'cheaper' || filters.priority === 'closer' ? filters.priority : 'balanced',
-    features: Array.isArray(filters.features) ? filters.features.filter((id: unknown) => [...WISHES, ...BATH_WISHES].some(([known]) => known === id)) : [],
+    features: Array.isArray(filters.features) ? filters.features.filter((id: unknown) => [...WISHES, ...BATH_WISHES, ...BANQUET_WISHES].some(([known]) => known === id)) : [],
     near: filters.near || null,
-    kinds: Array.isArray(filters.kinds) ? filters.kinds.filter((id: unknown) => typeof id === 'string' && Object.prototype.hasOwnProperty.call(HOME_KINDS, id)) : [],
+    kinds,
     rooms: typeof filters.rooms === 'string' && /^[1-9]\+?$/.test(filters.rooms) ? filters.rooms : '',
     now: filters.now === true
   };
   // "почасовая" names a tariff but no day and no length: the stay follows the new tariff.
-  if (!result.past && next.mode !== base.mode && !result.stated.when) Object.assign(next, { ...switchStay(next.mode, base.start, now), mode: next.mode });
+  if (!hall && !result.past && next.mode !== base.mode && !result.stated.when) Object.assign(next, { ...switchStay(next.mode, base.start, now), mode: next.mode });
   // The stay the guest had set is let go of, and the new phrase names none: said, so that it is not a surprise.
-  const reset = !refining && !result.stated.when && !result.past && result.understood && next.mode === 'daily' && (kept.mode !== usual.mode || kept.start !== usual.start || kept.end !== usual.end);
+  const reset = !hall && !refining && !result.stated.when && !result.past && result.understood && next.mode === 'daily' && (kept.mode !== usual.mode || kept.start !== usual.start || kept.end !== usual.end);
   return {
     draft: next,
     nearby: result.nearby,
@@ -200,6 +247,11 @@ export function guestRequestFromText(text: string, draft: GuestDraft, cities: st
  * hours, the nearest weekend.
  */
 export function chipDraft(id: ChipId, draft: GuestDraft, now = Date.now()): GuestDraft {
+  // The chips of «Банкет» say what the hall is for. A memorial meal is soon and at lunch: tomorrow at 12:00.
+  if (id === 'toi' || id === 'party' || id === 'memorial') {
+    const hall = withCategory(draft, 'banquet', now);
+    return { ...hall, occasion: id, ...(id === 'memorial' ? defaultBanquet(now, id) : hall.occasion === 'memorial' ? defaultBanquet(now) : {}) };
+  }
   if (id === 'now') {
     const from = new Date(nextSlot(now, 15) + 5 * 3600000).toISOString().slice(0, 16), today = kzToday(now);
     const stay = draft.mode === 'hourly'
@@ -234,16 +286,17 @@ export function guestSummary(draft: GuestDraft, now = Date.now()) {
   const said = line.toLocaleLowerCase('ru');
   // «Сейчас» and «На ночь» start at an hour of their own, not at 14:00: it is said.
   // So does a day the guest asked to start at an hour of their own («в 22:00»).
-  const from = draft.now || draft.mode === 'night' || (draft.mode === 'daily' && draft.start.slice(11) !== CHECKIN_TIME) ? 'заезд с ' + draft.start.slice(11) : '';
+  const hall = categoryOf(draft) === 'banquet';
+  const from = !hall && (draft.now || draft.mode === 'night' || (draft.mode === 'daily' && draft.start.slice(11) !== CHECKIN_TIME)) ? 'заезд с ' + draft.start.slice(11) : '';
   const more = [
     from,
     draft.now ? (draft.near && !draft.near.label ? 'готово сейчас, рядом с вами' : 'готово сейчас') : '',
-    ...WISHES.filter(([id]) => draft.features.includes(id)).map(([, title]) => (title === 'Wi-Fi' ? title : title.toLocaleLowerCase('ru'))),
+    ...(hall ? BANQUET_WISHES : WISHES).filter(([id]) => draft.features.includes(id)).map(([, title]) => (title === 'Wi-Fi' ? title : title.toLocaleLowerCase('ru'))),
     draft.now ? '' : PRIORITY_WORDS[draft.priority] || ''
   ].filter(word => word && !said.includes(word.toLocaleLowerCase('ru')));
   // A landmark is named: "рядом: железнодорожный вокзал", not "рядом с выбранным местом".
   const where = draft.near?.label ? line.replace('рядом с выбранным местом', 'рядом: ' + draft.near.label) : line;
-  return [where, homeWords(draft), budgetWords(draft), ...more].filter(Boolean).join(' · ');
+  return [hall ? occasionTitle(draft.occasion) : '', where, hall && draft.kinds.length > 1 ? '' : homeWords(draft), budgetWords(draft), ...more].filter(Boolean).join(' · ');
 }
 
 /** "студия или квартира, 2 комн."; '' when any home will do. */
@@ -254,10 +307,11 @@ export function homeWords(draft: Pick<GuestDraft, 'kinds' | 'rooms'>) {
 }
 
 /** "до 15 000 ₸ за сутки", "до 3 000 ₸ за час", "до 45 000 ₸ за всё"; '' without a budget. */
-export function budgetWords(draft: Pick<GuestDraft, 'maxPrice' | 'perUnit' | 'mode' | 'start' | 'end'>) {
+export function budgetWords(draft: Pick<GuestDraft, 'maxPrice' | 'perUnit' | 'mode' | 'start' | 'end'> & { kinds?: string[] }) {
   const amount = Number(draft.maxPrice);
   if (!(amount > 0) || draft.maxPrice === NO_BUDGET) return '';
   const sum = 'до ' + new Intl.NumberFormat('ru-RU').format(amount).replace(/\s/g, ' ') + ' ₸';
+  if (categoryOf({ kinds: draft.kinds || [] }) === 'banquet') return sum + (draft.perUnit ? ' за гостя' : ' за всё');
   if (draft.perUnit) return sum + (draft.mode === 'hourly' ? ' за час' : draft.mode === 'night' ? ' за ночь' : ' за сутки');
   return draftUnits(draft as GuestDraft) > 1 ? sum + ' за всё' : sum;
 }
@@ -272,13 +326,15 @@ export function matchingBody(draft: GuestDraft) {
     end: draft.end + '+05:00',
     guests: draft.guests,
     // The server compares the price of the whole stay: a price per day or per hour is multiplied out here.
-    maxPrice: Number(draft.maxPrice) ? Math.min(Number(NO_BUDGET), Number(draft.maxPrice) * (draft.perUnit ? draftUnits(draft) : 1)) : Number(NO_BUDGET),
+    // In «Банкет» the price named is per guest.
+    maxPrice: Number(draft.maxPrice) ? Math.min(Number(NO_BUDGET), Number(draft.maxPrice) * (draft.perUnit ? (categoryOf(draft) === 'banquet' ? draft.guests : draftUnits(draft)) : 1)) : Number(NO_BUDGET),
     priority: draft.priority,
     features: draft.features,
     near: draft.near ? { longitude: draft.near.longitude, latitude: draft.near.latitude, radius: draft.near.radius } : null,
     kinds: draft.kinds || [],
     rooms: draft.rooms || '',
-    now: !!draft.now
+    now: !!draft.now,
+    ...(categoryOf(draft) === 'banquet' && draft.occasion ? { occasion: draft.occasion } : {})
   };
 }
 
@@ -305,7 +361,13 @@ function stayFor(draft: GuestDraft, date: string, time: string, units: number, n
 export function withMode(draft: GuestDraft, mode: GuestDraft['mode'], now = Date.now()): GuestDraft {
   return mode === draft.mode ? draft : { ...draft, ...switchStay(mode, draft.start, now), mode };
 }
+/** The slot of a banquet day, and another day with the same slot. */
+export const draftSlot = (draft: Pick<GuestDraft, 'start'>): BanquetSlot => banquetSlot(draft.start);
+export function withSlot(draft: GuestDraft, date: string, slot: BanquetSlot): GuestDraft {
+  return { ...draft, mode: 'daily', ...banquetStay(date, slot) };
+}
 export function withDay(draft: GuestDraft, date: string, now = Date.now()): GuestDraft {
+  if (categoryOf(draft) === 'banquet') return withSlot(draft, date, draftSlot(draft));
   // A daily stay on another day starts at the usual check-in hour again.
   const time = draft.mode === 'hourly' ? draft.start.slice(11) : '14:00';
   return { ...draft, ...stayFor(draft, date, time, draftUnits(draft), now) };
@@ -323,10 +385,14 @@ export function dayChoices(draft: GuestDraft, now = Date.now()): [string, string
   const label = (date: string, offset: number) => {
     if (offset === 0) return 'Сегодня';
     if (offset === 1) return 'Завтра';
+    if (offset === 2 && categoryOf(draft) === 'banquet') return 'Послезавтра';
     const day = new Date(date + 'T00:00:00Z');
     return WEEKDAYS[day.getUTCDay()] + ', ' + day.getUTCDate() + ' ' + MONTHS[day.getUTCMonth()];
   };
-  const days: [string, string][] = [0, 1, 2, 3, 4, 5, 6].map(offset => [addDays(today, offset), label(addDays(today, offset), offset)]);
+  // A hall is taken ahead: tomorrow and the day after (a memorial meal), then the Saturdays and Sundays of three weeks.
+  const weekday = new Date(today + 'T00:00:00Z').getUTCDay(), saturday = (6 - weekday + 7) % 7;
+  const offsets = categoryOf(draft) === 'banquet' ? [...new Set([1, 2, ...[0, 7, 14].flatMap(week => [saturday + week, saturday + week + 1])])].filter(n => n > 0).sort((a, b) => a - b) : [0, 1, 2, 3, 4, 5, 6];
+  const days: [string, string][] = offsets.map(offset => [addDays(today, offset), label(addDays(today, offset), offset)]);
   const chosen = draft.start.slice(0, 10);
   if (!days.some(([date]) => date === chosen)) days.push([chosen, label(chosen, -1)]);
   return days.sort((a, b) => a[0].localeCompare(b[0]));
@@ -375,8 +441,10 @@ export function nearPlace(draft: GuestDraft, spot: { longitude?: unknown; latitu
 /** What the guest reads when the landmark was not found on the map. */
 export const placeMissedNote = (asked: string) => 'Не нашёл на карте: ' + asked + '. Ищу по всему городу.';
 
-/** One format for a price on a map pin: "9 тыс.", "9,5 тыс.", "12 тыс."; under a thousand "800 ₸". */
+/** One format for a price on a map pin: "9 тыс.", "9,5 тыс.", "12 тыс."; under a thousand "800 ₸", from a million "1,2 млн". */
 export function pinPrice(amount: number): string {
   if (amount < 1000) return Math.round(amount) + ' ₸';
+  // A banquet for a hundred guests: "1,2 млн".
+  if (amount >= 1000000) return String(Math.round(amount / 100000) / 10).replace('.', ',') + ' млн';
   return String(Math.round(amount / 100) / 10).replace('.', ',') + ' тыс.';
 }

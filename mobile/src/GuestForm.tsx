@@ -4,7 +4,8 @@ import { Action, Chips, Stepper, h } from './SheetParts';
 import { C, type } from './styles';
 import { T } from './tokens';
 import { mapCities } from './map-math';
-import { BATH_TYPES, MAX_GUESTS, categoryKinds, categoryOf, BATH_WISHES, WISHES, dayChoices, draftUnits, withDay, withMode, withTime, withUnits, type GuestDraft } from './ai-request';
+import { OCCASIONS, allKinds, maxGuestsOf, wishesOf, draftSlot, withSlot, categoryKinds, categoryOf, dayChoices, draftUnits, withDay, withMode, withTime, withUnits, type GuestDraft } from './ai-request';
+import { BANQUET_SLOTS, addDays, kzToday, type BanquetSlot } from '../../lib/map-search-request';
 
 type Props = {
   draft: GuestDraft;
@@ -27,26 +28,30 @@ export function GuestForm({ draft, onChange, onPickPoint, onNearMe, onSubmit, bu
   const startMinutes = Number(draft.start.slice(11, 13)) * 60 + Number(draft.start.slice(14, 16));
   const units = draftUnits(draft);
   // Home type, rooms, district, wishes, priority and the point on the map: how many of them are set.
-  const bath = categoryOf(draft) === 'bath';
+  const category = categoryOf(draft), bath = category === 'bath', hall = category === 'banquet', venue = category !== 'stay';
   // In «Баня» both types chosen is the category itself, not a condition.
-  const set = (bath ? Number(draft.kinds.length < BATH_TYPES.length) : draft.kinds.length) + Number(!!draft.rooms) + Number(!!draft.district) + draft.features.length + Number(draft.priority !== 'balanced') + Number(!!draft.near);
+  const set = (venue ? Number(draft.kinds.length < allKinds(category).length) : draft.kinds.length) + Number(!!draft.rooms) + Number(!!draft.district) + draft.features.length + Number(draft.priority !== 'balanced') + Number(!!draft.near);
   // «Баня» never loses its last type: an empty list would mean «Жильё».
   const toggleKind = (id: string) => {
     const kinds = draft.kinds.includes(id) ? draft.kinds.filter(v => v !== id) : [...draft.kinds, id];
-    onChange({ ...draft, kinds: bath && !kinds.length ? [...BATH_TYPES] : kinds });
+    onChange({ ...draft, kinds: venue && !kinds.length ? allKinds(category) : kinds });
   };
   // Rooms: any, exactly 1 or 2, 3 and more; a count the text named that is not here stays as an option.
   const roomOptions: [string, string][] = [['', 'Любое'], ['1', '1'], ['2', '2'], ['3+', '3+']];
   if (draft.rooms && !roomOptions.some(([id]) => id === draft.rooms)) roomOptions.push([draft.rooms, draft.rooms.endsWith('+') ? 'от ' + draft.rooms.slice(0, -1) : draft.rooms]);
   // The budget is a price per day (per hour on the hourly tariff); a total named in the line keeps its own label.
-  const budgetLabel = draft.perUnit || !draft.maxPrice ? (hourly ? 'Цена за час до, ₸' : draft.mode === 'night' ? 'Цена за ночь до, ₸' : 'Цена за сутки до, ₸') : 'Бюджет на весь срок, ₸';
+  // A hall: any day up to three months ahead, by the chips or one day at a time.
+  const today = kzToday(), day = draft.start.slice(0, 10), ahead = Math.round((Date.parse(day) - Date.parse(today)) / 86400000);
+  const dayText = (date: string) => { const d = new Date(date + 'T00:00:00Z'); return ['вс', 'пн', 'вт', 'ср', 'чт', 'пт', 'сб'][d.getUTCDay()] + ', ' + d.getUTCDate() + ' ' + ['янв', 'фев', 'мар', 'апр', 'мая', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'][d.getUTCMonth()]; };
+  const budgetLabel = hall ? (draft.perUnit || !draft.maxPrice ? 'Цена на гостя до, ₸' : 'Бюджет на всё, ₸') : draft.perUnit || !draft.maxPrice ? (hourly ? 'Цена за час до, ₸' : draft.mode === 'night' ? 'Цена за ночь до, ₸' : 'Цена за сутки до, ₸') : 'Бюджет на весь срок, ₸';
   const [more, setMore] = useState(set > 0), extra = more;
   const toggleWish = (id: string) =>
     onChange({ ...draft, features: draft.features.includes(id) ? draft.features.filter(v => v !== id) : [...draft.features, id] });
 
   return (
     <>
-      {!bath && (
+      {hall && <Chips label="Повод" value={draft.occasion || ''} options={OCCASIONS} onChange={occasion => onChange({ ...draft, occasion })} disabled={busy} />}
+      {!venue && (
         <Chips
           name="Срок аренды"
           value={draft.mode}
@@ -67,7 +72,15 @@ export function GuestForm({ draft, onChange, onPickPoint, onNearMe, onSubmit, bu
         disabled={busy}
       />
       <Chips label="Когда" value={draft.start.slice(0, 10)} options={dayChoices(draft)} onChange={day => onChange(withDay(draft, day))} disabled={busy} />
-      <View style={h.pair}>
+      {hall && (
+        <View style={h.pair}>
+          <Stepper label="День" value={ahead} text={dayText(day)} min={0} max={89} onChange={n => onChange(withDay(draft, addDays(today, n)))} disabled={busy} />
+          <View style={h.stepper}>
+            <Chips label="Время" value={draftSlot(draft)} options={(Object.keys(BANQUET_SLOTS) as BanquetSlot[]).map(id => [id, BANQUET_SLOTS[id].title + ' ' + BANQUET_SLOTS[id].from.slice(0, 2) + '–' + (BANQUET_SLOTS[id].to.slice(0, 2) === '00' ? '24' : BANQUET_SLOTS[id].to.slice(0, 2))])} onChange={slot => onChange(withSlot(draft, day, slot as BanquetSlot))} disabled={busy} />
+          </View>
+        </View>
+      )}
+      {!hall && <View style={h.pair}>
         <Stepper
           label={hourly ? 'Начало' : 'Заезд'}
           value={startMinutes}
@@ -87,14 +100,15 @@ export function GuestForm({ draft, onChange, onPickPoint, onNearMe, onSubmit, bu
           onChange={value => onChange(withUnits(draft, value))}
           disabled={busy}
         />
-      </View>
+      </View>}
       <View style={h.pair}>
         <Stepper
           label="Гостей"
           value={draft.guests}
           text={String(draft.guests)}
           min={1}
-          max={MAX_GUESTS}
+          max={maxGuestsOf(category)}
+          step={hall ? 10 : 1}
           onChange={guests => onChange({ ...draft, guests })}
           disabled={busy}
         />
@@ -119,9 +133,9 @@ export function GuestForm({ draft, onChange, onPickPoint, onNearMe, onSubmit, bu
       </Pressable>
       {extra && <>
       <View>
-        <Text style={h.label}>{bath ? 'Баня или сауна' : 'Тип жилья'}</Text>
+        <Text style={h.label}>{hall ? 'Зал или кафе' : bath ? 'Баня или сауна' : 'Тип жилья'}</Text>
         <View style={f.wishes}>
-          {categoryKinds(bath ? 'bath' : 'stay').map(([id, title]) => {
+          {categoryKinds(category).map(([id, title]) => {
             const on = draft.kinds.includes(id);
             return (
               <Pressable
@@ -139,7 +153,7 @@ export function GuestForm({ draft, onChange, onPickPoint, onNearMe, onSubmit, bu
           })}
         </View>
       </View>
-      {!bath && <Chips label="Комнат" value={draft.rooms} options={roomOptions} onChange={rooms => onChange({ ...draft, rooms })} disabled={busy} />}
+      {!venue && <Chips label="Комнат" value={draft.rooms} options={roomOptions} onChange={rooms => onChange({ ...draft, rooms })} disabled={busy} />}
       <View>
         <Text style={h.label}>Район</Text>
         <TextInput
@@ -154,9 +168,9 @@ export function GuestForm({ draft, onChange, onPickPoint, onNearMe, onSubmit, bu
         />
       </View>
       <View>
-        <Text style={h.label}>{bath ? 'Обязательно' : 'Обязательно в жилье'}</Text>
+        <Text style={h.label}>{venue ? 'Обязательно' : 'Обязательно в жилье'}</Text>
         <View style={f.wishes}>
-          {(bath ? BATH_WISHES : WISHES).map(([id, title]) => {
+          {wishesOf(category).map(([id, title]) => {
             const on = draft.features.includes(id);
             return (
               <Pressable
@@ -205,7 +219,7 @@ export function GuestForm({ draft, onChange, onPickPoint, onNearMe, onSubmit, bu
         </Pressable>
       )}
       </>}
-      <Text style={h.note}>{hourly ? '' : 'Выезд до 12:00. '}Депозит оплачивается отдельно.</Text>
+      <Text style={h.note}>{hall ? 'Цена зала считается на гостя. При отмене вся оплата возвращается.' : (hourly ? '' : 'Выезд до 12:00. ') + 'Депозит оплачивается отдельно.'}</Text>
       <Action title={busy ? 'Ищем…' : 'Показать варианты'} disabled={busy} onPress={onSubmit} />
     </>
   );

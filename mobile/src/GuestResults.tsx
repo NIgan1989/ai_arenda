@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { AccessibilityInfo, Animated, Easing, Image, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
-import { plural, stayWhen } from '../../lib/map-search-request';
+import { banquetWhen, plural, stayWhen } from '../../lib/map-search-request';
 import { Photo } from './ListingMedia';
 import { Action, h } from './SheetParts';
 import { money, type Row } from './model';
@@ -8,7 +8,7 @@ import { windowBadge } from '../../lib/window-badge';
 import { C, type } from './styles';
 import { T } from './tokens';
 import { ReliabilityBadge } from './Reliability';
-import { HOME_KINDS, WISHES, askFirst, draftUnits, homeWords, shownReasons, withMode, type GuestDraft } from './ai-request';
+import { HOME_KINDS, WISHES, BANQUET_WISHES, BANQUET_TYPES, askFirst, categoryOf, draftUnits, homeWords, kindCategoryOf, shownReasons, withMode, type GuestDraft } from './ai-request';
 import { carouselIndex } from './map-motion';
 import { Heart } from './Favorites';
 import { markLabel, markOf, type Mine } from './favorites';
@@ -65,6 +65,8 @@ function Rise({ children, onTop }: { children: React.ReactNode; onTop: (y: numbe
 }
 
 function stayWords(draft: GuestDraft) {
+  // A hall: "80 гостей", the price is for the party.
+  if (categoryOf(draft) === 'banquet') return draft.guests + ' ' + plural(draft.guests, 'гостя', 'гостей', 'гостей');
   const units = draftUnits(draft);
   if (draft.mode === 'night') return units + ' ' + plural(units, 'ночь', 'ночи', 'ночей');
   return draft.mode === 'hourly' ? units + ' ' + plural(units, 'час', 'часа', 'часов') : units + ' ' + plural(units, 'сутки', 'суток', 'суток');
@@ -94,8 +96,8 @@ export function emptyAnswer(empty: Row | undefined, draft: GuestDraft, narrowed:
   if (empty?.reason === 'busy') {
     const next = empty.next;
     if (!next) return { title: 'На это время всё занято', note: 'Свободного нет и в ближайшую неделю. Попробуйте другие даты.' };
-    const start = kzLocal(next.start), end = kzLocal(next.end), when = stayWhen(start, end, draft.mode);
-    return { title: 'На это время всё занято', note: 'Ближайшее свободное на тот же срок — ' + when + '.', action: { title: 'Показать на ' + when, patch: { start, end, now: false } } };
+    const start = kzLocal(next.start), end = kzLocal(next.end), when = categoryOf(draft) === 'banquet' ? banquetWhen(start) : stayWhen(start, end, draft.mode);
+    return { title: 'На это время всё занято', note: 'Ближайшее свободное ' + (categoryOf(draft) === 'banquet' ? 'на то же время' : 'на тот же срок') + ' — ' + when + '.', action: { title: 'Показать на ' + when, patch: { start, end, now: false } } };
   }
   if (empty?.reason === 'budget') {
     const cheapest = Number(empty.cheapest), units = draftUnits(draft), unit = draft.mode === 'hourly' ? 'час' : draft.mode === 'night' ? 'ночь' : 'сутки';
@@ -108,6 +110,11 @@ export function emptyAnswer(empty: Row | undefined, draft: GuestDraft, narrowed:
   }
   if (empty?.reason === 'filters') {
     const count = Number(empty.count) || 0;
+    if (categoryOf(draft) === 'banquet') {
+      if (count && empty.blocker === 'features') return { title: 'Свободного зала с этим нет: ' + BANQUET_WISHES.filter(([id]) => draft.features.includes(id)).map(([, name]) => name.toLocaleLowerCase('ru')).join(', '), note: 'Без этого условия свободно: ' + count + '.', action: { title: 'Искать без пожеланий', patch: { features: [] } } };
+      if (count && empty.blocker === 'kinds') return { title: 'Такого зала свободного нет', note: 'Других залов на это время свободно: ' + count + '.', action: { title: 'Показать любой зал', patch: { kinds: [...BANQUET_TYPES] } } };
+      if (!count || !empty.blocker) return { title: 'С этими условиями свободного зала нет', note: count ? 'Без района и пожеланий свободно: ' + count + '.' : 'Попробуйте другой день, обед вместо вечера или меньше гостей.' };
+    }
     // One condition empties the answer on its own: it is named, with one tap to search without it.
     const free = 'Без этого условия свободно: ' + count + '.';
     if (count && empty.blocker === 'kinds') return { title: 'Нет свободного жилья такого типа: ' + homeWords({ kinds: draft.kinds, rooms: '' }), note: 'Другого жилья на это время свободно: ' + count + '.', action: { title: 'Показать любое жильё', patch: { kinds: [] } } };
@@ -117,13 +124,14 @@ export function emptyAnswer(empty: Row | undefined, draft: GuestDraft, narrowed:
     if (count && empty.blocker === 'near') return { title: 'Рядом с этим местом свободного нет', note: 'В городе свободно: ' + count + '.', action: { title: 'Искать по всему городу', patch: { near: null, priority: 'balanced' } } };
     return { title: 'С этими условиями свободного нет', note: count ? 'Без района, типа жилья и пожеланий свободно: ' + count + '.' : 'Даже без района, типа жилья и пожеланий свободного нет. Попробуйте другое время.' };
   }
+  if (categoryOf(draft) === 'banquet') return { title: 'На этот день свободного зала нет', note: narrowed ? 'Поиск сужают район, цена на гостя или пожелания. Можно искать без них.' : 'Попробуйте другой день, обед вместо вечера или меньше гостей.' };
   return { title: 'На эти условия свободного жилья нет', note: narrowed ? 'Поиск сужают район, бюджет или пожелания. Можно искать без них.' : 'Попробуйте другое время или другой срок.' };
 }
 
 // "Студия · 1 комн. · до 2 гостей": what the home is, said on the card before why it was chosen.
 export function homeLine(flat: Row) {
   const kind = HOME_KINDS[flat.details?.type] || '', rooms = Number(flat.rooms), capacity = Number(flat.capacity);
-  return [kind, rooms > 0 && !['studio', 'banya', 'sauna'].includes(flat.details?.type) ? rooms + ' комн.' : '', capacity > 0 ? 'до ' + capacity + ' ' + plural(capacity, 'гостя', 'гостей', 'гостей') : ''].filter(Boolean).join(' · ');
+  return [kind, rooms > 0 && flat.details?.type !== 'studio' && kindCategoryOf(flat.details?.type) === 'stay' ? rooms + ' комн.' : '', capacity > 0 ? 'до ' + capacity + ' ' + plural(capacity, 'гостя', 'гостей', 'гостей') : ''].filter(Boolean).join(' · ');
 }
 
 export function GuestResults({ preview, draft, mine, onFavorite, selected, onSelect, onFocus, onBook, onOpen, onRefine, onWiden, onTry, onBookEdge, busy }: Props) {
@@ -168,8 +176,13 @@ export function GuestResults({ preview, draft, mine, onFavorite, selected, onSel
   const venueName = (flat: Row) => (flat.venue && Number(flat.venue.halls) > 1 && flat.venue.title !== flat.title ? String(flat.venue.title) : '');
   // The other free halls of the chosen one's venue: the guest switches between them without going back to the list.
   const otherHalls = (flat: Row) => (flat.venue ? flats.filter(x => x.id !== flat.id && x.venue?.id === flat.venue.id) : []);
+  const quiet = draft.occasion === 'memorial';
+  const perGuest = (flat: Row) => (kindCategoryOf(flat.details?.type) === 'banquet' ? Number(flat.policy?.extra_guest_price) || 0 : 0);
+  const least = (flat: Row) => Number(flat.policy?.included_guests) || 0;
   const about = (flat: Row) => {
-    const reasons = shownReasons(flat.match?.reasons, draft, ['banya', 'sauna'].includes(flat.details?.type));
+    const reasons = shownReasons(flat.match?.reasons, draft, kindCategoryOf(flat.details?.type) !== 'stay');
+    // A hall: the price per guest is what halls are compared by.
+    if (perGuest(flat)) return [venueName(flat), mark(flat), money(perGuest(flat)) + ' за гостя', homeLine(flat), flat.district, ...reasons].filter(Boolean).join(' · ');
     return (draft.now ? [...reasons.slice(0, 1), venueName(flat), mark(flat), homeLine(flat), flat.district, ...reasons.slice(1)] : [venueName(flat), mark(flat), homeLine(flat), flat.district, ...reasons]).filter(Boolean).join(' · ');
   };
 
@@ -199,7 +212,7 @@ export function GuestResults({ preview, draft, mine, onFavorite, selected, onSel
         </Pressable>
         <View style={r.chosen}>
           <View style={h.grow}>
-            {!!chosen.match?.best && <Text style={r.best}>Лучший выбор для вас</Text>}
+            {!!chosen.match?.best && <Text style={r.best}>{quiet ? 'Подходит лучше других' : 'Лучший выбор для вас'}</Text>}
             <Text accessibilityRole="header" numberOfLines={2} style={h.cardTitle}>
               {chosen.title}
             </Text>
@@ -230,13 +243,21 @@ export function GuestResults({ preview, draft, mine, onFavorite, selected, onSel
             </View>
           </View>
         )}
+        {perGuest(chosen) > 0 && (
+          <View style={r.halls}>
+            <Text style={r.hallsTitle}>{money(perGuest(chosen))} за гостя{least(chosen) > 1 ? ' · заказ от ' + least(chosen) + ' ' + plural(least(chosen), 'гостя', 'гостей', 'гостей') : ''}</Text>
+            {draft.guests < least(chosen) && <Text style={h.note}>У вас гостей меньше: цена как за {least(chosen)}.</Text>}
+            {!!chosen.details?.menu && <Text style={h.note}>Меню: {String(chosen.details.menu)}</Text>}
+            <Text style={h.note}>При отмене вся оплата возвращается.</Text>
+          </View>
+        )}
         {!!chosen.host && <View style={{ marginBottom: 12 }}><ReliabilityBadge value={chosen.host} title="Владелец" /></View>}
         <View onLayout={e => setButtonBottom(Math.round(e.nativeEvent.layout.y + e.nativeEvent.layout.height))}>
           <Action title="Забронировать" disabled={busy} onPress={() => onBook(chosen)} />
         </View>
         {askFirst(chosen) && <Text style={h.note}>Спросим владельца и ещё двух подходящих: ответ за 2 минуты, без вашего имени и телефона. Бронь создаётся после вашего подтверждения.</Text>}
         {!!chosen.photos?.[0] && <Photo id={chosen.photos[0]} alt={chosen.title + ', фото'} />}
-        <Action secondary title="Подробнее о жилье" disabled={busy} onPress={() => onOpen(chosen)} />
+        <Action secondary title={kindCategoryOf(chosen.details?.type) === 'banquet' ? 'Подробнее о зале' : kindCategoryOf(chosen.details?.type) === 'bath' ? 'Подробнее' : 'Подробнее о жилье'} disabled={busy} onPress={() => onOpen(chosen)} />
       </Rise>
     );
   }
@@ -262,7 +283,7 @@ export function GuestResults({ preview, draft, mine, onFavorite, selected, onSel
           <Pressable
             key={flat.id}
             accessibilityRole="button"
-            accessibilityLabel={(flat.match?.best ? 'Лучший выбор для вас. ' : '') + flat.title + ', ' + money(flat.estimate.amount)}
+            accessibilityLabel={(flat.match?.best ? (quiet ? 'Подходит лучше других. ' : 'Лучший выбор для вас. ') : '') + flat.title + ', ' + money(flat.estimate.amount)}
             onPress={() => {
               // The map flies to the chosen card's pin, even when the swipe that showed it has not settled yet.
               clearTimeout(settle.current);
@@ -274,7 +295,7 @@ export function GuestResults({ preview, draft, mine, onFavorite, selected, onSel
           >
             <View style={r.cardPhoto}>
               <Photo id={i <= seen + 2 ? flat.photos?.[0] : null} alt={flat.title + ', фото'} fill />
-              {!!flat.match?.best && <Text style={r.bestOnPhoto}>✦ Лучший выбор для вас</Text>}
+              {!!flat.match?.best && <Text style={r.bestOnPhoto}>{quiet ? 'Подходит лучше других' : '✦ Лучший выбор для вас'}</Text>}
               {!!mine && !!onFavorite && <View style={r.heartOnPhoto}><Heart on={mine.favorites.includes(flat.id)} title={flat.title} onPress={() => onFavorite(flat.id)} /></View>}
             </View>
             <View style={r.cardBody}>

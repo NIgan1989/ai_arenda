@@ -2,26 +2,42 @@ import {DomainError,number,required} from './domain';
 type Row=Record<string,any>;
 // Kinds of housing. The service is not only about flats: a hostel, a hotel or an apart-hotel has its own staff,
 // so for them the AI administrator does not look for executors (own_staff, see staffedTypes).
-export const propertyTypes:Record<string,string>={apartment:'Квартира',studio:'Студия',room:'Комната',house:'Дом',guesthouse:'Гостевой дом',hostel:'Хостел',hotel:'Гостиница',aparthotel:'Апарт-отель',banya:'Баня',sauna:'Сауна'};
+export const propertyTypes:Record<string,string>={apartment:'Квартира',studio:'Студия',room:'Комната',house:'Дом',guesthouse:'Гостевой дом',hostel:'Хостел',hotel:'Гостиница',aparthotel:'Апарт-отель',banya:'Баня',sauna:'Сауна',banquet:'Банкетный зал',cafe:'Кафе'};
 // Categories a guest chooses on the map, like the tariffs of a taxi (since 2026-11-17). «Жильё» is a place to stay,
 // «Баня» a bath or a sauna taken whole for a few hours. A search without a category is a search for «Жильё»:
 // a guest who asks for a flat never sees a sauna.
 export const categories:Record<string,{label:string;types:string[]}>={
  stay:{label:'Жильё',types:['apartment','studio','room','house','guesthouse','hostel','hotel','aparthotel']},
  bath:{label:'Баня',types:['banya','sauna']},
+ // «Банкет» (2026-11-17): a hall taken whole for a wedding, a той, an anniversary or a memorial meal. The price is
+ // per guest with a least number of guests, the time is a slot of the day (banquetSlots), not a night.
+ banquet:{label:'Банкет',types:['banquet','cafe']},
 };
 export const kindCategory=(type?:string)=>Object.entries(categories).find(([,c])=>c.types.includes(type||''))?.[0]||'stay';
+// The category a search is in: «Баня» or «Банкет» when every type asked for is of it, «Жильё» otherwise, also when no type is named.
+export const searchCategory=(kinds:string[]=[])=>{const found=kinds.length?kindCategory(kinds[0]):'stay';return found!=='stay'&&kinds.every(k=>kindCategory(k)===found)?found:'stay';};
 export const isBath=(type?:string)=>kindCategory(type)==='bath';
+export const isBanquet=(type?:string)=>kindCategory(type)==='banquet';
+// A place where nobody sleeps: its guests come for a few hours.
+export const isVenue=(type?:string)=>kindCategory(type)!=='stay';
+// The largest party: fifty in a home or a bath, a thousand in a banquet hall.
+export const maxGuests=(type?:string)=>isBanquet(type)?1000:50;
+// The two slots of a banquet day, Kazakhstan time; the evening ends at midnight.
+export const banquetSlots:Record<string,{label:string;from:string;to:string}>={lunch:{label:'Обед',from:'12:00',to:'17:00'},evening:{label:'Вечер',from:'18:00',to:'00:00'}};
+// What the hall is taken for. A memorial meal is spoken of quietly everywhere: no festive words, no celebration.
+export const occasions:Record<string,string>={toi:'Той, свадьба',party:'Юбилей, праздник',memorial:'Поминки, ас',other:'Другое'};
+export const occasionLabel=(id?:string)=>occasions[id||'']||'';
 // Kinds that usually clean with their own staff: «Свой персонал» is on by default, the owner can change it.
 // A sauna is mostly a complex with an administrator; a «баня» is often a private one, cleaned by our executor.
-export const staffedTypes=['hostel','hotel','aparthotel','sauna'];
+export const staffedTypes=['hostel','hotel','aparthotel','sauna','banquet','cafe'];
 export const defaultOwnStaff=(type:string)=>staffedTypes.includes(type);
 export const kindLabel=(type?:string)=>propertyTypes[type||'']||'Жильё';
-export const amenities:Record<string,string>={wifi:'Wi-Fi',kitchen:'Кухня',washer:'Стиральная машина',aircon:'Кондиционер',tv:'Телевизор',workspace:'Рабочее место',parking:'Парковка',balcony:'Балкон',elevator:'Лифт',linen:'Постельное бельё',towels:'Полотенца',hairdryer:'Фен',iron:'Утюг',crib:'Детская кроватка',steam:'Парилка',pool:'Бассейн',plunge:'Купель',brooms:'Веники',karaoke:'Караоке',billiards:'Бильярд',grill:'Мангал'};
+export const amenities:Record<string,string>={wifi:'Wi-Fi',kitchen:'Кухня',washer:'Стиральная машина',aircon:'Кондиционер',tv:'Телевизор',workspace:'Рабочее место',parking:'Парковка',balcony:'Балкон',elevator:'Лифт',linen:'Постельное бельё',towels:'Полотенца',hairdryer:'Фен',iron:'Утюг',crib:'Детская кроватка',steam:'Парилка',pool:'Бассейн',plunge:'Купель',brooms:'Веники',karaoke:'Караоке',billiards:'Бильярд',grill:'Мангал',stage:'Сцена',sound:'Звук и микрофон',dancefloor:'Танцпол',prayer:'Комната для намаза',halal:'Халяль',ownfood:'Можно свои продукты',kidsroom:'Детская комната'};
 // The amenities each category shows the owner and the guest; a stored id of the other category stays valid.
 export const categoryAmenities:Record<string,string[]>={
  stay:['wifi','kitchen','washer','aircon','tv','workspace','parking','balcony','elevator','linen','towels','hairdryer','iron','crib'],
  bath:['steam','pool','plunge','brooms','towels','karaoke','billiards','grill','tv','wifi','parking','kitchen'],
+ banquet:['halal','prayer','stage','sound','dancefloor','karaoke','ownfood','kidsroom','aircon','parking','wifi'],
 };
 export const checkinMethods:Record<string,string>={meet:'Встреча с хозяином',lockbox:'Сейф для ключей',smartlock:'Умный замок',reception:'Стойка регистрации'};
 export function listingInput(b:Row){
@@ -30,11 +46,13 @@ export function listingInput(b:Row){
  if(!Array.isArray(details.amenities)||details.amenities.some((v:unknown)=>typeof v!=='string'||!amenities[v]))throw new DomainError('Выберите удобства из списка.');
  if(!Array.isArray(b.photos)||b.photos.length>8||b.photos.some((v:unknown)=>typeof v!=='string'||v.length>100)||new Set(b.photos).size!==b.photos.length)throw new DomainError('Можно добавить до 8 разных фотографий.');
  if(typeof b.published!=='boolean')throw new DomainError('Выберите видимость объявления.');
- const p={title:required(b.title,'Название',120),city:required(b.city,'Город',80),district:required(b.district,'Район',120),address:required(b.address,'Точный адрес',300),description:required(b.description,'Описание',2500),price:number(b.price,'Цена за сутки',100,10000000),rooms:number(b.rooms,'Комнаты',1,20),capacity:number(b.capacity,'Гости',1,50),cleaningMinutes:number(b.cleaningMinutes,'Время уборки',30,1440),ownStaff:(typeof b.ownStaff==='boolean'?b.ownStaff:defaultOwnStaff(details.type))?1:0};
- const d={type:details.type,area:number(details.area,'Площадь',5,2000),beds:number(details.beds,'Спальные места',1,50),bathrooms:number(details.bathrooms,'Санузлы',1,20),floor:number(details.floor,'Этаж',0,100),floors:number(details.floors,'Этажей в доме',1,100),checkinMethod:details.checkinMethod,amenities:[...new Set<string>(details.amenities)],pets:details.pets===true,smoking:details.smoking===true,parties:details.parties===true};
+ const p={title:required(b.title,'Название',120),city:required(b.city,'Город',80),district:required(b.district,'Район',120),address:required(b.address,'Точный адрес',300),description:required(b.description,'Описание',2500),price:number(b.price,'Цена за сутки',100,10000000),rooms:number(b.rooms,'Комнаты',1,20),capacity:number(b.capacity,'Гости',1,maxGuests(details.type)),cleaningMinutes:number(b.cleaningMinutes,'Время уборки',30,1440),ownStaff:(typeof b.ownStaff==='boolean'?b.ownStaff:defaultOwnStaff(details.type))?1:0};
+ const d={type:details.type,area:number(details.area,'Площадь',5,2000),beds:number(details.beds,'Спальные места',1,maxGuests(details.type)),bathrooms:number(details.bathrooms,'Санузлы',1,20),floor:number(details.floor,'Этаж',0,100),floors:number(details.floors,'Этажей в доме',1,100),checkinMethod:details.checkinMethod,amenities:[...new Set<string>(details.amenities)],pets:details.pets===true,smoking:details.smoking===true,parties:details.parties===true,
+  // The menu of a banquet hall, as the owner writes it; other kinds keep none.
+  ...(isBanquet(details.type)&&typeof details.menu==='string'&&details.menu.trim()?{menu:details.menu.trim().slice(0,1500)}:{})};
  if(d.floor>d.floors)throw new DomainError('Этаж не может быть выше этажности дома.');
  // A bath has no beds: its guests come for a few hours, so the beds follow the guests there.
- if(isBath(d.type))d.beds=Math.max(d.beds,p.capacity);
+ if(isVenue(d.type))d.beds=Math.max(d.beds,p.capacity);
  if(d.beds<p.capacity)throw new DomainError('Спальных мест должно хватать для заявленного числа гостей.');
  if(b.published&&(!b.photos.length||p.description.length<80))throw new DomainError('Для публикации добавьте фото и описание от 80 символов. Черновик можно сохранить сейчас.');
  return {p,details:d,photos:b.photos as string[],published:b.published?1:0,expectedVersion:number(b.expectedVersion??0,'Версия объявления',0,10000000)};

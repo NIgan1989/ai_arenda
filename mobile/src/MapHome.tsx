@@ -25,7 +25,7 @@ import {countdown,mapCities,validPoint,type MapPoint} from './map-math';
 import {MapSheetHead} from './MapSheetHead';
 import {AutopilotThreads,type FeedNeed} from './AutopilotThreads';
 import {AutopilotHandoff} from './AutopilotHandoff';
-import {BATH_TYPES as BATH_KINDS,categoryOf,withKind,kindChoice,PAST_TEXT,nearPlace,placeMissedNote,pinPrice,askFirst,understoodNote,notUnderstoodNote,chipDraft,freshDraft,guestRequestFromText,guestSummary,matchingBody,newDraft,shownReasons,type GuestDraft} from './ai-request';
+import {BATH_TYPES as BATH_KINDS,allKinds,kindCategoryOf,isQuiet,occasionTitle,categoryOf,withKind,kindChoice,PAST_TEXT,nearPlace,placeMissedNote,pinPrice,askFirst,understoodNote,notUnderstoodNote,chipDraft,freshDraft,guestRequestFromText,guestSummary,matchingBody,newDraft,shownReasons,type GuestDraft} from './ai-request';
 import type {HeadAction} from './head-line';
 import {Action,Grip,SheetHeading,SheetRow,Stage,h,handleHeight,topInset} from './SheetParts';
 import {GuestForm} from './GuestForm';
@@ -50,9 +50,9 @@ import {ECHO_WINDOW,pinStates,recallMap,rememberMap,stageOf,targetPin,withEchoes
 type MapExtra={lines?:MapLine[];heat?:HeatPoint[];sparks?:MapPoint[]};
 type Publish=(pins:MapPin[],focusKey:string,extra?:MapExtra)=>void;
 // The stay a guest books from the map: Kazakhstan time, as the request form keeps it.
-export type MapStay={mode:'daily'|'hourly'|'nightly';start:string;end:string;guests:number};
+export type MapStay={mode:'daily'|'hourly'|'nightly';start:string;end:string;guests:number;occasion?:string};
 // showNow: whether the "Сейчас" card has its place in the sheet as it is now (see MapHome).
-type Common={setScanning:(on:boolean)=>void;accountId:string;data:Row;mapData:Row|null;city:string;publish:Publish;selected:string;setSelected:(key:string)=>void;focus:string;setFocus:(key:string)=>void;snap:number;showNow:boolean;expand:(snap:number)=>void;onHead:(height:number)=>void;onReach:(bottom:number)=>void;onAsk:(text:string)=>void;onIntent:(intent:string,stay?:MapStay)=>void;onBook:(property:Row,stay:MapStay)=>void;onChanged:()=>Promise<unknown>;onOpenProcess:(kind:'booking'|'job',id:string)=>void;onOpenPage:(id:string)=>void;onEdit?:(id:string,step:string|null)=>void;flyMe:()=>void;notify:(text:string)=>void};
+type Common={setScanning:(on:boolean)=>void;setQuiet:(on:boolean)=>void;accountId:string;data:Row;mapData:Row|null;city:string;publish:Publish;selected:string;setSelected:(key:string)=>void;focus:string;setFocus:(key:string)=>void;snap:number;showNow:boolean;expand:(snap:number)=>void;onHead:(height:number)=>void;onReach:(bottom:number)=>void;onAsk:(text:string)=>void;onIntent:(intent:string,stay?:MapStay)=>void;onBook:(property:Row,stay:MapStay)=>void;onChanged:()=>Promise<unknown>;onOpenProcess:(kind:'booking'|'job',id:string)=>void;onOpenPage:(id:string)=>void;onEdit?:(id:string,step:string|null)=>void;flyMe:()=>void;notify:(text:string)=>void};
 const liveRequests=new Map<string,string>();
 // The least room above an open card of a deal, under the buttons of the map, in which the pin of that deal is shown.
 const SPOT_ROOM=72;
@@ -87,7 +87,7 @@ function HeadSlot({onHeight,children}:{onHeight:(height:number)=>void;children:R
 }
 function useNow(active:boolean){const [now,setNow]=useState(Date.now()/1000);useEffect(()=>{if(!active)return;const timer=setInterval(()=>setNow(Date.now()/1000),1000);return()=>clearInterval(timer);},[active]);return now;}
 
-function GuestPanel({setScanning,accountId,data,mapData,publish,selected,setSelected,setFocus,snap,showNow,expand,onHead,onReach,onAsk,onIntent,onBook,onChanged,onOpenProcess,onOpenPage,picking,setPicking,mapCenter,city,setCity,aimed,flyMe,notify,held}:Common&{held:{point:MapPoint;n:number}|null;aimed:boolean;picking:boolean;setPicking:(value:boolean)=>void;mapCenter:React.RefObject<MapPoint|null>;setCity:(city:string)=>void}){
+function GuestPanel({setScanning,setQuiet,accountId,data,mapData,publish,selected,setSelected,setFocus,snap,showNow,expand,onHead,onReach,onAsk,onIntent,onBook,onChanged,onOpenProcess,onOpenPage,picking,setPicking,mapCenter,city,setCity,aimed,flyMe,notify,held}:Common&{held:{point:MapPoint;n:number}|null;aimed:boolean;picking:boolean;setPicking:(value:boolean)=>void;mapCenter:React.RefObject<MapPoint|null>;setCity:(city:string)=>void}){
  // «На карте» from a page wins over the search the guest left: the panel starts clean in the target's city.
  const kept=useRef(aimed?undefined:guestSearches.get(accountId)).current,foundAt=useRef(kept?.foundAt||0),recent=!!kept?.preview&&Date.now()-kept.foundAt<SEARCH_KEEP;
  const [draft,setDraft]=useState<GuestDraft>(()=>kept?.draft||newDraft(city));
@@ -170,16 +170,16 @@ function GuestPanel({setScanning,accountId,data,mapData,publish,selected,setSele
  };
  // «Сейчас»: the nearest first, counted from where the guest is when the phone knows it and it is in the searched city.
  const nearNow=(next:GuestDraft):GuestDraft=>{const fix=getHere().fix;return next.now&&!next.near&&fix&&nearestCity(fix.point)===next.city?{...next,near:{...nearOf(fix.point),radius:15000},priority:'closer'}:next;};
- const chip=(action:HeadAction)=>{if(action!=='now'&&action!=='night'&&action!=='daily'&&action!=='hourly'&&action!=='weekend'&&action!=='evening'&&action!=='tomorrow')return;const next=nearNow(chipDraft(action,draft));setAsked('');setHint(null);setError('');setDraft(next);setPreview(null);void find(next);};
+ const chip=(action:HeadAction)=>{if(action!=='now'&&action!=='night'&&action!=='daily'&&action!=='hourly'&&action!=='weekend'&&action!=='evening'&&action!=='tomorrow'&&action!=='toi'&&action!=='party'&&action!=='memorial')return;const next=nearNow(chipDraft(action,draft));setAsked('');setHint(null);setError('');setDraft(next);setPreview(null);void find(next);};
  // «Забронировать»: the price in the list is for the searched time. If that time has passed while the list was open, the search runs again first.
  const bookFlat=(property:Row)=>{if(freshDraft(draft).start!==draft.start){setHint({text:'Время начала уже прошло. Обновил варианты на ближайшее время.'});setSelected('');void find(draft);return;}// One button. A home that confirms by itself is booked at once; a home whose owner answers quick requests is asked
   // first, together with the next best ones, so a refusal or silence already has the next offer coming.
   if(askFirst(property)){void begin(property.id);return;}
-  onBook(property,{mode:tariffOf(draft,property),start:draft.start,end:draft.end,guests:draft.guests});};
+  onBook(property,{mode:tariffOf(draft,property),start:draft.start,end:draft.end,guests:draft.guests,...(draft.occasion?{occasion:draft.occasion}:{})});};
  // What narrows a search beyond the place, the time and the guests. An empty result offers to drop these and look again.
- const narrowed=!!(draft.district||draft.maxPrice||draft.features.length||draft.priority!=='balanced'||draft.near||(categoryOf(draft)==='bath'?draft.kinds.length<BATH_KINDS.length:draft.kinds.length)||draft.rooms||draft.now);
+ const narrowed=!!(draft.district||draft.maxPrice||draft.features.length||draft.priority!=='balanced'||draft.near||(categoryOf(draft)!=='stay'?draft.kinds.length<allKinds(categoryOf(draft)).length:draft.kinds.length)||draft.rooms||draft.now);
  const retry=(next:GuestDraft)=>{setHint(null);setError('');setDraft(next);setPreview(null);void find(next);};
- const widen=()=>retry({...draft,district:'',maxPrice:'',features:[],priority:'balanced',near:null,kinds:categoryOf(draft)==='bath'?[...BATH_KINDS]:[],rooms:'',now:false});
+ const widen=()=>retry({...draft,district:'',maxPrice:'',features:[],priority:'balanced',near:null,kinds:allKinds(categoryOf(draft)),rooms:'',now:false});
  const refining=snap>0&&(refine||!preview),toggleRefine=()=>{if(refining){setRefine(false);expand(preview?1:0);}else{setRefine(true);expand(2);}};
  useEffect(()=>{if(requestId||preview)expand(1);if(kept&&kept.draft.city!==city)setCity(kept.draft.city);},[]);
  useEffect(()=>{guestSearches.set(accountId,{draft,preview,foundAt:foundAt.current});},[draft,preview]);
@@ -255,7 +255,7 @@ function GuestPanel({setScanning,accountId,data,mapData,publish,selected,setSele
    publish(asked,'live:'+live.id+':'+offers.length+':'+(live.pendingProperties||[]).length,{lines:roadBeams(straight,roads)});
   }
   else if(preview){
-   const found:MapPin[]=preview.properties.flatMap((p:Row)=>pin(p,p.quickRequest?'booking':'home').map(m=>p.match?.best?{...m,best:true}:m));
+   const found:MapPin[]=preview.properties.flatMap((p:Row)=>pin(p,p.quickRequest?'booking':'home').map(m=>p.match?.best&&!isQuiet(draft)?{...m,best:true}:m));
    // Searched around a point held on the map: thin beams from that point to what was found, so the guest sees the zone.
    const held0=heldAt.current,from=held0&&draft.near&&nearOf(held0).longitude===draft.near.longitude&&nearOf(held0).latitude===draft.near.latitude?held0:null;
    publish(found,stageKey,{lines:from?found.slice(0,8).map(m=>({key:'beam:'+m.key,from,to:m.point,tone:'answer' as const})):[]});
@@ -296,6 +296,8 @@ function GuestPanel({setScanning,accountId,data,mapData,publish,selected,setSele
  // The radar on the map runs while flats are searched and while owners are being asked.
  const scanning=(working&&!requestId)||(!!requestId&&(!live||live.status==='searching'));
  useEffect(()=>{setScanning(scanning);return()=>setScanning(false);},[scanning]);
+ // A memorial meal: the map keeps still, nothing on it plays joy.
+ useEffect(()=>{setQuiet(isQuiet(draft));return()=>setQuiet(false);},[draft.occasion]);
  useEffect(()=>{if(offers.length&&selected){const at=offers.findIndex(p=>p.id===selected);if(at>=0&&at!==index){setIndex(at);setAccepted(false);}}},[selected]);
 
  const pickView=<View style={h.block}><Text style={h.title}>Где ищем?</Text><Text style={h.note}>Передвиньте карту так, чтобы метка стояла в нужном месте. Или просто удерживайте палец на нужном месте карты. Владельцам точка не передаётся, для подбора она округляется.</Text>
@@ -311,7 +313,7 @@ function GuestPanel({setScanning,accountId,data,mapData,publish,selected,setSele
   let found:Row|undefined;
   try{const {prefer,...conditions}=filters;found=((await request('/api/public/matching?q='+encodeURIComponent(JSON.stringify(conditions))))?.properties||[]).find((p:Row)=>p.id===id);}catch(e){if(isOffline(e))throw e;}
   reset();
-  if(found)onBook(found,{mode:filters.mode==='night'?(found.estimate?.billingMode==='nightly'?'nightly':'daily'):filters.mode,start:local(filters.start),end:local(filters.end),guests:Number(filters.guests)});
+  if(found)onBook(found,{mode:filters.mode==='night'?(found.estimate?.billingMode==='nightly'?'nightly':'daily'):filters.mode,start:local(filters.start),end:local(filters.end),guests:Number(filters.guests),...(filters.occasion?{occasion:String(filters.occasion)}:{})});
   else onIntent('property:'+id);
  });
  const renderLive=()=>{
@@ -370,7 +372,7 @@ function GuestPanel({setScanning,accountId,data,mapData,publish,selected,setSele
  const formOnly=refine&&snap>0;
  // Where the sheet stood before the category picker opened: it returns there when the picker closes.
  const before=useRef(0);
- const head=<MapSheetHead role="guest" text={asked} onText={setAsked} onSend={ask} onChip={chip} chips={!preview&&!formOnly} category={categoryOf(draft)} kind={draft.kinds.length===1?draft.kinds[0]:''} choice={kindChoice(draft)} onKind={(c,k)=>{setAsked('');change(withKind(draft,c,k));}} onPicker={open=>{if(open){before.current=snap;if(snap<1)expand(1);}else if(before.current<1&&snap===1)expand(0);}} busy={working} summary={guestSummary(freshDraft(draft))} onRefine={toggleRefine} refining={refining} now={null} onNow={()=>{}}>
+ const head=<MapSheetHead role="guest" text={asked} onText={setAsked} onSend={ask} onChip={chip} chips={!preview&&!formOnly} category={categoryOf(draft)} kind={draft.kinds.length===1?draft.kinds[0]:''} choice={kindChoice(draft)} onKind={(c,k)=>{setAsked('');change(withKind(draft,c,k));}} onPicker={open=>{/* Three categories with their types need the whole sheet. */if(open){before.current=snap;if(snap<2)expand(2);}else if(before.current<2&&snap===2)expand(before.current);}} busy={working} summary={guestSummary(freshDraft(draft))} onRefine={toggleRefine} refining={refining} now={null} onNow={()=>{}}>
   {!!hint&&<View style={h.picked}><Text accessibilityRole={hint.error?'alert':undefined} accessibilityLiveRegion="polite" style={hint.error?h.error:h.note}>{hint.text}</Text>{!!hint.ask&&<Action secondary title="Спросить ИИ-администратора" onPress={()=>onAsk(hint.ask!)}/>}</View>}
   {!!error&&<Text accessibilityRole="alert" style={h.error}>{error}</Text>}
   {!!nav.error&&<Text accessibilityRole="alert" style={h.error}>{nav.error}</Text>}
@@ -591,6 +593,7 @@ export function MapHome({ role, accountId, data, menu, chats, onChanged, onOpenP
   const sheet = useRef(new Animated.Value(0)).current;
   // The sheet settles like a spring with a light overshoot, as in the live map concept; with «reduce motion» it simply moves.
   const [calm, setCalm] = useState(false);
+  const [quiet, setQuiet] = useState(false);
   useEffect(() => { let live = true; AccessibilityInfo.isReduceMotionEnabled().then(v => { if (live) setCalm(v); }).catch(() => {}); const sub = AccessibilityInfo.addEventListener?.('reduceMotionChanged', v => setCalm(v)); return () => { live = false; sub?.remove(); }; }, []);
   const calmRef = useRef(calm); calmRef.current = calm;
   const settle = (to: number) => calmRef.current ? Animated.timing(sheet, { toValue: to, duration: T.motion.base, useNativeDriver: false }).start() : Animated.spring(sheet, { toValue: to, stiffness: 260, damping: 24, mass: 1, overshootClamping: false, restDisplacementThreshold: 0.5, restSpeedThreshold: 0.5, useNativeDriver: false }).start();
@@ -780,7 +783,7 @@ export function MapHome({ role, accountId, data, menu, chats, onChanged, onOpenP
     if (covered) cardEdge.setValue(cover);
     Animated.timing(veil, { toValue: covered ? 0 : 1, duration: calmRef.current ? 0 : T.motion.base, useNativeDriver: false }).start();
   }, [covered, cover]);
-  const common: Common = { setScanning, accountId, data, mapData, city, publish, selected, setSelected, focus, setFocus, snap, showNow, expand: setSnap, onHead: setHead, onReach: setReach, onAsk, onIntent, onBook, onChanged, onOpenProcess, onOpenPage, onEdit, flyMe: () => setMeFly(n => n + 1), notify: setNotice };
+  const common: Common = { setScanning, setQuiet, accountId, data, mapData, city, publish, selected, setSelected, focus, setFocus, snap, showNow, expand: setSnap, onHead: setHead, onReach: setReach, onAsk, onIntent, onBook, onChanged, onOpenProcess, onOpenPage, onEdit, flyMe: () => setMeFly(n => n + 1), notify: setNotice };
   const center = mapCities[city] || validPoint(mapData?.center) || mapCities['Павлодар'];
 
   // Where the person is (here.ts). The first visit of the map asks the phone (the system prompt appears only if it was
@@ -897,7 +900,7 @@ export function MapHome({ role, accountId, data, menu, chats, onChanged, onOpenP
       {(role === 'owner' || role === 'guest') && !selected && <PriceTip role={role} cards={data.approvals || []} onChanged={onChanged} onEdit={onEdit} />}
       {!!menu && <View style={h.menu}>{menu}</View>}
       {!!chats && <View style={h.chats}>{chats}</View>}
-      {!picking && <MapMood mood={mood} joy={joy} still={calm} bottom={covered ? cardEdge : sheet} />}
+      {!picking && <MapMood mood={mood} joy={joy} still={calm || quiet} bottom={covered ? cardEdge : sheet} />}
       <Animated.View style={[h.sheet, { height: sheet, opacity: veil }]} accessibilityViewIsModal={false}>
         <View {...drag.handle.panHandlers}>
           <Pressable

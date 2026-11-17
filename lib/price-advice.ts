@@ -104,6 +104,8 @@ export async function offerPriceAdvice(db:D1Database,propertyId:string,t=epoch()
  await q(db,expireStaleSql()+' AND property_id=?',t,t,propertyId).run();
  const property=await one(db,'SELECT * FROM properties WHERE id=? AND published=1 AND archived_at IS NULL AND demo_owner IS NULL',propertyId);
  if(!property)return null;
+ // A banquet hall is priced per guest: the advice about a day, an hour and a night is not for it.
+ if(['banquet','cafe'].includes((await one(db,"SELECT json_extract(details,'$.type') type FROM property_details WHERE property_id=?",propertyId))?.type))return null;
  const policy=await one(db,'SELECT * FROM property_policies WHERE property_id=?',propertyId);
  if(!policy)return null;
  // One question at a time and not more often than once in three days for a flat.

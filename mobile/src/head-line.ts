@@ -7,7 +7,7 @@ import { roleAiLine } from '../../lib/ai-line';
 
 export type HeadRole = 'guest' | 'owner' | 'cleaner';
 // What the app does for a shortcut: a guest search, a page of the role, or the opened sheet.
-export type HeadAction = 'now' | 'night' | 'daily' | 'hourly' | 'weekend' | 'evening' | 'tomorrow' | 'requests' | 'calendar' | 'properties' | 'nearby' | 'schedule';
+export type HeadAction = 'now' | 'night' | 'daily' | 'hourly' | 'weekend' | 'evening' | 'tomorrow' | 'toi' | 'party' | 'memorial' | 'requests' | 'calendar' | 'properties' | 'nearby' | 'schedule';
 export type HeadChip = {
   id: string;
   title: string; // the short label on the chip
@@ -57,11 +57,19 @@ const GUEST_BATH: HeadChip[] = [
   { id: 'tomorrow', title: 'Завтра', hint: 'Завтра вечером: три часа с 19:00', action: 'tomorrow' }
 ];
 const BATH_LINE = { placeholder: 'Баня на 6 человек сегодня в 20:00', shortPlaceholder: 'Баня на 6 в 20:00' };
+// The category «Банкет»: what the hall is for. The day, the slot and the guests are in the line or in the form.
+const GUEST_BANQUET: HeadChip[] = [
+  { id: 'toi', title: 'Той', hint: 'Той или свадьба: зал на вечер субботы', action: 'toi' },
+  { id: 'party', title: 'Юбилей', hint: 'Юбилей или праздник: зал на вечер субботы', action: 'party' },
+  { id: 'memorial', title: 'Поминки', hint: 'Поминки, ас: зал на завтра, на обед', action: 'memorial' }
+];
+const BANQUET_LINE = { placeholder: 'Той на 150 человек 5 декабря', shortPlaceholder: 'Той на 150, 5 декабря' };
 /** Evening and night in Kazakhstan: from 18:00 to 06:00. */
 export const isEvening = (now = Date.now()) => { const hour = new Date(now + 5 * 3600000).getUTCHours(); return hour >= 18 || hour < 6; };
 
-export function headLine(role: HeadRole, now = Date.now(), category: 'stay' | 'bath' = 'stay'): HeadLine {
+export function headLine(role: HeadRole, now = Date.now(), category: 'stay' | 'bath' | 'banquet' = 'stay'): HeadLine {
   const line = roleAiLine(role);
+  if (role === 'guest' && category === 'banquet') return { ...BANQUET_LINE, label: 'Какой зал найти', chips: GUEST_BANQUET };
   if (role === 'guest' && category === 'bath') return { ...BATH_LINE, label: line.label, chips: GUEST_BATH };
   if (role === 'guest') return { placeholder: line.placeholder, shortPlaceholder: line.shortPlaceholder, label: line.label, chips: isEvening(now) ? GUEST_NIGHT : GUEST_DAY };
   return {
