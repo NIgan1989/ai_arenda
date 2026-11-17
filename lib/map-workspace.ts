@@ -95,5 +95,31 @@ export async function placeFlatByAddress(s:RentalService,role:Role,b:Row,lookup:
  await saveMapPoint(s,role,{propertyId:p.id,longitude:spot.longitude,latitude:spot.latitude,version:Number(l?.version||0),confirmed:true});
  return {...spot,saved:true};
 }
+// «У вокзала», «рядом с ТРЦ»: a landmark the guest names, as a point in the city he searches, so that the search
+// can look around it. Only the landmark's words and the city leave the service. Nothing found, a place outside the
+// city or too many questions in an hour: found:false, and the search goes on over the whole city.
+export async function findPlace(s:RentalService,b:Row,lookup:typeof fetch=fetch,config:GeoConfig={}){
+ await s.requireRole('guest');
+ const place=typeof b.place==='string'?b.place.replace(/[^\p{L}\p{N} .«»"-]/gu,' ').replace(/\s+/g,' ').trim().slice(0,60):'';
+ const city=Object.keys(mapCities).find(c=>c.toLocaleLowerCase('ru')===String(b.city||'').trim().toLocaleLowerCase('ru'));
+ if(!city||place.length<3)return {found:false};
+ const time=epoch(),used=await s.db.prepare(`INSERT INTO auth_attempt_limits(key,attempts,expires_at) VALUES (?,1,?) ON CONFLICT(key) DO UPDATE SET attempts=CASE WHEN expires_at<=? THEN 1 ELSE attempts+1 END,expires_at=CASE WHEN expires_at<=? THEN excluded.expires_at ELSE expires_at END RETURNING attempts`).bind('place:user:'+s.userId,time+3600,time,time).first<{attempts:number}>();
+ if(!used||used.attempts>40)return {found:false};
+ const centre=mapCities[city],text=[place,city,'Казахстан'].join(', '),near=(lon:number,lat:number)=>Number.isFinite(lon)&&Number.isFinite(lat)&&geoDistance([lon,lat],centre)<=25000;
+ const spot=(lon:number,lat:number,name:unknown)=>({found:true,longitude:Number(lon.toFixed(4)),latitude:Number(lat.toFixed(4)),name:String(name||place).split(',')[0].trim().slice(0,60)||place});
+ const stadia=typeof config.STADIA_API_KEY==='string'&&/^[A-Za-z0-9-]{8,128}$/.test(config.STADIA_API_KEY)?config.STADIA_API_KEY:'';
+ const ask=async(url:string)=>{const signal=AbortSignal.timeout?AbortSignal.timeout(6000):undefined;const r=await lookup(url,{headers:{'User-Agent':'ai-arenda/1.0 (rental map)','Accept':'application/json'},signal});return r.ok?await r.json() as Row:null;};
+ if(stadia)try{
+  const url=new URL('https://api.stadiamaps.com/geocoding/v1/search');url.searchParams.set('text',text);url.searchParams.set('boundary.country','KZ');url.searchParams.set('focus.point.lon',String(centre[0]));url.searchParams.set('focus.point.lat',String(centre[1]));url.searchParams.set('lang','ru');url.searchParams.set('size','1');url.searchParams.set('api_key',stadia);
+  const hit=(await ask(url.toString()))?.features?.[0],[lon,lat]=(hit?.geometry?.coordinates||[]).map(Number);
+  // A named place, a street or a house: the city itself is no landmark.
+  if(hit&&['venue','street','address'].includes(hit.properties?.layer)&&near(lon,lat))return spot(lon,lat,hit.properties?.name);
+ }catch{/* The public search below tries the same words. */}
+ try{
+  const list=await ask('https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&countrycodes=kz&accept-language=ru&q='+encodeURIComponent(text)) as Row[]|null,hit=Array.isArray(list)?list[0]:null,lon=Number(hit?.lon),lat=Number(hit?.lat);
+  if(hit&&!['city','town','administrative','state','country'].includes(String(hit.type||hit.addresstype))&&near(lon,lat))return spot(lon,lat,hit.name||hit.display_name);
+ }catch{/* Not found is an answer too. */}
+ return {found:false};
+}
 // Whether the flat has a pin that matches its address now (a pin from an old address does not count).
 export async function hasFreshPoint(db:D1Database,p:Row){const l=await one(db,'SELECT address_fingerprint FROM property_locations WHERE property_id=?',p.id);return !!l&&l.address_fingerprint===fingerprint(p);}

@@ -25,7 +25,7 @@ import {countdown,mapCities,validPoint,type MapPoint} from './map-math';
 import {MapSheetHead} from './MapSheetHead';
 import {AutopilotThreads,type FeedNeed} from './AutopilotThreads';
 import {AutopilotHandoff} from './AutopilotHandoff';
-import {BATH_TYPES as BATH_KINDS,categoryOf,withCategory,PAST_TEXT,askFirst,understoodNote,notUnderstoodNote,chipDraft,freshDraft,guestRequestFromText,guestSummary,matchingBody,newDraft,shownReasons,type GuestDraft} from './ai-request';
+import {BATH_TYPES as BATH_KINDS,categoryOf,withCategory,PAST_TEXT,nearPlace,placeMissedNote,pinPrice,askFirst,understoodNote,notUnderstoodNote,chipDraft,freshDraft,guestRequestFromText,guestSummary,matchingBody,newDraft,shownReasons,type GuestDraft} from './ai-request';
 import type {HeadAction} from './head-line';
 import {Action,Grip,SheetHeading,SheetRow,Stage,h,handleHeight,topInset} from './SheetParts';
 import {GuestForm} from './GuestForm';
@@ -62,7 +62,7 @@ const NOT_ON_MAP='Этого нет на карте сейчас: у объек�
 // A city the guest chose themselves (in the line, in «Уточнить») is never moved to where the phone is.
 const chosenCity=new Set<string>();
 const guestSearches=new Map<string,{draft:GuestDraft;preview:Row|null;foundAt:number}>(),SEARCH_KEEP=600000;
-const short=(amount:unknown)=>typeof amount==='number'&&amount>0?(amount>=10000?Math.round(amount/1000)+' тыс.':money(amount)):'Жильё';
+const short=(amount:unknown)=>typeof amount==='number'&&amount>0?pinPrice(amount):'Жильё';
 // «На ночь» books the tariff the search priced the home by: the owner's nightly price, or started days.
 const tariffOf=(draft:GuestDraft,property:Row):MapStay['mode']=>draft.mode==='night'?(property.estimate?.billingMode==='nightly'?'nightly':'daily'):draft.mode;
 const pointOf=(item:Row):MapPoint|null=>validPoint([item.location?.longitude,item.location?.latitude]);
@@ -134,6 +134,19 @@ function GuestPanel({setScanning,accountId,data,mapData,publish,selected,setSele
   const fix=getHere().fix;
   if(parsed.nearby&&!parsed.draft.near&&fix&&nearestCity(fix.point)===parsed.draft.city){void find({...parsed.draft,near:nearOf(fix.point)});return;}
   if(parsed.nearby&&!parsed.draft.near){pickThenFind.current=true;setPicking(true);expand(0);return;}
+  // «У вокзала»: the landmark is found on the map and the search looks around it; not found is said, and the whole city is searched.
+  if(parsed.place&&!lock.current){
+   const asked=parsed.place;lock.current=true;setWorking(true);
+   void (async()=>{
+    let spot:Row|null=null;
+    try{spot=await request('/api/operations/search/place',{city:parsed.draft.city,place:asked},undefined,undefined,'guest');}catch{/* Said below as not found. */}
+    lock.current=false;setWorking(false);
+    if(spot?.found){void find(nearPlace(parsed.draft,spot,asked));return;}
+    setHint({text:[note,placeMissedNote(asked)].filter(Boolean).join(' ')});
+    void find({...parsed.draft,near:null,priority:parsed.draft.priority==='closer'?'balanced':parsed.draft.priority});
+   })();
+   return;
+  }
   void find(nearNow(parsed.draft));
  };
  const ask=(text:string)=>{
