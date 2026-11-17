@@ -112,6 +112,14 @@ function GuestPanel({setScanning,accountId,data,mapData,publish,selected,setSele
   const result=await request('/api/public/matching?q='+encodeURIComponent(JSON.stringify(matchingBody(next))));
   foundAt.current=Date.now();setPreview({...result,properties:favouredFirst(result.properties||[],mine)});setRefine(false);setSelected('');expand(1);
  });
+ // «Снова туда же»: the home is priced for the stay in the line first, so the card books the tariff the search would
+ // (the night price too). Busy or not fitting on these conditions: the card opens without dates, and the guest picks them.
+ const again=(home:Row)=>guarded(async()=>{
+  const d=freshDraft({...draft,district:'',maxPrice:'',kinds:[],rooms:'',features:[],now:false,near:null,priority:'balanced'});
+  let found:Row|undefined;
+  try{found=((await request('/api/public/matching?q='+encodeURIComponent(JSON.stringify(matchingBody({...d,city:home.city||d.city})))))?.properties||[]).find((p:Row)=>p.id===home.id);}catch(e){if(isOffline(e))throw e;}
+  if(found)onIntent('property:'+home.id,{mode:tariffOf(d,found),start:d.start,end:d.end,guests:d.guests});else onIntent('property:'+home.id);
+ });
  // The AI line: free text becomes the same conditions the form builds, then the usual search runs.
  // The text is read by rules, not by a model; what the rules cut or cannot take is said, never guessed.
  const ask=(text:string)=>{
@@ -322,7 +330,7 @@ function GuestPanel({setScanning,accountId,data,mapData,publish,selected,setSele
   {!stay&&near&&!preview&&!picked&&!formOnly&&<View style={h.listRow}><View style={h.grow}><Text numberOfLines={1} style={h.eventTitle}>{near.title}</Text><Text numberOfLines={1} style={h.note}>{near.label}</Text></View><Action secondary title="Маршрут" onPress={()=>go(near)}/></View>}
   {/* The guest's own stays as the same feed: what waits for the guest on top, a row for every other booking. */}
   {!preview&&!picked&&!stay&&!formOnly&&<AutopilotThreads role="guest" data={data} now={serverNow(data)} paymentMode={data.paymentMode} onOpen={(kind,id)=>onOpenProcess(kind,id)} onAll={trips.length?()=>onOpenPage('bookings'):undefined}/>}
-  {!preview&&!picked&&!stay&&!formOnly&&<AgainRow properties={data.properties||[]} mine={mine} onOpen={p=>{const d=freshDraft(draft);onIntent('property:'+p.id,{mode:tariffOf(d,p),start:d.start,end:d.end,guests:d.guests});}}/>}
+  {!preview&&!picked&&!stay&&!formOnly&&<AgainRow properties={data.properties||[]} mine={mine} onOpen={again}/>}
   {picked&&<View style={h.listRow}><Heart plain on={mine.favorites.includes(picked.id)} title={picked.title} onPress={()=>heart(picked.id)}/><View style={h.grow}><Text numberOfLines={1} style={h.eventTitle}>{picked.title}</Text><Text numberOfLines={1} style={h.note}>{[typeof picked.price==='number'?money(picked.price)+' за сутки':'',picked.district].filter(Boolean).join(' · ')}</Text></View><Action secondary title="Открыть" onPress={()=>onIntent('property:'+picked.id)}/></View>}
  </MapSheetHead>;
  // The form and the results live in the opened sheet only; a running request to owners keeps its place in any state.

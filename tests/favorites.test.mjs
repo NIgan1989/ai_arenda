@@ -28,6 +28,9 @@ test('a home that left the catalogue leaves the favourites; the list is capped',
   publish(f,f.property);f.db.raw.prepare('DELETE FROM guest_favorites').run();
   for(let i=0;i<MAX_FAVORITES;i++){const id=(await f.owner.createProperty({title:'Home '+i,city:'Павлодар',district:'Центр',address:'A',description:'T',price:10000,rooms:1,capacity:2,cleaningMinutes:90})).id;f.db.raw.prepare('INSERT INTO guest_favorites VALUES (?,?,?)').run('guest',id,now());}
   await assert.rejects(setFavorite(f.guest,{propertyId:f.property,on:true}),/Уберите лишние/);
+  // Homes that left the catalogue cannot be taken back in the app, so they do not use up the allowance.
+  f.db.raw.prepare("UPDATE properties SET published=0 WHERE title='Home 0'").run();
+  assert.equal((await setFavorite(f.guest,{propertyId:f.property,on:true})).favorites.length,MAX_FAVORITES);
  }finally{f.db.close();}
 });
 

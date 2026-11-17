@@ -27,9 +27,9 @@ export async function setFavorite(s:RentalService,body:Row){
  const p=await one(s.db,`SELECT p.id,p.owner_id FROM properties p WHERE p.id=? AND p.published=1 AND p.archived_at IS NULL AND p.demo_owner IS NULL AND ${pilotPropertyVisibleSql('p')}`,propertyId);
  if(!p)throw new DomainError('Жильё недоступно.',404);
  if(p.owner_id===s.userId)throw new DomainError('Своё жильё в избранное не добавляют.',409);
- const count=await one(s.db,'SELECT COUNT(*) n FROM guest_favorites WHERE guest_id=?',s.userId);
- const saved=await one(s.db,'SELECT 1 x FROM guest_favorites WHERE guest_id=? AND property_id=?',s.userId,propertyId);
- if(!saved&&Number(count?.n||0)>=MAX_FAVORITES)throw new DomainError('В избранном уже '+MAX_FAVORITES+' объектов. Уберите лишние.',409);
+ // Only what the guest can see and take back counts: a home that left the catalogue does not use up the allowance.
+ const shown=(await guestFavorites(s.db,s.userId)).favorites;
+ if(!shown.includes(propertyId)&&shown.length>=MAX_FAVORITES)throw new DomainError('В избранном уже '+MAX_FAVORITES+' объектов. Уберите лишние.',409);
  await q(s.db,'INSERT OR IGNORE INTO guest_favorites(guest_id,property_id,created_at) VALUES (?,?,?)',s.userId,propertyId,epoch()).run();
  return {...await guestFavorites(s.db,s.userId),message:'Добавлено в избранное.'};
 }
