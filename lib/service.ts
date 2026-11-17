@@ -428,7 +428,9 @@ export class RentalService {
     if(city.length>80||!['daily','hourly','night'].includes(mode))throw new DomainError('Проверьте город и вид аренды.');
     const catalog=await this.publicCatalog(options),cities=[...new Set(catalog.properties.map(p=>String(p.city)))].sort();
     const cityKey=city.toLocaleLowerCase('ru'),exactCity=catalog.properties.some(p=>String(p.city).toLocaleLowerCase('ru')===cityKey);
-    let items=catalog.properties.filter(p=>(!city||(exactCity?String(p.city).toLocaleLowerCase('ru')===cityKey:String(p.city).toLocaleLowerCase('ru').includes(cityKey)))&&p.capacity>=guests&&(mode!=='hourly'||p.policy.hourly_price>0)&&(!categories[filters.category]||kindCategory(p.details?.type)===filters.category));
+    // Homes unless the bath category is asked for by name or by its types: a bath never shows among homes.
+    const kinds=Array.isArray(filters.kinds)?filters.kinds:[],category=categories[filters.category]?filters.category:kinds.length&&kinds.every((k:string)=>kindCategory(k)==='bath')?'bath':'stay';
+    let items=catalog.properties.filter(p=>(!city||(exactCity?String(p.city).toLocaleLowerCase('ru')===cityKey:String(p.city).toLocaleLowerCase('ru').includes(cityKey)))&&p.capacity>=guests&&(mode!=='hourly'||p.policy.hourly_price>0)&&kindCategory(p.details?.type)===category);
     let range:{start:number;end:number}|null=null;
     if(filters.start||filters.end){
       range=interval(filters.start,filters.end);
