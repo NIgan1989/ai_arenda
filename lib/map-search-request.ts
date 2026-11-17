@@ -4,7 +4,12 @@ export function mapSearchFilters(input:Record<string,unknown>){
  for(const key of ['city','guests','rooms','roomsExact','minPrice','maxPrice','mode','sort','start','end'])if(typeof input[key]==='string'&&input[key].length<=120&&input[key]!=='')filters[key]=input[key];
  return filters;
 }
-const normal=(text:string)=>text.toLocaleLowerCase('ru').replace(/ё/g,'е');
+// Lower case, «е» for «ё», and the spellings the rules below do not need to know one by one: «вай фай» and «wi fi» are
+// «wifi», «кондей» a «кондиционер», a few Kazakh words of a request their Russian ones. «Завтрак» is set apart first,
+// so that it is never read as «завтра» (it is named back as not searched, see UNSEARCHED).
+const KZ_WORDS:[RegExp,string][]=[[/п[әа]тер[а-яәіңғүұқөһ]*/g,'квартира'],[/монша[а-яәіңғүұқөһ]*/g,'баня'],[/т[әа]ул[іи]к[а-яәіңғүұқөһ]*/g,'сутки'],[/сағат[а-яәіңғүұқөһ]*/g,'часа'],[/қонақ\s*үй[а-яәіңғүұқөһ]*/g,'гостиница']];
+const normal=(text:string)=>KZ_WORDS.reduce((t,[from,to])=>t.replace(from,to),text.toLocaleLowerCase('ru').replace(/ё/g,'е'))
+ .replace(/завтрак[а-я]*/g,'zavtrak').replace(/(?:вай|wi)[\s-]+(?:фай|fi)/g,'wifi').replace(/(?:^|[^а-я])конд(?:ей|еем|ея|ик[а-я]*)(?=$|[^а-я])/g,' кондиционер');
 export function mapSearchRequest(text:string,current:Filters,cities:string[],now=Date.now()){
  const request=normal(text),filters:Filters={...current,page:'1'},applied:string[]=[],notes:string[]=[];
  const city=[...new Set(cities)].sort((a,b)=>b.length-a.length).find(city=>{const stem=normal(city).replace(/[а-я]$/u,c=>/[аыь]$/.test(c)?'':c);return stem.length>=3&&new RegExp('(?:^|[^а-я])'+stem.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'(?:[аеуы]?)(?=$|[^а-я])','u').test(request);});
@@ -202,6 +207,9 @@ const WISHES: [RegExp, string][] = [
   [/(?:^|[^а-я])фен(?:ом)?(?=$|[^а-я])/, 'hairdryer'],
   [/утюг/, 'iron'],
   [/детск[а-я]*\s+кроват|кроватк/, 'crib'],
+  [/(?:постельн[а-я]*\s+)?бель[ея]|простын/, 'linen'],
+  [/полотенц/, 'towels'],
+  [/джакузи|гидромассаж/, 'jacuzzi'],
   [/собак|собач|(?:^|[^а-я])пс(?:ом|а)(?=$|[^а-я])|кошк|(?:^|[^а-я])кот(?:ом|а|иком)(?=$|[^а-я])|питом|животн/, 'pets'],
 ];
 // What a company asks of a bath (lib/listings.ts categoryAmenities.bath): read only in a bath request.
@@ -213,6 +221,17 @@ const BATH_WISHES: [RegExp, string][] = [
   [/мангал|шашлык/, 'grill'],
   [/биль[яа]рд/, 'billiards'],
   [/полотенц|простын/, 'towels'],
+  [/парилк|(?:^|[^а-я])парн(?:ая|ой|ую)(?=$|[^а-я])/, 'steam'],
+  [/джакузи|гидромассаж/, 'jacuzzi'],
+];
+// A wish that was read is not named back as not searched.
+const READ_WORDS: Record<string, string[]> = { smoking: ['курение'], parties: ['праздник'], nodeposit: ['депозит'], jacuzzi: ['джакузи'], steam: ['баня'] };
+// The owner's rules and ways of check-in a guest of a home asks for (lib/smart-matching.ts ruleFits).
+// «Без депозита» is read apart from the other «без …»: it asks for something, it does not take a wish off.
+const RULES: [RegExp, string][] = [
+  [/(?:^|[^а-я])(?:можно|разреш[а-я]*)\s+(?:курить|курени)|(?:^|[^а-я])для\s+курящ/, 'smoking'],
+  [/вечеринк|тусовк|(?:^|[^а-я])праздн|день\s+рождени/, 'parties'],
+  [/самозасел|бесконтакт|(?:^|[^а-я])сейф|умн[а-я]*\s+замок|кодов[а-я]*\s+замок/, 'selfcheckin'],
 ];
 // What is asked of a banquet hall (lib/listings.ts categoryAmenities.banquet): read only in a banquet request.
 const BANQUET_WISHES: [RegExp, string][] = [
@@ -231,14 +250,14 @@ const UNSEARCHED: [RegExp, string][] = [
   // «Дом с баней»: a home that has one. A request for a bath itself is the category «Баня» and is searched.
   [/(?:^|[^а-я])бан(?:я|ей|ю|и|ька|ькой)(?=$|[^а-я])|саун/, 'баня'],
   [/бассейн/, 'бассейн'],
-  [/джакузи/, 'джакузи'],
   [/мангал|барбекю|шашлы/, 'мангал'],
   [/отзыв|рейтинг|оценк/, 'отзывы'],
   [/депозит|залог/, 'депозит'],
+  [/zavtrak/, 'завтрак'],
   [/(?:^|[^а-я])вид(?:ом)?\s+на/, 'вид из окна'],
   [/(?:^|[^а-я])этаж/, 'этаж'],
   [/курить|курени|курящ/, 'курение'],
-  [/вечеринк|день рождени|праздник|компани(?:ей|я)/, 'праздник'],
+  [/вечеринк|день рождени|праздник/, 'праздник'],
 ];
 
 // «Рядом с вокзалом», «возле ТРЦ Батыр Молл», «у набережной»: a landmark, not «рядом со мной». Up to three words
@@ -263,7 +282,13 @@ const PLACE_NAMES: [RegExp, string][] = [
 ];
 
 /** The landmark the text asks to be near, in words for a map search: 'железнодорожный вокзал', 'трц батыр молл'; '' when none. */
+// «На Торайгырова», «улица Ломова», «мкр Усольский»: a street or a микрорайон is searched around as a landmark is.
+const PLACE_STREET = new RegExp('(?:^|[^а-я])(улиц[аеуы]|ул\\.?|проспект[а-я]*|пр-т|мкр\\.?|микрорайон[а-я]*)\\s+(' + PLACE_WORD + '(?:\\s+' + PLACE_WORD + ')?)');
+const PLACE_ON = /(?:^|[^а-я])на\s+([а-я]{3,}(?:ова|ева|ина|ына))(?=$|[^а-я])/;
 export function statedPlace(text: string): string {
+  const street = text.match(PLACE_STREET), on = text.match(PLACE_ON);
+  if (street) return (/^(?:мкр|микро)/.test(street[1]) ? 'микрорайон ' : 'улица ') + street[2].replace(/[«»"]/g, '').trim();
+  if (on && !/^(?:двоих|троих|одного|сына|часова)$/.test(on[1])) return 'улица ' + on[1];
   const said = (text.match(PLACE_AFTER) || text.match(PLACE_AT))?.[1]?.replace(/[«»"]/g, '').trim() || '';
   if (said.length < 3) return '';
   return PLACE_NAMES.find(([pattern]) => pattern.test(said))?.[1] || said;
@@ -272,8 +297,8 @@ export function statedPlace(text: string): string {
 /** What the text asks for that the search cannot check: ['джакузи', 'отзывы']. The text is already lower case. */
 // What a bath request can check (BATH_WISHES) or takes for granted (a company) is not named back there.
 const BATH_SEARCHED = ['баня', 'бассейн', 'мангал', 'праздник'];
-export function unsearched(text: string, bath = false): string[] {
-  return UNSEARCHED.filter(([pattern, word]) => pattern.test(text) && !(bath && BATH_SEARCHED.includes(word))).map(([, word]) => word);
+export function unsearched(text: string, bath = false, read: string[] = []): string[] {
+  return UNSEARCHED.filter(([pattern, word]) => pattern.test(text) && !(bath && BATH_SEARCHED.includes(word)) && !read.includes(word)).map(([, word]) => word);
 }
 
 const localISO = (time: number) => new Date(time + KZ).toISOString().slice(0, 16);
@@ -595,7 +620,7 @@ function statedHours(text: string): { time: string; hours: number } | null {
 // "на 3 часа", "на сутки", "на двое суток", "на неделю", "почасовая".
 // A stay longer than the line searches for is cut to the longest one, and `remarks` says so.
 function statedLength(text: string, remarks: string[]): { mode: 'daily' | 'hourly' | 'night' | null; units: number | null } {
-  const stay = text.match(/на\s+(?:(\d{1,3}|один|одну|одни|два|две|двое|пару|три|трое|четыре|пять|шесть|семь|несколько)\s+)?(час|сутк|суток|ноч|дн|день|недел|месяц)/);
+  const stay = text.match(/на\s+(?:(\d{1,3}|один|одну|одни|два|две|двое|пару|три|трое|четыре|пять|шесть|семь|несколько)\s+)?(час|сутк|суток|ноч|дн|день|недел|месяц)(?![а-я]*\s+рожд)/);
   if (stay) {
     const count = Math.max(1, stay[1] ? COUNT[stay[1]] ?? Number(stay[1]) : 1);
     if (stay[2] === 'час') {
@@ -615,20 +640,23 @@ function statedLength(text: string, remarks: string[]): { mode: 'daily' | 'hourl
 // "до 15000", "до 15 тысяч", "не дороже 20 000". A time, a date or a count after "до" is not money.
 // `perUnit`: the amount is a price per day, night or hour ("до 15 тысяч за сутки"), not for the whole stay.
 function statedBudget(text: string, banquet = false): { value: string; perUnit: boolean } | null {
-  const match = text.match(/(?:^|[^а-я])(?:до|не дороже|не больше|максимум|бюджет)\s*(\d{1,3}(?:[ . ]\d{3})+|\d+)\s*(тыс[а-я]*\.?|к(?![а-я]))?/);
+  const match = text.match(/(?:^|[^а-я])(?:до|не дороже|не больше|максимум|бюджет|за)\s*(\d{1,3}(?:[ . ]\d{3})+|\d+(?:[.,]\d)?)\s*(тыс[а-я]*\.?|к(?![а-я])|млн\.?|миллион[а-я]*)?/);
   if (!match) return null;
+  const times = !match[2] ? 1 : /^(?:млн|миллион)/.test(match[2]) ? 1000000 : 1000;
+  // «До 1,5» without «млн» is no sum; «до 15.000» is fifteen thousand with a dot between the thousands.
+  if (!match[2] && /^\d+[.,]\d$/.test(match[1])) return null;
   const rest = text.slice((match.index || 0) + match[0].length);
   // «До 8 000 за гостя», «с человека»: the price per guest of a banquet. A sum too small for a whole hall is one too.
   const each = '(?:за|с|на)\\s+(?:одного\\s+|каждого\\s+)?(?:гостя|человека|персону|чел(?![а-я]))';
   if (banquet) {
-    const sum = Number(match[1].replace(/[ . ]/g, '')) * (match[2] ? 1000 : 1);
+    const sum = (/^\d+[.,]\d$/.test(match[1]) ? Number(match[1].replace(',', '.')) : Number(match[1].replace(/\D/g, ''))) * times;
     if (!(sum >= 500 && sum <= Number(NO_BUDGET))) return null;
     const named = new RegExp('^\\s*(?:₸|тг|тенге)?\\s*' + each).test(rest) || new RegExp(each + '\\s+(?:до|не дороже|не больше|максимум)').test(text);
     if (!named && !match[2] && /^\s*(?:гост|человек|чел)/.test(rest)) return null;
     return { value: String(Math.round(sum)), perUnit: named || sum < 50000 };
   }
   if (!match[2] && new RegExp('^\\s*(?:[:.]\\d|час|гост|человек|чел|сут|дн|ноч|комн|утра|вечера|' + MONTH + ')').test(rest)) return null;
-  const value = Number(match[1].replace(/[ . ]/g, '')) * (match[2] ? 1000 : 1);
+  const value = (/^\d+[.,]\d$/.test(match[1]) ? Number(match[1].replace(',', '.')) : Number(match[1].replace(/\D/g, ''))) * times;
   if (!(value >= 500 && value <= Number(NO_BUDGET))) return null;
   const unit = '(?:за|в)\\s+(?:сутки|ночь|день|час)';
   const perUnit = new RegExp('^\\s*(?:₸|тг|тенге)?\\s*' + unit + '(?=$|[^а-я])').test(rest) || new RegExp(unit + '\\s+(?:до|не дороже|не больше|максимум)').test(text);
@@ -674,7 +702,9 @@ export function guestSearchRequest(text: string, current: Row, cities: string[],
   // A banquet is named by the hall («банкетный зал») or by what it is for («той на 100 человек», «поминки»): any hall
   // of the category, or only a «кафе» when that alone is said. The category chosen before stays for a bare phrase.
   const occasion = statedOccasion(request);
-  const hall = kinds.includes('banquet') || (!!occasion && !kinds.some(k => !BANQUET_KINDS.includes(k)));
+  // «Квартира на день рождения» is a home for a party, not a hall: an occasion makes a hall only when no home is named.
+  const homeNamed = /квартир|жиль[ея]|однушк|двушк|трешк|студи|(?:^|[^а-я])(?:дом|домик|коттедж)(?=$|[^а-я])|гостиниц|хостел/.test(request);
+  const hall = kinds.includes('banquet') || (!!occasion && !homeNamed && !kinds.some(k => !BANQUET_KINDS.includes(k)));
   if (hall) kinds.splice(0, kinds.length, ...(kinds.includes('cafe') && !kinds.includes('banquet') ? ['cafe'] : BANQUET_KINDS));
   if (kinds.length) filters.kinds = kinds;
   const banquet = isBanquetRequest(filters.kinds || current.kinds);
@@ -697,7 +727,12 @@ export function guestSearchRequest(text: string, current: Row, cities: string[],
   const party = PARTY.find(([pattern]) => pattern.test(request))?.[1];
   const counted = request.match(/(?:^|\D)(\d{1,4})\s*(?:гост|человек|чел(?![а-я])|взросл|персон)/);
   const most = banquet ? MAX_BANQUET_GUESTS : MAX_GUESTS;
-  const guests = party ?? (counted ? Number(counted[1]) : null);
+  // «С ребёнком», «семья с двумя детьми»: the children come on top of the grown-ups (two when none are counted).
+  const child = request.match(/(?:^|[^а-я])(?:с|и)\s+(?:(\d|двумя|двое|тремя|трое|одним)\s+)?(?:реб[еи]н[а-я]*|малыш[а-я]*|дет(?:ьми|ей|и)|дочк[а-я]*|сын[а-я]*)(?=$|[^а-я])/);
+  const kids = !child ? 0 : /^\d$/.test(child[1] || '') ? Math.max(1, Number(child[1])) : ({ двумя: 2, двое: 2, тремя: 3, трое: 3 } as Record<string, number>)[child[1] || ''] || (/дет/.test(child[0]) && !child[1] ? 2 : 1);
+  const adults = party ?? (counted ? Number(counted[1]) : null);
+  const grown = counted && !/взросл/.test(counted[0]) && adults !== null ? adults : null; // «на 4 гостей с ребёнком»: the four are everyone
+  const guests = kids && !banquet ? (grown ?? (adults ?? 2) + kids) : adults;
   if (guests !== null && guests >= 1) {
     if (guests > most) remarks.push('Гостей не больше ' + most + ', ищу на ' + most + '.');
     filters.guests = String(Math.min(guests, most));
@@ -719,11 +754,25 @@ export function guestSearchRequest(text: string, current: Row, cities: string[],
   // «Без парковки», «без животных»: what follows «без» is taken off the wishes, not asked for.
   const without = [...request.matchAll(/(?:^|[^а-я])без\s+([а-яa-z -]+?)(?=$|[,.;!?]|\s+(?:с|со|но|а|зато|и\s+со?)\s)/g)].map(match => match[1]).join(' , ');
   const asked = without ? request.replace(/(?:^|[^а-я])без\s+[а-яa-z -]+?(?=$|[,.;!?]|\s+(?:с|со|но|а|зато|и\s+со?)\s)/g, ' ') : request;
-  const known = banquet ? [...BANQUET_WISHES, ...WISHES.filter(([, id]) => id === 'parking' || id === 'aircon')] : [...WISHES, ...(bath ? BATH_WISHES : [])];
+  // Only what the owners of the category can mark: a bath has no balcony, a home no pool.
+  const known = banquet ? [...BANQUET_WISHES, ...WISHES.filter(([, id]) => ['parking', 'aircon', 'wifi'].includes(id))]
+    : bath ? [...BATH_WISHES, ...WISHES.filter(([, id]) => ['wifi', 'kitchen', 'tv', 'parking'].includes(id))]
+    : [...WISHES, ...RULES];
   const wishes = known.filter(([pattern]) => pattern.test(asked)).map(([, id]) => id);
+  // «Без депозита», «без залога»: a home whose owner asks for none.
+  if (!bath && !banquet && /(?:^|[^а-я])без\s+(?:депозит|залог)/.test(request)) wishes.push('nodeposit');
   const dropped = without ? known.filter(([pattern]) => pattern.test(without)).map(([, id]) => id) : [];
   if (wishes.length || dropped.length) {
     filters.features = [...new Set([...(Array.isArray(current.features) ? current.features : []), ...wishes])].filter(id => !dropped.includes(id) || wishes.includes(id));
+    stated.wishes = true;
+  }
+
+  // «Первый этаж», «не выше 3 этажа»: the highest floor a home may be on.
+  // «Не на первом этаже» is not a cap: it is left unsearched and said so (the word «этаж» stays in the note).
+  const floor = bath || banquet || /(?:^|[^а-я])не\s+(?:на\s+)?(?:перв(?:ый|ом)|1-?(?:й|м|ом))\s+этаж/.test(request) ? 0 : /(?:^|[^а-я])(?:перв(?:ый|ом)|1-?(?:й|м|ом))\s+этаж/.test(request) ? 1
+    : Number(request.match(/(?:не\s+выше|до|максимум|не\s+выше\s+чем)\s+(\d{1,2})(?:-?(?:го|й|ого))?\s+этаж/)?.[1] || 0);
+  if (floor >= 1) {
+    filters.maxFloor = floor;
     stated.wishes = true;
   }
 
@@ -800,7 +849,8 @@ export function guestSearchRequest(text: string, current: Row, cities: string[],
   const understood = nearby || plain || !!place || !!past || remarks.length > 0 || filters.mode !== current.mode || Object.values(stated).some(Boolean);
   // Said after `understood` is settled: a phrase of nothing but such words is not a request the rules can run.
   // A caller that does not find landmarks on the map (options.places) still tells the guest so.
-  const missed = [...unsearched(request, bath || banquet), ...(place && !options.places ? ['место рядом с ориентиром'] : [])];
+  const read = [...(Array.isArray(filters.features) ? filters.features : []).flatMap((id: string) => READ_WORDS[id] || []), ...(filters.maxFloor ? ['этаж'] : [])];
+  const missed = [...unsearched(request, bath || banquet, read), ...(place && !options.places ? ['место рядом с ориентиром'] : [])];
   if (missed.length) remarks.push('Пока не умею искать: ' + missed.join(', ') + '.');
   return { filters, stated, nearby, ...(place ? { place } : {}), understood, ...(past ? { past } : {}), remarks };
 }

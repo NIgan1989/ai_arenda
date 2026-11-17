@@ -30,7 +30,7 @@ export function GuestForm({ draft, onChange, onPickPoint, onNearMe, onSubmit, bu
   // Home type, rooms, district, wishes, priority and the point on the map: how many of them are set.
   const category = categoryOf(draft), bath = category === 'bath', hall = category === 'banquet', venue = category !== 'stay';
   // In «Баня» both types chosen is the category itself, not a condition.
-  const set = (venue ? Number(draft.kinds.length < allKinds(category).length) : draft.kinds.length) + Number(!!draft.rooms) + Number(!!draft.district) + draft.features.length + Number(draft.priority !== 'balanced') + Number(!!draft.near);
+  const set = (venue ? Number(draft.kinds.length < allKinds(category).length) : draft.kinds.length) + Number(!!draft.rooms) + Number(!!draft.district) + draft.features.length + Number(draft.priority !== 'balanced') + Number(!!draft.near) + Number(!!draft.maxFloor);
   // «Баня» never loses its last type: an empty list would mean «Жильё».
   const toggleKind = (id: string) => {
     const kinds = draft.kinds.includes(id) ? draft.kinds.filter(v => v !== id) : [...draft.kinds, id];

@@ -46,6 +46,7 @@ export type GuestDraft = {
   kinds: string[]; // types of home (lib/listings.ts propertyTypes); [] for any
   rooms: string; // '2' exactly two rooms, '2+' at least two; '' for any
   now: boolean; // «Сейчас»: only homes ready now that confirm at once, the nearest first
+  maxFloor?: number; // «первый этаж», «не выше 3 этажа»: the highest floor; absent or 0 for any
   occasion?: string; // «Банкет» only: what the hall is taken for (OCCASIONS); 'memorial' keeps every word quiet
 };
 export type ParsedRequest = {
@@ -111,7 +112,7 @@ export function withKind(draft: GuestDraft, category: Category, kind: string | n
 export function withCategory(draft: GuestDraft, category: Category, now = Date.now()): GuestDraft {
   if (categoryOf(draft) === category) return draft;
   const { occasion: _left, ...rest } = draft;
-  const clean = { ...rest, district: '', maxPrice: '', perUnit: true, priority: 'balanced' as const, features: [], near: null, rooms: '', now: false };
+  const clean = { ...rest, district: '', maxPrice: '', perUnit: true, priority: 'balanced' as const, features: [], near: null, rooms: '', now: false, maxFloor: 0 };
   if (category === 'banquet') return { ...clean, ...defaultBanquet(now), guests: 50, kinds: [...BANQUET_KINDS] };
   return category === 'bath'
     ? { ...clean, ...defaultStay('hourly', now), guests: Math.min(Math.max(draft.guests, 4), SHARED_MAX_GUESTS), kinds: [...BATH_KINDS] }
@@ -133,17 +134,28 @@ export const WISHES: [string, string][] = [
   ['elevator', 'Лифт'],
   ['crib', 'Детская кроватка'],
   ['hairdryer', 'Фен'],
-  ['iron', 'Утюг']
+  ['iron', 'Утюг'],
+  ['linen', 'Постельное бельё'],
+  ['towels', 'Полотенца'],
+  ['jacuzzi', 'Джакузи'],
+  // The owner's rules and way of check-in (lib/smart-matching.ts RULE_FEATURES).
+  ['selfcheckin', 'Самозаселение'],
+  ['nodeposit', 'Без депозита'],
+  ['smoking', 'Можно курить'],
+  ['parties', 'Для вечеринок']
 ];
 // What a company asks of a bath; the ids are the shared amenities.
 export const BATH_WISHES: [string, string][] = [
+  ['steam', 'Парилка'],
   ['pool', 'Бассейн'],
+  ['jacuzzi', 'Джакузи'],
   ['plunge', 'Купель'],
   ['brooms', 'Веники'],
   ['karaoke', 'Караоке'],
   ['grill', 'Мангал'],
   ['billiards', 'Бильярд'],
   ['towels', 'Полотенца'],
+  ['wifi', 'Wi-Fi'],
   ['parking', 'Парковка']
 ];
 // What is asked of a banquet hall; the ids are the shared amenities.
@@ -156,6 +168,8 @@ export const BANQUET_WISHES: [string, string][] = [
   ['karaoke', 'Караоке'],
   ['ownfood', 'Свои продукты'],
   ['kidsroom', 'Детская комната'],
+  ['aircon', 'Кондиционер'],
+  ['wifi', 'Wi-Fi'],
   ['parking', 'Парковка']
 ];
 export const wishesOf = (category: Category) => (category === 'bath' ? BATH_WISHES : category === 'banquet' ? BANQUET_WISHES : WISHES);
@@ -170,7 +184,7 @@ const clamp = (value: number, min: number, max: number) => Math.max(min, Math.mi
 
 /** What the form starts with: today until tomorrow, two guests, no budget. */
 export function newDraft(city: string, now = Date.now()): GuestDraft {
-  return { city, district: '', ...defaultStay('daily', now), guests: 2, maxPrice: '', perUnit: true, priority: 'balanced', features: [], near: null, kinds: [], rooms: '', now: false };
+  return { city, district: '', ...defaultStay('daily', now), guests: 2, maxPrice: '', perUnit: true, priority: 'balanced', features: [], near: null, kinds: [], rooms: '', now: false, maxFloor: 0 };
 }
 
 /** The same conditions with the stay moved out of the past, for a screen that stayed open. */
@@ -203,7 +217,7 @@ export function guestRequestFromText(text: string, draft: GuestDraft, cities: st
   const usual = category === 'banquet' ? defaultBanquet(now, kept.occasion) : defaultStay(bath ? 'hourly' : 'daily', now);
   const base: GuestDraft = refining
     ? kept
-    : { ...kept, ...usual, district: '', guests: venue ? kept.guests : 2, maxPrice: '', perUnit: true, priority: 'balanced', features: [], near: null, kinds: allKinds(category), rooms: '', now: false };
+    : { ...kept, ...usual, district: '', guests: venue ? kept.guests : 2, maxPrice: '', perUnit: true, priority: 'balanced', features: [], near: null, kinds: allKinds(category), rooms: '', now: false, maxFloor: 0 };
   const result = guestSearchRequest(text, base, cities, now, { places: true });
   const filters = result.filters;
   const kinds: string[] = Array.isArray(filters.kinds) ? filters.kinds.filter((id: unknown) => typeof id === 'string' && Object.prototype.hasOwnProperty.call(HOME_KINDS, id)) : [];
@@ -227,7 +241,8 @@ export function guestRequestFromText(text: string, draft: GuestDraft, cities: st
     near: filters.near || null,
     kinds,
     rooms: typeof filters.rooms === 'string' && /^[1-9]\+?$/.test(filters.rooms) ? filters.rooms : '',
-    now: filters.now === true
+    now: filters.now === true,
+    maxFloor: Number(filters.maxFloor) >= 1 ? Number(filters.maxFloor) : 0
   };
   // "почасовая" names a tariff but no day and no length: the stay follows the new tariff.
   if (!hall && !result.past && next.mode !== base.mode && !result.stated.when) Object.assign(next, { ...switchStay(next.mode, base.start, now), mode: next.mode });
@@ -296,6 +311,7 @@ export function guestSummary(draft: GuestDraft, now = Date.now()) {
     from,
     draft.now ? (draft.near && !draft.near.label ? 'готово сейчас, рядом с вами' : 'готово сейчас') : '',
     ...wishesOf(category).filter(([id]) => draft.features.includes(id)).map(([, title]) => (title === 'Wi-Fi' ? title : title.toLocaleLowerCase('ru'))),
+    draft.maxFloor ? (draft.maxFloor === 1 ? 'первый этаж' : 'не выше ' + draft.maxFloor + ' этажа') : '',
     draft.now ? '' : PRIORITY_WORDS[draft.priority] || ''
   ].filter(word => word && !said.includes(word.toLocaleLowerCase('ru')));
   // A landmark is named: "рядом: железнодорожный вокзал", not "рядом с выбранным местом".
@@ -338,6 +354,7 @@ export function matchingBody(draft: GuestDraft) {
     kinds: draft.kinds || [],
     rooms: draft.rooms || '',
     now: !!draft.now,
+    ...(draft.maxFloor ? { maxFloor: draft.maxFloor } : {}),
     ...(categoryOf(draft) === 'banquet' && draft.occasion ? { occasion: draft.occasion } : {})
   };
 }

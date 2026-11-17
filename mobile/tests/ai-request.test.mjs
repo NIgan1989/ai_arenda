@@ -18,7 +18,7 @@ const parse = (text, now = morning, from = draft) => guestRequestFromText(text, 
 const stay = result => [result.draft.mode, result.draft.start, result.draft.end];
 
 test('a new request is a day from today for two guests, with no budget', () => {
-  assert.deepEqual(draft, {city: 'Павлодар', district: '', mode: 'daily', start: '2026-11-11T14:00', end: '2026-11-12T12:00', guests: 2, maxPrice: '', perUnit: true, priority: 'balanced', features: [], near: null, kinds: [], rooms: '', now: false});
+  assert.deepEqual(draft, {city: 'Павлодар', district: '', mode: 'daily', start: '2026-11-11T14:00', end: '2026-11-12T12:00', guests: 2, maxPrice: '', perUnit: true, priority: 'balanced', features: [], near: null, kinds: [], rooms: '', now: false, maxFloor: 0});
   assert.equal(guestSummary(draft, morning), 'Павлодар · 11–12 ноября · 2 гостя');
   // The server needs a number: the largest budget it accepts stands for "no limit".
   const body = matchingBody(draft);
@@ -532,4 +532,27 @@ test('a bath said in the line: the whole category, four guests, its wishes in th
   assert.ok(!guestSummary(read('баня сейчас').draft, now).includes('заезд'));
   assert.deepEqual(read('квартира с сауной').draft.kinds, []);
   assert.equal(read('баня с ночёвкой').note, 'Баню бронируют по часам, ищу на 3 часа.');
+});
+
+test('every wish an owner can mark is read from text, and «завтрак» is not «завтра»', () => {
+  const read = text => parse(text).draft;
+  assert.equal(read('гостиница с завтраком').start, draft.start);
+  assert.match(parse('гостиница с завтраком').note, /завтрак/);
+  assert.deepEqual(read('с постельным бельём и полотенцами').features, ['linen', 'towels']);
+  assert.deepEqual(read('можно курить').features, ['smoking']);
+  assert.deepEqual(read('для вечеринки на 10 человек').features, ['parties']);
+  assert.deepEqual(read('бесконтактное заселение').features, ['selfcheckin']);
+  assert.deepEqual(read('без депозита').features, ['nodeposit']);
+  assert.equal(parse('можно курить').note, '');
+  assert.equal(read('первый этаж').maxFloor, 1);
+  assert.equal(read('не выше 3 этажа').maxFloor, 3);
+  assert.equal(matchingBody(read('не выше 3 этажа')).maxFloor, 3);
+  assert.deepEqual(read('вай фай и кондей').features.sort(), ['aircon', 'wifi']);
+  assert.equal(read('за 10 тысяч').maxPrice, '10000');
+  assert.equal(read('семья с двумя детьми').guests, 4);
+  assert.equal(read('с ребёнком').guests, 3);
+  assert.equal(read('на 4 гостей с ребёнком').guests, 4);
+  assert.deepEqual(read('квартира на день рождения').kinds, []);
+  assert.equal(parse('на Торайгырова').place, 'улица торайгырова');
+  assert.deepEqual(read('монша').kinds, ['banya', 'sauna']);
 });
