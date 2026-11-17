@@ -43,3 +43,11 @@ test('оповещения: жильё прежними словами, баня
   assert.ok(!isHome({ property_type: 'cafe' }));
   for (const type of ['banya', 'banquet']) for (const text of Object.values(stayWords(type))) assert.ok(!/аезд|ыезд|рожив|засел|жиль/i.test(text), text);
 });
+
+test('приёмка после гостей: в бане и зале свои замечания', async () => {
+  const { handoverIssueText } = await load('stay-handover-text');
+  assert.equal(handoverIssueText('late'), 'Поздний выезд');
+  assert.equal(handoverIssueText('late', true), 'Задержались дольше брони');
+  assert.equal(handoverIssueText('party', true), 'Жалоба соседей');
+  assert.equal(handoverIssueText('damage', true), 'Поломка или порча');
+});

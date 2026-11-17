@@ -4,7 +4,9 @@ export type HandoverIssue=keyof typeof HANDOVER_ISSUES;
 // The owner hands the home over within two days of the checkout; after that a stay without a handover reads «без замечаний».
 export const HANDOVER_WINDOW=2*86400;
 export const STAY_PHOTO_LIMIT=8;
-export const handoverIssueText=(code:string)=>(HANDOVER_ISSUES as Record<string,string>)[code]||code;
+// В бане и зале не выезжают и не устраивают «вечеринку»: те же коды, свои слова.
+const VENUE_ISSUES:Record<string,string>={late:'Задержались дольше брони',party:'Жалоба соседей'};
+export const handoverIssueText=(code:string,venue=false)=>(venue&&VENUE_ISSUES[code])||(HANDOVER_ISSUES as Record<string,string>)[code]||code;
 export type Handover={verdict:'ok'|'issues';issues:string[];note:string;cleaner_photos:number;created_at:number};
 // ask: the owner can still hand over; done: handed over; silent: the time passed without a handover, read as no issues.
 export function handoverState(b:{status:string;terms?:{actual_checkout?:number|null}|null;handover?:Handover|null},now:number):'ask'|'done'|'silent'|null{
