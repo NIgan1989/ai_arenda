@@ -182,7 +182,7 @@ export function GuestResults({ preview, draft, mine, onFavorite, selected, onSel
     }, 160);
   };
   // «Сейчас»: the time on the way comes first, it is what the guest decides by.
-  const mark = (flat: Row) => (mine ? markLabel(markOf(flat.id, mine)) : '');
+  const mark = (flat: Row) => (mine ? markLabel(markOf(flat.id, mine), ['banya', 'sauna', 'banquet', 'cafe'].includes(flat.details?.type)) : '');
   // «Заведение»: a hall says which venue it belongs to, when the venue has more than one hall and another name.
   const venueName = (flat: Row) => (flat.venue && Number(flat.venue.halls) > 1 && flat.venue.title !== flat.title ? String(flat.venue.title) : '');
   // The other free halls of the chosen one's venue: the guest switches between them without going back to the list.

@@ -1,3 +1,4 @@
+import {wordsOf,venueOr,TYPE_SQL} from './stay-words';
 import {UNREADY_SQL} from './unready';
 import {RentalService} from './service';
 import {defaultAssistantSettings} from './assistant';
@@ -56,23 +57,23 @@ async function automaticActions(service:RentalService){
   }
   if(policy.auto_assign&&policy.auto_confirm){
    // The guest said they left: free the flat so the cleaner can start. The owner is told.
-   const left=await service.all("SELECT b.id FROM bookings b JOIN booking_terms t ON t.booking_id=b.id WHERE b.property_id=? AND b.status='confirmed' AND t.checkout_reported_at IS NOT NULL AND t.actual_checkout IS NULL",policy.property_id);
-   for(const b of left){try{await delegated.bookingAction(b.id,{action:'checkout'});await service.notify(service.userId,'ИИ-администратор подтвердил выезд по сообщению гостя. Жильё ждёт уборки.','administrator-checkout:'+b.id,'owner').run();actions++;}catch(error){if(!expectedConflict(error))throw error;}}
+   const left=await service.all("SELECT b.id,"+TYPE_SQL+" FROM bookings b JOIN properties p ON p.id=b.property_id JOIN booking_terms t ON t.booking_id=b.id WHERE b.property_id=? AND b.status='confirmed' AND t.checkout_reported_at IS NOT NULL AND t.actual_checkout IS NULL",policy.property_id);
+   for(const b of left){try{await delegated.bookingAction(b.id,{action:'checkout'});await service.notify(service.userId,venueOr(b,'ИИ-администратор подтвердил выезд по сообщению гостя. Жильё ждёт уборки.','ИИ-администратор подтвердил '+wordsOf(b).leaveLow+' по сообщению гостя. Объект ждёт уборки.'),'administrator-checkout:'+b.id,'owner').run();actions++;}catch(error){if(!expectedConflict(error))throw error;}}
    // The guest says they arrived: with payment and deposit verified the AI confirms the check-in for the owner;
    // otherwise the owner is told once that only the payment check is missing.
-   const arrived=await service.all("SELECT b.id,b.guest_id,b.payment_status,t.deposit_status,p.title FROM bookings b JOIN booking_terms t ON t.booking_id=b.id JOIN properties p ON p.id=b.property_id WHERE b.property_id=? AND b.status='confirmed' AND t.checkin_reported_at IS NOT NULL AND t.actual_checkin IS NULL AND b.end>?",policy.property_id,now());
+   const arrived=await service.all("SELECT b.id,b.guest_id,b.payment_status,t.deposit_status,p.title,"+TYPE_SQL+" FROM bookings b JOIN booking_terms t ON t.booking_id=b.id JOIN properties p ON p.id=b.property_id WHERE b.property_id=? AND b.status='confirmed' AND t.checkin_reported_at IS NOT NULL AND t.actual_checkin IS NULL AND b.end>?",policy.property_id,now());
    for(const b of arrived){
     const title=b.title||'жильё';
     if(b.payment_status!=='owner_verified'||b.deposit_status==='pending'){
      // With in-app payment the guest is the one who can fix it: they are asked to pay in the booking card.
      const inApp=!!(await service.one("SELECT test_payments FROM platform_billing WHERE id='global'").catch(()=>null))?.test_payments;
-     if(inApp)await service.notify(b.guest_id,'Вы на месте в «'+title+'». Оплатите '+(b.payment_status!=='owner_verified'?'проживание':'депозит')+' в карточке брони, и ИИ-администратор сразу подтвердит заселение.','administrator-checkin-pay:'+b.id,'guest').run();
-     await service.notify(service.userId,'Гость на месте в «'+title+'», но оплата или депозит ещё не подтверждены. '+(inApp?'Гостя попросили оплатить в карточке брони; после оплаты ИИ-администратор сразу подтвердит заселение.':'Проверьте поступление, и ИИ-администратор сразу подтвердит заселение.'),'administrator-checkin-payment:'+b.id,'owner').run();continue;}
-    try{await delegated.bookingAction(b.id,{action:'checkin'});await service.notify(service.userId,'ИИ-администратор подтвердил заселение гостя в «'+title+'» по его сообщению.','administrator-checkin:'+b.id,'owner').run();actions++;}catch(error){
+     if(inApp)await service.notify(b.guest_id,venueOr(b,'Вы на месте в «'+title+'». Оплатите '+(b.payment_status!=='owner_verified'?'проживание':'депозит')+' в карточке брони, и ИИ-администратор сразу подтвердит заселение.','Вы на месте в «'+title+'». Оплатите '+(b.payment_status!=='owner_verified'?'бронь':'депозит')+' в карточке брони, и ИИ-администратор сразу подтвердит '+wordsOf(b).arriveAcc+'.'),'administrator-checkin-pay:'+b.id,'guest').run();
+     await service.notify(service.userId,'Гость на месте в «'+title+'», но оплата или депозит ещё не подтверждены. '+(inApp?venueOr(b,'Гостя попросили оплатить в карточке брони; после оплаты ИИ-администратор сразу подтвердит заселение.','Гостя попросили оплатить в карточке брони; после оплаты ИИ-администратор сразу подтвердит '+wordsOf(b).arriveAcc+'.'):venueOr(b,'Проверьте поступление, и ИИ-администратор сразу подтвердит заселение.','Проверьте поступление, и ИИ-администратор сразу подтвердит '+wordsOf(b).arriveAcc+'.')),'administrator-checkin-payment:'+b.id,'owner').run();continue;}
+    try{await delegated.bookingAction(b.id,{action:'checkin'});await service.notify(service.userId,venueOr(b,'ИИ-администратор подтвердил заселение гостя в «'+title+'» по его сообщению.','ИИ-администратор отметил: '+wordsOf(b).guestIn.toLowerCase()+' в «'+title+'», по сообщению гостя.'),'administrator-checkin:'+b.id,'owner').run();actions++;}catch(error){
      if(!expectedConflict(error))throw error;
      // Paid, but the flat is not marked ready (a new flat, or a cleaning not yet accepted): only the owner can say it is.
      const op=await service.one('SELECT readiness,active_booking_id FROM property_operations WHERE property_id=?',policy.property_id);
-     if(op&&op.readiness!=='ready'&&!op.active_booking_id)await service.notify(service.userId,'Гость оплатил и уже на месте в «'+title+'», но жильё не отмечено готовым. Подтвердите готовность в карточке жилья (или примите уборку), и ИИ-администратор сразу заселит гостя.','administrator-checkin-ready:'+b.id,'owner').run();
+     if(op&&op.readiness!=='ready'&&!op.active_booking_id)await service.notify(service.userId,venueOr(b,'Гость оплатил и уже на месте в «'+title+'», но жильё не отмечено готовым. Подтвердите готовность в карточке жилья (или примите уборку), и ИИ-администратор сразу заселит гостя.','Гость оплатил и уже на месте в «'+title+'», но готовность не отмечена. Нажмите «'+wordsOf(b).ready+'» в карточке брони (или примите уборку), и ИИ-администратор сразу подтвердит '+wordsOf(b).arriveAcc+'.'),'administrator-checkin-ready:'+b.id,'owner').run();
     }
    }
    // The AI checks each submitted cleaning report. A clean report is offered to the owner for one-tap acceptance;

@@ -37,7 +37,7 @@ export function AgainRow({properties,mine,onOpen}:{properties:Row[];mine:Mine;on
  return <View>
   <Text style={f.title}>Снова туда же</Text>
   <ScrollView horizontal showsHorizontalScrollIndicator={false} style={f.strip} contentContainerStyle={f.stripContent} keyboardShouldPersistTaps="handled">
-   {list.map(p=>{const fav=markOf(p.id,mine)==='favorite';return <Pressable key={p.id} accessibilityRole="button" accessibilityLabel={(fav?'Избранное: ':'Вы здесь жили: ')+p.title} onPress={()=>onOpen(p)} style={({pressed})=>[f.chip,pressed&&f.dim]}>
+   {list.map(p=>{const fav=markOf(p.id,mine)==='favorite';return <Pressable key={p.id} accessibilityRole="button" accessibilityLabel={(fav?'Избранное: ':['banya','sauna','banquet','cafe'].includes(p.details?.type||p.type)?'Вы здесь были: ':'Вы здесь жили: ')+p.title} onPress={()=>onOpen(p)} style={({pressed})=>[f.chip,pressed&&f.dim]}>
     <Text style={[f.chipMark,fav&&f.heartOn]}>{fav?'♥':'↻'}</Text><Text numberOfLines={1} style={f.chipText}>{p.title}</Text>
    </Pressable>;})}
   </ScrollView>
