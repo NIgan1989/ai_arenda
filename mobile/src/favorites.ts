@@ -8,7 +8,8 @@ export type Mark='favorite'|'stayed'|'';
 const ids=(value:unknown):string[]=>Array.isArray(value)?value.filter((id):id is string=>typeof id==='string'):[];
 export const mineOf=(data:Row|null|undefined):Mine=>({favorites:ids(data?.favorites),stayed:ids(data?.stayed)});
 export const markOf=(id:string,mine:Mine):Mark=>mine.favorites.includes(id)?'favorite':mine.stayed.includes(id)?'stayed':'';
-export const markLabel=(mark:Mark)=>mark==='favorite'?'♥ Ваше избранное':mark==='stayed'?'Вы здесь жили':'';
+// venue: в бане и зале бывают, а не живут.
+export const markLabel=(mark:Mark,venue=false)=>mark==='favorite'?'♥ Ваше избранное':mark==='stayed'?(venue?'Вы здесь были':'Вы здесь жили'):'';
 
 /** Favourites, then homes of earlier stays, each in the order the search gave; the rest keep their order. */
 export function favouredFirst<T extends {id:string}>(list:T[],mine:Mine):T[]{
