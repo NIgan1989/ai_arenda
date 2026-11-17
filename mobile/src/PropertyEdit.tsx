@@ -101,7 +101,8 @@ export function PropertyEdit({property,onSave,onReview,onRemove,onClose,onOpenHa
     <View style={e.row}>{num('Час, ₸',r.hourlyPrice,n=>setDraft(o=>({...o,price:Math.max(100,n*12),rental:{...o.rental,hourlyPrice:n}})))}{num('Депозит, ₸',r.deposit,n=>setR({deposit:n}))}</View>
     <Stepper label="Минимум часов" value={r.minHours} text={String(r.minHours)} min={1} max={24} onChange={n=>setR({minHours:n})}/>
     <View style={e.row}>{num('Гостей в цене',r.includedGuests,n=>setR({includedGuests:n}),50,'0 — цена не зависит')}{num('Доплата за гостя в час, ₸',r.extraGuestPrice,n=>setR({extraGuestPrice:n}),1000000)}</View>
-    <Stepper label="Напомнить затопить" value={r.prepMinutes} text={r.prepMinutes?'за '+(r.prepMinutes%60?r.prepMinutes+' мин':r.prepMinutes/60+' ч'):'не надо'} min={0} max={360} step={30} onChange={n=>setR({prepMinutes:n})}/>
+    <Stepper label="Подготовка перед гостями" value={r.prepMinutes} text={r.prepMinutes?(r.prepMinutes%60?r.prepMinutes+' мин':r.prepMinutes/60+' ч'):'не нужна'} min={0} max={360} step={30} onChange={n=>setR({prepMinutes:n})}/>
+    <Text style={e.label}>{r.prepMinutes?'Напомню затопить вовремя и не приму бронь, если до гостей осталось меньше.':'Сколько нужно, чтобы затопить. Напомню вовремя и не приму бронь раньше.'}</Text>
    </>}
    {open==='prices'&&isBanquet(d.type)&&(()=>{const q=banquetPrice(draft);return <>
     {/* A hall is priced per guest with a least party; the service keeps it as the price of the slot (lib/listing-edit.ts). */}

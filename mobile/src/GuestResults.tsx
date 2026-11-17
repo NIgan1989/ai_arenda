@@ -8,7 +8,7 @@ import { windowBadge } from '../../lib/window-badge';
 import { C, type } from './styles';
 import { T } from './tokens';
 import { ReliabilityBadge } from './Reliability';
-import { HOME_KINDS, WISHES, BANQUET_WISHES, BANQUET_TYPES, askFirst, categoryOf, draftUnits, homeWords, kindCategoryOf, shownReasons, withMode, type GuestDraft } from './ai-request';
+import { HOME_KINDS, WISHES, BANQUET_WISHES, BANQUET_TYPES, askFirst, categoryOf, draftUnits, homeWords, kindCategoryOf, shownReasons, withMode, withUnits, type GuestDraft } from './ai-request';
 import { carouselIndex } from './map-motion';
 import { Heart } from './Favorites';
 import { markLabel, markOf, type Mine } from './favorites';
@@ -92,6 +92,16 @@ export function emptyAnswer(empty: Row | undefined, draft: GuestDraft, narrowed:
       note: 'Свободно ещё ' + count + ' ' + plural(count, 'вариант', 'варианта', 'вариантов') + ': там владелец отвечает до 15 минут или жильё ещё готовят к заезду.',
       action: { title: 'Показать все варианты', patch: { now: false } }
     };
+  }
+  if (empty?.reason === 'minHours') {
+    const least = Number(empty.minHours) || 2, hours = least + ' ' + plural(least, 'час', 'часа', 'часов');
+    return { title: 'Так ненадолго здесь не бронируют', note: 'Минимум — ' + hours + '.', action: { title: 'Искать на ' + hours, patch: withUnits(draft, least) } };
+  }
+  if (empty?.reason === 'prep' && empty.next) {
+    // Free, but the place is made ready before the guests (a bath is heated): the first hour it can start.
+    const start = kzLocal(empty.next.start), end = kzLocal(empty.next.end), minutes = Number(empty.prepMinutes) || 0;
+    const long = [Math.floor(minutes / 60) ? Math.floor(minutes / 60) + ' ч' : '', minutes % 60 ? (minutes % 60) + ' мин' : ''].filter(Boolean).join(' ');
+    return { title: 'Так скоро не успеют подготовить', note: (categoryOf(draft) === 'bath' ? 'Баню топят' : 'Место готовят') + ' ' + long + ' до гостей. Ближайшее начало — ' + start.slice(11) + '.', action: { title: 'Показать с ' + start.slice(11), patch: { start, end, now: false } } };
   }
   if (empty?.reason === 'busy') {
     const next = empty.next;

@@ -70,7 +70,20 @@ test('the line reads a bath: by the hour, the category kept, a flat never become
  assert.deepEqual(statedKinds('квартира с банкоматом рядом'),[]);
  const at=Date.parse('2026-11-17T10:00:00+05:00'),current={city:'Павлодар',mode:'daily',start:'2026-11-17T14:00',end:'2026-11-18T12:00',guests:'2',kinds:[]};
  const r=guestSearchRequest('баня на 6 человек сегодня в 20:00',current,['Павлодар'],at);
- assert.equal(r.filters.mode,'hourly');assert.deepEqual(r.filters.kinds,['banya']);assert.equal(r.filters.start,'2026-11-17T20:00');assert.equal(r.filters.end,'2026-11-17T23:00');
+ assert.equal(r.filters.mode,'hourly');assert.equal(r.filters.start,'2026-11-17T20:00');assert.equal(r.filters.end,'2026-11-17T23:00');
+ // «Баня» said alone is the whole category (a sauna answers it too); «русская баня» and «сауна» name one kind.
+ assert.deepEqual(r.filters.kinds,['banya','sauna']);
+ const kinds=text=>guestSearchRequest(text,current,['Павлодар'],at).filters.kinds||[];
+ assert.deepEqual(kinds('русская баня на дровах'),['banya']);assert.deepEqual(kinds('сауна на 6 человек'),['sauna']);
+ assert.deepEqual(kinds('попариться вечером'),['banya','sauna']);assert.deepEqual(kinds('хаммам'),['banya','sauna']);
+ // «Квартира с сауной» is a home that has one: the search stays in «Жильё» and says what it cannot check.
+ const home=guestSearchRequest('квартира с сауной',current,['Павлодар'],at);
+ assert.deepEqual(home.filters.kinds||[],[]);assert.ok(home.remarks.some(text=>text.includes('баня')));
+ assert.deepEqual(kinds('дом с баней'),['house']);
+ // A day without an hour is an evening in a bath; an hour with a colon needs no «в»; «до 22:00» is not a start.
+ const day=text=>guestSearchRequest(text,current,['Павлодар'],at).filters.start;
+ assert.equal(day('баня завтра'),'2026-11-18T19:00');assert.equal(day('сауна послезавтра 20:30'),'2026-11-19T20:30');
+ assert.equal(day('квартира завтра до 22:00'),'2026-11-18T14:00');
  const bare=guestSearchRequest('баня',current,['Павлодар'],at);assert.equal(bare.filters.mode,'hourly');
 });
 
@@ -82,4 +95,28 @@ test('«баня на сутки» остаётся почасовой, а «с 
   assert.ok(day.remarks.some(r => r.includes('по часам')));
   const pool = guestSearchRequest('баня с бассейном и вениками завтра в 20:00', { city: 'Павлодар', mode: 'daily', guests: '2' }, ['Павлодар'], now);
   assert.deepEqual(pool.filters.features, ['pool', 'brooms']);
+});
+
+test('a bath that takes two hours to heat is not offered or booked sooner, and the empty answer names the first hour',async()=>{
+ const f=await fixture();try{
+  const bath=(await f.owner.saveListing(null,listing('banya'))).id;
+  f.db.raw.prepare('UPDATE properties SET published=1 WHERE id=?').run(bath);
+  f.db.raw.prepare("UPDATE property_operations SET readiness='ready'").run();
+  const {previewMatches}=await load('smart-matching'),soon=Math.ceil((now()+1800)/1800)*1800,later=Math.ceil((now()+2*3600)/1800)*1800+1800;
+  const search=async(start,extra={})=>previewMatches(f.guest,body(start,{kinds:['banya','sauna'],...extra}));
+  // In half an hour: free, but nobody can heat it by then.
+  const early=await search(soon);
+  assert.deepEqual(early.properties,[]);
+  assert.equal(early.empty.reason,'prep');assert.equal(early.empty.prepMinutes,120);
+  assert.ok(Date.parse(early.empty.next.start)/1000>=now()+120*60);
+  // The hour the answer names is found, and the guests' own later hour too.
+  assert.deepEqual((await previewMatches(f.guest,{...body(soon,{kinds:['banya','sauna']}),start:early.empty.next.start,end:early.empty.next.end})).properties.map(p=>p.id),[bath]);
+  assert.deepEqual((await search(later)).properties.map(p=>p.id),[bath]);
+  // A booking sooner than the heating is refused in words; the owner who says «готово» may still take it.
+  await assert.rejects(f.guest.bookingQuote({propertyId:bath,start:iso(soon),end:iso(soon+3*3600),guests:4,billingMode:'hourly'}),/готовят к приходу гостей 2 ч/);
+  assert.equal((await f.guest.bookingQuote({propertyId:bath,start:iso(soon),end:iso(soon+3*3600),guests:4,billingMode:'hourly'},{ownerReady:true})).amount,9000);
+  // One hour where two is the least: «минимум 2 часа», not «занято».
+  const short=await previewMatches(f.guest,{...body(later,{kinds:['banya','sauna']}),end:iso(later+3600)});
+  assert.deepEqual([short.properties.length,short.empty.reason,short.empty.minHours],[0,'minHours',2]);
+ }finally{f.db.close();}
 });

@@ -520,3 +520,16 @@ test('«Банкет»: the line and the chips say what the hall is for; a memor
   assert.equal(pinPrice(1200000), '1,2 млн');
   assert.deepEqual(mod.dayChoices(toi, morning).map(([, label]) => label).slice(0, 4), ['Завтра', 'Послезавтра', 'сб, 14 ноября', 'вс, 15 ноября']);
 });
+
+test('a bath said in the line: the whole category, four guests, its wishes in the conditions', () => {
+  const now = Date.parse('2026-11-17T12:50:00Z'), stay = newDraft('Павлодар', now);
+  const read = text => guestRequestFromText(text, stay, cities, now);
+  const pool = read('баня с бассейном и бильярдом');
+  assert.deepEqual(pool.draft.kinds, ['banya', 'sauna']);
+  assert.equal(pool.draft.guests, 4);
+  assert.equal(guestSummary(pool.draft, now), 'Павлодар · сегодня 18:30–21:30 · 4 гостя · баня или сауна · бассейн · бильярд');
+  // «Сейчас» in a bath says no «заезд».
+  assert.ok(!guestSummary(read('баня сейчас').draft, now).includes('заезд'));
+  assert.deepEqual(read('квартира с сауной').draft.kinds, []);
+  assert.equal(read('баня с ночёвкой').note, 'Баню бронируют по часам, ищу на 3 часа.');
+});

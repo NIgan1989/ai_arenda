@@ -107,6 +107,8 @@ const PART_OF_DAY: [RegExp, string, number][] = [
 ];
 // The type of home the text names, as the ids of lib/listings.ts (propertyTypes). "Квартира" is how most guests
 // say "жильё" and narrows nothing; a "гостевой дом" is not a "дом", an "апарт-отель" not an "отель".
+/** The hour a bath is searched from when a day is named without one. */
+export const BATH_EVENING = '19:00';
 /** The types of the category «Баня» (lib/listings.ts categories.bath). */
 export const BATH_KINDS = ['banya', 'sauna'];
 /** The types of the category «Банкет» (lib/listings.ts categories.banquet): a hall taken whole, priced per guest. */
@@ -210,6 +212,7 @@ const BATH_WISHES: [RegExp, string][] = [
   [/караоке/, 'karaoke'],
   [/мангал|шашлык/, 'grill'],
   [/биль[яа]рд/, 'billiards'],
+  [/полотенц|простын/, 'towels'],
 ];
 // What is asked of a banquet hall (lib/listings.ts categoryAmenities.banquet): read only in a banquet request.
 const BANQUET_WISHES: [RegExp, string][] = [
@@ -547,6 +550,12 @@ function statedTime(text: string): StatedTime | null {
     const minutes = Math.ceil((Number(clock[1]) * 60 + Number(clock[2] || clock[3])) / 30) * 30;
     if (minutes < 1440) return { time: two(Math.floor(minutes / 60)) + ':' + two(minutes % 60), exact: true, until: 24 };
   }
+  // «Послезавтра 20:00»: an hour with a colon needs no «в». «До 22:00» is the end of a stay, not its start.
+  for (const match of text.matchAll(/(?:^|\s)(?:(до|по)\s+)?(\d{1,2}):(\d{2})(?![\d.:])/g)) {
+    if (match[1] || Number(match[2]) > 23 || Number(match[3]) > 59) continue;
+    const minutes = Math.ceil((Number(match[2]) * 60 + Number(match[3])) / 30) * 30;
+    if (minutes < 1440) return { time: two(Math.floor(minutes / 60)) + ':' + two(minutes % 60), exact: true, until: 24 };
+  }
   for (const match of text.matchAll(/(?:^|\s)(?:в|к|с)\s+(\d{1,2})\s*(?:(час)[а-я]*\s*)?(утра|дня|вечера|ночи)?/g)) {
     if (!match[2] && !match[3]) continue;
     const hour = clockHour(Number(match[1]), match[3]);
@@ -653,6 +662,14 @@ export function guestSearchRequest(text: string, current: Row, cities: string[],
     }
   }
   const rooms = statedRooms(request), kinds = statedKinds(request);
+  // «Квартира с сауной», «дом с баней»: a home that has one, not the category «Баня» (it is named as not searched).
+  if (/(?:^|[^а-я])с\s+(?:[а-я]+\s+)?(?:бан(?:ей|ькой)|сауной)(?=$|[^а-я])/.test(request) && /квартир|жиль[ея]|однушк|двушк|трешк|студи|комнат|(?:^|[^а-я])(?:дом|домик|коттедж|дач)|гостиниц|отел|хостел/.test(request)) {
+    for (const id of BATH_KINDS) if (kinds.includes(id)) kinds.splice(kinds.indexOf(id), 1);
+  }
+  // «Баня» said alone is the whole category: a sauna with a pool answers «баня с бассейном» too. «Русская баня» and
+  // «на дровах» name the one kind. «Попариться», «парная», «хаммам» name the category without a kind.
+  if (kinds.includes('banya') && !kinds.includes('sauna') && kinds.every(id => BATH_KINDS.includes(id)) && !/русск|дров/.test(request)) kinds.push('sauna');
+  if (!kinds.length && /(?:^|[^а-я])(?:по)?парить|хамм?ам|(?:^|[^а-я])парн(?:ая|ую|ой)(?=$|[^а-я])/.test(request)) kinds.push(...BATH_KINDS);
   if (rooms) filters.rooms = rooms;
   // A banquet is named by the hall («банкетный зал») or by what it is for («той на 100 человек», «поминки»): any hall
   // of the category, or only a «кафе» when that alone is said. The category chosen before stays for a bare phrase.
@@ -718,7 +735,7 @@ export function guestSearchRequest(text: string, current: Row, cities: string[],
   const time = urgent ? localISO(soon).slice(11) : clock?.time || null;
   const kept = current.mode === 'hourly' || current.mode === 'night' ? current.mode : 'daily';
   // «Баня на сутки» or «на ночь» is still by the hour, and the guest is told: days are not read as hours.
-  const daysOfBath = bath && !!said.mode && said.mode !== 'hourly';
+  const daysOfBath = bath && ((!!said.mode && said.mode !== 'hourly') || /ночевк|переночев/.test(request));
   if (daysOfBath) remarks.push('Баню бронируют по часам, ищу на 3 часа.');
   const length = daysOfBath ? { mode: 'hourly' as const, units: null } : said;
   const mode: 'daily' | 'hourly' | 'night' = banquet ? 'daily' : length.mode ?? (bath ? 'hourly' : dates?.to || dates?.weekend ? (kept === 'night' ? 'night' : 'daily') : kept);
@@ -763,7 +780,8 @@ export function guestSearchRequest(text: string, current: Row, cities: string[],
     if (mode === 'hourly') {
       const kept = current.mode === 'hourly' && current.start && current.end ? clamp(stayHours(current.start, current.end), 1, MAX_HOURS) : 3;
       // Today without a named hour starts at the nearest half-hour; another day without one, at 14:00.
-      const wanted = day === today && !time ? soon : localTime(day + 'T' + (time || CHECKIN_TIME));
+      // A bath on another day without an hour is an evening, as the chip «Вечером» is.
+      const wanted = day === today && !time ? soon : localTime(day + 'T' + (time || (bath ? BATH_EVENING : CHECKIN_TIME)));
       const from = localISO(Math.max(wanted, soon));
       Object.assign(filters, hourlyStay(from.slice(0, 10), from.slice(11), length.units ?? kept));
     } else {
