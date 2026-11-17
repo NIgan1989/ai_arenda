@@ -159,12 +159,43 @@ export function otherTown(text: string): string | null {
   return null;
 }
 
+// Every amenity an owner can mark (lib/listings.ts amenities), and 'pets': the owner's rule «можно с питомцами».
 const WISHES: [RegExp, string][] = [
   [/парков|паркинг/, 'parking'],
   [/wi-?fi|вай-?фай|интернет/, 'wifi'],
   [/кухн/, 'kitchen'],
   [/рабоч[а-я]*\s+мест|для работы/, 'workspace'],
+  [/стиральн|стиралк/, 'washer'],
+  [/кондиционер|(?:^|[^а-я])кондер/, 'aircon'],
+  [/телевизор|(?:^|[^а-я])тв(?=$|[^а-я])/, 'tv'],
+  [/балкон|лоджи/, 'balcony'],
+  [/лифт/, 'elevator'],
+  [/(?:^|[^а-я])фен(?:ом)?(?=$|[^а-я])/, 'hairdryer'],
+  [/утюг/, 'iron'],
+  [/детск[а-я]*\s+кроват|кроватк/, 'crib'],
+  [/собак|собач|(?:^|[^а-я])пс(?:ом|а)(?=$|[^а-я])|кошк|(?:^|[^а-я])кот(?:ом|а|иком)(?=$|[^а-я])|питом|животн/, 'pets'],
 ];
+// What guests ask for and the search cannot check yet. It is named back («Пока не умею искать: баня»), never
+// dropped in silence and never guessed.
+const UNSEARCHED: [RegExp, string][] = [
+  [/(?:^|[^а-я])бан(?:я|ей|ю|и|ька|ькой)(?=$|[^а-я])|саун/, 'баня'],
+  [/бассейн/, 'бассейн'],
+  [/джакузи/, 'джакузи'],
+  [/мангал|барбекю|шашлы/, 'мангал'],
+  [/отзыв|рейтинг|оценк/, 'отзывы'],
+  [/депозит|залог/, 'депозит'],
+  [/(?:^|[^а-я])вид(?:ом)?\s+на/, 'вид из окна'],
+  [/(?:^|[^а-я])этаж/, 'этаж'],
+  [/курить|курени|курящ/, 'курение'],
+  [/вечеринк|день рождени|праздник|компани(?:ей|я)/, 'праздник'],
+  // «рядом с вокзалом», «возле ТРЦ», «у набережной»: a landmark, not «рядом со мной».
+  [/(?:рядом\s+со?|недалеко\s+от|около|возле)\s+(?!мной|меня|нас(?=$|[^а-я]))[а-я]{3,}|(?:^|[^а-я])у\s+(?:вокзал|набережн|парк|рынк|автовокзал|аэропорт|больниц|университет|трц|тц)/, 'место рядом с ориентиром'],
+];
+
+/** What the text asks for that the search cannot check: ['баня', 'отзывы']. The text is already lower case. */
+export function unsearched(text: string): string[] {
+  return UNSEARCHED.filter(([pattern]) => pattern.test(text)).map(([, word]) => word);
+}
 
 const localISO = (time: number) => new Date(time + KZ).toISOString().slice(0, 16);
 const localTime = (local: string) => Date.parse(local + ':00Z') - KZ;
@@ -390,6 +421,11 @@ function statedDates(text: string, now: number): StatedDates | null {
     return { from: first.date, to: second && !second.past && second.date > first.date ? second.date : undefined };
   }
 
+  // «На Новый год»: the night of 31 December, the nearest one.
+  if (/нов[а-я]+\s+год/.test(text)) {
+    const eve = today.slice(0, 4) + '-12-31';
+    return { from: eve, to: addDays(eve, 1) };
+  }
   if (/позавчера/.test(text)) return { from: addDays(today, -2), past: true };
   if (/вчера/.test(text)) return { from: addDays(today, -1), past: true };
   if (/послезавтра/.test(text)) return { from: addDays(today, 2) };
@@ -458,14 +494,14 @@ function statedHours(text: string): { time: string; hours: number } | null {
 // "на 3 часа", "на сутки", "на двое суток", "на неделю", "почасовая".
 // A stay longer than the line searches for is cut to the longest one, and `remarks` says so.
 function statedLength(text: string, remarks: string[]): { mode: 'daily' | 'hourly' | 'night' | null; units: number | null } {
-  const stay = text.match(/на\s+(?:(\d{1,3}|один|одну|одни|два|две|двое|пару|три|трое|четыре|пять|шесть|семь|несколько)\s+)?(час|сутк|суток|ноч|дн|день|недел)/);
+  const stay = text.match(/на\s+(?:(\d{1,3}|один|одну|одни|два|две|двое|пару|три|трое|четыре|пять|шесть|семь|несколько)\s+)?(час|сутк|суток|ноч|дн|день|недел|месяц)/);
   if (stay) {
     const count = Math.max(1, stay[1] ? COUNT[stay[1]] ?? Number(stay[1]) : 1);
     if (stay[2] === 'час') {
       if (count > MAX_HOURS) remarks.push('Максимум ' + MAX_HOURS + ' часа, ищу на ' + MAX_HOURS + '.');
       return { mode: 'hourly', units: Math.min(count, MAX_HOURS) };
     }
-    const days = stay[2] === 'недел' ? count * 7 : count;
+    const days = stay[2] === 'недел' ? count * 7 : stay[2] === 'месяц' ? count * 30 : count;
     if (days > MAX_DAYS) remarks.push('Максимум ' + MAX_DAYS + ' суток, ищу на ' + MAX_DAYS + '.');
     return { mode: stay[2] === 'ноч' ? 'night' : 'daily', units: Math.min(days, MAX_DAYS) };
   }
@@ -518,6 +554,15 @@ export function guestSearchRequest(text: string, current: Row, cities: string[],
   const rooms = statedRooms(request), kinds = statedKinds(request);
   if (rooms) filters.rooms = rooms;
   if (kinds.length) filters.kinds = kinds;
+  // «Студия или однушка»: either of the two. A room word names a flat, so a flat joins the types; the room count
+  // stays only when it is one (a studio has one room too), otherwise it would rule the studio out.
+  if (rooms && kinds.length && new RegExp('(?:^|[^а-я])или(?=$|[^а-я])').test(request) && !kinds.includes('apartment')) {
+    filters.kinds = [...kinds, 'apartment'];
+    if (rooms !== '1') {
+      filters.rooms = '';
+      remarks.push('Ищу любой из названных типов жилья, без числа комнат.');
+    }
+  }
   if (rooms || kinds.length) stated.home = true;
   if (/(?:^|[^а-я])центр/.test(request)) {
     filters.district = 'Центр';
@@ -591,7 +636,12 @@ export function guestSearchRequest(text: string, current: Row, cities: string[],
     }
   }
 
+  // «Хочу снять квартиру», «нужно жильё», «посуточно»: a request with nothing to narrow it is still a request.
+  const plain = /квартир|жиль[ея]|(?:^|[^а-я])(?:снять|сниму|снимем|арендовать|арендую)(?=$|[^а-я])|где\s+(?:остановиться|переночевать|пожить)/.test(request) || length.mode !== null;
   const nearby = /(?:рядом|около|возле|недалеко)\s+(?:со?\s+|от\s+)?(?:мной|меня)|поблизости|(?:^|\s)рядом(?=$|[.,!?]|\s+(?!с\s|со\s|от\s))/.test(request);
-  const understood = nearby || !!past || remarks.length > 0 || filters.mode !== current.mode || Object.values(stated).some(Boolean);
+  const understood = nearby || plain || !!past || remarks.length > 0 || filters.mode !== current.mode || Object.values(stated).some(Boolean);
+  // Said after `understood` is settled: a phrase of nothing but such words is not a request the rules can run.
+  const missed = unsearched(request);
+  if (missed.length) remarks.push('Пока не умею искать: ' + missed.join(', ') + '.');
   return { filters, stated, nearby, understood, ...(past ? { past } : {}), remarks };
 }

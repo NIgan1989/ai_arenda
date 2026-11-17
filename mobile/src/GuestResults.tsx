@@ -8,7 +8,7 @@ import { windowBadge } from '../../lib/window-badge';
 import { C, type } from './styles';
 import { T } from './tokens';
 import { ReliabilityBadge } from './Reliability';
-import { HOME_KINDS, askFirst, draftUnits, shownReasons, withMode, type GuestDraft } from './ai-request';
+import { HOME_KINDS, WISHES, askFirst, draftUnits, homeWords, shownReasons, withMode, type GuestDraft } from './ai-request';
 import { carouselIndex } from './map-motion';
 import { Heart } from './Favorites';
 import { markLabel, markOf, type Mine } from './favorites';
@@ -108,6 +108,13 @@ export function emptyAnswer(empty: Row | undefined, draft: GuestDraft, narrowed:
   }
   if (empty?.reason === 'filters') {
     const count = Number(empty.count) || 0;
+    // One condition empties the answer on its own: it is named, with one tap to search without it.
+    const free = 'Без этого условия свободно: ' + count + '.';
+    if (count && empty.blocker === 'kinds') return { title: 'Нет свободного жилья такого типа: ' + homeWords({ kinds: draft.kinds, rooms: '' }), note: 'Другого жилья на это время свободно: ' + count + '.', action: { title: 'Показать любое жильё', patch: { kinds: [] } } };
+    if (count && empty.blocker === 'rooms') return { title: 'С таким числом комнат свободного нет', note: free, action: { title: 'Показать с любым числом комнат', patch: { rooms: '' } } };
+    if (count && empty.blocker === 'district') return { title: 'В районе ' + draft.district + ' свободного нет', note: 'В других районах свободно: ' + count + '.', action: { title: 'Искать по всему городу', patch: { district: '' } } };
+    if (count && empty.blocker === 'features') return { title: 'Свободного жилья с этим нет: ' + WISHES.filter(([id]) => draft.features.includes(id)).map(([, name]) => (name === 'Wi-Fi' ? name : name.toLocaleLowerCase('ru'))).join(', '), note: free, action: { title: 'Искать без пожеланий', patch: { features: [] } } };
+    if (count && empty.blocker === 'near') return { title: 'Рядом с этим местом свободного нет', note: 'В городе свободно: ' + count + '.', action: { title: 'Искать по всему городу', patch: { near: null, priority: 'balanced' } } };
     return { title: 'С этими условиями свободного нет', note: count ? 'Без района, типа жилья и пожеланий свободно: ' + count + '.' : 'Даже без района, типа жилья и пожеланий свободного нет. Попробуйте другое время.' };
   }
   return { title: 'На эти условия свободного жилья нет', note: narrowed ? 'Поиск сужают район, бюджет или пожелания. Можно искать без них.' : 'Попробуйте другое время или другой срок.' };

@@ -12,7 +12,7 @@ export function matchingInput(body:Row){
  const mode=body.mode||'daily',priority=body.priority||'balanced';
  if(!['daily','hourly','night'].includes(mode)||!['balanced','cheaper','closer'].includes(priority))throw new DomainError('Проверьте тариф и приоритет.');
  const {start,end}=interval(body.start,body.end),features=Array.isArray(body.features)?body.features:[];
- if(features.length>8||features.some(v=>typeof v!=='string'||!Object.hasOwn(amenities,v)))throw new DomainError('Проверьте обязательные удобства.');
+ if(features.length>8||features.some(v=>typeof v!=='string'||(v!=='pets'&&!Object.hasOwn(amenities,v))))throw new DomainError('Проверьте обязательные удобства.');
  // The type of home and its rooms: '2' exactly two, '2+' at least two. Both optional, as older apps send neither.
  const kinds=Array.isArray(body.kinds)?body.kinds:[],rooms=body.rooms===undefined||body.rooms===null?'':String(body.rooms);
  if(kinds.length>8||kinds.some((v:unknown)=>typeof v!=='string'||!Object.hasOwn(propertyTypes,v)))throw new DomainError('Проверьте тип жилья.');
@@ -45,7 +45,7 @@ export function rankMatches(properties:Row[],filters:Row):Row[]{
  const budget=Number(filters.maxPrice),district=filters.district.toLocaleLowerCase('ru'),kinds:string[]=filters.kinds||[],rooms=String(filters.rooms||''),least=rooms.endsWith('+'),count=parseInt(rooms);
  // «Сейчас»: only a home that is ready and confirms at once, so the guest can go there right away.
  const home=(p:Row)=>(!filters.now||(p.display_status?.code==='ready'&&!!p.instant))&&(!kinds.length||kinds.includes(p.details?.type))&&(!rooms||(least?Number(p.rooms)>=count:Number(p.rooms)===count));
- const ranked=properties.filter(p=>!p.test_preview&&home(p)&&(!district||String(p.district).toLocaleLowerCase('ru').includes(district))&&filters.features.every((a:string)=>(p.details?.amenities||[]).includes(a))).flatMap<Row>(p=>{
+ const ranked=properties.filter(p=>!p.test_preview&&home(p)&&(!district||String(p.district).toLocaleLowerCase('ru').includes(district))&&filters.features.every((a:string)=>a==='pets'?p.details?.pets===true:(p.details?.amenities||[]).includes(a))).flatMap<Row>(p=>{
   const amount=p.estimate?.amount;if(!Number.isInteger(amount)||amount>budget)return [];
   const distance=filters.near&&p.location?geoDistance([filters.near.longitude,filters.near.latitude],[p.location.longitude,p.location.latitude]):null;
   if(filters.near&&(distance===null||distance>filters.near.radius))return [];
@@ -112,7 +112,10 @@ export async function emptyHint(s:RentalService,f:Row):Promise<Row>{
  }
  const anyPrice=rankMatches(open,{...f,maxPrice:'100000000'});
  if(anyPrice.length)return {reason:'budget',cheapest:Math.min(...anyPrice.map(p=>p.estimate.amount)),count:anyPrice.length};
- return {reason:'filters',count:rankMatches(open,{...f,now:false,district:'',features:[],near:null,kinds:[],rooms:'',priority:f.priority==='closer'?'balanced':f.priority}).length};
+ // The one condition that empties the answer on its own is named («гостиниц здесь нет»), with what is free without it.
+ const loose=f.priority==='closer'?'balanced':f.priority,without:[string,Row][]=[['kinds',{kinds:[]}],['rooms',{rooms:''}],['district',{district:''}],['features',{features:[]}],['near',{near:null,priority:loose}]];
+ for(const [blocker,patch] of without){const set=blocker==='near'?!!f.near:Array.isArray(f[blocker])?f[blocker].length>0:!!f[blocker];if(!set)continue;const count=rankMatches(open,{...f,now:false,...patch}).length;if(count)return {reason:'filters',blocker,count};}
+ return {reason:'filters',count:rankMatches(open,{...f,now:false,district:'',features:[],near:null,kinds:[],rooms:'',priority:loose}).length};
 }
 async function expire(s:RentalService){const t=epoch();await s.db.batch([q(s.db,"UPDATE matching_requests SET status='expired' WHERE expires_at<=? AND status IN ('searching','ready')",t),q(s.db,"UPDATE matching_offers SET status='expired' WHERE expires_at<=? AND status IN ('pending','accepted')",t)]);}
 async function guestRequest(s:RentalService,id:unknown){await s.requireRole('guest');const r=await one(s.db,'SELECT * FROM matching_requests WHERE id=? AND guest_id=?',required(id,'Запрос',100),s.userId);if(!r)throw new DomainError('Запрос недоступен.',404);return r;}
