@@ -170,6 +170,15 @@ const WISHES: [RegExp, string][] = [
   [/кухн/, 'kitchen'],
   [/рабоч[а-я]*\s+мест|для работы/, 'workspace'],
 ];
+// What a company asks of a bath (lib/listings.ts categoryAmenities.bath): read only in a bath request.
+const BATH_WISHES: [RegExp, string][] = [
+  [/бассейн/, 'pool'],
+  [/купел/, 'plunge'],
+  [/веник/, 'brooms'],
+  [/караоке/, 'karaoke'],
+  [/мангал|шашлык/, 'grill'],
+  [/биль[яа]рд/, 'billiards'],
+];
 
 const localISO = (time: number) => new Date(time + KZ).toISOString().slice(0, 16);
 const localTime = (local: string) => Date.parse(local + ':00Z') - KZ;
@@ -548,7 +557,9 @@ export function guestSearchRequest(text: string, current: Row, cities: string[],
     filters.priority = 'cheaper';
     stated.wishes = true;
   }
-  const wishes = WISHES.filter(([pattern]) => pattern.test(request)).map(([, id]) => id);
+  // A bath or a sauna is taken by the hour: «баня на вечер» is a few hours, not a day.
+  const bath = (filters.kinds || current.kinds || []).length > 0 && (filters.kinds || current.kinds || []).every((k: string) => BATH_KINDS.includes(k));
+  const wishes = [...WISHES, ...(bath ? BATH_WISHES : [])].filter(([pattern]) => pattern.test(request)).map(([, id]) => id);
   if (wishes.length) {
     filters.features = [...new Set([...(Array.isArray(current.features) ? current.features : []), ...wishes])];
     stated.wishes = true;
@@ -557,12 +568,14 @@ export function guestSearchRequest(text: string, current: Row, cities: string[],
   // «Сейчас»: the nearest half-hour that leaves 15 minutes, the time the check-in window opens.
   const urgent = /сейчас|срочно/.test(request), lead = urgent ? 15 : 30, soon = nextSlot(now, lead), today = kzToday(now);
   const dates = statedDates(request, now), hours = statedHours(request);
-  const length = hours ? { mode: 'hourly' as const, units: hours.hours } : statedLength(request, remarks);
+  const said = hours ? { mode: 'hourly' as const, units: hours.hours } : statedLength(request, remarks);
   const clock: StatedTime | null = hours ? { time: hours.time, exact: true, until: 24 } : statedTime(request);
   const time = urgent ? localISO(soon).slice(11) : clock?.time || null;
   const kept = current.mode === 'hourly' || current.mode === 'night' ? current.mode : 'daily';
-  // A bath or a sauna is taken by the hour: «баня на вечер» is a few hours, not a day.
-  const bath = (filters.kinds || current.kinds || []).length > 0 && (filters.kinds || current.kinds || []).every((k: string) => BATH_KINDS.includes(k));
+  // «Баня на сутки» or «на ночь» is still by the hour, and the guest is told: days are not read as hours.
+  const daysOfBath = bath && !!said.mode && said.mode !== 'hourly';
+  if (daysOfBath) remarks.push('Баню бронируют по часам, ищу на 3 часа.');
+  const length = daysOfBath ? { mode: 'hourly' as const, units: null } : said;
   const mode: 'daily' | 'hourly' | 'night' = length.mode ?? (bath ? 'hourly' : dates?.to || dates?.weekend ? (kept === 'night' ? 'night' : 'daily') : kept);
   if (urgent) filters.now = true;
   if (mode !== current.mode) filters.mode = mode;

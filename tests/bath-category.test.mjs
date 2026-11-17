@@ -73,3 +73,13 @@ test('the line reads a bath: by the hour, the category kept, a flat never become
  assert.equal(r.filters.mode,'hourly');assert.deepEqual(r.filters.kinds,['banya']);assert.equal(r.filters.start,'2026-11-17T20:00');assert.equal(r.filters.end,'2026-11-17T23:00');
  const bare=guestSearchRequest('баня',current,['Павлодар'],at);assert.equal(bare.filters.mode,'hourly');
 });
+
+test('«баня на сутки» остаётся почасовой, а «с бассейном» становится обязательным удобством', async () => {
+  const { guestSearchRequest } = await import('../lib/map-search-request.ts');
+  const now = Date.parse('2026-11-17T06:00:00Z');
+  const day = guestSearchRequest('баня на сутки', { city: 'Павлодар', mode: 'daily', guests: '2' }, ['Павлодар'], now);
+  assert.equal(day.filters.mode, 'hourly');
+  assert.ok(day.remarks.some(r => r.includes('по часам')));
+  const pool = guestSearchRequest('баня с бассейном и вениками завтра в 20:00', { city: 'Павлодар', mode: 'daily', guests: '2' }, ['Павлодар'], now);
+  assert.deepEqual(pool.filters.features, ['pool', 'brooms']);
+});
