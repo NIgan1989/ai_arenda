@@ -11,7 +11,7 @@ export function prepText(b:{title:string;type?:string;start:number;end:number;gu
  return '«'+b.title+'»: '+(isBath(b.type)?'затопите':'подготовьте')+' к '+clock(b.start)+'. Гостей: '+b.guests+', на '+hours+' ч.';
 }
 export async function sweepPrep(db:D1Database,at=epoch()){
- const due=await rows(db,`SELECT b.id,b.start,b.end,b.guests,p.owner_id,p.title,(SELECT details FROM property_details WHERE property_id=p.id) details
+ const due=await rows(db,`SELECT b.id,b.start,b.end,b.guests,p.owner_id,p.title,(SELECT staff_id FROM property_staff WHERE property_id=p.id) staff_id,(SELECT details FROM property_details WHERE property_id=p.id) details
   FROM bookings b JOIN properties p ON p.id=b.property_id JOIN property_policies pp ON pp.property_id=p.id
   WHERE b.status='confirmed' AND pp.prep_minutes>0 AND b.start>? AND b.start-pp.prep_minutes*60<=?`,at,at);
  let reminded=0;
@@ -19,6 +19,8 @@ export async function sweepPrep(db:D1Database,at=epoch()){
   let type='';try{type=JSON.parse(b.details||'{}').type||'';}catch{/* a broken card is reminded as a home */}
   const done=await q(db,'INSERT OR IGNORE INTO notifications(id,user_id,body,dedupe,read,created_at) VALUES (?,?,?,?,0,?)',uuid(),b.owner_id,prepText({...b,type} as any),'owner:prep:'+b.id+':'+b.start,at).run(); // eslint-disable-line @typescript-eslint/no-explicit-any
   if(done.meta?.changes)reminded++;
+  // The person on shift heats the bath, so the same reminder goes to them (lib/staff.ts).
+  if(b.staff_id)await q(db,'INSERT OR IGNORE INTO notifications(id,user_id,body,dedupe,read,created_at) VALUES (?,?,?,?,0,?)',uuid(),b.staff_id,prepText({...b,type} as any),'staff:prep:'+b.id+':'+b.start,at).run(); // eslint-disable-line @typescript-eslint/no-explicit-any
  }
  return {reminded};
 }

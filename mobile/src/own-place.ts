@@ -18,7 +18,7 @@ export type PlaceNow = { line: string; busy: boolean; requests: number };
 
 // Guests are inside from the actual check-in to the actual checkout (terms.actual_checkin/actual_checkout, as in
 // lib/process-threads.ts), so a guest staying past the planned end still occupies the object.
-export function placeNow(propertyId: string, bookings: Row[], now = Date.now() / 1000): PlaceNow {
+export function placeNow(propertyId: string, bookings: Row[], now = Date.now() / 1000, bath = false): PlaceNow {
   const terms = (b: Row) => (b.terms || {}) as Row;
   const own = bookings.filter(b => b.property_id === propertyId);
   const requests = own.filter(b => b.status === 'requested' && Number(b.end) > now).length;
@@ -26,9 +26,9 @@ export function placeNow(propertyId: string, bookings: Row[], now = Date.now() /
   const inside = confirmed.find(b => terms(b).actual_checkin);
   if (inside) {
     const end = Number(inside.end);
-    return { line: end > now ? 'Гости до ' + when(end, now) : 'Гости ещё не выехали, выезд был ' + when(end, now), busy: true, requests };
+    return { line: end > now ? 'Гости до ' + when(end, now) : (bath ? 'Гости ещё не ушли, время вышло ' : 'Гости ещё не выехали, выезд был ') + when(end, now), busy: true, requests };
   }
   const next = confirmed.filter(b => Number(b.end) > now).sort((a, b) => Number(a.start) - Number(b.start))[0];
-  if (next) return { line: (Number(next.start) <= now ? 'Ждём гостя, заезд ' : 'Заезд ') + when(Number(next.start), now), busy: false, requests };
+  if (next) return { line: (Number(next.start) <= now ? (bath ? 'Ждём гостей, бронь ' : 'Ждём гостя, заезд ') : bath ? 'Гости ' : 'Заезд ') + when(Number(next.start), now), busy: false, requests };
   return { line: 'Свободно, броней впереди нет', busy: false, requests };
 }
