@@ -132,6 +132,7 @@ export function emptyAnswer(empty: Row | undefined, draft: GuestDraft, narrowed:
     if (count && empty.blocker === 'rooms') return { title: 'С таким числом комнат свободного нет', note: free, action: { title: 'Показать с любым числом комнат', patch: { rooms: '' } } };
     if (count && empty.blocker === 'district') return { title: 'В районе ' + draft.district + ' свободного нет', note: 'В других районах свободно: ' + count + '.', action: { title: 'Искать по всему городу', patch: { district: '' } } };
     if (count && empty.blocker === 'features') return { title: 'Свободного жилья с этим нет: ' + WISHES.filter(([id]) => draft.features.includes(id)).map(([, name]) => (name === 'Wi-Fi' ? name : name.toLocaleLowerCase('ru'))).join(', '), note: free, action: { title: 'Искать без пожеланий', patch: { features: [] } } };
+    if (count && empty.blocker === 'maxFloor') return { title: 'Так низко свободного нет', note: free, action: { title: 'Искать на любом этаже', patch: { maxFloor: 0 } } };
     if (count && empty.blocker === 'near') return { title: 'Рядом с этим местом свободного нет', note: 'В городе свободно: ' + count + '.', action: { title: 'Искать по всему городу', patch: { near: null, priority: 'balanced' } } };
     return { title: 'С этими условиями свободного нет', note: count ? 'Без района, типа жилья и пожеланий свободно: ' + count + '.' : 'Даже без района, типа жилья и пожеланий свободного нет. Попробуйте другое время.' };
   }
