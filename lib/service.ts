@@ -429,7 +429,7 @@ export class RentalService {
     const policies=await this.all('SELECT * FROM property_policies');
     return {properties:await this.enrichProperties(properties.map(p=>({...p,policy:publicPolicy(policies.find(v=>v.property_id===p.id))})))};
   }
-  async publicSearch(filters:Record<string,string>={},options:{syntheticPreview?:boolean;matching?:boolean;ignorePrep?:boolean}={}){
+  async publicSearch(filters:Record<string,string>={},options:{syntheticPreview?:boolean;matching?:boolean;ignorePrep?:boolean;readyIds?:string[]}={}){
     const city=String(filters.city||'').trim(),mode=filters.mode||'daily',guests=number(filters.guests||1,'Гости',1,1000);
     if(city.length>80||!['daily','hourly','night'].includes(mode))throw new DomainError('Проверьте город и вид аренды.');
     const catalog=await this.publicCatalog(options),cities=[...new Set(catalog.properties.map(p=>String(p.city)))].sort();
@@ -450,7 +450,7 @@ export class RentalService {
       const occupied=new Set([...booked,...cleaning,...external,...stale].map(p=>p.property_id));
       items=items.filter(p=>!occupied.has(p.id)&&!['maintenance','blocked'].includes(p.display_status.code)&&(start>now()+60||p.display_status.code==='ready')
         // A place that is made ready before the guests is not offered sooner than that takes.
-        &&(options.ignorePrep||!tooSoon(p.policy,start,now())));
+        &&(options.ignorePrep||options.readyIds?.includes(p.id)||!tooSoon(p.policy,start,now())));
       const windows=mode==='hourly'?await openWindowsFor(this.db,start,end):new Map();
       items=items.flatMap(p=>{try{const price=withGuests(windowQuote(rentalPrice(p.price,p.policy,start,end,mode),p.policy.hourly_price,windows.get(p.id)),p.policy,guests);return [{...p,estimate:{amount:price.amount,periods:price.periods,rate:price.price,unitLabel:price.unitLabel,billingMode:price.billingMode,...(price.window?{window:price.window}:{})}}];}catch(error){if(error instanceof DomainError)return [];throw error;}});
       // «Цена выгодная»: compared with the other free flats of the city for the same dates, before any budget or page cuts them.
@@ -567,11 +567,13 @@ export class RentalService {
     await this.db.batch([this.query('INSERT INTO properties(id,owner_id,demo_owner,title,city,district,address,description,price,rooms,capacity,cleaning_minutes,published,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)',propertyId,this.userId,null,required(body.title,'Название',120),required(body.city,'Город',80),required(body.district,'Район',120),required(body.address,'Точный адрес',300),required(body.description,'Описание и правила',2500),number(body.price,'Цена за сутки',100,10000000),number(body.rooms,'Комнаты',1,20),number(body.capacity,'Вместимость',1,50),number(body.cleaningMinutes,'Время уборки',30,1440),published,now()),this.query('INSERT INTO property_operations(property_id,updated_at) VALUES (?,?)',propertyId,now()),this.audit(propertyId,'property.created')]);
     return {id:propertyId,message:published?'Жильё добавлено в каталог. Точный адрес скрыт до подтверждения брони.':'Жильё сохранено черновиком. Пройдите проверку перед публикацией.'};
   }
-  async createBooking(body:Row) {
+  // `ownerReady`: the owner has already said the place will be ready for this start (an accepted quick request),
+  // so the preparation time no longer stops the booking. Set only by the server, never from the request body.
+  async createBooking(body:Row,options:{ownerReady?:boolean}={}) {
     await this.requireRole('guest');
     const key=required(body.requestKey,'Ключ запроса',100), existing=await this.one('SELECT id FROM bookings WHERE guest_id=? AND request_key=?',this.userId,key);
     if(existing) return {id:existing.id,message:'Эта заявка уже сохранена.'};
-    const checked=await this.bookingQuote(body), {start,end,guests,amount}=checked;
+    const checked=await this.bookingQuote(body,{ownerReady:options.ownerReady===true}), {start,end,guests,amount}=checked;
     if(body.expectedAmount!==undefined && body.expectedAmount!==amount) throw new DomainError('Стоимость изменилась. Проверьте новый расчёт перед отправкой заявки.',409);
     if(body.expectedPolicyVersion!==undefined&&body.expectedPolicyVersion!==checked.policy.version)throw new DomainError('Условия проживания изменились. Проверьте новый расчёт.',409);
     if(checked.policy.version>0&&body.acceptTerms!==true)throw new DomainError('Подтвердите согласие с показанными правилами проживания.');

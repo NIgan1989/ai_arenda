@@ -118,6 +118,11 @@ test('a bath that takes two hours to heat is not offered or booked sooner, and t
   // One hour where two is the least: «минимум 2 часа», not «занято».
   const short=await previewMatches(f.guest,{...body(later,{kinds:['banya','sauna']}),end:iso(later+3600)});
   assert.deepEqual([short.properties.length,short.empty.reason,short.empty.minHours],[0,'minHours',2]);
+  // The hour that would be named is taken («Занято»): it is not offered as the nearest start.
+  const at=Date.parse(early.empty.next.start)/1000;
+  f.db.raw.prepare("INSERT INTO calendar_sources(id,property_id,owner_id,label,url,created_at,provider,external_property_id) VALUES ('busy-src',?,'owner','Занято','',?,'manual','aiqonaq:busy')").run(bath,now());
+  f.db.raw.prepare("INSERT INTO external_blocks(id,source_id,property_id,event_uid,start,end) VALUES ('busy-1','busy-src',?,'busy:1',?,?)").run(bath,at,at+3*3600);
+  const taken=await search(soon);assert.deepEqual(taken.properties,[]);assert.notEqual(taken.empty.reason,'prep');
  }finally{f.db.close();}
 });
 
