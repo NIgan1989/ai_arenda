@@ -122,7 +122,7 @@ async function emptyEnded(db:D1Database,at:number,result:Row){
   const title=b.title||'жильё',{c,forGuest,forOwner}=noShowTerms(b,at),done="EXISTS(SELECT 1 FROM bookings WHERE id=? AND status='cancelled')";
   const r=await db.batch([
    q(db,"UPDATE bookings SET status='cancelled' WHERE id=? AND status='confirmed' AND end<=? AND NOT EXISTS(SELECT 1 FROM booking_terms WHERE booking_id=? AND (actual_checkin IS NOT NULL OR checkin_reported_at IS NOT NULL)) AND NOT EXISTS(SELECT 1 FROM property_operations WHERE property_id=? AND active_booking_id=?)",b.id,at,b.id,b.property_id,b.id),
-   q(db,`INSERT OR IGNORE INTO notifications SELECT ?||j.id,j.assigned_to,?,'cleaner:booking-cancelled:'||j.id,0,? FROM cleaning_jobs j WHERE j.booking_id=? AND j.status='assigned' AND j.assigned_to IS NOT NULL AND ${done}`,uuid()+':','Гость не приехал в «'+title+'», уборка после этой брони не нужна. Задание снято.',at,b.id,b.id),
+   q(db,`INSERT OR IGNORE INTO notifications SELECT ?||j.id,j.assigned_to,?,'cleaner:booking-cancelled:'||j.id,0,? FROM cleaning_jobs j WHERE j.booking_id=? AND j.status='assigned' AND j.assigned_to IS NOT NULL AND ${done}`,uuid()+':',venueOr(b,'Гость не приехал в «'+title+'», уборка после этой брони не нужна. Задание снято.','Гость не пришёл в «'+title+'», уборка после этой брони не нужна. Задание снято.'),at,b.id,b.id),
    q(db,`UPDATE cleaning_jobs SET status='cancelled' WHERE booking_id=? AND status IN ('open','assigned') AND ${done}`,b.id,b.id),
    settle(db,b.id,c.refund,at),
    q(db,`INSERT OR IGNORE INTO notifications SELECT ?,?,?,?,0,? WHERE ${done}`,uuid(),b.guest_id,(venueOr(b,'ИИ-администратор: время брони «'+title+'» прошло, заселения не было. Бронь закрыта. ','ИИ-администратор: время брони «'+title+'» прошло, вы не пришли. Бронь закрыта. ')+forGuest).trim(),'guest:stay-no-show:'+b.id,at,b.id),
@@ -177,7 +177,7 @@ async function checkouts(db:D1Database,at:number,result:Row,admin:string[],rule:
   if(late>=handover.minutes*60&&s<3&&handover.on){
    if(moved(await db.batch([step(db,b.id,'checkout',Number(b.end),s,3,at),
     q(db,"INSERT OR IGNORE INTO notifications SELECT ?,?,?,?,0,? WHERE changes()>0",uuid(),b.owner_id,venueOr(b,'ИИ-администратор передал задержку выезда из «'+title+'» администратору сервиса. Подтвердите выезд, как только жильё освободится.','ИИ-администратор передал задержку в «'+title+'» администратору сервиса: '+wordsOf(b).notOut+'. Подтвердите '+wordsOf(b).leaveLow+', как только гости уйдут.'),'owner:stay-checkout-escalated:'+b.id+':'+b.end,at),
-    ...admin.map(a=>notice(db,a,'Гость не выехал из «'+title+'» больше '+minutesLabel(handover.minutes)+' после конца брони и не ответил. Свяжитесь с владельцем и гостем.','admin:stay-checkout:'+b.id+':'+b.end+':'+a,at))])))result.escalated++;
+    ...admin.map(a=>notice(db,a,venueOr(b,'Гость не выехал из «'+title+'» больше '+minutesLabel(handover.minutes)+' после конца брони и не ответил. Свяжитесь с владельцем и гостем.','Гость не освободил «'+title+'» больше '+minutesLabel(handover.minutes)+' после конца брони и не ответил. Свяжитесь с владельцем и гостем.'),'admin:stay-checkout:'+b.id+':'+b.end+':'+a,at))])))result.escalated++;
    continue;
   }
   if(late>=CHECKOUT_WARN&&s<2){
@@ -186,8 +186,8 @@ async function checkouts(db:D1Database,at:number,result:Row,admin:string[],rule:
    const jobs=await rows(db,"SELECT id,assigned_to FROM cleaning_jobs WHERE booking_id=? AND status='assigned' AND assigned_to IS NOT NULL",b.id);
    if(moved(await db.batch([step(db,b.id,'checkout',Number(b.end),s,2,at),
     q(db,"INSERT OR IGNORE INTO notifications SELECT ?,?,?,?,0,? WHERE changes()>0",uuid(),b.owner_id,venueOr(b,'ИИ-администратор: гость ещё не сообщил о выезде из «'+title+'».'+(close?' Следующий заезд в '+clock(close)+' под угрозой.':'')+' Свяжитесь с гостем или подтвердите выезд, если жильё свободно.','ИИ-администратор: гость ещё не сообщил '+wordsOf(b).ofLeave+' в «'+title+'».'+(close?' Следующая бронь в '+clock(close)+' под угрозой.':'')+' Свяжитесь с гостем или подтвердите '+wordsOf(b).leaveLow+', если гости ушли.'),'owner:stay-checkout-late:'+b.id+':'+b.end,at),
-    ...jobs.map(j=>notice(db,j.assigned_to,'ИИ-администратор: гость ещё в «'+title+'», начало уборки может сдвинуться. Я сообщу, когда жильё освободится.','cleaner:stay-checkout-late:'+j.id+':'+b.end,at)),
-    ...(close?admin.map(a=>notice(db,a,'Гость не выехал из «'+title+'», следующий заезд в '+clock(close)+'. Проверьте ситуацию.','admin:stay-checkout-next:'+b.id+':'+b.end+':'+a,at)):[])])))result.warned++;
+    ...jobs.map(j=>notice(db,j.assigned_to,'ИИ-администратор: гость ещё в «'+title+'», начало уборки может сдвинуться. Я сообщу, когда '+venueOr(b,'жильё','место')+' освободится.','cleaner:stay-checkout-late:'+j.id+':'+b.end,at)),
+    ...(close?admin.map(a=>notice(db,a,venueOr(b,'Гость не выехал из «'+title+'», следующий заезд в '+clock(close)+'. Проверьте ситуацию.','Гость не освободил «'+title+'», следующая бронь в '+clock(close)+'. Проверьте ситуацию.'),'admin:stay-checkout-next:'+b.id+':'+b.end+':'+a,at)):[])])))result.warned++;
    continue;
   }
   if(s<1&&moved(await db.batch([step(db,b.id,'checkout',Number(b.end),s,1,at),

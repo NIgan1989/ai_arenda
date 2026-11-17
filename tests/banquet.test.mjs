@@ -105,6 +105,13 @@ test('a guest books a slot of a banquet hall for a memorial meal',async()=>{
   await f.guest.bookingAction(made.id,{action:'report_checkin'});
   assert.ok(f.db.raw.prepare("SELECT 1 FROM notifications WHERE body LIKE 'Гость сообщил о начале мероприятия в «%'").get());
   assert.ok(!f.db.raw.prepare("SELECT 1 FROM notifications WHERE body LIKE '%заселился%'").get());
+  // The journal of the AI says it in the words of a hall too: «ИИ отметил начало», «начало» before the date.
+  const owner=f.db.raw.prepare('SELECT p.owner_id FROM bookings b JOIN properties p ON p.id=b.property_id WHERE b.id=?').get(made.id).owner_id;
+  f.db.raw.prepare("INSERT INTO notifications(id,user_id,body,dedupe,read,created_at) VALUES ('qa-j1',?,'x',?,0,?)").run(owner,'owner:administrator-checkin:'+made.id,epoch());
+  const {aiJournal,recentAiMarks}=await load('ai-moves'),{journalMeta}=await load('ai-move-marks'),line=(await aiJournal(f.db,owner,'owner')).find(l=>l.open?.id===made.id&&l.text.startsWith('ИИ отметил'));
+  assert.equal(line?.text,'ИИ отметил начало');assert.match(journalMeta(line),/^начало /);
+  assert.equal((await recentAiMarks(f.db,owner,'owner')).find(m=>m.id===made.id)?.type,'banquet');
+  f.db.raw.prepare("DELETE FROM notifications WHERE id='qa-j1'").run();
   f.db.raw.prepare('UPDATE booking_terms SET checkin_reported_at=NULL WHERE booking_id=?').run(made.id);
   // The guest never came: the automatic cancellation returns everything as well.
   const {sweepStays}=await load('stay-watch');f.db.raw.prepare('UPDATE bookings SET start=?,end=? WHERE id=?').run(epoch()-6*3600,epoch()-3600,made.id);

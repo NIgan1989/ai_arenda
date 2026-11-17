@@ -7,7 +7,8 @@ export type AiMove='confirmed'|'answered'|'checkin'|'checkout'|'checked'|'accept
 // kind: what the notice is about. An offer is turned into its property or job by the server.
 // propertyId: the object it happened at (the server adds it), so the owner's pin of the object shows a move about
 // a booking or a cleaning that has already left the map, like a cleaning just accepted.
-export type AiMark={kind:'booking'|'job'|'property'|'matching-offer'|'cleaning-offer';id:string;move:AiMove;at:number;propertyId?:string};
+// type: the kind of the object (banya, banquet…), added by the server, so a bath and a hall are spoken of in their own words.
+export type AiMark={kind:'booking'|'job'|'property'|'matching-offer'|'cleaning-offer';id:string;move:AiMove;at:number;propertyId?:string;type?:string};
 // A move is shown on the map for this long after it happened, so a map opened a little later still sees it.
 export const AI_WINDOW=600;
 
@@ -49,14 +50,36 @@ export const AI_SAYS:Record<AiMove,string>={
  took:'Автопилот взял уборку',moved:'ИИ перенёс время',reminded:'ИИ напомнил о сроке',escalated:'ИИ передал задержку',released:'ИИ снял назначение'
 };
 
+// A bath and a hall are not lived in: guests come and go, an event starts and ends. The same lines in their words
+// (the lists of kinds repeat lib/stay-words.ts: this file stays without imports). [line for a home, for a bath, for a hall].
+const VENUE_SAYS:[string,string,string][]=[
+ ['ИИ заселил гостя','ИИ отметил приход гостя','ИИ отметил начало'],
+ ['ИИ подтвердил выезд','ИИ подтвердил уход','ИИ подтвердил окончание'],
+ ['ИИ ждёт готовности жилья','ИИ ждёт готовности бани','ИИ ждёт готовности зала'],
+ ['ИИ предложил изменить проживание','ИИ предложил изменить время','ИИ предложил изменить время'],
+ ['ИИ спросил, едете ли вы','ИИ спросил, придёте ли вы','ИИ спросил, придёте ли вы'],
+ ['ИИ спросил гостя, едет ли он','ИИ спросил гостя, придёт ли он','ИИ спросил гостя, придёт ли он'],
+ ['ИИ снял бронь: вы не приехали','ИИ снял бронь: вы не пришли','ИИ снял бронь: вы не пришли'],
+ ['ИИ отметил неявку и освободил жильё','ИИ отметил неявку и освободил время','ИИ отметил неявку и освободил время'],
+ ['ИИ напомнил о выезде','ИИ напомнил об уходе','ИИ напомнил об окончании'],
+ ['ИИ сообщил: гость не выехал','ИИ сообщил: гость не ушёл','ИИ сообщил: гости не ушли'],
+ ['ИИ передал задержку выезда администратору','ИИ передал задержку ухода администратору','ИИ передал задержку окончания администратору'],
+ ['ИИ предупредил: гость ещё в жилье','ИИ предупредил: гость ещё в бане','ИИ предупредил: гости ещё в зале']
+];
+const venueOf=(type?:string|null)=>type==='banya'||type==='sauna'?1:type==='banquet'||type==='cafe'?2:0;
+// The line in the words of the object's kind; a home keeps the line as it is.
+export function aiSays(text:string,type?:string|null){const v=venueOf(type);if(!v)return text;const hit=VENUE_SAYS.find(x=>x[0]===text);return hit?hit[v]:text;}
+// Every way one line may be said, to recognise it whatever the kind of the object.
+export function aiSaysAll(text:string){const hit=VENUE_SAYS.find(x=>x[0]===text);return hit?[...hit]:[text];}
+
 // The newest move about any of these things, still within the window: the one a pin shows.
-export function latestMove(marks:unknown,about:{kind:string;id:string}[],now:number):{move:AiMove;at:number}|undefined{
+export function latestMove(marks:unknown,about:{kind:string;id:string}[],now:number):{move:AiMove;at:number;type?:string}|undefined{
  if(!Array.isArray(marks))return undefined;
- let best:{move:AiMove;at:number}|undefined;
+ let best:{move:AiMove;at:number;type?:string}|undefined;
  for(const m of marks as AiMark[]){
   if(!m||typeof m.at!=='number'||!(m.move in AI_SAYS)||now-m.at>AI_WINDOW||m.at>now+60)continue;
   if(!about.some(a=>a.kind===m.kind&&a.id===m.id||a.kind==='property'&&a.id===m.propertyId))continue;
-  if(!best||m.at>best.at)best={move:m.move,at:m.at};
+  if(!best||m.at>best.at)best={move:m.move,at:m.at,...(m.type?{type:m.type}:{})};
  }
  return best;
 }
@@ -118,7 +141,8 @@ export function journalToday(entries:{at:number}[],now:number){const zone=5*3600
 // open: the booking, the cleaning, the home or the chat of the line. The same addresses a push opens (lib/web-push.ts).
 export type JournalOpen={kind:'booking'|'job'|'property'|'room';id:string};
 // who: the person the step was about (the worker of a cleaning, for its owner). start: when that cleaning or stay begins.
-export type JournalLine={at:number;text:string;title:string;open?:JournalOpen;who?:string;start?:number};
+// type: the kind of the object the line is about, when it is a bath or a hall.
+export type JournalLine={at:number;text:string;title:string;open?:JournalOpen;who?:string;start?:number;type?:string};
 const J_ZONE=5*3600,J_MONTHS=['января','февраля','марта','апреля','мая','июня','июля','августа','сентября','октября','ноября','декабря'];
 const jTwo=(n:number)=>String(n).padStart(2,'0'),jDate=(at:number)=>new Date((at+J_ZONE)*1000);
 // «14:05» of a line, and the day that heads its group: «Сегодня», «Вчера», «12 ноября».
@@ -131,7 +155,7 @@ export function journalDay(at:number,now:number){
 // «Айгуль · уборка 14 ноября, 06:30», «заезд 15 ноября, 14:00».
 export function journalMeta(l:JournalLine){
  const parts:string[]=[];if(l.who)parts.push(l.who);
- if(typeof l.start==='number'&&l.start>0&&(l.open?.kind==='job'||l.open?.kind==='booking')){const d=jDate(l.start);parts.push((l.open.kind==='job'?'уборка ':'заезд ')+d.getUTCDate()+' '+J_MONTHS[d.getUTCMonth()]+', '+journalClock(l.start));}
+ if(typeof l.start==='number'&&l.start>0&&(l.open?.kind==='job'||l.open?.kind==='booking')){const d=jDate(l.start);parts.push((l.open.kind==='job'?'уборка ':['заезд ','приход ','начало '][venueOf(l.type)])+d.getUTCDate()+' '+J_MONTHS[d.getUTCMonth()]+', '+journalClock(l.start));}
  return parts.join(' · ');
 }
 // Lines under the heads of their days, in the order they came (the newest first).
