@@ -2,6 +2,7 @@ import {DomainError,required,number} from './domain';
 import {RentalService} from './service';
 import {normalizePhone} from './native-auth';
 import {isBath} from './listings';
+import {venuesFor} from './venue';
 import {q,one,rows,epoch,uuid,type Row} from './operation-core';
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -30,6 +31,9 @@ const tell=(db:D1Database,userId:string,body:string,dedupe:string,at:number)=>q(
 
 // ---------- The owner names the person ----------
 
+/** The object and the other halls of its venue that are not archived. */
+const hallIds=async(db:D1Database,propertyId:string)=>[propertyId,...(await rows(db,'SELECT h.property_id id FROM venue_halls h JOIN properties p ON p.id=h.property_id WHERE p.archived_at IS NULL AND h.property_id<>? AND h.venue_id=(SELECT venue_id FROM venue_halls WHERE property_id=?)',propertyId,propertyId)).map(r=>String(r.id))];
+
 export async function staffState(s:RentalService,propertyId:string){
  await s.requireRole('owner');
  if(!await one(s.db,'SELECT id FROM properties WHERE id=? AND owner_id=?',propertyId,s.userId))throw new DomainError('Объект недоступен.',404);
@@ -45,9 +49,12 @@ export async function assignStaff(s:RentalService,body:Row){
  if(!person)throw new DomainError('С этим номером в приложении никто не зарегистрирован. Попросите сотрудника установить приложение и создать аккаунт, затем назначьте его снова.',404);
  if(person.id===s.userId)throw new DomainError('Это ваш номер. Отметки по объекту у вас уже есть.',409);
  const at=epoch();
+ // A venue is run by one shift: the person is named for all its halls at once (lib/venue.ts).
+ const halls=await hallIds(s.db,propertyId);
  await s.db.batch([
-  q(s.db,'INSERT INTO property_staff(property_id,staff_id,owner_id,created_at) VALUES (?,?,?,?) ON CONFLICT(property_id) DO UPDATE SET staff_id=excluded.staff_id,owner_id=excluded.owner_id,created_at=excluded.created_at',propertyId,person.id,s.userId,at),
-  tell(s.db,person.id,'Вас назначили сотрудником объекта «'+p.title+'». Откройте «Смена» в меню: там сегодняшние гости и отметки.','staff:assigned:'+propertyId+':'+at,at)]);
+  ...halls.map(id=>q(s.db,'INSERT INTO property_staff(property_id,staff_id,owner_id,created_at) VALUES (?,?,?,?) ON CONFLICT(property_id) DO UPDATE SET staff_id=excluded.staff_id,owner_id=excluded.owner_id,created_at=excluded.created_at',id,person.id,s.userId,at)),
+  tell(s.db,person.id,'Вас назначили сотрудником объекта «'+p.title+'»'+(halls.length>1?' и других залов заведения':'')+'. Откройте «Смена» в меню: там сегодняшние гости и отметки.','staff:assigned:'+propertyId+':'+at,at)]);
+ if(halls.length>1)return {...await staffState(s,propertyId),message:person.name+' теперь отмечает гостей во всех залах заведения: '+halls.length+'.'};
  return {...await staffState(s,propertyId),message:person.name+' теперь отмечает гостей объекта «'+p.title+'».'};
 }
 export async function removeStaff(s:RentalService,body:Row){
@@ -55,7 +62,8 @@ export async function removeStaff(s:RentalService,body:Row){
  const propertyId=required(body.propertyId,'Объект',100),at=epoch();
  const row=await one(s.db,'SELECT x.staff_id,p.title FROM property_staff x JOIN properties p ON p.id=x.property_id WHERE x.property_id=? AND p.owner_id=?',propertyId,s.userId);
  if(!row)return {...await staffState(s,propertyId),message:'Сотрудник не назначен.'};
- await s.db.batch([q(s.db,'DELETE FROM property_staff WHERE property_id=? AND owner_id=?',propertyId,s.userId),
+ const halls=await hallIds(s.db,propertyId);
+ await s.db.batch([...halls.map(id=>q(s.db,'DELETE FROM property_staff WHERE property_id=? AND owner_id=?',id,s.userId)),
   tell(s.db,row.staff_id,'Владелец снял вас с объекта «'+row.title+'».','staff:removed:'+propertyId+':'+at,at)]);
  return {...await staffState(s,propertyId),message:'Сотрудник снят. Отметки снова только у вас.'};
 }
@@ -108,7 +116,7 @@ export async function staffToday(s:RentalService){
  const places=await rows(s.db,`SELECT p.id,p.title,p.city,p.district,p.address,(SELECT details FROM property_details WHERE property_id=p.id) details,
   COALESCE((SELECT readiness FROM property_operations WHERE property_id=p.id),'ready') readiness,(SELECT name FROM profiles WHERE id=p.owner_id) owner_name
   FROM property_staff x JOIN properties p ON p.id=x.property_id WHERE x.staff_id=? AND p.archived_at IS NULL ORDER BY p.title`,s.userId);
- const out:Row[]=[];
+ const out:Row[]=[],venues=places.length?await venuesFor(s.db):new Map();
  for(const p of places){
   const bath=isBath(kindOf(p.details));
   const stays=await rows(s.db,`SELECT b.id,b.start,b.end,b.guests,b.status,t.prepared_at,t.actual_checkin,t.actual_checkout,(SELECT name FROM profiles WHERE id=b.guest_id) guest_name
@@ -119,7 +127,7 @@ export async function staffToday(s:RentalService){
   // A finished stay stays on the list only while the object still waits for «Готово», and only the last one.
   const steps=stays.map(b=>({id:b.id,start:b.start,end:b.end,guests:b.guests,guestName:String(b.guest_name||'Гость').split(' ')[0],...stayStep(b as any,p.readiness,bath,at)})).filter(b=>b.stage!=='done');
   const last=steps.filter(b=>b.stage==='left').pop();
-  out.push({id:p.id,title:p.title,place:[p.city,p.district,p.address].filter(Boolean).join(', '),bath,readiness:p.readiness,ownerName:p.owner_name||'',busy:await busyBlocks(s.db,p.id,at),
+  out.push({id:p.id,title:p.title,venue:venues.get(p.id)?.title||'',place:[p.city,p.district,p.address].filter(Boolean).join(', '),bath,readiness:p.readiness,ownerName:p.owner_name||'',busy:await busyBlocks(s.db,p.id,at),
    stays:steps.filter(b=>b.stage!=='left'||b===last)});
  }
  return {serverTime:at,places:out};

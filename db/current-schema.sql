@@ -64,6 +64,7 @@
 -- migration 0060_guest_favorites.sql sha256:da4664c14d861893f3ba6ae36d881a993cd2f68ef8270bcdeeef24d84a0b7ee7
 -- migration 0061_bath_category.sql sha256:26dbbb2861fcef892b7203351d137cdb93fe79e3ad9eedb9d736731a06305f01
 -- migration 0062_property_staff.sql sha256:1404d19d85c70f739126976e6bb21eba091d5529d7a5c36d19fb08575daf3989
+-- migration 0063_venues.sql sha256:df0f7d13b7b869accb211edd5c3b1b84d7469ac39270b1eb53c12d626d7a29b2
 
 -- table access_receipts
 CREATE TABLE access_receipts (id TEXT PRIMARY KEY,property_id TEXT NOT NULL,entity_kind TEXT NOT NULL,entity_id TEXT NOT NULL,user_id TEXT NOT NULL,created_at INTEGER NOT NULL,expires_at INTEGER NOT NULL);
@@ -1092,6 +1093,21 @@ CREATE TABLE stay_watch (
  updated_at INTEGER NOT NULL
 );
 
+-- table venue_halls
+CREATE TABLE venue_halls (
+ property_id TEXT PRIMARY KEY REFERENCES properties(id),
+ venue_id TEXT NOT NULL REFERENCES venues(id),
+ created_at INTEGER NOT NULL
+);
+
+-- table venues
+CREATE TABLE venues (
+ id TEXT PRIMARY KEY,
+ owner_id TEXT NOT NULL REFERENCES profiles(id),
+ title TEXT NOT NULL,
+ created_at INTEGER NOT NULL
+);
+
 -- table worker_dispatch
 CREATE TABLE worker_dispatch (user_id TEXT PRIMARY KEY REFERENCES profiles(id),receive_offers INTEGER NOT NULL DEFAULT 0 CHECK(receive_offers IN (0,1)),updated_at INTEGER NOT NULL);
 
@@ -1304,6 +1320,9 @@ CREATE INDEX stay_photos_booking ON stay_photos(booking_id,phase,created_at);
 
 -- index stay_reviews_property
 CREATE INDEX stay_reviews_property ON stay_reviews(property_id,created_at);
+
+-- index venue_halls_venue
+CREATE INDEX venue_halls_venue ON venue_halls(venue_id);
 
 -- view pilot_property_admissions
 CREATE VIEW pilot_property_admissions AS
@@ -1780,6 +1799,9 @@ CREATE TRIGGER account_erased_stay_photos_insert BEFORE INSERT ON stay_photos WH
 
 -- trigger account_erased_stay_reviews_insert
 CREATE TRIGGER account_erased_stay_reviews_insert BEFORE INSERT ON stay_reviews WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.guest_id OR user_id=NEW.owner_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END;
+
+-- trigger account_erased_venues_insert
+CREATE TRIGGER account_erased_venues_insert BEFORE INSERT ON venues WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.owner_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END;
 
 -- trigger account_erased_worker_dispatch_insert
 CREATE TRIGGER account_erased_worker_dispatch_insert BEFORE INSERT ON worker_dispatch WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.user_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END;
