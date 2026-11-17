@@ -87,8 +87,8 @@ export async function previewMatches(s:RentalService,body:Row,explain=true):Prom
  return {filters,properties:ranked.map(p=>({...p,quickRequest:enabled.has(p.id)})),total:ranked.length,center:first.center,availabilityChecked:true,serverTime:epoch(),...(ranked.length||!explain?{}:{empty:await emptyHint(s,filters)})};
 }
 // Why nothing matched, and the nearest thing that would, so that the guest hears a reason and a way out instead of
-// a bare "nothing": no homes in the city, too many guests, no hourly homes, all taken (with the nearest free stay of
-// the same length within a week), over the budget (with the lowest price), or the district, type and wishes.
+// a bare "nothing": no homes in the city, too many guests, no hourly homes, all taken (with the nearest stay of the same
+// length within a week that passes every other condition), over the budget (with the lowest price), or the district, type and wishes.
 export async function emptyHint(s:RentalService,f:Row):Promise<Row>{
  const all=(await s.publicSearch({city:f.city,mode:'daily',guests:'1',limit:'60'},{matching:true})).properties.filter((p:Row)=>!p.test_preview);
  if(!all.length)return {reason:'city'};
@@ -99,7 +99,7 @@ export async function emptyHint(s:RentalService,f:Row):Promise<Row>{
  const now=await free(f.start,f.end);
  if(!now.length){
   const start=Date.parse(f.start),length=Date.parse(f.end)-start;
-  for(let day=1;day<=7;day++){const from=start+day*86400000,found=await free(new Date(from).toISOString(),new Date(from+length).toISOString());if(found.length)return {reason:'busy',next:{start:new Date(from).toISOString(),end:new Date(from+length).toISOString(),count:found.length}};}
+  for(let day=1;day<=7;day++){const from=start+day*86400000,found=rankMatches(await free(new Date(from).toISOString(),new Date(from+length).toISOString()),{...f,start:new Date(from).toISOString(),end:new Date(from+length).toISOString()});if(found.length)return {reason:'busy',next:{start:new Date(from).toISOString(),end:new Date(from+length).toISOString(),count:found.length}};}
   return {reason:'busy'};
  }
  const anyPrice=rankMatches(now,{...f,maxPrice:'100000000'});

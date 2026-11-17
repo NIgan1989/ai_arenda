@@ -169,5 +169,7 @@ test('all taken: the empty answer names the nearest free stay of the same length
   await f.guest.createBooking({propertyId:f.property,start:input().start,end:input().end,guests:2,billingMode:'daily',requestKey:'busy',acceptTerms:true});
   const busy=await previewMatches(f.other,input());assert.equal(busy.properties.length,0);assert.equal(busy.empty.reason,'busy');
   assert.ok(Date.parse(busy.empty.next.start)>Date.parse(input().start));assert.equal(Date.parse(busy.empty.next.end)-Date.parse(busy.empty.next.start),Date.parse(input().end)-Date.parse(input().start));assert.equal(busy.empty.next.count,1);
+  // Another day is offered only for a home that also passes the rest of the request.
+  const busyHostel=await previewMatches(f.other,{...input(),kinds:['hostel']});assert.equal(busyHostel.empty.reason,'busy');assert.equal(busyHostel.empty.next,undefined);
  }finally{f.db.close();}
 });
