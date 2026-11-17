@@ -31,6 +31,8 @@ import {WorkspaceMenuButton,MapChatsButton} from './src/WorkspaceNavigation';
 import {sheetName} from '../lib/sheet-title';
 import {OwnProperties} from './src/OwnProperties';
 import {PropertyListing} from './src/PropertyListing';
+// The line above a place opened from the map, in the words of its kind.
+const placeSaid=(type?:string)=>type==='banya'?'Баня, выбранная на карте.':type==='sauna'?'Сауна, выбранная на карте.':type==='banquet'?'Зал, выбранный на карте.':type==='cafe'?'Кафе, выбранное на карте.':'Жильё, выбранное на карте.';
 import {PropertyEdit} from './src/PropertyEdit';
 import {PropertyQuick} from './src/PropertyQuick';
 import {CleanerCard} from './src/ProfileEditor';
@@ -417,7 +419,7 @@ function Chat(){
     if(!intent.startsWith('property:'))return;
     const id=intent.slice(9);
     if(!data.properties.some((p:Row)=>p.id===id)){setPageId('catalog');return;}
-    setPageId('overview');say('Жильё, выбранное на карте.','properties',{ids:[id],mode:'guest',back:true,...(stay?{stay}:{})});
+    setPageId('overview');say(placeSaid(data.properties.find((p:Row)=>p.id===id)?.details?.type),'properties',{ids:[id],mode:'guest',back:true,...(stay?{stay}:{})});
   }
   // «Забронировать» in the map's results: the dates and guests are chosen there, so the guest goes straight to the check of the request.
   function bookFromMap(found:Row,stay:MapStay){
