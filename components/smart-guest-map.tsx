@@ -15,6 +15,7 @@ import { nowCard, type NowCardData } from './now-card';
 import { guestTrips, guestTripsLabel } from '../lib/guest-trips';
 import { administratorChatPath, askAdministratorInChats, cleanAiText, leaveAiAsk, type AiChip } from '../lib/ai-line';
 import { mapCities, cityNearLocation } from '../lib/map-location';
+import { propertyTypes } from '../lib/listings';
 import { requestBrowserLocation, type BrowserLocationFix } from '../lib/browser-location';
 import {
   MAX_GUESTS, NO_BUDGET, defaultStay, freshStay, guestRequestLine, guestSearchRequest, mapSearchFilters, plural, unbrokenParts, weekendStay,
@@ -154,9 +155,18 @@ function requestBody(draft: Row) {
     priority: draft.priority || 'balanced',
     features: Array.isArray(draft.features) ? draft.features : [],
     near: draft.near || null,
+    kinds: Array.isArray(draft.kinds) ? draft.kinds : [],
+    rooms: String(draft.rooms || ''),
     start: draft.start + '+05:00',
     end: draft.end + '+05:00',
   };
+}
+
+// "студия или квартира, 2 комн."; '' when any home will do. The site has no chips for these, so they hold for one phrase.
+function homeWords(draft: Row) {
+  const kinds = (Array.isArray(draft.kinds) ? draft.kinds : []).map((id: string) => (propertyTypes[id] || '').toLocaleLowerCase('ru')).filter(Boolean).join(' или ');
+  const rooms = draft.rooms ? (String(draft.rooms).endsWith('+') ? 'от ' + String(draft.rooms).slice(0, -1) : draft.rooms) + ' комн.' : '';
+  return [kinds, rooms].filter(Boolean).join(', ');
 }
 
 // "Понял: Астана, 2 гостя." — only what the text itself named.
@@ -168,6 +178,7 @@ function understoodLine(result: GuestSearch, before: Row) {
     filters.mode !== before.mode && (filters.mode === 'hourly' ? 'на часы' : 'на сутки'),
     stated.guests && guests + ' ' + plural(guests, 'гость', 'гостя', 'гостей'),
     stated.budget && 'до ' + money(Number(filters.maxPrice)),
+    stated.home && homeWords(filters),
     stated.wishes && 'пожелания',
   ].filter(Boolean);
   return parts.length ? 'Понял: ' + parts.join(', ') + '. ' : '';
@@ -557,6 +568,7 @@ export function SmartGuestMap({ publicMode = false, onChanged, accountId, city, 
       return;
     }
     let next = result.filters;
+    if (!result.stated.home) next = { ...next, kinds: [], rooms: '' };
     const remarks = result.remarks.join(' ');
     setRemark('');
     if (result.stated.city) cityChosen.current = true;
@@ -736,7 +748,7 @@ export function SmartGuestMap({ publicMode = false, onChanged, accountId, city, 
     : [];
   const canAskOwners = !requestId && candidates.some(property => property.quickRequest);
   // A search restored after a reload has no conditions to show until the server returns them.
-  const summary = stage === 'request' || (requestId && !state) ? '' : guestRequestLine(draft);
+  const summary = stage === 'request' || (requestId && !state) ? '' : [guestRequestLine(draft), homeWords(draft)].filter(Boolean).join(' · ');
   const submit = () => {
     setRemark('');
     void search(draft, true);

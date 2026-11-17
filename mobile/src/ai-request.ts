@@ -27,10 +27,13 @@ export type GuestDraft = {
   start: string; // Kazakhstan time, 'YYYY-MM-DDTHH:mm'
   end: string;
   guests: number;
-  maxPrice: string; // budget for the whole stay in tenge; '' when the guest named none
+  maxPrice: string; // budget in tenge; '' when the guest named none
+  perUnit: boolean; // maxPrice is a price per day (per hour for an hourly stay), not for the whole stay
   priority: 'balanced' | 'cheaper' | 'closer';
   features: string[]; // amenity ids the flat must have
   near: { longitude: number; latitude: number; radius: number } | null;
+  kinds: string[]; // types of home (lib/listings.ts propertyTypes); [] for any
+  rooms: string; // '2' exactly two rooms, '2+' at least two; '' for any
 };
 export type ParsedRequest = {
   draft: GuestDraft; // the conditions with everything the text says applied
@@ -43,6 +46,13 @@ export type ParsedRequest = {
   note: string;
 };
 export type ChipId = 'daily' | 'hourly' | 'weekend';
+
+// Types of home a guest can ask for, as lib/listings.ts names them (propertyTypes). Kept here so this file stays
+// free of server code; mobile/tests/ai-request.test.mjs checks that the two lists match.
+export const HOME_KINDS: Record<string, string> = {
+  apartment: 'Квартира', studio: 'Студия', room: 'Комната', house: 'Дом',
+  guesthouse: 'Гостевой дом', hostel: 'Хостел', hotel: 'Гостиница', aparthotel: 'Апарт-отель'
+};
 
 // The wishes the shared parser can read from text, in the order the form shows them.
 export const WISHES: [string, string][] = [
@@ -62,7 +72,7 @@ const clamp = (value: number, min: number, max: number) => Math.max(min, Math.mi
 
 /** What the form starts with: today until tomorrow, two guests, no budget. */
 export function newDraft(city: string, now = Date.now()): GuestDraft {
-  return { city, district: '', ...defaultStay('daily', now), guests: 2, maxPrice: '', priority: 'balanced', features: [], near: null };
+  return { city, district: '', ...defaultStay('daily', now), guests: 2, maxPrice: '', perUnit: true, priority: 'balanced', features: [], near: null, kinds: [], rooms: '' };
 }
 
 /** The same conditions with the stay moved out of the past, for a screen that stayed open. */
@@ -70,9 +80,20 @@ export function freshDraft(draft: GuestDraft, now = Date.now()): GuestDraft {
   return { ...draft, ...freshStay(draft, now) };
 }
 
-/** Free text applied to the current conditions. Nothing is invented: what the text does not name stays as it was. */
+// Words that refine the last request instead of starting a new one: "а дешевле", "ещё с парковкой", "теперь на завтра".
+const REFINE = /^(?:а|и|ещ[её]|теперь|только|плюс|также|тоже|добав[а-я]*|но|подешевле|дешевле|ближе|поближе)(?=$|[^а-яё])/;
+
+/**
+ * Free text as the conditions of a search. A new phrase is a new request: the place and the time stay, and
+ * what narrows a search (guests, budget, district, home type, wishes, a point) starts over, so that "нас 7
+ * человек" said a minute ago does not empty every later search. A phrase that starts as a refinement ("а
+ * дешевле", "ещё с парковкой") keeps it all. Nothing is invented: what the text does not name stays as it was.
+ */
 export function guestRequestFromText(text: string, draft: GuestDraft, cities: string[], now = Date.now()): ParsedRequest {
-  const base = freshDraft(draft, now);
+  const kept = freshDraft(draft, now);
+  const base: GuestDraft = REFINE.test(text.trim().toLocaleLowerCase('ru'))
+    ? kept
+    : { ...kept, district: '', guests: 2, maxPrice: '', perUnit: true, priority: 'balanced', features: [], near: null, kinds: [], rooms: '' };
   const result = guestSearchRequest(text, base, cities, now);
   const filters = result.filters;
   const next: GuestDraft = {
@@ -84,9 +105,12 @@ export function guestRequestFromText(text: string, draft: GuestDraft, cities: st
     end: String(filters.end),
     guests: clamp(Number(filters.guests) || base.guests, 1, MAX_GUESTS),
     maxPrice: String(filters.maxPrice || ''),
+    perUnit: typeof filters.perUnit === 'boolean' ? filters.perUnit : base.perUnit,
     priority: filters.priority === 'cheaper' || filters.priority === 'closer' ? filters.priority : 'balanced',
     features: Array.isArray(filters.features) ? filters.features.filter((id: unknown) => WISHES.some(([known]) => known === id)) : [],
-    near: filters.near || null
+    near: filters.near || null,
+    kinds: Array.isArray(filters.kinds) ? filters.kinds.filter((id: unknown) => typeof id === 'string' && Object.prototype.hasOwnProperty.call(HOME_KINDS, id)) : [],
+    rooms: typeof filters.rooms === 'string' && /^[1-9]\+?$/.test(filters.rooms) ? filters.rooms : ''
   };
   // "почасовая" names a tariff but no day and no length: the stay follows the new tariff.
   if (!result.past && next.mode !== base.mode && !result.stated.when) Object.assign(next, switchStay(next.mode, base.start, now));
@@ -112,13 +136,30 @@ const PRIORITY_WORDS: Record<string, string> = { cheaper: 'дешевле', clos
  * added here, so that no condition is applied without being shown.
  */
 export function guestSummary(draft: GuestDraft, now = Date.now()) {
-  const line = guestRequestLine(draft, now);
+  // The budget is said here, with what it is for: "до 15 000 ₸ за сутки" or "до 45 000 ₸ за всё".
+  const line = guestRequestLine({ ...draft, maxPrice: '' }, now);
   const said = line.toLocaleLowerCase('ru');
   const more = [
     ...WISHES.filter(([id]) => draft.features.includes(id)).map(([, title]) => (title === 'Wi-Fi' ? title : title.toLocaleLowerCase('ru'))),
     PRIORITY_WORDS[draft.priority] || ''
   ].filter(word => word && !said.includes(word.toLocaleLowerCase('ru')));
-  return [line, ...more].join(' · ');
+  return [line, homeWords(draft), budgetWords(draft), ...more].filter(Boolean).join(' · ');
+}
+
+/** "студия или квартира, 2 комн."; '' when any home will do. */
+export function homeWords(draft: Pick<GuestDraft, 'kinds' | 'rooms'>) {
+  const kinds = (draft.kinds || []).map(id => (HOME_KINDS[id] || '').toLocaleLowerCase('ru')).filter(Boolean).join(' или ');
+  const rooms = draft.rooms ? (draft.rooms.endsWith('+') ? 'от ' + draft.rooms.slice(0, -1) : draft.rooms) + ' комн.' : '';
+  return [kinds, rooms].filter(Boolean).join(', ');
+}
+
+/** "до 15 000 ₸ за сутки", "до 3 000 ₸ за час", "до 45 000 ₸ за всё"; '' without a budget. */
+export function budgetWords(draft: Pick<GuestDraft, 'maxPrice' | 'perUnit' | 'mode' | 'start' | 'end'>) {
+  const amount = Number(draft.maxPrice);
+  if (!(amount > 0) || draft.maxPrice === NO_BUDGET) return '';
+  const sum = 'до ' + new Intl.NumberFormat('ru-RU').format(amount).replace(/\s/g, ' ') + ' ₸';
+  if (draft.perUnit) return sum + (draft.mode === 'hourly' ? ' за час' : ' за сутки');
+  return draftUnits(draft as GuestDraft) > 1 ? sum + ' за всё' : sum;
 }
 
 /** The request as /api/public/matching and matching/begin expect it: Kazakhstan time with its offset. */
@@ -130,10 +171,13 @@ export function matchingBody(draft: GuestDraft) {
     start: draft.start + '+05:00',
     end: draft.end + '+05:00',
     guests: draft.guests,
-    maxPrice: Number(draft.maxPrice) || Number(NO_BUDGET),
+    // The server compares the price of the whole stay: a price per day or per hour is multiplied out here.
+    maxPrice: Number(draft.maxPrice) ? Math.min(Number(NO_BUDGET), Number(draft.maxPrice) * (draft.perUnit ? draftUnits(draft) : 1)) : Number(NO_BUDGET),
     priority: draft.priority,
     features: draft.features,
-    near: draft.near
+    near: draft.near,
+    kinds: draft.kinds || [],
+    rooms: draft.rooms || ''
   };
 }
 

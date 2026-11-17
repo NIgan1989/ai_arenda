@@ -45,7 +45,7 @@ export type GuestSearch = {
   /** The current conditions with everything the text says applied. */
   filters: Row;
   /** What the text itself named; the screen asks for the rest. */
-  stated: { city: boolean; district: boolean; when: boolean; guests: boolean; budget: boolean; wishes: boolean };
+  stated: { city: boolean; district: boolean; when: boolean; guests: boolean; budget: boolean; wishes: boolean; home: boolean };
   /** The guest asked for a place near them: the screen needs a point before it can search. */
   nearby: boolean;
   understood: boolean;
@@ -102,6 +102,62 @@ const PART_OF_DAY: [RegExp, string, number][] = [
   [/вечером/, '19:00', 24],
   [/ночью/, '22:00', 30],
 ];
+// The type of home the text names, as the ids of lib/listings.ts (propertyTypes). "Квартира" is how most guests
+// say "жильё" and narrows nothing; a "гостевой дом" is not a "дом", an "апарт-отель" not an "отель".
+const KINDS: [RegExp, string][] = [
+  [/студи/, 'studio'],
+  [/апарт[- ]?отел/, 'aparthotel'],
+  [/гостев[а-я]*\s+дом/, 'guesthouse'],
+  [/гостиниц|(?:^|[^а-я])отел[ьяеию]|(?:^|[^а-я])номер(?:ок|а|е)?(?=$|[^а-я])/, 'hotel'],
+  [/хостел/, 'hostel'],
+  [/(?:^|[^а-я])(?:дом|домик|коттедж|дач)(?:а|е|у|ом|ик|ика|ке|ку)?(?=$|[^а-я])/, 'house'],
+  [/(?:^|[^а-я])комнат(?:а|у|ку|ка|ой)(?=$|[^а-я])/, 'room'],
+];
+const ROOM_WORDS: [RegExp, number][] = [
+  [/однушк|однокомнат|(?:^|[^а-я])одно\s*комнат/, 1],
+  [/двушк|двухкомнат|(?:^|[^а-я])двух\s*комнат/, 2],
+  [/трешк|трехкомнат|(?:^|[^а-я])трех\s*комнат/, 3],
+  [/четырехкомнат|(?:^|[^а-я])четырех\s*комнат/, 4],
+];
+
+/**
+ * Rooms the text asks for: '2' for exactly two ("двушка", "2-комнатная", "2 комнаты"), '2+' for at least two
+ * ("от 2 комнат", "минимум двухкомнатная"); '' when the text names none.
+ */
+export function statedRooms(text: string): string {
+  const digit = text.match(/(?:^|[^\d])([1-6])\s*[-–]?\s*(?:х\s*)?комн/), word = ROOM_WORDS.find(([pattern]) => pattern.test(text));
+  const rooms = digit ? Number(digit[1]) : word ? word[1] : 0;
+  if (!rooms) return '';
+  return /(?:от|не менее|минимум|хотя бы)\s*(?:[1-6]|одно|двух|трех|четырех)/.test(text) ? rooms + '+' : String(rooms);
+}
+
+/** The types of home the text names, in the order of KINDS. */
+export function statedKinds(text: string): string[] {
+  const kinds = KINDS.filter(([pattern]) => pattern.test(text)).map(([, id]) => id);
+  return kinds.filter(id => !(id === 'house' && kinds.includes('guesthouse')) && !(id === 'hotel' && kinds.includes('aparthotel')));
+}
+
+// Towns the service has no homes in yet, with the service city nearest to each. A guest who names one is told so
+// and shown the nearest city, instead of the search quietly staying in the city it was in.
+export const OTHER_TOWNS: Record<string, string> = {
+  Экибастуз: 'Павлодар', Аксу: 'Павлодар', Темиртау: 'Караганда', Сарань: 'Караганда', Шахтинск: 'Караганда', Жезказган: 'Караганда',
+  Сатпаев: 'Караганда', Балхаш: 'Караганда', Талдыкорган: 'Алматы', Конаев: 'Алматы', Капчагай: 'Алматы', Каскелен: 'Алматы',
+  Талгар: 'Алматы', Есик: 'Алматы', Жаркент: 'Алматы', Рудный: 'Костанай', Лисаковск: 'Костанай', Аркалык: 'Костанай',
+  Степногорск: 'Астана', Атбасар: 'Астана', Косшы: 'Астана', Щучинск: 'Кокшетау', Бурабай: 'Кокшетау', Боровое: 'Кокшетау',
+  Риддер: 'Усть-Каменогорск', Зайсан: 'Усть-Каменогорск', Аягоз: 'Семей', Курчатов: 'Семей', Жанаозен: 'Актау',
+  Кульсары: 'Атырау', Хромтау: 'Актобе', Кандыагаш: 'Актобе', Аксай: 'Уральск', Байконур: 'Кызылорда', Кентау: 'Туркестан',
+  Сарыагаш: 'Шымкент', Ленгер: 'Шымкент', Жетысай: 'Шымкент', Каратау: 'Тараз',
+};
+
+/** The town outside the service the text names ("в Экибастузе"), or null. The text is already lower case. */
+export function otherTown(text: string): string | null {
+  for (const town of Object.keys(OTHER_TOWNS)) {
+    const stem = normal(town).replace(/[аяеьйо]$/, '');
+    if (new RegExp('(?:^|[^а-я])' + stem + '[а-я]{0,3}(?=$|[^а-я])').test(text)) return town;
+  }
+  return null;
+}
+
 const WISHES: [RegExp, string][] = [
   [/парков|паркинг/, 'parking'],
   [/wi-?fi|вай-?фай|интернет/, 'wifi'],
@@ -407,13 +463,17 @@ function statedLength(text: string, remarks: string[]): { mode: 'daily' | 'hourl
 }
 
 // "до 15000", "до 15 тысяч", "не дороже 20 000". A time, a date or a count after "до" is not money.
-function statedBudget(text: string): string | null {
+// `perUnit`: the amount is a price per day, night or hour ("до 15 тысяч за сутки"), not for the whole stay.
+function statedBudget(text: string): { value: string; perUnit: boolean } | null {
   const match = text.match(/(?:^|[^а-я])(?:до|не дороже|не больше|максимум|бюджет)\s*(\d{1,3}(?:[ . ]\d{3})+|\d+)\s*(тыс[а-я]*\.?|к(?![а-я]))?/);
   if (!match) return null;
   const rest = text.slice((match.index || 0) + match[0].length);
   if (!match[2] && new RegExp('^\\s*(?:[:.]\\d|час|гост|человек|чел|сут|дн|ноч|комн|утра|вечера|' + MONTH + ')').test(rest)) return null;
   const value = Number(match[1].replace(/[ . ]/g, '')) * (match[2] ? 1000 : 1);
-  return value >= 500 && value <= Number(NO_BUDGET) ? String(Math.round(value)) : null;
+  if (!(value >= 500 && value <= Number(NO_BUDGET))) return null;
+  const unit = '(?:за|в)\\s+(?:сутки|ночь|день|час)';
+  const perUnit = new RegExp('^\\s*(?:₸|тг|тенге)?\\s*' + unit + '(?=$|[^а-я])').test(rest) || new RegExp(unit + '\\s+(?:до|не дороже|не больше|максимум)').test(text);
+  return { value: String(Math.round(value)), perUnit };
 }
 
 /**
@@ -425,7 +485,7 @@ function statedBudget(text: string): string | null {
  */
 export function guestSearchRequest(text: string, current: Row, cities: string[], now = Date.now()): GuestSearch {
   const request = normal(text), filters: Row = { ...current }, remarks: string[] = [];
-  const stated = { city: false, district: false, when: false, guests: false, budget: false, wishes: false };
+  const stated = { city: false, district: false, when: false, guests: false, budget: false, wishes: false, home: false };
   const shared = mapSearchRequest(text, {
     city: String(current.city || ''), guests: String(current.guests || '1'), mode: String(current.mode || 'daily'),
   }, cities, now);
@@ -433,7 +493,19 @@ export function guestSearchRequest(text: string, current: Row, cities: string[],
   if (shared.citySpecified) {
     stated.city = true;
     if (shared.filters.city !== current.city) Object.assign(filters, { city: shared.filters.city, district: '', near: null });
+  } else {
+    // A town the service is not in yet: said, and the nearest city is searched instead.
+    const town = otherTown(request), nearest = town ? OTHER_TOWNS[town] : '';
+    if (town && cities.includes(nearest)) {
+      stated.city = true;
+      remarks.push(town + ': жилья в сервисе пока нет. Ищу в ближайшем городе — ' + nearest + '.');
+      if (nearest !== current.city) Object.assign(filters, { city: nearest, district: '', near: null });
+    }
   }
+  const rooms = statedRooms(request), kinds = statedKinds(request);
+  if (rooms) filters.rooms = rooms;
+  if (kinds.length) filters.kinds = kinds;
+  if (rooms || kinds.length) stated.home = true;
   if (/(?:^|[^а-я])центр/.test(request)) {
     filters.district = 'Центр';
     stated.district = true;
@@ -450,7 +522,8 @@ export function guestSearchRequest(text: string, current: Row, cities: string[],
 
   const budget = statedBudget(request);
   if (budget) {
-    filters.maxPrice = budget;
+    filters.maxPrice = budget.value;
+    filters.perUnit = budget.perUnit;
     stated.budget = true;
   }
   if (/дешев|недорог|бюджетн|эконом/.test(request)) {
@@ -483,8 +556,9 @@ export function guestSearchRequest(text: string, current: Row, cities: string[],
     if (mode !== current.mode) Object.assign(filters, defaultStay(mode, now, length.units ?? 3));
   } else if (dates || time || length.units !== null) {
     stated.when = true;
-    // An hour that is behind today, named without a day, is tomorrow's.
+    // An hour that is behind today, named without a day, is tomorrow's, and the guest is told so.
     const day = dates?.from || (ahead ? today : addDays(today, 1));
+    if (!dates && !ahead && clock) remarks.push((clock.exact ? 'Сегодня ' + clock.time + ' уже прошло' : 'Сегодня это время уже прошло') + ', ищу на завтра.');
     // A named hour closer than the nearest half-hour that can still be taken starts at that half-hour.
     if (!urgent && clock?.exact && day === today && localTime(today + 'T' + clock.time) < soon) {
       remarks.push('Ближайшее время — ' + localISO(soon).slice(11) + '.');

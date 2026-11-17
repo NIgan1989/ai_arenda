@@ -2,7 +2,7 @@ import {DomainError,required,number,interval,type Role} from './domain';
 import type {RentalService} from './service';
 import {epoch,uuid,q,one,rows,type Row} from './operation-core';
 import {geoDistance} from './map-location';
-import {amenities} from './listings';
+import {amenities,propertyTypes} from './listings';
 import {autoAnswerOffers,setGuestMode,guestModeSql,guestModeJoins} from './autopilot';
 
 // Structured facts are authoritative; the administrator's explanation is derived from them.
@@ -12,10 +12,14 @@ export function matchingInput(body:Row){
  if(!['daily','hourly'].includes(mode)||!['balanced','cheaper','closer'].includes(priority))throw new DomainError('Проверьте тариф и приоритет.');
  const {start,end}=interval(body.start,body.end),features=Array.isArray(body.features)?body.features:[];
  if(features.length>8||features.some(v=>typeof v!=='string'||!Object.hasOwn(amenities,v)))throw new DomainError('Проверьте обязательные удобства.');
+ // The type of home and its rooms: '2' exactly two, '2+' at least two. Both optional, as older apps send neither.
+ const kinds=Array.isArray(body.kinds)?body.kinds:[],rooms=body.rooms===undefined||body.rooms===null?'':String(body.rooms);
+ if(kinds.length>8||kinds.some((v:unknown)=>typeof v!=='string'||!Object.hasOwn(propertyTypes,v)))throw new DomainError('Проверьте тип жилья.');
+ if(rooms&&!/^[1-9]\+?$/.test(rooms))throw new DomainError('Проверьте число комнат.');
  let near:Row|null=null;
  if(body.near){const {longitude,latitude}=body.near;if(typeof longitude!=='number'||!Number.isFinite(longitude)||Math.abs(longitude)>180||typeof latitude!=='number'||!Number.isFinite(latitude)||Math.abs(latitude)>85)throw new DomainError('Проверьте точку поиска.');near={longitude:Math.round(longitude*100)/100,latitude:Math.round(latitude*100)/100,radius:number(body.near.radius||5000,'Радиус',1000,20000)};}
  if(priority==='closer'&&!near)throw new DomainError('Для приоритета «Ближе» выберите точку на карте или зону рядом с вами.');
- return {city:required(body.city,'Город',80),district:String(body.district||'').trim().slice(0,120),start:new Date(start*1000).toISOString(),end:new Date(end*1000).toISOString(),guests:String(number(body.guests,'Гости',1,50)),mode,maxPrice:String(number(body.maxPrice,'Бюджет за период',100,100000000)),priority,features:[...new Set(features)],near};
+ return {city:required(body.city,'Город',80),district:String(body.district||'').trim().slice(0,120),start:new Date(start*1000).toISOString(),end:new Date(end*1000).toISOString(),guests:String(number(body.guests,'Гости',1,50)),mode,maxPrice:String(number(body.maxPrice,'Бюджет за период',100,100000000)),priority,features:[...new Set(features)],near,kinds:[...new Set(kinds as string[])],rooms};
 }
 // The chance a guest books a flat, from what we know before they ask: the price against their budget,
 // the distance to their place, what earlier guests said and how fast the owner answers. Pure parts, so
@@ -33,8 +37,9 @@ export function responseFit(seconds:number|null|undefined,instant=false){
 }
 export function responseText(seconds:number){return 'Отвечает в среднем за '+(seconds<3600?plural(Math.max(1,Math.round(seconds/60)),'минуту','минуты','минут'):plural(Math.round(seconds/3600),'час','часа','часов'));}
 export function rankMatches(properties:Row[],filters:Row):Row[]{
- const budget=Number(filters.maxPrice),district=filters.district.toLocaleLowerCase('ru');
- const ranked=properties.filter(p=>!p.test_preview&&(!district||String(p.district).toLocaleLowerCase('ru').includes(district))&&filters.features.every((a:string)=>(p.details?.amenities||[]).includes(a))).flatMap<Row>(p=>{
+ const budget=Number(filters.maxPrice),district=filters.district.toLocaleLowerCase('ru'),kinds:string[]=filters.kinds||[],rooms=String(filters.rooms||''),least=rooms.endsWith('+'),count=parseInt(rooms);
+ const home=(p:Row)=>(!kinds.length||kinds.includes(p.details?.type))&&(!rooms||(least?Number(p.rooms)>=count:Number(p.rooms)===count));
+ const ranked=properties.filter(p=>!p.test_preview&&home(p)&&(!district||String(p.district).toLocaleLowerCase('ru').includes(district))&&filters.features.every((a:string)=>(p.details?.amenities||[]).includes(a))).flatMap<Row>(p=>{
   const amount=p.estimate?.amount;if(!Number.isInteger(amount)||amount>budget)return [];
   const distance=filters.near&&p.location?geoDistance([filters.near.longitude,filters.near.latitude],[p.location.longitude,p.location.latitude]):null;
   if(filters.near&&(distance===null||distance>filters.near.radius))return [];
@@ -68,7 +73,8 @@ export async function responseTimes(db:D1Database,ids:string[],t=epoch()){
  for(const [id,v] of samples){const s=v.sort((a,b)=>a-b),m=s.length>>1;result.set(id,s.length%2?s[m]:Math.round((s[m-1]+s[m])/2));}
  return result;
 }
-export async function previewMatches(s:RentalService,body:Row):Promise<Row>{
+// explain: an empty answer says why (emptyHint). Requests already sent to owners poll this and do not need it.
+export async function previewMatches(s:RentalService,body:Row,explain=true):Promise<Row>{
  const filters=matchingInput(body),search={city:filters.city,start:filters.start,end:filters.end,guests:filters.guests,mode:filters.mode,maxPrice:filters.maxPrice,map:'1',limit:'60'};
  const first=await s.publicSearch(search,{matching:true}),properties=first.properties;
  // In chunks: a matching search returns every match, and D1 binds at most 100 parameters.
@@ -78,7 +84,27 @@ export async function previewMatches(s:RentalService,body:Row):Promise<Row>{
  const response=await responseTimes(s.db,ids);
  const ranked=rankMatches(properties.map((p:Row)=>({...p,instant:instant.has(p.id),response:response.get(p.id)??null})),filters),preferences=await rows(s.db,'SELECT property_id FROM matching_preferences WHERE enabled=1');
  const enabled=new Set(preferences.map(p=>p.property_id));
- return {filters,properties:ranked.map(p=>({...p,quickRequest:enabled.has(p.id)})),total:ranked.length,center:first.center,availabilityChecked:true,serverTime:epoch()};
+ return {filters,properties:ranked.map(p=>({...p,quickRequest:enabled.has(p.id)})),total:ranked.length,center:first.center,availabilityChecked:true,serverTime:epoch(),...(ranked.length||!explain?{}:{empty:await emptyHint(s,filters)})};
+}
+// Why nothing matched, and the nearest thing that would, so that the guest hears a reason and a way out instead of
+// a bare "nothing": no homes in the city, too many guests, no hourly homes, all taken (with the nearest stay of the same
+// length within a week that passes every other condition), over the budget (with the lowest price), or the district, type and wishes.
+export async function emptyHint(s:RentalService,f:Row):Promise<Row>{
+ const all=(await s.publicSearch({city:f.city,mode:'daily',guests:'1',limit:'60'},{matching:true})).properties.filter((p:Row)=>!p.test_preview);
+ if(!all.length)return {reason:'city'};
+ const maxGuests=Math.max(...all.map((p:Row)=>Number(p.capacity)||0));
+ if(maxGuests<Number(f.guests))return {reason:'guests',maxGuests};
+ if(f.mode==='hourly'&&!all.some((p:Row)=>Number(p.policy?.hourly_price)>0))return {reason:'hourly'};
+ const free=async(start:string,end:string)=>(await s.publicSearch({city:f.city,start,end,guests:f.guests,mode:f.mode,map:'1',limit:'60'},{matching:true})).properties.filter((p:Row)=>!p.test_preview);
+ const now=await free(f.start,f.end);
+ if(!now.length){
+  const start=Date.parse(f.start),length=Date.parse(f.end)-start;
+  for(let day=1;day<=7;day++){const from=start+day*86400000,found=rankMatches(await free(new Date(from).toISOString(),new Date(from+length).toISOString()),{...f,start:new Date(from).toISOString(),end:new Date(from+length).toISOString()});if(found.length)return {reason:'busy',next:{start:new Date(from).toISOString(),end:new Date(from+length).toISOString(),count:found.length}};}
+  return {reason:'busy'};
+ }
+ const anyPrice=rankMatches(now,{...f,maxPrice:'100000000'});
+ if(anyPrice.length)return {reason:'budget',cheapest:Math.min(...anyPrice.map(p=>p.estimate.amount)),count:anyPrice.length};
+ return {reason:'filters',count:rankMatches(now,{...f,district:'',features:[],near:null,kinds:[],rooms:'',priority:f.priority==='closer'?'balanced':f.priority}).length};
 }
 async function expire(s:RentalService){const t=epoch();await s.db.batch([q(s.db,"UPDATE matching_requests SET status='expired' WHERE expires_at<=? AND status IN ('searching','ready')",t),q(s.db,"UPDATE matching_offers SET status='expired' WHERE expires_at<=? AND status IN ('pending','accepted')",t)]);}
 async function guestRequest(s:RentalService,id:unknown){await s.requireRole('guest');const r=await one(s.db,'SELECT * FROM matching_requests WHERE id=? AND guest_id=?',required(id,'Запрос',100),s.userId);if(!r)throw new DomainError('Запрос недоступен.',404);return r;}
@@ -95,7 +121,7 @@ export async function beginMatching(s:RentalService,body:Row){
  await s.requireRole('guest');const key=required(body.requestKey,'Ключ запроса',100),existing=await one(s.db,'SELECT id FROM matching_requests WHERE guest_id=? AND request_key=?',s.userId,key);if(existing)return matchingState(s,existing.id);
  if(body.consent!==true)throw new DomainError('Подтвердите отправку условий владельцам.');
  const recent=await one(s.db,'SELECT COUNT(*) n FROM matching_requests WHERE guest_id=? AND created_at>?',s.userId,epoch()-300);if((recent?.n||0)>=5)throw new DomainError('Слишком много запросов. Попробуйте через несколько минут.',429);
- const result=await previewMatches(s,body),eligible=result.properties.filter((p:Row)=>p.quickRequest).slice(0,3),id=uuid(),t=epoch();
+ const result=await previewMatches(s,body,false),eligible=result.properties.filter((p:Row)=>p.quickRequest).slice(0,3),id=uuid(),t=epoch();
  try{await q(s.db,"INSERT INTO matching_requests(id,guest_id,request_key,filters,status,created_at,expires_at) VALUES (?,?,?,?,?,?,?)",id,s.userId,key,JSON.stringify(result.filters),eligible.length?'searching':'empty',t,t+600).run();}catch(error){const duplicate=await one(s.db,'SELECT id FROM matching_requests WHERE guest_id=? AND request_key=?',s.userId,key);if(duplicate)return matchingState(s,duplicate.id);throw error;}
  await sendWave(s,{id,expires_at:t+600},result.properties);
  return matchingState(s,id,result);
@@ -105,7 +131,7 @@ export async function matchingState(s:RentalService,id:unknown,prepared?:Row){
  if(request.status==='booking'){const saved=await one(s.db,'SELECT id FROM bookings WHERE guest_id=? AND request_key=?',s.userId,'match:'+request.id);if(saved){await q(s.db,"UPDATE matching_requests SET status='booked',booking_id=? WHERE id=?",saved.id,request.id).run();request.status='booked';request.booking_id=saved.id;}else if(request.lease_until<t){await q(s.db,"UPDATE matching_requests SET status=? WHERE id=? AND status='booking' AND lease_until<?",request.expires_at>t?'ready':'expired',request.id,t).run();request.status=request.expires_at>t?'ready':'expired';}}
  let offers=await rows(s.db,'SELECT id,property_id,status,expires_at,amount,policy_version FROM matching_offers WHERE request_id=? ORDER BY created_at,id',request.id),dispatchChanged=false;
  if(['searching','ready'].includes(request.status)&&Date.parse(filters.start)<(t-60)*1000){await q(s.db,"UPDATE matching_requests SET status='expired' WHERE id=? AND status IN ('searching','ready')",request.id).run();request.status='expired';}
- const available=['searching','ready'].includes(request.status)?prepared||await previewMatches(s,filters):{properties:[]};
+ const available=['searching','ready'].includes(request.status)?prepared||await previewMatches(s,filters,false):{properties:[]};
  for(const offer of offers.filter(o=>['pending','accepted'].includes(o.status)&&o.expires_at>t)){if(!available.properties.some((p:Row)=>p.id===offer.property_id&&p.estimate.amount===offer.amount&&p.policy.version===offer.policy_version)){await q(s.db,"UPDATE matching_offers SET status='expired' WHERE id=? AND status IN ('pending','accepted')",offer.id).run();offer.status='expired';}}
  if(['searching','ready'].includes(request.status)&&!offers.some(o=>['pending','accepted'].includes(o.status)&&o.expires_at>t)&&offers.length<9){dispatchChanged=await sendWave(s,request,available.properties);if(dispatchChanged)offers=await rows(s.db,'SELECT id,property_id,status,expires_at,amount,policy_version FROM matching_offers WHERE request_id=? ORDER BY created_at,id',request.id);}
  const accepted=offers.filter(o=>o.status==='accepted'&&o.expires_at>t);
