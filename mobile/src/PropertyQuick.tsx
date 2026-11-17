@@ -8,10 +8,10 @@ import {T} from './tokens';
 import {Photo} from './ListingMedia';
 import {PhotoGrid} from './PhotoGrid';
 import {Stepper} from './SheetParts';
-import {amenities,checkinMethods} from '../../lib/listings';
+import {amenities,categoryAmenities,checkinMethods,isBath,kindCategory} from '../../lib/listings';
 import {KindPicker} from './KindPicker';
 import {needsReview,reviewRequest} from '../../lib/listing-edit';
-import {DRAFT_EXAMPLE,answerDraft,draftDescription,draftListingBody,draftQuestions,draftRules,draftTitle,emptyDraft,moneyAnswer,readListingText,type ListingDraft} from '../../lib/listing-draft';
+import {DRAFT_EXAMPLE,DRAFT_EXAMPLE_BATH,answerDraft,draftDescription,draftListingBody,draftQuestions,draftRules,draftTitle,emptyDraft,moneyAnswer,readListingText,type ListingDraft} from '../../lib/listing-draft';
 import {plural} from '../../lib/map-search-request';
 type Row=Record<string,any>;
 type Saved={id:string;message:string;published:boolean;placed?:boolean};
@@ -43,26 +43,28 @@ export function PropertyQuick({city,onSave,onGuestMode,onPlace,onReview,onClose,
    // The flat goes on the map by its address right away; the owner only checks the pin.
    let placed=false;try{placed=!!((await onPlace?.({propertyId:result.id})) as Row|undefined)?.saved;}catch{/* the map pin can be set later */}
    let note='';try{await onGuestMode({propertyId:result.id,mode,cleaningFee:mode==='auto'&&!draft.ownStaff?draft.cleaningFee:undefined});}catch(e:any){note=' '+(e?.message||'');}
-   setSaved({id:result.id,published,placed,message:(published?'Жильё опубликовано, гости уже видят его на карте.':review?'Сохранено черновиком и отправлено на проверку администратору: после проверки появится на карте само.':photos.length?'Сохранено черновиком: чтобы показать гостям, пройдите проверку в «Управление → Допуск».':'Сохранено черновиком. Добавьте фото, и его можно будет показать гостям.')+note});setStep(2);
-  }catch(e:any){setError(e?.message||'Не удалось сохранить жильё.');}finally{setBusy(false);}
+   setSaved({id:result.id,published,placed,message:(published?What+done+', гости уже видят его на карте.':review?'Сохранено черновиком и отправлено на проверку администратору: после проверки появится на карте само.':photos.length?'Сохранено черновиком: чтобы показать гостям, пройдите проверку в «Управление → Допуск».':'Сохранено черновиком. Добавьте фото, и его можно будет показать гостям.')+note});setStep(2);
+  }catch(e:any){setError(e?.message||'Не удалось сохранить '+what+'.');}finally{setBusy(false);}
  }
  // A banquet hall: `price` is the price per guest, with the least party (lib/listing-draft.ts).
- const hall=['banquet','cafe'].includes(draft.type);
- const priceLine=hall?(draft.price>=100?money(draft.price)+' за гостя':''):[draft.price>=100&&money(draft.price)+' / сутки',draft.hourlyPrice>=100&&money(draft.hourlyPrice)+' / час',draft.nightlyPrice>=100&&money(draft.nightlyPrice)+' / ночь'].filter(Boolean).join(' · ');
+ const hall=['banquet','cafe'].includes(draft.type),bath=isBath(draft.type),venue=hall||bath;
+ // A bath or a hall is not «жильё»: the screen names what the owner adds.
+ const what=hall?'зал':bath?'объект':'жильё',What=hall?'Зал':bath?'Объект':'Жильё',done=hall||bath?' опубликован':' опубликовано';
+ const priceLine=hall?(draft.price>=100?money(draft.price)+' за гостя':''):bath?(draft.hourlyPrice>=100?money(draft.hourlyPrice)+' / час · от '+draft.minHours+' ч':''):[draft.price>=100&&money(draft.price)+' / сутки',draft.hourlyPrice>=100&&money(draft.hourlyPrice)+' / час',draft.nightlyPrice>=100&&money(draft.nightlyPrice)+' / ночь'].filter(Boolean).join(' · ');
  const chip=(key:string,label:string,on:boolean,onPress:()=>void,radio=false)=><Pressable key={key} accessibilityRole={radio?'radio':'checkbox'} accessibilityState={{checked:on}} onPress={onPress} style={[q.chip,on&&q.chipOn]}><Text style={[q.chipText,on&&q.chipTextOn]}>{on&&!radio?'✓ ':''}{label}</Text></Pressable>;
  const num=(key:keyof ListingDraft,label:string,max=10000000)=><View style={q.tile} key={key}><Text style={q.tileLabel}>{label}{guessed(key)&&!['price','hourlyPrice','nightlyPrice','deposit'].includes(key)?<Text style={q.guess}>  ИИ предположил</Text>:null}</Text><TextInput accessibilityLabel={label} style={q.tileValue} keyboardType="number-pad" value={draft[key]?String(draft[key]):''} placeholder="0" placeholderTextColor={C.muted} onChangeText={v=>patch({[key]:Math.min(max,Number(v.replace(/[^\d]/g,''))||0)} as Partial<ListingDraft>)}/></View>;
  const field=(key:keyof ListingDraft,label:string,placeholder='',max=120)=><View key={key} style={q.field}><Text style={q.tileLabel}>{label}</Text><TextInput accessibilityLabel={label} style={q.input} value={String(draft[key]||'')} placeholder={placeholder} placeholderTextColor={C.muted} maxLength={max} onChangeText={v=>patch({[key]:v} as Partial<ListingDraft>)}/></View>;
 
  return <View style={q.sheet}>
-  <View style={q.head}><View style={q.orb}><Text style={q.orbText}>✦</Text></View><View style={{flex:1}}><Text accessibilityRole="header" style={q.title}>Новое жильё</Text><Text style={q.sub}>{['ИИ заполнит объявление по вашему рассказу','ИИ заполнил карточку. Проверьте и поправьте','Жильё добавлено'][step]}</Text></View>{step<2&&<Pressable accessibilityRole="button" accessibilityLabel="Закрыть" onPress={onClose} disabled={busy} style={q.close}><Text style={q.closeText}>✕</Text></Pressable>}</View>
+  <View style={q.head}><View style={q.orb}><Text style={q.orbText}>✦</Text></View><View style={{flex:1}}><Text accessibilityRole="header" style={q.title}>{step===0?'Новый объект':hall?'Новый зал':bath?(draft.type==='sauna'?'Новая сауна':'Новая баня'):'Новое жильё'}</Text><Text style={q.sub}>{['ИИ заполнит объявление по вашему рассказу','ИИ заполнил карточку. Проверьте и поправьте',What+(venue?' добавлен':' добавлено')][step]}</Text></View>{step<2&&<Pressable accessibilityRole="button" accessibilityLabel="Закрыть" onPress={onClose} disabled={busy} style={q.close}><Text style={q.closeText}>✕</Text></Pressable>}</View>
   <View style={q.steps} accessibilityLabel={'Шаг '+(step+1)+' из 3'}>{STEPS.map((label,i)=><View key={label} style={q.stepItem}><View style={[q.stepBar,i<step&&q.stepDone,i===step&&q.stepNow]}/><Text style={[q.stepText,i===step&&q.stepTextNow]}>{label}</Text></View>)}</View>
   {!!error&&<Text accessibilityRole="alert" style={q.error}>{error}</Text>}
 
   {step===0&&<View style={q.body}>
-   <View style={q.line}><TextInput accessibilityLabel="Расскажите о жилье" style={q.lineInput} multiline value={text} onChangeText={setText} maxLength={2000} placeholder="Например: однушка на Торайгырова 64, 4 этаж, до 3 гостей, есть Wi-Fi и стиралка, 15 000 в сутки, 2 500 в час" placeholderTextColor={C.muted} textAlignVertical="top"/>
-    <View style={q.lineBar}><Pressable accessibilityRole="button" onPress={()=>setText(DRAFT_EXAMPLE)} style={q.chip}><Text style={q.chipText}>Пример</Text></Pressable><Text style={q.hint}>{text.length?text.length+' / 2000':'Порядок не важен'}</Text></View></View>
+   <View style={q.line}><TextInput accessibilityLabel="Расскажите об объекте" style={q.lineInput} multiline value={text} onChangeText={setText} maxLength={2000} placeholder="Например: однушка на Торайгырова 64, 4 этаж, до 3 гостей, есть Wi-Fi и стиралка, 15 000 в сутки, 2 500 в час" placeholderTextColor={C.muted} textAlignVertical="top"/>
+    <View style={q.lineBar}><View style={q.grid}><Pressable accessibilityRole="button" onPress={()=>setText(DRAFT_EXAMPLE)} style={q.chip}><Text style={q.chipText}>Пример: жильё</Text></Pressable><Pressable accessibilityRole="button" onPress={()=>setText(DRAFT_EXAMPLE_BATH)} style={q.chip}><Text style={q.chipText}>Пример: баня</Text></Pressable></View><Text style={q.hint}>{text.length?text.length+' / 2000':''}</Text></View></View>
    <PhotoGrid photos={photos} onChange={setPhotos} onBusy={setUploading}/>
-   <Text style={q.hint}>ИИ поймёт комнаты, этаж, площадь, гостей, цены за сутки и час, удобства, правила и адрес. Фото можно добавить и потом.</Text>
+   <Text style={q.hint}>Жильё, баня, сауна или зал: ИИ поймёт тип, гостей, цены, удобства, правила и адрес. Порядок не важен, фото можно добавить и потом.</Text>
    <Pressable accessibilityRole="button" accessibilityState={{disabled:!text.trim()||uploading}} disabled={!text.trim()||uploading} onPress={read} style={[q.primary,(!text.trim()||uploading)&&q.primaryOff]}><Text style={q.primaryText}>✦  Заполнить с ИИ</Text></Pressable>
   </View>}
 
@@ -71,28 +73,33 @@ export function PropertyQuick({city,onSave,onGuestMode,onPlace,onReview,onClose,
      <View style={q.askRow}><TextInput accessibilityLabel={ask.label} style={q.askInput} value={answer} onChangeText={setAnswer} placeholder={ask.placeholder} placeholderTextColor={C.muted} onSubmitEditing={reply} returnKeyType="send" keyboardType={ask.key==='price'||ask.key==='cleaningFee'?'number-pad':'default'}/><Pressable accessibilityRole="button" disabled={!answer.trim()} onPress={reply} style={[q.send,!answer.trim()&&q.primaryOff]}><Text style={q.primaryText}>↑</Text></Pressable></View></View></View>
    :<Text style={q.ready}>✓ Всё нужное есть.{found.length?' ИИ понял из рассказа: '+found.length+' '+plural(found.length,'деталь','детали','деталей')+'.':''}</Text>}
    <View style={q.preview}>
-    <View style={q.cover}>{photos[0]?<Photo id={photos[0]} alt="Обложка"/>:<Text style={q.coverEmpty}>Без фото: жильё сохранится черновиком</Text>}</View>
+    <View style={q.cover}>{photos[0]?<Photo id={photos[0]} alt="Обложка"/>:<Text style={q.coverEmpty}>{'Без фото: '+what+' сохранится черновиком'}</Text>}</View>
     <View style={q.previewBody}><TextInput accessibilityLabel="Название" style={q.previewTitle} value={draftTitle(draft)} maxLength={120} onChangeText={v=>patch({title:v})}/><Text style={q.sub}>📍 {[draft.district||'Район не указан',draft.city].filter(Boolean).join(' · ')}</Text><Text style={q.price}>{priceLine||'Цена не указана'}</Text></View>
    </View>
-   <Text style={q.h}>ЖИЛЬЁ</Text>
+   <Text style={q.h}>{venue?'ОБЪЕКТ':'ЖИЛЬЁ'}</Text>
    <KindPicker kind={draft.type} ownStaff={draft.ownStaff} onChange={v=>patch(v)}/>
-   <View style={q.grid}><View style={q.half}><Stepper label={'Комнаты'+(guessed('rooms')?' · ИИ предположил':'')} value={draft.rooms} text={String(draft.rooms)} min={1} max={20} onChange={v=>patch({rooms:v})}/></View><View style={q.half}><Stepper label={'Гостей'+(guessed('capacity')?' · ИИ предположил':'')} value={draft.capacity} text={String(draft.capacity)} min={1} max={hall?1000:50} step={hall?10:1} onChange={v=>setDraft(d=>({...d,capacity:v,beds:Math.max(d.beds,v),known:[...new Set([...d.known,'capacity'])]}))}/></View></View>
-   <View style={q.grid}>{num('area','Площадь, м²',2000)}{num('floor','Этаж',100)}</View>
+   <View style={q.grid}>{!venue&&<View style={q.half}><Stepper label={'Комнаты'+(guessed('rooms')?' · ИИ предположил':'')} value={draft.rooms} text={String(draft.rooms)} min={1} max={20} onChange={v=>patch({rooms:v})}/></View>}<View style={q.half}><Stepper label={(bath?'Вмещает гостей':'Гостей')+(guessed('capacity')?' · ИИ предположил':'')} value={draft.capacity} text={String(draft.capacity)} min={1} max={hall?1000:50} step={hall?10:1} onChange={v=>setDraft(d=>({...d,capacity:v,beds:Math.max(d.beds,v),known:[...new Set([...d.known,'capacity'])]}))}/></View></View>
+   <View style={q.grid}>{num('area','Площадь, м²',2000)}{!bath&&num('floor','Этаж',100)}</View>
    {field('address','Точный адрес · только для гостя с бронью','Улица, дом, номер',300)}
    <View style={q.grid}><View style={q.half}>{field('district','Район','Например, Центр')}</View><View style={q.half}>{field('city','Город','',80)}</View></View>
    <Text style={q.h}>ЦЕНЫ</Text>
-   <View style={q.grid}>{hall?<>{num('price','На гостя, ₸',1000000)}{num('leastGuests','Минимум гостей',1000)}</>:<>{num('price','Сутки, ₸')}{num('hourlyPrice','Час, ₸ · 0 — нет')}</>}</View>
+   <View style={q.grid}>{hall?<>{num('price','На гостя, ₸',1000000)}{num('leastGuests','Минимум гостей',1000)}</>:bath?<>{num('hourlyPrice','Час, ₸')}{num('minHours','Минимум часов',24)}</>:<>{num('price','Сутки, ₸')}{num('hourlyPrice','Час, ₸ · 0 — нет')}</>}</View>
+   {bath&&<>
+    <View style={q.grid}>{num('includedGuests','Гостей в цене · 0 — все',50)}{num('extraGuestPrice','Доплата за гостя в час, ₸',1000000)}</View>
+    <Stepper label="Подготовка перед гостями" value={draft.prepMinutes||0} text={draft.prepMinutes?(draft.prepMinutes%60?draft.prepMinutes+' мин':draft.prepMinutes/60+' ч'):'не нужна'} min={0} max={360} step={30} onChange={v=>patch({prepMinutes:v})}/>
+    <Text style={q.hint}>{draft.prepMinutes?'Напомню затопить вовремя и не приму бронь, если до гостей осталось меньше.':'Сколько нужно, чтобы затопить. Напомню вовремя и не приму бронь раньше.'}</Text>
+   </>}
    <Text style={q.h}>УДОБСТВА</Text>
-   <View style={q.chips}>{Object.entries(amenities).map(([id,label])=>{const on=draft.amenities.includes(id);return chip(id,label,on,()=>patch({amenities:on?draft.amenities.filter(a=>a!==id):[...draft.amenities,id]}));})}</View>
+   <View style={q.chips}>{categoryAmenities[kindCategory(draft.type)].map(id=>[id,amenities[id]] as [string,string]).map(([id,label])=>{const on=draft.amenities.includes(id);return chip(id,label,on,()=>patch({amenities:on?draft.amenities.filter(a=>a!==id):[...draft.amenities,id]}));})}</View>
    <Text style={q.h}>ПРАВИЛА</Text>
-   <View style={q.chips}>{RULES.map(([key,label])=>chip(key,label,!!draft[key],()=>patch({[key]:!draft[key]} as Partial<ListingDraft>)))}</View>
-   <Pressable accessibilityRole="button" accessibilityState={{expanded:more}} onPress={()=>setMore(v=>!v)} style={q.moreBtn}><Text style={q.moreText}>{more?'Скрыть подробности':'Ещё: ночь, депозит, заезд, текст объявления'}</Text></Pressable>
+   <View style={q.chips}>{RULES.filter(([key])=>!venue||key==='smoking').map(([key,label])=>chip(key,label,!!draft[key],()=>patch({[key]:!draft[key]} as Partial<ListingDraft>)))}</View>
+   <Pressable accessibilityRole="button" accessibilityState={{expanded:more}} onPress={()=>setMore(v=>!v)} style={q.moreBtn}><Text style={q.moreText}>{more?'Скрыть подробности':venue?'Ещё: депозит, встреча гостей, текст объявления':'Ещё: ночь, депозит, заезд, текст объявления'}</Text></Pressable>
    {more&&<View style={q.body}>
-    <View style={q.grid}>{!hall&&num('nightlyPrice','Ночь, ₸ · 0 — нет')}{num('deposit','Депозит, ₸')}</View>
-    <View style={q.grid}><View style={q.half}>{field('checkinTime','Заезд с','14:00',5)}</View><View style={q.half}>{field('checkoutTime','Выезд до','12:00',5)}</View></View>
-    <Text style={q.tileLabel}>Как гость получит ключи</Text><View style={q.chips}>{Object.entries(checkinMethods).map(([id,label])=>chip(id,label,draft.checkinMethod===id,()=>patch({checkinMethod:id}),true))}</View>
+    <View style={q.grid}>{!venue&&num('nightlyPrice','Ночь, ₸ · 0 — нет')}{num('deposit','Депозит, ₸')}</View>
+    {!venue&&<View style={q.grid}><View style={q.half}>{field('checkinTime','Заезд с','14:00',5)}</View><View style={q.half}>{field('checkoutTime','Выезд до','12:00',5)}</View></View>}
+    <Text style={q.tileLabel}>{venue?'Как гости попадут внутрь':'Как гость получит ключи'}</Text><View style={q.chips}>{Object.entries(checkinMethods).map(([id,label])=>chip(id,label,draft.checkinMethod===id,()=>patch({checkinMethod:id}),true))}</View>
     <View style={q.field}><Text style={q.tileLabel}>Описание · ИИ написал сам</Text><TextInput accessibilityLabel="Описание" multiline style={[q.input,q.area]} value={draftDescription(draft)} maxLength={2500} onChangeText={v=>setDraft(d=>({...d,description:v}))}/></View>
-    <View style={q.field}><Text style={q.tileLabel}>Правила проживания</Text><TextInput accessibilityLabel="Правила проживания" multiline style={[q.input,q.area]} value={draftRules(draft)} maxLength={2500} onChangeText={v=>setDraft(d=>({...d,houseRules:v}))}/></View>
+    <View style={q.field}><Text style={q.tileLabel}>{venue?'Правила':'Правила проживания'}</Text><TextInput accessibilityLabel={venue?'Правила':'Правила проживания'} multiline style={[q.input,q.area]} value={draftRules(draft)} maxLength={2500} onChangeText={v=>setDraft(d=>({...d,houseRules:v}))}/></View>
    </View>}
    <Text style={q.h}>КТО ОТВЕЧАЕТ ГОСТЯМ</Text>
    <View style={q.grid} accessibilityRole="radiogroup">
