@@ -414,6 +414,17 @@ test('a landmark is searched around: «у вокзала», «возле ТРЦ�
   // A landmark said after a request refines it; a new request lets go of the landmark.
   assert.equal(parse('у набережной', morning, {...asked.draft, guests: 4}).draft.guests, 4);
   assert.equal(parse('студия завтра', morning, near).draft.near, null);
+  // The words of a home after the landmark are not part of it.
+  assert.equal(parse('у вокзала двушка завтра').place, 'железнодорожный вокзал');
+  assert.equal(parse('возле вокзала квартира на сутки').place, 'железнодорожный вокзал');
+  assert.equal(parse('рядом с трц батыр молл студия').place, 'трц батыр молл');
+  // «Сейчас у вокзала» stays «Сейчас»: only homes ready now, around the landmark.
+  const urgent = parse('сейчас у вокзала'), there = nearPlace(urgent.draft, {longitude: 76.97, latitude: 52.3, name: 'Вокзал'}, urgent.place);
+  assert.equal(there.now, true);
+  assert.match(guestSummary(there, morning), /рядом: Вокзал · .*готово сейчас(?!, рядом с вами)/);
+  // The site does not find landmarks on the map: there the guest is still told so.
+  assert.match(site.guestSearchRequest('завтра рядом с вокзалом', draft, cities, morning).remarks.join(' '), /место рядом с ориентиром/);
+  assert.equal(parse('завтра рядом с вокзалом').note, '');
 });
 
 test('one price format on the pins; the rating on a card is a star', () => {

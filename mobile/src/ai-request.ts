@@ -113,7 +113,7 @@ export function guestRequestFromText(text: string, draft: GuestDraft, cities: st
   const base: GuestDraft = refining
     ? kept
     : { ...kept, ...usual, district: '', guests: 2, maxPrice: '', perUnit: true, priority: 'balanced', features: [], near: null, kinds: [], rooms: '', now: false };
-  const result = guestSearchRequest(text, base, cities, now);
+  const result = guestSearchRequest(text, base, cities, now, { places: true });
   const filters = result.filters;
   const next: GuestDraft = {
     ...base,
@@ -175,19 +175,19 @@ const PRIORITY_WORDS: Record<string, string> = { cheaper: 'дешевле', clos
 export function guestSummary(draft: GuestDraft, now = Date.now()) {
   // The budget is said here, with what it is for: "до 15 000 ₸ за сутки" or "до 45 000 ₸ за всё".
   // «Сейчас» counts from where the guest is: "рядом с вами", not "рядом с выбранным местом", and no "ближе".
-  const line = guestRequestLine({ ...draft, maxPrice: '', near: draft.now ? null : draft.near }, now);
+  const line = guestRequestLine({ ...draft, maxPrice: '', near: draft.now && !draft.near?.label ? null : draft.near }, now);
   const said = line.toLocaleLowerCase('ru');
   // «Сейчас» and «На ночь» start at an hour of their own, not at 14:00: it is said.
   // So does a day the guest asked to start at an hour of their own («в 22:00»).
   const from = draft.now || draft.mode === 'night' || (draft.mode === 'daily' && draft.start.slice(11) !== CHECKIN_TIME) ? 'заезд с ' + draft.start.slice(11) : '';
   const more = [
     from,
-    draft.now ? (draft.near ? 'готово сейчас, рядом с вами' : 'готово сейчас') : '',
+    draft.now ? (draft.near && !draft.near.label ? 'готово сейчас, рядом с вами' : 'готово сейчас') : '',
     ...WISHES.filter(([id]) => draft.features.includes(id)).map(([, title]) => (title === 'Wi-Fi' ? title : title.toLocaleLowerCase('ru'))),
     draft.now ? '' : PRIORITY_WORDS[draft.priority] || ''
   ].filter(word => word && !said.includes(word.toLocaleLowerCase('ru')));
   // A landmark is named: "рядом: железнодорожный вокзал", not "рядом с выбранным местом".
-  const where = draft.near?.label && !draft.now ? line.replace('рядом с выбранным местом', 'рядом: ' + draft.near.label) : line;
+  const where = draft.near?.label ? line.replace('рядом с выбранным местом', 'рядом: ' + draft.near.label) : line;
   return [where, homeWords(draft), budgetWords(draft), ...more].filter(Boolean).join(' · ');
 }
 
@@ -314,7 +314,7 @@ export function nearPlace(draft: GuestDraft, spot: { longitude?: unknown; latitu
   const longitude = Number(spot.longitude), latitude = Number(spot.latitude);
   if (!Number.isFinite(longitude) || !Number.isFinite(latitude)) return draft;
   const label = (typeof spot.name === 'string' && spot.name.trim() ? spot.name.trim() : asked).slice(0, 60);
-  return { ...draft, near: { longitude, latitude, radius: 3000, label }, priority: 'closer', now: false };
+  return { ...draft, near: { longitude, latitude, radius: 3000, label }, priority: 'closer' };
 }
 
 /** What the guest reads when the landmark was not found on the map. */

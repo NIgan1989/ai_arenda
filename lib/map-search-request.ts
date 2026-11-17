@@ -194,7 +194,7 @@ const UNSEARCHED: [RegExp, string][] = [
 
 // «Рядом с вокзалом», «возле ТРЦ Батыр Молл», «у набережной»: a landmark, not «рядом со мной». Up to three words
 // after the preposition, stopping at the words of a stay, a day or a home.
-const PLACE_STOP = '(?:на|до|с|со|для|и|в|за|от|завтра|сегодня|послезавтра|сейчас|срочно|вечером|утром|днем|ночью|недорог[а-я]*|дешев[а-я]*|подешевле|посуточно|почасов[а-я]*|нужн[а-я]*|нас|мной|меня)(?=$|[^а-я])';
+const PLACE_STOP = '(?:на|до|с|со|для|и|в|за|от|завтра|сегодня|послезавтра|сейчас|срочно|вечером|утром|днем|ночью|недорог[а-я]*|дешев[а-я]*|подешевле|посуточно|почасов[а-я]*|нужн[а-я]*|нас|мной|меня|двушк[а-я]*|однушк[а-я]*|трешк[а-я]*|студи[а-я]*|квартир[а-я]*|комнат[а-я]*|[а-я]+комнатн[а-я]*|жиль[а-я]*|дом|домик|гостиниц[а-я]*|хостел[а-я]*|отел[а-я]*|апартамент[а-я]*|номер|ищу|хочу|снять|сниму)(?=$|[^а-я])';
 const PLACE_WORD = '(?!' + PLACE_STOP + ')[а-яa-z][а-яa-z0-9«»"-]*';
 const PLACE_AFTER = new RegExp('(?:рядом\\s+со?|недалеко\\s+от|неподалеку\\s+от|около|возле|вблизи|близко\\s+к|в\\s+районе)\\s+(' + PLACE_WORD + '(?:\\s+' + PLACE_WORD + '){0,2})');
 const PLACE_AT = new RegExp('(?:^|[^а-я])у\\s+((?:жд\\s+|железнодорожн[а-я]+\\s+)?(?:вокзал|автовокзал|набережн|парк|рынк|аэропорт|больниц|университет|трц|тц|мечет|стадион|цум)[а-я]*(?:\\s+' + PLACE_WORD + '){0,2})');
@@ -560,7 +560,7 @@ function statedBudget(text: string): { value: string; perUnit: boolean } | null 
  * `stated` tells the screen what it still has to ask for. A day or an hour that has passed is reported in `past`
  * and not applied; anything else that could not be taken as written is said in `remarks`.
  */
-export function guestSearchRequest(text: string, current: Row, cities: string[], now = Date.now()): GuestSearch {
+export function guestSearchRequest(text: string, current: Row, cities: string[], now = Date.now(), options: { places?: boolean } = {}): GuestSearch {
   const request = normal(text), filters: Row = { ...current }, remarks: string[] = [];
   const stated = { city: false, district: false, when: false, guests: false, budget: false, wishes: false, home: false };
   const shared = mapSearchRequest(text, {
@@ -674,7 +674,8 @@ export function guestSearchRequest(text: string, current: Row, cities: string[],
   const place = nearby ? '' : statedPlace(request);
   const understood = nearby || plain || !!place || !!past || remarks.length > 0 || filters.mode !== current.mode || Object.values(stated).some(Boolean);
   // Said after `understood` is settled: a phrase of nothing but such words is not a request the rules can run.
-  const missed = unsearched(request);
+  // A caller that does not find landmarks on the map (options.places) still tells the guest so.
+  const missed = [...unsearched(request), ...(place && !options.places ? ['место рядом с ориентиром'] : [])];
   if (missed.length) remarks.push('Пока не умею искать: ' + missed.join(', ') + '.');
   return { filters, stated, nearby, ...(place ? { place } : {}), understood, ...(past ? { past } : {}), remarks };
 }
