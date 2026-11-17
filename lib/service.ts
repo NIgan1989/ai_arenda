@@ -32,6 +32,7 @@ import {readAdministratorProcesses,processReadIntent} from './administrator-proc
 import {accrueCommission} from './platform-billing';
 import {offerPriceAdvice,ownerPriceSuggestions,decidePriceSuggestion} from './price-advice';
 import {guestStayOffers,decideStayOffer} from './stay-offers';
+import {guestFavorites} from './favorites';
 import {ownerForecasts,decideForecast} from './load-forecast';
 import {ownerListingTips,decideListingTip} from './listing-quality';
 import {ownerCleaningTips,decideCleaningTip} from './cleaning-price';
@@ -45,7 +46,7 @@ const now = () => Math.floor(Date.now() / 1000);
 const id = () => crypto.randomUUID();
 const clockLabel=(at:number)=>new Intl.DateTimeFormat('ru-RU',{hour:'2-digit',minute:'2-digit',timeZone:'Asia/Almaty'}).format(new Date(at*1000));
 const HISTORY_TABLES=['bookings','cleaning_jobs','finance_entries','platform_commissions','access_receipts','administrator_issues','administrator_tasks','matching_offers','review_property_bindings'];
-const SETTINGS_TABLES=['property_details','property_locations','property_operations','property_policies','operation_rules','matching_preferences','property_access','calendar_exports','property_import_links'];
+const SETTINGS_TABLES=['property_details','property_locations','property_operations','property_policies','operation_rules','matching_preferences','property_access','calendar_exports','property_import_links','guest_favorites'];
 // How far a stay may move its cleaning while the assigned cleaner keeps it: a late checkout or a few extra hours, not another day.
 const KEEP_SHIFT=3*3600;
 export class RentalService {
@@ -244,7 +245,7 @@ export class RentalService {
       // Training flats skip the platform check on the server, so their responses never wait for it.
       admission:a.job_demo?'not_required':role==='owner'?workers.get(a.user_id)?.admission:ownAdmission})),messages:state.messages.filter(m=>m.scope===role)};
     if(role==='owner'){(result as Row).priceSuggestions=await ownerPriceSuggestions(this.db,this.userId,state.serverTime);(result as Row).calendarWindows=await ownerWindows(this.db,this.userId,state.serverTime);(result as Row).loadForecasts=await ownerForecasts(this.db,this.userId,state.serverTime);(result as Row).listingTips=await ownerListingTips(this.db,this.userId,state.serverTime);(result as Row).cleaningTips=await ownerCleaningTips(this.db,this.userId,state.serverTime);}
-    if(role==='guest')(result as Row).stayOffers=await guestStayOffers(this.db,this.userId,state.serverTime);
+    if(role==='guest'){(result as Row).stayOffers=await guestStayOffers(this.db,this.userId,state.serverTime);Object.assign(result,await guestFavorites(this.db,this.userId));}
     const assistantSettings={...defaultAssistantSettings};
     const administrator=await readAdministratorState(this.db,this.userId,role);
     return {...result,administrator,approvals:approvalCards(result,role,this.userId,state.serverTime),assistantSettings,assistantBrief:assistantBrief(result,role,assistantSettings,state.serverTime),workspaces:{[role]:operationOverview(result,this.userId,role,state.serverTime)}};

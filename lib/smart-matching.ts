@@ -4,6 +4,7 @@ import {epoch,uuid,q,one,rows,type Row} from './operation-core';
 import {geoDistance} from './map-location';
 import {amenities,propertyTypes} from './listings';
 import {autoAnswerOffers,setGuestMode,guestModeSql,guestModeJoins} from './autopilot';
+import {guestFavorites,favouredFirst} from './favorites';
 
 // Structured facts are authoritative; the administrator's explanation is derived from them.
 export function matchingInput(body:Row){
@@ -116,17 +117,21 @@ async function guestRequest(s:RentalService,id:unknown){await s.requireRole('gue
 async function sendWave(s:RentalService,request:Row,ranked:Row[]){
  const existing=await rows(s.db,'SELECT property_id FROM matching_offers WHERE request_id=?',request.id),seen=new Set(existing.map(o=>o.property_id)),candidates=ranked.filter(p=>p.quickRequest&&!seen.has(p.id)).slice(0,3),t=epoch();
  const statements:D1PreparedStatement[]=[];
- for(const p of candidates){const owner=await one(s.db,'SELECT owner_id FROM properties WHERE id=?',p.id);if(!owner)continue;const id=uuid();
+ // One query for the owners of the whole wave: beginning a search has a tight budget of database queries.
+ const owners=candidates.length?await rows(s.db,'SELECT id,owner_id FROM properties WHERE id IN (SELECT value FROM json_each(?))',JSON.stringify(candidates.map(p=>p.id))):[];
+ for(const p of candidates){const owner=owners.find(o=>o.id===p.id);if(!owner)continue;const id=uuid();
   statements.push(q(s.db,`INSERT OR IGNORE INTO matching_offers(id,request_id,property_id,owner_id,status,amount,policy_version,created_at,expires_at) SELECT ?,?,?,?,'pending',?,?,?,? WHERE EXISTS(SELECT 1 FROM matching_preferences WHERE property_id=? AND owner_id=? AND enabled=1) AND EXISTS(SELECT 1 FROM matching_requests WHERE id=? AND status IN ('searching','ready') AND expires_at>?) AND (SELECT COUNT(*) FROM matching_offers WHERE request_id=?)<9 AND (SELECT COUNT(*) FROM matching_offers WHERE request_id=? AND status='pending' AND expires_at>?)<3 AND NOT EXISTS(SELECT 1 FROM matching_offers WHERE request_id=? AND status='accepted' AND expires_at>?)`,id,request.id,p.id,owner.owner_id,p.estimate.amount,p.policy.version,t,Math.min(t+120,request.expires_at),p.id,owner.owner_id,request.id,t,request.id,request.id,t,request.id,t),q(s.db,`INSERT OR IGNORE INTO notifications SELECT ?,?,?,?,0,? WHERE EXISTS(SELECT 1 FROM matching_offers WHERE id=?)`,uuid(),owner.owner_id,'Новый быстрый запрос на «'+p.title+'». Проверьте даты и готовность в разделе карты.','owner:matching:'+id,t,id));
  }
  if(statements.length){await s.db.batch(statements);await autoAnswerOffers(s,request.id);}
  const count=await one(s.db,'SELECT COUNT(*) n FROM matching_offers WHERE request_id=?',request.id);return Number(count?.n||0)>existing.length;
 }
+// The guest's favourites and the homes of earlier stays go first: their owners are asked in the first wave.
+async function mineFirst(s:RentalService,result:Row):Promise<Row>{return {...result,properties:favouredFirst(result.properties as {id:string}[],await guestFavorites(s.db,s.userId))};}
 export async function beginMatching(s:RentalService,body:Row){
  await s.requireRole('guest');const key=required(body.requestKey,'Ключ запроса',100),existing=await one(s.db,'SELECT id FROM matching_requests WHERE guest_id=? AND request_key=?',s.userId,key);if(existing)return matchingState(s,existing.id);
  if(body.consent!==true)throw new DomainError('Подтвердите отправку условий владельцам.');
  const recent=await one(s.db,'SELECT COUNT(*) n FROM matching_requests WHERE guest_id=? AND created_at>?',s.userId,epoch()-300);if((recent?.n||0)>=5)throw new DomainError('Слишком много запросов. Попробуйте через несколько минут.',429);
- const result=await previewMatches(s,body,false),eligible=result.properties.filter((p:Row)=>p.quickRequest).slice(0,3),id=uuid(),t=epoch();
+ const result=await mineFirst(s,await previewMatches(s,body,false)),eligible=result.properties.filter((p:Row)=>p.quickRequest).slice(0,3),id=uuid(),t=epoch();
  try{await q(s.db,"INSERT INTO matching_requests(id,guest_id,request_key,filters,status,created_at,expires_at) VALUES (?,?,?,?,?,?,?)",id,s.userId,key,JSON.stringify(result.filters),eligible.length?'searching':'empty',t,t+600).run();}catch(error){const duplicate=await one(s.db,'SELECT id FROM matching_requests WHERE guest_id=? AND request_key=?',s.userId,key);if(duplicate)return matchingState(s,duplicate.id);throw error;}
  await sendWave(s,{id,expires_at:t+600},result.properties);
  return matchingState(s,id,result);
@@ -136,7 +141,7 @@ export async function matchingState(s:RentalService,id:unknown,prepared?:Row){
  if(request.status==='booking'){const saved=await one(s.db,'SELECT id FROM bookings WHERE guest_id=? AND request_key=?',s.userId,'match:'+request.id);if(saved){await q(s.db,"UPDATE matching_requests SET status='booked',booking_id=? WHERE id=?",saved.id,request.id).run();request.status='booked';request.booking_id=saved.id;}else if(request.lease_until<t){await q(s.db,"UPDATE matching_requests SET status=? WHERE id=? AND status='booking' AND lease_until<?",request.expires_at>t?'ready':'expired',request.id,t).run();request.status=request.expires_at>t?'ready':'expired';}}
  let offers=await rows(s.db,'SELECT id,property_id,status,expires_at,amount,policy_version FROM matching_offers WHERE request_id=? ORDER BY created_at,id',request.id),dispatchChanged=false;
  if(['searching','ready'].includes(request.status)&&Date.parse(filters.start)<(t-60)*1000){await q(s.db,"UPDATE matching_requests SET status='expired' WHERE id=? AND status IN ('searching','ready')",request.id).run();request.status='expired';}
- const available=['searching','ready'].includes(request.status)?prepared||await previewMatches(s,filters,false):{properties:[]};
+ const available=['searching','ready'].includes(request.status)?prepared||await mineFirst(s,await previewMatches(s,filters,false)):{properties:[]};
  for(const offer of offers.filter(o=>['pending','accepted'].includes(o.status)&&o.expires_at>t)){if(!available.properties.some((p:Row)=>p.id===offer.property_id&&p.estimate.amount===offer.amount&&p.policy.version===offer.policy_version)){await q(s.db,"UPDATE matching_offers SET status='expired' WHERE id=? AND status IN ('pending','accepted')",offer.id).run();offer.status='expired';}}
  if(['searching','ready'].includes(request.status)&&!offers.some(o=>['pending','accepted'].includes(o.status)&&o.expires_at>t)&&offers.length<9){dispatchChanged=await sendWave(s,request,available.properties);if(dispatchChanged)offers=await rows(s.db,'SELECT id,property_id,status,expires_at,amount,policy_version FROM matching_offers WHERE request_id=? ORDER BY created_at,id',request.id);}
  const accepted=offers.filter(o=>o.status==='accepted'&&o.expires_at>t);

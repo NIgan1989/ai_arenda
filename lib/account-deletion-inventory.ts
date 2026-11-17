@@ -18,6 +18,7 @@ export const accountDeletionColumns:Record<string,string>={
  "stay_reviews":"booking_id,property_id,guest_id,owner_id,rating,body,created_at",
  "stay_handovers":"booking_id,property_id,owner_id,guest_id,verdict,issues,note,cleaner_photos,created_at",
  "stay_photos":"id,booking_id,user_id,phase,data,object_key,width,height,bytes,created_at",
+ "guest_favorites":"guest_id,property_id,created_at",
  "platform_commissions":"booking_id,owner_id,property_id,booking_amount,rate_bp,amount,mode,settings_version,created_at,managed",
  "owner_balance_entries":"id,owner_id,kind,amount,note,actor_id,request_key,created_at",
  "matching_preferences":"property_id,owner_id,enabled,updated_at",
@@ -123,6 +124,7 @@ export const accountDeletionFenceSql:Record<string,string>={
  "account_erased_cleaning_commissions_update": "CREATE TRIGGER account_erased_cleaning_commissions_update BEFORE UPDATE ON cleaning_commissions WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.owner_id OR user_id=NEW.cleaner_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END",
 
  "account_erased_stay_handovers_insert": "CREATE TRIGGER account_erased_stay_handovers_insert BEFORE INSERT ON stay_handovers WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.guest_id OR user_id=NEW.owner_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END",
+ "account_erased_guest_favorites_insert": "CREATE TRIGGER account_erased_guest_favorites_insert BEFORE INSERT ON guest_favorites WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.guest_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END",
  "account_erased_stay_photos_insert": "CREATE TRIGGER account_erased_stay_photos_insert BEFORE INSERT ON stay_photos WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.user_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END",
  "account_erased_stay_reviews_insert": "CREATE TRIGGER account_erased_stay_reviews_insert BEFORE INSERT ON stay_reviews WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.guest_id OR user_id=NEW.owner_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END",
  "account_erased_stay_offers_insert": "CREATE TRIGGER account_erased_stay_offers_insert BEFORE INSERT ON stay_offers WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.guest_id OR user_id=NEW.owner_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END",

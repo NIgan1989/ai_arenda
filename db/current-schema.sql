@@ -61,6 +61,7 @@
 -- migration 0057_deposit_kept.sql sha256:b2ad5f39474842083f0452275189833860ca09f7f41871b5fd7bc2af135c2fd7
 -- migration 0058_own_booking_refunds.sql sha256:9023de48d2a0b36a76ba8b9e89e12c2c0f48042d7b30442ed852c3c06eee1b4c
 -- migration 0059_stay_handover.sql sha256:564a9430097ab88e7599ae76fb418590e99a521c70255a33cf3dcdb10c7e376d
+-- migration 0060_guest_favorites.sql sha256:da4664c14d861893f3ba6ae36d881a993cd2f68ef8270bcdeeef24d84a0b7ee7
 
 -- table access_receipts
 CREATE TABLE access_receipts (id TEXT PRIMARY KEY,property_id TEXT NOT NULL,entity_kind TEXT NOT NULL,entity_id TEXT NOT NULL,user_id TEXT NOT NULL,created_at INTEGER NOT NULL,expires_at INTEGER NOT NULL);
@@ -592,6 +593,14 @@ CREATE TABLE finance_entries (
  amount INTEGER NOT NULL CHECK(amount>0),currency TEXT NOT NULL DEFAULT 'KZT' CHECK(currency='KZT'),
  source TEXT NOT NULL CHECK(source IN ('owner','provider','legacy')),external_reference TEXT NOT NULL DEFAULT '',note TEXT NOT NULL,
  actor_id TEXT NOT NULL,request_key TEXT NOT NULL,created_at INTEGER NOT NULL,UNIQUE(actor_id,request_key)
+);
+
+-- table guest_favorites
+CREATE TABLE guest_favorites (
+ guest_id TEXT NOT NULL REFERENCES profiles(id),
+ property_id TEXT NOT NULL REFERENCES properties(id),
+ created_at INTEGER NOT NULL,
+ PRIMARY KEY(guest_id,property_id)
 );
 
 -- table job_evidence
@@ -1187,6 +1196,9 @@ CREATE INDEX finance_booking ON finance_entries(booking_id,kind);
 -- index finance_property
 CREATE INDEX finance_property ON finance_entries(owner_id,property_id,created_at);
 
+-- index guest_favorites_property
+CREATE INDEX guest_favorites_property ON guest_favorites(property_id);
+
 -- index job_applicant
 CREATE UNIQUE INDEX `job_applicant` ON `applications` (`job_id`,`user_id`);
 
@@ -1553,6 +1565,9 @@ CREATE TRIGGER account_erased_finance_entries_insert BEFORE INSERT ON finance_en
 
 -- trigger account_erased_finance_entries_update
 CREATE TRIGGER account_erased_finance_entries_update BEFORE UPDATE ON finance_entries WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.owner_id OR user_id=NEW.actor_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END;
+
+-- trigger account_erased_guest_favorites_insert
+CREATE TRIGGER account_erased_guest_favorites_insert BEFORE INSERT ON guest_favorites WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.guest_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END;
 
 -- trigger account_erased_job_evidence_insert
 CREATE TRIGGER account_erased_job_evidence_insert BEFORE INSERT ON job_evidence WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.user_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END;
