@@ -1,8 +1,8 @@
 import {DomainError,number,required} from './domain';
 type Row=Record<string,any>;
-export const defaultPolicy={hourly_price:0,min_hours:2,nightly_price:0,checkin_minutes:840,checkout_minutes:720,deposit:0,house_rules:'',auto_confirm:0,auto_assign:0,cleaning_fee:0,cleaning_budget:0,max_discount_percent:0,minimum_rate:0,repair_budget:0,auto_extension:0,max_extension_hours:0,mandate_until:0,escalation_contact:'',version:0};
+export const defaultPolicy={hourly_price:0,min_hours:2,nightly_price:0,checkin_minutes:840,checkout_minutes:720,deposit:0,house_rules:'',auto_confirm:0,auto_assign:0,cleaning_fee:0,cleaning_budget:0,max_discount_percent:0,minimum_rate:0,repair_budget:0,auto_extension:0,max_extension_hours:0,mandate_until:0,escalation_contact:'',included_guests:0,extra_guest_price:0,prep_minutes:0,version:0};
 export function mandateActive(policy:Row,t=Math.floor(Date.now()/1000)){return !policy.mandate_until||policy.mandate_until>t;}
-export function publicPolicy(policy:Row=defaultPolicy){const {hourly_price,min_hours,nightly_price,checkin_minutes,checkout_minutes,deposit,house_rules,auto_confirm,version}={...defaultPolicy,...policy};return {hourly_price,min_hours,nightly_price,checkin_minutes,checkout_minutes,deposit,house_rules,auto_confirm:mandateActive(policy)?auto_confirm:0,version};}
+export function publicPolicy(policy:Row=defaultPolicy){const {hourly_price,min_hours,nightly_price,checkin_minutes,checkout_minutes,deposit,house_rules,auto_confirm,included_guests,extra_guest_price,version}={...defaultPolicy,...policy};return {hourly_price,min_hours,nightly_price,checkin_minutes,checkout_minutes,deposit,house_rules,included_guests,extra_guest_price,auto_confirm:mandateActive(policy)?auto_confirm:0,version};}
 export function clock(minutes:number){return String(Math.floor(minutes/60)).padStart(2,'0')+':'+String(minutes%60).padStart(2,'0');}
 export function minutes(value:unknown){const match=String(value).match(/^(\d{2}):(\d{2})$/);if(!match||+match[1]>23||+match[2]>59)throw new DomainError('Укажите время в формате ЧЧ:ММ.');return +match[1]*60 + +match[2];}
 export function policyInput(body:Row){
@@ -14,7 +14,23 @@ export function policyInput(body:Row){
   if((policy.auto_confirm||mandate.auto_extension)&&mandate.mandate_until&&!mandateActive(mandate))throw new DomainError('Срок автоматических полномочий уже истёк.');
   if((policy.auto_confirm||mandate.auto_extension)&&mandate.minimum_rate&&[number(body.dailyPrice,'Цена за сутки',100,10000000),policy.hourly_price,policy.nightly_price].some(rate=>rate>0&&rate<mandate.minimum_rate))throw new DomainError('Один из тарифов ниже минимальной разрешённой ставки.');
   if(body.autoAssign===true&&mandate.mandate_until&&!mandateActive(mandate))throw new DomainError('Срок автоматических полномочий уже истёк.');
-  return {...policy,...mandate,auto_assign:body.autoAssign===true?1:0};
+  // The guest surcharge and the reminder to get ready (a bath is heated before the guests). An older app sends none
+  // of them: the keys are then left out, so saving keeps what is stored.
+  const extra:Row={};
+  if(body.includedGuests!==undefined)extra.included_guests=number(body.includedGuests,'Гостей в цене',0,50);
+  if(body.extraGuestPrice!==undefined)extra.extra_guest_price=number(body.extraGuestPrice,'Доплата за гостя',0,1000000);
+  if(body.prepMinutes!==undefined)extra.prep_minutes=number(body.prepMinutes,'Подготовка, минут',0,720);
+  return {...policy,...mandate,auto_assign:body.autoAssign===true?1:0,...extra};
+}
+// Guests above the number the price covers pay extra for every hour (or day): «2 000 ₸ в час с человека сверх шести».
+// The surcharge is part of the rate, so the amount stays periods × price everywhere (terms, cancellation, changes).
+export function guestSurcharge(policy:Row,guests:number){
+  const included=Number(policy?.included_guests)||0,extra=Number(policy?.extra_guest_price)||0;
+  return included>0&&extra>0?Math.max(0,Math.floor(Number(guests)||0)-included)*extra:0;
+}
+export function withGuests<T extends {periods:number;price:number;amount:number}>(pricing:T,policy:Row,guests:number){
+  const add=guestSurcharge(policy,guests);
+  return add?{...pricing,price:pricing.price+add,amount:pricing.amount+add*pricing.periods,guestSurcharge:add,extraGuests:Math.floor(guests)-Number(policy.included_guests)}:pricing;
 }
 // The night a nightly stay starts on, as a Kazakhstan day number: from the check-in time to midnight it is that
 // day's night, and a late arrival after midnight, before the check-out time, still belongs to the night before.

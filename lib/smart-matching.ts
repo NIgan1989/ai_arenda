@@ -2,7 +2,9 @@ import {DomainError,required,number,interval,type Role} from './domain';
 import type {RentalService} from './service';
 import {epoch,uuid,q,one,rows,type Row} from './operation-core';
 import {geoDistance} from './map-location';
-import {amenities,propertyTypes} from './listings';
+import {amenities,propertyTypes,categories,kindCategory} from './listings';
+// The category a search is in: «Баня» when every type asked for is a bath, «Жильё» otherwise, also when no type is named.
+export const searchCategory=(kinds:string[]=[])=>kinds.length&&kinds.every(k=>kindCategory(k)==='bath')?'bath':'stay';
 import {autoAnswerOffers,setGuestMode,guestModeSql,guestModeJoins} from './autopilot';
 import {guestFavorites,favouredFirst} from './favorites';
 
@@ -15,7 +17,7 @@ export function matchingInput(body:Row){
  if(features.length>16||features.some(v=>typeof v!=='string'||(v!=='pets'&&!Object.hasOwn(amenities,v))))throw new DomainError('Проверьте обязательные удобства.');
  // The type of home and its rooms: '2' exactly two, '2+' at least two. Both optional, as older apps send neither.
  const kinds=Array.isArray(body.kinds)?body.kinds:[],rooms=body.rooms===undefined||body.rooms===null?'':String(body.rooms);
- if(kinds.length>8||kinds.some((v:unknown)=>typeof v!=='string'||!Object.hasOwn(propertyTypes,v)))throw new DomainError('Проверьте тип жилья.');
+ if(kinds.length>Object.keys(propertyTypes).length||kinds.some((v:unknown)=>typeof v!=='string'||!Object.hasOwn(propertyTypes,v)))throw new DomainError('Проверьте тип жилья.');
  if(rooms&&!/^[1-9]\+?$/.test(rooms))throw new DomainError('Проверьте число комнат.');
  let near:Row|null=null;
  if(body.near){const {longitude,latitude}=body.near;if(typeof longitude!=='number'||!Number.isFinite(longitude)||Math.abs(longitude)>180||typeof latitude!=='number'||!Number.isFinite(latitude)||Math.abs(latitude)>85)throw new DomainError('Проверьте точку поиска.');near={longitude:Math.round(longitude*100)/100,latitude:Math.round(latitude*100)/100,radius:number(body.near.radius||5000,'Радиус',1000,20000)};}
@@ -44,7 +46,7 @@ export const driveMinutes=(metres:number)=>Math.max(3,Math.round(metres*1.3/500)
 export function rankMatches(properties:Row[],filters:Row):Row[]{
  const budget=Number(filters.maxPrice),district=filters.district.toLocaleLowerCase('ru'),kinds:string[]=filters.kinds||[],rooms=String(filters.rooms||''),least=rooms.endsWith('+'),count=parseInt(rooms);
  // «Сейчас»: only a home that is ready and confirms at once, so the guest can go there right away.
- const home=(p:Row)=>(!filters.now||(p.display_status?.code==='ready'&&!!p.instant))&&(!kinds.length||kinds.includes(p.details?.type))&&(!rooms||(least?Number(p.rooms)>=count:Number(p.rooms)===count));
+ const home=(p:Row)=>(!filters.now||(p.display_status?.code==='ready'&&!!p.instant))&&(kinds.length?kinds.includes(p.details?.type):categories.stay.types.includes(p.details?.type||'apartment'))&&(!rooms||(least?Number(p.rooms)>=count:Number(p.rooms)===count));
  const ranked=properties.filter(p=>!p.test_preview&&home(p)&&(!district||String(p.district).toLocaleLowerCase('ru').includes(district))&&filters.features.every((a:string)=>a==='pets'?p.details?.pets===true:(p.details?.amenities||[]).includes(a))).flatMap<Row>(p=>{
   const amount=p.estimate?.amount;if(!Number.isInteger(amount)||amount>budget)return [];
   const distance=filters.near&&p.location?geoDistance([filters.near.longitude,filters.near.latitude],[p.location.longitude,p.location.latitude]):null;
@@ -81,7 +83,7 @@ export async function responseTimes(db:D1Database,ids:string[],t=epoch()){
 }
 // explain: an empty answer says why (emptyHint). Requests already sent to owners poll this and do not need it.
 export async function previewMatches(s:RentalService,body:Row,explain=true):Promise<Row>{
- const filters=matchingInput(body),search={city:filters.city,start:filters.start,end:filters.end,guests:filters.guests,mode:filters.mode,maxPrice:filters.maxPrice,map:'1',limit:'60'};
+ const filters=matchingInput(body),search={city:filters.city,start:filters.start,end:filters.end,guests:filters.guests,mode:filters.mode,maxPrice:filters.maxPrice,category:searchCategory(filters.kinds),map:'1',limit:'60'};
  const first=await s.publicSearch(search,{matching:true}),properties=first.properties;
  // In chunks: a matching search returns every match, and D1 binds at most 100 parameters.
  const modes:Row[]=[],ids=properties.map((p:Row)=>p.id);
@@ -96,12 +98,12 @@ export async function previewMatches(s:RentalService,body:Row,explain=true):Prom
 // a bare "nothing": no homes in the city, too many guests, no hourly homes, all taken (with the nearest stay of the same
 // length within a week that passes every other condition), over the budget (with the lowest price), or the district, type and wishes.
 export async function emptyHint(s:RentalService,f:Row):Promise<Row>{
- const all=(await s.publicSearch({city:f.city,mode:'daily',guests:'1',limit:'60'},{matching:true})).properties.filter((p:Row)=>!p.test_preview);
+ const all=(await s.publicSearch({city:f.city,mode:'daily',guests:'1',category:searchCategory(f.kinds),limit:'60'},{matching:true})).properties.filter((p:Row)=>!p.test_preview);
  if(!all.length)return {reason:'city'};
  const maxGuests=Math.max(...all.map((p:Row)=>Number(p.capacity)||0));
  if(maxGuests<Number(f.guests))return {reason:'guests',maxGuests};
  if(f.mode==='hourly'&&!all.some((p:Row)=>Number(p.policy?.hourly_price)>0))return {reason:'hourly'};
- const free=async(start:string,end:string)=>(await s.publicSearch({city:f.city,start,end,guests:f.guests,mode:f.mode,map:'1',limit:'60'},{matching:true})).properties.filter((p:Row)=>!p.test_preview);
+ const free=async(start:string,end:string)=>(await s.publicSearch({city:f.city,start,end,guests:f.guests,mode:f.mode,category:searchCategory(f.kinds),map:'1',limit:'60'},{matching:true})).properties.filter((p:Row)=>!p.test_preview);
  const open=await free(f.start,f.end);
  // «Сейчас» left out the homes that are not ready yet or confirm only after the owner answers.
  if(f.now&&open.length){const later=rankMatches(open,{...f,now:false});if(later.length)return {reason:'now',count:later.length};}

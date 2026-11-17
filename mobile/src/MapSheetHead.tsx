@@ -5,6 +5,7 @@ import { NowCard } from './NowCard';
 import type { NowCard as NowCardModel } from './now-card';
 import type { Role } from './model';
 import { headLine, type HeadAction } from './head-line';
+import { CATEGORIES, type Category } from './ai-request';
 import { C, type } from './styles';
 import { T } from './tokens';
 
@@ -27,6 +28,9 @@ type Props = {
   onNow: () => void;
   // A number on a chip: what waits behind it (the owner's «Заявки»: guests' requests and cleaners' responses).
   counts?: Partial<Record<HeadAction, number>>;
+  // Guest only: what is looked for, chosen above the line like a tariff in a taxi.
+  category?: Category;
+  onCategory?: (category: Category) => void;
   children?: ReactNode;
 };
 
@@ -36,10 +40,21 @@ type Props = {
 const unbroken = (line: string) => line.replace(/ ·/g, '\u00a0·').replace(/(\d) (?=[\d₸а-яё])/gi, '$1\u00a0').replace(/(^|[ \u00a0])до (?=\d)/g, '$1до\u00a0').replace(/–/g, '–\u2060');
 
 // The default state of the bottom sheet: one AI line, a row of chips and the "Сейчас" card when there is one.
-export function MapSheetHead({ role, text, onText, onSend, onChip, chips = true, busy = false, summary, onRefine, refining = false, now, onNow, counts, children }: Props) {
-  const line = headLine(role);
+export function MapSheetHead({ role, text, onText, onSend, onChip, chips = true, busy = false, summary, onRefine, refining = false, now, onNow, counts, category = 'stay', onCategory, children }: Props) {
+  const line = headLine(role, Date.now(), category);
   return (
     <View style={s.head}>
+      {!!onCategory && chips && <View style={s.cats} accessibilityRole="radiogroup" accessibilityLabel="Что ищете">
+        {CATEGORIES.map(c => {
+          const on = c.id === category;
+          return (
+            <Pressable key={c.id} accessibilityRole="radio" accessibilityLabel={c.hint} accessibilityState={{ checked: on }} disabled={busy} onPress={() => onCategory(c.id)} style={({ pressed }) => [s.cat, on && s.catOn, pressed && s.chipPressed]}>
+              <Text style={s.catIcon}>{c.icon}</Text>
+              <Text style={[s.catText, on && s.catTextOn]}>{c.title}</Text>
+            </Pressable>
+          );
+        })}
+      </View>}
       <AiLine value={text} onChangeText={onText} onSend={onSend} busy={busy} placeholder={line.placeholder} shortPlaceholder={line.shortPlaceholder} label={line.label} />
       {/* The chips of every role fit one row of a 360px phone; the row still scrolls for a larger system font. */}
       {chips && <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="handled" style={s.chipsScroll} contentContainerStyle={s.chips}>
@@ -79,6 +94,13 @@ export function MapSheetHead({ role, text, onText, onSend, onChip, chips = true,
 
 const s = StyleSheet.create({
   head: { gap: 12 },
+  // The categories: equal tiles in one row, the chosen one in the accent colour.
+  cats: { flexDirection: 'row', gap: 8 },
+  cat: { flex: 1, minHeight: T.control.touch, borderRadius: T.radius.md, backgroundColor: C.surfaceAlt, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
+  catOn: { backgroundColor: C.accent },
+  catIcon: { fontSize: 18, lineHeight: 22 },
+  catText: { ...type.label, color: C.ink, fontWeight: '700' },
+  catTextOn: { color: C.onAccent },
   // The row scrolls to the screen edge, past the sheet padding.
   chipsScroll: { marginHorizontal: -16, flexGrow: 0 },
   chips: { gap: 8, paddingHorizontal: 16 },

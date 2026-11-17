@@ -7,13 +7,13 @@ import { ratingsFor } from './stay-reviews';
 import { markDeals } from './price-deal';
 import { generateAnswer, assistantContext, type AIConfig,type AIToolExecutor } from './ai';
 import { operationOverview } from './operations';
-import { defaultPolicy,publicPolicy,policyInput,rentalPrice,changeRentalPrice,mandateActive } from './rental-policy';
+import { defaultPolicy,publicPolicy,policyInput,rentalPrice,changeRentalPrice,mandateActive ,withGuests} from './rental-policy';
 import { parseRole,commandRole } from './access';
 import {assistantBrief,defaultAssistantSettings} from './assistant';
 import {defaultAccountSettings,accountSettingsInput,userSearchInput} from './account';
 import {approvalCards} from './approvals';
 import {hasContacts,MIN_PHOTOS} from './listing-rules';
-import {listingInput,jpegInput,propertyStatus,cleanerStatus} from './listings';
+import {listingInput,jpegInput,propertyStatus,cleanerStatus,categories,kindCategory} from './listings';
 import {mediaKey,dataUrlBytes,mediaData} from './media-store';
 import {readAdministratorState} from './administrator';
 import {recordFinance,migrateFinanceEntity} from './finance';
@@ -428,7 +428,9 @@ export class RentalService {
     if(city.length>80||!['daily','hourly','night'].includes(mode))throw new DomainError('Проверьте город и вид аренды.');
     const catalog=await this.publicCatalog(options),cities=[...new Set(catalog.properties.map(p=>String(p.city)))].sort();
     const cityKey=city.toLocaleLowerCase('ru'),exactCity=catalog.properties.some(p=>String(p.city).toLocaleLowerCase('ru')===cityKey);
-    let items=catalog.properties.filter(p=>(!city||(exactCity?String(p.city).toLocaleLowerCase('ru')===cityKey:String(p.city).toLocaleLowerCase('ru').includes(cityKey)))&&p.capacity>=guests&&(mode!=='hourly'||p.policy.hourly_price>0));
+    // Homes unless the bath category is asked for by name or by its types: a bath never shows among homes.
+    const kinds=Array.isArray(filters.kinds)?filters.kinds:[],category=categories[filters.category]?filters.category:kinds.length&&kinds.every((k:string)=>kindCategory(k)==='bath')?'bath':'stay';
+    let items=catalog.properties.filter(p=>(!city||(exactCity?String(p.city).toLocaleLowerCase('ru')===cityKey:String(p.city).toLocaleLowerCase('ru').includes(cityKey)))&&p.capacity>=guests&&(mode!=='hourly'||p.policy.hourly_price>0)&&kindCategory(p.details?.type)===category);
     let range:{start:number;end:number}|null=null;
     if(filters.start||filters.end){
       range=interval(filters.start,filters.end);
@@ -442,7 +444,7 @@ export class RentalService {
       const occupied=new Set([...booked,...cleaning,...external,...stale].map(p=>p.property_id));
       items=items.filter(p=>!occupied.has(p.id)&&!['maintenance','blocked'].includes(p.display_status.code)&&(start>now()+60||p.display_status.code==='ready'));
       const windows=mode==='hourly'?await openWindowsFor(this.db,start,end):new Map();
-      items=items.flatMap(p=>{try{const price=windowQuote(rentalPrice(p.price,p.policy,start,end,mode),p.policy.hourly_price,windows.get(p.id));return [{...p,estimate:{amount:price.amount,periods:price.periods,rate:price.price,unitLabel:price.unitLabel,billingMode:price.billingMode,...(price.window?{window:price.window}:{})}}];}catch(error){if(error instanceof DomainError)return [];throw error;}});
+      items=items.flatMap(p=>{try{const price=withGuests(windowQuote(rentalPrice(p.price,p.policy,start,end,mode),p.policy.hourly_price,windows.get(p.id)),p.policy,guests);return [{...p,estimate:{amount:price.amount,periods:price.periods,rate:price.price,unitLabel:price.unitLabel,billingMode:price.billingMode,...(price.window?{window:price.window}:{})}}];}catch(error){if(error instanceof DomainError)return [];throw error;}});
       // «Цена выгодная»: compared with the other free flats of the city for the same dates, before any budget or page cuts them.
       items=markDeals(items);
     }
@@ -528,12 +530,13 @@ export class RentalService {
     const {start,end}=interval(body.start,body.end), guests=number(body.guests,'Гости',1,p.capacity), occupiedUntil=end+p.cleaning_minutes*60;
     const policy={...defaultPolicy,...await this.one('SELECT * FROM property_policies WHERE property_id=?',p.id)},op=await this.one('SELECT readiness FROM property_operations WHERE property_id=?',p.id);
     if(op&&(['maintenance','blocked'].includes(op.readiness)||(start<=now()+60&&op.readiness!=='ready')))throw new DomainError('Жильё сейчас не готово к новым заездам.',409);
-    const base=rentalPrice(p.price,policy,start,end,body.billingMode||'daily'),pricing=windowQuote(base,policy.hourly_price,base.billingMode==='hourly'?await openWindowFor(this.db,p.id,start,end):null);
+    const base=rentalPrice(p.price,policy,start,end,body.billingMode||'daily'),pricing=withGuests(windowQuote(base,policy.hourly_price,base.billingMode==='hourly'?await openWindowFor(this.db,p.id,start,end):null),policy,guests);
     await assertCalendarAvailable(this.db,p.id,start,occupiedUntil);
     const occupied=await this.one("SELECT id FROM bookings WHERE property_id=? AND (status='confirmed' OR (status='requested' AND expires_at>?)) AND start<? AND occupied_until>?",p.id,now(),occupiedUntil,start);
     const cleaning=await this.one("SELECT id FROM cleaning_jobs WHERE property_id=? AND status IN ('open','assigned','in_progress','submitted') AND start<? AND end>?",p.id,occupiedUntil,start);
     if(occupied||cleaning) throw new DomainError('Этот интервал уже занят, включая время уборки. Выберите другое время.',409);
-    return {propertyId:p.id,title:p.title,start,end,guests,...pricing,cleaningMinutes:p.cleaning_minutes,occupiedUntil,currency:'KZT',quotedAt:now(),policy:publicPolicy(policy)};
+    const kind=(await this.one("SELECT json_extract(details,'$.type') type FROM property_details WHERE property_id=?",p.id))?.type||'apartment';
+    return {propertyId:p.id,title:p.title,kind,start,end,guests,...pricing,cleaningMinutes:p.cleaning_minutes,occupiedUntil,currency:'KZT',quotedAt:now(),policy:publicPolicy(policy)};
   }
   async saveProfile(body: Row) {
     const name=required(body.name,'Имя',100), contact=required(body.contact,'Контакт',120), city=required(body.city,'Город',80);
@@ -805,7 +808,7 @@ export class RentalService {
     if(!Number.isFinite(start)||!Number.isFinite(end)||end<=start||end<=t||end-start>90*86400)throw new DomainError('Проверьте даты проживания: выезд должен быть в будущем, срок — до 90 дней.');
     if(terms.actual_checkin&&start!==b.start)throw new DomainError('После заселения время заезда изменить нельзя.');
     if(!terms.actual_checkin&&start<t-60&&start!==b.start)throw new DomainError('Новый заезд должен быть в будущем.');
-    const mode=body.billingMode||terms.billing_mode,pricing=changeRentalPrice(b.price,policy,start,end,mode);
+    const mode=body.billingMode||terms.billing_mode,pricing=withGuests(changeRentalPrice(b.price,policy,start,end,mode),policy,b.guests);
     const discount=number(body.discountPercent??terms.discount_percent??0,'Скидка, %',0,50);
     if(role==='guest'&&discount!==(terms.discount_percent||0))throw new DomainError('Скидку предлагает владелец.',403);
     if(discount>policy.max_discount_percent)throw new DomainError('Скидка превышает установленный владельцем предел.');

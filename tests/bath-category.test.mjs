@@ -1,0 +1,85 @@
+import {test} from 'node:test';import assert from 'node:assert/strict';
+import {fixture,now,iso,load} from './helpers/platform.mjs';
+
+// Категория «Баня»: a bath or a sauna taken whole by the hour (lib/listings.ts categories).
+const listing=(type,extra={})=>({title:type==='apartment'?'Квартира в центре':'Баня на дровах',city:'Павлодар',district:'Центр',address:'PRIVATE BATH ADDRESS',description:'Баня на дровах с парилкой и купелью, комната отдыха на шесть человек, мангал во дворе, парковка у ворот.',price:36000,rooms:1,capacity:8,cleaningMinutes:60,photos:[],published:false,expectedVersion:0,policyVersion:0,
+ details:{type,area:40,beds:type==='apartment'?8:1,bathrooms:1,floor:1,floors:1,checkinMethod:'meet',amenities:type==='apartment'?['wifi']:['steam','plunge','brooms'],pets:false,smoking:false,parties:false},
+ rental:{hourlyPrice:3000,minHours:2,nightlyPrice:0,checkinTime:'14:00',checkoutTime:'12:00',deposit:0,houseRules:'Тишина после 23:00.',includedGuests:4,extraGuestPrice:500,prepMinutes:120},...extra});
+const body=(start,extra={})=>({city:'Павлодар',mode:'hourly',start:iso(start),end:iso(start+3*3600),guests:6,maxPrice:100000000,priority:'balanced',features:[],...extra});
+
+test('a bath is found only in its own category, by the hour, with the surcharge for extra guests in the price',async()=>{
+ const f=await fixture();try{
+  const bath=(await f.owner.saveListing(null,listing('banya'))).id,flat=(await f.owner.saveListing(null,listing('apartment'))).id;
+  // A bath has no beds to count: eight guests with one bed is a valid card.
+  assert.equal(JSON.parse(f.db.raw.prepare('SELECT details FROM property_details WHERE property_id=?').get(bath).details).beds,8);
+  assert.equal(f.db.raw.prepare('SELECT own_staff FROM properties WHERE id=?').get(bath).own_staff,0);
+  const policy=f.db.raw.prepare('SELECT * FROM property_policies WHERE property_id=?').get(bath);
+  assert.deepEqual([policy.included_guests,policy.extra_guest_price,policy.prep_minutes],[4,500,120]);
+  f.db.raw.prepare('UPDATE properties SET published=(id IN (?,?))').run(bath,flat);
+  f.db.raw.prepare("UPDATE property_operations SET readiness='ready'").run();
+  const {previewMatches}=await load('smart-matching'),start=Math.ceil((now()+86400)/3600)*3600;
+  const ids=async extra=>(await previewMatches(f.guest,body(start,extra))).properties.map(p=>p.id);
+  // «Жильё»: no type named, the bath is not shown. «Баня»: only the bath.
+  assert.deepEqual(await ids({guests:2}),[flat]);
+  assert.deepEqual(await ids({kinds:['banya','sauna']}),[bath]);
+  // Six guests, four in the price: (3 000 + 2 × 500) × 3 hours.
+  const found=(await previewMatches(f.guest,body(start,{kinds:['banya','sauna']}))).properties[0];
+  assert.equal(found.estimate.amount,12000);assert.equal(found.estimate.rate,4000);
+  const four=(await previewMatches(f.guest,body(start,{kinds:['banya'],guests:4}))).properties[0];assert.equal(four.estimate.amount,9000);
+  // The booking costs what the search said, and the terms keep the rate with the surcharge.
+  const quote=await f.guest.bookingQuote({propertyId:bath,start:iso(start),end:iso(start+3*3600),guests:6,billingMode:'hourly'});
+  assert.equal(quote.amount,12000);
+  const booking=(await f.guest.createBooking({propertyId:bath,start:iso(start),end:iso(start+3*3600),guests:6,billingMode:'hourly',requestKey:'bath',acceptTerms:true})).id;
+  assert.equal(f.db.raw.prepare('SELECT amount FROM bookings WHERE id=?').get(booking).amount,12000);
+  assert.deepEqual({...f.db.raw.prepare('SELECT rate,units,amount FROM booking_terms WHERE booking_id=?').get(booking)},{rate:4000,units:3,amount:12000});
+ }finally{f.db.close();}
+});
+
+test('an older app that sends no guest surcharge keeps the stored one',async()=>{
+ const f=await fixture();try{
+  const id=(await f.owner.saveListing(null,listing('sauna'))).id;
+  assert.equal(f.db.raw.prepare('SELECT own_staff FROM properties WHERE id=?').get(id).own_staff,1);
+  const p=f.db.raw.prepare('SELECT * FROM property_policies WHERE property_id=?').get(id);
+  await f.owner.savePolicy(id,{expectedVersion:p.version,dailyPrice:36000,hourlyPrice:3500,minHours:2,nightlyPrice:0,checkinTime:'14:00',checkoutTime:'12:00',deposit:0,houseRules:'Тишина',autoConfirm:false,autoAssign:false,cleaningFee:0,cleaningBudget:0});
+  const after=f.db.raw.prepare('SELECT * FROM property_policies WHERE property_id=?').get(id);
+  assert.deepEqual([after.hourly_price,after.included_guests,after.extra_guest_price,after.prep_minutes],[3500,4,500,120]);
+ }finally{f.db.close();}
+});
+
+test('«Затопить»: the owner is reminded once, the set time before a confirmed stay',async()=>{
+ const f=await fixture();try{
+  const id=(await f.owner.saveListing(null,listing('banya'))).id;f.db.raw.prepare('UPDATE properties SET published=1').run();
+  const start=Math.ceil((now()+86400)/3600)*3600;
+  const booking=(await f.guest.createBooking({propertyId:id,start:iso(start),end:iso(start+3*3600),guests:5,billingMode:'hourly',requestKey:'heat',acceptTerms:true})).id;
+  const {sweepPrep,prepText}=await load('bath-prep');
+  const notes=()=>f.db.raw.prepare("SELECT body FROM notifications WHERE user_id='owner' AND dedupe LIKE 'owner:prep:%'").all();
+  // Not confirmed yet, then confirmed but too early: nothing.
+  assert.equal((await sweepPrep(f.db,start-3600)).reminded,0);
+  await f.owner.bookingAction(booking,{action:'confirm'});
+  assert.equal((await sweepPrep(f.db,start-3*3600)).reminded,0);
+  assert.equal((await sweepPrep(f.db,start-2*3600)).reminded,1);
+  assert.equal((await sweepPrep(f.db,start-3600)).reminded,0);
+  assert.equal(notes().length,1);assert.match(notes()[0].body,/затопите к \d\d:\d\d\. Гостей: 5, на 3 ч\./);
+  assert.match(prepText({title:'Лофт',type:'apartment',start,end:start+7200,guests:2}),/подготовьте/);
+ }finally{f.db.close();}
+});
+
+test('the line reads a bath: by the hour, the category kept, a flat never becomes a bath',async()=>{
+ const {guestSearchRequest,statedKinds}=await load('map-search-request');
+ assert.deepEqual(statedKinds('баня на 6 человек'),['banya']);assert.deepEqual(statedKinds('сауна с бассейном'),['sauna']);
+ assert.deepEqual(statedKinds('квартира с банкоматом рядом'),[]);
+ const at=Date.parse('2026-11-17T10:00:00+05:00'),current={city:'Павлодар',mode:'daily',start:'2026-11-17T14:00',end:'2026-11-18T12:00',guests:'2',kinds:[]};
+ const r=guestSearchRequest('баня на 6 человек сегодня в 20:00',current,['Павлодар'],at);
+ assert.equal(r.filters.mode,'hourly');assert.deepEqual(r.filters.kinds,['banya']);assert.equal(r.filters.start,'2026-11-17T20:00');assert.equal(r.filters.end,'2026-11-17T23:00');
+ const bare=guestSearchRequest('баня',current,['Павлодар'],at);assert.equal(bare.filters.mode,'hourly');
+});
+
+test('«баня на сутки» остаётся почасовой, а «с бассейном» становится обязательным удобством', async () => {
+  const { guestSearchRequest } = await import('../lib/map-search-request.ts');
+  const now = Date.parse('2026-11-17T06:00:00Z');
+  const day = guestSearchRequest('баня на сутки', { city: 'Павлодар', mode: 'daily', guests: '2' }, ['Павлодар'], now);
+  assert.equal(day.filters.mode, 'hourly');
+  assert.ok(day.remarks.some(r => r.includes('по часам')));
+  const pool = guestSearchRequest('баня с бассейном и вениками завтра в 20:00', { city: 'Павлодар', mode: 'daily', guests: '2' }, ['Павлодар'], now);
+  assert.deepEqual(pool.filters.features, ['pool', 'brooms']);
+});

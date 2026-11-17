@@ -105,6 +105,8 @@ const PART_OF_DAY: [RegExp, string, number][] = [
 ];
 // The type of home the text names, as the ids of lib/listings.ts (propertyTypes). "Квартира" is how most guests
 // say "жильё" and narrows nothing; a "гостевой дом" is not a "дом", an "апарт-отель" not an "отель".
+/** The types of the category «Баня» (lib/listings.ts categories.bath). */
+export const BATH_KINDS = ['banya', 'sauna'];
 const KINDS: [RegExp, string][] = [
   [/студи/, 'studio'],
   [/апарт[- ]?отел/, 'aparthotel'],
@@ -113,6 +115,9 @@ const KINDS: [RegExp, string][] = [
   [/хостел/, 'hostel'],
   [/(?:^|[^а-я])(?:дом|домик|коттедж|дач)(?:а|е|у|ом|ик|ика|ке|ку)?(?=$|[^а-я])/, 'house'],
   [/(?:^|[^а-я])комнат(?:а|у|ку|ка|ой)(?=$|[^а-я])/, 'room'],
+  // A bath or a sauna: the category «Баня» (lib/listings.ts categories), searched by the hour.
+  [/(?:^|[^а-я])бан(?:я|ю|е|и|ька|ьку|ьке|ный|ном|ного)(?=$|[^а-я])/, 'banya'],
+  [/саун/, 'sauna'],
 ];
 const ROOM_WORDS: [RegExp, number][] = [
   [/однушк|однокомнат|(?:^|[^а-я])одно\s*комнат/, 1],
@@ -175,9 +180,19 @@ const WISHES: [RegExp, string][] = [
   [/детск[а-я]*\s+кроват|кроватк/, 'crib'],
   [/собак|собач|(?:^|[^а-я])пс(?:ом|а)(?=$|[^а-я])|кошк|(?:^|[^а-я])кот(?:ом|а|иком)(?=$|[^а-я])|питом|животн/, 'pets'],
 ];
-// What guests ask for and the search cannot check yet. It is named back («Пока не умею искать: баня»), never
+// What a company asks of a bath (lib/listings.ts categoryAmenities.bath): read only in a bath request.
+const BATH_WISHES: [RegExp, string][] = [
+  [/бассейн/, 'pool'],
+  [/купел/, 'plunge'],
+  [/веник/, 'brooms'],
+  [/караоке/, 'karaoke'],
+  [/мангал|шашлык/, 'grill'],
+  [/биль[яа]рд/, 'billiards'],
+];
+// What guests ask for and the search cannot check yet. It is named back («Пока не умею искать: отзывы»), never
 // dropped in silence and never guessed.
 const UNSEARCHED: [RegExp, string][] = [
+  // «Дом с баней»: a home that has one. A request for a bath itself is the category «Баня» and is searched.
   [/(?:^|[^а-я])бан(?:я|ей|ю|и|ька|ькой)(?=$|[^а-я])|саун/, 'баня'],
   [/бассейн/, 'бассейн'],
   [/джакузи/, 'джакузи'],
@@ -192,9 +207,11 @@ const UNSEARCHED: [RegExp, string][] = [
   [/(?:рядом\s+со?|недалеко\s+от|около|возле)\s+(?!мной|меня|нас(?=$|[^а-я]))[а-я]{3,}|(?:^|[^а-я])у\s+(?:вокзал|набережн|парк|рынк|автовокзал|аэропорт|больниц|университет|трц|тц)/, 'место рядом с ориентиром'],
 ];
 
-/** What the text asks for that the search cannot check: ['баня', 'отзывы']. The text is already lower case. */
-export function unsearched(text: string): string[] {
-  return UNSEARCHED.filter(([pattern]) => pattern.test(text)).map(([, word]) => word);
+/** What the text asks for that the search cannot check: ['джакузи', 'отзывы']. The text is already lower case. */
+// What a bath request can check (BATH_WISHES) or takes for granted (a company) is not named back there.
+const BATH_SEARCHED = ['баня', 'бассейн', 'мангал', 'праздник'];
+export function unsearched(text: string, bath = false): string[] {
+  return UNSEARCHED.filter(([pattern, word]) => pattern.test(text) && !(bath && BATH_SEARCHED.includes(word))).map(([, word]) => word);
 }
 
 const localISO = (time: number) => new Date(time + KZ).toISOString().slice(0, 16);
@@ -588,11 +605,14 @@ export function guestSearchRequest(text: string, current: Row, cities: string[],
     filters.priority = 'cheaper';
     stated.wishes = true;
   }
+  // A bath or a sauna is taken by the hour: «баня на вечер» is a few hours, not a day.
+  const bath = (filters.kinds || current.kinds || []).length > 0 && (filters.kinds || current.kinds || []).every((k: string) => BATH_KINDS.includes(k));
   // «Без парковки», «без животных»: what follows «без» is taken off the wishes, not asked for.
   const without = [...request.matchAll(/(?:^|[^а-я])без\s+([а-яa-z -]+?)(?=$|[,.;!?]|\s+(?:с|со|но|а|зато|и\s+со?)\s)/g)].map(match => match[1]).join(' , ');
   const asked = without ? request.replace(/(?:^|[^а-я])без\s+[а-яa-z -]+?(?=$|[,.;!?]|\s+(?:с|со|но|а|зато|и\s+со?)\s)/g, ' ') : request;
-  const wishes = WISHES.filter(([pattern]) => pattern.test(asked)).map(([, id]) => id);
-  const dropped = without ? WISHES.filter(([pattern]) => pattern.test(without)).map(([, id]) => id) : [];
+  const known = [...WISHES, ...(bath ? BATH_WISHES : [])];
+  const wishes = known.filter(([pattern]) => pattern.test(asked)).map(([, id]) => id);
+  const dropped = without ? known.filter(([pattern]) => pattern.test(without)).map(([, id]) => id) : [];
   if (wishes.length || dropped.length) {
     filters.features = [...new Set([...(Array.isArray(current.features) ? current.features : []), ...wishes])].filter(id => !dropped.includes(id) || wishes.includes(id));
     stated.wishes = true;
@@ -601,11 +621,15 @@ export function guestSearchRequest(text: string, current: Row, cities: string[],
   // «Сейчас»: the nearest half-hour that leaves 15 minutes, the time the check-in window opens.
   const urgent = /сейчас|срочно/.test(request), lead = urgent ? 15 : 30, soon = nextSlot(now, lead), today = kzToday(now);
   const dates = statedDates(request, now), hours = statedHours(request);
-  const length = hours ? { mode: 'hourly' as const, units: hours.hours } : statedLength(request, remarks);
+  const said = hours ? { mode: 'hourly' as const, units: hours.hours } : statedLength(request, remarks);
   const clock: StatedTime | null = hours ? { time: hours.time, exact: true, until: 24 } : statedTime(request);
   const time = urgent ? localISO(soon).slice(11) : clock?.time || null;
   const kept = current.mode === 'hourly' || current.mode === 'night' ? current.mode : 'daily';
-  const mode: 'daily' | 'hourly' | 'night' = length.mode ?? (dates?.to || dates?.weekend ? (kept === 'night' ? 'night' : 'daily') : kept);
+  // «Баня на сутки» or «на ночь» is still by the hour, and the guest is told: days are not read as hours.
+  const daysOfBath = bath && !!said.mode && said.mode !== 'hourly';
+  if (daysOfBath) remarks.push('Баню бронируют по часам, ищу на 3 часа.');
+  const length = daysOfBath ? { mode: 'hourly' as const, units: null } : said;
+  const mode: 'daily' | 'hourly' | 'night' = length.mode ?? (bath ? 'hourly' : dates?.to || dates?.weekend ? (kept === 'night' ? 'night' : 'daily') : kept);
   if (urgent) filters.now = true;
   if (mode !== current.mode) filters.mode = mode;
 
@@ -638,6 +662,9 @@ export function guestSearchRequest(text: string, current: Row, cities: string[],
       const byDates = length.units === null && !!dates?.to, checkout = byDates ? dates!.to! : addDays(day, length.units ?? 1);
       Object.assign(filters, dailyStay(day, checkout, now, time || undefined, lead, !byDates));
     }
+  } else if (bath && mode !== current.mode) {
+    // «Баня» with no hour named: the nearest three hours, as the chip «На часы» does.
+    Object.assign(filters, defaultStay('hourly', now, 3));
   }
 
   // «Хочу снять квартиру», «нужно жильё», «посуточно»: a request with nothing to narrow it is still a request.
@@ -645,7 +672,7 @@ export function guestSearchRequest(text: string, current: Row, cities: string[],
   const nearby = /(?:рядом|около|возле|недалеко)\s+(?:со?\s+|от\s+)?(?:мной|меня)|поблизости|(?:^|\s)рядом(?=$|[.,!?]|\s+(?!с\s|со\s|от\s))/.test(request);
   const understood = nearby || plain || !!past || remarks.length > 0 || filters.mode !== current.mode || Object.values(stated).some(Boolean);
   // Said after `understood` is settled: a phrase of nothing but such words is not a request the rules can run.
-  const missed = unsearched(request);
+  const missed = unsearched(request, bath);
   if (missed.length) remarks.push('Пока не умею искать: ' + missed.join(', ') + '.');
   return { filters, stated, nearby, understood, ...(past ? { past } : {}), remarks };
 }

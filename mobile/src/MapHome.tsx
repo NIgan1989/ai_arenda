@@ -25,7 +25,7 @@ import {countdown,mapCities,validPoint,type MapPoint} from './map-math';
 import {MapSheetHead} from './MapSheetHead';
 import {AutopilotThreads,type FeedNeed} from './AutopilotThreads';
 import {AutopilotHandoff} from './AutopilotHandoff';
-import {PAST_TEXT,askFirst,understoodNote,notUnderstoodNote,chipDraft,freshDraft,guestRequestFromText,guestSummary,matchingBody,newDraft,shownReasons,type GuestDraft} from './ai-request';
+import {BATH_TYPES as BATH_KINDS,categoryOf,withCategory,PAST_TEXT,askFirst,understoodNote,notUnderstoodNote,chipDraft,freshDraft,guestRequestFromText,guestSummary,matchingBody,newDraft,shownReasons,type GuestDraft} from './ai-request';
 import type {HeadAction} from './head-line';
 import {Action,Grip,SheetHeading,SheetRow,Stage,h,handleHeight,topInset} from './SheetParts';
 import {GuestForm} from './GuestForm';
@@ -157,16 +157,16 @@ function GuestPanel({setScanning,accountId,data,mapData,publish,selected,setSele
  };
  // «Сейчас»: the nearest first, counted from where the guest is when the phone knows it and it is in the searched city.
  const nearNow=(next:GuestDraft):GuestDraft=>{const fix=getHere().fix;return next.now&&!next.near&&fix&&nearestCity(fix.point)===next.city?{...next,near:{...nearOf(fix.point),radius:15000},priority:'closer'}:next;};
- const chip=(action:HeadAction)=>{if(action!=='now'&&action!=='night'&&action!=='daily'&&action!=='hourly'&&action!=='weekend')return;const next=nearNow(chipDraft(action,draft));setAsked('');setHint(null);setError('');setDraft(next);setPreview(null);void find(next);};
+ const chip=(action:HeadAction)=>{if(action!=='now'&&action!=='night'&&action!=='daily'&&action!=='hourly'&&action!=='weekend'&&action!=='evening'&&action!=='tomorrow')return;const next=nearNow(chipDraft(action,draft));setAsked('');setHint(null);setError('');setDraft(next);setPreview(null);void find(next);};
  // «Забронировать»: the price in the list is for the searched time. If that time has passed while the list was open, the search runs again first.
  const bookFlat=(property:Row)=>{if(freshDraft(draft).start!==draft.start){setHint({text:'Время начала уже прошло. Обновил варианты на ближайшее время.'});setSelected('');void find(draft);return;}// One button. A home that confirms by itself is booked at once; a home whose owner answers quick requests is asked
   // first, together with the next best ones, so a refusal or silence already has the next offer coming.
   if(askFirst(property)){void begin(property.id);return;}
   onBook(property,{mode:tariffOf(draft,property),start:draft.start,end:draft.end,guests:draft.guests});};
  // What narrows a search beyond the place, the time and the guests. An empty result offers to drop these and look again.
- const narrowed=!!(draft.district||draft.maxPrice||draft.features.length||draft.priority!=='balanced'||draft.near||draft.kinds.length||draft.rooms||draft.now);
+ const narrowed=!!(draft.district||draft.maxPrice||draft.features.length||draft.priority!=='balanced'||draft.near||(categoryOf(draft)==='bath'?draft.kinds.length<BATH_KINDS.length:draft.kinds.length)||draft.rooms||draft.now);
  const retry=(next:GuestDraft)=>{setHint(null);setError('');setDraft(next);setPreview(null);void find(next);};
- const widen=()=>retry({...draft,district:'',maxPrice:'',features:[],priority:'balanced',near:null,kinds:[],rooms:'',now:false});
+ const widen=()=>retry({...draft,district:'',maxPrice:'',features:[],priority:'balanced',near:null,kinds:categoryOf(draft)==='bath'?[...BATH_KINDS]:[],rooms:'',now:false});
  const refining=snap>0&&(refine||!preview),toggleRefine=()=>{if(refining){setRefine(false);expand(preview?1:0);}else{setRefine(true);expand(2);}};
  useEffect(()=>{if(requestId||preview)expand(1);if(kept&&kept.draft.city!==city)setCity(kept.draft.city);},[]);
  useEffect(()=>{guestSearches.set(accountId,{draft,preview,foundAt:foundAt.current});},[draft,preview]);
@@ -324,7 +324,7 @@ function GuestPanel({setScanning,accountId,data,mapData,publish,selected,setSele
      {!!dealBadge(offer.estimate.deal)&&<Text style={h.reason}>✦ {dealBadge(offer.estimate.deal)}</Text>}
      {!!offer.host&&<View style={{marginTop:8}}><ReliabilityBadge value={offer.host} title="Владелец"/></View>}
      <Text style={h.note}>{date(Date.parse(live.filters.start)/1000)} → {date(Date.parse(live.filters.end)/1000)} · гостей: {live.filters.guests}{'\n'}Депозит отдельно: {offer.policy?.deposit?money(offer.policy.deposit):'не требуется'}</Text>
-     {shownReasons(offer.match?.reasons,{maxPrice:String(live.filters.maxPrice)===NO_BUDGET?'':String(live.filters.maxPrice||'')}).map((reason:string)=><Text key={reason} style={h.reason}>✓ {reason}</Text>)}
+     {shownReasons(offer.match?.reasons,{maxPrice:String(live.filters.maxPrice)===NO_BUDGET?'':String(live.filters.maxPrice||'')},BATH_KINDS.includes(offer.details?.type)).map((reason:string)=><Text key={reason} style={h.reason}>✓ {reason}</Text>)}
      {!!offer.policy?.house_rules&&<Text style={h.note}>Правила: {offer.policy.house_rules}</Text>}
      <Text style={h.timerSmall}>Предложение действует ещё {countdown(offer.offerExpiresAt-now)}</Text>
      <Pressable accessibilityRole="checkbox" accessibilityState={{checked:accepted}} onPress={()=>setAccepted(v=>!v)} style={h.check}><Text style={h.checkBox}>{accepted?'☑':'☐'}</Text><Text style={h.checkText}>Принимаю стоимость, депозит и правила этого жилья</Text></Pressable>
@@ -355,7 +355,7 @@ function GuestPanel({setScanning,accountId,data,mapData,publish,selected,setSele
  const trips=guestTrips(data,serverNow(data));
  // «Уточнить» was tapped: the sheet is the form alone, the bookings and the quick chips wait under the collapsed sheet.
  const formOnly=refine&&snap>0;
- const head=<MapSheetHead role="guest" text={asked} onText={setAsked} onSend={ask} onChip={chip} chips={!preview&&!formOnly} busy={working} summary={guestSummary(freshDraft(draft))} onRefine={toggleRefine} refining={refining} now={null} onNow={()=>{}}>
+ const head=<MapSheetHead role="guest" text={asked} onText={setAsked} onSend={ask} onChip={chip} chips={!preview&&!formOnly} category={categoryOf(draft)} onCategory={c=>{if(c!==categoryOf(draft)){setAsked('');change(withCategory(draft,c));}}} busy={working} summary={guestSummary(freshDraft(draft))} onRefine={toggleRefine} refining={refining} now={null} onNow={()=>{}}>
   {!!hint&&<View style={h.picked}><Text accessibilityRole={hint.error?'alert':undefined} accessibilityLiveRegion="polite" style={hint.error?h.error:h.note}>{hint.text}</Text>{!!hint.ask&&<Action secondary title="Спросить ИИ-администратора" onPress={()=>onAsk(hint.ask!)}/>}</View>}
   {!!error&&<Text accessibilityRole="alert" style={h.error}>{error}</Text>}
   {!!nav.error&&<Text accessibilityRole="alert" style={h.error}>{nav.error}</Text>}
