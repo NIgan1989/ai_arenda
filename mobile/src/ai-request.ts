@@ -35,7 +35,8 @@ export type GuestDraft = {
   perUnit: boolean; // maxPrice is a price per day (per hour for an hourly stay), not for the whole stay
   priority: 'balanced' | 'cheaper' | 'closer';
   features: string[]; // amenity ids the flat must have
-  near: { longitude: number; latitude: number; radius: number } | null;
+  // label: the landmark the point stands for («железнодорожный вокзал»), when the guest named one.
+  near: { longitude: number; latitude: number; radius: number; label?: string } | null;
   kinds: string[]; // types of home (lib/listings.ts propertyTypes); [] for any
   rooms: string; // '2' exactly two rooms, '2+' at least two; '' for any
   now: boolean; // «Сейчас»: only homes ready now that confirm at once, the nearest first
@@ -43,6 +44,7 @@ export type GuestDraft = {
 export type ParsedRequest = {
   draft: GuestDraft; // the conditions with everything the text says applied
   nearby: boolean; // the guest asked for "рядом": the screen asks for a point on the map
+  place?: string; // a landmark to search around («у вокзала»): the screen finds its point on the map
   understood: boolean; // false when the text named no condition we know
   // The day or the hour the text names is already behind. Nothing is moved to another day and nothing
   // is searched: the screen says so and opens the form.
@@ -137,7 +139,7 @@ export function freshDraft(draft: GuestDraft, now = Date.now()): GuestDraft {
 }
 
 // Words that refine the last request instead of starting a new one: "а дешевле", "ещё с парковкой", "теперь на завтра".
-const REFINE = /^(?:а|и|ещ[её]|теперь|только|плюс|также|тоже|добав[а-я]*|но|подешевле|дешевле|ближе|поближе|желательно|главное|без|со?(?=\s+(?!понедельник|вторник|сред|четверг|пятниц|суббот|воскресень|завтра|сегодня|послезавтра|утра|вечера|обеда)[а-яё]))(?=$|[^а-яё])/;
+const REFINE = /^(?:а|и|ещ[её]|теперь|только|плюс|также|тоже|добав[а-я]*|но|подешевле|дешевле|ближе|поближе|желательно|главное|без|у|возле|около|рядом|недалеко|вблизи|со?(?=\s+(?!понедельник|вторник|сред|четверг|пятниц|суббот|воскресень|завтра|сегодня|послезавтра|утра|вечера|обеда)[а-яё]))(?=$|[^а-яё])/;
 
 /**
  * Free text as the conditions of a search. A new phrase is a new request: only the city stays. What narrows a
@@ -158,7 +160,7 @@ export function guestRequestFromText(text: string, draft: GuestDraft, cities: st
   const base: GuestDraft = refining
     ? kept
     : { ...kept, ...usual, district: '', guests: bath ? kept.guests : 2, maxPrice: '', perUnit: true, priority: 'balanced', features: [], near: null, kinds: bath ? [...BATH_KINDS] : [], rooms: '', now: false };
-  const result = guestSearchRequest(text, base, cities, now);
+  const result = guestSearchRequest(text, base, cities, now, { places: true });
   const filters = result.filters;
   const next: GuestDraft = {
     ...base,
@@ -184,6 +186,7 @@ export function guestRequestFromText(text: string, draft: GuestDraft, cities: st
   return {
     draft: next,
     nearby: result.nearby,
+    ...(result.place ? { place: result.place } : {}),
     understood: result.understood,
     ...(result.past ? { past: result.past } : {}),
     note: [...(result.remarks || []), reset ? 'Срок не назван: ищу на сутки с сегодня.' : ''].filter(Boolean).join(' ')
@@ -227,18 +230,20 @@ const PRIORITY_WORDS: Record<string, string> = { cheaper: 'дешевле', clos
 export function guestSummary(draft: GuestDraft, now = Date.now()) {
   // The budget is said here, with what it is for: "до 15 000 ₸ за сутки" or "до 45 000 ₸ за всё".
   // «Сейчас» counts from where the guest is: "рядом с вами", not "рядом с выбранным местом", and no "ближе".
-  const line = guestRequestLine({ ...draft, maxPrice: '', near: draft.now ? null : draft.near }, now);
+  const line = guestRequestLine({ ...draft, maxPrice: '', near: draft.now && !draft.near?.label ? null : draft.near }, now);
   const said = line.toLocaleLowerCase('ru');
   // «Сейчас» and «На ночь» start at an hour of their own, not at 14:00: it is said.
   // So does a day the guest asked to start at an hour of their own («в 22:00»).
   const from = draft.now || draft.mode === 'night' || (draft.mode === 'daily' && draft.start.slice(11) !== CHECKIN_TIME) ? 'заезд с ' + draft.start.slice(11) : '';
   const more = [
     from,
-    draft.now ? (draft.near ? 'готово сейчас, рядом с вами' : 'готово сейчас') : '',
+    draft.now ? (draft.near && !draft.near.label ? 'готово сейчас, рядом с вами' : 'готово сейчас') : '',
     ...WISHES.filter(([id]) => draft.features.includes(id)).map(([, title]) => (title === 'Wi-Fi' ? title : title.toLocaleLowerCase('ru'))),
     draft.now ? '' : PRIORITY_WORDS[draft.priority] || ''
   ].filter(word => word && !said.includes(word.toLocaleLowerCase('ru')));
-  return [line, homeWords(draft), budgetWords(draft), ...more].filter(Boolean).join(' · ');
+  // A landmark is named: "рядом: железнодорожный вокзал", not "рядом с выбранным местом".
+  const where = draft.near?.label ? line.replace('рядом с выбранным местом', 'рядом: ' + draft.near.label) : line;
+  return [where, homeWords(draft), budgetWords(draft), ...more].filter(Boolean).join(' · ');
 }
 
 /** "студия или квартира, 2 комн."; '' when any home will do. */
@@ -270,7 +275,7 @@ export function matchingBody(draft: GuestDraft) {
     maxPrice: Number(draft.maxPrice) ? Math.min(Number(NO_BUDGET), Number(draft.maxPrice) * (draft.perUnit ? draftUnits(draft) : 1)) : Number(NO_BUDGET),
     priority: draft.priority,
     features: draft.features,
-    near: draft.near,
+    near: draft.near ? { longitude: draft.near.longitude, latitude: draft.near.latitude, radius: draft.near.radius } : null,
     kinds: draft.kinds || [],
     rooms: draft.rooms || '',
     now: !!draft.now
@@ -336,7 +341,8 @@ export function shownReasons(reasons: unknown, draft: Pick<GuestDraft, 'maxPrice
   if (!Array.isArray(reasons)) return [];
   return reasons
     .filter((reason): reason is string => typeof reason === 'string' && (!!draft.maxPrice || reason !== 'В пределах бюджета'))
-    .map(reason => (bath && reason === 'Готовность проверена' ? 'Готово к приходу гостей' : REASON_TEXT[reason] || reason));
+    // "Оценка 4,8 из 5 · 3 отзыва" is "★ 4,8 · 3 отзыва" on a card.
+    .map(reason => (bath && reason === 'Готовность проверена' ? 'Готово к приходу гостей' : REASON_TEXT[reason] || reason.replace(/^Оценка (\S+) из 5/, '★ $1')));
 }
 
 /** «Забронировать» asks the owner first: the home does not confirm by itself, and its owner answers quick requests. */
@@ -354,4 +360,23 @@ export function notUnderstoodNote(status: unknown, dropped: unknown): string {
   if (status === 'permission') return 'Не понял запрос. ИИ разберёт такие фразы, если вы разрешите передавать ему ваши сообщения: спросите ИИ-администратора.';
   if (status === 'none' && left.length) return 'Пока не ищу по условиям: ' + left.join(', ') + '. Назовите день и срок, например: «завтра на сутки на двоих».';
   return 'Не понял запрос. Назовите день и срок, например: «завтра на сутки на двоих».';
+}
+
+// ---------- A landmark ----------
+
+/** The point of a landmark the server found, as the place to search around: three kilometres, the nearest first. */
+export function nearPlace(draft: GuestDraft, spot: { longitude?: unknown; latitude?: unknown; name?: unknown }, asked: string): GuestDraft {
+  const longitude = Number(spot.longitude), latitude = Number(spot.latitude);
+  if (!Number.isFinite(longitude) || !Number.isFinite(latitude)) return draft;
+  const label = (typeof spot.name === 'string' && spot.name.trim() ? spot.name.trim() : asked).slice(0, 60);
+  return { ...draft, near: { longitude, latitude, radius: 3000, label }, priority: 'closer' };
+}
+
+/** What the guest reads when the landmark was not found on the map. */
+export const placeMissedNote = (asked: string) => 'Не нашёл на карте: ' + asked + '. Ищу по всему городу.';
+
+/** One format for a price on a map pin: "9 тыс.", "9,5 тыс.", "12 тыс."; under a thousand "800 ₸". */
+export function pinPrice(amount: number): string {
+  if (amount < 1000) return Math.round(amount) + ' ₸';
+  return String(Math.round(amount / 100) / 10).replace('.', ',') + ' тыс.';
 }

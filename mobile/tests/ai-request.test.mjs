@@ -4,7 +4,7 @@ import {loadPure} from './helpers/pure.mjs';
 
 const {
   guestRequestFromText, guestSummary, newDraft, freshDraft, chipDraft, matchingBody, stayISO,
-  withMode, withDay, withTime, withUnits, draftUnits, dayChoices, shownReasons, MAX_GUESTS, PAST_TEXT
+  withMode, withDay, withTime, withUnits, draftUnits, dayChoices, shownReasons, MAX_GUESTS, PAST_TEXT, nearPlace, placeMissedNote, pinPrice
 } = await loadPure('mobile/src/ai-request.ts', 'lib/map-search-request.ts');
 // The site's own reading of the same text: the app must never read a request differently.
 const site = await loadPure('lib/map-search-request.ts');
@@ -379,7 +379,7 @@ test('pets and every amenity of a home are searched; what is not is named', () =
   assert.equal(bath.understood, true);
   assert.deepEqual(bath.draft.kinds, ['house']);
   assert.match(bath.note, /Пока не умею искать: баня\./);
-  assert.match(parse('завтра рядом с вокзалом, хорошие отзывы').note, /Пока не умею искать: отзывы, место рядом с ориентиром\./);
+  assert.match(parse('завтра рядом с вокзалом, хорошие отзывы').note, /Пока не умею искать: отзывы\./);
   // Nothing but such words: not a request, and the note still names them.
   const only = parse('с бассейном');
   assert.equal(only.understood, false);
@@ -425,4 +425,53 @@ test('the category button: a tile chooses one type, «Любое» the whole cat
   const house = withKind(any, 'stay', 'house', at);
   assert.deepEqual([house.kinds, house.mode, kindChoice(house).title], [['house'], 'daily', 'Дом']);
   assert.deepEqual(withKind(house, 'stay', null, at).kinds, []);
+});
+
+test('a landmark is searched around: «у вокзала», «возле ТРЦ»', () => {
+  const cases = {
+    'двушка завтра у вокзала': 'железнодорожный вокзал',
+    'рядом с вокзалом на 3 часа': 'железнодорожный вокзал',
+    'возле трц батыр молл на сутки': 'трц батыр молл',
+    'недалеко от набережной недорого': 'набережная',
+    'около автовокзала сегодня вечером': 'автовокзал',
+    'студия в районе рынка': 'центральный рынок',
+  };
+  for (const [text, place] of Object.entries(cases)) {
+    const result = parse(text);
+    assert.equal(result.place, place, text);
+    assert.equal(result.understood, true, text);
+    assert.equal(result.nearby, false, text);
+  }
+  // «Рядом со мной» and a bare «рядом» are the guest's own place, not a landmark; an hour is not one either.
+  for (const text of ['рядом со мной', 'квартира рядом', 'около 5 вечера завтра', 'у нас двое детей']) assert.equal(parse(text).place, undefined, text);
+  // The point the server found becomes the place of the search, and the line names it.
+  const asked = parse('двушка завтра у вокзала');
+  const near = nearPlace(asked.draft, {longitude: 76.9712, latitude: 52.3004, name: 'Вокзал Павлодар'}, asked.place);
+  assert.deepEqual(near.near, {longitude: 76.9712, latitude: 52.3004, radius: 3000, label: 'Вокзал Павлодар'});
+  assert.equal(near.priority, 'closer');
+  assert.match(guestSummary(near, morning), /Павлодар, рядом: Вокзал Павлодар · /);
+  // The label stays in the app: the server gets the point only.
+  assert.deepEqual(matchingBody(near).near, {longitude: 76.9712, latitude: 52.3004, radius: 3000});
+  assert.equal(nearPlace(asked.draft, {name: 'x'}, 'вокзал'), asked.draft);
+  assert.equal(nearPlace(asked.draft, {longitude: 1, latitude: 2}, 'вокзал').near.label, 'вокзал');
+  assert.equal(placeMissedNote('вокзал'), 'Не нашёл на карте: вокзал. Ищу по всему городу.');
+  // A landmark said after a request refines it; a new request lets go of the landmark.
+  assert.equal(parse('у набережной', morning, {...asked.draft, guests: 4}).draft.guests, 4);
+  assert.equal(parse('студия завтра', morning, near).draft.near, null);
+  // The words of a home after the landmark are not part of it.
+  assert.equal(parse('у вокзала двушка завтра').place, 'железнодорожный вокзал');
+  assert.equal(parse('возле вокзала квартира на сутки').place, 'железнодорожный вокзал');
+  assert.equal(parse('рядом с трц батыр молл студия').place, 'трц батыр молл');
+  // «Сейчас у вокзала» stays «Сейчас»: only homes ready now, around the landmark.
+  const urgent = parse('сейчас у вокзала'), there = nearPlace(urgent.draft, {longitude: 76.97, latitude: 52.3, name: 'Вокзал'}, urgent.place);
+  assert.equal(there.now, true);
+  assert.match(guestSummary(there, morning), /рядом: Вокзал · .*готово сейчас(?!, рядом с вами)/);
+  // The site does not find landmarks on the map: there the guest is still told so.
+  assert.match(site.guestSearchRequest('завтра рядом с вокзалом', draft, cities, morning).remarks.join(' '), /место рядом с ориентиром/);
+  assert.equal(parse('завтра рядом с вокзалом').note, '');
+});
+
+test('one price format on the pins; the rating on a card is a star', () => {
+  assert.deepEqual([800, 9000, 9500, 12000, 14900, 120000].map(pinPrice), ['800 ₸', '9 тыс.', '9,5 тыс.', '12 тыс.', '14,9 тыс.', '120 тыс.']);
+  assert.deepEqual(shownReasons(['Оценка 4,8 из 5 · 3 отзыва', 'Готовность проверена'], {maxPrice: ''}), ['★ 4,8 · 3 отзыва', 'Готово к заселению']);
 });
