@@ -7,8 +7,8 @@ import {PhotoGrid} from './PhotoGrid';
 import {Stepper} from './SheetParts';
 import {FlatCalendars} from './FlatCalendars';
 import {RegularCleaner} from './RegularCleaner';
-import {EDIT_STEPS,editBody,editRequest,nextAdvice,needsReview,reviewRequest,REVIEW_SENT,stepForError,stepLine,stepNeeds,type Advice,type EditBody,type EditStep} from '../../lib/listing-edit';
-import {amenities,checkinMethods} from '../../lib/listings';
+import {EDIT_STEPS,editBody,editRequest,nextAdvice,needsReview,reviewRequest,REVIEW_SENT,stepForError,stepLine,stepNeeds,stepTitle,type Advice,type EditBody,type EditStep} from '../../lib/listing-edit';
+import {amenities,categoryAmenities,checkinMethods,isBath,kindCategory} from '../../lib/listings';
 import {KindPicker} from './KindPicker';
 import {AddressPin,type PinChoice} from './AddressPin';
 type Row=Record<string,any>;
@@ -66,15 +66,17 @@ export function PropertyEdit({property,onSave,onReview,onRemove,onClose,step,cal
 
  if(calendars&&p.id)return <FlatCalendars propertyId={p.id} onBack={()=>setCalendars(false)}/>;
  if(cleaner&&p.id)return <RegularCleaner propertyId={p.id} onBack={()=>setCleaner(false)}/>;
- if(open){const title=EDIT_STEPS.find(s=>s.key===open)!.title;
+ if(open){const title=stepTitle(draft.details.type,open);
   return <View style={e.sheet}>
    <View style={e.bar}><Pressable accessibilityRole="button" accessibilityLabel="Назад к списку" onPress={()=>{setOpen(null);if(!held)setError('');}} disabled={busy||uploading} style={e.round}><Text style={e.roundText}>←</Text></Pressable><Text accessibilityRole="header" style={e.title}>{title}</Text></View>
    {open==='photos'&&<PhotoGrid photos={draft.photos} onChange={photos=>set({photos})} onBusy={setUploading} disabled={busy}/>}
    {open==='flat'&&<>
     <KindPicker kind={d.type} ownStaff={draft.ownStaff} onChange={v=>setDraft(o=>({...o,ownStaff:v.ownStaff??o.ownStaff,details:{...o.details,type:v.type??o.details.type}}))}/>
-    <View style={e.row}>{half(<Stepper label="Комнаты" value={draft.rooms} text={String(draft.rooms)} min={1} max={20} onChange={n=>set({rooms:n})}/>)}{half(<Stepper label="Гостей" value={draft.capacity} text={String(draft.capacity)} min={1} max={50} onChange={n=>setDraft(o=>({...o,capacity:n,details:{...o.details,beds:Math.max(o.details.beds,n)}}))}/>)}</View>
-    <View style={e.row}>{half(<Stepper label="Спальных мест" value={d.beds} text={String(d.beds)} min={1} max={50} onChange={n=>setD({beds:n})}/>)}{half(<Stepper label="Санузлы" value={d.bathrooms} text={String(d.bathrooms)} min={1} max={20} onChange={n=>setD({bathrooms:n})}/>)}</View>
-    <View style={e.row}>{num('Площадь, м²',d.area,n=>setD({area:n}),2000)}{num('Этаж',d.floor,n=>setD({floor:n}),100)}{num('Этажей',d.floors,n=>setD({floors:n}),100)}</View>
+    {isBath(d.type)?<View style={e.row}>{half(<Stepper label="Гостей" value={draft.capacity} text={String(draft.capacity)} min={1} max={50} onChange={n=>setDraft(o=>({...o,capacity:n,details:{...o.details,beds:Math.max(o.details.beds,n)}}))}/>)}{half(num('Площадь, м²',d.area,n=>setD({area:n}),2000))}</View>:<>
+      <View style={e.row}>{half(<Stepper label="Комнаты" value={draft.rooms} text={String(draft.rooms)} min={1} max={20} onChange={n=>set({rooms:n})}/>)}{half(<Stepper label="Гостей" value={draft.capacity} text={String(draft.capacity)} min={1} max={50} onChange={n=>setDraft(o=>({...o,capacity:n,details:{...o.details,beds:Math.max(o.details.beds,n)}}))}/>)}</View>
+      <View style={e.row}>{half(<Stepper label="Спальных мест" value={d.beds} text={String(d.beds)} min={1} max={50} onChange={n=>setD({beds:n})}/>)}{half(<Stepper label="Санузлы" value={d.bathrooms} text={String(d.bathrooms)} min={1} max={20} onChange={n=>setD({bathrooms:n})}/>)}</View>
+      <View style={e.row}>{num('Площадь, м²',d.area,n=>setD({area:n}),2000)}{num('Этаж',d.floor,n=>setD({floor:n}),100)}{num('Этажей',d.floors,n=>setD({floors:n}),100)}</View>
+    </>}
    </>}
    {open==='place'&&<>
     <View style={e.row}>{half(text('Город',draft.city,v=>set({city:v}),80))}{half(text('Район',draft.district,v=>set({district:v}),120,'Например, Центр'))}</View>
@@ -88,15 +90,22 @@ export function PropertyEdit({property,onSave,onReview,onRemove,onClose,step,cal
     {text('Описание',draft.description,v=>set({description:v}),2500,'',true)}
     <Text style={[e.hint,draft.description.trim().length<80&&e.warn]}>{draft.description.trim().length} знаков{draft.description.trim().length<80?' · для показа гостям нужно от 80':''}</Text>
    </>}
-   {open==='amenities'&&<View style={e.chips}>{Object.entries(amenities).map(([id,label])=>{const on=d.amenities.includes(id);return chip(id,label,on,()=>setD({amenities:on?d.amenities.filter(a=>a!==id):[...d.amenities,id]}));})}</View>}
-   {open==='prices'&&<>
+   {open==='amenities'&&<View style={e.chips}>{categoryAmenities[kindCategory(d.type)].map(id=>[id,amenities[id]] as [string,string]).map(([id,label])=>{const on=d.amenities.includes(id);return chip(id,label,on,()=>setD({amenities:on?d.amenities.filter(a=>a!==id):[...d.amenities,id]}));})}</View>}
+   {open==='prices'&&isBath(d.type)&&<>
+    {/* A bath is taken by the hour. The day price the service needs is twelve hours, kept in step with the hour. */}
+    <View style={e.row}>{num('Час, ₸',r.hourlyPrice,n=>setDraft(o=>({...o,price:Math.max(100,n*12),rental:{...o.rental,hourlyPrice:n}})))}{num('Депозит, ₸',r.deposit,n=>setR({deposit:n}))}</View>
+    <Stepper label="Минимум часов" value={r.minHours} text={String(r.minHours)} min={1} max={24} onChange={n=>setR({minHours:n})}/>
+    <View style={e.row}>{num('Гостей в цене',r.includedGuests,n=>setR({includedGuests:n}),50,'0 — цена не зависит')}{num('Доплата за гостя в час, ₸',r.extraGuestPrice,n=>setR({extraGuestPrice:n}),1000000)}</View>
+    <Stepper label="Напомнить затопить" value={r.prepMinutes} text={r.prepMinutes?'за '+(r.prepMinutes%60?r.prepMinutes+' мин':r.prepMinutes/60+' ч'):'не надо'} min={0} max={360} step={30} onChange={n=>setR({prepMinutes:n})}/>
+   </>}
+   {open==='prices'&&!isBath(d.type)&&<>
     <View style={e.row}>{num('Сутки, ₸',draft.price,n=>set({price:n}))}{num('Час, ₸',r.hourlyPrice,n=>setR({hourlyPrice:n}),10000000,'0 — без почасовой')}</View>
     <View style={e.row}>{num('Ночь, ₸',r.nightlyPrice,n=>setR({nightlyPrice:n}),10000000,'0 — без ночной')}{num('Депозит, ₸',r.deposit,n=>setR({deposit:n}))}</View>
     {r.hourlyPrice>0&&<Stepper label="Минимум часов" value={r.minHours} text={String(r.minHours)} min={1} max={24} onChange={n=>setR({minHours:n})}/>}
    </>}
    {open==='checkin'&&<>
-    <View style={e.row}>{half(text('Заезд с',r.checkinTime,v=>setR({checkinTime:v}),5,'14:00'))}{half(text('Выезд до',r.checkoutTime,v=>setR({checkoutTime:v}),5,'12:00'))}</View>
-    <Text style={e.label}>Как гость получит ключи</Text>
+    {!isBath(d.type)&&<View style={e.row}>{half(text('Заезд с',r.checkinTime,v=>setR({checkinTime:v}),5,'14:00'))}{half(text('Выезд до',r.checkoutTime,v=>setR({checkoutTime:v}),5,'12:00'))}</View>}
+    <Text style={e.label}>{isBath(d.type)?'Как гости попадут внутрь':'Как гость получит ключи'}</Text>
     <View style={e.chips}>{Object.entries(checkinMethods).map(([id,label])=>chip(id,label,d.checkinMethod===id,()=>setD({checkinMethod:id}),true))}</View>
     <View style={e.row}>{num('Уборка между гостями, мин',draft.cleaningMinutes,n=>set({cleaningMinutes:n}),1440)}</View>
     {!!call&&!!p.id&&<>
@@ -133,9 +142,9 @@ export function PropertyEdit({property,onSave,onReview,onRemove,onClose,step,cal
     </View>}
    </View>
   </View>
-  <View style={e.grid}>{EDIT_STEPS.map(s=>{const needs=stepNeeds(base,s.key)||(s.key==='place'&&unmapped);return <Pressable key={s.key} accessibilityRole="button" accessibilityLabel={s.title+': '+stepLine(base,s.key)+(s.key==='place'&&unmapped?', нет метки на карте':needs?', нужно заполнить':'')} onPress={()=>go(s.key)} style={({pressed})=>[e.step,needs&&e.stepNeeds,pressed&&e.pressed]}>
+  <View style={e.grid}>{EDIT_STEPS.map(s=>{const needs=stepNeeds(base,s.key)||(s.key==='place'&&unmapped);return <Pressable key={s.key} accessibilityRole="button" accessibilityLabel={stepTitle(base.details.type,s.key)+': '+stepLine(base,s.key)+(s.key==='place'&&unmapped?', нет метки на карте':needs?', нужно заполнить':'')} onPress={()=>go(s.key)} style={({pressed})=>[e.step,needs&&e.stepNeeds,pressed&&e.pressed]}>
    <View style={[e.icoBox,needs&&e.icoNeeds]}><Text style={e.ico}>{ICONS[s.key]}</Text></View>
-   <View style={{flex:1,minWidth:0}}><Text style={e.stepTitle} numberOfLines={1}>{s.title}</Text><Text style={e.stepLine} numberOfLines={1}>{s.key==='place'&&unmapped?'Нет метки на карте':stepLine(base,s.key)}</Text></View>
+   <View style={{flex:1,minWidth:0}}><Text style={e.stepTitle} numberOfLines={1}>{stepTitle(base.details.type,s.key)}</Text><Text style={e.stepLine} numberOfLines={1}>{s.key==='place'&&unmapped?'Нет метки на карте':stepLine(base,s.key)}</Text></View>
    {needs&&<View style={e.dot}/>}
   </Pressable>;})}</View>
   {!!p.id&&!base.ownStaff&&<Pressable accessibilityRole="button" accessibilityLabel="Постоянный исполнитель" onPress={()=>{setDone('');setCleaner(true);}} style={({pressed})=>[e.step,{width:'100%'},pressed&&e.pressed]}>

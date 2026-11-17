@@ -47,7 +47,7 @@ export function readListingText(text:string,base:ListingDraft):{draft:ListingDra
  const t=lower(text),d:ListingDraft={...base,amenities:[...base.amenities],known:[...base.known]},found:string[]=[];
  const set=<K extends keyof ListingDraft>(key:K,value:ListingDraft[K])=>{(d as Row)[key]=value;if(!found.includes(key))found.push(key);};
 
- if(/хостел/.test(t))set('type','hostel');else if(/апарт-?отел|апарт-?гостиниц/.test(t))set('type','aparthotel');else if(/гостиниц|(?<![а-я])(?:мини-?)?отел/.test(t))set('type','hotel');
+ if(/саун/.test(t))set('type','sauna');else if(/(?<![а-я])бан(?:я|ю|е|и|ька|ьку)(?![а-я])/.test(t))set('type','banya');else if(/хостел/.test(t))set('type','hostel');else if(/апарт-?отел|апарт-?гостиниц/.test(t))set('type','aparthotel');else if(/гостиниц|(?<![а-я])(?:мини-?)?отел/.test(t))set('type','hotel');
  else if(/гостев[а-я]* дом/.test(t))set('type','guesthouse');else if(/студи/.test(t))set('type','studio');else if(/апарт/.test(t))set('type','aparthotel');else if(/(?<![а-я])(?:дом|коттедж)(?![а-я])/.test(t))set('type','house');
  else if(/(?<![а-я])комнат[ау](?![а-я])/.test(t)&&!/квартир|комнатн/.test(t))set('type','room');
  else if(/квартир|однушк|двушк|трешк|комнатн/.test(t))set('type','apartment');
@@ -137,6 +137,8 @@ export function draftKind(d:ListingDraft){
   case 'house':return d.rooms>1?'Дом, '+d.rooms+' комн.':'Дом';
   case 'guesthouse':return 'Гостевой дом';
   case 'hostel':return 'Хостел';
+  case 'banya':return 'Баня';
+  case 'sauna':return 'Сауна';
   case 'hotel':return 'Гостиница';
   default:return d.rooms>1?'Апарт-отель, '+d.rooms+' комн.':'Апарт-отель';
  }

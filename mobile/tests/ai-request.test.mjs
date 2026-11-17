@@ -292,6 +292,36 @@ test('«Сейчас» and «На ночь» chips', () => {
   assert.equal(parse('на ночь', at('2026-11-17T21:00')).draft.mode, 'night');
 });
 
+// Категория «Баня» (2026-11-17): chosen above the line, kept by the next phrase, searched by the hour.
+test('the category «Баня»: by the hour, both bath types, kept by a new phrase and left by the name of a home', async () => {
+  const {newDraft, withCategory, categoryOf, categoryKinds, guestRequestFromText, chipDraft, matchingBody} = await loadPure('mobile/src/ai-request.ts', 'lib/map-search-request.ts');
+  const at = Date.parse('2026-11-17T10:00:00+05:00'), stay = newDraft('Павлодар', at);
+  assert.equal(categoryOf(stay), 'stay');
+  const bath = withCategory({...stay, maxPrice: '9000', district: 'Центр'}, 'bath', at);
+  assert.equal(categoryOf(bath), 'bath');
+  assert.deepEqual([bath.mode, bath.kinds, bath.guests, bath.maxPrice, bath.district], ['hourly', ['banya', 'sauna'], 4, '', '']);
+  assert.deepEqual(matchingBody(bath).kinds, ['banya', 'sauna']);
+  assert.deepEqual(categoryKinds('bath').map(([id]) => id), ['banya', 'sauna']);
+  assert.ok(!categoryKinds('stay').some(([id]) => id === 'banya'));
+  // A new phrase in «Баня» is still about a bath.
+  const said = guestRequestFromText('на 6 человек сегодня в 20:00', bath, ['Павлодар'], at).draft;
+  assert.deepEqual([categoryOf(said), said.mode, said.guests, said.start, said.end], ['bath', 'hourly', 6, '2026-11-17T20:00', '2026-11-17T23:00']);
+  // «Сауна» narrows it; the name of a home leaves the category; «баня» said in «Жильё» enters it.
+  assert.deepEqual(guestRequestFromText('сауна завтра вечером', bath, ['Павлодар'], at).draft.kinds, ['sauna']);
+  assert.equal(categoryOf(guestRequestFromText('квартира на сутки', bath, ['Павлодар'], at).draft), 'stay');
+  const entered = guestRequestFromText('баня на шестерых в 19:00', stay, ['Павлодар'], at).draft;
+  assert.deepEqual([categoryOf(entered), entered.mode, entered.start], ['bath', 'hourly', '2026-11-17T19:00']);
+  // Back to «Жильё»: a day for two.
+  const back = withCategory(bath, 'stay', at);
+  assert.deepEqual([back.mode, back.kinds, back.guests], ['daily', [], 2]);
+  // «Вечером»: 19:00 today; late in the evening and «Завтра»: 19:00 tomorrow.
+  const evening = chipDraft('evening', bath, at);
+  assert.deepEqual([evening.start, evening.end], ['2026-11-17T19:00', '2026-11-17T22:00']);
+  assert.equal(chipDraft('evening', bath, Date.parse('2026-11-17T19:40:00+05:00')).start, '2026-11-17T20:30');
+  assert.equal(chipDraft('evening', bath, Date.parse('2026-11-17T22:10:00+05:00')).start, '2026-11-18T19:00');
+  assert.equal(chipDraft('tomorrow', bath, at).start, '2026-11-18T19:00');
+});
+
 const L = await loadPure('mobile/src/ai-request.ts', 'lib/map-search-request.ts');
 
 test('one button: a home that confirms by itself is booked, a home with quick answers is asked first', () => {

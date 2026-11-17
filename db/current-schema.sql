@@ -62,6 +62,7 @@
 -- migration 0058_own_booking_refunds.sql sha256:9023de48d2a0b36a76ba8b9e89e12c2c0f48042d7b30442ed852c3c06eee1b4c
 -- migration 0059_stay_handover.sql sha256:564a9430097ab88e7599ae76fb418590e99a521c70255a33cf3dcdb10c7e376d
 -- migration 0060_guest_favorites.sql sha256:da4664c14d861893f3ba6ae36d881a993cd2f68ef8270bcdeeef24d84a0b7ee7
+-- migration 0061_bath_category.sql sha256:26dbbb2861fcef892b7203351d137cdb93fe79e3ad9eedb9d736731a06305f01
 
 -- table access_receipts
 CREATE TABLE access_receipts (id TEXT PRIMARY KEY,property_id TEXT NOT NULL,entity_kind TEXT NOT NULL,entity_id TEXT NOT NULL,user_id TEXT NOT NULL,created_at INTEGER NOT NULL,expires_at INTEGER NOT NULL);
@@ -963,7 +964,7 @@ CREATE TABLE property_policies (
  version INTEGER NOT NULL DEFAULT 1,
  revision TEXT NOT NULL,
  updated_at INTEGER NOT NULL
-, max_discount_percent INTEGER NOT NULL DEFAULT 0 CHECK(max_discount_percent BETWEEN 0 AND 50), minimum_rate INTEGER NOT NULL DEFAULT 0 CHECK(minimum_rate>=0), repair_budget INTEGER NOT NULL DEFAULT 0 CHECK(repair_budget>=0), auto_extension INTEGER NOT NULL DEFAULT 0 CHECK(auto_extension IN (0,1)), max_extension_hours INTEGER NOT NULL DEFAULT 0 CHECK(max_extension_hours BETWEEN 0 AND 168), mandate_until INTEGER NOT NULL DEFAULT 0, escalation_contact TEXT NOT NULL DEFAULT '', auto_assign INTEGER NOT NULL DEFAULT 0 CHECK(auto_assign IN (0,1)));
+, max_discount_percent INTEGER NOT NULL DEFAULT 0 CHECK(max_discount_percent BETWEEN 0 AND 50), minimum_rate INTEGER NOT NULL DEFAULT 0 CHECK(minimum_rate>=0), repair_budget INTEGER NOT NULL DEFAULT 0 CHECK(repair_budget>=0), auto_extension INTEGER NOT NULL DEFAULT 0 CHECK(auto_extension IN (0,1)), max_extension_hours INTEGER NOT NULL DEFAULT 0 CHECK(max_extension_hours BETWEEN 0 AND 168), mandate_until INTEGER NOT NULL DEFAULT 0, escalation_contact TEXT NOT NULL DEFAULT '', auto_assign INTEGER NOT NULL DEFAULT 0 CHECK(auto_assign IN (0,1)), included_guests INTEGER NOT NULL DEFAULT 0 CHECK(included_guests BETWEEN 0 AND 50), extra_guest_price INTEGER NOT NULL DEFAULT 0 CHECK(extra_guest_price>=0), prep_minutes INTEGER NOT NULL DEFAULT 0 CHECK(prep_minutes BETWEEN 0 AND 720));
 
 -- table provider_events
 CREATE TABLE provider_events (provider TEXT NOT NULL,event_id TEXT NOT NULL,intent_id TEXT NOT NULL,payload_hash TEXT NOT NULL,created_at INTEGER NOT NULL,PRIMARY KEY(provider,event_id));

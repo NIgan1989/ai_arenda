@@ -77,16 +77,18 @@ function BookingReview({flow,busy,done,result,onConfirm,onEdit}:{flow:Flow;busy:
   // on the card; the calculation and the rules of the home open by «Правила и расчёт». The swipe itself is the consent.
   // A home that confirms by itself still leaves a risky request to its owner (lib/service.ts risk.held), so «сразу» is not promised.
   const guests=Number(quote?.guests)||1,tens=guests%100,units=guests%10,auto=!!quote?.policy?.auto_confirm,deposit=Number(quote?.policy?.deposit)||0;
+  const bath=['banya','sauna'].includes(quote?.kind),extra=Number(quote?.extraGuests)||0;
   return <View style={s.card}><Text accessibilityRole="header" style={s.cardTitle}>{quote?.title||'Проживание'}</Text>
     {checking&&<View style={s.progressRow}><Thinking size="sm"/><Text style={s.meta}>Проверяю стоимость и свободный интервал…</Text></View>}
     {!!error&&<><Text accessibilityRole="alert" style={s.error}>{error}</Text><Button title="Проверить ещё раз" secondary disabled={busy||checking} onPress={()=>setAttempt(v=>v+1)}/></>}
     {quote&&!error&&!checking&&<>
       <Text style={s.text}>{date(quote.start)} → {date(quote.end)} · {guests} {tens>10&&tens<20?'гостей':units===1?'гость':units>1&&units<5?'гостя':'гостей'}</Text>
-      <View style={s.quoteTotal}><Text style={s.key}>Стоимость проживания</Text><Text style={s.price}>{money(quote.amount)}</Text></View>
-      <Text style={s.meta}>{deposit?'Депозит '+money(deposit)+' вернётся после выезда. ':''}{auto?'Обычно бронь подтверждается сразу, иначе владелец ответит за 15 минут.':'Владелец ответит за 15 минут.'} Сейчас деньги не списываются.</Text>
-      {more&&<><Text style={s.meta}>{quote.periods} × {money(quote.price)} · {quote.unitLabel}. После выезда {quote.cleaningMinutes} мин. на подготовку жилья.</Text>{!!quote.policy.house_rules&&<Text style={s.meta}>{quote.policy.house_rules}</Text>}</>}
+      <View style={s.quoteTotal}><Text style={s.key}>{bath?'Стоимость':'Стоимость проживания'}</Text><Text style={s.price}>{money(quote.amount)}</Text></View>
+      <Text style={s.meta}>{deposit?'Депозит '+money(deposit)+(bath?' вернётся после ухода. ':' вернётся после выезда. '):''}{auto?'Обычно бронь подтверждается сразу, иначе владелец ответит за 15 минут.':'Владелец ответит за 15 минут.'} Сейчас деньги не списываются.</Text>
+      {bath&&extra>0&&<Text style={s.meta}>В цене гостей: {guests-extra}. Доплата за ещё {extra}: {money(Number(quote.guestSurcharge)*Number(quote.periods))}.</Text>}
+      {more&&<><Text style={s.meta}>{quote.periods} × {money(quote.price)} · {quote.unitLabel}. {bath?'После вас':'После выезда'} {quote.cleaningMinutes} мин. на {bath?'уборку':'подготовку жилья'}.</Text>{!!quote.policy.house_rules&&<Text style={s.meta}>{quote.policy.house_rules}</Text>}</>}
       <SwipeConfirm label={auto?'Проведите: забронировать за '+money(quote.amount):'Проведите: отправить заявку владельцу'} disabled={busy} onConfirm={()=>onConfirm(quote)}/>
-      <Text style={s.meta}>Проводя, вы соглашаетесь с датами, тарифом, депозитом и правилами жилья.</Text>
+      <Text style={s.meta}>Проводя, вы соглашаетесь с датами, тарифом, депозитом и правилами {bath?'объекта':'жилья'}.</Text>
     </>}
     <View style={s.buttonRow}>{quote&&!error&&!checking&&<Button title={more?'Свернуть':'Правила и расчёт'} secondary disabled={busy} onPress={()=>setMore(v=>!v)}/>}<Button title="Изменить даты" secondary disabled={busy||checking} onPress={onEdit}/></View>
   </View>;
