@@ -10,6 +10,8 @@ import { T } from './tokens';
 import { ReliabilityBadge } from './Reliability';
 import { HOME_KINDS, draftUnits, shownReasons, withMode, type GuestDraft } from './ai-request';
 import { carouselIndex } from './map-motion';
+import { Heart } from './Favorites';
+import { markLabel, markOf, type Mine } from './favorites';
 
 const chevron = require('../assets/ui/chevron.png');
 
@@ -18,6 +20,9 @@ type Props = {
   preview: Row;
   // The conditions that were searched; the price of every flat is for this stay.
   draft: GuestDraft;
+  // The guest's favourites and the homes of earlier stays: they are marked, and the heart on a card changes them.
+  mine?: Mine;
+  onFavorite?: (id: string) => void;
   selected: string;
   onSelect: (id: string) => void;
   // The card the guest has swiped to: its pin lifts and the map flies to it.
@@ -116,7 +121,7 @@ export function homeLine(flat: Row) {
   return [kind, rooms > 0 && flat.details?.type !== 'studio' ? rooms + ' комн.' : '', capacity > 0 ? 'до ' + capacity + ' ' + plural(capacity, 'гостя', 'гостей', 'гостей') : ''].filter(Boolean).join(' · ');
 }
 
-export function GuestResults({ preview, draft, selected, onSelect, onFocus, onBook, onOpen, onRefine, onWiden, onTry, onAskOwners, onBookEdge, busy }: Props) {
+export function GuestResults({ preview, draft, mine, onFavorite, selected, onSelect, onFocus, onBook, onOpen, onRefine, onWiden, onTry, onAskOwners, onBookEdge, busy }: Props) {
   const flats: Row[] = preview.properties || [];
   const chosen = flats.find(flat => flat.id === selected);
   const width = useWindowDimensions().width,
@@ -153,9 +158,10 @@ export function GuestResults({ preview, draft, selected, onSelect, onFocus, onBo
     }, 160);
   };
   // «Сейчас»: the time on the way comes first, it is what the guest decides by.
+  const mark = (flat: Row) => (mine ? markLabel(markOf(flat.id, mine)) : '');
   const about = (flat: Row) => {
     const reasons = shownReasons(flat.match?.reasons, draft);
-    return (draft.now ? [...reasons.slice(0, 1), homeLine(flat), flat.district, ...reasons.slice(1)] : [homeLine(flat), flat.district, ...reasons]).filter(Boolean).join(' · ');
+    return (draft.now ? [...reasons.slice(0, 1), mark(flat), homeLine(flat), flat.district, ...reasons.slice(1)] : [mark(flat), homeLine(flat), flat.district, ...reasons]).filter(Boolean).join(' · ');
   };
 
   if (!flats.length) {
@@ -194,6 +200,7 @@ export function GuestResults({ preview, draft, selected, onSelect, onFocus, onBo
               </Text>
             )}
           </View>
+          {!!mine && !!onFavorite && <Heart on={mine.favorites.includes(chosen.id)} title={chosen.title} onPress={() => onFavorite(chosen.id)} />}
           <View style={r.amount}>
             <Text style={h.price}>{money(chosen.estimate.amount)}</Text>
             <Text style={h.note}>за {stayWords(draft)}{chosen.estimate.billingMode === 'nightly' ? ' · ночная цена' : ''}</Text>
@@ -245,6 +252,7 @@ export function GuestResults({ preview, draft, selected, onSelect, onFocus, onBo
             <View style={r.cardPhoto}>
               <Photo id={i <= seen + 2 ? flat.photos?.[0] : null} alt={flat.title + ', фото'} fill />
               {!!flat.match?.best && <Text style={r.bestOnPhoto}>✦ Лучший выбор для вас</Text>}
+              {!!mine && !!onFavorite && <View style={r.heartOnPhoto}><Heart on={mine.favorites.includes(flat.id)} title={flat.title} onPress={() => onFavorite(flat.id)} /></View>}
             </View>
             <View style={r.cardBody}>
               <View style={r.cardTop}>
@@ -295,6 +303,7 @@ const r = StyleSheet.create({
   cardPressed: { opacity: 0.85 },
   cardPhoto: { height: 112, backgroundColor: C.surfaceAlt },
   bestOnPhoto: { ...type.caption, position: 'absolute', left: 8, top: 8, paddingHorizontal: 8, paddingVertical: 2, borderRadius: T.radius.full, overflow: 'hidden', backgroundColor: C.aiFrom, color: C.onAccent, fontWeight: '600' },
+  heartOnPhoto: { position: 'absolute', right: 8, top: 8 },
   cardBody: { padding: 12, gap: 4 },
   cardTop: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   badges: { flexDirection: 'row', gap: 8 },
