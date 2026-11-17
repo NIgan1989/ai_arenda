@@ -91,7 +91,7 @@ test('the placeholder request: three hours today in the centre', () => {
   const result = guest('Квартира на 3 часа сегодня в центре');
   assert.deepEqual(stay(result), ['hourly', '2026-11-11T10:30', '2026-11-11T13:30']);
   assert.equal(result.filters.district, 'Центр');
-  assert.deepEqual(result.stated, { city: false, district: true, when: true, guests: false, budget: false, wishes: false });
+  assert.deepEqual(result.stated, { city: false, district: true, when: true, guests: false, budget: false, wishes: false, home: false });
   assert.equal(result.understood, true);
   // Nothing the text did not name is changed.
   assert.equal(result.filters.city, 'Павлодар');

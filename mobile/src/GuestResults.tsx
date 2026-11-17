@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { AccessibilityInfo, Animated, Easing, Image, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
-import { plural } from '../../lib/map-search-request';
+import { plural, stayWhen } from '../../lib/map-search-request';
 import { Photo } from './ListingMedia';
 import { Action, h } from './SheetParts';
 import { money, type Row } from './model';
@@ -8,7 +8,7 @@ import { windowBadge } from '../../lib/window-badge';
 import { C, type } from './styles';
 import { T } from './tokens';
 import { ReliabilityBadge } from './Reliability';
-import { draftUnits, shownReasons, type GuestDraft } from './ai-request';
+import { HOME_KINDS, draftUnits, shownReasons, withMode, type GuestDraft } from './ai-request';
 import { carouselIndex } from './map-motion';
 
 const chevron = require('../assets/ui/chevron.png');
@@ -27,6 +27,8 @@ type Props = {
   onRefine: () => void;
   // Present when the search was narrowed by a district, a budget or wishes: looks again without them.
   onWiden?: () => void;
+  // Searches again with these conditions changed: the way out an empty answer offers.
+  onTry?: (patch: Partial<GuestDraft>) => void;
   // Present only when some owner of these flats answers quick requests.
   onAskOwners?: () => void;
   // Where «Забронировать» of the chosen flat ends, from the top of the sheet's content: the sheet opens that far.
@@ -65,7 +67,47 @@ function stayWords(draft: GuestDraft) {
 }
 
 // What the guest sees after a search: a short list, then one flat with a way to book it and a way back.
-export function GuestResults({ preview, draft, selected, onSelect, onFocus, onBook, onOpen, onRefine, onWiden, onAskOwners, onBookEdge, busy }: Props) {
+// The server's time as the request form keeps it: Kazakhstan wall clock, 'YYYY-MM-DDTHH:mm'.
+const kzLocal = (iso: string) => new Date(Date.parse(iso) + 5 * 3600000).toISOString().slice(0, 16);
+
+// An empty answer: the reason the server found (lib/smart-matching.ts emptyHint) and one way out of it.
+export function emptyAnswer(empty: Row | undefined, draft: GuestDraft, narrowed: boolean): { title: string; note: string; action?: { title: string; patch: Partial<GuestDraft> } } {
+  const guests = (n: number) => n + ' ' + plural(n, 'гостя', 'гостей', 'гостей');
+  if (empty?.reason === 'city') return { title: 'В городе ' + draft.city + ' пока нет жилья', note: 'Сервис только приходит сюда. Выберите другой город в «Изменить условия».' };
+  if (empty?.reason === 'guests') {
+    const most = Number(empty.maxGuests) || 1;
+    return { title: 'Нет жилья на ' + guests(draft.guests), note: 'Самое большое жильё здесь — до ' + guests(most) + '. Можно снять два объекта рядом.', action: { title: 'Искать на ' + guests(most), patch: { guests: most } } };
+  }
+  if (empty?.reason === 'hourly') return { title: 'На часы здесь пока не сдают', note: 'Есть жильё на сутки.', action: { title: 'Искать на сутки', patch: withMode(draft, 'daily') } };
+  if (empty?.reason === 'busy') {
+    const next = empty.next;
+    if (!next) return { title: 'На это время всё занято', note: 'Свободного нет и в ближайшую неделю. Попробуйте другие даты.' };
+    const start = kzLocal(next.start), end = kzLocal(next.end), when = stayWhen(start, end, draft.mode);
+    return { title: 'На это время всё занято', note: 'Ближайшее свободное на тот же срок — ' + when + '.', action: { title: 'Показать на ' + when, patch: { start, end } } };
+  }
+  if (empty?.reason === 'budget') {
+    const cheapest = Number(empty.cheapest), units = draftUnits(draft), unit = draft.mode === 'hourly' ? 'час' : 'сутки';
+    const limit = draft.perUnit ? Math.ceil(cheapest / units / 100) * 100 : Math.ceil(cheapest / 100) * 100;
+    return {
+      title: 'В пределах бюджета свободного нет',
+      note: 'Самое доступное на это время — ' + money(cheapest) + (units > 1 ? ' за всё (' + money(Math.round(cheapest / units)) + ' за ' + unit + ')' : '') + '.',
+      action: { title: 'Показать до ' + money(limit) + (draft.perUnit ? ' за ' + unit : ''), patch: { maxPrice: String(limit) } }
+    };
+  }
+  if (empty?.reason === 'filters') {
+    const count = Number(empty.count) || 0;
+    return { title: 'С этими условиями свободного нет', note: count ? 'Без района, типа жилья и пожеланий свободно: ' + count + '.' : 'Даже без района, типа жилья и пожеланий свободного нет. Попробуйте другое время.' };
+  }
+  return { title: 'На эти условия свободного жилья нет', note: narrowed ? 'Поиск сужают район, бюджет или пожелания. Можно искать без них.' : 'Попробуйте другое время или другой срок.' };
+}
+
+// "Студия · 1 комн. · до 2 гостей": what the home is, said on the card before why it was chosen.
+export function homeLine(flat: Row) {
+  const kind = HOME_KINDS[flat.details?.type] || '', rooms = Number(flat.rooms), capacity = Number(flat.capacity);
+  return [kind, rooms > 0 && flat.details?.type !== 'studio' ? rooms + ' комн.' : '', capacity > 0 ? 'до ' + capacity + ' ' + plural(capacity, 'гостя', 'гостей', 'гостей') : ''].filter(Boolean).join(' · ');
+}
+
+export function GuestResults({ preview, draft, selected, onSelect, onFocus, onBook, onOpen, onRefine, onWiden, onTry, onAskOwners, onBookEdge, busy }: Props) {
   const flats: Row[] = preview.properties || [];
   const chosen = flats.find(flat => flat.id === selected);
   const width = useWindowDimensions().width,
@@ -101,16 +143,18 @@ export function GuestResults({ preview, draft, selected, onSelect, onFocus, onBo
       if (list[at]) onFocus?.(list[at].id);
     }, 160);
   };
-  const about = (flat: Row) => [flat.district, ...shownReasons(flat.match?.reasons, draft)].filter(Boolean).join(' · ');
+  const about = (flat: Row) => [homeLine(flat), flat.district, ...shownReasons(flat.match?.reasons, draft)].filter(Boolean).join(' · ');
 
   if (!flats.length) {
+    const answer = emptyAnswer(preview.empty, draft, !!onWiden), way = answer.action;
     return (
       <>
         <Text accessibilityRole="header" style={h.cardTitle}>
-          На эти условия свободного жилья нет
+          {answer.title}
         </Text>
-        <Text style={h.note}>{onWiden ? 'Поиск сужают район, бюджет или пожелания. Можно искать без них.' : 'Попробуйте другое время или другой срок.'}</Text>
-        {!!onWiden && <Action title={busy ? 'Ищем…' : 'Искать без этих условий'} disabled={busy} onPress={onWiden} />}
+        <Text style={h.note}>{answer.note}</Text>
+        {!!way && !!onTry && <Action title={busy ? 'Ищем…' : way.title} disabled={busy} onPress={() => onTry(way.patch)} />}
+        {!way && !!onWiden && preview.empty?.reason !== 'city' && <Action title={busy ? 'Ищем…' : 'Искать без этих условий'} disabled={busy} onPress={onWiden} />}
         <Action secondary title="Изменить условия" disabled={busy} onPress={onRefine} />
       </>
     );

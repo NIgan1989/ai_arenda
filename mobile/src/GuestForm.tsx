@@ -4,7 +4,7 @@ import { Action, Chips, Stepper, h } from './SheetParts';
 import { C, type } from './styles';
 import { T } from './tokens';
 import { mapCities } from './map-math';
-import { MAX_GUESTS, WISHES, dayChoices, draftUnits, withDay, withMode, withTime, withUnits, type GuestDraft } from './ai-request';
+import { HOME_KINDS, MAX_GUESTS, WISHES, dayChoices, draftUnits, withDay, withMode, withTime, withUnits, type GuestDraft } from './ai-request';
 
 type Props = {
   draft: GuestDraft;
@@ -26,8 +26,14 @@ export function GuestForm({ draft, onChange, onPickPoint, onNearMe, onSubmit, bu
   const hourly = draft.mode === 'hourly';
   const startMinutes = Number(draft.start.slice(11, 13)) * 60 + Number(draft.start.slice(14, 16));
   const units = draftUnits(draft);
-  // District, wishes, priority and the point on the map: how many of them are set.
-  const set = Number(!!draft.district) + draft.features.length + Number(draft.priority !== 'balanced') + Number(!!draft.near);
+  // Home type, rooms, district, wishes, priority and the point on the map: how many of them are set.
+  const set = draft.kinds.length + Number(!!draft.rooms) + Number(!!draft.district) + draft.features.length + Number(draft.priority !== 'balanced') + Number(!!draft.near);
+  const toggleKind = (id: string) => onChange({ ...draft, kinds: draft.kinds.includes(id) ? draft.kinds.filter(v => v !== id) : [...draft.kinds, id] });
+  // Rooms: any, exactly 1 or 2, 3 and more; a count the text named that is not here stays as an option.
+  const roomOptions: [string, string][] = [['', 'Любое'], ['1', '1'], ['2', '2'], ['3+', '3+']];
+  if (draft.rooms && !roomOptions.some(([id]) => id === draft.rooms)) roomOptions.push([draft.rooms, draft.rooms.endsWith('+') ? 'от ' + draft.rooms.slice(0, -1) : draft.rooms]);
+  // The budget is a price per day (per hour on the hourly tariff); a total named in the line keeps its own label.
+  const budgetLabel = draft.perUnit || !draft.maxPrice ? (hourly ? 'Цена за час до, ₸' : 'Цена за сутки до, ₸') : 'Бюджет на весь срок, ₸';
   const [more, setMore] = useState(set > 0), extra = more;
   const toggleWish = (id: string) =>
     onChange({ ...draft, features: draft.features.includes(id) ? draft.features.filter(v => v !== id) : [...draft.features, id] });
@@ -84,16 +90,16 @@ export function GuestForm({ draft, onChange, onPickPoint, onNearMe, onSubmit, bu
           disabled={busy}
         />
         <View style={h.stepper}>
-          <Text style={h.label}>Бюджет на весь срок, ₸</Text>
+          <Text style={h.label}>{budgetLabel}</Text>
           <TextInput
-            accessibilityLabel="Бюджет на весь срок в тенге"
+            accessibilityLabel={budgetLabel.replace(', ₸', ' в тенге')}
             style={h.input}
             keyboardType="number-pad"
             maxLength={9}
             placeholder="Любой"
             placeholderTextColor={C.muted}
             value={draft.maxPrice}
-            onChangeText={text => onChange({ ...draft, maxPrice: text.replace(/[^\d]/g, '') })}
+            onChangeText={text => onChange({ ...draft, maxPrice: text.replace(/[^\d]/g, ''), perUnit: text ? draft.perUnit : true })}
             editable={!busy}
           />
         </View>
@@ -103,6 +109,28 @@ export function GuestForm({ draft, onChange, onPickPoint, onNearMe, onSubmit, bu
         <Text style={f.linkText}>{extra ? 'Свернуть условия' : 'Ещё условия' + (set ? ' · ' + set : '')}</Text>
       </Pressable>
       {extra && <>
+      <View>
+        <Text style={h.label}>Тип жилья</Text>
+        <View style={f.wishes}>
+          {Object.entries(HOME_KINDS).map(([id, title]) => {
+            const on = draft.kinds.includes(id);
+            return (
+              <Pressable
+                key={id}
+                accessibilityRole="checkbox"
+                accessibilityLabel={title}
+                accessibilityState={{ checked: on, disabled: busy }}
+                disabled={busy}
+                onPress={() => toggleKind(id)}
+                style={[h.chip, on && h.chipOn]}
+              >
+                <Text style={[h.chipText, on && h.chipTextOn]}>{title}</Text>
+              </Pressable>
+            );
+          })}
+        </View>
+      </View>
+      <Chips label="Комнат" value={draft.rooms} options={roomOptions} onChange={rooms => onChange({ ...draft, rooms })} disabled={busy} />
       <View>
         <Text style={h.label}>Район</Text>
         <TextInput

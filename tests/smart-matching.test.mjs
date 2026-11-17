@@ -149,3 +149,25 @@ test('answer speed is the median time from request to the owner’s answer over 
   assert.equal((await responseTimes(f.db,['missing'],t)).size,0);
  }finally{f.db.close();}
 });
+test('home type and rooms narrow the match; an empty answer says why and what would fit',async()=>{
+ assert.throws(()=>matchingInput({...input(),kinds:['castle']}));assert.throws(()=>matchingInput({...input(),rooms:'two'}));
+ assert.deepEqual(matchingInput(input()).kinds,[]);assert.equal(matchingInput(input()).rooms,'');
+ const f=await fixture();try{
+  assert.equal((await previewMatches(f.guest,{...input(),rooms:'1'})).properties.length,1);
+  assert.equal((await previewMatches(f.guest,{...input(),rooms:'1+'})).properties.length,1);
+  const rooms=await previewMatches(f.guest,{...input(),rooms:'2'});assert.equal(rooms.properties.length,0);assert.deepEqual(rooms.empty,{reason:'filters',count:1});
+  assert.equal((await previewMatches(f.guest,{...input(),kinds:['hotel']})).empty.reason,'filters');
+  assert.deepEqual((await previewMatches(f.guest,{...input(),guests:'5'})).empty,{reason:'guests',maxGuests:2});
+  assert.deepEqual((await previewMatches(f.guest,{...input(),maxPrice:'5000'})).empty,{reason:'budget',cheapest:10000,count:1});
+  assert.deepEqual((await previewMatches(f.guest,{...input(),city:'Астана'})).empty,{reason:'city'});
+  // Found ones carry no explanation, and a request already sent to owners never computes one.
+  assert.equal((await previewMatches(f.guest,input())).empty,undefined);assert.equal((await previewMatches(f.guest,{...input(),guests:'5'},false)).empty,undefined);
+ }finally{f.db.close();}
+});
+test('all taken: the empty answer names the nearest free stay of the same length',async()=>{
+ const f=await fixture();try{
+  await f.guest.createBooking({propertyId:f.property,start:input().start,end:input().end,guests:2,billingMode:'daily',requestKey:'busy',acceptTerms:true});
+  const busy=await previewMatches(f.other,input());assert.equal(busy.properties.length,0);assert.equal(busy.empty.reason,'busy');
+  assert.ok(Date.parse(busy.empty.next.start)>Date.parse(input().start));assert.equal(Date.parse(busy.empty.next.end)-Date.parse(busy.empty.next.start),Date.parse(input().end)-Date.parse(input().start));assert.equal(busy.empty.next.count,1);
+ }finally{f.db.close();}
+});

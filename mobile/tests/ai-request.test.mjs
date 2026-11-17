@@ -18,7 +18,7 @@ const parse = (text, now = morning, from = draft) => guestRequestFromText(text, 
 const stay = result => [result.draft.mode, result.draft.start, result.draft.end];
 
 test('a new request is a day from today for two guests, with no budget', () => {
-  assert.deepEqual(draft, {city: 'Павлодар', district: '', mode: 'daily', start: '2026-11-11T14:00', end: '2026-11-12T12:00', guests: 2, maxPrice: '', priority: 'balanced', features: [], near: null});
+  assert.deepEqual(draft, {city: 'Павлодар', district: '', mode: 'daily', start: '2026-11-11T14:00', end: '2026-11-12T12:00', guests: 2, maxPrice: '', perUnit: true, priority: 'balanced', features: [], near: null, kinds: [], rooms: ''});
   assert.equal(guestSummary(draft, morning), 'Павлодар · 11–12 ноября · 2 гостя');
   // The server needs a number: the largest budget it accepts stands for "no limit".
   const body = matchingBody(draft);
@@ -83,7 +83,7 @@ test('city, guests, budget and wishes', () => {
   assert.deepEqual(result.draft.features, ['parking']);
   assert.equal(matchingBody(result.draft).maxPrice, 15000);
   // Everything that is applied is part of the line the guest sees: the budget, the wish and "дешевле" too.
-  assert.equal(guestSummary(result.draft, morning), 'Астана · 12–14 ноября · 3 гостя · до 15 000 ₸ · парковка · дешевле');
+  assert.equal(guestSummary(result.draft, morning), 'Астана · 12–14 ноября · 3 гостя · до 15 000 ₸ за всё · парковка · дешевле');
   assert.equal(guestSummary({...draft, features: ['wifi', 'workspace'], priority: 'closer', near: {longitude: 76.95, latitude: 52.29, radius: 5000}}, morning), 'Павлодар, рядом с выбранным местом · 11–12 ноября · 2 гостя · Wi-Fi · рабочее место · ближе');
   assert.equal(parse('до 18:00').draft.maxPrice, '');
   // Another city drops the district and the point of the previous one.
@@ -200,4 +200,70 @@ test('the app reads every request exactly as the site does', () => {
       text
     );
   }
+});
+
+// ---------- Stage 1 of the guest search audit (2026-11-17): what the guest asked is what is searched ----------
+const {HOME_KINDS, homeWords, budgetWords} = await loadPure('mobile/src/ai-request.ts', 'lib/map-search-request.ts');
+
+test('rooms and the type of home are read, shown and sent, never dropped', () => {
+  const two = parse('2-комнатная на завтра');
+  assert.equal(two.draft.rooms, '2');
+  assert.match(guestSummary(two.draft, morning), /2 комн\./);
+  assert.equal(matchingBody(two.draft).rooms, '2');
+  assert.equal(parse('двушка').draft.rooms, '2');
+  assert.equal(parse('однушка').understood, true);
+  assert.equal(parse('однушка').draft.rooms, '1');
+  assert.equal(parse('от 2 комнат').draft.rooms, '2+');
+  assert.deepEqual(parse('номер в гостинице').draft.kinds, ['hotel']);
+  assert.deepEqual(parse('гостевой дом на выходные').draft.kinds, ['guesthouse']);
+  assert.deepEqual(parse('дом с баней').draft.kinds, ['house']);
+  assert.deepEqual(parse('студия на 3 часа').draft.kinds, ['studio']);
+  // "Квартира" is how guests say "жильё": it narrows nothing.
+  assert.deepEqual(parse('квартира на сутки').draft.kinds, []);
+  assert.equal(homeWords({kinds: ['studio', 'apartment'], rooms: '3+'}), 'студия или квартира, от 3 комн.');
+});
+
+test('the types of home are the ones owners choose from', async () => {
+  const listings = await import('node:fs').then(fs => fs.readFileSync(new URL('../../lib/listings.ts', import.meta.url), 'utf8'));
+  for (const [id, title] of Object.entries(HOME_KINDS)) assert.ok(listings.includes(id + ":'" + title + "'"), id);
+});
+
+test('a town the service is not in is said, and the nearest city is searched', () => {
+  const town = parse('Сейчас в Экибастузе', morning, {...draft, city: 'Алматы'});
+  assert.equal(town.draft.city, 'Павлодар');
+  assert.match(town.note, /Экибастуз: жилья в сервисе пока нет\. Ищу в ближайшем городе — Павлодар\./);
+});
+
+test('a budget per day is multiplied by the days; a bare amount is for the whole stay', () => {
+  const perDay = parse('до 15 тысяч за сутки на 3 дня');
+  assert.equal(perDay.draft.perUnit, true);
+  assert.equal(matchingBody(perDay.draft).maxPrice, 45000);
+  assert.equal(budgetWords(perDay.draft), 'до 15 000 ₸ за сутки');
+  const perHour = parse('на 3 часа до 3000 в час');
+  assert.equal(matchingBody(perHour.draft).maxPrice, 9000);
+  const total = parse('на 3 дня до 40000');
+  assert.equal(total.draft.perUnit, false);
+  assert.equal(matchingBody(total.draft).maxPrice, 40000);
+});
+
+test('a new phrase starts over; a refinement keeps the conditions', () => {
+  const seven = parse('нас 7 человек').draft;
+  assert.equal(seven.guests, 7);
+  const next = parse('однушка', morning, seven).draft;
+  assert.equal(next.guests, 2);
+  assert.equal(next.rooms, '1');
+  // The place and the time stay.
+  const hours = parse('в Астане на 3 часа').draft, moved = parse('с парковкой', morning, hours).draft;
+  assert.equal(moved.city, 'Астана');
+  assert.equal(moved.mode, 'hourly');
+  const refined = parse('а дешевле', morning, {...seven, rooms: '2'}).draft;
+  assert.equal(refined.guests, 7);
+  assert.equal(refined.rooms, '2');
+  assert.equal(refined.priority, 'cheaper');
+});
+
+test('an hour that has passed today is searched tomorrow, and the guest is told', () => {
+  const late = parse('в 22:00', Date.parse('2026-11-11T18:10:00Z'));
+  assert.equal(late.draft.start.slice(0, 10), '2026-11-12');
+  assert.match(late.note, /Сегодня 22:00 уже прошло, ищу на завтра\./);
 });

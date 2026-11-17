@@ -127,8 +127,9 @@ function GuestPanel({setScanning,accountId,data,mapData,publish,selected,setSele
  // «Забронировать»: the price in the list is for the searched time. If that time has passed while the list was open, the search runs again first.
  const bookFlat=(property:Row)=>{if(freshDraft(draft).start!==draft.start){setHint({text:'Время начала уже прошло. Обновил варианты на ближайшее время.'});setSelected('');void find(draft);return;}onBook(property,{mode:draft.mode,start:draft.start,end:draft.end,guests:draft.guests});};
  // What narrows a search beyond the place, the time and the guests. An empty result offers to drop these and look again.
- const narrowed=!!(draft.district||draft.maxPrice||draft.features.length||draft.priority!=='balanced'||draft.near);
- const widen=()=>{const next:GuestDraft={...draft,district:'',maxPrice:'',features:[],priority:'balanced',near:null};setHint(null);setError('');setDraft(next);setPreview(null);void find(next);};
+ const narrowed=!!(draft.district||draft.maxPrice||draft.features.length||draft.priority!=='balanced'||draft.near||draft.kinds.length||draft.rooms);
+ const retry=(next:GuestDraft)=>{setHint(null);setError('');setDraft(next);setPreview(null);void find(next);};
+ const widen=()=>retry({...draft,district:'',maxPrice:'',features:[],priority:'balanced',near:null,kinds:[],rooms:''});
  const refining=snap>0&&(refine||!preview),toggleRefine=()=>{if(refining){setRefine(false);expand(preview?1:0);}else{setRefine(true);expand(2);}};
  useEffect(()=>{if(requestId||preview)expand(1);if(kept&&kept.draft.city!==city)setCity(kept.draft.city);},[]);
  useEffect(()=>{guestSearches.set(accountId,{draft,preview,foundAt:foundAt.current});},[draft,preview]);
@@ -219,7 +220,8 @@ function GuestPanel({setScanning,accountId,data,mapData,publish,selected,setSele
   if(placed.current==='done'||!here.fix)return;
   if(aimed||recent||requestId||preview||draft.near||nav.trip||chosenCity.has(accountId)){placed.current='done';return;}
   const near=nearestCity(here.fix.point);
-  if(!near){placed.current='done';return;}
+  // Far from every city of the service: said once, and the map stays where it was.
+  if(!near){placed.current='done';if(here.fix.accuracy<=5000)notify('Рядом с вами жилья сервиса пока нет. Показываем '+draft.city+'. Другой город — напишите его в строке.');return;}
   // The city moves only once the map of the current one has answered, and never away from the guest's own stays there.
   if(placed.current==='no'){if(!mapData)return;placed.current='city';if(near!==draft.city){if(stays.length){placed.current='done';return;}change({...draft,city:near,district:'',near:null},false);notify('Вы в городе '+near+'. Нужен другой город — напишите его в строке, например «Астана завтра».');return;}}
   if(mapData&&mapData.city===near){placed.current='done';flyMe();}
@@ -316,7 +318,7 @@ function GuestPanel({setScanning,accountId,data,mapData,publish,selected,setSele
  </MapSheetHead>;
  // The form and the results live in the opened sheet only; a running request to owners keeps its place in any state.
  const body=requestId?renderLive():snap===0?null:preview&&!refine
-  ?<GuestResults preview={preview} draft={draft} selected={selected} onSelect={setSelected} onFocus={setFocus} onBook={bookFlat} onOpen={property=>onIntent('property:'+property.id,{mode:draft.mode,start:draft.start,end:draft.end,guests:draft.guests})} onRefine={toggleRefine} onWiden={narrowed?widen:undefined} onAskOwners={quick>0?()=>void begin():undefined} onBookEdge={onReach} busy={working}/>
+  ?<GuestResults preview={preview} draft={draft} selected={selected} onSelect={setSelected} onFocus={setFocus} onBook={bookFlat} onOpen={property=>onIntent('property:'+property.id,{mode:draft.mode,start:draft.start,end:draft.end,guests:draft.guests})} onRefine={toggleRefine} onWiden={narrowed?widen:undefined} onTry={patch=>retry({...draft,...patch})} onAskOwners={quick>0?()=>void begin():undefined} onBookEdge={onReach} busy={working}/>
   :<GuestForm draft={draft} onChange={change} onNearMe={meInCity?()=>change({...draft,near:nearOf(here.fix!.point)}):undefined} onPickPoint={()=>{setPicking(true);expand(0);}} onSubmit={()=>void find()} busy={working}/>;
  return <View style={h.block}>
   <HeadSlot onHeight={onHead}>{picking?pickView:nav.trip?<TripHead nav={nav} onOpen={()=>{const id=nav.trip!.id;nav.close();onOpenProcess('booking',id);}}/>:requestId?null:head}</HeadSlot>
