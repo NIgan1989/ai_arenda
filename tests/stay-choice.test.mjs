@@ -1,5 +1,5 @@
 import {test} from 'node:test';import assert from 'node:assert/strict';import {load} from './helpers/platform.mjs';
-const {stayInterval,stayStamp,stayDay,stayTimes,stayDays,defaultStay,settleStay,stayFromInterval,stayModes,stayLimits,stayUnit}=await load('stay-choice'),{rentalPrice}=await load('rental-policy');
+const {stayInterval,stayStamp,stayDay,stayTimes,stayDays,defaultStay,settleStay,stayFromInterval,stayModes,stayLimits,stayUnit}=await load('stay-choice'),{rentalPrice,changeRentalPrice}=await load('rental-policy');
 const at=iso=>Math.floor(Date.parse(iso)/1000),day13=at('2026-11-12T19:00:00Z'),policy={hourly_price:2000,min_hours:3,nightly_price:9000,checkin_minutes:840,checkout_minutes:720};
 test('a moment is sent as Kazakhstan time',()=>{assert.equal(stayStamp(day13+14*3600),'2026-11-13T14:00+05:00');assert.equal(Date.parse(stayStamp(day13+14*3600))/1000,day13+14*3600);assert.equal(stayDay(day13+86399),day13);});
 test('every tariff gives an interval the price rules accept',()=>{
@@ -15,3 +15,21 @@ test('the first offer: tomorrow at check-in, or the nearest hour',()=>{const now
 test('two moments become the same stay',()=>{assert.deepEqual(stayFromInterval('hourly',day13+3*3600,day13+6*3600,policy),{mode:'hourly',day:day13,time:180,count:3});assert.deepEqual(stayFromInterval('daily',day13+14*3600,day13+86400+12*3600,policy),{mode:'daily',day:day13,time:840,count:1});assert.equal(stayFromInterval('nightly',day13+14*3600,day13+2*86400+12*3600,policy).count,2);});
 test('units are declined',()=>{assert.equal([1,2,5,11,21,22].map(n=>stayUnit('hourly',n)).join(),'час,часа,часов,часов,час,часа');assert.equal([1,2,5].map(n=>stayUnit('daily',n)).join(),'сутки,суток,суток');assert.equal([1,3,7].map(n=>stayUnit('nightly',n)).join(),'ночь,ночи,ночей');});
 test('a whole day as the hourly minimum stays possible',()=>{const whole={...policy,min_hours:24},limits=stayLimits('hourly',whole);assert.deepEqual(limits,{min:24,max:24});const choice=settleStay(defaultStay('hourly',whole,day13+3600),whole,day13+3600),span=stayInterval(choice,whole);assert.equal(choice.count,24);assert.doesNotThrow(()=>rentalPrice(10000,whole,span.start,span.end,'hourly'));});
+test('«На ночь»: a late arrival keeps its night, the cheaper tariff is taken, a day check-in is not a night',()=>{
+ const k=iso=>at(iso+'+05:00');
+ // In at 23:30 or at 01:30 after midnight, out at noon: one night at the nightly price.
+ assert.deepEqual(rentalPrice(10000,policy,k('2026-11-13T23:30:00'),k('2026-11-14T12:00:00'),'nightly').periods,1);
+ assert.equal(rentalPrice(10000,policy,k('2026-11-14T01:30:00'),k('2026-11-14T12:00:00'),'nightly').amount,9000);
+ // 12:30 is between check-out and check-in: an early check-in, not a night.
+ assert.throws(()=>rentalPrice(10000,policy,k('2026-11-13T12:30:00'),k('2026-11-14T12:00:00'),'nightly'));
+ // The «night» request takes the nightly price where it is cheaper and started days otherwise.
+ const night=rentalPrice(10000,policy,k('2026-11-14T01:30:00'),k('2026-11-14T12:00:00'),'night');assert.equal(night.billingMode,'nightly');assert.equal(night.amount,9000);
+ assert.equal(rentalPrice(8000,policy,k('2026-11-14T01:30:00'),k('2026-11-14T12:00:00'),'night').billingMode,'daily');
+ assert.equal(rentalPrice(10000,{...policy,nightly_price:0},k('2026-11-14T01:30:00'),k('2026-11-14T12:00:00'),'night').billingMode,'daily');
+ assert.equal(rentalPrice(10000,policy,k('2026-11-14T13:00:00'),k('2026-11-15T12:00:00'),'night').billingMode,'daily');
+});
+test('a late arrival on the nightly tariff adds no early hours when the stay is changed',()=>{
+ const k=iso=>at(iso+'+05:00');
+ const late=changeRentalPrice(10000,policy,k('2026-11-14T01:30:00'),k('2026-11-15T12:00:00'),'nightly');assert.equal(late.extraHours,0);assert.equal(late.amount,18000);
+ const early=changeRentalPrice(10000,policy,k('2026-11-13T12:00:00'),k('2026-11-14T12:00:00'),'nightly');assert.equal(early.extraHours,2);assert.equal(early.amount,9000+2*2000);
+});

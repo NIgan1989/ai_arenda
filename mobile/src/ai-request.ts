@@ -14,6 +14,7 @@ import {
   guestSearchRequest,
   hourlyStay,
   kzToday,
+  nextSlot,
   stayHours,
   stayNights,
   switchStay,
@@ -23,7 +24,8 @@ import {
 export type GuestDraft = {
   city: string;
   district: string;
-  mode: 'daily' | 'hourly';
+  // 'night': a stay till the morning, at the owner's nightly price where it is cheaper than a day.
+  mode: 'daily' | 'hourly' | 'night';
   start: string; // Kazakhstan time, 'YYYY-MM-DDTHH:mm'
   end: string;
   guests: number;
@@ -34,6 +36,7 @@ export type GuestDraft = {
   near: { longitude: number; latitude: number; radius: number } | null;
   kinds: string[]; // types of home (lib/listings.ts propertyTypes); [] for any
   rooms: string; // '2' exactly two rooms, '2+' at least two; '' for any
+  now: boolean; // «Сейчас»: only homes ready now that confirm at once, the nearest first
 };
 export type ParsedRequest = {
   draft: GuestDraft; // the conditions with everything the text says applied
@@ -45,7 +48,7 @@ export type ParsedRequest = {
   // What was cut or could not be taken as written ("Максимум 23 часа, ищу на 23."); '' when nothing was.
   note: string;
 };
-export type ChipId = 'daily' | 'hourly' | 'weekend';
+export type ChipId = 'now' | 'night' | 'daily' | 'hourly' | 'weekend';
 
 // Types of home a guest can ask for, as lib/listings.ts names them (propertyTypes). Kept here so this file stays
 // free of server code; mobile/tests/ai-request.test.mjs checks that the two lists match.
@@ -72,7 +75,7 @@ const clamp = (value: number, min: number, max: number) => Math.max(min, Math.mi
 
 /** What the form starts with: today until tomorrow, two guests, no budget. */
 export function newDraft(city: string, now = Date.now()): GuestDraft {
-  return { city, district: '', ...defaultStay('daily', now), guests: 2, maxPrice: '', perUnit: true, priority: 'balanced', features: [], near: null, kinds: [], rooms: '' };
+  return { city, district: '', ...defaultStay('daily', now), guests: 2, maxPrice: '', perUnit: true, priority: 'balanced', features: [], near: null, kinds: [], rooms: '', now: false };
 }
 
 /** The same conditions with the stay moved out of the past, for a screen that stayed open. */
@@ -93,14 +96,14 @@ export function guestRequestFromText(text: string, draft: GuestDraft, cities: st
   const kept = freshDraft(draft, now);
   const base: GuestDraft = REFINE.test(text.trim().toLocaleLowerCase('ru'))
     ? kept
-    : { ...kept, district: '', guests: 2, maxPrice: '', perUnit: true, priority: 'balanced', features: [], near: null, kinds: [], rooms: '' };
+    : { ...kept, district: '', guests: 2, maxPrice: '', perUnit: true, priority: 'balanced', features: [], near: null, kinds: [], rooms: '', now: false };
   const result = guestSearchRequest(text, base, cities, now);
   const filters = result.filters;
   const next: GuestDraft = {
     ...base,
     city: String(filters.city || base.city),
     district: String(filters.district || ''),
-    mode: filters.mode === 'hourly' ? 'hourly' : 'daily',
+    mode: filters.mode === 'hourly' || filters.mode === 'night' ? filters.mode : 'daily',
     start: String(filters.start),
     end: String(filters.end),
     guests: clamp(Number(filters.guests) || base.guests, 1, MAX_GUESTS),
@@ -110,10 +113,11 @@ export function guestRequestFromText(text: string, draft: GuestDraft, cities: st
     features: Array.isArray(filters.features) ? filters.features.filter((id: unknown) => WISHES.some(([known]) => known === id)) : [],
     near: filters.near || null,
     kinds: Array.isArray(filters.kinds) ? filters.kinds.filter((id: unknown) => typeof id === 'string' && Object.prototype.hasOwnProperty.call(HOME_KINDS, id)) : [],
-    rooms: typeof filters.rooms === 'string' && /^[1-9]\+?$/.test(filters.rooms) ? filters.rooms : ''
+    rooms: typeof filters.rooms === 'string' && /^[1-9]\+?$/.test(filters.rooms) ? filters.rooms : '',
+    now: filters.now === true
   };
   // "почасовая" names a tariff but no day and no length: the stay follows the new tariff.
-  if (!result.past && next.mode !== base.mode && !result.stated.when) Object.assign(next, switchStay(next.mode, base.start, now));
+  if (!result.past && next.mode !== base.mode && !result.stated.when) Object.assign(next, { ...switchStay(next.mode, base.start, now), mode: next.mode });
   return {
     draft: next,
     nearby: result.nearby,
@@ -123,9 +127,23 @@ export function guestRequestFromText(text: string, draft: GuestDraft, cities: st
   };
 }
 
-/** The three quick requests under the line: a day from today, the nearest three hours, the nearest weekend. */
+/**
+ * The quick requests under the line. «Сейчас»: from the nearest half-hour that leaves 15 minutes, for a day (for
+ * three hours on the hourly tariff), only homes ready now that confirm at once. «На ночь»: tonight till noon at the
+ * nightly price where it is cheaper; after midnight, from now. The others: a day from today, the nearest three
+ * hours, the nearest weekend.
+ */
 export function chipDraft(id: ChipId, draft: GuestDraft, now = Date.now()): GuestDraft {
-  return { ...draft, ...(id === 'weekend' ? weekendStay(now) : defaultStay(id, now)) };
+  if (id === 'now') {
+    const from = new Date(nextSlot(now, 15) + 5 * 3600000).toISOString().slice(0, 16), today = kzToday(now);
+    const stay = draft.mode === 'hourly'
+      ? { mode: 'hourly' as const, ...hourlyStay(from.slice(0, 10), from.slice(11), 3) }
+      : { mode: draft.mode, ...dailyStay(today, addDays(today, 1), now, from.slice(11), 15, true) };
+    return { ...draft, ...stay, now: true };
+  }
+  // Leaving «Сейчас» also lets go of the point it took from the phone.
+  const loose = draft.now ? { near: null, priority: 'balanced' as const } : {};
+  return { ...draft, ...(id === 'weekend' ? weekendStay(now) : defaultStay(id, now)), ...loose, now: false };
 }
 
 const PRIORITY_WORDS: Record<string, string> = { cheaper: 'дешевле', closer: 'ближе' };
@@ -137,11 +155,16 @@ const PRIORITY_WORDS: Record<string, string> = { cheaper: 'дешевле', clos
  */
 export function guestSummary(draft: GuestDraft, now = Date.now()) {
   // The budget is said here, with what it is for: "до 15 000 ₸ за сутки" or "до 45 000 ₸ за всё".
-  const line = guestRequestLine({ ...draft, maxPrice: '' }, now);
+  // «Сейчас» counts from where the guest is: "рядом с вами", not "рядом с выбранным местом", and no "ближе".
+  const line = guestRequestLine({ ...draft, maxPrice: '', near: draft.now ? null : draft.near }, now);
   const said = line.toLocaleLowerCase('ru');
+  // «Сейчас» and «На ночь» start at an hour of their own, not at 14:00: it is said.
+  const from = draft.now || draft.mode === 'night' ? 'заезд с ' + draft.start.slice(11) : '';
   const more = [
+    from,
+    draft.now ? (draft.near ? 'готово сейчас, рядом с вами' : 'готово сейчас') : '',
     ...WISHES.filter(([id]) => draft.features.includes(id)).map(([, title]) => (title === 'Wi-Fi' ? title : title.toLocaleLowerCase('ru'))),
-    PRIORITY_WORDS[draft.priority] || ''
+    draft.now ? '' : PRIORITY_WORDS[draft.priority] || ''
   ].filter(word => word && !said.includes(word.toLocaleLowerCase('ru')));
   return [line, homeWords(draft), budgetWords(draft), ...more].filter(Boolean).join(' · ');
 }
@@ -158,7 +181,7 @@ export function budgetWords(draft: Pick<GuestDraft, 'maxPrice' | 'perUnit' | 'mo
   const amount = Number(draft.maxPrice);
   if (!(amount > 0) || draft.maxPrice === NO_BUDGET) return '';
   const sum = 'до ' + new Intl.NumberFormat('ru-RU').format(amount).replace(/\s/g, ' ') + ' ₸';
-  if (draft.perUnit) return sum + (draft.mode === 'hourly' ? ' за час' : ' за сутки');
+  if (draft.perUnit) return sum + (draft.mode === 'hourly' ? ' за час' : draft.mode === 'night' ? ' за ночь' : ' за сутки');
   return draftUnits(draft as GuestDraft) > 1 ? sum + ' за всё' : sum;
 }
 
@@ -177,7 +200,8 @@ export function matchingBody(draft: GuestDraft) {
     features: draft.features,
     near: draft.near,
     kinds: draft.kinds || [],
-    rooms: draft.rooms || ''
+    rooms: draft.rooms || '',
+    now: !!draft.now
   };
 }
 
@@ -201,8 +225,8 @@ function stayFor(draft: GuestDraft, date: string, time: string, units: number, n
   return dailyStay(date, checkout, now, time);
 }
 
-export function withMode(draft: GuestDraft, mode: 'daily' | 'hourly', now = Date.now()): GuestDraft {
-  return mode === draft.mode ? draft : { ...draft, ...switchStay(mode, draft.start, now) };
+export function withMode(draft: GuestDraft, mode: GuestDraft['mode'], now = Date.now()): GuestDraft {
+  return mode === draft.mode ? draft : { ...draft, ...switchStay(mode, draft.start, now), mode };
 }
 export function withDay(draft: GuestDraft, date: string, now = Date.now()): GuestDraft {
   // A daily stay on another day starts at the usual check-in hour again.

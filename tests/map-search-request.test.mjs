@@ -280,8 +280,8 @@ test('"до 15 ноября" is the check-out of a stay that starts today', () =
   assert.deepEqual(stay(late('по 15 ноября на двоих')), ['daily', '2026-11-12T14:00', '2026-11-15T12:00']);
   assert.deepEqual(stay(late('до 20.11')), ['daily', '2026-11-12T14:00', '2026-11-20T12:00']);
   assert.equal(late('до 15 ноября').stated.budget, false);
-  // "Until today" is one night from today; "until the 10th" has passed.
-  assert.deepEqual(stay(late('до 12 ноября')), ['daily', '2026-11-12T14:00', '2026-11-13T12:00']);
+  // "Until today" at 04:30 is the night under way: from the nearest half-hour until this noon; "until the 10th" has passed.
+  assert.deepEqual(stay(late('до 12 ноября')), ['daily', '2026-11-12T05:00', '2026-11-12T12:00']);
   assert.equal(late('до 10 ноября').past, 'date');
 });
 
@@ -329,7 +329,8 @@ test('what is cut to the longest stay or the largest party is said, not changed 
   assert.deepEqual(stay(late('на 23 часа завтра')), ['hourly', '2026-11-13T14:00', '2026-11-14T13:00']);
   assert.deepEqual(late('на 23 часа завтра').remarks, []);
   const month = late('на 45 суток');
-  assert.deepEqual(stay(month), ['daily', '2026-11-12T14:00', '2026-12-12T12:00']);
+  // At 04:30 the first of the 30 nights is the one under way: in at 05:00, 30 started days.
+  assert.deepEqual(stay(month), ['daily', '2026-11-12T05:00', '2026-12-11T12:00']);
   assert.deepEqual(month.remarks, ['Максимум 30 суток, ищу на 30.']);
   assert.deepEqual(late('на 6 недель').remarks, ['Максимум 30 суток, ищу на 30.']);
 
@@ -359,4 +360,39 @@ test('the summary line breaks only between its parts and names the chosen place'
   assert.equal(unbrokenParts('Павлодар · 13–14 ноября · 2 гостя'), 'Павлодар\u00a0· 13–\u206014\u00a0ноября\u00a0· 2\u00a0гостя');
   const near = { ...draft, near: { longitude: 76.95, latitude: 52.28, radius: 5000 } };
   assert.equal(guestRequestLine(near, morning), 'Павлодар, рядом с выбранным местом · 11–12 ноября · 2 гостя');
+});
+
+test('«Сейчас» starts at the nearest half-hour that leaves 15 minutes and asks for a home ready now', () => {
+  const now = guest('сейчас', at('2026-11-17T13:05'));
+  assert.deepEqual(stay(now), ['daily', '2026-11-17T13:30', '2026-11-18T12:00']);
+  assert.equal(now.filters.now, true);
+  assert.deepEqual(stay(guest('срочно на 3 часа', at('2026-11-17T13:05'))), ['hourly', '2026-11-17T13:30', '2026-11-17T16:30']);
+  // After midnight «сейчас» is the night under way: until this noon, not until tomorrow's.
+  assert.deepEqual(stay(guest('сейчас', at('2026-11-18T01:10'))), ['daily', '2026-11-18T01:30', '2026-11-18T12:00']);
+  assert.equal(guest('завтра на сутки').filters.now, undefined);
+});
+
+test('«На ночь» is the night tariff: tonight till noon, and after midnight from now', () => {
+  assert.deepEqual(stay(guest('на ночь', at('2026-11-17T13:05'))), ['night', '2026-11-17T14:00', '2026-11-18T12:00']);
+  assert.deepEqual(stay(guest('на ночь', at('2026-11-17T23:40'))), ['night', '2026-11-18T00:30', '2026-11-18T12:00']);
+  assert.deepEqual(stay(guest('на ночь', at('2026-11-18T01:10'))), ['night', '2026-11-18T02:00', '2026-11-18T12:00']);
+  assert.deepEqual(stay(guest('переночевать в центре', at('2026-11-17T21:00'))), ['night', '2026-11-17T21:30', '2026-11-18T12:00']);
+  assert.deepEqual(stay(guest('на 2 ночи', at('2026-11-18T01:10'))), ['night', '2026-11-18T02:00', '2026-11-19T12:00']);
+  // «На сутки» at night is also the night under way, priced by started days.
+  assert.deepEqual(stay(guest('на сутки', at('2026-11-18T01:10'))), ['daily', '2026-11-18T02:00', '2026-11-18T12:00']);
+  // A later phrase keeps the night tariff, as it keeps the hourly one.
+  const tonight = guest('на ночь', at('2026-11-17T21:00')).filters;
+  assert.equal(guest('на двоих', at('2026-11-17T21:05'), tonight).filters.mode, 'night');
+  // The form's default after midnight is the same night.
+  assert.deepEqual(defaultStay('daily', at('2026-11-18T01:10')), { mode: 'daily', start: '2026-11-18T02:00', end: '2026-11-18T12:00' });
+  assert.deepEqual(defaultStay('night', at('2026-11-17T10:00')), { mode: 'night', start: '2026-11-17T14:00', end: '2026-11-18T12:00' });
+});
+
+test('a night stay left open after midnight stays the same night', () => {
+  const { freshStay } = lib;
+  const stay0 = { mode: 'night', start: '2026-11-18T01:30', end: '2026-11-18T12:00' };
+  assert.deepEqual(freshStay(stay0, at('2026-11-18T01:40')), { start: '2026-11-18T02:30', end: '2026-11-18T12:00' });
+  assert.deepEqual(freshStay({ ...stay0, end: '2026-11-19T12:00' }, at('2026-11-18T01:40')), { start: '2026-11-18T02:30', end: '2026-11-19T12:00' });
+  // In the day a stale stay starts at the nearest half-hour as before.
+  assert.deepEqual(freshStay({ mode: 'daily', start: '2026-11-18T14:00', end: '2026-11-19T12:00' }, at('2026-11-18T15:10')), { start: '2026-11-18T16:00', end: '2026-11-19T12:00' });
 });

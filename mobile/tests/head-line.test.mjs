@@ -14,6 +14,8 @@ test('the line and the chips say what the site says', () => {
     assert.equal(mine.label, theirs.label);
     // Every chip of the site is in the app, in the same order and with the same words,
     // except the owner's «+ Жильё», which is «Жильё» in the app: it opens the list of objects, adding is inside.
+    // The guest's chips are the app's own: «Сейчас» and «На ночь» (see the next test).
+    if (role === 'guest') continue;
     assert.deepEqual(mine.chips.map(chip => chip.id), theirs.chips.map(chip => chip.id), role);
     assert.deepEqual(mine.chips.map(chip => chip.title), theirs.chips.map(chip => chip.id === 'add-property' ? 'Жильё' : chip.label), role);
   }
@@ -21,12 +23,12 @@ test('the line and the chips say what the site says', () => {
 
 test('every chip does something in the app', () => {
   const actions = {
-    guest: ['daily', 'hourly', 'weekend'],
+    guest: ['now', 'hourly', 'daily'],
     owner: ['requests', 'calendar', 'properties'],
     cleaner: ['nearby', 'schedule']
   };
   for (const role of roles) {
-    const chips = headLine(role).chips;
+    const chips = headLine(role, Date.parse('2026-11-17T13:00:00+05:00')).chips;
     assert.deepEqual(chips.map(chip => chip.action), actions[role]);
     for (const chip of chips) assert.ok(chip.hint, chip.title);
   }
@@ -34,10 +36,20 @@ test('every chip does something in the app', () => {
 
 test('the chips of a role fit one row of a 360px phone', () => {
   // 328px between the paddings of the sheet; a chip is its text (14px, about 8px a letter at most) plus 32px, with 8px between chips.
-  for (const role of roles) {
-    const chips = headLine(role).chips;
+  for (const role of roles) for (const hour of ['13', '21']) {
+    const chips = headLine(role, Date.parse('2026-11-17T' + hour + ':00:00+05:00')).chips;
     const width = chips.reduce((sum, chip) => sum + chip.title.length * 8 + 32, 0) + (chips.length - 1) * 8;
     assert.ok(width <= 328, role + ': ' + width);
     assert.ok(chips.length >= 2 && chips.length <= 3);
   }
+});
+
+test('the guest chips: «Сейчас» first, «На ночь» in the evening and at night', () => {
+  const at = time => Date.parse('2026-11-17T' + time + ':00+05:00');
+  assert.deepEqual(headLine('guest', at('13:00')).chips.map(chip => chip.title), ['Сейчас', 'На часы', 'На сутки']);
+  assert.deepEqual(headLine('guest', at('21:00')).chips.map(chip => chip.title), ['Сейчас', 'На ночь', 'На часы']);
+  assert.deepEqual(headLine('guest', at('02:30')).chips.map(chip => chip.action), ['now', 'night', 'hourly']);
+  assert.deepEqual(headLine('guest', at('06:00')).chips.map(chip => chip.action), ['now', 'hourly', 'daily']);
+  // The words of the line stay the site's.
+  assert.equal(headLine('guest').placeholder, site.roleAiLine('guest').placeholder);
 });
