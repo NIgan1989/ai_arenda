@@ -43,3 +43,12 @@ test('оповещения: жильё прежними словами, баня
   assert.ok(!isHome({ property_type: 'cafe' }));
   for (const type of ['banya', 'banquet']) for (const text of Object.values(stayWords(type))) assert.ok(!/аезд|ыезд|рожив|засел|жиль/i.test(text), text);
 });
+test('the summary and the hints of a bath booking speak of coming and of the booking, housing keeps its words',async()=>{
+ const {sheetName}=await load('sheet-title'),{operationOverview}=await load('operations'),{assistantBrief,defaultAssistantSettings}=await load('assistant');
+ assert.equal(sheetName('owner','properties','',true),'Мои объекты');assert.equal(sheetName('owner','properties'),'Моё жильё');
+ const t=1800000000,b=type=>({id:'b-'+type,guest_id:'g',owner_id:'o',status:'confirmed',start:t+3600,end:t+4*3600,title:'Место',property_type:type,payment_status:'owner_verified',terms:{}});
+ const all=type=>{const data={bookings:[b(type)],jobs:[]};return JSON.stringify([operationOverview(data,'g','guest',t),assistantBrief(data,'guest',defaultAssistantSettings,t)]);};
+ assert.match(all('banya'),/"Приход"/);assert.match(all('banya'),/Проверить предстоящую бронь/);assert.doesNotMatch(all('banya'),/заезд|Заезд|прожив|выезд/);
+ assert.match(all('banquet'),/"Начало"/);assert.doesNotMatch(all('banquet'),/заезд|Заезд|прожив/);
+ assert.match(all('apartment'),/"Заезд"/);assert.match(all('apartment'),/Проверить предстоящий заезд/);
+});
