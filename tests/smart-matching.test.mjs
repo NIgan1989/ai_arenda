@@ -188,3 +188,17 @@ test('«Сейчас» with nothing ready says how many would fit after the owne
   assert.equal(soon.properties.length,0);assert.deepEqual(soon.empty,{reason:'now',count:1});
  }finally{f.db.close();}
 });
+test('«Забронировать» on a home that needs its owner: that home is asked in the first wave, the next best with it',async()=>{
+ const f=await enabled();try{
+  const ids=[];
+  for(let i=0;i<4;i++){const p=await f.owner.createProperty({title:'Additional '+i,city:'Павлодар',district:'Центр',address:'PRIVATE ADDRESS '+i,description:'QA',price:10000,rooms:1,capacity:2,cleaningMinutes:90});await f.owner.savePolicy(p.id,{...f.policy,expectedVersion:0});await matchingAction(f.owner,'owner','preference',{propertyId:p.id,enabled:true});ids.push(p.id);}
+  // Without a preference the last home of the ranking is not in the first three.
+  const order=(await previewMatches(f.guest,input())).properties.map(p=>p.id),last=order[order.length-1];
+  const plain=await matchingAction(f.guest,'guest','begin',{...input(),requestKey:'plain',consent:true});
+  assert.ok(!plain.pendingProperties.some(p=>p.id===last));await matchingAction(f.guest,'guest','cancel',{id:plain.id});
+  const r=await matchingAction(f.guest,'guest','begin',{...input(),prefer:last,requestKey:'prefer',consent:true});
+  assert.equal(r.sent,3);assert.ok(r.pendingProperties.some(p=>p.id===last));assert.equal(r.filters.prefer,last);
+  // A preference that is not a plain id is dropped, never stored.
+  assert.equal(matchingInput({...input(),prefer:{id:last}}).prefer,undefined);assert.equal(matchingInput({...input(),prefer:"x' OR 1=1"}).prefer,undefined);
+ }finally{f.db.close();}
+});

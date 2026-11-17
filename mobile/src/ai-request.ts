@@ -266,3 +266,20 @@ export function shownReasons(reasons: unknown, draft: Pick<GuestDraft, 'maxPrice
     .filter((reason): reason is string => typeof reason === 'string' && (!!draft.maxPrice || reason !== 'В пределах бюджета'))
     .map(reason => REASON_TEXT[reason] || reason);
 }
+
+/** «Забронировать» asks the owner first: the home does not confirm by itself, and its owner answers quick requests. */
+export const askFirst = (property: { quickRequest?: unknown; instant?: unknown }) => !!property.quickRequest && !property.instant;
+
+const droppedWords = (dropped: unknown) => (Array.isArray(dropped) ? dropped.filter((v): v is string => typeof v === 'string' && !!v.trim()).slice(0, 5) : []);
+/** The model put the guest's phrase into the words of the search: the guest sees those words and what was left out. */
+export function understoodNote(phrase: string, dropped: unknown): string {
+  const left = droppedWords(dropped);
+  return 'ИИ понял так: «' + phrase + '».' + (left.length ? ' Пока не ищу по условиям: ' + left.join(', ') + '.' : '');
+}
+/** The model did not help: why, and what the guest can do. */
+export function notUnderstoodNote(status: unknown, dropped: unknown): string {
+  const left = droppedWords(dropped);
+  if (status === 'permission') return 'Не понял запрос. ИИ разберёт такие фразы, если вы разрешите передавать ему ваши сообщения: спросите ИИ-администратора.';
+  if (status === 'none' && left.length) return 'Пока не ищу по условиям: ' + left.join(', ') + '. Назовите день и срок, например: «завтра на сутки на двоих».';
+  return 'Не понял запрос. Назовите день и срок, например: «завтра на сутки на двоих».';
+}

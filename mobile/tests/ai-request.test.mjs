@@ -291,3 +291,26 @@ test('«Сейчас» and «На ночь» chips', () => {
   assert.equal(parse('завтра на сутки', at('2026-11-17T13:05'), now).draft.now, false);
   assert.equal(parse('на ночь', at('2026-11-17T21:00')).draft.mode, 'night');
 });
+
+const L = await loadPure('mobile/src/ai-request.ts', 'lib/map-search-request.ts');
+
+test('one button: a home that confirms by itself is booked, a home with quick answers is asked first', () => {
+  assert.equal(L.askFirst({quickRequest: true, instant: false}), true);
+  assert.equal(L.askFirst({quickRequest: true, instant: true}), false);
+  assert.equal(L.askFirst({quickRequest: false}), false);
+  assert.equal(L.askFirst({}), false);
+});
+
+test('the AI line says what the model understood and what the search leaves out', () => {
+  assert.equal(L.understoodNote('завтра на сутки', []), 'ИИ понял так: «завтра на сутки».');
+  assert.equal(L.understoodNote('завтра на сутки', ['с собакой', '', 5, 'у вокзала']), 'ИИ понял так: «завтра на сутки». Пока не ищу по условиям: с собакой, у вокзала.');
+  assert.match(L.notUnderstoodNote('permission', []), /разрешите/);
+  assert.match(L.notUnderstoodNote('none', ['с видом на реку']), /^Пока не ищу по условиям: с видом на реку\. Назовите день и срок/);
+  for (const status of ['off', 'busy', 'none', undefined]) assert.match(L.notUnderstoodNote(status, []), /^Не понял запрос\. Назовите день и срок/);
+});
+
+test('phrases in the words the model is told to use pass the rules', () => {
+  const cities = ['Павлодар', 'Астана'], at = Date.parse('2026-11-17T13:00:00+05:00'), draft = L.newDraft('Павлодар', at);
+  for (const phrase of ['с 20 ноября на 7 суток на двоих', 'завтра на 30 суток', 'в пятницу на 2 ночи на 4 человек до 9000 за ночь', 'сейчас на 3 часа студия', '25 ноября на сутки в Астане 2-комнатная с парковкой'])
+    assert.equal(L.guestRequestFromText(phrase, draft, cities, at).understood, true, phrase);
+});

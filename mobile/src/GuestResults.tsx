@@ -8,7 +8,7 @@ import { windowBadge } from '../../lib/window-badge';
 import { C, type } from './styles';
 import { T } from './tokens';
 import { ReliabilityBadge } from './Reliability';
-import { HOME_KINDS, draftUnits, shownReasons, withMode, type GuestDraft } from './ai-request';
+import { HOME_KINDS, askFirst, draftUnits, shownReasons, withMode, type GuestDraft } from './ai-request';
 import { carouselIndex } from './map-motion';
 import { Heart } from './Favorites';
 import { markLabel, markOf, type Mine } from './favorites';
@@ -34,8 +34,6 @@ type Props = {
   onWiden?: () => void;
   // Searches again with these conditions changed: the way out an empty answer offers.
   onTry?: (patch: Partial<GuestDraft>) => void;
-  // Present only when some owner of these flats answers quick requests.
-  onAskOwners?: () => void;
   // Where «Забронировать» of the chosen flat ends, from the top of the sheet's content: the sheet opens that far.
   onBookEdge?: (bottom: number) => void;
   busy: boolean;
@@ -121,7 +119,7 @@ export function homeLine(flat: Row) {
   return [kind, rooms > 0 && flat.details?.type !== 'studio' ? rooms + ' комн.' : '', capacity > 0 ? 'до ' + capacity + ' ' + plural(capacity, 'гостя', 'гостей', 'гостей') : ''].filter(Boolean).join(' · ');
 }
 
-export function GuestResults({ preview, draft, mine, onFavorite, selected, onSelect, onFocus, onBook, onOpen, onRefine, onWiden, onTry, onAskOwners, onBookEdge, busy }: Props) {
+export function GuestResults({ preview, draft, mine, onFavorite, selected, onSelect, onFocus, onBook, onOpen, onRefine, onWiden, onTry, onBookEdge, busy }: Props) {
   const flats: Row[] = preview.properties || [];
   const chosen = flats.find(flat => flat.id === selected);
   const width = useWindowDimensions().width,
@@ -212,6 +210,7 @@ export function GuestResults({ preview, draft, mine, onFavorite, selected, onSel
         <View onLayout={e => setButtonBottom(Math.round(e.nativeEvent.layout.y + e.nativeEvent.layout.height))}>
           <Action title="Забронировать" disabled={busy} onPress={() => onBook(chosen)} />
         </View>
+        {askFirst(chosen) && <Text style={h.note}>Спросим владельца и ещё двух подходящих: ответ за 2 минуты, без вашего имени и телефона. Бронь создаётся после вашего подтверждения.</Text>}
         {!!chosen.photos?.[0] && <Photo id={chosen.photos[0]} alt={chosen.title + ', фото'} />}
         <Action secondary title="Подробнее о жилье" disabled={busy} onPress={() => onOpen(chosen)} />
       </Rise>
@@ -284,12 +283,6 @@ export function GuestResults({ preview, draft, mine, onFavorite, selected, onSel
           </Pressable>
         )}
       </ScrollView>
-      {!!onAskOwners && (
-        <>
-          <Text style={h.note}>Владельцы получат даты, число гостей и сумму, без вашего имени и телефона.</Text>
-          <Action secondary title={busy ? 'Отправляем…' : 'Спросить владельцев'} disabled={busy} onPress={onAskOwners} />
-        </>
-      )}
     </>
   );
 }

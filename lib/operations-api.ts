@@ -22,6 +22,7 @@ import {aiBudgetState,saveAIBudget} from './ai-budget';
 import {boundedRequestText} from './request-body';
 import {saveStayReview} from './stay-reviews';
 import {setFavorite} from './favorites';
+import {understandSearch} from './search-understand';
 import {saveStayPhoto,listStayPhotos,readStayPhoto,saveHandover} from './stay-handover';
 import {rulesState,saveRule,type RuleRole} from './decision-rules';
 import {planState,startOwnerPlan,startCleanerPlan,stopPlan,saveCleanerRules,awayToday,planRequired} from './autopilot-plans';
@@ -80,6 +81,7 @@ export async function writeOperations(service:RentalService,role:Role,path:strin
  if(route==='delivery/channel')return setDeliveryChannel(service,role,body,config);
  if(route==='review'){active(role,['guest']);return saveStayReview(service,body);}
  if(route==='stay-photo'){active(role,['guest','owner']);return saveStayPhoto(service,role,body,config);}
+ if(route==='search/understand'){active(role,['guest']);return understandSearch(service,body,config);}
  if(route==='favorite'){active(role,['guest']);return setFavorite(service,body);}
  if(route==='handover'){active(role,['owner']);return saveHandover(service,body);}
  if(route==='finance'){active(role,['owner']);return recordFinance(service,body);}

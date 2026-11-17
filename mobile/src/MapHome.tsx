@@ -25,7 +25,7 @@ import {countdown,mapCities,validPoint,type MapPoint} from './map-math';
 import {MapSheetHead} from './MapSheetHead';
 import {AutopilotThreads,type FeedNeed} from './AutopilotThreads';
 import {AutopilotHandoff} from './AutopilotHandoff';
-import {PAST_TEXT,chipDraft,freshDraft,guestRequestFromText,guestSummary,matchingBody,newDraft,shownReasons,type GuestDraft} from './ai-request';
+import {PAST_TEXT,askFirst,understoodNote,notUnderstoodNote,chipDraft,freshDraft,guestRequestFromText,guestSummary,matchingBody,newDraft,shownReasons,type GuestDraft} from './ai-request';
 import type {HeadAction} from './head-line';
 import {Action,Grip,SheetHeading,SheetRow,Stage,h,handleHeight,topInset} from './SheetParts';
 import {GuestForm} from './GuestForm';
@@ -122,26 +122,45 @@ function GuestPanel({setScanning,accountId,data,mapData,publish,selected,setSele
  });
  // The AI line: free text becomes the same conditions the form builds, then the usual search runs.
  // The text is read by rules, not by a model; what the rules cut or cannot take is said, never guessed.
- const ask=(text:string)=>{
-  const parsed=guestRequestFromText(text,draft,Object.keys(mapCities));
-  setError('');
-  if(!parsed.understood){setHint({text:'Не понял запрос. Назовите день и срок, например: «завтра на сутки на двоих».',ask:text});return;}
+ // said: what the model made of a phrase the rules could not read; it is shown, so the guest sees what is searched.
+ const take=(parsed:ReturnType<typeof guestRequestFromText>,said='')=>{
   // Understood: the conditions line now says it, so the line is free for the next request (as on the site).
   setPreview(null);setAsked('');if(parsed.draft.city!==draft.city){setCity(parsed.draft.city);chosenCity.add(accountId);}setDraft(parsed.draft);
   // A day or an hour that has passed is never moved to another one: the guest is asked for the date.
   if(parsed.past){setHint({text:[PAST_TEXT[parsed.past],parsed.note,'Укажите, когда нужно жильё.'].filter(Boolean).join(' '),error:true});setRefine(true);expand(2);return;}
-  setHint(parsed.note?{text:parsed.note}:null);
+  const note=[said,parsed.note].filter(Boolean).join(' ');
+  setHint(note?{text:note}:null);
   // «Рядом»: where the guest is, if the phone knows it and it is in the searched city; otherwise the guest shows it on the map.
   const fix=getHere().fix;
   if(parsed.nearby&&!parsed.draft.near&&fix&&nearestCity(fix.point)===parsed.draft.city){void find({...parsed.draft,near:nearOf(fix.point)});return;}
   if(parsed.nearby&&!parsed.draft.near){pickThenFind.current=true;setPicking(true);expand(0);return;}
   void find(nearNow(parsed.draft));
  };
+ const ask=(text:string)=>{
+  const cities=Object.keys(mapCities),parsed=guestRequestFromText(text,draft,cities);
+  setError('');
+  if(parsed.understood){take(parsed);return;}
+  // What the rules could not read goes to the model, which says it in the words the rules do read; those words then
+  // pass the same rules. No model on the server, no permission or no answer: the guest is told, never guessed for.
+  if(lock.current)return;
+  lock.current=true;setWorking(true);setHint({text:'ИИ разбирает запрос…'});
+  void (async()=>{
+   let ai:Row|null=null;
+   try{ai=await request('/api/operations/search/understand',{text:text.slice(0,300)},undefined,undefined,'guest');}catch{/* Said below as «не понял». */}
+   lock.current=false;setWorking(false);
+   const again=ai?.status==='ok'?guestRequestFromText(String(ai.phrase),draft,cities):null;
+   if(again?.understood){take(again,understoodNote(String(ai!.phrase),ai!.dropped));return;}
+   setHint({text:notUnderstoodNote(ai?.status,ai?.dropped),ask:text});
+  })();
+ };
  // «Сейчас»: the nearest first, counted from where the guest is when the phone knows it and it is in the searched city.
  const nearNow=(next:GuestDraft):GuestDraft=>{const fix=getHere().fix;return next.now&&!next.near&&fix&&nearestCity(fix.point)===next.city?{...next,near:{...nearOf(fix.point),radius:15000},priority:'closer'}:next;};
  const chip=(action:HeadAction)=>{if(action!=='now'&&action!=='night'&&action!=='daily'&&action!=='hourly'&&action!=='weekend')return;const next=nearNow(chipDraft(action,draft));setAsked('');setHint(null);setError('');setDraft(next);setPreview(null);void find(next);};
  // «Забронировать»: the price in the list is for the searched time. If that time has passed while the list was open, the search runs again first.
- const bookFlat=(property:Row)=>{if(freshDraft(draft).start!==draft.start){setHint({text:'Время начала уже прошло. Обновил варианты на ближайшее время.'});setSelected('');void find(draft);return;}onBook(property,{mode:tariffOf(draft,property),start:draft.start,end:draft.end,guests:draft.guests});};
+ const bookFlat=(property:Row)=>{if(freshDraft(draft).start!==draft.start){setHint({text:'Время начала уже прошло. Обновил варианты на ближайшее время.'});setSelected('');void find(draft);return;}// One button. A home that confirms by itself is booked at once; a home whose owner answers quick requests is asked
+  // first, together with the next best ones, so a refusal or silence already has the next offer coming.
+  if(askFirst(property)){void begin(property.id);return;}
+  onBook(property,{mode:tariffOf(draft,property),start:draft.start,end:draft.end,guests:draft.guests});};
  // What narrows a search beyond the place, the time and the guests. An empty result offers to drop these and look again.
  const narrowed=!!(draft.district||draft.maxPrice||draft.features.length||draft.priority!=='balanced'||draft.near||draft.kinds.length||draft.rooms||draft.now);
  const retry=(next:GuestDraft)=>{setHint(null);setError('');setDraft(next);setPreview(null);void find(next);};
@@ -154,13 +173,13 @@ function GuestPanel({setScanning,accountId,data,mapData,publish,selected,setSele
  const lowScreen=useWindowDimensions().height<700;
  useEffect(()=>{if(!selected||!(preview||requestId))return;const need=preview&&!requestId&&lowScreen?2:1;if(snap<need)expand(need);},[selected]);
  useEffect(()=>{if(!picking)pickThenFind.current=false;},[picking]);
- const begin=()=>guarded(async()=>{
+ const begin=(prefer?:string)=>guarded(async()=>{
   requestKey.current||=uid();
   // The beams start where the guest is, if the phone told us (here.ts): no new prompt here.
   askedFrom.current=null;
   const fix=getHere().fix;
   if(fix&&fix.accuracy<=1500)askedFrom.current=fix.point;
-  const result=await request('/api/operations/matching/begin',{...matchingBody(freshDraft(draft)),requestKey:requestKey.current,consent:true},undefined,undefined,'guest');
+  const result=await request('/api/operations/matching/begin',{...matchingBody(freshDraft(draft)),...(prefer?{prefer}:{}),requestKey:requestKey.current,consent:true},undefined,undefined,'guest');
   liveRequests.set(accountId,result.id);setSkew(result.serverTime-Date.now()/1000);setLive(result);setRequestId(result.id);setIndex(0);setAccepted(false);expand(1);
  });
  const reset=()=>{askedFrom.current=null;liveRequests.delete(accountId);requestKey.current='';setRequestId('');setLive(null);setPreview(null);setAccepted(false);setIndex(0);};
@@ -268,6 +287,18 @@ function GuestPanel({setScanning,accountId,data,mapData,publish,selected,setSele
   <Action title="Искать рядом с этой точкой" onPress={()=>{const c=mapCenter.current,near=c?{longitude:Math.round(c[0]*100)/100,latitude:Math.round(c[1]*100)/100,radius:5000}:null,search=pickThenFind.current&&!!near;pickThenFind.current=false;if(near)change({...draft,near});setPicking(false);if(search)void find({...draft,near});else expand(1);}}/>
   <Action secondary title="Отмена" onPress={()=>{const fromLine=pickThenFind.current;pickThenFind.current=false;setPicking(false);expand(fromLine?0:1);}}/></View>;
 
+ // The home «Забронировать» was pressed on is kept in the request itself, so it survives a change of role or a restart.
+ const preferId=typeof live?.filters?.prefer==='string'?live.filters.prefer:'';
+ // Nobody answered in time: an ordinary request to that owner, for the stay the request was made for, priced again
+ // by the same search (the night price too). Not free any more: its card opens, and the guest picks the dates.
+ const direct=()=>guarded(async()=>{
+  const filters=live!.filters,id=preferId,local=(iso:string)=>new Date(Date.parse(iso)+5*3600000).toISOString().slice(0,16);
+  let found:Row|undefined;
+  try{const {prefer,...conditions}=filters;found=((await request('/api/public/matching?q='+encodeURIComponent(JSON.stringify(conditions))))?.properties||[]).find((p:Row)=>p.id===id);}catch(e){if(isOffline(e))throw e;}
+  reset();
+  if(found)onBook(found,{mode:filters.mode==='night'?(found.estimate?.billingMode==='nightly'?'nightly':'daily'):filters.mode,start:local(filters.start),end:local(filters.end),guests:Number(filters.guests)});
+  else onIntent('property:'+id);
+ });
  const renderLive=()=>{
   const status=live?.status||'searching',booked=status==='booked',step=booked?3:status==='ready'||status==='booking'?2:1;
   const booking=booked?(data.bookings||[]).find((b:Row)=>b.id===live?.bookingId):null;
@@ -306,15 +337,15 @@ function GuestPanel({setScanning,accountId,data,mapData,publish,selected,setSele
    </>}
    {live&&['empty','expired','cancelled'].includes(status)&&<>
     <Text accessibilityRole="header" style={h.cardTitle}>{status==='empty'?'Сейчас никто не подтвердил':status==='expired'?'Время подбора вышло':'Подбор отменён'}</Text>
-    <Text style={h.note}>{status==='empty'?'Подходящие владельцы не ответили или отказали. Попробуйте изменить время, бюджет или район.':'Условия сохранены. Можно запустить подбор заново.'}</Text>
-    <Action title="Изменить условия" onPress={reset}/>
+    <Text style={h.note}>{status==='empty'?''+(preferId?'Владельцы не ответили за отведённое время. Можно отправить обычную заявку: владелец ответит, когда увидит её.':'Подходящие владельцы не ответили или отказали. Попробуйте изменить время, бюджет или район.')+'':'Условия сохранены. Можно запустить подбор заново.'}</Text>
+    {!!preferId&&<Action title="Отправить заявку владельцу" disabled={working} onPress={()=>void direct()}/>}
+    <Action secondary={!!preferId} title="Изменить условия" onPress={reset}/>
    </>}
    {!!error&&<Text accessibilityRole="alert" style={h.error}>{error}</Text>}
    {active&&<Action secondary danger title="Отменить подбор" disabled={working||status==='booking'} onPress={cancel}/>}
   </View>;
  };
 
- const quick=preview?preview.properties.filter((p:Row)=>p.quickRequest).length:0;
  // Under the line the collapsed sheet shows one thing: a message, the flat tapped on the map, or the "Сейчас" card.
  const picked=snap===0&&!preview&&selected?(mapData?.properties||[]).find((p:Row)=>p.id===selected):null;
  // The guest's own stay tapped on the map, or the nearest one that can be reached now.
@@ -335,7 +366,7 @@ function GuestPanel({setScanning,accountId,data,mapData,publish,selected,setSele
  </MapSheetHead>;
  // The form and the results live in the opened sheet only; a running request to owners keeps its place in any state.
  const body=requestId?renderLive():snap===0?null:preview&&!refine
-  ?<GuestResults preview={preview} draft={draft} mine={mine} onFavorite={heart} selected={selected} onSelect={setSelected} onFocus={setFocus} onBook={bookFlat} onOpen={property=>onIntent('property:'+property.id,{mode:tariffOf(draft,property),start:draft.start,end:draft.end,guests:draft.guests})} onRefine={toggleRefine} onWiden={narrowed?widen:undefined} onTry={patch=>retry({...draft,...patch})} onAskOwners={quick>0?()=>void begin():undefined} onBookEdge={onReach} busy={working}/>
+  ?<GuestResults preview={preview} draft={draft} mine={mine} onFavorite={heart} selected={selected} onSelect={setSelected} onFocus={setFocus} onBook={bookFlat} onOpen={property=>onIntent('property:'+property.id,{mode:tariffOf(draft,property),start:draft.start,end:draft.end,guests:draft.guests})} onRefine={toggleRefine} onWiden={narrowed?widen:undefined} onTry={patch=>retry({...draft,...patch})} onBookEdge={onReach} busy={working}/>
   :<GuestForm draft={draft} onChange={change} onNearMe={meInCity?()=>change({...draft,near:nearOf(here.fix!.point)}):undefined} onPickPoint={()=>{setPicking(true);expand(0);}} onSubmit={()=>void find()} busy={working}/>;
  return <View style={h.block}>
   <HeadSlot onHeight={onHead}>{picking?pickView:nav.trip?<TripHead nav={nav} onOpen={()=>{const id=nav.trip!.id;nav.close();onOpenProcess('booking',id);}}/>:requestId?null:head}</HeadSlot>

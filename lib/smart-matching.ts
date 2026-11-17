@@ -20,7 +20,9 @@ export function matchingInput(body:Row){
  let near:Row|null=null;
  if(body.near){const {longitude,latitude}=body.near;if(typeof longitude!=='number'||!Number.isFinite(longitude)||Math.abs(longitude)>180||typeof latitude!=='number'||!Number.isFinite(latitude)||Math.abs(latitude)>85)throw new DomainError('Проверьте точку поиска.');near={longitude:Math.round(longitude*100)/100,latitude:Math.round(latitude*100)/100,radius:number(body.near.radius||5000,'Радиус',1000,20000)};}
  if(priority==='closer'&&!near)throw new DomainError('Для приоритета «Ближе» выберите точку на карте или зону рядом с вами.');
- return {city:required(body.city,'Город',80),district:String(body.district||'').trim().slice(0,120),start:new Date(start*1000).toISOString(),end:new Date(end*1000).toISOString(),guests:String(number(body.guests,'Гости',1,50)),mode,maxPrice:String(number(body.maxPrice,'Бюджет за период',100,100000000)),priority,features:[...new Set(features)],near,kinds:[...new Set(kinds as string[])],rooms,now:body.now===true};
+ return {city:required(body.city,'Город',80),district:String(body.district||'').trim().slice(0,120),start:new Date(start*1000).toISOString(),end:new Date(end*1000).toISOString(),guests:String(number(body.guests,'Гости',1,50)),mode,maxPrice:String(number(body.maxPrice,'Бюджет за период',100,100000000)),priority,features:[...new Set(features)],near,kinds:[...new Set(kinds as string[])],rooms,now:body.now===true,
+  // «Забронировать» on a home that needs its owner's answer: that home is asked first, the next best with it.
+  ...(typeof body.prefer==='string'&&/^[\w-]{1,100}$/.test(body.prefer)?{prefer:body.prefer}:{})};
 }
 // The chance a guest books a flat, from what we know before they ask: the price against their budget,
 // the distance to their place, what earlier guests said and how fast the owner answers. Pure parts, so
@@ -126,7 +128,10 @@ async function sendWave(s:RentalService,request:Row,ranked:Row[]){
  const count=await one(s.db,'SELECT COUNT(*) n FROM matching_offers WHERE request_id=?',request.id);return Number(count?.n||0)>existing.length;
 }
 // The guest's favourites and the homes of earlier stays go first: their owners are asked in the first wave.
-async function mineFirst(s:RentalService,result:Row):Promise<Row>{return {...result,properties:favouredFirst(result.properties as {id:string}[],await guestFavorites(s.db,s.userId))};}
+async function mineFirst(s:RentalService,result:Row):Promise<Row>{
+ const mine=favouredFirst(result.properties as {id:string}[],await guestFavorites(s.db,s.userId)),prefer=result.filters?.prefer;
+ return {...result,properties:prefer?[...mine.filter(p=>p.id===prefer),...mine.filter(p=>p.id!==prefer)]:mine};
+}
 export async function beginMatching(s:RentalService,body:Row){
  await s.requireRole('guest');const key=required(body.requestKey,'Ключ запроса',100),existing=await one(s.db,'SELECT id FROM matching_requests WHERE guest_id=? AND request_key=?',s.userId,key);if(existing)return matchingState(s,existing.id);
  if(body.consent!==true)throw new DomainError('Подтвердите отправку условий владельцам.');
