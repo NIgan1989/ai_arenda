@@ -341,6 +341,10 @@ test('pets and every amenity of a home are searched; what is not is named', () =
   assert.match(guestSummary(dog.draft, morning), /с питомцами/);
   assert.deepEqual(matchingBody(dog.draft).features, ['pets']);
   assert.deepEqual(parse('с кондиционером и стиралкой на сутки').draft.features.sort(), ['aircon', 'washer']);
+  // «Без …» takes a wish off; it never asks for it.
+  assert.deepEqual(parse('без собаки', morning, dog.draft).draft.features, []);
+  assert.deepEqual(parse('завтра без животных').draft.features, []);
+  assert.deepEqual(parse('без парковки, но с кондиционером', morning, {...dog.draft, features: ['parking', 'pets']}).draft.features, ['pets', 'aircon']);
   const bath = parse('дом с баней на выходные');
   assert.equal(bath.understood, true);
   assert.deepEqual(bath.draft.kinds, ['house']);

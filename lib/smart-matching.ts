@@ -12,7 +12,7 @@ export function matchingInput(body:Row){
  const mode=body.mode||'daily',priority=body.priority||'balanced';
  if(!['daily','hourly','night'].includes(mode)||!['balanced','cheaper','closer'].includes(priority))throw new DomainError('Проверьте тариф и приоритет.');
  const {start,end}=interval(body.start,body.end),features=Array.isArray(body.features)?body.features:[];
- if(features.length>8||features.some(v=>typeof v!=='string'||(v!=='pets'&&!Object.hasOwn(amenities,v))))throw new DomainError('Проверьте обязательные удобства.');
+ if(features.length>16||features.some(v=>typeof v!=='string'||(v!=='pets'&&!Object.hasOwn(amenities,v))))throw new DomainError('Проверьте обязательные удобства.');
  // The type of home and its rooms: '2' exactly two, '2+' at least two. Both optional, as older apps send neither.
  const kinds=Array.isArray(body.kinds)?body.kinds:[],rooms=body.rooms===undefined||body.rooms===null?'':String(body.rooms);
  if(kinds.length>8||kinds.some((v:unknown)=>typeof v!=='string'||!Object.hasOwn(propertyTypes,v)))throw new DomainError('Проверьте тип жилья.');
@@ -114,7 +114,7 @@ export async function emptyHint(s:RentalService,f:Row):Promise<Row>{
  if(anyPrice.length)return {reason:'budget',cheapest:Math.min(...anyPrice.map(p=>p.estimate.amount)),count:anyPrice.length};
  // The one condition that empties the answer on its own is named («гостиниц здесь нет»), with what is free without it.
  const loose=f.priority==='closer'?'balanced':f.priority,without:[string,Row][]=[['kinds',{kinds:[]}],['rooms',{rooms:''}],['district',{district:''}],['features',{features:[]}],['near',{near:null,priority:loose}]];
- for(const [blocker,patch] of without){const set=blocker==='near'?!!f.near:Array.isArray(f[blocker])?f[blocker].length>0:!!f[blocker];if(!set)continue;const count=rankMatches(open,{...f,now:false,...patch}).length;if(count)return {reason:'filters',blocker,count};}
+ for(const [blocker,patch] of without){const set=blocker==='near'?!!f.near:Array.isArray(f[blocker])?f[blocker].length>0:!!f[blocker];if(!set)continue;const count=rankMatches(open,{...f,...patch}).length;if(count)return {reason:'filters',blocker,count};}
  return {reason:'filters',count:rankMatches(open,{...f,now:false,district:'',features:[],near:null,kinds:[],rooms:'',priority:loose}).length};
 }
 async function expire(s:RentalService){const t=epoch();await s.db.batch([q(s.db,"UPDATE matching_requests SET status='expired' WHERE expires_at<=? AND status IN ('searching','ready')",t),q(s.db,"UPDATE matching_offers SET status='expired' WHERE expires_at<=? AND status IN ('pending','accepted')",t)]);}

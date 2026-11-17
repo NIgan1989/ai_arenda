@@ -160,6 +160,8 @@ test('home type and rooms narrow the match; an empty answer says why and what wo
   assert.deepEqual((await previewMatches(f.guest,{...input(),kinds:['hotel']})).empty,{reason:'filters',blocker:'kinds',count:1});
   assert.deepEqual((await previewMatches(f.guest,{...input(),features:['pets']})).empty,{reason:'filters',blocker:'features',count:1});
   assert.throws(()=>matchingInput({...input(),features:['dragons']}));
+  // Every wish of the form at once is a valid request.
+  assert.equal(matchingInput({...input(),features:['parking','wifi','kitchen','workspace','pets','aircon','washer','tv','balcony','elevator','crib','hairdryer','iron']}).features.length,13);
   assert.deepEqual((await previewMatches(f.guest,{...input(),guests:'5'})).empty,{reason:'guests',maxGuests:2});
   assert.deepEqual((await previewMatches(f.guest,{...input(),maxPrice:'5000'})).empty,{reason:'budget',cheapest:10000,count:1});
   assert.deepEqual((await previewMatches(f.guest,{...input(),city:'Астана'})).empty,{reason:'city'});

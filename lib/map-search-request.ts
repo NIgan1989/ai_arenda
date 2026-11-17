@@ -588,9 +588,13 @@ export function guestSearchRequest(text: string, current: Row, cities: string[],
     filters.priority = 'cheaper';
     stated.wishes = true;
   }
-  const wishes = WISHES.filter(([pattern]) => pattern.test(request)).map(([, id]) => id);
-  if (wishes.length) {
-    filters.features = [...new Set([...(Array.isArray(current.features) ? current.features : []), ...wishes])];
+  // «Без парковки», «без животных»: what follows «без» is taken off the wishes, not asked for.
+  const without = [...request.matchAll(/(?:^|[^а-я])без\s+([а-яa-z -]+?)(?=$|[,.;!?]|\s+(?:с|со|но|а|зато|и\s+со?)\s)/g)].map(match => match[1]).join(' , ');
+  const asked = without ? request.replace(/(?:^|[^а-я])без\s+[а-яa-z -]+?(?=$|[,.;!?]|\s+(?:с|со|но|а|зато|и\s+со?)\s)/g, ' ') : request;
+  const wishes = WISHES.filter(([pattern]) => pattern.test(asked)).map(([, id]) => id);
+  const dropped = without ? WISHES.filter(([pattern]) => pattern.test(without)).map(([, id]) => id) : [];
+  if (wishes.length || dropped.length) {
+    filters.features = [...new Set([...(Array.isArray(current.features) ? current.features : []), ...wishes])].filter(id => !dropped.includes(id) || wishes.includes(id));
     stated.wishes = true;
   }
 
