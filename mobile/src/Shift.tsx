@@ -27,7 +27,7 @@ export function Shift(){
   {!!error&&<Text accessibilityRole="alert" style={h.error}>{error}</Text>}
   {places.map(p=>{const held=busyNow(p.busy,now),inside=(p.stays||[]).some((b:Row)=>b.stage==='here');
    return <View key={p.id} style={h.card}>
-    <View style={h.head}><View style={{flex:1,minWidth:0}}><Text numberOfLines={1} style={h.title}>{p.title}</Text><Text numberOfLines={1} style={h.meta}>{p.place}</Text></View>
+    <View style={h.head}><View style={{flex:1,minWidth:0}}><Text numberOfLines={1} style={h.title}>{p.title}</Text><Text numberOfLines={1} style={h.meta}>{p.venue&&p.venue!==p.title?p.venue:p.place}</Text></View>
      <Text style={[h.tag,inside||held||p.readiness!=='ready'?h.tagBusy:h.tagFree]}>{inside?'Гости на месте':held?'Занято до '+hhmm(Number(held.end)):p.readiness==='ready'?'Свободно':'Наводим порядок'}</Text></View>
     {!(p.stays||[]).length&&<Text style={h.none}>Броней через приложение на сегодня нет.</Text>}
     {(p.stays||[]).map((b:Row)=><View key={b.id} style={[h.stay,b.stage==='here'&&h.stayOn]}>

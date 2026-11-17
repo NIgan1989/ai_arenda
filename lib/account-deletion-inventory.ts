@@ -20,6 +20,8 @@ export const accountDeletionColumns:Record<string,string>={
  "stay_photos":"id,booking_id,user_id,phase,data,object_key,width,height,bytes,created_at",
  "guest_favorites":"guest_id,property_id,created_at",
  "property_staff":"property_id,staff_id,owner_id,created_at",
+ "venues":"id,owner_id,title,created_at",
+ "venue_halls":"property_id,venue_id,created_at",
  "platform_commissions":"booking_id,owner_id,property_id,booking_amount,rate_bp,amount,mode,settings_version,created_at,managed",
  "owner_balance_entries":"id,owner_id,kind,amount,note,actor_id,request_key,created_at",
  "matching_preferences":"property_id,owner_id,enabled,updated_at",
@@ -125,6 +127,7 @@ export const accountDeletionFenceSql:Record<string,string>={
  "account_erased_cleaning_commissions_update": "CREATE TRIGGER account_erased_cleaning_commissions_update BEFORE UPDATE ON cleaning_commissions WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.owner_id OR user_id=NEW.cleaner_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END",
 
  "account_erased_stay_handovers_insert": "CREATE TRIGGER account_erased_stay_handovers_insert BEFORE INSERT ON stay_handovers WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.guest_id OR user_id=NEW.owner_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END",
+ "account_erased_venues_insert": "CREATE TRIGGER account_erased_venues_insert BEFORE INSERT ON venues WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.owner_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END",
  "account_erased_property_staff_insert": "CREATE TRIGGER account_erased_property_staff_insert BEFORE INSERT ON property_staff WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.staff_id OR user_id=NEW.owner_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END",
  "account_erased_guest_favorites_insert": "CREATE TRIGGER account_erased_guest_favorites_insert BEFORE INSERT ON guest_favorites WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.guest_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END",
  "account_erased_stay_photos_insert": "CREATE TRIGGER account_erased_stay_photos_insert BEFORE INSERT ON stay_photos WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.user_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END",

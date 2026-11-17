@@ -23,6 +23,7 @@ import {boundedRequestText} from './request-body';
 import {saveStayReview} from './stay-reviews';
 import {setFavorite} from './favorites';
 import {staffState,assignStaff,removeStaff,markBusy,freeBusy,staffToday,staffMark} from './staff';
+import {addHall,renameVenue,venueOf} from './venue';
 import {understandSearch} from './search-understand';
 import {saveStayPhoto,listStayPhotos,readStayPhoto,saveHandover} from './stay-handover';
 import {rulesState,saveRule,type RuleRole} from './decision-rules';
@@ -93,6 +94,10 @@ export async function writeOperations(service:RentalService,role:Role,path:strin
  if(route==='staff/mark')return staffMark(service,body);
  if(route==='staff/busy')return markBusy(service,body);
  if(route==='staff/free')return freeBusy(service,body);
+ // «Заведение с залами» (lib/venue.ts).
+ if(route==='venue/state'){active(role,['owner']);const id=required(body.propertyId,'Объект',100);if(!await service.one('SELECT id FROM properties WHERE id=? AND owner_id=?',id,service.userId))throw new DomainError('Объект недоступен.',404);return {venue:await venueOf(service.db,id)};}
+ if(route==='venue/hall'){active(role,['owner']);return addHall(service,body);}
+ if(route==='venue/rename'){active(role,['owner']);return renameVenue(service,body);}
  if(route==='handover'){active(role,['owner']);return saveHandover(service,body);}
  if(route==='finance'){active(role,['owner']);return recordFinance(service,body);}
  if(route==='payment-intent'){active(role,['guest']);return createPaymentIntent(service,body,config);}

@@ -50,7 +50,7 @@ function PropertyCard({property:p,bookings,busy,open,onToggle,onEdit,onSettings,
    <View style={o.thumb}><Photo id={p.photos?.[0]} alt={p.title} fill/></View>
    <View style={o.grow}>
     <Text numberOfLines={1} style={o.title}>{p.title}</Text>
-    <Text numberOfLines={1} style={o.meta}>{kind} · {bath&&policy.hourly_price?money(policy.hourly_price)+' / час':money(p.price)+' / сутки'}</Text>
+    <Text numberOfLines={1} style={o.meta}>{p.venue&&p.venue.title!==p.title?p.venue.title:kind} · {bath&&policy.hourly_price?money(policy.hourly_price)+' / час':money(p.price)+' / сутки'}</Text>
     <View style={o.tags}><Text style={[o.status,{backgroundColor:bg,color:ink}]}>{status.label}</Text>{!!p.address_check&&<Text style={[o.status,{backgroundColor:C.warningSoft,color:C.warning}]}>Адрес на проверке</Text>}{!!held&&<Text style={[o.status,{backgroundColor:C.warningSoft,color:C.warning}]}>Занято до {hhmm(Number(held.end))}</Text>}{!!p.demo_owner&&<Text style={[o.status,{backgroundColor:C.surfaceAlt,color:C.muted}]}>Учебный</Text>}</View>
    </View>
    <Text style={[o.chevron,open&&o.chevronOpen]}>›</Text>

@@ -164,9 +164,13 @@ export function GuestResults({ preview, draft, mine, onFavorite, selected, onSel
   };
   // «Сейчас»: the time on the way comes first, it is what the guest decides by.
   const mark = (flat: Row) => (mine ? markLabel(markOf(flat.id, mine)) : '');
+  // «Заведение»: a hall says which venue it belongs to, when the venue has more than one hall and another name.
+  const venueName = (flat: Row) => (flat.venue && Number(flat.venue.halls) > 1 && flat.venue.title !== flat.title ? String(flat.venue.title) : '');
+  // The other free halls of the chosen one's venue: the guest switches between them without going back to the list.
+  const otherHalls = (flat: Row) => (flat.venue ? flats.filter(x => x.id !== flat.id && x.venue?.id === flat.venue.id) : []);
   const about = (flat: Row) => {
     const reasons = shownReasons(flat.match?.reasons, draft, ['banya', 'sauna'].includes(flat.details?.type));
-    return (draft.now ? [...reasons.slice(0, 1), mark(flat), homeLine(flat), flat.district, ...reasons.slice(1)] : [mark(flat), homeLine(flat), flat.district, ...reasons]).filter(Boolean).join(' · ');
+    return (draft.now ? [...reasons.slice(0, 1), venueName(flat), mark(flat), homeLine(flat), flat.district, ...reasons.slice(1)] : [venueName(flat), mark(flat), homeLine(flat), flat.district, ...reasons]).filter(Boolean).join(' · ');
   };
 
   if (!flats.length) {
@@ -213,6 +217,19 @@ export function GuestResults({ preview, draft, mine, onFavorite, selected, onSel
             {!!chosen.estimate.deal && <Text style={r.deal}>Цена выгодная</Text>}
           </View>
         </View>
+        {otherHalls(chosen).length > 0 && (
+          <View style={r.halls}>
+            <Text style={r.hallsTitle}>Ещё свободные залы{chosen.venue?.title ? ' · ' + chosen.venue.title : ''}</Text>
+            <View style={r.hallsRow}>
+              {otherHalls(chosen).map(x => (
+                <Pressable key={x.id} accessibilityRole="button" accessibilityLabel={'Зал: ' + x.title + ', до ' + x.capacity + ' гостей, ' + money(x.estimate.amount)} disabled={busy} onPress={() => { onFocus?.(x.id); onSelect(x.id); }} style={({ pressed }) => [r.hall, pressed && h.dim]}>
+                  <Text numberOfLines={1} style={r.hallName}>{x.title}</Text>
+                  <Text numberOfLines={1} style={r.hallMeta}>до {x.capacity} · {money(x.estimate.amount)}</Text>
+                </Pressable>
+              ))}
+            </View>
+          </View>
+        )}
         {!!chosen.host && <View style={{ marginBottom: 12 }}><ReliabilityBadge value={chosen.host} title="Владелец" /></View>}
         <View onLayout={e => setButtonBottom(Math.round(e.nativeEvent.layout.y + e.nativeEvent.layout.height))}>
           <Action title="Забронировать" disabled={busy} onPress={() => onBook(chosen)} />
@@ -295,6 +312,12 @@ export function GuestResults({ preview, draft, mine, onFavorite, selected, onSel
 }
 
 const r = StyleSheet.create({
+  halls: { gap: 8, marginBottom: 12 },
+  hallsTitle: { ...type.caption, color: C.muted, fontWeight: '600' },
+  hallsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  hall: { minHeight: T.control.touch, justifyContent: 'center', paddingHorizontal: 12, paddingVertical: 6, borderRadius: T.radius.md, borderWidth: 1, borderColor: C.lineStrong, backgroundColor: C.surface, maxWidth: '100%' },
+  hallName: { ...type.label, color: C.ink, fontWeight: '600' },
+  hallMeta: { ...type.caption, color: C.muted },
   carousel: { marginHorizontal: -16, marginTop: 8, marginBottom: 12 },
   carouselContent: { paddingHorizontal: 16, gap: GAP },
   card: { borderRadius: T.radius.lg, borderWidth: 1, borderColor: C.line, backgroundColor: C.surface, overflow: 'hidden' },

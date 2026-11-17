@@ -34,6 +34,7 @@ import {offerPriceAdvice,ownerPriceSuggestions,decidePriceSuggestion} from './pr
 import {guestStayOffers,decideStayOffer} from './stay-offers';
 import {guestFavorites} from './favorites';
 import {staffPlaces} from './staff';
+import {venuesFor} from './venue';
 import {ownerForecasts,decideForecast} from './load-forecast';
 import {ownerListingTips,decideListingTip} from './listing-quality';
 import {ownerCleaningTips,decideCleaningTip} from './cleaning-price';
@@ -47,7 +48,7 @@ const now = () => Math.floor(Date.now() / 1000);
 const id = () => crypto.randomUUID();
 const clockLabel=(at:number)=>new Intl.DateTimeFormat('ru-RU',{hour:'2-digit',minute:'2-digit',timeZone:'Asia/Almaty'}).format(new Date(at*1000));
 const HISTORY_TABLES=['bookings','cleaning_jobs','finance_entries','platform_commissions','access_receipts','administrator_issues','administrator_tasks','matching_offers','review_property_bindings'];
-const SETTINGS_TABLES=['property_details','property_locations','property_operations','property_policies','operation_rules','matching_preferences','property_access','calendar_exports','property_import_links','guest_favorites','property_staff'];
+const SETTINGS_TABLES=['property_details','property_locations','property_operations','property_policies','operation_rules','matching_preferences','property_access','calendar_exports','property_import_links','guest_favorites','property_staff','venue_halls'];
 // How far a stay may move its cleaning while the assigned cleaner keeps it: a late checkout or a few extra hours, not another day.
 const KEEP_SHIFT=3*3600;
 export class RentalService {
@@ -196,7 +197,9 @@ export class RentalService {
     const access=owner?await this.all('SELECT property_id,version FROM property_access WHERE property_id IN (SELECT value FROM json_each(?))',JSON.stringify(items.slice(0,500).map(p=>p.id))):[];
     // A shown flat waiting for the check of a new address: the owner sees why new guests do not find it yet.
     const unchecked=owner?await this.all("SELECT a.id FROM pilot_property_admissions a WHERE a.owner_reviewed=0 AND COALESCE((SELECT require_owner_review FROM pilot_policy WHERE id='global'),0)=1 AND a.id IN (SELECT value FROM json_each(?))",JSON.stringify(items.slice(0,500).map(p=>p.id))):[];
-    return items.map(p=>{const d=details.find(d=>d.property_id===p.id),op=operations.find(o=>o.property_id===p.id);return {...p,...(owner?{address_check:Number(p.published)===1&&!p.demo_owner&&unchecked.some(u=>u.id===p.id),mapped:pins.some(l=>l.property_id===p.id&&l.address_fingerprint===[p.city,p.district,p.address].join('|')),access_version:access.find(a=>a.property_id===p.id)?.version||0}:{host:hostOf(p.id)||null}),details:d?JSON.parse(d.details):{},photos:d?JSON.parse(d.photos):[],listing_version:d?.version||0,rating:ratings.get(p.id)||null,display_status:propertyStatus(p,op,busy.some(b=>b.property_id===p.id)),...(owner?{}:{published:undefined})};});
+    // «Заведение»: the halls of one place carry its name, for the guest and for the owner (lib/venue.ts).
+    const venues=await venuesFor(this.db);
+    return items.map(p=>{const d=details.find(d=>d.property_id===p.id),op=operations.find(o=>o.property_id===p.id);return {...p,...(venues.has(p.id)?{venue:venues.get(p.id)}:{}),...(owner?{address_check:Number(p.published)===1&&!p.demo_owner&&unchecked.some(u=>u.id===p.id),mapped:pins.some(l=>l.property_id===p.id&&l.address_fingerprint===[p.city,p.district,p.address].join('|')),access_version:access.find(a=>a.property_id===p.id)?.version||0}:{host:hostOf(p.id)||null}),details:d?JSON.parse(d.details):{},photos:d?JSON.parse(d.photos):[],listing_version:d?.version||0,rating:ratings.get(p.id)||null,display_status:propertyStatus(p,op,busy.some(b=>b.property_id===p.id)),...(owner?{}:{published:undefined})};});
   }
   async workerCard(userId:string){
     const p=await this.one('SELECT p.name,p.city,p.districts,p.experience,p.availability,d.avatar_id,d.work_status FROM profiles p LEFT JOIN profile_details d ON d.user_id=p.id WHERE p.id=?',userId);
