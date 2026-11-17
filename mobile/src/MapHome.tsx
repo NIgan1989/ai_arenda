@@ -98,7 +98,8 @@ function GuestPanel({setScanning,setQuiet,accountId,data,mapData,publish,selecte
  const lock=useRef(false),requestKey=useRef(''),pickThenFind=useRef(false),bookedFlat=useRef<Row|null>(null),askedFrom=useRef<MapPoint|null>(null);
  const active=!!requestId&&(!live||['searching','ready','booking'].includes(live.status)),now=useNow(active)+skew;
  // «Избранное»: the hearts and the homes of earlier stays; they come first in what the search finds.
- const {mine,toggle}=useFavorites(data,onChanged),heart=(id:string)=>void toggle(id).then(text=>{if(text)setError(text);});
+ // Without an account a heart asks to sign in (App.tsx), instead of failing on the server.
+ const {mine,toggle}=useFavorites(data,onChanged),heart=(id:string)=>{if(!accountId){onIntent('favorite:'+id);return;}void toggle(id).then(text=>{if(text)setError(text);});};
  // Any change of the conditions makes the shown results stale.
  const change=(next:GuestDraft,own=true)=>{if(next.city!==draft.city){setCity(next.city);if(own)chosenCity.add(accountId);}setDraft(next);setPreview(null);setError('');setHint(null);};
  // A lost connection is already said by the line at the top of the screen; the sheet does not repeat it.
