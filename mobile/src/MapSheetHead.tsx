@@ -48,10 +48,12 @@ const unbroken = (line: string) => line.replace(/ ·/g, '\u00a0·').replace(/(\d
 // The default state of the bottom sheet: one AI line, a row of chips and the "Сейчас" card when there is one.
 export function MapSheetHead({ role, text, onText, onSend, onChip, chips = true, busy = false, summary, onRefine, refining = false, now, onNow, counts, category = 'stay', kind = '', choice, onKind, onPicker, children }: Props) {
   const line = headLine(role, Date.now(), category);
-  // The picker takes the place of the chips: every category with its types at once, one tap chooses and closes.
+  // The picker takes the place of the chips: a list of the categories, one of them opened; a tap on a type chooses and closes.
   const [picking, setPicking] = useState(false);
   const picker = !!onKind && chips && picking;
-  const show = (open: boolean) => { setPicking(open); onPicker?.(open); };
+  // The category whose types are shown: the chosen one when the list opens, another by a tap on its row.
+  const [opened, setOpened] = useState<Category | null>(category);
+  const show = (open: boolean) => { if (open) setOpened(category); setPicking(open); onPicker?.(open); };
   const pick = (to: Category, id: string | null) => { show(false); onKind?.(to, id); };
   return (
     <View style={s.head}>
@@ -62,26 +64,31 @@ export function MapSheetHead({ role, text, onText, onSend, onChip, chips = true,
           <Text accessibilityRole="header" style={s.pickerTitle}>Что ищете</Text>
           <Pressable accessibilityRole="button" accessibilityLabel="Закрыть выбор категории" onPress={() => show(false)} hitSlop={8} style={s.pickerClose}><Text style={s.pickerCloseText}>✕</Text></Pressable>
         </View>
-        {CATEGORIES.map((c, at) => (
-          <View key={c.id} style={[s.group, at > 0 && s.groupNext]} accessibilityRole="radiogroup" accessibilityLabel={c.title + ': ' + c.hint}>
-            <View style={s.groupHead}>
-              <KindIcon id={c.id} size={16} color={C.muted} />
-              <Text style={s.groupTitle}>{c.title}</Text>
-              <Text numberOfLines={1} style={s.groupHint}>{c.hint}</Text>
+        {/* A list that opens: one row per category, only the opened one shows its types. */}
+        {CATEGORIES.map((c, at) => {
+          const open = c.id === opened, chosen = c.id === category;
+          return (
+            <View key={c.id} style={[s.group, at > 0 && s.groupNext]}>
+              <Pressable accessibilityRole="button" accessibilityLabel={c.title + ': ' + c.hint} accessibilityState={{ expanded: open }} disabled={busy} onPress={() => setOpened(open ? null : c.id)} style={({ pressed }) => [s.groupHead, pressed && s.groupPressed]}>
+                <KindIcon id={c.id} size={18} color={chosen ? C.accent : C.inkSoft} />
+                <Text style={[s.groupTitle, chosen && s.groupTitleOn]}>{c.title}</Text>
+                <Text numberOfLines={1} style={s.groupHint}>{chosen && !open && choice && choice.title !== c.title ? choice.title : c.hint}</Text>
+                <Image source={chevron} style={[s.groupChevron, open && s.groupChevronOpen]} accessibilityIgnoresInvertColors />
+              </Pressable>
+              {open && <View style={s.kinds} accessibilityRole="radiogroup" accessibilityLabel={c.title}>
+                {[['', c.any] as [string, string], ...categoryKinds(c.id)].map(([id, title]) => {
+                  const on = chosen && id === kind;
+                  return (
+                    <Pressable key={id || 'any'} accessibilityRole="radio" accessibilityLabel={title} accessibilityState={{ checked: on }} disabled={busy} onPress={() => pick(c.id, id || null)} style={({ pressed }) => [s.kind, on && s.kindOn, pressed && !on && s.kindPressed]}>
+                      <KindIcon id={id || 'any'} size={18} color={on ? C.onAccent : C.inkSoft} />
+                      <Text style={[s.kindText, on && s.kindTextOn]}>{title}</Text>
+                    </Pressable>
+                  );
+                })}
+              </View>}
             </View>
-            <View style={s.kinds}>
-              {[['', c.any] as [string, string], ...categoryKinds(c.id)].map(([id, title]) => {
-                const on = c.id === category && id === kind;
-                return (
-                  <Pressable key={id || 'any'} accessibilityRole="radio" accessibilityLabel={title} accessibilityState={{ checked: on }} disabled={busy} onPress={() => pick(c.id, id || null)} style={({ pressed }) => [s.kind, on && s.kindOn, pressed && !on && s.kindPressed]}>
-                    <KindIcon id={id || 'any'} size={18} color={on ? C.onAccent : C.inkSoft} />
-                    <Text style={[s.kindText, on && s.kindTextOn]}>{title}</Text>
-                  </Pressable>
-                );
-              })}
-            </View>
-          </View>
-        ))}
+          );
+        })}
       </View>}
       {chips && !picker && <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="handled" style={s.chipsScroll} contentContainerStyle={s.chips}>
         {!!onKind && !!choice && (
@@ -132,17 +139,21 @@ const s = StyleSheet.create({
   catText: { ...type.label, color: C.accentPressed, fontWeight: '700' },
   catChevron: { width: 14, height: 14, tintColor: C.accentPressed, transform: [{ rotate: '90deg' }] },
   // The picker: a title, then each category as a named group of outlined chips, a hairline between the groups.
-  picker: { gap: 12 },
+  picker: { gap: 4 },
   pickerHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   pickerTitle: { ...type.label, color: C.ink, fontWeight: '700' },
   pickerClose: { width: 32, height: 32, borderRadius: T.radius.full, backgroundColor: C.surfaceAlt, alignItems: 'center', justifyContent: 'center' },
   pickerCloseText: { ...type.caption, color: C.inkSoft },
-  group: { gap: 8 },
-  groupNext: { paddingTop: 12, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: C.lineStrong },
-  groupHead: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  groupTitle: { ...type.caption, color: C.ink, fontWeight: '700' },
+  group: {},
+  groupNext: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: C.line },
+  groupHead: { minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: 8 },
+  groupPressed: { opacity: 0.6 },
+  groupTitle: { ...type.label, color: C.ink, fontWeight: '600' },
+  groupTitleOn: { color: C.accent },
+  groupChevron: { width: 14, height: 14, tintColor: C.muted, transform: [{ rotate: '90deg' }] },
+  groupChevronOpen: { transform: [{ rotate: '-90deg' }] },
   groupHint: { flex: 1, minWidth: 0, ...type.caption, color: C.muted },
-  kinds: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  kinds: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingBottom: 12 },
   kind: { minHeight: 40, paddingLeft: 10, paddingRight: 14, borderRadius: T.radius.full, borderWidth: 1, borderColor: C.line, backgroundColor: C.surface, flexDirection: 'row', alignItems: 'center', gap: 6 },
   kindOn: { borderColor: C.accent, backgroundColor: C.accent },
   kindPressed: { backgroundColor: C.surfaceAlt },
