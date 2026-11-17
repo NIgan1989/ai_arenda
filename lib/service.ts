@@ -1,3 +1,4 @@
+import {wordsOf,venueOr,TYPE_SQL} from './stay-words';
 import {unreadyNote} from './unready';
 import {reliabilityFor} from './reliability';
 import {CHECKIN_LEAD_SECONDS,checkinOpensLabel} from './checkin-window';
@@ -609,7 +610,7 @@ export class RentalService {
     return {id:bookingId,amount,message:'Заявка отправлена. Интервал зарезервирован на '+minutesLabel(answer)+' до решения владельца.'};
   }
   async bookingAction(bookingId:string,body:Row) {
-    const b=await this.one('SELECT b.*,p.owner_id,p.cleaning_minutes,p.title FROM bookings b JOIN properties p ON p.id=b.property_id WHERE b.id=? AND (b.guest_id=? OR p.owner_id=?)',bookingId,this.userId,this.userId);
+    const b=await this.one('SELECT b.*,p.owner_id,p.cleaning_minutes,p.title,'+TYPE_SQL+' FROM bookings b JOIN properties p ON p.id=b.property_id WHERE b.id=? AND (b.guest_id=? OR p.owner_id=?)',bookingId,this.userId,this.userId);
     if(!b) throw new DomainError('Бронь не найдена.',404);
     if(this.execution){
       const mandate=await this.one('SELECT * FROM property_policies WHERE property_id=?',b.property_id);
@@ -661,9 +662,9 @@ export class RentalService {
       return recordFinance(this,{kind:'deposit',bookingId,amount:remaining,confirmed:true,note:'Поступление депозита проверено владельцем',requestKey:'deposit:'+bookingId+':'+terms.version});
     }
     if(body.action==='report_checkout'){
-      if(b.guest_id!==this.userId)throw new DomainError('Сообщить о выезде может гость.',403);
-      if(b.status!=='confirmed'||b.start>now())throw new DomainError('Проживание ещё не началось или уже завершено.',409);
-      await this.db.batch([this.query('UPDATE booking_terms SET checkout_reported_at=?,version=version+1 WHERE booking_id=? AND checkout_reported_at IS NULL',now(),bookingId),this.notify(b.owner_id,'Гость сообщил о выезде. Проверьте освобождение жилья.','checkout-reported:'+bookingId,'owner'),this.audit(bookingId,'booking.checkout_reported')]);return {message:'Спасибо, выезд отмечен. Владелец подтвердит его; если он не ответит за полчаса, ИИ-администратор подтвердит сам.'};
+      if(b.guest_id!==this.userId)throw new DomainError(venueOr(b,'Сообщить о выезде может гость.','Сообщить '+wordsOf(b).ofLeave+' может гость.'),403);
+      if(b.status!=='confirmed'||b.start>now())throw new DomainError(venueOr(b,'Проживание ещё не началось или уже завершено.','Бронь ещё не началась или уже завершена.'),409);
+      await this.db.batch([this.query('UPDATE booking_terms SET checkout_reported_at=?,version=version+1 WHERE booking_id=? AND checkout_reported_at IS NULL',now(),bookingId),this.notify(b.owner_id,venueOr(b,'Гость сообщил о выезде. Проверьте освобождение жилья.','Гость сообщил '+wordsOf(b).ofLeave+' в «'+b.title+'». Проверьте и подтвердите.'),'checkout-reported:'+bookingId,'owner'),this.audit(bookingId,'booking.checkout_reported')]);return {message:venueOr(b,'Спасибо, выезд отмечен. Владелец подтвердит его; если он не ответит за полчаса, ИИ-администратор подтвердит сам.','Спасибо, отметили. Владелец подтвердит; если он не ответит за полчаса, ИИ-администратор подтвердит сам.')};
     }
     if(body.action==='report_late'){
       if(b.guest_id!==this.userId)throw new DomainError('Сообщить о задержке может гость.',403);
@@ -681,37 +682,37 @@ export class RentalService {
       return {message:'Владелец предупреждён: вы приедете к '+clockLabel(until)+'. Бронь сохраняется.'};
     }
     if(body.action==='report_checkin'){
-      if(b.guest_id!==this.userId)throw new DomainError('Сообщить о заселении может гость.',403);
-      if(b.status!=='confirmed'||b.end<=now()||terms?.actual_checkin)throw new DomainError('Сейчас нельзя сообщить о заселении по этой брони.',409);
-      if(b.start-CHECKIN_LEAD_SECONDS>now())throw new DomainError('Сообщить о заселении можно за 15 минут до заезда: '+checkinOpensLabel(b.start,now())+'.',409);
-      await this.db.batch([this.query('UPDATE booking_terms SET checkin_reported_at=?,version=version+1 WHERE booking_id=? AND checkin_reported_at IS NULL AND actual_checkin IS NULL',now(),bookingId),this.notify(b.owner_id,'Гость сообщил, что заселился в «'+b.title+'».','checkin-reported:'+bookingId,'owner'),this.audit(bookingId,'booking.checkin_reported')]);
+      if(b.guest_id!==this.userId)throw new DomainError(venueOr(b,'Сообщить о заселении может гость.','Сообщить '+wordsOf(b).ofArrive+' может гость.'),403);
+      if(b.status!=='confirmed'||b.end<=now()||terms?.actual_checkin)throw new DomainError(venueOr(b,'Сейчас нельзя сообщить о заселении по этой брони.','Сейчас нельзя сообщить '+wordsOf(b).ofArrive+' по этой брони.'),409);
+      if(b.start-CHECKIN_LEAD_SECONDS>now())throw new DomainError(venueOr(b,'Сообщить о заселении можно за 15 минут до заезда: ','Сообщить '+wordsOf(b).ofArrive+' можно за 15 минут до '+wordsOf(b).arriveGen+': ')+checkinOpensLabel(b.start,now())+'.',409);
+      await this.db.batch([this.query('UPDATE booking_terms SET checkin_reported_at=?,version=version+1 WHERE booking_id=? AND checkin_reported_at IS NULL AND actual_checkin IS NULL',now(),bookingId),this.notify(b.owner_id,venueOr(b,'Гость сообщил, что заселился в «'+b.title+'».','Гость сообщил '+wordsOf(b).ofArrive+' в «'+b.title+'».'),'checkin-reported:'+bookingId,'owner'),this.audit(bookingId,'booking.checkin_reported')]);
       // The answer says what is really awaited: the guest's payment, or only the owner's word (the AI gives it after ten minutes).
       const unpaid=b.payment_status!=='owner_verified'?'проживание':terms?.deposit_status==='pending'?'депозит':'';
       return {message:unpaid?'Спасибо! Осталось оплатить '+unpaid+' в карточке брони: после оплаты заселение подтвердится.':'Спасибо! Владелец подтвердит заселение. Если он не ответит за 10 минут, ИИ-администратор подтвердит сам.'};
     }
     if(body.action==='checkin'){
-      if(!owner)throw new DomainError('Заселение подтверждает владелец.',403);
+      if(!owner)throw new DomainError(venueOr(b,'Заселение подтверждает владелец.',wordsOf(b).arrive+' подтверждает владелец.'),403);
       if(terms?.actual_checkin&&!terms.actual_checkout&&op?.active_booking_id===bookingId)return {message:'Заселение уже подтверждено.'};
-      if(b.status!=='confirmed'||b.end<=now()||terms?.actual_checkout)throw new DomainError('Сейчас нельзя подтвердить заселение по этой брони.',409);
-      if(b.start-CHECKIN_LEAD_SECONDS>now())throw new DomainError('Подтвердить заселение можно за 15 минут до заезда: '+checkinOpensLabel(b.start,now())+'.',409);
-      if(b.payment_status!=='owner_verified'||terms?.deposit_status==='pending')throw new DomainError('Сначала проверьте оплату проживания и предусмотренный депозит.',409);
+      if(b.status!=='confirmed'||b.end<=now()||terms?.actual_checkout)throw new DomainError(venueOr(b,'Сейчас нельзя подтвердить заселение по этой брони.','Сейчас нельзя подтвердить '+wordsOf(b).arriveAcc+' по этой брони.'),409);
+      if(b.start-CHECKIN_LEAD_SECONDS>now())throw new DomainError(venueOr(b,'Подтвердить заселение можно за 15 минут до заезда: ','Подтвердить '+wordsOf(b).arriveAcc+' можно за 15 минут до '+wordsOf(b).arriveGen+': ')+checkinOpensLabel(b.start,now())+'.',409);
+      if(b.payment_status!=='owner_verified'||terms?.deposit_status==='pending')throw new DomainError(venueOr(b,'Сначала проверьте оплату проживания и предусмотренный депозит.','Сначала проверьте оплату брони и предусмотренный депозит.'),409);
       // Under execution the mandate and the guest's report are checked again inside the write.
       const checkinGate=this.execution?" AND t.checkin_reported_at IS NOT NULL AND EXISTS(SELECT 1 FROM property_policies pp WHERE pp.property_id=b.property_id AND pp.version=? AND pp.auto_confirm=1 AND pp.auto_assign=1 AND (pp.mandate_until=0 OR pp.mandate_until>?))":'';
       const result=await this.db.batch([this.query("UPDATE property_operations SET readiness='occupied',active_booking_id=?,version=version+1,updated_at=? WHERE property_id=? AND readiness='ready' AND active_booking_id IS NULL AND EXISTS(SELECT 1 FROM bookings b JOIN booking_terms t ON t.booking_id=b.id WHERE b.id=? AND b.status='confirmed' AND b.start-"+CHECKIN_LEAD_SECONDS+"<=? AND b.end>? AND b.payment_status='owner_verified' AND t.deposit_status<>'pending' AND t.actual_checkout IS NULL"+checkinGate+")",bookingId,now(),b.property_id,bookingId,now(),now(),...(this.execution?[this.execution.policyVersion,now()]:[])),this.query('UPDATE booking_terms SET actual_checkin=?,version=version+1 WHERE booking_id=? AND actual_checkin IS NULL AND EXISTS(SELECT 1 FROM property_operations WHERE property_id=? AND active_booking_id=?)',now(),bookingId,b.property_id,bookingId),this.audit(bookingId,'booking.checkin_requested')]);
-      if(!result[0].meta.changes)throw new DomainError('Жильё не готово или в нём ещё проживает другой гость.',409);return {message:'Фактическое заселение подтверждено.'};
+      if(!result[0].meta.changes)throw new DomainError(venueOr(b,'Жильё не готово или в нём ещё проживает другой гость.','Объект не готов или в нём ещё другие гости.'),409);return {message:venueOr(b,'Фактическое заселение подтверждено.',wordsOf(b).arriveOk+'.')};
     }
     if(body.action==='dispute_checkout'){
       if(!owner)throw new DomainError('Освобождение жилья проверяет владелец.',403);
       const reason=required(body.reason,'Причина',1000);
       const r=await this.query("UPDATE booking_terms SET checkout_reported_at=NULL,version=version+1 WHERE booking_id=? AND checkout_reported_at IS NOT NULL AND actual_checkout IS NULL AND version=? AND EXISTS(SELECT 1 FROM bookings WHERE id=? AND status='confirmed')",bookingId,body.expectedVersion??terms?.version,bookingId).run();
       if(!r.meta.changes)throw new DomainError('Сообщение уже рассмотрено. Обновите данные.',409);
-      await this.db.batch([this.notify(b.guest_id,'Выезд пока не подтверждён: '+reason,'checkout-disputed:'+bookingId+':'+(terms?.version||0),'guest'),this.audit(bookingId,'booking.checkout_disputed:'+reason)]);
+      await this.db.batch([this.notify(b.guest_id,venueOr(b,'Выезд пока не подтверждён: ',wordsOf(b).leaveNotOk+': ')+reason,'checkout-disputed:'+bookingId+':'+(terms?.version||0),'guest'),this.audit(bookingId,'booking.checkout_disputed:'+reason)]);
       return {message:'Гостю передана причина. Жильё остаётся занятым до подтверждения выезда.'};
     }
     if(body.action==='checkout'){
       if(!owner)throw new DomainError('Освобождение жилья подтверждает владелец.',403);
       if(terms?.actual_checkout)return {message:'Выезд уже подтверждён.'};
-      if(b.status!=='confirmed'||b.start>now()||(op?.active_booking_id&&op.active_booking_id!==bookingId))throw new DomainError('Сейчас нельзя подтвердить выезд по этой брони.',409);
+      if(b.status!=='confirmed'||b.start>now()||(op?.active_booking_id&&op.active_booking_id!==bookingId))throw new DomainError(venueOr(b,'Сейчас нельзя подтвердить выезд по этой брони.','Сейчас нельзя подтвердить '+wordsOf(b).leaveLow+' по этой брони.'),409);
       const t=now(),checkedOut="EXISTS(SELECT 1 FROM booking_terms bt JOIN bookings b ON b.id=bt.booking_id WHERE b.id=? AND b.status='completed' AND bt.actual_checkout IS NULL)";
       const keepCleaner=`booking_id=? AND status='assigned' AND assigned_to IS NOT NULL AND start<? AND start>=? AND NOT EXISTS(SELECT 1 FROM cleaning_jobs o WHERE o.id<>cleaning_jobs.id AND o.assigned_to=cleaning_jobs.assigned_to AND o.status IN ('assigned','in_progress','submitted') AND o.start<?+(cleaning_jobs.end-cleaning_jobs.start) AND o.end>?) AND NOT EXISTS(SELECT 1 FROM bookings nb WHERE nb.property_id=cleaning_jobs.property_id AND nb.id<>? AND (nb.status='confirmed' OR (nb.status='requested' AND nb.expires_at>?)) AND nb.start<?+(cleaning_jobs.end-cleaning_jobs.start) AND nb.occupied_until>?) AND ${checkedOut}`;
       const keepArgs=[bookingId,t-60,t-KEEP_SHIFT,t,t,bookingId,t,t,t,bookingId];
@@ -732,9 +733,9 @@ export class RentalService {
         this.query("UPDATE applications SET status='rejected' WHERE job_id IN(SELECT id FROM cleaning_jobs WHERE booking_id=? AND status IN ('open','assigned') AND start<?) AND EXISTS(SELECT 1 FROM booking_terms bt JOIN bookings b ON b.id=bt.booking_id WHERE b.id=? AND b.status='completed' AND bt.actual_checkout IS NULL)",bookingId,t-60,bookingId),
         this.query("UPDATE cleaning_jobs SET start=?,end=?,assigned_to=NULL,status='open' WHERE booking_id=? AND status IN ('open','assigned') AND start<? AND EXISTS(SELECT 1 FROM booking_terms bt JOIN bookings b ON b.id=bt.booking_id WHERE b.id=? AND b.status='completed' AND bt.actual_checkout IS NULL)",t,t+b.cleaning_minutes*60,bookingId,t-60,bookingId),
         this.query('UPDATE booking_terms SET actual_checkout=? WHERE booking_id=? AND actual_checkout IS NULL AND EXISTS(SELECT 1 FROM bookings WHERE id=? AND status=\'completed\')',t,bookingId,bookingId),this.audit(bookingId,'booking.checkout_confirmed')]);
-      if(!result[0].meta.changes)throw new DomainError('Выезд уже обрабатывается. Обновите данные.',409);await this.notify(b.guest_id,this.execution?'Выезд подтверждён. Спасибо, что выбрали нас.':'Владелец подтвердил освобождение жилья. Проживание завершено.','checkout-confirmed:'+bookingId,'guest').run();
+      if(!result[0].meta.changes)throw new DomainError('Выезд уже обрабатывается. Обновите данные.',409);await this.notify(b.guest_id,this.execution?venueOr(b,'Выезд подтверждён. Спасибо, что выбрали нас.',wordsOf(b).leaveOk+'. Спасибо, что выбрали нас.'):venueOr(b,'Владелец подтвердил освобождение жилья. Проживание завершено.','Владелец подтвердил '+wordsOf(b).leaveLow+'. '+wordsOf(b).done+'.'),'checkout-confirmed:'+bookingId,'guest').run();
       // «Как гость оставил жильё?»: one tap for the owner, the executor's photos come in by themselves (lib/stay-handover.ts).
-      await this.notify(b.owner_id,'Гость выехал из «'+b.title+'». Как он оставил жильё? Отметьте приёмку в карточке брони: «Всё хорошо» или замечания с фото.','handover-ask:'+bookingId,'owner').run();return {message:'Выезд подтверждён. Жильё ожидает уборки и проверки.'};
+      await this.notify(b.owner_id,venueOr(b,'Гость выехал из «'+b.title+'». Как он оставил жильё? Отметьте приёмку в карточке брони: «Всё хорошо» или замечания с фото.',wordsOf(b).guestOut+' из «'+b.title+'». Отметьте приёмку в карточке брони: «Всё хорошо» или замечания с фото.'),'handover-ask:'+bookingId,'owner').run();return {message:venueOr(b,'Выезд подтверждён. Жильё ожидает уборки и проверки.',wordsOf(b).leaveOk+'. Объект ожидает уборки и проверки.')};
     }
     if(body.action==='confirm') {
       await assertPilotAllowed(this,'booking',b.property_id,undefined,true);
