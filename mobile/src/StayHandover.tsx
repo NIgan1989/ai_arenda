@@ -3,6 +3,7 @@ import {View,Text,TextInput,Pressable,Image,StyleSheet} from 'react-native';
 import {request} from './api';
 import {pickImages,jpegData} from './ListingMedia';
 import {s,C} from './styles';
+import {stayWords} from '../../lib/stay-words';
 import {HANDOVER_ISSUES,STAY_PHOTO_LIMIT,handoverIssueText,type Handover} from '../../lib/stay-handover-text';
 
 type Phase='checkin'|'handover';
@@ -45,18 +46,18 @@ export function CheckinPhotos({bookingId,count,venue=false}:{bookingId:string;co
 
 // The owner after checkout: «Всё хорошо» in one tap, or what was wrong with photos.
 // The executor's photos taken before cleaning are counted in by themselves; damage they photographed opens the issues at once.
-export function StayHandover({bookingId,cleanerPhotos,cleanerDamage,checkinPhotos,busy,onSubmit}:{bookingId:string;cleanerPhotos:number;cleanerDamage:number;checkinPhotos:number;busy:boolean;onSubmit:(body:{verdict:'ok'|'issues';issues?:string[];note?:string})=>void}){
+export function StayHandover({bookingId,kind,cleanerPhotos,cleanerDamage,checkinPhotos,busy,onSubmit}:{bookingId:string;kind?:string;cleanerPhotos:number;cleanerDamage:number;checkinPhotos:number;busy:boolean;onSubmit:(body:{verdict:'ok'|'issues';issues?:string[];note?:string})=>void}){
  const [issuesOpen,setIssuesOpen]=useState(cleanerDamage>0),[picked,setPicked]=useState<string[]>(cleanerDamage>0?['damage']:[]),[note,setNote]=useState(''),[photos,setPhotos]=useState(0);
  const flip=(code:string)=>setPicked(list=>list.includes(code)?list.filter(c=>c!==code):[...list,code]);
- const ready=picked.length>0&&(!!note.trim()||photos>0||cleanerPhotos>0);
+ const ready=picked.length>0&&(!!note.trim()||photos>0||cleanerPhotos>0),w=stayWords(kind),venue=w.arrive!=='Заезд';
  return <View style={[s.card,{gap:12}]}>
-  <Text style={s.eventTitle}>Как гость оставил жильё?</Text>
+  <Text style={s.eventTitle}>{venue?(w.stay==='Отдых'?'Как гости оставили баню?':'Как гости оставили зал?'):'Как гость оставил жильё?'}</Text>
   {checkinPhotos>0&&<StayPhotos bookingId={bookingId} phase="checkin" role="owner" readOnly/>}
-  <Text style={s.meta}>{[cleanerPhotos?'Фото исполнителя до уборки: '+cleanerPhotos+', приложатся сами':'',cleanerDamage?'исполнитель снял повреждения':'',checkinPhotos?'гость снял жильё при заселении: '+checkinPhotos:''].filter(Boolean).join(' · ')||'Не отметите за двое суток — проживание засчитается без замечаний.'}</Text>
+  <Text style={s.meta}>{[cleanerPhotos?'Фото исполнителя до уборки: '+cleanerPhotos+', приложатся сами':'',cleanerDamage?'исполнитель снял повреждения':'',checkinPhotos?(venue?'гость снял помещение в начале: ':'гость снял жильё при заселении: ')+checkinPhotos:''].filter(Boolean).join(' · ')||(venue?'Не отметите за двое суток, бронь засчитается без замечаний.':'Не отметите за двое суток — проживание засчитается без замечаний.')}</Text>
   {!issuesOpen&&<View style={{gap:8}}>{button('Всё хорошо',()=>onSubmit({verdict:'ok'}),busy)}{button('Есть замечания',()=>setIssuesOpen(true),busy,true)}</View>}
   {issuesOpen&&<>
    <Text style={s.text}>Что было не так?</Text>
-   <View accessibilityRole="list" style={h.chips}>{Object.keys(HANDOVER_ISSUES).map(code=>{const on=picked.includes(code);return <Pressable key={code} accessibilityRole="checkbox" accessibilityState={{checked:on,disabled:busy}} disabled={busy} onPress={()=>flip(code)} style={[s.chip,h.chip,on&&h.chipOn]}><Text style={[s.chipText,on&&h.chipTextOn]}>{handoverIssueText(code)}</Text></Pressable>;})}</View>
+   <View accessibilityRole="list" style={h.chips}>{Object.keys(HANDOVER_ISSUES).map(code=>{const on=picked.includes(code);return <Pressable key={code} accessibilityRole="checkbox" accessibilityState={{checked:on,disabled:busy}} disabled={busy} onPress={()=>flip(code)} style={[s.chip,h.chip,on&&h.chipOn]}><Text style={[s.chipText,on&&h.chipTextOn]}>{handoverIssueText(code,venue)}</Text></Pressable>;})}</View>
    <TextInput accessibilityLabel="Пояснение для гостя" placeholder="Коротко, что именно (необязательно, если есть фото)" placeholderTextColor={C.muted} value={note} onChangeText={setNote} maxLength={500} multiline style={s.input} editable={!busy}/>
    <StayPhotos bookingId={bookingId} phase="handover" role="owner" disabled={busy} onCount={setPhotos}/>
    <Text style={s.meta}>Гость увидит замечания и фото и сможет ответить через «Есть проблема». Другим владельцам они пока не видны.</Text>
@@ -67,20 +68,20 @@ export function StayHandover({bookingId,cleanerPhotos,cleanerDamage,checkinPhoto
 }
 
 // After the stay both sides see the photos of both moments: how the guest found the home and what the owner noted.
-export function StayEvidence({bookingId,role,checkin,handover}:{bookingId:string;role:'guest'|'owner';checkin:boolean;handover:boolean}){
+export function StayEvidence({bookingId,kind,role,checkin,handover}:{bookingId:string;kind?:string;role:'guest'|'owner';checkin:boolean;handover:boolean}){
  return <View style={{gap:8}}>
-  {checkin&&<><Text style={s.meta}>Гость при заселении</Text><StayPhotos bookingId={bookingId} phase="checkin" role={role} readOnly/></>}
-  {handover&&<><Text style={s.meta}>Владелец после выезда</Text><StayPhotos bookingId={bookingId} phase="handover" role={role} readOnly/></>}
+  {checkin&&<><Text style={s.meta}>{stayWords(kind).arrive==='Заезд'?'Гость при заселении':'Гость в начале'}</Text><StayPhotos bookingId={bookingId} phase="checkin" role={role} readOnly/></>}
+  {handover&&<><Text style={s.meta}>Владелец {stayWords(kind).afterLeave}</Text><StayPhotos bookingId={bookingId} phase="handover" role={role} readOnly/></>}
  </View>;
 }
 
 // One line about a finished handover: the owner reads it about the guest, the guest about themselves.
-export function handoverLine(h:Handover|null|undefined,silent:boolean,guest=false){
- const head=guest?'Владелец после выезда':'Жильё после гостя';
+export function handoverLine(h:Handover|null|undefined,silent:boolean,guest=false,kind?:string){
+ const w=stayWords(kind),venue=w.arrive!=='Заезд',head=guest?'Владелец '+w.afterLeave:venue?'После гостей':'Жильё после гостя';
  if(!h)return silent?head+': без замечаний.':'';
  if(h.verdict==='ok')return head+': всё хорошо.';
- const what=h.issues.map(handoverIssueText).join(', ').toLowerCase()+(h.note?'. «'+h.note+'»':'')+'.';
- return guest?'Владелец отметил после выезда: '+what+' Не согласны — «Есть проблема» в «Ещё».':head+': '+what;
+ const what=h.issues.map(code=>handoverIssueText(code,venue)).join(', ').toLowerCase()+(h.note?'. «'+h.note+'»':'')+'.';
+ return guest?'Владелец отметил '+w.afterLeave+': '+what+' Не согласны — «Есть проблема» в «Ещё».':head+': '+what;
 }
 
 const h=StyleSheet.create({
