@@ -10,8 +10,8 @@ import {RegularCleaner} from './RegularCleaner';
 import {PropertyStaff} from './PropertyStaff';
 import {VenueHalls} from './VenueHalls';
 import {menuIcons} from './AccountRows';
-import {EDIT_STEPS,editBody,editRequest,nextAdvice,needsReview,reviewRequest,REVIEW_SENT,stepForError,stepLine,stepNeeds,stepTitle,type Advice,type EditBody,type EditStep} from '../../lib/listing-edit';
-import {amenities,categoryAmenities,checkinMethods,isBath,kindCategory} from '../../lib/listings';
+import {EDIT_STEPS,banquetPrice,withBanquetPrice,editBody,editRequest,nextAdvice,needsReview,reviewRequest,REVIEW_SENT,stepForError,stepLine,stepNeeds,stepTitle,type Advice,type EditBody,type EditStep} from '../../lib/listing-edit';
+import {amenities,categoryAmenities,checkinMethods,isBath,isBanquet,isVenue,kindCategory} from '../../lib/listings';
 import {KindPicker} from './KindPicker';
 import {AddressPin,type PinChoice} from './AddressPin';
 type Row=Record<string,any>;
@@ -77,7 +77,7 @@ export function PropertyEdit({property,onSave,onReview,onRemove,onClose,onOpenHa
    {open==='photos'&&<PhotoGrid photos={draft.photos} onChange={photos=>set({photos})} onBusy={setUploading} disabled={busy}/>}
    {open==='flat'&&<>
     <KindPicker kind={d.type} ownStaff={draft.ownStaff} onChange={v=>setDraft(o=>({...o,ownStaff:v.ownStaff??o.ownStaff,details:{...o.details,type:v.type??o.details.type}}))}/>
-    {isBath(d.type)?<View style={e.row}>{half(<Stepper label="Гостей" value={draft.capacity} text={String(draft.capacity)} min={1} max={50} onChange={n=>setDraft(o=>({...o,capacity:n,details:{...o.details,beds:Math.max(o.details.beds,n)}}))}/>)}{half(num('Площадь, м²',d.area,n=>setD({area:n}),2000))}</View>:<>
+    {isBanquet(d.type)?<View style={e.row}>{num('Вмещает гостей',draft.capacity,n=>setDraft(o=>({...o,capacity:Math.max(1,n),details:{...o.details,beds:Math.max(1,n)}})),1000)}{num('Площадь, м²',d.area,n=>setD({area:n}),2000)}</View>:isBath(d.type)?<View style={e.row}>{half(<Stepper label="Гостей" value={draft.capacity} text={String(draft.capacity)} min={1} max={50} onChange={n=>setDraft(o=>({...o,capacity:n,details:{...o.details,beds:Math.max(o.details.beds,n)}}))}/>)}{half(num('Площадь, м²',d.area,n=>setD({area:n}),2000))}</View>:<>
       <View style={e.row}>{half(<Stepper label="Комнаты" value={draft.rooms} text={String(draft.rooms)} min={1} max={20} onChange={n=>set({rooms:n})}/>)}{half(<Stepper label="Гостей" value={draft.capacity} text={String(draft.capacity)} min={1} max={50} onChange={n=>setDraft(o=>({...o,capacity:n,details:{...o.details,beds:Math.max(o.details.beds,n)}}))}/>)}</View>
       <View style={e.row}>{half(<Stepper label="Спальных мест" value={d.beds} text={String(d.beds)} min={1} max={50} onChange={n=>setD({beds:n})}/>)}{half(<Stepper label="Санузлы" value={d.bathrooms} text={String(d.bathrooms)} min={1} max={20} onChange={n=>setD({bathrooms:n})}/>)}</View>
       <View style={e.row}>{num('Площадь, м²',d.area,n=>setD({area:n}),2000)}{num('Этаж',d.floor,n=>setD({floor:n}),100)}{num('Этажей',d.floors,n=>setD({floors:n}),100)}</View>
@@ -103,14 +103,22 @@ export function PropertyEdit({property,onSave,onReview,onRemove,onClose,onOpenHa
     <View style={e.row}>{num('Гостей в цене',r.includedGuests,n=>setR({includedGuests:n}),50,'0 — цена не зависит')}{num('Доплата за гостя в час, ₸',r.extraGuestPrice,n=>setR({extraGuestPrice:n}),1000000)}</View>
     <Stepper label="Напомнить затопить" value={r.prepMinutes} text={r.prepMinutes?'за '+(r.prepMinutes%60?r.prepMinutes+' мин':r.prepMinutes/60+' ч'):'не надо'} min={0} max={360} step={30} onChange={n=>setR({prepMinutes:n})}/>
    </>}
-   {open==='prices'&&!isBath(d.type)&&<>
+   {open==='prices'&&isBanquet(d.type)&&(()=>{const q=banquetPrice(draft);return <>
+    {/* A hall is priced per guest with a least party; the service keeps it as the price of the slot (lib/listing-edit.ts). */}
+    <View style={e.row}>{num('На гостя, ₸',q.perGuest,n=>setDraft(o=>withBanquetPrice(o,n,q.least)),1000000)}{num('Минимум гостей',q.least,n=>setDraft(o=>withBanquetPrice(o,q.perGuest,Math.min(Math.max(1,n),o.capacity))),1000)}</View>
+    <Text style={e.hint}>{q.perGuest?'Гость платит за своё число гостей, но не меньше чем за '+q.least+': от '+new Intl.NumberFormat('ru-RU').format(q.perGuest*q.least)+' ₸. Зал берут на обед (12:00–17:00) или на вечер (18:00–00:00).':'Зал берут на обед (12:00–17:00) или на вечер (18:00–00:00) по цене на гостя.'}</Text>
+    <View style={e.row}>{num('Депозит, ₸',r.deposit,n=>setR({deposit:n}))}</View>
+    {text('Меню',d.menu||'',v=>setD({menu:v}),1500,'Бешбармак, казы, салаты, баурсаки, чай. Халяль. Свои напитки по согласованию.',true)}
+    <Text style={e.hint}>Гость видит меню до брони. Телефоны и ссылки не пишите: бронь и оплата идут через сервис.</Text>
+   </>;})()}
+   {open==='prices'&&!isVenue(d.type)&&<>
     <View style={e.row}>{num('Сутки, ₸',draft.price,n=>set({price:n}))}{num('Час, ₸',r.hourlyPrice,n=>setR({hourlyPrice:n}),10000000,'0 — без почасовой')}</View>
     <View style={e.row}>{num('Ночь, ₸',r.nightlyPrice,n=>setR({nightlyPrice:n}),10000000,'0 — без ночной')}{num('Депозит, ₸',r.deposit,n=>setR({deposit:n}))}</View>
     {r.hourlyPrice>0&&<Stepper label="Минимум часов" value={r.minHours} text={String(r.minHours)} min={1} max={24} onChange={n=>setR({minHours:n})}/>}
    </>}
    {open==='checkin'&&<>
-    {!isBath(d.type)&&<View style={e.row}>{half(text('Заезд с',r.checkinTime,v=>setR({checkinTime:v}),5,'14:00'))}{half(text('Выезд до',r.checkoutTime,v=>setR({checkoutTime:v}),5,'12:00'))}</View>}
-    <Text style={e.label}>{isBath(d.type)?'Как гости попадут внутрь':'Как гость получит ключи'}</Text>
+    {!isVenue(d.type)&&<View style={e.row}>{half(text('Заезд с',r.checkinTime,v=>setR({checkinTime:v}),5,'14:00'))}{half(text('Выезд до',r.checkoutTime,v=>setR({checkoutTime:v}),5,'12:00'))}</View>}
+    <Text style={e.label}>{isVenue(d.type)?'Как гости попадут внутрь':'Как гость получит ключи'}</Text>
     <View style={e.chips}>{Object.entries(checkinMethods).map(([id,label])=>chip(id,label,d.checkinMethod===id,()=>setD({checkinMethod:id}),true))}</View>
     <View style={e.row}>{num('Уборка между гостями, мин',draft.cleaningMinutes,n=>set({cleaningMinutes:n}),1440)}</View>
     {!!call&&!!p.id&&<>
@@ -121,7 +129,7 @@ export function PropertyEdit({property,onSave,onReview,onRemove,onClose,onOpenHa
     </>}
    </>}
    {open==='rules'&&<>
-    <View style={e.chips}>{([['pets','Можно с питомцами'],['smoking','Можно курить'],['parties','Можно вечеринки']] as const).map(([k,label])=>chip(k,label,d[k],()=>setD({[k]:!d[k]})))}</View>
+    <View style={e.chips}>{([['pets','Можно с питомцами'],['smoking','Можно курить'],['parties','Можно вечеринки']] as const).map(([k,label])=>chip(k,label,d[k],()=>setD({[k]:!d[k]}))).filter((_,at)=>!isBanquet(d.type)||at===1)}</View>
     {text('Правила и возврат депозита',r.houseRules,v=>setR({houseRules:v}),2500,'Тишина после 23:00. Депозит вернём в день выезда после проверки.',true)}
     <Text style={e.hint}>Не пишите здесь коды замков и личные контакты.</Text>
    </>}

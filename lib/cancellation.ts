@@ -4,9 +4,11 @@
 // minimum hours, and the rest goes back. The deposit always goes back in full and is counted separately.
 export type CancelTerms={free:boolean;refund:number;withheld:number;deposit:number;freeUntil:number};
 export const FREE_DAILY=24*3600,FREE_HOURLY=2*3600;
-export function cancellationTerms(v:{by:'owner'|'guest';status:string;mode:string;rate:number;units:number;amount:number;paid:number;deposit:number;start:number;minHours:number;at:number}):CancelTerms{
+export function cancellationTerms(v:{by:'owner'|'guest';status:string;mode:string;rate:number;units:number;amount:number;paid:number;deposit:number;start:number;minHours:number;at:number;banquet?:boolean}):CancelTerms{
  const hourly=v.mode==='hourly',freeUntil=v.start-(hourly?FREE_HOURLY:FREE_DAILY),paid=Math.max(0,Number(v.paid)||0),deposit=Math.max(0,Number(v.deposit)||0);
- const free=v.by==='owner'||v.status!=='confirmed'||v.at<=freeUntil;
+ // A banquet: the prepayment always goes back. The hall may keep only what it has already spent on this order and
+ // can prove with documents; that is claimed apart, in the appeal on the booking, never withheld by a rule.
+ const free=v.by==='owner'||v.status!=='confirmed'||v.at<=freeUntil||v.banquet===true;
  if(free)return {free:true,refund:paid,withheld:0,deposit,freeUntil};
  const first=hourly?v.rate*Math.max(1,Math.min(Number(v.units)||1,Number(v.minHours)||1)):v.mode==='legacy'?Math.round(v.amount/Math.max(1,Number(v.units)||1)):v.rate;
  const withheld=Math.min(paid,Math.max(0,first),v.amount);

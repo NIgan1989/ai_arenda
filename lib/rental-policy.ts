@@ -17,7 +17,7 @@ export function policyInput(body:Row){
   // The guest surcharge and the reminder to get ready (a bath is heated before the guests). An older app sends none
   // of them: the keys are then left out, so saving keeps what is stored.
   const extra:Row={};
-  if(body.includedGuests!==undefined)extra.included_guests=number(body.includedGuests,'Гостей в цене',0,50);
+  if(body.includedGuests!==undefined)extra.included_guests=number(body.includedGuests,'Гостей в цене',0,1000);
   if(body.extraGuestPrice!==undefined)extra.extra_guest_price=number(body.extraGuestPrice,'Доплата за гостя',0,1000000);
   if(body.prepMinutes!==undefined)extra.prep_minutes=number(body.prepMinutes,'Подготовка, минут',0,720);
   return {...policy,...mandate,auto_assign:body.autoAssign===true?1:0,...extra};

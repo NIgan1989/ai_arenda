@@ -13,7 +13,7 @@ import {assistantBrief,defaultAssistantSettings} from './assistant';
 import {defaultAccountSettings,accountSettingsInput,userSearchInput} from './account';
 import {approvalCards} from './approvals';
 import {hasContacts,MIN_PHOTOS} from './listing-rules';
-import {listingInput,jpegInput,propertyStatus,cleanerStatus,categories,kindCategory} from './listings';
+import {listingInput,jpegInput,propertyStatus,cleanerStatus,categories,kindCategory,isBanquet,occasions,occasionLabel,searchCategory} from './listings';
 import {mediaKey,dataUrlBytes,mediaData} from './media-store';
 import {readAdministratorState} from './administrator';
 import {recordFinance,migrateFinanceEntity} from './finance';
@@ -119,7 +119,7 @@ export class RentalService {
     // What guests read is checked on every save of a shown flat, by the same rules as the first review.
     if(shownBefore){
       const rules=String(body.rental?.houseRules||'');
-      if((p.title!==current.title||p.description!==current.description||rules!==String(currentPolicy?.house_rules||''))&&hasContacts(p.title+' '+p.description+' '+rules))throw new DomainError('Уберите из названия, описания и правил телефон, ссылки и просьбы оплатить напрямую: гости бронируют и платят через сервис.',409);
+      if((p.title!==current.title||p.description!==current.description||rules!==String(currentPolicy?.house_rules||''))&&hasContacts(p.title+' '+p.description+' '+rules)||hasContacts(String((details as Row).menu||'')))throw new DomainError('Уберите из названия, описания и правил телефон, ссылки и просьбы оплатить напрямую: гости бронируют и платят через сервис.',409);
       const before=JSON.parse((await this.one('SELECT photos FROM property_details WHERE property_id=?',propertyId))?.photos||'[]').length;
       if(photos.length<MIN_PHOTOS&&photos.length<before)throw new DomainError('Гости видят это жильё: оставьте не меньше '+MIN_PHOTOS+' фото или сначала скройте жильё.',409);
     }
@@ -418,7 +418,7 @@ export class RentalService {
     const enrichedTerms:Row[]=terms.map(t=>{const f=financeBalances.find(f=>f.booking_id===t.booking_id),received=f?.deposit_received??(t.deposit_status==='owner_verified'?t.deposit:0),returned=f?.deposit_returned??(t.deposit_returned_at?t.deposit:0);return {...t,deposit_received_amount:received,deposit_returned_amount:returned,deposit_balance:Math.max(0,received-returned-(Number(t.deposit_kept)||0)),refunded_amount:f?.refunded||0};});
     const policyFor=(p:Row)=>policies.find(v=>v.property_id===p.id)||defaultPolicy;
     // What cancelling right now would cost, for the card: the same rule the cancel action applies.
-    const cancelFor=(b:Row)=>{const t=enrichedTerms.find(v=>v.booking_id===b.id);if(!t||!['requested','confirmed'].includes(b.status)||t.actual_checkin)return null;return cancellationTerms({by:b.owner_id===this.userId?'owner':'guest',status:b.status,mode:t.billing_mode,rate:t.rate,units:t.units,amount:b.amount,paid:t.paid_amount,deposit:t.deposit_status==='owner_verified'?t.deposit:0,start:b.start,minHours:t.min_hours||policies.find(v=>v.property_id===b.property_id)?.min_hours||1,at:serverTime});};
+    const cancelFor=(b:Row)=>{const t=enrichedTerms.find(v=>v.booking_id===b.id);if(!t||!['requested','confirmed'].includes(b.status)||t.actual_checkin)return null;return cancellationTerms({by:b.owner_id===this.userId?'owner':'guest',status:b.status,mode:t.billing_mode,rate:t.rate,units:t.units,amount:b.amount,paid:t.paid_amount,deposit:t.deposit_status==='owner_verified'?t.deposit:0,start:b.start,minHours:t.min_hours||policies.find(v=>v.property_id===b.property_id)?.min_hours||1,at:serverTime,banquet:!!t.occasion});};
     const guests=await reliabilityFor(this.db,'guest',bookings.filter(b=>b.owner_id===this.userId&&b.status==='requested').map(b=>b.guest_id));
     const state={ profile, properties:await this.enrichProperties(properties.map(p=>({...p,policy:publicPolicy(policyFor(p))}))), ownProperties:await this.enrichProperties(ownProperties.map(p=>({...p,policy:policyFor(p),operation:operations.find(v=>v.property_id===p.id)})),true), bookings:bookings.map(({risk_row,handover_row,...b}) => ({...b,risk:riskFromRow(risk_row?JSON.parse(risk_row):null),handover:handover_row?JSON.parse(handover_row):null,...(b.owner_id===this.userId?{guest_reliability:guests.get(b.guest_id)}:{}),status:b.status==='requested' && b.expires_at<=serverTime?'expired':b.status,terms:enrichedTerms.find(t=>t.booking_id===b.id),cancel_terms:cancelFor(b),changes:changes.filter(c=>c.booking_id===b.id).map(c=>({...c,status:c.status==='pending'&&c.expires_at<=serverTime?'expired':c.status})),readiness:operations.find(o=>o.property_id===b.property_id)?.readiness})), jobs:jobs.map(({open_address,...j}:Row):Row=>({...j,street:streetAddress(open_address),settlement_paid:jobPayments.find(p=>p.job_id===j.id)?.paid??(j.settled_at?j.fee:0),checkout_confirmed:!j.booking_id||!!j.checkout_confirmed})), applications, notifications, messages, serverTime, integrations:{ai:false,telegram:false,whatsapp:false,payments:false} };
     return {...state,workspaces:Object.fromEntries(roles.map(role=>[role,operationOverview(state,this.userId,role,serverTime)]))};
@@ -430,12 +430,12 @@ export class RentalService {
     return {properties:await this.enrichProperties(properties.map(p=>({...p,policy:publicPolicy(policies.find(v=>v.property_id===p.id))})))};
   }
   async publicSearch(filters:Record<string,string>={},options:{syntheticPreview?:boolean;matching?:boolean}={}){
-    const city=String(filters.city||'').trim(),mode=filters.mode||'daily',guests=number(filters.guests||1,'Гости',1,50);
+    const city=String(filters.city||'').trim(),mode=filters.mode||'daily',guests=number(filters.guests||1,'Гости',1,1000);
     if(city.length>80||!['daily','hourly','night'].includes(mode))throw new DomainError('Проверьте город и вид аренды.');
     const catalog=await this.publicCatalog(options),cities=[...new Set(catalog.properties.map(p=>String(p.city)))].sort();
     const cityKey=city.toLocaleLowerCase('ru'),exactCity=catalog.properties.some(p=>String(p.city).toLocaleLowerCase('ru')===cityKey);
     // Homes unless the bath category is asked for by name or by its types: a bath never shows among homes.
-    const kinds=Array.isArray(filters.kinds)?filters.kinds:[],category=categories[filters.category]?filters.category:kinds.length&&kinds.every((k:string)=>kindCategory(k)==='bath')?'bath':'stay';
+    const kinds=Array.isArray(filters.kinds)?filters.kinds:[],category=categories[filters.category]?filters.category:searchCategory(kinds);
     let items=catalog.properties.filter(p=>(!city||(exactCity?String(p.city).toLocaleLowerCase('ru')===cityKey:String(p.city).toLocaleLowerCase('ru').includes(cityKey)))&&p.capacity>=guests&&(mode!=='hourly'||p.policy.hourly_price>0)&&kindCategory(p.details?.type)===category);
     let range:{start:number;end:number}|null=null;
     if(filters.start||filters.end){
@@ -542,6 +542,8 @@ export class RentalService {
     const cleaning=await this.one("SELECT id FROM cleaning_jobs WHERE property_id=? AND status IN ('open','assigned','in_progress','submitted') AND start<? AND end>?",p.id,occupiedUntil,start);
     if(occupied||cleaning) throw new DomainError('Этот интервал уже занят, включая время уборки. Выберите другое время.',409);
     const kind=(await this.one("SELECT json_extract(details,'$.type') type FROM property_details WHERE property_id=?",p.id))?.type||'apartment';
+    // A banquet hall is taken for a slot of one day, at the price per guest.
+    if(isBanquet(kind)&&(base.billingMode!=='daily'||end-start>12*3600))throw new DomainError('Банкетный зал бронируют на обед или на вечер одного дня.');
     return {propertyId:p.id,title:p.title,kind,start,end,guests,...pricing,cleaningMinutes:p.cleaning_minutes,occupiedUntil,currency:'KZT',quotedAt:now(),policy:publicPolicy(policy)};
   }
   async saveProfile(body: Row) {
@@ -581,10 +583,12 @@ export class RentalService {
     risk.held=autoConfirm&&risk.level==='high';
     // A home not ready with the arrival close: the owner is told in the request, the autopilot leaves the decision to them.
     const unready=unreadyNote((await this.one('SELECT readiness FROM property_operations WHERE property_id=?',p.id))?.readiness,start,now());
+    // A banquet always has an occasion: it marks the booking as a banquet and tells the owner what to get ready for.
+    const occasion=isBanquet(checked.kind)?(Object.hasOwn(occasions,String(body.occasion))?String(body.occasion):'other'):'',event=occasion?' '+(occasion==='other'?'Банкет':occasionLabel(occasion))+', гостей: '+guests+'.':'';
     await this.db.batch([
       this.query('INSERT INTO bookings(id,property_id,guest_id,start,end,occupied_until,guests,amount,status,expires_at,payment_status,request_key,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)',bookingId,p.id,this.userId,start,end,end+p.cleaning_minutes*60,guests,amount,'requested',now()+answer*60,'unpaid',key,now()),
-      this.query('INSERT INTO booking_terms(booking_id,billing_mode,rate,units,amount,deposit,deposit_status,house_rules,policy_version,original_end,min_hours) VALUES (?,?,?,?,?,?,?,?,?,?,?)',bookingId,checked.billingMode,checked.price,checked.periods,amount,checked.policy.deposit,checked.policy.deposit?'pending':'not_required',checked.policy.house_rules,checked.policy.version,end,Math.max(1,Number(checked.policy.min_hours)||1)),
-      this.notify(owner!.owner_id,risk.held?`ИИ-администратор не подтвердил заявку на «${checked.title}» сам: ${riskLabel.high.toLowerCase()} (${risk.reasons.slice(0,2).join(', ')}).${unready?' '+unready+'.':''} Решите в течение ${minutesLabel(answer)}.`:autoConfirm&&unready?`ИИ-администратор не подтвердил заявку на «${checked.title}» сам: ${unready[0].toLowerCase()+unready.slice(1)}. Отметьте «Жильё готово», если успеете, или решите сами в течение ${minutesLabel(answer)}.`:autoConfirm?`ИИ-администратор принял бронь на «${checked.title}» по вашим правилам. ${riskLabel[risk.level]}.`:`Новая заявка на «${checked.title}». ${riskLabel[risk.level]}.${unready?' '+unready+'.':''} Подтвердите её в течение ${minutesLabel(answer)}.`,`booking:${bookingId}`,'owner'),this.audit(bookingId,'booking.requested'),
+      this.query('INSERT INTO booking_terms(booking_id,billing_mode,rate,units,amount,deposit,deposit_status,house_rules,policy_version,original_end,min_hours,occasion) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)',bookingId,checked.billingMode,checked.price,checked.periods,amount,checked.policy.deposit,checked.policy.deposit?'pending':'not_required',checked.policy.house_rules,checked.policy.version,end,Math.max(1,Number(checked.policy.min_hours)||1),occasion),
+      this.notify(owner!.owner_id,risk.held?`ИИ-администратор не подтвердил заявку на «${checked.title}» сам: ${riskLabel.high.toLowerCase()} (${risk.reasons.slice(0,2).join(', ')}).${unready?' '+unready+'.':''} Решите в течение ${minutesLabel(answer)}.`:autoConfirm&&unready?`ИИ-администратор не подтвердил заявку на «${checked.title}» сам: ${unready[0].toLowerCase()+unready.slice(1)}. Отметьте «Жильё готово», если успеете, или решите сами в течение ${minutesLabel(answer)}.`:autoConfirm?`ИИ-администратор принял бронь на «${checked.title}» по вашим правилам.${event} ${riskLabel[risk.level]}.`:`Новая заявка на «${checked.title}».${event} ${riskLabel[risk.level]}.${unready?' '+unready+'.':''} Подтвердите её в течение ${minutesLabel(answer)}.`,`booking:${bookingId}`,'owner'),this.audit(bookingId,'booking.requested'),
       saveRiskSql(this.db,bookingId,p.id,this.userId,owner!.owner_id,risk),
       ...(!risk.phone&&risk.level!=='low'&&!(autoConfirm&&!risk.held&&!unready)?[this.notify(this.userId,'Подтвердите телефон в профиле: владельцу так спокойнее, и заявку на «'+checked.title+'» подтвердят быстрее.','phone-ask:'+bookingId,'guest')]:[])
     ]);
@@ -763,7 +767,7 @@ export class RentalService {
       // The money side is fixed by the guest offer at the moment of cancelling and told to both sides in tenge.
       const policy=terms?.min_hours?null:await this.one('SELECT min_hours FROM property_policies WHERE property_id=?',b.property_id),t=now();
       if(terms?.paid_amount)await migrateFinanceEntity(this,'booking',bookingId);
-      const c=cancellationTerms({by:owner?'owner':'guest',status:b.status,mode:terms?.billing_mode||'daily',rate:terms?.rate||0,units:terms?.units||1,amount:b.amount,paid:terms?.paid_amount||0,deposit:terms?.deposit_status==='owner_verified'?terms.deposit:0,start:b.start,minHours:terms?.min_hours||policy?.min_hours||1,at:t});
+      const c=cancellationTerms({by:owner?'owner':'guest',status:b.status,mode:terms?.billing_mode||'daily',rate:terms?.rate||0,units:terms?.units||1,amount:b.amount,paid:terms?.paid_amount||0,deposit:terms?.deposit_status==='owner_verified'?terms.deposit:0,start:b.start,minHours:terms?.min_hours||policy?.min_hours||1,at:t,banquet:!!terms?.occasion});
       const money=(n:number)=>n.toLocaleString('ru-RU').replace(/\u00a0|\u202f/g,' ')+' ₸',deposit=c.deposit?' Депозит '+money(c.deposit)+' возвращается полностью.':'';
       const who=owner?'Владелец отменил бронь':'Гость отменил бронь',title='«'+b.title+'»';
       const forGuest=!terms?.paid_amount&&!c.deposit?'Оплаты не было, возвращать нечего.':c.withheld?'Отмена позже бесплатного срока: по правилам сервиса владельцу остаётся '+money(c.withheld)+', вам вернут '+money(c.refund)+'.'+deposit:'Вам вернут всю оплату: '+money(c.refund)+'.'+deposit;

@@ -475,3 +475,48 @@ test('one price format on the pins; the rating on a card is a star', () => {
   assert.deepEqual([800, 9000, 9500, 12000, 14900, 120000].map(pinPrice), ['800 ₸', '9 тыс.', '9,5 тыс.', '12 тыс.', '14,9 тыс.', '120 тыс.']);
   assert.deepEqual(shownReasons(['Оценка 4,8 из 5 · 3 отзыва', 'Готовность проверена'], {maxPrice: ''}), ['★ 4,8 · 3 отзыва', 'Готово к заселению']);
 });
+
+// «Банкет» (2026-11-17): a hall for a той, an anniversary or a memorial meal. A slot of one day, a price per guest.
+test('«Банкет»: a hall is a slot of one day for a large party', async () => {
+  const mod = await loadPure('mobile/src/ai-request.ts', 'lib/map-search-request.ts');
+  const hall = mod.withKind(newDraft('Павлодар', morning), 'banquet', null, morning);
+  assert.equal(mod.categoryOf(hall), 'banquet');
+  // The nearest Saturday evening, fifty guests to begin with.
+  assert.deepEqual([hall.mode, hall.start, hall.end, hall.guests, hall.kinds], ['daily', '2026-11-14T18:00', '2026-11-15T00:00', 50, ['banquet', 'cafe']]);
+  // Another day keeps the slot, another slot keeps the day.
+  const later = withDay(hall, '2026-12-05', morning);
+  assert.deepEqual([later.start, later.end], ['2026-12-05T18:00', '2026-12-06T00:00']);
+  assert.deepEqual([mod.withSlot(later, '2026-12-05', 'lunch').start, mod.withSlot(later, '2026-12-05', 'lunch').end], ['2026-12-05T12:00', '2026-12-05T17:00']);
+  // The price named is per guest: the server gets it for the whole party, with what the hall is for.
+  const body = matchingBody({ ...later, guests: 150, maxPrice: '8000', occasion: 'toi' });
+  assert.deepEqual([body.maxPrice, body.guests, body.occasion, body.mode], [1200000, 150, 'toi', 'daily']);
+  assert.equal(guestSummary({ ...later, guests: 150, maxPrice: '8000', occasion: 'toi', features: ['halal'] }, morning), 'Той, свадьба · Павлодар · 5 декабря, вечер 18:00–00:00 · 150 гостей · до 8 000 ₸ за гостя · халяль');
+  // Leaving the category lets go of the occasion and of the large party.
+  const home = mod.withKind({ ...later, occasion: 'toi', guests: 150 }, 'stay', null, morning);
+  assert.deepEqual([home.occasion, home.guests, home.kinds], [undefined, 2, []]);
+  // A slot that has begun gives way to the usual one.
+  assert.equal(freshDraft({ ...hall, start: '2026-11-11T12:00', end: '2026-11-11T17:00' }, Date.parse('2026-11-11T08:00:00Z')).start, '2026-11-14T18:00');
+});
+
+test('«Банкет»: the line and the chips say what the hall is for; a memorial meal is quiet', async () => {
+  const mod = await loadPure('mobile/src/ai-request.ts', 'lib/map-search-request.ts');
+  const start = newDraft('Павлодар', morning);
+  // Said in «Жильё»: the category changes with the phrase.
+  const toi = guestRequestFromText('той на 150 человек 5 декабря', start, cities, morning).draft;
+  assert.deepEqual([mod.categoryOf(toi), toi.occasion, toi.guests, toi.start], ['banquet', 'toi', 150, '2026-12-05T18:00']);
+  assert.equal(guestRequestFromText('банкетный зал в субботу', start, cities, morning).draft.guests, 50);
+  // A memorial meal: tomorrow at lunch, by the chip and by the word.
+  const chip = chipDraft('memorial', start, morning);
+  assert.deepEqual([chip.occasion, chip.start, chip.end, mod.isQuiet(chip)], ['memorial', '2026-11-12T12:00', '2026-11-12T17:00', true]);
+  const said = guestRequestFromText('поминки на 60 человек послезавтра', start, cities, morning).draft;
+  assert.deepEqual([said.occasion, said.guests, said.start], ['memorial', 60, '2026-11-13T12:00']);
+  assert.equal(mod.isQuiet(toi), false);
+  // In the category a refinement keeps the day, the party and the occasion.
+  const lunch = guestRequestFromText('а в обед', toi, cities, morning).draft;
+  assert.deepEqual([lunch.start, lunch.guests, lunch.occasion], ['2026-12-05T12:00', 150, 'toi']);
+  // «Квартира» leaves the category; a flat is never searched for 150 guests.
+  const flat = guestRequestFromText('квартира на двоих завтра', toi, cities, morning).draft;
+  assert.deepEqual([mod.categoryOf(flat), flat.guests, flat.occasion], ['stay', 2, undefined]);
+  assert.equal(pinPrice(1200000), '1,2 млн');
+  assert.deepEqual(mod.dayChoices(toi, morning).map(([, label]) => label).slice(0, 4), ['Завтра', 'Послезавтра', 'сб, 14 ноября', 'вс, 15 ноября']);
+});

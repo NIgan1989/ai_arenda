@@ -109,6 +109,23 @@ const PART_OF_DAY: [RegExp, string, number][] = [
 // say "жильё" and narrows nothing; a "гостевой дом" is not a "дом", an "апарт-отель" not an "отель".
 /** The types of the category «Баня» (lib/listings.ts categories.bath). */
 export const BATH_KINDS = ['banya', 'sauna'];
+/** The types of the category «Банкет» (lib/listings.ts categories.banquet): a hall taken whole, priced per guest. */
+export const BANQUET_KINDS = ['banquet', 'cafe'];
+export const MAX_BANQUET_GUESTS = 1000;
+/** The two slots of a banquet day (lib/listings.ts banquetSlots); the evening ends at midnight. */
+export const BANQUET_SLOTS: Record<'lunch' | 'evening', { title: string; from: string; to: string }> = {
+  lunch: { title: 'Обед', from: '12:00', to: '17:00' },
+  evening: { title: 'Вечер', from: '18:00', to: '00:00' },
+};
+export type BanquetSlot = keyof typeof BANQUET_SLOTS;
+export const isBanquetRequest = (kinds: unknown) => Array.isArray(kinds) && kinds.length > 0 && kinds.every(k => BANQUET_KINDS.includes(k));
+/** What the hall is taken for, as the ids of lib/listings.ts occasions; '' when the text names none. */
+export function statedOccasion(text: string): string {
+  if (/помин|(?:^|[^а-я])ас(?=$|[^а-я])|садака|кудайы|годовщин[а-я]* смерти|похорон/.test(text)) return 'memorial';
+  if (/свадьб|свадеб|тойхан|(?:^|[^а-я])той(?=$|\s+(?:на|в|для|\d)|[,.!?])|(?:^|[^а-я])то[яю](?=$|[^а-я])|кудалы|узату|беташар|сундет/.test(text)) return 'toi';
+  if (/юбиле|день рождени|корпоратив|выпускн|праздн[а-я]* (?:отметить|провести)|(?:отметить|провести) праздн/.test(text)) return 'party';
+  return '';
+}
 const KINDS: [RegExp, string][] = [
   [/студи/, 'studio'],
   [/апарт[- ]?отел/, 'aparthotel'],
@@ -120,6 +137,9 @@ const KINDS: [RegExp, string][] = [
   // A bath or a sauna: the category «Баня» (lib/listings.ts categories), searched by the hour.
   [/(?:^|[^а-я])бан(?:я|ю|е|и|ька|ьку|ьке|ный|ном|ного)(?=$|[^а-я])/, 'banya'],
   [/саун/, 'sauna'],
+  // A hall for an event: the category «Банкет», a slot of one day at a price per guest.
+  [/банкет|тойхан|зал[а-я]*\s+(?:для\s+)?(?:торжеств|свадьб|праздник)|ресторан/, 'banquet'],
+  [/(?:^|[^а-я])кафе(?=$|[^а-я])/, 'cafe'],
 ];
 const ROOM_WORDS: [RegExp, number][] = [
   [/однушк|однокомнат|(?:^|[^а-я])одно\s*комнат/, 1],
@@ -190,6 +210,17 @@ const BATH_WISHES: [RegExp, string][] = [
   [/караоке/, 'karaoke'],
   [/мангал|шашлык/, 'grill'],
   [/биль[яа]рд/, 'billiards'],
+];
+// What is asked of a banquet hall (lib/listings.ts categoryAmenities.banquet): read only in a banquet request.
+const BANQUET_WISHES: [RegExp, string][] = [
+  [/халял/, 'halal'],
+  [/намаз/, 'prayer'],
+  [/сцен/, 'stage'],
+  [/микрофон|звук|аппаратур/, 'sound'],
+  [/танцпол/, 'dancefloor'],
+  [/караоке/, 'karaoke'],
+  [/сво[иейя][а-я]*\s+(?:продукт|ед[аоу]|напитк|алкогол)|со своим/, 'ownfood'],
+  [/детск[а-я]*\s+комнат/, 'kidsroom'],
 ];
 // What guests ask for and the search cannot check yet. It is named back («Пока не умею искать: отзывы»), never
 // dropped in silence and never guessed.
@@ -301,6 +332,22 @@ export function hourlyStay(date: string, time: string, hours: number): { start: 
   return { start: localISO(start), end: localISO(start + clamp(Math.round(hours) || 1, 1, 720) * HOUR) };
 }
 
+/** A banquet: the slot of one day. The evening ends at the midnight that follows. */
+export function banquetStay(date: string, slot: BanquetSlot): { start: string; end: string } {
+  return slot === 'lunch' ? { start: date + 'T12:00', end: date + 'T17:00' } : { start: date + 'T18:00', end: addDays(date, 1) + 'T00:00' };
+}
+export const banquetSlot = (start: string): BanquetSlot => (String(start).slice(11) < '17:00' ? 'lunch' : 'evening');
+/** What a banquet request starts with: the nearest Saturday evening that is at least a day ahead; a memorial meal, tomorrow's lunch. */
+export function defaultBanquet(now = Date.now(), occasion = ''): GuestStay {
+  const today = kzToday(now), weekday = new Date(now + KZ).getUTCDay(), ahead = (6 - weekday + 7) % 7 || 7;
+  return { mode: 'daily', ...(occasion === 'memorial' ? banquetStay(addDays(today, 1), 'lunch') : banquetStay(addDays(today, ahead), 'evening')) };
+}
+/** "20 декабря, вечер 18:00–00:00". */
+export function banquetWhen(start: string, now = Date.now()) {
+  const slot = BANQUET_SLOTS[banquetSlot(start)], today = kzToday(now), date = start.slice(0, 10);
+  return (date === today ? 'сегодня' : date === addDays(today, 1) ? 'завтра' : dayMonth(start, now)) + ', ' + slot.title.toLocaleLowerCase('ru') + ' ' + slot.from + '–' + slot.to;
+}
+
 /** What the request form starts with: today until tomorrow, or the nearest three hours. */
 export function defaultStay(mode: string, now = Date.now(), hours = 3): GuestStay {
   if (mode === 'hourly') {
@@ -389,7 +436,7 @@ export function guestRequestLine(draft: Row, now = Date.now()) {
     : '';
   return [
     String(draft.city || '') + (draft.district ? ', ' + draft.district : '') + (draft.near ? ', рядом с выбранным местом' : ''),
-    stayWhen(draft.start, draft.end, draft.mode, now),
+    isBanquetRequest(draft.kinds) ? banquetWhen(draft.start, now) : stayWhen(draft.start, draft.end, draft.mode, now),
     guests + ' ' + plural(guests, 'гость', 'гостя', 'гостей'),
     limit,
   ].filter(Boolean).join(' · ');
@@ -598,7 +645,14 @@ export function guestSearchRequest(text: string, current: Row, cities: string[],
   }
   const rooms = statedRooms(request), kinds = statedKinds(request);
   if (rooms) filters.rooms = rooms;
+  // A banquet is named by the hall («банкетный зал») or by what it is for («той на 100 человек», «поминки»): any hall
+  // of the category, or only a «кафе» when that alone is said. The category chosen before stays for a bare phrase.
+  const occasion = statedOccasion(request);
+  const hall = kinds.includes('banquet') || (!!occasion && !kinds.some(k => !BANQUET_KINDS.includes(k)));
+  if (hall) kinds.splice(0, kinds.length, ...(kinds.includes('cafe') && !kinds.includes('banquet') ? ['cafe'] : BANQUET_KINDS));
   if (kinds.length) filters.kinds = kinds;
+  const banquet = isBanquetRequest(filters.kinds || current.kinds);
+  if (banquet && occasion) filters.occasion = occasion;
   // «Студия или однушка»: either of the two. A room word names a flat, so a flat joins the types; the room count
   // stays only when it is one (a studio has one room too), otherwise it would rule the studio out.
   if (rooms && kinds.length && new RegExp('(?:^|[^а-я])или(?=$|[^а-я])').test(request) && !kinds.includes('apartment')) {
@@ -615,11 +669,12 @@ export function guestSearchRequest(text: string, current: Row, cities: string[],
   }
 
   const party = PARTY.find(([pattern]) => pattern.test(request))?.[1];
-  const counted = request.match(/(?:^|\D)(\d{1,3})\s*(?:гост|человек|чел(?![а-я])|взросл|персон)/);
+  const counted = request.match(/(?:^|\D)(\d{1,4})\s*(?:гост|человек|чел(?![а-я])|взросл|персон)/);
+  const most = banquet ? MAX_BANQUET_GUESTS : MAX_GUESTS;
   const guests = party ?? (counted ? Number(counted[1]) : null);
   if (guests !== null && guests >= 1) {
-    if (guests > MAX_GUESTS) remarks.push('Гостей не больше ' + MAX_GUESTS + ', ищу на ' + MAX_GUESTS + '.');
-    filters.guests = String(Math.min(guests, MAX_GUESTS));
+    if (guests > most) remarks.push('Гостей не больше ' + most + ', ищу на ' + most + '.');
+    filters.guests = String(Math.min(guests, most));
     stated.guests = true;
   }
 
@@ -638,7 +693,7 @@ export function guestSearchRequest(text: string, current: Row, cities: string[],
   // «Без парковки», «без животных»: what follows «без» is taken off the wishes, not asked for.
   const without = [...request.matchAll(/(?:^|[^а-я])без\s+([а-яa-z -]+?)(?=$|[,.;!?]|\s+(?:с|со|но|а|зато|и\s+со?)\s)/g)].map(match => match[1]).join(' , ');
   const asked = without ? request.replace(/(?:^|[^а-я])без\s+[а-яa-z -]+?(?=$|[,.;!?]|\s+(?:с|со|но|а|зато|и\s+со?)\s)/g, ' ') : request;
-  const known = [...WISHES, ...(bath ? BATH_WISHES : [])];
+  const known = banquet ? [...BANQUET_WISHES, ...WISHES.filter(([, id]) => id === 'parking' || id === 'aircon')] : [...WISHES, ...(bath ? BATH_WISHES : [])];
   const wishes = known.filter(([pattern]) => pattern.test(asked)).map(([, id]) => id);
   const dropped = without ? known.filter(([pattern]) => pattern.test(without)).map(([, id]) => id) : [];
   if (wishes.length || dropped.length) {
@@ -657,7 +712,7 @@ export function guestSearchRequest(text: string, current: Row, cities: string[],
   const daysOfBath = bath && !!said.mode && said.mode !== 'hourly';
   if (daysOfBath) remarks.push('Баню бронируют по часам, ищу на 3 часа.');
   const length = daysOfBath ? { mode: 'hourly' as const, units: null } : said;
-  const mode: 'daily' | 'hourly' | 'night' = length.mode ?? (bath ? 'hourly' : dates?.to || dates?.weekend ? (kept === 'night' ? 'night' : 'daily') : kept);
+  const mode: 'daily' | 'hourly' | 'night' = banquet ? 'daily' : length.mode ?? (bath ? 'hourly' : dates?.to || dates?.weekend ? (kept === 'night' ? 'night' : 'daily') : kept);
   if (urgent) filters.now = true;
   if (mode !== current.mode) filters.mode = mode;
 
@@ -665,9 +720,25 @@ export function guestSearchRequest(text: string, current: Row, cities: string[],
   // a part of the day ("вечером") until that part is over.
   const ahead = !clock || urgent
     || (clock.exact ? localTime(today + 'T' + clock.time) >= now : localTime(today + 'T00:00') + clock.until * HOUR > now);
-  const past = dates?.past ? 'date' as const : dates?.from === today && !ahead ? 'time' as const : undefined;
+  let past = dates?.past ? 'date' as const : !banquet && dates?.from === today && !ahead ? 'time' as const : undefined;
 
-  if (past) {
+  if (banquet) {
+    // A banquet is a slot of one day: «обед» 12:00–17:00 or «вечер» 18:00–00:00. A named hour picks the slot; no slot
+    // named keeps the one chosen before, a memorial meal is at lunch, anything else in the evening.
+    const was = isBanquetRequest(current.kinds) && current.mode === 'daily' && current.start ? { date: String(current.start).slice(0, 10), slot: banquetSlot(current.start) } : null;
+    const first = defaultBanquet(now, occasion || String(current.occasion || ''));
+    const said: BanquetSlot | null = /обед|днем|дневн/.test(request) ? 'lunch' : /вечер|ужин/.test(request) ? 'evening' : clock ? (clock.time < '17:00' ? 'lunch' : 'evening') : null;
+    let slot: BanquetSlot = said || (occasion === 'memorial' ? 'lunch' : was?.slot || banquetSlot(first.start));
+    const day = dates && !dates.past ? dates.from : was && was.date >= today ? was.date : first.start.slice(0, 10);
+    if (!past) {
+      if (dates || said) stated.when = true;
+      if (day === today && localTime(banquetStay(day, slot).start) < soon) {
+        if (slot === 'lunch' && localTime(banquetStay(day, 'evening').start) >= soon) { slot = 'evening'; remarks.push('Обед сегодня уже начался, ищу на вечер.'); }
+        else past = 'time';
+      }
+    }
+    Object.assign(filters, past ? first : banquetStay(day, slot));
+  } else if (past) {
     // Nothing is searched for a day or an hour that is behind: the screen asks for the date. A tariff the text
     // changed still opens with a stay of its own kind, so the fields do not show hours as days.
     if (mode !== current.mode) Object.assign(filters, defaultStay(mode, now, length.units ?? 3));
@@ -702,7 +773,7 @@ export function guestSearchRequest(text: string, current: Row, cities: string[],
   const understood = nearby || plain || !!place || !!past || remarks.length > 0 || filters.mode !== current.mode || Object.values(stated).some(Boolean);
   // Said after `understood` is settled: a phrase of nothing but such words is not a request the rules can run.
   // A caller that does not find landmarks on the map (options.places) still tells the guest so.
-  const missed = [...unsearched(request, bath), ...(place && !options.places ? ['место рядом с ориентиром'] : [])];
+  const missed = [...unsearched(request, bath || banquet), ...(place && !options.places ? ['место рядом с ориентиром'] : [])];
   if (missed.length) remarks.push('Пока не умею искать: ' + missed.join(', ') + '.');
   return { filters, stated, nearby, ...(place ? { place } : {}), understood, ...(past ? { past } : {}), remarks };
 }

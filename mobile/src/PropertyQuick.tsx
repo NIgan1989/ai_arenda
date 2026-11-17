@@ -46,7 +46,9 @@ export function PropertyQuick({city,onSave,onGuestMode,onPlace,onReview,onClose,
    setSaved({id:result.id,published,placed,message:(published?'Жильё опубликовано, гости уже видят его на карте.':review?'Сохранено черновиком и отправлено на проверку администратору: после проверки появится на карте само.':photos.length?'Сохранено черновиком: чтобы показать гостям, пройдите проверку в «Управление → Допуск».':'Сохранено черновиком. Добавьте фото, и его можно будет показать гостям.')+note});setStep(2);
   }catch(e:any){setError(e?.message||'Не удалось сохранить жильё.');}finally{setBusy(false);}
  }
- const priceLine=[draft.price>=100&&money(draft.price)+' / сутки',draft.hourlyPrice>=100&&money(draft.hourlyPrice)+' / час',draft.nightlyPrice>=100&&money(draft.nightlyPrice)+' / ночь'].filter(Boolean).join(' · ');
+ // A banquet hall: `price` is the price per guest, with the least party (lib/listing-draft.ts).
+ const hall=['banquet','cafe'].includes(draft.type);
+ const priceLine=hall?(draft.price>=100?money(draft.price)+' за гостя':''):[draft.price>=100&&money(draft.price)+' / сутки',draft.hourlyPrice>=100&&money(draft.hourlyPrice)+' / час',draft.nightlyPrice>=100&&money(draft.nightlyPrice)+' / ночь'].filter(Boolean).join(' · ');
  const chip=(key:string,label:string,on:boolean,onPress:()=>void,radio=false)=><Pressable key={key} accessibilityRole={radio?'radio':'checkbox'} accessibilityState={{checked:on}} onPress={onPress} style={[q.chip,on&&q.chipOn]}><Text style={[q.chipText,on&&q.chipTextOn]}>{on&&!radio?'✓ ':''}{label}</Text></Pressable>;
  const num=(key:keyof ListingDraft,label:string,max=10000000)=><View style={q.tile} key={key}><Text style={q.tileLabel}>{label}{guessed(key)&&!['price','hourlyPrice','nightlyPrice','deposit'].includes(key)?<Text style={q.guess}>  ИИ предположил</Text>:null}</Text><TextInput accessibilityLabel={label} style={q.tileValue} keyboardType="number-pad" value={draft[key]?String(draft[key]):''} placeholder="0" placeholderTextColor={C.muted} onChangeText={v=>patch({[key]:Math.min(max,Number(v.replace(/[^\d]/g,''))||0)} as Partial<ListingDraft>)}/></View>;
  const field=(key:keyof ListingDraft,label:string,placeholder='',max=120)=><View key={key} style={q.field}><Text style={q.tileLabel}>{label}</Text><TextInput accessibilityLabel={label} style={q.input} value={String(draft[key]||'')} placeholder={placeholder} placeholderTextColor={C.muted} maxLength={max} onChangeText={v=>patch({[key]:v} as Partial<ListingDraft>)}/></View>;
@@ -74,19 +76,19 @@ export function PropertyQuick({city,onSave,onGuestMode,onPlace,onReview,onClose,
    </View>
    <Text style={q.h}>ЖИЛЬЁ</Text>
    <KindPicker kind={draft.type} ownStaff={draft.ownStaff} onChange={v=>patch(v)}/>
-   <View style={q.grid}><View style={q.half}><Stepper label={'Комнаты'+(guessed('rooms')?' · ИИ предположил':'')} value={draft.rooms} text={String(draft.rooms)} min={1} max={20} onChange={v=>patch({rooms:v})}/></View><View style={q.half}><Stepper label={'Гостей'+(guessed('capacity')?' · ИИ предположил':'')} value={draft.capacity} text={String(draft.capacity)} min={1} max={50} onChange={v=>setDraft(d=>({...d,capacity:v,beds:Math.max(d.beds,v),known:[...new Set([...d.known,'capacity'])]}))}/></View></View>
+   <View style={q.grid}><View style={q.half}><Stepper label={'Комнаты'+(guessed('rooms')?' · ИИ предположил':'')} value={draft.rooms} text={String(draft.rooms)} min={1} max={20} onChange={v=>patch({rooms:v})}/></View><View style={q.half}><Stepper label={'Гостей'+(guessed('capacity')?' · ИИ предположил':'')} value={draft.capacity} text={String(draft.capacity)} min={1} max={hall?1000:50} step={hall?10:1} onChange={v=>setDraft(d=>({...d,capacity:v,beds:Math.max(d.beds,v),known:[...new Set([...d.known,'capacity'])]}))}/></View></View>
    <View style={q.grid}>{num('area','Площадь, м²',2000)}{num('floor','Этаж',100)}</View>
    {field('address','Точный адрес · только для гостя с бронью','Улица, дом, номер',300)}
    <View style={q.grid}><View style={q.half}>{field('district','Район','Например, Центр')}</View><View style={q.half}>{field('city','Город','',80)}</View></View>
    <Text style={q.h}>ЦЕНЫ</Text>
-   <View style={q.grid}>{num('price','Сутки, ₸')}{num('hourlyPrice','Час, ₸ · 0 — нет')}</View>
+   <View style={q.grid}>{hall?<>{num('price','На гостя, ₸',1000000)}{num('leastGuests','Минимум гостей',1000)}</>:<>{num('price','Сутки, ₸')}{num('hourlyPrice','Час, ₸ · 0 — нет')}</>}</View>
    <Text style={q.h}>УДОБСТВА</Text>
    <View style={q.chips}>{Object.entries(amenities).map(([id,label])=>{const on=draft.amenities.includes(id);return chip(id,label,on,()=>patch({amenities:on?draft.amenities.filter(a=>a!==id):[...draft.amenities,id]}));})}</View>
    <Text style={q.h}>ПРАВИЛА</Text>
    <View style={q.chips}>{RULES.map(([key,label])=>chip(key,label,!!draft[key],()=>patch({[key]:!draft[key]} as Partial<ListingDraft>)))}</View>
    <Pressable accessibilityRole="button" accessibilityState={{expanded:more}} onPress={()=>setMore(v=>!v)} style={q.moreBtn}><Text style={q.moreText}>{more?'Скрыть подробности':'Ещё: ночь, депозит, заезд, текст объявления'}</Text></Pressable>
    {more&&<View style={q.body}>
-    <View style={q.grid}>{num('nightlyPrice','Ночь, ₸ · 0 — нет')}{num('deposit','Депозит, ₸')}</View>
+    <View style={q.grid}>{!hall&&num('nightlyPrice','Ночь, ₸ · 0 — нет')}{num('deposit','Депозит, ₸')}</View>
     <View style={q.grid}><View style={q.half}>{field('checkinTime','Заезд с','14:00',5)}</View><View style={q.half}>{field('checkoutTime','Выезд до','12:00',5)}</View></View>
     <Text style={q.tileLabel}>Как гость получит ключи</Text><View style={q.chips}>{Object.entries(checkinMethods).map(([id,label])=>chip(id,label,draft.checkinMethod===id,()=>patch({checkinMethod:id}),true))}</View>
     <View style={q.field}><Text style={q.tileLabel}>Описание · ИИ написал сам</Text><TextInput accessibilityLabel="Описание" multiline style={[q.input,q.area]} value={draftDescription(draft)} maxLength={2500} onChangeText={v=>setDraft(d=>({...d,description:v}))}/></View>
