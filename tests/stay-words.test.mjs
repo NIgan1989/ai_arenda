@@ -52,3 +52,11 @@ test('the summary and the hints of a bath booking speak of coming and of the boo
  assert.match(all('banquet'),/"Начало"/);assert.doesNotMatch(all('banquet'),/заезд|Заезд|прожив/);
  assert.match(all('apartment'),/"Заезд"/);assert.match(all('apartment'),/Проверить предстоящий заезд/);
 });
+
+test('приёмка после гостей: в бане и зале свои замечания', async () => {
+  const { handoverIssueText } = await load('stay-handover-text');
+  assert.equal(handoverIssueText('late'), 'Поздний выезд');
+  assert.equal(handoverIssueText('late', true), 'Задержались дольше брони');
+  assert.equal(handoverIssueText('party', true), 'Жалоба соседей');
+  assert.equal(handoverIssueText('damage', true), 'Поломка или порча');
+});

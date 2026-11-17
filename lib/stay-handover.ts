@@ -2,6 +2,7 @@ import {DomainError,required,type Role} from './domain';
 import type {RentalService} from './service';
 import {jpegInput} from './listings';
 import {epoch,uuid,q,one,rows,type Row,type OperationConfig} from './operation-core';
+import {wordsOf,isHome,venueOr,TYPE_SQL} from './stay-words';
 import {HANDOVER_ISSUES,HANDOVER_WINDOW,STAY_PHOTO_LIMIT,handoverIssueText,type HandoverIssue} from './stay-handover-text';
 export {HANDOVER_ISSUES,HANDOVER_WINDOW,STAY_PHOTO_LIMIT,handoverIssueText,handoverState,type HandoverIssue} from './stay-handover-text';
 
@@ -10,9 +11,9 @@ export {HANDOVER_ISSUES,HANDOVER_WINDOW,STAY_PHOTO_LIMIT,handoverIssueText,hando
 // on them. Stage 1 of the guest reliability concept: the handover is seen only by this owner and this guest; it does
 // not reach other owners or the reliability rating yet.
 
-type Stay=Row&{id:string;guest_id:string;owner_id:string;status:string;title:string};
+type Stay=Row&{id:string;guest_id:string;owner_id:string;status:string;title:string;property_type?:string|null};
 async function stayOf(s:RentalService,bookingId:string):Promise<Stay>{
- const b=await one(s.db,`SELECT b.id,b.guest_id,b.status,b.property_id,p.owner_id,p.title,t.actual_checkin,t.checkin_reported_at,t.actual_checkout,
+ const b=await one(s.db,`SELECT b.id,b.guest_id,b.status,b.property_id,p.owner_id,p.title,${TYPE_SQL},t.actual_checkin,t.checkin_reported_at,t.actual_checkout,
   EXISTS(SELECT 1 FROM stay_handovers h WHERE h.booking_id=b.id) handed
   FROM bookings b JOIN properties p ON p.id=b.property_id LEFT JOIN booking_terms t ON t.booking_id=b.id WHERE b.id=?`,bookingId);
  if(!b||(b.guest_id!==s.userId&&b.owner_id!==s.userId))throw new DomainError('Бронь не найдена.',404);
@@ -24,11 +25,11 @@ const guestMayShoot=(b:Row)=>b.guest_id&&b.status==='confirmed'&&!!(b.actual_che
 const ownerMayHand=(b:Row,t:number)=>b.status==='completed'&&!!b.actual_checkout&&b.actual_checkout>t-HANDOVER_WINDOW&&!Number(b.handed);
 
 export async function saveStayPhoto(s:RentalService,role:Role,body:Row,config:OperationConfig={}){
- if(role!=='guest'&&role!=='owner')throw new DomainError('Фото жилья добавляют гость или владелец.',403);
+ if(role!=='guest'&&role!=='owner')throw new DomainError('Фото добавляют гость или владелец.',403);
  const b=await stayOf(s,required(body.bookingId,'Бронь',100)),t=epoch();
  const phase=role==='guest'?'checkin':'handover';
- if(role==='guest'&&(b.guest_id!==s.userId||!guestMayShoot(b)))throw new DomainError('Фото при заселении можно добавить, когда вы заселились, и до выезда.',409);
- if(role==='owner'&&(b.owner_id!==s.userId||!ownerMayHand(b,t)))throw new DomainError('Фото к приёмке можно добавить в течение двух суток после выезда, пока приёмка не отмечена.',409);
+ if(role==='guest'&&(b.guest_id!==s.userId||!guestMayShoot(b)))throw new DomainError(venueOr(b,'Фото при заселении можно добавить, когда вы заселились, и до выезда.','Фото можно добавить, когда вы на месте, и пока бронь не закончилась.'),409);
+ if(role==='owner'&&(b.owner_id!==s.userId||!ownerMayHand(b,t)))throw new DomainError('Фото к приёмке можно добавить в течение двух суток '+wordsOf(b).afterLeave+', пока приёмка не отмечена.',409);
  const image=jpegInput(body.data,'property'),photoId=uuid(),key=config.BUCKET?'stay-photos/'+photoId+'.jpg':'';
  if(key){const binary=atob(image.data.split(',')[1]);await config.BUCKET!.put(key,Uint8Array.from(binary,c=>c.charCodeAt(0)),{httpMetadata:{contentType:'image/jpeg'}});}
  const r=await q(s.db,'INSERT INTO stay_photos(id,booking_id,user_id,phase,data,object_key,width,height,bytes,created_at) SELECT ?,?,?,?,?,?,?,?,?,? WHERE (SELECT COUNT(*) FROM stay_photos WHERE booking_id=? AND phase=?)<?',
@@ -54,9 +55,9 @@ export async function readStayPhoto(s:RentalService,photoId:string,config:Operat
 export async function saveHandover(s:RentalService,body:Row){
  await s.requireRole('owner');
  const b=await stayOf(s,required(body.bookingId,'Бронь',100)),t=epoch();
- if(b.owner_id!==s.userId)throw new DomainError('Приёмку отмечает владелец жилья.',403);
+ if(b.owner_id!==s.userId)throw new DomainError('Приёмку отмечает владелец.',403);
  if(Number(b.handed))throw new DomainError('Приёмка по этой брони уже отмечена.',409);
- if(!ownerMayHand(b,t))throw new DomainError('Отметить приёмку можно в течение двух суток после выезда гостя.',409);
+ if(!ownerMayHand(b,t))throw new DomainError(venueOr(b,'Отметить приёмку можно в течение двух суток после выезда гостя.','Отметить приёмку можно в течение двух суток '+wordsOf(b).afterLeave+'.'),409);
  const verdict=body.verdict==='issues'?'issues':body.verdict==='ok'?'ok':null;if(!verdict)throw new DomainError('Выберите: всё хорошо или есть замечания.');
  const raw=Array.isArray(body.issues)?body.issues:[];
  if(raw.length>Object.keys(HANDOVER_ISSUES).length||raw.some((code:unknown)=>!Object.hasOwn(HANDOVER_ISSUES,String(code))))throw new DomainError('Неизвестное замечание.');
@@ -67,8 +68,8 @@ export async function saveHandover(s:RentalService,body:Row){
  const photos=Number((await one(s.db,"SELECT COUNT(*) n FROM stay_photos WHERE booking_id=? AND phase='handover'",b.id))?.n||0);
  const cleaner=Number((await one(s.db,"SELECT COUNT(*) n FROM job_evidence e JOIN cleaning_jobs j ON j.id=e.job_id WHERE j.booking_id=? AND e.phase IN ('before','damage')",b.id))?.n||0);
  if(verdict==='issues'&&!note&&!photos&&!cleaner)throw new DomainError('Добавьте фото или коротко опишите замечание: так его поймёт гость.');
- const list=verdict==='ok'?'':issues.map(handoverIssueText).join(', ').toLowerCase();
- const guestText=verdict==='ok'?'Владелец принял «'+b.title+'»: замечаний нет. Спасибо, что бережно отнеслись к жилью!':'После вашего выезда из «'+b.title+'» владелец отметил: '+list+(note?'. «'+note+'»':'')+'. Если не согласны, нажмите «Есть проблема» в карточке брони.';
+ const list=verdict==='ok'?'':issues.map(code=>handoverIssueText(code,!isHome(b))).join(', ').toLowerCase();
+ const guestText=verdict==='ok'?venueOr(b,'Владелец принял «'+b.title+'»: замечаний нет. Спасибо, что бережно отнеслись к жилью!','Владелец принял «'+b.title+'»: замечаний нет. Спасибо!'):venueOr(b,'После вашего выезда из «','По брони «')+b.title+'» владелец отметил: '+list+(note?'. «'+note+'»':'')+'. Если не согласны, нажмите «Есть проблема» в карточке брони.';
  const result=await s.db.batch([
   q(s.db,"INSERT OR IGNORE INTO stay_handovers(booking_id,property_id,owner_id,guest_id,verdict,issues,note,cleaner_photos,created_at) SELECT ?,?,?,?,?,?,?,?,? WHERE EXISTS(SELECT 1 FROM bookings WHERE id=? AND status='completed')",b.id,b.property_id,s.userId,b.guest_id,verdict,JSON.stringify(verdict==='ok'?[]:issues),verdict==='ok'?'':note,cleaner,t,b.id),
   q(s.db,'INSERT OR IGNORE INTO notifications SELECT ?,?,?,?,0,? WHERE changes()>0',uuid(),b.guest_id,guestText,'guest:handover:'+b.id,t),
