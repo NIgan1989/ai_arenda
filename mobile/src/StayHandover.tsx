@@ -35,10 +35,10 @@ export function StayPhotos({bookingId,phase,role,disabled=false,readOnly=false,o
 }
 
 // The guest, right after moving in: a few photos protect the deposit from damage that was already there.
-export function CheckinPhotos({bookingId,count}:{bookingId:string;count:number}){
+export function CheckinPhotos({bookingId,count,venue=false}:{bookingId:string;count:number;venue?:boolean}){
  return <View style={[s.card,{gap:8}]}>
-  <Text style={s.eventTitle}>{count?'Фото при заселении':'Сфотографируйте жильё'}</Text>
-  {!count&&<Text style={s.text}>3–5 снимков комнат и того, что уже сломано или испачкано. Тогда это не запишут на вас при выезде. Фото видите только вы и владелец.</Text>}
+  <Text style={s.eventTitle}>{count?(venue?'Фото в начале':'Фото при заселении'):venue?'Сфотографируйте помещение':'Сфотографируйте жильё'}</Text>
+  {!count&&<Text style={s.text}>{venue?'3–5 снимков помещения и того, что уже сломано или испачкано. Тогда это не запишут на вас, когда уйдёте.':'3–5 снимков комнат и того, что уже сломано или испачкано. Тогда это не запишут на вас при выезде.'} Фото видите только вы и владелец.</Text>}
   <StayPhotos bookingId={bookingId} phase="checkin" role="guest"/>
  </View>;
 }

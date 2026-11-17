@@ -4,8 +4,8 @@ import {loadPure} from './helpers/pure.mjs';
 
 // The rules themselves live in lib/now-card.ts and are tested in tests/now-card.test.mjs.
 // Here: the app shows exactly what the site shows, adds the owner's quick request, and knows where a tap leads.
-const {nowCard, unbrokenTime} = await loadPure('mobile/src/now-card.ts', 'lib/now-card.ts');
-const shared = await loadPure('lib/now-card.ts');
+const {nowCard, unbrokenTime} = await loadPure('mobile/src/now-card.ts', 'lib/now-card.ts', 'lib/stay-words.ts');
+const shared = await loadPure('lib/now-card.ts', 'lib/stay-words.ts');
 
 // 11 November 2026, 10:00 in Kazakhstan (UTC+5).
 const now = Date.parse('2026-11-11T05:00:00Z') / 1000;

@@ -1,3 +1,4 @@
+import {wordsOf} from '../../lib/stay-words';
 import React,{createContext,useContext,useEffect,useRef,useState,type ReactNode} from 'react';
 import {AppState,Animated,View,Text,StyleSheet} from 'react-native';
 import {activity,duration} from '../../lib/activity';
@@ -33,7 +34,7 @@ export function ActivityTimer({kind,item,compact=false}:{kind:'booking'|'job';it
  if(compact)return <View style={[a.box,a.compact]}><View style={a.row}><Text style={a.label}>{clock.label}</Text>{clock.phase!=='waiting'&&<Text accessibilityLiveRegion="none" style={[a.small,late&&a.red]}>{digits}</Text>}</View>{bar}</View>;
  return <View accessibilityLabel={clock.label} style={[a.box,late&&a.lateBox]}>
   <Text style={a.label}>{clock.label.toUpperCase()}</Text>
-  {clock.phase==='waiting'?<Text style={a.wait}>{kind==='booking'?'Таймер пойдёт с фактического заезда.':'Таймер пойдёт, когда исполнитель нажмёт «Начать уборку».'}</Text>
+  {clock.phase==='waiting'?<Text style={a.wait}>{kind==='booking'?(wordsOf(item).arrive==='Заезд'?'Таймер пойдёт с фактического заезда.':'Таймер пойдёт, когда отметят '+wordsOf(item).arriveAcc+'.'):'Таймер пойдёт, когда исполнитель нажмёт «Начать уборку».'}</Text>
   :<View style={a.top}><Text accessibilityLiveRegion="none" style={[a.digits,late&&a.red]}>{digits}</Text><Text style={a.note}>{note}</Text></View>}
   {bar}
   <View style={a.row}><Text style={a.end}>Начало <Text style={a.endB}>{clock.started?at(clock.started):'—'}</Text></Text><Text style={a.end}>{clock.phase==='stopped'&&clock.stopped?<>Конец <Text style={a.endB}>{at(clock.stopped)}</Text></>:<>Срок <Text style={a.endB}>{at(clock.deadline)}</Text>{late&&<> · сейчас <Text style={a.endB}>{hm(t)}</Text></>}</>}</Text></View>

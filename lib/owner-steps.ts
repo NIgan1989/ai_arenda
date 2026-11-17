@@ -1,4 +1,5 @@
 import { checkinOpen } from './checkin-window';
+import { wordsOf } from './stay-words';
 
 type Row = Record<string, any>;
 
@@ -10,12 +11,12 @@ export type OwnerStep = { id: OwnerStepId; label: string };
 export function ownerSteps(b: Row, now: number): OwnerStep[] {
   if (b.status === 'requested') return [{ id: 'answer', label: 'Рассмотреть заявку' }];
   if (b.status !== 'confirmed') return [];
-  const steps: OwnerStep[] = [];
-  if (checkinOpen(b.start, now) && !b.terms?.actual_checkin) steps.push({ id: 'checkin', label: 'Подтвердить заселение' });
-  if (b.terms?.checkout_reported_at) steps.push({ id: 'checkout-review', label: 'Рассмотреть выезд' });
+  const steps: OwnerStep[] = [], w = wordsOf(b);
+  if (checkinOpen(b.start, now) && !b.terms?.actual_checkin) steps.push({ id: 'checkin', label: 'Подтвердить ' + w.arriveAcc });
+  if (b.terms?.checkout_reported_at) steps.push({ id: 'checkout-review', label: 'Рассмотреть ' + w.leaveLow });
   if (b.terms?.deposit_status === 'pending') steps.push({ id: 'deposit', label: 'Подтвердить депозит' });
   if (b.payment_status !== 'owner_verified') steps.push({ id: 'paid', label: 'Отметить оплату' });
-  if (!b.terms?.checkout_reported_at && b.start <= now) steps.push({ id: 'checkout', label: 'Подтвердить выезд' });
+  if (!b.terms?.checkout_reported_at && b.start <= now) steps.push({ id: 'checkout', label: 'Подтвердить ' + w.leaveLow });
   return steps;
 }
 

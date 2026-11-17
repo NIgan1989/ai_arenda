@@ -1,5 +1,6 @@
 import type { Role } from './domain';
 import type { OperationEvent } from './operations';
+import { wordsOf } from './stay-words';
 
 type Row = Record<string, any>;
 
@@ -153,7 +154,7 @@ export function nowCard(role: Role, data: Row | null | undefined, nowSeconds: nu
   if (role === 'owner') {
     const request = requests.sort((a, b) => a.expires_at - b.expires_at)[0];
     if (request) return about('request', 'booking', request, 'Заявка ждёт ответа',
-      line('заезд ' + when(request.start), request.title), request.expires_at, 'Ответить', true);
+      line(wordsOf(request).arriveLow + ' ' + when(request.start), request.title), request.expires_at, 'Ответить', true);
     // A cleaner answered an open cleaning: the owner chooses right from this card, the responses wait for nobody else.
     const answered = ownerResponses(data, userId, now)[0];
     if (answered) return about('application', 'job', answered.job, answered.count > 1 ? 'Откликнулись исполнители · ' + answered.count : 'Откликнулся исполнитель',
@@ -166,7 +167,7 @@ export function nowCard(role: Role, data: Row | null | undefined, nowSeconds: nu
       else if (day(b.end) === today && b.end > now) moves.push({ booking: b, kind: 'checkout', at: b.end });
     }
     const move = moves.sort(byAt)[0];
-    if (move) return about(move.kind, 'booking', move.booking, move.kind === 'checkin' ? 'Заезд гостя' : 'Выезд гостя',
+    if (move) return about(move.kind, 'booking', move.booking, move.kind === 'checkin' ? wordsOf(move.booking).arrive + ' гостя' : wordsOf(move.booking).leave + ' гостя',
       line(when(move.at), move.booking.title), move.at, 'Открыть');
     return attention[0] ? fromEvent(attention[0]) : administrator();
   }
@@ -175,17 +176,17 @@ export function nowCard(role: Role, data: Row | null | undefined, nowSeconds: nu
   const overdue = stays.filter(b => b.end <= now).sort((a, b) => a.end - b.end)[0];
   if (overdue) {
     const reported = !!overdue.terms?.checkout_reported_at;
-    return about('checkout', 'booking', overdue, reported ? 'Выезд на проверке' : 'Сообщите о выезде',
-      line('выезд был ' + when(overdue.end), overdue.title), overdue.end, 'Открыть', !reported);
+    return about('checkout', 'booking', overdue, reported ? wordsOf(overdue).leave + ' на проверке' : 'Сообщите ' + wordsOf(overdue).ofLeave,
+      line(wordsOf(overdue).leaveLow + (wordsOf(overdue).leaveLow === 'окончание' ? ' было ' : ' был ') + when(overdue.end), overdue.title), overdue.end, 'Открыть', !reported);
   }
   const current = stays.filter(b => b.start <= now && b.end > now).sort((a, b) => a.end - b.end)[0];
-  if (current) return about('stay', 'booking', current, current.terms?.actual_checkin ? 'Вы заселены' : 'Время заезда наступило',
-    line('выезд ' + when(current.end), current.title), current.end, 'Открыть');
+  if (current) return about('stay', 'booking', current, current.terms?.actual_checkin ? wordsOf(current).youAre : 'Время ' + wordsOf(current).arriveGen + ' наступило',
+    line(wordsOf(current).leaveLow + ' ' + when(current.end), current.title), current.end, 'Открыть');
   const next = stays.filter(b => b.start > now).sort((a, b) => a.start - b.start)[0];
   const request = requests.sort((a, b) => a.start - b.start)[0];
-  if (next && (!request || next.start <= request.start)) return about('checkin', 'booking', next, 'Ближайший заезд',
+  if (next && (!request || next.start <= request.start)) return about('checkin', 'booking', next, wordsOf(next).arriveLow === 'заезд' ? 'Ближайший заезд' : 'Ближайшая бронь',
     line(when(next.start), next.title), next.start, 'Открыть');
   if (request) return about('request', 'booking', request, 'Ждём ответа владельца',
-    line('заезд ' + when(request.start), request.title), request.start, 'Открыть');
+    line(wordsOf(request).arriveLow + ' ' + when(request.start), request.title), request.start, 'Открыть');
   return administrator();
 }

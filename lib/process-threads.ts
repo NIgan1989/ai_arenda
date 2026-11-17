@@ -6,6 +6,7 @@
 import { aiNoteOf } from './ai-move-marks';
 import {handoverState} from './stay-handover-text';
 import { refundLeft } from './cancellation';
+import { wordsOf } from './stay-words';
 
 type Row = Record<string, any>;
 const tenge = (n: number) => Number(n).toLocaleString('ru-RU').replace(/\u00a0|\u202f/g, ' ') + ' ₸';
@@ -99,7 +100,7 @@ function lineOf(t: { steps: ThreadStep[]; current: number; finished: boolean }, 
 
 // ---------- Бронь глазами владельца ----------
 export function bookingThread(b: Row, data: Row, now: number): ProcessThread {
-  const did = aiDid(data, 'owner', 'booking', b.id), terms: Row = b.terms || {};
+  const did = aiDid(data, 'owner', 'booking', b.id), terms: Row = b.terms || {}, w = wordsOf(b);
   const confirmed = ['confirmed', 'completed'].includes(b.status), paid = b.payment_status === 'owner_verified';
   // After the end of the stay the check-in can no longer be reported (lib/guest-trips.ts): the guest is led to the checkout.
   const inside = !!terms.actual_checkin, out = !!terms.actual_checkout || b.status === 'completed', over = !inside && now >= b.end;
@@ -110,12 +111,12 @@ export function bookingThread(b: Row, data: Row, now: number): ProcessThread {
       note: confirmed ? (did('ИИ подтвердил бронь') ? 'ИИ подтвердил бронь' : 'Бронь подтверждена') : auto ? 'ИИ проверяет заявку' : 'Заявка ждёт вашего ответа' },
     // The guest pays in the app (data.paymentMode): the payment confirms itself and the AI reminds the guest, the owner marks nothing.
     { key: 'pay', label: 'Оплата', by: paid || inApp ? 'guest' : 'you', note: paid ? 'Оплата подтверждена' : inApp ? 'Ждём оплату гостя · ИИ напомнит' : 'Отметьте оплату, когда гость заплатит' },
-    { key: 'checkin', label: 'Заезд', by: did('ИИ заселил гостя') ? 'ai' : 'guest', at: b.start,
-      note: inside ? (did('ИИ заселил гостя') ? 'ИИ заселил гостя' : 'Гость заселился') : 'Заезд в ' + threadWhen(b.start, now) },
-    { key: 'stay', label: 'Проживание', by: 'guest', at: b.start, progress: inside && !out ? part(b.start, b.end, now) : undefined,
-      note: 'Гость в жилье' },
-    { key: 'checkout', label: 'Выезд', by: did('ИИ подтвердил выезд') ? 'ai' : 'guest', at: b.end,
-      note: out ? (did('ИИ подтвердил выезд') ? 'ИИ подтвердил выезд' : 'Выезд подтверждён') : terms.checkout_reported_at ? 'Гость сообщил о выезде · подтвердите' : now >= b.end ? 'Время выезда прошло · подтвердите выезд' : 'Выезд в ' + threadWhen(b.end, now) },
+    { key: 'checkin', label: w.arrive, by: did('ИИ заселил гостя') ? 'ai' : 'guest', at: b.start,
+      note: inside ? (did('ИИ заселил гостя') ? w.aiIn : w.guestIn) : w.arrive + ' в ' + threadWhen(b.start, now) },
+    { key: 'stay', label: w.stay, by: 'guest', at: b.start, progress: inside && !out ? part(b.start, b.end, now) : undefined,
+      note: w.guestInside },
+    { key: 'checkout', label: w.leave, by: did('ИИ подтвердил выезд') ? 'ai' : 'guest', at: b.end,
+      note: out ? (did('ИИ подтвердил выезд') ? w.aiOut : w.leaveOk) : terms.checkout_reported_at ? 'Гость сообщил ' + w.ofLeave + ' · подтвердите' : now >= b.end ? 'Время ' + w.leaveGen + ' прошло · подтвердите ' + w.leaveLow : w.leave + ' в ' + threadWhen(b.end, now) },
   ];
   // A deposit the owner received is a last step of its own: the stay is not closed until it is back with the guest.
   const held = terms.deposit_status === 'owner_verified' && Number(terms.deposit) > 0, owed = Number(terms.deposit_balance) || 0, kept = Number(terms.deposit_kept) || 0;
@@ -126,7 +127,7 @@ export function bookingThread(b: Row, data: Row, now: number): ProcessThread {
   const t = place(steps, done, i => i === 0 || i === 1 || i === 3 || i === 5 || (i === 2 ? now >= b.start - 15 * 60 : now >= b.end));
   const yours = !t.finished && t.steps[t.current].by === 'you';
   return { id: b.id, kind: 'booking', tag: 'Бронь', title: b.title || 'Бронь', propertyId: b.property_id, ...t, yours,
-    status: statusOf(t, now, 'Завершено'), line: lineOf(t, now, did('ИИ подтвердил выезд') ? 'ИИ подтвердил выезд' : 'Гость выехал'), at: b.start };
+    status: statusOf(t, now, 'Завершено'), line: lineOf(t, now, did('ИИ подтвердил выезд') ? w.aiOut : w.guestOut), at: b.start };
 }
 
 // ---------- Отменённая бронь, по которой владелец ещё должен гостю ----------
@@ -232,7 +233,7 @@ export function cleanerThreads(data: Row | null | undefined, now: number, week =
 // «Вы» здесь гость: оплата (пока она тестовая и её можно внести в приложении), заезд и выезд — его шаги,
 // подтверждает их владелец или ИИ. Законченная бронь без оценки ещё ждёт гостя: «Оцените проживание».
 export function tripThread(b: Row, now: number, paymentMode?: string): ProcessThread {
-  const terms: Row = b.terms || {};
+  const terms: Row = b.terms || {}, w = wordsOf(b);
   const confirmed = ['confirmed', 'completed'].includes(b.status), paid = b.payment_status === 'owner_verified';
   const left = Number(b.amount) - (Number(terms.paid_amount) || 0), depositDue = Number(terms.deposit) > 0 && terms.deposit_status === 'pending';
   const canPay = paymentMode === 'test' && (left > 0 || depositDue);
@@ -241,12 +242,12 @@ export function tripThread(b: Row, now: number, paymentMode?: string): ProcessTh
   const steps: Omit<ThreadStep, 'state'>[] = [
     { key: 'request', label: 'Заявка', by: 'owner', at: b.created_at, note: confirmed ? 'Бронь подтверждена' : 'Ждём ответа владельца' },
     { key: 'pay', label: 'Оплата', by: canPay ? 'you' : 'owner',
-      note: paid && !depositDue ? 'Оплата подтверждена' : canPay && left > 0 ? (depositDue ? 'Оплатите бронь и депозит одним платежом' : 'Оплатите бронь, чтобы она не снялась') : canPay ? 'Внесите депозит, он вернётся после выезда' : 'Владелец подтверждает оплату' },
-    { key: 'checkin', label: 'Заезд', by: 'you', at: b.start,
-      note: inside ? 'Вы заселились' : over ? 'Срок брони закончился' : terms.checkin_reported_at ? 'Владелец подтверждает заселение' : 'Заезд в ' + threadWhen(b.start, now) },
-    { key: 'stay', label: 'Проживание', by: 'you', at: b.start, progress: inside && !out ? part(b.start, b.end, now) : undefined, note: 'Вы в жилье' },
-    { key: 'checkout', label: 'Выезд', by: 'you', at: b.end,
-      note: out ? 'Выезд подтверждён' : terms.checkout_reported_at ? 'Владелец подтверждает выезд' : 'Сообщите о выезде, когда уйдёте' },
+      note: paid && !depositDue ? 'Оплата подтверждена' : canPay && left > 0 ? (depositDue ? 'Оплатите бронь и депозит одним платежом' : 'Оплатите бронь, чтобы она не снялась') : canPay ? 'Внесите депозит, он вернётся ' + w.afterLeave : 'Владелец подтверждает оплату' },
+    { key: 'checkin', label: w.arrive, by: 'you', at: b.start,
+      note: inside ? w.youIn : over ? 'Срок брони закончился' : terms.checkin_reported_at ? 'Владелец подтверждает ' + w.arriveAcc : w.arrive + ' в ' + threadWhen(b.start, now) },
+    { key: 'stay', label: w.stay, by: 'you', at: b.start, progress: inside && !out ? part(b.start, b.end, now) : undefined, note: w.youInside },
+    { key: 'checkout', label: w.leave, by: 'you', at: b.end,
+      note: out ? w.leaveOk : terms.checkout_reported_at ? 'Владелец подтверждает ' + w.leaveLow : 'Сообщите ' + w.ofLeave + ', когда уйдёте' },
   ];
   const leaving = out || !!terms.checkout_reported_at || now >= b.end;
   const t = place(steps, [confirmed, paid && !depositDue, inside || over, (inside || over) && leaving, out], i => i === 0 || i === 1 || i === 3 || (i === 2 ? now >= b.start - 15 * 60 : true));
@@ -256,7 +257,7 @@ export function tripThread(b: Row, now: number, paymentMode?: string): ProcessTh
     : t.current === 2 ? t.steps[2].state === 'now' && !terms.checkin_reported_at
     : t.current === 4 && !terms.checkout_reported_at;
   return { id: b.id, kind: 'booking', tag: 'Бронь', title: b.title || 'Бронь', propertyId: b.property_id, ...t, yours,
-    status: review ? 'Оцените' : statusOf(t, now, 'Завершено'), line: review ? 'Проживание завершено. Оцените его, это помогает другим гостям' : lineOf(t, now, 'Проживание завершено'), at: b.start };
+    status: review ? 'Оцените' : statusOf(t, now, 'Завершено'), line: review ? w.done + '. Оцените его, это помогает другим гостям' : lineOf(t, now, w.done), at: b.start };
 }
 
 const REVIEW = 3 * DAY;

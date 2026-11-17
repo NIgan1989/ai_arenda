@@ -1,4 +1,5 @@
 import { checkinOpen, checkinOpensLabel } from './checkin-window';
+import { wordsOf } from './stay-words';
 import { recordSpan } from './record-span';
 import { lateOpen, lateNote, lateLabel } from './late-arrival';
 
@@ -22,22 +23,23 @@ const PAST: Record<string, string> = {
 
 // What the booking waits for, in the guest's own words: the next thing the guest (or the owner) has to do.
 function state(b: Row, now: number): Pick<GuestTrip, 'status' | 'tone'> {
+  const w = wordsOf(b);
   if (b.status === 'requested') {
     return b.expires_at && b.expires_at <= now ? { status: PAST.expired, tone: 'neutral' } : { status: 'Ждём ответа владельца', tone: 'warning' };
   }
   if (b.status !== 'confirmed') {
     return b.status === 'completed' && !b.review_rating
-      ? { status: 'Оцените проживание', tone: 'active' }
-      : { status: PAST[b.status] || 'Бронь закрыта', tone: 'neutral' };
+      ? { status: w.rate, tone: 'active' }
+      : { status: b.status === 'completed' ? w.done : PAST[b.status] || 'Бронь закрыта', tone: 'neutral' };
   }
-  if (b.terms?.actual_checkout) return { status: PAST.completed, tone: 'neutral' };
+  if (b.terms?.actual_checkout) return { status: w.done, tone: 'neutral' };
   if (b.end <= now) {
-    return b.terms?.checkout_reported_at ? { status: 'Выезд на проверке', tone: 'neutral' } : { status: 'Сообщите о выезде', tone: 'warning' };
+    return b.terms?.checkout_reported_at ? { status: w.leave + ' на проверке', tone: 'neutral' } : { status: 'Сообщите ' + w.ofLeave, tone: 'warning' };
   }
-  if (b.terms?.actual_checkin) return { status: 'Вы заселены', tone: 'success' };
+  if (b.terms?.actual_checkin) return { status: w.youAre, tone: 'success' };
   if (b.payment_status !== 'owner_verified') return { status: 'Ждёт оплаты', tone: 'warning' };
   if (b.terms?.deposit > 0 && b.terms?.deposit_status === 'pending') return { status: 'Ждёт депозита', tone: 'warning' };
-  return b.start <= now ? { status: 'Время заезда наступило', tone: 'success' } : { status: 'Оплачено', tone: 'success' };
+  return b.start <= now ? { status: 'Время ' + w.arriveGen + ' наступило', tone: 'success' } : { status: 'Оплачено', tone: 'success' };
 }
 
 // The guest's bookings for the sheet of the map. What is going on or still ahead comes first, the nearest on top;
@@ -68,7 +70,8 @@ const money = (value: number) => new Intl.NumberFormat('ru-RU').format(value) + 
 // Everything the guest can do next with a booking, in the order it is done. The card of the booking shows all of
 // it; the map shows only the first step that can be taken now (guestStep).
 export function guestSteps(b: Row, now: number, paymentMode?: string): GuestStep[] {
-  if (b.status === 'completed') return b.review_rating ? [] : [{ id: 'review', label: 'Оценить проживание' }];
+  const w = wordsOf(b);
+  if (b.status === 'completed') return b.review_rating ? [] : [{ id: 'review', label: w.rateBtn }];
   if (b.status !== 'confirmed') return [];
   const steps: GuestStep[] = [], left = b.amount - (b.terms?.paid_amount || 0);
   if (paymentMode === 'test' && left > 0) steps.push({ id: 'pay', label: 'Оплатить ' + money(left) });
@@ -77,8 +80,8 @@ export function guestSteps(b: Row, now: number, paymentMode?: string): GuestStep
   }
   if (!b.terms?.actual_checkin && !b.terms?.checkin_reported_at && b.end > now) {
     steps.push({
-      id: 'checkin', label: 'Я заселился',
-      ...(checkinOpen(b.start, now) ? {} : { disabled: true, note: 'Кнопка станет активной за 15 минут до заезда: ' + checkinOpensLabel(b.start, now) + '.' }),
+      id: 'checkin', label: w.iAmIn,
+      ...(checkinOpen(b.start, now) ? {} : { disabled: true, note: 'Кнопка станет активной за 15 минут до ' + w.arriveGen + ': ' + checkinOpensLabel(b.start, now) + '.' }),
     });
   }
   // «Задерживаюсь на час»: the guest warns the owner before the AI has to ask (lib/late-arrival.ts).
@@ -86,7 +89,7 @@ export function guestSteps(b: Row, now: number, paymentMode?: string): GuestStep
   if (!b.terms?.actual_checkin && !b.terms?.checkin_reported_at && lateOpen(late, now)) {
     steps.push({ id: 'late', label: lateLabel(late), note: lateNote(late, now) || undefined });
   }
-  if (b.start <= now && !b.terms?.checkout_reported_at) steps.push({ id: 'checkout', label: 'Сообщить о выезде' });
+  if (b.start <= now && !b.terms?.checkout_reported_at) steps.push({ id: 'checkout', label: 'Сообщить ' + w.ofLeave });
   return steps;
 }
 
@@ -102,7 +105,7 @@ export function guestPin(b: Row, now: number, paymentMode?: string): { label: st
   const clock = (at: number) => { const d = new Date((at + 5 * 3600) * 1000); return String(d.getUTCHours()).padStart(2, '0') + ':' + String(d.getUTCMinutes()).padStart(2, '0'); };
   const step = guestStep(b, now, paymentMode);
   if (step?.id === 'pay' || step?.id === 'deposit') return { label: step.id === 'pay' ? 'Оплатить' : 'Внести депозит', tone: 'pending' };
-  if (step?.id === 'checkin') return { label: 'Можно заселяться', tone: 'booked' };
+  if (step?.id === 'checkin') return { label: wordsOf(b).canIn, tone: 'booked' };
   if (b.terms?.actual_checkin || b.terms?.checkin_reported_at) return { label: 'Вы здесь до ' + clock(b.end), tone: 'booking' };
-  return { label: 'Заезд ' + clock(b.start), tone: 'booking' };
+  return { label: wordsOf(b).arrive + ' ' + clock(b.start), tone: 'booking' };
 }
