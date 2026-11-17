@@ -27,3 +27,14 @@ test('a guest finds a home by its rules, check-in, deposit and floor',async()=>{
   assert.equal(empty.empty.blocker,'maxFloor');
  }finally{f.db.close();}
 });
+
+test('a dotted budget, every counted child and «не на первом этаже» are read as said',async()=>{
+ const {guestSearchRequest}=await load('map-search-request');
+ const at=Date.UTC(2026,10,17,6),read=text=>guestSearchRequest(text,{city:'Павлодар'},['Павлодар'],at);
+ assert.equal(read('квартира до 15.000 тенге').filters.maxPrice,'15000');
+ assert.equal(read('квартира до 1,5').filters.maxPrice,undefined);
+ assert.equal(read('квартира для 2 взрослых и 4 детей').filters.guests,'6');
+ const notFirst=read('квартира на сутки не на первом этаже');
+ assert.equal(notFirst.filters.maxFloor,undefined);
+ assert.match(notFirst.remarks.join(' '),/этаж/);
+});

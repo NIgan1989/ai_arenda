@@ -643,7 +643,8 @@ function statedBudget(text: string, banquet = false): { value: string; perUnit: 
   const match = text.match(/(?:^|[^а-я])(?:до|не дороже|не больше|максимум|бюджет|за)\s*(\d{1,3}(?:[ . ]\d{3})+|\d+(?:[.,]\d)?)\s*(тыс[а-я]*\.?|к(?![а-я])|млн\.?|миллион[а-я]*)?/);
   if (!match) return null;
   const times = !match[2] ? 1 : /^(?:млн|миллион)/.test(match[2]) ? 1000000 : 1000;
-  if (!match[2] && /[.,]/.test(match[1])) return null;
+  // «До 1,5» without «млн» is no sum; «до 15.000» is fifteen thousand with a dot between the thousands.
+  if (!match[2] && /^\d+[.,]\d$/.test(match[1])) return null;
   const rest = text.slice((match.index || 0) + match[0].length);
   // «До 8 000 за гостя», «с человека»: the price per guest of a banquet. A sum too small for a whole hall is one too.
   const each = '(?:за|с|на)\\s+(?:одного\\s+|каждого\\s+)?(?:гостя|человека|персону|чел(?![а-я]))';
@@ -728,7 +729,7 @@ export function guestSearchRequest(text: string, current: Row, cities: string[],
   const most = banquet ? MAX_BANQUET_GUESTS : MAX_GUESTS;
   // «С ребёнком», «семья с двумя детьми»: the children come on top of the grown-ups (two when none are counted).
   const child = request.match(/(?:^|[^а-я])(?:с|и)\s+(?:(\d|двумя|двое|тремя|трое|одним)\s+)?(?:реб[еи]н[а-я]*|малыш[а-я]*|дет(?:ьми|ей|и)|дочк[а-я]*|сын[а-я]*)(?=$|[^а-я])/);
-  const kids = child ? ({ '2': 2, двумя: 2, двое: 2, '3': 3, тремя: 3, трое: 3 } as Record<string, number>)[child[1] || ''] || (/дет/.test(child[0]) && !child[1] ? 2 : 1) : 0;
+  const kids = !child ? 0 : /^\d$/.test(child[1] || '') ? Math.max(1, Number(child[1])) : ({ двумя: 2, двое: 2, тремя: 3, трое: 3 } as Record<string, number>)[child[1] || ''] || (/дет/.test(child[0]) && !child[1] ? 2 : 1);
   const adults = party ?? (counted ? Number(counted[1]) : null);
   const grown = counted && !/взросл/.test(counted[0]) && adults !== null ? adults : null; // «на 4 гостей с ребёнком»: the four are everyone
   const guests = kids && !banquet ? (grown ?? (adults ?? 2) + kids) : adults;
@@ -767,7 +768,8 @@ export function guestSearchRequest(text: string, current: Row, cities: string[],
   }
 
   // «Первый этаж», «не выше 3 этажа»: the highest floor a home may be on.
-  const floor = bath || banquet ? 0 : /(?:^|[^а-я])(?:перв(?:ый|ом)|1-?(?:й|м|ом))\s+этаж/.test(request) ? 1
+  // «Не на первом этаже» is not a cap: it is left unsearched and said so (the word «этаж» stays in the note).
+  const floor = bath || banquet || /(?:^|[^а-я])не\s+(?:на\s+)?(?:перв(?:ый|ом)|1-?(?:й|м|ом))\s+этаж/.test(request) ? 0 : /(?:^|[^а-я])(?:перв(?:ый|ом)|1-?(?:й|м|ом))\s+этаж/.test(request) ? 1
     : Number(request.match(/(?:не\s+выше|до|максимум|не\s+выше\s+чем)\s+(\d{1,2})(?:-?(?:го|й|ого))?\s+этаж/)?.[1] || 0);
   if (floor >= 1) {
     filters.maxFloor = floor;
