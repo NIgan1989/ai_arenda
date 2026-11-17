@@ -135,6 +135,8 @@ function GuestPanel({setScanning,setQuiet,accountId,data,mapData,publish,selecte
   if(parsed.nearby&&!parsed.draft.near&&fix&&nearestCity(fix.point)===parsed.draft.city){void find({...parsed.draft,near:nearOf(fix.point)});return;}
   if(parsed.nearby&&!parsed.draft.near){pickThenFind.current=true;setPicking(true);expand(0);return;}
   // «У вокзала»: the landmark is found on the map and the search looks around it; not found is said, and the whole city is searched.
+  // Without an account the landmark is not looked up (the service pays for each lookup): the whole city is searched, and it is said.
+  if(parsed.place&&!accountId){setHint({text:[note,'Искать у ориентира смогу после входа. Пока показываю весь город.'].filter(Boolean).join(' ')});void find({...parsed.draft,near:null,priority:parsed.draft.priority==='closer'?'balanced':parsed.draft.priority});return;}
   if(parsed.place&&!lock.current){
    const asked=parsed.place;lock.current=true;setWorking(true);
    void (async()=>{
@@ -158,6 +160,8 @@ function GuestPanel({setScanning,setQuiet,accountId,data,mapData,publish,selecte
   // What the rules could not read goes to the model, which says it in the words the rules do read; those words then
   // pass the same rules. No model on the server, no permission or no answer: the guest is told, never guessed for.
   if(lock.current)return;
+  // The model reads free text only for someone signed in; without an account the guest is asked for the usual words.
+  if(!accountId){setHint({text:'Не понял запрос. Напишите день, срок, тип жилья или бюджет, например «завтра на сутки до 15 000». ИИ разберёт любой текст после входа.'});return;}
   lock.current=true;setWorking(true);setHint({text:'ИИ разбирает запрос…'});
   void (async()=>{
    let ai:Row|null=null;
@@ -174,7 +178,8 @@ function GuestPanel({setScanning,setQuiet,accountId,data,mapData,publish,selecte
  // «Забронировать»: the price in the list is for the searched time. If that time has passed while the list was open, the search runs again first.
  const bookFlat=(property:Row)=>{if(freshDraft(draft).start!==draft.start){setHint({text:'Время начала уже прошло. Обновил варианты на ближайшее время.'});setSelected('');void find(draft);return;}// One button. A home that confirms by itself is booked at once; a home whose owner answers quick requests is asked
   // first, together with the next best ones, so a refusal or silence already has the next offer coming.
-  if(askFirst(property)){void begin(property.id);return;}
+  // Without an account the button asks to sign in first (App.tsx); the booking then goes on with the same stay.
+  if(askFirst(property)&&accountId){void begin(property.id);return;}
   onBook(property,{mode:tariffOf(draft,property),start:draft.start,end:draft.end,guests:draft.guests,...(draft.occasion?{occasion:draft.occasion}:{})});};
  // What narrows a search beyond the place, the time and the guests. An empty result offers to drop these and look again.
  const narrowed=!!(draft.district||draft.maxPrice||draft.features.length||draft.priority!=='balanced'||draft.near||(categoryOf(draft)!=='stay'?draft.kinds.length<allKinds(categoryOf(draft)).length:draft.kinds.length)||draft.rooms||draft.now);
@@ -678,7 +683,8 @@ export function MapHome({ role, accountId, data, menu, chats, onChanged, onOpenP
   cityRef.current = city;
   const loadMap = async () => {
     const asked = cityRef.current;
-    const result = await request('/api/operations/map/search', { filters: { city: asked } }, undefined, undefined, role);
+    // Without an account the map is the public one: the same homes at the same rough points, nothing of anybody's deals.
+    const result = accountId ? await request('/api/operations/map/search', { filters: { city: asked } }, undefined, undefined, role) : await request('/api/public/catalog?map=1&limit=60&city=' + encodeURIComponent(asked));
     if (cityRef.current !== asked) return;
     const next = { ...result, city: asked, receivedAt: Date.now() / 1000 };
     setMapData(next);
@@ -898,7 +904,8 @@ export function MapHome({ role, accountId, data, menu, chats, onChanged, onOpenP
         </Text>
       )}
       {(role === 'owner' || role === 'guest') && !selected && <PriceTip role={role} cards={data.approvals || []} onChanged={onChanged} onEdit={onEdit} />}
-      {!!menu && <View style={h.menu}>{menu}</View>}
+      {/* Without an account the round slot widens for the «Войти» word. */}
+      {!!menu && <View style={[h.menu, !accountId && { width: 'auto' }]}>{menu}</View>}
       {!!chats && <View style={h.chats}>{chats}</View>}
       {!picking && <MapMood mood={mood} joy={joy} still={calm || quiet} bottom={covered ? cardEdge : sheet} />}
       <Animated.View style={[h.sheet, { height: sheet, opacity: veil }]} accessibilityViewIsModal={false}>
