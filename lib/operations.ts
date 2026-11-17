@@ -1,4 +1,5 @@
 import type { Role } from './domain';
+import { stayWords } from './stay-words';
 
 type Row = Record<string, any>;
 export type OperationEvent = {
@@ -24,7 +25,8 @@ export function operationOverview(data: Row, userId: string, role: Role, now: nu
     } else if (b.end <= now && !b.terms?.actual_checkout) {
       attention.push(bookingEvent(b,role==='owner'?'Проверить фактический выезд':'Уточнить завершение проживания',b.end,true));
     } else if (b.end > now) {
-      upcoming.push(bookingEvent(b, b.start > now ? 'Заезд' : 'Выезд', b.start > now ? b.start : b.end));
+      // A bath is come to and left, a hall has a beginning and an end: the words of the kind (lib/stay-words.ts).
+      upcoming.push(bookingEvent(b, b.start > now ? stayWords(b.property_type).arrive : stayWords(b.property_type).leave, b.start > now ? b.start : b.end));
       if (role === 'owner' && b.payment_status !== 'owner_verified')
         attention.push(bookingEvent(b, 'Проверить поступление оплаты', b.start));
     }
