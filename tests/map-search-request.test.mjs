@@ -387,3 +387,12 @@ test('«На ночь» is the night tariff: tonight till noon, and after midnig
   assert.deepEqual(defaultStay('daily', at('2026-11-18T01:10')), { mode: 'daily', start: '2026-11-18T02:00', end: '2026-11-18T12:00' });
   assert.deepEqual(defaultStay('night', at('2026-11-17T10:00')), { mode: 'night', start: '2026-11-17T14:00', end: '2026-11-18T12:00' });
 });
+
+test('a night stay left open after midnight stays the same night', () => {
+  const { freshStay } = lib;
+  const stay0 = { mode: 'night', start: '2026-11-18T01:30', end: '2026-11-18T12:00' };
+  assert.deepEqual(freshStay(stay0, at('2026-11-18T01:40')), { start: '2026-11-18T02:30', end: '2026-11-18T12:00' });
+  assert.deepEqual(freshStay({ ...stay0, end: '2026-11-19T12:00' }, at('2026-11-18T01:40')), { start: '2026-11-18T02:30', end: '2026-11-19T12:00' });
+  // In the day a stale stay starts at the nearest half-hour as before.
+  assert.deepEqual(freshStay({ mode: 'daily', start: '2026-11-18T14:00', end: '2026-11-19T12:00' }, at('2026-11-18T15:10')), { start: '2026-11-18T16:00', end: '2026-11-19T12:00' });
+});

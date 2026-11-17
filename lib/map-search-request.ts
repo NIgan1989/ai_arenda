@@ -256,8 +256,10 @@ export function freshStay(stay: GuestStay, now = Date.now()): { start: string; e
     const from = localISO(nextSlot(now));
     return hourlyStay(from.slice(0, 10), from.slice(11), stayHours(start, end));
   }
-  const today = kzToday(now);
-  return dailyStay(today, end.slice(0, 10) > today ? end.slice(0, 10) : addDays(today, 1), now);
+  const today = kzToday(now), out = end.slice(0, 10);
+  // Before 06:00 the night under way stays a night: from the nearest half-hour, out at the same noon as before.
+  if (localISO(now).slice(11) < NIGHT_UNTIL && out >= today) return dailyStay(today, addDays(out, 1), now, undefined, 30, true);
+  return dailyStay(today, out > today ? out : addDays(today, 1), now);
 }
 
 /** Half-hour start times of the chosen date; today only the ones still ahead. `keep` stays in the list. */

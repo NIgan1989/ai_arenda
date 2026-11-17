@@ -157,6 +157,7 @@ function requestBody(draft: Row) {
     near: draft.near || null,
     kinds: Array.isArray(draft.kinds) ? draft.kinds : [],
     rooms: String(draft.rooms || ''),
+    now: draft.now === true,
     start: draft.start + '+05:00',
     end: draft.end + '+05:00',
   };
@@ -569,6 +570,8 @@ export function SmartGuestMap({ publicMode = false, onChanged, accountId, city, 
     }
     let next = result.filters;
     if (!result.stated.home) next = { ...next, kinds: [], rooms: '' };
+    // «Сейчас» holds for the phrase that said it, as the type and rooms do.
+    if (!/сейчас|срочно/i.test(text)) next = { ...next, now: false };
     const remarks = result.remarks.join(' ');
     setRemark('');
     if (result.stated.city) cityChosen.current = true;
