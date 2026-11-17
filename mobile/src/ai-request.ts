@@ -3,6 +3,7 @@
 // "14 ноября на двоих" means the same thing in the app and in the browser. This file keeps the app's form
 // in step with those rules. No model is called here. Covered by mobile/tests/ai-request.test.mjs.
 import {
+  BATH_KINDS,
   CHECKOUT_TIME,
   MAX_GUESTS as SHARED_MAX_GUESTS,
   NO_BUDGET,
@@ -48,14 +49,36 @@ export type ParsedRequest = {
   // What was cut or could not be taken as written ("Максимум 23 часа, ищу на 23."); '' when nothing was.
   note: string;
 };
-export type ChipId = 'now' | 'night' | 'daily' | 'hourly' | 'weekend';
+export type ChipId = 'now' | 'night' | 'daily' | 'hourly' | 'weekend' | 'evening' | 'tomorrow';
 
 // Types of home a guest can ask for, as lib/listings.ts names them (propertyTypes). Kept here so this file stays
 // free of server code; mobile/tests/ai-request.test.mjs checks that the two lists match.
 export const HOME_KINDS: Record<string, string> = {
   apartment: 'Квартира', studio: 'Студия', room: 'Комната', house: 'Дом',
-  guesthouse: 'Гостевой дом', hostel: 'Хостел', hotel: 'Гостиница', aparthotel: 'Апарт-отель'
+  guesthouse: 'Гостевой дом', hostel: 'Хостел', hotel: 'Гостиница', aparthotel: 'Апарт-отель',
+  banya: 'Баня', sauna: 'Сауна'
 };
+
+// What the guest looks for, chosen above the line like a tariff in a taxi (lib/listings.ts categories).
+// «Баня» is a bath or a sauna taken whole for a few hours. The category is kept in the types of the request:
+// only bath types named means «Баня», anything else «Жильё».
+export type Category = 'stay' | 'bath';
+export const BATH_TYPES: string[] = BATH_KINDS;
+export const CATEGORIES: { id: Category; title: string; icon: string; hint: string }[] = [
+  { id: 'stay', title: 'Жильё', icon: '🏠', hint: 'Жильё: на сутки, на ночь или на часы' },
+  { id: 'bath', title: 'Баня', icon: '♨️', hint: 'Баня и сауна: на несколько часов' }
+];
+export const categoryOf = (draft: Pick<GuestDraft, 'kinds'>): Category => (draft.kinds.length && draft.kinds.every(id => BATH_KINDS.includes(id)) ? 'bath' : 'stay');
+/** The types a category offers in the form, with their names. */
+export const categoryKinds = (category: Category): [string, string][] => Object.entries(HOME_KINDS).filter(([id]) => BATH_KINDS.includes(id) === (category === 'bath'));
+/** Another category is another request: the place stays, what narrowed the search starts over, a bath is by the hour. */
+export function withCategory(draft: GuestDraft, category: Category, now = Date.now()): GuestDraft {
+  if (categoryOf(draft) === category) return draft;
+  const clean = { ...draft, district: '', maxPrice: '', perUnit: true, priority: 'balanced' as const, features: [], near: null, rooms: '', now: false };
+  return category === 'bath'
+    ? { ...clean, ...defaultStay('hourly', now), guests: Math.max(draft.guests, 4), kinds: [...BATH_KINDS] }
+    : { ...clean, ...defaultStay('daily', now), guests: 2, kinds: [] };
+}
 
 // The wishes the shared parser can read from text, in the order the form shows them.
 export const WISHES: [string, string][] = [
@@ -63,6 +86,15 @@ export const WISHES: [string, string][] = [
   ['wifi', 'Wi-Fi'],
   ['kitchen', 'Кухня'],
   ['workspace', 'Рабочее место']
+];
+// What a company asks of a bath; the ids are the shared amenities.
+export const BATH_WISHES: [string, string][] = [
+  ['pool', 'Бассейн'],
+  ['plunge', 'Купель'],
+  ['brooms', 'Веники'],
+  ['karaoke', 'Караоке'],
+  ['grill', 'Мангал'],
+  ['parking', 'Парковка']
 ];
 // The largest party the service accepts; the form and the text stop at the same number.
 export const MAX_GUESTS = SHARED_MAX_GUESTS;
@@ -93,10 +125,13 @@ const REFINE = /^(?:а|и|ещ[её]|теперь|только|плюс|такж
  * дешевле", "ещё с парковкой") keeps it all. Nothing is invented: what the text does not name stays as it was.
  */
 export function guestRequestFromText(text: string, draft: GuestDraft, cities: string[], now = Date.now()): ParsedRequest {
-  const kept = freshDraft(draft, now);
+  // «Квартира» names no type of home (any home will do), but said in «Баня» it leaves that category.
+  const home = /квартир|жиль[её]|однушк|двушк|тр[её]шк/.test(text.toLocaleLowerCase('ru'));
+  const kept = home && categoryOf(draft) === 'bath' ? withCategory(freshDraft(draft, now), 'stay', now) : freshDraft(draft, now);
   const base: GuestDraft = REFINE.test(text.trim().toLocaleLowerCase('ru'))
     ? kept
-    : { ...kept, district: '', guests: 2, maxPrice: '', perUnit: true, priority: 'balanced', features: [], near: null, kinds: [], rooms: '', now: false };
+    // The category chosen above the line stays: in «Баня» a new phrase is still about a bath, and keeps the party.
+    : { ...kept, district: '', guests: categoryOf(kept) === 'bath' ? kept.guests : 2, maxPrice: '', perUnit: true, priority: 'balanced', features: [], near: null, kinds: categoryOf(kept) === 'bath' ? [...BATH_KINDS] : [], rooms: '', now: false };
   const result = guestSearchRequest(text, base, cities, now);
   const filters = result.filters;
   const next: GuestDraft = {
@@ -110,7 +145,7 @@ export function guestRequestFromText(text: string, draft: GuestDraft, cities: st
     maxPrice: String(filters.maxPrice || ''),
     perUnit: typeof filters.perUnit === 'boolean' ? filters.perUnit : base.perUnit,
     priority: filters.priority === 'cheaper' || filters.priority === 'closer' ? filters.priority : 'balanced',
-    features: Array.isArray(filters.features) ? filters.features.filter((id: unknown) => WISHES.some(([known]) => known === id)) : [],
+    features: Array.isArray(filters.features) ? filters.features.filter((id: unknown) => [...WISHES, ...BATH_WISHES].some(([known]) => known === id)) : [],
     near: filters.near || null,
     kinds: Array.isArray(filters.kinds) ? filters.kinds.filter((id: unknown) => typeof id === 'string' && Object.prototype.hasOwnProperty.call(HOME_KINDS, id)) : [],
     rooms: typeof filters.rooms === 'string' && /^[1-9]\+?$/.test(filters.rooms) ? filters.rooms : '',
@@ -143,6 +178,14 @@ export function chipDraft(id: ChipId, draft: GuestDraft, now = Date.now()): Gues
   }
   // Leaving «Сейчас» also lets go of the point it took from the phone.
   const loose = draft.now ? { near: null, priority: 'balanced' as const } : {};
+  // «Вечером» and «Завтра» of the category «Баня»: three hours from 19:00, today while the evening is ahead
+  // (from the nearest half-hour once it has begun), otherwise tomorrow.
+  if (id === 'evening' || id === 'tomorrow') {
+    const today = kzToday(now), soon = new Date(nextSlot(now, 30) + 5 * 3600000).toISOString().slice(0, 16);
+    const late = soon.slice(0, 10) !== today || soon.slice(11) > '21:00';
+    const from = id === 'tomorrow' || late ? addDays(today, 1) + 'T19:00' : soon.slice(11) > '19:00' ? soon : today + 'T19:00';
+    return { ...draft, mode: 'hourly', ...hourlyStay(from.slice(0, 10), from.slice(11), 3), ...loose, now: false };
+  }
   return { ...draft, ...(id === 'weekend' ? weekendStay(now) : defaultStay(id, now)), ...loose, now: false };
 }
 
@@ -260,9 +303,9 @@ export function dayChoices(draft: GuestDraft, now = Date.now()): [string, string
 const REASON_TEXT: Record<string, string> = { 'Готовность проверена': 'Готово к заселению' };
 
 /** The server's reasons as the guest reads them: no "в пределах бюджета" when no budget was named. */
-export function shownReasons(reasons: unknown, draft: Pick<GuestDraft, 'maxPrice'>): string[] {
+export function shownReasons(reasons: unknown, draft: Pick<GuestDraft, 'maxPrice'>, bath = false): string[] {
   if (!Array.isArray(reasons)) return [];
   return reasons
     .filter((reason): reason is string => typeof reason === 'string' && (!!draft.maxPrice || reason !== 'В пределах бюджета'))
-    .map(reason => REASON_TEXT[reason] || reason);
+    .map(reason => (bath && reason === 'Готовность проверена' ? 'Готово к приходу гостей' : REASON_TEXT[reason] || reason));
 }

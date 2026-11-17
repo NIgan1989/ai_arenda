@@ -105,6 +105,8 @@ const PART_OF_DAY: [RegExp, string, number][] = [
 ];
 // The type of home the text names, as the ids of lib/listings.ts (propertyTypes). "Квартира" is how most guests
 // say "жильё" and narrows nothing; a "гостевой дом" is not a "дом", an "апарт-отель" not an "отель".
+/** The types of the category «Баня» (lib/listings.ts categories.bath). */
+export const BATH_KINDS = ['banya', 'sauna'];
 const KINDS: [RegExp, string][] = [
   [/студи/, 'studio'],
   [/апарт[- ]?отел/, 'aparthotel'],
@@ -113,6 +115,9 @@ const KINDS: [RegExp, string][] = [
   [/хостел/, 'hostel'],
   [/(?:^|[^а-я])(?:дом|домик|коттедж|дач)(?:а|е|у|ом|ик|ика|ке|ку)?(?=$|[^а-я])/, 'house'],
   [/(?:^|[^а-я])комнат(?:а|у|ку|ка|ой)(?=$|[^а-я])/, 'room'],
+  // A bath or a sauna: the category «Баня» (lib/listings.ts categories), searched by the hour.
+  [/(?:^|[^а-я])бан(?:я|ю|е|и|ька|ьку|ьке|ный|ном|ного)(?=$|[^а-я])/, 'banya'],
+  [/саун/, 'sauna'],
 ];
 const ROOM_WORDS: [RegExp, number][] = [
   [/однушк|однокомнат|(?:^|[^а-я])одно\s*комнат/, 1],
@@ -556,7 +561,9 @@ export function guestSearchRequest(text: string, current: Row, cities: string[],
   const clock: StatedTime | null = hours ? { time: hours.time, exact: true, until: 24 } : statedTime(request);
   const time = urgent ? localISO(soon).slice(11) : clock?.time || null;
   const kept = current.mode === 'hourly' || current.mode === 'night' ? current.mode : 'daily';
-  const mode: 'daily' | 'hourly' | 'night' = length.mode ?? (dates?.to || dates?.weekend ? (kept === 'night' ? 'night' : 'daily') : kept);
+  // A bath or a sauna is taken by the hour: «баня на вечер» is a few hours, not a day.
+  const bath = (filters.kinds || current.kinds || []).length > 0 && (filters.kinds || current.kinds || []).every((k: string) => BATH_KINDS.includes(k));
+  const mode: 'daily' | 'hourly' | 'night' = length.mode ?? (bath ? 'hourly' : dates?.to || dates?.weekend ? (kept === 'night' ? 'night' : 'daily') : kept);
   if (urgent) filters.now = true;
   if (mode !== current.mode) filters.mode = mode;
 
@@ -589,6 +596,9 @@ export function guestSearchRequest(text: string, current: Row, cities: string[],
       const byDates = length.units === null && !!dates?.to, checkout = byDates ? dates!.to! : addDays(day, length.units ?? 1);
       Object.assign(filters, dailyStay(day, checkout, now, time || undefined, lead, !byDates));
     }
+  } else if (bath && mode !== current.mode) {
+    // «Баня» with no hour named: the nearest three hours, as the chip «На часы» does.
+    Object.assign(filters, defaultStay('hourly', now, 3));
   }
 
   const nearby = /(?:рядом|около|возле|недалеко)\s+(?:со?\s+|от\s+)?(?:мной|меня)|поблизости|(?:^|\s)рядом(?=$|[.,!?]|\s+(?!с\s|со\s|от\s))/.test(request);

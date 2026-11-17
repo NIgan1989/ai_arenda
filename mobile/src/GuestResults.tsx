@@ -118,7 +118,7 @@ export function emptyAnswer(empty: Row | undefined, draft: GuestDraft, narrowed:
 // "Студия · 1 комн. · до 2 гостей": what the home is, said on the card before why it was chosen.
 export function homeLine(flat: Row) {
   const kind = HOME_KINDS[flat.details?.type] || '', rooms = Number(flat.rooms), capacity = Number(flat.capacity);
-  return [kind, rooms > 0 && flat.details?.type !== 'studio' ? rooms + ' комн.' : '', capacity > 0 ? 'до ' + capacity + ' ' + plural(capacity, 'гостя', 'гостей', 'гостей') : ''].filter(Boolean).join(' · ');
+  return [kind, rooms > 0 && !['studio', 'banya', 'sauna'].includes(flat.details?.type) ? rooms + ' комн.' : '', capacity > 0 ? 'до ' + capacity + ' ' + plural(capacity, 'гостя', 'гостей', 'гостей') : ''].filter(Boolean).join(' · ');
 }
 
 export function GuestResults({ preview, draft, mine, onFavorite, selected, onSelect, onFocus, onBook, onOpen, onRefine, onWiden, onTry, onAskOwners, onBookEdge, busy }: Props) {
@@ -160,7 +160,7 @@ export function GuestResults({ preview, draft, mine, onFavorite, selected, onSel
   // «Сейчас»: the time on the way comes first, it is what the guest decides by.
   const mark = (flat: Row) => (mine ? markLabel(markOf(flat.id, mine)) : '');
   const about = (flat: Row) => {
-    const reasons = shownReasons(flat.match?.reasons, draft);
+    const reasons = shownReasons(flat.match?.reasons, draft, ['banya', 'sauna'].includes(flat.details?.type));
     return (draft.now ? [...reasons.slice(0, 1), mark(flat), homeLine(flat), flat.district, ...reasons.slice(1)] : [mark(flat), homeLine(flat), flat.district, ...reasons]).filter(Boolean).join(' · ');
   };
 

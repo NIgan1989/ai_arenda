@@ -7,7 +7,7 @@ import { roleAiLine } from '../../lib/ai-line';
 
 export type HeadRole = 'guest' | 'owner' | 'cleaner';
 // What the app does for a shortcut: a guest search, a page of the role, or the opened sheet.
-export type HeadAction = 'now' | 'night' | 'daily' | 'hourly' | 'weekend' | 'requests' | 'calendar' | 'properties' | 'nearby' | 'schedule';
+export type HeadAction = 'now' | 'night' | 'daily' | 'hourly' | 'weekend' | 'evening' | 'tomorrow' | 'requests' | 'calendar' | 'properties' | 'nearby' | 'schedule';
 export type HeadChip = {
   id: string;
   title: string; // the short label on the chip
@@ -50,11 +50,19 @@ const GUEST_NIGHT: HeadChip[] = [
   { id: 'night', title: 'На ночь', hint: 'На ночь: до 12:00, по ночной цене, где она есть', action: 'night' },
   GUEST_DAY[1]
 ];
+// The category «Баня»: a bath is taken for a few hours, mostly in the evening.
+const GUEST_BATH: HeadChip[] = [
+  { id: 'now', title: 'Сейчас', hint: 'Сейчас: свободная баня рядом с мгновенным подтверждением', action: 'now' },
+  { id: 'evening', title: 'Вечером', hint: 'Вечером: три часа с 19:00', action: 'evening' },
+  { id: 'tomorrow', title: 'Завтра', hint: 'Завтра вечером: три часа с 19:00', action: 'tomorrow' }
+];
+const BATH_LINE = { placeholder: 'Баня на 6 человек сегодня в 20:00', shortPlaceholder: 'Баня на 6 в 20:00' };
 /** Evening and night in Kazakhstan: from 18:00 to 06:00. */
 export const isEvening = (now = Date.now()) => { const hour = new Date(now + 5 * 3600000).getUTCHours(); return hour >= 18 || hour < 6; };
 
-export function headLine(role: HeadRole, now = Date.now()): HeadLine {
+export function headLine(role: HeadRole, now = Date.now(), category: 'stay' | 'bath' = 'stay'): HeadLine {
   const line = roleAiLine(role);
+  if (role === 'guest' && category === 'bath') return { ...BATH_LINE, label: line.label, chips: GUEST_BATH };
   if (role === 'guest') return { placeholder: line.placeholder, shortPlaceholder: line.shortPlaceholder, label: line.label, chips: isEvening(now) ? GUEST_NIGHT : GUEST_DAY };
   return {
     placeholder: line.placeholder,

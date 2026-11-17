@@ -4,7 +4,7 @@ import { Action, Chips, Stepper, h } from './SheetParts';
 import { C, type } from './styles';
 import { T } from './tokens';
 import { mapCities } from './map-math';
-import { HOME_KINDS, MAX_GUESTS, WISHES, dayChoices, draftUnits, withDay, withMode, withTime, withUnits, type GuestDraft } from './ai-request';
+import { BATH_TYPES, MAX_GUESTS, categoryKinds, categoryOf, BATH_WISHES, WISHES, dayChoices, draftUnits, withDay, withMode, withTime, withUnits, type GuestDraft } from './ai-request';
 
 type Props = {
   draft: GuestDraft;
@@ -27,8 +27,14 @@ export function GuestForm({ draft, onChange, onPickPoint, onNearMe, onSubmit, bu
   const startMinutes = Number(draft.start.slice(11, 13)) * 60 + Number(draft.start.slice(14, 16));
   const units = draftUnits(draft);
   // Home type, rooms, district, wishes, priority and the point on the map: how many of them are set.
-  const set = draft.kinds.length + Number(!!draft.rooms) + Number(!!draft.district) + draft.features.length + Number(draft.priority !== 'balanced') + Number(!!draft.near);
-  const toggleKind = (id: string) => onChange({ ...draft, kinds: draft.kinds.includes(id) ? draft.kinds.filter(v => v !== id) : [...draft.kinds, id] });
+  const bath = categoryOf(draft) === 'bath';
+  // In «Баня» both types chosen is the category itself, not a condition.
+  const set = (bath ? Number(draft.kinds.length < BATH_TYPES.length) : draft.kinds.length) + Number(!!draft.rooms) + Number(!!draft.district) + draft.features.length + Number(draft.priority !== 'balanced') + Number(!!draft.near);
+  // «Баня» never loses its last type: an empty list would mean «Жильё».
+  const toggleKind = (id: string) => {
+    const kinds = draft.kinds.includes(id) ? draft.kinds.filter(v => v !== id) : [...draft.kinds, id];
+    onChange({ ...draft, kinds: bath && !kinds.length ? [...BATH_TYPES] : kinds });
+  };
   // Rooms: any, exactly 1 or 2, 3 and more; a count the text named that is not here stays as an option.
   const roomOptions: [string, string][] = [['', 'Любое'], ['1', '1'], ['2', '2'], ['3+', '3+']];
   if (draft.rooms && !roomOptions.some(([id]) => id === draft.rooms)) roomOptions.push([draft.rooms, draft.rooms.endsWith('+') ? 'от ' + draft.rooms.slice(0, -1) : draft.rooms]);
@@ -40,17 +46,19 @@ export function GuestForm({ draft, onChange, onPickPoint, onNearMe, onSubmit, bu
 
   return (
     <>
-      <Chips
-        name="Срок аренды"
-        value={draft.mode}
-        options={[
-          ['daily', 'На сутки'],
-          ['night', 'На ночь'],
-          ['hourly', 'На часы']
-        ]}
-        onChange={mode => onChange(withMode(draft, mode))}
-        disabled={busy}
-      />
+      {!bath && (
+        <Chips
+          name="Срок аренды"
+          value={draft.mode}
+          options={[
+            ['daily', 'На сутки'],
+            ['night', 'На ночь'],
+            ['hourly', 'На часы']
+          ]}
+          onChange={mode => onChange(withMode(draft, mode))}
+          disabled={busy}
+        />
+      )}
       <Chips
         label="Город"
         value={draft.city}
@@ -111,9 +119,9 @@ export function GuestForm({ draft, onChange, onPickPoint, onNearMe, onSubmit, bu
       </Pressable>
       {extra && <>
       <View>
-        <Text style={h.label}>Тип жилья</Text>
+        <Text style={h.label}>{bath ? 'Баня или сауна' : 'Тип жилья'}</Text>
         <View style={f.wishes}>
-          {Object.entries(HOME_KINDS).map(([id, title]) => {
+          {categoryKinds(bath ? 'bath' : 'stay').map(([id, title]) => {
             const on = draft.kinds.includes(id);
             return (
               <Pressable
@@ -131,7 +139,7 @@ export function GuestForm({ draft, onChange, onPickPoint, onNearMe, onSubmit, bu
           })}
         </View>
       </View>
-      <Chips label="Комнат" value={draft.rooms} options={roomOptions} onChange={rooms => onChange({ ...draft, rooms })} disabled={busy} />
+      {!bath && <Chips label="Комнат" value={draft.rooms} options={roomOptions} onChange={rooms => onChange({ ...draft, rooms })} disabled={busy} />}
       <View>
         <Text style={h.label}>Район</Text>
         <TextInput
@@ -146,9 +154,9 @@ export function GuestForm({ draft, onChange, onPickPoint, onNearMe, onSubmit, bu
         />
       </View>
       <View>
-        <Text style={h.label}>Обязательно в жилье</Text>
+        <Text style={h.label}>{bath ? 'Обязательно' : 'Обязательно в жилье'}</Text>
         <View style={f.wishes}>
-          {WISHES.map(([id, title]) => {
+          {(bath ? BATH_WISHES : WISHES).map(([id, title]) => {
             const on = draft.features.includes(id);
             return (
               <Pressable
