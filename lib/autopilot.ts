@@ -26,6 +26,8 @@ export async function setGuestMode(s:RentalService,body:Row){
  const t=epoch(),auto=mode==='auto'?1:0,db=s.db;
  const policy=await one(db,'SELECT * FROM property_policies WHERE property_id=?',p.id),rules=await one(db,'SELECT * FROM operation_rules WHERE property_id=?',p.id);
  let fee=Number(policy?.cleaning_fee||0);
+ // Without the AI the price of a cleaning is kept too: the owner's own confirmations order the cleaning at it.
+ if(!auto&&!Number(p.own_staff)&&body.cleaningFee!==undefined&&body.cleaningFee!==null&&body.cleaningFee!=='')fee=number(body.cleaningFee,'Стоимость уборки',100,1000000);
  if(auto){
   if(!policy)throw new DomainError('Сначала заполните тарифы жилья: по ним ИИ отвечает гостям.',409);
   // Own staff cleans: the AI does not order cleanings, so it needs no cleaning fee.
