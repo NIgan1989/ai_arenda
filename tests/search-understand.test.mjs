@@ -47,3 +47,23 @@ test('not a search, a broken answer or a failing model: the guest is told, nothi
   assert.deepEqual(states,['completed','completed','uncertain','uncertain']);
  }finally{globalThis.fetch=original;f.db.close();}
 });
+
+test('a landmark is found in the searched city, for a guest only, and only as a point',async()=>{
+ const {findPlace}=await load('map-workspace');
+ const f=await fixture();try{
+  const asked=[],hit=(lon,lat,name='Железнодорожный вокзал, Павлодар',type='station')=>async url=>{asked.push(String(url));return Response.json([{lon:String(lon),lat:String(lat),display_name:name,type}]);};
+  const found=await findPlace(f.guest,{city:'Павлодар',place:'железнодорожный вокзал'},hit(76.97123456,52.30045678));
+  assert.deepEqual(found,{found:true,longitude:76.9712,latitude:52.3005,name:'Железнодорожный вокзал'});
+  assert.match(decodeURIComponent(asked[0]),/железнодорожный вокзал, Павлодар, Казахстан/);
+  // A place of the same name in another city, the city itself, an unknown city, too short a word: not found.
+  assert.deepEqual(await findPlace(f.guest,{city:'Павлодар',place:'вокзал'},hit(71.43,51.13)),{found:false});
+  assert.deepEqual(await findPlace(f.guest,{city:'Павлодар',place:'павлодар'},hit(76.95,52.28,'Павлодар','city')),{found:false});
+  assert.deepEqual(await findPlace(f.guest,{city:'Нигде',place:'вокзал'},hit(76.97,52.3)),{found:false});
+  assert.deepEqual(await findPlace(f.guest,{city:'Павлодар',place:'я'},hit(76.97,52.3)),{found:false});
+  assert.deepEqual(await findPlace(f.guest,{city:'Павлодар',place:'вокзал'},async()=>{throw new Error('down');}),{found:false});
+  await assert.rejects(findPlace(f.owner,{city:'Павлодар',place:'вокзал'},hit(76.97,52.3)));
+  // Forty questions an hour, then the search simply goes on over the whole city.
+  for(let i=0;i<40;i++)await findPlace(f.guest,{city:'Павлодар',place:'вокзал'},hit(76.97,52.3));
+  assert.deepEqual(await findPlace(f.guest,{city:'Павлодар',place:'вокзал'},hit(76.97,52.3)),{found:false});
+ }finally{f.db.close();}
+});

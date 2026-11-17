@@ -49,6 +49,8 @@ export type GuestSearch = {
   stated: { city: boolean; district: boolean; when: boolean; guests: boolean; budget: boolean; wishes: boolean; home: boolean };
   /** The guest asked for a place near them: the screen needs a point before it can search. */
   nearby: boolean;
+  /** A landmark to search around («у вокзала»), in words for a map search; the screen finds its point. */
+  place?: string;
   understood: boolean;
   /**
    * The day or the hour the text names is already behind ("10 ноября", "вчера", "сегодня в 9" said at noon).
@@ -188,9 +190,35 @@ const UNSEARCHED: [RegExp, string][] = [
   [/(?:^|[^а-я])этаж/, 'этаж'],
   [/курить|курени|курящ/, 'курение'],
   [/вечеринк|день рождени|праздник|компани(?:ей|я)/, 'праздник'],
-  // «рядом с вокзалом», «возле ТРЦ», «у набережной»: a landmark, not «рядом со мной».
-  [/(?:рядом\s+со?|недалеко\s+от|около|возле)\s+(?!мной|меня|нас(?=$|[^а-я]))[а-я]{3,}|(?:^|[^а-я])у\s+(?:вокзал|набережн|парк|рынк|автовокзал|аэропорт|больниц|университет|трц|тц)/, 'место рядом с ориентиром'],
 ];
+
+// «Рядом с вокзалом», «возле ТРЦ Батыр Молл», «у набережной»: a landmark, not «рядом со мной». Up to three words
+// after the preposition, stopping at the words of a stay, a day or a home.
+const PLACE_STOP = '(?:на|до|с|со|для|и|в|за|от|завтра|сегодня|послезавтра|сейчас|срочно|вечером|утром|днем|ночью|недорог[а-я]*|дешев[а-я]*|подешевле|посуточно|почасов[а-я]*|нужн[а-я]*|нас|мной|меня)(?=$|[^а-я])';
+const PLACE_WORD = '(?!' + PLACE_STOP + ')[а-яa-z][а-яa-z0-9«»"-]*';
+const PLACE_AFTER = new RegExp('(?:рядом\\s+со?|недалеко\\s+от|неподалеку\\s+от|около|возле|вблизи|близко\\s+к|в\\s+районе)\\s+(' + PLACE_WORD + '(?:\\s+' + PLACE_WORD + '){0,2})');
+const PLACE_AT = new RegExp('(?:^|[^а-я])у\\s+((?:жд\\s+|железнодорожн[а-я]+\\s+)?(?:вокзал|автовокзал|набережн|парк|рынк|аэропорт|больниц|университет|трц|тц|мечет|стадион|цум)[а-я]*(?:\\s+' + PLACE_WORD + '){0,2})');
+// The usual landmarks in the form a map search finds: «вокзала» is «железнодорожный вокзал».
+const PLACE_NAMES: [RegExp, string][] = [
+  [/^автовокзал[а-я]*$/, 'автовокзал'],
+  [/^(?:жд\s+|железнодорожн[а-я]+\s+)?вокзал[а-я]*$/, 'железнодорожный вокзал'],
+  [/^аэропорт[а-я]*$/, 'аэропорт'],
+  [/^набережн[а-я]*$/, 'набережная'],
+  [/^(?:центральн[а-я]+\s+)?рын(?:ок|к[а-я]*)$/, 'центральный рынок'],
+  [/^больниц[а-я]*$/, 'больница'],
+  [/^университет[а-я]*$/, 'университет'],
+  [/^мечет[а-я]*$/, 'мечеть'],
+  [/^стадион[а-я]*$/, 'стадион'],
+  [/^парк[а-я]{0,2}$/, 'парк'],
+  [/^цум[а-я]{0,2}$/, 'цум'],
+];
+
+/** The landmark the text asks to be near, in words for a map search: 'железнодорожный вокзал', 'трц батыр молл'; '' when none. */
+export function statedPlace(text: string): string {
+  const said = (text.match(PLACE_AFTER) || text.match(PLACE_AT))?.[1]?.replace(/[«»"]/g, '').trim() || '';
+  if (said.length < 3) return '';
+  return PLACE_NAMES.find(([pattern]) => pattern.test(said))?.[1] || said;
+}
 
 /** What the text asks for that the search cannot check: ['баня', 'отзывы']. The text is already lower case. */
 export function unsearched(text: string): string[] {
@@ -643,9 +671,10 @@ export function guestSearchRequest(text: string, current: Row, cities: string[],
   // «Хочу снять квартиру», «нужно жильё», «посуточно»: a request with nothing to narrow it is still a request.
   const plain = /квартир|жиль[ея]|(?:^|[^а-я])(?:снять|сниму|снимем|арендовать|арендую)(?=$|[^а-я])|где\s+(?:остановиться|переночевать|пожить)/.test(request) || length.mode !== null;
   const nearby = /(?:рядом|около|возле|недалеко)\s+(?:со?\s+|от\s+)?(?:мной|меня)|поблизости|(?:^|\s)рядом(?=$|[.,!?]|\s+(?!с\s|со\s|от\s))/.test(request);
-  const understood = nearby || plain || !!past || remarks.length > 0 || filters.mode !== current.mode || Object.values(stated).some(Boolean);
+  const place = nearby ? '' : statedPlace(request);
+  const understood = nearby || plain || !!place || !!past || remarks.length > 0 || filters.mode !== current.mode || Object.values(stated).some(Boolean);
   // Said after `understood` is settled: a phrase of nothing but such words is not a request the rules can run.
   const missed = unsearched(request);
   if (missed.length) remarks.push('Пока не умею искать: ' + missed.join(', ') + '.');
-  return { filters, stated, nearby, understood, ...(past ? { past } : {}), remarks };
+  return { filters, stated, nearby, ...(place ? { place } : {}), understood, ...(past ? { past } : {}), remarks };
 }
