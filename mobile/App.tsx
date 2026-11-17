@@ -289,7 +289,7 @@ function Chat(){
     if(intent==='workspace'){if(!state.user){ensure(actor,intent,state);return;}say('Ближайшие события и задачи по вашим данным.','workspace',{role:actor});return;}
     if(intent==='property'){
       if(!ensure('owner',intent,state))return;
-      say('Расскажите о жилье одним сообщением, остальное заполню сам.','property-quick',{});return;
+      say('Расскажите об объекте одним сообщением, остальное заполню сам.','property-quick',{});return;
     }
     if(intent==='own-properties'){if(ensure('owner',intent,state)){setActor('owner');catalog(state,'owner');}return;}
     if(intent==='cleaner-profile'){if(ensure('cleaner','jobs',state)){setActor('cleaner');say('Анкета уже сохранена. Посмотрим доступные уборки.');run('jobs',state);}return;}

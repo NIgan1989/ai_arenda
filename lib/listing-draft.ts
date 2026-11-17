@@ -1,8 +1,9 @@
 // The owner describes a flat in one message, the way he would tell a friend; this file turns that
 // message into a listing draft without a model call: instant, free and the same on the site and in the app.
 // Everything the text does not say gets a safe default and is marked as guessed, so the check screen
-// can ask the owner to look at it. Only the address, the district and the daily price are asked for.
-import {isBanquet,propertyTypes,amenities,checkinMethods,defaultOwnStaff} from './listings';
+// can ask the owner to look at it. Only the address, the district and the price are asked for: the day for
+// housing, the hour for a bath, the guest for a banquet hall.
+import {isBanquet,isBath,propertyTypes,amenities,categoryAmenities,kindCategory,checkinMethods,defaultOwnStaff} from './listings';
 type Row=Record<string,any>;
 
 export type ListingDraft={
@@ -15,6 +16,9 @@ export type ListingDraft={
  ownStaff:boolean;
  // A banquet hall: `price` is the price per guest there, and this is the least party it takes.
  leastGuests?:number;
+ // A bath, taken by the hour: guests the hourly price covers, the pay per hour for every guest above them,
+ // and the minutes the owner needs to get it ready (heat it) before guests.
+ includedGuests?:number;extraGuestPrice?:number;prepMinutes?:number;
  title:string;description:string;houseRules:string;
  // Keys the owner said or set himself; the rest are defaults the AI picked.
  known:string[];
@@ -33,15 +37,19 @@ const NUM='(\\d{1,3}(?:[ \\u00a0]\\d{3})+|\\d+(?:[.,]\\d+)?)\\s*(к|тыс(?:\\.
 function amount(raw:string,unit?:string){const value=Number(raw.replace(/[  ]/g,'').replace(',','.'))*(unit?1000:1);return Number.isFinite(value)?Math.round(value):0;}
 function priceNear(text:string,period:string){
  const money='\\s*(?:₸|тг|тенге)?\\.?\\s*';
- const after=new RegExp(NUM+money+'(?:в|за|\\/|-|–)?\\s*'+period,'u').exec(text);if(after)return amount(after[1],after[2]);
- const before=new RegExp(period+'[а-я]*\\s*(?:[:—–-]|по|стоит|=)?\\s*'+NUM,'u').exec(text);if(before)return amount(before[1],before[2]);
+ // «от 2 часов, 5 000 в час»: a small number next to the word is hours, not money, so the first real sum wins.
+ for(const m of text.matchAll(new RegExp(NUM+money+'(?:в|за|\\/|-|–)?\\s*'+period,'gu'))){const v=amount(m[1],m[2]);if(v>=100)return v;}
+ for(const m of text.matchAll(new RegExp(period+'[а-я]*\\s*(?:[:—–-]|по|стоит|=)?\\s*'+NUM,'gu'))){const v=amount(m[1],m[2]);if(v>=100)return v;}
  return 0;
 }
 const WORD_ROOMS:Record<string,number>={одно:1,одн:1,двух:2,дву:2,трех:3,тре:3,четырех:4,пяти:5};
 const AMENITY_WORDS:[string,RegExp][]=[
  ['wifi',/wi-?fi|вай-?фай|интернет/],['kitchen',/кухн/],['washer',/стирал|стиралк/],['aircon',/кондиц/],['tv',/телевиз|smart ?tv|(?<![а-я])тв(?![а-я])/],
  ['workspace',/рабоч[а-я]* (?:мест|стол)/],['parking',/парков/],['balcony',/балкон|лоджи/],['elevator',/лифт/],['linen',/бель/],['towels',/полотенц/],
- ['hairdryer',/(?<![а-я])фен(?![а-я])/],['iron',/утюг/],['crib',/кроватк|детск[а-я]* кроват/]
+ ['hairdryer',/(?<![а-я])фен(?![а-я])/],['iron',/утюг/],['crib',/кроватк|детск[а-я]* кроват/],
+ // A bath and a hall have their own lists (lib/listings.ts categoryAmenities).
+ ['steam',/парилк|парн(?:ая|ую|ой)(?![а-я])/],['pool',/бассейн/],['plunge',/купел/],['brooms',/веник/],['karaoke',/караоке/],['billiards',/бильярд/],['grill',/мангал|барбекю/],
+ ['stage',/(?<![а-я])сцен[аыу](?![а-я])/],['sound',/микрофон|аппаратур|звук/],['dancefloor',/танцпол/],['prayer',/намаз/],['halal',/халял/],['ownfood',/сво[ияю] (?:продукт|еду|еда)/],['kidsroom',/детск[а-я]* комнат/]
 ];
 const STREET='(?:ул(?:ица|\\.)?|пр(?:оспект|-т|-кт|\\.)?|мкр(?:н|\\.)?|микрорайон|бул(?:ьвар|\\.)?|пер(?:еулок|\\.)?|шоссе|ш\\.)';
 
@@ -49,7 +57,9 @@ export function readListingText(text:string,base:ListingDraft):{draft:ListingDra
  const t=lower(text),d:ListingDraft={...base,amenities:[...base.amenities],known:[...base.known]},found:string[]=[];
  const set=<K extends keyof ListingDraft>(key:K,value:ListingDraft[K])=>{(d as Row)[key]=value;if(!found.includes(key))found.push(key);};
 
- if(/банкет|тойхан|зал[а-я]* (?:торжеств|для торжеств)|ресторан/.test(t))set('type','banquet');else if(/(?<![а-я])кафе(?![а-я])/.test(t))set('type','cafe');else if(/саун/.test(t))set('type','sauna');else if(/(?<![а-я])бан(?:я|ю|е|и|ька|ьку)(?![а-я])/.test(t))set('type','banya');else if(/хостел/.test(t))set('type','hostel');else if(/апарт-?отел|апарт-?гостиниц/.test(t))set('type','aparthotel');else if(/гостиниц|(?<![а-я])(?:мини-?)?отел/.test(t))set('type','hotel');
+  // «дом с баней», «коттедж с сауной» is housing with a bath in it, not a bath.
+ const withBath=/(?<![а-я])с\s+(?:сауной|баней|банькой)/.test(t);
+ if(/банкет|тойхан|зал[а-я]* (?:торжеств|для торжеств)|ресторан/.test(t))set('type','banquet');else if(/(?<![а-я])кафе(?![а-я])/.test(t))set('type','cafe');else if(!withBath&&/саун/.test(t))set('type','sauna');else if(!withBath&&/(?<![а-я])бан(?:я|ю|е|и|ька|ьку)(?![а-я])/.test(t))set('type','banya');else if(/хостел/.test(t))set('type','hostel');else if(/апарт-?отел|апарт-?гостиниц/.test(t))set('type','aparthotel');else if(/гостиниц|(?<![а-я])(?:мини-?)?отел/.test(t))set('type','hotel');
  else if(/гостев[а-я]* дом/.test(t))set('type','guesthouse');else if(/студи/.test(t))set('type','studio');else if(/апарт/.test(t))set('type','aparthotel');else if(/(?<![а-я])(?:дом|коттедж)(?![а-я])/.test(t))set('type','house');
  else if(/(?<![а-я])комнат[ау](?![а-я])/.test(t)&&!/квартир|комнатн/.test(t))set('type','room');
  else if(/квартир|однушк|двушк|трешк|комнатн/.test(t))set('type','apartment');
@@ -77,17 +87,34 @@ export function readListingText(text:string,base:ListingDraft):{draft:ListingDra
   if(each&&amount(each[1],each[2])>=100)set('price',amount(each[1],each[2]));
   if(!d.known.includes('cleaningMinutes'))d.cleaningMinutes=60;
  }
- const guests=hall?null:t.match(/(?:до|на|для)\s*(\d{1,2})\s*(?:-?х\s*)?(?:гост|человек|чел(?![а-я])|персон)/)||t.match(/(\d{1,2})\s*(?:гост|человек|чел(?![а-я]))/)||t.match(/(?:вместимость|спит|размест[а-я]*)\s*(?:до\s*)?(\d{1,2})/);
+ // A bath or a sauna: guests the hourly price covers, the pay for every guest above them, the time to heat it
+ // and its own name. What is read here is taken out of the text, so «6 человек в цене» is not the capacity
+ // and «топить 2 часа» is not a price.
+ const bath=isBath(d.type);let rest=t;
+ if(bath){
+  const who='(?:гост[а-я]*|человек[а-я]*|чел\\.?|персон[а-я]*)';
+  const inc=new RegExp('в (?:цену|стоимость)\\s*(?:входит|входят|включен[оы]?)\\s*(?:до\\s*)?(\\d{1,2})(?:\\s*'+who+')?(?!\\s*(?:час|\\d))','u').exec(t)||new RegExp('(?:до\\s*)?(\\d{1,2})\\s*'+who+'\\s*(?:входит |входят |включен[оы] )?в (?:цену|цене|стоимость)','u').exec(t);
+  if(inc&&+inc[1]>0){set('includedGuests',Number(inc[1]));rest=rest.replace(inc[0],' ');}
+  const extra=new RegExp('(?:доплат[а-я]*|сверх[а-я]*|кажд[а-я]+ (?:следующ[а-я]+|дополнительн[а-я]+|лишн[а-я]+)(?:\\s+'+who+')?|дополнительн[а-я]+ '+who+')[^\\d]{0,24}'+NUM+'(?:\\s*(?:₸|тг|тенге))?(?:\\s*(?:за|с)\\s*'+who+')?(?:\\s*(?:в|за)\\s*час)?','u').exec(rest);
+  if(extra&&amount(extra[1],extra[2])>=100){set('extraGuestPrice',amount(extra[1],extra[2]));rest=rest.replace(extra[0],' ');}
+  const prep=/(?:топи[а-я]*|затопи[а-я]*|протопи[а-я]*|растопи[а-я]*|подготов[а-я]*|готови[а-я]*|нагрев[а-я]*)\s*(?:баню\s*|сауну\s*|парную\s*)?(?:нужно\s*|надо\s*|занимает\s*|[:—–-]\s*)?(?:за\s*)?(?:(\d+(?:[.,]\d+)?)\s*(час|ч(?![а-я])|мин)[а-я]*|(полчаса|полтора часа|час(?![а-я])))/.exec(rest);
+  if(prep){const v=prep[3]?({полчаса:30,час:60}[prep[3]]||90):Number(prep[1].replace(',','.'))*(prep[2]==='мин'?1:60);if(v>0&&v<=720){set('prepMinutes',Math.max(30,Math.round(v/30)*30));rest=rest.replace(prep[0],' ');}}
+  if(!d.known.includes('parties'))d.parties=true;
+ }
+ // «баня „Берёзка“», «зал «Сарыарка»»: a place guests know by its name keeps it in the title.
+ if(bath||hall){const name=/[«"„“]([^«»"„“”\n]{2,40})[»"“”]/u.exec(text);if(name&&!d.known.includes('title'))set('title',(draftKind(d)+' «'+name[1].trim()+'»').slice(0,120));}
+ const guests=hall?null:rest.match(/(?:до|на|для)\s*(\d{1,2})\s*(?:-?х\s*)?(?:гост|человек|чел(?![а-я])|персон)/)||rest.match(/(\d{1,2})\s*(?:гост|человек|чел(?![а-я]))/)||rest.match(/(?:вместимость|спит|размест[а-я]*)\s*(?:до\s*)?(\d{1,2})/);
  if(guests&&+guests[1]>0&&+guests[1]<=50)set('capacity',Number(guests[1]));
  const beds=t.match(/(\d{1,2})\s*спальн[а-я]*\s*мест/);if(beds&&+beds[1]>0)set('beds',Number(beds[1]));
  if(!found.includes('capacity')&&found.includes('beds'))set('capacity',d.beds);
  if(!found.includes('capacity')&&found.includes('rooms')&&!d.known.includes('capacity'))d.capacity=d.type==='studio'?2:Math.min(50,d.rooms*2);
+ if(bath&&!found.includes('capacity')&&!d.known.includes('capacity'))d.capacity=Math.max(d.includedGuests||0,6);
  if(d.beds<d.capacity)d.beds=d.capacity;
 
  const daily=hall?0:priceNear(t,'(?:сут(?:ки|ок)?|день|дня|в день|посуточн)');if(daily>=100)set('price',daily);
- const hourly=priceNear(t,'(?:час(?!т)|почасов)');if(hourly>=100)set('hourlyPrice',hourly);
+ const hourly=priceNear(rest,'(?:час(?!т)|почасов)');if(hourly>=100)set('hourlyPrice',hourly);
  const nightly=priceNear(t,'(?:ноч[ьи])');if(nightly>=100)set('nightlyPrice',nightly);
- if(!found.includes('price')&&!hall){const bare=new RegExp('(?:цена|стоимость|стоит)?\\s*'+NUM+'\\s*(?:₸|тг|тенге)','u').exec(t);if(bare){const v=amount(bare[1],bare[2]);if(v>=100&&v!==d.hourlyPrice&&v!==d.nightlyPrice)set('price',v);}}
+ if(!found.includes('price')&&!hall&&!(bath&&found.includes('hourlyPrice'))){const bare=new RegExp('(?:цена|стоимость|стоит)?\\s*'+NUM+'\\s*(?:₸|тг|тенге)','u').exec(rest);if(bare){const v=amount(bare[1],bare[2]);if(v>=100&&v!==d.hourlyPrice&&v!==d.nightlyPrice)set(bath?'hourlyPrice':'price',v);}}
  const minHours=t.match(/(?:от|минимум|мин\.?)\s*(\d{1,2})\s*час/);if(minHours&&+minHours[1]>=1&&+minHours[1]<=24)set('minHours',Number(minHours[1]));
  if(/без (?:депозит|залог)/.test(t))set('deposit',0);else{const deposit=new RegExp('(?:депозит|залог)[а-я]*\\s*(?:[:—–-]|в)?\\s*'+NUM,'u').exec(t);if(deposit)set('deposit',amount(deposit[1],deposit[2]));}
  const fee=new RegExp('уборк[а-я]*\\s*(?:[:—–-]|стоит|за)?\\s*'+NUM,'u').exec(t);if(fee){const v=amount(fee[1],fee[2]);if(v>=100)set('cleaningFee',v);}
@@ -95,7 +122,9 @@ export function readListingText(text:string,base:ListingDraft):{draft:ListingDra
  // «без лифта», «нет кондиционера» name what the flat lacks, so a negated mention removes the amenity.
  const negated=(at:number)=>/(?:^|[^а-я])(?:без|нет|не)\s+(?:[а-я-]+\s+)?$/.test(t.slice(Math.max(0,at-24),at));
  const mentions=AMENITY_WORDS.map(([id,re])=>{const all=[...t.matchAll(new RegExp(re.source,'g'))];return {id,said:all.length>0,has:all.some(m=>{const at=m.index||0;return !negated(at)&&!/^[а-я-]*\s+(?:нет|не\s|отсутств)/.test(t.slice(at+m[0].length,at+m[0].length+24));})};}).filter(m=>m.said);
- if(mentions.length)set('amenities',[...new Set([...d.amenities.filter(a=>!mentions.some(m=>m.id===a&&!m.has)),...mentions.filter(m=>m.has).map(m=>m.id)])]);
+ // Only what this kind of place can have: a flat keeps no «парилка», a bath no «лифт».
+ const fits=(a:string)=>categoryAmenities[kindCategory(d.type)].includes(a);
+ if(mentions.length)set('amenities',[...new Set([...d.amenities.filter(a=>!mentions.some(m=>m.id===a&&!m.has)),...mentions.filter(m=>m.has).map(m=>m.id)])].filter(fits));
  if(/(?:можно|разрешен[а-я]*|допуска[а-я]*)\s*(?:с\s*)?(?:питом|животн|собак|кош)|(?:питом|животн)[а-я]*\s*(?:можно|разрешен|допуска)|pet.?friendly/.test(t))set('pets',true);
  else if(/без (?:питом|животн)|(?:питом|животн)[а-я]*\s*(?:нельзя|запрещ|не допуска)/.test(t))set('pets',false);
  if(/(?:можно|разрешено)\s*курить|курение\s*разрешено|курить можно/.test(t))set('smoking',true);
@@ -127,7 +156,9 @@ export function moneyAnswer(text:string){const m=new RegExp(NUM,'u').exec(lower(
 export function answerDraft(draft:ListingDraft,key:DraftQuestion['key'],answer:string):ListingDraft{
  const text=answer.trim();if(!text)return draft;
  let value:string|number;
- if(key==='price'){value=moneyAnswer(text);if(!(value>=100))return draft;}
+ if(key==='price'){value=moneyAnswer(text);if(!(value>=100))return draft;
+  // A bath is priced by the hour, so the answer to «Сколько стоит час?» is its hourly price.
+  if(isBath(draft.type))return {...draft,hourlyPrice:value,known:[...new Set([...draft.known,'hourlyPrice'])]};}
  else{const {draft:read}=readListingText(text,draft);value=read.known.includes(key)&&read[key]!==draft[key]?read[key]:text.slice(0,key==='address'?300:120);}
  return {...draft,[key]:value,known:[...new Set([...draft.known,key])]};
 }
@@ -135,8 +166,9 @@ export function answerDraft(draft:ListingDraft,key:DraftQuestion['key'],answer:s
 export function draftQuestions(d:ListingDraft):DraftQuestion[]{
  const q:DraftQuestion[]=[];
  if(!d.address.trim())q.push({key:'address',label:'Адрес',question:'Какой точный адрес? Гости увидят его только после брони.',placeholder:'Улица, дом, номер'});
- if(!d.district.trim())q.push({key:'district',label:'Район',question:isBanquet(d.type)?'В каком районе зал? Его гости видят на карте.':'В каком районе жильё? Его гости видят на карте.',placeholder:'Например, Центр'});
- if(!(d.price>=100))q.push(isBanquet(d.type)?{key:'price',label:'Цена на гостя',question:'Сколько стоит банкет на одного гостя?',placeholder:'Например, 8 000'}:{key:'price',label:'Цена за сутки',question:'Сколько стоят сутки?',placeholder:'Например, 15 000'});
+ if(!d.district.trim())q.push({key:'district',label:'Район',question:isBanquet(d.type)?'В каком районе зал? Его гости видят на карте.':isBath(d.type)?'В каком районе '+(d.type==='sauna'?'сауна':'баня')+'? Его гости видят на карте.':'В каком районе жильё? Его гости видят на карте.',placeholder:'Например, Центр'});
+ if(isBath(d.type)){if(!(d.hourlyPrice>=100))q.push({key:'price',label:'Цена за час',question:'Сколько стоит час?',placeholder:'Например, 5 000'});}
+ else if(!(d.price>=100))q.push(isBanquet(d.type)?{key:'price',label:'Цена на гостя',question:'Сколько стоит банкет на одного гостя?',placeholder:'Например, 8 000'}:{key:'price',label:'Цена за сутки',question:'Сколько стоят сутки?',placeholder:'Например, 15 000'});
  return q;
 }
 
@@ -172,6 +204,14 @@ export function draftDescription(d:ListingDraft){
   parts.push('Точный адрес гость получит после подтверждения брони.');
   return parts.join(' ').slice(0,2500);
  }
+ if(isBath(d.type)){
+  parts.push('Целиком для вашей компании, до '+d.capacity+' '+plural(d.capacity,'гостя','гостей','гостей')+'.');
+  if(d.amenities.length)parts.push('Есть: '+d.amenities.map(a=>amenities[a]).filter(Boolean).map((v,i)=>i&&v!=='Wi-Fi'?v.toLocaleLowerCase('ru'):v).join(', ')+'.');
+  parts.push('Бронь по часам, от '+d.minHours+' '+plural(d.minHours,'часа','часов','часов')+'.');
+  if(d.includedGuests&&d.extraGuestPrice)parts.push('В цену входит '+d.includedGuests+' '+plural(d.includedGuests,'гость','гостя','гостей')+', каждый следующий: '+fmt(d.extraGuestPrice)+' в час.');
+  parts.push('Точный адрес гость получит после подтверждения брони.');
+  return parts.join(' ').slice(0,2500);
+ }
  parts.push('До '+d.capacity+' '+plural(d.capacity,'гостя','гостей','гостей')+', '+d.beds+' '+plural(d.beds,'спальное место','спальных места','спальных мест')+'.');
  if(d.amenities.length)parts.push('Есть: '+d.amenities.map(a=>amenities[a]).filter(Boolean).map((v,i)=>i&&v!=='Wi-Fi'?v.toLocaleLowerCase('ru'):v).join(', ')+'.');
  if(d.pets)parts.push('Можно с питомцами.');
@@ -182,6 +222,7 @@ export function draftDescription(d:ListingDraft){
 export function draftRules(d:ListingDraft){
  if(d.houseRules.trim())return d.houseRules.trim().slice(0,2500);
  if(isBanquet(d.type))return ['Число гостей уточняется не позже чем за три дня.','Свои продукты и напитки по согласованию.',d.smoking?'Курение разрешено.':'Курение в зале запрещено.',d.deposit>0?'Депозит '+fmt(d.deposit)+' возвращается после мероприятия, если всё в порядке.':'Депозит не берётся.'].join(' ');
+ if(isBath(d.type))return ['Приходите ко времени брони и освобождайте вовремя: после вас ждут другие гости.','Свои продукты и напитки можно.',d.smoking?'Курение разрешено.':'Курение в помещении запрещено.',d.deposit>0?'Депозит '+fmt(d.deposit)+' возвращается после ухода гостей, если всё в порядке.':'Депозит не берётся.'].join(' ');
  return ['Тишина с 23:00 до 08:00.',d.smoking?'Курение разрешено.':'Курение в помещении запрещено.',d.parties?'Вечеринки по согласованию.':'Без вечеринок.',d.pets?'Можно с питомцами.':'Без питомцев.',
   d.deposit>0?'Депозит '+fmt(d.deposit)+' возвращается после выезда, если всё в порядке.':'Депозит не берётся.'].join(' ');
 }
@@ -195,6 +236,11 @@ export function draftListingBody(d:ListingDraft,photos:string[],published:boolea
   photos,published,expectedVersion:0,policyVersion:0,
   details:{type,area:d.area,beds:d.capacity,bathrooms:d.bathrooms,floor:d.floor,floors:Math.max(d.floors,d.floor,1),checkinMethod:method,amenities:d.amenities.filter(a=>amenities[a]),pets:false,smoking:d.smoking,parties:true},
   rental:{hourlyPrice:0,minHours:d.minHours,nightlyPrice:0,checkinTime:'12:00',checkoutTime:'00:00',deposit:d.deposit,houseRules:draftRules(d),includedGuests:least,extraGuestPrice:d.price}};
+ // A bath is taken by the hour. The day price the service needs is twelve hours, as in the editor (PropertyEdit).
+ if(isBath(type))return {title:draftTitle(d),city:d.city.trim(),district:d.district.trim(),address:d.address.trim(),description:draftDescription(d),price:d.price>=100?d.price:Math.max(100,d.hourlyPrice*12),rooms:d.rooms,capacity:d.capacity,cleaningMinutes:d.cleaningMinutes,ownStaff:!!d.ownStaff,
+  photos,published,expectedVersion:0,policyVersion:0,
+  details:{type,area:d.area,beds:d.capacity,bathrooms:d.bathrooms,floor:d.floor,floors:Math.max(d.floors,d.floor,1),checkinMethod:method,amenities:d.amenities.filter(a=>amenities[a]&&categoryAmenities.bath.includes(a)),pets:false,smoking:d.smoking,parties:true},
+  rental:{hourlyPrice:d.hourlyPrice,minHours:Math.max(1,d.minHours),nightlyPrice:0,checkinTime:d.checkinTime,checkoutTime:d.checkoutTime,deposit:d.deposit,houseRules:draftRules(d),includedGuests:d.extraGuestPrice?Math.min(d.capacity,d.includedGuests||0):0,extraGuestPrice:d.includedGuests?d.extraGuestPrice||0:0,prepMinutes:d.prepMinutes||0}};
  return {title:draftTitle(d),city:d.city.trim(),district:d.district.trim(),address:d.address.trim(),description:draftDescription(d),price:d.price,rooms:d.rooms,capacity:d.capacity,cleaningMinutes:d.cleaningMinutes,ownStaff:!!d.ownStaff,
   photos,published,expectedVersion:0,policyVersion:0,
   details:{type,area:d.area,beds:Math.max(d.beds,d.capacity),bathrooms:d.bathrooms,floor:d.floor,floors:Math.max(d.floors,d.floor,1),checkinMethod:method,amenities:d.amenities.filter(a=>amenities[a]),pets:d.pets,smoking:d.smoking,parties:d.parties},
@@ -203,3 +249,4 @@ export function draftListingBody(d:ListingDraft,photos:string[],published:boolea
 
 // A ready-made description the "Пример" chip puts into the line.
 export const DRAFT_EXAMPLE='Однушка на Торайгырова 64, кв 12, район Центр. 4 этаж из 9, 42 м², до 3 гостей. Есть Wi-Fi, кухня, стиралка и кондиционер. 15 000 в сутки, 2 500 в час от 2 часов. Без курения, ключи в сейфе.';
+export const DRAFT_EXAMPLE_BATH='Баня «Берёзка» на Лесной 5, район Дачный. До 10 гостей, в цену входит 6, доплата 1 000 за гостя в час. 5 000 в час от 2 часов. Парилка, бассейн, веники, мангал. Топить за 1,5 часа.';

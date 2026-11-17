@@ -21,9 +21,9 @@ type Props={properties:Row[];bookings:Row[];busy:boolean;onAdd?:()=>void;onEdit:
 export function OwnProperties({properties,bookings,busy,onAdd,onEdit,onSettings,onCleaning,onMap}:Props){
  const [open,setOpen]=useState(properties.length===1?properties[0].id:'');
  return <View style={o.list}>
-  {!!onAdd&&<Pressable accessibilityRole="button" accessibilityLabel="Добавить жильё" disabled={busy} onPress={onAdd} style={({pressed})=>[o.add,(pressed||busy)&&o.dim]}>
+  {!!onAdd&&<Pressable accessibilityRole="button" accessibilityLabel="Добавить объект" disabled={busy} onPress={onAdd} style={({pressed})=>[o.add,(pressed||busy)&&o.dim]}>
    <View style={o.addOrb}><Text style={o.addPlus}>+</Text></View>
-   <View style={o.grow}><Text style={o.addTitle}>Добавить жильё</Text><Text style={o.addSub}>Расскажите одним сообщением, ИИ заполнит объявление</Text></View>
+   <View style={o.grow}><Text style={o.addTitle}>Добавить объект</Text><Text style={o.addSub}>Жильё, баня или зал: расскажите одним сообщением, ИИ заполнит объявление</Text></View>
   </Pressable>}
   {!properties.length&&<Text style={o.empty}>Здесь появятся ваши объекты: их состояние, брони и цена.</Text>}
   {properties.map(p=><PropertyCard key={p.id} property={p} bookings={bookings} busy={busy} open={open===p.id} onToggle={()=>setOpen((v:string)=>v===p.id?'':p.id)} onEdit={()=>onEdit(p.id)} onSettings={()=>onSettings(p.id)} onCleaning={()=>onCleaning(p.id)} onMap={onMap(p.id)}/>)}

@@ -8,7 +8,7 @@ import { windowBadge } from '../../lib/window-badge';
 import { C, type } from './styles';
 import { T } from './tokens';
 import { ReliabilityBadge } from './Reliability';
-import { HOME_KINDS, WISHES, BANQUET_WISHES, BANQUET_TYPES, askFirst, categoryOf, draftUnits, homeWords, kindCategoryOf, shownReasons, withMode, type GuestDraft } from './ai-request';
+import { HOME_KINDS, WISHES, BANQUET_WISHES, BANQUET_TYPES, BATH_TYPES, askFirst, categoryOf, draftUnits, homeWords, kindCategoryOf, shownReasons, withMode, withUnits, type GuestDraft } from './ai-request';
 import { carouselIndex } from './map-motion';
 import { Heart } from './Favorites';
 import { markLabel, markOf, type Mine } from './favorites';
@@ -93,6 +93,16 @@ export function emptyAnswer(empty: Row | undefined, draft: GuestDraft, narrowed:
       action: { title: 'Показать все варианты', patch: { now: false } }
     };
   }
+  if (empty?.reason === 'minHours') {
+    const least = Number(empty.minHours) || 2, hours = least + ' ' + plural(least, 'час', 'часа', 'часов');
+    return { title: 'Так ненадолго здесь не бронируют', note: 'Минимум — ' + hours + '.', action: { title: 'Искать на ' + hours, patch: withUnits(draft, least) } };
+  }
+  if (empty?.reason === 'prep' && empty.next) {
+    // Free, but the place is made ready before the guests (a bath is heated): the first hour it can start.
+    const start = kzLocal(empty.next.start), end = kzLocal(empty.next.end), minutes = Number(empty.prepMinutes) || 0;
+    const long = [Math.floor(minutes / 60) ? Math.floor(minutes / 60) + ' ч' : '', minutes % 60 ? (minutes % 60) + ' мин' : ''].filter(Boolean).join(' ');
+    return { title: 'Так скоро не успеют подготовить', note: (categoryOf(draft) === 'bath' ? 'Баню топят' : 'Место готовят') + ' ' + long + ' до гостей. Ближайшее начало — ' + start.slice(11) + '.', action: { title: 'Показать с ' + start.slice(11), patch: { start, end, now: false } } };
+  }
   if (empty?.reason === 'busy') {
     const next = empty.next;
     if (!next) return { title: 'На это время всё занято', note: 'Свободного нет и в ближайшую неделю. Попробуйте другие даты.' };
@@ -117,6 +127,7 @@ export function emptyAnswer(empty: Row | undefined, draft: GuestDraft, narrowed:
     }
     // One condition empties the answer on its own: it is named, with one tap to search without it.
     const free = 'Без этого условия свободно: ' + count + '.';
+    if (count && empty.blocker === 'kinds' && categoryOf(draft) === 'bath') return { title: 'Свободной нет: ' + homeWords({ kinds: draft.kinds, rooms: '' }), note: 'Других бань и саун на это время свободно: ' + count + '.', action: { title: 'Показать любую баню', patch: { kinds: [...BATH_TYPES] } } };
     if (count && empty.blocker === 'kinds') return { title: 'Нет свободного жилья такого типа: ' + homeWords({ kinds: draft.kinds, rooms: '' }), note: 'Другого жилья на это время свободно: ' + count + '.', action: { title: 'Показать любое жильё', patch: { kinds: [] } } };
     if (count && empty.blocker === 'rooms') return { title: 'С таким числом комнат свободного нет', note: free, action: { title: 'Показать с любым числом комнат', patch: { rooms: '' } } };
     if (count && empty.blocker === 'district') return { title: 'В районе ' + draft.district + ' свободного нет', note: 'В других районах свободно: ' + count + '.', action: { title: 'Искать по всему городу', patch: { district: '' } } };

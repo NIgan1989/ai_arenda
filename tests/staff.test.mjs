@@ -37,7 +37,8 @@ test('«Занято»: the hours are closed for guests of the service, a booked
   const busy=await markBusy(f.cleaner,{propertyId:id,hours:3});
   assert.equal(busy.busy.length,1);assert.equal(busy.busy[0].end-busy.busy[0].start,3*3600);assert.match(busy.message,/Занято до \d\d:\d\d/);
   assert.ok(f.db.raw.prepare("SELECT 1 FROM notifications WHERE user_id='owner' AND body LIKE '%занято до%отметил сотрудник%'").get());
-  const start=Math.ceil((now()+3600)/3600)*3600,ask={propertyId:id,start:iso(start),end:iso(start+2*3600),guests:4,billingMode:'hourly',requestKey:'busy',acceptTerms:true};
+  // The bath takes two hours to heat, so the nearest stay a guest can ask for starts after that (still inside the mark).
+  const start=Math.ceil((now()+2*3600+60)/1800)*1800,ask={propertyId:id,start:iso(start),end:iso(start+2*3600),guests:4,billingMode:'hourly',requestKey:'busy',acceptTerms:true};
   await assert.rejects(f.guest.createBooking(ask),/Интервал занят/);
   // The mark is not shown to the owner as a calendar of another site.
   const {flatCalendars}=await load('external-calendar');assert.deepEqual((await flatCalendars(f.owner,{propertyId:id})).sources,[]);
