@@ -8,7 +8,7 @@ import { windowBadge } from '../../lib/window-badge';
 import { C, type } from './styles';
 import { T } from './tokens';
 import { ReliabilityBadge } from './Reliability';
-import { HOME_KINDS, WISHES, BANQUET_WISHES, BANQUET_TYPES, askFirst, categoryOf, draftUnits, homeWords, kindCategoryOf, shownReasons, withMode, withUnits, type GuestDraft } from './ai-request';
+import { HOME_KINDS, WISHES, BANQUET_WISHES, BANQUET_TYPES, BATH_TYPES, askFirst, categoryOf, draftUnits, homeWords, kindCategoryOf, shownReasons, withMode, withUnits, type GuestDraft } from './ai-request';
 import { carouselIndex } from './map-motion';
 import { Heart } from './Favorites';
 import { markLabel, markOf, type Mine } from './favorites';
@@ -127,6 +127,7 @@ export function emptyAnswer(empty: Row | undefined, draft: GuestDraft, narrowed:
     }
     // One condition empties the answer on its own: it is named, with one tap to search without it.
     const free = 'Без этого условия свободно: ' + count + '.';
+    if (count && empty.blocker === 'kinds' && categoryOf(draft) === 'bath') return { title: 'Свободной нет: ' + homeWords({ kinds: draft.kinds, rooms: '' }), note: 'Других бань и саун на это время свободно: ' + count + '.', action: { title: 'Показать любую баню', patch: { kinds: [...BATH_TYPES] } } };
     if (count && empty.blocker === 'kinds') return { title: 'Нет свободного жилья такого типа: ' + homeWords({ kinds: draft.kinds, rooms: '' }), note: 'Другого жилья на это время свободно: ' + count + '.', action: { title: 'Показать любое жильё', patch: { kinds: [] } } };
     if (count && empty.blocker === 'rooms') return { title: 'С таким числом комнат свободного нет', note: free, action: { title: 'Показать с любым числом комнат', patch: { rooms: '' } } };
     if (count && empty.blocker === 'district') return { title: 'В районе ' + draft.district + ' свободного нет', note: 'В других районах свободно: ' + count + '.', action: { title: 'Искать по всему городу', patch: { district: '' } } };

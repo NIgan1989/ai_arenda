@@ -120,3 +120,20 @@ test('a bath that takes two hours to heat is not offered or booked sooner, and t
   assert.deepEqual([short.properties.length,short.empty.reason,short.empty.minHours],[0,'minHours',2]);
  }finally{f.db.close();}
 });
+
+test('an empty bath search keeps its category: another kind of bath is offered, and heating is named beside other conditions',async()=>{
+ const f=await fixture();try{
+  const banya=(await f.owner.saveListing(null,listing('banya'))).id,sauna=(await f.owner.saveListing(null,listing('sauna',{rental:{...listing('sauna').rental,prepMinutes:0}}))).id;
+  f.db.raw.prepare('UPDATE properties SET published=(id IN (?,?))').run(banya,sauna);
+  f.db.raw.prepare("UPDATE property_operations SET readiness='ready'").run();
+  const {previewMatches}=await load('smart-matching'),soon=Math.ceil((now()+1800)/1800)*1800,later=Math.ceil((now()+3*3600)/1800)*1800;
+  // In half an hour the sauna is free, the bath is not heated yet: asked for the bath alone, the answer says so.
+  assert.deepEqual((await previewMatches(f.guest,body(soon,{kinds:['banya','sauna']}))).properties.map(p=>p.id),[sauna]);
+  const early=await previewMatches(f.guest,body(soon,{kinds:['banya']}));
+  assert.deepEqual([early.properties.length,early.empty.reason,early.empty.prepMinutes],[0,'prep',120]);
+  // The bath is taken later; asked for it alone, the sauna of the same category is counted, not the homes.
+  await f.guest.createBooking({propertyId:banya,start:iso(later),end:iso(later+3*3600),guests:4,billingMode:'hourly',requestKey:'taken',acceptTerms:true});
+  const taken=await previewMatches(f.guest,body(later,{kinds:['banya']}));
+  assert.deepEqual([taken.properties.length,taken.empty.reason,taken.empty.blocker,taken.empty.count],[0,'filters','kinds',1]);
+ }finally{f.db.close();}
+});

@@ -108,22 +108,22 @@ export async function emptyHint(s:RentalService,f:Row):Promise<Row>{
  const open=await free(f.start,f.end);
  // «Сейчас» left out the homes that are not ready yet or confirm only after the owner answers.
  if(f.now&&open.length){const later=rankMatches(open,{...f,now:false});if(later.length)return {reason:'now',count:later.length};}
+ // Free, but the place is made ready before the guests (a bath is heated): the first hour it can start is named.
+ const soon=rankMatches((await s.publicSearch({city:f.city,start:f.start,end:f.end,guests:f.guests,mode:f.mode,category:searchCategory(f.kinds),map:'1',limit:'60'},{matching:true,ignorePrep:true})).properties.filter((p:Row)=>!p.test_preview),{...f,now:false});
+ if(soon.length){const prep=Math.min(...soon.map((p:Row)=>Number(p.policy?.prep_minutes)||0)),from=Math.ceil((Date.now()+prep*60000)/1800000)*1800000;return {reason:'prep',prepMinutes:prep,next:{start:new Date(from).toISOString(),end:new Date(from+Date.parse(f.end)-Date.parse(f.start)).toISOString(),count:soon.length}};}
  if(!open.length){
   const start=Date.parse(f.start),length=Date.parse(f.end)-start;
   // Shorter than the shortest stay any place here takes: «минимум 2 часа», not «занято».
   if(f.mode==='hourly'){const least=all.filter((p:Row)=>Number(p.policy?.hourly_price)>0&&Number(p.capacity)>=Number(f.guests)).map((p:Row)=>Number(p.policy.min_hours)||1);if(least.length&&Math.min(...least)*3600000>length)return {reason:'minHours',minHours:Math.min(...least)};}
-  // Free, but the place is made ready before the guests (a bath is heated): the first hour it can start is named.
-  const soon=rankMatches((await s.publicSearch({city:f.city,start:f.start,end:f.end,guests:f.guests,mode:f.mode,category:searchCategory(f.kinds),map:'1',limit:'60'},{matching:true,ignorePrep:true})).properties.filter((p:Row)=>!p.test_preview),{...f,now:false});
-  if(soon.length){const prep=Math.min(...soon.map((p:Row)=>Number(p.policy?.prep_minutes)||0)),from=Math.ceil((Date.now()+prep*60000)/1800000)*1800000;return {reason:'prep',prepMinutes:prep,next:{start:new Date(from).toISOString(),end:new Date(from+length).toISOString(),count:soon.length}};}
   for(let day=1;day<=7;day++){const from=start+day*86400000,found=rankMatches(await free(new Date(from).toISOString(),new Date(from+length).toISOString()),{...f,now:false,start:new Date(from).toISOString(),end:new Date(from+length).toISOString()});if(found.length)return {reason:'busy',next:{start:new Date(from).toISOString(),end:new Date(from+length).toISOString(),count:found.length}};}
   return {reason:'busy'};
  }
  const anyPrice=rankMatches(open,{...f,maxPrice:'100000000'});
  if(anyPrice.length)return {reason:'budget',cheapest:Math.min(...anyPrice.map(p=>p.estimate.amount)),count:anyPrice.length};
  // The one condition that empties the answer on its own is named («гостиниц здесь нет»), with what is free without it.
- const loose=f.priority==='closer'?'balanced':f.priority,without:[string,Row][]=[['kinds',{kinds:[]}],['rooms',{rooms:''}],['district',{district:''}],['features',{features:[]}],['near',{near:null,priority:loose}]];
+ const loose=f.priority==='closer'?'balanced':f.priority,any=searchCategory(f.kinds)==='stay'?[]:categories[searchCategory(f.kinds)].types,without:[string,Row][]=[['kinds',{kinds:any}],['rooms',{rooms:''}],['district',{district:''}],['features',{features:[]}],['near',{near:null,priority:loose}]];
  for(const [blocker,patch] of without){const set=blocker==='near'?!!f.near:Array.isArray(f[blocker])?f[blocker].length>0:!!f[blocker];if(!set)continue;const count=rankMatches(open,{...f,...patch}).length;if(count)return {reason:'filters',blocker,count};}
- return {reason:'filters',count:rankMatches(open,{...f,now:false,district:'',features:[],near:null,kinds:[],rooms:'',priority:loose}).length};
+ return {reason:'filters',count:rankMatches(open,{...f,now:false,district:'',features:[],near:null,kinds:any,rooms:'',priority:loose}).length};
 }
 async function expire(s:RentalService){const t=epoch();await s.db.batch([q(s.db,"UPDATE matching_requests SET status='expired' WHERE expires_at<=? AND status IN ('searching','ready')",t),q(s.db,"UPDATE matching_offers SET status='expired' WHERE expires_at<=? AND status IN ('pending','accepted')",t)]);}
 async function guestRequest(s:RentalService,id:unknown){await s.requireRole('guest');const r=await one(s.db,'SELECT * FROM matching_requests WHERE id=? AND guest_id=?',required(id,'Запрос',100),s.userId);if(!r)throw new DomainError('Запрос недоступен.',404);return r;}
