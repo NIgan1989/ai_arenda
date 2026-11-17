@@ -72,6 +72,18 @@ export const CATEGORIES: { id: Category; title: string; icon: string; hint: stri
 export const categoryOf = (draft: Pick<GuestDraft, 'kinds'>): Category => (draft.kinds.length && draft.kinds.every(id => BATH_KINDS.includes(id)) ? 'bath' : 'stay');
 /** The types a category offers in the form, with their names. */
 export const categoryKinds = (category: Category): [string, string][] => Object.entries(HOME_KINDS).filter(([id]) => BATH_KINDS.includes(id) === (category === 'bath'));
+/** The picture of each type, the same as the owner's picker (KindPicker). */
+export const KIND_ICONS: Record<string, string> = { apartment: '🏢', studio: '🛋', room: '🚪', house: '🏠', guesthouse: '🌲', hostel: '🛏', hotel: '🏨', aparthotel: '🏬', banya: '♨️', sauna: '🧖' };
+/** What the category button says: the one type that is chosen, or the category itself. */
+export function kindChoice(draft: Pick<GuestDraft, 'kinds'>): { icon: string; title: string } {
+  const category = CATEGORIES.find(c => c.id === categoryOf(draft))!, one = draft.kinds.length === 1 ? draft.kinds[0] : '';
+  return one ? { icon: KIND_ICONS[one] || category.icon, title: HOME_KINDS[one] || category.title } : { icon: category.icon, title: category.title };
+}
+/** A type chosen in the category picker: the category changes with it; no type is the whole category. */
+export function withKind(draft: GuestDraft, category: Category, kind: string | null, now = Date.now()): GuestDraft {
+  const next = withCategory(draft, category, now);
+  return { ...next, kinds: kind ? [kind] : category === 'bath' ? [...BATH_KINDS] : [] };
+}
 /** Another category is another request: the place stays, what narrowed the search starts over, a bath is by the hour. */
 export function withCategory(draft: GuestDraft, category: Category, now = Date.now()): GuestDraft {
   if (categoryOf(draft) === category) return draft;
