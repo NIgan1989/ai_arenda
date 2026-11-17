@@ -19,8 +19,9 @@ const CLEANER_WHY:Record<number,string>={
  404:'Владелец ещё не добавил инструкцию. Напишите ему в чат уборки.',
  503:WHY[503],
 };
-export function CheckinGuide({bookingId,role='guest'}:{bookingId:string;role?:'guest'|'cleaner'}){
- const why=role==='cleaner'?CLEANER_WHY:WHY,title=role==='cleaner'?'Как попасть в жильё':'Как заселиться';
+// venue: баня или зал, куда приходят, а не заселяются.
+export function CheckinGuide({bookingId,role='guest',venue=false}:{bookingId:string;role?:'guest'|'cleaner';venue?:boolean}){
+ const why=role==='cleaner'?CLEANER_WHY:venue?{...WHY,403:'Инструкция откроется за час до начала, когда оплата и депозит подтверждены, а объект готов.'}:WHY,title=role==='cleaner'?'Как попасть в жильё':venue?'Как пройти':'Как заселиться';
  const [state,setState]=useState<{text:string;closed?:boolean}|null>(null),[busy,setBusy]=useState(false);
  async function open(){
   if(busy)return;setBusy(true);
