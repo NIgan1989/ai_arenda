@@ -1,3 +1,4 @@
+import {wordsOf,venueOr,TYPE_SQL} from './stay-words';
 import {epoch,uuid,q,rows,type OperationConfig} from './operation-core';
 import {RentalService} from './service';
 import {DomainError} from './domain';
@@ -20,21 +21,21 @@ const said=(r:D1Result[])=>r.some(x=>!!x?.meta?.changes);
 async function arrivals(db:D1Database,at:number,result:Row,admin:string[]){
  // Arrivals already asked about (the home is not ready) go after the ones not tried yet and take turns among
  // themselves, so fifty blocked homes never keep a ready home or a new guest out of the batch.
- const list=await rows(db,`SELECT b.id,b.guest_id,p.owner_id,p.title,t.checkin_reported_at reported,EXISTS(SELECT 1 FROM notifications n WHERE n.user_id=b.guest_id AND n.dedupe='guest:silence-checkin-ask:'||b.id) asked FROM bookings b JOIN properties p ON p.id=b.property_id JOIN booking_terms t ON t.booking_id=b.id
+ const list=await rows(db,`SELECT b.id,b.guest_id,p.owner_id,p.title,${TYPE_SQL},t.checkin_reported_at reported,EXISTS(SELECT 1 FROM notifications n WHERE n.user_id=b.guest_id AND n.dedupe='guest:silence-checkin-ask:'||b.id) asked FROM bookings b JOIN properties p ON p.id=b.property_id JOIN booking_terms t ON t.booking_id=b.id
   WHERE b.status='confirmed' AND b.end>? AND t.checkin_reported_at IS NOT NULL AND t.checkin_reported_at<=? AND t.actual_checkin IS NULL AND b.payment_status='owner_verified' AND t.deposit_status<>'pending' ORDER BY asked,CASE asked WHEN 0 THEN t.checkin_reported_at ELSE RANDOM() END LIMIT 50`,at,at-CHECKIN_WAIT);
  for(const b of list){
   const title=b.title||'жильё';
   try{
    await new RentalService(db,b.owner_id).bookingAction(b.id,{action:'checkin'});
-   await db.batch([notice(db,b.owner_id,'ИИ-администратор подтвердил заселение гостя в «'+title+'»: гость оплатил и сообщил, что он на месте.','owner:silence-checkin-done:'+b.id,at),
-    notice(db,b.guest_id,'ИИ-администратор подтвердил ваше заселение в «'+title+'». Хорошего отдыха!','guest:silence-checkin-done:'+b.id,at)]);
+   await db.batch([notice(db,b.owner_id,venueOr(b,'ИИ-администратор подтвердил заселение гостя в «'+title+'»: гость оплатил и сообщил, что он на месте.','ИИ-администратор отметил: '+wordsOf(b).guestIn.toLowerCase()+' в «'+title+'». Гость оплатил и сообщил, что он на месте.'),'owner:silence-checkin-done:'+b.id,at),
+    notice(db,b.guest_id,venueOr(b,'ИИ-администратор подтвердил ваше заселение в «'+title+'». Хорошего отдыха!','ИИ-администратор подтвердил: '+wordsOf(b).youIn.toLowerCase()+' в «'+title+'».'+(wordsOf(b).stay==='Отдых'?' Хорошего отдыха!':'')),'guest:silence-checkin-done:'+b.id,at)]);
    result.checkedIn++;continue;
   }catch(error){if(!(error instanceof DomainError))throw error;}
-  await db.batch([notice(db,b.owner_id,'ИИ-администратор: гость оплатил и ждёт у «'+title+'», а жильё не отмечено готовым. Нажмите «Жильё готово» в карточке жилья, и заселение подтвердится само.','owner:silence-checkin-ask:'+b.id,at),
+  await db.batch([notice(db,b.owner_id,venueOr(b,'ИИ-администратор: гость оплатил и ждёт у «'+title+'», а жильё не отмечено готовым. Нажмите «Жильё готово» в карточке жилья, и заселение подтвердится само.','ИИ-администратор: гость оплатил и ждёт у «'+title+'», а готовность не отмечена. Нажмите «'+wordsOf(b).ready+'» в карточке брони, и всё подтвердится само.'),'owner:silence-checkin-ask:'+b.id,at),
    notice(db,b.guest_id,'ИИ-администратор: оплата получена. Ждём, когда владелец подтвердит, что «'+title+'» готово. Если он не ответит, подключится администратор сервиса.','guest:silence-checkin-ask:'+b.id,at)]);
   if(b.reported>at-CHECKIN_HANDOVER||!admin.length)continue;
   if(said(await db.batch(admin.map(a=>notice(db,a,'Гость оплатил и больше получаса ждёт заселения в «'+title+'»: владелец не подтвердил готовность жилья. Свяжитесь с владельцем и гостем.','admin:silence-checkin:'+b.id+':'+a,at))))){
-   await notice(db,b.guest_id,'ИИ-администратор передал ваше заселение в «'+title+'» администратору сервиса. С вами свяжутся.','guest:silence-checkin-escalated:'+b.id,at).run();
+   await notice(db,b.guest_id,venueOr(b,'ИИ-администратор передал ваше заселение в «'+title+'» администратору сервиса. С вами свяжутся.','ИИ-администратор передал вашу бронь «'+title+'» администратору сервиса. С вами свяжутся.'),'guest:silence-checkin-escalated:'+b.id,at).run();
    result.escalated++;
   }
  }
@@ -93,21 +94,21 @@ async function pay(db:D1Database,at:number,result:Row,admin:string[]){
 // checkout is confirmed for the owner, so the cleaning can start and the home stops being «occupied». The deposit
 // stays the owner's decision. A checkout that cannot be confirmed goes to the service administrator after two hours.
 async function departures(db:D1Database,at:number,result:Row,admin:string[]){
- const list=await rows(db,`SELECT b.id,b.guest_id,p.owner_id,p.title,t.checkout_reported_at reported,t.deposit_status FROM bookings b JOIN properties p ON p.id=b.property_id JOIN booking_terms t ON t.booking_id=b.id
+ const list=await rows(db,`SELECT b.id,b.guest_id,p.owner_id,p.title,${TYPE_SQL},t.checkout_reported_at reported,t.deposit_status FROM bookings b JOIN properties p ON p.id=b.property_id JOIN booking_terms t ON t.booking_id=b.id
   WHERE b.status='confirmed' AND t.checkout_reported_at IS NOT NULL AND t.checkout_reported_at<=? AND t.actual_checkout IS NULL
   AND NOT EXISTS(SELECT 1 FROM notifications n WHERE n.user_id=p.owner_id AND n.dedupe='owner:silence-checkout-escalated:'||b.id) ORDER BY t.checkout_reported_at LIMIT 50`,at-CHECKOUT_WAIT);
  for(const b of list){
   const title=b.title||'жильё';
   try{
    await new RentalService(db,b.owner_id).bookingAction(b.id,{action:'checkout'});
-   await db.batch([notice(db,b.owner_id,'ИИ-администратор подтвердил выезд гостя из «'+title+'»: гость сообщил о выезде, полчаса ответа не было.'+(b.deposit_status==='owner_verified'?' Проверьте жильё и верните депозит или удержите часть с причиной.':''),'owner:silence-checkout-done:'+b.id,at),
-    notice(db,b.guest_id,'ИИ-администратор подтвердил ваш выезд из «'+title+'». Спасибо, что выбрали нас!'+(b.deposit_status==='owner_verified'?' Депозит владелец вернёт после проверки жилья.':''),'guest:silence-checkout-done:'+b.id,at)]);
+   await db.batch([notice(db,b.owner_id,venueOr(b,'ИИ-администратор подтвердил выезд гостя из «'+title+'»: гость сообщил о выезде, полчаса ответа не было.'+(b.deposit_status==='owner_verified'?' Проверьте жильё и верните депозит или удержите часть с причиной.':''),'ИИ-администратор подтвердил: '+wordsOf(b).swipeGuestOut+' из «'+title+'». Гость сообщил '+wordsOf(b).ofLeave+', полчаса ответа не было.'+(b.deposit_status==='owner_verified'?' Проверьте всё и верните депозит или удержите часть с причиной.':'')),'owner:silence-checkout-done:'+b.id,at),
+    notice(db,b.guest_id,venueOr(b,'ИИ-администратор подтвердил ваш выезд из «'+title+'». Спасибо, что выбрали нас!'+(b.deposit_status==='owner_verified'?' Депозит владелец вернёт после проверки жилья.':''),'ИИ-администратор: «'+title+'», '+wordsOf(b).leaveOk.toLowerCase()+'. Спасибо, что выбрали нас!'+(b.deposit_status==='owner_verified'?' Депозит владелец вернёт после проверки.':'')),'guest:silence-checkout-done:'+b.id,at)]);
    result.checkedOut++;continue;
   }catch(error){if(!(error instanceof DomainError))throw error;}
   if(b.reported>at-CHECKOUT_HANDOVER||!admin.length)continue;
   if(said(await db.batch(admin.map(a=>notice(db,a,'Гость больше двух часов назад сообщил о выезде из «'+title+'», выезд не подтверждён. Свяжитесь с владельцем.','admin:silence-checkout:'+b.id+':'+a,at))))){
-   await db.batch([notice(db,b.owner_id,'ИИ-администратор передал выезд гостя из «'+title+'» администратору сервиса: гость сообщил о выезде, подтверждения нет.','owner:silence-checkout-escalated:'+b.id,at),
-    notice(db,b.guest_id,'ИИ-администратор передал ваш выезд из «'+title+'» администратору сервиса. Вам ничего делать не нужно.','guest:silence-checkout-escalated:'+b.id,at)]);
+   await db.batch([notice(db,b.owner_id,venueOr(b,'ИИ-администратор передал выезд гостя из «'+title+'» администратору сервиса: гость сообщил о выезде, подтверждения нет.','ИИ-администратор передал бронь «'+title+'» администратору сервиса: гость сообщил '+wordsOf(b).ofLeave+', подтверждения нет.'),'owner:silence-checkout-escalated:'+b.id,at),
+    notice(db,b.guest_id,venueOr(b,'ИИ-администратор передал ваш выезд из «'+title+'» администратору сервиса. Вам ничего делать не нужно.','ИИ-администратор передал вашу бронь «'+title+'» администратору сервиса. Вам ничего делать не нужно.'),'guest:silence-checkout-escalated:'+b.id,at)]);
    result.escalated++;
   }
  }

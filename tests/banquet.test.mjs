@@ -99,6 +99,13 @@ test('a guest books a slot of a banquet hall for a memorial meal',async()=>{
   f.db.raw.prepare('UPDATE bookings SET start=? WHERE id=?').run(epoch()+3600,made.id);
   const state=await f.guest.roleState('guest',{catalog:false}),mine=state.bookings.find(b=>b.id===made.id);
   assert.deepEqual([mine.cancel_terms.free,mine.cancel_terms.refund,mine.terms.occasion],[true,200000,'memorial']);
+  // The booking of a hall speaks of the event, not of moving in: in the card and in the notice to the owner.
+  assert.equal(mine.property_type,'banquet');
+  f.db.raw.prepare('UPDATE bookings SET start=? WHERE id=?').run(epoch()+300,made.id);
+  await f.guest.bookingAction(made.id,{action:'report_checkin'});
+  assert.ok(f.db.raw.prepare("SELECT 1 FROM notifications WHERE body LIKE 'Гость сообщил о начале мероприятия в «%'").get());
+  assert.ok(!f.db.raw.prepare("SELECT 1 FROM notifications WHERE body LIKE '%заселился%'").get());
+  f.db.raw.prepare('UPDATE booking_terms SET checkin_reported_at=NULL WHERE booking_id=?').run(made.id);
   // The guest never came: the automatic cancellation returns everything as well.
   const {sweepStays}=await load('stay-watch');f.db.raw.prepare('UPDATE bookings SET start=?,end=? WHERE id=?').run(epoch()-6*3600,epoch()-3600,made.id);
   for(let i=0;i<3;i++)await sweepStays(f.db).catch(()=>{});

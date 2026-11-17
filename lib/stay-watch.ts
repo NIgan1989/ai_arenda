@@ -1,3 +1,4 @@
+import {wordsOf,venueOr,TYPE_SQL} from './stay-words';
 import {epoch,uuid,q,rows,type OperationConfig} from './operation-core';
 import {arrivalDue} from './late-arrival';
 import {assertCalendarAvailable} from './external-calendar';
@@ -34,7 +35,7 @@ export function payDue(b:{start:number;created_at:number}){return Math.max(Numbe
 // A step counts only for the deadline it was taken for: a stay moved to other dates or times starts over.
 const PAY_FOR='MAX(b.created_at+'+PAY_MIN_WINDOW+',MIN(b.start,b.created_at+'+PAY_HOLD+'))',ARRIVAL_FOR='MAX(b.start,COALESCE(t.arrival_eta,0))',CHECKOUT_FOR='b.end';
 const PAY_STEP=`CASE WHEN w.pay_for=${PAY_FOR} THEN w.pay_step ELSE 0 END`,ARRIVAL_STEP=`CASE WHEN w.arrival_for=${ARRIVAL_FOR} THEN w.arrival_step ELSE 0 END`,CHECKOUT_STEP=`CASE WHEN w.checkout_for=${CHECKOUT_FOR} THEN w.checkout_step ELSE 0 END`;
-const STAY_SQL=`SELECT b.id,b.property_id,b.guest_id,b.start,b.end,b.created_at,b.payment_status,b.amount,p.owner_id,p.title,
+const STAY_SQL=`SELECT b.id,b.property_id,b.guest_id,b.start,b.end,b.created_at,b.payment_status,b.amount,p.owner_id,p.title,${TYPE_SQL},
  t.rate,t.units,t.deposit,t.deposit_status,COALESCE(t.min_hours,(SELECT pp.min_hours FROM property_policies pp WHERE pp.property_id=b.property_id),1) min_hours,
  t.billing_mode,t.occasion,t.paid_amount,t.actual_checkin,t.actual_checkout,t.checkin_reported_at,t.checkout_reported_at,t.arrival_eta,t.late_count,
  ${PAY_STEP} pay_step,${ARRIVAL_STEP} arrival_step,${CHECKOUT_STEP} checkout_step,
@@ -70,7 +71,7 @@ async function payments(db:D1Database,at:number,result:Row,rule:Rules){
   if(at>=due+grace){
    if(Number(b.paid_amount)>0||b.checkin_reported_at){
     // Paid in part, or the guest says they are already inside: never released by the AI, the owner settles it.
-    if(moved(await db.batch([step(db,b.id,'pay',due,s,3,at),q(db,"INSERT OR IGNORE INTO notifications SELECT ?,?,?,?,0,? WHERE changes()>0",uuid(),b.owner_id,(b.checkin_reported_at?'ИИ-администратор: гость сообщил, что заселился в «'+title+'», но оплата не отмечена. Отметьте оплату или договоритесь с гостем в чате брони.':'ИИ-администратор: бронь «'+title+'» оплачена не полностью. Отметьте остаток оплаты или договоритесь с гостем в чате брони.'),'owner:stay-pay-part:'+b.id+':'+due,at)])))result.warned++;
+    if(moved(await db.batch([step(db,b.id,'pay',due,s,3,at),q(db,"INSERT OR IGNORE INTO notifications SELECT ?,?,?,?,0,? WHERE changes()>0",uuid(),b.owner_id,(b.checkin_reported_at?venueOr(b,'ИИ-администратор: гость сообщил, что заселился в «'+title+'», но оплата не отмечена. Отметьте оплату или договоритесь с гостем в чате брони.','ИИ-администратор: гость сообщил '+wordsOf(b).ofArrive+' в «'+title+'», но оплата не отмечена. Отметьте оплату или договоритесь с гостем в чате брони.'):'ИИ-администратор: бронь «'+title+'» оплачена не полностью. Отметьте остаток оплаты или договоритесь с гостем в чате брони.'),'owner:stay-pay-part:'+b.id+':'+due,at)])))result.warned++;
     continue;
    }
    if(!unpaid.on){
@@ -82,15 +83,15 @@ async function payments(db:D1Database,at:number,result:Row,rule:Rules){
     q(db,"UPDATE bookings SET status='cancelled' WHERE id=? AND status='confirmed' AND payment_status<>'owner_verified' AND NOT EXISTS(SELECT 1 FROM booking_terms WHERE booking_id=? AND (actual_checkin IS NOT NULL OR checkin_reported_at IS NOT NULL OR paid_amount>0)) AND NOT EXISTS(SELECT 1 FROM property_operations WHERE property_id=? AND active_booking_id=?)",b.id,b.id,b.property_id,b.id),
     q(db,"UPDATE cleaning_jobs SET status='cancelled' WHERE booking_id=? AND status IN ('open','assigned') AND EXISTS(SELECT 1 FROM bookings WHERE id=? AND status='cancelled')",b.id,b.id),
     step(db,b.id,'pay',due,s,3,at),settle(db,b.id,0,at),
-    q(db,"INSERT OR IGNORE INTO notifications SELECT ?,?,?,?,0,? WHERE EXISTS(SELECT 1 FROM bookings WHERE id=? AND status='cancelled')",uuid(),b.guest_id,'ИИ-администратор снял бронь «'+title+'»: оплата не поступила в срок. Если жильё ещё свободно, его можно забронировать заново.','guest:stay-unpaid-released:'+b.id+':'+due,at,b.id),
-    q(db,"INSERT OR IGNORE INTO notifications SELECT ?,?,?,?,0,? WHERE EXISTS(SELECT 1 FROM bookings WHERE id=? AND status='cancelled')",uuid(),b.owner_id,'ИИ-администратор снял неоплаченную бронь «'+title+'». Жильё снова свободно на эти даты.','owner:stay-unpaid-released:'+b.id+':'+due,at,b.id),
+    q(db,"INSERT OR IGNORE INTO notifications SELECT ?,?,?,?,0,? WHERE EXISTS(SELECT 1 FROM bookings WHERE id=? AND status='cancelled')",uuid(),b.guest_id,venueOr(b,'ИИ-администратор снял бронь «'+title+'»: оплата не поступила в срок. Если жильё ещё свободно, его можно забронировать заново.','ИИ-администратор снял бронь «'+title+'»: оплата не поступила в срок. Если время ещё свободно, его можно забронировать заново.'),'guest:stay-unpaid-released:'+b.id+':'+due,at,b.id),
+    q(db,"INSERT OR IGNORE INTO notifications SELECT ?,?,?,?,0,? WHERE EXISTS(SELECT 1 FROM bookings WHERE id=? AND status='cancelled')",uuid(),b.owner_id,venueOr(b,'ИИ-администратор снял неоплаченную бронь «'+title+'». Жильё снова свободно на эти даты.','ИИ-администратор снял неоплаченную бронь «'+title+'». Это время снова свободно.'),'owner:stay-unpaid-released:'+b.id+':'+due,at,b.id),
     q(db,"INSERT INTO audit_events SELECT ?,'ai-administrator',?,'booking.unpaid_released',? WHERE EXISTS(SELECT 1 FROM bookings WHERE id=? AND status='cancelled')",uuid(),b.id,at,b.id)]);
    if(r[0].meta.changes)result.released++;
    continue;
   }
   if(at>=due&&s<2){
    if(moved(await db.batch([step(db,b.id,'pay',due,s,2,at),
-    q(db,"INSERT OR IGNORE INTO notifications SELECT ?,?,?,?,0,? WHERE changes()>0",uuid(),b.guest_id,'ИИ-администратор: бронь «'+title+'» не оплачена. Оплатите до '+clock(due+grace)+(unpaid.on?', иначе бронь снимется и жильё станет свободным.':', иначе владелец может отменить бронь.'),'guest:stay-pay-warn:'+b.id+':'+due,at),
+    q(db,"INSERT OR IGNORE INTO notifications SELECT ?,?,?,?,0,? WHERE changes()>0",uuid(),b.guest_id,'ИИ-администратор: бронь «'+title+'» не оплачена. Оплатите до '+clock(due+grace)+(unpaid.on?venueOr(b,', иначе бронь снимется и жильё станет свободным.',', иначе бронь снимется.'):', иначе владелец может отменить бронь.'),'guest:stay-pay-warn:'+b.id+':'+due,at),
     notice(db,b.owner_id,'ИИ-администратор: гость не оплатил бронь «'+title+'». Если оплата получена, отметьте её в брони. '+(unpaid.on?'Иначе в '+clock(due+grace)+' я сниму бронь.':'Решение о брони за вами: в '+clock(due+grace)+' я напомню.'),'owner:stay-pay-warn:'+b.id+':'+due,at)])))result.warned++;
    continue;
   }
@@ -124,8 +125,8 @@ async function emptyEnded(db:D1Database,at:number,result:Row){
    q(db,`INSERT OR IGNORE INTO notifications SELECT ?||j.id,j.assigned_to,?,'cleaner:booking-cancelled:'||j.id,0,? FROM cleaning_jobs j WHERE j.booking_id=? AND j.status='assigned' AND j.assigned_to IS NOT NULL AND ${done}`,uuid()+':','Гость не приехал в «'+title+'», уборка после этой брони не нужна. Задание снято.',at,b.id,b.id),
    q(db,`UPDATE cleaning_jobs SET status='cancelled' WHERE booking_id=? AND status IN ('open','assigned') AND ${done}`,b.id,b.id),
    settle(db,b.id,c.refund,at),
-   q(db,`INSERT OR IGNORE INTO notifications SELECT ?,?,?,?,0,? WHERE ${done}`,uuid(),b.guest_id,('ИИ-администратор: время брони «'+title+'» прошло, заселения не было. Бронь закрыта. '+forGuest).trim(),'guest:stay-no-show:'+b.id,at,b.id),
-   q(db,`INSERT OR IGNORE INTO notifications SELECT ?,?,?,?,0,? WHERE ${done}`,uuid(),b.owner_id,('ИИ-администратор: время брони «'+title+'» прошло, гость не заселился. Я закрыл бронь как неявку, уборка после неё не нужна. '+forOwner).trim(),'owner:stay-no-show:'+b.id,at,b.id),
+   q(db,`INSERT OR IGNORE INTO notifications SELECT ?,?,?,?,0,? WHERE ${done}`,uuid(),b.guest_id,(venueOr(b,'ИИ-администратор: время брони «'+title+'» прошло, заселения не было. Бронь закрыта. ','ИИ-администратор: время брони «'+title+'» прошло, вы не пришли. Бронь закрыта. ')+forGuest).trim(),'guest:stay-no-show:'+b.id,at,b.id),
+   q(db,`INSERT OR IGNORE INTO notifications SELECT ?,?,?,?,0,? WHERE ${done}`,uuid(),b.owner_id,(venueOr(b,'ИИ-администратор: время брони «'+title+'» прошло, гость не заселился. Я закрыл бронь как неявку, уборка после неё не нужна. ','ИИ-администратор: время брони «'+title+'» прошло, гостей не было. Я закрыл бронь как неявку, уборка после неё не нужна. ')+forOwner).trim(),'owner:stay-no-show:'+b.id,at,b.id),
    q(db,`INSERT INTO audit_events SELECT ?,'ai-administrator',?,'booking.no_show_closed',? WHERE ${done}`,uuid(),b.id,at,b.id)]);
   if(r[0].meta.changes)result.released++;
  }
@@ -146,20 +147,20 @@ async function arrivals(db:D1Database,at:number,result:Row,rule:Rules){
      q(db,"UPDATE bookings SET status='cancelled' WHERE id=? AND status='confirmed' AND NOT EXISTS(SELECT 1 FROM booking_terms WHERE booking_id=? AND (actual_checkin IS NOT NULL OR checkin_reported_at IS NOT NULL OR COALESCE(arrival_eta,0)<>?)) AND NOT EXISTS(SELECT 1 FROM property_operations WHERE property_id=? AND active_booking_id=?)",b.id,b.id,Number(b.arrival_eta)||0,b.property_id,b.id),
      q(db,"UPDATE cleaning_jobs SET status='cancelled' WHERE booking_id=? AND status IN ('open','assigned') AND EXISTS(SELECT 1 FROM bookings WHERE id=? AND status='cancelled')",b.id,b.id),
      step(db,b.id,'arrival',due,s,2,at),settle(db,b.id,c.refund,at),
-     q(db,"INSERT OR IGNORE INTO notifications SELECT ?,?,?,?,0,? WHERE EXISTS(SELECT 1 FROM bookings WHERE id=? AND status='cancelled')",uuid(),b.guest_id,'ИИ-администратор: вы не заселились в «'+title+'» и не ответили, бронь снята. '+forGuest,'guest:stay-no-show:'+b.id,at,b.id),
-     q(db,"INSERT OR IGNORE INTO notifications SELECT ?,?,?,?,0,? WHERE EXISTS(SELECT 1 FROM bookings WHERE id=? AND status='cancelled')",uuid(),b.owner_id,'ИИ-администратор: гость не приехал в «'+title+'» и не ответил. Я отметил неявку и освободил жильё. '+forOwner,'owner:stay-no-show:'+b.id,at,b.id),
+     q(db,"INSERT OR IGNORE INTO notifications SELECT ?,?,?,?,0,? WHERE EXISTS(SELECT 1 FROM bookings WHERE id=? AND status='cancelled')",uuid(),b.guest_id,venueOr(b,'ИИ-администратор: вы не заселились в «'+title+'» и не ответили, бронь снята. ','ИИ-администратор: вы не пришли в «'+title+'» и не ответили, бронь снята. ')+forGuest,'guest:stay-no-show:'+b.id,at,b.id),
+     q(db,"INSERT OR IGNORE INTO notifications SELECT ?,?,?,?,0,? WHERE EXISTS(SELECT 1 FROM bookings WHERE id=? AND status='cancelled')",uuid(),b.owner_id,venueOr(b,'ИИ-администратор: гость не приехал в «'+title+'» и не ответил. Я отметил неявку и освободил жильё. ','ИИ-администратор: гости не пришли в «'+title+'» и не ответили. Я отметил неявку и освободил время. ')+forOwner,'owner:stay-no-show:'+b.id,at,b.id),
      q(db,"INSERT INTO audit_events SELECT ?,'ai-administrator',?,'booking.no_show_released',? WHERE EXISTS(SELECT 1 FROM bookings WHERE id=? AND status='cancelled')",uuid(),b.id,at,b.id)]);
     if(r[0].meta.changes){result.released++;continue;}
    }
    // Without the autopilot the owner decides: the guest may be there already and nobody pressed the button.
    if(moved(await db.batch([step(db,b.id,'arrival',due,s,2,at),
-    q(db,"INSERT OR IGNORE INTO notifications SELECT ?,?,?,?,0,? WHERE changes()>0",uuid(),b.owner_id,'ИИ-администратор: гость так и не заселился в «'+title+'» и не ответил. Если он на месте, подтвердите заселение; если не приедет, отмените бронь в карточке.','owner:stay-no-show-ask:'+b.id+':'+due,at)])))result.warned++;
+    q(db,"INSERT OR IGNORE INTO notifications SELECT ?,?,?,?,0,? WHERE changes()>0",uuid(),b.owner_id,venueOr(b,'ИИ-администратор: гость так и не заселился в «'+title+'» и не ответил. Если он на месте, подтвердите заселение; если не приедет, отмените бронь в карточке.','ИИ-администратор: '+wordsOf(b).notIn+' в «'+title+'» и не ответил. Если гости на месте, подтвердите '+wordsOf(b).arriveAcc+'; если не придут, отмените бронь в карточке.'),'owner:stay-no-show-ask:'+b.id+':'+due,at)])))result.warned++;
    continue;
   }
   if(at>=askAt&&s<1){
    if(moved(await db.batch([step(db,b.id,'arrival',due,s,1,at),
-    q(db,"INSERT OR IGNORE INTO notifications SELECT ?,?,?,?,0,? WHERE changes()>0",uuid(),b.guest_id,'ИИ-администратор: вы едете в «'+title+'»? Если задерживаетесь, нажмите «Задерживаюсь на час» в брони; если уже на месте, нажмите «Я заселился».'+(releases?' Без ответа до '+clock(actAt)+' бронь может быть снята.':''),'guest:stay-arrival-ask:'+b.id+':'+due,at),
-    notice(db,b.owner_id,'ИИ-администратор: гость ещё не заселился в «'+title+'». Я спросил, едет ли он.','owner:stay-arrival-ask:'+b.id+':'+due,at)])))result.reminded++;
+    q(db,"INSERT OR IGNORE INTO notifications SELECT ?,?,?,?,0,? WHERE changes()>0",uuid(),b.guest_id,venueOr(b,'ИИ-администратор: вы едете в «'+title+'»? Если задерживаетесь, нажмите «Задерживаюсь на час» в брони; если уже на месте, нажмите «Я заселился».','ИИ-администратор: вы едете в «'+title+'»? Если задерживаетесь, нажмите «Задерживаюсь на час» в брони; если уже на месте, нажмите «'+wordsOf(b).iAmIn+'».')+(releases?' Без ответа до '+clock(actAt)+' бронь может быть снята.':''),'guest:stay-arrival-ask:'+b.id+':'+due,at),
+    notice(db,b.owner_id,venueOr(b,'ИИ-администратор: гость ещё не заселился в «'+title+'». Я спросил, едет ли он.','ИИ-администратор: '+wordsOf(b).notIn+' в «'+title+'». Я спросил, едут ли.'),'owner:stay-arrival-ask:'+b.id+':'+due,at)])))result.reminded++;
   }
  }
 }
@@ -175,7 +176,7 @@ async function checkouts(db:D1Database,at:number,result:Row,admin:string[],rule:
   }
   if(late>=handover.minutes*60&&s<3&&handover.on){
    if(moved(await db.batch([step(db,b.id,'checkout',Number(b.end),s,3,at),
-    q(db,"INSERT OR IGNORE INTO notifications SELECT ?,?,?,?,0,? WHERE changes()>0",uuid(),b.owner_id,'ИИ-администратор передал задержку выезда из «'+title+'» администратору сервиса. Подтвердите выезд, как только жильё освободится.','owner:stay-checkout-escalated:'+b.id+':'+b.end,at),
+    q(db,"INSERT OR IGNORE INTO notifications SELECT ?,?,?,?,0,? WHERE changes()>0",uuid(),b.owner_id,venueOr(b,'ИИ-администратор передал задержку выезда из «'+title+'» администратору сервиса. Подтвердите выезд, как только жильё освободится.','ИИ-администратор передал задержку в «'+title+'» администратору сервиса: '+wordsOf(b).notOut+'. Подтвердите '+wordsOf(b).leaveLow+', как только гости уйдут.'),'owner:stay-checkout-escalated:'+b.id+':'+b.end,at),
     ...admin.map(a=>notice(db,a,'Гость не выехал из «'+title+'» больше '+minutesLabel(handover.minutes)+' после конца брони и не ответил. Свяжитесь с владельцем и гостем.','admin:stay-checkout:'+b.id+':'+b.end+':'+a,at))])))result.escalated++;
    continue;
   }
@@ -184,13 +185,13 @@ async function checkouts(db:D1Database,at:number,result:Row,admin:string[],rule:
    const close=next?.start&&Number(next.start)-at<=NEXT_CLOSE?Number(next.start):0;
    const jobs=await rows(db,"SELECT id,assigned_to FROM cleaning_jobs WHERE booking_id=? AND status='assigned' AND assigned_to IS NOT NULL",b.id);
    if(moved(await db.batch([step(db,b.id,'checkout',Number(b.end),s,2,at),
-    q(db,"INSERT OR IGNORE INTO notifications SELECT ?,?,?,?,0,? WHERE changes()>0",uuid(),b.owner_id,'ИИ-администратор: гость ещё не сообщил о выезде из «'+title+'».'+(close?' Следующий заезд в '+clock(close)+' под угрозой.':'')+' Свяжитесь с гостем или подтвердите выезд, если жильё свободно.','owner:stay-checkout-late:'+b.id+':'+b.end,at),
+    q(db,"INSERT OR IGNORE INTO notifications SELECT ?,?,?,?,0,? WHERE changes()>0",uuid(),b.owner_id,venueOr(b,'ИИ-администратор: гость ещё не сообщил о выезде из «'+title+'».'+(close?' Следующий заезд в '+clock(close)+' под угрозой.':'')+' Свяжитесь с гостем или подтвердите выезд, если жильё свободно.','ИИ-администратор: гость ещё не сообщил '+wordsOf(b).ofLeave+' в «'+title+'».'+(close?' Следующая бронь в '+clock(close)+' под угрозой.':'')+' Свяжитесь с гостем или подтвердите '+wordsOf(b).leaveLow+', если гости ушли.'),'owner:stay-checkout-late:'+b.id+':'+b.end,at),
     ...jobs.map(j=>notice(db,j.assigned_to,'ИИ-администратор: гость ещё в «'+title+'», начало уборки может сдвинуться. Я сообщу, когда жильё освободится.','cleaner:stay-checkout-late:'+j.id+':'+b.end,at)),
     ...(close?admin.map(a=>notice(db,a,'Гость не выехал из «'+title+'», следующий заезд в '+clock(close)+'. Проверьте ситуацию.','admin:stay-checkout-next:'+b.id+':'+b.end+':'+a,at)):[])])))result.warned++;
    continue;
   }
   if(s<1&&moved(await db.batch([step(db,b.id,'checkout',Number(b.end),s,1,at),
-   q(db,"INSERT OR IGNORE INTO notifications SELECT ?,?,?,?,0,? WHERE changes()>0",uuid(),b.guest_id,'ИИ-администратор: время выезда из «'+title+'» наступило. Нажмите «Сообщить о выезде», когда освободите жильё, или предложите владельцу продлить проживание в брони.','guest:stay-checkout-remind:'+b.id+':'+b.end,at)])))result.reminded++;
+   q(db,"INSERT OR IGNORE INTO notifications SELECT ?,?,?,?,0,? WHERE changes()>0",uuid(),b.guest_id,venueOr(b,'ИИ-администратор: время выезда из «'+title+'» наступило. Нажмите «Сообщить о выезде», когда освободите жильё, или предложите владельцу продлить проживание в брони.','ИИ-администратор: время брони «'+title+'» закончилось. Нажмите «Сообщить '+wordsOf(b).ofLeave+'», когда уйдёте, или предложите владельцу продлить время в брони.'),'guest:stay-checkout-remind:'+b.id+':'+b.end,at)])))result.reminded++;
  }
 }
 

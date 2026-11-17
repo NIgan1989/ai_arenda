@@ -34,3 +34,12 @@ test('нить брони зала: начало, мероприятие, око
   assert.deepEqual(labels.slice(2), ['Начало', 'Мероприятие', 'Окончание']);
   assert.ok(!JSON.stringify(tripThread(booking('banya'), now)).match(/аезд|ыезд|рожив|засел/));
 });
+
+test('оповещения: жильё прежними словами, баня и зал своими', async () => {
+  const { venueOr, isHome } = await load('stay-words');
+  assert.equal(venueOr({ property_type: 'flat' }, 'жильё', 'объект'), 'жильё');
+  assert.equal(venueOr({}, 'жильё', 'объект'), 'жильё');
+  assert.equal(venueOr({ property_type: 'sauna' }, 'жильё', 'объект'), 'объект');
+  assert.ok(!isHome({ property_type: 'cafe' }));
+  for (const type of ['banya', 'banquet']) for (const text of Object.values(stayWords(type))) assert.ok(!/аезд|ыезд|рожив|засел|жиль/i.test(text), text);
+});
