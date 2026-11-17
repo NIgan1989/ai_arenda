@@ -74,6 +74,9 @@ test('«Смена»: затоплено, гости пришли, гости у
   assert.deepEqual([(await stay()).stage,(await stay()).next],['here','left']);
   await staffMark(f.cleaner,{bookingId:booking,mark:'left'});
   assert.deepEqual([(await stay()).stage,(await stay()).next],['left','ready']);
+  // A stay that still waits for «Готово» stays in «Смена» however long ago it ended.
+  f.db.raw.prepare('UPDATE bookings SET start=?,"end"=?,occupied_until=? WHERE id=?').run(now()-3*86400,now()-2*86400,now()-2*86400,booking);
+  assert.deepEqual([(await stay()).stage,(await stay()).next],['left','ready']);
   const ready=await staffMark(f.cleaner,{bookingId:booking,mark:'ready'});
   assert.equal(f.db.raw.prepare('SELECT readiness FROM property_operations WHERE property_id=?').get(id).readiness,'ready');
   assert.deepEqual(ready.places[0].stays,[]);

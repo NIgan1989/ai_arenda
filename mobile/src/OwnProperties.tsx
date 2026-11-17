@@ -1,7 +1,7 @@
 // «Моё жильё»: the owner's objects as short cards, opened from the «Жильё» shortcut of the home sheet.
 // A card says what it is, its state, its price and what is happening there now; a tap opens the facts and
 // the actions. Changing an object is the step editor (PropertyEdit), adding one is the AI form (PropertyQuick).
-import React,{useState} from 'react';
+import React,{useEffect,useState} from 'react';
 import {View,Text,Pressable,StyleSheet} from 'react-native';
 import {C,type} from './styles';
 import {T} from './tokens';
@@ -35,6 +35,8 @@ function PropertyCard({property:p,bookings,busy,open,onToggle,onEdit,onSettings,
  const kind=propertyTypes[d.type]||'Жильё';
  // «Занято»: guests who came without the service. The card keeps the mark it was given until the state is read again.
  const [marked,setMarked]=useState<Row[]|null>(null),[busyOpen,setBusyOpen]=useState(false),[busyNote,setBusyNote]=useState('');
+ // A fresh state of the object wins over the local mark: the person on shift may have marked or freed it meanwhile.
+ useEffect(()=>{setMarked(null);},[p.busy_until]);
  const blocks=marked??(Number(p.busy_until)>Date.now()/1000?[{start:0,end:Number(p.busy_until)}]:[]),held=busyNow(blocks);
  const actions:(RecordAction|false)[]=[
   {title:'Изменить',kind:'main',onPress:onEdit},

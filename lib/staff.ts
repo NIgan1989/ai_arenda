@@ -73,11 +73,15 @@ export async function markBusy(s:RentalService,body:Row){
  if(taken)throw new DomainError('На это время уже есть бронь через сервис: '+clock(taken.start)+'–'+clock(taken.end)+'. Отметьте меньше часов.',409);
  let source=await one(s.db,'SELECT id FROM calendar_sources WHERE property_id=? AND external_property_id=?',p.id,BUSY_SOURCE);
  if(!source){source={id:uuid()};await q(s.db,"INSERT INTO calendar_sources(id,property_id,owner_id,label,url,created_at,provider,external_property_id) VALUES (?,?,?,'Занято','',?,'manual',?)",source.id,p.id,p.owner_id,at,BUSY_SOURCE).run();}
- await s.db.batch([
+ // The check above only words the refusal. The write itself is guarded: a stay booked between the check and the
+ // write is not written over, and the last mark is replaced only when the new one is in.
+ const mark=uuid(),free="NOT EXISTS(SELECT 1 FROM bookings WHERE property_id=? AND (status='confirmed' OR (status='requested' AND expires_at>?)) AND start<? AND occupied_until>?)";
+ const done=await s.db.batch([
+  q(s.db,'INSERT INTO external_blocks(id,source_id,property_id,event_uid,start,end) SELECT ?,?,?,?,?,? WHERE '+free,mark,source.id,p.id,'busy:'+mark,start,end,p.id,at,end,start),
   // One «Занято» at a time: a new mark replaces what is left of the last one, and what has ended is cleared.
-  q(s.db,'DELETE FROM external_blocks WHERE source_id=? AND (end<=? OR start<=?)',source.id,at,at),
-  q(s.db,'INSERT INTO external_blocks(id,source_id,property_id,event_uid,start,end) VALUES (?,?,?,?,?,?)',uuid(),source.id,p.id,'busy:'+uuid(),start,end),
-  ...(p.mine?[]:[tell(s.db,p.owner_id,'«'+p.title+'» занято до '+clock(end)+': отметил сотрудник. Гостям из приложения это время не предлагается.','staff:busy:'+p.id+':'+start,at)])]);
+  q(s.db,'DELETE FROM external_blocks WHERE source_id=? AND id<>? AND (end<=? OR start<=?) AND EXISTS(SELECT 1 FROM external_blocks WHERE id=?)',source.id,mark,at,at,mark),
+  ...(p.mine?[]:[q(s.db,'INSERT OR IGNORE INTO notifications(id,user_id,body,dedupe,read,created_at) SELECT ?,?,?,?,0,? WHERE EXISTS(SELECT 1 FROM external_blocks WHERE id=?)',uuid(),p.owner_id,'«'+p.title+'» занято до '+clock(end)+': отметил сотрудник. Гостям из приложения это время не предлагается.','staff:busy:'+p.id+':'+start,at,mark)])]);
+ if(!done[0]?.meta?.changes)throw new DomainError('На это время только что появилась бронь через сервис. Отметьте меньше часов.',409);
  return {busy:await busyBlocks(s.db,p.id,at),message:'Занято до '+clock(end)+'. Гостям из приложения это время не предлагается.'};
 }
 export async function freeBusy(s:RentalService,body:Row){
@@ -108,7 +112,10 @@ export async function staffToday(s:RentalService){
  for(const p of places){
   const bath=isBath(kindOf(p.details));
   const stays=await rows(s.db,`SELECT b.id,b.start,b.end,b.guests,b.status,t.prepared_at,t.actual_checkin,t.actual_checkout,(SELECT name FROM profiles WHERE id=b.guest_id) guest_name
-   FROM bookings b LEFT JOIN booking_terms t ON t.booking_id=b.id WHERE b.property_id=? AND b.status IN ('confirmed','completed') AND b.end>? AND b.start<? ORDER BY b.start`,p.id,from,to);
+   FROM bookings b LEFT JOIN booking_terms t ON t.booking_id=b.id WHERE b.property_id=? AND b.status IN ('confirmed','completed') AND ((b.end>? AND b.start<?)
+    -- A stay that still needs a mark stays on the list however late it is: guests inside, or the last checkout while the object is not ready.
+    OR (b.status='confirmed' AND t.actual_checkin IS NOT NULL AND t.actual_checkout IS NULL)
+    OR (?<>'ready' AND b.id=(SELECT x.booking_id FROM booking_terms x JOIN bookings y ON y.id=x.booking_id WHERE y.property_id=b.property_id AND x.actual_checkout IS NOT NULL ORDER BY x.actual_checkout DESC LIMIT 1))) ORDER BY b.start`,p.id,from,to,p.readiness);
   // A finished stay stays on the list only while the object still waits for «Готово», and only the last one.
   const steps=stays.map(b=>({id:b.id,start:b.start,end:b.end,guests:b.guests,guestName:String(b.guest_name||'Гость').split(' ')[0],...stayStep(b as any,p.readiness,bath,at)})).filter(b=>b.stage!=='done');
   const last=steps.filter(b=>b.stage==='left').pop();
