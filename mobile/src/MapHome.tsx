@@ -95,7 +95,7 @@ function GuestPanel({setScanning,accountId,data,mapData,publish,selected,setSele
  const [asked,setAsked]=useState(''),[hint,setHint]=useState<{text:string;ask?:string;error?:boolean}|null>(null),[refine,setRefine]=useState(false);
  const [preview,setPreview]=useState<Row|null>(recent?kept!.preview:null),[requestId,setRequestId]=useState(()=>liveRequests.get(accountId)||''),[live,setLive]=useState<Row|null>(null);
  const [error,setError]=useState(''),[working,setWorking]=useState(false),[index,setIndex]=useState(0),[acceptedKey,setAcceptedKey]=useState(''),[skew,setSkew]=useState(0);
- const lock=useRef(false),requestKey=useRef(''),pickThenFind=useRef(false),bookedFlat=useRef<Row|null>(null),preferred=useRef<Row|null>(null),askedFrom=useRef<MapPoint|null>(null);
+ const lock=useRef(false),requestKey=useRef(''),pickThenFind=useRef(false),bookedFlat=useRef<Row|null>(null),askedFrom=useRef<MapPoint|null>(null);
  const active=!!requestId&&(!live||['searching','ready','booking'].includes(live.status)),now=useNow(active)+skew;
  // «Избранное»: the hearts and the homes of earlier stays; they come first in what the search finds.
  const {mine,toggle}=useFavorites(data,onChanged),heart=(id:string)=>void toggle(id).then(text=>{if(text)setError(text);});
@@ -159,7 +159,7 @@ function GuestPanel({setScanning,accountId,data,mapData,publish,selected,setSele
  // «Забронировать»: the price in the list is for the searched time. If that time has passed while the list was open, the search runs again first.
  const bookFlat=(property:Row)=>{if(freshDraft(draft).start!==draft.start){setHint({text:'Время начала уже прошло. Обновил варианты на ближайшее время.'});setSelected('');void find(draft);return;}// One button. A home that confirms by itself is booked at once; a home whose owner answers quick requests is asked
   // first, together with the next best ones, so a refusal or silence already has the next offer coming.
-  if(askFirst(property)){preferred.current=property;void begin(property.id);return;}
+  if(askFirst(property)){void begin(property.id);return;}
   onBook(property,{mode:tariffOf(draft,property),start:draft.start,end:draft.end,guests:draft.guests});};
  // What narrows a search beyond the place, the time and the guests. An empty result offers to drop these and look again.
  const narrowed=!!(draft.district||draft.maxPrice||draft.features.length||draft.priority!=='balanced'||draft.near||draft.kinds.length||draft.rooms||draft.now);
@@ -174,7 +174,6 @@ function GuestPanel({setScanning,accountId,data,mapData,publish,selected,setSele
  useEffect(()=>{if(!selected||!(preview||requestId))return;const need=preview&&!requestId&&lowScreen?2:1;if(snap<need)expand(need);},[selected]);
  useEffect(()=>{if(!picking)pickThenFind.current=false;},[picking]);
  const begin=(prefer?:string)=>guarded(async()=>{
-  if(!prefer)preferred.current=null;
   requestKey.current||=uid();
   // The beams start where the guest is, if the phone told us (here.ts): no new prompt here.
   askedFrom.current=null;
@@ -288,6 +287,18 @@ function GuestPanel({setScanning,accountId,data,mapData,publish,selected,setSele
   <Action title="Искать рядом с этой точкой" onPress={()=>{const c=mapCenter.current,near=c?{longitude:Math.round(c[0]*100)/100,latitude:Math.round(c[1]*100)/100,radius:5000}:null,search=pickThenFind.current&&!!near;pickThenFind.current=false;if(near)change({...draft,near});setPicking(false);if(search)void find({...draft,near});else expand(1);}}/>
   <Action secondary title="Отмена" onPress={()=>{const fromLine=pickThenFind.current;pickThenFind.current=false;setPicking(false);expand(fromLine?0:1);}}/></View>;
 
+ // The home «Забронировать» was pressed on is kept in the request itself, so it survives a change of role or a restart.
+ const preferId=typeof live?.filters?.prefer==='string'?live.filters.prefer:'';
+ // Nobody answered in time: an ordinary request to that owner, for the stay the request was made for, priced again
+ // by the same search (the night price too). Not free any more: its card opens, and the guest picks the dates.
+ const direct=()=>guarded(async()=>{
+  const filters=live!.filters,id=preferId,local=(iso:string)=>new Date(Date.parse(iso)+5*3600000).toISOString().slice(0,16);
+  let found:Row|undefined;
+  try{const {prefer,...conditions}=filters;found=((await request('/api/public/matching?q='+encodeURIComponent(JSON.stringify(conditions))))?.properties||[]).find((p:Row)=>p.id===id);}catch(e){if(isOffline(e))throw e;}
+  reset();
+  if(found)onBook(found,{mode:filters.mode==='night'?(found.estimate?.billingMode==='nightly'?'nightly':'daily'):filters.mode,start:local(filters.start),end:local(filters.end),guests:Number(filters.guests)});
+  else onIntent('property:'+id);
+ });
  const renderLive=()=>{
   const status=live?.status||'searching',booked=status==='booked',step=booked?3:status==='ready'||status==='booking'?2:1;
   const booking=booked?(data.bookings||[]).find((b:Row)=>b.id===live?.bookingId):null;
@@ -326,9 +337,9 @@ function GuestPanel({setScanning,accountId,data,mapData,publish,selected,setSele
    </>}
    {live&&['empty','expired','cancelled'].includes(status)&&<>
     <Text accessibilityRole="header" style={h.cardTitle}>{status==='empty'?'Сейчас никто не подтвердил':status==='expired'?'Время подбора вышло':'Подбор отменён'}</Text>
-    <Text style={h.note}>{status==='empty'?''+(preferred.current?'Владельцы не ответили за отведённое время. Можно отправить обычную заявку: владелец ответит, когда увидит её.':'Подходящие владельцы не ответили или отказали. Попробуйте изменить время, бюджет или район.')+'':'Условия сохранены. Можно запустить подбор заново.'}</Text>
-    {!!preferred.current&&<Action title="Отправить заявку владельцу" onPress={()=>{const flat=preferred.current!,stay={mode:tariffOf(draft,flat),start:draft.start,end:draft.end,guests:draft.guests};reset();onBook(flat,stay);}}/>}
-    <Action secondary={!!preferred.current} title="Изменить условия" onPress={reset}/>
+    <Text style={h.note}>{status==='empty'?''+(preferId?'Владельцы не ответили за отведённое время. Можно отправить обычную заявку: владелец ответит, когда увидит её.':'Подходящие владельцы не ответили или отказали. Попробуйте изменить время, бюджет или район.')+'':'Условия сохранены. Можно запустить подбор заново.'}</Text>
+    {!!preferId&&<Action title="Отправить заявку владельцу" disabled={working} onPress={()=>void direct()}/>}
+    <Action secondary={!!preferId} title="Изменить условия" onPress={reset}/>
    </>}
    {!!error&&<Text accessibilityRole="alert" style={h.error}>{error}</Text>}
    {active&&<Action secondary danger title="Отменить подбор" disabled={working||status==='booking'} onPress={cancel}/>}
