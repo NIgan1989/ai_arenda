@@ -1,5 +1,8 @@
 import {DomainError,number,type Role} from './domain';
+import {stayWords} from './stay-words';
 type Row=Record<string,any>;
+// Housing is entered and left; a bath and a hall are booked for hours, so their hints speak of the booking.
+const home=(b:Row)=>stayWords(b.property_type).arrive==='Заезд';
 export const defaultAssistantSettings=Object.freeze({mode:'proactive',leadMinutes:60,repeatMinutes:60,quietEnabled:false,quietStart:'22:00',quietEnd:'08:00',urgentInQuiet:true,version:0});
 function minute(value:unknown){if(typeof value!=='string'||!/^([01]\d|2[0-3]):[0-5]\d$/.test(value))throw new DomainError('Укажите время в формате ЧЧ:ММ.');const [h,m]=value.split(':').map(Number);return h*60+m;}
 export function assistantSettingsInput(body:Row){
@@ -14,12 +17,12 @@ export function assistantBrief(data:Row,role:Role,settings:Row,t:number){
   const add=(key:string,title:string,reason:string,kind:string,section:string,entityId:string,priority:number,at=t,intent?:string)=>tasks.push({id:key,title,reason,kind,section,entityId,priority,at,intent});
   for(const b of data.bookings||[]){
     if(b.status==='requested'&&b.expires_at>t&&role==='owner')add('request:'+b.id,'Ответить на заявку',b.title+' · резерв скоро истечёт','booking','bookings',b.id,b.expires_at-t<=600?3:2,b.expires_at);
-    for(const c of b.changes||[])if(c.status==='pending'&&c.expires_at>t&&c.proposer_role!==role)add('change:'+c.id,'Согласовать изменение проживания',b.title+' · проверьте новые даты и стоимость','booking','bookings',b.id,2,c.expires_at);
+    for(const c of b.changes||[])if(c.status==='pending'&&c.expires_at>t&&c.proposer_role!==role)add('change:'+c.id,home(b)?'Согласовать изменение проживания':'Согласовать изменение брони',b.title+' · проверьте новые даты и стоимость','booking','bookings',b.id,2,c.expires_at);
     if(b.status!=='confirmed')continue;
-    if(!b.terms?.actual_checkout&&b.end<=t){add('checkout:'+b.id,role==='owner'?'Проверить фактический выезд':'Уточнить завершение проживания',b.title+' · время выезда прошло; освобождение ещё не подтверждено','booking','bookings',b.id,3,b.end);continue;}
+    if(!b.terms?.actual_checkout&&b.end<=t){add('checkout:'+b.id,home(b)?(role==='owner'?'Проверить фактический выезд':'Уточнить завершение проживания'):role==='owner'?'Проверить, что гости ушли':'Подтвердить, что вы ушли',b.title+(home(b)?' · время выезда прошло; освобождение ещё не подтверждено':' · время брони прошло; '+stayWords(b.property_type).leaveLow+' ещё не подтверждён'.replace('подтверждён',stayWords(b.property_type).leaveLow==='окончание'?'подтверждено':'подтверждён')),'booking','bookings',b.id,3,b.end);continue;}
     if(role==='guest'){
       const leaving=b.start<=t&&b.end<=horizon;
-      add('arrival:'+b.id,leaving?'Подготовиться к выезду':b.start>t?'Проверить предстоящий заезд':'Проверить данные проживания',b.title+' · даты, адрес и условия уже сохранены в вашей брони','booking','bookings',b.id,leaving||b.start>t&&b.start<=horizon?2:1,leaving?b.end:b.start);
+      add('arrival:'+b.id,home(b)?(leaving?'Подготовиться к выезду':b.start>t?'Проверить предстоящий заезд':'Проверить данные проживания'):leaving?'Время брони скоро закончится':b.start>t?'Проверить предстоящую бронь':'Проверить данные брони',b.title+(home(b)?' · даты, адрес и условия уже сохранены в вашей брони':' · время, адрес и условия уже сохранены в вашей брони'),'booking','bookings',b.id,leaving||b.start>t&&b.start<=horizon?2:1,leaving?b.end:b.start);
       continue;
     }
     if(role==='owner'&&b.terms?.checkout_reported_at&&!b.terms.actual_checkout)add('reported:'+b.id,'Проверить освобождение жилья',b.title+' · гость сообщил о выезде','booking','bookings',b.id,2,b.terms.checkout_reported_at);
