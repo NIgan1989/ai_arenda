@@ -155,8 +155,13 @@ test('home type and rooms narrow the match; an empty answer says why and what wo
  const f=await fixture();try{
   assert.equal((await previewMatches(f.guest,{...input(),rooms:'1'})).properties.length,1);
   assert.equal((await previewMatches(f.guest,{...input(),rooms:'1+'})).properties.length,1);
-  const rooms=await previewMatches(f.guest,{...input(),rooms:'2'});assert.equal(rooms.properties.length,0);assert.deepEqual(rooms.empty,{reason:'filters',count:1});
-  assert.equal((await previewMatches(f.guest,{...input(),kinds:['hotel']})).empty.reason,'filters');
+  const rooms=await previewMatches(f.guest,{...input(),rooms:'2'});assert.equal(rooms.properties.length,0);assert.deepEqual(rooms.empty,{reason:'filters',blocker:'rooms',count:1});
+  // The one condition that empties the answer is named: there is no hotel here, and no home that takes pets.
+  assert.deepEqual((await previewMatches(f.guest,{...input(),kinds:['hotel']})).empty,{reason:'filters',blocker:'kinds',count:1});
+  assert.deepEqual((await previewMatches(f.guest,{...input(),features:['pets']})).empty,{reason:'filters',blocker:'features',count:1});
+  assert.throws(()=>matchingInput({...input(),features:['dragons']}));
+  // Every wish of the form at once is a valid request.
+  assert.equal(matchingInput({...input(),features:['parking','wifi','kitchen','workspace','pets','aircon','washer','tv','balcony','elevator','crib','hairdryer','iron']}).features.length,13);
   assert.deepEqual((await previewMatches(f.guest,{...input(),guests:'5'})).empty,{reason:'guests',maxGuests:2});
   assert.deepEqual((await previewMatches(f.guest,{...input(),maxPrice:'5000'})).empty,{reason:'budget',cheapest:10000,count:1});
   assert.deepEqual((await previewMatches(f.guest,{...input(),city:'Астана'})).empty,{reason:'city'});
@@ -186,5 +191,19 @@ test('«Сейчас» with nothing ready says how many would fit after the owne
  const f=await fixture();try{
   const soon=await previewMatches(f.guest,{...input(),now:true});
   assert.equal(soon.properties.length,0);assert.deepEqual(soon.empty,{reason:'now',count:1});
+ }finally{f.db.close();}
+});
+test('«Забронировать» on a home that needs its owner: that home is asked in the first wave, the next best with it',async()=>{
+ const f=await enabled();try{
+  const ids=[];
+  for(let i=0;i<4;i++){const p=await f.owner.createProperty({title:'Additional '+i,city:'Павлодар',district:'Центр',address:'PRIVATE ADDRESS '+i,description:'QA',price:10000,rooms:1,capacity:2,cleaningMinutes:90});await f.owner.savePolicy(p.id,{...f.policy,expectedVersion:0});await matchingAction(f.owner,'owner','preference',{propertyId:p.id,enabled:true});ids.push(p.id);}
+  // Without a preference the last home of the ranking is not in the first three.
+  const order=(await previewMatches(f.guest,input())).properties.map(p=>p.id),last=order[order.length-1];
+  const plain=await matchingAction(f.guest,'guest','begin',{...input(),requestKey:'plain',consent:true});
+  assert.ok(!plain.pendingProperties.some(p=>p.id===last));await matchingAction(f.guest,'guest','cancel',{id:plain.id});
+  const r=await matchingAction(f.guest,'guest','begin',{...input(),prefer:last,requestKey:'prefer',consent:true});
+  assert.equal(r.sent,3);assert.ok(r.pendingProperties.some(p=>p.id===last));assert.equal(r.filters.prefer,last);
+  // A preference that is not a plain id is dropped, never stored.
+  assert.equal(matchingInput({...input(),prefer:{id:last}}).prefer,undefined);assert.equal(matchingInput({...input(),prefer:"x' OR 1=1"}).prefer,undefined);
  }finally{f.db.close();}
 });
