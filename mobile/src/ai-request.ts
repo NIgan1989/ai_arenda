@@ -67,13 +67,23 @@ export const HOME_KINDS: Record<string, string> = {
 // only bath types named means «Баня», anything else «Жильё».
 export type Category = 'stay' | 'bath';
 export const BATH_TYPES: string[] = BATH_KINDS;
-export const CATEGORIES: { id: Category; title: string; icon: string; hint: string }[] = [
-  { id: 'stay', title: 'Жильё', icon: '🏠', hint: 'Жильё: на сутки, на ночь или на часы' },
-  { id: 'bath', title: 'Баня', icon: '♨️', hint: 'Баня и сауна: на несколько часов' }
+export const CATEGORIES: { id: Category; title: string; any: string; hint: string }[] = [
+  { id: 'stay', title: 'Жильё', any: 'Любое жильё', hint: 'на сутки, на ночь или на часы' },
+  { id: 'bath', title: 'Баня', any: 'Любая баня', hint: 'на несколько часов' }
 ];
 export const categoryOf = (draft: Pick<GuestDraft, 'kinds'>): Category => (draft.kinds.length && draft.kinds.every(id => BATH_KINDS.includes(id)) ? 'bath' : 'stay');
 /** The types a category offers in the form, with their names. */
 export const categoryKinds = (category: Category): [string, string][] => Object.entries(HOME_KINDS).filter(([id]) => BATH_KINDS.includes(id) === (category === 'bath'));
+/** What the category button says: the one type that is chosen, or the category itself. `id` names the icon (KindIcon). */
+export function kindChoice(draft: Pick<GuestDraft, 'kinds'>): { id: string; title: string } {
+  const category = CATEGORIES.find(c => c.id === categoryOf(draft))!, one = draft.kinds.length === 1 ? draft.kinds[0] : '';
+  return one && HOME_KINDS[one] ? { id: one, title: HOME_KINDS[one] } : { id: category.id, title: category.title };
+}
+/** A type chosen in the category picker: the category changes with it; no type is the whole category. */
+export function withKind(draft: GuestDraft, category: Category, kind: string | null, now = Date.now()): GuestDraft {
+  const next = withCategory(draft, category, now);
+  return { ...next, kinds: kind ? [kind] : category === 'bath' ? [...BATH_KINDS] : [] };
+}
 /** Another category is another request: the place stays, what narrowed the search starts over, a bath is by the hour. */
 export function withCategory(draft: GuestDraft, category: Category, now = Date.now()): GuestDraft {
   if (categoryOf(draft) === category) return draft;

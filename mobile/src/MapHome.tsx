@@ -25,7 +25,7 @@ import {countdown,mapCities,validPoint,type MapPoint} from './map-math';
 import {MapSheetHead} from './MapSheetHead';
 import {AutopilotThreads,type FeedNeed} from './AutopilotThreads';
 import {AutopilotHandoff} from './AutopilotHandoff';
-import {BATH_TYPES as BATH_KINDS,categoryOf,withCategory,PAST_TEXT,nearPlace,placeMissedNote,pinPrice,askFirst,understoodNote,notUnderstoodNote,chipDraft,freshDraft,guestRequestFromText,guestSummary,matchingBody,newDraft,shownReasons,type GuestDraft} from './ai-request';
+import {BATH_TYPES as BATH_KINDS,categoryOf,withKind,kindChoice,PAST_TEXT,nearPlace,placeMissedNote,pinPrice,askFirst,understoodNote,notUnderstoodNote,chipDraft,freshDraft,guestRequestFromText,guestSummary,matchingBody,newDraft,shownReasons,type GuestDraft} from './ai-request';
 import type {HeadAction} from './head-line';
 import {Action,Grip,SheetHeading,SheetRow,Stage,h,handleHeight,topInset} from './SheetParts';
 import {GuestForm} from './GuestForm';
@@ -368,7 +368,9 @@ function GuestPanel({setScanning,accountId,data,mapData,publish,selected,setSele
  const trips=guestTrips(data,serverNow(data));
  // «Уточнить» was tapped: the sheet is the form alone, the bookings and the quick chips wait under the collapsed sheet.
  const formOnly=refine&&snap>0;
- const head=<MapSheetHead role="guest" text={asked} onText={setAsked} onSend={ask} onChip={chip} chips={!preview&&!formOnly} category={categoryOf(draft)} onCategory={c=>{if(c!==categoryOf(draft)){setAsked('');change(withCategory(draft,c));}}} busy={working} summary={guestSummary(freshDraft(draft))} onRefine={toggleRefine} refining={refining} now={null} onNow={()=>{}}>
+ // Where the sheet stood before the category picker opened: it returns there when the picker closes.
+ const before=useRef(0);
+ const head=<MapSheetHead role="guest" text={asked} onText={setAsked} onSend={ask} onChip={chip} chips={!preview&&!formOnly} category={categoryOf(draft)} kind={draft.kinds.length===1?draft.kinds[0]:''} choice={kindChoice(draft)} onKind={(c,k)=>{setAsked('');change(withKind(draft,c,k));}} onPicker={open=>{if(open){before.current=snap;if(snap<1)expand(1);}else if(before.current<1&&snap===1)expand(0);}} busy={working} summary={guestSummary(freshDraft(draft))} onRefine={toggleRefine} refining={refining} now={null} onNow={()=>{}}>
   {!!hint&&<View style={h.picked}><Text accessibilityRole={hint.error?'alert':undefined} accessibilityLiveRegion="polite" style={hint.error?h.error:h.note}>{hint.text}</Text>{!!hint.ask&&<Action secondary title="Спросить ИИ-администратора" onPress={()=>onAsk(hint.ask!)}/>}</View>}
   {!!error&&<Text accessibilityRole="alert" style={h.error}>{error}</Text>}
   {!!nav.error&&<Text accessibilityRole="alert" style={h.error}>{nav.error}</Text>}

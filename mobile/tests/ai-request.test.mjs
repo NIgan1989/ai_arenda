@@ -412,6 +412,20 @@ test('an hour of their own for a day is shown in the conditions', () => {
   assert.match(guestSummary(late.draft, morning), /заезд с 22:00/);
   assert.doesNotMatch(guestSummary(draft, morning), /заезд/);
 });
+test('the category button: a tile chooses one type, «Любое» the whole category', async () => {
+  const {newDraft, withKind, kindChoice, categoryOf} = await loadPure('mobile/src/ai-request.ts', 'lib/map-search-request.ts');
+  const at = Date.parse('2026-11-17T06:00:00Z'), stay = newDraft('Павлодар', at);
+  assert.deepEqual(kindChoice(stay), {id: 'stay', title: 'Жильё'});
+  const sauna = withKind(stay, 'bath', 'sauna', at);
+  assert.deepEqual([sauna.kinds, sauna.mode, categoryOf(sauna)], [['sauna'], 'hourly', 'bath']);
+  assert.deepEqual(kindChoice(sauna), {id: 'sauna', title: 'Сауна'});
+  const any = withKind(sauna, 'bath', null, at);
+  assert.deepEqual(any.kinds, ['banya', 'sauna']);
+  assert.equal(kindChoice(any).title, 'Баня');
+  const house = withKind(any, 'stay', 'house', at);
+  assert.deepEqual([house.kinds, house.mode, kindChoice(house).title], [['house'], 'daily', 'Дом']);
+  assert.deepEqual(withKind(house, 'stay', null, at).kinds, []);
+});
 
 test('a landmark is searched around: «у вокзала», «возле ТРЦ»', () => {
   const cases = {

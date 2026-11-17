@@ -18,4 +18,11 @@ for(const [name,icon] of Object.entries(rows)){
  const svg=renderToStaticMarkup(React.createElement(icons[icon],{size:60,strokeWidth:2,color:'#000000'}));
  await sharp(Buffer.from(svg)).png().toFile(fileURLToPath(new URL(name+'.png',menu)));
 }
+// The types of objects and their categories (lib/listings.ts): the guest's category picker and the owner's type picker.
+const kinds=new URL('../mobile/assets/kinds/',import.meta.url);await mkdir(kinds,{recursive:true});
+const types={any:'LayoutGrid',stay:'House',bath:'Flame',apartment:'Building2',studio:'Sofa',room:'DoorOpen',house:'House',guesthouse:'TreePine',hostel:'BedDouble',hotel:'Hotel',aparthotel:'Building',banya:'FlameKindling',sauna:'Heater'};
+for(const [name,icon] of Object.entries(types)){
+ const svg=renderToStaticMarkup(React.createElement(icons[icon],{size:72,strokeWidth:1.75,color:'#000000'}));
+ await sharp(Buffer.from(svg)).png().toFile(fileURLToPath(new URL(name+'.png',kinds)));
+}
 console.log('Exported '+Object.keys(names).length+' navigation and '+Object.keys(rows).length+' menu icons for the app.');
