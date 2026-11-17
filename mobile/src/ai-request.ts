@@ -3,6 +3,7 @@
 // "14 ноября на двоих" means the same thing in the app and in the browser. This file keeps the app's form
 // in step with those rules. No model is called here. Covered by mobile/tests/ai-request.test.mjs.
 import {
+  CHECKIN_TIME,
   CHECKOUT_TIME,
   MAX_GUESTS as SHARED_MAX_GUESTS,
   NO_BUDGET,
@@ -57,12 +58,22 @@ export const HOME_KINDS: Record<string, string> = {
   guesthouse: 'Гостевой дом', hostel: 'Хостел', hotel: 'Гостиница', aparthotel: 'Апарт-отель'
 };
 
-// The wishes the shared parser can read from text, in the order the form shows them.
+// The wishes the shared parser can read from text, in the order the form shows them: the amenities an owner
+// marks, and 'pets' for the owner's rule «можно с питомцами».
 export const WISHES: [string, string][] = [
   ['parking', 'Парковка'],
   ['wifi', 'Wi-Fi'],
   ['kitchen', 'Кухня'],
-  ['workspace', 'Рабочее место']
+  ['workspace', 'Рабочее место'],
+  ['pets', 'С питомцами'],
+  ['aircon', 'Кондиционер'],
+  ['washer', 'Стиральная машина'],
+  ['tv', 'Телевизор'],
+  ['balcony', 'Балкон'],
+  ['elevator', 'Лифт'],
+  ['crib', 'Детская кроватка'],
+  ['hairdryer', 'Фен'],
+  ['iron', 'Утюг']
 ];
 // The largest party the service accepts; the form and the text stop at the same number.
 export const MAX_GUESTS = SHARED_MAX_GUESTS;
@@ -84,19 +95,22 @@ export function freshDraft(draft: GuestDraft, now = Date.now()): GuestDraft {
 }
 
 // Words that refine the last request instead of starting a new one: "а дешевле", "ещё с парковкой", "теперь на завтра".
-const REFINE = /^(?:а|и|ещ[её]|теперь|только|плюс|также|тоже|добав[а-я]*|но|подешевле|дешевле|ближе|поближе)(?=$|[^а-яё])/;
+const REFINE = /^(?:а|и|ещ[её]|теперь|только|плюс|также|тоже|добав[а-я]*|но|подешевле|дешевле|ближе|поближе|желательно|главное|без|со?(?=\s+(?!понедельник|вторник|сред|четверг|пятниц|суббот|воскресень|завтра|сегодня|послезавтра|утра|вечера|обеда)[а-яё]))(?=$|[^а-яё])/;
 
 /**
- * Free text as the conditions of a search. A new phrase is a new request: the place and the time stay, and
- * what narrows a search (guests, budget, district, home type, wishes, a point) starts over, so that "нас 7
- * человек" said a minute ago does not empty every later search. A phrase that starts as a refinement ("а
- * дешевле", "ещё с парковкой") keeps it all. Nothing is invented: what the text does not name stays as it was.
+ * Free text as the conditions of a search. A new phrase is a new request: only the city stays. What narrows a
+ * search (guests, budget, district, home type, wishes, a point) starts over, so that "нас 7 человек" said a
+ * minute ago does not empty every later search; and the stay starts over as a day from today, so that "на 3
+ * часа" said a minute ago does not turn "двушка завтра" into three hours. When that lets go of a stay the guest
+ * had set, the note says so. A phrase that starts as a refinement ("а дешевле", "ещё с парковкой", "с собакой")
+ * keeps it all. Nothing is invented: what a refinement does not name stays as it was.
  */
 export function guestRequestFromText(text: string, draft: GuestDraft, cities: string[], now = Date.now()): ParsedRequest {
   const kept = freshDraft(draft, now);
-  const base: GuestDraft = REFINE.test(text.trim().toLocaleLowerCase('ru'))
+  const refining = REFINE.test(text.trim().toLocaleLowerCase('ru')), usual = defaultStay('daily', now);
+  const base: GuestDraft = refining
     ? kept
-    : { ...kept, district: '', guests: 2, maxPrice: '', perUnit: true, priority: 'balanced', features: [], near: null, kinds: [], rooms: '', now: false };
+    : { ...kept, ...usual, district: '', guests: 2, maxPrice: '', perUnit: true, priority: 'balanced', features: [], near: null, kinds: [], rooms: '', now: false };
   const result = guestSearchRequest(text, base, cities, now);
   const filters = result.filters;
   const next: GuestDraft = {
@@ -118,12 +132,14 @@ export function guestRequestFromText(text: string, draft: GuestDraft, cities: st
   };
   // "почасовая" names a tariff but no day and no length: the stay follows the new tariff.
   if (!result.past && next.mode !== base.mode && !result.stated.when) Object.assign(next, { ...switchStay(next.mode, base.start, now), mode: next.mode });
+  // The stay the guest had set is let go of, and the new phrase names none: said, so that it is not a surprise.
+  const reset = !refining && !result.stated.when && !result.past && result.understood && next.mode === 'daily' && (kept.mode !== usual.mode || kept.start !== usual.start || kept.end !== usual.end);
   return {
     draft: next,
     nearby: result.nearby,
     understood: result.understood,
     ...(result.past ? { past: result.past } : {}),
-    note: (result.remarks || []).join(' ')
+    note: [...(result.remarks || []), reset ? 'Срок не назван: ищу на сутки с сегодня.' : ''].filter(Boolean).join(' ')
   };
 }
 
@@ -159,7 +175,8 @@ export function guestSummary(draft: GuestDraft, now = Date.now()) {
   const line = guestRequestLine({ ...draft, maxPrice: '', near: draft.now ? null : draft.near }, now);
   const said = line.toLocaleLowerCase('ru');
   // «Сейчас» and «На ночь» start at an hour of their own, not at 14:00: it is said.
-  const from = draft.now || draft.mode === 'night' ? 'заезд с ' + draft.start.slice(11) : '';
+  // So does a day the guest asked to start at an hour of their own («в 22:00»).
+  const from = draft.now || draft.mode === 'night' || (draft.mode === 'daily' && draft.start.slice(11) !== CHECKIN_TIME) ? 'заезд с ' + draft.start.slice(11) : '';
   const more = [
     from,
     draft.now ? (draft.near ? 'готово сейчас, рядом с вами' : 'готово сейчас') : '',

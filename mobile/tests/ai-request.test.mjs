@@ -314,3 +314,71 @@ test('phrases in the words the model is told to use pass the rules', () => {
   for (const phrase of ['с 20 ноября на 7 суток на двоих', 'завтра на 30 суток', 'в пятницу на 2 ночи на 4 человек до 9000 за ночь', 'сейчас на 3 часа студия', '25 ноября на сутки в Астане 2-комнатная с парковкой'])
     assert.equal(L.guestRequestFromText(phrase, draft, cities, at).understood, true, phrase);
 });
+
+test('the term of the last phrase does not stick to a new one', () => {
+  const hours = parse('на 3 часа');
+  assert.equal(hours.draft.mode, 'hourly');
+  // A new phrase names a day and no length: a day, not the three hours said before.
+  const next = parse('двушка завтра', morning, hours.draft);
+  assert.deepEqual(stay(next), ['daily', '2026-11-12T14:00', '2026-11-13T12:00']);
+  assert.equal(next.note, '');
+  // A new phrase names no stay at all: a day from today, and the guest is told the stay was let go of.
+  const seven = parse('нас 7 человек', morning, hours.draft);
+  assert.deepEqual(stay(seven), ['daily', '2026-11-11T14:00', '2026-11-12T12:00']);
+  assert.match(seven.note, /Срок не назван: ищу на сутки с сегодня/);
+  // Nothing to let go of: no note.
+  assert.equal(parse('нас 4 человека').note, '');
+  // A refinement keeps the stay.
+  for (const text of ['а на четверых', 'ещё с парковкой', 'с собакой', 'без парковки дешевле']) assert.deepEqual(stay(parse(text, morning, hours.draft)), stay(hours), text);
+  // «с пятницы», «с 18 до 21» start a request of their own.
+  assert.equal(parse('с пятницы на 2 суток', morning, {...hours.draft, guests: 7}).draft.guests, 2);
+  assert.equal(parse('с 18 до 21', morning, {...hours.draft, guests: 7}).draft.guests, 2);
+});
+
+test('pets and every amenity of a home are searched; what is not is named', () => {
+  const dog = parse('двушка завтра с собакой');
+  assert.deepEqual(dog.draft.features, ['pets']);
+  assert.match(guestSummary(dog.draft, morning), /с питомцами/);
+  assert.deepEqual(matchingBody(dog.draft).features, ['pets']);
+  assert.deepEqual(parse('с кондиционером и стиралкой на сутки').draft.features.sort(), ['aircon', 'washer']);
+  // «Без …» takes a wish off; it never asks for it.
+  assert.deepEqual(parse('без собаки', morning, dog.draft).draft.features, []);
+  assert.deepEqual(parse('завтра без животных').draft.features, []);
+  assert.deepEqual(parse('без парковки, но с кондиционером', morning, {...dog.draft, features: ['parking', 'pets']}).draft.features, ['pets', 'aircon']);
+  const bath = parse('дом с баней на выходные');
+  assert.equal(bath.understood, true);
+  assert.deepEqual(bath.draft.kinds, ['house']);
+  assert.match(bath.note, /Пока не умею искать: баня\./);
+  assert.match(parse('завтра рядом с вокзалом, хорошие отзывы').note, /Пока не умею искать: отзывы, место рядом с ориентиром\./);
+  // Nothing but such words: not a request, and the note still names them.
+  const only = parse('с бассейном');
+  assert.equal(only.understood, false);
+  assert.match(only.note, /бассейн/);
+  assert.equal(parse('рядом со мной').note, '');
+});
+
+test('everyday phrases are read by the rules, without the model', () => {
+  for (const text of ['хочу снять квартиру', 'нужно жильё', 'посуточно', 'где переночевать']) assert.equal(parse(text).understood, true, text);
+  assert.deepEqual(stay(parse('на месяц')), ['daily', '2026-11-11T14:00', '2026-12-11T12:00']);
+  assert.match(parse('на 2 месяца').note, /Максимум 30 суток/);
+  assert.deepEqual(stay(parse('на новый год')), ['daily', '2026-12-31T14:00', '2027-01-01T12:00']);
+  assert.equal(parse('привет').understood, false);
+});
+
+test('«студия или однушка» is either of them', () => {
+  const either = parse('студия или однушка');
+  assert.deepEqual(either.draft.kinds, ['studio', 'apartment']);
+  assert.equal(either.draft.rooms, '1');
+  const wide = parse('студия или двушка');
+  assert.deepEqual(wide.draft.kinds, ['studio', 'apartment']);
+  assert.equal(wide.draft.rooms, '');
+  assert.match(wide.note, /любой из названных типов/);
+  assert.equal(parse('двухкомнатная студия').draft.rooms, '2');
+});
+
+test('an hour of their own for a day is shown in the conditions', () => {
+  const late = parse('сегодня в 22:00');
+  assert.equal(late.draft.start, '2026-11-11T22:00');
+  assert.match(guestSummary(late.draft, morning), /заезд с 22:00/);
+  assert.doesNotMatch(guestSummary(draft, morning), /заезд/);
+});

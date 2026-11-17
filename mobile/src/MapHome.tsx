@@ -140,6 +140,8 @@ function GuestPanel({setScanning,accountId,data,mapData,publish,selected,setSele
   const cities=Object.keys(mapCities),parsed=guestRequestFromText(text,draft,cities);
   setError('');
   if(parsed.understood){take(parsed);return;}
+  // Nothing but what the search cannot check yet («с баней»): said at once, the model could not put it in other words either.
+  if(parsed.note){setHint({text:parsed.note+' Напишите день, срок, тип жилья или бюджет.',ask:text});return;}
   // What the rules could not read goes to the model, which says it in the words the rules do read; those words then
   // pass the same rules. No model on the server, no permission or no answer: the guest is told, never guessed for.
   if(lock.current)return;
