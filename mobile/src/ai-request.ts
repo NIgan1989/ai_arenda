@@ -142,6 +142,8 @@ export const BATH_WISHES: [string, string][] = [
   ['brooms', 'Веники'],
   ['karaoke', 'Караоке'],
   ['grill', 'Мангал'],
+  ['billiards', 'Бильярд'],
+  ['towels', 'Полотенца'],
   ['parking', 'Парковка']
 ];
 // What is asked of a banquet hall; the ids are the shared amenities.
@@ -216,7 +218,8 @@ export function guestRequestFromText(text: string, draft: GuestDraft, cities: st
     mode: filters.mode === 'hourly' || filters.mode === 'night' ? filters.mode : 'daily',
     start: String(filters.start),
     end: String(filters.end),
-    guests: hall && category !== 'banquet' && !result.stated.guests ? 50 : clamp(Number(filters.guests) || base.guests, 1, maxGuestsOf(to)),
+    // A bath named in «Жильё» without its guests starts at four, as the category button does.
+    guests: hall && category !== 'banquet' && !result.stated.guests ? 50 : to === 'bath' && category !== 'bath' && !result.stated.guests ? 4 : clamp(Number(filters.guests) || base.guests, 1, maxGuestsOf(to)),
     maxPrice: String(filters.maxPrice || ''),
     perUnit: typeof filters.perUnit === 'boolean' ? filters.perUnit : base.perUnit,
     priority: filters.priority === 'cheaper' || filters.priority === 'closer' ? filters.priority : 'balanced',
@@ -286,12 +289,13 @@ export function guestSummary(draft: GuestDraft, now = Date.now()) {
   const said = line.toLocaleLowerCase('ru');
   // «Сейчас» and «На ночь» start at an hour of their own, not at 14:00: it is said.
   // So does a day the guest asked to start at an hour of their own («в 22:00»).
-  const hall = categoryOf(draft) === 'banquet';
-  const from = !hall && (draft.now || draft.mode === 'night' || (draft.mode === 'daily' && draft.start.slice(11) !== CHECKIN_TIME)) ? 'заезд с ' + draft.start.slice(11) : '';
+  const category = categoryOf(draft), hall = category === 'banquet';
+  // A bath is by the hour: its line already says «18:30–21:30», and nobody «заезжает» there.
+  const from = category === 'stay' && (draft.now || draft.mode === 'night' || (draft.mode === 'daily' && draft.start.slice(11) !== CHECKIN_TIME)) ? 'заезд с ' + draft.start.slice(11) : '';
   const more = [
     from,
     draft.now ? (draft.near && !draft.near.label ? 'готово сейчас, рядом с вами' : 'готово сейчас') : '',
-    ...(hall ? BANQUET_WISHES : WISHES).filter(([id]) => draft.features.includes(id)).map(([, title]) => (title === 'Wi-Fi' ? title : title.toLocaleLowerCase('ru'))),
+    ...wishesOf(category).filter(([id]) => draft.features.includes(id)).map(([, title]) => (title === 'Wi-Fi' ? title : title.toLocaleLowerCase('ru'))),
     draft.now ? '' : PRIORITY_WORDS[draft.priority] || ''
   ].filter(word => word && !said.includes(word.toLocaleLowerCase('ru')));
   // A landmark is named: "рядом: железнодорожный вокзал", not "рядом с выбранным местом".

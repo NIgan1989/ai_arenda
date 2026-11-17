@@ -207,3 +207,17 @@ test('«Забронировать» on a home that needs its owner: that home i
   assert.equal(matchingInput({...input(),prefer:{id:last}}).prefer,undefined);assert.equal(matchingInput({...input(),prefer:"x' OR 1=1"}).prefer,undefined);
  }finally{f.db.close();}
 });
+test('an owner who accepted a quick request inside the preparation time keeps the offer, and the guest can book it',async()=>{
+ const soonIn=()=>({...input(),start:iso(base+6*3600),end:iso(base+6*3600+86400)});
+ const f=await enabled();try{
+  const request=await matchingAction(f.guest,'guest','begin',{...soonIn(),requestKey:'prep-flow',consent:true}),offerId=request.offers[0].id;
+  // The place now needs more time to get ready than is left before the guests.
+  f.db.raw.prepare('UPDATE property_policies SET prep_minutes=720 WHERE property_id=?').run(f.property);
+  await assert.rejects(f.guest.bookingQuote({...soonIn(),propertyId:f.property,billingMode:'daily'}),/готовят/);
+  await matchingAction(f.owner,'owner','respond',{offerId,decision:'accept',ready:true});
+  const ready=await matchingState(f.guest,request.id);assert.equal(ready.status,'ready');assert.equal(ready.properties[0]?.ownerConfirmed,true);
+  const booked=await matchingAction(f.guest,'guest','book',{...soonIn(),billingMode:'daily',expectedAmount:10000,expectedPolicyVersion:1,id:request.id,offerId,acceptTerms:true});assert.ok(booked.id);
+  // Without the owner's word the same start is still refused.
+  await assert.rejects(f.guest.createBooking({...soonIn(),propertyId:f.property,billingMode:'daily',requestKey:'direct',acceptTerms:true}));
+ }finally{f.db.close();}
+});

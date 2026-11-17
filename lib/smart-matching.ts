@@ -83,9 +83,10 @@ export async function responseTimes(db:D1Database,ids:string[],t=epoch()){
  return result;
 }
 // explain: an empty answer says why (emptyHint). Requests already sent to owners poll this and do not need it.
-export async function previewMatches(s:RentalService,body:Row,explain=true):Promise<Row>{
+// `readyIds`: places whose owner has already accepted this very request, so their preparation time is not checked again.
+export async function previewMatches(s:RentalService,body:Row,explain=true,readyIds:string[]=[]):Promise<Row>{
  const filters=matchingInput(body),search={city:filters.city,start:filters.start,end:filters.end,guests:filters.guests,mode:filters.mode,maxPrice:filters.maxPrice,category:searchCategory(filters.kinds),map:'1',limit:'60'};
- const first=await s.publicSearch(search,{matching:true}),properties=first.properties;
+ const first=await s.publicSearch(search,{matching:true,readyIds}),properties=first.properties;
  // In chunks: a matching search returns every match, and D1 binds at most 100 parameters.
  const modes:Row[]=[],ids=properties.map((p:Row)=>p.id);
  for(let i=0;i<ids.length;i+=90){const part=ids.slice(i,i+90);modes.push(...await rows(s.db,`SELECT p.id,${guestModeSql} mode FROM properties p ${guestModeJoins} WHERE p.id IN (${part.map(()=>'?').join(',')})`,epoch(),...part));}
@@ -108,17 +109,27 @@ export async function emptyHint(s:RentalService,f:Row):Promise<Row>{
  const open=await free(f.start,f.end);
  // «Сейчас» left out the homes that are not ready yet or confirm only after the owner answers.
  if(f.now&&open.length){const later=rankMatches(open,{...f,now:false});if(later.length)return {reason:'now',count:later.length};}
+ // Free, but the place is made ready before the guests (a bath is heated): the first hour it can start is named.
+ const soon=rankMatches((await s.publicSearch({city:f.city,start:f.start,end:f.end,guests:f.guests,mode:f.mode,category:searchCategory(f.kinds),map:'1',limit:'60'},{matching:true,ignorePrep:true})).properties.filter((p:Row)=>!p.test_preview),{...f,now:false});
+ // The start that is named is searched again: a place free now can be taken by the time it is ready.
+ for(const prep of [...new Set<number>(soon.map((p:Row)=>Number(p.policy?.prep_minutes)||0))].sort((a,b)=>a-b)){
+  const from=Math.ceil((Date.now()+prep*60000)/1800000)*1800000,start=new Date(from).toISOString(),end=new Date(from+Date.parse(f.end)-Date.parse(f.start)).toISOString();
+  const fit=rankMatches(await free(start,end),{...f,start,end,now:false});
+  if(fit.length)return {reason:'prep',prepMinutes:prep,next:{start,end,count:fit.length}};
+ }
  if(!open.length){
   const start=Date.parse(f.start),length=Date.parse(f.end)-start;
+  // Shorter than the shortest stay any place here takes: «минимум 2 часа», not «занято».
+  if(f.mode==='hourly'){const least=all.filter((p:Row)=>Number(p.policy?.hourly_price)>0&&Number(p.capacity)>=Number(f.guests)).map((p:Row)=>Number(p.policy.min_hours)||1);if(least.length&&Math.min(...least)*3600000>length)return {reason:'minHours',minHours:Math.min(...least)};}
   for(let day=1;day<=7;day++){const from=start+day*86400000,found=rankMatches(await free(new Date(from).toISOString(),new Date(from+length).toISOString()),{...f,now:false,start:new Date(from).toISOString(),end:new Date(from+length).toISOString()});if(found.length)return {reason:'busy',next:{start:new Date(from).toISOString(),end:new Date(from+length).toISOString(),count:found.length}};}
   return {reason:'busy'};
  }
  const anyPrice=rankMatches(open,{...f,maxPrice:'100000000'});
  if(anyPrice.length)return {reason:'budget',cheapest:Math.min(...anyPrice.map(p=>p.estimate.amount)),count:anyPrice.length};
  // The one condition that empties the answer on its own is named («гостиниц здесь нет»), with what is free without it.
- const loose=f.priority==='closer'?'balanced':f.priority,without:[string,Row][]=[['kinds',{kinds:[]}],['rooms',{rooms:''}],['district',{district:''}],['features',{features:[]}],['near',{near:null,priority:loose}]];
+ const loose=f.priority==='closer'?'balanced':f.priority,any=searchCategory(f.kinds)==='stay'?[]:categories[searchCategory(f.kinds)].types,without:[string,Row][]=[['kinds',{kinds:any}],['rooms',{rooms:''}],['district',{district:''}],['features',{features:[]}],['near',{near:null,priority:loose}]];
  for(const [blocker,patch] of without){const set=blocker==='near'?!!f.near:Array.isArray(f[blocker])?f[blocker].length>0:!!f[blocker];if(!set)continue;const count=rankMatches(open,{...f,...patch}).length;if(count)return {reason:'filters',blocker,count};}
- return {reason:'filters',count:rankMatches(open,{...f,now:false,district:'',features:[],near:null,kinds:[],rooms:'',priority:loose}).length};
+ return {reason:'filters',count:rankMatches(open,{...f,now:false,district:'',features:[],near:null,kinds:any,rooms:'',priority:loose}).length};
 }
 async function expire(s:RentalService){const t=epoch();await s.db.batch([q(s.db,"UPDATE matching_requests SET status='expired' WHERE expires_at<=? AND status IN ('searching','ready')",t),q(s.db,"UPDATE matching_offers SET status='expired' WHERE expires_at<=? AND status IN ('pending','accepted')",t)]);}
 async function guestRequest(s:RentalService,id:unknown){await s.requireRole('guest');const r=await one(s.db,'SELECT * FROM matching_requests WHERE id=? AND guest_id=?',required(id,'Запрос',100),s.userId);if(!r)throw new DomainError('Запрос недоступен.',404);return r;}
@@ -152,7 +163,7 @@ export async function matchingState(s:RentalService,id:unknown,prepared?:Row){
  if(request.status==='booking'){const saved=await one(s.db,'SELECT id FROM bookings WHERE guest_id=? AND request_key=?',s.userId,'match:'+request.id);if(saved){await q(s.db,"UPDATE matching_requests SET status='booked',booking_id=? WHERE id=?",saved.id,request.id).run();request.status='booked';request.booking_id=saved.id;}else if(request.lease_until<t){await q(s.db,"UPDATE matching_requests SET status=? WHERE id=? AND status='booking' AND lease_until<?",request.expires_at>t?'ready':'expired',request.id,t).run();request.status=request.expires_at>t?'ready':'expired';}}
  let offers=await rows(s.db,'SELECT id,property_id,status,expires_at,amount,policy_version FROM matching_offers WHERE request_id=? ORDER BY created_at,id',request.id),dispatchChanged=false;
  if(['searching','ready'].includes(request.status)&&Date.parse(filters.start)<(t-60)*1000){await q(s.db,"UPDATE matching_requests SET status='expired' WHERE id=? AND status IN ('searching','ready')",request.id).run();request.status='expired';}
- const available=['searching','ready'].includes(request.status)?prepared||await mineFirst(s,await previewMatches(s,filters,false)):{properties:[]};
+ const available=['searching','ready'].includes(request.status)?prepared||await mineFirst(s,await previewMatches(s,filters,false,offers.filter(o=>o.status==='accepted'&&o.expires_at>t).map(o=>o.property_id))):{properties:[]};
  for(const offer of offers.filter(o=>['pending','accepted'].includes(o.status)&&o.expires_at>t)){if(!available.properties.some((p:Row)=>p.id===offer.property_id&&p.estimate.amount===offer.amount&&p.policy.version===offer.policy_version)){await q(s.db,"UPDATE matching_offers SET status='expired' WHERE id=? AND status IN ('pending','accepted')",offer.id).run();offer.status='expired';}}
  if(['searching','ready'].includes(request.status)&&!offers.some(o=>['pending','accepted'].includes(o.status)&&o.expires_at>t)&&offers.length<9){dispatchChanged=await sendWave(s,request,available.properties);if(dispatchChanged)offers=await rows(s.db,'SELECT id,property_id,status,expires_at,amount,policy_version FROM matching_offers WHERE request_id=? ORDER BY created_at,id',request.id);}
  const accepted=offers.filter(o=>o.status==='accepted'&&o.expires_at>t);
@@ -176,7 +187,7 @@ export async function matchingAction(s:RentalService,role:Role,action:string,bod
   await s.requireRole('owner');if(!['accept','decline'].includes(body.decision))throw new DomainError('Выберите ответ.');await expire(s);
   const offer=await one(s.db,"SELECT o.*,r.filters FROM matching_offers o JOIN matching_requests r ON r.id=o.request_id JOIN properties p ON p.id=o.property_id WHERE o.id=? AND o.owner_id=? AND p.owner_id=? AND r.status IN ('searching','ready') AND r.expires_at>?",body.offerId,s.userId,s.userId,epoch());if(!offer)throw new DomainError('Предложение недоступно.',404);
   if(offer.status!=='pending'||offer.expires_at<=epoch())throw new DomainError('Срок ответа истёк или ответ уже сохранён.',409);
-  if(body.decision==='accept'){if(body.ready!==true)throw new DomainError('Подтвердите готовность к указанному заезду.');const f=JSON.parse(offer.filters),quote=await s.bookingQuote({...f,propertyId:offer.property_id,billingMode:f.mode});if(quote.amount!==offer.amount||quote.policy.version!==offer.policy_version)throw new DomainError('Тариф изменился. Отклоните запрос, чтобы гость пересчитал стоимость.',409);}
+  if(body.decision==='accept'){if(body.ready!==true)throw new DomainError('Подтвердите готовность к указанному заезду.');const f=JSON.parse(offer.filters),quote=await s.bookingQuote({...f,propertyId:offer.property_id,billingMode:f.mode},{ownerReady:true});if(quote.amount!==offer.amount||quote.policy.version!==offer.policy_version)throw new DomainError('Тариф изменился. Отклоните запрос, чтобы гость пересчитал стоимость.',409);}
   const changed=await q(s.db,"UPDATE matching_offers SET status=?,responded_at=?,expires_at=? WHERE id=? AND status='pending' AND expires_at>? AND EXISTS(SELECT 1 FROM matching_requests r WHERE r.id=matching_offers.request_id AND r.status IN ('searching','ready') AND r.expires_at>?)",body.decision==='accept'?'accepted':'declined',epoch(),body.decision==='accept'?epoch()+300:offer.expires_at,offer.id,epoch(),epoch()).run();if(!changed.meta.changes)throw new DomainError('Запрос уже изменился.',409);
   const request=await one(s.db,'SELECT guest_id FROM matching_requests WHERE id=?',offer.request_id);if(request)await s.notify(request.guest_id,body.decision==='accept'?'Владелец ответил на ваш подбор. Откройте карту, чтобы посмотреть предложение.':'Один из владельцев не может принять запрос. Проверяем остальные ответы.','matching-response:'+offer.id,'guest').run();return matchingInbox(s);
  }
@@ -187,7 +198,7 @@ export async function matchingAction(s:RentalService,role:Role,action:string,bod
   if(body.acceptTerms!==true)throw new DomainError('Примите условия конкретного жилья.');
   const agreed=JSON.parse(r.filters);if(Date.parse(body.start)!==Date.parse(agreed.start)||Date.parse(body.end)!==Date.parse(agreed.end)||Number(body.guests)!==Number(agreed.guests)||body.billingMode!==agreed.mode||body.expectedAmount!==offer.amount||body.expectedPolicyVersion!==offer.policy_version)throw new DomainError('Условия отличаются от предложения. Измените запрос и получите новый расчёт.',409);
   const claimed=await q(s.db,"UPDATE matching_requests SET status='booking',selected_offer=?,lease_until=? WHERE id=? AND (status IN ('ready','searching') OR (status='booking' AND lease_until<?))",offer.id,epoch()+60,r.id,epoch()).run();if(!claimed.meta.changes)throw new DomainError('Заявка уже оформляется. Подождите и обновите подбор.',409);
-  try{const f=JSON.parse(r.filters),result=await s.createBooking({...f,propertyId:offer.property_id,billingMode:f.mode,expectedAmount:offer.amount,expectedPolicyVersion:offer.policy_version,requestKey:key,acceptTerms:true});await q(s.db,"UPDATE matching_requests SET status='booked',booking_id=? WHERE id=? AND selected_offer=?",result.id,r.id,offer.id).run();return result;}catch(error){await q(s.db,"UPDATE matching_requests SET status='ready',lease_until=0 WHERE id=? AND status='booking' AND selected_offer=?",r.id,offer.id).run();throw error;}
+  try{const f=JSON.parse(r.filters),result=await s.createBooking({...f,propertyId:offer.property_id,billingMode:f.mode,expectedAmount:offer.amount,expectedPolicyVersion:offer.policy_version,requestKey:key,acceptTerms:true},{ownerReady:true});await q(s.db,"UPDATE matching_requests SET status='booked',booking_id=? WHERE id=? AND selected_offer=?",result.id,r.id,offer.id).run();return result;}catch(error){await q(s.db,"UPDATE matching_requests SET status='ready',lease_until=0 WHERE id=? AND status='booking' AND selected_offer=?",r.id,offer.id).run();throw error;}
  }
  throw new DomainError('Действие подбора недоступно в этой роли.',403);
 }
