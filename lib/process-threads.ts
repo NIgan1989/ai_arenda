@@ -3,7 +3,7 @@
 // Чистая логика (только lib/ai-move-marks.ts, lib/cancellation.ts и lib/stay-handover-text.ts): её берут и сайт (components/autopilot-threads.tsx), и приложение (mobile/src/AutopilotThreads.tsx).
 // Тесты: tests/process-threads.test.mjs.
 
-import { aiNoteOf } from './ai-move-marks';
+import { aiNoteOf, aiSays, aiSaysAll } from './ai-move-marks';
 import {handoverState} from './stay-handover-text';
 import { refundLeft } from './cancellation';
 import { wordsOf } from './stay-words';
@@ -67,11 +67,13 @@ export function aiLines(data: Row | null | undefined, role: 'owner' | 'cleaner')
   for (const l of Array.isArray(data?.aiJournal) ? data!.aiJournal : [])
     if (typeof l?.at === 'number') out.push({ at: l.at, text: String(l.text || ''), kind: l.open?.kind || '', id: String(l.open?.id || ''), title: String(l.title || '') });
   const titles = new Map<string, string>([...(data?.bookings || []).map((b: Row) => ['booking:' + b.id, b.title]), ...(data?.jobs || []).map((j: Row) => ['job:' + j.id, j.title])] as [string, string][]);
-  return out.map(l => ({ ...l, title: l.title || titles.get(l.kind + ':' + l.id) || '' })).sort((a, b) => b.at - a.at);
+  // Баня и зал говорят своими словами: тип объекта приходит в брони как property_type.
+  const types = new Map<string, string>((data?.bookings || []).map((b: Row) => ['booking:' + b.id, b.property_type]) as [string, string][]);
+  return out.map(l => ({ ...l, text: aiSays(l.text, types.get(l.kind + ':' + l.id)), title: l.title || titles.get(l.kind + ':' + l.id) || '' })).sort((a, b) => b.at - a.at);
 }
 function aiDid(data: Row, role: 'owner' | 'cleaner', kind: 'booking' | 'job', id: string) {
   const texts = aiLines(data, role).filter(l => l.kind === kind && l.id === String(id)).map(l => l.text);
-  return (...words: string[]) => texts.some(t => words.some(w => t.startsWith(w)));
+  return (...words: string[]) => texts.some(t => words.some(w => aiSaysAll(w).some(v => t.startsWith(v))));
 }
 
 // Состояния шагов по порядку: первый непройденный становится «сейчас» (или «следующий», если его время ещё не пришло).

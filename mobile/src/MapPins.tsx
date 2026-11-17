@@ -5,7 +5,7 @@ import {T} from './tokens';
 import {ANSWER_WINDOW,answerLeft,beamBox,pinEvent,type BeamTone,type PinEvent,type PinState,type PinTone} from './map-motion';
 import type {MapPin} from './TileMap';
 import {TILE,pinBoxWidth} from './map-math';
-import {AI_SAYS,AI_WINDOW} from '../../lib/ai-move-marks';
+import {AI_SAYS,AI_WINDOW,aiSays} from '../../lib/ai-move-marks';
 
 // The pins, their events and the radar, shared by both maps of the app: the MapLibre map on a phone (LiveMap.native.tsx)
 // and the tile map of the web preview (TileMap.tsx). The map decides where a pin stands; the pin decides how it moves.
@@ -61,7 +61,7 @@ export function Pin({pin,x,y,more,active,still,picking,born,delay,loop,onPress}:
  useEffect(()=>{
   const move=pin.ai;if(!move||still||aiShown.get(pin.key)===move.at)return;
   aiShown.set(pin.key,move.at);if(Date.now()/1000-move.at>AI_WINDOW)return;
-  setAiText(AI_SAYS[move.move]);ai.setValue(0);
+  setAiText(aiSays(AI_SAYS[move.move],move.type));ai.setValue(0);
   const run=Animated.timing(ai,{toValue:1,duration:AI_PLAY,delay:(pin.was?ECHO_DELAY:0)+260,easing:Easing.linear,useNativeDriver:true});
   run.start(({finished})=>{if(finished)setAiText('');});
   // Stopped half-way (the pin changed, motion was switched off): the ring and the line leave with it.

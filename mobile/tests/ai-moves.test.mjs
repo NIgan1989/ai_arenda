@@ -2,7 +2,7 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {loadPure} from './helpers/pure.mjs';
 
-const {aiMarkOf, latestMove, AI_SAYS, AI_WINDOW, aiNoteOf, journalClock, journalDay, journalMeta, journalGroups, journalToday, journalHref, mergeJournal} = await loadPure('lib/ai-move-marks.ts');
+const {aiMarkOf, latestMove, AI_SAYS, AI_WINDOW, aiNoteOf, journalClock, journalDay, journalMeta, journalGroups, journalToday, journalHref, mergeJournal, aiSays, aiSaysAll} = await loadPure('lib/ai-move-marks.ts');
 
 test('the notices the AI leaves are read as moves on what they are about', () => {
   assert.deepEqual(aiMarkOf('owner:administrator-confirmed:b1', 100), {kind: 'booking', id: 'b1', move: 'confirmed', at: 100});
@@ -87,4 +87,18 @@ test('the same step told twice within a minute is one line; different cleanings 
     [[125, 'j1'], [120, 'j2'], [59, 'j2'], [58, 'j2']]);
   // Another line between two same notices does not let the repeat through.
   assert.deepEqual(mergeJournal([line(125, 'j1'), line(123, 'j2'), line(121, 'j1')]).map(l => [l.at, l.open.id]), [[125, 'j1'], [123, 'j2']]);
+});
+
+test('баня и зал в журнале ИИ говорят своими словами, жильё прежними', () => {
+  assert.equal(aiSays('ИИ заселил гостя', 'apartment'), 'ИИ заселил гостя');
+  assert.equal(aiSays('ИИ заселил гостя'), 'ИИ заселил гостя');
+  assert.equal(aiSays('ИИ заселил гостя', 'sauna'), 'ИИ отметил приход гостя');
+  assert.equal(aiSays('ИИ подтвердил выезд', 'banquet'), 'ИИ подтвердил окончание');
+  assert.equal(aiSays('ИИ напомнил о выезде', 'banya'), 'ИИ напомнил об уходе');
+  assert.equal(aiSays('ИИ подтвердил бронь', 'banya'), 'ИИ подтвердил бронь');
+  assert.deepEqual(aiSaysAll('ИИ подтвердил выезд'), ['ИИ подтвердил выезд', 'ИИ подтвердил уход', 'ИИ подтвердил окончание']);
+  const at = 1794466800;
+  assert.match(journalMeta({at, text: '', title: '', start: at, type: 'banya', open: {kind: 'booking', id: 'b1'}}), /^приход /);
+  assert.match(journalMeta({at, text: '', title: '', start: at, type: 'cafe', open: {kind: 'booking', id: 'b1'}}), /^начало /);
+  assert.equal(latestMove([{kind: 'booking', id: 'b1', move: 'checkin', at, type: 'banya'}], [{kind: 'booking', id: 'b1'}], at + 5).type, 'banya');
 });

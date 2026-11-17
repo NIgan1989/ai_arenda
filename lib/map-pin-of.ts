@@ -6,7 +6,7 @@ import type {PinState,PinTone} from '../mobile/src/map-motion';
 import type {AiMove} from './ai-move-marks';
 
 type Row=Record<string,any>;
-export type WebPin={key:string;point:[number,number];label:string;tone:PinTone;title:string;until?:number;progress?:number;best?:boolean;order?:number;was?:PinState;ai?:{move:AiMove;at:number}};
+export type WebPin={key:string;point:[number,number];label:string;tone:PinTone;title:string;until?:number;progress?:number;best?:boolean;order?:number;was?:PinState;ai?:{move:AiMove;at:number;type?:string}};
 const TONES:PinTone[]=['home','pending','offer','job','booking','booked','active','alert'];
 
 // 18 000 → «18 тыс.», 9 500 → «9 500 ₸», as the app's price pins.
