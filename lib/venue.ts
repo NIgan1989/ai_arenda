@@ -2,6 +2,10 @@ import {DomainError,required} from './domain';
 import type {RentalService} from './service';
 import {accountDeletionColumns} from './account-deletion-inventory';
 import {q,one,rows,epoch,uuid,type Row} from './operation-core';
+import {hasContacts} from './listing-rules';
+
+/** Guests read the names of the venue and of its halls: no phones, links or requests to pay directly, as in a listing. */
+const publicName=(value:string)=>{if(hasContacts(value))throw new DomainError('Уберите из названия телефон, ссылки и просьбы оплатить напрямую: гости бронируют и платят через сервис.',409);return value;};
 
 // «Заведение с залами» (2026-11-17). A bath complex has several steam rooms, a sauna several halls. Each hall is an
 // object of its own: its price, its capacity, its calendar, its bookings. The venue is the name they share. The owner
@@ -26,13 +30,13 @@ export async function venuesFor(db:D1Database){
 
 export async function addHall(s:RentalService,body:Row){
  await s.requireRole('owner');
- const propertyId=required(body.propertyId,'Объект',100),title=required(body.title,'Название зала',120),at=epoch();
+ const propertyId=required(body.propertyId,'Объект',100),title=publicName(required(body.title,'Название зала',120)),at=epoch();
  const p=await one(s.db,'SELECT id,title FROM properties WHERE id=? AND owner_id=? AND demo_owner IS NULL AND archived_at IS NULL',propertyId,s.userId);
  if(!p)throw new DomainError('Объект недоступен.',404);
  const venue=await venueOf(s.db,propertyId);
  if(venue&&venue.halls.length>=MAX_HALLS)throw new DomainError('В заведении уже '+MAX_HALLS+' залов. Больше добавить нельзя.',409);
  if((venue?.halls||[p]).some((h:Row)=>String(h.title).trim().toLocaleLowerCase('ru')===title.toLocaleLowerCase('ru')))throw new DomainError('Зал с таким названием уже есть. Назовите новый иначе, например «Малый зал».',409);
- const id=uuid(),venueId=venue?.id||uuid(),venueTitle=venue?.title||required(body.venueTitle||p.title,'Название заведения',120);
+ const id=uuid(),venueId=venue?.id||uuid(),venueTitle=venue?.title||publicName(required(body.venueTitle||p.title,'Название заведения',120));
  await s.db.batch([
   // A draft: the owner sets the capacity and the price of the new hall and then shows it to guests.
   q(s.db,copy('properties',{id:'?',title:'?',published:'0',created_at:'?',archived_at:'NULL'}),id,title,at,propertyId),
@@ -49,7 +53,7 @@ export async function addHall(s:RentalService,body:Row){
 
 export async function renameVenue(s:RentalService,body:Row){
  await s.requireRole('owner');
- const propertyId=required(body.propertyId,'Объект',100),title=required(body.title,'Название заведения',120);
+ const propertyId=required(body.propertyId,'Объект',100),title=publicName(required(body.title,'Название заведения',120));
  const done=await q(s.db,'UPDATE venues SET title=? WHERE owner_id=? AND id=(SELECT venue_id FROM venue_halls WHERE property_id=?)',title,s.userId,propertyId).run();
  if(!done.meta?.changes)throw new DomainError('Заведение не найдено.',404);
  return {venue:await venueOf(s.db,propertyId),message:'Заведение теперь называется «'+title+'».'};

@@ -32,6 +32,9 @@ test('«Добавить зал»: a copy of a filled hall as a draft, both unde
   assert.equal((await renameVenue(f.owner,{propertyId:first,title:'Сауны «Жар»'})).venue.title,'Сауны «Жар»');
   assert.equal((await venueOf(f.db,third.id)).title,'Сауны «Жар»');
   await assert.rejects(renameVenue(f.other,{propertyId:first,title:'X'}),/не найдено/);
+  // Guests read these names: contacts are refused as in a listing.
+  await assert.rejects(renameVenue(f.owner,{propertyId:first,title:'Сауна, звоните +7 701 123 45 67'}),/Уберите из названия/);
+  await assert.rejects(addHall(f.owner,{propertyId:first,title:'Зал t.me/zhar_sauna'}),/Уберите из названия/);
   f.db.raw.prepare('UPDATE venue_halls SET venue_id=venue_id').run();
   for(let i=3;i<MAX_HALLS;i++)await addHall(f.owner,{propertyId:first,title:'Зал '+i});
   await assert.rejects(addHall(f.owner,{propertyId:first,title:'Лишний'}),/Больше добавить нельзя/);
