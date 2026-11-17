@@ -42,6 +42,9 @@ test('the text names a banquet by the hall or by what it is for',()=>{
  assert.equal(toi.filters.start,'2026-12-05T18:00');assert.equal(toi.filters.end,'2026-12-06T00:00');assert.equal(toi.understood,true);
  const ac=guestSearchRequest('поминки завтра на 60 человек, халяль',base,['Павлодар'],now);
  assert.equal(ac.filters.occasion,'memorial');assert.equal(ac.filters.start,'2026-11-18T12:00');assert.equal(ac.filters.end,'2026-11-18T17:00');assert.deepEqual(ac.filters.features,['halal']);
+ const priced=guestSearchRequest('той на 150 человек 5 декабря до 8000 за гостя',base,['Павлодар'],now).filters;
+ assert.deepEqual([priced.maxPrice,priced.perUnit,priced.guests],['8000',true,'150']);
+ assert.equal(guestSearchRequest('той на 150 человек до 1 500 000',base,['Павлодар'],now).filters.perUnit,false);
  const hall=guestSearchRequest('банкетный зал в субботу в обед',base,['Павлодар'],now);
  assert.equal(hall.filters.start,'2026-11-21T12:00');assert.equal(hall.filters.occasion,undefined);
  // «В той квартире» is not a той, and a flat is still a flat.
@@ -81,7 +84,9 @@ test('a guest books a slot of a banquet hall for a memorial meal',async()=>{
   // A hall never shows among homes, and a home never among halls.
   assert.ok(!(await f.guest.publicSearch({city:'Павлодар',mode:'daily',guests:'2',start:iso(start),end:iso(end)})).properties.some(p=>p.id===id));
   await assert.rejects(f.guest.bookingQuote({propertyId:id,start:iso(start),end:iso(start+2*86400),guests:80,billingMode:'daily'}),/на обед или на вечер/);
-  await assert.rejects(f.guest.bookingQuote({propertyId:id,start:iso(start),end:iso(end),guests:201,billingMode:'daily'}),/Гости/);
+   // 15:00–21:00 would take both slots of the day.
+  await assert.rejects(f.guest.bookingQuote({propertyId:id,start:iso(start+3*3600),end:iso(start+9*3600),guests:80,billingMode:'daily'}),/на обед или на вечер/);
+ await assert.rejects(f.guest.bookingQuote({propertyId:id,start:iso(start),end:iso(end),guests:201,billingMode:'daily'}),/Гости/);
   const quote=await f.guest.bookingQuote({propertyId:id,start:iso(start),end:iso(end),guests:80,billingMode:'daily'});
   assert.deepEqual([quote.amount,quote.periods,quote.price,quote.kind],[640000,1,640000,'banquet']);
   const made=await f.guest.createBooking({propertyId:id,start:iso(start),end:iso(end),guests:80,billingMode:'daily',occasion:'memorial',requestKey:'banquet-1',acceptTerms:true,expectedAmount:640000});
@@ -94,5 +99,23 @@ test('a guest books a slot of a banquet hall for a memorial meal',async()=>{
   f.db.raw.prepare('UPDATE bookings SET start=? WHERE id=?').run(epoch()+3600,made.id);
   const state=await f.guest.roleState('guest',{catalog:false}),mine=state.bookings.find(b=>b.id===made.id);
   assert.deepEqual([mine.cancel_terms.free,mine.cancel_terms.refund,mine.terms.occasion],[true,200000,'memorial']);
+  // The guest never came: the automatic cancellation returns everything as well.
+  const {sweepStays}=await load('stay-watch');f.db.raw.prepare('UPDATE bookings SET start=?,end=? WHERE id=?').run(epoch()-6*3600,epoch()-3600,made.id);
+  for(let i=0;i<3;i++)await sweepStays(f.db).catch(()=>{});
+  const after=f.db.raw.prepare('SELECT b.status,t.refund_due FROM bookings b JOIN booking_terms t ON t.booking_id=b.id WHERE b.id=?').get(made.id);
+  if(after.status==='cancelled')assert.equal(after.refund_due,200000);
+ }finally{f.db.close();}
+});
+test('a banquet nobody came to is cancelled with everything returned',async()=>{
+ const f=await fixture();try{
+  const id=(await f.owner.saveListing(null,hall())).id;f.db.raw.prepare('UPDATE properties SET published=1 WHERE id=?').run(id);
+  f.db.raw.prepare("UPDATE property_operations SET readiness='ready' WHERE property_id=?").run(id);f.db.raw.prepare("UPDATE bookings SET status='cancelled' WHERE id=?").run(f.booking);
+  const day=Math.floor((epoch()+3*86400)/86400)*86400,start=day+7*3600,end=day+12*3600;
+  const made=await f.guest.createBooking({propertyId:id,start:iso(start),end:iso(end),guests:80,billingMode:'daily',occasion:'toi',requestKey:'banquet-2',acceptTerms:true});
+  await f.owner.bookingAction(made.id,{action:'confirm',cleaningFee:0});
+  f.db.raw.prepare("UPDATE booking_terms SET paid_amount=200000 WHERE booking_id=?").run(made.id);f.db.raw.prepare("UPDATE bookings SET payment_status='owner_verified',start=?,end=?,occupied_until=? WHERE id=?").run(epoch()-6*3600,epoch()-3600,epoch()-1,made.id);
+  const {sweepStays}=await load('stay-watch');for(let i=0;i<3;i++)await sweepStays(f.db);
+  const after=f.db.raw.prepare('SELECT b.status,t.refund_due FROM bookings b JOIN booking_terms t ON t.booking_id=b.id WHERE b.id=?').get(made.id);
+  assert.deepEqual({...after},{status:'cancelled',refund_due:200000});
  }finally{f.db.close();}
 });

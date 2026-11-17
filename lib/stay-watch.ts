@@ -36,7 +36,7 @@ const PAY_FOR='MAX(b.created_at+'+PAY_MIN_WINDOW+',MIN(b.start,b.created_at+'+PA
 const PAY_STEP=`CASE WHEN w.pay_for=${PAY_FOR} THEN w.pay_step ELSE 0 END`,ARRIVAL_STEP=`CASE WHEN w.arrival_for=${ARRIVAL_FOR} THEN w.arrival_step ELSE 0 END`,CHECKOUT_STEP=`CASE WHEN w.checkout_for=${CHECKOUT_FOR} THEN w.checkout_step ELSE 0 END`;
 const STAY_SQL=`SELECT b.id,b.property_id,b.guest_id,b.start,b.end,b.created_at,b.payment_status,b.amount,p.owner_id,p.title,
  t.rate,t.units,t.deposit,t.deposit_status,COALESCE(t.min_hours,(SELECT pp.min_hours FROM property_policies pp WHERE pp.property_id=b.property_id),1) min_hours,
- t.billing_mode,t.paid_amount,t.actual_checkin,t.actual_checkout,t.checkin_reported_at,t.checkout_reported_at,t.arrival_eta,t.late_count,
+ t.billing_mode,t.occasion,t.paid_amount,t.actual_checkin,t.actual_checkout,t.checkin_reported_at,t.checkout_reported_at,t.arrival_eta,t.late_count,
  ${PAY_STEP} pay_step,${ARRIVAL_STEP} arrival_step,${CHECKOUT_STEP} checkout_step,
  EXISTS(SELECT 1 FROM property_policies pp WHERE pp.property_id=b.property_id AND pp.auto_confirm=1 AND pp.auto_assign=1 AND (pp.mandate_until=0 OR pp.mandate_until>?1)) autopilot
  FROM bookings b JOIN properties p ON p.id=b.property_id JOIN booking_terms t ON t.booking_id=b.id LEFT JOIN stay_watch w ON w.booking_id=b.id`;
@@ -105,7 +105,7 @@ async function payments(db:D1Database,at:number,result:Row,rule:Rules){
 
 // Not coming is a late cancellation by the guest: the owner keeps the first day, night or the minimum hours.
 function noShowTerms(b:Row,at:number){
- const c=cancellationTerms({by:'guest',status:'confirmed',mode:b.billing_mode||'daily',rate:Number(b.rate)||0,units:Number(b.units)||1,amount:Number(b.amount)||0,paid:Number(b.paid_amount)||0,deposit:b.deposit_status==='owner_verified'?Number(b.deposit)||0:0,start:b.start,minHours:Number(b.min_hours)||1,at});
+ const c=cancellationTerms({by:'guest',status:'confirmed',mode:b.billing_mode||'daily',rate:Number(b.rate)||0,units:Number(b.units)||1,amount:Number(b.amount)||0,paid:Number(b.paid_amount)||0,deposit:b.deposit_status==='owner_verified'?Number(b.deposit)||0:0,start:b.start,minHours:Number(b.min_hours)||1,at,banquet:!!b.occasion});
  const deposit=c.deposit?' Депозит '+tenge(c.deposit)+' возвращается полностью.':'';
  const forGuest=c.withheld?'По правилам отмены владельцу остаётся '+tenge(c.withheld)+(c.refund?', вам вернут '+tenge(c.refund):'')+'.'+deposit:c.refund?'Вам вернут всю оплату: '+tenge(c.refund)+'.'+deposit:deposit.trim();
  const forOwner=c.withheld?'По правилам отмены у вас остаётся '+tenge(c.withheld)+(c.refund?', гостю нужно вернуть '+tenge(c.refund):'')+'.'+deposit:c.refund?'Верните гостю всю оплату: '+tenge(c.refund)+'.'+deposit:deposit.trim();

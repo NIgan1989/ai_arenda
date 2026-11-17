@@ -605,10 +605,19 @@ function statedLength(text: string, remarks: string[]): { mode: 'daily' | 'hourl
 
 // "до 15000", "до 15 тысяч", "не дороже 20 000". A time, a date or a count after "до" is not money.
 // `perUnit`: the amount is a price per day, night or hour ("до 15 тысяч за сутки"), not for the whole stay.
-function statedBudget(text: string): { value: string; perUnit: boolean } | null {
+function statedBudget(text: string, banquet = false): { value: string; perUnit: boolean } | null {
   const match = text.match(/(?:^|[^а-я])(?:до|не дороже|не больше|максимум|бюджет)\s*(\d{1,3}(?:[ . ]\d{3})+|\d+)\s*(тыс[а-я]*\.?|к(?![а-я]))?/);
   if (!match) return null;
   const rest = text.slice((match.index || 0) + match[0].length);
+  // «До 8 000 за гостя», «с человека»: the price per guest of a banquet. A sum too small for a whole hall is one too.
+  const each = '(?:за|с|на)\\s+(?:одного\\s+|каждого\\s+)?(?:гостя|человека|персону|чел(?![а-я]))';
+  if (banquet) {
+    const sum = Number(match[1].replace(/[ . ]/g, '')) * (match[2] ? 1000 : 1);
+    if (!(sum >= 500 && sum <= Number(NO_BUDGET))) return null;
+    const named = new RegExp('^\\s*(?:₸|тг|тенге)?\\s*' + each).test(rest) || new RegExp(each + '\\s+(?:до|не дороже|не больше|максимум)').test(text);
+    if (!named && !match[2] && /^\s*(?:гост|человек|чел)/.test(rest)) return null;
+    return { value: String(Math.round(sum)), perUnit: named || sum < 50000 };
+  }
   if (!match[2] && new RegExp('^\\s*(?:[:.]\\d|час|гост|человек|чел|сут|дн|ноч|комн|утра|вечера|' + MONTH + ')').test(rest)) return null;
   const value = Number(match[1].replace(/[ . ]/g, '')) * (match[2] ? 1000 : 1);
   if (!(value >= 500 && value <= Number(NO_BUDGET))) return null;
@@ -678,7 +687,7 @@ export function guestSearchRequest(text: string, current: Row, cities: string[],
     stated.guests = true;
   }
 
-  const budget = statedBudget(request);
+  const budget = statedBudget(request, banquet);
   if (budget) {
     filters.maxPrice = budget.value;
     filters.perUnit = budget.perUnit;

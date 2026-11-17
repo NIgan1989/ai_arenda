@@ -543,7 +543,9 @@ export class RentalService {
     if(occupied||cleaning) throw new DomainError('Этот интервал уже занят, включая время уборки. Выберите другое время.',409);
     const kind=(await this.one("SELECT json_extract(details,'$.type') type FROM property_details WHERE property_id=?",p.id))?.type||'apartment';
     // A banquet hall is taken for a slot of one day, at the price per guest.
-    if(isBanquet(kind)&&(base.billingMode!=='daily'||end-start>12*3600))throw new DomainError('Банкетный зал бронируют на обед или на вечер одного дня.');
+    // Only the two slots of the day (banquetSlots), by the Kazakhstan clock: 12:00–17:00 or 18:00–00:00.
+    const slotStart=(start+18000)%86400,slot=slotStart===12*3600?5:slotStart===18*3600?6:0;
+    if(isBanquet(kind)&&(base.billingMode!=='daily'||!slot||end-start!==slot*3600))throw new DomainError('Банкетный зал бронируют на обед или на вечер одного дня.');
     return {propertyId:p.id,title:p.title,kind,start,end,guests,...pricing,cleaningMinutes:p.cleaning_minutes,occupiedUntil,currency:'KZT',quotedAt:now(),policy:publicPolicy(policy)};
   }
   async saveProfile(body: Row) {
