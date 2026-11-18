@@ -47,6 +47,19 @@ test('the guest and the owner run ready commands through a confirmed card; the s
   await assert.rejects(prepareAdministratorCommand(f.owner,'owner',{action:'cancel_cleaning',jobId:f.db.raw.prepare('SELECT id FROM cleaning_jobs LIMIT 1').get().id,note:''},'no-reason'),/причину/);
  }finally{f.db.close();}
 });
+test('a ready card is bound to the record version and a cut-off run is never repeated',async()=>{
+ const f=await fixture();try{
+  const stale=(await prepareAdministratorCommand(f.guest,'guest',{action:'report_guest_late',bookingId:f.booking},'stale')).commands[0];
+  f.db.raw.prepare('UPDATE booking_terms SET version=version+1 WHERE booking_id=?').run(f.booking);
+  await assert.rejects(decideAdministratorCommand(f.guest,'guest',{id:stale.id,action:'execute',confirmed:true,expectedVersion:stale.version}),e=>e.status===409);
+  const {card}=await run(f.guest,'guest',{action:'report_guest_late',bookingId:f.booking},'late-once');
+  // The worker stopped after the action but before the command was marked done: recovery does not move the arrival again.
+  f.db.raw.prepare("UPDATE administrator_commands SET status='running',lease_until=0 WHERE id=?").run(card.id);
+  const again=await decideAdministratorCommand(f.guest,'guest',{id:card.id,action:'execute',confirmed:true,expectedVersion:card.version+1});
+  assert.match(again.message,/уже обработано/);
+  assert.equal(f.db.raw.prepare('SELECT late_count FROM booking_terms WHERE booking_id=?').get(f.booking).late_count,1);
+ }finally{f.db.close();}
+});
 test('the model may pick a ready command only for its own role and only on a plain request',async()=>{
  assert.ok(Object.keys(COMMAND_CATALOG).length>=15);
  const real=globalThis.fetch;let args;

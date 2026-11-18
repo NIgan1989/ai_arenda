@@ -35,12 +35,15 @@ export async function prepareAdministratorCommand(service:RentalService,role:Rol
   // The owner confirms with the cleaning price from the flat's own rules, shown on the card.
   let cleaningFee:number|undefined;
   if(kind==='confirm_booking')cleaningFee=Number((await service.one('SELECT cleaning_fee FROM property_policies WHERE property_id=?',item.property_id))?.cleaning_fee||0);
-  payload={entityKind:c.entity,entityId:id,action:c.action,note,...(cleaningFee!==undefined?{cleaningFee}:{})};
+  // The card is bound to the record as it is now: if it changes before the confirmation, the card has to be prepared again.
+  const version=await entityVersion(service.db,c.entity,id);
+  payload={entityKind:c.entity,entityId:id,action:c.action,note,...(version!==undefined?{expectedVersion:version}:{}),...(cleaningFee!==undefined?{cleaningFee}:{})};
   preview={title:c.title,subject:item.title,...(item.start?{start:item.start,end:item.end}:{}),...(kind==='confirm_booking'?{amount:item.amount,currency:'KZT'}:{}),description:[note,cleaningFee?'Уборка после гостя: '+cleaningFee+' ₸ по правилам жилья.':'',c.action==='cancel'&&c.entity==='booking'?'Условия возврата сервис покажет после отмены по правилам отмены.':''].filter(Boolean).join(' ')};
  }else throw new DomainError('Это действие пока не доступно через поручения.');
  const existing=await one(service.db,'SELECT * FROM administrator_commands WHERE user_id=? AND role=? AND request_key=?',service.userId,role,requestKey);if(existing)return {text:'Поручение уже подготовлено.',commands:[{...existing,preview:JSON.parse(existing.preview)}]};
  const id=uuid(),at=epoch();await q(service.db,'INSERT INTO administrator_commands(id,user_id,role,kind,payload,preview,request_key,created_at,expires_at) VALUES (?,?,?,?,?,?,?,?,?)',id,service.userId,role,kind,JSON.stringify(payload),JSON.stringify(preview),requestKey,at,at+900).run();return {text:'Подготовил поручение. Проверьте условия в карточке и подтвердите выполнение.',commands:[{id,kind,preview,status:'draft',version:1,expires_at:at+900}]};
 }
+const entityVersion=async(db:D1Database,entity:string,id:string)=>{const r=entity==='booking'?await one(db,'SELECT version FROM booking_terms WHERE booking_id=?',id):await one(db,'SELECT version FROM cleaning_jobs WHERE id=?',id);return r?Number(r.version):undefined;};
 export async function decideAdministratorCommand(service:RentalService,role:Role,body:Row){
  await service.authorizeWorkspace(role,'chat');const id=required(body.id,'Поручение',100),command=await one(service.db,'SELECT * FROM administrator_commands WHERE id=? AND user_id=? AND role=?',id,service.userId,role);if(!command)throw new DomainError('Поручение недоступно.',403);
  if(command.status==='executed')return JSON.parse(command.result);
@@ -48,6 +51,12 @@ export async function decideAdministratorCommand(service:RentalService,role:Role
   const receiptKind=command.kind==='create_cleaning'?'create_job':command.kind==='report_issue'?(JSON.parse(command.payload).entityKind==='job'?'job_issue':'booking_issue'):null;
   const receipt=receiptKind?await one(service.db,'SELECT result FROM operation_receipts WHERE user_id=? AND kind=? AND request_key=?',service.userId,receiptKind,'command:'+id):null;
   if(receipt){await q(service.db,"UPDATE administrator_commands SET status='executed',result=?,lease_until=0 WHERE id=? AND status='running'",receipt.result,id).run();return JSON.parse(receipt.result);}
+  // A ready command whose run was cut off: if the record moved past the version on the card, the action took
+  // effect (or someone else changed it) and is not repeated; if not, it never ran and runs now.
+  if(COMMAND_CATALOG[command.kind]&&command.lease_until<=epoch()){
+   const p=JSON.parse(command.payload);
+   if(p.expectedVersion!==undefined&&await entityVersion(service.db,p.entityKind,p.entityId)!==p.expectedVersion){const result={message:'Поручение уже обработано. Проверьте карточку '+(p.entityKind==='booking'?'брони.':'уборки.')};await q(service.db,"UPDATE administrator_commands SET status='executed',result=?,lease_until=0 WHERE id=? AND status='running'",JSON.stringify(result),id).run();return result;}
+  }
   if(command.kind==='extend_booking'){
    const saved=await one(service.db,'SELECT id FROM booking_changes WHERE proposed_by=? AND request_key=?',service.userId,'command:'+id);
    if(saved){const result={id:saved.id,message:'Предложение об изменении проживания сохранено.'};await q(service.db,"UPDATE administrator_commands SET status='executed',result=?,lease_until=0 WHERE id=? AND status='running'",JSON.stringify(result),id).run();return result;}
@@ -68,7 +77,7 @@ export async function decideAdministratorCommand(service:RentalService,role:Role
    // Dispatch writes versioned offers with a unique key; repeating the scan is safe.
    await service.requireRole('owner');const value=await coordinateDispatch(service);result={message:'Подбор проверен. Новых предложений: '+value.offered+'. Без подтверждённого согласия исполнитель не назначается.'};
   }else if(COMMAND_CATALOG[command.kind]){
-   const body={action:payload.action,requestKey,...(payload.note?{reason:payload.note,issue:payload.note}:{}),...(payload.cleaningFee!==undefined?{cleaningFee:payload.cleaningFee}:{})};
+   const body={action:payload.action,requestKey,...(payload.expectedVersion!==undefined?{expectedVersion:payload.expectedVersion}:{}),...(payload.note?{reason:payload.note,issue:payload.note}:{}),...(payload.cleaningFee!==undefined?{cleaningFee:payload.cleaningFee}:{})};
    result=payload.entityKind==='booking'?await service.bookingAction(payload.entityId,body):await service.jobAction(payload.entityId,body);
   }else throw new DomainError('Неизвестный вид поручения.');
   await q(service.db,"UPDATE administrator_commands SET status='executed',result=?,lease_until=0 WHERE id=? AND version=? AND status='running'",JSON.stringify(result),id,claimed.version).run();return result;
