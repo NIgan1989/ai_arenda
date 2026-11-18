@@ -1,6 +1,7 @@
 import {DomainError,type Role} from './domain';
 import type {AIBudgetConfig} from './ai-budget';
 import {kindLabel} from './listings';
+import {COMMAND_CATALOG,catalogText} from './command-catalog';
 
 export type AIConfig=AIBudgetConfig&{OPENAI_API_KEY?:string;OPENAI_MODEL?:string;TEST_DATA_ONLY?:string};
 export type AIBudgetOutcome={status:'completed'|'rejected'|'uncertain';usage?:{input_tokens:number;output_tokens:number};responseId?:string;httpStatus?:number};
@@ -11,7 +12,7 @@ export type AIReadProcesses=()=>Promise<{text:string}>;
 export const administratorProcessesTool={type:'function',name:'read_process_status',description:'Прочитать актуальные процессы текущей роли: все свои объекты, незавершённые брони, свои уборки, проверенные статусы оплаты и ближайшие шаги. Используй для вопросов о текущих делах вместо ограниченного снимка. Сервер сам определяет пользователя и роль. Только чтение, без изменения фактов и без аргументов.',strict:true,parameters:{type:'object',properties:{},required:[],additionalProperties:false}};
 export const administratorSearchTool={type:'function',name:'search_rental_catalog',description:'Проверить текущий опубликованный каталог по последнему сообщению гостя и условиям его предыдущего поиска. Используй для подбора жилья, проверки свободных дат, цены и уточнений вроде «теперь дешевле» или «на завтра». Сервер сам берёт согласованные условия; аргументы не нужны. Это только чтение, без создания брони и запроса геопозиции.',strict:true,parameters:{type:'object',properties:{},required:[],additionalProperties:false}};
 export type AIToolExecutor=(args:Record<string,any>,callId:string)=>Promise<{text:string;commands?:Record<string,any>[]} >;
-export const administratorCommandTool={type:'function',name:'prepare_administrator_action',description:'Подготовить проверяемое поручение по явной просьбе пользователя. Действие создаёт карточку на подтверждение; не подтверждает оплату, физический выезд или качество работы. При недостатке данных сначала задай вопрос.',strict:true,parameters:{type:'object',properties:{action:{type:'string',enum:['create_cleaning','extend_booking','report_issue','offer_cleaning','show_status']},propertyId:{type:['string','null'],description:'Точный id объекта из снимка; null если не нужен.'},bookingId:{type:['string','null']},jobId:{type:['string','null']},start:{type:['string','null'],description:'Дата ISO 8601 с часовым поясом, по согласованному времени пользователя.'},end:{type:['string','null'],description:'Дата ISO 8601 с часовым поясом.'},fee:{type:['integer','null'],description:'Согласованная стоимость уборки в KZT, не выдумывай.'},note:{type:['string','null'],description:'Согласованный состав работ, причина продления или текст обращения.'}},required:['action','propertyId','bookingId','jobId','start','end','fee','note'],additionalProperties:false}};
+export const administratorCommandTool={type:'function',name:'prepare_administrator_action',description:'Подготовить проверяемое поручение по явной просьбе пользователя. Действие создаёт карточку на подтверждение; не подтверждает оплату, физический выезд или качество работы. При недостатке данных сначала задай вопрос. Кроме create_cleaning, extend_booking, report_issue, offer_cleaning и show_status есть готовые поручения по одной брони или уборке текущей роли: '+catalogText()+'.',strict:true,parameters:{type:'object',properties:{action:{type:'string',enum:['create_cleaning','extend_booking','report_issue','offer_cleaning','show_status',...Object.keys(COMMAND_CATALOG)]},propertyId:{type:['string','null'],description:'Точный id объекта из снимка; null если не нужен.'},bookingId:{type:['string','null']},jobId:{type:['string','null']},start:{type:['string','null'],description:'Дата ISO 8601 с часовым поясом, по согласованному времени пользователя.'},end:{type:['string','null'],description:'Дата ISO 8601 с часовым поясом.'},fee:{type:['integer','null'],description:'Согласованная стоимость уборки в KZT, не выдумывай.'},note:{type:['string','null'],description:'Согласованный состав работ, причина продления или текст обращения.'}},required:['action','propertyId','bookingId','jobId','start','end','fee','note'],additionalProperties:false}};
 type Row=Record<string,any>;
 export function redactAIText(value:string){
  const protectedValues:string[]=[];
@@ -21,7 +22,7 @@ export function redactAIText(value:string){
 }
 const safe=(value:unknown,max=300)=>redactAIText(String(value??'')).slice(0,max);
 const iso=(value:unknown)=>typeof value==='number'&&Number.isFinite(value)?new Date(value*1000).toISOString():null;
-const commandIntent=(text:string)=>/(?:^|\s)(?:создай|организуй|закажи|продли|запроси|передай|отправь|сообщи|пожалуйся|подбери|найди исполнителя|запусти подбор|create|extend|report|schedule|dispatch)(?:\s|[,.!?]|$)|(?:хочу|нужно|прошу)\s+(?:создать|продлить|передать|запустить)/i.test(text);
+const commandIntent=(text:string)=>/(?:^|\s)(?:создай|организуй|закажи|продли|запроси|передай|отправь|сообщи|пожалуйся|подбери|найди исполнителя|запусти подбор|отмени|подтверди|отклони|прими|верни|начни|откликнись|отзови|отметь|предупреди|create|extend|report|schedule|dispatch|cancel|confirm|decline|accept|start|apply)(?:\s|[,.!?]|$)|(?:хочу|нужно|прошу|надо)\s+(?:создать|продлить|передать|запустить|отменить|подтвердить|отклонить|принять|вернуть|начать|откликнуться|отозвать|отметить|предупредить)|(?:^|\s)(?:я на месте|я приехал|я приехала|я заселил|я выехал|я выехала|я уехал|я уехала|опаздываю|задерживаюсь)/i.test(text);
 function validateAdministratorTool(args:Row,text:string,role:Role,context:unknown,history:{sender:string;body:string}[]){
  const contextRow=context&&typeof context==='object'?context as Row:null;
  if(!args||typeof args!=='object'||Array.isArray(args)||Object.keys(args).some(key=>!Object.prototype.hasOwnProperty.call(administratorCommandTool.parameters.properties,key))||!administratorCommandTool.parameters.properties.action.enum.includes(args.action))return 'Не удалось проверить поручение. Уточните действие; изменений нет.';
@@ -40,6 +41,13 @@ function validateAdministratorTool(args:Row,text:string,role:Role,context:unknow
   if(!hasFee||!hasDate||!hasTimes)return 'Уточните дату, время начала и окончания и стоимость уборки. Эти условия должны быть указаны вами до подготовки карточки.';
  }
  if(args.action==='extend_booking'&&(!dateValid(args.end)||typeof args.note!=='string'||!args.note.trim()))return 'Уточните новое время выезда с датой и причину продления. Изменений нет.';
+ const ready=COMMAND_CATALOG[args.action];
+ if(ready){
+  if(ready.role!==role)return 'Это поручение недоступно в текущей роли. Переключите рабочую роль и повторите запрос.';
+  if(ready.entity==='booking'&&(!args.bookingId||args.jobId||!includes('bookings','bookingId')))return 'Уточните бронь из списка вашей текущей роли. Изменений нет.';
+  if(ready.entity==='job'&&(!args.jobId||args.bookingId||!includes('jobs','jobId')))return 'Уточните уборку из списка вашей текущей роли. Изменений нет.';
+  if(ready.note==='required'&&(typeof args.note!=='string'||!args.note.trim()))return 'Уточните причину или что нужно сделать. Изменений нет.';
+ }
  return null;
 }
 // Explicit projection: no addresses, names, contacts, media, access codes or other roles.

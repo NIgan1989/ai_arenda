@@ -1,6 +1,7 @@
 import {DomainError,required,number,interval,type Role} from './domain';
 import type {RentalService} from './service';
 import {coordinateDispatch} from './dispatch';
+import {COMMAND_CATALOG} from './command-catalog';
 import {epoch,uuid,q,one,rows,hash,type Row} from './operation-core';
 
 export type PreparedCommand={id:string;kind:string;preview:Row;status:string;version:number;expires_at:number};
@@ -25,6 +26,17 @@ export async function prepareAdministratorCommand(service:RentalService,role:Rol
   payload={entityKind:isJob?'job':'booking',entityId:id,issue:required(args.note,'Описание обращения',1500)};preview={title:'Передать обращение',subject:item.title,description:payload.issue};
  }else if(kind==='offer_cleaning'){
   if(role!=='owner')throw new DomainError('Поиск исполнителя запускает владелец.',403);const propertyId=required(args.propertyId,'Жильё',100),property=await service.one('SELECT p.title,r.auto_offers FROM properties p JOIN operation_rules r ON r.property_id=p.id WHERE p.id=? AND p.owner_id=?',propertyId,service.userId);if(!property?.auto_offers)throw new DomainError('Сначала включите предложения исполнителям в правилах жилья.',409);payload={propertyId};preview={title:'Запустить подбор исполнителя',subject:property.title,description:'Предложения получают свободные исполнители, которые включили их приём. Назначение требует согласия на условия.'};
+ }else if(COMMAND_CATALOG[kind]){
+  // A ready command: one existing action on one booking or cleaning that this role sees right now.
+  const c=COMMAND_CATALOG[kind];if(role!==c.role)throw new DomainError('Это поручение недоступно в текущей роли.',403);
+  const id=required(c.entity==='booking'?args.bookingId:args.jobId,c.entity==='booking'?'Бронь':'Уборка',100),state=await service.roleState(role);
+  const item=(c.entity==='booking'?state.bookings:state.jobs).find((v:Row)=>v.id===id);if(!item)throw new DomainError('Запись недоступна в этой роли.',403);
+  const note=typeof args.note==='string'?args.note.trim().slice(0,1000):'';if(c.note==='required'&&!note)throw new DomainError('Уточните причину или что нужно сделать.');
+  // The owner confirms with the cleaning price from the flat's own rules, shown on the card.
+  let cleaningFee:number|undefined;
+  if(kind==='confirm_booking')cleaningFee=Number((await service.one('SELECT cleaning_fee FROM property_policies WHERE property_id=?',item.property_id))?.cleaning_fee||0);
+  payload={entityKind:c.entity,entityId:id,action:c.action,note,...(cleaningFee!==undefined?{cleaningFee}:{})};
+  preview={title:c.title,subject:item.title,...(item.start?{start:item.start,end:item.end}:{}),...(kind==='confirm_booking'?{amount:item.amount,currency:'KZT'}:{}),description:[note,cleaningFee?'Уборка после гостя: '+cleaningFee+' ₸ по правилам жилья.':'',c.action==='cancel'&&c.entity==='booking'?'Условия возврата сервис покажет после отмены по правилам отмены.':''].filter(Boolean).join(' ')};
  }else throw new DomainError('Это действие пока не доступно через поручения.');
  const existing=await one(service.db,'SELECT * FROM administrator_commands WHERE user_id=? AND role=? AND request_key=?',service.userId,role,requestKey);if(existing)return {text:'Поручение уже подготовлено.',commands:[{...existing,preview:JSON.parse(existing.preview)}]};
  const id=uuid(),at=epoch();await q(service.db,'INSERT INTO administrator_commands(id,user_id,role,kind,payload,preview,request_key,created_at,expires_at) VALUES (?,?,?,?,?,?,?,?,?)',id,service.userId,role,kind,JSON.stringify(payload),JSON.stringify(preview),requestKey,at,at+900).run();return {text:'Подготовил поручение. Проверьте условия в карточке и подтвердите выполнение.',commands:[{id,kind,preview,status:'draft',version:1,expires_at:at+900}]};
@@ -55,6 +67,9 @@ export async function decideAdministratorCommand(service:RentalService,role:Role
   else if(command.kind==='offer_cleaning'){
    // Dispatch writes versioned offers with a unique key; repeating the scan is safe.
    await service.requireRole('owner');const value=await coordinateDispatch(service);result={message:'Подбор проверен. Новых предложений: '+value.offered+'. Без подтверждённого согласия исполнитель не назначается.'};
+  }else if(COMMAND_CATALOG[command.kind]){
+   const body={action:payload.action,requestKey,...(payload.note?{reason:payload.note,issue:payload.note}:{}),...(payload.cleaningFee!==undefined?{cleaningFee:payload.cleaningFee}:{})};
+   result=payload.entityKind==='booking'?await service.bookingAction(payload.entityId,body):await service.jobAction(payload.entityId,body);
   }else throw new DomainError('Неизвестный вид поручения.');
   await q(service.db,"UPDATE administrator_commands SET status='executed',result=?,lease_until=0 WHERE id=? AND version=? AND status='running'",JSON.stringify(result),id,claimed.version).run();return result;
  }catch(error){if(error instanceof DomainError)await q(service.db,"UPDATE administrator_commands SET status='failed',result=?,lease_until=0 WHERE id=? AND version=? AND status='running'",JSON.stringify({message:error.message}),id,claimed.version).run();throw error;}
