@@ -276,8 +276,9 @@ function GuestPanel({setScanning,setQuiet,accountId,data,mapData,publish,selecte
   if(placed.current==='done'||!here.fix)return;
   if(aimed||recent||requestId||preview||draft.near||nav.trip||chosenCity.has(accountId)){placed.current='done';return;}
   const near=nearestCity(here.fix.point);
-  // Far from every city of the service: said once, and the map stays where it was.
-  if(!near){placed.current='done';if(here.fix.accuracy<=5000)notify('Рядом с вами жилья сервиса пока нет. Показываем '+draft.city+'. Другой город — напишите его в строке.');return;}
+  // Far from every city of the service: the map flies to the guest instead of keeping another city on screen. It waits
+  // for the first answer of the map, so the framing of those pins (a new focusKey) does not take the view away again.
+  if(!near){if(!mapData)return;placed.current='done';flyMe();if(here.fix.accuracy<=5000)notify('Рядом с вами жилья сервиса пока нет. Нужен город — напишите его в строке, например «Алматы завтра».');return;}
   // The city moves only once the map of the current one has answered, and never away from the guest's own stays there.
   if(placed.current==='no'){if(!mapData)return;placed.current='city';if(near!==draft.city){if(stays.length){placed.current='done';return;}change({...draft,city:near,district:'',near:null},false);notify('Вы в городе '+near+'. Нужен другой город — напишите его в строке, например «Астана завтра».');return;}}
   if(mapData&&mapData.city===near){placed.current='done';flyMe();}
@@ -677,7 +678,10 @@ export function MapHome({ role, accountId, data, menu, chats, onChanged, onOpenP
 
   // One city drives the map query, the viewport and the guest's request, so a picked point always lies in the searched city.
   const [city, setCity] = useState<string>(() => {
-    const wanted = aim.current?.city || kept?.city || data.profile?.city;
+    // A guest opens the map where the phone last saw them, before the city of the profile (often left as it was at
+    // sign-up). Pavlodar is only the last resort, when neither the phone nor the profile names a city of the service.
+    const fix = role === 'guest' ? getHere().fix : null;
+    const wanted = aim.current?.city || kept?.city || (fix && nearestCity(fix.point)) || data.profile?.city;
     return mapCities[wanted] ? wanted : mapCities[data.profile?.city] ? data.profile.city : 'Павлодар';
   });
   const cityRef = useRef(city);
