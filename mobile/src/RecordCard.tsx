@@ -1,6 +1,6 @@
 import {jobPayNote} from '../../lib/regular-cleaner-text';
 import React,{useState} from 'react';
-import {View,Text,Pressable,StyleSheet,Platform} from 'react-native';
+import {View,Text,Pressable,StyleSheet,Platform,LayoutAnimation,UIManager} from 'react-native';
 import {C,type} from './styles';
 import {T} from './tokens';
 import {SwipeConfirm} from './SwipeConfirm';
@@ -33,19 +33,34 @@ export function RecordActions({actions,busy,soft=false}:{actions:(RecordAction|f
 // One big button, and only for the step a person has to take; the facts open by «Подробнее», every other action by «Ещё».
 // `thread` is the same thread as on the home sheet (owner and assigned performer), so the step and the line match it.
 type Maybe<V>=V|false|null|undefined|''|0;
-export function DealCard({kind,item,role,userId,application,thread,line:own,actions,busy,always,details,extra,onMap}:{kind:'booking'|'job';item:Row;role:string;userId:string;application?:Row;thread?:ProcessThread|null;line?:string|null;actions:Maybe<RecordAction>[];busy:boolean;always?:React.ReactNode;details?:React.ReactNode;extra?:React.ReactNode;onMap?:()=>void}){
- const [open,setOpen]=useState(false),[more,setMore]=useState(false);
+// `compact` (the «Мои брони» list): the card is one short row (what, how much, when, the status) and opens in place
+// into the whole card by a tap; the title row of an open card folds it back. `startOpen` opens it at once (a stay going on now).
+if(Platform.OS==='android')UIManager.setLayoutAnimationEnabledExperimental?.(true);
+const smooth=()=>LayoutAnimation.configureNext(LayoutAnimation.create(220,LayoutAnimation.Types.easeInEaseOut,LayoutAnimation.Properties.opacity));
+export function DealCard({kind,item,role,userId,application,thread,line:own,actions,busy,always,details,extra,onMap,compact=false,startOpen=false}:{kind:'booking'|'job';item:Row;role:string;userId:string;application?:Row;thread?:ProcessThread|null;line?:string|null;actions:Maybe<RecordAction>[];busy:boolean;always?:React.ReactNode;details?:React.ReactNode;extra?:React.ReactNode;onMap?:()=>void;compact?:boolean;startOpen?:boolean}){
+ const [open,setOpen]=useState(false),[more,setMore]=useState(false),[unfolded,setUnfolded]=useState(startOpen);
  const status=processStatus(kind,item,role,userId,application),[bg,ink]=tones[status.tone]||tones.neutral,flow=processJourney(kind,item);
  const total=thread?thread.steps.length:flow.labels.length,done=thread?thread.finished:flow.done,step=Math.min(thread?thread.current:flow.current,total-1),line=flow.stopped?flow.hint:thread?thread.line:own||flow.hint;
  const all=actions.filter(Boolean) as RecordAction[],main=all.find(a=>a.kind==='main'),rest:Maybe<RecordAction>[]=[...all.filter(a=>a!==main),!!onMap&&{title:'Показать на карте',kind:'side' as const,onPress:onMap}];
  const hasMore=rest.some(Boolean)||!!extra;
  const toggle=(title:string,on:boolean,flip:()=>void,grow:boolean)=><Pressable accessibilityRole="button" accessibilityLabel={title} accessibilityState={{expanded:on}} onPress={flip} style={({pressed})=>[r.action,r.next,grow&&r.grow,pressed&&r.dim]}><Text style={[r.actionText,r.nextText]}>{title}</Text></Pressable>;
+ if(compact&&!unfolded){
+  const sum=money(kind==='job'?item.fee:item.amount),label=item.title+', '+sum+', '+recordSpan(item.start,item.end)+', '+status.label+(main?', дальше: '+main.title:'');
+  return <Pressable accessibilityRole="button" accessibilityLabel={label} accessibilityHint="Открыть подробности" accessibilityState={{expanded:false}} onPress={()=>{smooth();setUnfolded(true);}} style={({pressed})=>[r.card,r.row,pressed&&r.pressed]}>
+   <View style={r.rowHead}><Text numberOfLines={2} style={[r.dealTitle,r.grow]}>{item.title}</Text><Text style={r.rowSum}>{sum}</Text></View>
+   <Text numberOfLines={1} style={r.rowWhen}>{recordSpan(item.start,item.end)}</Text>
+   <View style={r.rowTop}><View style={[r.dot,{backgroundColor:ink}]}/><Text numberOfLines={1} style={[r.rowStatus,{color:ink},r.grow]}>{status.label}{!!main&&<Text style={r.rowDo}>{' · '+main.title}</Text>}</Text><Text style={r.chevron}>⌄</Text></View>
+  </Pressable>;
+ }
+ const fold=compact?()=>{smooth();setUnfolded(false);setOpen(false);setMore(false);}:undefined;
  return <View style={r.card}>
-  <View style={r.dealTop}><View style={[r.tags,r.grow]}><Text style={[r.status,{backgroundColor:bg,color:ink}]}>{status.label}</Text>{!!item.demo_owner&&<Text style={[r.status,{backgroundColor:C.surfaceAlt,color:C.muted}]}>{kind==='job'?'Учебное':'Учебная'}</Text>}{kind==='job'&&!!item.regular&&<Text style={[r.status,{backgroundColor:C.accentSoft,color:C.accentPressed}]}>Постоянный исполнитель</Text>}</View>{!flow.stopped&&!done&&<Text style={r.journeyCount}>шаг {step+1} из {total}</Text>}</View>
+  <Pressable disabled={!fold} accessibilityRole={fold?'button':undefined} accessibilityLabel={fold?'Свернуть: '+item.title:undefined} accessibilityState={fold?{expanded:true}:undefined} onPress={fold} style={({pressed})=>[{gap:12},pressed&&r.pressed]}>
+  <View style={r.dealTop}><View style={[r.tags,r.grow]}><Text style={[r.status,{backgroundColor:bg,color:ink}]}>{status.label}</Text>{!!item.demo_owner&&<Text style={[r.status,{backgroundColor:C.surfaceAlt,color:C.muted}]}>{kind==='job'?'Учебное':'Учебная'}</Text>}{kind==='job'&&!!item.regular&&<Text style={[r.status,{backgroundColor:C.accentSoft,color:C.accentPressed}]}>Постоянный исполнитель</Text>}</View>{!flow.stopped&&!done&&<Text style={r.journeyCount}>шаг {step+1} из {total}</Text>}{!!fold&&<Text style={[r.chevron,r.chevronUp]}>⌄</Text>}</View>
   <Text accessibilityRole="header" numberOfLines={2} style={r.dealTitle}>{item.title}</Text>
   <Text style={r.when}>{recordSpan(item.start,item.end)} · {money(kind==='job'?item.fee:item.amount)}</Text>
+  </Pressable>
   {!flow.stopped&&<View style={r.bar} accessible accessibilityLabel={done?'Завершено':'Шаг '+(step+1)+' из '+total}>{Array.from({length:total},(_,index)=><View key={index} style={[r.segment,done||index<step?{backgroundColor:C.success}:index===step?{backgroundColor:C.accent}:null]}/>)}</View>}
-  <Text style={r.dealLine}>{line}</Text>
+  {!flow.stopped&&<Text style={r.dealLine}>{line}</Text>}
   {always}
   {!!main&&<RecordActions busy={busy} actions={[main]}/>}
   <View style={r.sideRow}>{toggle(open?'Свернуть':'Подробнее',open,()=>setOpen(v=>!v),true)}{hasMore&&toggle(more?'Скрыть':'Ещё',more,()=>setMore(v=>!v),false)}</View>
@@ -69,7 +84,10 @@ const r=StyleSheet.create({
  main:{minHeight:H.primary,backgroundColor:C.accent},mainText:{...type.body,fontWeight:'600',color:C.onAccent},next:{backgroundColor:C.accentSoft},nextText:{color:C.accentPressed},
  side:{flex:1,backgroundColor:C.surface,borderWidth:1,borderColor:C.line},sideText:{color:C.ink},danger:{backgroundColor:'transparent'},dangerText:{color:C.danger,fontWeight:'500'},
  focus:{borderWidth:2,borderColor:C.focus},dim:{opacity:.55},grow:{flex:1,minWidth:0},
- dealTop:{flexDirection:'row',alignItems:'center',gap:8},dealTitle:{...type.body,color:C.ink,fontWeight:'700'},dealLine:{...type.label,color:C.inkSoft},
+ dealTop:{flexDirection:'row',alignItems:'center',gap:8},
+ row:{gap:4,marginTop:8,paddingVertical:12},rowTop:{flexDirection:'row',alignItems:'center',gap:8},rowHead:{flexDirection:'row',alignItems:'flex-start',gap:8},rowSum:{...type.label,color:C.ink,fontWeight:'700'},rowWhen:{...type.label,color:C.inkSoft},
+ rowStatus:{...type.caption,fontWeight:'600'},rowDo:{color:C.accentPressed},dot:{width:8,height:8,borderRadius:R.full},
+ chevron:{...type.label,color:C.muted,lineHeight:16},chevronUp:{transform:[{rotate:'180deg'}]},pressed:{opacity:.7},dealTitle:{...type.body,color:C.ink,fontWeight:'700'},dealLine:{...type.label,color:C.inkSoft},
  whereRow:{flexDirection:'row',alignItems:'center',gap:8},whereText:{flex:1,minWidth:0},
  mapLink:{flexDirection:'row',alignItems:'center',gap:4,minHeight:32,paddingHorizontal:12,borderRadius:R.full,backgroundColor:C.accentSoft},mapLinkText:{...type.caption,fontWeight:'600',color:C.accentPressed},
  mapPin:{width:12,height:12,borderRadius:R.full,borderBottomRightRadius:0,backgroundColor:C.accentPressed,transform:[{rotate:'45deg'}],alignItems:'center',justifyContent:'center'},mapPinDot:{width:4,height:4,borderRadius:R.full,backgroundColor:C.accentSoft},
