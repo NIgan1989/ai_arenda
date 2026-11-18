@@ -61,6 +61,11 @@ function compose(topics:Topic[],b:Row,change?:string):{text:string;escalate:bool
  return {text:lines.join('\n'),escalate};
 }
 
+// Whether the AI administrator answers the guest in this booking's chat (the flat is under autopilot).
+export async function aiAnswersBooking(db:D1Database,bookingId:string){
+ const row=await one(db,`SELECT ${guestModeSql} mode FROM bookings b JOIN properties p ON p.id=b.property_id ${guestModeJoins} WHERE b.id=?`,epoch(),bookingId);
+ return row?.mode==='auto';
+}
 // Called after a guest's message lands in a stay chat. Returns true when the AI replied.
 export type StayOfferMaker=(bookingId:string,kind:'late'|'early',wanted:number|null)=>Promise<{offer:Row|null;reason:string}>;
 // With a model (and the guest's permission) any other question is understood in the guest's own words and answered
