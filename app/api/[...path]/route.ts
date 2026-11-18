@@ -1,3 +1,4 @@
+import {recordViews} from '../../../lib/property-views';
 import {aiJournal} from '../../../lib/ai-moves';
 import {orderHomeCleaning} from '../../../lib/home-order';
 import { waitUntil, env as workerEnv } from 'cloudflare:workers';
@@ -61,6 +62,7 @@ async function handle(request:Request, context:{params:Promise<{path:string[]}>}
     }
     if(request.method==='GET'&&route.join('/')==='public/catalog')return json(await new RentalService(env.DB,'').publicSearch(Object.fromEntries(new URL(request.url).searchParams),{syntheticPreview:env.TEST_DATA_ONLY==='1'}));
     if(request.method==='GET'&&route.join('/')==='public/matching'){const input=new URL(request.url).searchParams.get('q')||'{}';if(input.length>2500)return json({error:'Слишком длинные условия поиска.'},400);let filters;try{filters=JSON.parse(input);}catch{return json({error:'Проверьте формат условий поиска.'},400);}return json(await previewMatches(new RentalService(env.DB,''),filters));}
+    if(request.method==='POST'&&route.join('/')==='public/views'){let body;try{body=JSON.parse(await boundedRequestText(request,6000)||'{}');}catch{return json({error:'Проверьте формат запроса.'},400);}return json(await recordViews(env.DB,body));}
     if(request.method==='GET'&&route.length===3&&route[0]==='public'&&route[1]==='media')return json(await new RentalService(env.DB,'').publicMedia(route[2],env.BUCKET));
     if(route.length===2&&route[0]==='auth')return await authRequest(env.DB,request,route[1],'web',env);
     if(route.length===3&&route[0]==='mobile'&&route[1]==='auth')return await authRequest(env.DB,request,route[2],'mobile',env);

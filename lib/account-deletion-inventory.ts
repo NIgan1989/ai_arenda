@@ -22,6 +22,7 @@ export const accountDeletionColumns:Record<string,string>={
  "property_staff":"property_id,staff_id,owner_id,created_at",
  "venues":"id,owner_id,title,created_at",
  "venue_halls":"property_id,venue_id,created_at",
+ "property_views":"property_id,day,shown",
  "platform_commissions":"booking_id,owner_id,property_id,booking_amount,rate_bp,amount,mode,settings_version,created_at,managed",
  "owner_balance_entries":"id,owner_id,kind,amount,note,actor_id,request_key,created_at",
  "matching_preferences":"property_id,owner_id,enabled,updated_at",
