@@ -30,7 +30,9 @@ export function PropertyQuick({city,onSave,onGuestMode,onPlace,onReview,onClose,
  const patch=(value:Partial<ListingDraft>)=>setDraft(d=>({...d,...value,known:[...new Set([...d.known,...Object.keys(value)])]}));
  const guessed=(key:string)=>!draft.known.includes(key);
  // Не объявление, а уборка своего жилья (lib/home-ask.ts): форма ведёт в заказ уборки с тем, что уже понято из текста.
- const homeAsk=useMemo(()=>onHome?homeAskFromText(text):null,[text,onHome]);
+ // «Нет, это объявление»: человек сам решает, если ИИ ошибся. Новый текст спрашивает заново.
+ const [listing,setListing]=useState('');
+ const homeAsk=useMemo(()=>onHome&&listing!==text?homeAskFromText(text):null,[text,onHome,listing]);
  function read(){if(!text.trim())return;if(homeAsk&&onHome){onHome(homeAsk);return;}const r=readListingText(text,draft);setDraft(r.draft);setFound(r.found);setError('');setStep(1);}
  function reply(){if(!ask||!answer.trim())return;
   // «Сами», «сам убираю», «свой персонал»: nobody is ordered, the owner marks the place ready himself.
@@ -70,7 +72,7 @@ export function PropertyQuick({city,onSave,onGuestMode,onPlace,onReview,onClose,
    <PhotoGrid photos={photos} onChange={setPhotos} onBusy={setUploading}/>
    <Text style={q.hint}>Жильё, баня, сауна или зал: ИИ поймёт тип, гостей, цены, удобства, правила и адрес. Порядок не важен, фото можно добавить и потом.</Text>
    {!!onHome&&!homeAsk&&<Pressable accessibilityRole="button" accessibilityLabel="Не сдаёте жильё, нужна только уборка? Заказать уборку дома" onPress={()=>onHome()} style={({pressed})=>[q.homeLink,pressed&&{opacity:.55}]}><Text style={q.homeLinkText}>Не сдаёте, нужна только уборка?  <Text style={q.homeLinkGo}>Заказать уборку дома ›</Text></Text></Pressable>}
-   {!!homeAsk&&<View accessibilityLiveRegion="polite" style={q.homeAsk}><Text style={q.homeAskTitle}>Похоже, вам нужна уборка своего жилья</Text><Text style={q.homeAskText}>{'Объявление не нужно: закажем уборку'+(homeAsk.address?' по адресу '+homeAsk.address:'')+'. Цену поставите сами, ИИ подскажет.'}</Text></View>}
+   {!!homeAsk&&<View accessibilityLiveRegion="polite" style={q.homeAsk}><Text style={q.homeAskTitle}>Похоже, вам нужна уборка своего жилья</Text><Text style={q.homeAskText}>{'Объявление не нужно: закажем уборку'+(homeAsk.address?' по адресу '+homeAsk.address:'')+'. Цену поставите сами, ИИ подскажет.'}</Text><Pressable accessibilityRole="button" accessibilityLabel="Нет, это объявление для сдачи" onPress={()=>setListing(text)} hitSlop={8}><Text style={q.homeLinkGo}>Нет, это объявление ›</Text></Pressable></View>}
    <Pressable accessibilityRole="button" accessibilityState={{disabled:!text.trim()||uploading}} disabled={!text.trim()||uploading} onPress={read} style={[q.primary,(!text.trim()||uploading)&&q.primaryOff]}><Text style={q.primaryText}>{homeAsk?'✦  Заказать уборку':'✦  Заполнить с ИИ'}</Text></Pressable>
   </View>}
 

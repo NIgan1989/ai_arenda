@@ -8,12 +8,14 @@ export type HomeAsk={address:string;rooms?:number;kind:HomeKind;windows:number};
 
 const CLEAN=/(?:^|[^а-яё])(?:уборк|убрать|убраться|убир[аи]|клининг|уборщ|помыть|вымыть|генералк)/i;
 // Слова сдачи: цена за сутки или час, гости, «сдаю». С ними это объявление, даже если уборка упомянута.
-const RENT=/сда[юёв]|сдат|посуточ|почасов|в\s+сутки|за\s+сутки|\/\s*сут|за\s+ночь|в\s+час(?![а-яё])|за\s+час(?![а-яё])|\/\s*ч(?![а-яё])|гост[ея]|бронир|жильц|арендатор/i;
+const RENT=/сда[юёв]|сдат|посуточ|почасов|сутк|суток|в\s+день|за\s+день|в\s+сутки|за\s+сутки|\/\s*сут|за\s+ночь|в\s+час(?![а-яё])|за\s+час(?![а-яё])|\/\s*ч(?![а-яё])|гост[ея]|бронир|жильц|арендатор/i;
 
 export function homeAskFromText(text:string):HomeAsk|null{
  const t=String(text||'').trim();
  if(!t||!CLEAN.test(t)||RENT.test(t))return null;
  const {draft,found}=readListingText(t,emptyDraft(''));
+ // Цена за сутки, час или ночь в любом виде, который понимает разбор объявления («15 000 в день»), — это объявление.
+ if(['price','hourlyPrice','nightlyPrice','capacity'].some(k=>found.includes(k)))return null;
  const lower=t.toLowerCase();
  const kind:HomeKind=/ремонт|стройк/.test(lower)?'renovation':/генеральн|генералк/.test(lower)?'general':'regular';
  const w=/(\d{1,2})\s*(?:окн|окон)/.exec(lower)||/окн\S*\s*(\d{1,2})/.exec(lower);

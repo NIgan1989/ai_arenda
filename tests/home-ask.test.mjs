@@ -12,5 +12,7 @@ test('the new object form tells a cleaning of the owner\'s own home from a listi
  assert.equal(homeAskFromText('Однушка на Торайгырова 64, до 3 гостей, 15 000 в сутки, уборка 3 000'),null);
  assert.equal(homeAskFromText('Сдаю двушку, уборку делаю сама'),null);
  assert.equal(homeAskFromText('Баня на Лесной 5, до 10 гостей, 5 000 в час'),null);
+ assert.equal(homeAskFromText('Однушка на Торайгырова 64, 15 000 в день, уборка 3 000'),null);
+ assert.equal(homeAskFromText('Двушка, 12 000 сутки, нужна уборка после гостей'),null);
  assert.equal(homeAskFromText(''),null);
 });
