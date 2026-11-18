@@ -58,3 +58,13 @@ export function homeDescription(o: HomeOrder & { wishes?: unknown }) {
   const windows = homeWindows(o.windows), wishes = String(o.wishes || '').trim();
   return ['Уборка на дом: ' + homeKinds[homeKind(o.kind)].label.toLowerCase(), roomsLabel(o.rooms), ...(windows ? ['мойка окон: ' + windowsLabel(windows)] : [])].join(', ') + '. ' + HOME_SUPPLIES + (wishes ? ' Пожелания: ' + wishes : '');
 }
+
+// Чек-лист отчёта по виду уборки: исполнитель отмечает каждый пункт, заказчик видит их на приёмке.
+const CHECKS: Record<HomeKind, string[]> = {
+  regular: ['Пыль вытерта', 'Полы вымыты', 'Кухня и санузел убраны', 'Мусор вынесен'],
+  general: ['Пыль вытерта, шкафы и полки протёрты', 'Полы и плинтусы вымыты', 'Кухня и техника вымыты', 'Санузел вымыт', 'Труднодоступные места убраны', 'Мусор вынесен'],
+  renovation: ['Строительная пыль убрана со всех поверхностей', 'Следы краски и клея сняты', 'Полы вымыты', 'Кухня и санузел вымыты', 'Строительный мусор вынесен'],
+};
+export function homeChecklist(o: HomeOrder | null | undefined): string[] {
+  return [...CHECKS[homeKind(o?.kind)], ...(homeWindows(o?.windows) ? ['Окна вымыты: ' + windowsLabel(o?.windows)] : [])];
+}

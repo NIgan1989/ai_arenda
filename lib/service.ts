@@ -1019,15 +1019,31 @@ export class RentalService {
       if(!r[0].meta.changes)throw new DomainError('Задание изменилось. Обновите карточку.',409);
       return {message:'Владелец предупреждён: вы начнёте к '+clockLabel(start)+'.'};
     }
+    // «Выезжаю» и «Я на месте»: уборка без брони (заказ на дом, своя уборка владельца). Заказчик дома и ждёт:
+    // он узнаёт об этом сразу и видит на карте. После гостей приезд отмечает «Гостя нет, жильё свободно».
+    if((body.action==='on_way'||body.action==='arrived')&&j.assigned_to===this.userId){
+      const arrived=body.action==='arrived',t=now();
+      if(j.booking_id)throw new DomainError('Для уборки после гостей отметьте «Гостя нет, жильё свободно» или начните уборку.',409);
+      if(j.status!=='assigned')throw new DomainError('Отметить приезд можно по назначенной уборке до её начала.',409);
+      if(arrived?j.arrived_at:j.on_way_at||j.arrived_at)return {message:arrived?'Заказчик уже знает, что вы на месте.':'Заказчик уже знает, что вы выехали.'};
+      if(t<Number(j.start)-(arrived?3600:3*3600))throw new DomainError(arrived?'Отметить «Я на месте» можно не раньше чем за час до уборки.':'Отметить выезд можно не раньше чем за 3 часа до уборки.',409);
+      const r=await this.db.batch([
+        this.query(arrived?"UPDATE cleaning_jobs SET arrived_at=? WHERE id=? AND assigned_to=? AND status='assigned' AND version=? AND arrived_at IS NULL":"UPDATE cleaning_jobs SET on_way_at=? WHERE id=? AND assigned_to=? AND status='assigned' AND version=? AND on_way_at IS NULL",t,jobId,this.userId,j.version),
+        this.notify(j.owner_id,arrived?'Исполнитель на месте: «'+(j.title||'уборка')+'». Откройте дверь, уборка начнётся с вашего согласия.':'Исполнитель выехал на уборку «'+(j.title||'уборка')+'». Начало в '+clockLabel(Number(j.start))+'.',(arrived?'cleaner-arrived:':'cleaner-on-way:')+jobId,'owner'),
+        this.audit(jobId,arrived?'job.cleaner_arrived':'job.cleaner_on_way')]);
+      if(!r[0].meta.changes)throw new DomainError('Задание изменилось. Обновите карточку.',409);
+      return {message:arrived?'Заказчик знает, что вы на месте. Начните уборку, когда вас впустят.':'Заказчик знает, что вы выехали.'};
+    }
     if(body.action==='start' && j.assigned_to===this.userId) {
       if(j.start>now()+3600) throw new DomainError('Начать работу можно не раньше чем за час до задания.');
-      const r=await this.db.batch([this.query("UPDATE cleaning_jobs SET status='in_progress' WHERE id=? AND assigned_to=? AND status='assigned' AND version=?",jobId,this.userId,j.version),this.query("UPDATE property_operations SET readiness='cleaning',version=version+1,updated_at=? WHERE property_id=? AND active_booking_id IS NULL AND EXISTS(SELECT 1 FROM cleaning_jobs WHERE id=? AND status='in_progress')",now(),j.property_id,jobId),this.audit(jobId,'job.start_requested')]);
+      const r=await this.db.batch([this.query("UPDATE cleaning_jobs SET status='in_progress',arrived_at=CASE WHEN booking_id IS NULL THEN COALESCE(arrived_at,?) ELSE arrived_at END WHERE id=? AND assigned_to=? AND status='assigned' AND version=?",now(),jobId,this.userId,j.version),this.query("UPDATE property_operations SET readiness='cleaning',version=version+1,updated_at=? WHERE property_id=? AND active_booking_id IS NULL AND EXISTS(SELECT 1 FROM cleaning_jobs WHERE id=? AND status='in_progress')",now(),j.property_id,jobId),this.audit(jobId,'job.start_requested')]);
       if(!r[0].meta.changes) throw new DomainError('Статус задания изменился.',409);return {message:'Начало работы отмечено.'};
     }
     if(body.action==='submit' && j.assigned_to===this.userId) {
       await requireEvidence(this,jobId);
       const checklist=Array.isArray(body.checklist)?body.checklist:[];
-      if(checklist.length!==4||checklist.some((v:any)=>v!==true)) throw new DomainError('Подтвердите все пункты чек-листа.');
+      // A home cleaning has its own list by its kind (lib/home-cleaning.ts homeChecklist), never shorter than the usual four.
+      if(checklist.length<4||checklist.length>12||checklist.some((v:any)=>v!==true)) throw new DomainError('Подтвердите все пункты чек-листа.');
       const report=required(body.report,'Отчёт о работе',1500);
       if(j.status!=='in_progress')throw new DomainError('Сначала отметьте начало работы.',409);
       const r=await this.db.batch([this.query("UPDATE cleaning_jobs SET status='submitted',checklist=?,report=? WHERE id=? AND assigned_to=? AND status='in_progress' AND version=?",JSON.stringify(checklist),report,jobId,this.userId,j.version),this.query("UPDATE property_operations SET readiness='inspection',version=version+1,updated_at=? WHERE property_id=? AND readiness='cleaning' AND active_booking_id IS NULL AND EXISTS(SELECT 1 FROM cleaning_jobs WHERE id=? AND status='submitted')",now(),j.property_id,jobId),this.notify(j.owner_id,'Уборка отправлена на проверку. Прочитайте отчёт и примите работу.','submitted:'+jobId+':'+j.version,'owner'),this.audit(jobId,'job.submitted')]);

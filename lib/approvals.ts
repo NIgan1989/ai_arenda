@@ -6,6 +6,11 @@ import {feeTipText} from './cleaning-tip-text';
 import {riskAdvice,riskLabel,type BookingRisk} from './booking-risk-text';
 import type {Reliability} from './reliability-text';
 import {amenities} from './listings';
+import {homeChecklist,homeOrderOf} from './home-cleaning';
+// The checklist of a report: how many points are confirmed, and for a home cleaning what exactly was promised by its kind.
+const ticks=(j:Record<string,any>)=>{try{const v=JSON.parse(j.checklist||'[]');return Array.isArray(v)?v as boolean[]:[];}catch{return [];}};
+const checked=(j:Record<string,any>)=>{const t=ticks(j);return t.filter(Boolean).length+' из '+Math.max(4,t.length);};
+const reportDetail=(j:Record<string,any>)=>{const order=homeOrderOf(j.description),t=ticks(j);return order&&t.length?String(j.report||'')+'\n\nОтмечено исполнителем: '+homeChecklist(order).filter((_,k)=>t[k]).join('; ').toLowerCase()+'.':j.report;};
 type Row=Record<string,any>;
 export type Approval={id:string;kind:string;entityId:string;revision:string;title:string;subject:string;from:string;to:string;canDecide:boolean;expiresAt?:number;facts:[string,string][];acceptLabel:string;rejectLabel:string;requiresReason?:boolean;cleaningFee?:number;cleaningBudget?:number;detail?:string;price?:PriceTip;window?:WindowTip;stay?:StayTip;forecast?:ForecastTip;listing?:ListingTip;cleaningTip?:CleaningTip;risk?:RiskTip;depositLabel?:string;unready?:string;reliability?:Reliability};
 export type RiskTip=BookingRisk&{label:string;advice:string};
@@ -45,7 +50,7 @@ export function approvalCards(data:Row,role:Role,userId:string,t:number):Approva
  for(const j of data.jobs||[]){
   if(role==='guest'||role==='owner'&&j.owner_id!==userId||role==='cleaner'&&j.assigned_to!==userId&&j.status!=='open')continue;
   if(j.status==='open'&&j.end>t)for(const a of (data.applications||[]).filter((a:Row)=>a.job_id===j.id&&a.status==='pending'&&(role==='owner'||a.user_id===userId)))cards.push({id:'application:'+a.id,kind:'application',entityId:j.id,revision:JSON.stringify([j.version,j.start,j.end,j.fee,a.id,a.status,a.created_at]),title:'Отклик на уборку',subject:j.title,from:role==='owner'?(a.name||'Исполнитель'):'Вы',to:role==='owner'?'Вам':'Владельцу',canDecide:role==='owner',expiresAt:j.end,facts:[['Начало',date(j.start)],['Окончание',date(j.end)],['Оплата за работу',money(j.fee)],['Исполнитель',a.name||'Исполнитель']],detail:a.experience,acceptLabel:'Назначить исполнителя',rejectLabel:'Отклонить отклик'});
-  if(j.status==='submitted')cards.push({id:'report:'+j.id,kind:'report',entityId:j.id,revision:JSON.stringify([j.version,j.status,j.submitted_at,j.assigned_to,j.report]),title:'Приёмка уборки',subject:j.title,from:role==='owner'?'Исполнитель':'Вы',to:role==='owner'?'Вам':'Владельцу',canDecide:role==='owner',facts:[['Оплата за работу',money(j.fee)],['Чек-лист',(JSON.parse(j.checklist||'[]') as boolean[]).filter(Boolean).length+' из 4'],['Отчёт передан',j.submitted_at?date(j.submitted_at):'Ранее, время не зафиксировано']],detail:j.report,acceptLabel:'Принять работу',rejectLabel:'Вернуть на доработку',requiresReason:true});
+  if(j.status==='submitted')cards.push({id:'report:'+j.id,kind:'report',entityId:j.id,revision:JSON.stringify([j.version,j.status,j.submitted_at,j.assigned_to,j.report]),title:'Приёмка уборки',subject:j.title,from:role==='owner'?'Исполнитель':'Вы',to:role==='owner'?'Вам':'Владельцу',canDecide:role==='owner',facts:[['Оплата за работу',money(j.fee)],['Чек-лист',checked(j)],['Отчёт передан',j.submitted_at?date(j.submitted_at):'Ранее, время не зафиксировано']],detail:reportDetail(j),acceptLabel:'Принять работу',rejectLabel:'Вернуть на доработку',requiresReason:true});
  }
  // The AI administrator's price advice: the owner answers with one button, nothing changes without it.
  if(role==='owner')for(const p of data.priceSuggestions||[])if(p.owner_id===userId&&p.status==='pending'&&p.expires_at>t){

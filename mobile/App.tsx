@@ -10,7 +10,7 @@ import { AppState,BackHandler,KeyboardAvoidingView,Linking,Platform,Pressable,Sc
 import { SafeAreaProvider,SafeAreaView } from 'react-native-safe-area-context';
 import {NativeChats,type NativeChatInitial} from './src/NativeChats';
 import {StayRequest,CleaningRequest,HomeCleaningOrder} from './src/StayRequest';
-import {HOME_TYPE} from '../lib/home-cleaning';
+import {HOME_TYPE,homeChecklist,homeOrderOf} from '../lib/home-cleaning';
 import {targetPin,type MapTarget} from './src/map-memory';
 import {DealCard,RecordFacts} from './src/RecordCard';
 import {bookingThread,cleaningThread,jobThread} from '../lib/process-threads';
@@ -574,7 +574,10 @@ function Chat(){
           !owner&&j.status==='open'&&application?.status==='pending'&&{title:'Отозвать отклик',kind:'side',onPress:()=>confirm('jobs/'+id,{action:'withdraw'},'Отозвать отклик на эту уборку','jobs')},
           // The guest left without a word: the cleaner at the door says so, and the owner (or the autopilot) confirms the checkout.
           assigned&&j.status==='assigned'&&!!j.booking_id&&!j.checkout_confirmed&&clock>=j.start-1800&&{title:'Гостя нет, жильё свободно',kind:'main',swipe:'Проведите: гостя нет, жильё свободно',onSwipe:()=>swiped('jobs/'+id,{action:'vacant'},'my-jobs'),onPress:()=>confirm('jobs/'+id,{action:'vacant'},'Сообщить владельцу, что гость ушёл и жильё свободно','my-jobs')},
-          assigned&&j.status==='assigned'&&{title:'Начать уборку',kind:'main',disabled:!j.checkout_confirmed,swipe:'Проведите: начинаю уборку',onSwipe:()=>swiped('jobs/'+id,{action:'start'},'my-jobs'),onPress:()=>confirm('jobs/'+id,{action:'start'},'Отметить начало работы','my-jobs')},
+          // A cleaning without a booking: the customer is at home and waits, so the performer says «Выезжаю» and «Я на месте».
+          assigned&&j.status==='assigned'&&j.booking_id===null&&!j.arrived_at&&clock>=j.start-3600&&{title:'Я на месте',kind:'main',swipe:'Проведите: я на месте',onSwipe:()=>swiped('jobs/'+id,{action:'arrived'},'my-jobs'),onPress:()=>confirm('jobs/'+id,{action:'arrived'},'Сообщить заказчику, что вы на месте','my-jobs')},
+          assigned&&j.status==='assigned'&&j.booking_id===null&&!j.arrived_at&&!j.on_way_at&&clock>=j.start-3*3600&&{title:'Выезжаю',kind:clock>=j.start-3600?'side':'main',onPress:()=>swiped('jobs/'+id,{action:'on_way'},'my-jobs')},
+          assigned&&j.status==='assigned'&&(j.booking_id!==null||!!j.arrived_at||clock<j.start-3600)&&{title:'Начать уборку',kind:'main',disabled:!j.checkout_confirmed,swipe:'Проведите: начинаю уборку',onSwipe:()=>swiped('jobs/'+id,{action:'start'},'my-jobs'),onPress:()=>confirm('jobs/'+id,{action:'start'},'Отметить начало работы','my-jobs')},
           assigned&&j.status==='assigned'&&clock>=j.start-3*3600&&clock<=j.start+2700&&{title:'Опаздываю',kind:'side',onPress:()=>confirm('jobs/'+id,{action:'late'},'Предупредить владельца: вы начнёте на полчаса позже, время уборки сдвинется','my-jobs')},
           // Cannot come after all: said in advance, the cleaning goes back to the search and the owner hears at once.
           assigned&&j.status==='assigned'&&{title:'Отказаться от задания',kind:'danger',onPress:()=>confirm('jobs/'+id,{action:'release'},'Отказаться от задания','my-jobs','Уборка вернётся в поиск, владелец сразу узнает.')},
@@ -585,7 +588,7 @@ function Chat(){
         ]}/>
       </Fragment>;
     })}{payload.role==='owner'&&m.id!=='deal'&&<Button title="Создать уборку" secondary disabled={busy} onPress={()=>send('Создать уборку')}/>}</View>;
-    if(m.block==='report')return <Report busy={busy||!!m.done} onSubmit={(body:Row)=>perform('jobs/'+payload.id,{action:'submit',...body},m.id,'my-jobs')}/>;
+    if(m.block==='report')return <Report items={reportItems(data.jobs.find((j:Row)=>j.id===payload.id))} busy={busy||!!m.done} onSubmit={(body:Row)=>perform('jobs/'+payload.id,{action:'submit',...body},m.id,'my-jobs')}/>;
     if(m.block==='notifications')return <View>{data.notifications.slice(0,20).map((n:Row)=><View style={s.card} key={n.id}><Text style={s.text}>{n.body}</Text><Text style={s.meta}>{date(n.created_at)}</Text></View>)}</View>;
     return null;
   }
@@ -627,9 +630,12 @@ function Chat(){
     {flow?<View style={s.composerWrap}>{flow?.questions[flow.index].choices&&<View style={s.buttonRow}>{flow.questions[flow.index].choices!.map(choice=><Button key={choice.value} title={choice.label} secondary disabled={busy} onPress={()=>send(choice.label)}/>)}</View>}{!!flow&&<View style={s.flowProgress}><Text style={s.flowLabel}>Вопрос {flow.index+1} из {flow.questions.length}</Text><View style={s.buttonRow}>{flow.index>0&&<Button title="Назад" secondary disabled={busy} onPress={()=>{const previous={...flow,index:flow.index-1};setFlow(previous);say(previous.questions[previous.index].text);}}/>}<Button title="Стоп" secondary disabled={busy} onPress={()=>send('Стоп')}/></View></View>}<View style={s.composer}><TextInput ref={composer} accessibilityLabel="Ваш ответ" placeholder="Ваш ответ…" placeholderTextColor={C.muted} value={input} onChangeText={setInput} style={s.input} maxLength={2500} multiline submitBehavior="submit" onSubmitEditing={()=>send()} editable={ready&&!busy}/><Pressable accessibilityRole="button" accessibilityLabel="Отправить сообщение" accessibilityState={{disabled:!ready||busy||!input.trim()}} disabled={!ready||busy||!input.trim()} onPress={()=>send()} style={[s.send,(!input.trim()||busy)&&s.disabled]}><Text style={s.sendText}>{busy?'Ждите':'Отправить'}</Text></Pressable></View><Text style={s.footnote}>Данные формы отправятся после проверки и подтверждения.</Text></View>:null}</>}</View></PageTransition></View>}</View>
   </KeyboardAvoidingView></SafeAreaView></ActivityClockProvider>;
 }
-function Report({busy,onSubmit}:{busy:boolean;onSubmit:(body:Row)=>void}){
-  const [checks,setChecks]=useState([false,false,false,false]),[report,setReport]=useState('');
-  return <View style={s.card}>{['Постельное бельё заменено','Санузел и кухня убраны','Мусор вынесен','Жильё проверено перед заездом'].map((label,i)=><Pressable key={label} accessibilityRole="checkbox" accessibilityState={{checked:checks[i],disabled:busy}} disabled={busy} onPress={()=>setChecks(prev=>prev.map((v,k)=>k===i?!v:v))} style={s.keyval}><Text style={s.text}>{checks[i]?'☑':'☐'}  {label}</Text></Pressable>)}<TextInput accessibilityLabel="Текст отчёта" style={s.field} placeholder="Что сделано, есть ли замечания?" placeholderTextColor={C.muted} multiline value={report} onChangeText={setReport} maxLength={1500} editable={!busy}/><SwipeConfirm label="Проведите: отправить отчёт владельцу" disabled={busy||checks.some(v=>!v)||!report.trim()} onConfirm={()=>onSubmit({checklist:checks,report})}/></View>;
+// What the performer confirms in the report: a home cleaning has its own list by its kind, the rest keep the usual four.
+const REPORT_ITEMS=['Постельное бельё заменено','Санузел и кухня убраны','Мусор вынесен','Жильё проверено перед заездом'];
+function reportItems(job?:Row){const order=homeOrderOf(job?.description);return order?homeChecklist(order):REPORT_ITEMS;}
+function Report({items=REPORT_ITEMS,busy,onSubmit}:{items?:string[];busy:boolean;onSubmit:(body:Row)=>void}){
+  const [checks,setChecks]=useState(()=>items.map(()=>false)),[report,setReport]=useState('');
+  return <View style={s.card}>{items.map((label,i)=><Pressable key={label} accessibilityRole="checkbox" accessibilityState={{checked:checks[i],disabled:busy}} disabled={busy} onPress={()=>setChecks(prev=>prev.map((v,k)=>k===i?!v:v))} style={s.keyval}><Text style={s.text}>{checks[i]?'☑':'☐'}  {label}</Text></Pressable>)}<TextInput accessibilityLabel="Текст отчёта" style={s.field} placeholder="Что сделано, есть ли замечания?" placeholderTextColor={C.muted} multiline value={report} onChangeText={setReport} maxLength={1500} editable={!busy}/><SwipeConfirm label="Проведите: отправить отчёт владельцу" disabled={busy||checks.some(v=>!v)||!report.trim()} onConfirm={()=>onSubmit({checklist:checks,report})}/></View>;
 }
 // Every tap is noted, so a request that follows it lights the loading line (background refreshes do not).
 // Bookings and cleanings from now to later, then the past; a group gets its title where it starts.

@@ -66,6 +66,7 @@
 -- migration 0062_property_staff.sql sha256:1404d19d85c70f739126976e6bb21eba091d5529d7a5c36d19fb08575daf3989
 -- migration 0063_venues.sql sha256:df0f7d13b7b869accb211edd5c3b1b84d7469ac39270b1eb53c12d626d7a29b2
 -- migration 0064_banquet.sql sha256:55ed28d55e08227ed7913885a77700d65b8c231ca08c16a13635ee283f389fc5
+-- migration 0065_job_arrival.sql sha256:4ee72df68e075685c228826800764c7227b892e77a173fa4fe492fa97ff19abd
 
 -- table access_receipts
 CREATE TABLE access_receipts (id TEXT PRIMARY KEY,property_id TEXT NOT NULL,entity_kind TEXT NOT NULL,entity_id TEXT NOT NULL,user_id TEXT NOT NULL,created_at INTEGER NOT NULL,expires_at INTEGER NOT NULL);
@@ -476,7 +477,7 @@ CREATE TABLE `cleaning_jobs` (
 	`assigned_to` text,
 	`checklist` text DEFAULT '[]' NOT NULL,
 	`report` text DEFAULT '' NOT NULL,
-	`created_at` integer NOT NULL, started_at INTEGER, submitted_at INTEGER, completed_at INTEGER, version INTEGER NOT NULL DEFAULT 1, settled_at INTEGER, overdue_step INTEGER NOT NULL DEFAULT 0,
+	`created_at` integer NOT NULL, started_at INTEGER, submitted_at INTEGER, completed_at INTEGER, version INTEGER NOT NULL DEFAULT 1, settled_at INTEGER, overdue_step INTEGER NOT NULL DEFAULT 0, on_way_at integer, arrived_at integer,
 	FOREIGN KEY (`property_id`) REFERENCES `properties`(`id`) ON UPDATE no action ON DELETE no action
 );
 
