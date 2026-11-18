@@ -35,6 +35,8 @@ type Props = {
   kind?: string;
   choice?: { id: string; title: string };
   onKind?: (category: Category, kind: string | null) => void;
+  // Guest only: a service that is ordered, not looked for on the map (a cleaning of one's own home).
+  onService?: () => void;
   // The picker opened or closed: the sheet makes room for it and returns to where it was.
   onPicker?: (open: boolean) => void;
   children?: ReactNode;
@@ -46,7 +48,7 @@ type Props = {
 const unbroken = (line: string) => line.replace(/ ·/g, '\u00a0·').replace(/(\d) (?=[\d₸а-яё])/gi, '$1\u00a0').replace(/(^|[ \u00a0])до (?=\d)/g, '$1до\u00a0').replace(/–/g, '–\u2060');
 
 // The default state of the bottom sheet: one AI line, a row of chips and the "Сейчас" card when there is one.
-export function MapSheetHead({ role, text, onText, onSend, onChip, chips = true, busy = false, summary, onRefine, refining = false, now, onNow, counts, category = 'stay', kind = '', choice, onKind, onPicker, children }: Props) {
+export function MapSheetHead({ role, text, onText, onSend, onChip, chips = true, busy = false, summary, onRefine, refining = false, now, onNow, counts, category = 'stay', kind = '', choice, onKind, onService, onPicker, children }: Props) {
   const line = headLine(role, Date.now(), category);
   // The picker takes the place of the chips: a list of the categories, one of them opened; a tap on a type chooses and closes.
   const [picking, setPicking] = useState(false);
@@ -89,6 +91,14 @@ export function MapSheetHead({ role, text, onText, onSend, onChip, chips = true,
             </View>
           );
         })}
+        {!!onService && <View style={[s.group, s.groupNext]}>
+          <Pressable accessibilityRole="button" accessibilityLabel="Уборка: закажите уборку у себя дома" disabled={busy} onPress={() => { show(false); onService(); }} style={({ pressed }) => [s.groupHead, pressed && s.groupPressed]}>
+            <KindIcon id="cleaning" size={18} color={C.inkSoft} />
+            <Text style={s.groupTitle}>Уборка</Text>
+            <Text numberOfLines={1} style={s.groupHint}>У вас дома</Text>
+            <Image source={chevron} style={s.groupChevron} accessibilityIgnoresInvertColors />
+          </Pressable>
+        </View>}
       </View>}
       {chips && !picker && <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="handled" style={s.chipsScroll} contentContainerStyle={s.chips}>
         {!!onKind && !!choice && (

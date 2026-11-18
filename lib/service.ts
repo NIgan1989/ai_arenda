@@ -35,6 +35,7 @@ import {offerPriceAdvice,ownerPriceSuggestions,decidePriceSuggestion} from './pr
 import {guestStayOffers,decideStayOffer} from './stay-offers';
 import {guestFavorites} from './favorites';
 import {staffPlaces} from './staff';
+import {homePlaces,homeDeals} from './home-order';
 import {venuesFor} from './venue';
 import {ownerForecasts,decideForecast} from './load-forecast';
 import {ownerListingTips,decideListingTip} from './listing-quality';
@@ -256,6 +257,10 @@ export class RentalService {
     if(role==='guest'){(result as Row).stayOffers=await guestStayOffers(this.db,this.userId,state.serverTime);Object.assign(result,await guestFavorites(this.db,this.userId));}
     // «Смена»: how many objects this person marks guests for (lib/staff.ts), in any role.
     (result as Row).staffPlaces=await staffPlaces(this.db,this.userId);
+    // The private addresses of home cleanings (lib/home-order.ts): a repeated order takes two taps, in any role.
+    (result as Row).homePlaces=await homePlaces(this);
+    // What executors of the city really took home orders for: the price advice of a new order leans on it.
+    if(role!=='cleaner')(result as Row).homeDeals=await homeDeals(this,String((result as Row).profile?.city||'Павлодар'));
     const assistantSettings={...defaultAssistantSettings};
     const administrator=await readAdministratorState(this.db,this.userId,role);
     return {...result,administrator,approvals:approvalCards(result,role,this.userId,state.serverTime),assistantSettings,assistantBrief:assistantBrief(result,role,assistantSettings,state.serverTime),workspaces:{[role]:operationOverview(result,this.userId,role,state.serverTime)}};

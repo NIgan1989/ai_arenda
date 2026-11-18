@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {fixture,load,now,iso} from './helpers/platform.mjs';
-const {homePrice,homeMinutes,homeDescription,homeTitle}=await load('home-cleaning');
-const {orderHomeCleaning,homePlaces}=await load('home-order');
+const {homePrice,homeMinutes,homeDescription,homeTitle,homeAdvice,homeOrderOf}=await load('home-cleaning');
+const {orderHomeCleaning,homePlaces,homeDeals}=await load('home-order');
 
 test('the price of a home cleaning grows with its kind, rooms and windows',()=>{
  assert.equal(homePrice({kind:'regular',rooms:1}),6000);
@@ -12,7 +12,18 @@ test('the price of a home cleaning grows with its kind, rooms and windows',()=>{
  assert.equal(homePrice({kind:'nonsense',rooms:99}),homePrice({kind:'regular',rooms:6}));
  assert.equal(homeMinutes({kind:'regular',rooms:2}),120);assert.equal(homeMinutes({kind:'general',rooms:2,windows:2}),270);
  assert.equal(homeTitle(2),'Дом · 2 комнаты');
- assert.equal(homeDescription({kind:'general',rooms:2,windows:3,wishes:' Есть кот '}),'Уборка на дом: генеральная, 2 комнаты, мойка окон: 3 окна. Пожелания: Есть кот');
+ assert.equal(homeDescription({kind:'general',rooms:2,windows:3,wishes:' Есть кот '}),'Уборка на дом: генеральная, 2 комнаты, мойка окон: 3 окна. Средства и инвентарь свои. Пожелания: Есть кот');
+});
+
+test('the price advice follows what executors of the city really take such orders for',()=>{
+ const order={kind:'general',rooms:2,windows:3};
+ assert.deepEqual(homeOrderOf(homeDescription({...order,wishes:'Кот'})),order);assert.equal(homeOrderOf('Уборка после гостей'),null);
+ assert.deepEqual(homeOrderOf(homeDescription({kind:'regular',rooms:5})),{kind:'regular',rooms:5,windows:0});
+ // Few orders: the advice is the grid.
+ assert.deepEqual(homeAdvice(order,[{kind:'regular',rooms:1,fee:9000}]),{fee:19000,market:false,deals:1});
+ // Enough orders: the median of «paid / grid» corrects it; a wild sum does not count.
+ const deals=[[1,7500],[1,7500],[2,10000],[3,12000],[2,10000],[1,100]].map(([rooms,fee])=>({kind:'regular',rooms,fee}));
+ assert.deepEqual(homeAdvice({kind:'regular',rooms:2},deals),{fee:10000,market:true,deals:5});
 });
 
 test('a guest orders a cleaning of their own home and the usual process takes it',async()=>{
@@ -43,9 +54,15 @@ test('a guest orders a cleaning of their own home and the usual process takes it
  assert.equal(f.db.raw.prepare("SELECT COUNT(*) n FROM properties WHERE owner_id='guest'").get().n,1);
 });
 
-test('an order cannot be cheaper than the price of the service or go to another person\'s address',async()=>{
+test('the customer sets the price, and an order cannot go to another person\'s address',async()=>{
  const f=await fixture(),start=iso(now()+86400);
- await assert.rejects(orderHomeCleaning(f.guest,{address:'ул. Тестовая, 5',rooms:2,kind:'general',start,fee:1000,requestKey:'a'}),/Цена/);
+ await assert.rejects(orderHomeCleaning(f.guest,{address:'ул. Тестовая, 5',rooms:2,kind:'general',start,fee:500,requestKey:'a'}),/Цена/);
+ // Below the advice is the customer's right; the order is counted in the market only once an executor took it.
+ const cheap=await orderHomeCleaning(f.guest,{address:'ул. Тестовая, 5',rooms:2,kind:'general',start,fee:9000,requestKey:'a2'});assert.equal(cheap.fee,9000);
+ assert.deepEqual(await homeDeals(f.guest,'Павлодар'),[]);
+ await f.cleaner.jobAction(cheap.id,{action:'apply'});await f.guest.jobAction(cheap.id,{action:'assign',applicationId:f.db.raw.prepare('SELECT id FROM applications WHERE job_id=?').get(cheap.id).id});
+ assert.deepEqual(await homeDeals(f.guest,'Павлодар'),[{kind:'general',rooms:2,windows:0,fee:9000}]);
+ assert.deepEqual((await f.guest.roleState('owner')).homeDeals.length,1);
  await assert.rejects(orderHomeCleaning(f.guest,{propertyId:f.property,rooms:1,kind:'regular',start,requestKey:'b'}),/адрес недоступен/);
  await assert.rejects(orderHomeCleaning(f.guest,{address:'ул. Тестовая, 5',rooms:1,kind:'regular',start:'когда-нибудь',requestKey:'c'}),/когда нужна уборка/);
  const {commandRole}=await load('access');assert.deepEqual(commandRole('home-cleaning',{}),['guest','owner']);

@@ -9,7 +9,8 @@ const lateStay=(b:Record<string,any>)=>({start:b.start,end:b.end,arrival_eta:b.t
 import { AppState,BackHandler,KeyboardAvoidingView,Linking,Platform,Pressable,ScrollView,Text,TextInput,View } from 'react-native';
 import { SafeAreaProvider,SafeAreaView } from 'react-native-safe-area-context';
 import {NativeChats,type NativeChatInitial} from './src/NativeChats';
-import {StayRequest,CleaningRequest} from './src/StayRequest';
+import {StayRequest,CleaningRequest,HomeCleaningOrder} from './src/StayRequest';
+import {HOME_TYPE} from '../lib/home-cleaning';
 import {targetPin,type MapTarget} from './src/map-memory';
 import {DealCard,RecordFacts} from './src/RecordCard';
 import {bookingThread,cleaningThread,jobThread} from '../lib/process-threads';
@@ -317,6 +318,12 @@ function Chat(){
       const items=state.jobs.filter((j:Row)=>role==='owner'?j.owner_id===state.user.id:intent==='my-jobs'?j.assigned_to===state.user.id||state.applications.some((a:Row)=>a.job_id===j.id&&a.user_id===state.user.id):j.status==='open'&&j.end>Date.now()/1000&&(!state.profile?.city||j.city.toLowerCase()===state.profile.city.toLowerCase()));
       say(items.length?(intent==='jobs'?'Вот доступные уборки. Адрес появится после назначения.':'Вот ваши задания и их текущий статус.'):'Сейчас заданий по этому запросу нет.','jobs',{ids:items.map((j:Row)=>j.id),role});return;
     }
+    // Уборка на дом: её заказывает гость или владелец, роль владельца подключается самим заказом.
+    if(intent==='home-cleaning'||intent.startsWith('home-cleaning:')){
+      if(!state.user){pending.current=intent;say('Чтобы заказать уборку, войдите или создайте аккаунт.','auth',{intent});return;}
+      if(selectedRole==='cleaner'){say('Уборку на дом заказывают в роли гостя или владельца. Нажмите «Сменить роль».');return;}
+      say('Закажем уборку вашего дома.','home-order',{propertyId:intent.slice(14)||undefined,requestKey:uid()});return;
+    }
     if(intent==='job'){
       if(!ensure('owner',intent,state))return;setActor('owner');catalog(state,'job');return;
     }
@@ -327,6 +334,7 @@ function Chat(){
     }
     if(intent.startsWith('job:')){
       if(!ensure('owner',intent,state))return;const id=intent.slice(4);if(!state.ownProperties.some((p:Row)=>p.id===id)){say('Жильё недоступно.');return;}
+      if(state.ownProperties.find((p:Row)=>p.id===id)?.details?.type===HOME_TYPE){say('Закажем уборку вашего дома.','home-order',{propertyId:id,requestKey:uid()});return;}
       say('Когда и что нужно убрать?','job-form',{propertyId:id});return;
     }
     if(intent==='bookings'||intent==='owner-bookings'){
@@ -336,6 +344,17 @@ function Chat(){
     }
     if(intent==='demo'){if(!state.user){ensure('guest',intent,state);return;}say('Добавлю две учебных объекта и уборку. Их увидите только вы. Реальных заездов и выплат по ним нет.','confirm',{path:'demo',body:{},after:selectedRole==='owner'?'own-properties':selectedRole==='cleaner'?'jobs':'properties',title:'Добавить учебные данные'});return;}
     if(intent==='notifications'){if(!state.user){ensure('guest',intent,state);return;}say(state.notifications.length?'Последние события:':'Пока новых событий нет.','notifications');return;}
+  }
+  // Заказ уборки на дом. Ведётся он в кабинете владельца («Мой дом»): гостя переводим туда и открываем заказ.
+  async function orderHome(body:Row,id:string){
+    if(locked.current)return;locked.current=true;setBusy(true);
+    try{
+      const result=await request('/api/home-cleaning',body,undefined,id+':home-cleaning');finish(id,result.message||'Заказ принят');
+      if(activeRoleRef.current!=='owner')await hydrate('owner');else await load();
+      say(result.message||'Заказ принят. Ищем исполнителя.');
+      if(result?.id)openDeal('job',result.id);
+    }catch(e){await handleError(e);}
+    finally{locked.current=false;setBusy(false);}
   }
   async function perform(path:string,body:Row,id:string,after?:string){
     if(locked.current)return;locked.current=true;setBusy(true);
@@ -391,6 +410,7 @@ function Chat(){
       if(/сдать|сдаю|сдавать|добав.*кварт|подключ.*кварт/i.test(text)){run('property',state);return;}
       if(/изменить.*(?:профил|анкет)/i.test(text)){run('profile',state);return;}
       if(/хочу работ|ищу работ|стать.*исполн|работать на убор/i.test(text)){run('cleaner-profile',state);return;}
+      if(selectedRole==='guest'&&/нужна убор|заказать убор|уборк\S* (?:на дом|дома|квартир)|убрать(?:ся)? (?:в |у меня|дом|квартир)/i.test(text)){run('home-cleaning',state);return;}
       if(/нужна убор|создать убор|заказать убор|найти.*(?:уборщ|исполнител)/i.test(text)){run('job',state);return;}
       if(/мои квартир|мо[иё] жиль|мои объект/i.test(text)){run('own-properties',state);return;}
       if(/уборк.*(?:квартир|жиль|объект)|уборк.*моих|уборки владельца/i.test(text)){run('owner-jobs',state);return;}
@@ -430,6 +450,7 @@ function Chat(){
     scrollMessage.current=null;
     if(intent==='add-property'){setPageId('properties');run('property');return;}
     if(intent==='job'){setPageId('overview');run('job');return;}
+    if(intent==='home-cleaning'||intent.startsWith('home-cleaning:')){setPageId('overview');run(intent);return;}
     if(!intent.startsWith('property:'))return;
     const id=intent.slice(9);
     if(!data.properties.some((p:Row)=>p.id===id)){setPageId('catalog');return;}
@@ -486,6 +507,7 @@ function Chat(){
     if(m.block==='review')return review(m);
     if(m.block==='stay-form'){const property=data.properties.find((p:Row)=>p.id===payload.propertyId);return property?<StayRequest property={property} busy={busy} done={m.done} result={m.result} onQuote={body=>request('/api/quote',body)} onConfirm={body=>perform('bookings',{...body,requestKey:payload.requestKey},m.id,'bookings')}/>:<Text style={s.meta}>Жильё больше недоступно.</Text>;}
     if(m.block==='job-form'){const property=data.ownProperties.find((p:Row)=>p.id===payload.propertyId);return property?<CleaningRequest property={property} busy={busy} done={m.done} result={m.result} onSubmit={body=>perform('jobs',body,m.id,'owner-jobs')}/>:<Text style={s.meta}>Жильё недоступно.</Text>;}
+    if(m.block==='home-order')return <HomeCleaningOrder places={(data as Row).homePlaces||[]} deals={(data as Row).homeDeals||[]} city={data.profile?.city||'Павлодар'} propertyId={payload.propertyId} busy={busy} done={m.done} result={m.result} onSubmit={body=>orderHome({...body,requestKey:payload.requestKey},m.id)}/>;
     if(m.block==='confirm')return <View style={s.card}><Text accessibilityRole="header" style={s.cardTitle}>{payload.title}</Text><Text style={s.text}>{payload.subject||'Подтверждение действия'}</Text>{!!payload.note&&<Text style={s.text}>{payload.note}</Text>}<Text style={s.meta}>{payload.dates}{payload.amount!==undefined?' · '+money(payload.amount):''}</Text><Button title={m.done?(m.result||'Действие закрыто'):payload.title} disabled={busy||m.done} onPress={()=>perform(payload.path,payload.body,m.id,payload.after)}/>{!m.done&&<Button title={payload.body?.action==='cancel'?'Не отменять':'Отменить'} secondary disabled={busy} onPress={()=>finish(m.id,'Отменено')}/>}</View>;
     if(m.block==='help')return <View style={s.suggestions}>{['Хочу снять жильё','Хочу сдать жильё','Хочу работать на уборке','Мои брони','Что нового'].map(t=><Button key={t} title={t} secondary disabled={busy} onPress={()=>send(t)}/>)}</View>;
     if(m.block==='property-quick')return m.done?<Text style={s.meta}>{m.result||'Готово'}</Text>:<PropertyQuick city={data.profile?.city||'Павлодар'} onSave={body=>request('/api/listings',body)} onGuestMode={body=>request('/api/operations/matching/preference',body,undefined,undefined,'owner')} onReview={body=>request('/api/operations/reviews/request',body,undefined,undefined,'owner')} onPlace={body=>request('/api/operations/map/place',body,undefined,undefined,'owner')} onClose={()=>finish(m.id,'Добавление отменено')} onMap={async()=>{finish(m.id,'Жильё добавлено');await load();setPageId('map');}} onDone={async saved=>{finish(m.id,'Жильё добавлено');const state=await load();say(saved.message);catalog(state,'owner');}}/>;

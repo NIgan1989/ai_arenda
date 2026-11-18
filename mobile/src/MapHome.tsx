@@ -378,7 +378,7 @@ function GuestPanel({setScanning,setQuiet,accountId,data,mapData,publish,selecte
  const formOnly=refine&&snap>0;
  // Where the sheet stood before the category picker opened: it returns there when the picker closes.
  const before=useRef(0);
- const head=<MapSheetHead role="guest" text={asked} onText={setAsked} onSend={ask} onChip={chip} chips={!preview&&!formOnly} category={categoryOf(draft)} kind={draft.kinds.length===1?draft.kinds[0]:''} choice={kindChoice(draft)} onKind={(c,k)=>{setAsked('');const next=withKind(draft,c,k);change(next);/* Another category is another map: its places are shown at once, not the homes left from before. */if(categoryOf(next)!==categoryOf(draft))void find(next);}} onPicker={open=>{if(open){before.current=snap;if(snap<1)expand(1);}else if(before.current<1&&snap===1)expand(0);}} busy={working} summary={guestSummary(freshDraft(draft))} onRefine={toggleRefine} refining={refining} now={null} onNow={()=>{}}>
+ const head=<MapSheetHead role="guest" text={asked} onText={setAsked} onSend={ask} onChip={chip} chips={!preview&&!formOnly} category={categoryOf(draft)} kind={draft.kinds.length===1?draft.kinds[0]:''} choice={kindChoice(draft)} onKind={(c,k)=>{setAsked('');const next=withKind(draft,c,k);change(next);/* Another category is another map: its places are shown at once, not the homes left from before. */if(categoryOf(next)!==categoryOf(draft))void find(next);}} onService={()=>onIntent('home-cleaning')} onPicker={open=>{if(open){before.current=snap;if(snap<1)expand(1);}else if(before.current<1&&snap===1)expand(0);}} busy={working} summary={guestSummary(freshDraft(draft))} onRefine={toggleRefine} refining={refining} now={null} onNow={()=>{}}>
   {!!hint&&<View style={h.picked}><Text accessibilityRole={hint.error?'alert':undefined} accessibilityLiveRegion="polite" style={hint.error?h.error:h.note}>{hint.text}</Text>{!!hint.ask&&<Action secondary title="Спросить ИИ-администратора" onPress={()=>onAsk(hint.ask!)}/>}</View>}
   {!!error&&<Text accessibilityRole="alert" style={h.error}>{error}</Text>}
   {!!nav.error&&<Text accessibilityRole="alert" style={h.error}>{nav.error}</Text>}
@@ -432,7 +432,7 @@ function OwnerPanel({accountId,data,mapData,publish,snap,showNow,expand,onHead,o
  useEffect(()=>{setTab('today');},[flat?.id]);
  if(flat)return <View style={h.block}>
   <HeadSlot onHeight={onHead}><FlatHubHead flat={flat} data={data} now={serverNow(data)} tab={tab} open={snap>0} onTab={next=>{setTab(next);if(snap===0)expand(1);}} onBack={()=>{setSelected('');expand(0);}} onOpen={onOpenProcess}/></HeadSlot>
-  {snap>0&&<FlatHub flat={flat} data={data} now={serverNow(data)} tab={tab} onOpen={onOpenProcess} onEdit={step=>step==='job'?onIntent('job'):onEdit?.(flat.id,step)} onChanged={onChanged}/>}
+  {snap>0&&<FlatHub flat={flat} data={data} now={serverNow(data)} tab={tab} onOpen={onOpenProcess} onEdit={step=>step==='job'?onIntent(flat.details?.type==='home'?'home-cleaning:'+flat.id:'job'):onEdit?.(flat.id,step)} onChanged={onChanged}/>}
  </View>;
  return <View style={h.block}>
   <HeadSlot onHeight={onHead}><MapSheetHead role="owner" counts={{requests:ownerWaiting(data,data.user?.id||'',clock)}} text={asked} onText={setAsked} onSend={text=>{setAsked('');onAsk(text);}} onChip={action=>{/* A guest waiting for a quick answer is in this sheet; other requests are on their page. */if(action==='requests'){if(offers.length)expand(1);else onOpenPage('bookings');}else if(action==='calendar')onOpenPage('calendar');else if(action==='properties')onOpenPage('properties');}} now={null} onNow={()=>{}}>

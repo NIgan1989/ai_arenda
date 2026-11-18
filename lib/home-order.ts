@@ -5,22 +5,27 @@ import {DomainError,number,required} from './domain';
 import type {RentalService} from './service';
 import {q,one,rows,uuid,epoch,type Row} from './operation-core';
 import {coordinateDispatch} from './dispatch';
-import {coordinate} from './map-workspace';
-import {HOME_TYPE,homeKind,homeRooms,homeWindows,homePrice,homeMinutes,homeTitle,homeDescription} from './home-cleaning';
+import {coordinate,placeFlatByAddress} from './map-workspace';
+import {HOME_TYPE,HOME_MIN_FEE,homeKind,homeRooms,homeWindows,homeAdvice,homeOrderOf,homeMinutes,homeTitle,homeDescription,type HomeDeal} from './home-cleaning';
 
 const TYPE="json_extract(d.details,'$.type')";
 // Частные адреса заказчика: по ним второй заказ делается в два нажатия.
 export async function homePlaces(service:RentalService):Promise<Row[]>{
  return rows(service.db,`SELECT p.id,p.title,p.city,p.district,p.address,p.rooms FROM properties p JOIN property_details d ON d.property_id=p.id WHERE p.owner_id=? AND p.archived_at IS NULL AND ${TYPE}=? ORDER BY p.created_at DESC LIMIT 10`,service.userId,HOME_TYPE);
 }
-export async function orderHomeCleaning(service:RentalService,body:Row){
+// Рынок города для совета по цене: заказы на дом за 90 дней, которые исполнитель взял, с их условиями.
+export async function homeDeals(service:RentalService,city:string):Promise<HomeDeal[]>{
+ const found=await rows(service.db,`SELECT j.fee,j.description FROM cleaning_jobs j JOIN properties p ON p.id=j.property_id JOIN property_details d ON d.property_id=p.id WHERE ${TYPE}=? AND p.city=? AND j.assigned_to IS NOT NULL AND j.status!='cancelled' AND j.created_at>? ORDER BY j.created_at DESC LIMIT 60`,HOME_TYPE,city,epoch()-90*86400);
+ return found.flatMap(j=>{const order=homeOrderOf(j.description);return order?[{...order,fee:Number(j.fee)}]:[];});
+}
+export async function orderHomeCleaning(service:RentalService,body:Row,config:{STADIA_API_KEY?:string}={}){
  const profile=await service.profile();if(!profile)throw new DomainError('Сначала войдите или создайте аккаунт.',403);
  const kind=homeKind(body.kind),windows=homeWindows(body.windows),db=service.db,at=epoch();
  let place=body.propertyId?await one(db,`SELECT p.* FROM properties p JOIN property_details d ON d.property_id=p.id WHERE p.id=? AND p.owner_id=? AND p.archived_at IS NULL AND ${TYPE}=?`,required(body.propertyId,'Адрес',100),service.userId,HOME_TYPE):null;
  if(body.propertyId&&!place)throw new DomainError('Этот адрес недоступен. Укажите адрес заново.',404);
  const rooms=homeRooms(place?body.rooms??place.rooms:body.rooms),order={kind,rooms,windows,wishes:body.wishes};
  if(String(body.wishes||'').length>600)throw new DomainError('Пожелания слишком длинные: до 600 знаков.');
- const least=homePrice(order),fee=number(body.fee??least,'Цена',least,1000000);
+ 
  const start=Date.parse(String(body.start));if(!Number.isFinite(start))throw new DomainError('Укажите, когда нужна уборка.');
  const end=new Date(start+homeMinutes(order)*60000).toISOString();
  if(!place){
@@ -43,10 +48,14 @@ export async function orderHomeCleaning(service:RentalService,body:Row){
    place=await one(db,'SELECT * FROM properties WHERE id=?',propertyId);
   }
  }
+ // Цену ставит заказчик; без неё берём совет по рынку города.
+ const fee=number(body.fee??homeAdvice(order,await homeDeals(service,String(place!.city))).fee,'Цена',HOME_MIN_FEE,1000000);
  // Роль владельца нужна и тому, кто заказывает на сохранённый адрес после смены ролей.
  await q(db,"UPDATE profiles SET roles=json_insert(roles,'$[#]','owner') WHERE id=? AND NOT EXISTS(SELECT 1 FROM json_each(roles) WHERE value='owner')",service.userId).run();
  if(Number(place!.rooms)!==rooms)await q(db,'UPDATE properties SET rooms=?,title=? WHERE id=? AND owner_id=?',rooms,homeTitle(rooms),place!.id,service.userId).run();
  const job=await service.createJob({propertyId:place!.id,start:new Date(start).toISOString(),end,fee,description:homeDescription(order),requestKey:body.requestKey});
  try{await coordinateDispatch(service);}catch{console.error('Home cleaning: the first offer was not sent');}
+ // Без своей метки дом встаёт на карту заказчика по адресу; если адрес не нашёлся, заказ всё равно принят.
+ try{await placeFlatByAddress(service,'owner',{propertyId:place!.id},fetch,config);}catch{console.error('Home cleaning: the address was not placed on the map');}
  return {id:job.id,propertyId:place!.id,fee,message:'Заказ принят. Ищем исполнителя.'};
 }
