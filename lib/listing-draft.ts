@@ -142,7 +142,7 @@ export function readListingText(text:string,base:ListingDraft):{draft:ListingDra
   ||/(?:^|[\s,])(?:на|по)\s+((?:[А-ЯЁ][а-яё-]+\s){0,2}[А-ЯЁ][а-яё-]+,?\s*(?:д\.?\s*)?\d+[а-яa-z]?(?:\s*\/\s*\d+)?)(?:\s*,?\s*(?:кв\.?|квартира)\s*(\d+))?/u.exec(text);
  if(street){const value=street[1].replace(/\s+/g,' ').replace(/[,\s]+$/,'').trim();set('address',value+(street[2]?', кв. '+street[2]:''));}
  // «…, Торайгырова 64, …»: a part that is a name and a house number is the address, though no «ул.» or «на» comes before it.
- else{const city=lower(d.city.trim()),parts=text.split(/[,;\n]/).map(x=>x.trim()),at=parts.findIndex(x=>/^[А-ЯЁ][а-яё-]+(?:\s[А-ЯЁ][а-яё-]+)?\s+\d{1,4}[а-яa-z]?(?:\s*\/\s*\d+)?$/u.test(x)&&!/^(?:этаж|комнат|гост|цен|уборк|депозит|площад|кв|дом|квартир)/i.test(x)&&lower(x.split(/\s/)[0])!==city);
+ else{const city=lower(d.city.trim()),parts=text.split(/[,;\n]/).map(x=>x.trim()),at=parts.findIndex(x=>/^[А-ЯЁ][а-яё-]+(?:\s[А-ЯЁ][а-яё-]+)?\s+\d{1,4}[а-яa-z]?(?:\s*\/\s*\d+)?$/u.test(x)&&!/^(?:этаж|комнат|гост|цен|уборк|депозит|площад|кв|дом|квартир|вместим|санузл|спал|спальн|кроват|мест|человек|персон|душ|туалет|ванн|зал|парилк|бассейн|час|мин|сут|ноч|макс|до\s|от\s|размер|высот|возраст)/i.test(x)&&lower(x.split(/\s/)[0])!==city);
   // The flat number said right after it stays with it: «Ленина 5, кв 3».
   if(at>=0)set('address',(parts[at]+(/^(?:кв\.?|квартира)\s*\d+$/i.test(parts[at+1]||'')?', '+parts[at+1]:'')).replace(/\s+/g,' '));}
 

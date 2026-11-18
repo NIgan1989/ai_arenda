@@ -13,6 +13,9 @@ test('one message: a bare street with a house number, a bare sum and «в Усо
  assert.deepEqual([c.address,c.hourlyPrice,c.cleaningFee],['Лермонтова 5',4000,2000]);
  // Not an address: the city, the floor, the rooms.
  assert.equal(read('Однушка, Павлодар 5, 12000').address,'');assert.equal(read('Квартира, Этаж 3, 15000').address,'');
+ // A labelled attribute is not an address either, so the address is still asked.
+ const e=read('Баня, Вместимость 10, в Усольском, 4000');assert.equal(e.address,'');assert.ok(draftQuestions(e).some(q=>q.key==='address'));
+ assert.equal(read('Однушка, Спальных мест 3, Ленина 5, 12000').address,'Ленина 5');
  // Two bare sums: which is the price is not guessed.
  assert.equal(read('Однушка, Торайгырова 64, 12000, 5000').price,0);
 });
