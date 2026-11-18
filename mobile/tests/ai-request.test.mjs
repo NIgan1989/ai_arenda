@@ -556,3 +556,12 @@ test('every wish an owner can mark is read from text, and «завтрак» is 
   assert.equal(parse('на Торайгырова').place, 'улица торайгырова');
   assert.deepEqual(read('монша').kinds, ['banya', 'sauna']);
 });
+
+// 2026-11-18: «уборка завтра» in the guest's line searched for a place to stay; it is the home cleaning order.
+test('a cleaning typed into the guest line is the home cleaning order, not a search', async () => {
+  const {cleaningAsk} = await loadPure('mobile/src/ai-request.ts', 'lib/map-search-request.ts');
+  for (const text of ['уборка завтра', 'Уборка', 'нужна уборка в 3 комнатах', 'хочу заказать уборку', 'клининг на субботу', 'убраться в квартире', 'генеральная уборка', 'уборка на дом'])
+    assert.equal(cleaningAsk(text), true, text);
+  for (const text of ['квартира после уборки', 'баня на вечер', 'квартира на 2 суток', 'хостел с уборкой'])
+    assert.equal(cleaningAsk(text), false, text);
+});
