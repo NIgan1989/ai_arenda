@@ -36,6 +36,7 @@ import {guestStayOffers,decideStayOffer} from './stay-offers';
 import {guestFavorites} from './favorites';
 import {staffPlaces} from './staff';
 import {homePlaces,homeDeals} from './home-order';
+import {homeChecklist,homeOrderOf} from './home-cleaning';
 import {venuesFor} from './venue';
 import {ownerForecasts,decideForecast} from './load-forecast';
 import {ownerListingTips,decideListingTip} from './listing-quality';
@@ -1029,7 +1030,7 @@ export class RentalService {
       if(t<Number(j.start)-(arrived?3600:3*3600))throw new DomainError(arrived?'Отметить «Я на месте» можно не раньше чем за час до уборки.':'Отметить выезд можно не раньше чем за 3 часа до уборки.',409);
       const r=await this.db.batch([
         this.query(arrived?"UPDATE cleaning_jobs SET arrived_at=? WHERE id=? AND assigned_to=? AND status='assigned' AND version=? AND arrived_at IS NULL":"UPDATE cleaning_jobs SET on_way_at=? WHERE id=? AND assigned_to=? AND status='assigned' AND version=? AND on_way_at IS NULL",t,jobId,this.userId,j.version),
-        this.notify(j.owner_id,arrived?'Исполнитель на месте: «'+(j.title||'уборка')+'». Откройте дверь, уборка начнётся с вашего согласия.':'Исполнитель выехал на уборку «'+(j.title||'уборка')+'». Начало в '+clockLabel(Number(j.start))+'.',(arrived?'cleaner-arrived:':'cleaner-on-way:')+jobId,'owner'),
+        this.notify(j.owner_id,arrived?'Исполнитель на месте: «'+(j.title||'уборка')+'». Откройте дверь, уборка начнётся с вашего согласия.':'Исполнитель выехал на уборку «'+(j.title||'уборка')+'». Начало в '+clockLabel(Number(j.start))+'.',(arrived?'cleaner-arrived:':'cleaner-on-way:')+jobId+':'+j.version,'owner'),
         this.audit(jobId,arrived?'job.cleaner_arrived':'job.cleaner_on_way')]);
       if(!r[0].meta.changes)throw new DomainError('Задание изменилось. Обновите карточку.',409);
       return {message:arrived?'Заказчик знает, что вы на месте. Начните уборку, когда вас впустят.':'Заказчик знает, что вы выехали.'};
@@ -1044,9 +1045,14 @@ export class RentalService {
       const checklist=Array.isArray(body.checklist)?body.checklist:[];
       // A home cleaning has its own list by its kind (lib/home-cleaning.ts homeChecklist), never shorter than the usual four.
       if(checklist.length<4||checklist.length>12||checklist.some((v:any)=>v!==true)) throw new DomainError('Подтвердите все пункты чек-листа.');
+      // The app sends the names of the points it showed (a home cleaning has its own list): they are kept as they were
+      // confirmed, so the customer reads exactly what the performer ticked. The site's four ticks stay four ticks.
+      const order=homeOrderOf(j.description),named=Array.isArray(body.items)?body.items.map(String):null;
+      if(named&&(!order||named.length!==checklist.length||named.join('|')!==homeChecklist(order).join('|')))throw new DomainError('Чек-лист изменился. Откройте отчёт заново.',409);
+      const kept=named||checklist;
       const report=required(body.report,'Отчёт о работе',1500);
       if(j.status!=='in_progress')throw new DomainError('Сначала отметьте начало работы.',409);
-      const r=await this.db.batch([this.query("UPDATE cleaning_jobs SET status='submitted',checklist=?,report=? WHERE id=? AND assigned_to=? AND status='in_progress' AND version=?",JSON.stringify(checklist),report,jobId,this.userId,j.version),this.query("UPDATE property_operations SET readiness='inspection',version=version+1,updated_at=? WHERE property_id=? AND readiness='cleaning' AND active_booking_id IS NULL AND EXISTS(SELECT 1 FROM cleaning_jobs WHERE id=? AND status='submitted')",now(),j.property_id,jobId),this.notify(j.owner_id,'Уборка отправлена на проверку. Прочитайте отчёт и примите работу.','submitted:'+jobId+':'+j.version,'owner'),this.audit(jobId,'job.submitted')]);
+      const r=await this.db.batch([this.query("UPDATE cleaning_jobs SET status='submitted',checklist=?,report=? WHERE id=? AND assigned_to=? AND status='in_progress' AND version=?",JSON.stringify(kept),report,jobId,this.userId,j.version),this.query("UPDATE property_operations SET readiness='inspection',version=version+1,updated_at=? WHERE property_id=? AND readiness='cleaning' AND active_booking_id IS NULL AND EXISTS(SELECT 1 FROM cleaning_jobs WHERE id=? AND status='submitted')",now(),j.property_id,jobId),this.notify(j.owner_id,'Уборка отправлена на проверку. Прочитайте отчёт и примите работу.','submitted:'+jobId+':'+j.version,'owner'),this.audit(jobId,'job.submitted')]);
       if(!r[0].meta.changes) throw new DomainError('Статус задания изменился.',409);
       return {message:'Отчёт отправлен заказчику на проверку.'};
     }

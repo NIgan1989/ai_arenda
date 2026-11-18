@@ -6,11 +6,11 @@ import {feeTipText} from './cleaning-tip-text';
 import {riskAdvice,riskLabel,type BookingRisk} from './booking-risk-text';
 import type {Reliability} from './reliability-text';
 import {amenities} from './listings';
-import {homeChecklist,homeOrderOf} from './home-cleaning';
-// The checklist of a report: how many points are confirmed, and for a home cleaning what exactly was promised by its kind.
-const ticks=(j:Record<string,any>)=>{try{const v=JSON.parse(j.checklist||'[]');return Array.isArray(v)?v as boolean[]:[];}catch{return [];}};
-const checked=(j:Record<string,any>)=>{const t=ticks(j);return t.filter(Boolean).length+' из '+Math.max(4,t.length);};
-const reportDetail=(j:Record<string,any>)=>{const order=homeOrderOf(j.description),t=ticks(j);return order&&t.length?String(j.report||'')+'\n\nОтмечено исполнителем: '+homeChecklist(order).filter((_,k)=>t[k]).join('; ').toLowerCase()+'.':j.report;};
+// The checklist of a report. Ticks (the usual four points) are counted; the points of a home cleaning are kept by
+// their names as the performer confirmed them, so the customer reads exactly those and nothing is guessed from ticks.
+const points=(j:Record<string,any>):unknown[]=>{try{const v=JSON.parse(j.checklist||'[]');return Array.isArray(v)?v:[];}catch{return [];}};
+const checked=(j:Record<string,any>)=>{const t=points(j);return t.filter(Boolean).length+' из '+Math.max(4,t.length);};
+const reportDetail=(j:Record<string,any>)=>{const named=points(j).filter(v=>typeof v==='string') as string[];return named.length?String(j.report||'')+'\n\nОтмечено исполнителем: '+named.join('; ').toLowerCase()+'.':j.report;};
 type Row=Record<string,any>;
 export type Approval={id:string;kind:string;entityId:string;revision:string;title:string;subject:string;from:string;to:string;canDecide:boolean;expiresAt?:number;facts:[string,string][];acceptLabel:string;rejectLabel:string;requiresReason?:boolean;cleaningFee?:number;cleaningBudget?:number;detail?:string;price?:PriceTip;window?:WindowTip;stay?:StayTip;forecast?:ForecastTip;listing?:ListingTip;cleaningTip?:CleaningTip;risk?:RiskTip;depositLabel?:string;unready?:string;reliability?:Reliability};
 export type RiskTip=BookingRisk&{label:string;advice:string};

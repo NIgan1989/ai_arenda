@@ -106,7 +106,27 @@ test('the performer says «Выезжаю» and «Я на месте», and repo
  await assert.rejects(f.cleaner.jobAction(made.id,{action:'submit',checklist:[true,true,true],report:'Готово'}),/чек-листа|фото/); // The customer's home asks for photos before and after: a report without them does not go.
  await assert.rejects(f.cleaner.jobAction(made.id,{action:'submit',checklist:list.map(()=>true),report:'Готово'}),/фото до и после/);
  f.db.raw.prepare('UPDATE operation_rules SET require_photos=0 WHERE property_id=?').run(made.propertyId);
- await f.cleaner.jobAction(made.id,{action:'submit',checklist:list.map(()=>true),report:'Готово'});
+ await assert.rejects(f.cleaner.jobAction(made.id,{action:'submit',checklist:list.map(()=>true),items:[...list.slice(1),'Что-то ещё'],report:'Готово'}),/Чек-лист изменился/);
+ await f.cleaner.jobAction(made.id,{action:'submit',checklist:list.map(()=>true),items:list,report:'Готово'});
  const card=(await f.guest.roleState('owner')).approvals.find(c=>c.kind==='report'&&c.entityId===made.id);
  assert.ok(card.facts.some(([k,v])=>k==='Чек-лист'&&v==='7 из 7'));assert.match(card.detail,/^Готово\n\nОтмечено исполнителем: .*окна вымыты: 2 окна\.$/);
+});
+
+test('ticks of the site are not read as the points of a home cleaning, and a new performer starts from the beginning',async()=>{
+ const f=await fixture();
+ const made=await orderHomeCleaning(f.guest,{address:'ул. Тестовая, 5',rooms:1,kind:'general',start:iso(now()+1800),requestKey:'s3'});
+ f.db.raw.prepare('UPDATE operation_rules SET require_photos=0 WHERE property_id=?').run(made.propertyId);
+ await f.cleaner.jobAction(made.id,{action:'apply'});await f.guest.jobAction(made.id,{action:'assign',applicationId:f.db.raw.prepare('SELECT id FROM applications WHERE job_id=?').get(made.id).id});
+ await f.cleaner.jobAction(made.id,{action:'on_way'});await f.cleaner.jobAction(made.id,{action:'arrived'});
+ // The performer gives the order back: the marks of the way and the arrival are not left for the next one.
+ await f.cleaner.jobAction(made.id,{action:'release'});
+ assert.deepEqual({...f.db.raw.prepare('SELECT status,assigned_to,on_way_at,arrived_at FROM cleaning_jobs WHERE id=?').get(made.id)},{status:'open',assigned_to:null,on_way_at:null,arrived_at:null});
+ f.db.raw.prepare("UPDATE applications SET status='pending' WHERE job_id=?").run(made.id);
+ await f.guest.jobAction(made.id,{action:'assign',applicationId:f.db.raw.prepare('SELECT id FROM applications WHERE job_id=?').get(made.id).id});
+ await f.cleaner.jobAction(made.id,{action:'arrived'});
+ assert.equal(f.db.raw.prepare("SELECT COUNT(*) n FROM notifications WHERE user_id='guest' AND dedupe LIKE '%cleaner-arrived:%'").get().n,2);
+ // The site still sends four ticks: they are counted, not turned into points nobody confirmed.
+ await f.cleaner.jobAction(made.id,{action:'start'});await f.cleaner.jobAction(made.id,{action:'submit',checklist:[true,true,true,true],report:'Убрано'});
+ const card=(await f.guest.roleState('owner')).approvals.find(c=>c.kind==='report'&&c.entityId===made.id);
+ assert.equal(card.detail,'Убрано');assert.ok(card.facts.some(([k,v])=>k==='Чек-лист'&&v==='4 из 4'));
 });
