@@ -107,7 +107,10 @@ export class RentalService {
     await this.audit(this.userId,'profile.form_updated').run();return {message:'Профиль сохранён.'};
   }
   async saveListing(propertyId:string|null,body:Row){
-    await this.requireRole('owner');const value=listingInput(body),{p,details,photos,published,expectedVersion}=value;
+    await this.requireRole('owner');
+    // A private address of a home cleaning (lib/home-order.ts) is never a listing.
+    if(propertyId&&await this.one("SELECT 1 FROM property_details WHERE property_id=? AND json_extract(details,'$.type')='home'",propertyId))throw new DomainError('Это частный адрес для уборки на дом, он не сдаётся. Чтобы сдавать жильё, добавьте объект.',409);
+    const value=listingInput(body),{p,details,photos,published,expectedVersion}=value;
     await this.checkMedia(photos,'property');
     const current=propertyId?await this.one('SELECT p.*,COALESCE(d.version,0) listing_version FROM properties p LEFT JOIN property_details d ON d.property_id=p.id WHERE p.id=? AND p.owner_id=? AND p.archived_at IS NULL',propertyId,this.userId):null;
     if(propertyId&&!current)throw new DomainError('Объявление не найдено.',404);
