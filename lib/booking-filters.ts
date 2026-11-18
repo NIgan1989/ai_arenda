@@ -21,3 +21,14 @@ export function bookingTabCounts(items:Row[],role:string,userId:string):Record<B
 export function firstBookingTab(counts:Record<BookingTab,number>):BookingTab{
  return counts.active?'active':counts.done?'done':counts.cancelled?'cancelled':'active';
 }
+
+// The owner's «Заявки» in the app (2026-11-18): what waits for his answer, what is booked, and the archive.
+// «Новые»: a guest's request still open (its answer time has not passed). Cleaners' responses are counted there too (App.tsx).
+// «Брони»: confirmed stays, and ended ones where he still owes the guest money (same rule as bookingTab).
+// «Архив»: everything that has ended — stayed, cancelled, refused or left without an answer.
+export type OwnerRequestTab='new'|'booked'|'archive';
+export const ownerRequestTabs:{id:OwnerRequestTab;label:string}[]=[{id:'new',label:'Новые'},{id:'booked',label:'Брони'},{id:'archive',label:'Архив'}];
+export function ownerRequestTab(b:Row,userId:string,now:number):OwnerRequestTab{
+ if(b.status==='requested')return Number(b.expires_at)>now?'new':'archive';
+ return bookingTab(b,'owner',userId)==='active'?'booked':'archive';
+}
