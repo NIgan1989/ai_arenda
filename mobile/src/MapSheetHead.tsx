@@ -20,6 +20,9 @@ type Props = {
   onChip: (action: HeadAction) => void;
   // false: the quick chips give their place to what is under the line (the guest's results).
   chips?: boolean;
+  // false: only the quick chips step aside (the guest's results are under the line); the category button stays,
+  // so a guest who has searched can still switch to a bath, a hall or a cleaning.
+  quick?: boolean;
   busy?: boolean;
   // Guest only: the conditions the search will use, as tokens (GuestTokens.tsx).
   conditions?: ReactNode;
@@ -41,7 +44,7 @@ type Props = {
 };
 
 // The default state of the bottom sheet: one AI line, a row of chips and the "Сейчас" card when there is one.
-export function MapSheetHead({ role, text, onText, onSend, onChip, chips = true, busy = false, conditions, now, onNow, counts, category = 'stay', kind = '', choice, onKind, onService, onPicker, children }: Props) {
+export function MapSheetHead({ role, text, onText, onSend, onChip, chips = true, quick = true, busy = false, conditions, now, onNow, counts, category = 'stay', kind = '', choice, onKind, onService, onPicker, children }: Props) {
   const line = headLine(role, Date.now(), category);
   // The picker takes the place of the chips: a list of the categories, one of them opened; a tap on a type chooses and closes.
   const [picking, setPicking] = useState(false);
@@ -102,7 +105,7 @@ export function MapSheetHead({ role, text, onText, onSend, onChip, chips = true,
             <Image source={chevron} style={s.catChevron} accessibilityIgnoresInvertColors />
           </Pressable>
         )}
-        {line.chips.map(chip => (
+        {quick && line.chips.map(chip => (
           <Pressable
             key={chip.id}
             accessibilityRole="button"
