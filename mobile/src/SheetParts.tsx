@@ -50,7 +50,7 @@ export const h=StyleSheet.create({
  row:{flexDirection:'row',alignItems:'center',gap:8},card:{borderWidth:1,borderColor:C.glassLine,borderRadius:R.lg,backgroundColor:C.glassStrong,padding:16,gap:8},urgent:{borderColor:C.warningLine,backgroundColor:C.warningSoft},cardTitle:{...type.subtitle,color:C.ink,fontWeight:'600'},price:{...type.title,color:C.ink,fontWeight:'700',letterSpacing:-.4},
  reason:{...type.label,color:C.success},timer:{...type.display,color:C.ink,fontWeight:'300',letterSpacing:-1},timerSmall:{...type.label,color:C.warning,fontWeight:'600'},
  check:{flexDirection:'row',alignItems:'center',gap:12,minHeight:H.touch},checkBox:{...type.title,color:C.accent},checkText:{flex:1,...type.label,color:C.ink},
- listRow:{flexDirection:'row',alignItems:'center',gap:12,minHeight:H.field},eventTitle:{...type.body,color:C.ink,fontWeight:'500'},rowPrice:{...type.body,color:C.ink,fontWeight:'600'},picked:{gap:8},
+ listRow:{flexDirection:'row',alignItems:'center',gap:12,minHeight:H.field},asked:{flexDirection:'row',alignItems:'center',gap:8,minHeight:H.compact},askedDot:{width:8,height:8,borderRadius:4},eventTitle:{...type.body,color:C.ink,fontWeight:'500'},rowPrice:{...type.body,color:C.ink,fontWeight:'600'},picked:{gap:8},
  error:{...type.label,color:C.danger,backgroundColor:C.dangerSoft,borderRadius:R.md,padding:12},
  stages:{flexDirection:'row',gap:4},stage:{flex:1,gap:4},stageBar:{height:4,borderRadius:R.xs,backgroundColor:C.line},stageBarOn:{backgroundColor:C.accent},stageText:{...type.caption,color:C.muted},stageTextOn:{color:C.ink,fontWeight:'600'}
 });

@@ -1,14 +1,19 @@
 import React, { useState } from 'react';
-import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Image, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Action, Chips, Stepper, h } from './SheetParts';
 import { C, type } from './styles';
 import { T } from './tokens';
 import { mapCities } from './map-math';
 import { OCCASIONS, allKinds, maxGuestsOf, wishesOf, draftSlot, withSlot, categoryKinds, categoryOf, dayChoices, draftUnits, withDay, withMode, withTime, withUnits, type GuestDraft } from './ai-request';
+import { SECTION_TITLES, sectionWords, type Section } from './guest-tokens';
 import { BANQUET_SLOTS, addDays, kzToday, type BanquetSlot } from '../../lib/map-search-request';
+
+const chevron = require('../assets/ui/chevron.png');
 
 type Props = {
   draft: GuestDraft;
+  // One part of the form (a token was tapped), or every condition as a list of rows.
+  only?: Section | 'all';
   onChange: (next: GuestDraft) => void;
   // Opens the point picker on the map; the point comes back through onChange.
   onPickPoint: () => void;
@@ -23,14 +28,11 @@ const clock = (minutes: number) => two(Math.floor(minutes / 60)) + ':' + two(min
 
 // The structured request for those who prefer fields to free text. The AI line fills the same conditions,
 // so what was typed there is already chosen here.
-export function GuestForm({ draft, onChange, onPickPoint, onNearMe, onSubmit, busy }: Props) {
+export function GuestForm({ draft, only = 'all', onChange, onPickPoint, onNearMe, onSubmit, busy }: Props) {
   const hourly = draft.mode === 'hourly';
   const startMinutes = Number(draft.start.slice(11, 13)) * 60 + Number(draft.start.slice(14, 16));
   const units = draftUnits(draft);
-  // Home type, rooms, district, wishes, priority and the point on the map: how many of them are set.
   const category = categoryOf(draft), bath = category === 'bath', hall = category === 'banquet', venue = category !== 'stay';
-  // In «Баня» both types chosen is the category itself, not a condition.
-  const set = (venue ? Number(draft.kinds.length < allKinds(category).length) : draft.kinds.length) + Number(!!draft.rooms) + Number(!!draft.district) + draft.features.length + Number(draft.priority !== 'balanced') + Number(!!draft.near) + Number(!!draft.maxFloor);
   // «Баня» never loses its last type: an empty list would mean «Жильё».
   const toggleKind = (id: string) => {
     const kinds = draft.kinds.includes(id) ? draft.kinds.filter(v => v !== id) : [...draft.kinds, id];
@@ -44,12 +46,12 @@ export function GuestForm({ draft, onChange, onPickPoint, onNearMe, onSubmit, bu
   const today = kzToday(), day = draft.start.slice(0, 10), ahead = Math.round((Date.parse(day) - Date.parse(today)) / 86400000);
   const dayText = (date: string) => { const d = new Date(date + 'T00:00:00Z'); return ['вс', 'пн', 'вт', 'ср', 'чт', 'пт', 'сб'][d.getUTCDay()] + ', ' + d.getUTCDate() + ' ' + ['янв', 'фев', 'мар', 'апр', 'мая', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'][d.getUTCMonth()]; };
   const budgetLabel = hall ? (draft.perUnit || !draft.maxPrice ? 'Цена на гостя до, ₸' : 'Бюджет на всё, ₸') : draft.perUnit || !draft.maxPrice ? (hourly ? 'Цена за час до, ₸' : draft.mode === 'night' ? 'Цена за ночь до, ₸' : 'Цена за сутки до, ₸') : 'Бюджет на весь срок, ₸';
-  const [more, setMore] = useState(set > 0), extra = more;
+  const [open, setOpen] = useState<Section | ''>('');
   const toggleWish = (id: string) =>
     onChange({ ...draft, features: draft.features.includes(id) ? draft.features.filter(v => v !== id) : [...draft.features, id] });
 
-  return (
-    <>
+  const parts: Record<Section, React.ReactNode> = {
+    when: <>
       {hall && <Chips label="Повод" value={draft.occasion || ''} options={OCCASIONS} onChange={occasion => onChange({ ...draft, occasion })} disabled={busy} />}
       {!venue && (
         <Chips
@@ -64,13 +66,6 @@ export function GuestForm({ draft, onChange, onPickPoint, onNearMe, onSubmit, bu
           disabled={busy}
         />
       )}
-      <Chips
-        label="Город"
-        value={draft.city}
-        options={Object.keys(mapCities).map(city => [city, city])}
-        onChange={city => onChange(city === draft.city ? draft : { ...draft, city, district: '', near: null })}
-        disabled={busy}
-      />
       <Chips label="Когда" value={draft.start.slice(0, 10)} options={dayChoices(draft)} onChange={day => onChange(withDay(draft, day))} disabled={busy} />
       {hall && (
         <View style={h.pair}>
@@ -101,7 +96,8 @@ export function GuestForm({ draft, onChange, onPickPoint, onNearMe, onSubmit, bu
           disabled={busy}
         />
       </View>}
-      <View style={h.pair}>
+    </>,
+    guests: <>
         <Stepper
           label="Гостей"
           value={draft.guests}
@@ -112,7 +108,9 @@ export function GuestForm({ draft, onChange, onPickPoint, onNearMe, onSubmit, bu
           onChange={guests => onChange({ ...draft, guests })}
           disabled={busy}
         />
-        <View style={h.stepper}>
+    </>,
+    price: <>
+        <View>
           <Text style={h.label}>{budgetLabel}</Text>
           <TextInput
             accessibilityLabel={budgetLabel.replace(', ₸', ' в тенге')}
@@ -126,12 +124,49 @@ export function GuestForm({ draft, onChange, onPickPoint, onNearMe, onSubmit, bu
             editable={!busy}
           />
         </View>
+    </>,
+    where: <>
+      <Chips
+        label="Город"
+        value={draft.city}
+        options={Object.keys(mapCities).map(city => [city, city])}
+        onChange={city => onChange(city === draft.city ? draft : { ...draft, city, district: '', near: null })}
+        disabled={busy}
+      />
+      <View>
+        <Text style={h.label}>Район</Text>
+        <TextInput
+          accessibilityLabel="Район"
+          style={h.input}
+          placeholder="Любой"
+          placeholderTextColor={C.muted}
+          maxLength={120}
+          value={draft.district}
+          onChangeText={district => onChange({ ...draft, district })}
+          editable={!busy}
+        />
       </View>
-      {/* The rest narrows the search and is rarely needed: one row opens it, and it is open when something is set there. */}
-      <Pressable accessibilityRole="button" accessibilityState={{ expanded: extra }} disabled={busy} onPress={() => setMore(v => !v)} style={({ pressed }) => [f.more, pressed && h.dim]}>
-        <Text style={f.linkText}>{extra ? 'Свернуть условия' : 'Ещё условия' + (set ? ' · ' + set : '')}</Text>
-      </Pressable>
-      {extra && <>
+      <View style={h.row}>
+        <Text style={[h.note, h.grow]}>{draft.near ? 'Ищем в 5 км от выбранной точки.' : 'Ищем по всему городу.'}</Text>
+        <Pressable
+          accessibilityRole="button"
+          disabled={busy}
+          onPress={() => {
+            if (draft.near) onChange({ ...draft, near: null, priority: draft.priority === 'closer' ? 'balanced' : draft.priority });
+            else onPickPoint();
+          }}
+          style={({ pressed }) => [f.link, (pressed || busy) && h.dim]}
+        >
+          <Text style={f.linkText}>{draft.near ? 'Убрать точку' : 'Указать точку на карте'}</Text>
+        </Pressable>
+      </View>
+      {!draft.near && !!onNearMe && (
+        <Pressable accessibilityRole="button" disabled={busy} onPress={onNearMe} style={({ pressed }) => [f.link, { alignSelf: 'flex-end' }, (pressed || busy) && h.dim]}>
+          <Text style={f.linkText}>Рядом со мной</Text>
+        </Pressable>
+      )}
+    </>,
+    home: <>
       <View>
         <Text style={h.label}>{hall ? 'Зал или кафе' : bath ? 'Баня или сауна' : 'Тип жилья'}</Text>
         <View style={f.wishes}>
@@ -154,19 +189,8 @@ export function GuestForm({ draft, onChange, onPickPoint, onNearMe, onSubmit, bu
         </View>
       </View>
       {!venue && <Chips label="Комнат" value={draft.rooms} options={roomOptions} onChange={rooms => onChange({ ...draft, rooms })} disabled={busy} />}
-      <View>
-        <Text style={h.label}>Район</Text>
-        <TextInput
-          accessibilityLabel="Район"
-          style={h.input}
-          placeholder="Любой"
-          placeholderTextColor={C.muted}
-          maxLength={120}
-          value={draft.district}
-          onChangeText={district => onChange({ ...draft, district })}
-          editable={!busy}
-        />
-      </View>
+    </>,
+    wishes: <>
       <View>
         <Text style={h.label}>{venue ? 'Обязательно' : 'Обязательно в жилье'}</Text>
         <View style={f.wishes}>
@@ -188,6 +212,8 @@ export function GuestForm({ draft, onChange, onPickPoint, onNearMe, onSubmit, bu
           })}
         </View>
       </View>
+    </>,
+    priority: <>
       <Chips
         label="Что важнее"
         value={draft.priority}
@@ -199,28 +225,38 @@ export function GuestForm({ draft, onChange, onPickPoint, onNearMe, onSubmit, bu
         onChange={priority => onChange({ ...draft, priority })}
         disabled={busy}
       />
-      <View style={h.row}>
-        <Text style={[h.note, h.grow]}>{draft.near ? 'Ищем в 5 км от выбранной точки.' : 'Ищем по всему городу.'}</Text>
-        <Pressable
-          accessibilityRole="button"
-          disabled={busy}
-          onPress={() => {
-            if (draft.near) onChange({ ...draft, near: null, priority: draft.priority === 'closer' ? 'balanced' : draft.priority });
-            else onPickPoint();
-          }}
-          style={({ pressed }) => [f.link, (pressed || busy) && h.dim]}
-        >
-          <Text style={f.linkText}>{draft.near ? 'Убрать точку' : 'Указать точку на карте'}</Text>
-        </Pressable>
-      </View>
-      {!draft.near && !!onNearMe && (
-        <Pressable accessibilityRole="button" disabled={busy} onPress={onNearMe} style={({ pressed }) => [f.link, { alignSelf: 'flex-end' }, (pressed || busy) && h.dim]}>
-          <Text style={f.linkText}>Рядом со мной</Text>
-        </Pressable>
-      )}
-      </>}
+    </>
+  };
+  const foot = <>
       <Text style={h.note}>{hall ? 'Цена зала считается на гостя. При отмене вся оплата возвращается.' : (hourly ? '' : 'Выезд до 12:00. ') + 'Депозит оплачивается отдельно.'}</Text>
       <Action title={busy ? 'Ищем…' : 'Показать варианты'} disabled={busy} onPress={onSubmit} />
+  </>;
+  // One token was tapped: only its part of the form, with the way to the rest.
+  if (only !== 'all') return (
+    <>
+      <View style={f.part}>{parts[only]}</View>
+      {foot}
+    </>
+  );
+  // Every condition as a row with what it holds; one row is open at a time.
+  return (
+    <>
+      <View>
+        {SECTION_TITLES(draft).map(([id, title], at) => {
+          const on = open === id;
+          return (
+            <View key={id} style={at > 0 && f.rowNext}>
+              <Pressable accessibilityRole="button" accessibilityLabel={title + ': ' + sectionWords(draft, id)} accessibilityState={{ expanded: on, disabled: busy }} disabled={busy} onPress={() => setOpen(on ? '' : id)} style={({ pressed }) => [f.row, pressed && h.dim]}>
+                <Text style={[f.rowTitle, on && f.rowTitleOn]}>{title}</Text>
+                <Text numberOfLines={1} style={f.rowValue}>{sectionWords(draft, id)}</Text>
+                <Image source={chevron} style={[f.chevron, on && f.chevronOpen]} accessibilityIgnoresInvertColors />
+              </Pressable>
+              {on && <View style={[f.part, f.partOpen]}>{parts[id]}</View>}
+            </View>
+          );
+        })}
+      </View>
+      {foot}
     </>
   );
 }
@@ -228,6 +264,14 @@ export function GuestForm({ draft, onChange, onPickPoint, onNearMe, onSubmit, bu
 const f = StyleSheet.create({
   wishes: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   link: { minHeight: T.control.touch, justifyContent: 'center', paddingLeft: 8 },
-  more: { minHeight: T.control.touch, justifyContent: 'center', alignSelf: 'flex-start', paddingRight: 12 },
+  part: { gap: 12 },
+  partOpen: { paddingBottom: 16 },
+  row: { minHeight: T.control.field, flexDirection: 'row', alignItems: 'center', gap: 8 },
+  rowNext: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: C.line },
+  rowTitle: { ...type.body, color: C.ink, fontWeight: '500' },
+  rowTitleOn: { color: C.accent, fontWeight: '600' },
+  rowValue: { flex: 1, minWidth: 0, textAlign: 'right', ...type.label, color: C.muted },
+  chevron: { width: 14, height: 14, tintColor: C.muted, transform: [{ rotate: '90deg' }] },
+  chevronOpen: { transform: [{ rotate: '-90deg' }] },
   linkText: { ...type.label, color: C.accent, fontWeight: '600' }
 });

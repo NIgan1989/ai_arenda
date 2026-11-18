@@ -21,10 +21,8 @@ type Props = {
   // false: the quick chips give their place to what is under the line (the guest's results).
   chips?: boolean;
   busy?: boolean;
-  // Guest only: the conditions the search will use, and the way to the full form.
-  summary?: string;
-  onRefine?: () => void;
-  refining?: boolean;
+  // Guest only: the conditions the search will use, as tokens (GuestTokens.tsx).
+  conditions?: ReactNode;
   now: NowCardModel | null;
   onNow: () => void;
   // A number on a chip: what waits behind it (the owner's «Заявки»: guests' requests and cleaners' responses).
@@ -42,13 +40,8 @@ type Props = {
   children?: ReactNode;
 };
 
-// Where a narrow sheet may not break the conditions line: before a " · ", and between a number and its
-// word, so neither "гостя" nor "ноября" nor "₸" starts a line alone.
-// A word joiner after the dash keeps "13–14 ноября" and "19:00–22:00" whole, as on the site.
-const unbroken = (line: string) => line.replace(/ ·/g, '\u00a0·').replace(/(\d) (?=[\d₸а-яё])/gi, '$1\u00a0').replace(/(^|[ \u00a0])до (?=\d)/g, '$1до\u00a0').replace(/–/g, '–\u2060');
-
 // The default state of the bottom sheet: one AI line, a row of chips and the "Сейчас" card when there is one.
-export function MapSheetHead({ role, text, onText, onSend, onChip, chips = true, busy = false, summary, onRefine, refining = false, now, onNow, counts, category = 'stay', kind = '', choice, onKind, onService, onPicker, children }: Props) {
+export function MapSheetHead({ role, text, onText, onSend, onChip, chips = true, busy = false, conditions, now, onNow, counts, category = 'stay', kind = '', choice, onKind, onService, onPicker, children }: Props) {
   const line = headLine(role, Date.now(), category);
   // The picker takes the place of the chips: a list of the categories, one of them opened; a tap on a type chooses and closes.
   const [picking, setPicking] = useState(false);
@@ -123,20 +116,7 @@ export function MapSheetHead({ role, text, onText, onSend, onChip, chips = true,
           </Pressable>
         ))}
       </ScrollView>}
-      {!!summary && !!onRefine && (
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={'Условия поиска: ' + summary + '. ' + (refining ? 'Свернуть' : 'Уточнить')}
-          accessibilityState={{ expanded: refining }}
-          onPress={onRefine}
-          style={({ pressed }) => [s.refine, pressed && s.refinePressed]}
-        >
-          {/* Every condition that is applied is shown: the line wraps instead of being cut. */}
-          <Text style={s.summary}>{unbroken(summary)}</Text>
-          <Text style={s.refineText}>{refining ? 'Свернуть' : 'Уточнить'}</Text>
-          <Image source={chevron} style={[s.chevron, refining && s.chevronOpen]} accessibilityIgnoresInvertColors />
-        </Pressable>
-      )}
+      {conditions}
       {children}
       {now && <NowCard card={now} onOpen={onNow} />}
     </View>
@@ -187,12 +167,5 @@ const s = StyleSheet.create({
   chipActive: { backgroundColor: C.accentSoft },
   chipTextActive: { color: C.accentPressed, fontWeight: '600' },
   chipCount: { ...type.caption, fontWeight: '700', color: C.onAccent, backgroundColor: C.accent, minWidth: 20, paddingHorizontal: 6, borderRadius: 999, overflow: 'hidden', textAlign: 'center' },
-  chipText: { ...type.label, color: C.ink, fontWeight: '500' },
-  // One row: what the search will use on the left, the way to the full form on the right.
-  refine: { minHeight: T.control.touch, flexDirection: 'row', alignItems: 'center', gap: 4 },
-  refinePressed: { opacity: 0.6 },
-  summary: { flex: 1, minWidth: 0, marginRight: 8, ...type.label, color: C.inkSoft },
-  refineText: { ...type.label, color: C.accent, fontWeight: '600' },
-  chevron: { width: 16, height: 16, tintColor: C.accent, transform: [{ rotate: '90deg' }] },
-  chevronOpen: { transform: [{ rotate: '-90deg' }] }
+  chipText: { ...type.label, color: C.ink, fontWeight: '500' }
 });
