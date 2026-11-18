@@ -45,10 +45,10 @@ export function DealCard({kind,item,role,userId,application,thread,line:own,acti
  const hasMore=rest.some(Boolean)||!!extra;
  const toggle=(title:string,on:boolean,flip:()=>void,grow:boolean)=><Pressable accessibilityRole="button" accessibilityLabel={title} accessibilityState={{expanded:on}} onPress={flip} style={({pressed})=>[r.action,r.next,grow&&r.grow,pressed&&r.dim]}><Text style={[r.actionText,r.nextText]}>{title}</Text></Pressable>;
  if(compact&&!unfolded){
-  const sum=money(kind==='job'?item.fee:item.amount),label=item.title+', '+sum+', '+recordSpan(item.start,item.end)+', '+status.label+(main?', дальше: '+main.title:'');
+  const sum=money(kind==='job'?item.fee:item.amount),label=item.title+', '+sum+', '+recordSpan(item.start,item.end)+', '+status.label+(item.demo_owner?', учебная':'')+(main?', дальше: '+main.title:'');
   return <Pressable accessibilityRole="button" accessibilityLabel={label} accessibilityHint="Открыть подробности" accessibilityState={{expanded:false}} onPress={()=>{smooth();setUnfolded(true);}} style={({pressed})=>[r.card,r.row,pressed&&r.pressed]}>
    <View style={r.rowHead}><Text numberOfLines={2} style={[r.dealTitle,r.grow]}>{item.title}</Text><Text style={r.rowSum}>{sum}</Text></View>
-   <Text numberOfLines={1} style={r.rowWhen}>{recordSpan(item.start,item.end)}</Text>
+   <Text numberOfLines={1} style={r.rowWhen}>{recordSpan(item.start,item.end)}{!!item.demo_owner&&<Text style={r.rowDemo}>{' · '+(kind==='job'?'Учебное':'Учебная')}</Text>}</Text>
    <View style={r.rowTop}><View style={[r.dot,{backgroundColor:ink}]}/><Text numberOfLines={1} style={[r.rowStatus,{color:ink},r.grow]}>{status.label}{!!main&&<Text style={r.rowDo}>{' · '+main.title}</Text>}</Text><Text style={r.chevron}>⌄</Text></View>
   </Pressable>;
  }
@@ -60,7 +60,7 @@ export function DealCard({kind,item,role,userId,application,thread,line:own,acti
   <Text style={r.when}>{recordSpan(item.start,item.end)} · {money(kind==='job'?item.fee:item.amount)}</Text>
   </Pressable>
   {!flow.stopped&&<View style={r.bar} accessible accessibilityLabel={done?'Завершено':'Шаг '+(step+1)+' из '+total}>{Array.from({length:total},(_,index)=><View key={index} style={[r.segment,done||index<step?{backgroundColor:C.success}:index===step?{backgroundColor:C.accent}:null]}/>)}</View>}
-  {!flow.stopped&&<Text style={r.dealLine}>{line}</Text>}
+  {!(flow.stopped&&kind==='booking')&&<Text style={r.dealLine}>{line}</Text>}
   {always}
   {!!main&&<RecordActions busy={busy} actions={[main]}/>}
   <View style={r.sideRow}>{toggle(open?'Свернуть':'Подробнее',open,()=>setOpen(v=>!v),true)}{hasMore&&toggle(more?'Скрыть':'Ещё',more,()=>setMore(v=>!v),false)}</View>
@@ -86,7 +86,7 @@ const r=StyleSheet.create({
  focus:{borderWidth:2,borderColor:C.focus},dim:{opacity:.55},grow:{flex:1,minWidth:0},
  dealTop:{flexDirection:'row',alignItems:'center',gap:8},
  row:{gap:4,marginTop:8,paddingVertical:12},rowTop:{flexDirection:'row',alignItems:'center',gap:8},rowHead:{flexDirection:'row',alignItems:'flex-start',gap:8},rowSum:{...type.label,color:C.ink,fontWeight:'700'},rowWhen:{...type.label,color:C.inkSoft},
- rowStatus:{...type.caption,fontWeight:'600'},rowDo:{color:C.accentPressed},dot:{width:8,height:8,borderRadius:R.full},
+ rowStatus:{...type.caption,fontWeight:'600'},rowDo:{color:C.accentPressed},rowDemo:{color:C.muted,fontWeight:'600'},dot:{width:8,height:8,borderRadius:R.full},
  chevron:{...type.label,color:C.muted,lineHeight:16},chevronUp:{transform:[{rotate:'180deg'}]},pressed:{opacity:.7},dealTitle:{...type.body,color:C.ink,fontWeight:'700'},dealLine:{...type.label,color:C.inkSoft},
  whereRow:{flexDirection:'row',alignItems:'center',gap:8},whereText:{flex:1,minWidth:0},
  mapLink:{flexDirection:'row',alignItems:'center',gap:4,minHeight:32,paddingHorizontal:12,borderRadius:R.full,backgroundColor:C.accentSoft},mapLinkText:{...type.caption,fontWeight:'600',color:C.accentPressed},
