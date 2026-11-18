@@ -4,6 +4,7 @@ import {journalClock,journalDay} from '../../lib/ai-move-marks';
 import {noticeText} from '../../lib/notice-feed';
 import {RowIcon} from './AccountRows';
 import {C,type} from './styles';
+import {BrandEmpty} from './BrandMoments';
 import {T} from './tokens';
 import type {Row} from './model';
 
@@ -16,7 +17,7 @@ import type {Row} from './model';
 // rows, the rest open in place.
 export function NoticeList({list,now,onOpen}:{list:Row[];now:number;onOpen?:(notice:Row)=>(()=>void)|undefined}){
  const [all,setAll]=useState(false),[full,setFull]=useState(''),shown=all?list:list.slice(0,8);
- if(!list.length)return <Text style={n.empty}>Пока тихо. Сюда приходит только то, что ждёт вас или касается денег: заявка, оплата, заезд, отчёт об уборке. Остальное ИИ записывает в «Автопилот».</Text>;
+ if(!list.length)return <BrandEmpty title="Пока тихо" text="Сюда приходит только то, что ждёт вас или касается денег: заявка, оплата, заезд, отчёт об уборке. Остальное ИИ записывает в «Автопилот»."/>;
  let day='';
  return <View>
   {shown.map(v=>{

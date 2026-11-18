@@ -90,8 +90,8 @@ export function AutopilotHandoff({ role, accountId, stamp = '', tick = 0, compac
 const a = StyleSheet.create({
   box: { gap: 12, padding: 12, borderRadius: T.radius.lg, borderWidth: 1, borderColor: C.line, backgroundColor: C.accentSoft },
   row: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  mark: { width: 28, height: 28, borderRadius: T.radius.sm, alignItems: 'center', justifyContent: 'center', backgroundColor: C.aiFrom },
-  markText: { ...type.label, color: C.onAccent, fontWeight: '700' },
+  mark: { width: 28, height: 28, borderRadius: T.radius.sm, alignItems: 'center', justifyContent: 'center', backgroundColor: C.night },
+  markText: { ...type.label, color: C.gold, fontWeight: '700' },
   text: { flex: 1, minWidth: 0, gap: 2 },
   title: { ...type.label, color: C.ink, fontWeight: '600' },
   line: { ...type.caption, color: C.muted },

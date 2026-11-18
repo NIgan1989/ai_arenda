@@ -4,6 +4,7 @@
 import React,{useEffect,useState} from 'react';
 import {View,Text,Pressable,StyleSheet} from 'react-native';
 import {C,type} from './styles';
+import {BrandEmpty} from './BrandMoments';
 import {T} from './tokens';
 import {money,type Row} from './model';
 import {Photo} from './ListingMedia';
@@ -28,7 +29,7 @@ export function OwnProperties({properties,bookings,busy,onAdd,onEdit,onSettings,
    <View style={o.addOrb}><Text style={o.addPlus}>+</Text></View>
    <View style={o.grow}><Text style={o.addTitle}>Добавить объект</Text><Text style={o.addSub}>Жильё, баня или зал: расскажите одним сообщением, ИИ заполнит объявление</Text></View>
   </Pressable>}
-  {!properties.length&&<Text style={o.empty}>Здесь появятся ваши объекты: их состояние, брони и цена.</Text>}
+  {!properties.length&&<BrandEmpty title="Пока пусто" text="Здесь появятся ваши объекты: их состояние, брони и цена."/>}
   {properties.map(p=>isHome(p.details?.type)?<HomeCard key={p.id} place={p} busy={busy} onCleaning={()=>onCleaning(p.id)} onMap={onMap(p.id)}/>:<PropertyCard key={p.id} property={p} bookings={bookings} busy={busy} open={open===p.id} onToggle={()=>setOpen((v:string)=>v===p.id?'':p.id)} onEdit={()=>onEdit(p.id)} onSettings={()=>onSettings(p.id)} onCleaning={()=>onCleaning(p.id)} onMap={onMap(p.id)}/>)}
  </View>;
 }

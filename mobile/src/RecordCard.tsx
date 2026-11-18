@@ -9,7 +9,7 @@ import {processJourney} from '../../lib/process-journey';
 import {processStatus} from '../../lib/process-status';
 import {recordSpan} from '../../lib/record-span';
 import type {ProcessThread} from '../../lib/process-threads';
-const tones:Record<string,[string,string]>={success:[C.successSoft,C.success],warning:[C.warningSoft,C.warning],active:[C.accentSoft,C.accentPressed],neutral:[C.surfaceAlt,C.muted],danger:[C.dangerSoft,C.danger]};
+const tones:Record<string,[string,string]>={success:[C.successSoft,C.success],warning:[C.warningSoft,C.warning],active:[C.goldSoft,C.goldInk],neutral:[C.surfaceAlt,C.muted],danger:[C.dangerSoft,C.danger]};
 // «На карте»: a small pill next to the place of a booking, a cleaning or an object, in a chat's subject line too.
 // It opens the home map on that pin (MapHome, map-memory.ts targetPin).
 export function MapLink({onPress,label='Показать на карте'}:{onPress:()=>void;label?:string}){
@@ -59,7 +59,7 @@ export function DealCard({kind,item,role,userId,application,thread,line:own,acti
   <Text accessibilityRole="header" numberOfLines={2} style={r.dealTitle}>{item.title}</Text>
   <Text style={r.when}>{recordSpan(item.start,item.end)} · {money(kind==='job'?item.fee:item.amount)}</Text>
   </Pressable>
-  {!flow.stopped&&<View style={r.bar} accessible accessibilityLabel={done?'Завершено':'Шаг '+(step+1)+' из '+total}>{Array.from({length:total},(_,index)=><View key={index} style={[r.segment,done||index<step?{backgroundColor:C.success}:index===step?{backgroundColor:C.accent}:null]}/>)}</View>}
+  {!flow.stopped&&<View style={r.bar} accessible accessibilityLabel={done?'Завершено':'Шаг '+(step+1)+' из '+total}>{Array.from({length:total},(_,index)=><View key={index} style={[r.segment,done||index<step?{backgroundColor:C.night}:index===step?{backgroundColor:C.gold}:null]}/>)}</View>}
   {!(flow.stopped&&kind==='booking')&&<Text style={r.dealLine}>{line}</Text>}
   {always}
   {!!main&&<RecordActions busy={busy} actions={[main]}/>}

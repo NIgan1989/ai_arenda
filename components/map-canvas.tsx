@@ -14,7 +14,7 @@ import {ECHO_WINDOW,pinStates,recallMap,rememberMap,withEchoes} from '../mobile/
 type Row=Record<string,any>;
 // One colour for one state on every map of every role (design/tokens.json): white is free, yellow waits for an answer,
 // indigo is chosen or answered, green is booked.
-const STATE={accent:'#4F46E5',wait:'#8A5A00',waitSoft:'#FFF4DB',waitLine:'#EED49A',success:'#0F7A55',danger:'#C0362C',dangerSoft:'#FDECEB'};
+const STATE={accent:'#4F46E5',wait:'#A8470A',waitSoft:'#FFF0E6',waitLine:'#F6C9A8',success:'#0F7A55',danger:'#C0362C',dangerSoft:'#FDECEB'};
 // The admin's live map: a flash in the colour of what happened, a ring for a problem (red open, green solved), соты of searches without a stay.
 const FLASH={ask:STATE.accent,booking:STATE.success,cleaning:STATE.wait,issue:STATE.danger};
 export type MapCanvasProps={adaptivePanel?:boolean;searching?:boolean;items:Row[];selected:string;onSelect:(id:string)=>void;center:[number,number];people?:Row[];routes?:Row[];sheetSize?:number;sheetHeight?:number;searchKey?:string;pick?:boolean;onPick?:(p:[number,number])=>void;focus?:[number,number]|null;hexes?:Row[];alerts?:Row[];flashes?:Row[];focusZoom?:number;memoryKey?:string;lines?:MapLine[];heat?:{point:[number,number];weight:number}[];sparks?:[number,number][]};

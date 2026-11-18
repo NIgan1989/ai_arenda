@@ -3,6 +3,7 @@ import {View,Text,Pressable,StyleSheet,LayoutAnimation} from 'react-native';
 import {C,type} from './styles';
 import {T} from './tokens';
 import {ListTabs} from './ListTabs';
+import {BrandEmpty} from './BrandMoments';
 import {ApprovalCard} from './ApprovalCard';
 import {boardTabs,overviewBoard,type BoardItem,type BoardTab} from '../../lib/overview-board';
 import {historyRows,HISTORY_DAYS,type HistoryMessage} from '../../lib/conversation-history';
@@ -26,7 +27,7 @@ export function OverviewBoard({workspace,approvals,data,now,busy,onDecide,onOpen
  const tab:BoardTab=picked||(boardTabs.find(t=>counts[t.id]>0)?.id??'decide');
  return <View style={b.wrap}>
   <ListTabs tabs={boardTabs} value={tab} counts={counts} label="Сводка" onChange={t=>{smooth();setPicked(t);setOpen('');}}/>
-  {!board[tab].length&&<Text style={b.empty}>{EMPTY[tab]}</Text>}
+  {!board[tab].length&&<BrandEmpty title={tab==='decide'?'Всё решено':'Пока пусто'} text={EMPTY[tab]}/>}
   {board[tab].map(item=>{
    const unfolded=open===item.key&&!!item.approval;
    return <View key={item.key}>

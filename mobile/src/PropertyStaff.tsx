@@ -3,7 +3,7 @@
 import React,{useEffect,useState} from 'react';
 import {Pressable,StyleSheet,Text,TextInput,View,Image} from 'react-native';
 import {ThinkingLine} from './Thinking';
-import {C,type} from './styles';
+import {C,type,brandFont} from './styles';
 import {T} from './tokens';
 import {request} from './api';
 import {menuIcons,type MenuIcon} from './AccountRows';
@@ -43,7 +43,7 @@ const f=StyleSheet.create({
  sheet:{backgroundColor:C.surface,borderRadius:R.xl,padding:16,gap:12,borderWidth:1,borderColor:C.line},
  bar:{flexDirection:'row',alignItems:'center',gap:12},
  round:{width:H.touch,height:H.touch,borderRadius:R.full,backgroundColor:C.surfaceAlt,alignItems:'center',justifyContent:'center'},roundText:{color:C.inkSoft,...type.subtitle},
- title:{color:C.ink,...type.title,fontWeight:'700'},
+ title:{color:C.ink,...type.subtitle,...brandFont},
  h:{color:C.muted,...type.caption,fontWeight:'700',marginTop:4},hint:{color:C.muted,...type.caption},
  row:{flexDirection:'row',alignItems:'center',gap:12,minHeight:64,padding:12,borderRadius:R.md,borderWidth:1,borderColor:C.line},pinned:{borderColor:C.accent,backgroundColor:C.accentSoft},
  avatar:{width:40,height:40,borderRadius:R.full,backgroundColor:C.accent,alignItems:'center',justifyContent:'center'},avatarText:{color:C.onAccent,...type.body,fontWeight:'700'},

@@ -6,7 +6,7 @@ import {T} from './tokens';
 export function ListTabs<T extends string>({tabs,value,counts,label,onChange}:{tabs:{id:T;label:string}[];value:T;counts:Record<T,number>;label:string;onChange:(tab:T)=>void}){
  return <View accessibilityRole="tablist" accessibilityLabel={label} style={b.seg}>{tabs.map(({id,label})=>{const on=id===value,n=counts[id];
   return <Pressable key={id} accessibilityRole="tab" accessibilityLabel={label+', '+n} accessibilityState={{selected:on}} onPress={()=>{if(!on)onChange(id);}} style={({pressed})=>[b.item,on&&b.on,pressed&&!on&&b.pressed]}>
-   <Text numberOfLines={1} style={[b.text,on&&b.textOn,!n&&!on&&b.empty]}>{label}</Text>{n>0&&<Text style={[b.count,on&&b.countOn]}>{n}</Text>}
+   <Text numberOfLines={1} style={[b.text,on&&b.textOn,!n&&!on&&b.empty]}>{label}</Text>{n>0&&<Text style={[b.count,on&&b.countOn]}>{n}</Text>}{on&&<View style={b.mark}/>}
   </Pressable>;})}</View>;
 }
 const R=T.radius;
@@ -15,5 +15,7 @@ const b=StyleSheet.create({
  item:{flex:1,minHeight:40,flexDirection:'row',alignItems:'center',justifyContent:'center',gap:4,paddingHorizontal:4,borderRadius:R.md},
  on:{backgroundColor:C.surface,shadowColor:C.ink,shadowOpacity:.08,shadowRadius:4,shadowOffset:{width:0,height:1},elevation:1},pressed:{opacity:.6},
  text:{...type.caption,fontWeight:'600',color:C.muted},textOn:{color:C.ink},empty:{opacity:.6},
- count:{...type.caption,color:C.muted},countOn:{color:C.accentPressed,fontWeight:'700'},
+ count:{...type.caption,color:C.muted},countOn:{color:C.goldInk,fontWeight:'700'},
+ // The chosen tab is underlined in the gold of the sign.
+ mark:{position:'absolute',bottom:4,left:'30%',right:'30%',height:2,borderRadius:R.xs,backgroundColor:C.gold},
 });

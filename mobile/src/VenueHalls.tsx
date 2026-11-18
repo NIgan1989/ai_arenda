@@ -4,7 +4,7 @@
 import React,{useEffect,useState} from 'react';
 import {Pressable,StyleSheet,Text,TextInput,View} from 'react-native';
 import {ThinkingLine} from './Thinking';
-import {C,type} from './styles';
+import {C,type,brandFont} from './styles';
 import {T} from './tokens';
 type Row=Record<string,any>;
 
@@ -41,7 +41,7 @@ const f=StyleSheet.create({
  sheet:{backgroundColor:C.surface,borderRadius:R.xl,padding:16,gap:12,borderWidth:1,borderColor:C.line},
  bar:{flexDirection:'row',alignItems:'center',gap:12},
  round:{width:H.touch,height:H.touch,borderRadius:R.full,backgroundColor:C.surfaceAlt,alignItems:'center',justifyContent:'center'},roundText:{color:C.inkSoft,...type.subtitle},
- title:{color:C.ink,...type.title,fontWeight:'700'},hint:{color:C.muted,...type.caption},
+ title:{color:C.ink,...type.subtitle,...brandFont},hint:{color:C.muted,...type.caption},
  venue:{flexDirection:'row',alignItems:'center',gap:12,padding:12,borderRadius:R.md,backgroundColor:C.accentSoft},venueTitle:{color:C.ink,...type.body,fontWeight:'700'},link:{color:C.accent,...type.label,fontWeight:'600'},
  row:{flexDirection:'row',alignItems:'center',gap:12,minHeight:56,paddingHorizontal:12,paddingVertical:8,borderRadius:R.md,borderWidth:1,borderColor:C.line},current:{borderColor:C.accent},pressed:{backgroundColor:C.surfaceAlt},
  name:{color:C.ink,...type.label,fontWeight:'600'},meta:{color:C.muted,...type.caption},

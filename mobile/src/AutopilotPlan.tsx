@@ -3,7 +3,7 @@ import {View,Text,TextInput,Pressable,Switch,StyleSheet} from 'react-native';
 import {Group,Row,a} from './AccountRows';
 import {ThinkingLine} from './Thinking';
 import {request} from './api';
-import {s,C,type} from './styles';
+import {s,C,type,brandFont} from './styles';
 import {T} from './tokens';
 import type {Row as Data} from './model';
 
@@ -136,7 +136,7 @@ const p=StyleSheet.create({
  card:{marginTop:12,borderRadius:T.radius.xl,padding:20,backgroundColor:C.surface,borderWidth:1,borderColor:C.accentLine,gap:16},
  badge:{alignSelf:'flex-start',...type.caption,fontWeight:'600',color:C.accent,backgroundColor:C.accentSoft,borderWidth:1,borderColor:C.accentLine,borderRadius:T.radius.full,paddingHorizontal:12,paddingVertical:4,overflow:'hidden'},
  head:{flexDirection:'row',alignItems:'center',gap:12},
- h3:{...type.title,fontWeight:'700',color:C.ink},
+ h3:{...type.subtitle,...brandFont,color:C.ink},
  price:{...type.label,color:C.muted},priceBig:{...type.subtitle,fontWeight:'700',color:C.ink},
  feature:{flexDirection:'row',gap:12},check:{...type.body,color:C.success,fontWeight:'700'},featureText:{...type.body,color:C.inkSoft,flex:1},
  keep:{...type.label,color:C.inkSoft,backgroundColor:C.bg,borderRadius:T.radius.md,padding:12},

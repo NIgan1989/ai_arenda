@@ -1,7 +1,7 @@
 import React,{useEffect,useState} from 'react';
 import {ThinkingLine} from './Thinking';
 import {Pressable,StyleSheet,Text,View} from 'react-native';
-import {C,type} from './styles';
+import {C,type,brandFont} from './styles';
 import {T} from './tokens';
 import {request} from './api';
 import {regularBenefits,regularSince} from '../../lib/regular-cleaner-text';
@@ -42,7 +42,7 @@ const f=StyleSheet.create({
  sheet:{backgroundColor:C.surface,borderRadius:R.xl,padding:16,gap:12,borderWidth:1,borderColor:C.line},
  bar:{flexDirection:'row',alignItems:'center',gap:12},
  round:{width:H.touch,height:H.touch,borderRadius:R.full,backgroundColor:C.surfaceAlt,alignItems:'center',justifyContent:'center'},roundText:{color:C.inkSoft,...type.subtitle},
- title:{color:C.ink,...type.title,fontWeight:'700'},
+ title:{color:C.ink,...type.subtitle,...brandFont},
  h:{color:C.muted,...type.caption,fontWeight:'700',marginTop:4},
  hint:{color:C.muted,...type.caption},
  row:{flexDirection:'row',alignItems:'center',gap:12,minHeight:64,padding:12,borderRadius:R.md,borderWidth:1,borderColor:C.line},
