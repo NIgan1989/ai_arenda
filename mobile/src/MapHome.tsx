@@ -199,6 +199,10 @@ function GuestPanel({setScanning,setQuiet,accountId,data,mapData,publish,selecte
  const [steps,setSteps]=useState<{id:string;at:string}[]>([]),[tried,setTried]=useState<string[]>([]),[anchor,setAnchor]=useState('');
  useEffect(()=>{setSteps([]);setTried([]);setAnchor('');},[preview?.serverTime]);
  const stepIds=steps.map(v=>v.id);
+ const here=useHere();
+ const meInCity=!!here.fix&&nearestCity(here.fix.point)===draft.city;
+ // What the steps leave of the answer: the cards, the pins and the one line of the closed sheet show the same places.
+ const from=meInCity&&here.fix?nearOf(here.fix.point):null,shown:Row[]=preview?(stepIds.length?narrowFlats(preview.properties||[],stepIds,{draft,from}):preview.properties||[]):[];
  const stepOn=(id:string,at:string)=>{setAnchor('');setSelected('');setSteps(list=>[...list,{id,at}]);},stepBack=()=>{const last=steps[steps.length-1];if(!last)return;setSelected('');setAnchor(last.at);setTried(list=>[...list,last.id]);setSteps(list=>list.slice(0,-1));};
  // The conditions as tokens; an empty answer blames the ones that leave nothing free.
  const tokens=guestTokens(freshDraft(draft)),blamed=preview&&!(preview.properties||[]).length?blamedTokens(preview.empty,tokens):[];
@@ -282,11 +286,11 @@ function GuestPanel({setScanning,setQuiet,accountId,data,mapData,publish,selecte
    publish(found,stageKey,{lines:from?found.slice(0,8).map(m=>({key:'beam:'+m.key,from,to:m.point,tone:'answer' as const})):[]});
   }
   else publish([...(mapData?.properties||[]).flatMap((p:Row)=>pin(p,'home')),...stays.map(({id,start,canGo,...m})=>m)],stageKey+':'+(mapData?.properties?.length||0));
- },[requestId,live,preview,stepIds.join(),mapData,draft.city,staysKey,nav.trip,nav.here,nav.route,nav.rerouted,roads,mine.favorites.join()]);
+ },[requestId,live,preview,shown.map((p:Row)=>p.id).join(),mapData,draft.city,staysKey,nav.trip,nav.here,nav.route,nav.rerouted,roads,mine.favorites.join()]);
  // Where the guest is: on the first point from the phone the search moves to the guest's city, and once that city's
  // homes are on the map, the map flies to the guest. Anything the guest is already doing (a search, a request, a trip,
  // «На карте» from a page) wins: then the point is only a dot on the map.
- const here=useHere(),placed=useRef<'no'|'city'|'done'>('no');
+ const placed=useRef<'no'|'city'|'done'>('no');
  useEffect(()=>{
   if(placed.current==='done'||!here.fix)return;
   if(aimed||recent||requestId||preview||draft.near||nav.trip||chosenCity.has(accountId)){placed.current='done';return;}
@@ -298,9 +302,6 @@ function GuestPanel({setScanning,setQuiet,accountId,data,mapData,publish,selecte
   if(placed.current==='no'){if(!mapData)return;placed.current='city';if(near!==draft.city){if(stays.length){placed.current='done';return;}change({...draft,city:near,district:'',near:null},false);notify('Вы в городе '+near+'. Нужен другой город — напишите его в строке, например «Астана завтра».');return;}}
   if(mapData&&mapData.city===near){placed.current='done';flyMe();}
  },[here.fix,mapData]);
- const meInCity=!!here.fix&&nearestCity(here.fix.point)===draft.city;
- // What the steps leave of the answer: the cards, the pins and the one line of the closed sheet show the same places.
- const from=meInCity&&here.fix?nearOf(here.fix.point):null,shown:Row[]=preview?(stepIds.length?narrowFlats(preview.properties||[],stepIds,{draft,from}):preview.properties||[]):[];
  // A finger held on the map: the search runs around that point (5 km), in the city it lies in. The exact point is only
  // drawn on this phone; the search gets it rounded, as a point picked under the marker.
  const heldAt=useRef<MapPoint|null>(null);

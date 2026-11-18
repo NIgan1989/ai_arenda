@@ -192,9 +192,10 @@ export function GuestResults({ preview, draft, mine, onFavorite, selected, onSel
   const settle = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const strip = useRef<ScrollView>(null);
   // Back from a result: the carousel opens again on the card the guest was looking at, as the counter and the map say.
+  // The same after the full list: the strip is mounted anew there, and must not start from its first card.
   useEffect(() => {
-    if (!chosen && index) strip.current?.scrollTo({ x: index * step, animated: false });
-  }, [!!chosen]);
+    if (!chosen && !full && index) strip.current?.scrollTo({ x: index * step, animated: false });
+  }, [!!chosen, full]);
   // «Забронировать» ends where the chosen card starts in the sheet plus where the button ends in the card.
   const [cardTop, setCardTop] = useState(0),
     [buttonBottom, setButtonBottom] = useState(0);
