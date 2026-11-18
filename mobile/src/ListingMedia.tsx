@@ -3,13 +3,14 @@ import React,{useEffect,useState} from 'react';
 import {Image,View,Text,Pressable,StyleSheet} from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import {ImageManipulator,SaveFormat} from 'expo-image-manipulator';
-import {request} from './api';
+import {request,ApiError} from './api';
 import {C,s} from './styles';
 // name: an avatar without a photo shows the person's initials, as on the site (lib/avatar.ts); solid paints them on the role's colour.
 export function Photo({id,avatar=false,alt,size=48,fill=false,name,solid}:{id?:string|null;avatar?:boolean;alt:string;size?:number;fill?:boolean;name?:string;solid?:string}){
+ // Without signing in (the map without login) a published home's photo comes from the public address.
  // The loaded picture is kept with its id, so a new id shows the placeholder at once and the effect never sets state while it runs.
  const [loaded,setLoaded]=useState<{id:string;uri:string}|null>(null),uri=loaded&&loaded.id===id?loaded.uri:'';
- useEffect(()=>{if(!id)return;let live=true;request('/api/media/'+id).then(r=>{if(live)setLoaded({id,uri:r.data});}).catch(()=>{});return()=>{live=false;};},[id]);
+ useEffect(()=>{if(!id)return;let live=true;request('/api/media/'+id).catch(error=>{if(avatar||!(error instanceof ApiError)||![401,403].includes(error.status))throw error;return request('/api/public/media/'+id);}).then(r=>{if(live)setLoaded({id,uri:r.data});}).catch(()=>{});return()=>{live=false;};},[id,avatar]);
  const avatarSize={width:size,height:size,borderRadius:size/2};
  return uri?<Image source={{uri}} accessibilityLabel={alt} style={avatar?[m.avatar,avatarSize]:fill?m.fill:m.photo} resizeMode="cover" onError={()=>setLoaded(null)}/>:<View accessibilityRole="image" accessibilityLabel={alt} style={avatar?[m.avatarPlaceholder,avatarSize,!!(name?.trim()&&solid)&&{backgroundColor:solid}]:fill?[m.placeholder,m.fill]:m.placeholder}>{avatar?(name?.trim()?<Text style={{fontSize:Math.round(size*.36),lineHeight:Math.round(size*.44),fontWeight:'600',color:solid?C.onAccent:C.inkSoft}}>{avatarInitials(name)}</Text>:<Image source={require('../assets/navigation/account.png')} style={{width:26,height:26,tintColor:C.accent}}/>):<Image source={require('../assets/navigation/properties.png')} style={{width:28,height:28,tintColor:C.accent}}/>}</View>;
 }
