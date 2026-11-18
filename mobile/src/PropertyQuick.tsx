@@ -24,13 +24,14 @@ export function PropertyQuick({city,onSave,onGuestMode,onPlace,onReview,onClose,
  const [step,setStep]=useState(0),[text,setText]=useState(''),[draft,setDraft]=useState<ListingDraft>(()=>emptyDraft(city)),[found,setFound]=useState<string[]>([]);
  const [photos,setPhotos]=useState<string[]>([]),[uploading,setUploading]=useState(false),[answer,setAnswer]=useState(''),[mode,setMode]=useState<'auto'|'manual'>('auto'),[more,setMore]=useState(false);
  const [busy,setBusy]=useState(false),[error,setError]=useState(''),[saved,setSaved]=useState<Saved|null>(null);
- const questions=useMemo(()=>{const q:{key:string;label:string;question:string;placeholder:string}[]=draftQuestions(draft);return mode==='auto'&&!draft.ownStaff&&!(draft.cleaningFee>=100)?[...q,{key:'cleaningFee',label:'Уборка',question:'Сколько вы платите за уборку после гостя? ИИ будет заказывать её сам.',placeholder:'Например, 3 000'}]:q;},[draft,mode]);
+ const questions=useMemo(()=>{const q:{key:string;label:string;question:string;placeholder:string}[]=draftQuestions(draft);return !draft.ownStaff&&!(draft.cleaningFee>=100)?[...q,{key:'cleaningFee',label:'Уборка',question:'Сколько платите исполнителю за уборку после гостей? Без цены уборку после выезда не заказать. Убираете сами или свой персонал, напишите «сами».',placeholder:'Например, 3 000 или «сами»'}]:q;},[draft,mode]);
  const ask=questions[0];
  const patch=(value:Partial<ListingDraft>)=>setDraft(d=>({...d,...value,known:[...new Set([...d.known,...Object.keys(value)])]}));
  const guessed=(key:string)=>!draft.known.includes(key);
  function read(){if(!text.trim())return;const r=readListingText(text,draft);setDraft(r.draft);setFound(r.found);setError('');setStep(1);}
  function reply(){if(!ask||!answer.trim())return;
-  if(ask.key==='cleaningFee'){const v=moneyAnswer(answer);if(v>=100)patch({cleaningFee:v});else{setError('Напишите сумму числом, от 100 ₸.');return;}}
+  // «Сами», «сам убираю», «свой персонал»: nobody is ordered, the owner marks the place ready himself.
+  if(ask.key==='cleaningFee'){const v=moneyAnswer(answer);if(v>=100)patch({cleaningFee:v});else if(/(?:^|[^а-я])(?:сам[аи]?|сво[йиея][а-я]*\s+(?:персонал|горничн|уборщ|сотрудник))(?=$|[^а-я])/i.test(answer))patch({ownStaff:true});else{setError('Напишите сумму числом, от 100 ₸, или «сами».');return;}}
   else setDraft(d=>answerDraft(d,ask.key as 'address'|'district'|'price',answer));
   setAnswer('');setError('');}
  async function save(){
@@ -42,7 +43,7 @@ export function PropertyQuick({city,onSave,onGuestMode,onPlace,onReview,onClose,
     if(onReview&&needsReview(String(e?.message))){try{await onReview(reviewRequest({id:result.id,title:draftTitle(draft),city:draft.city,address:draft.address}));review=true;}catch{/* the owner can still ask from «Допуск» */}}}
    // The flat goes on the map by its address right away; the owner only checks the pin.
    let placed=false;try{placed=!!((await onPlace?.({propertyId:result.id})) as Row|undefined)?.saved;}catch{/* the map pin can be set later */}
-   let note='';try{await onGuestMode({propertyId:result.id,mode,cleaningFee:mode==='auto'&&!draft.ownStaff?draft.cleaningFee:undefined});}catch(e:any){note=' '+(e?.message||'');}
+   let note='';try{await onGuestMode({propertyId:result.id,mode,cleaningFee:!draft.ownStaff&&draft.cleaningFee>=100?draft.cleaningFee:undefined});}catch(e:any){note=' '+(e?.message||'');}
    setSaved({id:result.id,published,placed,message:(published?What+done+', гости уже видят его на карте.':review?'Сохранено черновиком и отправлено на проверку администратору: после проверки появится на карте само.':photos.length?'Сохранено черновиком: чтобы показать гостям, пройдите проверку в «Управление → Допуск».':'Сохранено черновиком. Добавьте фото, и его можно будет показать гостям.')+note});setStep(2);
   }catch(e:any){setError(e?.message||'Не удалось сохранить '+what+'.');}finally{setBusy(false);}
  }

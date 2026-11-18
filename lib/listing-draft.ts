@@ -48,7 +48,7 @@ const AMENITY_WORDS:[string,RegExp][]=[
  ['workspace',/рабоч[а-я]* (?:мест|стол)/],['parking',/парков/],['balcony',/балкон|лоджи/],['elevator',/лифт/],['linen',/бель/],['towels',/полотенц/],
  ['hairdryer',/(?<![а-я])фен(?![а-я])/],['iron',/утюг/],['crib',/кроватк|детск[а-я]* кроват/],
  // A bath and a hall have their own lists (lib/listings.ts categoryAmenities).
- ['steam',/парилк|парн(?:ая|ую|ой)(?![а-я])/],['pool',/бассейн/],['plunge',/купел/],['brooms',/веник/],['karaoke',/караоке/],['billiards',/бильярд/],['grill',/мангал|барбекю/],
+ ['steam',/парилк|парн(?:ая|ую|ой)(?![а-я])/],['pool',/бассейн/],['plunge',/купел/],['jacuzzi',/джакузи|гидромассаж/],['brooms',/веник/],['karaoke',/караоке/],['billiards',/бильярд/],['grill',/мангал|барбекю/],
  ['stage',/(?<![а-я])сцен[аыу](?![а-я])/],['sound',/микрофон|аппаратур|звук/],['dancefloor',/танцпол/],['prayer',/намаз/],['halal',/халял/],['ownfood',/сво[ияю] (?:продукт|еду|еда)/],['kidsroom',/детск[а-я]* комнат/]
 ];
 const STREET='(?:ул(?:ица|\\.)?|пр(?:оспект|-т|-кт|\\.)?|мкр(?:н|\\.)?|микрорайон|бул(?:ьвар|\\.)?|пер(?:еулок|\\.)?|шоссе|ш\\.)';
@@ -118,6 +118,8 @@ export function readListingText(text:string,base:ListingDraft):{draft:ListingDra
  const minHours=t.match(/(?:от|минимум|мин\.?)\s*(\d{1,2})\s*час/);if(minHours&&+minHours[1]>=1&&+minHours[1]<=24)set('minHours',Number(minHours[1]));
  if(/без (?:депозит|залог)/.test(t))set('deposit',0);else{const deposit=new RegExp('(?:депозит|залог)[а-я]*\\s*(?:[:—–-]|в)?\\s*'+NUM,'u').exec(t);if(deposit)set('deposit',amount(deposit[1],deposit[2]));}
  const fee=new RegExp('уборк[а-я]*\\s*(?:[:—–-]|стоит|за)?\\s*'+NUM,'u').exec(t);if(fee){const v=amount(fee[1],fee[2]);if(v>=100)set('cleaningFee',v);}
+ // «Однушка, Торайгырова 64, 12000»: a part of the message that is a bare sum is the price (a bath's is for an hour).
+ if(!hall&&!found.includes('price')&&!found.includes('hourlyPrice')){const sums=t.split(/[,;\n]/).map(x=>x.trim()).filter(x=>new RegExp('^'+NUM+'\\s*(?:₸|тг|тенге)?$','u').test(x));if(sums.length===1){const m=new RegExp(NUM,'u').exec(sums[0])!;const v=amount(m[1],m[2]);if(v>=1000&&v!==d.cleaningFee)set(bath?'hourlyPrice':'price',v);}}
 
  // «без лифта», «нет кондиционера» name what the flat lacks, so a negated mention removes the amenity.
  const negated=(at:number)=>/(?:^|[^а-я])(?:без|нет|не)\s+(?:[а-я-]+\s+)?$/.test(t.slice(Math.max(0,at-24),at));
@@ -139,10 +141,16 @@ export function readListingText(text:string,base:ListingDraft):{draft:ListingDra
  const street=new RegExp('(?:^|[\\s,(])('+STREET+'\\s*[A-ZА-ЯЁa-zа-яё0-9][^,\\n;]*?\\d+[а-яА-Яa-z]?(?:\\s*\\/\\s*\\d+)?)(?:\\s*,?\\s*(?:д\\.?\\s*\\d+[а-я]?\\s*,?\\s*)?(?:кв\\.?|квартира)\\s*(\\d+))?','iu').exec(text)
   ||/(?:^|[\s,])(?:на|по)\s+((?:[А-ЯЁ][а-яё-]+\s){0,2}[А-ЯЁ][а-яё-]+,?\s*(?:д\.?\s*)?\d+[а-яa-z]?(?:\s*\/\s*\d+)?)(?:\s*,?\s*(?:кв\.?|квартира)\s*(\d+))?/u.exec(text);
  if(street){const value=street[1].replace(/\s+/g,' ').replace(/[,\s]+$/,'').trim();set('address',value+(street[2]?', кв. '+street[2]:''));}
+ // «…, Торайгырова 64, …»: a part that is a name and a house number is the address, though no «ул.» or «на» comes before it.
+ else{const city=lower(d.city.trim()),parts=text.split(/[,;\n]/).map(x=>x.trim()),at=parts.findIndex(x=>/^[А-ЯЁ][а-яё-]+(?:\s[А-ЯЁ][а-яё-]+)?\s+\d{1,4}[а-яa-z]?(?:\s*\/\s*\d+)?$/u.test(x)&&!/^(?:этаж|комнат|гост|цен|уборк|депозит|площад|кв|дом|квартир|вместим|санузл|спал|спальн|кроват|мест|человек|персон|душ|туалет|ванн|зал|парилк|бассейн|час|мин|сут|ноч|макс|до\s|от\s|размер|высот|возраст)/i.test(x)&&lower(x.split(/\s/)[0])!==city);
+  // The flat number said right after it stays with it: «Ленина 5, кв 3».
+  if(at>=0)set('address',(parts[at]+(/^(?:кв\.?|квартира)\s*\d+$/i.test(parts[at+1]||'')?', '+parts[at+1]:'')).replace(/\s+/g,' '));}
 
  const district=text.match(/(?:район|р-н|мкр\.?|микрорайон)\s+([А-ЯЁA-Zа-яё0-9][А-ЯЁа-яё0-9-]*(?:\s[А-ЯЁ][а-яё-]+)?)/u)||text.match(/([А-ЯЁ][а-яё-]+(?:ий|ый|ой))\s+район/u);
  if(district)set('district',district[1].replace(/^./,c=>c.toLocaleUpperCase('ru')));
  else if(/(?:в|около|возле|у)\s+центр|центр города/.test(t))set('district','Центр');
+ // «В Усольском», «в Центральном»: the district said without the word «район».
+ else if(/(?:^|[\s,])в\s+[А-ЯЁ][а-яё]+(?:[сц]ком|ном)(?=$|[\s,.;])/u.test(text)){const m=/(?:^|[\s,])в\s+([А-ЯЁ][а-яё]+?)([сц]ком|ном)(?=$|[\s,.;])/u.exec(text)!;set('district',m[1]+(m[2]==='ном'?'ный':m[2][0]+'кий'));}
  else if(found.includes('address')&&/^мкр/i.test(d.address))set('district',d.address.split(',')[0].replace(/^мкр\.?\s*/i,'Мкр ').trim());
 
  d.known=[...new Set([...d.known,...found])];

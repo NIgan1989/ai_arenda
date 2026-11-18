@@ -1,6 +1,7 @@
 import {q,one,uuid,epoch,type Row} from './operation-core';
 import {guestModeSql,guestModeJoins,underAutopilot} from './autopilot';
 import {wantsEarly,wantedHours,stayOfferAnswer} from './stay-offers';
+import {guestFacts,type GuestModel} from './guest-answers-ai';
 
 // Under autopilot the AI administrator answers the guest in the booking chat for the owner.
 // It answers only from the booking's own facts: dates, check-in and checkout times, the address
@@ -62,21 +63,42 @@ function compose(topics:Topic[],b:Row,change?:string):{text:string;escalate:bool
 
 // Called after a guest's message lands in a stay chat. Returns true when the AI replied.
 export type StayOfferMaker=(bookingId:string,kind:'late'|'early',wanted:number|null)=>Promise<{offer:Row|null;reason:string}>;
-export async function answerGuest(db:D1Database,roomId:string,seq:number,offer?:StayOfferMaker){
+// With a model (and the guest's permission) any other question is understood in the guest's own words and answered
+// from the facts; keys and changes of the booking still go the fixed way. Without a model the word rules answer.
+export async function answerGuest(db:D1Database,roomId:string,seq:number,offer?:StayOfferMaker,model?:GuestModel){
  const message=await one(db,"SELECT m.body,m.sender_id,r.entity_kind,r.entity_id,r.channel,r.membership_key FROM discussion_messages m JOIN discussion_rooms r ON r.id=m.room_id WHERE m.room_id=? AND m.seq=? AND m.sender_role='guest'",roomId,seq);
  if(!message||message.entity_kind!=='booking'||message.channel!=='stay')return false;
  const t=epoch();
- const b=await one(db,`SELECT b.*,p.owner_id,p.address,p.capacity,p.title,COALESCE(bt.deposit,0) deposit,bt.deposit_status,COALESCE(NULLIF(bt.house_rules,''),pp.house_rules,'') house_rules,${guestModeSql} mode
+ const b=await one(db,`SELECT b.*,p.owner_id,p.address,p.capacity,p.title,p.description,(SELECT details FROM property_details WHERE property_id=p.id) details,COALESCE(bt.deposit,0) deposit,bt.deposit_status,COALESCE(NULLIF(bt.house_rules,''),pp.house_rules,'') house_rules,${guestModeSql} mode
   FROM bookings b JOIN properties p ON p.id=b.property_id LEFT JOIN booking_terms bt ON bt.booking_id=b.id ${guestModeJoins} WHERE b.id=? AND b.guest_id=?`,t,message.entity_id,message.sender_id);
  if(!b||b.mode!=='auto'||!['requested','confirmed','completed'].includes(b.status))return false;
  // The owner is writing in this chat right now: the AI stays quiet.
  if(await one(db,"SELECT seq FROM discussion_messages WHERE room_id=? AND sender_role='owner' AND request_key NOT LIKE 'ai:%' AND created_at>?",roomId,t-OWNER_ACTIVE_SECONDS))return false;
  const topics=guestTopics(message.body);
- if(topics==='thanks'||Array.isArray(topics)&&!topics.length)return false;
+ if(topics==='thanks')return false;
+ let reply:{text:string;escalate:boolean}|null=null;
+ if(model&&Array.isArray(topics)&&!topics.includes('access')&&!topics.includes('change')&&(topics.length||String(message.body).trim().length>=8)){
+  let details:Row={};try{details=JSON.parse(b.details||'{}');}catch{/* No details: the facts say less. */}
+  // Only the guest's own words and the AI's own replies go to the model: the owner's personal messages never do,
+  // and the address the service added to an AI reply is taken out again.
+  const address=String(b.address||'').trim();
+  const history=(await db.prepare("SELECT sender_role,body FROM discussion_messages WHERE room_id=? AND seq<? AND photo_data='' AND (sender_role='guest' AND sender_id=? OR sender_role='owner' AND request_key LIKE 'ai:%') ORDER BY seq DESC LIMIT 6").bind(roomId,seq,message.sender_id).all<Row>()).results.reverse()
+   .map(m=>({from:m.sender_role,text:String(m.body).split('\n').filter(line=>!/^Адрес:/.test(line)).join('\n')}))
+   .map(m=>({...m,text:address?m.text.split(address).join('[адрес]'):m.text})).filter(m=>m.text.trim());
+  const got=await model(guestFacts(b,details),history,message.body);
+  if(got){
+   if(!got.reply&&!got.handoff)return false;
+   let text=got.reply||'Я передал ваш вопрос владельцу, он ответит здесь.';
+   // The model never sees the address: the confirmed one is added here, exactly as the rules give it.
+   if(topics.includes('address')&&b.status==='confirmed'&&b.address)text='Адрес: '+b.address+'.\n'+text;
+   reply={text,escalate:got.handoff};
+  }
+ }
+ if(!reply&&Array.isArray(topics)&&!topics.length)return false;
  // Earlier or longer: the AI checks the calendar and the cleaning and names the price right away.
  let change:string|undefined;
  if(Array.isArray(topics)&&topics.includes('change')&&offer){const kind=wantsEarly(message.body)?'early':'late';try{change=stayOfferAnswer(await offer(b.id,kind,wantedHours(message.body)),kind);}catch(error){console.error('AI administrator: stay offer failed',error instanceof Error?error.message:'');}}
- const reply=topics==='greeting'?{text:'Здравствуйте! Я ИИ-администратор этого жилья. Подскажу время заезда и выезда, адрес, правила, депозит и оплату. Остальное передам владельцу.',escalate:false}:compose(topics,b,change);
+ if(!reply)reply=topics==='greeting'?{text:'Здравствуйте! Я ИИ-администратор этого жилья. Подскажу время заезда и выезда, адрес, правила, депозит и оплату. Остальное передам владельцу.',escalate:false}:compose(topics,b,change);
  const gate='EXISTS(SELECT 1 FROM bookings b JOIN properties p ON p.id=b.property_id WHERE b.id=? AND p.owner_id=? AND b.guest_id=?) AND EXISTS(SELECT 1 FROM discussion_rooms WHERE id=? AND membership_key=?) AND NOT EXISTS(SELECT 1 FROM discussion_blocks WHERE room_id=?) AND '+underAutopilot('?');
  const statements=[q(db,`INSERT OR IGNORE INTO discussion_messages(room_id,sender_id,sender_role,body,request_key,created_at,photo_data,reply_to) SELECT ?,?,'owner',?,?,?,'',? WHERE ${gate}`,roomId,b.owner_id,reply.text.slice(0,4000),AI_KEY+seq,t,seq,b.id,b.owner_id,b.guest_id,roomId,message.membership_key,roomId,b.property_id,t)];
  if(reply.escalate)statements.push(q(db,'INSERT OR IGNORE INTO notifications SELECT ?,?,?,?,0,? WHERE changes()>0',uuid(),b.owner_id,'Гость спрашивает в чате брони «'+b.title+'»: «'+String(message.body).slice(0,140)+'». ИИ-администратор не знает ответа, ответьте гостю.','owner:guest-question:'+roomId+':'+seq,t));

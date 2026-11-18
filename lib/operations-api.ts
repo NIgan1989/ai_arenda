@@ -71,7 +71,7 @@ export async function writeOperations(service:RentalService,role:Role,path:strin
  if(route==='discussion/avatar')return discussionAvatar(service,role,body);
  if(route==='discussion/photo')return discussionPhoto(service,role,body);
  if(route==='discussion/typing')return discussionTyping(service,role,body);
- if(route==='discussion/send')return sendDiscussionMessage(service,role,body);
+ if(route==='discussion/send')return sendDiscussionMessage(service,role,body,config);
  if(route==='ai-budget')return saveAIBudget(service,body);
  if(route==='commands')return decideAdministratorCommand(service,role,body);
  if(route==='import/preview'){active(role,['owner']);return previewPropertyImport(service,body);}

@@ -1,5 +1,6 @@
 import {unreadyNote} from './unready';
 import type {Role} from './domain';
+import {venueOr,wordsOf} from './stay-words';
 
 type Row=Record<string,any>;
 export type AdministratorTask={id:string;owner_id:string;user_id:string;role:Role;property_id:string;entity_kind:string;entity_id:string;stage:string;title:string;reason:string;section:string;deadline:number;priority:number};
@@ -21,8 +22,10 @@ export function planAdministrator(data:Row,t:number):AdministratorTask[]{
  const due=(at:number,user:string,role:Role)=>at<=t+setting(user,role).leadMinutes*60;
  const bookingTask=(b:Row,stage:string,title:string,reason:string,at:number,roles:Role[]= ['owner','guest'],urgent=false)=>{
   // The guest reads their own part in plain words: what to do and where, not the owner's checklist.
-  const guestTitles:Record<string,string>={payment:'Оплатить проживание',deposit:'Оплатить депозит',checkin:'Заселиться',checkout:'Сообщить о выезде'};
-  const guestReasons:Record<string,string>={payment:'как оплатить, написано в карточке брони',deposit:'как передать депозит, написано в карточке брони; после выезда его вернут',checkin:'на месте отметьте заезд в карточке брони',checkout:'когда освободите жильё, нажмите «Сообщить о выезде»'};
+  // A bath and a hall are not lived in: their guest comes and leaves, and their words say so (lib/stay-words.ts).
+  const w=wordsOf(b),home=(text:string,venue:string)=>venueOr(b,text,venue);
+  const guestTitles:Record<string,string>={payment:home('Оплатить проживание','Оплатить бронь'),deposit:'Оплатить депозит',checkin:home('Заселиться','Отметить '+w.arriveAcc),checkout:home('Сообщить о выезде','Сообщить '+w.ofLeave)};
+  const guestReasons:Record<string,string>={payment:'как оплатить, написано в карточке брони',deposit:'как передать депозит, написано в карточке брони; '+w.afterLeave+' его вернут',checkin:home('на месте отметьте заезд в карточке брони','на месте отметьте '+w.arriveAcc+' в карточке брони'),checkout:home('когда освободите жильё, нажмите «Сообщить о выезде»','когда уйдёте, отметьте это в карточке брони')};
   const subject=reason.split(' · ')[0];
   for(const role of roles){const user=role==='owner'?owner:b.guest_id;if(due(at,user,role))add(b,'booking',stage,user,role,role==='guest'?guestTitles[stage]||title:title,role==='guest'&&guestReasons[stage]?subject+' · '+guestReasons[stage]:reason,at,urgent||at<=t?3:2);}
  };
