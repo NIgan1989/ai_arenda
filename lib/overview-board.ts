@@ -12,6 +12,8 @@ export type BoardItem={key:string;title:string;detail:string;when:string;urgent:
 export function overviewBoard(workspace:Row|null|undefined,approvals:Row[],data:Row|null|undefined,now:number):Record<BoardTab,BoardItem[]>{
  const board:Record<BoardTab,BoardItem[]>={decide:[],now:[],soon:[]};
  const asked=new Set((approvals||[]).filter(a=>a.canDecide&&a.kind==='booking').map(a=>String(a.entityId)));
+ // A request still waiting for an answer is the approval card itself (for the guest too, in «Сейчас»), not a second line in «Скоро».
+ const waiting=new Set((approvals||[]).filter(a=>a.kind==='booking').map(a=>String(a.entityId)));
  for(const a of approvals||[]){
   const item:BoardItem={key:'approval:'+a.id,title:String(a.title||'Нужно решение'),detail:String(a.subject||''),when:a.expiresAt&&a.expiresAt>now?'ответить до '+nowCardWhen(a.expiresAt,now).replace(/^сегодня в /,''):'',urgent:!!a.canDecide,approval:a};
   (a.canDecide?board.decide:board.now).push(item);
@@ -26,6 +28,9 @@ export function overviewBoard(workspace:Row|null|undefined,approvals:Row[],data:
   const b=(data?.bookings||[]).find((x:Row)=>x.id===e.entityId);
   return !!b&&b.status==='confirmed'&&Number(b.start)<=now&&Number(b.end)>now;
  };
- for(const e of (workspace?.upcoming||[]) as OperationEvent[])(going(e)?board.now:board.soon).push(event(e));
+ for(const e of (workspace?.upcoming||[]) as OperationEvent[]){
+  if(e.kind==='booking'&&waiting.has(String(e.entityId))&&(data?.bookings||[]).find((x:Row)=>x.id===e.entityId)?.status==='requested')continue;
+  (going(e)?board.now:board.soon).push(event(e));
+ }
  return board;
 }

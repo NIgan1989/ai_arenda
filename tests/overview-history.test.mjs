@@ -41,3 +41,9 @@ test('«Сводка»: each thing in one tab, a request with an approval card i
  assert.deepEqual(board.now.map(i=>i.title),['Выезд']);
  assert.deepEqual(board.soon.map(i=>i.title),['Уборка назначена']);
 });
+test('a guest\'s request waiting for the owner is one line, in «Сейчас»',()=>{
+ const data={bookings:[{id:'b2',status:'requested',start:now+86400,end:now+90000}]};
+ const workspace={attention:[],upcoming:[{id:'booking:b2:w',entityId:'b2',kind:'booking',title:'Ожидается решение владельца',detail:'Дом',at:now+600,urgent:false}]};
+ const board=overviewBoard(workspace,[{id:'a1',kind:'booking',entityId:'b2',title:'Запрос на бронирование',subject:'Дом',canDecide:false,expiresAt:now+600}],data,now);
+ assert.deepEqual([board.decide.length,board.now.length,board.soon.length],[0,1,0]);
+});
