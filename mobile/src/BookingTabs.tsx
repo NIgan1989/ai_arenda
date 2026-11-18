@@ -14,7 +14,7 @@ const R=T.radius;
 const b=StyleSheet.create({
  seg:{flexDirection:'row',gap:4,padding:4,marginBottom:4,borderRadius:R.lg,backgroundColor:C.surfaceAlt},
  item:{flex:1,minHeight:40,flexDirection:'row',alignItems:'center',justifyContent:'center',gap:4,paddingHorizontal:4,borderRadius:R.md},
- on:{backgroundColor:C.surface,shadowColor:'#000',shadowOpacity:.08,shadowRadius:4,shadowOffset:{width:0,height:1},elevation:1},pressed:{opacity:.6},
+ on:{backgroundColor:C.surface,shadowColor:C.ink,shadowOpacity:.08,shadowRadius:4,shadowOffset:{width:0,height:1},elevation:1},pressed:{opacity:.6},
  text:{...type.caption,fontWeight:'600',color:C.muted},textOn:{color:C.ink},empty:{opacity:.6},
  count:{...type.caption,color:C.muted},countOn:{color:C.accentPressed,fontWeight:'700'},
 });
