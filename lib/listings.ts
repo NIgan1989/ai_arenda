@@ -31,7 +31,8 @@ export const occasionLabel=(id?:string)=>occasions[id||'']||'';
 // A sauna is mostly a complex with an administrator; a «баня» is often a private one, cleaned by our executor.
 export const staffedTypes=['hostel','hotel','aparthotel','sauna','banquet','cafe'];
 export const defaultOwnStaff=(type:string)=>staffedTypes.includes(type);
-export const kindLabel=(type?:string)=>propertyTypes[type||'']||'Жильё';
+// «home» — частный адрес заказчика уборки на дом (lib/home-cleaning.ts): не сдаётся, в списках типов его нет.
+export const kindLabel=(type?:string)=>type==='home'?'Мой дом':propertyTypes[type||'']||'Жильё';
 export const amenities:Record<string,string>={wifi:'Wi-Fi',kitchen:'Кухня',washer:'Стиральная машина',aircon:'Кондиционер',tv:'Телевизор',workspace:'Рабочее место',parking:'Парковка',balcony:'Балкон',elevator:'Лифт',linen:'Постельное бельё',towels:'Полотенца',hairdryer:'Фен',iron:'Утюг',crib:'Детская кроватка',steam:'Парилка',pool:'Бассейн',plunge:'Купель',brooms:'Веники',karaoke:'Караоке',billiards:'Бильярд',grill:'Мангал',stage:'Сцена',sound:'Звук и микрофон',dancefloor:'Танцпол',prayer:'Комната для намаза',halal:'Халяль',ownfood:'Можно свои продукты',kidsroom:'Детская комната',jacuzzi:'Джакузи'};
 // The amenities each category shows the owner and the guest; a stored id of the other category stays valid.
 export const categoryAmenities:Record<string,string[]>={

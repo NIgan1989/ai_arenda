@@ -3,6 +3,7 @@ import {Pressable,StyleSheet,Text,View} from 'react-native';
 import type {Approval} from '../../lib/approvals';
 import {calendarEntries,dayLine,dayStart,type CalendarEntry} from '../../lib/calendar-days';
 import {HUB_TABS,hubLate,hubLine,hubToday,type HubTab} from '../../lib/property-hub';
+import {isHome} from '../../lib/home-cleaning';
 import {request} from './api';
 import {money,uid,type Row} from './model';
 import {PriceTipBody} from './PriceTip';
@@ -31,9 +32,10 @@ export function FlatHubHead({flat,data,now,tab,open,onTab,onBack,onOpen}:Pick<Pr
   <Pressable accessibilityRole="button" accessibilityLabel="Назад к карте" onPress={onBack} style={f.back}><Text style={f.backText}>‹ Назад</Text></Pressable>
   <Text accessibilityRole="header" numberOfLines={2} style={h.cardTitle}>{flat.title}</Text>
   {late?<Pressable accessibilityRole="button" accessibilityLabel={late.status+', открыть'} onPress={()=>onOpen(late.kind,late.id)} hitSlop={8}><Text numberOfLines={1} style={[h.note,f.late]}>{late.status} ›</Text></Pressable>:<Text numberOfLines={1} style={h.note}>{hubLine(entries,now)}</Text>}
-  <View accessibilityRole="tablist" style={f.tabs}>{HUB_TABS.map(([id,label])=><Pressable key={id} accessibilityRole="tab" accessibilityState={{selected:open&&tab===id}} accessibilityLabel={label+(id==='today'&&waiting?', ждут ответа: '+waiting:'')} onPress={()=>onTab(id)} style={[f.tab,open&&tab===id&&f.tabOn]}>
+  {/* A private home that is only cleaned has nothing to rent: no calendar, price or listing, so no tabs. */}
+  {!isHome(flat.details?.type)&&<View accessibilityRole="tablist" style={f.tabs}>{HUB_TABS.map(([id,label])=><Pressable key={id} accessibilityRole="tab" accessibilityState={{selected:open&&tab===id}} accessibilityLabel={label+(id==='today'&&waiting?', ждут ответа: '+waiting:'')} onPress={()=>onTab(id)} style={[f.tab,open&&tab===id&&f.tabOn]}>
    <Text numberOfLines={1} style={[f.tabText,open&&tab===id&&f.tabTextOn]}>{label}</Text>{id==='today'&&waiting>0&&<View style={f.count}><Text style={f.countText}>{waiting}</Text></View>}
-  </Pressable>)}</View>
+  </Pressable>)}</View>}
  </View>;
 }
 
@@ -54,12 +56,14 @@ export function FlatHub({flat,data,now,tab,onOpen,onEdit,onChanged}:Omit<Props,'
  const row=(title:string,note:string,onPress:()=>void):ReactNode=><Pressable key={title} accessibilityRole="button" onPress={onPress} style={f.row}>
   <View style={h.grow}><Text numberOfLines={1} style={h.eventTitle}>{title}</Text><Text numberOfLines={2} style={h.note}>{note}</Text></View><Text style={f.arrow}>›</Text>
  </Pressable>;
- if(tab==='today')return <View style={f.panel}>
+ const home=isHome(flat.details?.type);
+ if(home||tab==='today')return <View style={f.panel}>
   {view.waiting.length>0&&<><Text accessibilityRole="header" style={f.heading}>Ждут ответа</Text>{view.waiting.map(e=>entry(e,(e.kind==='job'?'Уборка ':'Заезд ')+words(e.start)))}</>}
   <Text accessibilityRole="header" style={f.heading}>Сегодня</Text>
-  {view.today.length>0?view.today.map(e=>entry(e,dayLine(e,today))):<Text style={h.note}>Сегодня ничего не запланировано.</Text>}
+  {view.today.length>0?view.today.map(e=>entry(e,dayLine(e,today))):<Text style={h.note}>{home?'Сегодня уборок нет.':'Сегодня ничего не запланировано.'}</Text>}
   {view.next.length>0&&<><Text accessibilityRole="header" style={f.heading}>Дальше</Text>{view.next.map(e=>entry(e,words(e.start)+' · '+dayLine(e,dayStart(e.start))))}</>}
-  {!Number(flat.own_staff)&&<Action secondary title="Создать уборку" onPress={()=>onEdit('job')}/>}
+  {home?<><Action title="Заказать уборку" onPress={()=>onEdit('job')}/><Text style={h.note}>{[flat.address,'адрес видит только назначенный исполнитель'].filter(Boolean).join(' · ')}</Text>{row('Постоянный исполнитель',flat.regular_cleaner_name||'Закрепите своего: заказы приходят сначала к нему',()=>onEdit('cleaner'))}</>
+  :!Number(flat.own_staff)&&<Action secondary title="Создать уборку" onPress={()=>onEdit('job')}/>}
  </View>;
  if(tab==='calendar')return <View style={f.panel}>
   <RentalCalendar data={data} role="owner" busy={false} onOpen={(kind,id)=>onOpen(kind as 'booking'|'job',id)} propertyId={flat.id}/>

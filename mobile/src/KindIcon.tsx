@@ -19,7 +19,8 @@ const ICONS: Record<string, ImageSourcePropType> = {
   banya: require('../assets/kinds/banya.png'),
   sauna: require('../assets/kinds/sauna.png'),
   banquet: require('../assets/kinds/banquet.png'),
-  cafe: require('../assets/kinds/cafe.png')
+  cafe: require('../assets/kinds/cafe.png'),
+  cleaning: require('../assets/kinds/cleaning.png')
 };
 
 export function KindIcon({ id, size = 20, color = C.inkSoft }: { id: string; size?: number; color?: string }) {

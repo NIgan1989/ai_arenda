@@ -8,6 +8,8 @@ import {money,type Row} from './model';
 import {useActivityClock} from './ActivityTimer';
 import {defaultStay,settleStay,stayClock,stayDay,stayDays,stayInterval,stayLimits,stayModes,stayRate,stayStamp,stayTimes,stayUnit,type StayChoice,type StayMode} from '../../lib/stay-choice';
 import {recordSpan} from '../../lib/record-span';
+import {homeKinds,homeMinutes,homeAdvice,homeRooms,HOME_MAX_ROOMS,HOME_MAX_WINDOWS,HOME_MIN_FEE,HOME_FEE_STEP,type HomeKind,type HomeDeal} from '../../lib/home-cleaning';
+import {SwipeConfirm} from './SwipeConfirm';
 // A stay request and a new cleaning on one screen each, built from the same parts as on the site:
 // a tariff switch, a strip of days, a row of times and "how many" steppers. Nothing is typed as a date.
 const words=(day:number,options:Intl.DateTimeFormatOptions)=>new Date((day+18000)*1000).toLocaleDateString('ru-RU',{timeZone:'UTC',...options});
@@ -85,6 +87,41 @@ export function CleaningRequest({property,busy,done,result,onSubmit}:{property:R
   <Text style={p.note}>Исполнители увидят район и условия, точный адрес — после назначения. Время Казахстана.</Text>
  </View>;
 }
+// Уборка на дом: адрес, вид уборки, размер, время. Цену считает сервис (lib/home-cleaning.ts), заказ уходит одним свайпом.
+// places — сохранённые частные адреса заказчика: с ними адрес второй раз не набирают.
+export function HomeCleaningOrder({places,deals=[],city,propertyId,busy,done,result,onSubmit}:{places:Row[];deals?:HomeDeal[];city:string;propertyId?:string;busy:boolean;done?:boolean;result?:string;onSubmit:(body:Row)=>void}){
+ const clock=useActivityClock(),[opened]=useState(()=>Math.floor(Date.now()/1000)),now=clock||opened;
+ const [placeId,setPlaceId]=useState(()=>propertyId||places[0]?.id||''),place=places.find(x=>x.id===placeId),[address,setAddress]=useState('');
+ const [kind,setKind]=useState<HomeKind>('regular'),[rooms,setRooms]=useState(()=>homeRooms(place?.rooms||2)),[windows,setWindows]=useState(0),[wishes,setWishes]=useState('');
+ const [when,setWhen]=useState<StayChoice>(()=>settleStay(defaultStay('hourly',{},opened),{},opened));
+ // Цену ставит заказчик: пока он её не тронул, в поле стоит совет ИИ и идёт за условиями заказа.
+ const [asked,setAsked]=useState<number|null>(null);
+ if(done)return <Closed text={result||'Заказ принят'} note="Заказ, отклики исполнителей и ход уборки видны на карте."/>;
+ const order={kind,rooms,windows},advice=homeAdvice(order,deals),fee=asked??advice.fee,start=when.day+when.time*60,end=start+homeMinutes(order)*60,change=(next:Partial<StayChoice>)=>setWhen(settleStay({...when,...next},{},now));
+ const ready=!!place||address.trim().length>=5;
+ return <View style={p.card}>
+  <View style={p.head}><Text style={p.eyebrow}>УБОРКА НА ДОМ</Text><Text accessibilityRole="header" style={p.title}>Что и когда убрать</Text><Text style={p.note}>Точный адрес увидит только назначенный исполнитель.</Text></View>
+  <View style={p.field}><Text style={p.label}>Адрес</Text>
+   {places.length>0&&<View style={p.tasks}>{[...places,{id:'',address:'Другой адрес'} as Row].map(x=>{const on=x.id===placeId;return <Pressable key={x.id||'new'} accessibilityRole="radio" accessibilityState={{selected:on,disabled:busy}} disabled={busy} onPress={()=>{setPlaceId(x.id);if(x.id)setRooms(homeRooms(x.rooms));}} style={[p.task,on&&p.taskOn]}><Text numberOfLines={1} style={[p.taskText,on&&{color:C.accentPressed,fontWeight:'600'}]}>{x.address}</Text></Pressable>;})}</View>}
+   {!place&&<TextInput accessibilityLabel="Адрес уборки" style={[p.input,p.line]} value={address} onChangeText={setAddress} editable={!busy} maxLength={300} placeholder={city+', улица, дом, квартира'} placeholderTextColor={C.muted}/>}
+  </View>
+  <View style={p.field}><Text style={p.label}>Вид уборки</Text>
+   {/* Three full names do not fit one row of a phone: they are chips that wrap, like the saved addresses. */}
+   <View accessibilityRole="radiogroup" accessibilityLabel="Вид уборки" style={p.tasks}>{(Object.keys(homeKinds) as HomeKind[]).map(id=>{const on=id===kind;return <Pressable key={id} accessibilityRole="radio" accessibilityLabel={homeKinds[id].label} accessibilityState={{selected:on,disabled:busy}} disabled={busy} onPress={()=>setKind(id)} style={[p.task,on&&p.taskOn]}><Text style={[p.taskText,on&&{color:C.accentPressed,fontWeight:'600'}]}>{homeKinds[id].label}</Text></Pressable>;})}</View>
+   <Text style={p.note}>{homeKinds[kind].hint}</Text>
+  </View>
+  <View style={p.row}><View style={p.half}><Stepper label="Комнаты" value={rooms} min={1} max={HOME_MAX_ROOMS} disabled={busy} format={String} onChange={setRooms}/></View><View style={p.half}><Stepper label="Помыть окна" value={windows} min={0} max={HOME_MAX_WINDOWS} disabled={busy} format={n=>n?String(n):'нет'} onChange={setWindows}/></View></View>
+  <Days label="День" value={when.day} now={now} disabled={busy} onChange={day=>change({day})}/>
+  <Times label="Начало" value={when.time} day={when.day} now={now} disabled={busy} onChange={time=>change({time})}/>
+  <View style={p.field}><Text style={p.label}>Пожелания</Text><TextInput accessibilityLabel="Пожелания к уборке" style={p.input} value={wishes} onChangeText={setWishes} editable={!busy} multiline maxLength={600} placeholder="Домофон, животные, на что обратить внимание" placeholderTextColor={C.muted}/></View>
+  <View style={p.field}><Stepper label="Ваша цена" value={fee} min={HOME_MIN_FEE} max={1000000} step={HOME_FEE_STEP} disabled={busy} format={money} onChange={setAsked}/>
+   <View style={p.advice}><Text style={p.adviceText}>{'Совет ИИ: '+money(advice.fee)+'. '+(advice.market?'За столько исполнители берут такие уборки в городе.':'Оценка по объёму работы: заказов в городе пока мало.')+(fee<advice.fee?' За меньшую цену исполнителя найти труднее.':'')}</Text>{fee!==advice.fee&&<Pressable accessibilityRole="button" accessibilityLabel={'Поставить цену по совету ИИ: '+money(advice.fee)} disabled={busy} onPress={()=>setAsked(null)} hitSlop={8}><Text style={p.adviceUse}>Поставить</Text></Pressable>}</View>
+  </View>
+  <View style={p.total}><Text style={p.span}>{recordSpan(start,end)}</Text><View style={p.sum}><Text style={p.amount}>{money(fee)}</Text><Text style={p.sumNote}>за всю уборку, средства и инвентарь исполнителя</Text></View></View>
+  <SwipeConfirm label="Проведите: заказать уборку" disabled={busy||!ready} onConfirm={()=>onSubmit({...(place?{propertyId:place.id}:{address:address.trim(),city}),rooms,kind,windows,start:stayStamp(start),fee,wishes:wishes.trim()})}/>
+  <Text style={p.note}>{ready?'Исполнители увидят район и условия. Оплата пока тестовая, без списания. Время Казахстана.':'Укажите адрес, и заказ можно будет отправить.'}</Text>
+ </View>;
+}
 const R=T.radius,H=T.control;
 const p=StyleSheet.create({
  window:{...type.label,marginTop:8,paddingHorizontal:12,paddingVertical:4,alignSelf:'flex-start',borderRadius:T.radius.full,overflow:'hidden',backgroundColor:C.surface,borderWidth:1,borderColor:C.accentLine,color:C.accent,fontWeight:'600'},
@@ -102,5 +139,7 @@ const p=StyleSheet.create({
  consent:{flexDirection:'row',alignItems:'flex-start',gap:12,minHeight:H.touch},box:{width:24,height:24,borderRadius:R.xs,borderWidth:2,borderColor:C.lineStrong,alignItems:'center',justifyContent:'center'},boxOn:{backgroundColor:C.accent,borderColor:C.accent},tick:{...type.label,color:C.onAccent,fontWeight:'700'},consentText:{...type.label,color:C.ink,flex:1},
  send:{minHeight:H.primary,borderRadius:R.md,backgroundColor:C.accent,alignItems:'center',justifyContent:'center',paddingHorizontal:16},sendOff:{backgroundColor:C.surfaceAlt},sendText:{...type.body,color:C.onAccent,fontWeight:'600'},
  tasks:{flexDirection:'row',flexWrap:'wrap',gap:8},task:{minHeight:H.compact,paddingVertical:8,paddingHorizontal:12,borderWidth:1,borderColor:C.line,borderRadius:R.full,backgroundColor:C.surface,justifyContent:'center'},taskOn:{borderColor:C.accentLine,backgroundColor:C.accentSoft},taskText:{...type.label,color:C.inkSoft},
+ line:{minHeight:T.control.field},
+ advice:{flexDirection:'row',alignItems:'center',gap:12},adviceText:{...type.caption,color:C.inkSoft,flex:1},adviceUse:{...type.label,color:C.accent,fontWeight:'600'},
  input:{...type.body,minHeight:88,padding:12,borderWidth:1,borderColor:C.line,borderRadius:R.md,backgroundColor:C.surface,color:C.ink,textAlignVertical:'top'},dim:{opacity:.4},
 });

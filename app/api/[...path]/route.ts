@@ -1,4 +1,5 @@
 import {aiJournal} from '../../../lib/ai-moves';
+import {orderHomeCleaning} from '../../../lib/home-order';
 import { waitUntil, env as workerEnv } from 'cloudflare:workers';
 import {isolateTestConfig} from '../../../lib/test-environment';
 import { getAppUser } from '../../session';
@@ -114,6 +115,7 @@ async function handle(request:Request, context:{params:Promise<{path:string[]}>}
         case 'properties':return json(await service.createProperty(body));
         case 'bookings':return json(await service.createBooking(body));
         case 'jobs':return json(await service.createJob(body));
+        case 'home-cleaning':return json(await orderHomeCleaning(service,body,env));
         case 'chat':{if(env.OPENAI_API_KEY&&env.OPENAI_MODEL)await reserveAIRequest(env.DB,user.userId);const turn=crypto.randomUUID();return json(await service.chat(body,env,(args,callId)=>prepareAdministratorCommand(service,parseRole(activeRole),args,turn+':'+callId.slice(0,60))));}
         case 'demo':return json(await service.demo());
         case 'maintenance':return json(await service.maintenance());

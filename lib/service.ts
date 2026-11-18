@@ -35,6 +35,7 @@ import {offerPriceAdvice,ownerPriceSuggestions,decidePriceSuggestion} from './pr
 import {guestStayOffers,decideStayOffer} from './stay-offers';
 import {guestFavorites} from './favorites';
 import {staffPlaces} from './staff';
+import {homePlaces,homeDeals} from './home-order';
 import {venuesFor} from './venue';
 import {ownerForecasts,decideForecast} from './load-forecast';
 import {ownerListingTips,decideListingTip} from './listing-quality';
@@ -107,7 +108,10 @@ export class RentalService {
     await this.audit(this.userId,'profile.form_updated').run();return {message:'Профиль сохранён.'};
   }
   async saveListing(propertyId:string|null,body:Row){
-    await this.requireRole('owner');const value=listingInput(body),{p,details,photos,published,expectedVersion}=value;
+    await this.requireRole('owner');
+    // A private address of a home cleaning (lib/home-order.ts) is never a listing.
+    if(propertyId&&await this.one("SELECT 1 FROM property_details WHERE property_id=? AND json_extract(details,'$.type')='home'",propertyId))throw new DomainError('Это частный адрес для уборки на дом, он не сдаётся. Чтобы сдавать жильё, добавьте объект.',409);
+    const value=listingInput(body),{p,details,photos,published,expectedVersion}=value;
     await this.checkMedia(photos,'property');
     const current=propertyId?await this.one('SELECT p.*,COALESCE(d.version,0) listing_version FROM properties p LEFT JOIN property_details d ON d.property_id=p.id WHERE p.id=? AND p.owner_id=? AND p.archived_at IS NULL',propertyId,this.userId):null;
     if(propertyId&&!current)throw new DomainError('Объявление не найдено.',404);
@@ -253,6 +257,10 @@ export class RentalService {
     if(role==='guest'){(result as Row).stayOffers=await guestStayOffers(this.db,this.userId,state.serverTime);Object.assign(result,await guestFavorites(this.db,this.userId));}
     // «Смена»: how many objects this person marks guests for (lib/staff.ts), in any role.
     (result as Row).staffPlaces=await staffPlaces(this.db,this.userId);
+    // The private addresses of home cleanings (lib/home-order.ts): a repeated order takes two taps, in any role.
+    (result as Row).homePlaces=await homePlaces(this);
+    // What executors of the city really took home orders for: the price advice of a new order leans on it.
+    if(role!=='cleaner')(result as Row).homeDeals=await homeDeals(this,String((result as Row).profile?.city||'Павлодар'));
     const assistantSettings={...defaultAssistantSettings};
     const administrator=await readAdministratorState(this.db,this.userId,role);
     return {...result,administrator,approvals:approvalCards(result,role,this.userId,state.serverTime),assistantSettings,assistantBrief:assistantBrief(result,role,assistantSettings,state.serverTime),workspaces:{[role]:operationOverview(result,this.userId,role,state.serverTime)}};
@@ -401,7 +409,7 @@ export class RentalService {
         CASE WHEN p.owner_id=? THEN (SELECT json_object('level',level,'score',score,'reasons',reasons,'deposit_advice',deposit_advice,'phone_verified',phone_verified,'held',held) FROM booking_risks WHERE booking_id=b.id) ELSE NULL END risk_row
         FROM bookings b JOIN properties p ON p.id=b.property_id LEFT JOIN profiles o ON o.id=p.owner_id LEFT JOIN profiles g ON g.id=b.guest_id
         WHERE b.guest_id=? OR p.owner_id=? ORDER BY b.start DESC`, ...Array(11).fill(this.userId)),
-      this.all(`SELECT j.*,EXISTS(SELECT 1 FROM regular_cleaners rc WHERE rc.property_id=j.property_id AND rc.cleaner_id=COALESCE(j.assigned_to,?)) regular,CASE WHEN j.owner_id=? OR j.assigned_to=? THEN (SELECT status FROM cleaning_holds h WHERE h.job_id=j.id AND h.cleaner_id=j.assigned_to AND h.status<>'returned') END guarantee,EXISTS(SELECT 1 FROM booking_terms t WHERE t.booking_id=j.booking_id AND t.actual_checkout IS NOT NULL) checkout_confirmed,p.title,p.city,p.district,p.rooms,p.capacity,p.cleaning_minutes,p.demo_owner,(SELECT photos FROM property_details WHERE property_id=p.id) property_photos,(SELECT details FROM property_details WHERE property_id=p.id) property_details,CASE WHEN j.status='open' THEN p.address END open_address,
+      this.all(`SELECT j.*,EXISTS(SELECT 1 FROM regular_cleaners rc WHERE rc.property_id=j.property_id AND rc.cleaner_id=COALESCE(j.assigned_to,?)) regular,CASE WHEN j.owner_id=? OR j.assigned_to=? THEN (SELECT status FROM cleaning_holds h WHERE h.job_id=j.id AND h.cleaner_id=j.assigned_to AND h.status<>'returned') END guarantee,(j.booking_id IS NULL OR EXISTS(SELECT 1 FROM booking_terms t WHERE t.booking_id=j.booking_id AND t.actual_checkout IS NOT NULL)) checkout_confirmed,p.title,p.city,p.district,p.rooms,p.capacity,p.cleaning_minutes,p.demo_owner,(SELECT photos FROM property_details WHERE property_id=p.id) property_photos,(SELECT details FROM property_details WHERE property_id=p.id) property_details,CASE WHEN j.status='open' THEN p.address END open_address,
         CASE WHEN j.owner_id=? OR j.assigned_to=? THEN p.address ELSE NULL END address,
         CASE WHEN j.owner_id=? OR j.assigned_to=? THEN o.contact ELSE NULL END owner_contact
         FROM cleaning_jobs j JOIN properties p ON p.id=j.property_id LEFT JOIN profiles o ON o.id=j.owner_id
