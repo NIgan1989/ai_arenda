@@ -12,7 +12,12 @@ export function WorkspaceMenuButton({open,busy,onPress,avatar=false,avatarId,ava
 export function MapChatsButton({busy,onPress,unread=0}:{busy:boolean;onPress:()=>void;unread?:number}){
  return <Pressable accessibilityRole="button" accessibilityLabel={unread?'Чаты, непрочитанных: '+unread:'Чаты'} accessibilityState={{disabled:busy}} disabled={busy} onPress={onPress} style={n.menuAvatar}><Image source={icons.chats} style={[n.icon,{tintColor:C.ink}]}/>{unread>0&&<View style={n.unread}><Text style={n.unreadText}>{unread>99?'99+':unread}</Text></View>}</Pressable>;
 }
+// Over the map of someone who has not signed in: the place of the profile button. The map, the search and the cards work without it.
+export function SignInButton({busy,onPress}:{busy:boolean;onPress:()=>void}){
+ return <Pressable accessibilityRole="button" accessibilityLabel="Войти" accessibilityState={{disabled:busy}} disabled={busy} onPress={onPress} style={({pressed})=>[n.signIn,pressed&&{opacity:.7}]}><Text style={n.signInText}>Войти</Text></Pressable>;
+}
 const n=StyleSheet.create({
+ signIn:{height:T.control.touch,paddingHorizontal:T.space[5],borderRadius:T.radius.full,alignItems:'center',justifyContent:'center'},signInText:{fontSize:T.font.body[0],lineHeight:T.font.body[1],fontWeight:'700',color:C.accent},
  unread:{position:'absolute',top:-2,right:-2,minWidth:20,height:20,borderRadius:T.radius.full,paddingHorizontal:4,backgroundColor:C.danger,alignItems:'center',justifyContent:'center'},unreadText:{fontSize:T.font.caption[0],lineHeight:T.font.caption[1],fontWeight:'700',color:C.onAccent},
  menu:{width:T.control.field,height:T.control.field,borderRadius:T.radius.full,alignItems:'center',justifyContent:'center'},menuAvatar:{width:T.control.touch,height:T.control.touch,borderRadius:T.radius.full,alignItems:'center',justifyContent:'center'},
  icon:{width:24,height:24}});
