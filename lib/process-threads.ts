@@ -161,14 +161,16 @@ export function cleaningThread(j: Row, data: Row, now: number): ProcessThread {
           : auto ? 'ИИ ищет исполнителя' : 'Ждём откликов исполнителей' },
     // A cleaning without a booking (a home cleaning, the owner's own order) waits for nobody's departure, only for its time.
     j.booking_id !== null ? { key: 'checkout', label: 'Выезд гостя', by: 'guest', at: j.start, note: j.checkout_confirmed ? 'Гость выехал' : 'Ждём выезда гостя' }
-      : { key: 'checkout', label: 'Приезд', by: 'cleaner', at: j.start, note: 'Исполнитель приедет к назначенному времени' },
+      : { key: 'checkout', label: 'Приезд', by: 'cleaner', at: j.arrived_at || j.start, note: j.arrived_at ? 'Исполнитель на месте' : j.on_way_at ? 'Исполнитель в пути' : 'Исполнитель приедет к назначенному времени' },
     { key: 'clean', label: 'Уборка', by: 'cleaner', at: j.start, progress: working ? part(Number(j.started_at) || j.start, j.end, now) : undefined,
-      note: working ? (j.end > now ? 'Исполнитель убирает · ещё ' + left(j.end - now) : 'Срок уборки прошёл') : 'Уборка в ' + threadWhen(j.start, now) },
+      note: working ? (j.end > now ? 'Исполнитель убирает · ещё ' + left(j.end - now) : 'Срок уборки прошёл') : j.arrived_at ? 'Исполнитель на месте, начнёт уборку' : 'Уборка в ' + threadWhen(j.start, now) },
     { key: 'check', label: 'Приёмка', by: accepted ? (aiAccepts ? 'ai' : 'owner') : auto ? 'ai' : 'you', at: j.submitted_at || j.end,
       note: accepted ? (aiAccepts ? 'ИИ принял уборку' : 'Уборка принята') : auto ? 'ИИ проверяет фото' : 'Отчёт ждёт вашей проверки' },
     { key: 'pay', label: 'Оплата', by: service ? 'ai' : 'you', at: j.settled_at || undefined, note: accepted && !j.assigned_to ? 'Убрано без исполнителя' : paid ? 'Исполнителю заплачено' : service ? 'Сервис заплатит из резерва' : 'Рассчитайтесь с исполнителем и отметьте оплату' },
   ];
-  const done = [assigned, !!j.checkout_confirmed && assigned, reported, accepted, paid];
+  // Without a booking the step is the performer's arrival: «Я на месте», or the start of the work itself.
+  const came = j.booking_id !== null ? !!j.checkout_confirmed : !!j.arrived_at || working || reported;
+  const done = [assigned, came && assigned, reported, accepted, paid];
   const t = place(steps, done, i => i === 0 || i === 3 || i === 4 || (i === 1 ? now >= j.start - 3600 : working));
   const mine = j.owner_id === userId;
   const yours = mine && !t.finished && t.steps[t.current].by === 'you' && (t.current !== 0 || pending > 0 || late);
@@ -188,14 +190,15 @@ export function jobThread(j: Row, data: Row, now: number): ProcessThread {
     { key: 'apply', label: 'Отклик', by: took ? 'ai' : 'you', at: application?.created_at, note: application || isMine ? (took ? 'Автопилот откликнулся за вас' : 'Отклик отправлен') : 'Можно откликнуться' },
     { key: 'assigned', label: 'Назначено', by: 'owner', note: isMine ? 'Вас назначили' : 'Ждём решения владельца' },
     j.booking_id !== null ? { key: 'checkout', label: 'Выезд гостя', by: 'guest', at: j.start, note: j.checkout_confirmed ? 'Гость выехал, можно начинать' : 'Ждём выезда гостя' }
-      : { key: 'checkout', label: 'Приезд', by: 'you', at: j.start, note: 'Приезжайте к назначенному времени' },
+      : { key: 'checkout', label: 'Приезд', by: 'you', at: j.arrived_at || j.start, note: j.arrived_at ? 'Вы на месте, можно начинать' : j.on_way_at ? 'Вы в пути · на месте нажмите «Я на месте»' : 'Приезжайте к назначенному времени' },
     { key: 'clean', label: 'Уборка', by: 'you', at: j.start, progress: working ? part(Number(j.started_at) || j.start, j.end, now) : undefined,
       note: working ? (j.end > now ? 'Идёт уборка · ещё ' + left(j.end - now) + ' · затем отчёт' : 'Срок прошёл · отправьте отчёт') : 'Начать уборку' },
     { key: 'check', label: 'Приёмка', by: did('ИИ принял уборку', 'ИИ проверил отчёт') ? 'ai' : 'owner', at: j.submitted_at || undefined,
       note: accepted ? 'Уборка принята' : 'Отчёт на приёмке' },
     { key: 'pay', label: 'Оплата', by: j.guarantee || !Number(j.fee) ? 'ai' : 'owner', at: j.settled_at || undefined, note: paid ? 'Оплата получена' : j.guarantee ? 'Сервис заплатит из резерва' : 'Владелец рассчитается после приёмки' },
   ];
-  const done = [!!application || isMine, isMine, isMine && !!j.checkout_confirmed, reported, accepted, paid];
+  const came = j.booking_id !== null ? !!j.checkout_confirmed : !!j.arrived_at || working || reported;
+  const done = [!!application || isMine, isMine, isMine && came, reported, accepted, paid];
   const t = place(steps, done, i => i === 0 || i === 1 || i === 4 || i === 5 || (i === 2 ? now >= j.start - 3600 : i === 3 ? !!j.checkout_confirmed : false));
   const s = t.steps[t.current];
   const yours = !t.finished && s.by === 'you' && (t.current !== 3 || !!j.checkout_confirmed);

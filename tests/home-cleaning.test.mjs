@@ -81,3 +81,52 @@ test('a cleaning without a booking waits for nobody\'s departure',async()=>{
  // The private home is not offered to the autopilot of rented objects.
  const {planState}=await load('autopilot-plans');assert.equal((await planState(f.guest,'owner')).flats.some(x=>x.id===made.propertyId),false);
 });
+
+test('the performer says «Выезжаю» and «Я на месте», and reports by the checklist of the kind',async()=>{
+ const f=await fixture(),{cleaningThread,jobThread}=await load('process-threads'),{homeChecklist}=await load('home-cleaning');
+ assert.equal(homeChecklist({kind:'regular'}).length,4);assert.equal(homeChecklist({kind:'general',windows:2}).at(-1),'Окна вымыты: 2 окна');assert.ok(homeChecklist({kind:'renovation'}).some(x=>/краски/.test(x)));
+ const made=await orderHomeCleaning(f.guest,{address:'ул. Тестовая, 5',rooms:2,kind:'general',windows:2,start:iso(now()+1800),requestKey:'s2'});
+ await assert.rejects(f.cleaner.jobAction(made.id,{action:'arrived'}),/./);
+ await f.cleaner.jobAction(made.id,{action:'apply'});await f.guest.jobAction(made.id,{action:'assign',applicationId:f.db.raw.prepare('SELECT id FROM applications WHERE job_id=?').get(made.id).id});
+ const line=async()=>{const s=await f.guest.roleState('owner');return cleaningThread(s.jobs.find(j=>j.id===made.id),s,now());};
+ assert.match((await line()).line,/приедет к назначенному времени/);
+ assert.match((await f.cleaner.jobAction(made.id,{action:'on_way'})).message,/выехали/);assert.match((await line()).line,/в пути/);
+ assert.match((await f.cleaner.jobAction(made.id,{action:'arrived'})).message,/на месте/);
+ const t=await line();assert.match(t.line,/на месте, начнёт уборку/);assert.equal(t.steps[1].state,'done');assert.equal(t.steps[1].note,'Исполнитель на месте');
+ // Said twice: the customer is not told twice.
+ assert.match((await f.cleaner.jobAction(made.id,{action:'arrived'})).message,/уже знает/);
+ const notes=f.db.raw.prepare("SELECT body FROM notifications WHERE user_id='guest' AND (dedupe LIKE '%cleaner-arrived:%' OR dedupe LIKE '%cleaner-on-way:%')").all();
+ assert.equal(notes.length,2);assert.ok(notes.some(n=>/Откройте дверь/.test(n.body)));
+ const mine=await f.cleaner.roleState('cleaner');assert.match(jobThread(mine.jobs.find(j=>j.id===made.id),mine,now()).steps[2].note,/на месте/);
+ // The usual cleaning after guests keeps its own way to say «на месте».
+ await assert.rejects(f.cleaner.jobAction(f.job.id,{action:'arrived'}),/./);
+ await f.cleaner.jobAction(made.id,{action:'start'});
+ const {commandRole}=await load('access');for(const action of ['on_way','arrived'])assert.deepEqual(commandRole('jobs/x',{action}),['cleaner']);
+ const list=homeChecklist({kind:'general',windows:2});assert.equal(list.length,7);
+ await assert.rejects(f.cleaner.jobAction(made.id,{action:'submit',checklist:[true,true,true],report:'Готово'}),/чек-листа|фото/); // The customer's home asks for photos before and after: a report without them does not go.
+ await assert.rejects(f.cleaner.jobAction(made.id,{action:'submit',checklist:list.map(()=>true),report:'Готово'}),/фото до и после/);
+ f.db.raw.prepare('UPDATE operation_rules SET require_photos=0 WHERE property_id=?').run(made.propertyId);
+ await assert.rejects(f.cleaner.jobAction(made.id,{action:'submit',checklist:list.map(()=>true),items:[...list.slice(1),'Что-то ещё'],report:'Готово'}),/Чек-лист изменился/);
+ await f.cleaner.jobAction(made.id,{action:'submit',checklist:list.map(()=>true),items:list,report:'Готово'});
+ const card=(await f.guest.roleState('owner')).approvals.find(c=>c.kind==='report'&&c.entityId===made.id);
+ assert.ok(card.facts.some(([k,v])=>k==='Чек-лист'&&v==='7 из 7'));assert.match(card.detail,/^Готово\n\nОтмечено исполнителем: .*окна вымыты: 2 окна\.$/);
+});
+
+test('ticks of the site are not read as the points of a home cleaning, and a new performer starts from the beginning',async()=>{
+ const f=await fixture();
+ const made=await orderHomeCleaning(f.guest,{address:'ул. Тестовая, 5',rooms:1,kind:'general',start:iso(now()+1800),requestKey:'s3'});
+ f.db.raw.prepare('UPDATE operation_rules SET require_photos=0 WHERE property_id=?').run(made.propertyId);
+ await f.cleaner.jobAction(made.id,{action:'apply'});await f.guest.jobAction(made.id,{action:'assign',applicationId:f.db.raw.prepare('SELECT id FROM applications WHERE job_id=?').get(made.id).id});
+ await f.cleaner.jobAction(made.id,{action:'on_way'});await f.cleaner.jobAction(made.id,{action:'arrived'});
+ // The performer gives the order back: the marks of the way and the arrival are not left for the next one.
+ await f.cleaner.jobAction(made.id,{action:'release'});
+ assert.deepEqual({...f.db.raw.prepare('SELECT status,assigned_to,on_way_at,arrived_at FROM cleaning_jobs WHERE id=?').get(made.id)},{status:'open',assigned_to:null,on_way_at:null,arrived_at:null});
+ f.db.raw.prepare("UPDATE applications SET status='pending' WHERE job_id=?").run(made.id);
+ await f.guest.jobAction(made.id,{action:'assign',applicationId:f.db.raw.prepare('SELECT id FROM applications WHERE job_id=?').get(made.id).id});
+ await f.cleaner.jobAction(made.id,{action:'arrived'});
+ assert.equal(f.db.raw.prepare("SELECT COUNT(*) n FROM notifications WHERE user_id='guest' AND dedupe LIKE '%cleaner-arrived:%'").get().n,2);
+ // The site still sends four ticks: they are counted, not turned into points nobody confirmed.
+ await f.cleaner.jobAction(made.id,{action:'start'});await f.cleaner.jobAction(made.id,{action:'submit',checklist:[true,true,true,true],report:'Убрано'});
+ const card=(await f.guest.roleState('owner')).approvals.find(c=>c.kind==='report'&&c.entityId===made.id);
+ assert.equal(card.detail,'Убрано');assert.ok(card.facts.some(([k,v])=>k==='Чек-лист'&&v==='4 из 4'));
+});

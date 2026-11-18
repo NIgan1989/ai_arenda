@@ -66,6 +66,8 @@
 -- migration 0062_property_staff.sql sha256:1404d19d85c70f739126976e6bb21eba091d5529d7a5c36d19fb08575daf3989
 -- migration 0063_venues.sql sha256:df0f7d13b7b869accb211edd5c3b1b84d7469ac39270b1eb53c12d626d7a29b2
 -- migration 0064_banquet.sql sha256:55ed28d55e08227ed7913885a77700d65b8c231ca08c16a13635ee283f389fc5
+-- migration 0065_job_arrival.sql sha256:4ee72df68e075685c228826800764c7227b892e77a173fa4fe492fa97ff19abd
+-- migration 0066_job_arrival_reset.sql sha256:e2f8b81b0529b14179e04321512b023963191722c0703862aad66dc4a19d98ef
 
 -- table access_receipts
 CREATE TABLE access_receipts (id TEXT PRIMARY KEY,property_id TEXT NOT NULL,entity_kind TEXT NOT NULL,entity_id TEXT NOT NULL,user_id TEXT NOT NULL,created_at INTEGER NOT NULL,expires_at INTEGER NOT NULL);
@@ -476,7 +478,7 @@ CREATE TABLE `cleaning_jobs` (
 	`assigned_to` text,
 	`checklist` text DEFAULT '[]' NOT NULL,
 	`report` text DEFAULT '' NOT NULL,
-	`created_at` integer NOT NULL, started_at INTEGER, submitted_at INTEGER, completed_at INTEGER, version INTEGER NOT NULL DEFAULT 1, settled_at INTEGER, overdue_step INTEGER NOT NULL DEFAULT 0,
+	`created_at` integer NOT NULL, started_at INTEGER, submitted_at INTEGER, completed_at INTEGER, version INTEGER NOT NULL DEFAULT 1, settled_at INTEGER, overdue_step INTEGER NOT NULL DEFAULT 0, on_way_at integer, arrived_at integer,
 	FOREIGN KEY (`property_id`) REFERENCES `properties`(`id`) ON UPDATE no action ON DELETE no action
 );
 
@@ -1905,6 +1907,11 @@ WHEN NEW.status IN ('open','cancelled')
 BEGIN
  UPDATE cleaning_holds SET status='returned' WHERE job_id=NEW.id AND status='held';
 END;
+
+-- trigger cleaning_job_arrival_reset
+CREATE TRIGGER cleaning_job_arrival_reset AFTER UPDATE OF assigned_to ON cleaning_jobs
+WHEN NEW.assigned_to IS NOT OLD.assigned_to AND (NEW.on_way_at IS NOT NULL OR NEW.arrived_at IS NOT NULL)
+BEGIN UPDATE cleaning_jobs SET on_way_at=NULL,arrived_at=NULL WHERE id=NEW.id; END;
 
 -- trigger cleaning_job_completed
 CREATE TRIGGER cleaning_job_completed AFTER UPDATE OF status ON cleaning_jobs
