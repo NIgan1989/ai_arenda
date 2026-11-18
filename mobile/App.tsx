@@ -59,7 +59,8 @@ import {isUnclaimed} from '../lib/overdue-text';
 import {CheckinGuide} from './src/CheckinGuide';
 import {PageTransition} from './src/PageTransition';
 import {background,entryReady,markGesture} from './src/loading';
-import {startHere} from './src/here';
+import {getHere,startHere} from './src/here';
+import {nearestCity} from './src/here-rules';
 import {refundLeft} from '../lib/cancellation';
 
 // What cancelling costs, in the words of the confirmation: the server counts it by the guest offer (lib/cancellation.ts).
@@ -104,7 +105,7 @@ function BookingReview({flow,busy,done,result,onConfirm,onEdit}:{flow:Flow;busy:
   </View>;
 }
 function Auth({onSubmit,busy,titled=true}:{titled?:boolean;onSubmit:(mode:string,phone:string,password:string,name?:string,city?:string,recovery?:string)=>Promise<void>;busy:boolean}){
-  const [mode,setMode]=useState('login'),[phone,setPhone]=useState(''),[password,setPassword]=useState(''),[name,setName]=useState(''),[city,setCity]=useState('Павлодар'),[recovery,setRecovery]=useState(''),[error,setError]=useState('');
+  const [mode,setMode]=useState('login'),[phone,setPhone]=useState(''),[password,setPassword]=useState(''),[name,setName]=useState(''),[city,setCity]=useState(''),[recovery,setRecovery]=useState(''),[error,setError]=useState('');
   // «Забыли пароль?»: first the number, then the code that came in Telegram or that the administrator dictated, and a new password.
   const [codeSent,setCodeSent]=useState(''),[sending,setSending]=useState(false);
   const [accepted,setAccepted]=useState(false);const legal=(path:string)=>void Linking.openURL(API_URL+path+'?from=app').catch(()=>setError('Не удалось открыть документ.'));
@@ -115,7 +116,7 @@ function Auth({onSubmit,busy,titled=true}:{titled?:boolean;onSubmit:(mode:string
   return <View style={s.card}>
     {(titled||mode!=='login')&&<Text style={s.cardTitle}>{title}</Text>}
     <Text style={s.meta}>{forgot?(codeSent||'Укажите номер, на который зарегистрирован аккаунт. Мы пришлём код для смены пароля.'):'Номер телефона и пароль те же, что на сайте. Брони и чаты общие.'}</Text>
-    {mode==='register'&&<><Text style={s.fieldLabel}>Имя</Text><TextInput accessibilityLabel="Имя" style={s.field} value={name} onChangeText={setName} maxLength={100} editable={!locked}/><Text style={s.fieldLabel}>Город</Text><TextInput accessibilityLabel="Город" style={s.field} value={city} onChangeText={setCity} maxLength={80} editable={!locked}/></>}
+    {mode==='register'&&<><Text style={s.fieldLabel}>Имя</Text><TextInput accessibilityLabel="Имя" style={s.field} value={name} onChangeText={setName} maxLength={100} editable={!locked}/><Text style={s.fieldLabel}>Город</Text><TextInput accessibilityLabel="Город" style={s.field} value={city} onChangeText={setCity} maxLength={80} editable={!locked} placeholder="Например, Алматы" placeholderTextColor={C.muted}/></>}
     <Text style={s.fieldLabel}>Номер телефона</Text><TextInput accessibilityLabel="Номер телефона" style={s.field} placeholder="+7 777 123 45 67" placeholderTextColor={C.muted} value={phone} onChangeText={v=>{setPhone(v);if(codeSent)setCodeSent('');}} keyboardType="phone-pad" autoComplete="tel" maxLength={30} editable={!locked}/>
     {forgot&&!!codeSent&&<><Text style={s.fieldLabel}>Код из сообщения</Text><TextInput accessibilityLabel="Код из сообщения" style={s.field} placeholder="6 цифр" placeholderTextColor={C.muted} value={recovery} onChangeText={v=>setRecovery(v.replace(/\D/g,'').slice(0,6))} keyboardType="number-pad" autoComplete="one-time-code" textContentType="oneTimeCode" maxLength={6} editable={!locked}/></>}
     {mode==='recover'&&<><Text style={s.fieldLabel}>Резервный код</Text><TextInput accessibilityLabel="Резервный код" style={s.field} value={recovery} onChangeText={setRecovery} maxLength={80} autoCapitalize="none" autoCorrect={false} editable={!locked}/><Text style={s.meta}>Код выдавали при регистрации. Смена пароля завершит прежние сеансы на всех устройствах.</Text></>}
@@ -378,10 +379,12 @@ function Chat(){
     }catch(e){await handleError(e);}
     finally{locked.current=false;setBusy(false);}
   }
+  // A city left empty at sign-up is the one the phone sees the person in; the server takes its own default otherwise.
+  const cityHere=()=>{const fix=getHere().fix;return fix?nearestCity(fix.point)||'':'';};
   async function authenticate(mode:string,phone:string,password:string,id:string,intent:string,name?:string,city?:string,recovery?:string){
     if(locked.current)return;locked.current=true;setBusy(true);
     try{
-      const result=await request('/auth/'+mode,{phone,password,...(mode==='register'?{name,city}:mode==='recover'?{recoveryCode:recovery}:mode==='reset'?{code:recovery}:{})});if(result.recoveryCode)setRecoveryCode(result.recoveryCode);if(mode==='recover'){await saveSession(null);session.current=false;setWorkspaceRole(null);activeRoleRef.current=null;setSelectedRole(null);setData(empty);setMessages([]);setFlow(null);return;}if(typeof result.token!=='string')throw Error('Сервер не подтвердил вход.');await saveSession(result.token);session.current=true;
+      const result=await request('/auth/'+mode,{phone,password,...(mode==='register'?{name,city:city?.trim()||cityHere()}:mode==='recover'?{recoveryCode:recovery}:mode==='reset'?{code:recovery}:{})});if(result.recoveryCode)setRecoveryCode(result.recoveryCode);if(mode==='recover'){await saveSession(null);session.current=false;setWorkspaceRole(null);activeRoleRef.current=null;setSelectedRole(null);setData(empty);setMessages([]);setFlow(null);return;}if(typeof result.token!=='string')throw Error('Сервер не подтвердил вход.');await saveSession(result.token);session.current=true;
       setWorkspaceRole(null);activeRoleRef.current=null;setSelectedRole(null);
       // While the last role is opening the chooser is not shown, so the map is the first thing seen after «Войти».
       // Signed in to book or to see something from the visitor map: the guest's pages open, and that goes on there.
