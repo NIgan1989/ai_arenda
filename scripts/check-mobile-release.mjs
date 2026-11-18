@@ -40,7 +40,8 @@ export async function checkMobileRelease({root=process.cwd(),env={},profile='pro
  const imagePicker=app?.plugins?.find(item=>Array.isArray(item)&&item[0]==='expo-image-picker')?.[1];
  required('camera_permission_explanation',typeof imagePicker?.cameraPermission==='string'&&imagePicker.cameraPermission.trim().length>=20);
  required('photos_permission_explanation',typeof imagePicker?.photosPermission==='string'&&imagePicker.photosPermission.trim().length>=20);
- required('no_unneeded_microphone',imagePicker?.microphonePermission===false);
+ // Voice input (expo-speech-recognition) needs the microphone: «false» here strips the iPhone's microphone text, and iOS then closes the app at the first tap on the microphone.
+ required('microphone_permission_explanation',typeof imagePicker?.microphonePermission==='string'&&imagePicker.microphonePermission.trim().length>=20);
  const fingerprint=mobileSourceFingerprint(root);
  if(profile==='production'){
   required('store_distribution',settings.distribution==='store');required('production_environment',settings.environment==='production');required('production_aab',settings.android.buildType==='app-bundle');required('production_physical_ios',settings.ios.simulator!==true);
