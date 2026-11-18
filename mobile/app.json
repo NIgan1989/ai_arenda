@@ -42,6 +42,13 @@
           "isIosBackgroundLocationEnabled": false
         }
       ],
+      [
+        "expo-speech-recognition",
+        {
+          "microphonePermission": "Разрешите микрофон, чтобы сказать запрос голосом вместо набора текста.",
+          "speechRecognitionPermission": "Разрешите распознавание речи, чтобы превратить сказанное в текст запроса."
+        }
+      ],
       "@maplibre/maplibre-react-native",
       [
         "expo-splash-screen",
