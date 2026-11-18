@@ -65,3 +65,43 @@ test('the morning summary goes to each admin once a day after 09:00 Kazakhstan t
   assert.match(body,/Сделал сам/);assert.match(body,/Брони: новых/);
  }finally{f.db.close();}
 });
+
+// With a model the AI reads the issue in the reporter's words; the word rules stay the floor.
+const {mergeTriage}=await load('admin-issues');
+const {saveAIDataPermission,AI_DATA_POLICY_VERSION}=await load('ai-data-permission');
+const aiConfig={PLATFORM_ADMIN_IDS:'admin',OPENAI_API_KEY:'fake-test-key',OPENAI_MODEL:'fixture-model'};
+const withTriage=async(answer,run)=>{
+ const real=globalThis.fetch,calls=[];
+ globalThis.fetch=async(url,request)=>{if(!String(url).includes('api.openai.com'))return real(url,request);calls.push(JSON.parse(request.body));
+  return Response.json({id:'r',usage:{input_tokens:10,output_tokens:5},output:[{type:'message',content:[{type:'output_text',text:JSON.stringify(answer)}]}]});};
+ try{await run(calls);}finally{globalThis.fetch=real;}
+};
+test('the model may raise an issue, never lower it below the word rules',()=>{
+ const urgent={kind:'access',priority:'urgent'};
+ assert.deepEqual(mergeTriage(urgent,{kind:'other',priority:'normal',advice:'a',action:'none'}),{kind:'access',priority:'urgent',advice:'a',action:'none'});
+ assert.deepEqual(mergeTriage({kind:'other',priority:'normal'},{kind:'safety',priority:'urgent',advice:'Звоните 112',action:'call_admin'}).priority,'urgent');
+ assert.deepEqual(mergeTriage(urgent,null),{...urgent,advice:'',action:'none'});
+});
+test('the model catches what the words miss, advises the guest, calls the admin and shows other free places',async()=>{
+ const f=await fixture();try{
+  await saveAIDataPermission(f.guest,{allowed:true,expectedVersion:0,policyVersion:AI_DATA_POLICY_VERSION});
+  await f.guest.bookingAction(f.booking,{action:'issue',issue:'Ребёнку стало плохо от сильной вони из вентиляции, находиться внутри невозможно',requestKey:'m1'});
+  const issue=f.db.raw.prepare('SELECT * FROM administrator_issues').get();
+  await withTriage({kind:'safety',priority:'urgent',advice:'Выйдите на свежий воздух, при плохом самочувствии звоните 112.',action:'offer_similar'},async calls=>{
+   const r=await sweepIssues(f.db,aiConfig);assert.equal(r.triaged,1);assert.equal(r.escalated,1);assert.equal(calls.length,1);
+   assert.doesNotMatch(JSON.stringify(calls[0]),/PRIVATE ADDRESS/);
+  });
+  assert.equal(f.db.raw.prepare('SELECT priority FROM operator_tickets WHERE issue_id=?').get(issue.id).priority,'urgent');
+  assert.match(f.db.raw.prepare("SELECT body FROM operator_history WHERE id=?").get('ai-triage:'+issue.id).body,/безопасность.*Совет: Выйдите/);
+  assert.match(f.db.raw.prepare("SELECT body FROM notifications WHERE dedupe=?").get('guest:issue-advice:'+issue.id+':1').body,/звоните 112/);
+  assert.equal(f.db.raw.prepare("SELECT COUNT(*) n FROM notifications WHERE dedupe LIKE 'admin:issue-urgent:%'").get().n,1);
+ }finally{f.db.close();}
+});
+test('without the reporter\'s permission the issue goes by the word rules, and the model is not asked',async()=>{
+ const f=await fixture();try{
+  await f.guest.bookingAction(f.booking,{action:'issue',issue:'В квартире грязно',requestKey:'m2'});
+  await withTriage({kind:'other',priority:'normal',advice:'x',action:'none'},async calls=>{await sweepIssues(f.db,aiConfig);assert.equal(calls.length,0);});
+  assert.equal(f.db.raw.prepare('SELECT priority FROM operator_tickets').get().priority,'high');
+  assert.equal(f.db.raw.prepare("SELECT COUNT(*) n FROM notifications WHERE dedupe LIKE 'guest:issue-advice:%'").get().n,0);
+ }finally{f.db.close();}
+});
