@@ -1,8 +1,6 @@
-import {DomainError} from './domain';
 import type {RentalService} from './service';
-import {redactAIText,reserveAIRequest,type AIConfig,type AIBudgetOutcome} from './ai';
-import {createAIBudgetLifecycle} from './ai-budget';
-import {aiDataPermission} from './ai-data-permission';
+import {redactAIText,type AIConfig} from './ai';
+import {askModelJSON,modelReady} from './ai-json';
 import {amenities,checkinMethods,kindLabel} from './listings';
 import type {Row} from './operation-core';
 
@@ -50,31 +48,11 @@ export function guestFacts(b:Row,details:Row={}):GuestFacts{
 
 /** The guest's own permission, limits and budget apply: it is the guest's text that leaves the service. */
 export function guestModel(s:RentalService,config:AIConfig):GuestModel|undefined{
- if(!config.OPENAI_API_KEY||!config.OPENAI_MODEL)return undefined;
+ if(!modelReady(config))return undefined;
  return async(facts,history,text)=>{
-  if(!(await aiDataPermission(s)).allowed)return null;
-  try{await reserveAIRequest(s.db,s.userId);}catch(error){if(error instanceof DomainError)return null;throw error;}
-  const budget=createAIBudgetLifecycle(s.db,s.userId,config);
-  let sent=false,accounted=false;
-  const settle=async(outcome:AIBudgetOutcome)=>{if(!accounted){accounted=true;await budget.finish(outcome);}};
-  try{
-   const input=[...history.slice(-6).map(m=>({role:m.from==='guest'?'user' as const:'assistant' as const,content:redactAIText(clean(m.text,600))})),{role:'user' as const,content:redactAIText(clean(text,1500))}];
-   const bodyJson=JSON.stringify({model:config.OPENAI_MODEL,store:false,max_output_tokens:400,
-    ...(/^gpt-6-(?:luna|sol)$/.test(config.OPENAI_MODEL!)?{reasoning:{effort:'none'}}:{}),
-    instructions:instructions+'\n\nФакты брони:\n'+JSON.stringify(facts),input,
-    text:{format:{type:'json_schema',name:'guest_answer',strict:true,schema}}});
-   await budget.beforeRequest(bodyJson);sent=true;
-   const response=await fetch('https://api.openai.com/v1/responses',{method:'POST',headers:{Authorization:`Bearer ${config.OPENAI_API_KEY}`,'Content-Type':'application/json'},signal:AbortSignal.timeout(15000),body:bodyJson});
-   if(!response.ok){await settle({status:[400,401,403,404,422,429].includes(response.status)?'rejected':'uncertain',httpStatus:response.status});return null;}
-   const result=await response.json() as {id?:string;usage?:{input_tokens:number;output_tokens:number};output?:{type:string;content?:{type:string;text?:string}[]}[]};
-   await settle({status:'completed',usage:result.usage,responseId:result.id,httpStatus:response.status});
-   const raw=result.output?.filter(item=>item.type==='message').flatMap(item=>item.content||[]).filter(item=>item.type==='output_text').map(item=>item.text||'').join('').trim();
-   let parsed:Row;try{parsed=JSON.parse(raw||'');}catch{return null;}
-   if(typeof parsed?.handoff!=='boolean'||typeof parsed?.reply!=='string')return null;
-   return {reply:redactAIText(clean(parsed.reply,1200)),handoff:parsed.handoff};
-  }catch{
-   if(sent&&!accounted)try{await settle({status:'uncertain'});}catch{/* The hold stays reserved. */}
-   return null;
-  }
+  const input=[...history.slice(-6).map(m=>({role:m.from==='guest'?'user' as const:'assistant' as const,content:redactAIText(clean(m.text,600))})),{role:'user' as const,content:redactAIText(clean(text,1500))}];
+  const parsed=await askModelJSON(s.db,s.userId,config,{name:'guest_answer',instructions:instructions+'\n\nФакты брони:\n'+JSON.stringify(facts),input,schema});
+  if(!parsed||typeof parsed.handoff!=='boolean'||typeof parsed.reply!=='string')return null;
+  return {reply:redactAIText(clean(parsed.reply,1200)),handoff:parsed.handoff};
  };
 }
