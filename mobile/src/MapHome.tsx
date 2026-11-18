@@ -25,7 +25,7 @@ import {countdown,mapCities,validPoint,type MapPoint} from './map-math';
 import {MapSheetHead} from './MapSheetHead';
 import {AutopilotThreads,type FeedNeed} from './AutopilotThreads';
 import {AutopilotHandoff} from './AutopilotHandoff';
-import {BATH_TYPES as BATH_KINDS,allKinds,kindCategoryOf,isQuiet,occasionTitle,categoryOf,withKind,kindChoice,PAST_TEXT,nearPlace,placeMissedNote,pinPrice,askFirst,understoodNote,notUnderstoodNote,chipDraft,freshDraft,guestRequestFromText,matchingBody,newDraft,shownReasons,type GuestDraft} from './ai-request';
+import {cleaningAsk,BATH_TYPES as BATH_KINDS,allKinds,kindCategoryOf,isQuiet,occasionTitle,categoryOf,withKind,kindChoice,PAST_TEXT,nearPlace,placeMissedNote,pinPrice,askFirst,understoodNote,notUnderstoodNote,chipDraft,freshDraft,guestRequestFromText,matchingBody,newDraft,shownReasons,type GuestDraft} from './ai-request';
 import type {HeadAction} from './head-line';
 import {Action,Grip,SheetHeading,SheetRow,Stage,h,handleHeight,topInset} from './SheetParts';
 import {GuestForm} from './GuestForm';
@@ -155,6 +155,8 @@ function GuestPanel({setScanning,setQuiet,accountId,data,mapData,publish,selecte
   void find(nearNow(parsed.draft));
  };
  const ask=(text:string)=>{
+  // «Уборка завтра» is not a place to stay: it is the home cleaning order, the same as the «Уборка» row of the picker.
+  if(cleaningAsk(text)){setAsked('');onIntent('home-cleaning');return;}
   const cities=Object.keys(mapCities),parsed=guestRequestFromText(text,draft,cities);
   setError('');
   if(parsed.understood){take(parsed);return;}

@@ -85,6 +85,11 @@ export const CATEGORIES: { id: Category; title: string; any: string; hint: strin
 // What a hall is taken for (lib/listings.ts occasions). A memorial meal is spoken of quietly on every screen.
 export const OCCASIONS: [string, string][] = [['toi', 'Той, свадьба'], ['party', 'Юбилей, праздник'], ['memorial', 'Поминки, ас'], ['other', 'Другое']];
 export const occasionTitle = (id?: string) => OCCASIONS.find(([known]) => known === id)?.[1] || '';
+// A guest asks for a cleaning of their own home, not for a place: «уборка завтра», «нужна уборка», «клининг», «убраться
+// в квартире». A stay that merely mentions cleaning («квартира после уборки») is still a search.
+export const cleaningAsk = (text: string) =>
+  /^\s*(?:(?:мне|нужна|нужен|нужно|хочу|заказать|закажу)\s+){0,3}(?:уборк|клининг|убрать(?:ся)?(?=\s|$)|генеральн\S*\s+уборк)/i.test(text) ||
+  /уборк\S*\s+(?:на\s+дом|дома|в\s+квартир|квартир)/i.test(text);
 export const isQuiet = (draft: { occasion?: string }) => draft.occasion === 'memorial';
 /** Every type of a category; none for «Жильё», where no type named is any home. */
 export const allKinds = (category: Category): string[] => (category === 'bath' ? [...BATH_KINDS] : category === 'banquet' ? [...BANQUET_KINDS] : []);
