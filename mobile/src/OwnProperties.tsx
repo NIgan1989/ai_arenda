@@ -20,14 +20,19 @@ import {plural} from '../../lib/map-search-request';
 
 const tones:Record<string,[string,string]>={success:[C.successSoft,C.success],warning:[C.warningSoft,C.warning],active:[C.accentSoft,C.accentPressed],neutral:[C.surfaceAlt,C.muted],danger:[C.dangerSoft,C.danger]};
 
-type Props={properties:Row[];bookings:Row[];busy:boolean;onAdd?:()=>void;onEdit:(id:string)=>void;onSettings:(id:string)=>void;onCleaning:(id:string)=>void;onMap:(id:string)=>(()=>void)|undefined};
+type Props={properties:Row[];bookings:Row[];busy:boolean;onAdd?:()=>void;onHome?:()=>void;onEdit:(id:string)=>void;onSettings:(id:string)=>void;onCleaning:(id:string)=>void;onMap:(id:string)=>(()=>void)|undefined};
 
-export function OwnProperties({properties,bookings,busy,onAdd,onEdit,onSettings,onCleaning,onMap}:Props){
+export function OwnProperties({properties,bookings,busy,onAdd,onHome,onEdit,onSettings,onCleaning,onMap}:Props){
  const [open,setOpen]=useState(properties.length===1?properties[0].id:'');
  return <View style={o.list}>
   {!!onAdd&&<Pressable accessibilityRole="button" accessibilityLabel="Добавить объект" disabled={busy} onPress={onAdd} style={({pressed})=>[o.add,(pressed||busy)&&o.dim]}>
    <View style={o.addOrb}><Text style={o.addPlus}>+</Text></View>
    <View style={o.grow}><Text style={o.addTitle}>Добавить объект</Text><Text style={o.addSub}>Жильё, баня или зал: расскажите одним сообщением, ИИ заполнит объявление</Text></View>
+  </Pressable>}
+  {/* Своё жильё, которое не сдаётся: только уборка (lib/home-cleaning.ts). Без объявления, цены и правил. */}
+  {!!onHome&&<Pressable accessibilityRole="button" accessibilityLabel="Мой дом: только уборка. Найти исполнителя на уборку своего жилья, которое вы не сдаёте" disabled={busy} onPress={onHome} style={({pressed})=>[o.add,o.home,(pressed||busy)&&o.dim]}>
+   <View style={[o.addOrb,o.homeOrb]}><KindIcon id="cleaning" size={22} color={C.accent}/></View>
+   <View style={o.grow}><Text style={o.addTitle}>Мой дом: только уборка</Text><Text style={o.addSub}>Не сдаёте? Укажите адрес и свою цену, ИИ найдёт исполнителя</Text></View>
   </Pressable>}
   {!properties.length&&<BrandEmpty title="Пока пусто" text="Здесь появятся ваши объекты: их состояние, брони и цена."/>}
   {properties.map(p=>isHome(p.details?.type)?<HomeCard key={p.id} place={p} busy={busy} onCleaning={()=>onCleaning(p.id)} onMap={onMap(p.id)}/>:<PropertyCard key={p.id} property={p} bookings={bookings} busy={busy} open={open===p.id} onToggle={()=>setOpen((v:string)=>v===p.id?'':p.id)} onEdit={()=>onEdit(p.id)} onSettings={()=>onSettings(p.id)} onCleaning={()=>onCleaning(p.id)} onMap={onMap(p.id)}/>)}
@@ -106,6 +111,7 @@ const o=StyleSheet.create({
  empty:{...type.label,color:C.muted,textAlign:'center',paddingVertical:16},note:{...type.caption,color:C.inkSoft,paddingHorizontal:4},
  card:{gap:12,padding:12,borderRadius:R.xl,borderWidth:1,borderColor:C.glassLine,backgroundColor:C.glassStrong},cardOpen:{borderColor:C.accentSoft},
  row:{flexDirection:'row',alignItems:'center',gap:12},
+ home:{backgroundColor:C.glassStrong},homeOrb:{backgroundColor:C.accentSoft},
  homeThumb:{alignItems:'center',justifyContent:'center',backgroundColor:C.accentSoft},
  thumb:{width:72,height:72,borderRadius:R.lg,overflow:'hidden',backgroundColor:C.surfaceAlt},
  title:{...type.body,color:C.ink,fontWeight:'700'},meta:{...type.label,color:C.inkSoft},

@@ -65,7 +65,7 @@ test('the customer sets the price, and an order cannot go to another person\'s a
  assert.deepEqual((await f.guest.roleState('owner')).homeDeals.length,1);
  await assert.rejects(orderHomeCleaning(f.guest,{propertyId:f.property,rooms:1,kind:'regular',start,requestKey:'b'}),/адрес недоступен/);
  await assert.rejects(orderHomeCleaning(f.guest,{address:'ул. Тестовая, 5',rooms:1,kind:'regular',start:'когда-нибудь',requestKey:'c'}),/когда нужна уборка/);
- const {commandRole}=await load('access');assert.deepEqual(commandRole('home-cleaning',{}),['guest','owner']);
+ const {commandRole}=await load('access');assert.deepEqual(commandRole('home-cleaning',{}),['owner']);
 });
 
 test('a cleaning without a booking waits for nobody\'s departure',async()=>{

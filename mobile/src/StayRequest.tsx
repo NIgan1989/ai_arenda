@@ -1,3 +1,4 @@
+import type {HomeAsk} from '../../lib/home-ask';
 import React,{useEffect,useMemo,useRef,useState} from 'react';
 import {Thinking} from './Thinking';
 import {windowBadge} from '../../lib/window-badge';
@@ -89,10 +90,11 @@ export function CleaningRequest({property,busy,done,result,onSubmit}:{property:R
 }
 // Уборка на дом: адрес, вид уборки, размер, время. Цену считает сервис (lib/home-cleaning.ts), заказ уходит одним свайпом.
 // places — сохранённые частные адреса заказчика: с ними адрес второй раз не набирают.
-export function HomeCleaningOrder({places,deals=[],city,propertyId,busy,done,result,onSubmit}:{places:Row[];deals?:HomeDeal[];city:string;propertyId?:string;busy:boolean;done?:boolean;result?:string;onSubmit:(body:Row)=>void}){
+export function HomeCleaningOrder({places,deals=[],city,propertyId,initial,busy,done,result,onSubmit}:{places:Row[];deals?:HomeDeal[];city:string;propertyId?:string;initial?:HomeAsk;busy:boolean;done?:boolean;result?:string;onSubmit:(body:Row)=>void}){
  const clock=useActivityClock(),[opened]=useState(()=>Math.floor(Date.now()/1000)),now=clock||opened;
- const [placeId,setPlaceId]=useState(()=>propertyId||places[0]?.id||''),place=places.find(x=>x.id===placeId),[address,setAddress]=useState('');
- const [kind,setKind]=useState<HomeKind>('regular'),[rooms,setRooms]=useState(()=>homeRooms(place?.rooms||2)),[windows,setWindows]=useState(0),[wishes,setWishes]=useState('');
+ // initial: что ИИ понял из текста «Нового объекта» (lib/home-ask.ts). Новый адрес из текста важнее сохранённых.
+ const [placeId,setPlaceId]=useState(()=>propertyId||(initial?.address?'':places[0]?.id)||''),place=places.find(x=>x.id===placeId),[address,setAddress]=useState(initial?.address||'');
+ const [kind,setKind]=useState<HomeKind>(initial?.kind||'regular'),[rooms,setRooms]=useState(()=>homeRooms(initial?.rooms||place?.rooms||2)),[windows,setWindows]=useState(initial?.windows||0),[wishes,setWishes]=useState('');
  const [when,setWhen]=useState<StayChoice>(()=>settleStay(defaultStay('hourly',{},opened),{},opened));
  // Цену ставит заказчик: пока он её не тронул, в поле стоит совет ИИ и идёт за условиями заказа.
  const [asked,setAsked]=useState<number|null>(null);
