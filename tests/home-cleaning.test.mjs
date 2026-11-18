@@ -155,6 +155,8 @@ test('a home order is cancelled free until two hours before the start, later the
  assert.match(f.db.raw.prepare("SELECT body FROM notifications WHERE user_id='cleaner' AND dedupe LIKE '%cancelled:'||?").get(early.id).body,/в бесплатный срок/);
  // Later: the customer who read «free» is asked again, then the part is recorded and can be marked as paid.
  const late=await taken(f,'c2');f.db.raw.prepare('UPDATE cleaning_jobs SET start=?,end=? WHERE id=?').run(now()+3600,now()+3*3600,late.id);
+ // Before the acceptance nothing can be recorded as paid, by the card or by the journal of payments.
+ {const {recordFinance}=await load('finance');await assert.rejects(recordFinance(f.guest,{kind:'job_payment',jobId:late.id,amount:1000,confirmed:true,note:'Рано',requestKey:'early-pay'}),/Сначала примите результат/);}
  await assert.rejects(f.guest.jobAction(late.id,{action:'cancel',expectedFee:0}),/Бесплатный срок отмены уже прошёл: исполнителю положено 3 000 ₸/);
  assert.equal(row(f,late.id).status,'assigned');
  const done=await f.guest.jobAction(late.id,{action:'cancel',expectedFee:3000});assert.equal(done.cancelFee,3000);assert.match(done.message,/положено 3 000 ₸/);

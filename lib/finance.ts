@@ -28,7 +28,7 @@ export async function recordFinance(service:RentalService,body:Row,provider?:{ev
  if(bookingId)await migrateFinanceEntity(service,'booking',bookingId);if(jobId)await migrateFinanceEntity(service,'job',jobId);
  if(['payment','deposit'].includes(kind)&&!(provider?['confirmed','cancelled','expired','completed']:['confirmed']).includes(entity.status))throw new DomainError('Поступление недоступно для этой брони.',409);
  const jobDue=jobId?(entity.status==='cancelled'?Number(entity.cancel_fee||0):entity.fee):0;
- if(kind==='job_payment'&&entity.status!=='completed'&&!jobDue)throw new DomainError('Сначала примите результат работы.',409);
+ if(kind==='job_payment'&&entity.status!=='completed'&&!(entity.status==='cancelled'&&jobDue>0))throw new DomainError('Сначала примите результат работы.',409);
  if(kind==='job_payment'&&!entity.assigned_to)throw new DomainError('Уборка закрыта без исполнителя: платить некому.',409);
  if(['refund','compensation'].includes(kind)&&!['confirmed','cancelled','completed','expired'].includes(entity.status))throw new DomainError('Для этой брони такой расчёт недоступен.',409);
  if(kind==='deposit_return'&&!['completed','cancelled','expired'].includes(entity.status))throw new DomainError('Сначала подтвердите освобождение жилья.',409);
