@@ -3,6 +3,8 @@ import type {RentalService} from './service';
 import {q,one,rows,uuid,epoch,hash,type Row} from './operation-core';
 import {jpegInput} from './listings';
 import {answerGuest,AI_KEY} from './guest-answers';
+import {guestModel} from './guest-answers-ai';
+import type {AIConfig} from './ai';
 import {makeStayOffer} from './stay-offers';
 import {reliabilityFor,reliabilityShort} from './reliability';
 type Member={id:string;role:Role;name?:string};
@@ -69,7 +71,7 @@ export async function readDiscussion(service:RentalService,role:Role,body:Row){
  const subject=await discussionSubject(service,context);
  return {room:{id:room.id,sendBlocked,title:room.title,channel:room.channel,members,archived},subject,call:archived?{phone:null,note:'Чат в архиве.'}:await discussionCall(service,role,context,subject,sendBlocked),messages,visits,hasOlder:older,userId:service.userId};
 }
-export async function sendDiscussionMessage(service:RentalService,role:Role,body:Row){
+export async function sendDiscussionMessage(service:RentalService,role:Role,body:Row,config:AIConfig={}){
  const {room,context}=await authorisedRoom(service,role,body);if(room.membership_key!==context.membershipKey)throw new DomainError('Состав участников изменился. Откройте актуальное обсуждение.',409);
  if(await one(service.db,'SELECT room_id FROM discussion_blocks WHERE room_id=?',room.id))throw new DomainError('Переписка заблокирована участником. История и действия по процессу доступны.',403);
  const photo=body.photo?jpegInput(body.photo,'property').data:'',reply=body.replyTo?number(body.replyTo,'Ответ на сообщение',1,Number.MAX_SAFE_INTEGER):null;
@@ -80,7 +82,7 @@ export async function sendDiscussionMessage(service:RentalService,role:Role,body
  const message=await q(service.db,`INSERT OR IGNORE INTO discussion_messages(room_id,sender_id,sender_role,body,request_key,created_at,photo_data,reply_to) SELECT ?,?,?,?,?,?,?,? WHERE ${context.gate} AND NOT EXISTS(SELECT 1 FROM discussion_blocks WHERE room_id=?) AND (SELECT COUNT(*) FROM discussion_messages WHERE sender_id=? AND created_at>?)<30 RETURNING seq`,room.id,service.userId,role,text,key,epoch(),photo,reply,...context.gateArgs,room.id,service.userId,epoch()-60).first<Row>();
  if(!message){const replay=await one(service.db,'SELECT seq,body,photo_data,reply_to FROM discussion_messages WHERE room_id=? AND sender_id=? AND sender_role=? AND request_key=?',room.id,service.userId,role,key);if(replay&&same(replay))return {sent:true,seq:replay.seq};throw new DomainError('Сообщение не отправлено: изменился состав участников или достигнут лимит. Обновите чат.',409);}
  // Under autopilot the AI administrator answers the guest for the owner. A failed answer never fails the guest's message.
- if(role==='guest'&&room.channel==='stay'){try{await answerGuest(service.db,room.id,message.seq,(bookingId,kind,wanted)=>makeStayOffer(service,bookingId,kind,undefined,wanted));}catch(error){console.error('AI administrator: guest answer failed',error);}}
+ if(role==='guest'&&room.channel==='stay'){try{await answerGuest(service.db,room.id,message.seq,(bookingId,kind,wanted)=>makeStayOffer(service,bookingId,kind,undefined,wanted),guestModel(service,config));}catch(error){console.error('AI administrator: guest answer failed',error);}}
  return {sent:true,seq:message.seq};
 }
 
