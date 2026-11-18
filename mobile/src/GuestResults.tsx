@@ -14,8 +14,14 @@ import { Heart } from './Favorites';
 import { markLabel, markOf, type Mine } from './favorites';
 import { GuestHelpers, HelperTrail } from './GuestHelpers';
 import { guestHelpers, narrowed, stepWords, type Point } from './guest-helpers';
+import { noteViews, takeViews, viewLog } from './guest-views';
+import { request } from './api';
+import { background } from './loading';
 
 const chevron = require('../assets/ui/chevron.png');
+// What was already told for the answer on screen. It outlives the sheet being lowered and raised again, so the same
+// card is not counted twice for one answer.
+const shownLog = viewLog();
 
 type Props = {
   // The answer of /api/public/matching: flats that are free on these conditions, best first.
@@ -207,6 +213,21 @@ export function GuestResults({ preview, draft, mine, onFavorite, selected, onSel
   }, [cardTop, buttonBottom, chosen?.id, stripBottom, full, flats.length]);
   useEffect(() => () => onBookEdge?.(0), []);
   useEffect(() => () => clearTimeout(settle.current), []);
+  // «Показы»: the card in view (every row of the full list) is counted for its owner, once for this answer.
+  // Sent a little later and in one go, so swiping does not turn into a request per card.
+  const viewTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const sendViews = () => {
+    const ids = takeViews(shownLog);
+    if (ids.length) background(() => request('/api/public/views', { ids })).catch(() => {});
+  };
+  useEffect(() => {
+    // An opened place takes the strip's seat: then it is the one the guest sees.
+    const onScreen = chosen ? [String(chosen.id)] : full ? list.map(flat => String(flat.id)) : list[index] ? [String(list[index].id)] : [];
+    if (!noteViews(shownLog, String(preview.serverTime || ''), onScreen)) return;
+    clearTimeout(viewTimer.current);
+    viewTimer.current = setTimeout(sendViews, 2000);
+  }, [preview.serverTime, index, full, listKey, chosen?.id]);
+  useEffect(() => () => { clearTimeout(viewTimer.current); sendViews(); }, []);
   // The map follows once the swipe has stopped, not on every card that passes by.
   const scrolled = (x: number) => {
     const at = carouselIndex(x, step, list.length);

@@ -15,6 +15,7 @@ import {placeNow} from './own-place';
 import {BusyMark,busyNow,hhmm} from './BusyMark';
 import {isHome} from '../../lib/home-cleaning';
 import {KindIcon} from './KindIcon';
+import {plural} from '../../lib/map-search-request';
 
 const tones:Record<string,[string,string]>={success:[C.successSoft,C.success],warning:[C.warningSoft,C.warning],active:[C.accentSoft,C.accentPressed],neutral:[C.surfaceAlt,C.muted],danger:[C.dangerSoft,C.danger]};
 
@@ -70,7 +71,7 @@ function PropertyCard({property:p,bookings,busy,open,onToggle,onEdit,onSettings,
    <View style={o.grow}>
     <Text numberOfLines={1} style={o.title}>{p.title}</Text>
     <Text numberOfLines={1} style={o.meta}>{p.venue&&p.venue.title!==p.title?p.venue.title:kind} · {hall?(perGuest?money(perGuest)+' за гостя':'цена не задана'):bath&&policy.hourly_price?money(policy.hourly_price)+' / час':money(p.price)+' / сутки'}</Text>
-    <View style={o.tags}><Text style={[o.status,{backgroundColor:bg,color:ink}]}>{status.label}</Text>{!!p.address_check&&<Text style={[o.status,{backgroundColor:C.warningSoft,color:C.warning}]}>Адрес на проверке</Text>}{!!held&&<Text style={[o.status,{backgroundColor:C.warningSoft,color:C.warning}]}>Занято до {hhmm(Number(held.end))}</Text>}{!!p.demo_owner&&<Text style={[o.status,{backgroundColor:C.surfaceAlt,color:C.muted}]}>Учебный</Text>}</View>
+    <View style={o.tags}><Text style={[o.status,{backgroundColor:bg,color:ink}]}>{status.label}</Text>{!!p.address_check&&<Text style={[o.status,{backgroundColor:C.warningSoft,color:C.warning}]}>Адрес на проверке</Text>}{!!held&&<Text style={[o.status,{backgroundColor:C.warningSoft,color:C.warning}]}>Занято до {hhmm(Number(held.end))}</Text>}{!!p.demo_owner&&<Text style={[o.status,{backgroundColor:C.surfaceAlt,color:C.muted}]}>Учебный</Text>}{!!p.published&&!p.demo_owner&&<Text accessibilityLabel={'Гости видели карточку в поиске: '+shownWords(Number(p.views_week)||0).toLowerCase()} style={[o.status,{backgroundColor:C.surfaceAlt,color:C.inkSoft}]}>{shownWords(Number(p.views_week)||0)}</Text>}</View>
    </View>
    <Text style={[o.chevron,open&&o.chevronOpen]}>›</Text>
   </Pressable>
@@ -91,6 +92,9 @@ function PropertyCard({property:p,bookings,busy,open,onToggle,onEdit,onSettings,
   </>}
  </View>;
 }
+
+// How often guests were shown the card in the search in the last seven days (lib/property-views.ts).
+export const shownWords=(n:number)=>n>0?n+' '+plural(n,'показ','показа','показов')+' за неделю':'Нет показов за неделю';
 
 const R=T.radius,H=T.control;
 const o=StyleSheet.create({

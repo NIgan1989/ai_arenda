@@ -71,6 +71,7 @@
 -- migration 0067_job_cancel_rating.sql sha256:a6bf8e9a8b02b740056b87cb90b0e97e9f3c18be6f4e65dbedd67ab920bbf032
 -- migration 0068_early_checkin.sql sha256:ebd306eaae07d993f402177b294bc75fe072d037d9f41124c99377fc2b99cca6
 -- migration 0069_early_checkin_hold.sql sha256:1aa41ec8707e7628888886cb35eb544716c3272e8394b1bc42d626694f702118
+-- migration 0070_property_views.sql sha256:2611b7beac6533757e18a3b8f354eeba5553b720fb659f4ff60bfb569e8e7bfe
 
 -- table access_receipts
 CREATE TABLE access_receipts (id TEXT PRIMARY KEY,property_id TEXT NOT NULL,entity_kind TEXT NOT NULL,entity_id TEXT NOT NULL,user_id TEXT NOT NULL,created_at INTEGER NOT NULL,expires_at INTEGER NOT NULL);
@@ -980,6 +981,13 @@ CREATE TABLE property_staff (
  staff_id TEXT NOT NULL REFERENCES profiles(id),
  owner_id TEXT NOT NULL REFERENCES profiles(id),
  created_at INTEGER NOT NULL
+);
+
+-- table property_views
+CREATE TABLE property_views (
+ property_id TEXT NOT NULL REFERENCES properties(id) ON DELETE CASCADE,
+ day INTEGER NOT NULL, shown INTEGER NOT NULL DEFAULT 0,
+ PRIMARY KEY(property_id,day)
 );
 
 -- table provider_events
