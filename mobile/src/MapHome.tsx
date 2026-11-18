@@ -25,10 +25,12 @@ import {countdown,mapCities,validPoint,type MapPoint} from './map-math';
 import {MapSheetHead} from './MapSheetHead';
 import {AutopilotThreads,type FeedNeed} from './AutopilotThreads';
 import {AutopilotHandoff} from './AutopilotHandoff';
-import {BATH_TYPES as BATH_KINDS,allKinds,kindCategoryOf,isQuiet,occasionTitle,categoryOf,withKind,kindChoice,PAST_TEXT,nearPlace,placeMissedNote,pinPrice,askFirst,understoodNote,notUnderstoodNote,chipDraft,freshDraft,guestRequestFromText,guestSummary,matchingBody,newDraft,shownReasons,type GuestDraft} from './ai-request';
+import {BATH_TYPES as BATH_KINDS,allKinds,kindCategoryOf,isQuiet,occasionTitle,categoryOf,withKind,kindChoice,PAST_TEXT,nearPlace,placeMissedNote,pinPrice,askFirst,understoodNote,notUnderstoodNote,chipDraft,freshDraft,guestRequestFromText,matchingBody,newDraft,shownReasons,type GuestDraft} from './ai-request';
 import type {HeadAction} from './head-line';
 import {Action,Grip,SheetHeading,SheetRow,Stage,h,handleHeight,topInset} from './SheetParts';
 import {GuestForm} from './GuestForm';
+import {GuestTokens} from './GuestTokens';
+import {blamedTokens,guestTokens,type Section} from './guest-tokens';
 import {GuestResults} from './GuestResults';
 import {AgainRow,Heart,useFavorites} from './Favorites';
 import {favouredFirst,markOf} from './favorites';
@@ -59,7 +61,7 @@ const SPOT_ROOM=72;
 const NOT_ON_MAP='Этого нет на карте сейчас: у объекта не отмечено место или он в другом городе.';
 // What the guest searched for outlives a visit to another page (a flat's details, the check of a booking):
 // coming back to the map within ten minutes shows the same conditions and the same list.
-// A city the guest chose themselves (in the line, in «Уточнить») is never moved to where the phone is.
+// A city the guest chose themselves (in the line, in the conditions) is never moved to where the phone is.
 const chosenCity=new Set<string>();
 const guestSearches=new Map<string,{draft:GuestDraft;preview:Row|null;foundAt:number}>(),SEARCH_KEEP=600000;
 const short=(amount:unknown)=>typeof amount==='number'&&amount>0?pinPrice(amount):'Жильё';
@@ -92,7 +94,7 @@ function GuestPanel({setScanning,setQuiet,accountId,data,mapData,publish,selecte
  const kept=useRef(aimed?undefined:guestSearches.get(accountId)).current,foundAt=useRef(kept?.foundAt||0),recent=!!kept?.preview&&Date.now()-kept.foundAt<SEARCH_KEEP;
  const [draft,setDraft]=useState<GuestDraft>(()=>kept?.draft||newDraft(city));
  // hint.ask: text the request rules could not read; the guest can still send it to the AI administrator.
- const [asked,setAsked]=useState(''),[hint,setHint]=useState<{text:string;ask?:string;error?:boolean}|null>(null),[refine,setRefine]=useState(false);
+ const [asked,setAsked]=useState(''),[hint,setHint]=useState<{text:string;ask?:string;error?:boolean}|null>(null),[refine,setRefine]=useState<Section|'all'|''>('');
  const [preview,setPreview]=useState<Row|null>(recent?kept!.preview:null),[requestId,setRequestId]=useState(()=>liveRequests.get(accountId)||''),[live,setLive]=useState<Row|null>(null);
  const [error,setError]=useState(''),[working,setWorking]=useState(false),[index,setIndex]=useState(0),[acceptedKey,setAcceptedKey]=useState(''),[skew,setSkew]=useState(0);
  const lock=useRef(false),requestKey=useRef(''),pickThenFind=useRef(false),bookedFlat=useRef<Row|null>(null),askedFrom=useRef<MapPoint|null>(null);
@@ -111,7 +113,7 @@ function GuestPanel({setScanning,setQuiet,accountId,data,mapData,publish,selecte
   if(next.priority==='closer'&&!next.near)throw new Error('Чтобы искать ближе, сначала укажите точку на карте.');
   setDraft(next);
   const result=await request('/api/public/matching?q='+encodeURIComponent(JSON.stringify(matchingBody(next))));
-  foundAt.current=Date.now();setPreview({...result,properties:favouredFirst(result.properties||[],mine)});setRefine(false);setSelected('');expand(1);
+  foundAt.current=Date.now();setPreview({...result,properties:favouredFirst(result.properties||[],mine)});setRefine('');setSelected('');expand(1);
  });
  // «Снова туда же»: the home is priced for the stay in the line first, so the card books the tariff the search would
  // (the night price too). Busy or not fitting on these conditions: the card opens without dates, and the guest picks them.
@@ -128,7 +130,7 @@ function GuestPanel({setScanning,setQuiet,accountId,data,mapData,publish,selecte
   // Understood: the conditions line now says it, so the line is free for the next request (as on the site).
   setPreview(null);setAsked('');if(parsed.draft.city!==draft.city){setCity(parsed.draft.city);chosenCity.add(accountId);}setDraft(parsed.draft);
   // A day or an hour that has passed is never moved to another one: the guest is asked for the date.
-  if(parsed.past){setHint({text:[PAST_TEXT[parsed.past],parsed.note,'Укажите, когда нужно жильё.'].filter(Boolean).join(' '),error:true});setRefine(true);expand(2);return;}
+  if(parsed.past){setHint({text:[PAST_TEXT[parsed.past],parsed.note,'Укажите, когда нужно жильё.'].filter(Boolean).join(' '),error:true});setRefine('when');expand(2);return;}
   const note=[said,parsed.note].filter(Boolean).join(' ');
   setHint(note?{text:note}:null);
   // «Рядом»: where the guest is, if the phone knows it and it is in the searched city; otherwise the guest shows it on the map.
@@ -186,7 +188,11 @@ function GuestPanel({setScanning,setQuiet,accountId,data,mapData,publish,selecte
  const narrowed=!!(draft.district||draft.maxPrice||draft.features.length||draft.priority!=='balanced'||draft.near||(categoryOf(draft)!=='stay'?draft.kinds.length<allKinds(categoryOf(draft)).length:draft.kinds.length)||draft.rooms||draft.now);
  const retry=(next:GuestDraft)=>{setHint(null);setError('');setDraft(next);setPreview(null);void find(next);};
  const widen=()=>retry({...draft,district:'',maxPrice:'',features:[],priority:'balanced',near:null,kinds:allKinds(categoryOf(draft)),rooms:'',now:false});
- const refining=snap>0&&(refine||!preview),toggleRefine=()=>{if(refining){setRefine(false);expand(preview?1:0);}else{setRefine(true);expand(2);}};
+ // «Изменить условия» of the results and «Условия» among the tokens: every condition as a list. A token opens its own
+ // part of the form; a second tap on it closes the form again.
+ const openPart=(part:Section|'all')=>{if(snap>0&&refine===part){setRefine('');expand(preview?1:0);}else{setRefine(part);expand(2);}},toggleRefine=()=>openPart('all');
+ // The conditions as tokens; an empty answer blames the ones that leave nothing free.
+ const tokens=guestTokens(freshDraft(draft)),blamed=preview&&!(preview.properties||[]).length?blamedTokens(preview.empty,tokens):[];
  useEffect(()=>{if(requestId||preview)expand(1);if(kept&&kept.draft.city!==city)setCity(kept.draft.city);},[]);
  useEffect(()=>{guestSearches.set(accountId,{draft,preview,foundAt:foundAt.current});},[draft,preview]);
  // A flat chosen in the list or on the map is shown in the opened sheet, which never closes for it.
@@ -333,7 +339,10 @@ function GuestPanel({setScanning,setQuiet,accountId,data,mapData,publish,selecte
     <Text accessibilityRole="header" style={h.cardTitle}>Спрашиваем владельцев</Text>
     <View style={h.row}><Thinking size="sm"/><Text style={h.note}>Ждём ответа: {live.pending} из {live.sent} запросов. На ответ у владельца 2 минуты.</Text></View>
     <Text style={h.timer} accessibilityLabel={'До конца подбора '+countdown(live.expiresAt-now)}>{countdown(live.expiresAt-now)}</Text>
-    <Text style={h.note}>Объекты, владельцы которых сейчас отвечают, отмечены на карте. Бронь на этом шаге не создаётся.</Text>
+    {/* Who was asked and who has answered: one row per home, the same homes that pulse on the map. */}
+    <View>{offers.map(p=><View key={p.id} style={h.asked}><View style={[h.askedDot,{backgroundColor:C.success}]}/><Text numberOfLines={1} style={[h.eventTitle,h.grow]}>{p.title}</Text><Text style={h.reason}>Готов принять</Text></View>)}
+    {(live.pendingProperties||[]).map((p:Row)=><View key={p.id} style={h.asked}><View style={[h.askedDot,{backgroundColor:C.gold}]}/><Text numberOfLines={1} style={[h.eventTitle,h.grow]}>{p.title}</Text><Text style={h.note}>ждём…</Text></View>)}</View>
+    <Text style={h.note}>Бронь на этом шаге не создаётся.</Text>
    </>}
    {live&&(status==='ready'||status==='booking')&&offer&&<>
     <Text accessibilityRole="header" style={h.cardTitle}>Владелец подтвердил готовность</Text>
@@ -375,11 +384,11 @@ function GuestPanel({setScanning,setQuiet,accountId,data,mapData,publish,selecte
  // The guest's own stay tapped on the map, or the nearest one that can be reached now.
  const stay=snap===0&&!preview?stays.find(v=>v.key===selected)||null:null,near=stays.find(v=>v.canGo)||null;
  const trips=guestTrips(data,serverNow(data));
- // «Уточнить» was tapped: the sheet is the form alone, the bookings and the quick chips wait under the collapsed sheet.
- const formOnly=refine&&snap>0;
+ // A token or «Условия» was tapped: the sheet is the form alone, the bookings and the quick chips wait under the collapsed sheet.
+ const formOnly=!!refine&&snap>0;
  // Where the sheet stood before the category picker opened: it returns there when the picker closes.
  const before=useRef(0);
- const head=<MapSheetHead role="guest" text={asked} onText={setAsked} onSend={ask} onChip={chip} chips={!preview&&!formOnly} category={categoryOf(draft)} kind={draft.kinds.length===1?draft.kinds[0]:''} choice={kindChoice(draft)} onKind={(c,k)=>{setAsked('');const next=withKind(draft,c,k);change(next);/* Another category is another map: its places are shown at once, not the homes left from before. */if(categoryOf(next)!==categoryOf(draft))void find(next);}} onService={()=>onIntent('home-cleaning')} onPicker={open=>{if(open){before.current=snap;if(snap<1)expand(1);}else if(before.current<1&&snap===1)expand(0);}} busy={working} summary={guestSummary(freshDraft(draft))} onRefine={toggleRefine} refining={refining} now={null} onNow={()=>{}}>
+ const head=<MapSheetHead role="guest" text={asked} onText={setAsked} onSend={ask} onChip={chip} chips={!preview&&!formOnly} category={categoryOf(draft)} kind={draft.kinds.length===1?draft.kinds[0]:''} choice={kindChoice(draft)} onKind={(c,k)=>{setAsked('');const next=withKind(draft,c,k);change(next);/* Another category is another map: its places are shown at once, not the homes left from before. */if(categoryOf(next)!==categoryOf(draft))void find(next);}} onService={()=>onIntent('home-cleaning')} onPicker={open=>{if(open){before.current=snap;if(snap<1)expand(1);}else if(before.current<1&&snap===1)expand(0);}} busy={working} conditions={<GuestTokens tokens={tokens} blamed={blamed} open={snap>0?(refine||(preview?'':'all')):''} line={(snap===0||!!preview)&&!formOnly&&blamed.length===0} busy={working} onOpen={openPart} onClear={token=>retry({...draft,...token.clear})}/>} now={null} onNow={()=>{}}>
   {!!hint&&<View style={h.picked}><Text accessibilityRole={hint.error?'alert':undefined} accessibilityLiveRegion="polite" style={hint.error?h.error:h.note}>{hint.text}</Text>{!!hint.ask&&<Action secondary title="Спросить ИИ-администратора" onPress={()=>onAsk(hint.ask!)}/>}</View>}
   {!!error&&<Text accessibilityRole="alert" style={h.error}>{error}</Text>}
   {!!nav.error&&<Text accessibilityRole="alert" style={h.error}>{nav.error}</Text>}
@@ -393,7 +402,7 @@ function GuestPanel({setScanning,setQuiet,accountId,data,mapData,publish,selecte
  // The form and the results live in the opened sheet only; a running request to owners keeps its place in any state.
  const body=requestId?renderLive():snap===0?null:preview&&!refine
   ?<GuestResults preview={preview} draft={draft} mine={mine} onFavorite={heart} selected={selected} onSelect={setSelected} onFocus={setFocus} onBook={bookFlat} onOpen={property=>onIntent('property:'+property.id,{mode:tariffOf(draft,property),start:draft.start,end:draft.end,guests:draft.guests})} onRefine={toggleRefine} onWiden={narrowed?widen:undefined} onTry={patch=>retry({...draft,...patch})} onBookEdge={onReach} busy={working}/>
-  :<GuestForm draft={draft} onChange={change} onNearMe={meInCity?()=>change({...draft,near:nearOf(here.fix!.point)}):undefined} onPickPoint={()=>{setPicking(true);expand(0);}} onSubmit={()=>void find()} busy={working}/>;
+  :<GuestForm key={refine||'all'} only={refine||'all'} draft={draft} onChange={change} onNearMe={meInCity?()=>change({...draft,near:nearOf(here.fix!.point)}):undefined} onPickPoint={()=>{setPicking(true);expand(0);}} onSubmit={()=>void find()} busy={working}/>;
  return <View style={h.block}>
   <HeadSlot onHeight={onHead}>{picking?pickView:nav.trip?<TripHead nav={nav} onOpen={()=>{const id=nav.trip!.id;nav.close();onOpenProcess('booking',id);}}/>:requestId?null:head}</HeadSlot>
   {!picking&&body}

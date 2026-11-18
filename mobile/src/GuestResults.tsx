@@ -357,7 +357,7 @@ const r = StyleSheet.create({
   cardInView: { borderColor: C.accentLine },
   cardBest: { borderColor: C.aiFrom, borderWidth: 2 },
   cardPressed: { opacity: 0.85 },
-  cardPhoto: { height: 112, backgroundColor: C.surfaceAlt },
+  cardPhoto: { height: 88, backgroundColor: C.surfaceAlt },
   bestOnPhoto: { ...type.caption, position: 'absolute', left: 8, top: 8, paddingHorizontal: 8, paddingVertical: 2, borderRadius: T.radius.full, overflow: 'hidden', backgroundColor: C.aiFrom, color: C.onAccent, fontWeight: '600' },
   heartOnPhoto: { position: 'absolute', right: 8, top: 8 },
   cardBody: { padding: 12, gap: 4 },
