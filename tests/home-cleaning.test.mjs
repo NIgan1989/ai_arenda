@@ -92,7 +92,7 @@ test('the performer says «Выезжаю» and «Я на месте», and repo
  assert.match((await line()).line,/приедет к назначенному времени/);
  assert.match((await f.cleaner.jobAction(made.id,{action:'on_way'})).message,/выехали/);assert.match((await line()).line,/в пути/);
  assert.match((await f.cleaner.jobAction(made.id,{action:'arrived'})).message,/на месте/);
- const t=await line();assert.equal(t.steps[1].state,'done');assert.equal(t.steps[1].note,'Исполнитель на месте');
+ const t=await line();assert.match(t.line,/на месте, начнёт уборку/);assert.equal(t.steps[1].state,'done');assert.equal(t.steps[1].note,'Исполнитель на месте');
  // Said twice: the customer is not told twice.
  assert.match((await f.cleaner.jobAction(made.id,{action:'arrived'})).message,/уже знает/);
  const notes=f.db.raw.prepare("SELECT body FROM notifications WHERE user_id='guest' AND (dedupe LIKE '%cleaner-arrived:%' OR dedupe LIKE '%cleaner-on-way:%')").all();
@@ -101,6 +101,7 @@ test('the performer says «Выезжаю» and «Я на месте», and repo
  // The usual cleaning after guests keeps its own way to say «на месте».
  await assert.rejects(f.cleaner.jobAction(f.job.id,{action:'arrived'}),/./);
  await f.cleaner.jobAction(made.id,{action:'start'});
+ const {commandRole}=await load('access');for(const action of ['on_way','arrived'])assert.deepEqual(commandRole('jobs/x',{action}),['cleaner']);
  const list=homeChecklist({kind:'general',windows:2});assert.equal(list.length,7);
  await assert.rejects(f.cleaner.jobAction(made.id,{action:'submit',checklist:[true,true,true],report:'Готово'}),/чек-листа|фото/); // The customer's home asks for photos before and after: a report without them does not go.
  await assert.rejects(f.cleaner.jobAction(made.id,{action:'submit',checklist:list.map(()=>true),report:'Готово'}),/фото до и после/);
