@@ -9,6 +9,7 @@ import {RentalService} from './service';
 import {financeState,recordFinance,createPaymentIntent,acceptPaymentEvent,testPayment} from './finance';
 import {dispatchState,saveOperationRules,saveWorkerDispatch,decideOffer,declineAssignment} from './dispatch';
 import {regularState,pinRegular,unpinRegular} from './regular-cleaner';
+import {saveHomeRepeat} from './home-repeat';
 import {saveEvidence,saveDamagePhoto,listEvidence,readEvidence} from './evidence';
 import {calendarSources,saveCalendarSource,refreshCalendar,commitCalendarImport,previewCalendarImport,createCalendarExport,exportCalendar,flatCalendars,connectCalendar} from './external-calendar';
 import {importState,previewPropertyImport,commitPropertyImport} from './property-import';
@@ -82,6 +83,7 @@ export async function writeOperations(service:RentalService,role:Role,path:strin
  if(route==='delivery/status')return telegramStatus(service,role,config);
  if(route==='delivery/channel')return setDeliveryChannel(service,role,body,config);
  if(route==='review'){active(role,['guest']);return saveStayReview(service,body);}
+ if(route==='home-repeat'){active(role,['owner']);return saveHomeRepeat(service,body);}
  if(route==='stay-photo'){active(role,['guest','owner']);return saveStayPhoto(service,role,body,config);}
  if(route==='search/understand'){active(role,['guest']);return understandSearch(service,body,config);}
  if(route==='search/place'){active(role,['guest']);return findPlace(service,body,fetch,config);}

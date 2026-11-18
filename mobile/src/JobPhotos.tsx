@@ -51,7 +51,7 @@ export function JobRating({busy,onSubmit}:{busy:boolean;onSubmit:(rating:number,
   </View>
   <Text style={s.meta}>{words[rating]}. Оценку увидят следующие заказчики.</Text>
   <TextInput accessibilityLabel="Отзыв для исполнителя" placeholder="Что понравилось или что улучшить (необязательно)" placeholderTextColor={C.muted} value={note} onChangeText={setNote} maxLength={1000} multiline style={s.field} editable={!busy}/>
-  <Pressable accessibilityRole="button" disabled={busy||!rating} onPress={()=>onSubmit(rating,note.trim())} style={[s.button,(busy||!rating)&&s.disabled]}><Text style={s.buttonText}>Отправить оценку</Text></Pressable>
+  <SwipeConfirm label="Проведите: отправить оценку" disabled={busy||!rating} onConfirm={()=>onSubmit(rating,note.trim())}/>
  </View>;
 }
 

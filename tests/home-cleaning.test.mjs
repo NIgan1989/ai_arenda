@@ -207,3 +207,44 @@ test('a complaint about damage needs a photo, reaches the performer and opens an
  await assert.rejects(f.guest.jobAction(made.id,{action:'damage',text:'Ещё царапина'}),/Срок прошёл/);
  await assert.rejects(saveDamagePhoto(f.guest,{jobId:made.id,data:photo}),/двух суток/);
 });
+
+// Stage 4: the cleaning repeats on a schedule and goes to the pinned performer first.
+test('a home cleaning repeats on a schedule: the next order appears three days ahead with the same terms',async()=>{
+ const {saveHomeRepeat,repeatHomeCleanings,nextRepeat,repeatLabel}=await load('home-repeat'),{checkAdministratorOwner}=await load('administrator-runtime');
+ const t=now();assert.equal(nextRepeat(t-86400,7,t),t+6*86400);assert.equal(nextRepeat(t-30*86400,7,t),t+5*86400);assert.equal(repeatLabel(14),'Раз в 2 недели');assert.equal(repeatLabel(0),'Не повторять');
+ const f=await fixture(),jobs=()=>f.db.raw.prepare("SELECT id,start,end,fee,description,status FROM cleaning_jobs WHERE owner_id='guest' ORDER BY start").all();
+ // Nothing to repeat before the first order; a stranger's address is not theirs to schedule.
+ const made=await orderHomeCleaning(f.guest,{address:'ул. Тестовая, 5',rooms:2,kind:'general',windows:1,fee:15000,wishes:'Кот',start:iso(now()+1800),requestKey:'p1'});
+ await assert.rejects(saveHomeRepeat(f.other,{propertyId:made.propertyId,every:7}),/./);await assert.rejects(saveHomeRepeat(f.guest,{propertyId:made.propertyId,every:5}),/как часто/);
+ const first=jobs()[0],saved=await saveHomeRepeat(f.guest,{propertyId:made.propertyId,every:7});
+ assert.equal(saved.next,first.start+7*86400);assert.match(saved.message,/^Каждую неделю: следующая уборка .* за 15 000 ₸/);
+ assert.equal((await f.guest.roleState('owner')).ownProperties.find(p=>p.id===made.propertyId).details.repeat.every,7);
+ // More than three days ahead: nothing yet. Three days before: the order is made once, the customer is told.
+ assert.equal(await repeatHomeCleanings(f.guest,now()),0);
+ f.db.raw.prepare('UPDATE cleaning_jobs SET start=start-4*86400-3600,end=end-4*86400-3600,status=\'completed\' WHERE id=?').run(first.id);
+ await checkAdministratorOwner(f.db,'guest');assert.equal(await repeatHomeCleanings(f.guest,now()),0);
+ const [old,next]=jobs();assert.equal(jobs().length,2);
+ assert.deepEqual([next.start-old.start,next.end-next.start,next.fee,next.description,next.status],[7*86400,old.end-old.start,15000,old.description,'open']);
+ assert.match(f.db.raw.prepare("SELECT body FROM notifications WHERE user_id='guest' AND dedupe LIKE '%home-repeat:%'").get().body,/по расписанию заказана уборка .* за 15 000 ₸\. Отменить бесплатно можно до/);
+ // The customer cancels this one: it is a skip, not ordered again; the following one comes in its time.
+ await f.guest.jobAction(next.id,{action:'cancel',expectedFee:0});
+ assert.equal(await repeatHomeCleanings(f.guest,now()),0);assert.equal(await repeatHomeCleanings(f.guest,next.start+4*86400+60),1);
+ assert.equal(jobs().at(-1).start,next.start+7*86400);
+ // Turned off: the orders already made stay, new ones do not come.
+ assert.match((await saveHomeRepeat(f.guest,{propertyId:made.propertyId,every:0})).message,/выключен/);
+ f.db.raw.prepare("UPDATE cleaning_jobs SET status='cancelled' WHERE owner_id='guest' AND status='open'").run();
+ assert.equal(await repeatHomeCleanings(f.guest,next.start+20*86400),0);
+});
+
+test('a pinned performer gets the home order first and their «yes» assigns them',async()=>{
+ const {pinRegular}=await load('regular-cleaner'),{coordinateDispatch,decideOffer}=await load('dispatch');
+ const f=await fixture(),first=await taken(f,'g1',{start:iso(now()+1800)});
+ assert.match((await pinRegular(f.guest,{propertyId:first.propertyId,cleanerId:'cleaner'})).message,/./);
+ assert.ok((await f.guest.roleState('owner')).ownProperties.find(p=>p.id===first.propertyId).regular_cleaner_name);
+ f.db.raw.prepare("UPDATE cleaning_jobs SET status='cancelled' WHERE id=?").run(first.id);
+ const second=await orderHomeCleaning(f.guest,{propertyId:first.propertyId,kind:'regular',fee:9000,start:iso(now()+2*86400),requestKey:'g2'});
+ await coordinateDispatch(f.guest);
+ const offer=f.db.raw.prepare("SELECT id,worker_id FROM cleaning_offers WHERE job_id=? AND status='offered'").get(second.id);assert.equal(offer.worker_id,'cleaner');
+ assert.equal((await decideOffer(f.cleaner,{id:offer.id,action:'accept'})).assigned,true);
+ assert.deepEqual({...f.db.raw.prepare('SELECT status,assigned_to FROM cleaning_jobs WHERE id=?').get(second.id)},{status:'assigned',assigned_to:'cleaner'});
+});
