@@ -81,6 +81,7 @@ test('the model may raise an issue, never lower it below the word rules',()=>{
  assert.deepEqual(mergeTriage(urgent,{kind:'other',priority:'normal',advice:'a',action:'none'}),{kind:'access',priority:'urgent',advice:'a',action:'none'});
  assert.deepEqual(mergeTriage({kind:'other',priority:'normal'},{kind:'safety',priority:'urgent',advice:'Звоните 112',action:'call_admin'}).priority,'urgent');
  assert.deepEqual(mergeTriage(urgent,null),{...urgent,advice:'',action:'none'});
+ assert.equal(mergeTriage({kind:'money',priority:'high'},{kind:'money',priority:'normal',advice:'',action:'call_admin'}).priority,'urgent','a call to the admin lands in the admin\'s queue');
 });
 test('the model catches what the words miss, advises the guest, calls the admin and shows other free places',async()=>{
  const f=await fixture();try{
@@ -95,6 +96,16 @@ test('the model catches what the words miss, advises the guest, calls the admin 
   assert.match(f.db.raw.prepare("SELECT body FROM operator_history WHERE id=?").get('ai-triage:'+issue.id).body,/безопасность.*Совет: Выйдите/);
   assert.match(f.db.raw.prepare("SELECT body FROM notifications WHERE dedupe=?").get('guest:issue-advice:'+issue.id+':1').body,/звоните 112/);
   assert.equal(f.db.raw.prepare("SELECT COUNT(*) n FROM notifications WHERE dedupe LIKE 'admin:issue-urgent:%'").get().n,1);
+ }finally{f.db.close();}
+});
+test('one sweep asks the model about a few issues only; the rest go by the word rules at once',async()=>{
+ const f=await fixture();try{
+  await saveAIDataPermission(f.guest,{allowed:true,expectedVersion:0,policyVersion:AI_DATA_POLICY_VERSION});
+  for(let i=0;i<7;i++){const id='b'+i;f.db.raw.prepare("INSERT INTO administrator_issues(id,owner_id,property_id,entity_kind,entity_id,opened_by,opened_role,other_user,other_role,description,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)").run(id,'owner',f.property,'booking',f.booking,'guest','guest','owner','owner','Грязно '+i,now()-i);}
+  await withTriage({kind:'condition',priority:'high',advice:'Сфотографируйте',action:'none'},async calls=>{
+   const r=await sweepIssues(f.db,aiConfig);assert.equal(r.triaged,7);assert.equal(calls.length,5);
+  });
+  assert.equal(f.db.raw.prepare('SELECT COUNT(*) n FROM operator_tickets').get().n,7);
  }finally{f.db.close();}
 });
 test('without the reporter\'s permission the issue goes by the word rules, and the model is not asked',async()=>{

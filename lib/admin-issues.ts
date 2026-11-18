@@ -43,21 +43,24 @@ priority: urgent — нужно решить в течение 30 минут (н
 advice: один практичный шаг для автора прямо сейчас, без обещаний денег и возвратов. При опасности первым делом — позвонить 112. Не называй адреса, коды и контакты.
 action: call_admin — нужен администратор сервиса сразу (опасность, конфликт, угрозы, деньги спорные); offer_similar — гость не может или не должен оставаться в этом жилье (не попасть внутрь, жить нельзя), ему стоит показать похожие свободные варианты; none — достаточно второй стороны.
 Пиши по-русски коротко.`;
-export async function modelTriage(db:D1Database,config:AIConfig,issue:Row):Promise<IssueTriage|null>{
+export const MODEL_SWEEP_MS=20000,MODEL_SWEEP_CALLS=5;
+export async function modelTriage(db:D1Database,config:AIConfig,issue:Row,timeoutMs=8000):Promise<IssueTriage|null>{
  if(!modelReady(config))return null;
  const entity=issue.entity_kind==='booking'?await one(db,'SELECT start,end,status FROM bookings WHERE id=?',issue.entity_id):await one(db,'SELECT start,end,status FROM cleaning_jobs WHERE id=?',issue.entity_id);
  const details=await one(db,'SELECT details FROM property_details WHERE property_id=?',issue.property_id);
  let type='';try{type=JSON.parse(details?.details||'{}').type||'';}catch{/* Unknown kind. */}
  const when=(t:unknown)=>typeof t==='number'?new Date(t*1000).toISOString():null;
  const facts={author:issue.opened_role,otherSide:issue.other_role,about:issue.entity_kind==='booking'?'бронь':'уборка',place:kindLabel(type),start:when(entity?.start),end:when(entity?.end),status:entity?.status||'',now:new Date().toISOString(),timeZone:'Asia/Almaty'};
- const parsed=await askModelJSON(db,issue.opened_by,config,{name:'issue_triage',instructions:triageInstructions+'\n\nФакты:\n'+JSON.stringify(facts),input:[{role:'user',content:redactAIText(String(issue.description||'').slice(-1500))}],schema:triageSchema,maxTokens:300});
+ const parsed=await askModelJSON(db,issue.opened_by,config,{name:'issue_triage',instructions:triageInstructions+'\n\nФакты:\n'+JSON.stringify(facts),input:[{role:'user',content:redactAIText(String(issue.description||'').slice(-1500))}],schema:triageSchema,maxTokens:300,timeoutMs});
  if(!parsed||!(parsed.kind in KIND_LABEL)||!(parsed.priority in RANK)||!['none','call_admin','offer_similar'].includes(parsed.action))return null;
  return {kind:parsed.kind,priority:parsed.priority,advice:redactAIText(typeof parsed.advice==='string'?parsed.advice.replace(/\s+/g,' ').trim().slice(0,400):''),action:parsed.action};
 }
 /** The rules are the floor: the model may raise the priority or name a theme the rules missed, never lower them. */
 export function mergeTriage(rules:{kind:IssueKind;priority:Priority},model:IssueTriage|null):IssueTriage{
  if(!model)return {...rules,advice:'',action:'none'};
- return {kind:rules.kind!=='other'?rules.kind:model.kind,priority:RANK[model.priority]>RANK[rules.priority]?model.priority:rules.priority,advice:model.advice,action:model.action};
+ // «Call the admin» means the admin looks now: the ticket becomes urgent, so it is in «Нужно ваше внимание».
+ const priority=model.action==='call_admin'?'urgent':RANK[model.priority]>RANK[rules.priority]?model.priority:rules.priority;
+ return {kind:rules.kind!=='other'?rules.kind:model.kind,priority,advice:model.advice,action:model.action};
 }
 const PRIORITY_LABEL:Record<Priority,string>={urgent:'срочно',high:'повышенная',normal:'обычная'};
 const minutes=(s:number)=>s<3600?Math.round(s/60)+' мин':Math.round(s/3600)+' ч';
@@ -70,8 +73,12 @@ export async function sweepIssues(db:D1Database,config:OperationConfig&{PLATFORM
  // An issue added to later (version above 1, «Есть проблема» pressed again) is triaged again: a new urgent detail
  // raises the priority and calls the admin, a calmer one never lowers what is already set.
  const fresh=await rows(db,"SELECT i.*,p.title FROM administrator_issues i JOIN properties p ON p.id=i.property_id WHERE i.status<>'resolved' AND NOT EXISTS(SELECT 1 FROM operator_history h WHERE h.id=CASE WHEN i.version>1 THEN 'ai-triage:'||i.id||':'||i.version ELSE 'ai-triage:'||i.id END) ORDER BY i.created_at LIMIT 30");
+ // The model gets a few issues and 20 seconds per sweep, within the job's lease; the rest go by the word rules now
+ // (an issue is triaged once), so a slow model never holds the other sweeps or makes a tick repeat its calls.
+ const modelUntil=Date.now()+MODEL_SWEEP_MS;let modelCalls=0;
  for(const issue of fresh){
-  const added=issue.version>1,triage=mergeTriage(classifyIssue(issue.description),await modelTriage(db,config as AIConfig,issue).catch(()=>null)),{kind,priority}=triage,deadline=(added?at:issue.created_at)+ANSWER_WITHIN[priority],rank=RANK[priority];
+  const ask=modelCalls<MODEL_SWEEP_CALLS&&Date.now()<modelUntil;if(ask&&modelReady(config as AIConfig))modelCalls++;
+  const added=issue.version>1,triage=mergeTriage(classifyIssue(issue.description),ask?await modelTriage(db,config as AIConfig,issue,Math.max(1000,Math.min(8000,modelUntil-Date.now()))).catch(()=>null):null),{kind,priority}=triage,deadline=(added?at:issue.created_at)+ANSWER_WITHIN[priority],rank=RANK[priority];
   const body='ИИ-администратор: '+(added?'обращение дополнено, ':'')+'тема «'+KIND_LABEL[kind]+'», срочность: '+PRIORITY_LABEL[priority]+'. Ответ нужен в течение '+minutes(ANSWER_WITHIN[priority])+'.'+(triage.advice?' Совет: '+triage.advice:'');
   const callAdmin=priority==='urgent'||triage.action==='call_admin',stamp=issue.id+':'+issue.version;
   // Somewhere else to stay: only for a guest's booking, only free places on the same dates; nothing is cancelled.
