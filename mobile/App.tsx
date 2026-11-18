@@ -371,6 +371,9 @@ function Chat(){
         // The cleaning is paid: the last thing left to the customer is the rating, so it is asked right away.
         const paid=body.action==='record_job_payment'&&state?(state.jobs||[]).find((j:Row)=>j.id===path.split('/')[1]):null;
         if(paid&&paid.status==='completed'&&paid.assigned_to&&paid.assigned_to!==paid.owner_id&&!paid.rating)say('Оцените работу исполнителя.','rate',{id:paid.id});
+        // A good rating of a home cleaning: the customer may keep this performer, so the next orders go to them first.
+        const rated=body.action==='rate'&&Number(body.rating)>=4&&state?(state.jobs||[]).find((j:Row)=>j.id===path.split('/')[1]):null,ratedHome=rated?(state!.ownProperties||[]).find((p:Row)=>p.id===rated.property_id):null;
+        if(rated&&ratedHome&&ratedHome.details?.type===HOME_TYPE&&!ratedHome.regular_cleaner_name&&rated.assigned_to)say('Понравилась работа? Закрепите исполнителя за домом: следующие заказы сначала придут к нему.','confirm',{path:'operations/regular/pin',body:{propertyId:rated.property_id,cleanerId:rated.assigned_to},title:'Закрепить исполнителя',subject:rated.worker?.name||ratedHome.title,note:'Его «да» сразу назначает его на уборку. Открепить можно в карточке дома.',dates:''});
       }catch(e){await handleError(e);}
     }catch(e){await handleError(e);}
     finally{locked.current=false;setBusy(false);}

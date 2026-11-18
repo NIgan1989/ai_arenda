@@ -9,7 +9,8 @@ import {money,uid,type Row} from './model';
 import {PriceTipBody} from './PriceTip';
 import {RentalCalendar} from './RentalCalendar';
 import {FlatAutopilotRow} from './FlatAutopilot';
-import {Action,h} from './SheetParts';
+import {Action,Chips,h} from './SheetParts';
+import {REPEAT_DAYS,REPEAT_AHEAD,nextRepeat,repeatLabel} from '../../lib/home-repeat-text';
 import {C,type} from './styles';
 import {T} from './tokens';
 
@@ -40,6 +41,25 @@ export function FlatHubHead({flat,data,now,tab,open,onTab,onBack,onOpen}:Pick<Pr
 }
 
 // What is under the tabs: everything about one flat that used to live on «Мои объекты», «Календарь» and «Управление».
+// «Повторять уборку» of a private home (lib/home-repeat.ts): one choice, and the next order comes by itself three days
+// ahead with the terms, the price and the hour of the last one.
+function HomeRepeat({flat,data,now,onChanged}:Pick<Props,'flat'|'data'|'now'|'onChanged'>){
+ const [busy,setBusy]=useState(false),[said,setSaid]=useState<{text:string;error:boolean}|null>(null);
+ const every=Number(flat.details?.repeat?.every)||0,jobs=((data.jobs||[]) as Row[]).filter(j=>j.property_id===flat.id&&j.booking_id===null).sort((a,b)=>b.start-a.start),last=jobs[0];
+ const ahead=last&&last.start>now&&last.status!=='cancelled',next=every&&last?(ahead?last.start:nextRepeat(last.start,every,now)):0;
+ const at=(t:number)=>new Date(t*1000).toLocaleString('ru-RU',{timeZone:'Asia/Almaty',day:'numeric',month:'long',hour:'2-digit',minute:'2-digit'});
+ async function save(value:number){
+  if(busy||value===every)return;setBusy(true);setSaid(null);
+  try{const v=await request('/api/operations/home-repeat',{propertyId:flat.id,every:value},undefined,undefined,'owner');setSaid({text:v.message||'Сохранено.',error:false});await onChanged();}
+  catch(error){setSaid({text:error instanceof Error?error.message:'Не получилось. Обновите экран.',error:true});}
+  finally{setBusy(false);}
+ }
+ return <View style={f.repeat}>
+  <Chips<number> label="Повторять уборку" value={every} disabled={busy} onChange={save} options={[[0,'Не повторять'],...REPEAT_DAYS.map(d=>[d,repeatLabel(d)] as [number,string])]}/>
+  {said?<Text accessibilityRole={said.error?'alert':undefined} style={[h.note,said.error&&{color:T.color.danger}]}>{said.text}</Text>
+   :<Text style={h.note}>{!every?(last?'ИИ-администратор сам закажет следующую уборку: те же условия, цена и время.':'Сначала закажите первую уборку: повтор возьмёт её условия.'):ahead?'Следующая уборка '+at(next)+' уже заказана.':'Следующая уборка '+at(next)+(next-now>REPEAT_AHEAD?'. Заказ появится сам за три дня.':'. Заказ появится в течение часа.')}</Text>}
+ </View>;
+}
 export function FlatHub({flat,data,now,tab,onOpen,onEdit,onChanged}:Omit<Props,'onTab'|'onBack'>){
  const today=dayStart(now),view=hubToday(calendarEntries(data,'owner',flat.id,now),now),policy=flat.policy||{};
  const [busy,setBusy]=useState(false),[said,setSaid]=useState<{text:string;error:boolean}|null>(null);
@@ -62,7 +82,7 @@ export function FlatHub({flat,data,now,tab,onOpen,onEdit,onChanged}:Omit<Props,'
   <Text accessibilityRole="header" style={f.heading}>Сегодня</Text>
   {view.today.length>0?view.today.map(e=>entry(e,dayLine(e,today))):<Text style={h.note}>{home?'Сегодня уборок нет.':'Сегодня ничего не запланировано.'}</Text>}
   {view.next.length>0&&<><Text accessibilityRole="header" style={f.heading}>Дальше</Text>{view.next.map(e=>entry(e,words(e.start)+' · '+dayLine(e,dayStart(e.start))))}</>}
-  {home?<><Action title="Заказать уборку" onPress={()=>onEdit('job')}/><Text style={h.note}>{[flat.address,'адрес видит только назначенный исполнитель'].filter(Boolean).join(' · ')}</Text>{row('Постоянный исполнитель',flat.regular_cleaner_name||'Закрепите своего: заказы приходят сначала к нему',()=>onEdit('cleaner'))}</>
+  {home?<><Action title="Заказать уборку" onPress={()=>onEdit('job')}/><Text style={h.note}>{[flat.address,'адрес видит только назначенный исполнитель'].filter(Boolean).join(' · ')}</Text><HomeRepeat flat={flat} data={data} now={now} onChanged={onChanged}/>{row('Постоянный исполнитель',flat.regular_cleaner_name||'Закрепите своего: заказы приходят сначала к нему',()=>onEdit('cleaner'))}</>
   :!Number(flat.own_staff)&&<Action secondary title="Создать уборку" onPress={()=>onEdit('job')}/>}
  </View>;
  if(tab==='calendar')return <View style={f.panel}>
@@ -88,6 +108,7 @@ export function FlatHub({flat,data,now,tab,onOpen,onEdit,onChanged}:Omit<Props,'
 
 const R=T.radius,H=T.control;
 const f=StyleSheet.create({
+ repeat:{gap:8,marginTop:8},
  late:{color:T.color.danger,fontWeight:'600'},
  head:{gap:4},back:{minHeight:H.touch,justifyContent:'center',alignSelf:'flex-start',paddingRight:16},backText:{...type.label,color:C.inkSoft,fontWeight:'500'},
  tabs:{flexDirection:'row',gap:4,padding:4,marginTop:8,borderRadius:R.lg,backgroundColor:C.surfaceAlt},

@@ -1,3 +1,4 @@
+import {repeatHomeCleanings} from './home-repeat';
 import {wordsOf,venueOr,TYPE_SQL} from './stay-words';
 import {UNREADY_SQL} from './unready';
 import {RentalService} from './service';
@@ -150,6 +151,8 @@ export async function checkAdministratorOwner(db:D1Database,ownerId:string,at=no
     service.notify(other,'ИИ-администратор: предложение изменить даты в «'+title+'» истекло без ответа. Действуют прежние даты.','change-expired:'+c.id,c.proposer_role==='owner'?'guest':'owner')
    ]);
   }
+  // A home cleaning on a schedule: the next order appears three days ahead, before the offers go out.
+  try{await repeatHomeCleanings(service,t);}catch(error){console.error('Home repeat failed',error instanceof Error?error.message:'');}
   await coordinateDispatch(service);
   await askForReviews(service);
   // Gaps between stays: optional advice, a failure never stops the owner's check.
