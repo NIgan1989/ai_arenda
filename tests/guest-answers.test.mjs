@@ -55,7 +55,7 @@ const modelChat=async(f,allow=true)=>{
  await matchingAction(f.owner,'owner','preference',{propertyId:f.property,mode:'auto'});
  if(allow)await saveAIDataPermission(f.guest,{allowed:true,expectedVersion:0,policyVersion:AI_DATA_POLICY_VERSION});
  const room=await openDiscussion(f.guest,'guest',{kind:'booking',entityId:f.booking});let n=0;
- return {send:text=>sendDiscussionMessage(f.guest,'guest',{...room,text,requestKey:'m'+(n++)},config),read:async()=>(await readDiscussion(f.guest,'guest',room)).messages,
+ return {room,send:text=>sendDiscussionMessage(f.guest,'guest',{...room,text,requestKey:'m'+(n++)},config),read:async()=>(await readDiscussion(f.guest,'guest',room)).messages,
   ownerAsked:()=>f.db.raw.prepare("SELECT COUNT(*) n FROM notifications WHERE user_id='owner' AND dedupe LIKE 'owner:guest-question:%'").get().n};
 };
 
@@ -69,6 +69,11 @@ test('with a model the AI answers any question from the booking facts, never see
    assert.equal(c.ownerAsked(),0,'an answered question does not bother the owner');
    // The address is added by the service itself, not by the model.
    await c.send('Какой адрес?');assert.match((await c.read()).at(-1).body,/Адрес: PRIVATE ADDRESS/);
+   // The next question carries the history: neither that address nor the owner's personal words go to the model.
+   await sendDiscussionMessage(f.owner,'owner',{...c.room,text:'Код домофона 4521, PRIVATE ADDRESS',requestKey:'own1'});
+   f.db.raw.prepare("UPDATE discussion_messages SET created_at=created_at-3600 WHERE sender_role='owner' AND request_key='own1'").run();
+   await c.send('А утюг там есть?');assert.equal(calls.length,3);const last=JSON.stringify(calls.at(-1).input);
+   assert.doesNotMatch(last,/PRIVATE ADDRESS|4521/);assert.match(last,/ребёнком/);
   });
  }finally{f.db.close();}
 });

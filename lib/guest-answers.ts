@@ -79,7 +79,12 @@ export async function answerGuest(db:D1Database,roomId:string,seq:number,offer?:
  let reply:{text:string;escalate:boolean}|null=null;
  if(model&&Array.isArray(topics)&&!topics.includes('access')&&!topics.includes('change')&&(topics.length||String(message.body).trim().length>=8)){
   let details:Row={};try{details=JSON.parse(b.details||'{}');}catch{/* No details: the facts say less. */}
-  const history=(await db.prepare("SELECT sender_role,body FROM discussion_messages WHERE room_id=? AND seq<? AND photo_data='' ORDER BY seq DESC LIMIT 6").bind(roomId,seq).all<Row>()).results.reverse().map(m=>({from:m.sender_role,text:m.body}));
+  // Only the guest's own words and the AI's own replies go to the model: the owner's personal messages never do,
+  // and the address the service added to an AI reply is taken out again.
+  const address=String(b.address||'').trim();
+  const history=(await db.prepare("SELECT sender_role,body FROM discussion_messages WHERE room_id=? AND seq<? AND photo_data='' AND (sender_role='guest' AND sender_id=? OR sender_role='owner' AND request_key LIKE 'ai:%') ORDER BY seq DESC LIMIT 6").bind(roomId,seq,message.sender_id).all<Row>()).results.reverse()
+   .map(m=>({from:m.sender_role,text:String(m.body).split('\n').filter(line=>!/^Адрес:/.test(line)).join('\n')}))
+   .map(m=>({...m,text:address?m.text.split(address).join('[адрес]'):m.text})).filter(m=>m.text.trim());
   const got=await model(guestFacts(b,details),history,message.body);
   if(got){
    if(!got.reply&&!got.handoff)return false;
