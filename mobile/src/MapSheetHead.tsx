@@ -95,8 +95,9 @@ export function MapSheetHead({ role, text, onText, onSend, onChip, chips = true,
           <Pressable accessibilityRole="button" accessibilityLabel="Уборка: закажите уборку у себя дома" disabled={busy} onPress={() => { show(false); onService(); }} style={({ pressed }) => [s.groupHead, pressed && s.groupPressed]}>
             <KindIcon id="cleaning" size={18} color={C.inkSoft} />
             <Text style={s.groupTitle}>Уборка</Text>
-            <Text numberOfLines={1} style={s.groupHint}>У вас дома</Text>
-            <Image source={chevron} style={s.groupChevron} accessibilityIgnoresInvertColors />
+            <Text numberOfLines={1} style={s.groupHint}>у вас дома, по вашей цене</Text>
+            {/* This row does not open a list, it leads to the order: the arrow looks forward. */}
+            <Image source={chevron} style={[s.groupChevron, { transform: [{ rotate: '0deg' }] }]} accessibilityIgnoresInvertColors />
           </Pressable>
         </View>}
       </View>}

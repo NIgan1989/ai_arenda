@@ -169,7 +169,8 @@ export async function planState(service:RentalService,role:PlanRole){
  const live=!!plan&&['trial','active','grace'].includes(plan.status);
  const base={plan:plan?{status:plan.status,periodEnd:plan.period_end,graceUntil:plan.grace_until,autoRenew:!!plan.auto_renew,startedAt:plan.started_at}:null,live,settings:{charge:s.charge,price:role==='owner'?s.ownerPrice:s.cleanerPrice,trialDays:plan?0:s.trialDays,graceDays:s.graceDays}};
  if(role==='owner'){
-  const flats=await rows(db,`SELECT p.id,p.title,p.own_staff,COALESCE(pp.cleaning_fee,0) cleaning_fee,pp.property_id IS NOT NULL has_policy,CASE WHEN ${underAutopilot('p.id')} THEN 1 ELSE 0 END managed FROM properties p LEFT JOIN property_policies pp ON pp.property_id=p.id WHERE p.owner_id=? AND p.archived_at IS NULL AND p.demo_owner IS NULL ORDER BY p.created_at`,at,service.userId);
+  // A private home that is only cleaned (lib/home-cleaning.ts) is not rented, so it is not offered to the AI.
+  const flats=await rows(db,`SELECT p.id,p.title,p.own_staff,COALESCE(pp.cleaning_fee,0) cleaning_fee,pp.property_id IS NOT NULL has_policy,CASE WHEN ${underAutopilot('p.id')} THEN 1 ELSE 0 END managed FROM properties p LEFT JOIN property_policies pp ON pp.property_id=p.id WHERE p.owner_id=? AND NOT EXISTS(SELECT 1 FROM property_details hd WHERE hd.property_id=p.id AND json_extract(hd.details,'$.type')='home') AND p.archived_at IS NULL AND p.demo_owner IS NULL ORDER BY p.created_at`,at,service.userId);
   const units=flats.filter(f=>f.managed).length;
   const stats=await one(db,`SELECT (SELECT COUNT(*) FROM audit_events a JOIN properties p ON p.id=a.entity_id WHERE p.owner_id=? AND a.actor_id='system:autopilot' AND a.created_at>?) answered,
    (SELECT COUNT(*) FROM bookings b JOIN properties p ON p.id=b.property_id WHERE p.owner_id=? AND b.status IN ('confirmed','completed') AND b.created_at>? AND ${underAutopilot('p.id')}) bookings,

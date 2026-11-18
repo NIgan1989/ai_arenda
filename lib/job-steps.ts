@@ -24,5 +24,6 @@ export function ownerJobStep(job: Row | null | undefined, pending: number): JobS
 export function cleanerLine(job: Row): string {
   if (job.status === 'submitted') return 'Отчёт у владельца на приёмке';
   if (job.status === 'in_progress') return 'Уборка идёт, подготовьте отчёт';
+  if (job.booking_id === null && job.checkout_confirmed) return 'Можно начинать в назначенное время';
   return job.checkout_confirmed ? 'Гость выехал, можно начинать' : 'Ждём выезда гостя';
 }

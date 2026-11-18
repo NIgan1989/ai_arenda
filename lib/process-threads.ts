@@ -159,7 +159,9 @@ export function cleaningThread(j: Row, data: Row, now: number): ProcessThread {
       note: late ? 'Никто не взял уборку · решите в карточке' : assigned ? (did('ИИ назначил исполнителя') ? 'ИИ назначил исполнителя' : 'Исполнитель назначен')
         : pending ? (auto ? 'Откликнулись: ' + pending + ' · ИИ выберет сам' : 'Откликнулись: ' + pending + ' · выберите исполнителя')
           : auto ? 'ИИ ищет исполнителя' : 'Ждём откликов исполнителей' },
-    { key: 'checkout', label: 'Выезд гостя', by: 'guest', at: j.start, note: j.checkout_confirmed ? 'Гость выехал' : 'Ждём выезда гостя' },
+    // A cleaning without a booking (a home cleaning, the owner's own order) waits for nobody's departure, only for its time.
+    j.booking_id !== null ? { key: 'checkout', label: 'Выезд гостя', by: 'guest', at: j.start, note: j.checkout_confirmed ? 'Гость выехал' : 'Ждём выезда гостя' }
+      : { key: 'checkout', label: 'Приезд', by: 'cleaner', at: j.start, note: 'Исполнитель приедет к назначенному времени' },
     { key: 'clean', label: 'Уборка', by: 'cleaner', at: j.start, progress: working ? part(Number(j.started_at) || j.start, j.end, now) : undefined,
       note: working ? (j.end > now ? 'Исполнитель убирает · ещё ' + left(j.end - now) : 'Срок уборки прошёл') : 'Уборка в ' + threadWhen(j.start, now) },
     { key: 'check', label: 'Приёмка', by: accepted ? (aiAccepts ? 'ai' : 'owner') : auto ? 'ai' : 'you', at: j.submitted_at || j.end,
@@ -185,7 +187,8 @@ export function jobThread(j: Row, data: Row, now: number): ProcessThread {
   const steps: Omit<ThreadStep, 'state'>[] = [
     { key: 'apply', label: 'Отклик', by: took ? 'ai' : 'you', at: application?.created_at, note: application || isMine ? (took ? 'Автопилот откликнулся за вас' : 'Отклик отправлен') : 'Можно откликнуться' },
     { key: 'assigned', label: 'Назначено', by: 'owner', note: isMine ? 'Вас назначили' : 'Ждём решения владельца' },
-    { key: 'checkout', label: 'Выезд гостя', by: 'guest', at: j.start, note: j.checkout_confirmed ? 'Гость выехал, можно начинать' : 'Ждём выезда гостя' },
+    j.booking_id !== null ? { key: 'checkout', label: 'Выезд гостя', by: 'guest', at: j.start, note: j.checkout_confirmed ? 'Гость выехал, можно начинать' : 'Ждём выезда гостя' }
+      : { key: 'checkout', label: 'Приезд', by: 'you', at: j.start, note: 'Приезжайте к назначенному времени' },
     { key: 'clean', label: 'Уборка', by: 'you', at: j.start, progress: working ? part(Number(j.started_at) || j.start, j.end, now) : undefined,
       note: working ? (j.end > now ? 'Идёт уборка · ещё ' + left(j.end - now) + ' · затем отчёт' : 'Срок прошёл · отправьте отчёт') : 'Начать уборку' },
     { key: 'check', label: 'Приёмка', by: did('ИИ принял уборку', 'ИИ проверил отчёт') ? 'ai' : 'owner', at: j.submitted_at || undefined,

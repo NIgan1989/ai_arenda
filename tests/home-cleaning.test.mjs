@@ -67,3 +67,17 @@ test('the customer sets the price, and an order cannot go to another person\'s a
  await assert.rejects(orderHomeCleaning(f.guest,{address:'ул. Тестовая, 5',rooms:1,kind:'regular',start:'когда-нибудь',requestKey:'c'}),/когда нужна уборка/);
  const {commandRole}=await load('access');assert.deepEqual(commandRole('home-cleaning',{}),['guest','owner']);
 });
+
+test('a cleaning without a booking waits for nobody\'s departure',async()=>{
+ const f=await fixture(),{cleaningThread:ownerJobThread,jobThread}=await load('process-threads'),{cleanerStep,cleanerLine}=await load('job-steps');
+ const made=await orderHomeCleaning(f.guest,{address:'ул. Тестовая, 5',rooms:1,kind:'regular',start:iso(now()+1800),requestKey:'w'});
+ const owner=await f.guest.roleState('owner'),mine=owner.jobs.find(j=>j.id===made.id);
+ assert.equal(mine.booking_id,null);assert.ok(mine.checkout_confirmed);
+ assert.doesNotMatch(JSON.stringify(ownerJobThread(mine,owner,now())),/[Вв]ыезд/);
+ await f.cleaner.jobAction(made.id,{action:'apply'});await f.guest.jobAction(made.id,{action:'assign',applicationId:f.db.raw.prepare('SELECT id FROM applications WHERE job_id=?').get(made.id).id});
+ const cleaner=await f.cleaner.roleState('cleaner'),job=cleaner.jobs.find(j=>j.id===made.id);
+ assert.deepEqual(cleanerStep(job,undefined,'cleaner'),{id:'start',label:'Начать уборку'});assert.equal(cleanerLine(job),'Можно начинать в назначенное время');
+ assert.doesNotMatch(JSON.stringify(jobThread(job,cleaner,now())),/[Вв]ыезд/);
+ // The private home is not offered to the autopilot of rented objects.
+ const {planState}=await load('autopilot-plans');assert.equal((await planState(f.guest,'owner')).flats.some(x=>x.id===made.propertyId),false);
+});

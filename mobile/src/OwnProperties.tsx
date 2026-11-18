@@ -13,6 +13,8 @@ import {processStatus} from '../../lib/process-status';
 import {clock} from '../../lib/rental-policy';
 import {placeNow} from './own-place';
 import {BusyMark,busyNow,hhmm} from './BusyMark';
+import {isHome} from '../../lib/home-cleaning';
+import {KindIcon} from './KindIcon';
 
 const tones:Record<string,[string,string]>={success:[C.successSoft,C.success],warning:[C.warningSoft,C.warning],active:[C.accentSoft,C.accentPressed],neutral:[C.surfaceAlt,C.muted],danger:[C.dangerSoft,C.danger]};
 
@@ -26,7 +28,23 @@ export function OwnProperties({properties,bookings,busy,onAdd,onEdit,onSettings,
    <View style={o.grow}><Text style={o.addTitle}>Добавить объект</Text><Text style={o.addSub}>Жильё, баня или зал: расскажите одним сообщением, ИИ заполнит объявление</Text></View>
   </Pressable>}
   {!properties.length&&<Text style={o.empty}>Здесь появятся ваши объекты: их состояние, брони и цена.</Text>}
-  {properties.map(p=><PropertyCard key={p.id} property={p} bookings={bookings} busy={busy} open={open===p.id} onToggle={()=>setOpen((v:string)=>v===p.id?'':p.id)} onEdit={()=>onEdit(p.id)} onSettings={()=>onSettings(p.id)} onCleaning={()=>onCleaning(p.id)} onMap={onMap(p.id)}/>)}
+  {properties.map(p=>isHome(p.details?.type)?<HomeCard key={p.id} place={p} busy={busy} onCleaning={()=>onCleaning(p.id)} onMap={onMap(p.id)}/>:<PropertyCard key={p.id} property={p} bookings={bookings} busy={busy} open={open===p.id} onToggle={()=>setOpen((v:string)=>v===p.id?'':p.id)} onEdit={()=>onEdit(p.id)} onSettings={()=>onSettings(p.id)} onCleaning={()=>onCleaning(p.id)} onMap={onMap(p.id)}/>)}
+ </View>;
+}
+
+// A private home that is only cleaned (lib/home-cleaning.ts): nothing to rent, so no listing, price or rules. One thing to do.
+function HomeCard({place:p,busy,onCleaning,onMap}:{place:Row;busy:boolean;onCleaning:()=>void;onMap?:()=>void}){
+ return <View style={o.card}>
+  <View style={o.row}>
+   <View style={[o.thumb,o.homeThumb]}><KindIcon id="cleaning" size={28} color={C.accent}/></View>
+   <View style={o.grow}>
+    <Text numberOfLines={1} style={o.title}>{p.title}</Text>
+    <Text numberOfLines={1} style={o.meta}>{[p.city,p.address].filter(Boolean).join(', ')}</Text>
+    <View style={o.tags}><Text style={[o.status,{backgroundColor:C.surfaceAlt,color:C.muted}]}>Мой дом · не сдаётся</Text></View>
+   </View>
+  </View>
+  <Text style={o.note}>Адрес видите только вы и назначенный исполнитель.</Text>
+  <RecordActions busy={busy} actions={[{title:'Заказать уборку',kind:'main',onPress:onCleaning},!!onMap&&{title:'На карте',kind:'side',onPress:onMap}]}/>
  </View>;
 }
 
@@ -83,6 +101,7 @@ const o=StyleSheet.create({
  empty:{...type.label,color:C.muted,textAlign:'center',paddingVertical:16},note:{...type.caption,color:C.inkSoft,paddingHorizontal:4},
  card:{gap:12,padding:12,borderRadius:R.xl,borderWidth:1,borderColor:C.glassLine,backgroundColor:C.glassStrong},cardOpen:{borderColor:C.accentSoft},
  row:{flexDirection:'row',alignItems:'center',gap:12},
+ homeThumb:{alignItems:'center',justifyContent:'center',backgroundColor:C.accentSoft},
  thumb:{width:72,height:72,borderRadius:R.lg,overflow:'hidden',backgroundColor:C.surfaceAlt},
  title:{...type.body,color:C.ink,fontWeight:'700'},meta:{...type.label,color:C.inkSoft},
  tags:{flexDirection:'row',flexWrap:'wrap',gap:8},status:{...type.caption,fontWeight:'500',paddingHorizontal:8,paddingVertical:2,borderRadius:R.sm,overflow:'hidden'},

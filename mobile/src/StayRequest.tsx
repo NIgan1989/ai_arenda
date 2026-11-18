@@ -8,7 +8,7 @@ import {money,type Row} from './model';
 import {useActivityClock} from './ActivityTimer';
 import {defaultStay,settleStay,stayClock,stayDay,stayDays,stayInterval,stayLimits,stayModes,stayRate,stayStamp,stayTimes,stayUnit,type StayChoice,type StayMode} from '../../lib/stay-choice';
 import {recordSpan} from '../../lib/record-span';
-import {homeKinds,homeMinutes,homeAdvice,homeRooms,roomsLabel,windowsLabel,HOME_MAX_ROOMS,HOME_MAX_WINDOWS,HOME_MIN_FEE,HOME_FEE_STEP,type HomeKind,type HomeDeal} from '../../lib/home-cleaning';
+import {homeKinds,homeMinutes,homeAdvice,homeRooms,HOME_MAX_ROOMS,HOME_MAX_WINDOWS,HOME_MIN_FEE,HOME_FEE_STEP,type HomeKind,type HomeDeal} from '../../lib/home-cleaning';
 import {SwipeConfirm} from './SwipeConfirm';
 // A stay request and a new cleaning on one screen each, built from the same parts as on the site:
 // a tariff switch, a strip of days, a row of times and "how many" steppers. Nothing is typed as a date.
@@ -106,10 +106,11 @@ export function HomeCleaningOrder({places,deals=[],city,propertyId,busy,done,res
    {!place&&<TextInput accessibilityLabel="Адрес уборки" style={[p.input,p.line]} value={address} onChangeText={setAddress} editable={!busy} maxLength={300} placeholder={city+', улица, дом, квартира'} placeholderTextColor={C.muted}/>}
   </View>
   <View style={p.field}><Text style={p.label}>Вид уборки</Text>
-   <Segments label="Вид уборки" value={kind} disabled={busy} onChange={setKind} options={(Object.keys(homeKinds) as HomeKind[]).map(id=>({id,title:homeKinds[id].label}))}/>
+   {/* Three full names do not fit one row of a phone: they are chips that wrap, like the saved addresses. */}
+   <View accessibilityRole="radiogroup" accessibilityLabel="Вид уборки" style={p.tasks}>{(Object.keys(homeKinds) as HomeKind[]).map(id=>{const on=id===kind;return <Pressable key={id} accessibilityRole="radio" accessibilityLabel={homeKinds[id].label} accessibilityState={{selected:on,disabled:busy}} disabled={busy} onPress={()=>setKind(id)} style={[p.task,on&&p.taskOn]}><Text style={[p.taskText,on&&{color:C.accentPressed,fontWeight:'600'}]}>{homeKinds[id].label}</Text></Pressable>;})}</View>
    <Text style={p.note}>{homeKinds[kind].hint}</Text>
   </View>
-  <View style={p.row}><View style={p.half}><Stepper label="Комнаты" value={rooms} min={1} max={HOME_MAX_ROOMS} disabled={busy} format={roomsLabel} onChange={setRooms}/></View><View style={p.half}><Stepper label="Мойка окон" value={windows} min={0} max={HOME_MAX_WINDOWS} disabled={busy} format={n=>n?windowsLabel(n):'не нужна'} onChange={setWindows}/></View></View>
+  <View style={p.row}><View style={p.half}><Stepper label="Комнаты" value={rooms} min={1} max={HOME_MAX_ROOMS} disabled={busy} format={String} onChange={setRooms}/></View><View style={p.half}><Stepper label="Помыть окна" value={windows} min={0} max={HOME_MAX_WINDOWS} disabled={busy} format={n=>n?String(n):'нет'} onChange={setWindows}/></View></View>
   <Days label="День" value={when.day} now={now} disabled={busy} onChange={day=>change({day})}/>
   <Times label="Начало" value={when.time} day={when.day} now={now} disabled={busy} onChange={time=>change({time})}/>
   <View style={p.field}><Text style={p.label}>Пожелания</Text><TextInput accessibilityLabel="Пожелания к уборке" style={p.input} value={wishes} onChangeText={setWishes} editable={!busy} multiline maxLength={600} placeholder="Домофон, животные, на что обратить внимание" placeholderTextColor={C.muted}/></View>
