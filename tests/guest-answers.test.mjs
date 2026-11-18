@@ -97,3 +97,15 @@ test('keys never go to the model; without permission or with a failed model the 
   await withModel('fail',async calls=>{await c.send('Во сколько заезд, подскажите?');assert.equal(calls.length,1);assert.match((await c.read()).at(-1).body,/Заезд:/);});
  }finally{f.db.close();}
 });
+
+test('the guest of a flat under autopilot is asked once in the chat; after the answer the question is gone',async()=>{
+ const f=await fixture();try{
+  const room=await openDiscussion(f.guest,'guest',{kind:'booking',entityId:f.booking});
+  assert.equal((await readDiscussion(f.guest,'guest',room)).aiHelper,null,'no autopilot, no question');
+  await matchingAction(f.owner,'owner','preference',{propertyId:f.property,mode:'auto'});
+  const helper=(await readDiscussion(f.guest,'guest',room)).aiHelper;assert.equal(helper.active,true);assert.equal(helper.permission.decided,false);
+  assert.equal((await readDiscussion(f.owner,'owner',room)).aiHelper,null,'the owner is never asked');
+  await saveAIDataPermission(f.guest,{allowed:false,expectedVersion:helper.permission.version,policyVersion:helper.permission.policyVersion});
+  assert.equal((await readDiscussion(f.guest,'guest',room)).aiHelper.permission.decided,true);
+ }finally{f.db.close();}
+});

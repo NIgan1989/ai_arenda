@@ -2,7 +2,8 @@ import {DomainError,required,number,type Role} from './domain';
 import type {RentalService} from './service';
 import {q,one,rows,uuid,epoch,hash,type Row} from './operation-core';
 import {jpegInput} from './listings';
-import {answerGuest,AI_KEY} from './guest-answers';
+import {answerGuest,aiAnswersBooking,AI_KEY} from './guest-answers';
+import {aiDataPermission} from './ai-data-permission';
 import {guestModel} from './guest-answers-ai';
 import type {AIConfig} from './ai';
 import {makeStayOffer} from './stay-offers';
@@ -69,7 +70,9 @@ export async function readDiscussion(service:RentalService,role:Role,body:Row){
  const sendBlocked=!!await one(service.db,'SELECT room_id FROM discussion_blocks WHERE room_id=?',room.id),archived=room.membership_key!==context.membershipKey,members=await currentMembers(service,room,context);
  for(const m of members){if(m.id===service.userId&&m.role===role)continue;try{const r=(await reliabilityFor(service.db,m.role,[m.id])).get(m.id);if(r)m.rating=reliabilityShort(r);}catch{}}
  const subject=await discussionSubject(service,context);
- return {room:{id:room.id,sendBlocked,title:room.title,channel:room.channel,members,archived},subject,call:archived?{phone:null,note:'Чат в архиве.'}:await discussionCall(service,role,context,subject,sendBlocked),messages,visits,hasOlder:older,userId:service.userId};
+ // The guest of a flat under autopilot is asked once, right in the chat, whether the AI may read their messages.
+ const aiHelper=role==='guest'&&room.channel==='stay'&&room.entity_kind==='booking'&&!archived&&await aiAnswersBooking(service.db,room.entity_id)?{active:true,permission:await aiDataPermission(service)}:null;
+ return {room:{id:room.id,sendBlocked,title:room.title,channel:room.channel,members,archived},aiHelper,subject,call:archived?{phone:null,note:'Чат в архиве.'}:await discussionCall(service,role,context,subject,sendBlocked),messages,visits,hasOlder:older,userId:service.userId};
 }
 export async function sendDiscussionMessage(service:RentalService,role:Role,body:Row,config:AIConfig={}){
  const {room,context}=await authorisedRoom(service,role,body);if(room.membership_key!==context.membershipKey)throw new DomainError('Состав участников изменился. Откройте актуальное обсуждение.',409);
