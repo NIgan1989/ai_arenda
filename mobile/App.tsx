@@ -1,5 +1,6 @@
 import React,{Fragment,useEffect,useRef,useState} from 'react';
 import {Thinking} from './src/Thinking';
+import {cancelVoice} from './src/useVoice';
 import {SwipeConfirm} from './src/SwipeConfirm';
 import {JobPhotos,JobRating,DamageClaim} from './src/JobPhotos';
 import {groupRecords,recordGroupLabels,recordGroup} from '../lib/record-groups';
@@ -632,6 +633,8 @@ function Chat(){
   const page=pages.find(p=>p.id===pageId);
   // Anything but the map itself is a sheet over it; a form being filled is one too.
   const sheetOpen=pageId!=='map'||!!flow;
+  // Dictation belongs to the visible map: a page over it must not get a late search.
+  useEffect(()=>{if(sheetOpen)cancelVoice();},[sheetOpen]);
   const nextTask=data.assistantBrief?.automatic?data.assistantBrief.prompts[0]:null;
   const homeCity=String(data.profile?.city||''),cityFlats=pageId==='catalog'&&homeCity?data.properties.filter((p:Row)=>p.city===homeCity):[],byCity=cityFlats.length>0&&!allCities;
   // Tabs of the list pages (lib/booking-filters.ts, lib/job-filters.ts): which tabs the page has, and the tab of each item on it.
