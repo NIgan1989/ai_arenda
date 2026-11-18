@@ -80,9 +80,10 @@ const r=StyleSheet.create({
  bar:{flexDirection:'row',gap:4},segment:{flex:1,height:4,borderRadius:R.xs,backgroundColor:C.line},hint:{...type.caption,color:C.muted},actionNote:{...type.caption,color:C.muted,textAlign:'center'},
  facts:{borderWidth:1,borderColor:C.line,borderRadius:R.lg,backgroundColor:C.surface,overflow:'hidden'},fact:{flexDirection:'row',gap:12,paddingVertical:12,paddingHorizontal:16},factLine:{borderTopWidth:1,borderTopColor:C.line},factPrivate:{backgroundColor:C.successSoft},
  factLabel:{...type.label,color:C.muted,width:96},factValue:{...type.label,color:C.ink,flex:1},
- actions:{gap:8},sideRow:{flexDirection:'row',gap:8},action:{minHeight:H.touch,borderRadius:R.md,paddingVertical:8,paddingHorizontal:16,alignItems:'center',justifyContent:'center'},actionText:{...type.label,fontWeight:'600',textAlign:'center'},
+ actions:{gap:8},sideRow:{flexDirection:'row',flexWrap:'wrap',gap:8},action:{minHeight:H.touch,borderRadius:R.md,paddingVertical:8,paddingHorizontal:16,alignItems:'center',justifyContent:'center'},actionText:{...type.label,fontWeight:'600',textAlign:'center'},
  main:{minHeight:H.primary,backgroundColor:C.accent},mainText:{...type.body,fontWeight:'600',color:C.onAccent},next:{backgroundColor:C.accentSoft},nextText:{color:C.accentPressed},
- side:{flex:1,backgroundColor:C.surface,borderWidth:1,borderColor:C.line},sideText:{color:C.ink},danger:{backgroundColor:'transparent'},dangerText:{color:C.danger,fontWeight:'500'},
+ // Up to three in a row; more wrap to the next row instead of squeezing their words.
+ side:{flexGrow:1,flexBasis:'30%',paddingHorizontal:8,backgroundColor:C.surface,borderWidth:1,borderColor:C.line},sideText:{color:C.ink},danger:{backgroundColor:'transparent'},dangerText:{color:C.danger,fontWeight:'500'},
  focus:{borderWidth:2,borderColor:C.focus},dim:{opacity:.55},grow:{flex:1,minWidth:0},
  dealTop:{flexDirection:'row',alignItems:'center',gap:8},
  row:{gap:4,marginTop:8,paddingVertical:12},rowTop:{flexDirection:'row',alignItems:'center',gap:8},rowHead:{flexDirection:'row',alignItems:'flex-start',gap:8},rowSum:{...type.label,color:C.ink,fontWeight:'700'},rowWhen:{...type.label,color:C.inkSoft},

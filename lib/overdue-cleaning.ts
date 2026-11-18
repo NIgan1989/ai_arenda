@@ -1,6 +1,7 @@
 import {epoch,uuid,q,rows,type OperationConfig} from './operation-core';
 import {OVERDUE_ESCALATE} from './overdue-text';
 import {ruleFor,minutesLabel,DECISION_RULES} from './decision-rules';
+import {shortWindowNote} from './arrival-shift';
 // The shortest wait an owner can choose: the sweep picks the job up then and checks the owner's own time.
 const SILENT_MIN=Math.min(...DECISION_RULES.find(r=>r.key==='overdue_job')!.options)*60;
 type Row=Record<string,any>;
@@ -65,7 +66,7 @@ async function sweepLateStart(db:D1Database,at:number,result:Row){
  // (an assignment made after the start counts from the assignment, not from the start). A short cleaning stays on this
  // clock after its window ends, so the 45-minute promise holds; an hour past it the end-based sweep below takes over.
  const since="MAX(j.start,COALESCE((SELECT t.actual_checkout FROM booking_terms t WHERE t.booking_id=j.booking_id),0),COALESCE((SELECT MAX(a.created_at) FROM audit_events a WHERE a.entity_id=j.id),0))";
- const list=await rows(db,`SELECT j.*,p.title,${since} since FROM cleaning_jobs j JOIN properties p ON p.id=j.property_id WHERE j.status='assigned' AND j.assigned_to IS NOT NULL AND ${since}>? AND j.start<=? AND ${since}<=? AND (j.booking_id IS NULL OR EXISTS(SELECT 1 FROM bookings b WHERE b.id=j.booking_id AND b.status='completed')) ORDER BY j.start LIMIT 50`,at-LATE_RELEASE-3600,at-LATE_ASK,at-LATE_ASK);
+ const list=await rows(db,`SELECT j.*,p.title,p.cleaning_minutes,${since} since FROM cleaning_jobs j JOIN properties p ON p.id=j.property_id WHERE j.status='assigned' AND j.assigned_to IS NOT NULL AND ${since}>? AND j.start<=? AND ${since}<=? AND (j.booking_id IS NULL OR EXISTS(SELECT 1 FROM bookings b WHERE b.id=j.booking_id AND b.status='completed')) ORDER BY j.start LIMIT 50`,at-LATE_RELEASE-3600,at-LATE_ASK,at-LATE_ASK);
  for(const j of list){
   const title=j.title||'жильё',start=Number(j.since),rule=await ruleFor(db,j.owner_id,'overdue_job');
   if(at>=start+LATE_RELEASE&&rule.on){
@@ -73,7 +74,7 @@ async function sweepLateStart(db:D1Database,at:number,result:Row){
    if(window){
     const r=await db.batch([...releaseStatements(db,j,window,at),
      q(db,"INSERT OR IGNORE INTO notifications SELECT ?,?,?,?,0,? WHERE EXISTS(SELECT 1 FROM cleaning_jobs WHERE id=? AND status='open')",uuid(),j.assigned_to,'ИИ-администратор снял вас с уборки «'+title+'»: вы не начали её и не ответили.','cleaner:late-released:'+j.id+':'+start,at,j.id),
-     q(db,"INSERT OR IGNORE INTO notifications SELECT ?,?,?,?,0,? WHERE EXISTS(SELECT 1 FROM cleaning_jobs WHERE id=? AND status='open')",uuid(),j.owner_id,'ИИ-администратор: исполнитель не пришёл на уборку «'+title+'» и не ответил. Я вернул уборку в поиск до '+clockOf(window.end)+'.','owner:late-released:'+j.id+':'+start,at,j.id),
+     q(db,"INSERT OR IGNORE INTO notifications SELECT ?,?,?,?,0,? WHERE EXISTS(SELECT 1 FROM cleaning_jobs WHERE id=? AND status='open')",uuid(),j.owner_id,'ИИ-администратор: исполнитель не пришёл на уборку «'+title+'» и не ответил. Я вернул уборку в поиск до '+clockOf(window.end)+'.'+shortWindowNote(window,Number(j.cleaning_minutes)*60),'owner:late-released:'+j.id+':'+start,at,j.id),
      q(db,"INSERT INTO audit_events SELECT ?,'ai-administrator',?,'job.late_start_released',? WHERE EXISTS(SELECT 1 FROM cleaning_jobs WHERE id=? AND status='open')",uuid(),j.id,at,j.id)]);
     if(r[0].meta.changes){result.released++;continue;}
    }
@@ -88,7 +89,7 @@ export async function sweepOverdueJobs(db:D1Database,config:OperationConfig&{PLA
  const at=epoch(),result={reminded:0,warned:0,released:0,escalated:0,reposted:0,unclaimed:0},list=admins(config);
  await sweepUnclaimed(db,at,result);
  await sweepLateStart(db,at,result);
- const late=await rows(db,"SELECT j.*,p.title,(j.booking_id IS NULL OR EXISTS(SELECT 1 FROM bookings b WHERE b.id=j.booking_id AND b.status='completed')) vacant FROM cleaning_jobs j JOIN properties p ON p.id=j.property_id WHERE j.status IN ('assigned','in_progress') AND j.assigned_to IS NOT NULL AND (j.overdue_step=0 AND j.end<=? OR j.overdue_step=1 AND j.end<=? OR j.overdue_step=2 AND j.status='in_progress' AND j.end<=?) ORDER BY j.end LIMIT 50",at,at-SILENT_MIN,at-OVERDUE_ESCALATE);
+ const late=await rows(db,"SELECT j.*,p.title,p.cleaning_minutes,(j.booking_id IS NULL OR EXISTS(SELECT 1 FROM bookings b WHERE b.id=j.booking_id AND b.status='completed')) vacant FROM cleaning_jobs j JOIN properties p ON p.id=j.property_id WHERE j.status IN ('assigned','in_progress') AND j.assigned_to IS NOT NULL AND (j.overdue_step=0 AND j.end<=? OR j.overdue_step=1 AND j.end<=? OR j.overdue_step=2 AND j.status='in_progress' AND j.end<=?) ORDER BY j.end LIMIT 50",at,at-SILENT_MIN,at-OVERDUE_ESCALATE);
  for(const j of late){
   const title=j.title||'жильё',step=Number(j.overdue_step)||0,started=j.status==='in_progress',mark=(to:number)=>q(db,'UPDATE cleaning_jobs SET overdue_step=? WHERE id=? AND overdue_step=? AND end=?',to,j.id,step,j.end);
   if(step<1){
@@ -105,7 +106,7 @@ export async function sweepOverdueJobs(db:D1Database,config:OperationConfig&{PLA
    if(window){
     const r=await db.batch([...releaseStatements(db,j,window,at),
      q(db,"INSERT OR IGNORE INTO notifications SELECT ?,?,?,?,0,? WHERE EXISTS(SELECT 1 FROM cleaning_jobs WHERE id=? AND status='open')",uuid(),j.assigned_to,'ИИ-администратор снял вас с уборки «'+title+'»: работа не начата в срок.','cleaner:overdue-released:'+j.id+':'+j.end,at,j.id),
-     q(db,"INSERT OR IGNORE INTO notifications SELECT ?,?,?,?,0,? WHERE EXISTS(SELECT 1 FROM cleaning_jobs WHERE id=? AND status='open')",uuid(),j.owner_id,'ИИ-администратор: исполнитель не начал уборку «'+title+'» и не ответил. Я вернул уборку в поиск, выберите нового исполнителя из откликов.','owner:overdue-released:'+j.id+':'+j.end,at,j.id),
+     q(db,"INSERT OR IGNORE INTO notifications SELECT ?,?,?,?,0,? WHERE EXISTS(SELECT 1 FROM cleaning_jobs WHERE id=? AND status='open')",uuid(),j.owner_id,'ИИ-администратор: исполнитель не начал уборку «'+title+'» и не ответил. Я вернул уборку в поиск, выберите нового исполнителя из откликов.'+shortWindowNote(window,Number(j.cleaning_minutes)*60),'owner:overdue-released:'+j.id+':'+j.end,at,j.id),
      q(db,"INSERT INTO audit_events SELECT ?,'ai-administrator',?,'job.overdue_released',? WHERE EXISTS(SELECT 1 FROM cleaning_jobs WHERE id=? AND status='open')",uuid(),j.id,at,j.id)]);
     if(r[0].meta.changes)result.released++;continue;
    }
