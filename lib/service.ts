@@ -1,7 +1,8 @@
 import {wordsOf,venueOr,TYPE_SQL} from './stay-words';
 import {unreadyNote} from './unready';
 import {reliabilityFor} from './reliability';
-import {CHECKIN_LEAD_SECONDS,checkinOpensLabel} from './checkin-window';
+import {CHECKIN_LEAD_SECONDS,checkinOpensAt,checkinOpensLabel} from './checkin-window';
+import {afterReady,allowEarlyCheckin,extendCleaningBefore,shiftedStay,shiftReason,SHIFT_CHOICES} from './arrival-shift';
 import {assessBookingRisk,riskSignals,saveRiskSql,riskLabel,riskFromRow} from './booking-risk';
 import { DomainError, required, number, interval, quote, roles, assistantReply, type Role } from './domain';
 import { ratingsFor } from './stay-reviews';
@@ -533,6 +534,8 @@ export class RentalService {
       const kept=upcoming.length-cancelled;
       return {message:'Состояние жилья сохранено.'+(cancelled?' Отменено броней: '+cancelled+', гости получили сообщение о полном возврате.':'')+(kept?' Броней в силе: '+kept+'. К заезду '+day(upcoming.find((_,i)=>i>=cancelled)?.start||upcoming[0].start)+' снова отметьте «Жильё готово», иначе гость не сможет заселиться.':''),priceSuggestion:null};
     }
+    // Cleaned early: the rest of the cleaning time is free again, and the owner may let the next guest in early.
+    if(readiness==='ready')await afterReady(this.db,propertyId);
     const advice=readiness==='ready'?await this.priceAdviceAfterReady(propertyId):null;
     return {message:readiness==='ready'?'Готовность жилья подтверждена.'+(advice?' ИИ-администратор предлагает новую цену, решение за вами.':''):'Состояние жилья сохранено.',priceSuggestion:advice};
   }
@@ -690,10 +693,25 @@ export class RentalService {
       if(!r[0].meta.changes)throw new DomainError('Бронь изменилась. Обновите карточку.',409);
       return {message:'Владелец предупреждён: вы приедете к '+clockLabel(until)+'. Бронь сохраняется.'};
     }
+    // The home is ready before the next guest: «Можно заселиться раньше» (lib/arrival-shift.ts).
+    if(body.action==='early_checkin'){
+      if(!owner)throw new DomainError('Пустить гостя раньше может владелец.',403);
+      return allowEarlyCheckin(this.db,b,terms,op);
+    }
+    // The cleaning runs late: the owner asks the guest to come later. A booking change the guest accepts or declines.
+    if(body.action==='shift_arrival'){
+      if(!owner)throw new DomainError('Сдвинуть заезд может владелец.',403);
+      const by=Number(body.minutes)*60;
+      if(!SHIFT_CHOICES.includes(by/60))throw new DomainError('Выберите, на сколько сдвинуть заезд.');
+      if(b.status!=='confirmed'||terms?.actual_checkin||b.start<=now())throw new DomainError('Сдвинуть можно только заезд, который ещё не начался.',409);
+      const next=shiftedStay(b,terms?.billing_mode||'daily',by),iso=(v:number)=>new Date(v*1000).toISOString();
+      const q=await this.bookingChangeQuote(bookingId,'owner',{start:iso(next.start),end:iso(next.end)});
+      return this.proposeBookingChange(bookingId,'owner',{start:iso(next.start),end:iso(next.end),expectedAmount:q.amount,baseVersion:q.baseVersion,policyVersion:q.policyVersion,acceptTerms:true,reason:shiftReason(b.title||'жильё',by,next.start),requestKey:'shift:'+bookingId+':'+b.start+':'+by});
+    }
     if(body.action==='report_checkin'){
       if(b.guest_id!==this.userId)throw new DomainError(venueOr(b,'Сообщить о заселении может гость.','Сообщить '+wordsOf(b).ofArrive+' может гость.'),403);
       if(b.status!=='confirmed'||b.end<=now()||terms?.actual_checkin)throw new DomainError(venueOr(b,'Сейчас нельзя сообщить о заселении по этой брони.','Сейчас нельзя сообщить '+wordsOf(b).ofArrive+' по этой брони.'),409);
-      if(b.start-CHECKIN_LEAD_SECONDS>now())throw new DomainError(venueOr(b,'Сообщить о заселении можно за 15 минут до заезда: ','Сообщить '+wordsOf(b).ofArrive+' можно за 15 минут до '+wordsOf(b).arriveGen+': ')+checkinOpensLabel(b.start,now())+'.',409);
+      if(checkinOpensAt(b.start,terms?.early_checkin_at)>now())throw new DomainError(venueOr(b,'Сообщить о заселении можно за 15 минут до заезда: ','Сообщить '+wordsOf(b).ofArrive+' можно за 15 минут до '+wordsOf(b).arriveGen+': ')+checkinOpensLabel(b.start,now(),terms?.early_checkin_at)+'.',409);
       await this.db.batch([this.query('UPDATE booking_terms SET checkin_reported_at=?,version=version+1 WHERE booking_id=? AND checkin_reported_at IS NULL AND actual_checkin IS NULL',now(),bookingId),this.notify(b.owner_id,venueOr(b,'Гость сообщил, что заселился в «'+b.title+'».','Гость сообщил '+wordsOf(b).ofArrive+' в «'+b.title+'».'),'checkin-reported:'+bookingId,'owner'),this.audit(bookingId,'booking.checkin_reported')]);
       // The answer says what is really awaited: the guest's payment, or only the owner's word (the AI gives it after ten minutes).
       const unpaid=b.payment_status!=='owner_verified'?venueOr(b,'проживание','бронь'):terms?.deposit_status==='pending'?'депозит':'';
@@ -704,11 +722,11 @@ export class RentalService {
       if(!owner)throw new DomainError(venueOr(b,'Заселение подтверждает владелец.',wordsOf(b).arrive+' подтверждает владелец.'),403);
       if(terms?.actual_checkin&&!terms.actual_checkout&&op?.active_booking_id===bookingId)return {message:'Заселение уже подтверждено.'};
       if(b.status!=='confirmed'||b.end<=now()||terms?.actual_checkout)throw new DomainError(venueOr(b,'Сейчас нельзя подтвердить заселение по этой брони.','Сейчас нельзя подтвердить '+wordsOf(b).arriveAcc+' по этой брони.'),409);
-      if(b.start-CHECKIN_LEAD_SECONDS>now())throw new DomainError(venueOr(b,'Подтвердить заселение можно за 15 минут до заезда: ','Подтвердить '+wordsOf(b).arriveAcc+' можно за 15 минут до '+wordsOf(b).arriveGen+': ')+checkinOpensLabel(b.start,now())+'.',409);
+      if(checkinOpensAt(b.start,terms?.early_checkin_at)>now())throw new DomainError(venueOr(b,'Подтвердить заселение можно за 15 минут до заезда: ','Подтвердить '+wordsOf(b).arriveAcc+' можно за 15 минут до '+wordsOf(b).arriveGen+': ')+checkinOpensLabel(b.start,now(),terms?.early_checkin_at)+'.',409);
       if(b.payment_status!=='owner_verified'||terms?.deposit_status==='pending')throw new DomainError(venueOr(b,'Сначала проверьте оплату проживания и предусмотренный депозит.','Сначала проверьте оплату брони и предусмотренный депозит.'),409);
       // Under execution the mandate and the guest's report are checked again inside the write.
       const checkinGate=this.execution?" AND t.checkin_reported_at IS NOT NULL AND EXISTS(SELECT 1 FROM property_policies pp WHERE pp.property_id=b.property_id AND pp.version=? AND pp.auto_confirm=1 AND pp.auto_assign=1 AND (pp.mandate_until=0 OR pp.mandate_until>?))":'';
-      const result=await this.db.batch([this.query("UPDATE property_operations SET readiness='occupied',active_booking_id=?,version=version+1,updated_at=? WHERE property_id=? AND readiness='ready' AND active_booking_id IS NULL AND EXISTS(SELECT 1 FROM bookings b JOIN booking_terms t ON t.booking_id=b.id WHERE b.id=? AND b.status='confirmed' AND b.start-"+CHECKIN_LEAD_SECONDS+"<=? AND b.end>? AND b.payment_status='owner_verified' AND t.deposit_status<>'pending' AND t.actual_checkout IS NULL"+checkinGate+")",bookingId,now(),b.property_id,bookingId,now(),now(),...(this.execution?[this.execution.policyVersion,now()]:[])),this.query('UPDATE booking_terms SET actual_checkin=?,version=version+1 WHERE booking_id=? AND actual_checkin IS NULL AND EXISTS(SELECT 1 FROM property_operations WHERE property_id=? AND active_booking_id=?)',now(),bookingId,b.property_id,bookingId),this.audit(bookingId,'booking.checkin_requested')]);
+      const result=await this.db.batch([this.query("UPDATE property_operations SET readiness='occupied',active_booking_id=?,version=version+1,updated_at=? WHERE property_id=? AND readiness='ready' AND active_booking_id IS NULL AND EXISTS(SELECT 1 FROM bookings b JOIN booking_terms t ON t.booking_id=b.id WHERE b.id=? AND b.status='confirmed' AND MIN(b.start-"+CHECKIN_LEAD_SECONDS+",COALESCE(t.early_checkin_at,b.start))<=? AND b.end>? AND b.payment_status='owner_verified' AND t.deposit_status<>'pending' AND t.actual_checkout IS NULL"+checkinGate+")",bookingId,now(),b.property_id,bookingId,now(),now(),...(this.execution?[this.execution.policyVersion,now()]:[])),this.query('UPDATE booking_terms SET actual_checkin=?,version=version+1 WHERE booking_id=? AND actual_checkin IS NULL AND EXISTS(SELECT 1 FROM property_operations WHERE property_id=? AND active_booking_id=?)',now(),bookingId,b.property_id,bookingId),this.audit(bookingId,'booking.checkin_requested')]);
       if(!result[0].meta.changes)throw new DomainError(venueOr(b,'Жильё не готово или в нём ещё проживает другой гость.','Объект не готов или в нём ещё другие гости.'),409);return {message:venueOr(b,'Фактическое заселение подтверждено.',wordsOf(b).arriveOk+'.')};
     }
     if(body.action==='dispute_checkout'){
@@ -892,6 +910,8 @@ export class RentalService {
       this.query("UPDATE booking_changes SET status='accepted',decided_at=? WHERE id=? AND status='pending' AND expires_at>? AND EXISTS(SELECT 1 FROM booking_terms WHERE booking_id=? AND version=? AND actual_checkout IS NULL AND checkout_reported_at IS NULL AND paid_amount<=?) AND EXISTS(SELECT 1 FROM property_policies WHERE property_id=? AND version=? AND (?=0 OR mandate_until=0 OR mandate_until>?)) AND EXISTS(SELECT 1 FROM bookings WHERE id=? AND status='confirmed')",now(),changeId,now(),bookingId,c.base_version,c.amount,b.property_id,c.policy_version,automatic?1:0,now(),bookingId),
       this.query(`UPDATE bookings SET start=?,end=?,occupied_until=?,amount=?,payment_status=CASE WHEN ?>=(SELECT paid_amount FROM booking_terms WHERE booking_id=?) AND ?>(SELECT paid_amount FROM booking_terms WHERE booking_id=?) THEN 'unpaid' ELSE payment_status END WHERE id=? AND ${gate}`,c.start,c.end,c.occupied_until,c.amount,c.amount,bookingId,c.amount,bookingId,bookingId,changeId)
     ];
+    // A later arrival gives the cleaning before it the time it needs (lib/arrival-shift.ts).
+    if(c.start>b.start)statements.push(extendCleaningBefore(this.db,b,c.start,gate,changeId));
     // The assigned cleaner keeps the job at its new time unless that time clashes with the cleaner's other work;
     // the cleaner is told and can step back in the job card. A clash, or a move of more than three hours, still asks again.
     const keeps=!!job?.assigned_to&&movesCleaning&&job.status==='assigned'&&Math.abs(c.end-job.start)<=KEEP_SHIFT&&!await this.one("SELECT id FROM cleaning_jobs WHERE id<>? AND assigned_to=? AND status IN ('assigned','in_progress','submitted') AND start<? AND end>?",job.id,job.assigned_to,c.occupied_until,c.end);
@@ -1070,6 +1090,7 @@ export class RentalService {
       const approveGate=this.execution?" AND EXISTS(SELECT 1 FROM property_policies WHERE property_id=cleaning_jobs.property_id AND version=? AND auto_assign=1 AND auto_confirm=1 AND (mandate_until=0 OR mandate_until>?))":'';
       const r=await this.db.batch([this.query("UPDATE cleaning_jobs SET status='completed' WHERE id=? AND status='submitted' AND version=?"+approveGate,jobId,j.version,...(this.execution?[this.execution.policyVersion,now()]:[])),this.query("UPDATE property_operations SET readiness='ready',version=version+1,updated_at=? WHERE property_id=? AND readiness='inspection' AND active_booking_id IS NULL AND EXISTS(SELECT 1 FROM cleaning_jobs WHERE id=? AND status='completed') AND NOT EXISTS(SELECT 1 FROM cleaning_jobs WHERE property_id=? AND (status IN ('in_progress','submitted') OR (status IN ('open','assigned') AND start<=?)))",now(),j.property_id,jobId,j.property_id,now()),this.notify(j.assigned_to,this.execution?'ИИ-администратор принял уборку по фотоотчёту. Расчёт производится с заказчиком отдельно.':'Заказчик принял уборку. Расчёт производится с заказчиком отдельно.','approved:'+jobId,'cleaner'),this.audit(jobId,'job.completed')]);
       if(!r[0].meta.changes) throw new DomainError('Нет отчёта для приёмки.',409);
+      if((await this.one('SELECT readiness FROM property_operations WHERE property_id=?',j.property_id))?.readiness==='ready')await afterReady(this.db,j.property_id);
       const advice=await this.priceAdviceAfterReady(j.property_id);
       return {message:'Работа принята. Денежные расчёты выполняются отдельно.'+(advice?' ИИ-администратор посмотрел спрос и предлагает новую цену, решение за вами.':''),priceSuggestion:advice};
     }

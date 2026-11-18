@@ -37,7 +37,7 @@ export async function sweepReadyBefore(db:D1Database,at=epoch()){
   AND NOT EXISTS(SELECT 1 FROM booking_terms t WHERE t.booking_id=b.id AND t.actual_checkin IS NOT NULL)`,at,READY_BEFORE,at);
  let reminded=0;
  for(const b of due as Row[]){
-  const w=stayWords(b.type),text='«'+b.title+'»: следующие гости в '+clock(b.start)+', а готовность ещё не отмечена. Когда уберёте, нажмите «'+w.ready+'».';
+  const w=stayWords(b.type),text='«'+b.title+'»: следующие гости в '+clock(b.start)+', а готовность ещё не отмечена. Когда уберёте, нажмите «'+w.ready+'». Не успеваете — сдвиньте '+w.arriveLow+' в карточке брони.';
   const done=await q(db,'INSERT OR IGNORE INTO notifications(id,user_id,body,dedupe,read,created_at) VALUES (?,?,?,?,0,?)',uuid(),b.owner_id,text,'owner:ready-before:'+b.id+':'+b.start,at).run();
   if(done.meta?.changes)reminded++;
   if(b.staff_id)await q(db,'INSERT OR IGNORE INTO notifications(id,user_id,body,dedupe,read,created_at) VALUES (?,?,?,?,0,?)',uuid(),b.staff_id,text,'staff:ready-before:'+b.id+':'+b.start,at).run();

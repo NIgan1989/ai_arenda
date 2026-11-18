@@ -81,7 +81,7 @@ export function guestSteps(b: Row, now: number, paymentMode?: string): GuestStep
   if (!b.terms?.actual_checkin && !b.terms?.checkin_reported_at && b.end > now) {
     steps.push({
       id: 'checkin', label: w.iAmIn,
-      ...(checkinOpen(b.start, now) ? {} : { disabled: true, note: 'Кнопка станет активной за 15 минут до ' + w.arriveGen + ': ' + checkinOpensLabel(b.start, now) + '.' }),
+      ...(checkinOpen(b.start, now, b.terms?.early_checkin_at) ? {} : { disabled: true, note: 'Кнопка станет активной за 15 минут до ' + w.arriveGen + ': ' + checkinOpensLabel(b.start, now, b.terms?.early_checkin_at) + '.' }),
     });
   }
   // «Задерживаюсь на час»: the guest warns the owner before the AI has to ask (lib/late-arrival.ts).

@@ -12,7 +12,7 @@ export function ownerSteps(b: Row, now: number): OwnerStep[] {
   if (b.status === 'requested') return [{ id: 'answer', label: 'Рассмотреть заявку' }];
   if (b.status !== 'confirmed') return [];
   const steps: OwnerStep[] = [], w = wordsOf(b);
-  if (checkinOpen(b.start, now) && !b.terms?.actual_checkin) steps.push({ id: 'checkin', label: 'Подтвердить ' + w.arriveAcc });
+  if (checkinOpen(b.start, now, b.terms?.early_checkin_at) && !b.terms?.actual_checkin) steps.push({ id: 'checkin', label: 'Подтвердить ' + w.arriveAcc });
   if (b.terms?.checkout_reported_at) steps.push({ id: 'checkout-review', label: 'Рассмотреть ' + w.leaveLow });
   if (b.terms?.deposit_status === 'pending') steps.push({ id: 'deposit', label: 'Подтвердить депозит' });
   if (b.payment_status !== 'owner_verified') steps.push({ id: 'paid', label: 'Отметить оплату' });
