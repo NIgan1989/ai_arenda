@@ -6,6 +6,7 @@
 import {epoch,uuid,q} from './operation-core';
 import {CHECKIN_LEAD_SECONDS} from './checkin-window';
 import {DomainError} from './domain';
+import {underAutopilot} from './autopilot';
 
 type Row=Record<string,any>; // eslint-disable-line @typescript-eslint/no-explicit-any
 const clock=(at:number)=>new Intl.DateTimeFormat('ru-RU',{hour:'2-digit',minute:'2-digit',timeZone:'Asia/Almaty'}).format(new Date(at*1000));
@@ -17,6 +18,9 @@ export const SHIFT_CHOICES=[30,60,120];
 export const SHIFT_LIMIT=Math.max(...SHIFT_CHOICES)*60;
 // Early check-in is offered when the next guest is due at least this much later than now.
 export const EARLY_GAIN=30*60;
+// Under the autopilot the AI lets the next guest in early by itself when they arrive within this time
+// (lib/arrival-autopilot.ts); further away the free time could still be sold, so the owner decides.
+export const EARLY_AUTO=3*3600;
 
 /** «На уборку осталось 60 мин из 90: следующий гость в 20:30.» — said when a cleaning window is shorter than needed. */
 export function shortWindowNote(window:{start:number;end:number},needed:number){
@@ -44,6 +48,8 @@ export async function afterReady(db:D1Database,propertyId:string,at=epoch()){
  const next=await nextArrival(db,propertyId,at);
  if(!next||next.start-CHECKIN_LEAD_SECONDS-at<EARLY_GAIN||next.start-at>12*3600||next.early_checkin_at)return null;
  const p=await q(db,'SELECT owner_id,title FROM properties WHERE id=?',propertyId).first<Row>();if(!p)return null;
+ // The autopilot lets this guest in by itself (lib/arrival-autopilot.ts): no offer to the owner then.
+ if(next.start-at<=EARLY_AUTO&&next.payment_status==='owner_verified'&&await q(db,'SELECT 1 AS x WHERE '+underAutopilot('?'),propertyId,at).first())return next.id as string;
  await q(db,'INSERT OR IGNORE INTO notifications(id,user_id,body,dedupe,read,created_at) VALUES (?,?,?,?,0,?)',uuid(),p.owner_id,
   '«'+p.title+'» готово в '+clock(at)+', а следующий гость приедет в '+clock(next.start)+'. Можно пустить его раньше: нажмите «Можно заселиться раньше» в карточке брони, гость получит сообщение.',
   'owner:early-offer:'+next.id+':'+next.start,at).run();

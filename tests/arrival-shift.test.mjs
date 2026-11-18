@@ -1,6 +1,6 @@
 import {test} from 'node:test';import assert from 'node:assert/strict';
 import {fixture,load,now} from './helpers/platform.mjs';
-const {testPayment}=await load('finance'),{shortWindowNote,shiftedStay}=await load('arrival-shift'),{RentalService}=await load('service');
+const {testPayment}=await load('finance'),{matchingAction}=await load('smart-matching'),{sweepArrivals,shiftFor,cleaningEnds}=await load('arrival-autopilot'),{shortWindowNote,shiftedStay}=await load('arrival-shift'),{RentalService}=await load('service');
 const pay=f=>{f.db.raw.prepare("INSERT INTO platform_billing(id,test_payments) VALUES ('global',1) ON CONFLICT(id) DO UPDATE SET test_payments=1").run();return testPayment(f.guest,{bookingId:f.booking,kind:'all'},{},id=>new RentalService(f.db,id));};
 const notes=(f,user,like)=>f.db.raw.prepare('SELECT body FROM notifications WHERE user_id=? AND dedupe LIKE ?').all(user,like).map(r=>r.body);
 // The guest of the fixture arrives in `inMinutes`; a previous guest left 10 minutes ago and the cleaning time after them
@@ -99,4 +99,44 @@ test('the cleaning before a later arrival is not stretched into the same cleaner
   assert.equal(R.prepare("SELECT end FROM cleaning_jobs WHERE id='late'").get().end,t+40*60,'the cleaner keeps the next job, the arrival still moves');
   assert.equal(R.prepare("SELECT status FROM booking_changes WHERE id=?").get(c.id).status,'accepted');
  }finally{f.db.close();}
+});
+
+const autopilot=f=>matchingAction(f.owner,'owner','preference',{propertyId:f.property,mode:'auto'});
+
+test('autopilot: a ready home lets the next guest in early by itself, only when they are close',async()=>{
+ const near=await between(120),far=await between(240);try{
+  for(const f of [near,far]){await autopilot(f);await pay(f);await f.owner.readinessAction(f.property,{readiness:'ready',inspected:true});}
+  assert.equal(notes(near,'owner','owner:early-offer:%').length,0,'no offer: the AI does it');
+  assert.deepEqual(await sweepArrivals(near.db),{early:1,shifted:0});
+  assert.ok(near.db.raw.prepare('SELECT early_checkin_at FROM booking_terms WHERE booking_id=?').get(near.booking).early_checkin_at);
+  assert.match(notes(near,'owner','owner:auto-early:%').join(' '),/может заселиться раньше/);
+  assert.deepEqual(await sweepArrivals(near.db),{early:0,shifted:0},'said and done once');
+  assert.deepEqual(await sweepArrivals(far.db),{early:0,shifted:0},'four hours ahead the owner decides');
+  assert.equal(notes(far,'owner','owner:early-offer:%').length,1);
+ }finally{near.db.close();far.db.close();}
+});
+
+test('autopilot: a cleaning that will not end in time asks the guest to come later, once',async()=>{
+ const f=await between(40),R=f.db.raw,t=now();try{
+  await autopilot(f);
+  R.prepare("INSERT INTO cleaning_jobs(id,property_id,owner_id,booking_id,description,start,end,fee,status,assigned_to,created_at) SELECT 'late',?,owner_id,'prev','Уборка',?,?,3000,'assigned','cleaner',? FROM properties WHERE id=?").run(f.property,t-600,t+40*60,t,f.property);
+  assert.deepEqual(await sweepArrivals(f.db),{early:0,shifted:1});
+  const c=R.prepare("SELECT reason,start FROM booking_changes WHERE booking_id=? AND status='pending'").get(f.booking);
+  assert.match(c.reason,/на 1 ч позже/);
+  assert.match(notes(f,'owner','owner:auto-shift:%').join(' '),/попросил гостя заехать/);
+  assert.deepEqual(await sweepArrivals(f.db),{early:0,shifted:0});
+ }finally{f.db.close();}
+});
+
+test('autopilot: without the autopilot nothing is done for the owner',async()=>{
+ const f=await between(40),R=f.db.raw,t=now();try{
+  R.prepare("INSERT INTO cleaning_jobs(id,property_id,owner_id,booking_id,description,start,end,fee,status,assigned_to,created_at) SELECT 'late',?,owner_id,'prev','Уборка',?,?,3000,'assigned','cleaner',? FROM properties WHERE id=?").run(f.property,t-600,t+40*60,t,f.property);
+  assert.deepEqual(await sweepArrivals(f.db),{early:0,shifted:0});
+ }finally{f.db.close();}
+});
+
+test('how late and by how much',()=>{
+ assert.deepEqual([shiftFor(60),shiftFor(1800),shiftFor(1801),shiftFor(5000),shiftFor(99999)],[30,30,60,120,120]);
+ assert.equal(cleaningEnds({status:'assigned',start:0,end:3000},90,1000),1000+5400);
+ assert.equal(cleaningEnds({status:'in_progress',start:0,end:3000},90,1000),3000);
 });
