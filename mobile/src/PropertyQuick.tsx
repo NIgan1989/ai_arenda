@@ -1,6 +1,7 @@
 // Adding a flat in the app: the owner tells the AI about it in one message, then checks the card the AI filled.
 // The AI asks only what it could not read (address, district, daily price), one question at a time.
 // Same reading as on the site: lib/listing-draft.ts.
+import {homeAskFromText,type HomeAsk} from '../../lib/home-ask';
 import React,{useMemo,useState} from 'react';
 import {View,Text,TextInput,Pressable,StyleSheet} from 'react-native';
 import {C,type,brandFont} from './styles';
@@ -20,7 +21,7 @@ const money=(n:number)=>new Intl.NumberFormat('ru-RU').format(n)+' ₸';
 const STEPS=['Расскажите','Проверьте','Готово'];
 const RULES:[keyof ListingDraft,string][]=[['pets','Можно с питомцами'],['smoking','Можно курить'],['parties','Можно вечеринки']];
 
-export function PropertyQuick({city,onSave,onGuestMode,onPlace,onReview,onClose,onMap,onDone}:{city:string;onSave:(body:Row)=>Promise<Row>;onGuestMode:(body:Row)=>Promise<unknown>;onPlace?:(body:Row)=>Promise<unknown>;onReview?:(body:Row)=>Promise<unknown>;onClose:()=>void;onMap?:(id:string)=>void;onDone:(saved:Saved)=>void}){
+export function PropertyQuick({city,onSave,onGuestMode,onPlace,onReview,onClose,onMap,onDone,onHome}:{city:string;onHome?:(ask?:HomeAsk)=>void;onSave:(body:Row)=>Promise<Row>;onGuestMode:(body:Row)=>Promise<unknown>;onPlace?:(body:Row)=>Promise<unknown>;onReview?:(body:Row)=>Promise<unknown>;onClose:()=>void;onMap?:(id:string)=>void;onDone:(saved:Saved)=>void}){
  const [step,setStep]=useState(0),[text,setText]=useState(''),[draft,setDraft]=useState<ListingDraft>(()=>emptyDraft(city)),[found,setFound]=useState<string[]>([]);
  const [photos,setPhotos]=useState<string[]>([]),[uploading,setUploading]=useState(false),[answer,setAnswer]=useState(''),[mode,setMode]=useState<'auto'|'manual'>('auto'),[more,setMore]=useState(false);
  const [busy,setBusy]=useState(false),[error,setError]=useState(''),[saved,setSaved]=useState<Saved|null>(null);
@@ -28,7 +29,9 @@ export function PropertyQuick({city,onSave,onGuestMode,onPlace,onReview,onClose,
  const ask=questions[0];
  const patch=(value:Partial<ListingDraft>)=>setDraft(d=>({...d,...value,known:[...new Set([...d.known,...Object.keys(value)])]}));
  const guessed=(key:string)=>!draft.known.includes(key);
- function read(){if(!text.trim())return;const r=readListingText(text,draft);setDraft(r.draft);setFound(r.found);setError('');setStep(1);}
+ // Не объявление, а уборка своего жилья (lib/home-ask.ts): форма ведёт в заказ уборки с тем, что уже понято из текста.
+ const homeAsk=useMemo(()=>onHome?homeAskFromText(text):null,[text,onHome]);
+ function read(){if(!text.trim())return;if(homeAsk&&onHome){onHome(homeAsk);return;}const r=readListingText(text,draft);setDraft(r.draft);setFound(r.found);setError('');setStep(1);}
  function reply(){if(!ask||!answer.trim())return;
   // «Сами», «сам убираю», «свой персонал»: nobody is ordered, the owner marks the place ready himself.
   if(ask.key==='cleaningFee'){const v=moneyAnswer(answer);if(v>=100)patch({cleaningFee:v});else if(/(?:^|[^а-я])(?:сам[аи]?|сво[йиея][а-я]*\s+(?:персонал|горничн|уборщ|сотрудник))(?=$|[^а-я])/i.test(answer))patch({ownStaff:true});else{setError('Напишите сумму числом, от 100 ₸, или «сами».');return;}}
@@ -66,7 +69,9 @@ export function PropertyQuick({city,onSave,onGuestMode,onPlace,onReview,onClose,
     <View style={q.lineBar}><View style={q.grid}><Pressable accessibilityRole="button" onPress={()=>setText(DRAFT_EXAMPLE)} style={q.chip}><Text style={q.chipText}>Пример: жильё</Text></Pressable><Pressable accessibilityRole="button" onPress={()=>setText(DRAFT_EXAMPLE_BATH)} style={q.chip}><Text style={q.chipText}>Пример: баня</Text></Pressable></View><Text style={q.hint}>{text.length?text.length+' / 2000':''}</Text></View></View>
    <PhotoGrid photos={photos} onChange={setPhotos} onBusy={setUploading}/>
    <Text style={q.hint}>Жильё, баня, сауна или зал: ИИ поймёт тип, гостей, цены, удобства, правила и адрес. Порядок не важен, фото можно добавить и потом.</Text>
-   <Pressable accessibilityRole="button" accessibilityState={{disabled:!text.trim()||uploading}} disabled={!text.trim()||uploading} onPress={read} style={[q.primary,(!text.trim()||uploading)&&q.primaryOff]}><Text style={q.primaryText}>✦  Заполнить с ИИ</Text></Pressable>
+   {!!onHome&&!homeAsk&&<Pressable accessibilityRole="button" accessibilityLabel="Не сдаёте жильё, нужна только уборка? Заказать уборку дома" onPress={()=>onHome()} style={({pressed})=>[q.homeLink,pressed&&{opacity:.55}]}><Text style={q.homeLinkText}>Не сдаёте, нужна только уборка?  <Text style={q.homeLinkGo}>Заказать уборку дома ›</Text></Text></Pressable>}
+   {!!homeAsk&&<View accessibilityLiveRegion="polite" style={q.homeAsk}><Text style={q.homeAskTitle}>Похоже, вам нужна уборка своего жилья</Text><Text style={q.homeAskText}>{'Объявление не нужно: закажем уборку'+(homeAsk.address?' по адресу '+homeAsk.address:'')+'. Цену поставите сами, ИИ подскажет.'}</Text></View>}
+   <Pressable accessibilityRole="button" accessibilityState={{disabled:!text.trim()||uploading}} disabled={!text.trim()||uploading} onPress={read} style={[q.primary,(!text.trim()||uploading)&&q.primaryOff]}><Text style={q.primaryText}>{homeAsk?'✦  Заказать уборку':'✦  Заполнить с ИИ'}</Text></Pressable>
   </View>}
 
   {step===1&&<View style={q.body}>
@@ -137,6 +142,7 @@ const q=StyleSheet.create({
  lineInput:{minHeight:136,padding:16,color:C.ink,...type.body},
  lineBar:{flexDirection:'row',alignItems:'center',justifyContent:'space-between',gap:8,paddingHorizontal:12,paddingBottom:12},
  hint:{color:C.muted,...type.caption},
+ homeLink:{paddingVertical:8},homeAsk:{gap:4,padding:12,borderRadius:R.lg,backgroundColor:C.accentSoft},homeAskTitle:{color:C.accentPressed,...type.label,fontWeight:'700'},homeAskText:{color:C.inkSoft,...type.caption},homeLinkText:{color:C.inkSoft,...type.label},homeLinkGo:{color:C.accentPressed,fontWeight:'600'},
  photos:{flexDirection:'row',flexWrap:'wrap',gap:8},photo:{width:88,height:88,borderRadius:R.md,overflow:'hidden'},
  photoX:{position:'absolute',top:4,right:4,width:24,height:24,borderRadius:R.full,backgroundColor:C.scrim,alignItems:'center',justifyContent:'center'},photoXText:{color:C.onAccent,...type.caption},
  primary:{minHeight:H.primary,borderRadius:R.full,backgroundColor:C.aiFrom,alignItems:'center',justifyContent:'center',paddingHorizontal:24},primaryOff:{backgroundColor:C.lineStrong},

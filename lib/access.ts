@@ -19,8 +19,8 @@ export function intentRole(intent:string):Role|null{
 export function commandRole(path:string,body:Record<string,any>):Role[]|null{
   if(path==='profile'||path==='demo'||path==='notifications')return null;
   if(path==='listings'||path.startsWith('listings/')||(path==='media'&&body.kind==='property'))return ['owner'];
-  // Уборку на дом заказывает и гость, и владелец: роль владельца подключается самим заказом (lib/home-order.ts).
-  if(path==='home-cleaning')return ['guest','owner'];
+  // Уборку своего жилья заказывает только владелец (решение 2026-11-18): у гостя этого входа нет.
+  if(path==='home-cleaning')return ['owner'];
   if(path==='quote'||path==='bookings')return ['guest'];
   if(path==='properties'||path.startsWith('properties/')||path==='jobs')return ['owner'];
   if(path.startsWith('bookings/'))return ['confirm','reject','paid','deposit_received','checkin','checkout','dispute_checkout','record_deposit_return','record_refund','keep_deposit'].includes(body.action)?['owner']:['report_checkout','report_checkin','report_late'].includes(body.action)?['guest']:['owner','guest'];
