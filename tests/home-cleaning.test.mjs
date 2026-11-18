@@ -130,3 +130,78 @@ test('ticks of the site are not read as the points of a home cleaning, and a new
  const card=(await f.guest.roleState('owner')).approvals.find(c=>c.kind==='report'&&c.entityId===made.id);
  assert.equal(card.detail,'Убрано');assert.ok(card.facts.some(([k,v])=>k==='Чек-лист'&&v==='4 из 4'));
 });
+
+// Stage 3: the cancellation with a free term, the complaint about damage with photos, the rating of the performer.
+const taken=async(f,key,over={})=>{
+ const made=await orderHomeCleaning(f.guest,{address:'ул. Тестовая, 5',rooms:2,kind:'regular',fee:10000,start:iso(now()+5*3600),requestKey:key,...over});
+ await f.cleaner.jobAction(made.id,{action:'apply'});await f.guest.jobAction(made.id,{action:'assign',applicationId:f.db.raw.prepare('SELECT id FROM applications WHERE job_id=?').get(made.id).id});
+ return made;
+};
+const row=(f,id)=>({...f.db.raw.prepare('SELECT * FROM cleaning_jobs WHERE id=?').get(id)});
+
+test('a home order is cancelled free until two hours before the start, later the performer is owed a part',async()=>{
+ const {homeCancel,homeCancelLine}=await load('home-cleaning'),t=now();
+ assert.deepEqual(homeCancel({start:t+7200,fee:10000},t+7000),{fee:0,freeUntil:t,taken:false});
+ assert.equal(homeCancel({start:t+7200,fee:10000,assigned_to:'c'},t-1).fee,0);
+ assert.equal(homeCancel({start:t+7200,fee:10000,assigned_to:'c'},t).fee,3000);
+ assert.equal(homeCancel({start:t+7200,fee:10000,assigned_to:'c',arrived_at:t},t).fee,5000);
+ assert.equal(homeCancel({start:t+7200,fee:1000,assigned_to:'c'},t).fee,500);
+ assert.match(homeCancelLine({fee:3000,taken:true},''),/положено 3 000 ₸/);assert.match(homeCancelLine({fee:0,taken:true},'сегодня до 12:00'),/бесплатная сегодня до 12:00/);assert.match(homeCancelLine({fee:0,taken:false},''),/Исполнителя ещё нет/);
+ const f=await fixture();
+ // In the free term: nothing is owed, no reason is asked.
+ const early=await taken(f,'c1');
+ assert.deepEqual(await f.guest.jobAction(early.id,{action:'cancel',expectedFee:0}),{message:'Заказ отменён бесплатно.',cancelFee:0});
+ assert.equal(row(f,early.id).cancel_fee,0);assert.ok(row(f,early.id).cancelled_at);
+ assert.match(f.db.raw.prepare("SELECT body FROM notifications WHERE user_id='cleaner' AND dedupe LIKE '%cancelled:'||?").get(early.id).body,/в бесплатный срок/);
+ // Later: the customer who read «free» is asked again, then the part is recorded and can be marked as paid.
+ const late=await taken(f,'c2');f.db.raw.prepare('UPDATE cleaning_jobs SET start=?,end=? WHERE id=?').run(now()+3600,now()+3*3600,late.id);
+ await assert.rejects(f.guest.jobAction(late.id,{action:'cancel',expectedFee:0}),/Бесплатный срок отмены уже прошёл: исполнителю положено 3 000 ₸/);
+ assert.equal(row(f,late.id).status,'assigned');
+ const done=await f.guest.jobAction(late.id,{action:'cancel',expectedFee:3000});assert.equal(done.cancelFee,3000);assert.match(done.message,/положено 3 000 ₸/);
+ assert.match(f.db.raw.prepare("SELECT body FROM notifications WHERE user_id='cleaner' AND dedupe LIKE '%cancelled:'||?").get(late.id).body,/вам положено 3 000 ₸/);
+ await f.guest.jobAction(late.id,{action:'record_job_payment',confirmed:true,expectedVersion:row(f,late.id).version});
+ assert.equal(f.db.raw.prepare("SELECT SUM(amount) n FROM finance_entries WHERE job_id=? AND kind='job_payment'").get(late.id).n,3000);assert.ok(row(f,late.id).settled_at);
+ assert.match((await f.guest.jobAction(late.id,{action:'record_job_payment',confirmed:true,expectedVersion:row(f,late.id).version})).message,/уже полностью/);
+ // A free cancellation leaves nothing to pay; a cleaning after guests keeps its own cancellation with a reason.
+ await assert.rejects(f.guest.jobAction(early.id,{action:'record_job_payment',confirmed:true,expectedVersion:row(f,early.id).version}),/Сначала примите работу/);
+ await assert.rejects(f.owner.jobAction(f.job.id,{action:'cancel'}),/Причина отмены/);
+});
+
+test('the customer rates the performer once after the acceptance, and the next customers see the average',async()=>{
+ const f=await fixture(),{reliabilityFor}=await load('reliability');
+ const made=await taken(f,'r1',{start:iso(now()+1800)});f.db.raw.prepare('UPDATE operation_rules SET require_photos=0 WHERE property_id=?').run(made.propertyId);
+ await assert.rejects(f.guest.jobAction(made.id,{action:'rate',rating:5}),/после приёмки/);
+ await f.cleaner.jobAction(made.id,{action:'arrived'});await f.cleaner.jobAction(made.id,{action:'start'});await f.cleaner.jobAction(made.id,{action:'submit',checklist:[true,true,true,true],report:'Убрано'});
+ await f.guest.jobAction(made.id,{action:'approve'});
+ await assert.rejects(f.guest.jobAction(made.id,{action:'rate',rating:6}),/./);await assert.rejects(f.cleaner.jobAction(made.id,{action:'rate',rating:5}),/./);
+ assert.match((await f.guest.jobAction(made.id,{action:'rate',rating:4,note:' Аккуратно '})).message,/Спасибо/);
+ await assert.rejects(f.guest.jobAction(made.id,{action:'rate',rating:1}),/уже оценили/);
+ assert.deepEqual((({rating,rating_note})=>({rating,rating_note}))(row(f,made.id)),{rating:4,rating_note:'Аккуратно'});
+ assert.match(f.db.raw.prepare("SELECT body FROM notifications WHERE user_id='cleaner' AND dedupe LIKE '%rated:%'").get().body,/★★★★☆ «Аккуратно»/);
+ assert.ok((await reliabilityFor(f.db,'cleaner',['cleaner'])).get('cleaner').facts.includes('оценка заказчиков 4,0'));
+});
+
+test('a complaint about damage needs a photo, reaches the performer and opens an issue',async()=>{
+ const f=await fixture(),{saveDamagePhoto,listEvidence}=await load('evidence'),{photo}=await import('./fixtures/photo.mjs');
+ const made=await taken(f,'d1',{start:iso(now()+1800)});f.db.raw.prepare('UPDATE operation_rules SET require_photos=0 WHERE property_id=?').run(made.propertyId);
+ // Before the report there is nothing to complain about.
+ await assert.rejects(saveDamagePhoto(f.guest,{jobId:made.id,data:photo}),/после отчёта/);
+ await f.cleaner.jobAction(made.id,{action:'arrived'});await f.cleaner.jobAction(made.id,{action:'start'});await f.cleaner.jobAction(made.id,{action:'submit',checklist:[true,true,true,true],report:'Убрано'});
+ await assert.rejects(f.guest.jobAction(made.id,{action:'damage',text:'Разбита ваза'}),/хотя бы одно фото/);
+ await assert.rejects(saveDamagePhoto(f.other,{jobId:made.id,data:photo}),/./);
+ await saveDamagePhoto(f.guest,{jobId:made.id,data:photo});
+ assert.match((await f.guest.jobAction(made.id,{action:'damage',text:'Разбита ваза'})).message,/Жалоба отправлена/);
+ const issue=f.db.raw.prepare("SELECT description,opened_role,other_user FROM administrator_issues WHERE entity_id=?").get(made.id);
+ assert.deepEqual({...issue},{description:'Ущерб при уборке: Разбита ваза (фото: 1)',opened_role:'owner',other_user:'cleaner'});
+ assert.ok(f.db.raw.prepare("SELECT 1 FROM notifications WHERE user_id='cleaner' AND body LIKE 'Заказчик сообщил об ущербе%Разбита ваза%'").get());
+ // Both sides see the photo; the performer's side knows it is not theirs.
+ assert.deepEqual((await listEvidence(f.cleaner,'cleaner',made.id)).map(p=>[p.phase,p.mine]),[['damage',0]]);
+ assert.deepEqual((await listEvidence(f.guest,'owner',made.id)).map(p=>[p.phase,p.mine]),[['damage',1]]);
+ // Two days after the acceptance the term is over; no more than six photos.
+ await f.guest.jobAction(made.id,{action:'approve'});
+ for(let i=0;i<5;i++)await saveDamagePhoto(f.guest,{jobId:made.id,data:photo});
+ await assert.rejects(saveDamagePhoto(f.guest,{jobId:made.id,data:photo}),/до 6 фото/);
+ f.db.raw.prepare('UPDATE cleaning_jobs SET completed_at=? WHERE id=?').run(now()-49*3600,made.id);
+ await assert.rejects(f.guest.jobAction(made.id,{action:'damage',text:'Ещё царапина'}),/Срок прошёл/);
+ await assert.rejects(saveDamagePhoto(f.guest,{jobId:made.id,data:photo}),/двух суток/);
+});

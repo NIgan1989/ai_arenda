@@ -68,3 +68,21 @@ const CHECKS: Record<HomeKind, string[]> = {
 export function homeChecklist(o: HomeOrder | null | undefined): string[] {
   return [...CHECKS[homeKind(o?.kind)], ...(homeWindows(o?.windows) ? ['Окна вымыты: ' + windowsLabel(o?.windows)] : [])];
 }
+
+// Отмена заказчиком (решение 2026-11-18): бесплатно, пока исполнителя нет или до начала больше двух часов.
+// Позже исполнитель уже отложил под заказ время: ему положено 30% суммы, а если он отметил «Я на месте», половина.
+export const HOME_FREE_CANCEL = 2 * 3600, HOME_LATE_SHARE = 0.3, HOME_ARRIVED_SHARE = 0.5;
+export function homeCancel(job: Record<string, any>, at: number) {
+  const freeUntil = Number(job.start) - HOME_FREE_CANCEL, fee = Number(job.fee) || 0;
+  if (!job.assigned_to || at < freeUntil || fee <= 0) return { fee: 0, freeUntil, taken: !!job.assigned_to };
+  const part = fee * (job.arrived_at ? HOME_ARRIVED_SHARE : HOME_LATE_SHARE);
+  return { fee: Math.min(fee, Math.max(HOME_FEE_STEP, Math.round(part / HOME_FEE_STEP) * HOME_FEE_STEP)), freeUntil, taken: true };
+}
+export const tenge = (n: number) => Number(n).toLocaleString('ru-RU').replace(/\u00a0|\u202f/g, ' ') + ' ₸';
+// Что заказчик читает перед отменой. until — время конца бесплатного срока словами («сегодня до 12:00»).
+export function homeCancelLine(terms: { fee: number; taken: boolean }, until: string) {
+  const sum = tenge(terms.fee);
+  return terms.fee ? 'Бесплатный срок прошёл: исполнителю положено ' + sum + ' за отложенное время.' : terms.taken ? 'Отмена бесплатная ' + until + '. Позже исполнителю положена часть суммы.' : 'Исполнителя ещё нет: отмена бесплатная.';
+}
+// Жалоба на ущерб с фото: пока идёт приёмка и ещё двое суток после неё.
+export const HOME_DAMAGE_WINDOW = 48 * 3600, DAMAGE_PHOTO_LIMIT = 6;

@@ -27,7 +27,8 @@ export async function recordFinance(service:RentalService,body:Row,provider?:{ev
  const propertyId=entity.property_id;
  if(bookingId)await migrateFinanceEntity(service,'booking',bookingId);if(jobId)await migrateFinanceEntity(service,'job',jobId);
  if(['payment','deposit'].includes(kind)&&!(provider?['confirmed','cancelled','expired','completed']:['confirmed']).includes(entity.status))throw new DomainError('Поступление недоступно для этой брони.',409);
- if(kind==='job_payment'&&entity.status!=='completed')throw new DomainError('Сначала примите результат работы.',409);
+ const jobDue=jobId?(entity.status==='cancelled'?Number(entity.cancel_fee||0):entity.fee):0;
+ if(kind==='job_payment'&&entity.status!=='completed'&&!jobDue)throw new DomainError('Сначала примите результат работы.',409);
  if(kind==='job_payment'&&!entity.assigned_to)throw new DomainError('Уборка закрыта без исполнителя: платить некому.',409);
  if(['refund','compensation'].includes(kind)&&!['confirmed','cancelled','completed','expired'].includes(entity.status))throw new DomainError('Для этой брони такой расчёт недоступен.',409);
  if(kind==='deposit_return'&&!['completed','cancelled','expired'].includes(entity.status))throw new DomainError('Сначала подтвердите освобождение жилья.',409);
@@ -37,7 +38,7 @@ export async function recordFinance(service:RentalService,body:Row,provider?:{ev
  if(kind==='refund'){guard=balance('payment','refund')+'>=?';args=[bookingId,amount];}
  // What the owner kept for damage is not returned, by hand or by the automatic settlement.
  if(kind==='deposit_return'){guard=balance('deposit','deposit_return')+'-COALESCE((SELECT deposit_kept FROM booking_terms WHERE booking_id=?),0)>=?';args=[bookingId,bookingId,amount];}
- if(kind==='job_payment'){guard='COALESCE((SELECT SUM(amount) FROM finance_entries WHERE job_id=? AND kind=\'job_payment\'),0)+?<=?';args=[jobId,amount,entity.fee];}
+ if(kind==='job_payment'){guard='COALESCE((SELECT SUM(amount) FROM finance_entries WHERE job_id=? AND kind=\'job_payment\'),0)+?<=?';args=[jobId,amount,jobDue];}
  if(kind==='payment'&&!provider){guard=balance('payment','refund')+'+?<=?';args=[bookingId,amount,entity.amount];}
  if(kind==='deposit'&&!provider){guard=balance('deposit','deposit_return')+'+?<=COALESCE((SELECT deposit FROM booking_terms WHERE booking_id=?),0)';args=[bookingId,amount,bookingId];}
  // Checking the balance in INSERT makes concurrent partial refunds safe.
@@ -52,7 +53,7 @@ export async function recordFinance(service:RentalService,body:Row,provider?:{ev
   statements.push(q(db,`UPDATE booking_terms SET paid_amount=${netPayment},deposit_status=CASE WHEN deposit=0 THEN 'not_required' WHEN ${deposits}>=deposit THEN 'owner_verified' ELSE 'pending' END,deposit_returned_at=CASE WHEN ${deposits}>0 AND ${returned}+deposit_kept>=${deposits} THEN ? ELSE NULL END,refund_recorded_at=CASE WHEN refund_due IS NOT NULL AND COALESCE((SELECT SUM(amount) FROM finance_entries WHERE booking_id=booking_terms.booking_id AND kind='refund'),0)>=refund_due OR EXISTS(SELECT 1 FROM finance_entries WHERE booking_id=booking_terms.booking_id AND kind='refund') AND ${netPayment}=0 THEN ? ELSE NULL END,version=version+1 WHERE booking_id=? AND EXISTS(SELECT 1 FROM finance_entries WHERE id=?)`,at,at,bookingId,entryId));
   statements.push(q(db,"UPDATE bookings SET payment_status=CASE WHEN (SELECT paid_amount FROM booking_terms WHERE booking_id=bookings.id)>=amount THEN 'owner_verified' ELSE 'unpaid' END WHERE id=? AND EXISTS(SELECT 1 FROM finance_entries WHERE id=?)",bookingId,entryId));
  }
- if(jobId)statements.push(q(db,"UPDATE cleaning_jobs SET settled_at=CASE WHEN COALESCE((SELECT SUM(amount) FROM finance_entries WHERE job_id=cleaning_jobs.id AND kind='job_payment'),0)>=fee THEN ? ELSE NULL END WHERE id=? AND EXISTS(SELECT 1 FROM finance_entries WHERE id=?)",at,jobId,entryId));
+ if(jobId)statements.push(q(db,"UPDATE cleaning_jobs SET settled_at=CASE WHEN COALESCE((SELECT SUM(amount) FROM finance_entries WHERE job_id=cleaning_jobs.id AND kind='job_payment'),0)>=CASE WHEN status='cancelled' THEN cancel_fee ELSE fee END THEN ? ELSE NULL END WHERE id=? AND EXISTS(SELECT 1 FROM finance_entries WHERE id=?)",at,jobId,entryId));
  statements.push(q(db,'INSERT INTO audit_events SELECT ?,?,?,?,? WHERE EXISTS(SELECT 1 FROM finance_entries WHERE id=?)',uuid(),actor,bookingId||jobId||propertyId,JSON.stringify({action:'finance.recorded',entryId,kind,amount,source:provider?'provider':'owner'}),at,entryId));
  const recipient=bookingId?entity.guest_id:jobId?entity.assigned_to:null,role=jobId?'cleaner':'guest';
  if(recipient)statements.push(q(db,'INSERT OR IGNORE INTO notifications SELECT ?,?,?,?,?,? WHERE EXISTS(SELECT 1 FROM finance_entries WHERE id=?)',uuid(),recipient,'В журнале расчётов записана операция на '+amount+' ₸. Проверьте сведения в карточке и фактическое поступление.',role+':finance:'+entryId,0,at,entryId));
