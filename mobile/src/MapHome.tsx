@@ -32,6 +32,7 @@ import {GuestForm} from './GuestForm';
 import {GuestTokens} from './GuestTokens';
 import {blamedTokens,guestTokens,type Section} from './guest-tokens';
 import {GuestResults} from './GuestResults';
+import {narrowed as narrowFlats,rotateEquals,foundLine} from './guest-helpers';
 import {AgainRow,Heart,useFavorites} from './Favorites';
 import {favouredFirst,markOf} from './favorites';
 import {GuestMode} from './GuestMode';
@@ -113,7 +114,7 @@ function GuestPanel({setScanning,setQuiet,accountId,data,mapData,publish,selecte
   if(next.priority==='closer'&&!next.near)throw new Error('Чтобы искать ближе, сначала укажите точку на карте.');
   setDraft(next);
   const result=await request('/api/public/matching?q='+encodeURIComponent(JSON.stringify(matchingBody(next))));
-  foundAt.current=Date.now();setPreview({...result,properties:favouredFirst(result.properties||[],mine)});setRefine('');setSelected('');expand(1);
+  foundAt.current=Date.now();setPreview({...result,properties:rotateEquals(favouredFirst(result.properties||[],mine),Math.floor(Date.now()/3600000),p=>mine.favorites.includes(p.id))});setRefine('');setSelected('');expand(1);
  });
  // «Снова туда же»: the home is priced for the stay in the line first, so the card books the tariff the search would
  // (the night price too). Busy or not fitting on these conditions: the card opens without dates, and the guest picks them.
@@ -193,6 +194,16 @@ function GuestPanel({setScanning,setQuiet,accountId,data,mapData,publish,selecte
  // «Изменить условия» of the results and «Условия» among the tokens: every condition as a list. A token opens its own
  // part of the form; a second tap on it closes the form again.
  const openPart=(part:Section|'all')=>{if(snap>0&&refine===part){setRefine('');expand(preview?1:0);}else{setRefine(part);expand(2);}},toggleRefine=()=>openPart('all');
+ // «Помогайки»: the steps that narrow the answer on the phone, each with the card that was in view when it was taken;
+ // the ones taken back are not offered again. A new answer starts clean.
+ const [steps,setSteps]=useState<{id:string;at:string}[]>([]),[tried,setTried]=useState<string[]>([]),[anchor,setAnchor]=useState('');
+ useEffect(()=>{setSteps([]);setTried([]);setAnchor('');},[preview?.serverTime]);
+ const stepIds=steps.map(v=>v.id);
+ const here=useHere();
+ const meInCity=!!here.fix&&nearestCity(here.fix.point)===draft.city;
+ // What the steps leave of the answer: the cards, the pins and the one line of the closed sheet show the same places.
+ const from=meInCity&&here.fix?nearOf(here.fix.point):null,shown:Row[]=preview?(stepIds.length?narrowFlats(preview.properties||[],stepIds,{draft,from}):preview.properties||[]):[];
+ const stepOn=(id:string,at:string)=>{setAnchor('');setSelected('');setSteps(list=>[...list,{id,at}]);},stepBack=()=>{const last=steps[steps.length-1];if(!last)return;setSelected('');setAnchor(last.at);setTried(list=>[...list,last.id]);setSteps(list=>list.slice(0,-1));};
  // The conditions as tokens; an empty answer blames the ones that leave nothing free.
  const tokens=guestTokens(freshDraft(draft)),blamed=preview&&!(preview.properties||[]).length?blamedTokens(preview.empty,tokens):[];
  useEffect(()=>{if(requestId||preview)expand(1);if(kept&&kept.draft.city!==city)setCity(kept.draft.city);},[]);
@@ -248,7 +259,7 @@ function GuestPanel({setScanning,setQuiet,accountId,data,mapData,publish,selecte
   }})();
  };
  // Pins follow the stage: catalogue, checked candidates, then owners who are answering.
- const stageKey=(requestId?'live':preview?'preview:'+preview.serverTime:'base:'+draft.city)+':'+mine.favorites.length;
+ const stageKey=(requestId?'live':preview?'preview:'+preview.serverTime+':'+stepIds.join():'base:'+draft.city)+':'+mine.favorites.length;
  useEffect(()=>{
   const pin=(p:Row,tone:MapPin['tone']):MapPin[]=>{const point=pointOf(p),amount=p.estimate?.amount??p.price;return point?[{key:p.id,point,title:p.title,label:(mine.favorites.includes(p.id)?'♥ ':'')+short(amount),tone,rank:typeof amount==='number'?amount:0}]:[];};
   // On the way the map shows only the way: the home, the guest's point and the road between them.
@@ -269,17 +280,17 @@ function GuestPanel({setScanning,setQuiet,accountId,data,mapData,publish,selecte
    publish(asked,'live:'+live.id+':'+offers.length+':'+(live.pendingProperties||[]).length,{lines:roadBeams(straight,roads)});
   }
   else if(preview){
-   const found:MapPin[]=preview.properties.flatMap((p:Row)=>pin(p,p.quickRequest?'booking':'home').map(m=>p.match?.best&&!isQuiet(draft)?{...m,best:true}:m));
+   const found:MapPin[]=shown.flatMap((p:Row)=>pin(p,p.quickRequest?'booking':'home').map(m=>p.match?.best&&!isQuiet(draft)?{...m,best:true}:m));
    // Searched around a point held on the map: thin beams from that point to what was found, so the guest sees the zone.
    const held0=heldAt.current,from=held0&&draft.near&&nearOf(held0).longitude===draft.near.longitude&&nearOf(held0).latitude===draft.near.latitude?held0:null;
    publish(found,stageKey,{lines:from?found.slice(0,8).map(m=>({key:'beam:'+m.key,from,to:m.point,tone:'answer' as const})):[]});
   }
   else publish([...(mapData?.properties||[]).flatMap((p:Row)=>pin(p,'home')),...stays.map(({id,start,canGo,...m})=>m)],stageKey+':'+(mapData?.properties?.length||0));
- },[requestId,live,preview,mapData,draft.city,staysKey,nav.trip,nav.here,nav.route,nav.rerouted,roads,mine.favorites.join()]);
+ },[requestId,live,preview,shown.map((p:Row)=>p.id).join(),mapData,draft.city,staysKey,nav.trip,nav.here,nav.route,nav.rerouted,roads,mine.favorites.join()]);
  // Where the guest is: on the first point from the phone the search moves to the guest's city, and once that city's
  // homes are on the map, the map flies to the guest. Anything the guest is already doing (a search, a request, a trip,
  // «На карте» from a page) wins: then the point is only a dot on the map.
- const here=useHere(),placed=useRef<'no'|'city'|'done'>('no');
+ const placed=useRef<'no'|'city'|'done'>('no');
  useEffect(()=>{
   if(placed.current==='done'||!here.fix)return;
   if(aimed||recent||requestId||preview||draft.near||nav.trip||chosenCity.has(accountId)){placed.current='done';return;}
@@ -291,7 +302,6 @@ function GuestPanel({setScanning,setQuiet,accountId,data,mapData,publish,selecte
   if(placed.current==='no'){if(!mapData)return;placed.current='city';if(near!==draft.city){if(stays.length){placed.current='done';return;}change({...draft,city:near,district:'',near:null},false);notify('Вы в городе '+near+'. Нужен другой город — напишите его в строке, например «Астана завтра».');return;}}
   if(mapData&&mapData.city===near){placed.current='done';flyMe();}
  },[here.fix,mapData]);
- const meInCity=!!here.fix&&nearestCity(here.fix.point)===draft.city;
  // A finger held on the map: the search runs around that point (5 km), in the city it lies in. The exact point is only
  // drawn on this phone; the search gets it rounded, as a point picked under the marker.
  const heldAt=useRef<MapPoint|null>(null);
@@ -399,11 +409,13 @@ function GuestPanel({setScanning,setQuiet,accountId,data,mapData,publish,selecte
   {/* The guest's own stays as the same feed: what waits for the guest on top, a row for every other booking. */}
   {!preview&&!picked&&!stay&&!formOnly&&<AutopilotThreads role="guest" data={data} now={serverNow(data)} paymentMode={data.paymentMode} onOpen={(kind,id)=>onOpenProcess(kind,id)} onAll={trips.length?()=>onOpenPage('bookings'):undefined}/>}
   {!preview&&!picked&&!stay&&!formOnly&&<AgainRow properties={data.properties||[]} mine={mine} onOpen={again}/>}
+  {/* The sheet is down over an answer: the whole of it in one line, and one tap to the cards. */}
+  {!!preview&&snap===0&&shown.length>0&&!stay&&<Pressable accessibilityRole="button" accessibilityLabel={foundLine(shown,plural)+'. Показать'} onPress={()=>expand(1)} style={({pressed})=>[h.listRow,pressed&&h.dim]}><Text numberOfLines={1} style={[h.eventTitle,h.grow]}>{foundLine(shown,plural)}</Text><Text style={[h.note,{color:C.accent,fontWeight:'600'}]}>Показать</Text></Pressable>}
   {picked&&<View style={h.listRow}><Heart plain on={mine.favorites.includes(picked.id)} title={picked.title} onPress={()=>heart(picked.id)}/><View style={h.grow}><Text numberOfLines={1} style={h.eventTitle}>{picked.title}</Text><Text numberOfLines={1} style={h.note}>{[typeof picked.price==='number'?money(picked.price)+' за сутки':'',picked.district].filter(Boolean).join(' · ')}</Text></View><Action secondary title="Открыть" onPress={()=>onIntent('property:'+picked.id)}/></View>}
  </MapSheetHead>;
  // The form and the results live in the opened sheet only; a running request to owners keeps its place in any state.
  const body=requestId?renderLive():snap===0?null:preview&&!refine
-  ?<GuestResults preview={preview} draft={draft} mine={mine} onFavorite={heart} selected={selected} onSelect={setSelected} onFocus={setFocus} onBook={bookFlat} onOpen={property=>onIntent('property:'+property.id,{mode:tariffOf(draft,property),start:draft.start,end:draft.end,guests:draft.guests})} onRefine={toggleRefine} onWiden={narrowed?widen:undefined} onTry={patch=>retry({...draft,...patch})} onBookEdge={onReach} busy={working}/>
+  ?<GuestResults preview={preview} draft={draft} mine={mine} onFavorite={heart} selected={selected} onSelect={setSelected} onFocus={setFocus} onBook={bookFlat} onOpen={property=>onIntent('property:'+property.id,{mode:tariffOf(draft,property),start:draft.start,end:draft.end,guests:draft.guests})} onRefine={toggleRefine} onWiden={narrowed?widen:undefined} onTry={patch=>retry({...draft,...patch})} onBookEdge={onReach} busy={working} steps={stepIds} tried={tried} from={from} onStep={stepOn} onBack={stepBack} anchor={anchor} full={snap===2&&!selected}/>
   :<GuestForm key={refine||'all'} only={refine||'all'} draft={draft} onChange={change} onNearMe={meInCity?()=>change({...draft,near:nearOf(here.fix!.point)}):undefined} onPickPoint={()=>{setPicking(true);expand(0);}} onSubmit={()=>void find()} busy={working}/>;
  return <View style={h.block}>
   <HeadSlot onHeight={onHead}>{picking?pickView:nav.trip?<TripHead nav={nav} onOpen={()=>{const id=nav.trip!.id;nav.close();onOpenProcess('booking',id);}}/>:requestId?null:head}</HeadSlot>
@@ -624,9 +636,10 @@ export function MapHome({ role, accountId, data, menu, chats, onChanged, onOpenP
   const topEdge = screen.height >= 700 ? 0.5 : 0.36;
   const cap = Math.max(handleHeight + T.control.primary + 24, Math.round(top + height - screen.height * topEdge));
   const collapsed = head ? Math.min(cap, wanted) : Math.max(132, Math.round(height * 0.2));
-  // A chosen flat is shown down to its «Забронировать»: the half-open sheet grows for it, so the button is never under the tabs.
+  // The answer is shown down to «Забронировать» of the card in view or of the chosen flat: the half-open sheet grows for
+  // it, so the button is never under the tabs. The results say where that is, and take it back when they go.
   const full = Math.max(collapsed, Math.round(height * 0.88));
-  const fit = role === 'guest' && selected && reach ? handleHeight + reach + 16 : 0;
+  const fit = role === 'guest' && reach ? handleHeight + reach + 16 : 0;
   const heights = [collapsed, Math.min(full, Math.max(collapsed, Math.round(height * 0.55), fit)), full];
   const sheetHeight = height ? heights[snap] : 0;
   const scrollable = snap > 0 || !head || wanted > collapsed;
@@ -643,7 +656,6 @@ export function MapHome({ role, accountId, data, menu, chats, onChanged, onOpenP
   // What is chosen replaces the list in the same scroll view: it is shown from its top, not from where the list was.
   useEffect(() => {
     scroll.current?.scrollTo({ y: 0, animated: false });
-    if (!selected) setReach(0);
   }, [selected]);
 
   // The sheet follows the finger and settles in the nearest position. The handle always drags it;

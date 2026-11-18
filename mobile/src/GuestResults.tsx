@@ -12,6 +12,8 @@ import { HOME_KINDS, WISHES, BANQUET_WISHES, BANQUET_TYPES, BATH_TYPES, askFirst
 import { carouselIndex } from './map-motion';
 import { Heart } from './Favorites';
 import { markLabel, markOf, type Mine } from './favorites';
+import { GuestHelpers, HelperTrail } from './GuestHelpers';
+import { guestHelpers, narrowed, stepWords, type Point } from './guest-helpers';
 
 const chevron = require('../assets/ui/chevron.png');
 
@@ -37,12 +39,25 @@ type Props = {
   // Where «Забронировать» of the chosen flat ends, from the top of the sheet's content: the sheet opens that far.
   onBookEdge?: (bottom: number) => void;
   busy: boolean;
+  // «Помогайки»: the steps the guest took to narrow the answer, the ones taken back, and where the guest is.
+  steps?: string[];
+  tried?: string[];
+  from?: Point | null;
+  // A step forward remembers the card in view; a step back returns to the card of that moment.
+  onStep?: (id: string, inView: string) => void;
+  onBack?: () => void;
+  // The card to open the strip on after a step back.
+  anchor?: string;
+  // The sheet is fully open: every found place as a list, not one card at a time.
+  full?: boolean;
 };
 
 // The carousel: a card is a little narrower than the screen, so the next one peeks out and says «swipe».
-const TOP = 3;
 const GAP = 12,
-  CARD_MAX = 300;
+  CARD_MAX = 340,
+  DOTS = 7;
+// A dear card left this fast was not read: three of them and the price is offered first.
+const GLANCE = 1500;
 
 // The chosen flat rises into the sheet as if from its pin; with «reduce motion» it is simply there.
 // onTop: where the card starts in the sheet's content; the rise moves it on screen only, never in the layout.
@@ -146,36 +161,60 @@ export function homeLine(flat: Row) {
   return [kind, rooms > 0 && flat.details?.type !== 'studio' && kindCategoryOf(flat.details?.type) === 'stay' ? rooms + ' комн.' : '', capacity > 0 ? 'до ' + capacity + ' ' + plural(capacity, 'гостя', 'гостей', 'гостей') : ''].filter(Boolean).join(' · ');
 }
 
-export function GuestResults({ preview, draft, mine, onFavorite, selected, onSelect, onFocus, onBook, onOpen, onRefine, onWiden, onTry, onBookEdge, busy }: Props) {
-  const flats: Row[] = preview.properties || [];
+export function GuestResults({ preview, draft, mine, onFavorite, selected, onSelect, onFocus, onBook, onOpen, onRefine, onWiden, onTry, onBookEdge, busy, steps = [], tried = [], from = null, onStep, onBack, anchor = '', full = false }: Props) {
+  const found: Row[] = preview.properties || [];
+  // Dear cards the guest swiped past without reading, in this answer.
+  const [pricey, setPricey] = useState(0);
+  const context = { draft, from, tried, pricey, taken: steps };
+  const flats = steps.length ? narrowed(found, steps, context) : found;
   const chosen = flats.find(flat => flat.id === selected);
   const width = useWindowDimensions().width,
-    card = Math.min(CARD_MAX, width - 72),
+    card = Math.min(CARD_MAX, width - 64),
     step = card + GAP;
   // index: the card in view; seen: the farthest card reached, so photos load only near what the guest has looked at.
   const [index, setIndex] = useState(0),
     [seen, setSeen] = useState(0);
-  // The guest sees the three best first: the rest is one tap away, on the last card of the strip.
-  const [all, setAll] = useState(false);
-  useEffect(() => { setAll(false); }, [preview]);
-  const list = all || flats.length <= TOP + 1 ? flats : flats.slice(0, TOP), rest = flats.length - list.length;
+  const list = flats;
+  const helpers = onStep ? guestHelpers(flats, context) : [];
+  const middle = [...flats.map(flat => Number(flat.estimate?.amount) || 0)].sort((x, y) => x - y)[Math.floor((flats.length - 1) / 2)] || 0;
+  const arrived = useRef(Date.now());
+  useEffect(() => { setPricey(0); }, [preview]);
+  // Another set of cards (a step forward or back): the strip opens on the remembered card, else on the first.
+  const listKey = flats.map(flat => flat.id).join();
+  useEffect(() => {
+    const at = Math.max(0, flats.findIndex(flat => flat.id === anchor));
+    setIndex(at);
+    setSeen(at);
+    arrived.current = Date.now();
+    strip.current?.scrollTo({ x: at * step, animated: false });
+    if (flats[at] && (steps.length || anchor)) onFocus?.(flats[at].id);
+  }, [listKey]);
   const settle = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const strip = useRef<ScrollView>(null);
   // Back from a result: the carousel opens again on the card the guest was looking at, as the counter and the map say.
+  // The same after the full list: the strip is mounted anew there, and must not start from its first card.
   useEffect(() => {
-    if (!chosen && index) strip.current?.scrollTo({ x: index * step, animated: false });
-  }, [!!chosen]);
+    if (!chosen && !full && index) strip.current?.scrollTo({ x: index * step, animated: false });
+  }, [!!chosen, full]);
   // «Забронировать» ends where the chosen card starts in the sheet plus where the button ends in the card.
   const [cardTop, setCardTop] = useState(0),
     [buttonBottom, setButtonBottom] = useState(0);
+  // The strip of cards ends with its dots: the half-open sheet shows the card in view whole.
+  const [stripBottom, setStripBottom] = useState(0);
   useEffect(() => {
-    if (chosen && buttonBottom) onBookEdge?.(cardTop + buttonBottom);
-  }, [cardTop, buttonBottom, chosen?.id]);
+    if (chosen) { if (buttonBottom) onBookEdge?.(cardTop + buttonBottom); }
+    else onBookEdge?.(full || !flats.length ? 0 : stripBottom);
+  }, [cardTop, buttonBottom, chosen?.id, stripBottom, full, flats.length]);
+  useEffect(() => () => onBookEdge?.(0), []);
   useEffect(() => () => clearTimeout(settle.current), []);
   // The map follows once the swipe has stopped, not on every card that passes by.
   const scrolled = (x: number) => {
     const at = carouselIndex(x, step, list.length);
-    if (at !== index) setIndex(at);
+    if (at !== index) {
+      if (at > index && Date.now() - arrived.current < GLANCE && (Number(list[index]?.estimate?.amount) || 0) > middle) setPricey(n => n + 1);
+      arrived.current = Date.now();
+      setIndex(at);
+    }
     if (at > seen) setSeen(at);
     clearTimeout(settle.current);
     settle.current = setTimeout(() => {
@@ -200,13 +239,15 @@ export function GuestResults({ preview, draft, mine, onFavorite, selected, onSel
 
   if (!flats.length) {
     const answer = emptyAnswer(preview.empty, draft, !!onWiden), way = answer.action;
+    // The way out says how many places it opens, when the server counted them.
+    const opens = way && (preview.empty?.reason === 'now' || (preview.empty?.reason === 'filters' && preview.empty?.blocker)) ? Number(preview.empty?.count) || 0 : 0;
     return (
       <>
         <Text accessibilityRole="header" style={h.cardTitle}>
           {answer.title}
         </Text>
         <Text style={h.note}>{answer.note}</Text>
-        {!!way && !!onTry && <Action title={busy ? 'Ищем…' : way.title} disabled={busy} onPress={() => onTry(way.patch)} />}
+        {!!way && !!onTry && <Action title={busy ? 'Ищем…' : way.title + (opens ? ' · ' + opens : '')} disabled={busy} onPress={() => onTry(way.patch)} />}
         {!way && !!onWiden && preview.empty?.reason !== 'city' && <Action title={busy ? 'Ищем…' : 'Искать без этих условий'} disabled={busy} onPress={onWiden} />}
         <Action secondary title="Изменить условия" disabled={busy} onPress={onRefine} />
       </>
@@ -220,7 +261,7 @@ export function GuestResults({ preview, draft, mine, onFavorite, selected, onSel
       <Rise key={chosen.id} onTop={setCardTop}>
         <Pressable accessibilityRole="button" accessibilityLabel="Все варианты" onPress={() => onSelect('')} style={({ pressed }) => [r.back, pressed && h.dim]}>
           <Image source={chevron} style={r.backIcon} accessibilityIgnoresInvertColors />
-          <Text style={r.backText}>Все варианты · {flats.length}</Text>
+          <Text style={r.backText}>{flats.length > 1 ? 'Все варианты · ' + flats.length : 'К вариантам'}</Text>
         </Pressable>
         <View style={r.chosen}>
           <View style={h.grow}>
@@ -274,11 +315,50 @@ export function GuestResults({ preview, draft, mine, onFavorite, selected, onSel
     );
   }
 
+  const why = (flat: Row) => shownReasons(flat.match?.reasons, draft, kindCategoryOf(flat.details?.type) !== 'stay').slice(0, 3).join(' · ');
+  const what = (flat: Row) => [venueName(flat), mark(flat), perGuest(flat) ? money(perGuest(flat)) + ' за гостя' : '', homeLine(flat), flat.district].filter(Boolean).join(' · ');
+  const bestWords = quiet ? 'Подходит лучше других' : '✦ Лучший выбор';
+  const trail = steps.length > 0 && !!onBack && <HelperTrail words={stepWords(steps, draft)} count={flats.length + ' ' + plural(flats.length, 'вариант', 'варианта', 'вариантов')} onBack={onBack} busy={busy} />;
+  const tips = <GuestHelpers helpers={helpers} busy={busy} onPress={helper => onStep?.(helper.id, list[index]?.id || '')} />;
+
+  if (full) {
+    // Every found place at once: the guest who wants the whole list pulls the sheet up.
+    return (
+      <>
+        {trail}
+        {tips}
+        <Text accessibilityRole="header" style={h.cardTitle}>
+          Свободно на {stayWords(draft)}: {flats.length}
+        </Text>
+        <View>
+          {list.map(flat => (
+            <Pressable key={flat.id} accessibilityRole="button" accessibilityLabel={flat.title + ', ' + money(flat.estimate.amount)} onPress={() => { onFocus?.(flat.id); onSelect(flat.id); }} style={({ pressed }) => [r.line, pressed && r.cardPressed]}>
+              <View style={r.lineThumb}><Photo id={flat.photos?.[0]} alt={flat.title + ', фото'} fill /></View>
+              <View style={h.grow}>
+                <View style={r.cardTop}>
+                  <Text numberOfLines={1} style={[h.eventTitle, h.grow]}>{flat.title}</Text>
+                  <Text style={h.rowPrice}>{money(flat.estimate.amount)}</Text>
+                </View>
+                <Text numberOfLines={1} style={h.note}>{what(flat) || 'за ' + stayWords(draft)}</Text>
+                {!!why(flat) && <Text numberOfLines={1} style={r.why}>{why(flat)}</Text>}
+              </View>
+            </Pressable>
+          ))}
+        </View>
+      </>
+    );
+  }
+
   return (
-    <>
-      <Text accessibilityRole="header" style={h.cardTitle}>
-        {rest ? list.length + ' лучших из ' + flats.length + ' на ' + stayWords(draft) : 'Свободно на ' + stayWords(draft) + ': ' + flats.length}
-      </Text>
+    <View style={r.strip} onLayout={e => setStripBottom(Math.round(e.nativeEvent.layout.y + e.nativeEvent.layout.height))}>
+      {trail}
+      {tips}
+      <View style={r.counter}>
+        <Text accessibilityRole="header" style={h.cardTitle}>
+          {list.length > 1 ? index + 1 + ' из ' + list.length : 'Свободно на ' + stayWords(draft)}
+        </Text>
+        {list.length > 1 && <Text style={h.note}>на {stayWords(draft)}</Text>}
+      </View>
       <ScrollView
         ref={strip}
         horizontal
@@ -305,42 +385,45 @@ export function GuestResults({ preview, draft, mine, onFavorite, selected, onSel
             }}
             style={({ pressed }) => [r.card, { width: card }, i === index && r.cardInView, flat.match?.best && r.cardBest, pressed && r.cardPressed]}
           >
-            <View style={r.cardPhoto}>
-              <Photo id={i <= seen + 2 ? flat.photos?.[0] : null} alt={flat.title + ', фото'} fill />
-              {!!flat.match?.best && <Text style={r.bestOnPhoto}>{quiet ? 'Подходит лучше других' : '✦ Лучший выбор для вас'}</Text>}
-              {!!mine && !!onFavorite && <View style={r.heartOnPhoto}><Heart on={mine.favorites.includes(flat.id)} title={flat.title} onPress={() => onFavorite(flat.id)} /></View>}
-            </View>
-            <View style={r.cardBody}>
-              <View style={r.cardTop}>
-                <Text numberOfLines={1} style={[h.eventTitle, h.grow]}>
+            <View style={r.cardRow}>
+              <View style={r.cardPhoto}>
+                <Photo id={Math.abs(i - index) <= 2 || i <= seen + 2 ? flat.photos?.[0] : null} alt={flat.title + ', фото'} fill />
+                {!!mine && !!onFavorite && <View style={r.heartOnPhoto}><Heart on={mine.favorites.includes(flat.id)} title={flat.title} onPress={() => onFavorite(flat.id)} /></View>}
+              </View>
+              <View style={r.cardBody}>
+                {!!flat.match?.best && <Text style={r.bestTag}>{bestWords}</Text>}
+                <Text numberOfLines={1} style={h.eventTitle}>
                   {flat.title}
                 </Text>
-                <Text style={h.rowPrice}>{money(flat.estimate.amount)}</Text>
-              </View>
-              <Text numberOfLines={1} style={h.note}>
-                {about(flat) || 'за ' + stayWords(draft)}
-              </Text>
-              {(!!flat.estimate.window || !!flat.estimate.deal) && (
-                <View style={r.badges}>
+                <Text numberOfLines={1} style={h.note}>
+                  {what(flat) || 'за ' + stayWords(draft)}
+                </Text>
+                <View style={r.priceRow}>
+                  <Text style={h.rowPrice}>{money(flat.estimate.amount)}</Text>
                   {!!flat.estimate.window && <Text style={r.window}>−{flat.estimate.window.percent}%</Text>}
                   {!!flat.estimate.deal && <Text style={r.deal}>Цена выгодная</Text>}
                 </View>
-              )}
-              {/* Two taps to a booking: this button, then «Отправить заявку» on the check of the booking. */}
-              <Pressable accessibilityRole="button" accessibilityLabel={'Забронировать: ' + flat.title} disabled={busy} onPress={() => onBook(flat)} style={({ pressed }) => [r.book, (pressed || busy) && h.dim]}>
-                <Text style={r.bookText}>Забронировать</Text>
-              </Pressable>
+              </View>
             </View>
+            {/* Why this place answers the request, in the guest's own conditions. */}
+            {!!why(flat) && <Text numberOfLines={1} style={r.why}>✓ {why(flat)}</Text>}
+            {/* Two taps to a booking: this button, then «Отправить заявку» on the check of the booking. */}
+            <Pressable accessibilityRole="button" accessibilityLabel={'Забронировать: ' + flat.title} disabled={busy} onPress={() => onBook(flat)} style={({ pressed }) => [r.book, (pressed || busy) && h.dim]}>
+              <Text style={r.bookText}>Забронировать</Text>
+            </Pressable>
           </Pressable>
         ))}
-        {rest > 0 && (
-          <Pressable accessibilityRole="button" accessibilityLabel={'Показать ещё ' + rest} onPress={() => setAll(true)} style={({ pressed }) => [r.card, r.moreCard, pressed && r.cardPressed]}>
-            <Text style={r.moreCount}>+{rest}</Text>
-            <Text style={r.moreText}>Ещё {rest} {rest % 10 === 1 && rest % 100 !== 11 ? 'вариант' : rest % 10 > 1 && rest % 10 < 5 && !(rest % 100 > 11 && rest % 100 < 15) ? 'варианта' : 'вариантов'}</Text>
-          </Pressable>
-        )}
       </ScrollView>
-    </>
+      {list.length > 1 && (
+        <View style={r.dots} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
+          {Array.from({ length: Math.min(DOTS, list.length) }, (_, i) => {
+            // More cards than dots: the dots follow the card in view like a window over the strip.
+            const first = Math.max(0, Math.min(list.length - DOTS, index - Math.floor(DOTS / 2)));
+            return <View key={i} style={[r.dot, first + i === index && r.dotOn]} />;
+          })}
+        </View>
+      )}
+    </View>
   );
 }
 
@@ -351,16 +434,26 @@ const r = StyleSheet.create({
   hall: { minHeight: T.control.touch, justifyContent: 'center', paddingHorizontal: 12, paddingVertical: 6, borderRadius: T.radius.md, borderWidth: 1, borderColor: C.lineStrong, backgroundColor: C.surface, maxWidth: '100%' },
   hallName: { ...type.label, color: C.ink, fontWeight: '600' },
   hallMeta: { ...type.caption, color: C.muted },
-  carousel: { marginHorizontal: -16, marginTop: 8, marginBottom: 12 },
+  carousel: { marginHorizontal: -16, marginBottom: 4 },
   carouselContent: { paddingHorizontal: 16, gap: GAP },
-  card: { borderRadius: T.radius.lg, borderWidth: 1, borderColor: C.line, backgroundColor: C.surface, overflow: 'hidden' },
+  card: { borderRadius: T.radius.lg, borderWidth: 1, borderColor: C.line, backgroundColor: C.surface, overflow: 'hidden', padding: 12, gap: 8 },
   cardInView: { borderColor: C.accentLine },
   cardBest: { borderColor: C.aiFrom, borderWidth: 2 },
   cardPressed: { opacity: 0.85 },
-  cardPhoto: { height: 88, backgroundColor: C.surfaceAlt },
-  bestOnPhoto: { ...type.caption, position: 'absolute', left: 8, top: 8, paddingHorizontal: 8, paddingVertical: 2, borderRadius: T.radius.full, overflow: 'hidden', backgroundColor: C.aiFrom, color: C.onAccent, fontWeight: '600' },
-  heartOnPhoto: { position: 'absolute', right: 8, top: 8 },
-  cardBody: { padding: 12, gap: 4 },
+  cardRow: { flexDirection: 'row', gap: 12 },
+  cardPhoto: { width: 88, height: 88, borderRadius: T.radius.md, overflow: 'hidden', backgroundColor: C.surfaceAlt },
+  bestTag: { ...type.caption, alignSelf: 'flex-start', paddingHorizontal: 8, paddingVertical: 2, borderRadius: T.radius.full, overflow: 'hidden', backgroundColor: C.aiFrom, color: C.onAccent, fontWeight: '600' },
+  heartOnPhoto: { position: 'absolute', right: 2, top: 2 },
+  cardBody: { flex: 1, minWidth: 0, gap: 2, justifyContent: 'center' },
+  priceRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', columnGap: 8 },
+  why: { ...type.caption, color: C.success, fontWeight: '600' },
+  strip: { gap: 12 },
+  counter: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', gap: 8 },
+  dots: { flexDirection: 'row', justifyContent: 'center', gap: 6, marginBottom: 4 },
+  dot: { width: 6, height: 6, borderRadius: 3, backgroundColor: C.lineStrong },
+  dotOn: { width: 18, backgroundColor: C.accent },
+  line: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 10, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: C.line },
+  lineThumb: { width: 56, height: 56, borderRadius: T.radius.md, overflow: 'hidden', backgroundColor: C.surfaceAlt },
   cardTop: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   badges: { flexDirection: 'row', gap: 8 },
   back: { minHeight: T.control.touch, flexDirection: 'row', alignItems: 'center', gap: 4, alignSelf: 'flex-start', paddingRight: 12 },
@@ -371,9 +464,6 @@ const r = StyleSheet.create({
   best: { ...type.caption, alignSelf: 'flex-start', marginBottom: 4, paddingHorizontal: 8, paddingVertical: 2, borderRadius: T.radius.full, overflow: 'hidden', backgroundColor: C.accentSoft, color: C.accent, fontWeight: '600' },
   deal: { ...type.caption, marginTop: 4, paddingHorizontal: 8, paddingVertical: 2, borderRadius: T.radius.full, overflow: 'hidden', backgroundColor: C.successSoft, color: C.success, fontWeight: '600' },
   window: { ...type.caption, marginTop: 4, paddingHorizontal: 8, paddingVertical: 2, borderRadius: T.radius.full, overflow: 'hidden', backgroundColor: C.accentSoft, color: C.accent, fontWeight: '600' },
-  book: { minHeight: 36, marginTop: 8, borderRadius: T.radius.full, alignItems: 'center', justifyContent: 'center', backgroundColor: C.accent },
-  bookText: { ...type.label, color: C.onAccent, fontWeight: '600' },
-  moreCard: { width: 132, alignItems: 'center', justifyContent: 'center', gap: 4, padding: 12, backgroundColor: C.accentSoft, borderColor: C.accentLine },
-  moreCount: { ...type.title, color: C.accent, fontWeight: '700' },
-  moreText: { ...type.label, color: C.accent, fontWeight: '600', textAlign: 'center' }
+  book: { minHeight: 40, borderRadius: T.radius.full, alignItems: 'center', justifyContent: 'center', backgroundColor: C.accent },
+  bookText: { ...type.label, color: C.onAccent, fontWeight: '600' }
 });
