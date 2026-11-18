@@ -45,11 +45,11 @@ export function DealCard({kind,item,role,userId,application,thread,line:own,acti
  const hasMore=rest.some(Boolean)||!!extra;
  const toggle=(title:string,on:boolean,flip:()=>void,grow:boolean)=><Pressable accessibilityRole="button" accessibilityLabel={title} accessibilityState={{expanded:on}} onPress={flip} style={({pressed})=>[r.action,r.next,grow&&r.grow,pressed&&r.dim]}><Text style={[r.actionText,r.nextText]}>{title}</Text></Pressable>;
  if(compact&&!unfolded){
-  const sum=money(kind==='job'?item.fee:item.amount),label=item.title+', '+sum+', '+recordSpan(item.start,item.end)+', '+status.label+(item.demo_owner?', учебная':'')+(main?', дальше: '+main.title:'');
+  const sum=money(kind==='job'?item.fee:item.amount),said=!!main&&status.label.toLowerCase().includes(main.title.toLowerCase().slice(0,8)),next=main?main.title.replace(/^Оплатил /,'Оплатить ').replace(/^Вернул /,'Вернуть '):'',label=item.title+', '+sum+', '+recordSpan(item.start,item.end)+', '+status.label+(item.demo_owner?', учебная':'')+(main&&!said?', дальше: '+next:'');
   return <Pressable accessibilityRole="button" accessibilityLabel={label} accessibilityHint="Открыть подробности" accessibilityState={{expanded:false}} onPress={()=>{smooth();setUnfolded(true);}} style={({pressed})=>[r.card,r.row,pressed&&r.pressed]}>
    <View style={r.rowHead}><Text numberOfLines={2} style={[r.dealTitle,r.grow]}>{item.title}</Text><Text style={r.rowSum}>{sum}</Text></View>
    <Text numberOfLines={1} style={r.rowWhen}>{recordSpan(item.start,item.end)}{!!item.demo_owner&&<Text style={r.rowDemo}>{' · '+(kind==='job'?'Учебное':'Учебная')}</Text>}</Text>
-   <View style={r.rowTop}><View style={[r.dot,{backgroundColor:ink}]}/><Text numberOfLines={1} style={[r.rowStatus,{color:ink},r.grow]}>{status.label}{!!main&&<Text style={r.rowDo}>{' · '+main.title}</Text>}</Text><Text style={r.chevron}>⌄</Text></View>
+   <View style={r.rowTop}><View style={[r.dot,{backgroundColor:ink}]}/><Text numberOfLines={1} style={[r.rowStatus,{color:ink},r.grow]}>{status.label}{!!main&&!said&&<Text style={r.rowDo}>{' · '+next}</Text>}</Text><Text style={r.chevron}>⌄</Text></View>
   </Pressable>;
  }
  const fold=compact?()=>{smooth();setUnfolded(false);setOpen(false);setMore(false);}:undefined;

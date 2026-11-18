@@ -2,10 +2,9 @@ import React from 'react';
 import {View,Text,Pressable,StyleSheet} from 'react-native';
 import {C,type} from './styles';
 import {T} from './tokens';
-import {bookingTabs,type BookingTab} from '../../lib/booking-filters';
-// «Активные · Завершённые · Отменённые» over «Мои брони»: one segmented row, each tab with its count; an empty tab stays tappable but quiet.
-export function BookingTabs({value,counts,onChange}:{value:BookingTab;counts:Record<BookingTab,number>;onChange:(tab:BookingTab)=>void}){
- return <View accessibilityRole="tablist" accessibilityLabel="Брони" style={b.seg}>{bookingTabs.map(({id,label})=>{const on=id===value,n=counts[id];
+// Tabs over a list («Мои брони», «Уборки», «Мои задания»): one segmented row, each tab with its count; an empty tab stays tappable but quiet.
+export function ListTabs<T extends string>({tabs,value,counts,label,onChange}:{tabs:{id:T;label:string}[];value:T;counts:Record<T,number>;label:string;onChange:(tab:T)=>void}){
+ return <View accessibilityRole="tablist" accessibilityLabel={label} style={b.seg}>{tabs.map(({id,label})=>{const on=id===value,n=counts[id];
   return <Pressable key={id} accessibilityRole="tab" accessibilityLabel={label+', '+n} accessibilityState={{selected:on}} onPress={()=>{if(!on)onChange(id);}} style={({pressed})=>[b.item,on&&b.on,pressed&&!on&&b.pressed]}>
    <Text numberOfLines={1} style={[b.text,on&&b.textOn,!n&&!on&&b.empty]}>{label}</Text>{n>0&&<Text style={[b.count,on&&b.countOn]}>{n}</Text>}
   </Pressable>;})}</View>;
