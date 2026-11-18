@@ -1,6 +1,7 @@
 import React,{useState} from 'react';
 import {Pressable,StyleSheet,Text,View} from 'react-native';
 import {C} from './styles';
+import {BrandEmpty} from './BrandMoments';
 import {journalClock,journalGroups,journalMeta,type JournalLine,type JournalOpen} from '../../lib/ai-move-marks';
 
 // The journal of the AI administrator in the menu: what it did for this person, as a timeline under the heads of
@@ -10,7 +11,7 @@ import {journalClock,journalGroups,journalMeta,type JournalLine,type JournalOpen
 export type JournalEntry=JournalLine;
 export function AiJournal({entries,now,onOpen}:{entries:JournalEntry[];now:number;onOpen?:(open:JournalOpen)=>(()=>void)|undefined}){
  const [all,setAll]=useState(false),shown=all?entries:entries.slice(0,3);
- if(!entries.length)return <Text style={j.empty}>Здесь появится короткая запись о каждом действии ИИ: что подтвердил, кого назначил, о чём напомнил.</Text>;
+ if(!entries.length)return <BrandEmpty title="Пока пусто" text="Здесь появится короткая запись о каждом действии ИИ: что подтвердил, кого назначил, о чём напомнил."/>;
  return <View>
   {journalGroups(shown,now).map(g=><View key={g.day}>
    <Text accessibilityRole="header" style={j.day}>{g.day.toUpperCase()}</Text>

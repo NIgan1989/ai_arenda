@@ -3,7 +3,7 @@
 // Same reading as on the site: lib/listing-draft.ts.
 import React,{useMemo,useState} from 'react';
 import {View,Text,TextInput,Pressable,StyleSheet} from 'react-native';
-import {C,type} from './styles';
+import {C,type,brandFont} from './styles';
 import {T} from './tokens';
 import {Photo} from './ListingMedia';
 import {PhotoGrid} from './PhotoGrid';
@@ -127,9 +127,9 @@ const q=StyleSheet.create({
  orb:{width:H.touch,height:H.touch,borderRadius:R.full,backgroundColor:C.aiFrom,alignItems:'center',justifyContent:'center',borderWidth:3,borderColor:C.accentLine},
  orbSm:{width:32,height:32,borderWidth:2},
  orbText:{color:C.onAccent,...type.subtitle,fontWeight:'700'},orbTextSm:{color:C.onAccent,...type.label,fontWeight:'700'},
- title:{color:C.ink,...type.title,fontWeight:'700'},sub:{color:C.muted,...type.label},
+ title:{color:C.ink,...type.subtitle,...brandFont},sub:{color:C.muted,...type.label},
  close:{width:H.touch,height:H.touch,borderRadius:R.full,backgroundColor:C.surfaceAlt,alignItems:'center',justifyContent:'center'},closeText:{color:C.inkSoft,...type.subtitle},
- steps:{flexDirection:'row',gap:8},stepItem:{flex:1,gap:4},stepBar:{height:4,borderRadius:R.full,backgroundColor:C.line},stepNow:{backgroundColor:C.aiFrom},stepDone:{backgroundColor:C.accent},
+ steps:{flexDirection:'row',gap:8},stepItem:{flex:1,gap:4},stepBar:{height:4,borderRadius:R.full,backgroundColor:C.line},stepNow:{backgroundColor:C.gold},stepDone:{backgroundColor:C.night},
  stepText:{color:C.muted,...type.caption,fontWeight:'600'},stepTextNow:{color:C.ink},
  error:{color:C.danger,backgroundColor:C.dangerSoft,borderRadius:R.md,padding:12,...type.label},
  body:{gap:12},

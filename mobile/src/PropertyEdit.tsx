@@ -1,6 +1,6 @@
 import React,{useRef,useState} from 'react';
 import {Image,Pressable,StyleSheet,Switch,Text,TextInput,View} from 'react-native';
-import {C,type} from './styles';
+import {C,type,brandFont} from './styles';
 import {T} from './tokens';
 import {Photo} from './ListingMedia';
 import {PhotoGrid} from './PhotoGrid';
@@ -190,7 +190,7 @@ const e=StyleSheet.create({
  sheet:{backgroundColor:C.surface,borderRadius:R.xl,padding:16,gap:12,borderWidth:1,borderColor:C.line},
  bar:{flexDirection:'row',alignItems:'center',gap:12},
  round:{width:H.touch,height:H.touch,borderRadius:R.full,backgroundColor:C.surfaceAlt,alignItems:'center',justifyContent:'center'},roundText:{color:C.inkSoft,...type.subtitle},
- title:{color:C.ink,...type.title,fontWeight:'700'},
+ title:{color:C.ink,...type.subtitle,...brandFont},
  thumb:{width:40,height:40,borderRadius:R.md,overflow:'hidden',backgroundColor:C.accentSoft,alignItems:'center',justifyContent:'center'},
  name:{color:C.ink,...type.subtitle,fontWeight:'700'},state:{color:C.muted,...type.caption,fontWeight:'600'},stateOn:{color:C.success},
  advice:{flexDirection:'row',gap:12,padding:12,borderRadius:R.lg,backgroundColor:C.accentSoft,borderWidth:1,borderColor:C.accentLine},

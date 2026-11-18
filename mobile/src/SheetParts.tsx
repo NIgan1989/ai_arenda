@@ -2,7 +2,7 @@ import React from 'react';
 import {Image,Pressable,ScrollView,StyleSheet,Text,View} from 'react-native';
 import {Photo} from './ListingMedia';
 import {menuIcons,type MenuIcon} from './AccountRows';
-import {C,type} from './styles';
+import {C,brandFont,type} from './styles';
 import {T} from './tokens';
 
 // Small controls and the styles shared by everything inside the map's bottom sheet
@@ -21,7 +21,7 @@ export function Stepper({label,value,text,min,max,step=1,onChange,disabled}:{lab
  </View></View>;
 }
 export function Stage({steps,current}:{steps:string[];current:number}){
- return <View style={h.stages} accessibilityLabel={'Этап '+(current+1)+' из '+steps.length+': '+steps[current]}>{steps.map((step,i)=><View key={step} style={h.stage}><View style={[h.stageBar,i<=current&&h.stageBarOn]}/><Text numberOfLines={1} style={[h.stageText,i===current&&h.stageTextOn]}>{step}</Text></View>)}</View>;
+ return <View style={h.stages} accessibilityLabel={'Этап '+(current+1)+' из '+steps.length+': '+steps[current]}>{steps.map((step,i)=><View key={step} style={h.stage}><View style={[h.stageBar,i<current&&h.stageBarOn,i===current&&h.stageBarNow]}/><Text numberOfLines={1} style={[h.stageText,i===current&&h.stageTextOn]}>{step}</Text></View>)}</View>;
 }
 
 // The screen sits inside the app's safe area, so offsets start at its own top edge.
@@ -41,8 +41,8 @@ export const h=StyleSheet.create({
  menu:{position:'absolute',top:12,left:12,width:H.touch,height:H.touch,borderRadius:R.full,backgroundColor:C.glassStrong,borderWidth:1,borderColor:C.glassLine,alignItems:'center',justifyContent:'center',...shadow},
  chats:{position:'absolute',top:12,right:12,width:H.touch,height:H.touch,borderRadius:R.full,backgroundColor:C.glassStrong,borderWidth:1,borderColor:C.glassLine,alignItems:'center',justifyContent:'center',...shadow},
  sheet:{position:'absolute',left:0,right:0,bottom:0,backgroundColor:C.glassStrong,borderTopLeftRadius:R.xl,borderTopRightRadius:R.xl,borderTopWidth:1,borderColor:C.glassLine,shadowColor:C.ink,shadowOffset:{width:0,height:-4},shadowOpacity:.1,shadowRadius:12,elevation:12},
- handleArea:{height:handleHeight,alignItems:'center',paddingTop:12,gap:8},handle:{width:40,height:4,borderRadius:R.xs,backgroundColor:C.lineStrong},ornament:{width:264,maxWidth:'100%',height:12,tintColor:C.accent,opacity:.5},sheetContent:{paddingHorizontal:16,paddingBottom:16},
- block:{gap:12},head:{},grow:{flex:1,minWidth:0},title:{...type.title,color:C.ink,fontWeight:'600',letterSpacing:-.3},note:{...type.label,color:C.muted},label:{...type.caption,color:C.muted,marginBottom:4},
+ handleArea:{height:handleHeight,alignItems:'center',paddingTop:12,gap:8},handle:{width:40,height:4,borderRadius:R.xs,backgroundColor:C.lineStrong},ornament:{width:264,maxWidth:'100%',height:12,tintColor:C.gold,opacity:.9},sheetContent:{paddingHorizontal:16,paddingBottom:16},
+ block:{gap:12},head:{},grow:{flex:1,minWidth:0},title:{...type.subtitle,...brandFont,color:C.ink},note:{...type.label,color:C.muted},label:{...type.caption,color:C.muted,marginBottom:4},
  field:{gap:0},chipsScroll:{marginHorizontal:-16,flexGrow:0},chips:{gap:8,paddingHorizontal:16},chip:{minHeight:H.touch,paddingHorizontal:16,borderRadius:R.full,borderWidth:1,borderColor:C.accentLine,backgroundColor:C.glassStrong,justifyContent:'center'},chipOn:{backgroundColor:C.accent,borderColor:C.accent},chipText:{...type.label,color:C.ink},chipTextOn:{color:C.onAccent,fontWeight:'600'},
  pair:{flexDirection:'row',gap:8},stepper:{flex:1},stepperRow:{flexDirection:'row',alignItems:'center',borderWidth:1,borderColor:C.line,borderRadius:R.md,backgroundColor:C.surface,height:H.field},step:{width:H.touch,height:H.touch,alignItems:'center',justifyContent:'center'},stepText:{...type.title,color:C.ink},stepValue:{flex:1,textAlign:'center',...type.body,color:C.ink,fontWeight:'600'},
  input:{height:H.field,borderWidth:1,borderColor:C.line,borderRadius:R.md,backgroundColor:C.surface,paddingHorizontal:12,fontSize:16,color:C.ink},
@@ -52,7 +52,7 @@ export const h=StyleSheet.create({
  check:{flexDirection:'row',alignItems:'center',gap:12,minHeight:H.touch},checkBox:{...type.title,color:C.accent},checkText:{flex:1,...type.label,color:C.ink},
  listRow:{flexDirection:'row',alignItems:'center',gap:12,minHeight:H.field},asked:{flexDirection:'row',alignItems:'center',gap:8,minHeight:H.compact},askedDot:{width:8,height:8,borderRadius:4},eventTitle:{...type.body,color:C.ink,fontWeight:'500'},rowPrice:{...type.body,color:C.ink,fontWeight:'600'},picked:{gap:8},
  error:{...type.label,color:C.danger,backgroundColor:C.dangerSoft,borderRadius:R.md,padding:12},
- stages:{flexDirection:'row',gap:4},stage:{flex:1,gap:4},stageBar:{height:4,borderRadius:R.xs,backgroundColor:C.line},stageBarOn:{backgroundColor:C.accent},stageText:{...type.caption,color:C.muted},stageTextOn:{color:C.ink,fontWeight:'600'}
+ stages:{flexDirection:'row',gap:4},stage:{flex:1,gap:4},stageBar:{height:4,borderRadius:R.xs,backgroundColor:C.line},stageBarOn:{backgroundColor:C.night},stageBarNow:{backgroundColor:C.gold},stageText:{...type.caption,color:C.muted},stageTextOn:{color:C.ink,fontWeight:'600'}
 });
 
 // A row of the sheet's lists, as on the site (components/map-workspace.tsx, MapRow): a photo of the place, an icon of the

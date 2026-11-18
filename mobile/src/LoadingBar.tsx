@@ -62,7 +62,7 @@ const st=StyleSheet.create({
   layer:{position:'absolute',top:0,bottom:0,left:0,right:0,alignItems:'center',justifyContent:'flex-end',zIndex:1000,elevation:1000},
   track:{position:'absolute',left:0,right:0,height:3},
   bar:{flex:1,flexDirection:'row',overflow:'hidden',borderTopRightRadius:4,borderBottomRightRadius:4,shadowColor:C.aiFrom,shadowOpacity:.6,shadowRadius:6,shadowOffset:{width:0,height:0}},
-  from:{flex:1,backgroundColor:C.accent},mid:{flex:1,backgroundColor:C.aiFrom},to:{flex:1,backgroundColor:C.aiTo},
+  from:{flex:1,backgroundColor:C.accent},mid:{flex:1,backgroundColor:C.aiFrom},to:{flex:1,backgroundColor:C.gold},
   shine:{position:'absolute',top:0,bottom:0,width:80,backgroundColor:'rgba(255,255,255,0.55)'},
   pill:{flexDirection:'row',alignItems:'center',gap:8,minHeight:36,paddingVertical:8,paddingHorizontal:16,borderRadius:999,backgroundColor:C.glassStrong,borderWidth:1,borderColor:C.glassLine,shadowColor:C.ink,shadowOpacity:.12,shadowRadius:12,shadowOffset:{width:0,height:6},elevation:6},
   pillText:{fontSize:14,lineHeight:20,fontWeight:'600',color:C.ink},

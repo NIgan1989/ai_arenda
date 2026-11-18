@@ -5,9 +5,12 @@ export const C=T.color;
 const [caption,label,body,subtitle,title,heading,display]=Object.values(T.font).map(([fontSize,lineHeight])=>({fontSize,lineHeight}));
 const R=T.radius,H=T.control;
 export const type={caption,label,body,subtitle,title,heading,display};
+// The typeface of the name (lib/brand.ts, Unbounded): the titles of screens and of marked moments, nothing else.
+// The file is loaded once, before the first screen (App.tsx). It has one weight, so `fontWeight` stays normal.
+export const brandFont={fontFamily:'Unbounded',fontWeight:'normal',letterSpacing:0} as const;
 export const s=StyleSheet.create({
   groupTitle:{...caption,color:C.muted,fontWeight:'600',letterSpacing:.4,textTransform:'uppercase',marginTop:8,marginBottom:8,marginHorizontal:4},
-  pageTitle:{...heading,color:C.ink,fontWeight:'600',letterSpacing:-.4,marginBottom:16},
+  pageTitle:{...title,...brandFont,color:C.ink,marginBottom:16},
   recommendation:{padding:16,borderWidth:1,borderColor:C.accentLine,backgroundColor:C.accentSoft,borderRadius:R.lg,gap:4,marginBottom:16},
   urgentRecommendation:{backgroundColor:C.warningSoft,borderColor:C.warningLine},
   recommendationLabel:{...caption,color:C.muted},
@@ -22,12 +25,12 @@ export const s=StyleSheet.create({
   sheetHead:{minHeight:H.primary,paddingTop:16,paddingBottom:4,paddingLeft:20,paddingRight:8,flexDirection:'row',alignItems:'center',gap:8},sheetGrab:{position:'absolute',top:8,left:'50%',marginLeft:-20,width:40,height:4,borderRadius:R.xs,backgroundColor:C.lineStrong},
   sheetClose:{width:H.touch,height:H.touch,borderRadius:R.full,alignItems:'center',justifyContent:'center'},sheetCloseText:{width:32,height:32,borderRadius:R.full,backgroundColor:C.surfaceAlt,color:C.ink,textAlign:'center',lineHeight:32,fontSize:16,overflow:'hidden'},
   header:{minHeight:H.primary,paddingVertical:4,paddingLeft:16,paddingRight:8,flexDirection:'row',alignItems:'center',gap:8},
-  headerTitle:{...title,color:C.ink,fontWeight:'600',letterSpacing:-.3},
+  headerTitle:{...title,...brandFont,color:C.ink},
   headerAI:{width:H.touch,height:H.touch,borderRadius:R.full,backgroundColor:C.accent,alignItems:'center',justifyContent:'center'},headerAIText:{...label,color:C.onAccent,fontWeight:'700'},
   logo:{width:H.compact,height:H.compact,backgroundColor:C.accent,borderRadius:R.md,alignItems:'center',justifyContent:'center'},logoText:{...subtitle,color:C.onAccent,fontWeight:'600'},subtitle:{...caption,color:C.muted},
   status:{width:8,height:8,borderRadius:R.xs},connection:{alignItems:'center',flexDirection:'row',gap:8},connectionText:{...caption,color:C.muted},
   transcript:{paddingHorizontal:16,paddingTop:8,paddingBottom:24,flexGrow:1},
-  welcome:{paddingTop:8,paddingBottom:16},eyebrow:{...caption,color:C.muted,letterSpacing:1.2,marginBottom:12},hero:{...heading,color:C.ink,fontWeight:'600',letterSpacing:-.6},lead:{...body,color:C.muted,marginTop:8,maxWidth:440},
+  welcome:{paddingTop:8,paddingBottom:16},eyebrow:{...caption,color:C.muted,letterSpacing:1.2,marginBottom:12},hero:{...title,...brandFont,color:C.ink},lead:{...body,color:C.muted,marginTop:8,maxWidth:440},
   suggestions:{marginTop:24,gap:8},chip:{minHeight:H.touch,paddingVertical:12,paddingHorizontal:16,borderWidth:1,borderColor:C.accentLine,borderRadius:R.full,backgroundColor:C.glassStrong},chipText:{...label,color:C.ink},
   welcomeAction:{borderWidth:1,borderColor:C.glassLine,borderRadius:R.lg,padding:16,minHeight:72,justifyContent:'center',backgroundColor:C.glassStrong,gap:4},welcomeActionTitle:{...body,fontWeight:'600',color:C.ink},welcomeActionDetail:{...label,color:C.muted},welcomeNote:{marginTop:16,...caption,color:C.muted},
   shortcutWrap:{height:H.primary},shortcutList:{gap:8,paddingHorizontal:16,paddingBottom:12},shortcut:{height:H.touch,paddingHorizontal:16,borderWidth:1,borderColor:C.accentLine,borderRadius:R.full,backgroundColor:C.glassStrong,justifyContent:'center'},shortcutText:{...label,color:C.inkSoft},
