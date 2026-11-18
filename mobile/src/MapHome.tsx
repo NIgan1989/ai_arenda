@@ -276,8 +276,9 @@ function GuestPanel({setScanning,setQuiet,accountId,data,mapData,publish,selecte
   if(placed.current==='done'||!here.fix)return;
   if(aimed||recent||requestId||preview||draft.near||nav.trip||chosenCity.has(accountId)){placed.current='done';return;}
   const near=nearestCity(here.fix.point);
-  // Far from every city of the service: the map flies to the guest instead of keeping another city on screen.
-  if(!near){placed.current='done';flyMe();if(here.fix.accuracy<=5000)notify('Рядом с вами жилья сервиса пока нет. Нужен город — напишите его в строке, например «Алматы завтра».');return;}
+  // Far from every city of the service: the map flies to the guest instead of keeping another city on screen. It waits
+  // for the first answer of the map, so the framing of those pins (a new focusKey) does not take the view away again.
+  if(!near){if(!mapData)return;placed.current='done';flyMe();if(here.fix.accuracy<=5000)notify('Рядом с вами жилья сервиса пока нет. Нужен город — напишите его в строке, например «Алматы завтра».');return;}
   // The city moves only once the map of the current one has answered, and never away from the guest's own stays there.
   if(placed.current==='no'){if(!mapData)return;placed.current='city';if(near!==draft.city){if(stays.length){placed.current='done';return;}change({...draft,city:near,district:'',near:null},false);notify('Вы в городе '+near+'. Нужен другой город — напишите его в строке, например «Астана завтра».');return;}}
   if(mapData&&mapData.city===near){placed.current='done';flyMe();}
