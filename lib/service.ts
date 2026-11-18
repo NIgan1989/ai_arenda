@@ -36,7 +36,7 @@ import {guestStayOffers,decideStayOffer} from './stay-offers';
 import {guestFavorites} from './favorites';
 import {staffPlaces} from './staff';
 import {homePlaces,homeDeals} from './home-order';
-import {homeChecklist,homeOrderOf} from './home-cleaning';
+import {homeChecklist,homeOrderOf,homeCancel,tenge,HOME_DAMAGE_WINDOW} from './home-cleaning';
 import {venuesFor} from './venue';
 import {ownerForecasts,decideForecast} from './load-forecast';
 import {ownerListingTips,decideListingTip} from './listing-quality';
@@ -410,7 +410,7 @@ export class RentalService {
         CASE WHEN p.owner_id=? THEN (SELECT json_object('level',level,'score',score,'reasons',reasons,'deposit_advice',deposit_advice,'phone_verified',phone_verified,'held',held) FROM booking_risks WHERE booking_id=b.id) ELSE NULL END risk_row
         FROM bookings b JOIN properties p ON p.id=b.property_id LEFT JOIN profiles o ON o.id=p.owner_id LEFT JOIN profiles g ON g.id=b.guest_id
         WHERE b.guest_id=? OR p.owner_id=? ORDER BY b.start DESC`, ...Array(11).fill(this.userId)),
-      this.all(`SELECT j.*,EXISTS(SELECT 1 FROM regular_cleaners rc WHERE rc.property_id=j.property_id AND rc.cleaner_id=COALESCE(j.assigned_to,?)) regular,CASE WHEN j.owner_id=? OR j.assigned_to=? THEN (SELECT status FROM cleaning_holds h WHERE h.job_id=j.id AND h.cleaner_id=j.assigned_to AND h.status<>'returned') END guarantee,(j.booking_id IS NULL OR EXISTS(SELECT 1 FROM booking_terms t WHERE t.booking_id=j.booking_id AND t.actual_checkout IS NOT NULL)) checkout_confirmed,p.title,p.city,p.district,p.rooms,p.capacity,p.cleaning_minutes,p.demo_owner,(SELECT photos FROM property_details WHERE property_id=p.id) property_photos,(SELECT details FROM property_details WHERE property_id=p.id) property_details,CASE WHEN j.status='open' THEN p.address END open_address,
+      this.all(`SELECT j.*,EXISTS(SELECT 1 FROM regular_cleaners rc WHERE rc.property_id=j.property_id AND rc.cleaner_id=COALESCE(j.assigned_to,?)) regular,CASE WHEN j.owner_id=? OR j.assigned_to=? THEN (SELECT status FROM cleaning_holds h WHERE h.job_id=j.id AND h.cleaner_id=j.assigned_to AND h.status<>'returned') END guarantee,(j.booking_id IS NULL OR EXISTS(SELECT 1 FROM booking_terms t WHERE t.booking_id=j.booking_id AND t.actual_checkout IS NOT NULL)) checkout_confirmed,COALESCE((SELECT require_photos FROM operation_rules r WHERE r.property_id=j.property_id),0) photos_required,p.title,p.city,p.district,p.rooms,p.capacity,p.cleaning_minutes,p.demo_owner,(SELECT photos FROM property_details WHERE property_id=p.id) property_photos,(SELECT details FROM property_details WHERE property_id=p.id) property_details,CASE WHEN j.status='open' THEN p.address END open_address,
         CASE WHEN j.owner_id=? OR j.assigned_to=? THEN p.address ELSE NULL END address,
         CASE WHEN j.owner_id=? OR j.assigned_to=? THEN o.contact ELSE NULL END owner_contact
         FROM cleaning_jobs j JOIN properties p ON p.id=j.property_id LEFT JOIN profiles o ON o.id=j.owner_id
@@ -936,10 +936,12 @@ export class RentalService {
     if(body.expectedVersion!==undefined&&body.expectedVersion!==j.version)throw new DomainError('Задание изменилось. Обновите карточку перед решением.',409);
     if(body.action==='record_job_payment'){
       if(j.owner_id!==this.userId)throw new DomainError('Оплату исполнителю отмечает владелец.',403);
-      if(j.status!=='completed'||body.confirmed!==true)throw new DomainError('Сначала примите работу и подтвердите выполненный перевод.',409);
+      // A late cancellation of a home order leaves a part of the sum owed to the performer (cancel_fee).
+      const late=j.status==='cancelled'&&j.cancel_fee>0,due=late?j.cancel_fee:j.fee;
+      if(j.status!=='completed'&&!late||body.confirmed!==true)throw new DomainError('Сначала примите работу и подтвердите выполненный перевод.',409);
       number(body.expectedVersion,'Версия задания',1,10000000);await migrateFinanceEntity(this,'job',jobId);
-      const balance=await this.one("SELECT COALESCE(SUM(amount),0) n FROM finance_entries WHERE job_id=? AND kind='job_payment'",jobId),remaining=Math.max(0,j.fee-(balance?.n||0));if(!remaining)return {message:'Оплата уборки уже полностью отмечена.'};
-      return recordFinance(this,{kind:'job_payment',jobId,amount:remaining,confirmed:true,note:required(body.note||'Владелец отметил оплату уборки','Основание отметки расчёта',1000),requestKey:'job-paid:'+jobId+':'+j.version});
+      const balance=await this.one("SELECT COALESCE(SUM(amount),0) n FROM finance_entries WHERE job_id=? AND kind='job_payment'",jobId),remaining=Math.max(0,due-(balance?.n||0));if(!remaining)return {message:'Оплата уборки уже полностью отмечена.'};
+      return recordFinance(this,{kind:'job_payment',jobId,amount:remaining,confirmed:true,note:required(body.note||(late?'Заказчик отметил оплату за позднюю отмену':'Владелец отметил оплату уборки'),'Основание отметки расчёта',1000),requestKey:'job-paid:'+jobId+':'+j.version});
     }
     if(body.action==='apply') {
       await this.requireRole('cleaner');
@@ -1071,7 +1073,42 @@ export class RentalService {
       const advice=await this.priceAdviceAfterReady(j.property_id);
       return {message:'Работа принята. Денежные расчёты выполняются отдельно.'+(advice?' ИИ-администратор посмотрел спрос и предлагает новую цену, решение за вами.':''),priceSuggestion:advice};
     }
-    if(body.action==='cancel'&&j.owner_id===this.userId){const reason=required(body.reason,'Причина отмены',1000);const r=await this.query("UPDATE cleaning_jobs SET status='cancelled' WHERE id=? AND (status IN ('open','assigned') OR status='in_progress' AND end<=?)",jobId,now()).run();if(!r.meta.changes)throw new DomainError('Начатую работу нельзя отменить этим действием.',409);await this.db.batch([this.audit(jobId,'job.cancelled:'+reason),...(j.assigned_to?[this.notify(j.assigned_to,'Владелец отменил уборку «'+(j.title||'жильё')+'». Причина: '+reason,'cancelled:'+jobId,'cleaner')]:[])]);return {message:'Задание отменено. Готовность жилья нужно проверить отдельно.'};}
+    if(body.action==='cancel'&&j.owner_id===this.userId){
+      // A home order has terms the customer read before confirming (lib/home-cleaning.ts homeCancel): free until two
+      // hours before the start or while nobody took it, later the performer is owed a part of the sum.
+      const home=j.booking_id===null&&!!homeOrderOf(j.description),t=now(),terms=home?homeCancel(j,t):{fee:0};
+      const reason=home?String(body.reason||'').trim().slice(0,1000)||'Заказчик отменил заказ':required(body.reason,'Причина отмены',1000);
+      if(home&&body.expectedFee!==undefined&&Number(body.expectedFee)!==terms.fee)throw new DomainError(terms.fee?'Бесплатный срок отмены уже прошёл: исполнителю положено '+tenge(terms.fee)+'. Подтвердите отмену ещё раз.':'Условия отмены изменились. Обновите карточку.',409);
+      const r=await this.query("UPDATE cleaning_jobs SET status='cancelled',cancel_fee=?,cancelled_at=? WHERE id=? AND (status IN ('open','assigned') OR status='in_progress' AND end<=?)"+(home?' AND version=?':''),terms.fee,t,jobId,t,...(home?[j.version]:[])).run();
+      if(!r.meta.changes)throw new DomainError(home&&['open','assigned'].includes(j.status)?'Заказ изменился. Обновите карточку.':'Начатую работу нельзя отменить этим действием.',409);
+      const said=home?'Заказчик отменил уборку «'+(j.title||'дом')+'». '+(terms.fee?'Отмена позже бесплатного срока: вам положено '+tenge(terms.fee)+' за отложенное время.':'Отмена в бесплатный срок.'):'Владелец отменил уборку «'+(j.title||'жильё')+'». Причина: '+reason;
+      await this.db.batch([this.audit(jobId,'job.cancelled:'+reason),...(j.assigned_to?[this.notify(j.assigned_to,said,'cancelled:'+jobId,'cleaner')]:[])]);
+      return {message:home?(terms.fee?'Заказ отменён. Исполнителю положено '+tenge(terms.fee)+': переведите и отметьте оплату в карточке.':'Заказ отменён бесплатно.'):'Задание отменено. Готовность жилья нужно проверить отдельно.',cancelFee:terms.fee};
+    }
+    // After the work is accepted the customer rates the performer once: the average is shown to the next customers.
+    if(body.action==='rate'&&j.owner_id===this.userId){
+      const rating=number(body.rating,'Оценка',1,5),note=String(body.note??'').trim();
+      if(note.length>1000)throw new DomainError('Сократите отзыв до 1000 знаков.');
+      if(j.status!=='completed'||!j.assigned_to||j.assigned_to===j.owner_id)throw new DomainError('Оценить исполнителя можно после приёмки работы.',409);
+      const r=await this.query("UPDATE cleaning_jobs SET rating=?,rating_note=?,rated_at=? WHERE id=? AND status='completed' AND rating IS NULL",rating,note,now(),jobId).run();
+      if(!r.meta.changes)throw new DomainError('Вы уже оценили эту уборку.',409);
+      await this.db.batch([this.notify(j.assigned_to,'Заказчик оценил уборку «'+(j.title||'жильё')+'»: '+'★'.repeat(rating)+'☆'.repeat(5-rating)+(note?' «'+note+'»':''),'rated:'+jobId,'cleaner'),this.audit(jobId,'job.rated:'+rating)]);
+      return {message:'Спасибо за оценку! Её увидят следующие заказчики.'};
+    }
+    // Damage found at the acceptance or within two days after it: the photos are already saved (operations/evidence,
+    // phase damage), the complaint opens an issue both the performer and the AI administrator see.
+    if(body.action==='damage'&&j.owner_id===this.userId){
+      const text=required(body.text,'Что повреждено',1500);
+      if(!j.assigned_to||j.assigned_to===j.owner_id||!['submitted','completed'].includes(j.status))throw new DomainError('Сообщить об ущербе можно после отчёта исполнителя.',409);
+      if(j.status==='completed'&&j.completed_at&&j.completed_at<now()-HOME_DAMAGE_WINDOW)throw new DomainError('Срок прошёл: об ущербе можно сообщить в течение двух суток после приёмки.',409);
+      const photos=Number((await this.one("SELECT COUNT(*) n FROM job_evidence WHERE job_id=? AND user_id=? AND phase='damage'",jobId,this.userId))?.n||0);
+      if(!photos)throw new DomainError('Добавьте хотя бы одно фото повреждения.');
+      const issue='Ущерб при уборке: '+text+' (фото: '+photos+')';
+      const receipt=await this.operationReceipt('job_issue',body,[jobId,issue]);if(receipt.previous)return receipt.previous;
+      const issueWrite=await this.issueWrite(j,'job',issue),result={message:'Жалоба отправлена исполнителю. ИИ-администратор следит за ответом и подключит администратора сервиса, если вы не договоритесь.'};
+      await this.db.batch([issueWrite.statement,this.notify(j.assigned_to,'Заказчик сообщил об ущербе при уборке «'+(j.title||'жильё')+'»: '+text+'. Фото в карточке задания.',id(),'cleaner'),this.audit(jobId,'job.damage_claimed'),this.query('INSERT INTO operation_receipts VALUES (?,?,?,?,?,?)',this.userId,'job_issue',receipt.key,receipt.digest,JSON.stringify(result),now())]);
+      return result;
+    }
     if(body.action==='repost'&&j.owner_id===this.userId||j.status==='open'&&body.action==='close'&&j.owner_id===this.userId)return this.unclaimedAction(j,body);
     if(['extend','release','close'].includes(body.action)&&(j.owner_id===this.userId||j.assigned_to===this.userId&&body.action!=='close'))return this.overdueAction(j,body);
     if(body.action==='issue' && (j.owner_id===this.userId||j.assigned_to===this.userId)) {

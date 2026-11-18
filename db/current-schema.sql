@@ -68,6 +68,7 @@
 -- migration 0064_banquet.sql sha256:55ed28d55e08227ed7913885a77700d65b8c231ca08c16a13635ee283f389fc5
 -- migration 0065_job_arrival.sql sha256:4ee72df68e075685c228826800764c7227b892e77a173fa4fe492fa97ff19abd
 -- migration 0066_job_arrival_reset.sql sha256:e2f8b81b0529b14179e04321512b023963191722c0703862aad66dc4a19d98ef
+-- migration 0067_job_cancel_rating.sql sha256:a6bf8e9a8b02b740056b87cb90b0e97e9f3c18be6f4e65dbedd67ab920bbf032
 
 -- table access_receipts
 CREATE TABLE access_receipts (id TEXT PRIMARY KEY,property_id TEXT NOT NULL,entity_kind TEXT NOT NULL,entity_id TEXT NOT NULL,user_id TEXT NOT NULL,created_at INTEGER NOT NULL,expires_at INTEGER NOT NULL);
@@ -478,7 +479,7 @@ CREATE TABLE `cleaning_jobs` (
 	`assigned_to` text,
 	`checklist` text DEFAULT '[]' NOT NULL,
 	`report` text DEFAULT '' NOT NULL,
-	`created_at` integer NOT NULL, started_at INTEGER, submitted_at INTEGER, completed_at INTEGER, version INTEGER NOT NULL DEFAULT 1, settled_at INTEGER, overdue_step INTEGER NOT NULL DEFAULT 0, on_way_at integer, arrived_at integer,
+	`created_at` integer NOT NULL, started_at INTEGER, submitted_at INTEGER, completed_at INTEGER, version INTEGER NOT NULL DEFAULT 1, settled_at INTEGER, overdue_step INTEGER NOT NULL DEFAULT 0, on_way_at integer, arrived_at integer, cancel_fee integer NOT NULL DEFAULT 0, cancelled_at integer, rating integer, rating_note text NOT NULL DEFAULT '', rated_at integer,
 	FOREIGN KEY (`property_id`) REFERENCES `properties`(`id`) ON UPDATE no action ON DELETE no action
 );
 

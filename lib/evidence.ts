@@ -2,7 +2,19 @@ import {DomainError,required,type Role} from './domain';
 import type {RentalService} from './service';
 import {jpegInput} from './listings';
 import {epoch,uuid,q,one,rows,type Row,type OperationConfig} from './operation-core';
+import {HOME_DAMAGE_WINDOW,DAMAGE_PHOTO_LIMIT} from './home-cleaning';
 
+// The customer's photos of damage (phase damage): while the report waits for acceptance and two days after it.
+// They are saved before the complaint is sent (jobs/<id> action damage) so nothing is lost if the app closes.
+export async function saveDamagePhoto(service:RentalService,body:Row,config:OperationConfig={}){
+ await service.requireRole('owner');const t=epoch(),job=await one(service.db,"SELECT * FROM cleaning_jobs WHERE id=? AND owner_id=? AND assigned_to IS NOT NULL AND assigned_to<>owner_id AND (status='submitted' OR status='completed' AND COALESCE(completed_at,0)>=?)",required(body.jobId,'Задание',100),service.userId,t-HOME_DAMAGE_WINDOW);
+ if(!job)throw new DomainError('Фото ущерба можно добавить после отчёта исполнителя и в течение двух суток после приёмки.',409);
+ const image=jpegInput(body.data,'property'),id=uuid(),objectKey=config.BUCKET?'job-evidence/'+id+'.jpg':'',note=String(body.note||'').trim();if(note.length>500)throw new DomainError('Слишком длинное описание материала.');
+ if(config.BUCKET){const binary=atob(image.data.split(',')[1]),bytes=Uint8Array.from(binary,c=>c.charCodeAt(0));await config.BUCKET.put(objectKey,bytes,{httpMetadata:{contentType:'image/jpeg'}});}
+ try{const r=await q(service.db,"INSERT INTO job_evidence(id,job_id,user_id,phase,data,object_key,width,height,bytes,note,created_at,mime,duration) SELECT ?,?,?,'damage',?,?,?,?,?,?,?,'image/jpeg',0 WHERE (SELECT COUNT(*) FROM job_evidence WHERE job_id=? AND user_id=?)<? AND EXISTS(SELECT 1 FROM cleaning_jobs WHERE id=? AND owner_id=? AND status IN ('submitted','completed'))",id,job.id,service.userId,objectKey?'':image.data,objectKey,image.width,image.height,image.bytes,note,t,job.id,service.userId,DAMAGE_PHOTO_LIMIT,job.id,service.userId).run();
+  if(!r.meta.changes)throw new DomainError('К жалобе можно приложить до '+DAMAGE_PHOTO_LIMIT+' фото.',409);}catch(error){if(objectKey)await config.BUCKET!.delete(objectKey);throw error;}
+ return {id,message:'Фото сохранено. Метаданные EXIF удалены.'};
+}
 export async function saveEvidence(service:RentalService,body:Row,config:OperationConfig={}){
  await service.requireRole('cleaner');const job=await one(service.db,"SELECT * FROM cleaning_jobs WHERE id=? AND assigned_to=? AND status='in_progress'",required(body.jobId,'Задание',100),service.userId);if(!job)throw new DomainError('Фотоотчёт доступен назначенному исполнителю во время работы.',403);
  if(!['before','after','damage'].includes(body.phase))throw new DomainError('Выберите этап фотоотчёта.');
@@ -15,7 +27,8 @@ export async function saveEvidence(service:RentalService,body:Row,config:Operati
 export async function listEvidence(service:RentalService,role:Role,jobId:string){
  if(role==='guest')throw new DomainError('Фотоотчёт недоступен гостю.',403);
  if(!await one(service.db,`SELECT id FROM cleaning_jobs WHERE id=? AND ${role==='owner'?'owner_id':'assigned_to'}=?`,jobId,service.userId))throw new DomainError('Отчёт недоступен.',403);
- return rows(service.db,'SELECT id,job_id,phase,note,width,height,created_at,mime,duration,bytes FROM job_evidence WHERE job_id=? ORDER BY created_at',jobId);
+ // mine: who added it. The customer's damage photos and the performer's report photos are shown apart.
+ return rows(service.db,'SELECT id,job_id,phase,note,width,height,created_at,mime,duration,bytes,user_id=? mine FROM job_evidence WHERE job_id=? ORDER BY created_at',service.userId,jobId);
 }
 export async function readEvidence(service:RentalService,role:Role,id:string,config:OperationConfig={}){
  if(role==='guest')throw new DomainError('Фотография недоступна.',403);

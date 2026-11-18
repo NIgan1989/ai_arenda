@@ -1,6 +1,7 @@
 import React,{Fragment,useEffect,useRef,useState} from 'react';
 import {Thinking} from './src/Thinking';
 import {SwipeConfirm} from './src/SwipeConfirm';
+import {JobPhotos,JobRating,DamageClaim} from './src/JobPhotos';
 import {groupRecords,recordGroupLabels} from '../lib/record-groups';
 import {checkinOpen,checkinOpensLabel} from '../lib/checkin-window';
 import {lateOpen,lateNote,lateLabel} from '../lib/late-arrival';
@@ -10,7 +11,7 @@ import { AppState,BackHandler,KeyboardAvoidingView,Linking,Platform,Pressable,Sc
 import { SafeAreaProvider,SafeAreaView } from 'react-native-safe-area-context';
 import {NativeChats,type NativeChatInitial} from './src/NativeChats';
 import {StayRequest,CleaningRequest,HomeCleaningOrder} from './src/StayRequest';
-import {HOME_TYPE,homeChecklist,homeOrderOf} from '../lib/home-cleaning';
+import {HOME_TYPE,HOME_DAMAGE_WINDOW,homeCancel,homeCancelLine,homeChecklist,homeOrderOf} from '../lib/home-cleaning';
 import {targetPin,type MapTarget} from './src/map-memory';
 import {DealCard,RecordFacts} from './src/RecordCard';
 import {bookingThread,cleaningThread,jobThread} from '../lib/process-threads';
@@ -367,6 +368,9 @@ function Chat(){
         // The booking just sent from its check opens as its card: the state, what happens next and the payment when it is due.
         if(dealRef.current==='review'&&path==='bookings'&&result?.id&&state){setDeal(d=>d&&d.kind==='review'?{kind:'booking',id:result.id,after:id}:d);scroll.current?.scrollTo({y:0,animated:false});}
         else if(after&&state&&!dealRef.current)run(after,state);
+        // The cleaning is paid: the last thing left to the customer is the rating, so it is asked right away.
+        const paid=body.action==='record_job_payment'&&state?(state.jobs||[]).find((j:Row)=>j.id===path.split('/')[1]):null;
+        if(paid&&paid.status==='completed'&&paid.assigned_to&&paid.assigned_to!==paid.owner_id&&!paid.rating)say('Оцените работу исполнителя.','rate',{id:paid.id});
       }catch(e){await handleError(e);}
     }catch(e){await handleError(e);}
     finally{locked.current=false;setBusy(false);}
@@ -478,7 +482,9 @@ function Chat(){
   const openDeal=(kind:'booking'|'job',id:string)=>{scrollMessage.current=null;setDealCover(0);setDeal({kind,id,after:messages.length?messages[messages.length-1].id:''});setPageId('overview');scroll.current?.scrollTo({y:0,animated:false});};
   const openPage=(id:string)=>{scrollMessage.current=null;setPageId(id);};
   function renderAssistantBrief(){const brief=data.assistantBrief;if(!brief)return null;return <View style={s.card}><Text style={s.eyebrow}>ПЛАН АССИСТЕНТА</Text><Text style={s.cardTitle}>{brief.summary}</Text>{brief.tasks.map((task:Row)=><View key={task.id} style={s.event}><Text style={s.eventTitle}>{task.title}</Text><Text style={s.meta}>{task.reason}</Text><Button title="Открыть задачу" secondary disabled={busy} onPress={()=>openAssistantTask(task)}/></View>)}<Text style={s.meta}>Сроки и согласования проверяются сервером. Внешние каналы подключаются отдельно.</Text></View>;}
-  function approval(id:string){const card=(data.approvals||[]).find((c:Row)=>c.id===id);return card?<ApprovalCard key={card.id+card.revision} card={card} busy={busy} onDecide={body=>perform('approvals',body,uid())}/>:<Text style={s.meta}>Согласование закрыто или срок истёк. Проверьте статус задачи.</Text>;}
+  function approval(id:string){const card=(data.approvals||[]).find((c:Row)=>c.id===id);const reportOf=card?.kind==='report'&&card.canDecide?card.entityId:'';
+   // The acceptance of a cleaning: the performer's photos are looked at before the decision, and damage is reported from here.
+   return card?<Fragment key={card.id+card.revision}>{!!reportOf&&<View style={{gap:8,marginTop:8,marginBottom:8}}><JobPhotos jobId={reportOf} phase="before" role="owner" readOnly title="До уборки"/><JobPhotos jobId={reportOf} phase="after" role="owner" readOnly title="После уборки"/></View>}<ApprovalCard card={card} busy={busy} onDecide={body=>perform('approvals',body,uid())}/>{!!reportOf&&<View style={{marginTop:8}}><Button title="Сообщить об ущербе" secondary disabled={busy} onPress={()=>say('Сфотографируйте повреждение и опишите, что случилось.','damage',{id:reportOf})}/></View>}</Fragment>:<Text style={s.meta}>Согласование закрыто или срок истёк. Проверьте статус задачи.</Text>;}
   // «На карте» on a booking, a cleaning, an object or a chat: the home map opens on its pin (MapHome, map-memory.ts).
   // The map stays mounted under the sheets, so a new target starts it afresh (mapSeq): it aims once, when it opens.
   // A line of the AI journal opens what it is about, if this person still has it: the card of the booking or of the
@@ -557,17 +563,26 @@ function Chat(){
       const j=data.jobs.find((j:Row)=>j.id===id);if(!j)return null;const owner=j.owner_id===userId&&payload.role==='owner',assigned=j.assigned_to===userId&&!owner;
       const applied=data.applications.some((a:Row)=>a.job_id===id&&a.user_id===userId&&a.status!=='rejected');
       const application=data.applications.find((a:Row)=>a.job_id===id&&a.user_id===userId);
-      const clock=data.serverTime||Date.now()/1000,running=j.status==='in_progress',thread=owner?cleaningThread(j,data,clock):assigned?jobThread(j,data,clock):null;
+      const home=j.booking_id===null&&!!homeOrderOf(j.description),hired=!!j.assigned_to&&j.assigned_to!==j.owner_id,lateDue=j.status==='cancelled'&&j.cancel_fee>0?Math.max(0,j.cancel_fee-(j.settlement_paid||0)):0,stars=(n:number)=>'★'.repeat(n)+'☆'.repeat(5-n);
+      const clock=data.serverTime||Date.now()/1000,running=j.status==='in_progress',reported=['submitted','completed'].includes(j.status),canClaim=owner&&hired&&(j.status==='submitted'||j.status==='completed'&&(j.completed_at||0)>=clock-HOME_DAMAGE_WINDOW),thread=owner?cleaningThread(j,data,clock):assigned?jobThread(j,data,clock):null;
       const nextBox=<CleanerNextBox job={j} application={application} admission={application?.admission??data.profile?.admission} userId={userId||''} busy={busy} onRequestReview={()=>perform('operations/reviews/request',{reference:'Отклик на уборку: проверьте анкету исполнителя.'},uid())}/>;
       return <Fragment key={id}>{!!title&&<Text accessibilityRole="header" style={s.groupTitle}>{title}</Text>}<DealCard kind="job" item={j} role={payload.role} userId={userId||''} application={application} thread={thread} busy={busy} onMap={onMap('job',id)}
         always={<>{owner&&j.status==='open'&&!isUnclaimed(j,Date.now()/1000)&&<ApplicantPick applications={data.applications.filter((a:Row)=>a.job_id===id&&a.status==='pending')} approvals={data.approvals||[]} busy={busy} onDecide={body=>perform('approvals',body,uid())}/>}{running&&<ActivityTimer kind="job" item={j}/>}{(owner||assigned)&&<OverdueHelp job={j} role={owner?'owner':'cleaner'} busy={busy} onAction={body=>perform('jobs/'+id,body,uid(),owner?'owner-jobs':'my-jobs')}/>}{!owner&&!thread&&nextBox}</>}
-        details={<>{!owner&&<JobPlace job={j}/>}{assigned&&['assigned','in_progress'].includes(j.status)&&<CheckinGuide key={'access:'+id} bookingId={id} role="cleaner"/>}{owner&&!!j.worker&&<View style={applicantStyles.assigned}><WorkerRow worker={j.worker} label="Исполнитель"/></View>}<RecordFacts rows={[owner&&j.description&&['Что сделать',j.description],j.address&&['Адрес',j.address+(j.owner_contact?' · '+j.owner_contact:''),true],j.report&&['Отчёт',j.report]]}/>{!running&&<ActivityTimer kind="job" item={j}/>}{!owner&&!!thread&&nextBox}</>}
+        details={<>{!owner&&<JobPlace job={j}/>}{assigned&&['assigned','in_progress'].includes(j.status)&&<CheckinGuide key={'access:'+id} bookingId={id} role="cleaner"/>}{owner&&!!j.worker&&<View style={applicantStyles.assigned}><WorkerRow worker={j.worker} label="Исполнитель"/></View>}<RecordFacts rows={[owner&&j.description&&['Что сделать',j.description],j.address&&['Адрес',j.address+(j.owner_contact?' · '+j.owner_contact:''),true],j.report&&['Отчёт',j.report],j.status==='cancelled'&&j.cancel_fee>0&&['За позднюю отмену',money(j.cancel_fee)+(lateDue?'':' · оплачено')],!!j.rating&&[owner?'Ваша оценка':'Оценка заказчика',stars(j.rating)+(j.rating_note?' «'+j.rating_note+'»':'')]]}/>{(owner||assigned)&&hired&&reported&&<>{owner&&<><JobPhotos jobId={id} phase="before" role="owner" readOnly title="До уборки"/><JobPhotos jobId={id} phase="after" role="owner" readOnly title="После уборки"/></>}<JobPhotos key={'damage:'+j.version} jobId={id} phase="damage" role={owner?'owner':'cleaner'} readOnly title="Фото повреждений"/></>}{!running&&<ActivityTimer kind="job" item={j}/>}{!owner&&!!thread&&nextBox}</>}
         actions={[
           owner&&j.status==='completed'&&!!j.assigned_to&&j.fee>(j.settlement_paid||0)&&{title:'Оплатил уборку '+money(j.fee-(j.settlement_paid||0)),kind:'main',swipe:'Проведите: оплатил уборку '+money(j.fee-(j.settlement_paid||0)),onSwipe:()=>swiped('jobs/'+id,{action:'record_job_payment',confirmed:true},'owner-jobs'),onPress:()=>confirm('jobs/'+id,{action:'record_job_payment',confirmed:true},'Оплатил уборку '+money(j.fee-(j.settlement_paid||0)),'owner-jobs','Подтверждаю, что уже перевёл исполнителю эту сумму.')},
 
 
 
 
+          // A home order cancelled after the free term: the customer owes the performer a part of the sum.
+          owner&&lateDue>0&&{title:'Оплатил за отмену '+money(lateDue),kind:'main',swipe:'Проведите: оплатил за отмену '+money(lateDue),onSwipe:()=>swiped('jobs/'+id,{action:'record_job_payment',confirmed:true},'owner-jobs'),onPress:()=>confirm('jobs/'+id,{action:'record_job_payment',confirmed:true},'Оплатил за отмену '+money(lateDue),'owner-jobs','Подтверждаю, что уже перевёл исполнителю эту сумму.')},
+          assigned&&lateDue>0&&{title:'Не получил оплату',kind:'side',onPress:()=>confirm('jobs/'+id,{action:'issue',issue:'Исполнитель не получил '+money(lateDue)+' за позднюю отмену уборки.'},'Сообщить, что оплата за отмену не пришла','my-jobs','Заказчик и администратор сервиса получат сообщение.')},
+          // After the acceptance: the rating first once the work is paid, the complaint about damage for two days.
+          owner&&j.status==='completed'&&hired&&!j.rating&&{title:'Оценить исполнителя',kind:j.fee>(j.settlement_paid||0)?'side':'main',onPress:()=>say('Оцените работу исполнителя.','rate',{id})},
+          canClaim&&{title:'Сообщить об ущербе',kind:'side',onPress:()=>say('Сфотографируйте повреждение и опишите, что случилось.','damage',{id})},
+          // The customer changes their mind: the terms are said before the confirmation (free term, then a part of the sum).
+          owner&&home&&['open','assigned'].includes(j.status)&&{title:'Отменить уборку',kind:'danger',onPress:()=>{const terms=homeCancel(j,clock);confirm('jobs/'+id,{action:'cancel',expectedFee:terms.fee},'Отменить уборку','owner-jobs',homeCancelLine(terms,'до '+date(terms.freeUntil)));}},
           // Accepted and still not paid by the owner: one tap opens an issue the service administrator sees too.
           assigned&&j.status==='completed'&&!j.settled_at&&!j.guarantee&&j.fee>(j.settlement_paid||0)&&{title:'Не получил оплату',kind:'side',onPress:()=>confirm('jobs/'+id,{action:'issue',issue:'Исполнитель не получил оплату '+money(j.fee-(j.settlement_paid||0))+' за уборку.'},'Сообщить, что оплата за уборку не пришла','my-jobs','Владелец и администратор сервиса получат сообщение.')},
           !owner&&j.status==='open'&&!applied&&{title:'Откликнуться',kind:'main',swipe:'Проведите: беру эту уборку',onPress:()=>perform('jobs/'+id,{action:'apply'},m.id)},
@@ -581,14 +596,16 @@ function Chat(){
           assigned&&j.status==='assigned'&&clock>=j.start-3*3600&&clock<=j.start+2700&&{title:'Опаздываю',kind:'side',onPress:()=>confirm('jobs/'+id,{action:'late'},'Предупредить владельца: вы начнёте на полчаса позже, время уборки сдвинется','my-jobs')},
           // Cannot come after all: said in advance, the cleaning goes back to the search and the owner hears at once.
           assigned&&j.status==='assigned'&&{title:'Отказаться от задания',kind:'danger',onPress:()=>confirm('jobs/'+id,{action:'release'},'Отказаться от задания','my-jobs','Уборка вернётся в поиск, владелец сразу узнает.')},
-          assigned&&j.status==='in_progress'&&{title:'Подготовить отчёт',kind:'main',onPress:()=>say('Проверьте каждый пункт. Отчёт уйдёт владельцу после вашего подтверждения.','report',{id})},
+          assigned&&j.status==='in_progress'&&{title:'Подготовить отчёт',kind:'main',onPress:()=>say('Проверьте каждый пункт. Отчёт уйдёт '+(home?'заказчику':'владельцу')+' после вашего подтверждения.','report',{id})},
           owner&&j.status==='submitted'&&{title:'Рассмотреть отчёт',kind:'main',onPress:()=>say('Отчёт на приёмке.','approval',{id:'report:'+id})},
           (owner&&!!j.assigned_to||assigned)&&{title:'Открыть чат',kind:'side',onPress:()=>{setChatInitial({kind:'job',entityId:id,channel:'cleaning'});setPageId('chats');}},
           (owner&&!!j.assigned_to||assigned)&&{title:'Есть проблема',kind:'side',onPress:()=>raiseIssue('job',id,owner?'owner':'cleaner')},
         ]}/>
       </Fragment>;
     })}{payload.role==='owner'&&m.id!=='deal'&&<Button title="Создать уборку" secondary disabled={busy} onPress={()=>send('Создать уборку')}/>}</View>;
-    if(m.block==='report')return <Report items={reportItems(data.jobs.find((j:Row)=>j.id===payload.id))} busy={busy||!!m.done} onSubmit={(body:Row)=>perform('jobs/'+payload.id,{action:'submit',...body},m.id,'my-jobs')}/>;
+    if(m.block==='rate')return m.done?null:<JobRating busy={busy} onSubmit={(rating,note)=>perform('jobs/'+payload.id,{action:'rate',rating,note},m.id,'owner-jobs')}/>;
+    if(m.block==='damage')return m.done?null:<DamageClaim jobId={payload.id} busy={busy} onSubmit={text=>perform('jobs/'+payload.id,{action:'damage',text},m.id,'owner-jobs')}/>;
+    if(m.block==='report')return <Report items={reportItems(data.jobs.find((j:Row)=>j.id===payload.id))} jobId={payload.id} photos={!!data.jobs.find((j:Row)=>j.id===payload.id)?.photos_required} busy={busy||!!m.done} onSubmit={(body:Row)=>perform('jobs/'+payload.id,{action:'submit',...body},m.id,'my-jobs')}/>;
     if(m.block==='notifications')return <View>{data.notifications.slice(0,20).map((n:Row)=><View style={s.card} key={n.id}><Text style={s.text}>{n.body}</Text><Text style={s.meta}>{date(n.created_at)}</Text></View>)}</View>;
     return null;
   }
@@ -633,9 +650,10 @@ function Chat(){
 // What the performer confirms in the report: a home cleaning has its own list by its kind, the rest keep the usual four.
 const REPORT_ITEMS=['Постельное бельё заменено','Санузел и кухня убраны','Мусор вынесен','Жильё проверено перед заездом'];
 function reportItems(job?:Row){const order=homeOrderOf(job?.description);return order?homeChecklist(order):REPORT_ITEMS;}
-function Report({items=REPORT_ITEMS,busy,onSubmit}:{items?:string[];busy:boolean;onSubmit:(body:Row)=>void}){
-  const [checks,setChecks]=useState(()=>items.map(()=>false)),[report,setReport]=useState('');
-  return <View style={s.card}>{items.map((label,i)=><Pressable key={label} accessibilityRole="checkbox" accessibilityState={{checked:checks[i],disabled:busy}} disabled={busy} onPress={()=>setChecks(prev=>prev.map((v,k)=>k===i?!v:v))} style={s.keyval}><Text style={s.text}>{checks[i]?'☑':'☐'}  {label}</Text></Pressable>)}<TextInput accessibilityLabel="Текст отчёта" style={s.field} placeholder="Что сделано, есть ли замечания?" placeholderTextColor={C.muted} multiline value={report} onChangeText={setReport} maxLength={1500} editable={!busy}/><SwipeConfirm label="Проведите: отправить отчёт владельцу" disabled={busy||checks.some(v=>!v)||!report.trim()} onConfirm={()=>onSubmit({checklist:checks,report,...(items!==REPORT_ITEMS?{items}:{})})}/></View>;
+// photos: the rules of the place ask for photos before and after (a home order always does), so the report cannot go without them.
+function Report({items=REPORT_ITEMS,jobId,photos=false,busy,onSubmit}:{items?:string[];jobId?:string;photos?:boolean;busy:boolean;onSubmit:(body:Row)=>void}){
+  const [checks,setChecks]=useState(()=>items.map(()=>false)),[report,setReport]=useState(''),[before,setBefore]=useState(0),[after,setAfter]=useState(0),need=photos&&!!jobId&&(!before||!after);
+  return <View style={[s.card,{gap:8}]}>{photos&&!!jobId&&<><JobPhotos jobId={jobId} phase="before" role="cleaner" title="Фото до уборки" disabled={busy} onCount={setBefore}/><JobPhotos jobId={jobId} phase="after" role="cleaner" title="Фото после уборки" disabled={busy} onCount={setAfter}/></>}{items.map((label,i)=><Pressable key={label} accessibilityRole="checkbox" accessibilityState={{checked:checks[i],disabled:busy}} disabled={busy} onPress={()=>setChecks(prev=>prev.map((v,k)=>k===i?!v:v))} style={s.keyval}><Text style={s.text}>{checks[i]?'☑':'☐'}  {label}</Text></Pressable>)}<TextInput accessibilityLabel="Текст отчёта" style={s.field} placeholder="Что сделано, есть ли замечания?" placeholderTextColor={C.muted} multiline value={report} onChangeText={setReport} maxLength={1500} editable={!busy}/><SwipeConfirm label={'Проведите: отправить отчёт '+(photos?'заказчику':'владельцу')} disabled={busy||need||checks.some(v=>!v)||!report.trim()} onConfirm={()=>onSubmit({checklist:checks,report,...(items!==REPORT_ITEMS?{items}:{})})}/></View>;
 }
 // Every tap is noted, so a request that follows it lights the loading line (background refreshes do not).
 // Bookings and cleanings from now to later, then the past; a group gets its title where it starts.

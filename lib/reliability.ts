@@ -16,8 +16,9 @@ export function guestReliability(s:{completed:number;disputes:number;cancels:num
  const facts=[s.completed?plural(s.completed,'проживание','проживания','проживаний'):'',s.disputes?'споров при выезде: '+s.disputes:'',s.cancels?'отмен после подтверждения: '+s.cancels:'',s.phone?'телефон подтверждён':''].filter(Boolean);
  return reliabilityScore(Math.max(0,s.completed-s.disputes),s.disputes*2+s.cancels,facts);
 }
-export function cleanerReliability(s:{completed:number;noShows:number;returned:number}):Reliability{
- const facts=[s.completed?plural(s.completed,'уборка','уборки','уборок'):'',s.noShows?'срывов: '+s.noShows:'',s.returned?'возвратов на доработку: '+s.returned:''].filter(Boolean);
+export function cleanerReliability(s:{completed:number;noShows:number;returned:number;rating?:number|null}):Reliability{
+ // The customers' rating is shown as a fact; the score itself stays on what the service saw (done, missed, returned).
+ const facts=[s.completed?plural(s.completed,'уборка','уборки','уборок'):'',s.rating?'оценка заказчиков '+s.rating.toFixed(1).replace('.',','):'',s.noShows?'срывов: '+s.noShows:'',s.returned?'возвратов на доработку: '+s.returned:''].filter(Boolean);
  if(s.completed&&!s.noShows&&!s.returned)facts.push('без срывов');
  return reliabilityScore(s.completed,s.noShows*2+s.returned,facts);
 }
@@ -42,12 +43,12 @@ export async function reliabilityFor(db:D1Database,role:Role,ids:string[],t=epoc
   for(const id of list)out.set(id,guestReliability({completed:n(d.get(id)?.n),disputes:n(x.get(id)?.n),cancels:n(c.get(id)?.n),phone:p.has(id)}));
  }else if(role==='cleaner'){
   const [done,missed,returned]=await Promise.all([
-   rows(db,`SELECT j.assigned_to id,COUNT(*) n FROM cleaning_jobs j WHERE j.status='completed' AND ${live('j')} AND j.assigned_to IN (${m}) GROUP BY j.assigned_to`,ids_),
+   rows(db,`SELECT j.assigned_to id,COUNT(*) n,ROUND(AVG(j.rating),1) rating FROM cleaning_jobs j WHERE j.status='completed' AND ${live('j')} AND j.assigned_to IN (${m}) GROUP BY j.assigned_to`,ids_),
    rows(db,`SELECT x.user_id id,COUNT(*) n FROM notifications x WHERE x.dedupe LIKE 'cleaner:no-show:%' AND x.user_id IN (${m}) AND NOT EXISTS(SELECT 1 FROM cleaning_jobs j JOIN properties lp ON lp.id=j.property_id WHERE x.dedupe LIKE 'cleaner:no-show:'||j.id||':%' AND lp.demo_owner IS NOT NULL) GROUP BY x.user_id`,ids_),
    rows(db,`SELECT j.assigned_to id,COUNT(*) n FROM audit_events a JOIN cleaning_jobs j ON j.id=a.entity_id WHERE a.action LIKE '%job.revision_requested%' AND ${live('j')} AND j.assigned_to IN (${m}) GROUP BY j.assigned_to`,ids_)
   ]);
   const d=byId(done),x=byId(missed),r=byId(returned);
-  for(const id of list)out.set(id,cleanerReliability({completed:n(d.get(id)?.n),noShows:n(x.get(id)?.n),returned:n(r.get(id)?.n)}));
+  for(const id of list)out.set(id,cleanerReliability({completed:n(d.get(id)?.n),noShows:n(x.get(id)?.n),returned:n(r.get(id)?.n),rating:d.get(id)?.rating||null}));
  }else{
   const [answered,unanswered,done,cancels,ratings]=await Promise.all([
    rows(db,`SELECT p.owner_id id,COUNT(DISTINCT b.id) n FROM bookings b JOIN properties p ON p.id=b.property_id WHERE p.demo_owner IS NULL AND p.owner_id IN (${m}) AND EXISTS(SELECT 1 FROM audit_events a WHERE a.entity_id=b.id AND (a.action LIKE '%booking.confirmed%' OR a.action='booking.rejected')) GROUP BY p.owner_id`,ids_),
