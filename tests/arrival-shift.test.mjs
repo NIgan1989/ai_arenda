@@ -60,3 +60,43 @@ test('the owner reads how much cleaning time is left',()=>{
  assert.deepEqual(shiftedStay({start:100,end:200},'daily',60),{start:160,end:200});
  assert.deepEqual(shiftedStay({start:100,end:200},'hourly',60),{start:160,end:260});
 });
+
+test('the time a guest was let in early stays theirs, and is only offered when free',async()=>{
+ const f=await between(150),R=f.db.raw,t=now();try{
+  await pay(f);await f.owner.readinessAction(f.property,{readiness:'ready',inspected:true});
+  R.prepare("INSERT INTO bookings(id,property_id,guest_id,start,end,occupied_until,guests,amount,status,expires_at,payment_status,request_key,created_at) VALUES ('gap',?,'other',?,?,?,1,4000,'requested',?,'unpaid','gap',?)").run(f.property,t+20*60,t+80*60,t+100*60,t+600,t);
+  await assert.rejects(f.owner.bookingAction(f.booking,{action:'early_checkin'}),/ещё занято/);
+  R.prepare("UPDATE bookings SET status='expired' WHERE id='gap'").run();
+  await f.owner.bookingAction(f.booking,{action:'early_checkin'});
+  assert.throws(()=>R.prepare("UPDATE bookings SET status='requested',expires_at=? WHERE id='gap'").run(t+600),/booking_overlap/);
+  assert.throws(()=>R.prepare("INSERT INTO bookings(id,property_id,guest_id,start,end,occupied_until,guests,amount,status,expires_at,payment_status,request_key,created_at) VALUES ('gap2',?,'other',?,?,?,1,4000,'requested',?,'unpaid','gap2',?)").run(f.property,t+30*60,t+60*60,t+90*60,t+600,t),/booking_overlap/);
+ }finally{f.db.close();}
+});
+
+test('a later arrival asked by the owner keeps the agreed price of a daily stay',async()=>{
+ const f=await between(40),R=f.db.raw;try{
+  R.prepare("UPDATE booking_terms SET billing_mode='daily' WHERE booking_id=?").run(f.booking);
+  const b0=R.prepare('SELECT start FROM bookings WHERE id=?').get(f.booking);
+  R.prepare('UPDATE cleaning_jobs SET start=?,end=? WHERE booking_id=?').run(b0.start+86400,b0.start+86400+5400,f.booking);
+  R.prepare('UPDATE bookings SET end=?,occupied_until=? WHERE id=?').run(b0.start+86400,b0.start+86400+5400,f.booking);
+  const before=R.prepare('SELECT start,end,amount FROM bookings WHERE id=?').get(f.booking);
+  await f.owner.bookingAction(f.booking,{action:'shift_arrival',minutes:120});
+  const c=R.prepare("SELECT id,amount FROM booking_changes WHERE booking_id=? AND status='pending'").get(f.booking);assert.equal(c.amount,before.amount);
+  await f.guest.decideBookingChange(f.booking,c.id,'guest',{action:'accept'});
+  const after=R.prepare('SELECT start,end,amount FROM bookings WHERE id=?').get(f.booking);
+  assert.deepEqual([after.start-before.start,after.end,after.amount],[7200,before.end,before.amount]);
+ }finally{f.db.close();}
+});
+
+test('the cleaning before a later arrival is not stretched into the same cleaner\'s next job',async()=>{
+ const f=await between(40),R=f.db.raw,t=now();try{
+  R.prepare("INSERT INTO cleaning_jobs(id,property_id,owner_id,booking_id,description,start,end,fee,status,assigned_to,created_at) SELECT 'late',?,owner_id,'prev','Уборка',?,?,3000,'assigned','cleaner',? FROM properties WHERE id=?").run(f.property,t-600,t+40*60,t,f.property);
+  R.exec('CREATE TEMP TABLE p2 AS SELECT * FROM properties WHERE id='+JSON.stringify(f.property).replace(/"/g,"'"));R.exec("UPDATE p2 SET id='p2';INSERT INTO properties SELECT * FROM p2");
+  R.prepare("INSERT INTO cleaning_jobs(id,property_id,owner_id,description,start,end,fee,status,assigned_to,created_at) SELECT 'next','p2',owner_id,'Уборка',?,?,3000,'assigned','cleaner',? FROM properties WHERE id=?").run(t+50*60,t+140*60,t,f.property);
+  await f.owner.bookingAction(f.booking,{action:'shift_arrival',minutes:60});
+  const c=R.prepare("SELECT id FROM booking_changes WHERE booking_id=? AND status='pending'").get(f.booking);
+  await f.guest.decideBookingChange(f.booking,c.id,'guest',{action:'accept'});
+  assert.equal(R.prepare("SELECT end FROM cleaning_jobs WHERE id='late'").get().end,t+40*60,'the cleaner keeps the next job, the arrival still moves');
+  assert.equal(R.prepare("SELECT status FROM booking_changes WHERE id=?").get(c.id).status,'accepted');
+ }finally{f.db.close();}
+});

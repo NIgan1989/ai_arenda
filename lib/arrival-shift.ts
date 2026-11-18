@@ -13,6 +13,8 @@ const minutes=(seconds:number)=>Math.max(0,Math.round(seconds/60));
 
 // The owner may move an arrival by these many minutes: enough for a late cleaning, never a new booking in disguise.
 export const SHIFT_CHOICES=[30,60,120];
+// The longest owner delay that keeps the agreed price (lib/service.ts bookingChangeQuote).
+export const SHIFT_LIMIT=Math.max(...SHIFT_CHOICES)*60;
 // Early check-in is offered when the next guest is due at least this much later than now.
 export const EARLY_GAIN=30*60;
 
@@ -54,6 +56,10 @@ export async function allowEarlyCheckin(db:D1Database,b:Row,terms:Row|null,op:Ro
  if(b.start-CHECKIN_LEAD_SECONDS<=at)throw new DomainError('Заселение уже открыто.',409);
  if(op?.readiness!=='ready'||op?.active_booking_id)throw new DomainError('Сначала отметьте, что жильё убрано и готово.',409);
  if(b.payment_status!=='owner_verified'||terms.deposit_status==='pending')throw new DomainError('Гость ещё не оплатил бронь: раньше пустить можно после оплаты.',409);
+ // The time from now to the agreed arrival must be free; once allowed it stays the guest's (trigger
+ // booking_early_checkin_*_guard in drizzle/0068), so no new booking can be squeezed in before them.
+ const taken=await q(db,"SELECT 1 AS x FROM bookings WHERE property_id=? AND id<>? AND (status='confirmed' OR (status='requested' AND expires_at>?)) AND start<? AND occupied_until>? UNION ALL SELECT 1 FROM cleaning_jobs WHERE property_id=? AND (booking_id IS NULL OR booking_id<>?) AND status IN ('open','assigned','in_progress','submitted') AND start<? AND end>? LIMIT 1",b.property_id,b.id,at,b.start,at,b.property_id,b.id,b.start,at).first<Row>();
+ if(taken)throw new DomainError('До заезда этого гостя жильё ещё занято другой бронью или уборкой: раньше пустить нельзя.',409);
  const r=await db.batch([
   q(db,'UPDATE booking_terms SET early_checkin_at=?,version=version+1 WHERE booking_id=? AND early_checkin_at IS NULL AND actual_checkin IS NULL',at,b.id),
   q(db,'INSERT OR IGNORE INTO notifications(id,user_id,body,dedupe,read,created_at) VALUES (?,?,?,?,0,?)',uuid(),b.guest_id,'«'+b.title+'» уже готово: можно заселиться раньше, с '+clock(at)+' вместо '+clock(b.start)+'. Доплаты нет. Когда будете на месте, нажмите «Я заселился».','guest:early-checkin:'+b.id,at),
@@ -70,8 +76,9 @@ export function shiftReason(title:string,by:number,start:number){
 
 /**
  * A later arrival was accepted: the cleaning before it may use the time won, up to the time the home needs. Only a
- * cleaning that has not been reported yet and ended right at the old arrival is extended.
+ * cleaning that has not been reported yet and ended right at the old arrival is extended, and never into another job of
+ * the same cleaner (cleaner_overlap would undo the guest's acceptance).
  */
 export function extendCleaningBefore(db:D1Database,b:Row,newStart:number,gate:string,gateArg:string){
- return q(db,`UPDATE cleaning_jobs SET end=MIN(start+MAX(end-start,(SELECT cleaning_minutes*60 FROM properties WHERE id=cleaning_jobs.property_id)),?) WHERE property_id=? AND (booking_id IS NULL OR booking_id<>?) AND status IN ('open','assigned','in_progress') AND end<=? AND end>?-6*3600 AND ?>end AND ${gate}`,newStart,b.property_id,b.id,b.start,b.start,newStart,gateArg);
+ return q(db,`UPDATE cleaning_jobs SET end=MIN(start+MAX(end-start,(SELECT cleaning_minutes*60 FROM properties WHERE id=cleaning_jobs.property_id)),?) WHERE property_id=? AND (booking_id IS NULL OR booking_id<>?) AND status IN ('open','assigned','in_progress') AND end<=? AND end>?-6*3600 AND ?>end AND (assigned_to IS NULL OR NOT EXISTS(SELECT 1 FROM cleaning_jobs o WHERE o.id<>cleaning_jobs.id AND o.assigned_to=cleaning_jobs.assigned_to AND o.status IN ('assigned','in_progress','submitted') AND o.start<MIN(cleaning_jobs.start+MAX(cleaning_jobs.end-cleaning_jobs.start,(SELECT cleaning_minutes*60 FROM properties WHERE id=cleaning_jobs.property_id)),?) AND o.end>cleaning_jobs.end)) AND ${gate}`,newStart,b.property_id,b.id,b.start,b.start,newStart,newStart,gateArg);
 }

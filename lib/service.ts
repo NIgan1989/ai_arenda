@@ -2,7 +2,7 @@ import {wordsOf,venueOr,TYPE_SQL} from './stay-words';
 import {unreadyNote} from './unready';
 import {reliabilityFor} from './reliability';
 import {CHECKIN_LEAD_SECONDS,checkinOpensAt,checkinOpensLabel} from './checkin-window';
-import {afterReady,allowEarlyCheckin,extendCleaningBefore,shiftedStay,shiftReason,SHIFT_CHOICES} from './arrival-shift';
+import {afterReady,allowEarlyCheckin,extendCleaningBefore,shiftedStay,shiftReason,SHIFT_CHOICES,SHIFT_LIMIT} from './arrival-shift';
 import {assessBookingRisk,riskSignals,saveRiskSql,riskLabel,riskFromRow} from './booking-risk';
 import { DomainError, required, number, interval, quote, roles, assistantReply, type Role } from './domain';
 import { ratingsFor } from './stay-reviews';
@@ -859,8 +859,12 @@ export class RentalService {
     const discount=number(body.discountPercent??terms.discount_percent??0,'Скидка, %',0,50);
     if(role==='guest'&&discount!==(terms.discount_percent||0))throw new DomainError('Скидку предлагает владелец.',403);
     if(discount>policy.max_discount_percent)throw new DomainError('Скидка превышает установленный владельцем предел.');
-    const amount=Math.ceil(pricing.amount*(100-discount)/100);
-    if(policy.minimum_rate&&amount<policy.minimum_rate*pricing.periods)throw new DomainError('Стоимость ниже минимальной разрешённой ставки.');
+    // An owner asking the guest to come a little later (a late cleaning, «Сдвинуть заезд») keeps the agreed price: the
+    // guest pays nothing more and gets nothing less for the owner's delay. The rule depends only on the terms, so the
+    // proposal and the guest's acceptance compute the same amount.
+    const ownerDelay=role==='owner'&&start>b.start&&start-b.start<=SHIFT_LIMIT&&mode===terms.billing_mode&&discount===(terms.discount_percent||0)&&(end===b.end||end-start===b.end-b.start);
+    const amount=ownerDelay?Number(b.amount):Math.ceil(pricing.amount*(100-discount)/100);
+    if(!ownerDelay&&policy.minimum_rate&&amount<policy.minimum_rate*pricing.periods)throw new DomainError('Стоимость ниже минимальной разрешённой ставки.');
     if(amount<terms.paid_amount)throw new DomainError('Новая сумма меньше подтверждённой оплаты. Сначала согласуйте возврат с владельцем; автоматический возврат не подключён.',409);
     if(start===b.start&&end===b.end&&amount===b.amount&&mode===terms.billing_mode)throw new DomainError('Условия не изменились.');
     const occupiedUntil=end+b.cleaning_minutes*60;
