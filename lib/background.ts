@@ -2,6 +2,7 @@ import {DomainError,type Role} from './domain';
 import {sweepReviews} from './admin-autocheck';
 import {sweepIssues} from './admin-issues';
 import {sweepOverdueJobs} from './overdue-cleaning';
+import {sweepArrivals} from './arrival-autopilot';
 import {sweepStays} from './stay-watch';
 import {sweepPrep,sweepReadyBefore} from './bath-prep';
 import {sweepPlans} from './autopilot-plans';
@@ -86,7 +87,7 @@ export async function runOperationalTick(db:D1Database,config:OperationConfig={}
  const result=await runBackgroundJobs(db,async job=>{
   if(job.kind==='discovery')return discover(db,job);
   if(job.kind==='autopilot-plans')return sweepPlans(db);
-  if(job.kind==='admin-issues')return {issues:await sweepIssues(db,config as OperationConfig&{PLATFORM_ADMIN_IDS?:string}),overdue:await sweepOverdueJobs(db,config as OperationConfig&{PLATFORM_ADMIN_IDS?:string}),stays:await sweepStays(db,config as OperationConfig&{PLATFORM_ADMIN_IDS?:string}),prep:await sweepPrep(db),readyBefore:await sweepReadyBefore(db),silence:await sweepSilence(db,config as OperationConfig&{PLATFORM_ADMIN_IDS?:string}),reports:await sweepReports(db),digest:await sendDigest(db,config as OperationConfig&{PLATFORM_ADMIN_IDS?:string})};
+  if(job.kind==='admin-issues')return {issues:await sweepIssues(db,config as OperationConfig&{PLATFORM_ADMIN_IDS?:string}),overdue:await sweepOverdueJobs(db,config as OperationConfig&{PLATFORM_ADMIN_IDS?:string}),arrivals:await sweepArrivals(db),stays:await sweepStays(db,config as OperationConfig&{PLATFORM_ADMIN_IDS?:string}),prep:await sweepPrep(db),readyBefore:await sweepReadyBefore(db),silence:await sweepSilence(db,config as OperationConfig&{PLATFORM_ADMIN_IDS?:string}),reports:await sweepReports(db),digest:await sendDigest(db,config as OperationConfig&{PLATFORM_ADMIN_IDS?:string})};
   if(job.kind==='admin-autocheck')return sweepReviews(db,config as OperationConfig&{PLATFORM_ADMIN_IDS?:string});
   if(job.kind==='matching-dispatch')return advanceMatchingRequests(db,config);
   if(job.kind==='owner')return checkAdministratorOwner(db,job.scope);
