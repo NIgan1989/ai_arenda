@@ -76,6 +76,7 @@
 -- migration 0072_direct_payments.sql sha256:cb04757fb811ef441743f2f320fc0b299d026c29ec56228158ebe79a3d1955f5
 -- migration 0073_direct_cleaning_pay.sql sha256:84422dcaed857f0573a0473aef5a83fb31365f793c18863165f08eb060ffdc28
 -- migration 0074_payment_receipts.sql sha256:6f43b5b3d88b23cb3f7ed436bfb2fb642f05edc411cdb4435af017b320091bbf
+-- migration 0075_service_billing.sql sha256:22291f4b24994157164644befff06e5bbb609441f61cda77b29c2d73dc031986
 
 -- table access_receipts
 CREATE TABLE access_receipts (id TEXT PRIMARY KEY,property_id TEXT NOT NULL,entity_kind TEXT NOT NULL,entity_id TEXT NOT NULL,user_id TEXT NOT NULL,created_at INTEGER NOT NULL,expires_at INTEGER NOT NULL);
@@ -1132,6 +1133,14 @@ CREATE TABLE review_property_bindings (
  property_id TEXT PRIMARY KEY REFERENCES properties(id),revision INTEGER NOT NULL DEFAULT 0
 );
 
+-- table service_billing
+CREATE TABLE service_billing (
+ user_id TEXT PRIMARY KEY REFERENCES profiles(id),
+ card_mask TEXT NOT NULL DEFAULT '', card_token TEXT NOT NULL DEFAULT '', card_test INTEGER NOT NULL DEFAULT 0 CHECK(card_test IN (0,1)), card_at INTEGER,
+ last_charge_at INTEGER, failed_at INTEGER, paused_at INTEGER,
+ version INTEGER NOT NULL DEFAULT 1, updated_at INTEGER NOT NULL
+);
+
 -- table stay_handovers
 CREATE TABLE stay_handovers (
  booking_id TEXT PRIMARY KEY REFERENCES bookings(id),
@@ -1918,6 +1927,12 @@ CREATE TRIGGER account_erased_regular_cleaners_insert BEFORE INSERT ON regular_c
 
 -- trigger account_erased_regular_cleaners_update
 CREATE TRIGGER account_erased_regular_cleaners_update BEFORE UPDATE ON regular_cleaners WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.owner_id OR user_id=NEW.cleaner_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END;
+
+-- trigger account_erased_service_billing_insert
+CREATE TRIGGER account_erased_service_billing_insert BEFORE INSERT ON service_billing WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.user_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END;
+
+-- trigger account_erased_service_billing_update
+CREATE TRIGGER account_erased_service_billing_update BEFORE UPDATE ON service_billing WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.user_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END;
 
 -- trigger account_erased_stay_handovers_insert
 CREATE TRIGGER account_erased_stay_handovers_insert BEFORE INSERT ON stay_handovers WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.guest_id OR user_id=NEW.owner_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END;

@@ -13,7 +13,7 @@ export const CLEANER_RULES = { districts: [] as string[], days: 63, fromMinute: 
 export function planPrice(settings: Row | null | undefined, units: number, role: 'owner' | 'cleaner') {
   const s = settings || {}, sum = money(Number(s.price || 0) * (role === 'owner' ? Math.max(1, units) : 1));
   if (!s.charge) return 'Плата пока не взимается.';
-  const per = sum + ' в месяц' + (role === 'owner' ? ' с баланса' : ' из выплат');
+  const per = sum + ' в месяц с привязанной карты';
   return s.trialDays ? `Первые ${s.trialDays} ${plural(s.trialDays, 'день', 'дня', 'дней')} бесплатно, потом ${per}.` : per[0].toUpperCase() + per.slice(1) + '.';
 }
 
