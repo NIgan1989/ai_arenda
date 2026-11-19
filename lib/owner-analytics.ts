@@ -51,7 +51,10 @@ function occupancy(input:AnalyticsInput,from:number,to:number,place?:string):num
 }
 const count=(v:number)=>new Intl.NumberFormat('ru-RU').format(Math.round(v)).replace(/\s/g,' '),tenge=(v:number)=>count(v)+' ₸';
 
-export function buildOwnerAnalytics(input:AnalyticsInput,period:AnalyticsPeriod){
+export function buildOwnerAnalytics(all:AnalyticsInput,period:AnalyticsPeriod){
+ // «Мой дом» (a private address for home cleaning, type «home») is not a rental: neither its time nor its cleaning bills are business.
+ const home=new Set(all.places.filter(p=>p.type==='home').map(p=>p.id)),rent=(list:Row[])=>list.filter(r=>!home.has(r.property_id));
+ const input:AnalyticsInput={...all,places:all.places.filter(p=>!home.has(p.id)),bookings:rent(all.bookings),jobs:rent(all.jobs),commissions:rent(all.commissions),expenses:rent(all.expenses),reviews:rent(all.reviews),views:rent(all.views)};
  const days=ANALYTICS_PERIODS.find(p=>p.id===period)!.days,to=input.now,from=to-days*DAY,prevFrom=from-days*DAY;
  const now=money(input,from,to),before=money(input,prevFrom,from);
  const inPeriod=(b:Row)=>n(b.created_at)>=from&&n(b.created_at)<=to;

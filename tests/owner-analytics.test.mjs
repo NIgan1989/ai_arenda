@@ -48,3 +48,12 @@ test('the owner sees only his own objects through the database',async()=>{
  const other=await ownerAnalytics(f.db,'other','nonsense');
  assert.equal(other.period,'month');assert.equal(other.objects,0);assert.equal(other.money.revenue,0);
 });
+
+test('a private home ordered for cleaning is not part of the rental business',async()=>{
+ const {buildOwnerAnalytics}=await load('owner-analytics'),t=now(),i=base(t);
+ i.places=[{id:'a',title:'Студия',created_at:t-400*DAY},{id:'h',title:'Мой дом',type:'home',created_at:t-400*DAY}];
+ i.bookings=[{id:'1',property_id:'a',guest_id:'g',start:t-7*DAY,end:t,amount:70000,status:'completed',created_at:t-9*DAY}];
+ i.jobs=[{property_id:'h',start:t-2*DAY,fee:9000,status:'completed',assigned_to:'c'}];
+ const r=buildOwnerAnalytics(i,'week');
+ assert.equal(r.objects,1);assert.equal(r.stays.occupancy,100);assert.equal(r.money.cleaning,0);assert.deepEqual(r.places.map(p=>p.id),['a']);
+});
