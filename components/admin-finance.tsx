@@ -36,7 +36,7 @@ function plLines(s:Row):Line[]{return [
 ];}
 function cfLines(basis:string,ip:boolean,payouts:boolean):Line[]{return [
  {key:'_op',label:'Операционная деятельность',kind:'section'},
- {key:'inflow',label:basis==='fact'?'Пополнения балансов владельцами':'Оплата комиссий и подписок'},
+ {key:'inflow',label:basis==='fact'?'Оплата услуг (списания с карт)':'Оплата комиссий и подписок'},
  ...(basis==='fact'&&payouts?[{key:'payouts',label:'Выплаты исполнителям через сервис',sign:-1 as const}]:[]),
  {key:'salaries_net',label:'Зарплаты на руки',sign:-1},{key:'outsource',label:'Аутсорс',sign:-1},{key:'services',label:'Платные сервисы',sign:-1},{key:'opex',label:'Прочие расходы',sign:-1},{key:'acquiring',label:'Комиссия Kaspi Pay',sign:-1},{key:'ai',label:'ИИ (OpenAI)',sign:-1},{key:'taxes_paid',label:'Налоги и взносы уплачены',sign:-1},
  {key:'operating',label:'Поток от операций',kind:'subtotal'},
