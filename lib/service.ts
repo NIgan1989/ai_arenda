@@ -403,6 +403,7 @@ export class RentalService {
         (SELECT rating FROM stay_reviews r WHERE r.booking_id=b.id) review_rating,
         (SELECT json_object('verdict',verdict,'issues',json(issues),'note',note,'cleaner_photos',cleaner_photos,'created_at',created_at) FROM stay_handovers h WHERE h.booking_id=b.id) handover_row,
         (SELECT COUNT(*) FROM stay_photos f WHERE f.booking_id=b.id AND f.phase='checkin') checkin_photos,
+        (SELECT COUNT(*) FROM payment_receipts r WHERE r.booking_id=b.id) receipts,
         (SELECT COUNT(*) FROM stay_photos f WHERE f.booking_id=b.id AND f.phase='handover' AND EXISTS(SELECT 1 FROM stay_handovers x WHERE x.booking_id=b.id)) handover_photos,
         CASE WHEN p.owner_id=? THEN (SELECT COUNT(*) FROM job_evidence e JOIN cleaning_jobs j ON j.id=e.job_id WHERE j.booking_id=b.id AND e.phase IN ('before','damage')) ELSE 0 END cleaner_photos,
         CASE WHEN p.owner_id=? THEN (SELECT COUNT(*) FROM job_evidence e JOIN cleaning_jobs j ON j.id=e.job_id WHERE j.booking_id=b.id AND e.phase='damage') ELSE 0 END cleaner_damage,
@@ -416,6 +417,7 @@ export class RentalService {
       this.all(`SELECT j.*,EXISTS(SELECT 1 FROM regular_cleaners rc WHERE rc.property_id=j.property_id AND rc.cleaner_id=COALESCE(j.assigned_to,?)) regular,CASE WHEN j.owner_id=? OR j.assigned_to=? THEN (SELECT status FROM cleaning_holds h WHERE h.job_id=j.id AND h.cleaner_id=j.assigned_to AND h.status<>'returned') END guarantee,(j.booking_id IS NULL OR EXISTS(SELECT 1 FROM booking_terms t WHERE t.booking_id=j.booking_id AND t.actual_checkout IS NOT NULL)) checkout_confirmed,COALESCE((SELECT require_photos FROM operation_rules r WHERE r.property_id=j.property_id),0) photos_required,p.title,p.city,p.district,p.rooms,p.capacity,p.cleaning_minutes,p.demo_owner,(SELECT photos FROM property_details WHERE property_id=p.id) property_photos,(SELECT details FROM property_details WHERE property_id=p.id) property_details,CASE WHEN j.status='open' THEN p.address END open_address,
         CASE WHEN j.owner_id=? OR j.assigned_to=? THEN p.address ELSE NULL END address,
         CASE WHEN j.owner_id=? OR j.assigned_to=? THEN o.contact ELSE NULL END owner_contact,
+        (SELECT COUNT(*) FROM payment_receipts r WHERE r.job_id=j.id) receipts,
         CASE WHEN j.owner_id=? AND j.assigned_to IS NOT NULL THEN (SELECT json_object('phone',phone,'recipient',recipient,'link',link) FROM payout_details d WHERE d.user_id=j.assigned_to AND d.phone<>'') ELSE NULL END cleaner_pay_row
         FROM cleaning_jobs j JOIN properties p ON p.id=j.property_id LEFT JOIN profiles o ON o.id=j.owner_id
         WHERE (j.owner_id=? OR j.assigned_to=? OR (j.status='open' AND j.end>?)) AND (p.demo_owner IS NULL OR p.demo_owner=?) ORDER BY j.start`, this.userId,this.userId,this.userId,this.userId,this.userId,this.userId,this.userId,this.userId,this.userId,this.userId,now(),this.userId),
@@ -722,7 +724,7 @@ export class RentalService {
       const what=left&&deposit?sum(left+deposit)+' ('+wordsOf(b).stay.toLowerCase()+' '+sum(left)+' и депозит '+sum(deposit)+')':left?sum(left):'депозит '+sum(deposit),t=now();
       const r=await this.db.batch([
         this.query('UPDATE booking_terms SET payment_reported_at=CASE WHEN ?>0 THEN COALESCE(payment_reported_at,?) ELSE payment_reported_at END,deposit_reported_at=CASE WHEN ?>0 THEN COALESCE(deposit_reported_at,?) ELSE deposit_reported_at END,version=version+1 WHERE booking_id=? AND version=?',left,t,deposit,t,bookingId,terms?.version),
-        this.notify(b.owner_id,'Гость сообщил, что перевёл вам '+what+' за «'+b.title+'». Проверьте поступление в банке и подтвердите в брони.',`paid-reported:${bookingId}:${terms?.version}`,'owner'),
+        this.notify(b.owner_id,'Гость сообщил, что перевёл вам '+what+' за «'+b.title+'»'+((await this.one('SELECT 1 x FROM payment_receipts WHERE booking_id=?',bookingId))?' и приложил чек':'')+'. Проверьте поступление в банке и подтвердите в брони.',`paid-reported:${bookingId}:${terms?.version}`,'owner'),
         this.audit(bookingId,'booking.paid_reported')]);
       if(!r[0].meta.changes)throw new DomainError('Бронь изменилась. Обновите карточку.',409);
       return {message:'Владелец получил сообщение о переводе. Когда он увидит деньги, оплата подтвердится.'};

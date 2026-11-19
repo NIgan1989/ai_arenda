@@ -1,5 +1,6 @@
-import React,{useState} from 'react';
-import {View,Text,TextInput,Pressable,Linking,StyleSheet} from 'react-native';
+import React,{useCallback,useEffect,useState} from 'react';
+import {View,Text,TextInput,Pressable,Linking,Image,StyleSheet} from 'react-native';
+import {pickImages,jpegData} from './ListingMedia';
 import {request} from './api';
 import {s,C,type,brandFont} from './styles';
 import {T} from './tokens';
@@ -13,7 +14,7 @@ export const phoneText=(phone:string)=>/^\+7\d{10}$/.test(phone)?`+7 ${phone.sli
 const money=(n:number)=>new Intl.NumberFormat('ru-RU').format(n).replace(/\s/g,' ')+' ₸';
 
 /** Where to transfer and how much. `parts` explains a sum made of several things (the stay and the deposit). */
-export function PayTo({title,to,amount,parts,waiting,missing,note}:{title:string;to:Payout|null|undefined;amount:number;parts?:string;waiting?:string;missing:string;note?:string}){
+export function PayTo({title,to,amount,parts,waiting,missing,note,children}:{title:string;to:Payout|null|undefined;amount:number;parts?:string;waiting?:string;missing:string;note?:string;children?:React.ReactNode}){
  return <View accessible={false} style={p.card}>
   <View style={p.head}><Text style={p.title}>{title}</Text><Text style={p.sum}>{money(amount)}</Text></View>
   {!!parts&&<Text style={p.meta}>{parts}</Text>}
@@ -21,7 +22,37 @@ export function PayTo({title,to,amount,parts,waiting,missing,note}:{title:string
    {!!to.link&&<Pressable accessibilityRole="link" onPress={()=>void Linking.openURL(to.link).catch(()=>undefined)} style={({pressed})=>[p.link,pressed&&{opacity:.7}]}><Text style={p.linkText}>Открыть оплату в Kaspi</Text></Pressable>}</>
    :<Text style={p.warn}>{missing}</Text>}
   {!!waiting&&<View style={p.wait}><Text style={p.waitText}>{waiting}</Text></View>}
+  {children}
   {!!note&&<Text style={p.meta}>{note}</Text>}
+ </View>;
+}
+
+const RECEIPT_LIMIT=3;
+/** The bank receipt next to «Я оплатил» (lib/payment-receipts.ts). The payer attaches a screenshot from Kaspi with `canAdd`;
+ *  the receiver only looks. A tap opens the receipt large enough to read. Nothing is drawn for a receiver with no receipts. */
+export function Receipts({kind,id,role,count=0,canAdd=false,title}:{kind:'booking'|'job';id:string;role:'guest'|'owner'|'cleaner';count?:number;canAdd?:boolean;title?:string}){
+ const [list,setList]=useState<{id:string;uri:string}[]>([]),[busy,setBusy]=useState(false),[error,setError]=useState(''),[open,setOpen]=useState('');
+ const load=useCallback(async()=>{
+  const found=(await request('/api/operations/receipts/'+kind+'/'+id,undefined,undefined,undefined,role))?.receipts||[];
+  return Promise.all(found.map(async(r:{id:string})=>({id:r.id,uri:(await request('/api/operations/receipts/photo/'+r.id,undefined,undefined,undefined,role).catch(()=>null))?.data||''})));
+ },[kind,id,role]);
+ // `count` comes from the state the app refreshes in the background: a receipt added by the other side, or a first
+ // load that failed, is picked up on the next refresh.
+ useEffect(()=>{let live=true;load().then(found=>{if(live)setList(found);}).catch(()=>{});return()=>{live=false;};},[load,count]);
+ async function add(){setBusy(true);setError('');try{
+  const images=await pickImages(false,1);
+  for(const image of images)await request('/api/operations/receipt',{[kind==='job'?'jobId':'bookingId']:id,data:await jpegData(image)},undefined,undefined,role);
+  if(images.length)setList(await load());
+ }catch(e){setError(e instanceof Error&&e.message?e.message:'Не удалось приложить чек.');}finally{setBusy(false);}}
+ if(!canAdd&&!list.length)return null;
+ const big=list.find(r=>r.id===open);
+ return <View style={{gap:8}}>
+  {!!title&&!!list.length&&<Text style={p.title}>{title}</Text>}
+  {!!list.length&&<View style={p.receipts}>{list.map(r=><Pressable key={r.id} accessibilityRole="imagebutton" accessibilityLabel={open===r.id?'Свернуть чек':'Открыть чек'} onPress={()=>setOpen(open===r.id?'':r.id)}>{r.uri?<Image source={{uri:r.uri}} style={p.receipt} alt="Чек об оплате"/>:<View style={[p.receipt,{backgroundColor:C.surfaceAlt}]}/>}</Pressable>)}</View>}
+  {!!big?.uri&&<Pressable accessibilityRole="imagebutton" accessibilityLabel="Свернуть чек" onPress={()=>setOpen('')}><Image source={{uri:big.uri}} style={p.receiptBig} resizeMode="contain" alt="Чек об оплате"/></Pressable>}
+  {canAdd&&list.length<RECEIPT_LIMIT&&<Pressable accessibilityRole="button" disabled={busy} onPress={()=>void add()} style={({pressed})=>[p.link,(pressed||busy)&&{opacity:.7}]}><Text style={p.linkText}>{busy?'Прикладываю…':list.length?'Приложить ещё чек':'Приложить чек из Kaspi'}</Text></Pressable>}
+  {canAdd&&!list.length&&<Text style={p.meta}>Снимок чека видит только получатель. С чеком он подтвердит оплату быстрее.</Text>}
+  {!!error&&<Text accessibilityRole="alert" style={p.warn}>{error}</Text>}
  </View>;
 }
 
@@ -59,4 +90,7 @@ const p=StyleSheet.create({
  warn:{...type.label,color:C.warning},
  wait:{borderRadius:R.md,backgroundColor:C.surface,padding:12},
  waitText:{...type.label,color:C.inkSoft},
+ receipts:{flexDirection:'row',gap:8},
+ receipt:{width:72,height:96,borderRadius:R.md,backgroundColor:C.surface},
+ receiptBig:{width:'100%',height:420,borderRadius:R.md,backgroundColor:C.surface},
 });

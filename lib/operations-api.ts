@@ -28,6 +28,7 @@ import {staffState,assignStaff,removeStaff,markBusy,freeBusy,staffToday,staffMar
 import {addHall,renameVenue,venueOf} from './venue';
 import {understandSearch} from './search-understand';
 import {saveStayPhoto,listStayPhotos,readStayPhoto,saveHandover} from './stay-handover';
+import {saveReceipt,listReceipts,readReceipt} from './payment-receipts';
 import {rulesState,saveRule,type RuleRole} from './decision-rules';
 import {planState,startOwnerPlan,startCleanerPlan,stopPlan,saveCleanerRules,awayToday,planRequired} from './autopilot-plans';
 import {discussionCandidates,openDiscussion,readDiscussion,sendDiscussionMessage,discussionInbox,discussionPhoto,discussionTyping,discussionAvatar} from './process-discussions';
@@ -46,6 +47,7 @@ export async function readOperations(service:RentalService,role:Role,path:string
  if(route==='import/state'){active(role,['owner']);return importState(service);}
  if(route==='autopilot/state')return planState(service,planRequired(role));
  if(route==='decision-rules/state')return rulesState(service.db,service.userId,role as RuleRole);
+ if(path[0]==='receipts'&&path[1]&&path[2])return path[1]==='photo'?readReceipt(service,path[2],config,platformAdmin):listReceipts(service,path[1],path[2],platformAdmin);
  if(path[0]==='stay-photos'&&path[1]){active(role,['guest','owner']);return path[2]==='photo'?readStayPhoto(service,path[1],config):listStayPhotos(service,path[1]);}
  if(path[0]==='evidence'&&path[1])return path[2]==='photo'?readEvidence(service,role,path[1],config):{photos:await listEvidence(service,role,path[1])};
  if(route!=='state')throw new DomainError('Раздел не найден.',404);
@@ -85,6 +87,7 @@ export async function writeOperations(service:RentalService,role:Role,path:strin
  if(route==='delivery/channel')return setDeliveryChannel(service,role,body,config);
  if(route==='review'){active(role,['guest']);return saveStayReview(service,body);}
  if(route==='home-repeat'){active(role,['owner']);return saveHomeRepeat(service,body);}
+ if(route==='receipt'){active(role,['guest','owner']);return saveReceipt(service,role,body,config);}
  if(route==='stay-photo'){active(role,['guest','owner']);return saveStayPhoto(service,role,body,config);}
  if(route==='search/understand'){active(role,['guest']);return understandSearch(service,body,config);}
  if(route==='search/place'){active(role,['guest']);return findPlace(service,body,fetch,config);}
