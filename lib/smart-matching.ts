@@ -94,7 +94,10 @@ export async function responseTimes(db:D1Database,ids:string[],t=epoch()){
 // `readyIds`: places whose owner has already accepted this very request, so their preparation time is not checked again.
 export async function previewMatches(s:RentalService,body:Row,explain=true,readyIds:string[]=[]):Promise<Row>{
  const filters=matchingInput(body),search={city:filters.city,start:filters.start,end:filters.end,guests:filters.guests,mode:filters.mode,maxPrice:filters.maxPrice,category:searchCategory(filters.kinds),map:'1',limit:'60'};
- const first=await s.publicSearch(search,{matching:true,readyIds}),properties=first.properties;
+ // The guest's map (explain): the arrival strip comes with the answer (lib/arrival-ready.ts); a banquet keeps its slots.
+ // `around`: the arrival the strip was first built round, so moving along it keeps the same steps.
+ const around=Date.parse(String(body.around||'')),strip=explain&&searchCategory(filters.kinds)!=='banquet'?{around:Number.isFinite(around)?Math.floor(around/1000):null}:undefined;
+ const first=await s.publicSearch(search,{matching:true,readyIds,...(strip?{arrival:strip}:{})}),properties=first.properties;
  // In chunks: a matching search returns every match, and D1 binds at most 100 parameters.
  const modes:Row[]=[],ids=properties.map((p:Row)=>p.id);
  for(let i=0;i<ids.length;i+=90){const part=ids.slice(i,i+90);modes.push(...await rows(s.db,`SELECT p.id,${guestModeSql} mode FROM properties p ${guestModeJoins} WHERE p.id IN (${part.map(()=>'?').join(',')})`,epoch(),...part));}
@@ -102,7 +105,9 @@ export async function previewMatches(s:RentalService,body:Row,explain=true,ready
  const response=await responseTimes(s.db,ids);
  const ranked=rankMatches(properties.map((p:Row)=>({...p,instant:instant.has(p.id),response:response.get(p.id)??null})),filters),preferences=await rows(s.db,'SELECT property_id FROM matching_preferences WHERE enabled=1');
  const enabled=new Set(preferences.map(p=>p.property_id));
- return {filters,properties:ranked.map(p=>({...p,quickRequest:enabled.has(p.id)})),total:ranked.length,center:first.center,availabilityChecked:true,serverTime:epoch(),...(ranked.length||!explain?{}:{empty:await emptyHint(s,filters)})};
+ // Free a little later, on every other condition of the guest: priced at the first free step, without the reasons of the list.
+ const later=first.arrival?rankMatches((first.later||[]).map((p:Row)=>({...p,instant:instant.has(p.id)})),{...filters,now:false}).map((p:Row)=>({...p,match:undefined,quickRequest:enabled.has(p.id)})):[];
+ return {filters,...(first.arrival?{arrival:first.arrival,later}:{}),properties:ranked.map(p=>({...p,quickRequest:enabled.has(p.id)})),total:ranked.length,center:first.center,availabilityChecked:true,serverTime:epoch(),...(ranked.length||!explain?{}:{empty:await emptyHint(s,filters)})};
 }
 // Why nothing matched, and the nearest thing that would, so that the guest hears a reason and a way out instead of
 // a bare "nothing": no homes in the city, too many guests, no hourly homes, all taken (with the nearest stay of the same
