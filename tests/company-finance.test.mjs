@@ -2,9 +2,9 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {fixture,load,now,iso} from './helpers/platform.mjs';
 const {readPlatformAdmin,writePlatformAdmin}=await load('platform-admin');
-const {payroll,monthKey,shiftMonth}=await load('company-finance');
+const {payroll,selfContributions,monthKey,shiftMonth}=await load('company-finance');
 const config=f=>({PLATFORM_ADMIN_IDS:f.other.userId});
-const settings={opv_bp:1000,vosms_employee_bp:200,ipn_bp:1000,ipn_deduction_mrp:30,mrp:4325,sn_bp:600,so_bp:500,opvr_bp:350,vosms_employer_bp:300};
+const settings={entity:'ip',tax_regime:'general',mzp:85000,owner_base:85000,vosms_self_bp:500,opv_bp:1000,vosms_employee_bp:200,ipn_bp:1000,ipn_deduction_mrp:30,mrp:4325,sn_bp:600,so_bp:500,opvr_bp:350,vosms_employer_bp:300};
 
 test('payroll follows the 2026 rates: withheld from the employee and paid on top by the employer',()=>{
  const p=payroll(500000,settings);
@@ -13,7 +13,13 @@ test('payroll follows the 2026 rates: withheld from the employee and paid on top
  assert.equal(p.net,500000-50000-10000-p.ipn);
  assert.equal(p.sn,30000);assert.equal(p.so,22500);assert.equal(p.opvr,17500);assert.equal(p.vosms_employer,15000);
  assert.equal(payroll(50000,settings).ipn,0,'the standard deduction leaves a small salary without ИПН');
+ assert.equal(payroll(500000,{...settings,tax_regime:'simplified'}).sn,0,'no social tax on the simplified declaration');
+ assert.deepEqual(selfContributions(settings),{self_opv:8500,self_opvr:2975,self_so:4250,self_vosms:5950});
+ assert.equal(selfContributions({...settings,owner_base:200000}).self_opv,20000);
+ assert.equal(selfContributions({...settings,entity:'too'}).self_opv,0);
 });
+
+const settingsBody={entity:'ip',companyName:'AiQonaq',mzp:85000,ownerBase:85000,vosmsSelf:5,startMonth:'2026-11',taxRegime:'simplified',cit:20,simplified:4,vatRegistered:false,vat:16,vatThresholdMrp:10000,mrp:4325,usdRate:500,opv:10,vosmsEmployee:2,ipn:10,ipnDeductionMrp:30,sn:6,so:5,opvr:3.5,vosmsEmployer:3,acquiring:0.95,shareCapital:0};
 
 test('the three reports reconcile: assets equal liabilities plus equity in fact and forecast',async()=>{
  const f=await fixture();try{
@@ -31,6 +37,7 @@ test('the three reports reconcile: assets equal liabilities plus equity in fact 
   f.db.raw.prepare("INSERT INTO cleaning_commissions(job_id,owner_id,cleaner_id,property_id,fee,rate_bp,amount,pair,mode,created_at) VALUES (?,?,?,?,3000,1000,300,0,'charged',?)").run(f.job.id,'owner','cleaner',f.property,at);
 
   const month=monthKey();
+  await writePlatformAdmin(f.other,'finance/cost',{kind:'staff',employment:'employee',name:'Оператор',amount:'500000',period:'month',startMonth:month},config(f));
   await writePlatformAdmin(f.other,'finance/cost',{kind:'service',name:'Хостинг',amount:'10',currency:'USD',period:'month',startMonth:month},config(f));
   await writePlatformAdmin(f.other,'finance/cost',{kind:'opex',name:'Ноутбук в рассрочку',amount:'120000',period:'year',startMonth:month},config(f));
   await writePlatformAdmin(f.other,'finance/cash',{kind:'capital',amount:'1000000',month},config(f));
@@ -46,19 +53,22 @@ test('the three reports reconcile: assets equal liabilities plus equity in fact 
   const pl=fact.current.pl;
   assert.equal(pl.bookings,fee);assert.equal(pl.cleaning,300);assert.equal(pl.autopilot,1900);assert.equal(pl.bonuses,2000);
   assert.equal(pl.services,Math.round(10*fact.settings.usd_rate)+Math.round(20*fact.settings.usd_rate)+170000,'the seeded Stadia Maps and AI subscriptions plus the new hosting');assert.equal(pl.opex,10000);
-  const director=payroll(500000,fact.settings);assert.equal(pl.salaries,500000);assert.equal(pl.outsource,120000);
+  const director=payroll(500000,fact.settings),self=selfContributions(fact.settings),selfTotal=self.self_opv+self.self_opvr+self.self_so+self.self_vosms;
+  assert.equal(fact.settings.entity,'ip');assert.equal(fact.settings.tax_regime,'simplified');assert.equal(director.sn,0);
+  assert.equal(pl.salaries,500000);assert.equal(pl.outsource,30000);assert.equal(pl.self,selfTotal);assert.equal(selfTotal,21675);
   assert.equal(pl.employer,director.sn+director.so+director.opvr+director.vosms_employer);
-  assert.equal(pl.profit_tax,0,'a loss carries no profit tax');
+  assert.equal(pl.profit_tax,Math.round(pl.revenue*0.04),'the simplified declaration taxes income, not profit');
   assert.equal(fact.current.cf.inflow,50000);assert.equal(fact.current.cf.payouts,2000);
   assert.equal(fact.balance.assets.cleaners,900);assert.equal(fact.balance.liabilities.loans,200000);
   assert.equal(fact.balance.liabilities.owners,50000+2000-fee-300-3000);
-  assert.equal(fact.balance.liabilities.taxes,director.ipn+director.opv+director.vosms_employee+director.sn+director.so+director.opvr+director.vosms_employer);
-  assert.equal(fact.balance.equity.capital,100000+1000000);
+  assert.equal(fact.balance.liabilities.taxes,director.ipn+director.opv+director.vosms_employee+director.sn+director.so+director.opvr+director.vosms_employer+selfTotal+pl.profit_tax);
+  assert.equal(fact.balance.equity.capital,1000000);
 
-  // Turning a cost off removes it from the reports; a profitable forecast accrues КПН on the year's profit.
+  // Turning a cost off removes it from the reports; a ТОО on the general regime accrues КПН on the year's profit.
   for(const c of fact.costs.filter(c=>c.active))await writePlatformAdmin(f.other,'finance/cost/toggle',{id:c.id,active:false},config(f));
+  await writePlatformAdmin(f.other,'finance/settings',{...settingsBody,expectedVersion:fact.settings.version,entity:'too',taxRegime:'general'},config(f));
   const lean=await readPlatformAdmin(f.other,'finance',{basis:'forecast',month},config(f));
-  assert.equal(lean.current.pl.salaries,0);assert.ok(lean.current.pl.operating>0);
+  assert.equal(lean.current.pl.salaries,0);assert.equal(lean.current.pl.self,0);assert.ok(lean.current.pl.operating>0);
   assert.equal(lean.current.pl.profit_tax,Math.round(lean.current.pl.operating*0.2));
   assert.equal(lean.balance.difference,0);
  }finally{f.db.close();}
@@ -67,12 +77,12 @@ test('the three reports reconcile: assets equal liabilities plus equity in fact 
 test('settings are validated and versioned',async()=>{
  const f=await fixture();try{
   const state=await readPlatformAdmin(f.other,'finance',{},config(f));
-  const body={expectedVersion:1,startMonth:'2026-11',taxRegime:'simplified',cit:20,simplified:4,vatRegistered:false,vat:16,vatThresholdMrp:10000,mrp:4325,usdRate:500,opv:10,vosmsEmployee:2,ipn:10,ipnDeductionMrp:30,sn:6,so:5,opvr:3.5,vosmsEmployer:3,acquiring:1.5,shareCapital:100000};
+  const body={...settingsBody,expectedVersion:1,entity:'too',companyName:'Тест'};
   await assert.rejects(writePlatformAdmin(f.other,'finance/settings',{...body,cit:80},config(f)),/КПН/);
   await writePlatformAdmin(f.other,'finance/settings',body,config(f));
   await assert.rejects(writePlatformAdmin(f.other,'finance/settings',body,config(f)),e=>e.status===409);
   const after=await readPlatformAdmin(f.other,'finance',{},config(f));
-  assert.equal(after.settings.tax_regime,'simplified');assert.equal(after.settings.opvr_bp,350);assert.equal(after.settings.usd_rate,500);assert.equal(state.settings.version+1,after.settings.version);
+  assert.equal(after.settings.entity,'too');assert.equal(after.settings.company_name,'Тест');assert.equal(after.settings.acquiring_bp,95);assert.equal(after.settings.opvr_bp,350);assert.equal(after.settings.usd_rate,500);assert.equal(state.settings.version+1,after.settings.version);
  }finally{f.db.close();}
 });
 
@@ -80,14 +90,15 @@ test('accounting lists what is owed, a payment lands in ДДС and keeps the bal
  const f=await fixture();try{
   const month=monthKey();
   let state=await readPlatformAdmin(f.other,'accounting',{},config(f));
-  const payrollDue=state.obligations.find(o=>o.group==='payroll'&&o.period===month);
-  const p=payroll(500000,{...settings});
-  assert.equal(payrollDue.accrued,p.ipn+p.opv+p.vosms_employee+p.sn+p.so+p.opvr+p.vosms_employer);
+  const payrollDue=state.obligations.find(o=>o.group==='self'&&o.period===month);
+  assert.equal(state.obligations.some(o=>o.group==='payroll'),false,'no employees yet: only the owner pays for himself');
+  assert.equal(payrollDue.accrued,21675);assert.equal(payrollDue.name,'Взносы ИП за себя');
+  assert.equal(state.obligations.some(o=>o.group==='simplified'),false,'no charged income yet, so no income tax');
   assert.equal(payrollDue.due,shiftMonth(month,1)+'-25');
   await assert.rejects(writePlatformAdmin(f.other,'accounting/pay',{key:payrollDue.key,amount:payrollDue.accrued+1,month,confirmed:true},config(f)),/допустимо/);
-  await writePlatformAdmin(f.other,'accounting/pay',{key:payrollDue.key,amount:100000,month,confirmed:true},config(f));
+  await writePlatformAdmin(f.other,'accounting/pay',{key:payrollDue.key,amount:10000,month,confirmed:true},config(f));
   state=await readPlatformAdmin(f.other,'accounting',{},config(f));
-  const after=state.obligations.find(o=>o.key===payrollDue.key);assert.equal(after.paid,100000);assert.equal(after.left,payrollDue.accrued-100000);
+  const after=state.obligations.find(o=>o.key===payrollDue.key);assert.equal(after.paid,10000);assert.equal(after.left,payrollDue.accrued-10000);
   await writePlatformAdmin(f.other,'accounting/pay',{key:payrollDue.key,amount:after.left,month,confirmed:true},config(f));
   state=await readPlatformAdmin(f.other,'accounting',{},config(f));
   assert.equal(state.obligations.find(o=>o.key===payrollDue.key).status,'paid');

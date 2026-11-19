@@ -10,9 +10,9 @@ type Row=Record<string,any>;
 type Save=(path:string,body:Row)=>Promise<Row|undefined>;
 const money=(value:number)=>new Intl.NumberFormat('ru-RU').format(Math.round(value||0))+' ₸';
 const date=(iso:string)=>new Date(iso+'T12:00:00Z').toLocaleDateString('ru-RU',{day:'numeric',month:'long',year:'numeric',timeZone:'UTC'}).replace(' г.','');
-const partNames:Row={ipn:'ИПН',opv:'ОПВ',vosms_employee:'ВОСМС работника',sn:'Социальный налог',so:'Социальные отчисления',opvr:'ОПВР',vosms_employer:'ООСМС',cit:'КПН',simplified:'Налог 910.00',vat:'НДС'};
+const partNames:Row={ipn:'ИПН',opv:'ОПВ',vosms_employee:'ВОСМС работника',sn:'Социальный налог',so:'Социальные отчисления',opvr:'ОПВР',vosms_employer:'ООСМС',self_opv:'ОПВ',self_opvr:'ОПВР',self_so:'Соцотчисления',self_vosms:'ВОСМС',cit:'КПН',simplified:'Налог 910.00',vat:'НДС'};
 function periodText(o:Row){
- if(o.group==='payroll')return 'за '+monthName(o.period).toLowerCase();
+ if(o.group==='payroll'||o.group==='self')return 'за '+monthName(o.period).toLowerCase();
  if(o.group==='cit')return 'за '+o.period+' год';
  if(o.group==='simplified')return (o.period.endsWith('H1')?'первое':'второе')+' полугодие '+o.period.slice(0,4);
  return o.period.slice(6)+' квартал '+o.period.slice(0,4);
@@ -22,7 +22,7 @@ const statusText:Row={paid:'Оплачено',open:'К оплате',overdue:'П
 export function AdminAccounting({data,busy,save,onFinance}:{data:Row;busy:boolean;save:Save;onFinance:()=>void}){
  const [paying,setPaying]=useState<Row|null>(null),[showPaid,setShowPaid]=useState(false);
  const t=data.totals,open=(data.obligations as Row[]).filter(o=>o.status!=='paid'),paid=(data.obligations as Row[]).filter(o=>o.status==='paid');
- const regime=data.settings.tax_regime==='simplified';
+ const regime=data.settings.tax_regime==='simplified',ip=data.settings.entity==='ip';
  return <div className="admin-revenue admin-finance">
   <section className={'revenue-hero finance-hero '+(t.overdue>0?'is-loss':t.due>0?'is-scheduled':'is-active')}>
    <div className="revenue-hero-main">
@@ -33,7 +33,7 @@ export function AdminAccounting({data,busy,save,onFinance}:{data:Row;busy:boolea
    </div>
    <div className="revenue-hero-side">
     <dl>
-     <div><dt>Режим</dt><dd>{regime?'Упрощённая декларация':'Общий, КПН '+String(data.settings.cit_bp/100)+'%'}</dd></div>
+     <div><dt>{ip?'ИП':'ТОО'} «{data.settings.company_name}»</dt><dd>{regime?'Упрощёнка '+String(data.settings.simplified_bp/100).replace('.',',')+'%':'Общий режим, '+String(data.settings.cit_bp/100)+'%'}</dd></div>
      <div><dt>Прибыль за {data.profit.year} год</dt><dd className={data.profit.profit<0?'is-negative':''}>{data.profit.profit<0?'−':''}{money(Math.abs(data.profit.profit))}</dd></div>
      <div><dt>{regime?'Налог с дохода':'КПН начислен'}</dt><dd>{money(data.profit.cit)}</dd></div>
      <div><dt>Уплачено за год</dt><dd>{money(t.paidYear)}</dd></div>
@@ -43,13 +43,13 @@ export function AdminAccounting({data,busy,save,onFinance}:{data:Row;busy:boolea
   </section>
 
   <div className="revenue-stats" aria-label="Главные цифры">
-   <Stat Icon={Landmark} label="Налог с прибыли" value={money(data.profit.cit)} note={data.profit.profit>0?'приходит из ОПИУ Финансиста':'прибыли пока нет, налог не начислен'}/>
+   <Stat Icon={Landmark} label={regime?'Налог с дохода':'Налог с прибыли'} value={money(data.profit.cit)} note={regime?'считается с выручки из ОПИУ Финансиста':data.profit.profit>0?'приходит из ОПИУ Финансиста':'прибыли пока нет, налог не начислен'}/>
    <Stat Icon={CalendarClock} label="Ближайший срок" value={t.next?date(t.next.due):'нет'} note={t.next?t.next.name:'всё оплачено'}/>
-   <Stat Icon={Percent} label={data.vat.registered?'Плательщик НДС':'До порога НДС'} value={`${Math.round(data.vat.share*100)}%`} note={`${money(data.vat.yearRevenue)} из ${money(data.vat.threshold)}`}/>
+   <Stat Icon={Percent} label={data.vat.kind==='simplified'?'До лимита упрощёнки':data.vat.registered?'Плательщик НДС':'До порога НДС'} value={`${Math.round(data.vat.share*100)}%`} note={`${money(data.vat.yearRevenue)} из ${money(data.vat.threshold)}`}/>
   </div>
 
   <section className="admin-surface">
-   <div className="admin-section-heading"><div><h2>Начисления и сроки</h2><p>Налоги считаются сами: с зарплат по «Расходам», с прибыли по ОПИУ. Оплаченное уходит в ДДС.</p></div><span className="admin-pill">{open.length} к оплате</span></div>
+   <div className="admin-section-heading"><div><h2>Начисления и сроки</h2><p>Налоги считаются сами: взносы и зарплаты по «Расходам», налог по ОПИУ. Оплаченное уходит в ДДС.</p></div><span className="admin-pill">{open.length} к оплате</span></div>
    {open.length===0?<div className="revenue-empty"><CheckCircle2 size={22}/><p>Неоплаченных налогов нет.</p></div>:<ul className="revenue-list">{open.map(o=><Obligation key={o.key} o={o} busy={busy} onPay={()=>setPaying(o)}/>)}</ul>}
    {paid.length>0&&<><button type="button" className="revenue-view finance-more" onClick={()=>setShowPaid(!showPaid)}>{showPaid?'Скрыть оплаченные':`Оплаченные: ${paid.length}`}</button>{showPaid&&<ul className="revenue-list">{paid.map(o=><Obligation key={o.key} o={o} busy={busy}/>)}</ul>}</>}
   </section>
@@ -59,7 +59,7 @@ export function AdminAccounting({data,busy,save,onFinance}:{data:Row;busy:boolea
    {data.payments.length===0?<p className="finance-empty">Платежей пока нет.</p>:<ul className="revenue-list">{data.payments.map((p:Row)=><li key={p.id}><div className="revenue-row"><span className="finance-dot"><CheckCircle2 size={16}/></span><span><strong>{p.name}</strong><small>период {p.period} · оплачено в {monthName(p.month,'long').toLowerCase()}{p.note?' · '+p.note:''}</small></span><b>{money(p.amount)}</b><Button variant="ghost" size="sm" disabled={busy} onClick={()=>save('accounting/payment/delete',{id:p.id,confirmed:true})}>Удалить</Button></div></li>)}</ul>}
   </section>
 
-  <div className="finance-note"><Info size={18}/><p>Сроки по Налоговому кодексу РК 2026 года для небольшого ТОО: налоги с зарплаты до 25 числа следующего месяца, форма 200.00 раз в квартал, КПН по декларации 100.00 до 10 апреля следующего года{data.vat.registered?', НДС по декларации 300.00 до 25 числа второго месяца после квартала':''}. Авансовые платежи КПН не считаются. Сверьте с бухгалтером.</p></div>
+  <div className="finance-note"><Info size={18}/><p>{regime?`Сроки для ${ip?'ИП':'ТОО'} на упрощённой декларации по Налоговому кодексу РК 2026 года: взносы${ip?' ИП за себя и':''} с зарплат до 25 числа следующего месяца, декларация 910.00 за полугодие до 15 августа и 15 февраля, налог до 25 числа.`:`Сроки по Налоговому кодексу РК 2026 года: налоги с зарплаты до 25 числа следующего месяца, форма 200.00 раз в квартал, налог с прибыли по годовой декларации до 10 апреля${data.vat.registered?', НДС по декларации 300.00 до 25 числа второго месяца после квартала':''}. Авансовые платежи не считаются.`} Платить удобно из Kaspi Pay в разделе налоговых платежей. Сверьте с бухгалтером.</p></div>
 
   <Sheet open={!!paying} onOpenChange={v=>{if(!v)setPaying(null);}}><SheetContent side="right" className="revenue-sheet"><SheetHeader><SheetTitle>Отметить оплату</SheetTitle><SheetDescription>{paying?`${paying.name} ${periodText(paying)}. Срок ${date(paying.due)}.`:''}</SheetDescription></SheetHeader>{paying&&<PayForm o={paying} now={data.now} busy={busy} save={async b=>{const r=await save('accounting/pay',b);if(r)setPaying(null);}}/>}</SheetContent></Sheet>
  </div>;

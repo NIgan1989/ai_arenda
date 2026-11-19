@@ -72,7 +72,7 @@
 -- migration 0068_early_checkin.sql sha256:ebd306eaae07d993f402177b294bc75fe072d037d9f41124c99377fc2b99cca6
 -- migration 0069_early_checkin_hold.sql sha256:1aa41ec8707e7628888886cb35eb544716c3272e8394b1bc42d626694f702118
 -- migration 0070_property_views.sql sha256:2611b7beac6533757e18a3b8f354eeba5553b720fb659f4ff60bfb569e8e7bfe
--- migration 0071_company_finance.sql sha256:5097fb6965145239db8b8cfff24d831fea0182ef3486f212f61f15e8208500c4
+-- migration 0071_company_finance.sql sha256:0bb9b781ee0101b40e4a7848d992f60c75e636b8c89749df1af8967dce361311
 
 -- table access_receipts
 CREATE TABLE access_receipts (id TEXT PRIMARY KEY,property_id TEXT NOT NULL,entity_kind TEXT NOT NULL,entity_id TEXT NOT NULL,user_id TEXT NOT NULL,created_at INTEGER NOT NULL,expires_at INTEGER NOT NULL);
@@ -535,14 +535,19 @@ CREATE TABLE company_costs (
 -- table company_finance_settings
 CREATE TABLE company_finance_settings (
  id TEXT PRIMARY KEY CHECK(id='global'),
+ entity TEXT NOT NULL DEFAULT 'ip' CHECK(entity IN ('ip','too')),
+ company_name TEXT NOT NULL DEFAULT 'AiQonaq' CHECK(length(company_name) BETWEEN 1 AND 80),
  start_month TEXT NOT NULL,
- tax_regime TEXT NOT NULL DEFAULT 'general' CHECK(tax_regime IN ('general','simplified')),
+ tax_regime TEXT NOT NULL DEFAULT 'simplified' CHECK(tax_regime IN ('general','simplified')),
  cit_bp INTEGER NOT NULL DEFAULT 2000 CHECK(cit_bp BETWEEN 0 AND 5000),
  simplified_bp INTEGER NOT NULL DEFAULT 400 CHECK(simplified_bp BETWEEN 0 AND 2000),
  vat_registered INTEGER NOT NULL DEFAULT 0 CHECK(vat_registered IN (0,1)),
  vat_bp INTEGER NOT NULL DEFAULT 1600 CHECK(vat_bp BETWEEN 0 AND 3000),
  vat_threshold_mrp INTEGER NOT NULL DEFAULT 10000 CHECK(vat_threshold_mrp BETWEEN 0 AND 1000000),
  mrp INTEGER NOT NULL DEFAULT 4325 CHECK(mrp BETWEEN 1 AND 100000),
+ mzp INTEGER NOT NULL DEFAULT 85000 CHECK(mzp BETWEEN 1 AND 10000000),
+ owner_base INTEGER NOT NULL DEFAULT 85000 CHECK(owner_base BETWEEN 0 AND 100000000),
+ vosms_self_bp INTEGER NOT NULL DEFAULT 500 CHECK(vosms_self_bp BETWEEN 0 AND 3000),
  usd_rate INTEGER NOT NULL DEFAULT 520 CHECK(usd_rate BETWEEN 1 AND 100000),
  opv_bp INTEGER NOT NULL DEFAULT 1000 CHECK(opv_bp BETWEEN 0 AND 3000),
  vosms_employee_bp INTEGER NOT NULL DEFAULT 200 CHECK(vosms_employee_bp BETWEEN 0 AND 3000),
@@ -552,8 +557,8 @@ CREATE TABLE company_finance_settings (
  so_bp INTEGER NOT NULL DEFAULT 500 CHECK(so_bp BETWEEN 0 AND 3000),
  opvr_bp INTEGER NOT NULL DEFAULT 350 CHECK(opvr_bp BETWEEN 0 AND 3000),
  vosms_employer_bp INTEGER NOT NULL DEFAULT 300 CHECK(vosms_employer_bp BETWEEN 0 AND 3000),
- acquiring_bp INTEGER NOT NULL DEFAULT 150 CHECK(acquiring_bp BETWEEN 0 AND 3000),
- share_capital INTEGER NOT NULL DEFAULT 100000 CHECK(share_capital BETWEEN 0 AND 10000000000),
+ acquiring_bp INTEGER NOT NULL DEFAULT 95 CHECK(acquiring_bp BETWEEN 0 AND 3000),
+ share_capital INTEGER NOT NULL DEFAULT 0 CHECK(share_capital BETWEEN 0 AND 10000000000),
  version INTEGER NOT NULL DEFAULT 1,
  updated_at INTEGER NOT NULL
 );
@@ -561,7 +566,7 @@ CREATE TABLE company_finance_settings (
 -- table company_tax_payments
 CREATE TABLE company_tax_payments (
  id TEXT PRIMARY KEY,
- tax TEXT NOT NULL CHECK(tax IN ('cit','simplified','vat','ipn','opv','vosms_employee','sn','so','opvr','vosms_employer')),
+ tax TEXT NOT NULL CHECK(tax IN ('cit','simplified','vat','ipn','opv','vosms_employee','sn','so','opvr','vosms_employer','self_opv','self_opvr','self_so','self_vosms')),
  period TEXT NOT NULL,
  amount INTEGER NOT NULL CHECK(amount BETWEEN 1 AND 10000000000),
  month TEXT NOT NULL,

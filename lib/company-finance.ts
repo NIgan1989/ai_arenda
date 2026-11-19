@@ -8,11 +8,14 @@ import {epoch,uuid,q,one,rows,type Row} from './operation-core';
 // Kazakhstan time, so the three reports reconcile to the tenge: assets = liabilities + equity.
 
 export type Basis='fact'|'forecast';
-export type FinanceSettings={start_month:string;tax_regime:'general'|'simplified';cit_bp:number;simplified_bp:number;vat_registered:number;vat_bp:number;vat_threshold_mrp:number;mrp:number;usd_rate:number;opv_bp:number;vosms_employee_bp:number;ipn_bp:number;ipn_deduction_mrp:number;sn_bp:number;so_bp:number;opvr_bp:number;vosms_employer_bp:number;acquiring_bp:number;share_capital:number;version:number;updated_at:number};
+export type FinanceSettings={entity:'ip'|'too';company_name:string;mzp:number;owner_base:number;vosms_self_bp:number;start_month:string;tax_regime:'general'|'simplified';cit_bp:number;simplified_bp:number;vat_registered:number;vat_bp:number;vat_threshold_mrp:number;mrp:number;usd_rate:number;opv_bp:number;vosms_employee_bp:number;ipn_bp:number;ipn_deduction_mrp:number;sn_bp:number;so_bp:number;opvr_bp:number;vosms_employer_bp:number;acquiring_bp:number;share_capital:number;version:number;updated_at:number};
 export type Cost={id:string;kind:'staff'|'service'|'opex';name:string;amount:number;currency:'KZT'|'USD';period:'month'|'year'|'once';employment:'none'|'employee'|'outsource';start_month:string;end_month:string|null;active:number;note:string;sort:number};
 export type Payroll={gross:number;opv:number;vosms_employee:number;ipn:number;net:number;sn:number;so:number;opvr:number;vosms_employer:number};
 export const payrollTaxes=['ipn','opv','vosms_employee','sn','so','opvr','vosms_employer'] as const;
-export const taxNames:Record<string,string>={cit:'КПН',simplified:'Налог по упрощённой декларации',vat:'НДС',ipn:'ИПН с зарплат',opv:'ОПВ (пенсионные)',vosms_employee:'ВОСМС работника',sn:'Социальный налог',so:'Социальные отчисления',opvr:'ОПВР работодателя',vosms_employer:'ООСМС работодателя'};
+export const selfTaxes=['self_opv','self_opvr','self_so','self_vosms'] as const;
+// Income ceiling of the simplified declaration, in МРП a year (2026 Tax Code).
+export const SIMPLIFIED_LIMIT_MRP=600000;
+export const taxNames:Record<string,string>={cit:'КПН',simplified:'Налог по упрощённой декларации',vat:'НДС',ipn:'ИПН с зарплат',opv:'ОПВ (пенсионные)',vosms_employee:'ВОСМС работника',sn:'Социальный налог',so:'Социальные отчисления',opvr:'ОПВР работодателя',vosms_employer:'ООСМС работодателя',self_opv:'ОПВ ИП за себя',self_opvr:'ОПВР ИП за себя',self_so:'СО ИП за себя',self_vosms:'ВОСМС ИП за себя'};
 const OFFSET=5*3600;
 const live="(SELECT status FROM bookings WHERE id=c.booking_id) IN ('confirmed','completed')";
 const monthOf=(column:string)=>`strftime('%Y-%m',${column}+${OFFSET},'unixepoch')`;
@@ -29,7 +32,14 @@ function monthsBetween(from:string,to:string){const out:string[]=[];for(let k=fr
 export function payroll(gross:number,s:FinanceSettings):Payroll{
  const opv=pct(gross,s.opv_bp),vosms_employee=pct(gross,s.vosms_employee_bp);
  const ipn=pct(Math.max(0,gross-opv-vosms_employee-s.ipn_deduction_mrp*s.mrp),s.ipn_bp);
- return {gross,opv,vosms_employee,ipn,net:gross-opv-vosms_employee-ipn,sn:pct(gross,s.sn_bp),so:pct(Math.max(0,gross-opv),s.so_bp),opvr:pct(gross,s.opvr_bp),vosms_employer:pct(gross,s.vosms_employer_bp)};
+ return {gross,opv,vosms_employee,ipn,net:gross-opv-vosms_employee-ipn,sn:s.tax_regime==='simplified'?0:pct(gross,s.sn_bp),so:pct(Math.max(0,gross-opv),s.so_bp),opvr:pct(gross,s.opvr_bp),vosms_employer:pct(gross,s.vosms_employer_bp)};
+}
+// What an ИП pays for its owner every month: pension and social contributions from the base the
+// owner declares (not below one minimum wage) and medical insurance from 1.4 minimum wages.
+export function selfContributions(s:FinanceSettings){
+ if(s.entity!=='ip')return {self_opv:0,self_opvr:0,self_so:0,self_vosms:0};
+ const base=Math.max(s.owner_base,s.mzp);
+ return {self_opv:pct(base,s.opv_bp),self_opvr:pct(base,s.opvr_bp),self_so:pct(base,s.so_bp),self_vosms:pct(Math.round(s.mzp*1.4),s.vosms_self_bp)};
 }
 // Monthly cost in tenge: a yearly payment is spread over twelve months, a one-off falls on its start month.
 export const costTenge=(c:Pick<Cost,'amount'|'currency'>,s:Pick<FinanceSettings,'usd_rate'>)=>c.currency==='USD'?Math.round(c.amount*s.usd_rate/100):c.amount;
@@ -88,7 +98,8 @@ export function computeMonths(input:Inputs,basis:Basis,until:string):Month[]{
   const acquiring=pct(Number(fact?b.turnover_charged:b.turnover_all)||0,s.acquiring_bp);
   const aiCost=Math.round(Number(ai.micros||0)*s.usd_rate/1e6);
   const bonuses=fact?Number(c.balance[month]?.bonuses||0):0;
-  let salaries=0,employer=0,outsource=0,services=0,opex=0,net=0;const taxes:Row={ipn:0,opv:0,vosms_employee:0,sn:0,so:0,opvr:0,vosms_employer:0,cit:0,simplified:0,vat};
+  let salaries=0,employer=0,outsource=0,services=0,opex=0,net=0;const taxes:Row={ipn:0,opv:0,vosms_employee:0,sn:0,so:0,opvr:0,vosms_employer:0,cit:0,simplified:0,vat,...(month>=s.start_month?selfContributions(s):{})};
+  const self=selfTaxes.reduce((a,k)=>a+Number(taxes[k]||0),0);
   for(const cost of input.costs){
    const amount=costInMonth(cost,month,s);if(!amount)continue;
    if(cost.kind==='staff'&&cost.employment==='employee'){const p=payroll(amount,s);salaries+=amount;net+=p.net;employer+=p.sn+p.so+p.opvr+p.vosms_employer;for(const k of payrollTaxes)taxes[k]+=p[k];}
@@ -97,12 +108,12 @@ export function computeMonths(input:Inputs,basis:Basis,until:string):Month[]{
    else opex+=amount;
   }
   const gross_profit=revenue-acquiring-aiCost-bonuses;
-  const operating=gross_profit-salaries-employer-outsource-services-opex;
+  const operating=gross_profit-salaries-employer-self-outsource-services-opex;
   let profitTax=0;
   if(s.tax_regime==='simplified'){taxes.simplified=pct(revenue,s.simplified_bp);profitTax=taxes.simplified;}
   else{ytdProfit+=operating;const due=Math.max(0,pct(ytdProfit,s.cit_bp));taxes.cit=due-ytdCit;ytdCit=due;profitTax=taxes.cit;}
   const netProfit=operating-profitTax;
-  const pl={bookings,cleaning,autopilot,gross,vat,revenue,acquiring,ai:aiCost,aiRequests:Number(ai.requests||0),bonuses,gross_profit,salaries,employer,outsource,services,opex,operating,profit_tax:profitTax,net:netProfit,turnover:Number(fact?b.turnover_charged:b.turnover_all)||0,bookingsCount:Number(b.bookings||0)};
+  const pl={bookings,cleaning,autopilot,gross,vat,revenue,acquiring,ai:aiCost,aiRequests:Number(ai.requests||0),bonuses,gross_profit,salaries,employer,self,outsource,services,opex,operating,profit_tax:profitTax,net:netProfit,turnover:Number(fact?b.turnover_charged:b.turnover_all)||0,bookingsCount:Number(b.bookings||0)};
   const paid=input.taxPaid[month]||{},taxesPaid=Object.values(paid).reduce((a:number,v)=>a+Number(v),0) as number;
   const entries=input.cashEntries.filter(e=>e.month===month),sum=(k:string)=>entries.filter(e=>e.kind===k).reduce((a,e)=>a+Number(e.amount),0);
   const inflow=fact?Number(c.balance[month]?.topups||0):gross;
@@ -145,6 +156,12 @@ export function balanceAt(months:Month[],month:string,s:FinanceSettings,entries:
  return {month,assets,liabilities,equity,totalAssets,totalLiabilities,totalEquity,difference:totalAssets-totalLiabilities-totalEquity};
 }
 
+// The ceiling the business must watch: the income limit of the simplified declaration, or the
+// turnover after which VAT registration is required on the general regime.
+function limitInfo(s:FinanceSettings,yearRevenue:number){
+ const simplified=s.tax_regime==='simplified',threshold=(simplified?SIMPLIFIED_LIMIT_MRP:s.vat_threshold_mrp)*s.mrp;
+ return {kind:simplified?'simplified':'vat',threshold,yearRevenue,share:threshold?Math.min(1,yearRevenue/threshold):0,registered:!!s.vat_registered};
+}
 export async function companyFinance(db:D1Database,params:Row){
  const basis:Basis=params.basis==='forecast'?'forecast':'fact';
  const input=await inputs(db),now=monthKey(),s=input.settings;
@@ -167,7 +184,7 @@ export async function companyFinance(db:D1Database,params:Row){
   previousBalance:prev>=first?balanceAt(months,prev,s,input.cashEntries,posPrev):null,
   costs:input.costs.map(c=>({...c,tenge:costTenge(c,s),inMonth:costInMonth(c,month,s),payroll:c.kind==='staff'&&c.employment==='employee'?payroll(costTenge(c,s),s):null})),
   cashEntries:input.cashEntries.slice(0,50),
-  vat:{threshold:s.vat_threshold_mrp*s.mrp,yearRevenue,share:s.vat_threshold_mrp?Math.min(1,yearRevenue/(s.vat_threshold_mrp*s.mrp)):0},
+  vat:limitInfo(s,yearRevenue),
  };
 }
 
@@ -175,10 +192,10 @@ const bp=(value:unknown,label:string,max=3000)=>{const n=Number(String(value).re
 export async function saveFinanceSettings(service:RentalService,body:Row){
  const version=number(body.expectedVersion,'Версия настроек',1,1e9);
  const start=String(body.startMonth||'');if(!monthRe.test(start))throw new DomainError('Укажите месяц начала учёта.');
- const regime=body.taxRegime==='simplified'?'simplified':'general';
- const values=[start,regime,bp(body.cit,'КПН',5000),bp(body.simplified,'Упрощённая декларация',2000),body.vatRegistered?1:0,bp(body.vat,'НДС'),number(body.vatThresholdMrp,'Порог НДС в МРП',0,1000000),number(body.mrp,'МРП',1,100000),number(body.usdRate,'Курс доллара',1,100000),bp(body.opv,'ОПВ'),bp(body.vosmsEmployee,'ВОСМС работника'),bp(body.ipn,'ИПН'),number(body.ipnDeductionMrp,'Вычет по ИПН',0,1000),bp(body.sn,'Социальный налог'),bp(body.so,'Социальные отчисления'),bp(body.opvr,'ОПВР'),bp(body.vosmsEmployer,'ООСМС работодателя'),bp(body.acquiring,'Эквайринг'),number(body.shareCapital,'Уставный капитал',0,1e10)];
+ const regime=body.taxRegime==='simplified'?'simplified':'general',entity=body.entity==='too'?'too':'ip',name=required(body.companyName,'Название',80);
+ const values=[entity,name,number(body.mzp,'МЗП',1,10000000),number(body.ownerBase,'База взносов ИП',0,100000000),bp(body.vosmsSelf,'ВОСМС ИП за себя'),start,regime,bp(body.cit,'КПН',5000),bp(body.simplified,'Упрощённая декларация',2000),body.vatRegistered?1:0,bp(body.vat,'НДС'),number(body.vatThresholdMrp,'Порог НДС в МРП',0,1000000),number(body.mrp,'МРП',1,100000),number(body.usdRate,'Курс доллара',1,100000),bp(body.opv,'ОПВ'),bp(body.vosmsEmployee,'ВОСМС работника'),bp(body.ipn,'ИПН'),number(body.ipnDeductionMrp,'Вычет по ИПН',0,1000),bp(body.sn,'Социальный налог'),bp(body.so,'Социальные отчисления'),bp(body.opvr,'ОПВР'),bp(body.vosmsEmployer,'ООСМС работодателя'),bp(body.acquiring,'Эквайринг'),number(body.shareCapital,'Уставный капитал',0,1e10)];
  const at=epoch(),r=await service.db.batch([
-  q(service.db,"UPDATE company_finance_settings SET start_month=?,tax_regime=?,cit_bp=?,simplified_bp=?,vat_registered=?,vat_bp=?,vat_threshold_mrp=?,mrp=?,usd_rate=?,opv_bp=?,vosms_employee_bp=?,ipn_bp=?,ipn_deduction_mrp=?,sn_bp=?,so_bp=?,opvr_bp=?,vosms_employer_bp=?,acquiring_bp=?,share_capital=?,version=version+1,updated_at=? WHERE id='global' AND version=?",...values,at,version),
+  q(service.db,"UPDATE company_finance_settings SET entity=?,company_name=?,mzp=?,owner_base=?,vosms_self_bp=?,start_month=?,tax_regime=?,cit_bp=?,simplified_bp=?,vat_registered=?,vat_bp=?,vat_threshold_mrp=?,mrp=?,usd_rate=?,opv_bp=?,vosms_employee_bp=?,ipn_bp=?,ipn_deduction_mrp=?,sn_bp=?,so_bp=?,opvr_bp=?,vosms_employer_bp=?,acquiring_bp=?,share_capital=?,version=version+1,updated_at=? WHERE id='global' AND version=?",...values,at,version),
   q(service.db,'INSERT INTO audit_events SELECT ?,?,?,?,? WHERE changes()>0',uuid(),service.userId,'company-finance',JSON.stringify({action:'finance.settings_changed',previousVersion:version}),at),
  ]);
  if(!r[0].meta.changes)throw new DomainError('Настройки уже изменились. Обновите страницу.',409);
@@ -233,12 +250,12 @@ export async function deleteCashEntry(service:RentalService,body:Row){
 // Accounting: what the company owes the budget, by the period a declaration covers. Always the
 // fact basis: a tax is owed on money that was really charged. Due dates follow the 2026 Tax Code
 // for a small ТОО; the accountant marks a payment, which then appears in ДДС in its month.
-const groupTaxes:Record<string,string[]>={payroll:[...payrollTaxes],cit:['cit'],simplified:['simplified'],vat:['vat']};
-const groupNames:Record<string,string>={payroll:'Налоги и взносы с зарплаты',cit:'КПН с прибыли',simplified:'Налог по упрощённой декларации',vat:'НДС'};
+const groupTaxes:Record<string,string[]>={self:[...selfTaxes],payroll:[...payrollTaxes],cit:['cit'],simplified:['simplified'],vat:['vat']};
+const groupNames:Record<string,string>={self:'Взносы ИП за себя',payroll:'Налоги и взносы с зарплаты',cit:'КПН с прибыли',simplified:'Налог по упрощённой декларации',vat:'НДС'};
 const dueDay=(y:number,m:number,d:number)=>`${y}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
 function periodOf(group:string,month:string){
  const [y,m]=month.split('-').map(Number);
- if(group==='payroll'){const n=shiftMonth(month,1).split('-').map(Number);return {period:month,due:dueDay(n[0],n[1],25),form:'Форма 200.00 раз в квартал'};}
+ if(group==='payroll'||group==='self'){const n=shiftMonth(month,1).split('-').map(Number);return {period:month,due:dueDay(n[0],n[1],25),form:group==='self'?'Входит в декларацию 910.00':'Форма 200.00 раз в квартал'};}
  if(group==='cit')return {period:String(y),due:dueDay(y+1,4,10),form:'Декларация 100.00 до 31 марта'};
  if(group==='simplified')return m<=6?{period:`${y}-H1`,due:dueDay(y,8,25),form:'Декларация 910.00 до 15 августа'}:{period:`${y}-H2`,due:dueDay(y+1,2,25),form:'Декларация 910.00 до 15 февраля'};
  const quarter=Math.ceil(m/3),after=shiftMonth(`${y}-${String(quarter*3).padStart(2,'0')}`,2).split('-').map(Number);
@@ -263,7 +280,7 @@ export async function accountingState(db:D1Database){
  return {now,today,settings:s,obligations,payments:paidRows.map(r=>({...r,name:taxNames[r.tax]})),
   totals:{due:open.reduce((a,o)=>a+Math.max(0,o.left),0),overdue:open.filter(o=>o.status==='overdue').reduce((a,o)=>a+o.left,0),next:open.find(o=>o.status==='open')||null,paidYear:Number(paidYear?.n||0)},
   profit:{year,profit:yearProfit,cit:months.filter(m=>m.month.startsWith(year)).reduce((a,m)=>a+Number(m.taxes.cit||0)+Number(m.taxes.simplified||0),0)},
-  vat:{threshold:s.vat_threshold_mrp*s.mrp,yearRevenue,share:s.vat_threshold_mrp?Math.min(1,yearRevenue/(s.vat_threshold_mrp*s.mrp)):0,registered:!!s.vat_registered}};
+  vat:limitInfo(s,yearRevenue)};
 }
 // Paying an obligation records each tax in it: the whole remainder, or a part of a single tax.
 export async function payTaxes(service:RentalService,body:Row){

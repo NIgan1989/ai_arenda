@@ -23,7 +23,7 @@ export const accountDeletionColumns:Record<string,string>={
  "venues":"id,owner_id,title,created_at",
  "venue_halls":"property_id,venue_id,created_at",
  "property_views":"property_id,day,shown",
- "company_finance_settings":"id,start_month,tax_regime,cit_bp,simplified_bp,vat_registered,vat_bp,vat_threshold_mrp,mrp,usd_rate,opv_bp,vosms_employee_bp,ipn_bp,ipn_deduction_mrp,sn_bp,so_bp,opvr_bp,vosms_employer_bp,acquiring_bp,share_capital,version,updated_at",
+ "company_finance_settings":"id,entity,company_name,start_month,tax_regime,cit_bp,simplified_bp,vat_registered,vat_bp,vat_threshold_mrp,mrp,mzp,owner_base,vosms_self_bp,usd_rate,opv_bp,vosms_employee_bp,ipn_bp,ipn_deduction_mrp,sn_bp,so_bp,opvr_bp,vosms_employer_bp,acquiring_bp,share_capital,version,updated_at",
  "company_costs":"id,kind,name,amount,currency,period,employment,start_month,end_month,active,note,sort,created_at,updated_at",
  "company_cash_entries":"id,kind,amount,month,note,created_at",
  "company_tax_payments":"id,tax,period,amount,month,note,created_at",
