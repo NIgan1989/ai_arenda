@@ -75,6 +75,7 @@
 -- migration 0071_company_finance.sql sha256:f299d7a0157f1e9c76cdd9c9a983768518588ae0d7fe8c9035f047216bfbc48a
 -- migration 0072_direct_payments.sql sha256:cb04757fb811ef441743f2f320fc0b299d026c29ec56228158ebe79a3d1955f5
 -- migration 0073_direct_cleaning_pay.sql sha256:84422dcaed857f0573a0473aef5a83fb31365f793c18863165f08eb060ffdc28
+-- migration 0074_payment_receipts.sql sha256:6f43b5b3d88b23cb3f7ed436bfb2fb642f05edc411cdb4435af017b320091bbf
 
 -- table access_receipts
 CREATE TABLE access_receipts (id TEXT PRIMARY KEY,property_id TEXT NOT NULL,entity_kind TEXT NOT NULL,entity_id TEXT NOT NULL,user_id TEXT NOT NULL,created_at INTEGER NOT NULL,expires_at INTEGER NOT NULL);
@@ -880,6 +881,21 @@ CREATE TABLE payment_intents (
  checkout_url TEXT NOT NULL DEFAULT '',provider_reference TEXT NOT NULL DEFAULT '',request_key TEXT NOT NULL,created_at INTEGER NOT NULL, test INTEGER NOT NULL DEFAULT 0 CHECK(test IN (0,1)),UNIQUE(user_id,request_key)
 );
 
+-- table payment_receipts
+CREATE TABLE payment_receipts (
+ id TEXT PRIMARY KEY,
+ booking_id TEXT REFERENCES bookings(id),
+ job_id TEXT REFERENCES cleaning_jobs(id),
+ user_id TEXT NOT NULL REFERENCES profiles(id),
+ data TEXT NOT NULL DEFAULT '',
+ object_key TEXT NOT NULL DEFAULT '',
+ width INTEGER NOT NULL,
+ height INTEGER NOT NULL,
+ bytes INTEGER NOT NULL,
+ created_at INTEGER NOT NULL,
+ CHECK((booking_id IS NULL)<>(job_id IS NULL))
+);
+
 -- table payout_details
 CREATE TABLE payout_details (
  user_id TEXT PRIMARY KEY REFERENCES profiles(id),
@@ -1382,6 +1398,12 @@ CREATE INDEX owner_balance_entries_owner ON owner_balance_entries(owner_id,creat
 -- index participant_review_user
 CREATE INDEX participant_review_user ON participant_reviews(user_id,role,status);
 
+-- index payment_receipts_booking
+CREATE INDEX payment_receipts_booking ON payment_receipts(booking_id);
+
+-- index payment_receipts_job
+CREATE INDEX payment_receipts_job ON payment_receipts(job_id);
+
 -- index platform_commissions_managed
 CREATE INDEX platform_commissions_managed ON platform_commissions(managed,created_at);
 
@@ -1805,6 +1827,9 @@ CREATE TRIGGER account_erased_payment_intents_insert BEFORE INSERT ON payment_in
 
 -- trigger account_erased_payment_intents_update
 CREATE TRIGGER account_erased_payment_intents_update BEFORE UPDATE ON payment_intents WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.user_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END;
+
+-- trigger account_erased_payment_receipts_insert
+CREATE TRIGGER account_erased_payment_receipts_insert BEFORE INSERT ON payment_receipts WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.user_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END;
 
 -- trigger account_erased_payout_details_insert
 CREATE TRIGGER account_erased_payout_details_insert BEFORE INSERT ON payout_details WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.user_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END;
