@@ -592,6 +592,8 @@ export class RentalService {
     const key=required(body.requestKey,'Ключ запроса',100), existing=await this.one('SELECT id FROM bookings WHERE guest_id=? AND request_key=?',this.userId,key);
     if(existing) return {id:existing.id,message:'Эта заявка уже сохранена.'};
     const checked=await this.bookingQuote(body,{ownerReady:options.ownerReady===true}), {start,end,guests,amount}=checked;
+    // An owner who has not paid the service for over a week takes no new bookings (lib/service-dues.ts).
+    if(await this.one('SELECT 1 x FROM service_billing sb JOIN properties p ON p.owner_id=sb.user_id WHERE p.id=? AND sb.paused_at IS NOT NULL',String(body.propertyId||'')))throw new DomainError('Это жильё временно не принимает новые брони. Выберите другое.',409);
     if(body.expectedAmount!==undefined && body.expectedAmount!==amount) throw new DomainError('Стоимость изменилась. Проверьте новый расчёт перед отправкой заявки.',409);
     if(body.expectedPolicyVersion!==undefined&&body.expectedPolicyVersion!==checked.policy.version)throw new DomainError('Условия проживания изменились. Проверьте новый расчёт.',409);
     if(checked.policy.version>0&&body.acceptTerms!==true)throw new DomainError('Подтвердите согласие с показанными правилами проживания.');

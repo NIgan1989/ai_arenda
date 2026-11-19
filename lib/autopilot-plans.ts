@@ -2,7 +2,7 @@ import {DomainError,number} from './domain';
 import type {RentalService} from './service';
 import {epoch,uuid,q,one,rows,type Row} from './operation-core';
 import {underAutopilot,setGuestMode} from './autopilot';
-import {ownerAvailable} from './regular-cleaner';
+import {dueOf,sweepDues,servicePaused} from './service-dues';
 import {declineAssignment} from './dispatch';
 
 // «Автопилот» as a paid plan. The owner pays a monthly price for each flat under the AI, the cleaner pays
@@ -32,14 +32,12 @@ export async function planSettings(db:D1Database):Promise<PlanSettings>{
 }
 export const planOf=(db:D1Database,user:string,role:PlanRole)=>one(db,'SELECT * FROM autopilot_plans WHERE user_id=? AND role=?',user,role);
 const managedCount=async(db:D1Database,owner:string,at:number)=>Number((await one(db,`SELECT COUNT(*) n FROM properties p WHERE p.owner_id=? AND p.archived_at IS NULL AND ${underAutopilot('p.id')}`,owner,at))?.n||0);
-// What the cleaner still has to receive through the service, less what is already withheld.
-const cleanerPending=async(db:D1Database,cleaner:string)=>Number((await one(db,"SELECT COALESCE((SELECT SUM(amount) FROM cleaning_holds WHERE cleaner_id=? AND status IN ('held','due')),0)-COALESCE((SELECT SUM(amount-withheld) FROM autopilot_charges WHERE user_id=? AND role='cleaner' AND mode='charged' AND settled_at IS NULL),0) n",cleaner,cleaner))?.n||0);
 export const priceFor=(s:PlanSettings,role:PlanRole,units:number)=>role==='owner'?s.ownerPrice*units:s.cleanerPrice;
 
-// Takes one month. Returns false when the money is not there (nothing is written then).
+// Accrues one month. The money itself is taken from the linked card with the rest of the service fees
+// (lib/service-dues.ts), so a month is never refused here: an unpaid week pauses the plan there.
 async function chargeMonth(db:D1Database,plan:Row,s:PlanSettings,at:number,from:number,least=0):Promise<{ok:boolean;amount:number;units:number}>{
  const role=plan.role as PlanRole,units=role==='owner'?Math.max(least,await managedCount(db,plan.user_id,at)):1,amount=priceFor(s,role,units);
- if(s.charge&&amount>0){const available=role==='owner'?await ownerAvailable(db,plan.user_id):await cleanerPending(db,plan.user_id);if(available<amount)return {ok:false,amount,units};}
  await q(db,'INSERT OR IGNORE INTO autopilot_charges(id,user_id,role,period_start,period_end,units,amount,mode,settled_at,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)',uuid(),plan.user_id,role,from,from+MONTH,units,amount,s.charge&&amount>0?'charged':'shadow',role==='owner'||!s.charge?at:null,at).run();
  return {ok:true,amount,units};
 }
@@ -70,15 +68,16 @@ export async function ensurePlan(db:D1Database,user:string,role:PlanRole,at=epoc
   if(!plan.auto_renew)await q(db,'UPDATE autopilot_plans SET auto_renew=1,version=version+1,updated_at=? WHERE user_id=? AND role=?',at,user,role).run();
   return {status:plan.status,started:false};
  }
+ // Paused for an unpaid week: neither a paid month nor a first free trial starts until the debt is paid.
+ if(await servicePaused(db,user))throw new DomainError('Сначала оплатите услуги сервиса: Меню, «Настройки», «Оплата услуг». После оплаты автопилот включится.',402);
  if(!plan&&s.trialDays>0){
   await db.batch([
    q(db,"INSERT OR IGNORE INTO autopilot_plans(user_id,role,status,started_at,period_end,updated_at) VALUES (?,?,'trial',?,?,?)",user,role,at,at+s.trialDays*DAY,at),
-   notice(db,user,`Автопилот включён. ${s.trialDays} дней бесплатно, до ${dateText(at+s.trialDays*DAY)}. ${s.charge?'Потом '+(role==='owner'?money(s.ownerPrice)+' в месяц за объект с баланса':money(s.cleanerPrice)+' в месяц из выплат за уборки')+'. За 3 дня до списания напомним.':'Пока плата не взимается.'}`,role+':autopilot-trial:'+user,at)
+   notice(db,user,`Автопилот включён. ${s.trialDays} дней бесплатно, до ${dateText(at+s.trialDays*DAY)}. ${s.charge?'Потом '+(role==='owner'?money(s.ownerPrice)+' в месяц за объект':money(s.cleanerPrice)+' в месяц')+', списание с привязанной карты. За 3 дня напомним.':'Пока плата не взимается.'}`,role+':autopilot-trial:'+user,at)
   ]);
   return {status:'trial',started:true};
  }
- const paid=await chargeMonth(db,plan||{user_id:user,role},s,at,at,flats);
- if(!paid.ok)throw new DomainError(role==='owner'?`На балансе не хватает ${money(paid.amount)} за месяц автопилота. Пополните баланс и включите снова.`:`Автопилот оплачивается из выплат за уборки: нужно ${money(paid.amount)} в ожидающих выплатах. Возьмите уборку и включите снова.`,402);
+ await chargeMonth(db,plan||{user_id:user,role},s,at,at,flats);
  await q(db,"INSERT INTO autopilot_plans(user_id,role,status,started_at,period_end,updated_at) VALUES (?,?,'active',?,?,?) ON CONFLICT(user_id,role) DO UPDATE SET status='active',period_end=excluded.period_end,grace_until=NULL,auto_renew=1,version=autopilot_plans.version+1,updated_at=excluded.updated_at",user,role,at,at+MONTH,at).run();
  return {status:'active',started:true};
 }
@@ -175,7 +174,7 @@ export async function planState(service:RentalService,role:PlanRole){
   const stats=await one(db,`SELECT (SELECT COUNT(*) FROM audit_events a JOIN properties p ON p.id=a.entity_id WHERE p.owner_id=? AND a.actor_id='system:autopilot' AND a.created_at>?) answered,
    (SELECT COUNT(*) FROM bookings b JOIN properties p ON p.id=b.property_id WHERE p.owner_id=? AND b.status IN ('confirmed','completed') AND b.created_at>? AND ${underAutopilot('p.id')}) bookings,
    (SELECT COUNT(*) FROM cleaning_jobs j WHERE j.owner_id=? AND j.status='completed' AND j.completed_at>? AND ${underAutopilot('j.property_id')}) cleanings`,service.userId,week,service.userId,week,at,service.userId,week,at);
-  return {...base,flats:flats.map(f=>({id:f.id,title:f.title,ownStaff:!!f.own_staff,cleaningFee:f.cleaning_fee,ready:!!f.has_policy,managed:!!f.managed})),units,nextAmount:priceFor(s,'owner',Math.max(units,1)),balance:await ownerAvailable(db,service.userId),week:{answered:Number(stats?.answered||0),bookings:Number(stats?.bookings||0),cleanings:Number(stats?.cleanings||0)}};
+  return {...base,flats:flats.map(f=>({id:f.id,title:f.title,ownStaff:!!f.own_staff,cleaningFee:f.cleaning_fee,ready:!!f.has_policy,managed:!!f.managed})),units,nextAmount:priceFor(s,'owner',Math.max(units,1)),due:await dueOf(db,service.userId),week:{answered:Number(stats?.answered||0),bookings:Number(stats?.bookings||0),cleanings:Number(stats?.cleanings||0)}};
  }
  const rules=await one(db,'SELECT * FROM cleaner_autopilot WHERE user_id=?',service.userId);
  let districts:string[]=[];try{districts=JSON.parse(rules?.districts||'[]');}catch{}
@@ -188,27 +187,27 @@ export async function planState(service:RentalService,role:PlanRole){
 
 // The daily round: renewals, grace, pauses, reminders, the cleaner's day plan at 8:00 and the owner's Monday report.
 export async function sweepPlans(db:D1Database,at=epoch()){
- const s=await planSettings(db),result={renewed:0,grace:0,paused:0,reminded:0,dayPlans:0,reports:0};
+ const s=await planSettings(db),result:Row={renewed:0,grace:0,paused:0,reminded:0,dayPlans:0,reports:0};
  const due=await rows(db,`SELECT * FROM autopilot_plans WHERE (status IN ('trial','active') AND period_end<=?) OR status='grace' ORDER BY period_end LIMIT 100`,at);
  for(const plan of due){
   if(plan.status!=='grace'&&!plan.auto_renew){if(await pause(db,plan,at,'Автопилот выключен: оплаченный месяц закончился. Включить снова можно '+(plan.role==='owner'?'в настройках жилья.':'в меню.')))result.paused++;continue;}
   const from=plan.status==='grace'?at:Math.max(plan.period_end,at-DAY),paid=await chargeMonth(db,plan,s,at,from);
   if(paid.ok){
    const r=await q(db,"UPDATE autopilot_plans SET status='active',period_end=?,grace_until=NULL,version=version+1,updated_at=? WHERE user_id=? AND role=? AND version=?",from+MONTH,at,plan.user_id,plan.role,plan.version).run();
-   if(r.meta.changes){result.renewed++;if(s.charge&&paid.amount>0)await notice(db,plan.user_id,`Автопилот продлён до ${dateText(from+MONTH)}: ${money(paid.amount)} ${plan.role==='owner'?'списано с баланса':'будет удержано из ближайшей выплаты'}.`,plan.role+':autopilot-paid:'+plan.user_id+':'+from,at).run();}
+   if(r.meta.changes){result.renewed++;if(s.charge&&paid.amount>0)await notice(db,plan.user_id,`Автопилот продлён до ${dateText(from+MONTH)}: ${money(paid.amount)} спишется с привязанной карты вместе с остальными услугами.`,plan.role+':autopilot-paid:'+plan.user_id+':'+from,at).run();}
    continue;
   }
   if(plan.status!=='grace'){
    const until=at+s.graceDays*DAY;
    const r=await q(db,"UPDATE autopilot_plans SET status='grace',grace_until=?,version=version+1,updated_at=? WHERE user_id=? AND role=? AND version=?",until,at,plan.user_id,plan.role,plan.version).run();
-   if(r.meta.changes){result.grace++;await notice(db,plan.user_id,plan.role==='owner'?`Не хватает ${money(paid.amount)} на балансе для автопилота. Пополните до ${dateText(until)}, иначе объекты перейдут в режим «Я сам».`:`Для автопилота нужно ${money(paid.amount)} в ожидающих выплатах. До ${dateText(until)} он работает, потом встанет на паузу.`,plan.role+':autopilot-grace:'+plan.user_id+':'+plan.period_end,at).run();}
-  }else if(plan.grace_until<=at){if(await pause(db,plan,at,plan.role==='owner'?'Автопилот на паузе: оплата не прошла. Объекты в режиме «Я сам», принятые брони и уборки в силе. Пополните баланс и включите в настройках жилья.':'Автопилот на паузе: оплата не прошла. Принятые уборки в силе. Включите снова в профиле.'))result.paused++;}
+   if(r.meta.changes){result.grace++;await notice(db,plan.user_id,`Автопилот не оплачен: ${money(paid.amount)}. До ${dateText(until)} он работает, потом встанет на паузу.`,plan.role+':autopilot-grace:'+plan.user_id+':'+plan.period_end,at).run();}
+  }else if(plan.grace_until<=at){if(await pause(db,plan,at,plan.role==='owner'?'Автопилот на паузе: оплата не прошла. Объекты в режиме «Я сам», принятые брони и уборки в силе. Оплатите услуги и включите в настройках жилья.':'Автопилот на паузе: оплата не прошла. Принятые уборки в силе. Включите снова в профиле.'))result.paused++;}
  }
  if(s.charge){
   const soon=await rows(db,"SELECT * FROM autopilot_plans WHERE status IN ('trial','active') AND auto_renew=1 AND period_end>? AND period_end<=? LIMIT 200",at,at+3*DAY);
   for(const plan of soon){
    const units=plan.role==='owner'?await managedCount(db,plan.user_id,at):1,amount=priceFor(s,plan.role,units);if(!amount)continue;
-   const r=await notice(db,plan.user_id,`${dateText(plan.period_end)} автопилот продлится на месяц: ${money(amount)} ${plan.role==='owner'?'с баланса':'из выплат за уборки'}.`,plan.role+':autopilot-remind:'+plan.user_id+':'+plan.period_end,at).run();
+   const r=await notice(db,plan.user_id,`${dateText(plan.period_end)} автопилот продлится на месяц: ${money(amount)} с привязанной карты.`,plan.role+':autopilot-remind:'+plan.user_id+':'+plan.period_end,at).run();
    if(r.meta.changes)result.reminded++;
   }
  }
@@ -230,6 +229,8 @@ export async function sweepPlans(db:D1Database,at=epoch()){
    if(r.meta.changes)result.reports++;
   }
  }
+ // The weekly card charge for all service fees; a debt unpaid for seven days pauses the debtor's plans.
+ result.dues=await sweepDues(db,async(d,user,t)=>{for(const plan of await rows(d,"SELECT * FROM autopilot_plans WHERE user_id=? AND status IN ('trial','active','grace')",user))await pause(d,plan,t,plan.role==='owner'?'Автопилот на паузе: услуги сервиса не оплачены. Объекты в режиме «Я сам», принятые брони и уборки в силе.':'Автопилот на паузе: услуги сервиса не оплачены. Принятые уборки в силе.');},at);
  return result;
 }
 
@@ -255,7 +256,7 @@ export async function savePlanSettings(service:RentalService,body:Row){
  // People on a plan hear about a new price or the start of charging.
  if(charge&&(!before.charge||before.ownerPrice!==ownerPrice||before.cleanerPrice!==cleanerPrice)){
   const people=await rows(service.db,`SELECT user_id,role FROM autopilot_plans WHERE status IN ${LIVE} LIMIT 2000`);
-  for(const p of people)await notice(service.db,p.user_id,`Условия автопилота: ${p.role==='owner'?money(ownerPrice)+' в месяц за объект с баланса':money(cleanerPrice)+' в месяц из выплат за уборки'}. Действует со следующего продления. Отключить можно в профиле.`,p.role+':autopilot-terms:'+p.user_id+':'+at,at).run();
+  for(const p of people)await notice(service.db,p.user_id,`Условия автопилота: ${p.role==='owner'?money(ownerPrice)+' в месяц за объект':money(cleanerPrice)+' в месяц'}, списание с привязанной карты. Действует со следующего продления. Отключить можно в профиле.`,p.role+':autopilot-terms:'+p.user_id+':'+at,at).run();
  }
  return {message:charge?'Тарифы сохранены, плата включена.':'Тарифы сохранены. Плата выключена, сервис только считает.',state:await plansAdminState(service.db)};
 }

@@ -40,7 +40,7 @@ export function NativeAutopilotPlan({role}:{role:'owner'|'cleaner'}){
  async function run(path:string,body:Data={}){setBusy(true);setError('');setMessage('');try{const r=await request('/api/'+path,body);setMessage(r.message||'Сохранено.');const next=r.state||await request('/api/operations/autopilot/state');setState(next);if(next.live){setOpen(false);setStep(0);}setConfirmOff(false);}catch(e:any){setError(e.message);}finally{setBusy(false);}}
  if(!state)return <Group title="Тариф">{error?<Text accessibilityRole="alert" style={[s.error,{padding:16}]}>{error}</Text>:<View style={{padding:16}}><ThinkingLine style={s.meta} text="Загружаю тариф…"/></View>}</Group>;
  const st=state.settings||{},plan=state.plan,live=!!state.live,flats:Data[]=state.flats||[];
- const statusLine=!plan?'':plan.status==='trial'?`Пробный период до ${date(plan.periodEnd)}`+(st.charge?`, потом ${owner?money(state.nextAmount)+' в месяц с баланса':money(st.price)+' в месяц из выплат'}`:', плата пока не взимается'):plan.status==='grace'?`Не хватило денег. Работает до ${date(plan.graceUntil)}`:plan.status==='active'?(plan.autoRenew?`Оплачено до ${date(plan.periodEnd)}`:`Работает до ${date(plan.periodEnd)} и не продлится`):'';
+ const statusLine=!plan?'':plan.status==='trial'?`Пробный период до ${date(plan.periodEnd)}`+(st.charge?`, потом ${money(owner?state.nextAmount:st.price)} в месяц с привязанной карты`:', плата пока не взимается'):plan.status==='grace'?`Не оплачен. Работает до ${date(plan.graceUntil)}`:plan.status==='active'?(plan.autoRenew?`Оплачено до ${date(plan.periodEnd)}`:`Работает до ${date(plan.periodEnd)} и не продлится`):'';
  const offNote=plan?.status==='active'&&st.charge?'Доработает оплаченный месяц и не продлится.':owner?'Объекты перейдут в режим «Я сам». Принятые брони и уборки останутся в силе.':'Предложения уборок снова будут приходить вам на решение. Принятые уборки останутся.';
  const steps=STEPS[role],last=steps.length-1,num=(v:string)=>v.replace(/\D/g,'').slice(0,7);
  const begin=()=>{setOpen(true);setStep(0);setMessage('');};
@@ -108,7 +108,7 @@ export function NativeAutopilotPlan({role}:{role:'owner'|'cleaner'}){
     {owner&&<Text style={p.keep}>Вам остаются деньги и решения: правка объявления, рискованные брони, споры. ИИ спросит вас кнопкой.</Text>}
     {btn(st.trialDays>0&&!plan?`Попробовать ${st.trialDays} дней бесплатно`:'Подключить',begin)}
    </>}
-   <Text style={p.fine}>{st.charge?(owner?'Оплата с баланса в приложении раз в месяц.':'Оплата удерживается из выплат за уборки.')+' Отключить можно в любой день.':'Пока плата не взимается. Отключить можно в любой день.'}</Text>
+   <Text style={p.fine}>{st.charge?'Оплата раз в месяц с привязанной карты: Меню, «Настройки», «Оплата услуг».'+' Отключить можно в любой день.':'Пока плата не взимается. Отключить можно в любой день.'}</Text>
   </View>
  </>;
  const n=state.today?.length||0;

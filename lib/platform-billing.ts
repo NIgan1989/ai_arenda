@@ -127,7 +127,7 @@ export async function recordBalanceEntry(service:RentalService,body:Row){
  if(!amount||(kind!=='adjustment'&&amount<0))throw new DomainError(kind==='adjustment'?'Сумма корректировки не может быть нулевой.':'Сумма должна быть больше нуля.');
  const owner=await one(service.db,'SELECT o.id,o.name FROM profiles o WHERE o.id=? AND EXISTS(SELECT 1 FROM properties p WHERE p.owner_id=o.id AND p.demo_owner IS NULL)',ownerId);
  if(!owner)throw new DomainError('Владелец не найден.',404);
- const at=epoch(),words={topup:'Пополнение баланса',bonus:'Бонус от сервиса',adjustment:'Корректировка баланса'}[kind as 'topup'];
+ const at=epoch(),words={topup:'Оплата услуг сервиса',bonus:'Бонус от сервиса',adjustment:'Корректировка учёта'}[kind as 'topup'];
  const results=await service.db.batch([
   q(service.db,'INSERT OR IGNORE INTO owner_balance_entries(id,owner_id,kind,amount,note,actor_id,request_key,created_at) VALUES (?,?,?,?,?,?,?,?)',uuid(),ownerId,kind,amount,note,service.userId,key,at),
   q(service.db,'INSERT INTO audit_events SELECT ?,?,?,?,? WHERE changes()>0',uuid(),service.userId,'owner-balance:'+ownerId,JSON.stringify({action:'billing.balance_entry',kind,amount}),at),

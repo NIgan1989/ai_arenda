@@ -31,26 +31,27 @@ test('turning a flat to «ИИ» starts the free trial once, with a notice; the 
  }finally{f.db.close();}
 });
 
-test('while charging is off a renewal is only recorded; with charging on it takes the balance, else grace and then pause',async()=>{
- const f=await fixture();try{
+test('while charging is off a renewal is only recorded; with charging on the month is accrued and the card pays it, else seven days and a pause',async()=>{
+ const f=await fixture(),{dueOf,serviceBillingAction}=await load('service-dues');try{
   await auto(f);
-  // Trial ends: shadow month, nothing taken.
+  // Trial ends: shadow month, nothing owed.
   f.db.raw.prepare("UPDATE autopilot_plans SET period_end=?").run(now()-10);
   assert.equal((await sweepPlans(f.db)).renewed,1);
-  assert.equal(plan(f).status,'active');assert.deepEqual(charges(f).map(c=>[c.mode,c.amount,c.units]),[['shadow',4900,1]]);
-  // Charging on, balance enough: the month is taken from the free balance.
-  charging(f);topUp(f,6000);f.db.raw.prepare("UPDATE autopilot_plans SET period_end=?").run(now()-20);
-  await sweepPlans(f.db);assert.equal(charges(f).at(-1).mode,'charged');assert.equal(await ownerAvailable(f.db,'owner'),1100);
-  assert.ok(f.db.raw.prepare("SELECT 1 FROM notifications WHERE dedupe LIKE 'owner:autopilot-paid:%'").get());
-  // Not enough: grace, the flat stays with the AI.
-  f.db.raw.prepare("UPDATE autopilot_plans SET period_end=?").run(now()-30);
-  assert.equal((await sweepPlans(f.db)).grace,1);assert.equal(plan(f).status,'grace');assert.ok(managed(f));
-  // Grace over: pause, the flat goes back to «Я сам».
-  f.db.raw.prepare("UPDATE autopilot_plans SET grace_until=?").run(now()-1);
-  assert.equal((await sweepPlans(f.db)).paused,1);assert.equal(plan(f).status,'paused');assert.equal(managed(f),false);
-  // Turning it on again pays the month first: no money, refused and the flat stays manual.
-  await assert.rejects(auto(f),e=>e.status===402);assert.equal(managed(f),false);
-  topUp(f,5000);await auto(f);assert.equal(plan(f).status,'active');assert.equal(charges(f).at(-1).amount,4900);assert.ok(managed(f));
+  assert.equal(plan(f).status,'active');assert.deepEqual(charges(f).map(c=>[c.mode,c.amount,c.units]),[['shadow',4900,1]]);assert.equal(await dueOf(f.db,'owner'),0);
+  // Charging on: the month is accrued, never refused; there is no balance to top up.
+  charging(f);f.db.raw.prepare("UPDATE autopilot_plans SET period_end=?").run(now()-20);
+  const first=await sweepPlans(f.db);assert.equal(first.renewed,1);assert.equal(charges(f).at(-1).mode,'charged');assert.equal(await dueOf(f.db,'owner'),4900);
+  assert.match(f.db.raw.prepare("SELECT body FROM notifications WHERE dedupe LIKE 'owner:autopilot-paid:%'").get().body,/с привязанной карты/);
+  // No card on the charge day: the owner is asked once and has seven days; the flat stays with the AI.
+  assert.equal(first.dues.asked,1);assert.match(f.db.raw.prepare("SELECT body FROM notifications WHERE dedupe LIKE 'service:card-ask:%'").get().body,/К оплате за услуги сервиса 4\s900 ₸\. Привяжите карту/);
+  assert.equal((await sweepPlans(f.db,now()+3*DAY)).dues.paused,0);assert.ok(managed(f));
+  // Seven days passed: pause, the flat goes back to «Я сам» and takes no new bookings.
+  assert.equal((await sweepPlans(f.db,now()+7*DAY+60)).dues.paused,1);assert.equal(plan(f).status,'paused');assert.equal(managed(f),false);
+  await assert.rejects(auto(f),e=>e.status===402&&/Оплата услуг/.test(e.message));
+  await assert.rejects(f.other.saveProfile({name:'G2',roles:['guest'],city:'Павлодар',contact:'+77000000009',offerAccepted:true}).then(()=>f.other.createBooking({propertyId:f.property,start:new Date((now()+40*DAY)*1000).toISOString(),end:new Date((now()+40*DAY+7200)*1000).toISOString(),guests:1,billingMode:'hourly',requestKey:'paused',acceptTerms:true})),e=>e.status===409&&/временно не принимает/.test(e.message));
+  // A linked card pays the debt at once and lifts the pause; the plan is turned on again by the owner.
+  const linked=await serviceBillingAction(f.owner,{action:'link'});assert.match(linked.message,/Списано 4\s900 ₸/);assert.equal(linked.state.due,0);assert.equal(linked.state.paused,false);
+  await auto(f);assert.equal(plan(f).status,'active');assert.equal(charges(f).at(-1).amount,4900);assert.ok(managed(f));assert.equal(await dueOf(f.db,'owner'),4900);
  }finally{f.db.close();}
 });
 
