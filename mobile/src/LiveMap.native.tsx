@@ -18,7 +18,7 @@ const toGl=(zoom:number)=>zoom-1,fromGl=(zoom:number)=>zoom+1;
 const plusIcon=require('../assets/ui/plus.png'),minusIcon=require('../assets/ui/minus.png');
 const fallback:MapPoint=[76.95,52.287];
 
-export function LiveMap({center,pins,selected,focus='',lines=[],heat=[],sparks=[],onSelect,bottomInset=0,topInset=0,focusKey='',picking=false,scanning=false,onCenter,restore,onView,me=null,locating=false,onLocate,meFly=0,onLongPress}:MapProps){
+export function LiveMap({center,pins,selected,focus='',lines=[],heat=[],sparks=[],onSelect,onAct,visit=false,bottomInset=0,topInset=0,focusKey='',picking=false,scanning=false,onCenter,restore,onView,me=null,locating=false,onLocate,meFly=0,onLongPress}:MapProps){
  const camera=useRef<CameraRef>(null);
  const [size,setSize]=useState({w:0,h:0}),[still,setStill]=useState(false),[failed,setFailed]=useState(false);
  // The view as the map last reported it, in map-math zoom; pins are grouped by it.
@@ -57,6 +57,9 @@ export function LiveMap({center,pins,selected,focus='',lines=[],heat=[],sparks=[
  // A card of the carousel came into view: the map flies to its pin, at no less than a street's zoom.
  // The camera keeps the padding it flew with, so when what covers the map changes its height (the card of a deal is
  // measured, or grows), the pin in focus is brought back into the part that is seen.
+ // visit: the card of a deal is open over the map. The view of before is kept; when the card closes the map flies back to it.
+ const visited=useRef<{view:{center:MapPoint;zoom:number};moved:boolean}|null>(null);
+ useEffect(()=>{if(visit){visited.current={view:live.current.view,moved:moved.current};return;}const back=visited.current;visited.current=null;if(back&&size.w){flyTo(back.view);moved.current=back.moved;}},[visit]);
  useEffect(()=>{const pin=focus&&pins.find(p=>p.key===focus),point=pin&&validPoint(pin.point);if(!point||!size.w)return;moved.current=true;flyTo({center:point,zoom:Math.max(live.current.view.zoom,13)});},[focus,focus?bottomInset:0]);
  useEffect(()=>{const point=me&&validPoint(me.point);if(!meFly||!point||!size.w)return;moved.current=true;flyTo({center:point,zoom:Math.max(live.current.view.zoom,15)});},[meFly]);
  const zoomBy=(delta:number)=>{moved.current=true;flyTo({center:view.center,zoom:Math.max(MIN_ZOOM,Math.min(MAX_ZOOM,view.zoom+delta))});};
@@ -95,7 +98,7 @@ export function LiveMap({center,pins,selected,focus='',lines=[],heat=[],sparks=[
  const byKey=new Map(placed.map(p=>[p.pin.key,p]));
  // The stops of a cleaner's route never fold into other pins; stops that meet each other fold into the first of them with «+N»,
  // and a tap opens them as for any group (at the closest zoom each tap shows the next stop).
- const box=(selectedRank:(pin:MapPin)=>number)=>({pin,x,y}:{pin:MapPin;x:number;y:number})=>({key:pin.key,x,y,width:pinBoxWidth(pin.label,pin.order),height:32,rank:pin.key===selected||pin.key===focus?-1:selectedRank(pin)});
+ const box=(selectedRank:(pin:MapPin)=>number)=>({pin,x,y}:{pin:MapPin;x:number;y:number})=>({key:pin.key,x,y,width:pinBoxWidth(pin.label,pin.order),height:pin.act?110:32,rank:pin.key===selected||pin.key===focus?-1:pin.act?-.5:selectedRank(pin)});
  const shown=[false,true].flatMap(stops=>groupPins(placed.filter(p=>!!p.pin.order===stops).map(box(pin=>stops?pin.order!:toneOrder[pin.tone||'home']*1e9+(pin.best?0:Math.max(0,Math.min(pin.rank??0,1e9-1))))))).map(g=>({...byKey.get(g.key)!,members:g.members}));
  const openGroup=(keys:string[])=>{
   if(view.zoom>=MAX_ZOOM){onSelect?.(keys[(keys.indexOf(selected||'')+1)%keys.length]);return;}
@@ -128,7 +131,7 @@ export function LiveMap({center,pins,selected,focus='',lines=[],heat=[],sparks=[
    {shown.map(({pin,x,y,members})=>{const more=members.length-1,b=born.current.get(pin.key)||0;
     return <Marker key={pin.key} id={pin.key} lngLat={pin.point} anchor="center">
      <Pin pin={pin} more={more} active={pin.key===selected||pin.key===focus} still={still} picking={picking} loop={loop}
-      born={now-b<FRESH?b:0} delay={appearDelay(x,y,0,0)} onPress={onSelect?()=>more?openGroup(members):onSelect(pin.key):undefined}/>
+      born={now-b<FRESH?b:0} delay={appearDelay(x,y,0,0)} onPress={onSelect?()=>more?openGroup(members):onSelect(pin.key):undefined} onAct={onAct&&pin.act?()=>onAct(pin.act!):undefined}/>
     </Marker>;})}
   </GlMap>
   {scanning&&!still&&size.w>0&&<View pointerEvents="none" style={StyleSheet.absoluteFill}><Radar x={size.w/2} y={originY}/></View>}

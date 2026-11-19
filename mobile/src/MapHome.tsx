@@ -14,6 +14,8 @@ import {T} from './tokens';
 import {LiveMap,type HeatPoint,type MapLine,type MapPin} from './LiveMap';
 import {ownerPin,travellers,withAiResult} from './owner-map';
 import {cleanerPin,dayRoute,routeLines,routeSummary} from './cleaner-map';
+import {attention,dealChain,marginLabel,nextAttention,ownerDeal,ownerMargin,ownerPinAct,pinAct,threadChain} from './pin-deal';
+import {cleanerThreads,guestThreads,ownerThreads} from '../../lib/process-threads';
 import {latestMove} from '../../lib/ai-move-marks';
 import {TripHead,useTrip} from './Navigator';
 import {SwipeConfirm} from './SwipeConfirm';
@@ -257,11 +259,12 @@ function GuestPanel({setScanning,setQuiet,accountId,data,mapData,publish,selecte
  // «Маршрут» leads to the home on our own map, the same way the cleaner is led (Navigator.tsx).
  const mapSkew=mapData?.serverTime&&mapData?.receivedAt?Number(mapData.serverTime)-Number(mapData.receivedAt):0,nav=useTrip('guest',mapSkew);
  const stayNow=serverNow(mapData||data);
+ const tripThreads=guestThreads(data,stayNow,data.paymentMode);
  const stays:(MapPin&{id:string;start:number;canGo:boolean})[]=(mapData?.processes||[]).flatMap((p:Row)=>{
   const own=p.kind==='booking'?(data.bookings||[]).find((b:Row)=>b.id===p.id):null,point=pointOf(p),state=own?guestPin(own,stayNow,data.paymentMode):null;
-  return own&&point&&state?[{key:'booking:'+p.id,id:String(p.id),point,title:p.title,label:state.label,tone:state.tone,start:Number(own.start),canGo:p.location?.precision==='exact'&&!own.terms?.actual_checkin&&!own.terms?.actual_checkout&&own.start<stayNow+86400&&own.end>stayNow}]:[];
+  return own&&point&&state?[{key:'booking:'+p.id,id:String(p.id),point,title:p.title,label:state.label,tone:state.tone,act:pinAct('guest',tripThreads,data,stayNow,t=>t.id===p.id)||undefined,chain:(t=>t?threadChain(t):undefined)(tripThreads.find(t=>t.id===p.id)),start:Number(own.start),canGo:p.location?.precision==='exact'&&!own.terms?.actual_checkin&&!own.terms?.actual_checkout&&own.start<stayNow+86400&&own.end>stayNow}]:[];
  }).sort((a:{start:number},b:{start:number})=>a.start-b.start);
- const staysKey=stays.map(v=>v.key+v.label).join();
+ const staysKey=stays.map(v=>v.key+v.label+(v.act?.label||'')+(v.chain?.states.join('')||'')).join();
  const go=(stay:{id:string;title?:string;point:MapPoint})=>{setSelected('');expand(0);void nav.start({kind:'booking',id:stay.id,title:stay.title||'Жильё',target:stay.point});};
  // Each beam goes along the roads, like a route: the first few are asked from the server one by one, the rest stay straight.
  const [roads,setRoads]=useState<BeamRoads>({}),roadAsked=useRef(new Set<string>());
@@ -454,13 +457,16 @@ function GuestPanel({setScanning,setQuiet,accountId,data,mapData,publish,selecte
  </View>;
 }
 
-function OwnerPanel({accountId,data,mapData,publish,snap,showNow,expand,onHead,onAsk,onIntent,onChanged,onOpenProcess,onOpenPage,onEdit,selected,setSelected}:Common){
+function OwnerPanel({accountId,data,mapData,publish,snap,showNow,expand,onHead,onAsk,onIntent,onChanged,onOpenProcess,onOpenPage,onEdit,selected,setSelected,setFocus}:Common){
  const [asked,setAsked]=useState(''),[tab,setTab]=useState<HubTab>('today'),[quick,setQuick]=useState(false);
  const [inbox,setInbox]=useState<Row|null>(null),[error,setError]=useState(''),[working,setWorking]=useState(false),[skew,setSkew]=useState(0);
  const lock=useRef(false),seen=useRef(0),now=useNow(!!inbox?.offers?.length)+skew;
  // An answer just sent shows on the flat's pin for a few seconds: «Ответ отправлен» after «Готов», the price again after a refusal.
  const [answered,setAnswered]=useState<Record<string,number>>({});
  const [saved,setSaved]=useState('');
+ // «Требуют внимания»: the places whose pin carries a tag; one tap flies to the next of them, round and round.
+ const [waiting,setWaiting]=useState<string[]>([]),walked=useRef('');
+ const walk=()=>{const key=nextAttention(waiting,walked.current);walked.current=key;if(key){expand(0);setFocus('');setTimeout(()=>setFocus(key),0);}};
  useEffect(()=>{const keys=Object.keys(answered);if(!keys.length)return;const timer=setTimeout(()=>setAnswered({}),5000);return()=>clearTimeout(timer);},[answered]);
  const apply=(result:Row)=>{setSkew(result.serverTime-Date.now()/1000);setInbox(result);if(result.offers.length>seen.current)expand(1);seen.current=result.offers.length;};
  usePoll(async()=>{try{apply(await request('/api/operations/matching/inbox',{},undefined,undefined,'owner'));setError('');}catch(e){if(e instanceof ApiError)setError(e.message);}},3000,true);
@@ -470,14 +476,18 @@ function OwnerPanel({accountId,data,mapData,publish,snap,showNow,expand,onHead,o
   const asked=new Map(offers.map(o=>[o.property_id,Number(o.expires_at)-skew]));
   // Each object says its most urgent state; the AI's price advice puts the AI ring on it.
   const advice=new Map<string,{from:number;to:number}>((data.approvals||[]).filter((c:Row)=>c.kind==='price'&&c.price?.propertyId&&c.canDecide).map((c:Row)=>[c.price.propertyId,{from:Number(c.price.from),to:Number(c.price.to)}]));
-  const clock=serverNow(mapData||data);
-  const own=(mapData?.properties||[]).flatMap((p:Row):MapPin[]=>{const point=pointOf(p),sent=!!answered[p.id]&&!asked.has(p.id),aiMove=latestMove(mapData?.aiMarks,[{kind:'property',id:String(p.id)}],clock),state=withAiResult(ownerPin(p,processes,clock,advice.get(p.id)),aiMove?.move);
-   return point?[{key:'property:'+p.id,point,title:p.title,label:asked.has(p.id)?'Запрос':sent?'Ответ отправлен':state.label,rank:typeof p.price==='number'?p.price:0,tone:asked.has(p.id)?'pending':sent?'offer':state.tone,best:!asked.has(p.id)&&!sent&&state.best,until:asked.get(p.id),progress:asked.has(p.id)||sent?undefined:state.progress,ai:aiMove}]:[];});
+  const clock=serverNow(mapData||data),threads=ownerThreads(data,clock);
+  const own=(mapData?.properties||[]).flatMap((p:Row):MapPin[]=>{const point=pointOf(p),sent=!!answered[p.id]&&!asked.has(p.id),aiMove=latestMove(mapData?.aiMarks,[{kind:'property',id:String(p.id)}],clock),deal=ownerDeal(data,p.id,clock),calm=withAiResult(ownerPin(p,processes,clock,advice.get(p.id)),aiMove?.move);
+   // The deal of the place has come to its end: the calm pin says «Готово ✓» for a while instead of the price.
+   const spare=calm.tone==='alert'||calm.tone==='active'||calm.tone==='pending'?'':marginLabel(ownerMargin(data,p.id,clock));
+   const state=spare?{label:spare,tone:'job' as const}:deal?.finished&&calm.tone==='home'?{label:'Готово ✓',tone:'booked' as const}:calm,quiet=asked.has(p.id)||sent;
+   return point?[{key:'property:'+p.id,point,title:p.title,act:quiet?undefined:ownerPinAct(threads,data,p.id,clock)||undefined,chain:deal?dealChain(deal):undefined,label:asked.has(p.id)?'Запрос':sent?'Ответ отправлен':state.label,rank:typeof p.price==='number'?p.price:0,tone:asked.has(p.id)?'pending':sent?'offer':state.tone,best:!asked.has(p.id)&&!sent&&state.best,until:asked.get(p.id),progress:asked.has(p.id)||sent?undefined:state.progress,ai:aiMove}]:[];});
   const moving=travellers(mapData?.journeys||[]).map((t):MapPin=>({...t,title:t.label,tone:'active'}));
   // Demand: the heat of the city, and sparks over the busiest places while guests are asking owners right now.
   const cells:Row[]=mapData?.demand?.cells||[],searching=Number(mapData?.demand?.searching)||0;
+  setWaiting(attention(own));
   publish([...own,...moving],'owner:'+(mapData?.properties?.length||0),{heat:cells.map(c=>({point:[c.longitude,c.latitude] as MapPoint,weight:c.weight})),sparks:searching?cells.slice(0,Math.min(3,searching)).map(c=>[c.longitude,c.latitude] as MapPoint):[]});
- },[mapData,inbox,answered,data.approvals]);
+ },[mapData,inbox,answered,data.approvals,data.bookings,data.jobs,data.applications]);
  const searching=Number(mapData?.demand?.searching)||0;
  const clock=Date.now()/1000+skew,flats:Row[]=data.ownProperties||[],quickOn=(inbox?.preferences||[]).filter((p:Row)=>p.enabled).length;
  // A guest waiting for a quick answer is the first thing that waits for the owner; the answer is in the opened sheet.
@@ -491,6 +501,7 @@ function OwnerPanel({accountId,data,mapData,publish,snap,showNow,expand,onHead,o
  </View>;
  return <View style={h.block}>
   <HeadSlot onHeight={onHead}><MapSheetHead role="owner" counts={{requests:ownerWaiting(data,data.user?.id||'',clock)}} text={asked} onText={setAsked} onSend={text=>{setAsked('');onAsk(text);}} onChip={action=>{/* A guest waiting for a quick answer is in this sheet; other requests are on their page. */if(action==='requests'){if(offers.length)expand(1);else onOpenPage('bookings');}else if(action==='calendar')onOpenPage('calendar');else if(action==='properties')onOpenPage('properties');}} now={null} onNow={()=>{}}>
+   {waiting.length>0&&<Pressable accessibilityRole="button" accessibilityLabel={'Требуют внимания: '+waiting.length+'. Показать следующий объект на карте'} onPress={walk} style={({pressed})=>[h.attention,pressed&&h.dim]}><View style={h.attentionDot}/><Text numberOfLines={1} style={[h.eventTitle,h.grow]}>Требуют внимания · {waiting.length}</Text><Text style={h.attentionGo}>{waiting.length>1?'Следующий ›':'Показать ›'}</Text></Pressable>}
    {/* The feed: what waits for the owner on top, then a row for every booking and cleaning the autopilot leads. */}
    {(flats.length>0||needs.length>0)&&<AutopilotThreads role="owner" data={data} now={serverNow(data)} needs={needs} onOpen={(kind,id)=>onOpenProcess(kind,id)}/>}
    {/* What the owner still does by hand and the AI can take: one row, one tap. */}
@@ -547,8 +558,8 @@ function CleanerPanel({accountId,data,mapData,city,publish,snap,showNow,expand,o
  useEffect(()=>{
   // Each job says what to do now; the day's stops carry their number and are joined by the route line in order.
   const shown=(mapData?.processes||[]).filter((p:Row)=>p.kind==='job'&&(p.status!=='open'||nearby.some(j=>j.id===p.id)));
-  const at=serverNow(mapData||data),byId=new Map(jobs.map(j=>[j.id,j]));
-  const pins=shown.flatMap((p:Row):MapPin[]=>{const point=pointOf(p);if(!point)return [];const state=cleanerPin({...byId.get(p.id),...p},route.find(r=>r.id===p.id),at,applied(p.id));return [{key:'job:'+p.id,point,title:p.title,...state,ai:latestMove(mapData?.aiMarks,[{kind:'job',id:String(p.id)}],at)}];});
+  const at=serverNow(mapData||data),byId=new Map(jobs.map(j=>[j.id,j])),threads=cleanerThreads(data,at);
+  const pins=shown.flatMap((p:Row):MapPin[]=>{const point=pointOf(p);if(!point)return [];const state=cleanerPin({...byId.get(p.id),...p},route.find(r=>r.id===p.id),at,applied(p.id));const thread=threads.find(t=>t.id===p.id);return [{key:'job:'+p.id,point,title:p.title,...state,act:pinAct('cleaner',threads,data,at,t=>t.id===p.id)||undefined,chain:thread&&p.status!=='open'?threadChain(thread):undefined,ai:latestMove(mapData?.aiMarks,[{kind:'job',id:String(p.id)}],at)}];});
   const placed=new Map<string,MapPoint|null>(shown.map((p:Row)=>[p.id,pointOf(p)]));
   // On a trip the map shows only the way: the object, the cleaner's point and the road between them; it frames them at the start and after a new route.
   if(nav.trip){
@@ -558,7 +569,7 @@ function CleanerPanel({accountId,data,mapData,city,publish,snap,showNow,expand,o
    return;
   }
   publish(pins,'cleaner:'+(mapData?.processes?.length||0),{lines:routeLines(route.map(r=>placed.get(r.id)))});
- },[mapData,nearbyIds,data.applications,routeIds,nav.trip,nav.here,nav.route,nav.rerouted]);
+ },[mapData,nearbyIds,data.applications,data.jobs,routeIds,nav.trip,nav.here,nav.route,nav.rerouted]);
  // The step of a job taken right on the map: an answer to an open one, the start of the one the guest has left.
  async function act(id:string,action:'apply'|'start'){if(lock.current)return;lock.current=true;setWorking(id);setError('');try{await request('/api/jobs/'+id,{action},undefined,'map-'+action+':'+id,'cleaner');await onChanged();}catch(e){setError(message(e));}finally{lock.current=false;setWorking('');}}
  const apply=(id:string)=>act(id,'apply');
@@ -923,6 +934,8 @@ export function MapHome({ role, accountId, data, menu, chats, onChanged, onOpenP
         heat={heat}
         sparks={sparks}
         onSelect={setSelected}
+        onAct={act => onOpenProcess(act.kind, act.id)}
+        visit={spotted}
         bottomInset={spotted ? cover : Math.min(sheetHeight, Math.round(height * 0.5))}
         topInset={topInset}
         focusKey={focusKey}

@@ -16,7 +16,7 @@ import {checkinOpen,checkinOpensLabel} from '../lib/checkin-window';
 import {lateOpen,lateNote,lateLabel} from '../lib/late-arrival';
 // The stay as «Задерживаюсь на час» reads it (lib/late-arrival.ts).
 const lateStay=(b:Record<string,any>)=>({start:b.start,end:b.end,arrival_eta:b.terms?.arrival_eta,late_count:b.terms?.late_count});
-import { AppState,BackHandler,KeyboardAvoidingView,Linking,Platform,Pressable,ScrollView,Text,TextInput,View } from 'react-native';
+import { Animated,AppState,BackHandler,KeyboardAvoidingView,Linking,Platform,Pressable,ScrollView,Text,TextInput,View } from 'react-native';
 import { SafeAreaProvider,SafeAreaView } from 'react-native-safe-area-context';
 import {NativeChats,type NativeChatInitial} from './src/NativeChats';
 import {StayRequest,CleaningRequest,HomeCleaningOrder} from './src/StayRequest';
@@ -639,7 +639,7 @@ function Chat(){
     })}{payload.role==='owner'&&m.id!=='deal'&&<Button title="Создать уборку" secondary disabled={busy} onPress={()=>send('Создать уборку')}/>}</View>;
     if(m.block==='rate')return m.done?null:<JobRating busy={busy} onSubmit={(rating,note)=>perform('jobs/'+payload.id,{action:'rate',rating,note},m.id,'owner-jobs')}/>;
     if(m.block==='damage')return m.done?null:<DamageClaim jobId={payload.id} busy={busy} onSubmit={text=>perform('jobs/'+payload.id,{action:'damage',text},m.id,'owner-jobs')}/>;
-    if(m.block==='report')return <Report items={reportItems(data.jobs.find((j:Row)=>j.id===payload.id))} jobId={payload.id} photos={!!data.jobs.find((j:Row)=>j.id===payload.id)?.photos_required} busy={busy||!!m.done} onSubmit={(body:Row)=>perform('jobs/'+payload.id,{action:'submit',...body},m.id,'my-jobs')}/>;
+    if(m.block==='report')return <Report items={reportItems(data.jobs.find((j:Row)=>j.id===payload.id))} jobId={payload.id} job={data.jobs.find((j:Row)=>j.id===payload.id)} photos={!!data.jobs.find((j:Row)=>j.id===payload.id)?.photos_required} busy={busy||!!m.done} onSubmit={(body:Row)=>perform('jobs/'+payload.id,{action:'submit',...body},m.id,'my-jobs')}/>;
     if(m.block==='notifications')return <View>{data.notifications.slice(0,20).map((n:Row)=><View style={s.card} key={n.id}><Text style={s.text}>{n.body}</Text><Text style={s.meta}>{date(n.created_at)}</Text></View>)}</View>;
     return null;
   }
@@ -699,10 +699,32 @@ function Chat(){
 const REPORT_ITEMS=['Постельное бельё заменено','Санузел и кухня убраны','Мусор вынесен','Жильё проверено перед заездом'];
 function reportItems(job?:Row){const order=homeOrderOf(job?.description);return order?homeChecklist(order):REPORT_ITEMS;}
 // photos: the rules of the place ask for photos before and after (a home order always does), so the report cannot go without them.
-function Report({items=REPORT_ITEMS,jobId,photos=false,busy,onSubmit}:{items?:string[];jobId?:string;photos?:boolean;busy:boolean;onSubmit:(body:Row)=>void}){
+// The list is ticked right here, point by point; when the last one is ticked (and the photos are there), the swipe
+// «отправить отчёт» comes in its place. What the work pays and when it is due stay on the same screen.
+function Report({items=REPORT_ITEMS,jobId,job,photos=false,busy,onSubmit}:{items?:string[];jobId?:string;job?:Row;photos?:boolean;busy:boolean;onSubmit:(body:Row)=>void}){
   const [checks,setChecks]=useState(()=>items.map(()=>false)),[report,setReport]=useState(''),[before,setBefore]=useState(0),[after,setAfter]=useState(0),need=photos&&!!jobId&&(!before||!after);
-  return <View style={[s.card,{gap:8}]}>{photos&&!!jobId&&<><JobPhotos jobId={jobId} phase="before" role="cleaner" title="Фото до уборки" disabled={busy} onCount={setBefore}/><JobPhotos jobId={jobId} phase="after" role="cleaner" title="Фото после уборки" disabled={busy} onCount={setAfter}/></>}{items.map((label,i)=><Pressable key={label} accessibilityRole="checkbox" accessibilityState={{checked:checks[i],disabled:busy}} disabled={busy} onPress={()=>setChecks(prev=>prev.map((v,k)=>k===i?!v:v))} style={s.keyval}><Text style={s.text}>{checks[i]?'☑':'☐'}  {label}</Text></Pressable>)}<TextInput accessibilityLabel="Текст отчёта" style={s.field} placeholder="Что сделано, есть ли замечания?" placeholderTextColor={C.muted} multiline value={report} onChangeText={setReport} maxLength={1500} editable={!busy}/><SwipeConfirm label={'Проведите: отправить отчёт '+(photos?'заказчику':'владельцу')} disabled={busy||need||checks.some(v=>!v)||!report.trim()} onConfirm={()=>onSubmit({checklist:checks,report,...(items!==REPORT_ITEMS?{items}:{})})}/></View>;
+  const done=checks.filter(Boolean).length,left=items.length-done,ready=!left&&!need,whom=photos?'заказчику':'владельцу';
+  const rise=useRef(new Animated.Value(0)).current;
+  useEffect(()=>{if(ready)Animated.spring(rise,{toValue:1,friction:7,tension:90,useNativeDriver:true}).start();else rise.setValue(0);},[ready]);
+  const due=Number(job?.end)?new Date(Number(job!.end)*1000).toLocaleTimeString('ru-RU',{timeZone:'Asia/Almaty',hour:'2-digit',minute:'2-digit'}):'';
+  return <View style={[s.card,{gap:12}]}>
+    {!!job&&<View style={{flexDirection:'row',alignItems:'flex-end',justifyContent:'space-between',gap:12}}><View style={{flex:1,gap:2}}><Text numberOfLines={2} style={s.eventTitle}>{job.title||'Уборка'}</Text>{!!due&&<Text style={s.meta}>Сдать отчёт до {due}</Text>}</View>{Number(job.fee)>0&&<View style={{alignItems:'flex-end'}}><Text style={s.meta}>За уборку</Text><Text style={s.eventTitle}>{money(Number(job.fee))}</Text></View>}</View>}
+    <View accessibilityRole="progressbar" accessibilityLabel={'Чек-лист: '+done+' из '+items.length} accessibilityValue={{min:0,max:items.length,now:done}} style={{gap:8}}>
+      <View style={{flexDirection:'row',gap:4}}>{items.map((label,i)=><View key={label} style={{flex:1,height:4,borderRadius:2,backgroundColor:checks[i]?C.success:C.line}}/>)}</View>
+      <Text style={s.meta}>{left?(left===1?'Остался последний пункт':'Чек-лист: '+done+' из '+items.length):'Чек-лист выполнен'}</Text>
+    </View>
+    <View style={{gap:4}}>{items.map((label,i)=>{const last=left===1&&!checks[i];return <Pressable key={label} accessibilityRole="checkbox" accessibilityLabel={label} accessibilityState={{checked:checks[i],disabled:busy}} disabled={busy} onPress={()=>setChecks(prev=>prev.map((v,k)=>k===i?!v:v))} style={({pressed})=>[{minHeight:48,flexDirection:'row',alignItems:'center',gap:12,paddingHorizontal:12,paddingVertical:8,borderRadius:12,borderWidth:1,borderColor:last?C.accent:'transparent',backgroundColor:last?C.accentSoft:C.surfaceAlt},pressed&&{opacity:.7}]}>
+      <View style={{width:24,height:24,borderRadius:12,borderWidth:2,alignItems:'center',justifyContent:'center',borderColor:checks[i]?C.success:last?C.accent:C.lineStrong,backgroundColor:checks[i]?C.success:C.surface}}>{checks[i]&&<Text style={{color:C.surface,fontSize:14,fontWeight:'700',lineHeight:20}}>✓</Text>}</View>
+      <Text style={[s.text,{flex:1},checks[i]&&{color:C.muted}]}>{label}</Text>{last&&<Text style={[s.meta,{color:C.accent,fontWeight:'600'}]}>Отметить</Text>}
+    </Pressable>;})}</View>
+    {photos&&!!jobId&&<><JobPhotos jobId={jobId} phase="before" role="cleaner" title="Фото до уборки" disabled={busy} onCount={setBefore}/><JobPhotos jobId={jobId} phase="after" role="cleaner" title="Фото после уборки" disabled={busy} onCount={setAfter}/></>}
+    <TextInput accessibilityLabel="Замечания к отчёту" style={s.field} placeholder="Замечания, если есть" placeholderTextColor={C.muted} multiline value={report} onChangeText={setReport} maxLength={1500} editable={!busy}/>
+    {ready?<Animated.View style={{opacity:rise,transform:[{translateY:rise.interpolate({inputRange:[0,1],outputRange:[12,0]})}]}}><SwipeConfirm label={'Проведите: отправить отчёт '+whom} disabled={busy} onConfirm={()=>onSubmit({checklist:checks,report:report.trim()||REPORT_DONE,...(items!==REPORT_ITEMS?{items}:{})})}/></Animated.View>
+      :<Text accessibilityLiveRegion="polite" style={s.meta}>{left?'Отметьте '+(left===1?'последний пункт':'все пункты')+', и появится «Отправить отчёт '+whom+'».':'Добавьте фото до и после уборки, и появится «Отправить отчёт '+whom+'».'}</Text>}
+  </View>;
 }
+// What the report says when the performer adds no remark of their own.
+const REPORT_DONE='Всё сделано по чек-листу, замечаний нет.';
 // Every tap is noted, so a request that follows it lights the loading line (background refreshes do not).
 // Bookings and cleanings from now to later, then the past; a group gets its title where it starts.
 function byTime(ids:string[],items:Row[]):{id:string;title:string}[]{
