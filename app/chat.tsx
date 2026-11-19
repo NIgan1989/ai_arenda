@@ -55,7 +55,7 @@ import './warm-theme.css';
 import '../components/administrator.css';
 import '../components/operations.css';
 import {checkinOpen,checkinOpensLabel} from '../lib/checkin-window';
-import {guestSteps,type GuestStepId} from '../lib/guest-trips';
+import {guestSteps,type GuestStepId,payDue} from '../lib/guest-trips';
 import {ownerSteps,type OwnerStepId} from '../lib/owner-steps';
 import {cleanerStep,ownerJobStep,type JobStepId} from '../lib/job-steps';
 import {CheckinGuide} from '../components/checkin-guide';
@@ -326,7 +326,8 @@ export default function Chat({workspaceRole,section,accountId,sheet=false}:{work
   // What the guest does next with a booking. The card of the booking and the map start the same step.
   function runGuestStep(b:Row,id:GuestStepId){
     const step=(action:string,text:string)=>say(text,'booking-action',{id:b.id,action,version:b.terms?.version});
-    if(id==='pay')say('Оплата брони «'+b.title+'».','pay',{id:b.id,kind:'payment',amount:b.amount-(b.terms?.paid_amount||0)});
+    // Direct settlement: the guest transfers to the owner's Kaspi and says «Я оплатил»; the owner confirms.
+    if(id==='pay'){const d=payDue(b),to=b.owner_pay;step('report_paid','Переведите владельцу '+money(d.sum)+(to?' на Kaspi '+to.phone+' ('+to.recipient+')':'. Куда переводить, спросите у владельца в чате брони')+'. Оплата идёт владельцу напрямую, сервис её не принимает. Подтвердите, что перевод отправлен.');}
     else if(id==='deposit')say('Депозит по брони «'+b.title+'».','pay',{id:b.id,kind:'deposit',amount:b.terms.deposit});
     else if(id==='late')step('report_late','Предупредить владельца, что вы приедете на час позже? Бронь сохранится, ИИ-администратор не будет снимать её за опоздание.');
     else if(id==='checkin')step('report_checkin','Подтвердите, что вы на месте и заселились. Заселение подтвердится после проверки оплаты и депозита.');

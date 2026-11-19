@@ -15,7 +15,6 @@ import {offerCalendarWindows} from './calendar-windows';
 import {offerWeeklyForecast} from './load-forecast';
 import {offerListingTip} from './listing-quality';
 import {offerCleaningPriceTip} from './cleaning-price';
-import {settleTestMoney} from './finance';
 
 type Row=Record<string,any>;
 // How long the owner has to agree the cleaner the AI proposes before it assigns her itself.
@@ -66,10 +65,10 @@ async function automaticActions(service:RentalService){
    for(const b of arrived){
     const title=b.title||'жильё';
     if(b.payment_status!=='owner_verified'||b.deposit_status==='pending'){
-     // With in-app payment the guest is the one who can fix it: they are asked to pay in the booking card.
-     const inApp=!!(await service.one("SELECT test_payments FROM platform_billing WHERE id='global'").catch(()=>null))?.test_payments;
-     if(inApp)await service.notify(b.guest_id,venueOr(b,'Вы на месте в «'+title+'». Оплатите '+(b.payment_status!=='owner_verified'?'проживание':'депозит')+' в карточке брони, и ИИ-администратор сразу подтвердит заселение.','Вы на месте в «'+title+'». Оплатите '+(b.payment_status!=='owner_verified'?'бронь':'депозит')+' в карточке брони, и ИИ-администратор сразу подтвердит '+wordsOf(b).arriveAcc+'.'),'administrator-checkin-pay:'+b.id,'guest').run();
-     await service.notify(service.userId,'Гость на месте в «'+title+'», но оплата или депозит ещё не подтверждены. '+(inApp?venueOr(b,'Гостя попросили оплатить в карточке брони; после оплаты ИИ-администратор сразу подтвердит заселение.','Гостя попросили оплатить в карточке брони; после оплаты ИИ-администратор сразу подтвердит '+wordsOf(b).arriveAcc+'.'):venueOr(b,'Проверьте поступление, и ИИ-администратор сразу подтвердит заселение.','Проверьте поступление, и ИИ-администратор сразу подтвердит '+wordsOf(b).arriveAcc+'.')),'administrator-checkin-payment:'+b.id,'owner').run();continue;}
+     // The guest pays the owner directly: the guest is asked to transfer and say «Я оплатил», the owner to check the bank.
+     const guestWord=venueOr(b,'заселение',wordsOf(b).arriveAcc);
+     await service.notify(b.guest_id,'Вы на месте в «'+title+'». Переведите владельцу '+(b.payment_status!=='owner_verified'?'оплату':'депозит')+' по реквизитам из карточки брони и нажмите «Я оплатил». Когда владелец увидит деньги, ИИ-администратор подтвердит '+guestWord+'.','administrator-checkin-pay:'+b.id,'guest').run();
+     await service.notify(service.userId,'Гость на месте в «'+title+'», но оплата или депозит ещё не подтверждены. Проверьте поступление в банке и подтвердите в брони, и ИИ-администратор сразу подтвердит '+guestWord+'.','administrator-checkin-payment:'+b.id,'owner').run();continue;}
     try{await delegated.bookingAction(b.id,{action:'checkin'});await service.notify(service.userId,venueOr(b,'ИИ-администратор подтвердил заселение гостя в «'+title+'» по его сообщению.','ИИ-администратор отметил: '+wordsOf(b).guestIn.toLowerCase()+' в «'+title+'», по сообщению гостя.'),'administrator-checkin:'+b.id,'owner').run();actions++;}catch(error){
      if(!expectedConflict(error))throw error;
      // Paid, but the flat is not marked ready (a new flat, or a cleaning not yet accepted): only the owner can say it is.
@@ -91,7 +90,6 @@ async function automaticActions(service:RentalService){
     }
     try{await delegated.jobAction(job.id,{action:'approve',expectedVersion:job.version});await service.notify(service.userId,'ИИ-администратор принял уборку «'+title+'» по фотоотчёту. Жильё готово к заселению.','administrator-approved:'+job.id,'owner').run();actions++;}catch(error){if(!expectedConflict(error))throw error;}
    }
-   actions+=await settleTestMoney(service,policy.property_id);
   }
   if(policy.auto_assign){
    const jobs=await service.all("SELECT j.*,p.title FROM cleaning_jobs j JOIN properties p ON p.id=j.property_id WHERE j.property_id=? AND j.status='open' AND j.end>? AND j.fee<=? ORDER BY j.start,j.id",policy.property_id,now(),policy.cleaning_budget);

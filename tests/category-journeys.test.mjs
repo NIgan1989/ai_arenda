@@ -6,7 +6,9 @@ import {test} from 'node:test';import assert from 'node:assert/strict';
 import {fixture,load,now,iso} from './helpers/platform.mjs';
 import {photo} from './fixtures/photo.mjs';
 const {RentalService}=await load('service');
-const {testPayment}=await load('finance'),{saveHandover}=await load('stay-handover'),{saveStayReview}=await load('stay-reviews');
+// Direct settlement: the guest transfers to the owner and says «Я оплатил»; the owner confirms what came.
+const payDirect=async(g,b,kind)=>{await g.bookingAction(b,{action:'report_paid'});return owner.bookingAction(b,{action:kind==='payment'?'paid':kind==='deposit'?'deposit_received':'received'});};
+const {saveHandover}=await load('stay-handover'),{saveStayReview}=await load('stay-reviews');
 const {writeOperations}=await load('operations-api'),{previewMatches}=await load('smart-matching'),{orderHomeCleaning}=await load('home-order');
 const {homeChecklist,homeOrderOf}=await load('home-cleaning'),{saveEvidence}=await load('evidence');
 
@@ -57,8 +59,8 @@ for(const [i,k] of KINDS.entries()){
  const b=await step('гость отправил заявку',async()=>(await guest.createBooking(bookingBody(k,id,[s,e],'b-'+k.type))).id);if(!b)continue;
  await step('владелец подтвердил',async()=>(await owner.bookingAction(b,{action:'confirm',cleaningFee:ownStaff?0:3000})).message);
  const t=()=>R.prepare('SELECT * FROM booking_terms WHERE booking_id=?').get(b);
- await step('тестовая оплата брони',async()=>(await testPayment(guest,{bookingId:b,kind:'payment'},cfg,asOwner)).message);
- if(t().deposit)await step('тестовая оплата депозита',async()=>(await testPayment(guest,{bookingId:b,kind:'deposit'},cfg,asOwner)).message);
+ await step('гость перевёл, владелец подтвердил оплату',async()=>(await payDirect(guest,b,'payment')).message);
+ if(t().deposit)await step('владелец подтвердил депозит',async()=>(await payDirect(guest,b,'deposit')).message);
  await step('статус оплаты у брони',async()=>{const r=R.prepare('SELECT payment_status FROM bookings WHERE id=?').get(b);const tt=t();if(r.payment_status!=='owner_verified')throw Error('payment_status='+r.payment_status);if(tt.deposit&&tt.deposit_status!=='owner_verified')throw Error('deposit_status='+tt.deposit_status);return 'оплачено '+tt.paid_amount;});
  // Changing the dates before arrival.
  await step('гость предлагает другие даты (расчёт)',async()=>{const r=await guest.changeQuote?.(b,{start:iso(s+86400),end:iso(e+86400)});return r?JSON.stringify(r).slice(0,80):'нет метода changeQuote';});
@@ -96,7 +98,7 @@ for(const [i,k] of KINDS.entries()){
  const b2=await step('вторая заявка (другой гость)',async()=>(await guest2.createBooking(bookingBody(k,id,[s2,e2],'b2-'+k.type))).id);
  if(b2){
   await step('владелец подтвердил вторую',async()=>(await owner.bookingAction(b2,{action:'confirm',cleaningFee:ownStaff?0:3000})).message);
-  await step('второй гость оплатил',async()=>(await testPayment(guest2,{bookingId:b2,kind:'all'},cfg,asOwner)).message);
+  await step('второй гость оплатил',async()=>(await payDirect(guest2,b2,'all')).message);
   await step('второй гость отменил',async()=>(await guest2.bookingAction(b2,{action:'cancel',reason:'Планы изменились'})).message);
   await step('владелец отметил возврат',async()=>{const tt=R.prepare('SELECT * FROM booking_terms WHERE booking_id=?').get(b2);return (await owner.bookingAction(b2,{action:'record_refund',confirmed:true,expectedVersion:tt.version})).message;});
   await step('уборка второй брони отменена',async()=>{const j=R.prepare('SELECT status FROM cleaning_jobs WHERE booking_id=?').get(b2);if(j&&!['cancelled'].includes(j.status))throw Error('уборка '+j.status);return j?j.status:'не было';});
@@ -137,29 +139,29 @@ current='особые случаи';
  const terms=b=>R.prepare('SELECT * FROM booking_terms WHERE booking_id=?').get(b);
  // 1. Guest moves the dates, owner accepts, guest pays the difference.
  const b=await step('бронь для переноса',async()=>(await guest.createBooking(bookingBody(k,id,span(0),'x1'))).id);
- await owner.bookingAction(b,{action:'confirm',cleaningFee:3000});await testPayment(guest,{bookingId:b,kind:'all'},cfg,asOwner);
+ await owner.bookingAction(b,{action:'confirm',cleaningFee:3000});await payDirect(guest,b,'all');
  const [ns,ne]=[span(0)[0],span(0)[1]+86400];
  const cq=await step('гость рассчитал продление на сутки',async()=>{const q=await guest.bookingChangeQuote(b,'guest',{start:iso(ns),end:iso(ne)});return q;});
  const ch=await step('гость отправил изменение',async()=>(await guest.proposeBookingChange(b,'guest',{start:iso(ns),end:iso(ne),requestKey:'c1',expectedAmount:cq?.amount,baseVersion:cq?.baseVersion,policyVersion:cq?.policyVersion,acceptTerms:true,reason:'Задержусь на день'})).id);
  await step('владелец принял изменение',async()=>(await owner.decideBookingChange(b,ch,'owner',{action:'accept'})).message);
  await step('сумма брони выросла',async()=>{const x=R.prepare('SELECT amount FROM bookings WHERE id=?').get(b).amount;if(x!==24000)throw Error('amount='+x);return String(x);});
- await step('гость доплатил разницу',async()=>(await testPayment(guest,{bookingId:b,kind:'payment'},cfg,asOwner)).message);
+ await step('гость доплатил разницу',async()=>(await payDirect(guest,b,'payment')).message);
  await step('уборка сдвинулась на новый выезд',async()=>{const j=R.prepare("SELECT start FROM cleaning_jobs WHERE booking_id=? AND status<>'cancelled'").get(b);if(!j)throw Error('нет уборки');if(j.start<ne-3600)throw Error('уборка в '+iso(j.start)+', выезд '+iso(ne));return iso(j.start);});
  // 2. Late cancellation: what the guest gets back.
  const b2=await step('бронь для поздней отмены',async()=>(await guest2.createBooking(bookingBody(k,id,span(1),'x2'))).id);
- await owner.bookingAction(b2,{action:'confirm',cleaningFee:3000});await testPayment(guest2,{bookingId:b2,kind:'all'},cfg,asOwner);
+ await owner.bookingAction(b2,{action:'confirm',cleaningFee:3000});await payDirect(guest2,b2,'all');
  startIn(b2,3*3600);
  await step('поздняя отмена гостем (за 3 часа)',async()=>(await guest2.bookingAction(b2,{action:'cancel',reason:'Не успеваю'})).message);
  await step('возврат по правилам',async()=>{const t=terms(b2);return 'к возврату '+t.refund_due+' из '+t.paid_amount;});
  await step('владелец отметил возврат и депозит',async()=>{await owner.bookingAction(b2,{action:'record_refund',confirmed:true,expectedVersion:terms(b2).version});return (await owner.bookingAction(b2,{action:'record_deposit_return',confirmed:true,expectedVersion:terms(b2).version})).message;});
  // 3. Owner cancels a confirmed booking.
  const b3=await step('бронь, которую отменит владелец',async()=>(await guest.createBooking(bookingBody(k,id,span(2),'x3'))).id);
- await owner.bookingAction(b3,{action:'confirm',cleaningFee:3000});await testPayment(guest,{bookingId:b3,kind:'payment'},cfg,asOwner);
+ await owner.bookingAction(b3,{action:'confirm',cleaningFee:3000});await payDirect(guest,b3,'payment');
  await step('владелец отменил подтверждённую',async()=>(await owner.bookingAction(b3,{action:'cancel',reason:'Авария, нет воды'})).message);
  await step('гостю положен полный возврат',async()=>{const t=terms(b3);if(t.refund_due!==null&&t.refund_due<t.paid_amount)throw Error('refund_due='+t.refund_due+' paid='+t.paid_amount);return 'refund_due='+t.refund_due;});
  // 4. Stay with damage: owner disputes checkout, then keeps part of the deposit.
  const b4=await step('бронь с ущербом',async()=>(await guest.createBooking(bookingBody(k,id,span(3),'x4'))).id);
- await owner.bookingAction(b4,{action:'confirm',cleaningFee:3000});await testPayment(guest,{bookingId:b4,kind:'all'},cfg,asOwner);
+ await owner.bookingAction(b4,{action:'confirm',cleaningFee:3000});await payDirect(guest,b4,'all');
  startIn(b4,5*60);await guest.bookingAction(b4,{action:'report_checkin'});await owner.bookingAction(b4,{action:'checkin'});endNow(b4);
  await guest.bookingAction(b4,{action:'report_checkout'});
  await step('владелец оспорил выезд',async()=>(await owner.bookingAction(b4,{action:'dispute_checkout',reason:'Ключи не оставлены'})).message);

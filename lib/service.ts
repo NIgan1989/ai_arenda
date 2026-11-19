@@ -406,16 +406,18 @@ export class RentalService {
         CASE WHEN p.owner_id=? THEN (SELECT COUNT(*) FROM job_evidence e JOIN cleaning_jobs j ON j.id=e.job_id WHERE j.booking_id=b.id AND e.phase IN ('before','damage')) ELSE 0 END cleaner_photos,
         CASE WHEN p.owner_id=? THEN (SELECT COUNT(*) FROM job_evidence e JOIN cleaning_jobs j ON j.id=e.job_id WHERE j.booking_id=b.id AND e.phase='damage') ELSE 0 END cleaner_damage,
         CASE WHEN p.owner_id=? OR (b.guest_id=? AND b.status='confirmed') THEN o.contact ELSE NULL END owner_contact,
+        CASE WHEN p.owner_id=? OR (b.guest_id=? AND b.status='confirmed') THEN (SELECT json_object('phone',phone,'recipient',recipient,'link',link) FROM payout_details d WHERE d.user_id=p.owner_id AND d.phone<>'') ELSE NULL END owner_pay_row,
         CASE WHEN p.owner_id=? THEN g.name ELSE NULL END guest_name,
         CASE WHEN p.owner_id=? THEN g.contact ELSE NULL END guest_contact,
         CASE WHEN p.owner_id=? THEN (SELECT json_object('level',level,'score',score,'reasons',reasons,'deposit_advice',deposit_advice,'phone_verified',phone_verified,'held',held) FROM booking_risks WHERE booking_id=b.id) ELSE NULL END risk_row
         FROM bookings b JOIN properties p ON p.id=b.property_id LEFT JOIN profiles o ON o.id=p.owner_id LEFT JOIN profiles g ON g.id=b.guest_id
-        WHERE b.guest_id=? OR p.owner_id=? ORDER BY b.start DESC`, ...Array(11).fill(this.userId)),
+        WHERE b.guest_id=? OR p.owner_id=? ORDER BY b.start DESC`, ...Array(13).fill(this.userId)),
       this.all(`SELECT j.*,EXISTS(SELECT 1 FROM regular_cleaners rc WHERE rc.property_id=j.property_id AND rc.cleaner_id=COALESCE(j.assigned_to,?)) regular,CASE WHEN j.owner_id=? OR j.assigned_to=? THEN (SELECT status FROM cleaning_holds h WHERE h.job_id=j.id AND h.cleaner_id=j.assigned_to AND h.status<>'returned') END guarantee,(j.booking_id IS NULL OR EXISTS(SELECT 1 FROM booking_terms t WHERE t.booking_id=j.booking_id AND t.actual_checkout IS NOT NULL)) checkout_confirmed,COALESCE((SELECT require_photos FROM operation_rules r WHERE r.property_id=j.property_id),0) photos_required,p.title,p.city,p.district,p.rooms,p.capacity,p.cleaning_minutes,p.demo_owner,(SELECT photos FROM property_details WHERE property_id=p.id) property_photos,(SELECT details FROM property_details WHERE property_id=p.id) property_details,CASE WHEN j.status='open' THEN p.address END open_address,
         CASE WHEN j.owner_id=? OR j.assigned_to=? THEN p.address ELSE NULL END address,
-        CASE WHEN j.owner_id=? OR j.assigned_to=? THEN o.contact ELSE NULL END owner_contact
+        CASE WHEN j.owner_id=? OR j.assigned_to=? THEN o.contact ELSE NULL END owner_contact,
+        CASE WHEN j.owner_id=? AND j.assigned_to IS NOT NULL THEN (SELECT json_object('phone',phone,'recipient',recipient,'link',link) FROM payout_details d WHERE d.user_id=j.assigned_to AND d.phone<>'') ELSE NULL END cleaner_pay_row
         FROM cleaning_jobs j JOIN properties p ON p.id=j.property_id LEFT JOIN profiles o ON o.id=j.owner_id
-        WHERE (j.owner_id=? OR j.assigned_to=? OR (j.status='open' AND j.end>?)) AND (p.demo_owner IS NULL OR p.demo_owner=?) ORDER BY j.start`, this.userId,this.userId,this.userId,this.userId,this.userId,this.userId,this.userId,this.userId,this.userId,now(),this.userId),
+        WHERE (j.owner_id=? OR j.assigned_to=? OR (j.status='open' AND j.end>?)) AND (p.demo_owner IS NULL OR p.demo_owner=?) ORDER BY j.start`, this.userId,this.userId,this.userId,this.userId,this.userId,this.userId,this.userId,this.userId,this.userId,this.userId,now(),this.userId),
       this.all(`SELECT a.*,p.name,p.experience,p.availability,p.districts,(SELECT pr.demo_owner FROM properties pr WHERE pr.id=j.property_id) job_demo FROM applications a JOIN cleaning_jobs j ON j.id=a.job_id JOIN profiles p ON p.id=a.user_id WHERE a.user_id=? OR j.owner_id=?`, this.userId,this.userId),
       this.all('SELECT * FROM notifications WHERE user_id=? ORDER BY created_at DESC LIMIT 40', this.userId),
       this.all('SELECT * FROM (SELECT * FROM messages WHERE user_id=? ORDER BY created_at DESC,rowid DESC LIMIT 100) ORDER BY created_at', this.userId),
@@ -431,7 +433,7 @@ export class RentalService {
     // What cancelling right now would cost, for the card: the same rule the cancel action applies.
     const cancelFor=(b:Row)=>{const t=enrichedTerms.find(v=>v.booking_id===b.id);if(!t||!['requested','confirmed'].includes(b.status)||t.actual_checkin)return null;return cancellationTerms({by:b.owner_id===this.userId?'owner':'guest',status:b.status,mode:t.billing_mode,rate:t.rate,units:t.units,amount:b.amount,paid:t.paid_amount,deposit:t.deposit_status==='owner_verified'?t.deposit:0,start:b.start,minHours:t.min_hours||policies.find(v=>v.property_id===b.property_id)?.min_hours||1,at:serverTime,banquet:!!t.occasion});};
     const guests=await reliabilityFor(this.db,'guest',bookings.filter(b=>b.owner_id===this.userId&&b.status==='requested').map(b=>b.guest_id));
-    const state={ profile, properties:await this.enrichProperties(properties.map(p=>({...p,policy:publicPolicy(policyFor(p))}))), ownProperties:await this.enrichProperties(ownProperties.map(p=>({...p,policy:policyFor(p),operation:operations.find(v=>v.property_id===p.id)})),true), bookings:bookings.map(({risk_row,handover_row,...b}) => ({...b,risk:riskFromRow(risk_row?JSON.parse(risk_row):null),handover:handover_row?JSON.parse(handover_row):null,...(b.owner_id===this.userId?{guest_reliability:guests.get(b.guest_id)}:{}),status:b.status==='requested' && b.expires_at<=serverTime?'expired':b.status,terms:enrichedTerms.find(t=>t.booking_id===b.id),cancel_terms:cancelFor(b),changes:changes.filter(c=>c.booking_id===b.id).map(c=>({...c,status:c.status==='pending'&&c.expires_at<=serverTime?'expired':c.status})),readiness:operations.find(o=>o.property_id===b.property_id)?.readiness})), jobs:jobs.map(({open_address,...j}:Row):Row=>({...j,street:streetAddress(open_address),settlement_paid:jobPayments.find(p=>p.job_id===j.id)?.paid??(j.settled_at?j.fee:0),checkout_confirmed:!j.booking_id||!!j.checkout_confirmed})), applications, notifications, messages, serverTime, integrations:{ai:false,telegram:false,whatsapp:false,payments:false} };
+    const state={ profile, properties:await this.enrichProperties(properties.map(p=>({...p,policy:publicPolicy(policyFor(p))}))), ownProperties:await this.enrichProperties(ownProperties.map(p=>({...p,policy:policyFor(p),operation:operations.find(v=>v.property_id===p.id)})),true), bookings:bookings.map(({risk_row,handover_row,owner_pay_row,...b}) => ({...b,owner_pay:owner_pay_row?JSON.parse(owner_pay_row):null,risk:riskFromRow(risk_row?JSON.parse(risk_row):null),handover:handover_row?JSON.parse(handover_row):null,...(b.owner_id===this.userId?{guest_reliability:guests.get(b.guest_id)}:{}),status:b.status==='requested' && b.expires_at<=serverTime?'expired':b.status,terms:enrichedTerms.find(t=>t.booking_id===b.id),cancel_terms:cancelFor(b),changes:changes.filter(c=>c.booking_id===b.id).map(c=>({...c,status:c.status==='pending'&&c.expires_at<=serverTime?'expired':c.status})),readiness:operations.find(o=>o.property_id===b.property_id)?.readiness})), jobs:jobs.map(({open_address,cleaner_pay_row,...j}:Row):Row=>({...j,cleaner_pay:cleaner_pay_row?JSON.parse(cleaner_pay_row):null,street:streetAddress(open_address),settlement_paid:jobPayments.find(p=>p.job_id===j.id)?.paid??(j.settled_at?j.fee:0),checkout_confirmed:!j.booking_id||!!j.checkout_confirmed})), applications, notifications, messages, serverTime, integrations:{ai:false,telegram:false,whatsapp:false,payments:false} };
     return {...state,workspaces:Object.fromEntries(roles.map(role=>[role,operationOverview(state,this.userId,role,serverTime)]))};
   }
   async publicCatalog(options:{syntheticPreview?:boolean}={}) {
@@ -708,6 +710,44 @@ export class RentalService {
       const q=await this.bookingChangeQuote(bookingId,'owner',{start:iso(next.start),end:iso(next.end)});
       return this.proposeBookingChange(bookingId,'owner',{start:iso(next.start),end:iso(next.end),expectedAmount:q.amount,baseVersion:q.baseVersion,policyVersion:q.policyVersion,acceptTerms:true,reason:shiftReason(b.title||'жильё',by,next.start),requestKey:'shift:'+bookingId+':'+b.start+':'+by});
     }
+    // Direct settlement: the guest transfers the stay and the deposit to the owner outside the service and says so here.
+    // Nothing is counted as paid until the owner has seen the money and confirmed («received»).
+    if(body.action==='report_paid'){
+      if(b.guest_id!==this.userId)throw new DomainError('Сообщить об оплате может гость.',403);
+      if(b.status!=='confirmed')throw new DomainError('Оплата нужна после подтверждения брони.',409);
+      const left=Math.max(0,b.amount-(Number(terms?.paid_amount)||0)),deposit=terms?.deposit_status==='pending'?Number(terms.deposit)||0:0,sum=(n:number)=>n.toLocaleString('ru-RU').replace(/ | /g,' ')+' ₸';
+      if(!left&&!deposit)return {message:'Владелец уже подтвердил оплату.'};
+      if((!left||terms?.payment_reported_at)&&(!deposit||terms?.deposit_reported_at))return {message:'Владелец уже знает о переводе. Он проверит поступление и подтвердит.'};
+      const what=left&&deposit?sum(left+deposit)+' ('+wordsOf(b).stay.toLowerCase()+' '+sum(left)+' и депозит '+sum(deposit)+')':left?sum(left):'депозит '+sum(deposit),t=now();
+      const r=await this.db.batch([
+        this.query('UPDATE booking_terms SET payment_reported_at=CASE WHEN ?>0 THEN COALESCE(payment_reported_at,?) ELSE payment_reported_at END,deposit_reported_at=CASE WHEN ?>0 THEN COALESCE(deposit_reported_at,?) ELSE deposit_reported_at END,version=version+1 WHERE booking_id=? AND version=?',left,t,deposit,t,bookingId,terms?.version),
+        this.notify(b.owner_id,'Гость сообщил, что перевёл вам '+what+' за «'+b.title+'». Проверьте поступление в банке и подтвердите в брони.',`paid-reported:${bookingId}:${terms?.version}`,'owner'),
+        this.audit(bookingId,'booking.paid_reported')]);
+      if(!r[0].meta.changes)throw new DomainError('Бронь изменилась. Обновите карточку.',409);
+      return {message:'Владелец получил сообщение о переводе. Когда он увидит деньги, оплата подтвердится.'};
+    }
+    // «Деньги получены»: the stay and the deposit confirmed in one swipe, each as its own journal entry.
+    if(body.action==='received'){
+      if(!owner)throw new DomainError('Получение денег подтверждает владелец.',403);
+      if(b.status!=='confirmed')throw new DomainError('Сначала подтвердите бронь.');
+      const done:string[]=[];
+      for(const action of ['paid','deposit_received']){
+        if(action==='deposit_received'&&!terms?.deposit)continue;
+        const r=await this.bookingAction(bookingId,{action}) as Row;if(r?.id)done.push(action);
+      }
+      return {message:done.length?'Оплата подтверждена, гость это видит.':'Оплата уже была подтверждена.'};
+    }
+    // The owner looked at the bank and the transfer is not there: the guest is told and can say «Я оплатил» again.
+    if(body.action==='not_received'){
+      if(!owner)throw new DomainError('Ответить на сообщение об оплате может владелец.',403);
+      if(b.status!=='confirmed'||!terms?.payment_reported_at&&!terms?.deposit_reported_at)throw new DomainError('Гость не сообщал о переводе по этой брони.',409);
+      const r=await this.db.batch([
+        this.query('UPDATE booking_terms SET payment_reported_at=NULL,deposit_reported_at=NULL,version=version+1 WHERE booking_id=? AND version=?',bookingId,terms.version),
+        this.notify(b.guest_id,'Владелец проверил банк и не видит перевод за «'+b.title+'». Проверьте номер и сумму в карточке брони, повторите перевод или напишите владельцу в чат.',`not-received:${bookingId}:${terms.version}`,'guest'),
+        this.audit(bookingId,'booking.payment_not_received')]);
+      if(!r[0].meta.changes)throw new DomainError('Бронь изменилась. Обновите карточку.',409);
+      return {message:'Гость получил сообщение, что перевод не пришёл.'};
+    }
     if(body.action==='report_checkin'){
       if(b.guest_id!==this.userId)throw new DomainError(venueOr(b,'Сообщить о заселении может гость.','Сообщить '+wordsOf(b).ofArrive+' может гость.'),403);
       if(b.status!=='confirmed'||b.end<=now()||terms?.actual_checkin)throw new DomainError(venueOr(b,'Сейчас нельзя сообщить о заселении по этой брони.','Сейчас нельзя сообщить '+wordsOf(b).ofArrive+' по этой брони.'),409);
@@ -716,7 +756,7 @@ export class RentalService {
       // The answer says what is really awaited: the guest's payment, or only the owner's word (the AI gives it after ten minutes).
       const unpaid=b.payment_status!=='owner_verified'?venueOr(b,'проживание','бронь'):terms?.deposit_status==='pending'?'депозит':'';
       const arrival=venueOr(b,'заселение',wordsOf(b).arriveAcc);
-      return {message:unpaid?'Спасибо! Осталось оплатить '+unpaid+' в карточке брони: после оплаты '+arrival+' подтвердится.':'Спасибо! Владелец подтвердит '+arrival+'. Если он не ответит за 10 минут, ИИ-администратор подтвердит сам.'};
+      return {message:unpaid?'Спасибо! Осталось перевести владельцу '+(unpaid==='депозит'?'депозит':'оплату')+' по реквизитам из карточки брони и нажать «Я оплатил»: когда владелец увидит деньги, '+arrival+' подтвердится.':'Спасибо! Владелец подтвердит '+arrival+'. Если он не ответит за 10 минут, ИИ-администратор подтвердит сам.'};
     }
     if(body.action==='checkin'){
       if(!owner)throw new DomainError(venueOr(b,'Заселение подтверждает владелец.',wordsOf(b).arrive+' подтверждает владелец.'),403);
@@ -775,9 +815,8 @@ export class RentalService {
       if(b.status!=='requested'||b.expires_at<=now()) throw new DomainError('Срок заявки истёк или статус уже изменился.',409);
       // A high booking risk is never confirmed on the owner's behalf: the owner decides.
       const policyGate=this.execution?" AND EXISTS(SELECT 1 FROM property_policies WHERE property_id=bookings.property_id AND version=? AND auto_confirm=1 AND cleaning_fee=? AND cleaning_fee<=cleaning_budget AND (mandate_until=0 OR mandate_until>?)) AND NOT EXISTS(SELECT 1 FROM booking_risks WHERE booking_id=bookings.id AND level='high')":'';
-      const payInApp=!!(await this.one("SELECT test_payments FROM platform_billing WHERE id='global'").catch(()=>null))?.test_payments;
       const auditId=id(),auditAction=this.execution?JSON.stringify({action:'booking.confirmed',onBehalfOf:this.userId,...this.execution}):'booking.confirmed';
-      const statements=[this.query("UPDATE bookings SET status='confirmed' WHERE id=? AND status='requested' AND expires_at>? AND EXISTS(SELECT 1 FROM booking_terms WHERE booking_id=? AND version=?)"+policyGate,bookingId,now(),bookingId,terms?.version,...(this.execution?[this.execution.policyVersion,fee,now()]:[])),this.query('INSERT INTO audit_events SELECT ?,?,?,?,? WHERE changes()>0',auditId,this.execution?'system:rental-policy':this.userId,bookingId,auditAction,now()),this.query("INSERT OR IGNORE INTO notifications SELECT ?,?,?,?,?,? WHERE EXISTS(SELECT 1 FROM audit_events WHERE id=?)",id(),b.guest_id,`Бронь «${b.title}» подтверждена. Адрес доступен в карточке.`+(payInApp&&b.payment_status!=='owner_verified'?' Оплатите '+venueOr(b,'проживание','бронь')+(terms?.deposit?' и депозит':'')+' в карточке брони до '+wordsOf(b).arriveGen+'.':''),'guest:confirmed:'+bookingId,0,now(),auditId)];
+      const statements=[this.query("UPDATE bookings SET status='confirmed' WHERE id=? AND status='requested' AND expires_at>? AND EXISTS(SELECT 1 FROM booking_terms WHERE booking_id=? AND version=?)"+policyGate,bookingId,now(),bookingId,terms?.version,...(this.execution?[this.execution.policyVersion,fee,now()]:[])),this.query('INSERT INTO audit_events SELECT ?,?,?,?,? WHERE changes()>0',auditId,this.execution?'system:rental-policy':this.userId,bookingId,auditAction,now()),this.query("INSERT OR IGNORE INTO notifications SELECT ?,?,?,?,?,? WHERE EXISTS(SELECT 1 FROM audit_events WHERE id=?)",id(),b.guest_id,`Бронь «${b.title}» подтверждена. Адрес доступен в карточке.`+(b.payment_status!=='owner_verified'?' Переведите владельцу '+venueOr(b,'оплату проживания','оплату брони')+(terms?.deposit?' и депозит':'')+' по реквизитам из карточки брони до '+wordsOf(b).arriveGen+' и нажмите «Я оплатил».':''),'guest:confirmed:'+bookingId,0,now(),auditId)];
       statements.push(accrueCommission(this.db,bookingId,auditId,now()));
       // «С депозитом»: the owner follows the AI's risk advice and asks for a refundable deposit.
       const depositAsked=body.withDeposit===true&&!this.execution?Number((await this.one('SELECT deposit_advice FROM booking_risks WHERE booking_id=?',bookingId))?.deposit_advice||0):0;
@@ -929,7 +968,7 @@ export class RentalService {
     }
     statements.push(
       this.query(`INSERT INTO audit_events SELECT ?,?,?,?,? WHERE ${gate}`,id(),automatic?'system:rental-policy':this.userId,bookingId,JSON.stringify({action:'booking.change_accepted',changeId,onBehalfOf:automatic?b.owner_id:null,policyVersion:policy.version,pricing:{rate:q.rate,units:q.units,extraHours:q.extraHours,extraRate:q.extraRate,discountPercent:q.discountPercent,amount:q.amount}}),now(),changeId),
-      this.query(`UPDATE booking_terms SET amount=?,rate=?,units=?,billing_mode=?,discount_percent=?,version=version+1 WHERE booking_id=? AND ${gate}`,c.amount,c.rate,c.units,c.billing_mode,c.discount_percent,bookingId,changeId)
+      this.query(`UPDATE booking_terms SET payment_reported_at=CASE WHEN ?>amount THEN NULL ELSE payment_reported_at END,amount=?,rate=?,units=?,billing_mode=?,discount_percent=?,version=version+1 WHERE booking_id=? AND ${gate}`,c.amount,c.amount,c.rate,c.units,c.billing_mode,c.discount_percent,bookingId,changeId)
     );
     const result=await this.db.batch(statements);if(!result[0].meta.changes||!result[1].meta.changes)throw new DomainError('Предложение уже изменилось. Обновите данные.',409);
     await this.db.batch([this.notify(b.guest_id,'Изменение проживания согласовано. Проверьте новые даты и остаток к оплате.','change-accepted:'+changeId,'guest'),this.notify(b.owner_id,'Календарь обновлён по согласованному изменению проживания.'+(job&&movesCleaning?(keeps?' Уборка перенесена, исполнитель остаётся тот же.':' Исполнителя уборки нужно согласовать заново.'):''),'change-accepted:'+changeId,'owner')]);

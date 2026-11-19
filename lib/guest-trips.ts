@@ -69,15 +69,23 @@ const money = (value: number) => new Intl.NumberFormat('ru-RU').format(value) + 
 
 // Everything the guest can do next with a booking, in the order it is done. The card of the booking shows all of
 // it; the map shows only the first step that can be taken now (guestStep).
+// What the guest still has to transfer to the owner: the unpaid part of the stay and a deposit not yet received.
+// `reported` is true once the guest has said «Я оплатил» for everything that is due.
+export function payDue(b: Row): { left: number; deposit: number; sum: number; reported: boolean } {
+  const t = b.terms || {}, left = Math.max(0, Number(b.amount) - (Number(t.paid_amount) || 0));
+  const deposit = Number(t.deposit) > 0 && t.deposit_status === 'pending' ? Number(t.deposit) : 0;
+  return { left, deposit, sum: left + deposit, reported: (!left || !!t.payment_reported_at) && (!deposit || !!t.deposit_reported_at) };
+}
+
 export function guestSteps(b: Row, now: number, paymentMode?: string): GuestStep[] {
   const w = wordsOf(b);
   if (b.status === 'completed') return b.review_rating ? [] : [{ id: 'review', label: w.rateBtn }];
   if (b.status !== 'confirmed') return [];
-  const steps: GuestStep[] = [], left = b.amount - (b.terms?.paid_amount || 0);
-  if (paymentMode === 'test' && left > 0) steps.push({ id: 'pay', label: 'Оплатить ' + money(left) });
-  if (paymentMode === 'test' && b.terms?.deposit > 0 && b.terms?.deposit_status === 'pending') {
-    steps.push({ id: 'deposit', label: 'Внести депозит ' + money(b.terms.deposit) });
-  }
+  const steps: GuestStep[] = [];
+  // The guest transfers the stay and the deposit straight to the owner and says so in one tap («Я оплатил»);
+  // after that the step is the owner's (he checks the bank and confirms), so the guest sees no payment button.
+  const due = payDue(b);
+  if (due.sum > 0 && !due.reported) steps.push({ id: 'pay', label: 'Я оплатил ' + money(due.sum) });
   if (!b.terms?.actual_checkin && !b.terms?.checkin_reported_at && b.end > now) {
     steps.push({
       id: 'checkin', label: w.iAmIn,
@@ -104,7 +112,7 @@ export function guestPin(b: Row, now: number, paymentMode?: string): { label: st
   if (b.status !== 'confirmed') return null;
   const clock = (at: number) => { const d = new Date((at + 5 * 3600) * 1000); return String(d.getUTCHours()).padStart(2, '0') + ':' + String(d.getUTCMinutes()).padStart(2, '0'); };
   const step = guestStep(b, now, paymentMode);
-  if (step?.id === 'pay' || step?.id === 'deposit') return { label: step.id === 'pay' ? 'Оплатить' : 'Внести депозит', tone: 'pending' };
+  if (step?.id === 'pay') return { label: 'Оплатить', tone: 'pending' };
   if (step?.id === 'checkin') return { label: wordsOf(b).canIn, tone: 'booked' };
   if (b.terms?.actual_checkin || b.terms?.checkin_reported_at) return { label: 'Вы здесь до ' + clock(b.end), tone: 'booking' };
   return { label: wordsOf(b).arrive + ' ' + clock(b.start), tone: 'booking' };

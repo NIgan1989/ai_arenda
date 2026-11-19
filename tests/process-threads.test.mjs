@@ -27,10 +27,12 @@ test('выезд становится текущим шагом, когда вр
  const due={...owner,bookings:[{id:'b5',owner_id:'o',property_id:'p1',title:'Лофт',status:'confirmed',payment_status:'owner_verified',start:now-5*H,end:now-600,created_at:now-9*H,terms:{actual_checkin:now-5*H}}],jobs:[]};
  const [b]=ownerThreads(due,now);assert.equal(b.steps[3].state,'done');assert.equal(b.steps[4].state,'now');assert.equal(b.status,'Выезд');
  const unpaid={...owner,bookings:[{...owner.bookings[1],payment_status:'unpaid'}],jobs:[{id:'j9',owner_id:'o',property_id:'p2',title:'Дом',status:'completed',assigned_to:'c',checkout_confirmed:true,start:now-3*H,end:now-H,fee:5000,created_at:now-5*H}]};
- const t=ownerThreads(unpaid,now);assert.equal(t.find(x=>x.id==='b2').yours,true);
- // Гость платит в приложении: оплата подтверждается сама, владельцу отмечать нечего.
- const inApp=ownerThreads({...unpaid,paymentMode:'test'},now).find(x=>x.id==='b2');
- assert.equal(inApp.yours,false);assert.equal(inApp.steps[1].by,'guest');assert.match(inApp.line,/^Ждём оплату гостя · ИИ напомнит/);
+ // Гость платит владельцу напрямую: пока он не сказал «Я оплатил», владельцу проверять нечего.
+ const t=ownerThreads(unpaid,now),waits=t.find(x=>x.id==='b2');
+ assert.equal(waits.yours,false);assert.equal(waits.steps[1].by,'guest');assert.match(waits.line,/^Ждём перевод от гостя на ваши реквизиты/);
+ // Гость сообщил о переводе: теперь шаг владельца, он проверяет банк и подтверждает.
+ const told=ownerThreads({...unpaid,bookings:[{...unpaid.bookings[0],terms:{...unpaid.bookings[0].terms,payment_reported_at:now-60}}]},now).find(x=>x.id==='b2');
+ assert.equal(told.yours,true);assert.equal(told.steps[1].by,'you');assert.match(told.line,/^Гость сообщил о переводе · проверьте банк и подтвердите/);
  const job=t.find(x=>x.id==='j9');assert.equal(job.yours,true);assert.equal(job.steps[4].by,'you');
  const held=ownerThreads({...unpaid,jobs:[{...unpaid.jobs[0],guarantee:'due'}]},now).find(x=>x.id==='j9');assert.equal(held.yours,false);assert.equal(held.steps[4].by,'ai');
 });
@@ -58,11 +60,11 @@ test('у гостя бронь идёт той же нитью: его шаги 
  const {guestThreads,tripThread}=await load('process-threads');
  const trip=(id,patch={})=>({id,guest_id:'g',property_id:'p1',title:'Студия',status:'confirmed',payment_status:'pending',amount:20000,start:now+2*H,end:now+26*H,created_at:now-3*H,terms:{paid_amount:0},...patch});
  const pay=tripThread(trip('pay'),now,'test');
- assert.equal(pay.yours,true);assert.equal(pay.steps[1].state,'now');assert.equal(pay.status,'Оплата');assert.match(pay.line,/^Оплатите бронь.*→ Заезд 14:00$/);
- // Без оплаты в приложении гость ждёт владельца: шаг не его.
- const live=tripThread(trip('live'),now,'live');assert.equal(live.yours,false);assert.equal(live.steps[1].by,'owner');assert.match(live.line,/^Владелец подтверждает оплату/);
+ assert.equal(pay.yours,true);assert.equal(pay.steps[1].state,'now');assert.equal(pay.status,'Оплата');assert.match(pay.line,/^Переведите оплату владельцу и нажмите «Я оплатил» → Заезд 14:00$/);
+ // Гость сказал «Я оплатил»: дальше ждёт владельца, шаг не его.
+ const live=tripThread(trip('live',{terms:{paid_amount:0,payment_reported_at:now}}),now);assert.equal(live.yours,false);assert.equal(live.steps[1].by,'owner');assert.match(live.line,/^Владелец проверяет перевод и подтвердит/);
  const deposit=tripThread(trip('dep',{payment_status:'owner_verified',terms:{paid_amount:20000,deposit:5000,deposit_status:'pending'}}),now,'test');
- assert.equal(deposit.yours,true);assert.match(deposit.line,/^Внесите депозит/);
+ assert.equal(deposit.yours,true);assert.match(deposit.line,/^Переведите депозит владельцу, он вернётся/);
  // Оплачено, до заезда ещё два часа: от гостя ничего не нужно; за 15 минут до заезда шаг становится его.
  const paid=trip('paid',{payment_status:'owner_verified',terms:{paid_amount:20000}});
  assert.equal(tripThread(paid,now,'test').yours,false);assert.equal(tripThread(paid,now,'test').status,'Заезд · 14:00');

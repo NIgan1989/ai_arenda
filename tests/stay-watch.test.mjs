@@ -177,3 +177,14 @@ test('a home busy in its external calendar is not offered as free',async()=>{
   assert.deepEqual(await similarFree(f.db,f.booking),[]);
  }finally{f.db.close();}
 });
+
+test('a stay the guest reported as paid is never released by the AI: the owner is asked to check the bank',async()=>{
+ const f=await fixture();try{
+  autopilot(f);at(f,-1900);
+  await f.guest.bookingAction(f.booking,{action:'report_paid'});
+  const r=await sweepStays(f.db,{});assert.equal(r.released,0);assert.equal(r.warned,1);
+  assert.equal(booking(f).status,'confirmed');assert.equal(notes(f,'owner','owner:stay-pay-told:%'),1);assert.equal(notes(f,'guest','guest:stay-unpaid-released:%'),0);
+  assert.equal((await sweepStays(f.db,{})).warned,0);assert.equal(booking(f).status,'confirmed');
+  await f.owner.bookingAction(f.booking,{action:'received'});assert.equal(booking(f).payment_status,'owner_verified');
+ }finally{f.db.close();}
+});

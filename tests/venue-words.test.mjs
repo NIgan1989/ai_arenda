@@ -47,7 +47,7 @@ test('a bath booking speaks of «бронь» and «приход», not of «п�
   // «Я на месте» before paying.
   f.db.raw.prepare('UPDATE bookings SET start=?,"end"=? WHERE id=?').run(now()+300,now()+3*3600,booking);
   const said=await f.guest.bookingAction(booking,{action:'report_checkin'});
-  assert.match(said.message,/оплатить бронь/);assert.match(said.message,/приход подтвердится/);
+  assert.match(said.message,/перевести владельцу оплату/);assert.match(said.message,/приход подтвердится/);
   // After the stay: the request to rate and the owner's note.
   f.db.raw.prepare("UPDATE bookings SET status='completed' WHERE id=?").run(booking);
   f.db.raw.prepare('UPDATE booking_terms SET actual_checkin=?,actual_checkout=? WHERE booking_id=?').run(now()-7200,now()-3700,booking);

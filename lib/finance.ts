@@ -51,12 +51,16 @@ export async function recordFinance(service:RentalService,body:Row,provider?:{ev
  if(bookingId){
   const netPayment="COALESCE((SELECT SUM(CASE WHEN kind='payment' THEN amount WHEN kind='refund' THEN -amount ELSE 0 END) FROM finance_entries WHERE booking_id=booking_terms.booking_id),0)",deposits="COALESCE((SELECT SUM(amount) FROM finance_entries WHERE booking_id=booking_terms.booking_id AND kind='deposit'),0)",returned="COALESCE((SELECT SUM(amount) FROM finance_entries WHERE booking_id=booking_terms.booking_id AND kind='deposit_return'),0)";
   statements.push(q(db,`UPDATE booking_terms SET paid_amount=${netPayment},deposit_status=CASE WHEN deposit=0 THEN 'not_required' WHEN ${deposits}>=deposit THEN 'owner_verified' ELSE 'pending' END,deposit_returned_at=CASE WHEN ${deposits}>0 AND ${returned}+deposit_kept>=${deposits} THEN ? ELSE NULL END,refund_recorded_at=CASE WHEN refund_due IS NOT NULL AND COALESCE((SELECT SUM(amount) FROM finance_entries WHERE booking_id=booking_terms.booking_id AND kind='refund'),0)>=refund_due OR EXISTS(SELECT 1 FROM finance_entries WHERE booking_id=booking_terms.booking_id AND kind='refund') AND ${netPayment}=0 THEN ? ELSE NULL END,version=version+1 WHERE booking_id=? AND EXISTS(SELECT 1 FROM finance_entries WHERE id=?)`,at,at,bookingId,entryId));
+  // The guest's «Я оплатил» is answered by this entry; a later change of the sum lets the guest say it again.
+  if(kind==='payment'||kind==='deposit')statements.push(q(db,`UPDATE booking_terms SET ${kind==='payment'?'payment_reported_at':'deposit_reported_at'}=NULL WHERE booking_id=? AND EXISTS(SELECT 1 FROM finance_entries WHERE id=?)`,bookingId,entryId));
   statements.push(q(db,"UPDATE bookings SET payment_status=CASE WHEN (SELECT paid_amount FROM booking_terms WHERE booking_id=bookings.id)>=amount THEN 'owner_verified' ELSE 'unpaid' END WHERE id=? AND EXISTS(SELECT 1 FROM finance_entries WHERE id=?)",bookingId,entryId));
  }
  if(jobId)statements.push(q(db,"UPDATE cleaning_jobs SET settled_at=CASE WHEN COALESCE((SELECT SUM(amount) FROM finance_entries WHERE job_id=cleaning_jobs.id AND kind='job_payment'),0)>=CASE WHEN status='cancelled' THEN cancel_fee ELSE fee END THEN ? ELSE NULL END WHERE id=? AND EXISTS(SELECT 1 FROM finance_entries WHERE id=?)",at,jobId,entryId));
  statements.push(q(db,'INSERT INTO audit_events SELECT ?,?,?,?,? WHERE EXISTS(SELECT 1 FROM finance_entries WHERE id=?)',uuid(),actor,bookingId||jobId||propertyId,JSON.stringify({action:'finance.recorded',entryId,kind,amount,source:provider?'provider':'owner'}),at,entryId));
  const recipient=bookingId?entity.guest_id:jobId?entity.assigned_to:null,role=jobId?'cleaner':'guest';
- if(recipient)statements.push(q(db,'INSERT OR IGNORE INTO notifications SELECT ?,?,?,?,?,? WHERE EXISTS(SELECT 1 FROM finance_entries WHERE id=?)',uuid(),recipient,'В журнале расчётов записана операция на '+amount+' ₸. Проверьте сведения в карточке и фактическое поступление.',role+':finance:'+entryId,0,at,entryId));
+ // Money moves between the participants directly; the notice says in plain words what the other side marked.
+ const sum=new Intl.NumberFormat('ru-RU').format(amount).replace(/\u00a0|\u202f/g,' ')+' ₸',noticeText=provider?'В журнале расчётов записана операция на '+sum+'.':({payment:'Владелец подтвердил, что получил оплату '+sum+'.',deposit:'Владелец подтвердил, что получил депозит '+sum+'. Он вернёт его после выезда.',refund:'Владелец отметил, что вернул вам '+sum+'. Проверьте поступление; если денег нет, нажмите «Есть проблема» в брони.',deposit_return:'Владелец отметил, что вернул депозит '+sum+'. Проверьте поступление; если денег нет, нажмите «Есть проблема» в брони.',compensation:'Владелец отметил компенсацию '+sum+'.',job_payment:'Заказчик отметил, что перевёл вам '+sum+' за уборку. Проверьте поступление; если денег нет, нажмите «Есть проблема» в задании.'} as Record<string,string>)[kind]||'В журнале расчётов записана операция на '+sum+'.';
+ if(recipient)statements.push(q(db,'INSERT OR IGNORE INTO notifications SELECT ?,?,?,?,?,? WHERE EXISTS(SELECT 1 FROM finance_entries WHERE id=?)',uuid(),recipient,noticeText,role+':finance:'+entryId,0,at,entryId));
  const result=await db.batch(statements);if(!result[0].meta.changes)throw new DomainError('Сумма превышает остаток расчёта или операция уже изменилась.',409);
  return {id:entryId,message:provider?'Подтверждённое событие провайдера учтено.':'Фактическая операция записана в журнал. Сервис не выполнял перевод.'};
 }
@@ -104,68 +108,12 @@ export async function acceptPaymentEvent(db:D1Database,raw:string,serviceForOwne
 
 // Until a bank is connected the platform can run test payments: the guest pays and the deposit is
 // recorded the same way a provider event would, but no money moves and every entry says so.
-export async function paymentMode(db:D1Database,config:OperationConfig):Promise<'live'|'test'|'off'>{
- if(config.PAYMENT_GATEWAY_URL&&config.PAYMENT_GATEWAY_TOKEN&&config.PAYMENT_WEBHOOK_SECRET)return 'live';
- const s=await one(db,"SELECT test_payments FROM platform_billing WHERE id='global'").catch(()=>null);
- return s?.test_payments?'test':'off';
+// Guests pay owners directly and owners pay performers directly, so a booking is never paid through the service:
+// the guest says «Я оплатил», the owner confirms. A bank, once connected, takes only top-ups of the service balance.
+export async function paymentMode(_db:D1Database,_config:OperationConfig):Promise<'direct'>{return 'direct';}
+export async function testPayment(_service:RentalService,_body:Row,_config:OperationConfig,_serviceForOwner:(id:string)=>RentalService):Promise<Row>{
+ throw new DomainError('Оплата идёт напрямую владельцу: переведите по реквизитам из брони и нажмите «Я оплатил».',409);
 }
-export async function testPayment(service:RentalService,body:Row,config:OperationConfig,serviceForOwner:(id:string)=>RentalService):Promise<Row>{
- if(await paymentMode(service.db,config)!=='test')throw new DomainError('Тестовая оплата выключена.',409);
- // «Оплатить всё»: the stay and the refundable deposit in one tap. Each part is still its own journal entry and attempt.
- if(body.kind==='all'){
-  const done:Row[]=[];
-  for(const kind of ['payment','deposit']){try{done.push(await testPayment(service,{...body,kind},config,serviceForOwner));}catch(e){if(!(e instanceof DomainError)||e.status!==409)throw e;}}
-  if(!done.length)throw new DomainError('Бронь уже оплачена.',409);
-  const sum=(n:number)=>new Intl.NumberFormat('ru-RU').format(n)+' ₸',paid=done.filter(d=>d.amount);
-  return paid.length<2?{message:done[0].message}:{message:'Оплачено '+sum(paid[0].amount+paid[1].amount)+' в тестовом режиме: проживание '+sum(paid[0].amount)+' и депозит '+sum(paid[1].amount)+'. Деньги не списывались.'};
- }
- await service.requireRole('guest');const bookingId=required(body.bookingId,'Бронь',100),kind=body.kind==='deposit'?'deposit':'payment';
- const b=await one(service.db,"SELECT b.*,p.owner_id,t.paid_amount,t.deposit FROM bookings b JOIN properties p ON p.id=b.property_id JOIN booking_terms t ON t.booking_id=b.id WHERE b.id=? AND b.guest_id=? AND b.status='confirmed'",bookingId,service.userId);if(!b)throw new DomainError('Подтверждённая бронь недоступна.',403);
- await migrateFinanceEntity({db:service.db,userId:b.owner_id},'booking',bookingId);
- const received=await one(service.db,"SELECT COALESCE(SUM(CASE WHEN kind='deposit' THEN amount WHEN kind='deposit_return' THEN -amount ELSE 0 END),0) n FROM finance_entries WHERE booking_id=?",bookingId);
- const amount=kind==='payment'?Math.max(0,b.amount-b.paid_amount):Math.max(0,b.deposit-(received?.n||0));if(!amount)throw new DomainError(kind==='payment'?'Бронь уже оплачена.':'Депозит уже внесён.',409);
- // One attempt per settlement state: a second tap finds the same attempt and records nothing twice,
- // while a new balance (after a change or a refund) adds a journal entry and gets its own attempt.
- const entries=await one(service.db,'SELECT COUNT(*) n FROM finance_entries WHERE booking_id=?',bookingId);
- const key='test:'+bookingId+':'+kind+':'+(entries?.n||0)+':'+amount;
- await q(service.db,"INSERT OR IGNORE INTO payment_intents(id,booking_id,user_id,kind,amount,status,request_key,created_at,test) VALUES (?,?,?,?,?,'ready',?,?,1)",uuid(),bookingId,service.userId,kind,amount,key,epoch()).run();
- const intent=await one(service.db,'SELECT * FROM payment_intents WHERE user_id=? AND request_key=?',service.userId,key);
- if(!intent||intent.test!==1)throw new DomainError('Попытка оплаты недоступна.',409);
- const what=kind==='payment'?'Оплата':'Депозит';
- if(intent.status==='paid')return {message:what+' уже учтён'+(kind==='payment'?'а':'')+'.'};
- await recordFinance(serviceForOwner(b.owner_id),{kind,bookingId,amount,note:'Тестовая оплата: деньги не списывались',externalReference:'TEST-'+String(intent.id).slice(0,8),requestKey:'provider:'+intent.id},{eventId:'test:'+intent.id,intentId:intent.id,payloadHash:'test'});
- return {amount,message:what+' '+new Intl.NumberFormat('ru-RU').format(amount)+' ₸ учтен'+(kind==='payment'?'а':'')+' в тестовом режиме. Деньги не списывались.'};
-}
-export async function setTestPayments(service:RentalService,body:Row){
- if(typeof body.enabled!=='boolean')throw new DomainError('Укажите, включена ли тестовая оплата.');
- const at=epoch(),r=await service.db.batch([
-  q(service.db,"UPDATE platform_billing SET test_payments=? WHERE id='global'",body.enabled?1:0),
-  q(service.db,'INSERT INTO audit_events SELECT ?,?,?,?,? WHERE changes()>0',uuid(),service.userId,'platform-billing',JSON.stringify({action:'billing.test_payments',enabled:body.enabled}),at),
- ]);
- if(!r[0].meta.changes)throw new DomainError('Настройки оплаты не найдены. Примените обновление базы.',503);
- return {message:body.enabled?'Тестовая оплата включена: гости проходят оплату без списания денег.':'Тестовая оплата выключена. Гости платят по договорённости с владельцем, пока не подключён банк.'};
-}
-
-// While payments are simulated, the AI closes the money side of a stay for an autopilot owner once the
-// cleaning is accepted and nothing is disputed: the guest's test deposit comes back and the cleaner's
-// test payout is recorded. Nothing is touched when any money on the booking was real.
-export async function settleTestMoney(service:RentalService,propertyId:string){
- const db=service.db,flag=await one(db,"SELECT test_payments FROM platform_billing WHERE id='global'").catch(()=>null);
- if(!flag?.test_payments)return 0;
- const simulated="EXISTS(SELECT 1 FROM finance_entries f WHERE f.booking_id=b.id AND f.kind IN ('payment','deposit')) AND NOT EXISTS(SELECT 1 FROM finance_entries f WHERE f.booking_id=b.id AND f.kind IN ('payment','deposit') AND f.external_reference NOT LIKE 'TEST-%')";
- const quiet="NOT EXISTS(SELECT 1 FROM administrator_issues i WHERE i.status='open' AND ((i.entity_kind='booking' AND i.entity_id=b.id) OR (i.entity_kind='job' AND i.entity_id=j.id))) AND NOT EXISTS(SELECT 1 FROM finance_entries f WHERE f.booking_id=b.id AND f.kind='compensation')";
- const done=await rows(db,`SELECT b.id booking,b.guest_id,j.id job,j.assigned_to,j.fee,j.settled_at,p.title,(SELECT COALESCE(SUM(CASE WHEN kind='deposit' THEN amount WHEN kind='deposit_return' THEN -amount ELSE 0 END),0) FROM finance_entries WHERE booking_id=b.id)-t.deposit_kept held,t.deposit_kept kept FROM bookings b JOIN booking_terms t ON t.booking_id=b.id JOIN properties p ON p.id=b.property_id JOIN cleaning_jobs j ON j.booking_id=b.id AND j.status='completed' WHERE b.property_id=? AND p.owner_id=? AND b.status='completed' AND t.actual_checkout IS NOT NULL AND ${simulated} AND ${quiet}`,propertyId,service.userId);
- let n=0;const money=(v:number)=>new Intl.NumberFormat('ru-RU').format(v)+' ₸';
- for(const d of done){
-  if(d.held>0){try{
-   await recordFinance(service,{kind:'deposit_return',bookingId:d.booking,amount:d.held,confirmed:true,note:'Тестовый возврат депозита: деньги не переводились',externalReference:'TEST-RETURN',requestKey:'ai-test-deposit-return:'+d.booking});
-   await service.notify(d.guest_id,'ИИ-администратор вернул '+(d.kept?'остаток депозита ':'депозит ')+money(d.held)+' за «'+d.title+'»: уборка принята'+(d.kept?'':', замечаний нет')+'. Тестовый режим, деньги не переводились.','test-deposit-return:'+d.booking,'guest').run();n++;
-  }catch(e){if(!(e instanceof DomainError))throw e;}}
-  // A regular cleaner is paid by the service from the owner's reserve, not here; a reserve given back no longer backs it.
-  if(d.assigned_to&&!d.settled_at&&d.fee>0&&!await one(db,"SELECT 1 FROM cleaning_holds WHERE job_id=? AND status<>'returned'",d.job)){try{
-   await recordFinance(service,{kind:'job_payment',jobId:d.job,amount:d.fee,confirmed:true,note:'Тестовая выплата исполнителю: деньги не переводились',externalReference:'TEST-PAYOUT',requestKey:'ai-test-payout:'+d.job});
-   await service.notify(d.assigned_to,'Оплата '+money(d.fee)+' за уборку «'+d.title+'» записана. Тестовый режим, деньги не переводились.','test-payout:'+d.job,'cleaner').run();n++;
-  }catch(e){if(!(e instanceof DomainError))throw e;}}
- }
- return n;
+export async function setTestPayments(_service:RentalService,_body:Row):Promise<Row>{
+ throw new DomainError('Гости платят владельцам напрямую, поэтому тестовая оплата брони больше не используется.',409);
 }
