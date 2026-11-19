@@ -26,7 +26,7 @@ function plLines(s:Row):Line[]{return [
  ...(s.vat_registered?[{key:'vat',label:'НДС в выручке',sign:-1 as const}]:[]),
  {key:'revenue',label:'Выручка',kind:'subtotal'},
  {key:'_direct',label:'Прямые расходы',kind:'section'},
- {key:'acquiring',label:'Комиссия Kaspi Pay',sign:-1,hint:`${percent(s.acquiring_bp)} от оплат гостей`},{key:'ai',label:'ИИ по факту (OpenAI)',sign:-1},{key:'bonuses',label:'Бонусы и корректировки владельцам',sign:-1},
+ {key:'acquiring',label:'Комиссия Kaspi Pay',sign:-1,hint:`${percent(s.acquiring_bp)} от денег, пришедших на счёт`},{key:'ai',label:'ИИ по факту (OpenAI)',sign:-1},{key:'bonuses',label:'Бонусы и корректировки владельцам',sign:-1},
  {key:'gross_profit',label:'Валовая прибыль',kind:'subtotal'},
  {key:'_opex',label:'Операционные расходы',kind:'section'},
  {key:'salaries',label:'Зарплаты сотрудников',sign:-1},{key:'employer',label:'Налоги и взносы работодателя',sign:-1},...(s.entity==='ip'?[{key:'self',label:'Взносы ИП за себя',sign:-1 as const,hint:'пенсионные, социальные, медстраховка'}]:[]),{key:'outsource',label:'Аутсорс',sign:-1},{key:'services',label:'Платные сервисы',sign:-1},{key:'opex',label:'Прочие расходы',sign:-1},
@@ -34,10 +34,10 @@ function plLines(s:Row):Line[]{return [
  {key:'profit_tax',label:s.tax_regime==='simplified'?`Налог по упрощёнке ${percent(s.simplified_bp)} с дохода`:`КПН ${percent(s.cit_bp)}`,sign:-1,hint:'уходит в Бухгалтерию'},
  {key:'net',label:'Чистая прибыль',kind:'total'},
 ];}
-function cfLines(basis:string,ip:boolean):Line[]{return [
+function cfLines(basis:string,ip:boolean,payouts:boolean):Line[]{return [
  {key:'_op',label:'Операционная деятельность',kind:'section'},
  {key:'inflow',label:basis==='fact'?'Пополнения балансов владельцами':'Оплата комиссий и подписок'},
- ...(basis==='fact'?[{key:'payouts',label:'Выплаты исполнителям',sign:-1 as const}]:[]),
+ ...(basis==='fact'&&payouts?[{key:'payouts',label:'Выплаты исполнителям через сервис',sign:-1 as const}]:[]),
  {key:'salaries_net',label:'Зарплаты на руки',sign:-1},{key:'outsource',label:'Аутсорс',sign:-1},{key:'services',label:'Платные сервисы',sign:-1},{key:'opex',label:'Прочие расходы',sign:-1},{key:'acquiring',label:'Комиссия Kaspi Pay',sign:-1},{key:'ai',label:'ИИ (OpenAI)',sign:-1},{key:'taxes_paid',label:'Налоги и взносы уплачены',sign:-1},
  {key:'operating',label:'Поток от операций',kind:'subtotal'},
  {key:'_inv',label:'Инвестиции',kind:'section'},{key:'assets',label:'Покупка техники',sign:-1},
@@ -92,7 +92,7 @@ export function AdminFinance({data,busy,save,onParams}:{data:Row;busy:boolean;sa
     {([['pl','ОПИУ'],['cf','ДДС'],['balance','Баланс'],['costs','Расходы'],['settings','Допущения']] as const).map(([id,label])=><button key={id} role="tab" type="button" aria-selected={tab===id} onClick={()=>setTab(id)}>{label}{id==='balance'&&b.difference!==0&&<b>!</b>}</button>)}
    </div>
    {tab==='pl'&&<><p className="finance-caption">Отчёт о прибылях и убытках: что заработали и потратили по начислению. {data.basis==='forecast'?'В прогнозе выручка считается так, будто плата за сервис уже включена.':'В факте только начисленная плата, бесплатные брони не считаются.'}</p><ReportTable lines={plLines(s)} months={data.months} part="pl" active={data.month}/></>}
-   {tab==='cf'&&<><p className="finance-caption">Движение денежных средств: сколько денег пришло и ушло на самом деле. Налоги попадают сюда, когда бухгалтер отметит их оплату.</p><ReportTable lines={cfLines(data.basis,ip)} months={data.months} part="cf" active={data.month} opening={data.openingCash}/>
+   {tab==='cf'&&<><p className="finance-caption">Движение денежных средств: сколько денег пришло и ушло на самом деле. Налоги попадают сюда, когда бухгалтер отметит их оплату.</p><ReportTable lines={cfLines(data.basis,ip,data.months.some((m:Row)=>m.cf.payouts))} months={data.months} part="cf" active={data.month} opening={data.openingCash}/>
     <div className="finance-subhead"><div><h3>{ip?'Деньги владельца, займы и покупки':'Деньги учредителя, займы и покупки'}</h3><p>Не доход и не расход, но меняют остаток денег и баланс.</p></div><Button variant="outline" disabled={busy} onClick={()=>setCashOpen(true)}><Plus size={16}/>Добавить</Button></div>
     {data.cashEntries.length===0?<p className="finance-empty">Пока записей нет.{ip?' Запишите сюда свои деньги, вложенные в дело, чтобы остаток на счёте Kaspi Pay совпадал с отчётом.':` Уставный капитал ${money(s.share_capital)} учтён в месяце начала учёта.`}</p>:<ul className="revenue-list">{data.cashEntries.map((e:Row)=><li key={e.id}><div className="revenue-row"><span className="finance-dot" data-kind={e.kind}><Banknote size={16}/></span><span><strong>{cashNames[e.kind]}</strong><small>{monthName(e.month)}{e.note?' · '+e.note:''}</small></span><b>{['loan_repay','dividend','asset'].includes(e.kind)?'−':'+'}{money(e.amount)}</b><Button variant="ghost" size="sm" disabled={busy} onClick={()=>save('finance/cash/delete',{id:e.id,confirmed:true})}>Удалить</Button></div></li>)}</ul>}
    </>}
@@ -137,7 +137,7 @@ function BalanceView({data}:{data:Row;onTaxes:()=>void}){
    </dl></section>
    <section><h3><Landmark size={18}/>Обязательства и капитал<b>{money(b.totalLiabilities+b.totalEquity)}</b></h3><dl className="revenue-facts">
     {line('Авансы владельцев',b.liabilities.owners,p?.liabilities.owners,'деньги на их балансах')}
-    {line('Деньги исполнителей к выплате',b.liabilities.cleaners,p?.liabilities.cleaners)}
+    {(b.liabilities.cleaners||p?.liabilities.cleaners)?line('Деньги исполнителей к выплате',b.liabilities.cleaners,p?.liabilities.cleaners):null}
     {line('Налоги и взносы к уплате',b.liabilities.taxes,p?.liabilities.taxes,'платит Бухгалтерия')}
     {line('Займы',b.liabilities.loans,p?.liabilities.loans)}
     {line(ip?'Вложения владельца':'Уставный капитал и взносы',b.equity.capital,p?.equity.capital)}
@@ -214,7 +214,7 @@ function SettingsForm({s,busy,save}:{s:Row;busy:boolean;save:Save}){
  const field=(key:string,label:string,suffix:string)=><label className="plans-field">{label}<span><Input value={f[key]} inputMode="decimal" disabled={busy} onChange={e=>setF({...f,[key]:e.target.value.replace(/[^\d.,]/g,'').slice(0,12)})}/><em>{suffix}</em></span></label>;
  const num=(k:string)=>Number(String(f[k]).replace(',','.'));
  return <form className="revenue-terms finance-settings" onSubmit={e=>{e.preventDefault();void save('finance/settings',{...f,expectedVersion:s.version,vatThresholdMrp:num('vatThresholdMrp'),mrp:num('mrp'),usdRate:num('usdRate'),mzp:num('mzp'),ownerBase:num('ownerBase'),ipnDeductionMrp:num('ipnDeductionMrp'),shareCapital:num('shareCapital')});}}>
-  <div className="finance-note"><Info size={18}/><p>По умолчанию ИП на упрощённой декларации со счётом Kaspi Pay: {percent(s.simplified_bp)} с дохода раз в полугодие, без НДС и без социального налога, плюс взносы ИП за себя каждый месяц. Ставки по Налоговому кодексу РК 2026 года. Это допущения, их стоит сверить с бухгалтером. Не учтены потолки взносов, входящий НДС, перенос убытков и амортизация техники.</p></div>
+  <div className="finance-note"><Info size={18}/><p>По умолчанию ИП на упрощённой декларации со счётом Kaspi Pay: {percent(s.simplified_bp)} с дохода раз в полугодие, без НДС и без социального налога, плюс взносы ИП за себя каждый месяц. Гости платят владельцам, а владельцы исполнителям напрямую, мимо сервиса: на счёт ИП приходят только комиссия и «Автопилот», и только они считаются доходом. Ставки по Налоговому кодексу РК 2026 года. Это допущения, их стоит сверить с бухгалтером. Не учтены потолки взносов, входящий НДС, перенос убытков и амортизация техники.</p></div>
   <fieldset><legend>Бизнес</legend>
    <div className="revenue-segment finance-segment-2" role="radiogroup" aria-label="Форма бизнеса">{([['ip','ИП'],['too','ТОО']] as const).map(([id,label])=><button key={id} type="button" role="radio" aria-checked={f.entity===id} onClick={()=>setF({...f,entity:id,taxRegime:id==='ip'?'simplified':'general'})}>{label}</button>)}</div>
    <div className="revenue-fields"><label>Название<Input value={f.companyName} maxLength={80} onChange={e=>setF({...f,companyName:e.target.value})}/></label><label>Начало учёта<Input type="month" value={f.startMonth} onChange={e=>setF({...f,startMonth:e.target.value})}/></label></div>

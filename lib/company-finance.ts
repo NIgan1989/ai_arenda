@@ -95,7 +95,10 @@ export function computeMonths(input:Inputs,basis:Basis,until:string):Month[]{
   const fact=basis==='fact';
   const bookings=Number(b.charged||0)+(fact?0:Number(b.shadow||0)),cleaning=Number(cl.charged||0)+(fact?0:Number(cl.shadow||0)),autopilot=Number(ap.charged||0)+(fact?0:Number(ap.shadow||0));
   const gross=bookings+cleaning+autopilot,vat=s.vat_registered?Math.round(gross*s.vat_bp/(10000+s.vat_bp)):0,revenue=gross-vat;
-  const acquiring=pct(Number(fact?b.turnover_charged:b.turnover_all)||0,s.acquiring_bp);
+  // Guests pay owners and owners pay cleaners directly, outside the service. Only the money that
+  // reaches the business account (commissions and «Автопилот») carries the bank's commission.
+  const inflow=fact?Number(c.balance[month]?.topups||0):gross;
+  const acquiring=pct(inflow,s.acquiring_bp);
   const aiCost=Math.round(Number(ai.micros||0)*s.usd_rate/1e6);
   const bonuses=fact?Number(c.balance[month]?.bonuses||0):0;
   let salaries=0,employer=0,outsource=0,services=0,opex=0,net=0;const taxes:Row={ipn:0,opv:0,vosms_employee:0,sn:0,so:0,opvr:0,vosms_employer:0,cit:0,simplified:0,vat,...(month>=s.start_month?selfContributions(s):{})};
@@ -116,7 +119,6 @@ export function computeMonths(input:Inputs,basis:Basis,until:string):Month[]{
   const pl={bookings,cleaning,autopilot,gross,vat,revenue,acquiring,ai:aiCost,aiRequests:Number(ai.requests||0),bonuses,gross_profit,salaries,employer,self,outsource,services,opex,operating,profit_tax:profitTax,net:netProfit,turnover:Number(fact?b.turnover_charged:b.turnover_all)||0,bookingsCount:Number(b.bookings||0)};
   const paid=input.taxPaid[month]||{},taxesPaid=Object.values(paid).reduce((a:number,v)=>a+Number(v),0) as number;
   const entries=input.cashEntries.filter(e=>e.month===month),sum=(k:string)=>entries.filter(e=>e.kind===k).reduce((a,e)=>a+Number(e.amount),0);
-  const inflow=fact?Number(c.balance[month]?.topups||0):gross;
   const payouts=fact?Number(c.holds[month]?.paid||0)-Number(c.withheld[month]?.withheld||0):0;
   const operatingCash=inflow-payouts-net-outsource-services-opex-acquiring-aiCost-taxesPaid;
   const capital=sum('capital')+(month===s.start_month?s.share_capital:0),loans=sum('loan'),repay=sum('loan_repay'),dividends=sum('dividend'),assets=sum('asset');

@@ -1,5 +1,7 @@
 -- The business is an ИП on the simplified declaration with a Kaspi Pay account by default (the
 -- owner's choice of 2026-11-19); a ТОО on the general regime is a settings change away.
+-- Guests pay owners and owners pay cleaners directly: only commissions and «Автопилот» reach the
+-- business account, so acquiring_bp applies to that money and not to the guests' payments.
 -- Company finance for the platform administrator: the service's own costs, tax assumptions
 -- and the founder's money movements. Revenue is never stored here: it is read from the
 -- commission tables, so the reports always match what owners and cleaners were charged.

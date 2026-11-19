@@ -72,7 +72,7 @@
 -- migration 0068_early_checkin.sql sha256:ebd306eaae07d993f402177b294bc75fe072d037d9f41124c99377fc2b99cca6
 -- migration 0069_early_checkin_hold.sql sha256:1aa41ec8707e7628888886cb35eb544716c3272e8394b1bc42d626694f702118
 -- migration 0070_property_views.sql sha256:2611b7beac6533757e18a3b8f354eeba5553b720fb659f4ff60bfb569e8e7bfe
--- migration 0071_company_finance.sql sha256:0bb9b781ee0101b40e4a7848d992f60c75e636b8c89749df1af8967dce361311
+-- migration 0071_company_finance.sql sha256:f299d7a0157f1e9c76cdd9c9a983768518588ae0d7fe8c9035f047216bfbc48a
 
 -- table access_receipts
 CREATE TABLE access_receipts (id TEXT PRIMARY KEY,property_id TEXT NOT NULL,entity_kind TEXT NOT NULL,entity_id TEXT NOT NULL,user_id TEXT NOT NULL,created_at INTEGER NOT NULL,expires_at INTEGER NOT NULL);
