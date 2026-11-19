@@ -30,7 +30,7 @@ const d=StyleSheet.create({
  box:{gap:8},line:{gap:8,paddingVertical:4},
  stages:{flexDirection:'row',gap:4},stage:{flex:1,gap:4},
  track:{height:4,borderRadius:2,backgroundColor:C.line,overflow:'hidden'},fill:{height:4,width:'100%',borderRadius:2},fillDone:{backgroundColor:C.success},fillNow:{backgroundColor:C.accent},fillWait:{backgroundColor:'transparent'},
- label:{fontSize:11,lineHeight:16,color:C.muted},labelNow:{color:C.accent,fontWeight:'700'},labelDone:{color:C.ink},
+ label:{fontSize:12,lineHeight:16,color:C.muted},labelNow:{color:C.accent,fontWeight:'700'},labelDone:{color:C.ink},
  more:{...type.caption,color:C.accent,fontWeight:'600'},
  history:{paddingVertical:4},step:{flexDirection:'row',gap:8,minHeight:T.control.touch},
  when:{...type.caption,width:84,textAlign:'right',color:C.muted,paddingTop:2,fontVariant:['tabular-nums']},
