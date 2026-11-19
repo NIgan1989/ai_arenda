@@ -16,6 +16,7 @@ import {safetyAction} from './account-safety';
 import {billingState,billingOwners,saveBillingSettings,recordBalanceEntry} from './platform-billing';
 import {plansAdminState,savePlanSettings} from './autopilot-plans';
 import {markCleanerPayout} from './regular-cleaner';
+import {companyFinance,saveFinanceSettings,saveCost,toggleCost,deleteCost,addCashEntry,deleteCashEntry} from './company-finance';
 type Config=OperationConfig&{PLATFORM_ADMIN_IDS?:string;ADMINISTRATOR_RUNNER_SECRET?:string;OPENAI_API_KEY?:string;OPENAI_MODEL?:string};
 type Row=Record<string,any>;
 export function requirePlatformAdmin(userId:string,config:Config){if(!isPlatformAdmin(userId,config.PLATFORM_ADMIN_IDS))throw new DomainError('Управление сервисом доступно только администратору.',403);}
@@ -45,6 +46,7 @@ export async function readPlatformAdmin(service:RentalService,route:string,param
  if(route==='billing/owners')return billingOwners(service,params);
  if(route==='billing/plans')return plansAdminState(service.db);
  if(route==='billing'){const state={...await billingState(service),plans:await plansAdminState(service.db),testPayments:(await one(service.db,"SELECT test_payments FROM platform_billing WHERE id='global'"))?.test_payments===1};await service.audit(service.userId,'admin.billing_viewed').run();return state;}
+ if(route==='finance'){const state=await companyFinance(service.db,params);await service.audit(service.userId,'admin.finance_viewed').run();return state;}
  if(route==='governance')return {...await governanceState(service,'guest',true),admissions:[],testMode:config.TEST_DATA_ONLY==='1'};
  if(route==='health')return {runtime:await buildRuntimeHealth(service.db,config),queue:await operationalHealth(service,'guest',true),integrations:integrationStatus(config),aiBudget:await aiBudgetState(service,config,true)};
  if(route==='properties'){
@@ -87,6 +89,12 @@ export async function writePlatformAdmin(service:RentalService,route:string,body
  if(route==='billing/plans')return savePlanSettings(service,body);
  if(route==='billing/balance')return recordBalanceEntry(service,body);
  if(route==='billing/payout')return markCleanerPayout(service,body);
+ if(route==='finance/settings')return saveFinanceSettings(service,body);
+ if(route==='finance/cost')return saveCost(service,body);
+ if(route==='finance/cost/toggle')return toggleCost(service,body);
+ if(route==='finance/cost/delete')return deleteCost(service,body);
+ if(route==='finance/cash')return addCashEntry(service,body);
+ if(route==='finance/cash/delete')return deleteCashEntry(service,body);
  if(route==='background/retry')return retryBackgroundJob(service,body,true);
  throw new DomainError('Операция управления не найдена.',404);
 }

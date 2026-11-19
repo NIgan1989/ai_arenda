@@ -1,6 +1,6 @@
 'use client';
 import {useEffect,useRef,useState} from 'react';
-import {LayoutDashboard,Users,House,ShieldCheck,MessagesSquare,SlidersHorizontal,Activity,Flag,ArrowUpRight,RefreshCw,LogOut,Menu,X,ChevronRight,CheckCircle2,AlertCircle,MapPin,Camera,CalendarDays,Brush,Search,MoreHorizontal,Wallet,type LucideIcon} from 'lucide-react';
+import {LayoutDashboard,Users,House,ShieldCheck,MessagesSquare,SlidersHorizontal,Activity,Flag,ArrowUpRight,RefreshCw,LogOut,Menu,X,ChevronRight,CheckCircle2,AlertCircle,MapPin,Camera,CalendarDays,Brush,Search,MoreHorizontal,Wallet,LineChart,type LucideIcon} from 'lucide-react';
 import {Brand} from './brand';
 import {AdminActivityMap} from './admin-activity-map';
 import {Button} from './ui/button';
@@ -11,6 +11,7 @@ import {AdminIssues} from './admin-issues';
 import {AdminReports} from './admin-reports';
 import {AdminPolicy} from './admin-policy';
 import {AdminRevenue} from './admin-revenue';
+import {AdminFinance} from './admin-finance';
 import {AdminReviews} from './admin-reviews';
 import {AdminDeletionRequests} from './safety-controls';
 import {logout} from './auth-form';
@@ -20,17 +21,20 @@ import '../app/chat.css';
 import '../app/warm-theme.css';
 import './platform-admin.css';
 type Row=Record<string,any>;
-type Section={id:AdminSection;label:string;hint:string;Icon:LucideIcon;group:'service'|'control';count?:string};
+type Section={id:AdminSection;label:string;hint:string;Icon:LucideIcon;group:Group;count?:string}
+type Group='work'|'people'|'money'|'settings';
+const groups:[Group,string][]=[['work','Работа'],['people','Участники'],['money','Деньги'],['settings','Настройки']];;
 const sections:Section[]=[
- {id:'overview',label:'Обзор',hint:'Главное по сервису и задачи, которым нужно внимание.',Icon:LayoutDashboard,group:'service'},
- {id:'users',label:'Пользователи',hint:'Аккаунты, подключённые роли и участие в работе сервиса.',Icon:Users,group:'service'},
- {id:'properties',label:'Недвижимость',hint:'Объявления владельцев, готовность карточек и публикация.',Icon:House,group:'service'},
- {id:'reviews',label:'Проверки',hint:'ИИ проверяет жильё и исполнителей сам, спорное отдаёт вам.',Icon:ShieldCheck,group:'service',count:'reviews'},
- {id:'operator',label:'Обращения',hint:'ИИ ведёт обращения сам, вам приходит только срочное и просроченное.',Icon:MessagesSquare,group:'service',count:'issues'},
- {id:'moderation',label:'Жалобы и безопасность',hint:'ИИ скрывает явные нарушения сам, остальные жалобы решаете вы.',Icon:Flag,group:'control',count:'reports'},
- {id:'policy',label:'Правила допуска',hint:'Какие проверки нужны до показа жилья и назначения исполнителя.',Icon:SlidersHorizontal,group:'control'},
- {id:'revenue',label:'Доход',hint:'Комиссия с владельцев: бесплатный период, прогноз, условия и балансы.',Icon:Wallet,group:'control'},
- {id:'health',label:'Состояние сервиса',hint:'Фоновые проверки, резервные копии и подключения.',Icon:Activity,group:'control'},
+ {id:'overview',label:'Обзор',hint:'Главное по сервису и задачи, которым нужно внимание.',Icon:LayoutDashboard,group:'work'},
+ {id:'reviews',label:'Проверки',hint:'ИИ проверяет жильё и исполнителей сам, спорное отдаёт вам.',Icon:ShieldCheck,group:'work',count:'reviews'},
+ {id:'operator',label:'Обращения',hint:'ИИ ведёт обращения сам, вам приходит только срочное и просроченное.',Icon:MessagesSquare,group:'work',count:'issues'},
+ {id:'moderation',label:'Жалобы',hint:'ИИ скрывает явные нарушения сам, остальные жалобы решаете вы.',Icon:Flag,group:'work',count:'reports'},
+ {id:'users',label:'Пользователи',hint:'Аккаунты, подключённые роли и участие в работе сервиса.',Icon:Users,group:'people'},
+ {id:'properties',label:'Объекты',hint:'Объявления владельцев, готовность карточек и публикация.',Icon:House,group:'people'},
+ {id:'revenue',label:'Доход и балансы',hint:'Комиссия с владельцев: бесплатный период, прогноз, условия и балансы.',Icon:Wallet,group:'money'},
+ {id:'finance',label:'Финансист',hint:'ОПИУ, ДДС и баланс сервиса. Расходы на сотрудников, сервисы и налоги можно править.',Icon:LineChart,group:'money'},
+ {id:'policy',label:'Правила допуска',hint:'Какие проверки нужны до показа жилья и назначения исполнителя.',Icon:SlidersHorizontal,group:'settings'},
+ {id:'health',label:'Состояние сервиса',hint:'Фоновые проверки, резервные копии и подключения.',Icon:Activity,group:'settings'},
 ];
 const labels:Row={guest:'Гость',owner:'Владелец',cleaner:'Исполнитель',pending:'На проверке',approved:'Одобрено',rejected:'Отклонено'};
 const jobKinds:Row={owner:'Контроль объектов','finance-history':'История расчётов',calendar:'Календари',discovery:'Поиск задач',delivery:'Доставка уведомлений',backup:'Резервная копия','local-backup':'Локальная резервная копия'};
@@ -45,7 +49,7 @@ async function adminAPI(path:string,body?:Row){
  if(!r.ok)throw Error(result.error||'Не удалось выполнить действие.');return result;
 }
 function AdminNavigation({active,counts,onSelect,disabled=false}:{active:AdminSection;counts:Row;onSelect:(id:AdminSection)=>void;disabled?:boolean}){
- return <nav className="admin-nav" aria-label="Разделы управления">{(['service','control'] as const).map(group=><div className="admin-nav-group" key={group}><span className="admin-nav-caption">{group==='service'?'Сервис':'Контроль и настройки'}</span>{sections.filter(s=>s.group===group).map(({id,label,Icon,count})=><button key={id} type="button" disabled={disabled} aria-current={active===id?'page':undefined} onClick={()=>onSelect(id)}><Icon size={18}/><span>{label}</span>{count&&counts[count]>0&&<b>{counts[count]}</b>}</button>)}</div>)}</nav>;
+ return <nav className="admin-nav" aria-label="Разделы управления">{groups.map(([group,caption])=><div className="admin-nav-group" key={group}><span className="admin-nav-caption">{caption}</span>{sections.filter(s=>s.group===group).map(({id,label,Icon,count})=><button key={id} type="button" disabled={disabled} aria-current={active===id?'page':undefined} onClick={()=>onSelect(id)}><Icon size={18}/><span>{label}</span>{count&&counts[count]>0&&<b>{counts[count]}</b>}</button>)}</div>)}</nav>;
 }
 function AdminOverview({data,onSelect}:{data:Row;onSelect:(id:AdminSection)=>void}){
  const c=data.counts,working=data.runtime.ok,StatusIcon=working?CheckCircle2:AlertCircle;
@@ -58,14 +62,14 @@ function AdminOverview({data,onSelect}:{data:Row;onSelect:(id:AdminSection)=>voi
 export function PlatformAdmin({name}:{name:string}){
  const [tab,setTab]=useState<AdminSection>('overview'),[menuOpen,setMenuOpen]=useState(false),[data,setData]=useState<Row|null>(null),[summary,setSummary]=useState<Row|null>(null);
  const [loading,setLoading]=useState(true),[busy,setBusy]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState(''),[updatedAt,setUpdatedAt]=useState(0);
- const [search,setSearch]=useState(''),[filter,setFilter]=useState(''),[page,setPage]=useState(0),sequence=useRef(0);
+ const [search,setSearch]=useState(''),[filter,setFilter]=useState(''),[page,setPage]=useState(0),sequence=useRef(0),financeParams=useRef<Row>({});
  const section=sections.find(s=>s.id===tab)!;
  function select(id:AdminSection){setMenuOpen(false);setTab(id);const path=adminSectionPath(id);if(window.location.pathname+window.location.search!==path)window.history.pushState(null,'',path);window.scrollTo({top:0,behavior:'instant'});}
  useEffect(()=>{const read=()=>setTab(adminSection(new URLSearchParams(window.location.search).get('section')));read();window.addEventListener('popstate',read);return()=>window.removeEventListener('popstate',read);},[]);
  async function refresh(target=tab,p=page,query=search,role=filter){
   const request=++sequence.current;setLoading(true);setError('');
   const path=target==='operator'||target==='policy'?'governance':target==='moderation'?'reports':target==='revenue'?'billing':target;
-  try{const value=await adminAPI(path+(['users','properties'].includes(target)?'?'+new URLSearchParams({search:query,role,page:String(p)}):''));if(request===sequence.current){setData({...value,_adminSection:target});setPage(p);setUpdatedAt(Math.floor(Date.now()/1000));if(path==='overview')setSummary(value);}}catch(e:any){if(request===sequence.current)setError(e.message);}finally{if(request===sequence.current)setLoading(false);}
+  try{const value=await adminAPI(path+(['users','properties'].includes(target)?'?'+new URLSearchParams({search:query,role,page:String(p)}):target==='finance'?'?'+new URLSearchParams(financeParams.current):''));if(request===sequence.current){setData({...value,_adminSection:target});setPage(p);setUpdatedAt(Math.floor(Date.now()/1000));if(path==='overview')setSummary(value);}}catch(e:any){if(request===sequence.current)setError(e.message);}finally{if(request===sequence.current)setLoading(false);}
  }
  useEffect(()=>{setData(null);setSearch('');setFilter('');setPage(0);setNotice('');void refresh(tab,0,'','');return()=>{sequence.current++;};},[tab]);
  async function save(path:string,body:Row){setBusy(true);setError('');setNotice('');try{const result=await adminAPI(path,body);setNotice(result.message||'Сохранено.');await refresh();return result;}catch(e:any){setError(e.message);return undefined;}finally{setBusy(false);}}
@@ -86,6 +90,7 @@ export function PlatformAdmin({name}:{name:string}){
  {tab==='policy'&&<AdminPolicy state={data} busy={busy} save={save}/>}
  {tab==='moderation'&&<><AdminReports data={data} busy={busy} save={save}/><details className="reviews-rules"><summary>Запросы на удаление аккаунтов<ChevronRight size={16}/></summary><div className="admin-safety-extra"><AdminDeletionRequests role="guest"/></div></details></>}
  {tab==='revenue'&&<AdminRevenue data={data} busy={busy} save={save}/>}
+ {tab==='finance'&&<AdminFinance data={data} busy={busy||loading} save={save} onParams={p=>{financeParams.current=p;void refresh('finance');}}/>}
  {tab==='health'&&<AdminHealth data={data} busy={busy} save={save}/>}
  </>}
  </div></main>
