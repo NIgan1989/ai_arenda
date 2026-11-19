@@ -23,7 +23,8 @@ export type WeekInput={
  regular:{id:string;property_id:string}[];
  // The AI's own steps written in the journal this week.
  steps:number;
- plan:{status:string;period_end:number;price:number;units:number}|null;
+ // until: the end of the paid or free period, or for a plan awaiting payment the day it pauses.
+ plan:{status:string;until:number;price:number;units:number}|null;
 };
 export type WeekLate={propertyId:string;title:string;start:number;readyAt:number|null;minutes:number|null};
 export type WeekPlace={id:string;title:string;arrivals:number;onTime:number;assigned:number;confirmed:number;decisions:number};
@@ -41,7 +42,7 @@ function actionOf(raw:string):{action:string;onBehalf:boolean}{
  if(raw.startsWith('{')){try{const v=JSON.parse(raw);return {action:String(v?.action||''),onBehalf:!!v?.onBehalfOf};}catch{return {action:'',onBehalf:false};}}
  return {action:raw,onBehalf:false};
 }
-const AI_ACTORS=new Set(['system:rental-policy','system:dispatch']);
+const AI_ACTORS=new Set(['system:rental-policy']);
 const dayStart=(t:number)=>Math.floor((t+ZONE)/DAY)*DAY-ZONE;
 /** The seven local days counted: today and the six before it, or (ended) the seven days that ended last midnight,
  *  which on a Monday is the whole past week. */
@@ -61,8 +62,9 @@ export function buildAutopilotWeek(i:WeekInput):AutopilotWeek{
  const bump=(id:string|undefined,key:'assigned'|'confirmed'|'decisions')=>{const p=id?place.get(id):undefined;if(p)p[key]++;};
  const assignedJobs=new Set<string>(),confirmedBookings=new Set<string>(),decided=new Set<string>();
  for(const a of i.audits){
-  const {action,onBehalf}=actionOf(a.action),ai=onBehalf&&AI_ACTORS.has(a.actor_id)||a.actor_id==='system:dispatch';
-  if(action==='job.assigned'||action==='cleaning.no_show_replacement'){
+  const {action,onBehalf}=actionOf(a.action),ai=onBehalf&&AI_ACTORS.has(a.actor_id);
+  // A no-show only takes the assignment off (the job opens again): the replacement counts when someone is assigned.
+  if(action==='job.assigned'){
    if(ai){if(!assignedJobs.has(a.entity_id)){assignedJobs.add(a.entity_id);bump(a.property_id,'assigned');}}
    else if(!a.actor_id.startsWith('system:')&&!decided.has('job:'+a.entity_id)){decided.add('job:'+a.entity_id);bump(a.property_id,'decisions');}
   }else if(action==='booking.confirmed'||action==='booking.rejected'){
@@ -85,7 +87,7 @@ export function buildAutopilotWeek(i:WeekInput):AutopilotWeek{
  }
  const assigned=assignedJobs.size,confirmed=confirmedBookings.size,decisions=decided.size;
  const places=[...place.values()].filter(p=>p.arrivals||p.assigned||p.confirmed||p.decisions).sort((a,b)=>b.arrivals+b.assigned-(a.arrivals+a.assigned));
- const plan=i.plan?{status:i.plan.status,until:i.plan.period_end,price:i.plan.price,units:i.plan.units}:null;
+ const plan=i.plan?{...i.plan}:null;
  return {from,to,label:weekLabel(from,to),assigned,confirmed,decisions,steps:i.steps,arrivals,onTime,late,places,plan,summary:weekSummary({assigned,confirmed,decisions,arrivals,onTime})};
 }
 

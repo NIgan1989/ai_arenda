@@ -11,7 +11,9 @@ test('counts the AI\'s assignments and confirmations apart from the owner\'s own
  i.audits=[
   {entity_id:'j1',actor_id:'system:rental-policy',action:ai('job.assigned'),property_id:'a'},
   {entity_id:'j1',actor_id:'system:rental-policy',action:ai('job.assigned'),property_id:'a'},
+  // A no-show only opens the job again: not an assignment.
   {entity_id:'j2',actor_id:'system:dispatch',action:JSON.stringify({action:'cleaning.no_show_replacement',onBehalfOf:'o'}),property_id:'b'},
+  {entity_id:'j5',actor_id:'system:rental-policy',action:ai('job.assigned'),property_id:'b'},
   {entity_id:'j3',actor_id:'o',action:'job.assigned',property_id:'b'},
   {entity_id:'b1',actor_id:'system:rental-policy',action:ai('booking.confirmed'),property_id:'a'},
   {entity_id:'b2',actor_id:'o',action:'booking.confirmed',property_id:'a'},
@@ -19,7 +21,7 @@ test('counts the AI\'s assignments and confirmations apart from the owner\'s own
  ];
  i.regular=[{id:'j4',property_id:'a'},{id:'j1',property_id:'a'}];
  const w=buildAutopilotWeek(i);
- assert.equal(w.assigned,3,'j1 once, j2 replaced by the AI, j4 taken by the regular performer');
+ assert.equal(w.assigned,3,'j1 once, j5 assigned by the AI, j4 taken by the regular performer; the no-show of j2 is not one');
  assert.equal(w.confirmed,1);assert.equal(w.decisions,3,'the owner assigned one cleaning and decided two requests');
  const a=w.places.find(p=>p.id==='a');assert.equal(a.assigned,2);assert.equal(a.confirmed,1);assert.equal(a.decisions,1);
  assert.match(w.summary,/ИИ назначил 3 уборки, подтвердил 1 бронь/);assert.match(w.summary,/ваше решение понадобилось 3 раза/);
@@ -54,7 +56,7 @@ test('the week label and the plan',async()=>{
  // Monday 2026-11-23 10:00: the week that ended at midnight, Monday to Sunday.
  const mon=weekWindow(Date.UTC(2026,10,23,5)/1000,true);assert.equal(weekLabel(mon.from,mon.to),'16–22 ноября');
  const x=weekWindow(Date.UTC(2026,10,3,5)/1000,true);assert.equal(weekLabel(x.from,x.to),'27 октября – 2 ноября');
- const w=buildAutopilotWeek({...base(t),plan:{status:'trial',period_end:t+5*DAY,price:4900,units:2},steps:17});
+ const w=buildAutopilotWeek({...base(t),plan:{status:'trial',until:t+5*DAY,price:4900,units:2},steps:17});
  assert.deepEqual(w.plan,{status:'trial',until:t+5*DAY,price:4900,units:2});assert.equal(w.steps,17);
  assert.match(w.summary,/заездов после уборки не было/);
 });
@@ -77,5 +79,13 @@ test('the loader reads only the owner\'s own things; the Monday notice carries t
   await sweepPlans(f.db,at);
   const n=R.prepare("SELECT body FROM notifications WHERE user_id='owner' AND dedupe LIKE 'owner:autopilot-week:%'").get();
   assert.match(n.body,/^Неделя на автопилоте: ИИ назначил \d+ уборк/);assert.match(n.body,/меню → Автопилот/);
+ }finally{f.db.close();}
+});
+
+test('a plan awaiting payment shows the day it pauses, not the period that ended',async()=>{
+ const f=await fixture();try{
+  const {autopilotWeek}=await load('autopilot-week-db'),R=f.db.raw,t=now();
+  R.prepare("INSERT INTO autopilot_plans(user_id,role,status,started_at,period_end,grace_until,auto_renew,version,updated_at) VALUES ('owner','owner','grace',?,?,?,1,1,?)").run(t-40*DAY,t-DAY,t+2*DAY,t);
+  const w=await autopilotWeek(f.db,'owner',t);assert.equal(w.plan.status,'grace');assert.equal(w.plan.until,t+2*DAY);
  }finally{f.db.close();}
 });
