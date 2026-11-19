@@ -40,7 +40,7 @@ test('advice speaks plainly when there is nothing yet',async()=>{
 });
 
 test('the owner sees only his own objects through the database',async()=>{
- const f=await fixture(),{ownerAnalytics}=await load('owner-analytics');
+ const f=await fixture(),{ownerAnalytics}=await load('owner-analytics-db');
  const mine=await ownerAnalytics(f.db,'owner','week');
  assert.equal(mine.objects,1);assert.equal(mine.stays.requests,1);
  // The fixture's stay begins in an hour: it is money ahead, not yet earned.

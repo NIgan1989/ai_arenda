@@ -1,5 +1,5 @@
 import {recordViews} from '../../../lib/property-views';
-import {ownerAnalytics} from '../../../lib/owner-analytics';
+import {ownerAnalytics} from '../../../lib/owner-analytics-db';
 import {aiJournal} from '../../../lib/ai-moves';
 import {orderHomeCleaning} from '../../../lib/home-order';
 import { waitUntil, env as workerEnv } from 'cloudflare:workers';
