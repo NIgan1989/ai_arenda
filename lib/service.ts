@@ -2,6 +2,7 @@ import {wordsOf,venueOr,TYPE_SQL} from './stay-words';
 import {unreadyNote} from './unready';
 import {reliabilityFor} from './reliability';
 import {CHECKIN_LEAD_SECONDS,checkinOpensAt,checkinOpensLabel} from './checkin-window';
+import {arrivalSteps,arrivalCodes,busyAround} from './arrival-ready';
 import {afterReady,allowEarlyCheckin,extendCleaningBefore,shiftedStay,shiftReason,SHIFT_CHOICES,SHIFT_LIMIT} from './arrival-shift';
 import {assessBookingRisk,riskSignals,saveRiskSql,riskLabel,riskFromRow} from './booking-risk';
 import { DomainError, required, number, interval, quote, roles, assistantReply, type Role } from './domain';
@@ -46,7 +47,7 @@ import {ownerCleaningTips,decideCleaningTip} from './cleaning-price';
 import {releaseStatements,releaseWindow} from './overdue-cleaning';
 import {lateUntil,LATE_OPENS} from './late-arrival';
 import {ruleFor,minutesLabel} from './decision-rules';
-import {ownerWindows,decideCalendarWindow,openWindowFor,openWindowsFor,windowQuote} from './calendar-windows';
+import {ownerWindows,decideCalendarWindow,openWindowFor,openWindowsFor,openWindowsIn,windowAt,windowQuote} from './calendar-windows';
 
 type Row = Record<string, any>;
 const now = () => Math.floor(Date.now() / 1000);
@@ -445,7 +446,7 @@ export class RentalService {
     const policies=await this.all('SELECT * FROM property_policies');
     return {properties:await this.enrichProperties(properties.map(p=>({...p,policy:publicPolicy(policies.find(v=>v.property_id===p.id))})))};
   }
-  async publicSearch(filters:Record<string,string>={},options:{syntheticPreview?:boolean;matching?:boolean;ignorePrep?:boolean;readyIds?:string[]}={}){
+  async publicSearch(filters:Record<string,string>={},options:{syntheticPreview?:boolean;matching?:boolean;ignorePrep?:boolean;readyIds?:string[];arrival?:{around:number|null}}={}){
     const city=String(filters.city||'').trim(),mode=filters.mode||'daily',guests=number(filters.guests||1,'Гости',1,1000);
     if(city.length>80||!['daily','hourly','night'].includes(mode))throw new DomainError('Проверьте город и вид аренды.');
     const catalog=await this.publicCatalog(options),cities=[...new Set(catalog.properties.map(p=>String(p.city)))].sort();
@@ -453,17 +454,36 @@ export class RentalService {
     // Homes unless the bath category is asked for by name or by its types: a bath never shows among homes.
     const kinds=Array.isArray(filters.kinds)?filters.kinds:[],category=categories[filters.category]?filters.category:searchCategory(kinds);
     let items=catalog.properties.filter(p=>(!city||(exactCity?String(p.city).toLocaleLowerCase('ru')===cityKey:String(p.city).toLocaleLowerCase('ru').includes(cityKey)))&&p.capacity>=guests&&(mode!=='hourly'||p.policy.hourly_price>0)&&kindCategory(p.details?.type)===category);
-    let range:{start:number;end:number}|null=null;
+    let range:{start:number;end:number}|null=null,later:Row[]=[],arrivalSet:{steps:number[];at:number}|null=null;
+    const arrivalOf=new Map<string,string>();
     if(filters.start||filters.end){
       range=interval(filters.start,filters.end);
       const {start,end}=range;
-      const [booked,cleaning,external,stale]=await Promise.all([
+      // The arrival strip (lib/arrival-ready.ts): the same stays, cleanings and blocks, fetched once for every step of it.
+      const steps=options.arrival?arrivalSteps(start,options.arrival.around,now()):[];
+      const strip=options.arrival?await busyAround(this.db,steps[0],steps[steps.length-1]+end-start,now()):null;
+      const [booked,cleaning,external,stale]=strip?[strip.filter(b=>{const p=items.find(p=>p.id===b.property_id);return !!p&&b.start<end+(Number(p.cleaning_minutes)||0)*60&&b.until>start;}),[],[],await this.all("SELECT DISTINCT property_id FROM calendar_sources WHERE enabled=1 AND url<>'' AND (last_success IS NULL OR last_success<? OR last_error<>'')",now()-3600)]:await Promise.all([
         this.all("SELECT DISTINCT b.property_id FROM bookings b JOIN properties p ON p.id=b.property_id WHERE (b.status='confirmed' OR (b.status='requested' AND b.expires_at>?)) AND b.start<?+p.cleaning_minutes*60 AND b.occupied_until>?",now(),end,start),
         this.all("SELECT DISTINCT j.property_id FROM cleaning_jobs j JOIN properties p ON p.id=j.property_id WHERE j.status IN ('open','assigned','in_progress','submitted') AND j.start<?+p.cleaning_minutes*60 AND j.end>?",end,start),
         this.all('SELECT DISTINCT x.property_id FROM external_blocks x JOIN calendar_sources s ON s.id=x.source_id JOIN properties p ON p.id=x.property_id WHERE s.enabled=1 AND x.start<?+p.cleaning_minutes*60 AND x.end>?',end,start),
         this.all("SELECT DISTINCT property_id FROM calendar_sources WHERE enabled=1 AND url<>'' AND (last_success IS NULL OR last_success<? OR last_error<>'')",now()-3600),
       ]);
       const occupied=new Set([...booked,...cleaning,...external,...stale].map(p=>p.property_id));
+      // Every home of the city that passes all but the time, with its code for each step; the ones not free at the asked
+      // time are priced at their first free step, so the guest sees «С 19:00» and what it costs.
+      if(strip){
+        const staleIds=new Set(stale.map(p=>p.property_id)),length=end-start,stripWindows=mode==='hourly'?await openWindowsIn(this.db,steps[0],steps[steps.length-1]+length):[];
+        later=items.filter(p=>!staleIds.has(p.id)&&!['maintenance','blocked'].includes(p.display_status.code)).flatMap(p=>{
+          const codes=arrivalCodes(p,strip.filter(b=>b.property_id===p.id),steps,length,now(),options.readyIds?.includes(p.id));
+          // The first free step after the asked arrival; else the latest before it (the strip counts it at its own steps).
+          let first=steps.findIndex((t,i)=>codes[i]!=='-'&&t>start);
+          if(first<0)first=[...codes].map((c,i)=>c!=='-'?i:-1).filter(i=>i>=0).pop()??-1;
+          arrivalOf.set(p.id,codes);
+          if(first<0)return [];
+          try{const at=steps[first],price=withGuests(windowQuote(rentalPrice(p.price,p.policy,at,at+length,mode),p.policy.hourly_price,windowAt(stripWindows,p.id,at,at+length)),p.policy,guests);return [{...p,arrival:codes,arrivalFrom:at,estimate:{amount:price.amount,periods:price.periods,rate:price.price,unitLabel:price.unitLabel,billingMode:price.billingMode,...(price.window?{window:price.window}:{})}}];}catch(error){if(error instanceof DomainError)return [];throw error;}
+        });
+        arrivalSet={steps,at:start};
+      }
       items=items.filter(p=>!occupied.has(p.id)&&!['maintenance','blocked'].includes(p.display_status.code)&&(start>now()+60||p.display_status.code==='ready')
         // A place that is made ready before the guests is not offered sooner than that takes.
         &&(options.ignorePrep||options.readyIds?.includes(p.id)||!tooSoon(p.policy,start,now())));
@@ -481,8 +501,10 @@ export class RentalService {
     if(sort!=='recommended')items.sort((a,b)=>(sort==='price-asc'?1:-1)*(rate(a)-rate(b))||String(a.id).localeCompare(String(b.id)));
     const total=items.length,totalPages=Math.max(1,Math.ceil(total/limit)),page=Math.min(pageInput,totalPages);
     let pageItems:Row[]=options.matching?items:items.slice((page-1)*limit,page*limit);
-    if(filters.map==='1'&&pageItems.length){const locations=options.matching?await this.all('SELECT l.*,p.city,p.district,p.address FROM property_locations l JOIN properties p ON p.id=l.property_id WHERE p.published=1'):await this.all('SELECT l.*,p.city,p.district,p.address FROM property_locations l JOIN properties p ON p.id=l.property_id WHERE p.id IN ('+pageItems.map(()=>'?').join(',')+')',...pageItems.map(p=>p.id));pageItems=pageItems.map(p=>{const l=locations.find(l=>l.property_id===p.id);return {...p,location:l&&l.address_fingerprint===[l.city,l.district,l.address].join('|')?publicPoint(l):null};});}
-    return {properties:pageItems,total,page,limit,totalPages,cities,filters:{city,mode,guests,minPrice,maxPrice,rooms,sort,...(range?{start:range.start,end:range.end}:{})},availabilityChecked:!!range,...(filters.map==='1'?{center:mapCities[Object.keys(mapCities).find(c=>c.toLocaleLowerCase('ru')===city.toLocaleLowerCase('ru'))||'']||[67,48]}:{})};
+    // The strip: each found home carries its codes; the others free later are kept apart, off the found list.
+    if(arrivalSet){const found=new Set(pageItems.map(p=>p.id));pageItems=pageItems.map(p=>({...p,arrival:arrivalOf.get(p.id)||''}));later=later.filter(p=>!found.has(p.id));}
+    if(filters.map==='1'&&(pageItems.length||later.length)){const locations=options.matching?await this.all('SELECT l.*,p.city,p.district,p.address FROM property_locations l JOIN properties p ON p.id=l.property_id WHERE p.published=1'):await this.all('SELECT l.*,p.city,p.district,p.address FROM property_locations l JOIN properties p ON p.id=l.property_id WHERE p.id IN ('+pageItems.map(()=>'?').join(',')+')',...pageItems.map(p=>p.id));const placed=(p:Row)=>{const l=locations.find(l=>l.property_id===p.id);return {...p,location:l&&l.address_fingerprint===[l.city,l.district,l.address].join('|')?publicPoint(l):null};};pageItems=pageItems.map(placed);later=later.map(placed);}
+    return {...(arrivalSet?{arrival:arrivalSet,later}:{}),properties:pageItems,total,page,limit,totalPages,cities,filters:{city,mode,guests,minPrice,maxPrice,rooms,sort,...(range?{start:range.start,end:range.end}:{})},availabilityChecked:!!range,...(filters.map==='1'?{center:mapCities[Object.keys(mapCities).find(c=>c.toLocaleLowerCase('ru')===city.toLocaleLowerCase('ru'))||'']||[67,48]}:{})};
   }
   async publicMedia(mediaId:string,bucket?:R2Bucket){
     const image=await this.one(`SELECT m.data,m.object_key,m.width,m.height FROM media m WHERE m.id=? AND m.kind='property' AND EXISTS(SELECT 1 FROM property_details d JOIN properties p ON p.id=d.property_id,json_each(d.photos) f WHERE f.value=m.id AND p.published=1 AND p.demo_owner IS NULL AND ${pilotPropertyVisibleSql('p')})`,required(mediaId,'Фото',100));

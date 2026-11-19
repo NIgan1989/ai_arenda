@@ -102,6 +102,13 @@ export async function openWindowsFor(db:D1Database,start:number|null,end:number|
   :await rows(db,"SELECT "+windowCols+" WHERE w.status='open' AND w.end>? ORDER BY w.start DESC",t+3600);
  return new Map(list.map(w=>[w.property_id,w]));
 }
+// Open windows that touch a span (the arrival strip): the stay of each step finds its own among them (windowAt).
+export async function openWindowsIn(db:D1Database,start:number,end:number){
+ return rows(db,"SELECT "+windowCols+" WHERE w.status='open' AND w.start<? AND w.end>? GROUP BY w.id",end,start);
+}
+export function windowAt(list:Row[],propertyId:string,start:number,end:number){
+ return list.filter(w=>w.property_id===propertyId&&w.start<=start&&w.end>=end).sort((a,b)=>a.hourly_to-b.hourly_to)[0]||null;
+}
 // Applies an open window to an hourly quote. The stored price never raises the current tariff.
 export function windowQuote<T extends {billingMode:string;periods:number;price:number;amount:number}>(pricing:T,hourly:number,w:Row|null|undefined){
  if(!w||pricing.billingMode!=='hourly'||!(w.hourly_to<hourly))return {...pricing,window:null};

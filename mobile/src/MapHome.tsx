@@ -38,6 +38,8 @@ import {narrowed as narrowFlats,rotateEquals,foundLine} from './guest-helpers';
 import {AgainRow,Heart,useFavorites} from './Favorites';
 import {favouredFirst,markOf} from './favorites';
 import {GuestMode} from './GuestMode';
+import {ArrivalStrip} from './ArrivalStrip';
+import {arrivalOf,cardWords,countsAt,homeAt,pinWords,shiftDraft} from './arrival';
 import {PriceTip} from './PriceTip';
 import {kindLabel} from '../../lib/listings';
 import {guestPin,guestTrips} from '../../lib/guest-trips';
@@ -101,6 +103,8 @@ function GuestPanel({setScanning,setQuiet,accountId,data,mapData,publish,selecte
  const [preview,setPreview]=useState<Row|null>(recent?kept!.preview:null),[requestId,setRequestId]=useState(()=>liveRequests.get(accountId)||''),[live,setLive]=useState<Row|null>(null);
  const [error,setError]=useState(''),[working,setWorking]=useState(false),[index,setIndex]=useState(0),[acceptedKey,setAcceptedKey]=useState(''),[skew,setSkew]=useState(0);
  const lock=useRef(false),requestKey=useRef(''),pickThenFind=useRef(false),bookedFlat=useRef<Row|null>(null),askedFrom=useRef<MapPoint|null>(null);
+ // «Заезд» under the map: the arrival the pins speak for (null: the searched one), and the arrival the strip was built round.
+ const [arriveAt,setArriveAt]=useState<number|null>(null),around=useRef(kept?.draft?kept.draft.start+'+05:00':''),shiftTimer=useRef<ReturnType<typeof setTimeout>|undefined>(undefined),latestDraft=useRef(draft);latestDraft.current=draft;
  const active=!!requestId&&(!live||['searching','ready','booking'].includes(live.status)),now=useNow(active)+skew;
  // «Избранное»: the hearts and the homes of earlier stays; they come first in what the search finds.
  // Without an account a heart asks to sign in (App.tsx), instead of failing on the server.
@@ -110,14 +114,26 @@ function GuestPanel({setScanning,setQuiet,accountId,data,mapData,publish,selecte
  // A lost connection is already said by the line at the top of the screen; the sheet does not repeat it.
  async function guarded(task:()=>Promise<void>){if(lock.current)return;lock.current=true;setWorking(true);setError('');try{await task();}catch(e){if(!isOffline(e))setError(message(e));}finally{lock.current=false;setWorking(false);}}
  // A search never starts in the past: a stay left from an earlier hour moves forward first.
- const find=(conditions:GuestDraft=draft)=>guarded(async()=>{
+ // shift: the same search moved along the arrival strip; the map keeps its view and the sheet stays as it is.
+ const find=(conditions:GuestDraft=draft,shift=false)=>guarded(async()=>{
   const next=freshDraft(conditions);
   if(next.maxPrice&&Number(next.maxPrice)<100)throw new Error('Бюджет: от 100 ₸. Или оставьте поле пустым.');
   if(next.priority==='closer'&&!next.near)throw new Error('Чтобы искать ближе, сначала укажите точку на карте.');
   setDraft(next);
-  const result=await request('/api/public/matching?q='+encodeURIComponent(JSON.stringify(matchingBody(next))));
-  foundAt.current=Date.now();setPreview({...result,properties:rotateEquals(favouredFirst(result.properties||[],mine),Math.floor(Date.now()/3600000),p=>mine.favorites.includes(p.id))});setRefine('');setSelected('');expand(1);
+  if(!shift){around.current=next.start+'+05:00';clearTimeout(shiftTimer.current);setArriveAt(null);}
+  const result=await request('/api/public/matching?q='+encodeURIComponent(JSON.stringify({...matchingBody(next),around:around.current})));
+  foundAt.current=Date.now();
+  const properties=rotateEquals(favouredFirst(result.properties||[],mine),Math.floor(Date.now()/3600000),p=>mine.favorites.includes(p.id));
+  setPreview(old=>({...result,properties,frame:shift&&old?old.frame||old.serverTime:result.serverTime}));
+  if(shift)return;
+  setRefine('');setSelected('');expand(1);
  });
+ // A step of the strip: the pins answer at once from what the search already said; a moment later the search runs for
+ // that arrival, so the cards, their prices and «Забронировать» are for it too.
+ const arriveBy=(t:number)=>{setArriveAt(t);clearTimeout(shiftTimer.current);// A search still running holds the lock: the latest step waits for it instead of being dropped.
+  const run=()=>{if(lock.current){shiftTimer.current=setTimeout(run,300);return;}void find(shiftDraft(latestDraft.current,t),true);};
+  shiftTimer.current=setTimeout(run,700);};
+ useEffect(()=>()=>clearTimeout(shiftTimer.current),[]);
  // «Снова туда же»: the home is priced for the stay in the line first, so the card books the tariff the search would
  // (the night price too). Busy or not fitting on these conditions: the card opens without dates, and the guest picks them.
  const again=(home:Row)=>guarded(async()=>{
@@ -199,7 +215,7 @@ function GuestPanel({setScanning,setQuiet,accountId,data,mapData,publish,selecte
  // «Помогайки»: the steps that narrow the answer on the phone, each with the card that was in view when it was taken;
  // the ones taken back are not offered again. A new answer starts clean.
  const [steps,setSteps]=useState<{id:string;at:string}[]>([]),[tried,setTried]=useState<string[]>([]),[anchor,setAnchor]=useState('');
- useEffect(()=>{setSteps([]);setTried([]);setAnchor('');},[preview?.serverTime]);
+ useEffect(()=>{setSteps([]);setTried([]);setAnchor('');},[preview?.frame||preview?.serverTime]);
  const stepIds=steps.map(v=>v.id);
  const here=useHere();
  const meInCity=!!here.fix&&nearestCity(here.fix.point)===draft.city;
@@ -262,7 +278,15 @@ function GuestPanel({setScanning,setQuiet,accountId,data,mapData,publish,selecte
   }})();
  };
  // Pins follow the stage: catalogue, checked candidates, then owners who are answering.
- const stageKey=(requestId?'live':preview?'preview:'+preview.serverTime+':'+stepIds.join():'base:'+draft.city)+':'+mine.favorites.length;
+ const stageKey=(requestId?'live':preview?'preview:'+(preview.frame||preview.serverTime)+':'+stepIds.join():'base:'+draft.city)+':'+mine.favorites.length;
+ // The arrival the pins speak for, and the homes free only later on the guest's other conditions («С 19:00»).
+ const arrival=arrivalOf(preview),at=arrival?arriveAt!==null&&arrival.steps.includes(arriveAt)?arriveAt:arrival.at:0;
+ const later:Row[]=arrival&&!stepIds.length?(preview?.later||[]).filter((p:Row)=>!shown.some(x=>x.id===p.id)):[];
+ const counts=arrival?countsAt([...shown,...later],arrival):[];
+ // A pin «С 19:00» tapped on the map moves the arrival there; the card of that home opens once the search answers for it.
+ useEffect(()=>{if(!arrival||!selected)return;const p=[...shown,...later].find(x=>x.id===selected);if(!p)return;const state=homeAt(p,arrival,at);if(state.state==='later'&&state.from)arriveBy(state.from);},[selected]);
+ // What the card of a found home says about its readiness at the searched arrival.
+ const readiness=(p:Row)=>{if(!arrival)return null;const state=homeAt(p,arrival,arrival.at);return state.state==='ready'||state.state==='check'?{text:cardWords(state,arrival.at),check:state.state==='check'}:null;};
  useEffect(()=>{
   const pin=(p:Row,tone:MapPin['tone']):MapPin[]=>{const point=pointOf(p),amount=p.estimate?.amount??p.price;return point?[{key:p.id,point,title:p.title,label:(mine.favorites.includes(p.id)?'♥ ':'')+short(amount),tone,rank:typeof amount==='number'?amount:0}]:[];};
   // On the way the map shows only the way: the home, the guest's point and the road between them.
@@ -283,13 +307,19 @@ function GuestPanel({setScanning,setQuiet,accountId,data,mapData,publish,selecte
    publish(asked,'live:'+live.id+':'+offers.length+':'+(live.pendingProperties||[]).length,{lines:roadBeams(straight,roads)});
   }
   else if(preview){
-   const found:MapPin[]=shown.flatMap((p:Row)=>pin(p,p.quickRequest?'booking':'home').map(m=>p.match?.best&&!isQuiet(draft)?{...m,best:true}:m));
+   // With the arrival strip each pin says what the home is at the chosen arrival: its price when it is ready then.
+   const found:MapPin[]=[...shown,...later].flatMap((p:Row)=>pin(p,p.quickRequest?'booking':'home').map(m=>{
+    if(!arrival)return p.match?.best&&!isQuiet(draft)?{...m,best:true}:m;
+    const state=homeAt(p,arrival,at),away=state.state==='later'||state.state==='busy';
+    const words=pinWords(state);
+    return {...m,label:words?(mine.favorites.includes(p.id)?'♥ ':'')+words:m.label,...(state.state==='check'?{tone:'job' as const}:{}),...(away?{dim:true}:{}),...(p.match?.best&&!away&&!isQuiet(draft)?{best:true}:{})};
+   }));
    // Searched around a point held on the map: thin beams from that point to what was found, so the guest sees the zone.
    const held0=heldAt.current,from=held0&&draft.near&&nearOf(held0).longitude===draft.near.longitude&&nearOf(held0).latitude===draft.near.latitude?held0:null;
    publish(found,stageKey,{lines:from?found.slice(0,8).map(m=>({key:'beam:'+m.key,from,to:m.point,tone:'answer' as const})):[]});
   }
   else publish([...(mapData?.properties||[]).flatMap((p:Row)=>pin(p,'home')),...stays.map(({id,start,canGo,...m})=>m)],stageKey+':'+(mapData?.properties?.length||0));
- },[requestId,live,preview,shown.map((p:Row)=>p.id).join(),mapData,draft.city,staysKey,nav.trip,nav.here,nav.route,nav.rerouted,roads,mine.favorites.join()]);
+ },[requestId,live,preview,shown.map((p:Row)=>p.id).join(),mapData,draft.city,staysKey,nav.trip,nav.here,nav.route,nav.rerouted,roads,mine.favorites.join(),at]);
  // Where the guest is: on the first point from the phone the search moves to the guest's city, and once that city's
  // homes are on the map, the map flies to the guest. Anything the guest is already doing (a search, a request, a trip,
  // «На карте» from a page) wins: then the point is only a dot on the map.
@@ -406,6 +436,7 @@ function GuestPanel({setScanning,setQuiet,accountId,data,mapData,publish,selecte
  const head=<MapSheetHead role="guest" text={asked} onText={setAsked} onSend={ask} onChip={chip} chips={!formOnly} quick={!preview} category={categoryOf(draft)} kind={draft.kinds.length===1?draft.kinds[0]:''} choice={kindChoice(draft)} onKind={(c,k)=>{setAsked('');const next=withKind(draft,c,k);change(next);/* Another category is another map: its places are shown at once, not the homes left from before. */if(categoryOf(next)!==categoryOf(draft))void find(next);}} onPicker={open=>{if(open){before.current=snap;if(snap<1)expand(1);}else if(before.current<1&&snap===1)expand(0);}} busy={working} conditions={<GuestTokens tokens={tokens} blamed={blamed} open={snap>0?(refine||(preview?'':'all')):''} line={(snap===0||!!preview)&&!formOnly&&blamed.length===0} busy={working} onOpen={openPart} onClear={token=>retry({...draft,...token.clear})}/>} now={null} onNow={()=>{}}>
   {!!hint&&<View style={h.picked}><Text accessibilityRole={hint.error?'alert':undefined} accessibilityLiveRegion="polite" style={hint.error?h.error:h.note}>{hint.text}</Text>{!!hint.ask&&<Action secondary title="Спросить ИИ-администратора" onPress={()=>onAsk(hint.ask!)}/>}</View>}
   {!!error&&<Text accessibilityRole="alert" style={h.error}>{error}</Text>}
+  {!!preview&&!!arrival&&!stay&&!picked&&!formOnly&&counts.some(n=>n>0)&&<ArrivalStrip arrival={arrival} at={at} asked={Date.parse(around.current)/1000} counts={counts} onPick={arriveBy}/>}
   {!!nav.error&&<Text accessibilityRole="alert" style={h.error}>{nav.error}</Text>}
   {stay&&<View style={h.listRow}><View style={h.grow}><Text numberOfLines={1} style={h.eventTitle}>{stay.title}</Text><Text numberOfLines={1} style={h.note}>{stay.label}</Text></View>{stay.canGo&&<Action title="Маршрут" onPress={()=>go(stay)}/>}<Action secondary title="Открыть" onPress={()=>onOpenProcess('booking',stay.id)}/></View>}
   {!stay&&near&&!preview&&!picked&&!formOnly&&<View style={h.listRow}><View style={h.grow}><Text numberOfLines={1} style={h.eventTitle}>{near.title}</Text><Text numberOfLines={1} style={h.note}>{near.label}</Text></View><Action secondary title="Маршрут" onPress={()=>go(near)}/></View>}
@@ -418,7 +449,7 @@ function GuestPanel({setScanning,setQuiet,accountId,data,mapData,publish,selecte
  </MapSheetHead>;
  // The form and the results live in the opened sheet only; a running request to owners keeps its place in any state.
  const body=requestId?renderLive():snap===0?null:preview&&!refine
-  ?<GuestResults preview={preview} draft={draft} mine={mine} onFavorite={heart} selected={selected} onSelect={setSelected} onFocus={setFocus} onBook={bookFlat} onOpen={property=>onIntent('property:'+property.id,{mode:tariffOf(draft,property),start:draft.start,end:draft.end,guests:draft.guests})} onRefine={toggleRefine} onWiden={narrowed?widen:undefined} onTry={patch=>retry({...draft,...patch})} onBookEdge={onReach} busy={working} steps={stepIds} tried={tried} from={from} onStep={stepOn} onBack={stepBack} anchor={anchor} full={snap===2&&!selected}/>
+  ?<GuestResults preview={preview} draft={draft} readiness={readiness} mine={mine} onFavorite={heart} selected={selected} onSelect={setSelected} onFocus={setFocus} onBook={bookFlat} onOpen={property=>onIntent('property:'+property.id,{mode:tariffOf(draft,property),start:draft.start,end:draft.end,guests:draft.guests})} onRefine={toggleRefine} onWiden={narrowed?widen:undefined} onTry={patch=>retry({...draft,...patch})} onBookEdge={onReach} busy={working} steps={stepIds} tried={tried} from={from} onStep={stepOn} onBack={stepBack} anchor={anchor} full={snap===2&&!selected}/>
   :<GuestForm key={refine||'all'} only={refine||'all'} draft={draft} onChange={change} onNearMe={meInCity?()=>change({...draft,near:nearOf(here.fix!.point)}):undefined} onPickPoint={()=>{setPicking(true);expand(0);}} onSubmit={()=>void find()} busy={working}/>;
  return <View style={h.block}>
   <HeadSlot onHeight={onHead}>{picking?pickView:nav.trip?<TripHead nav={nav} onOpen={()=>{const id=nav.trip!.id;nav.close();onOpenProcess('booking',id);}}/>:requestId?null:head}</HeadSlot>

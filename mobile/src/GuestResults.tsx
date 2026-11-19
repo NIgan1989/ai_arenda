@@ -56,6 +56,8 @@ type Props = {
   anchor?: string;
   // The sheet is fully open: every found place as a list, not one card at a time.
   full?: boolean;
+  // «Готово к 18:00» or «Уточняем готовность»: the home at the searched arrival (arrival.ts); null when the answer has no strip.
+  readiness?: (flat: Row) => { text: string; check: boolean } | null;
 };
 
 // The carousel: a card is a little narrower than the screen, so the next one peeks out and says «swipe».
@@ -167,7 +169,7 @@ export function homeLine(flat: Row) {
   return [kind, rooms > 0 && flat.details?.type !== 'studio' && kindCategoryOf(flat.details?.type) === 'stay' ? rooms + ' комн.' : '', capacity > 0 ? 'до ' + capacity + ' ' + plural(capacity, 'гостя', 'гостей', 'гостей') : ''].filter(Boolean).join(' · ');
 }
 
-export function GuestResults({ preview, draft, mine, onFavorite, selected, onSelect, onFocus, onBook, onOpen, onRefine, onWiden, onTry, onBookEdge, busy, steps = [], tried = [], from = null, onStep, onBack, anchor = '', full = false }: Props) {
+export function GuestResults({ preview, draft, mine, onFavorite, selected, onSelect, onFocus, onBook, onOpen, onRefine, onWiden, onTry, onBookEdge, busy, steps = [], tried = [], from = null, onStep, onBack, anchor = '', full = false, readiness }: Props) {
   const found: Row[] = preview.properties || [];
   // Dear cards the guest swiped past without reading, in this answer.
   const [pricey, setPricey] = useState(0);
@@ -251,11 +253,18 @@ export function GuestResults({ preview, draft, mine, onFavorite, selected, onSel
   const quiet = draft.occasion === 'memorial';
   const perGuest = (flat: Row) => (kindCategoryOf(flat.details?.type) === 'banquet' ? Number(flat.policy?.extra_guest_price) || 0 : 0);
   const least = (flat: Row) => Number(flat.policy?.included_guests) || 0;
+  // With the arrival line the card says readiness itself, for the asked time; the general «готово» would repeat it.
+  const reasonsOf = (flat: Row) => shownReasons(flat.match?.reasons, draft, kindCategoryOf(flat.details?.type) !== 'stay').filter(x => !(readiness?.(flat) && x === 'Готово к заселению'));
   const about = (flat: Row) => {
-    const reasons = shownReasons(flat.match?.reasons, draft, kindCategoryOf(flat.details?.type) !== 'stay');
+    const reasons = reasonsOf(flat);
     // A hall: the price per guest is what halls are compared by.
     if (perGuest(flat)) return [venueName(flat), mark(flat), money(perGuest(flat)) + ' за гостя', homeLine(flat), flat.district, ...reasons].filter(Boolean).join(' · ');
     return (draft.now ? [...reasons.slice(0, 1), venueName(flat), mark(flat), homeLine(flat), flat.district, ...reasons.slice(1)] : [venueName(flat), mark(flat), homeLine(flat), flat.district, ...reasons]).filter(Boolean).join(' · ');
+  };
+
+  const ready = (flat: Row, long = false) => {
+    const said = readiness?.(flat);
+    return said ? <Text numberOfLines={long ? 2 : 1} style={[r.ready, said.check && r.readyCheck]}>{said.check ? (long ? said.text : 'Уточняем готовность') : '✓ ' + said.text}</Text> : null;
   };
 
   if (!flats.length) {
@@ -290,6 +299,7 @@ export function GuestResults({ preview, draft, mine, onFavorite, selected, onSel
             <Text accessibilityRole="header" numberOfLines={2} style={h.cardTitle}>
               {chosen.title}
             </Text>
+            {ready(chosen, true)}
             {!!about(chosen) && (
               <Text numberOfLines={2} style={h.note}>
                 {about(chosen)}
@@ -336,7 +346,7 @@ export function GuestResults({ preview, draft, mine, onFavorite, selected, onSel
     );
   }
 
-  const why = (flat: Row) => shownReasons(flat.match?.reasons, draft, kindCategoryOf(flat.details?.type) !== 'stay').slice(0, 3).join(' · ');
+  const why = (flat: Row) => reasonsOf(flat).slice(0, 3).join(' · ');
   const what = (flat: Row) => [venueName(flat), mark(flat), perGuest(flat) ? money(perGuest(flat)) + ' за гостя' : '', homeLine(flat), flat.district].filter(Boolean).join(' · ');
   const bestWords = quiet ? 'Подходит лучше других' : '✦ Лучший выбор';
   const trail = steps.length > 0 && !!onBack && <HelperTrail words={stepWords(steps, draft)} count={flats.length + ' ' + plural(flats.length, 'вариант', 'варианта', 'вариантов')} onBack={onBack} busy={busy} />;
@@ -361,6 +371,7 @@ export function GuestResults({ preview, draft, mine, onFavorite, selected, onSel
                   <Text style={h.rowPrice}>{money(flat.estimate.amount)}</Text>
                 </View>
                 <Text numberOfLines={1} style={h.note}>{what(flat) || 'за ' + stayWords(draft)}</Text>
+                {ready(flat)}
                 {!!why(flat) && <Text numberOfLines={1} style={r.why}>{why(flat)}</Text>}
               </View>
             </Pressable>
@@ -416,6 +427,7 @@ export function GuestResults({ preview, draft, mine, onFavorite, selected, onSel
                 <Text numberOfLines={1} style={h.eventTitle}>
                   {flat.title}
                 </Text>
+                {ready(flat)}
                 <Text numberOfLines={1} style={h.note}>
                   {what(flat) || 'за ' + stayWords(draft)}
                 </Text>
@@ -468,6 +480,8 @@ const r = StyleSheet.create({
   cardBody: { flex: 1, minWidth: 0, gap: 2, justifyContent: 'center' },
   priceRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', columnGap: 8 },
   why: { ...type.caption, color: C.success, fontWeight: '600' },
+  ready: { ...type.caption, color: C.success, fontWeight: '600' },
+  readyCheck: { color: C.warning },
   strip: { gap: 12 },
   counter: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', gap: 8 },
   dots: { flexDirection: 'row', justifyContent: 'center', gap: 6, marginBottom: 4 },
