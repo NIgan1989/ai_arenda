@@ -35,7 +35,7 @@ export function AutopilotPlan({role,api}:{role:'owner'|'cleaner';api:(path:strin
  async function run(path:string,body:Row={}){setBusy(true);setError('');setMessage('');try{const r=await api(path,body);setMessage(r.message||'Сохранено.');const next=r.state||await api('operations/autopilot/state');setState(next);if(next.live){setOpen(false);setStep(0);}setConfirmOff(false);return r;}catch(e:any){setError(e.message);}finally{setBusy(false);}}
  if(!state)return <section className="acct-group plan-loading">{error?<p className="form-error" role="alert">{error}</p>:<p role="status"><Thinking size="sm" lead/>Загружаю тариф…</p>}</section>;
  const s=state.settings||{},plan=state.plan,live=!!state.live,flats:Row[]=state.flats||[];
- const statusLine=!plan?'':plan.status==='trial'?`Пробный период до ${date(plan.periodEnd)}`+(s.charge?`, потом ${owner?money(state.nextAmount)+' в месяц с баланса':money(s.price)+' в месяц из выплат'}`:', плата пока не взимается'):plan.status==='grace'?`Не хватило денег. Автопилот работает до ${date(plan.graceUntil)}, пополните баланс`:plan.status==='active'?(plan.autoRenew?`Оплачено до ${date(plan.periodEnd)}`:`Работает до ${date(plan.periodEnd)} и не продлится`):'';
+ const statusLine=!plan?'':plan.status==='trial'?`Пробный период до ${date(plan.periodEnd)}`+(s.charge?`, потом ${money(owner?state.nextAmount:s.price)} в месяц с привязанной карты`:', плата пока не взимается'):plan.status==='grace'?`Оплата не прошла. Автопилот работает до ${date(plan.graceUntil)}, привяжите карту в приложении`:plan.status==='active'?(plan.autoRenew?`Оплачено до ${date(plan.periodEnd)}`:`Работает до ${date(plan.periodEnd)} и не продлится`):'';
  const offNote=plan?.status==='active'&&s.charge?'Доработает оплаченный месяц и не продлится.':owner?'Объекты перейдут в режим «Я сам». Принятые брони и уборки останутся в силе.':'Предложения уборок снова будут приходить вам на решение. Принятые уборки останутся.';
  const steps=planSteps[role],last=steps.length-1;
  const start=()=>{setOpen(true);setStep(0);setMessage('');};
@@ -105,7 +105,7 @@ export function AutopilotPlan({role,api}:{role:'owner'|'cleaner';api:(path:strin
      {owner&&<p className="plan-keep">Вам остаются деньги и решения: правка объявления, рискованные брони, споры. ИИ спросит вас кнопкой.</p>}
      <Button className="plan-cta" disabled={busy} onClick={start}>{s.trialDays>0&&!plan?`Попробовать ${s.trialDays} дней бесплатно`:'Подключить'}</Button>
     </>}
-    <p className="plan-fine">{s.charge?(owner?'Оплата с баланса в приложении раз в месяц.':'Оплата удерживается из выплат за уборки.')+' Отключить можно в любой день.':'Пока плата не взимается. Отключить можно в любой день.'}</p>
+    <p className="plan-fine">{s.charge?'Оплата с привязанной карты, списание по понедельникам.'+' Отключить можно в любой день.':'Пока плата не взимается. Отключить можно в любой день.'}</p>
    </section>
   </>:<>
    <section className="plan-on">
