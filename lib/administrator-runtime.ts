@@ -88,7 +88,7 @@ async function automaticActions(service:RentalService){
      if(!asked){await service.notify(service.userId,'ИИ-администратор проверил отчёт об уборке «'+title+'»: фото до ('+review.before+') и после ('+review.after+') сделаны во время уборки, чек-лист выполнен, проблем не указано. Примите уборку в карточке'+(accept.on?', или через '+minutesLabel(accept.minutes)+' ИИ примет сам.':'.'),'administrator-review:'+job.id+':'+job.version,'owner').run();continue;}
      if(!accept.on||asked.created_at+accept.minutes*60>t)continue;
     }
-    try{await delegated.jobAction(job.id,{action:'approve',expectedVersion:job.version});await service.notify(service.userId,'ИИ-администратор принял уборку «'+title+'» по фотоотчёту. Жильё готово к заселению.','administrator-approved:'+job.id,'owner').run();actions++;}catch(error){if(!expectedConflict(error))throw error;}
+    try{await delegated.jobAction(job.id,{action:'approve',expectedVersion:job.version});await service.notify(service.userId,'ИИ-администратор принял уборку «'+title+'» по фотоотчёту. Жильё готово к заселению.'+(job.fee>0&&job.assigned_to&&job.assigned_to!==service.userId?' Переведите исполнителю '+job.fee.toLocaleString('ru-RU').replace(/\u00a0|\u202f/g,' ')+' ₸ напрямую и отметьте оплату в карточке уборки.':''),'administrator-approved:'+job.id,'owner').run();actions++;}catch(error){if(!expectedConflict(error))throw error;}
    }
   }
   if(policy.auto_assign){

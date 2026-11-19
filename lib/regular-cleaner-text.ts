@@ -11,25 +11,20 @@ export function regularSince(r:Row){
 }
 export type Benefit={key:'first'|'backup'|'guarantee'|'fee'|'proof';title:string;text:string;warn?:boolean};
 export function regularBenefits(state:Row):Benefit[]{
- const g=state.guarantee||{},covered=Number(g.covered||0),name=String(state.regular?.name||'').split(' ')[0];
+ const name=String(state.regular?.name||'').split(' ')[0];
  return [
   {key:'first',title:'Уборки приходят первыми',text:`${state.regular&&name?name:'Исполнитель'} получает каждую уборку первым. Ответ «да» сразу назначает, без переписки.`},
   {key:'backup',title:'Замена, если не сможет',text:'Если исполнитель заболел или не ответил вовремя, ИИ сам предложит уборку другому надёжному исполнителю.'},
-  covered>0?{key:'guarantee',title:'Оплата гарантирована',text:`Сумма уборки резервируется с вашего баланса (хватит на ${plural(covered,'уборку','уборки','уборок')}). Исполнитель видит гарантию и получает деньги после вашей приёмки.`}
-   :{key:'guarantee',title:'Включите гарантию оплаты',text:`Пополните баланс${g.fee?` хотя бы на ${money(g.fee)}`:''}: сумма уборки будет резервироваться заранее, исполнитель увидит гарантию и охотнее возьмёт ваш объект.`,warn:true},
+  {key:'guarantee',title:'Оплата напрямую',text:'После приёмки вы переводите исполнителю сумму уборки на его Kaspi и отмечаете «Оплатил уборку», он подтверждает получение. Сервис эти деньги не принимает.'},
   {key:'fee',title:'Комиссия ниже',text:String(state.terms?.text||'')},
   {key:'proof',title:'Фото до и после',text:'Отчёт с фото и временем хранится в сервисе. Если что-то испортят, есть чем доказать.'},
  ];
 }
-// The cleaner's side, one line per fact, for the cleaner's list of regular flats.
-export function cleanerMoneyLine(m:Row){
- const parts=[m.held?money(m.held)+' зарезервировано':'',m.due?money(m.due)+' к выплате':'',m.paid?money(m.paid)+' получено':''].filter(Boolean);
- return parts.length?parts.join(' · '):'';
-}
-// Under the cleaning's sum: who pays and whether the money is already set aside.
+// The cleaner's side: the reserves of the old model are gone, so there is nothing to sum up here.
+export function cleanerMoneyLine(_m:Row){return '';}
+// Under the cleaning's sum: who pays.
 export function jobPayNote(item:Row){
- if(item.guarantee==='held')return 'оплата гарантирована, сумма зарезервирована';
- if(item.guarantee==='due')return 'работа принята, сервис выплачивает';
- if(item.guarantee==='paid')return 'выплачено сервисом';
- return 'за выполнение';
+ if(item.payment_received_at)return 'оплата получена';
+ if(item.settled_at)return 'заказчик отметил оплату';
+ return 'заказчик платит напрямую после приёмки';
 }

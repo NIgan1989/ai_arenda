@@ -64,7 +64,7 @@ export function DealCard({kind,item,role,userId,application,thread,line:own,acti
   {always}
   {!!main&&<RecordActions busy={busy} actions={[main]}/>}
   <View style={r.sideRow}>{toggle(open?'Свернуть':'Подробнее',open,()=>setOpen(v=>!v),true)}{hasMore&&toggle(more?'Скрыть':'Ещё',more,()=>setMore(v=>!v),false)}</View>
-  {open&&kind==='job'&&<Text style={[r.sumNote,!!item.guarantee&&{color:C.success}]}>{money(item.fee)} {jobPayNote(item)}</Text>}
+  {open&&kind==='job'&&<Text style={[r.sumNote,!!item.payment_received_at&&{color:C.success}]}>{money(item.fee)} {jobPayNote(item)}</Text>}
   {open&&details}
   {more&&<><RecordActions soft busy={busy} actions={rest}/>{extra}</>}
  </View>;

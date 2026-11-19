@@ -74,6 +74,7 @@
 -- migration 0070_property_views.sql sha256:2611b7beac6533757e18a3b8f354eeba5553b720fb659f4ff60bfb569e8e7bfe
 -- migration 0071_company_finance.sql sha256:f299d7a0157f1e9c76cdd9c9a983768518588ae0d7fe8c9035f047216bfbc48a
 -- migration 0072_direct_payments.sql sha256:cb04757fb811ef441743f2f320fc0b299d026c29ec56228158ebe79a3d1955f5
+-- migration 0073_direct_cleaning_pay.sql sha256:062f7a34c7e5e4dc6e5a04b90d6753175686df16d47f3ef14de958371c52e732
 
 -- table access_receipts
 CREATE TABLE access_receipts (id TEXT PRIMARY KEY,property_id TEXT NOT NULL,entity_kind TEXT NOT NULL,entity_id TEXT NOT NULL,user_id TEXT NOT NULL,created_at INTEGER NOT NULL,expires_at INTEGER NOT NULL);
@@ -484,7 +485,7 @@ CREATE TABLE `cleaning_jobs` (
 	`assigned_to` text,
 	`checklist` text DEFAULT '[]' NOT NULL,
 	`report` text DEFAULT '' NOT NULL,
-	`created_at` integer NOT NULL, started_at INTEGER, submitted_at INTEGER, completed_at INTEGER, version INTEGER NOT NULL DEFAULT 1, settled_at INTEGER, overdue_step INTEGER NOT NULL DEFAULT 0, on_way_at integer, arrived_at integer, cancel_fee integer NOT NULL DEFAULT 0, cancelled_at integer, rating integer, rating_note text NOT NULL DEFAULT '', rated_at integer,
+	`created_at` integer NOT NULL, started_at INTEGER, submitted_at INTEGER, completed_at INTEGER, version INTEGER NOT NULL DEFAULT 1, settled_at INTEGER, overdue_step INTEGER NOT NULL DEFAULT 0, on_way_at integer, arrived_at integer, cancel_fee integer NOT NULL DEFAULT 0, cancelled_at integer, rating integer, rating_note text NOT NULL DEFAULT '', rated_at integer, payment_received_at INTEGER,
 	FOREIGN KEY (`property_id`) REFERENCES `properties`(`id`) ON UPDATE no action ON DELETE no action
 );
 
@@ -1989,7 +1990,6 @@ CREATE TRIGGER cleaning_completed_money AFTER UPDATE OF status ON cleaning_jobs
 WHEN NEW.status='completed' AND OLD.status<>'completed' AND NEW.assigned_to IS NOT NULL
  AND EXISTS(SELECT 1 FROM properties WHERE id=NEW.property_id AND demo_owner IS NULL)
 BEGIN
- UPDATE cleaning_holds SET status='due',due_at=CAST(strftime('%s','now') AS INTEGER) WHERE job_id=NEW.id AND status='held';
  INSERT OR IGNORE INTO cleaning_commissions(job_id,owner_id,cleaner_id,property_id,fee,rate_bp,amount,pair,mode,created_at)
  SELECT NEW.id,NEW.owner_id,NEW.assigned_to,NEW.property_id,NEW.fee,x.rate,
   CASE WHEN x.pair=1 AND x.cap>0 THEN MIN(x.raw,MAX(0,x.cap-COALESCE((SELECT SUM(amount) FROM cleaning_commissions c WHERE c.owner_id=NEW.owner_id AND c.cleaner_id=NEW.assigned_to AND c.pair=1 AND c.mode=x.mode
@@ -2000,29 +2000,6 @@ BEGIN
    CASE WHEN s.enabled=1 AND s.starts_at<=CAST(strftime('%s','now') AS INTEGER) THEN 'charged' ELSE 'shadow' END mode
   FROM platform_billing s,(SELECT EXISTS(SELECT 1 FROM regular_cleaners WHERE property_id=NEW.property_id AND cleaner_id=NEW.assigned_to) pair) p WHERE s.id='global') y) x
  WHERE NEW.fee>0;
-END;
-
--- trigger cleaning_hold_on_assign
-CREATE TRIGGER cleaning_hold_on_assign AFTER UPDATE OF status,assigned_to ON cleaning_jobs
-WHEN NEW.status='assigned' AND NEW.assigned_to IS NOT NULL AND NEW.fee>0 AND (OLD.status<>'assigned' OR OLD.assigned_to IS NOT NEW.assigned_to)
- AND EXISTS(SELECT 1 FROM properties WHERE id=NEW.property_id AND demo_owner IS NULL)
-BEGIN
- UPDATE cleaning_holds SET status='returned' WHERE job_id=NEW.id AND status='held' AND cleaner_id<>NEW.assigned_to;
- INSERT INTO cleaning_holds(job_id,owner_id,cleaner_id,property_id,amount,status,created_at)
- SELECT NEW.id,NEW.owner_id,NEW.assigned_to,NEW.property_id,NEW.fee,'held',CAST(strftime('%s','now') AS INTEGER)
- WHERE COALESCE((SELECT SUM(amount) FROM owner_balance_entries WHERE owner_id=NEW.owner_id),0)
-  -COALESCE((SELECT SUM(c.amount) FROM platform_commissions c WHERE c.owner_id=NEW.owner_id AND c.mode='charged' AND (SELECT status FROM bookings WHERE id=c.booking_id) IN ('confirmed','completed')),0)
-  -COALESCE((SELECT SUM(amount) FROM cleaning_commissions WHERE owner_id=NEW.owner_id AND mode='charged'),0)
-  -COALESCE((SELECT SUM(amount) FROM cleaning_holds WHERE owner_id=NEW.owner_id AND status IN ('held','due','paid') AND job_id<>NEW.id),0)
-  -COALESCE((SELECT SUM(amount) FROM autopilot_charges WHERE user_id=NEW.owner_id AND role='owner' AND mode='charged'),0)>=NEW.fee
- ON CONFLICT(job_id) DO UPDATE SET cleaner_id=excluded.cleaner_id,amount=excluded.amount,status='held',created_at=excluded.created_at WHERE cleaning_holds.status IN ('held','returned');
-END;
-
--- trigger cleaning_hold_returned
-CREATE TRIGGER cleaning_hold_returned AFTER UPDATE OF status ON cleaning_jobs
-WHEN NEW.status IN ('open','cancelled')
-BEGIN
- UPDATE cleaning_holds SET status='returned' WHERE job_id=NEW.id AND status='held';
 END;
 
 -- trigger cleaning_job_arrival_reset
