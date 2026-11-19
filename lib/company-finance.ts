@@ -246,20 +246,21 @@ function periodOf(group:string,month:string){
 export async function accountingState(db:D1Database){
  const input=await inputs(db),now=monthKey(),today=new Date((epoch()+OFFSET)*1000).toISOString().slice(0,10);
  const months=computeMonths(input,'fact',now);
- const paidRows=await rows(db,'SELECT id,tax,period,amount,month,note,created_at FROM company_tax_payments ORDER BY created_at DESC,id LIMIT 200');
+ // The journal shows the latest payments only; what is owed is reconciled against every payment.
+ const [paidRows,paidTotals,paidYear]=await Promise.all([rows(db,'SELECT id,tax,period,amount,month,note,created_at FROM company_tax_payments ORDER BY created_at DESC,id LIMIT 200'),rows(db,'SELECT tax,period,COALESCE(SUM(amount),0) amount FROM company_tax_payments GROUP BY tax,period'),one(db,'SELECT COALESCE(SUM(amount),0) n FROM company_tax_payments WHERE month LIKE ?',now.slice(0,4)+'-%')]);
  const map=new Map<string,Row>();
  for(const m of months)for(const [group,taxes] of Object.entries(groupTaxes)){
   const amount=taxes.reduce((a,t)=>a+Number(m.taxes[t]||0),0);if(!amount)continue;
   const p=periodOf(group,m.month),key=group+':'+p.period,o=map.get(key)||{key,group,name:groupNames[group],period:p.period,due:p.due,form:p.form,accrued:0,parts:{} as Row,paid:0};
   o.accrued+=amount;for(const t of taxes)if(m.taxes[t])o.parts[t]=(o.parts[t]||0)+Number(m.taxes[t]);map.set(key,o);
  }
- for(const r of paidRows){const group=Object.entries(groupTaxes).find(([,t])=>t.includes(r.tax))?.[0];const o=group&&map.get(group+':'+r.period);if(o)o.paid+=Number(r.amount);}
+ for(const r of paidTotals){const group=Object.entries(groupTaxes).find(([,t])=>t.includes(r.tax))?.[0];const o=group&&map.get(group+':'+r.period);if(o)o.paid+=Number(r.amount);}
  const obligations=[...map.values()].map((o):Row=>{const left=o.accrued-o.paid;return {...o,left,status:left<=0?'paid':o.due<today?'overdue':'open'};}).sort((a,b)=>(a.status==='paid'?1:0)-(b.status==='paid'?1:0)||a.due.localeCompare(b.due));
  const open=obligations.filter(o=>o.status!=='paid');
  const s=input.settings,year=now.slice(0,4),yearRevenue=months.filter(m=>m.month.startsWith(year)).reduce((a,m)=>a+m.pl.revenue,0);
  const yearProfit=months.filter(m=>m.month.startsWith(year)).reduce((a,m)=>a+m.pl.operating,0);
  return {now,today,settings:s,obligations,payments:paidRows.map(r=>({...r,name:taxNames[r.tax]})),
-  totals:{due:open.reduce((a,o)=>a+Math.max(0,o.left),0),overdue:open.filter(o=>o.status==='overdue').reduce((a,o)=>a+o.left,0),next:open.find(o=>o.status==='open')||null,paidYear:paidRows.filter(r=>String(r.month).startsWith(year)).reduce((a,r)=>a+Number(r.amount),0)},
+  totals:{due:open.reduce((a,o)=>a+Math.max(0,o.left),0),overdue:open.filter(o=>o.status==='overdue').reduce((a,o)=>a+o.left,0),next:open.find(o=>o.status==='open')||null,paidYear:Number(paidYear?.n||0)},
   profit:{year,profit:yearProfit,cit:months.filter(m=>m.month.startsWith(year)).reduce((a,m)=>a+Number(m.taxes.cit||0)+Number(m.taxes.simplified||0),0)},
   vat:{threshold:s.vat_threshold_mrp*s.mrp,yearRevenue,share:s.vat_threshold_mrp?Math.min(1,yearRevenue/(s.vat_threshold_mrp*s.mrp)):0,registered:!!s.vat_registered}};
 }

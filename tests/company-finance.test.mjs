@@ -92,7 +92,13 @@ test('accounting lists what is owed, a payment lands in ДДС and keeps the bal
   state=await readPlatformAdmin(f.other,'accounting',{},config(f));
   assert.equal(state.obligations.find(o=>o.key===payrollDue.key).status,'paid');
   await assert.rejects(writePlatformAdmin(f.other,'accounting/pay',{key:payrollDue.key,amount:1,month,confirmed:true},config(f)),e=>e.status===409);
+  assert.equal(state.totals.paidYear,payrollDue.accrued);
   const fin=await readPlatformAdmin(f.other,'finance',{basis:'fact',month},config(f));
   assert.equal(fin.current.cf.taxes_paid,payrollDue.accrued);assert.equal(fin.balance.liabilities.taxes,0);assert.equal(fin.balance.difference,0);
+  // The journal is limited to the latest rows, the reconciliation is not: many small payments still add up.
+  const next=shiftMonth(month,1);
+  for(let i=0;i<230;i++)f.db.raw.prepare("INSERT INTO company_tax_payments(id,tax,period,amount,month,note,created_at) VALUES (?,?,?,?,?,?,?)").run('many'+i,'opv',next,1,month,'',now()+i);
+  state=await readPlatformAdmin(f.other,'accounting',{},config(f));
+  assert.equal(state.payments.length,200);assert.equal(state.totals.paidYear,payrollDue.accrued+230);
  }finally{f.db.close();}
 });
