@@ -24,10 +24,10 @@ test('the three reports reconcile: assets equal liabilities plus equity in fact 
   const fee=f.db.raw.prepare('SELECT amount FROM platform_commissions WHERE booking_id=?').get(id).amount;assert.ok(fee>0);
   await writePlatformAdmin(f.other,'billing/balance',{confirmed:true,ownerId:'owner',kind:'topup',amount:50000,note:'Kaspi',requestKey:'t1'},config(f));
   await writePlatformAdmin(f.other,'billing/balance',{confirmed:true,ownerId:'owner',kind:'bonus',amount:2000,note:'Подарок',requestKey:'t2'},config(f));
-  // A cleaner's money: a paid cleaning with the «Автопилот» fee withheld, and a reserved one still owed.
+  // A cleaner's money: a paid cleaning with part of the «Автопилот» fee withheld (the charge is not settled yet).
   const at=now();
   f.db.raw.prepare("INSERT INTO cleaning_holds(job_id,owner_id,cleaner_id,property_id,amount,status,created_at,paid_at) VALUES (?,?,?,?,?,?,?,?)").run(f.job.id,'owner','cleaner',f.property,3000,'paid',at,at);
-  f.db.raw.prepare("INSERT INTO autopilot_charges(id,user_id,role,period_start,period_end,units,amount,withheld,mode,settled_at,created_at) VALUES ('ap1','cleaner','cleaner',?,?,1,1900,1000,'charged',?,?)").run(at,at+86400,at,at);
+  f.db.raw.prepare("INSERT INTO autopilot_charges(id,user_id,role,period_start,period_end,units,amount,withheld,mode,settled_at,created_at) VALUES ('ap1','cleaner','cleaner',?,?,1,1900,1000,'charged',NULL,?)").run(at,at+86400,at);
   f.db.raw.prepare("INSERT INTO cleaning_commissions(job_id,owner_id,cleaner_id,property_id,fee,rate_bp,amount,pair,mode,created_at) VALUES (?,?,?,?,3000,1000,300,0,'charged',?)").run(f.job.id,'owner','cleaner',f.property,at);
 
   const month=monthKey();
