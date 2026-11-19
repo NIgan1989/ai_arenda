@@ -19,6 +19,7 @@ import {listingInput,jpegInput,propertyStatus,cleanerStatus,categories,kindCateg
 import {mediaKey,dataUrlBytes,mediaData} from './media-store';
 import {readAdministratorState} from './administrator';
 import {recordFinance,migrateFinanceEntity} from './finance';
+import {payoutOf,payoutPhoneText} from './payout';
 import {requireEvidence} from './evidence';
 import {hash as operationHash} from './operation-core';
 import {assertCalendarAvailable} from './external-calendar';
@@ -997,6 +998,14 @@ export class RentalService {
       if(!allowed||j.owner_id!==this.userId||this.execution.propertyId!==j.property_id||policy?.version!==this.execution.policyVersion||!policy.auto_assign||!mandateActive(policy)||j.fee>policy.cleaning_budget)throw new DomainError('Автоназначение выходит за полномочия владельца.',403);
     }
     if(body.expectedVersion!==undefined&&body.expectedVersion!==j.version)throw new DomainError('Задание изменилось. Обновите карточку перед решением.',409);
+    // «Деньги получены»: the performer confirms the transfer the owner marked.
+    if(body.action==='payment_received'){
+      if(j.assigned_to!==this.userId)throw new DomainError('Получение оплаты подтверждает исполнитель.',403);
+      if(!j.settled_at)throw new DomainError('Заказчик ещё не отметил оплату этой уборки.',409);
+      if(j.payment_received_at)return {message:'Получение оплаты уже подтверждено.'};
+      await this.db.batch([this.query('UPDATE cleaning_jobs SET payment_received_at=? WHERE id=? AND payment_received_at IS NULL',now(),jobId),this.notify(j.owner_id,'Исполнитель подтвердил, что получил оплату за уборку «'+j.title+'».','payment-received:'+jobId,'owner'),this.audit(jobId,'job.payment_received')]);
+      return {message:'Спасибо! Заказчик видит, что деньги дошли.'};
+    }
     if(body.action==='record_job_payment'){
       if(j.owner_id!==this.userId)throw new DomainError('Оплату исполнителю отмечает владелец.',403);
       // A late cancellation of a home order leaves a part of the sum owed to the performer (cancel_fee).
@@ -1130,12 +1139,14 @@ export class RentalService {
     }
     if(body.action==='approve' && j.owner_id===this.userId) {
       await requireEvidence(this,jobId);
+      // The owner pays the performer directly; the service only shows where to transfer and keeps both marks.
+      const tenge=(n:number)=>n.toLocaleString('ru-RU').replace(/\u00a0|\u202f/g,' ')+' ₸',payTo=j.assigned_to?await payoutOf(this.db,j.assigned_to):null;
       const approveGate=this.execution?" AND EXISTS(SELECT 1 FROM property_policies WHERE property_id=cleaning_jobs.property_id AND version=? AND auto_assign=1 AND auto_confirm=1 AND (mandate_until=0 OR mandate_until>?))":'';
-      const r=await this.db.batch([this.query("UPDATE cleaning_jobs SET status='completed' WHERE id=? AND status='submitted' AND version=?"+approveGate,jobId,j.version,...(this.execution?[this.execution.policyVersion,now()]:[])),this.query("UPDATE property_operations SET readiness='ready',version=version+1,updated_at=? WHERE property_id=? AND readiness='inspection' AND active_booking_id IS NULL AND EXISTS(SELECT 1 FROM cleaning_jobs WHERE id=? AND status='completed') AND NOT EXISTS(SELECT 1 FROM cleaning_jobs WHERE property_id=? AND (status IN ('in_progress','submitted') OR (status IN ('open','assigned') AND start<=?)))",now(),j.property_id,jobId,j.property_id,now()),this.notify(j.assigned_to,this.execution?'ИИ-администратор принял уборку по фотоотчёту. Расчёт производится с заказчиком отдельно.':'Заказчик принял уборку. Расчёт производится с заказчиком отдельно.','approved:'+jobId,'cleaner'),this.audit(jobId,'job.completed')]);
+      const r=await this.db.batch([this.query("UPDATE cleaning_jobs SET status='completed' WHERE id=? AND status='submitted' AND version=?"+approveGate,jobId,j.version,...(this.execution?[this.execution.policyVersion,now()]:[])),this.query("UPDATE property_operations SET readiness='ready',version=version+1,updated_at=? WHERE property_id=? AND readiness='inspection' AND active_booking_id IS NULL AND EXISTS(SELECT 1 FROM cleaning_jobs WHERE id=? AND status='completed') AND NOT EXISTS(SELECT 1 FROM cleaning_jobs WHERE property_id=? AND (status IN ('in_progress','submitted') OR (status IN ('open','assigned') AND start<=?)))",now(),j.property_id,jobId,j.property_id,now()),this.notify(j.assigned_to,(this.execution?'ИИ-администратор принял уборку по фотоотчёту.':'Заказчик принял уборку.')+(j.fee>0?' Заказчик переведёт вам '+tenge(j.fee)+' напрямую и отметит оплату.'+(payTo?'':' Укажите номер Kaspi в «Настройках», «Реквизиты для оплаты», чтобы он знал, куда платить.'):''),'approved:'+jobId,'cleaner'),this.audit(jobId,'job.completed')]);
       if(!r[0].meta.changes) throw new DomainError('Нет отчёта для приёмки.',409);
       if((await this.one('SELECT readiness FROM property_operations WHERE property_id=?',j.property_id))?.readiness==='ready')await afterReady(this.db,j.property_id);
       const advice=await this.priceAdviceAfterReady(j.property_id);
-      return {message:'Работа принята. Денежные расчёты выполняются отдельно.'+(advice?' ИИ-администратор посмотрел спрос и предлагает новую цену, решение за вами.':''),priceSuggestion:advice};
+      return {message:'Работа принята.'+(j.fee>0&&j.assigned_to&&j.assigned_to!==j.owner_id?' Переведите исполнителю '+tenge(j.fee)+' напрямую'+(payTo?' на Kaspi '+payoutPhoneText(payTo.phone)+' ('+payTo.recipient+')':'')+' и отметьте «Оплатил уборку».':'')+(advice?' ИИ-администратор посмотрел спрос и предлагает новую цену, решение за вами.':''),priceSuggestion:advice};
     }
     if(body.action==='cancel'&&j.owner_id===this.userId){
       // A home order has terms the customer read before confirming (lib/home-cleaning.ts homeCancel): free until two

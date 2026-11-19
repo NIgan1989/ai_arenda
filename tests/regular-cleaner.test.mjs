@@ -1,6 +1,6 @@
 import {test} from 'node:test';import assert from 'node:assert/strict';
 import {fixture,load,now} from './helpers/platform.mjs';
-const {coordinateDispatch,decideOffer,saveWorkerDispatch,declineAssignment}=await load('dispatch');
+const {coordinateDispatch,decideOffer,saveWorkerDispatch}=await load('dispatch');
 const {migrateFinanceEntity}=await load('finance');
 const {regularState,pinRegular,unpinRegular,cleanerRegulars,markCleanerPayout,ownerAvailable,pairTermsText}=await load('regular-cleaner');
 const topUp=(f,amount)=>f.db.raw.prepare("INSERT INTO owner_balance_entries(id,owner_id,kind,amount,note,actor_id,request_key,created_at) VALUES (?,?,?,?,?,?,?,?)").run('e'+amount+Math.random(),'owner','topup',amount,'Kaspi','admin','k'+Math.random(),now());
@@ -30,35 +30,39 @@ test('pinned cleaner gets the cleaning first without general offers, and her yes
  }finally{f.db.close();}
 });
 
-test('reserve on assignment, due after acceptance, pair commission capped per month, payout settles the job',async()=>{
- const f=await fixture();try{
+// Direct settlements: nothing is reserved on the owner's balance, the owner pays the performer himself.
+test('no reserve on assignment: the balance stays free, the pair fee is charged and capped, the owner pays directly and the cleaner confirms',async()=>{
+ const f=await fixture(),{savePayout}=await load('payout');try{
   f.db.raw.prepare("UPDATE platform_billing SET enabled=1,starts_at=?,pair_rate_bp=500,pair_month_cap=100").run(now()-60);
   topUp(f,10000);await pinRegular(f.owner,{propertyId:f.property,cleanerId:'cleaner'});
   await coordinateDispatch(f.owner);const offer=f.db.raw.prepare('SELECT * FROM cleaning_offers').get();await decideOffer(f.cleaner,{id:offer.id,action:'accept'});
-  assert.equal(hold(f).status,'held');assert.equal(hold(f).amount,3000);assert.equal(await ownerAvailable(f.db,'owner'),7000);
+  assert.equal(job(f).assigned_to,'cleaner');assert.equal(hold(f),undefined,'no reserve is made');assert.equal(await ownerAvailable(f.db,'owner'),10000);
   // A shadow pair commission from before billing started must not eat the charged monthly cap.
   f.db.raw.exec('PRAGMA foreign_keys=OFF');f.db.raw.prepare("INSERT INTO cleaning_commissions(job_id,owner_id,cleaner_id,property_id,fee,rate_bp,amount,pair,mode,created_at) VALUES ('old-shadow','owner','cleaner',?,2000,500,100,1,'shadow',?)").run(f.property,now()-60);f.db.raw.exec('PRAGMA foreign_keys=ON');
+  await savePayout(f.cleaner,{phone:'+7 702 000 11 22',recipient:'Айгуль С.'});
   await finish(f);
-  assert.equal(hold(f).status,'due');
+  assert.equal(hold(f),undefined);
   const c=f.db.raw.prepare('SELECT * FROM cleaning_commissions WHERE job_id=?').get(f.job.id);assert.equal(c.pair,1);assert.equal(c.mode,'charged');assert.equal(c.amount,100);
-  assert.equal(await ownerAvailable(f.db,'owner'),6900);
-  await markCleanerPayout(f.owner,{jobId:f.job.id,confirmed:true});
-  assert.equal(hold(f).status,'paid');assert.ok(job(f).settled_at);
-  await assert.rejects(markCleanerPayout(f.owner,{jobId:f.job.id,confirmed:true}),e=>e.status===409);
-  // The legacy ledger backfill sees the job as migrated and adds no second payment.
+  assert.equal(await ownerAvailable(f.db,'owner'),9900,'only the service fee leaves the balance');
+  // The owner sees where to transfer; the cleaner is told the owner pays directly.
+  const mine=(await f.owner.roleState('owner',{catalog:false})).jobs.find(j=>j.id===f.job.id);assert.deepEqual(mine.cleaner_pay,{phone:'+77020001122',recipient:'Айгуль С.',link:''});
+  assert.equal((await f.cleaner.roleState('cleaner',{catalog:false})).jobs.find(j=>j.id===f.job.id).cleaner_pay,null);
+  assert.match(f.db.raw.prepare("SELECT body FROM notifications WHERE user_id='cleaner' AND dedupe LIKE 'cleaner:approved:%'").get().body,/переведёт вам 3\s000 ₸ напрямую/);
+  await assert.rejects(markCleanerPayout(f.owner,{jobId:f.job.id,confirmed:true}),e=>e.status===409,'the service pays nobody');
+  await assert.rejects(f.cleaner.jobAction(f.job.id,{action:'payment_received'}),e=>e.status===409,'nothing was marked yet');
+  await f.owner.jobAction(f.job.id,{action:'record_job_payment',confirmed:true,expectedVersion:job(f).version});assert.ok(job(f).settled_at);
+  await assert.rejects(f.owner.jobAction(f.job.id,{action:'payment_received'}),e=>e.status===403);
+  assert.match((await f.cleaner.jobAction(f.job.id,{action:'payment_received'})).message,/Спасибо/);assert.ok(job(f).payment_received_at);
+  assert.match(f.db.raw.prepare("SELECT body FROM notifications WHERE user_id='owner' AND dedupe LIKE 'owner:payment-received:%'").get().body,/получил оплату/);
   await migrateFinanceEntity(f.owner,'job',f.job.id);
   assert.equal(f.db.raw.prepare("SELECT COUNT(*) n FROM finance_entries WHERE job_id=? AND kind='job_payment'").get(f.job.id).n,1);
-  assert.deepEqual((await cleanerRegulars(f.cleaner)).money,{held:0,due:0,paid:3000});
  }finally{f.db.close();}
 });
 
-test('reserve is returned when the cleaner steps back; ordinary cleaning pays the base rate as shadow while billing is off',async()=>{
+test('an ordinary cleaning reserves nothing either and writes the base rate as shadow while billing is off',async()=>{
  const f=await fixture();try{
   topUp(f,5000);await f.cleaner.jobAction(f.job.id,{action:'apply'});const app=f.db.raw.prepare('SELECT id FROM applications WHERE job_id=?').get(f.job.id);
-  await f.owner.jobAction(f.job.id,{action:'assign',applicationId:app.id});assert.equal(hold(f).status,'held');
-  await declineAssignment(f.cleaner,{jobId:f.job.id,reason:'Заболела'});assert.equal(hold(f).status,'returned');assert.equal(await ownerAvailable(f.db,'owner'),5000);
-  await f.cleaner.jobAction(f.job.id,{action:'apply'});const again=f.db.raw.prepare("SELECT id FROM applications WHERE job_id=? AND status='pending'").get(f.job.id);
-  await f.owner.jobAction(f.job.id,{action:'assign',applicationId:again.id});assert.equal(hold(f).status,'held');
+  await f.owner.jobAction(f.job.id,{action:'assign',applicationId:app.id});assert.equal(hold(f),undefined);assert.equal(await ownerAvailable(f.db,'owner'),5000);
   await finish(f);const c=f.db.raw.prepare('SELECT * FROM cleaning_commissions WHERE job_id=?').get(f.job.id);assert.equal(c.pair,0);assert.equal(c.mode,'shadow');assert.equal(c.amount,300);
  }finally{f.db.close();}
 });

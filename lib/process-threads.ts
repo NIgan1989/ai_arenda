@@ -147,7 +147,7 @@ export function cleaningThread(j: Row, data: Row, now: number): ProcessThread {
   const assigned = !!j.assigned_to && j.status !== 'open', working = j.status === 'in_progress';
   const reported = ['submitted', 'completed'].includes(j.status), accepted = j.status === 'completed';
   const paid = accepted && (!j.assigned_to || Number(j.settlement_paid) >= Number(j.fee) || !!j.settled_at || j.guarantee === 'paid');
-  // С резервом (гарантия оплаты) платит сервис; без него владелец рассчитывается сам и отмечает оплату.
+  // Владелец сам переводит исполнителю и отмечает оплату; «guarantee» остался только у старых уборок с резервом.
   const service = !!j.guarantee || !Number(j.fee);
   const pending = (data?.applications || []).filter((a: Row) => a.job_id === j.id && a.status === 'pending').length;
   const policy = data?.ownProperties?.find((p: Row) => p.id === j.property_id)?.policy || {}, auto = !!Number(policy.auto_assign);
@@ -166,7 +166,7 @@ export function cleaningThread(j: Row, data: Row, now: number): ProcessThread {
       note: working ? (j.end > now ? 'Исполнитель убирает · ещё ' + left(j.end - now) : 'Срок уборки прошёл') : j.arrived_at ? 'Исполнитель на месте, начнёт уборку' : 'Уборка в ' + threadWhen(j.start, now) },
     { key: 'check', label: 'Приёмка', by: accepted ? (aiAccepts ? 'ai' : 'owner') : auto ? 'ai' : 'you', at: j.submitted_at || j.end,
       note: accepted ? (aiAccepts ? 'ИИ принял уборку' : 'Уборка принята') : auto ? 'ИИ проверяет фото' : 'Отчёт ждёт вашей проверки' },
-    { key: 'pay', label: 'Оплата', by: service ? 'ai' : 'you', at: j.settled_at || undefined, note: accepted && !j.assigned_to ? 'Убрано без исполнителя' : paid ? 'Исполнителю заплачено' : service ? 'Сервис заплатит из резерва' : 'Рассчитайтесь с исполнителем и отметьте оплату' },
+    { key: 'pay', label: 'Оплата', by: service ? 'ai' : 'you', at: j.settled_at || undefined, note: accepted && !j.assigned_to ? 'Убрано без исполнителя' : paid ? 'Исполнителю заплачено' : service ? 'Сервис заплатит из резерва' : 'Переведите исполнителю напрямую и отметьте оплату' },
   ];
   // Without a booking the step is the performer's arrival: «Я на месте», or the start of the work itself.
   const came = j.booking_id !== null ? !!j.checkout_confirmed : !!j.arrived_at || working || reported;
@@ -185,6 +185,8 @@ export function jobThread(j: Row, data: Row, now: number): ProcessThread {
   const isMine = j.assigned_to === userId && j.status !== 'open';
   const working = isMine && j.status === 'in_progress', reported = isMine && ['submitted', 'completed'].includes(j.status);
   const accepted = isMine && j.status === 'completed', paid = accepted && (Number(j.settlement_paid) >= Number(j.fee) || !!j.settled_at || j.guarantee === 'paid');
+  // Direct settlements: the customer's mark is half of the step; it closes when the performer says the money came.
+  const got = paid && (!!j.payment_received_at || !!j.guarantee || !Number(j.fee));
   const took = did('Автопилот взял уборку');
   const steps: Omit<ThreadStep, 'state'>[] = [
     { key: 'apply', label: 'Отклик', by: took ? 'ai' : 'you', at: application?.created_at, note: application || isMine ? (took ? 'Автопилот откликнулся за вас' : 'Отклик отправлен') : 'Можно откликнуться' },
@@ -195,10 +197,10 @@ export function jobThread(j: Row, data: Row, now: number): ProcessThread {
       note: working ? (j.end > now ? 'Идёт уборка · ещё ' + left(j.end - now) + ' · затем отчёт' : 'Срок прошёл · отправьте отчёт') : 'Начать уборку' },
     { key: 'check', label: 'Приёмка', by: did('ИИ принял уборку', 'ИИ проверил отчёт') ? 'ai' : 'owner', at: j.submitted_at || undefined,
       note: accepted ? 'Уборка принята' : 'Отчёт на приёмке' },
-    { key: 'pay', label: 'Оплата', by: j.guarantee || !Number(j.fee) ? 'ai' : 'owner', at: j.settled_at || undefined, note: paid ? 'Оплата получена' : j.guarantee ? 'Сервис заплатит из резерва' : 'Владелец рассчитается после приёмки' },
+    { key: 'pay', label: 'Оплата', by: j.guarantee || !Number(j.fee) ? 'ai' : paid && !got ? 'you' : 'owner', at: j.settled_at || undefined, note: paid ? (got ? 'Оплата получена' : 'Заказчик отметил оплату · подтвердите, что деньги пришли') : j.guarantee ? 'Сервис заплатит из резерва' : 'Заказчик переведёт вам напрямую после приёмки' },
   ];
   const came = j.booking_id !== null ? !!j.checkout_confirmed : !!j.arrived_at || working || reported;
-  const done = [!!application || isMine, isMine, isMine && came, reported, accepted, paid];
+  const done = [!!application || isMine, isMine, isMine && came, reported, accepted, got];
   const t = place(steps, done, i => i === 0 || i === 1 || i === 4 || i === 5 || (i === 2 ? now >= j.start - 3600 : i === 3 ? !!j.checkout_confirmed : false));
   const s = t.steps[t.current];
   const yours = !t.finished && s.by === 'you' && (t.current !== 3 || !!j.checkout_confirmed);

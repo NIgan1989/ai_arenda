@@ -72,7 +72,7 @@ export async function pinRegular(service:RentalService,body:Row){
  const terms=await pairTerms(service.db),statements=[
   q(service.db,'INSERT INTO regular_cleaners(property_id,owner_id,cleaner_id,created_at) VALUES (?,?,?,?) ON CONFLICT(property_id) DO UPDATE SET cleaner_id=excluded.cleaner_id,created_at=excluded.created_at',p.id,service.userId,c.id,at),
   service.audit(p.id,JSON.stringify({action:'regular_cleaner.pinned',cleanerId:c.id,previous:before?.cleaner_id||null})),
-  service.notify(c.id,`Вы постоянный исполнитель объекта «${p.title}». Все уборки этого жилья сначала приходят вам, ваше «да» сразу назначает вас. Если на балансе владельца есть деньги, оплата резервируется заранее и приходит после приёмки. ${pairTermsText(terms)}`,'regular:'+p.id+':'+at,'cleaner'),
+  service.notify(c.id,`Вы постоянный исполнитель объекта «${p.title}». Все уборки этого жилья сначала приходят вам, ваше «да» сразу назначает вас. Владелец платит вам напрямую после приёмки и отмечает оплату. ${pairTermsText(terms)}`,'regular:'+p.id+':'+at,'cleaner'),
  ];
  if(before)statements.push(service.notify(before.cleaner_id,`Владелец закрепил за объектом «${p.title}» другого исполнителя. Уже назначенные вам уборки остаются за вами.`,'regular-ended:'+p.id+':'+at,'cleaner'));
  await service.db.batch(statements);
