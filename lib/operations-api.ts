@@ -6,6 +6,7 @@ import {mapSearch,saveMapPoint,journeyAction,geocodeFlat,placeFlatByAddress,flat
 import {administratorConversation} from './administrator-conversation';
 import {DomainError,required,type Role} from './domain';
 import {RentalService} from './service';
+import {savePayout} from './payout';
 import {financeState,recordFinance,createPaymentIntent,acceptPaymentEvent,testPayment} from './finance';
 import {dispatchState,saveOperationRules,saveWorkerDispatch,decideOffer,declineAssignment} from './dispatch';
 import {regularState,pinRegular,unpinRegular} from './regular-cleaner';
@@ -101,6 +102,7 @@ export async function writeOperations(service:RentalService,role:Role,path:strin
  if(route==='venue/hall'){active(role,['owner']);return addHall(service,body);}
  if(route==='venue/rename'){active(role,['owner']);return renameVenue(service,body);}
  if(route==='handover'){active(role,['owner']);return saveHandover(service,body);}
+ if(route==='payout'){active(role,['owner','cleaner']);return savePayout(service,body);}
  if(route==='finance'){active(role,['owner']);return recordFinance(service,body);}
  if(route==='payment-intent'){active(role,['guest']);return createPaymentIntent(service,body,config);}
  if(route==='payment-test'){active(role,['guest']);return testPayment(service,body,config,id=>new RentalService(service.db,id));}

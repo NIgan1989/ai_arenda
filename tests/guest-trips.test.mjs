@@ -38,13 +38,13 @@ test('a row says what the booking waits for, in the guest\'s words',()=>{
 
 test('the steps of a booking keep their order; the map offers the first one that can be taken now',()=>{
  const ids=(b,mode='test')=>guestSteps(b,now,mode).map(s=>s.id);
- assert.deepEqual(ids(booking('b',{terms:{paid_amount:0,deposit:5000,deposit_status:'pending'}})),['pay','deposit','checkin']);
- // Without the test payment the owner marks the money: the guest has nothing to pay here.
- assert.deepEqual(ids(booking('b'),'manual'),['checkin']);
+ assert.deepEqual(ids(booking('b',{terms:{paid_amount:0,deposit:5000,deposit_status:'pending'}})),['pay','checkin']);
+ // Once the guest said «Я оплатил», the step is the owner's: the guest has nothing to press about money.
+ assert.deepEqual(ids(booking('b',{terms:{paid_amount:0,payment_reported_at:now}})),['checkin']);
  const early=guestSteps(booking('b',{payment_status:'owner_verified',terms:{paid_amount:20000}}),now,'test');
  assert.equal(early[0].id,'checkin');assert.equal(early[0].disabled,true);assert.match(early[0].note,/за 15 минут до заезда/);
  assert.equal(guestStep(booking('b',{payment_status:'owner_verified',terms:{paid_amount:20000}}),now,'test'),null);
- assert.equal(guestStep(booking('b'),now,'test').label,'Оплатить 20 000 ₸');
+ assert.equal(guestStep(booking('b'),now,'test').label,'Я оплатил 20 000 ₸');
  assert.equal(guestStep(booking('b',{start:now-60,terms:{paid_amount:20000}}),now,'test').id,'checkin');
  assert.deepEqual(ids(booking('b',{start:now-hour,terms:{paid_amount:20000,actual_checkin:now-hour}})),['checkout']);
  assert.deepEqual(ids(booking('b',{status:'completed'})),['review']);

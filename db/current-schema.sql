@@ -73,6 +73,7 @@
 -- migration 0069_early_checkin_hold.sql sha256:1aa41ec8707e7628888886cb35eb544716c3272e8394b1bc42d626694f702118
 -- migration 0070_property_views.sql sha256:2611b7beac6533757e18a3b8f354eeba5553b720fb659f4ff60bfb569e8e7bfe
 -- migration 0071_company_finance.sql sha256:f299d7a0157f1e9c76cdd9c9a983768518588ae0d7fe8c9035f047216bfbc48a
+-- migration 0072_direct_payments.sql sha256:cb04757fb811ef441743f2f320fc0b299d026c29ec56228158ebe79a3d1955f5
 
 -- table access_receipts
 CREATE TABLE access_receipts (id TEXT PRIMARY KEY,property_id TEXT NOT NULL,entity_kind TEXT NOT NULL,entity_id TEXT NOT NULL,user_id TEXT NOT NULL,created_at INTEGER NOT NULL,expires_at INTEGER NOT NULL);
@@ -360,7 +361,7 @@ CREATE TABLE booking_terms (
  deposit_status TEXT NOT NULL DEFAULT 'not_required' CHECK(deposit_status IN ('not_required','pending','owner_verified')),
  house_rules TEXT NOT NULL DEFAULT '', policy_version INTEGER NOT NULL DEFAULT 0,
  actual_checkin INTEGER, actual_checkout INTEGER, checkout_reported_at INTEGER
-, version INTEGER NOT NULL DEFAULT 1, discount_percent INTEGER NOT NULL DEFAULT 0, paid_amount INTEGER NOT NULL DEFAULT 0, original_end INTEGER NOT NULL DEFAULT 0, deposit_returned_at INTEGER, refund_recorded_at INTEGER, checkin_reported_at INTEGER, arrival_eta INTEGER, late_count INTEGER NOT NULL DEFAULT 0, refund_due INTEGER, min_hours INTEGER, deposit_kept INTEGER NOT NULL DEFAULT 0, deposit_kept_note TEXT NOT NULL DEFAULT '', prepared_at INTEGER, occasion text NOT NULL DEFAULT '', `early_checkin_at` integer);
+, version INTEGER NOT NULL DEFAULT 1, discount_percent INTEGER NOT NULL DEFAULT 0, paid_amount INTEGER NOT NULL DEFAULT 0, original_end INTEGER NOT NULL DEFAULT 0, deposit_returned_at INTEGER, refund_recorded_at INTEGER, checkin_reported_at INTEGER, arrival_eta INTEGER, late_count INTEGER NOT NULL DEFAULT 0, refund_due INTEGER, min_hours INTEGER, deposit_kept INTEGER NOT NULL DEFAULT 0, deposit_kept_note TEXT NOT NULL DEFAULT '', prepared_at INTEGER, occasion text NOT NULL DEFAULT '', `early_checkin_at` integer, payment_reported_at INTEGER, deposit_reported_at INTEGER);
 
 -- table bookings
 CREATE TABLE `bookings` (
@@ -876,6 +877,13 @@ CREATE TABLE payment_intents (
  id TEXT PRIMARY KEY,booking_id TEXT NOT NULL REFERENCES bookings(id),user_id TEXT NOT NULL,kind TEXT NOT NULL CHECK(kind IN ('payment','deposit')),
  amount INTEGER NOT NULL CHECK(amount>0),currency TEXT NOT NULL DEFAULT 'KZT',status TEXT NOT NULL DEFAULT 'prepared' CHECK(status IN ('prepared','processing','ready','paid','failed')),
  checkout_url TEXT NOT NULL DEFAULT '',provider_reference TEXT NOT NULL DEFAULT '',request_key TEXT NOT NULL,created_at INTEGER NOT NULL, test INTEGER NOT NULL DEFAULT 0 CHECK(test IN (0,1)),UNIQUE(user_id,request_key)
+);
+
+-- table payout_details
+CREATE TABLE payout_details (
+ user_id TEXT PRIMARY KEY REFERENCES profiles(id),
+ phone TEXT NOT NULL DEFAULT '', recipient TEXT NOT NULL DEFAULT '', link TEXT NOT NULL DEFAULT '',
+ version INTEGER NOT NULL DEFAULT 1, updated_at INTEGER NOT NULL
 );
 
 -- table phone_verifications
@@ -1796,6 +1804,12 @@ CREATE TRIGGER account_erased_payment_intents_insert BEFORE INSERT ON payment_in
 
 -- trigger account_erased_payment_intents_update
 CREATE TRIGGER account_erased_payment_intents_update BEFORE UPDATE ON payment_intents WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.user_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END;
+
+-- trigger account_erased_payout_details_insert
+CREATE TRIGGER account_erased_payout_details_insert BEFORE INSERT ON payout_details WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.user_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END;
+
+-- trigger account_erased_payout_details_update
+CREATE TRIGGER account_erased_payout_details_update BEFORE UPDATE ON payout_details WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.user_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END;
 
 -- trigger account_erased_phone_verifications_insert
 CREATE TRIGGER account_erased_phone_verifications_insert BEFORE INSERT ON phone_verifications WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.user_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END;

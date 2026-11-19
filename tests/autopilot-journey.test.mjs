@@ -1,10 +1,10 @@
 import {test} from 'node:test';import assert from 'node:assert/strict';import {fixture,load,now,iso} from './helpers/platform.mjs';
 const {matchingAction}=await load('smart-matching'),{startOwnerPlan,startCleanerPlan,sweepPlans}=await load('autopilot-plans'),{saveWorkerDispatch}=await load('dispatch');
-const {checkAdministratorOwner}=await load('administrator-runtime'),{testPayment}=await load('finance'),{saveEvidence}=await load('evidence'),{saveStayReview}=await load('stay-reviews');
+const {checkAdministratorOwner}=await load('administrator-runtime'),{saveEvidence}=await load('evidence'),{saveStayReview}=await load('stay-reviews');
 const {openDiscussion,sendDiscussionMessage,readDiscussion}=await load('process-discussions'),{photo}=await import('./fixtures/photo.mjs');
 
-// One stay end to end under both autopilots with test payments: every participant only taps what is theirs.
-test('autopilot journey: booking, test payment, check-in, chat, checkout, cleaning, deposit back, cleaner paid, review',async()=>{
+// One stay end to end under both autopilots with direct settlements: the money goes between the people, the AI does the rest.
+test('autopilot journey: booking, direct payment, check-in, chat, checkout, cleaning, deposit back, cleaner paid, review',async()=>{
  const {RentalService}=await load('service'),f=await fixture(),R=f.db.raw;try{
   const ownerFor=id=>new RentalService(f.db,id),tick=async()=>{f.release();await checkAdministratorOwner(f.db,'owner');};
   const notice=(user,key)=>R.prepare('SELECT body FROM notifications WHERE user_id=? AND dedupe LIKE ?').get(user,key)?.body;
@@ -21,7 +21,7 @@ test('autopilot journey: booking, test payment, check-in, chat, checkout, cleani
   assert.equal(R.prepare('SELECT status FROM bookings WHERE id=?').get(id).status,'confirmed');
   assert.match(notice('owner','owner:booking:'+id),/принял бронь/,'the owner is not asked to confirm what the AI already confirmed');
   assert.equal(notice('guest','guest:phone-ask:'+id),undefined);
-  assert.match(notice('guest','guest:confirmed:'+id),/Оплатите проживание и депозит в карточке брони/);
+  assert.match(notice('guest','guest:confirmed:'+id),/Переведите владельцу оплату проживания и депозит по реквизитам из карточки брони/);
   assert.equal(R.prepare('SELECT mode,managed FROM platform_commissions WHERE booking_id=?').get(id).mode,'shadow');
   // The AI offers the cleaning, the cleaner's autopilot takes it, the AI assigns.
   const job=R.prepare('SELECT * FROM cleaning_jobs WHERE booking_id=?').get(id);
@@ -44,12 +44,13 @@ test('autopilot journey: booking, test payment, check-in, chat, checkout, cleani
   assert.ok(ownerLog.some(e=>e.text==='ИИ назначил исполнителя'&&e.who&&e.start>0)&&cleanerLog.every(e=>!e.who),'the owner reads who was assigned and when; a worker\'s own line carries no name');
   assert.ok(ownerLog.filter(e=>e.kind!==undefined).length===0&&ownerLog.every(e=>!e.open||e.title),'a line that opens something names the home');
   assert.ok(!ownerMarks.some(m=>m.move==='took')&&!cleanerMarks.some(m=>m.move==='confirmed'),'each person sees only their own notices');
-  // Arrival day. The guest arrives before paying: they are asked to pay in the card, not the owner to check a transfer.
+  // Arrival day. The guest arrives before paying: they are asked to transfer to the owner, the owner to check the bank.
   move(id,job.id,-(86400+600));
   await f.guest.bookingAction(id,{action:'report_checkin'});await tick();
-  assert.match(notice('guest','guest:administrator-checkin-pay:'+id),/Оплатите проживание в карточке брони/);
-  assert.match(notice('owner','owner:administrator-checkin-payment:'+id),/Гостя попросили оплатить/);
-  await testPayment(f.guest,{bookingId:id,kind:'payment'},{},ownerFor);await testPayment(f.guest,{bookingId:id,kind:'deposit'},{},ownerFor);
+  assert.match(notice('guest','guest:administrator-checkin-pay:'+id),/Переведите владельцу оплату по реквизитам из карточки брони и нажмите «Я оплатил»/);
+  assert.match(notice('owner','owner:administrator-checkin-payment:'+id),/Проверьте поступление в банке и подтвердите в брони/);
+  await f.guest.bookingAction(id,{action:'report_paid'});assert.match(notice('owner','owner:paid-reported:'+id+':%'),/Гость сообщил, что перевёл вам 20\s000 ₸/);
+  await f.owner.bookingAction(id,{action:'received'});
   // Paid, but a new flat was never marked ready: the owner is told exactly that.
   await tick();assert.equal(R.prepare('SELECT actual_checkin FROM booking_terms WHERE booking_id=?').get(id).actual_checkin,null);
   assert.match(notice('owner','owner:administrator-checkin-ready:'+id),/не отмечено готовым/);
@@ -70,36 +71,20 @@ test('autopilot journey: booking, test payment, check-in, chat, checkout, cleani
   R.prepare("UPDATE notifications SET created_at=created_at-3601 WHERE dedupe LIKE 'owner:administrator-review%'").run();await tick();
   assert.equal(R.prepare('SELECT status FROM cleaning_jobs WHERE id=?').get(job.id).status,'completed');
   assert.equal(R.prepare('SELECT readiness FROM property_operations WHERE property_id=?').get(f.property).readiness,'ready');
-  // With test money the AI closes the stay: deposit back to the guest, the cleaner paid, once.
+  // The money never passes through the service: the owner returns the deposit and pays the cleaner himself and marks both.
   await tick();
-  const money=R.prepare('SELECT kind,amount,external_reference ref FROM finance_entries WHERE booking_id=? OR job_id=? ORDER BY kind').all(id,job.id).map(e=>e.kind+':'+e.amount+':'+e.ref.slice(0,5));
-  assert.deepEqual(money,['deposit:10000:TEST-','deposit_return:10000:TEST-','job_payment:3000:TEST-','payment:10000:TEST-']);
+  const version=()=>R.prepare('SELECT version FROM booking_terms WHERE booking_id=?').get(id).version;
+  await f.owner.bookingAction(id,{action:'record_deposit_return',confirmed:true,expectedVersion:version()});
+  await f.owner.jobAction(job.id,{action:'record_job_payment',confirmed:true,expectedVersion:R.prepare('SELECT version FROM cleaning_jobs WHERE id=?').get(job.id).version});
+  const money=R.prepare('SELECT kind,amount,source FROM finance_entries WHERE booking_id=? OR job_id=? ORDER BY kind').all(id,job.id).map(e=>e.kind+':'+e.amount+':'+e.source);
+  assert.deepEqual(money,['deposit:10000:owner','deposit_return:10000:owner','job_payment:3000:owner','payment:10000:owner']);
   assert.ok(R.prepare('SELECT deposit_returned_at FROM booking_terms WHERE booking_id=?').get(id).deposit_returned_at);
   assert.ok(R.prepare('SELECT settled_at FROM cleaning_jobs WHERE id=?').get(job.id).settled_at);
-  assert.match(notice('guest','guest:test-deposit-return:'+id),/вернул депозит 10\s000 ₸/);assert.match(notice('cleaner','cleaner:test-payout:'+job.id),/3\s000 ₸/);
+  assert.match(R.prepare("SELECT body FROM notifications WHERE user_id='guest' AND body LIKE 'Владелец отметил, что вернул депозит%'").get().body,/10\s000 ₸/);
+  assert.match(R.prepare("SELECT body FROM notifications WHERE user_id='cleaner' AND body LIKE 'Заказчик отметил, что перевёл вам%'").get().body,/3\s000 ₸/);
   // The guest is asked to rate the stay and the owner sees it; both plans keep running.
   R.prepare('UPDATE booking_terms SET actual_checkout=actual_checkout-3700 WHERE booking_id=?').run(id);await tick();
   assert.ok(notice('guest','guest:review-request:'+id));await saveStayReview(f.guest,{bookingId:id,rating:5,text:'Отлично'});assert.ok(notice('owner','owner:stay-review:'+id));
   await sweepPlans(f.db);assert.deepEqual(R.prepare("SELECT role,status FROM autopilot_plans ORDER BY role").all().map(p=>p.role+':'+p.status),['cleaner:trial','owner:trial']);
- }finally{f.db.close();}
-});
-
-test('test money is not settled when the stay has real money, an open issue, or the test mode is off',async()=>{
- const {settleTestMoney}=await load('finance');
- const stay=async(depositRef)=>{const f=await fixture(),R=f.db.raw;
-  for(const k of ['booking:'+f.booking,'job:'+f.job.id])R.prepare('INSERT OR IGNORE INTO finance_backfill_receipts VALUES (?,?)').run(k,now());
-  for(const [kind,ref] of [['payment','TEST-1'],['deposit',depositRef]])R.prepare("INSERT INTO finance_entries(id,owner_id,property_id,booking_id,job_id,kind,amount,currency,source,external_reference,note,actor_id,request_key,created_at) VALUES (?,?,?,?,NULL,?,10000,'KZT','provider',?,'x','x',?,?)").run(kind,'owner',f.property,f.booking,kind,ref,kind,now());
-  R.prepare("UPDATE bookings SET status='completed' WHERE id=?").run(f.booking);R.prepare('UPDATE booking_terms SET actual_checkout=? WHERE booking_id=?').run(now(),f.booking);R.prepare("UPDATE cleaning_jobs SET status='completed',assigned_to='cleaner' WHERE id=?").run(f.job.id);
-  return f;};
- const real=await stay('KASPI-77');try{assert.equal(await settleTestMoney(real.owner,real.property),0,'a real deposit is returned by the owner');}finally{real.db.close();}
- const f=await stay('TEST-2'),R=f.db.raw;try{
-  R.prepare("INSERT INTO administrator_issues(id,owner_id,property_id,entity_kind,entity_id,opened_by,opened_role,other_user,other_role,description,created_at) VALUES ('i','owner',?,'job',?,'owner','owner','cleaner','cleaner','Разбита ваза',?)").run(f.property,f.job.id,now());
-  assert.equal(await settleTestMoney(f.owner,f.property),0,'an open issue stops it');
-  R.prepare("UPDATE administrator_issues SET status='resolved'").run();R.prepare("UPDATE platform_billing SET test_payments=0").run();
-  assert.equal(await settleTestMoney(f.owner,f.property),0,'test mode off');
-  R.prepare("UPDATE platform_billing SET test_payments=1").run();
-  // A reserve that was given back (the assignment was released) does not pay the cleaner; the test payout does.
-  R.prepare("INSERT INTO cleaning_holds(job_id,owner_id,cleaner_id,property_id,amount,status,created_at) VALUES (?,?,?,?,3000,'returned',?)").run(f.job.id,'owner','cleaner',f.property,now());
-  assert.equal(await settleTestMoney(f.owner,f.property),2);assert.equal(await settleTestMoney(f.owner,f.property),0,'once');
  }finally{f.db.close();}
 });

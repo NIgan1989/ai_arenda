@@ -20,6 +20,7 @@ import {request,API_URL} from './api';
 import {roleNames,rolePages} from './RoleEntry';
 import {Shift} from './Shift';
 import {OwnerAnalytics,loadAnalytics,shortTenge} from './OwnerAnalytics';
+import {PayoutForm,phoneText,type Payout} from './PayoutDetails';
 import {s,C} from './styles';
 import type {Row as Data,Role} from './model';
 type Row_=Data;
@@ -33,17 +34,19 @@ const shortRole:Record<Role,string>={guest:'Гость',owner:'Владелец'
 // profile: what others read about me and how reliable I look to them.
 // money: the owner's business numbers, «Доходы» (OwnerAnalytics.tsx); the row shows the month's net profit.
 // settings: channels, the bank, privacy, and inside it the data and safety pages and joining another role.
-type MenuView=''|'money'|'notices'|'autopilot'|'profile'|'settings'|'safety'|`safety:${Exclude<SafetyPage,''>}`|'shift';
+type MenuView=''|'money'|'notices'|'autopilot'|'profile'|'settings'|'safety'|`safety:${Exclude<SafetyPage,''>}`|'shift'|'payout';
 export function AccountControl({role:active,staffPlaces=0,notices,onOpenNotice,start,onChanged,onSignedOut,onSwitchRole,onPickRole,onJoinRole,onAskAdministrator,onLogout,onOpenPage,onOpenEntry}:{staffPlaces?:number;notices?:Data[];onOpenNotice?:(notice:Data)=>(()=>void)|undefined;start?:'notices';onPickRole?:(role:Role)=>void;onJoinRole?:(role:Role)=>void;onAskAdministrator?:()=>void;onOpenPage?:(id:string)=>void;onOpenEntry?:(open:JournalOpen)=>(()=>void)|undefined;role:Role;onEdit:()=>void;onChanged?:()=>Promise<unknown>;onSignedOut:(result?:Row_)=>void|Promise<void>;onSwitchRole?:()=>void;onLogout?:()=>void}){
  const [view,setView]=useState<MenuView>(start||''),[editing,setEditing]=useState(false),[readUpTo,setReadUpTo]=useState(0);
  // Every opening of «Уведомления» marks what is there as read: the counter in the menu then shows only what came after.
  // A failed mark is not repeated on its own; the next opening sends it again.
  useEffect(()=>{if(view!=='notices')return;setReadUpTo(Math.max(0,...(notices||[]).map(n=>Number(n.created_at)||0)));request('/api/notifications',{}).catch(()=>{});},[view]); // eslint-disable-line react-hooks/exhaustive-deps
  const [account,setAccount]=useState<Row_|null>(null),[busy,setBusy]=useState(false),[error,setError]=useState(''),[message,setMessage]=useState(''),[users,setUsers]=useState<Row_|null>(null),[role,setRole]=useState(''),[search,setSearch]=useState(''),[finding,setFinding]=useState(false);
+ // «Реквизиты для оплаты» (PayoutDetails.tsx): where guests and customers transfer money directly.
+ const [payout,setPayout]=useState<Payout|null>(null);
  // The owner's row «Доходы» shows the last 30 days' net profit; a failure leaves the row without a value.
  const [netMonth,setNetMonth]=useState<number|null>(null);
  useEffect(()=>{if(active!=='owner')return;let live=true;loadAnalytics('month').then(r=>{if(live)setNetMonth(r.money.net);}).catch(()=>{});return()=>{live=false;};},[active]);
- useEffect(()=>{let live=true;request('/api/account').then(v=>{if(live)setAccount(v);}).catch(e=>{if(live)setError(e.message);});return()=>{live=false;};},[]);
+ useEffect(()=>{let live=true;request('/api/account').then(v=>{if(live){setAccount(v);setPayout(v.payout||null);}}).catch(e=>{if(live)setError(e.message);});return()=>{live=false;};},[]);
  const button=(title:string,fn:()=>void,disabled=busy)=><Pressable accessibilityRole="button" disabled={disabled} onPress={fn} style={[s.button,s.secondary,disabled&&s.disabled]}><Text style={[s.buttonText,s.secondaryText]}>{title}</Text></Pressable>;
  // Instant save: show the new value at once, roll back if the server refuses.
  async function instant(change:(v:Row_)=>Row_,send:()=>Promise<unknown>){if(busy||!account)return;const before=account;setBusy(true);setError('');setMessage('');setAccount(change(account));try{await send();setAccount(await request('/api/account'));setMessage('Сохранено.');}catch(e:any){setAccount(before);setError(e.message);}finally{setBusy(false);}}
@@ -62,16 +65,17 @@ export function AccountControl({role:active,staffPlaces=0,notices,onOpenNotice,s
  const go=(to:MenuView)=>{setMessage('');setError('');setView(to);};
  // Joining another role is offered in the settings, as a thing done once.
  const join=onJoinRole?(['guest','owner','cleaner'] as Role[]).filter(v=>v!==active&&!roles.includes(v)):[];
- const titles={money:'Доходы',shift:'Смена',notices:'Уведомления',autopilot:'Автопилот',profile:experience.profileTitle,settings:'Настройки',safety:'Данные и безопасность'};
+ const titles={payout:'Реквизиты для оплаты',money:'Доходы',shift:'Смена',notices:'Уведомления',autopilot:'Автопилот',profile:experience.profileTitle,settings:'Настройки',safety:'Данные и безопасность'};
  const clock=account.serverTime||Date.now()/1000,events=roleEvents(notices,active),eventsNow=eventsToday(events.filter(n=>!Number(n.read)&&Number(n.created_at)>readUpTo),clock),trust=String(account.reliability?.label||'').replace(/^Надёжность\s+/,'');
  const hint=steps.length>0&&<Pressable accessibilityRole="button" onPress={edit} style={a.next}><RowIcon icon="sparkles" tint={C.aiTo}/><View style={{flex:1}}><Text style={a.title}>{steps[0]}</Text>{steps.length>1&&<Text style={a.note}>и ещё {steps.length-1} {steps.length===2?'шаг':'шага'} до полного профиля</Text>}</View><Text style={[a.chevron,{color:C.ink}]}>›</Text></Pressable>;
  return <View>
-  {!!view&&(()=>{const sub=view.startsWith('safety:'),title=sub?safetyTitles[view.slice(7) as Exclude<SafetyPage,''>]:titles[view as keyof typeof titles];return <View style={{flexDirection:'row',alignItems:'center',gap:4,minHeight:44,marginBottom:4}}><Pressable accessibilityRole="button" accessibilityLabel={sub?'Назад: Данные и безопасность':view==='safety'?'Назад: Настройки':'Назад в меню'} hitSlop={8} onPress={()=>go(sub?'safety':view==='safety'?'settings':'')} style={{width:44,height:44,marginLeft:-12,alignItems:'center',justifyContent:'center'}}><Text style={{fontSize:28,lineHeight:32,color:C.ink}}>‹</Text></Pressable><Text accessibilityRole="header" style={[a.name,{fontSize:22,lineHeight:28,flex:1}]}>{title}</Text></View>;})()}
+  {!!view&&(()=>{const sub=view.startsWith('safety:'),title=sub?safetyTitles[view.slice(7) as Exclude<SafetyPage,''>]:titles[view as keyof typeof titles];return <View style={{flexDirection:'row',alignItems:'center',gap:4,minHeight:44,marginBottom:4}}><Pressable accessibilityRole="button" accessibilityLabel={sub?'Назад: Данные и безопасность':view==='safety'||view==='payout'?'Назад: Настройки':'Назад в меню'} hitSlop={8} onPress={()=>go(sub?'safety':view==='safety'||view==='payout'?'settings':'')} style={{width:44,height:44,marginLeft:-12,alignItems:'center',justifyContent:'center'}}><Text style={{fontSize:28,lineHeight:32,color:C.ink}}>‹</Text></Pressable><Text accessibilityRole="header" style={[a.name,{fontSize:22,lineHeight:28,flex:1}]}>{title}</Text></View>;})()}
   {!view&&<><View style={a.head}><ProfileRing photoId={p.avatar_id} name={p.name} progress={completion/100} ink={ink} onPress={edit}/><View style={{flex:1,minWidth:0}}><Text style={a.name}>{p.name||'Мой профиль'}</Text><Text style={s.meta}>{p.city||'Город не указан'} · {completion<100?'профиль на '+completion+'%':'профиль заполнен'}</Text></View><Pressable accessibilityRole="button" onPress={edit} style={a.edit}><Text style={a.editText}>Изменить</Text></Pressable></View>
   {roles.length>1&&!!onPickRole&&<View accessibilityRole="tablist" accessibilityLabel="Роль" style={[a.seg,{marginTop:16,padding:4,borderRadius:12}]}>{(['guest','owner','cleaner'] as Role[]).filter(r=>roles.includes(r)).map(r=><Pressable key={r} accessibilityRole="tab" accessibilityState={{selected:r===active}} onPress={()=>{if(r!==active)onPickRole(r);}} style={[a.segItem,{flex:1,minHeight:40,alignItems:'center'},r===active&&a.segOn]}><Text style={[a.segText,{fontWeight:'600'},r===active&&a.segTextOn]}>{shortRole[r]}</Text></Pressable>)}</View>}</>}
   {!!error&&<Text accessibilityRole="alert" style={s.error}>{error}</Text>}{!!message&&<Text accessibilityLiveRegion="polite" style={a.saved}>{message}</Text>}
   {!view&&<Group space>{worker&&<SwitchRow icon="briefcase" tint={ink} title="Принимаю предложения" note={/^(Принимает|Не принимает)/.test(account.workerStatus?.label||'')?undefined:account.workerStatus?.label} checked={(p.work_status||'available')==='available'} disabled={busy} onChange={work}/>}{staffPlaces>0&&<Row icon="key" tint={ink} title="Смена" value={staffPlaces===1?'гости сегодня':'объектов: '+staffPlaces} onPress={()=>go('shift')}/>}{owner&&<Row icon="chart" tint={ink} title="Доходы" value={netMonth===null?undefined:(netMonth>0?'+':'')+shortTenge(netMonth)+' за месяц'} onPress={()=>go('money')}/>}<Row icon="bell" tint={ink} title="Уведомления" value={eventsNow?eventsNow+' новых':undefined} onPress={()=>go('notices')}/><Row icon="sparkles" tint={ink} title="Автопилот" value={today?'ИИ: '+today+' сегодня':undefined} onPress={()=>go('autopilot')}/><Row icon="user" tint={ink} title={experience.profileTitle} value={completion<100?completion+'%':trust||'заполнен'} onPress={()=>go('profile')}/></Group>}
   {view==='shift'&&<Shift/>}
+  {view==='payout'&&active!=='guest'&&<PayoutForm initial={payout} role={active} onSaved={v=>{setPayout(v);void onChanged?.();}}/>}
   {view==='money'&&<OwnerAnalytics tint={ink}/>}
   {view==='notices'&&<Group><NativeTelegram tint={ink} invite/><NoticeList list={events} now={clock} onOpen={onOpenNotice}/></Group>}
   {view==='autopilot'&&<><Group title="Что сделал ИИ"><AiJournal entries={journal} now={clock} onOpen={onOpenEntry}/></Group>{worker?<NativeAutopilotPlan key={'plan:'+active} role="cleaner"/>:<NativeDecisionRules key={'rules:'+active} tint={ink}/>}</>}
@@ -79,8 +83,8 @@ export function AccountControl({role:active,staffPlaces=0,notices,onOpenNotice,s
   {view==='settings'&&<>
    <Group title="Куда сообщать"><NativeTelegram tint={ink}/><SwitchRow icon="wallet" tint={ink} title="О расчётах и выплатах" checked={!!account.settings.payment_notifications} disabled={busy} onChange={v=>settings({payment_notifications:v?1:0})}/></Group>
    <Text style={a.footnote}>Сообщаем только то, что ждёт вас или касается денег. Что ИИ сделал сам, записано в «Автопилот».</Text>
-   <Group title={experience.paymentTitle}><Choice icon="bank" tint={ink} title="Банк" value={account.settings.payment_provider||'undecided'} options={[['kaspi','Kaspi'],['halyk','Halyk'],['undecided','Позже']]} disabled={busy} onChange={v=>settings({payment_provider:v})}/></Group>
-   <Text style={a.footnote}>Пока оплата тестовая: деньги не списываются и не поступают.</Text>
+   {active==='guest'?<Text style={a.footnote}>Вы платите владельцу напрямую по реквизитам из брони. Сервис деньги за жильё не принимает.</Text>:<><Group title="Расчёты"><Row icon="bank" tint={ink} title="Реквизиты для оплаты" value={payout?phoneText(payout.phone):'не указаны'} onPress={()=>go('payout')}/></Group>
+   <Text style={a.footnote}>{owner?'Гости переводят оплату прямо вам на Kaspi. Сервис деньги гостей не принимает.':'Заказчики переводят оплату за уборку прямо вам на Kaspi.'}</Text></>}
    <Group title="Приватность"><Choice icon="eye" tint={ink} title="Моё фото" value={p.avatar_visibility||'participants'} options={[['participants','Участникам'],['self','Только мне']]} disabled={busy} onChange={v=>privacy({avatar_visibility:v},{avatarVisibility:v})}/><SwitchRow icon="dot" tint={ink} title="Показывать, что я в сети" checked={p.show_presence!==0} disabled={busy} onChange={v=>privacy({show_presence:v?1:0},{showPresence:v})}/><SwitchRow icon="read" tint={ink} title="Отметки прочтения" checked={p.show_receipts!==0} disabled={busy} onChange={v=>privacy({show_receipts:v?1:0},{showReceipts:v})}/></Group>
    <Text style={a.footnote}>Если скрыть своё, вы тоже не увидите «в сети» и прочтение у собеседника.</Text>
    <Group title="Аккаунт"><Row icon="lock" tint={ink} title="Данные и безопасность" onPress={()=>go('safety')}/>{join.map(v=><Row key={v} icon="plus" tint={ink} title={joinTitle(v)} onPress={()=>onJoinRole?.(v)}/>)}</Group></>}

@@ -1,7 +1,8 @@
 import {test} from 'node:test';import assert from 'node:assert/strict';
 import {fixture,load,now} from './helpers/platform.mjs';
-const {testPayment}=await load('finance'),{matchingAction}=await load('smart-matching'),{sweepArrivals,shiftFor,cleaningEnds}=await load('arrival-autopilot'),{shortWindowNote,shiftedStay}=await load('arrival-shift'),{RentalService}=await load('service');
-const pay=f=>{f.db.raw.prepare("INSERT INTO platform_billing(id,test_payments) VALUES ('global',1) ON CONFLICT(id) DO UPDATE SET test_payments=1").run();return testPayment(f.guest,{bookingId:f.booking,kind:'all'},{},id=>new RentalService(f.db,id));};
+const {matchingAction}=await load('smart-matching'),{sweepArrivals,shiftFor,cleaningEnds}=await load('arrival-autopilot'),{shortWindowNote,shiftedStay}=await load('arrival-shift'),{RentalService}=await load('service');
+// Direct settlement: the guest says «Я оплатил», the owner confirms the money («received»).
+const pay=async f=>{await f.guest.bookingAction(f.booking,{action:'report_paid'});return f.owner.bookingAction(f.booking,{action:'received'});};
 const notes=(f,user,like)=>f.db.raw.prepare('SELECT body FROM notifications WHERE user_id=? AND dedupe LIKE ?').all(user,like).map(r=>r.body);
 // The guest of the fixture arrives in `inMinutes`; a previous guest left 10 minutes ago and the cleaning time after them
 // still runs for 80 minutes.

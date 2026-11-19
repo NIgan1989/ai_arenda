@@ -1,6 +1,6 @@
 // One line under the guest's booking card: what the guest does now, or what the booking waits for.
 // The steps are guestSteps (lib/guest-trips.ts); null leaves the card with the general hint of the process.
-import { guestSteps } from './guest-trips';
+import { guestSteps, payDue } from './guest-trips';
 import { threadWhen } from './process-threads';
 import { wordsOf } from './stay-words';
 
@@ -12,15 +12,14 @@ export function guestLine(b: Row | null | undefined, now: number, paymentMode?: 
   const step = guestSteps(b, now, paymentMode).find(s => s.id !== 'late');
   if (!step) return null;
   const w = wordsOf(b);
-  // One payment covers the stay and the refundable deposit.
-  if (step.id === 'pay') return (b.terms?.deposit > 0 && b.terms?.deposit_status === 'pending' ? 'Оплатите бронь и депозит одним платежом' : 'Оплатите бронь, чтобы она не снялась') + ' → ' + w.arrive + ' ' + threadWhen(b.start, now);
-  if (step.id === 'deposit') return 'Внесите депозит, он вернётся ' + w.afterLeave + ' → ' + w.arrive + ' ' + threadWhen(b.start, now);
+  // The guest transfers the stay and the refundable deposit to the owner directly and says «Я оплатил».
+  if (step.id === 'pay') return (payDue(b).left > 0 ? (payDue(b).deposit ? 'Переведите владельцу оплату и депозит' : 'Переведите оплату владельцу') : 'Переведите владельцу депозит, он вернётся ' + w.afterLeave) + ' → ' + w.arrive + ' ' + threadWhen(b.start, now);
   if (step.id === 'checkin') {
     // The owner confirms the check-in only after the payment, the deposit and the readiness of the home:
     // «Всё готово» is said when all three are there, otherwise the line names what is still waited for.
     const arrive = ' → ' + w.arrive + ' ' + threadWhen(b.start, now);
-    if (b.payment_status !== 'owner_verified') return 'Ждём, когда владелец подтвердит оплату' + arrive;
-    if (b.terms?.deposit > 0 && b.terms?.deposit_status === 'pending') return 'Ждём, когда владелец подтвердит депозит' + arrive;
+    if (b.payment_status !== 'owner_verified') return 'Владелец проверяет перевод и подтвердит оплату' + arrive;
+    if (b.terms?.deposit > 0 && b.terms?.deposit_status === 'pending') return 'Владелец проверяет перевод и подтвердит депозит' + arrive;
     return b.readiness === 'ready' ? 'Всё готово' + arrive : null;
   }
   if (step.id === 'checkout') return w.youInside + ' → ' + w.leave + ' ' + threadWhen(b.end, now);

@@ -29,7 +29,7 @@ test('a paid guest at the door is checked in after ten minutes of the owner\'s s
 test('a guest who has not paid is told to pay, and is not checked in',async()=>{
  const f=await fixture();try{
   f.db.raw.prepare('UPDATE bookings SET start=? WHERE id=?').run(now()-60,f.booking);
-  assert.match((await f.guest.bookingAction(f.booking,{action:'report_checkin'})).message,/Осталось оплатить проживание/);
+  assert.match((await f.guest.bookingAction(f.booking,{action:'report_checkin'})).message,/Осталось перевести владельцу оплату по реквизитам из карточки брони и нажать «Я оплатил»/);
   f.db.raw.prepare('UPDATE booking_terms SET checkin_reported_at=? WHERE booking_id=?').run(now()-3600,f.booking);
   assert.deepEqual(await sweepSilence(f.db,config),{checkedIn:0,checkedOut:0,accepted:0,told:0,escalated:0});
  }finally{f.db.close();}
