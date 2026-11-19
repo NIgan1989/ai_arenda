@@ -128,7 +128,9 @@ function GuestPanel({setScanning,setQuiet,accountId,data,mapData,publish,selecte
  });
  // A step of the strip: the pins answer at once from what the search already said; a moment later the search runs for
  // that arrival, so the cards, their prices and «Забронировать» are for it too.
- const arriveBy=(t:number)=>{setArriveAt(t);clearTimeout(shiftTimer.current);shiftTimer.current=setTimeout(()=>void find(shiftDraft(latestDraft.current,t),true),700);};
+ const arriveBy=(t:number)=>{setArriveAt(t);clearTimeout(shiftTimer.current);// A search still running holds the lock: the latest step waits for it instead of being dropped.
+  const run=()=>{if(lock.current){shiftTimer.current=setTimeout(run,300);return;}void find(shiftDraft(latestDraft.current,t),true);};
+  shiftTimer.current=setTimeout(run,700);};
  useEffect(()=>()=>clearTimeout(shiftTimer.current),[]);
  // «Снова туда же»: the home is priced for the stay in the line first, so the card books the tariff the search would
  // (the night price too). Busy or not fitting on these conditions: the card opens without dates, and the guest picks them.

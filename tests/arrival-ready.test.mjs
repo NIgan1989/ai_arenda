@@ -35,6 +35,10 @@ test('the guest search carries the strip: a home busy at the asked time is offer
   f.db.raw.prepare("UPDATE cleaning_jobs SET status='assigned',assigned_to='cleaner' WHERE id=?").run(f.job.id||f.job);
   const again=await previewMatches(f.guest,{...body,start:iso(p.arrivalFrom),end:iso(p.arrivalFrom+7200),around:iso(start)});
   assert.deepEqual(again.arrival.steps,r.arrival.steps);assert.equal(again.properties.length,1);assert.equal(again.properties[0].arrival[again.arrival.steps.indexOf(p.arrivalFrom)],'r');
+  // Free only before the asked arrival: still on the map, counted at its own steps.
+  const ahead=now()+9*3600;f.db.raw.prepare("INSERT INTO bookings(id,property_id,guest_id,start,end,occupied_until,guests,amount,status,expires_at,payment_status,request_key,created_at) VALUES ('next',?,'guest',?,?,?,1,4000,'confirmed',0,'paid','next',?)").run(f.property,ahead,ahead+7200,ahead+7200+5400,now());
+  const late=now()+7*3600,earlier=await previewMatches(f.guest,{...body,start:iso(late),end:iso(late+7200)});
+  assert.equal(earlier.properties.length,0);assert.equal(earlier.later.length,1);assert.equal(earlier.later[0].arrival[earlier.arrival.steps.indexOf(late)],'-');assert.ok(earlier.later[0].arrivalFrom<late);
   // The waves of a request to owners do not need the strip.
   assert.equal((await previewMatches(f.guest,body,false)).arrival,undefined);
  }finally{f.db.close();}

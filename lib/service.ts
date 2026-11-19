@@ -47,7 +47,7 @@ import {ownerCleaningTips,decideCleaningTip} from './cleaning-price';
 import {releaseStatements,releaseWindow} from './overdue-cleaning';
 import {lateUntil,LATE_OPENS} from './late-arrival';
 import {ruleFor,minutesLabel} from './decision-rules';
-import {ownerWindows,decideCalendarWindow,openWindowFor,openWindowsFor,windowQuote} from './calendar-windows';
+import {ownerWindows,decideCalendarWindow,openWindowFor,openWindowsFor,openWindowsIn,windowAt,windowQuote} from './calendar-windows';
 
 type Row = Record<string, any>;
 const now = () => Math.floor(Date.now() / 1000);
@@ -472,13 +472,15 @@ export class RentalService {
       // Every home of the city that passes all but the time, with its code for each step; the ones not free at the asked
       // time are priced at their first free step, so the guest sees «С 19:00» and what it costs.
       if(strip){
-        const staleIds=new Set(stale.map(p=>p.property_id)),length=end-start;
+        const staleIds=new Set(stale.map(p=>p.property_id)),length=end-start,stripWindows=mode==='hourly'?await openWindowsIn(this.db,steps[0],steps[steps.length-1]+length):[];
         later=items.filter(p=>!staleIds.has(p.id)&&!['maintenance','blocked'].includes(p.display_status.code)).flatMap(p=>{
           const codes=arrivalCodes(p,strip.filter(b=>b.property_id===p.id),steps,length,now(),options.readyIds?.includes(p.id));
-          const first=steps.findIndex((t,i)=>codes[i]!=='-'&&t>start);
+          // The first free step after the asked arrival; else the latest before it (the strip counts it at its own steps).
+          let first=steps.findIndex((t,i)=>codes[i]!=='-'&&t>start);
+          if(first<0)first=[...codes].map((c,i)=>c!=='-'?i:-1).filter(i=>i>=0).pop()??-1;
           arrivalOf.set(p.id,codes);
           if(first<0)return [];
-          try{const at=steps[first],price=withGuests(rentalPrice(p.price,p.policy,at,at+length,mode),p.policy,guests);return [{...p,arrival:codes,arrivalFrom:at,estimate:{amount:price.amount,periods:price.periods,rate:price.price,unitLabel:price.unitLabel,billingMode:price.billingMode}}];}catch(error){if(error instanceof DomainError)return [];throw error;}
+          try{const at=steps[first],price=withGuests(windowQuote(rentalPrice(p.price,p.policy,at,at+length,mode),p.policy.hourly_price,windowAt(stripWindows,p.id,at,at+length)),p.policy,guests);return [{...p,arrival:codes,arrivalFrom:at,estimate:{amount:price.amount,periods:price.periods,rate:price.price,unitLabel:price.unitLabel,billingMode:price.billingMode,...(price.window?{window:price.window}:{})}}];}catch(error){if(error instanceof DomainError)return [];throw error;}
         });
         arrivalSet={steps,at:start};
       }
