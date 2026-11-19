@@ -1,6 +1,6 @@
 'use client';
 import {useEffect,useRef,useState} from 'react';
-import {LayoutDashboard,Users,House,ShieldCheck,MessagesSquare,SlidersHorizontal,Activity,Flag,ArrowUpRight,RefreshCw,LogOut,Menu,X,ChevronRight,CheckCircle2,AlertCircle,MapPin,Camera,CalendarDays,Brush,Search,MoreHorizontal,Wallet,LineChart,type LucideIcon} from 'lucide-react';
+import {LayoutDashboard,Users,House,ShieldCheck,MessagesSquare,SlidersHorizontal,Activity,Flag,ArrowUpRight,RefreshCw,LogOut,Menu,X,ChevronRight,CheckCircle2,AlertCircle,MapPin,Camera,CalendarDays,Brush,Search,MoreHorizontal,Wallet,LineChart,Calculator,TrendingUp,type LucideIcon} from 'lucide-react';
 import {Brand} from './brand';
 import {AdminActivityMap} from './admin-activity-map';
 import {Button} from './ui/button';
@@ -12,6 +12,7 @@ import {AdminReports} from './admin-reports';
 import {AdminPolicy} from './admin-policy';
 import {AdminRevenue} from './admin-revenue';
 import {AdminFinance} from './admin-finance';
+import {AdminAccounting} from './admin-accounting';
 import {AdminReviews} from './admin-reviews';
 import {AdminDeletionRequests} from './safety-controls';
 import {logout} from './auth-form';
@@ -32,6 +33,7 @@ const sections:Section[]=[
  {id:'users',label:'Пользователи',hint:'Аккаунты, подключённые роли и участие в работе сервиса.',Icon:Users,group:'people'},
  {id:'properties',label:'Объекты',hint:'Объявления владельцев, готовность карточек и публикация.',Icon:House,group:'people'},
  {id:'revenue',label:'Доход и балансы',hint:'Комиссия с владельцев: бесплатный период, прогноз, условия и балансы.',Icon:Wallet,group:'money'},
+ {id:'accounting',label:'Бухгалтерия',hint:'Налоги и взносы к уплате, сроки деклараций и журнал платежей в бюджет.',Icon:Calculator,group:'money'},
  {id:'finance',label:'Финансист',hint:'ОПИУ, ДДС и баланс сервиса. Расходы на сотрудников, сервисы и налоги можно править.',Icon:LineChart,group:'money'},
  {id:'policy',label:'Правила допуска',hint:'Какие проверки нужны до показа жилья и назначения исполнителя.',Icon:SlidersHorizontal,group:'settings'},
  {id:'health',label:'Состояние сервиса',hint:'Фоновые проверки, резервные копии и подключения.',Icon:Activity,group:'settings'},
@@ -57,7 +59,16 @@ function AdminOverview({data,onSelect}:{data:Row;onSelect:(id:AdminSection)=>voi
  return <><section className={'admin-service-banner '+(working?'is-healthy':'needs-attention')}><span className="admin-service-icon"><StatusIcon size={24}/></span><div><h2>{working?'Сервис работает':'Нужно проверить состояние'}</h2><p>{working?'Сервер и фоновые проверки доступны.':'Посмотрите фоновые задачи и последние резервные копии.'}</p><small>Проверка: {when(data.runtime.serverTime)}</small></div><button type="button" onClick={()=>onSelect('health')} aria-label="Открыть состояние сервиса"><ArrowUpRight size={20}/></button></section>
  <div className="admin-metrics" aria-label="Показатели сервиса">{([{key:'users',label:'Пользователи',Icon:Users},{key:'properties',label:'Объекты',Icon:House},{key:'bookings',label:'Активные брони',Icon:CalendarDays},{key:'jobs',label:'Уборки в работе',Icon:Brush}]).map(({key,label,Icon})=><section className="admin-metric" key={key}><div><span>{label}</span><Icon size={17}/></div><strong>{c[key]}</strong>{key==='properties'&&<small>{c.published} в каталоге</small>}</section>)}</div>
  <AdminActivityMap onProperties={()=>onSelect('properties')} onIssues={()=>onSelect('operator')}/><div className="admin-overview-grid"><section className="admin-surface admin-work-queue"><div className="admin-section-heading"><div><h2>Рабочая очередь</h2><p>Проверки и вопросы участников</p></div><span className="admin-pill">{c.reviews+c.issues+c.reports} новых</span></div>{queues.map(({id,label,note,count,Icon})=><button className="admin-queue-row" key={id} type="button" onClick={()=>onSelect(id)}><span className={'admin-queue-icon '+(count?'has-work':'')}><Icon size={20}/></span><span><strong>{label}</strong><small>{note}</small></span>{count>0?<b>{count}</b>:<CheckCircle2 size={17} className="admin-quiet-check"/>}<ChevronRight size={17}/></button>)}</section>
- <section className="admin-surface admin-listing-quality"><div className="admin-section-heading"><div><h2>Карточки недвижимости</h2><p>Что поможет гостям выбрать жильё</p></div><House size={20}/></div><div className="admin-quality-row"><Camera size={18}/><span>Без фотографий</span><b>{c.withoutPhotos||0}</b></div><div className="admin-quality-row"><MapPin size={18}/><span>Без точки на карте</span><b>{c.unmapped||0}</b></div><p className="admin-quality-note">Показаны опубликованные объекты. Уточнить сведения можно у их владельцев.</p><Button variant="outline" onClick={()=>onSelect('properties')}>Открыть объекты<ArrowUpRight size={16}/></Button></section></div></>;
+ {data.money&&<MoneyCard money={data.money} onSelect={onSelect}/>}<section className="admin-surface admin-listing-quality"><div className="admin-section-heading"><div><h2>Карточки недвижимости</h2><p>Что поможет гостям выбрать жильё</p></div><House size={20}/></div><div className="admin-quality-row"><Camera size={18}/><span>Без фотографий</span><b>{c.withoutPhotos||0}</b></div><div className="admin-quality-row"><MapPin size={18}/><span>Без точки на карте</span><b>{c.unmapped||0}</b></div><p className="admin-quality-note">Показаны опубликованные объекты. Уточнить сведения можно у их владельцев.</p><Button variant="outline" onClick={()=>onSelect('properties')}>Открыть объекты<ArrowUpRight size={16}/></Button></section></div></>;
+}
+function MoneyCard({money:m,onSelect}:{money:Row;onSelect:(id:AdminSection)=>void}){
+ const sign=(v:number)=>(v<0?'−':'')+money(Math.abs(v));
+ return <section className="admin-surface admin-money"><div className="admin-section-heading"><div><h2>Деньги сервиса</h2><p>Факт за этот месяц и долг перед бюджетом</p></div><Wallet size={20}/></div>
+  <button type="button" className="admin-quality-row" onClick={()=>onSelect('revenue')}><TrendingUp size={18}/><span>Выручка{m.forecastRevenue>m.revenue?<small> · с включённой платой было бы {money(m.forecastRevenue)}</small>:null}</span><b>{money(m.revenue)}</b></button>
+  <button type="button" className="admin-quality-row" onClick={()=>onSelect('finance')}><LineChart size={18}/><span>Чистая прибыль</span><b className={m.net<0?'is-negative':''}>{sign(m.net)}</b></button>
+  <button type="button" className="admin-quality-row" onClick={()=>onSelect('finance')}><Wallet size={18}/><span>Деньги на счетах</span><b className={m.cash<0?'is-negative':''}>{sign(m.cash)}</b></button>
+  <button type="button" className="admin-quality-row" onClick={()=>onSelect('accounting')}><Calculator size={18}/><span>Налоги к уплате{m.next?<small> · срок {new Date(m.next.due+'T12:00:00Z').toLocaleDateString('ru-RU',{day:'numeric',month:'long',timeZone:'UTC'})}</small>:null}</span><b className={m.overdue>0?'is-negative':''}>{money(m.taxesDue)}</b></button>
+ </section>;
 }
 export function PlatformAdmin({name}:{name:string}){
  const [tab,setTab]=useState<AdminSection>('overview'),[menuOpen,setMenuOpen]=useState(false),[data,setData]=useState<Row|null>(null),[summary,setSummary]=useState<Row|null>(null);
@@ -90,6 +101,7 @@ export function PlatformAdmin({name}:{name:string}){
  {tab==='policy'&&<AdminPolicy state={data} busy={busy} save={save}/>}
  {tab==='moderation'&&<><AdminReports data={data} busy={busy} save={save}/><details className="reviews-rules"><summary>Запросы на удаление аккаунтов<ChevronRight size={16}/></summary><div className="admin-safety-extra"><AdminDeletionRequests role="guest"/></div></details></>}
  {tab==='revenue'&&<AdminRevenue data={data} busy={busy} save={save}/>}
+ {tab==='accounting'&&<AdminAccounting data={data} busy={busy} save={save} onFinance={()=>select('finance')}/>}
  {tab==='finance'&&<AdminFinance data={data} busy={busy||loading} save={save} onParams={p=>{financeParams.current=p;void refresh('finance');}}/>}
  {tab==='health'&&<AdminHealth data={data} busy={busy} save={save}/>}
  </>}

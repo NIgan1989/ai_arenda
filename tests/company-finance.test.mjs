@@ -75,3 +75,24 @@ test('settings are validated and versioned',async()=>{
   assert.equal(after.settings.tax_regime,'simplified');assert.equal(after.settings.opvr_bp,350);assert.equal(after.settings.usd_rate,500);assert.equal(state.settings.version+1,after.settings.version);
  }finally{f.db.close();}
 });
+
+test('accounting lists what is owed, a payment lands in ДДС and keeps the balance whole',async()=>{
+ const f=await fixture();try{
+  const month=monthKey();
+  let state=await readPlatformAdmin(f.other,'accounting',{},config(f));
+  const payrollDue=state.obligations.find(o=>o.group==='payroll'&&o.period===month);
+  const p=payroll(500000,{...settings});
+  assert.equal(payrollDue.accrued,p.ipn+p.opv+p.vosms_employee+p.sn+p.so+p.opvr+p.vosms_employer);
+  assert.equal(payrollDue.due,shiftMonth(month,1)+'-25');
+  await assert.rejects(writePlatformAdmin(f.other,'accounting/pay',{key:payrollDue.key,amount:payrollDue.accrued+1,month,confirmed:true},config(f)),/допустимо/);
+  await writePlatformAdmin(f.other,'accounting/pay',{key:payrollDue.key,amount:100000,month,confirmed:true},config(f));
+  state=await readPlatformAdmin(f.other,'accounting',{},config(f));
+  const after=state.obligations.find(o=>o.key===payrollDue.key);assert.equal(after.paid,100000);assert.equal(after.left,payrollDue.accrued-100000);
+  await writePlatformAdmin(f.other,'accounting/pay',{key:payrollDue.key,amount:after.left,month,confirmed:true},config(f));
+  state=await readPlatformAdmin(f.other,'accounting',{},config(f));
+  assert.equal(state.obligations.find(o=>o.key===payrollDue.key).status,'paid');
+  await assert.rejects(writePlatformAdmin(f.other,'accounting/pay',{key:payrollDue.key,amount:1,month,confirmed:true},config(f)),e=>e.status===409);
+  const fin=await readPlatformAdmin(f.other,'finance',{basis:'fact',month},config(f));
+  assert.equal(fin.current.cf.taxes_paid,payrollDue.accrued);assert.equal(fin.balance.liabilities.taxes,0);assert.equal(fin.balance.difference,0);
+ }finally{f.db.close();}
+});

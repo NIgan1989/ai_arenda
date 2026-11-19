@@ -67,12 +67,11 @@ CREATE TABLE company_cash_entries (
  amount INTEGER NOT NULL CHECK(amount BETWEEN 1 AND 10000000000),
  month TEXT NOT NULL,
  note TEXT NOT NULL DEFAULT '',
- actor_id TEXT NOT NULL,
  created_at INTEGER NOT NULL
 );
 CREATE INDEX company_cash_entries_month ON company_cash_entries(month);
 
--- Taxes the accountant marked as paid. Until then the accrued tax stays a liability.
+-- Who recorded a row is kept in audit_events, not here. Taxes the accountant marked as paid. Until then the accrued tax stays a liability.
 CREATE TABLE company_tax_payments (
  id TEXT PRIMARY KEY,
  tax TEXT NOT NULL CHECK(tax IN ('cit','simplified','vat','ipn','opv','vosms_employee','sn','so','opvr','vosms_employer')),
@@ -80,7 +79,6 @@ CREATE TABLE company_tax_payments (
  amount INTEGER NOT NULL CHECK(amount BETWEEN 1 AND 10000000000),
  month TEXT NOT NULL,
  note TEXT NOT NULL DEFAULT '',
- actor_id TEXT NOT NULL,
  created_at INTEGER NOT NULL
 );
 CREATE INDEX company_tax_payments_month ON company_tax_payments(month,tax);

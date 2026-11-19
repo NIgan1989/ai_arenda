@@ -219,7 +219,7 @@ export async function addCashEntry(service:RentalService,body:Row){
  const kind=body.kind in cashKinds?body.kind:null;if(!kind)throw new DomainError('Выберите вид движения денег.');
  const month=String(body.month||'');if(!monthRe.test(month))throw new DomainError('Укажите месяц.');
  const amount=number(Math.round(Number(String(body.amount).replace(/\s/g,''))),'Сумма',1,1e10),note=String(body.note||'').trim().slice(0,200),at=epoch();
- await service.db.batch([q(service.db,'INSERT INTO company_cash_entries(id,kind,amount,month,note,actor_id,created_at) VALUES (?,?,?,?,?,?,?)',uuid(),kind,amount,month,note,service.userId,at),service.audit('company-finance','finance.cash_'+kind)]);
+ await service.db.batch([q(service.db,'INSERT INTO company_cash_entries(id,kind,amount,month,note,created_at) VALUES (?,?,?,?,?,?)',uuid(),kind,amount,month,note,at),service.audit('company-finance','finance.cash_'+kind)]);
  return {message:`${cashKinds[kind]} записан.`};
 }
 export async function deleteCashEntry(service:RentalService,body:Row){
@@ -227,4 +227,61 @@ export async function deleteCashEntry(service:RentalService,body:Row){
  const r=await q(service.db,'DELETE FROM company_cash_entries WHERE id=?',required(body.id,'Запись',100)).run();
  if(!r.meta.changes)throw new DomainError('Запись уже удалена.',404);
  await service.audit('company-finance','finance.cash_deleted').run();return {message:'Запись удалена.'};
+}
+
+// Accounting: what the company owes the budget, by the period a declaration covers. Always the
+// fact basis: a tax is owed on money that was really charged. Due dates follow the 2026 Tax Code
+// for a small ТОО; the accountant marks a payment, which then appears in ДДС in its month.
+const groupTaxes:Record<string,string[]>={payroll:[...payrollTaxes],cit:['cit'],simplified:['simplified'],vat:['vat']};
+const groupNames:Record<string,string>={payroll:'Налоги и взносы с зарплаты',cit:'КПН с прибыли',simplified:'Налог по упрощённой декларации',vat:'НДС'};
+const dueDay=(y:number,m:number,d:number)=>`${y}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+function periodOf(group:string,month:string){
+ const [y,m]=month.split('-').map(Number);
+ if(group==='payroll'){const n=shiftMonth(month,1).split('-').map(Number);return {period:month,due:dueDay(n[0],n[1],25),form:'Форма 200.00 раз в квартал'};}
+ if(group==='cit')return {period:String(y),due:dueDay(y+1,4,10),form:'Декларация 100.00 до 31 марта'};
+ if(group==='simplified')return m<=6?{period:`${y}-H1`,due:dueDay(y,8,25),form:'Декларация 910.00 до 15 августа'}:{period:`${y}-H2`,due:dueDay(y+1,2,25),form:'Декларация 910.00 до 15 февраля'};
+ const quarter=Math.ceil(m/3),after=shiftMonth(`${y}-${String(quarter*3).padStart(2,'0')}`,2).split('-').map(Number);
+ return {period:`${y}-Q${quarter}`,due:dueDay(after[0],after[1],25),form:'Декларация 300.00 раз в квартал'};
+}
+export async function accountingState(db:D1Database){
+ const input=await inputs(db),now=monthKey(),today=new Date((epoch()+OFFSET)*1000).toISOString().slice(0,10);
+ const months=computeMonths(input,'fact',now);
+ const paidRows=await rows(db,'SELECT id,tax,period,amount,month,note,created_at FROM company_tax_payments ORDER BY created_at DESC,id LIMIT 200');
+ const map=new Map<string,Row>();
+ for(const m of months)for(const [group,taxes] of Object.entries(groupTaxes)){
+  const amount=taxes.reduce((a,t)=>a+Number(m.taxes[t]||0),0);if(!amount)continue;
+  const p=periodOf(group,m.month),key=group+':'+p.period,o=map.get(key)||{key,group,name:groupNames[group],period:p.period,due:p.due,form:p.form,accrued:0,parts:{} as Row,paid:0};
+  o.accrued+=amount;for(const t of taxes)if(m.taxes[t])o.parts[t]=(o.parts[t]||0)+Number(m.taxes[t]);map.set(key,o);
+ }
+ for(const r of paidRows){const group=Object.entries(groupTaxes).find(([,t])=>t.includes(r.tax))?.[0];const o=group&&map.get(group+':'+r.period);if(o)o.paid+=Number(r.amount);}
+ const obligations=[...map.values()].map((o):Row=>{const left=o.accrued-o.paid;return {...o,left,status:left<=0?'paid':o.due<today?'overdue':'open'};}).sort((a,b)=>(a.status==='paid'?1:0)-(b.status==='paid'?1:0)||a.due.localeCompare(b.due));
+ const open=obligations.filter(o=>o.status!=='paid');
+ const s=input.settings,year=now.slice(0,4),yearRevenue=months.filter(m=>m.month.startsWith(year)).reduce((a,m)=>a+m.pl.revenue,0);
+ const yearProfit=months.filter(m=>m.month.startsWith(year)).reduce((a,m)=>a+m.pl.operating,0);
+ return {now,today,settings:s,obligations,payments:paidRows.map(r=>({...r,name:taxNames[r.tax]})),
+  totals:{due:open.reduce((a,o)=>a+Math.max(0,o.left),0),overdue:open.filter(o=>o.status==='overdue').reduce((a,o)=>a+o.left,0),next:open.find(o=>o.status==='open')||null,paidYear:paidRows.filter(r=>String(r.month).startsWith(year)).reduce((a,r)=>a+Number(r.amount),0)},
+  profit:{year,profit:yearProfit,cit:months.filter(m=>m.month.startsWith(year)).reduce((a,m)=>a+Number(m.taxes.cit||0)+Number(m.taxes.simplified||0),0)},
+  vat:{threshold:s.vat_threshold_mrp*s.mrp,yearRevenue,share:s.vat_threshold_mrp?Math.min(1,yearRevenue/(s.vat_threshold_mrp*s.mrp)):0,registered:!!s.vat_registered}};
+}
+// Paying an obligation records each tax in it: the whole remainder, or a part of a single tax.
+export async function payTaxes(service:RentalService,body:Row){
+ if(body.confirmed!==true)throw new DomainError('Подтвердите, что платёж отправлен в бюджет.');
+ const state=await accountingState(service.db),o=state.obligations.find(x=>x.key===body.key);
+ if(!o)throw new DomainError('Начисление не найдено. Обновите страницу.',404);
+ if(o.left<=0)throw new DomainError('Это начисление уже оплачено.',409);
+ const month=String(body.month||'');if(!monthRe.test(month))throw new DomainError('Укажите месяц оплаты.');
+ const amount=number(Math.round(Number(String(body.amount).replace(/\s/g,''))),'Сумма',1,o.left);
+ // Split the payment over the taxes in proportion to what is still owed on each.
+ const paidBy:Row={};for(const r of await rows(service.db,'SELECT tax,COALESCE(SUM(amount),0) amount FROM company_tax_payments WHERE period=? GROUP BY tax',o.period))paidBy[r.tax]=Number(r.amount);
+ const owed=Object.entries(o.parts as Row).map(([tax,v])=>[tax,Math.max(0,Number(v)-(paidBy[tax]||0))] as [string,number]).filter(([,v])=>v>0);
+ const total=owed.reduce((a,[,v])=>a+v,0);let rest=amount;const at=epoch(),note=String(body.note||'').trim().slice(0,200);
+ const statements=owed.map(([tax,v],i)=>{const share=i===owed.length-1?rest:Math.min(rest,Math.round(amount*v/total));rest-=share;return share>0?q(service.db,'INSERT INTO company_tax_payments(id,tax,period,amount,month,note,created_at) VALUES (?,?,?,?,?,?,?)',uuid(),tax,o.period,share,month,note,at):null;}).filter(Boolean) as D1PreparedStatement[];
+ await service.db.batch([...statements,service.audit('company-finance','finance.tax_paid')]);
+ return {message:`Оплата ${new Intl.NumberFormat('ru-RU').format(amount)} ₸ записана. Она уже в ДДС и уменьшила долг в балансе.`};
+}
+export async function deleteTaxPayment(service:RentalService,body:Row){
+ if(body.confirmed!==true)throw new DomainError('Подтвердите удаление.');
+ const r=await q(service.db,'DELETE FROM company_tax_payments WHERE id=?',required(body.id,'Платёж',100)).run();
+ if(!r.meta.changes)throw new DomainError('Платёж уже удалён.',404);
+ await service.audit('company-finance','finance.tax_payment_deleted').run();return {message:'Платёж удалён.'};
 }
