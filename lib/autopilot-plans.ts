@@ -68,6 +68,8 @@ export async function ensurePlan(db:D1Database,user:string,role:PlanRole,at=epoc
   if(!plan.auto_renew)await q(db,'UPDATE autopilot_plans SET auto_renew=1,version=version+1,updated_at=? WHERE user_id=? AND role=?',at,user,role).run();
   return {status:plan.status,started:false};
  }
+ // Paused for an unpaid week: neither a paid month nor a first free trial starts until the debt is paid.
+ if(await servicePaused(db,user))throw new DomainError('Сначала оплатите услуги сервиса: Меню, «Настройки», «Оплата услуг». После оплаты автопилот включится.',402);
  if(!plan&&s.trialDays>0){
   await db.batch([
    q(db,"INSERT OR IGNORE INTO autopilot_plans(user_id,role,status,started_at,period_end,updated_at) VALUES (?,?,'trial',?,?,?)",user,role,at,at+s.trialDays*DAY,at),
@@ -75,7 +77,6 @@ export async function ensurePlan(db:D1Database,user:string,role:PlanRole,at=epoc
   ]);
   return {status:'trial',started:true};
  }
- if(await servicePaused(db,user))throw new DomainError('Сначала оплатите услуги сервиса: Меню, «Настройки», «Оплата услуг». После оплаты автопилот включится.',402);
  await chargeMonth(db,plan||{user_id:user,role},s,at,at,flats);
  await q(db,"INSERT INTO autopilot_plans(user_id,role,status,started_at,period_end,updated_at) VALUES (?,?,'active',?,?,?) ON CONFLICT(user_id,role) DO UPDATE SET status='active',period_end=excluded.period_end,grace_until=NULL,auto_renew=1,version=autopilot_plans.version+1,updated_at=excluded.updated_at",user,role,at,at+MONTH,at).run();
  return {status:'active',started:true};

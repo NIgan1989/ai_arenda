@@ -14,7 +14,7 @@ import {availableSql} from './regular-cleaner';
 // owner_id is the participant; a performer's «Автопилот» month gets settled_at only when the card paid for it.
 const DAY=86400,WEEK=7*DAY,ZONE=5*3600;
 export const PAY_DAYS=7,CHARGE_HOUR=10;
-const ACTOR='system:service-billing';
+const ACTOR='system:service-billing',PAGE=500;
 const money=(n:number)=>new Intl.NumberFormat('ru-RU').format(n).replace(/\s/g,' ')+' ₸';
 const dateText=(at:number)=>new Date(at*1000).toLocaleDateString('ru-RU',{timeZone:'Asia/Qyzylorda',day:'numeric',month:'long'});
 const notice=(db:D1Database,user:string,body:string,dedupe:string,at:number)=>q(db,'INSERT OR IGNORE INTO notifications(id,user_id,body,dedupe,read,created_at) VALUES (?,?,?,?,0,?)',uuid(),user,body,dedupe,at);
@@ -50,15 +50,17 @@ export async function serviceBillingState(service:RentalService,config:Operation
 }
 
 // Takes the whole debt from the card. Returns the sum taken; nothing is written when there is nothing to pay.
+// The entry is written only if that much is still owed inside the same statement, so «Оплатить сейчас» that
+// overlaps the Monday round cannot take the sum twice: the later one finds the debt paid and writes nothing.
 async function charge(db:D1Database,user:string,b:Row,at:number,why:'week'|'now'){
  const due=await dueOf(db,user);if(due<=0||!b.card_mask)return 0;
  const key='card:'+user+':'+(why==='week'?chargeSlot(at):at),note='Списание с карты '+b.card_mask+' за услуги сервиса'+(b.card_test?' (тест)':'');
  const r=await db.batch([
-  q(db,'INSERT OR IGNORE INTO owner_balance_entries(id,owner_id,kind,amount,note,actor_id,request_key,created_at) VALUES (?,?,?,?,?,?,?,?)',uuid(),user,'topup',due,note,ACTOR,key,at),
+  q(db,`INSERT OR IGNORE INTO owner_balance_entries(id,owner_id,kind,amount,note,actor_id,request_key,created_at) SELECT ?,?,?,?,?,?,?,? WHERE ${dueSql('?')}>=?`,uuid(),user,'topup',due,note,ACTOR,key,at,user,user,user,user,user,user,due),
   q(db,"UPDATE autopilot_charges SET settled_at=? WHERE user_id=? AND role='cleaner' AND mode='charged' AND settled_at IS NULL AND EXISTS(SELECT 1 FROM owner_balance_entries WHERE request_key=? AND created_at=?)",at,user,key,at),
   q(db,'UPDATE service_billing SET last_charge_at=?,failed_at=NULL,paused_at=NULL,version=version+1,updated_at=? WHERE user_id=? AND EXISTS(SELECT 1 FROM owner_balance_entries WHERE request_key=? AND created_at=?)',at,at,user,key,at),
   q(db,'INSERT INTO audit_events SELECT ?,?,?,?,? WHERE EXISTS(SELECT 1 FROM owner_balance_entries WHERE request_key=? AND created_at=?)',uuid(),ACTOR,'service-billing:'+user,JSON.stringify({action:'service_billing.charged',amount:due,test:!!b.card_test}),at,key,at),
-  notice(db,user,`С карты ${b.card_mask} списано ${money(due)} за услуги сервиса${b.card_test?' (тестовое списание, деньги не сняты)':''}.${b.paused_at?' Пауза снята: жильё снова принимает брони, «Автопилот» можно включить заново.':''} За что: Меню, «Настройки», «Оплата услуг».`,'service:charged:'+key,at),
+  q(db,'INSERT OR IGNORE INTO notifications(id,user_id,body,dedupe,read,created_at) SELECT ?,?,?,?,0,? WHERE EXISTS(SELECT 1 FROM owner_balance_entries WHERE request_key=? AND created_at=?)',uuid(),user,`С карты ${b.card_mask} списано ${money(due)} за услуги сервиса${b.card_test?' (тестовое списание, деньги не сняты)':''}.${b.paused_at?' Пауза снята: жильё снова принимает брони, «Автопилот» можно включить заново.':''} За что: Меню, «Настройки», «Оплата услуг».`,'service:charged:'+key,at,key,at),
  ]);
  return r[0].meta.changes?due:0;
 }
@@ -91,7 +93,9 @@ export async function serviceBillingAction(service:RentalService,body:Row,config
 /** The round: Monday's charge for everyone who owes, the 7 days for those without a card, then the pause. */
 export async function sweepDues(db:D1Database,pausePlans:(db:D1Database,user:string,at:number)=>Promise<unknown>,at=epoch()){
  const result={charged:0,asked:0,paused:0},slot=chargeSlot(at);
- const owing=await rows(db,`SELECT u.id,${dueSql('u.id')} due FROM profiles u WHERE ${dueSql('u.id')}>0 LIMIT 500`);
+ // Everyone who owes, page by page: those still waiting for a card stay in debt and must not hide the rest.
+ for(let after='';;){
+ const owing=await rows(db,`SELECT u.id,${dueSql('u.id')} due FROM profiles u WHERE u.id>? AND ${dueSql('u.id')}>0 ORDER BY u.id LIMIT ${PAGE}`,after);
  for(const o of owing){
   const b=await billingOf(db,o.id);
   if(b?.card_mask){if(!b.last_charge_at||b.last_charge_at<slot){if(await charge(db,o.id,b,at,'week'))result.charged++;}continue;}
@@ -109,6 +113,8 @@ export async function sweepDues(db:D1Database,pausePlans:(db:D1Database,user:str
     q(db,'INSERT INTO audit_events VALUES (?,?,?,?,?)',uuid(),ACTOR,'service-billing:'+o.id,JSON.stringify({action:'service_billing.paused',due:Number(o.due)}),at)]);
    result.paused++;
   }
+ }
+ if(owing.length<PAGE)break;after=String(owing[owing.length-1].id);
  }
  // Someone paid another way (an administrator's entry) while waiting: the clock and the pause go away.
  await q(db,`UPDATE service_billing SET failed_at=NULL,paused_at=NULL,version=version+1,updated_at=? WHERE (failed_at IS NOT NULL OR paused_at IS NOT NULL) AND ${dueSql('service_billing.user_id')}=0`,at).run();

@@ -83,3 +83,16 @@ test('end to end: an owner pays 9 800 ₸ for two homes on «Автопилот�
   assert.equal(report.balance.receivable||0,0,'nobody owes the service anything');
  }finally{f.db.close();}
 });
+
+test('«Оплатить сейчас» that overlaps the Monday round takes the debt once; a paused participant gets no free trial',async()=>{
+ const f=await fixture(),{ensurePlan}=await load('autopilot-plans');try{
+  await serviceBillingAction(f.cleaner,{action:'link'});owe(f,'cleaner',1900);
+  await Promise.all([serviceBillingAction(f.cleaner,{action:'pay'}),sweepDues(f.db,noPlans,now()+1)]);
+  const e=entries(f,'cleaner');assert.equal(e.length,1,'one entry');assert.equal(e[0].amount,1900);assert.equal(await dueOf(f.db,'cleaner'),0);
+  assert.equal(notes(f,'cleaner','service:charged:%').length,1,'one notice, for the charge that happened');
+  owe(f,'owner',4900,'owner');const at=now();await sweepDues(f.db,noPlans,at);await sweepDues(f.db,noPlans,at+PAY_DAYS*DAY+1);assert.ok(billing(f,'owner').paused_at);
+  f.db.raw.prepare("DELETE FROM autopilot_plans WHERE user_id='owner'").run();
+  await assert.rejects(ensurePlan(f.db,'owner','owner',now(),1),e=>e.status===402);
+  assert.equal(f.db.raw.prepare("SELECT COUNT(*) n FROM autopilot_plans WHERE user_id='owner'").get().n,0);
+ }finally{f.db.close();}
+});
