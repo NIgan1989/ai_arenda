@@ -144,7 +144,7 @@ export function stepWhen(step:DealStep,now:number){return step.at&&(step.state==
 // hour to accept the report. decide: the owner has something to do or to watch: a report to accept, nobody assigned, a cleaning
 // that does not fit, or an arrival within the hour (the pin is red then, owner-map.ts). A cleaning in time and in hands is not shown.
 export const MARGIN_AHEAD=6*3600,ACCEPT_BUFFER=900;
-export type Margin={jobId:string;status:string;left:number;need:number;tight:boolean;decide:boolean;verb:string;reason:string;why:string};
+export type Margin={jobId:string;open:{kind:'booking'|'job';id:string};status:string;left:number;need:number;tight:boolean;decide:boolean;verb:string;reason:string;why:string};
 const span=(seconds:number)=>{const m=Math.max(1,Math.round(seconds/60));return m<60?m+' мин':String(Math.round(m/30)/2).replace('.',',')+' ч';};
 export function ownerMargin(data:Row|null|undefined,propertyId:unknown,now:number):Margin|null{
  const userId=data?.user?.id;if(!userId)return null;
@@ -154,15 +154,18 @@ export function ownerMargin(data:Row|null|undefined,propertyId:unknown,now:numbe
   if(!arrival||arrival-now>MARGIN_AHEAD)continue;
   const left=arrival-now,window=Math.max(0,Number(j.end)-Number(j.start));
   const out=j.booking_id===null||!!j.checkout_confirmed,taken=!!j.assigned_to&&j.status!=='open';
-  const work=j.status==='submitted'?0:j.status==='in_progress'?Math.max(0,Number(j.end)-now):window;
+  // A cleaning that has not begun ends at its hour, not a window from now: the wait till its start counts too.
+  const work=j.status==='submitted'?0:j.status==='in_progress'?Math.max(0,Number(j.end)-now):Math.max(window,Number(j.end)-now);
   const need=work+ACCEPT_BUFFER,tight=left<need,near=left<=HOT;
   const [verb,reason,decide]:[string,string,boolean]=
    j.status==='submitted'?['Проверить уборку','отчёт ждёт приёмки',true]
    :!taken?['Найти исполнителя','исполнитель не назначен',true]
    :!out?['Подтвердить выезд','гость ещё не выехал',tight||near]
    :j.status==='in_progress'?[tight?'Уборка не успевает':'Следить за уборкой',work>0?'уборке осталось '+span(work):'срок уборки вышел',tight||near]
-   :[tight?'Уборка не успевает':'Следить за уборкой','уборка займёт '+span(work),tight||near];
-  return {jobId:String(j.id),status:taken?String(j.status):'open',left,need,tight,decide,verb,reason,why:(left>0?'До заезда '+span(left):'Заезд уже начался')+' · '+reason};
+   :[tight?'Уборка не успевает':'Следить за уборкой',Number(j.start)-now>=60?'уборка закончится через '+span(work):'уборка займёт '+span(work),tight||near];
+  // The owner confirms the departure on the card of the stay, so that is where «Подтвердить выезд» leads.
+  const stay=taken&&!out&&j.status==='assigned'&&j.booking_id;
+  return {jobId:String(j.id),open:stay?{kind:'booking',id:String(j.booking_id)}:{kind:'job',id:String(j.id)},status:taken?String(j.status):'open',left,need,tight,decide,verb,reason,why:(left>0?'До заезда '+span(left):'Заезд уже начался')+' · '+reason};
  }
  return null;
 }
@@ -172,7 +175,7 @@ export function marginLabel(m:Margin|null){return m&&!m.decide&&m.status==='assi
 // The tag of the owner's pin: where the next arrival is at stake, the margin with its reason; otherwise the step that waits for the owner.
 export function ownerPinAct(threads:ProcessThread[],data:Row|null|undefined,propertyId:unknown,now:number):PinAct|null{
  const m=ownerMargin(data,propertyId,now);
- if(m?.decide)return {label:m.verb,why:m.why,kind:'job',id:m.jobId,urgent:m.tight||m.left<=HOT};
+ if(m?.decide)return {label:m.verb,why:m.why,kind:m.open.kind,id:m.open.id,urgent:m.tight||m.left<=HOT};
  return pinAct('owner',threads,data,now,t=>t.propertyId===propertyId);
 }
 // «Требуют внимания»: the pins with a tag, the urgent ones first; next() walks them round, one tap one place.

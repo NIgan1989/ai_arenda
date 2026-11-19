@@ -119,11 +119,21 @@ test('«Требуют внимания» walks the pins with a tag, urgent firs
 });
 
 test('once a performer is assigned and the cleaning fits, the pin says the margin that is back', () => {
-  // 20:15 now, arrival 21:30, cleaning 20:20–21:10 assigned, the guest is out: 75 − (50 + 15) = 10 minutes to spare.
+  // 20:15 now, arrival 21:30, cleaning 20:20–21:10 assigned, the guest is out: it ends in 55 minutes, 75 − (55 + 15) = 5 to spare.
   const data = state([stay(), {...next, start: at(21, 30)}], [job({status: 'assigned', start: at(20, 20), end: at(21, 10), submitted_at: null})]);
   const m = ownerMargin(data, 'p1', now);
   assert.equal(m.decide, false);
-  assert.equal(marginLabel(m), 'Назначено · запас 10 мин');
+  assert.equal(marginLabel(m), 'Назначено · запас 5 мин');
+  // A cleaning set for later than it fits: the wait till its start counts, so it stays flagged.
+  const later = state([stay(), {...next, start: at(22, 15)}], [job({status: 'assigned', start: at(21, 45), end: at(22, 45), submitted_at: null})]);
+  assert.equal(ownerMargin(later, 'p1', now).tight, true);
+  assert.equal(ownerMargin(later, 'p1', now).why, 'До заезда 2 ч · уборка закончится через 2,5 ч');
+  assert.equal(marginLabel(ownerMargin(later, 'p1', now)), '');
+  // The guest has not left: «Подтвердить выезд» opens the stay, where the owner confirms it.
+  const stays = state([stay(), next], [job({status: 'assigned', start: at(20), end: at(20, 50), submitted_at: null, checkout_confirmed: 0})]);
+  const out = ownerPinAct(ownerThreads(stays, now), stays, 'p1', now);
+  assert.equal(out.label, 'Подтвердить выезд');
+  assert.equal(out.kind, 'booking');
   // Nobody assigned, or a decision is due: no such label.
   assert.equal(marginLabel(ownerMargin(state([stay(), next], [job({status: 'open', assigned_to: null})]), 'p1', now)), '');
   assert.equal(marginLabel(null), '');
