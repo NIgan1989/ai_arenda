@@ -15,7 +15,8 @@ import {accuracyRadius,type HereFix} from './here-rules';
 // best: the AI's best choice for the guest; it wears the two-colour ring of the AI and a ✦.
 // order: the stop's number on the cleaner's route of the day; progress: how far a cleaning under way has gone (0..1), a strip that fills.
 // was: how the pin looked when the person left the map (map-memory.ts); the pin plays that change once when they come back.
-export type MapPin={key:string;point:MapPoint;label:string;tone?:PinTone;title?:string;rank?:number;until?:number;best?:boolean;order?:number;progress?:number;was?:PinState;ai?:{move:AiMove;at:number;type?:string}};
+// dim: a home not free at the arrival the guest chose (arrival.ts): its pin stays, quieter.
+export type MapPin={key:string;point:MapPoint;label:string;tone?:PinTone;dim?:boolean;title?:string;rank?:number;until?:number;best?:boolean;order?:number;progress?:number;was?:PinState;ai?:{move:AiMove;at:number;type?:string}};
 export type {MapLine};
 // scanning: a search is running; the map sends radar waves from the middle of what is visible.
 // focus: the pin of the card the guest is looking at in the carousel: it lifts and the map flies to it.
