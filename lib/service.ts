@@ -968,7 +968,7 @@ export class RentalService {
     }
     statements.push(
       this.query(`INSERT INTO audit_events SELECT ?,?,?,?,? WHERE ${gate}`,id(),automatic?'system:rental-policy':this.userId,bookingId,JSON.stringify({action:'booking.change_accepted',changeId,onBehalfOf:automatic?b.owner_id:null,policyVersion:policy.version,pricing:{rate:q.rate,units:q.units,extraHours:q.extraHours,extraRate:q.extraRate,discountPercent:q.discountPercent,amount:q.amount}}),now(),changeId),
-      this.query(`UPDATE booking_terms SET amount=?,rate=?,units=?,billing_mode=?,discount_percent=?,version=version+1 WHERE booking_id=? AND ${gate}`,c.amount,c.rate,c.units,c.billing_mode,c.discount_percent,bookingId,changeId)
+      this.query(`UPDATE booking_terms SET payment_reported_at=CASE WHEN ?>amount THEN NULL ELSE payment_reported_at END,amount=?,rate=?,units=?,billing_mode=?,discount_percent=?,version=version+1 WHERE booking_id=? AND ${gate}`,c.amount,c.amount,c.rate,c.units,c.billing_mode,c.discount_percent,bookingId,changeId)
     );
     const result=await this.db.batch(statements);if(!result[0].meta.changes||!result[1].meta.changes)throw new DomainError('Предложение уже изменилось. Обновите данные.',409);
     await this.db.batch([this.notify(b.guest_id,'Изменение проживания согласовано. Проверьте новые даты и остаток к оплате.','change-accepted:'+changeId,'guest'),this.notify(b.owner_id,'Календарь обновлён по согласованному изменению проживания.'+(job&&movesCleaning?(keeps?' Уборка перенесена, исполнитель остаётся тот же.':' Исполнителя уборки нужно согласовать заново.'):''),'change-accepted:'+changeId,'owner')]);

@@ -37,7 +37,7 @@ const PAY_FOR='MAX(b.created_at+'+PAY_MIN_WINDOW+',MIN(b.start,b.created_at+'+PA
 const PAY_STEP=`CASE WHEN w.pay_for=${PAY_FOR} THEN w.pay_step ELSE 0 END`,ARRIVAL_STEP=`CASE WHEN w.arrival_for=${ARRIVAL_FOR} THEN w.arrival_step ELSE 0 END`,CHECKOUT_STEP=`CASE WHEN w.checkout_for=${CHECKOUT_FOR} THEN w.checkout_step ELSE 0 END`;
 const STAY_SQL=`SELECT b.id,b.property_id,b.guest_id,b.start,b.end,b.created_at,b.payment_status,b.amount,p.owner_id,p.title,${TYPE_SQL},
  t.rate,t.units,t.deposit,t.deposit_status,COALESCE(t.min_hours,(SELECT pp.min_hours FROM property_policies pp WHERE pp.property_id=b.property_id),1) min_hours,
- t.billing_mode,t.occasion,t.paid_amount,t.actual_checkin,t.actual_checkout,t.checkin_reported_at,t.checkout_reported_at,t.arrival_eta,t.late_count,
+ t.billing_mode,t.occasion,t.paid_amount,t.actual_checkin,t.actual_checkout,t.checkin_reported_at,t.checkout_reported_at,t.payment_reported_at,t.arrival_eta,t.late_count,
  ${PAY_STEP} pay_step,${ARRIVAL_STEP} arrival_step,${CHECKOUT_STEP} checkout_step,
  EXISTS(SELECT 1 FROM property_policies pp WHERE pp.property_id=b.property_id AND pp.auto_confirm=1 AND pp.auto_assign=1 AND (pp.mandate_until=0 OR pp.mandate_until>?1)) autopilot
  FROM bookings b JOIN properties p ON p.id=b.property_id JOIN booking_terms t ON t.booking_id=b.id LEFT JOIN stay_watch w ON w.booking_id=b.id`;
@@ -69,6 +69,11 @@ async function payments(db:D1Database,at:number,result:Row,rule:Rules){
   const due=payDue({start:b.start,created_at:b.created_at}),title=b.title||'жильё',s=Number(b.pay_step);
   const unpaid=await rule(b.owner_id,'unpaid'),remind=await rule(b.guest_id,'pay_remind'),grace=unpaid.minutes*60;
   if(at>=due+grace){
+   if(b.payment_reported_at&&!b.checkin_reported_at&&!(Number(b.paid_amount)>0)){
+    // Direct settlements: the guest says the transfer is sent. Only the owner sees their bank, so the AI never releases such a stay.
+    if(moved(await db.batch([step(db,b.id,'pay',due,s,3,at),q(db,"INSERT OR IGNORE INTO notifications SELECT ?,?,?,?,0,? WHERE changes()>0",uuid(),b.owner_id,'ИИ-администратор: гость сообщил о переводе за бронь «'+title+'», а вы ещё не ответили. Проверьте банк и отметьте в карточке брони: «Деньги получены» или «Перевод не пришёл».','owner:stay-pay-told:'+b.id+':'+due,at)])))result.warned++;
+    continue;
+   }
    if(Number(b.paid_amount)>0||b.checkin_reported_at){
     // Paid in part, or the guest says they are already inside: never released by the AI, the owner settles it.
     if(moved(await db.batch([step(db,b.id,'pay',due,s,3,at),q(db,"INSERT OR IGNORE INTO notifications SELECT ?,?,?,?,0,? WHERE changes()>0",uuid(),b.owner_id,(b.checkin_reported_at?venueOr(b,'ИИ-администратор: гость сообщил, что заселился в «'+title+'», но оплата не отмечена. Отметьте оплату или договоритесь с гостем в чате брони.','ИИ-администратор: гость сообщил '+wordsOf(b).ofArrive+' в «'+title+'», но оплата не отмечена. Отметьте оплату или договоритесь с гостем в чате брони.'):'ИИ-администратор: бронь «'+title+'» оплачена не полностью. Отметьте остаток оплаты или договоритесь с гостем в чате брони.'),'owner:stay-pay-part:'+b.id+':'+due,at)])))result.warned++;
@@ -80,7 +85,7 @@ async function payments(db:D1Database,at:number,result:Row,rule:Rules){
     continue;
    }
    const r=await db.batch([
-    q(db,"UPDATE bookings SET status='cancelled' WHERE id=? AND status='confirmed' AND payment_status<>'owner_verified' AND NOT EXISTS(SELECT 1 FROM booking_terms WHERE booking_id=? AND (actual_checkin IS NOT NULL OR checkin_reported_at IS NOT NULL OR paid_amount>0)) AND NOT EXISTS(SELECT 1 FROM property_operations WHERE property_id=? AND active_booking_id=?)",b.id,b.id,b.property_id,b.id),
+    q(db,"UPDATE bookings SET status='cancelled' WHERE id=? AND status='confirmed' AND payment_status<>'owner_verified' AND NOT EXISTS(SELECT 1 FROM booking_terms WHERE booking_id=? AND (actual_checkin IS NOT NULL OR checkin_reported_at IS NOT NULL OR payment_reported_at IS NOT NULL OR paid_amount>0)) AND NOT EXISTS(SELECT 1 FROM property_operations WHERE property_id=? AND active_booking_id=?)",b.id,b.id,b.property_id,b.id),
     q(db,"UPDATE cleaning_jobs SET status='cancelled' WHERE booking_id=? AND status IN ('open','assigned') AND EXISTS(SELECT 1 FROM bookings WHERE id=? AND status='cancelled')",b.id,b.id),
     step(db,b.id,'pay',due,s,3,at),settle(db,b.id,0,at),
     q(db,"INSERT OR IGNORE INTO notifications SELECT ?,?,?,?,0,? WHERE EXISTS(SELECT 1 FROM bookings WHERE id=? AND status='cancelled')",uuid(),b.guest_id,venueOr(b,'ИИ-администратор снял бронь «'+title+'»: оплата не поступила в срок. Если жильё ещё свободно, его можно забронировать заново.','ИИ-администратор снял бронь «'+title+'»: оплата не поступила в срок. Если время ещё свободно, его можно забронировать заново.'),'guest:stay-unpaid-released:'+b.id+':'+due,at,b.id),

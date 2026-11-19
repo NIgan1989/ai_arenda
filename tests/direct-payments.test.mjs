@@ -71,3 +71,15 @@ test('payout details: a Kaspi number and a name, shown only to the payer of a co
   assert.equal((await f.guest.roleState('guest',{catalog:false})).bookings.find(b=>b.id===f.booking).owner_pay,null);
  }finally{f.db.close();}
 });
+
+test('a dearer stay agreed after «Я оплатил» is reported again: the old report covers only the old sum',async()=>{
+ const f=await fixture(),R=f.db.raw;try{
+  const iso=s=>new Date(s*1000).toISOString(),terms=()=>R.prepare('SELECT * FROM booking_terms WHERE booking_id=?').get(f.booking),start=R.prepare('SELECT start FROM bookings WHERE id=?').get(f.booking).start;
+  await f.guest.bookingAction(f.booking,{action:'report_paid'});assert.ok(terms().payment_reported_at);
+  const before=terms().amount,body={start:iso(start),end:iso(start+3*3600),billingMode:'hourly'},q=await f.guest.bookingChangeQuote(f.booking,'guest',body);
+  const c=await f.guest.proposeBookingChange(f.booking,'guest',{...body,requestKey:'longer',expectedAmount:q.amount,baseVersion:q.baseVersion,policyVersion:q.policyVersion,acceptTerms:true,reason:'Планы изменились'});
+  await f.owner.decideBookingChange(f.booking,c.id,'owner',{action:'accept'});
+  assert.ok(terms().amount>before);assert.equal(terms().payment_reported_at,null,'the bigger sum is not reported yet');assert.ok(terms().deposit_reported_at,'the deposit did not change');
+  assert.match((await f.guest.bookingAction(f.booking,{action:'report_paid'})).message,/Владелец получил сообщение/);assert.ok(terms().payment_reported_at);
+ }finally{f.db.close();}
+});
