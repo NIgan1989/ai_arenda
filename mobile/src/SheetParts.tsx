@@ -35,6 +35,7 @@ export function Grip({color}:{color?:string}){
 }
 const R=T.radius,H=T.control,shadow={shadowColor:C.ink,shadowOffset:{width:0,height:2},shadowOpacity:.12,shadowRadius:8,elevation:3};
 export const h=StyleSheet.create({
+ attention:{minHeight:44,flexDirection:'row',alignItems:'center',gap:8,paddingHorizontal:12,borderRadius:12,backgroundColor:C.dangerSoft},attentionDot:{width:8,height:8,borderRadius:4,backgroundColor:C.danger},attentionGo:{fontSize:14,lineHeight:20,color:C.danger,fontWeight:'600'},
  host:{flex:1,backgroundColor:C.bg},
  // A short line over the map, under the avatar: what «На карте» could not show.
  mapNotice:{position:'absolute',top:68,left:16,right:16,alignSelf:'center',textAlign:'center',paddingVertical:8,paddingHorizontal:16,borderRadius:R.lg,backgroundColor:C.glassStrong,borderWidth:1,borderColor:C.glassLine,...type.label,color:C.ink,...shadow},

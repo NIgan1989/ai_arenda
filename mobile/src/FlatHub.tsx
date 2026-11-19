@@ -12,6 +12,9 @@ import {FlatAutopilotRow} from './FlatAutopilot';
 import {Action,Chips,h} from './SheetParts';
 import {REPEAT_DAYS,REPEAT_AHEAD,nextRepeat,repeatLabel} from '../../lib/home-repeat-text';
 import {C,type} from './styles';
+import {DealLine} from './DealLine';
+import {ownerDeal,ownerPinAct} from './pin-deal';
+import {ownerThreads} from '../../lib/process-threads';
 import {T} from './tokens';
 
 const words=(t:number)=>new Date(t*1000).toLocaleDateString('ru-RU',{timeZone:'Asia/Almaty',day:'numeric',month:'long'});
@@ -29,10 +32,15 @@ type Props={
 // It stays visible while the sheet is folded; a tap on a tab unfolds the sheet on that tab.
 export function FlatHubHead({flat,data,now,tab,open,onTab,onBack,onOpen}:Pick<Props,'flat'|'data'|'now'|'tab'|'onTab'|'onBack'|'onOpen'>&{open:boolean}){
  const entries=calendarEntries(data,'owner',flat.id,now),waiting=hubToday(entries,now).waiting.length,late=hubLate(entries,now);
+ // The step that waits for the owner at this place is the button of the head, the same words as the tag on its pin.
+ const act=ownerPinAct(ownerThreads(data,now),data,flat.id,now),deal=ownerDeal(data,flat.id,now);
  return <View style={f.head}>
   <Pressable accessibilityRole="button" accessibilityLabel="Назад к карте" onPress={onBack} style={f.back}><Text style={f.backText}>‹ Назад</Text></Pressable>
   <Text accessibilityRole="header" numberOfLines={2} style={h.cardTitle}>{flat.title}</Text>
   {late?<Pressable accessibilityRole="button" accessibilityLabel={late.status+', открыть'} onPress={()=>onOpen(late.kind,late.id)} hitSlop={8}><Text numberOfLines={1} style={[h.note,f.late]}>{late.status} ›</Text></Pressable>:<Text numberOfLines={1} style={h.note}>{hubLine(entries,now)}</Text>}
+  {!!act?.why&&<Text numberOfLines={2} style={[h.note,act.urgent&&f.late]}>{act.why}</Text>}
+  {!!act&&<Action title={act.label} onPress={()=>onOpen(act.kind,act.id)}/>}
+  {!!deal&&<DealLine deal={deal} now={now} onOpen={onOpen} history={open}/>}
   {/* A private home that is only cleaned has nothing to rent: no calendar, price or listing, so no tabs. */}
   {!isHome(flat.details?.type)&&<View accessibilityRole="tablist" style={f.tabs}>{HUB_TABS.map(([id,label])=><Pressable key={id} accessibilityRole="tab" accessibilityState={{selected:open&&tab===id}} accessibilityLabel={label+(id==='today'&&waiting?', ждут ответа: '+waiting:'')} onPress={()=>onTab(id)} style={[f.tab,open&&tab===id&&f.tabOn]}>
    <Text numberOfLines={1} style={[f.tabText,open&&tab===id&&f.tabTextOn]}>{label}</Text>{id==='today'&&waiting>0&&<View style={f.count}><Text style={f.countText}>{waiting}</Text></View>}
