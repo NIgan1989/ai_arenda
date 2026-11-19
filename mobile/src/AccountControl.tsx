@@ -19,6 +19,7 @@ import {eventsToday,roleEvents} from '../../lib/notice-feed';
 import {request,API_URL} from './api';
 import {roleNames,rolePages} from './RoleEntry';
 import {Shift} from './Shift';
+import {OwnerAnalytics,loadAnalytics,shortTenge} from './OwnerAnalytics';
 import {s,C} from './styles';
 import type {Row as Data,Role} from './model';
 type Row_=Data;
@@ -30,14 +31,18 @@ const shortRole:Record<Role,string>={guest:'Гость',owner:'Владелец'
 // notices: only what needs the person or concerns their money (lib/notice-feed.ts).
 // autopilot: everything the AI did alone (its journal) and what it may decide (the rules; the performer's plan).
 // profile: what others read about me and how reliable I look to them.
+// money: the owner's business numbers, «Доходы» (OwnerAnalytics.tsx); the row shows the month's net profit.
 // settings: channels, the bank, privacy, and inside it the data and safety pages and joining another role.
-type MenuView=''|'notices'|'autopilot'|'profile'|'settings'|'safety'|`safety:${Exclude<SafetyPage,''>}`|'shift';
+type MenuView=''|'money'|'notices'|'autopilot'|'profile'|'settings'|'safety'|`safety:${Exclude<SafetyPage,''>}`|'shift';
 export function AccountControl({role:active,staffPlaces=0,notices,onOpenNotice,start,onChanged,onSignedOut,onSwitchRole,onPickRole,onJoinRole,onAskAdministrator,onLogout,onOpenPage,onOpenEntry}:{staffPlaces?:number;notices?:Data[];onOpenNotice?:(notice:Data)=>(()=>void)|undefined;start?:'notices';onPickRole?:(role:Role)=>void;onJoinRole?:(role:Role)=>void;onAskAdministrator?:()=>void;onOpenPage?:(id:string)=>void;onOpenEntry?:(open:JournalOpen)=>(()=>void)|undefined;role:Role;onEdit:()=>void;onChanged?:()=>Promise<unknown>;onSignedOut:(result?:Row_)=>void|Promise<void>;onSwitchRole?:()=>void;onLogout?:()=>void}){
  const [view,setView]=useState<MenuView>(start||''),[editing,setEditing]=useState(false),[readUpTo,setReadUpTo]=useState(0);
  // Every opening of «Уведомления» marks what is there as read: the counter in the menu then shows only what came after.
  // A failed mark is not repeated on its own; the next opening sends it again.
  useEffect(()=>{if(view!=='notices')return;setReadUpTo(Math.max(0,...(notices||[]).map(n=>Number(n.created_at)||0)));request('/api/notifications',{}).catch(()=>{});},[view]); // eslint-disable-line react-hooks/exhaustive-deps
  const [account,setAccount]=useState<Row_|null>(null),[busy,setBusy]=useState(false),[error,setError]=useState(''),[message,setMessage]=useState(''),[users,setUsers]=useState<Row_|null>(null),[role,setRole]=useState(''),[search,setSearch]=useState(''),[finding,setFinding]=useState(false);
+ // The owner's row «Доходы» shows the last 30 days' net profit; a failure leaves the row without a value.
+ const [netMonth,setNetMonth]=useState<number|null>(null);
+ useEffect(()=>{if(active!=='owner')return;let live=true;loadAnalytics('month').then(r=>{if(live)setNetMonth(r.money.net);}).catch(()=>{});return()=>{live=false;};},[active]);
  useEffect(()=>{let live=true;request('/api/account').then(v=>{if(live)setAccount(v);}).catch(e=>{if(live)setError(e.message);});return()=>{live=false;};},[]);
  const button=(title:string,fn:()=>void,disabled=busy)=><Pressable accessibilityRole="button" disabled={disabled} onPress={fn} style={[s.button,s.secondary,disabled&&s.disabled]}><Text style={[s.buttonText,s.secondaryText]}>{title}</Text></Pressable>;
  // Instant save: show the new value at once, roll back if the server refuses.
@@ -57,7 +62,7 @@ export function AccountControl({role:active,staffPlaces=0,notices,onOpenNotice,s
  const go=(to:MenuView)=>{setMessage('');setError('');setView(to);};
  // Joining another role is offered in the settings, as a thing done once.
  const join=onJoinRole?(['guest','owner','cleaner'] as Role[]).filter(v=>v!==active&&!roles.includes(v)):[];
- const titles={shift:'Смена',notices:'Уведомления',autopilot:'Автопилот',profile:experience.profileTitle,settings:'Настройки',safety:'Данные и безопасность'};
+ const titles={money:'Доходы',shift:'Смена',notices:'Уведомления',autopilot:'Автопилот',profile:experience.profileTitle,settings:'Настройки',safety:'Данные и безопасность'};
  const clock=account.serverTime||Date.now()/1000,events=roleEvents(notices,active),eventsNow=eventsToday(events.filter(n=>!Number(n.read)&&Number(n.created_at)>readUpTo),clock),trust=String(account.reliability?.label||'').replace(/^Надёжность\s+/,'');
  const hint=steps.length>0&&<Pressable accessibilityRole="button" onPress={edit} style={a.next}><RowIcon icon="sparkles" tint={C.aiTo}/><View style={{flex:1}}><Text style={a.title}>{steps[0]}</Text>{steps.length>1&&<Text style={a.note}>и ещё {steps.length-1} {steps.length===2?'шаг':'шага'} до полного профиля</Text>}</View><Text style={[a.chevron,{color:C.ink}]}>›</Text></Pressable>;
  return <View>
@@ -65,8 +70,9 @@ export function AccountControl({role:active,staffPlaces=0,notices,onOpenNotice,s
   {!view&&<><View style={a.head}><ProfileRing photoId={p.avatar_id} name={p.name} progress={completion/100} ink={ink} onPress={edit}/><View style={{flex:1,minWidth:0}}><Text style={a.name}>{p.name||'Мой профиль'}</Text><Text style={s.meta}>{p.city||'Город не указан'} · {completion<100?'профиль на '+completion+'%':'профиль заполнен'}</Text></View><Pressable accessibilityRole="button" onPress={edit} style={a.edit}><Text style={a.editText}>Изменить</Text></Pressable></View>
   {roles.length>1&&!!onPickRole&&<View accessibilityRole="tablist" accessibilityLabel="Роль" style={[a.seg,{marginTop:16,padding:4,borderRadius:12}]}>{(['guest','owner','cleaner'] as Role[]).filter(r=>roles.includes(r)).map(r=><Pressable key={r} accessibilityRole="tab" accessibilityState={{selected:r===active}} onPress={()=>{if(r!==active)onPickRole(r);}} style={[a.segItem,{flex:1,minHeight:40,alignItems:'center'},r===active&&a.segOn]}><Text style={[a.segText,{fontWeight:'600'},r===active&&a.segTextOn]}>{shortRole[r]}</Text></Pressable>)}</View>}</>}
   {!!error&&<Text accessibilityRole="alert" style={s.error}>{error}</Text>}{!!message&&<Text accessibilityLiveRegion="polite" style={a.saved}>{message}</Text>}
-  {!view&&<Group space>{worker&&<SwitchRow icon="briefcase" tint={ink} title="Принимаю предложения" note={/^(Принимает|Не принимает)/.test(account.workerStatus?.label||'')?undefined:account.workerStatus?.label} checked={(p.work_status||'available')==='available'} disabled={busy} onChange={work}/>}{staffPlaces>0&&<Row icon="key" tint={ink} title="Смена" value={staffPlaces===1?'гости сегодня':'объектов: '+staffPlaces} onPress={()=>go('shift')}/>}<Row icon="bell" tint={ink} title="Уведомления" value={eventsNow?eventsNow+' новых':undefined} onPress={()=>go('notices')}/><Row icon="sparkles" tint={ink} title="Автопилот" value={today?'ИИ: '+today+' сегодня':undefined} onPress={()=>go('autopilot')}/><Row icon="user" tint={ink} title={experience.profileTitle} value={completion<100?completion+'%':trust||'заполнен'} onPress={()=>go('profile')}/></Group>}
+  {!view&&<Group space>{worker&&<SwitchRow icon="briefcase" tint={ink} title="Принимаю предложения" note={/^(Принимает|Не принимает)/.test(account.workerStatus?.label||'')?undefined:account.workerStatus?.label} checked={(p.work_status||'available')==='available'} disabled={busy} onChange={work}/>}{staffPlaces>0&&<Row icon="key" tint={ink} title="Смена" value={staffPlaces===1?'гости сегодня':'объектов: '+staffPlaces} onPress={()=>go('shift')}/>}{owner&&<Row icon="chart" tint={ink} title="Доходы" value={netMonth===null?undefined:(netMonth>0?'+':'')+shortTenge(netMonth)+' за месяц'} onPress={()=>go('money')}/>}<Row icon="bell" tint={ink} title="Уведомления" value={eventsNow?eventsNow+' новых':undefined} onPress={()=>go('notices')}/><Row icon="sparkles" tint={ink} title="Автопилот" value={today?'ИИ: '+today+' сегодня':undefined} onPress={()=>go('autopilot')}/><Row icon="user" tint={ink} title={experience.profileTitle} value={completion<100?completion+'%':trust||'заполнен'} onPress={()=>go('profile')}/></Group>}
   {view==='shift'&&<Shift/>}
+  {view==='money'&&<OwnerAnalytics tint={ink}/>}
   {view==='notices'&&<Group><NativeTelegram tint={ink} invite/><NoticeList list={events} now={clock} onOpen={onOpenNotice}/></Group>}
   {view==='autopilot'&&<><Group title="Что сделал ИИ"><AiJournal entries={journal} now={clock} onOpen={onOpenEntry}/></Group>{worker?<NativeAutopilotPlan key={'plan:'+active} role="cleaner"/>:<NativeDecisionRules key={'rules:'+active} tint={ink}/>}</>}
   {view==='profile'&&<>{hint}<Group space={!!hint}>{item('user','О себе',p.bio)}{item('languages','Языки общения',p.languages)}{item('pin',experience.cityLabel,p.city)}{worker&&<>{item('map','Районы работы',p.districts)}{item('clock','График',p.availability)}{item('badge','Опыт и услуги',p.experience)}</>}{item('phone','Телефон',p.contact)}</Group>{!!account.reliability&&<><View style={{height:16}}/><ReliabilityBadge value={account.reliability} title={owner?'Как вас видят гости':'Как вас видят владельцы'}/><Group title="Как повысить надёжность">{(reliabilityHints[active]||[]).map(h=><View key={h} style={a.row}><RowIcon icon="check" tint={ink}/><Text style={[a.title,a.wide]}>{h}</Text></View>)}</Group></>}</>}

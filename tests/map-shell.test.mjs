@@ -53,7 +53,9 @@ test('the menu is short: a few rows open their own screens, the rest stays one t
     // «autopilot» holds the journal for every role, the decision rules of the guest and the owner, the plan of the cleaner.
     // Reliability is read inside the profile; the data pages and joining another role are inside the settings.
     const text = read('mobile/src/AccountControl.tsx');
-    assert.match(text, /type MenuView=''\|'notices'\|'autopilot'\|'profile'\|'settings'\|'safety'/);
+    // «money» is the owner's «Доходы» (OwnerAnalytics.tsx).
+    assert.match(text, /type MenuView=''\|'money'\|'notices'\|'autopilot'\|'profile'\|'settings'\|'safety'/);
+    assert.match(text, /owner&&<Row icon="chart"[^>]*title="Доходы"/, 'only the owner has «Доходы»');
     for (const view of ['notices', 'autopilot', 'profile', 'settings']) assert.ok(text.includes("view==='" + view + "'"), view);
     for (const title of ['Уведомления', 'Автопилот', 'Настройки', 'Помощь']) assert.match(text, new RegExp('<Row (?:[^<>]*? )?title="' + title + '"'), title);
     assert.doesNotMatch(text, /title="(Надёжность|Что сделал ИИ|Тариф и автопилот)"[^\n]*onPress=\{\(\)=>go/, 'no separate rows for what the three rows hold');
