@@ -22,6 +22,7 @@ import {Shift} from './Shift';
 import {OwnerAnalytics,loadAnalytics,shortTenge} from './OwnerAnalytics';
 import {PayoutForm,phoneText,type Payout} from './PayoutDetails';
 import {ServiceBilling} from './ServiceBilling';
+import {AutopilotWeek} from './AutopilotWeek';
 import {s,C} from './styles';
 import type {Row as Data,Role} from './model';
 type Row_=Data;
@@ -31,7 +32,8 @@ const shortRole:Record<Role,string>={guest:'Гость',owner:'Владелец'
 // The menu is short: who I am, three rows about what goes on (notices, the autopilot, my profile), the sections of
 // my role, and settings, help and the way out. Each row shows its current value and opens its own screen.
 // notices: only what needs the person or concerns their money (lib/notice-feed.ts).
-// autopilot: everything the AI did alone (its journal) and what it may decide (the rules; the performer's plan).
+// autopilot: everything the AI did alone (its journal) and what it may decide (the rules; the performer's plan);
+// for the owner, on top, the week of the plan in numbers (AutopilotWeek.tsx).
 // profile: what others read about me and how reliable I look to them.
 // money: the owner's business numbers, «Доходы» (OwnerAnalytics.tsx); the row shows the month's net profit.
 // settings: channels, the bank, privacy, and inside it the data and safety pages and joining another role.
@@ -80,7 +82,7 @@ export function AccountControl({role:active,staffPlaces=0,notices,onOpenNotice,s
   {view==='billing'&&active!=='guest'&&<ServiceBilling key={'billing:'+active} role={active}/>}
   {view==='money'&&<OwnerAnalytics tint={ink}/>}
   {view==='notices'&&<Group><NativeTelegram tint={ink} invite/><NoticeList list={events} now={clock} onOpen={onOpenNotice}/></Group>}
-  {view==='autopilot'&&<><Group title="Что сделал ИИ"><AiJournal entries={journal} now={clock} onOpen={onOpenEntry}/></Group>{worker?<NativeAutopilotPlan key={'plan:'+active} role="cleaner"/>:<NativeDecisionRules key={'rules:'+active} tint={ink}/>}</>}
+  {view==='autopilot'&&<>{owner&&<View style={{marginBottom:16}}><AutopilotWeek/></View>}<Group title="Что сделал ИИ"><AiJournal entries={journal} now={clock} onOpen={onOpenEntry}/></Group>{worker?<NativeAutopilotPlan key={'plan:'+active} role="cleaner"/>:<NativeDecisionRules key={'rules:'+active} tint={ink}/>}</>}
   {view==='profile'&&<>{hint}<Group space={!!hint}>{item('user','О себе',p.bio)}{item('languages','Языки общения',p.languages)}{item('pin',experience.cityLabel,p.city)}{worker&&<>{item('map','Районы работы',p.districts)}{item('clock','График',p.availability)}{item('badge','Опыт и услуги',p.experience)}</>}{item('phone','Телефон',p.contact)}</Group>{!!account.reliability&&<><View style={{height:16}}/><ReliabilityBadge value={account.reliability} title={owner?'Как вас видят гости':'Как вас видят владельцы'}/><Group title="Как повысить надёжность">{(reliabilityHints[active]||[]).map(h=><View key={h} style={a.row}><RowIcon icon="check" tint={ink}/><Text style={[a.title,a.wide]}>{h}</Text></View>)}</Group></>}</>}
   {view==='settings'&&<>
    <Group title="Куда сообщать"><NativeTelegram tint={ink}/><SwitchRow icon="wallet" tint={ink} title="О расчётах и выплатах" checked={!!account.settings.payment_notifications} disabled={busy} onChange={v=>settings({payment_notifications:v?1:0})}/></Group>

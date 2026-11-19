@@ -4,6 +4,7 @@ import {epoch,uuid,q,one,rows,type Row} from './operation-core';
 import {underAutopilot,setGuestMode} from './autopilot';
 import {dueOf,sweepDues,servicePaused} from './service-dues';
 import {declineAssignment} from './dispatch';
+import {autopilotWeek} from './autopilot-week-db';
 
 // «Автопилот» as a paid plan. The owner pays a monthly price for each flat under the AI, the cleaner pays
 // one monthly price. Every plan starts with a free trial; then the price is taken once a month: the owner's
@@ -224,8 +225,9 @@ export async function sweepPlans(db:D1Database,at=epoch()){
  if(weekday(at)===0&&minuteOfDay(at)>=9*60){
   const owners=await rows(db,`SELECT user_id FROM autopilot_plans WHERE role='owner' AND status IN ${LIVE} LIMIT 500`),week=at-7*DAY;
   for(const o of owners){
-   const n=await one(db,`SELECT (SELECT COUNT(*) FROM bookings b JOIN properties p ON p.id=b.property_id WHERE p.owner_id=? AND b.status IN ('confirmed','completed') AND b.created_at>?) bookings,(SELECT COALESCE(SUM(b.amount),0) FROM bookings b JOIN properties p ON p.id=b.property_id WHERE p.owner_id=? AND b.status IN ('confirmed','completed') AND b.created_at>?) income,(SELECT COUNT(*) FROM cleaning_jobs WHERE owner_id=? AND status='completed' AND completed_at>?) cleanings`,o.user_id,week,o.user_id,week,o.user_id,week);
-   const r=await notice(db,o.user_id,`Неделя на автопилоте: ${n?.bookings||0} броней на ${money(Number(n?.income||0))}, ${n?.cleanings||0} уборок принято. Подробности в профиле.`,'owner:autopilot-week:'+o.user_id+':'+isoDay(at),at).run();
+   // The same seven days the owner sees in «Автопилот» (lib/autopilot-week.ts): the notice goes to Telegram as well.
+   const w=await autopilotWeek(db,o.user_id,at,true);
+   const r=await notice(db,o.user_id,w.summary+' Подробнее: меню → Автопилот.','owner:autopilot-week:'+o.user_id+':'+isoDay(at),at).run();
    if(r.meta.changes)result.reports++;
   }
  }
