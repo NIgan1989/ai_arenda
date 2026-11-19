@@ -36,6 +36,12 @@ test('the three reports reconcile: assets equal liabilities plus equity in fact 
   f.db.raw.prepare("INSERT INTO autopilot_charges(id,user_id,role,period_start,period_end,units,amount,withheld,mode,settled_at,created_at) VALUES ('ap1','cleaner','cleaner',?,?,1,1900,1000,'charged',NULL,?)").run(at,at+86400,at);
   f.db.raw.prepare("INSERT INTO cleaning_commissions(job_id,owner_id,cleaner_id,property_id,fee,rate_bp,amount,pair,mode,created_at) VALUES (?,?,?,?,3000,1000,300,0,'charged',?)").run(f.job.id,'owner','cleaner',f.property,at);
 
+  // Direct payments: a cleaner tops up a balance of their own and the fee is taken from it at once.
+  const entry=f.db.raw.prepare("SELECT * FROM owner_balance_entries WHERE kind='topup' LIMIT 1").get();
+  const cols=Object.keys(entry),copy={...entry,id:'cleaner-topup',owner_id:'cleaner',amount:5000,request_key:'ct1'};
+  f.db.raw.prepare(`INSERT INTO owner_balance_entries(${cols.join(',')}) VALUES (${cols.map(()=>'?').join(',')})`).run(...cols.map(c=>copy[c]));
+  f.db.raw.prepare("INSERT INTO autopilot_charges(id,user_id,role,period_start,period_end,units,amount,withheld,mode,settled_at,created_at) VALUES ('ap2','cleaner','cleaner',?,?,1,700,0,'charged',?,?)").run(at+86400,at+2*86400,at,at);
+
   const month=monthKey();
   await writePlatformAdmin(f.other,'finance/cost',{kind:'staff',employment:'employee',name:'Оператор',amount:'500000',period:'month',startMonth:month},config(f));
   await writePlatformAdmin(f.other,'finance/cost',{kind:'service',name:'Хостинг',amount:'10',currency:'USD',period:'month',startMonth:month},config(f));
@@ -51,16 +57,16 @@ test('the three reports reconcile: assets equal liabilities plus equity in fact 
   }
   const fact=await readPlatformAdmin(f.other,'finance',{basis:'fact',month},config(f));
   const pl=fact.current.pl;
-  assert.equal(pl.bookings,fee);assert.equal(pl.cleaning,300);assert.equal(pl.autopilot,1900);assert.equal(pl.bonuses,2000);
+  assert.equal(pl.bookings,fee);assert.equal(pl.cleaning,300);assert.equal(pl.autopilot,2600);assert.equal(pl.bonuses,2000);
   assert.equal(pl.services,Math.round(10*fact.settings.usd_rate)+Math.round(20*fact.settings.usd_rate)+170000,'the seeded Stadia Maps and AI subscriptions plus the new hosting');assert.equal(pl.opex,10000);
   const director=payroll(500000,fact.settings),self=selfContributions(fact.settings),selfTotal=self.self_opv+self.self_opvr+self.self_so+self.self_vosms;
   assert.equal(fact.settings.entity,'ip');assert.equal(fact.settings.tax_regime,'simplified');assert.equal(director.sn,0);
   assert.equal(pl.salaries,500000);assert.equal(pl.outsource,30000);assert.equal(pl.self,selfTotal);assert.equal(selfTotal,21675);
   assert.equal(pl.employer,director.sn+director.so+director.opvr+director.vosms_employer);
   assert.equal(pl.profit_tax,Math.round(pl.revenue*0.04),'the simplified declaration taxes income, not profit');
-  assert.equal(fact.current.cf.inflow,50000);assert.equal(fact.current.cf.payouts,2000);
+  assert.equal(fact.current.cf.inflow,55000);assert.equal(fact.current.cf.payouts,2000);
   assert.equal(fact.balance.assets.cleaners,900);assert.equal(fact.balance.liabilities.loans,200000);
-  assert.equal(fact.balance.liabilities.owners,50000+2000-fee-300-3000);
+  assert.equal(fact.balance.liabilities.owners,50000+2000-fee-300-3000+5000-700);
   assert.equal(fact.balance.liabilities.taxes,director.ipn+director.opv+director.vosms_employee+director.sn+director.so+director.opvr+director.vosms_employer+selfTotal+pl.profit_tax);
   assert.equal(fact.balance.equity.capital,1000000);
 

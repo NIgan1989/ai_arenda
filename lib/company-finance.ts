@@ -131,15 +131,20 @@ export function computeMonths(input:Inputs,basis:Basis,until:string):Month[]{
 // Owner and cleaner money held by the service at a month end (fact basis only): an owner's
 // prepaid balance is a liability, a negative one is a receivable; reserved cleaning fees are
 // owed to the cleaner; a cleaner's unpaid «Автопилот» fee is a receivable.
+// A cleaner with a balance of their own pays the «Автопилот» fee from it: such a charge is settled
+// without having been withheld from payouts in full, and the rest came off the balance.
+const fromBalance="role='cleaner' AND mode='charged' AND settled_at IS NOT NULL AND withheld<amount";
 async function positions(db:D1Database,end:number){
  const owners=await rows(db,`SELECT o.owner_id,(COALESCE((SELECT SUM(amount) FROM owner_balance_entries WHERE owner_id=o.owner_id AND created_at<=?),0)
   -COALESCE((SELECT SUM(c.amount) FROM platform_commissions c WHERE c.owner_id=o.owner_id AND c.mode='charged' AND c.created_at<=? AND ${live}),0)
   -COALESCE((SELECT SUM(amount) FROM cleaning_commissions WHERE owner_id=o.owner_id AND mode='charged' AND created_at<=?),0)
   -COALESCE((SELECT SUM(amount) FROM cleaning_holds WHERE owner_id=o.owner_id AND status IN ('held','due','paid') AND created_at<=?),0)
-  -COALESCE((SELECT SUM(amount) FROM autopilot_charges WHERE user_id=o.owner_id AND role='owner' AND mode='charged' AND created_at<=?),0)) balance
-  FROM (SELECT o.id owner_id FROM profiles o WHERE EXISTS(SELECT 1 FROM properties p WHERE p.owner_id=o.id AND p.demo_owner IS NULL)) o`,end,end,end,end,end);
+  -COALESCE((SELECT SUM(amount) FROM autopilot_charges WHERE user_id=o.owner_id AND role='owner' AND mode='charged' AND created_at<=?),0)
+  -COALESCE((SELECT SUM(amount-withheld) FROM autopilot_charges WHERE user_id=o.owner_id AND ${fromBalance} AND settled_at<=?),0)) balance
+  FROM (SELECT o.id owner_id FROM profiles o WHERE EXISTS(SELECT 1 FROM properties p WHERE p.owner_id=o.id AND p.demo_owner IS NULL)
+   UNION SELECT e.owner_id FROM owner_balance_entries e WHERE NOT EXISTS(SELECT 1 FROM properties p WHERE p.owner_id=e.owner_id)) o`,end,end,end,end,end,end);
  const holds=await one(db,"SELECT COALESCE(SUM(amount),0) n FROM cleaning_holds WHERE created_at<=? AND (status IN ('held','due') OR (status='paid' AND paid_at>?))",end,end);
- const cleaners=await one(db,"SELECT COALESCE((SELECT SUM(amount) FROM autopilot_charges WHERE role='cleaner' AND mode='charged' AND created_at<=?),0)-COALESCE((SELECT SUM(withheld) FROM autopilot_charges WHERE role='cleaner' AND mode='charged' AND COALESCE(settled_at,created_at)<=?),0) n",end,end);
+ const cleaners=await one(db,"SELECT COALESCE((SELECT SUM(amount) FROM autopilot_charges WHERE role='cleaner' AND mode='charged' AND created_at<=?),0)-COALESCE((SELECT SUM(withheld) FROM autopilot_charges WHERE role='cleaner' AND mode='charged' AND COALESCE(settled_at,created_at)<=?),0)-COALESCE((SELECT SUM(amount-withheld) FROM autopilot_charges WHERE "+fromBalance+" AND settled_at<=?),0) n",end,end,end);
  let advances=0,receivable=0;for(const o of owners){const v=Number(o.balance||0);if(v>0)advances+=v;else receivable-=v;}
  return {advances,receivable,cleanerPayable:Number(holds?.n||0),cleanerReceivable:Number(cleaners?.n||0)};
 }
