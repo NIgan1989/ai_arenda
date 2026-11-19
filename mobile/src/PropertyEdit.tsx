@@ -110,7 +110,7 @@ export function PropertyEdit({property,onSave,onReview,onRemove,onClose,onOpenHa
     <Text style={e.hint}>{q.perGuest?'Гость платит за своё число гостей, но не меньше чем за '+q.least+': от '+new Intl.NumberFormat('ru-RU').format(q.perGuest*q.least)+' ₸. Зал берут на обед (12:00–17:00) или на вечер (18:00–00:00).':'Зал берут на обед (12:00–17:00) или на вечер (18:00–00:00) по цене на гостя.'}</Text>
     <View style={e.row}>{num('Депозит, ₸',r.deposit,n=>setR({deposit:n}))}</View>
     {text('Меню',d.menu||'',v=>setD({menu:v}),1500,'Бешбармак, казы, салаты, баурсаки, чай. Халяль. Свои напитки по согласованию.',true)}
-    <Text style={e.hint}>Гость видит меню до брони. Телефоны и ссылки не пишите: бронь и оплата идут через сервис.</Text>
+    <Text style={e.hint}>Гость видит меню до брони. Телефоны и ссылки не пишите: бронь идёт через сервис.</Text>
    </>;})()}
    {open==='prices'&&!isVenue(d.type)&&<>
     <View style={e.row}>{num('Сутки, ₸',draft.price,n=>set({price:n}))}{num('Час, ₸',r.hourlyPrice,n=>setR({hourlyPrice:n}),10000000,'0 — без почасовой')}</View>
