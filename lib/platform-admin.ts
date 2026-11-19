@@ -16,6 +16,7 @@ import {safetyAction} from './account-safety';
 import {billingState,billingOwners,saveBillingSettings,recordBalanceEntry} from './platform-billing';
 import {plansAdminState,savePlanSettings} from './autopilot-plans';
 import {markCleanerPayout} from './regular-cleaner';
+import {companyFinance,saveFinanceSettings,saveCost,toggleCost,deleteCost,addCashEntry,deleteCashEntry,accountingState,payTaxes,deleteTaxPayment} from './company-finance';
 type Config=OperationConfig&{PLATFORM_ADMIN_IDS?:string;ADMINISTRATOR_RUNNER_SECRET?:string;OPENAI_API_KEY?:string;OPENAI_MODEL?:string};
 type Row=Record<string,any>;
 export function requirePlatformAdmin(userId:string,config:Config){if(!isPlatformAdmin(userId,config.PLATFORM_ADMIN_IDS))throw new DomainError('Управление сервисом доступно только администратору.',403);}
@@ -45,6 +46,8 @@ export async function readPlatformAdmin(service:RentalService,route:string,param
  if(route==='billing/owners')return billingOwners(service,params);
  if(route==='billing/plans')return plansAdminState(service.db);
  if(route==='billing'){const state={...await billingState(service),plans:await plansAdminState(service.db),testPayments:(await one(service.db,"SELECT test_payments FROM platform_billing WHERE id='global'"))?.test_payments===1};await service.audit(service.userId,'admin.billing_viewed').run();return state;}
+ if(route==='finance'){const state=await companyFinance(service.db,params);await service.audit(service.userId,'admin.finance_viewed').run();return state;}
+ if(route==='accounting'){const state=await accountingState(service.db);await service.audit(service.userId,'admin.accounting_viewed').run();return state;}
  if(route==='governance')return {...await governanceState(service,'guest',true),admissions:[],testMode:config.TEST_DATA_ONLY==='1'};
  if(route==='health')return {runtime:await buildRuntimeHealth(service.db,config),queue:await operationalHealth(service,'guest',true),integrations:integrationStatus(config),aiBudget:await aiBudgetState(service,config,true)};
  if(route==='properties'){
@@ -59,9 +62,18 @@ export async function readPlatformAdmin(service:RentalService,route:string,param
   const [users,properties,bookings,jobs,reviews,issues,reports]=await Promise.all([
    service.one('SELECT COUNT(*) count FROM profiles'),service.one("SELECT COUNT(*) count,SUM(p.published=1) published,SUM(p.published=0) drafts,SUM(p.published=1 AND NOT EXISTS(SELECT 1 FROM property_locations l WHERE l.property_id=p.id)) unmapped,SUM(p.published=1 AND COALESCE((SELECT json_array_length(d.photos) FROM property_details d WHERE d.property_id=p.id),0)=0) without_photos FROM properties p WHERE p.demo_owner IS NULL"),service.one("SELECT COUNT(*) count FROM bookings WHERE status IN ('requested','confirmed')"),service.one("SELECT COUNT(*) count FROM cleaning_jobs WHERE status IN ('open','assigned','in_progress','submitted')"),service.one("SELECT COUNT(*) count FROM participant_reviews WHERE status='pending' AND (ai_verdict<>'fix' OR (SELECT ai_review FROM pilot_policy WHERE id='global')=0)"),service.one("SELECT COUNT(*) count FROM administrator_issues i WHERE i.status<>'resolved' AND (NOT EXISTS(SELECT 1 FROM operator_tickets t WHERE t.issue_id=i.id) OR EXISTS(SELECT 1 FROM operator_tickets t WHERE t.issue_id=i.id AND t.status<>'resolved' AND (t.priority='urgent' OR t.deadline<=unixepoch() OR t.assigned_to IS NOT NULL)))"),service.one("SELECT COUNT(*) count FROM content_reports WHERE status<>'resolved'")
   ]);
-  return {counts:{users:users?.count||0,properties:properties?.count||0,published:properties?.published||0,drafts:properties?.drafts||0,unmapped:properties?.unmapped||0,withoutPhotos:properties?.without_photos||0,bookings:bookings?.count||0,jobs:jobs?.count||0,reviews:reviews?.count||0,issues:issues?.count||0,reports:reports?.count||0},runtime:await buildRuntimeHealth(service.db,config)};
+  return {counts:{users:users?.count||0,properties:properties?.count||0,published:properties?.published||0,drafts:properties?.drafts||0,unmapped:properties?.unmapped||0,withoutPhotos:properties?.without_photos||0,bookings:bookings?.count||0,jobs:jobs?.count||0,reviews:reviews?.count||0,issues:issues?.count||0,reports:reports?.count||0},runtime:await buildRuntimeHealth(service.db,config),money:await moneySummary(service.db)};
  }
  throw new DomainError('Раздел управления не найден.',404);
+}
+// The overview's money card: this month in fact, cash, and what is owed to the budget.
+// It never blocks the overview: before the finance tables exist the card is simply absent.
+async function moneySummary(db:D1Database){
+ try{
+  const [fin,acc,forecast]=await Promise.all([companyFinance(db,{basis:'fact'}),accountingState(db),companyFinance(db,{basis:'forecast'})]);
+  const pl=fin.current?.pl||{};
+  return {month:fin.month,revenue:pl.revenue||0,forecastRevenue:forecast.current?.pl?.revenue||0,net:pl.net||0,cash:fin.balance.assets.cash,taxesDue:acc.totals.due,overdue:acc.totals.overdue,next:acc.totals.next?{name:acc.totals.next.name,due:acc.totals.next.due,left:acc.totals.next.left}:null};
+ }catch{return null;}
 }
 export async function writePlatformAdmin(service:RentalService,route:string,body:Row,config:Config){
  requirePlatformAdmin(service.userId,config);
@@ -87,6 +99,14 @@ export async function writePlatformAdmin(service:RentalService,route:string,body
  if(route==='billing/plans')return savePlanSettings(service,body);
  if(route==='billing/balance')return recordBalanceEntry(service,body);
  if(route==='billing/payout')return markCleanerPayout(service,body);
+ if(route==='finance/settings')return saveFinanceSettings(service,body);
+ if(route==='finance/cost')return saveCost(service,body);
+ if(route==='finance/cost/toggle')return toggleCost(service,body);
+ if(route==='finance/cost/delete')return deleteCost(service,body);
+ if(route==='finance/cash')return addCashEntry(service,body);
+ if(route==='finance/cash/delete')return deleteCashEntry(service,body);
+ if(route==='accounting/pay')return payTaxes(service,body);
+ if(route==='accounting/payment/delete')return deleteTaxPayment(service,body);
  if(route==='background/retry')return retryBackgroundJob(service,body,true);
  throw new DomainError('Операция управления не найдена.',404);
 }

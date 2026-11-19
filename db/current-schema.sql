@@ -72,6 +72,7 @@
 -- migration 0068_early_checkin.sql sha256:ebd306eaae07d993f402177b294bc75fe072d037d9f41124c99377fc2b99cca6
 -- migration 0069_early_checkin_hold.sql sha256:1aa41ec8707e7628888886cb35eb544716c3272e8394b1bc42d626694f702118
 -- migration 0070_property_views.sql sha256:2611b7beac6533757e18a3b8f354eeba5553b720fb659f4ff60bfb569e8e7bfe
+-- migration 0071_company_finance.sql sha256:f299d7a0157f1e9c76cdd9c9a983768518588ae0d7fe8c9035f047216bfbc48a
 
 -- table access_receipts
 CREATE TABLE access_receipts (id TEXT PRIMARY KEY,property_id TEXT NOT NULL,entity_kind TEXT NOT NULL,entity_id TEXT NOT NULL,user_id TEXT NOT NULL,created_at INTEGER NOT NULL,expires_at INTEGER NOT NULL);
@@ -501,6 +502,76 @@ CREATE TABLE client_conversations (
  body TEXT NOT NULL,
  updated_at INTEGER NOT NULL,
  PRIMARY KEY(user_id,role)
+);
+
+-- table company_cash_entries
+CREATE TABLE company_cash_entries (
+ id TEXT PRIMARY KEY,
+ kind TEXT NOT NULL CHECK(kind IN ('capital','loan','loan_repay','dividend','asset')),
+ amount INTEGER NOT NULL CHECK(amount BETWEEN 1 AND 10000000000),
+ month TEXT NOT NULL,
+ note TEXT NOT NULL DEFAULT '',
+ created_at INTEGER NOT NULL
+);
+
+-- table company_costs
+CREATE TABLE company_costs (
+ id TEXT PRIMARY KEY,
+ kind TEXT NOT NULL CHECK(kind IN ('staff','service','opex')),
+ name TEXT NOT NULL CHECK(length(name) BETWEEN 1 AND 120),
+ amount INTEGER NOT NULL CHECK(amount BETWEEN 0 AND 10000000000),
+ currency TEXT NOT NULL DEFAULT 'KZT' CHECK(currency IN ('KZT','USD')),
+ period TEXT NOT NULL DEFAULT 'month' CHECK(period IN ('month','year','once')),
+ employment TEXT NOT NULL DEFAULT 'none' CHECK(employment IN ('none','employee','outsource')),
+ start_month TEXT NOT NULL,
+ end_month TEXT,
+ active INTEGER NOT NULL DEFAULT 1 CHECK(active IN (0,1)),
+ note TEXT NOT NULL DEFAULT '',
+ sort INTEGER NOT NULL DEFAULT 0,
+ created_at INTEGER NOT NULL,
+ updated_at INTEGER NOT NULL
+);
+
+-- table company_finance_settings
+CREATE TABLE company_finance_settings (
+ id TEXT PRIMARY KEY CHECK(id='global'),
+ entity TEXT NOT NULL DEFAULT 'ip' CHECK(entity IN ('ip','too')),
+ company_name TEXT NOT NULL DEFAULT 'AiQonaq' CHECK(length(company_name) BETWEEN 1 AND 80),
+ start_month TEXT NOT NULL,
+ tax_regime TEXT NOT NULL DEFAULT 'simplified' CHECK(tax_regime IN ('general','simplified')),
+ cit_bp INTEGER NOT NULL DEFAULT 2000 CHECK(cit_bp BETWEEN 0 AND 5000),
+ simplified_bp INTEGER NOT NULL DEFAULT 400 CHECK(simplified_bp BETWEEN 0 AND 2000),
+ vat_registered INTEGER NOT NULL DEFAULT 0 CHECK(vat_registered IN (0,1)),
+ vat_bp INTEGER NOT NULL DEFAULT 1600 CHECK(vat_bp BETWEEN 0 AND 3000),
+ vat_threshold_mrp INTEGER NOT NULL DEFAULT 10000 CHECK(vat_threshold_mrp BETWEEN 0 AND 1000000),
+ mrp INTEGER NOT NULL DEFAULT 4325 CHECK(mrp BETWEEN 1 AND 100000),
+ mzp INTEGER NOT NULL DEFAULT 85000 CHECK(mzp BETWEEN 1 AND 10000000),
+ owner_base INTEGER NOT NULL DEFAULT 85000 CHECK(owner_base BETWEEN 0 AND 100000000),
+ vosms_self_bp INTEGER NOT NULL DEFAULT 500 CHECK(vosms_self_bp BETWEEN 0 AND 3000),
+ usd_rate INTEGER NOT NULL DEFAULT 520 CHECK(usd_rate BETWEEN 1 AND 100000),
+ opv_bp INTEGER NOT NULL DEFAULT 1000 CHECK(opv_bp BETWEEN 0 AND 3000),
+ vosms_employee_bp INTEGER NOT NULL DEFAULT 200 CHECK(vosms_employee_bp BETWEEN 0 AND 3000),
+ ipn_bp INTEGER NOT NULL DEFAULT 1000 CHECK(ipn_bp BETWEEN 0 AND 3000),
+ ipn_deduction_mrp INTEGER NOT NULL DEFAULT 30 CHECK(ipn_deduction_mrp BETWEEN 0 AND 1000),
+ sn_bp INTEGER NOT NULL DEFAULT 600 CHECK(sn_bp BETWEEN 0 AND 3000),
+ so_bp INTEGER NOT NULL DEFAULT 500 CHECK(so_bp BETWEEN 0 AND 3000),
+ opvr_bp INTEGER NOT NULL DEFAULT 350 CHECK(opvr_bp BETWEEN 0 AND 3000),
+ vosms_employer_bp INTEGER NOT NULL DEFAULT 300 CHECK(vosms_employer_bp BETWEEN 0 AND 3000),
+ acquiring_bp INTEGER NOT NULL DEFAULT 95 CHECK(acquiring_bp BETWEEN 0 AND 3000),
+ share_capital INTEGER NOT NULL DEFAULT 0 CHECK(share_capital BETWEEN 0 AND 10000000000),
+ version INTEGER NOT NULL DEFAULT 1,
+ updated_at INTEGER NOT NULL
+);
+
+-- table company_tax_payments
+CREATE TABLE company_tax_payments (
+ id TEXT PRIMARY KEY,
+ tax TEXT NOT NULL CHECK(tax IN ('cit','simplified','vat','ipn','opv','vosms_employee','sn','so','opvr','vosms_employer','self_opv','self_opvr','self_so','self_vosms')),
+ period TEXT NOT NULL,
+ amount INTEGER NOT NULL CHECK(amount BETWEEN 1 AND 10000000000),
+ month TEXT NOT NULL,
+ note TEXT NOT NULL DEFAULT '',
+ created_at INTEGER NOT NULL
 );
 
 -- table content_reports
@@ -1211,6 +1282,15 @@ CREATE INDEX cleaning_holds_owner ON cleaning_holds(owner_id,status);
 
 -- index cleaning_offer_worker
 CREATE INDEX cleaning_offer_worker ON cleaning_offers(worker_id,status,expires_at);
+
+-- index company_cash_entries_month
+CREATE INDEX company_cash_entries_month ON company_cash_entries(month);
+
+-- index company_costs_kind
+CREATE INDEX company_costs_kind ON company_costs(kind,sort);
+
+-- index company_tax_payments_month
+CREATE INDEX company_tax_payments_month ON company_tax_payments(month,tax);
 
 -- index content_reports_queue
 CREATE INDEX content_reports_queue ON content_reports(status,created_at);
