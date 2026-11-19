@@ -74,7 +74,7 @@
 -- migration 0070_property_views.sql sha256:2611b7beac6533757e18a3b8f354eeba5553b720fb659f4ff60bfb569e8e7bfe
 -- migration 0071_company_finance.sql sha256:f299d7a0157f1e9c76cdd9c9a983768518588ae0d7fe8c9035f047216bfbc48a
 -- migration 0072_direct_payments.sql sha256:cb04757fb811ef441743f2f320fc0b299d026c29ec56228158ebe79a3d1955f5
--- migration 0073_direct_cleaning_pay.sql sha256:062f7a34c7e5e4dc6e5a04b90d6753175686df16d47f3ef14de958371c52e732
+-- migration 0073_direct_cleaning_pay.sql sha256:84422dcaed857f0573a0473aef5a83fb31365f793c18863165f08eb060ffdc28
 
 -- table access_receipts
 CREATE TABLE access_receipts (id TEXT PRIMARY KEY,property_id TEXT NOT NULL,entity_kind TEXT NOT NULL,entity_id TEXT NOT NULL,user_id TEXT NOT NULL,created_at INTEGER NOT NULL,expires_at INTEGER NOT NULL);

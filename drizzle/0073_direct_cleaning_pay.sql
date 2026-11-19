@@ -24,3 +24,5 @@ END;
 UPDATE cleaning_holds SET status='returned' WHERE status IN ('held','due');
 -- «Деньги получены»: the performer confirms the owner's transfer.
 ALTER TABLE cleaning_jobs ADD COLUMN payment_received_at INTEGER;
+-- Cleanings paid before this change have nothing to confirm.
+UPDATE cleaning_jobs SET payment_received_at=settled_at WHERE settled_at IS NOT NULL;

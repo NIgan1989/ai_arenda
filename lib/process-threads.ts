@@ -185,6 +185,8 @@ export function jobThread(j: Row, data: Row, now: number): ProcessThread {
   const isMine = j.assigned_to === userId && j.status !== 'open';
   const working = isMine && j.status === 'in_progress', reported = isMine && ['submitted', 'completed'].includes(j.status);
   const accepted = isMine && j.status === 'completed', paid = accepted && (Number(j.settlement_paid) >= Number(j.fee) || !!j.settled_at || j.guarantee === 'paid');
+  // Direct settlements: the customer's mark is half of the step; it closes when the performer says the money came.
+  const got = paid && (!!j.payment_received_at || !!j.guarantee || !Number(j.fee));
   const took = did('Автопилот взял уборку');
   const steps: Omit<ThreadStep, 'state'>[] = [
     { key: 'apply', label: 'Отклик', by: took ? 'ai' : 'you', at: application?.created_at, note: application || isMine ? (took ? 'Автопилот откликнулся за вас' : 'Отклик отправлен') : 'Можно откликнуться' },
@@ -195,10 +197,10 @@ export function jobThread(j: Row, data: Row, now: number): ProcessThread {
       note: working ? (j.end > now ? 'Идёт уборка · ещё ' + left(j.end - now) + ' · затем отчёт' : 'Срок прошёл · отправьте отчёт') : 'Начать уборку' },
     { key: 'check', label: 'Приёмка', by: did('ИИ принял уборку', 'ИИ проверил отчёт') ? 'ai' : 'owner', at: j.submitted_at || undefined,
       note: accepted ? 'Уборка принята' : 'Отчёт на приёмке' },
-    { key: 'pay', label: 'Оплата', by: j.guarantee || !Number(j.fee) ? 'ai' : 'owner', at: j.settled_at || undefined, note: paid ? (j.payment_received_at || j.guarantee ? 'Оплата получена' : 'Заказчик отметил оплату · подтвердите, что деньги пришли') : j.guarantee ? 'Сервис заплатит из резерва' : 'Заказчик переведёт вам напрямую после приёмки' },
+    { key: 'pay', label: 'Оплата', by: j.guarantee || !Number(j.fee) ? 'ai' : paid && !got ? 'you' : 'owner', at: j.settled_at || undefined, note: paid ? (got ? 'Оплата получена' : 'Заказчик отметил оплату · подтвердите, что деньги пришли') : j.guarantee ? 'Сервис заплатит из резерва' : 'Заказчик переведёт вам напрямую после приёмки' },
   ];
   const came = j.booking_id !== null ? !!j.checkout_confirmed : !!j.arrived_at || working || reported;
-  const done = [!!application || isMine, isMine, isMine && came, reported, accepted, paid];
+  const done = [!!application || isMine, isMine, isMine && came, reported, accepted, got];
   const t = place(steps, done, i => i === 0 || i === 1 || i === 4 || i === 5 || (i === 2 ? now >= j.start - 3600 : i === 3 ? !!j.checkout_confirmed : false));
   const s = t.steps[t.current];
   const yours = !t.finished && s.by === 'you' && (t.current !== 3 || !!j.checkout_confirmed);

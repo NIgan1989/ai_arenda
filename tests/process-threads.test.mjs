@@ -47,6 +47,10 @@ test('исполнитель видит своё задание до оплат�
  const later={...data,jobs:[...data.jobs,{id:'j7',owner_id:'o',property_id:'p2',title:'Дача',status:'assigned',assigned_to:'c',start:now+5*24*H,end:now+5*24*H+2*H,fee:4000}]};
  assert.equal(cleanerThreads(later,now).some(x=>x.id==='j7'),false);assert.equal(dayRibbon(cleanerThreads(later,now,true),later,week[5].key,now).bars.length,1);
  const r=dayRibbon(t,data,week[0].key,now);assert.equal(r.bars.length,1);assert.equal(r.bars[0].state,'now');assert.ok(r.now);
+ // Direct pay: the customer's mark does not finish the thread; the performer confirms, even a day later.
+ const told={user:{id:'c'},jobs:[{id:'j5',booking_id:null,arrived_at:now-30*H,owner_id:'o',property_id:'p',title:'Дом',status:'completed',assigned_to:'c',start:now-30*H,end:now-28*H,completed_at:now-27*H,fee:5000,settled_at:now-26*H,settlement_paid:5000}]};
+ const wait=cleanerThreads(told,now)[0];assert.equal(wait.finished,false);assert.equal(wait.yours,true);assert.equal(wait.steps[5].by,'you');assert.match(wait.steps[5].note,/подтвердите, что деньги пришли/);
+ assert.equal(cleanerThreads({...told,jobs:[{...told.jobs[0],payment_received_at:now-25*H}]},now).length,0,'confirmed long ago: the thread is gone');
 });
 
 test('время по Алматы и последнее действие ИИ за сегодня',()=>{
