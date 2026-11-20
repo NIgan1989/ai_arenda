@@ -3,7 +3,7 @@ import {useState} from 'react';
 import {FileCheck2,ShieldOff,EyeOff} from 'lucide-react';
 import {Button} from './ui/button';
 
-type Row=Record<string,any>;
+type Row=Record<string,unknown>&{[key:string]:any}; // eslint-disable-line @typescript-eslint/no-explicit-any
 type Save=(path:string,body:Row)=>Promise<Row|undefined>;
 const kinds:Row={owner:'Собственник',sublease:'Субаренда (с согласием собственника)'};
 
@@ -12,7 +12,7 @@ async function get(path:string){const r=await fetch('/api/admin/'+path,{cache:'n
 // The owner's proof of the right to let the place (lib/property-rights.ts): seen only here, by the platform administrator.
 export function RightDocsAdmin({propertyId}:{propertyId:string}){
  const [docs,setDocs]=useState<Row[]|null>(null),[names,setNames]=useState<Row|null>(null),[error,setError]=useState('');
- async function open(){if(docs)return;try{const v=await get('rights?propertyId='+encodeURIComponent(propertyId));setNames(v.names||null);setDocs(await Promise.all((v.docs||[]).map(async(d:Row)=>({...d,uri:(await get('rights/photo?id='+encodeURIComponent(d.id)).catch(()=>null))?.data||''}))));}catch(e:any){setError(e.message);}}
+ async function open(){if(docs)return;try{const v=await get('rights?propertyId='+encodeURIComponent(propertyId));setNames(v.names||null);setDocs(await Promise.all((v.docs||[]).map(async(d:Row)=>({...d,uri:(await get('rights/photo?id='+encodeURIComponent(d.id)).catch(()=>null))?.data||''}))));}catch(e){setError(e instanceof Error?e.message:'Не удалось открыть.');}}
  return <details className="admin-rights" onToggle={e=>{if((e.target as HTMLDetailsElement).open)void open();}}>
   <summary><FileCheck2 size={15}/>Документ о праве сдавать</summary>
   {error?<p role="alert">{error}</p>:!docs?<p>Загружаем…</p>:!docs.length?<p>Документ не приложен. Одобрить жильё нельзя, пока владелец его не приложит.</p>:docs[0].checked_at?<p>{kinds[docs[0].kind]||docs[0].kind}: проверено, фото удалено после проверки.</p>:<>
