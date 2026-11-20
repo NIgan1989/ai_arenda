@@ -16,7 +16,7 @@ test('actual Workerd D1 executes deletion preflight and the atomic erase guard w
  import {safetyAction} from ${JSON.stringify(modules+'account-safety.js')};
  import {accountDeletionState,accountDeletionAction} from ${JSON.stringify(modules+'account-deletion.js')};
  const credentials={phone:'+77774440001',name:'Workerd deletion fixture',password:'workerd-fixture-password'};
- const auth=(action,body,mobile=false)=>new Request('http://localhost/api/'+(mobile?'mobile/':'')+'auth/'+action,{method:'POST',headers:{'Content-Type':'application/json',...(mobile?{}:{origin:'http://localhost'})},body:JSON.stringify(body)});
+ const auth=(action,body,mobile=false)=>new Request('http://localhost/api/'+(mobile?'mobile/':'')+'auth/'+action,{method:'POST',headers:{'Content-Type':'application/json',...(mobile?{}:{origin:'http://localhost'})},body:JSON.stringify(action==='register'?{accept:true,...body}:body)});
  export default {async fetch(request,env){try{
   const registered=await authRequest(env.DB,auth('register',credentials),'register'),cookie=registered.headers.get('set-cookie');
   const user=await sessionUser(env.DB,cookie),s=new RentalService(env.DB,user.userId);

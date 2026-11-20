@@ -1,5 +1,6 @@
 import {DomainError} from './domain';
 import {boundedRequestText} from './request-body';
+import {LEGAL_EDITION} from './legal-documents';
 
 export const sessionCookie='arenda_session';
 const lifetime=30*86400;
@@ -129,8 +130,10 @@ export async function authRequest(db:D1Database,request:Request,action:string,cl
  if(action==='register'){
   const name=String(body.name??'').trim();if(name.length<2||name.length>100)throw new DomainError('Укажите имя: от 2 до 100 символов.');
   const city=String(body.city||'Павлодар').trim();if(!city||city.length>80)throw new DomainError('Проверьте город.');
+  // The agreement and the data consent are accepted with the account itself, and the record proves it (table legal_acceptances, lib/legal-acceptance.ts).
+  if(body.accept!==true&&body.accept!=='on')throw new DomainError('Примите Пользовательское соглашение и дайте согласие на обработку персональных данных.');
   const id=crypto.randomUUID(),code=recoveryCode(),token=random();
-  try{await db.batch([query(db,'INSERT INTO auth_accounts(id,phone,name,password_hash,recovery_hash,created_at) VALUES (?,?,?,?,?,?)',id,phone,name,await hashPassword(password),await recoveryDigest(code),now()),guestProfile(db,id,name,phone!,city),query(db,`INSERT INTO ${sessions} VALUES (?,?,1,?)`,await digest(token),id,now()+lifetime)]);}
+  try{await db.batch([query(db,'INSERT INTO auth_accounts(id,phone,name,password_hash,recovery_hash,created_at) VALUES (?,?,?,?,?,?)',id,phone,name,await hashPassword(password),await recoveryDigest(code),now()),guestProfile(db,id,name,phone!,city),...['terms','consent'].map(doc=>query(db,'INSERT OR IGNORE INTO legal_acceptances(id,user_id,document,edition,client,accepted_at) VALUES (?,?,?,?,?,?)',crypto.randomUUID(),id,doc,LEGAL_EDITION,client,now())),query(db,`INSERT INTO ${sessions} VALUES (?,?,1,?)`,await digest(token),id,now()+lifetime)]);}
   catch(error){if(/UNIQUE/.test(String(error)))throw new DomainError('Не удалось зарегистрировать номер. Попробуйте войти или восстановить доступ.',409);throw error;}
   return response({message:'Аккаунт создан.',recoveryCode:code,...(client==='mobile'?{token,user:{id,name,phone}}:{})},client==='web'?cookie(token,request):undefined,201);
  }

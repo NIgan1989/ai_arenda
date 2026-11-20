@@ -77,6 +77,7 @@
 -- migration 0073_direct_cleaning_pay.sql sha256:84422dcaed857f0573a0473aef5a83fb31365f793c18863165f08eb060ffdc28
 -- migration 0074_payment_receipts.sql sha256:6f43b5b3d88b23cb3f7ed436bfb2fb642f05edc411cdb4435af017b320091bbf
 -- migration 0075_service_billing.sql sha256:22291f4b24994157164644befff06e5bbb609441f61cda77b29c2d73dc031986
+-- migration 0076_legal_acceptances.sql sha256:f61f2a547bff5007224bb63e0d6980d16498277a59b7640a78e5837ba27bf3de
 
 -- table access_receipts
 CREATE TABLE access_receipts (id TEXT PRIMARY KEY,property_id TEXT NOT NULL,entity_kind TEXT NOT NULL,entity_id TEXT NOT NULL,user_id TEXT NOT NULL,created_at INTEGER NOT NULL,expires_at INTEGER NOT NULL);
@@ -713,6 +714,17 @@ CREATE TABLE journey_sessions (
  recorded_at INTEGER,
  received_at INTEGER
 , route TEXT, route_recorded_at INTEGER);
+
+-- table legal_acceptances
+CREATE TABLE legal_acceptances (
+ id TEXT PRIMARY KEY,
+ user_id TEXT NOT NULL REFERENCES profiles(id),
+ document TEXT NOT NULL CHECK(document IN ('terms','consent','owner','cleaner')),
+ edition TEXT NOT NULL,
+ client TEXT NOT NULL CHECK(client IN ('web','mobile')),
+ accepted_at INTEGER NOT NULL,
+ UNIQUE(user_id,document,edition)
+);
 
 -- table listing_tips
 CREATE TABLE listing_tips (
@@ -1746,6 +1758,12 @@ CREATE TRIGGER account_erased_journey_sessions_insert BEFORE INSERT ON journey_s
 
 -- trigger account_erased_journey_sessions_update
 CREATE TRIGGER account_erased_journey_sessions_update BEFORE UPDATE ON journey_sessions WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.sender_id OR user_id=NEW.owner_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END;
+
+-- trigger account_erased_legal_acceptances_insert
+CREATE TRIGGER account_erased_legal_acceptances_insert BEFORE INSERT ON legal_acceptances WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.user_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END;
+
+-- trigger account_erased_legal_acceptances_update
+CREATE TRIGGER account_erased_legal_acceptances_update BEFORE UPDATE ON legal_acceptances WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.user_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END;
 
 -- trigger account_erased_listing_tips_insert
 CREATE TRIGGER account_erased_listing_tips_insert BEFORE INSERT ON listing_tips WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.owner_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END;
