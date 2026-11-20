@@ -10,7 +10,8 @@ type Row=Record<string,any>; // eslint-disable-line @typescript-eslint/no-explic
 // ladder: remind → ask → act by the rule → hand over to a person. Each step is said once (stay_watch keeps how far it
 // went), each notice goes to the AI journal of the person who gets it (lib/ai-move-marks.ts reads its key).
 //
-// Payment (due at the arrival, at most a day after the request): three hours before it is due the guest is reminded, at the due time both sides are warned, thirty minutes
+// Payment (lib/prepay.ts): a stay paid at the arrival is not watched here, its arrival is. A prepayment (the owner's
+// share, or all of an older booking) is due at the arrival, at most a day after the request: three hours before it is due the guest is reminded, at the due time both sides are warned, thirty minutes
 // later an unpaid stay is released and the home is free again. Payments are an imitation until the launch, so
 // releasing takes no money and returns none; a stay paid in part is never released, the owner decides.
 // Arrival: a paid guest who has not checked in is asked whether they are coming; with no answer the owner's
@@ -64,6 +65,7 @@ function rulesOf(db:D1Database):Rules{
 
 async function payments(db:D1Database,at:number,result:Row,rule:Rules){
  const list:Row[]=await rows(db,STAY_SQL+` WHERE b.status='confirmed' AND b.payment_status<>'owner_verified' AND t.actual_checkin IS NULL AND b.end>?1
+  AND COALESCE(t.prepay_percent,100)>0 AND t.paid_amount<(b.amount*COALESCE(t.prepay_percent,100)+99)/100
   AND ${PAY_STEP}<3 ORDER BY b.start LIMIT 50`,at);
  for(const b of list){
   const due=payDue({start:b.start,created_at:b.created_at}),title=b.title||'жильё',s=Number(b.pay_step);
@@ -138,7 +140,7 @@ async function emptyEnded(db:D1Database,at:number,result:Row){
 }
 
 async function arrivals(db:D1Database,at:number,result:Row,rule:Rules){
- const list:Row[]=await rows(db,STAY_SQL+` WHERE b.status='confirmed' AND b.payment_status='owner_verified' AND t.actual_checkin IS NULL AND t.checkin_reported_at IS NULL
+ const list:Row[]=await rows(db,STAY_SQL+` WHERE b.status='confirmed' AND (b.payment_status='owner_verified' OR (COALESCE(t.prepay_percent,100)<100 AND t.paid_amount>=(b.amount*COALESCE(t.prepay_percent,100)+99)/100)) AND t.actual_checkin IS NULL AND t.checkin_reported_at IS NULL
   AND t.actual_checkout IS NULL AND b.end>?1 AND MAX(b.start,COALESCE(t.arrival_eta,0))<=?1 AND ${ARRIVAL_STEP}<2 ORDER BY b.start LIMIT 50`,at);
  for(const b of list){
   const due=arrivalDue({start:b.start,arrival_eta:b.arrival_eta}),kind=hourly(b),title=b.title||'жильё',s=Number(b.arrival_step);

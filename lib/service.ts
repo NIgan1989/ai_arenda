@@ -21,6 +21,8 @@ import {mediaKey,dataUrlBytes,mediaData} from './media-store';
 import {readAdministratorState} from './administrator';
 import {recordFinance,migrateFinanceEntity} from './finance';
 import {payoutOf,payoutPhoneText} from './payout';
+import {prepaySum,prepayLabel,prepayState,dueNow,payoutOpen,prepayOf} from './prepay';
+import {placePrepay} from './prepay-db';
 import {requireEvidence} from './evidence';
 import {hash as operationHash} from './operation-core';
 import {assertCalendarAvailable} from './external-calendar';
@@ -436,8 +438,10 @@ export class RentalService {
     const policyFor=(p:Row)=>policies.find(v=>v.property_id===p.id)||defaultPolicy;
     // What cancelling right now would cost, for the card: the same rule the cancel action applies.
     const cancelFor=(b:Row)=>{const t=enrichedTerms.find(v=>v.booking_id===b.id);if(!t||!['requested','confirmed'].includes(b.status)||t.actual_checkin)return null;return cancellationTerms({by:b.owner_id===this.userId?'owner':'guest',status:b.status,mode:t.billing_mode,rate:t.rate,units:t.units,amount:b.amount,paid:t.paid_amount,deposit:t.deposit_status==='owner_verified'?t.deposit:0,start:b.start,minHours:t.min_hours||policies.find(v=>v.property_id===b.property_id)?.min_hours||1,at:serverTime,banquet:!!t.occasion});};
+    // Completed stays per own place: prepayments open after five of them (lib/prepay.ts).
+    const stays=new Map<string,number>((ownProperties.length?await this.all("SELECT b.property_id,COUNT(*) n FROM bookings b JOIN properties p ON p.id=b.property_id JOIN booking_terms t ON t.booking_id=b.id WHERE p.owner_id=? AND b.status='completed' AND t.actual_checkout IS NOT NULL AND b.guest_id<>p.owner_id GROUP BY b.property_id",this.userId):[]).map(r=>[r.property_id,Number(r.n)]));
     const guests=await reliabilityFor(this.db,'guest',bookings.filter(b=>b.owner_id===this.userId&&b.status==='requested').map(b=>b.guest_id));
-    const state={ profile, properties:await this.enrichProperties(properties.map(p=>({...p,policy:publicPolicy(policyFor(p))}))), ownProperties:await this.enrichProperties(ownProperties.map(p=>({...p,policy:policyFor(p),operation:operations.find(v=>v.property_id===p.id)})),true), bookings:bookings.map(({risk_row,handover_row,owner_pay_row,...b}) => ({...b,owner_pay:owner_pay_row?JSON.parse(owner_pay_row):null,risk:riskFromRow(risk_row?JSON.parse(risk_row):null),handover:handover_row?JSON.parse(handover_row):null,...(b.owner_id===this.userId?{guest_reliability:guests.get(b.guest_id)}:{}),status:b.status==='requested' && b.expires_at<=serverTime?'expired':b.status,terms:enrichedTerms.find(t=>t.booking_id===b.id),cancel_terms:cancelFor(b),changes:changes.filter(c=>c.booking_id===b.id).map(c=>({...c,status:c.status==='pending'&&c.expires_at<=serverTime?'expired':c.status})),readiness:operations.find(o=>o.property_id===b.property_id)?.readiness})), jobs:jobs.map(({open_address,cleaner_pay_row,...j}:Row):Row=>({...j,cleaner_pay:cleaner_pay_row?JSON.parse(cleaner_pay_row):null,street:streetAddress(open_address),settlement_paid:jobPayments.find(p=>p.job_id===j.id)?.paid??(j.settled_at?j.fee:0),checkout_confirmed:!j.booking_id||!!j.checkout_confirmed})), applications, notifications, messages, serverTime, integrations:{ai:false,telegram:false,whatsapp:false,payments:false} };
+    const state={ profile, properties:await this.enrichProperties(properties.map(p=>({...p,policy:publicPolicy(policyFor(p))}))), ownProperties:await this.enrichProperties(ownProperties.map(p=>({...p,policy:policyFor(p),operation:operations.find(v=>v.property_id===p.id),prepay:prepayState(policyFor(p).prepay_percent,stays.get(p.id)||0)})),true), bookings:bookings.map(({risk_row,handover_row,owner_pay_row,...b}) => ({...b,owner_pay:owner_pay_row&&(b.owner_id===this.userId||payoutOpen({...b,terms:enrichedTerms.find(t=>t.booking_id===b.id)},serverTime))?JSON.parse(owner_pay_row):null,risk:riskFromRow(risk_row?JSON.parse(risk_row):null),handover:handover_row?JSON.parse(handover_row):null,...(b.owner_id===this.userId?{guest_reliability:guests.get(b.guest_id)}:{}),status:b.status==='requested' && b.expires_at<=serverTime?'expired':b.status,terms:enrichedTerms.find(t=>t.booking_id===b.id),cancel_terms:cancelFor(b),changes:changes.filter(c=>c.booking_id===b.id).map(c=>({...c,status:c.status==='pending'&&c.expires_at<=serverTime?'expired':c.status})),readiness:operations.find(o=>o.property_id===b.property_id)?.readiness})), jobs:jobs.map(({open_address,cleaner_pay_row,...j}:Row):Row=>({...j,cleaner_pay:cleaner_pay_row?JSON.parse(cleaner_pay_row):null,street:streetAddress(open_address),settlement_paid:jobPayments.find(p=>p.job_id===j.id)?.paid??(j.settled_at?j.fee:0),checkout_confirmed:!j.booking_id||!!j.checkout_confirmed})), applications, notifications, messages, serverTime, integrations:{ai:false,telegram:false,whatsapp:false,payments:false} };
     return {...state,workspaces:Object.fromEntries(roles.map(role=>[role,operationOverview(state,this.userId,role,serverTime)]))};
   }
   async publicCatalog(options:{syntheticPreview?:boolean}={}) {
@@ -590,7 +594,9 @@ export class RentalService {
     // Only the two slots of the day (banquetSlots), by the Kazakhstan clock: 12:00–17:00 or 18:00–00:00.
     const slotStart=(start+18000)%86400,slot=slotStart===12*3600?5:slotStart===18*3600?6:0;
     if(isBanquet(kind)&&(base.billingMode!=='daily'||!slot||end-start!==slot*3600))throw new DomainError('Банкетный зал бронируют на обед или на вечер одного дня.');
-    return {propertyId:p.id,title:p.title,kind,start,end,guests,...pricing,cleaningMinutes:p.cleaning_minutes,occupiedUntil,currency:'KZT',quotedAt:now(),policy:publicPolicy(policy)};
+    // How this guest pays the owner (lib/prepay.ts): the owner's share, or at the arrival while the place is new.
+    const prepay=await placePrepay(this.db,p.id,policy.prepay_percent),payment={prepayPercent:prepay.percent,prepay:prepaySum(pricing.amount,prepay.percent),label:prepayLabel(prepay.percent),newPlace:prepay.left>0};
+    return {propertyId:p.id,title:p.title,kind,start,end,guests,...pricing,cleaningMinutes:p.cleaning_minutes,occupiedUntil,currency:'KZT',quotedAt:now(),policy:publicPolicy(policy),payment};
   }
   async saveProfile(body: Row) {
     const name=required(body.name,'Имя',100), contact=required(body.contact,'Контакт',120), city=required(body.city,'Город',80);
@@ -637,7 +643,7 @@ export class RentalService {
     const occasion=isBanquet(checked.kind)?(Object.hasOwn(occasions,String(body.occasion))?String(body.occasion):'other'):'',event=occasion?' '+(occasion==='other'?'Банкет':occasionLabel(occasion))+', гостей: '+guests+'.':'';
     await this.db.batch([
       this.query('INSERT INTO bookings(id,property_id,guest_id,start,end,occupied_until,guests,amount,status,expires_at,payment_status,request_key,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)',bookingId,p.id,this.userId,start,end,end+p.cleaning_minutes*60,guests,amount,'requested',now()+answer*60,'unpaid',key,now()),
-      this.query('INSERT INTO booking_terms(booking_id,billing_mode,rate,units,amount,deposit,deposit_status,house_rules,policy_version,original_end,min_hours,occasion) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)',bookingId,checked.billingMode,checked.price,checked.periods,amount,checked.policy.deposit,checked.policy.deposit?'pending':'not_required',checked.policy.house_rules,checked.policy.version,end,Math.max(1,Number(checked.policy.min_hours)||1),occasion),
+      this.query('INSERT INTO booking_terms(booking_id,billing_mode,rate,units,amount,deposit,deposit_status,house_rules,policy_version,original_end,min_hours,occasion,prepay_percent) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)',bookingId,checked.billingMode,checked.price,checked.periods,amount,checked.policy.deposit,checked.policy.deposit?'pending':'not_required',checked.policy.house_rules,checked.policy.version,end,Math.max(1,Number(checked.policy.min_hours)||1),occasion,checked.payment.prepayPercent),
       this.notify(owner!.owner_id,risk.held?`ИИ-администратор не подтвердил заявку на «${checked.title}» сам: ${riskLabel.high.toLowerCase()} (${risk.reasons.slice(0,2).join(', ')}).${unready?' '+unready+'.':''} Решите в течение ${minutesLabel(answer)}.`:autoConfirm&&unready?`ИИ-администратор не подтвердил заявку на «${checked.title}» сам: ${unready[0].toLowerCase()+unready.slice(1)}. Отметьте «Жильё готово», если успеете, или решите сами в течение ${minutesLabel(answer)}.`:autoConfirm?`ИИ-администратор принял бронь на «${checked.title}» по вашим правилам.${event} ${riskLabel[risk.level]}.`:`Новая заявка на «${checked.title}».${event} ${riskLabel[risk.level]}.${unready?' '+unready+'.':''} Подтвердите её в течение ${minutesLabel(answer)}.`,`booking:${bookingId}`,'owner'),this.audit(bookingId,'booking.requested'),
       saveRiskSql(this.db,bookingId,p.id,this.userId,owner!.owner_id,risk),
       ...(!risk.phone&&risk.level!=='low'&&!(autoConfirm&&!risk.held&&!unready)?[this.notify(this.userId,'Подтвердите телефон в профиле: владельцу так спокойнее, и заявку на «'+checked.title+'» подтвердят быстрее.','phone-ask:'+bookingId,'guest')]:[])
@@ -742,7 +748,9 @@ export class RentalService {
     if(body.action==='report_paid'){
       if(b.guest_id!==this.userId)throw new DomainError('Сообщить об оплате может гость.',403);
       if(b.status!=='confirmed')throw new DomainError('Оплата нужна после подтверждения брони.',409);
-      const left=Math.max(0,b.amount-(Number(terms?.paid_amount)||0)),deposit=terms?.deposit_status==='pending'?Number(terms.deposit)||0:0,sum=(n:number)=>n.toLocaleString('ru-RU').replace(/ | /g,' ')+' ₸';
+      // What is due now (lib/prepay.ts): the prepayment before the arrival, the rest and the deposit at it.
+      const due=dueNow({...b,terms},now()),left=due.left,deposit=due.deposit,sum=(n:number)=>n.toLocaleString('ru-RU').replace(/ | /g,' ')+' ₸';
+      if(!left&&!deposit&&due.phase==='prepay'&&b.amount>(Number(terms?.paid_amount)||0))throw new DomainError((prepayOf(terms)?'Предоплата уже учтена, остальное':'По этой брони оплата')+' — при заселении: реквизиты откроются за 15 минут до '+wordsOf(b).arriveGen+'.',409);
       if(!left&&!deposit)return {message:'Владелец уже подтвердил оплату.'};
       if((!left||terms?.payment_reported_at)&&(!deposit||terms?.deposit_reported_at))return {message:'Владелец уже знает о переводе. Он проверит поступление и подтвердит.'};
       const what=left&&deposit?sum(left+deposit)+' ('+wordsOf(b).stay.toLowerCase()+' '+sum(left)+' и депозит '+sum(deposit)+')':left?sum(left):'депозит '+sum(deposit),t=now();
@@ -758,9 +766,12 @@ export class RentalService {
       if(!owner)throw new DomainError('Получение денег подтверждает владелец.',403);
       if(b.status!=='confirmed')throw new DomainError('Сначала подтвердите бронь.');
       const done:string[]=[];
+      // Before the arrival only the prepayment is due (lib/prepay.ts): that much is recorded, the rest at the door.
+      const due=dueNow({...b,terms},now()),upTo=due.phase==='prepay'?due.left:undefined;
       for(const action of ['paid','deposit_received']){
-        if(action==='deposit_received'&&!terms?.deposit)continue;
-        const r=await this.bookingAction(bookingId,{action}) as Row;if(r?.id)done.push(action);
+        if(action==='deposit_received'&&(!terms?.deposit||due.phase==='prepay'))continue;
+        if(action==='paid'&&upTo===0)continue;
+        const r=await this.bookingAction(bookingId,{action,...(upTo!==undefined&&action==='paid'?{upTo}:{})}) as Row;if(r?.id)done.push(action);
       }
       return {message:done.length?'Оплата подтверждена, гость это видит.':'Оплата уже была подтверждена.'};
     }
@@ -843,7 +854,7 @@ export class RentalService {
       // A high booking risk is never confirmed on the owner's behalf: the owner decides.
       const policyGate=this.execution?" AND EXISTS(SELECT 1 FROM property_policies WHERE property_id=bookings.property_id AND version=? AND auto_confirm=1 AND cleaning_fee=? AND cleaning_fee<=cleaning_budget AND (mandate_until=0 OR mandate_until>?)) AND NOT EXISTS(SELECT 1 FROM booking_risks WHERE booking_id=bookings.id AND level='high')":'';
       const auditId=id(),auditAction=this.execution?JSON.stringify({action:'booking.confirmed',onBehalfOf:this.userId,...this.execution}):'booking.confirmed';
-      const statements=[this.query("UPDATE bookings SET status='confirmed' WHERE id=? AND status='requested' AND expires_at>? AND EXISTS(SELECT 1 FROM booking_terms WHERE booking_id=? AND version=?)"+policyGate,bookingId,now(),bookingId,terms?.version,...(this.execution?[this.execution.policyVersion,fee,now()]:[])),this.query('INSERT INTO audit_events SELECT ?,?,?,?,? WHERE changes()>0',auditId,this.execution?'system:rental-policy':this.userId,bookingId,auditAction,now()),this.query("INSERT OR IGNORE INTO notifications SELECT ?,?,?,?,?,? WHERE EXISTS(SELECT 1 FROM audit_events WHERE id=?)",id(),b.guest_id,`Бронь «${b.title}» подтверждена. Адрес доступен в карточке.`+(b.payment_status!=='owner_verified'?' Переведите владельцу '+venueOr(b,'оплату проживания','оплату брони')+(terms?.deposit?' и депозит':'')+' по реквизитам из карточки брони до '+wordsOf(b).arriveGen+' и нажмите «Я оплатил».':''),'guest:confirmed:'+bookingId,0,now(),auditId)];
+      const statements=[this.query("UPDATE bookings SET status='confirmed' WHERE id=? AND status='requested' AND expires_at>? AND EXISTS(SELECT 1 FROM booking_terms WHERE booking_id=? AND version=?)"+policyGate,bookingId,now(),bookingId,terms?.version,...(this.execution?[this.execution.policyVersion,fee,now()]:[])),this.query('INSERT INTO audit_events SELECT ?,?,?,?,? WHERE changes()>0',auditId,this.execution?'system:rental-policy':this.userId,bookingId,auditAction,now()),this.query("INSERT OR IGNORE INTO notifications SELECT ?,?,?,?,?,? WHERE EXISTS(SELECT 1 FROM audit_events WHERE id=?)",id(),b.guest_id,`Бронь «${b.title}» подтверждена. Адрес доступен в карточке.`+(b.payment_status!=='owner_verified'?(prepayOf(terms)>=100?' Переведите владельцу '+venueOr(b,'оплату проживания','оплату брони')+(terms?.deposit?' и депозит':'')+' по реквизитам из карточки брони до '+wordsOf(b).arriveGen+' и нажмите «Я оплатил».':prepayOf(terms)?' Переведите владельцу предоплату '+prepayOf(terms)+'% по реквизитам из карточки брони и нажмите «Я оплатил». Остальное'+(terms?.deposit?' и депозит':'')+' — при заселении.':' Оплата при заселении: реквизиты владельца откроются в карточке брони за 15 минут до '+wordsOf(b).arriveGen+'. Не переводите деньги заранее и по другим реквизитам.'):''),'guest:confirmed:'+bookingId,0,now(),auditId)];
       statements.push(accrueCommission(this.db,bookingId,auditId,now()));
       // «С депозитом»: the owner follows the AI's risk advice and asks for a refundable deposit.
       const depositAsked=body.withDeposit===true&&!this.execution?Number((await this.one('SELECT deposit_advice FROM booking_risks WHERE booking_id=?',bookingId))?.deposit_advice||0):0;
@@ -895,7 +906,9 @@ export class RentalService {
       if(b.status!=='confirmed') throw new DomainError('Сначала подтвердите бронь.');
       if(body.expectedAmount!==undefined&&body.expectedAmount!==b.amount)throw new DomainError('Стоимость брони изменилась. Проверьте сумму заново.',409);
       await migrateFinanceEntity(this,'booking',bookingId);const balance=await this.one("SELECT COALESCE(SUM(CASE WHEN kind='payment' THEN amount WHEN kind='refund' THEN -amount ELSE 0 END),0) n FROM finance_entries WHERE booking_id=?",bookingId),remaining=Math.max(0,b.amount-(balance?.n||0));if(!remaining)return {message:'Полная оплата уже учтена.'};
-      return recordFinance(this,{kind:'payment',bookingId,amount:remaining,confirmed:true,note:'Поступление проживания проверено владельцем',requestKey:'paid:'+bookingId+':'+terms?.version});
+      // «Деньги получены» before the arrival records only the prepayment (lib/prepay.ts).
+      const amount=body.upTo!==undefined?Math.min(remaining,number(body.upTo,'Сумма',1,remaining)):remaining;
+      return recordFinance(this,{kind:'payment',bookingId,amount,confirmed:true,note:'Поступление проживания проверено владельцем',requestKey:'paid:'+bookingId+':'+terms?.version});
     }
     if(body.action==='issue') {
       const issue=required(body.issue,'Описание проблемы',1500);
