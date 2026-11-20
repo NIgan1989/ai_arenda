@@ -9,6 +9,9 @@ export const type={caption,label,body,subtitle,title,heading,display};
 // The file is loaded once, before the first screen (App.tsx). It has one weight, so `fontWeight` stays normal.
 export const brandFont={fontFamily:'Unbounded',fontWeight:'normal',letterSpacing:0} as const;
 export const s=StyleSheet.create({
+  // The consent at sign-up: a box and one line whose document names are links, as other services do.
+  checkBox:{width:24,height:24,borderRadius:R.xs,borderWidth:2,borderColor:C.lineStrong,alignItems:'center',justifyContent:'center'},checkBoxOn:{backgroundColor:C.accent,borderColor:C.accent},
+  checkTick:{...label,color:C.onAccent,fontWeight:'700'},inlineLink:{color:C.accent,textDecorationLine:'underline'},
   groupTitle:{...caption,color:C.muted,fontWeight:'600',letterSpacing:.4,textTransform:'uppercase',marginTop:8,marginBottom:8,marginHorizontal:4},
   pageTitle:{...title,...brandFont,color:C.ink,marginBottom:16},
   recommendation:{padding:16,borderWidth:1,borderColor:C.accentLine,backgroundColor:C.accentSoft,borderRadius:R.lg,gap:4,marginBottom:16},
