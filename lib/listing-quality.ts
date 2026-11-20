@@ -63,9 +63,23 @@ async function leadersFor(db:D1Database,property:Row,mine:ListingStats,t:number)
 
 const expireSql="UPDATE listing_tips SET status='expired',decided_at=? WHERE status='suggested' AND (expires_at<=? OR NOT EXISTS(SELECT 1 FROM properties p WHERE p.id=listing_tips.property_id AND p.published=1 AND p.archived_at IS NULL))";
 
+// D1 can lose its connection during a background sweep. Retrying this exact update is
+// safe: only still-suggested tips are expired, so a committed first attempt cannot
+// produce a second state transition. Do not apply this retry to general writes.
+async function expireOwnerListingTips(db:D1Database,ownerId:string,t:number){
+ for(let attempt=0;attempt<2;attempt++){
+  try{return await q(db,expireSql+' AND owner_id=?',t,t,ownerId).run();}
+  catch(error){
+   if(attempt>0||!/(?:Network connection lost|connection reset)/i.test(String((error as Error)?.message||error)))throw error;
+   await new Promise<void>(resolve=>setTimeout(resolve,100));
+  }
+ }
+}
+
+
 // Runs with the AI administrator's regular check of an owner. Returns the tip id or null.
 export async function offerListingTip(db:D1Database,ownerId:string,t=epoch()):Promise<string|null>{
- await q(db,expireSql+' AND owner_id=?',t,t,ownerId).run();
+ await expireOwnerListingTips(db,ownerId,t);
  // One tip at a time, and a pause of three days after the last one.
  if(await one(db,"SELECT 1 FROM listing_tips WHERE owner_id=? AND (status='suggested' OR created_at>?)",ownerId,t-TIP_PAUSE))return null;
  const flats=await rows(db,'SELECT id,city,rooms FROM properties WHERE owner_id=? AND published=1 AND archived_at IS NULL AND demo_owner IS NULL ORDER BY created_at',ownerId);
@@ -100,7 +114,7 @@ function stillTrue(tip:Row){
 const tipCols='l.*,p.title,p.description,d.details,d.photos,d.version current_details,pp.hourly_price,pp.version current_policy FROM listing_tips l JOIN properties p ON p.id=l.property_id LEFT JOIN property_details d ON d.property_id=l.property_id LEFT JOIN property_policies pp ON pp.property_id=l.property_id';
 
 export async function ownerListingTips(db:D1Database,ownerId:string,t=epoch()){
- await q(db,expireSql+' AND owner_id=?',t,t,ownerId).run();
+ await expireOwnerListingTips(db,ownerId,t);
  const list=await rows(db,"SELECT "+tipCols+" WHERE l.owner_id=? AND l.status='suggested' AND l.expires_at>? ORDER BY l.created_at DESC LIMIT 3",ownerId,t);
  const stale=list.filter(l=>!stillTrue(l));
  for(const l of stale)await q(db,"UPDATE listing_tips SET status='expired',decided_at=? WHERE id=? AND status='suggested'",t,l.id).run();
