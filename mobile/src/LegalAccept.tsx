@@ -20,7 +20,7 @@ const LEAD:Record<string,string>={
 };
 
 // One sheet, one swipe: the documents a role still has to accept (lib/legal-acceptance.ts). Until then the
-// workspace takes no new actions; the person can still read the documents, go back to the roles or leave.
+// workspace takes no new actions; «Не сейчас» hides the sheet so the person can still read, chat, change settings or leave.
 // The server keeps who accepted which edition and when.
 export function LegalAccept({legal,role,onAccepted,onLeave}:{legal:LegalState;role:string;onAccepted:()=>void;onLeave:()=>void}){
  const [busy,setBusy]=useState(false),[error,setError]=useState('');
@@ -46,7 +46,7 @@ export function LegalAccept({legal,role,onAccepted,onLeave}:{legal:LegalState;ro
     <Text style={s.meta}>Редакция от {legal.edition}. Проводя ползунок, вы принимаете эти документы целиком. Сервис сохранит, когда и какую редакцию вы приняли.</Text>
     {!!error&&<Text accessibilityRole="alert" style={s.error}>{error}</Text>}
     <SwipeConfirm label={busy?'Сохраняю…':'Проведите, чтобы принять'} disabled={busy} onConfirm={()=>void accept()}/>
-    <Pressable accessibilityRole="button" onPress={onLeave} disabled={busy} style={{minHeight:44,justifyContent:'center',alignItems:'center'}}><Text style={s.meta}>Не сейчас, к выбору роли</Text></Pressable>
+    <Pressable accessibilityRole="button" onPress={onLeave} disabled={busy} style={{minHeight:44,justifyContent:'center',alignItems:'center'}}><Text style={s.meta}>Не сейчас</Text></Pressable>
    </ScrollView>
   </SafeAreaView>
  </Modal>;

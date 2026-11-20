@@ -31,10 +31,10 @@ import {requestCleanerAdmission} from '../../../lib/pilot-governance';
 import {ensurePublishReview} from '../../../lib/participant-security';
 export const dynamic='force-dynamic';
 // Routes that stay open before the documents are accepted: the person's own settings, leaving and deleting the account,
-// reading and the map. Everything else in a workspace waits for acceptance.
+// reading, the map and switching Autopilot off (declining new terms must not keep a paid plan running). Everything else in a workspace waits for acceptance.
 const legalOpenTop=new Set(['profile','account','sessions','push','notifications','conversation','onboarding','quote']);
 const legalOpenOps=new Set(['safety','ai-data-permission','ai-budget','phone','map','search','delivery']);
-const legalOpen=(route:string[])=>legalOpenTop.has(route[0])||route[0]==='operations'&&(legalOpenOps.has(route[1])||['discussion/read','discussion/typing','discussion/inbox','administrator/conversation','administrator/history'].includes(route.slice(1).join('/')));
+const legalOpen=(route:string[])=>legalOpenTop.has(route[0])||route[0]==='operations'&&(legalOpenOps.has(route[1])||['discussion/read','discussion/typing','discussion/inbox','administrator/conversation','administrator/history','autopilot/stop'].includes(route.slice(1).join('/')));
 const json=(data:unknown,status=200)=>Response.json(data,{status,headers:{'Cache-Control':'no-store','X-Content-Type-Options':'nosniff'}});
 // A saved draft that is ready for guests goes to the administrator's check by itself; a failed request never fails the save.
 async function withPublishReview(service:RentalService,result:{id?:string;message?:string}&Record<string,unknown>,config:object){

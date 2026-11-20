@@ -261,8 +261,10 @@ function Chat(){
   useEffect(()=>{if(ready)entryReady();},[ready]);
   // Every answer or silence of the server updates the one "Нет связи" line.
   useEffect(()=>{onServerReach(setOnline);return()=>onServerReach(null);},[]);
-  // A role with documents to accept: the state brings them, a refused action (428) brings a fresh state.
-  useEffect(()=>{onLegalRequired(()=>void load());return()=>onLegalRequired(null);});
+  // A role with documents to accept: the state brings them, a refused action (428) brings a fresh state and the sheet back.
+  // «Не сейчас» hides the sheet: the person can still read, chat, change settings or delete the account; new actions wait.
+  const [legalLater,setLegalLater]=useState(false);
+  useEffect(()=>{onLegalRequired(()=>{setLegalLater(false);void load();});return()=>onLegalRequired(null);});
   // Android's back button returns to the map from any other page before it leaves the app. An open chat and the map's sheet handle it first.
   useEffect(()=>{
     if(Platform.OS!=='android'||!selectedRole||pageId==='map'||flow)return;
@@ -697,7 +699,7 @@ function Chat(){
       {saveError&&<Text accessibilityRole="alert" style={s.error}>История ещё не сохранена. Проверьте связь; заявки хранятся на сервере.</Text>}
     </ScrollView>
     {flow?<View style={s.composerWrap}>{flow?.questions[flow.index].choices&&<View style={s.buttonRow}>{flow.questions[flow.index].choices!.map(choice=><Button key={choice.value} title={choice.label} secondary disabled={busy} onPress={()=>send(choice.label)}/>)}</View>}{!!flow&&<View style={s.flowProgress}><Text style={s.flowLabel}>Вопрос {flow.index+1} из {flow.questions.length}</Text><View style={s.buttonRow}>{flow.index>0&&<Button title="Назад" secondary disabled={busy} onPress={()=>{const previous={...flow,index:flow.index-1};setFlow(previous);say(previous.questions[previous.index].text);}}/>}<Button title="Стоп" secondary disabled={busy} onPress={()=>send('Стоп')}/></View></View>}<View style={s.composer}><TextInput ref={composer} accessibilityLabel="Ваш ответ" placeholder="Ваш ответ…" placeholderTextColor={C.muted} value={input} onChangeText={setInput} style={s.input} maxLength={2500} multiline submitBehavior="submit" onSubmitEditing={()=>send()} editable={ready&&!busy}/><Pressable accessibilityRole="button" accessibilityLabel="Отправить сообщение" accessibilityState={{disabled:!ready||busy||!input.trim()}} disabled={!ready||busy||!input.trim()} onPress={()=>send()} style={[s.send,(!input.trim()||busy)&&s.disabled]}><Text style={s.sendText}>{busy?'Ждите':'Отправить'}</Text></Pressable></View><Text style={s.footnote}>Данные формы отправятся после проверки и подтверждения.</Text></View>:null}</>}</View></PageTransition></View>}</View>
-  </KeyboardAvoidingView>{legalDue&&<LegalAccept legal={legalDue} role={selectedRole} onAccepted={()=>void load()} onLeave={switchRole}/>}</SafeAreaView></ActivityClockProvider>;
+  </KeyboardAvoidingView>{legalDue&&!legalLater&&<LegalAccept legal={legalDue} role={selectedRole} onAccepted={()=>void load()} onLeave={()=>setLegalLater(true)}/>}</SafeAreaView></ActivityClockProvider>;
 }
 // What the performer confirms in the report: a home cleaning has its own list by its kind, the rest keep the usual four.
 const REPORT_ITEMS=['Постельное бельё заменено','Санузел и кухня убраны','Мусор вынесен','Жильё проверено перед заездом'];
