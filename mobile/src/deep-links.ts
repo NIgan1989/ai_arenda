@@ -1,3 +1,4 @@
+import {t} from '../../lib/i18n';
 import type {Role,Row} from './model';
 
 export type ProcessLink={role:Role;section:string;entityId?:string};
@@ -37,7 +38,7 @@ export function parseProcessLink(value:unknown,apiUrl:string):ProcessLink|null{
 }
 
 function connectedRoles(profile:Row){try{const value=typeof profile.roles==='string'?JSON.parse(profile.roles):profile.roles;return Array.isArray(value)?value:[];}catch{return [];}}
-const denied=()=>new Error('Этот процесс недоступен в выбранной роли. Откройте актуальный список после входа.');
+const denied=()=>new Error(t('Этот процесс недоступен в выбранной роли. Откройте актуальный список после входа.'));
 
 // Call only with fresh /api/state fetched for link.role. URL data is not authority.
 export function resolveProcessLink(link:ProcessLink,state:Row,accountId:string):ProcessLinkView{

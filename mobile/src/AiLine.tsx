@@ -1,3 +1,4 @@
+import {t} from '../../lib/i18n';
 import React, { useState } from 'react';
 import {Thinking} from './Thinking';
 import { Image, Linking, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
@@ -49,30 +50,14 @@ export function AiLine({ value, onChangeText, onSend, placeholder, shortPlacehol
   // The microphone stands where «Отправить» is while the line is empty; with text in the line the arrow is back.
   const speak = voice.available && !busy && (voice.listening || !text);
   return (
-    <View style={a.box}>
-    <View style={[a.line, (focused || voice.listening) && a.lineFocused]}>
-      <Image source={sparkle} style={a.mark} accessibilityIgnoresInvertColors />
-      <View style={a.field} onLayout={e => setRoom(e.nativeEvent.layout.width)}>
-        {/* The example is drawn as text, not as a native placeholder, so that its size can follow the room it has. */}
-        {!value && (
+    <View style={a.box}><View style={[a.line, (focused || voice.listening) && a.lineFocused]}><Image source={sparkle} style={a.mark} accessibilityIgnoresInvertColors /><View style={a.field} onLayout={e => setRoom(e.nativeEvent.layout.width)}>{/* The example is drawn as text, not as a native placeholder, so that its size can follow the room it has. */}{!value && (
           // The box takes no touches: a tap anywhere on the line must reach the input under it.
-          <View style={a.exampleBox}>
-            <Text numberOfLines={1} style={[a.example, example.compact && a.exampleCompact]} importantForAccessibility="no" accessibilityElementsHidden>
-              {voice.listening ? 'Слушаю…' : example.text}
-            </Text>
-            <Text numberOfLines={1} style={a.measure} onLayout={e => setNatural(e.nativeEvent.layout.width)} importantForAccessibility="no" accessibilityElementsHidden>
-              {placeholder}
-            </Text>
-            {!!shortPlaceholder && (
-              <Text numberOfLines={1} style={a.measure} onLayout={e => setShortWidth(e.nativeEvent.layout.width)} importantForAccessibility="no" accessibilityElementsHidden>
-                {shortPlaceholder}
-              </Text>
-            )}
-          </View>
-        )}
-        <TextInput
+          <View style={a.exampleBox}><Text numberOfLines={1} style={[a.example, example.compact && a.exampleCompact]} importantForAccessibility="no" accessibilityElementsHidden>{voice.listening ? t('Слушаю…') : example.text}</Text><Text numberOfLines={1} style={a.measure} onLayout={e => setNatural(e.nativeEvent.layout.width)} importantForAccessibility="no" accessibilityElementsHidden>{placeholder}</Text>{!!shortPlaceholder && (
+              <Text numberOfLines={1} style={a.measure} onLayout={e => setShortWidth(e.nativeEvent.layout.width)} importantForAccessibility="no" accessibilityElementsHidden>{shortPlaceholder}</Text>
+            )}</View>
+        )}<TextInput
           accessibilityLabel={label}
-          accessibilityHint={'Например: ' + placeholder}
+          accessibilityHint={t('Например: {placeholder}',{placeholder})}
           style={a.input}
           value={value}
           onChangeText={next => { voice.clearNote(); onChangeText(next); }}
@@ -83,57 +68,33 @@ export function AiLine({ value, onChangeText, onSend, placeholder, shortPlacehol
           onFocus={() => setFocused(true)}
           onBlur={() => setFocused(false)}
           editable={!busy && !voice.listening}
-        />
-      </View>
-      {speak ? (
-        <View style={a.voice}>
-          {/* The pulse follows the voice, so the guest sees the phone hears them. */}
-          {voice.listening && <View style={[a.pulse, { transform: [{ scale: 1 + voice.level * 0.5 }] }]} />}
-          <Pressable
+        /></View>{speak ? (
+        <View style={a.voice}>{/* The pulse follows the voice, so the guest sees the phone hears them. */}{voice.listening && <View style={[a.pulse, { transform: [{ scale: 1 + voice.level * 0.5 }] }]} />}<Pressable
             accessibilityRole="button"
-            accessibilityLabel={voice.listening ? 'Остановить запись' : 'Голосовой ввод'}
-            accessibilityHint={voice.listening ? undefined : 'Скажите, что ищете'}
+            accessibilityLabel={voice.listening ? t('Остановить запись') : t('Голосовой ввод')}
+            accessibilityHint={voice.listening ? undefined : t('Скажите, что ищете')}
             onPress={voice.listening ? voice.stop : () => void voice.start()}
             style={({ pressed }) => [a.send, a.mic, voice.listening && a.micOn, pressed && a.micPressed]}
-          >
-            <Image source={voice.listening ? stopIcon : mic} style={[a.arrow, { tintColor: voice.listening ? C.onAccent : C.accent }]} accessibilityIgnoresInvertColors />
-          </Pressable>
-        </View>
+          ><Image source={voice.listening ? stopIcon : mic} style={[a.arrow, { tintColor: voice.listening ? C.onAccent : C.accent }]} accessibilityIgnoresInvertColors /></Pressable></View>
       ) : (
       /* The round send button: dimmed until there is something to send. */
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel="Отправить"
+        accessibilityLabel={t('Отправить')}
         accessibilityState={{ disabled: busy || !text }}
         disabled={busy || !text}
         onPress={send}
         style={({ pressed }) => [a.send, !text && !busy && a.sendIdle, pressed && a.sendPressed]}
-      >
-        {busy ? <Thinking size="sm" color={C.onAccent} /> : <Image source={arrow} style={a.arrow} accessibilityIgnoresInvertColors />}
-      </Pressable>
-      )}
-    </View>
-    {voice.listening && (
-      <View style={a.langs} accessibilityRole="radiogroup" accessibilityLabel="Язык речи">
-        <Text style={a.say}>Говорите. Найду, когда закончите.</Text>
-        {VOICE_LANGS.map(([id, title]) => (
-          <Pressable key={id} accessibilityRole="radio" accessibilityLabel={title} accessibilityState={{ checked: voice.lang === id }} onPress={() => voice.setLang(id)} hitSlop={8} style={[a.lang, voice.lang === id && a.langOn]}>
-            <Text style={[a.langText, voice.lang === id && a.langTextOn]}>{title}</Text>
-          </Pressable>
-        ))}
-      </View>
-    )}
-    {!voice.listening && !!voice.note && (
-      <View style={a.note}>
-        <Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={a.noteText}>{voice.note.text}</Text>
-        {voice.note.settings && Platform.OS !== 'web' && (
-          <Pressable accessibilityRole="button" onPress={() => void Linking.openSettings()} hitSlop={8} style={({ pressed }) => pressed && a.micPressed}>
-            <Text style={a.noteLink}>Открыть настройки</Text>
-          </Pressable>
-        )}
-      </View>
-    )}
-    </View>
+      >{busy ? <Thinking size="sm" color={C.onAccent} /> : <Image source={arrow} style={a.arrow} accessibilityIgnoresInvertColors />}</Pressable>
+      )}</View>{voice.listening && (
+      <View style={a.langs} accessibilityRole="radiogroup" accessibilityLabel={t('Язык речи')}><Text style={a.say}>{t('Говорите. Найду, когда закончите.')}</Text>{VOICE_LANGS.map(([id, title]) => (
+          <Pressable key={id} accessibilityRole="radio" accessibilityLabel={title} accessibilityState={{ checked: voice.lang === id }} onPress={() => voice.setLang(id)} hitSlop={8} style={[a.lang, voice.lang === id && a.langOn]}><Text style={[a.langText, voice.lang === id && a.langTextOn]}>{title}</Text></Pressable>
+        ))}</View>
+    )}{!voice.listening && !!voice.note && (
+      <View style={a.note}><Text accessibilityRole="alert" accessibilityLiveRegion="polite" style={a.noteText}>{voice.note.text}</Text>{voice.note.settings && Platform.OS !== 'web' && (
+          <Pressable accessibilityRole="button" onPress={() => void Linking.openSettings()} hitSlop={8} style={({ pressed }) => pressed && a.micPressed}><Text style={a.noteLink}>{t('Открыть настройки')}</Text></Pressable>
+        )}</View>
+    )}</View>
   );
 }
 

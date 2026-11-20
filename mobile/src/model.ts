@@ -1,4 +1,4 @@
-import {L,LOCALE,lang} from '../../lib/i18n';
+import {dateText,L,lang,t as tr} from '../../lib/i18n';
 export type Row=Record<string,any>;
 export type Role='guest'|'owner'|'cleaner';
 export type Message={id:string;sender:'user'|'assistant';text:string;block?:string;payload?:Row;done?:boolean;result?:string};
@@ -7,7 +7,7 @@ export type Flow={kind:string;questions:Question[];index:number;answers:Row;afte
 export const empty={user:null,profile:null,properties:[],ownProperties:[],bookings:[],jobs:[],applications:[],notifications:[]};
 export const money=(n:number)=>new Intl.NumberFormat('ru-RU').format(n)+' ₸';
 // The date in the language of the app (25 нояб., 25 қар., 25 Nov), always in Kazakhstan time.
-export const date=(n:number)=>new Date(n*1000).toLocaleString(LOCALE[lang()],{timeZone:'Asia/Almaty',day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'});
+export const date=(n:number)=>dateText(new Date(n*1000),{timeZone:'Asia/Almaty',day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'});
 export const labels:Row=L({requested:'Ожидает владельца',confirmed:'Подтверждено',cancelled:'Отменено',expired:'Срок заявки истёк',open:'Открыта',assigned:'Исполнитель назначен',in_progress:'В работе',submitted:'На проверке',completed:'Завершено',pending:'Отклик отправлен',accepted:'Вы назначены',rejected:'Выбран другой исполнитель'});
 let sequence=0;
 export const uid=()=>Date.now().toString(36)+'-'+(++sequence)+'-'+Math.random().toString(36).slice(2,10);
@@ -27,9 +27,9 @@ export const propertyQuestions:Question[]=[
 export function parseDate(value:string){
   // All housing schedules use the business timezone UTC+05:00, regardless of device timezone.
   const match=value.trim().match(/^(\d{2})\.(\d{2})\.(\d{4})\s+(\d{2}):(\d{2})$/);
-  if(!match)throw new Error('Напишите дату в формате ДД.ММ.ГГГГ ЧЧ:ММ, например 25.10.2026 14:00. Время Казахстана (UTC+5).');
+  if(!match)throw new Error(tr('Напишите дату в формате ДД.ММ.ГГГГ ЧЧ:ММ, например 25.10.2026 14:00. Время Казахстана (UTC+5).'));
   const [,d,m,y,h,min]=match;const stamp=Date.parse(`${y}-${m}-${d}T${h}:${min}:00+05:00`);
   const shifted=new Date(stamp+5*3600000);
-  if(!Number.isFinite(stamp)||shifted.getUTCDate()!==+d||shifted.getUTCMonth()+1!==+m||shifted.getUTCFullYear()!==+y||shifted.getUTCHours()!==+h||shifted.getUTCMinutes()!==+min)throw new Error('Такой даты или времени нет. Проверьте ввод.');
+  if(!Number.isFinite(stamp)||shifted.getUTCDate()!==+d||shifted.getUTCMonth()+1!==+m||shifted.getUTCFullYear()!==+y||shifted.getUTCHours()!==+h||shifted.getUTCMinutes()!==+min)throw new Error(tr('Такой даты или времени нет. Проверьте ввод.'));
   return new Date(stamp).toISOString();
 }

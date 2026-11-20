@@ -1,3 +1,4 @@
+import {t as tr} from '../../lib/i18n';
 import React, { useEffect, useRef } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { C, type } from './styles';
@@ -19,7 +20,7 @@ export function ArrivalStrip({ arrival, at, counts, asked, onPick, busy }: { arr
   }, [index]);
   return (
     <View style={a.wrap}>
-      <Text style={a.title}>Заезд</Text>
+      <Text style={a.title}>{tr('Заезд')}</Text>
       <ScrollView
         ref={strip}
         horizontal
@@ -39,7 +40,7 @@ export function ArrivalStrip({ arrival, at, counts, asked, onPick, busy }: { arr
               key={t}
               accessibilityRole="button"
               accessibilityState={{ selected: on }}
-              accessibilityLabel={'Заезд в ' + clock(t) + ', можно занять: ' + n}
+              accessibilityLabel={tr('Заезд в {v}, можно занять: {n}',{v:clock(t),n})}
               disabled={busy && !on}
               onPress={() => !on && onPick(t)}
               style={({ pressed }) => [a.chip, on && a.chipOn, !n && !on && a.chipNone, pressed && a.pressed]}
@@ -56,8 +57,9 @@ export function ArrivalStrip({ arrival, at, counts, asked, onPick, busy }: { arr
 }
 const a = StyleSheet.create({
   wrap: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 4, marginBottom: 8 },
-  title: { ...type.caption, color: C.muted, fontWeight: '600' },
-  strip: { flexGrow: 1 },
+  // The word keeps its line in every language («Check-in» is longer than «Заезд»): the strip takes what is left.
+  title: { ...type.caption, color: C.muted, fontWeight: '600', flexShrink: 0 },
+  strip: { flex: 1 },
   row: { gap: GAP, paddingRight: 8 },
   chip: { width: CHIP, minHeight: T.control.touch, borderRadius: T.radius.md, borderWidth: 1, borderColor: C.line, backgroundColor: C.surface, alignItems: 'center', justifyContent: 'center', paddingVertical: 4 },
   chipOn: { backgroundColor: C.accent, borderColor: C.accent },

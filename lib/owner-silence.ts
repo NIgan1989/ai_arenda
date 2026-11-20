@@ -1,4 +1,4 @@
-import {wordsOf,venueOr,TYPE_SQL} from './stay-words';
+import {stayWords,wordsOf,venueOr,TYPE_SQL} from './stay-words';
 import {epoch,uuid,q,rows,type OperationConfig} from './operation-core';
 import {RentalService} from './service';
 import {DomainError} from './domain';
@@ -28,7 +28,7 @@ async function arrivals(db:D1Database,at:number,result:Row,admin:string[]){
   try{
    await new RentalService(db,b.owner_id).bookingAction(b.id,{action:'checkin'});
    await db.batch([notice(db,b.owner_id,venueOr(b,'ИИ-администратор подтвердил заселение гостя в «'+title+'»: гость оплатил и сообщил, что он на месте.','ИИ-администратор отметил: '+wordsOf(b).guestIn.toLowerCase()+' в «'+title+'». Гость оплатил и сообщил, что он на месте.'),'owner:silence-checkin-done:'+b.id,at),
-    notice(db,b.guest_id,venueOr(b,'ИИ-администратор подтвердил ваше заселение в «'+title+'». Хорошего отдыха!','ИИ-администратор подтвердил: '+wordsOf(b).youIn.toLowerCase()+' в «'+title+'».'+(wordsOf(b).stay==='Отдых'?' Хорошего отдыха!':'')),'guest:silence-checkin-done:'+b.id,at)]);
+    notice(db,b.guest_id,venueOr(b,'ИИ-администратор подтвердил ваше заселение в «'+title+'». Хорошего отдыха!','ИИ-администратор подтвердил: '+wordsOf(b).youIn.toLowerCase()+' в «'+title+'».'+(wordsOf(b)===stayWords('banya')?' Хорошего отдыха!':'')),'guest:silence-checkin-done:'+b.id,at)]);
    result.checkedIn++;continue;
   }catch(error){if(!(error instanceof DomainError))throw error;}
   await db.batch([notice(db,b.owner_id,venueOr(b,'ИИ-администратор: гость оплатил и ждёт у «'+title+'», а жильё не отмечено готовым. Нажмите «Жильё готово» в карточке жилья, и заселение подтвердится само.','ИИ-администратор: гость оплатил и ждёт у «'+title+'», а готовность не отмечена. Нажмите «'+wordsOf(b).ready+'» в карточке брони, и всё подтвердится само.'),'owner:silence-checkin-ask:'+b.id,at),

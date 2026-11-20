@@ -1,3 +1,4 @@
+import {t} from '../../lib/i18n';
 import React from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { C, type } from './styles';
@@ -14,43 +15,27 @@ type Props = {
 export function GuestHelpers({ helpers, onPress, busy = false }: Props) {
   if (!helpers.length) return null;
   return (
-    <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="handled" style={s.scroll} contentContainerStyle={s.row} accessibilityLabel="Подсказки: сузить выбор">
-      <Text style={s.spark} accessibilityElementsHidden importantForAccessibility="no">✦</Text>
-      {helpers.map(helper => (
+    <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="handled" style={s.scroll} contentContainerStyle={s.row} accessibilityLabel={t('Подсказки: сузить выбор')}><Text style={s.spark} accessibilityElementsHidden importantForAccessibility="no">✦</Text>{helpers.map(helper => (
         <Pressable
           key={helper.id}
           accessibilityRole="button"
-          accessibilityLabel={helper.off ? helper.title + ': уже пробовали' : helper.title + ': останется ' + helper.count}
+          accessibilityLabel={helper.off ? t('{title}: уже пробовали',{title:helper.title}) : t('{title}: останется {count}',{title:helper.title,count:helper.count})}
           accessibilityState={{ disabled: busy || !!helper.off }}
           disabled={busy || !!helper.off}
           onPress={() => onPress(helper)}
           hitSlop={{ top: 6, bottom: 6 }}
           style={({ pressed }) => [s.chip, helper.hot && s.hot, helper.off && s.off, pressed && s.pressed]}
-        >
-          <Text numberOfLines={1} style={[s.text, helper.hot && s.textHot, helper.off && s.textOff]}>{helper.title}</Text>
-          {!helper.off && (
-            <View style={[s.count, helper.hot && s.countHot]}>
-              <Text style={[s.countText, helper.hot && s.textHot]}>{helper.count}</Text>
-            </View>
-          )}
-        </Pressable>
-      ))}
-    </ScrollView>
+        ><Text numberOfLines={1} style={[s.text, helper.hot && s.textHot, helper.off && s.textOff]}>{helper.title}</Text>{!helper.off && (
+            <View style={[s.count, helper.hot && s.countHot]}><Text style={[s.countText, helper.hot && s.textHot]}>{helper.count}</Text></View>
+          )}</Pressable>
+      ))}</ScrollView>
   );
 }
 
 // The steps taken, and the one tap that takes the last of them back.
 export function HelperTrail({ words, count, onBack, busy = false }: { words: string; count: string; onBack: () => void; busy?: boolean }) {
   return (
-    <View style={s.trail}>
-      <Text numberOfLines={1} style={s.trailText}>
-        <Text style={s.trailWords}>{words}</Text>
-        {count ? ' · ' + count : ''}
-      </Text>
-      <Pressable accessibilityRole="button" accessibilityLabel="Вернуть как было" accessibilityState={{ disabled: busy }} disabled={busy} onPress={onBack} hitSlop={{ top: 8, bottom: 8, left: 8 }} style={({ pressed }) => [s.undo, pressed && s.pressed]}>
-        <Text style={s.undoText}>↩ Вернуть</Text>
-      </Pressable>
-    </View>
+    <View style={s.trail}><Text numberOfLines={1} style={s.trailText}><Text style={s.trailWords}>{words}</Text>{count ? ' · ' + count : ''}</Text><Pressable accessibilityRole="button" accessibilityLabel={t('Вернуть как было')} accessibilityState={{ disabled: busy }} disabled={busy} onPress={onBack} hitSlop={{ top: 8, bottom: 8, left: 8 }} style={({ pressed }) => [s.undo, pressed && s.pressed]}><Text style={s.undoText}>{t('↩ Вернуть')}</Text></Pressable></View>
   );
 }
 

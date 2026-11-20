@@ -1,3 +1,4 @@
+import {L,t as tr} from './i18n';
 import { checkinOpen, checkinOpensLabel } from './checkin-window';
 import { wordsOf } from './stay-words';
 import { recordSpan } from './record-span';
@@ -17,29 +18,29 @@ export type GuestTrip = {
   open: boolean;
 };
 
-const PAST: Record<string, string> = {
+const PAST: Record<string, string> = L({
   completed: 'Проживание завершено', cancelled: 'Бронь отменена', rejected: 'Заявка отклонена', expired: 'Срок заявки истёк',
-};
+});
 
 // What the booking waits for, in the guest's own words: the next thing the guest (or the owner) has to do.
 function state(b: Row, now: number): Pick<GuestTrip, 'status' | 'tone'> {
   const w = wordsOf(b);
   if (b.status === 'requested') {
-    return b.expires_at && b.expires_at <= now ? { status: PAST.expired, tone: 'neutral' } : { status: 'Ждём ответа владельца', tone: 'warning' };
+    return b.expires_at && b.expires_at <= now ? { status: PAST.expired, tone: 'neutral' } : { status: tr('Ждём ответа владельца'), tone: 'warning' };
   }
   if (b.status !== 'confirmed') {
     return b.status === 'completed' && !b.review_rating
       ? { status: w.rate, tone: 'active' }
-      : { status: b.status === 'completed' ? w.done : PAST[b.status] || 'Бронь закрыта', tone: 'neutral' };
+      : { status: b.status === 'completed' ? w.done : PAST[b.status] || tr('Бронь закрыта'), tone: 'neutral' };
   }
   if (b.terms?.actual_checkout) return { status: w.done, tone: 'neutral' };
   if (b.end <= now) {
-    return b.terms?.checkout_reported_at ? { status: w.leave + ' на проверке', tone: 'neutral' } : { status: 'Сообщите ' + w.ofLeave, tone: 'warning' };
+    return b.terms?.checkout_reported_at ? { status: tr('{leave} на проверке',{leave:w.leave}), tone: 'neutral' } : { status: tr('Сообщите {ofLeave}',{ofLeave:w.ofLeave}), tone: 'warning' };
   }
   if (b.terms?.actual_checkin) return { status: w.youAre, tone: 'success' };
-  if (b.payment_status !== 'owner_verified') return { status: 'Ждёт оплаты', tone: 'warning' };
-  if (b.terms?.deposit > 0 && b.terms?.deposit_status === 'pending') return { status: 'Ждёт депозита', tone: 'warning' };
-  return b.start <= now ? { status: 'Время ' + w.arriveGen + ' наступило', tone: 'success' } : { status: 'Оплачено', tone: 'success' };
+  if (b.payment_status !== 'owner_verified') return { status: tr('Ждёт оплаты'), tone: 'warning' };
+  if (b.terms?.deposit > 0 && b.terms?.deposit_status === 'pending') return { status: tr('Ждёт депозита'), tone: 'warning' };
+  return b.start <= now ? { status: tr('Время {arriveGen} наступило',{arriveGen:w.arriveGen}), tone: 'success' } : { status: tr('Оплачено'), tone: 'success' };
 }
 
 // The guest's bookings for the sheet of the map. What is going on or still ahead comes first, the nearest on top;
@@ -59,7 +60,7 @@ export function guestTrips(data: Row | null | undefined, now: number, past = 5):
 // «Мои брони · 2»: the number counts only what is still ahead or going on.
 export function guestTripsLabel(trips: GuestTrip[]) {
   const open = trips.filter(trip => trip.open).length;
-  return open ? 'Мои брони · ' + open : 'Мои брони';
+  return open ? tr('Мои брони · {open}',{open}) : tr('Мои брони');
 }
 
 export type GuestStepId = 'pay' | 'deposit' | 'late' | 'checkin' | 'checkout' | 'review';
@@ -112,8 +113,8 @@ export function guestPin(b: Row, now: number, paymentMode?: string): { label: st
   if (b.status !== 'confirmed') return null;
   const clock = (at: number) => { const d = new Date((at + 5 * 3600) * 1000); return String(d.getUTCHours()).padStart(2, '0') + ':' + String(d.getUTCMinutes()).padStart(2, '0'); };
   const step = guestStep(b, now, paymentMode);
-  if (step?.id === 'pay') return { label: 'Оплатить', tone: 'pending' };
+  if (step?.id === 'pay') return { label: tr('Оплатить'), tone: 'pending' };
   if (step?.id === 'checkin') return { label: wordsOf(b).canIn, tone: 'booked' };
-  if (b.terms?.actual_checkin || b.terms?.checkin_reported_at) return { label: 'Вы здесь до ' + clock(b.end), tone: 'booking' };
+  if (b.terms?.actual_checkin || b.terms?.checkin_reported_at) return { label: tr('Вы здесь до {v}',{v:clock(b.end)}), tone: 'booking' };
   return { label: wordsOf(b).arrive + ' ' + clock(b.start), tone: 'booking' };
 }

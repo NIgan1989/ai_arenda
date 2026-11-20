@@ -1,3 +1,4 @@
+import {forms,t as tr} from './i18n';
 // A stay or a cleaning chosen the way a person says it: a day, a time and "how many" — instead of two raw
 // date-and-time fields. Kazakhstan keeps one time all year (UTC+5), so the shift is fixed.
 type Row=Record<string,any>;
@@ -38,4 +39,4 @@ export function stayFromInterval(mode:StayMode,start:number,end:number,policy:Ro
  const day=stayDay(start),limits=stayLimits(mode,policy),raw=mode==='hourly'?Math.ceil((end-start)/3600):mode==='nightly'?Math.round((stayDay(end)-day)/DAY):Math.ceil((end-start)/DAY);
  return {mode,day,time:Math.round((start-day)/1800)*30%1440,count:Math.min(limits.max,Math.max(limits.min,raw||limits.min))};
 }
-export const stayUnit=(mode:StayMode,n:number)=>{const tens=n%100,units=n%10,few=units>=2&&units<=4&&!(tens>=12&&tens<=14),one=units===1&&tens!==11;return mode==='hourly'?(one?'час':few?'часа':'часов'):mode==='nightly'?(one?'ночь':few?'ночи':'ночей'):'сут'+(one?'ки':'ок');};
+export const stayUnit=(mode:StayMode,n:number)=>mode==='hourly'?forms(n,'час','часа','часов'):mode==='nightly'?forms(n,'ночь','ночи','ночей'):forms(n,'сутки','суток','суток');

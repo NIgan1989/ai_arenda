@@ -1,3 +1,4 @@
+import {L,forms,t as tr} from './i18n';
 // «Нити» автопилота: каждая бронь, уборка и задание — нить шагов от начала до конца и шаг, на котором дело сейчас.
 // Блок «Автопилот» в шторке карты показывает их при входе, чтобы было видно, как дела идут без человека.
 // Чистая логика (только lib/ai-move-marks.ts, lib/cancellation.ts и lib/stay-handover-text.ts): её берут и сайт (components/autopilot-threads.tsx), и приложение (mobile/src/AutopilotThreads.tsx).
@@ -6,7 +7,7 @@
 import { aiNoteOf, aiSays, aiSaysAll } from './ai-move-marks';
 import {handoverState} from './stay-handover-text';
 import { refundLeft } from './cancellation';
-import { wordsOf } from './stay-words';
+import { isHome, wordsOf } from './stay-words';
 
 type Row = Record<string, any>;
 const tenge = (n: number) => Number(n).toLocaleString('ru-RU').replace(/\u00a0|\u202f/g, ' ') + ' ₸';
@@ -35,7 +36,7 @@ export type ProcessThread = {
   at: number;
 };
 
-export const THREAD_BY: Record<ThreadBy, string> = { ai: '✦ ИИ', guest: 'Гость', owner: 'Владелец', cleaner: 'Исполнитель', you: 'Вы' };
+export const THREAD_BY: Record<ThreadBy, string> = L({ ai: '✦ ИИ', guest: 'Гость', owner: 'Владелец', cleaner: 'Исполнитель', you: 'Вы' });
 
 const ZONE = 5 * 3600, DAY = 86400;
 const two = (n: number) => String(n).padStart(2, '0');
@@ -46,12 +47,12 @@ const MONTHS = ['января', 'февраля', 'марта', 'апреля', 
 export function threadWhen(at: number, now: number) {
   const ago = dayOf(now) - dayOf(at), clock = threadClock(at);
   if (ago === 0) return clock;
-  if (ago === -1) return 'завтра ' + clock;
-  if (ago === 1) return 'вчера ' + clock;
+  if (ago === -1) return tr('завтра {clock}',{clock});
+  if (ago === 1) return tr('вчера {clock}',{clock});
   const d = new Date((at + ZONE) * 1000);
-  return d.getUTCDate() + ' ' + MONTHS[d.getUTCMonth()] + ' ' + clock;
+  return d.getUTCDate() + ' ' + tr(MONTHS[d.getUTCMonth()]) + ' ' + clock;
 }
-const left = (seconds: number) => { const m = Math.max(1, Math.round(seconds / 60)); return m >= 60 ? Math.floor(m / 60) + ' ч' + (m % 60 ? ' ' + (m % 60) + ' мин' : '') : m + ' мин'; };
+const left = (seconds: number) => { const m = Math.max(1, Math.round(seconds / 60)); return m >= 60 ? (m % 60 ? tr('{h} ч {m} мин',{h:Math.floor(m / 60),m:m % 60}) : tr('{h} ч',{h:Math.floor(m / 60)})) : tr('{m} мин',{m}); };
 const part = (from: number, to: number, now: number) => to > from ? Math.max(0, Math.min(1, (now - from) / (to - from))) : 0;
 
 // Что сделал ИИ: уведомления, которые ИИ оставляет (data.notifications состояния роли, ключи из lib/ai-move-marks.ts),
@@ -95,8 +96,8 @@ function statusOf(t: { steps: ThreadStep[]; current: number; finished: boolean }
 function lineOf(t: { steps: ThreadStep[]; current: number; finished: boolean }, now: number, finishedLine: string) {
   if (t.finished) return finishedLine;
   const s = t.steps[t.current], after = t.steps[t.current + 1];
-  let text = s.note || (s.state === 'next' && s.at ? s.label + ' в ' + threadWhen(s.at, now) : s.label);
-  if (after) text += ' → ' + after.label + (after.by === 'ai' ? ' (ИИ)' : '') + (after.at && after.at > now ? ' ' + threadWhen(after.at, now) : '');
+  let text = s.note || (s.state === 'next' && s.at ? tr('{label} в {when}',{label:s.label,when:threadWhen(s.at, now)}) : s.label);
+  if (after) text += ' → ' + after.label + (after.by === 'ai' ? tr(' (ИИ)') : '') + (after.at && after.at > now ? ' ' + threadWhen(after.at, now) : '');
   return text;
 }
 
@@ -110,35 +111,37 @@ export function bookingThread(b: Row, data: Row, now: number): ProcessThread {
   // The guest pays the owner directly and says «Я оплатил»; the step turns to the owner once there is something to check.
   const told = !!terms.payment_reported_at || !!terms.deposit_reported_at;
   const steps: Omit<ThreadStep, 'state'>[] = [
-    { key: 'request', label: 'Заявка', by: confirmed ? (did('ИИ подтвердил бронь') ? 'ai' : 'owner') : auto ? 'ai' : 'you', at: b.created_at,
-      note: confirmed ? (did('ИИ подтвердил бронь') ? 'ИИ подтвердил бронь' : 'Бронь подтверждена') : auto ? 'ИИ проверяет заявку' : 'Заявка ждёт вашего ответа' },
-    { key: 'pay', label: 'Оплата', by: paid || !told ? 'guest' : 'you', note: paid ? 'Оплата подтверждена' : told ? 'Гость сообщил о переводе · проверьте банк и подтвердите' : 'Ждём перевод от гостя на ваши реквизиты' },
+    { key: 'request', label: tr('Заявка'), by: confirmed ? (did('ИИ подтвердил бронь') ? 'ai' : 'owner') : auto ? 'ai' : 'you', at: b.created_at,
+      note: confirmed ? (did('ИИ подтвердил бронь') ? tr('ИИ подтвердил бронь') : tr('Бронь подтверждена')) : auto ? tr('ИИ проверяет заявку') : tr('Заявка ждёт вашего ответа') },
+    { key: 'pay', label: tr('Оплата'), by: paid || !told ? 'guest' : 'you', note: paid ? tr('Оплата подтверждена') : told ? tr('Гость сообщил о переводе · проверьте банк и подтвердите') : tr('Ждём перевод от гостя на ваши реквизиты') },
     { key: 'checkin', label: w.arrive, by: did('ИИ заселил гостя') ? 'ai' : 'guest', at: b.start,
-      note: inside ? (did('ИИ заселил гостя') ? w.aiIn : w.guestIn) : w.arrive + ' в ' + threadWhen(b.start, now) },
+      note: inside ? (did('ИИ заселил гостя') ? w.aiIn : w.guestIn) : tr('{label} в {when}',{label:w.arrive,when:threadWhen(b.start, now)}) },
     { key: 'stay', label: w.stay, by: 'guest', at: b.start, progress: inside && !out ? part(b.start, b.end, now) : undefined,
       note: w.guestInside },
     { key: 'checkout', label: w.leave, by: did('ИИ подтвердил выезд') ? 'ai' : 'guest', at: b.end,
-      note: out ? (did('ИИ подтвердил выезд') ? w.aiOut : w.leaveOk) : terms.checkout_reported_at ? 'Гость сообщил ' + w.ofLeave + ' · подтвердите' : now >= b.end ? 'Время ' + w.leaveGen + ' прошло · подтвердите ' + w.leaveLow : w.leave + ' в ' + threadWhen(b.end, now) },
+      note: out ? (did('ИИ подтвердил выезд') ? w.aiOut : w.leaveOk) : terms.checkout_reported_at ? tr('Гость сообщил {ofLeave} · подтвердите',{ofLeave:w.ofLeave}) : now >= b.end ? tr('Время {leaveGen} прошло · подтвердите {leaveLow}',{leaveGen:w.leaveGen,leaveLow:w.leaveLow}) : tr('{label} в {when}',{label:w.leave,when:threadWhen(b.end, now)}) },
   ];
   // A deposit the owner received is a last step of its own: the stay is not closed until it is back with the guest.
   const held = terms.deposit_status === 'owner_verified' && Number(terms.deposit) > 0, owed = Number(terms.deposit_balance) || 0, kept = Number(terms.deposit_kept) || 0;
-  if (held) steps.push({ key: 'deposit', label: 'Депозит', by: 'you', at: terms.deposit_returned_at || undefined,
-    note: owed && handoverState(b as Parameters<typeof handoverState>[0], now) === 'ask' ? (w.arrive==='Заезд'?'Отметьте, как гость оставил жильё, потом верните депозит':'Отметьте приёмку после гостей, потом верните депозит') : owed ? 'Верните гостю ' + (kept ? 'остаток депозита ' : 'депозит ') + tenge(owed) + ' и отметьте возврат' : kept ? 'Удержано ' + tenge(kept) + (kept < Number(terms.deposit) ? ', остальное возвращено' : '') : 'Депозит возвращён' });
+  if (held) steps.push({ key: 'deposit', label: tr('Депозит'), by: 'you', at: terms.deposit_returned_at || undefined,
+    note: owed && handoverState(b as Parameters<typeof handoverState>[0], now) === 'ask' ? (isHome(b) ? tr('Отметьте, как гость оставил жильё, потом верните депозит') : tr('Отметьте приёмку после гостей, потом верните депозит'))
+      : owed ? (kept ? tr('Верните гостю остаток депозита {sum} и отметьте возврат',{sum:tenge(owed)}) : tr('Верните гостю депозит {sum} и отметьте возврат',{sum:tenge(owed)}))
+        : kept ? (kept < Number(terms.deposit) ? tr('Удержано {sum}, остальное возвращено',{sum:tenge(kept)}) : tr('Удержано {sum}',{sum:tenge(kept)})) : tr('Депозит возвращён') });
   const leaving = out || !!terms.checkout_reported_at || now >= b.end;
   const done = [confirmed, paid, inside, inside && leaving, out, ...(held ? [out && !owed] : [])];
   const t = place(steps, done, i => i === 0 || i === 1 || i === 3 || i === 5 || (i === 2 ? now >= b.start - 15 * 60 : now >= b.end));
   const yours = !t.finished && t.steps[t.current].by === 'you';
-  return { id: b.id, kind: 'booking', tag: 'Бронь', title: b.title || 'Бронь', propertyId: b.property_id, ...t, yours,
-    status: statusOf(t, now, 'Завершено'), line: lineOf(t, now, did('ИИ подтвердил выезд') ? w.aiOut : w.guestOut), at: b.start };
+  return { id: b.id, kind: 'booking', tag: 'Бронь', title: b.title || tr('Бронь'), propertyId: b.property_id, ...t, yours,
+    status: statusOf(t, now, tr('Завершено')), line: lineOf(t, now, did('ИИ подтвердил выезд') ? w.aiOut : w.guestOut), at: b.start };
 }
 
 // ---------- Отменённая бронь, по которой владелец ещё должен гостю ----------
 export function refundThread(b: Row, now: number): ProcessThread | null {
   const refund = refundLeft(b), deposit = b.terms?.deposit_status === 'owner_verified' ? Number(b.terms?.deposit_balance) || 0 : 0;
   if (!['cancelled', 'expired'].includes(b.status) || !(refund || deposit)) return null;
-  const what = [refund && tenge(refund), deposit && 'депозит ' + tenge(deposit)].filter(Boolean).join(' и ');
-  const t = place([{ key: 'cancel', label: 'Отмена', by: 'guest', note: 'Бронь отменена' }, { key: 'refund', label: 'Возврат', by: 'you', note: 'Верните гостю ' + what + ' и отметьте возврат' }], [true, false], () => true);
-  return { id: b.id, kind: 'booking', tag: 'Возврат', title: b.title || 'Бронь', propertyId: b.property_id, ...t, yours: true, status: statusOf(t, now, 'Возвращено'), line: lineOf(t, now, 'Возвращено'), at: b.start };
+  const what = [refund && tenge(refund), deposit && tr('депозит {sum}',{sum:tenge(deposit)})].filter(Boolean).join(tr(' и '));
+  const t = place([{ key: 'cancel', label: tr('Отмена'), by: 'guest', note: tr('Бронь отменена') }, { key: 'refund', label: tr('Возврат'), by: 'you', note: tr('Верните гостю {what} и отметьте возврат',{what}) }], [true, false], () => true);
+  return { id: b.id, kind: 'booking', tag: 'Возврат', title: b.title || tr('Бронь'), propertyId: b.property_id, ...t, yours: true, status: statusOf(t, now, tr('Возвращено')), line: lineOf(t, now, tr('Возвращено')), at: b.start };
 }
 
 // ---------- Уборка глазами владельца ----------
@@ -155,18 +158,18 @@ export function cleaningThread(j: Row, data: Row, now: number): ProcessThread {
   // Nobody took it and its time is over: the owner decides in the card (new time, cleaned without a cleaner, cancel).
   const late = j.status === 'open' && !j.assigned_to && Number(j.end) <= now;
   const steps: Omit<ThreadStep, 'state'>[] = [
-    { key: 'pick', label: late ? 'Срок прошёл' : 'Подбор', by: assigned ? (did('ИИ назначил исполнителя') ? 'ai' : 'owner') : auto && !late ? 'ai' : 'you', at: j.created_at,
-      note: late ? 'Никто не взял уборку · решите в карточке' : assigned ? (did('ИИ назначил исполнителя') ? 'ИИ назначил исполнителя' : 'Исполнитель назначен')
-        : pending ? (auto ? 'Откликнулись: ' + pending + ' · ИИ выберет сам' : 'Откликнулись: ' + pending + ' · выберите исполнителя')
-          : auto ? 'ИИ ищет исполнителя' : 'Ждём откликов исполнителей' },
+    { key: 'pick', label: late ? tr('Срок прошёл') : tr('Подбор'), by: assigned ? (did('ИИ назначил исполнителя') ? 'ai' : 'owner') : auto && !late ? 'ai' : 'you', at: j.created_at,
+      note: late ? tr('Никто не взял уборку · решите в карточке') : assigned ? (did('ИИ назначил исполнителя') ? tr('ИИ назначил исполнителя') : tr('Исполнитель назначен'))
+        : pending ? (auto ? tr('Откликнулись: {pending} · ИИ выберет сам',{pending}) : tr('Откликнулись: {pending} · выберите исполнителя',{pending}))
+          : auto ? tr('ИИ ищет исполнителя') : tr('Ждём откликов исполнителей') },
     // A cleaning without a booking (a home cleaning, the owner's own order) waits for nobody's departure, only for its time.
-    j.booking_id !== null ? { key: 'checkout', label: 'Выезд гостя', by: 'guest', at: j.start, note: j.checkout_confirmed ? 'Гость выехал' : 'Ждём выезда гостя' }
-      : { key: 'checkout', label: 'Приезд', by: 'cleaner', at: j.arrived_at || j.start, note: j.arrived_at ? 'Исполнитель на месте' : j.on_way_at ? 'Исполнитель в пути' : 'Исполнитель приедет к назначенному времени' },
-    { key: 'clean', label: 'Уборка', by: 'cleaner', at: j.start, progress: working ? part(Number(j.started_at) || j.start, j.end, now) : undefined,
-      note: working ? (j.end > now ? 'Исполнитель убирает · ещё ' + left(j.end - now) : 'Срок уборки прошёл') : j.arrived_at ? 'Исполнитель на месте, начнёт уборку' : 'Уборка в ' + threadWhen(j.start, now) },
-    { key: 'check', label: 'Приёмка', by: accepted ? (aiAccepts ? 'ai' : 'owner') : auto ? 'ai' : 'you', at: j.submitted_at || j.end,
-      note: accepted ? (aiAccepts ? 'ИИ принял уборку' : 'Уборка принята') : auto ? 'ИИ проверяет фото' : 'Отчёт ждёт вашей проверки' },
-    { key: 'pay', label: 'Оплата', by: service ? 'ai' : 'you', at: j.settled_at || undefined, note: accepted && !j.assigned_to ? 'Убрано без исполнителя' : paid ? 'Исполнителю заплачено' : service ? 'Сервис заплатит из резерва' : 'Переведите исполнителю напрямую и отметьте оплату' },
+    j.booking_id !== null ? { key: 'checkout', label: tr('Выезд гостя'), by: 'guest', at: j.start, note: j.checkout_confirmed ? tr('Гость выехал') : tr('Ждём выезда гостя') }
+      : { key: 'checkout', label: tr('Приезд'), by: 'cleaner', at: j.arrived_at || j.start, note: j.arrived_at ? tr('Исполнитель на месте') : j.on_way_at ? tr('Исполнитель в пути') : tr('Исполнитель приедет к назначенному времени') },
+    { key: 'clean', label: tr('Уборка'), by: 'cleaner', at: j.start, progress: working ? part(Number(j.started_at) || j.start, j.end, now) : undefined,
+      note: working ? (j.end > now ? tr('Исполнитель убирает · ещё {left}',{left:left(j.end - now)}) : tr('Срок уборки прошёл')) : j.arrived_at ? tr('Исполнитель на месте, начнёт уборку') : tr('Уборка в {when}',{when:threadWhen(j.start, now)}) },
+    { key: 'check', label: tr('Приёмка'), by: accepted ? (aiAccepts ? 'ai' : 'owner') : auto ? 'ai' : 'you', at: j.submitted_at || j.end,
+      note: accepted ? (aiAccepts ? tr('ИИ принял уборку') : tr('Уборка принята')) : auto ? tr('ИИ проверяет фото') : tr('Отчёт ждёт вашей проверки') },
+    { key: 'pay', label: tr('Оплата'), by: service ? 'ai' : 'you', at: j.settled_at || undefined, note: accepted && !j.assigned_to ? tr('Убрано без исполнителя') : paid ? tr('Исполнителю заплачено') : service ? tr('Сервис заплатит из резерва') : tr('Переведите исполнителю напрямую и отметьте оплату') },
   ];
   // Without a booking the step is the performer's arrival: «Я на месте», or the start of the work itself.
   const came = j.booking_id !== null ? !!j.checkout_confirmed : !!j.arrived_at || working || reported;
@@ -174,8 +177,8 @@ export function cleaningThread(j: Row, data: Row, now: number): ProcessThread {
   const t = place(steps, done, i => i === 0 || i === 3 || i === 4 || (i === 1 ? now >= j.start - 3600 : working));
   const mine = j.owner_id === userId;
   const yours = mine && !t.finished && t.steps[t.current].by === 'you' && (t.current !== 0 || pending > 0 || late);
-  return { id: j.id, kind: 'job', tag: 'Уборка', title: j.title || 'Уборка', propertyId: j.property_id, ...t, yours,
-    status: statusOf(t, now, 'Готово'), line: lineOf(t, now, paid ? 'Уборка принята и оплачена' : 'Уборка принята'), at: j.start };
+  return { id: j.id, kind: 'job', tag: 'Уборка', title: j.title || tr('Уборка'), propertyId: j.property_id, ...t, yours,
+    status: statusOf(t, now, tr('Готово')), line: lineOf(t, now, paid ? tr('Уборка принята и оплачена') : tr('Уборка принята')), at: j.start };
 }
 
 // ---------- Задание глазами исполнителя ----------
@@ -189,15 +192,15 @@ export function jobThread(j: Row, data: Row, now: number): ProcessThread {
   const got = paid && (!!j.payment_received_at || !!j.guarantee || !Number(j.fee));
   const took = did('Автопилот взял уборку');
   const steps: Omit<ThreadStep, 'state'>[] = [
-    { key: 'apply', label: 'Отклик', by: took ? 'ai' : 'you', at: application?.created_at, note: application || isMine ? (took ? 'Автопилот откликнулся за вас' : 'Отклик отправлен') : 'Можно откликнуться' },
-    { key: 'assigned', label: 'Назначено', by: 'owner', note: isMine ? 'Вас назначили' : 'Ждём решения владельца' },
-    j.booking_id !== null ? { key: 'checkout', label: 'Выезд гостя', by: 'guest', at: j.start, note: j.checkout_confirmed ? 'Гость выехал, можно начинать' : 'Ждём выезда гостя' }
-      : { key: 'checkout', label: 'Приезд', by: 'you', at: j.arrived_at || j.start, note: j.arrived_at ? 'Вы на месте, можно начинать' : j.on_way_at ? 'Вы в пути · на месте нажмите «Я на месте»' : 'Приезжайте к назначенному времени' },
-    { key: 'clean', label: 'Уборка', by: 'you', at: j.start, progress: working ? part(Number(j.started_at) || j.start, j.end, now) : undefined,
-      note: working ? (j.end > now ? 'Идёт уборка · ещё ' + left(j.end - now) + ' · затем отчёт' : 'Срок прошёл · отправьте отчёт') : 'Начать уборку' },
-    { key: 'check', label: 'Приёмка', by: did('ИИ принял уборку', 'ИИ проверил отчёт') ? 'ai' : 'owner', at: j.submitted_at || undefined,
-      note: accepted ? 'Уборка принята' : 'Отчёт на приёмке' },
-    { key: 'pay', label: 'Оплата', by: j.guarantee || !Number(j.fee) ? 'ai' : paid && !got ? 'you' : 'owner', at: j.settled_at || undefined, note: paid ? (got ? 'Оплата получена' : 'Заказчик отметил оплату · подтвердите, что деньги пришли') : j.guarantee ? 'Сервис заплатит из резерва' : 'Заказчик переведёт вам напрямую после приёмки' },
+    { key: 'apply', label: tr('Отклик'), by: took ? 'ai' : 'you', at: application?.created_at, note: application || isMine ? (took ? tr('Автопилот откликнулся за вас') : tr('Отклик отправлен')) : tr('Можно откликнуться') },
+    { key: 'assigned', label: tr('Назначено'), by: 'owner', note: isMine ? tr('Вас назначили') : tr('Ждём решения владельца') },
+    j.booking_id !== null ? { key: 'checkout', label: tr('Выезд гостя'), by: 'guest', at: j.start, note: j.checkout_confirmed ? tr('Гость выехал, можно начинать') : tr('Ждём выезда гостя') }
+      : { key: 'checkout', label: tr('Приезд'), by: 'you', at: j.arrived_at || j.start, note: j.arrived_at ? tr('Вы на месте, можно начинать') : j.on_way_at ? tr('Вы в пути · на месте нажмите «Я на месте»') : tr('Приезжайте к назначенному времени') },
+    { key: 'clean', label: tr('Уборка'), by: 'you', at: j.start, progress: working ? part(Number(j.started_at) || j.start, j.end, now) : undefined,
+      note: working ? (j.end > now ? tr('Идёт уборка · ещё {left} · затем отчёт',{left:left(j.end - now)}) : tr('Срок прошёл · отправьте отчёт')) : tr('Начать уборку') },
+    { key: 'check', label: tr('Приёмка'), by: did('ИИ принял уборку', 'ИИ проверил отчёт') ? 'ai' : 'owner', at: j.submitted_at || undefined,
+      note: accepted ? tr('Уборка принята') : tr('Отчёт на приёмке') },
+    { key: 'pay', label: tr('Оплата'), by: j.guarantee || !Number(j.fee) ? 'ai' : paid && !got ? 'you' : 'owner', at: j.settled_at || undefined, note: paid ? (got ? tr('Оплата получена') : tr('Заказчик отметил оплату · подтвердите, что деньги пришли')) : j.guarantee ? tr('Сервис заплатит из резерва') : tr('Заказчик переведёт вам напрямую после приёмки') },
   ];
   const came = j.booking_id !== null ? !!j.checkout_confirmed : !!j.arrived_at || working || reported;
   const done = [!!application || isMine, isMine, isMine && came, reported, accepted, got];
@@ -205,8 +208,8 @@ export function jobThread(j: Row, data: Row, now: number): ProcessThread {
   const s = t.steps[t.current];
   const yours = !t.finished && s.by === 'you' && (t.current !== 3 || !!j.checkout_confirmed);
   const money = Number(j.fee) ? ' · ' + Number(j.fee).toLocaleString('ru-RU').replace(/ /g, ' ') + ' ₸' : '';
-  return { id: j.id, kind: 'job', tag: 'Задание', title: j.title || 'Задание', propertyId: j.property_id, ...t, yours,
-    status: t.finished ? 'Оплачено' : statusOf(t, now, 'Готово'), line: lineOf(t, now, 'Оплата получена' + money), at: j.start };
+  return { id: j.id, kind: 'job', tag: 'Задание', title: j.title || tr('Задание'), propertyId: j.property_id, ...t, yours,
+    status: t.finished ? tr('Оплачено') : statusOf(t, now, tr('Готово')), line: lineOf(t, now, tr('Оплата получена') + money), at: j.start };
 }
 
 const RECENT = 6 * 3600, AHEAD = 3 * DAY;
@@ -250,14 +253,14 @@ export function tripThread(b: Row, now: number, paymentMode?: string): ProcessTh
   // After the end of the stay the check-in can no longer be reported (lib/guest-trips.ts): the guest is led to the checkout.
   const inside = !!terms.actual_checkin, out = !!terms.actual_checkout || b.status === 'completed', over = !inside && now >= b.end;
   const steps: Omit<ThreadStep, 'state'>[] = [
-    { key: 'request', label: 'Заявка', by: 'owner', at: b.created_at, note: confirmed ? 'Бронь подтверждена' : 'Ждём ответа владельца' },
-    { key: 'pay', label: 'Оплата', by: canPay ? 'you' : 'owner',
-      note: paid && !depositDue ? 'Оплата подтверждена' : canPay ? (left > 0 && depositDue ? 'Переведите владельцу оплату и депозит и нажмите «Я оплатил»' : left > 0 ? 'Переведите оплату владельцу и нажмите «Я оплатил»' : 'Переведите депозит владельцу, он вернётся ' + w.afterLeave) : 'Владелец проверяет перевод и подтвердит' },
+    { key: 'request', label: tr('Заявка'), by: 'owner', at: b.created_at, note: confirmed ? tr('Бронь подтверждена') : tr('Ждём ответа владельца') },
+    { key: 'pay', label: tr('Оплата'), by: canPay ? 'you' : 'owner',
+      note: paid && !depositDue ? tr('Оплата подтверждена') : canPay ? (left > 0 && depositDue ? tr('Переведите владельцу оплату и депозит и нажмите «Я оплатил»') : left > 0 ? tr('Переведите оплату владельцу и нажмите «Я оплатил»') : tr('Переведите депозит владельцу, он вернётся {afterLeave}',{afterLeave:w.afterLeave})) : tr('Владелец проверяет перевод и подтвердит') },
     { key: 'checkin', label: w.arrive, by: 'you', at: b.start,
-      note: inside ? w.youIn : over ? 'Срок брони закончился' : terms.checkin_reported_at ? 'Владелец подтверждает ' + w.arriveAcc : w.arrive + ' в ' + threadWhen(b.start, now) },
+      note: inside ? w.youIn : over ? tr('Срок брони закончился') : terms.checkin_reported_at ? tr('Владелец подтверждает {arriveAcc}',{arriveAcc:w.arriveAcc}) : tr('{label} в {when}',{label:w.arrive,when:threadWhen(b.start, now)}) },
     { key: 'stay', label: w.stay, by: 'you', at: b.start, progress: inside && !out ? part(b.start, b.end, now) : undefined, note: w.youInside },
     { key: 'checkout', label: w.leave, by: 'you', at: b.end,
-      note: out ? w.leaveOk : terms.checkout_reported_at ? 'Владелец подтверждает ' + w.leaveLow : 'Сообщите ' + w.ofLeave + ', когда уйдёте' },
+      note: out ? w.leaveOk : terms.checkout_reported_at ? tr('Владелец подтверждает {leaveLow}',{leaveLow:w.leaveLow}) : tr('Сообщите {ofLeave}, когда уйдёте',{ofLeave:w.ofLeave}) },
   ];
   const leaving = out || !!terms.checkout_reported_at || now >= b.end;
   const t = place(steps, [confirmed, paid && !depositDue, inside || over, (inside || over) && leaving, out], i => i === 0 || i === 1 || i === 3 || (i === 2 ? now >= b.start - 15 * 60 : true));
@@ -266,8 +269,8 @@ export function tripThread(b: Row, now: number, paymentMode?: string): ProcessTh
     : t.current === 1 ? canPay
     : t.current === 2 ? t.steps[2].state === 'now' && !terms.checkin_reported_at
     : t.current === 4 && !terms.checkout_reported_at;
-  return { id: b.id, kind: 'booking', tag: 'Бронь', title: b.title || 'Бронь', propertyId: b.property_id, ...t, yours,
-    status: review ? 'Оцените' : statusOf(t, now, 'Завершено'), line: review ? w.done + '. Оцените его, это помогает другим гостям' : lineOf(t, now, w.done), at: b.start };
+  return { id: b.id, kind: 'booking', tag: 'Бронь', title: b.title || tr('Бронь'), propertyId: b.property_id, ...t, yours,
+    status: review ? tr('Оцените') : statusOf(t, now, tr('Завершено')), line: review ? tr('{done}. Оцените его, это помогает другим гостям',{done:w.done}) : lineOf(t, now, w.done), at: b.start };
 }
 
 const REVIEW = 3 * DAY;
@@ -282,22 +285,22 @@ export function guestThreads(data: Row | null | undefined, now: number, paymentM
 }
 
 // Итог в шапке блока: «ведёт 2 брони и 1 уборку · от вас ничего не нужно».
-const plural = (n: number, one: string, few: string, many: string) => { const a = n % 100, b = n % 10; return a > 10 && a < 20 ? many : b > 1 && b < 5 ? few : b === 1 ? one : many; };
+const plural = forms;
 export function threadsSummary(role: 'owner' | 'cleaner' | 'guest', threads: ProcessThread[]) {
   const going = threads.filter(t => !t.finished), yours = threads.filter(t => t.yours).length;
   if (role === 'guest') {
-    if (!going.length) return yours ? 'Оцените проживание' : 'Броней сейчас нет';
-    return (going.length === 1 ? 'Ваша бронь' : 'Ваши брони: ' + going.length) + (yours ? ' · ждут вас: ' + yours : ' · от вас ничего не нужно');
+    if (!going.length) return yours ? tr('Оцените проживание') : tr('Броней сейчас нет');
+    return (going.length === 1 ? tr('Ваша бронь') : tr('Ваши брони: {n}',{n:going.length})) + ' · ' + (yours ? tr('ждут вас: {yours}',{yours}) : tr('от вас ничего не нужно'));
   }
-  const tail = yours ? ' · ждут вас: ' + yours : ' · от вас ничего не нужно';
+  const tail = ' · ' + (yours ? tr('ждут вас: {yours}',{yours}) : tr('от вас ничего не нужно'));
   if (role === 'owner') {
     const b = going.filter(t => t.kind === 'booking').length, u = going.filter(t => t.kind === 'job').length;
-    if (!b && !u) return 'Сейчас дел нет' + (threads.length ? ' · всё закончено' : '');
+    if (!b && !u) return tr('Сейчас дел нет') + (threads.length ? ' · ' + tr('всё закончено') : '');
     const parts = [b ? b + ' ' + plural(b, 'бронь', 'брони', 'броней') : '', u ? u + ' ' + plural(u, 'уборку', 'уборки', 'уборок') : ''].filter(Boolean);
-    return 'Ведёт ' + parts.join(' и ') + tail;
+    return tr('Ведёт {what}',{what:parts.join(tr(' и '))}) + tail;
   }
-  if (!going.length) return threads.length ? 'Все задания закончены' : 'Заданий пока нет';
-  return 'Ведёт ' + going.length + ' ' + plural(going.length, 'задание', 'задания', 'заданий') + (yours ? ' · ваш шаг: ' + threads.find(t => t.yours)!.steps[threads.find(t => t.yours)!.current].label.toLowerCase() : '');
+  if (!going.length) return threads.length ? tr('Все задания закончены') : tr('Заданий пока нет');
+  return tr('Ведёт {what}',{what:going.length + ' ' + plural(going.length, 'задание', 'задания', 'заданий')}) + (yours ? ' · ' + tr('ваш шаг: {step}',{step:threads.find(t => t.yours)!.steps[threads.find(t => t.yours)!.current].label.toLowerCase()}) : '');
 }
 
 // Последнее, что сделал ИИ сегодня: строка под шапкой.
@@ -313,7 +316,7 @@ export function cleanerWeek(data: Row | null | undefined, now: number): WeekDay[
   const userId = data?.user?.id, mine: Row[] = (data?.jobs || []).filter((j: Row) => j.assigned_to === userId && !['open', 'cancelled'].includes(j.status));
   return Array.from({ length: 7 }, (_, i) => {
     const key = dayOf(now) + i, d = new Date(key * DAY * 1000);
-    return { key, week: WEEK[d.getUTCDay()], date: d.getUTCDate(), count: mine.filter(j => dayOf(j.start) === key).length, today: i === 0 };
+    return { key, week: tr(WEEK[d.getUTCDay()]), date: d.getUTCDate(), count: mine.filter(j => dayOf(j.start) === key).length, today: i === 0 };
   });
 }
 // Лента дня: часы дня и полосы заданий (с 8:00 до 22:00, шире, если задание выходит за край).

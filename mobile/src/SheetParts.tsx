@@ -1,3 +1,4 @@
+import {t} from '../../lib/i18n';
 import React from 'react';
 import {Image,Pressable,ScrollView,StyleSheet,Text,View} from 'react-native';
 import {Photo} from './ListingMedia';
@@ -15,13 +16,13 @@ export function Chips<T extends string|number>({label,name,value,options,onChang
 }
 export function Stepper({label,value,text,min,max,step=1,onChange,disabled}:{label:string;value:number;text:string;min:number;max:number;step?:number;onChange:(value:number)=>void;disabled?:boolean}){
  return <View style={h.stepper}><Text style={h.label}>{label}</Text><View style={h.stepperRow}>
-  <Pressable accessibilityRole="button" accessibilityLabel={label+': меньше'} disabled={disabled||value<=min} onPress={()=>onChange(Math.max(min,value-step))} style={[h.step,(disabled||value<=min)&&h.dim]}><Text style={h.stepText}>−</Text></Pressable>
+  <Pressable accessibilityRole="button" accessibilityLabel={t('{label}: меньше',{label})} disabled={disabled||value<=min} onPress={()=>onChange(Math.max(min,value-step))} style={[h.step,(disabled||value<=min)&&h.dim]}><Text style={h.stepText}>−</Text></Pressable>
   <Text accessibilityLiveRegion="polite" style={h.stepValue}>{text}</Text>
-  <Pressable accessibilityRole="button" accessibilityLabel={label+': больше'} disabled={disabled||value>=max} onPress={()=>onChange(Math.min(max,value+step))} style={[h.step,(disabled||value>=max)&&h.dim]}><Text style={h.stepText}>+</Text></Pressable>
+  <Pressable accessibilityRole="button" accessibilityLabel={t('{label}: больше',{label})} disabled={disabled||value>=max} onPress={()=>onChange(Math.min(max,value+step))} style={[h.step,(disabled||value>=max)&&h.dim]}><Text style={h.stepText}>+</Text></Pressable>
  </View></View>;
 }
 export function Stage({steps,current}:{steps:string[];current:number}){
- return <View style={h.stages} accessibilityLabel={'Этап '+(current+1)+' из '+steps.length+': '+steps[current]}>{steps.map((step,i)=><View key={step} style={h.stage}><View style={[h.stageBar,i<current&&h.stageBarOn,i===current&&h.stageBarNow]}/><Text numberOfLines={1} style={[h.stageText,i===current&&h.stageTextOn]}>{step}</Text></View>)}</View>;
+ return <View style={h.stages} accessibilityLabel={t('Этап {v} из {length}: {v2}',{v:(current+1),length:steps.length,v2:steps[current]})}>{steps.map((step,i)=><View key={step} style={h.stage}><View style={[h.stageBar,i<current&&h.stageBarOn,i===current&&h.stageBarNow]}/><Text numberOfLines={1} style={[h.stageText,i===current&&h.stageTextOn]}>{step}</Text></View>)}</View>;
 }
 
 // The screen sits inside the app's safe area, so offsets start at its own top edge.
@@ -62,7 +63,7 @@ export function SheetRow({title,line,photo,icon,order,onPress,label}:{title:stri
  return <Pressable accessibilityRole="button" accessibilityLabel={label} onPress={onPress} style={({pressed})=>[r.row,pressed&&{backgroundColor:C.bg}]}>
   {order?<View style={[r.thumb,r.order]}><Text style={r.orderText}>{order}</Text></View>
    :icon?<View style={[r.thumb,r.icon]}><Image source={menuIcons[icon]} style={{width:20,height:20,tintColor:C.accent}}/></View>
-   :<View style={r.thumb}><Photo id={photo} fill alt={'Фото: '+title}/></View>}
+   :<View style={r.thumb}><Photo id={photo} fill alt={t('Фото: {title}',{title})}/></View>}
   <View style={r.text}><Text numberOfLines={2} style={r.title}>{title}</Text>{!!line&&<Text numberOfLines={2} style={r.line}>{line}</Text>}</View>
   <Image source={menuIcons.chevron} style={{width:18,height:18,tintColor:C.muted}}/>
  </Pressable>;

@@ -1,18 +1,24 @@
-import {L,t} from '../../lib/i18n';
+import {L,t,tLine} from '../../lib/i18n';
 import React from 'react';
 import {View,Text,StyleSheet} from 'react-native';
 import {C} from './styles';
 import {T} from './tokens';
 import type {Reliability} from '../../lib/reliability-text';
 const F=T.font,R=T.radius;
+// The label comes from the server in Russian (lib/reliability-text.ts reliabilityLabels): its four values are translated here.
+const LABELS=/* i18n */['Новый участник','Надёжность отличная','Надёжность хорошая','Есть замечания'];
+// The facts come from the server in Russian too (lib/reliability.ts); tLine finds them here with {n} for the number.
+export const FACTS=/* i18n */['{n} проживание','{n} проживания','{n} проживаний','споров при выезде: {n}','отмен после подтверждения: {n}','телефон подтверждён',
+ '{n} уборка','{n} уборки','{n} уборок','оценка заказчиков {n}','срывов: {n}','возвратов на доработку: {n}','без срывов',
+ 'отвечает на {n}% заявок','{n} завершённая бронь','{n} завершённые брони','{n} завершённых броней','отмен владельцем: {n}','оценка гостей {n}'];
 // The reliability rating: a score out of five with what it is made of.
 export function ReliabilityBadge({value,title,compact=false}:{value?:Reliability|null;title?:string;compact?:boolean}){
  if(!value)return null;
- const score=value.score===null?'✦':'★ '+value.score.toFixed(1).replace('.',',');
+ const score=value.score===null?'✦':'★ '+value.score.toFixed(1).replace('.',','),label=LABELS.includes(value.label)?t(value.label):value.label;
  if(compact)return <Text style={[r.chip,value.level==='new'&&r.chipNew]}>{value.score===null?t('✦ новый'):score}</Text>;
- return <View accessibilityLabel={(title||t('Надёжность'))+': '+value.label} style={[r.box,value.level==='excellent'&&r.excellent,value.level==='attention'&&r.attention]}>
+ return <View accessibilityLabel={(title||t('Надёжность'))+': '+label} style={[r.box,value.level==='excellent'&&r.excellent,value.level==='attention'&&r.attention]}>
   <View style={r.score}><Text style={[r.scoreText,value.level==='new'&&{color:C.accent}]}>{score}</Text></View>
-  <View style={r.text}>{!!title&&<Text style={r.title}>{title}</Text>}<Text style={r.label}>{value.label}</Text>{value.facts.length>0&&<Text style={r.facts}>{value.facts.join(' · ')}</Text>}</View>
+  <View style={r.text}>{!!title&&<Text style={r.title}>{title}</Text>}<Text style={r.label}>{label}</Text>{value.facts.length>0&&<Text style={r.facts}>{value.facts.map(tLine).join(' · ')}</Text>}</View>
  </View>;
 }
 export const reliabilityHints:Record<string,string[]>=L({

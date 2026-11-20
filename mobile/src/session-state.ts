@@ -1,5 +1,6 @@
+import {t} from '../../lib/i18n';
 export class StaleSessionError extends Error {
- constructor(){super('Вход изменился. Ответ предыдущего сеанса не используется.');this.name='StaleSessionError';}
+ constructor(){super(t('Вход изменился. Ответ предыдущего сеанса не используется.'));this.name='StaleSessionError';}
 }
 type Persistence={read:()=>Promise<string|null>;write:(record:string|null)=>Promise<void>};
 export type SessionSnapshot={generation:number;token:string|null;transitioning:boolean};
@@ -28,7 +29,7 @@ export class SessionState {
   });
  }
  async save(value:string|null,origin:string){
-  if(value!==null&&(typeof value!=='string'||!/^[a-f0-9]{64}$/.test(value)))throw Error('Обновите вход в общий аккаунт.');
+  if(value!==null&&(typeof value!=='string'||!/^[a-f0-9]{64}$/.test(value)))throw Error(t('Обновите вход в общий аккаунт.'));
   const snapshot=this.begin();
   return this.enqueue(async()=>{
    try{

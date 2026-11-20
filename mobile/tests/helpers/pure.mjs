@@ -1,6 +1,6 @@
 // Transpiles pure TypeScript modules (no React Native imports) into a temporary folder so node can run them.
 import ts from 'typescript';
-import {mkdirSync, mkdtempSync, readFileSync, writeFileSync} from 'node:fs';
+import {mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {dirname, join} from 'node:path';
 import {fileURLToPath, pathToFileURL} from 'node:url';
@@ -8,9 +8,11 @@ import {fileURLToPath, pathToFileURL} from 'node:url';
 const repo = fileURLToPath(new URL('../../../', import.meta.url));
 
 // files are repo-relative paths; the first one is imported and returned.
+// The words of the interface (lib/i18n*.ts) always come along: any module may speak through t().
+const words = readdirSync(join(repo, 'lib')).filter(name => /^i18n.*\.ts$/.test(name)).map(name => 'lib/' + name);
 export async function loadPure(...files) {
   const output = mkdtempSync(join(tmpdir(), 'ai-arenda-mobile-'));
-  for (const file of files) {
+  for (const file of [...files, ...words.filter(name => !files.includes(name))]) {
     const js = ts
       .transpileModule(readFileSync(join(repo, file), 'utf8'), {compilerOptions: {module: ts.ModuleKind.ES2022, target: ts.ScriptTarget.ES2022}})
       .outputText.replace(/from '(\.{1,2}\/[^']+)'/g, (_, name) => `from '${name}.mjs'`);

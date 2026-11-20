@@ -1,3 +1,4 @@
+import {L,forms,t,tLine} from '../../lib/i18n';
 // The guest's request on the map screen: the conditions of a search and the free text that fills them.
 // The text is read by the same rules as on the site (guestSearchRequest in lib/map-search-request.ts), so
 // "14 ноября на двоих" means the same thing in the app and in the browser. This file keeps the app's form
@@ -64,12 +65,12 @@ export type ChipId = 'now' | 'night' | 'daily' | 'hourly' | 'weekend' | 'evening
 
 // Types of home a guest can ask for, as lib/listings.ts names them (propertyTypes). Kept here so this file stays
 // free of server code; mobile/tests/ai-request.test.mjs checks that the two lists match.
-export const HOME_KINDS: Record<string, string> = {
+export const HOME_KINDS: Record<string, string> = L({
   apartment: 'Квартира', studio: 'Студия', room: 'Комната', house: 'Дом',
   guesthouse: 'Гостевой дом', hostel: 'Хостел', hotel: 'Гостиница', aparthotel: 'Апарт-отель',
   banya: 'Баня', sauna: 'Сауна',
   banquet: 'Банкетный зал', cafe: 'Кафе'
-};
+});
 
 // What the guest looks for, chosen above the line like a tariff in a taxi (lib/listings.ts categories).
 // «Баня» is a bath or a sauna taken whole for a few hours. The category is kept in the types of the request:
@@ -77,13 +78,13 @@ export const HOME_KINDS: Record<string, string> = {
 export type Category = 'stay' | 'bath' | 'banquet';
 export const BATH_TYPES: string[] = BATH_KINDS;
 export const BANQUET_TYPES: string[] = BANQUET_KINDS;
-export const CATEGORIES: { id: Category; title: string; any: string; hint: string }[] = [
+export const CATEGORIES: { id: Category; title: string; any: string; hint: string }[] = L([
   { id: 'stay', title: 'Жильё', any: 'Любое жильё', hint: 'на сутки, на ночь или на часы' },
   { id: 'bath', title: 'Баня', any: 'Любая баня', hint: 'на несколько часов' },
   { id: 'banquet', title: 'Банкет', any: 'Любой зал', hint: 'той, юбилей, поминки' }
-];
+]);
 // What a hall is taken for (lib/listings.ts occasions). A memorial meal is spoken of quietly on every screen.
-export const OCCASIONS: [string, string][] = [['toi', 'Той, свадьба'], ['party', 'Юбилей, праздник'], ['memorial', 'Поминки, ас'], ['other', 'Другое']];
+export const OCCASIONS: [string, string][] = L([['toi', 'Той, свадьба'], ['party', 'Юбилей, праздник'], ['memorial', 'Поминки, ас'], ['other', 'Другое']]);
 export const occasionTitle = (id?: string) => OCCASIONS.find(([known]) => known === id)?.[1] || '';
 // A guest asks for a cleaning of their own home, not for a place: «уборка завтра», «нужна уборка», «клининг», «убраться
 // в квартире». A stay that merely mentions cleaning («квартира после уборки») is still a search.
@@ -126,7 +127,7 @@ export function withCategory(draft: GuestDraft, category: Category, now = Date.n
 
 // The wishes the shared parser can read from text, in the order the form shows them: the amenities an owner
 // marks, and 'pets' for the owner's rule «можно с питомцами».
-export const WISHES: [string, string][] = [
+export const WISHES: [string, string][] = L([
   ['parking', 'Парковка'],
   ['wifi', 'Wi-Fi'],
   ['kitchen', 'Кухня'],
@@ -148,9 +149,9 @@ export const WISHES: [string, string][] = [
   ['nodeposit', 'Без депозита'],
   ['smoking', 'Можно курить'],
   ['parties', 'Для вечеринок']
-];
+]);
 // What a company asks of a bath; the ids are the shared amenities.
-export const BATH_WISHES: [string, string][] = [
+export const BATH_WISHES: [string, string][] = L([
   ['steam', 'Парилка'],
   ['pool', 'Бассейн'],
   ['jacuzzi', 'Джакузи'],
@@ -162,9 +163,9 @@ export const BATH_WISHES: [string, string][] = [
   ['towels', 'Полотенца'],
   ['wifi', 'Wi-Fi'],
   ['parking', 'Парковка']
-];
+]);
 // What is asked of a banquet hall; the ids are the shared amenities.
-export const BANQUET_WISHES: [string, string][] = [
+export const BANQUET_WISHES: [string, string][] = L([
   ['halal', 'Халяль'],
   ['prayer', 'Комната для намаза'],
   ['stage', 'Сцена'],
@@ -176,15 +177,15 @@ export const BANQUET_WISHES: [string, string][] = [
   ['aircon', 'Кондиционер'],
   ['wifi', 'Wi-Fi'],
   ['parking', 'Парковка']
-];
+]);
 export const wishesOf = (category: Category) => (category === 'bath' ? BATH_WISHES : category === 'banquet' ? BANQUET_WISHES : WISHES);
 // The largest party the service accepts; the form and the text stop at the same number.
 export const MAX_GUESTS = SHARED_MAX_GUESTS;
 // What the screen says when the text names a day or an hour that is behind, in the words of the site.
-export const PAST_TEXT = { date: 'Эта дата уже прошла.', time: 'Это время уже прошло.' };
+export const PAST_TEXT = L({ date: 'Эта дата уже прошла.', time: 'Это время уже прошло.' });
 
-const MONTHS = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня', 'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'];
-const WEEKDAYS = ['вс', 'пн', 'вт', 'ср', 'чт', 'пт', 'сб'];
+const MONTHS = L(['января', 'февраля', 'марта', 'апреля', 'мая', 'июня', 'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря']);
+const WEEKDAYS = L(['вс', 'пн', 'вт', 'ср', 'чт', 'пт', 'сб']);
 const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
 
 /** What the form starts with: today until tomorrow, two guests, no budget. */
@@ -259,7 +260,7 @@ export function guestRequestFromText(text: string, draft: GuestDraft, cities: st
     ...(result.place ? { place: result.place } : {}),
     understood: result.understood,
     ...(result.past ? { past: result.past } : {}),
-    note: [...(result.remarks || []), reset ? 'Срок не назван: ищу на сутки с сегодня.' : ''].filter(Boolean).join(' ')
+    note: [...(result.remarks || []), reset ? t('Срок не назван: ищу на сутки с сегодня.') : ''].filter(Boolean).join(' ')
   };
 }
 
@@ -295,7 +296,7 @@ export function chipDraft(id: ChipId, draft: GuestDraft, now = Date.now()): Gues
   return { ...draft, ...(id === 'weekend' ? weekendStay(now) : defaultStay(id, now)), ...loose, now: false };
 }
 
-const PRIORITY_WORDS: Record<string, string> = { cheaper: 'дешевле', closer: 'ближе' };
+const PRIORITY_WORDS: Record<string, string> = L({ cheaper: 'дешевле', closer: 'ближе' });
 
 /**
  * One line that says everything the search will use: "Павлодар, Центр · сегодня 19:00–22:00 · 2 гостя · до 20 000 ₸ · парковка".
@@ -311,23 +312,23 @@ export function guestSummary(draft: GuestDraft, now = Date.now()) {
   // So does a day the guest asked to start at an hour of their own («в 22:00»).
   const category = categoryOf(draft), hall = category === 'banquet';
   // A bath is by the hour: its line already says «18:30–21:30», and nobody «заезжает» there.
-  const from = category === 'stay' && (draft.now || draft.mode === 'night' || (draft.mode === 'daily' && draft.start.slice(11) !== CHECKIN_TIME)) ? 'заезд с ' + draft.start.slice(11) : '';
+  const from = category === 'stay' && (draft.now || draft.mode === 'night' || (draft.mode === 'daily' && draft.start.slice(11) !== CHECKIN_TIME)) ? t('заезд с {time}',{time:draft.start.slice(11)}) : '';
   const more = [
     from,
-    draft.now ? (draft.near && !draft.near.label ? 'готово сейчас, рядом с вами' : 'готово сейчас') : '',
+    draft.now ? (draft.near && !draft.near.label ? t('готово сейчас, рядом с вами') : t('готово сейчас')) : '',
     ...wishesOf(category).filter(([id]) => draft.features.includes(id)).map(([, title]) => (title === 'Wi-Fi' ? title : title.toLocaleLowerCase('ru'))),
-    draft.maxFloor ? (draft.maxFloor === 1 ? 'первый этаж' : 'не выше ' + draft.maxFloor + ' этажа') : '',
+    draft.maxFloor ? (draft.maxFloor === 1 ? t('первый этаж') : t('не выше {maxFloor} этажа',{maxFloor:draft.maxFloor})) : '',
     draft.now ? '' : PRIORITY_WORDS[draft.priority] || ''
   ].filter(word => word && !said.includes(word.toLocaleLowerCase('ru')));
   // A landmark is named: "рядом: железнодорожный вокзал", not "рядом с выбранным местом".
-  const where = draft.near?.label ? line.replace('рядом с выбранным местом', 'рядом: ' + draft.near.label) : line;
+  const where = draft.near?.label ? line.replace(t('рядом с выбранным местом'), t('рядом: {label}', { label: draft.near.label })) : line;
   return [hall ? occasionTitle(draft.occasion) : '', where, hall && draft.kinds.length > 1 ? '' : homeWords(draft), budgetWords(draft), ...more].filter(Boolean).join(' · ');
 }
 
 /** "студия или квартира, 2 комн."; '' when any home will do. */
 export function homeWords(draft: Pick<GuestDraft, 'kinds' | 'rooms'>) {
-  const kinds = (draft.kinds || []).map(id => (HOME_KINDS[id] || '').toLocaleLowerCase('ru')).filter(Boolean).join(' или ');
-  const rooms = draft.rooms ? (draft.rooms.endsWith('+') ? 'от ' + draft.rooms.slice(0, -1) : draft.rooms) + ' комн.' : '';
+  const kinds = (draft.kinds || []).map(id => (HOME_KINDS[id] || '').toLocaleLowerCase('ru')).filter(Boolean).join(t(' или '));
+  const rooms = draft.rooms ? (draft.rooms.endsWith('+') ? t('от {n} комн.',{n:draft.rooms.slice(0, -1)}) : t('{n} комн.',{n:draft.rooms})) : '';
   return [kinds, rooms].filter(Boolean).join(', ');
 }
 
@@ -335,10 +336,10 @@ export function homeWords(draft: Pick<GuestDraft, 'kinds' | 'rooms'>) {
 export function budgetWords(draft: Pick<GuestDraft, 'maxPrice' | 'perUnit' | 'mode' | 'start' | 'end'> & { kinds?: string[] }) {
   const amount = Number(draft.maxPrice);
   if (!(amount > 0) || draft.maxPrice === NO_BUDGET) return '';
-  const sum = 'до ' + new Intl.NumberFormat('ru-RU').format(amount).replace(/\s/g, ' ') + ' ₸';
-  if (categoryOf({ kinds: draft.kinds || [] }) === 'banquet') return sum + (draft.perUnit ? ' за гостя' : ' за всё');
-  if (draft.perUnit) return sum + (draft.mode === 'hourly' ? ' за час' : draft.mode === 'night' ? ' за ночь' : ' за сутки');
-  return draftUnits(draft as GuestDraft) > 1 ? sum + ' за всё' : sum;
+  const sum = new Intl.NumberFormat('ru-RU').format(amount).replace(/\s/g, ' ');
+  if (categoryOf({ kinds: draft.kinds || [] }) === 'banquet') return draft.perUnit ? t('до {sum} ₸ за гостя',{sum}) : t('до {sum} ₸ за всё',{sum});
+  if (draft.perUnit) return draft.mode === 'hourly' ? t('до {sum} ₸ за час',{sum}) : draft.mode === 'night' ? t('до {sum} ₸ за ночь',{sum}) : t('до {sum} ₸ за сутки',{sum});
+  return draftUnits(draft as GuestDraft) > 1 ? t('до {sum} ₸ за всё',{sum}) : t('до {sum} ₸',{sum});
 }
 
 /** The request as /api/public/matching and matching/begin expect it: Kazakhstan time with its offset. */
@@ -409,9 +410,9 @@ export function withUnits(draft: GuestDraft, units: number, now = Date.now()): G
 export function dayChoices(draft: GuestDraft, now = Date.now()): [string, string][] {
   const today = kzToday(now);
   const label = (date: string, offset: number) => {
-    if (offset === 0) return 'Сегодня';
-    if (offset === 1) return 'Завтра';
-    if (offset === 2 && categoryOf(draft) === 'banquet') return 'Послезавтра';
+    if (offset === 0) return t('Сегодня');
+    if (offset === 1) return t('Завтра');
+    if (offset === 2 && categoryOf(draft) === 'banquet') return t('Послезавтра');
     const day = new Date(date + 'T00:00:00Z');
     return WEEKDAYS[day.getUTCDay()] + ', ' + day.getUTCDate() + ' ' + MONTHS[day.getUTCMonth()];
   };
@@ -426,15 +427,23 @@ export function dayChoices(draft: GuestDraft, now = Date.now()): [string, string
 
 // ---------- Search results ----------
 
-const REASON_TEXT: Record<string, string> = { 'Готовность проверена': 'Готово к заселению' };
+const REASON_TEXT: Record<string, string> = L({ 'Готовность проверена': 'Готово к заселению' });
+// The reasons with a number inside (lib/smart-matching.ts): tLine finds them here with {n} for the number.
+export const REASON_LINES = /* i18n */ ['Отвечает в среднем за {n} минуту', 'Отвечает в среднем за {n} минуты', 'Отвечает в среднем за {n} минут', 'Отвечает в среднем за {n} час', 'Отвечает в среднем за {n} часа', 'Отвечает в среднем за {n} часов',
+  'Около {n} минуты на машине', 'Около {n} минут на машине', 'Примерно {n} км от выбранного места'];
 
+// A reason of the server in the language of the app: the fixed ones by the table, «Оценка 4,8 из 5 · 3 отзыва» as «★ 4,8 · 3».
+const shownReason = (reason: string) => {
+  const rated = reason.match(/^Оценка (\S+) из 5(?: · (\d+) отзыв\S*)?$/);
+  return rated ? '★ ' + rated[1] + (rated[2] ? ' · ' + rated[2] + ' ' + forms(Number(rated[2]), 'отзыв', 'отзыва', 'отзывов') : '') : tLine(reason);
+};
 /** The server's reasons as the guest reads them: no "в пределах бюджета" when no budget was named. */
 export function shownReasons(reasons: unknown, draft: Pick<GuestDraft, 'maxPrice'>, bath = false): string[] {
   if (!Array.isArray(reasons)) return [];
   return reasons
     .filter((reason): reason is string => typeof reason === 'string' && (!!draft.maxPrice || reason !== 'В пределах бюджета'))
     // "Оценка 4,8 из 5 · 3 отзыва" is "★ 4,8 · 3 отзыва" on a card.
-    .map(reason => (bath && reason === 'Готовность проверена' ? 'Готово к приходу гостей' : REASON_TEXT[reason] || reason.replace(/^Оценка (\S+) из 5/, '★ $1')));
+    .map(reason => (bath && reason === 'Готовность проверена' ? t('Готово к приходу гостей') : REASON_TEXT[reason] || shownReason(reason)));
 }
 
 /** «Забронировать» asks the owner first: the home does not confirm by itself, and its owner answers quick requests. */
@@ -444,14 +453,14 @@ const droppedWords = (dropped: unknown) => (Array.isArray(dropped) ? dropped.fil
 /** The model put the guest's phrase into the words of the search: the guest sees those words and what was left out. */
 export function understoodNote(phrase: string, dropped: unknown): string {
   const left = droppedWords(dropped);
-  return 'ИИ понял так: «' + phrase + '».' + (left.length ? ' Пока не ищу по условиям: ' + left.join(', ') + '.' : '');
+  return t('ИИ понял так: «{phrase}».',{phrase}) + (left.length ? ' ' + t('Пока не ищу по условиям: {list}.',{list:left.join(', ')}) : '');
 }
 /** The model did not help: why, and what the guest can do. */
 export function notUnderstoodNote(status: unknown, dropped: unknown): string {
   const left = droppedWords(dropped);
-  if (status === 'permission') return 'Не понял запрос. ИИ разберёт такие фразы, если вы разрешите передавать ему ваши сообщения: спросите ИИ-администратора.';
-  if (status === 'none' && left.length) return 'Пока не ищу по условиям: ' + left.join(', ') + '. Назовите день и срок, например: «завтра на сутки на двоих».';
-  return 'Не понял запрос. Назовите день и срок, например: «завтра на сутки на двоих».';
+  if (status === 'permission') return t('Не понял запрос. ИИ разберёт такие фразы, если вы разрешите передавать ему ваши сообщения: спросите ИИ-администратора.');
+  if (status === 'none' && left.length) return t('Пока не ищу по условиям: {list}. Назовите день и срок, например: «завтра на сутки на двоих».',{list:left.join(', ')});
+  return t('Не понял запрос. Назовите день и срок, например: «завтра на сутки на двоих».');
 }
 
 // ---------- A landmark ----------
@@ -465,12 +474,12 @@ export function nearPlace(draft: GuestDraft, spot: { longitude?: unknown; latitu
 }
 
 /** What the guest reads when the landmark was not found on the map. */
-export const placeMissedNote = (asked: string) => 'Не нашёл на карте: ' + asked + '. Ищу по всему городу.';
+export const placeMissedNote = (asked: string) => t('Не нашёл на карте: {asked}. Ищу по всему городу.',{asked});
 
 /** One format for a price on a map pin: "9 тыс.", "9,5 тыс.", "12 тыс."; under a thousand "800 ₸", from a million "1,2 млн". */
 export function pinPrice(amount: number): string {
   if (amount < 1000) return Math.round(amount) + ' ₸';
   // A banquet for a hundred guests: "1,2 млн".
-  if (amount >= 1000000) return String(Math.round(amount / 100000) / 10).replace('.', ',') + ' млн';
-  return String(Math.round(amount / 100) / 10).replace('.', ',') + ' тыс.';
+  if (amount >= 1000000) return t('{v} млн',{v:String(Math.round(amount / 100000) / 10).replace('.', ',')});
+  return t('{v} тыс.',{v:String(Math.round(amount / 100) / 10).replace('.', ',')});
 }

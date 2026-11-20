@@ -4,9 +4,10 @@ import {mkdirSync,writeFileSync,readFileSync,mkdtempSync} from 'node:fs';
 import {resolve} from 'node:path';
 import {pathToFileURL} from 'node:url';
 import ts from 'typescript';
+import {withWords} from './helpers/i18n.mjs';
 mkdirSync('outputs',{recursive:true});
 const output=mkdtempSync(resolve('outputs/mobile-arrival-test-'));
-writeFileSync(resolve(output,'arrival.mjs'),ts.transpileModule(readFileSync('mobile/src/arrival.ts','utf8'),{compilerOptions:{module:ts.ModuleKind.ES2022,target:ts.ScriptTarget.ES2022}}).outputText);
+writeFileSync(resolve(output,'arrival.mjs'),withWords(ts.transpileModule(readFileSync('mobile/src/arrival.ts','utf8'),{compilerOptions:{module:ts.ModuleKind.ES2022,target:ts.ScriptTarget.ES2022}}).outputText,output));
 const {homeAt,pinWords,cardWords,countsAt,shiftDraft,arrivalOf,clock}=await import(pathToFileURL(resolve(output,'arrival.mjs')).href);
 
 // 18:00 in Kazakhstan (UTC+5).

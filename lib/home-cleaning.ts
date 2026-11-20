@@ -1,6 +1,7 @@
 // Уборка на дом (с 2026-11-18): человек, который ничего не сдаёт, заказывает уборку своего дома.
 // Заказ — обычное задание на уборку (cleaning_jobs) на частном объекте типа «home»: он не публикуется
-// и гостям не виден. Здесь только слова и расчёт, без зависимостей: файл читают сервер и приложение.
+// и гостям не виден. Здесь только слова и расчёт, без зависимостей, кроме слов перевода (lib/i18n.ts): файл читают сервер и приложение.
+import { t as tr } from './i18n';
 export const HOME_TYPE = 'home';
 export const isHome = (type?: string | null) => type === HOME_TYPE;
 
@@ -10,7 +11,7 @@ export type HomeKind = 'regular' | 'general' | 'renovation';
 // Когда в городе накопились заказы, совет подстраивается под то, за сколько исполнители их на деле берут.
 export const HOME_MIN_FEE = 1000, HOME_FEE_STEP = 500, HOME_MARKET_DEALS = 5;
 export const HOME_BASE = 6000, HOME_ROOM = 2000, HOME_WINDOW = 1000, HOME_MAX_ROOMS = 6, HOME_MAX_WINDOWS = 20;
-export const homeKinds: Record<HomeKind, { label: string; hint: string; times: number }> = {
+export const homeKinds: Record<HomeKind, { label: string; hint: string; times: number }> = /* i18n */ {
   regular: { label: 'Поддерживающая', hint: 'Пыль, полы, кухня, санузел', times: 1 },
   general: { label: 'Генеральная', hint: 'Всё, включая шкафы, технику и труднодоступные места', times: 2 },
   renovation: { label: 'После ремонта', hint: 'Строительная пыль, следы краски и клея', times: 2.5 },
@@ -60,7 +61,7 @@ export function homeDescription(o: HomeOrder & { wishes?: unknown }) {
 }
 
 // Чек-лист отчёта по виду уборки: исполнитель отмечает каждый пункт, заказчик видит их на приёмке.
-const CHECKS: Record<HomeKind, string[]> = {
+const CHECKS: Record<HomeKind, string[]> = /* i18n */ {
   regular: ['Пыль вытерта', 'Полы вымыты', 'Кухня и санузел убраны', 'Мусор вынесен'],
   general: ['Пыль вытерта, шкафы и полки протёрты', 'Полы и плинтусы вымыты', 'Кухня и техника вымыты', 'Санузел вымыт', 'Труднодоступные места убраны', 'Мусор вынесен'],
   renovation: ['Строительная пыль убрана со всех поверхностей', 'Следы краски и клея сняты', 'Полы вымыты', 'Кухня и санузел вымыты', 'Строительный мусор вынесен'],
@@ -82,7 +83,7 @@ export const tenge = (n: number) => Number(n).toLocaleString('ru-RU').replace(/\
 // Что заказчик читает перед отменой. until — время конца бесплатного срока словами («сегодня до 12:00»).
 export function homeCancelLine(terms: { fee: number; taken: boolean }, until: string) {
   const sum = tenge(terms.fee);
-  return terms.fee ? 'Бесплатный срок прошёл: исполнителю положено ' + sum + ' за отложенное время.' : terms.taken ? 'Отмена бесплатная ' + until + '. Позже исполнителю положена часть суммы.' : 'Исполнителя ещё нет: отмена бесплатная.';
+  return terms.fee ? tr('Бесплатный срок прошёл: исполнителю положено {sum} за отложенное время.', { sum }) : terms.taken ? tr('Отмена бесплатная {until}. Позже исполнителю положена часть суммы.', { until }) : tr('Исполнителя ещё нет: отмена бесплатная.');
 }
 // Жалоба на ущерб с фото: пока идёт приёмка и ещё двое суток после неё.
 export const HOME_DAMAGE_WINDOW = 48 * 3600, DAMAGE_PHOTO_LIMIT = 6;

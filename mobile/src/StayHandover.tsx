@@ -1,3 +1,4 @@
+import {t} from '../../lib/i18n';
 import React,{useCallback,useEffect,useState} from 'react';
 import {View,Text,TextInput,Pressable,Image,StyleSheet} from 'react-native';
 import {request} from './api';
@@ -24,13 +25,13 @@ export function StayPhotos({bookingId,phase,role,disabled=false,readOnly=false,o
   const images=await pickImages(camera,camera?1:Math.max(1,STAY_PHOTO_LIMIT-photos.length));
   for(const image of images)await request('/api/operations/stay-photo',{bookingId,data:await jpegData(image)},undefined,undefined,role);
   if(images.length)show(await fetchPhotos());
- }catch(e){setError(e instanceof Error&&e.message?e.message:'Не удалось добавить фото.');}finally{setBusy(false);}}
+ }catch(e){setError(e instanceof Error&&e.message?e.message:t('Не удалось добавить фото.'));}finally{setBusy(false);}}
  const full=photos.length>=STAY_PHOTO_LIMIT,off=busy||disabled||full;
- if(readOnly)return photos.length?<View style={h.grid}>{photos.map(p=>p.uri?<Image key={p.id} source={{uri:p.uri}} style={h.view} alt="Фото жилья" accessibilityLabel="Фото жилья"/>:<View key={p.id} style={[h.view,{backgroundColor:C.surfaceAlt}]}/>)}</View>:null;
+ if(readOnly)return photos.length?<View style={h.grid}>{photos.map(p=>p.uri?<Image key={p.id} source={{uri:p.uri}} style={h.view} alt={t('Фото жилья')} accessibilityLabel={t('Фото жилья')}/>:<View key={p.id} style={[h.view,{backgroundColor:C.surfaceAlt}]}/>)}</View>:null;
  return <View style={{gap:8}}>
-  {!!photos.length&&<View style={h.grid}>{photos.map(p=>p.uri?<Image key={p.id} source={{uri:p.uri}} style={h.thumb} alt="Фото жилья" accessibilityLabel="Фото жилья"/>:<View key={p.id} style={[h.thumb,{backgroundColor:C.surfaceAlt}]}/>)}</View>}
-  <Text style={s.meta}>{busy?'Сохраняю фото…':photos.length?'Добавлено '+photos.length+' из '+STAY_PHOTO_LIMIT+'.':'Пока нет фото.'}</Text>
-  {!full&&<View style={h.row}><View style={h.grow}>{button('Снять фото',()=>add(true),off)}</View><View style={h.grow}>{button('Из галереи',()=>add(false),off,true)}</View></View>}
+  {!!photos.length&&<View style={h.grid}>{photos.map(p=>p.uri?<Image key={p.id} source={{uri:p.uri}} style={h.thumb} alt={t('Фото жилья')} accessibilityLabel={t('Фото жилья')}/>:<View key={p.id} style={[h.thumb,{backgroundColor:C.surfaceAlt}]}/>)}</View>}
+  <Text style={s.meta}>{busy?t('Сохраняю фото…'):photos.length?t('Добавлено {length} из {STAY_PHOTO_LIMIT}.',{length:photos.length,STAY_PHOTO_LIMIT}):t('Пока нет фото.')}</Text>
+  {!full&&<View style={h.row}><View style={h.grow}>{button(t('Снять фото'),()=>add(true),off)}</View><View style={h.grow}>{button(t('Из галереи'),()=>add(false),off,true)}</View></View>}
   {!!error&&<Text accessibilityRole="alert" style={[s.meta,{color:C.danger}]}>{error}</Text>}
  </View>;
 }
@@ -38,8 +39,8 @@ export function StayPhotos({bookingId,phase,role,disabled=false,readOnly=false,o
 // The guest, right after moving in: a few photos protect the deposit from damage that was already there.
 export function CheckinPhotos({bookingId,count,venue=false}:{bookingId:string;count:number;venue?:boolean}){
  return <View style={[s.card,{gap:8}]}>
-  <Text style={s.eventTitle}>{count?(venue?'Фото в начале':'Фото при заселении'):venue?'Сфотографируйте помещение':'Сфотографируйте жильё'}</Text>
-  {!count&&<Text style={s.text}>{venue?'3–5 снимков помещения и того, что уже сломано или испачкано. Тогда это не запишут на вас, когда уйдёте.':'3–5 снимков комнат и того, что уже сломано или испачкано. Тогда это не запишут на вас при выезде.'} Фото видите только вы и владелец.</Text>}
+  <Text style={s.eventTitle}>{count?(venue?t('Фото в начале'):t('Фото при заселении')):venue?t('Сфотографируйте помещение'):t('Сфотографируйте жильё')}</Text>
+  {!count&&<Text style={s.text}>{venue?t('3–5 снимков помещения и того, что уже сломано или испачкано. Тогда это не запишут на вас, когда уйдёте.'):t('3–5 снимков комнат и того, что уже сломано или испачкано. Тогда это не запишут на вас при выезде.')}{' '}{t('Фото видите только вы и владелец.')}</Text>}
   <StayPhotos bookingId={bookingId} phase="checkin" role="guest"/>
  </View>;
 }
@@ -49,20 +50,20 @@ export function CheckinPhotos({bookingId,count,venue=false}:{bookingId:string;co
 export function StayHandover({bookingId,kind,cleanerPhotos,cleanerDamage,checkinPhotos,busy,onSubmit}:{bookingId:string;kind?:string;cleanerPhotos:number;cleanerDamage:number;checkinPhotos:number;busy:boolean;onSubmit:(body:{verdict:'ok'|'issues';issues?:string[];note?:string})=>void}){
  const [issuesOpen,setIssuesOpen]=useState(cleanerDamage>0),[picked,setPicked]=useState<string[]>(cleanerDamage>0?['damage']:[]),[note,setNote]=useState(''),[photos,setPhotos]=useState(0);
  const flip=(code:string)=>setPicked(list=>list.includes(code)?list.filter(c=>c!==code):[...list,code]);
- const ready=picked.length>0&&(!!note.trim()||photos>0||cleanerPhotos>0),w=stayWords(kind),venue=w.arrive!=='Заезд';
+ const ready=picked.length>0&&(!!note.trim()||photos>0||cleanerPhotos>0),w=stayWords(kind),venue=w!==stayWords();
  return <View style={[s.card,{gap:12}]}>
-  <Text style={s.eventTitle}>{venue?(w.stay==='Отдых'?'Как гости оставили баню?':'Как гости оставили зал?'):'Как гость оставил жильё?'}</Text>
+  <Text style={s.eventTitle}>{venue?(w===stayWords('banya')?t('Как гости оставили баню?'):t('Как гости оставили зал?')):t('Как гость оставил жильё?')}</Text>
   {checkinPhotos>0&&<StayPhotos bookingId={bookingId} phase="checkin" role="owner" readOnly/>}
-  <Text style={s.meta}>{[cleanerPhotos?'Фото исполнителя до уборки: '+cleanerPhotos+', приложатся сами':'',cleanerDamage?'исполнитель снял повреждения':'',checkinPhotos?(venue?'гость снял помещение в начале: ':'гость снял жильё при заселении: ')+checkinPhotos:''].filter(Boolean).join(' · ')||(venue?'Не отметите за двое суток, бронь засчитается без замечаний.':'Не отметите за двое суток — проживание засчитается без замечаний.')}</Text>
-  {!issuesOpen&&<View style={{gap:8}}>{button('Всё хорошо',()=>onSubmit({verdict:'ok'}),busy)}{button('Есть замечания',()=>setIssuesOpen(true),busy,true)}</View>}
+  <Text style={s.meta}>{[cleanerPhotos?t('Фото исполнителя до уборки: {cleanerPhotos}, приложатся сами',{cleanerPhotos}):'',cleanerDamage?t('исполнитель снял повреждения'):'',checkinPhotos?(venue?t('гость снял помещение в начале: '):t('гость снял жильё при заселении: '))+checkinPhotos:''].filter(Boolean).join(' · ')||(venue?t('Не отметите за двое суток, бронь засчитается без замечаний.'):t('Не отметите за двое суток — проживание засчитается без замечаний.'))}</Text>
+  {!issuesOpen&&<View style={{gap:8}}>{button(t('Всё хорошо'),()=>onSubmit({verdict:'ok'}),busy)}{button(t('Есть замечания'),()=>setIssuesOpen(true),busy,true)}</View>}
   {issuesOpen&&<>
-   <Text style={s.text}>Что было не так?</Text>
+   <Text style={s.text}>{t('Что было не так?')}</Text>
    <View accessibilityRole="list" style={h.chips}>{Object.keys(HANDOVER_ISSUES).map(code=>{const on=picked.includes(code);return <Pressable key={code} accessibilityRole="checkbox" accessibilityState={{checked:on,disabled:busy}} disabled={busy} onPress={()=>flip(code)} style={[s.chip,h.chip,on&&h.chipOn]}><Text style={[s.chipText,on&&h.chipTextOn]}>{handoverIssueText(code,venue)}</Text></Pressable>;})}</View>
-   <TextInput accessibilityLabel="Пояснение для гостя" placeholder="Коротко, что именно (необязательно, если есть фото)" placeholderTextColor={C.muted} value={note} onChangeText={setNote} maxLength={500} multiline style={s.input} editable={!busy}/>
+   <TextInput accessibilityLabel={t('Пояснение для гостя')} placeholder={t('Коротко, что именно (необязательно, если есть фото)')} placeholderTextColor={C.muted} value={note} onChangeText={setNote} maxLength={500} multiline style={s.input} editable={!busy}/>
    <StayPhotos bookingId={bookingId} phase="handover" role="owner" disabled={busy} onCount={setPhotos}/>
-   <Text style={s.meta}>Гость увидит замечания и фото и сможет ответить через «Есть проблема». Другим владельцам они пока не видны.</Text>
-   {button('Отправить замечания',()=>onSubmit({verdict:'issues',issues:picked,note:note.trim()}),busy||!ready)}
-   {button('Назад',()=>{setIssuesOpen(false);setPicked([]);},busy,true)}
+   <Text style={s.meta}>{t('Гость увидит замечания и фото и сможет ответить через «Есть проблема». Другим владельцам они пока не видны.')}</Text>
+   {button(t('Отправить замечания'),()=>onSubmit({verdict:'issues',issues:picked,note:note.trim()}),busy||!ready)}
+   {button(t('Назад'),()=>{setIssuesOpen(false);setPicked([]);},busy,true)}
   </>}
  </View>;
 }
@@ -70,18 +71,18 @@ export function StayHandover({bookingId,kind,cleanerPhotos,cleanerDamage,checkin
 // After the stay both sides see the photos of both moments: how the guest found the home and what the owner noted.
 export function StayEvidence({bookingId,kind,role,checkin,handover}:{bookingId:string;kind?:string;role:'guest'|'owner';checkin:boolean;handover:boolean}){
  return <View style={{gap:8}}>
-  {checkin&&<><Text style={s.meta}>{stayWords(kind).arrive==='Заезд'?'Гость при заселении':'Гость в начале'}</Text><StayPhotos bookingId={bookingId} phase="checkin" role={role} readOnly/></>}
-  {handover&&<><Text style={s.meta}>Владелец {stayWords(kind).afterLeave}</Text><StayPhotos bookingId={bookingId} phase="handover" role={role} readOnly/></>}
+  {checkin&&<><Text style={s.meta}>{stayWords(kind)===stayWords()?t('Гость при заселении'):t('Гость в начале')}</Text><StayPhotos bookingId={bookingId} phase="checkin" role={role} readOnly/></>}
+  {handover&&<><Text style={s.meta}>{t('Владелец {afterLeave}',{afterLeave:stayWords(kind).afterLeave})}</Text><StayPhotos bookingId={bookingId} phase="handover" role={role} readOnly/></>}
  </View>;
 }
 
 // One line about a finished handover: the owner reads it about the guest, the guest about themselves.
 export function handoverLine(h:Handover|null|undefined,silent:boolean,guest=false,kind?:string){
- const w=stayWords(kind),venue=w.arrive!=='Заезд',head=guest?'Владелец '+w.afterLeave:venue?'После гостей':'Жильё после гостя';
- if(!h)return silent?head+': без замечаний.':'';
- if(h.verdict==='ok')return head+': всё хорошо.';
+ const w=stayWords(kind),venue=w!==stayWords(),head=guest?t('Владелец {afterLeave}',{afterLeave:w.afterLeave}):venue?t('После гостей'):t('Жильё после гостя');
+ if(!h)return silent?t('{head}: без замечаний.',{head}):'';
+ if(h.verdict==='ok')return t('{head}: всё хорошо.',{head});
  const what=h.issues.map(code=>handoverIssueText(code,venue)).join(', ').toLowerCase()+(h.note?'. «'+h.note+'»':'')+'.';
- return guest?'Владелец отметил '+w.afterLeave+': '+what+' Не согласны — «Есть проблема» в «Ещё».':head+': '+what;
+ return guest?t('Владелец отметил {afterLeave}: {what} Не согласны — «Есть проблема» в «Ещё».',{afterLeave:w.afterLeave,what}):head+': '+what;
 }
 
 const h=StyleSheet.create({

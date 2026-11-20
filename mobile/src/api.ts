@@ -1,3 +1,4 @@
+import {t} from '../../lib/i18n';
 import { Platform } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
 import {SessionState,StaleSessionError} from './session-state';
@@ -5,7 +6,7 @@ import {trackRequest} from './loading';
 export {StaleSessionError} from './session-state';
 export const API_URL=(process.env.EXPO_PUBLIC_API_URL||'http://127.0.0.1:5174').replace(/\/$/,'');
 const sessionKey='ai-arenda-shared-session-v2';
-function checkedServer(){const url=new URL(API_URL);if(url.username||url.password||url.search||url.hash||url.pathname!=='/'||url.protocol!=='https:'&&(!__DEV__||url.protocol!=='http:'))throw new Error('Укажите защищённый адрес общего сервера приложения.');return url.origin;}
+function checkedServer(){const url=new URL(API_URL);if(url.username||url.password||url.search||url.hash||url.pathname!=='/'||url.protocol!=='https:'&&(!__DEV__||url.protocol!=='http:'))throw new Error(t('Укажите защищённый адрес общего сервера приложения.'));return url.origin;}
 let memoryRecord:string|null=null;
 const sessions=new SessionState({read:async()=>Platform.OS==='web'?memoryRecord:SecureStore.getItemAsync(sessionKey),write:async record=>{if(Platform.OS==='web'){memoryRecord=record;return;}if(record!==null)await SecureStore.setItemAsync(sessionKey,record);else await SecureStore.deleteItemAsync(sessionKey);}});
 let workspaceRole:string|null=null;
@@ -13,7 +14,7 @@ export function setWorkspaceRole(role:string|null){workspaceRole=role;}
 export function getSessionGeneration(){return sessions.currentGeneration();}
 export class ApiError extends Error {constructor(message:string,public status:number){super(message);}}
 // No answer came back. For a request that only reads, that means "no connection"; for one that may have changed something, the result is unknown.
-export class NetworkError extends Error {constructor(public uncertain:boolean){super(uncertain?'Нет ответа от сервера. Результат действия пока неизвестен. Проверьте связь и обновите данные.':'Нет связи. Проверьте интернет.');}}
+export class NetworkError extends Error {constructor(public uncertain:boolean){super(uncertain?t('Нет ответа от сервера. Результат действия пока неизвестен. Проверьте связь и обновите данные.'):t('Нет связи. Проверьте интернет.'));}}
 export const isOffline=(error:unknown)=>error instanceof NetworkError&&!error.uncertain;
 const readOnly=/^\/api\/(?:public\/|quote$|operations\/(?:map\/search|matching\/(?:state|inbox)|discussion\/(?:inbox|read|avatar|photo|blocks)|administrator\/(?:conversation|history))$|bookings\/[^/]+\/change-quote$)|^\/auth\/login$/;
 // The app shows one quiet "Нет связи" line; every answer or silence of the server updates it.
@@ -40,7 +41,7 @@ export async function saveSession(value:string|null){
   await sessions.save(value,checkedServer());
 }
 export async function request(path:string,body?:unknown,method?:string,requestKey?:string,role?:string):Promise<any>{
-  checkedServer();if(!/^\/(?:api\/|auth\/)/.test(path))throw Error('Неверный адрес операции.');
+  checkedServer();if(!/^\/(?:api\/|auth\/)/.test(path))throw Error(t('Неверный адрес операции.'));
   const snapshot=sessions.snapshot();if(snapshot.transitioning)throw new StaleSessionError();
   const requestRole=role||workspaceRole;
   const target=path.startsWith('/auth/')?'/api/mobile'+path:path;
@@ -54,7 +55,7 @@ export async function request(path:string,body?:unknown,method?:string,requestKe
     sessions.assertCurrent(snapshot);
     reachListener?.(true);
     if(response.status===428&&Array.isArray(data.legal))legalListener?.();
-    if(!response.ok)throw new ApiError(data.error||'Сервер не подтвердил действие.',response.status);
+    if(!response.ok)throw new ApiError(data.error||t('Сервер не подтвердил действие.'),response.status);
     return data;
   }catch(error){
     sessions.assertCurrent(snapshot);

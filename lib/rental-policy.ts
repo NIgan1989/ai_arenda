@@ -1,3 +1,4 @@
+import {t as tr} from './i18n';
 import {DomainError,number,required} from './domain';
 type Row=Record<string,any>;
 export const defaultPolicy={hourly_price:0,min_hours:2,nightly_price:0,checkin_minutes:840,checkout_minutes:720,deposit:0,house_rules:'',auto_confirm:0,auto_assign:0,cleaning_fee:0,cleaning_budget:0,max_discount_percent:0,minimum_rate:0,repair_budget:0,auto_extension:0,max_extension_hours:0,mandate_until:0,escalation_contact:'',included_guests:0,extra_guest_price:0,prep_minutes:0,version:0};
@@ -41,6 +42,8 @@ function nightOf(policy:Row,start:number){
   if(time<policy.checkout_minutes*60&&policy.checkout_minutes<policy.checkin_minutes)return day-1;
   return null;
 }
+// The names of the units as the app shows them through t(quote.unitLabel): listed for scripts/i18n-missing.mjs.
+export const UNIT_LABELS=/* i18n */['начатые сутки (24 часа)','начатый час','ночь'] as const;
 export type RentalPrice={billingMode:string;periods:number;price:number;amount:number;unitLabel:string};
 export function rentalPrice(dailyPrice:number,policy:Row,start:number,end:number,mode:unknown='daily'):RentalPrice{
   let units:number,price:number,label:string;
@@ -79,4 +82,4 @@ export function changeRentalPrice(dailyPrice:number,policy:Row,start:number,end:
 export const prepSeconds=(policy:Row)=>Math.max(0,Number(policy?.prep_minutes)||0)*60;
 export const tooSoon=(policy:Row,start:number,at:number)=>prepSeconds(policy)>0&&start<at+prepSeconds(policy);
 /** "1 ч", "30 мин", "1 ч 30 мин". */
-export function prepWords(minutes:number){const h=Math.floor(minutes/60),m=minutes%60;return [h?h+' ч':'',m?m+' мин':''].filter(Boolean).join(' ');}
+export function prepWords(minutes:number){const h=Math.floor(minutes/60),m=minutes%60;return [h?tr('{h} ч',{h}):'',m?tr('{m} мин',{m}):''].filter(Boolean).join(' ');}

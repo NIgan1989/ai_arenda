@@ -1,3 +1,4 @@
+import {t} from '../../lib/i18n';
 import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { C, type } from './styles';
@@ -7,9 +8,9 @@ import { unbrokenTime, type NowCard as NowCardModel } from './now-card';
 // Shown only when now-card.ts found something real. No card is rendered for an empty state.
 export function NowCard({ card, onOpen }: { card: NowCardModel; onOpen: () => void }) {
   return (
-    <View style={[n.card, card.urgent && n.urgent]} accessibilityLabel={'Сейчас: ' + card.title + '. ' + card.detail}>
+    <View style={[n.card, card.urgent && n.urgent]} accessibilityLabel={t('Сейчас: {title}. {detail}',{title:card.title,detail:card.detail})}>
       <View style={n.text}>
-        <Text style={[n.label, card.urgent && n.labelUrgent]}>Сейчас</Text>
+        <Text style={[n.label, card.urgent && n.labelUrgent]}>{t('Сейчас')}</Text>
         <Text numberOfLines={2} style={n.title}>
           {card.title}
         </Text>
