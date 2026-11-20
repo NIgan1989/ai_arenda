@@ -91,3 +91,7 @@ INCLUDING ANY GENERAL, SPECIAL, INDIRECT, INCIDENTAL, OR CONSEQUENTIAL
 DAMAGES, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
 FROM, OUT OF THE USE OR INABILITY TO USE THE FONT SOFTWARE OR FROM
 OTHER DEALINGS IN THE FONT SOFTWARE.
+
+-----------------------------------------------------------
+Modified for AiQonaq, 2026-11-20: the Kazakh letters Ә Ғ Қ Ң Ө Ұ Ү Һ (capital and small) were added from the
+font's own shapes by scripts/build-kazakh-font.py. The modified font stays under the same license.
