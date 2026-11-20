@@ -68,3 +68,17 @@ test('two overlapping «Всё включено» requests bill one month, not t
   assert.equal(R.prepare("SELECT COUNT(*) n FROM notifications WHERE user_id='owner' AND dedupe LIKE 'owner:plan-all:%'").get().n,1);
  }finally{f.db.close();}
 });
+
+test('a stop after choosing to go back to paying for the result turns the AI off when the month ends',async()=>{
+ const f=await fixture(),R=f.db.raw;try{
+  const {sweepPlans}=await load('autopilot-plans');
+  R.prepare("UPDATE platform_billing SET plan_charge=1").run();
+  await writeOperations(f.owner,'owner',['autopilot','start'],{propertyIds:[f.property],cleaningFees:{[f.property]:3000}});
+  await writeOperations(f.owner,'owner',['autopilot','tier'],{tier:'all'});
+  await writeOperations(f.owner,'owner',['autopilot','tier'],{tier:'pay'});
+  await writeOperations(f.owner,'owner',['autopilot','stop'],{});
+  const end=R.prepare("SELECT period_end FROM autopilot_plans WHERE user_id='owner'").get().period_end;
+  await sweepPlans(f.db,end+60);
+  assert.equal(R.prepare("SELECT status FROM autopilot_plans WHERE user_id='owner'").get().status,'paused');
+ }finally{f.db.close();}
+});

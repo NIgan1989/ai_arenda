@@ -139,7 +139,7 @@ export async function stopPlan(service:RentalService,role:PlanRole){
  const at=epoch(),plan=await planOf(service.db,service.userId,role);
  if(!plan||plan.status==='paused')return {message:'Автопилот уже выключен.'};
  const s=await planSettings(service.db);
- if(plan.status==='active'&&plan.tier==='all'&&s.charge){await q(service.db,'UPDATE autopilot_plans SET auto_renew=0,version=version+1,updated_at=? WHERE user_id=? AND role=?',at,service.userId,role).run();return {message:`Автопилот работает до ${dateText(plan.period_end)} и не продлится. Включить снова можно ${role==='owner'?'в настройках жилья':'в меню'}.`};}
+ if(plan.status==='active'&&plan.tier==='all'&&s.charge){await q(service.db,'UPDATE autopilot_plans SET auto_renew=0,next_tier=NULL,version=version+1,updated_at=? WHERE user_id=? AND role=?',at,service.userId,role).run();return {message:`Автопилот работает до ${dateText(plan.period_end)} и не продлится. Включить снова можно ${role==='owner'?'в настройках жилья':'в меню'}.`};}
  await pause(service.db,plan,at,role==='owner'?'Автопилот выключен. Объекты в режиме «Я сам»: запросы гостей приходят вам.':'Автопилот выключен. Предложения уборок снова приходят вам на решение.');
  return {message:role==='owner'?'Автопилот выключен. Объекты переведены в режим «Я сам».':'Автопилот выключен.'};
 }
@@ -257,12 +257,13 @@ export async function sweepPlans(db:D1Database,at=epoch(),config:{PLATFORM_ADMIN
  const s=await planSettings(db),result:Row={renewed:0,grace:0,paused:0,reminded:0,dayPlans:0,reports:0};
  const due=await rows(db,`SELECT * FROM autopilot_plans WHERE tier='all' AND ((status IN ('trial','active') AND period_end<=?) OR status='grace') ORDER BY period_end LIMIT 100`,at);
  for(const plan of due){
+  // An explicit stop wins over a scheduled return to paying for the result.
+  if(plan.status!=='grace'&&!plan.auto_renew){if(await pause(db,plan,at,'Автопилот выключен: оплаченный месяц «Всё включено» закончился. Включить снова можно '+(plan.role==='owner'?'в настройках жилья.':'в меню.')))result.paused++;continue;}
   if(plan.status!=='grace'&&plan.next_tier==='pay'){
    const r=await q(db,"UPDATE autopilot_plans SET tier='pay',next_tier=NULL,period_end=?,version=version+1,updated_at=? WHERE user_id=? AND role=? AND version=?",at+MONTH,at,plan.user_id,plan.role,plan.version).run();
    if(r.meta.changes){result.renewed++;await notice(db,plan.user_id,'«Всё включено» закончилось. Дальше вы платите только за результат: '+payNote(s,plan.role).charAt(0).toLowerCase()+payNote(s,plan.role).slice(1),plan.role+':plan-pay:'+plan.user_id+':'+plan.period_end,at).run();}
    continue;
   }
-  if(plan.status!=='grace'&&!plan.auto_renew){if(await pause(db,plan,at,'Автопилот выключен: оплаченный месяц «Всё включено» закончился. Включить снова можно '+(plan.role==='owner'?'в настройках жилья.':'в меню.')))result.paused++;continue;}
   const from=plan.status==='grace'?at:Math.max(plan.period_end,at-DAY),paid=await chargeMonth(db,plan,s,at,from);
   if(paid.ok){
    const r=await q(db,"UPDATE autopilot_plans SET status='active',period_end=?,grace_until=NULL,version=version+1,updated_at=? WHERE user_id=? AND role=? AND version=?",from+MONTH,at,plan.user_id,plan.role,plan.version).run();
