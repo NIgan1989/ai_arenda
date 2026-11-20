@@ -335,7 +335,7 @@ export function GuestResults({ preview, draft, mine, onFavorite, selected, onSel
             <Text style={h.note}>При отмене вся оплата возвращается.</Text>
           </View>
         )}
-        {!!chosen.host && <View style={{ marginBottom: 12 }}><ReliabilityBadge value={chosen.host} title="Владелец" /></View>}
+        {!!chosen.host && <View style={{ marginBottom: 12 }}><ReliabilityBadge value={chosen.host} title="Владелец" subtleAttention /></View>}
         <View onLayout={e => setButtonBottom(Math.round(e.nativeEvent.layout.y + e.nativeEvent.layout.height))}>
           <Action title="Забронировать" disabled={busy} onPress={() => onBook(chosen)} />
         </View>
@@ -415,7 +415,7 @@ export function GuestResults({ preview, draft, mine, onFavorite, selected, onSel
               onFocus?.(flat.id);
               onSelect(flat.id);
             }}
-            style={({ pressed }) => [r.card, { width: card }, i === index && r.cardInView, flat.match?.best && r.cardBest, pressed && r.cardPressed]}
+            style={({ pressed }) => [r.card, { width: card }, i === index && r.cardInView, pressed && r.cardPressed]}
           >
             <View style={r.cardRow}>
               <View style={r.cardPhoto}>
@@ -439,7 +439,7 @@ export function GuestResults({ preview, draft, mine, onFavorite, selected, onSel
               </View>
             </View>
             {/* Why this place answers the request, in the guest's own conditions. */}
-            {!!why(flat) && <Text numberOfLines={1} style={r.why}>✓ {why(flat)}</Text>}
+            {!!why(flat) && <Text numberOfLines={1} style={r.why}>{why(flat)}</Text>}
             {/* Two taps to a booking: this button, then «Отправить заявку» on the check of the booking. */}
             <Pressable accessibilityRole="button" accessibilityLabel={'Забронировать: ' + flat.title} disabled={busy} onPress={() => onBook(flat)} style={({ pressed }) => [r.book, (pressed || busy) && h.dim]}>
               <Text style={r.bookText}>Забронировать</Text>
@@ -470,8 +470,7 @@ const r = StyleSheet.create({
   carousel: { marginHorizontal: -16, marginBottom: 4 },
   carouselContent: { paddingHorizontal: 16, gap: GAP },
   card: { borderRadius: T.radius.lg, borderWidth: 1, borderColor: C.line, backgroundColor: C.surface, overflow: 'hidden', padding: 12, gap: 8 },
-  cardInView: { borderColor: C.accentLine },
-  cardBest: { borderColor: C.aiFrom, borderWidth: 2 },
+  cardInView: { borderColor: C.accent, borderWidth: 2 },
   cardPressed: { opacity: 0.85 },
   cardRow: { flexDirection: 'row', gap: 12 },
   cardPhoto: { width: 88, height: 88, borderRadius: T.radius.md, overflow: 'hidden', backgroundColor: C.surfaceAlt },
@@ -479,7 +478,7 @@ const r = StyleSheet.create({
   heartOnPhoto: { position: 'absolute', right: 2, top: 2 },
   cardBody: { flex: 1, minWidth: 0, gap: 2, justifyContent: 'center' },
   priceRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', columnGap: 8 },
-  why: { ...type.caption, color: C.success, fontWeight: '600' },
+  why: { ...type.caption, color: C.muted, fontWeight: '600' },
   ready: { ...type.caption, color: C.success, fontWeight: '600' },
   readyCheck: { color: C.warning },
   strip: { gap: 12 },
@@ -497,7 +496,7 @@ const r = StyleSheet.create({
   chosen: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
   amount: { alignItems: 'flex-end' },
   best: { ...type.caption, alignSelf: 'flex-start', marginBottom: 4, paddingHorizontal: 8, paddingVertical: 2, borderRadius: T.radius.full, overflow: 'hidden', backgroundColor: C.accentSoft, color: C.accent, fontWeight: '600' },
-  deal: { ...type.caption, marginTop: 4, paddingHorizontal: 8, paddingVertical: 2, borderRadius: T.radius.full, overflow: 'hidden', backgroundColor: C.successSoft, color: C.success, fontWeight: '600' },
+  deal: { ...type.caption, marginTop: 4, color: C.muted },
   window: { ...type.caption, marginTop: 4, paddingHorizontal: 8, paddingVertical: 2, borderRadius: T.radius.full, overflow: 'hidden', backgroundColor: C.accentSoft, color: C.accent, fontWeight: '600' },
   book: { minHeight: 40, borderRadius: T.radius.full, alignItems: 'center', justifyContent: 'center', backgroundColor: C.accent },
   bookText: { ...type.label, color: C.onAccent, fontWeight: '600' }

@@ -15,7 +15,6 @@ const b=StyleSheet.create({
  item:{flex:1,minHeight:40,flexDirection:'row',alignItems:'center',justifyContent:'center',gap:4,paddingHorizontal:4,borderRadius:R.md},
  on:{backgroundColor:C.surface,shadowColor:C.ink,shadowOpacity:.08,shadowRadius:4,shadowOffset:{width:0,height:1},elevation:1},pressed:{opacity:.6},
  text:{...type.caption,fontWeight:'600',color:C.muted},textOn:{color:C.ink},empty:{opacity:.6},
- count:{...type.caption,color:C.muted},countOn:{color:C.goldInk,fontWeight:'700'},
- // The chosen tab is underlined in the gold of the sign.
- mark:{position:'absolute',bottom:4,left:'30%',right:'30%',height:2,borderRadius:R.xs,backgroundColor:C.gold},
+ count:{...type.caption,color:C.muted},countOn:{color:C.accentPressed,fontWeight:'700'},
+ mark:{position:'absolute',bottom:4,left:'30%',right:'30%',height:2,borderRadius:R.xs,backgroundColor:C.accent},
 });
