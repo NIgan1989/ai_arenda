@@ -6,10 +6,49 @@ export function mapSearchFilters(input:Record<string,unknown>){
  return filters;
 }
 // Lower case, «е» for «ё», and the spellings the rules below do not need to know one by one: «вай фай» and «wi fi» are
-// «wifi», «кондей» a «кондиционер», a few Kazakh words of a request their Russian ones. «Завтрак» is set apart first,
-// so that it is never read as «завтра» (it is named back as not searched, see UNSEARCHED).
-const KZ_WORDS:[RegExp,string][]=[[/п[әа]тер[а-яәіңғүұқөһ]*/g,'квартира'],[/монша[а-яәіңғүұқөһ]*/g,'баня'],[/т[әа]ул[іи]к[а-яәіңғүұқөһ]*/g,'сутки'],[/сағат[а-яәіңғүұқөһ]*/g,'часа'],[/қонақ\s*үй[а-яәіңғүұқөһ]*/g,'гостиница']];
-const normal=(text:string)=>KZ_WORDS.reduce((t,[from,to])=>t.replace(from,to),text.toLocaleLowerCase('ru').replace(/ё/g,'е'))
+// «wifi», «кондей» a «кондиционер». «Завтрак» is set apart first, so that it is never read as «завтра» (it is named
+// back as not searched, see UNSEARCHED).
+//
+// The rules read Russian. A request in Kazakh or in English is first said in the Russian words of the rules: the
+// examples the app shows in those languages («Бүгін 20:00-ге 6 адамға монша», «Bathhouse for 6 people today at 20:00»)
+// must be read the same as the Russian one. Only the words of a search are known here; the rest is left as it is,
+// and what the rules still cannot read goes to the model, as before.
+const KK='а-яәіңғүұқөһ',KK_END='(?![а-яәіңғүұқөһ])';
+const kkWord=(words:string,to:string):[RegExp,string]=>[new RegExp('(^|[^'+KK+'])(?:'+words+')'+KK_END,'g'),'$1'+to];
+const MONTHS_RU=['января','февраля','марта','апреля','мая','июня','июля','августа','сентября','октября','ноября','декабря'];
+const MONTHS_KK=['қаңтар','ақпан','наурыз','сәуір','мамыр','маусым','шілде','тамыз','қыркүйек','қазан','қараша','желтоқсан'];
+const MONTHS_EN=['january','february','march','april','may','june','july','august','september','october','november','december'];
+const KZ_WORDS:[RegExp,string][]=[
+ // «20:00-ге» is «в 20:00»; «15 000-ға дейін» and «15 мың теңгеге дейін» are «до 15 000».
+ [new RegExp('(\\d{1,2}[:.]\\d{2})\\s*-?\\s*(?:ге|ға|де|да|те|та)'+KK_END,'g'),'в $1'],
+ [/(\d)\s*мың/g,'$1 тыс'],
+ [new RegExp('(\\d[\\d ]*(?:\\s*тыс)?)\\s*(?:теңге(?:ге)?)?\\s*-?\\s*(?:ға|ге|қа|ке)?\\s+дейін'+KK_END,'g'),'до $1'],
+ [/қонақ\s*үй[а-яәіңғүұқөһ]*/g,'гостиница'],
+ // The party: «6 адамға», «екі адамға», «екеуге».
+ [new RegExp('(\\d{1,3})\\s*(?:адам|кісі|қонақ)(?:ға|қа)?'+KK_END,'g'),'на $1 человек'],
+ kkWord('екі\\s+(?:адам|кісі)(?:ға|қа)?|екеуге|екеумізге','на двоих'),kkWord('үш\\s+(?:адам|кісі)(?:ға|қа)?|үшеуге|үшеумізге','на троих'),
+ // The length: «3 сағатқа», «бір тәулікке», «2 күнге», «түнге».
+ [new RegExp('(\\d{1,2})\\s*сағат(?:қа|ка)?'+KK_END,'g'),'на $1 часа'],
+ [new RegExp('(\\d{1,2})\\s*тәулік(?:ке)?'+KK_END,'g'),'на $1 суток'],[new RegExp('(\\d{1,2})\\s*күн(?:ге)?'+KK_END,'g'),'на $1 дней'],[new RegExp('(\\d{1,2})\\s*түн(?:ге)?'+KK_END,'g'),'на $1 ночей'],
+ kkWord('(?:бір\\s+)?тәулікке','на сутки'),kkWord('(?:бір\\s+)?түнге','на ночь'),
+ kkWord('бүрсігүні','послезавтра'),kkWord('бүгін','сегодня'),kkWord('ертең','завтра'),kkWord('қазір','сейчас'),kkWord('кешке|кешкісін','вечером'),kkWord('демалыс\\s+күндері(?:не)?|демалысқа','на выходные'),
+ kkWord('орталығында|орталықта|орталық','в центре'),kkWord('арзанырақ|арзан','дешевле'),kkWord('жақынырақ|жақын','ближе'),
+ ...MONTHS_KK.map((m,i):[RegExp,string]=>[new RegExp('(\\d{1,2})\\s*-?\\s*'+m+'['+KK+']*','g'),'$1 '+MONTHS_RU[i]]),
+ [/п[әа]тер[а-яәіңғүұқөһ]*/g,'квартира'],[/монша[а-яәіңғүұқөһ]*/g,'баня'],[/т[әа]ул[іи]к[а-яәіңғүұқөһ]*/g,'сутки'],[/сағат[а-яәіңғүұқөһ]*/g,'часа']];
+const EN_MONTH='('+MONTHS_EN.join('|')+')',enMonth=(name:string)=>MONTHS_RU[MONTHS_EN.indexOf(name)];
+const enWords=(text:string)=>!/[a-z]{3}/.test(text)?text:text
+ .replace(/\bat\s+(\d{1,2})\s*(am|pm)\b/g,(_,h,half)=>'в '+String(Number(h)%12+(half==='pm'?12:0)).padStart(2,'0')+':00').replace(/\bat\s+(\d{1,2}[:.]\d{2})\b/g,'в $1')
+ .replace(/(\d),(\d{3})\b/g,'$1$2').replace(/\b(?:up\s+to|under|below|no\s+more\s+than|max(?:imum)?)\s+(\d[\d ]*)(?:\s*k\b)?/g,(whole,n)=>'до '+n.trim()+(/k$/.test(whole)?' тыс':''))
+ .replace(/\b(?:for\s+)?(\d{1,2})\s*(?:hours?|hrs?)\b/g,'на $1 часа').replace(/\b(?:for\s+)?(\d{1,2})\s*days?\b/g,'на $1 дней').replace(/\b(?:for\s+)?(\d{1,2})\s*nights?\b/g,'на $1 ночей')
+ .replace(/\b(?:for\s+)?(\d{1,3})\s*(?:people|persons?|guests?|adults?)\b/g,'на $1 человек').replace(/\bfor\s+(\d{1,3})\b(?![:.]\d)/g,'на $1')
+ .replace(/\bfor\s+(?:two|a\s+couple)\b/g,'на двоих').replace(/\bfor\s+three\b/g,'на троих')
+ .replace(/\b(?:for\s+)?(?:one|a)\s+day\b/g,'на сутки').replace(/\btonight\b/g,'сегодня на ночь').replace(/\b(?:for\s+)?(?:the|a|one)\s+night\b|\bovernight\b/g,'на ночь')
+ .replace(/\b(?:the\s+)?day\s+after\s+tomorrow\b/g,'послезавтра').replace(/\btoday\b/g,'сегодня').replace(/\btomorrow\b/g,'завтра').replace(/\b(?:right\s+)?now\b/g,'сейчас').replace(/\b(?:this\s+|in\s+the\s+)?evening\b/g,'вечером')
+ .replace(/\b(?:(?:this|at\s+the|on\s+the|for\s+the)\s+)?weekend\b/g,'на выходные').replace(/\b(?:(?:in|near)\s+(?:the\s+)?)?(?:city\s+)?cent(?:re|er)\b|\bdowntown\b/g,'в центре')
+ .replace(new RegExp('\\b(?:on\\s+)?(?:the\\s+)?(\\d{1,2})(?:st|nd|rd|th)?\\s+(?:of\\s+)?'+EN_MONTH+'\\b','g'),(_,d,m)=>d+' '+enMonth(m)).replace(new RegExp('\\b(?:on\\s+)?'+EN_MONTH+'\\s+(\\d{1,2})(?:st|nd|rd|th)?\\b','g'),(_,m,d)=>d+' '+enMonth(m))
+ .replace(/\b(?:bath\s*houses?|saunas?|banya)\b/g,'баня').replace(/\btoi\b/g,'той').replace(/\bbanquet(?:\s+hall)?\b/g,'банкетный зал').replace(/\b(?:apartments?|flats?)\b/g,'квартира').replace(/\bhotels?\b/g,'гостиница')
+ .replace(/\b(?:cheaper|cheapest|cheap)\b/g,'дешевле').replace(/\b(?:closer|nearer|nearby)\b/g,'ближе').replace(/\bparking\b/g,'парковка').replace(/\b(?:hourly|by\s+the\s+hour)\b/g,'почасовая');
+const normal=(text:string)=>enWords(KZ_WORDS.reduce((t,[from,to])=>t.replace(from,to),text.toLocaleLowerCase('ru').replace(/ё/g,'е')))
  .replace(/завтрак[а-я]*/g,'zavtrak').replace(/(?:вай|wi)[\s-]+(?:фай|fi)/g,'wifi').replace(/(?:^|[^а-я])конд(?:ей|еем|ея|ик[а-я]*)(?=$|[^а-я])/g,' кондиционер');
 export function mapSearchRequest(text:string,current:Filters,cities:string[],now=Date.now()){
  const request=normal(text),filters:Filters={...current,page:'1'},applied:string[]=[],notes:string[]=[];
@@ -725,7 +764,11 @@ export function guestSearchRequest(text: string, current: Row, cities: string[],
   }
 
   const party = PARTY.find(([pattern]) => pattern.test(request))?.[1];
-  const counted = request.match(/(?:^|\D)(\d{1,4})\s*(?:гост|человек|чел(?![а-я])|взросл|персон)/);
+  // A bath or a hall is taken for a party: «баня на 6 в 20:00», «той на 150, 5 декабря». The bare number is the party
+  // when a time, a day or the end of the phrase follows it; «на 3 часа» stays a length.
+  const venueAsked = banquet || (filters.kinds || current.kinds || []).some((id: string) => BATH_KINDS.includes(id));
+  const counted = request.match(/(?:^|\D)(\d{1,4})\s*(?:гост|человек|чел(?![а-я])|взросл|персон)/)
+    || (venueAsked ? request.match(/(?:^|[^а-я])на\s+(\d{1,4})(?=\s*(?:$|,|в\s+\d|\d{1,2}\s+[а-я]|сегодня|завтра|послезавтра|вечером|днем|утром))/) : null);
   const most = banquet ? MAX_BANQUET_GUESTS : MAX_GUESTS;
   // «С ребёнком», «семья с двумя детьми»: the children come on top of the grown-ups (two when none are counted).
   const child = request.match(/(?:^|[^а-я])(?:с|и)\s+(?:(\d|двумя|двое|тремя|трое|одним)\s+)?(?:реб[еи]н[а-я]*|малыш[а-я]*|дет(?:ьми|ей|и)|дочк[а-я]*|сын[а-я]*)(?=$|[^а-я])/);

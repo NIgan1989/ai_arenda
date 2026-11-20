@@ -565,3 +565,38 @@ test('a cleaning typed into the guest line is the home cleaning order, not a sea
   for (const text of ['квартира после уборки', 'баня на вечер', 'квартира на 2 суток', 'хостел с уборкой'])
     assert.equal(cleaningAsk(text), false, text);
 });
+
+test('the examples the app shows in Kazakh and in English are read as the Russian ones', async () => {
+  const {tIn} = await loadPure('lib/i18n.ts');
+  const read = (text, from = draft) => { const r = parse(text, morning, from); return {draft: r.draft, understood: r.understood, past: r.past}; };
+  // The examples of the line (lib/ai-line.ts, mobile/src/head-line.ts), each in the category it is shown in.
+  const bath = chipDraft('evening', {...draft, kinds: ['banya', 'sauna'], guests: 4}, morning);
+  for (const [key, from] of [['На 3 часа сегодня в центре', draft], ['Баня на 6 человек сегодня в 20:00', draft], ['Баня на 6 человек сегодня в 20:00', bath], ['Баня на 6 в 20:00', bath], ['Баня на 6 в 20:00', draft], ['Той на 150 человек 5 декабря', draft], ['Той на 150, 5 декабря', draft]]) {
+    const ru = read(key, from);
+    assert.equal(ru.understood, true, key);
+    for (const l of ['kk', 'en']) {
+      const said = tIn(l, key);
+      assert.notEqual(said, key, 'no translation: ' + key);
+      assert.deepEqual(read(said, from), ru, l + ': ' + said);
+    }
+  }
+  assert.equal(read('Баня на 6 в 20:00').draft.guests, 6);
+  assert.equal(read('Bathhouse for 6 people today at 20:00', bath).draft.guests, 6);
+  assert.equal(read('Той на 150, 5 декабря').draft.guests, 150);
+  // «На 3 часа» stays a length, not a party.
+  assert.equal(read('Баня на 3 часа завтра', bath).draft.guests, 4);
+  // The examples inside the hints.
+  for (const [ru, kk, en] of [
+    ['завтра на сутки на двоих', 'ертең бір тәулікке екі адамға', 'tomorrow for one day for two'],
+    ['завтра на сутки до 15 000', 'ертең бір тәулікке 15 000-ға дейін', 'tomorrow for a day up to 15 000'],
+    ['на выходные до 20 тыс', 'демалыс күндеріне 20 мың теңгеге дейін', 'for the weekend up to 20k'],
+    ['послезавтра на 2 ночей на троих', 'бүрсігүні 2 түнге үш адамға', 'the day after tomorrow for 2 nights for three'],
+    ['квартира сегодня на ночь дешевле', 'бүгін түнге пәтер арзанырақ', 'cheaper flat tonight'],
+    ['баня 5 декабря в 20:00 на 8 человек', '5 желтоқсанда 20:00-де 8 адамға монша', 'sauna on December 5th at 8 pm for 8 guests'],
+  ]) {
+    assert.deepEqual(read(kk), read(ru), kk);
+    assert.deepEqual(read(en), read(ru), en);
+  }
+  // Russian is read as before: a Russian word is never taken for a Kazakh or an English one.
+  assert.equal(read('Екибастуз завтра на сутки').draft.guests, 2);
+});
