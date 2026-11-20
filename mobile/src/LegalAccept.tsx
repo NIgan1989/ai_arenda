@@ -36,7 +36,7 @@ export function LegalAccept({legal,role,onAccepted,onLeave}:{legal:LegalState;ro
     {/* With large system text the card may outgrow the screen: it stops at 90% and scrolls, so the documents stay reachable. */}
     <ScrollView contentContainerStyle={l.content} bounces={false}>
     <Text accessibilityRole="header" style={l.title}>{about?about.title:t('Условия обновились')}</Text>
-    <Text style={l.body}>{tParts(docs.length>1?'Нажимая «Принимаю», вы соглашаетесь с документами: {links}.':'Нажимая «Принимаю», вы соглашаетесь с документом: {links}.').map((part,i)=>typeof part==='string'?part:<React.Fragment key={i}>{links}</React.Fragment>)}{lang()!=='ru'&&t(' (документы на русском языке)')}</Text>
+    <Text style={l.body}>{tParts(docs.length>1?t('Нажимая «Принимаю», вы соглашаетесь с документами: {links}.'):t('Нажимая «Принимаю», вы соглашаетесь с документом: {links}.')).map((part,i)=>typeof part==='string'?part:<React.Fragment key={i}>{links}</React.Fragment>)}{lang()!=='ru'&&t(' (документы на русском языке)')}</Text>
     <Text style={s.meta}>{about?about.note+' ':''}{t('Редакция от {edition}',{edition:t(legal.edition)})}.</Text>
     {!!error&&<Text accessibilityRole="alert" style={s.error}>{error}</Text>}
     <Pressable accessibilityRole="button" accessibilityState={{disabled:busy}} disabled={busy} onPress={()=>void accept()} style={({pressed})=>[s.button,(busy||pressed)&&s.disabled]}><Text style={s.buttonText}>{busy?t('Сохраняю…'):t('Принимаю')}</Text></Pressable>

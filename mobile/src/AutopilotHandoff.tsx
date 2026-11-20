@@ -1,3 +1,4 @@
+import {t} from '../../lib/i18n';
 import React, { useEffect, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { cleanerHandoff, ownerHandoff } from '../../lib/autopilot-handoff';
@@ -41,46 +42,46 @@ export function AutopilotHandoff({ role, accountId, stamp = '', tick = 0, compac
       if (!live.current) return;
       // A home the server refused (an expired mandate, a tariff under the minimum) keeps the offer open with the reason.
       const failed: Row[] = result?.failed || [];
-      setNotice(failed.length ? failed.map(f => f.error).join(' ') : result?.message || 'Автопилот включён.');
+      setNotice(failed.length ? failed.map(f => f.error).join(' ') : result?.message || t('Автопилот включён.'));
       if (!failed.length) setOpen(false);
       setState(result?.state || null); if (!result?.state) await load();
       await onChanged();
-    } catch (e: any) { if (live.current) setNotice(e?.message || 'Не получилось включить. Попробуйте ещё раз.'); }
+    } catch (e: any) { if (live.current) setNotice(e?.message || t('Не получилось включить. Попробуйте ещё раз.')); }
     finally { if (live.current) setBusy(false); }
   }
   if (compact && !open) return (
-    <Pressable accessibilityRole="button" accessibilityLabel={'Передать ИИ: ' + offer.title} onPress={() => { setNotice(''); setOpen(true); onExpand?.(); }} style={({ pressed }) => [a.slim, pressed && a.pressed]}>
-      <Text style={a.slimMark}>✦</Text><Text numberOfLines={1} style={[a.linkText, a.text]}>{owner ? 'Передать жильё ИИ' : 'ИИ может брать уборки за вас'}</Text><Text style={a.linkText}>›</Text>
+    <Pressable accessibilityRole="button" accessibilityLabel={t('Передать ИИ: {title}',{title:offer.title})} onPress={() => { setNotice(''); setOpen(true); onExpand?.(); }} style={({ pressed }) => [a.slim, pressed && a.pressed]}>
+      <Text style={a.slimMark}>✦</Text><Text numberOfLines={1} style={[a.linkText, a.text]}>{owner ? t('Передать жильё ИИ') : t('ИИ может брать уборки за вас')}</Text><Text style={a.linkText}>›</Text>
     </Pressable>
   );
   return (
-    <View style={a.box} accessibilityLabel={'Передать ИИ: ' + offer.title}>
+    <View style={a.box} accessibilityLabel={t('Передать ИИ: {title}',{title:offer.title})}>
       <View style={a.row}>
         <View style={a.mark}><Text style={a.markText}>✦</Text></View>
         <View style={a.text}><Text numberOfLines={2} style={a.title}>{offer.title}</Text><Text numberOfLines={open ? undefined : 2} style={a.line}>{offer.line}</Text></View>
-        {!open && <Pressable accessibilityRole="button" accessibilityLabel={(owner ? 'Передать ИИ' : 'Включить') + ': ' + offer.title} onPress={() => { setNotice(''); setOpen(true); }} style={({ pressed }) => [a.button, pressed && a.pressed]}><Text style={a.buttonText}>{owner ? 'Передать ИИ' : 'Включить'}</Text></Pressable>}
+        {!open && <Pressable accessibilityRole="button" accessibilityLabel={(owner ? t('Передать ИИ') : t('Включить')) + ': ' + offer.title} onPress={() => { setNotice(''); setOpen(true); }} style={({ pressed }) => [a.button, pressed && a.pressed]}><Text style={a.buttonText}>{owner ? t('Передать ИИ') : t('Включить')}</Text></Pressable>}
       </View>
       {open && <>
         {owner?.needFee.map(f => (
           <View key={f.id} style={a.fee}>
-            <Text style={a.feeLabel}>{f.title}: сколько платить за уборку, ₸</Text>
-            <TextInput accessibilityLabel={'Стоимость уборки: ' + f.title} style={a.field} keyboardType="number-pad" placeholder="Например, 5000" placeholderTextColor={C.muted} value={fees[f.id] || ''} onChangeText={v => setFees({ ...fees, [f.id]: v.replace(/\D/g, '').slice(0, 7) })} />
+            <Text style={a.feeLabel}>{t('{title}: сколько платить за уборку, ₸',{title:f.title})}</Text>
+            <TextInput accessibilityLabel={t('Стоимость уборки: {title}',{title:f.title})} style={a.field} keyboardType="number-pad" placeholder={t('Например, 5000')} placeholderTextColor={C.muted} value={fees[f.id] || ''} onChangeText={v => setFees({ ...fees, [f.id]: v.replace(/\D/g, '').slice(0, 7) })} />
           </View>
         ))}
-        {owner?.ready.filter(f => !owner.needFee.includes(f) && !f.ownStaff).map(f => <Text key={f.id} style={a.fact}>{f.title}: уборка {money(f.cleaningFee)} после каждого выезда</Text>)}
+        {owner?.ready.filter(f => !owner.needFee.includes(f) && !f.ownStaff).map(f => <Text key={f.id} style={a.fact}>{t('{title}: уборка {sum} после каждого выезда',{title:f.title,sum:money(f.cleaningFee)})}</Text>)}
         {owner?.notReady.map(f => (
           <View key={f.id} style={a.setup}>
-            <Text style={[a.fact, a.text]}>{f.title}: сначала укажите цены и правила, по ним ИИ отвечает гостям</Text>
-            <Pressable accessibilityRole="button" accessibilityLabel={'Заполнить: ' + f.title} onPress={() => setup(f.id)} style={a.link}><Text style={a.linkText}>Заполнить</Text></Pressable>
+            <Text style={[a.fact, a.text]}>{t('{title}: сначала укажите цены и правила, по ним ИИ отвечает гостям',{title:f.title})}</Text>
+            <Pressable accessibilityRole="button" accessibilityLabel={t('Заполнить: {title}',{title:f.title})} onPress={() => setup(f.id)} style={a.link}><Text style={a.linkText}>{t('Заполнить')}</Text></Pressable>
           </View>
         ))}
-        {cleaner && <Text style={a.fact}>{cleaner.rulesText}. О новом владельце ИИ спросит вас.</Text>}
-        {!none && <Text style={a.fact}>{offer.price} Отключить можно в любой момент.</Text>}
+        {cleaner && <Text style={a.fact}>{t('{rules}. О новом владельце ИИ спросит вас.',{rules:cleaner.rulesText})}</Text>}
+        {!none && <Text style={a.fact}>{offer.price}{' '}{t('Отключить можно в любой момент.')}</Text>}
         {!!notice && <Text accessibilityRole="alert" style={a.error}>{notice}</Text>}
         <View style={a.actions}>
-          {!none && <Pressable accessibilityRole="button" accessibilityLabel="Включить автопилот" disabled={busy || missing} onPress={() => void start()} style={({ pressed }) => [a.button, a.grow, (busy || missing) && a.off, pressed && a.pressed]}><Text style={a.buttonText}>{busy ? 'Включаю…' : 'Включить'}</Text></Pressable>}
-          {cleaner && <Pressable accessibilityRole="button" disabled={busy} onPress={() => setup()} style={a.link}><Text style={a.linkText}>Изменить правила</Text></Pressable>}
-          <Pressable accessibilityRole="button" disabled={busy} onPress={() => { later.add(key); setHidden(true); }} style={a.link}><Text style={a.linkMuted}>Не сейчас</Text></Pressable>
+          {!none && <Pressable accessibilityRole="button" accessibilityLabel={t('Включить автопилот')} disabled={busy || missing} onPress={() => void start()} style={({ pressed }) => [a.button, a.grow, (busy || missing) && a.off, pressed && a.pressed]}><Text style={a.buttonText}>{busy ? t('Включаю…') : t('Включить')}</Text></Pressable>}
+          {cleaner && <Pressable accessibilityRole="button" disabled={busy} onPress={() => setup()} style={a.link}><Text style={a.linkText}>{t('Изменить правила')}</Text></Pressable>}
+          <Pressable accessibilityRole="button" disabled={busy} onPress={() => { later.add(key); setHidden(true); }} style={a.link}><Text style={a.linkMuted}>{t('Не сейчас')}</Text></Pressable>
         </View>
       </>}
     </View>

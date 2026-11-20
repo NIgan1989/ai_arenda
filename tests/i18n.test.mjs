@@ -79,3 +79,33 @@ test('a Russian line of the server with numbers is found by its pattern', async 
   assert.equal(tLine('телефон подтверждён'),'phone confirmed');
   setLang('ru');
 });
+
+test('a Russian word with two meanings has a line for each', async () => {
+  const {t,tc,setLang}=await load('i18n');
+  assert.equal(tc('Загрузка','occupancy'),'Загрузка');
+  setLang('kk');assert.equal(t('Загрузка'),'Жүктелуде');assert.equal(tc('Загрузка','occupancy'),'Жүктеме');
+  setLang('en');assert.equal(tc('Загрузка','occupancy'),'Occupancy');assert.equal(tc('Слово без второй строки','x'),'Слово без второй строки');
+  setLang('ru');
+});
+
+test('the shared lines of the owner are whole sentences in each language', async () => {
+  const {setLang}=await load('i18n');
+  const {planPrice,ownerHandoff,rulesLine}=await load('autopilot-handoff'),{calendarStatus}=await load('flat-calendars'),{regularSince}=await load('regular-cleaner-text');
+  const {dayLine}=await load('calendar-days'),{activity}=await load('activity'),{hubLine}=await load('property-hub'),{answerBy}=await load('now-card'),{repeatLabel}=await load('home-repeat-text');
+  const settings={price:4900,charge:true,trialDays:14},now=1795000000,source={enabled:1,automatic:1,last_success:now-7200,busy:3};
+  const entry={key:'job:1',kind:'job',id:'1',title:'Дом',start:now,end:now+3600,planned:now+3600,tone:'cleaning',status:'Нужен исполнитель'};
+  const lines=()=>[planPrice(settings,2,'owner'),ownerHandoff({flats:[{title:'Дом'},{title:'Баня'}],settings:{}}).title,rulesLine({districts:[],days:127,fromMinute:600,toMinute:1140,maxPerDay:4,minFee:0}),
+    calendarStatus(source,now).text,regularSince({here:5,noShows:1}),dayLine({...entry,planned:now+3*86400},Math.floor((now+18000)/86400)*86400-18000),
+    activity('booking',{status:'confirmed',end:now+3600,terms:{},property_type:'banya'},now).label,hubLine([{...entry,waiting:true,status:'Откликов: 2'}],now),answerBy(now+86400,now).replace(/\d\d:\d\d/,'T'),repeatLabel(14)].map(v=>v.replace(/\u00a0|\u202f/g,' '));
+  assert.deepEqual(lines(),['Первые 14 дней бесплатно, потом 9 800 ₸ в месяц с привязанной карты.','Вы сами ведёте 2 объекта','Любой район · каждый день · 10:00–19:00 · до 4 уборок в день',
+    'Не обновляется с 2 ч. Новые заявки на это жильё остановлены','5 уборок здесь · 1 срыв','С 16:06','Ожидаем прихода','Уборка: откликов: 2','ответить до завтра в T','Раз в 2 недели']);
+  setLang('kk');
+  assert.deepEqual(lines().slice(0,5),['Алғашқы 14 күн тегін, одан кейін байланған картадан айына 9 800 ₸.','2 нысанды өзіңіз жүргізесіз','Кез келген аудан · күн сайын · 10:00–19:00 · күніне 4 тазалауға дейін',
+    '2 сағ бойы жаңармай тұр. Осы баспанаға жаңа өтінімдер тоқтатылды','осы жерде 5 тазалау · 1 рет келмеді']);
+  assert.deepEqual(lines().slice(6,7).concat(lines().slice(8)),['Келуді күтудеміз','ертең T дейін жауап беру','2 аптада бір рет']);
+  setLang('en');
+  assert.deepEqual(lines().slice(0,5),['First 14 days free, then 9 800 ₸ a month from the linked card.','You run 2 properties yourself','Any district · every day · 10:00–19:00 · up to 4 cleanings a day',
+    'Not updated for 2 h. New requests for this place are stopped','5 cleanings here · 1 no-show']);
+  assert.deepEqual(lines().slice(6,7).concat(lines().slice(8)),['Waiting for arrival','answer by tomorrow T','Every 2 weeks']);
+  setLang('ru');
+});

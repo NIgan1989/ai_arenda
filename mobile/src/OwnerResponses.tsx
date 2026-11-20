@@ -1,3 +1,4 @@
+import {dateText,t} from '../../lib/i18n';
 import React from 'react';
 import {View,Text,Pressable,StyleSheet} from 'react-native';
 import {C,type} from './styles';
@@ -7,7 +8,7 @@ import {ApplicantPick} from './ApplicantPick';
 import type {Row} from './model';
 import {jobPlace} from '../../lib/job-place';
 const R=T.radius;
-const when=(v:number)=>new Date(v*1000).toLocaleString('ru-RU',{timeZone:'Asia/Almaty',day:'numeric',month:'long',hour:'2-digit',minute:'2-digit'});
+const when=(v:number)=>dateText(v*1000,{timeZone:'Asia/Almaty',day:'numeric',month:'long',hour:'2-digit',minute:'2-digit'});
 const money=(n:number)=>new Intl.NumberFormat('ru-RU').format(n)+'\u00a0₸';
 
 // Same as components/owner-responses.tsx: on the owner's «Заявки», cleaners who answered his open cleanings come first,
@@ -15,12 +16,12 @@ const money=(n:number)=>new Intl.NumberFormat('ru-RU').format(n)+'\u00a0₸';
 export function OwnerResponses({rows,approvals,busy,onDecide,onOpen,autopilot}:{autopilot?:(job:Row,applications:Row[])=>string;rows:{job:Row;applications:Row[]}[];approvals:Row[];busy:boolean;onDecide:(body:Row)=>void;onOpen:(jobId:string)=>void}){
  if(!rows.length)return null;
  const total=rows.reduce((n,r)=>n+r.applications.length,0);
- return <View style={o.block} accessibilityLabel="Отклики исполнителей">
-  <View style={o.head}><Text accessibilityRole="header" style={o.title}>Отклики исполнителей</Text><Text style={o.count}>{total}</Text></View>
+ return <View style={o.block} accessibilityLabel={t('Отклики исполнителей')}>
+  <View style={o.head}><Text accessibilityRole="header" style={o.title}>{t('Отклики исполнителей')}</Text><Text style={o.count}>{total}</Text></View>
   {rows.map(({job,applications})=><View key={job.id} style={o.card}>
-   <Pressable accessibilityRole="button" accessibilityLabel={'Открыть уборку: '+job.title} onPress={()=>onOpen(job.id)} style={({pressed})=>[o.job,pressed&&{opacity:.7}]}>
-    <View style={o.thumb}><Photo id={jobPlace(job).photos[0]} fill alt={'Фото: '+job.title}/></View>
-    <View style={{flex:1,minWidth:0,gap:2}}><Text numberOfLines={1} style={o.jobTitle}>{job.title}</Text><Text style={o.jobNote}>Уборка · {when(job.start)} · {money(job.fee)}</Text></View>
+   <Pressable accessibilityRole="button" accessibilityLabel={t('Открыть уборку: {title}',{title:job.title})} onPress={()=>onOpen(job.id)} style={({pressed})=>[o.job,pressed&&{opacity:.7}]}>
+    <View style={o.thumb}><Photo id={jobPlace(job).photos[0]} fill alt={t('Фото: {title}',{title:job.title})}/></View>
+    <View style={{flex:1,minWidth:0,gap:2}}><Text numberOfLines={1} style={o.jobTitle}>{job.title}</Text><Text style={o.jobNote}>{t('Уборка · {when}',{when:when(job.start)})} · {money(job.fee)}</Text></View>
     <Text style={o.chevron}>›</Text>
    </Pressable>
    {!!autopilot?.(job,applications)&&<Text style={o.autopilot}>{autopilot(job,applications)}</Text>}

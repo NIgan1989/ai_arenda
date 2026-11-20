@@ -83,6 +83,12 @@ export function tLine(ru:string):string{
 
 /** A word after a number. Russian has three forms (1 гость, 2 гостя, 5 гостей), English two, Kazakh one
  *  (the noun after a number does not change: 5 қонақ). */
+/** A Russian word with two meanings: tc('Загрузка','occupancy') shows «Загрузка» in Russian and reads the line
+ *  «Загрузка|occupancy» of the tables in the other languages (without it, the line of the word itself). */
+export function tc(ru:string,note:string,vars?:Record<string,unknown>):string{
+  const row=current==='ru'?undefined:WORDS[ru+'|'+note];
+  return row?fill(row[COLUMN[current as 'kk'|'en']],vars):t(ru,vars);
+}
 export function plural(n:number,ru:readonly [string,string,string],en:readonly [string,string],kk:string):string{
   if(current==='kk')return kk;
   if(current==='en')return Math.abs(n)===1?en[0]:en[1];

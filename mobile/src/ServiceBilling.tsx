@@ -1,3 +1,4 @@
+import {dateText,t as tr} from '../../lib/i18n';
 import React,{useCallback,useEffect,useState} from 'react';
 import {View,Text,Pressable,StyleSheet} from 'react-native';
 import {request} from './api';
@@ -11,39 +12,39 @@ type Item={kind:'commission'|'cleaning'|'autopilot'|'payment';at:number;amount:n
 type State={due:number;card:{mask:string;test:boolean}|null;nextChargeAt:number;payBy:number|null;paused:boolean;test:boolean;payDays:number;items:Item[]};
 const R=T.radius;
 const money=(n:number)=>new Intl.NumberFormat('ru-RU').format(n||0).replace(/\s/g,' ')+' ₸';
-const day=(t:number)=>new Date(t*1000).toLocaleDateString('ru-RU',{timeZone:'Asia/Qyzylorda',day:'numeric',month:'long'});
+const day=(t:number)=>dateText(t*1000,{timeZone:'Asia/Qyzylorda',day:'numeric',month:'long'});
 
 export function ServiceBilling({role}:{role:'owner'|'cleaner'}){
  const [state,setState]=useState<State|null>(null),[busy,setBusy]=useState(false),[error,setError]=useState(''),[message,setMessage]=useState('');
- const load=useCallback(()=>request('/api/operations/service-billing/state',undefined,undefined,undefined,role).then(setState).catch((e:any)=>setError(e?.message||'Не удалось загрузить.')),[role]);
+ const load=useCallback(()=>request('/api/operations/service-billing/state',undefined,undefined,undefined,role).then(setState).catch((e:any)=>setError(e?.message||tr('Не удалось загрузить.'))),[role]);
  useEffect(()=>{void load();},[load]);
  async function act(action:'link'|'pay'|'unlink'){
   if(busy)return;setBusy(true);setError('');setMessage('');
   try{const r=await request('/api/operations/service-billing',{action},undefined,undefined,role);setMessage(r?.message||'');if(r?.state)setState(r.state);}
-  catch(e:any){setError(e?.message||'Не получилось.');}finally{setBusy(false);}
+  catch(e:any){setError(e?.message||tr('Не получилось.'));}finally{setBusy(false);}
  }
- if(!state)return error?<Text accessibilityRole="alert" style={s.error}>{error}</Text>:<ThinkingLine style={s.meta} text="Загружаю…"/>;
+ if(!state)return error?<Text accessibilityRole="alert" style={s.error}>{error}</Text>:<ThinkingLine style={s.meta} text={tr('Загружаю…')}/>;
  const button=(title:string,onPress:()=>void,secondary=false)=><Pressable accessibilityRole="button" disabled={busy} onPress={onPress} style={({pressed})=>[s.button,secondary&&s.secondary,(busy||pressed)&&s.disabled]}><Text style={[s.buttonText,secondary&&s.secondaryText]}>{title}</Text></Pressable>;
- const when=state.paused?'Пауза: новые брони и «Автопилот» остановлены до оплаты.':state.payBy?'Привяжите карту до '+day(state.payBy)+', иначе новые брони и «Автопилот» встанут на паузу.':state.due>0?(state.card?'Спишется с карты '+day(state.nextChargeAt)+'.':'Привяжите карту: списание раз в неделю, по понедельникам.'):'Сейчас платить нечего.';
+ const when=state.paused?tr('Пауза: новые брони и «Автопилот» остановлены до оплаты.'):state.payBy?tr('Привяжите карту до {v}, иначе новые брони и «Автопилот» встанут на паузу.',{v:day(state.payBy)}):state.due>0?(state.card?tr('Спишется с карты {v}.',{v:day(state.nextChargeAt)}):tr('Привяжите карту: списание раз в неделю, по понедельникам.')):tr('Сейчас платить нечего.');
  return <View style={{gap:16}}>
-  <View accessible accessibilityLabel={'К оплате '+money(state.due)+'. '+when} style={[b.card,(state.paused||!!state.payBy)&&b.cardWarn]}>
-   <Text style={b.label}>К оплате за услуги сервиса</Text>
+  <View accessible accessibilityLabel={tr('К оплате {v}. {when}',{v:money(state.due),when})} style={[b.card,(state.paused||!!state.payBy)&&b.cardWarn]}>
+   <Text style={b.label}>{tr('К оплате за услуги сервиса')}</Text>
    <Text style={b.sum}>{money(state.due)}</Text>
    <Text style={[b.meta,(state.paused||!!state.payBy)&&{color:C.warning}]}>{when}</Text>
   </View>
   <View style={b.row}>
-   <View style={{flex:1,minWidth:0}}><Text style={b.title}>{state.card?'Карта '+state.card.mask:'Карта не привязана'}</Text><Text style={b.meta}>{state.card?(state.card.test?'Тестовая: деньги не списываются':'Списания раз в неделю'):'Привяжите один раз, дальше сервис списывает сам'}</Text></View>
+   <View style={{flex:1,minWidth:0}}><Text style={b.title}>{state.card?tr('Карта {mask}',{mask:state.card.mask}):tr('Карта не привязана')}</Text><Text style={b.meta}>{state.card?(state.card.test?tr('Тестовая: деньги не списываются'):tr('Списания раз в неделю')):tr('Привяжите один раз, дальше сервис списывает сам')}</Text></View>
   </View>
   {!!error&&<Text accessibilityRole="alert" style={s.error}>{error}</Text>}{!!message&&<Text accessibilityLiveRegion="polite" style={b.done}>{message}</Text>}
-  {!state.card&&<Text style={s.meta}>Привязывая карту, вы соглашаетесь, что сервис раз в неделю, по понедельникам, списывает с неё начисленную плату за свои услуги. Сумму и список начислений видно здесь заранее. Отвязать карту можно в любой момент, когда долга нет.</Text>}
-  {!state.card&&button(state.test?'Привязать тестовую карту':'Привязать карту',()=>void act('link'))}
-  {!!state.card&&state.due>0&&button('Оплатить сейчас '+money(state.due),()=>void act('pay'))}
-  {!!state.card&&state.due<=0&&button('Отвязать карту',()=>void act('unlink'),true)}
-  <Text style={s.meta}>{role==='owner'?'Сервис берёт плату только за свои услуги: комиссию за бронь, подбор исполнителя и «Автопилот». Оплату от гостей получаете вы сами.':'Сервис берёт плату только за «Автопилот». Оплату за уборки вы получаете напрямую от заказчиков.'}{state.test?' Пока банк не подключён, карта и списания тестовые.':''}</Text>
+  {!state.card&&<Text style={s.meta}>{tr('Привязывая карту, вы соглашаетесь, что сервис раз в неделю, по понедельникам, списывает с неё начисленную плату за свои услуги. Сумму и список начислений видно здесь заранее. Отвязать карту можно в любой момент, когда долга нет.')}</Text>}
+  {!state.card&&button(state.test?tr('Привязать тестовую карту'):tr('Привязать карту'),()=>void act('link'))}
+  {!!state.card&&state.due>0&&button(tr('Оплатить сейчас {v}',{v:money(state.due)}),()=>void act('pay'))}
+  {!!state.card&&state.due<=0&&button(tr('Отвязать карту'),()=>void act('unlink'),true)}
+  <Text style={s.meta}>{role==='owner'?tr('Сервис берёт плату только за свои услуги: комиссию за бронь, подбор исполнителя и «Автопилот». Оплату от гостей получаете вы сами.'):tr('Сервис берёт плату только за «Автопилот». Оплату за уборки вы получаете напрямую от заказчиков.')}{state.test?' '+tr('Пока банк не подключён, карта и списания тестовые.'):''}</Text>
   <View style={{gap:8}}>
-   <Text style={b.title}>Учёт</Text>
-   {!state.items.length&&<Text style={s.meta}>Пока начислений нет.</Text>}
-   {state.items.map((i,n)=><View key={n} style={b.item}><View style={{flex:1,minWidth:0}}><Text numberOfLines={2} style={b.itemTitle}>{i.title}</Text><Text style={b.meta}>{day(i.at)}</Text></View><Text style={[b.itemSum,i.kind==='payment'&&{color:C.success}]}>{i.kind==='payment'?'оплачено '+money(i.amount):money(i.amount)}</Text></View>)}
+   <Text style={b.title}>{tr('Учёт')}</Text>
+   {!state.items.length&&<Text style={s.meta}>{tr('Пока начислений нет.')}</Text>}
+   {state.items.map((i,n)=><View key={n} style={b.item}><View style={{flex:1,minWidth:0}}><Text numberOfLines={2} style={b.itemTitle}>{i.title}</Text><Text style={b.meta}>{day(i.at)}</Text></View><Text style={[b.itemSum,i.kind==='payment'&&{color:C.success}]}>{i.kind==='payment'?tr('оплачено {v}',{v:money(i.amount)}):money(i.amount)}</Text></View>)}
   </View>
  </View>;
 }

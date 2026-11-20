@@ -37,6 +37,13 @@ export function nowCardWhen(at: number, now: number) {
   if (key === day(now - 86400)) return t('вчера в {time}',{time});
   return t('{date} в {time}',{date:dateFormat.format(date),time});
 }
+// The deadline of an answer: «ответить до 14:00» today, with the day when it is later.
+export function answerBy(at: number, now: number) {
+  const date = new Date(at * 1000), time = timeFormat.format(date), key = day(at);
+  if (key === day(now)) return t('ответить до {time}',{time});
+  if (key === day(now + 86400)) return t('ответить до завтра в {time}',{time});
+  return t('ответить до {date} в {time}',{date:dateFormat.format(date),time});
+}
 
 // The time goes first: a long flat name may be cut on a narrow screen, the time may not.
 const line = (time: string, name: string) => time.charAt(0).toUpperCase() + time.slice(1) + ' · ' + name;

@@ -1,3 +1,4 @@
+import {L,dateText,t as tr} from '../../lib/i18n';
 // «Правила» of one object: its state in one tap, prices in six tiles and what the AI administrator may decide.
 // Each group is a single line until the owner opens it; one «Сохранить» appears only after a change.
 // Check-in times and house rules live in the step editor («Изменить»), so they are not repeated here.
@@ -9,21 +10,22 @@ import {money,type Row} from './model';
 import {Stepper} from './SheetParts';
 const R=T.radius,H=T.control;
 const clock=(v:number)=>String(Math.floor(v/60)).padStart(2,'0')+':'+String(v%60).padStart(2,'0');
-export const readinessLabels:Row={ready:'Готово к заселению',inspection:'Ожидает проверки',occupied:'Гость проживает',awaiting_cleaning:'Ожидает уборки',cleaning:'Идёт уборка',maintenance:'На ремонте',blocked:'Заезды закрыты'};
+export const readinessLabels:Row=L({ready:'Готово к заселению',inspection:'Ожидает проверки',occupied:'Гость проживает',awaiting_cleaning:'Ожидает уборки',cleaning:'Идёт уборка',maintenance:'На ремонте',blocked:'Заезды закрыты'});
+// The note goes to the server as it is; the title is shown in the language of the app.
 const CLOSE:[string,string,string][]=[['maintenance','На ремонте','Владелец закрыл жильё на ремонт.'],['blocked','Закрыть заезды','Владелец временно закрыл заезды.']];
 type Values={dailyPrice:number;hourlyPrice:number;minHours:number;nightlyPrice:number;deposit:number;cleaningFee:number;maxDiscountPercent:number;minimumRate:number;maxExtensionHours:number;autoConfirm:boolean;autoExtension:boolean};
 export function controlValues(property:Row):Values{const p=property.policy||{};return {dailyPrice:Number(property.price)||0,hourlyPrice:p.hourly_price||0,minHours:p.min_hours||2,nightlyPrice:p.nightly_price||0,deposit:p.deposit||0,cleaningFee:p.cleaning_fee||0,maxDiscountPercent:p.max_discount_percent||0,minimumRate:p.minimum_rate||0,maxExtensionHours:p.max_extension_hours||0,autoConfirm:!!p.auto_confirm,autoExtension:!!p.auto_extension};}
 // What goes to the server: the visible values plus everything this screen does not show, unchanged.
 export function controlRequest(property:Row,v:Values):Row{const p=property.policy||{};
  return {dailyPrice:v.dailyPrice,hourlyPrice:v.hourlyPrice,minHours:v.minHours,nightlyPrice:v.nightlyPrice,deposit:v.deposit,cleaningFee:v.cleaningFee,cleaningBudget:Math.max(p.cleaning_budget||0,v.cleaningFee),
-  checkinTime:clock(p.checkin_minutes??840),checkoutTime:clock(p.checkout_minutes??720),houseRules:p.house_rules||property.description||'Правила уточняются.',
+  checkinTime:clock(p.checkin_minutes??840),checkoutTime:clock(p.checkout_minutes??720),houseRules:p.house_rules||property.description||tr('Правила уточняются.'),
   maxDiscountPercent:v.maxDiscountPercent,minimumRate:v.minimumRate,autoConfirm:v.autoConfirm,autoExtension:v.autoExtension,maxExtensionHours:v.autoExtension?Math.max(1,v.maxExtensionHours):v.maxExtensionHours,expectedVersion:p.version||0};}
-export const pricesLine=(v:Values)=>[money(v.dailyPrice)+' / сутки',v.hourlyPrice>0&&money(v.hourlyPrice)+' / час',v.nightlyPrice>0&&money(v.nightlyPrice)+' / ночь',v.deposit>0&&'депозит '+money(v.deposit)].filter(Boolean).join(' · ');
-export const aiLine=(v:Values)=>[v.autoConfirm?'подтверждает брони':'брони подтверждаете вы',v.autoExtension&&'продлевает до '+Math.max(1,v.maxExtensionHours)+' ч',v.maxDiscountPercent>0&&'скидка до '+v.maxDiscountPercent+'%'].filter(Boolean).join(' · ');
+export const pricesLine=(v:Values)=>[tr('{v} / сутки',{v:money(v.dailyPrice)}),v.hourlyPrice>0&&tr('{v} / час',{v:money(v.hourlyPrice)}),v.nightlyPrice>0&&tr('{v} / ночь',{v:money(v.nightlyPrice)}),v.deposit>0&&tr('депозит {v}',{v:money(v.deposit)})].filter(Boolean).join(' · ');
+export const aiLine=(v:Values)=>[v.autoConfirm?tr('подтверждает брони'):tr('брони подтверждаете вы'),v.autoExtension&&tr('продлевает до {v} ч',{v:Math.max(1,v.maxExtensionHours)}),v.maxDiscountPercent>0&&tr('скидка до {maxDiscountPercent}%',{maxDiscountPercent:v.maxDiscountPercent})].filter(Boolean).join(' · ');
 
 // Stays that are booked and not yet lived in: closing the home asks what to do with them.
 export function upcomingStays(bookings:Row[],propertyId:string,at:number){const list=(bookings||[]).filter(b=>b.property_id===propertyId&&b.status==='confirmed'&&b.end>at&&!b.terms?.actual_checkin).sort((a,b)=>a.start-b.start);return {count:list.length,next:list[0]?.start||0};}
-export const closeQuestion=(u:{count:number;next:number})=>'Есть брони: '+u.count+'. Ближайший заезд '+new Intl.DateTimeFormat('ru-RU',{day:'numeric',month:'long',hour:'2-digit',minute:'2-digit',timeZone:'Asia/Almaty'}).format(new Date(u.next*1000))+'. Что с ними сделать?';
+export const closeQuestion=(u:{count:number;next:number})=>tr('Есть брони: {count}. Ближайший заезд {v}. Что с ними сделать?',{count:u.count,v:dateText(u.next*1000,{day:'numeric',month:'long',hour:'2-digit',minute:'2-digit',timeZone:'Asia/Almaty'})});
 export function PropertyControl({property,busy,onSave,onReadiness,upcoming}:{property:Row;busy:boolean;onSave:(data:Row)=>void;onReadiness:(data:Row)=>void;upcoming?:{count:number;next:number}}){
  const op=property.operation||{},start=controlValues(property),staff=!!Number(property.own_staff);
  const [v,setV]=useState<Values>(start),[open,setOpen]=useState<'prices'|'ai'|null>(null),[closing,setClosing]=useState<[string,string]|null>(null);
@@ -36,35 +38,35 @@ export function PropertyControl({property,busy,onSave,onReadiness,upcoming}:{pro
   <Text style={[c.chevron,open===key&&c.chevronOpen]}>›</Text>
  </Pressable>;
  return <View style={c.sheet}>
-  <View style={c.top}><View style={c.grow}><Text accessibilityRole="header" numberOfLines={1} style={c.name}>{property.title}</Text><Text style={[c.state,ready&&c.stateOn]}>{readinessLabels[op.readiness]||'Ожидает проверки'}</Text></View></View>
-  {living?<Text style={c.hint}>Пока гость проживает, состояние меняется само после выезда.</Text>
-   :cleaning?<Text style={c.hint}>Идёт уборка. После приёмки жильё станет готовым само.</Text>
+  <View style={c.top}><View style={c.grow}><Text accessibilityRole="header" numberOfLines={1} style={c.name}>{property.title}</Text><Text style={[c.state,ready&&c.stateOn]}>{readinessLabels[op.readiness]||tr('Ожидает проверки')}</Text></View></View>
+  {living?<Text style={c.hint}>{tr('Пока гость проживает, состояние меняется само после выезда.')}</Text>
+   :cleaning?<Text style={c.hint}>{tr('Идёт уборка. После приёмки жильё станет готовым само.')}</Text>
    :<View style={c.actions}>
-    {!ready&&<Pressable accessibilityRole="button" disabled={busy} onPress={()=>onReadiness({readiness:'ready',inspected:true,expectedVersion:op.version})} style={[c.go,busy&&c.off]}><Text style={c.goText}>✓  Жильё готово</Text></Pressable>}
-    {CLOSE.filter(([code])=>code!==op.readiness).map(([code,title,note])=><Pressable key={code} accessibilityRole="button" disabled={busy} onPress={()=>upcoming?.count?setClosing([code,note]):onReadiness({readiness:code,note,expectedVersion:op.version})} style={[c.side,busy&&c.dim]}><Text style={c.sideText}>{title}</Text></Pressable>)}
+    {!ready&&<Pressable accessibilityRole="button" disabled={busy} onPress={()=>onReadiness({readiness:'ready',inspected:true,expectedVersion:op.version})} style={[c.go,busy&&c.off]}><Text style={c.goText}>{tr('✓  Жильё готово')}</Text></Pressable>}
+    {CLOSE.filter(([code])=>code!==op.readiness).map(([code,,note])=><Pressable key={code} accessibilityRole="button" disabled={busy} onPress={()=>upcoming?.count?setClosing([code,note]):onReadiness({readiness:code,note,expectedVersion:op.version})} style={[c.side,busy&&c.dim]}><Text style={c.sideText}>{code==='maintenance'?tr('На ремонте'):tr('Закрыть заезды')}</Text></Pressable>)}
    </View>}
   {!!closing&&!!upcoming?.count&&<View style={c.ask}>
    <Text accessibilityRole="alert" style={c.askText}>{closeQuestion(upcoming)}</Text>
-   <Pressable accessibilityRole="button" disabled={busy} onPress={()=>{onReadiness({readiness:closing[0],note:closing[1],bookings:'keep',expectedVersion:op.version});setClosing(null);}} style={[c.side,busy&&c.dim]}><Text style={c.sideText}>Оставить брони в силе</Text></Pressable>
-   <Pressable accessibilityRole="button" disabled={busy} onPress={()=>{onReadiness({readiness:closing[0],note:closing[1],bookings:'cancel',expectedVersion:op.version});setClosing(null);}} style={[c.side,busy&&c.dim]}><Text style={[c.sideText,{color:C.danger}]}>Отменить с полным возвратом</Text></Pressable>
-   <Pressable accessibilityRole="button" onPress={()=>setClosing(null)} style={c.side}><Text style={c.sideText}>Не закрывать</Text></Pressable>
+   <Pressable accessibilityRole="button" disabled={busy} onPress={()=>{onReadiness({readiness:closing[0],note:closing[1],bookings:'keep',expectedVersion:op.version});setClosing(null);}} style={[c.side,busy&&c.dim]}><Text style={c.sideText}>{tr('Оставить брони в силе')}</Text></Pressable>
+   <Pressable accessibilityRole="button" disabled={busy} onPress={()=>{onReadiness({readiness:closing[0],note:closing[1],bookings:'cancel',expectedVersion:op.version});setClosing(null);}} style={[c.side,busy&&c.dim]}><Text style={[c.sideText,{color:C.danger}]}>{tr('Отменить с полным возвратом')}</Text></Pressable>
+   <Pressable accessibilityRole="button" onPress={()=>setClosing(null)} style={c.side}><Text style={c.sideText}>{tr('Не закрывать')}</Text></Pressable>
   </View>}
-  {head('prices','₸','Цены и депозит',pricesLine(v))}
+  {head('prices','₸',tr('Цены и депозит'),pricesLine(v))}
   {open==='prices'&&<>
-   <View style={c.row}>{num('Сутки, ₸','dailyPrice')}{num('Час, ₸','hourlyPrice',10000000,'0, если не сдаёте по часам')}</View>
-   <View style={c.row}>{num('Ночь, ₸','nightlyPrice',10000000,'0, если нет ночного тарифа')}{num('Депозит, ₸','deposit')}</View>
-   <View style={c.row}>{v.hourlyPrice>0&&<View style={c.grow}><Stepper label="Минимум часов" text={String(v.minHours)} value={v.minHours} min={1} max={24} onChange={n=>set({minHours:n})}/></View>}{!staff&&num('Уборка, ₸','cleaningFee',1000000,'Столько получит исполнитель')}</View>
-   <Text style={c.hint}>Новые цены действуют для новых заявок.</Text>
+   <View style={c.row}>{num(tr('Сутки, ₸'),'dailyPrice')}{num(tr('Час, ₸'),'hourlyPrice',10000000,tr('0, если не сдаёте по часам'))}</View>
+   <View style={c.row}>{num(tr('Ночь, ₸'),'nightlyPrice',10000000,tr('0, если нет ночного тарифа'))}{num(tr('Депозит, ₸'),'deposit')}</View>
+   <View style={c.row}>{v.hourlyPrice>0&&<View style={c.grow}><Stepper label={tr('Минимум часов')} text={String(v.minHours)} value={v.minHours} min={1} max={24} onChange={n=>set({minHours:n})}/></View>}{!staff&&num(tr('Уборка, ₸'),'cleaningFee',1000000,tr('Столько получит исполнитель'))}</View>
+   <Text style={c.hint}>{tr('Новые цены действуют для новых заявок.')}</Text>
   </>}
-  {head('ai','✦','Что ИИ решает сам',aiLine(v))}
+  {head('ai','✦',tr('Что ИИ решает сам'),aiLine(v))}
   {open==='ai'&&<>
-   <View style={c.switchRow}><View style={c.grow}><Text style={c.title}>Подтверждать брони</Text><Text style={c.line}>{staff?'ИИ подтверждает заявки гостей без вас':'ИИ подтверждает заявки и заказывает уборку'}</Text></View><Switch accessibilityLabel="Подтверждать брони" value={v.autoConfirm} disabled={busy} onValueChange={x=>set({autoConfirm:x})} trackColor={{true:C.success,false:C.lineStrong}} thumbColor={C.surface}/></View>
-   <View style={c.switchRow}><View style={c.grow}><Text style={c.title}>Продлевать проживание</Text><Text style={c.line}>По просьбе гостя, если жильё свободно</Text></View><Switch accessibilityLabel="Продлевать проживание" value={v.autoExtension} disabled={busy} onValueChange={x=>set({autoExtension:x,maxExtensionHours:x?Math.max(1,v.maxExtensionHours||3):v.maxExtensionHours})} trackColor={{true:C.success,false:C.lineStrong}} thumbColor={C.surface}/></View>
-   {v.autoExtension&&<View><Stepper label="Продлевать не больше чем на, часов" text={String(Math.max(1,v.maxExtensionHours))} value={Math.max(1,v.maxExtensionHours)} min={1} max={168} onChange={n=>set({maxExtensionHours:n})}/></View>}
-   <View style={c.row}>{num('Скидка не больше, %','maxDiscountPercent',50)}{num('Цена не ниже, ₸','minimumRate',10000000,'За сутки, час или ночь')}</View>
-   <Text style={c.hint}>Всё, что выходит за эти пределы, ИИ спросит у вас.</Text>
+   <View style={c.switchRow}><View style={c.grow}><Text style={c.title}>{tr('Подтверждать брони')}</Text><Text style={c.line}>{staff?tr('ИИ подтверждает заявки гостей без вас'):tr('ИИ подтверждает заявки и заказывает уборку')}</Text></View><Switch accessibilityLabel={tr('Подтверждать брони')} value={v.autoConfirm} disabled={busy} onValueChange={x=>set({autoConfirm:x})} trackColor={{true:C.success,false:C.lineStrong}} thumbColor={C.surface}/></View>
+   <View style={c.switchRow}><View style={c.grow}><Text style={c.title}>{tr('Продлевать проживание')}</Text><Text style={c.line}>{tr('По просьбе гостя, если жильё свободно')}</Text></View><Switch accessibilityLabel={tr('Продлевать проживание')} value={v.autoExtension} disabled={busy} onValueChange={x=>set({autoExtension:x,maxExtensionHours:x?Math.max(1,v.maxExtensionHours||3):v.maxExtensionHours})} trackColor={{true:C.success,false:C.lineStrong}} thumbColor={C.surface}/></View>
+   {v.autoExtension&&<View><Stepper label={tr('Продлевать не больше чем на, часов')} text={String(Math.max(1,v.maxExtensionHours))} value={Math.max(1,v.maxExtensionHours)} min={1} max={168} onChange={n=>set({maxExtensionHours:n})}/></View>}
+   <View style={c.row}>{num(tr('Скидка не больше, %'),'maxDiscountPercent',50)}{num(tr('Цена не ниже, ₸'),'minimumRate',10000000,tr('За сутки, час или ночь'))}</View>
+   <Text style={c.hint}>{tr('Всё, что выходит за эти пределы, ИИ спросит у вас.')}</Text>
   </>}
-  {dirty&&<Pressable accessibilityRole="button" disabled={busy} onPress={()=>onSave(controlRequest(property,v))} style={[c.primary,busy&&c.off]}><Text style={c.primaryText}>{busy?'Сохраняю…':'✓  Сохранить'}</Text></Pressable>}
+  {dirty&&<Pressable accessibilityRole="button" disabled={busy} onPress={()=>onSave(controlRequest(property,v))} style={[c.primary,busy&&c.off]}><Text style={c.primaryText}>{busy?tr('Сохраняю…'):tr('✓  Сохранить')}</Text></Pressable>}
  </View>;
 }
 const c=StyleSheet.create({

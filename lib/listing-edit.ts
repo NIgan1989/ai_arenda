@@ -1,3 +1,4 @@
+import {L,t} from './i18n';
 // Editing a property one short step at a time: every step is saved at once, then the AI administrator offers the next one.
 // Shared by the site and the app: the body for PUT /api/listings/:id, the line under each step and the AI's next advice.
 import {amenities,checkinMethods,isBath,isBanquet,isVenue,kindLabel,propertyTypes} from './listings';
@@ -8,9 +9,9 @@ export type EditBody={title:string;city:string;district:string;address:string;de
  details:{type:string;area:number;beds:number;bathrooms:number;floor:number;floors:number;checkinMethod:string;amenities:string[];pets:boolean;smoking:boolean;parties:boolean;menu?:string};
  rental:{hourlyPrice:number;minHours:number;nightlyPrice:number;deposit:number;checkinTime:string;checkoutTime:string;houseRules:string;includedGuests:number;extraGuestPrice:number;prepMinutes:number}};
 export type EditStep='photos'|'flat'|'place'|'text'|'amenities'|'prices'|'checkin'|'rules';
-export const EDIT_STEPS:{key:EditStep;title:string}[]=[
+export const EDIT_STEPS:{key:EditStep;title:string}[]=L([
  {key:'photos',title:'Фотографии'},{key:'flat',title:'Жильё'},{key:'place',title:'Адрес'},{key:'text',title:'Описание'},
- {key:'amenities',title:'Удобства'},{key:'prices',title:'Цены'},{key:'checkin',title:'Заезд'},{key:'rules',title:'Правила'}];
+ {key:'amenities',title:'Удобства'},{key:'prices',title:'Цены'},{key:'checkin',title:'Заезд'},{key:'rules',title:'Правила'}]);
 
 export function editBody(p:Row):EditBody{
  const d=p.details||{},r=p.policy||{};
@@ -29,24 +30,24 @@ export function banquetPrice(b:Pick<EditBody,'price'|'rental'>){const least=Math
 export function withBanquetPrice<T extends Pick<EditBody,'price'|'rental'>>(b:T,perGuest:number,least:number):T{const n=Math.max(1,Math.floor(least)||1),g=Math.max(0,Math.floor(perGuest)||0);return {...b,price:Math.max(100,g*n),rental:{...b.rental,includedGuests:n,extraGuestPrice:g,hourlyPrice:0,nightlyPrice:0}};}
 // A bath is not «жильё» and has no check-in hours: its two steps are named for what the owner fills in there.
 export function stepTitle(type:string,key:EditStep):string{
- if(isBath(type)){if(key==='flat')return 'Объект';if(key==='checkin')return 'Приход гостей';}
- if(isBanquet(type)){if(key==='flat')return 'Зал';if(key==='prices')return 'Цена и меню';if(key==='checkin')return 'Приход гостей';}
+ if(isBath(type)){if(key==='flat')return t('Объект');if(key==='checkin')return t('Приход гостей');}
+ if(isBanquet(type)){if(key==='flat')return t('Зал');if(key==='prices')return t('Цена и меню');if(key==='checkin')return t('Приход гостей');}
  return EDIT_STEPS.find(s=>s.key===key)!.title;
 }
 // The one line under each step on the overview, so the owner sees what is there without opening it.
 export function stepLine(b:EditBody,key:EditStep):string{
  const d=b.details,r=b.rental;
  switch(key){
-  case 'photos':return b.photos.length?b.photos.length+' из 8':'Нет фото';
-  case 'flat':return [kindLabel(d.type),b.ownStaff?'свой персонал':'',isVenue(d.type)?'':b.rooms+' комн.',(isBanquet(d.type)?'до ':'')+b.capacity+' гост.'].filter(Boolean).join(' · ');
-  case 'place':return b.address||[b.city,b.district].filter(Boolean).join(', ')||'Не указан';
-  case 'text':return b.description.trim().length+' знаков';
-  case 'amenities':return d.amenities.length?d.amenities.length+' отмечено':'Не отмечены';
-  case 'prices':if(isBanquet(d.type)){const q=banquetPrice(b);return [q.perGuest?money(q.perGuest)+' за гостя':'Цена на гостя не задана','от '+q.least+' гост.',d.menu?'меню есть':'меню нет'].join(' · ');}
-   return isBath(d.type)?[r.hourlyPrice?money(r.hourlyPrice)+'/ч':'Цена за час не задана',r.hourlyPrice?'от '+r.minHours+' ч':'',r.includedGuests&&r.extraGuestPrice?'+'+money(r.extraGuestPrice)+' за гостя сверх '+r.includedGuests:''].filter(Boolean).join(' · ')
-   :[money(b.price),r.hourlyPrice?money(r.hourlyPrice)+'/ч':''].filter(Boolean).join(' · ');
-  case 'checkin':return isVenue(d.type)?(checkinMethods[d.checkinMethod]||'Не выбрано')+' · уборка '+b.cleaningMinutes+' мин':r.checkinTime+'–'+r.checkoutTime;
-  case 'rules':return r.houseRules.trim()?(d.pets?'с питомцами':'без питомцев'):'Не написаны';
+  case 'photos':return b.photos.length?t('{length} из 8',{length:b.photos.length}):t('Нет фото');
+  case 'flat':return [kindLabel(d.type),b.ownStaff?t('свой персонал'):'',isVenue(d.type)?'':t('{rooms} комн.',{rooms:b.rooms}),isBanquet(d.type)?t('до {n} гост.',{n:b.capacity}):t('{n} гост.',{n:b.capacity})].filter(Boolean).join(' · ');
+  case 'place':return b.address||[b.city,b.district].filter(Boolean).join(', ')||t('Не указан');
+  case 'text':return t('{length} знаков',{length:b.description.trim().length});
+  case 'amenities':return d.amenities.length?t('{length} отмечено',{length:d.amenities.length}):t('Не отмечены');
+  case 'prices':if(isBanquet(d.type)){const q=banquetPrice(b);return [q.perGuest?t('{v} за гостя',{v:money(q.perGuest)}):t('Цена на гостя не задана'),t('от {least} гост.',{least:q.least}),d.menu?t('меню есть'):t('меню нет')].join(' · ');}
+   return isBath(d.type)?[r.hourlyPrice?t('{v}/ч',{v:money(r.hourlyPrice)}):t('Цена за час не задана'),r.hourlyPrice?t('от {minHours} ч',{minHours:r.minHours}):'',r.includedGuests&&r.extraGuestPrice?t('+{v} за гостя сверх {includedGuests}',{v:money(r.extraGuestPrice),includedGuests:r.includedGuests}):''].filter(Boolean).join(' · ')
+   :[money(b.price),r.hourlyPrice?t('{v}/ч',{v:money(r.hourlyPrice)}):''].filter(Boolean).join(' · ');
+  case 'checkin':return isVenue(d.type)?t('{v} · уборка {cleaningMinutes} мин',{v:(checkinMethods[d.checkinMethod]||t('Не выбрано')),cleaningMinutes:b.cleaningMinutes}):r.checkinTime+'–'+r.checkoutTime;
+  case 'rules':return r.houseRules.trim()?(d.pets?t('с питомцами'):t('без питомцев')):t('Не написаны');
  }
 }
 // A step that blocks showing the flat to guests, or that is clearly missing.
@@ -60,21 +61,21 @@ export type Advice={step:EditStep|'publish'|null;text:string;action?:string};
 export function nextAdvice(b:EditBody,skipped:string[]=[]):Advice{
  const short=b.description.trim().length<80,keep=(a:Advice|false)=>a&&!skipped.includes(a.step||'')?[a]:[];
  // First what stops the flat from being shown, then showing it, then what makes it booked more often.
- const blocking=[...keep(!b.photos.length&&{step:'photos',text:'Без фото гости не увидят жильё. Добавьте 3–5 снимков, можно сразу несколько.',action:'Добавить фото'}),
-  ...keep(short&&{step:'text',text:'Описание короче 80 знаков, с ним объявление не показать. Допишите пару строк '+(isBanquet(b.details.type)?'о зале':isBath(b.details.type)?'об объекте':'о жилье')+'.',action:'Дописать'}),
-  ...keep((!b.address.trim()||!b.district.trim())&&{step:'place',text:'Укажите район и точный адрес: по нему ставится метка на карте.',action:'Указать адрес'}),
+ const blocking=[...keep(!b.photos.length&&{step:'photos',text:t('Без фото гости не увидят жильё. Добавьте 3–5 снимков, можно сразу несколько.'),action:t('Добавить фото')}),
+  ...keep(short&&{step:'text',text:isBanquet(b.details.type)?t('Описание короче 80 знаков, с ним объявление не показать. Допишите пару строк о зале.'):isBath(b.details.type)?t('Описание короче 80 знаков, с ним объявление не показать. Допишите пару строк об объекте.'):t('Описание короче 80 знаков, с ним объявление не показать. Допишите пару строк о жилье.'),action:t('Дописать')}),
+  ...keep((!b.address.trim()||!b.district.trim())&&{step:'place',text:t('Укажите район и точный адрес: по нему ставится метка на карте.'),action:t('Указать адрес')}),
   // A bath is found only by the hour: without an hourly price no guest sees it.
-  ...keep(isBath(b.details.type)&&!b.rental.hourlyPrice&&{step:'prices',text:'Баню ищут по часам. Назначьте цену за час, иначе гости её не найдут.',action:'Назначить цену'}),
-  ...keep(isBanquet(b.details.type)&&!b.rental.extraGuestPrice&&{step:'prices',text:'Зал выбирают по цене на гостя. Назначьте её и наименьшее число гостей.',action:'Назначить цену'})];
+  ...keep(isBath(b.details.type)&&!b.rental.hourlyPrice&&{step:'prices',text:t('Баню ищут по часам. Назначьте цену за час, иначе гости её не найдут.'),action:t('Назначить цену')}),
+  ...keep(isBanquet(b.details.type)&&!b.rental.extraGuestPrice&&{step:'prices',text:t('Зал выбирают по цене на гостя. Назначьте её и наименьшее число гостей.'),action:t('Назначить цену')})];
  if(blocking.length)return blocking[0];
- if(!b.published&&b.photos.length&&!short&&!skipped.includes('publish'))return {step:'publish',text:'Всё нужное есть. Показать '+(isBanquet(b.details.type)?'зал':isBath(b.details.type)?'объект':'жильё')+' гостям на карте?',action:'Показать гостям'};
- const better=[...keep(b.photos.length>0&&b.photos.length<5&&{step:'photos',text:'Добавьте ещё '+(5-b.photos.length)+' фото: '+(isBanquet(b.details.type)?'зал с накрытыми столами, сцену, вход':isBath(b.details.type)?'парную, комнату отдыха, двор':'кухню, санузел, вид из окна')+'. С пятью снимками бронируют чаще.',action:'Добавить фото'}),
-  ...keep(b.details.amenities.length<3&&{step:'amenities',text:isBanquet(b.details.type)?'Отметьте, что есть: халяль, комната для намаза, сцена, звук. По ним выбирают зал.':isBath(b.details.type)?'Отметьте, что есть: парилка, бассейн, купель, веники. По ним гости выбирают баню.':'Отметьте удобства: гости ищут по Wi-Fi, кухне и стиральной машине.',action:'Отметить'}),
-  ...keep(isBath(b.details.type)&&!b.rental.prepMinutes&&{step:'prices',text:'Укажите, сколько нужно, чтобы затопить баню: напомню вовремя и не приму бронь раньше.',action:'Указать'}),
-  ...keep(isBanquet(b.details.type)&&!b.details.menu&&{step:'prices',text:'Добавьте меню: по нему гости понимают, что входит в цену на гостя.',action:'Добавить меню'}),
-  ...keep(!isBanquet(b.details.type)&&!b.rental.hourlyPrice&&{step:'prices',text:'Включите почасовую цену: между гостями жильё может приносить доход и днём.',action:'Назначить цену'}),
-  ...keep(!b.rental.houseRules.trim()&&{step:'rules',text:isBanquet(b.details.type)?'Напишите короткие правила: свои продукты и напитки, музыка, до какого часа. Так меньше споров с гостями.':'Напишите короткие правила: тишина, курение, возврат депозита. Так меньше споров с гостями.',action:'Написать'})];
- return better[0]||{step:null,text:b.published?'Объявление в порядке, гости видят его на карте. Если что-то изменится, откройте нужный пункт.':'Объявление скрыто от гостей. Когда будете готовы, включите показ ниже.'};
+ if(!b.published&&b.photos.length&&!short&&!skipped.includes('publish'))return {step:'publish',text:isBanquet(b.details.type)?t('Всё нужное есть. Показать зал гостям на карте?'):isBath(b.details.type)?t('Всё нужное есть. Показать объект гостям на карте?'):t('Всё нужное есть. Показать жильё гостям на карте?'),action:t('Показать гостям')};
+ const better=[...keep(b.photos.length>0&&b.photos.length<5&&{step:'photos',text:isBanquet(b.details.type)?t('Добавьте ещё {n} фото: зал с накрытыми столами, сцену, вход. С пятью снимками бронируют чаще.',{n:5-b.photos.length}):isBath(b.details.type)?t('Добавьте ещё {n} фото: парную, комнату отдыха, двор. С пятью снимками бронируют чаще.',{n:5-b.photos.length}):t('Добавьте ещё {n} фото: кухню, санузел, вид из окна. С пятью снимками бронируют чаще.',{n:5-b.photos.length}),action:t('Добавить фото')}),
+  ...keep(b.details.amenities.length<3&&{step:'amenities',text:isBanquet(b.details.type)?t('Отметьте, что есть: халяль, комната для намаза, сцена, звук. По ним выбирают зал.'):isBath(b.details.type)?t('Отметьте, что есть: парилка, бассейн, купель, веники. По ним гости выбирают баню.'):t('Отметьте удобства: гости ищут по Wi-Fi, кухне и стиральной машине.'),action:t('Отметить')}),
+  ...keep(isBath(b.details.type)&&!b.rental.prepMinutes&&{step:'prices',text:t('Укажите, сколько нужно, чтобы затопить баню: напомню вовремя и не приму бронь раньше.'),action:t('Указать')}),
+  ...keep(isBanquet(b.details.type)&&!b.details.menu&&{step:'prices',text:t('Добавьте меню: по нему гости понимают, что входит в цену на гостя.'),action:t('Добавить меню')}),
+  ...keep(!isBanquet(b.details.type)&&!b.rental.hourlyPrice&&{step:'prices',text:t('Включите почасовую цену: между гостями жильё может приносить доход и днём.'),action:t('Назначить цену')}),
+  ...keep(!b.rental.houseRules.trim()&&{step:'rules',text:isBanquet(b.details.type)?t('Напишите короткие правила: свои продукты и напитки, музыка, до какого часа. Так меньше споров с гостями.'):t('Напишите короткие правила: тишина, курение, возврат депозита. Так меньше споров с гостями.'),action:t('Написать')})];
+ return better[0]||{step:null,text:b.published?t('Объявление в порядке, гости видят его на карте. Если что-то изменится, откройте нужный пункт.'):t('Объявление скрыто от гостей. Когда будете готовы, включите показ ниже.')};
 }
 // A save can fail because of another step (an older listing without rules, say): the step to open next.
 export function stepForError(message:string):EditStep|null{
@@ -87,4 +88,6 @@ export function stepForError(message:string):EditStep|null{
 export const PUBLISH_REVIEW='Показать гостям после проверки';
 export const needsReview=(message:string)=>/провер|допуск/i.test(message)&&!/телефон/i.test(message);
 export function reviewRequest(p:{id:string;title?:string;city?:string;address?:string}){return {propertyId:p.id,reference:PUBLISH_REVIEW+': «'+(p.title||'жильё')+'», '+[p.city,p.address].filter(Boolean).join(', ')};}
-export const REVIEW_SENT='Отправил жильё на проверку администратору. Как только он подтвердит, оно само появится на карте, а вам придёт уведомление.';
+// Shown through t(REVIEW_SENT) in the app; the list is what the translation tables are checked against.
+const REVIEW_WORDS=/* i18n */['Отправил жильё на проверку администратору. Как только он подтвердит, оно само появится на карте, а вам придёт уведомление.'];
+export const REVIEW_SENT=REVIEW_WORDS[0];

@@ -1,3 +1,4 @@
+import {t as tr} from '../../lib/i18n';
 import React,{useEffect,useState} from 'react';
 import {Animated,Pressable,StyleSheet,Text,View} from 'react-native';
 import type {Approval} from '../../lib/approvals';
@@ -14,17 +15,17 @@ const money=(n:number)=>new Intl.NumberFormat('ru-RU').format(n)+' ₸';
 function WindowTipBody({card,busy,onDecide,compact}:{card:Approval;busy:boolean;onDecide:(action:'accept'|'reject')=>void;compact:boolean}){
  const w=card.window!;
  return <View>
-  <View style={t.when}><Text style={t.whenIcon}>◷</Text><Text numberOfLines={1} style={t.whenText}>{w.when}</Text><View style={t.hours}><Text style={t.hoursText}>{w.hours+' ч'}</Text></View></View>
-  <View style={t.priceRow} accessible accessibilityLabel={'Час сейчас '+money(w.from)+', в окне '+money(w.to)}>
-   <Text style={t.from}>{money(w.from)}</Text><Text style={t.arrow}>→</Text><Text style={t.to}>{money(w.to)}<Text style={t.unit}> / час</Text></Text>
+  <View style={t.when}><Text style={t.whenIcon}>◷</Text><Text numberOfLines={1} style={t.whenText}>{w.when}</Text><View style={t.hours}><Text style={t.hoursText}>{tr('{hours} ч',{hours:w.hours})}</Text></View></View>
+  <View style={t.priceRow} accessible accessibilityLabel={tr('Час сейчас {v}, в окне {v2}',{v:money(w.from),v2:money(w.to)})}>
+   <Text style={t.from}>{money(w.from)}</Text><Text style={t.arrow}>→</Text><Text style={t.to}>{money(w.to)}<Text style={t.unit}>{' '}{tr('/ час')}</Text></Text>
    <View style={[t.delta,t.deltaWindow]}><Text style={[t.deltaText,{color:C.accent}]}>{'−'+w.percent+'%'}</Text></View>
   </View>
-  <Text numberOfLines={2} style={t.rows}>Пустует между бронями. Скидку гости увидят только в эти часы.</Text>
+  <Text numberOfLines={2} style={t.rows}>{tr('Пустует между бронями. Скидку гости увидят только в эти часы.')}</Text>
   <View style={t.actions}>
    <Pressable accessibilityRole="button" accessibilityLabel={card.acceptLabel} disabled={busy} onPress={()=>onDecide('accept')} style={({pressed})=>[t.accept,(busy||pressed)&&t.dim]}><Text numberOfLines={1} style={t.acceptText}>{card.acceptLabel}</Text></Pressable>
    <Pressable accessibilityRole="button" accessibilityLabel={card.rejectLabel} disabled={busy} onPress={()=>onDecide('reject')} style={({pressed})=>[t.reject,(busy||pressed)&&t.dim]}><Text style={t.rejectText}>{card.rejectLabel}</Text></Pressable>
   </View>
-  {!compact&&<Text style={t.note}>Без вашего согласия гостям ничего не покажем.</Text>}
+  {!compact&&<Text style={t.note}>{tr('Без вашего согласия гостям ничего не покажем.')}</Text>}
  </View>;
 }
 
@@ -32,34 +33,34 @@ function WindowTipBody({card,busy,onDecide,compact}:{card:Approval;busy:boolean;
 function ForecastTipBody({card,busy,onDecide,compact}:{card:Approval;busy:boolean;onDecide:(action:'accept'|'reject')=>void;compact:boolean}){
  const f=card.forecast!,priced=f.advice==='raise'||f.advice==='lower';
  return <View>
-  <View style={t.days} accessible accessibilityLabel={'Загрузка города по вечерам: '+f.days.map(d=>d.label+' '+d.load+'%').join(', ')}>
+  <View style={t.days} accessible accessibilityLabel={tr('Загрузка города по вечерам: {v}',{v:f.days.map(d=>d.label+' '+d.load+'%').join(', ')})}>
    {f.days.map(d=><View key={d.label+d.date} style={t.day}>
     <View style={t.bar}><View style={[t.fill,{height:`${Math.max(8,d.load)}%`},d.level==='busy'?t.fillBusy:d.level==='quiet'?t.fillQuiet:null]}/></View>
     <Text style={[t.dayLabel,d.level==='quiet'&&{color:C.muted}]}>{d.label}</Text><Text style={[t.dayLoad,d.level==='busy'&&t.dayLoadBusy]}>{d.load+'%'}</Text>
    </View>)}
   </View>
   <Text numberOfLines={2} style={t.summary}>{f.summary+'.'}</Text>
-  {priced&&<View style={t.priceRow} accessible accessibilityLabel={'Сейчас '+money(f.from)+', предлагаю '+money(f.to)}>
+  {priced&&<View style={t.priceRow} accessible accessibilityLabel={tr('Сейчас {v}, предлагаю {v2}',{v:money(f.from),v2:money(f.to)})}>
    <Text style={t.from}>{money(f.from)}</Text><Text style={t.arrow}>→</Text><Text style={t.to}>{money(f.to)}</Text>
    <View style={[t.delta,f.advice==='raise'?t.deltaUp:t.deltaDown]}><Text style={[t.deltaText,{color:f.advice==='raise'?C.success:C.warning}]}>{(f.advice==='raise'?'+':'−')+f.percent+'%'}</Text></View>
   </View>}
-  {f.advice==='min_hours'&&<View style={t.priceRow} accessible accessibilityLabel={'Минимум '+f.from+' ч, предлагаю '+f.to+' ч'}>
-   <Text style={t.from}>{'от '+f.from+' ч'}</Text><Text style={t.arrow}>→</Text><Text style={t.to}>{'от '+f.to+' ч'}</Text>
+  {f.advice==='min_hours'&&<View style={t.priceRow} accessible accessibilityLabel={tr('Минимум {from} ч, предлагаю {to} ч',{from:f.from,to:f.to})}>
+   <Text style={t.from}>{tr('от {from} ч',{from:f.from})}</Text><Text style={t.arrow}>→</Text><Text style={t.to}>{tr('от {to} ч',{to:f.to})}</Text>
   </View>}
-  {f.advice!=='none'&&<Text numberOfLines={compact?2:4} style={t.rows}>{'«'+f.title+'» свободна в эти дни'+(compact?'':'. '+f.reasons.join(' · '))}</Text>}
+  {f.advice!=='none'&&<Text numberOfLines={compact?2:4} style={t.rows}>{tr('«{title}» свободна в эти дни',{title:f.title})+(compact?'':'. '+f.reasons.join(' · '))}</Text>}
   <View style={t.actions}>
    <Pressable accessibilityRole="button" accessibilityLabel={card.acceptLabel} disabled={busy} onPress={()=>onDecide('accept')} style={({pressed})=>[t.accept,(busy||pressed)&&t.dim]}><Text numberOfLines={1} style={t.acceptText}>{card.acceptLabel}</Text></Pressable>
    <Pressable accessibilityRole="button" accessibilityLabel={card.rejectLabel} disabled={busy} onPress={()=>onDecide('reject')} style={({pressed})=>[t.reject,(busy||pressed)&&t.dim]}><Text style={t.rejectText}>{card.rejectLabel}</Text></Pressable>
   </View>
-  {!compact&&f.advice!=='none'&&<Text style={t.note}>Без вашего согласия ничего не изменится.</Text>}
+  {!compact&&f.advice!=='none'&&<Text style={t.note}>{tr('Без вашего согласия ничего не изменится.')}</Text>}
  </View>;
 }
 
 // Listing quality: the flat next to similar flats that are booked more often, and one button.
 function ListingTipBody({card,busy,onDecide,compact}:{card:Approval;busy:boolean;onDecide:(action:'accept'|'reject')=>void;compact:boolean}){
  const l=card.listing!,icon=l.kind==='photos'?'▣':l.kind==='checkin'?'⚿':l.kind==='text'?'≡':'✓';
- const compare=l.kind==='photos'?[[String(l.mine),'фото у вас'],[String(l.theirs),'у тех, кого бронируют чаще']]:l.kind==='text'?[[String(l.mine),'знаков у вас'],[String(l.theirs),'у тех, кого бронируют чаще']]
-  :l.kind==='amenity'?[['Нет','у вас: '+l.amenity.toLocaleLowerCase('ru')],[l.count+' из '+l.leaders,'отмечают у себя']]:l.kind==='hourly'?[['—','почасовой цены нет'],[money(l.value),'в час, как у '+l.count+' из '+l.leaders]]:[['Встреча','сейчас у вас'],[l.count+' из '+l.leaders,'заселяют без встречи']];
+ const compare=l.kind==='photos'?[[String(l.mine),tr('фото у вас')],[String(l.theirs),tr('у тех, кого бронируют чаще')]]:l.kind==='text'?[[String(l.mine),tr('знаков у вас')],[String(l.theirs),tr('у тех, кого бронируют чаще')]]
+  :l.kind==='amenity'?[[tr('Нет'),tr('у вас: {v}',{v:l.amenity.toLocaleLowerCase('ru')})],[tr('{count} из {leaders}',{count:l.count,leaders:l.leaders}),tr('отмечают у себя')]]:l.kind==='hourly'?[['—',tr('почасовой цены нет')],[money(l.value),tr('в час, как у {count} из {leaders}',{count:l.count,leaders:l.leaders})]]:[[tr('Встреча'),tr('сейчас у вас')],[tr('{count} из {leaders}',{count:l.count,leaders:l.leaders}),tr('заселяют без встречи')]];
  return <View>
   <View style={t.compare} accessible accessibilityLabel={compare[0].join(' ')+'; '+compare[1].join(' ')}>
    <View style={t.cmpMine}><Text numberOfLines={1} style={t.cmpValue}>{compare[0][0]}</Text><Text style={t.cmpLabel}>{compare[0][1]}</Text></View>
@@ -71,13 +72,13 @@ function ListingTipBody({card,busy,onDecide,compact}:{card:Approval;busy:boolean
    <Pressable accessibilityRole="button" accessibilityLabel={card.acceptLabel} disabled={busy} onPress={()=>onDecide('accept')} style={({pressed})=>[t.accept,(busy||pressed)&&t.dim]}><Text numberOfLines={1} style={t.acceptText}>{card.acceptLabel}</Text></Pressable>
    <Pressable accessibilityRole="button" accessibilityLabel={card.rejectLabel} disabled={busy} onPress={()=>onDecide('reject')} style={({pressed})=>[t.reject,(busy||pressed)&&t.dim]}><Text style={t.rejectText}>{card.rejectLabel}</Text></Pressable>
   </View>
-  {!compact&&<Text style={t.note}>Сравниваю с похожими объектами в вашем городе за последние 2 месяца.</Text>}
+  {!compact&&<Text style={t.note}>{tr('Сравниваю с похожими объектами в вашем городе за последние 2 месяца.')}</Text>}
  </View>;
 }
 
 // Cleaning price: the flat's price next to what similar flats pay (or what cleaners refused), and one button.
 function CleaningTipBody({card,busy,onDecide,compact}:{card:Approval;busy:boolean;onDecide:(action:'accept'|'reject')=>void;compact:boolean}){
- const c=card.cleaningTip!,compare=[[money(c.from),c.refused?'отказов: '+c.refused:'сейчас у вас'],[money(c.to),c.typical?'платят за похожие':'предлагаю']];
+ const c=card.cleaningTip!,compare=[[money(c.from),c.refused?tr('отказов: {refused}',{refused:c.refused}):tr('сейчас у вас')],[money(c.to),c.typical?tr('платят за похожие'):tr('предлагаю')]];
  return <View>
   <View style={t.compare} accessible accessibilityLabel={compare[0].join(' ')+'; '+compare[1].join(' ')}>
    <View style={t.cmpMine}><Text numberOfLines={1} style={t.cmpValue}>{compare[0][0]}</Text><Text style={t.cmpLabel}>{compare[0][1]}</Text></View>
@@ -89,7 +90,7 @@ function CleaningTipBody({card,busy,onDecide,compact}:{card:Approval;busy:boolea
    <Pressable accessibilityRole="button" accessibilityLabel={card.acceptLabel} disabled={busy} onPress={()=>onDecide('accept')} style={({pressed})=>[t.accept,(busy||pressed)&&t.dim]}><Text numberOfLines={1} style={t.acceptText}>{card.acceptLabel}</Text></Pressable>
    <Pressable accessibilityRole="button" accessibilityLabel={card.rejectLabel} disabled={busy} onPress={()=>onDecide('reject')} style={({pressed})=>[t.reject,(busy||pressed)&&t.dim]}><Text style={t.rejectText}>{card.rejectLabel}</Text></Pressable>
   </View>
-  {!compact&&<Text style={t.note}>Открытые уборки уйдут исполнителям заново по новой цене. Без вашего согласия ничего не изменится.</Text>}
+  {!compact&&<Text style={t.note}>{tr('Открытые уборки уйдут исполнителям заново по новой цене. Без вашего согласия ничего не изменится.')}</Text>}
  </View>;
 }
 
@@ -97,21 +98,22 @@ function CleaningTipBody({card,busy,onDecide,compact}:{card:Approval;busy:boolea
 function StayTipBody({card,busy,onDecide,compact}:{card:Approval;busy:boolean;onDecide:(action:'accept'|'reject')=>void;compact:boolean}){
  const o=card.stay!;
  return <View>
-  <View style={t.when}><Text style={t.whenIcon}>◷</Text><Text numberOfLines={1} style={t.whenText}>{(o.kind==='late'?'Выезд ':'Заезд ')+o.when}</Text><View style={t.hours}><Text style={t.hoursText}>{'+'+o.hours+' ч'}</Text></View></View>
-  <View style={t.priceRow} accessible accessibilityLabel={'Доплата '+money(o.extra)}>
-   <Text style={t.to}>{'+'+money(o.extra)}</Text><Text style={t.unit}>{'итого '+money(o.amount)}</Text>
+  <View style={t.when}><Text style={t.whenIcon}>◷</Text><Text numberOfLines={1} style={t.whenText}>{o.kind==='late'?tr('Выезд {when}',{when:o.when}):tr('Заезд {when}',{when:o.when})}</Text><View style={t.hours}><Text style={t.hoursText}>{tr('+{hours} ч',{hours:o.hours})}</Text></View></View>
+  <View style={t.priceRow} accessible accessibilityLabel={tr('Доплата {v}',{v:money(o.extra)})}>
+   <Text style={t.to}>{'+'+money(o.extra)}</Text><Text style={t.unit}>{tr('итого {v}',{v:money(o.amount)})}</Text>
   </View>
-  <Text numberOfLines={2} style={t.rows}>{o.automatic?'Календарь свободен, уборка успевает. Оформлю сразу.':'Календарь свободен, уборка успевает. Время изменится после подтверждения владельца.'}</Text>
+  <Text numberOfLines={2} style={t.rows}>{o.automatic?tr('Календарь свободен, уборка успевает. Оформлю сразу.'):tr('Календарь свободен, уборка успевает. Время изменится после подтверждения владельца.')}</Text>
   <View style={t.actions}>
    <Pressable accessibilityRole="button" accessibilityLabel={card.acceptLabel} disabled={busy} onPress={()=>onDecide('accept')} style={({pressed})=>[t.accept,(busy||pressed)&&t.dim]}><Text numberOfLines={1} style={t.acceptText}>{card.acceptLabel}</Text></Pressable>
    <Pressable accessibilityRole="button" accessibilityLabel={card.rejectLabel} disabled={busy} onPress={()=>onDecide('reject')} style={({pressed})=>[t.reject,(busy||pressed)&&t.dim]}><Text style={t.rejectText}>{card.rejectLabel}</Text></Pressable>
   </View>
-  {!compact&&<Text style={t.note}>Доплата войдёт в остаток к оплате по брони.</Text>}
+  {!compact&&<Text style={t.note}>{tr('Доплата войдёт в остаток к оплате по брони.')}</Text>}
  </View>;
 }
 
 // A new booking request pops up on the owner's map like an order: dates, money, the AI's risk read.
 type Decision='accept'|'reject'|'deposit';
+// The facts of a card come from the server with Russian labels: a fact is found by that label.
 const fact=(card:Approval,label:string)=>card.facts.find(([l])=>l===label)?.[1]||'';
 const riskTone={low:[C.successSoft,C.success],medium:[C.warningSoft,C.warning],high:[C.dangerSoft,C.danger]} as const;
 function BookingTipBody({card,busy,onDecide}:{card:Approval;busy:boolean;onDecide:(action:Decision)=>void}){
@@ -121,11 +123,11 @@ function BookingTipBody({card,busy,onDecide}:{card:Approval;busy:boolean;onDecid
   <View style={t.priceRow}><Text style={t.to}>{fact(card,'Проживание')}</Text><Text numberOfLines={1} style={[t.unit,{flexShrink:1}]}>{card.from}</Text><ReliabilityBadge value={card.reliability} compact/></View>
   <View style={[t.when,{marginTop:4}]}><Text style={t.whenIcon}>◷</Text><Text numberOfLines={1} style={t.whenText}>{fact(card,'Заезд')+' → '+fact(card,'Выезд')}</Text></View>
   <View accessibilityLabel={r.label} style={[t.risk,{backgroundColor:bg,borderColor:r.level==='medium'?C.warningLine:bg}]}>
-   <View style={t.riskHead}><View style={[t.riskDot,{backgroundColor:fg}]}/><Text style={t.riskTitle}>{r.label}</Text>{r.held&&<Text style={t.small}>автоподтверждение остановлено</Text>}</View>
+   <View style={t.riskHead}><View style={[t.riskDot,{backgroundColor:fg}]}/><Text style={t.riskTitle}>{r.label}</Text>{r.held&&<Text style={t.small}>{tr('автоподтверждение остановлено')}</Text>}</View>
    <Text style={t.riskLine}>{r.reasons.join(' · ')}</Text>
   </View>
-  {!!card.unready&&<Text accessibilityLabel={card.unready} style={[t.riskLine,{color:C.warning}]}>{card.unready}. Подтверждайте, если успеете подготовить.</Text>}
-  {card.depositLabel?<><View style={t.actions}>{btn(card.depositLabel,'deposit',true)}</View><View style={[t.actions,{marginTop:8}]}>{btn('Без депозита','accept',false)}{btn(card.rejectLabel,'reject',false)}</View></>
+  {!!card.unready&&<Text accessibilityLabel={card.unready} style={[t.riskLine,{color:C.warning}]}>{tr('{what}. Подтверждайте, если успеете подготовить.',{what:card.unready})}</Text>}
+  {card.depositLabel?<><View style={t.actions}>{btn(card.depositLabel,'deposit',true)}</View><View style={[t.actions,{marginTop:8}]}>{btn(tr('Без депозита'),'accept',false)}{btn(card.rejectLabel,'reject',false)}</View></>
    :<View style={t.actions}>{btn(card.acceptLabel,'accept',true)}<Pressable accessibilityRole="button" accessibilityLabel={card.rejectLabel} disabled={busy} onPress={()=>onDecide('reject')} style={({pressed})=>[t.reject,(busy||pressed)&&t.dim]}><Text style={t.rejectText}>{card.rejectLabel}</Text></Pressable></View>}
  </View>;
 }
@@ -139,7 +141,7 @@ export function PriceTipBody({card,busy,onDecide,compact=false}:{card:Approval;b
  if(card.window)return <WindowTipBody card={card} busy={busy} onDecide={onDecide} compact={compact}/>;
  const p=card.price!,up=p.direction==='up';
  return <View>
-  <View style={t.priceRow} accessible accessibilityLabel={'Сейчас '+money(p.from)+', предлагаю '+money(p.to)}>
+  <View style={t.priceRow} accessible accessibilityLabel={tr('Сейчас {v}, предлагаю {v2}',{v:money(p.from),v2:money(p.to)})}>
    <Text style={t.from}>{money(p.from)}</Text><Text style={t.arrow}>→</Text><Text style={t.to}>{money(p.to)}</Text>
    <View style={[t.delta,up?t.deltaUp:t.deltaDown]}><Text style={[t.deltaText,{color:up?C.success:C.warning}]}>{(up?'▲ +':'▼ −')+p.percent}%</Text></View>
   </View>
@@ -149,9 +151,9 @@ export function PriceTipBody({card,busy,onDecide,compact=false}:{card:Approval;b
   </>}
   <View style={t.actions}>
    <Pressable accessibilityRole="button" accessibilityLabel={card.acceptLabel} disabled={busy} onPress={()=>onDecide('accept')} style={({pressed})=>[t.accept,(busy||pressed)&&t.dim]}><Text numberOfLines={1} style={t.acceptText}>{card.acceptLabel}</Text></Pressable>
-   <Pressable accessibilityRole="button" accessibilityLabel="Оставить цену" disabled={busy} onPress={()=>onDecide('reject')} style={({pressed})=>[t.reject,(busy||pressed)&&t.dim]}><Text style={t.rejectText}>Оставить</Text></Pressable>
+   <Pressable accessibilityRole="button" accessibilityLabel={tr('Оставить цену')} disabled={busy} onPress={()=>onDecide('reject')} style={({pressed})=>[t.reject,(busy||pressed)&&t.dim]}><Text style={t.rejectText}>{tr('Оставить')}</Text></Pressable>
   </View>
-  {!compact&&<Text style={t.note}>Без вашего согласия цена не изменится.</Text>}
+  {!compact&&<Text style={t.note}>{tr('Без вашего согласия цена не изменится.')}</Text>}
  </View>;
 }
 
@@ -167,15 +169,15 @@ export function PriceTip({cards,onChanged,onEdit,role='owner'}:{cards:Approval[]
  if(result||!card)return <Animated.View style={[t.box,t.resultBox,style]} accessibilityLiveRegion="polite"><View style={[t.icon,result?.error&&{backgroundColor:C.danger}]}><Text style={t.iconText}>{result?.error?'!':'✓'}</Text></View><Text style={t.resultText}>{result?.text}</Text></Animated.View>;
  async function decide(action:Decision){
   if(!card)return;setBusy(true);
-  try{const v=await request('/api/approvals',{id:card.id,revision:card.revision,action},undefined,uid()+':'+card.kind+':'+action,role);if(v.edit&&onEdit){await onChanged?.();onEdit(v.edit.propertyId,v.edit.step);return;}setResult({text:v.message||'Готово.',error:false});await onChanged?.();}
-  catch(error){setResult({text:error instanceof Error?error.message:'Не получилось. Обновите экран.',error:true});}
+  try{const v=await request('/api/approvals',{id:card.id,revision:card.revision,action},undefined,uid()+':'+card.kind+':'+action,role);if(v.edit&&onEdit){await onChanged?.();onEdit(v.edit.propertyId,v.edit.step);return;}setResult({text:v.message||tr('Готово.'),error:false});await onChanged?.();}
+  catch(error){setResult({text:error instanceof Error?error.message:tr('Не получилось. Обновите экран.'),error:true});}
   finally{setBusy(false);}
  }
- return <Animated.View style={[t.box,style]} accessibilityLabel={card.risk?'Новая заявка на бронирование':card.cleaningTip?'Совет ИИ-администратора по цене уборки':card.listing?'Совет ИИ-администратора по объявлению':card.forecast?'Прогноз загрузки на неделю от ИИ-администратора':card.stay?'Предложение ИИ-администратора по времени проживания':card.window?'Окно в календаре от ИИ-администратора':'Совет ИИ-администратора по цене'}>
+ return <Animated.View style={[t.box,style]} accessibilityLabel={card.risk?tr('Новая заявка на бронирование'):card.cleaningTip?tr('Совет ИИ-администратора по цене уборки'):card.listing?tr('Совет ИИ-администратора по объявлению'):card.forecast?tr('Прогноз загрузки на неделю от ИИ-администратора'):card.stay?tr('Предложение ИИ-администратора по времени проживания'):card.window?tr('Окно в календаре от ИИ-администратора'):tr('Совет ИИ-администратора по цене')}>
   <View style={t.head}>
    <View style={t.icon}><Text style={t.iconText}>{card.risk?'◷':card.forecast?'▥':card.listing?'★':card.cleaningTip?'✧':'✦'}</Text></View>
-   <View style={t.titleBox}><Text style={t.small}>{'ИИ-администратор · '+(card.risk?'новая заявка':card.cleaningTip?'цена уборки':card.listing?card.listing.title.toLocaleLowerCase('ru'):card.forecast?'прогноз на неделю':card.stay?(card.stay.kind==='late'?'поздний выезд':'ранний заезд'):card.window?'окно в календаре':card.price?.direction==='up'?'спрос вырос':'спрос снизился')}</Text><Text numberOfLines={1} style={t.title}>{card.subject}</Text></View>
-   <Pressable accessibilityRole="button" accessibilityLabel="Позже" onPress={()=>setLater(v=>[...v,card.id])} style={t.close}><Text style={t.closeText}>×</Text></Pressable>
+   <View style={t.titleBox}><Text style={t.small}>{tr('ИИ-администратор · {v}',{v:(card.risk?tr('новая заявка'):card.cleaningTip?tr('цена уборки'):card.listing?card.listing.title.toLocaleLowerCase('ru'):card.forecast?tr('прогноз на неделю'):card.stay?(card.stay.kind==='late'?tr('поздний выезд'):tr('ранний заезд')):card.window?tr('окно в календаре'):card.price?.direction==='up'?tr('спрос вырос'):tr('спрос снизился'))})}</Text><Text numberOfLines={1} style={t.title}>{card.subject}</Text></View>
+   <Pressable accessibilityRole="button" accessibilityLabel={tr('Позже')} onPress={()=>setLater(v=>[...v,card.id])} style={t.close}><Text style={t.closeText}>×</Text></Pressable>
   </View>
   <PriceTipBody card={card} busy={busy} onDecide={decide} compact/>
  </Animated.View>;

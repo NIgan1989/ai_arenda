@@ -46,6 +46,8 @@ export function keysOf(file){
         strings(first);
       }
       if(name==='L'&&first)strings(first);
+      // tc('Загрузка','occupancy'): the line of a word with a second meaning is «Загрузка|occupancy».
+      if(name==='tc'&&first&&n.arguments[1]&&ts.isStringLiteralLike(first)&&ts.isStringLiteralLike(n.arguments[1]))keys.add(first.text+'|'+n.arguments[1].text);
       // forms(n,'гость','гостя','гостей') and the local helpers of the same shape (plural, guestsWord…): the first
       // and the last Russian form are translated.
       if(n.arguments.length===4&&ts.isStringLiteralLike(n.arguments[1])){const [,one,,many]=n.arguments;for(const a of [one,many])if((ts.isStringLiteral(a)||ts.isNoSubstitutionTemplateLiteral(a))&&CYR.test(a.text))keys.add(a.text);}

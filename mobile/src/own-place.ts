@@ -1,16 +1,17 @@
+import {dateText,t} from '../../lib/i18n';
 // One line on what is happening with an owner's object now, for its short card in «Моё жильё» (OwnProperties.tsx):
 // guests inside, the next arrival, or free. Bookings that are cancelled, rejected, expired or over are ignored.
 // Covered by mobile/tests/own-place.test.mjs.
 type Row = Record<string, unknown>;
 
 const part = (v: number, options: Intl.DateTimeFormatOptions) =>
-  new Date(v * 1000).toLocaleString('ru-RU', { timeZone: 'Asia/Almaty', ...options });
+  dateText(v * 1000,{ timeZone: 'Asia/Almaty', ...options });
 const day = (v: number) => part(v, { day: 'numeric', month: 'long' });
 const time = (v: number) => part(v, { hour: '2-digit', minute: '2-digit' });
 // «сегодня 14:00», «завтра 12:00» or «18 ноября, 14:00», in Kazakhstan time.
 export function when(v: number, now: number) {
-  if (day(v) === day(now)) return 'сегодня ' + time(v);
-  if (day(v) === day(now + 86400)) return 'завтра ' + time(v);
+  if (day(v) === day(now)) return t('сегодня {time}',{time:time(v)});
+  if (day(v) === day(now + 86400)) return t('завтра {time}',{time:time(v)});
   return day(v) + ', ' + time(v);
 }
 
@@ -26,9 +27,9 @@ export function placeNow(propertyId: string, bookings: Row[], now = Date.now() /
   const inside = confirmed.find(b => terms(b).actual_checkin);
   if (inside) {
     const end = Number(inside.end);
-    return { line: end > now ? 'Гости до ' + when(end, now) : (bath ? 'Гости ещё не ушли, время вышло ' : 'Гости ещё не выехали, выезд был ') + when(end, now), busy: true, requests };
+    return { line: t(end > now ? 'Гости до {when}' : bath ? 'Гости ещё не ушли, время вышло {when}' : 'Гости ещё не выехали, выезд был {when}', { when: when(end, now) }), busy: true, requests };
   }
   const next = confirmed.filter(b => Number(b.end) > now).sort((a, b) => Number(a.start) - Number(b.start))[0];
-  if (next) return { line: (Number(next.start) <= now ? (bath ? 'Ждём гостей, бронь ' : 'Ждём гостя, заезд ') : bath ? 'Гости ' : 'Заезд ') + when(Number(next.start), now), busy: false, requests };
-  return { line: 'Свободно, броней впереди нет', busy: false, requests };
+  if (next) return { line: t(Number(next.start) <= now ? (bath ? 'Ждём гостей, бронь {when}' : 'Ждём гостя, заезд {when}') : bath ? 'Гости {when}' : 'Заезд {when}', { when: when(Number(next.start), now) }), busy: false, requests };
+  return { line: t('Свободно, броней впереди нет'), busy: false, requests };
 }
