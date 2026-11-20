@@ -51,3 +51,20 @@ test('the app suggests «Всё включено» when the last 30 days for the
   const cleaner=await planState(f.cleaner,'cleaner');assert.equal(cleaner.billing.spent30,250);assert.equal(cleaner.billing.allAmount,2900);assert.equal(cleaner.billing.advise,false);
  }finally{f.db.close();}
 });
+
+test('two overlapping «Всё включено» requests bill one month, not two',async()=>{
+ const f=await fixture(),R=f.db.raw;try{
+  await writeOperations(f.owner,'owner',['autopilot','start'],{propertyIds:[f.property],cleaningFees:{[f.property]:3000}});
+  const stale=R.prepare("SELECT * FROM autopilot_plans WHERE user_id='owner' AND role='owner'").get();assert.equal(stale.tier,'pay');
+  await writeOperations(f.owner,'owner',['autopilot','tier'],{tier:'all'});
+  // The first request happened a few seconds earlier; the second one still holds the plan as it was before it.
+  R.prepare("UPDATE autopilot_plans SET updated_at=updated_at-5 WHERE user_id='owner'").run();R.prepare("UPDATE autopilot_charges SET period_start=period_start-5 WHERE user_id='owner'").run();
+  const real=f.owner.db,late=Object.create(real);
+  late.prepare=sql=>/^SELECT \* FROM autopilot_plans WHERE user_id=\? AND role=\?$/.test(sql)?{bind(){return this;},async first(){return stale;}}:real.prepare(sql);
+  f.owner.db=late;
+  await assert.rejects(writeOperations(f.owner,'owner',['autopilot','tier'],{tier:'all'}),/уже меняется/);
+  f.owner.db=real;
+  assert.equal(R.prepare("SELECT COUNT(*) n FROM autopilot_charges WHERE user_id='owner'").get().n,1);
+  assert.equal(R.prepare("SELECT COUNT(*) n FROM notifications WHERE user_id='owner' AND dedupe LIKE 'owner:plan-all:%'").get().n,1);
+ }finally{f.db.close();}
+});

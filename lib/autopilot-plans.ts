@@ -108,12 +108,20 @@ export async function setTier(service:RentalService,role:PlanRole,body:Row){
   }
   if(await servicePaused(db,user))throw new DomainError('Сначала оплатите услуги сервиса: Меню, «Настройки», «Оплата услуг».',402);
   if(role==='owner'&&!await objectCount(db,user))throw new DomainError('Сначала добавьте жильё.',409);
-  const paid=await chargeMonth(db,{user_id:user,role},s,at,at);
-  await db.batch([
-   q(db,"INSERT INTO autopilot_plans(user_id,role,status,started_at,period_end,updated_at,tier) VALUES (?,?,'active',?,?,?,'all') ON CONFLICT(user_id,role) DO UPDATE SET status='active',tier='all',next_tier=NULL,period_end=excluded.period_end,grace_until=NULL,auto_renew=1,version=autopilot_plans.version+1,updated_at=excluded.updated_at",user,role,at,at+MONTH,at),
-   q(db,'INSERT INTO audit_events VALUES (?,?,?,?,?)',uuid(),user,'autopilot-plan:'+user,JSON.stringify({action:'plan.tier',role,tier:'all',amount:paid.amount,units:paid.units}),at),
-   notice(db,user,`«Всё включено» подключено до ${dateText(at+MONTH)}: ${money(paid.amount)}${role==='owner'?` за ${paid.units} ${paid.units===1?'объект':'объекта(ов)'}`:''}${s.charge?', спишется с привязанной карты в понедельник':', пока плата не взимается'}. ${role==='owner'?'Без комиссий и платы за брони ИИ.':'Без платы за уборки.'}`,role+':plan-all:'+user+':'+at,at)
+  // The tier switch and the month's charge commit together, and only for the request whose switch took effect:
+  // a second, overlapping request (even a second later) finds the plan changed and bills nothing.
+  const units=await unitsFor(db,role,user),amount=priceFor(s,role,units),version=plan?Number(plan.version)+1:1;
+  const guard="EXISTS(SELECT 1 FROM autopilot_plans WHERE user_id=? AND role=? AND tier='all' AND updated_at=? AND version=?)";
+  const body=`«Всё включено» подключено до ${dateText(at+MONTH)}: ${money(amount)}${role==='owner'?` за ${units} ${units===1?'объект':'объекта(ов)'}`:''}${s.charge?', спишется с привязанной карты в понедельник':', пока плата не взимается'}. ${role==='owner'?'Без комиссий и платы за брони ИИ.':'Без платы за уборки.'}`;
+  const done=await db.batch([
+   plan
+    ?q(db,"UPDATE autopilot_plans SET status='active',tier='all',next_tier=NULL,period_end=?,grace_until=NULL,auto_renew=1,version=version+1,updated_at=? WHERE user_id=? AND role=? AND version=?",at+MONTH,at,user,role,plan.version)
+    :q(db,"INSERT INTO autopilot_plans(user_id,role,status,started_at,period_end,updated_at,tier) VALUES (?,?,'active',?,?,?,'all') ON CONFLICT(user_id,role) DO NOTHING",user,role,at,at+MONTH,at),
+   q(db,`INSERT OR IGNORE INTO autopilot_charges(id,user_id,role,period_start,period_end,units,amount,mode,settled_at,created_at) SELECT ?,?,?,?,?,?,?,?,?,? WHERE ${guard}`,uuid(),user,role,at,at+MONTH,units,amount,s.charge&&amount>0?'charged':'shadow',role==='owner'||!s.charge?at:null,at,user,role,at,version),
+   q(db,`INSERT INTO audit_events SELECT ?,?,?,?,? WHERE ${guard}`,uuid(),user,'autopilot-plan:'+user,JSON.stringify({action:'plan.tier',role,tier:'all',amount,units}),at,user,role,at,version),
+   q(db,`INSERT OR IGNORE INTO notifications(id,user_id,body,dedupe,read,created_at) SELECT ?,?,?,?,0,? WHERE ${guard}`,uuid(),user,body,role+':plan-all:'+user+':'+at,at,user,role,at,version)
   ]);
+  if(!done[0].meta.changes)throw new DomainError('Способ оплаты уже меняется. Обновите экран.',409);
   return {message:`«Всё включено» подключено до ${dateText(at+MONTH)}.`,state:await planState(service,role)};
  }
  if(!live||plan.tier==='pay')return {message:'Вы платите только за результат.',state:await planState(service,role)};
