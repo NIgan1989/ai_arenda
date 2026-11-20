@@ -18,8 +18,8 @@ function Card({title,value,open,onPress,children}:{title:string;value?:string;op
 }
 function planLine(p:Week['plan']){
  if(!p||p.status==='paused')return 'Автопилот выключен. Включите режим «ИИ» у объекта, и эти шаги ИИ будет делать сам.';
- const price=tenge(p.price)+' в месяц за объект';
- return p.status==='trial'?'Пробный период до '+day(p.until)+'. Дальше '+price+'.':p.status==='grace'?'Автопилот не оплачен, работает до '+day(p.until)+'. '+price+'.':'Тариф «Автопилот»: '+price+(p.units?' · объектов: '+p.units:'')+'.';
+ if(p.tier==='all')return (p.status==='grace'?'«Всё включено» не оплачено, работает до '+day(p.until)+'. ':'Тариф «Всё включено»: '+tenge(p.price)+' в месяц за объект'+(p.units?' · объектов под ИИ: '+p.units:'')+'.');
+ return 'Оплата за результат: '+tenge(p.price)+' за бронь, которую провёл ИИ'+(p.cap?', не больше '+tenge(p.cap)+' в месяц за объект':'')+'.';
 }
 
 export function AutopilotWeek(){

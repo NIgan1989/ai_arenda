@@ -7,7 +7,7 @@ import {T} from './tokens';
 
 // «Оплата услуг» in the settings of the owner and the performer (lib/service-dues.ts). No balance and no top-ups:
 // the screen shows what the service accrued, the linked card and when it is charged; the list below is the account.
-type Item={kind:'commission'|'cleaning'|'autopilot'|'payment';at:number;amount:number;title:string};
+type Item={kind:'commission'|'cleaning'|'autopilot'|'ai_booking'|'cleaner_job'|'payment';at:number;amount:number;title:string};
 type State={due:number;stopped?:boolean;checking?:number;confirm?:number;card:{mask:string;test:boolean}|null;nextChargeAt:number;payBy:number|null;paused:boolean;test:boolean;payDays:number;items:Item[]};
 const R=T.radius;
 const money=(n:number)=>new Intl.NumberFormat('ru-RU').format(n||0).replace(/\s/g,' ')+' ₸';

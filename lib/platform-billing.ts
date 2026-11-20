@@ -22,16 +22,32 @@ export function commissionFor(amount:number,s:Pick<BillingSettings,'rate_bp'|'mi
 
 // Statement for the booking-confirmation batch. The amount is computed in SQL from the
 // settings row read in the same batch, so a concurrent settings change cannot split it.
-// A flat under autopilot pays the base rate when its owner is on the «Автопилот» plan (the plan is the price of
-// the AI); a flat left under the AI without a plan pays the AI rate (ai_rate_bp).
+// The hybrid tariff (2026-11-20): every booking pays the base rate; the AI is paid apart, per booking
+// (accrueAiBookingFee). An owner on «Всё включено» pays no commission at all: the row is written with 0 ₸.
+export const allInclusiveSql=(user:string,role:'owner'|'cleaner')=>`EXISTS(SELECT 1 FROM autopilot_plans ap WHERE ap.user_id=${user} AND ap.role='${role}' AND ap.tier='all' AND ap.status IN ('trial','active','grace'))`;
 export function accrueCommission(db:D1Database,bookingId:string,auditId:string,at:number){
- const fee="MIN(x.amount,MAX(x.min_fee,CASE WHEN x.max_fee>0 THEN MIN(x.max_fee,(x.amount*x.rate+5000)/10000) ELSE (x.amount*x.rate+5000)/10000 END))";
+ const fee="CASE WHEN x.included=1 THEN 0 ELSE MIN(x.amount,MAX(x.min_fee,CASE WHEN x.max_fee>0 THEN MIN(x.max_fee,(x.amount*x.rate+5000)/10000) ELSE (x.amount*x.rate+5000)/10000 END)) END";
  const used=`(SELECT COUNT(*) FROM platform_commissions c WHERE c.owner_id=x.owner_id AND c.mode IN ('free','charged') AND ${live})`;
  return q(db,`INSERT OR IGNORE INTO platform_commissions(booking_id,owner_id,property_id,booking_amount,rate_bp,amount,mode,settings_version,created_at,managed)
   SELECT x.id,x.owner_id,x.property_id,x.amount,x.rate,${fee},CASE WHEN x.enabled=1 AND x.starts_at<=? THEN CASE WHEN ${used}<x.free_bookings THEN 'free' ELSE 'charged' END ELSE 'shadow' END,x.version,?,x.managed
-  FROM (SELECT z.*,CASE WHEN z.managed=1 AND NOT EXISTS(SELECT 1 FROM autopilot_plans ap WHERE ap.user_id=z.owner_id AND ap.role='owner' AND ap.status IN ('trial','active','grace')) THEN z.ai_rate_bp ELSE z.rate_bp END rate FROM (SELECT b.id,p.owner_id,b.property_id,b.amount,s.min_fee,s.max_fee,s.enabled,s.starts_at,s.free_bookings,s.version,s.rate_bp,s.ai_rate_bp,CASE WHEN ${underAutopilot('b.property_id')} THEN 1 ELSE 0 END managed
+  FROM (SELECT z.*,CASE WHEN ${allInclusiveSql('z.owner_id','owner')} THEN 1 ELSE 0 END included,CASE WHEN ${allInclusiveSql('z.owner_id','owner')} THEN 0 ELSE z.rate_bp END rate FROM (SELECT b.id,p.owner_id,b.property_id,b.amount,s.min_fee,s.max_fee,s.enabled,s.starts_at,s.free_bookings,s.version,s.rate_bp,s.ai_rate_bp,CASE WHEN ${underAutopilot('b.property_id')} THEN 1 ELSE 0 END managed
    FROM bookings b JOIN properties p ON p.id=b.property_id JOIN platform_billing s ON s.id='global'
    WHERE b.id=? AND b.status='confirmed' AND p.demo_owner IS NULL AND EXISTS(SELECT 1 FROM audit_events WHERE id=?)) z) x`,at,at,at,bookingId,auditId);
+}
+
+// «Автопилот» paid for the result: a booking confirmed while its object is under the AI costs the owner
+// ai_booking_fee, at most ai_month_cap a month for one object (bookings cancelled later do not count: lib/service-fees.ts
+// reads only live ones). Nothing under «Всё включено». Money is taken only while plan_charge is on; until then the
+// row is a forecast (shadow). Written in the same batch as the confirmation, from the settings read in it.
+export function accrueAiBookingFee(db:D1Database,bookingId:string,auditId:string,at:number){
+ const month="CAST(strftime('%s',date(?,'unixepoch','+5 hours','start of month')) AS INTEGER)-18000";
+ const used=`COALESCE((SELECT SUM(f.amount) FROM service_fees f WHERE f.kind='ai_booking' AND f.property_id=x.property_id AND f.mode=x.mode AND f.created_at>=${month} AND (SELECT status FROM bookings WHERE id=f.ref_id) IN ('confirmed','completed')),0)`;
+ return q(db,`INSERT OR IGNORE INTO service_fees(id,user_id,role,kind,ref_id,property_id,amount,mode,created_at)
+  SELECT ?,x.owner_id,'owner','ai_booking',x.id,x.property_id,CASE WHEN x.cap>0 THEN MIN(x.fee,MAX(0,x.cap-${used})) ELSE x.fee END,x.mode,?
+  FROM (SELECT b.id,p.owner_id,b.property_id,s.ai_booking_fee fee,s.ai_month_cap cap,CASE WHEN s.plan_charge=1 THEN 'charged' ELSE 'shadow' END mode
+   FROM bookings b JOIN properties p ON p.id=b.property_id JOIN platform_billing s ON s.id='global'
+   WHERE b.id=? AND b.status='confirmed' AND p.demo_owner IS NULL AND s.ai_booking_fee>0 AND ${underAutopilot('b.property_id')}
+    AND NOT ${allInclusiveSql('p.owner_id','owner')} AND EXISTS(SELECT 1 FROM audit_events WHERE id=?)) x`,uuid(),at,at,bookingId,at,auditId);
 }
 
 export async function billingSettings(db:D1Database){
@@ -88,6 +104,7 @@ export async function saveBillingSettings(service:RentalService,body:Row){
  if(typeof body.enabled!=='boolean')throw new DomainError('Укажите, включена ли плата.');
  const percent=Number(body.ratePercent);
  if(!Number.isFinite(percent)||percent<0||percent>30||Math.round(percent*10)!==percent*10)throw new DomainError('Комиссия: от 0 до 30%, с шагом 0,1.');
+ // ai_rate_bp is kept for the history only: since the hybrid tariff the AI is paid per booking (accrueAiBookingFee).
  const aiPercent=body.aiRatePercent===undefined?Number(((await billingSettings(service.db))?.ai_rate_bp??1000)/100):Number(body.aiRatePercent);
  if(!Number.isFinite(aiPercent)||aiPercent<0||aiPercent>30||Math.round(aiPercent*10)!==aiPercent*10)throw new DomainError('Комиссия за режим «ИИ»: от 0 до 30%, с шагом 0,1.');
  // Cleaning commissions: every finished cleaning and the lower rate with a monthly cap for a regular pair.
@@ -111,7 +128,7 @@ export async function saveBillingSettings(service:RentalService,body:Row){
  let notified=0;
  if(changed){
   const fees=[minFee?`не меньше ${minFee} ₸`:'',maxFee?`не больше ${maxFee} ₸`:''].filter(Boolean).join(' и ');
-  const text=`С ${dateText(Math.max(startsAt,at))} сервис берёт комиссию ${String(percent).replace('.',',')}% с брони, подтверждённой через приложение${fees?` (${fees})`:''}${aiPercent!==percent?`; для объектов в режиме «ИИ», где ИИ-администратор ведёт гостей и уборку за вас, ${String(aiPercent).replace('.',',')}%`:''}.${free?` Первые брони бесплатно: ${free}.`:''} Отменённые брони не оплачиваются.${cleaningRate>0?` За принятую уборку ${String(cleaningRate/100).replace('.',',')}%, для постоянного исполнителя ${String(pairRate/100).replace('.',',')}%${pairCap>0?` и не больше ${pairCap} ₸ в месяц`:''}.`:''}`;
+  const text=`С ${dateText(Math.max(startsAt,at))} сервис берёт комиссию ${String(percent).replace('.',',')}% с брони, подтверждённой через приложение${fees?` (${fees})`:''}.${free?` Первые брони бесплатно: ${free}.`:''} Отменённые брони не оплачиваются.${cleaningRate>0?` За принятую уборку ${String(cleaningRate/100).replace('.',',')}%, для постоянного исполнителя ${String(pairRate/100).replace('.',',')}%${pairCap>0?` и не больше ${pairCap} ₸ в месяц`:''}.`:''}`;
   for(const o of await owners(service.db)){statements.push(q(service.db,'INSERT OR IGNORE INTO notifications SELECT ?,?,?,?,?,? WHERE EXISTS(SELECT 1 FROM audit_events WHERE id=?)',uuid(),o.id,text,'owner:billing:'+(version+1),0,at,event));notified++;}
  }
  const results=await service.db.batch(statements);

@@ -9,11 +9,14 @@ import {cleanerStats,rankCleaners} from './cleaner-match';
 
 // The owner's free service balance: top-ups minus commissions and cleaning reserves. Same formula as the
 // reserve trigger in migration 0044, so the screen and the database agree.
+// The per-result fees of the hybrid tariff (service_fees: «Автопилот» per booking, the performer's fee per cleaning)
+// are owed the same way; the owner's or the performer's own id is bound once, so callers keep the same arguments.
 export const availableSql=(owner:string)=>`(COALESCE((SELECT SUM(amount) FROM owner_balance_entries WHERE owner_id=${owner}),0)
  -COALESCE((SELECT SUM(c.amount) FROM platform_commissions c WHERE c.owner_id=${owner} AND c.mode='charged' AND (SELECT status FROM bookings WHERE id=c.booking_id) IN ('confirmed','completed')),0)
  -COALESCE((SELECT SUM(amount) FROM cleaning_commissions WHERE owner_id=${owner} AND mode='charged'),0)
  -COALESCE((SELECT SUM(amount) FROM cleaning_holds WHERE owner_id=${owner} AND status IN ('held','due','paid')),0)
- -COALESCE((SELECT SUM(amount) FROM autopilot_charges WHERE user_id=${owner} AND role='owner' AND mode='charged'),0))`;
+ -COALESCE((SELECT SUM(a.amount) FROM (SELECT ${owner} u) k JOIN (SELECT user_id,amount FROM autopilot_charges WHERE role='owner' AND mode='charged'
+   UNION ALL SELECT user_id,amount FROM service_fees f WHERE f.mode='charged' AND (f.kind<>'ai_booking' OR (SELECT status FROM bookings WHERE id=f.ref_id) IN ('confirmed','completed'))) a ON a.user_id=k.u),0))`;
 export async function ownerAvailable(db:D1Database,ownerId:string){return Number((await one(db,`SELECT ${availableSql('?')} n`,ownerId,ownerId,ownerId,ownerId,ownerId))?.n||0);}
 
 const money=(n:number)=>new Intl.NumberFormat('ru-RU').format(n)+' ₸';

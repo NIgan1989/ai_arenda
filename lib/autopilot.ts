@@ -39,9 +39,9 @@ export async function setGuestMode(s:RentalService,body:Row){
   if(policy.minimum_rate&&[daily,policy.hourly_price,policy.nightly_price].some(rate=>rate>0&&rate<policy.minimum_rate))throw new DomainError('Один из тарифов ниже минимальной разрешённой ставки. Исправьте тарифы жилья.',409);
   if(policy.mandate_until&&policy.mandate_until<=t)throw new DomainError('Срок полномочий в правилах жилья истёк. Продлите его или очистите поле.',409);
 
-  // A check only validates: the plan is paid for the flats that pass, before any is switched.
+  // A check only validates: the flats that pass are switched afterwards.
   if(body.check===true)return {ok:true};
-  // «ИИ» is the paid «Автопилот» plan: the first flat starts the free trial, a paused plan pays its month first.
+  // «ИИ» turns the «Автопилот» plan on; it is paid for the result (lib/autopilot-plans.ts).
   await ensurePlan(db,s.userId,'owner',t);
  }
  const statements:D1PreparedStatement[]=[q(db,'INSERT INTO matching_preferences VALUES (?,?,?,?) ON CONFLICT(property_id) DO UPDATE SET enabled=excluded.enabled,owner_id=excluded.owner_id,updated_at=excluded.updated_at',p.id,s.userId,mode==='off'?0:1,t)];
