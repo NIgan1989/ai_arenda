@@ -5,12 +5,12 @@ import {readFileSync,writeFileSync,mkdirSync} from 'node:fs';
 import {pathToFileURL} from 'node:url';
 import ts from 'typescript';
 mkdirSync('outputs/auth-test',{recursive:true});
-for(const name of ['domain','request-body','native-auth'])writeFileSync(`outputs/auth-test/${name}.js`,ts.transpileModule(readFileSync(`lib/${name}.ts`,'utf8'),{compilerOptions:{module:ts.ModuleKind.ES2022,target:ts.ScriptTarget.ES2022}}).outputText.replace(/from '(\.\/[^']+)'/g,(_,name)=>`from '${name}.js'`));
+for(const name of ['domain','request-body','legal-documents','native-auth'])writeFileSync(`outputs/auth-test/${name}.js`,ts.transpileModule(readFileSync(`lib/${name}.ts`,'utf8'),{compilerOptions:{module:ts.ModuleKind.ES2022,target:ts.ScriptTarget.ES2022}}).outputText.replace(/from '(\.\/[^']+)'/g,(_,name)=>`from '${name}.js'`));
 const {authRequest,sessionUser,normalizePhone,digest}=await import(pathToFileURL(process.cwd()+'/outputs/auth-test/native-auth.js'));
 function fixture(){
- const raw=new DatabaseSync(':memory:');raw.exec(readFileSync('drizzle/0000_boring_unus.sql','utf8'));raw.exec(readFileSync('drizzle/0007_native_auth.sql','utf8'));raw.exec(readFileSync('drizzle/0027_shared_mobile_api.sql','utf8'));raw.exec(readFileSync('drizzle/0052_password_reset.sql','utf8'));
+ const raw=new DatabaseSync(':memory:');raw.exec(readFileSync('drizzle/0000_boring_unus.sql','utf8'));raw.exec(readFileSync('drizzle/0007_native_auth.sql','utf8'));raw.exec(readFileSync('drizzle/0027_shared_mobile_api.sql','utf8'));raw.exec(readFileSync('drizzle/0052_password_reset.sql','utf8'));raw.exec(readFileSync('drizzle/0076_legal_acceptances.sql','utf8').split('CREATE TRIGGER')[0]);
  const db={prepare(sql){let values=[];return {bind(...args){values=args;return this;},async first(){return raw.prepare(sql).get(...values)||null;},async run(){return {meta:{changes:raw.prepare(sql).run(...values).changes}};}};},async batch(statements){raw.exec('BEGIN');try{const results=[];for(const statement of statements)results.push(await statement.run());raw.exec('COMMIT');return results;}catch(error){raw.exec('ROLLBACK');throw error;}}};
- const call=(action,body={},headers={})=>authRequest(db,new Request('http://localhost/api/auth/'+action,{method:'POST',headers:{origin:'http://localhost','content-type':'application/json',...headers},body:JSON.stringify(body)}),action);
+ const call=(action,body={},headers={})=>authRequest(db,new Request('http://localhost/api/auth/'+action,{method:'POST',headers:{origin:'http://localhost','content-type':'application/json',...headers},body:JSON.stringify(action==='register'?{accept:true,...body}:body)}),action);
  return {db,raw,call};
 }
 test('normalizes phone numbers and rejects malformed input',()=>{
@@ -86,7 +86,7 @@ test('forgotten password: a six-digit code, a new password, old sessions end and
   const user={name:'Forgetful',phone:'+77771234568',password:'Old password 2026'};
   const first=await f.call('register',user),oldCookie=first.headers.get('set-cookie');
   const sent=[];const config={sendResetCode:async(account,code)=>{sent.push({account,code});return true;}};
-  const call=(action,body)=>authRequest(f.db,new Request('http://localhost/api/mobile/auth/'+action,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)}),action,'mobile',config);
+  const call=(action,body)=>authRequest(f.db,new Request('http://localhost/api/mobile/auth/'+action,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(action==='register'?{accept:true,...body}:body)}),action,'mobile',config);
   const unknown=await (await call('reset-request',{phone:'+77770000000'})).json();
   const known=await (await call('reset-request',{phone:'8 777 123 45 68'})).json();
   assert.equal(unknown.message,known.message);assert.equal(sent.length,1);assert.match(sent[0].code,/^\d{6}$/);
@@ -107,7 +107,7 @@ test('forgotten password: five wrong codes end the code',async()=>{
  const f=fixture();try{
   await f.call('register',{name:'Guessed',phone:'+77771234569',password:'Old password 2026'});
   let code='';const config={sendResetCode:async(_,c)=>{code=c;return true;}};
-  const call=(action,body)=>authRequest(f.db,new Request('http://localhost/api/mobile/auth/'+action,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)}),action,'mobile',config);
+  const call=(action,body)=>authRequest(f.db,new Request('http://localhost/api/mobile/auth/'+action,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(action==='register'?{accept:true,...body}:body)}),action,'mobile',config);
   await call('reset-request',{phone:'+77771234569'});
   const wrong=code==='000000'?'111111':'000000';
   for(let i=0;i<5;i++)await assert.rejects(call('reset',{phone:'+77771234569',code:wrong,password:'New password 2026'}),e=>e.status===401);
@@ -129,7 +129,7 @@ test('forgotten password: recovery with the backup code revokes a reset code alr
   const user={name:'Twice',phone:'+77771234571',password:'Old password 2026'};
   const backup=(await (await f.call('register',user)).json()).recoveryCode;
   let code='';const config={sendResetCode:async(_,c)=>{code=c;return true;}};
-  const call=(action,body)=>authRequest(f.db,new Request('http://localhost/api/mobile/auth/'+action,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)}),action,'mobile',config);
+  const call=(action,body)=>authRequest(f.db,new Request('http://localhost/api/mobile/auth/'+action,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(action==='register'?{accept:true,...body}:body)}),action,'mobile',config);
   await call('reset-request',{phone:user.phone});
   assert.equal((await f.call('recover',{phone:user.phone,recoveryCode:backup,password:'Owner password 2026'})).status,200);
   await assert.rejects(call('reset',{phone:user.phone,code,password:'Thief password 2026'}),e=>e.status===409);

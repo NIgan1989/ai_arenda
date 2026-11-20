@@ -12,7 +12,7 @@ test('recovery cleanup cannot revoke a concurrent login using the new credential
   await authRequest(db,request('recover',{...user,password:'new-fixture-password',recoveryCode}),'recover');assert.ok(inserted);assert.ok(await sessionUser(db,'arenda_session='+webToken));assert.ok(await sessionUser(db,null,'Bearer '+mobileToken));
  }finally{db.close();}
 });
-function request(action,body={},headers={},client='web'){return new Request('http://localhost/api/'+(client==='mobile'?'mobile/':'')+'auth/'+action,{method:'POST',headers:{'Content-Type':'application/json',...(client==='web'?{origin:'http://localhost'}:{}),...headers},body:JSON.stringify(body)});}
+function request(action,body={},headers={},client='web'){return new Request('http://localhost/api/'+(client==='mobile'?'mobile/':'')+'auth/'+action,{method:'POST',headers:{'Content-Type':'application/json',...(client==='web'?{origin:'http://localhost'}:{}),...headers},body:JSON.stringify(action==='register'?{accept:true,...body}:body)});}
 test('web and mobile use one identity but tokens cannot substitute for cookies; recovery revokes both',async()=>{
  const db=new TestDatabase();try{
   const registered=await authRequest(db,request('register',user),'register'),cookie=registered.headers.get('set-cookie'),{recoveryCode}=await registered.json();

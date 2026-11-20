@@ -16,6 +16,7 @@ import {checkAdministratorForUser,runAdministrator} from '../../../lib/administr
 import {administratorRunnerAuthorized} from '../../../lib/administrator-auth';
 import {runOperationalTick} from '../../../lib/background';
 import {readOperations,writeOperations,publicOperationsRequest} from '../../../lib/operations-api';
+import {acceptLegal,legalMissing,legalState} from '../../../lib/legal-acceptance';
 import {previewMatches,matchingState} from '../../../lib/smart-matching';
 import {listCommands,prepareAdministratorCommand} from '../../../lib/administrator-commands';
 import {parseRole} from '../../../lib/access';
@@ -29,6 +30,11 @@ import {readPlatformAdmin,writePlatformAdmin} from '../../../lib/platform-admin'
 import {requestCleanerAdmission} from '../../../lib/pilot-governance';
 import {ensurePublishReview} from '../../../lib/participant-security';
 export const dynamic='force-dynamic';
+// Routes that stay open before the documents are accepted: the person's own settings, leaving and deleting the account,
+// reading and the map. Everything else in a workspace waits for acceptance.
+const legalOpenTop=new Set(['profile','account','sessions','push','notifications','conversation','onboarding','quote']);
+const legalOpenOps=new Set(['safety','ai-data-permission','ai-budget','phone','map','search','delivery']);
+const legalOpen=(route:string[])=>legalOpenTop.has(route[0])||route[0]==='operations'&&(legalOpenOps.has(route[1])||['discussion/read','discussion/typing','discussion/inbox','administrator/conversation','administrator/history'].includes(route.slice(1).join('/')));
 const json=(data:unknown,status=200)=>Response.json(data,{status,headers:{'Cache-Control':'no-store','X-Content-Type-Options':'nosniff'}});
 // A saved draft that is ready for guests goes to the administrator's check by itself; a failed request never fails the save.
 async function withPublishReview(service:RentalService,result:{id?:string;message?:string}&Record<string,unknown>,config:object){
@@ -78,13 +84,14 @@ async function handle(request:Request, context:{params:Promise<{path:string[]}>}
     if(request.method==='GET'&&route.join('/')==='push'){const identity=await requestSessionIdentity(request);return json(await webPushState(service,parseRole(activeRole),env,identity?.kind==='web'?identity.hash:''));}
     if(request.method==='GET'&&route.join('/')==='sessions'){await service.authorizeWorkspace(activeRole,'account');return json(await accountSessions(service,request));}
     if(request.method==='GET'&&route.join('/')==='conversation')return json(await clientConversation(service,parseRole(activeRole)));
+    if(request.method==='GET'&&route.join('/')==='legal')return json({legal:await legalState(env.DB,user.userId,activeRole)});
     if(request.method==='GET'&&route[0]==='operations')return json(await readOperations(service,parseRole(activeRole),route.slice(1),env,isPlatformAdmin(user.userId,env.PLATFORM_ADMIN_IDS)));
     if(request.method==='GET'&&route.length===2&&route[0]==='media'){const mediaRole=await service.authorizeWorkspace(activeRole,'media');return json(await service.readMedia(route[1],mediaRole,env.BUCKET));}
     if(request.method==='GET'&&route.length===1&&route[0]==='account'){await service.authorizeWorkspace(activeRole,'account');return json({...await service.accountState(activeRole==='guest'||activeRole==='owner'||activeRole==='cleaner'?activeRole:undefined),aiJournal:activeRole==='guest'||activeRole==='owner'||activeRole==='cleaner'?await aiJournal(env.DB,user.userId,activeRole):[],payout:await payoutOf(env.DB,user.userId),serverTime:Math.floor(Date.now()/1000),platformAdmin:isPlatformAdmin(user.userId,env.PLATFORM_ADMIN_IDS),modelConfigured:!!(env.OPENAI_API_KEY&&env.OPENAI_MODEL)});}
     if(request.method==='GET'&&route.join('/')==='owner/autopilot-week'){const role=await service.authorizeWorkspace(activeRole,'account');if(role!=='owner')throw new DomainError('Отчёт автопилота видит только владелец.',403);return json(await autopilotWeek(env.DB,user.userId));}
     if(request.method==='GET'&&route.join('/')==='owner/analytics'){const role=await service.authorizeWorkspace(activeRole,'account');if(role!=='owner')throw new DomainError('«Доходы» видит только владелец.',403);return json(await ownerAnalytics(env.DB,user.userId,new URL(request.url).searchParams.get('period')));}
     if(request.method==='GET'&&route.join('/')==='admin/users'){await service.authorizeWorkspace(activeRole,'admin/users');const url=new URL(request.url);return json(await service.listUsers(isPlatformAdmin(user.userId,env.PLATFORM_ADMIN_IDS),{role:url.searchParams.get('role'),search:url.searchParams.get('search'),page:url.searchParams.get('page')||0}));}
-    if(request.method==='GET'&&route[0]==='state') { const role=await service.authorizeWorkspace(activeRole,'state');try{await checkAdministratorForUser(env.DB,user.userId,role);}catch{console.error('AI administrator: workflow check failed');}const state=await service.roleState(role,{catalog:new URL(request.url).searchParams.get('catalog')!=='0'});return json({...state,platformAdmin:isPlatformAdmin(user.userId,env.PLATFORM_ADMIN_IDS),testMode:env.TEST_DATA_ONLY==='1',paymentMode:await paymentMode(env.DB,env),payout:role==='guest'?null:await payoutOf(env.DB,user.userId),commands:await listCommands(service,role),integrations:{...state.integrations,ai:!!(env.OPENAI_API_KEY&&env.OPENAI_MODEL)},user:{id:user.userId,name:user.fullName||''}}); }
+    if(request.method==='GET'&&route[0]==='state') { const role=await service.authorizeWorkspace(activeRole,'state');try{await checkAdministratorForUser(env.DB,user.userId,role);}catch{console.error('AI administrator: workflow check failed');}const state=await service.roleState(role,{catalog:new URL(request.url).searchParams.get('catalog')!=='0'});return json({...state,platformAdmin:isPlatformAdmin(user.userId,env.PLATFORM_ADMIN_IDS),testMode:env.TEST_DATA_ONLY==='1',paymentMode:await paymentMode(env.DB,env),payout:role==='guest'?null:await payoutOf(env.DB,user.userId),commands:await listCommands(service,role),legal:await legalState(env.DB,user.userId,role),integrations:{...state.integrations,ai:!!(env.OPENAI_API_KEY&&env.OPENAI_MODEL)},user:{id:user.userId,name:user.fullName||''}}); }
     if(request.method==='GET'&&route.length===1&&route[0]==='catalog'){await service.authorizeWorkspace(activeRole,'quote');return json(await service.publicCatalog());}
     if(request.method!=='POST'&&!(request.method==='PUT'&&route.join('/')==='conversation')) return json({error:'Маршрут не найден.'},404);
     const origin=request.headers.get('origin');
@@ -97,6 +104,12 @@ async function handle(request:Request, context:{params:Promise<{path:string[]}>}
     if(!body||typeof body!=='object'||Array.isArray(body))return json({error:'Ожидается объект JSON.'},400);
     const requestKey=request.headers.get('Idempotency-Key');if(requestKey){if(requestKey.length>120||body.requestKey&&body.requestKey!==requestKey)return json({error:'Проверьте ключ операции.'},400);body.requestKey=requestKey;}
     if(route[0]==='admin')return json(await writePlatformAdmin(service,route.slice(1).join('/'),body,env));
+    // Accepting the agreement, the consent or a role's offer; and until the current edition is accepted, the app's
+    // workspace takes no new actions (lib/legal-acceptance.ts). Settings, data requests and reading stay open, so a person
+    // can always leave, delete the account or read the documents. The site keeps its own pages for now (mobile first).
+    {const identity=await requestSessionIdentity(request),client=identity?.kind==='mobile'?'mobile':'web';
+     if(route.join('/')==='legal/accept')return json(await acceptLegal(env.DB,user.userId,{...body,role:activeRole},client));
+     if(client==='mobile'&&!legalOpen(route)){const missing=await legalMissing(env.DB,user.userId,activeRole);if(missing.length)return json({error:'Примите условия сервиса, чтобы продолжить.',legal:missing},428);}}
     if(route.join('/')==='push'){const identity=await requestSessionIdentity(request);return json(await manageWebPush(service,parseRole(activeRole),body,env,identity?.kind==='web'?identity.hash:''));}
     if(request.method==='POST'&&route.join('/')==='sessions'){await service.authorizeWorkspace(activeRole,'account');return json(await accountSessions(service,request,body));}
     if(request.method==='PUT'&&route.join('/')==='conversation')return json(await clientConversation(service,parseRole(activeRole),body));

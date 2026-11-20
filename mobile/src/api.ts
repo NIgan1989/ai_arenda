@@ -19,6 +19,9 @@ const readOnly=/^\/api\/(?:public\/|quote$|operations\/(?:map\/search|matching\/
 // The app shows one quiet "Нет связи" line; every answer or silence of the server updates it.
 let reachListener:((reached:boolean)=>void)|null=null;
 export function onServerReach(listener:((reached:boolean)=>void)|null){reachListener=listener;}
+// The server answers 428 when the role has documents to accept (lib/legal-acceptance.ts): the app refreshes and shows the sheet.
+let legalListener:(()=>void)|null=null;
+export function onLegalRequired(listener:(()=>void)|null){legalListener=listener;}
 // The role used last on this device, so the app opens straight on its map. Not a secret; kept beside the session.
 // In the browser preview it is kept in localStorage (the session itself stays in memory there), or in memory when storage is off.
 const roleKey='ai-arenda-last-role-v1';
@@ -50,6 +53,7 @@ export async function request(path:string,body?:unknown,method?:string,requestKe
     const data=await response.json();
     sessions.assertCurrent(snapshot);
     reachListener?.(true);
+    if(response.status===428&&Array.isArray(data.legal))legalListener?.();
     if(!response.ok)throw new ApiError(data.error||'Сервер не подтвердил действие.',response.status);
     return data;
   }catch(error){

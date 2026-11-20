@@ -12,7 +12,7 @@ test('shared mobile erasure with an idempotency key removes prior receipts and n
  }
  try{
   const credentials={phone:'+77773331111',password:'erasure-http-fixture-password',name:'Unused erasure fixture',city:'Павлодар'};
-  const registered=await call('/api/auth/register',credentials,{origin:base});assert.equal(registered.status,201);
+  const registered=await call('/api/auth/register',{...credentials,accept:true},{origin:base});assert.equal(registered.status,201);
   const browser={cookie:registered.cookie.split(';')[0],'X-Workspace-Role':'guest'};
   const login=await call('/api/mobile/auth/login',credentials);assert.equal(login.status,200);
   const mobile={Authorization:'Bearer '+login.value.token,'X-Workspace-Role':'guest'};
