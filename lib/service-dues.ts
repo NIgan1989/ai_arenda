@@ -50,7 +50,7 @@ export async function serviceBillingState(service:RentalService,config:Operation
  return {due,stopped:!!rules.stoppedAt,checking:open&&open.status!=='held'?Number(open.amount):0,confirm:open?.status==='held'&&due>0?due:0,card:b?.card_mask?{mask:b.card_mask,test:!!b.card_test}:null,nextChargeAt:charged||!due?slot+WEEK:Math.max(slot,at),payBy:b?.failed_at&&due>0?b.failed_at+PAY_DAYS*DAY:null,paused:!!b?.paused_at,test:testMode(config),payDays:PAY_DAYS,items:list};
 }
 
-// ── Safe card charges (drizzle/0080_card_charges.sql) ──
+// ── Safe card charges (drizzle/0081_card_charges.sql) ──
 // 1. The attempt is written first, under its own operation number, and only if that much is still owed and nothing
 //    else is in flight for this person (one open attempt per person, enforced by a unique index).
 // 2. Then the bank is asked, with the operation number as the idempotency key: a repeat with the same number is

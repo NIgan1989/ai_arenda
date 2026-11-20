@@ -7,7 +7,8 @@ import {fixture,load,now,iso} from './helpers/platform.mjs';
 import {photo} from './fixtures/photo.mjs';
 const {RentalService}=await load('service');
 // Direct settlement: the guest transfers to the owner and says «Я оплатил»; the owner confirms what came.
-const payDirect=async(g,b,kind)=>{await g.bookingAction(b,{action:'report_paid'});return owner.bookingAction(b,{action:kind==='payment'?'paid':kind==='deposit'?'deposit_received':'received'});};
+// These journeys pay in advance, as a place with five completed stays and a 100% prepayment does (lib/prepay.ts).
+const payDirect=async(g,b,kind)=>{R.prepare('UPDATE booking_terms SET prepay_percent=100 WHERE booking_id=?').run(b);await g.bookingAction(b,{action:'report_paid'});return owner.bookingAction(b,{action:kind==='payment'?'paid':kind==='deposit'?'deposit_received':'received'});};
 const {saveHandover}=await load('stay-handover'),{saveStayReview}=await load('stay-reviews');
 const {writeOperations}=await load('operations-api'),{previewMatches}=await load('smart-matching'),{orderHomeCleaning}=await load('home-order');
 const {homeChecklist,homeOrderOf}=await load('home-cleaning'),{saveEvidence}=await load('evidence');

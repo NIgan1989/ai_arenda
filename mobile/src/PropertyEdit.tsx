@@ -13,6 +13,7 @@ import {menuIcons} from './AccountRows';
 import {EDIT_STEPS,banquetPrice,withBanquetPrice,editBody,editRequest,nextAdvice,needsReview,reviewRequest,REVIEW_SENT,stepForError,stepLine,stepNeeds,stepTitle,type Advice,type EditBody,type EditStep} from '../../lib/listing-edit';
 import {amenities,categoryAmenities,checkinMethods,isBath,isBanquet,isVenue,kindCategory} from '../../lib/listings';
 import {KindPicker} from './KindPicker';
+import {PREPAY_CHOICES,prepayNote,prepayState} from '../../lib/prepay';
 import {AddressPin,type PinChoice} from './AddressPin';
 type Row=Record<string,any>;
 const R=T.radius,H=T.control;
@@ -116,6 +117,12 @@ export function PropertyEdit({property,onSave,onReview,onRemove,onClose,onOpenHa
     <View style={e.row}>{num('Сутки, ₸',draft.price,n=>set({price:n}))}{num('Час, ₸',r.hourlyPrice,n=>setR({hourlyPrice:n}),10000000,'0 — без почасовой')}</View>
     <View style={e.row}>{num('Ночь, ₸',r.nightlyPrice,n=>setR({nightlyPrice:n}),10000000,'0 — без ночной')}{num('Депозит, ₸',r.deposit,n=>setR({deposit:n}))}</View>
     {r.hourlyPrice>0&&<Stepper label="Минимум часов" value={r.minHours} text={String(r.minHours)} min={1} max={24} onChange={n=>setR({minHours:n})}/>}
+   </>}
+   {open==='prices'&&<>
+    {/* «Предоплата или оплата при заселении» (lib/prepay.ts): a new place is paid at the door until five completed stays. */}
+    <Text style={e.label}>Как гость платит</Text>
+    <View style={e.chips}>{PREPAY_CHOICES.map(n=>chip('prepay'+n,n?'Предоплата '+n+'%':'При заселении',r.prepayPercent===n,()=>setR({prepayPercent:n}),true))}</View>
+    <Text style={e.hint}>{prepayNote(prepayState(r.prepayPercent,Number(p.prepay?.completed)||0))}{r.prepayPercent>0&&r.prepayPercent<100?' Остальное и депозит гость переводит при заселении.':''}</Text>
    </>}
    {open==='checkin'&&<>
     {!isVenue(d.type)&&<View style={e.row}>{half(text('Заезд с',r.checkinTime,v=>setR({checkinTime:v}),5,'14:00'))}{half(text('Выезд до',r.checkoutTime,v=>setR({checkoutTime:v}),5,'12:00'))}</View>}

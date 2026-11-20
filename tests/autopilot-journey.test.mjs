@@ -21,7 +21,7 @@ test('autopilot journey: booking, direct payment, check-in, chat, checkout, clea
   assert.equal(R.prepare('SELECT status FROM bookings WHERE id=?').get(id).status,'confirmed');
   assert.match(notice('owner','owner:booking:'+id),/принял бронь/,'the owner is not asked to confirm what the AI already confirmed');
   assert.equal(notice('guest','guest:phone-ask:'+id),undefined);
-  assert.match(notice('guest','guest:confirmed:'+id),/Переведите владельцу оплату проживания и депозит по реквизитам из карточки брони/);
+  assert.match(notice('guest','guest:confirmed:'+id),/Оплата при заселении: реквизиты владельца откроются/,'a new place: the guest pays at the door');
   assert.equal(R.prepare('SELECT mode,managed FROM platform_commissions WHERE booking_id=?').get(id).mode,'shadow');
   // The AI offers the cleaning, the cleaner's autopilot takes it, the AI assigns.
   const job=R.prepare('SELECT * FROM cleaning_jobs WHERE booking_id=?').get(id);

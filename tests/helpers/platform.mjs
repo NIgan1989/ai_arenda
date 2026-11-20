@@ -14,11 +14,15 @@ export class TestDatabase{
  close(){this.raw.close();}
 }
 export const now=()=>Math.floor(Date.now()/1000),iso=t=>new Date(t*1000).toISOString();
+// A photo of the title the owner attached to a place, as saveRightDoc stores it.
+export function rightDoc(db,propertyId,ownerId,kind='owner'){db.raw.prepare("INSERT INTO property_right_docs(id,property_id,owner_id,kind,data,width,height,bytes,created_at) VALUES (?,?,?,?,'data:image/jpeg;base64,AA==',1,1,1,?)").run('doc-'+propertyId+'-'+Math.random().toString(36).slice(2,8),propertyId,ownerId,kind,now());}
 export async function fixture(){
  const {RentalService}=await load('service'),db=new TestDatabase(),owner=new RentalService(db,'owner'),guest=new RentalService(db,'guest'),cleaner=new RentalService(db,'cleaner'),other=new RentalService(db,'other');
  for(const [service,name,roles] of [[owner,'Owner',['owner']],[guest,'Guest',['guest']],[cleaner,'Cleaner',['cleaner']],[other,'Other',['owner']]])await service.saveProfile({name,roles,city:'Павлодар',contact:'test',districts:'Центр',experience:'Experienced',availability:'By agreement'});
  const property=(await owner.createProperty({title:'Test apartment',city:'Павлодар',district:'Центр',address:'PRIVATE ADDRESS',description:'Test',price:10000,rooms:1,capacity:2,cleaningMinutes:90})).id;
  const policy={expectedVersion:0,dailyPrice:10000,hourlyPrice:2000,minHours:2,nightlyPrice:9000,checkinTime:'14:00',checkoutTime:'12:00',deposit:10000,houseRules:'No smoking',autoConfirm:false,autoAssign:false,cleaningFee:3000,cleaningBudget:4000};await owner.savePolicy(property,policy);
- const booking=(await guest.createBooking({propertyId:property,start:iso(now()+3600),end:iso(now()+10800),guests:1,billingMode:'hourly',requestKey:'booking',acceptTerms:true})).id;await owner.bookingAction(booking,{action:'confirm',cleaningFee:3000});const job=db.raw.prepare('SELECT * FROM cleaning_jobs WHERE booking_id=?').get(booking);
+ const booking=(await guest.createBooking({propertyId:property,start:iso(now()+3600),end:iso(now()+10800),guests:1,billingMode:'hourly',requestKey:'booking',acceptTerms:true})).id;await owner.bookingAction(booking,{action:'confirm',cleaningFee:3000});/* The fixture's stay is paid in advance as before lib/prepay.ts; tests/prepay.test.mjs covers the new place paid at the arrival. */db.raw.prepare('UPDATE booking_terms SET prepay_percent=NULL WHERE booking_id=?').run(booking);const job=db.raw.prepare('SELECT * FROM cleaning_jobs WHERE booking_id=?').get(booking);
+ // The owner has proven the right to let the place (lib/property-rights.ts): a person at the platform may approve it.
+ rightDoc(db,property,'owner');
  return {db,owner,guest,cleaner,other,property,policy,booking,job,release(){db.raw.prepare('UPDATE administrator_runs SET lease_until=0').run();}};
 }
