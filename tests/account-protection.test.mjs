@@ -1,7 +1,7 @@
 import {test} from 'node:test';import assert from 'node:assert/strict';
 import {pbkdf2Sync} from 'node:crypto';
 import {fixture,load,now} from './helpers/platform.mjs';
-const {savePayout,payoutOf,payoutState,applyDuePayouts,PAYOUT_HOLD}=await load('payout'),{adminFactorPassed,adminFactorState,adminFactorAction,sweepAdminFactor,ADMIN_SESSION}=await load('admin-factor');
+const {savePayout,payoutOf,payoutState,applyDuePayouts,PAYOUT_HOLD}=await load('payout'),{adminFactorPassed,adminFactorState,adminFactorAction,sweepAdminFactor,adminTelegramRelinkBlocked,ADMIN_SESSION}=await load('admin-factor');
 
 const password='owner-password-123';
 function account(R,id,phone){const salt='0123456789abcdef0123456789abcdef',hash=pbkdf2Sync(password,salt,100000,64,'sha512').toString('hex');R.prepare('INSERT INTO auth_accounts(id,phone,name,password_hash,recovery_hash,credential_version,created_at) VALUES (?,?,?,?,?,1,?)').run(id,phone,id,`pbkdf2-sha512$100000$${salt}$${hash}`,'x',now());}
@@ -94,5 +94,31 @@ test('administrator: five wrong codes burn the code and warn the administrator; 
   assert.ok(R.prepare("SELECT 1 FROM notifications WHERE user_id='owner' AND dedupe LIKE 'admin:factor-failed:%'").get());
   // Outside the test stand the code goes only to a connected Telegram chat.
   await assert.rejects(adminFactorAction(f.db,'owner','d'.repeat(64),{action:'send'},{PLATFORM_ADMIN_IDS:'owner',TELEGRAM_BOT_TOKEN:'t'}),e=>e.status===409&&/Telegram/.test(e.message));
+ }finally{f.db.close();}
+});
+
+test('administrator: a new code never revives an expired confirmation, and the code chat cannot be moved without the code',async()=>{
+ const f=await fixture(),R=f.db.raw;try{
+  const config={PLATFORM_ADMIN_IDS:'owner',TEST_DATA_ONLY:'1'},session='e'.repeat(64);
+  const sent=await adminFactorAction(f.db,'owner',session,{action:'send'},config);
+  await adminFactorAction(f.db,'owner',session,{action:'verify',code:sent.testCode},config);
+  // The confirmation ran out but the row is not swept yet; asking for a code must not open the management again.
+  R.prepare('UPDATE admin_factor SET verified_at=?,expires_at=?,code_sent_at=? WHERE session_hash=?').run(now()-ADMIN_SESSION-10,now()-5,now()-ADMIN_SESSION-10,session);
+  await adminFactorAction(f.db,'owner',session,{action:'send'},config);
+  assert.equal(await adminFactorPassed(f.db,'owner',session,config),false);
+  assert.equal((await adminFactorState(f.db,'owner',session,config)).verified,false);
+  // A code sent near the end of a confirmation keeps the row for the code but does not lengthen the confirmation.
+  const near='f'.repeat(64),s2=await adminFactorAction(f.db,'owner',near,{action:'send'},config);
+  await adminFactorAction(f.db,'owner',near,{action:'verify',code:s2.testCode},config);
+  R.prepare('UPDATE admin_factor SET verified_at=?,expires_at=?,code_sent_at=? WHERE session_hash=?').run(now()-ADMIN_SESSION+30,now()+30,now()-120,near);
+  await adminFactorAction(f.db,'owner',near,{action:'send'},config);
+  assert.ok((await adminFactorState(f.db,'owner',near,config)).until<=now()+30);
+  // Linking Telegram: the first chat is open; once a chat receives the codes, only a confirmed session may link another.
+  assert.equal(await adminTelegramRelinkBlocked(f.db,'owner',false,config),false);
+  R.prepare("INSERT INTO delivery_channels VALUES ('owner','owner','telegram','111',0,?,?)").run(now(),now());
+  assert.equal(await adminTelegramRelinkBlocked(f.db,'owner',false,config),true,'switching notices off does not free the way');
+  assert.equal(await adminTelegramRelinkBlocked(f.db,'owner',true,config),false);
+  assert.equal(await adminTelegramRelinkBlocked(f.db,'guest',false,config),false);
+  assert.equal(await adminTelegramRelinkBlocked(f.db,'owner',false,{...config,ADMIN_SECOND_FACTOR:'off'}),false);
  }finally{f.db.close();}
 });

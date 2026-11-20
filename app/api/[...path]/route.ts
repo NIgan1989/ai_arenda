@@ -27,7 +27,7 @@ import {clientConversation} from '../../../lib/client-conversation';
 import {accountSessions} from '../../../lib/account-sessions';
 import {paymentMode} from '../../../lib/finance';
 import {payoutOf,payoutState} from '../../../lib/payout';
-import {adminFactorPassed,adminFactorState,adminFactorAction} from '../../../lib/admin-factor';
+import {adminFactorPassed,adminFactorState,adminFactorAction,adminTelegramRelinkBlocked} from '../../../lib/admin-factor';
 import {readPlatformAdmin,writePlatformAdmin} from '../../../lib/platform-admin';
 import {requestCleanerAdmission} from '../../../lib/pilot-governance';
 import {ensurePublishReview} from '../../../lib/participant-security';
@@ -113,6 +113,7 @@ async function handle(request:Request, context:{params:Promise<{path:string[]}>}
     const requestKey=request.headers.get('Idempotency-Key');if(requestKey){if(requestKey.length>120||body.requestKey&&body.requestKey!==requestKey)return json({error:'Проверьте ключ операции.'},400);body.requestKey=requestKey;}
     if(route.join('/')==='admin-factor')return json(await adminFactorAction(env.DB,user.userId,session,body,env));
     if(route[0]==='admin'&&adminId&&!admin)return factorGate();
+    if(route.join('/')==='operations/delivery/telegram'&&await adminTelegramRelinkBlocked(env.DB,user.userId,admin,env))return factorGate();
     if(route[0]==='admin')return json(await writePlatformAdmin(service,route.slice(1).join('/'),body,env));
     // Accepting the agreement, the consent or a role's offer; and until the current edition is accepted, the app's
     // workspace takes no new actions (lib/legal-acceptance.ts). Settings, data requests and reading stay open, so a person

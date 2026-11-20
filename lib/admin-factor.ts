@@ -19,8 +19,17 @@ const off=(config:AdminFactorConfig)=>String(config.ADMIN_SECOND_FACTOR||'').toL
 const codeHash=(code:string,session:string)=>digest('admin-factor:'+session+':'+code);
 const sixDigits=()=>String(crypto.getRandomValues(new Uint32Array(1))[0]%1000000).padStart(6,'0');
 
+// Every linked chat counts, even one whose notices are switched off: the code is not a notice, and switching notices off
+// must not clear the way to linking a new chat (see adminTelegramRelinkBlocked).
 async function telegramChats(db:D1Database,userId:string){
- return (await db.prepare("SELECT DISTINCT address FROM delivery_channels WHERE user_id=? AND channel='telegram' AND enabled=1 AND verified_at IS NOT NULL").bind(userId).all<{address:string}>()).results.map(r=>r.address).filter(Boolean);
+ return (await db.prepare("SELECT DISTINCT address FROM delivery_channels WHERE user_id=? AND channel='telegram' AND verified_at IS NOT NULL").bind(userId).all<{address:string}>()).results.map(r=>r.address).filter(Boolean);
+}
+/** The chat that receives the code is the factor itself. While the administrator already has a linked chat, linking another
+ * one needs a session that typed the code; otherwise a password alone could move the code to someone else's Telegram.
+ * The first link is open, since there is no factor yet; ADMIN_SECOND_FACTOR=off is the recovery for a lost Telegram. */
+export async function adminTelegramRelinkBlocked(db:D1Database,userId:string,passed:boolean,config:AdminFactorConfig){
+ if(passed||off(config)||!isPlatformAdmin(userId,config.PLATFORM_ADMIN_IDS))return false;
+ return (await telegramChats(db,userId)).length>0;
 }
 async function telegramSend(token:string,chat:string,text:string){
  try{const r=await fetch('https://api.telegram.org/bot'+token+'/sendMessage',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({chat_id:chat,text}),redirect:'manual',signal:AbortSignal.timeout(8000)});return r.ok;}
@@ -29,21 +38,23 @@ async function telegramSend(token:string,chat:string,text:string){
 // A notice to the administrator: the `admin:` prefix sends it to Telegram (migration 0044, notification_outbox_admin).
 const notice=(db:D1Database,user:string,body:string,tag:string,at:number)=>q(db,'INSERT OR IGNORE INTO notifications(id,user_id,body,dedupe,read,created_at) VALUES (?,?,?,?,0,?)',uuid(),user,body,'admin:'+tag+':'+user+':'+at,at);
 
+// A confirmation lasts ADMIN_SESSION from the moment the code was typed, whatever later keeps the row alive.
+const confirmed=(row:Row|null|undefined,at:number)=>!!row?.verified_at&&Number(row.expires_at)>at&&Number(row.verified_at)+ADMIN_SESSION>at;
 /** True when this session may manage the service: a platform administrator who typed the code in this session. */
 export async function adminFactorPassed(db:D1Database,userId:string,session:string,config:AdminFactorConfig){
  if(!isPlatformAdmin(userId,config.PLATFORM_ADMIN_IDS))return false;
  if(off(config))return true;
  if(!/^[a-f0-9]{64}$/.test(session))return false;
  const row=await one(db,'SELECT verified_at,expires_at FROM admin_factor WHERE session_hash=? AND user_id=?',session,userId);
- return !!row?.verified_at&&Number(row.expires_at)>epoch();
+ return confirmed(row,epoch());
 }
 
 export async function adminFactorState(db:D1Database,userId:string,session:string,config:AdminFactorConfig){
  const admin=isPlatformAdmin(userId,config.PLATFORM_ADMIN_IDS);
  if(!admin)return {admin:false,required:false,verified:false};
  const row=/^[a-f0-9]{64}$/.test(session)?await one(db,'SELECT verified_at,expires_at,code_hash,code_sent_at FROM admin_factor WHERE session_hash=? AND user_id=?',session,userId):null,at=epoch();
- const verified=off(config)||(!!row?.verified_at&&Number(row.expires_at)>at);
- return {admin:true,required:!off(config),verified,until:verified&&row?Number(row.expires_at):null,codeSent:!!row?.code_hash&&Number(row.code_sent_at)+CODE_LIFETIME>at,telegram:(await telegramChats(db,userId)).length>0};
+ const verified=off(config)||confirmed(row,at);
+ return {admin:true,required:!off(config),verified,until:verified&&row?Math.min(Number(row.expires_at),Number(row.verified_at)+ADMIN_SESSION):null,codeSent:!!row?.code_hash&&Number(row.code_sent_at)+CODE_LIFETIME>at,telegram:(await telegramChats(db,userId)).length>0};
 }
 
 export async function adminFactorAction(db:D1Database,userId:string,session:string,body:Row,config:AdminFactorConfig){
@@ -56,8 +67,9 @@ export async function adminFactorAction(db:D1Database,userId:string,session:stri
   const test=config.TEST_DATA_ONLY==='1',chats=await telegramChats(db,userId);
   if(!test&&(!config.TELEGRAM_BOT_TOKEN||!chats.length))throw new DomainError('Код приходит только в Telegram. Подключите его: Аккаунт, «Telegram», и попробуйте снова.',409);
   const code=sixDigits(),hash=await codeHash(code,session);
-  // A new code keeps a session that is still confirmed; it only replaces the code.
-  await q(db,'INSERT INTO admin_factor(session_hash,user_id,code_hash,code_sent_at,attempts,expires_at,created_at) VALUES (?,?,?,?,0,?,?) ON CONFLICT(session_hash) DO UPDATE SET code_hash=excluded.code_hash,code_sent_at=excluded.code_sent_at,attempts=0,expires_at=MAX(admin_factor.expires_at,excluded.expires_at)',session,userId,hash,at,at+CODE_LIFETIME,at).run();
+  // A new code replaces only the code. A confirmation still in force keeps its own deadline (a code never extends it);
+  // one that ran out is cleared, so that only typing the new code confirms the session again.
+  await q(db,'INSERT INTO admin_factor(session_hash,user_id,code_hash,code_sent_at,attempts,expires_at,created_at) VALUES (?,?,?,?,0,?,?) ON CONFLICT(session_hash) DO UPDATE SET code_hash=excluded.code_hash,code_sent_at=excluded.code_sent_at,attempts=0,verified_at=CASE WHEN admin_factor.verified_at IS NOT NULL AND admin_factor.expires_at>excluded.code_sent_at THEN admin_factor.verified_at ELSE NULL END,expires_at=CASE WHEN admin_factor.verified_at IS NOT NULL AND admin_factor.expires_at>excluded.code_sent_at THEN MAX(admin_factor.expires_at,excluded.expires_at) ELSE excluded.expires_at END',session,userId,hash,at,at+CODE_LIFETIME,at).run();
   let sent=false;
   if(config.TELEGRAM_BOT_TOKEN)for(const chat of chats)sent=await telegramSend(config.TELEGRAM_BOT_TOKEN,chat,'🔐 Код для входа в управление AiQonaq: '+code+'\nДействует 10 минут. Никому его не сообщайте. Если вы не входили, смените пароль.')||sent;
   if(!sent&&!test)throw new DomainError('Telegram не принял сообщение. Попробуйте через минуту.',502);
