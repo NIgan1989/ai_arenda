@@ -78,6 +78,7 @@
 -- migration 0074_payment_receipts.sql sha256:6f43b5b3d88b23cb3f7ed436bfb2fb642f05edc411cdb4435af017b320091bbf
 -- migration 0075_service_billing.sql sha256:22291f4b24994157164644befff06e5bbb609441f61cda77b29c2d73dc031986
 -- migration 0076_legal_acceptances.sql sha256:f61f2a547bff5007224bb63e0d6980d16498277a59b7640a78e5837ba27bf3de
+-- migration 0077_reliability_objections.sql sha256:fc4ed81444c7a9bb36a484f0909f4d9bbc3cabf4be35e2a38aaeb8f1b2d85659
 
 -- table access_receipts
 CREATE TABLE access_receipts (id TEXT PRIMARY KEY,property_id TEXT NOT NULL,entity_kind TEXT NOT NULL,entity_id TEXT NOT NULL,user_id TEXT NOT NULL,created_at INTEGER NOT NULL,expires_at INTEGER NOT NULL);
@@ -1140,6 +1141,20 @@ CREATE TABLE regular_cleaners (
  created_at INTEGER NOT NULL
 );
 
+-- table reliability_objections
+CREATE TABLE reliability_objections (
+ id TEXT PRIMARY KEY,
+ user_id TEXT NOT NULL REFERENCES profiles(id),
+ role TEXT NOT NULL CHECK(role IN ('guest','owner','cleaner')),
+ body TEXT NOT NULL,
+ status TEXT NOT NULL DEFAULT 'open' CHECK(status IN ('open','answered')),
+ created_at INTEGER NOT NULL,
+ due_at INTEGER NOT NULL,
+ answer TEXT,
+ answered_by TEXT,
+ answered_at INTEGER
+);
+
 -- table review_property_bindings
 CREATE TABLE review_property_bindings (
  property_id TEXT PRIMARY KEY REFERENCES properties(id),revision INTEGER NOT NULL DEFAULT 0
@@ -1451,6 +1466,12 @@ CREATE INDEX push_due ON push_deliveries(status,available_at,lease_until);
 
 -- index regular_cleaners_cleaner
 CREATE INDEX regular_cleaners_cleaner ON regular_cleaners(cleaner_id);
+
+-- index reliability_objections_open
+CREATE INDEX reliability_objections_open ON reliability_objections(status,due_at);
+
+-- index reliability_objections_user
+CREATE INDEX reliability_objections_user ON reliability_objections(user_id,role,created_at);
 
 -- index stay_handovers_guest
 CREATE INDEX stay_handovers_guest ON stay_handovers(guest_id,created_at);
@@ -1945,6 +1966,12 @@ CREATE TRIGGER account_erased_regular_cleaners_insert BEFORE INSERT ON regular_c
 
 -- trigger account_erased_regular_cleaners_update
 CREATE TRIGGER account_erased_regular_cleaners_update BEFORE UPDATE ON regular_cleaners WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.owner_id OR user_id=NEW.cleaner_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END;
+
+-- trigger account_erased_reliability_objections_insert
+CREATE TRIGGER account_erased_reliability_objections_insert BEFORE INSERT ON reliability_objections WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.user_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END;
+
+-- trigger account_erased_reliability_objections_update
+CREATE TRIGGER account_erased_reliability_objections_update BEFORE UPDATE ON reliability_objections WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.user_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END;
 
 -- trigger account_erased_service_billing_insert
 CREATE TRIGGER account_erased_service_billing_insert BEFORE INSERT ON service_billing WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.user_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END;

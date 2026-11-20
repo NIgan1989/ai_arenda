@@ -23,7 +23,27 @@ export function AdminReports({data,busy,save}:{data:Row;busy:boolean;save:Save})
   {hidden.length>0&&<section className="reviews-group"><header><h2>Скрыто ИИ за неделю</h2><span>{hidden.length}</span></header>
    <ul className="reviews-done">{hidden.map(r=><li key={r.id}><span className="reviews-role"><EyeOff size={16}/></span><span><strong>{!r.hidden?'Сообщение возвращено':String(r.resolution||'Сообщение скрыто').replace(/^Скрыто ИИ-администратором:\s*/,'').replace(/\.\s*Администратор может восстановить\.?$/,'').replace(/^./,(c:string)=>c.toUpperCase())}</strong><small>Жалоба: {r.reason}</small></span>{r.hidden?<Button variant="outline" disabled={busy} onClick={async()=>{const seen=await save('reports/action',{action:'inspect',reportId:r.id,reason:'Проверка решения ИИ'});if(seen)await save('reports/action',{action:'moderate',reportId:r.id,decision:'restore',expectedVersion:seen.material.version,reason:'Администратор вернул сообщение'});}}>Вернуть</Button>:<span className="reviews-when">Возвращено</span>}</li>)}</ul>
   </section>}
+  <Objections list={data.objections||[]} busy={busy} save={save}/>
  </div>;
+}
+
+// «Не согласен с оценкой»: a participant objects to the reliability rating (lib/reliability-objection.ts).
+// The answer goes to the participant as a notice; it is due within three working days.
+function Objections({list,busy,save}:{list:Row[];busy:boolean;save:Save}){
+ const open=list.filter(o=>o.status==='open'),done=list.filter(o=>o.status!=='open');
+ return <section className="reviews-group"><header><h2>Возражения на оценку надёжности</h2><span>{open.length}</span></header>
+  {open.length===0?<div className="reviews-empty"><CheckCircle2 size={24}/><p>Открытых возражений нет.</p></div>:<div className="reviews-list">{open.map(o=><ObjectionCard key={o.id} o={o} busy={busy} save={save}/>)}</div>}
+  {done.length>0&&<ul className="reviews-done">{done.map(o=><li key={o.id}><span className="reviews-role"><CheckCircle2 size={16}/></span><span><strong>{o.name||'Участник'}: {o.answer}</strong><small>Возражение: {o.body}</small></span></li>)}</ul>}
+ </section>;
+}
+function ObjectionCard({o,busy,save}:{o:Row;busy:boolean;save:Save}){
+ const [answer,setAnswer]=useState('');
+ return <article className="review-card">
+  <div className="review-head"><span className="reviews-role"><Flag size={18}/></span><div><span className="review-kind">{roles[o.role]||'Участник'} · {when(o.created_at)}</span><h3>{o.name||'Участник'}</h3><p>{o.late?'Срок ответа прошёл: ':'Ответить до '}{when(o.due_at)}</p></div></div>
+  <p className="issue-text"><MessageSquareText size={16}/>{o.body}</p>
+  <textarea aria-label="Ответ участнику" value={answer} onChange={e=>setAnswer(e.target.value)} maxLength={2000} rows={3} placeholder="Что проверили и что решили" style={{width:'100%'}}/>
+  <div className="review-actions"><Button disabled={busy||answer.trim().length<10} onClick={async()=>{if(await save('objections/answer',{id:o.id,answer}))setAnswer('');}}>Ответить</Button></div>
+ </article>;
 }
 
 function ReportCard({r,busy,save}:{r:Row;busy:boolean;save:Save}){

@@ -1,3 +1,4 @@
+import {answerObjection,objectionQueue} from './reliability-objection';
 import {DomainError,number} from './domain';
 import {isPlatformAdmin} from './account';
 import type {RentalService} from './service';
@@ -41,7 +42,7 @@ export async function readPlatformAdmin(service:RentalService,route:string,param
   // Message text stays behind an audited «Открыть»; the list carries only who reported, why, and what the AI concluded.
   const queue=await service.all("SELECT r.id,r.role,r.target_kind,r.reason,r.status,r.created_at,(SELECT e.reason FROM moderation_access_events e WHERE e.id='ai-check:'||r.id) ai_note,(SELECT version FROM moderated_content m WHERE m.kind=r.target_kind AND m.target_id=r.target_id AND m.room_id=r.room_id) version FROM content_reports r WHERE r.status<>'resolved' ORDER BY r.created_at LIMIT 100");
   const hidden=await service.all("SELECT r.id,r.role,r.target_kind,r.reason,r.resolution,e.created_at,(SELECT version FROM moderated_content m WHERE m.kind=r.target_kind AND m.target_id=r.target_id AND m.room_id=r.room_id) version,(SELECT hidden FROM moderated_content m WHERE m.kind=r.target_kind AND m.target_id=r.target_id AND m.room_id=r.room_id) hidden FROM moderation_access_events e JOIN content_reports r ON r.id=e.report_id WHERE e.actor_id='ai-administrator' AND e.action='hide' AND e.created_at>? ORDER BY e.created_at DESC LIMIT 50",Math.floor(Date.now()/1000)-7*86400);
-  await service.audit(service.userId,'admin.reports_viewed').run();return {queue,hidden};
+  await service.audit(service.userId,'admin.reports_viewed').run();return {queue,hidden,objections:await objectionQueue(service.db)};
  }
  if(route==='billing/owners')return billingOwners(service,params);
  if(route==='billing/plans')return plansAdminState(service.db);
@@ -60,7 +61,7 @@ export async function readPlatformAdmin(service:RentalService,route:string,param
  }
  if(route==='overview'){
   const [users,properties,bookings,jobs,reviews,issues,reports]=await Promise.all([
-   service.one('SELECT COUNT(*) count FROM profiles'),service.one("SELECT COUNT(*) count,SUM(p.published=1) published,SUM(p.published=0) drafts,SUM(p.published=1 AND NOT EXISTS(SELECT 1 FROM property_locations l WHERE l.property_id=p.id)) unmapped,SUM(p.published=1 AND COALESCE((SELECT json_array_length(d.photos) FROM property_details d WHERE d.property_id=p.id),0)=0) without_photos FROM properties p WHERE p.demo_owner IS NULL"),service.one("SELECT COUNT(*) count FROM bookings WHERE status IN ('requested','confirmed')"),service.one("SELECT COUNT(*) count FROM cleaning_jobs WHERE status IN ('open','assigned','in_progress','submitted')"),service.one("SELECT COUNT(*) count FROM participant_reviews WHERE status='pending' AND (ai_verdict<>'fix' OR (SELECT ai_review FROM pilot_policy WHERE id='global')=0)"),service.one("SELECT COUNT(*) count FROM administrator_issues i WHERE i.status<>'resolved' AND (NOT EXISTS(SELECT 1 FROM operator_tickets t WHERE t.issue_id=i.id) OR EXISTS(SELECT 1 FROM operator_tickets t WHERE t.issue_id=i.id AND t.status<>'resolved' AND (t.priority='urgent' OR t.deadline<=unixepoch() OR t.assigned_to IS NOT NULL)))"),service.one("SELECT COUNT(*) count FROM content_reports WHERE status<>'resolved'")
+   service.one('SELECT COUNT(*) count FROM profiles'),service.one("SELECT COUNT(*) count,SUM(p.published=1) published,SUM(p.published=0) drafts,SUM(p.published=1 AND NOT EXISTS(SELECT 1 FROM property_locations l WHERE l.property_id=p.id)) unmapped,SUM(p.published=1 AND COALESCE((SELECT json_array_length(d.photos) FROM property_details d WHERE d.property_id=p.id),0)=0) without_photos FROM properties p WHERE p.demo_owner IS NULL"),service.one("SELECT COUNT(*) count FROM bookings WHERE status IN ('requested','confirmed')"),service.one("SELECT COUNT(*) count FROM cleaning_jobs WHERE status IN ('open','assigned','in_progress','submitted')"),service.one("SELECT COUNT(*) count FROM participant_reviews WHERE status='pending' AND (ai_verdict<>'fix' OR (SELECT ai_review FROM pilot_policy WHERE id='global')=0)"),service.one("SELECT COUNT(*) count FROM administrator_issues i WHERE i.status<>'resolved' AND (NOT EXISTS(SELECT 1 FROM operator_tickets t WHERE t.issue_id=i.id) OR EXISTS(SELECT 1 FROM operator_tickets t WHERE t.issue_id=i.id AND t.status<>'resolved' AND (t.priority='urgent' OR t.deadline<=unixepoch() OR t.assigned_to IS NOT NULL)))"),service.one("SELECT (SELECT COUNT(*) FROM content_reports WHERE status<>'resolved')+(SELECT COUNT(*) FROM reliability_objections WHERE status='open') count")
   ]);
   return {counts:{users:users?.count||0,properties:properties?.count||0,published:properties?.published||0,drafts:properties?.drafts||0,unmapped:properties?.unmapped||0,withoutPhotos:properties?.without_photos||0,bookings:bookings?.count||0,jobs:jobs?.count||0,reviews:reviews?.count||0,issues:issues?.count||0,reports:reports?.count||0},runtime:await buildRuntimeHealth(service.db,config),money:await moneySummary(service.db)};
  }
@@ -89,6 +90,7 @@ export async function writePlatformAdmin(service:RentalService,route:string,body
   if(config.TEST_DATA_ONLY==='1'&&[body.requireOwnerReview,body.requireCleanerReview,body.requirePhone].some(v=>v===true))throw new DomainError('Правила рабочего сервиса настраиваются вне учебного стенда.',409);
   return savePilotPolicy(service,body,true);
  }
+ if(route==='objections/answer')return answerObjection(service.db,service.userId,body);
  if(route==='reports/action'){
   if(!['inspect','moderate','review'].includes(body.action))throw new DomainError('Неизвестное действие с жалобой.');
   return safetyAction(service,'guest',body.action,body,true);
