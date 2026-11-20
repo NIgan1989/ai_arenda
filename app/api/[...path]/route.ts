@@ -16,6 +16,7 @@ import {checkAdministratorForUser,runAdministrator} from '../../../lib/administr
 import {administratorRunnerAuthorized} from '../../../lib/administrator-auth';
 import {runOperationalTick} from '../../../lib/background';
 import {readOperations,writeOperations,publicOperationsRequest} from '../../../lib/operations-api';
+import {myObjection,objectReliability} from '../../../lib/reliability-objection';
 import {acceptLegal,legalMissing,legalState} from '../../../lib/legal-acceptance';
 import {previewMatches,matchingState} from '../../../lib/smart-matching';
 import {listCommands,prepareAdministratorCommand} from '../../../lib/administrator-commands';
@@ -32,7 +33,7 @@ import {ensurePublishReview} from '../../../lib/participant-security';
 export const dynamic='force-dynamic';
 // Routes that stay open before the documents are accepted: the person's own settings, leaving and deleting the account,
 // reading, the map and switching Autopilot off (declining new terms must not keep a paid plan running). Everything else in a workspace waits for acceptance.
-const legalOpenTop=new Set(['profile','account','sessions','push','notifications','conversation','onboarding','quote']);
+const legalOpenTop=new Set(['reliability','profile','account','sessions','push','notifications','conversation','onboarding','quote']);
 const legalOpenOps=new Set(['safety','ai-data-permission','ai-budget','phone','map','search','delivery']);
 const legalOpen=(route:string[])=>legalOpenTop.has(route[0])||route[0]==='operations'&&(legalOpenOps.has(route[1])||['discussion/read','discussion/typing','discussion/inbox','administrator/conversation','administrator/history','autopilot/stop'].includes(route.slice(1).join('/')));
 const json=(data:unknown,status=200)=>Response.json(data,{status,headers:{'Cache-Control':'no-store','X-Content-Type-Options':'nosniff'}});
@@ -84,6 +85,7 @@ async function handle(request:Request, context:{params:Promise<{path:string[]}>}
     if(request.method==='GET'&&route.join('/')==='push'){const identity=await requestSessionIdentity(request);return json(await webPushState(service,parseRole(activeRole),env,identity?.kind==='web'?identity.hash:''));}
     if(request.method==='GET'&&route.join('/')==='sessions'){await service.authorizeWorkspace(activeRole,'account');return json(await accountSessions(service,request));}
     if(request.method==='GET'&&route.join('/')==='conversation')return json(await clientConversation(service,parseRole(activeRole)));
+    if(request.method==='GET'&&route.join('/')==='reliability/objection'){const role=await service.authorizeWorkspace(activeRole,'account');return json(await myObjection(env.DB,user.userId,role));}
     if(request.method==='GET'&&route.join('/')==='legal')return json({legal:await legalState(env.DB,user.userId,activeRole)});
     if(request.method==='GET'&&route[0]==='operations')return json(await readOperations(service,parseRole(activeRole),route.slice(1),env,isPlatformAdmin(user.userId,env.PLATFORM_ADMIN_IDS)));
     if(request.method==='GET'&&route.length===2&&route[0]==='media'){const mediaRole=await service.authorizeWorkspace(activeRole,'media');return json(await service.readMedia(route[1],mediaRole,env.BUCKET));}
@@ -110,6 +112,7 @@ async function handle(request:Request, context:{params:Promise<{path:string[]}>}
     {const identity=await requestSessionIdentity(request),client=identity?.kind==='mobile'?'mobile':'web';
      if(route.join('/')==='legal/accept')return json(await acceptLegal(env.DB,user.userId,{...body,role:activeRole},client));
      if(client==='mobile'&&!legalOpen(route)){const missing=await legalMissing(env.DB,user.userId,activeRole);if(missing.length)return json({error:'Примите условия сервиса, чтобы продолжить.',legal:missing},428);}}
+    if(route.join('/')==='reliability/objection'){const role=await service.authorizeWorkspace(activeRole,'account');return json(await objectReliability(env.DB,user.userId,role,body,env.PLATFORM_ADMIN_IDS));}
     if(route.join('/')==='push'){const identity=await requestSessionIdentity(request);return json(await manageWebPush(service,parseRole(activeRole),body,env,identity?.kind==='web'?identity.hash:''));}
     if(request.method==='POST'&&route.join('/')==='sessions'){await service.authorizeWorkspace(activeRole,'account');return json(await accountSessions(service,request,body));}
     if(request.method==='PUT'&&route.join('/')==='conversation')return json(await clientConversation(service,parseRole(activeRole),body));

@@ -11,6 +11,7 @@ import {Choice,Group,Row,RowIcon,SwitchRow,a,menuInk,type MenuIcon} from './Acco
 import {ProfileRing} from './ProfileRing';
 import {experienceFor,joinTitle} from '../../lib/role-experience';
 import {ReliabilityBadge,reliabilityHints} from './Reliability';
+import {ReliabilityObjection} from './ReliabilityObjection';
 import {NativeTelegram} from './NativeTelegram';
 import {NativeAutopilotPlan} from './AutopilotPlan';
 import {NativeDecisionRules} from './DecisionRules';
@@ -83,7 +84,7 @@ export function AccountControl({role:active,staffPlaces=0,notices,onOpenNotice,s
   {view==='money'&&<OwnerAnalytics tint={ink}/>}
   {view==='notices'&&<Group><NativeTelegram tint={ink} invite/><NoticeList list={events} now={clock} onOpen={onOpenNotice}/></Group>}
   {view==='autopilot'&&<>{owner&&<View style={{marginBottom:16}}><AutopilotWeek/></View>}<Group title="Что сделал ИИ"><AiJournal entries={journal} now={clock} onOpen={onOpenEntry}/></Group>{worker?<NativeAutopilotPlan key={'plan:'+active} role="cleaner"/>:<NativeDecisionRules key={'rules:'+active} tint={ink}/>}</>}
-  {view==='profile'&&<>{hint}<Group space={!!hint}>{item('user','О себе',p.bio)}{item('languages','Языки общения',p.languages)}{item('pin',experience.cityLabel,p.city)}{worker&&<>{item('map','Районы работы',p.districts)}{item('clock','График',p.availability)}{item('badge','Опыт и услуги',p.experience)}</>}{item('phone','Телефон',p.contact)}</Group>{!!account.reliability&&<><View style={{height:16}}/><ReliabilityBadge value={account.reliability} title={owner?'Как вас видят гости':'Как вас видят владельцы'}/><Group title="Как повысить надёжность">{(reliabilityHints[active]||[]).map(h=><View key={h} style={a.row}><RowIcon icon="check" tint={ink}/><Text style={[a.title,a.wide]}>{h}</Text></View>)}</Group></>}</>}
+  {view==='profile'&&<>{hint}<Group space={!!hint}>{item('user','О себе',p.bio)}{item('languages','Языки общения',p.languages)}{item('pin',experience.cityLabel,p.city)}{worker&&<>{item('map','Районы работы',p.districts)}{item('clock','График',p.availability)}{item('badge','Опыт и услуги',p.experience)}</>}{item('phone','Телефон',p.contact)}</Group>{!!account.reliability&&<><View style={{height:16}}/><ReliabilityBadge value={account.reliability} title={owner?'Как вас видят гости':'Как вас видят владельцы'}/><Group title="Как повысить надёжность">{(reliabilityHints[active]||[]).map(h=><View key={h} style={a.row}><RowIcon icon="check" tint={ink}/><Text style={[a.title,a.wide]}>{h}</Text></View>)}</Group><ReliabilityObjection role={active}/></>}</>}
   {view==='settings'&&<>
    <Group title="Куда сообщать"><NativeTelegram tint={ink}/><SwitchRow icon="wallet" tint={ink} title="О расчётах и выплатах" checked={!!account.settings.payment_notifications} disabled={busy} onChange={v=>settings({payment_notifications:v?1:0})}/></Group>
    <Text style={a.footnote}>Сообщаем только то, что ждёт вас или касается денег. Что ИИ сделал сам, записано в «Автопилот».</Text>
