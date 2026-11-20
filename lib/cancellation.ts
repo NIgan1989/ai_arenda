@@ -1,9 +1,10 @@
 // What a cancellation costs, by the guest offer (lib/legal-documents.ts, section 5):
 // the owner cancelling, an unconfirmed request, or the guest cancelling at least 24 hours before a daily or nightly stay
 // (2 hours before an hourly one) returns everything paid. Later than that the owner keeps the first day, night or the
-// minimum hours, and the rest goes back. The deposit always goes back in full and is counted separately.
+// minimum hours, but never more than 30% of the stay (Consumer Protection Law art. 8-1: a penalty a consumer pays for
+// refusing a service is capped), and the rest goes back. The deposit always goes back in full and is counted separately.
 export type CancelTerms={free:boolean;refund:number;withheld:number;deposit:number;freeUntil:number};
-export const FREE_DAILY=24*3600,FREE_HOURLY=2*3600;
+export const FREE_DAILY=24*3600,FREE_HOURLY=2*3600,CANCEL_CAP=0.3;
 export function cancellationTerms(v:{by:'owner'|'guest';status:string;mode:string;rate:number;units:number;amount:number;paid:number;deposit:number;start:number;minHours:number;at:number;banquet?:boolean}):CancelTerms{
  const hourly=v.mode==='hourly',freeUntil=v.start-(hourly?FREE_HOURLY:FREE_DAILY),paid=Math.max(0,Number(v.paid)||0),deposit=Math.max(0,Number(v.deposit)||0);
  // A banquet: the prepayment always goes back. The hall may keep only what it has already spent on this order and
@@ -11,7 +12,7 @@ export function cancellationTerms(v:{by:'owner'|'guest';status:string;mode:strin
  const free=v.by==='owner'||v.status!=='confirmed'||v.at<=freeUntil||v.banquet===true;
  if(free)return {free:true,refund:paid,withheld:0,deposit,freeUntil};
  const first=hourly?v.rate*Math.max(1,Math.min(Number(v.units)||1,Number(v.minHours)||1)):v.mode==='legacy'?Math.round(v.amount/Math.max(1,Number(v.units)||1)):v.rate;
- const withheld=Math.min(paid,Math.max(0,first),v.amount);
+ const withheld=Math.min(paid,Math.max(0,first),Math.floor(Math.max(0,Number(v.amount)||0)*CANCEL_CAP));
  return {free:false,refund:paid-withheld,withheld,deposit,freeUntil};
 }
 // What the owner still has to return to the guest for a cancelled or expired booking (b.terms as the state gives them).

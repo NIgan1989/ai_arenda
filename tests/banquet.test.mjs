@@ -32,7 +32,7 @@ test('the price is guests × price per guest, never under the least order',()=>{
 
 test('a cancelled banquet returns everything paid, at any hour',()=>{
  const v={by:'guest',status:'confirmed',mode:'daily',rate:640000,units:1,amount:640000,paid:200000,deposit:0,start:10000,minHours:1,at:9000};
- assert.equal(cancellationTerms(v).withheld,200000);
+ assert.equal(cancellationTerms(v).withheld,192000);
  const c=cancellationTerms({...v,banquet:true});assert.equal(c.free,true);assert.equal(c.refund,200000);assert.equal(c.withheld,0);
 });
 
