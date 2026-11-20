@@ -45,7 +45,7 @@ test('no reserve on assignment: the balance stays free, the pair fee is charged 
   const c=f.db.raw.prepare('SELECT * FROM cleaning_commissions WHERE job_id=?').get(f.job.id);assert.equal(c.pair,1);assert.equal(c.mode,'charged');assert.equal(c.amount,100);
   assert.equal(await ownerAvailable(f.db,'owner'),9900,'only the service fee leaves the balance');
   // The owner sees where to transfer; the cleaner is told the owner pays directly.
-  const mine=(await f.owner.roleState('owner',{catalog:false})).jobs.find(j=>j.id===f.job.id);assert.deepEqual(mine.cleaner_pay,{phone:'+77020001122',recipient:'Айгуль С.',link:''});
+  const mine=(await f.owner.roleState('owner',{catalog:false})).jobs.find(j=>j.id===f.job.id);assert.deepEqual(mine.cleaner_pay,{phone:'+77020001122',recipient:'Айгуль С.',link:'',changed_at:null});
   assert.equal((await f.cleaner.roleState('cleaner',{catalog:false})).jobs.find(j=>j.id===f.job.id).cleaner_pay,null);
   assert.match(f.db.raw.prepare("SELECT body FROM notifications WHERE user_id='cleaner' AND dedupe LIKE 'cleaner:approved:%'").get().body,/переведёт вам 3\s000 ₸ напрямую/);
   await assert.rejects(markCleanerPayout(f.owner,{jobId:f.job.id,confirmed:true}),e=>e.status===409,'the service pays nobody');

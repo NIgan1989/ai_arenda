@@ -80,7 +80,8 @@
 -- migration 0076_legal_acceptances.sql sha256:f61f2a547bff5007224bb63e0d6980d16498277a59b7640a78e5837ba27bf3de
 -- migration 0077_reliability_objections.sql sha256:fc4ed81444c7a9bb36a484f0909f4d9bbc3cabf4be35e2a38aaeb8f1b2d85659
 -- migration 0078_reliability_objection_one_open.sql sha256:186709cda819f915ea5c691804323e75e670e0b8762f15c841b2328c9638ed32
--- migration 0079_fraud_guards.sql sha256:d1328a42a14e09525f7f779c08e1ac1bc5530348c419b73121a1dfba65de48fa
+-- migration 0079_account_protection.sql sha256:8ee6b6dd2a862e3a843c7c0c82c19a8e3401f25cb30b766bbd55b6874bce17c7
+-- migration 0080_fraud_guards.sql sha256:d1328a42a14e09525f7f779c08e1ac1bc5530348c419b73121a1dfba65de48fa
 
 -- table access_receipts
 CREATE TABLE access_receipts (id TEXT PRIMARY KEY,property_id TEXT NOT NULL,entity_kind TEXT NOT NULL,entity_id TEXT NOT NULL,user_id TEXT NOT NULL,created_at INTEGER NOT NULL,expires_at INTEGER NOT NULL);
@@ -123,6 +124,18 @@ CREATE TABLE account_restrictions (
  reason TEXT NOT NULL,
  booking_id TEXT REFERENCES bookings(id),
  created_by TEXT NOT NULL,
+ created_at INTEGER NOT NULL
+);
+
+-- table admin_factor
+CREATE TABLE admin_factor (
+ session_hash TEXT PRIMARY KEY,
+ user_id TEXT NOT NULL,
+ code_hash TEXT,
+ code_sent_at INTEGER,
+ attempts INTEGER NOT NULL DEFAULT 0,
+ verified_at INTEGER,
+ expires_at INTEGER NOT NULL,
  created_at INTEGER NOT NULL
 );
 
@@ -927,7 +940,7 @@ CREATE TABLE payout_details (
  user_id TEXT PRIMARY KEY REFERENCES profiles(id),
  phone TEXT NOT NULL DEFAULT '', recipient TEXT NOT NULL DEFAULT '', link TEXT NOT NULL DEFAULT '',
  version INTEGER NOT NULL DEFAULT 1, updated_at INTEGER NOT NULL
-);
+, pending_phone TEXT, pending_recipient TEXT, pending_link TEXT, pending_role TEXT, pending_until INTEGER, changed_at INTEGER);
 
 -- table phone_verifications
 CREATE TABLE phone_verifications (user_id TEXT PRIMARY KEY,phone TEXT NOT NULL,code_hash TEXT NOT NULL,expires_at INTEGER NOT NULL,attempts INTEGER NOT NULL DEFAULT 0,sent_at INTEGER NOT NULL,verified_at INTEGER);
@@ -1286,6 +1299,12 @@ CREATE TABLE worker_dispatch (user_id TEXT PRIMARY KEY REFERENCES profiles(id),r
 -- index account_deletion_review_request
 CREATE INDEX account_deletion_review_request ON account_deletion_reviews(request_id,created_at);
 
+-- index admin_factor_expiry
+CREATE INDEX admin_factor_expiry ON admin_factor(expires_at);
+
+-- index admin_factor_user
+CREATE INDEX admin_factor_user ON admin_factor(user_id);
+
 -- index administrator_issues_owner
 CREATE INDEX administrator_issues_owner ON administrator_issues(owner_id,status);
 
@@ -1466,6 +1485,9 @@ CREATE INDEX payment_receipts_booking ON payment_receipts(booking_id);
 -- index payment_receipts_job
 CREATE INDEX payment_receipts_job ON payment_receipts(job_id);
 
+-- index payout_details_pending
+CREATE INDEX payout_details_pending ON payout_details(pending_until) WHERE pending_until IS NOT NULL;
+
 -- index platform_commissions_managed
 CREATE INDEX platform_commissions_managed ON platform_commissions(managed,created_at);
 
@@ -1559,6 +1581,12 @@ CREATE TRIGGER account_erased_account_preferences_insert BEFORE INSERT ON accoun
 
 -- trigger account_erased_account_preferences_update
 CREATE TRIGGER account_erased_account_preferences_update BEFORE UPDATE ON account_preferences WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.user_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END;
+
+-- trigger account_erased_admin_factor_insert
+CREATE TRIGGER account_erased_admin_factor_insert BEFORE INSERT ON admin_factor WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.user_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END;
+
+-- trigger account_erased_admin_factor_update
+CREATE TRIGGER account_erased_admin_factor_update BEFORE UPDATE ON admin_factor WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.user_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END;
 
 -- trigger account_erased_administrator_commands_insert
 CREATE TRIGGER account_erased_administrator_commands_insert BEFORE INSERT ON administrator_commands WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.user_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END;

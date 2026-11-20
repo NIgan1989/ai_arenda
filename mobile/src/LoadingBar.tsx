@@ -1,3 +1,4 @@
+import {t} from '../../lib/i18n';
 import React,{useEffect,useRef,useState} from 'react';
 import {AccessibilityInfo,Animated,Easing,Platform,StyleSheet,Text,View} from 'react-native';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
@@ -45,7 +46,7 @@ export function LoadingBar(){
   // scaleX grows from the centre, so the bar is shifted left by the part not yet filled.
   const scale=progress,shift=progress.interpolate({inputRange:[0,1],outputRange:[-width/2,0]});
   return <View pointerEvents="none" style={[st.layer,{paddingBottom:insets.bottom+24}]} onLayout={e=>setWidth(e.nativeEvent.layout.width)}>
-    {shown&&<Animated.View accessibilityRole="progressbar" accessibilityLabel="Загрузка" style={[st.track,{top:insets.top,opacity}]}>
+    {shown&&<Animated.View accessibilityRole="progressbar" accessibilityLabel={t('Загрузка')} style={[st.track,{top:insets.top,opacity}]}>
       <Animated.View style={[st.bar,{transform:[{translateX:shift},{scaleX:scale}]}]}>
         <View style={st.from}/><View style={st.mid}/><View style={st.to}/>
         {!calm&&<Animated.View style={[st.shine,{transform:[{translateX:shine.interpolate({inputRange:[0,1],outputRange:[-120,Math.max(width,240)]})}]}]}/>}
@@ -53,7 +54,7 @@ export function LoadingBar(){
     </Animated.View>}
     {pill&&!local&&<Animated.View accessibilityRole="text" accessibilityLiveRegion="polite" style={[st.pill,{opacity:pillIn,transform:[{translateY:pillIn.interpolate({inputRange:[0,1],outputRange:[12,0]})}]}]}>
       <Thinking size="sm" pill/>
-      <Text style={st.pillText}>Секунду…</Text>
+      <Text style={st.pillText}>{t('Секунду…')}</Text>
     </Animated.View>}
   </View>;
 }

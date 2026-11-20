@@ -2,7 +2,7 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {loadPure} from './helpers/pure.mjs';
 
-const {guestHelpers, narrowed, stepWords, rotateEquals, foundLine, metres} = await loadPure('mobile/src/guest-helpers.ts', 'mobile/src/ai-request.ts', 'mobile/src/model.ts', 'lib/map-search-request.ts');
+const {guestHelpers, narrowed, stepWords, rotateEquals, foundLine, metres} = await loadPure('mobile/src/guest-helpers.ts', 'mobile/src/ai-request.ts', 'mobile/src/model.ts', 'lib/map-search-request.ts', 'lib/i18n.ts', 'lib/i18n-words.ts', 'lib/i18n-common.ts');
 const {newDraft} = await loadPure('mobile/src/ai-request.ts', 'lib/map-search-request.ts');
 const {plural} = await loadPure('lib/map-search-request.ts');
 

@@ -1,3 +1,4 @@
+import {L,LOCALE,lang} from '../../lib/i18n';
 export type Row=Record<string,any>;
 export type Role='guest'|'owner'|'cleaner';
 export type Message={id:string;sender:'user'|'assistant';text:string;block?:string;payload?:Row;done?:boolean;result?:string};
@@ -5,8 +6,9 @@ export type Question={key:string;text:string;label:string;min?:number;max?:numbe
 export type Flow={kind:string;questions:Question[];index:number;answers:Row;after:string;role:Role;endpoint:string;extra?:Row};
 export const empty={user:null,profile:null,properties:[],ownProperties:[],bookings:[],jobs:[],applications:[],notifications:[]};
 export const money=(n:number)=>new Intl.NumberFormat('ru-RU').format(n)+' ₸';
-export const date=(n:number)=>new Date(n*1000).toLocaleString('ru-RU',{timeZone:'Asia/Almaty',day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'});
-export const labels:Row={requested:'Ожидает владельца',confirmed:'Подтверждено',cancelled:'Отменено',expired:'Срок заявки истёк',open:'Открыта',assigned:'Исполнитель назначен',in_progress:'В работе',submitted:'На проверке',completed:'Завершено',pending:'Отклик отправлен',accepted:'Вы назначены',rejected:'Выбран другой исполнитель'};
+// The date in the language of the app (25 нояб., 25 қар., 25 Nov), always in Kazakhstan time.
+export const date=(n:number)=>new Date(n*1000).toLocaleString(LOCALE[lang()],{timeZone:'Asia/Almaty',day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'});
+export const labels:Row=L({requested:'Ожидает владельца',confirmed:'Подтверждено',cancelled:'Отменено',expired:'Срок заявки истёк',open:'Открыта',assigned:'Исполнитель назначен',in_progress:'В работе',submitted:'На проверке',completed:'Завершено',pending:'Отклик отправлен',accepted:'Вы назначены',rejected:'Выбран другой исполнитель'});
 let sequence=0;
 export const uid=()=>Date.now().toString(36)+'-'+(++sequence)+'-'+Math.random().toString(36).slice(2,10);
 export const baseQuestions:Question[]=[{key:'name',text:'Как к вам обращаться?',label:'Имя'},{key:'contact',text:'Напишите телефон или контакт в мессенджере для связи по заявкам.',label:'Контакт'},{key:'city',text:'В каком городе вы будете пользоваться сервисом?',label:'Город'}];

@@ -416,7 +416,7 @@ export class RentalService {
         CASE WHEN p.owner_id=? THEN (SELECT COUNT(*) FROM job_evidence e JOIN cleaning_jobs j ON j.id=e.job_id WHERE j.booking_id=b.id AND e.phase IN ('before','damage')) ELSE 0 END cleaner_photos,
         CASE WHEN p.owner_id=? THEN (SELECT COUNT(*) FROM job_evidence e JOIN cleaning_jobs j ON j.id=e.job_id WHERE j.booking_id=b.id AND e.phase='damage') ELSE 0 END cleaner_damage,
         CASE WHEN p.owner_id=? OR (b.guest_id=? AND b.status='confirmed') THEN o.contact ELSE NULL END owner_contact,
-        CASE WHEN p.owner_id=? OR (b.guest_id=? AND b.status='confirmed') THEN (SELECT json_object('phone',phone,'recipient',recipient,'link',link) FROM payout_details d WHERE d.user_id=p.owner_id AND d.phone<>'') ELSE NULL END owner_pay_row,
+        CASE WHEN p.owner_id=? OR (b.guest_id=? AND b.status='confirmed') THEN (SELECT json_object('phone',phone,'recipient',recipient,'link',link,'changed_at',changed_at) FROM payout_details d WHERE d.user_id=p.owner_id AND d.phone<>'') ELSE NULL END owner_pay_row,
         CASE WHEN p.owner_id=? THEN g.name ELSE NULL END guest_name,
         CASE WHEN p.owner_id=? THEN g.contact ELSE NULL END guest_contact,
         CASE WHEN p.owner_id=? THEN (SELECT json_object('level',level,'score',score,'reasons',reasons,'deposit_advice',deposit_advice,'phone_verified',phone_verified,'held',held) FROM booking_risks WHERE booking_id=b.id) ELSE NULL END risk_row
@@ -426,7 +426,7 @@ export class RentalService {
         CASE WHEN j.owner_id=? OR j.assigned_to=? THEN p.address ELSE NULL END address,
         CASE WHEN j.owner_id=? OR j.assigned_to=? THEN o.contact ELSE NULL END owner_contact,
         (SELECT COUNT(*) FROM payment_receipts r WHERE r.job_id=j.id) receipts,
-        CASE WHEN j.owner_id=? AND j.assigned_to IS NOT NULL THEN (SELECT json_object('phone',phone,'recipient',recipient,'link',link) FROM payout_details d WHERE d.user_id=j.assigned_to AND d.phone<>'') ELSE NULL END cleaner_pay_row
+        CASE WHEN j.owner_id=? AND j.assigned_to IS NOT NULL THEN (SELECT json_object('phone',phone,'recipient',recipient,'link',link,'changed_at',changed_at) FROM payout_details d WHERE d.user_id=j.assigned_to AND d.phone<>'') ELSE NULL END cleaner_pay_row
         FROM cleaning_jobs j JOIN properties p ON p.id=j.property_id LEFT JOIN profiles o ON o.id=j.owner_id
         WHERE (j.owner_id=? OR j.assigned_to=? OR (j.status='open' AND j.end>?)) AND (p.demo_owner IS NULL OR p.demo_owner=?) ORDER BY j.start`, this.userId,this.userId,this.userId,this.userId,this.userId,this.userId,this.userId,this.userId,this.userId,this.userId,now(),this.userId),
       this.all(`SELECT a.*,p.name,p.experience,p.availability,p.districts,(SELECT pr.demo_owner FROM properties pr WHERE pr.id=j.property_id) job_demo FROM applications a JOIN cleaning_jobs j ON j.id=a.job_id JOIN profiles p ON p.id=a.user_id WHERE a.user_id=? OR j.owner_id=?`, this.userId,this.userId),

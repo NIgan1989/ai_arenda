@@ -18,6 +18,8 @@ import {sweepSilence} from './owner-silence';
 import {migrateFinanceEntity} from './finance';
 import {encryptInstructions} from './participant-security';
 import {moveMediaToBucket,sweepMediaObjects} from './media-store';
+import {applyDuePayouts} from './payout';
+import {sweepAdminFactor} from './admin-factor';
 import {epoch,uuid,q,one,rows,type Row,type OperationConfig} from './operation-core';
 
 export async function enqueueJob(db:D1Database,id:string,kind:string,scope:string,payload:Row={},repeatSeconds=0){await q(db,'INSERT OR IGNORE INTO background_jobs(id,kind,scope,payload,available_at,repeat_seconds,updated_at) VALUES (?,?,?,?,?,?,?)',id,kind,scope,JSON.stringify(payload),epoch(),repeatSeconds,epoch()).run();}
@@ -81,6 +83,8 @@ export async function cloudBackup(db:D1Database,config:OperationConfig,page=BACK
 export const TICK_JOBS=40;
 export async function runOperationalTick(db:D1Database,config:OperationConfig={}){
  await enqueueJob(db,'matching-dispatch','matching-dispatch','system',{},30);
+ // Payout details whose 24 hours passed go into use; expired administrator codes and sessions are dropped.
+ try{await applyDuePayouts(db);await sweepAdminFactor(db);}catch{console.error('Account protection sweep failed');}
  await q(db,'UPDATE journey_sessions SET longitude=NULL,latitude=NULL,accuracy=NULL,route=NULL,route_recorded_at=NULL WHERE (expires_at<=? OR stopped_at IS NOT NULL) AND (longitude IS NOT NULL OR route IS NOT NULL)',epoch()).run();
  await enqueueJob(db,'discovery','discovery','system',{},30);await enqueueJob(db,'admin-autocheck','admin-autocheck','system',{},300);await enqueueJob(db,'admin-issues','admin-issues','system',{},120);await enqueueJob(db,'autopilot-plans','autopilot-plans','system',{},600);await enqueueJob(db,'delivery','delivery','system',{},30);if(config.BUCKET&&config.ACCESS_ENCRYPTION_KEY)await enqueueJob(db,'cloud-backup','backup','system',{},86400);
  if(config.BUCKET){await enqueueJob(db,'media-move','media-move','system',{},60);await enqueueJob(db,'media-sweep','media-sweep','system',{},3600);}

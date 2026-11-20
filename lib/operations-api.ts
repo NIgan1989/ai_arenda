@@ -112,7 +112,7 @@ export async function writeOperations(service:RentalService,role:Role,path:strin
  if(route==='venue/hall'){active(role,['owner']);return addHall(service,body);}
  if(route==='venue/rename'){active(role,['owner']);return renameVenue(service,body);}
  if(route==='handover'){active(role,['owner']);return saveHandover(service,body);}
- if(route==='payout'){active(role,['owner','cleaner']);return savePayout(service,body);}
+ if(route==='payout'){active(role,['owner','cleaner']);return savePayout(service,body,role==='cleaner'?'cleaner':'owner');}
  if(route==='finance'){active(role,['owner']);return recordFinance(service,body);}
  if(route==='payment-intent'){active(role,['guest']);return createPaymentIntent(service,body,config);}
  if(route==='payment-test'){active(role,['guest']);return testPayment(service,body,config,id=>new RentalService(service.db,id));}
