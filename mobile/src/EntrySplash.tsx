@@ -36,7 +36,7 @@ export function EntryStatusBar(){
 // The entry story on every cold start, the same as on the site (components/entry-splash.tsx), on the night-blue plate:
 //   1. the шаңырақ, the crown of a yurt, is put together line by line — the ring is drawn, the four bars cross it;
 //   2. the roof poles spread around it as gold rays, and a light runs once round the ring;
-//   3. the name comes up under it, then the line «Жильё, бани и залы на часы и сутки»;
+//   3. the name comes up under it, then the line «Сервис аренды, где всё делает ИИ»;
 //   4. the crown opens: its ring becomes a window, and the window widens until the whole screen is in it.
 // It waits for the first data (so the map is ready under it), but never longer than a few seconds.
 // There is no vector drawing in the app, so the sign is made of pictures behind moving windows, and the plate with its
