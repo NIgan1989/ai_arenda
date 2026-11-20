@@ -35,6 +35,7 @@ export function ServiceBilling({role}:{role:'owner'|'cleaner'}){
    <View style={{flex:1,minWidth:0}}><Text style={b.title}>{state.card?'Карта '+state.card.mask:'Карта не привязана'}</Text><Text style={b.meta}>{state.card?(state.card.test?'Тестовая: деньги не списываются':'Списания раз в неделю'):'Привяжите один раз, дальше сервис списывает сам'}</Text></View>
   </View>
   {!!error&&<Text accessibilityRole="alert" style={s.error}>{error}</Text>}{!!message&&<Text accessibilityLiveRegion="polite" style={b.done}>{message}</Text>}
+  {!state.card&&<Text style={s.meta}>Привязывая карту, вы соглашаетесь, что сервис раз в неделю, по понедельникам, списывает с неё начисленную плату за свои услуги. Сумму и список начислений видно здесь заранее. Отвязать карту можно в любой момент, когда долга нет.</Text>}
   {!state.card&&button(state.test?'Привязать тестовую карту':'Привязать карту',()=>void act('link'))}
   {!!state.card&&state.due>0&&button('Оплатить сейчас '+money(state.due),()=>void act('pay'))}
   {!!state.card&&state.due<=0&&button('Отвязать карту',()=>void act('unlink'),true)}

@@ -8,28 +8,30 @@ const base={by:'guest',status:'confirmed',mode:'daily',rate:10000,units:3,amount
 // The fixture's stay is hourly, 2 hours for 4 000 ₸ with a 10 000 ₸ deposit, and starts in an hour.
 async function paid(f){await f.owner.bookingAction(f.booking,{action:'paid'});await f.owner.bookingAction(f.booking,{action:'deposit_received'});}
 
-test('the offer rule: free before the deadline, the first day kept after it, the owner always returns everything',()=>{
+test('the offer rule: free before the deadline, the first day kept after it but never over 30%, the owner always returns everything',()=>{
  assert.deepEqual(cancellationTerms({...base,at:base.start-24*3600}),{free:true,refund:30000,withheld:0,deposit:5000,freeUntil:base.start-24*3600});
- const late=cancellationTerms({...base,at:base.start-3600});assert.equal(late.withheld,10000);assert.equal(late.refund,20000);assert.equal(late.deposit,5000);
+ const late=cancellationTerms({...base,at:base.start-3600});assert.equal(late.withheld,9000);assert.equal(late.refund,21000);
+ // The first day under 30% of the stay is kept whole.
+ assert.equal(cancellationTerms({...base,units:5,amount:50000,paid:50000,at:base.start-3600}).withheld,10000);assert.equal(late.deposit,5000);
  assert.equal(cancellationTerms({...base,at:base.start-3600,by:'owner'}).refund,30000);
  assert.equal(cancellationTerms({...base,at:base.start-3600,status:'requested'}).refund,30000);
- const hourly=cancellationTerms({...base,mode:'hourly',rate:2000,units:5,amount:10000,paid:10000,minHours:2,at:base.start-3600});assert.equal(hourly.withheld,4000);assert.equal(hourly.refund,6000);
+ const hourly=cancellationTerms({...base,mode:'hourly',rate:2000,units:5,amount:10000,paid:10000,minHours:2,at:base.start-3600});assert.equal(hourly.withheld,3000);assert.equal(hourly.refund,7000);
  assert.equal(cancellationTerms({...base,mode:'hourly',rate:2000,units:5,amount:10000,paid:10000,minHours:2,at:base.start-2*3600}).free,true);
  assert.equal(cancellationTerms({...base,paid:4000,at:base.start-3600}).withheld,4000);
 });
 
 test('a guest who cancels late is told what stays with the owner; the owner returns only the rest and the deposit',async()=>{
  const f=await fixture();try{
-  // Four hours instead of two, so that something is left to return after the minimum two hours are kept.
-  f.db.raw.prepare('UPDATE booking_terms SET units=4,amount=8000 WHERE booking_id=?').run(f.booking);
-  f.db.raw.prepare('UPDATE bookings SET amount=8000 WHERE id=?').run(f.booking);
+  // Twenty hours instead of two, so that the minimum two hours stay under the 30% cap.
+  f.db.raw.prepare('UPDATE booking_terms SET units=20,amount=40000 WHERE booking_id=?').run(f.booking);
+  f.db.raw.prepare('UPDATE bookings SET amount=40000 WHERE id=?').run(f.booking);
   await paid(f);
-  const state=await f.guest.state(),quote=state.bookings[0].cancel_terms;assert.equal(quote.withheld,4000);assert.equal(quote.refund,4000);
-  const r=await f.guest.bookingAction(f.booking,{action:'cancel'});assert.match(r.message,/владельцу остаётся 4 000 ₸, вам вернут 4 000 ₸/);
-  assert.equal(terms(f).refund_due,4000);
-  assert.match(note(f,'owner','owner:cancelled:%').body,/остаётся 4 000 ₸, гостю нужно вернуть 4 000 ₸.*Депозит 10 000 ₸/);
+  const state=await f.guest.state(),quote=state.bookings[0].cancel_terms;assert.equal(quote.withheld,4000);assert.equal(quote.refund,36000);
+  const r=await f.guest.bookingAction(f.booking,{action:'cancel'});assert.match(r.message,/владельцу остаётся 4 000 ₸, вам вернут 36 000 ₸/);
+  assert.equal(terms(f).refund_due,36000);
+  assert.match(note(f,'owner','owner:cancelled:%').body,/остаётся 4 000 ₸, гостю нужно вернуть 36 000 ₸.*Депозит 10 000 ₸/);
   await f.owner.bookingAction(f.booking,{action:'record_refund',confirmed:true,expectedVersion:terms(f).version});
-  assert.equal(f.db.raw.prepare("SELECT SUM(amount) n FROM finance_entries WHERE booking_id=? AND kind='refund'").get(f.booking).n,4000);
+  assert.equal(f.db.raw.prepare("SELECT SUM(amount) n FROM finance_entries WHERE booking_id=? AND kind='refund'").get(f.booking).n,36000);
   assert.ok(terms(f).refund_recorded_at);
   assert.match((await f.owner.bookingAction(f.booking,{action:'record_refund',confirmed:true,expectedVersion:terms(f).version})).message,/уже полностью/);
   await f.owner.bookingAction(f.booking,{action:'record_deposit_return',confirmed:true,expectedVersion:terms(f).version});
@@ -72,9 +74,10 @@ test('money owed to the guest stays in front of the owner until it is marked ret
  const {ownerThreads}=await load('process-threads');
  const f=await fixture();try{
   await paid(f);await f.guest.bookingAction(f.booking,{action:'cancel'});
-  // The fixture's two hours are the minimum, so a late cancellation leaves only the deposit to return.
+  // The fixture's two hours for 4 000 ₸: a late cancellation keeps 30% (1 200 ₸), the rest and the deposit go back.
   const threads=async()=>{const s=await f.owner.state();return ownerThreads({...s,user:{id:'owner'}},now());};
-  let t=(await threads()).find(x=>x.tag==='Возврат');assert.ok(t.yours);assert.match(t.line,/Верните гостю депозит 10 000 ₸/);
+  let t=(await threads()).find(x=>x.tag==='Возврат');assert.ok(t.yours);assert.match(t.line,/Верните гостю 2 800 ₸ и депозит 10 000 ₸/);
+  await f.owner.bookingAction(f.booking,{action:'record_refund',confirmed:true,expectedVersion:terms(f).version});
   await f.owner.bookingAction(f.booking,{action:'record_deposit_return',confirmed:true,expectedVersion:terms(f).version});
   assert.equal((await threads()).find(x=>x.tag==='Возврат'),undefined);
  }finally{f.db.close();}
@@ -93,17 +96,16 @@ test('a refund made before the cancellation is not subtracted twice',async()=>{
  }finally{f.db.close();}
 });
 
-test('a late cancellation that leaves nothing to return is settled at once and keeps the agreed minimum hours',async()=>{
+test('a late cancellation keeps the agreed minimum hours',async()=>{
  const f=await fixture();try{
+  f.db.raw.prepare('UPDATE booking_terms SET units=20,amount=40000 WHERE booking_id=?').run(f.booking);
+  f.db.raw.prepare('UPDATE bookings SET amount=40000 WHERE id=?').run(f.booking);
   await paid(f);
   // The owner raises the minimum for new requests; this booking was made with two hours.
   f.db.raw.prepare('UPDATE property_policies SET min_hours=1 WHERE property_id=?').run(f.property);
   assert.equal(terms(f).min_hours,2);
-  const r=await f.guest.bookingAction(f.booking,{action:'cancel'});assert.equal(r.cancel.withheld,4000);assert.equal(r.cancel.refund,0);
-  assert.equal(terms(f).refund_due,0);assert.ok(terms(f).refund_recorded_at);
-  // Returning the deposit afterwards does not reopen the settled refund.
-  await f.owner.bookingAction(f.booking,{action:'record_deposit_return',confirmed:true,expectedVersion:terms(f).version});
-  assert.ok(terms(f).refund_recorded_at);
+  const r=await f.guest.bookingAction(f.booking,{action:'cancel'});assert.equal(r.cancel.withheld,4000);assert.equal(r.cancel.refund,36000);
+  assert.equal(terms(f).refund_due,36000);
  }finally{f.db.close();}
 });
 
