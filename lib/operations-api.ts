@@ -32,6 +32,7 @@ import {serviceBillingState,serviceBillingAction} from './service-dues';
 import {saveReceipt,listReceipts,readReceipt} from './payment-receipts';
 import {rulesState,saveRule,type RuleRole} from './decision-rules';
 import {planState,startOwnerPlan,startCleanerPlan,stopPlan,saveCleanerRules,awayToday,planRequired} from './autopilot-plans';
+import {saveIdentityDoc,removeIdentityDoc,listIdentityDocs,readIdentityDoc} from './identity-docs';
 import {saveRightDoc,removeRightDoc,listRightDocs,readRightDoc} from './property-rights';
 import {restrictAccount,restrictionsList,unlistPlace} from './account-restrictions';
 import {discussionCandidates,openDiscussion,readDiscussion,sendDiscussionMessage,discussionInbox,discussionPhoto,discussionTyping,discussionAvatar} from './process-discussions';
@@ -52,6 +53,8 @@ export async function readOperations(service:RentalService,role:Role,path:string
  if(route==='service-billing/state'){active(role,['owner','cleaner']);return serviceBillingState(service,config);}
  if(route==='decision-rules/state')return rulesState(service.db,service.userId,role as RuleRole);
  if(path[0]==='receipts'&&path[1]&&path[2])return path[1]==='photo'?readReceipt(service,path[2],config,platformAdmin):listReceipts(service,path[1],path[2],platformAdmin);
+ if(route==='identity')return listIdentityDocs(service,service.userId);
+ if(path[0]==='identity'&&path[1]&&path[2]==='photo')return readIdentityDoc(service,path[1],config);
  if(path[0]==='rights'&&path[1])return path[2]==='photo'?readRightDoc(service,path[1],config,platformAdmin):listRightDocs(service,path[1],platformAdmin);
  if(route==='restrictions')return restrictionsList(service,platformAdmin);
  if(path[0]==='stay-photos'&&path[1]){active(role,['guest','owner']);return path[2]==='photo'?readStayPhoto(service,path[1],config):listStayPhotos(service,path[1]);}
@@ -140,6 +143,8 @@ export async function writeOperations(service:RentalService,role:Role,path:strin
  if(route==='phone/request')return requestPhoneCode(service,config);
  if(route==='phone/verify')return verifyPhoneCode(service,body);
  if(route==='reviews/request')return requestParticipantReview(service,role,body,config);
+ if(route==='identity/save')return saveIdentityDoc(service,body,config);
+ if(route==='identity/remove')return removeIdentityDoc(service,body,config);
  if(route==='rights/save')return saveRightDoc(service,role,body,{...config});
  if(route==='rights/remove')return removeRightDoc(service,role,body,config);
  if(route==='restrictions/decide')return restrictAccount(service,body,platformAdmin);

@@ -1,0 +1,88 @@
+import {DomainError,required} from './domain';
+import type {RentalService} from './service';
+import {jpegInput} from './listings';
+import {epoch,uuid,q,one,rows,type Row,type OperationConfig} from './operation-core';
+
+// «Удостоверение личности»: every participant (guest, owner, performer) attaches a photo of the ID card once, in the
+// profile. A person at the platform compares it with the profile; for an owner also with the document of the right to
+// let (lib/property-rights.ts) and the Kaspi recipient. Then the photo is deleted and only the record stays.
+// - A guest sends a booking request only with the ID attached; the check itself runs in the background.
+// - An owner's place and a performer's admission are approved only with the ID attached.
+// The photos are seen only by the participant and the platform administrators.
+export const IDENTITY_LIMIT=2; // the front and the back
+export const IDENTITY_NEED='Приложите фото удостоверения личности в профиле («Профиль» → «Удостоверение личности»). Его видит только администратор сервиса, после проверки фото удаляется.';
+
+export type IdentityState={attached:number;checked:boolean};
+export async function identityOf(db:D1Database,userId:string):Promise<IdentityState>{
+ const r=await one(db,'SELECT COUNT(*) n,MAX(checked_at) checked FROM identity_docs WHERE user_id=?',userId);
+ return {attached:Number(r?.n)||0,checked:!!r?.checked};
+}
+/** Throws the participant's own words when no ID is attached yet. */
+export async function requireIdentity(db:D1Database,userId:string,what=IDENTITY_NEED){
+ if(!(await identityOf(db,userId)).attached)throw new DomainError(what,409);
+}
+
+export async function saveIdentityDoc(s:RentalService,body:Row,config:OperationConfig={}){
+ if(!await s.profile())throw new DomainError('Сначала заполните профиль.',403);
+ if((await identityOf(s.db,s.userId)).checked)throw new DomainError('Личность уже подтверждена. Чтобы заменить удостоверение, напишите в поддержку.',409);
+ const image=jpegInput(body.data,'property'),docId=uuid(),key=config.BUCKET?'identity/'+docId+'.jpg':'';
+ if(key){const binary=atob(image.data.split(',')[1]);await config.BUCKET!.put(key,Uint8Array.from(binary,ch=>ch.charCodeAt(0)),{httpMetadata:{contentType:'image/jpeg'}});}
+ const r=await q(s.db,'INSERT INTO identity_docs(id,user_id,data,object_key,width,height,bytes,created_at) SELECT ?,?,?,?,?,?,?,? WHERE (SELECT COUNT(*) FROM identity_docs WHERE user_id=?)<?',
+  docId,s.userId,key?'':image.data,key,image.width,image.height,image.bytes,epoch(),s.userId,IDENTITY_LIMIT).run();
+ if(!r.meta.changes){if(key)await config.BUCKET!.delete(key).catch(()=>{});throw new DomainError('Приложено максимум фото: '+IDENTITY_LIMIT+' (лицевая и обратная сторона).',409);}
+ return {id:docId,message:'Фото удостоверения приложено. Его увидит только администратор сервиса, после проверки фото удалится.'};
+}
+export async function removeIdentityDoc(s:RentalService,body:Row,config:OperationConfig={}){
+ const d=await one(s.db,'SELECT * FROM identity_docs WHERE id=? AND user_id=?',required(body.id,'Фото',100),s.userId);
+ if(!d)throw new DomainError('Фото не найдено.',404);
+ if(d.checked_at)throw new DomainError('Личность уже подтверждена. Чтобы заменить удостоверение, напишите в поддержку.',409);
+ await q(s.db,'DELETE FROM identity_docs WHERE id=?',d.id).run();
+ if(d.object_key)await config.BUCKET?.delete(d.object_key).catch(()=>{});
+ return {message:'Фото убрано.'};
+}
+export async function listIdentityDocs(s:RentalService,userId:string,platformAdmin=false){
+ const user=platformAdmin?required(userId||s.userId,'Участник',100):s.userId;
+ const docs=await rows(s.db,'SELECT id,width,height,created_at,checked_at FROM identity_docs WHERE user_id=? ORDER BY created_at,id',user);
+ // The administrator compares the name on the ID with the profile and with the Kaspi recipient guests or the owner pay.
+ const names=platformAdmin?await one(s.db,'SELECT u.name,u.roles,d.recipient,d.pending_recipient FROM profiles u LEFT JOIN payout_details d ON d.user_id=u.id WHERE u.id=?',user):null;
+ return {docs,checked:docs.some(d=>d.checked_at),...(names?{names:{profile:names.name||'',roles:JSON.parse(names.roles||'[]'),recipient:names.recipient||'',pendingRecipient:names.pending_recipient||''}}:{})};
+}
+export async function readIdentityDoc(s:RentalService,docId:string,config:OperationConfig={},platformAdmin=false){
+ const d=await one(s.db,'SELECT * FROM identity_docs WHERE id=?',required(docId,'Фото',100));
+ if(!d||(!platformAdmin&&d.user_id!==s.userId))throw new DomainError('Фото недоступно.',404);
+ if(d.checked_at)throw new DomainError('Фото удостоверения удалено после проверки.',410);
+ if(!d.object_key)return {data:d.data};
+ const object=await config.BUCKET?.get(d.object_key);if(!object)throw new DomainError('Хранилище фото сейчас недоступно.',503);
+ const bytes=new Uint8Array(await object.arrayBuffer());let binary='';for(const byte of bytes)binary+=String.fromCharCode(byte);
+ return {data:'data:image/jpeg;base64,'+btoa(binary)};
+}
+// After a person checked the ID the photos are deleted; only the record of the check stays.
+export async function settleIdentity(db:D1Database,userId:string,reviewerId:string,config:OperationConfig={}){
+ const keys=(await rows(db,"SELECT object_key FROM identity_docs WHERE user_id=? AND checked_at IS NULL AND object_key<>''",userId)).map(r=>String(r.object_key));
+ await q(db,"UPDATE identity_docs SET data='',object_key='',checked_at=?,checked_by=? WHERE user_id=? AND checked_at IS NULL",epoch(),reviewerId,userId).run();
+ for(const key of keys)await config.BUCKET?.delete(key).catch(()=>{});
+}
+// The administrator's queue: participants whose ID waits for a look, oldest first.
+export async function identityQueue(db:D1Database){
+ return rows(db,"SELECT d.user_id,u.name,u.roles,COUNT(*) photos,MIN(d.created_at) since FROM identity_docs d JOIN profiles u ON u.id=d.user_id WHERE d.checked_at IS NULL AND NOT EXISTS(SELECT 1 FROM identity_docs c WHERE c.user_id=d.user_id AND c.checked_at IS NOT NULL) GROUP BY d.user_id ORDER BY since LIMIT 100");
+}
+/** The administrator confirms the ID (the photos are deleted) or turns it down (the photos are deleted, the person is told why). */
+export async function decideIdentity(s:RentalService,body:Row,config:OperationConfig={}){
+ const userId=required(body.userId,'Участник',100),state=await identityOf(s.db,userId);
+ if(!state.attached)throw new DomainError('Участник ещё не приложил удостоверение.',409);
+ if(state.checked)return {message:'Личность уже подтверждена.'};
+ const t=epoch(),note=(text:string,key:string)=>q(s.db,'INSERT OR IGNORE INTO notifications(id,user_id,body,dedupe,read,created_at) VALUES (?,?,?,?,0,?)',uuid(),userId,text,key,t);
+ if(body.action==='confirm'){
+  if(body.namesMatch!==true)throw new DomainError('Отметьте, что ФИО и фото в удостоверении совпадают с профилем.');
+  await settleIdentity(s.db,userId,s.userId,config);
+  await s.db.batch([note('Администратор подтвердил вашу личность. Фото удостоверения удалено.','identity:checked:'+userId),q(s.db,'INSERT INTO audit_events VALUES (?,?,?,?,?)',uuid(),s.userId,userId,'identity.checked',t)]);
+  return {message:'Личность подтверждена, фото удалено.'};
+ }
+ if(body.action==='reject'){
+  const reason=required(body.reason,'Причина',500),keys=(await rows(s.db,"SELECT object_key FROM identity_docs WHERE user_id=? AND checked_at IS NULL AND object_key<>''",userId)).map(r=>String(r.object_key));
+  await s.db.batch([q(s.db,'DELETE FROM identity_docs WHERE user_id=? AND checked_at IS NULL',userId),note('Удостоверение не принято: '+reason+' Приложите фото заново в профиле.','identity:rejected:'+userId+':'+t),q(s.db,'INSERT INTO audit_events VALUES (?,?,?,?,?)',uuid(),s.userId,userId,JSON.stringify({action:'identity.rejected',reason}),t)]);
+  for(const key of keys)await config.BUCKET?.delete(key).catch(()=>{});
+  return {message:'Удостоверение не принято, участник получил причину.'};
+ }
+ throw new DomainError('Выберите: подтвердить или отклонить.');
+}

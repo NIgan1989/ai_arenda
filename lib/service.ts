@@ -50,6 +50,7 @@ import {releaseStatements,releaseWindow} from './overdue-cleaning';
 import {lateUntil,LATE_OPENS} from './late-arrival';
 import {reportNotLetIn,BLOCKED_TEXT} from './account-restrictions';
 import {verifiedPlaceSql} from './property-rights';
+import {requireIdentity,identityOf} from './identity-docs';
 import {ruleFor,minutesLabel} from './decision-rules';
 import {ownerWindows,decideCalendarWindow,openWindowFor,openWindowsFor,openWindowsIn,windowAt,windowQuote} from './calendar-windows';
 
@@ -222,7 +223,7 @@ export class RentalService {
     const jobs=await this.all("SELECT start,end,status FROM cleaning_jobs WHERE assigned_to=? AND status IN ('assigned','in_progress','submitted')",userId);
     return {...p,display_status:cleanerStatus(p.work_status,jobs,now()),admission:await cleanerAdmission(this.db,userId),reliability:(await reliabilityFor(this.db,'cleaner',[userId])).get(userId)};
   }
-  async accountState(role?:Role){return {reliability:role?(await reliabilityFor(this.db,role,[this.userId])).get(this.userId):undefined,profile:await this.profile(),workerStatus:(await this.workerCard(this.userId))?.display_status,settings:await this.one('SELECT payment_provider,payment_notifications,version FROM account_preferences WHERE user_id=?',this.userId)||defaultAccountSettings};}
+  async accountState(role?:Role){return {identity:await identityOf(this.db,this.userId),reliability:role?(await reliabilityFor(this.db,role,[this.userId])).get(this.userId):undefined,profile:await this.profile(),workerStatus:(await this.workerCard(this.userId))?.display_status,settings:await this.one('SELECT payment_provider,payment_notifications,version FROM account_preferences WHERE user_id=?',this.userId)||defaultAccountSettings};}
   async saveAccountSettings(body:Row){
     const {provider,notifications,version}=accountSettingsInput(body);if(!await this.profile())throw new DomainError('Сначала заполните профиль.',403);
     if(!await this.one('SELECT user_id FROM account_preferences WHERE user_id=?',this.userId)&&version!==0)throw new DomainError('Обновите настройки аккаунта.',409);
@@ -627,6 +628,8 @@ export class RentalService {
     await this.requireRole('guest');
     const key=required(body.requestKey,'Ключ запроса',100), existing=await this.one('SELECT id FROM bookings WHERE guest_id=? AND request_key=?',this.userId,key);
     if(existing) return {id:existing.id,message:'Эта заявка уже сохранена.'};
+    // A guest sends a request only with a photo of the ID attached (lib/identity-docs.ts); a person checks it later.
+    await requireIdentity(this.db,this.userId,'Перед первой заявкой приложите фото удостоверения личности в профиле. Его видит только администратор сервиса, после проверки фото удаляется.');
     const checked=await this.bookingQuote(body,{ownerReady:options.ownerReady===true}), {start,end,guests,amount}=checked;
     // An owner who has not paid the service for over a week takes no new bookings (lib/service-dues.ts).
     if(await this.one('SELECT 1 x FROM service_billing sb JOIN properties p ON p.owner_id=sb.user_id WHERE p.id=? AND sb.paused_at IS NOT NULL',String(body.propertyId||'')))throw new DomainError('Это жильё временно не принимает новые брони. Выберите другое.',409);

@@ -25,19 +25,20 @@ export async function verifyPhoneCode(service:RentalService,body:Row){
  const [salt,expected]=row.code_hash.split(':'),valid=safeEqual(await hash(salt+':'+code),expected),r=await q(service.db,'UPDATE phone_verifications SET attempts=attempts+1,verified_at=CASE WHEN ?=1 THEN ? ELSE verified_at END WHERE user_id=? AND code_hash=? AND expires_at>? AND attempts<5',valid?1:0,epoch(),service.userId,row.code_hash,epoch()).run();if(!r.meta.changes||!valid)throw new DomainError('Код не подходит.');return {message:'Номер телефона подтверждён.'};
 }
 // A place is approved by a person who looks at the proof of the right to let it (lib/property-rights.ts).
-const HANDED='Жильё и документ о праве переданы администратору: он сверит их вручную, обычно в течение дня.';
+const HANDED='Жильё, документ о праве и удостоверение переданы администратору: он сверит их вручную, обычно в течение дня.';
+const HANDED_CLEANER='Анкета и удостоверение переданы администратору: он сверит их вручную, обычно в течение дня.';
 export async function requestParticipantReview(service:RentalService,role:Role,body:Row,config:OperationConfig&{PLATFORM_ADMIN_IDS?:string}={}){
  if(role==='guest')throw new DomainError('В этой форме проверяются владельцы и исполнители.',403);
  const reference=required(body.reference,'Основание проверки',500),propertyId=role==='owner'?required(body.propertyId,'Жильё',100):null;
  if(propertyId&&!await service.one('SELECT id FROM properties WHERE id=? AND owner_id=?',propertyId,service.userId))throw new DomainError('Жильё недоступно.',403);
  if(propertyId)await placeQuietly(service,propertyId,config);
  const waiting=await one(service.db,"SELECT id FROM participant_reviews WHERE user_id=? AND role=? AND COALESCE(property_id,'')=COALESCE(?,'') AND status='pending' AND (role<>'owner' OR property_revision=COALESCE((SELECT revision FROM review_property_bindings WHERE property_id=participant_reviews.property_id),0))",service.userId,role,propertyId);
- if(waiting){if(await autoReview(service.db,waiting.id,config)==='approve')return role==='owner'?{message:HANDED,verdict:'escalate'}:{message:'ИИ-администратор проверил: всё в порядке.',verdict:'approve'};return {message:'Заявка уже ожидает проверки.'};}
+ if(waiting){if(await autoReview(service.db,waiting.id,config)==='approve')return {message:role==='owner'?HANDED:HANDED_CLEANER,verdict:'escalate'};return {message:'Заявка уже ожидает проверки.'};}
  const reviewId=uuid(),at=epoch();await q(service.db,'INSERT INTO participant_reviews(id,user_id,role,property_id,reference,created_at) VALUES (?,?,?,?,?,?)',reviewId,service.userId,role,propertyId,reference,at).run();
  // The AI administrator checks the request at once: it approves when every rule passes, tells the participant
  // what to add, or hands the request to the platform administrators with the reasons.
  const verdict=await autoReview(service.db,reviewId,config);
- if(verdict==='approve')return role==='owner'?{message:HANDED,verdict:'escalate'}:{message:'ИИ-администратор проверил анкету: всё в порядке.',verdict};
+ if(verdict==='approve')return {message:role==='owner'?HANDED:HANDED_CLEANER,verdict:'escalate'};
  if(verdict==='fix'){const checks=JSON.parse((await one(service.db,'SELECT ai_checks FROM participant_reviews WHERE id=?',reviewId))?.ai_checks||'[]') as Row[];return {message:'Чтобы пройти проверку, осталось: '+checks.filter(c=>c.state==='fix').map(c=>c.note.charAt(0).toLowerCase()+c.note.slice(1)).join('; ')+'.',verdict};}
  return {message:'Заявка на проверку сохранена. Документы и персональные номера в это поле добавлять не нужно.'};
 }
@@ -47,6 +48,7 @@ export async function decideParticipantReview(service:RentalService,body:Row,pla
  const id=required(body.id,'Проверка',100),method=required(body.method,'Способ фактической проверки',150),notes=required(body.notes,'Результат проверки',1000),validUntil=body.validUntil?Math.floor(Date.parse(body.validUntil)/1000):null;if(validUntil!==null&&(!Number.isFinite(validUntil)||validUntil<=epoch()))throw new DomainError('Укажите будущий срок действия проверки.');
  const review=await one(service.db,'SELECT r.*,COALESCE(b.revision,0) current_revision,p.owner_id current_owner FROM participant_reviews r LEFT JOIN review_property_bindings b ON b.property_id=r.property_id LEFT JOIN properties p ON p.id=r.property_id WHERE r.id=?',id);
  if(body.status==='approved'&&review?.role==='owner'&&(review.property_revision!==review.current_revision||review.user_id!==review.current_owner))throw new DomainError('Сведения объекта изменились после заявки. Нужна новая проверка текущего адреса.',409);
+if(body.status==='approved'&&review&&['owner','cleaner'].includes(review.role)&&!await one(service.db,'SELECT 1 x FROM identity_docs WHERE user_id=?',review.user_id))throw new DomainError('Участник ещё не приложил фото удостоверения личности. Одобрить можно после проверки удостоверения.',409);
  if(body.status==='approved'&&review?.role==='owner'&&review.property_id&&!await one(service.db,'SELECT 1 x FROM property_right_docs WHERE property_id=?',review.property_id))throw new DomainError('Владелец ещё не приложил документ о праве собственности или нотариальное согласие на субаренду. Одобрить жильё можно после проверки документа.',409);
  const event=uuid(),at=epoch(),result=await service.db.batch([
   q(service.db,"UPDATE participant_reviews SET status=?,method=?,reviewer_id=?,notes=?,reviewed_at=?,valid_until=?,version=version+1 WHERE id=? AND status='pending' AND version=?",body.status,method,service.userId,notes,at,validUntil,id,number(body.expectedVersion,'Версия',1,10000000)),

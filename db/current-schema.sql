@@ -83,6 +83,7 @@
 -- migration 0079_account_protection.sql sha256:8ee6b6dd2a862e3a843c7c0c82c19a8e3401f25cb30b766bbd55b6874bce17c7
 -- migration 0080_fraud_guards.sql sha256:fa0e03c8a49e0dcf56905173f286c74dc81f59b81c2fcc64d8ba4c3513c9146d
 -- migration 0081_card_charges.sql sha256:f15fe6140b37c7191a0ce7598dfedd7170f8646905bf534ef61a9a131669c666
+-- migration 0082_identity_docs.sql sha256:d8c474857ff501c173d91c4c569a121dab137592b83042efa91841625eeeadf2
 
 -- table access_receipts
 CREATE TABLE access_receipts (id TEXT PRIMARY KEY,property_id TEXT NOT NULL,entity_kind TEXT NOT NULL,entity_id TEXT NOT NULL,user_id TEXT NOT NULL,created_at INTEGER NOT NULL,expires_at INTEGER NOT NULL);
@@ -731,6 +732,20 @@ CREATE TABLE guest_favorites (
  property_id TEXT NOT NULL REFERENCES properties(id),
  created_at INTEGER NOT NULL,
  PRIMARY KEY(guest_id,property_id)
+);
+
+-- table identity_docs
+CREATE TABLE identity_docs (
+ id TEXT PRIMARY KEY,
+ user_id TEXT NOT NULL REFERENCES profiles(id),
+ data TEXT NOT NULL DEFAULT '',
+ object_key TEXT NOT NULL DEFAULT '',
+ width INTEGER NOT NULL,
+ height INTEGER NOT NULL,
+ bytes INTEGER NOT NULL,
+ created_at INTEGER NOT NULL,
+ checked_at INTEGER,
+ checked_by TEXT
 );
 
 -- table job_evidence
@@ -1454,6 +1469,9 @@ CREATE INDEX finance_property ON finance_entries(owner_id,property_id,created_at
 -- index guest_favorites_property
 CREATE INDEX guest_favorites_property ON guest_favorites(property_id);
 
+-- index identity_docs_user
+CREATE INDEX identity_docs_user ON identity_docs(user_id,created_at);
+
 -- index job_applicant
 CREATE UNIQUE INDEX `job_applicant` ON `applications` (`job_id`,`user_id`);
 
@@ -1862,6 +1880,9 @@ CREATE TRIGGER account_erased_finance_entries_update BEFORE UPDATE ON finance_en
 
 -- trigger account_erased_guest_favorites_insert
 CREATE TRIGGER account_erased_guest_favorites_insert BEFORE INSERT ON guest_favorites WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.guest_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END;
+
+-- trigger account_erased_identity_docs_insert
+CREATE TRIGGER account_erased_identity_docs_insert BEFORE INSERT ON identity_docs WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.user_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END;
 
 -- trigger account_erased_job_evidence_insert
 CREATE TRIGGER account_erased_job_evidence_insert BEFORE INSERT ON job_evidence WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.user_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END;

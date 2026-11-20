@@ -14,12 +14,15 @@ type Kind=Doc['kind'];
 
 export function RightDocs({propertyId,approved}:{propertyId:string;approved:boolean}){
  const [docs,setDocs]=useState<Doc[]>([]),[kind,setKind]=useState<Kind>('owner'),[need,setNeed]=useState<Record<string,string>>({}),[busy,setBusy]=useState(false),[said,setSaid]=useState<{text:string;error:boolean}|null>(null),[open,setOpen]=useState('');
- const load=useCallback(async()=>{
+ const fetchDocs=useCallback(async()=>{
   const v=await request('/api/operations/rights/'+propertyId,undefined,undefined,undefined,'owner');
-  const found:Doc[]=await Promise.all((v?.docs||[]).map(async(d:Doc)=>({...d,uri:(await request('/api/operations/rights/'+d.id+'/photo',undefined,undefined,undefined,'owner').catch(()=>null))?.data||''})));
-  setNeed(v?.need||{});setDocs(found);if(found[0])setKind(found[0].kind);
+  // A document checked by the administrator has no photo any more: only its kind is shown.
+  const found:Doc[]=await Promise.all((v?.docs||[]).map(async(d:Doc&{checked_at?:number})=>({...d,uri:d.checked_at?'':(await request('/api/operations/rights/'+d.id+'/photo',undefined,undefined,undefined,'owner').catch(()=>null))?.data||''})));
+  return {need:(v?.need||{}) as Record<string,string>,found};
  },[propertyId]);
- useEffect(()=>{load().catch(()=>{});},[load]);
+ const apply=(v:{need:Record<string,string>;found:Doc[]})=>{setNeed(v.need);setDocs(v.found);if(v.found[0])setKind(v.found[0].kind);};
+ const load=async()=>apply(await fetchDocs());
+ useEffect(()=>{let live=true;fetchDocs().then(v=>{if(live)apply(v);}).catch(()=>{});return()=>{live=false;};},[fetchDocs]);
  async function add(){setBusy(true);setSaid(null);try{
   const images=await pickImages(false,1);
   for(const image of images){const v=await request('/api/operations/rights/save',{propertyId,kind,data:await jpegData(image)},undefined,undefined,'owner');setSaid({text:v.message,error:false});}
