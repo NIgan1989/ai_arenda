@@ -49,10 +49,7 @@ export function AdminRevenue({data,busy,save}:{data:Row;busy:boolean;save:Save})
    <Stat Icon={Bot} label="Расходы на ИИ" value={'$'+(data.aiCostUsd30||0)} note={`${data.aiRequests30||0} запросов`}/>
   </div>
 
-  <section className="admin-surface revenue-test-pay" aria-label="Тестовая оплата">
-   <div><strong>Тестовая оплата · {data.testPayments?'включена':'выключена'}</strong><small>{data.testPayments?'Гости оплачивают бронь и депозит в приложении без списания денег. Так можно пройти весь путь до заселения, пока не подключён банк.':'Гости платят по договорённости с владельцем, оплату отмечает владелец.'}</small></div>
-   <Button variant="outline" disabled={busy} onClick={()=>save('billing/test-payments',{enabled:!data.testPayments})}>{data.testPayments?'Выключить':'Включить'}</Button>
-  </section>
+  <CardCharges data={data.charges||{}} busy={busy} save={save}/>
 
   <MonthlyChart rows={data.monthly||[]} now={data.serverTime} phase={phase}/>
 
@@ -69,6 +66,30 @@ export function AdminRevenue({data,busy,save}:{data:Row;busy:boolean;save:Save})
 
   <Sheet open={termsOpen} onOpenChange={setTermsOpen}><SheetContent side="right" className="revenue-sheet"><SheetHeader><SheetTitle>Условия оплаты</SheetTitle><SheetDescription>Комиссия с владельца за каждую бронь, подтверждённую через приложение.</SheetDescription></SheetHeader>{termsOpen&&<BillingTerms settings={s} now={data.serverTime} phase={phase} busy={busy} save={saveTerms}/>}</SheetContent></Sheet>
  </div>;
+}
+
+// Card charges (lib/service-dues.ts): the stop switch, the limits of the Monday round, and the attempts that need a person.
+const chargeStatus:Row={unknown:'Банк не ответил',started:'Идёт',held:'Ждёт подтверждения участника',failed:'Отклонено',succeeded:'Списано'};
+function CardCharges({data,busy,save}:{data:Row;busy:boolean;save:Save}){
+ const [limitsOpen,setLimitsOpen]=useState(false),stopped=!!data.stoppedAt,open:Row[]=data.open||[];
+ async function resolve(c:Row,outcome:'succeeded'|'failed'){await save('billing/charges',{action:'resolve',id:c.id,outcome,confirmed:true});}
+ async function limits(e:FormEvent<HTMLFormElement>){e.preventDefault();const f=new FormData(e.currentTarget);if(await save('billing/charges',{action:'limits',confirmAbove:Number(f.get('confirm')),dailyLimit:Number(f.get('daily'))}))setLimitsOpen(false);}
+ return <section className={'admin-surface revenue-charges'+(stopped?' is-stopped':'')} aria-label="Списания с карт">
+  <div className="revenue-charges-head">
+   <div><strong>Списания с карт · {stopped?'остановлены':'работают'}</strong><small>{stopped?`С ${day(data.stoppedAt)} ничего не списывается, долги ждут. Паузы за неоплату тоже не наступают.`:`Сегодня ушло в банк ${money(data.today||0)} из ${money(data.dailyLimit||0)} в день. Больше ${money(data.confirmAbove||0)} за неделю участник подтверждает сам.`}</small></div>
+   <div className="revenue-charges-actions">
+    <Button variant="outline" disabled={busy} onClick={()=>setLimitsOpen(v=>!v)}>Пределы</Button>
+    <Button variant={stopped?'default':'destructive'} disabled={busy} onClick={()=>save('billing/charges',{action:stopped?'resume':'stop'})}>{stopped?'Включить списания':'Остановить все списания'}</Button>
+   </div>
+  </div>
+  {limitsOpen&&<form className="revenue-charges-limits" onSubmit={limits}>
+   <label>Подтверждение участника, если за неделю больше, ₸<Input name="confirm" type="number" min={1000} defaultValue={data.confirmAbove}/></label>
+   <label>Предел всех списаний за день, ₸<Input name="daily" type="number" min={10000} defaultValue={data.dailyLimit}/></label>
+   <Button type="submit" disabled={busy}>Сохранить</Button>
+  </form>}
+  {open.length>0&&<ul className="revenue-list">{open.map(c=><li key={c.id}><div className="revenue-row"><span className="revenue-icon"><Wallet size={18}/></span><span><strong>{c.name||'Участник'} · {chargeStatus[c.status]||c.status}</strong><small>{day(c.created_at)} · операция {String(c.id).slice(0,8)} · карта {c.card_mask}{c.test?' · тест':''}{c.error&&c.status==='failed'?' · '+c.error:''}</small></span><b>{money(c.amount)}</b></div>
+   {(c.status==='unknown'||c.status==='started')&&<div className="revenue-charges-resolve"><small>Проверьте операцию в банке по номеру и отметьте итог. Повторно сервис не спишет.</small><Button variant="outline" disabled={busy} onClick={()=>void resolve(c,'succeeded')}>Банк списал</Button><Button variant="outline" disabled={busy} onClick={()=>void resolve(c,'failed')}>Не списал</Button></div>}</li>)}</ul>}
+ </section>;
 }
 
 function Stat({Icon,label,value,note}:{Icon:typeof Wallet;label:string;value:string;note:string}){return <section className="revenue-stat"><span><Icon size={18}/></span><div><small>{label}</small><strong>{value}</strong><em>{note}</em></div></section>;}

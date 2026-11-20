@@ -81,6 +81,7 @@
 -- migration 0077_reliability_objections.sql sha256:fc4ed81444c7a9bb36a484f0909f4d9bbc3cabf4be35e2a38aaeb8f1b2d85659
 -- migration 0078_reliability_objection_one_open.sql sha256:186709cda819f915ea5c691804323e75e670e0b8762f15c841b2328c9638ed32
 -- migration 0079_account_protection.sql sha256:8ee6b6dd2a862e3a843c7c0c82c19a8e3401f25cb30b766bbd55b6874bce17c7
+-- migration 0080_card_charges.sql sha256:f15fe6140b37c7191a0ce7598dfedd7170f8646905bf534ef61a9a131669c666
 
 -- table access_receipts
 CREATE TABLE access_receipts (id TEXT PRIMARY KEY,property_id TEXT NOT NULL,entity_kind TEXT NOT NULL,entity_id TEXT NOT NULL,user_id TEXT NOT NULL,created_at INTEGER NOT NULL,expires_at INTEGER NOT NULL);
@@ -426,6 +427,23 @@ CREATE TABLE calendar_windows (
  created_at INTEGER NOT NULL,
  decided_at INTEGER,
  UNIQUE(property_id,start)
+);
+
+-- table card_charges
+CREATE TABLE card_charges (
+ id TEXT PRIMARY KEY,
+ user_id TEXT NOT NULL REFERENCES profiles(id),
+ request_key TEXT NOT NULL UNIQUE,
+ amount INTEGER NOT NULL CHECK(amount>0),
+ status TEXT NOT NULL CHECK(status IN ('started','succeeded','failed','unknown','held')),
+ reason TEXT NOT NULL CHECK(reason IN ('week','now')),
+ card_mask TEXT NOT NULL DEFAULT '',
+ test INTEGER NOT NULL DEFAULT 0 CHECK(test IN (0,1)),
+ bank_ref TEXT NOT NULL DEFAULT '',
+ error TEXT NOT NULL DEFAULT '',
+ resolved_by TEXT,
+ created_at INTEGER NOT NULL,
+ finished_at INTEGER
 );
 
 -- table cleaner_autopilot
@@ -955,7 +973,7 @@ CREATE TABLE platform_billing (
  version INTEGER NOT NULL DEFAULT 1,
  updated_by TEXT,
  updated_at INTEGER NOT NULL DEFAULT 0
-, ai_rate_bp INTEGER NOT NULL DEFAULT 1000 CHECK(ai_rate_bp BETWEEN 0 AND 3000), cleaning_rate_bp INTEGER NOT NULL DEFAULT 1000 CHECK(cleaning_rate_bp BETWEEN 0 AND 3000), pair_rate_bp INTEGER NOT NULL DEFAULT 500 CHECK(pair_rate_bp BETWEEN 0 AND 3000), pair_month_cap INTEGER NOT NULL DEFAULT 2000 CHECK(pair_month_cap>=0), plan_charge INTEGER NOT NULL DEFAULT 0 CHECK(plan_charge IN (0,1)), plan_owner_price INTEGER NOT NULL DEFAULT 4900 CHECK(plan_owner_price BETWEEN 0 AND 1000000), plan_cleaner_price INTEGER NOT NULL DEFAULT 1900 CHECK(plan_cleaner_price BETWEEN 0 AND 1000000), plan_trial_days INTEGER NOT NULL DEFAULT 14 CHECK(plan_trial_days BETWEEN 0 AND 90), plan_grace_days INTEGER NOT NULL DEFAULT 3 CHECK(plan_grace_days BETWEEN 0 AND 30), test_payments INTEGER NOT NULL DEFAULT 1 CHECK(test_payments IN (0,1)));
+, ai_rate_bp INTEGER NOT NULL DEFAULT 1000 CHECK(ai_rate_bp BETWEEN 0 AND 3000), cleaning_rate_bp INTEGER NOT NULL DEFAULT 1000 CHECK(cleaning_rate_bp BETWEEN 0 AND 3000), pair_rate_bp INTEGER NOT NULL DEFAULT 500 CHECK(pair_rate_bp BETWEEN 0 AND 3000), pair_month_cap INTEGER NOT NULL DEFAULT 2000 CHECK(pair_month_cap>=0), plan_charge INTEGER NOT NULL DEFAULT 0 CHECK(plan_charge IN (0,1)), plan_owner_price INTEGER NOT NULL DEFAULT 4900 CHECK(plan_owner_price BETWEEN 0 AND 1000000), plan_cleaner_price INTEGER NOT NULL DEFAULT 1900 CHECK(plan_cleaner_price BETWEEN 0 AND 1000000), plan_trial_days INTEGER NOT NULL DEFAULT 14 CHECK(plan_trial_days BETWEEN 0 AND 90), plan_grace_days INTEGER NOT NULL DEFAULT 3 CHECK(plan_grace_days BETWEEN 0 AND 30), test_payments INTEGER NOT NULL DEFAULT 1 CHECK(test_payments IN (0,1)), charges_stopped_at INTEGER, charges_stopped_by TEXT, charge_confirm_above INTEGER NOT NULL DEFAULT 100000 CHECK(charge_confirm_above>0), charge_daily_limit INTEGER NOT NULL DEFAULT 5000000 CHECK(charge_daily_limit>0));
 
 -- table platform_commissions
 CREATE TABLE platform_commissions (
@@ -1340,6 +1358,15 @@ CREATE INDEX calendar_windows_open ON calendar_windows(property_id,status,start,
 -- index calendar_windows_owner
 CREATE INDEX calendar_windows_owner ON calendar_windows(owner_id,status,start);
 
+-- index card_charges_one_open
+CREATE UNIQUE INDEX card_charges_one_open ON card_charges(user_id) WHERE status IN ('started','unknown');
+
+-- index card_charges_status
+CREATE INDEX card_charges_status ON card_charges(status,created_at);
+
+-- index card_charges_user
+CREATE INDEX card_charges_user ON card_charges(user_id,created_at);
+
 -- index cleaning_commissions_owner
 CREATE INDEX cleaning_commissions_owner ON cleaning_commissions(owner_id,mode);
 
@@ -1694,6 +1721,12 @@ CREATE TRIGGER account_erased_calendar_windows_insert BEFORE INSERT ON calendar_
 
 -- trigger account_erased_calendar_windows_update
 CREATE TRIGGER account_erased_calendar_windows_update BEFORE UPDATE ON calendar_windows WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.owner_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END;
+
+-- trigger account_erased_card_charges_insert
+CREATE TRIGGER account_erased_card_charges_insert BEFORE INSERT ON card_charges WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.user_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END;
+
+-- trigger account_erased_card_charges_update
+CREATE TRIGGER account_erased_card_charges_update BEFORE UPDATE ON card_charges WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.user_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END;
 
 -- trigger account_erased_cleaner_autopilot_insert
 CREATE TRIGGER account_erased_cleaner_autopilot_insert BEFORE INSERT ON cleaner_autopilot WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.user_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END;

@@ -8,7 +8,7 @@ import {T} from './tokens';
 // «Оплата услуг» in the settings of the owner and the performer (lib/service-dues.ts). No balance and no top-ups:
 // the screen shows what the service accrued, the linked card and when it is charged; the list below is the account.
 type Item={kind:'commission'|'cleaning'|'autopilot'|'payment';at:number;amount:number;title:string};
-type State={due:number;card:{mask:string;test:boolean}|null;nextChargeAt:number;payBy:number|null;paused:boolean;test:boolean;payDays:number;items:Item[]};
+type State={due:number;stopped?:boolean;checking?:number;confirm?:number;card:{mask:string;test:boolean}|null;nextChargeAt:number;payBy:number|null;paused:boolean;test:boolean;payDays:number;items:Item[]};
 const R=T.radius;
 const money=(n:number)=>new Intl.NumberFormat('ru-RU').format(n||0).replace(/\s/g,' ')+' ₸';
 const day=(t:number)=>new Date(t*1000).toLocaleDateString('ru-RU',{timeZone:'Asia/Qyzylorda',day:'numeric',month:'long'});
@@ -24,12 +24,14 @@ export function ServiceBilling({role}:{role:'owner'|'cleaner'}){
  }
  if(!state)return error?<Text accessibilityRole="alert" style={s.error}>{error}</Text>:<ThinkingLine style={s.meta} text="Загружаю…"/>;
  const button=(title:string,onPress:()=>void,secondary=false)=><Pressable accessibilityRole="button" disabled={busy} onPress={onPress} style={({pressed})=>[s.button,secondary&&s.secondary,(busy||pressed)&&s.disabled]}><Text style={[s.buttonText,secondary&&s.secondaryText]}>{title}</Text></Pressable>;
- const when=state.paused?'Пауза: новые брони и «Автопилот» остановлены до оплаты.':state.payBy?'Привяжите карту до '+day(state.payBy)+', иначе новые брони и «Автопилот» встанут на паузу.':state.due>0?(state.card?'Спишется с карты '+day(state.nextChargeAt)+'.':'Привяжите карту: списание раз в неделю, по понедельникам.'):'Сейчас платить нечего.';
+ // A charge is never repeated while the bank's answer is checked; a large week waits for the person's own «Оплатить сейчас».
+ const hold=state.stopped?'Списания временно остановлены сервисом. Ничего не спишется, пока их не включат.':state.checking?'Уточняем в банке прошлое списание '+money(state.checking)+'. Повторно не спишем, итог пришлём.':state.confirm?'Сумма крупная, поэтому сама не спишется. Подтвердите её кнопкой ниже'+(state.payBy?' до '+day(state.payBy):'')+'.':'';
+ const when=hold||(state.paused?'Пауза: новые брони и «Автопилот» остановлены до оплаты.':state.payBy?(state.card?'Оплатите до ':'Привяжите карту до ')+day(state.payBy)+', иначе новые брони и «Автопилот» встанут на паузу.':state.due>0?(state.card?'Спишется с карты '+day(state.nextChargeAt)+'.':'Привяжите карту: списание раз в неделю, по понедельникам.'):'Сейчас платить нечего.');
  return <View style={{gap:16}}>
-  <View accessible accessibilityLabel={'К оплате '+money(state.due)+'. '+when} style={[b.card,(state.paused||!!state.payBy)&&b.cardWarn]}>
+  <View accessible accessibilityLabel={'К оплате '+money(state.due)+'. '+when} style={[b.card,(state.paused||!!state.payBy||!!hold)&&b.cardWarn]}>
    <Text style={b.label}>К оплате за услуги сервиса</Text>
    <Text style={b.sum}>{money(state.due)}</Text>
-   <Text style={[b.meta,(state.paused||!!state.payBy)&&{color:C.warning}]}>{when}</Text>
+   <Text style={[b.meta,(state.paused||!!state.payBy||!!hold)&&{color:C.warning}]}>{when}</Text>
   </View>
   <View style={b.row}>
    <View style={{flex:1,minWidth:0}}><Text style={b.title}>{state.card?'Карта '+state.card.mask:'Карта не привязана'}</Text><Text style={b.meta}>{state.card?(state.card.test?'Тестовая: деньги не списываются':'Списания раз в неделю'):'Привяжите один раз, дальше сервис списывает сам'}</Text></View>
@@ -37,7 +39,7 @@ export function ServiceBilling({role}:{role:'owner'|'cleaner'}){
   {!!error&&<Text accessibilityRole="alert" style={s.error}>{error}</Text>}{!!message&&<Text accessibilityLiveRegion="polite" style={b.done}>{message}</Text>}
   {!state.card&&<Text style={s.meta}>Привязывая карту, вы соглашаетесь, что сервис раз в неделю, по понедельникам, списывает с неё начисленную плату за свои услуги. Сумму и список начислений видно здесь заранее. Отвязать карту можно в любой момент, когда долга нет.</Text>}
   {!state.card&&button(state.test?'Привязать тестовую карту':'Привязать карту',()=>void act('link'))}
-  {!!state.card&&state.due>0&&button('Оплатить сейчас '+money(state.due),()=>void act('pay'))}
+  {!!state.card&&state.due>0&&!state.stopped&&!state.checking&&button('Оплатить сейчас '+money(state.due),()=>void act('pay'))}
   {!!state.card&&state.due<=0&&button('Отвязать карту',()=>void act('unlink'),true)}
   <Text style={s.meta}>{role==='owner'?'Сервис берёт плату только за свои услуги: комиссию за бронь, подбор исполнителя и «Автопилот». Оплату от гостей получаете вы сами.':'Сервис берёт плату только за «Автопилот». Оплату за уборки вы получаете напрямую от заказчиков.'}{state.test?' Пока банк не подключён, карта и списания тестовые.':''}</Text>
   <View style={{gap:8}}>
