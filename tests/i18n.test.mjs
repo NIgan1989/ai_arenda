@@ -109,3 +109,8 @@ test('the shared lines of the owner are whole sentences in each language', async
   assert.deepEqual(lines().slice(6,7).concat(lines().slice(8)),['Waiting for arrival','answer by tomorrow T','Every 2 weeks']);
   setLang('ru');
 });
+
+test('the documents the server asks an owner for have a line in each language',async()=>{
+  const {WORDS}=await load('i18n-words'),{RIGHT_DOCS}=await load('property-rights');
+  for(const text of Object.values(RIGHT_DOCS))assert.ok(WORDS[text],text);
+});

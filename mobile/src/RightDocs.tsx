@@ -12,6 +12,8 @@ import {T} from './tokens';
 // The photos are seen only by the owner and the platform administrators.
 type Doc={id:string;kind:'owner'|'sublease';uri:string};
 type Kind=Doc['kind'];
+// What the server asks for (lib/property-rights.ts), translated when shown.
+const NEED=/* i18n */['документ о праве собственности: выписка из eGov, договор купли-продажи или свидетельство','договор аренды и нотариально заверенное согласие собственника на сдачу в субаренду'];void NEED;
 
 export function RightDocs({propertyId,approved}:{propertyId:string;approved:boolean}){
  const [docs,setDocs]=useState<Doc[]>([]),[kind,setKind]=useState<Kind>('owner'),[need,setNeed]=useState<Record<string,string>>({}),[busy,setBusy]=useState(false),[said,setSaid]=useState<{text:string;error:boolean}|null>(null),[open,setOpen]=useState('');
@@ -34,7 +36,7 @@ export function RightDocs({propertyId,approved}:{propertyId:string;approved:bool
   <Text accessibilityRole="header" style={r.title}>{t('Право сдавать жильё')}</Text>
   <Text style={h.note}>{approved?t('Документ проверен администратором. Чтобы заменить его, напишите в поддержку.'):docs.length?t('Документ приложен. Администратор сверит его вручную, обычно в течение дня.'):t('Гости увидят жильё после того, как администратор проверит документ.')}</Text>
   {!approved&&<Chips name={t('Кто вы')} value={kind} options={[['owner',t('Я собственник')],['sublease',t('Сдаю в субаренду')]]} onChange={setKind} disabled={busy}/>}
-  {!approved&&!!need[kind]&&<Text style={h.note}>{t('Нужно фото: {v}.',{v:need[kind]})}</Text>}
+  {!approved&&!!need[kind]&&<Text style={h.note}>{t('Нужно фото: {v}.',{v:t(need[kind])})}</Text>}
   {switching&&<Text style={r.warn}>{t('Новое фото заменит уже приложенные документы.')}</Text>}
   {!!docs.length&&<View style={r.row}>{docs.map(d=><View key={d.id} style={{gap:4}}>
    <Pressable accessibilityRole="imagebutton" accessibilityLabel={open===d.id?t('Свернуть документ'):t('Открыть документ')} onPress={()=>setOpen(open===d.id?'':d.id)}>{d.uri?<Image source={{uri:d.uri}} style={r.thumb} alt={t('Документ о праве')}/>:<View style={[r.thumb,{backgroundColor:C.surfaceAlt}]}/>}</Pressable>
