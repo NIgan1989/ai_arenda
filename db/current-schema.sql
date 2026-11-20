@@ -81,6 +81,7 @@
 -- migration 0077_reliability_objections.sql sha256:fc4ed81444c7a9bb36a484f0909f4d9bbc3cabf4be35e2a38aaeb8f1b2d85659
 -- migration 0078_reliability_objection_one_open.sql sha256:186709cda819f915ea5c691804323e75e670e0b8762f15c841b2328c9638ed32
 -- migration 0079_account_protection.sql sha256:8ee6b6dd2a862e3a843c7c0c82c19a8e3401f25cb30b766bbd55b6874bce17c7
+-- migration 0080_fraud_guards.sql sha256:d1328a42a14e09525f7f779c08e1ac1bc5530348c419b73121a1dfba65de48fa
 
 -- table access_receipts
 CREATE TABLE access_receipts (id TEXT PRIMARY KEY,property_id TEXT NOT NULL,entity_kind TEXT NOT NULL,entity_id TEXT NOT NULL,user_id TEXT NOT NULL,created_at INTEGER NOT NULL,expires_at INTEGER NOT NULL);
@@ -114,6 +115,16 @@ CREATE TABLE account_preferences (
  payment_notifications INTEGER NOT NULL DEFAULT 1 CHECK(payment_notifications IN (0,1)),
  version INTEGER NOT NULL DEFAULT 1,
  updated_at INTEGER NOT NULL
+);
+
+-- table account_restrictions
+CREATE TABLE account_restrictions (
+ user_id TEXT PRIMARY KEY REFERENCES profiles(id),
+ kind TEXT NOT NULL CHECK(kind IN ('hold','blocked')),
+ reason TEXT NOT NULL,
+ booking_id TEXT REFERENCES bookings(id),
+ created_by TEXT NOT NULL,
+ created_at INTEGER NOT NULL
 );
 
 -- table admin_factor
@@ -380,7 +391,7 @@ CREATE TABLE booking_terms (
  deposit_status TEXT NOT NULL DEFAULT 'not_required' CHECK(deposit_status IN ('not_required','pending','owner_verified')),
  house_rules TEXT NOT NULL DEFAULT '', policy_version INTEGER NOT NULL DEFAULT 0,
  actual_checkin INTEGER, actual_checkout INTEGER, checkout_reported_at INTEGER
-, version INTEGER NOT NULL DEFAULT 1, discount_percent INTEGER NOT NULL DEFAULT 0, paid_amount INTEGER NOT NULL DEFAULT 0, original_end INTEGER NOT NULL DEFAULT 0, deposit_returned_at INTEGER, refund_recorded_at INTEGER, checkin_reported_at INTEGER, arrival_eta INTEGER, late_count INTEGER NOT NULL DEFAULT 0, refund_due INTEGER, min_hours INTEGER, deposit_kept INTEGER NOT NULL DEFAULT 0, deposit_kept_note TEXT NOT NULL DEFAULT '', prepared_at INTEGER, occasion text NOT NULL DEFAULT '', `early_checkin_at` integer, payment_reported_at INTEGER, deposit_reported_at INTEGER);
+, version INTEGER NOT NULL DEFAULT 1, discount_percent INTEGER NOT NULL DEFAULT 0, paid_amount INTEGER NOT NULL DEFAULT 0, original_end INTEGER NOT NULL DEFAULT 0, deposit_returned_at INTEGER, refund_recorded_at INTEGER, checkin_reported_at INTEGER, arrival_eta INTEGER, late_count INTEGER NOT NULL DEFAULT 0, refund_due INTEGER, min_hours INTEGER, deposit_kept INTEGER NOT NULL DEFAULT 0, deposit_kept_note TEXT NOT NULL DEFAULT '', prepared_at INTEGER, occasion text NOT NULL DEFAULT '', `early_checkin_at` integer, payment_reported_at INTEGER, deposit_reported_at INTEGER, prepay_percent INTEGER CHECK(prepay_percent IS NULL OR prepay_percent IN (0,10,20,30,50,100)));
 
 -- table bookings
 CREATE TABLE `bookings` (
@@ -1097,7 +1108,21 @@ CREATE TABLE property_policies (
  version INTEGER NOT NULL DEFAULT 1,
  revision TEXT NOT NULL,
  updated_at INTEGER NOT NULL
-, max_discount_percent INTEGER NOT NULL DEFAULT 0 CHECK(max_discount_percent BETWEEN 0 AND 50), minimum_rate INTEGER NOT NULL DEFAULT 0 CHECK(minimum_rate>=0), repair_budget INTEGER NOT NULL DEFAULT 0 CHECK(repair_budget>=0), auto_extension INTEGER NOT NULL DEFAULT 0 CHECK(auto_extension IN (0,1)), max_extension_hours INTEGER NOT NULL DEFAULT 0 CHECK(max_extension_hours BETWEEN 0 AND 168), mandate_until INTEGER NOT NULL DEFAULT 0, escalation_contact TEXT NOT NULL DEFAULT '', auto_assign INTEGER NOT NULL DEFAULT 0 CHECK(auto_assign IN (0,1)), included_guests INTEGER NOT NULL DEFAULT 0 CHECK(included_guests BETWEEN 0 AND 50), extra_guest_price INTEGER NOT NULL DEFAULT 0 CHECK(extra_guest_price>=0), prep_minutes INTEGER NOT NULL DEFAULT 0 CHECK(prep_minutes BETWEEN 0 AND 720));
+, max_discount_percent INTEGER NOT NULL DEFAULT 0 CHECK(max_discount_percent BETWEEN 0 AND 50), minimum_rate INTEGER NOT NULL DEFAULT 0 CHECK(minimum_rate>=0), repair_budget INTEGER NOT NULL DEFAULT 0 CHECK(repair_budget>=0), auto_extension INTEGER NOT NULL DEFAULT 0 CHECK(auto_extension IN (0,1)), max_extension_hours INTEGER NOT NULL DEFAULT 0 CHECK(max_extension_hours BETWEEN 0 AND 168), mandate_until INTEGER NOT NULL DEFAULT 0, escalation_contact TEXT NOT NULL DEFAULT '', auto_assign INTEGER NOT NULL DEFAULT 0 CHECK(auto_assign IN (0,1)), included_guests INTEGER NOT NULL DEFAULT 0 CHECK(included_guests BETWEEN 0 AND 50), extra_guest_price INTEGER NOT NULL DEFAULT 0 CHECK(extra_guest_price>=0), prep_minutes INTEGER NOT NULL DEFAULT 0 CHECK(prep_minutes BETWEEN 0 AND 720), prepay_percent INTEGER NOT NULL DEFAULT 0 CHECK(prepay_percent IN (0,10,20,30,50,100)));
+
+-- table property_right_docs
+CREATE TABLE property_right_docs (
+ id TEXT PRIMARY KEY,
+ property_id TEXT NOT NULL REFERENCES properties(id),
+ owner_id TEXT NOT NULL REFERENCES profiles(id),
+ kind TEXT NOT NULL CHECK(kind IN ('owner','sublease')),
+ data TEXT NOT NULL DEFAULT '',
+ object_key TEXT NOT NULL DEFAULT '',
+ width INTEGER NOT NULL,
+ height INTEGER NOT NULL,
+ bytes INTEGER NOT NULL,
+ created_at INTEGER NOT NULL
+);
 
 -- table property_staff
 CREATE TABLE property_staff (
@@ -1480,6 +1505,9 @@ CREATE INDEX price_suggestions_property ON price_suggestions(property_id,created
 
 -- index property_imports_owner
 CREATE INDEX property_imports_owner ON property_imports(owner_id,created_at);
+
+-- index property_right_docs_place
+CREATE INDEX property_right_docs_place ON property_right_docs(property_id,created_at);
 
 -- index property_staff_person
 CREATE INDEX property_staff_person ON property_staff(staff_id);
@@ -1979,6 +2007,9 @@ CREATE TRIGGER account_erased_property_imports_insert BEFORE INSERT ON property_
 
 -- trigger account_erased_property_imports_update
 CREATE TRIGGER account_erased_property_imports_update BEFORE UPDATE ON property_imports WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.owner_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END;
+
+-- trigger account_erased_property_right_docs_insert
+CREATE TRIGGER account_erased_property_right_docs_insert BEFORE INSERT ON property_right_docs WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.owner_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END;
 
 -- trigger account_erased_property_staff_insert
 CREATE TRIGGER account_erased_property_staff_insert BEFORE INSERT ON property_staff WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.staff_id OR user_id=NEW.owner_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END;

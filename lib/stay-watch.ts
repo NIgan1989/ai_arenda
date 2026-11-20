@@ -10,7 +10,8 @@ type Row=Record<string,any>; // eslint-disable-line @typescript-eslint/no-explic
 // ladder: remind → ask → act by the rule → hand over to a person. Each step is said once (stay_watch keeps how far it
 // went), each notice goes to the AI journal of the person who gets it (lib/ai-move-marks.ts reads its key).
 //
-// Payment (due at the arrival, at most a day after the request): three hours before it is due the guest is reminded, at the due time both sides are warned, thirty minutes
+// Payment (lib/prepay.ts): a stay paid at the arrival is not watched here, its arrival is. A prepayment (the owner's
+// share, or all of an older booking) is due at the arrival, at most a day after the request: three hours before it is due the guest is reminded, at the due time both sides are warned, thirty minutes
 // later an unpaid stay is released and the home is free again. Payments are an imitation until the launch, so
 // releasing takes no money and returns none; a stay paid in part is never released, the owner decides.
 // Arrival: a paid guest who has not checked in is asked whether they are coming; with no answer the owner's
@@ -64,6 +65,7 @@ function rulesOf(db:D1Database):Rules{
 
 async function payments(db:D1Database,at:number,result:Row,rule:Rules){
  const list:Row[]=await rows(db,STAY_SQL+` WHERE b.status='confirmed' AND b.payment_status<>'owner_verified' AND t.actual_checkin IS NULL AND b.end>?1
+  AND COALESCE(t.prepay_percent,100)>0 AND t.paid_amount<(b.amount*COALESCE(t.prepay_percent,100)+99)/100
   AND ${PAY_STEP}<3 ORDER BY b.start LIMIT 50`,at);
  for(const b of list){
   const due=payDue({start:b.start,created_at:b.created_at}),title=b.title||'жильё',s=Number(b.pay_step);
@@ -120,8 +122,11 @@ function noShowTerms(b:Row,at:number){
 
 // The time of a stay is over and nobody checked in or said they were inside: there is nothing left to wait for, with
 // or without the autopilot. The stay is closed as a no-show, its cleaning is not needed, the money follows the rules.
+// «Меня не заселили» (lib/account-restrictions.ts): while the guest's complaint is open the booking is in dispute, and
+// nothing settles it as the guest's no-show: a person at the platform decides.
+const NOT_DISPUTED="NOT EXISTS(SELECT 1 FROM administrator_issues ni WHERE ni.entity_kind='booking' AND ni.entity_id=b.id AND ni.status='open' AND ni.description LIKE 'Меня не заселили%')";
 async function emptyEnded(db:D1Database,at:number,result:Row){
- const list:Row[]=await rows(db,STAY_SQL+` WHERE b.status='confirmed' AND t.actual_checkin IS NULL AND t.checkin_reported_at IS NULL AND t.actual_checkout IS NULL AND b.end<=?1
+ const list:Row[]=await rows(db,STAY_SQL+` WHERE b.status='confirmed' AND t.actual_checkin IS NULL AND t.checkin_reported_at IS NULL AND t.actual_checkout IS NULL AND b.end<=?1 AND ${NOT_DISPUTED}
   AND NOT EXISTS(SELECT 1 FROM property_operations o WHERE o.property_id=b.property_id AND o.active_booking_id=b.id) ORDER BY b.end LIMIT 50`,at);
  for(const b of list){
   const title=b.title||'жильё',{c,forGuest,forOwner}=noShowTerms(b,at),done="EXISTS(SELECT 1 FROM bookings WHERE id=? AND status='cancelled')";
@@ -138,8 +143,8 @@ async function emptyEnded(db:D1Database,at:number,result:Row){
 }
 
 async function arrivals(db:D1Database,at:number,result:Row,rule:Rules){
- const list:Row[]=await rows(db,STAY_SQL+` WHERE b.status='confirmed' AND b.payment_status='owner_verified' AND t.actual_checkin IS NULL AND t.checkin_reported_at IS NULL
-  AND t.actual_checkout IS NULL AND b.end>?1 AND MAX(b.start,COALESCE(t.arrival_eta,0))<=?1 AND ${ARRIVAL_STEP}<2 ORDER BY b.start LIMIT 50`,at);
+ const list:Row[]=await rows(db,STAY_SQL+` WHERE b.status='confirmed' AND (b.payment_status='owner_verified' OR (COALESCE(t.prepay_percent,100)<100 AND t.paid_amount>=(b.amount*COALESCE(t.prepay_percent,100)+99)/100)) AND t.actual_checkin IS NULL AND t.checkin_reported_at IS NULL
+  AND t.actual_checkout IS NULL AND b.end>?1 AND MAX(b.start,COALESCE(t.arrival_eta,0))<=?1 AND ${ARRIVAL_STEP}<2 AND ${NOT_DISPUTED} ORDER BY b.start LIMIT 50`,at);
  for(const b of list){
   const due=arrivalDue({start:b.start,arrival_eta:b.arrival_eta}),kind=hourly(b),title=b.title||'жильё',s=Number(b.arrival_step);
   // The owner's wait, but never more than half an hour for an hourly stay; the guest is asked halfway at the latest.

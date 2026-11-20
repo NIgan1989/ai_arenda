@@ -65,7 +65,7 @@ export async function assertPilotAllowed(service:RentalService,capability:'publi
 // Trusted SQL fragment for catalogue queries; caller supplies a static table alias.
 export function pilotPropertyVisibleSql(alias='p'){
  if(!/^[a-zA-Z][a-zA-Z0-9_]*$/.test(alias))throw new Error('Invalid table alias');
- return `(${alias}.demo_owner IS NOT NULL OR ((COALESCE((SELECT require_owner_review FROM pilot_policy WHERE id='global'),0)=0 OR EXISTS(SELECT 1 FROM pilot_property_admissions a WHERE a.id=${alias}.id AND a.owner_reviewed=1)) AND (COALESCE((SELECT require_phone FROM pilot_policy WHERE id='global'),0)=0 OR EXISTS(SELECT 1 FROM pilot_property_admissions a WHERE a.id=${alias}.id AND a.owner_phone_verified=1))))`;
+ return `(NOT EXISTS(SELECT 1 FROM account_restrictions ar WHERE ar.user_id=${alias}.owner_id) AND (${alias}.demo_owner IS NOT NULL OR ((COALESCE((SELECT require_owner_review FROM pilot_policy WHERE id='global'),0)=0 OR EXISTS(SELECT 1 FROM pilot_property_admissions a WHERE a.id=${alias}.id AND a.owner_reviewed=1)) AND (COALESCE((SELECT require_phone FROM pilot_policy WHERE id='global'),0)=0 OR EXISTS(SELECT 1 FROM pilot_property_admissions a WHERE a.id=${alias}.id AND a.owner_phone_verified=1)))))`;
 }
 export async function savePilotPolicy(service:RentalService,body:Row,platformAdmin:boolean){
  if(!platformAdmin)throw new DomainError('Правила допуска меняет администратор платформы.',403);

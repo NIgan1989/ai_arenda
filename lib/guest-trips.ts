@@ -1,4 +1,5 @@
 import { checkinOpen, checkinOpensLabel } from './checkin-window';
+import { dueNow } from './prepay';
 import { wordsOf } from './stay-words';
 import { recordSpan } from './record-span';
 import { lateOpen, lateNote, lateLabel } from './late-arrival';
@@ -71,10 +72,10 @@ const money = (value: number) => new Intl.NumberFormat('ru-RU').format(value) + 
 // it; the map shows only the first step that can be taken now (guestStep).
 // What the guest still has to transfer to the owner: the unpaid part of the stay and a deposit not yet received.
 // `reported` is true once the guest has said «Я оплатил» for everything that is due.
-export function payDue(b: Row): { left: number; deposit: number; sum: number; reported: boolean } {
-  const t = b.terms || {}, left = Math.max(0, Number(b.amount) - (Number(t.paid_amount) || 0));
-  const deposit = Number(t.deposit) > 0 && t.deposit_status === 'pending' ? Number(t.deposit) : 0;
-  return { left, deposit, sum: left + deposit, reported: (!left || !!t.payment_reported_at) && (!deposit || !!t.deposit_reported_at) };
+export function payDue(b: Row, now = Math.floor(Date.now() / 1000)): { left: number; deposit: number; sum: number; reported: boolean } {
+  // The prepayment before the arrival, the rest and the deposit at it (lib/prepay.ts).
+  const d = dueNow(b, now);
+  return { left: d.left, deposit: d.deposit, sum: d.sum, reported: d.reported };
 }
 
 export function guestSteps(b: Row, now: number, paymentMode?: string): GuestStep[] {
@@ -84,7 +85,7 @@ export function guestSteps(b: Row, now: number, paymentMode?: string): GuestStep
   const steps: GuestStep[] = [];
   // The guest transfers the stay and the deposit straight to the owner and says so in one tap («Я оплатил»);
   // after that the step is the owner's (he checks the bank and confirms), so the guest sees no payment button.
-  const due = payDue(b);
+  const due = payDue(b, now);
   if (due.sum > 0 && !due.reported) steps.push({ id: 'pay', label: 'Я оплатил ' + money(due.sum) });
   if (!b.terms?.actual_checkin && !b.terms?.checkin_reported_at && b.end > now) {
     steps.push({

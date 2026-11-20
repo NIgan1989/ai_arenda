@@ -36,9 +36,17 @@ test('the administrator approves a draft from «Недвижимость» and i
   await requireReview(f);readyDraft(f);const admin={PLATFORM_ADMIN_IDS:f.guest.userId};
   await assert.rejects(writePlatformAdmin(f.owner,'properties/approve',{propertyId:f.property,confirmed:true},admin),e=>e.status===403);
   await assert.rejects(writePlatformAdmin(f.guest,'properties/approve',{propertyId:f.property},admin),/Подтвердите/);
-  const result=await writePlatformAdmin(f.guest,'properties/approve',{propertyId:f.property,confirmed:true},admin);
+  // The name on the document of the right to let is compared with the owner and the Kaspi recipient first.
+  await assert.rejects(writePlatformAdmin(f.guest,'properties/approve',{propertyId:f.property,confirmed:true},admin),/ФИО в документе/);
+  const docs=await readPlatformAdmin(f.guest,'rights',{propertyId:f.property},admin);assert.equal(docs.names.profile,'Owner');
+  const result=await writePlatformAdmin(f.guest,'properties/approve',{propertyId:f.property,confirmed:true,namesMatch:true},admin);
   assert.equal(result.shown,true);
   assert.equal(f.db.raw.prepare('SELECT published FROM properties WHERE id=?').get(f.property).published,1);
+  // The photo is deleted after the check; the record stays, and guests see «Жильё проверено».
+  const doc=f.db.raw.prepare('SELECT * FROM property_right_docs WHERE property_id=?').get(f.property);
+  assert.equal(doc.data,'');assert.ok(doc.checked_at);assert.equal(doc.checked_by,f.guest.userId);
+  await assert.rejects(readPlatformAdmin(f.guest,'rights/photo',{id:doc.id},admin),e=>e.status===410);
+  assert.equal((await f.guest.roleState('guest',{catalog:true})).properties.find(p=>p.id===f.property).verified,true);
   const list=await readPlatformAdmin(f.guest,'properties',{},admin);assert.equal(list.items[0].review_status,'approved');
   assert.ok(f.db.raw.prepare("SELECT 1 FROM notifications WHERE user_id='owner' AND body LIKE '%показано гостям%'").get());
  }finally{f.db.close();}
@@ -48,7 +56,7 @@ test('an open owner request is used instead of a second one',async()=>{
  const f=await fixture();try{
   await requireReview(f);readyDraft(f);const admin={PLATFORM_ADMIN_IDS:f.guest.userId};
   await ensurePublishReview(f.owner,f.property,{});
-  await writePlatformAdmin(f.guest,'properties/approve',{propertyId:f.property,confirmed:true},admin);
+  await writePlatformAdmin(f.guest,'properties/approve',{propertyId:f.property,confirmed:true,namesMatch:true},admin);
   const rows=f.db.raw.prepare("SELECT status FROM participant_reviews WHERE property_id=?").all(f.property);
   assert.deepEqual(rows.map(r=>r.status),['approved']);
  }finally{f.db.close();}
@@ -58,7 +66,7 @@ test('approval is kept and reported honestly when another rule holds publication
  const f=await fixture();try{
   const current=await readPilotPolicy(f.db);await savePilotPolicy(f.owner,{expectedVersion:current.version,requireOwnerReview:true,requireCleanerReview:false,requirePhone:true,confirmed:true},true);
   readyDraft(f);const admin={PLATFORM_ADMIN_IDS:f.guest.userId};
-  const result=await writePlatformAdmin(f.guest,'properties/approve',{propertyId:f.property,confirmed:true},admin);
+  const result=await writePlatformAdmin(f.guest,'properties/approve',{propertyId:f.property,confirmed:true,namesMatch:true},admin);
   assert.equal(result.shown,false);assert.match(result.message,/подтвердить телефон/);
   assert.equal(f.db.raw.prepare('SELECT published FROM properties WHERE id=?').get(f.property).published,0);
   assert.equal(f.db.raw.prepare("SELECT status FROM participant_reviews WHERE property_id=?").get(f.property).status,'approved');
