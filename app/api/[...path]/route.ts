@@ -26,7 +26,8 @@ import {buildRuntimeHealth} from '../../../lib/runtime-health';
 import {clientConversation} from '../../../lib/client-conversation';
 import {accountSessions} from '../../../lib/account-sessions';
 import {paymentMode} from '../../../lib/finance';
-import {payoutOf} from '../../../lib/payout';
+import {payoutOf,payoutState} from '../../../lib/payout';
+import {adminFactorPassed,adminFactorState,adminFactorAction} from '../../../lib/admin-factor';
 import {readPlatformAdmin,writePlatformAdmin} from '../../../lib/platform-admin';
 import {requestCleanerAdmission} from '../../../lib/pilot-governance';
 import {ensurePublishReview} from '../../../lib/participant-security';
@@ -79,7 +80,12 @@ async function handle(request:Request, context:{params:Promise<{path:string[]}>}
     const user=await getAppUser(request);
     if(!user) return json({error:'Войдите, чтобы сохранить данные.',signIn:'/'},401);
     const service=new RentalService(env.DB,user.userId);
-    if(request.method==='GET'&&route.length===1&&route[0]==='access')return json({profile:await service.profile(),platformAdmin:isPlatformAdmin(user.userId,env.PLATFORM_ADMIN_IDS),user:{id:user.userId,name:user.fullName||'',phone:user.phone}});
+    // A platform administrator manages the service only from a session confirmed by a code from Telegram (lib/admin-factor.ts).
+    const adminId=isPlatformAdmin(user.userId,env.PLATFORM_ADMIN_IDS),session=adminId?(await requestSessionIdentity(request))?.hash||'':'',admin=adminId&&await adminFactorPassed(env.DB,user.userId,session,env);
+    const factorGate=()=>json({error:'Подтвердите вход в управление кодом из Telegram.',adminFactor:true},403);
+    if(request.method==='GET'&&route.join('/')==='admin-factor')return json(await adminFactorState(env.DB,user.userId,session,env));
+    if(request.method==='GET'&&route.length===1&&route[0]==='access')return json({profile:await service.profile(),platformAdmin:adminId,adminVerified:admin,user:{id:user.userId,name:user.fullName||'',phone:user.phone}});
+    if(request.method==='GET'&&route[0]==='admin'){if(adminId&&!admin)return factorGate();}
     if(request.method==='GET'&&route[0]==='admin')return json(await readPlatformAdmin(service,route.slice(1).join('/'),Object.fromEntries(new URL(request.url).searchParams),env));
     const activeRole=request.headers.get('X-Workspace-Role');
     if(request.method==='GET'&&route.join('/')==='push'){const identity=await requestSessionIdentity(request);return json(await webPushState(service,parseRole(activeRole),env,identity?.kind==='web'?identity.hash:''));}
@@ -87,13 +93,13 @@ async function handle(request:Request, context:{params:Promise<{path:string[]}>}
     if(request.method==='GET'&&route.join('/')==='conversation')return json(await clientConversation(service,parseRole(activeRole)));
     if(request.method==='GET'&&route.join('/')==='reliability/objection'){const role=await service.authorizeWorkspace(activeRole,'account');return json(await myObjection(env.DB,user.userId,role));}
     if(request.method==='GET'&&route.join('/')==='legal')return json({legal:await legalState(env.DB,user.userId,activeRole)});
-    if(request.method==='GET'&&route[0]==='operations')return json(await readOperations(service,parseRole(activeRole),route.slice(1),env,isPlatformAdmin(user.userId,env.PLATFORM_ADMIN_IDS)));
+    if(request.method==='GET'&&route[0]==='operations')return json(await readOperations(service,parseRole(activeRole),route.slice(1),env,admin));
     if(request.method==='GET'&&route.length===2&&route[0]==='media'){const mediaRole=await service.authorizeWorkspace(activeRole,'media');return json(await service.readMedia(route[1],mediaRole,env.BUCKET));}
-    if(request.method==='GET'&&route.length===1&&route[0]==='account'){await service.authorizeWorkspace(activeRole,'account');return json({...await service.accountState(activeRole==='guest'||activeRole==='owner'||activeRole==='cleaner'?activeRole:undefined),aiJournal:activeRole==='guest'||activeRole==='owner'||activeRole==='cleaner'?await aiJournal(env.DB,user.userId,activeRole):[],payout:await payoutOf(env.DB,user.userId),serverTime:Math.floor(Date.now()/1000),platformAdmin:isPlatformAdmin(user.userId,env.PLATFORM_ADMIN_IDS),modelConfigured:!!(env.OPENAI_API_KEY&&env.OPENAI_MODEL)});}
+    if(request.method==='GET'&&route.length===1&&route[0]==='account'){await service.authorizeWorkspace(activeRole,'account');return json({...await service.accountState(activeRole==='guest'||activeRole==='owner'||activeRole==='cleaner'?activeRole:undefined),aiJournal:activeRole==='guest'||activeRole==='owner'||activeRole==='cleaner'?await aiJournal(env.DB,user.userId,activeRole):[],...await (async()=>{const p=await payoutState(env.DB,user.userId);return {payout:p.payout,payoutPending:p.pending};})(),serverTime:Math.floor(Date.now()/1000),platformAdmin:adminId,adminVerified:admin,modelConfigured:!!(env.OPENAI_API_KEY&&env.OPENAI_MODEL)});}
     if(request.method==='GET'&&route.join('/')==='owner/autopilot-week'){const role=await service.authorizeWorkspace(activeRole,'account');if(role!=='owner')throw new DomainError('Отчёт автопилота видит только владелец.',403);return json(await autopilotWeek(env.DB,user.userId));}
     if(request.method==='GET'&&route.join('/')==='owner/analytics'){const role=await service.authorizeWorkspace(activeRole,'account');if(role!=='owner')throw new DomainError('«Доходы» видит только владелец.',403);return json(await ownerAnalytics(env.DB,user.userId,new URL(request.url).searchParams.get('period')));}
-    if(request.method==='GET'&&route.join('/')==='admin/users'){await service.authorizeWorkspace(activeRole,'admin/users');const url=new URL(request.url);return json(await service.listUsers(isPlatformAdmin(user.userId,env.PLATFORM_ADMIN_IDS),{role:url.searchParams.get('role'),search:url.searchParams.get('search'),page:url.searchParams.get('page')||0}));}
-    if(request.method==='GET'&&route[0]==='state') { const role=await service.authorizeWorkspace(activeRole,'state');try{await checkAdministratorForUser(env.DB,user.userId,role);}catch{console.error('AI administrator: workflow check failed');}const state=await service.roleState(role,{catalog:new URL(request.url).searchParams.get('catalog')!=='0'});return json({...state,platformAdmin:isPlatformAdmin(user.userId,env.PLATFORM_ADMIN_IDS),testMode:env.TEST_DATA_ONLY==='1',paymentMode:await paymentMode(env.DB,env),payout:role==='guest'?null:await payoutOf(env.DB,user.userId),commands:await listCommands(service,role),legal:await legalState(env.DB,user.userId,role),integrations:{...state.integrations,ai:!!(env.OPENAI_API_KEY&&env.OPENAI_MODEL)},user:{id:user.userId,name:user.fullName||''}}); }
+    if(request.method==='GET'&&route.join('/')==='admin/users'){await service.authorizeWorkspace(activeRole,'admin/users');const url=new URL(request.url);return json(await service.listUsers(admin,{role:url.searchParams.get('role'),search:url.searchParams.get('search'),page:url.searchParams.get('page')||0}));}
+    if(request.method==='GET'&&route[0]==='state') { const role=await service.authorizeWorkspace(activeRole,'state');try{await checkAdministratorForUser(env.DB,user.userId,role);}catch{console.error('AI administrator: workflow check failed');}const state=await service.roleState(role,{catalog:new URL(request.url).searchParams.get('catalog')!=='0'});return json({...state,platformAdmin:adminId,adminVerified:admin,testMode:env.TEST_DATA_ONLY==='1',paymentMode:await paymentMode(env.DB,env),payout:role==='guest'?null:await payoutOf(env.DB,user.userId),commands:await listCommands(service,role),legal:await legalState(env.DB,user.userId,role),integrations:{...state.integrations,ai:!!(env.OPENAI_API_KEY&&env.OPENAI_MODEL)},user:{id:user.userId,name:user.fullName||''}}); }
     if(request.method==='GET'&&route.length===1&&route[0]==='catalog'){await service.authorizeWorkspace(activeRole,'quote');return json(await service.publicCatalog());}
     if(request.method!=='POST'&&!(request.method==='PUT'&&route.join('/')==='conversation')) return json({error:'Маршрут не найден.'},404);
     const origin=request.headers.get('origin');
@@ -105,6 +111,8 @@ async function handle(request:Request, context:{params:Promise<{path:string[]}>}
     const body=JSON.parse(raw||'{}');
     if(!body||typeof body!=='object'||Array.isArray(body))return json({error:'Ожидается объект JSON.'},400);
     const requestKey=request.headers.get('Idempotency-Key');if(requestKey){if(requestKey.length>120||body.requestKey&&body.requestKey!==requestKey)return json({error:'Проверьте ключ операции.'},400);body.requestKey=requestKey;}
+    if(route.join('/')==='admin-factor')return json(await adminFactorAction(env.DB,user.userId,session,body,env));
+    if(route[0]==='admin'&&adminId&&!admin)return factorGate();
     if(route[0]==='admin')return json(await writePlatformAdmin(service,route.slice(1).join('/'),body,env));
     // Accepting the agreement, the consent or a role's offer; and until the current edition is accepted, the app's
     // workspace takes no new actions (lib/legal-acceptance.ts). Settings, data requests and reading stay open, so a person
@@ -116,7 +124,7 @@ async function handle(request:Request, context:{params:Promise<{path:string[]}>}
     if(route.join('/')==='push'){const identity=await requestSessionIdentity(request);return json(await manageWebPush(service,parseRole(activeRole),body,env,identity?.kind==='web'?identity.hash:''));}
     if(request.method==='POST'&&route.join('/')==='sessions'){await service.authorizeWorkspace(activeRole,'account');return json(await accountSessions(service,request,body));}
     if(request.method==='PUT'&&route.join('/')==='conversation')return json(await clientConversation(service,parseRole(activeRole),body));
-    if(route[0]==='operations'){const result=await writeOperations(service,parseRole(activeRole),route.slice(1),body,env,isPlatformAdmin(user.userId,env.PLATFORM_ADMIN_IDS)),response=json(result);if(route[1]==='matching'&&(['begin','respond','book'].includes(route[2])||(result as Record<string,any>).dispatchChanged===true))waitUntil(deliverWebPush(env.DB,env,3).catch(()=>({configured:true,sent:0,failed:1})));if((result as Record<string,any>)?.signOut)response.headers.set('Set-Cookie',expireSessionCookie(request));return response;}
+    if(route[0]==='operations'){const result=await writeOperations(service,parseRole(activeRole),route.slice(1),body,env,admin),response=json(result);if(route[1]==='matching'&&(['begin','respond','book'].includes(route[2])||(result as Record<string,any>).dispatchChanged===true))waitUntil(deliverWebPush(env.DB,env,3).catch(()=>({configured:true,sent:0,failed:1})));if((result as Record<string,any>)?.signOut)response.headers.set('Set-Cookie',expireSessionCookie(request));return response;}
     if(route.length===2&&route[0]==='onboarding'){
       if(!['guest','owner','cleaner'].includes(route[1]))return json({error:'Такой профиль недоступен.'},400);
       if(!await service.profile())await service.saveProfile({name:user.fullName||'Гость',contact:user.phone,city:body.city||'Павлодар',roles:['guest']});
