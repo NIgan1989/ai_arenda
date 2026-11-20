@@ -6,6 +6,10 @@
 import type {Words} from './i18n-words';
 
 export const COMMON:Words={
+  'Заявка на бронь':['Брондау өтінімі','Booking request'],
+  'Отправить заявку':['Өтінім жіберу','Send request'],
+  'Подобрать другое жильё':['Басқа баспана табу','Find another place'],
+
   // ── The splash ──
   'Сервис поиска аренды жилья и досуга':['Баспана мен демалыс орнын жалға іздеу сервисі','Find a place to stay or unwind'],
 

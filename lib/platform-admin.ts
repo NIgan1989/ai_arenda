@@ -4,6 +4,7 @@ import {isPlatformAdmin} from './account';
 import type {RentalService} from './service';
 import {one,type OperationConfig} from './operation-core';
 import {setTestPayments} from './finance';
+import {cardChargesAdmin,cardChargesAction} from './service-dues';
 import {buildRuntimeHealth} from './runtime-health';
 import {integrationStatus} from './delivery';
 import {securityState,decideParticipantReview,adminApproveProperty} from './participant-security';
@@ -14,6 +15,8 @@ import {publicPoint,mapCities} from './map-workspace';
 import {adminLiveMap} from './admin-map';
 import {AI_REVIEWER,sweepReviews} from './admin-autocheck';
 import {safetyAction} from './account-safety';
+import {listRightDocs,readRightDoc,settleRightDocs} from './property-rights';
+import {restrictAccount,restrictionsList,unlistPlace} from './account-restrictions';
 import {billingState,billingOwners,saveBillingSettings,recordBalanceEntry} from './platform-billing';
 import {plansAdminState,savePlanSettings} from './autopilot-plans';
 import {markCleanerPayout} from './regular-cleaner';
@@ -44,9 +47,12 @@ export async function readPlatformAdmin(service:RentalService,route:string,param
   const hidden=await service.all("SELECT r.id,r.role,r.target_kind,r.reason,r.resolution,e.created_at,(SELECT version FROM moderated_content m WHERE m.kind=r.target_kind AND m.target_id=r.target_id AND m.room_id=r.room_id) version,(SELECT hidden FROM moderated_content m WHERE m.kind=r.target_kind AND m.target_id=r.target_id AND m.room_id=r.room_id) hidden FROM moderation_access_events e JOIN content_reports r ON r.id=e.report_id WHERE e.actor_id='ai-administrator' AND e.action='hide' AND e.created_at>? ORDER BY e.created_at DESC LIMIT 50",Math.floor(Date.now()/1000)-7*86400);
   await service.audit(service.userId,'admin.reports_viewed').run();return {queue,hidden,objections:await objectionQueue(service.db)};
  }
+ if(route==='rights')return listRightDocs(service,String(params.propertyId||''),true);
+ if(route==='rights/photo')return readRightDoc(service,String(params.id||''),config,true);
+ if(route==='restrictions')return restrictionsList(service,true);
  if(route==='billing/owners')return billingOwners(service,params);
  if(route==='billing/plans')return plansAdminState(service.db);
- if(route==='billing'){const state={...await billingState(service),plans:await plansAdminState(service.db),testPayments:(await one(service.db,"SELECT test_payments FROM platform_billing WHERE id='global'"))?.test_payments===1};await service.audit(service.userId,'admin.billing_viewed').run();return state;}
+ if(route==='billing'){const state={...await billingState(service),plans:await plansAdminState(service.db),charges:await cardChargesAdmin(service.db),testPayments:(await one(service.db,"SELECT test_payments FROM platform_billing WHERE id='global'"))?.test_payments===1};await service.audit(service.userId,'admin.billing_viewed').run();return state;}
  if(route==='finance'){const state=await companyFinance(service.db,params);await service.audit(service.userId,'admin.finance_viewed').run();return state;}
  if(route==='accounting'){const state=await accountingState(service.db);await service.audit(service.userId,'admin.accounting_viewed').run();return state;}
  if(route==='governance')return {...await governanceState(service,'guest',true),admissions:[],testMode:config.TEST_DATA_ONLY==='1'};
@@ -56,7 +62,7 @@ export async function readPlatformAdmin(service:RentalService,route:string,param
   const page=number(params.page||0,'Страница',0,100000),pattern='%'+search.replace(/[\\%_]/g,'\\$&')+'%';
   const where="p.demo_owner IS NULL AND (p.title LIKE ? ESCAPE '\\' OR p.city LIKE ? ESCAPE '\\' OR o.name LIKE ? ESCAPE '\\')";
   const total=await service.one(`SELECT COUNT(*) count FROM properties p LEFT JOIN profiles o ON o.id=p.owner_id WHERE ${where}`,pattern,pattern,pattern);
-  const items=await service.all(`SELECT p.id,p.title,p.city,p.district,p.price,p.published,o.name owner_name,COALESCE(json_array_length(d.photos),0) photos,EXISTS(SELECT 1 FROM property_locations l WHERE l.property_id=p.id) has_location,(SELECT r.status FROM participant_reviews r WHERE r.property_id=p.id AND r.role='owner' ORDER BY r.created_at DESC,r.rowid DESC LIMIT 1) review_status FROM properties p LEFT JOIN profiles o ON o.id=p.owner_id LEFT JOIN property_details d ON d.property_id=p.id WHERE ${where} ORDER BY p.created_at DESC,p.id LIMIT 25 OFFSET ?`,pattern,pattern,pattern,page*25);
+  const items=await service.all(`SELECT p.id,p.owner_id,p.title,p.city,p.district,p.price,p.published,o.name owner_name,(SELECT kind FROM account_restrictions ar WHERE ar.user_id=p.owner_id) restriction,(SELECT COUNT(*) FROM property_right_docs rd WHERE rd.property_id=p.id) right_docs,COALESCE(json_array_length(d.photos),0) photos,EXISTS(SELECT 1 FROM property_locations l WHERE l.property_id=p.id) has_location,(SELECT r.status FROM participant_reviews r WHERE r.property_id=p.id AND r.role='owner' ORDER BY r.created_at DESC,r.rowid DESC LIMIT 1) review_status FROM properties p LEFT JOIN profiles o ON o.id=p.owner_id LEFT JOIN property_details d ON d.property_id=p.id WHERE ${where} ORDER BY p.created_at DESC,p.id LIMIT 25 OFFSET ?`,pattern,pattern,pattern,page*25);
   await service.audit(service.userId,'admin.properties_viewed').run();return {items,total:total?.count||0,page,limit:25};
  }
  if(route==='overview'){
@@ -76,6 +82,9 @@ async function moneySummary(db:D1Database){
   return {month:fin.month,revenue:pl.revenue||0,forecastRevenue:forecast.current?.pl?.revenue||0,net:pl.net||0,cash:fin.balance.assets.cash,taxesDue:acc.totals.due,overdue:acc.totals.overdue,next:acc.totals.next?{name:acc.totals.next.name,due:acc.totals.next.due,left:acc.totals.next.left}:null};
  }catch{return null;}
 }
+// A place is approved only after the administrator compared the name on the document of the right to let it with the
+// owner's profile and with the Kaspi recipient guests pay (lib/payout.ts): a stranger's title does not let a home.
+function namesChecked(body:Row){if(body.namesMatch!==true)throw new DomainError('Отметьте, что ФИО в документе совпадает с владельцем и получателем Kaspi.');}
 export async function writePlatformAdmin(service:RentalService,route:string,body:Row,config:Config){
  requirePlatformAdmin(service.userId,config);
  if(route==='reviews/ai'){
@@ -84,8 +93,15 @@ export async function writePlatformAdmin(service:RentalService,route:string,body
   if(body.enabled)await sweepReviews(service.db,config);
   return {message:body.enabled?'Теперь заявки проверяет ИИ-администратор, спорные приходят вам.':'Теперь все заявки решаете вы. ИИ только показывает свои проверки.'};
  }
- if(route==='properties/approve'){if(body.confirmed!==true)throw new DomainError('Подтвердите, что проверили жильё и владельца.');return adminApproveProperty(service,body);}
- if(route==='reviews/decide'){if(body.confirmed!==true)throw new DomainError('Подтвердите фактическую проверку сведений.');return decideParticipantReview(service,body,true);}
+ if(route==='properties/approve'){if(body.confirmed!==true)throw new DomainError('Подтвердите, что проверили жильё и владельца.');namesChecked(body);const r=await adminApproveProperty(service,body);await settleRightDocs(service.db,String(body.propertyId),service.userId,config);return r;}
+ if(route==='restrictions/decide')return restrictAccount(service,body,true);
+ if(route==='properties/unlist')return unlistPlace(service,body,true);
+ if(route==='reviews/decide'){
+  if(body.confirmed!==true)throw new DomainError('Подтвердите фактическую проверку сведений.');
+  const review=await one(service.db,'SELECT role,property_id FROM participant_reviews WHERE id=?',String(body.id||''));
+  const place=body.status==='approved'&&review?.role==='owner'&&review.property_id;if(place)namesChecked(body);
+  const r=await decideParticipantReview(service,body,true);if(place)await settleRightDocs(service.db,review.property_id,service.userId,config);return r;
+ }
  if(route==='governance/policy'){
   if(config.TEST_DATA_ONLY==='1'&&[body.requireOwnerReview,body.requireCleanerReview,body.requirePhone].some(v=>v===true))throw new DomainError('Правила рабочего сервиса настраиваются вне учебного стенда.',409);
   return savePilotPolicy(service,body,true);
@@ -101,6 +117,7 @@ export async function writePlatformAdmin(service:RentalService,route:string,body
  if(route==='billing/plans')return savePlanSettings(service,body);
  if(route==='billing/balance')return recordBalanceEntry(service,body);
  if(route==='billing/payout')return markCleanerPayout(service,body);
+ if(route==='billing/charges')return cardChargesAction(service.db,service.userId,body);
  if(route==='finance/settings')return saveFinanceSettings(service,body);
  if(route==='finance/cost')return saveCost(service,body);
  if(route==='finance/cost/toggle')return toggleCost(service,body);

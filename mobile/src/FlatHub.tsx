@@ -17,6 +17,7 @@ import {DealLine} from './DealLine';
 import {ownerDeal,ownerPinAct} from './pin-deal';
 import {ownerThreads} from '../../lib/process-threads';
 import {T} from './tokens';
+import {RightDocs} from './RightDocs';
 
 const words=(t:number)=>dateText(t*1000,{timeZone:'Asia/Almaty',day:'numeric',month:'long'});
 
@@ -111,6 +112,7 @@ export function FlatHub({flat,data,now,tab,onOpen,onEdit,onChanged}:Omit<Props,'
   <FlatAutopilotRow propertyId={flat.id} onChanged={onChanged}/>
   {row(tr('Объявление'),tr('Фото, описание, удобства, заезд'),()=>onEdit(null))}
   {row(tr('Правила и готовность'),tr('Автоподтверждение, депозит, готовность к заселению'),()=>onEdit('settings'))}
+  {!flat.demo_owner&&<RightDocs propertyId={flat.id} approved={!!flat.approved}/>}
   {!Number(flat.own_staff)&&row(tr('Постоянный исполнитель'),flat.regular_cleaner_name||tr('Закрепите своего: уборки приходят сначала к нему'),()=>onEdit('cleaner'))}
  </View>;
 }

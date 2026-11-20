@@ -90,7 +90,7 @@ export async function runOperationalTick(db:D1Database,config:OperationConfig={}
  if(config.BUCKET){await enqueueJob(db,'media-move','media-move','system',{},60);await enqueueJob(db,'media-sweep','media-sweep','system',{},3600);}
  const result=await runBackgroundJobs(db,async job=>{
   if(job.kind==='discovery')return discover(db,job);
-  if(job.kind==='autopilot-plans')return sweepPlans(db);
+  if(job.kind==='autopilot-plans')return sweepPlans(db,undefined,config as OperationConfig&{PLATFORM_ADMIN_IDS?:string});
   if(job.kind==='admin-issues')return {issues:await sweepIssues(db,config as OperationConfig&{PLATFORM_ADMIN_IDS?:string}),overdue:await sweepOverdueJobs(db,config as OperationConfig&{PLATFORM_ADMIN_IDS?:string}),arrivals:await sweepArrivals(db),stays:await sweepStays(db,config as OperationConfig&{PLATFORM_ADMIN_IDS?:string}),prep:await sweepPrep(db),readyBefore:await sweepReadyBefore(db),silence:await sweepSilence(db,config as OperationConfig&{PLATFORM_ADMIN_IDS?:string}),reports:await sweepReports(db),digest:await sendDigest(db,config as OperationConfig&{PLATFORM_ADMIN_IDS?:string})};
   if(job.kind==='admin-autocheck')return sweepReviews(db,config as OperationConfig&{PLATFORM_ADMIN_IDS?:string});
   if(job.kind==='matching-dispatch')return advanceMatchingRequests(db,config);

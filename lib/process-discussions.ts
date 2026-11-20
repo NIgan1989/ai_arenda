@@ -1,3 +1,4 @@
+import {chatGuard} from './chat-guard';
 import {DomainError,required,number,type Role} from './domain';
 import type {RentalService} from './service';
 import {q,one,rows,uuid,epoch,hash,type Row} from './operation-core';
@@ -80,6 +81,8 @@ export async function sendDiscussionMessage(service:RentalService,role:Role,body
  const photo=body.photo?jpegInput(body.photo,'property').data:'',reply=body.replyTo?number(body.replyTo,'Ответ на сообщение',1,Number.MAX_SAFE_INTEGER):null;
  if(reply&&!await one(service.db,'SELECT seq FROM discussion_messages WHERE room_id=? AND seq=?',room.id,reply))throw new DomainError('Исходное сообщение недоступно.',403);
  const text=required(body.text||(photo?'Фотография':''),'Сообщение',4000),key=required(body.requestKey,'Ключ сообщения',100);if(key.startsWith(AI_KEY))throw new DomainError('Некорректный ключ сообщения.');const previous=await one(service.db,'SELECT seq,body,photo_data,reply_to FROM discussion_messages WHERE room_id=? AND sender_id=? AND sender_role=? AND request_key=?',room.id,service.userId,role,key);
+ // Between a guest and an owner: no links, no card numbers, no phone before the confirmation (lib/chat-guard.ts).
+ if(room.entity_kind==='booking'&&!key.startsWith(AI_KEY)){const b=await one(service.db,'SELECT status FROM bookings WHERE id=?',room.entity_id),guard=chatGuard(text,{confirmed:['confirmed','completed'].includes(b?.status)});if(!guard.ok)throw new DomainError(guard.reason,422);}
  const same=(m:Row)=>m.body===text&&m.photo_data===photo&&m.reply_to===reply;
  if(previous){if(!same(previous))throw new DomainError('Этот ключ использован для другого сообщения.',409);return {sent:true,seq:previous.seq};}
  const message=await q(service.db,`INSERT OR IGNORE INTO discussion_messages(room_id,sender_id,sender_role,body,request_key,created_at,photo_data,reply_to) SELECT ?,?,?,?,?,?,?,? WHERE ${context.gate} AND NOT EXISTS(SELECT 1 FROM discussion_blocks WHERE room_id=?) AND (SELECT COUNT(*) FROM discussion_messages WHERE sender_id=? AND created_at>?)<30 RETURNING seq`,room.id,service.userId,role,text,key,epoch(),photo,reply,...context.gateArgs,room.id,service.userId,epoch()-60).first<Row>();
