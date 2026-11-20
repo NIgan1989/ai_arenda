@@ -61,12 +61,14 @@ test('payout details: a Kaspi number and a name, shown only to the payer of a co
   await assert.rejects(savePayout(f.owner,{phone:'+7 701 123 45 67',recipient:''}),/имя получателя/);
   const saved=await savePayout(f.owner,{phone:'+7 701 123 45 67',recipient:'  Дулат   Н. ',link:''});
   assert.deepEqual(saved.payout,{phone:'+77011234567',recipient:'Дулат Н.',link:''});
-  await savePayout(f.owner,{phone:'87011234568',recipient:'Дулат Н.'});
-  assert.deepEqual(await payoutOf(f.db,'owner'),{phone:'+77011234568',recipient:'Дулат Н.',link:''});assert.equal(R.prepare("SELECT version FROM payout_details WHERE user_id='owner'").get().version,2);
+  // A change of details in use needs the password and waits (tests/account-protection.test.mjs).
+  await assert.rejects(savePayout(f.owner,{phone:'87011234568',recipient:'Дулат Н.'}),e=>e.status===403);
+  R.prepare("UPDATE payout_details SET phone='+77011234568' WHERE user_id='owner'").run();
+  assert.deepEqual(await payoutOf(f.db,'owner'),{phone:'+77011234568',recipient:'Дулат Н.',link:''});
   assert.equal(await payoutOf(f.db,'guest'),null);
   // The guest of the confirmed booking reads them in the card; a guest whose request is not confirmed does not.
   const mine=(await f.guest.roleState('guest',{catalog:false})).bookings.find(b=>b.id===f.booking);
-  assert.deepEqual(mine.owner_pay,{phone:'+77011234568',recipient:'Дулат Н.',link:''});
+  assert.deepEqual(mine.owner_pay,{phone:'+77011234568',recipient:'Дулат Н.',link:'',changed_at:null});
   R.prepare("UPDATE bookings SET status='requested',expires_at=? WHERE id=?").run(Math.floor(Date.now()/1000)+3600,f.booking);
   assert.equal((await f.guest.roleState('guest',{catalog:false})).bookings.find(b=>b.id===f.booking).owner_pay,null);
  }finally{f.db.close();}

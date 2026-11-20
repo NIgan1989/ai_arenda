@@ -8,19 +8,26 @@ import {T} from './tokens';
 // Direct settlements (2026-11-19): the guest pays the owner and the owner pays the performer outside the service.
 // The service shows where to transfer (PayTo) and keeps the marks of both sides; it never holds this money.
 // The details themselves are typed once in «Настройки» (PayoutForm) and saved by POST /api/operations/payout.
-export type Payout={phone:string;recipient:string;link:string};
+export type Payout={phone:string;recipient:string;link:string;changed_at?:number|null};
+export type PendingPayout={phone:string;recipient:string;link:string;until:number};
+// The payer is warned for a week after the details changed (lib/payout.ts PAYOUT_FRESH).
+const FRESH=7*86400;
+const when=(at:number)=>new Date(at*1000).toLocaleString('ru-RU',{day:'numeric',month:'long',hour:'2-digit',minute:'2-digit'});
 const R=T.radius;
 export const phoneText=(phone:string)=>/^\+7\d{10}$/.test(phone)?`+7 ${phone.slice(2,5)} ${phone.slice(5,8)} ${phone.slice(8,10)} ${phone.slice(10)}`:phone;
 const money=(n:number)=>new Intl.NumberFormat('ru-RU').format(n).replace(/\s/g,' ')+' ₸';
 
 /** Where to transfer and how much. `parts` explains a sum made of several things (the stay and the deposit). */
 export function PayTo({title,to,amount,parts,waiting,missing,note,children}:{title:string;to:Payout|null|undefined;amount:number;parts?:string;waiting?:string;missing:string;note?:string;children?:React.ReactNode}){
+ // Read once per card: a warning that appears or disappears while the card is open would only distract.
+ const [now]=useState(()=>Date.now()/1000);
  return <View accessible={false} style={p.card}>
   <View style={p.head}><Text style={p.title}>{title}</Text><Text style={p.sum}>{money(amount)}</Text></View>
   {!!parts&&<Text style={p.meta}>{parts}</Text>}
   {to?<><View style={p.to}><View style={p.kaspi}><Text style={p.kaspiText}>K</Text></View><View style={{flex:1,minWidth:0}}><Text selectable accessibilityLabel={'Номер Kaspi '+phoneText(to.phone)} style={p.phone}>{phoneText(to.phone)}</Text><Text style={p.meta}>Kaspi · {to.recipient}</Text></View></View>
    {!!to.link&&<Pressable accessibilityRole="link" onPress={()=>void Linking.openURL(to.link).catch(()=>undefined)} style={({pressed})=>[p.link,pressed&&{opacity:.7}]}><Text style={p.linkText}>Открыть оплату в Kaspi</Text></Pressable>}</>
    :<Text style={p.warn}>{missing}</Text>}
+  {!!to?.changed_at&&now-to.changed_at<FRESH&&<Text accessibilityRole="alert" style={p.warn}>Реквизиты изменены {when(to.changed_at)}. Перед переводом сверьте имя получателя в Kaspi. Если сомневаетесь, уточните в чате брони.</Text>}
   {!!waiting&&<View style={p.wait}><Text style={p.waitText}>{waiting}</Text></View>}
   {children}
   {!!note&&<Text style={p.meta}>{note}</Text>}
@@ -56,21 +63,29 @@ export function Receipts({kind,id,role,count=0,canAdd=false,title}:{kind:'bookin
  </View>;
 }
 
-/** «Реквизиты для оплаты» in the settings of the owner and the performer. */
-export function PayoutForm({initial,role,onSaved}:{initial:Payout|null;role:'owner'|'cleaner';onSaved?:(value:Payout)=>void}){
- const [phone,setPhone]=useState(initial?phoneText(initial.phone):'+7 '),[recipient,setRecipient]=useState(initial?.recipient||''),[link,setLink]=useState(initial?.link||''),[busy,setBusy]=useState(false),[error,setError]=useState(''),[done,setDone]=useState('');
- async function save(){
+/** «Реквизиты для оплаты» in the settings of the owner and the performer. The first details go into use at once; a
+ *  change of details in use asks for the account password and waits 24 hours, with a notice and «Отменить замену»
+ *  (lib/payout.ts), so whoever took over the account cannot redirect the next transfer at once. */
+export function PayoutForm({initial,pending:initialPending,role,onSaved}:{initial:Payout|null;pending?:PendingPayout|null;role:'owner'|'cleaner';onSaved?:(value:Payout|null,pending:PendingPayout|null)=>void}){
+ const [phone,setPhone]=useState(initial?phoneText(initial.phone):'+7 '),[recipient,setRecipient]=useState(initial?.recipient||''),[link,setLink]=useState(initial?.link||''),[password,setPassword]=useState(''),[pending,setPending]=useState<PendingPayout|null>(initialPending||null),[busy,setBusy]=useState(false),[error,setError]=useState(''),[done,setDone]=useState('');
+ const digits=(v:string)=>v.replace(/\D/g,'').slice(-10),changed=!!initial&&(digits(phone)!==digits(initial.phone)||recipient.trim().replace(/\s+/g,' ')!==initial.recipient||link.trim()!==(initial.link||''));
+ async function send(body:Record<string,unknown>,ok:string){
   if(busy)return;setBusy(true);setError('');setDone('');
-  try{const r=await request('/api/operations/payout',{phone,recipient,link},undefined,undefined,role);setDone('Сохранено');if(r?.payout){setPhone(phoneText(r.payout.phone));onSaved?.(r.payout);}}
-  catch(x:any){setError(x?.message||'Не удалось сохранить.');}finally{setBusy(false);}
+  try{const r=await request('/api/operations/payout',body,undefined,undefined,role);setDone(r?.message||ok);setPassword('');setPending(r?.pending||null);if(r?.payout){setPhone(phoneText(r.payout.phone));setRecipient(r.payout.recipient);setLink(r.payout.link||'');}onSaved?.(r?.payout||null,r?.pending||null);}
+  catch(x){setError(x instanceof Error&&x.message?x.message:'Не удалось сохранить.');}finally{setBusy(false);}
  }
  return <View style={{gap:12}}>
   <Text style={s.meta}>{role==='owner'?'Гости переводят оплату и депозит прямо вам. Сервис эти деньги не принимает и не удерживает.':'Заказчики переводят оплату за уборку прямо вам. Сервис эти деньги не принимает и не удерживает.'}</Text>
+  {!!pending&&<View style={p.wait}><Text style={p.waitText}>Замена ждёт: Kaspi {phoneText(pending.phone)} ({pending.recipient}) вступит в силу {when(pending.until)}. До этого вам платят по прежним реквизитам.</Text>
+   <Pressable accessibilityRole="button" disabled={busy} onPress={()=>void send({action:'cancel'},'Замена отменена.')} style={({pressed})=>[p.link,{marginTop:8},(pressed||busy)&&{opacity:.7}]}><Text style={p.linkText}>Отменить замену</Text></Pressable></View>}
   <View><Text style={s.fieldLabel}>Номер Kaspi</Text><TextInput accessibilityLabel="Номер Kaspi" value={phone} onChangeText={v=>{setPhone(v);setDone('');}} keyboardType="phone-pad" maxLength={20} placeholder="+7 7XX XXX XX XX" placeholderTextColor={C.muted} style={s.field}/></View>
   <View><Text style={s.fieldLabel}>Имя получателя, как в Kaspi</Text><TextInput accessibilityLabel="Имя получателя" value={recipient} onChangeText={v=>{setRecipient(v);setDone('');}} maxLength={60} placeholder="Айгерим К." placeholderTextColor={C.muted} style={s.field}/></View>
   <View><Text style={s.fieldLabel}>Ссылка Kaspi Pay, если есть</Text><TextInput accessibilityLabel="Ссылка Kaspi Pay" value={link} onChangeText={v=>{setLink(v);setDone('');}} autoCapitalize="none" autoCorrect={false} keyboardType="url" maxLength={300} placeholder="https://pay.kaspi.kz/…" placeholderTextColor={C.muted} style={s.field}/></View>
+  {changed&&<View><Text style={s.fieldLabel}>Пароль от аккаунта</Text><TextInput accessibilityLabel="Пароль от аккаунта" value={password} onChangeText={setPassword} secureTextEntry autoCapitalize="none" autoCorrect={false} maxLength={128} style={s.field}/>
+   <Text style={[s.meta,{marginTop:8}]}>Новые реквизиты вступят в силу через 24 часа. Мы пришлём оповещение, чтобы замену можно было отменить, если это не вы.</Text></View>}
   {!!error&&<Text accessibilityRole="alert" style={s.error}>{error}</Text>}
-  <Pressable accessibilityRole="button" disabled={busy} onPress={()=>void save()} style={[s.button,busy&&s.disabled]}><Text style={s.buttonText}>{busy?'Сохраняю…':done||'Сохранить реквизиты'}</Text></Pressable>
+  {!!done&&<Text accessibilityRole="text" style={s.meta}>{done}</Text>}
+  <Pressable accessibilityRole="button" disabled={busy||(changed&&!password)} onPress={()=>void send({phone,recipient,link,...(changed?{password}:{})},'Сохранено')} style={[s.button,(busy||(changed&&!password))&&s.disabled]}><Text style={s.buttonText}>{busy?'Сохраняю…':changed?'Заменить реквизиты':'Сохранить реквизиты'}</Text></Pressable>
   <Text style={s.meta}>Реквизиты видит только тот, кто платит вам: {role==='owner'?'гость после подтверждения брони':'заказчик после принятой уборки'}.</Text>
  </View>;
 }
