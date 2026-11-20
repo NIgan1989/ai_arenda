@@ -79,6 +79,7 @@
 -- migration 0075_service_billing.sql sha256:22291f4b24994157164644befff06e5bbb609441f61cda77b29c2d73dc031986
 -- migration 0076_legal_acceptances.sql sha256:f61f2a547bff5007224bb63e0d6980d16498277a59b7640a78e5837ba27bf3de
 -- migration 0077_reliability_objections.sql sha256:fc4ed81444c7a9bb36a484f0909f4d9bbc3cabf4be35e2a38aaeb8f1b2d85659
+-- migration 0078_reliability_objection_one_open.sql sha256:186709cda819f915ea5c691804323e75e670e0b8762f15c841b2328c9638ed32
 
 -- table access_receipts
 CREATE TABLE access_receipts (id TEXT PRIMARY KEY,property_id TEXT NOT NULL,entity_kind TEXT NOT NULL,entity_id TEXT NOT NULL,user_id TEXT NOT NULL,created_at INTEGER NOT NULL,expires_at INTEGER NOT NULL);
@@ -1466,6 +1467,9 @@ CREATE INDEX push_due ON push_deliveries(status,available_at,lease_until);
 
 -- index regular_cleaners_cleaner
 CREATE INDEX regular_cleaners_cleaner ON regular_cleaners(cleaner_id);
+
+-- index reliability_objections_one_open
+CREATE UNIQUE INDEX reliability_objections_one_open ON reliability_objections(user_id,role) WHERE status='open';
 
 -- index reliability_objections_open
 CREATE INDEX reliability_objections_open ON reliability_objections(status,due_at);

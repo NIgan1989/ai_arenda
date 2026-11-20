@@ -15,6 +15,5 @@ CREATE TABLE reliability_objections (
 );
 CREATE INDEX reliability_objections_user ON reliability_objections(user_id,role,created_at);
 CREATE INDEX reliability_objections_open ON reliability_objections(status,due_at);
-CREATE UNIQUE INDEX reliability_objections_one_open ON reliability_objections(user_id,role) WHERE status='open';
 CREATE TRIGGER account_erased_reliability_objections_insert BEFORE INSERT ON reliability_objections WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.user_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END;
 CREATE TRIGGER account_erased_reliability_objections_update BEFORE UPDATE ON reliability_objections WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.user_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END;
