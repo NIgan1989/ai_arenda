@@ -49,6 +49,7 @@ import {ownerCleaningTips,decideCleaningTip} from './cleaning-price';
 import {releaseStatements,releaseWindow} from './overdue-cleaning';
 import {lateUntil,LATE_OPENS} from './late-arrival';
 import {reportNotLetIn,BLOCKED_TEXT} from './account-restrictions';
+import {verifiedPlaceSql} from './property-rights';
 import {ruleFor,minutesLabel} from './decision-rules';
 import {ownerWindows,decideCalendarWindow,openWindowFor,openWindowsFor,openWindowsIn,windowAt,windowQuote} from './calendar-windows';
 
@@ -202,7 +203,7 @@ export class RentalService {
     // The owner's reliability travels with each flat; the owner's id itself stays private.
     const owners=owner?[]:await this.all('SELECT id,owner_id FROM properties WHERE id IN (SELECT value FROM json_each(?))',JSON.stringify(items.slice(0,500).map(p=>p.id))),hosts=await reliabilityFor(this.db,'owner',owners.map(o=>o.owner_id));
     const hostOf=(id:string)=>hosts.get(owners.find(o=>o.id===id)?.owner_id);
-    const [ratings,details,operations,busy]=await Promise.all([ratingsFor(this.db,items.map(p=>p.id)),this.all('SELECT * FROM property_details'),this.all('SELECT * FROM property_operations'),this.all("SELECT DISTINCT property_id FROM bookings WHERE (status='confirmed' OR (status='requested' AND expires_at>?)) AND start<=? AND occupied_until>?",now(),now(),now())]);
+    const [ratings,details,operations,busy]=await Promise.all([ratingsFor(this.db,items.map(p=>p.id)),this.all(`SELECT d.*,${verifiedPlaceSql('d.property_id')} verified FROM property_details d`),this.all('SELECT * FROM property_operations'),this.all("SELECT DISTINCT property_id FROM bookings WHERE (status='confirmed' OR (status='requested' AND expires_at>?)) AND start<=? AND occupied_until>?",now(),now(),now())]);
     // The owner sees whether the flat's pin still matches its address (a pin from an old address does not count).
     const pins=owner?await this.all('SELECT property_id,address_fingerprint FROM property_locations WHERE property_id IN (SELECT value FROM json_each(?))',JSON.stringify(items.slice(0,500).map(p=>p.id))):[];
     // Only the version of the check-in instruction travels to the owner (it says whether one is saved); the text stays encrypted.
@@ -213,7 +214,7 @@ export class RentalService {
     const approvedIds=owner?new Set((await this.all('SELECT id FROM pilot_property_admissions WHERE owner_reviewed=1 AND id IN (SELECT value FROM json_each(?))',JSON.stringify(items.slice(0,500).map(p=>p.id)))).map(a=>a.id)):new Set();
     // «Заведение»: the halls of one place carry its name, for the guest and for the owner (lib/venue.ts).
     const venues=await venuesFor(this.db);
-    return items.map(p=>{const d=details.find(d=>d.property_id===p.id),op=operations.find(o=>o.property_id===p.id);return {...p,...(venues.has(p.id)?{venue:venues.get(p.id)}:{}),...(owner?{address_check:Number(p.published)===1&&!p.demo_owner&&unchecked.some(u=>u.id===p.id),mapped:pins.some(l=>l.property_id===p.id&&l.address_fingerprint===[p.city,p.district,p.address].join('|')),access_version:access.find(a=>a.property_id===p.id)?.version||0,approved:approvedIds.has(p.id)}:{host:hostOf(p.id)||null}),details:d?JSON.parse(d.details):{},photos:d?JSON.parse(d.photos):[],listing_version:d?.version||0,rating:ratings.get(p.id)||null,display_status:propertyStatus(p,op,busy.some(b=>b.property_id===p.id)),...(owner?{}:{published:undefined})};});
+    return items.map(p=>{const d=details.find(d=>d.property_id===p.id),op=operations.find(o=>o.property_id===p.id);return {...p,...(venues.has(p.id)?{venue:venues.get(p.id)}:{}),...(owner?{address_check:Number(p.published)===1&&!p.demo_owner&&unchecked.some(u=>u.id===p.id),mapped:pins.some(l=>l.property_id===p.id&&l.address_fingerprint===[p.city,p.district,p.address].join('|')),access_version:access.find(a=>a.property_id===p.id)?.version||0,approved:approvedIds.has(p.id)}:{host:hostOf(p.id)||null}),details:d?JSON.parse(d.details):{},photos:d?JSON.parse(d.photos):[],listing_version:d?.version||0,rating:ratings.get(p.id)||null,verified:!!d?.verified,display_status:propertyStatus(p,op,busy.some(b=>b.property_id===p.id)),...(owner?{}:{published:undefined})};});
   }
   async workerCard(userId:string){
     const p=await this.one('SELECT p.name,p.city,p.districts,p.experience,p.availability,d.avatar_id,d.work_status FROM profiles p LEFT JOIN profile_details d ON d.user_id=p.id WHERE p.id=?',userId);

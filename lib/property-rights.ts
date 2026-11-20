@@ -16,6 +16,15 @@ export const RIGHT_DOCS:Record<RightKind,string>={
  sublease:'договор аренды и нотариально заверенное согласие собственника на сдачу в субаренду',
 };
 export const RIGHT_LIMIT=4;
+// «Жильё проверено»: a person at the platform approved the place by its proof (the guest sees the mark on the card).
+// `id` is a trusted column expression naming the place's id, such as p.id or d.property_id.
+export const verifiedPlaceSql=(id='p.id')=>{if(!/^[a-zA-Z][a-zA-Z0-9_]*\.[a-zA-Z_]+$/.test(id))throw new Error('Invalid column');return `(EXISTS(SELECT 1 FROM property_right_docs rd WHERE rd.property_id=${id} AND rd.checked_at IS NOT NULL) AND EXISTS(SELECT 1 FROM pilot_property_admissions pa WHERE pa.id=${id} AND pa.owner_reviewed=1))`;};
+// Once a person approved the place the photos are deleted: only the record of the check stays (kind, who, when).
+export async function settleRightDocs(db:D1Database,propertyId:string,reviewerId:string,config:OperationConfig={}){
+ const keys=(await rows(db,"SELECT object_key FROM property_right_docs WHERE property_id=? AND checked_at IS NULL AND object_key<>''",propertyId)).map(r=>String(r.object_key));
+ await q(db,"UPDATE property_right_docs SET data='',object_key='',checked_at=?,checked_by=? WHERE property_id=? AND checked_at IS NULL",epoch(),reviewerId,propertyId).run();
+ for(const key of keys)await config.BUCKET?.delete(key).catch(()=>{});
+}
 
 async function ownPlace(s:RentalService,propertyId:string){
  const p=await one(s.db,'SELECT id,owner_id,title,demo_owner FROM properties WHERE id=?',required(propertyId,'Жильё',100));
@@ -61,11 +70,15 @@ export async function removeRightDoc(s:RentalService,role:Role,body:Row,config:O
 export async function listRightDocs(s:RentalService,propertyId:string,platformAdmin=false){
  const p=await one(s.db,'SELECT id,owner_id FROM properties WHERE id=?',required(propertyId,'Жильё',100));
  if(!p||(!platformAdmin&&p.owner_id!==s.userId))throw new DomainError('Жильё не найдено.',404);
- return {docs:await rows(s.db,'SELECT id,kind,width,height,created_at FROM property_right_docs WHERE property_id=? ORDER BY created_at,id',p.id),kinds:RIGHT_KINDS,need:RIGHT_DOCS};
+ const docs=await rows(s.db,'SELECT id,kind,width,height,created_at,checked_at FROM property_right_docs WHERE property_id=? ORDER BY created_at,id',p.id);
+ // The administrator compares the name on the document with the profile and with the Kaspi recipient guests pay.
+ const names=platformAdmin?await one(s.db,'SELECT u.name,d.recipient,d.pending_recipient FROM profiles u LEFT JOIN payout_details d ON d.user_id=u.id WHERE u.id=?',p.owner_id):null;
+ return {docs,kinds:RIGHT_KINDS,need:RIGHT_DOCS,...(names?{names:{profile:names.name||'',recipient:names.recipient||'',pendingRecipient:names.pending_recipient||''}}:{})};
 }
 export async function readRightDoc(s:RentalService,docId:string,config:OperationConfig={},platformAdmin=false){
  const d=await one(s.db,'SELECT d.*,p.owner_id place_owner FROM property_right_docs d JOIN properties p ON p.id=d.property_id WHERE d.id=?',docId);
  if(!d||(!platformAdmin&&d.place_owner!==s.userId))throw new DomainError('Документ недоступен.',404);
+ if(d.checked_at)throw new DomainError('Фото документа удалено после проверки.',410);
  if(!d.object_key)return {data:d.data};
  const object=await config.BUCKET?.get(d.object_key);if(!object)throw new DomainError('Хранилище фото сейчас недоступно.',503);
  const bytes=new Uint8Array(await object.arrayBuffer());let binary='';for(const byte of bytes)binary+=String.fromCharCode(byte);

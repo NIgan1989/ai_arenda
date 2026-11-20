@@ -17,7 +17,7 @@ export const accountDeletionColumns:Record<string,string>={
  "reliability_objections":"id,user_id,role,body,status,created_at,due_at,answer,answered_by,answered_at",
  "service_billing":"user_id,card_mask,card_token,card_test,card_at,last_charge_at,failed_at,paused_at,version,updated_at",
  "payment_receipts":"id,booking_id,job_id,user_id,data,object_key,width,height,bytes,created_at",
- "property_right_docs":"id,property_id,owner_id,kind,data,object_key,width,height,bytes,created_at",
+ "property_right_docs":"id,property_id,owner_id,kind,data,object_key,width,height,bytes,created_at,checked_at,checked_by",
  "account_restrictions":"user_id,kind,reason,booking_id,created_by,created_at",
  "cleaner_autopilot":"user_id,districts,days,from_minute,to_minute,min_fee,max_per_day,ask_new_owner,paused_until,version,updated_at",
  "regular_cleaners":"property_id,owner_id,cleaner_id,created_at",

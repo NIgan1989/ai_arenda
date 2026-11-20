@@ -14,7 +14,7 @@ import {publicPoint,mapCities} from './map-workspace';
 import {adminLiveMap} from './admin-map';
 import {AI_REVIEWER,sweepReviews} from './admin-autocheck';
 import {safetyAction} from './account-safety';
-import {listRightDocs,readRightDoc} from './property-rights';
+import {listRightDocs,readRightDoc,settleRightDocs} from './property-rights';
 import {restrictAccount,restrictionsList,unlistPlace} from './account-restrictions';
 import {billingState,billingOwners,saveBillingSettings,recordBalanceEntry} from './platform-billing';
 import {plansAdminState,savePlanSettings} from './autopilot-plans';
@@ -81,6 +81,9 @@ async function moneySummary(db:D1Database){
   return {month:fin.month,revenue:pl.revenue||0,forecastRevenue:forecast.current?.pl?.revenue||0,net:pl.net||0,cash:fin.balance.assets.cash,taxesDue:acc.totals.due,overdue:acc.totals.overdue,next:acc.totals.next?{name:acc.totals.next.name,due:acc.totals.next.due,left:acc.totals.next.left}:null};
  }catch{return null;}
 }
+// A place is approved only after the administrator compared the name on the document of the right to let it with the
+// owner's profile and with the Kaspi recipient guests pay (lib/payout.ts): a stranger's title does not let a home.
+function namesChecked(body:Row){if(body.namesMatch!==true)throw new DomainError('Отметьте, что ФИО в документе совпадает с владельцем и получателем Kaspi.');}
 export async function writePlatformAdmin(service:RentalService,route:string,body:Row,config:Config){
  requirePlatformAdmin(service.userId,config);
  if(route==='reviews/ai'){
@@ -89,10 +92,15 @@ export async function writePlatformAdmin(service:RentalService,route:string,body
   if(body.enabled)await sweepReviews(service.db,config);
   return {message:body.enabled?'Теперь заявки проверяет ИИ-администратор, спорные приходят вам.':'Теперь все заявки решаете вы. ИИ только показывает свои проверки.'};
  }
- if(route==='properties/approve'){if(body.confirmed!==true)throw new DomainError('Подтвердите, что проверили жильё и владельца.');return adminApproveProperty(service,body);}
+ if(route==='properties/approve'){if(body.confirmed!==true)throw new DomainError('Подтвердите, что проверили жильё и владельца.');namesChecked(body);const r=await adminApproveProperty(service,body);await settleRightDocs(service.db,String(body.propertyId),service.userId,config);return r;}
  if(route==='restrictions/decide')return restrictAccount(service,body,true);
  if(route==='properties/unlist')return unlistPlace(service,body,true);
- if(route==='reviews/decide'){if(body.confirmed!==true)throw new DomainError('Подтвердите фактическую проверку сведений.');return decideParticipantReview(service,body,true);}
+ if(route==='reviews/decide'){
+  if(body.confirmed!==true)throw new DomainError('Подтвердите фактическую проверку сведений.');
+  const review=await one(service.db,'SELECT role,property_id FROM participant_reviews WHERE id=?',String(body.id||''));
+  const place=body.status==='approved'&&review?.role==='owner'&&review.property_id;if(place)namesChecked(body);
+  const r=await decideParticipantReview(service,body,true);if(place)await settleRightDocs(service.db,review.property_id,service.userId,config);return r;
+ }
  if(route==='governance/policy'){
   if(config.TEST_DATA_ONLY==='1'&&[body.requireOwnerReview,body.requireCleanerReview,body.requirePhone].some(v=>v===true))throw new DomainError('Правила рабочего сервиса настраиваются вне учебного стенда.',409);
   return savePilotPolicy(service,body,true);

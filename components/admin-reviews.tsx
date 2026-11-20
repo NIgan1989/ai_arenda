@@ -4,7 +4,7 @@ import {Sparkles,CheckCircle2,AlertTriangle,CircleDashed,House,UserRound,Camera,
 import {Button} from './ui/button';
 import {Textarea} from './ui/textarea';
 import './admin-reviews.css';
-import {RightDocsAdmin} from './admin-rights';
+import {RightDocsAdmin,namesMatch} from './admin-rights';
 
 type Row=Record<string,any>;
 type Save=(path:string,body:Row)=>Promise<Row|undefined>;
@@ -44,7 +44,7 @@ function ReviewCard({review:r,busy,save,quiet=false}:{review:Row;busy:boolean;sa
  const checks:Row[]=r.ai_checks||[],risks=checks.filter(c=>c.state==='risk'),fixes=checks.filter(c=>c.state==='fix');
  const [rejecting,setRejecting]=useState(false),[reason,setReason]=useState(()=>[...risks,...fixes].map(c=>c.note).join('. '));
  const owner=r.role==='owner';
- const decide=(status:'approved'|'rejected')=>save('reviews/decide',{id:r.id,status,expectedVersion:r.version,confirmed:true,method:'Администратор по проверке ИИ',notes:status==='approved'?(risks.length?'Проверено вручную: '+risks.map(c=>c.note).join('; '):'Проверено администратором'):reason.trim(),validUntil:!owner&&status==='approved'?new Date(Date.now()+180*86400000).toISOString():undefined});
+ const decide=(status:'approved'|'rejected')=>save('reviews/decide',{id:r.id,status,expectedVersion:r.version,confirmed:true,method:'Администратор по проверке ИИ',notes:status==='approved'?(risks.length?'Проверено вручную: '+risks.map(c=>c.note).join('; '):'Проверено администратором'):reason.trim(),namesMatch:owner&&status==='approved'?true:undefined,validUntil:!owner&&status==='approved'?new Date(Date.now()+180*86400000).toISOString():undefined});
  const summary=r.ai_verdict==='escalate'?'ИИ сомневается: '+risks.map(c=>c.note.charAt(0).toLowerCase()+c.note.slice(1)).join('; '):r.ai_verdict==='fix'?'Не хватает: '+fixes.map(c=>c.note.charAt(0).toLowerCase()+c.note.slice(1)).join('; '):r.ai_verdict==='approve'?'ИИ: все правила пройдены':'ИИ ещё не проверял';
  return <article className={'review-card'+(r.ai_verdict==='escalate'?' is-risk':'')}>
   <div className="review-head"><span className="reviews-role">{owner?<House size={18}/>:<UserRound size={18}/>}</span><div><span className="review-kind">{owner?'Жильё':'Исполнитель'} · {when(r.created_at)}</span><h3>{owner?(r.title||'Жильё'):r.name}</h3><p>{owner?[r.name,[r.city,r.district].filter(Boolean).join(', '),r.address].filter(Boolean).join(' · '):'Отклик на уборку'}</p></div>{owner&&<div className="review-price"><strong>{money(r.price)}</strong><small><Camera size={13}/>{r.photos} фото</small></div>}</div>
@@ -52,6 +52,6 @@ function ReviewCard({review:r,busy,save,quiet=false}:{review:Row;busy:boolean;sa
   {owner&&r.property_id&&<RightDocsAdmin propertyId={r.property_id}/>}
   {checks.length>0&&<ul className="review-checks">{checks.map(c=>{const Icon=stateIcon[c.state as keyof typeof stateIcon]||CheckCircle2;return <li key={c.key} className={'is-'+c.state}><Icon size={15}/><span>{c.note}</span></li>;})}</ul>}
   {!quiet&&(rejecting?<div className="review-reject"><label>Причина для участника<Textarea value={reason} onChange={e=>setReason(e.target.value)} maxLength={1000} rows={3}/></label><div className="review-actions"><Button variant="outline" disabled={busy} onClick={()=>setRejecting(false)}>Отмена</Button><Button variant="destructive" disabled={busy||!reason.trim()} onClick={()=>decide('rejected')}>Отклонить</Button></div></div>
-   :<div className="review-actions"><Button variant="outline" disabled={busy} onClick={()=>setRejecting(true)}>Отклонить</Button><Button disabled={busy} onClick={()=>decide('approved')}>Одобрить</Button></div>)}
+   :<div className="review-actions"><Button variant="outline" disabled={busy} onClick={()=>setRejecting(true)}>Отклонить</Button><Button disabled={busy} onClick={()=>{if(!owner||namesMatch())void decide('approved');}}>Одобрить</Button></div>)}
  </article>;
 }

@@ -4,6 +4,7 @@ ALTER TABLE property_policies ADD COLUMN prepay_percent INTEGER NOT NULL DEFAULT
 ALTER TABLE booking_terms ADD COLUMN prepay_percent INTEGER CHECK(prepay_percent IS NULL OR prepay_percent IN (0,10,20,30,50,100));
 -- «Право сдавать жильё» (lib/property-rights.ts): photos of the title, or of the lease with the owner's notarised consent
 -- to sublet. A person at the platform looks at them before the place is shown; the AI never approves a place alone.
+-- After a person checked the proof its photo is deleted; the row stays as the record of the check (checked_at, checked_by).
 CREATE TABLE property_right_docs (
  id TEXT PRIMARY KEY,
  property_id TEXT NOT NULL REFERENCES properties(id),
@@ -14,7 +15,9 @@ CREATE TABLE property_right_docs (
  width INTEGER NOT NULL,
  height INTEGER NOT NULL,
  bytes INTEGER NOT NULL,
- created_at INTEGER NOT NULL
+ created_at INTEGER NOT NULL,
+ checked_at INTEGER,
+ checked_by TEXT
 );
 CREATE INDEX property_right_docs_place ON property_right_docs(property_id,created_at);
 CREATE TRIGGER account_erased_property_right_docs_insert BEFORE INSERT ON property_right_docs WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.owner_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END;
