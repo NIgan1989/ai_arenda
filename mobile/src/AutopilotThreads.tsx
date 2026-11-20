@@ -103,7 +103,7 @@ export function AutopilotThreads({ role, data, now, paymentMode, needs = [], cal
   return (
     <View style={a.box} accessibilityLabel="Автопилот">
       <View style={a.head}>
-        <Text style={a.badge}>{role === 'guest' ? '✦ Мои брони' : '✦ Автопилот'}</Text>
+        <Text style={role === 'guest' ? a.guestLabel : a.badge}>{role === 'guest' ? 'Мои брони' : '✦ Автопилот'}</Text>
         <Text style={a.sum}>{threadsSummary(role, threads)}</Text>
         <Text style={a.clock}>{threadClock(now)}</Text>
       </View>
@@ -179,6 +179,7 @@ export function AutopilotThreads({ role, data, now, paymentMode, needs = [], cal
 const a = StyleSheet.create({
   box: { gap: 12, padding: 12, borderRadius: T.radius.lg, borderWidth: 1, borderColor: C.line, backgroundColor: C.surface },
   head: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  guestLabel: { ...type.caption, color: C.ink, fontWeight: '700' },
   badge: { ...type.caption, fontWeight: '700', color: C.gold, backgroundColor: C.night, paddingHorizontal: 8, paddingVertical: 2, borderRadius: T.radius.full, overflow: 'hidden' },
   sum: { ...type.label, flex: 1, minWidth: 0, color: C.inkSoft, fontWeight: '500' },
   clock: { ...type.caption, color: C.muted, fontVariant: ['tabular-nums'] },
