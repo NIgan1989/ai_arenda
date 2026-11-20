@@ -46,12 +46,14 @@ export async function saveRightDoc(s:RentalService,role:Role,body:Row,config:Ope
  if(await approved(s.db,p.id))throw new DomainError('Жильё уже проверено. Чтобы заменить документ, напишите администратору.',409);
  const image=jpegInput(body.data,'property'),docId=uuid(),key=config.BUCKET?'property-rights/'+docId+'.jpg':'';
  if(key){const binary=atob(image.data.split(',')[1]);await config.BUCKET!.put(key,Uint8Array.from(binary,ch=>ch.charCodeAt(0)),{httpMetadata:{contentType:'image/jpeg'}});}
- // One kind per place: choosing the other kind starts the proof over.
+ // One kind per place: choosing the other kind starts the proof over, and the replaced photos leave the storage too.
+ const replaced=(await rows(s.db,"SELECT object_key FROM property_right_docs WHERE property_id=? AND kind<>? AND object_key<>''",p.id,kind)).map(d=>String(d.object_key));
  const r=await s.db.batch([
   q(s.db,'DELETE FROM property_right_docs WHERE property_id=? AND kind<>?',p.id,kind),
   q(s.db,'INSERT INTO property_right_docs(id,property_id,owner_id,kind,data,object_key,width,height,bytes,created_at) SELECT ?,?,?,?,?,?,?,?,?,? WHERE (SELECT COUNT(*) FROM property_right_docs WHERE property_id=?)<?',
    docId,p.id,s.userId,kind,key?'':image.data,key,image.width,image.height,image.bytes,epoch(),p.id,RIGHT_LIMIT),
  ]);
+ for(const old of replaced)await config.BUCKET?.delete(old).catch(()=>{});
  if(!r[1].meta.changes){if(key)await config.BUCKET!.delete(key).catch(()=>{});throw new DomainError('Приложено максимум фото документа: '+RIGHT_LIMIT+'.',409);}
  // A waiting review is checked again at once, so the platform administrators hear the place is ready for their look.
  const waiting=await one(s.db,"SELECT id FROM participant_reviews WHERE property_id=? AND user_id=? AND role='owner' AND status='pending' ORDER BY created_at DESC LIMIT 1",p.id,s.userId);

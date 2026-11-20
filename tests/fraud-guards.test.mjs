@@ -49,6 +49,9 @@ test('«Меня не заселили» puts the owner on hold at once; the adm
   assert.equal(R.prepare('SELECT kind FROM account_restrictions WHERE user_id=?').get('owner').kind,'hold');
   assert.ok(R.prepare("SELECT 1 FROM administrator_issues WHERE entity_id=? AND description LIKE 'Меня не заселили%'").get(f.booking),'an urgent issue for the administrator');
   assert.match(R.prepare("SELECT body FROM notifications WHERE user_id='other' AND dedupe LIKE 'guest:owner-hold:%'").get().body,/не переводите деньги заранее/);
+  // In dispute: the stay watch never settles it as the guest's no-show, even after its end.
+  const {sweepStays}=await load('stay-watch');R.prepare('UPDATE bookings SET end=? WHERE id=?').run(now()-60,f.booking);
+  await sweepStays(f.db,{});assert.equal(R.prepare('SELECT status FROM bookings WHERE id=?').get(f.booking).status,'confirmed');
   // Hidden from the map and no new bookings.
   const catalog=await f.guest.roleState('guest',{catalog:true});
   assert.ok(!catalog.properties.some(p=>p.id===f.property),'the place left the map');
@@ -110,4 +113,15 @@ test('the offers tell every role the new rules, in a new edition everyone accept
  assert.match(text('owner'),/нотариально удостоверенное согласие собственника/);assert.match(text('owner'),/сотрудник Оператора, а не ИИ-администратор/);assert.match(text('owner'),/включается сама после 5-й/);
  assert.match(text('cleaner'),/не берёт с исполнителя предоплату/);
  assert.match(text('privacy'),/документа о праве сдавать жильё/);
+});
+test('photos replaced by the other kind and settled after the check leave the object storage',async()=>{
+ const f=await fixture(),R=f.db.raw;try{
+  R.prepare('DELETE FROM property_right_docs').run();
+  const stored=new Map(),BUCKET={put:async(k,v)=>{stored.set(k,v);},delete:async k=>{stored.delete(k);},get:async k=>stored.has(k)?{arrayBuffer:async()=>stored.get(k).buffer}:null};
+  await saveRightDoc(f.owner,'owner',{propertyId:f.property,kind:'owner',data:photo},{BUCKET});
+  await saveRightDoc(f.owner,'owner',{propertyId:f.property,kind:'sublease',data:photo},{BUCKET});
+  assert.equal(stored.size,1,'the replaced kind is deleted');
+  const {settleRightDocs}=await load('property-rights');await settleRightDocs(f.db,f.property,'admin',{BUCKET});
+  assert.equal(stored.size,0,'nothing stays after the check');
+ }finally{f.db.close();}
 });
