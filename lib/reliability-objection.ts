@@ -29,11 +29,13 @@ export async function objectReliability(db:D1Database,userId:string,role:string,
  if(text.length>2000)throw new DomainError('Сократите текст до 2 000 знаков.');
  if(await one(db,"SELECT 1 FROM reliability_objections WHERE user_id=? AND role=? AND status='open'",userId,role))throw new DomainError('Ваше возражение уже на рассмотрении. Ответ придёт в уведомлениях.',409);
  const id=uuid(),due=workingDaysLater(at),admins=typeof adminIds==='string'?adminIds.split(',').map(v=>v.trim()).filter(Boolean):[];
+ const busy=new DomainError('Ваше возражение уже на рассмотрении. Ответ придёт в уведомлениях.',409);
  await db.batch([
   q(db,'INSERT INTO reliability_objections(id,user_id,role,body,created_at,due_at) VALUES (?,?,?,?,?,?)',id,userId,role,text,at,due),
   q(db,'INSERT INTO audit_events VALUES (?,?,?,?,?)',uuid(),userId,id,JSON.stringify({action:'reliability.objected',role}),at),
   ...admins.map(admin=>q(db,'INSERT OR IGNORE INTO notifications(id,user_id,body,dedupe,read,created_at) VALUES (?,?,?,?,0,?)',uuid(),admin,'Возражение '+ADMIN_TEXT[role as ObjectionRole]+' на оценку надёжности. Ответить нужно за 3 рабочих дня: раздел «Жалобы» в админке.','admin:objection:'+id+':'+admin,at)),
- ]);
+ // Two overlapping sends: the partial unique index keeps one open objection, the other gets the same answer.
+ ]).catch(e=>{throw /UNIQUE/i.test(String((e as Error)?.message))?busy:e;});
  return {message:'Возражение отправлено. Администратор ответит в течение 3 рабочих дней.',...await myObjection(db,userId,role)};
 }
 

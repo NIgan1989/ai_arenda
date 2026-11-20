@@ -25,7 +25,9 @@ test('a participant objects to the rating once, the administrator answers, the p
   const mine=(await myObjection(f.db,'guest','guest')).objection;
   assert.equal(mine.status,'answered');assert.match(mine.answer,/спор снят/);
   assert.match(f.db.raw.prepare("SELECT body FROM notifications WHERE user_id='guest' AND dedupe LIKE 'guest:reliability-objection:%'").get().body,/спор снят/);
-  // After the answer a new objection can be sent.
-  await objectReliability(f.db,'guest','guest',{text:'Появился новый спор, тоже ошибочный.'},'');
+  // After the answer a new objection can be sent; two overlapping sends leave one open objection.
+  const both=await Promise.allSettled([objectReliability(f.db,'guest','guest',{text:'Появился новый спор, тоже ошибочный.'},''),objectReliability(f.db,'guest','guest',{text:'Появился новый спор, тоже ошибочный.'},'')]);
+  assert.equal(both.filter(r=>r.status==='fulfilled').length,1);assert.equal(both.find(r=>r.status==='rejected').reason.status,409);
+  assert.equal(f.db.raw.prepare("SELECT COUNT(*) n FROM reliability_objections WHERE user_id='guest' AND role='guest' AND status='open'").get().n,1);
  }finally{f.db.close();}
 });
