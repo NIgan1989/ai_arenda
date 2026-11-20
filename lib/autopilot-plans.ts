@@ -187,7 +187,7 @@ export async function planState(service:RentalService,role:PlanRole){
 }
 
 // The daily round: renewals, grace, pauses, reminders, the cleaner's day plan at 8:00 and the owner's Monday report.
-export async function sweepPlans(db:D1Database,at=epoch()){
+export async function sweepPlans(db:D1Database,at=epoch(),config:{PLATFORM_ADMIN_IDS?:string}={}){
  const s=await planSettings(db),result:Row={renewed:0,grace:0,paused:0,reminded:0,dayPlans:0,reports:0};
  const due=await rows(db,`SELECT * FROM autopilot_plans WHERE (status IN ('trial','active') AND period_end<=?) OR status='grace' ORDER BY period_end LIMIT 100`,at);
  for(const plan of due){
@@ -232,7 +232,7 @@ export async function sweepPlans(db:D1Database,at=epoch()){
   }
  }
  // The weekly card charge for all service fees; a debt unpaid for seven days pauses the debtor's plans.
- result.dues=await sweepDues(db,async(d,user,t)=>{for(const plan of await rows(d,"SELECT * FROM autopilot_plans WHERE user_id=? AND status IN ('trial','active','grace')",user))await pause(d,plan,t,plan.role==='owner'?'Автопилот на паузе: услуги сервиса не оплачены. Объекты в режиме «Я сам», принятые брони и уборки в силе.':'Автопилот на паузе: услуги сервиса не оплачены. Принятые уборки в силе.');},at);
+ result.dues=await sweepDues(db,async(d,user,t)=>{for(const plan of await rows(d,"SELECT * FROM autopilot_plans WHERE user_id=? AND status IN ('trial','active','grace')",user))await pause(d,plan,t,plan.role==='owner'?'Автопилот на паузе: услуги сервиса не оплачены. Объекты в режиме «Я сам», принятые брони и уборки в силе.':'Автопилот на паузе: услуги сервиса не оплачены. Принятые уборки в силе.');},at,config);
  return result;
 }
 

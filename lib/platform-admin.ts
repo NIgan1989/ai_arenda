@@ -4,6 +4,7 @@ import {isPlatformAdmin} from './account';
 import type {RentalService} from './service';
 import {one,type OperationConfig} from './operation-core';
 import {setTestPayments} from './finance';
+import {cardChargesAdmin,cardChargesAction} from './service-dues';
 import {buildRuntimeHealth} from './runtime-health';
 import {integrationStatus} from './delivery';
 import {securityState,decideParticipantReview,adminApproveProperty} from './participant-security';
@@ -51,7 +52,7 @@ export async function readPlatformAdmin(service:RentalService,route:string,param
  if(route==='restrictions')return restrictionsList(service,true);
  if(route==='billing/owners')return billingOwners(service,params);
  if(route==='billing/plans')return plansAdminState(service.db);
- if(route==='billing'){const state={...await billingState(service),plans:await plansAdminState(service.db),testPayments:(await one(service.db,"SELECT test_payments FROM platform_billing WHERE id='global'"))?.test_payments===1};await service.audit(service.userId,'admin.billing_viewed').run();return state;}
+ if(route==='billing'){const state={...await billingState(service),plans:await plansAdminState(service.db),charges:await cardChargesAdmin(service.db),testPayments:(await one(service.db,"SELECT test_payments FROM platform_billing WHERE id='global'"))?.test_payments===1};await service.audit(service.userId,'admin.billing_viewed').run();return state;}
  if(route==='finance'){const state=await companyFinance(service.db,params);await service.audit(service.userId,'admin.finance_viewed').run();return state;}
  if(route==='accounting'){const state=await accountingState(service.db);await service.audit(service.userId,'admin.accounting_viewed').run();return state;}
  if(route==='governance')return {...await governanceState(service,'guest',true),admissions:[],testMode:config.TEST_DATA_ONLY==='1'};
@@ -116,6 +117,7 @@ export async function writePlatformAdmin(service:RentalService,route:string,body
  if(route==='billing/plans')return savePlanSettings(service,body);
  if(route==='billing/balance')return recordBalanceEntry(service,body);
  if(route==='billing/payout')return markCleanerPayout(service,body);
+ if(route==='billing/charges')return cardChargesAction(service.db,service.userId,body);
  if(route==='finance/settings')return saveFinanceSettings(service,body);
  if(route==='finance/cost')return saveCost(service,body);
  if(route==='finance/cost/toggle')return toggleCost(service,body);

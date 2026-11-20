@@ -96,3 +96,87 @@ test('«Оплатить сейчас» that overlaps the Monday round takes the
   assert.equal(f.db.raw.prepare("SELECT COUNT(*) n FROM autopilot_plans WHERE user_id='owner'").get().n,0);
  }finally{f.db.close();}
 });
+
+// ── Safe card charges: the record comes before the bank, a lost answer is never repeated ──
+const {cardChargesAction,cardChargesAdmin}=await load('service-dues');
+const admins={PLATFORM_ADMIN_IDS:'owner'};
+const charges=(f,user)=>f.db.raw.prepare('SELECT * FROM card_charges WHERE user_id=? ORDER BY created_at,rowid').all(user);
+
+test('a lost bank answer is never repeated: the charge waits as «unknown» until the administrator checks the bank',async()=>{
+ const f=await fixture();try{
+  await serviceBillingAction(f.cleaner,{action:'link'});owe(f,'cleaner',1900);
+  let calls=0;const bank=async op=>{calls++;throw new Error('timeout '+op.id);};
+  const at=now();assert.equal((await sweepDues(f.db,noPlans,at,admins,bank)).charged,0);
+  assert.equal(calls,1);assert.equal(charges(f,'cleaner')[0].status,'unknown');assert.equal(entries(f,'cleaner').length,0);assert.equal(await dueOf(f.db,'cleaner'),1900);
+  assert.match(notes(f,'owner','admin:charge-unknown:%')[0],/Повторять не будем/);
+  // Neither the next round nor «Оплатить сейчас» goes to the bank again while the answer is unknown.
+  assert.equal((await sweepDues(f.db,noPlans,at+WEEK,admins,bank)).charged,0);
+  assert.equal(await serviceBillingAction(f.cleaner,{action:'pay'},admins,bank).then(r=>r.message),'Сейчас платить нечего.');
+  assert.equal(calls,1);assert.equal((await serviceBillingState(f.cleaner)).checking,1900);
+  // The administrator checked the bank: the money was taken. The ledger records it once.
+  const id=charges(f,'cleaner')[0].id;
+  await assert.rejects(cardChargesAction(f.db,'owner',{action:'resolve',id,outcome:'succeeded'}),/Подтвердите/);
+  assert.match((await cardChargesAction(f.db,'owner',{action:'resolve',id,outcome:'succeeded',confirmed:true})).message,/списал/);
+  assert.equal(entries(f,'cleaner').length,1);assert.equal(await dueOf(f.db,'cleaner'),0);
+  await assert.rejects(cardChargesAction(f.db,'owner',{action:'resolve',id,outcome:'failed',confirmed:true}),e=>e.status===409);
+ }finally{f.db.close();}
+});
+
+test('a declined card writes nothing, is not retried the same week, and gives the seven days',async()=>{
+ const f=await fixture();try{
+  await serviceBillingAction(f.cleaner,{action:'link'});owe(f,'cleaner',1900);
+  let calls=0;const bank=async()=>{calls++;return {status:'failed',error:'insufficient_funds'};};
+  const at=now();await sweepDues(f.db,noPlans,at,admins,bank);await sweepDues(f.db,noPlans,at+60,admins,bank);
+  assert.equal(calls,1,'one automatic attempt a week');assert.equal(charges(f,'cleaner')[0].status,'failed');assert.equal(entries(f,'cleaner').length,0);
+  assert.equal(billing(f,'cleaner').failed_at,at);assert.match(notes(f,'cleaner','service:declined:%')[0],/Деньги не сняты/);
+  await assert.rejects(serviceBillingAction(f.cleaner,{action:'pay'},admins,bank),e=>e.status===402);
+  let paused=0;await sweepDues(f.db,async()=>{paused++;},at+PAY_DAYS*DAY+1,admins,bank);assert.equal(paused,1);
+ }finally{f.db.close();}
+});
+
+test('the stop switch halts every charge; a large week waits for the person; the daily limit holds the round',async()=>{
+ const f=await fixture();try{
+  await serviceBillingAction(f.cleaner,{action:'link'});await serviceBillingAction(f.owner,{action:'link'});owe(f,'cleaner',1900);
+  await cardChargesAction(f.db,'owner',{action:'stop'});
+  assert.equal((await sweepDues(f.db,noPlans,now(),admins)).charged,0);
+  await assert.rejects(serviceBillingAction(f.cleaner,{action:'pay'},admins),e=>e.status===503);
+  assert.equal((await serviceBillingState(f.cleaner)).stopped,true);assert.equal(charges(f,'cleaner').length,0);
+  await cardChargesAction(f.db,'owner',{action:'resume'});
+  // Above the confirmation threshold the Monday round only asks.
+  await cardChargesAction(f.db,'owner',{action:'limits',confirmAbove:1000,dailyLimit:100000});
+  const at=now();assert.equal((await sweepDues(f.db,noPlans,at,admins)).charged,0);
+  assert.equal(charges(f,'cleaner')[0].status,'held');assert.equal((await serviceBillingState(f.cleaner)).confirm,1900);
+  assert.match(notes(f,'cleaner','service:held:%')[0],/подтвердите её кнопкой «Оплатить сейчас»/);
+  assert.match((await serviceBillingAction(f.cleaner,{action:'pay'},admins)).message,/Списано 1\s900/);assert.equal(await dueOf(f.db,'cleaner'),0);
+  // The daily limit: what was taken today counts, the rest waits for tomorrow.
+  await cardChargesAction(f.db,'owner',{action:'limits',confirmAbove:100000,dailyLimit:10000});
+  owe(f,'owner',9000,'owner');
+  assert.equal((await sweepDues(f.db,noPlans,at+60,admins)).charged,0,'1 900 taken today + 9 000 is over 10 000');
+  assert.match(notes(f,'owner','admin:charge-limit:%')[0],/Дневной предел/);
+  assert.equal((await cardChargesAdmin(f.db)).today,1900);
+ }finally{f.db.close();}
+});
+
+test('an attempt left «started» by a stopped worker becomes «unknown» and is reported, never retried',async()=>{
+ const f=await fixture();try{
+  await serviceBillingAction(f.cleaner,{action:'link'});owe(f,'cleaner',1900);
+  const at=now();f.db.raw.prepare("INSERT INTO card_charges(id,user_id,request_key,amount,status,reason,card_mask,test,created_at) VALUES ('op1','cleaner','card:cleaner:x',1900,'started','now','•• 0000',1,?)").run(at-16*60);
+  let calls=0;await sweepDues(f.db,noPlans,at,admins,async()=>{calls++;return {status:'succeeded'};});
+  assert.equal(calls,0);assert.equal(f.db.raw.prepare("SELECT status FROM card_charges WHERE id='op1'").get().status,'unknown');
+  assert.match(notes(f,'owner','admin:charge-unknown:op1%')[0],/не завершилось/);
+  assert.match((await cardChargesAction(f.db,'owner',{action:'resolve',id:'op1',outcome:'failed',confirmed:true})).message,/не списал/);
+  assert.equal(entries(f,'cleaner').length,0);
+ }finally{f.db.close();}
+});
+
+test('while charges are stopped nobody is paused; linking a card never takes a sum above the confirmation threshold',async()=>{
+ const f=await fixture();try{
+  owe(f,'owner',4900,'owner');const at=now();await sweepDues(f.db,noPlans,at,admins);assert.ok(billing(f,'owner').failed_at);
+  await cardChargesAction(f.db,'owner',{action:'stop'});
+  let paused=0;await sweepDues(f.db,async()=>{paused++;},at+PAY_DAYS*DAY+1,admins);assert.equal(paused,0);assert.equal(billing(f,'owner').paused_at,null);
+  await cardChargesAction(f.db,'owner',{action:'resume'});
+  await cardChargesAction(f.db,'owner',{action:'limits',confirmAbove:1000,dailyLimit:100000});
+  assert.doesNotMatch((await serviceBillingAction(f.owner,{action:'link'},admins)).message,/Списано/);assert.equal(await dueOf(f.db,'owner'),4900);
+  assert.match((await serviceBillingAction(f.owner,{action:'pay'},admins)).message,/Списано 4\s900/);
+ }finally{f.db.close();}
+});
