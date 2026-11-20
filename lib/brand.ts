@@ -6,7 +6,7 @@
 // poles around it as rays. In Kazakh culture it stands for a home. The colours are in design/tokens.json
 // (night, nightGlow, gold, domeFrom, domeTo).
 export const BRAND_NAME='AiQonaq';
-export const BRAND_LINE='Сервис аренды, где всё делает ИИ';
+export const BRAND_LINE='Сервис поиска аренды жилья и досуга';
 
 // ── The sign, in a 100×100 box with the centre at 50,50 ──────────────────────────────────────────────────────
 export const DOME_RING=35;
