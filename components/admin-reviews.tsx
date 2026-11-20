@@ -4,6 +4,7 @@ import {Sparkles,CheckCircle2,AlertTriangle,CircleDashed,House,UserRound,Camera,
 import {Button} from './ui/button';
 import {Textarea} from './ui/textarea';
 import './admin-reviews.css';
+import {RightDocsAdmin} from './admin-rights';
 
 type Row=Record<string,any>;
 type Save=(path:string,body:Row)=>Promise<Row|undefined>;
@@ -48,6 +49,7 @@ function ReviewCard({review:r,busy,save,quiet=false}:{review:Row;busy:boolean;sa
  return <article className={'review-card'+(r.ai_verdict==='escalate'?' is-risk':'')}>
   <div className="review-head"><span className="reviews-role">{owner?<House size={18}/>:<UserRound size={18}/>}</span><div><span className="review-kind">{owner?'Жильё':'Исполнитель'} · {when(r.created_at)}</span><h3>{owner?(r.title||'Жильё'):r.name}</h3><p>{owner?[r.name,[r.city,r.district].filter(Boolean).join(', '),r.address].filter(Boolean).join(' · '):'Отклик на уборку'}</p></div>{owner&&<div className="review-price"><strong>{money(r.price)}</strong><small><Camera size={13}/>{r.photos} фото</small></div>}</div>
   <p className={'review-verdict is-'+(r.ai_verdict||'none')}><Sparkles size={15}/>{summary}</p>
+  {owner&&r.property_id&&<RightDocsAdmin propertyId={r.property_id}/>}
   {checks.length>0&&<ul className="review-checks">{checks.map(c=>{const Icon=stateIcon[c.state as keyof typeof stateIcon]||CheckCircle2;return <li key={c.key} className={'is-'+c.state}><Icon size={15}/><span>{c.note}</span></li>;})}</ul>}
   {!quiet&&(rejecting?<div className="review-reject"><label>Причина для участника<Textarea value={reason} onChange={e=>setReason(e.target.value)} maxLength={1000} rows={3}/></label><div className="review-actions"><Button variant="outline" disabled={busy} onClick={()=>setRejecting(false)}>Отмена</Button><Button variant="destructive" disabled={busy||!reason.trim()} onClick={()=>decide('rejected')}>Отклонить</Button></div></div>
    :<div className="review-actions"><Button variant="outline" disabled={busy} onClick={()=>setRejecting(true)}>Отклонить</Button><Button disabled={busy} onClick={()=>decide('approved')}>Одобрить</Button></div>)}

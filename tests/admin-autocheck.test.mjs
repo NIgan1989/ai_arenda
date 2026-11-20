@@ -2,7 +2,7 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {fixture,load,now} from './helpers/platform.mjs';
 const {flatChecks,cleanerChecks,verdictOf,normalAddress,hasContacts,sweepReviews,AI_REVIEWER}=await load('admin-autocheck');
-const {requestParticipantReview}=await load('participant-security');
+const {requestParticipantReview,decideParticipantReview}=await load('participant-security');
 const {readPilotPolicy,savePilotPolicy}=await load('pilot-governance');
 const {readPlatformAdmin,writePlatformAdmin}=await load('platform-admin');
 
@@ -36,16 +36,22 @@ test('cleaner rules need a name and a photo, history goes to the administrator',
  assert.equal(verdictOf(cleanerChecks({name:'Гость',avatar:true,rejectedBefore:0,openComplaints:0})),'fix');
  assert.equal(verdictOf(cleanerChecks({name:'Айгуль',avatar:true,rejectedBefore:0,openComplaints:1})),'escalate');
 });
-test('a complete flat is approved by the AI administrator and shown on the map at once',async()=>{
+// A place is never approved by the AI alone: with every rule passed and the document attached, a person decides.
+test('a complete flat with its document goes to a person: the AI never approves a place by itself',async()=>{
  const f=await fixture();try{
   const {PUBLISH_REVIEW}=await load('listing-edit');await strict(f);readyFlat(f);
   const result=await requestParticipantReview(f.owner,'owner',{propertyId:f.property,reference:PUBLISH_REVIEW+': fixture'},{PLATFORM_ADMIN_IDS:'admin'});
-  assert.equal(result.verdict,'approve');
+  assert.equal(result.verdict,'escalate');assert.match(result.message,/сверит их вручную/);
   const review=f.db.raw.prepare('SELECT * FROM participant_reviews WHERE property_id=?').get(f.property);
-  assert.equal(review.status,'approved');assert.equal(review.reviewer_id,AI_REVIEWER);assert.match(review.notes,/Все правила пройдены/);
-  assert.equal(f.db.raw.prepare('SELECT published FROM properties WHERE id=?').get(f.property).published,1);
-  assert.equal(f.db.raw.prepare("SELECT COUNT(*) n FROM notifications WHERE dedupe LIKE 'admin:%'").get().n,0);
-  assert.match(f.db.raw.prepare("SELECT body FROM notifications WHERE dedupe LIKE 'owner:review:%'").get().body,/показано гостям/);
+  assert.equal(review.status,'pending');assert.equal(review.ai_verdict,'approve');
+  assert.equal(JSON.parse(review.ai_checks).find(c=>c.key==='rights').state,'ok');
+  assert.equal(f.db.raw.prepare('SELECT published FROM properties WHERE id=?').get(f.property).published,0);
+  assert.match(f.db.raw.prepare("SELECT body FROM notifications WHERE dedupe LIKE 'admin:review:%'").get().body,/документ о праве приложен/);
+  // Without the document the owner is told what to attach, and an administrator cannot approve it either.
+  f.db.raw.prepare('DELETE FROM property_right_docs WHERE property_id=?').run(f.property);
+  f.db.raw.prepare('UPDATE participant_reviews SET ai_checked_at=NULL').run();await sweepReviews(f.db,{});
+  assert.equal(JSON.parse(f.db.raw.prepare('SELECT ai_checks FROM participant_reviews WHERE id=?').get(review.id).ai_checks).find(c=>c.key==='rights').state,'fix');
+  await assert.rejects(decideParticipantReview(f.owner,{id:review.id,expectedVersion:review.version,status:'approved',method:'fixture',notes:'ok'},true),e=>e.status===409&&/документ/.test(e.message));
  }finally{f.db.close();}
 });
 test('a flat with too few photos waits for the owner and is approved by the sweep once fixed',async()=>{
@@ -57,7 +63,7 @@ test('a flat with too few photos waits for the owner and is approved by the swee
   assert.equal(f.db.raw.prepare("SELECT COUNT(*) n FROM notifications WHERE dedupe LIKE 'owner:review-fix:%'").get().n,1);
   readyFlat(f,4);f.db.raw.prepare('UPDATE participant_reviews SET ai_checked_at=0').run();
   assert.equal((await sweepReviews(f.db,{})).approve,1);
-  assert.equal(f.db.raw.prepare('SELECT status FROM participant_reviews WHERE property_id=?').get(f.property).status,'approved');
+  assert.equal(f.db.raw.prepare('SELECT status FROM participant_reviews WHERE property_id=?').get(f.property).status,'pending','a person approves a place');
  }finally{f.db.close();}
 });
 test('a doubtful flat goes to the administrator with the reason, and the administrator can switch the AI off',async()=>{
@@ -85,15 +91,15 @@ test('a cleaner with a name and a photo is admitted for six months on the first 
   assert.equal(review.status,'approved');assert.ok(review.valid_until>now()+170*86400);
  }finally{f.db.close();}
 });
-test('an approval refused because the flat changed after the request goes to the administrator instead of hiding',async()=>{
+test('a flat changed after the request still reaches the administrator instead of hiding',async()=>{
  const f=await fixture();try{
   const {PUBLISH_REVIEW}=await load('listing-edit');await strict(f);readyFlat(f,1);
   await requestParticipantReview(f.owner,'owner',{propertyId:f.property,reference:PUBLISH_REVIEW+': fixture'},{PLATFORM_ADMIN_IDS:'admin'});
   f.db.raw.prepare("INSERT INTO review_property_bindings(property_id,revision) VALUES (?,1) ON CONFLICT(property_id) DO UPDATE SET revision=revision+1").run(f.property);
   readyFlat(f,4);f.db.raw.prepare('UPDATE participant_reviews SET ai_checked_at=0').run();
-  assert.equal((await sweepReviews(f.db,{PLATFORM_ADMIN_IDS:'admin'})).escalate,1);
+  assert.equal((await sweepReviews(f.db,{PLATFORM_ADMIN_IDS:'admin'})).approve,1);
   const review=f.db.raw.prepare('SELECT * FROM participant_reviews WHERE property_id=?').get(f.property);
-  assert.equal(review.status,'pending');assert.equal(review.ai_verdict,'escalate');
+  assert.equal(review.status,'pending');
   assert.equal(f.db.raw.prepare("SELECT COUNT(*) n FROM notifications WHERE dedupe LIKE 'admin:review:%'").get().n,1);
  }finally{f.db.close();}
 });
@@ -134,6 +140,6 @@ test('after the city changes the old pin does not count, and the review request 
   assert.match(notified,/«Адрес»/);
   globalThis.fetch=async url=>new Response(JSON.stringify(String(url).includes('nominatim')?[{lon:'76.93',lat:'43.24'}]:[]));
   const placed=await requestParticipantReview(f.owner,'owner',{propertyId:f.property,reference:PUBLISH_REVIEW+': fixture'},{PLATFORM_ADMIN_IDS:'admin'});
-  assert.equal(placed.verdict,'approve');
+  assert.equal(placed.verdict,'escalate','handed to a person with every rule passed');
  }finally{globalThis.fetch=original;f.db.close();}
 });

@@ -48,6 +48,7 @@ import {ownerListingTips,decideListingTip} from './listing-quality';
 import {ownerCleaningTips,decideCleaningTip} from './cleaning-price';
 import {releaseStatements,releaseWindow} from './overdue-cleaning';
 import {lateUntil,LATE_OPENS} from './late-arrival';
+import {reportNotLetIn,BLOCKED_TEXT} from './account-restrictions';
 import {ruleFor,minutesLabel} from './decision-rules';
 import {ownerWindows,decideCalendarWindow,openWindowFor,openWindowsFor,openWindowsIn,windowAt,windowQuote} from './calendar-windows';
 
@@ -64,7 +65,7 @@ export class RentalService {
   query(sql: string, ...args: any[]) { return this.db.prepare(sql).bind(...args); }
   async one(sql: string, ...args: any[]) { return this.query(sql, ...args).first<Row>(); }
   async all(sql: string, ...args: any[]) { return (await this.query(sql, ...args).all<Row>()).results; }
-  async profile() { return this.one(`SELECT p.*,d.avatar_id,d.work_status,COALESCE(d.version,0) profile_version,COALESCE(x.bio,'') bio,COALESCE(x.languages,'') languages,COALESCE(x.avatar_visibility,'participants') avatar_visibility,COALESCE(x.show_presence,1) show_presence,COALESCE(x.show_receipts,1) show_receipts FROM profiles p LEFT JOIN profile_details d ON d.user_id=p.id LEFT JOIN profile_preferences x ON x.user_id=p.id WHERE p.id=?`, this.userId); }
+  async profile() { return this.one(`SELECT p.*,d.avatar_id,d.work_status,COALESCE(d.version,0) profile_version,COALESCE(x.bio,'') bio,COALESCE(x.languages,'') languages,COALESCE(x.avatar_visibility,'participants') avatar_visibility,COALESCE(x.show_presence,1) show_presence,COALESCE(x.show_receipts,1) show_receipts,(SELECT kind FROM account_restrictions r WHERE r.user_id=p.id) restriction FROM profiles p LEFT JOIN profile_details d ON d.user_id=p.id LEFT JOIN profile_preferences x ON x.user_id=p.id WHERE p.id=?`, this.userId); }
   async uploadMedia(body:Row,bucket?:R2Bucket){
     if(!await this.profile())throw new DomainError('Сначала заполните профиль.',403);
     if(body.kind==='property')await this.requireRole('owner');
@@ -208,9 +209,11 @@ export class RentalService {
     const access=owner?await this.all('SELECT property_id,version FROM property_access WHERE property_id IN (SELECT value FROM json_each(?))',JSON.stringify(items.slice(0,500).map(p=>p.id))):[];
     // A shown flat waiting for the check of a new address: the owner sees why new guests do not find it yet.
     const unchecked=owner?await this.all("SELECT a.id FROM pilot_property_admissions a WHERE a.owner_reviewed=0 AND COALESCE((SELECT require_owner_review FROM pilot_policy WHERE id='global'),0)=1 AND a.id IN (SELECT value FROM json_each(?))",JSON.stringify(items.slice(0,500).map(p=>p.id))):[];
+    // Approved by a person at the platform: the owner's proof of the right to let it is settled (lib/property-rights.ts).
+    const approvedIds=owner?new Set((await this.all('SELECT id FROM pilot_property_admissions WHERE owner_reviewed=1 AND id IN (SELECT value FROM json_each(?))',JSON.stringify(items.slice(0,500).map(p=>p.id)))).map(a=>a.id)):new Set();
     // «Заведение»: the halls of one place carry its name, for the guest and for the owner (lib/venue.ts).
     const venues=await venuesFor(this.db);
-    return items.map(p=>{const d=details.find(d=>d.property_id===p.id),op=operations.find(o=>o.property_id===p.id);return {...p,...(venues.has(p.id)?{venue:venues.get(p.id)}:{}),...(owner?{address_check:Number(p.published)===1&&!p.demo_owner&&unchecked.some(u=>u.id===p.id),mapped:pins.some(l=>l.property_id===p.id&&l.address_fingerprint===[p.city,p.district,p.address].join('|')),access_version:access.find(a=>a.property_id===p.id)?.version||0}:{host:hostOf(p.id)||null}),details:d?JSON.parse(d.details):{},photos:d?JSON.parse(d.photos):[],listing_version:d?.version||0,rating:ratings.get(p.id)||null,display_status:propertyStatus(p,op,busy.some(b=>b.property_id===p.id)),...(owner?{}:{published:undefined})};});
+    return items.map(p=>{const d=details.find(d=>d.property_id===p.id),op=operations.find(o=>o.property_id===p.id);return {...p,...(venues.has(p.id)?{venue:venues.get(p.id)}:{}),...(owner?{address_check:Number(p.published)===1&&!p.demo_owner&&unchecked.some(u=>u.id===p.id),mapped:pins.some(l=>l.property_id===p.id&&l.address_fingerprint===[p.city,p.district,p.address].join('|')),access_version:access.find(a=>a.property_id===p.id)?.version||0,approved:approvedIds.has(p.id)}:{host:hostOf(p.id)||null}),details:d?JSON.parse(d.details):{},photos:d?JSON.parse(d.photos):[],listing_version:d?.version||0,rating:ratings.get(p.id)||null,display_status:propertyStatus(p,op,busy.some(b=>b.property_id===p.id)),...(owner?{}:{published:undefined})};});
   }
   async workerCard(userId:string){
     const p=await this.one('SELECT p.name,p.city,p.districts,p.experience,p.availability,d.avatar_id,d.work_status FROM profiles p LEFT JOIN profile_details d ON d.user_id=p.id WHERE p.id=?',userId);
@@ -391,6 +394,8 @@ export class RentalService {
   async requireRole(role: Role) {
     const p = await this.profile();
     if (!p || !JSON.parse(p.roles).includes(role)) throw new DomainError('Заполните профиль и подключите нужную роль.', 403);
+    // An account the platform administrator blocked does nothing (lib/account-restrictions.ts).
+    if(p.restriction==='blocked')throw new DomainError(BLOCKED_TEXT,403);
     return p;
   }
   audit(entity: string, action: string) { return this.query('INSERT INTO audit_events VALUES (?,?,?,?,?)', id(), this.execution?'system:rental-policy':this.userId, entity, this.execution?JSON.stringify({action,onBehalfOf:this.userId,...this.execution}):action, now()); }
@@ -576,9 +581,11 @@ export class RentalService {
     try{return await offerPriceAdvice(this.db,propertyId);}catch(error){console.error('Price advice failed',error instanceof Error?error.message:'');return null;}
   }
   async bookingQuote(body:Row,options:{ownerReady?:boolean}={}) {
-    const p=await this.one('SELECT * FROM properties WHERE id=? AND published=1 AND (demo_owner IS NULL OR demo_owner=?)',required(body.propertyId,'Жильё',100),this.userId);
+    const p=await this.one('SELECT p.*,EXISTS(SELECT 1 FROM account_restrictions r WHERE r.user_id=p.owner_id) restricted FROM properties p WHERE p.id=? AND p.published=1 AND (p.demo_owner IS NULL OR p.demo_owner=?)',required(body.propertyId,'Жильё',100),this.userId);
     if(!p) throw new DomainError('Жильё недоступно.',404);
     await assertPilotAllowed(this,'booking',p.id);
+    // An owner on hold after a guest's «Меня не заселили», or blocked, takes no new bookings.
+    if(p.restricted)throw new DomainError('Это жильё временно не принимает новые брони. Выберите другое.',409);
     const {start,end}=interval(body.start,body.end), guests=number(body.guests,'Гости',1,p.capacity), occupiedUntil=end+p.cleaning_minutes*60;
     const policy={...defaultPolicy,...await this.one('SELECT * FROM property_policies WHERE property_id=?',p.id)},op=await this.one('SELECT readiness FROM property_operations WHERE property_id=?',p.id);
     if(op&&(['maintenance','blocked'].includes(op.readiness)||(start<=now()+60&&op.readiness!=='ready')))throw new DomainError('Жильё сейчас не готово к новым заездам.',409);
@@ -727,6 +734,14 @@ export class RentalService {
         this.audit(bookingId,'booking.guest_late')]);
       if(!r[0].meta.changes)throw new DomainError('Бронь изменилась. Обновите карточку.',409);
       return {message:'Владелец предупреждён: вы приедете к '+clockLabel(until)+'. Бронь сохраняется.'};
+    }
+    // «Меня не заселили»: the guest is at the door and nobody lets them in (lib/account-restrictions.ts).
+    if(body.action==='not_let_in'){
+      if(b.guest_id!==this.userId)throw new DomainError('Сообщить об этом может гость.',403);
+      if(b.status!=='confirmed'||terms?.actual_checkin)throw new DomainError('По этой брони заселение уже отмечено или бронь не подтверждена. Если что-то не так, нажмите «Есть проблема».',409);
+      if(now()<checkinOpensAt(b.start,terms?.early_checkin_at))throw new DomainError('Сообщить, что вас не заселили, можно с 15 минут до заезда.',409);
+      if(now()>b.end+86400)throw new DomainError('Бронь уже закончилась. Нажмите «Есть проблема» в брони.',409);
+      return reportNotLetIn(this,b,terms,String(body.text||''));
     }
     // The home is ready before the next guest: «Можно заселиться раньше» (lib/arrival-shift.ts).
     if(body.action==='early_checkin'){
