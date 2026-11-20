@@ -52,7 +52,7 @@ test('the service is called by its new name everywhere a person reads it',()=>{
 
 test('the app sets its status bar once, at the root, so that no screen is left with the white signs of the splash',()=>{
  const app=read('mobile/App.tsx'),splash=read('mobile/src/EntrySplash.tsx');
- assert.match(app,/export default function App\(\)\{return <SafeAreaProvider><View[^>]*><EntryStatusBar\/>/);
+ assert.match(app,/export default function App\(\)\{useLang\(\);return <SafeAreaProvider><View[^>]*><EntryStatusBar\/>/);
  assert.equal(app.match(/<EntryStatusBar\/>/g).length,1);
  assert.equal(/<EntryStatusBar\/>|<StatusBar /.test(splash.slice(splash.indexOf('export function EntrySplash'))),false);
  assert.equal(/<StatusBar /.test(app),false);

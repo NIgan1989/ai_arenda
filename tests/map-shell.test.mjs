@@ -55,14 +55,16 @@ test('the menu is short: a few rows open their own screens, the rest stays one t
     const text = read('mobile/src/AccountControl.tsx');
     // «money» is the owner's «Доходы» (OwnerAnalytics.tsx).
     assert.match(text, /type MenuView=''\|'money'\|'notices'\|'autopilot'\|'profile'\|'settings'\|'safety'/);
-    assert.match(text, /owner&&<Row icon="chart"[^>]*title="Доходы"/, 'only the owner has «Доходы»');
+    assert.match(text, /owner&&<Row icon="chart"[^>]*title=\{t\('Доходы'\)\}/, 'only the owner has «Доходы»');
     for (const view of ['notices', 'autopilot', 'profile', 'settings']) assert.ok(text.includes("view==='" + view + "'"), view);
-    for (const title of ['Уведомления', 'Автопилот', 'Настройки', 'Помощь']) assert.match(text, new RegExp('<Row (?:[^<>]*? )?title="' + title + '"'), title);
-    assert.doesNotMatch(text, /title="(Надёжность|Что сделал ИИ|Тариф и автопилот)"[^\n]*onPress=\{\(\)=>go/, 'no separate rows for what the three rows hold');
+    for (const title of ['Уведомления', 'Автопилот', 'Настройки', 'Помощь']) assert.match(text, new RegExp("<Row (?:[^<>]*? )?title=\\{t\\('" + title + "'\\)\\}"), title);
+    assert.doesNotMatch(text, /title=\{t\('(Надёжность|Что сделал ИИ|Тариф и автопилот)'\)\}[^\n]*onPress=\{\(\)=>go/, 'no separate rows for what the three rows hold');
     assert.match(text, /view==='autopilot'&&[^\n]*<AiJournal [^\n]*worker\?<NativeAutopilotPlan [^\n]*:<NativeDecisionRules /);
     assert.match(text, /view==='profile'&&[^\n]*<ReliabilityBadge /);
-    assert.match(text, /view==='settings'&&[\s\S]*title="Данные и безопасность" onPress=\{\(\)=>go\('safety'\)\}\/>\{join\.map/);
+    assert.match(text, /view==='settings'&&[\s\S]*title=\{t\('Данные и безопасность'\)\} onPress=\{\(\)=>go\('safety'\)\}\/>\{join\.map/);
     assert.match(text, /'properties'\]:\['jobs'\]/, "the owner's objects and the cleaner's search for jobs live on the map");
+    // The language is chosen in the menu itself, not hidden in the settings.
+    assert.match(text, /!view&&[\s\S]*<LangSwitch /);
     // The notices of the menu are the events of the role; a new one is said over the map, not written into the chat.
     assert.match(text, /roleEvents\(notices,active\)/);
     const app = read('mobile/App.tsx');

@@ -1,3 +1,4 @@
+import {t} from '../../lib/i18n';
 import React from 'react';
 import {Image,Pressable,View} from 'react-native';
 import {C} from './styles';
@@ -15,11 +16,11 @@ function Half({side,turn,ink}:{side:'right'|'left';turn:number;ink:string}){
 }
 export function ProfileRing({photoId,name,progress,ink,onPress}:{photoId?:string|null;name?:string;progress:number;ink:string;onPress:()=>void}){
  const p=Math.max(0,Math.min(1,progress)),turn=360*p-135;
- return <Pressable accessibilityRole="button" accessibilityLabel="Изменить фото профиля" onPress={onPress} style={{width:SIZE,height:SIZE}}>
+ return <Pressable accessibilityRole="button" accessibilityLabel={t('Изменить фото профиля')} onPress={onPress} style={{width:SIZE,height:SIZE}}>
   <View style={{position:'absolute',inset:0,borderRadius:SIZE/2,borderWidth:STROKE,borderColor:C.line} as any}/>
   {p>0&&<Half side="right" turn={Math.min(turn,45)} ink={ink}/>}
   {p>.5&&<Half side="left" turn={turn} ink={ink}/>}
-  <View style={{position:'absolute',top:(SIZE-PHOTO)/2,left:(SIZE-PHOTO)/2}}><Photo id={photoId} avatar size={PHOTO} name={name} solid={ink} alt="Мой профиль"/></View>
+  <View style={{position:'absolute',top:(SIZE-PHOTO)/2,left:(SIZE-PHOTO)/2}}><Photo id={photoId} avatar size={PHOTO} name={name} solid={ink} alt={t('Мой профиль')}/></View>
   <View style={{position:'absolute',right:0,bottom:0,width:24,height:24,borderRadius:12,alignItems:'center',justifyContent:'center',backgroundColor:ink,borderWidth:2,borderColor:C.bg}}><Image source={menuIcons.camera} style={{width:12,height:12,tintColor:C.onAccent}}/></View>
  </Pressable>;
 }

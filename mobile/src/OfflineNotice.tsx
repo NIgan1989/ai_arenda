@@ -1,3 +1,4 @@
+import {t} from '../../lib/i18n';
 import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { C, type } from './styles';
@@ -7,9 +8,9 @@ import { T } from './tokens';
 export function OfflineNotice({ busy = false, onRetry }: { busy?: boolean; onRetry: () => void }) {
   return (
     <View style={o.row} accessibilityRole="alert">
-      <Text style={o.text}>Нет связи. Проверьте интернет.</Text>
-      <Pressable accessibilityRole="button" accessibilityLabel="Повторить" disabled={busy} onPress={onRetry} style={({ pressed }) => [o.retry, (pressed || busy) && o.dim]}>
-        <Text style={o.retryText}>Повторить</Text>
+      <Text style={o.text}>{t('Нет связи. Проверьте интернет.')}</Text>
+      <Pressable accessibilityRole="button" accessibilityLabel={t('Повторить')} disabled={busy} onPress={onRetry} style={({ pressed }) => [o.retry, (pressed || busy) && o.dim]}>
+        <Text style={o.retryText}>{t('Повторить')}</Text>
       </Pressable>
     </View>
   );

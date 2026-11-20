@@ -1,3 +1,4 @@
+import {t} from '../../lib/i18n';
 import React,{useEffect,useState,useSyncExternalStore} from 'react';
 import {AccessibilityInfo,Animated,Easing,Image,Platform,StatusBar,StyleSheet,useWindowDimensions,View} from 'react-native';
 import {BRAND_LINE,BRAND_NAME,DOME_RAYS,DOME_RAY_FROM,DOME_RAY_STROKE,DOME_RAY_TO,DOME_RING,DOME_STROKE} from '../../lib/brand';
@@ -108,7 +109,7 @@ export function EntrySplash(){
       </View>
       <Animated.View style={[st.words,{opacity:a.words,transform:[{translateY:a.words.interpolate({inputRange:[0,1],outputRange:[8,0]})}]}]}>
         <Animated.Image source={nameImage} style={[st.name,up(a.name)]}/>
-        <Animated.Text style={[st.line,up(a.line)]}>{BRAND_LINE}</Animated.Text>
+        <Animated.Text style={[st.line,up(a.line)]}>{t(BRAND_LINE)}</Animated.Text>
       </Animated.View>
     </View>
   </Animated.View>;
