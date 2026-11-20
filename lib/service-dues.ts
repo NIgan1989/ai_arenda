@@ -183,7 +183,8 @@ export async function serviceBillingAction(service:RentalService,body:Row,config
   await q(db,"INSERT INTO service_billing(user_id,card_mask,card_token,card_test,card_at,updated_at) VALUES (?,?,?,1,?,?) ON CONFLICT(user_id) DO UPDATE SET card_mask=excluded.card_mask,card_token=excluded.card_token,card_test=1,card_at=excluded.card_at,version=service_billing.version+1,updated_at=excluded.updated_at",user,'•• 0000','test:'+uuid(),at,at).run();
   b=await billingOf(db,user);
   // A debt that already waited for a card is paid at once, so the pause never comes or ends right here.
-  const taken=b?.failed_at||b?.paused_at?await charge(db,user,b!,at,'now',config,bank).catch(()=>0):0;
+  // Linking pays a debt that already waited, unless it is above the confirmation threshold: that one waits for «Оплатить сейчас».
+  const taken=(b?.failed_at||b?.paused_at)&&await dueOf(db,user)<=(await chargeRules(db)).confirmAbove?await charge(db,user,b!,at,'now',config,bank).catch(()=>0):0;
   return {message:'Тестовая карта привязана.'+(taken?' Списано '+money(taken)+' (тест).':' Списания раз в неделю, по понедельникам.'),state:await serviceBillingState(service,config)};
  }
  if(action==='pay'){
@@ -210,9 +211,9 @@ export async function sweepDues(db:D1Database,pausePlans:(db:D1Database,user:str
  const owing=await rows(db,`SELECT u.id,${dueSql('u.id')} due FROM profiles u WHERE u.id>? AND ${dueSql('u.id')}>0 ORDER BY u.id LIMIT ${PAGE}`,after);
  for(const o of owing){
   const b=await billingOf(db,o.id);
+  // Charges stopped by the administrator: nobody is charged, asked for a card or paused meanwhile.
+  if(stopped)continue;
   if(b?.card_mask){
-   // Charges stopped by the administrator: nobody with a card is charged, asked or paused meanwhile.
-   if(stopped)continue;
    if(!b.last_charge_at||b.last_charge_at<slot){if(await charge(db,o.id,b,at,'week',config,bank).catch(()=>0)){result.charged++;continue;}}
    // A card that declined, or a large sum not confirmed, gets the same seven days as a missing card.
    const fresh=await billingOf(db,o.id);if(!fresh?.failed_at||fresh.paused_at||fresh.failed_at+PAY_DAYS*DAY>at)continue;

@@ -168,3 +168,15 @@ test('an attempt left «started» by a stopped worker becomes «unknown» and is
   assert.equal(entries(f,'cleaner').length,0);
  }finally{f.db.close();}
 });
+
+test('while charges are stopped nobody is paused; linking a card never takes a sum above the confirmation threshold',async()=>{
+ const f=await fixture();try{
+  owe(f,'owner',4900,'owner');const at=now();await sweepDues(f.db,noPlans,at,admins);assert.ok(billing(f,'owner').failed_at);
+  await cardChargesAction(f.db,'owner',{action:'stop'});
+  let paused=0;await sweepDues(f.db,async()=>{paused++;},at+PAY_DAYS*DAY+1,admins);assert.equal(paused,0);assert.equal(billing(f,'owner').paused_at,null);
+  await cardChargesAction(f.db,'owner',{action:'resume'});
+  await cardChargesAction(f.db,'owner',{action:'limits',confirmAbove:1000,dailyLimit:100000});
+  assert.doesNotMatch((await serviceBillingAction(f.owner,{action:'link'},admins)).message,/Списано/);assert.equal(await dueOf(f.db,'owner'),4900);
+  assert.match((await serviceBillingAction(f.owner,{action:'pay'},admins)).message,/Списано 4\s900/);
+ }finally{f.db.close();}
+});
