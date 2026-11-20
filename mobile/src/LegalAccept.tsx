@@ -1,5 +1,5 @@
 import React,{useState} from 'react';
-import {Linking,Modal,Pressable,Text,View} from 'react-native';
+import {Linking,Modal,Pressable,ScrollView,Text,View} from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import {API_URL,isOffline,request} from './api';
 import {C,s,type} from './styles';
@@ -32,12 +32,15 @@ export function LegalAccept({legal,role,onAccepted,onLeave}:{legal:LegalState;ro
  return <Modal visible transparent animationType="slide" statusBarTranslucent onRequestClose={onLeave}>
   <View style={l.backdrop}>
    <SafeAreaView edges={['bottom']} style={l.card} accessibilityViewIsModal>
+    {/* With large system text the card may outgrow the screen: it stops at 90% and scrolls, so the documents stay reachable. */}
+    <ScrollView contentContainerStyle={l.content} bounces={false}>
     <Text accessibilityRole="header" style={l.title}>{about?about.title:'Условия обновились'}</Text>
     <Text style={l.body}>Нажимая «Принимаю», вы соглашаетесь с {docs.length>1?'документами':'документом'}: {links}.</Text>
     <Text style={s.meta}>{about?about.note+' ':''}Редакция от {legal.edition}.</Text>
     {!!error&&<Text accessibilityRole="alert" style={s.error}>{error}</Text>}
     <Pressable accessibilityRole="button" accessibilityState={{disabled:busy}} disabled={busy} onPress={()=>void accept()} style={({pressed})=>[s.button,(busy||pressed)&&s.disabled]}><Text style={s.buttonText}>{busy?'Сохраняю…':'Принимаю'}</Text></Pressable>
     <Pressable accessibilityRole="button" onPress={onLeave} disabled={busy} style={l.later}><Text style={s.meta}>Не сейчас</Text></Pressable>
+    </ScrollView>
    </SafeAreaView>
   </View>
  </Modal>;
@@ -45,7 +48,8 @@ export function LegalAccept({legal,role,onAccepted,onLeave}:{legal:LegalState;ro
 
 const l={
  backdrop:{flex:1,justifyContent:'flex-end' as const,backgroundColor:C.scrim},
- card:{backgroundColor:C.surface,borderTopLeftRadius:T.radius.lg,borderTopRightRadius:T.radius.lg,paddingHorizontal:20,paddingTop:20,gap:12},
+ card:{maxHeight:'90%' as const,backgroundColor:C.surface,borderTopLeftRadius:T.radius.lg,borderTopRightRadius:T.radius.lg},
+ content:{paddingHorizontal:20,paddingTop:20,gap:12},
  title:{...type.subtitle,color:C.ink,fontWeight:'600' as const},
  body:{...type.body,color:C.ink},
  link:{color:C.accent,textDecorationLine:'underline' as const},
