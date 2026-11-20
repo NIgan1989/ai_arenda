@@ -362,7 +362,7 @@ export const GUEST:Words={
  'Спросим владельца и ещё двух подходящих: ответ за 2 минуты, без вашего имени и телефона. Бронь создаётся после вашего подтверждения.':['Иесінен және тағы екі сәйкес иеден сұраймыз: жауап 2 минутта, атыңыз бен телефоныңызсыз. Бронь сіз растағаннан кейін жасалады.','We will ask this owner and two more that fit: an answer in 2 minutes, without your name or phone. The booking is made after you confirm.'],
  '{title}, фото':['{title}, фото','{title}, photo'],
  'Подробнее о зале':['Зал туралы толығырақ','More about the hall'],
- 'Подробнее':['Толығырақ','More'],
+ 'Подробнее':['Толығырақ','Details'],
  'Подробнее о жилье':['Баспана туралы толығырақ','More about the place'],
  '✦ Лучший выбор':['✦ Ең жақсы таңдау','✦ Best choice'],
  'Свободно на {stay}: {n}':['{stay:dat} бос: {n}','Free for {stay}: {n}'],

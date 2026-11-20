@@ -11,9 +11,9 @@ export const date=(n:number)=>dateText(new Date(n*1000),{timeZone:'Asia/Almaty',
 export const labels:Row=L({requested:'Ожидает владельца',confirmed:'Подтверждено',cancelled:'Отменено',expired:'Срок заявки истёк',open:'Открыта',assigned:'Исполнитель назначен',in_progress:'В работе',submitted:'На проверке',completed:'Завершено',pending:'Отклик отправлен',accepted:'Вы назначены',rejected:'Выбран другой исполнитель'});
 let sequence=0;
 export const uid=()=>Date.now().toString(36)+'-'+(++sequence)+'-'+Math.random().toString(36).slice(2,10);
-export const baseQuestions:Question[]=[{key:'name',text:'Как к вам обращаться?',label:'Имя'},{key:'contact',text:'Напишите телефон или контакт в мессенджере для связи по заявкам.',label:'Контакт'},{key:'city',text:'В каком городе вы будете пользоваться сервисом?',label:'Город'}];
-export const cleanerQuestions:Question[]=[{key:'districts',text:'В каких районах удобно брать уборки?',label:'Районы'},{key:'experience',text:'Расскажите об опыте уборки. Что умеете и сколько работаете?',label:'Опыт'},{key:'availability',text:'В какие дни и часы вы готовы работать?',label:'График'}];
-export const propertyQuestions:Question[]=[
+export const baseQuestions:Question[]=L([{key:'name',text:'Как к вам обращаться?',label:'Имя'},{key:'contact',text:'Напишите телефон или контакт в мессенджере для связи по заявкам.',label:'Контакт'},{key:'city',text:'В каком городе вы будете пользоваться сервисом?',label:'Город'}]);
+export const cleanerQuestions:Question[]=L([{key:'districts',text:'В каких районах удобно брать уборки?',label:'Районы'},{key:'experience',text:'Расскажите об опыте уборки. Что умеете и сколько работаете?',label:'Опыт'},{key:'availability',text:'В какие дни и часы вы готовы работать?',label:'График'}]);
+export const propertyQuestions:Question[]=L([
   {key:'title',text:'Как назовём жильё? Например, «Студия у набережной».',label:'Название'},
   {key:'city',text:'В каком городе жильё?',label:'Город'},
   {key:'district',text:'В каком районе?',label:'Район'},
@@ -23,7 +23,7 @@ export const propertyQuestions:Question[]=[
   {key:'capacity',text:'Сколько гостей можно разместить?',label:'Гости',min:1,max:50},
   {key:'cleaningMinutes',text:'Сколько минут нужно на уборку между гостями?',label:'Уборка, минут',min:30,max:1440},
   {key:'description',text:'Какие удобства и правила важно знать гостю?',label:'Удобства и правила'}
-];
+]);
 export function parseDate(value:string){
   // All housing schedules use the business timezone UTC+05:00, regardless of device timezone.
   const match=value.trim().match(/^(\d{2})\.(\d{2})\.(\d{4})\s+(\d{2}):(\d{2})$/);

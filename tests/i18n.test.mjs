@@ -114,3 +114,15 @@ test('the documents the server asks an owner for have a line in each language',a
   const {WORDS}=await load('i18n-words'),{RIGHT_DOCS}=await load('property-rights');
   for(const text of Object.values(RIGHT_DOCS))assert.ok(WORDS[text],text);
 });
+
+test('the cleaner reads the place and the next step in the chosen language',async()=>{
+  const {setLang}=await load('i18n'),{jobPlace,cleaningTime}=await load('job-place'),{cleanerLine,cleanerStep}=await load('job-steps'),{cleanerNext}=await load('cleaner-next');
+  const job={status:'open',rooms:2,property_details:JSON.stringify({type:'apartment',area:37,bathrooms:1,floor:2,floors:12})};
+  const lines=()=>{const v=jobPlace(job);return [v.floor,v.facts.map(f=>f.value+' '+f.label).join(', '),cleaningTime(90),cleanerStep(job,undefined,'me').label,cleanerLine({status:'assigned',booking_id:'b'}),cleanerNext({status:'open'},{status:'pending'},'approved','me').title];};
+  assert.deepEqual(lines(),['2 этаж из 12','2 комнаты, 37 м² площадь, 1 санузел','≈ 1 ч 30 мин','Откликнуться','Ждём выезда гостя','Отклик у владельца']);
+  setLang('kk');
+  assert.deepEqual(lines(),['12 қабаттың 2-қабаты','2 бөлме, 37 м² ауданы, 1 санторап','≈ 1 сағ 30 мин','Өтінім беру','Қонақтың шығуын күтудеміз','Өтінім иесінде']);
+  setLang('en');
+  assert.deepEqual(lines(),['floor 2 of 12','2 rooms, 37 m² area, 1 bathroom','≈ 1 h 30 min','Apply','Waiting for the guest to check out','The application is with the owner']);
+  setLang('ru');
+});

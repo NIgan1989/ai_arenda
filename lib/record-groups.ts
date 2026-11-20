@@ -1,9 +1,11 @@
 // Bookings and cleanings in the order a person looks for them: what is happening now, today, tomorrow,
 // later, and what has passed (the most recent first). Kazakhstan keeps one time all year (UTC+5).
+import {L} from './i18n';
+
 type Row=Record<string,any>;
 const SHIFT=18000,DAY=86400;
 export type RecordGroup='now'|'today'|'tomorrow'|'later'|'past';
-export const recordGroupLabels:Record<RecordGroup,string>={now:'Сейчас',today:'Сегодня',tomorrow:'Завтра',later:'Позже',past:'Прошедшие'};
+export const recordGroupLabels:Record<RecordGroup,string>=L({now:'Сейчас',today:'Сегодня',tomorrow:'Завтра',later:'Позже',past:'Прошедшие'});
 const order:RecordGroup[]=['now','today','tomorrow','later','past'];
 export function recordGroup(item:Row,now:number):RecordGroup{
  const start=Number(item.start)||0,end=Number(item.end)||start,today=Math.floor((now+SHIFT)/DAY)*DAY-SHIFT;

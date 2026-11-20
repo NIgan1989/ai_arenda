@@ -1,4 +1,4 @@
-import {L,lang,t,tParts} from '../../lib/i18n';
+import {dateText,L,lang,t,tParts} from '../../lib/i18n';
 import React,{useState} from 'react';
 import {Linking,Modal,Pressable,ScrollView,Text,View} from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
@@ -6,6 +6,12 @@ import {API_URL,isOffline,request} from './api';
 import {C,s,type} from './styles';
 import {T} from './tokens';
 
+// The server names the edition by its Russian date («21 ноября 2026»); the other languages write the same day themselves.
+const MONTHS=['января','февраля','марта','апреля','мая','июня','июля','августа','сентября','октября','ноября','декабря'];
+export function editionText(edition:string){
+ const m=/^(\d{1,2}) ([а-яё]+) (\d{4})$/.exec(edition),month=m?MONTHS.indexOf(m[2]):-1;
+ return lang()==='ru'||!m||month<0?edition:dateText(new Date(Date.UTC(Number(m[3]),month,Number(m[1]),12)),{timeZone:'UTC',day:'numeric',month:'long',year:'numeric'});
+}
 export type LegalState={edition:string;missing:string[];documents:{id:string;title:string;path:string}[]};
 
 // The one thing an offer changes for the person, so the key terms are seen before the tap.
@@ -37,7 +43,7 @@ export function LegalAccept({legal,role,onAccepted,onLeave}:{legal:LegalState;ro
     <ScrollView contentContainerStyle={l.content} bounces={false}>
     <Text accessibilityRole="header" style={l.title}>{about?about.title:t('Условия обновились')}</Text>
     <Text style={l.body}>{tParts(docs.length>1?t('Нажимая «Принимаю», вы соглашаетесь с документами: {links}.'):t('Нажимая «Принимаю», вы соглашаетесь с документом: {links}.')).map((part,i)=>typeof part==='string'?part:<React.Fragment key={i}>{links}</React.Fragment>)}{lang()!=='ru'&&t(' (документы на русском языке)')}</Text>
-    <Text style={s.meta}>{about?about.note+' ':''}{t('Редакция от {edition}',{edition:t(legal.edition)})}.</Text>
+    <Text style={s.meta}>{about?about.note+' ':''}{t('Редакция от {edition}',{edition:editionText(legal.edition)})}.</Text>
     {!!error&&<Text accessibilityRole="alert" style={s.error}>{error}</Text>}
     <Pressable accessibilityRole="button" accessibilityState={{disabled:busy}} disabled={busy} onPress={()=>void accept()} style={({pressed})=>[s.button,(busy||pressed)&&s.disabled]}><Text style={s.buttonText}>{busy?t('Сохраняю…'):t('Принимаю')}</Text></Pressable>
     <Pressable accessibilityRole="button" onPress={onLeave} disabled={busy} style={l.later}><Text style={s.meta}>{t('Не сейчас')}</Text></Pressable>
