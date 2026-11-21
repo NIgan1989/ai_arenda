@@ -42,8 +42,10 @@ CREATE INDEX service_fees_month ON service_fees(kind,property_id,created_at);
 CREATE TRIGGER account_erased_service_fees_insert BEFORE INSERT ON service_fees WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.user_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END;
 CREATE TRIGGER account_erased_service_fees_update BEFORE UPDATE ON service_fees WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.user_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END;
 
--- Nobody stays on «Всё включено»: the plan is simply on, paid by the percent.
-UPDATE autopilot_plans SET tier='pay',next_tier=NULL WHERE tier='all' OR next_tier IS NOT NULL;
+-- «Всё включено» is gone. A month already paid runs to its end and then turns into the percent by itself (the daily
+-- round in lib/autopilot-plans.ts); a trial, a grace or a plan without a paid month turns into the percent at once.
+UPDATE autopilot_plans SET next_tier='pay',auto_renew=1 WHERE tier='all' AND status='active' AND period_end>CAST(strftime('%s','now') AS INTEGER);
+UPDATE autopilot_plans SET tier='pay',next_tier=NULL WHERE (tier='all' AND next_tier IS NOT 'pay') OR (tier='pay' AND next_tier IS NOT NULL);
 
 -- An accepted cleaning: the performer pays cleaner_rate_bp of its price (not for the object's own staff). An owner's own
 -- home that is only cleaned («Мой дом», type 'home') earns the owner nothing, so the owner pays for the service there:
@@ -68,5 +70,6 @@ BEGIN
  SELECT lower(hex(randomblob(16))),NEW.assigned_to,'cleaner','cleaning',NEW.id,NEW.property_id,MIN(NEW.fee,(NEW.fee*x.rate+5000)/10000),x.mode,CAST(strftime('%s','now') AS INTEGER)
  FROM (SELECT s.cleaner_rate_bp rate,CASE WHEN s.plan_charge=0 THEN 'shadow' ELSE 'charged' END mode FROM platform_billing s WHERE s.id='global') x
  WHERE x.rate>0 AND NEW.fee>0
+  AND NOT EXISTS(SELECT 1 FROM autopilot_plans ap WHERE ap.user_id=NEW.assigned_to AND ap.role='cleaner' AND ap.tier='all' AND ap.status IN ('trial','active','grace'))
   AND NOT EXISTS(SELECT 1 FROM property_staff WHERE property_id=NEW.property_id AND staff_id=NEW.assigned_to);
 END;

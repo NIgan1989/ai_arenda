@@ -24,7 +24,10 @@ test('the prices after the change: 4% and at most 15 000 ₸ a booking for the o
   // An hourly booking pays less by itself; a banquet stops at the cap.
   assert.equal(commissionFor(6000,s),240);assert.equal(commissionFor(12000,s),480);assert.equal(commissionFor(1000000,s),15000);
   const owner=await planState(f.owner,'owner'),cleaner=await planState(f.cleaner,'cleaner');
-  assert.match(owner.terms.pay,/^Тариф: 4% с каждого заселения/);assert.match(cleaner.terms.pay,/5% с каждой выполненной уборки/);
+  assert.match(owner.terms.pay,/^Тариф: 4% с каждого заселения/);
+  // The owner's percent follows the booking billing switch, not the cleaner's plan_charge.
+  assert.equal(owner.settings.charge,false);f.db.raw.prepare("UPDATE platform_billing SET enabled=1,starts_at=0,plan_charge=0").run();
+  assert.equal((await planState(f.owner,'owner')).settings.charge,true);assert.equal((await planState(f.cleaner,'cleaner')).settings.charge,false);assert.match(cleaner.terms.pay,/5% с каждой выполненной уборки/);
  }finally{f.db.close();}
 });
 

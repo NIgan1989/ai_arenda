@@ -33,10 +33,11 @@ const isoDay=(t:number)=>new Date((t+ZONE)*1000).toISOString().slice(0,10);
 
 // ownerPrice and cleanerPrice are the monthly prices of «Всё включено»; the rest is paid for the result.
 // ownerRate and cleanerRate (basis points) are the tariff; the other prices are kept at 0 since 2026-11-22.
-export type PlanSettings={charge:boolean;ownerRate:number;cleanerRate:number;ownerPrice:number;cleanerPrice:number;graceDays:number;aiBookingFee:number;aiMonthCap:number;cleanerJobFee:number;cleanerFreeJobs:number;cleanerMonthCap:number};
+export type PlanSettings={charge:boolean;ownerCharge:boolean;ownerRate:number;cleanerRate:number;ownerPrice:number;cleanerPrice:number;graceDays:number;aiBookingFee:number;aiMonthCap:number;cleanerJobFee:number;cleanerFreeJobs:number;cleanerMonthCap:number};
 export async function planSettings(db:D1Database):Promise<PlanSettings>{
- const s=await one(db,"SELECT plan_charge,rate_bp,cleaner_rate_bp,plan_owner_price,plan_cleaner_price,plan_grace_days,ai_booking_fee,ai_month_cap,cleaner_job_fee,cleaner_free_jobs,cleaner_month_cap FROM platform_billing WHERE id='global'");
- return {charge:!!s?.plan_charge,ownerRate:Number(s?.rate_bp??400),cleanerRate:Number(s?.cleaner_rate_bp??500),ownerPrice:Number(s?.plan_owner_price??9900),cleanerPrice:Number(s?.plan_cleaner_price??2900),graceDays:Number(s?.plan_grace_days??3),
+ const s=await one(db,"SELECT plan_charge,enabled,starts_at,rate_bp,cleaner_rate_bp,plan_owner_price,plan_cleaner_price,plan_grace_days,ai_booking_fee,ai_month_cap,cleaner_job_fee,cleaner_free_jobs,cleaner_month_cap FROM platform_billing WHERE id='global'");
+ // The owner's percent is taken by the booking billing switch (lib/platform-billing.ts), the cleaner's by plan_charge.
+ return {charge:!!s?.plan_charge,ownerCharge:!!s?.enabled&&Number(s?.starts_at)<=epoch(),ownerRate:Number(s?.rate_bp??400),cleanerRate:Number(s?.cleaner_rate_bp??500),ownerPrice:Number(s?.plan_owner_price??9900),cleanerPrice:Number(s?.plan_cleaner_price??2900),graceDays:Number(s?.plan_grace_days??3),
   aiBookingFee:Number(s?.ai_booking_fee??0),aiMonthCap:Number(s?.ai_month_cap??0),cleanerJobFee:Number(s?.cleaner_job_fee??0),cleanerFreeJobs:Number(s?.cleaner_free_jobs??0),cleanerMonthCap:Number(s?.cleaner_month_cap??0)};
 }
 export const percentText=(bp:number)=>String(bp/100).replace('.',',')+'%';
@@ -91,7 +92,7 @@ export async function ensurePlan(db:D1Database,user:string,role:PlanRole,at=epoc
  if(await servicePaused(db,user))throw new DomainError('Сначала оплатите услуги сервиса: Меню, «Настройки», «Оплата услуг». После оплаты автопилот включится.',402);
  await db.batch([
   q(db,"INSERT INTO autopilot_plans(user_id,role,status,started_at,period_end,updated_at,tier) VALUES (?,?,'active',?,?,?,'pay') ON CONFLICT(user_id,role) DO UPDATE SET status='active',tier='pay',next_tier=NULL,period_end=excluded.period_end,grace_until=NULL,auto_renew=1,version=autopilot_plans.version+1,updated_at=excluded.updated_at",user,role,at,at+MONTH,at),
-  notice(db,user,'Автопилот включён. '+payNote(s,role)+(s.charge?' Списание раз в неделю с привязанной карты.':' Пока плата не взимается.'),role+':autopilot-on:'+user+':'+at,at)
+  notice(db,user,'Автопилот включён. '+payNote(s,role)+((role==='owner'?s.ownerCharge:s.charge)?' Списание раз в неделю с привязанной карты.':' Пока плата не взимается.'),role+':autopilot-on:'+user+':'+at,at)
  ]);
  return {status:'active',started:true};
 }
@@ -210,7 +211,7 @@ export async function planState(service:RentalService,role:PlanRole){
  const tier:Tier=live&&plan.tier==='all'?'all':'pay',units=await unitsFor(db,role,service.userId),allAmount=priceFor(s,role,units),spent30=await spentFor(db,service.userId,role,at-MONTH,at);
   const freeLeft=role==='cleaner'?Math.max(0,s.cleanerFreeJobs-Number((await one(db,"SELECT COUNT(*) n FROM service_fees WHERE user_id=? AND kind='cleaning' AND mode IN ('free','charged')",service.userId))?.n||0)):0;
  const base={plan:plan?{status:plan.status,periodEnd:plan.period_end,graceUntil:plan.grace_until,autoRenew:!!plan.auto_renew,startedAt:plan.started_at,tier:plan.tier,nextTier:plan.next_tier||null}:null,live,tier,
-  settings:{charge:s.charge,rate:role==='owner'?s.ownerRate:s.cleanerRate,ownerRate:s.ownerRate,cleanerRate:s.cleanerRate,price:role==='owner'?s.ownerPrice:s.cleanerPrice,trialDays:0,graceDays:s.graceDays,aiBookingFee:s.aiBookingFee,aiMonthCap:s.aiMonthCap,cleanerJobFee:s.cleanerJobFee,cleanerFreeJobs:s.cleanerFreeJobs,cleanerMonthCap:s.cleanerMonthCap},
+  settings:{charge:role==='owner'?s.ownerCharge:s.charge,rate:role==='owner'?s.ownerRate:s.cleanerRate,ownerRate:s.ownerRate,cleanerRate:s.cleanerRate,price:role==='owner'?s.ownerPrice:s.cleanerPrice,trialDays:0,graceDays:s.graceDays,aiBookingFee:s.aiBookingFee,aiMonthCap:s.aiMonthCap,cleanerJobFee:s.cleanerJobFee,cleanerFreeJobs:s.cleanerFreeJobs,cleanerMonthCap:s.cleanerMonthCap},
   terms:tierText(s,role),billing:{objects:role==='owner'?units:1,allAmount,spent30,advise:false,freeLeft}};
  if(role==='owner'){
   // A private home that is only cleaned (lib/home-cleaning.ts) is not rented, so it is not offered to the AI.
