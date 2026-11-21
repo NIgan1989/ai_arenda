@@ -1030,6 +1030,7 @@ export const OWNER:Words={
  'Нет в списке: сохраним, как вы написали':['Тізімде жоқ: қалай жазсаңыз, солай сақтаймыз','Not in the list: we will save it as you wrote it'],
  'Город или село':['Қала немесе ауыл','City or village'],
  // One tariff in percent (2026-11-22).
+ '{rate} с заселения':['қоныстанудан {rate}','{rate} per check-in'],
  'Залы и кафе платят за месяц: до {a} гостей {small}, до {b} гостей {mid}, больше {large}. Брони без ограничений. Месяц без броней через приложение бесплатный.':['Залдар мен кафелер айына төлейді: {a} қонаққа дейін {small}, {b} қонаққа дейін {mid}, одан көп {large}. Брондар шектеусіз. Қосымша арқылы брон болмаған ай тегін.','Halls and cafés pay by the month: up to {a} guests {small}, up to {b} guests {mid}, more {large}. Unlimited bookings. A month with no booking through the app is free.'],
  'ИИ отвечает гостям и заказывает уборки. Входит в тариф {rate} с заселения, без доплат':['ЖИ қонақтарға жауап беріп, тазалауға тапсырыс береді. Қоныстанудан {rate} тарифына кіреді, қосымша ақысыз','The AI answers guests and orders cleanings. Included in the {rate} per booking tariff, no extra fees'],
  'ИИ будет отвечать гостям и заказывать уборки. Входит в тариф {rate} с заселения, без доплат':['ЖИ қонақтарға жауап беріп, тазалауға тапсырыс береді. Қоныстанудан {rate} тарифына кіреді, қосымша ақысыз','The AI will answer guests and order cleanings. Included in the {rate} per booking tariff, no extra fees'],

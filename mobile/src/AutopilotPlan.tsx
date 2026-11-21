@@ -10,7 +10,7 @@ import type {Row as Data} from './model';
 // The server writes the terms of each way to pay in Russian; they are shown in the language of the app.
 const termsIn=(terms:{pay?:unknown;all?:unknown}|undefined)=>({pay:terms?.pay?tServer(String(terms.pay)):'',all:terms?.all?tServer(String(terms.all)):''});
 
-const money=(n:number)=>new Intl.NumberFormat('ru-RU').format(n||0)+' ₸';
+const money=(n:number)=>new Intl.NumberFormat('ru-RU').format(n||0)+'\u00a0₸';
 const date=(t:number)=>dateText(t*1000,{timeZone:'Asia/Qyzylorda',day:'numeric',month:'long'});
 const DAYS=L(['Пн','Вт','Ср','Чт','Пт','Сб','Вс']);
 const hhmm=(m:number)=>String(Math.floor(m/60)).padStart(2,'0')+':'+String(m%60).padStart(2,'0');
@@ -131,7 +131,7 @@ export function NativeAutopilotPlan({role}:{role:'owner'|'cleaner'}){
  </View>;
  const notice=<>{!!error&&<Text accessibilityRole="alert" style={s.error}>{error}</Text>}{!!message&&<Text accessibilityLiveRegion="polite" style={a.saved}>{message}</Text>}</>;
  if(!live)return <>
-  <Group title={tr('Тариф')}><View style={a.row}><View style={a.wide}><Text style={a.title}>{owner?tr('Сам'):tr('Обычный')}</Text><Text style={a.note}>{owner?tr('Брони и уборки подтверждаете вы. ИИ подсказывает.'):tr('На каждое предложение уборки отвечаете вы.')}</Text></View><Text style={p.free}>{tr('Бесплатно')}</Text></View></Group>
+  <Group title={tr('Тариф')}><View style={a.row}><View style={a.wide}><Text style={a.title}>{owner?tr('Сам'):tr('Обычный')}</Text><Text style={a.note}>{owner?tr('Брони и уборки подтверждаете вы. ИИ подсказывает.'):tr('На каждое предложение уборки отвечаете вы.')}</Text></View><Text style={p.free}>{owner?tr('{rate} с заселения',{rate:pct(st.ownerRate)}):tr('{rate} с уборки',{rate:pct(st.cleanerRate)})}</Text></View></Group>
   {notice}
   <View style={p.card}>
    <Text style={p.badge}>{tr('✦ ИИ-администратор')}</Text>
