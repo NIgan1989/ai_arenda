@@ -122,6 +122,13 @@ function expectedConflict(error:unknown){return [400,403,404,409].includes((erro
 export const NOTICE_LIMIT=5;
 export const noticeGap=(sent:number,repeatMinutes:number)=>repeatMinutes*60*(sent<=1?1:sent===2?4:24);
 const NIGHT={quietEnabled:true,quietStart:'22:00',quietEnd:'08:00'};
+// Advice to the owner (gaps between stays, the week ahead, the listing, the price of a cleaning) does not change from
+// minute to minute, and finding it reads the whole city: it is looked for once an hour, the rest of the check every minute.
+export const ADVICE_EVERY=3600;
+async function adviceDue(db:D1Database,ownerId:string,at:number){
+ return !!await db.prepare(`INSERT INTO administrator_runs(id,checked_at) VALUES (?,?) ON CONFLICT(id) DO UPDATE SET checked_at=excluded.checked_at
+ WHERE administrator_runs.checked_at<=? RETURNING id`).bind('advice:'+ownerId,at,at-ADVICE_EVERY).first();
+}
 export async function checkAdministratorOwner(db:D1Database,ownerId:string,at=now()){
  const key='owner:'+ownerId,token=await acquire(db,key,120);
  if(!token)return {checked:false,actions:0};
@@ -153,12 +160,14 @@ export async function checkAdministratorOwner(db:D1Database,ownerId:string,at=no
   try{await repeatHomeCleanings(service,t);}catch(error){console.error('Home repeat failed',error instanceof Error?error.message:'');}
   await coordinateDispatch(service);
   await askForReviews(service);
-  // Gaps between stays: optional advice, a failure never stops the owner's check.
-  try{await offerCalendarWindows(db,ownerId,t);}catch(error){console.error('Calendar windows failed',error instanceof Error?error.message:'');}
-  // The week ahead: once a week, the same rule: advice only, a failure never stops the check.
-  try{await offerWeeklyForecast(db,ownerId,t);}catch(error){console.error('Load forecast failed',error instanceof Error?error.message:'');}
-  try{await offerListingTip(db,ownerId,t);}catch(error){console.error('Listing tip failed',error instanceof Error?error.message:'');}
-  try{await offerCleaningPriceTip(db,ownerId,t);}catch(error){console.error('Cleaning price tip failed',error instanceof Error?error.message:'');}
+  if(await adviceDue(db,ownerId,t)){
+   // Gaps between stays: optional advice, a failure never stops the owner's check.
+   try{await offerCalendarWindows(db,ownerId,t);}catch(error){console.error('Calendar windows failed',error instanceof Error?error.message:'');}
+   // The week ahead: once a week, the same rule: advice only, a failure never stops the check.
+   try{await offerWeeklyForecast(db,ownerId,t);}catch(error){console.error('Load forecast failed',error instanceof Error?error.message:'');}
+   try{await offerListingTip(db,ownerId,t);}catch(error){console.error('Listing tip failed',error instanceof Error?error.message:'');}
+   try{await offerCleaningPriceTip(db,ownerId,t);}catch(error){console.error('Cleaning price tip failed',error instanceof Error?error.message:'');}
+  }
   const actions=await automaticActions(service),data=await ownerData(service),tasks=planAdministrator(data,t);
   // Renew before writes; a superseded scan cannot close another scan's tasks.
   const renew=async()=>{const r=await service.query('UPDATE administrator_runs SET lease_until=? WHERE id=? AND token=?',now()+120,key,token).run();if(!r.meta.changes)throw new Error('Administrator lease was superseded');};

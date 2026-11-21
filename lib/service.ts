@@ -205,7 +205,7 @@ export class RentalService {
     // The owner's reliability travels with each flat; the owner's id itself stays private.
     const owners=owner?[]:await this.all('SELECT id,owner_id FROM properties WHERE id IN (SELECT value FROM json_each(?))',JSON.stringify(items.slice(0,500).map(p=>p.id))),hosts=await reliabilityFor(this.db,'owner',owners.map(o=>o.owner_id));
     const hostOf=(id:string)=>hosts.get(owners.find(o=>o.id===id)?.owner_id);
-    const [ratings,details,operations,busy]=await Promise.all([ratingsFor(this.db,items.map(p=>p.id)),this.all(`SELECT d.*,${verifiedPlaceSql('d.property_id')} verified FROM property_details d`),this.all('SELECT * FROM property_operations'),this.all("SELECT DISTINCT property_id FROM bookings WHERE (status='confirmed' OR (status='requested' AND expires_at>?)) AND start<=? AND occupied_until>?",now(),now(),now())]);
+    const [ratings,details,operations,busy]=await Promise.all([ratingsFor(this.db,items.map(p=>p.id)),this.all(`SELECT d.*,${verifiedPlaceSql('d.property_id')} verified FROM property_details d WHERE d.property_id IN (SELECT value FROM json_each(?))`,JSON.stringify(items.map(p=>p.id))),this.all('SELECT * FROM property_operations WHERE property_id IN (SELECT value FROM json_each(?))',JSON.stringify(items.map(p=>p.id))),this.all("SELECT DISTINCT property_id FROM bookings WHERE (status='confirmed' OR (status='requested' AND expires_at>?)) AND start<=? AND occupied_until>?",now(),now(),now())]);
     // The owner sees whether the flat's pin still matches its address (a pin from an old address does not count).
     const pins=owner?await this.all('SELECT property_id,address_fingerprint FROM property_locations WHERE property_id IN (SELECT value FROM json_each(?))',JSON.stringify(items.slice(0,500).map(p=>p.id))):[];
     // Only the version of the check-in instruction travels to the owner (it says whether one is saved); the text stays encrypted.
@@ -437,7 +437,9 @@ export class RentalService {
       this.all('SELECT * FROM (SELECT * FROM messages WHERE user_id=? ORDER BY created_at DESC,rowid DESC LIMIT 100) ORDER BY created_at', this.userId),
     ]);
     const serverTime=now();
-    const [policies,operations,terms,changes]=await Promise.all([this.all('SELECT * FROM property_policies'),this.all('SELECT * FROM property_operations'),this.all('SELECT t.* FROM booking_terms t JOIN bookings b ON b.id=t.booking_id JOIN properties p ON p.id=b.property_id WHERE b.guest_id=? OR p.owner_id=?',this.userId,this.userId),this.all('SELECT c.* FROM booking_changes c JOIN bookings b ON b.id=c.booking_id JOIN properties p ON p.id=b.property_id WHERE b.guest_id=? OR p.owner_id=? ORDER BY c.created_at DESC',this.userId,this.userId)]);
+    // Only the rules of the places this person sees: the whole table would be read on every refresh of the app.
+    const placeIds=JSON.stringify([...new Set([...properties,...ownProperties].map(p=>p.id).concat(bookings.map(b=>b.property_id)))]);
+    const [policies,operations,terms,changes]=await Promise.all([this.all('SELECT * FROM property_policies WHERE property_id IN (SELECT value FROM json_each(?))',placeIds),this.all('SELECT * FROM property_operations WHERE property_id IN (SELECT value FROM json_each(?))',placeIds),this.all('SELECT t.* FROM booking_terms t JOIN bookings b ON b.id=t.booking_id JOIN properties p ON p.id=b.property_id WHERE b.guest_id=? OR p.owner_id=?',this.userId,this.userId),this.all('SELECT c.* FROM booking_changes c JOIN bookings b ON b.id=c.booking_id JOIN properties p ON p.id=b.property_id WHERE b.guest_id=? OR p.owner_id=? ORDER BY c.created_at DESC',this.userId,this.userId)]);
     const [financeBalances,jobPayments]=await Promise.all([
       this.all("SELECT f.booking_id,SUM(CASE WHEN f.kind='deposit' THEN f.amount ELSE 0 END) deposit_received,SUM(CASE WHEN f.kind='deposit_return' THEN f.amount ELSE 0 END) deposit_returned,SUM(CASE WHEN f.kind='refund' THEN f.amount ELSE 0 END) refunded FROM finance_entries f JOIN bookings b ON b.id=f.booking_id JOIN properties p ON p.id=b.property_id WHERE b.guest_id=? OR p.owner_id=? GROUP BY f.booking_id",this.userId,this.userId),
       this.all("SELECT f.job_id,SUM(f.amount) paid FROM finance_entries f JOIN cleaning_jobs j ON j.id=f.job_id WHERE f.kind='job_payment' AND (j.owner_id=? OR j.assigned_to=?) GROUP BY f.job_id",this.userId,this.userId)
@@ -455,7 +457,7 @@ export class RentalService {
   async publicCatalog(options:{syntheticPreview?:boolean}={}) {
     const visible=pilotPropertyVisibleSql('p'),visibility=options.syntheticPreview?"("+visible+" OR p.description LIKE 'СИНТЕТИЧЕСКОЕ ОБЪЯВЛЕНИЕ%')":visible;
     const properties=await this.all('SELECT id,title,city,district,description,price,rooms,capacity,cleaning_minutes,CASE WHEN '+visible+' THEN 0 ELSE 1 END test_preview FROM properties p WHERE published=1 AND demo_owner IS NULL AND '+visibility+' ORDER BY created_at DESC');
-    const policies=await this.all('SELECT * FROM property_policies');
+    const policies=await this.all('SELECT * FROM property_policies WHERE property_id IN (SELECT value FROM json_each(?))',JSON.stringify(properties.map(p=>p.id)));
     return {properties:await this.enrichProperties(properties.map(p=>({...p,policy:publicPolicy(policies.find(v=>v.property_id===p.id))})))};
   }
   async publicSearch(filters:Record<string,string>={},options:{syntheticPreview?:boolean;matching?:boolean;ignorePrep?:boolean;readyIds?:string[];arrival?:{around:number|null}}={}){
