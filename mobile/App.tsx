@@ -51,6 +51,7 @@ import {PropertyListing} from './src/PropertyListing';
 const placeSaid=(type?:string)=>type==='banya'?tr('Баня, выбранная на карте.'):type==='sauna'?tr('Сауна, выбранная на карте.'):type==='banquet'?tr('Зал, выбранный на карте.'):type==='cafe'?tr('Кафе, выбранное на карте.'):tr('Жильё, выбранное на карте.');
 import {PropertyEdit} from './src/PropertyEdit';
 import {PropertyQuick} from './src/PropertyQuick';
+import {AddressField} from './src/AddressSuggest';
 import {CleanerCard} from './src/ProfileEditor';
 import {AccountControl} from './src/AccountControl';
 import {NoticeToast} from './src/Notices';
@@ -130,7 +131,7 @@ function Auth({onSubmit,busy,titled=true}:{titled?:boolean;onSubmit:(mode:string
   return <View style={s.card}>
     {(titled||mode!=='login')&&<Text style={s.cardTitle}>{title}</Text>}
     <Text style={s.meta}>{forgot?(codeSent||t('Укажите номер, на который зарегистрирован аккаунт. Мы пришлём код для смены пароля.')):t('Номер телефона и пароль те же, что на сайте. Брони и чаты общие.')}</Text>
-    {mode==='register'&&<><Text style={s.fieldLabel}>{t('Имя')}</Text><TextInput accessibilityLabel={t('Имя')} style={s.field} value={name} onChangeText={setName} maxLength={100} editable={!locked}/><Text style={s.fieldLabel}>{t('Город')}</Text><TextInput accessibilityLabel={t('Город')} style={s.field} value={city} onChangeText={setCity} maxLength={80} editable={!locked} placeholder={t('Например, Алматы')} placeholderTextColor={C.muted}/></>}
+    {mode==='register'&&<><Text style={s.fieldLabel}>{t('Имя')}</Text><TextInput accessibilityLabel={t('Имя')} style={s.field} value={name} onChangeText={setName} maxLength={100} editable={!locked}/>{locked?<><Text style={s.fieldLabel}>{t('Город')}</Text><TextInput accessibilityLabel={t('Город')} style={s.field} value={city} maxLength={80} editable={false}/></>:<AddressField kind="city" label={t('Город')} value={city} onChange={setCity} max={80} placeholder={t('Например, Алматы')} labelStyle={s.fieldLabel} inputStyle={s.field}/>}</>}
     <Text style={s.fieldLabel}>{t('Номер телефона')}</Text><TextInput accessibilityLabel={t('Номер телефона')} style={s.field} placeholder="+7 777 123 45 67" placeholderTextColor={C.muted} value={phone} onChangeText={v=>{setPhone(v);if(codeSent)setCodeSent('');}} keyboardType="phone-pad" autoComplete="tel" maxLength={30} editable={!locked}/>
     {forgot&&!!codeSent&&<><Text style={s.fieldLabel}>{t('Код из сообщения')}</Text><TextInput accessibilityLabel={t('Код из сообщения')} style={s.field} placeholder={t('6 цифр')} placeholderTextColor={C.muted} value={recovery} onChangeText={v=>setRecovery(v.replace(/\D/g,'').slice(0,6))} keyboardType="number-pad" autoComplete="one-time-code" textContentType="oneTimeCode" maxLength={6} editable={!locked}/></>}
     {mode==='recover'&&<><Text style={s.fieldLabel}>{t('Резервный код')}</Text><TextInput accessibilityLabel={t('Резервный код')} style={s.field} value={recovery} onChangeText={setRecovery} maxLength={80} autoCapitalize="none" autoCorrect={false} editable={!locked}/><Text style={s.meta}>{t('Код выдавали при регистрации. Смена пароля завершит прежние сеансы на всех устройствах.')}</Text></>}

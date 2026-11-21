@@ -1021,4 +1021,12 @@ export const OWNER:Words={
  'входит в «Всё включено»':['«Бәрі қосылған» ішіне кіреді','included in “All inclusive”'],
  'не больше {cap} в месяц за объект. Нет броней — нет платы.':['бір нысан үшін айына {cap} аспайды. Бронь жоқ — ақы жоқ.','at most {cap} a month per property. No bookings, no fee.'],
  'Платите только за брони, которые провёл ИИ':['Тек ЖИ жүргізген брондар үшін төлейсіз','You pay only for the bookings the AI handled'],
+ 'Уже есть в сервисе':['Сервисте бар','Already in the service'],
+ 'город':['қала','city'],
+ 'село':['ауыл','village'],
+ 'посёлок':['кент','settlement'],
+ 'Район: {district}':['Аудан: {district}','District: {district}'],
+ 'Выберите дом в списке или допишите номер':['Тізімнен үйді таңдаңыз немесе нөмірін жазыңыз','Pick the house from the list or type its number'],
+ 'Нет в списке: сохраним, как вы написали':['Тізімде жоқ: қалай жазсаңыз, солай сақтаймыз','Not in the list: we will save it as you wrote it'],
+ 'Город или село':['Қала немесе ауыл','City or village'],
 };

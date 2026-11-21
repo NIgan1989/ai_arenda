@@ -5,6 +5,7 @@ import {L,forms,t} from '../../lib/i18n';
 import {homeAskFromText,type HomeAsk} from '../../lib/home-ask';
 import React,{useMemo,useState} from 'react';
 import {View,Text,TextInput,Pressable,StyleSheet} from 'react-native';
+import {AddressField} from './AddressSuggest';
 import {C,type,brandFont} from './styles';
 import {T} from './tokens';
 import {Photo} from './ListingMedia';
@@ -28,6 +29,7 @@ export function PropertyQuick({city,onSave,onGuestMode,onPlace,onReview,onClose,
  const [busy,setBusy]=useState(false),[error,setError]=useState(''),[saved,setSaved]=useState<Saved|null>(null);
  const questions=useMemo(()=>{const q:{key:string;label:string;question:string;placeholder:string}[]=draftQuestions(draft);return !draft.ownStaff&&!(draft.cleaningFee>=100)?[...q,{key:'cleaningFee',label:t('Уборка'),question:t('Сколько платите исполнителю за уборку после гостей? Без цены уборку после выезда не заказать. Убираете сами или свой персонал, напишите «сами».'),placeholder:t('Например, 3 000 или «сами»')}]:q;},[draft,mode]);
  const ask=questions[0];
+ const [place,setPlace]=useState('');
  const patch=(value:Partial<ListingDraft>)=>setDraft(d=>({...d,...value,known:[...new Set([...d.known,...Object.keys(value)])]}));
  const guessed=(key:string)=>!draft.known.includes(key);
  // Не объявление, а уборка своего жилья (lib/home-ask.ts): форма ведёт в заказ уборки с тем, что уже понято из текста.
@@ -89,8 +91,9 @@ export function PropertyQuick({city,onSave,onGuestMode,onPlace,onReview,onClose,
    <KindPicker kind={draft.type} ownStaff={draft.ownStaff} onChange={v=>patch(v)}/>
    <View style={q.grid}>{!venue&&<View style={q.half}><Stepper label={guess(t('Комнаты'),'rooms')} value={draft.rooms} text={String(draft.rooms)} min={1} max={20} onChange={v=>patch({rooms:v})}/></View>}<View style={q.half}><Stepper label={guess(bath?t('Вмещает гостей'):t('Гостей'),'capacity')} value={draft.capacity} text={String(draft.capacity)} min={1} max={hall?1000:50} step={hall?10:1} onChange={v=>setDraft(d=>({...d,capacity:v,beds:Math.max(d.beds,v),known:[...new Set([...d.known,'capacity'])]}))}/></View></View>
    <View style={q.grid}>{num('area',t('Площадь, м²'),2000)}{!bath&&num('floor',t('Этаж'),100)}</View>
-   {field('address',t('Точный адрес · только для гостя с бронью'),t('Улица, дом, номер'),300)}
-   <View style={q.grid}><View style={q.half}>{field('district',t('Район'),t('Например, Центр'))}</View><View style={q.half}>{field('city',t('Город'),'',80)}</View></View>
+   <AddressField kind="city" label={t('Город или село')} value={String(draft.city||'')} max={80} labelStyle={q.tileLabel} inputStyle={q.input} style={q.field} onChange={v=>{setPlace('');patch({city:v});}} onPick={c=>setPlace(c.id||'')}/>
+   <AddressField kind="street" label={t('Точный адрес · только для гостя с бронью')} value={String(draft.address||'')} city={String(draft.city||'')} place={place} max={300} placeholder={t('Улица, дом, номер')} labelStyle={q.tileLabel} inputStyle={q.input} style={q.field} onChange={v=>patch({address:v})} onPick={c=>{if(c.district&&!String(draft.district||'').trim())patch({district:c.district});}}/>
+   <AddressField kind="district" label={t('Район')} value={String(draft.district||'')} city={String(draft.city||'')} place={place} max={120} placeholder={t('Например, Центр')} labelStyle={q.tileLabel} inputStyle={q.input} style={q.field} onChange={v=>patch({district:v})}/>
    <Text style={q.h}>{t('ЦЕНЫ')}</Text>
    <View style={q.grid}>{hall?<>{num('price',t('На гостя, ₸'),1000000)}{num('leastGuests',t('Минимум гостей'),1000)}</>:bath?<>{num('hourlyPrice',t('Час, ₸'))}{num('minHours',t('Минимум часов'),24)}</>:<>{num('price',t('Сутки, ₸'))}{num('hourlyPrice',t('Час, ₸ · 0 — нет'))}</>}</View>
    {bath&&<>
