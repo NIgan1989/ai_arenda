@@ -36,10 +36,14 @@ export async function runBackgroundJobs(db:D1Database,handler:(job:Row)=>Promise
  return {completed,failures};
 }
 
+// The check of each owner (lib/administrator-runtime.ts) in the background, for the times nobody has the app open: a
+// person's own actions and the app's refresh run it at once. Every two minutes is enough for expiries and offers, and
+// keeps the rows read from the database within the daily limit.
+export const OWNER_EVERY=120;
 async function discover(db:D1Database,job:Row){
  const cursor=String(job.payload.ownerCursor||''),calendarCursor=String(job.payload.calendarCursor||'');
  let owners=await rows(db,'SELECT DISTINCT owner_id FROM properties WHERE owner_id>? ORDER BY owner_id LIMIT 100',cursor);if(!owners.length)owners=await rows(db,'SELECT DISTINCT owner_id FROM properties ORDER BY owner_id LIMIT 100');
- for(const owner of owners){await enqueueJob(db,'owner:'+owner.owner_id,'owner',owner.owner_id,{},30);await enqueueJob(db,'finance-history:'+owner.owner_id,'finance-history',owner.owner_id,{},60);}
+ for(const owner of owners){await enqueueJob(db,'owner:'+owner.owner_id,'owner',owner.owner_id,{},OWNER_EVERY);await enqueueJob(db,'finance-history:'+owner.owner_id,'finance-history',owner.owner_id,{},60);}
  let sources=await rows(db,"SELECT id,owner_id FROM calendar_sources WHERE enabled=1 AND url<>'' AND id>? ORDER BY id LIMIT 100",calendarCursor);if(!sources.length)sources=await rows(db,"SELECT id,owner_id FROM calendar_sources WHERE enabled=1 AND url<>'' ORDER BY id LIMIT 100");
  for(const source of sources)await enqueueJob(db,'calendar:'+source.id,'calendar',source.owner_id,{sourceId:source.id},900);
  await q(db,'UPDATE background_jobs SET payload=? WHERE id=?',JSON.stringify({ownerCursor:owners.at(-1)?.owner_id||'',calendarCursor:sources.at(-1)?.id||''}),job.id).run();

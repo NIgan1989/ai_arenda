@@ -16,6 +16,8 @@ import {BrandEmpty,BrandMoment,celebrate} from './src/BrandMoments';
 import {recordSpan} from '../lib/record-span';
 import {checkinOpen,checkinOpensLabel} from '../lib/checkin-window';
 import {lateOpen,lateNote,lateLabel} from '../lib/late-arrival';
+// How often the background refresh of the app also brings the catalogue of places (see load).
+const CATALOG_EVERY=5*60*1000;
 // The stay as «Задерживаюсь на час» reads it (lib/late-arrival.ts).
 const lateStay=(b:Record<string,any>)=>({start:b.start,end:b.end,arrival_eta:b.terms?.arrival_eta,late_count:b.terms?.late_count});
 import { Animated,AppState,BackHandler,KeyboardAvoidingView,Linking,Platform,Pressable,ScrollView,Text,TextInput,View } from 'react-native';
@@ -216,16 +218,19 @@ function Chat(){
   }
   // «Избранное» on a home's card; the map's panel keeps its own copy, both follow the state.
   const favorites=useFavorites(data,()=>load());
-  async function load(){
-    const active=activeRoleRef.current,generation=getSessionGeneration();
-    try{const state=await request(active?'/api/state':'/api/access');if(activeRoleRef.current!==active||generation!==getSessionGeneration())return;setData(active?state:{...empty,...state});setOnline(true);return state;}
+  // The refresh every 15 seconds brings the catalogue of all places only once in five minutes: it is the biggest part of
+  // the state and changes rarely, and every refresh is paid in rows read from the database. Between, the map keeps the list it has.
+  const catalogAt=useRef(0);
+  async function load(light=false){
+    const active=activeRoleRef.current,generation=getSessionGeneration(),withCatalog=!light||Date.now()-catalogAt.current>=CATALOG_EVERY;
+    try{const state=await request(active?(withCatalog?'/api/state':'/api/state?catalog=0'):'/api/access');if(activeRoleRef.current!==active||generation!==getSessionGeneration())return;if(active&&withCatalog)catalogAt.current=Date.now();setData(prev=>!active?{...empty,...state}:withCatalog?state:{...state,properties:prev.properties});setOnline(true);return state;}
     catch(error){if(error instanceof StaleSessionError||generation!==getSessionGeneration()||activeRoleRef.current!==active)return;if(active&&error instanceof ApiError&&error.status===403){setWorkspaceRole(null);activeRoleRef.current=null;setSelectedRole(null);setHistoryReady(false);setMessages([]);setFlow(null);const access=await request('/api/access');if(generation===getSessionGeneration()&&activeRoleRef.current===null)setData({...empty,...access});}throw error;}
   }
   async function hydrate(role:Role){
     const generation=getSessionGeneration();setHistoryReady(false);setWorkspaceRole(role);activeRoleRef.current=role;
     const [state,history]=await Promise.all([request('/api/state',undefined,undefined,undefined,role),request('/api/conversation',undefined,undefined,undefined,role)]);
     if(generation!==getSessionGeneration()||activeRoleRef.current!==role)throw new StaleSessionError();
-    setData(state);historyEnd.current=pruneHistory(history.messages||[]).at(-1)?.id||'';setMessages(pruneHistory(history.messages||[]));setFlow(history.flow||null);setActor(role);setSelectedRole(role);setPageId(history.flow?'overview':'map');if(history.draftInvalid)setLinkError(tr('Сохранённый ввод не удалось открыть. Начните форму заново; заявки сохранены на сервере.'));setSaveError(false);setOnline(true);(state.notifications||[]).forEach((n:Row)=>seen.current.add(n.id));setHistoryReady(true);seen.current=new Set(state.notifications.map((n:Row)=>n.id));void saveLastRole(state.user?.id||null,role);return state;
+    setData(state);catalogAt.current=Date.now();historyEnd.current=pruneHistory(history.messages||[]).at(-1)?.id||'';setMessages(pruneHistory(history.messages||[]));setFlow(history.flow||null);setActor(role);setSelectedRole(role);setPageId(history.flow?'overview':'map');if(history.draftInvalid)setLinkError(tr('Сохранённый ввод не удалось открыть. Начните форму заново; заявки сохранены на сервере.'));setSaveError(false);setOnline(true);(state.notifications||[]).forEach((n:Row)=>seen.current.add(n.id));setHistoryReady(true);seen.current=new Set(state.notifications.map((n:Row)=>n.id));void saveLastRole(state.user?.id||null,role);return state;
   }
   // The map opens first: the role used last on this device, or the only role the account has. The role chooser stays behind «Сменить роль».
   async function openLastRole(state?:Row){
@@ -286,7 +291,7 @@ function Chat(){
   },[messages,flow,actor,userId,historyReady,selectedRole,busy]);
   useEffect(()=>{
     if(!userId||!selectedRole)return;
-    async function refresh(){if(AppState.currentState!=='active'||locked.current)return;try{const state=await background(load);if(!state)return;
+    async function refresh(){if(AppState.currentState!=='active'||locked.current)return;try{const state=await background(()=>load(true));if(!state)return;
       const fresh=freshEvents(state.notifications as Row[],seen.current,selectedRole!);state.notifications.forEach((n:Row)=>seen.current.add(n.id));
       if(fresh.length)setToast({notice:fresh[0],more:fresh.length-1});
     }catch(error){if(error instanceof ApiError&&error.status===401)await handleError(error);else setOnline(false);}}

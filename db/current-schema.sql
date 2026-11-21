@@ -86,6 +86,7 @@
 -- migration 0082_hybrid_tariff.sql sha256:67c948fb8d0e77155ff9571bd22fe1db769d80a0a2b811e15729937e8560f32b
 -- migration 0083_identity_docs.sql sha256:d8c474857ff501c173d91c4c569a121dab137592b83042efa91841625eeeadf2
 -- migration 0084_user_language.sql sha256:7d46fdf0481c182354cb1d43b51fd99610e5a4ad72f8edfa31bf7a19cf34f8ad
+-- migration 0085_read_indexes.sql sha256:7100201f70821f1da31ea5a7a95df6a279e49e755897bc1e793b1b8411654910
 
 -- table access_receipts
 CREATE TABLE access_receipts (id TEXT PRIMARY KEY,property_id TEXT NOT NULL,entity_kind TEXT NOT NULL,entity_id TEXT NOT NULL,user_id TEXT NOT NULL,created_at INTEGER NOT NULL,expires_at INTEGER NOT NULL);
@@ -1375,6 +1376,9 @@ CREATE INDEX administrator_tasks_recipient ON administrator_tasks(user_id,role,s
 -- index ai_usage_day
 CREATE INDEX ai_usage_day ON ai_usage_reservations(day,user_id);
 
+-- index audit_events_entity
+CREATE INDEX audit_events_entity ON audit_events(entity_id,created_at);
+
 -- index auth_mobile_sessions_expiry
 CREATE INDEX auth_mobile_sessions_expiry ON auth_mobile_sessions(expires_at);
 
@@ -1408,8 +1412,14 @@ CREATE INDEX booking_risks_guest ON booking_risks(guest_id,created_at);
 -- index booking_risks_owner
 CREATE INDEX booking_risks_owner ON booking_risks(owner_id,created_at);
 
+-- index bookings_guest
+CREATE INDEX bookings_guest ON bookings(guest_id,start);
+
 -- index bookings_property_interval
 CREATE INDEX bookings_property_interval ON bookings(property_id,start,occupied_until);
+
+-- index bookings_status
+CREATE INDEX bookings_status ON bookings(status,start);
 
 -- index calendar_previews_owner
 CREATE INDEX calendar_previews_owner ON calendar_previews(user_id,expires_at);
@@ -1453,8 +1463,20 @@ CREATE INDEX cleaning_holds_cleaner ON cleaning_holds(cleaner_id,status);
 -- index cleaning_holds_owner
 CREATE INDEX cleaning_holds_owner ON cleaning_holds(owner_id,status);
 
+-- index cleaning_jobs_owner
+CREATE INDEX cleaning_jobs_owner ON cleaning_jobs(owner_id,status);
+
+-- index cleaning_jobs_property
+CREATE INDEX cleaning_jobs_property ON cleaning_jobs(property_id,status);
+
+-- index cleaning_jobs_status
+CREATE INDEX cleaning_jobs_status ON cleaning_jobs(status,start);
+
 -- index cleaning_offer_worker
 CREATE INDEX cleaning_offer_worker ON cleaning_offers(worker_id,status,expires_at);
+
+-- index cleaning_offers_job
+CREATE INDEX cleaning_offers_job ON cleaning_offers(job_id,status);
 
 -- index company_cash_entries_month
 CREATE INDEX company_cash_entries_month ON company_cash_entries(month);
@@ -1537,6 +1559,9 @@ CREATE INDEX moderation_access_report ON moderation_access_events(report_id,crea
 -- index notification_dedupe
 CREATE UNIQUE INDEX `notification_dedupe` ON `notifications` (`dedupe`);
 
+-- index notifications_user
+CREATE INDEX notifications_user ON notifications(user_id,created_at);
+
 -- index operator_history_issue
 CREATE INDEX operator_history_issue ON operator_history(issue_id,created_at,id);
 
@@ -1572,6 +1597,15 @@ CREATE INDEX price_suggestions_owner ON price_suggestions(owner_id,status,expire
 
 -- index price_suggestions_property
 CREATE INDEX price_suggestions_property ON price_suggestions(property_id,created_at);
+
+-- index profiles_city
+CREATE INDEX profiles_city ON profiles(city);
+
+-- index properties_city
+CREATE INDEX properties_city ON properties(city,published);
+
+-- index properties_owner
+CREATE INDEX properties_owner ON properties(owner_id,created_at);
 
 -- index property_imports_owner
 CREATE INDEX property_imports_owner ON property_imports(owner_id,created_at);
