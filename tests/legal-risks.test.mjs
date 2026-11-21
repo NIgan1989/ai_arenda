@@ -24,6 +24,8 @@ test('the offers cover the launch risks in one new edition',()=>{
  assert.match(text('cleaner'),/последние 3 месяца/);
  assert.match(text('privacy'),/обязаны хранить их в тайне/);
  assert.match(text('privacy'),/с момента её обнаружения/);
+ assert.match(text('privacy'),/OpenAI, США/);
+ assert.match(text('privacy'),/Stadia Maps, США/);
  assert.match(text('privacy'),/лицо, ответственное за организацию обработки/);
  assert.match(text('privacy'),/не позднее 15 рабочих дней/);
  assert.match(text('consent'),/не позднее 15 рабочих дней/);
