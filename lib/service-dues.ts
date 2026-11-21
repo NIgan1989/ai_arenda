@@ -203,11 +203,32 @@ export async function serviceBillingAction(service:RentalService,body:Row,config
  throw new DomainError('Неизвестное действие.');
 }
 
+/** From Sunday 10:00, a day before the Monday charge: everyone with a card and a debt is told the sum, once a week.
+ * A card charge the person expected is not disputed with the bank. A sum above the confirmation threshold is not
+ * taken automatically (it gets its own notice on Monday), so it is not announced here. */
+export const REMIND_BEFORE=DAY;
+async function remindDues(db:D1Database,at:number,confirmAbove:number){
+ const next=chargeSlot(at)+WEEK;if(at<next-REMIND_BEFORE)return 0;
+ let sent=0;
+ for(let after='';;){
+  const list=await rows(db,`SELECT b.user_id id,b.card_mask,${dueSql('b.user_id')} due FROM service_billing b WHERE b.user_id>? AND b.card_mask<>'' AND b.paused_at IS NULL AND ${dueSql('b.user_id')}>0 ORDER BY b.user_id LIMIT ${PAGE}`,after);
+  for(const o of list){
+   const due=Number(o.due);if(due>confirmAbove)continue;
+   const card_mask=String(o.card_mask);
+   const r=await notice(db,o.id,`Завтра в 10:00 с карты ${card_mask} спишется ${money(due)} за услуги сервиса. За что и как оспорить: Меню, «Настройки», «Оплата услуг».`,'service:remind:'+o.id+':'+next,at).run();
+   if(r.meta.changes)sent++;
+  }
+  if(list.length<PAGE)break;after=String(list[list.length-1].id);
+ }
+ return sent;
+}
+
 /** The round: Monday's charge for everyone who owes, the 7 days for those without a card, then the pause. */
 export async function sweepDues(db:D1Database,pausePlans:(db:D1Database,user:string,at:number)=>Promise<unknown>,at=epoch(),config:Admins={},bank:Bank=testBank){
  const result={charged:0,asked:0,paused:0},slot=chargeSlot(at);
  await sweepStuck(db,config,at);
- const stopped=!!(await chargeRules(db)).stoppedAt;
+ const rules=await chargeRules(db),stopped=!!rules.stoppedAt;
+ if(!stopped)await remindDues(db,at,rules.confirmAbove);
  // Everyone who owes, page by page: those still waiting for a card stay in debt and must not hide the rest.
  for(let after='';;){
  const owing=await rows(db,`SELECT u.id,${dueSql('u.id')} due FROM profiles u WHERE u.id>? AND ${dueSql('u.id')}>0 ORDER BY u.id LIMIT ${PAGE}`,after);
