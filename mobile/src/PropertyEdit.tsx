@@ -26,12 +26,13 @@ const SAVED:Record<EditStep|'publish',string>=L({photos:'Фото сохране
 export function PropertyEdit({property,onSave,onReview,onRemove,onClose,onOpenHall,step,call}:{property:Row;onSave:(body:Row)=>Promise<Row|undefined>;onReview?:(body:Row)=>Promise<unknown>;onRemove?:()=>Promise<unknown>;onClose:()=>void;onOpenHall?:(id:string)=>void|Promise<void>;step?:EditStep|'calendars'|'cleaner'|'staff'|'halls'|null;call?:(path:string,body:Row)=>Promise<Row>}){
  const [p,setP]=useState(property),[base,setBase]=useState<EditBody>(()=>editBody(property)),[draft,setDraft]=useState<EditBody>(base);
  const [open,setOpen]=useState<EditStep|null>(step&&EDIT_STEPS.some(x=>x.key===step)?step as EditStep:null),[busy,setBusy]=useState(false),[uploading,setUploading]=useState(false),[error,setError]=useState(''),[done,setDone]=useState(''),[skipped,setSkipped]=useState<string[]>([]),[held,setHeld]=useState(false),[sent,setSent]=useState(false);
- const pick=useRef<PinChoice|null>(null);
+ const pick=useRef<PinChoice|null>(null),errorRu=useRef('');
  const [access,setAccess]=useState(''),[accessState,setAccessState]=useState('');
  async function saveAccess(){if(!call||!p.id||!access.trim())return;setAccessState('…');try{await call('access/save',{propertyId:p.id,instructions:access.trim(),expectedVersion:p.access_version||0});setP((o:Row)=>({...o,access_version:(o.access_version||0)+1}));setAccess('');setAccessState(t('Инструкция сохранена. Гость увидит её перед заездом, исполнитель — когда начнёт уборку.'));}catch(r:any){setAccessState(r?.message||t('Не удалось сохранить инструкцию.'));}}
  const [confirm,setConfirm]=useState(false),[removeError,setRemoveError]=useState(''),[calendars,setCalendars]=useState(step==='calendars'),[cleaner,setCleaner]=useState(step==='cleaner'),[staff,setStaff]=useState(step==='staff'),[halls,setHalls]=useState(step==='halls');
  // A save that failed keeps its changes: the owner fixes what the server asked for in another step and everything is saved together.
- const fix=held&&error?stepForError(error):null;
+ // The server's own Russian words decide the step; the person reads them in their language (ApiError.ru).
+ const fix=held&&error?stepForError(errorRu.current||error):null;
  // Without a pin that matches the address the review cannot pass, so the AI says it first and leads straight to «Адрес».
  const unmapped=!!p.id&&p.mapped===false&&!!base.address.trim();
  const advice:Advice=held&&error?{step:fix,text:t(fix?'Не сохранилось: {error} Заполните это, и сохранится всё вместе.':'Не сохранилось: {error}',{error}),action:fix?t('Заполнить'):undefined}
@@ -55,9 +56,9 @@ export function PropertyEdit({property,onSave,onReview,onRemove,onClose,onOpenHa
    const pinned=what==='place'?await savePin(saved):null;if(pinned!==null)saved={...saved,mapped:pinned||saved.mapped};
    setP(saved);setBase(b);setDraft(b);setOpen(null);setHeld(false);setError('');
    setDone(what==='place'?(saved.address_check?t('Адрес сохранён и отправлен на проверку. Действующие брони в силе, новые гости увидят жильё после проверки.'):saved.mapped?t('Адрес и метка на карте сохранены.'):t('Адрес сохранён, а дом на карте не нашёлся: откройте «Адрес» и передвиньте карту к дому.')):SAVED[what]);}
-  catch(e:any){const message=e?.message||t('Не удалось сохранить.');
+  catch(e:any){const message=e?.message||t('Не удалось сохранить.');errorRu.current=String(e?.ru||message);
    // Publishing waits for the administrator: the flat is sent for review instead of failing, and is shown once approved.
-   if(what==='publish'&&next.published&&onReview&&needsReview(message)){try{const kept={...next,published:false};if(held){const fresh=await onSave(editRequest(kept,p));setP(fresh||p);const b=fresh?editBody(fresh):kept;setBase(b);setDraft(b);}await onReview(reviewRequest({id:p.id,title:next.title,city:next.city,address:next.address}));if(call&&p.id){try{const now=await call('map/spot',{propertyId:p.id});setP((o:Row)=>({...o,mapped:!!now.saved}));}catch{}}setSent(true);setHeld(false);setDone('');setError('');setOpen(null);return;}catch(r:any){setError(r?.message||message);setHeld(true);setOpen(null);return;}}
+   if(what==='publish'&&next.published&&onReview&&needsReview(errorRu.current)){try{const kept={...next,published:false};if(held){const fresh=await onSave(editRequest(kept,p));setP(fresh||p);const b=fresh?editBody(fresh):kept;setBase(b);setDraft(b);}await onReview(reviewRequest({id:p.id,title:next.title,city:next.city,address:next.address}));if(call&&p.id){try{const now=await call('map/spot',{propertyId:p.id});setP((o:Row)=>({...o,mapped:!!now.saved}));}catch{}}setSent(true);setHeld(false);setDone('');setError('');setOpen(null);return;}catch(r:any){setError(r?.message||message);setHeld(true);setOpen(null);return;}}
    setError(message);setHeld(true);setOpen(null);}finally{setBusy(false);}
  }
  const d=draft.details,r=draft.rental;
