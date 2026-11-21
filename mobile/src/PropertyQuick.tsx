@@ -50,7 +50,7 @@ export function PropertyQuick({city,onSave,onGuestMode,onPlace,onReview,onClose,
    catch(e:any){if(!published||!/провер|допуск/i.test(String(e?.message)))throw e;published=false;result=await onSave(draftListingBody(draft,photos,false));
     if(onReview&&needsReview(String(e?.message))){try{await onReview(reviewRequest({id:result.id,title:draftTitle(draft),city:draft.city,address:draft.address}));review=true;}catch{/* the owner can still ask from «Допуск» */}}}
    // The flat goes on the map by its address right away; the owner only checks the pin.
-   let placed=false;try{placed=!!((await onPlace?.({propertyId:result.id})) as Row|undefined)?.saved;}catch{/* the map pin can be set later */}
+   let placed=false;try{placed=!!((await onPlace?.({propertyId:result.id,...(place?{place}:{})})) as Row|undefined)?.saved;}catch{/* the map pin can be set later */}
    let note='';try{await onGuestMode({propertyId:result.id,mode,cleaningFee:!draft.ownStaff&&draft.cleaningFee>=100?draft.cleaningFee:undefined});}catch(e:any){note=' '+(e?.message||'');}
    setSaved({id:result.id,published,placed,message:(published?t(['Зал опубликован, гости уже видят его на карте.','Объект опубликован, гости уже видят его на карте.','Жильё опубликовано, гости уже видят его на карте.'][sort]):review?t('Сохранено черновиком и отправлено на проверку администратору: после проверки появится на карте само.'):photos.length?t('Сохранено черновиком: чтобы показать гостям, пройдите проверку в «Управление → Допуск».'):t('Сохранено черновиком. Добавьте фото, и его можно будет показать гостям.'))+note});setStep(2);
   }catch(e:any){setError(e?.message||t(['Не удалось сохранить зал.','Не удалось сохранить объект.','Не удалось сохранить жильё.'][sort]));}finally{setBusy(false);}

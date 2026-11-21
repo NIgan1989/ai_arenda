@@ -89,7 +89,11 @@ test('districts of a city, and the pin from the book', async () => {
  assert.equal(spot.exact,true);
  const street=await bookSpot(bucket,'Павлодар','Торайгырова 99');
  assert.equal(street.exact,false);
- assert.equal((await bookSpot(bucket,'Жанаталап','')).longitude,77.2);
+ assert.equal(await bookSpot(bucket,'Жанаталап','Абая 5'),null,'namesake villages: no pin without the one the owner picked');
+ assert.equal((await bookSpot(bucket,'Жанаталап','Абая 5','n2')).exact,true);
+ assert.equal((await bookSpot(bucket,'Жанаталап','','n2')).longitude,77.2);
+ assert.equal((await bookSpot(bucket,'Павлодар','Торай 64')).exact,false,'a part of a street name is no exact house');
+ assert.equal((await bookSpot(bucket,'Павлодар','Сатпаева 3')).exact,false);
 });
 
 test('the public route answers without the book with empty lists', async () => {

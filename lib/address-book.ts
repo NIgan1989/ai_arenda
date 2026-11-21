@@ -98,11 +98,15 @@ export async function suggestAddress(bucket:BookBucket|undefined,city:unknown,te
 // settlement) gives a place to start from and the owner moves the pin himself.
 export async function bookSpot(bucket:BookBucket|undefined,city:unknown,address:unknown,id=''){
  const p=await findPlace(bucket,city,id);if(!p)return null;
+ // Several villages share a name: without the one the owner picked, the book cannot tell which, and stays silent.
+ if(!id||p.i!==id){const same=(await placesFor(bucket,nameTokens(String(city??'').slice(0,80),'place'))).filter(x=>x.n===p.n&&x.i!==p.i&&fitOf(nameTokens(String(city??''),'place'),x)===3);if(same.length)return null;}
  const parts=splitAddress(address),query=nameTokens(parts.street),centre={longitude:p.c[0],latitude:p.c[1],found:false,exact:false};
  if(!query.length||!p.s)return centre;
  const found=(await streetsFor(bucket,p,query)).map(s=>({s,fit:fitOf(query,s)})).filter(x=>x.fit>=2).sort((a,b)=>b.fit-a.fit||b.s.h.length-a.s.h.length);
  const s=found[0]?.s;if(!s)return centre;
- const h=parts.house&&s.h.find(x=>String(x[0])===houseNumber(parts.house));
+ // Only a whole street name makes a house exact: «Аб 5» or a longer street that merely starts so is just a start for the pin.
+ const whole=s.v.some(v=>{const words=v.split(' ');return query.every(q=>words.includes(q));});
+ const h=whole&&parts.house&&s.h.find(x=>String(x[0])===houseNumber(parts.house));
  if(h){const [lon,lat]=at(p,h[1],h[2]);return {longitude:lon,latitude:lat,found:true,exact:true};}
  const [lon,lat]=at(p,s.c[0],s.c[1]);return {longitude:lon,latitude:lat,found:false,exact:false};
 }

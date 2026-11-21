@@ -92,7 +92,7 @@ export function PropertyEdit({property,onSave,onReview,onRemove,onClose,onOpenHa
     <AddressField kind="street" label={t('Точный адрес')} value={draft.address} city={draft.city} place={place} max={300} placeholder={t('Улица, дом, номер')} onChange={v=>set({address:v})} onPick={c=>{if(c.district&&!draft.district.trim())set({district:c.district});}}/>
     <Text style={e.hint}>{t('Адрес видит только гость с подтверждённой бронью. Метку на карте ставим по нему.')}</Text>
     {base.published&&(draft.address!==base.address||draft.city!==base.city||draft.district!==base.district)&&<Text accessibilityLiveRegion="polite" style={e.note}>{t('Новый адрес проверит администратор, обычно это быстро. До проверки новые гости не увидят жильё, а действующие брони останутся в силе.')}</Text>}
-    {!!call&&!!p.id&&<AddressPin propertyId={p.id} city={draft.city} district={draft.district} address={draft.address} call={call} onChoice={c=>{pick.current=c;}}/>}
+    {!!call&&!!p.id&&<AddressPin propertyId={p.id} city={draft.city} district={draft.district} address={draft.address} place={place} call={call} onChoice={c=>{pick.current=c;}}/>}
    </>}
    {open==='text'&&<>
     {text(t('Название'),draft.title,v=>set({title:v}),120)}
