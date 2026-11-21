@@ -19,46 +19,59 @@ const managed=f=>f.db.raw.prepare('SELECT auto_confirm FROM property_policies WH
 const daytime=f=>{const local=now()+DAY+5*3600,noon=local-local%DAY-5*3600+12*3600;f.db.raw.prepare('UPDATE cleaning_jobs SET start=?,"end"=? WHERE id=?').run(noon,noon+5400,f.job.id);};
 const openRules={districts:[],days:127,fromMinute:0,toMinute:1440,minFee:0,maxPerDay:4,askNewOwner:false};
 
-test('turning a flat to «ИИ» starts the free trial once, with a notice; the state shows the flat as managed',async()=>{
+test('turning a flat to «ИИ» turns the plan on for the result: no month, no trial, a notice with the price; the state shows the flat as managed',async()=>{
  const f=await fixture();try{
   await auto(f);
-  const p=plan(f);assert.equal(p.status,'trial');assert.ok(Math.abs(p.period_end-(now()+14*DAY))<5);
-  assert.match(f.db.raw.prepare("SELECT body FROM notifications WHERE dedupe='owner:autopilot-trial:owner'").get().body,/14 дней бесплатно.*плата не взимается/);
+  const p=plan(f);assert.equal(p.status,'active');assert.equal(p.tier,'pay');assert.equal(charges(f).length,0);
+  assert.match(f.db.raw.prepare("SELECT body FROM notifications WHERE dedupe LIKE 'owner:autopilot-on:owner:%'").get().body,/490 ₸ за каждую бронь.*4\s900 ₸ в месяц за объект.*плата не взимается/);
   await auto(f);assert.equal(plan(f).version,1);
   const state=await readOperations(f.owner,'owner',['autopilot','state']);
-  assert.equal(state.live,true);assert.equal(state.units,1);assert.equal(state.flats[0].managed,true);assert.equal(state.settings.price,4900);
+  assert.equal(state.live,true);assert.equal(state.tier,'pay');assert.equal(state.units,1);assert.equal(state.flats[0].managed,true);
+  assert.equal(state.settings.price,9900);assert.equal(state.settings.aiBookingFee,490);assert.equal(state.billing.allAmount,9900);assert.equal(state.billing.advise,false);
+  // A month for the result is never charged: the daily round leaves the plan alone.
+  f.db.raw.prepare("UPDATE autopilot_plans SET period_end=?").run(now()-10);charging(f);
+  await sweepPlans(f.db);assert.equal(charges(f).length,0);assert.equal(plan(f).status,'active');
   await assert.rejects(readOperations(f.guest,'guest',['autopilot','state']),e=>e.status===403);
  }finally{f.db.close();}
 });
 
-test('while charging is off a renewal is only recorded; with charging on the month is accrued and the card pays it, else seven days and a pause',async()=>{
+test('«Всё включено»: while charging is off the month is only recorded; with charging on it is accrued for every object and the card pays it, else seven days and a pause',async()=>{
  const f=await fixture(),{dueOf,serviceBillingAction}=await load('service-dues');try{
   await auto(f);
-  // Trial ends: shadow month, nothing owed.
-  f.db.raw.prepare("UPDATE autopilot_plans SET period_end=?").run(now()-10);
-  assert.equal((await sweepPlans(f.db)).renewed,1);
-  assert.equal(plan(f).status,'active');assert.deepEqual(charges(f).map(c=>[c.mode,c.amount,c.units]),[['shadow',4900,1]]);assert.equal(await dueOf(f.db,'owner'),0);
-  // Charging on: the month is accrued, never refused; there is no balance to top up.
+  let r=await writeOperations(f.owner,'owner',['autopilot','tier'],{tier:'all'});assert.match(r.message,/«Всё включено» подключено/);
+  assert.equal(plan(f).tier,'all');assert.deepEqual(charges(f).map(c=>[c.mode,c.amount,c.units]),[['shadow',9900,1]]);assert.equal(await dueOf(f.db,'owner'),0);
+  // Charging on: the next month is accrued, never refused; there is no balance to top up.
   charging(f);f.db.raw.prepare("UPDATE autopilot_plans SET period_end=?").run(now()-20);
-  const first=await sweepPlans(f.db);assert.equal(first.renewed,1);assert.equal(charges(f).at(-1).mode,'charged');assert.equal(await dueOf(f.db,'owner'),4900);
-  assert.match(f.db.raw.prepare("SELECT body FROM notifications WHERE dedupe LIKE 'owner:autopilot-paid:%'").get().body,/с привязанной карты/);
+  const first=await sweepPlans(f.db);assert.equal(first.renewed,1);assert.equal(charges(f).at(-1).mode,'charged');assert.equal(await dueOf(f.db,'owner'),9900);
+  assert.match(f.db.raw.prepare("SELECT body FROM notifications WHERE dedupe LIKE 'owner:autopilot-paid:%'").get().body,/«Всё включено» продлено.*с привязанной карты/);
   // No card on the charge day: the owner is asked once and has seven days; the flat stays with the AI.
-  assert.equal(first.dues.asked,1);assert.match(f.db.raw.prepare("SELECT body FROM notifications WHERE dedupe LIKE 'service:card-ask:%'").get().body,/К оплате за услуги сервиса 4\s900 ₸\. Привяжите карту/);
+  assert.equal(first.dues.asked,1);assert.match(f.db.raw.prepare("SELECT body FROM notifications WHERE dedupe LIKE 'service:card-ask:%'").get().body,/К оплате за услуги сервиса 9\s900 ₸\. Привяжите карту/);
   assert.equal((await sweepPlans(f.db,now()+3*DAY)).dues.paused,0);assert.ok(managed(f));
   // Seven days passed: pause, the flat goes back to «Я сам» and takes no new bookings.
   assert.equal((await sweepPlans(f.db,now()+7*DAY+60)).dues.paused,1);assert.equal(plan(f).status,'paused');assert.equal(managed(f),false);
   await assert.rejects(auto(f),e=>e.status===402&&/Оплата услуг/.test(e.message));
-  await assert.rejects(f.other.saveProfile({name:'G2',roles:['guest'],city:'Павлодар',contact:'+77000000009',offerAccepted:true}).then(()=>f.other.createBooking({propertyId:f.property,start:new Date((now()+40*DAY)*1000).toISOString(),end:new Date((now()+40*DAY+7200)*1000).toISOString(),guests:1,billingMode:'hourly',requestKey:'paused',acceptTerms:true})),e=>e.status===409&&/временно не принимает/.test(e.message));
-  // A linked card pays the debt at once and lifts the pause; the plan is turned on again by the owner.
-  const linked=await serviceBillingAction(f.owner,{action:'link'});assert.match(linked.message,/Списано 4\s900 ₸/);assert.equal(linked.state.due,0);assert.equal(linked.state.paused,false);
-  await auto(f);assert.equal(plan(f).status,'active');assert.equal(charges(f).at(-1).amount,4900);assert.ok(managed(f));assert.equal(await dueOf(f.db,'owner'),4900);
+  await assert.rejects(writeOperations(f.owner,'owner',['autopilot','tier'],{tier:'all'}),e=>e.status===402);
+  // A linked card pays the debt at once and lifts the pause; the owner turns the AI on again, paying for the result.
+  const linked=await serviceBillingAction(f.owner,{action:'link'});assert.match(linked.message,/Списано 9\s900 ₸/);assert.equal(linked.state.due,0);assert.equal(linked.state.paused,false);
+  await auto(f);assert.equal(plan(f).status,'active');assert.equal(plan(f).tier,'pay');assert.equal(charges(f).length,2);assert.ok(managed(f));assert.equal(await dueOf(f.db,'owner'),0);
  }finally{f.db.close();}
 });
 
-test('stop: a trial pauses now and the flats go manual; a paid month with charging on runs to its end',async()=>{
+test('back to paying for the result: a paid month of «Всё включено» runs to its end, then the plan pays for the result',async()=>{
+ const f=await fixture();try{
+  charging(f);await auto(f);await writeOperations(f.owner,'owner',['autopilot','tier'],{tier:'all'});
+  const r=await writeOperations(f.owner,'owner',['autopilot','tier'],{tier:'pay'});assert.match(r.message,/Потом — оплата за результат/);
+  assert.equal(plan(f).tier,'all');assert.equal(plan(f).next_tier,'pay');assert.equal(r.state.tier,'all');
+  f.db.raw.prepare("UPDATE autopilot_plans SET period_end=?").run(now()-10);await sweepPlans(f.db);
+  assert.equal(plan(f).tier,'pay');assert.equal(plan(f).next_tier,null);assert.equal(plan(f).status,'active');assert.equal(charges(f).length,1);assert.ok(managed(f));
+  assert.match(f.db.raw.prepare("SELECT body FROM notifications WHERE dedupe LIKE 'owner:plan-pay:%'").get().body,/только за результат/);
+ }finally{f.db.close();}
+});
+
+test('stop: paying for the result stops now and the flats go manual; a paid month of «Всё включено» runs to its end',async()=>{
  const f=await fixture();try{
   await auto(f);await stopPlan(f.owner,'owner');assert.equal(plan(f).status,'paused');assert.equal(managed(f),false);
-  charging(f);topUp(f,10000);await auto(f);assert.equal(plan(f).status,'active');
+  charging(f);await auto(f);assert.equal(plan(f).status,'active');await writeOperations(f.owner,'owner',['autopilot','tier'],{tier:'all'});
   const r=await writeOperations(f.owner,'owner',['autopilot','stop'],{});assert.match(r.message,/не продлится/);
   assert.equal(plan(f).status,'active');assert.equal(plan(f).auto_renew,0);assert.ok(managed(f));
   f.db.raw.prepare("UPDATE autopilot_plans SET period_end=?").run(now()-10);await sweepPlans(f.db);
@@ -71,7 +84,7 @@ test('cleaner rules decide what the AI takes: district, day, hours, pay, load, n
   daytime(f);
   const job=f.db.raw.prepare('SELECT j.*,p.district FROM cleaning_jobs j JOIN properties p ON p.id=j.property_id WHERE j.id=?').get(f.job.id);
   assert.equal(await autopilotFits(f.db,'cleaner',job),false);
-  await startCleanerPlan(f.cleaner,openRules);assert.equal(plan(f,'cleaner','cleaner').status,'trial');
+  await startCleanerPlan(f.cleaner,openRules);assert.equal(plan(f,'cleaner','cleaner').status,'active');
   assert.equal(await autopilotFits(f.db,'cleaner',job),true);
   const fits=async rules=>{await writeOperations(f.cleaner,'cleaner',['autopilot','rules'],{...openRules,...rules});return autopilotFits(f.db,'cleaner',job);};
   assert.equal(await fits({districts:['Другой']}),false);assert.equal(await fits({districts:['центр']}),true);
@@ -120,13 +133,13 @@ test('a cleaner charge is withheld from the next payout and settled by it',async
 test('the administrator sets prices and turns charging on with consent; people on a plan are told',async()=>{
  const f=await fixture();try{
   await auto(f);
-  const before=await readPlatformAdmin(f.other,'billing/plans',{},config(f));assert.equal(before.owner.trial,1);assert.equal(before.owner.flats,1);assert.equal(before.settings.charge,false);
-  const body={ownerPrice:5900,cleanerPrice:1500,trialDays:7,graceDays:2,charge:true};
+  const before=await readPlatformAdmin(f.other,'billing/plans',{},config(f));assert.equal(before.owner.pay,1);assert.equal(before.owner.flats,1);assert.equal(before.settings.charge,false);assert.equal(before.settings.aiBookingFee,490);
+  const body={ownerPrice:8900,cleanerPrice:2500,graceDays:2,aiBookingFee:390,aiMonthCap:3900,cleanerJobFee:200,cleanerFreeJobs:3,cleanerMonthCap:5000,charge:true};
   await assert.rejects(writePlatformAdmin(f.other,'billing/plans',body,config(f)),/Подтвердите/);
   await assert.rejects(writePlatformAdmin(f.owner,'billing/plans',{...body,confirmed:true},config(f)),e=>e.status===403);
   const r=await writePlatformAdmin(f.other,'billing/plans',{...body,confirmed:true},config(f));
-  assert.equal(r.state.settings.ownerPrice,5900);assert.equal(r.state.settings.charge,true);
-  assert.match(f.db.raw.prepare("SELECT body FROM notifications WHERE dedupe LIKE 'owner:autopilot-terms:%'").get().body,/5\s900/);
+  assert.equal(r.state.settings.ownerPrice,8900);assert.equal(r.state.settings.aiBookingFee,390);assert.equal(r.state.settings.cleanerFreeJobs,3);assert.equal(r.state.settings.charge,true);
+  assert.match(f.db.raw.prepare("SELECT body FROM notifications WHERE dedupe LIKE 'owner:autopilot-terms:%'").get().body,/390 ₸ за каждую бронь.*3\s900/);
  }finally{f.db.close();}
 });
 
@@ -147,15 +160,15 @@ test('a payout smaller than the month withholds part of it, and the next payout 
  }finally{f.db.close();}
 });
 
-test('turning the plan on checks the flats first: nothing is charged when none can go on, and duplicates count once',async()=>{
+test('turning the plan on checks the flats first: nothing turns on when none can go on, and duplicates count once',async()=>{
  const f=await fixture();try{
-  charging(f);topUp(f,20000);f.db.raw.prepare("INSERT INTO autopilot_plans(user_id,role,status,started_at,period_end,updated_at) VALUES ('owner','owner','paused',?,?,?)").run(now()-40*DAY,now()-10*DAY,now()-10*DAY);
+  charging(f);f.db.raw.prepare("INSERT INTO autopilot_plans(user_id,role,status,started_at,period_end,updated_at) VALUES ('owner','owner','paused',?,?,?)").run(now()-40*DAY,now()-10*DAY,now()-10*DAY);
   f.db.raw.prepare('UPDATE property_policies SET mandate_until=? WHERE property_id=?').run(now()-60,f.property);
   const r=await writeOperations(f.owner,'owner',['autopilot','start'],{propertyIds:[f.property]});
-  assert.match(r.message,/не включён.*полномочий/);assert.equal(charges(f).length,0);assert.equal(plan(f).status,'paused');
+  assert.match(r.message,/не включён.*полномочий/);assert.equal(plan(f).status,'paused');
   f.db.raw.prepare('UPDATE property_policies SET mandate_until=0 WHERE property_id=?').run(f.property);
-  await writeOperations(f.owner,'owner',['autopilot','start'],{propertyIds:[f.property,f.property,'missing']});
-  assert.deepEqual(charges(f).map(c=>[c.units,c.amount]),[[1,4900]]);assert.ok(managed(f));
+  const ok=await writeOperations(f.owner,'owner',['autopilot','start'],{propertyIds:[f.property,f.property,'missing']});
+  assert.deepEqual(ok.done,[f.property]);assert.equal(plan(f).status,'active');assert.equal(charges(f).length,0);assert.ok(managed(f));
  }finally{f.db.close();}
 });
 

@@ -1,4 +1,4 @@
-import {L,dateText,forms,t as tr} from '../../lib/i18n';
+import {L,dateText,forms,t as tr,tServer} from '../../lib/i18n';
 import React,{useEffect,useState} from 'react';
 import {View,Text,TextInput,Pressable,Switch,StyleSheet} from 'react-native';
 import {Group,Row,a} from './AccountRows';
@@ -6,7 +6,10 @@ import {ThinkingLine} from './Thinking';
 import {request} from './api';
 import {s,C,type,brandFont} from './styles';
 import {T} from './tokens';
+import {SwipeConfirm} from './SwipeConfirm';
 import type {Row as Data} from './model';
+// The server writes the terms of each way to pay in Russian; they are shown in the language of the app.
+const termsIn=(terms:{pay?:unknown;all?:unknown}|undefined)=>({pay:terms?.pay?tServer(String(terms.pay)):'',all:terms?.all?tServer(String(terms.all)):''});
 
 const money=(n:number)=>new Intl.NumberFormat('ru-RU').format(n||0)+' ₸';
 const date=(t:number)=>dateText(t*1000,{timeZone:'Asia/Qyzylorda',day:'numeric',month:'long'});
@@ -14,7 +17,7 @@ const DAYS=L(['Пн','Вт','Ср','Чт','Пт','Сб','Вс']);
 const hhmm=(m:number)=>String(Math.floor(m/60)).padStart(2,'0')+':'+String(m%60).padStart(2,'0');
 const toMinutes=(v:string)=>{const [h,m]=v.split(':').map(Number);return Math.max(0,Math.min(1440,(h||0)*60+(m||0)));};
 const FEATURES=L({
- owner:['Принимает брони и отвечает гостям за вас, днём и ночью','Заказывает уборку, назначает исполнителя и находит замену','Принимает уборку по фотоотчёту и отмечает выезд гостя','Жильё выше в подборе для гостей','Комиссия с брони обычная, без надбавки за ИИ','Итоги недели по понедельникам'],
+ owner:['Принимает брони и отвечает гостям за вас, днём и ночью','Заказывает уборку, назначает исполнителя и находит замену','Принимает уборку по фотоотчёту и отмечает выезд гостя','Жильё выше в подборе для гостей','Платите только за брони, которые провёл ИИ','Итоги недели по понедельникам'],
  cleaner:['Берёт уборки сам по вашим правилам: районы, дни, часы, оплата','Подходящие уборки приходят вам раньше остальных','План дня в 8:00: адреса по порядку и время','«Не могу сегодня»: ИИ вернёт уборки и найдёт замену','Итоги недели в профиле']
 });
 const STEPS=L({owner:['Объекты','Уборка','Итог'],cleaner:['Где и когда','Оплата','Итог']});
@@ -31,17 +34,60 @@ function Steps({steps,current,onPick}:{steps:string[];current:number;onPick:(i:n
 }
 
 // The «Автопилот» plan on the account screen: what it gives, how to turn it on, how it runs.
+// How the participant pays the service (hybrid tariff): for the result, or one monthly «Всё включено». The hint
+// compares the last 30 days for the result with the subscription; the subscription is taken by a swipe.
+function PayWay({state,owner,busy,run}:{state:Data;owner:boolean;busy:boolean;run:(path:string,body?:Data)=>void}){
+ const plan=state.plan,tier=state.tier==='all'?'all':'pay',b=state.billing||{},terms=termsIn(state.terms),st=state.settings||{};
+ const option=(id:'pay'|'all',title:string,note:string)=><View key={id} accessibilityRole="radio" accessibilityState={{checked:tier===id}} style={[p.way,tier===id&&p.wayOn]}>
+  <View style={[p.radio,tier===id&&p.radioOn]}>{tier===id&&<View style={p.radioDot}/>}</View>
+  <View style={{flex:1,gap:2}}><Text style={a.title}>{title}</Text><Text style={a.note}>{note}</Text></View></View>;
+ const allNote=tier==='all'&&plan?.periodEnd?(plan.nextTier==='pay'?tr('До {date}, потом оплата за результат',{date:date(plan.periodEnd)}):tr('Оплачено до {date}',{date:date(plan.periodEnd)})):terms.all;
+ const hint=tier==='pay'&&b.spent30>0?tr('За 30 дней: {spent}. С «Всё включено» было бы {all}.',{spent:money(b.spent30),all:money(b.allAmount)}):'';
+ return <View style={p.payWay}>
+  <Text accessibilityRole="header" style={a.label}>{tr('Как платить')}</Text>
+  <View accessibilityRole="radiogroup" style={{gap:8}}>
+   {option('pay',tr('За результат'),terms.pay||'')}
+   {option('all',tr('«Всё включено»'),allNote||'')}
+  </View>
+  {!!hint&&<Text style={[p.hint,b.advise&&p.hintOn]}>{hint}{b.advise?' '+tr('Подписка выгоднее.'):''}</Text>}
+  {!owner&&tier==='pay'&&b.freeLeft>0&&<Text style={a.note}>{tr('Бесплатных уборок осталось: {n}',{n:b.freeLeft})}</Text>}
+  {tier==='pay'
+   ?<SwipeConfirm label={tr('Проведите: подключить «Всё включено»')} disabled={busy} onConfirm={()=>run('operations/autopilot/tier',{tier:'all'})}/>
+   :plan?.nextTier==='pay'
+    ?<Pressable accessibilityRole="button" disabled={busy} onPress={()=>run('operations/autopilot/tier',{tier:'all'})} style={[p.btn,p.btnLine,busy&&s.disabled]}><Text style={[p.btnText,p.btnLineText]}>{tr('Оставить «Всё включено»')}</Text></Pressable>
+    :<Pressable accessibilityRole="button" disabled={busy} onPress={()=>run('operations/autopilot/tier',{tier:'pay'})} style={[p.btn,p.btnLine,busy&&s.disabled]}><Text style={[p.btnText,p.btnLineText]}>{tr('Вернуться к оплате за результат')}</Text></Pressable>}
+  <Text style={p.fine}>{st.charge?tr('Всё копится и списывается одной суммой по понедельникам с привязанной карты.'):tr('Пока плата не взимается: сервис только считает.')}</Text>
+ </View>;
+}
+
+// The owner's «Как платить» on the «Автопилот» screen: the owner turns the AI on per object (FlatAutopilot.tsx),
+// so here is only the way to pay and the hint.
+export function NativePayWay({role}:{role:'owner'|'cleaner'}){
+ const [state,setState]=useState<Data|null>(null),[busy,setBusy]=useState(false),[note,setNote]=useState(''),[error,setError]=useState('');
+ useEffect(()=>{let live=true;request('/api/operations/autopilot/state').then(v=>{if(live)setState(v);}).catch(e=>live&&setError(e.message));return()=>{live=false;};},[role]);
+ async function run(path:string,body:Data={}){setBusy(true);setError('');setNote('');try{const r=await request('/api/'+path,body);setNote(r.message||'');setState(r.state||await request('/api/operations/autopilot/state'));}catch(e){setError((e as Error).message);}finally{setBusy(false);}}
+ if(!state)return error?<Text accessibilityRole="alert" style={s.error}>{error}</Text>:null;
+ return <View style={{marginBottom:16}}>
+  <PayWay state={state} owner={role==='owner'} busy={busy} run={(path,body)=>void run(path,body)}/>
+  {!!error&&<Text accessibilityRole="alert" style={s.error}>{error}</Text>}{!!note&&<Text accessibilityLiveRegion="polite" style={a.saved}>{note}</Text>}
+ </View>;
+}
+
+// The «Автопилот» plan on the account screen: what it gives, how to turn it on, how it runs.
 export function NativeAutopilotPlan({role}:{role:'owner'|'cleaner'}){
  const owner=role==='owner';
  const [state,setState]=useState<Data|null>(null),[open,setOpen]=useState(false),[step,setStep]=useState(0),[confirmOff,setConfirmOff]=useState(false),[busy,setBusy]=useState(false),[error,setError]=useState(''),[message,setMessage]=useState('');
  const [picked,setPicked]=useState<string[]>([]),[fees,setFees]=useState<Data>({}),[rules,setRules]=useState<Data>({districts:[],days:63,fromMinute:600,toMinute:1140,minFee:0,maxPerDay:4,askNewOwner:true});
  const [from,setFrom]=useState('10:00'),[to,setTo]=useState('19:00');
  useEffect(()=>{let live=true;request('/api/operations/autopilot/state').then(v=>{if(!live)return;setState(v);if(v.rules){setRules(v.rules);setFrom(hhmm(v.rules.fromMinute));setTo(hhmm(Math.min(v.rules.toMinute,1439)));}setPicked((v.flats||[]).filter((f:Data)=>f.managed||f.ready).map((f:Data)=>f.id));}).catch(e=>live&&setError(e.message));return()=>{live=false;};},[role]);
- async function run(path:string,body:Data={}){setBusy(true);setError('');setMessage('');try{const r=await request('/api/'+path,body);setMessage(r.message||tr('Сохранено.'));const next=r.state||await request('/api/operations/autopilot/state');setState(next);if(next.live){setOpen(false);setStep(0);}setConfirmOff(false);}catch(e:any){setError(e.message);}finally{setBusy(false);}}
+ async function run(path:string,body:Data={}){setBusy(true);setError('');setMessage('');try{const r=await request('/api/'+path,body);setMessage(r.message||tr('Сохранено.'));const next=r.state||await request('/api/operations/autopilot/state');setState(next);if(next.live&&!path.endsWith('/tier')){setOpen(false);setStep(0);}setConfirmOff(false);}catch(e){setError((e as Error).message);}finally{setBusy(false);}}
  if(!state)return <Group title={tr('Тариф')}>{error?<Text accessibilityRole="alert" style={[s.error,{padding:16}]}>{error}</Text>:<View style={{padding:16}}><ThinkingLine style={s.meta} text={tr('Загружаю тариф…')}/></View>}</Group>;
  const st=state.settings||{},plan=state.plan,live=!!state.live,flats:Data[]=state.flats||[];
- const statusLine=!plan?'':plan.status==='trial'?(st.charge?tr('Пробный период до {date}, потом {sum} в месяц с привязанной карты',{date:date(plan.periodEnd),sum:money(owner?state.nextAmount:st.price)}):tr('Пробный период до {date}, плата пока не взимается',{date:date(plan.periodEnd)})):plan.status==='grace'?tr('Не оплачен. Работает до {v}',{v:date(plan.graceUntil)}):plan.status==='active'?(plan.autoRenew?tr('Оплачено до {v}',{v:date(plan.periodEnd)}):tr('Работает до {v} и не продлится',{v:date(plan.periodEnd)})):'';
- const offNote=plan?.status==='active'&&st.charge?tr('Доработает оплаченный месяц и не продлится.'):owner?tr('Объекты перейдут в режим «Я сам». Принятые брони и уборки останутся в силе.'):tr('Предложения уборок снова будут приходить вам на решение. Принятые уборки останутся.');
+ const all=state.tier==='all',terms=termsIn(state.terms);
+ const statusLine=!plan?'':plan.status==='grace'?tr('«Всё включено» не оплачено. Работает до {date}',{date:date(plan.graceUntil)}):all?(plan.autoRenew?tr('«Всё включено» до {date}',{date:date(plan.periodEnd)}):tr('Работает до {v} и не продлится',{v:date(plan.periodEnd)})):(terms.pay||'')+(st.charge?'':' '+tr('Пока бесплатно.'));
+ const priceLine=owner?tr('{fee} за бронь, которую провёл ИИ',{fee:money(st.aiBookingFee)}):tr('Бесплатно');
+ const priceNote=owner?tr('не больше {cap} в месяц за объект. Нет броней — нет платы.',{cap:money(st.aiMonthCap)}):tr('{fee} за принятую уборку, не больше {cap} в месяц',{fee:money(st.cleanerJobFee),cap:money(st.cleanerMonthCap)});
+ const offNote=all&&plan?.status==='active'&&st.charge?tr('Доработает оплаченный месяц и не продлится.'):owner?tr('Объекты перейдут в режим «Я сам». Принятые брони и уборки останутся в силе.'):tr('Предложения уборок снова будут приходить вам на решение. Принятые уборки останутся.');
  const steps=STEPS[role],last=steps.length-1,num=(v:string)=>v.replace(/\D/g,'').slice(0,7);
  const begin=()=>{setOpen(true);setStep(0);setMessage('');};
  const fresh=flats.filter(f=>picked.includes(f.id)&&f.ready&&!f.managed),feeMissing=fresh.some(f=>!f.cleaningFee&&!f.ownStaff&&Number(fees[f.id]||0)<100);
@@ -49,7 +95,7 @@ export function NativeAutopilotPlan({role}:{role:'owner'|'cleaner'}){
  const canNext=owner?(step===0?fresh.length>0:step===1?!feeMissing:true):(step===0?!!rules.days&&toM-fromM>=60:true);
  const chip=(label:string,on:boolean,press:()=>void,wide=false)=><Pressable key={label} accessibilityRole="button" accessibilityState={{selected:on}} onPress={press} style={[p.chip,wide&&p.day,on&&(wide?p.dayOn:p.chipOn)]}><Text style={[p.chipText,on&&(wide?p.dayOnText:p.chipOnText)]}>{label}</Text></Pressable>;
  const btn=(title:string,fn:()=>void,kind:'main'|'line'|'danger'='main',disabled=false)=><Pressable accessibilityRole="button" disabled={busy||disabled} onPress={fn} style={[p.btn,kind==='line'&&p.btnLine,kind==='danger'&&p.btnDanger,(busy||disabled)&&s.disabled]}><Text style={[p.btnText,kind==='line'&&p.btnLineText]}>{title}</Text></Pressable>;
- const sum=<View style={p.sum}>{plan?<><Text style={p.sumLabel}>{tr('Оплата')}</Text><Text style={p.sumValue}>{tr('{sum} в месяц',{sum:money(st.price*Math.max(1,owner?fresh.length+state.units:1))})}</Text></>:<><Text style={p.sumLabel}>{tr('Первые {n} дней',{n:st.trialDays})}</Text><Text style={p.sumValue}>{tr('бесплатно')}</Text><Text style={p.sumLabel}>{owner?tr('Потом, объектов: {n}',{n:Math.max(1,fresh.length)}):tr('Потом')}</Text><Text style={p.sumValue}>{owner?tr('{sum} в месяц',{sum:money(st.price*Math.max(1,fresh.length))}):tr('{sum} в месяц из выплат',{sum:money(st.price)})}</Text></>}</View>;
+ const sum=<View style={p.sum}><Text style={p.sumLabel}>{tr('Оплата')}</Text><Text style={p.sumValue}>{all?tr('входит в «Всё включено»'):owner?tr('{fee} за бронь ИИ',{fee:money(st.aiBookingFee)}):tr('{fee} за уборку',{fee:money(st.cleanerJobFee)})}</Text>{!all&&<><Text style={p.sumLabel}>{tr('Не больше')}</Text><Text style={p.sumValue}>{owner?tr('{cap} в месяц за объект',{cap:money(st.aiMonthCap)}):tr('{cap} в месяц',{cap:money(st.cleanerMonthCap)})}</Text></>}</View>;
  const finish=owner
   ?()=>run('operations/autopilot/start',{propertyIds:fresh.map(f=>f.id),cleaningFees:Object.fromEntries(Object.entries(fees).filter(([,v])=>v).map(([k,v])=>[k,Number(v)]))})
   :()=>run(live?'operations/autopilot/rules':'operations/autopilot/start',{...rules,fromMinute:fromM,toMinute:toM});
@@ -57,7 +103,7 @@ export function NativeAutopilotPlan({role}:{role:'owner'|'cleaner'}){
   <View key="flats" style={p.connect}>
    <Text style={p.lead}>{tr('Отметьте объекты, которые поведёт ИИ.')}</Text>
    {flats.length===0&&<Text style={a.note}>{tr('Сначала добавьте жильё.')}</Text>}
-   <View style={p.list}>{flats.map((f,i)=>{const on=picked.includes(f.id)||f.managed,locked=!f.ready||f.managed;return <Pressable key={f.id} accessibilityRole="checkbox" accessibilityState={{checked:on,disabled:locked}} disabled={busy||locked} onPress={()=>setPicked(picked.includes(f.id)?picked.filter(x=>x!==f.id):[...picked,f.id])} style={[p.flatRow,i>0&&p.flatLine]}><View style={[p.box,on&&p.boxOn]}>{on&&<Text style={p.tick}>✓</Text>}</View><View style={{flex:1}}><Text style={a.title}>{f.title}</Text><Text style={a.note}>{f.managed?tr('Уже на автопилоте'):!f.ready?tr('Сначала заполните тарифы жилья'):tr('{v} в месяц',{v:money(st.price)})}</Text></View></Pressable>;})}</View>
+   <View style={p.list}>{flats.map((f,i)=>{const on=picked.includes(f.id)||f.managed,locked=!f.ready||f.managed;return <Pressable key={f.id} accessibilityRole="checkbox" accessibilityState={{checked:on,disabled:locked}} disabled={busy||locked} onPress={()=>setPicked(picked.includes(f.id)?picked.filter(x=>x!==f.id):[...picked,f.id])} style={[p.flatRow,i>0&&p.flatLine]}><View style={[p.box,on&&p.boxOn]}>{on&&<Text style={p.tick}>✓</Text>}</View><View style={{flex:1}}><Text style={a.title}>{f.title}</Text><Text style={a.note}>{f.managed?tr('Уже на автопилоте'):!f.ready?tr('Сначала заполните тарифы жилья'):all?tr('Входит в «Всё включено»'):tr('{fee} за бронь ИИ',{fee:money(st.aiBookingFee)})}</Text></View></Pressable>;})}</View>
   </View>,
   <View key="fees" style={p.connect}>
    <Text style={p.lead}>{tr('После каждого выезда ИИ закажет уборку по этой цене и найдёт исполнителя.')}</Text>
@@ -92,7 +138,7 @@ export function NativeAutopilotPlan({role}:{role:'owner'|'cleaner'}){
   {(owner?ownerStep:cleanerStep)[step]}
   <View style={p.nav}>
    {step>0?btn(tr('‹ Назад'),()=>setStep(step-1),'line'):btn(tr('Отмена'),()=>{setOpen(false);setStep(0);},'line')}
-   {step<last?btn(tr('Далее ›'),()=>setStep(step+1),'main',!canNext):btn(live?(owner?tr('Добавить объекты'):tr('Сохранить правила')):st.trialDays>0&&!plan?tr('Включить бесплатно'):tr('Включить за {v}',{v:money(st.price*Math.max(1,owner?fresh.length:1))}),finish,'main',owner&&!fresh.length)}
+   {step<last?btn(tr('Далее ›'),()=>setStep(step+1),'main',!canNext):btn(live?(owner?tr('Добавить объекты'):tr('Сохранить правила')):tr('Включить'),finish,'main',owner&&!fresh.length)}
   </View>
  </View>;
  const notice=<>{!!error&&<Text accessibilityRole="alert" style={s.error}>{error}</Text>}{!!message&&<Text accessibilityLiveRegion="polite" style={a.saved}>{message}</Text>}</>;
@@ -101,25 +147,27 @@ export function NativeAutopilotPlan({role}:{role:'owner'|'cleaner'}){
   {notice}
   <View style={p.card}>
    <Text style={p.badge}>{tr('✦ ИИ-администратор')}</Text>
-   <View style={p.head}><View style={{flex:1,gap:4}}><Text style={p.h3}>{owner?tr('Автопилот'):tr('Автопилот исполнителя')}</Text><Text style={p.price}><Text style={p.priceBig}>{money(st.price)}</Text> {st.trialDays>0&&!plan?tr(owner?'в месяц за объект, первые {days} дней бесплатно':'в месяц, первые {days} дней бесплатно',{days:st.trialDays}):owner?tr('в месяц за объект'):tr('в месяц')}</Text></View><Switch accessibilityLabel={tr('Автопилот')} value={open} disabled={busy} onValueChange={v=>v?begin():(setOpen(false),setStep(0))} trackColor={{false:C.lineStrong,true:C.accent}} thumbColor={C.surface}/></View>
+   <View style={p.head}><View style={{flex:1,gap:4}}><Text style={p.h3}>{owner?tr('Автопилот'):tr('Автопилот исполнителя')}</Text><Text style={p.price}><Text style={p.priceBig}>{priceLine}</Text>{'\n'}{priceNote}</Text></View><Switch accessibilityLabel={tr('Автопилот')} value={open} disabled={busy} onValueChange={v=>v?begin():(setOpen(false),setStep(0))} trackColor={{false:C.lineStrong,true:C.accent}} thumbColor={C.surface}/></View>
    {plan?.status==='paused'&&<Text style={p.paused}>{tr('Автопилот на паузе. Принятые брони и уборки в силе.')}</Text>}
    {open?wizard:<>
     <View style={{gap:12}}>{FEATURES[role].map(f=><View key={f} style={p.feature}><Text style={p.check}>✓</Text><Text style={p.featureText}>{f}</Text></View>)}</View>
     {owner&&<Text style={p.keep}>{tr('Вам остаются деньги и решения: правка объявления, рискованные брони, споры. ИИ спросит вас кнопкой.')}</Text>}
-    {btn(st.trialDays>0&&!plan?tr('Попробовать {trialDays} дней бесплатно',{trialDays:st.trialDays}):tr('Подключить'),begin)}
+    {btn(tr('Подключить'),begin)}
    </>}
-   <Text style={p.fine}>{st.charge?tr('Оплата раз в месяц с привязанной карты: Меню, «Настройки», «Оплата услуг». Отключить можно в любой день.'):tr('Пока плата не взимается. Отключить можно в любой день.')}</Text>
+   <Text style={p.fine}>{st.charge?tr('Списание раз в неделю с привязанной карты: Меню, «Настройки», «Оплата услуг». Отключить можно в любой день.'):tr('Пока плата не взимается. Отключить можно в любой день.')}</Text>
   </View>
+  <PayWay state={state} owner={owner} busy={busy} run={(path,body)=>void run(path,body)}/>
  </>;
  const n=state.today?.length||0;
  return <>
   <Text accessibilityRole="header" style={a.label}>{tr('Тариф')}</Text>
   <View style={p.on}>
-   <View style={p.head}><Text style={[p.onLabel,{flex:1}]}>● {plan?.status==='trial'?tr('Автопилот включён · пробный период'):plan?.status==='grace'?tr('Автопилот · нужна оплата'):tr('Автопилот включён')}</Text><Switch accessibilityLabel={tr('Автопилот включён')} value={!confirmOff} disabled={busy} onValueChange={v=>setConfirmOff(!v)} trackColor={{false:C.accentPressed,true:C.onAccent}} thumbColor={confirmOff?C.surface:C.accent}/></View>
+   <View style={p.head}><Text style={[p.onLabel,{flex:1}]}>● {plan?.status==='grace'?tr('Автопилот · нужна оплата'):all?tr('Автопилот включён · «Всё включено»'):tr('Автопилот включён · оплата за результат')}</Text><Switch accessibilityLabel={tr('Автопилот включён')} value={!confirmOff} disabled={busy} onValueChange={v=>setConfirmOff(!v)} trackColor={{false:C.accentPressed,true:C.onAccent}} thumbColor={confirmOff?C.surface:C.accent}/></View>
    <Text style={p.onTitle}>{owner?tr(forms(state.units,'ИИ ведёт {n} объект','ИИ ведёт {n} объекта','ИИ ведёт {n} объектов'),{n:state.units}):n?tr(forms(n,'На сегодня {n} уборка','На сегодня {n} уборки','На сегодня {n} уборок'),{n}):tr('ИИ берёт уборки по вашим правилам')}</Text><Text style={p.onNote}>{statusLine}</Text>
   </View>
   {confirmOff&&<View accessibilityRole="alert" style={p.off}><Text style={a.title}>{tr('Отключить автопилот?')}</Text><Text style={a.note}>{offNote}</Text><View style={p.nav}>{btn(tr('Оставить'),()=>setConfirmOff(false),'line')}{btn(tr('Отключить'),()=>void run('operations/autopilot/stop'),'danger')}</View></View>}
   {notice}
+  <PayWay state={state} owner={owner} busy={busy} run={(path,body)=>void run(path,body)}/>
   <Text accessibilityRole="header" style={a.label}>{tr('За эту неделю')}</Text>
   <View style={p.stats}>{(owner?[[state.week.answered,tr('ответов гостям')],[state.week.bookings,tr('броней')],[state.week.cleanings,tr('уборок принято')]]:[[state.week.taken,tr('уборок взял ИИ')],[money(state.week.earned),tr('заработано')]]).map(([v,l])=><View key={String(l)} style={p.stat}><Text style={p.statValue}>{v}</Text><Text style={a.note}>{l}</Text></View>)}</View>
   {!owner&&<Group title={tr('План на сегодня')}>{n?state.today.map((j:Data)=><View key={j.id} style={a.row}><View style={a.wide}><Text style={a.title}>{j.from}–{j.to} · {j.title}</Text><Text style={a.note}>{[j.district,j.address].filter(Boolean).join(', ')} · {money(j.fee)}</Text></View></View>):<View style={a.row}><Text style={a.title}>{tr('На сегодня уборок нет')}</Text></View>}
@@ -166,5 +214,9 @@ const p=StyleSheet.create({
  two:{flexDirection:'row',gap:8},half:{flex:1,gap:4},
  on:{borderRadius:T.radius.xl,padding:20,backgroundColor:C.accent,gap:8},onLabel:{...type.caption,color:C.accentSoft,fontWeight:'600'},onTitle:{...type.title,color:C.onAccent,fontWeight:'700'},onNote:{...type.label,color:C.accentSoft},
  off:{marginTop:12,gap:8,padding:16,borderRadius:T.radius.lg,backgroundColor:C.dangerSoft},
- stats:{flexDirection:'row',flexWrap:'wrap',gap:12},stat:{flexGrow:1,flexBasis:96,backgroundColor:C.surface,borderWidth:1,borderColor:C.line,borderRadius:T.radius.lg,paddingHorizontal:16,paddingVertical:12},statValue:{...type.title,fontWeight:'700',color:C.ink}
+ stats:{flexDirection:'row',flexWrap:'wrap',gap:12},stat:{flexGrow:1,flexBasis:96,backgroundColor:C.surface,borderWidth:1,borderColor:C.line,borderRadius:T.radius.lg,paddingHorizontal:16,paddingVertical:12},statValue:{...type.title,fontWeight:'700',color:C.ink},
+ payWay:{marginTop:12,gap:12},
+ way:{flexDirection:'row',alignItems:'center',gap:12,padding:12,borderRadius:T.radius.lg,borderWidth:1,borderColor:C.line,backgroundColor:C.surface},wayOn:{borderColor:C.accent,backgroundColor:C.accentSoft},
+ radio:{width:22,height:22,borderRadius:T.radius.full,borderWidth:2,borderColor:C.lineStrong,alignItems:'center',justifyContent:'center'},radioOn:{borderColor:C.accent},radioDot:{width:10,height:10,borderRadius:T.radius.full,backgroundColor:C.accent},
+ hint:{...type.label,color:C.inkSoft,backgroundColor:C.bg,borderRadius:T.radius.md,padding:12,overflow:'hidden'},hintOn:{color:C.accentPressed,backgroundColor:C.accentSoft,fontWeight:'600'},
 });

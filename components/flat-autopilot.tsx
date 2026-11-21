@@ -10,7 +10,7 @@ async function call(path:string,body?:Row){const r=await fetch('/api/operations/
 // still needs it, the cleaning price. The plan is paid per flat, so it lives with the flat, not in the menu.
 export function FlatAutopilotRow({propertyId,onChanged}:{propertyId:string;onChanged?:()=>void}){
  const [state,setState]=useState<FlatAutopilot|null>(null),[busy,setBusy]=useState(false),[asking,setAsking]=useState(false),[fee,setFee]=useState(''),[notice,setNotice]=useState('');
- async function load(){try{const v=await call('autopilot/state'),flat=(v.flats||[]).find((f:Row)=>f.id===propertyId);setState(flat?{...flat,price:v.settings?.price||0,trialDays:v.settings?.trialDays||0,charge:!!v.settings?.charge}:null);}catch(e:any){setNotice(e.message);}}
+ async function load(){try{const v=await call('autopilot/state'),flat=(v.flats||[]).find((f:Row)=>f.id===propertyId);setState(flat?{...flat,price:v.settings?.aiBookingFee||0,cap:v.settings?.aiMonthCap||0,included:v.tier==='all',trialDays:0,charge:!!v.settings?.charge}:null);}catch(e:any){setNotice(e.message);}}
  useEffect(()=>{void load();},[propertyId]);
  async function run(body:()=>Promise<Row>){setBusy(true);setNotice('');try{const r=await body();setNotice(r.failed?.length?r.failed[0].error:'');setAsking(false);await load();onChanged?.();}catch(e:any){setNotice(e.message);await load();}finally{setBusy(false);}}
  const on=(cleaningFee?:number)=>run(()=>call('autopilot/start',{propertyIds:[propertyId],...(cleaningFee?{cleaningFees:{[propertyId]:cleaningFee}}:{})}));

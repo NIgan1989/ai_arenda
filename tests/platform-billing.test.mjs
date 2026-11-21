@@ -94,24 +94,29 @@ test('owner balances are searchable and paged on the server, and debtors are cou
  }finally{f.db.close();}
 });
 
-test('a managed flat pays the base rate on the «Автопилот» plan, the AI rate without it, and is marked as managed; the administrator sets that rate',async()=>{
+test('hybrid tariff: a managed flat pays the base rate, the AI is paid per booking it confirmed (with a monthly cap), «Всё включено» pays neither',async()=>{
  const {matchingAction}=await load('smart-matching'),f=await fixture();try{
-  const manual=await book(f,3,'manual-rate');assert.deepEqual([row(f,manual).rate_bp,row(f,manual).managed],[500,0]);
+  const fee=id=>f.db.raw.prepare("SELECT * FROM service_fees WHERE kind='ai_booking' AND ref_id=?").get(id);
+  const manual=await book(f,3,'manual-rate');assert.deepEqual([row(f,manual).rate_bp,row(f,manual).managed],[500,0]);assert.equal(fee(manual),undefined);
   await matchingAction(f.owner,'owner','preference',{propertyId:f.property,mode:'auto'});
-  const id=(await f.guest.createBooking({propertyId:f.property,start:iso(now()+5*86400),end:iso(now()+5*86400+7200),guests:1,billingMode:'hourly',requestKey:'ai-rate',acceptTerms:true})).id;
-  // Under autopilot the booking confirms itself.
-  if(f.db.raw.prepare('SELECT status FROM bookings WHERE id=?').get(id).status==='requested')await f.owner.bookingAction(id,{action:'confirm',cleaningFee:3000});
-  // Turning the flat to auto starts the «Автопилот» plan: a paid plan keeps the base rate.
-  const planned=row(f,id);assert.deepEqual([planned.rate_bp,planned.managed],[500,1]);
-  assert.equal(f.db.raw.prepare("SELECT status FROM autopilot_plans WHERE user_id='owner' AND role='owner'").get().status,'trial');
-  // Without a live plan a managed flat pays the AI rate.
-  f.db.raw.prepare("UPDATE autopilot_plans SET status='paused' WHERE user_id='owner'").run();
-  const bare=(await f.guest.createBooking({propertyId:f.property,start:iso(now()+7*86400),end:iso(now()+7*86400+7200),guests:1,billingMode:'hourly',requestKey:'ai-rate-2',acceptTerms:true})).id;
-  if(f.db.raw.prepare('SELECT status FROM bookings WHERE id=?').get(bare).status==='requested')await f.owner.bookingAction(bare,{action:'confirm',cleaningFee:3000});
-  const managed=row(f,bare);assert.deepEqual([managed.rate_bp,managed.managed],[1000,1]);assert.equal(managed.amount,Math.floor((managed.booking_amount*1000+5000)/10000));
-  await writePlatformAdmin(f.other,'billing/settings',{confirmed:true,enabled:true,ratePercent:5,aiRatePercent:12,startsAt:now()+86400,freeBookings:0,expectedVersion:1},config(f));
-  const settings=f.db.raw.prepare("SELECT rate_bp,ai_rate_bp FROM platform_billing WHERE id='global'").get();assert.deepEqual([settings.rate_bp,settings.ai_rate_bp],[500,1200]);
-  assert.match(f.db.raw.prepare("SELECT body FROM notifications WHERE user_id='owner' AND dedupe LIKE 'owner:billing:%'").get().body,/режиме «ИИ».*12%/);
-  await assert.rejects(writePlatformAdmin(f.other,'billing/settings',{confirmed:true,enabled:true,ratePercent:5,aiRatePercent:31,startsAt:now()+86400,freeBookings:0,expectedVersion:2},config(f)),/ИИ/);
+  assert.equal(f.db.raw.prepare("SELECT tier FROM autopilot_plans WHERE user_id='owner' AND role='owner'").get().tier,'pay');
+  const {RentalService}=await load('service');
+  // The AI confirms on the owner's behalf (the same call the service makes when a request fits the rules).
+  const ai=async(day,key)=>{const id=(await f.guest.createBooking({propertyId:f.property,start:iso(now()+day*86400),end:iso(now()+day*86400+7200),guests:1,billingMode:'hourly',requestKey:key,acceptTerms:true})).id;
+   if(f.db.raw.prepare('SELECT status FROM bookings WHERE id=?').get(id).status==='requested'){f.db.raw.prepare('DELETE FROM booking_risks WHERE booking_id=?').run(id);const p=f.db.raw.prepare('SELECT version,cleaning_fee FROM property_policies WHERE property_id=?').get(f.property);await new RentalService(f.db,'owner',{propertyId:f.property,policyVersion:p.version}).bookingAction(id,{action:'confirm',cleaningFee:p.cleaning_fee});}
+   return id;};
+  // Under autopilot the booking confirms itself: the base rate and 490 ₸ for the AI (a forecast while charging is off).
+  const first=await ai(5,'ai-1');assert.equal(f.db.raw.prepare('SELECT status FROM bookings WHERE id=?').get(first).status,'confirmed');
+  assert.deepEqual([row(f,first).rate_bp,row(f,first).managed],[500,1]);assert.deepEqual([fee(first).amount,fee(first).mode,fee(first).role],[490,'shadow','owner']);
+  // The monthly cap for one object (700 ₸ here): after 490 ₸ only 210 ₸ more is taken.
+  f.db.raw.prepare("UPDATE platform_billing SET plan_charge=1,ai_month_cap=700").run();
+  const second=await ai(6,'ai-2');assert.deepEqual([fee(second).amount,fee(second).mode],[490,'charged']);
+  const third=await ai(7,'ai-3');assert.equal(fee(third).amount,210);
+  // A cancelled booking frees its part of the cap.
+  f.db.raw.prepare("UPDATE bookings SET status='cancelled' WHERE id=?").run(second);
+  const fourth=await ai(8,'ai-4');assert.equal(fee(fourth).amount,490);
+  // «Всё включено»: no commission and no per-booking fee.
+  f.db.raw.prepare("UPDATE autopilot_plans SET tier='all' WHERE user_id='owner'").run();
+  const fifth=await ai(9,'ai-5');assert.equal(row(f,fifth).amount,0);assert.equal(fee(fifth),undefined);
  }finally{f.db.close();}
 });

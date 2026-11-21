@@ -146,3 +146,14 @@ test('every line the server can answer with has a translation',async()=>{
   assert.ok(Object.keys(SERVER).length>800);
   for(const ru of Object.keys(SERVER))assert.equal(WORDS[ru],SERVER[ru],ru);
 });
+
+test('a notice and the terms of the service read back with their parts, even an empty one',async()=>{
+  const {tServerIn}=await load('i18n'),{noticeIn}=await load('notice-feed');
+  assert.equal(tServerIn('en','Тестовая карта привязана.'),'Test card linked.');
+  assert.equal(tServerIn('kk','Условия сервиса: 9 900 ₸ в месяц за объект: без комиссий и платы за брони, подбор исполнителей включён. Списание раз в неделю с привязанной карты. Новые цены действуют для новых броней и уборок. Отключить можно в профиле.'),
+    'Сервис шарттары: Бір нысанға айына 9 900 ₸: комиссиясыз және броньдар үшін төлемсіз, орындаушыларды іріктеу кіреді. Аптасына бір рет байланған картадан шегеріледі. Жаңа бағалар жаңа броньдар мен тазалауларға қолданылады. Профильде өшіруге болады.');
+  // Telegram: the name of the place stays as the owner wrote it; an unknown notice goes as written.
+  assert.equal(noticeIn('en','ИИ-администратор: уборка «Дом» просрочена. Я напомнил исполнителю. В карточке уборки можно продлить срок или найти замену.'),'The cleaning of “Дом” is overdue. I reminded the cleaner. In the cleaning card you can extend the time or find a replacement.');
+  assert.equal(noticeIn('kk','Такого уведомления нет в таблицах.'),'Такого уведомления нет в таблицах.');
+  assert.equal(noticeIn('ru','ИИ-администратор: уборка «Дом» просрочена.'),'ИИ-администратор: уборка «Дом» просрочена.');
+});

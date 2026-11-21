@@ -92,7 +92,7 @@ function readBack(){
     if(!/\{\w+\}/.test(key)||key.includes('|'))continue;
     const names:string[]=[],quoted:boolean[]=[],pieces=key.split(/\{(\w+)\}/);
     let source='^',fixed=0;
-    pieces.forEach((piece,i)=>{if(i%2){names.push(piece);quoted.push(pieces[i-1].endsWith('«')&&pieces[i+1].startsWith('»'));source+='(.+?)';}else{source+=piece.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');fixed+=piece.length;}});
+    pieces.forEach((piece,i)=>{if(i%2){names.push(piece);quoted.push(pieces[i-1].endsWith('«')&&pieces[i+1].startsWith('»'));source+='(.*?)';}else{source+=piece.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');fixed+=piece.length;}});
     // A line made of slots alone («{a} · {b}») would read back anything.
     if(fixed<4)continue;
     patterns.push({key,names,quoted,re:new RegExp(source+'$','s'),fixed});
@@ -101,10 +101,10 @@ function readBack(){
   return patterns;
 }
 /** A line the server wrote in Russian, in the language `l`: the line itself, the line with numbers ({n}), or a line
- *  of the tables with slots whose fixed words match. The values of the slots are translated when the tables know
- *  them (the name of a field, a status); a title, a name or a quote («…») someone wrote stays as written. A line the
- *  tables do not know stays Russian. The app shows errors and notices through it (tServer: the chosen language);
- *  the server, for a message to one person, passes their language. */
+ *  of the tables with slots whose fixed words match (a slot may be empty). The values of the slots are read the same
+ *  way (the name of a field, a status, a sentence of terms); a title, a name or a quote («…») someone wrote stays
+ *  as written. A line the tables do not know stays Russian. The app shows errors and notices through it (tServer:
+ *  the chosen language); the server, for a message to one person, passes their language. */
 export function tServerIn(l:Lang,ru:string):string{
   if(l==='ru'||typeof ru!=='string'||!ru||WORDS[ru])return typeof ru==='string'?tIn(l,ru):ru;
   const line=tLineIn(l,ru);
@@ -113,7 +113,7 @@ export function tServerIn(l:Lang,ru:string):string{
     const m=p.re.exec(ru);
     if(!m)continue;
     const vars:Record<string,string>={};
-    p.names.forEach((name,i)=>{const v=m[i+1];vars[name]=p.quoted[i]||/^(title|name)$/.test(name)?v:WORDS[v]?tIn(l,v):tLineIn(l,v);});
+    p.names.forEach((name,i)=>{const v=m[i+1];vars[name]=p.quoted[i]||/^(title|name)$/.test(name)||!v?v:tServerIn(l,v);});
     return tIn(l,p.key,vars);
   }
   return ru;

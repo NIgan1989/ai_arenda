@@ -22,7 +22,7 @@ const cashLabels:Row={capital:'Взнос учредителя',loan:'Получ
 
 function plLines(s:Row):Line[]{return [
  {key:'_rev',label:'Выручка',kind:'section'},
- {key:'bookings',label:'Комиссия с броней'},{key:'cleaning',label:'Комиссия с уборок'},{key:'autopilot',label:'Подписки «Автопилот»'},
+ {key:'bookings',label:'Комиссия с броней'},{key:'cleaning',label:'Комиссия с уборок'},{key:'autopilot',label:'«Автопилот», исполнители и «Всё включено»'},
  ...(s.vat_registered?[{key:'vat',label:'НДС в выручке',sign:-1 as const}]:[]),
  {key:'revenue',label:'Выручка',kind:'subtotal'},
  {key:'_direct',label:'Прямые расходы',kind:'section'},
@@ -133,7 +133,7 @@ function BalanceView({data}:{data:Row;onTaxes:()=>void}){
     {line(ip?'Деньги на счёте Kaspi Pay':'Деньги на счетах',b.assets.cash,p?.assets.cash)}
     {line('Техника и оборудование',b.assets.equipment,p?.assets.equipment,'без амортизации')}
     {line('Долги владельцев сервису',b.assets.owners,p?.assets.owners,'отрицательные балансы')}
-    {line('Долги исполнителей за «Автопилот»',b.assets.cleaners,p?.assets.cleaners)}
+    {line('Долги исполнителей за услуги сервиса',b.assets.cleaners,p?.assets.cleaners)}
    </dl></section>
    <section><h3><Landmark size={18}/>Обязательства и капитал<b>{money(b.totalLiabilities+b.totalEquity)}</b></h3><dl className="revenue-facts">
     {line('Авансы владельцев',b.liabilities.owners,p?.liabilities.owners,'деньги на их балансах')}

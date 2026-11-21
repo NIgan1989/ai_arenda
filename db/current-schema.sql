@@ -83,6 +83,7 @@
 -- migration 0079_account_protection.sql sha256:8ee6b6dd2a862e3a843c7c0c82c19a8e3401f25cb30b766bbd55b6874bce17c7
 -- migration 0080_fraud_guards.sql sha256:fa0e03c8a49e0dcf56905173f286c74dc81f59b81c2fcc64d8ba4c3513c9146d
 -- migration 0081_card_charges.sql sha256:f15fe6140b37c7191a0ce7598dfedd7170f8646905bf534ef61a9a131669c666
+-- migration 0082_hybrid_tariff.sql sha256:67c948fb8d0e77155ff9571bd22fe1db769d80a0a2b811e15729937e8560f32b
 
 -- table access_receipts
 CREATE TABLE access_receipts (id TEXT PRIMARY KEY,property_id TEXT NOT NULL,entity_kind TEXT NOT NULL,entity_id TEXT NOT NULL,user_id TEXT NOT NULL,created_at INTEGER NOT NULL,expires_at INTEGER NOT NULL);
@@ -342,7 +343,7 @@ CREATE TABLE autopilot_plans (
  auto_renew INTEGER NOT NULL DEFAULT 1 CHECK(auto_renew IN (0,1)),
  trial_used INTEGER NOT NULL DEFAULT 1 CHECK(trial_used IN (0,1)),
  version INTEGER NOT NULL DEFAULT 1,
- updated_at INTEGER NOT NULL,
+ updated_at INTEGER NOT NULL, tier TEXT NOT NULL DEFAULT 'pay' CHECK(tier IN ('pay','all')), next_tier TEXT CHECK(next_tier IN ('pay','all')),
  PRIMARY KEY(user_id,role)
 );
 
@@ -984,7 +985,7 @@ CREATE TABLE platform_billing (
  version INTEGER NOT NULL DEFAULT 1,
  updated_by TEXT,
  updated_at INTEGER NOT NULL DEFAULT 0
-, ai_rate_bp INTEGER NOT NULL DEFAULT 1000 CHECK(ai_rate_bp BETWEEN 0 AND 3000), cleaning_rate_bp INTEGER NOT NULL DEFAULT 1000 CHECK(cleaning_rate_bp BETWEEN 0 AND 3000), pair_rate_bp INTEGER NOT NULL DEFAULT 500 CHECK(pair_rate_bp BETWEEN 0 AND 3000), pair_month_cap INTEGER NOT NULL DEFAULT 2000 CHECK(pair_month_cap>=0), plan_charge INTEGER NOT NULL DEFAULT 0 CHECK(plan_charge IN (0,1)), plan_owner_price INTEGER NOT NULL DEFAULT 4900 CHECK(plan_owner_price BETWEEN 0 AND 1000000), plan_cleaner_price INTEGER NOT NULL DEFAULT 1900 CHECK(plan_cleaner_price BETWEEN 0 AND 1000000), plan_trial_days INTEGER NOT NULL DEFAULT 14 CHECK(plan_trial_days BETWEEN 0 AND 90), plan_grace_days INTEGER NOT NULL DEFAULT 3 CHECK(plan_grace_days BETWEEN 0 AND 30), test_payments INTEGER NOT NULL DEFAULT 1 CHECK(test_payments IN (0,1)), charges_stopped_at INTEGER, charges_stopped_by TEXT, charge_confirm_above INTEGER NOT NULL DEFAULT 100000 CHECK(charge_confirm_above>0), charge_daily_limit INTEGER NOT NULL DEFAULT 5000000 CHECK(charge_daily_limit>0));
+, ai_rate_bp INTEGER NOT NULL DEFAULT 1000 CHECK(ai_rate_bp BETWEEN 0 AND 3000), cleaning_rate_bp INTEGER NOT NULL DEFAULT 1000 CHECK(cleaning_rate_bp BETWEEN 0 AND 3000), pair_rate_bp INTEGER NOT NULL DEFAULT 500 CHECK(pair_rate_bp BETWEEN 0 AND 3000), pair_month_cap INTEGER NOT NULL DEFAULT 2000 CHECK(pair_month_cap>=0), plan_charge INTEGER NOT NULL DEFAULT 0 CHECK(plan_charge IN (0,1)), plan_owner_price INTEGER NOT NULL DEFAULT 4900 CHECK(plan_owner_price BETWEEN 0 AND 1000000), plan_cleaner_price INTEGER NOT NULL DEFAULT 1900 CHECK(plan_cleaner_price BETWEEN 0 AND 1000000), plan_trial_days INTEGER NOT NULL DEFAULT 14 CHECK(plan_trial_days BETWEEN 0 AND 90), plan_grace_days INTEGER NOT NULL DEFAULT 3 CHECK(plan_grace_days BETWEEN 0 AND 30), test_payments INTEGER NOT NULL DEFAULT 1 CHECK(test_payments IN (0,1)), charges_stopped_at INTEGER, charges_stopped_by TEXT, charge_confirm_above INTEGER NOT NULL DEFAULT 100000 CHECK(charge_confirm_above>0), charge_daily_limit INTEGER NOT NULL DEFAULT 5000000 CHECK(charge_daily_limit>0), ai_booking_fee INTEGER NOT NULL DEFAULT 490 CHECK(ai_booking_fee BETWEEN 0 AND 100000), ai_month_cap INTEGER NOT NULL DEFAULT 4900 CHECK(ai_month_cap BETWEEN 0 AND 1000000), cleaner_job_fee INTEGER NOT NULL DEFAULT 250 CHECK(cleaner_job_fee BETWEEN 0 AND 100000), cleaner_free_jobs INTEGER NOT NULL DEFAULT 5 CHECK(cleaner_free_jobs BETWEEN 0 AND 1000), cleaner_month_cap INTEGER NOT NULL DEFAULT 6000 CHECK(cleaner_month_cap BETWEEN 0 AND 1000000));
 
 -- table platform_commissions
 CREATE TABLE platform_commissions (
@@ -1225,6 +1226,20 @@ CREATE TABLE service_billing (
  card_mask TEXT NOT NULL DEFAULT '', card_token TEXT NOT NULL DEFAULT '', card_test INTEGER NOT NULL DEFAULT 0 CHECK(card_test IN (0,1)), card_at INTEGER,
  last_charge_at INTEGER, failed_at INTEGER, paused_at INTEGER,
  version INTEGER NOT NULL DEFAULT 1, updated_at INTEGER NOT NULL
+);
+
+-- table service_fees
+CREATE TABLE service_fees (
+ id TEXT PRIMARY KEY,
+ user_id TEXT NOT NULL REFERENCES profiles(id),
+ role TEXT NOT NULL CHECK(role IN ('owner','cleaner')),
+ kind TEXT NOT NULL CHECK(kind IN ('ai_booking','cleaning')),
+ ref_id TEXT NOT NULL,
+ property_id TEXT,
+ amount INTEGER NOT NULL CHECK(amount>=0),
+ mode TEXT NOT NULL CHECK(mode IN ('shadow','free','charged')),
+ created_at INTEGER NOT NULL,
+ UNIQUE(kind,ref_id)
 );
 
 -- table stay_handovers
@@ -1555,6 +1570,12 @@ CREATE INDEX reliability_objections_open ON reliability_objections(status,due_at
 
 -- index reliability_objections_user
 CREATE INDEX reliability_objections_user ON reliability_objections(user_id,role,created_at);
+
+-- index service_fees_month
+CREATE INDEX service_fees_month ON service_fees(kind,property_id,created_at);
+
+-- index service_fees_user
+CREATE INDEX service_fees_user ON service_fees(user_id,mode,created_at);
 
 -- index stay_handovers_guest
 CREATE INDEX stay_handovers_guest ON stay_handovers(guest_id,created_at);
@@ -2077,6 +2098,12 @@ CREATE TRIGGER account_erased_service_billing_insert BEFORE INSERT ON service_bi
 -- trigger account_erased_service_billing_update
 CREATE TRIGGER account_erased_service_billing_update BEFORE UPDATE ON service_billing WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.user_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END;
 
+-- trigger account_erased_service_fees_insert
+CREATE TRIGGER account_erased_service_fees_insert BEFORE INSERT ON service_fees WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.user_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END;
+
+-- trigger account_erased_service_fees_update
+CREATE TRIGGER account_erased_service_fees_update BEFORE UPDATE ON service_fees WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.user_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END;
+
 -- trigger account_erased_stay_handovers_insert
 CREATE TRIGGER account_erased_stay_handovers_insert BEFORE INSERT ON stay_handovers WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.guest_id OR user_id=NEW.owner_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END;
 
@@ -2179,10 +2206,24 @@ BEGIN
    AND c.created_at>=CAST(strftime('%s',date('now','+5 hours','start of month')) AS INTEGER)-18000),0))) ELSE x.raw END,
   x.pair,x.mode,CAST(strftime('%s','now') AS INTEGER)
  FROM (SELECT y.*,MIN(NEW.fee,(NEW.fee*y.rate+5000)/10000) raw FROM (
-  SELECT CASE WHEN p.pair=1 THEN s.pair_rate_bp ELSE s.cleaning_rate_bp END rate,s.pair_month_cap cap,p.pair,
+  SELECT CASE WHEN EXISTS(SELECT 1 FROM autopilot_plans ap WHERE ap.user_id=NEW.owner_id AND ap.role='owner' AND ap.tier='all' AND ap.status IN ('trial','active','grace')) THEN 0
+    WHEN p.pair=1 THEN s.pair_rate_bp ELSE s.cleaning_rate_bp END rate,s.pair_month_cap cap,p.pair,
    CASE WHEN s.enabled=1 AND s.starts_at<=CAST(strftime('%s','now') AS INTEGER) THEN 'charged' ELSE 'shadow' END mode
   FROM platform_billing s,(SELECT EXISTS(SELECT 1 FROM regular_cleaners WHERE property_id=NEW.property_id AND cleaner_id=NEW.assigned_to) pair) p WHERE s.id='global') y) x
  WHERE NEW.fee>0;
+ INSERT OR IGNORE INTO service_fees(id,user_id,role,kind,ref_id,property_id,amount,mode,created_at)
+ SELECT lower(hex(randomblob(16))),NEW.assigned_to,'cleaner','cleaning',NEW.id,NEW.property_id,
+  CASE WHEN x.mode='free' THEN x.fee ELSE MIN(x.fee,CASE WHEN x.cap>0 THEN MAX(0,x.cap-COALESCE((SELECT SUM(f.amount) FROM service_fees f WHERE f.user_id=NEW.assigned_to AND f.kind='cleaning' AND f.mode=x.mode
+   AND f.created_at>=CAST(strftime('%s',date('now','+5 hours','start of month')) AS INTEGER)-18000),0)) ELSE x.fee END) END,
+  x.mode,CAST(strftime('%s','now') AS INTEGER)
+ FROM (SELECT s.cleaner_job_fee fee,s.cleaner_month_cap cap,
+   CASE WHEN s.plan_charge=0 THEN 'shadow'
+    WHEN (SELECT COUNT(*) FROM service_fees f WHERE f.user_id=NEW.assigned_to AND f.kind='cleaning' AND f.mode IN ('free','charged'))<s.cleaner_free_jobs THEN 'free' ELSE 'charged' END mode
+  FROM platform_billing s WHERE s.id='global') x
+ WHERE x.fee>0 AND NEW.fee>0
+  AND NOT EXISTS(SELECT 1 FROM regular_cleaners WHERE property_id=NEW.property_id AND cleaner_id=NEW.assigned_to)
+  AND NOT EXISTS(SELECT 1 FROM property_staff WHERE property_id=NEW.property_id AND staff_id=NEW.assigned_to)
+  AND NOT EXISTS(SELECT 1 FROM autopilot_plans ap WHERE ap.user_id=NEW.assigned_to AND ap.role='cleaner' AND ap.tier='all' AND ap.status IN ('trial','active','grace'));
 END;
 
 -- trigger cleaning_job_arrival_reset
