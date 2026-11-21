@@ -21,6 +21,19 @@ test('the offers cover the launch risks in one new edition',()=>{
  assert.match(text('privacy'),/обязаны хранить их в тайне/);
 });
 
+test('the offers take the protections other rental services use',()=>{
+ const terms=text('terms');
+ assert.match(terms,/Чрезвычайные события/);
+ assert.match(terms,/для рекламы Сервиса/);
+ assert.match(terms,/передать свои права и обязанности/);
+ assert.match(terms,/могут использоваться как доказательства/);
+ assert.match(terms,/вправе отменить подтверждённую бронь/);
+ assert.match(terms,/повторно подтвердить личность/);
+ assert.match(terms,/не является страховщиком/);
+ assert.match(text('owner'),/до 48 часов после времени выезда/);
+ assert.match(text('owner'),/как за свои собственные/);
+});
+
 test('every clause number is unique inside a document',()=>{
  for(const d of LEGAL_DOCUMENTS){
   const nums=d.sections.flatMap(s=>s.p).map(p=>p.match(/^(\d+(?:\.\d+)+)\./)?.[1]).filter(Boolean);
