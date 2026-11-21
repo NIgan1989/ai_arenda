@@ -1,4 +1,4 @@
-import {L,dateText,forms,t as tr} from '../../lib/i18n';
+import {L,dateText,forms,t as tr,tServer} from '../../lib/i18n';
 import React,{useEffect,useState} from 'react';
 import {View,Text,TextInput,Pressable,Switch,StyleSheet} from 'react-native';
 import {Group,Row,a} from './AccountRows';
@@ -8,6 +8,8 @@ import {s,C,type,brandFont} from './styles';
 import {T} from './tokens';
 import {SwipeConfirm} from './SwipeConfirm';
 import type {Row as Data} from './model';
+// The server writes the terms of each way to pay in Russian; they are shown in the language of the app.
+const termsIn=(terms:{pay?:unknown;all?:unknown}|undefined)=>({pay:terms?.pay?tServer(String(terms.pay)):'',all:terms?.all?tServer(String(terms.all)):''});
 
 const money=(n:number)=>new Intl.NumberFormat('ru-RU').format(n||0)+' ₸';
 const date=(t:number)=>dateText(t*1000,{timeZone:'Asia/Qyzylorda',day:'numeric',month:'long'});
@@ -35,7 +37,7 @@ function Steps({steps,current,onPick}:{steps:string[];current:number;onPick:(i:n
 // How the participant pays the service (hybrid tariff): for the result, or one monthly «Всё включено». The hint
 // compares the last 30 days for the result with the subscription; the subscription is taken by a swipe.
 function PayWay({state,owner,busy,run}:{state:Data;owner:boolean;busy:boolean;run:(path:string,body?:Data)=>void}){
- const plan=state.plan,tier=state.tier==='all'?'all':'pay',b=state.billing||{},terms=state.terms||{},st=state.settings||{};
+ const plan=state.plan,tier=state.tier==='all'?'all':'pay',b=state.billing||{},terms=termsIn(state.terms),st=state.settings||{};
  const option=(id:'pay'|'all',title:string,note:string)=><View key={id} accessibilityRole="radio" accessibilityState={{checked:tier===id}} style={[p.way,tier===id&&p.wayOn]}>
   <View style={[p.radio,tier===id&&p.radioOn]}>{tier===id&&<View style={p.radioDot}/>}</View>
   <View style={{flex:1,gap:2}}><Text style={a.title}>{title}</Text><Text style={a.note}>{note}</Text></View></View>;
@@ -81,7 +83,7 @@ export function NativeAutopilotPlan({role}:{role:'owner'|'cleaner'}){
  async function run(path:string,body:Data={}){setBusy(true);setError('');setMessage('');try{const r=await request('/api/'+path,body);setMessage(r.message||tr('Сохранено.'));const next=r.state||await request('/api/operations/autopilot/state');setState(next);if(next.live&&!path.endsWith('/tier')){setOpen(false);setStep(0);}setConfirmOff(false);}catch(e){setError((e as Error).message);}finally{setBusy(false);}}
  if(!state)return <Group title={tr('Тариф')}>{error?<Text accessibilityRole="alert" style={[s.error,{padding:16}]}>{error}</Text>:<View style={{padding:16}}><ThinkingLine style={s.meta} text={tr('Загружаю тариф…')}/></View>}</Group>;
  const st=state.settings||{},plan=state.plan,live=!!state.live,flats:Data[]=state.flats||[];
- const all=state.tier==='all',terms=state.terms||{};
+ const all=state.tier==='all',terms=termsIn(state.terms);
  const statusLine=!plan?'':plan.status==='grace'?tr('«Всё включено» не оплачено. Работает до {date}',{date:date(plan.graceUntil)}):all?(plan.autoRenew?tr('«Всё включено» до {date}',{date:date(plan.periodEnd)}):tr('Работает до {v} и не продлится',{v:date(plan.periodEnd)})):(terms.pay||'')+(st.charge?'':' '+tr('Пока бесплатно.'));
  const priceLine=owner?tr('{fee} за бронь, которую провёл ИИ',{fee:money(st.aiBookingFee)}):tr('Бесплатно');
  const priceNote=owner?tr('не больше {cap} в месяц за объект. Нет броней — нет платы.',{cap:money(st.aiMonthCap)}):tr('{fee} за принятую уборку, не больше {cap} в месяц',{fee:money(st.cleanerJobFee),cap:money(st.cleanerMonthCap)});

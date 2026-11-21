@@ -4,6 +4,8 @@
 // concerns their money or their home; the rest is written down in «Что сделал ИИ» and shown on the map.
 // Covered by tests/notice-feed.test.mjs.
 import {aiMarkOf,type AiMove} from './ai-move-marks';
+import {lang,tIn,tServerIn,type Lang} from './i18n';
+import {WORDS} from './i18n-words';
 
 export type Notice={id:string;body:string;dedupe:string;created_at:number};
 // Steps of the AI after which the person has nothing to do, no money has moved and the home is as it was: it answered
@@ -32,9 +34,21 @@ export function roleEvents<T extends {dedupe?:unknown;body?:unknown;created_at?:
   .filter(n=>{const key=String(n.dedupe).replace(/:\d+$/,'');if(seen.has(key))return false;seen.add(key);return true;});
 }
 // The words of a notice in a list of notices: the service is the one speaking there, so its name is not repeated.
-export function noticeText(body:unknown){
- const text=String(body||'').replace(/^ИИ-администратор:\s*/,'').replace(/^Требует внимания\.\s*/,'').trim();
- return text?text[0].toUpperCase()+text.slice(1):'';
+const bare=(body:unknown)=>{const text=String(body||'').replace(/^ИИ-администратор:\s*/,'').replace(/^Требует внимания\.\s*/,'').trim();return text?text[0].toUpperCase()+text.slice(1):'';};
+// The server writes in Russian; the app shows the notice in the chosen language when the tables know it. A task of
+// the AI administrator reads «What to do. Place · why» (lib/administrator.ts): the place stays as written.
+function readNotice(l:Lang,text:string){
+ const task=/^(.+?)\. (.+?) · ([\s\S]+)$/.exec(text);
+ if(task&&WORDS[task[1]])return tIn(l,task[1])+'. '+task[2]+' · '+tServerIn(l,task[3]);
+ return tServerIn(l,text);
+}
+export function noticeText(body:unknown){return readNotice(lang(),bare(body));}
+/** A notice in the language `l` for a message outside the app (Telegram): read as in the list; a notice the tables
+ *  do not know goes as the server wrote it. */
+export function noticeIn(l:Lang,body:string){
+ if(l==='ru')return body;
+ const text=bare(body),out=readNotice(l,text);
+ return out!==text?out:body;
 }
 // The booking or the cleaning a notice is about, when the person has it in their data: its card opens by a tap.
 // The key is «role:kind:id[:more]», and a task of the administrator carries its ids as a list inside the key; every

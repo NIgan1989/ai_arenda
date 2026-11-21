@@ -85,6 +85,7 @@
 -- migration 0081_card_charges.sql sha256:f15fe6140b37c7191a0ce7598dfedd7170f8646905bf534ef61a9a131669c666
 -- migration 0082_hybrid_tariff.sql sha256:67c948fb8d0e77155ff9571bd22fe1db769d80a0a2b811e15729937e8560f32b
 -- migration 0083_identity_docs.sql sha256:d8c474857ff501c173d91c4c569a121dab137592b83042efa91841625eeeadf2
+-- migration 0084_user_language.sql sha256:7d46fdf0481c182354cb1d43b51fd99610e5a4ad72f8edfa31bf7a19cf34f8ad
 
 -- table access_receipts
 CREATE TABLE access_receipts (id TEXT PRIMARY KEY,property_id TEXT NOT NULL,entity_kind TEXT NOT NULL,entity_id TEXT NOT NULL,user_id TEXT NOT NULL,created_at INTEGER NOT NULL,expires_at INTEGER NOT NULL);
@@ -1328,6 +1329,13 @@ CREATE TABLE stay_watch (
  updated_at INTEGER NOT NULL
 );
 
+-- table user_language
+CREATE TABLE user_language (
+ user_id TEXT PRIMARY KEY REFERENCES profiles(id),
+ lang TEXT NOT NULL CHECK(lang IN ('ru','kk','en')),
+ updated_at INTEGER NOT NULL
+);
+
 -- table venue_halls
 CREATE TABLE venue_halls (
  property_id TEXT PRIMARY KEY REFERENCES properties(id),
@@ -2139,6 +2147,12 @@ CREATE TRIGGER account_erased_stay_photos_insert BEFORE INSERT ON stay_photos WH
 
 -- trigger account_erased_stay_reviews_insert
 CREATE TRIGGER account_erased_stay_reviews_insert BEFORE INSERT ON stay_reviews WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.guest_id OR user_id=NEW.owner_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END;
+
+-- trigger account_erased_user_language_insert
+CREATE TRIGGER account_erased_user_language_insert BEFORE INSERT ON user_language WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.user_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END;
+
+-- trigger account_erased_user_language_update
+CREATE TRIGGER account_erased_user_language_update BEFORE UPDATE ON user_language WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.user_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END;
 
 -- trigger account_erased_venues_insert
 CREATE TRIGGER account_erased_venues_insert BEFORE INSERT ON venues WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.owner_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END;
