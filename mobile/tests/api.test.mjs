@@ -29,6 +29,7 @@ test('registration hashes passwords; sessions store only token hashes',async()=>
 test('different accounts complete a real booking and cleaning assignment with private addresses',async()=>{
   for(const [account,role]of [[owner,'owner'],[guest,'guest'],[worker,'cleaner']]){
     assert.equal((await call('/api/profile',{name:role,contact:'test contact',city:'Павлодар',roles:[role],districts:'Центр',experience:'Опыт',availability:'Днём'},account.token)).status,200);
+    assert.equal((await call('/api/operations/identity/save',{data:photo},account.token)).status,200);
   }
   property=(await call('/api/properties',{title:'Тест',city:'Павлодар',district:'Центр',address:'PRIVATE ADDRESS',description:'Тестовые условия',price:10000,rooms:1,capacity:2,cleaningMinutes:90},owner.token)).body.id;
   const state=(await call('/api/state',undefined,guest.token)).body;assert.equal(state.properties[0].address,undefined);

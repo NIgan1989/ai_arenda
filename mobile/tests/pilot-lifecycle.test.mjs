@@ -20,6 +20,7 @@ test('pilot HTTP lifecycle: import, admission, booking, partial funds, cleaning 
   await start();
   for(const [login,roles] of [['pilot_owner',['owner','guest']],['pilot_guest',['guest']],['pilot_cleaner',['cleaner']],['pilot_other',['owner']]]){
    const account=await ok('/auth/register',{login,password:'fixture-pilot-password'});await ok('/api/profile',{name:login,contact:'fixture contact',city:'Павлодар',roles,districts:'Центр',experience:'Fixture experience',availability:'By agreement'},account);if(login==='pilot_owner')owner=account;if(login==='pilot_guest')guest=account;if(login==='pilot_cleaner')cleaner=account;if(login==='pilot_other')stranger=account;
+   await ok('/api/operations/identity/save',{data:photo},account,roles[0]);
   }
   await app.close();app=null;await start(owner.user.id);
   await t.test('server administrator policy and account-wide AI budget remain isolated from declared body identities',async()=>{

@@ -37,7 +37,7 @@ test('the administrator approves a draft from «Недвижимость» and i
   await assert.rejects(writePlatformAdmin(f.owner,'properties/approve',{propertyId:f.property,confirmed:true},admin),e=>e.status===403);
   await assert.rejects(writePlatformAdmin(f.guest,'properties/approve',{propertyId:f.property},admin),/Подтвердите/);
   // The name on the document of the right to let is compared with the owner and the Kaspi recipient first.
-  await assert.rejects(writePlatformAdmin(f.guest,'properties/approve',{propertyId:f.property,confirmed:true},admin),/ФИО в документе/);
+  await assert.rejects(writePlatformAdmin(f.guest,'properties/approve',{propertyId:f.property,confirmed:true},admin),/ФИО в удостоверении/);
   const docs=await readPlatformAdmin(f.guest,'rights',{propertyId:f.property},admin);assert.equal(docs.names.profile,'Owner');
   const result=await writePlatformAdmin(f.guest,'properties/approve',{propertyId:f.property,confirmed:true,namesMatch:true},admin);
   assert.equal(result.shown,true);

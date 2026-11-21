@@ -1,3 +1,4 @@
+import {IDENTITY_SHIM} from './helpers/identity-shim.mjs';
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {DatabaseSync} from 'node:sqlite';
@@ -15,7 +16,7 @@ const {checkAdministratorOwner,runAdministrator}=await import(pathToFileURL(proc
 const {planAdministrator}=await import(pathToFileURL(process.cwd()+'/outputs/administrator-test/administrator.js'));
 const {administratorRunnerAuthorized}=await import(pathToFileURL(process.cwd()+'/outputs/administrator-test/administrator-auth.js'));
 class D1{
- constructor(){this.raw=new DatabaseSync(':memory:');this.raw.exec('PRAGMA foreign_keys=ON');for(const file of readdirSync('drizzle').filter(f=>/^\d+.*\.sql$/.test(f)).sort())this.raw.exec(readFileSync('drizzle/'+file,'utf8'));}
+ constructor(){this.raw=new DatabaseSync(':memory:');this.raw.exec('PRAGMA foreign_keys=ON');for(const file of readdirSync('drizzle').filter(f=>/^\d+.*\.sql$/.test(f)).sort())this.raw.exec(readFileSync('drizzle/'+file,'utf8'));this.raw.exec(IDENTITY_SHIM);}
  prepare(sql){const db=this.raw;let args=[];return {bind(...values){args=values;return this;},async first(){return db.prepare(sql).get(...args)||null;},async all(){return {results:db.prepare(sql).all(...args)};},async run(){const r=db.prepare(sql).run(...args);return {meta:{changes:Number(r.changes)}};}};}
  async batch(statements){this.raw.exec('BEGIN');try{const results=[];for(const statement of statements)results.push(await statement.run());this.raw.exec('COMMIT');return results;}catch(error){this.raw.exec('ROLLBACK');throw error;}}
  close(){this.raw.close();}

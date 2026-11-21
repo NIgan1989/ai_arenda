@@ -1,3 +1,4 @@
+import {IDENTITY_SHIM} from './identity-shim.mjs';
 import {DatabaseSync} from 'node:sqlite';
 import {readFileSync,writeFileSync,mkdirSync,readdirSync} from 'node:fs';
 import {pathToFileURL} from 'node:url';
@@ -8,7 +9,7 @@ export const load=name=>import(pathToFileURL(output+'/'+name+'.js'));
 // The map's address search never leaves the tests: by default it finds nothing, a test that needs a find stubs it itself.
 {const real=globalThis.fetch;globalThis.fetch=async(url,init)=>/nominatim\.openstreetmap\.org|api\.stadiamaps\.com\/geocoding/.test(String(url))?new Response('[]',{headers:{'content-type':'application/json'}}):real(url,init);}
 export class TestDatabase{
- constructor(filename=':memory:'){this.raw=new DatabaseSync(filename);this.db=this.raw;this.raw.exec('PRAGMA foreign_keys=ON');for(const file of readdirSync('drizzle').filter(f=>/^\d+.*\.sql$/.test(f)).sort())this.raw.exec(readFileSync('drizzle/'+file,'utf8'));}
+ constructor(filename=':memory:'){this.raw=new DatabaseSync(filename);this.db=this.raw;this.raw.exec('PRAGMA foreign_keys=ON');for(const file of readdirSync('drizzle').filter(f=>/^\d+.*\.sql$/.test(f)).sort())this.raw.exec(readFileSync('drizzle/'+file,'utf8'));this.raw.exec(IDENTITY_SHIM);}
  prepare(sql){const db=this.raw;let args=[];return {bind(...values){args=values;return this;},async first(){return db.prepare(sql).get(...args)||null;},async all(){return {results:db.prepare(sql).all(...args)};},execute(){const r=db.prepare(sql).run(...args);return {meta:{changes:Number(r.changes)}};},async run(){return this.execute();}};}
  async batch(statements){this.raw.exec('BEGIN');try{const results=statements.map(statement=>statement.execute());this.raw.exec('COMMIT');return results;}catch(error){this.raw.exec('ROLLBACK');throw error;}}
  close(){this.raw.close();}
@@ -16,6 +17,8 @@ export class TestDatabase{
 export const now=()=>Math.floor(Date.now()/1000),iso=t=>new Date(t*1000).toISOString();
 // A photo of the title the owner attached to a place, as saveRightDoc stores it.
 export function rightDoc(db,propertyId,ownerId,kind='owner'){db.raw.prepare("INSERT INTO property_right_docs(id,property_id,owner_id,kind,data,width,height,bytes,created_at) VALUES (?,?,?,?,'data:image/jpeg;base64,AA==',1,1,1,?)").run('doc-'+propertyId+'-'+Math.random().toString(36).slice(2,8),propertyId,ownerId,kind,now());}
+// A photo of the ID card a participant attached in the profile.
+export function identityDoc(db,userId){db.raw.prepare("INSERT INTO identity_docs(id,user_id,data,width,height,bytes,created_at) VALUES (?,?,'data:image/jpeg;base64,AA==',1,1,1,?)").run('id-'+userId+'-'+Math.random().toString(36).slice(2,8),userId,now());}
 export async function fixture(){
  const {RentalService}=await load('service'),db=new TestDatabase(),owner=new RentalService(db,'owner'),guest=new RentalService(db,'guest'),cleaner=new RentalService(db,'cleaner'),other=new RentalService(db,'other');
  for(const [service,name,roles] of [[owner,'Owner',['owner']],[guest,'Guest',['guest']],[cleaner,'Cleaner',['cleaner']],[other,'Other',['owner']]])await service.saveProfile({name,roles,city:'Павлодар',contact:'test',districts:'Центр',experience:'Experienced',availability:'By agreement'});
