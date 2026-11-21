@@ -1,3 +1,4 @@
+import {dateText,t as tr} from '../../lib/i18n';
 import type { GuestDraft } from './ai-request';
 
 // «Готово к 18:00»: the guest moves the arrival along the strip under the map, and each pin says what that home will be
@@ -8,7 +9,7 @@ export type HomeAt = { state: 'ready' | 'check' | 'later' | 'busy'; from?: numbe
 type Coded = { arrival?: unknown };
 
 // Kazakhstan time, as everything the guest reads.
-export const clock = (seconds: number) => new Date(seconds * 1000).toLocaleTimeString('ru-RU', { timeZone: 'Asia/Almaty', hour: '2-digit', minute: '2-digit' });
+export const clock = (seconds: number) => dateText(new Date(seconds * 1000),{ timeZone: 'Asia/Almaty', hour: '2-digit', minute: '2-digit' });
 
 export function arrivalOf(preview: { arrival?: unknown } | null | undefined): Arrival | null {
   const a = preview?.arrival as Arrival | undefined;
@@ -27,17 +28,17 @@ export function homeAt(home: Coded, arrival: Arrival, at: number): HomeAt {
 // The words on the pin. A home ready at the chosen arrival shows its price (''): moving the arrival to 19:00 turns
 // «После 19:00» into a price, so the guest sees which homes the move opened and can take one at once.
 export function pinWords(home: HomeAt) {
-  return home.state === 'ready' ? '' : home.state === 'check' ? 'Уточняем' : home.state === 'later' ? 'После ' + clock(home.from!) : 'Занято';
+  return home.state === 'ready' ? '' : home.state === 'check' ? tr('Уточняем') : home.state === 'later' ? tr('После {v}',{v:clock(home.from!)}) : tr('Занято');
 }
 // The line in the card: the same, with the reason.
 export function cardWords(home: HomeAt, at: number) {
   return home.state === 'ready'
-    ? 'Готово к ' + clock(at)
+    ? tr('Готово к {v}',{v:clock(at)})
     : home.state === 'check'
-      ? 'Уточняем готовность: уборку после прошлых гостей ещё никто не подтвердил'
+      ? tr('Уточняем готовность: уборку после прошлых гостей ещё никто не подтвердил')
       : home.state === 'later'
-        ? 'Доступно с ' + clock(home.from!)
-        : 'В это время занято';
+        ? tr('Доступно с {v}',{v:clock(home.from!)})
+        : tr('В это время занято');
 }
 // How many homes can be taken at each step: the number under each time of the strip.
 export function countsAt(homes: Coded[], arrival: Arrival) {

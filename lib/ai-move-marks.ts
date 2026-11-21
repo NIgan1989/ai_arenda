@@ -1,6 +1,7 @@
+import {t as tr,dateText} from './i18n';
 // What the AI administrator did on its own, read from the notices it leaves (lib/ai-moves.ts gives them to the map).
 // The map shows each with one sign, the same in every role: an AI ring runs round the pin once and a short line lifts
-// above it («ИИ подтвердил бронь»). Pure, no imports: the site, the app and the server share it.
+// above it («ИИ подтвердил бронь»). Pure, only lib/i18n is imported: the site, the app and the server share it.
 // Covered by mobile/tests/ai-moves.test.mjs. It lives in lib so the server can use it too.
 
 export type AiMove='confirmed'|'answered'|'checkin'|'checkout'|'checked'|'accepted'|'assigned'|'replaced'|'took'|'moved'|'reminded'|'escalated'|'released';
@@ -143,19 +144,19 @@ export type JournalOpen={kind:'booking'|'job'|'property'|'room';id:string};
 // who: the person the step was about (the worker of a cleaning, for its owner). start: when that cleaning or stay begins.
 // type: the kind of the object the line is about, when it is a bath or a hall.
 export type JournalLine={at:number;text:string;title:string;open?:JournalOpen;who?:string;start?:number;type?:string};
-const J_ZONE=5*3600,J_MONTHS=['января','февраля','марта','апреля','мая','июня','июля','августа','сентября','октября','ноября','декабря'];
+const J_ZONE=5*3600,jDayMonth=(at:number)=>dateText(at*1000,{timeZone:'Asia/Qyzylorda',day:'numeric',month:'long'});
 const jTwo=(n:number)=>String(n).padStart(2,'0'),jDate=(at:number)=>new Date((at+J_ZONE)*1000);
 // «14:05» of a line, and the day that heads its group: «Сегодня», «Вчера», «12 ноября».
 export function journalClock(at:number){const d=jDate(at);return jTwo(d.getUTCHours())+':'+jTwo(d.getUTCMinutes());}
 export function journalDay(at:number,now:number){
- const day=(t:number)=>Math.floor((t+J_ZONE)/86400),ago=day(now)-day(at),d=jDate(at);
- return ago===0?'Сегодня':ago===1?'Вчера':d.getUTCDate()+' '+J_MONTHS[d.getUTCMonth()];
+ const day=(t:number)=>Math.floor((t+J_ZONE)/86400),ago=day(now)-day(at);
+ return ago===0?tr('Сегодня'):ago===1?tr('Вчера'):jDayMonth(at);
 }
 // The second line of an entry: who and when, so the step reads whole without opening it.
 // «Айгуль · уборка 14 ноября, 06:30», «заезд 15 ноября, 14:00».
 export function journalMeta(l:JournalLine){
  const parts:string[]=[];if(l.who)parts.push(l.who);
- if(typeof l.start==='number'&&l.start>0&&(l.open?.kind==='job'||l.open?.kind==='booking')){const d=jDate(l.start);parts.push((l.open.kind==='job'?'уборка ':['заезд ','приход ','начало '][venueOf(l.type)])+d.getUTCDate()+' '+J_MONTHS[d.getUTCMonth()]+', '+journalClock(l.start));}
+ if(typeof l.start==='number'&&l.start>0&&(l.open?.kind==='job'||l.open?.kind==='booking'))parts.push(tr(l.open.kind==='job'?'уборка {date}, {time}':['заезд {date}, {time}','приход {date}, {time}','начало {date}, {time}'][venueOf(l.type)],{date:jDayMonth(l.start),time:journalClock(l.start)}));
  return parts.join(' · ');
 }
 // Lines under the heads of their days, in the order they came (the newest first).

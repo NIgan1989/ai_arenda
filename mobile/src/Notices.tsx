@@ -1,3 +1,4 @@
+import {t} from '../../lib/i18n';
 import React,{useEffect,useRef,useState} from 'react';
 import {AccessibilityInfo,Animated,Easing,Pressable,StyleSheet,Text,View} from 'react-native';
 import {journalClock,journalDay} from '../../lib/ai-move-marks';
@@ -17,7 +18,7 @@ import type {Row} from './model';
 // rows, the rest open in place.
 export function NoticeList({list,now,onOpen}:{list:Row[];now:number;onOpen?:(notice:Row)=>(()=>void)|undefined}){
  const [all,setAll]=useState(false),[full,setFull]=useState(''),shown=all?list:list.slice(0,8);
- if(!list.length)return <BrandEmpty title="Пока тихо" text="Сюда приходит только то, что ждёт вас или касается денег: заявка, оплата, заезд, отчёт об уборке. Остальное ИИ записывает в «Автопилот»."/>;
+ if(!list.length)return <BrandEmpty title={t('Пока тихо')} text={t('Сюда приходит только то, что ждёт вас или касается денег: заявка, оплата, заезд, отчёт об уборке. Остальное ИИ записывает в «Автопилот».')}/>;
  let day='';
  return <View>
   {shown.map(v=>{
@@ -25,10 +26,10 @@ export function NoticeList({list,now,onOpen}:{list:Row[];now:number;onOpen?:(not
    const open=full===v.id,body=<><View style={n.text}><Text numberOfLines={open?undefined:2} style={n.body}>{noticeText(v.body)}</Text><Text style={n.when}>{journalClock(at)}</Text></View>{!!go&&<Text style={n.go}>›</Text>}</>;
    return <View key={v.id}>
     {first&&<Text accessibilityRole="header" style={n.day}>{head.toUpperCase()}</Text>}
-    <Pressable accessibilityRole="button" accessibilityHint={go?'Открыть':undefined} accessibilityState={go?undefined:{expanded:open}} onPress={go||(()=>setFull(open?'':v.id))} style={({pressed})=>[n.line,pressed&&n.pressed]}>{body}</Pressable>
+    <Pressable accessibilityRole="button" accessibilityHint={go?t('Открыть'):undefined} accessibilityState={go?undefined:{expanded:open}} onPress={go||(()=>setFull(open?'':v.id))} style={({pressed})=>[n.line,pressed&&n.pressed]}>{body}</Pressable>
    </View>;
   })}
-  {list.length>8&&<Pressable accessibilityRole="button" accessibilityState={{expanded:all}} onPress={()=>setAll(v=>!v)} style={n.more}><Text style={n.moreText}>{all?'Свернуть':'Показать все · '+list.length}</Text></Pressable>}
+  {list.length>8&&<Pressable accessibilityRole="button" accessibilityState={{expanded:all}} onPress={()=>setAll(v=>!v)} style={n.more}><Text style={n.moreText}>{all?t('Свернуть'):t('Показать все · {length}',{length:list.length})}</Text></Pressable>}
  </View>;
 }
 
@@ -43,12 +44,12 @@ export function NoticeToast({notice,more=0,onPress,onDone}:{notice:Row;more?:num
   return()=>{alive=false;clearTimeout(timer);};
  },[notice.id]);
  return <Animated.View style={[n.toast,{opacity:shown,transform:[{translateY:shown.interpolate({inputRange:[0,1],outputRange:[-12,0]})}]}]}>
-  <Pressable accessibilityRole="button" accessibilityLabel={'Новое событие: '+noticeText(notice.body)} accessibilityHint="Открыть" onPress={onPress} style={({pressed})=>[n.toastMain,pressed&&n.pressedSoft]}>
+  <Pressable accessibilityRole="button" accessibilityLabel={t('Новое событие: {v}',{v:noticeText(notice.body)})} accessibilityHint={t('Открыть')} onPress={onPress} style={({pressed})=>[n.toastMain,pressed&&n.pressedSoft]}>
    <RowIcon icon="bell" tint={C.accent}/>
-   <View style={n.toastText}><Text numberOfLines={2} style={n.toastBody}>{noticeText(notice.body)}</Text>{more>0&&<Text style={n.when}>и ещё {more}</Text>}</View>
+   <View style={n.toastText}><Text numberOfLines={2} style={n.toastBody}>{noticeText(notice.body)}</Text>{more>0&&<Text style={n.when}>{t('и ещё {more}',{more})}</Text>}</View>
    <Text style={n.go}>›</Text>
   </Pressable>
-  <Pressable accessibilityRole="button" accessibilityLabel="Скрыть" hitSlop={8} onPress={onDone} style={n.toastClose}><Text style={n.closeText}>✕</Text></Pressable>
+  <Pressable accessibilityRole="button" accessibilityLabel={t('Скрыть')} hitSlop={8} onPress={onDone} style={n.toastClose}><Text style={n.closeText}>✕</Text></Pressable>
  </Animated.View>;
 }
 

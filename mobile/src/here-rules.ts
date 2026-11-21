@@ -1,3 +1,4 @@
+import {t} from '../../lib/i18n';
 import {mapCities,type MapPoint} from './map-math';
 
 // Where the person is, as the phone told us (here.ts), and what the map says about it.
@@ -45,9 +46,9 @@ export function accuracyRadius(accuracy:number,latitude:number,zoom:number){
 // city: what the map shows instead. canPick: the guest can put the point on the map by hand.
 export function hereNote(status:HereStatus,city:string,canPick:boolean,platform:'ios'|'android'|string):HereNote|null{
  const pick:HereAction[]=canPick?['pick']:[];
- if(status==='blocked')return {text:'Доступ к геопозиции запрещён. Разрешите его в настройках'+(platform==='ios'?' (Геопозиция → При использовании)':'')+'. Пока показываем '+city+'.',actions:['settings',...pick]};
- if(status==='denied')return {text:'Без доступа к геопозиции не найдём вас на карте. Пока показываем '+city+'.',actions:['retry',...pick]};
- if(status==='off')return {text:'Геолокация на телефоне выключена. Включите её'+(platform==='ios'?' в Настройках → Конфиденциальность → Службы геолокации':'')+'. Пока показываем '+city+'.',actions:['settings',...pick]};
- if(status==='failed')return {text:'Телефон пока не знает, где вы. Выйдите ближе к окну или попробуйте ещё раз. Пока показываем '+city+'.',actions:['retry',...pick]};
+ if(status==='blocked')return {text:platform==='ios'?t('Доступ к геопозиции запрещён. Разрешите его в настройках (Геопозиция → При использовании). Пока показываем {city}.',{city}):t('Доступ к геопозиции запрещён. Разрешите его в настройках. Пока показываем {city}.',{city}),actions:['settings',...pick]};
+ if(status==='denied')return {text:t('Без доступа к геопозиции не найдём вас на карте. Пока показываем {city}.',{city}),actions:['retry',...pick]};
+ if(status==='off')return {text:platform==='ios'?t('Геолокация на телефоне выключена. Включите её в Настройках → Конфиденциальность → Службы геолокации. Пока показываем {city}.',{city}):t('Геолокация на телефоне выключена. Включите её. Пока показываем {city}.',{city}),actions:['settings',...pick]};
+ if(status==='failed')return {text:t('Телефон пока не знает, где вы. Выйдите ближе к окну или попробуйте ещё раз. Пока показываем {city}.',{city}),actions:['retry',...pick]};
  return null;
 }

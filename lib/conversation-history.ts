@@ -1,3 +1,4 @@
+import {t as tr,L,dateText} from './i18n';
 // What the AI administrator said earlier (the conversation kept on the server, 120 messages at most) is history, not the page.
 // Since 2026-11-18 the app shows on a page only what was said after it opened; on «Сводка» the rest folds into one list
 // «История» (a line per message, by day), and anything older than a week is dropped when the conversation loads.
@@ -22,25 +23,25 @@ export function splitAt<T extends {id:string}>(messages:T[],start:string):{befor
  const at=start?messages.findIndex(m=>m.id===start):-1;
  return at<0?{before:[],after:messages}:{before:messages.slice(0,at+1),after:messages.slice(at+1)};
 }
-const BLOCKS:Record<string,string>={
+const BLOCKS:Record<string,string>=L({
  bookings:'Брони',jobs:'Уборки',properties:'Жильё',workspace:'Сводка',notifications:'Уведомления',confirm:'Подтверждение',
  'property-editor':'Изменение жилья','property-quick':'Новое жильё','property-settings':'Правила жилья','stay-form':'Бронирование',
  'job-form':'Заказ уборки','home-order':'Уборка на дом',review:'Проверка брони',report:'Отчёт об уборке',auth:'Вход',help:'Подсказки'
-};
+});
 // One line for a message: what the person wrote, or what the AI said and what it showed.
 export function historyLine(m:HistoryMessage):string{
  const text=String(m.text||'').replace(/\s+/g,' ').trim();
- if(m.sender==='user')return 'Вы: '+(text||'сообщение');
+ if(m.sender==='user')return tr('Вы: {text}',{text:text||tr('сообщение')});
  const what=m.block==='confirm'&&m.payload?.title?String(m.payload.title):m.block?BLOCKS[m.block]||'':'';
- const head=text&&what&&!text.toLowerCase().includes(what.toLowerCase())?text.replace(/\.$/,'')+' · '+what:text||what||'Сообщение';
+ const head=text&&what&&!text.toLowerCase().includes(what.toLowerCase())?text.replace(/\.$/,'')+' · '+what:text||what||tr('Сообщение');
  return m.done&&m.result?head+' — '+m.result:head;
 }
 // The day a message belongs to, said the way a person says it: «Сегодня», «Вчера», «16 ноября».
 export function historyDay(at:number,now=Date.now()):string{
- if(!at)return 'Раньше';
+ if(!at)return tr('Раньше');
  const day=(t:number)=>Math.floor((t+SHIFT)/DAY),d=day(now)-day(at);
- if(d<=0)return 'Сегодня';if(d===1)return 'Вчера';
- return new Date(at).toLocaleDateString('ru-RU',{timeZone:'Asia/Almaty',day:'numeric',month:'long'});
+ if(d<=0)return tr('Сегодня');if(d===1)return tr('Вчера');
+ return dateText(at,{timeZone:'Asia/Almaty',day:'numeric',month:'long'});
 }
 // Newest first, each with its day title where a day starts.
 export function historyRows<T extends HistoryMessage>(messages:T[],now=Date.now()):{message:T;line:string;time:string;day:string}[]{

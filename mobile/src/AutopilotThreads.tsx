@@ -4,6 +4,7 @@ import {
   THREAD_BY, cleanerThreads, cleanerWeek, dayRibbon, guestThreads, lastAiMove, ownerThreads, ribbonX, threadClock, threadWhen, threadsSummary,
   type ProcessThread, type ThreadStep
 } from '../../lib/process-threads';
+import { t as tr } from '../../lib/i18n';
 import { C, type } from './styles';
 import { T } from './tokens';
 
@@ -84,7 +85,7 @@ export function AutopilotThreads({ role, data, now, paymentMode, needs = [], cal
   const [width, setWidth] = useState(0);
   if (!data?.user?.id) return null;
   // Nothing goes on now: the guest still reaches the past bookings from here, the others see no block.
-  if (!threads.length && !needs.length && role !== 'cleaner') return onAll ? <View style={a.box}><Pressable accessibilityRole="button" accessibilityLabel="Все брони" onPress={onAll} style={a.moreButton}><Text style={a.moreText}>Все брони ›</Text></Pressable></View> : null;
+  if (!threads.length && !needs.length && role !== 'cleaner') return onAll ? <View style={a.box}><Pressable accessibilityRole="button" accessibilityLabel={tr('Все брони')} onPress={onAll} style={a.moreButton}><Text style={a.moreText}>{tr('Все брони')} ›</Text></Pressable></View> : null;
   const dayKey = day ?? week[0]?.key ?? 0;
   const yours = threads.filter(t => t.yours), calm = threads.filter(t => !t.yours);
   // The filter works only while its buttons are on the screen: with three rows or fewer everything is shown.
@@ -101,32 +102,32 @@ export function AutopilotThreads({ role, data, now, paymentMode, needs = [], cal
     </Pressable>
   );
   return (
-    <View style={a.box} accessibilityLabel="Автопилот">
+    <View style={a.box} accessibilityLabel={tr('Автопилот')}>
       <View style={a.head}>
-        <Text style={role === 'guest' ? a.guestLabel : a.badge}>{role === 'guest' ? 'Мои брони' : '✦ Автопилот'}</Text>
+        <Text style={role === 'guest' ? a.guestLabel : a.badge}>{role === 'guest' ? tr('Мои брони') : '✦ ' + tr('Автопилот')}</Text>
         <Text style={a.sum}>{threadsSummary(role, threads)}</Text>
         <Text style={a.clock}>{threadClock(now)}</Text>
       </View>
       {last && <View style={a.last}><Text style={a.lastTime}>✦ {threadClock(last.at)}</Text><Text numberOfLines={1} style={a.lastText}>{last.text}{last.title ? ' · ' + last.title : ''}</Text></View>}
       {needs.map(n => (
-        <View key={n.key} style={a.need} accessibilityLabel={'Ждёт вас: ' + n.title + '. ' + n.line}>
+        <View key={n.key} style={a.need} accessibilityLabel={tr('Ждёт вас: {title}. {line}', { title: n.title, line: n.line })}>
           <View style={a.needDot}><Text style={a.needMark}>!</Text></View>
           <View style={a.rowText}><Text numberOfLines={2} style={a.title}>{n.title}</Text><Text numberOfLines={2} style={a.rowLine}>{n.line}</Text></View>
           <Pressable accessibilityRole="button" accessibilityLabel={n.action + ': ' + n.title} onPress={n.onPress} style={({ pressed }) => [a.needButton, pressed && a.pressed]}><Text style={a.needButtonText}>{n.action}</Text></Pressable>
         </View>
       ))}
       {yours.map(t => (
-        <View key={t.kind + t.id} style={a.need} accessibilityLabel={'Ждёт вас: ' + t.tag + ' ' + t.title + '. ' + t.line}>
+        <View key={t.kind + t.id} style={a.need} accessibilityLabel={tr('Ждёт вас: {tag} {title}. {line}', { tag: tr(t.tag), title: t.title, line: t.line })}>
           <View style={a.needDot}><Text style={a.needMark}>!</Text></View>
-          <Pressable accessibilityRole="button" accessibilityLabel={t.tag + ' ' + t.title + '. ' + t.status + '. ' + t.line} onPress={() => onOpen(t.kind, t.id)} style={a.rowText}><Text numberOfLines={2} style={a.title}>{t.tag} · {t.title}</Text><Text numberOfLines={2} style={a.rowLine}>{t.line}</Text></Pressable>
-          <Pressable accessibilityRole="button" accessibilityLabel={'Решить: ' + t.tag + ' ' + t.title} onPress={() => onOpen(t.kind, t.id)} style={({ pressed }) => [a.needButton, pressed && a.pressed]}><Text style={a.needButtonText}>Решить</Text></Pressable>
+          <Pressable accessibilityRole="button" accessibilityLabel={tr(t.tag) + ' ' + t.title + '. ' + t.status + '. ' + t.line} onPress={() => onOpen(t.kind, t.id)} style={a.rowText}><Text numberOfLines={2} style={a.title}>{tr(t.tag)} · {t.title}</Text><Text numberOfLines={2} style={a.rowLine}>{t.line}</Text></Pressable>
+          <Pressable accessibilityRole="button" accessibilityLabel={tr('Решить: {tag} {title}', { tag: tr(t.tag), title: t.title })} onPress={() => onOpen(t.kind, t.id)} style={({ pressed }) => [a.needButton, pressed && a.pressed]}><Text style={a.needButtonText}>{tr('Решить')}</Text></Pressable>
         </View>
       ))}
-      {tabs && <View style={a.tabs}>{tab('all', 'Всё')}{tab('booking', 'Брони', count('booking'))}{tab('job', 'Уборки', count('job'))}</View>}
+      {tabs && <View style={a.tabs}>{tab('all', tr('Всё'))}{tab('booking', tr('Брони'), count('booking'))}{tab('job', tr('Уборки'), count('job'))}</View>}
       {role === 'cleaner' && calendar && <>
         <View style={a.week}>
           {week.map(d => (
-            <Pressable key={d.key} accessibilityRole="button" accessibilityState={{ selected: d.key === dayKey }} accessibilityLabel={(d.today ? 'Сегодня, ' : '') + d.week + ' ' + d.date + ': уборок ' + d.count} onPress={() => setDay(d.key)} style={[a.day, d.key === dayKey && a.dayOn]}>
+            <Pressable key={d.key} accessibilityRole="button" accessibilityState={{ selected: d.key === dayKey }} accessibilityLabel={d.today ? tr('Сегодня, {week} {date}: уборок {n}', { week: d.week, date: d.date, n: d.count }) : tr('{week} {date}: уборок {n}', { week: d.week, date: d.date, n: d.count })} onPress={() => setDay(d.key)} style={[a.day, d.key === dayKey && a.dayOn]}>
               <Text style={[a.dayWeek, d.key === dayKey && a.dayWeekOn]}>{d.week}</Text>
               <Text style={[a.dayDate, d.key === dayKey && a.dayDateOn]}>{d.date}</Text>
               <View style={a.dayDots}>{Array.from({ length: Math.min(3, d.count) }, (_, i) => <View key={i} style={[a.dayDot, d.key === dayKey && a.dayDotOn]} />)}</View>
@@ -142,19 +143,19 @@ export function AutopilotThreads({ role, data, now, paymentMode, needs = [], cal
             ))}
             {ribbon.now !== null && <View style={[a.nowLine, { left: pct(ribbonX(ribbon, ribbon.now)) }]} />}
           </View>
-          {!ribbon.bars.length && <Text style={a.empty}>В этот день уборок нет</Text>}
+          {!ribbon.bars.length && <Text style={a.empty}>{tr('В этот день уборок нет')}</Text>}
         </View>}
       </>}
       {rows.map(t => {
         const isOpen = open === t.id;
         return (
           <View key={t.kind + t.id} style={[a.item, isOpen && a.itemOpen]}>
-            <Pressable accessibilityRole="button" accessibilityState={{ expanded: isOpen }} accessibilityLabel={t.tag + ' ' + t.title + '. ' + t.status + '. ' + t.line} onPress={() => setOpen(isOpen ? '' : t.id)} style={a.row}>
+            <Pressable accessibilityRole="button" accessibilityState={{ expanded: isOpen }} accessibilityLabel={tr(t.tag) + ' ' + t.title + '. ' + t.status + '. ' + t.line} onPress={() => setOpen(isOpen ? '' : t.id)} style={a.row}>
               {t.finished ? <View style={[a.mark, a.markDone]}><Text style={[a.markText, a.markTextDone]}>✓</Text></View>
                 : t.steps[t.current]?.by === 'ai' ? <View style={a.mark}><Text style={a.markText}>✦</Text></View>
                 : <View style={[a.mark, a.markWait]}><View style={a.markRing} /></View>}
               <View style={a.rowText}>
-                <Text numberOfLines={1} style={a.title}>{t.tag} · {t.title}</Text>
+                <Text numberOfLines={1} style={a.title}>{tr(t.tag)} · {t.title}</Text>
                 <Text numberOfLines={isOpen ? 3 : 1} style={a.rowLine}>{t.line}</Text>
               </View>
               <Text style={a.chevron}>{isOpen ? '⌃' : '›'}</Text>
@@ -163,15 +164,15 @@ export function AutopilotThreads({ role, data, now, paymentMode, needs = [], cal
               <Rail t={t} />
               {t.steps.map((s, i) => <Step key={s.key} s={s} last={i === t.steps.length - 1} now={now} />)}
               <Pressable accessibilityRole="button" onPress={() => onOpen(t.kind, t.id)} style={({ pressed }) => [a.open, pressed && a.openPressed]}>
-                <Text style={a.openText}>{t.kind === 'booking' ? 'Открыть бронь' : t.tag === 'Задание' ? 'Открыть задание' : 'Открыть уборку'}</Text>
+                <Text style={a.openText}>{t.kind === 'booking' ? tr('Открыть бронь') : t.tag === 'Задание' ? tr('Открыть задание') : tr('Открыть уборку')}</Text>
               </Pressable>
             </View>}
           </View>
         );
       })}
-      {!rows.length && !yours.length && !needs.length && <Text style={a.empty}>{role === 'owner' ? (kind === 'job' ? 'Уборок сейчас нет' : 'Броней сейчас нет') : role === 'guest' ? 'Броней сейчас нет' : 'Когда вас назначат на уборку, она появится здесь'}</Text>}
-      {!!onAll && <Pressable accessibilityRole="button" accessibilityLabel="Все брони" onPress={onAll} style={a.moreButton}><Text style={a.moreText}>Все брони ›</Text></Pressable>}
-      {shown.length > FOLDED && <Pressable accessibilityRole="button" onPress={() => setAll(v => !v)} style={a.moreButton}><Text style={a.moreText}>{all ? 'Свернуть' : 'Ещё ' + (shown.length - FOLDED)}</Text></Pressable>}
+      {!rows.length && !yours.length && !needs.length && <Text style={a.empty}>{role === 'owner' ? (kind === 'job' ? tr('Уборок сейчас нет') : tr('Броней сейчас нет')) : role === 'guest' ? tr('Броней сейчас нет') : tr('Когда вас назначат на уборку, она появится здесь')}</Text>}
+      {!!onAll && <Pressable accessibilityRole="button" accessibilityLabel={tr('Все брони')} onPress={onAll} style={a.moreButton}><Text style={a.moreText}>{tr('Все брони')} ›</Text></Pressable>}
+      {shown.length > FOLDED && <Pressable accessibilityRole="button" onPress={() => setAll(v => !v)} style={a.moreButton}><Text style={a.moreText}>{all ? tr('Свернуть') : tr('Ещё {n}', { n: shown.length - FOLDED })}</Text></Pressable>}
     </View>
   );
 }

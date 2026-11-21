@@ -1,3 +1,4 @@
+import {t as tr} from '../../lib/i18n';
 import React,{useEffect,useRef,useState,useSyncExternalStore} from 'react';
 import {AccessibilityInfo,Animated,Easing,Image,Modal,Platform,Pressable,StyleSheet,Text,View} from 'react-native';
 import * as Haptics from 'expo-haptics';
@@ -24,7 +25,7 @@ export function Dome({size,ink,gold=C.gold,burst}:{size:number;ink?:string;gold?
 }
 
 /** An empty list: the sign in grey with pale rays, a short title in the typeface of the name, a line of what to do, and one way on. */
-export function BrandEmpty({title='Пока пусто',text,action,onPress}:{title?:string;text?:string;action?:string;onPress?:()=>void}){
+export function BrandEmpty({title=tr('Пока пусто'),text,action,onPress}:{title?:string;text?:string;action?:string;onPress?:()=>void}){
  return <View style={e.wrap}>
   <Dome size={96} ink={C.lineStrong} gold={C.goldLine}/>
   <Text accessibilityRole="header" style={e.title}>{title}</Text>
@@ -71,7 +72,7 @@ export function BrandMoment(){
      {!!moment.lines?.length&&<View style={m.card}>{moment.lines.map((line,i)=><Text key={i} style={m.line}>{line}</Text>)}</View>}
     </Animated.View>
    </View>
-   <Animated.View style={up}><Pressable accessibilityRole="button" onPress={close} style={({pressed})=>[m.action,pressed&&{opacity:.8}]}><Text style={m.actionText}>{moment.action||'Хорошо'}</Text></Pressable></Animated.View>
+   <Animated.View style={up}><Pressable accessibilityRole="button" onPress={close} style={({pressed})=>[m.action,pressed&&{opacity:.8}]}><Text style={m.actionText}>{moment.action||tr('Хорошо')}</Text></Pressable></Animated.View>
   </Animated.View>
  </Modal>;
 }

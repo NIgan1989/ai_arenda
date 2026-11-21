@@ -4,10 +4,11 @@
 // «Сейчас»: what is going on — a stay or a cleaning under way, and a request waiting for the other side.
 // «Скоро»: what is planned next (lib/operations.ts `upcoming`).
 import type {OperationEvent} from './operations';
-import {nowCardWhen} from './now-card';
+import {answerBy,nowCardWhen} from './now-card';
+import {t as tr,L} from './i18n';
 type Row=Record<string,any>;
 export type BoardTab='decide'|'now'|'soon';
-export const boardTabs:{id:BoardTab;label:string}[]=[{id:'decide',label:'Ждут вас'},{id:'now',label:'Сейчас'},{id:'soon',label:'Скоро'}];
+export const boardTabs:{id:BoardTab;label:string}[]=L([{id:'decide',label:'Ждут вас'},{id:'now',label:'Сейчас'},{id:'soon',label:'Скоро'}]);
 export type BoardItem={key:string;title:string;detail:string;when:string;urgent:boolean;entityKind?:'booking'|'job';entityId?:string;approval?:Row};
 export function overviewBoard(workspace:Row|null|undefined,approvals:Row[],data:Row|null|undefined,now:number):Record<BoardTab,BoardItem[]>{
  const board:Record<BoardTab,BoardItem[]>={decide:[],now:[],soon:[]};
@@ -15,7 +16,7 @@ export function overviewBoard(workspace:Row|null|undefined,approvals:Row[],data:
  // A request still waiting for an answer is the approval card itself (for the guest too, in «Сейчас»), not a second line in «Скоро».
  const waiting=new Set((approvals||[]).filter(a=>a.kind==='booking').map(a=>String(a.entityId)));
  for(const a of approvals||[]){
-  const item:BoardItem={key:'approval:'+a.id,title:String(a.title||'Нужно решение'),detail:String(a.subject||''),when:a.expiresAt&&a.expiresAt>now?'ответить до '+nowCardWhen(a.expiresAt,now).replace(/^сегодня в /,''):'',urgent:!!a.canDecide,approval:a};
+  const item:BoardItem={key:'approval:'+a.id,title:String(a.title||tr('Нужно решение')),detail:String(a.subject||''),when:a.expiresAt&&a.expiresAt>now?answerBy(a.expiresAt,now):'',urgent:!!a.canDecide,approval:a};
   (a.canDecide?board.decide:board.now).push(item);
  }
  const event=(e:OperationEvent):BoardItem=>({key:e.id,title:e.title,detail:e.detail,when:e.at?nowCardWhen(e.at,now):'',urgent:!!e.urgent,entityKind:e.kind,entityId:e.entityId});

@@ -1,11 +1,11 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {DatabaseSync} from 'node:sqlite';
-import {mkdirSync,readFileSync,writeFileSync} from 'node:fs';
+import {mkdirSync,readFileSync,readdirSync,writeFileSync} from 'node:fs';
 import {pathToFileURL} from 'node:url';
 import ts from 'typescript';
 mkdirSync('outputs/ai-test',{recursive:true});
-for(const name of ['domain','listings','command-catalog','ai'])writeFileSync(`outputs/ai-test/${name}.js`,ts.transpileModule(readFileSync(`lib/${name}.ts`,'utf8'),{compilerOptions:{module:ts.ModuleKind.ES2022,target:ts.ScriptTarget.ES2022}}).outputText.replace("from './domain'","from './domain.js'").replace("from './listings'","from './listings.js'").replace("from './command-catalog'","from './command-catalog.js'"));
+for(const name of ['domain','listings','command-catalog','ai','i18n','i18n-words',...readdirSync('lib').filter(f=>/^i18n-.*\.ts$/.test(f)&&f!=='i18n-words.ts').map(f=>f.slice(0,-3))])writeFileSync(`outputs/ai-test/${name}.js`,ts.transpileModule(readFileSync(`lib/${name}.ts`,'utf8'),{compilerOptions:{module:ts.ModuleKind.ES2022,target:ts.ScriptTarget.ES2022}}).outputText.replace("from './domain'","from './domain.js'").replace("from './listings'","from './listings.js'").replace("from './command-catalog'","from './command-catalog.js'").replace(/from '\.\/(i18n[^']*)'/g,"from './$1.js'"));
 const {generateAnswer,assistantContext,reserveAIRequest}=await import(pathToFileURL(process.cwd()+'/outputs/ai-test/ai.js'));
 test('model input excludes private fields and bounds role context/history; responses are real model text',async()=>{
  const secret='sk-FAKEKEYNOTAREALCREDENTIAL12345',contact='private@example.com',phone='+7 777 123 45 67';

@@ -1,3 +1,5 @@
+import { t } from './i18n';
+
 type Row = Record<string, any>;
 
 export type JobStepId = 'apply' | 'start' | 'report' | 'accept' | 'pick';
@@ -7,23 +9,23 @@ export type JobStep = { id: JobStepId; label: string };
 // The card of the job, the map of the site and the map of the app all offer this one step as their main button.
 export function cleanerStep(job: Row | null | undefined, application: Row | undefined, userId: string): JobStep | null {
   if (!job) return null;
-  if (job.status === 'open') return !application || application.status === 'rejected' ? { id: 'apply', label: 'Откликнуться' } : null;
+  if (job.status === 'open') return !application || application.status === 'rejected' ? { id: 'apply', label: t('Откликнуться') } : null;
   if (job.assigned_to !== userId) return null;
-  if (job.status === 'assigned') return job.checkout_confirmed ? { id: 'start', label: 'Начать уборку' } : null;
-  return job.status === 'in_progress' ? { id: 'report', label: 'Отправить отчёт' } : null;
+  if (job.status === 'assigned') return job.checkout_confirmed ? { id: 'start', label: t('Начать уборку') } : null;
+  return job.status === 'in_progress' ? { id: 'report', label: t('Отправить отчёт') } : null;
 }
 
 // What the owner does next with a cleaning: choose among those who answered, accept the report.
 export function ownerJobStep(job: Row | null | undefined, pending: number): JobStep | null {
   if (!job) return null;
-  if (job.status === 'submitted') return { id: 'accept', label: 'Рассмотреть отчёт' };
-  return job.status === 'open' && pending > 0 ? { id: 'pick', label: pending > 1 ? 'Выбрать исполнителя · ' + pending : 'Выбрать исполнителя' } : null;
+  if (job.status === 'submitted') return { id: 'accept', label: t('Рассмотреть отчёт') };
+  return job.status === 'open' && pending > 0 ? { id: 'pick', label: pending > 1 ? t('Выбрать исполнителя') + ' · ' + pending : t('Выбрать исполнителя') } : null;
 }
 
 // One line about a cleaning of the cleaner's day, in the cleaner's words.
 export function cleanerLine(job: Row): string {
-  if (job.status === 'submitted') return 'Отчёт у владельца на приёмке';
-  if (job.status === 'in_progress') return 'Уборка идёт, подготовьте отчёт';
-  if (job.booking_id === null && job.checkout_confirmed) return 'Можно начинать в назначенное время';
-  return job.checkout_confirmed ? 'Гость выехал, можно начинать' : 'Ждём выезда гостя';
+  if (job.status === 'submitted') return t('Отчёт у владельца на приёмке');
+  if (job.status === 'in_progress') return t('Уборка идёт, подготовьте отчёт');
+  if (job.booking_id === null && job.checkout_confirmed) return t('Можно начинать в назначенное время');
+  return job.checkout_confirmed ? t('Гость выехал, можно начинать') : t('Ждём выезда гостя');
 }

@@ -1,4 +1,5 @@
 import {amenities,kindLabel} from './listings';
+import {forms,t} from './i18n';
 type Row = Record<string, any>;
 
 // The place to clean, as the cleaner sees it before and after the assignment: photos, the kind of housing, the area
@@ -70,7 +71,7 @@ export function streetAddress(address: unknown): string {
 export function cleaningTime(minutes: number) {
   if (!minutes) return '';
   const h = Math.floor(minutes / 60), m = minutes % 60;
-  return '≈ ' + (h ? h + ' ч' : '') + (h && m ? ' ' : '') + (m ? m + ' мин' : '');
+  return '≈ ' + [h ? t('{n} ч', { n: h }) : '', m ? t('{n} мин', { n: m }) : ''].filter(Boolean).join(' ');
 }
 
 export function jobPlace(job: Row | null | undefined): JobPlaceView {
@@ -79,19 +80,19 @@ export function jobPlace(job: Row | null | undefined): JobPlaceView {
   const rooms = Number(j.rooms) || 0, area = Number(d.area) || 0, beds = Number(d.beds) || 0, bath = Number(d.bathrooms) || 0;
   const floor = Number(d.floor), floors = Number(d.floors) || 0;
   const facts: PlaceFact[] = [];
-  if (rooms && d.type !== 'room') facts.push({ id: 'rooms', value: String(rooms), label: plural(rooms, ['комната', 'комнаты', 'комнат']) });
-  if (area) facts.push({ id: 'area', value: area + ' м²', label: 'площадь' });
-  if (beds) facts.push({ id: 'beds', value: String(beds), label: plural(beds, ['спальное место', 'спальных места', 'спальных мест']) });
-  if (bath) facts.push({ id: 'bath', value: String(bath), label: plural(bath, ['санузел', 'санузла', 'санузлов']) });
+  if (rooms && d.type !== 'room') facts.push({ id: 'rooms', value: String(rooms), label: forms(rooms, 'комната', 'комнаты', 'комнат') });
+  if (area) facts.push({ id: 'area', value: t('{area} м²', { area }), label: t('площадь') });
+  if (beds) facts.push({ id: 'beds', value: String(beds), label: forms(beds, 'спальное место', 'спальных места', 'спальных мест') });
+  if (bath) facts.push({ id: 'bath', value: String(bath), label: forms(bath, 'санузел', 'санузла', 'санузлов') });
   const hasFloor = Number.isFinite(floor) && d.floor !== undefined && d.floor !== null && d.type !== 'house';
   const kind = kindLabel(d.type);
-  const size = [rooms && d.type !== 'room' ? rooms + ' ' + plural(rooms, ['комната', 'комнаты', 'комнат']) : '', area ? area + ' м²' : ''].filter(Boolean);
+  const size = [rooms && d.type !== 'room' ? t(forms(rooms, '{n} комната', '{n} комнаты', '{n} комнат'), { n: rooms }) : '', area ? t('{area} м²', { area }) : ''].filter(Boolean);
   const list: string[] = Array.isArray(d.amenities) ? d.amenities : [];
   return {
     photos,
     kind,
     where: [j.city, j.district].filter(Boolean).join(', '),
-    floor: !hasFloor ? '' : floor === 0 ? 'цокольный этаж' : floor + ' этаж' + (floors ? ' из ' + floors : ''),
+    floor: !hasFloor ? '' : floor === 0 ? t('цокольный этаж') : floors ? t('{floor} этаж из {floors}', { floor, floors }) : t('{floor} этаж', { floor }),
     summary: [kind, ...size].join(' · '),
     facts,
     kit: KIT.filter(key => list.includes(key)).map(key => amenities[key]),

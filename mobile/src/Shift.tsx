@@ -1,3 +1,4 @@
+import {dateText,forms,L,t as tr} from '../../lib/i18n';
 // «Смена»: the screen of the person the owner named for an object (lib/staff.ts). Today's guests in order, one
 // button for the next mark of each, and «Занято» for guests who came without the service. No money, no settings.
 import React,{useEffect,useState,useCallback} from 'react';
@@ -9,31 +10,31 @@ import {request} from './api';
 import type {Row} from './model';
 import {BusyMark,busyNow,hhmm} from './BusyMark';
 
-const MARK:Record<string,string>={heated:'Затоплено',arrived:'Гости пришли',left:'Гости ушли',ready:'Готово'};
-const STAGE:Record<string,string>={wait:'Ждём гостей',here:'Гости на месте',left:'Гости ушли, наведите порядок'};
-const day=(at:number,now:number)=>{const d=(v:number)=>new Date(v*1000).toLocaleDateString('ru-RU',{timeZone:'Asia/Almaty'});return d(at)===d(now)?'':d(at)===d(now+86400)?'завтра ':d(at)===d(now-86400)?'вчера ':new Date(at*1000).toLocaleDateString('ru-RU',{timeZone:'Asia/Almaty',day:'numeric',month:'short'})+' ';};
-const people=(n:number)=>n+' '+(n%10===1&&n%100!==11?'гость':n%10>=2&&n%10<=4&&(n%100<10||n%100>=20)?'гостя':'гостей');
+const MARK:Record<string,string>=L({heated:'Затоплено',arrived:'Гости пришли',left:'Гости ушли',ready:'Готово'});
+const STAGE:Record<string,string>=L({wait:'Ждём гостей',here:'Гости на месте',left:'Гости ушли, наведите порядок'});
+const day=(at:number,now:number)=>{const d=(v:number)=>new Date(v*1000).toLocaleDateString('ru-RU',{timeZone:'Asia/Almaty'});return d(at)===d(now)?'':d(at)===d(now+86400)?tr('завтра')+' ':d(at)===d(now-86400)?tr('вчера')+' ':dateText(new Date(at*1000),{timeZone:'Asia/Almaty',day:'numeric',month:'short'})+' ';};
+const people=(n:number)=>tr(forms(n,'{n} гость','{n} гостя','{n} гостей'),{n});
 
 export function Shift(){
  const [state,setState]=useState<Row|null>(null),[error,setError]=useState(''),[note,setNote]=useState(''),[wait,setWait]=useState('');
- const load=useCallback(async()=>{try{setState(await request('/api/operations/staff/today',{}));}catch(x:any){setError(x?.message||'Не удалось загрузить.');}},[]);
+ const load=useCallback(async()=>{try{setState(await request('/api/operations/staff/today',{}));}catch(x:any){setError(x?.message||tr('Не удалось загрузить.'));}},[]);
  useEffect(()=>{load();const t=setInterval(load,60000);return()=>clearInterval(t);},[load]);
- async function mark(bookingId:string,name:string){if(wait)return;setWait(bookingId);setError('');setNote('');try{const r=await request('/api/operations/staff/mark',{bookingId,mark:name});setState(r);setNote(r?.message||'');}catch(x:any){setError(x?.message||'Не получилось.');}finally{setWait('');}}
- if(!state)return <View style={h.list}>{error?<Text accessibilityRole="alert" style={h.error}>{error}</Text>:<ThinkingLine style={h.meta} text="Загружаю смену…"/>}</View>;
+ async function mark(bookingId:string,name:string){if(wait)return;setWait(bookingId);setError('');setNote('');try{const r=await request('/api/operations/staff/mark',{bookingId,mark:name});setState(r);setNote(r?.message||'');}catch(x:any){setError(x?.message||tr('Не получилось.'));}finally{setWait('');}}
+ if(!state)return <View style={h.list}>{error?<Text accessibilityRole="alert" style={h.error}>{error}</Text>:<ThinkingLine style={h.meta} text={tr('Загружаю смену…')}/>}</View>;
  const now=Number(state.serverTime)||Date.now()/1000,places:Row[]=state.places||[];
  return <View style={h.list}>
-  {!places.length&&<Text style={h.empty}>Вас пока не назначили ни на один объект. Назначает владелец в настройках объекта, по вашему номеру телефона.</Text>}
+  {!places.length&&<Text style={h.empty}>{tr('Вас пока не назначили ни на один объект. Назначает владелец в настройках объекта, по вашему номеру телефона.')}</Text>}
   {!!note&&<Text accessibilityLiveRegion="polite" style={h.note}>{note}</Text>}
   {!!error&&<Text accessibilityRole="alert" style={h.error}>{error}</Text>}
   {places.map(p=>{const held=busyNow(p.busy,now),inside=(p.stays||[]).some((b:Row)=>b.stage==='here');
    return <View key={p.id} style={h.card}>
     <View style={h.head}><View style={{flex:1,minWidth:0}}><Text numberOfLines={1} style={h.title}>{p.title}</Text><Text numberOfLines={1} style={h.meta}>{p.venue&&p.venue!==p.title?p.venue:p.place}</Text></View>
-     <Text style={[h.tag,inside||held||p.readiness!=='ready'?h.tagBusy:h.tagFree]}>{inside?'Гости на месте':held?'Занято до '+hhmm(Number(held.end)):p.readiness==='ready'?'Свободно':'Наводим порядок'}</Text></View>
-    {!(p.stays||[]).length&&<Text style={h.none}>Броней через приложение на сегодня нет.</Text>}
+     <Text style={[h.tag,inside||held||p.readiness!=='ready'?h.tagBusy:h.tagFree]}>{inside?tr('Гости на месте'):held?tr('Занято до {v}',{v:hhmm(Number(held.end))}):p.readiness==='ready'?tr('Свободно'):tr('Наводим порядок')}</Text></View>
+    {!(p.stays||[]).length&&<Text style={h.none}>{tr('Броней через приложение на сегодня нет.')}</Text>}
     {(p.stays||[]).map((b:Row)=><View key={b.id} style={[h.stay,b.stage==='here'&&h.stayOn]}>
      <View style={h.stayRow}><Text style={h.time}>{day(Number(b.start),now)}{hhmm(Number(b.start))}–{hhmm(Number(b.end))}</Text><Text numberOfLines={1} style={h.who}>{b.guestName} · {people(Number(b.guests)||1)}</Text></View>
      <Text style={h.stage}>{STAGE[b.stage]||''}</Text>
-     {!!b.next&&<Pressable accessibilityRole="button" accessibilityLabel={MARK[b.next]+': '+b.guestName+', '+hhmm(Number(b.start))} disabled={!!wait} onPress={()=>mark(b.id,b.next)} style={({pressed})=>[h.go,(pressed||(!!wait&&wait!==b.id))&&h.dim]}><Text style={h.goText}>{wait===b.id?'Отмечаю…':'✓  '+MARK[b.next]}</Text></Pressable>}
+     {!!b.next&&<Pressable accessibilityRole="button" accessibilityLabel={MARK[b.next]+': '+b.guestName+', '+hhmm(Number(b.start))} disabled={!!wait} onPress={()=>mark(b.id,b.next)} style={({pressed})=>[h.go,(pressed||(!!wait&&wait!==b.id))&&h.dim]}><Text style={h.goText}>{wait===b.id?tr('Отмечаю…'):'✓  '+MARK[b.next]}</Text></Pressable>}
     </View>)}
     {!inside&&<BusyMark propertyId={p.id} busy={p.busy} onChange={(busy,message)=>{setState(v=>v&&({...v,places:v.places.map((x:Row)=>x.id===p.id?{...x,busy}:x)}));setNote(message);setError('');}}/>}
    </View>;})}

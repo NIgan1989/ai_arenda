@@ -4,10 +4,11 @@ import {mkdirSync,writeFileSync,readFileSync,mkdtempSync} from 'node:fs';
 import {resolve} from 'node:path';
 import {pathToFileURL} from 'node:url';
 import ts from 'typescript';
+import {withWords} from './helpers/i18n.mjs';
 mkdirSync('outputs',{recursive:true});
 const output=mkdtempSync(resolve('outputs/mobile-session-test-'));
 const compile=file=>ts.transpileModule(readFileSync(file,'utf8'),{compilerOptions:{module:ts.ModuleKind.ES2022,target:ts.ScriptTarget.ES2022}}).outputText;
-writeFileSync(output+'/session-state.js',compile('mobile/src/session-state.ts'));
+writeFileSync(output+'/session-state.js',withWords(compile('mobile/src/session-state.ts'),output,'.js'));
 const {SessionState,StaleSessionError}=await import(pathToFileURL(output+'/session-state.js'));
 const origin='https://rent.company.kz',a='a'.repeat(64),b='b'.repeat(64),c='c'.repeat(64);
 function deferred(){let resolve,reject;const promise=new Promise((r,j)=>{resolve=r;reject=j;});return {promise,resolve,reject};}
@@ -44,7 +45,7 @@ async function apiFixture(){
  writeFileSync(output+'/secure-store.js',"export async function getItemAsync(){throw Error('Web preview must not access Keychain');} export async function setItemAsync(){throw Error('Web preview must not access Keychain');} export async function deleteItemAsync(){throw Error('Web preview must not access Keychain');}");
  const source=compile('mobile/src/api.ts').replaceAll("from 'react-native'","from './platform.js'").replaceAll("from 'expo-secure-store'","from './secure-store.js'").replaceAll("from './session-state'","from './session-state.js'").replaceAll("from './loading'","from './loading.js'");
  writeFileSync(output+'/loading.js',compile('mobile/src/loading.ts'));
- writeFileSync(output+'/api.js',source);const previous=process.env.EXPO_PUBLIC_API_URL;process.env.EXPO_PUBLIC_API_URL=origin;
+ writeFileSync(output+'/api.js',withWords(source,output,'.js'));const previous=process.env.EXPO_PUBLIC_API_URL;process.env.EXPO_PUBLIC_API_URL=origin;
  try{return await import(pathToFileURL(output+'/api.js'));}finally{if(previous===undefined)delete process.env.EXPO_PUBLIC_API_URL;else process.env.EXPO_PUBLIC_API_URL=previous;}
 }
 test('old HTTP success, 401 and network failure become StaleSessionError before they can affect a new login',async()=>{
