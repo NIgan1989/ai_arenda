@@ -126,3 +126,23 @@ test('the cleaner reads the place and the next step in the chosen language',asyn
   assert.deepEqual(lines(),['floor 2 of 12','2 rooms, 37 m² area, 1 bathroom','≈ 1 h 30 min','Apply','Waiting for the guest to check out','The application is with the owner']);
   setLang('ru');
 });
+
+test('a finished line of the server is shown in the chosen language',async()=>{
+  const {tServer,setLang}=await load('i18n');
+  assert.equal(tServer('Бронь подтверждена.'),'Бронь подтверждена.');
+  setLang('kk');
+  assert.equal(tServer('Бронь подтверждена.'),'Бронь расталды.');
+  // The server filled the slots in Russian: the app finds the line by its fixed words.
+  assert.equal(tServer('Объявление «Дом у реки» удалено.'),'«Дом у реки» хабарландыруы жойылды.');
+  assert.equal(tServer('Строка, которой нет в таблицах.'),'Строка, которой нет в таблицах.');
+  setLang('en');
+  assert.equal(tServer('Минимальная почасовая аренда — 3 ч.'),'The minimum hourly rental is 3 h.');
+  assert.equal(tServer('Ivan теперь ваш постоянный исполнитель. Уборки «Дом» будут приходить сначала к нему.'),'Ivan is now your regular cleaner. Cleanings of “Дом” will come to them first.');
+  setLang('ru');
+});
+
+test('every line the server can answer with has a translation',async()=>{
+  const {WORDS}=await load('i18n-words'),{SERVER}=await load('i18n-server');
+  assert.ok(Object.keys(SERVER).length>800);
+  for(const ru of Object.keys(SERVER))assert.equal(WORDS[ru],SERVER[ru],ru);
+});

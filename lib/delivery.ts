@@ -3,7 +3,8 @@ import type {RentalService} from './service';
 import type {Approval} from './approvals';
 import {defaultAssistantSettings} from './assistant';
 import {quietNow} from './administrator';
-import {silentNotice} from './notice-feed';
+import {noticeIn,silentNotice} from './notice-feed';
+import {isLang,tIn,type Lang} from './i18n';
 import {pushConfigured,pushTarget} from './web-push';
 import {isAdminNotice,adminNotice,adminDecide} from './admin-telegram';
 import {epoch,uuid,q,one,rows,hash,randomToken,httpsEndpoint,safeEqual,type Row,type OperationConfig} from './operation-core';
@@ -102,7 +103,7 @@ export async function setDeliveryChannel(service:RentalService,role:Role,body:Ro
 }
 
 export async function deliverOutbox(db:D1Database,config:OperationConfig,limit=30,serviceFor?:ServiceFor){
- const pending=await rows(db,"SELECT o.*,n.dedupe,n.body,c.address,c.enabled,c.verified_at,p.settings FROM delivery_outbox o JOIN notifications n ON n.id=o.notification_id LEFT JOIN delivery_channels c ON c.user_id=o.user_id AND c.role=o.role AND c.channel=o.channel LEFT JOIN assistant_preferences p ON p.user_id=o.user_id AND p.role=o.role WHERE (o.status='pending' AND o.available_at<=?) OR (o.status='sending' AND o.lease_until<=?) ORDER BY o.created_at LIMIT ?",epoch(),epoch(),limit);
+ const pending=await rows(db,"SELECT o.*,n.dedupe,n.body,c.address,c.enabled,c.verified_at,p.settings,ul.lang FROM delivery_outbox o JOIN notifications n ON n.id=o.notification_id LEFT JOIN user_language ul ON ul.user_id=o.user_id LEFT JOIN delivery_channels c ON c.user_id=o.user_id AND c.role=o.role AND c.channel=o.channel LEFT JOIN assistant_preferences p ON p.user_id=o.user_id AND p.role=o.role WHERE (o.status='pending' AND o.available_at<=?) OR (o.status='sending' AND o.lease_until<=?) ORDER BY o.created_at LIMIT ?",epoch(),epoch(),limit);
  let sent=0,failed=0;const deadline=Date.now()+20000;
  for(const item of pending){
   if(Date.now()>deadline)break;
@@ -155,7 +156,10 @@ const PERSON_WRITTEN:[RegExp,string][]=[
  [/^(Владелец отменил уборку «[^»]*»)\. Причина: [\s\S]*$/,'$1. Причина в задании.'],
  [/^(Гость оценил проживание в «[^»]*»: [★☆]+) «[\s\S]*$/,'$1. Отзыв в сервисе.']
 ];
-const plainNotice=(item:Row)=>{
+// The language the person chose in the app (lib/user-language.ts); Russian when unknown.
+const langOf=(item:Row):Lang=>isLang(item.lang)?item.lang:'ru';
+const plainNotice=(item:Row)=>noticeIn(langOf(item),personWritten(item));
+const personWritten=(item:Row)=>{
  const body=String(item.body||'').trim()||'Есть новое событие. Откройте сервис, чтобы посмотреть.';
  if(String(item.dedupe||'').split(':')[1]==='discussion')return body.replace(/\+?\d[\d\s()-]{8,}\d|\d{4,}/g,'••••');
  const rule=PERSON_WRITTEN.find(([re])=>re.test(body));return rule?body.replace(rule[0],rule[1]):body;
@@ -164,9 +168,11 @@ const ICONS:[RegExp,string][]=[[/^Бронь/,'📅'],[/^Уборка/,'🧹'],[
 const ROLE_TITLES:Record<string,string>={guest:'Для гостя',owner:'Для владельца',cleaner:'Для исполнителя'};
 // What happened, with what, and one button to the very card or chat. A notice that asks for a decision carries its buttons.
 export async function plainTelegramNotice(item:Row,base:string|null,target:{url:string;title:string}|null):Promise<Row>{
- const title=target?.title||'AiQonaq · '+(ROLE_TITLES[item.role]||'событие'),icon=ICONS.find(([re])=>re.test(title))?.[1]||'🔔';
+ const l=langOf(item),ru=target?.title||'AiQonaq · '+(ROLE_TITLES[item.role]||'событие'),icon=ICONS.find(([re])=>re.test(ru))?.[1]||'🔔';
+ // «Бронь · Дом у реки»: the kind is translated, the name stays as the owner wrote it.
+ const title=ru.split(' · ').map((part,i)=>i===0||ru.startsWith('AiQonaq ·')?tIn(l,part):part).join(' · ');
  const text=icon+' <b>'+html(clip(title,200))+'</b>\n\n'+html(clip(plainNotice(item),3500));
- const open=base?[{text:target?'Открыть':'Открыть AiQonaq',url:base+(target?.url||'/workspace/'+item.role+'/map')}]:[];
+ const open=base?[{text:tIn(l,target?'Открыть':'Открыть AiQonaq'),url:base+(target?.url||'/workspace/'+item.role+'/map')}]:[];
  return {text,parse_mode:'HTML',...(open.length?{reply_markup:{inline_keyboard:[open]}}:{})};
 }
 async function telegramNotice(item:Row,text:string,base:string|null,serviceFor?:ServiceFor):Promise<Row>{
