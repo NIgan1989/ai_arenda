@@ -1,3 +1,4 @@
+import {t as tr} from '../../lib/i18n';
 import type {AiMove} from '../../lib/ai-move-marks';
 import React,{useEffect,useLayoutEffect,useMemo,useRef,useState} from 'react';
 import {AccessibilityInfo,Animated,Easing,Image,PanResponder,Pressable,StyleSheet,Text,View,type LayoutChangeEvent} from 'react-native';
@@ -140,34 +141,7 @@ export function TileMap({center,pins,selected,focus='',lines=[],heat=[],sparks=[
  // Where the map stands on the screen, so a held finger (pageX/pageY) is turned into a place on the map.
  const host=useRef<View>(null),hostAt=useRef({x:0,y:0});
  const now=Date.now();
- return <View ref={host} style={m.host} onLayout={e=>{layout(e);host.current?.measureInWindow((x,y)=>{hostAt.current={x,y};});}} accessibilityLabel={'Карта. Меток на экране: '+placed.length}>
-  <View style={[StyleSheet.absoluteFill,{transform:[{translateX:drag.x},{translateY:drag.y}]}]} {...pan.panHandlers}>
-   <Pressable accessible={false} disabled={!onLongPress} delayLongPress={450} style={StyleSheet.absoluteFill} onLongPress={e=>{const x=e.nativeEvent.pageX-hostAt.current.x,y=e.nativeEvent.pageY-hostAt.current.y,{view:v,size:s}=state.current,c0=project(v.center,v.zoom);onLongPress?.(unproject(c0.x+x-s.w/2,c0.y+y-originY,v.zoom));}}>
-   <Animated.View style={[StyleSheet.absoluteFill,camera?{transform:camera}:null]}>
-    {tiles.map(t=><Image key={t.key} fadeDuration={0} accessibilityIgnoresInvertColors source={{uri:'https://tile.openstreetmap.org/'+view.zoom+'/'+t.x+'/'+t.y+'.png',headers:tileHeaders}} style={[m.tile,{left:t.left,top:t.top}]}/>)}
-    {scanning&&!still&&<Radar x={size.w/2} y={originY}/>}
-    {heat.map((c,i)=><HeatBlob key={'heat:'+i} weight={c.weight} {...at(c.point)}/>)}
-    {!still&&sparks.map((p,i)=><Spark key={'spark:'+i} delay={i*500} {...at(p)}/>)}
-    {lines.flatMap(l=>l.path&&l.path.length>1?l.path.slice(1).map((q,i)=><Beam key={l.key+':'+i} a={at(l.path![i])} b={at(q)} tone={l.tone} still/>):[<Beam key={l.key} a={at(l.from)} b={at(l.to)} tone={l.tone} still={still}/>])}
-    {(origin=>origin?<Origin {...at(origin)}/>:null)(lineOrigin(lines))}
-    {!!me&&!!validPoint(me.point)&&<MeDot {...at(me.point)} radius={accuracyRadius(me.accuracy,me.point[1],view.zoom)} rough={me.rough} still={still}/>}
-    {!still&&leaving.filter(p=>validPoint(p.point)).map(p=><Leaving key={'gone:'+p.key+':'+p.gone} pin={p} {...at(p.point)}/>)}
-    {shown.map(({pin,x,y,members})=>{const more=members.length-1,b=born.current.get(pin.key)||0;
+ return <View ref={host} style={m.host} onLayout={e=>{layout(e);host.current?.measureInWindow((x,y)=>{hostAt.current={x,y};});}} accessibilityLabel={tr('Карта. Меток на экране: {length}',{length:placed.length})}><View style={[StyleSheet.absoluteFill,{transform:[{translateX:drag.x},{translateY:drag.y}]}]} {...pan.panHandlers}><Pressable accessible={false} disabled={!onLongPress} delayLongPress={450} style={StyleSheet.absoluteFill} onLongPress={e=>{const x=e.nativeEvent.pageX-hostAt.current.x,y=e.nativeEvent.pageY-hostAt.current.y,{view:v,size:s}=state.current,c0=project(v.center,v.zoom);onLongPress?.(unproject(c0.x+x-s.w/2,c0.y+y-originY,v.zoom));}}><Animated.View style={[StyleSheet.absoluteFill,camera?{transform:camera}:null]}>{tiles.map(t=><Image key={t.key} fadeDuration={0} accessibilityIgnoresInvertColors source={{uri:'https://tile.openstreetmap.org/'+view.zoom+'/'+t.x+'/'+t.y+'.png',headers:tileHeaders}} style={[m.tile,{left:t.left,top:t.top}]}/>)}{scanning&&!still&&<Radar x={size.w/2} y={originY}/>}{heat.map((c,i)=><HeatBlob key={'heat:'+i} weight={c.weight} {...at(c.point)}/>)}{!still&&sparks.map((p,i)=><Spark key={'spark:'+i} delay={i*500} {...at(p)}/>)}{lines.flatMap(l=>l.path&&l.path.length>1?l.path.slice(1).map((q,i)=><Beam key={l.key+':'+i} a={at(l.path![i])} b={at(q)} tone={l.tone} still/>):[<Beam key={l.key} a={at(l.from)} b={at(l.to)} tone={l.tone} still={still}/>])}{(origin=>origin?<Origin {...at(origin)}/>:null)(lineOrigin(lines))}{!!me&&!!validPoint(me.point)&&<MeDot {...at(me.point)} radius={accuracyRadius(me.accuracy,me.point[1],view.zoom)} rough={me.rough} still={still}/>}{!still&&leaving.filter(p=>validPoint(p.point)).map(p=><Leaving key={'gone:'+p.key+':'+p.gone} pin={p} {...at(p.point)}/>)}{shown.map(({pin,x,y,members})=>{const more=members.length-1,b=born.current.get(pin.key)||0;
      return <Pin key={pin.key} pin={pin} x={x} y={y} more={more} active={pin.key===selected||pin.key===focus} still={still} picking={picking} loop={loop}
-      born={now-b<FRESH?b:0} delay={appearDelay(x,y,size.w/2,originY)} onPress={onSelect?()=>more?openGroup(members):onSelect(pin.key):undefined} onAct={onAct&&pin.act?()=>onAct(pin.act!):undefined}/>;})}
-   </Animated.View>
-   </Pressable>
-  </View>
-  {picking&&<View pointerEvents="none" style={[m.cross,{left:size.w/2-28,top:originY-28}]}>
-   <Animated.View style={[m.landing,{opacity:land.interpolate({inputRange:[0,1],outputRange:[.6,0]}),transform:[{scale:land.interpolate({inputRange:[0,1],outputRange:[.2,1.4]})}]}]}/>
-   <Animated.View style={[m.crossShadow,{opacity:lift.interpolate({inputRange:[0,1],outputRange:[.25,.12]}),transform:[{scale:lift.interpolate({inputRange:[0,1],outputRange:[1,.6]})}]}]}/>
-   <Animated.View style={{alignItems:'center',position:'absolute',bottom:28,transform:[{translateY:lift.interpolate({inputRange:[0,1],outputRange:[0,-14]})}]}}><CrossHead/><View style={m.crossStem}/></Animated.View>
-  </View>}
-  <View style={[m.controls,{top:Math.max(topInset+12,Math.round(originY-controlsHeight/2))}]}>
-   <Pressable accessibilityRole="button" accessibilityLabel="Приблизить" disabled={view.zoom>=MAX_ZOOM} onPress={()=>zoomBy(1)} style={m.control}><Image source={plusIcon} style={m.controlIcon} accessibilityIgnoresInvertColors/></Pressable>
-   <Pressable accessibilityRole="button" accessibilityLabel="Отдалить" disabled={view.zoom<=MIN_ZOOM} onPress={()=>zoomBy(-1)} style={m.control}><Image source={minusIcon} style={m.controlIcon} accessibilityIgnoresInvertColors/></Pressable>
-   {!!onLocate&&<Pressable accessibilityRole="button" accessibilityLabel={locating?'Ищем вас на карте':'Где я'} accessibilityState={{busy:locating}} onPress={onLocate} style={m.control}><LocateIcon known={!!me} busy={locating} still={still}/></Pressable>}
-  </View>
-  <Text style={[m.credit,{bottom:bottomInset+6}]}>© OpenStreetMap</Text>
- </View>;
+      born={now-b<FRESH?b:0} delay={appearDelay(x,y,size.w/2,originY)} onPress={onSelect?()=>more?openGroup(members):onSelect(pin.key):undefined} onAct={onAct&&pin.act?()=>onAct(pin.act!):undefined}/>;})}</Animated.View></Pressable></View>{picking&&<View pointerEvents="none" style={[m.cross,{left:size.w/2-28,top:originY-28}]}><Animated.View style={[m.landing,{opacity:land.interpolate({inputRange:[0,1],outputRange:[.6,0]}),transform:[{scale:land.interpolate({inputRange:[0,1],outputRange:[.2,1.4]})}]}]}/><Animated.View style={[m.crossShadow,{opacity:lift.interpolate({inputRange:[0,1],outputRange:[.25,.12]}),transform:[{scale:lift.interpolate({inputRange:[0,1],outputRange:[1,.6]})}]}]}/><Animated.View style={{alignItems:'center',position:'absolute',bottom:28,transform:[{translateY:lift.interpolate({inputRange:[0,1],outputRange:[0,-14]})}]}}><CrossHead/><View style={m.crossStem}/></Animated.View></View>}<View style={[m.controls,{top:Math.max(topInset+12,Math.round(originY-controlsHeight/2))}]}><Pressable accessibilityRole="button" accessibilityLabel={tr('Приблизить')} disabled={view.zoom>=MAX_ZOOM} onPress={()=>zoomBy(1)} style={m.control}><Image source={plusIcon} style={m.controlIcon} accessibilityIgnoresInvertColors/></Pressable><Pressable accessibilityRole="button" accessibilityLabel={tr('Отдалить')} disabled={view.zoom<=MIN_ZOOM} onPress={()=>zoomBy(-1)} style={m.control}><Image source={minusIcon} style={m.controlIcon} accessibilityIgnoresInvertColors/></Pressable>{!!onLocate&&<Pressable accessibilityRole="button" accessibilityLabel={locating?tr('Ищем вас на карте'):tr('Где я')} accessibilityState={{busy:locating}} onPress={onLocate} style={m.control}><LocateIcon known={!!me} busy={locating} still={still}/></Pressable>}</View><Text style={[m.credit,{bottom:bottomInset+6}]}>© OpenStreetMap</Text></View>;
 }

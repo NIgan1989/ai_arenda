@@ -1,3 +1,4 @@
+import {t as tr} from '../../lib/i18n';
 // Leading the way on our own map: where along the road route the person is, the next turn and how far it is,
 // whether they left the route, and whether they have arrived. Pure functions, covered by mobile/tests/navigation.test.mjs.
 type Point=[number,number];
@@ -40,8 +41,8 @@ export function offRoute(state:NavState,accuracy=0){return state.off>OFF_ROUTE+M
 export function arrived(p:Point,target:Point){return metres(p,target)<=ARRIVED;}
 
 // «300 м», «1,2 км», «12 км»; «через 300 м» for the turn ahead.
-export function distanceText(m:number){const v=Math.max(0,m);if(v<1000)return (v<100?Math.round(v/10)*10:Math.round(v/50)*50)+' м';const km=v/1000;return (km<10?km.toFixed(1).replace('.',','):String(Math.round(km)))+' км';}
-export function minutesText(s:number){const m=Math.max(1,Math.round(s/60));return m<60?m+' мин':(Math.floor(m/60)+' ч '+(m%60?m%60+' мин':'')).trim();}
+export function distanceText(m:number){const v=Math.max(0,m);if(v<1000)return tr('{v} м',{v:(v<100?Math.round(v/10)*10:Math.round(v/50)*50)});const km=v/1000;return tr('{v} км',{v:(km<10?km.toFixed(1).replace('.',','):String(Math.round(km)))});}
+export function minutesText(s:number){const m=Math.max(1,Math.round(s/60));return m<60?tr('{m} мин',{m}):m%60?tr('{h} ч {m} мин',{h:Math.floor(m/60),m:m%60}):tr('{h} ч',{h:Math.floor(m/60)});}
 // The arrow for the turn ahead.
 export function turnArrow(step:NavStep|null){
  if(!step)return '↑';if(step.type==='arrive')return '⚑';if(step.type==='roundabout'||step.type==='rotary')return '↻';

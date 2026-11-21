@@ -1,3 +1,4 @@
+import {dateText,t} from '../../lib/i18n';
 // «Занято»: guests came from the street or by phone. The hours are closed for guests of the service from this
 // minute; «Освободить» opens them again. The owner marks it on the card of the object, the person on shift in «Смена».
 import React,{useState} from 'react';
@@ -8,21 +9,21 @@ import {request} from './api';
 import type {Row} from './model';
 
 export const BUSY_HOURS=[1,2,3,4,6];
-export const hhmm=(at:number)=>new Date(at*1000).toLocaleTimeString('ru-RU',{timeZone:'Asia/Almaty',hour:'2-digit',minute:'2-digit'});
+export const hhmm=(at:number)=>dateText(at*1000,{timeZone:'Asia/Almaty',hour:'2-digit',minute:'2-digit'});
 /** The mark that holds now, if any. */
 export const busyNow=(busy:Row[]|undefined,now=Date.now()/1000)=>(busy||[]).find(b=>Number(b.start)<=now+60&&Number(b.end)>now);
 
 export function BusyMark({propertyId,busy,onChange}:{propertyId:string;busy?:Row[];onChange:(busy:Row[],message:string)=>void}){
  const [wait,setWait]=useState(0),[error,setError]=useState(''),held=busyNow(busy);
- async function send(path:string,hours:number){if(wait)return;setWait(hours||-1);setError('');try{const r=await request('/api/operations/staff/'+path,{propertyId,hours});onChange(r.busy||[],r.message||'');}catch(x:any){setError(x?.message||'Не получилось.');}finally{setWait(0);}}
+ async function send(path:string,hours:number){if(wait)return;setWait(hours||-1);setError('');try{const r=await request('/api/operations/staff/'+path,{propertyId,hours});onChange(r.busy||[],r.message||'');}catch(x:any){setError(x?.message||t('Не получилось.'));}finally{setWait(0);}}
  return <View style={b.box}>
   {held?<View style={b.row}>
-   <View style={b.dot}/><Text style={b.held}>Занято до {hhmm(Number(held.end))}</Text>
-   <Pressable accessibilityRole="button" accessibilityLabel="Освободить" disabled={!!wait} onPress={()=>send('free',0)} style={[b.free,!!wait&&b.dim]}><Text style={b.freeText}>{wait?'Освобождаю…':'Освободить'}</Text></Pressable>
+   <View style={b.dot}/><Text style={b.held}>{t('Занято до {time}',{time:hhmm(Number(held.end))})}</Text>
+   <Pressable accessibilityRole="button" accessibilityLabel={t('Освободить')} disabled={!!wait} onPress={()=>send('free',0)} style={[b.free,!!wait&&b.dim]}><Text style={b.freeText}>{wait?t('Освобождаю…'):t('Освободить')}</Text></Pressable>
   </View>:<>
-   <Text style={b.label}>Занято с этой минуты на</Text>
-   <View style={b.hours}>{BUSY_HOURS.map(h=><Pressable key={h} accessibilityRole="button" accessibilityLabel={'Занято на '+h+' ч'} disabled={!!wait} onPress={()=>send('busy',h)} style={({pressed})=>[b.hour,(pressed||wait===h)&&b.hourOn,!!wait&&wait!==h&&b.dim]}><Text style={[b.hourText,wait===h&&b.hourTextOn]}>{h} ч</Text></Pressable>)}</View>
-   <Text style={b.hint}>Гостям из приложения это время не предлагается.</Text>
+   <Text style={b.label}>{t('Занято с этой минуты на')}</Text>
+   <View style={b.hours}>{BUSY_HOURS.map(h=><Pressable key={h} accessibilityRole="button" accessibilityLabel={t('Занято на {h} ч',{h})} disabled={!!wait} onPress={()=>send('busy',h)} style={({pressed})=>[b.hour,(pressed||wait===h)&&b.hourOn,!!wait&&wait!==h&&b.dim]}><Text style={[b.hourText,wait===h&&b.hourTextOn]}>{t('{h} ч',{h})}</Text></Pressable>)}</View>
+   <Text style={b.hint}>{t('Гостям из приложения это время не предлагается.')}</Text>
   </>}
   {!!error&&<Text accessibilityRole="alert" style={b.error}>{error}</Text>}
  </View>;

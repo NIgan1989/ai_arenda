@@ -29,14 +29,7 @@ export function Thinking({size='md',color,label,style,pill=false}:{size?:keyof t
   // size and line with two of its quarters painted: the tail and, ahead of it, the bright head.
   const box=SIZES[size],d=rays?box*.6:box,rim=d*(GLYPH_RING+GLYPH_STROKE/2)/50,ink=color||C.accent;
   const full=(value:Animated.Value)=>value.interpolate({inputRange:[0,1],outputRange:['0deg','360deg']});
-  return <View accessible={!!label} accessibilityRole={label?'progressbar':undefined} accessibilityLabel={label} importantForAccessibility={label?'yes':'no-hide-descendants'} style={[st.sign,{width:box,height:box},style]}>
-    {rays&&<Animated.View style={[st.fill,{transform:[{rotate:full(slow)}]}]}>
-      {RAYS.map(i=><View key={i} style={[st.fill,{transform:[{rotate:i*30+'deg'}]}]}><View style={{top:box*.015,width:box*.05,height:box*.105,borderRadius:box*.025,backgroundColor:color||C.gold}}/></View>)}
-    </Animated.View>}
-    {/* With «reduce motion» nothing turns: the crown itself slowly brightens and dims. */}
-    <Animated.Image source={crown} style={{width:d,height:d,tintColor:ink,opacity:calm?turn.interpolate({inputRange:[0,.5,1],outputRange:[.45,1,.45]}):.3}}/>
-    {!calm&&<Animated.View style={[st.light,{width:rim,height:rim,borderRadius:rim/2,borderWidth:d*GLYPH_STROKE/100,borderTopColor:ink,borderRightColor:color||C.aiTo,transform:[{rotate:full(turn)}]}]}/>}
-  </View>;
+  return <View accessible={!!label} accessibilityRole={label?'progressbar':undefined} accessibilityLabel={label} importantForAccessibility={label?'yes':'no-hide-descendants'} style={[st.sign,{width:box,height:box},style]}>{rays&&<Animated.View style={[st.fill,{transform:[{rotate:full(slow)}]}]}>{RAYS.map(i=><View key={i} style={[st.fill,{transform:[{rotate:i*30+'deg'}]}]}><View style={{top:box*.015,width:box*.05,height:box*.105,borderRadius:box*.025,backgroundColor:color||C.gold}}/></View>)}</Animated.View>}{/* With «reduce motion» nothing turns: the crown itself slowly brightens and dims. */}<Animated.Image source={crown} style={{width:d,height:d,tintColor:ink,opacity:calm?turn.interpolate({inputRange:[0,.5,1],outputRange:[.45,1,.45]}):.3}}/>{!calm&&<Animated.View style={[st.light,{width:rim,height:rim,borderRadius:rim/2,borderWidth:d*GLYPH_STROKE/100,borderTopColor:ink,borderRightColor:color||C.aiTo,transform:[{rotate:full(turn)}]}]}/>}</View>;
 }
 
 // A line of waiting text with the sign before it: «Загружаю профиль…».

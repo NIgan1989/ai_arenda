@@ -1,3 +1,4 @@
+import {t} from '../../lib/i18n';
 import React,{useEffect,useState} from 'react';
 import {View,Text,Pressable} from 'react-native';
 import {Group,RowIcon,SwitchRow,a} from './AccountRows';
@@ -14,11 +15,11 @@ export function NativeDecisionRules({tint}:{tint:string}){
  async function save(rule:Row,patch:Row){
   if(busy||!rules)return;const before=rules;setBusy(rule.key);setError('');setMessage('');
   setRules(rules.map(r=>r.key===rule.key?{...r,...patch}:r));
-  try{const r=await request('/api/operations/decision-rules',{rule:rule.key,...patch});setRules(r.rules);setMessage(r.message||'Сохранено.');}catch(e:any){setRules(before);setError(e.message);}finally{setBusy('');}
+  try{const r=await request('/api/operations/decision-rules',{rule:rule.key,...patch});setRules(r.rules);setMessage(r.message||t('Сохранено.'));}catch(e:any){setRules(before);setError(e.message);}finally{setBusy('');}
  }
- if(!rules)return error?<Text accessibilityRole="alert" style={s.error}>{error}</Text>:<ThinkingLine style={s.meta} text="Загружаю настройки…"/>;
+ if(!rules)return error?<Text accessibilityRole="alert" style={s.error}>{error}</Text>:<ThinkingLine style={s.meta} text={t('Загружаю настройки…')}/>;
  return <View>
-  <Text style={a.footnote}>Когда ИИ-администратор ждёт чьего-то ответа, здесь видно, сколько он ждёт и что делает дальше. Без ответа ИИ решает сам только там, где это включено.</Text>
+  <Text style={a.footnote}>{t('Когда ИИ-администратор ждёт чьего-то ответа, здесь видно, сколько он ждёт и что делает дальше. Без ответа ИИ решает сам только там, где это включено.')}</Text>
   {!!error&&<Text accessibilityRole="alert" style={s.error}>{error}</Text>}{!!message&&<Text accessibilityLiveRegion="polite" style={a.saved}>{message}</Text>}
   {rules.map(r=><View key={r.key} accessibilityLabel={r.title}><Group space>
    {r.auto?<SwitchRow icon="sparkles" tint={tint} title={r.title} note={r.auto} checked={!!r.on} disabled={!!busy} onChange={v=>save(r,{on:v})}/>

@@ -1,3 +1,4 @@
+import {t} from './i18n';
 import type { Role } from './domain';
 
 // href: where the shortcut leads when it is a plain link; active: shown as chosen (a filter that is on);
@@ -14,32 +15,32 @@ export const AI_LINE_MAX = 2000;
 // tests/administrator-process-read.test.mjs keeps that true.
 export function roleAiLine(role: Role): RoleAiLine {
   if (role === 'owner') return {
-    placeholder: 'Что сегодня требует внимания?',
-    shortPlaceholder: 'Что требует внимания?',
-    label: 'Вопрос ИИ-администратору',
+    placeholder: t('Что сегодня требует внимания?'),
+    shortPlaceholder: t('Что требует внимания?'),
+    label: t('Вопрос ИИ-администратору'),
     chips: [
-      { id: 'requests', label: 'Заявки', hint: 'Заявки гостей и отклики исполнителей', href: '/workspace/owner/bookings' },
-      { id: 'free-dates', label: 'Календарь', href: '/workspace/owner/calendar' },
-      { id: 'add-property', label: '+ Жильё', hint: 'Добавить жильё', href: '/workspace/owner/properties?new=1' },
+      { id: 'requests', label: t('Заявки'), hint: t('Заявки гостей и отклики исполнителей'), href: '/workspace/owner/bookings' },
+      { id: 'free-dates', label: t('Календарь'), href: '/workspace/owner/calendar' },
+      { id: 'add-property', label: t('+ Жильё'), hint: t('Добавить жильё'), href: '/workspace/owner/properties?new=1' },
     ],
   };
   if (role === 'cleaner') return {
-    placeholder: 'Есть уборки рядом на сегодня?',
-    shortPlaceholder: 'Уборки рядом сегодня?',
-    label: 'Вопрос ИИ-администратору',
+    placeholder: t('Есть уборки рядом на сегодня?'),
+    shortPlaceholder: t('Уборки рядом сегодня?'),
+    label: t('Вопрос ИИ-администратору'),
     chips: [
-      { id: 'jobs-nearby', label: 'Задания рядом', href: '/workspace/cleaner/jobs' },
-      { id: 'schedule', label: 'Мой график', href: '/workspace/cleaner/calendar' },
+      { id: 'jobs-nearby', label: t('Задания рядом'), href: '/workspace/cleaner/jobs' },
+      { id: 'schedule', label: t('Мой график'), href: '/workspace/cleaner/calendar' },
     ],
   };
   return {
     // The longer "Квартира на 3 часа сегодня в центре" does not fit the line of a 360px phone.
-    placeholder: 'На 3 часа сегодня в центре',
-    label: 'Какое жильё найти',
+    placeholder: t('На 3 часа сегодня в центре'),
+    label: t('Какое жильё найти'),
     chips: [
-      { id: 'daily', label: 'На сутки' },
-      { id: 'hourly', label: 'На часы' },
-      { id: 'weekend', label: 'На выходные' },
+      { id: 'daily', label: t('На сутки') },
+      { id: 'hourly', label: t('На часы') },
+      { id: 'weekend', label: t('На выходные') },
     ],
   };
 }

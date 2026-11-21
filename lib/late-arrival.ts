@@ -1,3 +1,4 @@
+import {t} from './i18n';
 // «Задерживаюсь на час»: a guest who will arrive later says so before the AI administrator asks. Pure, no imports:
 // the site, the app and the server share it (lib/stay-watch.ts, lib/guest-trips.ts, mobile/App.tsx).
 
@@ -24,8 +25,8 @@ export function lateOpen(b:Stay,now:number){return Number(b.start)-LATE_OPENS<=n
 export function lateNote(b:{arrival_eta?:number|null;start:number},now:number){
  const eta=Number(b.arrival_eta)||0;if(!eta||eta<=Number(b.start))return '';
  const d=new Date((eta+5*3600)*1000),hm=String(d.getUTCHours()).padStart(2,'0')+':'+String(d.getUTCMinutes()).padStart(2,'0');
- return eta>now?'Владелец предупреждён: вы приедете к '+hm+'.':'Вы обещали приехать к '+hm+'.';
+ return eta>now?t('Владелец предупреждён: вы приедете к {hm}.',{hm}):t('Вы обещали приехать к {hm}.',{hm});
 }
 
 // «Задерживаюсь на час», then «Задерживаюсь ещё на час» once the guest has moved the arrival.
-export function lateLabel(b:{late_count?:number|null}){return (Number(b.late_count)||0)>0?'Задерживаюсь ещё на час':'Задерживаюсь на час';}
+export function lateLabel(b:{late_count?:number|null}){return (Number(b.late_count)||0)>0?t('Задерживаюсь ещё на час'):t('Задерживаюсь на час');}

@@ -1,3 +1,4 @@
+import {t} from './i18n';
 // «Цена выгодная»: a flat whose price for the guest's dates is clearly below what similar free flats
 // in the same city ask for the same dates. Pure, shared by the server (which marks the search results)
 // and by the site and the app (which show the badge).
@@ -18,7 +19,7 @@ export function markDeals<T extends Row>(items:T[]):T[]{
  return items.map(p=>{const deal=dealFor(p,items);return deal?{...p,estimate:{...p.estimate,deal}}:p;});
 }
 // «Цена выгодная · −18%»
-export function dealBadge(deal:{percent?:number}|null|undefined){return deal?.percent?'Цена выгодная · −'+deal.percent+'%':'';}
+export function dealBadge(deal:{percent?:number}|null|undefined){return deal?.percent?t('Цена выгодная · −{percent}%',{percent:deal.percent}):'';}
 export function dealNote(deal:{typical?:number;similar?:number}|null|undefined,money:(n:number)=>string){
- return deal?.typical?'Похожие свободные объекты на эти даты стоят около '+money(deal.typical):'';
+ return deal?.typical?t('Похожие свободные объекты на эти даты стоят около {v}',{v:money(deal.typical)}):'';
 }

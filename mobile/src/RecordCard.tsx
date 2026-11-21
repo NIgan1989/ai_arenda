@@ -1,3 +1,4 @@
+import {t} from '../../lib/i18n';
 import {jobPayNote} from '../../lib/regular-cleaner-text';
 import React,{useState} from 'react';
 import {View,Text,Pressable,StyleSheet,Platform,LayoutAnimation,UIManager} from 'react-native';
@@ -12,8 +13,8 @@ import type {ProcessThread} from '../../lib/process-threads';
 const tones:Record<string,[string,string]>={success:[C.successSoft,C.success],warning:[C.warningSoft,C.warning],active:[C.goldSoft,C.goldInk],neutral:[C.surfaceAlt,C.muted],danger:[C.dangerSoft,C.danger]};
 // «На карте»: a small pill next to the place of a booking, a cleaning or an object, in a chat's subject line too.
 // It opens the home map on that pin (MapHome, map-memory.ts targetPin).
-export function MapLink({onPress,label='Показать на карте'}:{onPress:()=>void;label?:string}){
- return <Pressable accessibilityRole="button" accessibilityLabel={label} hitSlop={8} onPress={onPress} style={({pressed})=>[r.mapLink,pressed&&r.dim]}><View style={r.mapPin}><View style={r.mapPinDot}/></View><Text style={r.mapLinkText}>На карте</Text></Pressable>;
+export function MapLink({onPress,label=t('Показать на карте')}:{onPress:()=>void;label?:string}){
+ return <Pressable accessibilityRole="button" accessibilityLabel={label} hitSlop={8} onPress={onPress} style={({pressed})=>[r.mapLink,pressed&&r.dim]}><View style={r.mapPin}><View style={r.mapPinDot}/></View><Text style={r.mapLinkText}>{t('На карте')}</Text></Pressable>;
 }
 export function RecordFacts({rows}:{rows:(readonly [string,string,boolean?]|false|null|undefined|'')[]}){
  const shown=rows.filter(Boolean) as (readonly [string,string,boolean?])[];if(!shown.length)return null;
@@ -41,29 +42,29 @@ export function DealCard({kind,item,role,userId,application,thread,line:own,acti
  const [open,setOpen]=useState(false),[more,setMore]=useState(false),[unfolded,setUnfolded]=useState(startOpen);
  const status=processStatus(kind,item,role,userId,application),[bg,ink]=tones[status.tone]||tones.neutral,flow=processJourney(kind,item);
  const total=thread?thread.steps.length:flow.labels.length,done=thread?thread.finished:flow.done,step=Math.min(thread?thread.current:flow.current,total-1),line=flow.stopped?flow.hint:thread?thread.line:own||flow.hint;
- const all=actions.filter(Boolean) as RecordAction[],main=all.find(a=>a.kind==='main'),rest:Maybe<RecordAction>[]=[...all.filter(a=>a!==main),!!onMap&&{title:'Показать на карте',kind:'side' as const,onPress:onMap}];
+ const all=actions.filter(Boolean) as RecordAction[],main=all.find(a=>a.kind==='main'),rest:Maybe<RecordAction>[]=[...all.filter(a=>a!==main),!!onMap&&{title:t('Показать на карте'),kind:'side' as const,onPress:onMap}];
  const hasMore=rest.some(Boolean)||!!extra;
  const toggle=(title:string,on:boolean,flip:()=>void,grow:boolean)=><Pressable accessibilityRole="button" accessibilityLabel={title} accessibilityState={{expanded:on}} onPress={flip} style={({pressed})=>[r.action,r.next,grow&&r.grow,pressed&&r.dim]}><Text style={[r.actionText,r.nextText]}>{title}</Text></Pressable>;
  if(compact&&!unfolded){
-  const sum=money(kind==='job'?item.fee:item.amount),said=!!main&&status.label.toLowerCase().includes(main.title.toLowerCase().slice(0,8)),next=main?main.title.replace(/^Оплатил /,'Оплатить ').replace(/^Вернул /,'Вернуть '):'',label=item.title+', '+sum+', '+recordSpan(item.start,item.end)+', '+status.label+(item.demo_owner?', учебная':'')+(main&&!said?', дальше: '+next:'');
-  return <Pressable accessibilityRole="button" accessibilityLabel={label} accessibilityHint="Открыть подробности" accessibilityState={{expanded:false}} onPress={()=>{smooth();setUnfolded(true);}} style={({pressed})=>[r.card,r.row,pressed&&r.pressed]}>
+  const sum=money(kind==='job'?item.fee:item.amount),said=!!main&&status.label.toLowerCase().includes(main.title.toLowerCase().slice(0,8)),next=main?main.title.replace(/^Оплатил /,'Оплатить ').replace(/^Вернул /,'Вернуть '):'',label=item.title+', '+sum+', '+recordSpan(item.start,item.end)+', '+status.label+(item.demo_owner?t(', учебная'):'')+(main&&!said?t(', дальше: {next}',{next}):'');
+  return <Pressable accessibilityRole="button" accessibilityLabel={label} accessibilityHint={t('Открыть подробности')} accessibilityState={{expanded:false}} onPress={()=>{smooth();setUnfolded(true);}} style={({pressed})=>[r.card,r.row,pressed&&r.pressed]}>
    <View style={r.rowHead}><Text numberOfLines={2} style={[r.dealTitle,r.grow]}>{item.title}</Text><Text style={r.rowSum}>{sum}</Text></View>
-   <Text numberOfLines={1} style={r.rowWhen}>{recordSpan(item.start,item.end)}{!!item.demo_owner&&<Text style={r.rowDemo}>{' · '+(kind==='job'?'Учебное':'Учебная')}</Text>}</Text>
+   <Text numberOfLines={1} style={r.rowWhen}>{recordSpan(item.start,item.end)}{!!item.demo_owner&&<Text style={r.rowDemo}>{' · '+(kind==='job'?t('Учебное'):t('Учебная'))}</Text>}</Text>
    <View style={r.rowTop}><View style={[r.dot,{backgroundColor:ink}]}/><Text numberOfLines={1} style={[r.rowStatus,{color:ink},r.grow]}>{status.label}{!!main&&!said&&<Text style={r.rowDo}>{' · '+next}</Text>}</Text><Text style={r.chevron}>⌄</Text></View>
   </Pressable>;
  }
  const fold=compact?()=>{smooth();setUnfolded(false);setOpen(false);setMore(false);}:undefined;
  return <View style={r.card}>
-  <Pressable disabled={!fold} accessibilityRole={fold?'button':undefined} accessibilityLabel={fold?'Свернуть: '+item.title:undefined} accessibilityState={fold?{expanded:true}:undefined} onPress={fold} style={({pressed})=>[{gap:12},pressed&&r.pressed]}>
-  <View style={r.dealTop}><View style={[r.tags,r.grow]}><Text style={[r.status,{backgroundColor:bg,color:ink}]}>{status.label}</Text>{!!item.demo_owner&&<Text style={[r.status,{backgroundColor:C.surfaceAlt,color:C.muted}]}>{kind==='job'?'Учебное':'Учебная'}</Text>}{kind==='job'&&!!item.regular&&<Text style={[r.status,{backgroundColor:C.accentSoft,color:C.accentPressed}]}>Постоянный исполнитель</Text>}</View>{!flow.stopped&&!done&&<Text style={r.journeyCount}>шаг {step+1} из {total}</Text>}{!!fold&&<Text style={[r.chevron,r.chevronUp]}>⌄</Text>}</View>
+  <Pressable disabled={!fold} accessibilityRole={fold?'button':undefined} accessibilityLabel={fold?t('Свернуть: {title}',{title:item.title}):undefined} accessibilityState={fold?{expanded:true}:undefined} onPress={fold} style={({pressed})=>[{gap:12},pressed&&r.pressed]}>
+  <View style={r.dealTop}><View style={[r.tags,r.grow]}><Text style={[r.status,{backgroundColor:bg,color:ink}]}>{status.label}</Text>{!!item.demo_owner&&<Text style={[r.status,{backgroundColor:C.surfaceAlt,color:C.muted}]}>{kind==='job'?t('Учебное'):t('Учебная')}</Text>}{kind==='job'&&!!item.regular&&<Text style={[r.status,{backgroundColor:C.accentSoft,color:C.accentPressed}]}>{t('Постоянный исполнитель')}</Text>}</View>{!flow.stopped&&!done&&<Text style={r.journeyCount}>{t('шаг {n} из {total}',{n:step+1,total})}</Text>}{!!fold&&<Text style={[r.chevron,r.chevronUp]}>⌄</Text>}</View>
   <Text accessibilityRole="header" numberOfLines={2} style={r.dealTitle}>{item.title}</Text>
   <Text style={r.when}>{recordSpan(item.start,item.end)} · {money(kind==='job'?item.fee:item.amount)}</Text>
   </Pressable>
-  {!flow.stopped&&<View style={r.bar} accessible accessibilityLabel={done?'Завершено':'Шаг '+(step+1)+' из '+total}>{Array.from({length:total},(_,index)=><View key={index} style={[r.segment,done||index<step?{backgroundColor:C.night}:index===step?{backgroundColor:C.gold}:null]}/>)}</View>}
+  {!flow.stopped&&<View style={r.bar} accessible accessibilityLabel={done?t('Завершено'):t('Шаг {v} из {total}',{v:(step+1),total})}>{Array.from({length:total},(_,index)=><View key={index} style={[r.segment,done||index<step?{backgroundColor:C.night}:index===step?{backgroundColor:C.gold}:null]}/>)}</View>}
   {!(flow.stopped&&kind==='booking')&&<Text style={r.dealLine}>{line}</Text>}
   {always}
   {!!main&&<RecordActions busy={busy} actions={[main]}/>}
-  <View style={r.sideRow}>{toggle(open?'Свернуть':'Подробнее',open,()=>setOpen(v=>!v),true)}{hasMore&&toggle(more?'Скрыть':'Ещё',more,()=>setMore(v=>!v),false)}</View>
+  <View style={r.sideRow}>{toggle(open?t('Свернуть'):t('Подробнее'),open,()=>setOpen(v=>!v),true)}{hasMore&&toggle(more?t('Скрыть'):t('Ещё'),more,()=>setMore(v=>!v),false)}</View>
   {open&&kind==='job'&&<Text style={[r.sumNote,!!item.payment_received_at&&{color:C.success}]}>{money(item.fee)} {jobPayNote(item)}</Text>}
   {open&&details}
   {more&&<><RecordActions soft busy={busy} actions={rest}/>{extra}</>}

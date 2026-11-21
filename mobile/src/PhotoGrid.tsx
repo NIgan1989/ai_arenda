@@ -1,3 +1,4 @@
+import {t} from '../../lib/i18n';
 import React,{useLayoutEffect,useRef,useState} from 'react';
 import {Thinking} from './Thinking';
 import {Pressable,StyleSheet,Text,View} from 'react-native';
@@ -19,26 +20,26 @@ export function PhotoGrid({photos,onChange,max=8,onBusy,disabled=false}:{photos:
    setPending(assets.length);onBusy?.(true);
    for(const a of assets){try{const id=await uploadImage(a,'property');if(!list.current.includes(id)&&list.current.length<max){list.current=[...list.current,id];onChange(list.current);}}catch(e:any){failed++;first=first||e?.message||'';}finally{setPending(n=>Math.max(0,n-1));}}
    onBusy?.(false);
-  }catch(e:any){first=e?.message||'Не удалось открыть фото.';failed=failed||1;}
-  if(failed)setError(failed===1?first||'Фото не загрузилось.':'Не загрузились '+failed+' фото. '+first);
+  }catch(e:any){first=e?.message||t('Не удалось открыть фото.');failed=failed||1;}
+  if(failed)setError(failed===1?first||t('Фото не загрузилось.'):t('Не загрузились {failed} фото. {first}',{failed,first}));
  }
  const cell=width?(width-2*GAP)/3:0,big=cell*2+GAP,room=photos.length+pending<max;
  const tile=(id:string,i:number,size:number)=><View key={id} style={[g.tile,{width:size,height:size}]}>
-  <Photo id={id} alt={i===0?'Обложка':'Фото '+(i+1)} fill/>
-  {i===0?<View style={g.badge}><Text style={g.badgeText}>★ Обложка</Text></View>:<Pressable accessibilityRole="button" accessibilityLabel={'Сделать фото '+(i+1)+' обложкой'} disabled={disabled} hitSlop={6} onPress={()=>onChange([id,...photos.filter(x=>x!==id)])} style={[g.round,g.left]}><Text style={g.roundText}>☆</Text></Pressable>}
-  <Pressable accessibilityRole="button" accessibilityLabel={'Убрать фото '+(i+1)} disabled={disabled} hitSlop={6} onPress={()=>onChange(photos.filter(x=>x!==id))} style={[g.round,g.right]}><Text style={g.roundText}>✕</Text></Pressable>
+  <Photo id={id} alt={i===0?t('Обложка'):t('Фото {v}',{v:(i+1)})} fill/>
+  {i===0?<View style={g.badge}><Text style={g.badgeText}>{t('★ Обложка')}</Text></View>:<Pressable accessibilityRole="button" accessibilityLabel={t('Сделать фото {v} обложкой',{v:(i+1)})} disabled={disabled} hitSlop={6} onPress={()=>onChange([id,...photos.filter(x=>x!==id)])} style={[g.round,g.left]}><Text style={g.roundText}>☆</Text></Pressable>}
+  <Pressable accessibilityRole="button" accessibilityLabel={t('Убрать фото {v}',{v:(i+1)})} disabled={disabled} hitSlop={6} onPress={()=>onChange(photos.filter(x=>x!==id))} style={[g.round,g.right]}><Text style={g.roundText}>✕</Text></Pressable>
  </View>;
- const extra=[...Array.from({length:pending},(_,i)=><View key={'wait'+i} accessibilityLabel="Фото загружается" style={[g.tile,g.wait,{width:cell,height:cell}]}><Thinking/></View>),
-  room&&photos.length>0?<Pressable key="add" accessibilityRole="button" accessibilityLabel="Добавить ещё фото" disabled={disabled||pending>0} onPress={()=>add(false)} style={[g.tile,g.add,{width:cell,height:cell}]}><Text style={g.addIcon}>＋</Text><Text style={g.addText}>Ещё</Text></Pressable>:null].filter(Boolean) as React.ReactElement[];
+ const extra=[...Array.from({length:pending},(_,i)=><View key={'wait'+i} accessibilityLabel={t('Фото загружается')} style={[g.tile,g.wait,{width:cell,height:cell}]}><Thinking/></View>),
+  room&&photos.length>0?<Pressable key="add" accessibilityRole="button" accessibilityLabel={t('Добавить ещё фото')} disabled={disabled||pending>0} onPress={()=>add(false)} style={[g.tile,g.add,{width:cell,height:cell}]}><Text style={g.addIcon}>＋</Text><Text style={g.addText}>{t('Ещё')}</Text></Pressable>:null].filter(Boolean) as React.ReactElement[];
  const rest=[...photos.slice(3).map((id,i)=>tile(id,i+3,cell)),...extra];
  return <View style={g.box} onLayout={e=>setWidth(e.nativeEvent.layout.width)}>
-  {!photos.length&&!pending?<Pressable accessibilityRole="button" disabled={disabled} onPress={()=>add(false)} style={g.empty}><Text style={g.addIcon}>📷</Text><Text style={g.emptyTitle}>Добавить фото</Text><Text style={g.hint}>Можно выбрать сразу несколько</Text></Pressable>
+  {!photos.length&&!pending?<Pressable accessibilityRole="button" disabled={disabled} onPress={()=>add(false)} style={g.empty}><Text style={g.addIcon}>📷</Text><Text style={g.emptyTitle}>{t('Добавить фото')}</Text><Text style={g.hint}>{t('Можно выбрать сразу несколько')}</Text></Pressable>
   :width>0&&<>
    <View style={g.row}>{photos[0]?tile(photos[0],0,big):null}<View style={{gap:GAP}}>{photos.slice(1,3).map((id,i)=>tile(id,i+1,cell))}{photos.length<3&&extra.slice(0,3-photos.length)}</View></View>
    <View style={[g.row,g.wrap]}>{photos.length<3?extra.slice(3-photos.length):rest}</View>
   </>}
-  <View style={g.foot}><Text style={g.count}>{photos.length} из {max}</Text><Pressable accessibilityRole="button" disabled={disabled||!room||pending>0} onPress={()=>add(true)} style={g.camera}><Text style={g.cameraText}>📸 Снять</Text></Pressable></View>
-  <Text style={g.hint}>Первое фото — обложка. ☆ на снимке делает его первым.</Text>
+  <View style={g.foot}><Text style={g.count}>{t('{n} из {max}',{n:photos.length,max})}</Text><Pressable accessibilityRole="button" disabled={disabled||!room||pending>0} onPress={()=>add(true)} style={g.camera}><Text style={g.cameraText}>{t('📸 Снять')}</Text></Pressable></View>
+  <Text style={g.hint}>{t('Первое фото — обложка. ☆ на снимке делает его первым.')}</Text>
   {!!error&&<Text accessibilityRole="alert" style={g.error}>{error}</Text>}
  </View>;
 }

@@ -1,3 +1,4 @@
+import {t} from '../../lib/i18n';
 import React,{useCallback,useEffect,useState} from 'react';
 import {View,Text,TextInput,Pressable,Image,StyleSheet} from 'react-native';
 import {request} from './api';
@@ -27,31 +28,31 @@ export function JobPhotos({jobId,phase,role,title,mine,readOnly=false,disabled=f
   const images=await pickImages(camera,camera?1:Math.max(1,limit-photos.length));
   for(const image of images)await request('/api/operations/evidence',{jobId,phase,data:await jpegData(image)},undefined,undefined,role);
   if(images.length)show(await fetchPhotos());
- }catch(e){setError(e instanceof Error&&e.message?e.message:'Не удалось добавить фото.');}finally{setBusy(false);}}
- const grid=!!photos.length&&<View style={p.grid}>{photos.map(x=>x.uri?<Image key={x.id} source={{uri:x.uri}} style={readOnly?p.view:p.thumb} alt={title||'Фото уборки'} accessibilityLabel={title||'Фото уборки'}/>:<View key={x.id} style={[readOnly?p.view:p.thumb,{backgroundColor:C.surfaceAlt}]}/>)}</View>;
+ }catch(e){setError(e instanceof Error&&e.message?e.message:t('Не удалось добавить фото.'));}finally{setBusy(false);}}
+ const grid=!!photos.length&&<View style={p.grid}>{photos.map(x=>x.uri?<Image key={x.id} source={{uri:x.uri}} style={readOnly?p.view:p.thumb} alt={title||t('Фото уборки')} accessibilityLabel={title||t('Фото уборки')}/>:<View key={x.id} style={[readOnly?p.view:p.thumb,{backgroundColor:C.surfaceAlt}]}/>)}</View>;
  if(readOnly)return photos.length?<View style={p.block}>{!!title&&<Text style={s.meta}>{title}</Text>}{grid}</View>:null;
  const full=photos.length>=limit,off=busy||disabled||full;
  return <View style={p.block}>
   {!!title&&<Text style={s.eventTitle}>{title}</Text>}
   {grid}
-  <Text style={s.meta}>{busy?'Сохраняю фото…':photos.length?'Добавлено '+photos.length+' из '+limit+'.':'Пока нет фото.'}</Text>
-  {!full&&<View style={p.row}>{button('Снять фото',()=>add(true),off)}{button('Из галереи',()=>add(false),off,true)}</View>}
+  <Text style={s.meta}>{busy?t('Сохраняю фото…'):photos.length?t('Добавлено {length} из {limit}.',{length:photos.length,limit}):t('Пока нет фото.')}</Text>
+  {!full&&<View style={p.row}>{button(t('Снять фото'),()=>add(true),off)}{button(t('Из галереи'),()=>add(false),off,true)}</View>}
   {!!error&&<Text accessibilityRole="alert" style={[s.meta,{color:C.danger}]}>{error}</Text>}
  </View>;
 }
 
 // The customer rates the performer after the acceptance: five stars and an optional note.
-const words=['Выберите оценку','Плохо','Так себе','Нормально','Хорошо','Отлично'];
+const words=/* i18n */['Выберите оценку','Плохо','Так себе','Нормально','Хорошо','Отлично'];
 export function JobRating({busy,onSubmit}:{busy:boolean;onSubmit:(rating:number,note:string)=>void}){
  const [rating,setRating]=useState(0),[note,setNote]=useState('');
  return <View style={[s.card,p.block]}>
-  <Text style={s.eventTitle}>Как убрал исполнитель?</Text>
-  <View accessibilityRole="radiogroup" accessibilityLabel="Оценка исполнителя" style={p.stars}>
-   {[1,2,3,4,5].map(n=><Pressable key={n} accessibilityRole="radio" accessibilityLabel={n+' из 5'} accessibilityState={{checked:rating===n,disabled:busy}} disabled={busy} onPress={()=>setRating(n)} hitSlop={4} style={p.star}><Text style={[p.starText,{color:n<=rating?C.accent:C.lineStrong}]}>★</Text></Pressable>)}
+  <Text style={s.eventTitle}>{t('Как убрал исполнитель?')}</Text>
+  <View accessibilityRole="radiogroup" accessibilityLabel={t('Оценка исполнителя')} style={p.stars}>
+   {[1,2,3,4,5].map(n=><Pressable key={n} accessibilityRole="radio" accessibilityLabel={t('{n} из 5',{n})} accessibilityState={{checked:rating===n,disabled:busy}} disabled={busy} onPress={()=>setRating(n)} hitSlop={4} style={p.star}><Text style={[p.starText,{color:n<=rating?C.accent:C.lineStrong}]}>★</Text></Pressable>)}
   </View>
-  <Text style={s.meta}>{words[rating]}. Оценку увидят следующие заказчики.</Text>
-  <TextInput accessibilityLabel="Отзыв для исполнителя" placeholder="Что понравилось или что улучшить (необязательно)" placeholderTextColor={C.muted} value={note} onChangeText={setNote} maxLength={1000} multiline style={s.field} editable={!busy}/>
-  <SwipeConfirm label="Проведите: отправить оценку" disabled={busy||!rating} onConfirm={()=>onSubmit(rating,note.trim())}/>
+  <Text style={s.meta}>{t('{word}. Оценку увидят следующие заказчики.',{word:t(words[rating])})}</Text>
+  <TextInput accessibilityLabel={t('Отзыв для исполнителя')} placeholder={t('Что понравилось или что улучшить (необязательно)')} placeholderTextColor={C.muted} value={note} onChangeText={setNote} maxLength={1000} multiline style={s.field} editable={!busy}/>
+  <SwipeConfirm label={t('Проведите: отправить оценку')} disabled={busy||!rating} onConfirm={()=>onSubmit(rating,note.trim())}/>
  </View>;
 }
 
@@ -59,10 +60,10 @@ export function JobRating({busy,onSubmit}:{busy:boolean;onSubmit:(rating:number,
 export function DamageClaim({jobId,busy,onSubmit}:{jobId:string;busy:boolean;onSubmit:(text:string)=>void}){
  const [count,setCount]=useState(0),[text,setText]=useState('');
  return <View style={[s.card,p.block]}>
-  <JobPhotos jobId={jobId} phase="damage" role="owner" mine title="Фото повреждения" limit={DAMAGE_PHOTO_LIMIT} disabled={busy} onCount={setCount}/>
-  <TextInput accessibilityLabel="Что повреждено" placeholder="Что повреждено и где" placeholderTextColor={C.muted} value={text} onChangeText={setText} maxLength={1500} multiline style={s.field} editable={!busy}/>
-  <Text style={s.meta}>Жалобу и фото увидит исполнитель. Если не договоритесь, подключится администратор сервиса.</Text>
-  <SwipeConfirm label="Проведите: отправить жалобу" disabled={busy||!count||!text.trim()} onConfirm={()=>onSubmit(text.trim())}/>
+  <JobPhotos jobId={jobId} phase="damage" role="owner" mine title={t('Фото повреждения')} limit={DAMAGE_PHOTO_LIMIT} disabled={busy} onCount={setCount}/>
+  <TextInput accessibilityLabel={t('Что повреждено')} placeholder={t('Что повреждено и где')} placeholderTextColor={C.muted} value={text} onChangeText={setText} maxLength={1500} multiline style={s.field} editable={!busy}/>
+  <Text style={s.meta}>{t('Жалобу и фото увидит исполнитель. Если не договоритесь, подключится администратор сервиса.')}</Text>
+  <SwipeConfirm label={t('Проведите: отправить жалобу')} disabled={busy||!count||!text.trim()} onConfirm={()=>onSubmit(text.trim())}/>
  </View>;
 }
 

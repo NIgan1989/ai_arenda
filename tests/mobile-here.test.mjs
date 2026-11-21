@@ -4,11 +4,12 @@ import {mkdirSync,writeFileSync,readFileSync,mkdtempSync} from 'node:fs';
 import {resolve} from 'node:path';
 import {pathToFileURL} from 'node:url';
 import ts from 'typescript';
+import {withWords} from './helpers/i18n.mjs';
 mkdirSync('outputs',{recursive:true});
 const output=mkdtempSync(resolve('outputs/mobile-here-test-'));
 const js=file=>ts.transpileModule(readFileSync(file,'utf8'),{compilerOptions:{module:ts.ModuleKind.ES2022,target:ts.ScriptTarget.ES2022}}).outputText.replace("'./map-math'","'./map-math.mjs'");
 writeFileSync(resolve(output,'map-math.mjs'),js('mobile/src/map-math.ts'));
-writeFileSync(resolve(output,'here-rules.mjs'),js('mobile/src/here-rules.ts'));
+writeFileSync(resolve(output,'here-rules.mjs'),withWords(js('mobile/src/here-rules.ts'),output));
 const {nearestCity,distanceKm,betterFix,isFresh,accuracyRadius,hereNote,FRESH_FIX}=await import(pathToFileURL(resolve(output,'here-rules.mjs')).href);
 
 test('the nearest city of the service is found within its suburbs only',()=>{

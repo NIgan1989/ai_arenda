@@ -1,3 +1,4 @@
+import {t as tr} from '../../lib/i18n';
 import React,{useEffect,useState} from 'react';
 import {View,Text,Pressable,StyleSheet} from 'react-native';
 import {T} from './tokens';
@@ -18,16 +19,16 @@ export function OverdueHelp({job,role,busy,onAction}:{job:Row;role:'owner'|'clea
   <Text accessibilityRole="header" style={o.title}>⏱  {note.title}</Text>
   <Text style={o.text}>{note.text}</Text>
   <Text style={o.ai}>✦  {note.ai}</Text>
-  {ask?<View style={o.confirm}><Text style={[o.text,{color:T.color.ink}]}>{ask.text}</Text>{btn(ask.label,()=>act(ask.body),'main')}{btn('Назад',()=>setAsk(null))}</View>:unclaimed?<>
-   {btn('Искать на новое время',()=>act({action:'repost'}),'main')}
-   {btn('Убрали сами, закрыть',()=>setAsk({label:'Да, убрали сами',text:'Закрыть уборку без исполнителя? Жильё будет отмечено готовым, платить никому не нужно.',body:{action:'close',confirmed:true}}))}
-   {btn('Отменить уборку',()=>setAsk({label:'Отменить уборку',text:'Отменить уборку совсем? Готовность жилья нужно будет отметить отдельно.',body:{action:'cancel',reason:'Уборка просрочена'}}),'danger')}
+  {ask?<View style={o.confirm}><Text style={[o.text,{color:T.color.ink}]}>{ask.text}</Text>{btn(ask.label,()=>act(ask.body),'main')}{btn(tr('Назад'),()=>setAsk(null))}</View>:unclaimed?<>
+   {btn(tr('Искать на новое время'),()=>act({action:'repost'}),'main')}
+   {btn(tr('Убрали сами, закрыть'),()=>setAsk({label:tr('Да, убрали сами'),text:tr('Закрыть уборку без исполнителя? Жильё будет отмечено готовым, платить никому не нужно.'),body:{action:'close',confirmed:true}}))}
+   {btn(tr('Отменить уборку'),()=>setAsk({label:tr('Отменить уборку'),text:tr('Отменить уборку совсем? Готовность жилья нужно будет отметить отдельно.'),body:{action:'cancel',reason:'Уборка просрочена'}}),'danger')}
   </>:<>
-   <Text style={o.label}>{owner?'ПРОДЛИТЬ СРОК':'НУЖНО ЕЩЁ ВРЕМЯ'}</Text>
+   <Text style={o.label}>{owner?tr('ПРОДЛИТЬ СРОК'):tr('НУЖНО ЕЩЁ ВРЕМЯ')}</Text>
    <View style={o.chips}>{extendChoices.map(m=><View key={m} style={{flex:1}}>{btn('+'+extendLabel(m),()=>act({action:'extend',minutes:m}))}</View>)}</View>
-   {owner&&started&&btn('Уборка сделана, закрыть',()=>setAsk({label:'Да, уборка выполнена',text:'Закрыть уборку без отчёта исполнителя? Жильё будет отмечено готовым, оплата исполнителю пройдёт как за принятую работу.',body:{action:'close',confirmed:true}}),'main')}
-   {btn(owner?'Найти другого исполнителя':'Не смогу закончить',()=>setAsk(owner?{label:'Найти другого',text:'Снять текущего исполнителя и вернуть уборку в поиск? Он получит уведомление, резерв оплаты вернётся.',body:{action:'release'}}:{label:'Да, отказаться',text:'Отказаться от задания? Уборка вернётся в поиск, владелец получит уведомление.',body:{action:'release'}}))}
-   {owner&&btn('Отменить уборку',()=>setAsk({label:'Отменить уборку',text:'Отменить уборку совсем? Готовность жилья нужно будет отметить отдельно.',body:{action:'cancel',reason:'Уборка просрочена'}}),'danger')}
+   {owner&&started&&btn(tr('Уборка сделана, закрыть'),()=>setAsk({label:tr('Да, уборка выполнена'),text:tr('Закрыть уборку без отчёта исполнителя? Жильё будет отмечено готовым, оплата исполнителю пройдёт как за принятую работу.'),body:{action:'close',confirmed:true}}),'main')}
+   {btn(owner?tr('Найти другого исполнителя'):tr('Не смогу закончить'),()=>setAsk(owner?{label:tr('Найти другого'),text:tr('Снять текущего исполнителя и вернуть уборку в поиск? Он получит уведомление, резерв оплаты вернётся.'),body:{action:'release'}}:{label:tr('Да, отказаться'),text:tr('Отказаться от задания? Уборка вернётся в поиск, владелец получит уведомление.'),body:{action:'release'}}))}
+   {owner&&btn(tr('Отменить уборку'),()=>setAsk({label:tr('Отменить уборку'),text:tr('Отменить уборку совсем? Готовность жилья нужно будет отметить отдельно.'),body:{action:'cancel',reason:'Уборка просрочена'}}),'danger')}
   </>}
  </View>;
 }

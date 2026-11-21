@@ -1,7 +1,8 @@
 import {test} from 'node:test';import assert from 'node:assert/strict';import {readFileSync,writeFileSync,mkdirSync} from 'node:fs';import {pathToFileURL} from 'node:url';import ts from 'typescript';
 import {fixture,now} from './helpers/platform.mjs';
+import {withWords} from './helpers/i18n.mjs';
 const out=process.cwd()+'/outputs/deep-link-tests-'+process.pid;mkdirSync(out,{recursive:true});
-writeFileSync(out+'/deep-links.mjs',ts.transpileModule(readFileSync('mobile/src/deep-links.ts','utf8'),{compilerOptions:{module:ts.ModuleKind.ES2022,target:ts.ScriptTarget.ES2022}}).outputText);
+writeFileSync(out+'/deep-links.mjs',withWords(ts.transpileModule(readFileSync('mobile/src/deep-links.ts','utf8'),{compilerOptions:{module:ts.ModuleKind.ES2022,target:ts.ScriptTarget.ES2022}}).outputText,out));
 const {parseProcessLink,resolveProcessLink,ProcessLinkQueue}=await import(pathToFileURL(out+'/deep-links.mjs'));
 const origin='https://rent.example',uri='aiarenda://workspace/guest/bookings?entity=booking-1';
 

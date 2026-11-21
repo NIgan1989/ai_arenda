@@ -3,6 +3,7 @@
 // Everything the text does not say gets a safe default and is marked as guessed, so the check screen
 // can ask the owner to look at it. Only the address, the district and the price are asked for: the day for
 // housing, the hour for a bath, the guest for a banquet hall.
+import {t as tr} from './i18n';
 import {isBanquet,isBath,propertyTypes,amenities,categoryAmenities,kindCategory,checkinMethods,defaultOwnStaff} from './listings';
 type Row=Record<string,any>;
 
@@ -173,10 +174,10 @@ export function answerDraft(draft:ListingDraft,key:DraftQuestion['key'],answer:s
 
 export function draftQuestions(d:ListingDraft):DraftQuestion[]{
  const q:DraftQuestion[]=[];
- if(!d.address.trim())q.push({key:'address',label:'Адрес',question:'Какой точный адрес? Гости увидят его только после брони.',placeholder:'Улица, дом, номер'});
- if(!d.district.trim())q.push({key:'district',label:'Район',question:isBanquet(d.type)?'В каком районе зал? Его гости видят на карте.':isBath(d.type)?'В каком районе '+(d.type==='sauna'?'сауна':'баня')+'? Его гости видят на карте.':'В каком районе жильё? Его гости видят на карте.',placeholder:'Например, Центр'});
- if(isBath(d.type)){if(!(d.hourlyPrice>=100))q.push({key:'price',label:'Цена за час',question:'Сколько стоит час?',placeholder:'Например, 5 000'});}
- else if(!(d.price>=100))q.push(isBanquet(d.type)?{key:'price',label:'Цена на гостя',question:'Сколько стоит банкет на одного гостя?',placeholder:'Например, 8 000'}:{key:'price',label:'Цена за сутки',question:'Сколько стоят сутки?',placeholder:'Например, 15 000'});
+ if(!d.address.trim())q.push({key:'address',label:tr('Адрес'),question:tr('Какой точный адрес? Гости увидят его только после брони.'),placeholder:tr('Улица, дом, номер')});
+ if(!d.district.trim())q.push({key:'district',label:tr('Район'),question:isBanquet(d.type)?tr('В каком районе зал? Его гости видят на карте.'):isBath(d.type)?(d.type==='sauna'?tr('В каком районе сауна? Его гости видят на карте.'):tr('В каком районе баня? Его гости видят на карте.')):tr('В каком районе жильё? Его гости видят на карте.'),placeholder:tr('Например, Центр')});
+ if(isBath(d.type)){if(!(d.hourlyPrice>=100))q.push({key:'price',label:tr('Цена за час'),question:tr('Сколько стоит час?'),placeholder:tr('Например, 5 000')});}
+ else if(!(d.price>=100))q.push(isBanquet(d.type)?{key:'price',label:tr('Цена на гостя'),question:tr('Сколько стоит банкет на одного гостя?'),placeholder:tr('Например, 8 000')}:{key:'price',label:tr('Цена за сутки'),question:tr('Сколько стоят сутки?'),placeholder:tr('Например, 15 000')});
  return q;
 }
 

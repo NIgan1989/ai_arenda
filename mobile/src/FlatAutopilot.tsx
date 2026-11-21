@@ -1,3 +1,4 @@
+import {t} from '../../lib/i18n';
 import React,{useEffect,useState} from 'react';
 import {Pressable,Switch,Text,TextInput,View,StyleSheet} from 'react-native';
 import {flatAutopilotNote,type FlatAutopilot} from '../../lib/flat-autopilot';
@@ -17,8 +18,8 @@ export function FlatAutopilotRow({propertyId,onChanged}:{propertyId:string;onCha
  const off=()=>run(()=>request('/api/operations/matching/preference',{propertyId,mode:'manual'},undefined,undefined,'owner'));
  function toggle(next:boolean){if(!state)return;if(!next){void off();return;}if(!state.ownStaff&&!(state.cleaningFee>=100)){setAsking(true);return;}void on();}
  return <View style={{gap:8}}>
-  <View style={a.row}><View style={h.grow}><Text style={h.eventTitle}>Автопилот</Text><Text style={h.note}>{state?flatAutopilotNote(state):notice||'Загружаем…'}</Text></View><Switch accessibilityLabel="Автопилот" value={!!state?.managed||asking} disabled={busy||!state||!state.ready} onValueChange={toggle} trackColor={{false:C.lineStrong,true:C.accent}} thumbColor={C.surface}/></View>
-  {asking&&<View style={a.fee}><Text style={s.fieldLabel}>Сколько платить за уборку, ₸</Text><TextInput accessibilityLabel="Стоимость уборки" style={s.field} keyboardType="number-pad" value={fee} onChangeText={setFee} autoFocus/><View style={{flexDirection:'row',gap:8}}><Pressable accessibilityRole="button" disabled={busy||Number(fee)<100} onPress={()=>void on(Number(fee))} style={[s.button,{flex:1},(busy||Number(fee)<100)&&s.disabled]}><Text style={s.buttonText}>Включить</Text></Pressable><Pressable accessibilityRole="button" disabled={busy} onPress={()=>setAsking(false)} style={[s.button,s.secondary,{flex:1}]}><Text style={[s.buttonText,s.secondaryText]}>Отмена</Text></Pressable></View></View>}
+  <View style={a.row}><View style={h.grow}><Text style={h.eventTitle}>{t('Автопилот')}</Text><Text style={h.note}>{state?flatAutopilotNote(state):notice||t('Загружаем…')}</Text></View><Switch accessibilityLabel={t('Автопилот')} value={!!state?.managed||asking} disabled={busy||!state||!state.ready} onValueChange={toggle} trackColor={{false:C.lineStrong,true:C.accent}} thumbColor={C.surface}/></View>
+  {asking&&<View style={a.fee}><Text style={s.fieldLabel}>{t('Сколько платить за уборку, ₸')}</Text><TextInput accessibilityLabel={t('Стоимость уборки')} style={s.field} keyboardType="number-pad" value={fee} onChangeText={setFee} autoFocus/><View style={{flexDirection:'row',gap:8}}><Pressable accessibilityRole="button" disabled={busy||Number(fee)<100} onPress={()=>void on(Number(fee))} style={[s.button,{flex:1},(busy||Number(fee)<100)&&s.disabled]}><Text style={s.buttonText}>{t('Включить')}</Text></Pressable><Pressable accessibilityRole="button" disabled={busy} onPress={()=>setAsking(false)} style={[s.button,s.secondary,{flex:1}]}><Text style={[s.buttonText,s.secondaryText]}>{t('Отмена')}</Text></Pressable></View></View>}
   {!!notice&&!!state&&<Text accessibilityLiveRegion="polite" style={h.note}>{notice}</Text>}
  </View>;
 }

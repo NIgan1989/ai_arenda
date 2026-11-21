@@ -1,3 +1,4 @@
+import {L,dateText,forms,lang,t as tr,tc} from '../../lib/i18n';
 import React,{useEffect,useState} from 'react';
 import {View,Text,Pressable,Animated,Easing,StyleSheet,type StyleProp,type ViewStyle} from 'react-native';
 import type {OwnerAnalytics as Report,AnalyticsPeriod} from '../../lib/owner-analytics';
@@ -10,12 +11,14 @@ import {T} from './tokens';
 // «Доходы» in the owner's menu (2026-11-19): how the business goes, on one screen and in short cards.
 // On top the one number that matters, net profit, with the six months under it; then four tiles; then the AI's
 // advice; then cards that open: expenses, each object, guests, money ahead. The numbers come from lib/owner-analytics.ts.
-const PERIODS:[AnalyticsPeriod,string,string][]=[['week','Неделя','к прошлой неделе'],['month','Месяц','к прошлым 30 дням'],['year','Год','к прошлому году']];
+const PERIODS:[AnalyticsPeriod,string,string][]=L([['week','Неделя','к прошлой неделе'],['month','Месяц','к прошлым 30 дням'],['year','Год','к прошлому году']]);
 export const tenge=(v:number)=>new Intl.NumberFormat('ru-RU').format(Math.round(v)).replace(/\s/g,' ')+' ₸';
 /** Short money for a menu row and tiles: 1,2 млн ₸, 350 тыс ₸. */
-export const shortTenge=(v:number)=>{const a=Math.abs(v),sign=v<0?'−':'';return a>=1e6?sign+(Math.round(a/1e5)/10).toString().replace('.',',')+' млн ₸':a>=1e4?sign+Math.round(a/1e3)+' тыс ₸':sign+tenge(a);};
+export const shortTenge=(v:number)=>{const a=Math.abs(v),sign=v<0?'−':'';return a>=1e6?tr('{v} млн ₸',{v:(sign+(Math.round(a/1e5)/10).toString().replace('.',','))}):a>=1e4?tr('{v} тыс ₸',{v:(sign+Math.round(a/1e3))}):sign+tenge(a);};
 const count=(v:number)=>new Intl.NumberFormat('ru-RU').format(Math.round(v)).replace(/\s/g,' ');
 const change=(v:number|null|undefined)=>v===null||v===undefined?null:(v>0?'+':v<0?'−':'')+Math.abs(v)+'%';
+// The server names the months in Russian; in another language the app names them itself from the month's start.
+const monthName=(start:number,ru:string)=>lang()==='ru'?ru:dateText((start+43200)*1000,{timeZone:'Asia/Qyzylorda',month:'short'}).replace(/\.$/,'');
 export function loadAnalytics(period:AnalyticsPeriod):Promise<Report>{return request('/api/owner/analytics?period='+period,undefined,undefined,undefined,'owner');}
 
 // A bar that grows from nothing when the numbers arrive: the screen feels alive without a library.
@@ -32,48 +35,48 @@ const Line=({label,value,share,tint=C.accent}:{label:string;value:string;share?:
 
 export function OwnerAnalytics({tint=C.accent}:{tint?:string}){
  const [period,setPeriod]=useState<AnalyticsPeriod>('month'),[data,setData]=useState<Report|null>(null),[error,setError]=useState(''),[open,setOpen]=useState('');
- useEffect(()=>{let live=true;loadAnalytics(period).then(r=>{if(live)setData(r);}).catch(e=>{if(live)setError(e.message||'Не удалось загрузить показатели.');});return()=>{live=false;};},[period]);
+ useEffect(()=>{let live=true;loadAnalytics(period).then(r=>{if(live)setData(r);}).catch(e=>{if(live)setError(e.message||tr('Не удалось загрузить показатели.'));});return()=>{live=false;};},[period]);
  const toggle=(id:string)=>setOpen(v=>v===id?'':id);
- const seg=<View accessibilityRole="tablist" accessibilityLabel="Срок" style={st.seg}>{PERIODS.map(([id,label])=><Pressable key={id} accessibilityRole="tab" accessibilityState={{selected:id===period}} onPress={()=>{if(id!==period){setPeriod(id);setOpen('');setError('');}}} style={[st.segItem,id===period&&st.segOn]}><Text style={[st.segText,id===period&&st.segTextOn]}>{label}</Text></Pressable>)}</View>;
- if(!data||data.period!==period)return <View>{seg}{error?<Text accessibilityRole="alert" style={st.error}>{error}</Text>:<ThinkingLine style={st.note} text="Считаю показатели…"/>}</View>;
+ const seg=<View accessibilityRole="tablist" accessibilityLabel={tr('Срок')} style={st.seg}>{PERIODS.map(([id,label])=><Pressable key={id} accessibilityRole="tab" accessibilityState={{selected:id===period}} onPress={()=>{if(id!==period){setPeriod(id);setOpen('');setError('');}}} style={[st.segItem,id===period&&st.segOn]}><Text style={[st.segText,id===period&&st.segTextOn]}>{label}</Text></Pressable>)}</View>;
+ if(!data||data.period!==period)return <View>{seg}{error?<Text accessibilityRole="alert" style={st.error}>{error}</Text>:<ThinkingLine style={st.note} text={tr('Считаю показатели…')}/>}</View>;
  const m=data.money,s=data.stays,vs=PERIODS.find(p=>p[0]===period)![2],peak=Math.max(1,...data.trend.map(t=>t.revenue),...data.trend.map(t=>t.expenses));
- const net=change(m.change.net),rev=change(m.change.revenue),costs:[string,number,string][]=([['Уборки',m.cleaning,C.aiTo],['Комиссия сервиса',m.commission,C.accent],['Автопилот',m.autopilot,C.aiFrom],['Свои расходы',m.other,C.warning]] as [string,number,string][]).filter(c=>c[1]>0);
+ const net=change(m.change.net),rev=change(m.change.revenue),costs:[string,number,string][]=([[tr('Уборки'),m.cleaning,C.aiTo],[tr('Комиссия сервиса'),m.commission,C.accent],[tr('Автопилот'),m.autopilot,C.aiFrom],[tr('Свои расходы'),m.other,C.warning]] as [string,number,string][]).filter(c=>c[1]>0);
  const occTone=s.occupancy>=70?C.success:s.occupancy>=40?C.goldInk:C.warning;
  return <View>
   {seg}
   {/* The hero: night indigo and gold, the colours of the sign. */}
-  <View accessible accessibilityLabel={'Чистая прибыль '+tenge(m.net)+(net?', '+net+' '+vs:'')} style={st.hero}>
-   <Text style={st.heroLabel}>Чистая прибыль</Text>
+  <View accessible accessibilityLabel={tr('Чистая прибыль {sum}',{sum:tenge(m.net)})+(net?', '+net+' '+vs:'')} style={st.hero}>
+   <Text style={st.heroLabel}>{tr('Чистая прибыль')}</Text>
    <Text style={[st.heroValue,m.net<0&&{color:C.dangerSoft}]} adjustsFontSizeToFit numberOfLines={1}>{tenge(m.net)}</Text>
-   <View style={st.heroRow}>{!!net&&<View style={[st.badge,{backgroundColor:(m.change.net||0)>=0?'rgba(34,197,94,.18)':'rgba(239,68,68,.2)'}]}><Text style={[st.badgeText,{color:(m.change.net||0)>=0?C.successSoft:C.dangerSoft}]}>{net} {vs}</Text></View>}{m.margin!==null&&<Text style={st.heroMeta}>маржа {m.margin}%</Text>}</View>
-   <View style={st.heroSplit}><View style={{flex:1}}><Text style={st.heroMeta}>Выручка</Text><Text style={st.heroSmall}>{tenge(m.revenue)}{rev?<Text style={st.heroMeta}>  {rev}</Text>:null}</Text></View><View style={{flex:1}}><Text style={st.heroMeta}>Расходы</Text><Text style={st.heroSmall}>{tenge(m.expenses)}</Text></View></View>
-   <View accessibilityLabel="Выручка и чистая прибыль за шесть месяцев" style={st.chart}>{data.trend.map((t,i)=><View key={t.month} style={st.col}><View style={st.bars}><View style={st.barSlot}><Grow vertical delay={i*60} value={t.revenue/peak} style={st.barRev}/></View><View style={st.barSlot}><Grow vertical delay={i*60+30} value={Math.max(0,t.net)/peak} style={st.barNet}/></View></View><Text style={[st.colLabel,i===5&&{color:C.gold}]}>{t.label}</Text></View>)}</View>
-   <View style={st.legend}><View style={[st.dot,{backgroundColor:'rgba(165,180,252,.55)'}]}/><Text style={st.heroMeta}>выручка</Text><View style={[st.dot,{backgroundColor:C.gold,marginLeft:12}]}/><Text style={st.heroMeta}>чистыми</Text></View>
+   <View style={st.heroRow}>{!!net&&<View style={[st.badge,{backgroundColor:(m.change.net||0)>=0?'rgba(34,197,94,.18)':'rgba(239,68,68,.2)'}]}><Text style={[st.badgeText,{color:(m.change.net||0)>=0?C.successSoft:C.dangerSoft}]}>{net} {vs}</Text></View>}{m.margin!==null&&<Text style={st.heroMeta}>{tr('маржа {n}%',{n:m.margin})}</Text>}</View>
+   <View style={st.heroSplit}><View style={{flex:1}}><Text style={st.heroMeta}>{tr('Выручка')}</Text><Text style={st.heroSmall}>{tenge(m.revenue)}{rev?<Text style={st.heroMeta}>  {rev}</Text>:null}</Text></View><View style={{flex:1}}><Text style={st.heroMeta}>{tr('Расходы')}</Text><Text style={st.heroSmall}>{tenge(m.expenses)}</Text></View></View>
+   <View accessibilityLabel={tr('Выручка и чистая прибыль за шесть месяцев')} style={st.chart}>{data.trend.map((t,i)=><View key={t.month} style={st.col}><View style={st.bars}><View style={st.barSlot}><Grow vertical delay={i*60} value={t.revenue/peak} style={st.barRev}/></View><View style={st.barSlot}><Grow vertical delay={i*60+30} value={Math.max(0,t.net)/peak} style={st.barNet}/></View></View><Text style={[st.colLabel,i===5&&{color:C.gold}]}>{monthName(t.month,t.label)}</Text></View>)}</View>
+   <View style={st.legend}><View style={[st.dot,{backgroundColor:'rgba(165,180,252,.55)'}]}/><Text style={st.heroMeta}>{tr('выручка')}</Text><View style={[st.dot,{backgroundColor:C.gold,marginLeft:12}]}/><Text style={st.heroMeta}>{tr('чистыми')}</Text></View>
   </View>
   {/* Four tiles: the numbers an owner asks first. */}
   <View style={st.tiles}>
-   <View style={st.tile}><Text style={st.tileLabel}>Загрузка</Text><Text style={[st.tileValue,{color:occTone}]}>{s.occupancy}%</Text><View style={st.track}><Grow value={s.occupancy/100} style={[st.fill,{backgroundColor:occTone}]}/></View>{!!s.occupancyChange&&<Text style={st.tileNote}>{(s.occupancyChange||0)>0?'+':'−'}{Math.abs(s.occupancyChange||0)} п. {vs}</Text>}</View>
-   <View style={st.tile}><Text style={st.tileLabel}>Брони</Text><Text style={st.tileValue}>{s.sold}</Text><Text style={st.tileNote}>{s.nights>=1?s.nights+' сут.':s.hours+' ч'} · заявок {s.requests}</Text></View>
-   <View style={st.tile}><Text style={st.tileLabel}>Средний чек</Text><Text style={st.tileValue}>{s.average?shortTenge(s.average):'—'}</Text><Text style={st.tileNote}>{s.perNight?shortTenge(s.perNight)+' за сутки':'за бронь'}</Text></View>
-   <View style={st.tile}><Text style={st.tileLabel}>Оценка гостей</Text><Text style={st.tileValue}>{s.rating?'★ '+String(s.rating).replace('.',','):'—'}</Text><Text style={st.tileNote}>{s.reviews?'отзывов '+s.reviews:'отзывов пока нет'}</Text></View>
+   <View style={st.tile}><Text style={st.tileLabel}>{tc('Загрузка','occupancy')}</Text><Text style={[st.tileValue,{color:occTone}]}>{s.occupancy}%</Text><View style={st.track}><Grow value={s.occupancy/100} style={[st.fill,{backgroundColor:occTone}]}/></View>{!!s.occupancyChange&&<Text style={st.tileNote}>{(s.occupancyChange||0)>0?'+':'−'}{tr('{n} п. {vs}',{n:Math.abs(s.occupancyChange||0),vs})}</Text>}</View>
+   <View style={st.tile}><Text style={st.tileLabel}>{tr('Брони')}</Text><Text style={st.tileValue}>{s.sold}</Text><Text style={st.tileNote}>{s.nights>=1?tr('{nights} сут. · заявок {requests}',{nights:s.nights,requests:s.requests}):tr('{hours} ч · заявок {requests}',{hours:s.hours,requests:s.requests})}</Text></View>
+   <View style={st.tile}><Text style={st.tileLabel}>{tr('Средний чек')}</Text><Text style={st.tileValue}>{s.average?shortTenge(s.average):'—'}</Text><Text style={st.tileNote}>{s.perNight?tr('{v} за сутки',{v:shortTenge(s.perNight)}):tr('за бронь')}</Text></View>
+   <View style={st.tile}><Text style={st.tileLabel}>{tr('Оценка гостей')}</Text><Text style={st.tileValue}>{s.rating?'★ '+String(s.rating).replace('.',','):'—'}</Text><Text style={st.tileNote}>{s.reviews?tr('отзывов {reviews}',{reviews:s.reviews}):tr('отзывов пока нет')}</Text></View>
   </View>
   {/* The AI reads the numbers and says what to do: rules, one line each. */}
-  {data.advice.length>0&&<View style={st.advice}><View style={{flexDirection:'row',alignItems:'center',gap:8}}><RowIcon icon="sparkles" tint={C.aiTo}/><Text style={st.adviceTitle}>Совет ИИ</Text></View>{data.advice.map(a=><Text key={a} style={st.adviceText}>{a}</Text>)}</View>}
-  {data.ahead.count>0&&<View style={st.ahead}><Text style={st.aheadText}>Впереди {data.ahead.count} {data.ahead.count===1?'бронь':data.ahead.count<5?'брони':'броней'}</Text><Text style={st.aheadValue}>{tenge(data.ahead.amount)}</Text></View>}
-  <Card title="Расходы" value={tenge(m.expenses)} open={open==='costs'} onPress={()=>toggle('costs')}>
-   {costs.length?costs.map(([label,v,c])=><Line key={label} label={label} value={tenge(v)} share={m.expenses?v/m.expenses:0} tint={c}/>):<Text style={st.note}>За этот срок расходов нет.</Text>}
-   {m.revenue>0&&<Text style={st.note}>Из каждых 100 ₸ выручки у вас остаётся {Math.max(0,Math.round(m.net/m.revenue*100))} ₸.</Text>}
+  {data.advice.length>0&&<View style={st.advice}><View style={{flexDirection:'row',alignItems:'center',gap:8}}><RowIcon icon="sparkles" tint={C.aiTo}/><Text style={st.adviceTitle}>{tr('Совет ИИ')}</Text></View>{data.advice.map(a=><Text key={a} style={st.adviceText}>{a}</Text>)}</View>}
+  {data.ahead.count>0&&<View style={st.ahead}><Text style={st.aheadText}>{tr(forms(data.ahead.count,'Впереди {n} бронь','Впереди {n} брони','Впереди {n} броней'),{n:data.ahead.count})}</Text><Text style={st.aheadValue}>{tenge(data.ahead.amount)}</Text></View>}
+  <Card title={tr('Расходы')} value={tenge(m.expenses)} open={open==='costs'} onPress={()=>toggle('costs')}>
+   {costs.length?costs.map(([label,v,c])=><Line key={label} label={label} value={tenge(v)} share={m.expenses?v/m.expenses:0} tint={c}/>):<Text style={st.note}>{tr('За этот срок расходов нет.')}</Text>}
+   {m.revenue>0&&<Text style={st.note}>{tr('Из каждых 100 ₸ выручки у вас остаётся {n} ₸.',{n:Math.max(0,Math.round(m.net/m.revenue*100))})}</Text>}
   </Card>
-  <Card title="По объектам" value={data.places.length?String(data.places.length):undefined} open={open==='places'} onPress={()=>toggle('places')}>
-   {data.places.length?data.places.map(p=><View key={p.id} style={{gap:8}}><View style={st.line}><Text numberOfLines={1} style={[st.lineLabel,{fontWeight:'600',color:C.ink}]}>{p.title}</Text><Text style={st.lineValue}>{tenge(p.revenue)}</Text></View><View style={st.track}><Grow value={p.occupancy/100} style={[st.fill,{backgroundColor:tint}]}/></View><Text style={st.note}>загрузка {p.occupancy}% · броней {p.bookings} · чистыми {tenge(p.net)}</Text></View>):<Text style={st.note}>Объектов пока нет.</Text>}
+  <Card title={tr('По объектам')} value={data.places.length?String(data.places.length):undefined} open={open==='places'} onPress={()=>toggle('places')}>
+   {data.places.length?data.places.map(p=><View key={p.id} style={{gap:8}}><View style={st.line}><Text numberOfLines={1} style={[st.lineLabel,{fontWeight:'600',color:C.ink}]}>{p.title}</Text><Text style={st.lineValue}>{tenge(p.revenue)}</Text></View><View style={st.track}><Grow value={p.occupancy/100} style={[st.fill,{backgroundColor:tint}]}/></View><Text style={st.note}>{tr('загрузка {n}% · броней {bookings} · чистыми {net}',{n:p.occupancy,bookings:p.bookings,net:tenge(p.net)})}</Text></View>):<Text style={st.note}>{tr('Объектов пока нет.')}</Text>}
   </Card>
-  <Card title="Гости и спрос" value={data.funnel.views?count(data.funnel.views)+' показов':undefined} open={open==='guests'} onPress={()=>toggle('guests')}>
-   <Line label={'Показы в поиске'+(data.funnel.days<data.days?' (30 дней)':'')} value={count(data.funnel.views)}/>
-   <Line label="Заявки" value={String(data.funnel.requests)}/>
-   {data.funnel.conversion!==null&&<Line label="Из показа в заявку" value={String(data.funnel.conversion).replace('.',',')+'%'}/>}
-   <Line label="Гостей" value={String(s.guests)}/>
-   <Line label="Вернулись снова" value={String(s.repeat)}/>
-   <Line label="Отменено заявок" value={s.cancelled+(s.requests?' из '+s.requests:'')} share={s.requests?s.cancelled/s.requests:0} tint={C.warning}/>
+  <Card title={tr('Гости и спрос')} value={data.funnel.views?tr('{v} показов',{v:count(data.funnel.views)}):undefined} open={open==='guests'} onPress={()=>toggle('guests')}>
+   <Line label={data.funnel.days<data.days?tr('Показы в поиске (30 дней)'):tr('Показы в поиске')} value={count(data.funnel.views)}/>
+   <Line label={tr('Заявки')} value={String(data.funnel.requests)}/>
+   {data.funnel.conversion!==null&&<Line label={tr('Из показа в заявку')} value={String(data.funnel.conversion).replace('.',',')+'%'}/>}
+   <Line label={tr('Гостей')} value={String(s.guests)}/>
+   <Line label={tr('Вернулись снова')} value={String(s.repeat)}/>
+   <Line label={tr('Отменено заявок')} value={s.requests?tr('{n} из {total}',{n:s.cancelled,total:s.requests}):String(s.cancelled)} share={s.requests?s.cancelled/s.requests:0} tint={C.warning}/>
   </Card>
   <Text style={st.foot}>{data.note}</Text>
  </View>;

@@ -1,4 +1,5 @@
 import {checkinOpen} from './checkin-window';
+import {t} from './i18n';
 
 type Row=Record<string,any>; // eslint-disable-line @typescript-eslint/no-explicit-any
 
@@ -11,7 +12,7 @@ type Row=Record<string,any>; // eslint-disable-line @typescript-eslint/no-explic
 export const PREPAY_AFTER=5;
 export const PREPAY_CHOICES=[0,10,20,30,50,100] as const;
 export function prepayChoice(value:unknown){const n=Number(value);return (PREPAY_CHOICES as readonly number[]).includes(n)?n:null;}
-export const prepayLabel=(percent:number)=>percent>0?(percent>=100?'Предоплата 100%':'Предоплата '+percent+'%, остальное при заселении'):'Оплата при заселении';
+export const prepayLabel=(percent:number)=>percent>0?(percent>=100?t('Предоплата 100%'):t('Предоплата {percent}%, остальное при заселении',{percent})):t('Оплата при заселении');
 
 export type PrepayState={wanted:number;percent:number;completed:number;left:number};
 // The owner's choice and the share in force now: 0 while the place has fewer than PREPAY_AFTER completed stays.
@@ -22,8 +23,9 @@ export function prepayState(wanted:unknown,completed:number):PrepayState{
 
 /** The owner's words under the choice: what guests of this place see now. */
 export function prepayNote(s:PrepayState){
- if(!s.left)return s.percent?prepayLabel(s.percent)+'.':'Гости платят при заселении.';
- return 'Пока у жилья меньше '+PREPAY_AFTER+' завершённых броней (сейчас '+s.completed+'), все гости платят при заселении'+(s.wanted?'. Предоплата '+s.wanted+'% включится сама после '+PREPAY_AFTER+'-й брони.':'.');
+ if(!s.left)return s.percent?prepayLabel(s.percent)+'.':t('Гости платят при заселении.');
+ const v={after:PREPAY_AFTER,completed:s.completed,wanted:s.wanted};
+ return s.wanted?t('Пока у жилья меньше {after} завершённых броней (сейчас {completed}), все гости платят при заселении. Предоплата {wanted}% включится сама после {after}-й брони.',v):t('Пока у жилья меньше {after} завершённых броней (сейчас {completed}), все гости платят при заселении.',v);
 }
 
 export const prepayOf=(terms:Row|null|undefined)=>terms?.prepay_percent==null?100:Number(terms.prepay_percent)||0;

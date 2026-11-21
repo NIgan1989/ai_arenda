@@ -1,3 +1,4 @@
+import {t} from '../../lib/i18n';
 import {useCallback,useEffect,useRef,useState} from 'react';
 import {AppState,Linking} from 'react-native';
 import {StaleSessionError} from './session-state';
@@ -27,7 +28,7 @@ export function useProcessLinks(options:Options){
   const pending=queue.current.claim(current.accountId);if(!pending)return;
   const accountId=current.accountId,isCurrent=()=>mounted.current&&queue.current.isCurrent(pending.id,latest.current.accountId);
   running.current=true;
-  void current.onOpen(pending.target,{accountId,isCurrent}).catch(error=>{if(error instanceof StaleSessionError)return;if(isCurrent())latest.current.onError(typeof error?.message==='string'?error.message:'Не удалось открыть ссылку. Обновите данные и попробуйте ещё раз.');}).finally(()=>{queue.current.consume(pending.id);running.current=false;wake();});
+  void current.onOpen(pending.target,{accountId,isCurrent}).catch(error=>{if(error instanceof StaleSessionError)return;if(isCurrent())latest.current.onError(typeof error?.message==='string'?error.message:t('Не удалось открыть ссылку. Обновите данные и попробуйте ещё раз.'));}).finally(()=>{queue.current.consume(pending.id);running.current=false;wake();});
  },[options.ready,options.accountId,options.blocked,revision,wake]);
  return {acceptURL,cancelPending,pending:queue.current.pending};
 }

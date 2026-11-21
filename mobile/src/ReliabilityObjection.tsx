@@ -1,4 +1,4 @@
-import {t} from '../../lib/i18n';
+import {dateText,t} from '../../lib/i18n';
 import React,{useEffect,useState} from 'react';
 import {Pressable,Text,TextInput,View} from 'react-native';
 import {request} from './api';
@@ -7,7 +7,7 @@ import {C,s} from './styles';
 // «Не согласен с оценкой» under the reliability rating (lib/reliability-objection.ts). The rating is computed by rules,
 // so the person can object in their own words; the administrator answers within three working days.
 type Objection={status:'open'|'answered';body:string;dueAt:number;answer:string|null}|null;
-const day=(t:number)=>new Date(t*1000).toLocaleDateString('ru-RU',{timeZone:'Asia/Qyzylorda',day:'numeric',month:'long'});
+const day=(t:number)=>dateText(new Date(t*1000),{timeZone:'Asia/Qyzylorda',day:'numeric',month:'long'});
 
 export function ReliabilityObjection({role}:{role:string}){
  const [objection,setObjection]=useState<Objection>(null),[open,setOpen]=useState(false),[text,setText]=useState(''),[busy,setBusy]=useState(false),[error,setError]=useState('');

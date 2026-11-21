@@ -1,3 +1,4 @@
+import {t} from '../../lib/i18n';
 // The "Сейчас" card: the single most important thing for this person right now.
 // The rules are the site's own (lib/now-card.ts), so the app and the browser never say different things
 // about the same booking. This file adds the owner's quick request, which only the app's map polls for,
@@ -42,12 +43,12 @@ function quickRequest(offers: Row[], now: number): NowCard | null {
   const offer = offers.filter(o => o.expires_at > now).sort((a, b) => a.expires_at - b.expires_at)[0];
   if (!offer) return null;
   const start = Date.parse(offer.filters?.start) / 1000;
-  const time = Number.isFinite(start) ? sentence('заезд ' + nowCardWhen(start, now)) + ' · ' : '';
+  const time = Number.isFinite(start) ? sentence(t('заезд {v}',{v:nowCardWhen(start, now)})) + ' · ' : '';
   return {
     key: 'offer:' + offer.id,
-    title: 'Гость ждёт ответа',
+    title: t('Гость ждёт ответа'),
     detail: time + offer.title,
-    action: 'Ответить',
+    action: t('Ответить'),
     urgent: true,
     target: { type: 'sheet' }
   };

@@ -1,3 +1,4 @@
+import { forms, t as tr } from './i18n';
 type Filters=Record<string,string>;
 export function mapSearchFilters(input:Record<string,unknown>){
  const filters:Filters={city:'',guests:'1',mode:'daily',page:'1'};
@@ -5,10 +6,49 @@ export function mapSearchFilters(input:Record<string,unknown>){
  return filters;
 }
 // Lower case, «е» for «ё», and the spellings the rules below do not need to know one by one: «вай фай» and «wi fi» are
-// «wifi», «кондей» a «кондиционер», a few Kazakh words of a request their Russian ones. «Завтрак» is set apart first,
-// so that it is never read as «завтра» (it is named back as not searched, see UNSEARCHED).
-const KZ_WORDS:[RegExp,string][]=[[/п[әа]тер[а-яәіңғүұқөһ]*/g,'квартира'],[/монша[а-яәіңғүұқөһ]*/g,'баня'],[/т[әа]ул[іи]к[а-яәіңғүұқөһ]*/g,'сутки'],[/сағат[а-яәіңғүұқөһ]*/g,'часа'],[/қонақ\s*үй[а-яәіңғүұқөһ]*/g,'гостиница']];
-const normal=(text:string)=>KZ_WORDS.reduce((t,[from,to])=>t.replace(from,to),text.toLocaleLowerCase('ru').replace(/ё/g,'е'))
+// «wifi», «кондей» a «кондиционер». «Завтрак» is set apart first, so that it is never read as «завтра» (it is named
+// back as not searched, see UNSEARCHED).
+//
+// The rules read Russian. A request in Kazakh or in English is first said in the Russian words of the rules: the
+// examples the app shows in those languages («Бүгін 20:00-ге 6 адамға монша», «Bathhouse for 6 people today at 20:00»)
+// must be read the same as the Russian one. Only the words of a search are known here; the rest is left as it is,
+// and what the rules still cannot read goes to the model, as before.
+const KK='а-яәіңғүұқөһ',KK_END='(?![а-яәіңғүұқөһ])';
+const kkWord=(words:string,to:string):[RegExp,string]=>[new RegExp('(^|[^'+KK+'])(?:'+words+')'+KK_END,'g'),'$1'+to];
+const MONTHS_RU=['января','февраля','марта','апреля','мая','июня','июля','августа','сентября','октября','ноября','декабря'];
+const MONTHS_KK=['қаңтар','ақпан','наурыз','сәуір','мамыр','маусым','шілде','тамыз','қыркүйек','қазан','қараша','желтоқсан'];
+const MONTHS_EN=['january','february','march','april','may','june','july','august','september','october','november','december'];
+const KZ_WORDS:[RegExp,string][]=[
+ // «20:00-ге» is «в 20:00»; «15 000-ға дейін» and «15 мың теңгеге дейін» are «до 15 000».
+ [new RegExp('(\\d{1,2}[:.]\\d{2})\\s*-?\\s*(?:ге|ға|де|да|те|та)'+KK_END,'g'),'в $1'],
+ [/(\d)\s*мың/g,'$1 тыс'],
+ [new RegExp('(\\d[\\d ]*(?:\\s*тыс)?)\\s*(?:теңге(?:ге)?)?\\s*-?\\s*(?:ға|ге|қа|ке)?\\s+дейін'+KK_END,'g'),'до $1'],
+ [/қонақ\s*үй[а-яәіңғүұқөһ]*/g,'гостиница'],
+ // The party: «6 адамға», «екі адамға», «екеуге».
+ [new RegExp('(\\d{1,3})\\s*(?:адам|кісі|қонақ)(?:ға|қа)?'+KK_END,'g'),'на $1 человек'],
+ kkWord('екі\\s+(?:адам|кісі)(?:ға|қа)?|екеуге|екеумізге','на двоих'),kkWord('үш\\s+(?:адам|кісі)(?:ға|қа)?|үшеуге|үшеумізге','на троих'),
+ // The length: «3 сағатқа», «бір тәулікке», «2 күнге», «түнге».
+ [new RegExp('(\\d{1,2})\\s*сағат(?:қа|ка)?'+KK_END,'g'),'на $1 часа'],
+ [new RegExp('(\\d{1,2})\\s*тәулік(?:ке)?'+KK_END,'g'),'на $1 суток'],[new RegExp('(\\d{1,2})\\s*күн(?:ге)?'+KK_END,'g'),'на $1 дней'],[new RegExp('(\\d{1,2})\\s*түн(?:ге)?'+KK_END,'g'),'на $1 ночей'],
+ kkWord('(?:бір\\s+)?тәулікке','на сутки'),kkWord('(?:бір\\s+)?түнге','на ночь'),
+ kkWord('бүрсігүні','послезавтра'),kkWord('бүгін','сегодня'),kkWord('ертең','завтра'),kkWord('қазір','сейчас'),kkWord('кешке|кешкісін','вечером'),kkWord('демалыс\\s+күндері(?:не)?|демалысқа','на выходные'),
+ kkWord('орталығында|орталықта|орталық','в центре'),kkWord('арзанырақ|арзан','дешевле'),kkWord('жақынырақ|жақын','ближе'),
+ ...MONTHS_KK.map((m,i):[RegExp,string]=>[new RegExp('(\\d{1,2})\\s*-?\\s*'+m+'['+KK+']*','g'),'$1 '+MONTHS_RU[i]]),
+ [/п[әа]тер[а-яәіңғүұқөһ]*/g,'квартира'],[/монша[а-яәіңғүұқөһ]*/g,'баня'],[/т[әа]ул[іи]к[а-яәіңғүұқөһ]*/g,'сутки'],[/сағат[а-яәіңғүұқөһ]*/g,'часа']];
+const EN_MONTH='('+MONTHS_EN.join('|')+')',enMonth=(name:string)=>MONTHS_RU[MONTHS_EN.indexOf(name)];
+const enWords=(text:string)=>!/[a-z]{3}/.test(text)?text:text
+ .replace(/\bat\s+(\d{1,2})\s*(am|pm)\b/g,(_,h,half)=>'в '+String(Number(h)%12+(half==='pm'?12:0)).padStart(2,'0')+':00').replace(/\bat\s+(\d{1,2}[:.]\d{2})\b/g,'в $1')
+ .replace(/(\d),(\d{3})\b/g,'$1$2').replace(/\b(?:up\s+to|under|below|no\s+more\s+than|max(?:imum)?)\s+(\d[\d ]*)(?:\s*k\b)?/g,(whole,n)=>'до '+n.trim()+(/k$/.test(whole)?' тыс':''))
+ .replace(/\b(?:for\s+)?(\d{1,2})\s*(?:hours?|hrs?)\b/g,'на $1 часа').replace(/\b(?:for\s+)?(\d{1,2})\s*days?\b/g,'на $1 дней').replace(/\b(?:for\s+)?(\d{1,2})\s*nights?\b/g,'на $1 ночей')
+ .replace(/\b(?:for\s+)?(\d{1,3})\s*(?:people|persons?|guests?|adults?)\b/g,'на $1 человек').replace(/\bfor\s+(\d{1,3})\b(?![:.]\d)/g,'на $1')
+ .replace(/\bfor\s+(?:two|a\s+couple)\b/g,'на двоих').replace(/\bfor\s+three\b/g,'на троих')
+ .replace(/\b(?:for\s+)?(?:one|a)\s+day\b/g,'на сутки').replace(/\btonight\b/g,'сегодня на ночь').replace(/\b(?:for\s+)?(?:the|a|one)\s+night\b|\bovernight\b/g,'на ночь')
+ .replace(/\b(?:the\s+)?day\s+after\s+tomorrow\b/g,'послезавтра').replace(/\btoday\b/g,'сегодня').replace(/\btomorrow\b/g,'завтра').replace(/\b(?:right\s+)?now\b/g,'сейчас').replace(/\b(?:this\s+|in\s+the\s+)?evening\b/g,'вечером')
+ .replace(/\b(?:(?:this|at\s+the|on\s+the|for\s+the)\s+)?weekend\b/g,'на выходные').replace(/\b(?:(?:in|near)\s+(?:the\s+)?)?(?:city\s+)?cent(?:re|er)\b|\bdowntown\b/g,'в центре')
+ .replace(new RegExp('\\b(?:on\\s+)?(?:the\\s+)?(\\d{1,2})(?:st|nd|rd|th)?\\s+(?:of\\s+)?'+EN_MONTH+'\\b','g'),(_,d,m)=>d+' '+enMonth(m)).replace(new RegExp('\\b(?:on\\s+)?'+EN_MONTH+'\\s+(\\d{1,2})(?:st|nd|rd|th)?\\b','g'),(_,m,d)=>d+' '+enMonth(m))
+ .replace(/\b(?:bath\s*houses?|saunas?|banya)\b/g,'баня').replace(/\btoi\b/g,'той').replace(/\bbanquet(?:\s+hall)?\b/g,'банкетный зал').replace(/\b(?:apartments?|flats?)\b/g,'квартира').replace(/\bhotels?\b/g,'гостиница')
+ .replace(/\b(?:cheaper|cheapest|cheap)\b/g,'дешевле').replace(/\b(?:closer|nearer|nearby)\b/g,'ближе').replace(/\bparking\b/g,'парковка').replace(/\b(?:hourly|by\s+the\s+hour)\b/g,'почасовая');
+const normal=(text:string)=>enWords(KZ_WORDS.reduce((t,[from,to])=>t.replace(from,to),text.toLocaleLowerCase('ru').replace(/ё/g,'е')))
  .replace(/завтрак[а-я]*/g,'zavtrak').replace(/(?:вай|wi)[\s-]+(?:фай|fi)/g,'wifi').replace(/(?:^|[^а-я])конд(?:ей|еем|ея|ик[а-я]*)(?=$|[^а-я])/g,' кондиционер');
 export function mapSearchRequest(text:string,current:Filters,cities:string[],now=Date.now()){
  const request=normal(text),filters:Filters={...current,page:'1'},applied:string[]=[],notes:string[]=[];
@@ -320,10 +360,9 @@ export function nextSlot(now = Date.now(), lead = 30) {
   return Math.ceil((now + lead * 60000) / HALF_HOUR) * HALF_HOUR;
 }
 
+/** The word after a number, in the language of the app (lib/i18n.ts forms): in Russian by the Russian rule. */
 export function plural(count: number, one: string, few: string, many: string) {
-  const tens = count % 100, units = count % 10;
-  if (tens >= 11 && tens <= 14) return many;
-  return units === 1 ? one : units >= 2 && units <= 4 ? few : many;
+  return forms(count, one, few, many);
 }
 
 /** Started days of a stay, the way the daily tariff counts them. */
@@ -373,7 +412,7 @@ export function defaultBanquet(now = Date.now(), occasion = ''): GuestStay {
 /** "20 декабря, вечер 18:00–00:00". */
 export function banquetWhen(start: string, now = Date.now()) {
   const slot = BANQUET_SLOTS[banquetSlot(start)], today = kzToday(now), date = start.slice(0, 10);
-  return (date === today ? 'сегодня' : date === addDays(today, 1) ? 'завтра' : dayMonth(start, now)) + ', ' + slot.title.toLocaleLowerCase('ru') + ' ' + slot.from + '–' + slot.to;
+  return (date === today ? tr('сегодня') : date === addDays(today, 1) ? tr('завтра') : dayMonth(start, now)) + ', ' + tr(slot.title).toLocaleLowerCase('ru') + ' ' + slot.from + '–' + slot.to;
 }
 
 /** What the request form starts with: today until tomorrow, or the nearest three hours. */
@@ -427,7 +466,7 @@ export function startTimes(date: string, now = Date.now(), keep = ''): string[] 
 
 // "12 ноября"; with the year when it is not the current one, so that a stay next year is never read as this year's.
 const dayMonth = (local: string, now: number) =>
-  Number(local.slice(8, 10)) + ' ' + MONTHS[Number(local.slice(5, 7)) - 1] + (local.slice(0, 4) === kzToday(now).slice(0, 4) ? '' : ' ' + local.slice(0, 4));
+  Number(local.slice(8, 10)) + ' ' + tr(MONTHS[Number(local.slice(5, 7)) - 1]) + (local.slice(0, 4) === kzToday(now).slice(0, 4) ? '' : ' ' + local.slice(0, 4));
 
 /** "12 ноября, 14:00 — 13 ноября, 12:00 · 1 сутки"; within one day "12 ноября, 19:00–22:00 · 3 часа". */
 export function stayLine(start: string, end: string, mode: string, now = Date.now()) {
@@ -444,7 +483,7 @@ export function stayLine(start: string, end: string, mode: string, now = Date.no
 /** The short "when" of the one-line summary: "сегодня 19:00–22:00", "12–13 ноября", "10–15 ноября 2027". */
 export function stayWhen(start: string, end: string, mode: string, now = Date.now()) {
   const today = kzToday(now), tomorrow = addDays(today, 1);
-  const day = (local: string) => local.slice(0, 10) === today ? 'сегодня' : local.slice(0, 10) === tomorrow ? 'завтра' : dayMonth(local, now);
+  const day = (local: string) => local.slice(0, 10) === today ? tr('сегодня') : local.slice(0, 10) === tomorrow ? tr('завтра') : dayMonth(local, now);
   if (mode === 'hourly') {
     return start.slice(0, 10) === end.slice(0, 10)
       ? day(start) + ' ' + start.slice(11) + '–' + end.slice(11)
@@ -460,10 +499,10 @@ export function stayWhen(start: string, end: string, mode: string, now = Date.no
 export function guestRequestLine(draft: Row, now = Date.now()) {
   const guests = Number(draft.guests) || 1, budget = Number(draft.maxPrice);
   const limit = budget > 0 && String(draft.maxPrice) !== NO_BUDGET
-    ? 'до ' + new Intl.NumberFormat('ru-RU').format(budget).replace(/\s/g, ' ') + ' ₸'
+    ? tr('до {v} ₸', { v: new Intl.NumberFormat('ru-RU').format(budget).replace(/\s/g, ' ') })
     : '';
   return [
-    String(draft.city || '') + (draft.district ? ', ' + draft.district : '') + (draft.near ? ', рядом с выбранным местом' : ''),
+    String(draft.city || '') + (draft.district ? ', ' + draft.district : '') + (draft.near ? ', ' + tr('рядом с выбранным местом') : ''),
     isBanquetRequest(draft.kinds) ? banquetWhen(draft.start, now) : stayWhen(draft.start, draft.end, draft.mode, now),
     guests + ' ' + plural(guests, 'гость', 'гостя', 'гостей'),
     limit,
@@ -624,11 +663,11 @@ function statedLength(text: string, remarks: string[]): { mode: 'daily' | 'hourl
   if (stay) {
     const count = Math.max(1, stay[1] ? COUNT[stay[1]] ?? Number(stay[1]) : 1);
     if (stay[2] === 'час') {
-      if (count > MAX_HOURS) remarks.push('Максимум ' + MAX_HOURS + ' часа, ищу на ' + MAX_HOURS + '.');
+      if (count > MAX_HOURS) remarks.push(tr('Максимум {n} часа, ищу на {n}.', { n: MAX_HOURS }));
       return { mode: 'hourly', units: Math.min(count, MAX_HOURS) };
     }
     const days = stay[2] === 'недел' ? count * 7 : stay[2] === 'месяц' ? count * 30 : count;
-    if (days > MAX_DAYS) remarks.push('Максимум ' + MAX_DAYS + ' суток, ищу на ' + MAX_DAYS + '.');
+    if (days > MAX_DAYS) remarks.push(tr('Максимум {n} суток, ищу на {n}.', { n: MAX_DAYS }));
     return { mode: stay[2] === 'ноч' ? 'night' : 'daily', units: Math.min(days, MAX_DAYS) };
   }
   if (/переночевать|ночл[её]г|до утра/.test(text)) return { mode: 'night', units: 1 };
@@ -685,7 +724,7 @@ export function guestSearchRequest(text: string, current: Row, cities: string[],
     const town = otherTown(request), nearest = town ? OTHER_TOWNS[town] : '';
     if (town && cities.includes(nearest)) {
       stated.city = true;
-      remarks.push(town + ': жилья в сервисе пока нет. Ищу в ближайшем городе — ' + nearest + '.');
+      remarks.push(tr('{town}: жилья в сервисе пока нет. Ищу в ближайшем городе — {nearest}.', { town, nearest }));
       if (nearest !== current.city) Object.assign(filters, { city: nearest, district: '', near: null });
     }
   }
@@ -715,7 +754,7 @@ export function guestSearchRequest(text: string, current: Row, cities: string[],
     filters.kinds = [...kinds, 'apartment'];
     if (rooms !== '1') {
       filters.rooms = '';
-      remarks.push('Ищу любой из названных типов жилья, без числа комнат.');
+      remarks.push(tr('Ищу любой из названных типов жилья, без числа комнат.'));
     }
   }
   if (rooms || kinds.length) stated.home = true;
@@ -725,7 +764,11 @@ export function guestSearchRequest(text: string, current: Row, cities: string[],
   }
 
   const party = PARTY.find(([pattern]) => pattern.test(request))?.[1];
-  const counted = request.match(/(?:^|\D)(\d{1,4})\s*(?:гост|человек|чел(?![а-я])|взросл|персон)/);
+  // A bath or a hall is taken for a party: «баня на 6 в 20:00», «той на 150, 5 декабря». The bare number is the party
+  // when a time, a day or the end of the phrase follows it; «на 3 часа» stays a length.
+  const venueAsked = banquet || (filters.kinds || current.kinds || []).some((id: string) => BATH_KINDS.includes(id));
+  const counted = request.match(/(?:^|\D)(\d{1,4})\s*(?:гост|человек|чел(?![а-я])|взросл|персон)/)
+    || (venueAsked ? request.match(/(?:^|[^а-я])на\s+(\d{1,4})(?=\s*(?:$|,|в\s+\d|\d{1,2}\s+[а-я]|сегодня|завтра|послезавтра|вечером|днем|утром))/) : null);
   const most = banquet ? MAX_BANQUET_GUESTS : MAX_GUESTS;
   // «С ребёнком», «семья с двумя детьми»: the children come on top of the grown-ups (two when none are counted).
   const child = request.match(/(?:^|[^а-я])(?:с|и)\s+(?:(\d|двумя|двое|тремя|трое|одним)\s+)?(?:реб[еи]н[а-я]*|малыш[а-я]*|дет(?:ьми|ей|и)|дочк[а-я]*|сын[а-я]*)(?=$|[^а-я])/);
@@ -734,7 +777,7 @@ export function guestSearchRequest(text: string, current: Row, cities: string[],
   const grown = counted && !/взросл/.test(counted[0]) && adults !== null ? adults : null; // «на 4 гостей с ребёнком»: the four are everyone
   const guests = kids && !banquet ? (grown ?? (adults ?? 2) + kids) : adults;
   if (guests !== null && guests >= 1) {
-    if (guests > most) remarks.push('Гостей не больше ' + most + ', ищу на ' + most + '.');
+    if (guests > most) remarks.push(tr('Гостей не больше {n}, ищу на {n}.', { n: most }));
     filters.guests = String(Math.min(guests, most));
     stated.guests = true;
   }
@@ -785,7 +828,7 @@ export function guestSearchRequest(text: string, current: Row, cities: string[],
   const kept = current.mode === 'hourly' || current.mode === 'night' ? current.mode : 'daily';
   // «Баня на сутки» or «на ночь» is still by the hour, and the guest is told: days are not read as hours.
   const daysOfBath = bath && ((!!said.mode && said.mode !== 'hourly') || /ночевк|переночев/.test(request));
-  if (daysOfBath) remarks.push('Баню бронируют по часам, ищу на 3 часа.');
+  if (daysOfBath) remarks.push(tr('Баню бронируют по часам, ищу на 3 часа.'));
   const length = daysOfBath ? { mode: 'hourly' as const, units: null } : said;
   const mode: 'daily' | 'hourly' | 'night' = banquet ? 'daily' : length.mode ?? (bath ? 'hourly' : dates?.to || dates?.weekend ? (kept === 'night' ? 'night' : 'daily') : kept);
   if (urgent) filters.now = true;
@@ -808,7 +851,7 @@ export function guestSearchRequest(text: string, current: Row, cities: string[],
     if (!past) {
       if (dates || said) stated.when = true;
       if (day === today && localTime(banquetStay(day, slot).start) < soon) {
-        if (slot === 'lunch' && localTime(banquetStay(day, 'evening').start) >= soon) { slot = 'evening'; remarks.push('Обед сегодня уже начался, ищу на вечер.'); }
+        if (slot === 'lunch' && localTime(banquetStay(day, 'evening').start) >= soon) { slot = 'evening'; remarks.push(tr('Обед сегодня уже начался, ищу на вечер.')); }
         else past = 'time';
       }
     }
@@ -821,10 +864,10 @@ export function guestSearchRequest(text: string, current: Row, cities: string[],
     stated.when = true;
     // An hour that is behind today, named without a day, is tomorrow's, and the guest is told so.
     const day = dates?.from || (ahead ? today : addDays(today, 1));
-    if (!dates && !ahead && clock) remarks.push((clock.exact ? 'Сегодня ' + clock.time + ' уже прошло' : 'Сегодня это время уже прошло') + ', ищу на завтра.');
+    if (!dates && !ahead && clock) remarks.push(clock.exact ? tr('Сегодня {time} уже прошло, ищу на завтра.', { time: clock.time }) : tr('Сегодня это время уже прошло, ищу на завтра.'));
     // A named hour closer than the nearest half-hour that can still be taken starts at that half-hour.
     if (!urgent && clock?.exact && day === today && localTime(today + 'T' + clock.time) < soon) {
-      remarks.push('Ближайшее время — ' + localISO(soon).slice(11) + '.');
+      remarks.push(tr('Ближайшее время — {time}.', { time: localISO(soon).slice(11) }));
     }
     if (mode === 'hourly') {
       const kept = current.mode === 'hourly' && current.start && current.end ? clamp(stayHours(current.start, current.end), 1, MAX_HOURS) : 3;
@@ -851,6 +894,6 @@ export function guestSearchRequest(text: string, current: Row, cities: string[],
   // A caller that does not find landmarks on the map (options.places) still tells the guest so.
   const read = [...(Array.isArray(filters.features) ? filters.features : []).flatMap((id: string) => READ_WORDS[id] || []), ...(filters.maxFloor ? ['этаж'] : [])];
   const missed = [...unsearched(request, bath || banquet, read), ...(place && !options.places ? ['место рядом с ориентиром'] : [])];
-  if (missed.length) remarks.push('Пока не умею искать: ' + missed.join(', ') + '.');
+  if (missed.length) remarks.push(tr('Пока не умею искать: {v}.', { v: missed.join(', ') }));
   return { filters, stated, nearby, ...(place ? { place } : {}), understood, ...(past ? { past } : {}), remarks };
 }

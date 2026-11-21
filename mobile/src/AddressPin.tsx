@@ -1,3 +1,4 @@
+import {t} from '../../lib/i18n';
 import React,{useEffect,useRef,useState} from 'react';
 import {StyleSheet,Text,View} from 'react-native';
 import {C,type} from './styles';
@@ -41,19 +42,19 @@ export function AddressPin({propertyId,city,district,address,call,onChoice}:{pro
   if(away!==moved)setMoved(away);
   report.current(away?{point:[Number(c[0].toFixed(6)),Number(c[1].toFixed(6))],moved:true,saved:false}:{point:spot.found?[spot.longitude,spot.latitude]:null,moved:false,saved:spot.saved});
  };
- const note=failed?'Карта не ответила. Адрес сохранится, метку поставим по нему.'
-  :looking&&!spot?'Ищу дом по адресу…'
-  :moved?'Метка будет здесь. Нажмите «Сохранить».'
-  :looking?'Ищу дом по новому адресу…'
-  :spot?.saved?'Метка стоит на доме. Если чуть мимо, передвиньте карту.'
-  :spot?.found?'Нашёл дом по адресу. Проверьте метку и сохраните.'
-  :'Не нашёл дом по адресу. Передвиньте карту так, чтобы метка стояла на вашем доме.';
+ const note=failed?t('Карта не ответила. Адрес сохранится, метку поставим по нему.')
+  :looking&&!spot?t('Ищу дом по адресу…')
+  :moved?t('Метка будет здесь. Нажмите «Сохранить».')
+  :looking?t('Ищу дом по новому адресу…')
+  :spot?.saved?t('Метка стоит на доме. Если чуть мимо, передвиньте карту.')
+  :spot?.found?t('Нашёл дом по адресу. Проверьте метку и сохраните.')
+  :t('Не нашёл дом по адресу. Передвиньте карту так, чтобы метка стояла на вашем доме.');
  const warn=!looking&&!moved&&!!spot&&!spot.found;
  return <View style={a.box}>
-  <Text style={a.label}>Метка на карте</Text>
+  <Text style={a.label}>{t('Метка на карте')}</Text>
   <View style={a.map}>
    {spot?<LiveMap key={'pin:'+round} center={[spot.longitude,spot.latitude]} pins={[]} picking focusKey={'pin:'+round} restore={{view:{center:[spot.longitude,spot.latitude],zoom:spot.found?16:12},key:'pin:'+round}} onCenter={onCenter}/>
-    :<View style={a.wait}><Text style={a.note}>Ищу дом по адресу…</Text></View>}
+    :<View style={a.wait}><Text style={a.note}>{t('Ищу дом по адресу…')}</Text></View>}
   </View>
   <Text accessibilityLiveRegion="polite" style={[a.note,warn&&a.warn]}>{note}</Text>
  </View>;

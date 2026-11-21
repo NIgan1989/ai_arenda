@@ -1,3 +1,4 @@
+import {L,t as tr} from '../../lib/i18n';
 import React,{useState,type ReactNode} from 'react';
 import {View,Text,Pressable,StyleSheet,LayoutAnimation} from 'react-native';
 import {C,type} from './styles';
@@ -12,11 +13,11 @@ type Row=Record<string,any>;
 const R=T.radius;
 const smooth=()=>LayoutAnimation.configureNext(LayoutAnimation.create(200,LayoutAnimation.Types.easeInEaseOut,LayoutAnimation.Properties.opacity));
 
-const EMPTY:Record<BoardTab,string>={
+const EMPTY:Record<BoardTab,string>=L({
  decide:'Сейчас ничего не ждёт вашего решения. ИИ-администратор скажет, когда понадобитесь.',
  now:'Сейчас ничего не идёт.',
  soon:'Впереди пока ничего не запланировано.'
-};
+});
 
 // «Сводка» (lib/overview-board.ts): tabs with their counts, one line per thing. A line of an event opens its deal;
 // a line of an approval opens the approval card in place, where it is answered.
@@ -26,8 +27,8 @@ export function OverviewBoard({workspace,approvals,data,now,busy,onDecide,onOpen
  const [picked,setPicked]=useState<BoardTab|null>(null),[open,setOpen]=useState('');
  const tab:BoardTab=picked||(boardTabs.find(t=>counts[t.id]>0)?.id??'decide');
  return <View style={b.wrap}>
-  <ListTabs tabs={boardTabs} value={tab} counts={counts} label="Сводка" onChange={t=>{smooth();setPicked(t);setOpen('');}}/>
-  {!board[tab].length&&<BrandEmpty title={tab==='decide'?'Всё решено':'Пока пусто'} text={EMPTY[tab]}/>}
+  <ListTabs tabs={boardTabs} value={tab} counts={counts} label={tr('Сводка')} onChange={t=>{smooth();setPicked(t);setOpen('');}}/>
+  {!board[tab].length&&<BrandEmpty title={tab==='decide'?tr('Всё решено'):tr('Пока пусто')} text={EMPTY[tab]}/>}
   {board[tab].map(item=>{
    const unfolded=open===item.key&&!!item.approval;
    return <View key={item.key}>
@@ -40,7 +41,7 @@ export function OverviewBoard({workspace,approvals,data,now,busy,onDecide,onOpen
 
 function Line({item,expanded,onPress}:{item:BoardItem;expanded?:boolean;onPress:()=>void}){
  const folding=expanded!==undefined;
- return <Pressable accessibilityRole="button" accessibilityLabel={[item.title,item.detail,item.when].filter(Boolean).join(', ')} accessibilityHint={folding?(expanded?'Свернуть':'Открыть и ответить'):'Открыть'} accessibilityState={folding?{expanded}:undefined} onPress={onPress} style={({pressed})=>[b.line,item.urgent&&b.lineUrgent,pressed&&b.pressed]}>
+ return <Pressable accessibilityRole="button" accessibilityLabel={[item.title,item.detail,item.when].filter(Boolean).join(', ')} accessibilityHint={folding?(expanded?tr('Свернуть'):tr('Открыть и ответить')):tr('Открыть')} accessibilityState={folding?{expanded}:undefined} onPress={onPress} style={({pressed})=>[b.line,item.urgent&&b.lineUrgent,pressed&&b.pressed]}>
   <View style={[b.dot,{backgroundColor:item.urgent?C.warning:C.accent}]}/>
   <View style={b.body}>
    <Text numberOfLines={1} style={b.title}>{item.title}</Text>
@@ -57,8 +58,8 @@ export function HistoryFold({messages,render,onClear}:{messages:HistoryMessage[]
  if(!messages.length)return null;
  const rows=historyRows(messages);
  return <View style={b.history}>
-  <Pressable accessibilityRole="button" accessibilityLabel={'История, '+messages.length} accessibilityState={{expanded:open}} onPress={()=>{smooth();setOpen(!open);setShown('');setAsked(false);}} style={({pressed})=>[b.historyHead,pressed&&b.pressed]}>
-   <View style={b.body}><Text style={b.title}>История · {messages.length}</Text><Text numberOfLines={1} style={b.detail}>Что говорил ИИ-администратор. Старше {HISTORY_DAYS} дней удаляется само.</Text></View>
+  <Pressable accessibilityRole="button" accessibilityLabel={tr('История, {length}',{length:messages.length})} accessibilityState={{expanded:open}} onPress={()=>{smooth();setOpen(!open);setShown('');setAsked(false);}} style={({pressed})=>[b.historyHead,pressed&&b.pressed]}>
+   <View style={b.body}><Text style={b.title}>{tr('История · {n}',{n:messages.length})}</Text><Text numberOfLines={1} style={b.detail}>{tr('Что говорил ИИ-администратор. Старше {n} дней удаляется само.',{n:HISTORY_DAYS})}</Text></View>
    <Text style={[b.chevron,open&&b.chevronUp]}>⌄</Text>
   </Pressable>
   {open&&<View style={b.historyList}>
@@ -71,10 +72,10 @@ export function HistoryFold({messages,render,onClear}:{messages:HistoryMessage[]
     {!!content&&<View style={b.historyOpen}>{content}</View>}
    </View>;})}
    {asked?<View style={b.clearRow}>
-     <Pressable accessibilityRole="button" onPress={()=>{setAsked(false);setOpen(false);onClear();}} style={({pressed})=>[b.clear,b.clearYes,pressed&&b.pressed]}><Text style={[b.clearText,b.clearYesText]}>Да, очистить</Text></Pressable>
-     <Pressable accessibilityRole="button" onPress={()=>setAsked(false)} style={({pressed})=>[b.clear,pressed&&b.pressed]}><Text style={b.clearText}>Не нужно</Text></Pressable>
+     <Pressable accessibilityRole="button" onPress={()=>{setAsked(false);setOpen(false);onClear();}} style={({pressed})=>[b.clear,b.clearYes,pressed&&b.pressed]}><Text style={[b.clearText,b.clearYesText]}>{tr('Да, очистить')}</Text></Pressable>
+     <Pressable accessibilityRole="button" onPress={()=>setAsked(false)} style={({pressed})=>[b.clear,pressed&&b.pressed]}><Text style={b.clearText}>{tr('Не нужно')}</Text></Pressable>
     </View>
-    :<Pressable accessibilityRole="button" onPress={()=>setAsked(true)} style={({pressed})=>[b.clear,pressed&&b.pressed]}><Text style={b.clearText}>Очистить историю</Text></Pressable>}
+    :<Pressable accessibilityRole="button" onPress={()=>setAsked(true)} style={({pressed})=>[b.clear,pressed&&b.pressed]}><Text style={b.clearText}>{tr('Очистить историю')}</Text></Pressable>}
   </View>}
  </View>;
 }
