@@ -16,6 +16,7 @@ import {amenities,categoryAmenities,checkinMethods,isBath,isBanquet,isVenue,kind
 import {KindPicker} from './KindPicker';
 import {PREPAY_CHOICES,prepayNote,prepayState} from '../../lib/prepay';
 import {AddressPin,type PinChoice} from './AddressPin';
+import {AddressField} from './AddressSuggest';
 type Row=Record<string,any>;
 const R=T.radius,H=T.control;
 const ICONS:Record<EditStep,string>={photos:'📷',flat:'🏠',place:'📍',text:'📝',amenities:'📶',prices:'₸',checkin:'🕑',rules:'📜'};
@@ -27,7 +28,7 @@ export function PropertyEdit({property,onSave,onReview,onRemove,onClose,onOpenHa
  const [p,setP]=useState(property),[base,setBase]=useState<EditBody>(()=>editBody(property)),[draft,setDraft]=useState<EditBody>(base);
  const [open,setOpen]=useState<EditStep|null>(step&&EDIT_STEPS.some(x=>x.key===step)?step as EditStep:null),[busy,setBusy]=useState(false),[uploading,setUploading]=useState(false),[error,setError]=useState(''),[done,setDone]=useState(''),[skipped,setSkipped]=useState<string[]>([]),[held,setHeld]=useState(false),[sent,setSent]=useState(false);
  const pick=useRef<PinChoice|null>(null),errorRu=useRef('');
- const [access,setAccess]=useState(''),[accessState,setAccessState]=useState('');
+ const [access,setAccess]=useState(''),[accessState,setAccessState]=useState(''),[place,setPlace]=useState('');
  async function saveAccess(){if(!call||!p.id||!access.trim())return;setAccessState('…');try{await call('access/save',{propertyId:p.id,instructions:access.trim(),expectedVersion:p.access_version||0});setP((o:Row)=>({...o,access_version:(o.access_version||0)+1}));setAccess('');setAccessState(t('Инструкция сохранена. Гость увидит её перед заездом, исполнитель — когда начнёт уборку.'));}catch(r:any){setAccessState(r?.message||t('Не удалось сохранить инструкцию.'));}}
  const [confirm,setConfirm]=useState(false),[removeError,setRemoveError]=useState(''),[calendars,setCalendars]=useState(step==='calendars'),[cleaner,setCleaner]=useState(step==='cleaner'),[staff,setStaff]=useState(step==='staff'),[halls,setHalls]=useState(step==='halls');
  // A save that failed keeps its changes: the owner fixes what the server asked for in another step and everything is saved together.
@@ -87,11 +88,12 @@ export function PropertyEdit({property,onSave,onReview,onRemove,onClose,onOpenHa
     </>}
    </>}
    {open==='place'&&<>
-    <View style={e.row}>{half(text(t('Город'),draft.city,v=>set({city:v}),80))}{half(text(t('Район'),draft.district,v=>set({district:v}),120,t('Например, Центр')))}</View>
-    {text(t('Точный адрес'),draft.address,v=>set({address:v}),300,t('Улица, дом, номер'))}
+    <AddressField kind="city" label={t('Город или село')} value={draft.city} max={80} onChange={v=>{setPlace('');set({city:v});}} onPick={c=>setPlace(c.id||'')}/>
+    <AddressField kind="district" label={t('Район')} value={draft.district} city={draft.city} place={place} max={120} placeholder={t('Например, Центр')} onChange={v=>set({district:v})}/>
+    <AddressField kind="street" label={t('Точный адрес')} value={draft.address} city={draft.city} place={place} max={300} placeholder={t('Улица, дом, номер')} onChange={v=>set({address:v})} onPick={c=>{if(c.district&&!draft.district.trim())set({district:c.district});}}/>
     <Text style={e.hint}>{t('Адрес видит только гость с подтверждённой бронью. Метку на карте ставим по нему.')}</Text>
     {base.published&&(draft.address!==base.address||draft.city!==base.city||draft.district!==base.district)&&<Text accessibilityLiveRegion="polite" style={e.note}>{t('Новый адрес проверит администратор, обычно это быстро. До проверки новые гости не увидят жильё, а действующие брони останутся в силе.')}</Text>}
-    {!!call&&!!p.id&&<AddressPin propertyId={p.id} city={draft.city} district={draft.district} address={draft.address} call={call} onChoice={c=>{pick.current=c;}}/>}
+    {!!call&&!!p.id&&<AddressPin propertyId={p.id} city={draft.city} district={draft.district} address={draft.address} place={place} call={call} onChoice={c=>{pick.current=c;}}/>}
    </>}
    {open==='text'&&<>
     {text(t('Название'),draft.title,v=>set({title:v}),120)}

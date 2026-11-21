@@ -32,6 +32,7 @@ import {adminFactorPassed,adminFactorState,adminFactorAction,adminTelegramRelink
 import {readPlatformAdmin,writePlatformAdmin} from '../../../lib/platform-admin';
 import {requestCleanerAdmission} from '../../../lib/pilot-governance';
 import {ensurePublishReview} from '../../../lib/participant-security';
+import {addressRequest,withCanonicalCity} from '../../../lib/address-api';
 export const dynamic='force-dynamic';
 // Routes that stay open before the documents are accepted: the person's own settings, leaving and deleting the account,
 // reading, the map and switching Autopilot off (declining new terms must not keep a paid plan running). Everything else in a workspace waits for acceptance.
@@ -75,6 +76,7 @@ async function handle(request:Request, context:{params:Promise<{path:string[]}>}
     if(request.method==='GET'&&route.join('/')==='public/catalog')return json(await new RentalService(env.DB,'').publicSearch(Object.fromEntries(new URL(request.url).searchParams),{syntheticPreview:env.TEST_DATA_ONLY==='1'}));
     if(request.method==='GET'&&route.join('/')==='public/matching'){const input=new URL(request.url).searchParams.get('q')||'{}';if(input.length>2500)return json({error:'Слишком длинные условия поиска.'},400);let filters;try{filters=JSON.parse(input);}catch{return json({error:'Проверьте формат условий поиска.'},400);}return json(await previewMatches(new RentalService(env.DB,''),filters));}
     if(request.method==='POST'&&route.join('/')==='public/views'){let body;try{body=JSON.parse(await boundedRequestText(request,6000)||'{}');}catch{return json({error:'Проверьте формат запроса.'},400);}return json(await recordViews(env.DB,body));}
+    if(request.method==='GET'&&route.join('/')==='public/address')return json(await addressRequest(env.BUCKET,env.DB,new URL(request.url).searchParams));
     if(request.method==='GET'&&route.length===3&&route[0]==='public'&&route[1]==='media')return json(await new RentalService(env.DB,'').publicMedia(route[2],env.BUCKET));
     if(route.length===2&&route[0]==='auth')return await authRequest(env.DB,request,route[1],'web',env);
     if(route.length===3&&route[0]==='mobile'&&route[1]==='auth')return await authRequest(env.DB,request,route[2],'mobile',env);
@@ -146,7 +148,7 @@ async function handle(request:Request, context:{params:Promise<{path:string[]}>}
         case 'quote':return json(await service.bookingQuote(body));
         case 'profile':return json(await service.saveProfile(body));
         case 'media':return json(await service.uploadMedia(body,env.BUCKET));
-        case 'listings':return json(await withPublishReview(service,await service.saveListing(null,body),env));
+        case 'listings':return json(await withPublishReview(service,await service.saveListing(null,await withCanonicalCity(env.BUCKET,body)),env));
         case 'properties':return json(await service.createProperty(body));
         case 'bookings':return json(await service.createBooking(body));
         case 'jobs':return json(await service.createJob(body));
@@ -160,7 +162,7 @@ async function handle(request:Request, context:{params:Promise<{path:string[]}>}
     if(route.length===2&&route[0]==='profile'&&route[1]==='edit')return json(await service.editProfile(body));
     if(route.length===2&&route[0]==='media'&&body.action==='remove')return json(await service.deleteMedia(route[1],env.BUCKET));
     if(route.length===3&&route[0]==='listings'&&route[2]==='remove')return json(await service.removeProperty(route[1]));
-    if(route.length===2&&route[0]==='listings')return json(await withPublishReview(service,await service.saveListing(route[1],body),env));
+    if(route.length===2&&route[0]==='listings')return json(await withPublishReview(service,await service.saveListing(route[1],await withCanonicalCity(env.BUCKET,body)),env));
     if(route.length===2 && route[0]==='bookings') return json(await service.bookingAction(route[1],body));
     if(route.length===2 && route[0]==='jobs'){const result=await service.jobAction(route[1],body);if(body.action!=='apply')return json(result);
       // The response itself sends the cleaner's profile to the platform check that assignment needs, and says so.

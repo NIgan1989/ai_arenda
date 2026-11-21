@@ -4,6 +4,7 @@ import {q,one,rows,uuid,epoch,type Row,type OperationConfig} from './operation-c
 import {mapCities,geoDistance} from './map-location';
 import {ownerDemand} from './owner-demand';
 import {recentAiMarks} from './ai-moves';
+import {bookSpot,type BookBucket} from './address-book';
 export {mapCities,geoDistance} from './map-location';
 export function coordinate(value:unknown,min:number,max:number){if(value===null||value===''||typeof value==='boolean')throw new DomainError('Укажите координаты точки.');const n=Number(value);if(!Number.isFinite(n)||n<min||n>max)throw new DomainError('Некорректные координаты.');return n;}
 const fingerprint=(p:Row)=>[p.city,p.district,p.address].join('|');
@@ -47,11 +48,19 @@ export function geocodeQueries(p:Row){
  return [...new Set(ways)].slice(0,3);
 }
 type Spot={longitude:number;latitude:number;found:boolean};
-type GeoConfig={STADIA_API_KEY?:string};
+type GeoConfig={STADIA_API_KEY?:string;BUCKET?:unknown};
+// The settlement the owner picked from the list, to tell namesake villages apart.
+const placeOf=(b:Row)=>typeof b.place==='string'&&/^[nwr]\d{1,15}$/.test(b.place)?b.place:'';
 // The owner may pass the address he is still typing (city, district, address), so the pin moves before he saves.
 function draftOf(p:Row,b:Row){const take=(k:string,max:number)=>typeof b[k]==='string'?b[k].slice(0,max):p[k];return {...p,city:take('city',80),district:take('district',120),address:take('address',300)};}
-async function findSpot(p:Row,lookup:typeof fetch,config:GeoConfig):Promise<Spot>{
- const city=String(p.city||'').trim().toLocaleLowerCase('ru'),centre=mapCities[Object.keys(mapCities).find(c=>c.toLocaleLowerCase('ru')===city)||'']||mapCities['Павлодар'],fallback={longitude:centre[0],latitude:centre[1],found:false};
+async function findSpot(p:Row,lookup:typeof fetch,config:GeoConfig,place=''):Promise<Spot>{
+ // The address book knows every settlement and many houses: a house from it is the pin at once, a small town
+ // gets its own centre instead of Pavlodar's, and a known street is a better start than the centre.
+ let book:Awaited<ReturnType<typeof bookSpot>>=null;try{book=await bookSpot(config.BUCKET as BookBucket|undefined,p.city,cutFlat(p.address),place);}catch{book=null;}
+ if(book?.exact)return {longitude:book.longitude,latitude:book.latitude,found:true};
+ const city=String(p.city||'').trim().toLocaleLowerCase('ru'),known=mapCities[Object.keys(mapCities).find(c=>c.toLocaleLowerCase('ru')===city)||''];
+ const centre:[number,number]=known||(book?[book.longitude,book.latitude]:mapCities['Павлодар']),fallback={longitude:book&&!known?book.longitude:centre[0],latitude:book&&!known?book.latitude:centre[1],found:false};
+ if(book&&known&&(book.longitude!==known[0]||book.latitude!==known[1])&&geoDistance([book.longitude,book.latitude],known)<=60000){fallback.longitude=book.longitude;fallback.latitude=book.latitude;}
  if(!cutFlat(p.address))return fallback;
  const stadia=typeof config.STADIA_API_KEY==='string'&&/^[A-Za-z0-9-]{8,128}$/.test(config.STADIA_API_KEY)?config.STADIA_API_KEY:'';
  // A result far from the flat's city is somebody else's street with the same name.
@@ -76,21 +85,21 @@ async function ownFlat(s:RentalService,role:Role,id:unknown){
  const p=await one(s.db,'SELECT * FROM properties WHERE id=? AND owner_id=?',id,s.userId);if(!p)throw new DomainError('Объект недоступен.',404);return p;
 }
 export async function geocodeFlat(s:RentalService,role:Role,b:Row,lookup:typeof fetch=fetch,config:GeoConfig={}){
- const p=await ownFlat(s,role,b.propertyId);return findSpot(draftOf(p,b),lookup,config);
+ const p=await ownFlat(s,role,b.propertyId);return findSpot(draftOf(p,b),lookup,config,placeOf(b));
 }
 // The pin of the flat as the owner sees it in «Адрес»: his own pin while it still matches the address,
 // otherwise where the address is (or the city centre, found:false). saved tells which one it is; version is for saving.
 export async function flatSpot(s:RentalService,role:Role,b:Row,lookup:typeof fetch=fetch,config:GeoConfig={}){
  const p=await ownFlat(s,role,b.propertyId),draft=draftOf(p,b),l=await one(s.db,'SELECT * FROM property_locations WHERE property_id=?',p.id),version=Number(l?.version||0);
  if(l&&l.address_fingerprint===fingerprint(draft))return {longitude:l.longitude,latitude:l.latitude,found:true,saved:true,version};
- return {...await findSpot(draft,lookup,config),saved:false,version};
+ return {...await findSpot(draft,lookup,config,placeOf(b)),saved:false,version};
 }
 // After a flat is added or its address changes: put it on the map by its address, unless the owner's own pin still
 // matches the address. A pin left from the old address (another city, another street) is replaced.
 export async function placeFlatByAddress(s:RentalService,role:Role,b:Row,lookup:typeof fetch=fetch,config:GeoConfig={}){
  const p=await ownFlat(s,role,b.propertyId),l=await one(s.db,'SELECT * FROM property_locations WHERE property_id=?',p.id);
  if(l&&l.address_fingerprint===fingerprint(p))return {longitude:l.longitude,latitude:l.latitude,found:true,saved:false,current:true};
- const spot=await findSpot(p,lookup,config);
+ const spot=await findSpot(p,lookup,config,placeOf(b));
  if(!spot.found)return {...spot,saved:false};
  await saveMapPoint(s,role,{propertyId:p.id,longitude:spot.longitude,latitude:spot.latitude,version:Number(l?.version||0),confirmed:true});
  return {...spot,saved:true};

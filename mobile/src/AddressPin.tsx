@@ -15,18 +15,18 @@ export type Spot={longitude:number;latitude:number;found:boolean;saved:boolean;v
 
 // The flat's pin in the «Адрес» step. The service finds the house by the address being typed (city, district, address)
 // and the map flies there; the pin stays in the middle and the owner moves the map under it if the house is a bit off.
-export function AddressPin({propertyId,city,district,address,call,onChoice}:{propertyId:string;city:string;district:string;address:string;call:(path:string,body:Row)=>Promise<Row>;onChoice:(choice:PinChoice)=>void}){
+export function AddressPin({propertyId,city,district,address,place='',call,onChoice}:{propertyId:string;city:string;district:string;address:string;place?:string;call:(path:string,body:Row)=>Promise<Row>;onChoice:(choice:PinChoice)=>void}){
  const [spot,setSpot]=useState<Spot|null>(null),[answered,setAnswered]=useState(''),[moved,setMoved]=useState(false),[failed,setFailed]=useState(false),[round,setRound]=useState(0);
  const report=useRef(onChoice);useEffect(()=>{report.current=onChoice;},[onChoice]);
  // The address being typed; the note says «Ищу…» until the answer for exactly this address arrives.
- const asked=[city,district,address].join('|'),looking=answered!==asked;
+ const asked=[city,district,address,place].join('|'),looking=answered!==asked;
  // Ask again a moment after the owner stops typing; an older answer never overwrites a newer one.
  useEffect(()=>{
   let live=true;
   // A pin chosen for the old address is forgotten at once: until the new one is found, «Сохранить» keeps the service's own pin.
   report.current({point:null,moved:false,saved:false});
   const timer=setTimeout(async()=>{
-   try{const next=await call('map/spot',{propertyId,city,district,address}) as Spot;if(!live)return;
+   try{const next=await call('map/spot',{propertyId,city,district,address,...(place?{place}:{})}) as Spot;if(!live)return;
     setSpot(next);setFailed(false);setMoved(false);setRound(n=>n+1);
     report.current({point:next.found?[next.longitude,next.latitude]:null,moved:false,saved:!!next.saved});}
    catch{if(live)setFailed(true);}
