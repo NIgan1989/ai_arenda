@@ -93,8 +93,8 @@ function readBack(){
     const names:string[]=[],quoted:boolean[]=[],pieces=key.split(/\{(\w+)\}/);
     let source='^',fixed=0;
     pieces.forEach((piece,i)=>{if(i%2){names.push(piece);quoted.push(pieces[i-1].endsWith('«')&&pieces[i+1].startsWith('»'));source+='(.*?)';}else{source+=piece.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');fixed+=piece.length;}});
-    // A line made of slots alone («{a} · {b}») would read back anything.
-    if(fixed<4)continue;
+    // A line made mostly of slots («{a} · {b}», «Уборка {when}») would read back almost any line.
+    if(fixed<12)continue;
     patterns.push({key,names,quoted,re:new RegExp(source+'$','s'),fixed});
   }
   patterns.sort((a,b)=>b.fixed-a.fixed);

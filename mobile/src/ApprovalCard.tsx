@@ -24,8 +24,8 @@ const F=T.font,R=T.radius;
 const tone={low:[C.successSoft,C.success],medium:[C.warningSoft,C.warning],high:[C.dangerSoft,C.danger]} as const;
 export function BookingRiskBox({risk}:{risk:NonNullable<Approval['risk']>}){
  const [bg,fg]=tone[risk.level];
- return <View accessibilityLabel={risk.label} style={[k.box,{backgroundColor:bg,borderColor:risk.level==='medium'?C.warningLine:bg}]}>
-  <View style={k.head}><View style={[k.dot,{backgroundColor:fg}]}/><Text style={k.title}>{risk.label}</Text>{risk.held&&<Text style={k.held}>{tr('автоподтверждение остановлено')}</Text>}</View>
+ return <View accessibilityLabel={tr(risk.label)} style={[k.box,{backgroundColor:bg,borderColor:risk.level==='medium'?C.warningLine:bg}]}>
+  <View style={k.head}><View style={[k.dot,{backgroundColor:fg}]}/><Text style={k.title}>{tr(risk.label)}</Text>{risk.held&&<Text style={k.held}>{tr('автоподтверждение остановлено')}</Text>}</View>
   <View style={k.reasons}>{risk.reasons.map(r=><Text key={r} style={k.reason}>{r}</Text>)}</View>
   <Text style={k.advice}>{risk.advice}</Text>
  </View>;
