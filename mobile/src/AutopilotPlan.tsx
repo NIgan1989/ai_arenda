@@ -42,11 +42,11 @@ function PayWay({state,owner}:{state:Data;owner:boolean}){
   <Text accessibilityRole="header" style={a.label}>{tr('Тариф')}</Text>
   <View style={[p.way,p.wayOn]}>
    <View style={{flex:1,gap:2}}>
-    <Text style={a.title}>{owner?tr('{rate} с каждой брони',{rate}):tr('{rate} с каждой выполненной уборки',{rate})}</Text>
-    <Text style={a.note}>{owner?tr('Автопилот, ИИ-администратор, подбор исполнителя, защита и аналитика входят. Доплат нет. Нет броней — нет платы.'):tr('Автопилот и заказы рядом бесплатно. Платите только с уборок, которые выполнили.')}</Text>
+    <Text style={a.title}>{owner?tr('{rate} с каждого заселения',{rate}):tr('{rate} с каждой выполненной уборки',{rate})}</Text>
+    <Text style={a.note}>{owner?tr('Автопилот, ИИ-администратор, подбор исполнителя, защита и аналитика входят. Доплат нет. Платите, только когда гость заселился.'):tr('Автопилот и заказы рядом бесплатно. Платите только с уборок, которые выполнили.')}</Text>
    </View>
   </View>
-  {owner&&state.hallScale&&<Text style={p.hint}>{tr('Залы и кафе: {r1} с суммы до {b1}, {r2} до {b2}, {r3} свыше, не больше {max} за мероприятие. Сумма — гости × цена за гостя.',{r1:pct(state.hallScale.rate1),b1:money(state.hallScale.band1),r2:pct(state.hallScale.rate2),b2:money(state.hallScale.band2),r3:pct(state.hallScale.rate3),max:money(state.hallScale.max)})}</Text>}
+  {owner&&state.hallScale&&<Text style={p.hint}>{tr('Залы и кафе платят за месяц: до {a} гостей {small}, до {b} гостей {mid}, больше {large}. Брони без ограничений. Месяц без броней через приложение бесплатный.',{a:state.hallScale.smallUpto,b:state.hallScale.midUpto,small:money(state.hallScale.small),mid:money(state.hallScale.mid),large:money(state.hallScale.large)})}</Text>}
   {b.spent30>0&&<Text style={p.hint}>{tr('За 30 дней: {spent}.',{spent:money(b.spent30)})}</Text>}
   <Text style={p.fine}>{st.charge?tr('Всё копится и списывается одной суммой по понедельникам с привязанной карты.'):tr('Пока плата не взимается: сервис только считает.')}</Text>
  </View>;
@@ -74,7 +74,7 @@ export function NativeAutopilotPlan({role}:{role:'owner'|'cleaner'}){
  const terms=termsIn(state.terms);
  const statusLine=!plan?'':(terms.pay||'')+(st.charge?'':' '+tr('Пока бесплатно.'));
  const priceLine=owner?tr('Входит в тариф'):tr('Бесплатно');
- const priceNote=owner?tr('{rate} с каждой брони, без доплат за ИИ',{rate:pct(st.ownerRate)}):tr('Тариф: {rate} с каждой выполненной уборки',{rate:pct(st.cleanerRate)});
+ const priceNote=owner?tr('{rate} с каждого заселения, без доплат за ИИ',{rate:pct(st.ownerRate)}):tr('Тариф: {rate} с каждой выполненной уборки',{rate:pct(st.cleanerRate)});
  const offNote=owner?tr('Объекты перейдут в режим «Я сам». Принятые брони и уборки останутся в силе.'):tr('Предложения уборок снова будут приходить вам на решение. Принятые уборки останутся.');
  const steps=STEPS[role],last=steps.length-1,num=(v:string)=>v.replace(/\D/g,'').slice(0,7);
  const begin=()=>{setOpen(true);setStep(0);setMessage('');};
@@ -83,7 +83,7 @@ export function NativeAutopilotPlan({role}:{role:'owner'|'cleaner'}){
  const canNext=owner?(step===0?fresh.length>0:step===1?!feeMissing:true):(step===0?!!rules.days&&toM-fromM>=60:true);
  const chip=(label:string,on:boolean,press:()=>void,wide=false)=><Pressable key={label} accessibilityRole="button" accessibilityState={{selected:on}} onPress={press} style={[p.chip,wide&&p.day,on&&(wide?p.dayOn:p.chipOn)]}><Text style={[p.chipText,on&&(wide?p.dayOnText:p.chipOnText)]}>{label}</Text></Pressable>;
  const btn=(title:string,fn:()=>void,kind:'main'|'line'|'danger'='main',disabled=false)=><Pressable accessibilityRole="button" disabled={busy||disabled} onPress={fn} style={[p.btn,kind==='line'&&p.btnLine,kind==='danger'&&p.btnDanger,(busy||disabled)&&s.disabled]}><Text style={[p.btnText,kind==='line'&&p.btnLineText]}>{title}</Text></Pressable>;
- const sum=<View style={p.sum}><Text style={p.sumLabel}>{tr('Оплата')}</Text><Text style={p.sumValue}>{owner?tr('{rate} с брони, ИИ без доплат',{rate:pct(st.ownerRate)}):tr('{rate} с уборки',{rate:pct(st.cleanerRate)})}</Text></View>;
+ const sum=<View style={p.sum}><Text style={p.sumLabel}>{tr('Оплата')}</Text><Text style={p.sumValue}>{owner?tr('{rate} с заселения, ИИ без доплат',{rate:pct(st.ownerRate)}):tr('{rate} с уборки',{rate:pct(st.cleanerRate)})}</Text></View>;
  const finish=owner
   ?()=>run('operations/autopilot/start',{propertyIds:fresh.map(f=>f.id),cleaningFees:Object.fromEntries(Object.entries(fees).filter(([,v])=>v).map(([k,v])=>[k,Number(v)]))})
   :()=>run(live?'operations/autopilot/rules':'operations/autopilot/start',{...rules,fromMinute:fromM,toMinute:toM});

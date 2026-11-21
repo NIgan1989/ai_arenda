@@ -1,6 +1,7 @@
 import {DomainError,required} from './domain';
 import type {RentalService} from './service';
 import {epoch,uuid,q,one,rows,type Row} from './operation-core';
+import {stayedSql} from './stay-result';
 import {cleanerStats,rankCleaners} from './cleaner-match';
 
 // «Моя уборщица»: an owner and a cleaner who work together keep doing it through the service, because the
@@ -12,7 +13,7 @@ import {cleanerStats,rankCleaners} from './cleaner-match';
 // The per-result fees of the hybrid tariff (service_fees: «Автопилот» per booking, the performer's fee per cleaning)
 // are owed the same way; the owner's or the performer's own id is bound once, so callers keep the same arguments.
 export const availableSql=(owner:string)=>`(COALESCE((SELECT SUM(amount) FROM owner_balance_entries WHERE owner_id=${owner}),0)
- -COALESCE((SELECT SUM(c.amount) FROM platform_commissions c WHERE c.owner_id=${owner} AND c.mode='charged' AND (SELECT status FROM bookings WHERE id=c.booking_id) IN ('confirmed','completed')),0)
+ -COALESCE((SELECT SUM(c.amount) FROM platform_commissions c WHERE c.owner_id=${owner} AND c.mode='charged' AND ${stayedSql('c.booking_id')}),0)
  -COALESCE((SELECT SUM(amount) FROM cleaning_commissions WHERE owner_id=${owner} AND mode='charged'),0)
  -COALESCE((SELECT SUM(amount) FROM cleaning_holds WHERE owner_id=${owner} AND status IN ('held','due','paid')),0)
  -COALESCE((SELECT SUM(a.amount) FROM (SELECT ${owner} u) k JOIN (SELECT user_id,amount FROM autopilot_charges WHERE role='owner' AND mode='charged'

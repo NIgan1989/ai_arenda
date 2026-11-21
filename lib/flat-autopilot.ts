@@ -6,7 +6,7 @@ const percent=(bp:number)=>String(bp/100).replace('.',',')+'%';
 const money=(n:number)=>new Intl.NumberFormat('ru-RU').format(n||0)+' ₸';
 export function flatAutopilotNote(f:FlatAutopilot){
  if(!f.managed&&!f.ready)return t('Сначала заполните правила и цены жилья: по ним ИИ отвечает гостям');
- if(f.rate!==undefined)return f.managed?t('ИИ отвечает гостям и заказывает уборки. Входит в тариф {rate} с брони, без доплат',{rate:percent(f.rate)}):t('ИИ будет отвечать гостям и заказывать уборки. Входит в тариф {rate} с брони, без доплат',{rate:percent(f.rate)});
+ if(f.rate!==undefined)return f.managed?t('ИИ отвечает гостям и заказывает уборки. Входит в тариф {rate} с заселения, без доплат',{rate:percent(f.rate)}):t('ИИ будет отвечать гостям и заказывать уборки. Входит в тариф {rate} с заселения, без доплат',{rate:percent(f.rate)});
  if(f.included)return f.managed?t('ИИ отвечает гостям и заказывает уборки. Входит в «Всё включено»'):t('ИИ будет отвечать гостям и заказывать уборки. Входит в «Всё включено»');
  const v={sum:money(f.price),cap:money(f.cap||0)};
  if(f.managed)return f.cap

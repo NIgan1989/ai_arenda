@@ -755,7 +755,8 @@ export function guestSearchRequest(text: string, current: Row, cities: string[],
   const occasion = statedOccasion(request);
   // «Квартира на день рождения» is a home for a party, not a hall: an occasion makes a hall only when no home is named.
   const homeNamed = /квартир|жиль[ея]|однушк|двушк|трешк|студи|(?:^|[^а-я])(?:дом|домик|коттедж)(?=$|[^а-я])|гостиниц|хостел/.test(request);
-  const hall = kinds.includes('banquet') || (!!occasion && !homeNamed && !kinds.some(k => !BANQUET_KINDS.includes(k)));
+  // «На Новый год» is mostly a home for the night: only a hall named makes it a banquet.
+  const hall = kinds.includes('banquet') || (!!occasion && occasion !== 'newyear' && !homeNamed && !kinds.some(k => !BANQUET_KINDS.includes(k)));
   if (hall) kinds.splice(0, kinds.length, ...(kinds.includes('cafe') && !kinds.includes('banquet') ? ['cafe'] : BANQUET_KINDS));
   if (kinds.length) filters.kinds = kinds;
   const banquet = isBanquetRequest(filters.kinds || current.kinds);

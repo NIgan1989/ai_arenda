@@ -5,6 +5,7 @@ import {underAutopilot,setGuestMode} from './autopilot';
 import {dueOf,sweepDues,servicePaused} from './service-dues';
 import {declineAssignment} from './dispatch';
 import {autopilotWeek} from './autopilot-week-db';
+import {sweepHallMonths} from './platform-billing';
 
 // «Автопилот» and the tariff. Since 2026-11-22 there is one tariff in percent: the owner pays rate_bp (4%) of every
 // booking confirmed through the service (lib/platform-billing.ts), the performer cleaner_rate_bp (5%) of every
@@ -74,7 +75,7 @@ async function pause(db:D1Database,plan:Row,at:number,why:string){
 }
 
 const payNote=(s:PlanSettings,role:PlanRole)=>role==='owner'
- ?`Тариф: ${percentText(s.ownerRate)} с каждой брони. Автопилот, ИИ-администратор и подбор исполнителя входят, доплат нет.`
+ ?`Тариф: ${percentText(s.ownerRate)} с каждого заселения. Автопилот, ИИ-администратор и подбор исполнителя входят, доплат нет.`
  :`Автопилот бесплатный. Тариф: ${percentText(s.cleanerRate)} с каждой выполненной уборки.`;
 export const tierText=(s:PlanSettings,role:PlanRole)=>({pay:payNote(s,role),all:payNote(s,role)});
 
@@ -218,9 +219,9 @@ export async function planState(service:RentalService,role:PlanRole){
   const stats=await one(db,`SELECT (SELECT COUNT(*) FROM audit_events a JOIN properties p ON p.id=a.entity_id WHERE p.owner_id=? AND a.actor_id='system:autopilot' AND a.created_at>?) answered,
    (SELECT COUNT(*) FROM bookings b JOIN properties p ON p.id=b.property_id WHERE p.owner_id=? AND b.status IN ('confirmed','completed') AND b.created_at>? AND ${underAutopilot('p.id')}) bookings,
    (SELECT COUNT(*) FROM cleaning_jobs j WHERE j.owner_id=? AND j.status='completed' AND j.completed_at>? AND ${underAutopilot('j.property_id')}) cleanings`,service.userId,week,service.userId,week,at,service.userId,week,at);
-  // An owner with a banquet hall or a café sees the scale of the hall too (lib/platform-billing.ts hallFeeFor).
-  const hall=await one(db,"SELECT s.hall_rate_bp,s.hall_band1,s.hall_rate2_bp,s.hall_band2,s.hall_rate3_bp,s.hall_max_fee FROM platform_billing s WHERE s.id='global' AND EXISTS(SELECT 1 FROM properties p JOIN property_details d ON d.property_id=p.id WHERE p.owner_id=? AND p.archived_at IS NULL AND json_extract(d.details,'$.type') IN ('banquet','cafe'))",service.userId);
-  const hallScale=hall?{rate1:Number(hall.hall_rate_bp),band1:Number(hall.hall_band1),rate2:Number(hall.hall_rate2_bp),band2:Number(hall.hall_band2),rate3:Number(hall.hall_rate3_bp),max:Number(hall.hall_max_fee)}:null;
+  // An owner with a banquet hall or a café sees its month too (lib/platform-billing.ts sweepHallMonths).
+  const hall=await one(db,"SELECT s.hall_small_upto,s.hall_mid_upto,s.hall_fee_small,s.hall_fee_mid,s.hall_fee_large FROM platform_billing s WHERE s.id='global' AND EXISTS(SELECT 1 FROM properties p JOIN property_details d ON d.property_id=p.id WHERE p.owner_id=? AND p.archived_at IS NULL AND json_extract(d.details,'$.type') IN ('banquet','cafe'))",service.userId);
+  const hallScale=hall?{smallUpto:Number(hall.hall_small_upto),midUpto:Number(hall.hall_mid_upto),small:Number(hall.hall_fee_small),mid:Number(hall.hall_fee_mid),large:Number(hall.hall_fee_large)}:null;
   return {...base,hallScale,flats:flats.map(f=>({id:f.id,title:f.title,ownStaff:!!f.own_staff,cleaningFee:f.cleaning_fee,ready:!!f.has_policy,managed:!!f.managed})),units:managed,nextAmount:allAmount,due:await dueOf(db,service.userId),week:{answered:Number(stats?.answered||0),bookings:Number(stats?.bookings||0),cleanings:Number(stats?.cleanings||0)}};
  }
  const rules=await one(db,'SELECT * FROM cleaner_autopilot WHERE user_id=?',service.userId);
@@ -284,6 +285,8 @@ export async function sweepPlans(db:D1Database,at=epoch(),config:{PLATFORM_ADMIN
    if(r.meta.changes)result.reports++;
   }
  }
+ // The month of every hall that had a booking through the app (written once a month, safe to repeat).
+ result.hallMonths=await sweepHallMonths(db,at);
  // The weekly card charge for all service fees; a debt unpaid for seven days pauses the debtor's plans.
  result.dues=await sweepDues(db,async(d,user,t)=>{for(const plan of await rows(d,"SELECT * FROM autopilot_plans WHERE user_id=? AND status IN ('trial','active','grace')",user))await pause(d,plan,t,plan.role==='owner'?'Автопилот на паузе: услуги сервиса не оплачены. Объекты в режиме «Я сам», принятые брони и уборки в силе.':'Автопилот на паузе: услуги сервиса не оплачены. Принятые уборки в силе.');},at,config);
  return result;

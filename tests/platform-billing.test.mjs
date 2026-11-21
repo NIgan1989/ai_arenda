@@ -42,7 +42,10 @@ test('enabled billing gives free bookings first, then charges the owner balance;
   const free=await book(f,2,'b2'),charged=await book(f,3,'b3');
   assert.equal(row(f,free).mode,'free');assert.equal(row(f,charged).mode,'charged');
   const fee=row(f,charged).amount;assert.equal(fee,Math.max(300,Math.floor((row(f,charged).booking_amount*1000+5000)/10000)));
-  let state=await readPlatformAdmin(f.other,'billing',{},config(f));
+  // The owner owes the fee once the guest has settled in, not at the confirmation.
+  let state=await readPlatformAdmin(f.other,'billing',{},config(f));assert.equal(ownerRow(state).balance,0,'nothing before the guest came');
+  f.db.raw.prepare('UPDATE booking_terms SET actual_checkin=? WHERE booking_id=?').run(now(),charged);
+  state=await readPlatformAdmin(f.other,'billing',{},config(f));
   assert.equal(state.phase,'active');assert.equal(ownerRow(state).balance,-fee);assert.equal(ownerRow(state).freeLeft,0);assert.equal(state.debtors,1);
 
   await assert.rejects(writePlatformAdmin(f.other,'billing/balance',{confirmed:true,ownerId:'owner',kind:'topup',amount:-5,note:'Kaspi',requestKey:'t0'},config(f)),/больше нуля/);

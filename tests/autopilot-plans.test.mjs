@@ -22,7 +22,7 @@ test('turning a flat to «ИИ» turns the plan on: no month, no trial, a notice
  const f=await fixture();try{
   await auto(f);
   const p=plan(f);assert.equal(p.status,'active');assert.equal(p.tier,'pay');assert.equal(charges(f).length,0);
-  assert.match(f.db.raw.prepare("SELECT body FROM notifications WHERE dedupe LIKE 'owner:autopilot-on:owner:%'").get().body,/Тариф: 4% с каждой брони.*доплат нет.*плата не взимается/);
+  assert.match(f.db.raw.prepare("SELECT body FROM notifications WHERE dedupe LIKE 'owner:autopilot-on:owner:%'").get().body,/Тариф: 4% с каждого заселения.*доплат нет.*плата не взимается/);
   await auto(f);assert.equal(plan(f).version,1);
   const state=await readOperations(f.owner,'owner',['autopilot','state']);
   assert.equal(state.live,true);assert.equal(state.tier,'pay');assert.equal(state.units,1);assert.equal(state.flats[0].managed,true);
@@ -37,7 +37,7 @@ test('turning a flat to «ИИ» turns the plan on: no month, no trial, a notice
 test('«Всё включено» is not offered any more: the one tariff stays, and stop turns the AI off now',async()=>{
  const f=await fixture();try{
   charging(f);await auto(f);
-  await assert.rejects(writeOperations(f.owner,'owner',['autopilot','tier'],{tier:'all'}),e=>e.status===409&&/Тариф один: 4% с каждой брони/.test(e.message));
+  await assert.rejects(writeOperations(f.owner,'owner',['autopilot','tier'],{tier:'all'}),e=>e.status===409&&/Тариф один: 4% с каждого заселения/.test(e.message));
   assert.equal(plan(f).tier,'pay');assert.equal(charges(f).length,0);
   assert.match((await writeOperations(f.owner,'owner',['autopilot','tier'],{tier:'pay'})).message,/Тариф один/);
   await assert.rejects(writeOperations(f.cleaner,'cleaner',['autopilot','tier'],{tier:'all'}),e=>e.status===409&&/5% с каждой выполненной уборки/.test(e.message));
@@ -108,7 +108,7 @@ test('the administrator sets prices and turns charging on with consent; people o
   const r=await writePlatformAdmin(f.other,'billing/plans',{...body,confirmed:true},config(f));
   assert.equal(r.state.settings.cleanerRate,450);assert.equal(r.state.settings.graceDays,2);assert.equal(r.state.settings.charge,true);
   await assert.rejects(writePlatformAdmin(f.other,'billing/plans',{...body,cleanerRatePercent:45,confirmed:true},config(f)),/30%/);
-  assert.match(f.db.raw.prepare("SELECT body FROM notifications WHERE dedupe LIKE 'owner:autopilot-terms:%'").get().body,/Тариф: 4% с каждой брони/);
+  assert.match(f.db.raw.prepare("SELECT body FROM notifications WHERE dedupe LIKE 'owner:autopilot-terms:%'").get().body,/Тариф: 4% с каждого заселения/);
  }finally{f.db.close();}
 });
 

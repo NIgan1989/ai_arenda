@@ -227,7 +227,7 @@ function AutopilotPlans({data,busy,save}:{data:Row;busy:boolean;save:Save}){
    {s.charge?<Button variant="outline" disabled={busy} onClick={()=>submit(false)}>Выключить плату</Button>:<label className="plans-agree"><input type="checkbox" checked={agreed} disabled={busy} onChange={e=>setAgreed(e.target.checked)}/>Участники получат уведомление</label>}
    {!s.charge&&<Button disabled={busy||!agreed} onClick={()=>submit(true)}>Включить плату</Button>}</div>
   <div className="plans-cols">
-   <section className="plans-card"><h3>Владельцы</h3><p>{pct(s.ownerRate)} с каждой брони (комиссия в «Условиях оплаты»). Автопилот, ИИ и подбор исполнителя входят.</p>
+   <section className="plans-card"><h3>Владельцы</h3><p>{pct(s.ownerRate)} с каждого заселения (комиссия в «Условиях оплаты»). Автопилот, ИИ и подбор исполнителя входят.</p>
     <dl className="revenue-facts">{stat(o.pay||0,'Автопилот включён')}{stat(o.paused||0,'На паузе')}{stat(o.flats||0,'Объектов под ИИ')}</dl></section>
    <section className="plans-card"><h3>Исполнители</h3><p>{pct(s.cleanerRate)} с каждой выполненной уборки, автопилот бесплатно.</p>
     <dl className="revenue-facts">{stat(c.pay||0,'Автопилот включён')}{stat(c.paused||0,'На паузе')}{stat(c.results30||0,'Уборок за 30 дней')}{stat(c.taken30||0,'Взял ИИ')}</dl>

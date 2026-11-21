@@ -24,7 +24,7 @@ test('the prices after the change: 4% and at most 15 000 ₸ a booking for the o
   // An hourly booking pays less by itself; a banquet stops at the cap.
   assert.equal(commissionFor(6000,s),240);assert.equal(commissionFor(12000,s),480);assert.equal(commissionFor(1000000,s),15000);
   const owner=await planState(f.owner,'owner'),cleaner=await planState(f.cleaner,'cleaner');
-  assert.match(owner.terms.pay,/^Тариф: 4% с каждой брони/);assert.match(cleaner.terms.pay,/5% с каждой выполненной уборки/);
+  assert.match(owner.terms.pay,/^Тариф: 4% с каждого заселения/);assert.match(cleaner.terms.pay,/5% с каждой выполненной уборки/);
  }finally{f.db.close();}
 });
 
@@ -42,22 +42,47 @@ test('the performer pays 5% of every accepted cleaning, a regular pair too; the 
  }finally{f.db.close();}
 });
 
-test('a banquet hall pays in steps: 2% of the first 300 000 ₸, 1% up to 1 000 000 ₸, 0,5% above, at most 15 000 ₸',async()=>{
- const {accrueCommission}=await load('platform-billing'),f=await fixture(),R=f.db.raw;try{
+test('«Мой дом»: the owner pays 5% of a cleaning of the own home, at least 300 ₸; the performer 5% as everywhere',async()=>{
+ const f=await fixture(),R=f.db.raw;try{
+  R.prepare("INSERT INTO property_details(property_id,details,revision,updated_at) VALUES (?,'{\"type\":\"home\"}','r',?) ON CONFLICT(property_id) DO UPDATE SET details=json_set(details,'$.type','home')").run(f.property,now());
+  const owner=job=>R.prepare('SELECT amount,rate_bp FROM cleaning_commissions WHERE job_id=?').get(job);
+  let job=accepted(f,{fee:12000});assert.deepEqual({...owner(job)},{amount:600,rate_bp:500});assert.equal(fee(f,job).amount,600);
+  job=accepted(f,{fee:4000});assert.deepEqual({...owner(job)},{amount:300,rate_bp:500},'the least for the service');
+  job=accepted(f,{fee:200});assert.equal(owner(job).amount,200,'never more than the cleaning');
+ }finally{f.db.close();}
+});
+
+test('a banquet hall pays nothing per booking: a fixed month by capacity, free without bookings and the first month',async()=>{
+ const {accrueCommission,sweepHallMonths,hallMonthFee,previousMonth}=await load('platform-billing'),f=await fixture(),R=f.db.raw;try{
   const audit=R.prepare('SELECT id FROM audit_events LIMIT 1').get().id;
   const again=async amount=>{R.prepare('DELETE FROM platform_commissions WHERE booking_id=?').run(f.booking);R.prepare('UPDATE bookings SET amount=? WHERE id=?').run(amount,f.booking);await accrueCommission(f.db,f.booking,audit,now()).run();return R.prepare('SELECT rate_bp,amount FROM platform_commissions WHERE booking_id=?').get(f.booking);};
   assert.deepEqual({...await again(12000)},{rate_bp:400,amount:480});
   R.prepare("INSERT INTO property_details(property_id,details,revision,updated_at) VALUES (?,'{\"type\":\"banquet\"}','r',?) ON CONFLICT(property_id) DO UPDATE SET details=json_set(details,'$.type','banquet')").run(f.property,now());
-  assert.deepEqual({...await again(240000)},{rate_bp:200,amount:4800},'a memorial meal for 60 guests');
-  assert.deepEqual({...await again(960000)},{rate_bp:200,amount:12600},'120 guests at 8 000 ₸: 6 000 + 6 600');
-  assert.deepEqual({...await again(2000000)},{rate_bp:200,amount:15000},'a той for 250 guests stops at the cap');
+  assert.deepEqual({...await again(2000000)},{rate_bp:0,amount:0},'a той for 250 guests: no percent');
+  const s={hall_small_upto:100,hall_mid_upto:300,hall_fee_small:9900,hall_fee_mid:19900,hall_fee_large:29900};
+  assert.deepEqual([60,100,101,300,301,800].map(c=>hallMonthFee(c,s)),[9900,9900,19900,19900,29900,29900]);
+  R.prepare('UPDATE properties SET capacity=200 WHERE id=?').run(f.property);
+  R.prepare("UPDATE platform_billing SET enabled=1,starts_at=0").run();
+  const month=b=>R.prepare("SELECT amount,mode FROM service_fees WHERE kind='hall_month' AND ref_id=?").get(f.property+':'+previousMonth(b).name);
+  // The booking was confirmed now: the next month's sweep writes this month, the first with bookings: free.
+  const d=new Date((now()+18000)*1000),start=k=>Date.UTC(d.getUTCFullYear(),d.getUTCMonth()+k,1)/1000-18000+86400,next=start(1),later=start(2);
+  await sweepHallMonths(f.db,now());assert.equal(month(now()),undefined,'a month without bookings costs nothing');
+  // The event took place this month: it started on the 2nd and is over.
+  const held=start(0)+86400;R.prepare('UPDATE bookings SET start=?,end=?,occupied_until=? WHERE id=?').run(held,held+7200,held+7200,f.booking);
+  await sweepHallMonths(f.db,next);assert.deepEqual({...month(next)},{amount:19900,mode:'free'});
+  await sweepHallMonths(f.db,next);assert.equal(R.prepare("SELECT COUNT(*) n FROM service_fees WHERE kind='hall_month'").get().n,1,'once a month');
+  // A month later, with a new booking that month: the hall had bookings before, so this month is charged.
+  const cols=R.prepare('PRAGMA table_info(bookings)').all().map(c=>c.name).filter(c=>c!=='id'&&c!=='request_key');
+  R.prepare(`INSERT INTO bookings(id,request_key,${cols.join(',')}) SELECT 'second','second',${cols.map(c=>['start','end','occupied_until'].includes(c)?'?+'+c+'-start':c).join(',')} FROM bookings WHERE id=?`).run(...cols.filter(c=>['start','end','occupied_until'].includes(c)).map(()=>previousMonth(later).start+86400),f.booking);
+  R.prepare("INSERT INTO platform_commissions(booking_id,owner_id,property_id,booking_amount,rate_bp,amount,mode,settings_version,created_at,managed) SELECT 'second',owner_id,property_id,booking_amount,0,0,mode,settings_version,?,managed FROM platform_commissions WHERE booking_id=?").run(previousMonth(later).start+3600,f.booking);
+  R.prepare("UPDATE bookings SET status='completed' WHERE id='second'").run();
+  await sweepHallMonths(f.db,later);assert.deepEqual({...month(later)},{amount:19900,mode:'charged'});
+  assert.ok(R.prepare("SELECT 1 FROM notifications WHERE dedupe=?").get('owner:hall-month:'+f.property+':'+previousMonth(later).name));
  }finally{f.db.close();}
 });
 
-test('the hall scale has no jump and the guest names every kind of event',async()=>{
- const {hallFeeFor}=await load('platform-billing'),{statedOccasion}=await load('map-search-request'),{occasions}=await load('listings');
- assert.deepEqual([280000,300000,420000,1000000,1400000,3000000].map(a=>hallFeeFor(a)),[5600,6000,7200,13000,15000,15000]);
- for(let a=0;a<2000000;a+=10000)assert.ok(hallFeeFor(a+10000)>=hallFeeFor(a),'a bigger event never pays less');
+test('the guest names every kind of event',async()=>{
+ const {statedOccasion}=await load('map-search-request'),{occasions}=await load('listings');
  const said={'қыз ұзату в субботу':'uzatu','кыз узату':'uzatu','кудалык на 40 человек':'kudalyk','беташар':'betashar','сундет той сыну':'sundet','тусаукесер':'tusau','шилдехана':'besik',
   'свадьба на 200':'toi','день рождения папы':'birthday','детский праздник':'kids','корпоратив отдела':'corporate','выпускной 11 класса':'graduation','новый год с семьёй':'newyear',
   'семинар на 50':'conference','юбилей 60 лет':'party','жетісі':'memorial','поминки на 80':'memorial'};
