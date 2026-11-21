@@ -11,6 +11,7 @@ test('operations HTTP routes enforce roles, real balances, calendar privacy and 
  try{
   const owner=(await call('/auth/register',{login:'operations_owner',password:'fixture-password'})).body,guest=(await call('/auth/register',{login:'operations_guest',password:'fixture-password'})).body;
   for(const [user,roles] of [[owner,['owner','guest']],[guest,['guest']]])assert.equal((await call('/api/profile',{name:roles[0],roles,city:'Павлодар',contact:'fixture'},user)).status,200);
+  for(const [user,role] of [[owner,'owner'],[guest,'guest']])assert.equal((await call('/api/operations/identity/save',{data:photo},user,role)).status,200);
   const property=(await call('/api/properties',{title:'HTTP fixture',city:'Павлодар',district:'Центр',address:'PRIVATE ADDRESS',description:'Fixture',price:10000,rooms:1,capacity:2,cleaningMinutes:90},owner)).body.id;
   const policy={expectedVersion:0,dailyPrice:10000,hourlyPrice:2000,minHours:2,nightlyPrice:9000,checkinTime:'14:00',checkoutTime:'12:00',deposit:10000,houseRules:'Fixture',autoConfirm:false,autoAssign:false,cleaningFee:3000,cleaningBudget:4000};assert.equal((await call('/api/properties/'+property+'/policy',policy,owner)).status,200);
   const start=Date.now()+86400000,booking=(await call('/api/bookings',{propertyId:property,start:new Date(start).toISOString(),end:new Date(start+7200000).toISOString(),billingMode:'hourly',guests:1,requestKey:'http-booking',acceptTerms:true},guest,'guest')).body.id;

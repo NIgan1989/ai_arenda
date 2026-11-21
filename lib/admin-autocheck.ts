@@ -26,7 +26,7 @@ export function normalAddress(city:string,address:string){
 const median=(n:number[])=>{const s=[...n].sort((a,b)=>a-b),m=s.length>>1;return s.length?(s.length%2?s[m]:(s[m-1]+s[m])/2):0;};
 const money=(n:number)=>Math.round(n).toLocaleString('ru-RU').replace(/ /g,' ')+' ₸';
 
-export type FlatFacts={description:string;title:string;photos:number;mapped:boolean;price:number;comparable:number[];duplicateAddress:boolean;rejectedBefore:number;openComplaints:number;rights?:number;rightsKind?:string};
+export type FlatFacts={description:string;title:string;photos:number;mapped:boolean;price:number;comparable:number[];duplicateAddress:boolean;rejectedBefore:number;openComplaints:number;rights?:number;rightsKind?:string;identity?:number};
 // Pure: the rules for an owner and the flat they want to show guests.
 export function flatChecks(f:FlatFacts):ReviewCheck[]{
  const checks:ReviewCheck[]=[];
@@ -43,16 +43,20 @@ export function flatChecks(f:FlatFacts):ReviewCheck[]{
  // The right to let the place (lib/property-rights.ts): a photo of the title, or of the notarised consent to sublet.
  // Older callers that do not know the rights pass nothing and are not asked for them.
  if(f.rights!==undefined)checks.push({key:'rights',label:'Право сдавать',state:f.rights>0?'ok':'fix',note:f.rights>0?(f.rightsKind==='sublease'?'Приложены договор аренды и согласие собственника на субаренду: сверит администратор':'Приложен документ о праве собственности: сверит администратор'):'Приложите фото документа о праве собственности или нотариально заверенного согласия собственника на субаренду: «Моё жильё» → «Документы»'});
+ if(f.identity!==undefined)checks.push(identityCheck(f.identity));
  checks.push({key:'history',label:'История владельца',state:f.rejectedBefore||f.openComplaints?'risk':'ok',note:f.rejectedBefore?'Раньше проверка уже не проходила':f.openComplaints?'Открытые жалобы гостей: '+f.openComplaints:'Отказов и жалоб нет'});
  return checks;
 }
-export type CleanerFacts={name:string;avatar:boolean;rejectedBefore:number;openComplaints:number};
+// The photo of the ID card (lib/identity-docs.ts): a person compares it with the profile.
+const identityCheck=(n:number):ReviewCheck=>({key:'identity',label:'Удостоверение',state:n>0?'ok':'fix',note:n>0?'Приложено фото удостоверения личности: сверит администратор':'Приложите фото удостоверения личности: «Профиль» → «Удостоверение личности»'});
+export type CleanerFacts={name:string;avatar:boolean;rejectedBefore:number;openComplaints:number;identity?:number};
 // Pure: the rules for a cleaner. Every assignment is still agreed by the flat's owner.
 export function cleanerChecks(f:CleanerFacts):ReviewCheck[]{
  const named=f.name.trim().replace(/[^A-Za-zА-Яа-яЁёӘәҒғҚқҢңӨөҰұҮүҺһІі]/g,'').length>=2&&!/^(гость|пользователь|user|guest|исполнитель)$/i.test(f.name.trim());
  return [
   {key:'name',label:'Имя',state:named?'ok':'fix',note:named?'Имя указано':'Укажите настоящее имя в профиле'},
   {key:'avatar',label:'Фото профиля',state:f.avatar?'ok':'fix',note:f.avatar?'Фото профиля есть':'Добавьте фото профиля, чтобы владелец узнал вас у двери'},
+  ...(f.identity!==undefined?[identityCheck(f.identity)]:[]),
   {key:'history',label:'История',state:f.rejectedBefore||f.openComplaints?'risk':'ok',note:f.rejectedBefore?'Раньше проверка уже не проходила':f.openComplaints?'Открытые жалобы владельцев: '+f.openComplaints:'Отказов и жалоб нет'}
  ];
 }
@@ -67,11 +71,12 @@ async function flatFacts(db:D1Database,review:Row):Promise<FlatFacts|null>{
  const mine=normalAddress(p.city,p.address),others=await rows(db,'SELECT city,address FROM properties WHERE owner_id<>? AND demo_owner IS NULL AND archived_at IS NULL AND city=? LIMIT 2000',p.owner_id,p.city);
  const history=await one(db,"SELECT (SELECT COUNT(*) FROM participant_reviews WHERE user_id=? AND role='owner' AND status='rejected' AND reviewed_at>?) rejected,(SELECT COUNT(*) FROM administrator_issues WHERE owner_id=? AND opened_role='guest' AND status<>'resolved') complaints",p.owner_id,epoch()-HISTORY,p.owner_id);
  const rights=await one(db,'SELECT kind,COUNT(*) n FROM property_right_docs WHERE property_id=? GROUP BY kind ORDER BY MAX(created_at) DESC LIMIT 1',p.id);
- return {description:p.description||'',title:p.title||'',photos:p.photos,mapped:!!p.mapped,price:p.price,comparable,duplicateAddress:others.some(o=>normalAddress(o.city,o.address)===mine),rejectedBefore:history?.rejected||0,openComplaints:history?.complaints||0,rights:Number(rights?.n)||0,rightsKind:rights?.kind||''};
+ return {description:p.description||'',title:p.title||'',photos:p.photos,mapped:!!p.mapped,price:p.price,comparable,duplicateAddress:others.some(o=>normalAddress(o.city,o.address)===mine),rejectedBefore:history?.rejected||0,openComplaints:history?.complaints||0,rights:Number(rights?.n)||0,rightsKind:rights?.kind||'',identity:Number((await one(db,'SELECT COUNT(*) n FROM identity_docs WHERE user_id=?',p.owner_id))?.n)||0};
 }
 async function cleanerFacts(db:D1Database,review:Row):Promise<CleanerFacts|null>{
  const p=await one(db,"SELECT p.name,d.avatar_id,(SELECT COUNT(*) FROM participant_reviews r WHERE r.user_id=p.id AND r.role='cleaner' AND r.status='rejected' AND r.reviewed_at>?) rejected,(SELECT COUNT(*) FROM administrator_issues i WHERE i.other_user=p.id AND i.other_role='cleaner' AND i.status<>'resolved') complaints FROM profiles p LEFT JOIN profile_details d ON d.user_id=p.id WHERE p.id=?",epoch()-HISTORY,review.user_id);
- return p?{name:p.name||'',avatar:!!p.avatar_id,rejectedBefore:p.rejected||0,openComplaints:p.complaints||0}:null;
+ const id=await one(db,'SELECT COUNT(*) n FROM identity_docs WHERE user_id=?',review.user_id);
+ return p?{name:p.name||'',avatar:!!p.avatar_id,rejectedBefore:p.rejected||0,openComplaints:p.complaints||0,identity:Number(id?.n)||0}:null;
 }
 export async function reviewChecks(db:D1Database,review:Row):Promise<ReviewCheck[]|null>{
  if(review.role==='owner'&&review.property_id){const f=await flatFacts(db,review);return f&&flatChecks(f);}
@@ -89,8 +94,8 @@ export async function autoReview(db:D1Database,reviewId:string,config:OperationC
  const verdict=verdictOf(checks),at=epoch(),policy=await one(db,"SELECT ai_review FROM pilot_policy WHERE id='global'"),auto=!!(policy?.ai_review??1);
  await q(db,"UPDATE participant_reviews SET ai_verdict=?,ai_checks=?,ai_checked_at=? WHERE id=? AND status='pending'",verdict,JSON.stringify(checks),at,reviewId).run();
  const what=review.role==='owner'?'Жильё «'+(review.title||'без названия')+'»':'Анкета исполнителя «'+(review.name||'без имени')+'»';
- // A place is never approved by the AI alone: a person looks at the proof of the right to let it and decides.
- if(auto&&verdict==='approve'&&review.role!=='owner'){
+ // Nobody is approved by the AI alone: a person looks at the ID (and, for a place, the proof of the right to let it).
+ if(auto&&verdict==='approve'&&!['owner','cleaner'].includes(review.role)){
   try{await decideParticipantReview({db,userId:AI_REVIEWER} as unknown as RentalService,{id:reviewId,status:'approved',method:AI_METHOD,notes:'Все правила пройдены: '+checksSummary(checks,['ok']),validUntil:review.role==='cleaner'?new Date((at+CLEANER_VALID)*1000).toISOString():undefined,expectedVersion:review.version},true);return verdict;}
   catch(e){if(!(e instanceof DomainError))throw e;
    // The request no longer matches the flat (address changed) or was decided meanwhile: never leave it hidden.
@@ -108,7 +113,7 @@ export async function autoReview(db:D1Database,reviewId:string,config:OperationC
   if(auto)return verdict;
  }
  const list=admins(config);if(list.length){
-  const reason=verdict==='escalate'?'ИИ просит вашего решения: '+checksSummary(checks,['risk']):verdict==='fix'?'Не хватает: '+checksSummary(checks,['fix']):review.role==='owner'?'Правила пройдены, документ о праве приложен. Сверьте его с владельцем и адресом и решите':'Правила пройдены, решение за вами.';
+  const reason=verdict==='escalate'?'ИИ просит вашего решения: '+checksSummary(checks,['risk']):verdict==='fix'?'Не хватает: '+checksSummary(checks,['fix']):review.role==='owner'?'Правила пройдены, документ о праве и удостоверение приложены. Сверьте ФИО с владельцем, получателем Kaspi и адресом и решите':'Правила пройдены, удостоверение приложено. Сверьте его с профилем и решите';
   await db.batch(list.map(admin=>note(db,admin,what+' ждёт проверки. '+reason+'. Админка → Проверки.','admin:review:'+reviewId+':'+admin,at)));
  }
  return verdict;

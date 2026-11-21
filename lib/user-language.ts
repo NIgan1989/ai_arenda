@@ -1,4 +1,4 @@
-// The language a person chose in the app, kept by the server (drizzle/0083_user_language.sql). The app tells it after
+// The language a person chose in the app, kept by the server (drizzle/0084_user_language.sql). The app tells it after
 // sign-in and on every change (mobile/src/lang.ts); the server uses it where it speaks to the person alone: Telegram,
 // SMS and push (lib/delivery.ts) and the answers of the AI administrator (lib/ai.ts). No row means Russian.
 import {DomainError} from './domain';

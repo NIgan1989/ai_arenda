@@ -46,7 +46,7 @@ test('a complete flat with its document goes to a person: the AI never approves 
   assert.equal(review.status,'pending');assert.equal(review.ai_verdict,'approve');
   assert.equal(JSON.parse(review.ai_checks).find(c=>c.key==='rights').state,'ok');
   assert.equal(f.db.raw.prepare('SELECT published FROM properties WHERE id=?').get(f.property).published,0);
-  assert.match(f.db.raw.prepare("SELECT body FROM notifications WHERE dedupe LIKE 'admin:review:%'").get().body,/документ о праве приложен/);
+  assert.match(f.db.raw.prepare("SELECT body FROM notifications WHERE dedupe LIKE 'admin:review:%'").get().body,/документ о праве и удостоверение приложены/);
   // Without the document the owner is told what to attach, and an administrator cannot approve it either.
   f.db.raw.prepare('DELETE FROM property_right_docs WHERE property_id=?').run(f.property);
   f.db.raw.prepare('UPDATE participant_reviews SET ai_checked_at=NULL').run();await sweepReviews(f.db,{});
@@ -82,13 +82,19 @@ test('a doubtful flat goes to the administrator with the reason, and the adminis
   await assert.rejects(writePlatformAdmin(f.guest,'reviews/ai',{enabled:true},{PLATFORM_ADMIN_IDS:'owner'}),e=>e.status===403);
  }finally{f.db.close();}
 });
-test('a cleaner with a name and a photo is admitted for six months on the first response',async()=>{
+// A person looks at the performer's ID card: with every rule passed the AI hands the request over, never admits alone.
+test('a cleaner with a name, a photo and an ID goes to a person, who admits for six months',async()=>{
  const f=await fixture();try{
   await strict(f);f.db.raw.prepare("INSERT OR REPLACE INTO profile_details(user_id,avatar_id,revision,updated_at) VALUES ('cleaner','a1','r',?)").run(now());
-  const result=await requestParticipantReview(f.cleaner,'cleaner',{reference:'Отклик'},{});
-  assert.equal(result.verdict,'approve');
+  const result=await requestParticipantReview(f.cleaner,'cleaner',{reference:'Отклик'},{PLATFORM_ADMIN_IDS:'admin'});
+  assert.equal(result.verdict,'escalate');assert.match(result.message,/удостоверение переданы администратору/);
   const review=f.db.raw.prepare("SELECT * FROM participant_reviews WHERE user_id='cleaner'").get();
-  assert.equal(review.status,'approved');assert.ok(review.valid_until>now()+170*86400);
+  assert.equal(review.status,'pending');assert.equal(JSON.parse(review.ai_checks).find(c=>c.key==='identity').state,'ok');
+  await assert.rejects(writePlatformAdmin(f.guest,'reviews/decide',{id:review.id,status:'approved',expectedVersion:review.version,confirmed:true,method:'Администратор',notes:'ok',validUntil:new Date(Date.now()+180*86400000).toISOString()},{PLATFORM_ADMIN_IDS:'guest'}),/ФИО в удостоверении/);
+  await writePlatformAdmin(f.guest,'reviews/decide',{id:review.id,status:'approved',expectedVersion:review.version,confirmed:true,namesMatch:true,method:'Администратор',notes:'ok',validUntil:new Date(Date.now()+180*86400000).toISOString()},{PLATFORM_ADMIN_IDS:'guest'});
+  assert.equal(f.db.raw.prepare("SELECT status FROM participant_reviews WHERE user_id='cleaner'").get().status,'approved');
+  const id=f.db.raw.prepare("SELECT data,checked_by FROM identity_docs WHERE user_id='cleaner'").get();
+  assert.equal(id.data,'','the photo is deleted after the check');assert.equal(id.checked_by,'guest');
  }finally{f.db.close();}
 });
 test('a flat changed after the request still reaches the administrator instead of hiding',async()=>{

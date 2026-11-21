@@ -16,6 +16,7 @@ import {adminLiveMap} from './admin-map';
 import {AI_REVIEWER,sweepReviews} from './admin-autocheck';
 import {safetyAction} from './account-safety';
 import {listRightDocs,readRightDoc,settleRightDocs} from './property-rights';
+import {listIdentityDocs,readIdentityDoc,settleIdentity,identityQueue,decideIdentity} from './identity-docs';
 import {restrictAccount,restrictionsList,unlistPlace} from './account-restrictions';
 import {billingState,billingOwners,saveBillingSettings,recordBalanceEntry} from './platform-billing';
 import {plansAdminState,savePlanSettings} from './autopilot-plans';
@@ -47,6 +48,9 @@ export async function readPlatformAdmin(service:RentalService,route:string,param
   const hidden=await service.all("SELECT r.id,r.role,r.target_kind,r.reason,r.resolution,e.created_at,(SELECT version FROM moderated_content m WHERE m.kind=r.target_kind AND m.target_id=r.target_id AND m.room_id=r.room_id) version,(SELECT hidden FROM moderated_content m WHERE m.kind=r.target_kind AND m.target_id=r.target_id AND m.room_id=r.room_id) hidden FROM moderation_access_events e JOIN content_reports r ON r.id=e.report_id WHERE e.actor_id='ai-administrator' AND e.action='hide' AND e.created_at>? ORDER BY e.created_at DESC LIMIT 50",Math.floor(Date.now()/1000)-7*86400);
   await service.audit(service.userId,'admin.reports_viewed').run();return {queue,hidden,objections:await objectionQueue(service.db)};
  }
+ if(route==='identity')return {queue:await identityQueue(service.db)};
+ if(route==='identity/docs')return listIdentityDocs(service,String(params.userId||''),true);
+ if(route==='identity/photo')return readIdentityDoc(service,String(params.id||''),config,true);
  if(route==='rights')return listRightDocs(service,String(params.propertyId||''),true);
  if(route==='rights/photo')return readRightDoc(service,String(params.id||''),config,true);
  if(route==='restrictions')return restrictionsList(service,true);
@@ -84,7 +88,7 @@ async function moneySummary(db:D1Database){
 }
 // A place is approved only after the administrator compared the name on the document of the right to let it with the
 // owner's profile and with the Kaspi recipient guests pay (lib/payout.ts): a stranger's title does not let a home.
-function namesChecked(body:Row){if(body.namesMatch!==true)throw new DomainError('Отметьте, что ФИО в документе совпадает с владельцем и получателем Kaspi.');}
+function namesChecked(body:Row){if(body.namesMatch!==true)throw new DomainError('Отметьте, что ФИО в удостоверении и документах совпадает с профилем и получателем Kaspi.');}
 export async function writePlatformAdmin(service:RentalService,route:string,body:Row,config:Config){
  requirePlatformAdmin(service.userId,config);
  if(route==='reviews/ai'){
@@ -93,14 +97,18 @@ export async function writePlatformAdmin(service:RentalService,route:string,body
   if(body.enabled)await sweepReviews(service.db,config);
   return {message:body.enabled?'Теперь заявки проверяет ИИ-администратор, спорные приходят вам.':'Теперь все заявки решаете вы. ИИ только показывает свои проверки.'};
  }
- if(route==='properties/approve'){if(body.confirmed!==true)throw new DomainError('Подтвердите, что проверили жильё и владельца.');namesChecked(body);const r=await adminApproveProperty(service,body);await settleRightDocs(service.db,String(body.propertyId),service.userId,config);return r;}
+ if(route==='properties/approve'){if(body.confirmed!==true)throw new DomainError('Подтвердите, что проверили жильё и владельца.');namesChecked(body);const r=await adminApproveProperty(service,body);await settleRightDocs(service.db,String(body.propertyId),service.userId,config);const owner=await one(service.db,'SELECT owner_id FROM properties WHERE id=?',String(body.propertyId));if(owner)await settleIdentity(service.db,owner.owner_id,service.userId,config);return r;}
+ if(route==='identity/decide')return decideIdentity(service,body,config);
  if(route==='restrictions/decide')return restrictAccount(service,body,true);
  if(route==='properties/unlist')return unlistPlace(service,body,true);
  if(route==='reviews/decide'){
   if(body.confirmed!==true)throw new DomainError('Подтвердите фактическую проверку сведений.');
   const review=await one(service.db,'SELECT role,property_id FROM participant_reviews WHERE id=?',String(body.id||''));
-  const place=body.status==='approved'&&review?.role==='owner'&&review.property_id;if(place)namesChecked(body);
-  const r=await decideParticipantReview(service,body,true);if(place)await settleRightDocs(service.db,review.property_id,service.userId,config);return r;
+  const approving=body.status==='approved'&&review&&['owner','cleaner'].includes(review.role),place=approving&&review.role==='owner'&&review.property_id;if(approving)namesChecked(body);
+  const r=await decideParticipantReview(service,body,true);
+  if(place)await settleRightDocs(service.db,review.property_id,service.userId,config);
+  if(approving){const who=await one(service.db,'SELECT user_id FROM participant_reviews WHERE id=?',String(body.id));if(who)await settleIdentity(service.db,who.user_id,service.userId,config);}
+  return r;
  }
  if(route==='governance/policy'){
   if(config.TEST_DATA_ONLY==='1'&&[body.requireOwnerReview,body.requireCleanerReview,body.requirePhone].some(v=>v===true))throw new DomainError('Правила рабочего сервиса настраиваются вне учебного стенда.',409);

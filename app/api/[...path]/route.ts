@@ -106,7 +106,7 @@ async function handle(request:Request, context:{params:Promise<{path:string[]}>}
     const origin=request.headers.get('origin');
     if(origin && origin!==new URL(request.url).origin||request.headers.get('sec-fetch-site')==='cross-site') return json({error:'Источник запроса не разрешён.'},403);
     if(!request.headers.get('content-type')?.includes('application/json')) return json({error:'Ожидается JSON.'},415);
-    const maxBody=route.join('/')==='conversation'?200000:route.join('/')==='operations/evidence'?11500000:route[0]==='operations'&&['discussion/send','evidence','stay-photo','receipt','rights/save','calendar/import','calendar/source','calendar/preview','import/preview'].includes(route.slice(1).join('/'))?700000:route.length===1&&route[0]==='media'?510000:20000;
+    const maxBody=route.join('/')==='conversation'?200000:route.join('/')==='operations/evidence'?11500000:route[0]==='operations'&&['discussion/send','evidence','stay-photo','receipt','rights/save','identity/save','calendar/import','calendar/source','calendar/preview','import/preview'].includes(route.slice(1).join('/'))?700000:route.length===1&&route[0]==='media'?510000:20000;
     if(Number(request.headers.get('content-length')||0)>maxBody) return json({error:'Слишком большой запрос.'},413);
     const raw=await boundedRequestText(request,maxBody);
     const body=JSON.parse(raw||'{}');
