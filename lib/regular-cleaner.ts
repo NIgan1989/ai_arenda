@@ -21,15 +21,17 @@ export async function ownerAvailable(db:D1Database,ownerId:string){return Number
 
 const money=(n:number)=>new Intl.NumberFormat('ru-RU').format(n)+' ₸';
 const percent=(bp:number)=>String(bp/100).replace('.',',')+'%';
-export type PairTerms={rate:number;pairRate:number;cap:number;active:boolean};
+export type PairTerms={rate:number;pairRate:number;cap:number;active:boolean;cleanerRate?:number};
 export async function pairTerms(db:D1Database):Promise<PairTerms>{
- const s=await one(db,"SELECT enabled,starts_at,cleaning_rate_bp,pair_rate_bp,pair_month_cap FROM platform_billing WHERE id='global'");
- return {rate:Number(s?.cleaning_rate_bp??1000),pairRate:Number(s?.pair_rate_bp??500),cap:Number(s?.pair_month_cap??2000),active:!!s?.enabled&&Number(s.starts_at)<=epoch()};
+ const s=await one(db,"SELECT enabled,starts_at,plan_charge,cleaning_rate_bp,pair_rate_bp,pair_month_cap,cleaner_rate_bp FROM platform_billing WHERE id='global'");
+ return {rate:Number(s?.cleaning_rate_bp??0),pairRate:Number(s?.pair_rate_bp??0),cap:Number(s?.pair_month_cap??0),active:!!s?.enabled&&Number(s.starts_at)<=epoch(),cleanerRate:Number(s?.cleaner_rate_bp??500)};
 }
-// One line for both sides about what the pair pays. While the service is free, it says so.
+// One line for both sides about what the pair pays. Since 2026-11-22 the owner pays nothing for cleanings (the match is
+// part of the tariff) and the performer pays cleaner_rate_bp of each one, as with any owner. While free, it says so.
 export function pairTermsText(t:PairTerms){
- const pair=t.pairRate<t.rate?`${percent(t.pairRate)} вместо ${percent(t.rate)}`:percent(t.pairRate);
- const fee=`Комиссия за уборку для постоянной пары ${pair}${t.cap>0?`, не больше ${money(t.cap)} в месяц`:''}. Платит владелец, исполнитель получает всю сумму.`;
+ const fee=t.rate>0||t.pairRate>0
+  ?`Комиссия за уборку для постоянной пары ${t.pairRate<t.rate?`${percent(t.pairRate)} вместо ${percent(t.rate)}`:percent(t.pairRate)}${t.cap>0?`, не больше ${money(t.cap)} в месяц`:''}. Платит владелец, исполнитель получает всю сумму.`
+  :`Для владельца уборки без доплат: подбор входит в тариф. Исполнитель платит сервису ${percent(t.cleanerRate??500)} с уборки.`;
  return t.active?fee:'Сейчас сервис бесплатный. Когда включится плата: '+fee.charAt(0).toLowerCase()+fee.slice(1);
 }
 

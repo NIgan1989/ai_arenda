@@ -168,9 +168,21 @@ export type BanquetSlot = keyof typeof BANQUET_SLOTS;
 export const isBanquetRequest = (kinds: unknown) => Array.isArray(kinds) && kinds.length > 0 && kinds.every(k => BANQUET_KINDS.includes(k));
 /** What the hall is taken for, as the ids of lib/listings.ts occasions; '' when the text names none. */
 export function statedOccasion(text: string): string {
-  if (/помин|(?:^|[^а-я])ас(?=$|[^а-я])|садака|кудайы|годовщин[а-я]* смерти|похорон/.test(text)) return 'memorial';
-  if (/свадьб|свадеб|тойхан|(?:^|[^а-я])той(?=$|\s+(?:на|в|для|\d)|[,.!?])|(?:^|[^а-я])то[яю](?=$|[^а-я])|кудалы|узату|беташар|сундет/.test(text)) return 'toi';
-  if (/юбиле|день рождени|корпоратив|выпускн|праздн[а-я]* (?:отметить|провести)|(?:отметить|провести) праздн/.test(text)) return 'party';
+  if (/помин|(?:^|[^а-я])ас(?=$|[^а-я])|садака|кудайы|құдайы|жетіс|қырқ|кырк|жылдық|жылдык|годовщин[а-я]* смерти|похорон/.test(text)) return 'memorial';
+  if (/[кқ]ыз\s*[уұ]зат|узату|ұзату/.test(text)) return 'uzatu';
+  if (/[кқ][уұ]далы|сватовств|сватан/.test(text)) return 'kudalyk';
+  if (/беташар/.test(text)) return 'betashar';
+  if (/с[уү]ндет|обрезан/.test(text)) return 'sundet';
+  if (/т[уұ]саукес/.test(text)) return 'tusau';
+  if (/б[еі]сік|бесик|ш[іи]лдехан|рождени[ея] реб/.test(text)) return 'besik';
+  if (/свадьб|свадеб|тойхан|(?:^|[^а-я])той(?=$|\s+(?:на|в|для|\d)|[,.!?])|(?:^|[^а-я])то[яю](?=$|[^а-я])/.test(text)) return 'toi';
+  if (/детск[а-я]* (?:праздник|день рожд)/.test(text)) return 'kids';
+  if (/день рождени|днюх/.test(text)) return 'birthday';
+  if (/корпоратив/.test(text)) return 'corporate';
+  if (/выпускн/.test(text)) return 'graduation';
+  if (/новый год|новогодн/.test(text)) return 'newyear';
+  if (/конференц|семинар|тренинг|форум/.test(text)) return 'conference';
+  if (/юбиле|мерейто|праздн[а-я]* (?:отметить|провести)|(?:отметить|провести) праздн/.test(text)) return 'party';
   return '';
 }
 const KINDS: [RegExp, string][] = [

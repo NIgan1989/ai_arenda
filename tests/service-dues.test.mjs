@@ -53,34 +53,32 @@ test('without a card: one ask, seven days, then a pause that a payment lifts',as
 });
 
 // The launch check: every tenge the service earns is seen by the payer and by «Бухгалтерия».
-test('end to end, hybrid tariff: the AI for the result costs nothing without results, a cleaning brings 10% and 250 ₸, «Всё включено» 9 900 ₸ for each object',async()=>{
+test('end to end, one tariff in percent: the AI costs nothing extra, a cleaning brings the performer\'s 5% and nothing from the owner',async()=>{
  const f=await fixture(),R=f.db.raw,{startCleanerPlan}=await load('autopilot-plans');try{
-  R.prepare("UPDATE platform_billing SET enabled=1,starts_at=?,plan_charge=1,cleaning_rate_bp=1000,free_bookings=1000,cleaner_free_jobs=0").run(now()-60);
+  R.prepare("UPDATE platform_billing SET enabled=1,starts_at=?,plan_charge=1,free_bookings=1000").run(now()-60);
   const second=(await f.owner.createProperty({title:'Second home',city:'Павлодар',district:'Центр',address:'ADDRESS 2',description:'Test',price:10000,rooms:1,capacity:2,cleaningMinutes:90})).id;
   await f.owner.savePolicy(second,f.policy);
   const started=await writeOperations(f.owner,'owner',['autopilot','start'],{propertyIds:[f.property,second],cleaningFees:{[f.property]:3000,[second]:3000}});
   assert.equal(started.done.length,2,started.message);assert.equal(await dueOf(f.db,'owner'),0,'no bookings, nothing to pay');
   await startCleanerPlan(f.cleaner,{districts:[],days:127,fromMinute:0,toMinute:1440,minFee:0,maxPerDay:4,askNewOwner:false});assert.equal(await dueOf(f.db,'cleaner'),0);
-  // An ordinary cleaning for 4 000 ₸: the owner pays the performer directly; the service accrues 10% to the owner and 250 ₸ to the performer.
+  // An ordinary cleaning for 4 000 ₸: the owner pays the performer directly; the service accrues 5% (200 ₸) to the performer only.
   R.prepare("UPDATE cleaning_jobs SET fee=4000,status='assigned',assigned_to='cleaner',start=?,end=? WHERE id=?").run(now()+15,now()+5415,f.job.id);
   R.prepare('UPDATE bookings SET start=?,end=?,occupied_until=? WHERE id=?').run(now()-600,now()+15,now()+5415,f.booking);
   await f.owner.bookingAction(f.booking,{action:'checkout'});await f.cleaner.jobAction(f.job.id,{action:'start'});
   await f.cleaner.jobAction(f.job.id,{action:'submit',checklist:[true,true,true,true],report:'Done'});await f.owner.jobAction(f.job.id,{action:'approve'});
-  assert.equal(R.prepare('SELECT amount FROM cleaning_commissions WHERE job_id=?').get(f.job.id).amount,400);
-  assert.equal(await dueOf(f.db,'owner'),400);assert.equal(await dueOf(f.db,'cleaner'),250);
-  // The owner takes «Всё включено» for both homes: one month at once.
-  await writeOperations(f.owner,'owner',['autopilot','tier'],{tier:'all'});assert.equal(await dueOf(f.db,'owner'),20200);
-  // Both link a card; the weekly charge takes exactly what was accrued.
-  await serviceBillingAction(f.owner,{action:'link'});await serviceBillingAction(f.cleaner,{action:'link'});
-  assert.equal((await sweepDues(f.db,noPlans,now())).charged,2);
-  assert.deepEqual(entries(f,'owner').map(e=>e.amount),[20200]);assert.deepEqual(entries(f,'cleaner').map(e=>e.amount),[250]);
-  // Each payer sees what for and how much.
-  const mine=await serviceBillingState(f.owner),theirs=await serviceBillingState(f.cleaner),sum=(s,k)=>s.items.filter(i=>i.kind===k).reduce((a,i)=>a+i.amount,0);
-  assert.equal(mine.due,0);assert.equal(sum(mine,'autopilot'),19800);assert.equal(sum(mine,'cleaning'),400);assert.equal(sum(mine,'payment'),20200);
-  assert.equal(theirs.due,0);assert.equal(sum(theirs,'cleaner_job'),250);assert.equal(sum(theirs,'payment'),250);
-  // «Бухгалтерия»: 20 450 ₸ of revenue and the same 20 450 ₸ on the account.
+  assert.equal(R.prepare('SELECT amount FROM cleaning_commissions WHERE job_id=?').get(f.job.id).amount,0);
+  assert.equal(await dueOf(f.db,'owner'),0);assert.equal(await dueOf(f.db,'cleaner'),200);
+  // «Всё включено» is gone: nothing monthly can be added.
+  await assert.rejects(writeOperations(f.owner,'owner',['autopilot','tier'],{tier:'all'}),e=>e.status===409);assert.equal(await dueOf(f.db,'owner'),0);
+  // The performer links a card; the weekly charge takes exactly what was accrued.
+  await serviceBillingAction(f.cleaner,{action:'link'});
+  assert.equal((await sweepDues(f.db,noPlans,now())).charged,1);
+  assert.deepEqual(entries(f,'cleaner').map(e=>e.amount),[200]);
+  const theirs=await serviceBillingState(f.cleaner),sum=(s,k)=>s.items.filter(i=>i.kind===k).reduce((a,i)=>a+i.amount,0);
+  assert.equal(theirs.due,0);assert.equal(sum(theirs,'cleaner_job'),200);assert.equal(sum(theirs,'payment'),200);
+  // «Бухгалтерия»: 200 ₸ of revenue and the same 200 ₸ on the account.
   const report=await companyFinance(f.db,{basis:'fact',month:monthKey()}),pl=report.current.pl,cf=report.current.cf;
-  assert.equal(pl.autopilot,20050);assert.equal(pl.cleaning,400);assert.equal(pl.gross,20450);assert.equal(cf.inflow,20450);
+  assert.equal(pl.gross,200);assert.equal(cf.inflow,200);
   assert.equal(report.balance.receivable||0,0,'nobody owes the service anything');
  }finally{f.db.close();}
 });

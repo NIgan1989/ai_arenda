@@ -21,7 +21,7 @@ test('commission math rounds to whole tenge and respects minimum, maximum and th
 
 test('billing starts off: confirmed bookings only build the revenue forecast',async()=>{
  const f=await fixture();try{
-  const shadow=row(f,f.booking);assert.equal(shadow.mode,'shadow');assert.equal(shadow.amount,Math.floor((shadow.booking_amount*500+5000)/10000));
+  const shadow=row(f,f.booking);assert.equal(shadow.mode,'shadow');assert.equal(shadow.rate_bp,400,'4% since 2026-11-22');assert.equal(shadow.amount,Math.floor((shadow.booking_amount*400+5000)/10000));
   const state=await readPlatformAdmin(f.other,'billing',{},config(f));
   assert.equal(state.phase,'off');assert.equal(state.allTime.bookings,1);assert.equal(state.allTime.projected,shadow.amount);assert.equal(state.allTime.charged,0);
   assert.equal(ownerRow(state).balance,0);assert.equal(state.debtors,0);
@@ -94,29 +94,18 @@ test('owner balances are searchable and paged on the server, and debtors are cou
  }finally{f.db.close();}
 });
 
-test('hybrid tariff: a managed flat pays the base rate, the AI is paid per booking it confirmed (with a monthly cap), «Всё включено» pays neither',async()=>{
+test('one tariff in percent: every booking pays 4%, with the AI or without it; the AI costs nothing extra',async()=>{
  const {matchingAction}=await load('smart-matching'),f=await fixture();try{
   const fee=id=>f.db.raw.prepare("SELECT * FROM service_fees WHERE kind='ai_booking' AND ref_id=?").get(id);
-  const manual=await book(f,3,'manual-rate');assert.deepEqual([row(f,manual).rate_bp,row(f,manual).managed],[500,0]);assert.equal(fee(manual),undefined);
+  const manual=await book(f,3,'manual-rate');assert.deepEqual([row(f,manual).rate_bp,row(f,manual).managed],[400,0]);assert.equal(fee(manual),undefined);
   await matchingAction(f.owner,'owner','preference',{propertyId:f.property,mode:'auto'});
-  assert.equal(f.db.raw.prepare("SELECT tier FROM autopilot_plans WHERE user_id='owner' AND role='owner'").get().tier,'pay');
   const {RentalService}=await load('service');
-  // The AI confirms on the owner's behalf (the same call the service makes when a request fits the rules).
   const ai=async(day,key)=>{const id=(await f.guest.createBooking({propertyId:f.property,start:iso(now()+day*86400),end:iso(now()+day*86400+7200),guests:1,billingMode:'hourly',requestKey:key,acceptTerms:true})).id;
    if(f.db.raw.prepare('SELECT status FROM bookings WHERE id=?').get(id).status==='requested'){f.db.raw.prepare('DELETE FROM booking_risks WHERE booking_id=?').run(id);const p=f.db.raw.prepare('SELECT version,cleaning_fee FROM property_policies WHERE property_id=?').get(f.property);await new RentalService(f.db,'owner',{propertyId:f.property,policyVersion:p.version}).bookingAction(id,{action:'confirm',cleaningFee:p.cleaning_fee});}
    return id;};
-  // Under autopilot the booking confirms itself: the base rate and 490 ₸ for the AI (a forecast while charging is off).
+  f.db.raw.prepare("UPDATE platform_billing SET plan_charge=1").run();
   const first=await ai(5,'ai-1');assert.equal(f.db.raw.prepare('SELECT status FROM bookings WHERE id=?').get(first).status,'confirmed');
-  assert.deepEqual([row(f,first).rate_bp,row(f,first).managed],[500,1]);assert.deepEqual([fee(first).amount,fee(first).mode,fee(first).role],[490,'shadow','owner']);
-  // The monthly cap for one object (700 ₸ here): after 490 ₸ only 210 ₸ more is taken.
-  f.db.raw.prepare("UPDATE platform_billing SET plan_charge=1,ai_month_cap=700").run();
-  const second=await ai(6,'ai-2');assert.deepEqual([fee(second).amount,fee(second).mode],[490,'charged']);
-  const third=await ai(7,'ai-3');assert.equal(fee(third).amount,210);
-  // A cancelled booking frees its part of the cap.
-  f.db.raw.prepare("UPDATE bookings SET status='cancelled' WHERE id=?").run(second);
-  const fourth=await ai(8,'ai-4');assert.equal(fee(fourth).amount,490);
-  // «Всё включено»: no commission and no per-booking fee.
-  f.db.raw.prepare("UPDATE autopilot_plans SET tier='all' WHERE user_id='owner'").run();
-  const fifth=await ai(9,'ai-5');assert.equal(row(f,fifth).amount,0);assert.equal(fee(fifth),undefined);
+  const r=row(f,first);assert.deepEqual([r.rate_bp,r.managed],[400,1]);assert.equal(r.amount,Math.floor((r.booking_amount*400+5000)/10000));
+  assert.equal(fee(first),undefined,'no fee per AI booking');
  }finally{f.db.close();}
 });

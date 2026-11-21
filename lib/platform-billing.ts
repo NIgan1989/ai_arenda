@@ -19,6 +19,13 @@ export function commissionFor(amount:number,s:Pick<BillingSettings,'rate_bp'|'mi
  fee=Math.max(fee,s.min_fee);
  return Math.max(0,Math.min(fee,amount));
 }
+// A banquet hall or a café (2026-11-22): the total (guests × price per guest) pays in steps, like a tax scale.
+export type HallScale={hall_rate_bp:number;hall_band1:number;hall_rate2_bp:number;hall_band2:number;hall_rate3_bp:number;hall_max_fee:number};
+export const HALL_SCALE:HallScale={hall_rate_bp:200,hall_band1:300000,hall_rate2_bp:100,hall_band2:1000000,hall_rate3_bp:50,hall_max_fee:15000};
+export function hallFeeFor(amount:number,s:HallScale=HALL_SCALE){
+ const a=Math.max(0,amount),raw=Math.floor((Math.min(a,s.hall_band1)*s.hall_rate_bp+Math.max(0,Math.min(a,s.hall_band2)-s.hall_band1)*s.hall_rate2_bp+Math.max(0,a-Math.max(s.hall_band1,s.hall_band2))*s.hall_rate3_bp+5000)/10000);
+ return Math.min(a,s.hall_max_fee>0?Math.min(raw,s.hall_max_fee):raw);
+}
 
 // Statement for the booking-confirmation batch. The amount is computed in SQL from the
 // settings row read in the same batch, so a concurrent settings change cannot split it.
@@ -26,11 +33,15 @@ export function commissionFor(amount:number,s:Pick<BillingSettings,'rate_bp'|'mi
 // (accrueAiBookingFee). An owner on «Всё включено» pays no commission at all: the row is written with 0 ₸.
 export const allInclusiveSql=(user:string,role:'owner'|'cleaner')=>`EXISTS(SELECT 1 FROM autopilot_plans ap WHERE ap.user_id=${user} AND ap.role='${role}' AND ap.tier='all' AND ap.status IN ('trial','active','grace'))`;
 export function accrueCommission(db:D1Database,bookingId:string,auditId:string,at:number){
- const fee="CASE WHEN x.included=1 THEN 0 ELSE MIN(x.amount,MAX(x.min_fee,CASE WHEN x.max_fee>0 THEN MIN(x.max_fee,(x.amount*x.rate+5000)/10000) ELSE (x.amount*x.rate+5000)/10000 END)) END";
+ // A hall pays in steps (hallFeeFor): band1 at the rate, up to band2 at rate2, the rest at rate3. A home has no steps.
+ const raw="CASE WHEN x.hall=1 THEN (MIN(x.amount,x.band1)*x.rate+MAX(0,MIN(x.amount,x.band2)-x.band1)*x.rate2+MAX(0,x.amount-MAX(x.band1,x.band2))*x.rate3+5000)/10000 ELSE (x.amount*x.rate+5000)/10000 END";
+ const fee=`CASE WHEN x.included=1 THEN 0 ELSE MIN(x.amount,MAX(x.min_fee,CASE WHEN x.max_fee>0 THEN MIN(x.max_fee,${raw}) ELSE ${raw} END)) END`;
  const used=`(SELECT COUNT(*) FROM platform_commissions c WHERE c.owner_id=x.owner_id AND c.mode IN ('free','charged') AND ${live})`;
+ // A banquet hall or a café pays its own lower rate and cap (migration 0086).
+ const hall="COALESCE((SELECT json_extract(d.details,'$.type') FROM property_details d WHERE d.property_id=b.property_id),'') IN ('banquet','cafe')";
  return q(db,`INSERT OR IGNORE INTO platform_commissions(booking_id,owner_id,property_id,booking_amount,rate_bp,amount,mode,settings_version,created_at,managed)
   SELECT x.id,x.owner_id,x.property_id,x.amount,x.rate,${fee},CASE WHEN x.enabled=1 AND x.starts_at<=? THEN CASE WHEN ${used}<x.free_bookings THEN 'free' ELSE 'charged' END ELSE 'shadow' END,x.version,?,x.managed
-  FROM (SELECT z.*,CASE WHEN ${allInclusiveSql('z.owner_id','owner')} THEN 1 ELSE 0 END included,CASE WHEN ${allInclusiveSql('z.owner_id','owner')} THEN 0 ELSE z.rate_bp END rate FROM (SELECT b.id,p.owner_id,b.property_id,b.amount,s.min_fee,s.max_fee,s.enabled,s.starts_at,s.free_bookings,s.version,s.rate_bp,s.ai_rate_bp,CASE WHEN ${underAutopilot('b.property_id')} THEN 1 ELSE 0 END managed
+  FROM (SELECT z.*,CASE WHEN ${allInclusiveSql('z.owner_id','owner')} THEN 1 ELSE 0 END included,CASE WHEN ${allInclusiveSql('z.owner_id','owner')} THEN 0 ELSE z.rate_bp END rate FROM (SELECT b.id,p.owner_id,b.property_id,b.amount,s.min_fee,CASE WHEN ${hall} THEN s.hall_max_fee ELSE s.max_fee END max_fee,s.enabled,s.starts_at,s.free_bookings,s.version,CASE WHEN ${hall} THEN s.hall_rate_bp ELSE s.rate_bp END rate_bp,CASE WHEN ${hall} THEN 1 ELSE 0 END hall,s.hall_band1 band1,s.hall_band2 band2,s.hall_rate2_bp rate2,s.hall_rate3_bp rate3,s.ai_rate_bp,CASE WHEN ${underAutopilot('b.property_id')} THEN 1 ELSE 0 END managed
    FROM bookings b JOIN properties p ON p.id=b.property_id JOIN platform_billing s ON s.id='global'
    WHERE b.id=? AND b.status='confirmed' AND p.demo_owner IS NULL AND EXISTS(SELECT 1 FROM audit_events WHERE id=?)) z) x`,at,at,at,bookingId,auditId);
 }
