@@ -23,6 +23,13 @@ test('the offers cover the launch risks in one new edition',()=>{
  assert.match(text('cleaner'),/исполнитель возмещает Оператору/);
  assert.match(text('cleaner'),/последние 3 месяца/);
  assert.match(text('privacy'),/обязаны хранить их в тайне/);
+ assert.match(text('privacy'),/с момента её обнаружения/);
+ assert.match(text('privacy'),/лицо, ответственное за организацию обработки/);
+ assert.match(text('privacy'),/не позднее 15 рабочих дней/);
+ assert.match(text('consent'),/не позднее 15 рабочих дней/);
+ assert.match(text('terms'),/Решение Оператора не лишает участника права/);
+ assert.match(text('terms'),/о перемене лиц в обязательстве/);
+ assert.match(text('terms'),/в сфере защиты прав потребителей/);
 });
 
 test('the offers take the protections other rental services use',()=>{
