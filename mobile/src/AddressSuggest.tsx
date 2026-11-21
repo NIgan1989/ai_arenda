@@ -65,8 +65,8 @@ const R=T.radius,H=T.control;
 const a=StyleSheet.create({
  field:{gap:4},label:{color:C.muted,...type.caption,fontWeight:'600'},
  input:{minHeight:H.field,borderRadius:R.md,borderWidth:1,borderColor:C.line,backgroundColor:C.surface,paddingHorizontal:16,paddingVertical:12,color:C.ink,...type.body},
- list:{marginTop:4,borderRadius:R.md,borderWidth:1,borderColor:C.line,backgroundColor:C.surface,overflow:'hidden',shadowColor:'#0E1324',shadowOpacity:.08,shadowRadius:12,shadowOffset:{width:0,height:4},elevation:3},
- row:{flexDirection:'row',alignItems:'center',gap:10,minHeight:H.touch,paddingHorizontal:12,paddingVertical:8},
+ list:{marginTop:4,borderRadius:R.md,borderWidth:1,borderColor:C.line,backgroundColor:C.surface,overflow:'hidden',shadowColor:C.ink,shadowOpacity:.08,shadowRadius:12,shadowOffset:{width:0,height:4},elevation:3},
+ row:{flexDirection:'row',alignItems:'center',gap:8,minHeight:H.touch,paddingHorizontal:12,paddingVertical:8},
  rowLine:{borderTopWidth:StyleSheet.hairlineWidth,borderTopColor:C.line},rowOn:{backgroundColor:C.accentSoft},
  icon:{width:20,textAlign:'center',color:C.accent,...type.body},grow:{flex:1,minWidth:0},
  title:{color:C.ink,...type.body,fontWeight:'600'},sub:{color:C.muted,...type.caption},
