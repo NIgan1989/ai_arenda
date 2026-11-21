@@ -1,7 +1,7 @@
 name: Address book of Kazakhstan
 # Builds the address book (settlements, districts, streets, houses) from the OpenStreetMap extract of Kazakhstan
 # and puts it into the photo bucket (R2), where the Worker reads it for address suggestions.
-# Runs once a month and by hand. On other branches it only builds and reports, nothing is uploaded.
+# Runs once a month (3rd day, 02:17 UTC) and by hand. On other branches it only builds and reports, nothing is uploaded.
 # Needs CLOUDFLARE_API_TOKEN (the same as publishing: Workers R2 Storage: Edit, Account Settings: Read).
 on:
   schedule:
