@@ -14,6 +14,8 @@ test('the offers cover the launch risks in one new edition',()=>{
  assert.match(terms,/не удерживает налоги с доходов участников/);
  assert.match(terms,/рассматривает сотрудник Оператора, а не автоматическая система/);
  assert.match(terms,/являются его цифровым подтверждением/);
+ assert.match(terms,/вправе отказаться от общения с ИИ-администратором/);
+ assert.match(terms,/без использования моделей искусственного интеллекта/);
  assert.match(terms,/начинают действовать через 24 часа/);
  assert.match(terms,/не страхует жильё/);
  assert.match(text('owner'),/владелец возмещает Оператору/);
