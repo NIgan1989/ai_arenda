@@ -68,7 +68,9 @@ export async function buildAddressBook(lines,{version=new Date().toISOString().s
   const radius=kind==='city'?(pop>=900_000?25_000:pop>=250_000?15_000:10_000):kind==='town'?(pop>=50_000?8_000:5_000):kind==='village'?2_500:1_200;
   const region=oblasts.find(a=>inside(a,c))?.name||'',raion=raions.find(a=>inside(a,c))?.name||'';
   const all=[...new Set(names(p.tags))];
-  return {id:p.id,name:ruName(p.tags),kk:String(p.tags['name:kk']||'').trim(),all,kind,pop,c,radius,region:region===ruName(p.tags)?'':region,raion,streets:new Map(),districts:[]};
+  // A city's own administration («Павлодар Г.А.») is no district of the country worth showing.
+  const ownRaion=!raion||/Г\.\s*А\.?$|городская администрация|әкімдігі/i.test(raion)||plainName(raion,'place').startsWith(plainName(ruName(p.tags),'place'));
+  return {id:p.id,name:ruName(p.tags),kk:String(p.tags['name:kk']||'').trim(),all,kind,pop,c,radius,region:region===ruName(p.tags)?'':region,raion:ownRaion?'':raion,streets:new Map(),districts:[]};
  }).filter(p=>p.id&&p.name);
  // A grid of 0.1° cells, so that each street and house finds its settlement quickly.
  const grid=new Map(),cell=(x,y)=>Math.floor(x*10)+':'+Math.floor(y*10);

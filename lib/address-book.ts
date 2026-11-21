@@ -24,7 +24,7 @@ async function version(bucket?:BookBucket){const c=await readJson<{version?:stri
 async function bookFile<T>(bucket:BookBucket|undefined,path:string){const v=await version(bucket);return v?readJson<T>(bucket,PREFIX+v+'/'+path,60*60_000):null;}
 export async function hasAddressBook(bucket?:BookBucket){return !!await version(bucket);}
 
-const place=(p:BookPlace):Place=>({id:p.i,name:p.n,...(p.k?{kk:p.k}:{}),...(p.r?{region:p.r}:{}),...(p.a?{raion:p.a}:{}),kind:p.t,center:p.c,streets:p.s>0});
+const place=(p:BookPlace):Place=>({id:p.i,name:p.n,...(p.k?{kk:p.k}:{}),...(p.r?{region:p.r}:{}),...(p.a&&!/Г\.\s*А\.?$/.test(p.a)?{raion:p.a}:{}),kind:p.t,center:p.c,streets:p.s>0});
 async function placesFor(bucket:BookBucket|undefined,tokens:string[]){
  const keys=[...new Set(tokens.filter(t=>t.length>=2||/^\d/.test(t)).map(shardKey))].slice(0,2),seen=new Map<string,BookPlace>();
  for(const k of keys)for(const p of await bookFile<BookPlace[]>(bucket,'p/'+shardFile(k)+'.json')||[])seen.set(p.i,p);
