@@ -30,6 +30,8 @@ test('the offers take the protections other rental services use',()=>{
  assert.match(terms,/вправе отменить подтверждённую бронь/);
  assert.match(terms,/повторно подтвердить личность/);
  assert.match(terms,/не является страховщиком/);
+ assert.match(terms,/парсинг, боты/);
+ assert.match(terms,/услуги других компаний/);
  assert.match(text('owner'),/до 48 часов после времени выезда/);
  assert.match(text('owner'),/как за свои собственные/);
 });
