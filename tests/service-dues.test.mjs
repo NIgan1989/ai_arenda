@@ -181,3 +181,23 @@ test('while charges are stopped nobody is paused; linking a card never takes a s
   assert.match((await serviceBillingAction(f.owner,{action:'pay'},admins)).message,/Списано 4\s900/);
  }finally{f.db.close();}
 });
+
+test('a day before the Monday charge the card holder is told the sum, once; a large sum and a stopped round are not announced',async()=>{
+ const f=await fixture(),R=f.db.raw;try{
+  await serviceBillingAction(f.cleaner,{action:'link'});owe(f,'cleaner',1900);
+  const monday=chargeSlot(now())+WEEK,remind=n=>notes(f,'cleaner','service:remind:%').length===n;
+  // This week's charge is already done: the debt waits for the next Monday.
+  R.prepare("UPDATE service_billing SET last_charge_at=? WHERE user_id='cleaner'").run(monday-WEEK);
+  await sweepDues(f.db,noPlans,monday-DAY-60);assert.ok(remind(0),'not before Sunday 10:00');
+  await sweepDues(f.db,noPlans,monday-DAY+60);assert.ok(remind(1));
+  assert.match(notes(f,'cleaner','service:remind:%')[0],/Завтра в 10:00 с карты •• 0000 спишется 1\s900 ₸ за услуги сервиса\. За что и как оспорить/);
+  await sweepDues(f.db,noPlans,monday-60);assert.ok(remind(1),'one reminder a week');
+  // The next week: a sum above the confirmation threshold waits for the person, so no reminder.
+  await sweepDues(f.db,noPlans,monday+60);owe(f,'cleaner',200000);
+  await sweepDues(f.db,noPlans,monday+WEEK-DAY+60);assert.ok(remind(1));
+  // Charges stopped by the administrator: nobody is reminded.
+  R.prepare("DELETE FROM autopilot_charges WHERE amount=200000").run();owe(f,'cleaner',500);
+  R.prepare("UPDATE platform_billing SET charges_stopped_at=? WHERE id='global'").run(now());
+  await sweepDues(f.db,noPlans,monday+WEEK-DAY+120);assert.ok(remind(1));
+ }finally{f.db.close();}
+});
