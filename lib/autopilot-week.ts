@@ -24,7 +24,7 @@ export type WeekInput={
  // The AI's own steps written in the journal this week.
  steps:number;
  // until: the end of the paid or free period, or for a plan awaiting payment the day it pauses.
- plan:{status:string;until:number;price:number;units:number}|null;
+ plan:{status:string;until:number;price:number;units:number;tier?:'pay'|'all';cap?:number}|null;
 };
 export type WeekLate={propertyId:string;title:string;start:number;readyAt:number|null;minutes:number|null};
 export type WeekPlace={id:string;title:string;arrivals:number;onTime:number;assigned:number;confirmed:number;decisions:number};
@@ -33,7 +33,7 @@ export type AutopilotWeek={
  assigned:number;confirmed:number;decisions:number;steps:number;
  arrivals:number;onTime:number;late:WeekLate[];
  places:WeekPlace[];
- plan:{status:string;until:number;price:number;units:number}|null;
+ plan:{status:string;until:number;price:number;units:number;tier?:'pay'|'all';cap?:number}|null;
  summary:string;
 };
 

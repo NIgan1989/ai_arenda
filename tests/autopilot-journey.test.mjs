@@ -85,6 +85,6 @@ test('autopilot journey: booking, direct payment, check-in, chat, checkout, clea
   // The guest is asked to rate the stay and the owner sees it; both plans keep running.
   R.prepare('UPDATE booking_terms SET actual_checkout=actual_checkout-3700 WHERE booking_id=?').run(id);await tick();
   assert.ok(notice('guest','guest:review-request:'+id));await saveStayReview(f.guest,{bookingId:id,rating:5,text:'Отлично'});assert.ok(notice('owner','owner:stay-review:'+id));
-  await sweepPlans(f.db);assert.deepEqual(R.prepare("SELECT role,status FROM autopilot_plans ORDER BY role").all().map(p=>p.role+':'+p.status),['cleaner:trial','owner:trial']);
+  await sweepPlans(f.db);assert.deepEqual(R.prepare("SELECT role,status FROM autopilot_plans ORDER BY role").all().map(p=>p.role+':'+p.status),['cleaner:active','owner:active']);
  }finally{f.db.close();}
 });

@@ -63,7 +63,8 @@ async function inputs(db:D1Database):Promise<Inputs>{
   rows(db,'SELECT * FROM company_costs ORDER BY kind,sort,created_at,id') as Promise<Cost[]>,
   rows(db,`SELECT ${monthOf('c.created_at')} month,COALESCE(SUM(CASE WHEN c.mode='charged' THEN c.amount END),0) charged,COALESCE(SUM(CASE WHEN c.mode='shadow' THEN c.amount END),0) shadow,COALESCE(SUM(CASE WHEN c.mode='charged' THEN c.booking_amount END),0) turnover_charged,COALESCE(SUM(CASE WHEN c.mode IN ('charged','shadow') THEN c.booking_amount END),0) turnover_all,COUNT(*) bookings FROM platform_commissions c WHERE ${live} GROUP BY month`),
   rows(db,`SELECT ${monthOf('created_at')} month,COALESCE(SUM(CASE WHEN mode='charged' THEN amount END),0) charged,COALESCE(SUM(CASE WHEN mode='shadow' THEN amount END),0) shadow FROM cleaning_commissions GROUP BY month`),
-  rows(db,`SELECT ${monthOf('created_at')} month,COALESCE(SUM(CASE WHEN mode='charged' THEN amount END),0) charged,COALESCE(SUM(CASE WHEN mode='shadow' THEN amount END),0) shadow,COALESCE(SUM(CASE WHEN mode='charged' AND role='cleaner' THEN amount END),0) cleaner_charged FROM autopilot_charges GROUP BY month`),
+  rows(db,`SELECT ${monthOf('created_at')} month,COALESCE(SUM(CASE WHEN mode='charged' THEN amount END),0) charged,COALESCE(SUM(CASE WHEN mode='shadow' THEN amount END),0) shadow,COALESCE(SUM(CASE WHEN mode='charged' AND role='cleaner' THEN amount END),0) cleaner_charged FROM (SELECT created_at,mode,role,amount FROM autopilot_charges
+   UNION ALL SELECT f.created_at,f.mode,f.role,f.amount FROM service_fees f WHERE f.kind<>'ai_booking' OR (SELECT status FROM bookings WHERE id=f.ref_id) IN ('confirmed','completed')) GROUP BY month`),
   // A part-paid charge has no settlement date yet: its deductions count from the month it was charged.
   rows(db,`SELECT ${monthOf('COALESCE(settled_at,created_at)')} month,COALESCE(SUM(withheld),0) withheld FROM autopilot_charges WHERE role='cleaner' AND mode='charged' AND withheld>0 GROUP BY month`),
   rows(db,`SELECT ${monthOf('created_at')} month,COALESCE(SUM(CASE WHEN kind='topup' THEN amount END),0) topups,COALESCE(SUM(CASE WHEN kind<>'topup' THEN amount END),0) bonuses FROM owner_balance_entries GROUP BY month`),
@@ -71,7 +72,7 @@ async function inputs(db:D1Database):Promise<Inputs>{
   rows(db,`SELECT ${monthOf('created_at')} month,COALESCE(SUM(charged_cost_micros),0) micros,COUNT(*) requests FROM ai_usage_reservations WHERE charged_cost_micros IS NOT NULL GROUP BY month`),
   rows(db,'SELECT id,kind,amount,month,note,created_at FROM company_cash_entries ORDER BY month DESC,created_at DESC,id'),
   rows(db,'SELECT month,tax,COALESCE(SUM(amount),0) amount FROM company_tax_payments GROUP BY month,tax'),
-  one(db,`SELECT (SELECT MIN(created_at) FROM platform_commissions) a,(SELECT MIN(created_at) FROM owner_balance_entries) b,(SELECT MIN(created_at) FROM cleaning_commissions) c,(SELECT MIN(created_at) FROM autopilot_charges) d,(SELECT MIN(month) FROM company_cash_entries) e,(SELECT MIN(month) FROM company_tax_payments) f`),
+  one(db,`SELECT (SELECT MIN(created_at) FROM platform_commissions) a,(SELECT MIN(created_at) FROM owner_balance_entries) b,(SELECT MIN(created_at) FROM cleaning_commissions) c,(SELECT MIN(created_at) FROM (SELECT created_at FROM autopilot_charges UNION ALL SELECT created_at FROM service_fees)) d,(SELECT MIN(month) FROM company_cash_entries) e,(SELECT MIN(month) FROM company_tax_payments) f`),
  ]);
  const index=(list:Row[])=>Object.fromEntries(list.map(r=>[r.month,r]));
  // D1 refuses long UNION chains, so the earliest month is picked here from one row of minimums.
@@ -140,9 +141,11 @@ async function positions(db:D1Database,end:number){
   -COALESCE((SELECT SUM(amount) FROM cleaning_commissions WHERE owner_id=o.owner_id AND mode='charged' AND created_at<=?),0)
   -COALESCE((SELECT SUM(amount) FROM cleaning_holds WHERE owner_id=o.owner_id AND status IN ('held','due','paid') AND created_at<=?),0)
   -COALESCE((SELECT SUM(amount) FROM autopilot_charges WHERE user_id=o.owner_id AND role='owner' AND mode='charged' AND created_at<=?),0)
-  -COALESCE((SELECT SUM(amount-withheld) FROM autopilot_charges WHERE user_id=o.owner_id AND ${fromBalance} AND settled_at<=?),0)) balance
+  -COALESCE((SELECT SUM(amount-withheld) FROM autopilot_charges WHERE user_id=o.owner_id AND ${fromBalance} AND settled_at<=?),0)
+  -COALESCE((SELECT SUM(f.amount) FROM service_fees f WHERE f.user_id=o.owner_id AND f.mode='charged' AND f.created_at<=? AND (f.kind<>'ai_booking' OR (SELECT status FROM bookings WHERE id=f.ref_id) IN ('confirmed','completed'))),0)) balance
   FROM (SELECT o.id owner_id FROM profiles o WHERE EXISTS(SELECT 1 FROM properties p WHERE p.owner_id=o.id AND p.demo_owner IS NULL)
-   UNION SELECT e.owner_id FROM owner_balance_entries e WHERE NOT EXISTS(SELECT 1 FROM properties p WHERE p.owner_id=e.owner_id)) o`,end,end,end,end,end,end);
+   UNION SELECT e.owner_id FROM owner_balance_entries e WHERE NOT EXISTS(SELECT 1 FROM properties p WHERE p.owner_id=e.owner_id)
+   UNION SELECT f.user_id FROM service_fees f WHERE NOT EXISTS(SELECT 1 FROM properties p WHERE p.owner_id=f.user_id)) o`,end,end,end,end,end,end,end);
  const holds=await one(db,"SELECT COALESCE(SUM(amount),0) n FROM cleaning_holds WHERE created_at<=? AND (status IN ('held','due') OR (status='paid' AND paid_at>?))",end,end);
  const cleaners=await one(db,"SELECT COALESCE((SELECT SUM(amount) FROM autopilot_charges WHERE role='cleaner' AND mode='charged' AND created_at<=?),0)-COALESCE((SELECT SUM(withheld) FROM autopilot_charges WHERE role='cleaner' AND mode='charged' AND COALESCE(settled_at,created_at)<=?),0)-COALESCE((SELECT SUM(amount-withheld) FROM autopilot_charges WHERE "+fromBalance+" AND settled_at<=?),0) n",end,end,end);
  let advances=0,receivable=0;for(const o of owners){const v=Number(o.balance||0);if(v>0)advances+=v;else receivable-=v;}
