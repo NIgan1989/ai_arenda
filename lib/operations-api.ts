@@ -31,7 +31,7 @@ import {saveStayPhoto,listStayPhotos,readStayPhoto,saveHandover} from './stay-ha
 import {serviceBillingState,serviceBillingAction} from './service-dues';
 import {saveReceipt,listReceipts,readReceipt} from './payment-receipts';
 import {rulesState,saveRule,type RuleRole} from './decision-rules';
-import {planState,startOwnerPlan,startCleanerPlan,stopPlan,saveCleanerRules,awayToday,planRequired} from './autopilot-plans';
+import {planState,startOwnerPlan,startCleanerPlan,stopPlan,saveCleanerRules,awayToday,planRequired,setTier} from './autopilot-plans';
 import {saveIdentityDoc,removeIdentityDoc,listIdentityDocs,readIdentityDoc} from './identity-docs';
 import {saveRightDoc,removeRightDoc,listRightDocs,readRightDoc} from './property-rights';
 import {restrictAccount,restrictionsList,unlistPlace} from './account-restrictions';
@@ -122,6 +122,7 @@ export async function writeOperations(service:RentalService,role:Role,path:strin
  if(route==='dispatch/preferences'){active(role,['cleaner']);return saveWorkerDispatch(service,body);}
  if(route==='autopilot/start')return planRequired(role)==='owner'?startOwnerPlan(service,body):startCleanerPlan(service,body);
  if(route==='autopilot/stop')return stopPlan(service,planRequired(role));
+ if(route==='autopilot/tier')return setTier(service,planRequired(role),body);
  if(route==='decision-rules')return saveRule(service.db,service.userId,role as RuleRole,body);
  if(route==='autopilot/rules'){active(role,['cleaner']);await saveCleanerRules(service,body);return {message:'Правила сохранены.',state:await planState(service,'cleaner')};}
  if(route==='autopilot/away'){active(role,['cleaner']);return awayToday(service);}

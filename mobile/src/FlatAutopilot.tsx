@@ -11,7 +11,7 @@ import {T} from './tokens';
 // still needs it, the cleaning price. The same as on the site.
 export function FlatAutopilotRow({propertyId,onChanged}:{propertyId:string;onChanged?:()=>Promise<unknown>|void}){
  const [state,setState]=useState<FlatAutopilot|null>(null),[busy,setBusy]=useState(false),[asking,setAsking]=useState(false),[fee,setFee]=useState(''),[notice,setNotice]=useState('');
- async function load(){try{const v=await request('/api/operations/autopilot/state',undefined,undefined,undefined,'owner'),flat=(v.flats||[]).find((f:any)=>f.id===propertyId);setState(flat?{...flat,price:v.settings?.price||0,trialDays:v.settings?.trialDays||0,charge:!!v.settings?.charge}:null);}catch(e:any){setNotice(e.message);}}
+ async function load(){try{const v=await request('/api/operations/autopilot/state',undefined,undefined,undefined,'owner'),flat=(v.flats||[]).find((f:any)=>f.id===propertyId);setState(flat?{...flat,price:v.settings?.aiBookingFee||0,cap:v.settings?.aiMonthCap||0,included:v.tier==='all',trialDays:0,charge:!!v.settings?.charge}:null);}catch(e:any){setNotice(e.message);}}
  useEffect(()=>{void load();},[propertyId]);
  async function run(body:()=>Promise<any>){setBusy(true);setNotice('');try{const r=await body();setNotice(r?.failed?.length?r.failed[0].error:'');setAsking(false);await load();await onChanged?.();}catch(e:any){setNotice(e.message);await load();}finally{setBusy(false);}}
  const on=(cleaningFee?:number)=>run(()=>request('/api/operations/autopilot/start',{propertyIds:[propertyId],...(cleaningFee?{cleaningFees:{[propertyId]:cleaningFee}}:{})},undefined,undefined,'owner'));

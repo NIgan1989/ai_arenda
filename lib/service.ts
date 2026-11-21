@@ -35,7 +35,7 @@ import {createAIBudgetLifecycle} from './ai-budget';
 import {aiDataPermission} from './ai-data-permission';
 import {administratorSearch,isPropertySearch,isSearchRefinement,previousAdministratorSearch} from './administrator-search';
 import {readAdministratorProcesses,processReadIntent} from './administrator-process-read';
-import {accrueCommission} from './platform-billing';
+import {accrueCommission,accrueAiBookingFee} from './platform-billing';
 import {offerPriceAdvice,ownerPriceSuggestions,decidePriceSuggestion} from './price-advice';
 import {guestStayOffers,decideStayOffer} from './stay-offers';
 import {guestFavorites} from './favorites';
@@ -875,6 +875,8 @@ export class RentalService {
       const auditId=id(),auditAction=this.execution?JSON.stringify({action:'booking.confirmed',onBehalfOf:this.userId,...this.execution}):'booking.confirmed';
       const statements=[this.query("UPDATE bookings SET status='confirmed' WHERE id=? AND status='requested' AND expires_at>? AND EXISTS(SELECT 1 FROM booking_terms WHERE booking_id=? AND version=?)"+policyGate,bookingId,now(),bookingId,terms?.version,...(this.execution?[this.execution.policyVersion,fee,now()]:[])),this.query('INSERT INTO audit_events SELECT ?,?,?,?,? WHERE changes()>0',auditId,this.execution?'system:rental-policy':this.userId,bookingId,auditAction,now()),this.query("INSERT OR IGNORE INTO notifications SELECT ?,?,?,?,?,? WHERE EXISTS(SELECT 1 FROM audit_events WHERE id=?)",id(),b.guest_id,`Бронь «${b.title}» подтверждена. Адрес доступен в карточке.`+(b.payment_status!=='owner_verified'?(prepayOf(terms)>=100?' Переведите владельцу '+venueOr(b,'оплату проживания','оплату брони')+(terms?.deposit?' и депозит':'')+' по реквизитам из карточки брони до '+wordsOf(b).arriveGen+' и нажмите «Я оплатил».':prepayOf(terms)?' Переведите владельцу предоплату '+prepayOf(terms)+'% по реквизитам из карточки брони и нажмите «Я оплатил». Остальное'+(terms?.deposit?' и депозит':'')+' — при заселении.':' Оплата при заселении: реквизиты владельца откроются в карточке брони за 15 минут до '+wordsOf(b).arriveGen+'. Не переводите деньги заранее и по другим реквизитам.'):''),'guest:confirmed:'+bookingId,0,now(),auditId)];
       statements.push(accrueCommission(this.db,bookingId,auditId,now()));
+      // «Автопилот» is paid per booking the AI confirmed itself (hybrid tariff, lib/platform-billing.ts).
+      if(this.execution)statements.push(accrueAiBookingFee(this.db,bookingId,auditId,now()));
       // «С депозитом»: the owner follows the AI's risk advice and asks for a refundable deposit.
       const depositAsked=body.withDeposit===true&&!this.execution?Number((await this.one('SELECT deposit_advice FROM booking_risks WHERE booking_id=?',bookingId))?.deposit_advice||0):0;
       if(body.withDeposit===true&&(!depositAsked||terms?.deposit))throw new DomainError('Для этой заявки депозит уже предусмотрен или не нужен.',409);

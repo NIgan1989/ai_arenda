@@ -19,8 +19,8 @@ function Card({title,value,open,onPress,children}:{title:string;value?:string;op
 }
 function planLine(p:Week['plan']){
  if(!p||p.status==='paused')return tr('Автопилот выключен. Включите режим «ИИ» у объекта, и эти шаги ИИ будет делать сам.');
- const price=tr('{v} в месяц за объект',{v:tenge(p.price)});
- return p.status==='trial'?tr('Пробный период до {v}. Дальше {price}.',{v:day(p.until),price}):p.status==='grace'?tr('Автопилот не оплачен, работает до {v}. {price}.',{v:day(p.until),price}):(p.units?tr('Тариф «Автопилот»: {price} · объектов: {units}.',{price,units:p.units}):tr('Тариф «Автопилот»: {price}.',{price}));
+ if(p.tier==='all')return p.status==='grace'?tr('«Всё включено» не оплачено, работает до {v}.',{v:day(p.until)}):p.units?tr('Тариф «Всё включено»: {price} в месяц за объект · объектов под ИИ: {units}.',{price:tenge(p.price),units:p.units}):tr('Тариф «Всё включено»: {price} в месяц за объект.',{price:tenge(p.price)});
+ return p.cap?tr('Оплата за результат: {price} за бронь, которую провёл ИИ, не больше {cap} в месяц за объект.',{price:tenge(p.price),cap:tenge(p.cap)}):tr('Оплата за результат: {price} за бронь, которую провёл ИИ.',{price:tenge(p.price)});
 }
 
 // «13–19 ноября» comes from the server in Russian; in another language the app writes the same from the week's ends.

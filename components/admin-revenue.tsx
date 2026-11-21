@@ -35,7 +35,6 @@ export function AdminRevenue({data,busy,save}:{data:Row;busy:boolean;save:Save})
    <div className="revenue-hero-side">
     <dl>
      <div><dt>Комиссия</dt><dd>{percent(s.rate_bp||0)}</dd></div>
-     <div><dt>В режиме «ИИ»</dt><dd>{percent(s.ai_rate_bp??1000)}</dd></div>
      <div><dt>Бесплатно каждому</dt><dd>{s.free_bookings||0} брон.</dd></div>
      <div><dt>Должников</dt><dd>{data.debtors||0}</dd></div>
     </dl>
@@ -117,14 +116,14 @@ function MonthlyChart({rows,now,phase}:{rows:Row[];now:number;phase:Phase}){
 }
 
 function BillingTerms({settings:s,now,phase,busy,save}:{settings:Row;now:number;phase:Phase;busy:boolean;save:(body:Row)=>Promise<Row|undefined>}){
- const [enabled,setEnabled]=useState(!!s.enabled),[rate,setRate]=useState(String((s.rate_bp??500)/100)),[aiRate,setAiRate]=useState(String((s.ai_rate_bp??1000)/100)),[minFee,setMinFee]=useState(String(s.min_fee||0)),[maxFee,setMaxFee]=useState(String(s.max_fee||0)),[free,setFree]=useState(String(s.free_bookings??3)),[cleanRate,setCleanRate]=useState(String((s.cleaning_rate_bp??1000)/100)),[pairRate,setPairRate]=useState(String((s.pair_rate_bp??500)/100)),[pairCap,setPairCap]=useState(String(s.pair_month_cap??2000)),[start,setStart]=useState(isoDay(s.enabled?s.starts_at:now+30*86400)),[agreed,setAgreed]=useState(false);
- const cr=Number(cleanRate)||0,pr=Number(pairRate)||0,cap=Number(pairCap)||0,r=Number(rate)||0,ai=Number(aiRate)||0,min=Number(minFee)||0,max=Number(maxFee)||0;
+ const [enabled,setEnabled]=useState(!!s.enabled),[rate,setRate]=useState(String((s.rate_bp??500)/100)),[minFee,setMinFee]=useState(String(s.min_fee||0)),[maxFee,setMaxFee]=useState(String(s.max_fee||0)),[free,setFree]=useState(String(s.free_bookings??3)),[cleanRate,setCleanRate]=useState(String((s.cleaning_rate_bp??1000)/100)),[pairRate,setPairRate]=useState(String((s.pair_rate_bp??500)/100)),[pairCap,setPairCap]=useState(String(s.pair_month_cap??2000)),[start,setStart]=useState(isoDay(s.enabled?s.starts_at:now+30*86400)),[agreed,setAgreed]=useState(false);
+ const cr=Number(cleanRate)||0,pr=Number(pairRate)||0,cap=Number(pairCap)||0,r=Number(rate)||0,min=Number(minFee)||0,max=Number(maxFee)||0;
  const soon=enabled&&phase!=='active'&&Date.parse(start+'T00:00:00+05:00')/1000<now+14*86400;
  async function submit(e:FormEvent<HTMLFormElement>){
   e.preventDefault();const chosen=Math.floor(Date.parse(start+'T00:00:00+05:00')/1000);
   // Keep a running start date untouched unless the administrator picked another day.
   const startsAt=s.enabled&&s.starts_at<=now&&start===isoDay(s.starts_at)?s.starts_at:Math.max(chosen,Math.floor(Date.now()/1000));
-  await save({enabled,ratePercent:r,aiRatePercent:ai,minFee:min,maxFee:max,freeBookings:Number(free)||0,cleaningRatePercent:cr,pairRatePercent:pr,pairMonthCap:cap,startsAt,expectedVersion:s.version,confirmed:agreed});
+  await save({enabled,ratePercent:r,minFee:min,maxFee:max,freeBookings:Number(free)||0,cleaningRatePercent:cr,pairRatePercent:pr,pairMonthCap:cap,startsAt,expectedVersion:s.version,confirmed:agreed});
  }
  return <form className="revenue-terms" onSubmit={submit}>
   <label className="revenue-switch"><input type="checkbox" role="switch" checked={enabled} onChange={e=>setEnabled(e.target.checked)}/><span className="revenue-switch-track" aria-hidden="true"/><span><strong>Брать комиссию с владельцев</strong><small>{enabled?'Плата спишется с баланса владельца при подтверждении брони.':'Сейчас сервис бесплатный. Прогноз дохода всё равно считается.'}</small></span></label>
@@ -132,7 +131,6 @@ function BillingTerms({settings:s,now,phase,busy,save}:{settings:Row;now:number;
    <legend>Сколько платит владелец</legend>
    <div className="revenue-fields">
     <label>Комиссия, %<Input type="number" inputMode="decimal" min={0} max={30} step={0.1} value={rate} onChange={e=>setRate(e.target.value)} required/></label>
-    <label>В режиме «ИИ», %<Input type="number" inputMode="decimal" min={0} max={30} step={0.1} value={aiRate} onChange={e=>setAiRate(e.target.value)} required/></label>
     <label>Бесплатных броней<Input type="number" inputMode="numeric" min={0} max={1000} value={free} onChange={e=>setFree(e.target.value)}/></label>
     <label>Минимум, ₸<Input type="number" inputMode="numeric" min={0} value={minFee} onChange={e=>setMinFee(e.target.value)}/></label>
     <label>Максимум, ₸<Input type="number" inputMode="numeric" min={0} value={maxFee} onChange={e=>setMaxFee(e.target.value)} placeholder="Без ограничения"/></label>
@@ -145,7 +143,7 @@ function BillingTerms({settings:s,now,phase,busy,save}:{settings:Row;now:number;
    </div>
    <label>Начать с<Input type="date" min={phase==='active'?undefined:isoDay(now)} value={start} onChange={e=>setStart(e.target.value)} required={enabled}/></label>
   </fieldset>
-  <div className="revenue-example"><small>Пример расчёта</small><div><span>Бронь на сутки, 15 000 ₸</span><b>{money(feeFor(15000,r,min,max))}</b></div><div><span>Почасовая бронь, 4 000 ₸</span><b>{money(feeFor(4000,r,min,max))}</b></div><div><span>Сутки, 15 000 ₸, режим «ИИ»</span><b>{money(feeFor(15000,ai,min,max))}</b></div><div><span>Уборка 8 000 ₸ / у постоянной пары</span><b>{money(feeFor(8000,cr,0,0))} / {money(Math.min(feeFor(8000,pr,0,0),cap||Infinity))}</b></div></div>
+  <div className="revenue-example"><small>Пример расчёта</small><div><span>Бронь на сутки, 15 000 ₸</span><b>{money(feeFor(15000,r,min,max))}</b></div><div><span>Почасовая бронь, 4 000 ₸</span><b>{money(feeFor(4000,r,min,max))}</b></div><div><span>Уборка 8 000 ₸ / у постоянной пары</span><b>{money(feeFor(8000,cr,0,0))} / {money(Math.min(feeFor(8000,pr,0,0),cap||Infinity))}</b></div></div>
   {enabled&&<p className={'revenue-callout'+(soon?' is-warning':'')}><Info size={16}/>{soon?'До начала меньше двух недель. Лучше дать владельцам месяц, чтобы они успели пополнить баланс.':'Владельцы получат уведомление в приложении. Отменённые брони никогда не оплачиваются.'}</p>}
   <label className="revenue-confirm"><input type="checkbox" checked={agreed} onChange={e=>setAgreed(e.target.checked)} required/>{enabled?'Я понимаю, что владельцы будут платить по этим условиям.':'Оставить сервис бесплатным.'}</label>
   <Button className="revenue-primary" disabled={busy||!agreed}>Сохранить условия</Button>
@@ -214,28 +212,30 @@ function CleanerPayouts({data:c,busy,save}:{data:Row;busy:boolean;save:Save}){
  </>;
 }
 
-// Тарифы: the «Автопилот» plan for owners and cleaners. Charging stays off until bank top-ups work; until then
-// every plan runs free and the service records what it would have taken.
+// Тарифы: the hybrid tariff (2026-11-20). For the result by default («Автопилот» per booking the AI confirmed,
+// the performer's fee per cleaning, each with a monthly cap) or «Всё включено» by choice. Charging stays off until
+// the bank's recurring charges work; until then the service records what it would have taken.
 function AutopilotPlans({data,busy,save}:{data:Row;busy:boolean;save:Save}){
  const s=data.settings||{},o=data.owner||{},c=data.cleaner||{};
- const [form,setForm]=useState(()=>({ownerPrice:String(s.ownerPrice??4900),cleanerPrice:String(s.cleanerPrice??1900),trialDays:String(s.trialDays??14),graceDays:String(s.graceDays??3)})),[agreed,setAgreed]=useState(false);
+ const [form,setForm]=useState(()=>({aiBookingFee:String(s.aiBookingFee??490),aiMonthCap:String(s.aiMonthCap??4900),ownerPrice:String(s.ownerPrice??9900),cleanerJobFee:String(s.cleanerJobFee??250),cleanerFreeJobs:String(s.cleanerFreeJobs??5),cleanerMonthCap:String(s.cleanerMonthCap??6000),cleanerPrice:String(s.cleanerPrice??2900),graceDays:String(s.graceDays??3)})),[agreed,setAgreed]=useState(false);
  const field=(key:keyof typeof form,label:string,suffix:string)=><label className="plans-field">{label}<span><Input inputMode="numeric" value={form[key]} disabled={busy} onChange={e=>setForm({...form,[key]:e.target.value.replace(/\D/g,'').slice(0,7)})}/><em>{suffix}</em></span></label>;
- const submit=(charge:boolean)=>save('billing/plans',{charge,confirmed:true,ownerPrice:Number(form.ownerPrice||0),cleanerPrice:Number(form.cleanerPrice||0),trialDays:Number(form.trialDays||0),graceDays:Number(form.graceDays||0)}).then(r=>{if(r)setAgreed(false);});
+ const submit=(charge:boolean)=>save('billing/plans',{charge,confirmed:true,...Object.fromEntries(Object.entries(form).map(([k,v])=>[k,Number(v||0)]))}).then(r=>{if(r)setAgreed(false);});
  const stat=(n:number,label:string)=><div><dt>{label}</dt><dd>{n}</dd></div>;
  return <div className="plans">
-  <div className={'plans-charge'+(s.charge?' is-on':'')}><div><strong>{s.charge?'Плата за автопилот включена.':'Плата за автопилот выключена.'}</strong><p>{s.charge?'Владельцы платят с баланса, исполнители из выплат. Не хватило денег: отсрочка, потом пауза.':'Все, кто подключил, пользуются бесплатно. Сервис считает, сколько заработал бы. Включите, когда заработает пополнение через банк.'}</p></div>
+  <div className={'plans-charge'+(s.charge?' is-on':'')}><div><strong>{s.charge?'Плата за «Автопилот», уборки и «Всё включено» включена.':'Плата за «Автопилот», уборки и «Всё включено» выключена.'}</strong><p>{s.charge?'Всё копится и списывается с привязанной карты по понедельникам. Не оплачено 7 дней: пауза.':'Все пользуются бесплатно. Сервис считает, сколько заработал бы. Включите, когда заработают списания через банк.'}</p></div>
    {s.charge?<Button variant="outline" disabled={busy} onClick={()=>submit(false)}>Выключить плату</Button>:<label className="plans-agree"><input type="checkbox" checked={agreed} disabled={busy} onChange={e=>setAgreed(e.target.checked)}/>Участники получат уведомление</label>}
    {!s.charge&&<Button disabled={busy||!agreed} onClick={()=>submit(true)}>Включить плату</Button>}</div>
   <div className="plans-cols">
-   <section className="plans-card"><h3>Автопилот владельца</h3><p>Цена за один объект под ИИ в месяц. Комиссия с брони у таких объектов обычная, без надбавки за ИИ.</p>
-    <dl className="revenue-facts">{stat(o.trial||0,'В пробном')}{stat(o.active||0,'Платят')}{stat(o.grace||0,'Отсрочка')}{stat(o.paused||0,'На паузе')}{stat(o.flats||0,'Объектов под ИИ')}</dl>
-    <p className="plans-sum">{s.charge?'Списано за 30 дней: '+money(o.charged30):'Было бы за месяц: '+money(o.monthly)}</p></section>
-   <section className="plans-card"><h3>Автопилот исполнителя</h3><p>Цена в месяц. Удерживается из ближайшей выплаты за уборки.</p>
-    <dl className="revenue-facts">{stat(c.trial||0,'В пробном')}{stat(c.active||0,'Платят')}{stat(c.grace||0,'Отсрочка')}{stat(c.paused||0,'На паузе')}{stat(c.taken30||0,'Уборок взял ИИ за 30 дней')}</dl>
-    <p className="plans-sum">{s.charge?'Удержано за 30 дней: '+money(c.charged30):'Было бы за 30 дней: '+money(c.shadow30)}</p></section>
+   <section className="plans-card"><h3>Владельцы</h3><p>По умолчанию платят за брони, которые провёл ИИ. «Всё включено»: одна сумма за каждый объект, без комиссий.</p>
+    <dl className="revenue-facts">{stat(o.pay||0,'За результат')}{stat(o.all||0,'«Всё включено»')}{stat(o.paused||0,'На паузе')}{stat(o.flats||0,'Объектов под ИИ')}{stat(o.results30||0,'Броней ИИ за 30 дней')}</dl>
+    <p className="plans-sum">{s.charge?'За 30 дней: за брони ИИ '+money(o.fees30)+', «Всё включено» '+money(o.charged30):'Было бы за 30 дней: '+money((o.feesShadow30||0)+(o.shadow30||0))}</p></section>
+   <section className="plans-card"><h3>Исполнители</h3><p>По умолчанию платят за каждую принятую уборку, «Автопилот» бесплатно. «Всё включено»: одна сумма в месяц.</p>
+    <dl className="revenue-facts">{stat(c.pay||0,'За результат')}{stat(c.all||0,'«Всё включено»')}{stat(c.paused||0,'На паузе')}{stat(c.results30||0,'Уборок за 30 дней')}{stat(c.taken30||0,'Взял ИИ')}</dl>
+    <p className="plans-sum">{s.charge?'За 30 дней: за уборки '+money(c.fees30)+', «Всё включено» '+money(c.charged30)+(c.free30?', бесплатно '+money(c.free30):''):'Было бы за 30 дней: '+money((c.feesShadow30||0)+(c.shadow30||0))}</p></section>
   </div>
   <section className="plans-card"><h3>Условия</h3>
-   <div className="plans-fields">{field('ownerPrice','Владелец, за объект','₸ в месяц')}{field('cleanerPrice','Исполнитель','₸ в месяц')}{field('trialDays','Бесплатно','дней')}{field('graceDays','Отсрочка','дней')}</div>
+   <div className="plans-fields">{field('aiBookingFee','Бронь, которую провёл ИИ','₸')}{field('aiMonthCap','Потолок за объект','₸ в месяц')}{field('ownerPrice','«Всё включено», объект','₸ в месяц')}
+    {field('cleanerJobFee','Исполнитель, за уборку','₸')}{field('cleanerFreeJobs','Бесплатно новичку','уборок')}{field('cleanerMonthCap','Потолок исполнителя','₸ в месяц')}{field('cleanerPrice','«Всё включено», исполнитель','₸ в месяц')}{field('graceDays','Отсрочка','дней')}</div>
    <Button disabled={busy} onClick={()=>submit(!!s.charge)}>Сохранить условия</Button></section>
  </div>;
 }
