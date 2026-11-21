@@ -37,8 +37,10 @@ const fitOf=(query:string[],p:{v:string[]})=>Math.max(0,...p.v.map(v=>nameFit(qu
 export async function suggestPlaces(bucket:BookBucket|undefined,db:D1Database|undefined,text:unknown,limit=8):Promise<Place[]>{
  const query=nameTokens(String(text??'').slice(0,80),'place');
  if(!query.length){const top=await bookFile<BookPlace[]>(bucket,'top.json')||[];return top.slice(0,limit).map(place);}
- const scored=(await placesFor(bucket,query)).map(p=>({p,fit:fitOf(query,p)})).filter(x=>x.fit>0)
-  .sort((a,b)=>b.fit-a.fit||(RANK[b.p.t]||0)-(RANK[a.p.t]||0)||(b.p.p||0)-(a.p.p||0)||a.p.n.localeCompare(b.p.n,'ru'));
+ // A settlement found by its own name comes before one found by an old or other name («Павловка» renamed long ago).
+ const own=(p:BookPlace)=>Math.max(0,...[p.n,p.k||''].filter(Boolean).map(n=>nameFit(query,nameTokens(n,'place'))));
+ const scored=(await placesFor(bucket,query)).map(p=>({p,fit:fitOf(query,p),own:own(p)})).filter(x=>x.fit>0)
+  .sort((a,b)=>Math.max(b.fit,b.own+.5*Math.sign(b.own))-Math.max(a.fit,a.own+.5*Math.sign(a.own))||(RANK[b.p.t]||0)-(RANK[a.p.t]||0)||(b.p.p||0)-(a.p.p||0)||a.p.n.localeCompare(b.p.n,'ru'));
  const out=scored.slice(0,limit).map(x=>place(x.p)),known=new Set(out.map(p=>plainName(p.name,'place')));
  for(const name of await usedCities(db))if(out.length<limit&&!known.has(plainName(name,'place'))&&nameFit(query,nameTokens(name,'place'))>=2){known.add(plainName(name,'place'));out.push({id:'',name,kind:'custom',center:[0,0],streets:false,custom:true});}
  return out;
