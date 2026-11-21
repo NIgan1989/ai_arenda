@@ -77,7 +77,7 @@ test('a bath and a hall: the category is not a condition, one type is', () => {
   assert.equal({...sauna, ...token.clear}.kinds.length, 2);
   const hall = chipDraft('toi', newDraft('Павлодар', NOW), NOW), tokens = guestTokens(hall, NOW);
   assert.equal(tokens[0].id, 'occasion');
-  assert.equal(tokens[0].title, 'Той, свадьба');
+  assert.equal(tokens[0].title, 'Свадьба, той');
   assert.ok(!tokens[0].clear);
 });
 

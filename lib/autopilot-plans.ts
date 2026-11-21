@@ -5,14 +5,13 @@ import {underAutopilot,setGuestMode} from './autopilot';
 import {dueOf,sweepDues,servicePaused} from './service-dues';
 import {declineAssignment} from './dispatch';
 import {autopilotWeek} from './autopilot-week-db';
+import {sweepHallMonths} from './platform-billing';
 
-// «Автопилот» and the hybrid tariff (decision of 2026-11-20). A plan row means the participant's AI is on, and its
-// tier says how the participant pays the service:
-//  - 'pay' (the default): for the result only. The owner pays ai_booking_fee for every booking the AI confirmed
-//    (at most ai_month_cap a month for one object), the performer pays cleaner_job_fee for every accepted cleaning
-//    (lib/platform-billing.ts, the trigger of migration 0080). Nothing monthly: no bookings, nothing to pay.
-//  - 'all' («Всё включено»): one monthly price, plan_owner_price for every object of the owner or plan_cleaner_price
-//    for the performer; no commission, no per-booking fee, no match fee, no fee per cleaning.
+// «Автопилот» and the tariff. Since 2026-11-22 there is one tariff in percent: the owner pays rate_bp (4%) of every
+// booking confirmed through the service (lib/platform-billing.ts), the performer cleaner_rate_bp (5%) of every
+// cleaning accepted through it (the trigger of migration 0086). «Автопилот» itself costs nothing extra: a plan row only
+// means the participant's AI is on. The old 'all' tier («Всё включено») is no longer offered; its code paths stay so
+// that rows written before the change still read.
 // Everything is summed up and taken from the linked card on Monday (lib/service-dues.ts); an unpaid week pauses
 // the plan: objects go back to «Я сам», the performer's AI stops accepting. Nothing confirmed is cancelled.
 // While charging is off (no bank yet) the service only records what it would take.
@@ -33,12 +32,15 @@ const weekday=(t:number)=>(localDay(t)+3)%7; // 0 = Monday
 const isoDay=(t:number)=>new Date((t+ZONE)*1000).toISOString().slice(0,10);
 
 // ownerPrice and cleanerPrice are the monthly prices of «Всё включено»; the rest is paid for the result.
-export type PlanSettings={charge:boolean;ownerPrice:number;cleanerPrice:number;graceDays:number;aiBookingFee:number;aiMonthCap:number;cleanerJobFee:number;cleanerFreeJobs:number;cleanerMonthCap:number};
+// ownerRate and cleanerRate (basis points) are the tariff; the other prices are kept at 0 since 2026-11-22.
+export type PlanSettings={charge:boolean;ownerCharge:boolean;ownerRate:number;cleanerRate:number;ownerPrice:number;cleanerPrice:number;graceDays:number;aiBookingFee:number;aiMonthCap:number;cleanerJobFee:number;cleanerFreeJobs:number;cleanerMonthCap:number};
 export async function planSettings(db:D1Database):Promise<PlanSettings>{
- const s=await one(db,"SELECT plan_charge,plan_owner_price,plan_cleaner_price,plan_grace_days,ai_booking_fee,ai_month_cap,cleaner_job_fee,cleaner_free_jobs,cleaner_month_cap FROM platform_billing WHERE id='global'");
- return {charge:!!s?.plan_charge,ownerPrice:Number(s?.plan_owner_price??9900),cleanerPrice:Number(s?.plan_cleaner_price??2900),graceDays:Number(s?.plan_grace_days??3),
-  aiBookingFee:Number(s?.ai_booking_fee??490),aiMonthCap:Number(s?.ai_month_cap??4900),cleanerJobFee:Number(s?.cleaner_job_fee??250),cleanerFreeJobs:Number(s?.cleaner_free_jobs??5),cleanerMonthCap:Number(s?.cleaner_month_cap??6000)};
+ const s=await one(db,"SELECT plan_charge,enabled,starts_at,rate_bp,cleaner_rate_bp,plan_owner_price,plan_cleaner_price,plan_grace_days,ai_booking_fee,ai_month_cap,cleaner_job_fee,cleaner_free_jobs,cleaner_month_cap FROM platform_billing WHERE id='global'");
+ // The owner's percent is taken by the booking billing switch (lib/platform-billing.ts), the cleaner's by plan_charge.
+ return {charge:!!s?.plan_charge,ownerCharge:!!s?.enabled&&Number(s?.starts_at)<=epoch(),ownerRate:Number(s?.rate_bp??400),cleanerRate:Number(s?.cleaner_rate_bp??500),ownerPrice:Number(s?.plan_owner_price??9900),cleanerPrice:Number(s?.plan_cleaner_price??2900),graceDays:Number(s?.plan_grace_days??3),
+  aiBookingFee:Number(s?.ai_booking_fee??0),aiMonthCap:Number(s?.ai_month_cap??0),cleanerJobFee:Number(s?.cleaner_job_fee??0),cleanerFreeJobs:Number(s?.cleaner_free_jobs??0),cleanerMonthCap:Number(s?.cleaner_month_cap??0)};
 }
+export const percentText=(bp:number)=>String(bp/100).replace('.',',')+'%';
 export const planOf=(db:D1Database,user:string,role:PlanRole)=>one(db,'SELECT * FROM autopilot_plans WHERE user_id=? AND role=?',user,role);
 // The owner's objects that «Всё включено» covers: every rented one (not «Мой дом», not archived, not demo).
 const rentedSql="p.archived_at IS NULL AND p.demo_owner IS NULL AND NOT EXISTS(SELECT 1 FROM property_details hd WHERE hd.property_id=p.id AND json_extract(hd.details,'$.type')='home')";
@@ -74,9 +76,9 @@ async function pause(db:D1Database,plan:Row,at:number,why:string){
 }
 
 const payNote=(s:PlanSettings,role:PlanRole)=>role==='owner'
- ?`${money(s.aiBookingFee)} за каждую бронь, которую провёл ИИ, не больше ${money(s.aiMonthCap)} в месяц за объект. Нет броней — нет платы.`
- :`Автопилот бесплатный. За каждую принятую уборку ${money(s.cleanerJobFee)}${s.cleanerFreeJobs?`, первые ${s.cleanerFreeJobs} бесплатно`:''}, не больше ${money(s.cleanerMonthCap)} в месяц.`;
-export const tierText=(s:PlanSettings,role:PlanRole)=>({pay:payNote(s,role),all:role==='owner'?`${money(s.ownerPrice)} в месяц за объект: без комиссий и платы за брони, подбор исполнителей включён.`:`${money(s.cleanerPrice)} в месяц, без платы за уборки.`});
+ ?`Тариф: ${percentText(s.ownerRate)} с каждого заселения. Автопилот, ИИ-администратор и подбор исполнителя входят, доплат нет.`
+ :`Автопилот бесплатный. Тариф: ${percentText(s.cleanerRate)} с каждой выполненной уборки.`;
+export const tierText=(s:PlanSettings,role:PlanRole)=>({pay:payNote(s,role),all:payNote(s,role)});
 
 // Turns the AI on. Paying for the result needs no month and no trial: the plan is simply on ('pay'). A plan already
 // on stays as it is (a «Всё включено» set to end is renewed again).
@@ -90,7 +92,7 @@ export async function ensurePlan(db:D1Database,user:string,role:PlanRole,at=epoc
  if(await servicePaused(db,user))throw new DomainError('Сначала оплатите услуги сервиса: Меню, «Настройки», «Оплата услуг». После оплаты автопилот включится.',402);
  await db.batch([
   q(db,"INSERT INTO autopilot_plans(user_id,role,status,started_at,period_end,updated_at,tier) VALUES (?,?,'active',?,?,?,'pay') ON CONFLICT(user_id,role) DO UPDATE SET status='active',tier='pay',next_tier=NULL,period_end=excluded.period_end,grace_until=NULL,auto_renew=1,version=autopilot_plans.version+1,updated_at=excluded.updated_at",user,role,at,at+MONTH,at),
-  notice(db,user,'Автопилот включён. '+payNote(s,role)+(s.charge?' Списание раз в неделю с привязанной карты.':' Пока плата не взимается.'),role+':autopilot-on:'+user+':'+at,at)
+  notice(db,user,'Автопилот включён. '+payNote(s,role)+((role==='owner'?s.ownerCharge:s.charge)?' Списание раз в неделю с привязанной карты.':' Пока плата не взимается.'),role+':autopilot-on:'+user+':'+at,at)
  ]);
  return {status:'active',started:true};
 }
@@ -101,30 +103,9 @@ export async function setTier(service:RentalService,role:PlanRole,body:Row){
  await service.requireRole(role);
  const db=service.db,user=service.userId,at=epoch(),want:Tier=body.tier==='all'?'all':'pay',s=await planSettings(db),plan=await planOf(db,user,role);
  const live=!!plan&&['trial','active','grace'].includes(plan.status);
- if(want==='all'){
-  if(live&&plan.tier==='all'){
-   if(plan.next_tier||!plan.auto_renew)await q(db,'UPDATE autopilot_plans SET next_tier=NULL,auto_renew=1,version=version+1,updated_at=? WHERE user_id=? AND role=?',at,user,role).run();
-   return {message:`«Всё включено» продлится ${dateText(plan.period_end)}.`,state:await planState(service,role)};
-  }
-  if(await servicePaused(db,user))throw new DomainError('Сначала оплатите услуги сервиса: Меню, «Настройки», «Оплата услуг».',402);
-  if(role==='owner'&&!await objectCount(db,user))throw new DomainError('Сначала добавьте жильё.',409);
-  // The tier switch and the month's charge commit together, and only for the request whose switch took effect:
-  // a second, overlapping request (even a second later) finds the plan changed and bills nothing.
-  const units=await unitsFor(db,role,user),amount=priceFor(s,role,units),version=plan?Number(plan.version)+1:1;
-  const guard="EXISTS(SELECT 1 FROM autopilot_plans WHERE user_id=? AND role=? AND tier='all' AND updated_at=? AND version=?)";
-  const body=`«Всё включено» подключено до ${dateText(at+MONTH)}: ${money(amount)}${role==='owner'?` за ${units} ${units===1?'объект':'объекта(ов)'}`:''}${s.charge?', спишется с привязанной карты в понедельник':', пока плата не взимается'}. ${role==='owner'?'Без комиссий и платы за брони ИИ.':'Без платы за уборки.'}`;
-  const done=await db.batch([
-   plan
-    ?q(db,"UPDATE autopilot_plans SET status='active',tier='all',next_tier=NULL,period_end=?,grace_until=NULL,auto_renew=1,version=version+1,updated_at=? WHERE user_id=? AND role=? AND version=?",at+MONTH,at,user,role,plan.version)
-    :q(db,"INSERT INTO autopilot_plans(user_id,role,status,started_at,period_end,updated_at,tier) VALUES (?,?,'active',?,?,?,'all') ON CONFLICT(user_id,role) DO NOTHING",user,role,at,at+MONTH,at),
-   q(db,`INSERT OR IGNORE INTO autopilot_charges(id,user_id,role,period_start,period_end,units,amount,mode,settled_at,created_at) SELECT ?,?,?,?,?,?,?,?,?,? WHERE ${guard}`,uuid(),user,role,at,at+MONTH,units,amount,s.charge&&amount>0?'charged':'shadow',role==='owner'||!s.charge?at:null,at,user,role,at,version),
-   q(db,`INSERT INTO audit_events SELECT ?,?,?,?,? WHERE ${guard}`,uuid(),user,'autopilot-plan:'+user,JSON.stringify({action:'plan.tier',role,tier:'all',amount,units}),at,user,role,at,version),
-   q(db,`INSERT OR IGNORE INTO notifications(id,user_id,body,dedupe,read,created_at) SELECT ?,?,?,?,0,? WHERE ${guard}`,uuid(),user,body,role+':plan-all:'+user+':'+at,at,user,role,at,version)
-  ]);
-  if(!done[0].meta.changes)throw new DomainError('Способ оплаты уже меняется. Обновите экран.',409);
-  return {message:`«Всё включено» подключено до ${dateText(at+MONTH)}.`,state:await planState(service,role)};
- }
- if(!live||plan.tier==='pay')return {message:'Вы платите только за результат.',state:await planState(service,role)};
+ // One tariff since 2026-11-22: «Всё включено» is not offered any more.
+ if(want==='all')throw new DomainError('Тариф один: '+payNote(s,role).replace(/^Тариф: /,''),409);
+ if(!live||plan.tier==='pay')return {message:'Тариф один, в процентах: ничего менять не нужно.',state:await planState(service,role)};
  if(s.charge&&plan.status==='active'){
   await q(db,"UPDATE autopilot_plans SET next_tier='pay',auto_renew=1,version=version+1,updated_at=? WHERE user_id=? AND role=?",at,user,role).run();
   return {message:`«Всё включено» оплачено до ${dateText(plan.period_end)}. Потом — оплата за результат.`,state:await planState(service,role)};
@@ -228,11 +209,10 @@ export async function planState(service:RentalService,role:PlanRole){
  const db=service.db,at=epoch(),s=await planSettings(db),plan=await planOf(db,service.userId,role),week=at-7*DAY;
  const live=!!plan&&['trial','active','grace'].includes(plan.status);
  const tier:Tier=live&&plan.tier==='all'?'all':'pay',units=await unitsFor(db,role,service.userId),allAmount=priceFor(s,role,units),spent30=await spentFor(db,service.userId,role,at-MONTH,at);
- // The hint: «Всё включено» is offered when the last 30 days for the result cost more than the subscription.
- const freeLeft=role==='cleaner'?Math.max(0,s.cleanerFreeJobs-Number((await one(db,"SELECT COUNT(*) n FROM service_fees WHERE user_id=? AND kind='cleaning' AND mode IN ('free','charged')",service.userId))?.n||0)):0;
+  const freeLeft=role==='cleaner'?Math.max(0,s.cleanerFreeJobs-Number((await one(db,"SELECT COUNT(*) n FROM service_fees WHERE user_id=? AND kind='cleaning' AND mode IN ('free','charged')",service.userId))?.n||0)):0;
  const base={plan:plan?{status:plan.status,periodEnd:plan.period_end,graceUntil:plan.grace_until,autoRenew:!!plan.auto_renew,startedAt:plan.started_at,tier:plan.tier,nextTier:plan.next_tier||null}:null,live,tier,
-  settings:{charge:s.charge,price:role==='owner'?s.ownerPrice:s.cleanerPrice,trialDays:0,graceDays:s.graceDays,aiBookingFee:s.aiBookingFee,aiMonthCap:s.aiMonthCap,cleanerJobFee:s.cleanerJobFee,cleanerFreeJobs:s.cleanerFreeJobs,cleanerMonthCap:s.cleanerMonthCap},
-  terms:tierText(s,role),billing:{objects:role==='owner'?units:1,allAmount,spent30,advise:tier==='pay'&&spent30>allAmount,freeLeft}};
+  settings:{charge:role==='owner'?s.ownerCharge:s.charge,rate:role==='owner'?s.ownerRate:s.cleanerRate,ownerRate:s.ownerRate,cleanerRate:s.cleanerRate,price:role==='owner'?s.ownerPrice:s.cleanerPrice,trialDays:0,graceDays:s.graceDays,aiBookingFee:s.aiBookingFee,aiMonthCap:s.aiMonthCap,cleanerJobFee:s.cleanerJobFee,cleanerFreeJobs:s.cleanerFreeJobs,cleanerMonthCap:s.cleanerMonthCap},
+  terms:tierText(s,role),billing:{objects:role==='owner'?units:1,allAmount,spent30,advise:false,freeLeft}};
  if(role==='owner'){
   // A private home that is only cleaned (lib/home-cleaning.ts) is not rented, so it is not offered to the AI.
   const flats=await rows(db,`SELECT p.id,p.title,p.own_staff,COALESCE(pp.cleaning_fee,0) cleaning_fee,pp.property_id IS NOT NULL has_policy,CASE WHEN ${underAutopilot('p.id')} THEN 1 ELSE 0 END managed FROM properties p LEFT JOIN property_policies pp ON pp.property_id=p.id WHERE p.owner_id=? AND NOT EXISTS(SELECT 1 FROM property_details hd WHERE hd.property_id=p.id AND json_extract(hd.details,'$.type')='home') AND p.archived_at IS NULL AND p.demo_owner IS NULL ORDER BY p.created_at`,at,service.userId);
@@ -240,7 +220,10 @@ export async function planState(service:RentalService,role:PlanRole){
   const stats=await one(db,`SELECT (SELECT COUNT(*) FROM audit_events a JOIN properties p ON p.id=a.entity_id WHERE p.owner_id=? AND a.actor_id='system:autopilot' AND a.created_at>?) answered,
    (SELECT COUNT(*) FROM bookings b JOIN properties p ON p.id=b.property_id WHERE p.owner_id=? AND b.status IN ('confirmed','completed') AND b.created_at>? AND ${underAutopilot('p.id')}) bookings,
    (SELECT COUNT(*) FROM cleaning_jobs j WHERE j.owner_id=? AND j.status='completed' AND j.completed_at>? AND ${underAutopilot('j.property_id')}) cleanings`,service.userId,week,service.userId,week,at,service.userId,week,at);
-  return {...base,flats:flats.map(f=>({id:f.id,title:f.title,ownStaff:!!f.own_staff,cleaningFee:f.cleaning_fee,ready:!!f.has_policy,managed:!!f.managed})),units:managed,nextAmount:allAmount,due:await dueOf(db,service.userId),week:{answered:Number(stats?.answered||0),bookings:Number(stats?.bookings||0),cleanings:Number(stats?.cleanings||0)}};
+  // An owner with a banquet hall or a café sees its month too (lib/platform-billing.ts sweepHallMonths).
+  const hall=await one(db,"SELECT s.hall_small_upto,s.hall_mid_upto,s.hall_fee_small,s.hall_fee_mid,s.hall_fee_large FROM platform_billing s WHERE s.id='global' AND EXISTS(SELECT 1 FROM properties p JOIN property_details d ON d.property_id=p.id WHERE p.owner_id=? AND p.archived_at IS NULL AND json_extract(d.details,'$.type') IN ('banquet','cafe'))",service.userId);
+  const hallScale=hall?{smallUpto:Number(hall.hall_small_upto),midUpto:Number(hall.hall_mid_upto),small:Number(hall.hall_fee_small),mid:Number(hall.hall_fee_mid),large:Number(hall.hall_fee_large)}:null;
+  return {...base,hallScale,flats:flats.map(f=>({id:f.id,title:f.title,ownStaff:!!f.own_staff,cleaningFee:f.cleaning_fee,ready:!!f.has_policy,managed:!!f.managed})),units:managed,nextAmount:allAmount,due:await dueOf(db,service.userId),week:{answered:Number(stats?.answered||0),bookings:Number(stats?.bookings||0),cleanings:Number(stats?.cleanings||0)}};
  }
  const rules=await one(db,'SELECT * FROM cleaner_autopilot WHERE user_id=?',service.userId);
  let districts:string[]=[];try{districts=JSON.parse(rules?.districts||'[]');}catch{}
@@ -303,6 +286,8 @@ export async function sweepPlans(db:D1Database,at=epoch(),config:{PLATFORM_ADMIN
    if(r.meta.changes)result.reports++;
   }
  }
+ // The month of every hall that had a booking through the app (written once a month, safe to repeat).
+ result.hallMonths=await sweepHallMonths(db,at);
  // The weekly card charge for all service fees; a debt unpaid for seven days pauses the debtor's plans.
  result.dues=await sweepDues(db,async(d,user,t)=>{for(const plan of await rows(d,"SELECT * FROM autopilot_plans WHERE user_id=? AND status IN ('trial','active','grace')",user))await pause(d,plan,t,plan.role==='owner'?'Автопилот на паузе: услуги сервиса не оплачены. Объекты в режиме «Я сам», принятые брони и уборки в силе.':'Автопилот на паузе: услуги сервиса не оплачены. Принятые уборки в силе.');},at,config);
  return result;
@@ -330,16 +315,18 @@ export async function savePlanSettings(service:RentalService,body:Row){
  const ownerPrice=n('ownerPrice','«Всё включено» для владельца',1000000,before.ownerPrice),cleanerPrice=n('cleanerPrice','«Всё включено» для исполнителя',1000000,before.cleanerPrice),grace=n('graceDays','Дней отсрочки',30,before.graceDays);
  const aiFee=n('aiBookingFee','Плата за бронь ИИ',100000,before.aiBookingFee),aiCap=n('aiMonthCap','Потолок «Автопилота» в месяц',1000000,before.aiMonthCap);
  const jobFee=n('cleanerJobFee','Плата исполнителя за уборку',100000,before.cleanerJobFee),freeJobs=n('cleanerFreeJobs','Бесплатных уборок',1000,before.cleanerFreeJobs),jobCap=n('cleanerMonthCap','Потолок исполнителя в месяц',1000000,before.cleanerMonthCap);
- const charge=body.charge===true?1:0,at=epoch();
+ const pct=body.cleanerRatePercent===undefined?before.cleanerRate/100:Number(body.cleanerRatePercent);
+ if(!Number.isFinite(pct)||pct<0||pct>30||Math.round(pct*10)!==pct*10)throw new DomainError('Процент исполнителя: от 0 до 30%, с шагом 0,1.');
+ const cleanerRate=Math.round(pct*100),charge=body.charge===true?1:0,at=epoch();
  await service.db.batch([
-  q(service.db,"UPDATE platform_billing SET plan_charge=?,plan_owner_price=?,plan_cleaner_price=?,plan_grace_days=?,ai_booking_fee=?,ai_month_cap=?,cleaner_job_fee=?,cleaner_free_jobs=?,cleaner_month_cap=?,version=version+1,updated_by=?,updated_at=? WHERE id='global'",charge,ownerPrice,cleanerPrice,grace,aiFee,aiCap,jobFee,freeJobs,jobCap,service.userId,at),
-  q(service.db,'INSERT INTO audit_events VALUES (?,?,?,?,?)',uuid(),service.userId,'platform_billing',JSON.stringify({action:'admin.plans_saved',charge,ownerPrice,cleanerPrice,grace,aiFee,aiCap,jobFee,freeJobs,jobCap}),at)
+  q(service.db,"UPDATE platform_billing SET plan_charge=?,plan_owner_price=?,plan_cleaner_price=?,plan_grace_days=?,ai_booking_fee=?,ai_month_cap=?,cleaner_job_fee=?,cleaner_free_jobs=?,cleaner_month_cap=?,cleaner_rate_bp=?,version=version+1,updated_by=?,updated_at=? WHERE id='global'",charge,ownerPrice,cleanerPrice,grace,aiFee,aiCap,jobFee,freeJobs,jobCap,cleanerRate,service.userId,at),
+  q(service.db,'INSERT INTO audit_events VALUES (?,?,?,?,?)',uuid(),service.userId,'platform_billing',JSON.stringify({action:'admin.plans_saved',charge,ownerPrice,cleanerPrice,grace,aiFee,aiCap,jobFee,freeJobs,jobCap,cleanerRate}),at)
  ]);
  // People on a plan hear about new prices or the start of charging.
  const after=await planSettings(service.db);
- if(charge&&(!before.charge||before.ownerPrice!==ownerPrice||before.cleanerPrice!==cleanerPrice||before.aiBookingFee!==aiFee||before.aiMonthCap!==aiCap||before.cleanerJobFee!==jobFee||before.cleanerMonthCap!==jobCap||before.cleanerFreeJobs!==freeJobs)){
+ if(charge&&(!before.charge||before.ownerPrice!==ownerPrice||before.cleanerPrice!==cleanerPrice||before.aiBookingFee!==aiFee||before.aiMonthCap!==aiCap||before.cleanerJobFee!==jobFee||before.cleanerMonthCap!==jobCap||before.cleanerFreeJobs!==freeJobs||before.cleanerRate!==cleanerRate)){
   const people=await rows(service.db,`SELECT user_id,role,tier FROM autopilot_plans WHERE status IN ${LIVE} LIMIT 2000`);
-  for(const p of people)await notice(service.db,p.user_id,`Условия сервиса: ${tierText(after,p.role)[p.tier==='all'?'all':'pay']} Списание раз в неделю с привязанной карты. Новые цены действуют для новых броней и уборок${p.tier==='all'?' и со следующего месяца подписки':''}. Отключить можно в профиле.`,p.role+':autopilot-terms:'+p.user_id+':'+at,at).run();
+  for(const p of people)await notice(service.db,p.user_id,`Условия сервиса: ${tierText(after,p.role)[p.tier==='all'?'all':'pay']} Списание раз в неделю с привязанной карты. Новые цены действуют для новых броней и уборок. Отключить можно в профиле.`,p.role+':autopilot-terms:'+p.user_id+':'+at,at).run();
  }
  return {message:charge?'Тарифы сохранены, плата включена.':'Тарифы сохранены. Плата выключена, сервис только считает.',state:await plansAdminState(service.db)};
 }

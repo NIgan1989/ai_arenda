@@ -6,7 +6,6 @@ import {ThinkingLine} from './Thinking';
 import {request} from './api';
 import {s,C,type,brandFont} from './styles';
 import {T} from './tokens';
-import {SwipeConfirm} from './SwipeConfirm';
 import type {Row as Data} from './model';
 // The server writes the terms of each way to pay in Russian; they are shown in the language of the app.
 const termsIn=(terms:{pay?:unknown;all?:unknown}|undefined)=>({pay:terms?.pay?tServer(String(terms.pay)):'',all:terms?.all?tServer(String(terms.all)):''});
@@ -17,7 +16,7 @@ const DAYS=L(['Пн','Вт','Ср','Чт','Пт','Сб','Вс']);
 const hhmm=(m:number)=>String(Math.floor(m/60)).padStart(2,'0')+':'+String(m%60).padStart(2,'0');
 const toMinutes=(v:string)=>{const [h,m]=v.split(':').map(Number);return Math.max(0,Math.min(1440,(h||0)*60+(m||0)));};
 const FEATURES=L({
- owner:['Принимает брони и отвечает гостям за вас, днём и ночью','Заказывает уборку, назначает исполнителя и находит замену','Принимает уборку по фотоотчёту и отмечает выезд гостя','Жильё выше в подборе для гостей','Платите только за брони, которые провёл ИИ','Итоги недели по понедельникам'],
+ owner:['Принимает брони и отвечает гостям за вас, днём и ночью','Заказывает уборку, назначает исполнителя и находит замену','Принимает уборку по фотоотчёту и отмечает выезд гостя','Жильё выше в подборе для гостей','Входит в тариф: без доплат за ИИ','Итоги недели по понедельникам'],
  cleaner:['Берёт уборки сам по вашим правилам: районы, дни, часы, оплата','Подходящие уборки приходят вам раньше остальных','План дня в 8:00: адреса по порядку и время','«Не могу сегодня»: ИИ вернёт уборки и найдёт замену','Итоги недели в профиле']
 });
 const STEPS=L({owner:['Объекты','Уборка','Итог'],cleaner:['Где и когда','Оплата','Итог']});
@@ -33,29 +32,22 @@ function Steps({steps,current,onPick}:{steps:string[];current:number;onPick:(i:n
  </React.Fragment>;})}</View>;
 }
 
-// The «Автопилот» plan on the account screen: what it gives, how to turn it on, how it runs.
-// How the participant pays the service (hybrid tariff): for the result, or one monthly «Всё включено». The hint
-// compares the last 30 days for the result with the subscription; the subscription is taken by a swipe.
-function PayWay({state,owner,busy,run}:{state:Data;owner:boolean;busy:boolean;run:(path:string,body?:Data)=>void}){
- const plan=state.plan,tier=state.tier==='all'?'all':'pay',b=state.billing||{},terms=termsIn(state.terms),st=state.settings||{};
- const option=(id:'pay'|'all',title:string,note:string)=><View key={id} accessibilityRole="radio" accessibilityState={{checked:tier===id}} style={[p.way,tier===id&&p.wayOn]}>
-  <View style={[p.radio,tier===id&&p.radioOn]}>{tier===id&&<View style={p.radioDot}/>}</View>
-  <View style={{flex:1,gap:2}}><Text style={a.title}>{title}</Text><Text style={a.note}>{note}</Text></View></View>;
- const allNote=tier==='all'&&plan?.periodEnd?(plan.nextTier==='pay'?tr('До {date}, потом оплата за результат',{date:date(plan.periodEnd)}):tr('Оплачено до {date}',{date:date(plan.periodEnd)})):terms.all;
- const hint=tier==='pay'&&b.spent30>0?tr('За 30 дней: {spent}. С «Всё включено» было бы {all}.',{spent:money(b.spent30),all:money(b.allAmount)}):'';
+// The tariff on the «Автопилот» screen (one tariff in percent since 2026-11-22): what the participant pays and what is
+// included, and what the last 30 days cost. Nothing to choose.
+const pct=(bp:unknown)=>String(Number(bp??0)/100).replace('.',',')+'%';
+function PayWay({state,owner}:{state:Data;owner:boolean}){
+ const b=state.billing||{},st=state.settings||{};
+ const rate=pct(owner?st.ownerRate:st.cleanerRate);
  return <View style={p.payWay}>
-  <Text accessibilityRole="header" style={a.label}>{tr('Как платить')}</Text>
-  <View accessibilityRole="radiogroup" style={{gap:8}}>
-   {option('pay',tr('За результат'),terms.pay||'')}
-   {option('all',tr('«Всё включено»'),allNote||'')}
+  <Text accessibilityRole="header" style={a.label}>{tr('Тариф')}</Text>
+  <View style={[p.way,p.wayOn]}>
+   <View style={{flex:1,gap:2}}>
+    <Text style={a.title}>{owner?tr('{rate} с каждого заселения',{rate}):tr('{rate} с каждой выполненной уборки',{rate})}</Text>
+    <Text style={a.note}>{owner?tr('Автопилот, ИИ-администратор, подбор исполнителя, защита и аналитика входят. Доплат нет. Платите, только когда гость заселился.'):tr('Автопилот и заказы рядом бесплатно. Платите только с уборок, которые выполнили.')}</Text>
+   </View>
   </View>
-  {!!hint&&<Text style={[p.hint,b.advise&&p.hintOn]}>{hint}{b.advise?' '+tr('Подписка выгоднее.'):''}</Text>}
-  {!owner&&tier==='pay'&&b.freeLeft>0&&<Text style={a.note}>{tr('Бесплатных уборок осталось: {n}',{n:b.freeLeft})}</Text>}
-  {tier==='pay'
-   ?<SwipeConfirm label={tr('Проведите: подключить «Всё включено»')} disabled={busy} onConfirm={()=>run('operations/autopilot/tier',{tier:'all'})}/>
-   :plan?.nextTier==='pay'
-    ?<Pressable accessibilityRole="button" disabled={busy} onPress={()=>run('operations/autopilot/tier',{tier:'all'})} style={[p.btn,p.btnLine,busy&&s.disabled]}><Text style={[p.btnText,p.btnLineText]}>{tr('Оставить «Всё включено»')}</Text></Pressable>
-    :<Pressable accessibilityRole="button" disabled={busy} onPress={()=>run('operations/autopilot/tier',{tier:'pay'})} style={[p.btn,p.btnLine,busy&&s.disabled]}><Text style={[p.btnText,p.btnLineText]}>{tr('Вернуться к оплате за результат')}</Text></Pressable>}
+  {owner&&state.hallScale&&<Text style={p.hint}>{tr('Залы и кафе платят за месяц: до {a} гостей {small}, до {b} гостей {mid}, больше {large}. Брони без ограничений. Месяц без броней через приложение бесплатный.',{a:state.hallScale.smallUpto,b:state.hallScale.midUpto,small:money(state.hallScale.small),mid:money(state.hallScale.mid),large:money(state.hallScale.large)})}</Text>}
+  {b.spent30>0&&<Text style={p.hint}>{tr('За 30 дней: {spent}.',{spent:money(b.spent30)})}</Text>}
   <Text style={p.fine}>{st.charge?tr('Всё копится и списывается одной суммой по понедельникам с привязанной карты.'):tr('Пока плата не взимается: сервис только считает.')}</Text>
  </View>;
 }
@@ -63,14 +55,10 @@ function PayWay({state,owner,busy,run}:{state:Data;owner:boolean;busy:boolean;ru
 // The owner's «Как платить» on the «Автопилот» screen: the owner turns the AI on per object (FlatAutopilot.tsx),
 // so here is only the way to pay and the hint.
 export function NativePayWay({role}:{role:'owner'|'cleaner'}){
- const [state,setState]=useState<Data|null>(null),[busy,setBusy]=useState(false),[note,setNote]=useState(''),[error,setError]=useState('');
+ const [state,setState]=useState<Data|null>(null),[error,setError]=useState('');
  useEffect(()=>{let live=true;request('/api/operations/autopilot/state').then(v=>{if(live)setState(v);}).catch(e=>live&&setError(e.message));return()=>{live=false;};},[role]);
- async function run(path:string,body:Data={}){setBusy(true);setError('');setNote('');try{const r=await request('/api/'+path,body);setNote(r.message||'');setState(r.state||await request('/api/operations/autopilot/state'));}catch(e){setError((e as Error).message);}finally{setBusy(false);}}
  if(!state)return error?<Text accessibilityRole="alert" style={s.error}>{error}</Text>:null;
- return <View style={{marginBottom:16}}>
-  <PayWay state={state} owner={role==='owner'} busy={busy} run={(path,body)=>void run(path,body)}/>
-  {!!error&&<Text accessibilityRole="alert" style={s.error}>{error}</Text>}{!!note&&<Text accessibilityLiveRegion="polite" style={a.saved}>{note}</Text>}
- </View>;
+ return <View style={{marginBottom:16}}><PayWay state={state} owner={role==='owner'}/></View>;
 }
 
 // The «Автопилот» plan on the account screen: what it gives, how to turn it on, how it runs.
@@ -83,11 +71,11 @@ export function NativeAutopilotPlan({role}:{role:'owner'|'cleaner'}){
  async function run(path:string,body:Data={}){setBusy(true);setError('');setMessage('');try{const r=await request('/api/'+path,body);setMessage(r.message||tr('Сохранено.'));const next=r.state||await request('/api/operations/autopilot/state');setState(next);if(next.live&&!path.endsWith('/tier')){setOpen(false);setStep(0);}setConfirmOff(false);}catch(e){setError((e as Error).message);}finally{setBusy(false);}}
  if(!state)return <Group title={tr('Тариф')}>{error?<Text accessibilityRole="alert" style={[s.error,{padding:16}]}>{error}</Text>:<View style={{padding:16}}><ThinkingLine style={s.meta} text={tr('Загружаю тариф…')}/></View>}</Group>;
  const st=state.settings||{},plan=state.plan,live=!!state.live,flats:Data[]=state.flats||[];
- const all=state.tier==='all',terms=termsIn(state.terms);
- const statusLine=!plan?'':plan.status==='grace'?tr('«Всё включено» не оплачено. Работает до {date}',{date:date(plan.graceUntil)}):all?(plan.autoRenew?tr('«Всё включено» до {date}',{date:date(plan.periodEnd)}):tr('Работает до {v} и не продлится',{v:date(plan.periodEnd)})):(terms.pay||'')+(st.charge?'':' '+tr('Пока бесплатно.'));
- const priceLine=owner?tr('{fee} за бронь, которую провёл ИИ',{fee:money(st.aiBookingFee)}):tr('Бесплатно');
- const priceNote=owner?tr('не больше {cap} в месяц за объект. Нет броней — нет платы.',{cap:money(st.aiMonthCap)}):tr('{fee} за принятую уборку, не больше {cap} в месяц',{fee:money(st.cleanerJobFee),cap:money(st.cleanerMonthCap)});
- const offNote=all&&plan?.status==='active'&&st.charge?tr('Доработает оплаченный месяц и не продлится.'):owner?tr('Объекты перейдут в режим «Я сам». Принятые брони и уборки останутся в силе.'):tr('Предложения уборок снова будут приходить вам на решение. Принятые уборки останутся.');
+ const terms=termsIn(state.terms);
+ const statusLine=!plan?'':(terms.pay||'')+(st.charge?'':' '+tr('Пока бесплатно.'));
+ const priceLine=owner?tr('Входит в тариф'):tr('Бесплатно');
+ const priceNote=owner?tr('{rate} с каждого заселения, без доплат за ИИ',{rate:pct(st.ownerRate)}):tr('Тариф: {rate} с каждой выполненной уборки',{rate:pct(st.cleanerRate)});
+ const offNote=owner?tr('Объекты перейдут в режим «Я сам». Принятые брони и уборки останутся в силе.'):tr('Предложения уборок снова будут приходить вам на решение. Принятые уборки останутся.');
  const steps=STEPS[role],last=steps.length-1,num=(v:string)=>v.replace(/\D/g,'').slice(0,7);
  const begin=()=>{setOpen(true);setStep(0);setMessage('');};
  const fresh=flats.filter(f=>picked.includes(f.id)&&f.ready&&!f.managed),feeMissing=fresh.some(f=>!f.cleaningFee&&!f.ownStaff&&Number(fees[f.id]||0)<100);
@@ -95,7 +83,7 @@ export function NativeAutopilotPlan({role}:{role:'owner'|'cleaner'}){
  const canNext=owner?(step===0?fresh.length>0:step===1?!feeMissing:true):(step===0?!!rules.days&&toM-fromM>=60:true);
  const chip=(label:string,on:boolean,press:()=>void,wide=false)=><Pressable key={label} accessibilityRole="button" accessibilityState={{selected:on}} onPress={press} style={[p.chip,wide&&p.day,on&&(wide?p.dayOn:p.chipOn)]}><Text style={[p.chipText,on&&(wide?p.dayOnText:p.chipOnText)]}>{label}</Text></Pressable>;
  const btn=(title:string,fn:()=>void,kind:'main'|'line'|'danger'='main',disabled=false)=><Pressable accessibilityRole="button" disabled={busy||disabled} onPress={fn} style={[p.btn,kind==='line'&&p.btnLine,kind==='danger'&&p.btnDanger,(busy||disabled)&&s.disabled]}><Text style={[p.btnText,kind==='line'&&p.btnLineText]}>{title}</Text></Pressable>;
- const sum=<View style={p.sum}><Text style={p.sumLabel}>{tr('Оплата')}</Text><Text style={p.sumValue}>{all?tr('входит в «Всё включено»'):owner?tr('{fee} за бронь ИИ',{fee:money(st.aiBookingFee)}):tr('{fee} за уборку',{fee:money(st.cleanerJobFee)})}</Text>{!all&&<><Text style={p.sumLabel}>{tr('Не больше')}</Text><Text style={p.sumValue}>{owner?tr('{cap} в месяц за объект',{cap:money(st.aiMonthCap)}):tr('{cap} в месяц',{cap:money(st.cleanerMonthCap)})}</Text></>}</View>;
+ const sum=<View style={p.sum}><Text style={p.sumLabel}>{tr('Оплата')}</Text><Text style={p.sumValue}>{owner?tr('{rate} с заселения, ИИ без доплат',{rate:pct(st.ownerRate)}):tr('{rate} с уборки',{rate:pct(st.cleanerRate)})}</Text></View>;
  const finish=owner
   ?()=>run('operations/autopilot/start',{propertyIds:fresh.map(f=>f.id),cleaningFees:Object.fromEntries(Object.entries(fees).filter(([,v])=>v).map(([k,v])=>[k,Number(v)]))})
   :()=>run(live?'operations/autopilot/rules':'operations/autopilot/start',{...rules,fromMinute:fromM,toMinute:toM});
@@ -103,7 +91,7 @@ export function NativeAutopilotPlan({role}:{role:'owner'|'cleaner'}){
   <View key="flats" style={p.connect}>
    <Text style={p.lead}>{tr('Отметьте объекты, которые поведёт ИИ.')}</Text>
    {flats.length===0&&<Text style={a.note}>{tr('Сначала добавьте жильё.')}</Text>}
-   <View style={p.list}>{flats.map((f,i)=>{const on=picked.includes(f.id)||f.managed,locked=!f.ready||f.managed;return <Pressable key={f.id} accessibilityRole="checkbox" accessibilityState={{checked:on,disabled:locked}} disabled={busy||locked} onPress={()=>setPicked(picked.includes(f.id)?picked.filter(x=>x!==f.id):[...picked,f.id])} style={[p.flatRow,i>0&&p.flatLine]}><View style={[p.box,on&&p.boxOn]}>{on&&<Text style={p.tick}>✓</Text>}</View><View style={{flex:1}}><Text style={a.title}>{f.title}</Text><Text style={a.note}>{f.managed?tr('Уже на автопилоте'):!f.ready?tr('Сначала заполните тарифы жилья'):all?tr('Входит в «Всё включено»'):tr('{fee} за бронь ИИ',{fee:money(st.aiBookingFee)})}</Text></View></Pressable>;})}</View>
+   <View style={p.list}>{flats.map((f,i)=>{const on=picked.includes(f.id)||f.managed,locked=!f.ready||f.managed;return <Pressable key={f.id} accessibilityRole="checkbox" accessibilityState={{checked:on,disabled:locked}} disabled={busy||locked} onPress={()=>setPicked(picked.includes(f.id)?picked.filter(x=>x!==f.id):[...picked,f.id])} style={[p.flatRow,i>0&&p.flatLine]}><View style={[p.box,on&&p.boxOn]}>{on&&<Text style={p.tick}>✓</Text>}</View><View style={{flex:1}}><Text style={a.title}>{f.title}</Text><Text style={a.note}>{f.managed?tr('Уже на автопилоте'):!f.ready?tr('Сначала заполните тарифы жилья'):tr('Входит в тариф')}</Text></View></Pressable>;})}</View>
   </View>,
   <View key="fees" style={p.connect}>
    <Text style={p.lead}>{tr('После каждого выезда ИИ закажет уборку по этой цене и найдёт исполнителя.')}</Text>
@@ -156,18 +144,18 @@ export function NativeAutopilotPlan({role}:{role:'owner'|'cleaner'}){
    </>}
    <Text style={p.fine}>{st.charge?tr('Списание раз в неделю с привязанной карты: Меню, «Настройки», «Оплата услуг». Отключить можно в любой день.'):tr('Пока плата не взимается. Отключить можно в любой день.')}</Text>
   </View>
-  <PayWay state={state} owner={owner} busy={busy} run={(path,body)=>void run(path,body)}/>
+  <PayWay state={state} owner={owner}/>
  </>;
  const n=state.today?.length||0;
  return <>
   <Text accessibilityRole="header" style={a.label}>{tr('Тариф')}</Text>
   <View style={p.on}>
-   <View style={p.head}><Text style={[p.onLabel,{flex:1}]}>● {plan?.status==='grace'?tr('Автопилот · нужна оплата'):all?tr('Автопилот включён · «Всё включено»'):tr('Автопилот включён · оплата за результат')}</Text><Switch accessibilityLabel={tr('Автопилот включён')} value={!confirmOff} disabled={busy} onValueChange={v=>setConfirmOff(!v)} trackColor={{false:C.accentPressed,true:C.onAccent}} thumbColor={confirmOff?C.surface:C.accent}/></View>
+   <View style={p.head}><Text style={[p.onLabel,{flex:1}]}>● {plan?.status==='grace'?tr('Автопилот · нужна оплата'):tr('Автопилот включён · входит в тариф')}</Text><Switch accessibilityLabel={tr('Автопилот включён')} value={!confirmOff} disabled={busy} onValueChange={v=>setConfirmOff(!v)} trackColor={{false:C.accentPressed,true:C.onAccent}} thumbColor={confirmOff?C.surface:C.accent}/></View>
    <Text style={p.onTitle}>{owner?tr(forms(state.units,'ИИ ведёт {n} объект','ИИ ведёт {n} объекта','ИИ ведёт {n} объектов'),{n:state.units}):n?tr(forms(n,'На сегодня {n} уборка','На сегодня {n} уборки','На сегодня {n} уборок'),{n}):tr('ИИ берёт уборки по вашим правилам')}</Text><Text style={p.onNote}>{statusLine}</Text>
   </View>
   {confirmOff&&<View accessibilityRole="alert" style={p.off}><Text style={a.title}>{tr('Отключить автопилот?')}</Text><Text style={a.note}>{offNote}</Text><View style={p.nav}>{btn(tr('Оставить'),()=>setConfirmOff(false),'line')}{btn(tr('Отключить'),()=>void run('operations/autopilot/stop'),'danger')}</View></View>}
   {notice}
-  <PayWay state={state} owner={owner} busy={busy} run={(path,body)=>void run(path,body)}/>
+  <PayWay state={state} owner={owner}/>
   <Text accessibilityRole="header" style={a.label}>{tr('За эту неделю')}</Text>
   <View style={p.stats}>{(owner?[[state.week.answered,tr('ответов гостям')],[state.week.bookings,tr('броней')],[state.week.cleanings,tr('уборок принято')]]:[[state.week.taken,tr('уборок взял ИИ')],[money(state.week.earned),tr('заработано')]]).map(([v,l])=><View key={String(l)} style={p.stat}><Text style={p.statValue}>{v}</Text><Text style={a.note}>{l}</Text></View>)}</View>
   {!owner&&<Group title={tr('План на сегодня')}>{n?state.today.map((j:Data)=><View key={j.id} style={a.row}><View style={a.wide}><Text style={a.title}>{j.from}–{j.to} · {j.title}</Text><Text style={a.note}>{[j.district,j.address].filter(Boolean).join(', ')} · {money(j.fee)}</Text></View></View>):<View style={a.row}><Text style={a.title}>{tr('На сегодня уборок нет')}</Text></View>}

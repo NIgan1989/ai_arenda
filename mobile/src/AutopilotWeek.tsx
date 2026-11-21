@@ -19,6 +19,7 @@ function Card({title,value,open,onPress,children}:{title:string;value?:string;op
 }
 function planLine(p:Week['plan']){
  if(!p||p.status==='paused')return tr('Автопилот выключен. Включите режим «ИИ» у объекта, и эти шаги ИИ будет делать сам.');
+ if(p.rate!==undefined)return tr('Автопилот входит в тариф: {rate} с каждого заселения, без доплат.',{rate:String(p.rate/100).replace('.',',')+'%'});
  if(p.tier==='all')return p.status==='grace'?tr('«Всё включено» не оплачено, работает до {v}.',{v:day(p.until)}):p.units?tr('Тариф «Всё включено»: {price} в месяц за объект · объектов под ИИ: {units}.',{price:tenge(p.price),units:p.units}):tr('Тариф «Всё включено»: {price} в месяц за объект.',{price:tenge(p.price)});
  return p.cap?tr('Оплата за результат: {price} за бронь, которую провёл ИИ, не больше {cap} в месяц за объект.',{price:tenge(p.price),cap:tenge(p.cap)}):tr('Оплата за результат: {price} за бронь, которую провёл ИИ.',{price:tenge(p.price)});
 }

@@ -2,6 +2,7 @@ import {DomainError} from './domain';
 import type {RentalService} from './service';
 import {epoch,uuid,q,one,rows,type Row,type OperationConfig} from './operation-core';
 import {availableSql} from './regular-cleaner';
+import {stayedSql} from './stay-result';
 
 // Paying the service for its own work. There is no virtual balance and nothing to top up: the service keeps the
 // account of what it earned from a participant (booking commission, cleaning match fee, «Автопилот» per booking, the
@@ -36,10 +37,10 @@ const testMode=(config:OperationConfig)=>!(config.PAYMENT_GATEWAY_URL&&config.PA
 
 async function items(db:D1Database,user:string){
  const list=await rows(db,`SELECT * FROM (
-  SELECT 'commission' kind,c.created_at at,c.amount,'Комиссия за бронь · '||p.title title FROM platform_commissions c JOIN properties p ON p.id=c.property_id WHERE c.owner_id=?1 AND c.mode='charged' AND (SELECT status FROM bookings WHERE id=c.booking_id) IN ('confirmed','completed')
+  SELECT 'commission' kind,c.created_at at,c.amount,'Заселение · '||p.title title FROM platform_commissions c JOIN properties p ON p.id=c.property_id WHERE c.owner_id=?1 AND c.mode='charged' AND ${stayedSql('c.booking_id')}
   UNION ALL SELECT 'cleaning',c.created_at,c.amount,'Подбор исполнителя · '||COALESCE((SELECT title FROM properties WHERE id=c.property_id),'уборка') FROM cleaning_commissions c WHERE c.owner_id=?1 AND c.mode='charged' AND c.amount>0
   UNION ALL SELECT 'autopilot',a.created_at,a.amount-CASE WHEN a.role='cleaner' THEN a.withheld ELSE 0 END,'«Всё включено» · месяц'||CASE WHEN a.role='owner' AND a.units>1 THEN ' · объектов: '||a.units ELSE '' END FROM autopilot_charges a WHERE a.user_id=?1 AND a.mode='charged' AND a.amount>0
-  UNION ALL SELECT CASE f.kind WHEN 'ai_booking' THEN 'ai_booking' ELSE 'cleaner_job' END,f.created_at,f.amount,CASE f.kind WHEN 'ai_booking' THEN 'Бронь провёл ИИ · ' ELSE 'Уборка · ' END||COALESCE((SELECT title FROM properties WHERE id=f.property_id),'') FROM service_fees f WHERE f.user_id=?1 AND f.mode='charged' AND f.amount>0 AND (f.kind<>'ai_booking' OR (SELECT status FROM bookings WHERE id=f.ref_id) IN ('confirmed','completed'))
+  UNION ALL SELECT CASE f.kind WHEN 'ai_booking' THEN 'ai_booking' WHEN 'hall_month' THEN 'hall_month' ELSE 'cleaner_job' END,f.created_at,f.amount,CASE f.kind WHEN 'ai_booking' THEN 'Бронь провёл ИИ · ' WHEN 'hall_month' THEN 'Зал, месяц · ' ELSE 'Уборка · ' END||COALESCE((SELECT title FROM properties WHERE id=f.property_id),'') FROM service_fees f WHERE f.user_id=?1 AND f.mode='charged' AND f.amount>0 AND (f.kind<>'ai_booking' OR (SELECT status FROM bookings WHERE id=f.ref_id) IN ('confirmed','completed'))
   UNION ALL SELECT 'payment',e.created_at,e.amount,e.note FROM owner_balance_entries e WHERE e.owner_id=?1
  ) ORDER BY at DESC LIMIT 30`,user);
  return list.map(i=>({kind:i.kind,at:i.at,amount:Number(i.amount)||0,title:String(i.title||'')}));

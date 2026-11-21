@@ -490,7 +490,7 @@ test('«Банкет»: a hall is a slot of one day for a large party', async ()
   // The price named is per guest: the server gets it for the whole party, with what the hall is for.
   const body = matchingBody({ ...later, guests: 150, maxPrice: '8000', occasion: 'toi' });
   assert.deepEqual([body.maxPrice, body.guests, body.occasion, body.mode], [1200000, 150, 'toi', 'daily']);
-  assert.equal(guestSummary({ ...later, guests: 150, maxPrice: '8000', occasion: 'toi', features: ['halal'] }, morning), 'Той, свадьба · Павлодар · 5 декабря, вечер 18:00–00:00 · 150 гостей · до 8 000 ₸ за гостя · халяль');
+  assert.equal(guestSummary({ ...later, guests: 150, maxPrice: '8000', occasion: 'toi', features: ['halal'] }, morning), 'Свадьба, той · Павлодар · 5 декабря, вечер 18:00–00:00 · 150 гостей · до 8 000 ₸ за гостя · халяль');
   // Leaving the category lets go of the occasion and of the large party.
   const home = mod.withKind({ ...later, occasion: 'toi', guests: 150 }, 'stay', null, morning);
   assert.deepEqual([home.occasion, home.guests, home.kinds], [undefined, 2, []]);
