@@ -88,7 +88,7 @@ test('the line reads a bath: by the hour, the category kept, a flat never become
 });
 
 test('«баня на сутки» остаётся почасовой, а «с бассейном» становится обязательным удобством', async () => {
-  const { guestSearchRequest } = await import('../lib/map-search-request.ts');
+  const { guestSearchRequest } = await load('map-search-request');
   const now = Date.parse('2026-11-17T06:00:00Z');
   const day = guestSearchRequest('баня на сутки', { city: 'Павлодар', mode: 'daily', guests: '2' }, ['Павлодар'], now);
   assert.equal(day.filters.mode, 'hourly');

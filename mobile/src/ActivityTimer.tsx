@@ -1,4 +1,5 @@
-import {wordsOf} from '../../lib/stay-words';
+import {dateText,t as tr} from '../../lib/i18n';
+import {isHome,wordsOf} from '../../lib/stay-words';
 import React,{createContext,useContext,useEffect,useRef,useState,type ReactNode} from 'react';
 import {AppState,Animated,View,Text,StyleSheet} from 'react-native';
 import {activity,duration} from '../../lib/activity';
@@ -10,8 +11,8 @@ export function ActivityClockProvider({serverTime,children}:{serverTime?:number;
  useEffect(()=>{if(!serverTime)return;const anchor=performance.now(),tick=()=>setNow(serverTime+Math.floor((performance.now()-anchor)/1000));tick();const timer=setInterval(tick,1000),subscription=AppState.addEventListener('change',value=>{if(value==='active')tick();});return()=>{clearInterval(timer);subscription.remove();};},[serverTime]);
  return <Clock.Provider value={now}>{children}</Clock.Provider>;
 }
-const hm=(t:number)=>new Date(t*1000).toLocaleTimeString('ru-RU',{timeZone:'Asia/Almaty',hour:'2-digit',minute:'2-digit'});
-const day=(t:number)=>new Date(t*1000).toLocaleDateString('ru-RU',{timeZone:'Asia/Almaty',day:'numeric',month:'long'});
+const hm=(t:number)=>dateText(new Date(t*1000),{timeZone:'Asia/Almaty',hour:'2-digit',minute:'2-digit'});
+const day=(t:number)=>dateText(new Date(t*1000),{timeZone:'Asia/Almaty',day:'numeric',month:'long'});
 // Same as components/activity-clock.tsx on the site, «Дорожка»: big digits over a line from the start to the
 // deadline with a moving dot; after the deadline the line goes on in red past a flag.
 export function ActivityTimer({kind,item,compact=false}:{kind:'booking'|'job';item:Record<string,any>;compact?:boolean}){
@@ -30,14 +31,14 @@ export function ActivityTimer({kind,item,compact=false}:{kind:'booking'|'job';it
   {late&&<View style={[a.flag,{left:pct(flag)}]}/>}
   <View style={[a.dotWrap,compact&&a.dotWrapSmall,{left:pct(dot)}]}>{(clock.phase==='running'||late)&&<Animated.View style={[a.halo,compact&&a.haloSmall,{backgroundColor:ring,transform:[{scale:halo}]}]}/>}<View style={[a.dot,compact&&a.dotSmall,{borderColor:ring}]}/></View>
  </View>;
- const note=clock.phase==='running'?'осталось до '+at(clock.deadline):late?'сверх срока':clock.phase==='stopped'?'затрачено':'';
+ const note=clock.phase==='running'?tr('осталось до {v}',{v:at(clock.deadline)}):late?tr('сверх срока'):clock.phase==='stopped'?tr('затрачено'):'';
  if(compact)return <View style={[a.box,a.compact]}><View style={a.row}><Text style={a.label}>{clock.label}</Text>{clock.phase!=='waiting'&&<Text accessibilityLiveRegion="none" style={[a.small,late&&a.red]}>{digits}</Text>}</View>{bar}</View>;
  return <View accessibilityLabel={clock.label} style={[a.box,late&&a.lateBox]}>
   <Text style={a.label}>{clock.label.toUpperCase()}</Text>
-  {clock.phase==='waiting'?<Text style={a.wait}>{kind==='booking'?(wordsOf(item).arrive==='Заезд'?'Таймер пойдёт с фактического заезда.':'Таймер пойдёт, когда отметят '+wordsOf(item).arriveAcc+'.'):'Таймер пойдёт, когда исполнитель нажмёт «Начать уборку».'}</Text>
+  {clock.phase==='waiting'?<Text style={a.wait}>{kind==='booking'?(isHome(item)?tr('Таймер пойдёт с фактического заезда.'):tr('Таймер пойдёт, когда отметят {arriveAcc}.',{arriveAcc:wordsOf(item).arriveAcc})):tr('Таймер пойдёт, когда исполнитель нажмёт «Начать уборку».')}</Text>
   :<View style={a.top}><Text accessibilityLiveRegion="none" style={[a.digits,late&&a.red]}>{digits}</Text><Text style={a.note}>{note}</Text></View>}
   {bar}
-  <View style={a.row}><Text style={a.end}>Начало <Text style={a.endB}>{clock.started?at(clock.started):'—'}</Text></Text><Text style={a.end}>{clock.phase==='stopped'&&clock.stopped?<>Конец <Text style={a.endB}>{at(clock.stopped)}</Text></>:<>Срок <Text style={a.endB}>{at(clock.deadline)}</Text>{late&&<> · сейчас <Text style={a.endB}>{hm(t)}</Text></>}</>}</Text></View>
+  <View style={a.row}><Text style={a.end}>{tr('Начало')}{' '}<Text style={a.endB}>{clock.started?at(clock.started):'—'}</Text></Text><Text style={a.end}>{clock.phase==='stopped'&&clock.stopped?<>{tr('Конец')}{' '}<Text style={a.endB}>{at(clock.stopped)}</Text></>:<>{tr('Срок')}{' '}<Text style={a.endB}>{at(clock.deadline)}</Text>{late&&<>{' '}{tr('· сейчас')}{' '}<Text style={a.endB}>{hm(t)}</Text></>}</>}</Text></View>
  </View>;
 }
 const a=StyleSheet.create({

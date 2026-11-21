@@ -1,10 +1,11 @@
+import {t as tr,L} from './i18n';
 import type { CalendarEntry } from './calendar-days';
 
 const DAY = 86400, SHIFT = 5 * 3600;
 const dayStart = (t: number) => Math.floor((t + SHIFT) / DAY) * DAY - SHIFT;
 
 export type HubTab = 'today' | 'calendar' | 'price' | 'settings';
-export const HUB_TABS: [HubTab, string][] = [['today', 'Сегодня'], ['calendar', 'Календарь'], ['price', 'Цена'], ['settings', 'Настройки']];
+export const HUB_TABS: [HubTab, string][] = L([['today', 'Сегодня'], ['calendar', 'Календарь'], ['price', 'Цена'], ['settings', 'Настройки']]);
 
 // The «Сегодня» tab of a flat: requests and cleaners' responses the owner has not answered (whatever their dates), what occupies the flat
 // today, and the few entries that come next. A request is listed once, among those that wait.
@@ -22,12 +23,12 @@ export function hubToday(entries: CalendarEntry[], now: number, ahead = 3) {
 // One line under the name of the flat while its card is folded: the most pressing thing about it.
 export function hubLine(entries: CalendarEntry[], now: number) {
   const view = hubToday(entries, now);
-  if (view.waiting.length === 1) return view.waiting[0].kind === 'job' ? 'Уборка: ' + view.waiting[0].status.toLocaleLowerCase('ru') : 'Заявка ждёт ответа';
-  if (view.waiting.length) return 'Ждут ответа: ' + view.waiting.length;
+  if (view.waiting.length === 1) return view.waiting[0].kind === 'job' ? tr('Уборка: {status}',{status:view.waiting[0].status.toLocaleLowerCase()}) : tr('Заявка ждёт ответа');
+  if (view.waiting.length) return tr('Ждут ответа: {n}',{n:view.waiting.length});
   const late = hubLate(entries, now);
   if (late) return late.status;
-  if (view.today.length) return view.today[0].status + (view.today.length > 1 ? ' · ещё ' + (view.today.length - 1) : '');
-  return view.next.length ? 'Сегодня свободно' : 'Броней и уборок нет';
+  if (view.today.length) return view.today[0].status + (view.today.length > 1 ? ' · ' + tr('ещё {n}',{n:view.today.length - 1}) : '');
+  return view.next.length ? tr('Сегодня свободно') : tr('Броней и уборок нет');
 }
 
 // What went wrong today (a cleaning past its time, a departure nobody confirmed), when nothing waits for an answer:

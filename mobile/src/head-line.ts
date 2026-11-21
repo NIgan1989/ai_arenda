@@ -1,3 +1,4 @@
+import {L,t} from '../../lib/i18n';
 // The words of the one AI line and of the shortcuts under it. They are the site's own (lib/ai-line.ts),
 // so the app and the browser never show different examples or different chips. This file only says what
 // a tap on each shortcut does in the app. Covered by mobile/tests/head-line.test.mjs.
@@ -34,42 +35,42 @@ const ACTIONS: Record<string, HeadAction> = {
   schedule: 'schedule'
 };
 // The words of the app where they differ from the site's.
-const OWN: Record<string, { title: string; hint: string }> = {
+const OWN: Record<string, { title: string; hint: string }> = L({
   'add-property': { title: 'Жильё', hint: 'Моё жильё: посмотреть, изменить, добавить' }
-};
+});
 
 // The guest's chips are the app's own (since 2026-11-17): «Сейчас» first, then what fits the hour. In the evening
 // and at night «На ночь» and «На часы», in the day «На часы» and «На сутки». «На выходные» is said in the line.
-const GUEST_DAY: HeadChip[] = [
+const GUEST_DAY: HeadChip[] = L([
   { id: 'now', title: 'Сейчас', hint: 'Сейчас: готовое жильё рядом с мгновенным подтверждением', action: 'now' },
   { id: 'hourly', title: 'На часы', hint: 'На часы: ближайшие три часа', action: 'hourly' },
   { id: 'daily', title: 'На сутки', hint: 'На сутки: с сегодняшнего дня', action: 'daily' }
-];
-const GUEST_NIGHT: HeadChip[] = [
+]);
+const GUEST_NIGHT: HeadChip[] = L([
   GUEST_DAY[0],
   { id: 'night', title: 'На ночь', hint: 'На ночь: до 12:00, по ночной цене, где она есть', action: 'night' },
   GUEST_DAY[1]
-];
+]);
 // The category «Баня»: a bath is taken for a few hours, mostly in the evening.
-const GUEST_BATH: HeadChip[] = [
+const GUEST_BATH: HeadChip[] = L([
   { id: 'now', title: 'Сейчас', hint: 'Сейчас: свободная баня рядом с мгновенным подтверждением', action: 'now' },
   { id: 'evening', title: 'Вечером', hint: 'Вечером: три часа с 19:00', action: 'evening' },
   { id: 'tomorrow', title: 'Завтра', hint: 'Завтра вечером: три часа с 19:00', action: 'tomorrow' }
-];
-const BATH_LINE = { placeholder: 'Баня на 6 человек сегодня в 20:00', shortPlaceholder: 'Баня на 6 в 20:00' };
+]);
+const BATH_LINE = L({ placeholder: 'Баня на 6 человек сегодня в 20:00', shortPlaceholder: 'Баня на 6 в 20:00' });
 // The category «Банкет»: what the hall is for. The day, the slot and the guests are in the line or in the form.
-const GUEST_BANQUET: HeadChip[] = [
+const GUEST_BANQUET: HeadChip[] = L([
   { id: 'toi', title: 'Той', hint: 'Той или свадьба: зал на вечер субботы', action: 'toi' },
   { id: 'party', title: 'Юбилей', hint: 'Юбилей или праздник: зал на вечер субботы', action: 'party' },
   { id: 'memorial', title: 'Поминки', hint: 'Поминки, ас: зал на завтра, на обед', action: 'memorial' }
-];
-const BANQUET_LINE = { placeholder: 'Той на 150 человек 5 декабря', shortPlaceholder: 'Той на 150, 5 декабря' };
+]);
+const BANQUET_LINE = L({ placeholder: 'Той на 150 человек 5 декабря', shortPlaceholder: 'Той на 150, 5 декабря' });
 /** Evening and night in Kazakhstan: from 18:00 to 06:00. */
 export const isEvening = (now = Date.now()) => { const hour = new Date(now + 5 * 3600000).getUTCHours(); return hour >= 18 || hour < 6; };
 
 export function headLine(role: HeadRole, now = Date.now(), category: 'stay' | 'bath' | 'banquet' = 'stay'): HeadLine {
   const line = roleAiLine(role);
-  if (role === 'guest' && category === 'banquet') return { ...BANQUET_LINE, label: 'Какой зал найти', chips: GUEST_BANQUET };
+  if (role === 'guest' && category === 'banquet') return { ...BANQUET_LINE, label: t('Какой зал найти'), chips: GUEST_BANQUET };
   if (role === 'guest' && category === 'bath') return { ...BATH_LINE, label: line.label, chips: GUEST_BATH };
   if (role === 'guest') return { placeholder: line.placeholder, shortPlaceholder: line.shortPlaceholder, label: line.label, chips: isEvening(now) ? GUEST_NIGHT : GUEST_DAY };
   return {

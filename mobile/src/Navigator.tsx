@@ -1,3 +1,4 @@
+import {t as tr} from '../../lib/i18n';
 import React,{useEffect,useRef,useState} from 'react';
 import {StyleSheet,Text,View} from 'react-native';
 import * as Location from 'expo-location';
@@ -18,7 +19,7 @@ export type Trip={kind:'job'|'booking';id:string;title:string;target:MapPoint};
 type Status='idle'|'locating'|'routing'|'driving'|'arrived';
 const REROUTE_AFTER=30000,POINT_EVERY=5000;
 const asPosition=(fix:HereFix)=>({coords:{longitude:fix.point[0],latitude:fix.point[1],accuracy:fix.accuracy,altitude:null,altitudeAccuracy:null,heading:null,speed:null},timestamp:fix.at}) as Location.LocationObject;
-const fail=(e:unknown)=>e instanceof Error&&e.message?e.message:'Не удалось построить маршрут. Попробуйте ещё раз.';
+const fail=(e:unknown)=>e instanceof Error&&e.message?e.message:tr('Не удалось построить маршрут. Попробуйте ещё раз.');
 
 // skew: the server's clock minus the phone's, in seconds, so positions carry the server's time.
 export function useTrip(role:'cleaner'|'guest',skew:number){
@@ -50,13 +51,13 @@ export function useTrip(role:'cleaner'|'guest',skew:number){
   try{
    // The shared search (here.ts): a remembered point at once, a fresh one with a time limit, never an endless wait.
    const found=await locate({ask:'always',precise:true}),fix=found.fix;
-   if(found.status==='blocked'){openLocationSettings();throw Error('Разрешите доступ к геопозиции в настройках, чтобы мы вели вас по карте.');}
-   if(found.status==='denied'||found.status==='idle')throw Error('Разрешите доступ к геопозиции, чтобы мы вели вас по карте.');
-   if(found.status==='off')throw Error('Геолокация на телефоне выключена. Включите её и нажмите «Маршрут» ещё раз.');
-   if(!fix)throw Error('Телефон пока не знает, где вы. Выйдите ближе к окну или на улицу и попробуйте ещё раз.');
+   if(found.status==='blocked'){openLocationSettings();throw Error(tr('Разрешите доступ к геопозиции в настройках, чтобы мы вели вас по карте.'));}
+   if(found.status==='denied'||found.status==='idle')throw Error(tr('Разрешите доступ к геопозиции, чтобы мы вели вас по карте.'));
+   if(found.status==='off')throw Error(tr('Геолокация на телефоне выключена. Включите её и нажмите «Маршрут» ещё раз.'));
+   if(!fix)throw Error(tr('Телефон пока не знает, где вы. Выйдите ближе к окну или на улицу и попробуйте ещё раз.'));
    // The server takes a position measured within the last minute: an older remembered one is not sent.
-   if(Date.now()-fix.at>ROUTE_MAX_AGE)throw Error('Телефон пока не уточнил, где вы. Выйдите ближе к окну или на улицу и нажмите «Маршрут» ещё раз.');
-   if(fix.accuracy>ROUTE_ACCURACY)throw Error(found.reduced?'Телефон даёт только примерное место. Включите «Точная геопозиция» для AiQonaq в настройках.':'Телефон знает место только примерно. Выйдите на открытое место и попробуйте ещё раз.');
+   if(Date.now()-fix.at>ROUTE_MAX_AGE)throw Error(tr('Телефон пока не уточнил, где вы. Выйдите ближе к окну или на улицу и нажмите «Маршрут» ещё раз.'));
+   if(fix.accuracy>ROUTE_ACCURACY)throw Error(found.reduced?tr('Телефон даёт только примерное место. Включите «Точная геопозиция» для AiQonaq в настройках.'):tr('Телефон знает место только примерно. Выйдите на открытое место и попробуйте ещё раз.'));
    const pos=asPosition(fix);
    setHere({point:[pos.coords.longitude,pos.coords.latitude],accuracy:pos.coords.accuracy??50});setStatus('routing');
    await reroute(t,pos);
@@ -75,20 +76,20 @@ export type TripControl=ReturnType<typeof useTrip>;
 export function TripHead({nav,onOpen}:{nav:TripControl;onOpen:()=>void}){
  const {trip,status,state}=nav;if(!trip)return null;
  if(status==='arrived')return <View style={n.wrap}>
-  <View style={n.row}><View style={[n.arrow,n.arrived]}><Text style={n.arrowText}>⚑</Text></View><View style={h.grow}><Text style={n.big}>Вы на месте</Text><Text numberOfLines={1} style={h.note}>{trip.title}</Text></View></View>
-  <Action title={trip.kind==='booking'?'Открыть бронь':'Открыть задание'} onPress={onOpen}/><Action secondary title="Закрыть" onPress={nav.close}/>
+  <View style={n.row}><View style={[n.arrow,n.arrived]}><Text style={n.arrowText}>⚑</Text></View><View style={h.grow}><Text style={n.big}>{tr('Вы на месте')}</Text><Text numberOfLines={1} style={h.note}>{trip.title}</Text></View></View>
+  <Action title={trip.kind==='booking'?tr('Открыть бронь'):tr('Открыть задание')} onPress={onOpen}/><Action secondary title={tr('Закрыть')} onPress={nav.close}/>
  </View>;
  const waiting=status==='locating'||status==='routing'||!state;
  return <View style={n.wrap} accessibilityLiveRegion="polite">
   <View style={n.row}>
    <View style={n.arrow}><Text style={n.arrowText}>{waiting?'…':turnArrow(state.next)}</Text></View>
    <View style={h.grow}>
-    <Text style={n.big}>{status==='locating'?'Ищем вас на карте…':waiting?'Строим маршрут…':distanceText(state.toNext)}</Text>
-    <Text numberOfLines={2} style={n.text}>{waiting?trip.title:state.next?.text||'Двигайтесь по линии маршрута'}</Text>
+    <Text style={n.big}>{status==='locating'?tr('Ищем вас на карте…'):waiting?tr('Строим маршрут…'):distanceText(state.toNext)}</Text>
+    <Text numberOfLines={2} style={n.text}>{waiting?trip.title:state.next?.text||tr('Двигайтесь по линии маршрута')}</Text>
    </View>
   </View>
-  {!waiting&&<Text numberOfLines={1} style={h.note}>Осталось {distanceText(state.left)} · {minutesText(state.secondsLeft)} · {trip.title}</Text>}
-  <Action secondary title="Завершить поездку" onPress={()=>void nav.stop()}/>
+  {!waiting&&<Text numberOfLines={1} style={h.note}>{tr('Осталось {left}',{left:distanceText(state.left)})} · {minutesText(state.secondsLeft)} · {trip.title}</Text>}
+  <Action secondary title={tr('Завершить поездку')} onPress={()=>void nav.stop()}/>
  </View>;
 }
 

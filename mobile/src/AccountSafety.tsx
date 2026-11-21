@@ -1,4 +1,4 @@
-import {L,plural,t} from '../../lib/i18n';
+import {dateText,L,plural,t} from '../../lib/i18n';
 import {NativeAccountDeletion} from './AccountDeletion';
 import {ThinkingLine} from './Thinking';
 import React,{useEffect,useRef,useState} from 'react';
@@ -10,7 +10,7 @@ import {Group,Row,SwitchRow,a} from './AccountRows';
 // Plain words for the participant; only an administrator sees the deletion requests.
 export type SafetyPage=''|'devices'|'ai'|'delete'|'reports'|'requests';
 export const safetyTitles:Record<Exclude<SafetyPage,''>,string>=L({devices:'Вход и устройства',ai:'ИИ-помощник',delete:'Удаление аккаунта',reports:'Мои жалобы',requests:'Запросы на удаление'});
-const day=(t:number)=>new Date(t*1000).toLocaleDateString('ru-RU',{day:'numeric',month:'long'});
+const day=(t:number)=>dateText(new Date(t*1000),{day:'numeric',month:'long'});
 const devices=(n:number)=>n+' '+plural(n,['устройство','устройства','устройств'],['device','devices'],'құрылғы');
 export function NativeAccountSafety({role,page,go,admin=false,onSignedOut,tint}:{tint?:string;role:string;page:SafetyPage;go:(page:SafetyPage)=>void;admin?:boolean;onSignedOut:(result?:Record<string,any>)=>void|Promise<void>}){
  const [state,setState]=useState<any>(null),[sessions,setSessions]=useState<any[]|null>(null),[permission,setPermission]=useState<any>(null),[confirmed,setConfirmed]=useState(false),[busy,setBusy]=useState(false),[notice,setNotice]=useState(''),[loading,setLoading]=useState(true),[loadError,setLoadError]=useState('');

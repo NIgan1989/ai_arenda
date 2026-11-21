@@ -1,3 +1,4 @@
+import {L,t} from '../../lib/i18n';
 import React,{useState} from 'react';
 import {Image,Pressable,StyleSheet,Text,View} from 'react-native';
 import {ApiError,request} from './api';
@@ -8,27 +9,27 @@ import {menuIcons} from './AccountRows';
 
 // «Как заселиться» inside a confirmed booking, as on the site (components/checkin-guide.tsx): the owner's instruction
 // is asked for only when the guest taps, because every opening is checked (time, payment, readiness) and recorded.
-const WHY:Record<number,string>={
+const WHY:Record<number,string>=L({
  403:'Инструкция откроется за час до заезда, когда оплата и депозит подтверждены, а жильё готово.',
  404:'Владелец ещё не добавил инструкцию. Напишите ему в чат брони.',
  503:'Инструкции сейчас недоступны. Попробуйте позже или напишите владельцу.',
-};
+});
 // The cleaner opens the same instruction from the assigned cleaning («Как попасть»), once the guest has left.
-const CLEANER_WHY:Record<number,string>={
+const CLEANER_WHY:Record<number,string>=L({
  403:'Инструкция откроется за час до уборки, когда выезд гостя подтверждён.',
  404:'Владелец ещё не добавил инструкцию. Напишите ему в чат уборки.',
- 503:WHY[503],
-};
+ 503:'Инструкции сейчас недоступны. Попробуйте позже или напишите владельцу.',
+});
 // venue: баня или зал, куда приходят, а не заселяются.
 export function CheckinGuide({bookingId,role='guest',venue=false}:{bookingId:string;role?:'guest'|'cleaner';venue?:boolean}){
- const why=role==='cleaner'?CLEANER_WHY:venue?{...WHY,403:'Инструкция откроется за час до начала, когда оплата и депозит подтверждены, а объект готов.'}:WHY,title=role==='cleaner'?'Как попасть в жильё':venue?'Как пройти':'Как заселиться';
+ const why=role==='cleaner'?CLEANER_WHY:venue?{...WHY,403:t('Инструкция откроется за час до начала, когда оплата и депозит подтверждены, а объект готов.')}:WHY,title=role==='cleaner'?t('Как попасть в жильё'):venue?t('Как пройти'):t('Как заселиться');
  const [state,setState]=useState<{text:string;closed?:boolean}|null>(null),[busy,setBusy]=useState(false);
  async function open(){
   if(busy)return;setBusy(true);
   try{
    const value=await request('/api/operations/access/open',{entityId:bookingId},undefined,undefined,role);
    setState(value?.instructions?{text:value.instructions}:{text:why[503],closed:true});
-  }catch(e){setState({text:e instanceof ApiError?why[e.status]||why[503]:'Нет связи. Проверьте интернет и попробуйте ещё раз.',closed:true});}
+  }catch(e){setState({text:e instanceof ApiError?why[e.status]||why[503]:t('Нет связи. Проверьте интернет и попробуйте ещё раз.'),closed:true});}
   finally{setBusy(false);}
  }
  return <View accessibilityLabel={title} style={g.box}>

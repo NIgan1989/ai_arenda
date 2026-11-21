@@ -1,3 +1,4 @@
+import {dateText,t} from '../../lib/i18n';
 import React,{useCallback,useEffect,useState} from 'react';
 import {View,Text,TextInput,Pressable,Linking,Image,StyleSheet} from 'react-native';
 import {pickImages,jpegData} from './ListingMedia';
@@ -12,7 +13,7 @@ export type Payout={phone:string;recipient:string;link:string;changed_at?:number
 export type PendingPayout={phone:string;recipient:string;link:string;until:number};
 // The payer is warned for a week after the details changed (lib/payout.ts PAYOUT_FRESH).
 const FRESH=7*86400;
-const when=(at:number)=>new Date(at*1000).toLocaleString('ru-RU',{day:'numeric',month:'long',hour:'2-digit',minute:'2-digit'});
+const when=(at:number)=>dateText(at*1000,{day:'numeric',month:'long',hour:'2-digit',minute:'2-digit'});
 const R=T.radius;
 export const phoneText=(phone:string)=>/^\+7\d{10}$/.test(phone)?`+7 ${phone.slice(2,5)} ${phone.slice(5,8)} ${phone.slice(8,10)} ${phone.slice(10)}`:phone;
 const money=(n:number)=>new Intl.NumberFormat('ru-RU').format(n).replace(/\s/g,' ')+' ₸';
@@ -24,10 +25,10 @@ export function PayTo({title,to,amount,parts,waiting,missing,note,children}:{tit
  return <View accessible={false} style={p.card}>
   <View style={p.head}><Text style={p.title}>{title}</Text><Text style={p.sum}>{money(amount)}</Text></View>
   {!!parts&&<Text style={p.meta}>{parts}</Text>}
-  {to?<><View style={p.to}><View style={p.kaspi}><Text style={p.kaspiText}>K</Text></View><View style={{flex:1,minWidth:0}}><Text selectable accessibilityLabel={'Номер Kaspi '+phoneText(to.phone)} style={p.phone}>{phoneText(to.phone)}</Text><Text style={p.meta}>Kaspi · {to.recipient}</Text></View></View>
-   {!!to.link&&<Pressable accessibilityRole="link" onPress={()=>void Linking.openURL(to.link).catch(()=>undefined)} style={({pressed})=>[p.link,pressed&&{opacity:.7}]}><Text style={p.linkText}>Открыть оплату в Kaspi</Text></Pressable>}</>
+  {to?<><View style={p.to}><View style={p.kaspi}><Text style={p.kaspiText}>K</Text></View><View style={{flex:1,minWidth:0}}><Text selectable accessibilityLabel={t('Номер Kaspi {v}',{v:phoneText(to.phone)})} style={p.phone}>{phoneText(to.phone)}</Text><Text style={p.meta}>Kaspi · {to.recipient}</Text></View></View>
+   {!!to.link&&<Pressable accessibilityRole="link" onPress={()=>void Linking.openURL(to.link).catch(()=>undefined)} style={({pressed})=>[p.link,pressed&&{opacity:.7}]}><Text style={p.linkText}>{t('Открыть оплату в Kaspi')}</Text></Pressable>}</>
    :<Text style={p.warn}>{missing}</Text>}
-  {!!to?.changed_at&&now-to.changed_at<FRESH&&<Text accessibilityRole="alert" style={p.warn}>Реквизиты изменены {when(to.changed_at)}. Перед переводом сверьте имя получателя в Kaspi. Если сомневаетесь, уточните в чате брони.</Text>}
+  {!!to?.changed_at&&now-to.changed_at<FRESH&&<Text accessibilityRole="alert" style={p.warn}>{t('Реквизиты изменены {when}. Перед переводом сверьте имя получателя в Kaspi. Если сомневаетесь, уточните в чате брони.',{when:when(to.changed_at)})}</Text>}
   {!!waiting&&<View style={p.wait}><Text style={p.waitText}>{waiting}</Text></View>}
   {children}
   {!!note&&<Text style={p.meta}>{note}</Text>}
@@ -50,15 +51,15 @@ export function Receipts({kind,id,role,count=0,canAdd=false,title}:{kind:'bookin
   const images=await pickImages(false,1);
   for(const image of images)await request('/api/operations/receipt',{[kind==='job'?'jobId':'bookingId']:id,data:await jpegData(image)},undefined,undefined,role);
   if(images.length)setList(await load());
- }catch(e){setError(e instanceof Error&&e.message?e.message:'Не удалось приложить чек.');}finally{setBusy(false);}}
+ }catch(e){setError(e instanceof Error&&e.message?e.message:t('Не удалось приложить чек.'));}finally{setBusy(false);}}
  if(!canAdd&&!list.length)return null;
  const big=list.find(r=>r.id===open);
  return <View style={{gap:8}}>
   {!!title&&!!list.length&&<Text style={p.title}>{title}</Text>}
-  {!!list.length&&<View style={p.receipts}>{list.map(r=><Pressable key={r.id} accessibilityRole="imagebutton" accessibilityLabel={open===r.id?'Свернуть чек':'Открыть чек'} onPress={()=>setOpen(open===r.id?'':r.id)}>{r.uri?<Image source={{uri:r.uri}} style={p.receipt} alt="Чек об оплате"/>:<View style={[p.receipt,{backgroundColor:C.surfaceAlt}]}/>}</Pressable>)}</View>}
-  {!!big?.uri&&<Pressable accessibilityRole="imagebutton" accessibilityLabel="Свернуть чек" onPress={()=>setOpen('')}><Image source={{uri:big.uri}} style={p.receiptBig} resizeMode="contain" alt="Чек об оплате"/></Pressable>}
-  {canAdd&&list.length<RECEIPT_LIMIT&&<Pressable accessibilityRole="button" disabled={busy} onPress={()=>void add()} style={({pressed})=>[p.link,(pressed||busy)&&{opacity:.7}]}><Text style={p.linkText}>{busy?'Прикладываю…':list.length?'Приложить ещё чек':'Приложить чек из Kaspi'}</Text></Pressable>}
-  {canAdd&&!list.length&&<Text style={p.meta}>Снимок чека видит только получатель. С чеком он подтвердит оплату быстрее.</Text>}
+  {!!list.length&&<View style={p.receipts}>{list.map(r=><Pressable key={r.id} accessibilityRole="imagebutton" accessibilityLabel={open===r.id?t('Свернуть чек'):t('Открыть чек')} onPress={()=>setOpen(open===r.id?'':r.id)}>{r.uri?<Image source={{uri:r.uri}} style={p.receipt} alt={t('Чек об оплате')}/>:<View style={[p.receipt,{backgroundColor:C.surfaceAlt}]}/>}</Pressable>)}</View>}
+  {!!big?.uri&&<Pressable accessibilityRole="imagebutton" accessibilityLabel={t('Свернуть чек')} onPress={()=>setOpen('')}><Image source={{uri:big.uri}} style={p.receiptBig} resizeMode="contain" alt={t('Чек об оплате')}/></Pressable>}
+  {canAdd&&list.length<RECEIPT_LIMIT&&<Pressable accessibilityRole="button" disabled={busy} onPress={()=>void add()} style={({pressed})=>[p.link,(pressed||busy)&&{opacity:.7}]}><Text style={p.linkText}>{busy?t('Прикладываю…'):list.length?t('Приложить ещё чек'):t('Приложить чек из Kaspi')}</Text></Pressable>}
+  {canAdd&&!list.length&&<Text style={p.meta}>{t('Снимок чека видит только получатель. С чеком он подтвердит оплату быстрее.')}</Text>}
   {!!error&&<Text accessibilityRole="alert" style={p.warn}>{error}</Text>}
  </View>;
 }
@@ -72,21 +73,21 @@ export function PayoutForm({initial,pending:initialPending,role,onSaved}:{initia
  async function send(body:Record<string,unknown>,ok:string){
   if(busy)return;setBusy(true);setError('');setDone('');
   try{const r=await request('/api/operations/payout',body,undefined,undefined,role);setDone(r?.message||ok);setPassword('');setPending(r?.pending||null);if(r?.payout){setPhone(phoneText(r.payout.phone));setRecipient(r.payout.recipient);setLink(r.payout.link||'');}onSaved?.(r?.payout||null,r?.pending||null);}
-  catch(x){setError(x instanceof Error&&x.message?x.message:'Не удалось сохранить.');}finally{setBusy(false);}
+  catch(x){setError(x instanceof Error&&x.message?x.message:t('Не удалось сохранить.'));}finally{setBusy(false);}
  }
  return <View style={{gap:12}}>
-  <Text style={s.meta}>{role==='owner'?'Гости переводят оплату и депозит прямо вам. Сервис эти деньги не принимает и не удерживает.':'Заказчики переводят оплату за уборку прямо вам. Сервис эти деньги не принимает и не удерживает.'}</Text>
-  {!!pending&&<View style={p.wait}><Text style={p.waitText}>Замена ждёт: Kaspi {phoneText(pending.phone)} ({pending.recipient}) вступит в силу {when(pending.until)}. До этого вам платят по прежним реквизитам.</Text>
-   <Pressable accessibilityRole="button" disabled={busy} onPress={()=>void send({action:'cancel'},'Замена отменена.')} style={({pressed})=>[p.link,{marginTop:8},(pressed||busy)&&{opacity:.7}]}><Text style={p.linkText}>Отменить замену</Text></Pressable></View>}
-  <View><Text style={s.fieldLabel}>Номер Kaspi</Text><TextInput accessibilityLabel="Номер Kaspi" value={phone} onChangeText={v=>{setPhone(v);setDone('');}} keyboardType="phone-pad" maxLength={20} placeholder="+7 7XX XXX XX XX" placeholderTextColor={C.muted} style={s.field}/></View>
-  <View><Text style={s.fieldLabel}>Имя получателя, как в Kaspi</Text><TextInput accessibilityLabel="Имя получателя" value={recipient} onChangeText={v=>{setRecipient(v);setDone('');}} maxLength={60} placeholder="Айгерим К." placeholderTextColor={C.muted} style={s.field}/></View>
-  <View><Text style={s.fieldLabel}>Ссылка Kaspi Pay, если есть</Text><TextInput accessibilityLabel="Ссылка Kaspi Pay" value={link} onChangeText={v=>{setLink(v);setDone('');}} autoCapitalize="none" autoCorrect={false} keyboardType="url" maxLength={300} placeholder="https://pay.kaspi.kz/…" placeholderTextColor={C.muted} style={s.field}/></View>
-  {changed&&<View><Text style={s.fieldLabel}>Пароль от аккаунта</Text><TextInput accessibilityLabel="Пароль от аккаунта" value={password} onChangeText={setPassword} secureTextEntry autoCapitalize="none" autoCorrect={false} maxLength={128} style={s.field}/>
-   <Text style={[s.meta,{marginTop:8}]}>Новые реквизиты вступят в силу через 24 часа. Мы пришлём оповещение, чтобы замену можно было отменить, если это не вы.</Text></View>}
+  <Text style={s.meta}>{role==='owner'?t('Гости переводят оплату и депозит прямо вам. Сервис эти деньги не принимает и не удерживает.'):t('Заказчики переводят оплату за уборку прямо вам. Сервис эти деньги не принимает и не удерживает.')}</Text>
+  {!!pending&&<View style={p.wait}><Text style={p.waitText}>{t('Замена ждёт: Kaspi {phone} ({name}) вступит в силу {when}. До этого вам платят по прежним реквизитам.',{phone:phoneText(pending.phone),name:pending.recipient,when:when(pending.until)})}</Text>
+   <Pressable accessibilityRole="button" disabled={busy} onPress={()=>void send({action:'cancel'},t('Замена отменена.'))} style={({pressed})=>[p.link,{marginTop:8},(pressed||busy)&&{opacity:.7}]}><Text style={p.linkText}>{t('Отменить замену')}</Text></Pressable></View>}
+  <View><Text style={s.fieldLabel}>{t('Номер Kaspi')}</Text><TextInput accessibilityLabel={t('Номер Kaspi')} value={phone} onChangeText={v=>{setPhone(v);setDone('');}} keyboardType="phone-pad" maxLength={20} placeholder="+7 7XX XXX XX XX" placeholderTextColor={C.muted} style={s.field}/></View>
+  <View><Text style={s.fieldLabel}>{t('Имя получателя, как в Kaspi')}</Text><TextInput accessibilityLabel={t('Имя получателя')} value={recipient} onChangeText={v=>{setRecipient(v);setDone('');}} maxLength={60} placeholder={t('Айгерим К.')} placeholderTextColor={C.muted} style={s.field}/></View>
+  <View><Text style={s.fieldLabel}>{t('Ссылка Kaspi Pay, если есть')}</Text><TextInput accessibilityLabel={t('Ссылка Kaspi Pay')} value={link} onChangeText={v=>{setLink(v);setDone('');}} autoCapitalize="none" autoCorrect={false} keyboardType="url" maxLength={300} placeholder="https://pay.kaspi.kz/…" placeholderTextColor={C.muted} style={s.field}/></View>
+  {changed&&<View><Text style={s.fieldLabel}>{t('Пароль от аккаунта')}</Text><TextInput accessibilityLabel={t('Пароль от аккаунта')} value={password} onChangeText={setPassword} secureTextEntry autoCapitalize="none" autoCorrect={false} maxLength={128} style={s.field}/>
+   <Text style={[s.meta,{marginTop:8}]}>{t('Новые реквизиты вступят в силу через 24 часа. Мы пришлём оповещение, чтобы замену можно было отменить, если это не вы.')}</Text></View>}
   {!!error&&<Text accessibilityRole="alert" style={s.error}>{error}</Text>}
   {!!done&&<Text accessibilityRole="text" style={s.meta}>{done}</Text>}
-  <Pressable accessibilityRole="button" disabled={busy||(changed&&!password)} onPress={()=>void send({phone,recipient,link,...(changed?{password}:{})},'Сохранено')} style={[s.button,(busy||(changed&&!password))&&s.disabled]}><Text style={s.buttonText}>{busy?'Сохраняю…':changed?'Заменить реквизиты':'Сохранить реквизиты'}</Text></Pressable>
-  <Text style={s.meta}>Реквизиты видит только тот, кто платит вам: {role==='owner'?'гость после подтверждения брони':'заказчик после принятой уборки'}.</Text>
+  <Pressable accessibilityRole="button" disabled={busy||(changed&&!password)} onPress={()=>void send({phone,recipient,link,...(changed?{password}:{})},t('Сохранено'))} style={[s.button,(busy||(changed&&!password))&&s.disabled]}><Text style={s.buttonText}>{busy?t('Сохраняю…'):changed?t('Заменить реквизиты'):t('Сохранить реквизиты')}</Text></Pressable>
+  <Text style={s.meta}>{role==='owner'?t('Реквизиты видит только тот, кто платит вам: гость после подтверждения брони.'):t('Реквизиты видит только тот, кто платит вам: заказчик после принятой уборки.')}</Text>
  </View>;
 }
 

@@ -1,6 +1,7 @@
+import {L,dateFormat as formatOf,t} from './i18n';
 import type { Role } from './domain';
 import type { OperationEvent } from './operations';
-import { wordsOf } from './stay-words';
+import { isHome, stayWords, wordsOf } from './stay-words';
 
 type Row = Record<string, any>;
 
@@ -24,17 +25,24 @@ export type NowCard = {
 
 const zone = 'Asia/Almaty';
 const dayFormat = new Intl.DateTimeFormat('en-CA', { timeZone: zone, year: 'numeric', month: '2-digit', day: '2-digit' });
-const timeFormat = new Intl.DateTimeFormat('ru-RU', { timeZone: zone, hour: '2-digit', minute: '2-digit' });
-const dateFormat = new Intl.DateTimeFormat('ru-RU', { timeZone: zone, day: 'numeric', month: 'long' });
+const timeFormat = formatOf({ timeZone: zone, hour: '2-digit', minute: '2-digit' });
+const dateFormat = formatOf({ timeZone: zone, day: 'numeric', month: 'long' });
 const day = (seconds: number) => dayFormat.format(new Date(seconds * 1000));
 
 // "сегодня в 14:00", "завтра в 09:30", "12 ноября в 14:00" in Kazakhstan time.
 export function nowCardWhen(at: number, now: number) {
   const date = new Date(at * 1000), time = timeFormat.format(date), key = day(at);
-  if (key === day(now)) return 'сегодня в ' + time;
-  if (key === day(now + 86400)) return 'завтра в ' + time;
-  if (key === day(now - 86400)) return 'вчера в ' + time;
-  return dateFormat.format(date) + ' в ' + time;
+  if (key === day(now)) return t('сегодня в {time}',{time});
+  if (key === day(now + 86400)) return t('завтра в {time}',{time});
+  if (key === day(now - 86400)) return t('вчера в {time}',{time});
+  return t('{date} в {time}',{date:dateFormat.format(date),time});
+}
+// The deadline of an answer: «ответить до 14:00» today, with the day when it is later.
+export function answerBy(at: number, now: number) {
+  const date = new Date(at * 1000), time = timeFormat.format(date), key = day(at);
+  if (key === day(now)) return t('ответить до {time}',{time});
+  if (key === day(now + 86400)) return t('ответить до завтра в {time}',{time});
+  return t('ответить до {date} в {time}',{date:dateFormat.format(date),time});
 }
 
 // The time goes first: a long flat name may be cut on a narrow screen, the time may not.
@@ -42,13 +50,13 @@ const line = (time: string, name: string) => time.charAt(0).toUpperCase() + time
 
 // The card names the state of things, not a task: what lib/operations.ts calls "Проверить фактический выезд"
 // is "Выезд не подтверждён" here. before: what the time in the detail line is the time of.
-const STATES: Record<string, { title: string; before?: string }> = {
+const STATES: Record<string, { title: string; before?: string }> = L({
   'Подтвердить заявку': { title: 'Заявка ждёт ответа', before: 'ответить до ' },
   'Проверить фактический выезд': { title: 'Выезд не подтверждён' },
   'Проверить поступление оплаты': { title: 'Оплата не подтверждена', before: 'заезд ' },
   'Проверить отчёт об уборке': { title: 'Отчёт ждёт проверки', before: 'срок был ' },
   'Найти исполнителя': { title: 'Уборка без исполнителя' },
-};
+});
 
 const byAt = (a: Row, b: Row) => a.at - b.at;
 const section = (role: Role, kind: string) =>
@@ -73,11 +81,11 @@ export function autopilotPick(data: Row | null | undefined, job: Row, applicatio
   if (!Number(policy.auto_assign) || Number(job.fee) > Number(policy.cleaning_budget || 0)) return '';
   const first = [...applications].sort((a, b) => a.created_at - b.created_at || String(a.id).localeCompare(String(b.id)))[0];
   if (!first) return '';
-  const name = first.worker?.name || first.name || 'первый откликнувшийся';
-  if (job.start <= now + 3600) return 'Если не выберете сами, автопилот в ближайшие минуты назначит: ' + name;
+  const name = first.worker?.name || first.name || t('первый откликнувшийся');
+  if (job.start <= now + 3600) return t('Если не выберете сами, автопилот в ближайшие минуты назначит: {name}',{name});
   const asked = (data?.notifications || []).find((n: Row) => n.dedupe === 'owner:administrator-propose:' + first.id);
   const at = asked ? asked.created_at + 900 : 0;
-  return 'Если не выберете сами, автопилот ' + (at > now ? 'в ' + timeFormat.format(new Date(at * 1000)) : 'через 15 минут') + ' назначит: ' + name;
+  return at > now ? t('Если не выберете сами, автопилот в {time} назначит: {name}',{time:timeFormat.format(new Date(at * 1000)),name}) : t('Если не выберете сами, автопилот через 15 минут назначит: {name}',{name});
 }
 
 // What waits for the owner on «Заявки»: guests' requests not answered yet and cleaners' responses. The chip says the number.
@@ -101,7 +109,7 @@ export function nowCard(role: Role, data: Row | null | undefined, nowSeconds: nu
   const fromEvent = (event: OperationEvent): NowCard => ({
     kind: 'attention', title: STATES[event.title]?.title || event.title,
     detail: line((STATES[event.title]?.before || '') + when(event.at), event.detail), at: event.at,
-    actionLabel: 'Открыть', urgent: event.urgent, entityKind: event.kind, entityId: event.entityId,
+    actionLabel: t('Открыть'), urgent: event.urgent, entityKind: event.kind, entityId: event.entityId,
     href: '/workspace/' + role + '/' + section(role, event.kind), event,
   });
   // The administrator's pending hint, only when nothing above it is more important.
@@ -114,7 +122,7 @@ export function nowCard(role: Role, data: Row | null | undefined, nowSeconds: nu
     const job = task.kind === 'job' ? (data.jobs || []).find((j: Row) => j.id === task.entityId) : null;
     if (job && ['completed', 'cancelled'].includes(job.status)) return null;
     return {
-      kind: 'administrator', title: task.title, detail: task.reason, at: task.at, actionLabel: 'Открыть',
+      kind: 'administrator', title: task.title, detail: task.reason, at: task.at, actionLabel: t('Открыть'),
       urgent: task.priority === 3, entityId: task.entityId || undefined,
       entityKind: ['booking', 'job', 'property'].includes(task.kind) ? task.kind : undefined,
       href: '/workspace/' + role + '/' + (task.section || section(role, task.kind)),
@@ -126,24 +134,24 @@ export function nowCard(role: Role, data: Row | null | undefined, nowSeconds: nu
     const working = mine.filter(j => j.status === 'in_progress').sort((a, b) => a.end - b.end)[0];
     if (working) {
       const late = working.end <= now;
-      return about('job', 'job', working, late ? 'Срок уборки прошёл' : 'Уборка идёт',
-        line('срок: ' + when(working.end), working.title), working.end, 'Открыть', late);
+      return about('job', 'job', working, late ? t('Срок уборки прошёл') : t('Уборка идёт'),
+        line(t('срок: {v}',{v:when(working.end)}), working.title), working.end, t('Открыть'), late);
     }
     const assigned = mine.filter(j => j.status === 'assigned').sort((a, b) => a.start - b.start)[0];
     if (assigned) {
       const late = assigned.end <= now;
-      return about('job', 'job', assigned, late ? 'Срок уборки прошёл' : 'Следующая уборка',
-        line(when(assigned.start), assigned.title), assigned.start, 'Открыть', late);
+      return about('job', 'job', assigned, late ? t('Срок уборки прошёл') : t('Следующая уборка'),
+        line(when(assigned.start), assigned.title), assigned.start, t('Открыть'), late);
     }
     const submitted = mine.filter(j => j.status === 'submitted').sort((a, b) => a.end - b.end)[0];
-    if (submitted) return about('job', 'job', submitted, 'Отчёт ждёт приёмки',
-      line('отправлен владельцу', submitted.title), submitted.end, 'Открыть');
+    if (submitted) return about('job', 'job', submitted, t('Отчёт ждёт приёмки'),
+      line(t('отправлен владельцу'), submitted.title), submitted.end, t('Открыть'));
     const applied = (data.applications || [])
       .filter((a: Row) => a.user_id === userId && a.status === 'pending')
       .map((a: Row) => (data.jobs || []).find((j: Row) => j.id === a.job_id && j.status === 'open' && j.end > now))
       .filter(Boolean).sort((a: Row, b: Row) => a.start - b.start)[0];
-    if (applied) return about('application', 'job', applied, 'Ждём ответа на отклик',
-      line(when(applied.start), applied.title), applied.start, 'Открыть');
+    if (applied) return about('application', 'job', applied, t('Ждём ответа на отклик'),
+      line(when(applied.start), applied.title), applied.start, t('Открыть'));
     return administrator();
   }
 
@@ -153,12 +161,12 @@ export function nowCard(role: Role, data: Row | null | undefined, nowSeconds: nu
 
   if (role === 'owner') {
     const request = requests.sort((a, b) => a.expires_at - b.expires_at)[0];
-    if (request) return about('request', 'booking', request, 'Заявка ждёт ответа',
-      line(wordsOf(request).arriveLow + ' ' + when(request.start), request.title), request.expires_at, 'Ответить', true);
+    if (request) return about('request', 'booking', request, t('Заявка ждёт ответа'),
+      line(wordsOf(request).arriveLow + ' ' + when(request.start), request.title), request.expires_at, t('Ответить'), true);
     // A cleaner answered an open cleaning: the owner chooses right from this card, the responses wait for nobody else.
     const answered = ownerResponses(data, userId, now)[0];
-    if (answered) return about('application', 'job', answered.job, answered.count > 1 ? 'Откликнулись исполнители · ' + answered.count : 'Откликнулся исполнитель',
-      line('уборка ' + when(answered.job.start), answered.job.title), answered.job.start, 'Выбрать', true);
+    if (answered) return about('application', 'job', answered.job, answered.count > 1 ? t('Откликнулись исполнители · {count}',{count:answered.count}) : t('Откликнулся исполнитель'),
+      line(t('уборка {v}',{v:when(answered.job.start)}), answered.job.title), answered.job.start, t('Выбрать'), true);
     const urgent = attention.find(event => event.urgent);
     if (urgent) return fromEvent(urgent);
     const today = day(now), moves: { booking: Row; kind: 'checkin' | 'checkout'; at: number }[] = [];
@@ -167,8 +175,8 @@ export function nowCard(role: Role, data: Row | null | undefined, nowSeconds: nu
       else if (day(b.end) === today && b.end > now) moves.push({ booking: b, kind: 'checkout', at: b.end });
     }
     const move = moves.sort(byAt)[0];
-    if (move) return about(move.kind, 'booking', move.booking, move.kind === 'checkin' ? wordsOf(move.booking).arrive + ' гостя' : wordsOf(move.booking).leave + ' гостя',
-      line(when(move.at), move.booking.title), move.at, 'Открыть');
+    if (move) return about(move.kind, 'booking', move.booking, move.kind === 'checkin' ? t('{arrive} гостя',{arrive:wordsOf(move.booking).arrive}) : t('{leave} гостя',{leave:wordsOf(move.booking).leave}),
+      line(when(move.at), move.booking.title), move.at, t('Открыть'));
     return attention[0] ? fromEvent(attention[0]) : administrator();
   }
 
@@ -176,17 +184,17 @@ export function nowCard(role: Role, data: Row | null | undefined, nowSeconds: nu
   const overdue = stays.filter(b => b.end <= now).sort((a, b) => a.end - b.end)[0];
   if (overdue) {
     const reported = !!overdue.terms?.checkout_reported_at;
-    return about('checkout', 'booking', overdue, reported ? wordsOf(overdue).leave + ' на проверке' : 'Сообщите ' + wordsOf(overdue).ofLeave,
-      line(wordsOf(overdue).leaveLow + (wordsOf(overdue).leaveLow === 'окончание' ? ' было ' : ' был ') + when(overdue.end), overdue.title), overdue.end, 'Открыть', !reported);
+    return about('checkout', 'booking', overdue, reported ? t('{leave} на проверке',{leave:wordsOf(overdue).leave}) : t('Сообщите {ofLeave}',{ofLeave:wordsOf(overdue).ofLeave}),
+      line(wordsOf(overdue) === stayWords('banquet') ? t('окончание было {when}',{when:when(overdue.end)}) : t('{leave} был {when}',{leave:wordsOf(overdue).leaveLow,when:when(overdue.end)}), overdue.title), overdue.end, t('Открыть'), !reported);
   }
   const current = stays.filter(b => b.start <= now && b.end > now).sort((a, b) => a.end - b.end)[0];
-  if (current) return about('stay', 'booking', current, current.terms?.actual_checkin ? wordsOf(current).youAre : 'Время ' + wordsOf(current).arriveGen + ' наступило',
-    line(wordsOf(current).leaveLow + ' ' + when(current.end), current.title), current.end, 'Открыть');
+  if (current) return about('stay', 'booking', current, current.terms?.actual_checkin ? wordsOf(current).youAre : t('Время {arriveGen} наступило',{arriveGen:wordsOf(current).arriveGen}),
+    line(wordsOf(current).leaveLow + ' ' + when(current.end), current.title), current.end, t('Открыть'));
   const next = stays.filter(b => b.start > now).sort((a, b) => a.start - b.start)[0];
   const request = requests.sort((a, b) => a.start - b.start)[0];
-  if (next && (!request || next.start <= request.start)) return about('checkin', 'booking', next, wordsOf(next).arriveLow === 'заезд' ? 'Ближайший заезд' : 'Ближайшая бронь',
-    line(when(next.start), next.title), next.start, 'Открыть');
-  if (request) return about('request', 'booking', request, 'Ждём ответа владельца',
-    line(wordsOf(request).arriveLow + ' ' + when(request.start), request.title), request.start, 'Открыть');
+  if (next && (!request || next.start <= request.start)) return about('checkin', 'booking', next, isHome(next) ? t('Ближайший заезд') : t('Ближайшая бронь'),
+    line(when(next.start), next.title), next.start, t('Открыть'));
+  if (request) return about('request', 'booking', request, t('Ждём ответа владельца'),
+    line(wordsOf(request).arriveLow + ' ' + when(request.start), request.title), request.start, t('Открыть'));
   return administrator();
 }

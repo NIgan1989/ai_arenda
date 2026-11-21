@@ -2,11 +2,12 @@
 // Owner («Уборки»): «Ищем» (no performer yet), at work (taken, going on, waiting for acceptance or for the owner to pay), finished.
 // Performer («Мои задания»): ahead (taken or applied for), done, cancelled (or the response was turned down).
 // A cleaning the owner still has to pay for (the fee after acceptance, a late-cancellation fee) stays «В работе».
+import {L} from './i18n';
 type Row=Record<string,any>;
 export type OwnerJobTab='need'|'work'|'done';
 export type CleanerJobTab='ahead'|'done'|'cancelled';
-export const ownerJobTabs:{id:OwnerJobTab;label:string}[]=[{id:'need',label:'Ищем'},{id:'work',label:'В работе'},{id:'done',label:'Готовые'}];
-export const cleanerJobTabs:{id:CleanerJobTab;label:string}[]=[{id:'ahead',label:'Предстоящие'},{id:'done',label:'Выполненные'},{id:'cancelled',label:'Отменённые'}];
+export const ownerJobTabs:{id:OwnerJobTab;label:string}[]=L([{id:'need',label:'Ищем'},{id:'work',label:'В работе'},{id:'done',label:'Готовые'}]);
+export const cleanerJobTabs:{id:CleanerJobTab;label:string}[]=L([{id:'ahead',label:'Предстоящие'},{id:'done',label:'Выполненные'},{id:'cancelled',label:'Отменённые'}]);
 const owed=(j:Row)=>j.status==='completed'&&!!j.assigned_to&&j.assigned_to!==j.owner_id&&Number(j.fee)>(Number(j.settlement_paid)||0)
  ||j.status==='cancelled'&&Number(j.cancel_fee)>(Number(j.settlement_paid)||0);
 export function ownerJobTab(j:Row):OwnerJobTab{

@@ -1,3 +1,4 @@
+import {t} from '../../lib/i18n';
 import { WISHES, BANQUET_WISHES, askFirst, categoryOf, type GuestDraft } from './ai-request';
 import { money, type Row } from './model';
 
@@ -59,14 +60,14 @@ function candidates(flats: Row[], context: HelperContext): Candidate[] {
   const prices = flats.map(amount).filter(v => v > 0);
   if (prices.length === flats.length && context.draft.priority !== 'cheaper') {
     const middle = median(prices);
-    if (prices.some(v => v > middle)) out.push({ id: 'cheaper', title: 'Дешевле', hotTitle: 'До ' + money(middle), test: flat => amount(flat) <= middle });
+    if (prices.some(v => v > middle)) out.push({ id: 'cheaper', title: t('Дешевле'), hotTitle: t('До {v}', { v: money(middle) }), test: flat => amount(flat) <= middle });
   }
   const ways = flats.map(flat => away(flat, context.from));
   if (ways.every(v => v !== null) && context.draft.priority !== 'closer') {
     const middle = median(ways as number[]);
-    if ((ways as number[]).some(v => v > middle)) out.push({ id: 'closer', title: 'Ближе', test: flat => (away(flat, context.from) ?? Infinity) <= middle });
+    if ((ways as number[]).some(v => v > middle)) out.push({ id: 'closer', title: t('Ближе'), test: flat => (away(flat, context.from) ?? Infinity) <= middle });
   }
-  if (!context.draft.now) out.push({ id: 'instant', title: 'Сразу', test: flat => !!flat.instant && !askFirst(flat) });
+  if (!context.draft.now) out.push({ id: 'instant', title: t('Сразу'), test: flat => !!flat.instant && !askFirst(flat) });
   for (const [id, name] of wishes(context.draft)) out.push({ id: 'f:' + id, title: name, test: flat => (flat.details?.amenities || []).includes(id) });
   return out;
 }
@@ -105,7 +106,7 @@ export function narrowed(flats: Row[], steps: string[], context: HelperContext):
 
 /** The words of the steps taken, for the row that takes the last one back: «Ближе › Парковка». */
 export function stepWords(steps: string[], draft: GuestDraft) {
-  const names: Record<string, string> = { cheaper: 'Дешевле', closer: 'Ближе', instant: 'Сразу' };
+  const names: Record<string, string> = { cheaper: t('Дешевле'), closer: t('Ближе'), instant: t('Сразу') };
   const wish = new Map([...WISHES, ...BANQUET_WISHES]);
   return steps.map(id => names[id] || wish.get(id.slice(2)) || '').filter(Boolean).join(' › ');
 }
@@ -132,5 +133,5 @@ export function rotateEquals(flats: Row[], seed: number, fixed: (flat: Row) => b
 export function foundLine(flats: Row[], plural: (n: number, one: string, few: string, many: string) => string) {
   if (!flats.length) return '';
   const least = Math.min(...flats.map(amount).filter(v => v > 0));
-  return flats.length + ' ' + plural(flats.length, 'вариант', 'варианта', 'вариантов') + (Number.isFinite(least) ? ' от ' + money(least) : '');
+  return flats.length + ' ' + plural(flats.length, 'вариант', 'варианта', 'вариантов') + (Number.isFinite(least) ? ' ' + t('от {price}',{price:money(least)}) : '');
 }

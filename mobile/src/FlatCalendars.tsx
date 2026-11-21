@@ -1,3 +1,4 @@
+import {t} from '../../lib/i18n';
 import React,{useEffect,useState} from 'react';
 import {ThinkingLine} from './Thinking';
 import {Pressable,Share,StyleSheet,Text,TextInput,View} from 'react-native';
@@ -12,30 +13,30 @@ const R=T.radius,H=T.control;
 // paste the platform's link here, send this service's link there.
 export function FlatCalendars({propertyId,onBack}:{propertyId:string;onBack:()=>void}){
  const [state,setState]=useState<Row|null>(null),[url,setUrl]=useState(''),[busy,setBusy]=useState(false),[error,setError]=useState(''),[note,setNote]=useState(''),[link,setLink]=useState(''),[help,setHelp]=useState(false);
- async function load(){try{setState(await request('/api/operations/calendar/flat',{propertyId}));}catch(x:any){setError(x?.message||'Не удалось загрузить календари.');}}
+ async function load(){try{setState(await request('/api/operations/calendar/flat',{propertyId}));}catch(x:any){setError(x?.message||t('Не удалось загрузить календари.'));}}
  useEffect(()=>{load();},[propertyId]);
- async function run(action:()=>Promise<void>){if(busy)return;setBusy(true);setError('');setNote('');try{await action();await load();}catch(x:any){setError(x?.message||'Не получилось.');}finally{setBusy(false);}}
+ async function run(action:()=>Promise<void>){if(busy)return;setBusy(true);setError('');setNote('');try{await action();await load();}catch(x:any){setError(x?.message||t('Не получилось.'));}finally{setBusy(false);}}
  const connect=()=>run(async()=>{const r=await request('/api/operations/calendar/connect',{propertyId,url});setNote(r.message);if(!r.failed)setUrl('');});
  const toggle=(s:Row)=>run(async()=>{const r=await request('/api/operations/calendar/source',{id:s.id,propertyId,label:s.label,expectedVersion:s.version,enabled:!s.enabled});setNote(r.message||'');});
  const share=()=>run(async()=>{const r=await request('/api/operations/calendar/export',{propertyId});setLink(r.url);});
  return <View style={f.sheet}>
-  <View style={f.bar}><Pressable accessibilityRole="button" accessibilityLabel="Назад к списку" onPress={onBack} disabled={busy} style={f.round}><Text style={f.roundText}>←</Text></Pressable><Text accessibilityRole="header" style={f.title}>Календари площадок</Text></View>
-  <Text style={f.hint}>Если жильё есть на Airbnb, Booking или Суточно, свяжите календари, и одно жильё не забронируют дважды.</Text>
-  <Text style={f.h}>ЗАНЯТОСТЬ С ДРУГИХ ПЛОЩАДОК</Text>
-  {!state&&!error&&<ThinkingLine style={f.hint} text="Загружаю…"/>}
+  <View style={f.bar}><Pressable accessibilityRole="button" accessibilityLabel={t('Назад к списку')} onPress={onBack} disabled={busy} style={f.round}><Text style={f.roundText}>←</Text></Pressable><Text accessibilityRole="header" style={f.title}>{t('Календари площадок')}</Text></View>
+  <Text style={f.hint}>{t('Если жильё есть на Airbnb, Booking или Суточно, свяжите календари, и одно жильё не забронируют дважды.')}</Text>
+  <Text style={f.h}>{t('ЗАНЯТОСТЬ С ДРУГИХ ПЛОЩАДОК')}</Text>
+  {!state&&!error&&<ThinkingLine style={f.hint} text={t('Загружаю…')}/>}
   {(state?.sources||[]).map((s:Row)=>{const st=calendarStatus(s);return <View key={s.id} style={[f.row,st.tone==='warn'&&f.rowWarn,st.tone==='off'&&f.rowOff]}>
    <View style={[f.ico,st.tone==='warn'&&f.icoWarn]}><Text style={f.icoText}>📅</Text></View>
    <View style={{flex:1,minWidth:0}}><Text style={f.name}>{s.label}</Text><Text style={[f.line,st.tone==='ok'&&f.lineOk,st.tone==='warn'&&f.lineWarn]}>{st.text}</Text></View>
-   {s.automatic===1&&<Pressable accessibilityRole="button" disabled={busy} onPress={()=>toggle(s)} style={f.small}><Text style={f.smallText}>{s.enabled?'Отключить':'Включить'}</Text></Pressable>}
+   {s.automatic===1&&<Pressable accessibilityRole="button" disabled={busy} onPress={()=>toggle(s)} style={f.small}><Text style={f.smallText}>{s.enabled?t('Отключить'):t('Включить')}</Text></Pressable>}
   </View>;})}
-  <View style={{gap:4}}><Text style={f.label}>Ссылка на календарь площадки</Text><TextInput accessibilityLabel="Ссылка на календарь площадки" style={f.input} value={url} onChangeText={setUrl} maxLength={2000} autoCapitalize="none" autoCorrect={false} keyboardType="url" placeholder="https://www.airbnb.ru/calendar/ical/…" placeholderTextColor={C.muted}/></View>
-  <Pressable accessibilityRole="button" onPress={()=>setHelp(v=>!v)} style={f.small}><Text style={f.link}>{help?'Скрыть подсказку':'Где взять ссылку'}</Text></Pressable>
+  <View style={{gap:4}}><Text style={f.label}>{t('Ссылка на календарь площадки')}</Text><TextInput accessibilityLabel={t('Ссылка на календарь площадки')} style={f.input} value={url} onChangeText={setUrl} maxLength={2000} autoCapitalize="none" autoCorrect={false} keyboardType="url" placeholder="https://www.airbnb.ru/calendar/ical/…" placeholderTextColor={C.muted}/></View>
+  <Pressable accessibilityRole="button" onPress={()=>setHelp(v=>!v)} style={f.small}><Text style={f.link}>{help?t('Скрыть подсказку'):t('Где взять ссылку')}</Text></Pressable>
   {help&&<View style={{gap:4}}>{CALENDAR_HELP.map(h=><Text key={h.name} style={f.hint}><Text style={{fontWeight:'700'}}>{h.name}: </Text>{h.where}</Text>)}</View>}
-  <Pressable accessibilityRole="button" disabled={busy||!url.trim()} onPress={connect} style={[f.primary,(busy||!url.trim())&&f.disabled]}><Text style={f.primaryText}>{busy?'Подключаю…':'Подключить'}</Text></Pressable>
-  <Text style={f.h}>ССЫЛКА ДЛЯ ДРУГИХ ПЛОЩАДОК</Text>
-  <Text style={f.hint}>Вставьте её в импорт календаря на Airbnb или Booking, тогда брони отсюда закроют даты и там. В ссылке только занятые даты, без имён и адресов.</Text>
-  {link?<><Text selectable style={f.linkBox}>{link}</Text><Pressable accessibilityRole="button" onPress={()=>Share.share({message:link}).catch(()=>{})} style={f.primary}><Text style={f.primaryText}>Отправить ссылку</Text></Pressable></>
-   :<Pressable accessibilityRole="button" disabled={busy} onPress={share} style={f.ghost}><Text style={f.ghostText}>Получить ссылку</Text></Pressable>}
+  <Pressable accessibilityRole="button" disabled={busy||!url.trim()} onPress={connect} style={[f.primary,(busy||!url.trim())&&f.disabled]}><Text style={f.primaryText}>{busy?t('Подключаю…'):t('Подключить')}</Text></Pressable>
+  <Text style={f.h}>{t('ССЫЛКА ДЛЯ ДРУГИХ ПЛОЩАДОК')}</Text>
+  <Text style={f.hint}>{t('Вставьте её в импорт календаря на Airbnb или Booking, тогда брони отсюда закроют даты и там. В ссылке только занятые даты, без имён и адресов.')}</Text>
+  {link?<><Text selectable style={f.linkBox}>{link}</Text><Pressable accessibilityRole="button" onPress={()=>Share.share({message:link}).catch(()=>{})} style={f.primary}><Text style={f.primaryText}>{t('Отправить ссылку')}</Text></Pressable></>
+   :<Pressable accessibilityRole="button" disabled={busy} onPress={share} style={f.ghost}><Text style={f.ghostText}>{t('Получить ссылку')}</Text></Pressable>}
   {!!note&&<Text accessibilityRole="text" style={f.note}>{note}</Text>}
   {!!error&&<Text accessibilityRole="alert" style={f.error}>{error}</Text>}
  </View>;

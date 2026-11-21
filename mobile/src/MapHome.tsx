@@ -1,3 +1,4 @@
+import {t as tr} from '../../lib/i18n';
 import {background} from './loading';
 import {ReliabilityBadge} from './Reliability';
 import React,{useEffect,useRef,useState,type ReactNode} from 'react';
@@ -69,13 +70,13 @@ const NOT_ON_MAP='Этого нет на карте сейчас: у объек�
 // A city the guest chose themselves (in the line, in the conditions) is never moved to where the phone is.
 const chosenCity=new Set<string>();
 const guestSearches=new Map<string,{draft:GuestDraft;preview:Row|null;foundAt:number}>(),SEARCH_KEEP=600000;
-const short=(amount:unknown)=>typeof amount==='number'&&amount>0?pinPrice(amount):'Жильё';
+const short=(amount:unknown)=>typeof amount==='number'&&amount>0?pinPrice(amount):tr('Жильё');
 // «На ночь» books the tariff the search priced the home by: the owner's nightly price, or started days.
 const tariffOf=(draft:GuestDraft,property:Row):MapStay['mode']=>draft.mode==='night'?(property.estimate?.billingMode==='nightly'?'nightly':'daily'):draft.mode;
 const pointOf=(item:Row):MapPoint|null=>validPoint([item.location?.longitude,item.location?.latitude]);
 // The guest's point, rounded as a picked one is: owners never get it, the search gets it to about a kilometre.
 const nearOf=(point:MapPoint)=>({longitude:Math.round(point[0]*100)/100,latitude:Math.round(point[1]*100)/100,radius:5000});
-const message=(error:unknown)=>error instanceof Error?error.message:'Действие не подтверждено. Обновите данные.';
+const message=(error:unknown)=>error instanceof Error?error.message:tr('Действие не подтверждено. Обновите данные.');
 // The server's clock, as of the last refresh of the state: a wrong clock on the phone must not change what is "now".
 const serverNow=(data:Row)=>Number(data.serverTime)||Date.now()/1000;
 
@@ -117,8 +118,8 @@ function GuestPanel({setScanning,setQuiet,accountId,data,mapData,publish,selecte
  // shift: the same search moved along the arrival strip; the map keeps its view and the sheet stays as it is.
  const find=(conditions:GuestDraft=draft,shift=false)=>guarded(async()=>{
   const next=freshDraft(conditions);
-  if(next.maxPrice&&Number(next.maxPrice)<100)throw new Error('Бюджет: от 100 ₸. Или оставьте поле пустым.');
-  if(next.priority==='closer'&&!next.near)throw new Error('Чтобы искать ближе, сначала укажите точку на карте.');
+  if(next.maxPrice&&Number(next.maxPrice)<100)throw new Error(tr('Бюджет: от 100 ₸. Или оставьте поле пустым.'));
+  if(next.priority==='closer'&&!next.near)throw new Error(tr('Чтобы искать ближе, сначала укажите точку на карте.'));
   setDraft(next);
   if(!shift){around.current=next.start+'+05:00';clearTimeout(shiftTimer.current);setArriveAt(null);}
   const result=await request('/api/public/matching?q='+encodeURIComponent(JSON.stringify({...matchingBody(next),around:around.current})));
@@ -149,7 +150,7 @@ function GuestPanel({setScanning,setQuiet,accountId,data,mapData,publish,selecte
   // Understood: the conditions line now says it, so the line is free for the next request (as on the site).
   setPreview(null);setAsked('');if(parsed.draft.city!==draft.city){setCity(parsed.draft.city);chosenCity.add(accountId);}setDraft(parsed.draft);
   // A day or an hour that has passed is never moved to another one: the guest is asked for the date.
-  if(parsed.past){setHint({text:[PAST_TEXT[parsed.past],parsed.note,'Укажите, когда нужно жильё.'].filter(Boolean).join(' '),error:true});setRefine('when');expand(2);return;}
+  if(parsed.past){setHint({text:[PAST_TEXT[parsed.past],parsed.note,tr('Укажите, когда нужно жильё.')].filter(Boolean).join(' '),error:true});setRefine('when');expand(2);return;}
   const note=[said,parsed.note].filter(Boolean).join(' ');
   setHint(note?{text:note}:null);
   // «Рядом»: where the guest is, if the phone knows it and it is in the searched city; otherwise the guest shows it on the map.
@@ -158,7 +159,7 @@ function GuestPanel({setScanning,setQuiet,accountId,data,mapData,publish,selecte
   if(parsed.nearby&&!parsed.draft.near){pickThenFind.current=true;setPicking(true);expand(0);return;}
   // «У вокзала»: the landmark is found on the map and the search looks around it; not found is said, and the whole city is searched.
   // Without an account the landmark is not looked up (the service pays for each lookup): the whole city is searched, and it is said.
-  if(parsed.place&&!accountId){setHint({text:[note,'Искать у ориентира смогу после входа. Пока показываю весь город.'].filter(Boolean).join(' ')});void find({...parsed.draft,near:null,priority:parsed.draft.priority==='closer'?'balanced':parsed.draft.priority});return;}
+  if(parsed.place&&!accountId){setHint({text:[note,tr('Искать у ориентира смогу после входа. Пока показываю весь город.')].filter(Boolean).join(' ')});void find({...parsed.draft,near:null,priority:parsed.draft.priority==='closer'?'balanced':parsed.draft.priority});return;}
   if(parsed.place&&!lock.current){
    const asked=parsed.place;lock.current=true;setWorking(true);
    void (async()=>{
@@ -180,13 +181,13 @@ function GuestPanel({setScanning,setQuiet,accountId,data,mapData,publish,selecte
   setError('');
   if(parsed.understood){take(parsed);return;}
   // Nothing but what the search cannot check yet («с баней»): said at once, the model could not put it in other words either.
-  if(parsed.note){setHint({text:parsed.note+' Напишите день, срок, тип жилья или бюджет.',ask:text});return;}
+  if(parsed.note){setHint({text:tr('{note} Напишите день, срок, тип жилья или бюджет.',{note:parsed.note}),ask:text});return;}
   // What the rules could not read goes to the model, which says it in the words the rules do read; those words then
   // pass the same rules. No model on the server, no permission or no answer: the guest is told, never guessed for.
   if(lock.current)return;
   // The model reads free text only for someone signed in; without an account the guest is asked for the usual words.
-  if(!accountId){setHint({text:'Не понял запрос. Напишите день, срок, тип жилья или бюджет, например «завтра на сутки до 15 000». ИИ разберёт любой текст после входа.'});return;}
-  lock.current=true;setWorking(true);setHint({text:'ИИ разбирает запрос…'});
+  if(!accountId){setHint({text:tr('Не понял запрос. Напишите день, срок, тип жилья или бюджет, например «завтра на сутки до 15 000». ИИ разберёт любой текст после входа.')});return;}
+  lock.current=true;setWorking(true);setHint({text:tr('ИИ разбирает запрос…')});
   void (async()=>{
    let ai:Row|null=null;
    try{ai=await request('/api/operations/search/understand',{text:text.slice(0,300)},undefined,undefined,'guest');}catch{/* Said below as «не понял». */}
@@ -200,7 +201,7 @@ function GuestPanel({setScanning,setQuiet,accountId,data,mapData,publish,selecte
  const nearNow=(next:GuestDraft):GuestDraft=>{const fix=getHere().fix;return next.now&&!next.near&&fix&&nearestCity(fix.point)===next.city?{...next,near:{...nearOf(fix.point),radius:15000},priority:'closer'}:next;};
  const chip=(action:HeadAction)=>{if(action!=='now'&&action!=='night'&&action!=='daily'&&action!=='hourly'&&action!=='weekend'&&action!=='evening'&&action!=='tomorrow'&&action!=='toi'&&action!=='party'&&action!=='memorial')return;const next=nearNow(chipDraft(action,draft));setAsked('');setHint(null);setError('');setDraft(next);setPreview(null);void find(next);};
  // «Забронировать»: the price in the list is for the searched time. If that time has passed while the list was open, the search runs again first.
- const bookFlat=(property:Row)=>{if(freshDraft(draft).start!==draft.start){setHint({text:'Время начала уже прошло. Обновил варианты на ближайшее время.'});setSelected('');void find(draft);return;}// One button. A home that confirms by itself is booked at once; a home whose owner answers quick requests is asked
+ const bookFlat=(property:Row)=>{if(freshDraft(draft).start!==draft.start){setHint({text:tr('Время начала уже прошло. Обновил варианты на ближайшее время.')});setSelected('');void find(draft);return;}// One button. A home that confirms by itself is booked at once; a home whose owner answers quick requests is asked
   // first, together with the next best ones, so a refusal or silence already has the next offer coming.
   // Without an account the button asks to sign in first (App.tsx); the booking then goes on with the same stay.
   if(askFirst(property)&&accountId){void begin(property.id);return;}
@@ -265,7 +266,7 @@ function GuestPanel({setScanning,setQuiet,accountId,data,mapData,publish,selecte
   return own&&point&&state?[{key:'booking:'+p.id,id:String(p.id),point,title:p.title,label:state.label,tone:state.tone,act:pinAct('guest',tripThreads,data,stayNow,t=>t.id===p.id)||undefined,chain:(t=>t?threadChain(t):undefined)(tripThreads.find(t=>t.id===p.id)),start:Number(own.start),canGo:p.location?.precision==='exact'&&!own.terms?.actual_checkin&&!own.terms?.actual_checkout&&own.start<stayNow+86400&&own.end>stayNow}]:[];
  }).sort((a:{start:number},b:{start:number})=>a.start-b.start);
  const staysKey=stays.map(v=>v.key+v.label+(v.act?.label||'')+(v.chain?.states.join('')||'')).join();
- const go=(stay:{id:string;title?:string;point:MapPoint})=>{setSelected('');expand(0);void nav.start({kind:'booking',id:stay.id,title:stay.title||'Жильё',target:stay.point});};
+ const go=(stay:{id:string;title?:string;point:MapPoint})=>{setSelected('');expand(0);void nav.start({kind:'booking',id:stay.id,title:stay.title||tr('Жильё'),target:stay.point});};
  // Each beam goes along the roads, like a route: the first few are asked from the server one by one, the rest stay straight.
  const [roads,setRoads]=useState<BeamRoads>({}),roadAsked=useRef(new Set<string>());
  const askRoads=(lines:MapLine[])=>{
@@ -291,12 +292,12 @@ function GuestPanel({setScanning,setQuiet,accountId,data,mapData,publish,selecte
   const pin=(p:Row,tone:MapPin['tone']):MapPin[]=>{const point=pointOf(p),amount=p.estimate?.amount??p.price;return point?[{key:p.id,point,title:p.title,label:(mine.favorites.includes(p.id)?'♥ ':'')+short(amount),tone,rank:typeof amount==='number'?amount:0}]:[];};
   // On the way the map shows only the way: the home, the guest's point and the road between them.
   if(nav.trip){
-   const target=stays.filter(v=>v.id===nav.trip!.id).map(({id,start,canGo,...m})=>m),me:MapPin[]=nav.here&&nav.status!=='arrived'?[{key:'me',point:nav.here.point,title:'Вы',label:'Вы',tone:'active'}]:[];
+   const target=stays.filter(v=>v.id===nav.trip!.id).map(({id,start,canGo,...m})=>m),me:MapPin[]=nav.here&&nav.status!=='arrived'?[{key:'me',point:nav.here.point,title:tr('Вы'),label:tr('Вы'),tone:'active'}]:[];
    const path=nav.state?.path;
    publish([...target,...me],'nav:'+nav.trip.id+':'+nav.rerouted,{lines:path&&path.length>1?[{key:'nav:'+nav.trip.id,from:path[0],to:path[path.length-1],tone:'nav',path}]:[]});
   }
   // A booking made: the flat that was booked stays on the map, green, and the rest leave it.
-  else if(requestId&&live?.status==='booked'){const flat=bookedFlat.current;publish(flat?pin(flat,'booked').map(p=>({...p,label:'✓ Бронь'})):[],'booked:'+live.id);}
+  else if(requestId&&live?.status==='booked'){const flat=bookedFlat.current;publish(flat?pin(flat,'booked').map(p=>({...p,label:tr('✓ Бронь')})):[],'booked:'+live.id);}
   // A flat being asked carries the end of its owner's time to answer, moved to this phone's clock.
   else if(requestId&&live){
    // Beams start at the searched point; a request restored after a restart starts them at the middle of the map.
@@ -330,9 +331,9 @@ function GuestPanel({setScanning,setQuiet,accountId,data,mapData,publish,selecte
   const near=nearestCity(here.fix.point);
   // Far from every city of the service: the map flies to the guest instead of keeping another city on screen. It waits
   // for the first answer of the map, so the framing of those pins (a new focusKey) does not take the view away again.
-  if(!near){if(!mapData)return;placed.current='done';flyMe();if(here.fix.accuracy<=5000)notify('Рядом с вами жилья сервиса пока нет. Нужен город — напишите его в строке, например «Алматы завтра».');return;}
+  if(!near){if(!mapData)return;placed.current='done';flyMe();if(here.fix.accuracy<=5000)notify(tr('Рядом с вами жилья сервиса пока нет. Нужен город — напишите его в строке, например «Алматы завтра».'));return;}
   // The city moves only once the map of the current one has answered, and never away from the guest's own stays there.
-  if(placed.current==='no'){if(!mapData)return;placed.current='city';if(near!==draft.city){if(stays.length){placed.current='done';return;}change({...draft,city:near,district:'',near:null},false);notify('Вы в городе '+near+'. Нужен другой город — напишите его в строке, например «Астана завтра».');return;}}
+  if(placed.current==='no'){if(!mapData)return;placed.current='city';if(near!==draft.city){if(stays.length){placed.current='done';return;}change({...draft,city:near,district:'',near:null},false);notify(tr('Вы в городе {near}. Нужен другой город — напишите его в строке, например «Астана завтра».',{near}));return;}}
   if(mapData&&mapData.city===near){placed.current='done';flyMe();}
  },[here.fix,mapData]);
  // A finger held on the map: the search runs around that point (5 km), in the city it lies in. The exact point is only
@@ -340,15 +341,15 @@ function GuestPanel({setScanning,setQuiet,accountId,data,mapData,publish,selecte
  const heldAt=useRef<MapPoint|null>(null);
  useEffect(()=>{
   if(!held)return;
-  if(requestId||nav.trip){notify('Сначала завершите текущий подбор или поездку.');return;}
-  if(lock.current){notify('Секунду: ещё ищем по прошлой точке.');return;}
+  if(requestId||nav.trip){notify(tr('Сначала завершите текущий подбор или поездку.'));return;}
+  if(lock.current){notify(tr('Секунду: ещё ищем по прошлой точке.'));return;}
   const where=nearestCity(held.point);
-  if(!where){notify('Здесь пока нет жилья сервиса. Удерживайте палец на месте в городе.');return;}
+  if(!where){notify(tr('Здесь пока нет жилья сервиса. Удерживайте палец на месте в городе.'));return;}
   if(where!==draft.city){setCity(where);chosenCity.add(accountId);}
   heldAt.current=held.point;
   // A point held in «Где ищем?» answers that question: the marker mode ends here.
   if(picking){pickThenFind.current=false;setPicking(false);}
-  notify('Ищем жильё в 5 км от этой точки.');
+  notify(tr('Ищем жильё в 5 км от этой точки.'));
   void find({...draft,city:where,district:where===draft.city?draft.district:'',near:nearOf(held.point)});
  },[held?.n]);
  // The radar on the map runs while flats are searched and while owners are being asked.
@@ -358,9 +359,7 @@ function GuestPanel({setScanning,setQuiet,accountId,data,mapData,publish,selecte
  useEffect(()=>{setQuiet(isQuiet(draft));return()=>setQuiet(false);},[draft.occasion]);
  useEffect(()=>{if(offers.length&&selected){const at=offers.findIndex(p=>p.id===selected);if(at>=0&&at!==index){setIndex(at);setAccepted(false);}}},[selected]);
 
- const pickView=<View style={h.block}><Text style={h.title}>Где ищем?</Text><Text style={h.note}>Передвиньте карту так, чтобы метка стояла в нужном месте. Или просто удерживайте палец на нужном месте карты. Владельцам точка не передаётся, для подбора она округляется.</Text>
-  <Action title="Искать рядом с этой точкой" onPress={()=>{const c=mapCenter.current,near=c?{longitude:Math.round(c[0]*100)/100,latitude:Math.round(c[1]*100)/100,radius:5000}:null,search=pickThenFind.current&&!!near;pickThenFind.current=false;if(near)change({...draft,near});setPicking(false);if(search)void find({...draft,near});else expand(1);}}/>
-  <Action secondary title="Отмена" onPress={()=>{const fromLine=pickThenFind.current;pickThenFind.current=false;setPicking(false);expand(fromLine?0:1);}}/></View>;
+ const pickView=<View style={h.block}><Text style={h.title}>{tr('Где ищем?')}</Text><Text style={h.note}>{tr('Передвиньте карту так, чтобы метка стояла в нужном месте. Или просто удерживайте палец на нужном месте карты. Владельцам точка не передаётся, для подбора она округляется.')}</Text><Action title={tr('Искать рядом с этой точкой')} onPress={()=>{const c=mapCenter.current,near=c?{longitude:Math.round(c[0]*100)/100,latitude:Math.round(c[1]*100)/100,radius:5000}:null,search=pickThenFind.current&&!!near;pickThenFind.current=false;if(near)change({...draft,near});setPicking(false);if(search)void find({...draft,near});else expand(1);}}/><Action secondary title={tr('Отмена')} onPress={()=>{const fromLine=pickThenFind.current;pickThenFind.current=false;setPicking(false);expand(fromLine?0:1);}}/></View>;
 
  // The home «Забронировать» was pressed on is kept in the request itself, so it survives a change of role or a restart.
  const preferId=typeof live?.filters?.prefer==='string'?live.filters.prefer:'';
@@ -377,51 +376,7 @@ function GuestPanel({setScanning,setQuiet,accountId,data,mapData,publish,selecte
  const renderLive=()=>{
   const status=live?.status||'searching',booked=status==='booked',step=booked?3:status==='ready'||status==='booking'?2:1;
   const booking=booked?(data.bookings||[]).find((b:Row)=>b.id===live?.bookingId):null;
-  return <View style={h.block}>
-   <Stage steps={['Условия','Владельцы','Предложение','Бронь']} current={step}/>
-   {!live&&<View style={h.row}><Thinking size="sm"/><Text style={h.note}>Восстанавливаем ваш подбор…</Text></View>}
-   {live&&status==='searching'&&<>
-    <Text accessibilityRole="header" style={h.cardTitle}>Спрашиваем владельцев</Text>
-    <View style={h.row}><Thinking size="sm"/><Text style={h.note}>Ждём ответа: {live.pending} из {live.sent} запросов. На ответ у владельца 2 минуты.</Text></View>
-    <Text style={h.timer} accessibilityLabel={'До конца подбора '+countdown(live.expiresAt-now)}>{countdown(live.expiresAt-now)}</Text>
-    {/* Who was asked and who has answered: one row per home, the same homes that pulse on the map. */}
-    <View>{offers.map(p=><View key={p.id} style={h.asked}><View style={[h.askedDot,{backgroundColor:C.success}]}/><Text numberOfLines={1} style={[h.eventTitle,h.grow]}>{p.title}</Text><Text style={h.reason}>Готов принять</Text></View>)}
-    {(live.pendingProperties||[]).map((p:Row)=><View key={p.id} style={h.asked}><View style={[h.askedDot,{backgroundColor:C.gold}]}/><Text numberOfLines={1} style={[h.eventTitle,h.grow]}>{p.title}</Text><Text style={h.note}>ждём…</Text></View>)}</View>
-    <Text style={h.note}>Бронь на этом шаге не создаётся.</Text>
-   </>}
-   {live&&(status==='ready'||status==='booking')&&offer&&<>
-    <Text accessibilityRole="header" style={h.cardTitle}>Владелец подтвердил готовность</Text>
-    {offers.length>1&&<View style={h.row}><Action secondary title="← Назад" disabled={index===0} onPress={()=>{setIndex(index-1);setAccepted(false);setSelected(offers[index-1].id);}}/><Text style={h.note}>{index+1} из {offers.length}</Text><Action secondary title="Ещё →" disabled={index>=offers.length-1} onPress={()=>{setIndex(index+1);setAccepted(false);setSelected(offers[index+1].id);}}/></View>}
-    <View style={h.card}>
-     {!!offer.photos?.[0]&&<Photo id={offer.photos[0]} alt={offer.title+', фото'}/>}
-     <Text style={h.cardTitle}>{offer.title}</Text><Text style={h.note}>{[offer.city,offer.district].filter(Boolean).join(' · ')}</Text>
-     <Text style={h.price}>{money(offer.estimate.amount)}</Text>
-     {!!windowBadge(offer.estimate.window)&&<Text style={h.reason}>✦ {windowBadge(offer.estimate.window)}</Text>}
-     {!!dealBadge(offer.estimate.deal)&&<Text style={h.reason}>✦ {dealBadge(offer.estimate.deal)}</Text>}
-     {!!offer.host&&<View style={{marginTop:8}}><ReliabilityBadge value={offer.host} title="Владелец"/></View>}
-     <Text style={h.note}>{date(Date.parse(live.filters.start)/1000)} → {date(Date.parse(live.filters.end)/1000)} · гостей: {live.filters.guests}{'\n'}Депозит отдельно: {offer.policy?.deposit?money(offer.policy.deposit):'не требуется'}</Text>
-     {shownReasons(offer.match?.reasons,{maxPrice:String(live.filters.maxPrice)===NO_BUDGET?'':String(live.filters.maxPrice||'')},BATH_KINDS.includes(offer.details?.type)).map((reason:string)=><Text key={reason} style={h.reason}>✓ {reason}</Text>)}
-     {!!offer.policy?.house_rules&&<Text style={h.note}>Правила: {offer.policy.house_rules}</Text>}
-     <Text style={h.timerSmall}>Предложение действует ещё {countdown(offer.offerExpiresAt-now)}</Text>
-     <Pressable accessibilityRole="checkbox" accessibilityState={{checked:accepted}} onPress={()=>setAccepted(v=>!v)} style={h.check}><Text style={h.checkBox}>{accepted?'☑':'☐'}</Text><Text style={h.checkText}>Принимаю стоимость, депозит и правила этого жилья</Text></Pressable>
-     <SwipeConfirm label={status==='booking'?'Оформляем…':'Проведите: забронировать'} disabled={working||!accepted||status==='booking'} onConfirm={book}/>
-    </View>
-    <Text style={h.note}>Оплата в приложении не списывается. {offer.policy?.auto_confirm?'Бронь подтвердится по правилам владельца.':'Владелец подтвердит заявку отдельно.'}</Text>
-   </>}
-   {live&&booked&&<>
-    <Text accessibilityRole="header" style={h.cardTitle}>Заявка на бронь создана</Text>
-    <Text style={h.note}>{booking?'Статус: '+(labels[booking.status]||booking.status)+'. ':''}Адрес и инструкции заезда появятся после подтверждения. Оплату отмечает владелец.</Text>
-    <Action title={booking?'Открыть бронь':'Мои брони'} onPress={()=>booking?onOpenProcess('booking',booking.id):onOpenPage('bookings')}/><Action secondary title="Новый подбор" onPress={reset}/>
-   </>}
-   {live&&['empty','expired','cancelled'].includes(status)&&<>
-    <Text accessibilityRole="header" style={h.cardTitle}>{status==='empty'?'Сейчас никто не подтвердил':status==='expired'?'Время подбора вышло':'Подбор отменён'}</Text>
-    <Text style={h.note}>{status==='empty'?''+(preferId?'Владельцы не ответили за отведённое время. Можно отправить обычную заявку: владелец ответит, когда увидит её.':'Подходящие владельцы не ответили или отказали. Попробуйте изменить время, бюджет или район.')+'':'Условия сохранены. Можно запустить подбор заново.'}</Text>
-    {!!preferId&&<Action title="Отправить заявку владельцу" disabled={working} onPress={()=>void direct()}/>}
-    <Action secondary={!!preferId} title="Изменить условия" onPress={reset}/>
-   </>}
-   {!!error&&<Text accessibilityRole="alert" style={h.error}>{error}</Text>}
-   {active&&<Action secondary danger title="Отменить подбор" disabled={working||status==='booking'} onPress={cancel}/>}
-  </View>;
+  return <View style={h.block}><Stage steps={[tr('Условия'),tr('Владельцы'),tr('Предложение'),tr('Бронь')]} current={step}/>{!live&&<View style={h.row}><Thinking size="sm"/><Text style={h.note}>{tr('Восстанавливаем ваш подбор…')}</Text></View>}{live&&status==='searching'&&<><Text accessibilityRole="header" style={h.cardTitle}>{tr('Спрашиваем владельцев')}</Text><View style={h.row}><Thinking size="sm"/><Text style={h.note}>{tr('Ждём ответа: {pending} из {sent} запросов. На ответ у владельца 2 минуты.',{pending:live.pending,sent:live.sent})}</Text></View><Text style={h.timer} accessibilityLabel={tr('До конца подбора {v}',{v:countdown(live.expiresAt-now)})}>{countdown(live.expiresAt-now)}</Text>{/* Who was asked and who has answered: one row per home, the same homes that pulse on the map. */}<View>{offers.map(p=><View key={p.id} style={h.asked}><View style={[h.askedDot,{backgroundColor:C.success}]}/><Text numberOfLines={1} style={[h.eventTitle,h.grow]}>{p.title}</Text><Text style={h.reason}>{tr('Готов принять')}</Text></View>)}{(live.pendingProperties||[]).map((p:Row)=><View key={p.id} style={h.asked}><View style={[h.askedDot,{backgroundColor:C.gold}]}/><Text numberOfLines={1} style={[h.eventTitle,h.grow]}>{p.title}</Text><Text style={h.note}>{tr('ждём…')}</Text></View>)}</View><Text style={h.note}>{tr('Бронь на этом шаге не создаётся.')}</Text></>}{live&&(status==='ready'||status==='booking')&&offer&&<><Text accessibilityRole="header" style={h.cardTitle}>{tr('Владелец подтвердил готовность')}</Text>{offers.length>1&&<View style={h.row}><Action secondary title={tr('← Назад')} disabled={index===0} onPress={()=>{setIndex(index-1);setAccepted(false);setSelected(offers[index-1].id);}}/><Text style={h.note}>{tr('{n} из {all}',{n:index+1,all:offers.length})}</Text><Action secondary title={tr('Ещё →')} disabled={index>=offers.length-1} onPress={()=>{setIndex(index+1);setAccepted(false);setSelected(offers[index+1].id);}}/></View>}<View style={h.card}>{!!offer.photos?.[0]&&<Photo id={offer.photos[0]} alt={tr('{title}, фото',{title:offer.title})}/>}<Text style={h.cardTitle}>{offer.title}</Text><Text style={h.note}>{[offer.city,offer.district].filter(Boolean).join(' · ')}</Text><Text style={h.price}>{money(offer.estimate.amount)}</Text>{!!windowBadge(offer.estimate.window)&&<Text style={h.reason}>✦ {windowBadge(offer.estimate.window)}</Text>}{!!dealBadge(offer.estimate.deal)&&<Text style={h.reason}>✦ {dealBadge(offer.estimate.deal)}</Text>}{!!offer.host&&<View style={{marginTop:8}}><ReliabilityBadge value={offer.host} title={tr('Владелец')}/></View>}<Text style={h.note}>{date(Date.parse(live.filters.start)/1000)} → {date(Date.parse(live.filters.end)/1000)}{tr(' · гостей: {n}',{n:live.filters.guests})}{'\n'}{tr('Депозит отдельно: {v}',{v:offer.policy?.deposit?money(offer.policy.deposit):tr('не требуется')})}</Text>{shownReasons(offer.match?.reasons,{maxPrice:String(live.filters.maxPrice)===NO_BUDGET?'':String(live.filters.maxPrice||'')},BATH_KINDS.includes(offer.details?.type)).map((reason:string)=><Text key={reason} style={h.reason}>✓ {reason}</Text>)}{!!offer.policy?.house_rules&&<Text style={h.note}>{tr('Правила: {v}',{v:offer.policy.house_rules})}</Text>}<Text style={h.timerSmall}>{tr('Предложение действует ещё {v}',{v:countdown(offer.offerExpiresAt-now)})}</Text><Pressable accessibilityRole="checkbox" accessibilityState={{checked:accepted}} onPress={()=>setAccepted(v=>!v)} style={h.check}><Text style={h.checkBox}>{accepted?'☑':'☐'}</Text><Text style={h.checkText}>{tr('Принимаю стоимость, депозит и правила этого жилья')}</Text></Pressable><SwipeConfirm label={status==='booking'?tr('Оформляем…'):tr('Проведите: забронировать')} disabled={working||!accepted||status==='booking'} onConfirm={book}/></View><Text style={h.note}>{tr('Оплата в приложении не списывается.')}{' '}{offer.policy?.auto_confirm?tr('Бронь подтвердится по правилам владельца.'):tr('Владелец подтвердит заявку отдельно.')}</Text></>}{live&&booked&&<><Text accessibilityRole="header" style={h.cardTitle}>{tr('Заявка на бронь создана')}</Text><Text style={h.note}>{booking?tr('Статус: {v}. ',{v:(labels[booking.status]||booking.status)}):''}{tr('Адрес и инструкции заезда появятся после подтверждения. Оплату отмечает владелец.')}</Text><Action title={booking?tr('Открыть бронь'):tr('Мои брони')} onPress={()=>booking?onOpenProcess('booking',booking.id):onOpenPage('bookings')}/><Action secondary title={tr('Новый подбор')} onPress={reset}/></>}{live&&['empty','expired','cancelled'].includes(status)&&<><Text accessibilityRole="header" style={h.cardTitle}>{status==='empty'?tr('Сейчас никто не подтвердил'):status==='expired'?tr('Время подбора вышло'):tr('Подбор отменён')}</Text><Text style={h.note}>{status==='empty'?''+(preferId?tr('Владельцы не ответили за отведённое время. Можно отправить обычную заявку: владелец ответит, когда увидит её.'):tr('Подходящие владельцы не ответили или отказали. Попробуйте изменить время, бюджет или район.'))+'':tr('Условия сохранены. Можно запустить подбор заново.')}</Text>{!!preferId&&<Action title={tr('Отправить заявку владельцу')} disabled={working} onPress={()=>void direct()}/>}<Action secondary={!!preferId} title={tr('Изменить условия')} onPress={reset}/></>}{!!error&&<Text accessibilityRole="alert" style={h.error}>{error}</Text>}{active&&<Action secondary danger title={tr('Отменить подбор')} disabled={working||status==='booking'} onPress={cancel}/>}</View>;
  };
 
  // Under the line the collapsed sheet shows one thing: a message, the flat tapped on the map, or the "Сейчас" card.
@@ -433,28 +388,12 @@ function GuestPanel({setScanning,setQuiet,accountId,data,mapData,publish,selecte
  const formOnly=!!refine&&snap>0;
  // Where the sheet stood before the category picker opened: it returns there when the picker closes.
  const before=useRef(0);
- const head=<MapSheetHead role="guest" text={asked} onText={setAsked} onSend={ask} onChip={chip} chips={!formOnly} quick={!preview} category={categoryOf(draft)} kind={draft.kinds.length===1?draft.kinds[0]:''} choice={kindChoice(draft)} onKind={(c,k)=>{setAsked('');const next=withKind(draft,c,k);change(next);/* Another category is another map: its places are shown at once, not the homes left from before. */if(categoryOf(next)!==categoryOf(draft))void find(next);}} onPicker={open=>{if(open){before.current=snap;if(snap<1)expand(1);}else if(before.current<1&&snap===1)expand(0);}} busy={working} conditions={<GuestTokens tokens={tokens} blamed={blamed} open={snap>0?(refine||(preview?'':'all')):''} line={(snap===0||!!preview)&&!formOnly&&blamed.length===0} busy={working} onOpen={openPart} onClear={token=>retry({...draft,...token.clear})}/>} now={null} onNow={()=>{}}>
-  {!!hint&&<View style={h.picked}><Text accessibilityRole={hint.error?'alert':undefined} accessibilityLiveRegion="polite" style={hint.error?h.error:h.note}>{hint.text}</Text>{!!hint.ask&&<Action secondary title="Спросить ИИ-администратора" onPress={()=>onAsk(hint.ask!)}/>}</View>}
-  {!!error&&<Text accessibilityRole="alert" style={h.error}>{error}</Text>}
-  {!!preview&&!!arrival&&!stay&&!picked&&!formOnly&&counts.some(n=>n>0)&&<ArrivalStrip arrival={arrival} at={at} asked={Date.parse(around.current)/1000} counts={counts} onPick={arriveBy}/>}
-  {!!nav.error&&<Text accessibilityRole="alert" style={h.error}>{nav.error}</Text>}
-  {stay&&<View style={h.listRow}><View style={h.grow}><Text numberOfLines={1} style={h.eventTitle}>{stay.title}</Text><Text numberOfLines={1} style={h.note}>{stay.label}</Text></View>{stay.canGo&&<Action title="Маршрут" onPress={()=>go(stay)}/>}<Action secondary title="Открыть" onPress={()=>onOpenProcess('booking',stay.id)}/></View>}
-  {!stay&&near&&!preview&&!picked&&!formOnly&&<View style={h.listRow}><View style={h.grow}><Text numberOfLines={1} style={h.eventTitle}>{near.title}</Text><Text numberOfLines={1} style={h.note}>{near.label}</Text></View><Action secondary title="Маршрут" onPress={()=>go(near)}/></View>}
-  {/* The guest's own stays as the same feed: what waits for the guest on top, a row for every other booking. */}
-  {!preview&&!picked&&!stay&&!formOnly&&<AutopilotThreads role="guest" data={data} now={serverNow(data)} paymentMode={data.paymentMode} onOpen={(kind,id)=>onOpenProcess(kind,id)} onAll={trips.length?()=>onOpenPage('bookings'):undefined}/>}
-  {!preview&&!picked&&!stay&&!formOnly&&<AgainRow properties={data.properties||[]} mine={mine} onOpen={again}/>}
-  {/* The sheet is down over an answer: the whole of it in one line, and one tap to the cards. */}
-  {!!preview&&snap===0&&shown.length>0&&!stay&&<Pressable accessibilityRole="button" accessibilityLabel={foundLine(shown,plural)+'. Показать'} onPress={()=>expand(1)} style={({pressed})=>[h.listRow,pressed&&h.dim]}><Text numberOfLines={1} style={[h.eventTitle,h.grow]}>{foundLine(shown,plural)}</Text><Text style={[h.note,{color:C.accent,fontWeight:'600'}]}>Показать</Text></Pressable>}
-  {picked&&<View style={h.listRow}><Heart plain on={mine.favorites.includes(picked.id)} title={picked.title} onPress={()=>heart(picked.id)}/><View style={h.grow}><Text numberOfLines={1} style={h.eventTitle}>{picked.title}</Text><Text numberOfLines={1} style={h.note}>{[typeof picked.price==='number'?money(picked.price)+' за сутки':'',picked.district].filter(Boolean).join(' · ')}</Text></View><Action secondary title="Открыть" onPress={()=>onIntent('property:'+picked.id)}/></View>}
- </MapSheetHead>;
+ const head=<MapSheetHead role="guest" text={asked} onText={setAsked} onSend={ask} onChip={chip} chips={!formOnly} quick={!preview} category={categoryOf(draft)} kind={draft.kinds.length===1?draft.kinds[0]:''} choice={kindChoice(draft)} onKind={(c,k)=>{setAsked('');const next=withKind(draft,c,k);change(next);/* Another category is another map: its places are shown at once, not the homes left from before. */if(categoryOf(next)!==categoryOf(draft))void find(next);}} onPicker={open=>{if(open){before.current=snap;if(snap<1)expand(1);}else if(before.current<1&&snap===1)expand(0);}} busy={working} conditions={<GuestTokens tokens={tokens} blamed={blamed} open={snap>0?(refine||(preview?'':'all')):''} line={(snap===0||!!preview)&&!formOnly&&blamed.length===0} busy={working} onOpen={openPart} onClear={token=>retry({...draft,...token.clear})}/>} now={null} onNow={()=>{}}>{!!hint&&<View style={h.picked}><Text accessibilityRole={hint.error?'alert':undefined} accessibilityLiveRegion="polite" style={hint.error?h.error:h.note}>{hint.text}</Text>{!!hint.ask&&<Action secondary title={tr('Спросить ИИ-администратора')} onPress={()=>onAsk(hint.ask!)}/>}</View>}{!!error&&<Text accessibilityRole="alert" style={h.error}>{error}</Text>}{!!preview&&!!arrival&&!stay&&!picked&&!formOnly&&counts.some(n=>n>0)&&<ArrivalStrip arrival={arrival} at={at} asked={Date.parse(around.current)/1000} counts={counts} onPick={arriveBy}/>}{!!nav.error&&<Text accessibilityRole="alert" style={h.error}>{nav.error}</Text>}{stay&&<View style={h.listRow}><View style={h.grow}><Text numberOfLines={1} style={h.eventTitle}>{stay.title}</Text><Text numberOfLines={1} style={h.note}>{stay.label}</Text></View>{stay.canGo&&<Action title={tr('Маршрут')} onPress={()=>go(stay)}/>}<Action secondary title={tr('Открыть')} onPress={()=>onOpenProcess('booking',stay.id)}/></View>}{!stay&&near&&!preview&&!picked&&!formOnly&&<View style={h.listRow}><View style={h.grow}><Text numberOfLines={1} style={h.eventTitle}>{near.title}</Text><Text numberOfLines={1} style={h.note}>{near.label}</Text></View><Action secondary title={tr('Маршрут')} onPress={()=>go(near)}/></View>}{/* The guest's own stays as the same feed: what waits for the guest on top, a row for every other booking. */}{!preview&&!picked&&!stay&&!formOnly&&<AutopilotThreads role="guest" data={data} now={serverNow(data)} paymentMode={data.paymentMode} onOpen={(kind,id)=>onOpenProcess(kind,id)} onAll={trips.length?()=>onOpenPage('bookings'):undefined}/>}{!preview&&!picked&&!stay&&!formOnly&&<AgainRow properties={data.properties||[]} mine={mine} onOpen={again}/>}{/* The sheet is down over an answer: the whole of it in one line, and one tap to the cards. */}{!!preview&&snap===0&&shown.length>0&&!stay&&<Pressable accessibilityRole="button" accessibilityLabel={tr('{v}. Показать',{v:foundLine(shown,plural)})} onPress={()=>expand(1)} style={({pressed})=>[h.listRow,pressed&&h.dim]}><Text numberOfLines={1} style={[h.eventTitle,h.grow]}>{foundLine(shown,plural)}</Text><Text style={[h.note,{color:C.accent,fontWeight:'600'}]}>{tr('Показать')}</Text></Pressable>}{picked&&<View style={h.listRow}><Heart plain on={mine.favorites.includes(picked.id)} title={picked.title} onPress={()=>heart(picked.id)}/><View style={h.grow}><Text numberOfLines={1} style={h.eventTitle}>{picked.title}</Text><Text numberOfLines={1} style={h.note}>{[typeof picked.price==='number'?tr('{v} за сутки',{v:money(picked.price)}):'',picked.district].filter(Boolean).join(' · ')}</Text></View><Action secondary title={tr('Открыть')} onPress={()=>onIntent('property:'+picked.id)}/></View>}</MapSheetHead>;
  // The form and the results live in the opened sheet only; a running request to owners keeps its place in any state.
  const body=requestId?renderLive():snap===0?null:preview&&!refine
   ?<GuestResults preview={preview} draft={draft} readiness={readiness} mine={mine} onFavorite={heart} selected={selected} onSelect={setSelected} onFocus={setFocus} onBook={bookFlat} onOpen={property=>onIntent('property:'+property.id,{mode:tariffOf(draft,property),start:draft.start,end:draft.end,guests:draft.guests})} onRefine={toggleRefine} onWiden={narrowed?widen:undefined} onTry={patch=>retry({...draft,...patch})} onBookEdge={onReach} busy={working} steps={stepIds} tried={tried} from={from} onStep={stepOn} onBack={stepBack} anchor={anchor} full={snap===2&&!selected}/>
   :<GuestForm key={refine||'all'} only={refine||'all'} draft={draft} onChange={change} onNearMe={meInCity?()=>change({...draft,near:nearOf(here.fix!.point)}):undefined} onPickPoint={()=>{setPicking(true);expand(0);}} onSubmit={()=>void find()} busy={working}/>;
- return <View style={h.block}>
-  <HeadSlot onHeight={onHead}>{picking?pickView:nav.trip?<TripHead nav={nav} onOpen={()=>{const id=nav.trip!.id;nav.close();onOpenProcess('booking',id);}}/>:requestId?null:head}</HeadSlot>
-  {!picking&&body}
- </View>;
+ return <View style={h.block}><HeadSlot onHeight={onHead}>{picking?pickView:nav.trip?<TripHead nav={nav} onOpen={()=>{const id=nav.trip!.id;nav.close();onOpenProcess('booking',id);}}/>:requestId?null:head}</HeadSlot>{!picking&&body}</View>;
 }
 
 function OwnerPanel({accountId,data,mapData,publish,snap,showNow,expand,onHead,onAsk,onIntent,onChanged,onOpenProcess,onOpenPage,onEdit,selected,setSelected,setFocus}:Common){
@@ -480,8 +419,8 @@ function OwnerPanel({accountId,data,mapData,publish,snap,showNow,expand,onHead,o
   const own=(mapData?.properties||[]).flatMap((p:Row):MapPin[]=>{const point=pointOf(p),sent=!!answered[p.id]&&!asked.has(p.id),aiMove=latestMove(mapData?.aiMarks,[{kind:'property',id:String(p.id)}],clock),deal=ownerDeal(data,p.id,clock),calm=withAiResult(ownerPin(p,processes,clock,advice.get(p.id)),aiMove?.move);
    // The deal of the place has come to its end: the calm pin says «Готово ✓» for a while instead of the price.
    const spare=calm.tone==='alert'||calm.tone==='active'||calm.tone==='pending'?'':marginLabel(ownerMargin(data,p.id,clock));
-   const state=spare?{label:spare,tone:'job' as const}:deal?.finished&&calm.tone==='home'?{label:'Готово ✓',tone:'booked' as const}:calm,quiet=asked.has(p.id)||sent;
-   return point?[{key:'property:'+p.id,point,title:p.title,act:quiet?undefined:ownerPinAct(threads,data,p.id,clock)||undefined,chain:deal?dealChain(deal):undefined,label:asked.has(p.id)?'Запрос':sent?'Ответ отправлен':state.label,rank:typeof p.price==='number'?p.price:0,tone:asked.has(p.id)?'pending':sent?'offer':state.tone,best:!asked.has(p.id)&&!sent&&state.best,until:asked.get(p.id),progress:asked.has(p.id)||sent?undefined:state.progress,ai:aiMove}]:[];});
+   const state=spare?{label:spare,tone:'job' as const}:deal?.finished&&calm.tone==='home'?{label:tr('Готово ✓'),tone:'booked' as const}:calm,quiet=asked.has(p.id)||sent;
+   return point?[{key:'property:'+p.id,point,title:p.title,act:quiet?undefined:ownerPinAct(threads,data,p.id,clock)||undefined,chain:deal?dealChain(deal):undefined,label:asked.has(p.id)?tr('Запрос'):sent?tr('Ответ отправлен'):state.label,rank:typeof p.price==='number'?p.price:0,tone:asked.has(p.id)?'pending':sent?'offer':state.tone,best:!asked.has(p.id)&&!sent&&state.best,until:asked.get(p.id),progress:asked.has(p.id)||sent?undefined:state.progress,ai:aiMove}]:[];});
   const moving=travellers(mapData?.journeys||[]).map((t):MapPin=>({...t,title:t.label,tone:'active'}));
   // Demand: the heat of the city, and sparks over the busiest places while guests are asking owners right now.
   const cells:Row[]=mapData?.demand?.cells||[],searching=Number(mapData?.demand?.searching)||0;
@@ -491,51 +430,13 @@ function OwnerPanel({accountId,data,mapData,publish,snap,showNow,expand,onHead,o
  const searching=Number(mapData?.demand?.searching)||0;
  const clock=Date.now()/1000+skew,flats:Row[]=data.ownProperties||[],quickOn=(inbox?.preferences||[]).filter((p:Row)=>p.enabled).length;
  // A guest waiting for a quick answer is the first thing that waits for the owner; the answer is in the opened sheet.
- const needs:FeedNeed[]=snap===0&&offers[0]?[{key:'offer:'+offers[0].id,title:'Гость ждёт ответа',line:offers[0].title+' · осталось '+countdown(offers[0].expires_at-now),action:'Ответить',onPress:()=>expand(1)}]:[];
+ const needs:FeedNeed[]=snap===0&&offers[0]?[{key:'offer:'+offers[0].id,title:tr('Гость ждёт ответа'),line:tr('{title} · осталось {v}',{title:offers[0].title,v:countdown(offers[0].expires_at-now)}),action:tr('Ответить'),onPress:()=>expand(1)}]:[];
  // A flat chosen by its pin or its row: its card of four tabs takes the sheet, the map keeps the flat in view.
  const flat=selected.startsWith('property:')?flats.find(p=>'property:'+p.id===selected):undefined;
  useEffect(()=>{setTab('today');},[flat?.id]);
- if(flat)return <View style={h.block}>
-  <HeadSlot onHeight={onHead}><FlatHubHead flat={flat} data={data} now={serverNow(data)} tab={tab} open={snap>0} onTab={next=>{setTab(next);if(snap===0)expand(1);}} onBack={()=>{setSelected('');expand(0);}} onOpen={onOpenProcess}/></HeadSlot>
-  {snap>0&&<FlatHub flat={flat} data={data} now={serverNow(data)} tab={tab} onOpen={onOpenProcess} onEdit={step=>step==='job'?onIntent(flat.details?.type==='home'?'home-cleaning:'+flat.id:'job'):onEdit?.(flat.id,step)} onChanged={onChanged}/>}
- </View>;
- return <View style={h.block}>
-  <HeadSlot onHeight={onHead}><MapSheetHead role="owner" counts={{requests:ownerWaiting(data,data.user?.id||'',clock)}} text={asked} onText={setAsked} onSend={text=>{setAsked('');onAsk(text);}} onChip={action=>{/* A guest waiting for a quick answer is in this sheet; other requests are on their page. */if(action==='requests'){if(offers.length)expand(1);else onOpenPage('bookings');}else if(action==='calendar')onOpenPage('calendar');else if(action==='properties')onOpenPage('properties');}} now={null} onNow={()=>{}}>
-   {waiting.length>0&&<Pressable accessibilityRole="button" accessibilityLabel={'Требуют внимания: '+waiting.length+'. Показать следующий объект на карте'} onPress={walk} style={({pressed})=>[h.attention,pressed&&h.dim]}><View style={h.attentionDot}/><Text numberOfLines={1} style={[h.eventTitle,h.grow]}>Требуют внимания · {waiting.length}</Text><Text style={h.attentionGo}>{waiting.length>1?'Следующий ›':'Показать ›'}</Text></Pressable>}
-   {/* The feed: what waits for the owner on top, then a row for every booking and cleaning the autopilot leads. */}
-   {(flats.length>0||needs.length>0)&&<AutopilotThreads role="owner" data={data} now={serverNow(data)} needs={needs} onOpen={(kind,id)=>onOpenProcess(kind,id)}/>}
-   {/* What the owner still does by hand and the AI can take: one row, one tap. */}
-   {flats.length>0&&<AutopilotHandoff role="owner" accountId={accountId} stamp={flats.map(p=>p.id+':'+(p.policy?.version??'')+':'+(p.policy?.cleaning_fee??'')+':'+(p.policy?.auto_confirm??'')).join('|')} tick={Number(data.serverTime)||0} compact={snap===0} onExpand={()=>expand(2)} onChanged={onChanged} onSetup={id=>{if(id)onEdit?.(id,'prices');}}/>}
-   {snap===0&&Array.isArray(data.ownProperties)&&!flats.length&&<Text style={h.note}>Добавьте первое жильё, и оно появится на карте.</Text>}
-   {snap===0&&!needs.length&&searching>0&&<Text style={h.note}>Сейчас {searching} {plural(searching,'гость ищет','гостя ищут','гостей ищут')} жильё в городе. Где спрос выше, карта светится ярче.</Text>}
-  </MapSheetHead></HeadSlot>
-  {snap>0&&<>
-   {!!error&&<Text accessibilityRole="alert" style={h.error}>{error}</Text>}
-   {offers.length>0&&<Text accessibilityRole="header" style={h.cardTitle}>Гость ждёт ответа</Text>}
-   {offers.map(o=><View key={o.id} style={[h.card,h.urgent]}>
-    <View style={h.row}><Text style={[h.cardTitle,h.grow]}>{o.title}</Text><Text style={h.timerSmall} accessibilityLabel={'На ответ осталось '+countdown(o.expires_at-now)}>{countdown(o.expires_at-now)}</Text></View>
-    <Text style={h.note}>{date(Date.parse(o.filters.start)/1000)} → {date(Date.parse(o.filters.end)/1000)}{'\n'}{o.filters.mode==='hourly'?'На часы':o.filters.mode==='night'?'На ночь':'На сутки'} · гостей: {o.filters.guests}</Text>
-    <Text style={h.price}>{money(o.amount)}</Text>
-    {/* One swipe answers «Готов»; the words on the track are the promise the owner gives with it. */}
-    <SwipeConfirm label="Проведите: свободно и готово" disabled={working} onConfirm={()=>act('respond',{offerId:o.id,decision:'accept',ready:true})}/>
-    <Action secondary title="Отказать" disabled={working} onPress={()=>act('respond',{offerId:o.id,decision:'decline'})}/>
-    <Text style={h.note}>Ответ не создаёт бронь и не меняет цену. Если гость выберет ваше жильё, заявка придёт в «Заявки гостей».</Text>
-   </View>)}
-   {/* As on the site (components/map-workspace.tsx): the objects with their photo and state, then the bookings and
-       cleanings under way, then «Быстрые запросы гостей», which opens who answers guests for each object. */}
-   <SheetHeading icon="building" title="Мои объекты" count={String(flats.length)}/>
-   {flats.map(p=>{const m=(mapData?.properties||[]).find((x:Row)=>x.id===p.id)||p;return <SheetRow key={p.id} label={'Мои объекты: '+p.title} title={p.title} photo={(m.photos||p.photos||[])[0]} line={[kindLabel((m.details||p.details)?.type),m.display_status?.label||p.display_status?.label||'Статус уточняется',m.city||p.city].filter(Boolean).join(' · ')+(m.location?'':' · нет точки на карте')} onPress={()=>{setSelected('property:'+p.id);expand(1);}}/>;})}
-   {!flats.length&&<Text style={h.note}>Объектов пока нет.</Text>}
-   {!!inbox&&<SheetRow icon="zap" title="Быстрые запросы гостей" line={quickOn?'Включены: '+quickOn+' '+plural(quickOn,'объект','объекта','объектов'):'Выключены'} onPress={()=>setQuick(v=>!v)}/>}
-   {quick&&!!inbox&&<View style={h.card}>
-    <Text accessibilityRole="header" style={h.label}>Кто отвечает гостям</Text>
-    <Text style={h.note}>ИИ — это автопилот: сразу отвечает гостю, подтверждает бронь, заказывает уборку и назначает исполнителя по вашим тарифам. Оплату и депозит проверяете вы.</Text>
-    {!!saved&&<Text accessibilityLiveRegion="polite" style={h.note}>{saved}</Text>}
-    {(inbox.preferences||[]).map((p:Row)=><GuestMode key={p.id} flat={p} busy={working} onChange={body=>act('preference',body)}/>)}
-    {!inbox.preferences.length&&<Text style={h.note}>Включить можно после добавления жилья.</Text>}
-   </View>}
-  </>}
- </View>;
+ if(flat)return <View style={h.block}><HeadSlot onHeight={onHead}><FlatHubHead flat={flat} data={data} now={serverNow(data)} tab={tab} open={snap>0} onTab={next=>{setTab(next);if(snap===0)expand(1);}} onBack={()=>{setSelected('');expand(0);}} onOpen={onOpenProcess}/></HeadSlot>{snap>0&&<FlatHub flat={flat} data={data} now={serverNow(data)} tab={tab} onOpen={onOpenProcess} onEdit={step=>step==='job'?onIntent(flat.details?.type==='home'?'home-cleaning:'+flat.id:'job'):onEdit?.(flat.id,step)} onChanged={onChanged}/>}</View>;
+ return <View style={h.block}><HeadSlot onHeight={onHead}><MapSheetHead role="owner" counts={{requests:ownerWaiting(data,data.user?.id||'',clock)}} text={asked} onText={setAsked} onSend={text=>{setAsked('');onAsk(text);}} onChip={action=>{/* A guest waiting for a quick answer is in this sheet; other requests are on their page. */if(action==='requests'){if(offers.length)expand(1);else onOpenPage('bookings');}else if(action==='calendar')onOpenPage('calendar');else if(action==='properties')onOpenPage('properties');}} now={null} onNow={()=>{}}>{waiting.length>0&&<Pressable accessibilityRole="button" accessibilityLabel={tr('Требуют внимания: {length}. Показать следующий объект на карте',{length:waiting.length})} onPress={walk} style={({pressed})=>[h.attention,pressed&&h.dim]}><View style={h.attentionDot}/><Text numberOfLines={1} style={[h.eventTitle,h.grow]}>{tr('Требуют внимания · {n}',{n:waiting.length})}</Text><Text style={h.attentionGo}>{waiting.length>1?tr('Следующий ›'):tr('Показать ›')}</Text></Pressable>}{/* The feed: what waits for the owner on top, then a row for every booking and cleaning the autopilot leads. */}{(flats.length>0||needs.length>0)&&<AutopilotThreads role="owner" data={data} now={serverNow(data)} needs={needs} onOpen={(kind,id)=>onOpenProcess(kind,id)}/>}{/* What the owner still does by hand and the AI can take: one row, one tap. */}{flats.length>0&&<AutopilotHandoff role="owner" accountId={accountId} stamp={flats.map(p=>p.id+':'+(p.policy?.version??'')+':'+(p.policy?.cleaning_fee??'')+':'+(p.policy?.auto_confirm??'')).join('|')} tick={Number(data.serverTime)||0} compact={snap===0} onExpand={()=>expand(2)} onChanged={onChanged} onSetup={id=>{if(id)onEdit?.(id,'prices');}}/>}{snap===0&&Array.isArray(data.ownProperties)&&!flats.length&&<Text style={h.note}>{tr('Добавьте первое жильё, и оно появится на карте.')}</Text>}{snap===0&&!needs.length&&searching>0&&<Text style={h.note}>{plural(searching,'Сейчас {n} гость ищет жильё в городе.','Сейчас {n} гостя ищут жильё в городе.','Сейчас {n} гостей ищут жильё в городе.').replace('{n}',String(searching))}{' '}{tr('Где спрос выше, карта светится ярче.')}</Text>}</MapSheetHead></HeadSlot>{snap>0&&<>{!!error&&<Text accessibilityRole="alert" style={h.error}>{error}</Text>}{offers.length>0&&<Text accessibilityRole="header" style={h.cardTitle}>{tr('Гость ждёт ответа')}</Text>}{offers.map(o=><View key={o.id} style={[h.card,h.urgent]}><View style={h.row}><Text style={[h.cardTitle,h.grow]}>{o.title}</Text><Text style={h.timerSmall} accessibilityLabel={tr('На ответ осталось {v}',{v:countdown(o.expires_at-now)})}>{countdown(o.expires_at-now)}</Text></View><Text style={h.note}>{date(Date.parse(o.filters.start)/1000)} → {date(Date.parse(o.filters.end)/1000)}{'\n'}{o.filters.mode==='hourly'?tr('На часы'):o.filters.mode==='night'?tr('На ночь'):tr('На сутки')}{tr(' · гостей: {n}',{n:o.filters.guests})}</Text><Text style={h.price}>{money(o.amount)}</Text>{/* One swipe answers «Готов»; the words on the track are the promise the owner gives with it. */}<SwipeConfirm label={tr('Проведите: свободно и готово')} disabled={working} onConfirm={()=>act('respond',{offerId:o.id,decision:'accept',ready:true})}/><Action secondary title={tr('Отказать')} disabled={working} onPress={()=>act('respond',{offerId:o.id,decision:'decline'})}/><Text style={h.note}>{tr('Ответ не создаёт бронь и не меняет цену. Если гость выберет ваше жильё, заявка придёт в «Заявки гостей».')}</Text></View>)}{/* As on the site (components/map-workspace.tsx): the objects with their photo and state, then the bookings and
+       cleanings under way, then «Быстрые запросы гостей», which opens who answers guests for each object. */}<SheetHeading icon="building" title={tr('Мои объекты')} count={String(flats.length)}/>{flats.map(p=>{const m=(mapData?.properties||[]).find((x:Row)=>x.id===p.id)||p;return <SheetRow key={p.id} label={tr('Мои объекты: {title}',{title:p.title})} title={p.title} photo={(m.photos||p.photos||[])[0]} line={[kindLabel((m.details||p.details)?.type),tr(m.display_status?.label||p.display_status?.label||'Статус уточняется'),m.city||p.city].filter(Boolean).join(' · ')+(m.location?'':' · '+tr('нет точки на карте'))} onPress={()=>{setSelected('property:'+p.id);expand(1);}}/>;})}{!flats.length&&<Text style={h.note}>{tr('Объектов пока нет.')}</Text>}{!!inbox&&<SheetRow icon="zap" title={tr('Быстрые запросы гостей')} line={quickOn?tr('Включены: {found}',{found:quickOn+' '+plural(quickOn,'объект','объекта','объектов')}):tr('Выключены')} onPress={()=>setQuick(v=>!v)}/>}{quick&&!!inbox&&<View style={h.card}><Text accessibilityRole="header" style={h.label}>{tr('Кто отвечает гостям')}</Text><Text style={h.note}>{tr('ИИ — это автопилот: сразу отвечает гостю, подтверждает бронь, заказывает уборку и назначает исполнителя по вашим тарифам. Оплату и депозит проверяете вы.')}</Text>{!!saved&&<Text accessibilityLiveRegion="polite" style={h.note}>{saved}</Text>}{(inbox.preferences||[]).map((p:Row)=><GuestMode key={p.id} flat={p} busy={working} onChange={body=>act('preference',body)}/>)}{!inbox.preferences.length&&<Text style={h.note}>{tr('Включить можно после добавления жилья.')}</Text>}</View>}</>}</View>;
 }
 
 function CleanerPanel({accountId,data,mapData,city,publish,snap,showNow,expand,onHead,onAsk,onChanged,onOpenProcess,onOpenPage}:Common){
@@ -563,7 +464,7 @@ function CleanerPanel({accountId,data,mapData,city,publish,snap,showNow,expand,o
   const placed=new Map<string,MapPoint|null>(shown.map((p:Row)=>[p.id,pointOf(p)]));
   // On a trip the map shows only the way: the object, the cleaner's point and the road between them; it frames them at the start and after a new route.
   if(nav.trip){
-   const target=pins.filter((p:MapPin)=>p.key==='job:'+nav.trip!.id),me:MapPin[]=nav.here&&nav.status!=='arrived'?[{key:'me',point:nav.here.point,title:'Вы',label:'Вы',tone:'active'}]:[];
+   const target=pins.filter((p:MapPin)=>p.key==='job:'+nav.trip!.id),me:MapPin[]=nav.here&&nav.status!=='arrived'?[{key:'me',point:nav.here.point,title:tr('Вы'),label:tr('Вы'),tone:'active'}]:[];
    const path=nav.state?.path;
    publish([...target,...me],'nav:'+nav.trip.id+':'+nav.rerouted,{lines:path&&path.length>1?[{key:'nav:'+nav.trip.id,from:path[0],to:path[path.length-1],tone:'nav',path}]:[]});
    return;
@@ -573,40 +474,11 @@ function CleanerPanel({accountId,data,mapData,city,publish,snap,showNow,expand,o
  // The step of a job taken right on the map: an answer to an open one, the start of the one the guest has left.
  async function act(id:string,action:'apply'|'start'){if(lock.current)return;lock.current=true;setWorking(id);setError('');try{await request('/api/jobs/'+id,{action},undefined,'map-'+action+':'+id,'cleaner');await onChanged();}catch(e){setError(message(e));}finally{lock.current=false;setWorking('');}}
  const apply=(id:string)=>act(id,'apply');
- return <View style={h.block}>
-  <HeadSlot onHeight={onHead}>{nav.trip?<TripHead nav={nav} onOpen={()=>{const id=nav.trip!.id;nav.close();onOpenProcess('job',id);}}/>:<MapSheetHead role="cleaner" text={asked} onText={setAsked} onSend={text=>{setAsked('');onAsk(text);}} onChip={action=>{if(action==='nearby')expand(1);else if(action==='schedule')onOpenPage('calendar');}} now={null} onNow={()=>{}}>
-   {!!nav.error&&<Text accessibilityRole="alert" style={h.error}>{nav.error}</Text>}
-   <AutopilotThreads role="cleaner" data={data} now={clock} calendar={snap>0} onOpen={(kind,id)=>onOpenProcess(kind,id)}/>
-   <AutopilotHandoff role="cleaner" accountId={accountId} tick={Number(data.serverTime)||0} compact={snap===0} onExpand={()=>expand(2)} onChanged={onChanged} onSetup={()=>onOpenPage('account')}/>
-  </MapSheetHead>}</HeadSlot>
-  {snap>0&&<>
-   {mine.length>0&&<Text accessibilityRole="header" style={h.cardTitle}>{route.length?'Маршрут дня':'Ваше задание'}</Text>}
-   {!!summary&&<Text style={h.note}>{summary}</Text>}
-   {mine.map(j=>{
+ return <View style={h.block}><HeadSlot onHeight={onHead}>{nav.trip?<TripHead nav={nav} onOpen={()=>{const id=nav.trip!.id;nav.close();onOpenProcess('job',id);}}/>:<MapSheetHead role="cleaner" text={asked} onText={setAsked} onSend={text=>{setAsked('');onAsk(text);}} onChip={action=>{if(action==='nearby')expand(1);else if(action==='schedule')onOpenPage('calendar');}} now={null} onNow={()=>{}}>{!!nav.error&&<Text accessibilityRole="alert" style={h.error}>{nav.error}</Text>}<AutopilotThreads role="cleaner" data={data} now={clock} calendar={snap>0} onOpen={(kind,id)=>onOpenProcess(kind,id)}/><AutopilotHandoff role="cleaner" accountId={accountId} tick={Number(data.serverTime)||0} compact={snap===0} onExpand={()=>expand(2)} onChanged={onChanged} onSetup={()=>onOpenPage('account')}/></MapSheetHead>}</HeadSlot>{snap>0&&<>{mine.length>0&&<Text accessibilityRole="header" style={h.cardTitle}>{route.length?tr('Маршрут дня'):tr('Ваше задание')}</Text>}{!!summary&&<Text style={h.note}>{summary}</Text>}{mine.map(j=>{
     // One main button a stop: the step that is due (start, report); before it, the way there.
     const step=cleanerStep(j,undefined,userId),isNext=j.id===next;
-    return <View key={j.id} style={[h.card,isNext||j.status==='in_progress'?h.urgent:null]}>
-     <Text style={h.cardTitle}>{order.get(j.id)?order.get(j.id)+'. ':''}{j.title}</Text><Text style={h.note}>{date(j.start)} → {date(j.end)}{j.address?'\n'+j.address:''}</Text><Text style={h.price}>{money(j.fee)}</Text>
-     <Text style={h.note}>{cleanerLine(j)}.</Text>
-     {step?.id==='start'&&<Action title={working===j.id?'Начинаем…':step.label} disabled={!!working} onPress={()=>act(j.id,'start')}/>}
-     {step?.id==='report'&&<Action title={step.label} onPress={()=>onOpenProcess('job',j.id)}/>}
-     {isNext&&<>
-      <Action secondary={!!step} title="Поехали" disabled={!!nav.trip} onPress={()=>go(j)}/>
-     </>}
-     {step?.id!=='report'&&<Action secondary={!!step||isNext} title="Открыть задание" onPress={()=>onOpenProcess('job',j.id)}/>}
-    </View>;
-   })}
-   {!!error&&<Text accessibilityRole="alert" style={h.error}>{error}</Text>}
-   <Text accessibilityRole="header" style={h.cardTitle}>Задания рядом · {city}</Text>
-   {nearby.slice(0,8).map(j=><View key={j.id} style={h.card}>
-    <View style={h.row}><Text style={[h.cardTitle,h.grow]}>{j.title}</Text><Text style={h.rowPrice}>{money(j.fee)}</Text></View>
-    <Text style={h.note}>{[date(j.start)+' → '+date(j.end),j.district].filter(Boolean).join(' · ')}</Text>
-    <View style={h.pair}><View style={h.grow}><Action title={applied(j.id)?'Отклик отправлен':working===j.id?'Отправляем…':'Откликнуться'} disabled={!!working||applied(j.id)} onPress={()=>apply(j.id)}/></View><View style={h.grow}><Action secondary title="Подробнее" onPress={()=>onOpenProcess('job',j.id)}/></View></View>
-   </View>)}
-   {!nearby.length&&<Text style={h.note}>{city}: открытых заданий сейчас нет. Адрес виден только назначенному исполнителю.</Text>}
-   <Action secondary title={open.length>nearby.length?'Все задания · '+open.length:'Все задания'} onPress={()=>onOpenPage('jobs')}/>
-  </>}
- </View>;
+    return <View key={j.id} style={[h.card,isNext||j.status==='in_progress'?h.urgent:null]}><Text style={h.cardTitle}>{order.get(j.id)?order.get(j.id)+'. ':''}{j.title}</Text><Text style={h.note}>{date(j.start)} → {date(j.end)}{j.address?'\n'+j.address:''}</Text><Text style={h.price}>{money(j.fee)}</Text><Text style={h.note}>{cleanerLine(j)}.</Text>{step?.id==='start'&&<Action title={working===j.id?tr('Начинаем…'):step.label} disabled={!!working} onPress={()=>act(j.id,'start')}/>}{step?.id==='report'&&<Action title={step.label} onPress={()=>onOpenProcess('job',j.id)}/>}{isNext&&<><Action secondary={!!step} title={tr('Поехали')} disabled={!!nav.trip} onPress={()=>go(j)}/></>}{step?.id!=='report'&&<Action secondary={!!step||isNext} title={tr('Открыть задание')} onPress={()=>onOpenProcess('job',j.id)}/>}</View>;
+   })}{!!error&&<Text accessibilityRole="alert" style={h.error}>{error}</Text>}<Text accessibilityRole="header" style={h.cardTitle}>{tr('Задания рядом · {city}',{city})}</Text>{nearby.slice(0,8).map(j=><View key={j.id} style={h.card}><View style={h.row}><Text style={[h.cardTitle,h.grow]}>{j.title}</Text><Text style={h.rowPrice}>{money(j.fee)}</Text></View><Text style={h.note}>{[date(j.start)+' → '+date(j.end),j.district].filter(Boolean).join(' · ')}</Text><View style={h.pair}><View style={h.grow}><Action title={applied(j.id)?tr('Отклик отправлен'):working===j.id?tr('Отправляем…'):tr('Откликнуться')} disabled={!!working||applied(j.id)} onPress={()=>apply(j.id)}/></View><View style={h.grow}><Action secondary title={tr('Подробнее')} onPress={()=>onOpenProcess('job',j.id)}/></View></View></View>)}{!nearby.length&&<Text style={h.note}>{tr('{city}: открытых заданий сейчас нет. Адрес виден только назначенному исполнителю.',{city})}</Text>}<Action secondary title={open.length>nearby.length?tr('Все задания · {length}',{length:open.length}):tr('Все задания')} onPress={()=>onOpenPage('jobs')}/></>}</View>;
 }
 type Props = {
   role: Role;
@@ -747,7 +619,7 @@ export function MapHome({ role, accountId, data, menu, chats, onChanged, onOpenP
     // sign-up). Pavlodar is only the last resort, when neither the phone nor the profile names a city of the service.
     const fix = role === 'guest' ? getHere().fix : null;
     const wanted = aim.current?.city || kept?.city || (fix && nearestCity(fix.point)) || data.profile?.city;
-    return mapCities[wanted] ? wanted : mapCities[data.profile?.city] ? data.profile.city : 'Павлодар';
+    return mapCities[wanted] ? wanted : mapCities[data.profile?.city] ? data.profile.city : tr('Павлодар');
   });
   const cityRef = useRef(city);
   cityRef.current = city;
@@ -803,7 +675,7 @@ export function MapHome({ role, accountId, data, menu, chats, onChanged, onOpenP
     const t = aim.current;
     if (!target) return;
     if (!t) {
-      setNotice(NOT_ON_MAP);
+      setNotice(tr(NOT_ON_MAP));
       onTargetDone?.();
       return;
     }
@@ -811,7 +683,7 @@ export function MapHome({ role, accountId, data, menu, chats, onChanged, onOpenP
     const timer = setTimeout(() => {
       if (aim.current !== t) return;
       aim.current = null;
-      setNotice(NOT_ON_MAP);
+      setNotice(tr(NOT_ON_MAP));
       onTargetDone?.();
     }, 8000);
     return () => clearTimeout(timer);
@@ -828,7 +700,7 @@ export function MapHome({ role, accountId, data, menu, chats, onChanged, onOpenP
     } else if (mapData && mapData.receivedAt >= openedAt && (!t.city || !mapCities[t.city] || mapData.city === t.city)) {
       // The map has answered after this visit began and the pin is not among its pins.
       aim.current = null;
-      setNotice(NOT_ON_MAP);
+      setNotice(tr(NOT_ON_MAP));
       onTargetDone?.();
     }
   }, [pins]);
@@ -883,7 +755,7 @@ export function MapHome({ role, accountId, data, menu, chats, onChanged, onOpenP
       const found = await locate({ ask: 'always' });
       if (found.fix) {
         setMeFly(n => n + 1);
-        if (found.status !== 'found') setNotice('Показываем место, где телефон видел вас недавно. Уточняем…');
+        if (found.status !== 'found') setNotice(tr('Показываем место, где телефон видел вас недавно. Уточняем…'));
       } else setHereTip(hereNote(found.status, city, role === 'guest', Platform.OS));
     } finally {
       setSeeking(false);
@@ -914,7 +786,7 @@ export function MapHome({ role, accountId, data, menu, chats, onChanged, onOpenP
       setSnap(0);
     }
   };
-  const HERE_LABEL: Record<HereAction, string> = { settings: 'Открыть настройки', retry: 'Ещё раз', pick: 'Указать на карте' };
+  const HERE_LABEL: Record<HereAction, string> = { settings: tr('Открыть настройки'), retry: tr('Ещё раз'), pick: tr('Указать на карте') };
 
   return (
     <View
@@ -924,8 +796,7 @@ export function MapHome({ role, accountId, data, menu, chats, onChanged, onOpenP
         setHeight(Math.round(e.nativeEvent.layout.height));
         host.current?.measureInWindow((_x, y) => setTop(Math.round(y) || 0));
       }}
-    >
-      <LiveMap
+    ><LiveMap
         center={center}
         pins={pins}
         selected={selected}
@@ -951,59 +822,26 @@ export function MapHome({ role, accountId, data, menu, chats, onChanged, onOpenP
         meFly={meFly}
         onLongPress={role === 'guest' ? point => { setHeld({ point, n: Date.now() }); setSnap(1); } : undefined}
         onView={view => rememberMap(scope, shownKey.current ? { view, viewKey: shownKey.current } : { view })}
-      />
-      {seeking && !here.fix && !notice && !picking && (
-        <View accessibilityLiveRegion="polite" style={w.seek}>
-          <Thinking size="sm" />
-          <Text style={w.seekText}>Ищем вас на карте…</Text>
-        </View>
-      )}
-      {!!hereTip && !picking && (
-        <View accessibilityLiveRegion="polite" style={w.tip}>
-          <Text style={w.tipText}>{hereTip.text}</Text>
-          <View style={w.tipRow}>
-            {hereTip.actions.map(a => (
-              <Pressable key={a} accessibilityRole="button" onPress={() => hereAct(a)} style={({ pressed }) => [w.tipButton, pressed && { opacity: 0.6 }]}>
-                <Text style={w.tipButtonText}>{HERE_LABEL[a]}</Text>
-              </Pressable>
-            ))}
-          </View>
-        </View>
-      )}
-      {!!notice && (
-        <Text accessibilityLiveRegion="polite" style={h.mapNotice}>
-          {notice}
-        </Text>
-      )}
-      {(role === 'owner' || role === 'guest') && !selected && <PriceTip role={role} cards={data.approvals || []} onChanged={onChanged} onEdit={onEdit} />}
-      {/* Without an account the round slot widens for the «Войти» word. */}
-      {!!menu && <View style={[h.menu, !accountId && { width: 'auto' }]}>{menu}</View>}
-      {!!chats && <View style={h.chats}>{chats}</View>}
-      {!picking && <MapMood mood={mood} joy={joy} still={calm || quiet} bottom={covered ? cardEdge : sheet} />}
-      <Animated.View style={[h.sheet, { height: sheet, opacity: veil }]} accessibilityViewIsModal={false}>
-        <View {...drag.handle.panHandlers}>
-          <Pressable
+      />{seeking && !here.fix && !notice && !picking && (
+        <View accessibilityLiveRegion="polite" style={w.seek}><Thinking size="sm" /><Text style={w.seekText}>{tr('Ищем вас на карте…')}</Text></View>
+      )}{!!hereTip && !picking && (
+        <View accessibilityLiveRegion="polite" style={w.tip}><Text style={w.tipText}>{hereTip.text}</Text><View style={w.tipRow}>{hereTip.actions.map(a => (
+              <Pressable key={a} accessibilityRole="button" onPress={() => hereAct(a)} style={({ pressed }) => [w.tipButton, pressed && { opacity: 0.6 }]}><Text style={w.tipButtonText}>{HERE_LABEL[a]}</Text></Pressable>
+            ))}</View></View>
+      )}{!!notice && (
+        <Text accessibilityLiveRegion="polite" style={h.mapNotice}>{notice}</Text>
+      )}{(role === 'owner' || role === 'guest') && !selected && <PriceTip role={role} cards={data.approvals || []} onChanged={onChanged} onEdit={onEdit} />}{/* Without an account the round slot widens for the «Войти» word. */}{!!menu && <View style={[h.menu, !accountId && { width: 'auto' }]}>{menu}</View>}{!!chats && <View style={h.chats}>{chats}</View>}{!picking && <MapMood mood={mood} joy={joy} still={calm || quiet} bottom={covered ? cardEdge : sheet} />}<Animated.View style={[h.sheet, { height: sheet, opacity: veil }]} accessibilityViewIsModal={false}><View {...drag.handle.panHandlers}><Pressable
             accessibilityRole="button"
-            accessibilityLabel={snap === 0 ? 'Развернуть панель' : 'Свернуть панель'}
+            accessibilityLabel={snap === 0 ? tr('Развернуть панель') : tr('Свернуть панель')}
             onPress={() => setSnap(snap === 0 ? 1 : 0)}
             style={h.handleArea}
-          >
-            <Grip color={mood === 'calm' ? undefined : MOOD_COLOR[mood]} />
-          </Pressable>
-        </View>
-        <View style={h.grow} {...drag.body.panHandlers}>
-          <ScrollView ref={scroll} scrollEnabled={scrollable} keyboardShouldPersistTaps="handled" contentContainerStyle={h.sheetContent} showsVerticalScrollIndicator={false}>
-            {role === 'guest' ? (
+          ><Grip color={mood === 'calm' ? undefined : MOOD_COLOR[mood]} /></Pressable></View><View style={h.grow} {...drag.body.panHandlers}><ScrollView ref={scroll} scrollEnabled={scrollable} keyboardShouldPersistTaps="handled" contentContainerStyle={h.sheetContent} showsVerticalScrollIndicator={false}>{role === 'guest' ? (
               <GuestPanel {...common} held={held} aimed={!!aim.current} picking={picking} setPicking={setPicking} mapCenter={mapCenter} setCity={setCity} />
             ) : role === 'owner' ? (
               <OwnerPanel {...common} />
             ) : (
               <CleanerPanel {...common} />
-            )}
-          </ScrollView>
-        </View>
-      </Animated.View>
-    </View>
+            )}</ScrollView></View></Animated.View></View>
   );
 }
 

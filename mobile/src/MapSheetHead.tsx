@@ -1,3 +1,4 @@
+import {t} from '../../lib/i18n';
 import React, { useState, type ReactNode } from 'react';
 import { Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { AiLine } from './AiLine';
@@ -54,75 +55,28 @@ export function MapSheetHead({ role, text, onText, onSend, onChip, chips = true,
   const show = (open: boolean) => { if (open) setOpened(category); setPicking(open); onPicker?.(open); };
   const pick = (to: Category, id: string | null) => { show(false); onKind?.(to, id); };
   return (
-    <View style={s.head}>
-      <AiLine value={text} onChangeText={onText} onSend={onSend} busy={busy} placeholder={line.placeholder} shortPlaceholder={line.shortPlaceholder} label={line.label} />
-      {/* The chips of every role fit one row of a 360px phone; the row still scrolls for a larger system font. */}
-      {picker && <View style={s.picker}>
-        <View style={s.pickerHead}>
-          <Text accessibilityRole="header" style={s.pickerTitle}>Что ищете</Text>
-          <Pressable accessibilityRole="button" accessibilityLabel="Закрыть выбор категории" onPress={() => show(false)} hitSlop={8} style={s.pickerClose}><Text style={s.pickerCloseText}>✕</Text></Pressable>
-        </View>
-        {/* A list that opens: one row per category, only the opened one shows its types. */}
-        {CATEGORIES.map((c, at) => {
+    <View style={s.head}><AiLine value={text} onChangeText={onText} onSend={onSend} busy={busy} placeholder={line.placeholder} shortPlaceholder={line.shortPlaceholder} label={line.label} />{/* The chips of every role fit one row of a 360px phone; the row still scrolls for a larger system font. */}{picker && <View style={s.picker}><View style={s.pickerHead}><Text accessibilityRole="header" style={s.pickerTitle}>{t('Что ищете')}</Text><Pressable accessibilityRole="button" accessibilityLabel={t('Закрыть выбор категории')} onPress={() => show(false)} hitSlop={8} style={s.pickerClose}><Text style={s.pickerCloseText}>✕</Text></Pressable></View>{/* A list that opens: one row per category, only the opened one shows its types. */}{CATEGORIES.map((c, at) => {
           const open = c.id === opened, chosen = c.id === category;
           return (
-            <View key={c.id} style={[s.group, at > 0 && s.groupNext]}>
-              <Pressable accessibilityRole="button" accessibilityLabel={c.title + ': ' + c.hint} accessibilityState={{ expanded: open }} disabled={busy} onPress={() => setOpened(open ? null : c.id)} style={({ pressed }) => [s.groupHead, pressed && s.groupPressed]}>
-                <KindIcon id={c.id} size={18} color={chosen ? C.accent : C.inkSoft} />
-                <Text style={[s.groupTitle, chosen && s.groupTitleOn]}>{c.title}</Text>
-                <Text numberOfLines={1} style={s.groupHint}>{chosen && !open && choice && choice.title !== c.title ? choice.title : c.hint}</Text>
-                <Image source={chevron} style={[s.groupChevron, open && s.groupChevronOpen]} accessibilityIgnoresInvertColors />
-              </Pressable>
-              {open && <View style={s.kinds} accessibilityRole="radiogroup" accessibilityLabel={c.title}>
-                {[['', c.any] as [string, string], ...categoryKinds(c.id)].map(([id, title]) => {
+            <View key={c.id} style={[s.group, at > 0 && s.groupNext]}><Pressable accessibilityRole="button" accessibilityLabel={c.title + ': ' + c.hint} accessibilityState={{ expanded: open }} disabled={busy} onPress={() => setOpened(open ? null : c.id)} style={({ pressed }) => [s.groupHead, pressed && s.groupPressed]}><KindIcon id={c.id} size={18} color={chosen ? C.accent : C.inkSoft} /><Text style={[s.groupTitle, chosen && s.groupTitleOn]}>{c.title}</Text><Text numberOfLines={1} style={s.groupHint}>{chosen && !open && choice && choice.title !== c.title ? choice.title : c.hint}</Text><Image source={chevron} style={[s.groupChevron, open && s.groupChevronOpen]} accessibilityIgnoresInvertColors /></Pressable>{open && <View style={s.kinds} accessibilityRole="radiogroup" accessibilityLabel={c.title}>{[['', c.any] as [string, string], ...categoryKinds(c.id)].map(([id, title]) => {
                   const on = chosen && id === kind;
                   return (
-                    <Pressable key={id || 'any'} accessibilityRole="radio" accessibilityLabel={title} accessibilityState={{ checked: on }} disabled={busy} onPress={() => pick(c.id, id || null)} style={({ pressed }) => [s.kind, on && s.kindOn, pressed && !on && s.kindPressed]}>
-                      <KindIcon id={id || 'any'} size={18} color={on ? C.onAccent : C.inkSoft} />
-                      <Text style={[s.kindText, on && s.kindTextOn]}>{title}</Text>
-                    </Pressable>
+                    <Pressable key={id || 'any'} accessibilityRole="radio" accessibilityLabel={title} accessibilityState={{ checked: on }} disabled={busy} onPress={() => pick(c.id, id || null)} style={({ pressed }) => [s.kind, on && s.kindOn, pressed && !on && s.kindPressed]}><KindIcon id={id || 'any'} size={18} color={on ? C.onAccent : C.inkSoft} /><Text style={[s.kindText, on && s.kindTextOn]}>{title}</Text></Pressable>
                   );
-                })}
-              </View>}
-            </View>
+                })}</View>}</View>
           );
-        })}
-        {!!onService && <View style={[s.group, s.groupNext]}>
-          <Pressable accessibilityRole="button" accessibilityLabel="Уборка: закажите уборку у себя дома" disabled={busy} onPress={() => { show(false); onService(); }} style={({ pressed }) => [s.groupHead, pressed && s.groupPressed]}>
-            <KindIcon id="cleaning" size={18} color={C.inkSoft} />
-            <Text style={s.groupTitle}>Уборка</Text>
-            <Text numberOfLines={1} style={s.groupHint}>у вас дома, по вашей цене</Text>
-            {/* This row does not open a list, it leads to the order: the arrow looks forward. */}
-            <Image source={chevron} style={[s.groupChevron, { transform: [{ rotate: '0deg' }] }]} accessibilityIgnoresInvertColors />
-          </Pressable>
-        </View>}
-      </View>}
-      {chips && !picker && <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="handled" style={s.chipsScroll} contentContainerStyle={s.chips}>
-        {!!onKind && !!choice && (
-          <Pressable accessibilityRole="button" accessibilityLabel={'Категория: ' + choice.title + '. Выбрать'} accessibilityState={{ expanded: false }} disabled={busy} onPress={() => show(true)} style={({ pressed }) => [s.chip, s.catChip, pressed && s.chipPressed]}>
-            <KindIcon id={choice.id} size={18} color={C.accentPressed} />
-            <Text style={s.catText}>{choice.title}</Text>
-            <Image source={chevron} style={s.catChevron} accessibilityIgnoresInvertColors />
-          </Pressable>
-        )}
-        {quick && line.chips.map(chip => (
+        })}{!!onService && <View style={[s.group, s.groupNext]}><Pressable accessibilityRole="button" accessibilityLabel={t('Уборка: закажите уборку у себя дома')} disabled={busy} onPress={() => { show(false); onService(); }} style={({ pressed }) => [s.groupHead, pressed && s.groupPressed]}><KindIcon id="cleaning" size={18} color={C.inkSoft} /><Text style={s.groupTitle}>{t('Уборка')}</Text><Text numberOfLines={1} style={s.groupHint}>{t('у вас дома, по вашей цене')}</Text>{/* This row does not open a list, it leads to the order: the arrow looks forward. */}<Image source={chevron} style={[s.groupChevron, { transform: [{ rotate: '0deg' }] }]} accessibilityIgnoresInvertColors /></Pressable></View>}</View>}{chips && !picker && <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="handled" style={s.chipsScroll} contentContainerStyle={s.chips}>{!!onKind && !!choice && (
+          <Pressable accessibilityRole="button" accessibilityLabel={t('Категория: {title}. Выбрать',{title:choice.title})} accessibilityState={{ expanded: false }} disabled={busy} onPress={() => show(true)} style={({ pressed }) => [s.chip, s.catChip, pressed && s.chipPressed]}><KindIcon id={choice.id} size={18} color={C.accentPressed} /><Text style={s.catText}>{choice.title}</Text><Image source={chevron} style={s.catChevron} accessibilityIgnoresInvertColors /></Pressable>
+        )}{quick && line.chips.map(chip => (
           <Pressable
             key={chip.id}
             accessibilityRole="button"
-            accessibilityLabel={chip.hint + (counts?.[chip.action] ? ', ждут ответа: ' + counts[chip.action] : '')}
+            accessibilityLabel={chip.hint + (counts?.[chip.action] ? t(', ждут ответа: {v}',{v:counts[chip.action]}) : '')}
             disabled={busy}
             onPress={() => onChip(chip.action)}
             style={({ pressed }) => [s.chip, !!counts?.[chip.action] && s.chipActive, pressed && s.chipPressed]}
-          >
-            <Text style={[s.chipText, !!counts?.[chip.action] && s.chipTextActive]}>{chip.title}</Text>
-            {!!counts?.[chip.action] && <Text style={s.chipCount}>{counts[chip.action]}</Text>}
-          </Pressable>
-        ))}
-      </ScrollView>}
-      {conditions}
-      {children}
-      {now && <NowCard card={now} onOpen={onNow} />}
-    </View>
+          ><Text style={[s.chipText, !!counts?.[chip.action] && s.chipTextActive]}>{chip.title}</Text>{!!counts?.[chip.action] && <Text style={s.chipCount}>{counts[chip.action]}</Text>}</Pressable>
+        ))}</ScrollView>}{conditions}{children}{now && <NowCard card={now} onOpen={onNow} />}</View>
   );
 }
 

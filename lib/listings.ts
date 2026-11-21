@@ -1,18 +1,19 @@
+import {L,t as tr} from './i18n';
 import {DomainError,number,required} from './domain';
 type Row=Record<string,any>;
 // Kinds of housing. The service is not only about flats: a hostel, a hotel or an apart-hotel has its own staff,
 // so for them the AI administrator does not look for executors (own_staff, see staffedTypes).
-export const propertyTypes:Record<string,string>={apartment:'Квартира',studio:'Студия',room:'Комната',house:'Дом',guesthouse:'Гостевой дом',hostel:'Хостел',hotel:'Гостиница',aparthotel:'Апарт-отель',banya:'Баня',sauna:'Сауна',banquet:'Банкетный зал',cafe:'Кафе'};
+export const propertyTypes:Record<string,string>=L({apartment:'Квартира',studio:'Студия',room:'Комната',house:'Дом',guesthouse:'Гостевой дом',hostel:'Хостел',hotel:'Гостиница',aparthotel:'Апарт-отель',banya:'Баня',sauna:'Сауна',banquet:'Банкетный зал',cafe:'Кафе'});
 // Categories a guest chooses on the map, like the tariffs of a taxi (since 2026-11-17). «Жильё» is a place to stay,
 // «Баня» a bath or a sauna taken whole for a few hours. A search without a category is a search for «Жильё»:
 // a guest who asks for a flat never sees a sauna.
-export const categories:Record<string,{label:string;types:string[]}>={
+export const categories:Record<string,{label:string;types:string[]}>=L({
  stay:{label:'Жильё',types:['apartment','studio','room','house','guesthouse','hostel','hotel','aparthotel']},
  bath:{label:'Баня',types:['banya','sauna']},
  // «Банкет» (2026-11-17): a hall taken whole for a wedding, a той, an anniversary or a memorial meal. The price is
  // per guest with a least number of guests, the time is a slot of the day (banquetSlots), not a night.
  banquet:{label:'Банкет',types:['banquet','cafe']},
-};
+});
 export const kindCategory=(type?:string)=>Object.entries(categories).find(([,c])=>c.types.includes(type||''))?.[0]||'stay';
 // The category a search is in: «Баня» or «Банкет» when every type asked for is of it, «Жильё» otherwise, also when no type is named.
 export const searchCategory=(kinds:string[]=[])=>{const found=kinds.length?kindCategory(kinds[0]):'stay';return found!=='stay'&&kinds.every(k=>kindCategory(k)===found)?found:'stay';};
@@ -23,24 +24,24 @@ export const isVenue=(type?:string)=>kindCategory(type)!=='stay';
 // The largest party: fifty in a home or a bath, a thousand in a banquet hall.
 export const maxGuests=(type?:string)=>isBanquet(type)?1000:50;
 // The two slots of a banquet day, Kazakhstan time; the evening ends at midnight.
-export const banquetSlots:Record<string,{label:string;from:string;to:string}>={lunch:{label:'Обед',from:'12:00',to:'17:00'},evening:{label:'Вечер',from:'18:00',to:'00:00'}};
+export const banquetSlots:Record<string,{label:string;from:string;to:string}>=L({lunch:{label:'Обед',from:'12:00',to:'17:00'},evening:{label:'Вечер',from:'18:00',to:'00:00'}});
 // What the hall is taken for. A memorial meal is spoken of quietly everywhere: no festive words, no celebration.
-export const occasions:Record<string,string>={toi:'Той, свадьба',party:'Юбилей, праздник',memorial:'Поминки, ас',other:'Другое'};
+export const occasions:Record<string,string>=L({toi:'Той, свадьба',party:'Юбилей, праздник',memorial:'Поминки, ас',other:'Другое'});
 export const occasionLabel=(id?:string)=>occasions[id||'']||'';
 // Kinds that usually clean with their own staff: «Свой персонал» is on by default, the owner can change it.
 // A sauna is mostly a complex with an administrator; a «баня» is often a private one, cleaned by our executor.
 export const staffedTypes=['hostel','hotel','aparthotel','sauna','banquet','cafe'];
 export const defaultOwnStaff=(type:string)=>staffedTypes.includes(type);
 // «home» — частный адрес заказчика уборки на дом (lib/home-cleaning.ts): не сдаётся, в списках типов его нет.
-export const kindLabel=(type?:string)=>type==='home'?'Мой дом':propertyTypes[type||'']||'Жильё';
-export const amenities:Record<string,string>={wifi:'Wi-Fi',kitchen:'Кухня',washer:'Стиральная машина',aircon:'Кондиционер',tv:'Телевизор',workspace:'Рабочее место',parking:'Парковка',balcony:'Балкон',elevator:'Лифт',linen:'Постельное бельё',towels:'Полотенца',hairdryer:'Фен',iron:'Утюг',crib:'Детская кроватка',steam:'Парилка',pool:'Бассейн',plunge:'Купель',brooms:'Веники',karaoke:'Караоке',billiards:'Бильярд',grill:'Мангал',stage:'Сцена',sound:'Звук и микрофон',dancefloor:'Танцпол',prayer:'Комната для намаза',halal:'Халяль',ownfood:'Можно свои продукты',kidsroom:'Детская комната',jacuzzi:'Джакузи'};
+export const kindLabel=(type?:string)=>type==='home'?tr('Мой дом'):propertyTypes[type||'']||tr('Жильё');
+export const amenities:Record<string,string>=L({wifi:'Wi-Fi',kitchen:'Кухня',washer:'Стиральная машина',aircon:'Кондиционер',tv:'Телевизор',workspace:'Рабочее место',parking:'Парковка',balcony:'Балкон',elevator:'Лифт',linen:'Постельное бельё',towels:'Полотенца',hairdryer:'Фен',iron:'Утюг',crib:'Детская кроватка',steam:'Парилка',pool:'Бассейн',plunge:'Купель',brooms:'Веники',karaoke:'Караоке',billiards:'Бильярд',grill:'Мангал',stage:'Сцена',sound:'Звук и микрофон',dancefloor:'Танцпол',prayer:'Комната для намаза',halal:'Халяль',ownfood:'Можно свои продукты',kidsroom:'Детская комната',jacuzzi:'Джакузи'});
 // The amenities each category shows the owner and the guest; a stored id of the other category stays valid.
 export const categoryAmenities:Record<string,string[]>={
  stay:['wifi','kitchen','washer','aircon','tv','workspace','parking','balcony','elevator','linen','towels','hairdryer','iron','crib','jacuzzi'],
  bath:['steam','pool','plunge','jacuzzi','brooms','towels','karaoke','billiards','grill','tv','wifi','parking','kitchen'],
  banquet:['halal','prayer','stage','sound','dancefloor','karaoke','ownfood','kidsroom','aircon','parking','wifi'],
 };
-export const checkinMethods:Record<string,string>={meet:'Встреча с хозяином',lockbox:'Сейф для ключей',smartlock:'Умный замок',reception:'Стойка регистрации'};
+export const checkinMethods:Record<string,string>=L({meet:'Встреча с хозяином',lockbox:'Сейф для ключей',smartlock:'Умный замок',reception:'Стойка регистрации'});
 export function listingInput(b:Row){
  const details=b.details||{};
  if(!propertyTypes[details.type]||!checkinMethods[details.checkinMethod])throw new DomainError('Выберите тип жилья и способ заселения.');
@@ -59,18 +60,18 @@ export function listingInput(b:Row){
  return {p,details:d,photos:b.photos as string[],published:b.published?1:0,expectedVersion:number(b.expectedVersion??0,'Версия объявления',0,10000000)};
 }
 export function propertyStatus(p:Row,operation?:Row,busy=false){
- if(p.published===0)return {code:'draft',label:'Черновик',tone:'muted'};
- const map:Record<string,string>={ready:'Готово к заселению',inspection:'Требует проверки',occupied:'Проживают гости',awaiting_cleaning:'Ожидает уборки',cleaning:'На уборке',maintenance:'На ремонте',blocked:'Временно недоступно'};
+ if(p.published===0)return {code:'draft',label:tr('Черновик'),tone:'muted'};
+ const map:Record<string,string>={ready:tr('Готово к заселению'),inspection:tr('Требует проверки'),occupied:tr('Проживают гости'),awaiting_cleaning:tr('Ожидает уборки'),cleaning:tr('На уборке'),maintenance:tr('На ремонте'),blocked:tr('Временно недоступно')};
  const code=operation?.active_booking_id?'occupied':operation?.readiness||'inspection';
  return {code,label:map[code]||map.inspection,tone:code==='ready'?'good':['maintenance','blocked'].includes(code)?'danger':'warning',reservedNow:busy};
 }
 export function cleanerStatus(workStatus:string,jobs:Row[],t:number){
- if(jobs.some(j=>j.status==='in_progress'))return {code:'working',label:'На уборке',tone:'warning'};
- if(jobs.some(j=>j.status==='submitted'))return {code:'review',label:'Отчёт на проверке',tone:'warning'};
- if(jobs.some(j=>j.status==='assigned'&&j.end<=t))return {code:'late_assignment',label:'Просрочено начало уборки',tone:'warning'};
- if(jobs.some(j=>j.status==='assigned'&&j.start<=t&&j.end>t))return {code:'assigned',label:'Назначена уборка',tone:'warning'};
- if(workStatus==='away')return {code:'away',label:'Не принимает задания',tone:'muted'};
- return {code:'available',label:'Принимает предложения',tone:'good',upcoming:jobs.some(j=>j.status==='assigned'&&j.start>t)};
+ if(jobs.some(j=>j.status==='in_progress'))return {code:'working',label:tr('На уборке'),tone:'warning'};
+ if(jobs.some(j=>j.status==='submitted'))return {code:'review',label:tr('Отчёт на проверке'),tone:'warning'};
+ if(jobs.some(j=>j.status==='assigned'&&j.end<=t))return {code:'late_assignment',label:tr('Просрочено начало уборки'),tone:'warning'};
+ if(jobs.some(j=>j.status==='assigned'&&j.start<=t&&j.end>t))return {code:'assigned',label:tr('Назначена уборка'),tone:'warning'};
+ if(workStatus==='away')return {code:'away',label:tr('Не принимает задания'),tone:'muted'};
+ return {code:'available',label:tr('Принимает предложения'),tone:'good',upcoming:jobs.some(j=>j.status==='assigned'&&j.start>t)};
 }
 // Only bounded JPEGs are persisted. APP metadata (including EXIF/GPS) and comments are discarded.
 export function jpegInput(value:unknown,kind:string){

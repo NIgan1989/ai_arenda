@@ -1,3 +1,4 @@
+import {t} from '../../lib/i18n';
 import type {Row} from './model';
 
 // «Избранное» and «Снова туда же»: the homes the guest marked with a heart and the homes of the guest's finished
@@ -9,7 +10,7 @@ const ids=(value:unknown):string[]=>Array.isArray(value)?value.filter((id):id is
 export const mineOf=(data:Row|null|undefined):Mine=>({favorites:ids(data?.favorites),stayed:ids(data?.stayed)});
 export const markOf=(id:string,mine:Mine):Mark=>mine.favorites.includes(id)?'favorite':mine.stayed.includes(id)?'stayed':'';
 // venue: в бане и зале бывают, а не живут.
-export const markLabel=(mark:Mark,venue=false)=>mark==='favorite'?'♥ Ваше избранное':mark==='stayed'?(venue?'Вы здесь были':'Вы здесь жили'):'';
+export const markLabel=(mark:Mark,venue=false)=>mark==='favorite'?t('♥ Ваше избранное'):mark==='stayed'?(venue?t('Вы здесь были'):t('Вы здесь жили')):'';
 
 /** Favourites, then homes of earlier stays, each in the order the search gave; the rest keep their order. */
 export function favouredFirst<T extends {id:string}>(list:T[],mine:Mine):T[]{

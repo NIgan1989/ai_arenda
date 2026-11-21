@@ -1,10 +1,11 @@
 // «Мои брони» in the app in three tabs: what is still going on, what has ended, what was cancelled.
 // A finished or cancelled booking where the owner still owes the guest money (a refund or the deposit)
 // stays among the active ones for the owner, so the button «Вернул …» is not lost in the archive.
+import {L} from './i18n';
 import {refundLeft} from './cancellation';
 type Row=Record<string,any>;
 export type BookingTab='active'|'done'|'cancelled';
-export const bookingTabs:{id:BookingTab;label:string}[]=[{id:'active',label:'Активные'},{id:'done',label:'Завершённые'},{id:'cancelled',label:'Отменённые'}];
+export const bookingTabs:{id:BookingTab;label:string}[]=L([{id:'active',label:'Активные'},{id:'done',label:'Завершённые'},{id:'cancelled',label:'Отменённые'}]);
 export function bookingTab(b:Row,role:string,userId:string):BookingTab{
  if(['requested','confirmed'].includes(b.status))return 'active';
  const owner=role==='owner'&&b.owner_id===userId,closed=['cancelled','expired','rejected'].includes(b.status);
@@ -27,7 +28,7 @@ export function firstBookingTab(counts:Record<BookingTab,number>):BookingTab{
 // «Брони»: confirmed stays, and ended ones where he still owes the guest money (same rule as bookingTab).
 // «Архив»: everything that has ended — stayed, cancelled, refused or left without an answer.
 export type OwnerRequestTab='new'|'booked'|'archive';
-export const ownerRequestTabs:{id:OwnerRequestTab;label:string}[]=[{id:'new',label:'Новые'},{id:'booked',label:'Брони'},{id:'archive',label:'Архив'}];
+export const ownerRequestTabs:{id:OwnerRequestTab;label:string}[]=L([{id:'new',label:'Новые'},{id:'booked',label:'Брони'},{id:'archive',label:'Архив'}]);
 export function ownerRequestTab(b:Row,userId:string,now:number):OwnerRequestTab{
  if(b.status==='requested')return Number(b.expires_at)>now?'new':'archive';
  return bookingTab(b,'owner',userId)==='active'?'booked':'archive';

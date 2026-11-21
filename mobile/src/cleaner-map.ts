@@ -1,3 +1,4 @@
+import {forms,t} from '../../lib/i18n';
 // What the cleaner's live map says: the day's route in order, each stop's pin and how far the cleaning under way has gone.
 // The way to a stop is led on our own map (navigation.ts, Navigator.tsx). Pure functions, covered by mobile/tests/cleaner-map.test.mjs.
 // Times are Kazakhstan time (UTC+5), as everywhere on the map.
@@ -31,20 +32,20 @@ export type CleanerPin={label:string;tone:PinTone;order?:number;progress?:number
 export function cleanerPin(job:Row,stop:Stop|undefined,now:number,applied:boolean):CleanerPin{
  const status=String(job.status);
  // Past the deadline: the report is due now.
- if(status==='in_progress'&&Number(job.end)<=now)return {label:'Срок вышел',tone:'alert',order:stop?.order};
- if(status==='in_progress'){const until=soon(Number(job.end),now);return {label:until?'Уборка до '+until:'Уборка идёт',tone:'active',order:stop?.order,progress:progress(job.startedAt??job.started_at,job.end,now)};}
- if(status==='submitted')return {label:'На приёмке',tone:'booking'};
+ if(status==='in_progress'&&Number(job.end)<=now)return {label:t('Срок вышел'),tone:'alert',order:stop?.order};
+ if(status==='in_progress'){const until=soon(Number(job.end),now);return {label:until?t('Уборка до {until}',{until}):t('Уборка идёт'),tone:'active',order:stop?.order,progress:progress(job.startedAt??job.started_at,job.end,now)};}
+ if(status==='submitted')return {label:t('На приёмке'),tone:'booking'};
  if(status==='assigned'){
   // Not started and the window is over: the day's route has dropped it, the pin still says so.
-  if(Number(job.end)<=now)return {label:'Срок вышел',tone:'alert'};
-  if(!stop)return {label:soon(Number(job.start),now)||'Моё задание',tone:'offer'};
+  if(Number(job.end)<=now)return {label:t('Срок вышел'),tone:'alert'};
+  if(!stop)return {label:soon(Number(job.start),now)||t('Моё задание'),tone:'offer'};
   // A guest already gone: the flat is free, the cleaning can start now.
   const ready=job.checkout_confirmed===true||job.checkout_confirmed===1;
   // The flat is free and the start is a quarter of an hour late: the owner already sees «Исполнитель не начал».
-  if(ready&&Number(job.start)+900<=now)return {label:'Пора начинать',tone:'alert',order:stop.order};
-  return {label:Number(job.start)<=now?(ready?'Начинайте':'Ждём выезда'):soon(Number(job.start),now)||'Сегодня',tone:'offer',order:stop.order};
+  if(ready&&Number(job.start)+900<=now)return {label:t('Пора начинать'),tone:'alert',order:stop.order};
+  return {label:Number(job.start)<=now?(ready?t('Начинайте'):t('Ждём выезда')):soon(Number(job.start),now)||t('Сегодня'),tone:'offer',order:stop.order};
  }
- return applied?{label:'Отклик ✓',tone:'job'}:{label:'Уборка',tone:'job'};
+ return applied?{label:t('Отклик ✓'),tone:'job'}:{label:t('Уборка'),tone:'job'};
 }
 
 // The route as lines from one stop to the next, in order; stops without a point on the map are skipped.
@@ -63,6 +64,5 @@ export function routeSummary(stops:{fee?:number;point?:Point|null}[]){
  const n=stops.length;if(!n)return '';
  const pts=stops.map(s=>s.point).filter(ok),km=pts.slice(1).reduce((sum,p,i)=>sum+distance(pts[i],p),0)/1000;
  const fee=stops.reduce((sum,s)=>sum+(Number(s.fee)||0),0);
- const word=n%10===1&&n%100!==11?'уборка':n%10>=2&&n%10<=4&&(n%100<10||n%100>=20)?'уборки':'уборок';
- return [n+' '+word,pts.length>1?(km<10?km.toFixed(1).replace('.',','):String(Math.round(km)))+' км':'',fee>0?fee.toLocaleString('ru-RU').replace(/\s/g,' ')+' ₸':''].filter(Boolean).join(' · ');
+ return [t(forms(n,'{n} уборка','{n} уборки','{n} уборок'),{n}),pts.length>1?t('{v} км',{v:km<10?km.toFixed(1).replace('.',','):String(Math.round(km))}):'',fee>0?fee.toLocaleString('ru-RU').replace(/\s/g,' ')+' ₸':''].filter(Boolean).join(' · ');
 }

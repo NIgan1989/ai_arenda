@@ -1,3 +1,4 @@
+import {L,t as tr} from '../../lib/i18n';
 // The guest's conditions as tokens under the AI line: one token per condition, in one order on every screen.
 // What the guest set (in words, by a chip or in the form) is a token that can be taken off; the day, the guests
 // and the city are always there and open their part of the form. Nothing is decided here: each token only says
@@ -16,20 +17,20 @@ export type GuestToken = {
 };
 
 const cap = (text: string) => (text ? text[0].toLocaleUpperCase('ru') + text.slice(1) : text);
-const PRIORITY: Record<string, string> = { balanced: 'Баланс', cheaper: 'Дешевле', closer: 'Ближе' };
+const PRIORITY: Record<string, string> = L({ balanced: 'Баланс', cheaper: 'Дешевле', closer: 'Ближе' });
 
 /** "Сегодня 19:00–22:00", "18–19 ноября", "18–19 ноября, с 19:30", "18–19 ноября, ночь с 22:00", "Завтра, вечер 18:00–00:00". */
 export function whenWords(draft: GuestDraft, now = Date.now()) {
   if (categoryOf(draft) === 'banquet') return cap(banquetWhen(draft.start, now));
   const days = stayWhen(draft.start, draft.end, draft.mode, now), from = draft.start.slice(11);
   if (draft.mode === 'hourly') return cap(days);
-  if (draft.mode === 'night') return cap(days) + ', ночь с ' + from;
-  return cap(days) + (draft.now || from !== CHECKIN_TIME ? ', с ' + from : '');
+  if (draft.mode === 'night') return tr('{days}, ночь с {from}',{days:cap(days),from});
+  return cap(days) + (draft.now || from !== CHECKIN_TIME ? ', ' + tr('с {from}',{from}) : '');
 }
 export const guestsWords = (draft: Pick<GuestDraft, 'guests'>) => draft.guests + ' ' + plural(draft.guests, 'гость', 'гостя', 'гостей');
-const floorWords = (floor: number) => (floor === 1 ? 'Первый этаж' : 'Не выше ' + floor + ' этажа');
+const floorWords = (floor: number) => (floor === 1 ? tr('Первый этаж') : tr('Не выше {floor} этажа',{floor}));
 const wishTitle = (id: string, draft: GuestDraft) => [...wishesOf(categoryOf(draft)), ...WISHES, ...BATH_WISHES, ...BANQUET_WISHES].find(([known]) => known === id)?.[1] || '';
-const nearWords = (draft: GuestDraft) => (draft.near?.label ? 'Рядом: ' + draft.near.label : draft.now ? 'Рядом с вами' : 'Рядом с точкой');
+const nearWords = (draft: GuestDraft) => (draft.near?.label ? tr('Рядом: {label}',{label:draft.near.label}) : draft.now ? tr('Рядом с вами') : tr('Рядом с точкой'));
 
 /** Every condition the search will use, in the order the sheet shows them. */
 export function guestTokens(draft: GuestDraft, now = Date.now()): GuestToken[] {
@@ -41,7 +42,7 @@ export function guestTokens(draft: GuestDraft, now = Date.now()): GuestToken[] {
   if (typed || draft.rooms) tokens.push({ id: 'home', title: cap(homeWords(typed ? draft : { kinds: [], rooms: draft.rooms })), section: 'home', clear: { kinds: every, rooms: '' } });
   // «Сейчас» takes its point from the phone: taken off, the point goes with it.
   const mine = draft.now && !!draft.near && !draft.near.label;
-  if (draft.now) tokens.push({ id: 'now', title: mine ? 'Сейчас, рядом с вами' : 'Готово сейчас', section: 'when', clear: { now: false, ...(mine ? { near: null, priority: 'balanced' as const } : {}) } });
+  if (draft.now) tokens.push({ id: 'now', title: mine ? tr('Сейчас, рядом с вами') : tr('Готово сейчас'), section: 'when', clear: { now: false, ...(mine ? { near: null, priority: 'balanced' as const } : {}) } });
   tokens.push({ id: 'when', title: whenWords(draft, now), section: 'when' });
   tokens.push({ id: 'guests', title: guestsWords(draft), section: 'guests' });
   const budget = budgetWords(draft);
@@ -89,24 +90,24 @@ export function sectionWords(draft: GuestDraft, section: Section, now = Date.now
   const category = categoryOf(draft), venue = category !== 'stay';
   if (section === 'when') return [category === 'banquet' ? occasionTitle(draft.occasion) : '', whenWords(draft, now)].filter(Boolean).join(' · ');
   if (section === 'guests') return guestsWords(draft);
-  if (section === 'price') return cap(budgetWords(draft)) || 'Любая';
+  if (section === 'price') return cap(budgetWords(draft)) || tr('Любая');
   if (section === 'where') return [draft.city, draft.district.trim(), draft.near ? nearWords(draft) : ''].filter(Boolean).join(' · ');
   if (section === 'home') {
     const typed = venue ? draft.kinds.length < allKinds(category).length : draft.kinds.length > 0;
-    return cap(homeWords(typed ? draft : { kinds: [], rooms: draft.rooms })) || (category === 'bath' ? 'Любая' : category === 'banquet' ? 'Любой' : 'Любое');
+    return cap(homeWords(typed ? draft : { kinds: [], rooms: draft.rooms })) || (category === 'bath' ? tr('Любая') : category === 'banquet' ? tr('Любой') : tr('Любое'));
   }
-  if (section === 'wishes') return draft.features.map(id => wishTitle(id, draft)).filter(Boolean).join(', ') || 'Не важно';
+  if (section === 'wishes') return draft.features.map(id => wishTitle(id, draft)).filter(Boolean).join(', ') || tr('Не важно');
   return PRIORITY[draft.priority] || PRIORITY.balanced;
 }
 export const SECTION_TITLES = (draft: GuestDraft): [Section, string][] => {
   const category = categoryOf(draft);
   return [
-    ['when', 'Когда'],
-    ['guests', 'Гости'],
-    ['price', category === 'banquet' ? 'Цена на гостя' : 'Цена'],
-    ['where', 'Где'],
-    ['home', category === 'banquet' ? 'Зал или кафе' : category === 'bath' ? 'Баня или сауна' : 'Тип и комнаты'],
-    ['wishes', category === 'stay' ? 'Удобства и правила' : 'Обязательно'],
-    ['priority', 'Что важнее']
+    ['when', tr('Когда')],
+    ['guests', tr('Гости')],
+    ['price', category === 'banquet' ? tr('Цена на гостя') : tr('Цена')],
+    ['where', tr('Где')],
+    ['home', category === 'banquet' ? tr('Зал или кафе') : category === 'bath' ? tr('Баня или сауна') : tr('Тип и комнаты')],
+    ['wishes', category === 'stay' ? tr('Удобства и правила') : tr('Обязательно')],
+    ['priority', tr('Что важнее')]
   ];
 };

@@ -1,3 +1,4 @@
+import {t} from '../../lib/i18n';
 import React from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { C, type } from './styles';
@@ -21,37 +22,25 @@ type Props = {
 // condition off and the search runs again. «Условия» opens the whole form.
 export function GuestTokens({ tokens, blamed = [], open = '', onOpen, onClear, line = false, busy = false }: Props) {
   const items = (
-    <>
-      {tokens.map(token => {
+    <>{tokens.map(token => {
         const bad = blamed.includes(token.id), set = !!token.clear, active = open === token.section;
         return (
-          <View key={token.id} style={[s.token, set && s.set, bad && s.bad, active && s.active]}>
-            <Pressable
+          <View key={token.id} style={[s.token, set && s.set, bad && s.bad, active && s.active]}><Pressable
               accessibilityRole="button"
-              accessibilityLabel={token.title + (bad ? '. С этим условием свободного нет' : '') + '. Изменить'}
+              accessibilityLabel={bad ? t('{title}. С этим условием свободного нет. Изменить',{title:token.title}) : t('{title}. Изменить',{title:token.title})}
               accessibilityState={{ expanded: active, disabled: busy }}
               disabled={busy}
               onPress={() => onOpen(token.section)}
               hitSlop={{ top: 6, bottom: 6 }}
               style={({ pressed }) => [s.body, set && s.bodySet, pressed && s.pressed]}
-            >
-              <Text numberOfLines={1} style={[s.text, set && s.textSet, bad && s.textBad]}>{token.title}</Text>
-            </Pressable>
-            {set && (
-              <Pressable accessibilityRole="button" accessibilityLabel={'Убрать условие: ' + token.title} accessibilityState={{ disabled: busy }} disabled={busy} onPress={() => onClear(token)} hitSlop={{ top: 6, bottom: 6, right: 4 }} style={({ pressed }) => [s.cross, pressed && s.pressed]}>
-                <View style={[s.crossDot, bad && s.crossDotBad]}><Text style={[s.crossText, bad && s.textBad]}>✕</Text></View>
-              </Pressable>
-            )}
-          </View>
+            ><Text numberOfLines={1} style={[s.text, set && s.textSet, bad && s.textBad]}>{token.title}</Text></Pressable>{set && (
+              <Pressable accessibilityRole="button" accessibilityLabel={t('Убрать условие: {title}',{title:token.title})} accessibilityState={{ disabled: busy }} disabled={busy} onPress={() => onClear(token)} hitSlop={{ top: 6, bottom: 6, right: 4 }} style={({ pressed }) => [s.cross, pressed && s.pressed]}><View style={[s.crossDot, bad && s.crossDotBad]}><Text style={[s.crossText, bad && s.textBad]}>✕</Text></View></Pressable>
+            )}</View>
         );
-      })}
-      <Pressable accessibilityRole="button" accessibilityLabel="Все условия поиска" accessibilityState={{ expanded: open === 'all', disabled: busy }} disabled={busy} onPress={() => onOpen('all')} hitSlop={{ top: 6, bottom: 6 }} style={({ pressed }) => [s.token, s.more, open === 'all' && s.active, pressed && s.pressed]}>
-        <Text style={s.moreText}>+ Условия</Text>
-      </Pressable>
-    </>
+      })}<Pressable accessibilityRole="button" accessibilityLabel={t('Все условия поиска')} accessibilityState={{ expanded: open === 'all', disabled: busy }} disabled={busy} onPress={() => onOpen('all')} hitSlop={{ top: 6, bottom: 6 }} style={({ pressed }) => [s.token, s.more, open === 'all' && s.active, pressed && s.pressed]}><Text style={s.moreText}>{t('+ Условия')}</Text></Pressable></>
   );
-  if (line) return <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="handled" style={s.scroll} contentContainerStyle={s.row} accessibilityLabel="Условия поиска">{items}</ScrollView>;
-  return <View style={s.wrap} accessibilityLabel="Условия поиска">{items}</View>;
+  if (line) return <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="handled" style={s.scroll} contentContainerStyle={s.row} accessibilityLabel={t('Условия поиска')}>{items}</ScrollView>;
+  return <View style={s.wrap} accessibilityLabel={t('Условия поиска')}>{items}</View>;
 }
 
 const H = 36;

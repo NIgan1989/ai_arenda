@@ -1,8 +1,9 @@
+import {t as tr} from './i18n';
 import {wordsOf} from './stay-words';
 type Row=Record<string,any>;
 export function duration(seconds:number){
  const n=Math.max(0,Math.floor(seconds)),days=Math.floor(n/86400),hours=Math.floor(n%86400/3600),minutes=Math.floor(n%3600/60),rest=n%60;
- return (days?days+' д. ':'')+[hours,minutes,rest].map(v=>String(v).padStart(2,'0')).join(':');
+ return (days?tr('{days} д.',{days})+' ':'')+[hours,minutes,rest].map(v=>String(v).padStart(2,'0')).join(':');
 }
 // The agreed end remains the deadline; a late start never silently extends a stay or cleaning.
 export function activity(kind:'booking'|'job',item:Row,t:number){
@@ -14,6 +15,6 @@ export function activity(kind:'booking'|'job',item:Row,t:number){
  const phase=finished?'stopped':!started?'waiting':t>=deadline?'overdue':'running';
  return {kind,phase,started:started||null,stopped:stopped||null,deadline,elapsed,
   seconds:phase==='stopped'?elapsed:Math.abs(deadline-t),
-  label:phase==='stopped'?(kind==='booking'?w.done:item.status==='submitted'?'Отчёт на проверке':'Уборка принята'):phase==='waiting'?(kind==='booking'?'Ожидаем '+(w.arriveAcc==='заселение'?'заселения':w.arriveGen):item.status==='in_progress'?'Начало не зафиксировано':'Ожидаем начала уборки'):phase==='overdue'?'Просрочено':kind==='booking'?'До '+w.leaveGen:'До окончания уборки',
+  label:phase==='stopped'?(kind==='booking'?w.done:item.status==='submitted'?tr('Отчёт на проверке'):tr('Уборка принята')):phase==='waiting'?(kind==='booking'?w.waitArrive:item.status==='in_progress'?tr('Начало не зафиксировано'):tr('Ожидаем начала уборки')):phase==='overdue'?tr('Просрочено'):kind==='booking'?w.untilLeave:tr('До окончания уборки'),
   progress:started?Math.min(1,Math.max(0,((stopped||t)-started)/Math.max(1,deadline-started))):0};
 }

@@ -5,6 +5,8 @@
 // - a card number: never;
 // - a phone number: not before the booking is confirmed; after it, contacts are fine, but not with words about a transfer.
 // The same rule runs in the app before sending and on the server.
+import {t as tr} from './i18n';
+
 export type ChatGuard={ok:true}|{ok:false;reason:string};
 
 const LINK=/(https?:\/\/|www\.|\b(?:t\.me|wa\.me|vk\.cc|bit\.ly|clck\.ru)\b|\b[a-z0-9-]{2,}\.(?:kz|ru|com|net|org|me|link|site|online|shop|app|io|pro)\b)/i;
@@ -25,4 +27,4 @@ export function chatGuard(text:string,o:{confirmed:boolean}):ChatGuard{
  return {ok:true};
 }
 /** The guest's reminder under the chat. */
-export const CHAT_PAY_NOTE='Платите только по реквизитам из карточки брони. Если просят перевести на другой номер или по ссылке, нажмите «Есть проблема».';
+export const chatPayNote=()=>tr('Платите только по реквизитам из карточки брони. Если просят перевести на другой номер или по ссылке, нажмите «Есть проблема».');
