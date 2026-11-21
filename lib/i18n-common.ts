@@ -365,4 +365,16 @@ export const COMMON:Words={
   'Сдавать жильё':['Баспана жалға беру','Rent out a property'],
   'Работать на уборках':['Тазалаумен айналысу','Work as a cleaner'],
   'Искать жильё':['Баспана іздеу','Look for a place'],
+  // Photo of the identity card (mobile/src/IdentityDocs.tsx).
+  'Нужно один раз перед первой заявкой на бронь: так владелец знает, что гость настоящий.':['Броньға алғашқы өтінім алдында бір рет керек: иесі қонақтың шынайы екенін осылай біледі.','Needed once before your first booking request: this way the owner knows the guest is real.'],
+  'Нужно для проверки жилья: администратор сверит ФИО с документом о праве и получателем Kaspi.':['Баспананы тексеру үшін керек: әкімші аты-жөнді құқық құжатымен және Kaspi алушысымен салыстырады.','Needed to check the place: the administrator compares the full name with the ownership document and the Kaspi recipient.'],
+  'Нужно для допуска к уборкам: владелец знает, кого впускает.':['Тазалауға рұқсат алу үшін керек: иесі кімді кіргізетінін біледі.','Needed to be allowed to clean: the owner knows who they let in.'],
+  'Удостоверение личности':['Жеке куәлік','Identity card'],
+  'Личность подтверждена администратором. Фото удалено после проверки.':['Жеке басыңызды әкімші растады. Фото тексеруден кейін жойылды.','Your identity is confirmed by the administrator. The photo was deleted after the check.'],
+  'Фото приложено. Администратор сверит его с профилем, затем фото удалится.':['Фото тіркелді. Әкімші оны профильмен салыстырады, содан кейін фото жойылады.','Photo attached. The administrator will compare it with your profile, then the photo will be deleted.'],
+  'Убрать фото удостоверения':['Куәлік фотосын алып тастау','Remove the identity card photo'],
+  'Добавить обратную сторону':['Артқы жағын қосу','Add the back side'],
+  'Сфотографировать удостоверение':['Куәлікті суретке түсіру','Take a photo of the identity card'],
+  'Выбрать из галереи':['Галереядан таңдау','Choose from the gallery'],
+  '🔒 Фото видит только администратор сервиса':['🔒 Фотоны тек сервис әкімшісі көреді','🔒 Only the service administrator sees the photo'],
 };

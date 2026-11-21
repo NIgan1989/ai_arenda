@@ -5,7 +5,10 @@ import {CLEANER} from './i18n-cleaner';
 import {COMMON} from './i18n-common';
 import {DEALS} from './i18n-deals';
 import {GUEST} from './i18n-guest';
+import {NOTICES} from './i18n-notices';
 import {OWNER} from './i18n-owner';
+import {SERVER} from './i18n-server';
 
 export type Words=Record<string,readonly [kk:string,en:string]>;
-export const WORDS:Words={...COMMON,...GUEST,...DEALS,...CHATS,...OWNER,...CLEANER};
+// SERVER goes first: a line the app already translates keeps the app's wording.
+export const WORDS:Words={...SERVER,...NOTICES,...COMMON,...GUEST,...DEALS,...CHATS,...OWNER,...CLEANER};

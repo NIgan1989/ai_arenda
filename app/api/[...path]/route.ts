@@ -18,6 +18,7 @@ import {runOperationalTick} from '../../../lib/background';
 import {readOperations,writeOperations,publicOperationsRequest} from '../../../lib/operations-api';
 import {myObjection,objectReliability} from '../../../lib/reliability-objection';
 import {acceptLegal,legalMissing,legalState} from '../../../lib/legal-acceptance';
+import {saveLanguage} from '../../../lib/user-language';
 import {previewMatches,matchingState} from '../../../lib/smart-matching';
 import {listCommands,prepareAdministratorCommand} from '../../../lib/administrator-commands';
 import {parseRole} from '../../../lib/access';
@@ -115,6 +116,8 @@ async function handle(request:Request, context:{params:Promise<{path:string[]}>}
     if(route[0]==='admin'&&adminId&&!admin)return factorGate();
     if(route.join('/')==='operations/delivery/telegram'&&await adminTelegramRelinkBlocked(env.DB,user.userId,admin,env))return factorGate();
     if(route[0]==='admin')return json(await writePlatformAdmin(service,route.slice(1).join('/'),body,env));
+    // The language of the app, for Telegram and the AI administrator (lib/user-language.ts): a setting, open before the terms.
+    if(route.join('/')==='language')return json(await saveLanguage(env.DB,user.userId,body.lang));
     // Accepting the agreement, the consent or a role's offer; and until the current edition is accepted, the app's
     // workspace takes no new actions (lib/legal-acceptance.ts). Settings, data requests and reading stay open, so a person
     // can always leave, delete the account or read the documents. The site keeps its own pages for now (mobile first).

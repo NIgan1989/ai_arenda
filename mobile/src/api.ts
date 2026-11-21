@@ -1,4 +1,4 @@
-import {t} from '../../lib/i18n';
+import {t,tServer} from '../../lib/i18n';
 import { Platform } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
 import {SessionState,StaleSessionError} from './session-state';
@@ -12,7 +12,8 @@ const sessions=new SessionState({read:async()=>Platform.OS==='web'?memoryRecord:
 let workspaceRole:string|null=null;
 export function setWorkspaceRole(role:string|null){workspaceRole=role;}
 export function getSessionGeneration(){return sessions.currentGeneration();}
-export class ApiError extends Error {constructor(message:string,public status:number){super(message);}}
+// `ru` keeps the server's own Russian words, for code that reads the reason; `message` is in the language of the app.
+export class ApiError extends Error {constructor(message:string,public status:number,public ru=message){super(message);}}
 // No answer came back. For a request that only reads, that means "no connection"; for one that may have changed something, the result is unknown.
 export class NetworkError extends Error {constructor(public uncertain:boolean){super(uncertain?t('Нет ответа от сервера. Результат действия пока неизвестен. Проверьте связь и обновите данные.'):t('Нет связи. Проверьте интернет.'));}}
 export const isOffline=(error:unknown)=>error instanceof NetworkError&&!error.uncertain;
@@ -55,7 +56,9 @@ export async function request(path:string,body?:unknown,method?:string,requestKe
     sessions.assertCurrent(snapshot);
     reachListener?.(true);
     if(response.status===428&&Array.isArray(data.legal))legalListener?.();
-    if(!response.ok)throw new ApiError(data.error||t('Сервер не подтвердил действие.'),response.status);
+    // The server speaks Russian; its error and its «message» are shown in the language of the app (lib/i18n.ts tServer).
+    if(!response.ok)throw new ApiError(data.error?tServer(String(data.error)):t('Сервер не подтвердил действие.'),response.status,String(data.error||''));
+    if(data&&typeof data==='object'&&typeof data.message==='string')data.message=tServer(data.message);
     return data;
   }catch(error){
     sessions.assertCurrent(snapshot);

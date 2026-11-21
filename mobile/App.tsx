@@ -252,6 +252,9 @@ function Chat(){
   })();return()=>{active=false;};},[]);
   // An account is in: the sign-in screen is not needed any more; what the visitor was doing goes on as the guest.
   useEffect(()=>{if(data.user)setSignIn(null);},[!!data.user]);
+  // Telegram messages and the AI administrator's answers come in the language of the app (lib/user-language.ts).
+  const appLang=useLang();
+  useEffect(()=>{if(userId)void request('/api/language',{lang:appLang}).catch(()=>undefined);},[userId,appLang]);
   useEffect(()=>{
     const next=afterSignIn.current;if(!next||selectedRole!=='guest'||!historyReady)return;afterSignIn.current=null;
     if(next.kind==='book')bookFromMap(next.property,next.stay);

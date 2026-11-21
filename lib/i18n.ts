@@ -74,12 +74,51 @@ export function tIn(l:Lang,ru:string,vars?:Record<string,unknown>):string{
 export function t(ru:string,vars?:Record<string,unknown>):string{return tIn(current,ru,vars);}
 /** A line the server wrote in Russian with numbers inside: «срывов: 2» is found in the tables as «срывов: {n}»
  *  (a second number is {n2}). The server speaks Russian to everybody until it learns the language of the person. */
-export function tLine(ru:string):string{
-  if(current==='ru'||WORDS[ru])return t(ru);
+export function tLineIn(l:Lang,ru:string):string{
+  if(l==='ru'||WORDS[ru])return tIn(l,ru);
   const vars:Record<string,string>={};let count=0;
-  const key=ru.replace(/\d+(?:[.,]\d+)?/g,v=>{const name=count++?'n'+count:'n';vars[name]=current==='en'?v.replace(',','.'):v;return '{'+name+'}';});
-  return WORDS[key]?t(key,vars):ru;
+  const key=ru.replace(/\d+(?:[.,]\d+)?/g,v=>{const name=count++?'n'+count:'n';vars[name]=l==='en'?v.replace(',','.'):v;return '{'+name+'}';});
+  return WORDS[key]?tIn(l,key,vars):ru;
 }
+export const tLine=(ru:string)=>tLineIn(current,ru);
+
+// The lines of the tables with {slots}, as patterns to read a ready server line back: «Проверьте поле «Город»» is
+// found as «Проверьте поле «{label}»» with label «Город». Built once, the longest fixed text first.
+let patterns:{key:string;names:string[];quoted:boolean[];re:RegExp;fixed:number}[]|null=null;
+function readBack(){
+  if(patterns)return patterns;
+  patterns=[];
+  for(const key of Object.keys(WORDS)){
+    if(!/\{\w+\}/.test(key)||key.includes('|'))continue;
+    const names:string[]=[],quoted:boolean[]=[],pieces=key.split(/\{(\w+)\}/);
+    let source='^',fixed=0;
+    pieces.forEach((piece,i)=>{if(i%2){names.push(piece);quoted.push(pieces[i-1].endsWith('«')&&pieces[i+1].startsWith('»'));source+='(.*?)';}else{source+=piece.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');fixed+=piece.length;}});
+    // A line made mostly of slots («{a} · {b}», «Уборка {when}») would read back almost any line.
+    if(fixed<12)continue;
+    patterns.push({key,names,quoted,re:new RegExp(source+'$','s'),fixed});
+  }
+  patterns.sort((a,b)=>b.fixed-a.fixed);
+  return patterns;
+}
+/** A line the server wrote in Russian, in the language `l`: the line itself, the line with numbers ({n}), or a line
+ *  of the tables with slots whose fixed words match (a slot may be empty). The values of the slots are read the same
+ *  way (the name of a field, a status, a sentence of terms); a title, a name or a quote («…») someone wrote stays
+ *  as written. A line the tables do not know stays Russian. The app shows errors and notices through it (tServer:
+ *  the chosen language); the server, for a message to one person, passes their language. */
+export function tServerIn(l:Lang,ru:string):string{
+  if(l==='ru'||typeof ru!=='string'||!ru||WORDS[ru])return typeof ru==='string'?tIn(l,ru):ru;
+  const line=tLineIn(l,ru);
+  if(line!==ru)return line;
+  for(const p of readBack()){
+    const m=p.re.exec(ru);
+    if(!m)continue;
+    const vars:Record<string,string>={};
+    p.names.forEach((name,i)=>{const v=m[i+1];vars[name]=p.quoted[i]||/^(title|name)$/.test(name)||!v?v:tServerIn(l,v);});
+    return tIn(l,p.key,vars);
+  }
+  return ru;
+}
+export const tServer=(ru:string)=>tServerIn(current,ru);
 
 /** A word after a number. Russian has three forms (1 гость, 2 гостя, 5 гостей), English two, Kazakh one
  *  (the noun after a number does not change: 5 қонақ). */

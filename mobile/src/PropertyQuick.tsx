@@ -45,8 +45,8 @@ export function PropertyQuick({city,onSave,onGuestMode,onPlace,onReview,onClose,
   try{
    let result:Row,published=photos.length>0,review=false;
    try{result=await onSave(draftListingBody(draft,photos,published));}
-   catch(e:any){if(!published||!/провер|допуск/i.test(String(e?.message)))throw e;published=false;result=await onSave(draftListingBody(draft,photos,false));
-    if(onReview&&needsReview(String(e?.message))){try{await onReview(reviewRequest({id:result.id,title:draftTitle(draft),city:draft.city,address:draft.address}));review=true;}catch{/* the owner can still ask from «Допуск» */}}}
+   catch(e:any){if(!published||!/провер|допуск/i.test(String(e?.ru??e?.message)))throw e;published=false;result=await onSave(draftListingBody(draft,photos,false));
+    if(onReview&&needsReview(String(e?.ru??e?.message))){try{await onReview(reviewRequest({id:result.id,title:draftTitle(draft),city:draft.city,address:draft.address}));review=true;}catch{/* the owner can still ask from «Допуск» */}}}
    // The flat goes on the map by its address right away; the owner only checks the pin.
    let placed=false;try{placed=!!((await onPlace?.({propertyId:result.id})) as Row|undefined)?.saved;}catch{/* the map pin can be set later */}
    let note='';try{await onGuestMode({propertyId:result.id,mode,cleaningFee:!draft.ownStaff&&draft.cleaningFee>=100?draft.cleaningFee:undefined});}catch(e:any){note=' '+(e?.message||'');}

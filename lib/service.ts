@@ -53,6 +53,7 @@ import {verifiedPlaceSql} from './property-rights';
 import {requireIdentity,identityOf} from './identity-docs';
 import {ruleFor,minutesLabel} from './decision-rules';
 import {ownerWindows,decideCalendarWindow,openWindowFor,openWindowsFor,openWindowsIn,windowAt,windowQuote} from './calendar-windows';
+import {languageOf} from './user-language';
 
 type Row = Record<string, any>;
 const now = () => Math.floor(Date.now() / 1000);
@@ -1278,7 +1279,7 @@ export class RentalService {
       const history=await this.all('SELECT sender,body FROM (SELECT sender,body,created_at FROM messages WHERE user_id=? AND scope=? ORDER BY created_at DESC LIMIT 8) ORDER BY created_at',this.userId,role);
       const context=assistantContext(await this.roleState(role),role);
       const budget=createAIBudgetLifecycle(this.db,this.userId,config);
-      const generated=await generateAnswer(config,text,role,history as {sender:string;body:string}[],reply.text,context,toolExecutor,{...budget,beforeRequest:async body=>{if(!(await aiDataPermission(this)).allowed)throw new DomainError('Передача данных отозвана. Поиск и формы доступны.');await budget.beforeRequest(body);}},role==='guest'?readSearch:undefined,()=>readAdministratorProcesses(this,role));
+      const generated=await generateAnswer(config,text,role,history as {sender:string;body:string}[],reply.text,context,toolExecutor,{...budget,beforeRequest:async body=>{if(!(await aiDataPermission(this)).allowed)throw new DomainError('Передача данных отозвана. Поиск и формы доступны.');await budget.beforeRequest(body);}},role==='guest'?readSearch:undefined,()=>readAdministratorProcesses(this,role),await languageOf(this.db,this.userId));
       reply.text=generated.text;
       mode=generated.mode;errorCode=generated.errorCode;commands=generated.commands||[];
       if(generated.search){search=generated.search;reply.action='properties';}
