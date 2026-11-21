@@ -1,0 +1,73 @@
+name: Address book of Kazakhstan
+# Builds the address book (settlements, districts, streets, houses) from the OpenStreetMap extract of Kazakhstan
+# and puts it into the photo bucket (R2), where the Worker reads it for address suggestions.
+# Runs once a month and by hand. On other branches it only builds and reports, nothing is uploaded.
+# Needs CLOUDFLARE_API_TOKEN (the same as publishing: Workers R2 Storage: Edit, Account Settings: Read).
+on:
+  schedule:
+    - cron: '17 2 3 * *'
+  workflow_dispatch:
+  push:
+    branches: [main, 'claude/**']
+    paths:
+      - lib/address-text.ts
+      - scripts/build-address-book.mjs
+      - scripts/upload-address-book.mjs
+      - .github/workflows/address-book.yml
+permissions:
+  contents: read
+concurrency:
+  group: address-book-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Install osmium
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq osmium-tool
+      - name: Download OpenStreetMap of Kazakhstan
+        run: |
+          mkdir -p outputs/osm
+          curl -fsSL --retry 5 --retry-delay 10 -o outputs/osm/kz.osm.pbf https://download.geofabrik.de/asia/kazakhstan-latest.osm.pbf
+          ls -la outputs/osm
+      - name: Keep settlements, borders, streets and houses
+        run: |
+          osmium tags-filter outputs/osm/kz.osm.pbf n/place nwr/addr:housenumber w/highway r/boundary=administrative w/place -o outputs/osm/addr.osm.pbf --overwrite
+          osmium export outputs/osm/addr.osm.pbf -f geojsonseq --add-unique-id=type_id -o outputs/osm/addr.geojsonseq --overwrite
+          ls -la outputs/osm
+      - name: Build the address book
+        run: node --max-old-space-size=6000 scripts/build-address-book.mjs outputs/osm/addr.geojsonseq outputs/address-book "$(date -u +%Y-%m-%d)-${GITHUB_RUN_NUMBER}"
+      - name: Report the sizes
+        run: |
+          du -sh outputs/address-book
+          find outputs/address-book -type f | wc -l
+          find outputs/address-book -type f -printf '%s %p\n' | sort -rn | head -15
+      - name: Find the account
+        if: github.ref == 'refs/heads/main'
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_D1_DATABASE_ID: ${{ secrets.CLOUDFLARE_D1_DATABASE_ID }}
+        run: node scripts/resolve-cloudflare-ids.mjs
+      - name: Upload to R2
+        if: github.ref == 'refs/heads/main'
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: node scripts/upload-address-book.mjs outputs/address-book
+      - name: Keep a sample for checks
+        if: github.ref != 'refs/heads/main'
+        uses: actions/upload-artifact@v4
+        with:
+          name: address-book
+          path: outputs/address-book
+          retention-days: 7
