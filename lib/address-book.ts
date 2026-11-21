@@ -6,7 +6,7 @@ import {nameTokens,plainName,shardKey,shardFile,splitAddress,joinAddress,houseNu
 export {splitAddress,joinAddress} from './address-text';
 
 export type BookBucket={get(key:string):Promise<{text():Promise<string>}|null>};
-export type BookPlace={i:string;n:string;k?:string;v:string[];t:string;p?:number;r?:string;a?:string;c:[number,number];s:number;d:number};
+export type BookPlace={i:string;n:string;k?:string;v:string[];t:string;sk?:string[];p?:number;r?:string;a?:string;c:[number,number];s:number;d:number};
 type BookStreet={n:string;v:string[];c:[number,number];h:(string|number)[][]};
 type BookDistrict={n:string;v:string[];c:[number,number]};
 export type Place={id:string;name:string;kk?:string;region?:string;raion?:string;kind:string;center:[number,number];streets:boolean;custom?:boolean};
@@ -14,20 +14,24 @@ export type AddressItem={kind:'street'|'house';label:string;value:string;street:
 
 const PREFIX='geo/kz/',RANK:Record<string,number>={city:4,town:3,village:2,hamlet:1};
 // A Worker keeps the files it has read for a while: the same street is typed letter by letter.
-const memory=new Map<string,{until:number;value:unknown}>();
+const memories=new WeakMap<object,Map<string,{until:number;value:unknown}>>();
 async function readJson<T>(bucket:BookBucket|undefined,key:string,ttl:number):Promise<T|null>{
- if(!bucket?.get)return null;const now=Date.now(),hit=memory.get(key);if(hit&&hit.until>now){memory.delete(key);memory.set(key,hit);return hit.value as T;}
+ if(!bucket?.get)return null;let memory=memories.get(bucket);if(!memory){memory=new Map();memories.set(bucket,memory);}const now=Date.now(),hit=memory.get(key);if(hit&&hit.until>now){memory.delete(key);memory.set(key,hit);return hit.value as T;}
  let value:T|null=null;try{const o=await bucket.get(key);value=o?JSON.parse(await o.text()) as T:null;}catch{value=null;}
  memory.set(key,{until:now+(value?ttl:60_000),value});while(memory.size>80)memory.delete(memory.keys().next().value as string);return value;
 }
-async function version(bucket?:BookBucket){const c=await readJson<{version?:string}>(bucket,PREFIX+'current.json',10*60_000);return c?.version&&/^[\w.-]{1,40}$/.test(c.version)?c.version:'';}
+type Current={version?:string;pk?:string[]};
+async function current(bucket?:BookBucket){return await readJson<Current>(bucket,PREFIX+'current.json',10*60_000);}
+async function version(bucket?:BookBucket){const c=await current(bucket);return c?.version&&/^[\w.-]{1,40}$/.test(c.version)?c.version:'';}
 async function bookFile<T>(bucket:BookBucket|undefined,path:string){const v=await version(bucket);return v?readJson<T>(bucket,PREFIX+v+'/'+path,60*60_000):null;}
 export async function hasAddressBook(bucket?:BookBucket){return !!await version(bucket);}
 
 const place=(p:BookPlace):Place=>({id:p.i,name:p.n,...(p.k?{kk:p.k}:{}),...(p.r?{region:p.r}:{}),...(p.a&&!/Г\.\s*А\.?$/.test(p.a)?{raion:p.a}:{}),kind:p.t,center:p.c,streets:p.s>0});
 async function placesFor(bucket:BookBucket|undefined,tokens:string[]){
  const keys=[...new Set(tokens.filter(t=>t.length>=2||/^\d/.test(t)).map(shardKey))].slice(0,2),seen=new Map<string,BookPlace>();
- for(const k of keys)for(const p of await bookFile<BookPlace[]>(bucket,'p/'+shardFile(k)+'.json')||[])seen.set(p.i,p);
+ // Only the parts the current book has: the other files in its place may be left from an older book.
+ const have=(await current(bucket))?.pk;
+ for(const k of keys)if(!Array.isArray(have)||have.includes(shardFile(k)))for(const p of await bookFile<BookPlace[]>(bucket,'p/'+shardFile(k)+'.json')||[])seen.set(p.i,p);
  return [...seen.values()];
 }
 const fitOf=(query:string[],p:{v:string[]})=>Math.max(0,...p.v.map(v=>nameFit(query,v.split(' '))));
@@ -69,7 +73,9 @@ export async function suggestDistricts(bucket:BookBucket|undefined,db:D1Database
 
 async function streetsFor(bucket:BookBucket|undefined,p:BookPlace,tokens:string[]){
  if(!p.s)return [];if(p.s===1)return await bookFile<BookStreet[]>(bucket,'s/'+p.i+'.json')||[];
- const key=tokens.find(t=>t.length>=2||/^\d/.test(t));return key?await bookFile<BookStreet[]>(bucket,'s/'+p.i+'/'+shardFile(shardKey(key))+'.json')||[]:[];
+ const key=tokens.find(t=>t.length>=2||/^\d/.test(t)),file=key?shardFile(shardKey(key)):'';
+ if(!file||Array.isArray(p.sk)&&!p.sk.includes(file))return [];
+ return await bookFile<BookStreet[]>(bucket,'s/'+p.i+'/'+file+'.json')||[];
 }
 const at=(p:BookPlace,dx:unknown,dy:unknown):[number,number]=>[Number((p.c[0]+Number(dx)/1e5).toFixed(6)),Number((p.c[1]+Number(dy)/1e5).toFixed(6))];
 const houseOrder=(a:string,b:string)=>(parseInt(a,10)||0)-(parseInt(b,10)||0)||a.localeCompare(b,'ru');

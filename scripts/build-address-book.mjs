@@ -110,14 +110,15 @@ export async function buildAddressBook(lines,{version=new Date().toISOString().s
   const whole=JSON.stringify(rows.map(r=>r.row));
   if(whole.length<=SINGLE_FILE_LIMIT){files.set(`s/${p.id}.json`,whole);p.hasStreets=1;continue;}
   const shards=new Map();for(const r of rows)for(const k of new Set(r.tokens.map(shardKey)))(shards.get(k)||shards.set(k,[]).get(k)).push(r.row);
-  for(const [k,list] of shards)put(`s/${p.id}/${shardFile(k)}.json`,list);p.hasStreets=2;
+  for(const [k,list] of shards)put(`s/${p.id}/${shardFile(k)}.json`,list);p.hasStreets=2;p.shardKeys=[...shards.keys()].map(shardFile).sort();
  }
- const placeRow=p=>({i:p.id,n:p.name,...(p.kk&&p.kk!==p.name?{k:p.kk}:{}),v:[...new Set(p.all.map(x=>plainName(x,'place')).filter(Boolean))],t:p.kind,...(p.pop?{p:p.pop}:{}),...(p.region?{r:p.region}:{}),...(p.raion?{a:p.raion}:{}),c:p.c,s:p.hasStreets,d:p.hasDistricts});
+ const placeRow=p=>({i:p.id,n:p.name,...(p.kk&&p.kk!==p.name?{k:p.kk}:{}),v:[...new Set(p.all.map(x=>plainName(x,'place')).filter(Boolean))],t:p.kind,...(p.shardKeys?{sk:p.shardKeys}:{}),...(p.pop?{p:p.pop}:{}),...(p.region?{r:p.region}:{}),...(p.raion?{a:p.raion}:{}),c:p.c,s:p.hasStreets,d:p.hasDistricts});
  const index=new Map();for(const p of book){const row=placeRow(p);for(const k of new Set(p.all.flatMap(n=>nameTokens(n,'place')).map(shardKey)))(index.get(k)||index.set(k,[]).get(k)).push(row);}
  for(const [k,list] of index)put(`p/${shardFile(k)}.json`,list.sort((a,b)=>SETTLEMENTS[b.t]-SETTLEMENTS[a.t]||(b.p||0)-(a.p||0)));
  put('top.json',book.filter(p=>SETTLEMENTS[p.kind]>=3).sort((a,b)=>SETTLEMENTS[b.kind]-SETTLEMENTS[a.kind]||b.pop-a.pop).slice(0,60).map(placeRow));
  const counts={settlements:book.length,streets:streetCount,houses:houseCount,housesRead:houses.length,housesPlaced:placed,districts:book.reduce((n,p)=>n+p.districts.length,0),files:files.size+1,bytes:[...files.values()].reduce((n,v)=>n+Buffer.byteLength(v),0)};
- put('meta.json',{version,built:new Date().toISOString(),source:'© OpenStreetMap contributors, ODbL',counts});
+ // Which parts exist: the Worker asks only for these, so a file left from an older book in the same place is never read.
+ put('meta.json',{version,built:new Date().toISOString(),source:'© OpenStreetMap contributors, ODbL',counts,pk:[...index.keys()].map(shardFile).sort()});
  return {files,counts,book};
 }
 
