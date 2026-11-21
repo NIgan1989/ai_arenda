@@ -100,3 +100,22 @@ test('the public route answers without the book with empty lists', async () => {
  assert.deepEqual(await addressRequest(undefined,undefined,new URLSearchParams('kind=street&city=Павлодар&q=торайг')),{items:[]});
  assert.equal((await addressRequest(bucket,undefined,new URLSearchParams('kind=city&q=пав'))).items[0].name,'Павлодар');
 });
+
+test('a file left from an older book in the same place is never read', async () => {
+ const meta=JSON.parse(files.get('meta.json'));
+ const old=new Map(store);old.set('geo/kz/current.json',JSON.stringify({version:'t1',pk:meta.pk.filter(k=>k!==[...'па'].map(c=>c.codePointAt(0).toString(36)).join('-'))}));
+ const stale={get:async k=>old.has(k)?{text:async()=>old.get(k)}:null};
+ assert.equal((await suggestPlaces(stale,undefined,'пав')).length,0);
+});
+
+test('the upload stops when it cannot tell which book is in use, and starts a first book only on «not found»', async () => {
+ const {uploadAddressBook}=await import('../scripts/upload-address-book.mjs');
+ const {mkdtempSync,writeFileSync:write,mkdirSync:mk}=await import('node:fs');const {join:j}=await import('node:path');const {tmpdir}=await import('node:os');
+ const dir=mkdtempSync(j(tmpdir(),'book-'));for(const [k,v] of files){mk(j(dir,k,'..'),{recursive:true});write(j(dir,k),v);}
+ const run=(answer)=>{const puts=[];return uploadAddressBook({dir,token:'t',account:'x',log:()=>{},perSecond:1e6,wait:async()=>{},fetcher:async(u,o={})=>{if(!o.method)return answer();puts.push(decodeURIComponent(String(u).split('/objects/')[1]));return new Response('{}');}}).then(r=>({r,puts}));};
+ await assert.rejects(run(()=>new Response('busy',{status:503})));
+ const first=await run(()=>new Response('{}',{status:404}));
+ assert.equal(first.r.slot,'a');assert.equal(first.puts.at(-1),'geo/kz/current.json');
+ const second=await run(()=>Response.json({version:'a'}));
+ assert.equal(second.r.slot,'b');assert.ok(second.puts.every(p=>p.startsWith('geo/kz/b/')||p==='geo/kz/current.json'));
+});

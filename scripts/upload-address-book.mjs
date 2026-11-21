@@ -18,11 +18,17 @@ export async function uploadAddressBook({dir,token,account,bucket=BUCKET_NAME,fe
  let next=0;const turn=async()=>{const now=Date.now(),at=Math.max(now,next);next=at+1000/perSecond;if(at>now)await wait(at-now);};
  const send=async(k,body)=>{for(let i=1;;i++){await turn();let r;try{r=await fetcher(url(k),{method:'PUT',headers:{...auth,'Content-Type':'application/json','Cache-Control':'public, max-age=86400'},body});}catch(e){if(i>=8)throw e;await wait(5000*i);continue;}
   if(r.ok)return;const text=(await r.text()).slice(0,200);if(i>=8||r.status<500&&r.status!==429)throw Error(`R2 refused ${k}: ${r.status} ${text}`);await wait(r.status===429?60_000:5000*i);}};
- let live='';try{await turn();const r=await fetcher(url(PREFIX+'current.json'),{headers:auth});if(r.ok)live=String((await r.json())?.version||'');}catch{/* no book yet */}
+ // Which place the Worker reads now. Only a confirmed «no such file» starts a first book; any other doubt stops the
+ // upload, so the book in use is never written over.
+ let live='';
+ for(let i=1;;i++){await turn();let r;try{r=await fetcher(url(PREFIX+'current.json'),{headers:auth});}catch(e){if(i>=5)throw Error('The current address book could not be read: '+(e?.message||e));await wait(5000*i);continue;}
+  if(r.status===404){live='';break;}
+  if(r.ok){let body;try{body=await r.json();}catch{body=null;}const v=String(body?.version||'');if(v!=='a'&&v!=='b'&&!/^[\w.-]{1,40}$/.test(v))throw Error('The current address book pointer is unreadable.');live=v;break;}
+  if(i>=5||r.status<500&&r.status!==429)throw Error('The current address book could not be read ('+r.status+').');await wait(r.status===429?60_000:5000*i);}
  const slot=live==='a'?'b':'a',files=walk(dir).map(p=>relative(dir,p).split(sep).join('/'));let done=0;
  log(`Uploading ${files.length} files into ${PREFIX}${slot}/ (the Worker reads ${live||'nothing'} meanwhile).`);
  const queue=[...files];await Promise.all(Array.from({length:6},async()=>{for(let f;(f=queue.shift());){await send(PREFIX+slot+'/'+f,readFileSync(join(dir,f)));if(++done%1000===0)log(`${done} of ${files.length} files`);}}));
- await send(PREFIX+'current.json',JSON.stringify({version:slot,build:meta.version,built:meta.built,counts:meta.counts}));
+ await send(PREFIX+'current.json',JSON.stringify({version:slot,build:meta.version,built:meta.built,counts:meta.counts,pk:meta.pk}));
  log(`Address book ${meta.version}: ${files.length} files uploaded to ${slot} and switched on.`);
  return {slot,files:files.length};
 }
