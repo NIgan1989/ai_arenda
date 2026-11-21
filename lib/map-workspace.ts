@@ -4,6 +4,7 @@ import {q,one,rows,uuid,epoch,type Row,type OperationConfig} from './operation-c
 import {mapCities,geoDistance} from './map-location';
 import {ownerDemand} from './owner-demand';
 import {recentAiMarks} from './ai-moves';
+import {bookSpot,type BookBucket} from './address-book';
 export {mapCities,geoDistance} from './map-location';
 export function coordinate(value:unknown,min:number,max:number){if(value===null||value===''||typeof value==='boolean')throw new DomainError('Укажите координаты точки.');const n=Number(value);if(!Number.isFinite(n)||n<min||n>max)throw new DomainError('Некорректные координаты.');return n;}
 const fingerprint=(p:Row)=>[p.city,p.district,p.address].join('|');
@@ -47,11 +48,17 @@ export function geocodeQueries(p:Row){
  return [...new Set(ways)].slice(0,3);
 }
 type Spot={longitude:number;latitude:number;found:boolean};
-type GeoConfig={STADIA_API_KEY?:string};
+type GeoConfig={STADIA_API_KEY?:string;BUCKET?:unknown};
 // The owner may pass the address he is still typing (city, district, address), so the pin moves before he saves.
 function draftOf(p:Row,b:Row){const take=(k:string,max:number)=>typeof b[k]==='string'?b[k].slice(0,max):p[k];return {...p,city:take('city',80),district:take('district',120),address:take('address',300)};}
 async function findSpot(p:Row,lookup:typeof fetch,config:GeoConfig):Promise<Spot>{
- const city=String(p.city||'').trim().toLocaleLowerCase('ru'),centre=mapCities[Object.keys(mapCities).find(c=>c.toLocaleLowerCase('ru')===city)||'']||mapCities['Павлодар'],fallback={longitude:centre[0],latitude:centre[1],found:false};
+ // The address book knows every settlement and many houses: a house from it is the pin at once, a small town
+ // gets its own centre instead of Pavlodar's, and a known street is a better start than the centre.
+ let book:Awaited<ReturnType<typeof bookSpot>>=null;try{book=await bookSpot(config.BUCKET as BookBucket|undefined,p.city,cutFlat(p.address));}catch{book=null;}
+ if(book?.exact)return {longitude:book.longitude,latitude:book.latitude,found:true};
+ const city=String(p.city||'').trim().toLocaleLowerCase('ru'),known=mapCities[Object.keys(mapCities).find(c=>c.toLocaleLowerCase('ru')===city)||''];
+ const centre:[number,number]=known||(book?[book.longitude,book.latitude]:mapCities['Павлодар']),fallback={longitude:book&&!known?book.longitude:centre[0],latitude:book&&!known?book.latitude:centre[1],found:false};
+ if(book&&known&&(book.longitude!==known[0]||book.latitude!==known[1])&&geoDistance([book.longitude,book.latitude],known)<=60000){fallback.longitude=book.longitude;fallback.latitude=book.latitude;}
  if(!cutFlat(p.address))return fallback;
  const stadia=typeof config.STADIA_API_KEY==='string'&&/^[A-Za-z0-9-]{8,128}$/.test(config.STADIA_API_KEY)?config.STADIA_API_KEY:'';
  // A result far from the flat's city is somebody else's street with the same name.
