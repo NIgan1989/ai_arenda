@@ -19,7 +19,7 @@ import {hasContacts,hasContactWays,MIN_PHOTOS} from './listing-rules';
 import {phoneOpens} from './chat-guard';
 import {listingInput,jpegInput,propertyStatus,cleanerStatus,categories,kindCategory,isBanquet,occasions,occasionLabel,searchCategory} from './listings';
 import {mediaKey,dataUrlBytes,mediaData} from './media-store';
-import {CANCELLED_AFTER_ARRIVAL} from './stay-result';
+import {CANCELLED_AFTER_ARRIVAL,NOT_LET_IN} from './stay-result';
 import {readAdministratorState} from './administrator';
 import {recordFinance,migrateFinanceEntity} from './finance';
 import {payoutOf,payoutPhoneText} from './payout';
@@ -292,6 +292,9 @@ export class RentalService {
   async resolveAdministratorIssue(roleValue:unknown,body:Row){
     const role=await this.authorizeWorkspace(roleValue,'administrator/issues'),issue=await this.one('SELECT * FROM administrator_issues WHERE id=?',required(body.id,'Обращение',100));
     if(!issue||!(role==='owner'&&issue.owner_id===this.userId||issue.other_user===this.userId&&issue.other_role===role))throw new DomainError('Обращение недоступно для решения в этой роли.',403);
+    // «Меня не заселили» is decided by a person at the platform (lib/pilot-governance.ts), never by the owner it is about:
+    // its outcome decides the commission (lib/stay-result.ts) and the hold of the owner's places.
+    if(String(issue.description).startsWith(NOT_LET_IN))throw new DomainError('Жалобу «Меня не заселили» разбирает администратор сервиса. Ответьте в обращении, решение примет он.',403);
     const resolution=required(body.resolution,'Как решено обращение',1500),version=number(body.expectedVersion,'Версия обращения',1,10000000);
     const auditId=id(),r=await this.db.batch([
       this.query("UPDATE administrator_issues SET status='resolved',resolution=?,resolved_at=?,version=version+1 WHERE id=? AND status='open' AND version=?",resolution,now(),issue.id,version),
@@ -307,10 +310,12 @@ export class RentalService {
     const issueId=id();
     return this.query('INSERT INTO administrator_issues(id,owner_id,property_id,entity_kind,entity_id,opened_by,opened_role,other_user,other_role,description,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)',issueId,entity.owner_id,entity.property_id,kind,entity.id,this.userId,role,other,owner?(kind==='booking'?'guest':'cleaner'):'owner',description,now());
   }
-  // One open issue per participant and booking or cleaning: pressing «Есть проблема» again adds to it instead of
-  // opening a second one, so the other side and the AI administrator follow a single thread.
+  // One open issue per pair of participants and booking or cleaning: pressing «Есть проблема» again adds to it instead of
+  // opening a second one, so the other side and the AI administrator follow a single thread. A cleaning that passed
+  // to another cleaner gets a new thread: the next cleaner never reads, and is never sent into, the previous one's.
   async issueWrite(entity:Row,kind:'booking'|'job',description:string){
-    const open=await this.one("SELECT id FROM administrator_issues WHERE entity_kind=? AND entity_id=? AND opened_by=? AND status='open' ORDER BY created_at DESC LIMIT 1",kind,entity.id,this.userId);
+    const other=entity.owner_id===this.userId?(kind==='booking'?entity.guest_id:entity.assigned_to):entity.owner_id;
+    const open=await this.one("SELECT id FROM administrator_issues WHERE entity_kind=? AND entity_id=? AND opened_by=? AND other_user IS ? AND status='open' ORDER BY created_at DESC LIMIT 1",kind,entity.id,this.userId,other??null);
     if(!open)return {added:false,statement:this.administratorIssueStatement(entity,kind,description)};
     return {added:true,statement:this.query("UPDATE administrator_issues SET description=substr(description||char(10)||'Дополнение: '||?,1,6000),version=version+1 WHERE id=? AND status='open'",description,open.id)};
   }
@@ -352,6 +357,9 @@ export class RentalService {
       const end=Math.max(Number(j.end),t)+minutes*60;
       const next=await this.one("SELECT start FROM bookings WHERE property_id=? AND status='confirmed' AND start>=? AND start<? AND (? IS NULL OR id<>?) ORDER BY start LIMIT 1",j.property_id,j.start,end,j.booking_id,j.booking_id);
       if(next)throw new DomainError('Следующий заезд в '+new Intl.DateTimeFormat('ru-RU',{hour:'2-digit',minute:'2-digit',timeZone:'Asia/Almaty'}).format(new Date(next.start*1000))+', продлить уборку дальше нельзя.',409);
+      // A stay booked in an outside calendar (Airbnb, Booking…) counts the same as ours, as for «Опаздываю».
+      const outside=await this.one('SELECT x.start FROM external_blocks x JOIN calendar_sources c ON c.id=x.source_id WHERE x.property_id=? AND c.enabled=1 AND x.start<? AND x.end>? ORDER BY x.start LIMIT 1',j.property_id,end,Math.max(Number(j.end),t));
+      if(outside)throw new DomainError('По внешнему календарю заезд в '+new Intl.DateTimeFormat('ru-RU',{hour:'2-digit',minute:'2-digit',timeZone:'Asia/Almaty'}).format(new Date(Number(outside.start)*1000))+', продлить уборку дальше нельзя.',409);
       const label=minutes<60?minutes+' мин':minutes/60+' ч';
       const r=await this.db.batch([
         this.query("UPDATE cleaning_jobs SET end=?,overdue_step=0 WHERE id=? AND version=? AND status IN ('assigned','in_progress')",end,j.id,j.version),
@@ -364,8 +372,11 @@ export class RentalService {
     if(body.action==='release'){
       if(owner&&j.end>t&&j.status==='in_progress')throw new DomainError('Исполнитель ещё в отведённом времени. Найти замену можно после срока.',409);
       const window=await releaseWindow(this.db,j,t);if(!window)throw new DomainError('До следующего заезда меньше получаса: нового исполнителя не найти. Продлите срок или закройте уборку.',409);
+      // The owner takes a started cleaning away: the part already done is not lost, an issue with both sides records it.
+      const started=owner&&j.status==='in_progress',issue=started?await this.issueWrite(j,'job','Начатая уборка передана другому исполнителю. Договоритесь об оплате сделанной части: исполнитель описывает, что успел, владелец отмечает, сколько перевёл.'):null;
       const r=await this.db.batch([...releaseStatements(this.db,j,window,t),
-        this.notify(owner?j.assigned_to:j.owner_id,owner?'Владелец передал уборку «'+title+'» другому исполнителю.':'Исполнитель отказался от уборки «'+title+'». Уборка снова в поиске, выберите нового исполнителя из откликов.','released:'+j.id+':'+j.version,owner?'cleaner':'owner'),
+        ...(issue?[issue.statement]:[]),
+        this.notify(owner?j.assigned_to:j.owner_id,owner?'Владелец передал уборку «'+title+'» другому исполнителю.'+(started?' Вы уже начали работу: напишите в обращении по уборке, что успели сделать, чтобы договориться об оплате.':''):'Исполнитель отказался от уборки «'+title+'». Уборка снова в поиске, выберите нового исполнителя из откликов.','released:'+j.id+':'+j.version,owner?'cleaner':'owner'),
         this.audit(j.id,owner?'job.reassign_requested':'job.released_by_cleaner')]);
       if(!r[0].meta.changes)throw new DomainError('Задание уже изменилось. Обновите карточку.',409);
       return {message:owner?'Уборка снова в поиске. Новые отклики появятся в карточке.':'Вы отказались от задания. Владелец получит уведомление.'};
@@ -1157,6 +1168,17 @@ export class RentalService {
       if(!b||b.status!=='confirmed')throw new DomainError('Бронь уже закрыта. Обновите задание.',409);
       if(now()<Number(b.end)-1800)throw new DomainError('Гость живёт до '+clockLabel(Number(b.end))+'. Сообщить, что жильё свободно, можно за полчаса до этого времени.',409);
       if(b.checkout_reported_at)return {message:'Выезд уже отмечен, ждём подтверждения. Начните уборку, как только кнопка станет активной.'};
+      // Before the end of the stay the performer's word is not the guest's: the guest may be out for a walk. It is told
+      // to the owner and the guest; the checkout is confirmed by the guest («Сообщить о выезде») or the owner, never by
+      // the autopilot on the performer's word (audit of 2026-11-22). From the end of the stay it counts as a report.
+      if(now()<Number(b.end)){
+        const title=j.title||'жильё';
+        await this.db.batch([
+          this.notify(j.owner_id,'Исполнитель на месте в «'+title+'»: говорит, что гостя нет и жильё свободно. Бронь идёт до '+clockLabel(Number(b.end))+'. Если гость выехал, подтвердите выезд, и уборка начнётся.','cleaner-vacant:'+b.id,'owner'),
+          this.notify(b.guest_id,'Исполнитель пришёл на уборку «'+title+'» и видит, что жильё свободно. Если вы уже выехали, нажмите «Сообщить о выезде» в брони. Если вы ещё здесь, ничего делать не нужно: бронь идёт до '+clockLabel(Number(b.end))+'.','cleaner-vacant:'+b.id,'guest'),
+          this.audit(b.id,'booking.vacant_seen_by_cleaner')]);
+        return {message:'Владелец и гость получили сообщение. Начать уборку можно, когда гость или владелец подтвердят выезд.'};
+      }
       const r=await this.db.batch([
         this.query('UPDATE booking_terms SET checkout_reported_at=?,version=version+1 WHERE booking_id=? AND checkout_reported_at IS NULL AND actual_checkout IS NULL',now(),b.id),
         this.notify(j.owner_id,'Исполнитель на месте в «'+(j.title||'жильё')+'»: гостя нет, жильё свободно. Подтвердите выезд, чтобы началась уборка.','cleaner-vacant:'+b.id,'owner'),
@@ -1246,7 +1268,10 @@ export class RentalService {
       const home=j.booking_id===null&&!!homeOrderOf(j.description),t=now(),terms=home?homeCancel(j,t):{fee:0};
       const reason=home?String(body.reason||'').trim().slice(0,1000)||'Заказчик отменил заказ':required(body.reason,'Причина отмены',1000);
       if(home&&body.expectedFee!==undefined&&Number(body.expectedFee)!==terms.fee)throw new DomainError(terms.fee?'Бесплатный срок отмены уже прошёл: исполнителю положено '+tenge(terms.fee)+'. Подтвердите отмену ещё раз.':'Условия отмены изменились. Обновите карточку.',409);
-      const r=await this.query("UPDATE cleaning_jobs SET status='cancelled',cancel_fee=?,cancelled_at=? WHERE id=? AND (status IN ('open','assigned') OR status='in_progress' AND end<=?)"+(home?' AND version=?':''),terms.fee,t,jobId,t,...(home?[j.version]:[])).run();
+      // Started work is never cancelled (audit of 2026-11-22: the performer lost the report and the pay). The owner
+      // closes it as done, gives it to another performer (the started part is then settled in an issue), or extends it.
+      if(j.status==='in_progress')throw new DomainError('Уборка уже начата, отменить её нельзя. Если работа сделана, закройте уборку как выполненную; если исполнитель не справляется, передайте её другому, тогда оплату сделанной части обсудите в обращении.',409);
+      const r=await this.query("UPDATE cleaning_jobs SET status='cancelled',cancel_fee=?,cancelled_at=? WHERE id=? AND status IN ('open','assigned')"+(home?' AND version=?':''),terms.fee,t,jobId,...(home?[j.version]:[])).run();
       if(!r.meta.changes)throw new DomainError(home&&['open','assigned'].includes(j.status)?'Заказ изменился. Обновите карточку.':'Начатую работу нельзя отменить этим действием.',409);
       const said=home?'Заказчик отменил уборку «'+(j.title||'дом')+'». '+(terms.fee?'Отмена позже бесплатного срока: вам положено '+tenge(terms.fee)+' за отложенное время.':'Отмена в бесплатный срок.'):'Владелец отменил уборку «'+(j.title||'жильё')+'». Причина: '+reason;
       await this.db.batch([this.audit(jobId,'job.cancelled:'+reason),...(j.assigned_to?[this.notify(j.assigned_to,said,'cancelled:'+jobId,'cleaner')]:[])]);

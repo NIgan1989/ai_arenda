@@ -830,7 +830,7 @@ export function MapHome({ role, accountId, data, menu, chats, onChanged, onOpenP
             ))}</View></View>
       )}{!!notice && (
         <Text accessibilityLiveRegion="polite" style={h.mapNotice}>{notice}</Text>
-      )}{(role === 'owner' || role === 'guest') && !selected && <PriceTip role={role} cards={data.approvals || []} onChanged={onChanged} onEdit={onEdit} />}{/* Without an account the round slot widens for the «Войти» word. */}{!!menu && <View style={[h.menu, !accountId && { width: 'auto' }]}>{menu}</View>}{!!chats && <View style={h.chats}>{chats}</View>}{!picking && <MapMood mood={mood} joy={joy} still={calm || quiet} bottom={covered ? cardEdge : sheet} />}<Animated.View style={[h.sheet, { height: sheet, opacity: veil }]} accessibilityViewIsModal={false}><View {...drag.handle.panHandlers}><Pressable
+      )}{(role === 'owner' || role === 'guest') && !selected && <PriceTip role={role} cards={data.approvals || []} onChanged={onChanged} onEdit={onEdit} />}{/* Without an account the round slot widens for the «Войти» word. */}{!!menu && <View style={[h.menu, { width: 'auto' }]}>{menu}</View>}{!!chats && <View style={h.chats}>{chats}</View>}{!picking && <MapMood mood={mood} joy={joy} still={calm || quiet} bottom={covered ? cardEdge : sheet} />}<Animated.View style={[h.sheet, { height: sheet, opacity: veil }]} accessibilityViewIsModal={false}><View {...drag.handle.panHandlers}><Pressable
             accessibilityRole="button"
             accessibilityLabel={snap === 0 ? tr('Развернуть панель') : tr('Свернуть панель')}
             onPress={() => setSnap(snap === 0 ? 1 : 0)}

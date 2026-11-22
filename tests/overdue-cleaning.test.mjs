@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {fixture,load,now} from './helpers/platform.mjs';
 const {sweepOverdueJobs}=await load('overdue-cleaning');
 const {overdueNote}=await load('overdue-text');
+const {RentalService}=await load('service');
 const job=f=>f.db.raw.prepare('SELECT * FROM cleaning_jobs WHERE id=?').get(f.job.id);
 const late=(f,status,end)=>{f.db.raw.prepare("UPDATE cleaning_jobs SET assigned_to='cleaner',status='assigned',booking_id=NULL,start=?,end=? WHERE id=?").run(now()-7200,end,f.job.id);if(status==='in_progress')f.db.raw.prepare("UPDATE cleaning_jobs SET status='in_progress' WHERE id=?").run(f.job.id);};
 
@@ -54,12 +55,28 @@ test('the owner and the cleaner get a way out of an overdue cleaning',async()=>{
   j=job(f);assert.equal(j.status,'completed');assert.match(j.report,/Закрыто владельцем/);
  }finally{f.db.close();}
 });
-test('the cleaner can give an overdue task back and the owner can cancel it',async()=>{
+test('the cleaner can give an overdue task back; the owner cannot cancel started work, only close or pass it on',async()=>{
  const f=await fixture();try{
   late(f,'in_progress',now()-60);
   assert.match((await f.cleaner.jobAction(f.job.id,{action:'release'})).message,/отказались/);
   assert.equal(job(f).status,'open');
+  // Audit of 2026-11-22: a cancel of started work left the performer without the report and the pay.
   late(f,'in_progress',now()-60);
+  await assert.rejects(f.owner.jobAction(f.job.id,{action:'cancel',reason:'Сделали сами'}),e=>e.status===409&&/уже начата/.test(e.message));
+  assert.equal(job(f).status,'in_progress');
+  // Passed on to another performer: an issue with both sides keeps the started part's pay.
+  await f.owner.jobAction(f.job.id,{action:'release'});assert.equal(job(f).status,'open');
+  const issue=f.db.raw.prepare("SELECT * FROM administrator_issues WHERE entity_id=?").get(f.job.id);
+  assert.equal(issue.other_user,'cleaner');assert.match(issue.description,/оплате сделанной части/);
+  assert.match(f.db.raw.prepare("SELECT body FROM notifications WHERE user_id='cleaner' AND dedupe LIKE 'cleaner:released:%'").get().body,/что успели сделать/);
+  // The next performer also starts and is passed on before the first thread is settled: each gets their own thread.
+  await new RentalService(f.db,'cleaner2').saveProfile({name:'Cleaner 2',roles:['cleaner'],city:'Павлодар',contact:'test',districts:'Центр',experience:'Experienced',availability:'By agreement'});
+  late(f,'in_progress',now()-60);f.db.raw.prepare("UPDATE cleaning_jobs SET assigned_to='cleaner2' WHERE id=?").run(f.job.id);
+  await f.owner.jobAction(f.job.id,{action:'release'});
+  const threads=f.db.raw.prepare("SELECT other_user FROM administrator_issues WHERE entity_id=? ORDER BY created_at,rowid").all(f.job.id).map(r=>r.other_user);
+  assert.deepEqual(threads.sort(),['cleaner','cleaner2']);
+  // Not started yet: the owner still cancels as before.
+  late(f,'assigned',now()+3600);
   await f.owner.jobAction(f.job.id,{action:'cancel',reason:'Сделали сами'});assert.equal(job(f).status,'cancelled');
  }finally{f.db.close();}
 });

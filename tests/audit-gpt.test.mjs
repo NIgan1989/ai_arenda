@@ -1,5 +1,5 @@
 import {test} from 'node:test';import assert from 'node:assert/strict';
-import {fixture,load,now} from './helpers/platform.mjs';
+import {fixture,load,now,iso} from './helpers/platform.mjs';
 import {photo} from './fixtures/photo.mjs';
 // The outside audit of 2026-11-22: the three fixes it asked for before launch.
 const {saveIdentityDoc,decideIdentity,removeIdentityDoc,listIdentityDocs,sweepIdentityObjects}=await load('identity-docs');
@@ -69,7 +69,7 @@ test('nothing is owed while «Меня не заселили» is open, even aft
   R.prepare('UPDATE bookings SET end=? WHERE id=?').run(now()-60,f.booking);
   assert.equal(stayed(f),0,'disputed: a person decides first');
   R.prepare("UPDATE administrator_issues SET status='resolved' WHERE entity_id=?").run(f.booking);
-  assert.equal(stayed(f),1,'closed without a no-show: the ended booking counts again (the stay watch closes it as a no-show if nobody marked it)');
+  assert.equal(stayed(f),0,'closed: still nothing owed without the owner\'s own mark of the arrival (repeat audit)');
  }finally{f.db.close();}
 });
 
@@ -121,4 +121,124 @@ test('before a near arrival the AI accepts the cleaning at once only with the ow
    assert.match(R.prepare("SELECT body FROM notifications WHERE user_id='owner' AND dedupe LIKE 'owner:administrator-review:%'").get().body,/^Скоро заезд гостя\..*Качество уборки проверьте по фото/);
   }
  }finally{f.db.close();}}
+});
+
+// The repeat audit of 2026-11-22.
+const {previewMatches}=await load('smart-matching');
+const {saveRightDoc,removeRightDoc,settleRightDocs,sweepRightObjects}=await load('property-rights');
+
+test('closing «Меня не заселили» never brings the charge back: only the owner\'s own mark of the arrival counts',async()=>{
+ for(const owner of [false,true]){const f=await fixture(),R=f.db.raw;try{
+  R.prepare("UPDATE bookings SET payment_status='owner_verified' WHERE id=?").run(f.booking);
+  R.prepare('UPDATE bookings SET start=?,end=?,occupied_until=? WHERE id=?').run(now()-300,now()+7200,now()+9000,f.booking);
+  await f.guest.bookingAction(f.booking,{action:'not_let_in',text:'Дверь никто не открывает'});
+  const issue=R.prepare('SELECT * FROM administrator_issues WHERE entity_id=?').get(f.booking);
+  // The owner the complaint is about cannot close it.
+  await assert.rejects(f.owner.resolveAdministratorIssue('owner',{id:issue.id,resolution:'Гость ошибся',expectedVersion:issue.version}),e=>e.status===403);
+  if(owner)R.prepare('UPDATE booking_terms SET actual_checkin=? WHERE booking_id=?').run(now(),f.booking);
+  R.prepare('UPDATE bookings SET end=? WHERE id=?').run(now()-60,f.booking);
+  R.prepare("UPDATE administrator_issues SET status='resolved' WHERE id=?").run(issue.id);
+  // Closed by a person at the platform: the ended booking is owed only if the owner marked the arrival.
+  assert.equal(stayed(f),owner?1:0);
+  R.prepare('UPDATE booking_terms SET checkin_reported_at=? WHERE booking_id=?').run(now(),f.booking);
+  assert.equal(stayed(f),owner?1:0,'the guest\'s word does not count after the complaint');
+ }finally{f.db.close();}}
+});
+
+test('a document of the right to let keeps its pointer until the storage deleted it; the sweep retries',async()=>{
+ const f=await fixture(),R=f.db.raw;try{
+  R.prepare('DELETE FROM property_right_docs').run();
+  const BUCKET=bucket();
+  await saveRightDoc(f.owner,'owner',{propertyId:f.property,kind:'owner',data:photo},{BUCKET});
+  await saveRightDoc(f.owner,'owner',{propertyId:f.property,kind:'owner',data:photo},{BUCKET});
+  assert.equal(BUCKET.stored.size,2);
+  // The owner removes one while the storage is down: the row goes, the file is found by the sweep.
+  const doc=R.prepare('SELECT id FROM property_right_docs ORDER BY created_at,id LIMIT 1').get();BUCKET.refuse=true;
+  await removeRightDoc(f.owner,'owner',{id:doc.id},{BUCKET});
+  assert.equal(await settleRightDocs(f.db,f.property,'admin',{BUCKET}),1,'approved, the delete waits');
+  assert.ok(R.prepare("SELECT object_key FROM property_right_docs").get().object_key,'the pointer stays');
+  for(const o of BUCKET.stored.values())o.uploaded=new Date(Date.now()-2*3600000);
+  assert.equal((await sweepRightObjects(f.db,BUCKET)).left,2);
+  BUCKET.refuse=false;
+  assert.equal((await sweepRightObjects(f.db,BUCKET)).removed,2);
+  assert.equal(BUCKET.stored.size,0);assert.equal(R.prepare("SELECT object_key FROM property_right_docs").get().object_key,'');
+ }finally{f.db.close();}
+});
+
+test('a request not yet confirmed never speeds up the acceptance of a cleaning',async()=>{
+ const {checkAdministratorOwner}=await load('administrator-runtime'),{saveEvidence}=await load('evidence');
+ const f=await fixture(),R=f.db.raw;try{
+  await matchingAction(f.owner,'owner','preference',{propertyId:f.property,mode:'auto'});
+  await saveRule(f.db,'owner','owner',{rule:'accept_fast',on:true});
+  await f.cleaner.jobAction(f.job.id,{action:'apply'});const app=R.prepare('SELECT * FROM applications WHERE job_id=?').get(f.job.id);await f.owner.jobAction(f.job.id,{action:'assign',applicationId:app.id});
+  R.prepare('UPDATE bookings SET start=?,end=?,occupied_until=? WHERE id=?').run(now()-600,now()+15,now()+5415,f.booking);R.prepare('UPDATE cleaning_jobs SET start=?,end=? WHERE id=?').run(now()+15,now()+5415,f.job.id);
+  await f.owner.bookingAction(f.booking,{action:'checkout'});await f.cleaner.jobAction(f.job.id,{action:'start'});
+  for(const phase of ['before','after','after'])await saveEvidence(f.cleaner,{jobId:f.job.id,phase,data:photo});
+  await f.cleaner.jobAction(f.job.id,{action:'submit',checklist:[true,true,true,true],report:'Убрано, всё чисто'});
+  const row=R.prepare('SELECT * FROM bookings WHERE id=?').get(f.booking),next={...row,id:'next-request',request_key:'next-request',status:'requested',expires_at:now()+900,start:now()+6000,end:now()+9000,occupied_until:now()+10000};
+  R.prepare(`INSERT INTO bookings(${Object.keys(next).join(',')}) VALUES (${Object.keys(next).map(()=>'?').join(',')})`).run(...Object.values(next));
+  f.release();await checkAdministratorOwner(f.db,'owner');
+  assert.equal(R.prepare('SELECT status FROM cleaning_jobs WHERE id=?').get(f.job.id).status,'submitted');
+  assert.match(R.prepare("SELECT body FROM notifications WHERE user_id='owner' AND dedupe LIKE 'owner:administrator-review:%'").get().body,/^Есть заявка на скорый заезд\./);
+ }finally{f.db.close();}
+});
+
+test('by the hour, a later free start the same day comes before tomorrow',async()=>{
+ const f=await fixture();try{
+  // 10:00–13:00 Kazakhstan time, two days ahead, is taken.
+  const day=Math.floor((now()+5*3600)/86400)+2,start=day*86400-5*3600+10*3600,end=start+3*3600;
+  await f.guest.createBooking({propertyId:f.property,start:iso(start),end:iso(end),guests:1,billingMode:'hourly',requestKey:'taken',acceptTerms:true});
+  const r=await previewMatches(f.other,{city:'Павлодар',start:iso(start),end:iso(end),guests:'1',mode:'hourly',maxPrice:'11000',priority:'balanced',features:[]});
+  assert.equal(r.empty.reason,'busy');
+  const next=Date.parse(r.empty.next.start)/1000;
+  assert.ok(next>start&&next<day*86400-5*3600+86400,'the same day: '+r.empty.next.start);
+  assert.equal(Date.parse(r.empty.next.end)/1000-next,3*3600);
+ }finally{f.db.close();}
+});
+
+// The audit of the owner and the performer, 2026-11-22.
+test('extending a cleaning stops at a stay from an outside calendar, like «Опаздываю»',async()=>{
+ const f=await fixture(),R=f.db.raw;try{
+  R.prepare("UPDATE cleaning_jobs SET assigned_to='cleaner',status='in_progress',booking_id=NULL,start=?,end=? WHERE id=?").run(now()-7200,now()-60,f.job.id);
+  R.prepare("UPDATE bookings SET status='cancelled' WHERE id=?").run(f.booking);
+  R.prepare('INSERT INTO calendar_sources(id,property_id,owner_id,label,url,created_at) VALUES (?,?,?,?,?,?)').run('src',f.property,'owner','Booking','https://calendar.example.test/x',now());
+  R.prepare("INSERT INTO external_blocks(id,source_id,property_id,event_uid,start,end) VALUES ('ext-1','src',?,'ext:1',?,?)").run(f.property,now()+600,now()+4*3600);
+  await assert.rejects(f.cleaner.jobAction(f.job.id,{action:'extend',minutes:30}),e=>e.status===409&&/внешнему календарю/.test(e.message));
+  // Passing it on gives the new performer only the time before the outside stay.
+  const {releaseWindow}=await load('overdue-cleaning');
+  const w=await releaseWindow(f.db,R.prepare('SELECT * FROM cleaning_jobs WHERE id=?').get(f.job.id),now());
+  assert.equal(w,null,'ten minutes before the outside guest there is no window of half an hour');
+ }finally{f.db.close();}
+});
+
+test('the performer\'s «Гостя нет» before the end of the stay never closes it by itself',async()=>{
+ const {checkAdministratorOwner}=await load('administrator-runtime');
+ const f=await fixture(),R=f.db.raw;try{
+  await matchingAction(f.owner,'owner','preference',{propertyId:f.property,mode:'auto'});
+  R.prepare("UPDATE bookings SET payment_status='owner_verified',start=?,end=?,occupied_until=? WHERE id=?").run(now()-7200,now()+1200,now()+6600,f.booking);
+  R.prepare("UPDATE cleaning_jobs SET assigned_to='cleaner',status='assigned',start=?,end=? WHERE id=?").run(now()+1200,now()+6600,f.job.id);
+  const r=await f.cleaner.jobAction(f.job.id,{action:'vacant'});
+  assert.match(r.message,/гость или владелец подтвердят выезд/);
+  assert.equal(R.prepare('SELECT checkout_reported_at FROM booking_terms WHERE booking_id=?').get(f.booking).checkout_reported_at,null);
+  f.release();await checkAdministratorOwner(f.db,'owner');
+  assert.equal(R.prepare('SELECT actual_checkout FROM booking_terms WHERE booking_id=?').get(f.booking).actual_checkout,null,'the autopilot does not end the stay on the performer\'s word');
+  assert.match(R.prepare("SELECT body FROM notifications WHERE user_id='guest' AND dedupe LIKE 'guest:cleaner-vacant:%'").get().body,/Сообщить о выезде/);
+  // After the end of the stay the word counts as a report, as before.
+  R.prepare('UPDATE bookings SET end=? WHERE id=?').run(now()-60,f.booking);
+  R.prepare("DELETE FROM notifications WHERE dedupe LIKE '%cleaner-vacant:%'").run();
+  await f.cleaner.jobAction(f.job.id,{action:'vacant'});
+  assert.ok(R.prepare('SELECT checkout_reported_at FROM booking_terms WHERE booking_id=?').get(f.booking).checkout_reported_at);
+ }finally{f.db.close();}
+});
+test('a finished cleaning says where the money is: marked by the owner, then confirmed by the performer',async()=>{
+ const {cleaningThread,jobThread}=await load('process-threads'),t=now();
+ const j={id:'j1',property_id:'p1',owner_id:'o',assigned_to:'c',status:'completed',fee:5000,settled_at:t-60,settlement_paid:5000,booking_id:'b1',checkout_confirmed:1,start:t-7200,end:t-3600};
+ const owner={user:{id:'o'},applications:[],jobs:[j]},cleaner={user:{id:'c'},applications:[],jobs:[j]};
+ assert.match(cleaningThread(j,owner,t).line,/ждём подтверждения исполнителя/);
+ assert.match(jobThread(j,cleaner,t).line,/Заказчик отметил перевод/);
+ const got={...j,payment_received_at:t};
+ assert.match(cleaningThread(got,owner,t).line,/исполнитель подтвердил получение/);
+ assert.match(jobThread(got,cleaner,t).line,/вы подтвердили получение/);
+ assert.match(cleaningThread({...j,settled_at:null,settlement_paid:0},owner,t).line,/Ждём ваш перевод/);
+ assert.match(jobThread({...j,status:'assigned',checkout_confirmed:0,settled_at:null},cleaner,t-9000).line,/начать можно после подтверждения выезда/);
 });

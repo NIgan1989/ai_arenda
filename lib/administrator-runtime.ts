@@ -84,11 +84,12 @@ async function automaticActions(service:RentalService){
     const t=now(),review=await reviewCleaning(service.db,job),title=job.title||'жильё';
     if(!review.ok){await service.notify(service.userId,'ИИ-администратор проверил отчёт об уборке «'+title+'» и нашёл замечания: '+review.findings.join('; ')+'. Проверьте фото и примите уборку или верните на доработку.','administrator-review-issue:'+job.id+':'+job.version,'owner').run();continue;}
     const soon=accept.on&&fast.on?fast.minutes*60:7200;
-    const nextGuest=await service.one("SELECT id FROM bookings WHERE property_id=? AND status IN ('requested','confirmed') AND start>? AND start<=?",policy.property_id,t-3600,t+soon);
-    const quick=!!nextGuest&&accept.on&&fast.on;
+    // A confirmed booking comes first; a request not yet confirmed only tells the owner an arrival may be near.
+    const nextGuest=await service.one("SELECT id,status FROM bookings WHERE property_id=? AND status IN ('requested','confirmed') AND start>? AND start<=? ORDER BY status='confirmed' DESC,start LIMIT 1",policy.property_id,t-3600,t+soon);
+    const quick=nextGuest?.status==='confirmed'&&accept.on&&fast.on;
     if(!quick){
      const asked=await service.one('SELECT created_at FROM notifications WHERE user_id=? AND dedupe=?',service.userId,'owner:administrator-review:'+job.id+':'+job.version);
-     if(!asked){await service.notify(service.userId,(nextGuest?'Скоро заезд гостя. ':'')+'ИИ-администратор проверил отчёт об уборке «'+title+'»: фото до ('+review.before+') и после ('+review.after+') загружены во время уборки, чек-лист выполнен, проблем не указано. Качество уборки проверьте по фото. Примите уборку в карточке'+(accept.on?', или через '+minutesLabel(accept.minutes)+' ИИ примет сам.':'.'),'administrator-review:'+job.id+':'+job.version,'owner').run();continue;}
+     if(!asked){await service.notify(service.userId,(nextGuest?nextGuest.status==='confirmed'?'Скоро заезд гостя. ':'Есть заявка на скорый заезд. ':'')+'ИИ-администратор проверил отчёт об уборке «'+title+'»: фото до ('+review.before+') и после ('+review.after+') загружены во время уборки, чек-лист выполнен, проблем не указано. Качество уборки проверьте по фото. Примите уборку в карточке'+(accept.on?', или через '+minutesLabel(accept.minutes)+' ИИ примет сам.':'.'),'administrator-review:'+job.id+':'+job.version,'owner').run();continue;}
      if(!accept.on||asked.created_at+accept.minutes*60>t)continue;
     }
     // The journal says which of the owner's rules accepted the report and on what it relied.

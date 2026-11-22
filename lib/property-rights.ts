@@ -3,6 +3,11 @@ import type {RentalService} from './service';
 import {jpegInput} from './listings';
 import {epoch,uuid,q,one,rows,type Row,type OperationConfig} from './operation-core';
 import {autoReview} from './admin-autocheck';
+import {dropPrivatePhotos,sweepPrivatePhotos} from './private-photos';
+const drop=(db:D1Database,bucket:R2Bucket|undefined,keys:string[])=>dropPrivatePhotos(db,bucket,'property_right_docs',keys);
+export const RIGHTS_PREFIX='property-rights/';
+// The hourly sweep of the documents' photos (lib/private-photos.ts).
+export const sweepRightObjects=(db:D1Database,bucket:R2Bucket|undefined,cursor='')=>sweepPrivatePhotos(db,bucket,'property_right_docs',RIGHTS_PREFIX,cursor);
 
 // «Право сдавать жильё»: before a place is shown to guests its owner proves the right to let it, and a person
 // at the platform looks at the proof (the AI administrator never approves a place by itself, lib/admin-autocheck.ts).
@@ -20,10 +25,11 @@ export const RIGHT_LIMIT=4;
 // `id` is a trusted column expression naming the place's id, such as p.id or d.property_id.
 export const verifiedPlaceSql=(id='p.id')=>{if(!/^[a-zA-Z][a-zA-Z0-9_]*\.[a-zA-Z_]+$/.test(id))throw new Error('Invalid column');return `(EXISTS(SELECT 1 FROM property_right_docs rd WHERE rd.property_id=${id} AND rd.checked_at IS NOT NULL) AND EXISTS(SELECT 1 FROM pilot_property_admissions pa WHERE pa.id=${id} AND pa.owner_reviewed=1))`;};
 // Once a person approved the place the photos are deleted: only the record of the check stays (kind, who, when).
+// The pointer stays until the storage confirmed the delete; the hourly sweep retries a failed one.
 export async function settleRightDocs(db:D1Database,propertyId:string,reviewerId:string,config:OperationConfig={}){
  const keys=(await rows(db,"SELECT object_key FROM property_right_docs WHERE property_id=? AND checked_at IS NULL AND object_key<>''",propertyId)).map(r=>String(r.object_key));
- await q(db,"UPDATE property_right_docs SET data='',object_key='',checked_at=?,checked_by=? WHERE property_id=? AND checked_at IS NULL",epoch(),reviewerId,propertyId).run();
- for(const key of keys)await config.BUCKET?.delete(key).catch(()=>{});
+ await q(db,"UPDATE property_right_docs SET data='',checked_at=?,checked_by=? WHERE property_id=? AND checked_at IS NULL",epoch(),reviewerId,propertyId).run();
+ return drop(db,config.BUCKET,keys);
 }
 
 async function ownPlace(s:RentalService,propertyId:string){
@@ -53,8 +59,8 @@ export async function saveRightDoc(s:RentalService,role:Role,body:Row,config:Ope
   q(s.db,'INSERT INTO property_right_docs(id,property_id,owner_id,kind,data,object_key,width,height,bytes,created_at) SELECT ?,?,?,?,?,?,?,?,?,? WHERE (SELECT COUNT(*) FROM property_right_docs WHERE property_id=?)<?',
    docId,p.id,s.userId,kind,key?'':image.data,key,image.width,image.height,image.bytes,epoch(),p.id,RIGHT_LIMIT),
  ]);
- for(const old of replaced)await config.BUCKET?.delete(old).catch(()=>{});
- if(!r[1].meta.changes){if(key)await config.BUCKET!.delete(key).catch(()=>{});throw new DomainError('Приложено максимум фото документа: '+RIGHT_LIMIT+'.',409);}
+ await drop(s.db,config.BUCKET,replaced);
+ if(!r[1].meta.changes){if(key)await drop(s.db,config.BUCKET,[key]);throw new DomainError('Приложено максимум фото документа: '+RIGHT_LIMIT+'.',409);}
  // A waiting review is checked again at once, so the platform administrators hear the place is ready for their look.
  const waiting=await one(s.db,"SELECT id FROM participant_reviews WHERE property_id=? AND user_id=? AND role='owner' AND status='pending' ORDER BY created_at DESC LIMIT 1",p.id,s.userId);
  if(waiting)await autoReview(s.db,waiting.id,config);
@@ -66,7 +72,7 @@ export async function removeRightDoc(s:RentalService,role:Role,body:Row,config:O
  if(!d)throw new DomainError('Документ не найден.',404);
  if(await approved(s.db,d.property_id))throw new DomainError('Жильё уже проверено. Чтобы заменить документ, напишите администратору.',409);
  await q(s.db,'DELETE FROM property_right_docs WHERE id=?',d.id).run();
- if(d.object_key)await config.BUCKET?.delete(d.object_key).catch(()=>{});
+ if(d.object_key)await drop(s.db,config.BUCKET,[String(d.object_key)]);
  return {message:'Фото убрано.'};
 }
 export async function listRightDocs(s:RentalService,propertyId:string,platformAdmin=false){
