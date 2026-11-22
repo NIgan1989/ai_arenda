@@ -12,7 +12,8 @@ import {stayedSql} from './stay-result';
 // cleanings are never touched. Until a bank with recurring payments is connected the card and the charge are
 // simulated: the entry is written exactly as a real one, marked as a test.
 //
-// Accounting (shared with lib/company-finance.ts): a charge is a 'topup' row of owner_balance_entries whose
+// Accounting (shared with lib/company-finance.ts): a charge is a 'topup' row of owner_balance_entries (test=1 for a test
+// card: it settles the debt in the pilot but is never counted as cash) whose
 // owner_id is the participant; a performer's «Автопилот» month gets settled_at only when the card paid for it.
 const DAY=86400,WEEK=7*DAY,ZONE=5*3600;
 export const PAY_DAYS=7,CHARGE_HOUR=10;
@@ -128,11 +129,11 @@ async function settle(db:D1Database,c:Row,ref:string,at:number,wasPaused:boolean
  const note='Списание с карты '+c.card_mask+' за услуги сервиса'+(test?' (тест)':'');
  const r=await db.batch([
   q(db,"UPDATE card_charges SET status='succeeded',bank_ref=?,finished_at=? WHERE id=? AND status IN ('started','unknown')",ref.slice(0,200),at,id),
-  q(db,"INSERT OR IGNORE INTO owner_balance_entries(id,owner_id,kind,amount,note,actor_id,request_key,created_at) SELECT ?,?,?,?,?,?,?,? WHERE changes()>0",uuid(),user,'topup',due,note,ACTOR,key,at),
+  q(db,"INSERT OR IGNORE INTO owner_balance_entries(id,owner_id,kind,amount,note,actor_id,request_key,created_at,test) SELECT ?,?,?,?,?,?,?,?,? WHERE changes()>0",uuid(),user,'topup',due,note,ACTOR,key,at,test?1:0),
   q(db,"UPDATE autopilot_charges SET settled_at=? WHERE user_id=? AND role='cleaner' AND mode='charged' AND settled_at IS NULL AND EXISTS(SELECT 1 FROM owner_balance_entries WHERE request_key=? AND created_at=?)",at,user,key,at),
   q(db,'UPDATE service_billing SET last_charge_at=?,failed_at=NULL,paused_at=NULL,version=version+1,updated_at=? WHERE user_id=? AND EXISTS(SELECT 1 FROM owner_balance_entries WHERE request_key=? AND created_at=?)',at,at,user,key,at),
   q(db,'INSERT INTO audit_events SELECT ?,?,?,?,? WHERE EXISTS(SELECT 1 FROM owner_balance_entries WHERE request_key=? AND created_at=?)',uuid(),ACTOR,'service-billing:'+user,JSON.stringify({action:'service_billing.charged',amount:due,test,operation:id}),at,key,at),
-  q(db,'INSERT OR IGNORE INTO notifications(id,user_id,body,dedupe,read,created_at) SELECT ?,?,?,?,0,? WHERE EXISTS(SELECT 1 FROM owner_balance_entries WHERE request_key=? AND created_at=?)',uuid(),user,`С карты ${c.card_mask} списано ${money(due)} за услуги сервиса${test?' (тестовое списание, деньги не сняты)':''}.${wasPaused?' Пауза снята: жильё снова принимает брони, «Автопилот» можно включить заново.':''} За что: Меню, «Настройки», «Оплата услуг».`,'service:charged:'+key,at,key,at),
+  q(db,'INSERT OR IGNORE INTO notifications(id,user_id,body,dedupe,read,created_at) SELECT ?,?,?,?,0,? WHERE EXISTS(SELECT 1 FROM owner_balance_entries WHERE request_key=? AND created_at=?)',uuid(),user,`С карты ${c.card_mask} списано ${money(due)} за услуги сервиса${test?' (тестовое списание, деньги не сняты)':''}.${wasPaused?' Пауза снята: жильё снова принимает брони. «Автопилот» включите снова: Меню, «Автопилот», «Подключить».':''} За что: Меню, «Настройки», «Оплата услуг».`,'service:charged:'+key,at,key,at),
  ]);
  return r[1].meta.changes?due:0;
 }
@@ -256,14 +257,17 @@ export async function sweepDues(db:D1Database,pausePlans:(db:D1Database,user:str
    const r=await q(db,'UPDATE service_billing SET paused_at=?,version=version+1,updated_at=? WHERE user_id=? AND paused_at IS NULL',at,at,o.id).run();
    if(!r.meta.changes)continue;
    await pausePlans(db,o.id,at);
-   await db.batch([notice(db,o.id,`Пауза: ${money(Number(o.due))} за услуги сервиса не оплачены. Новые брони и «Автопилот» остановлены, принятые брони и уборки в силе. Оплатите в «Оплате услуг», и всё включится снова.`,'service:paused:'+o.id+':'+w.failed_at,at),
+   await db.batch([notice(db,o.id,`Пауза: ${money(Number(o.due))} за услуги сервиса не оплачены. Новые брони и «Автопилот» остановлены, принятые брони и уборки в силе. Оплатите в «Оплате услуг»: новые брони включатся сами, а «Автопилот» включите снова в меню «Автопилот».`,'service:paused:'+o.id+':'+w.failed_at,at),
     q(db,'INSERT INTO audit_events VALUES (?,?,?,?,?)',uuid(),ACTOR,'service-billing:'+o.id,JSON.stringify({action:'service_billing.paused',due:Number(o.due)}),at)]);
    result.paused++;
   }
  }
  if(owing.length<PAGE)break;after=String(owing[owing.length-1].id);
  }
- // Someone paid another way (an administrator's entry) while waiting: the clock and the pause go away.
+ // Someone paid another way (an administrator's entry) while waiting: the clock and the pause go away. Whoever was
+ // paused hears that bookings are open again and how to switch «Автопилот» back on (it does not come back by itself).
+ const lifted=await rows(db,`SELECT user_id,paused_at FROM service_billing WHERE paused_at IS NOT NULL AND ${dueSql('service_billing.user_id')}=0`);
  await q(db,`UPDATE service_billing SET failed_at=NULL,paused_at=NULL,version=version+1,updated_at=? WHERE (failed_at IS NOT NULL OR paused_at IS NOT NULL) AND ${dueSql('service_billing.user_id')}=0`,at).run();
+ for(const l of lifted)await notice(db,String(l.user_id),'Оплата услуг получена, пауза снята: жильё снова принимает брони. «Автопилот» включите снова: Меню, «Автопилот», «Подключить».','service:unpaused:'+l.user_id+':'+l.paused_at,at).run();
  return result;
 }

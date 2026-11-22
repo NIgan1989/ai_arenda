@@ -205,6 +205,16 @@ export async function spentFor(db:D1Database,user:string,role:PlanRole,from:numb
  return Number((await one(db,sql,user,from,to))?.n||0);
 }
 
+// «14 дней бесплатно» (decision of 2026-11-22): the days and, once they started, their end for this participant.
+// The owner's days run from the first listing (or from the start of billing if later), the performer's from the first
+// charged cleaning (lib/platform-billing.ts freshSql, migration 0095).
+async function freeStart(db:D1Database,user:string,role:PlanRole){
+ const r=await one(db,role==='owner'
+  ?"SELECT s.free_days days,s.enabled,MAX(s.starts_at,(SELECT MIN(created_at) FROM properties WHERE owner_id=? AND demo_owner IS NULL)) since FROM platform_billing s WHERE s.id='global'"
+  :"SELECT s.free_days days,s.plan_charge enabled,(SELECT MIN(created_at) FROM service_fees WHERE user_id=? AND kind='cleaning' AND mode<>'shadow') since FROM platform_billing s WHERE s.id='global'",user);
+ const days=Number(r?.days||0),since=r?.since==null?null:Number(r.since);
+ return {freeDays:days,freeUntil:days&&since!=null&&r?.enabled?since+days*DAY:null};
+}
 export async function planState(service:RentalService,role:PlanRole){
  const db=service.db,at=epoch(),s=await planSettings(db),plan=await planOf(db,service.userId,role),week=at-7*DAY;
  const live=!!plan&&['trial','active','grace'].includes(plan.status);
@@ -212,7 +222,7 @@ export async function planState(service:RentalService,role:PlanRole){
   const freeLeft=role==='cleaner'?Math.max(0,s.cleanerFreeJobs-Number((await one(db,"SELECT COUNT(*) n FROM service_fees WHERE user_id=? AND kind='cleaning' AND mode IN ('free','charged')",service.userId))?.n||0)):0;
  const base={plan:plan?{status:plan.status,periodEnd:plan.period_end,graceUntil:plan.grace_until,autoRenew:!!plan.auto_renew,startedAt:plan.started_at,tier:plan.tier,nextTier:plan.next_tier||null}:null,live,tier,
   settings:{charge:role==='owner'?s.ownerCharge:s.charge,rate:role==='owner'?s.ownerRate:s.cleanerRate,ownerRate:s.ownerRate,cleanerRate:s.cleanerRate,price:role==='owner'?s.ownerPrice:s.cleanerPrice,trialDays:0,graceDays:s.graceDays,aiBookingFee:s.aiBookingFee,aiMonthCap:s.aiMonthCap,cleanerJobFee:s.cleanerJobFee,cleanerFreeJobs:s.cleanerFreeJobs,cleanerMonthCap:s.cleanerMonthCap},
-  terms:tierText(s,role),billing:{objects:role==='owner'?units:1,allAmount,spent30,advise:false,freeLeft}};
+  terms:tierText(s,role),billing:{objects:role==='owner'?units:1,allAmount,spent30,advise:false,freeLeft,...await freeStart(db,service.userId,role)}};
  if(role==='owner'){
   // A private home that is only cleaned (lib/home-cleaning.ts) is not rented, so it is not offered to the AI.
   const flats=await rows(db,`SELECT p.id,p.title,p.own_staff,COALESCE(pp.cleaning_fee,0) cleaning_fee,pp.property_id IS NOT NULL has_policy,CASE WHEN ${underAutopilot('p.id')} THEN 1 ELSE 0 END managed FROM properties p LEFT JOIN property_policies pp ON pp.property_id=p.id WHERE p.owner_id=? AND NOT EXISTS(SELECT 1 FROM property_details hd WHERE hd.property_id=p.id AND json_extract(hd.details,'$.type')='home') AND p.archived_at IS NULL AND p.demo_owner IS NULL ORDER BY p.created_at`,at,service.userId);

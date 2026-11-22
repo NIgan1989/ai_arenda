@@ -11,7 +11,7 @@ import {availableSql,cleanerPayouts} from './regular-cleaner';
 // A cancelled booking never costs the owner anything: balances count only
 // commissions whose booking is still confirmed or completed.
 
-export type BillingSettings={enabled:number;starts_at:number;rate_bp:number;ai_rate_bp:number;cleaning_rate_bp:number;pair_rate_bp:number;pair_month_cap:number;min_fee:number;max_fee:number;free_bookings:number;version:number;updated_at:number};
+export type BillingSettings={enabled:number;starts_at:number;rate_bp:number;ai_rate_bp:number;cleaning_rate_bp:number;pair_rate_bp:number;pair_month_cap:number;min_fee:number;max_fee:number;free_bookings:number;free_days?:number;version:number;updated_at:number};
 const live="(SELECT status FROM bookings WHERE id=c.booking_id) IN ('confirmed','completed')";
 
 export function commissionFor(amount:number,s:Pick<BillingSettings,'rate_bp'|'min_fee'|'max_fee'>){
@@ -38,14 +38,16 @@ export async function sweepHallMonths(db:D1Database,at=epoch()){
  const halls=await rows(db,`SELECT p.id,p.owner_id,p.title,p.capacity,s.hall_small_upto,s.hall_mid_upto,s.hall_fee_small,s.hall_fee_mid,s.hall_fee_large,
    CASE WHEN s.enabled=1 AND s.starts_at<? THEN 1 ELSE 0 END active,
    (SELECT COUNT(*) FROM platform_commissions c WHERE c.property_id=p.id AND ${startOf}>=? AND ${startOf}<? AND ${held}) bookings,
+   (SELECT MAX(c.capacity) FROM platform_commissions c WHERE c.property_id=p.id AND ${startOf}>=? AND ${startOf}<? AND ${held}) month_capacity,
    EXISTS(SELECT 1 FROM platform_commissions c WHERE c.property_id=p.id AND ${startOf}<? AND ${held}) before
   FROM properties p JOIN property_details d ON d.property_id=p.id JOIN platform_billing s ON s.id='global'
   WHERE p.demo_owner IS NULL AND json_extract(d.details,'$.type') IN ${HALL_TYPES}
-   AND NOT EXISTS(SELECT 1 FROM service_fees f WHERE f.kind='hall_month' AND f.ref_id=p.id||':'||?)`,month.end,month.start,month.end,month.start,month.name);
+   AND NOT EXISTS(SELECT 1 FROM service_fees f WHERE f.kind='hall_month' AND f.ref_id=p.id||':'||?)`,month.end,month.start,month.end,month.start,month.end,month.start,month.name);
  let written=0;
  for(const h of halls){
   if(!Number(h.bookings))continue;
-  const fee=hallMonthFee(Number(h.capacity)||0,h as unknown as HallTariff),mode=!h.active?'shadow':h.before?'charged':'free';
+  // The capacity the hall had when this month's bookings were confirmed, not a later edit of the card (audit 2026-11-22).
+  const fee=hallMonthFee(Number(h.month_capacity??h.capacity)||0,h as unknown as HallTariff),mode=!h.active?'shadow':h.before?'charged':'free';
   const r=await q(db,"INSERT OR IGNORE INTO service_fees(id,user_id,role,kind,ref_id,property_id,amount,mode,created_at) VALUES (?,?,'owner','hall_month',?,?,?,?,?)",uuid(),h.owner_id,h.id+':'+month.name,h.id,fee,mode,month.end).run();
   if(!r.meta.changes)continue;written++;
   if(mode!=='shadow')await q(db,'INSERT OR IGNORE INTO notifications(id,user_id,body,dedupe,read,created_at) VALUES (?,?,?,?,0,?)',uuid(),h.owner_id,
@@ -60,17 +62,36 @@ export async function sweepHallMonths(db:D1Database,at=epoch()){
 // The hybrid tariff (2026-11-20): every booking pays the base rate; the AI is paid apart, per booking
 // (accrueAiBookingFee). An owner on «Всё включено» pays no commission at all: the row is written with 0 ₸.
 export const allInclusiveSql=(user:string,role:'owner'|'cleaner')=>`EXISTS(SELECT 1 FROM autopilot_plans ap WHERE ap.user_id=${user} AND ap.role='${role}' AND ap.tier='all' AND ap.status IN ('trial','active','grace'))`;
+// «14 дней бесплатно» (2026-11-22): free_days calendar days from the owner's first listing, or from the start of
+// billing if that is later, a stay confirmed through the service costs nothing (mode 'free'). The cleaning trigger
+// (migration 0095) applies the same days to «Мой дом» and, from the first charged cleaning, to the performer.
+export const freshSql=(owner:string,at:string)=>`(SELECT CASE WHEN MAX(s2.starts_at,COALESCE((SELECT MIN(created_at) FROM properties WHERE owner_id=${owner} AND demo_owner IS NULL),0))+s2.free_days*86400>${at} THEN 1 ELSE 0 END FROM platform_billing s2 WHERE s2.id='global')`;
 export function accrueCommission(db:D1Database,bookingId:string,auditId:string,at:number){
  // A hall pays by the month (sweepHallMonths), so its booking is written with 0 ₸: it still counts for the month.
  const fee="CASE WHEN x.included=1 OR x.hall=1 THEN 0 ELSE MIN(x.amount,MAX(x.min_fee,CASE WHEN x.max_fee>0 THEN MIN(x.max_fee,(x.amount*x.rate+5000)/10000) ELSE (x.amount*x.rate+5000)/10000 END)) END";
  const used=`(SELECT COUNT(*) FROM platform_commissions c WHERE c.owner_id=x.owner_id AND c.mode IN ('free','charged') AND ${live})`;
  // A banquet hall or a café pays by the month, not by the booking (migration 0086).
  const hall="COALESCE((SELECT json_extract(d.details,'$.type') FROM property_details d WHERE d.property_id=b.property_id),'') IN ('banquet','cafe')";
- return q(db,`INSERT OR IGNORE INTO platform_commissions(booking_id,owner_id,property_id,booking_amount,rate_bp,amount,mode,settings_version,created_at,managed)
-  SELECT x.id,x.owner_id,x.property_id,x.amount,x.rate,${fee},CASE WHEN x.enabled=1 AND x.starts_at<=? THEN CASE WHEN ${used}<x.free_bookings THEN 'free' ELSE 'charged' END ELSE 'shadow' END,x.version,?,x.managed
-  FROM (SELECT z.*,CASE WHEN ${allInclusiveSql('z.owner_id','owner')} THEN 1 ELSE 0 END included,CASE WHEN ${allInclusiveSql('z.owner_id','owner')} THEN 0 ELSE z.rate_bp END rate FROM (SELECT b.id,p.owner_id,b.property_id,b.amount,s.min_fee,s.max_fee,s.enabled,s.starts_at,s.free_bookings,s.version,CASE WHEN ${hall} THEN 0 ELSE s.rate_bp END rate_bp,CASE WHEN ${hall} THEN 1 ELSE 0 END hall,s.ai_rate_bp,CASE WHEN ${underAutopilot('b.property_id')} THEN 1 ELSE 0 END managed
+ return q(db,`INSERT OR IGNORE INTO platform_commissions(booking_id,owner_id,property_id,booking_amount,rate_bp,amount,mode,settings_version,created_at,managed,capacity)
+  SELECT x.id,x.owner_id,x.property_id,x.amount,x.rate,${fee},CASE WHEN x.enabled=1 AND x.starts_at<=? THEN CASE WHEN ${used}<x.free_bookings OR x.fresh=1 THEN 'free' ELSE 'charged' END ELSE 'shadow' END,x.version,?,x.managed,x.capacity
+  FROM (SELECT z.*,CASE WHEN ${allInclusiveSql('z.owner_id','owner')} THEN 1 ELSE 0 END included,CASE WHEN ${allInclusiveSql('z.owner_id','owner')} THEN 0 ELSE z.rate_bp END rate FROM (SELECT b.id,p.owner_id,b.property_id,b.amount,p.capacity,s.min_fee,s.max_fee,s.enabled,s.starts_at,s.free_bookings,s.version,${freshSql('p.owner_id','?')} fresh,CASE WHEN ${hall} THEN 0 ELSE s.rate_bp END rate_bp,CASE WHEN ${hall} THEN 1 ELSE 0 END hall,s.ai_rate_bp,CASE WHEN ${underAutopilot('b.property_id')} THEN 1 ELSE 0 END managed
    FROM bookings b JOIN properties p ON p.id=b.property_id JOIN platform_billing s ON s.id='global'
-   WHERE b.id=? AND b.status='confirmed' AND p.demo_owner IS NULL AND EXISTS(SELECT 1 FROM audit_events WHERE id=?)) z) x`,at,at,at,bookingId,auditId);
+   WHERE b.id=? AND b.status='confirmed' AND p.demo_owner IS NULL AND EXISTS(SELECT 1 FROM audit_events WHERE id=?)) z) x`,at,at,at,at,bookingId,auditId);
+}
+
+/** A change of the stay the guest and the owner agreed (decideBookingChange): the commission follows the new price, at the
+ *  rate kept in its row and the current limits. Debts are summed on the fly (lib/service-dues.ts), so a week already
+ *  paid shows the difference as the next charge or an overpayment. A hall (rate 0) stays 0 ₸. Written only when `gate`
+ *  holds, in the same batch as the new price; the audit row keeps both sums. */
+export function recalcCommission(db:D1Database,bookingId:string,amount:number,changeId:string,actor:string,at:number){
+ const limit=(c:string)=>`(SELECT ${c} FROM platform_billing WHERE id='global')`;
+ const n='CAST(?1 AS INTEGER)',fee=`CASE WHEN rate_bp=0 THEN 0 ELSE MIN(${n},MAX(${limit('min_fee')},CASE WHEN ${limit('max_fee')}>0 THEN MIN(${limit('max_fee')},(${n}*rate_bp+5000)/10000) ELSE (${n}*rate_bp+5000)/10000 END)) END`;
+ // The same gate as the new price: the change was accepted and the terms are still the ones it was made on.
+ const gate="EXISTS(SELECT 1 FROM booking_changes c JOIN booking_terms t ON t.booking_id=c.booking_id WHERE c.id=?3 AND c.status='accepted' AND t.version=c.base_version)";
+ return [
+  q(db,`INSERT INTO audit_events SELECT ?4,?5,?2,json_object('action','billing.commission_recalculated','from',amount,'to',${fee},'bookingAmount',?1),?6 FROM platform_commissions WHERE booking_id=?2 AND booking_amount<>CAST(?1 AS INTEGER) AND ${gate}`,amount,bookingId,changeId,uuid(),actor,at),
+  q(db,`UPDATE platform_commissions SET booking_amount=CAST(?1 AS INTEGER),amount=${fee} WHERE booking_id=?2 AND booking_amount<>CAST(?1 AS INTEGER) AND ${gate}`,amount,bookingId,changeId),
+ ];
 }
 
 // «Автопилот» paid for the result: a booking confirmed while its object is under the AI costs the owner
@@ -89,14 +110,15 @@ export function accrueAiBookingFee(db:D1Database,bookingId:string,auditId:string
 }
 
 export async function billingSettings(db:D1Database){
- return (await one(db,"SELECT enabled,starts_at,rate_bp,ai_rate_bp,cleaning_rate_bp,pair_rate_bp,pair_month_cap,min_fee,max_fee,free_bookings,version,updated_at FROM platform_billing WHERE id='global'")) as BillingSettings|null;
+ return (await one(db,"SELECT enabled,starts_at,rate_bp,ai_rate_bp,cleaning_rate_bp,pair_rate_bp,pair_month_cap,min_fee,max_fee,free_bookings,free_days,version,updated_at FROM platform_billing WHERE id='global'")) as BillingSettings|null;
 }
 export function billingPhase(s:BillingSettings|null,at=epoch()){return !s||!s.enabled?'off':s.starts_at>at?'scheduled':'active';}
 
 // Free balance: top-ups minus booking and cleaning commissions and cleaning reserves.
 const balanceSql=availableSql('o.id');
 
-const ownerFilter="EXISTS(SELECT 1 FROM properties p WHERE p.owner_id=o.id AND p.demo_owner IS NULL)";
+// Everyone who can owe the service: an owner with a real listing, or a performer with a fee for a cleaning.
+const ownerFilter="(EXISTS(SELECT 1 FROM properties p WHERE p.owner_id=o.id AND p.demo_owner IS NULL) OR EXISTS(SELECT 1 FROM service_fees f WHERE f.user_id=o.id AND f.role='cleaner'))";
 // Paged and searchable on the server, so every owner stays reachable however many there are.
 export async function billingOwners(service:RentalService,params:Row){
  const search=String(params.search||'').trim();if(search.length>100)throw new DomainError('Сократите запрос.');
@@ -116,7 +138,7 @@ export async function billingState(service:RentalService){
   totals(month),totals(0),
   rows(db,`SELECT strftime('%Y-%m',c.created_at+18000,'unixepoch') month,COUNT(*) bookings,SUM(c.booking_amount) turnover,SUM(c.amount) projected,SUM(CASE WHEN c.mode='charged' THEN c.amount ELSE 0 END) charged FROM platform_commissions c WHERE c.created_at>=? AND ${live} GROUP BY month ORDER BY month DESC`,at-183*86400),
   billingOwners(service,{}),
-  rows(db,'SELECT e.id,e.kind,e.amount,e.note,e.created_at,o.name owner_name FROM owner_balance_entries e LEFT JOIN profiles o ON o.id=e.owner_id ORDER BY e.created_at DESC,e.id LIMIT 20'),
+  rows(db,'SELECT e.id,e.kind,e.amount,e.note,e.test,e.created_at,o.name owner_name FROM owner_balance_entries e LEFT JOIN profiles o ON o.id=e.owner_id ORDER BY e.created_at DESC,e.id LIMIT 20'),
   one(db,'SELECT COALESCE(SUM(charged_cost_micros),0) micros,COUNT(*) requests FROM ai_usage_reservations WHERE created_at>=?',month),
   rows(db,"SELECT action,created_at at FROM audit_events WHERE entity_id='platform-billing' ORDER BY created_at DESC,rowid DESC LIMIT 10"),
   one(db,`SELECT COUNT(*) count FROM profiles o WHERE ${ownerFilter} AND ${balanceSql}<0`),
@@ -166,7 +188,7 @@ export async function saveBillingSettings(service:RentalService,body:Row){
  let notified=0;
  if(changed){
   const fees=[minFee?`не меньше ${minFee} ₸`:'',maxFee?`не больше ${maxFee} ₸`:''].filter(Boolean).join(' и ');
-  const text=`С ${dateText(Math.max(startsAt,at))} сервис берёт комиссию ${String(percent).replace('.',',')}% с брони, подтверждённой через приложение${fees?` (${fees})`:''}.${free?` Первые брони бесплатно: ${free}.`:''} Отменённые брони не оплачиваются.${cleaningRate>0?` За принятую уборку ${String(cleaningRate/100).replace('.',',')}%, для постоянного исполнителя ${String(pairRate/100).replace('.',',')}%${pairCap>0?` и не больше ${pairCap} ₸ в месяц`:''}.`:''}`;
+  const text=`С ${dateText(Math.max(startsAt,at))} сервис берёт комиссию ${String(percent).replace('.',',')}% с брони, подтверждённой через приложение${fees?` (${fees})`:''}.${free?` Первые брони бесплатно: ${free}.`:''}${Number(before.free_days)>0?` Первые ${before.free_days} дней с первого объявления бесплатно.`:''} Отменённые брони не оплачиваются.${cleaningRate>0?` За принятую уборку ${String(cleaningRate/100).replace('.',',')}%, для постоянного исполнителя ${String(pairRate/100).replace('.',',')}%${pairCap>0?` и не больше ${pairCap} ₸ в месяц`:''}.`:''}`;
   for(const o of await owners(service.db)){statements.push(q(service.db,'INSERT OR IGNORE INTO notifications SELECT ?,?,?,?,?,? WHERE EXISTS(SELECT 1 FROM audit_events WHERE id=?)',uuid(),o.id,text,'owner:billing:'+(version+1),0,at,event));notified++;}
  }
  const results=await service.db.batch(statements);
@@ -177,11 +199,12 @@ export async function saveBillingSettings(service:RentalService,body:Row){
 export async function recordBalanceEntry(service:RentalService,body:Row){
  if(body.confirmed!==true)throw new DomainError('Подтвердите, что деньги фактически получены или бонус согласован.');
  const kind=['topup','bonus','adjustment'].includes(body.kind)?body.kind:null;if(!kind)throw new DomainError('Выберите вид операции.');
- const ownerId=required(body.ownerId,'Владелец',100),key=required(body.requestKey,'Ключ операции',120),note=required(body.note,'Комментарий',300);
+ const ownerId=required(body.ownerId??body.userId,'Участник',100),key=required(body.requestKey,'Ключ операции',120),note=required(body.note,'Комментарий',300);
  const amount=number(body.amount,'Сумма',-10000000,10000000);
  if(!amount||(kind!=='adjustment'&&amount<0))throw new DomainError(kind==='adjustment'?'Сумма корректировки не может быть нулевой.':'Сумма должна быть больше нуля.');
- const owner=await one(service.db,'SELECT o.id,o.name FROM profiles o WHERE o.id=? AND EXISTS(SELECT 1 FROM properties p WHERE p.owner_id=o.id AND p.demo_owner IS NULL)',ownerId);
- if(!owner)throw new DomainError('Владелец не найден.',404);
+ // An owner or a performer (audit «Оплата услуг», point 2): a payment confirmed outside the card closes the debt of either.
+ const owner=await one(service.db,`SELECT o.id,o.name FROM profiles o WHERE o.id=? AND ${ownerFilter}`,ownerId);
+ if(!owner)throw new DomainError('Участник не найден: оплату можно внести владельцу с объявлением или исполнителю с начислениями.',404);
  const at=epoch(),words={topup:'Оплата услуг сервиса',bonus:'Бонус от сервиса',adjustment:'Корректировка учёта'}[kind as 'topup'];
  const results=await service.db.batch([
   q(service.db,'INSERT OR IGNORE INTO owner_balance_entries(id,owner_id,kind,amount,note,actor_id,request_key,created_at) VALUES (?,?,?,?,?,?,?,?)',uuid(),ownerId,kind,amount,note,service.userId,key,at),

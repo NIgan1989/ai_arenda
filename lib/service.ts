@@ -37,7 +37,7 @@ import {createAIBudgetLifecycle} from './ai-budget';
 import {aiDataPermission} from './ai-data-permission';
 import {administratorSearch,isPropertySearch,isSearchRefinement,previousAdministratorSearch} from './administrator-search';
 import {readAdministratorProcesses,processReadIntent} from './administrator-process-read';
-import {accrueCommission,accrueAiBookingFee} from './platform-billing';
+import {accrueCommission,accrueAiBookingFee,recalcCommission} from './platform-billing';
 import {offerPriceAdvice,ownerPriceSuggestions,decidePriceSuggestion} from './price-advice';
 import {guestStayOffers,decideStayOffer} from './stay-offers';
 import {guestFavorites} from './favorites';
@@ -1191,6 +1191,8 @@ export class RentalService {
       this.query("UPDATE booking_changes SET status='accepted',decided_at=? WHERE id=? AND status='pending' AND expires_at>? AND EXISTS(SELECT 1 FROM booking_terms WHERE booking_id=? AND version=? AND actual_checkout IS NULL AND checkout_reported_at IS NULL AND paid_amount<=?) AND EXISTS(SELECT 1 FROM property_policies WHERE property_id=? AND version=? AND (?=0 OR mandate_until=0 OR mandate_until>?)) AND EXISTS(SELECT 1 FROM bookings WHERE id=? AND status='confirmed')",now(),changeId,now(),bookingId,c.base_version,c.amount,b.property_id,c.policy_version,automatic?1:0,now(),bookingId),
       this.query(`UPDATE bookings SET guests=COALESCE((SELECT guests FROM booking_changes WHERE id=?),guests),start=?,end=?,occupied_until=?,amount=?,payment_status=CASE WHEN ?>=(SELECT paid_amount FROM booking_terms WHERE booking_id=?) AND ?>(SELECT paid_amount FROM booking_terms WHERE booking_id=?) THEN 'unpaid' ELSE payment_status END WHERE id=? AND ${gate}`,changeId,c.start,c.end,c.occupied_until,c.amount,c.amount,bookingId,c.amount,bookingId,bookingId,changeId)
     ];
+    // The service's commission follows the agreed price (audit «Оплата услуг», point 4).
+    statements.push(...recalcCommission(this.db,bookingId,c.amount,changeId,this.userId,now()));
     // A later arrival gives the cleaning before it the time it needs (lib/arrival-shift.ts).
     if(c.start>b.start)statements.push(extendCleaningBefore(this.db,b,c.start,gate,changeId));
     // The assigned cleaner keeps the job at its new time unless that time clashes with the cleaner's other work;

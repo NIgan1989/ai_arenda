@@ -96,6 +96,7 @@
 -- migration 0092_chat_voice_place.sql sha256:887badea01961521b6e4017467c307731745bab0c20450639c7969e8c26c72e3
 -- migration 0093_moderation_voice_place.sql sha256:2bff022e636d8d78fe5805b9e8db1302c2b10b7b4f6d65186b46cd533da274e8
 -- migration 0094_chat_calls.sql sha256:11281ac6e7e03c1a90c9ae385b3eb47215ef128392e94bf7740896a927892e70
+-- migration 0095_service_billing_audit.sql sha256:cf606de2fb9d3d6d53b2f6fb51cb82b94927bfbe0a3885ef3167c3dcdd5d2275
 
 -- table access_receipts
 CREATE TABLE access_receipts (id TEXT PRIMARY KEY,property_id TEXT NOT NULL,entity_kind TEXT NOT NULL,entity_id TEXT NOT NULL,user_id TEXT NOT NULL,created_at INTEGER NOT NULL,expires_at INTEGER NOT NULL);
@@ -963,7 +964,7 @@ CREATE TABLE owner_balance_entries (
  actor_id TEXT NOT NULL,
  request_key TEXT NOT NULL UNIQUE,
  created_at INTEGER NOT NULL
-);
+, test INTEGER NOT NULL DEFAULT 0 CHECK(test IN (0,1)));
 
 -- table participant_reviews
 CREATE TABLE participant_reviews (id TEXT PRIMARY KEY,user_id TEXT NOT NULL REFERENCES profiles(id),role TEXT NOT NULL,property_id TEXT REFERENCES properties(id),status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','approved','rejected')),method TEXT NOT NULL DEFAULT '',reference TEXT NOT NULL DEFAULT '',reviewer_id TEXT,notes TEXT NOT NULL DEFAULT '',created_at INTEGER NOT NULL,reviewed_at INTEGER,valid_until INTEGER,version INTEGER NOT NULL DEFAULT 1, property_revision INTEGER NOT NULL DEFAULT 0, ai_verdict TEXT NOT NULL DEFAULT '' CHECK(ai_verdict IN ('','approve','fix','escalate')), ai_checks TEXT NOT NULL DEFAULT '[]', ai_checked_at INTEGER);
@@ -1021,7 +1022,7 @@ CREATE TABLE platform_billing (
  version INTEGER NOT NULL DEFAULT 1,
  updated_by TEXT,
  updated_at INTEGER NOT NULL DEFAULT 0
-, ai_rate_bp INTEGER NOT NULL DEFAULT 1000 CHECK(ai_rate_bp BETWEEN 0 AND 3000), cleaning_rate_bp INTEGER NOT NULL DEFAULT 1000 CHECK(cleaning_rate_bp BETWEEN 0 AND 3000), pair_rate_bp INTEGER NOT NULL DEFAULT 500 CHECK(pair_rate_bp BETWEEN 0 AND 3000), pair_month_cap INTEGER NOT NULL DEFAULT 2000 CHECK(pair_month_cap>=0), plan_charge INTEGER NOT NULL DEFAULT 0 CHECK(plan_charge IN (0,1)), plan_owner_price INTEGER NOT NULL DEFAULT 4900 CHECK(plan_owner_price BETWEEN 0 AND 1000000), plan_cleaner_price INTEGER NOT NULL DEFAULT 1900 CHECK(plan_cleaner_price BETWEEN 0 AND 1000000), plan_trial_days INTEGER NOT NULL DEFAULT 14 CHECK(plan_trial_days BETWEEN 0 AND 90), plan_grace_days INTEGER NOT NULL DEFAULT 3 CHECK(plan_grace_days BETWEEN 0 AND 30), test_payments INTEGER NOT NULL DEFAULT 1 CHECK(test_payments IN (0,1)), charges_stopped_at INTEGER, charges_stopped_by TEXT, charge_confirm_above INTEGER NOT NULL DEFAULT 100000 CHECK(charge_confirm_above>0), charge_daily_limit INTEGER NOT NULL DEFAULT 5000000 CHECK(charge_daily_limit>0), ai_booking_fee INTEGER NOT NULL DEFAULT 490 CHECK(ai_booking_fee BETWEEN 0 AND 100000), ai_month_cap INTEGER NOT NULL DEFAULT 4900 CHECK(ai_month_cap BETWEEN 0 AND 1000000), cleaner_job_fee INTEGER NOT NULL DEFAULT 250 CHECK(cleaner_job_fee BETWEEN 0 AND 100000), cleaner_free_jobs INTEGER NOT NULL DEFAULT 5 CHECK(cleaner_free_jobs BETWEEN 0 AND 1000), cleaner_month_cap INTEGER NOT NULL DEFAULT 6000 CHECK(cleaner_month_cap BETWEEN 0 AND 1000000), hall_small_upto INTEGER NOT NULL DEFAULT 100 CHECK(hall_small_upto BETWEEN 1 AND 100000), hall_mid_upto INTEGER NOT NULL DEFAULT 300 CHECK(hall_mid_upto BETWEEN 1 AND 100000), hall_fee_small INTEGER NOT NULL DEFAULT 9900 CHECK(hall_fee_small BETWEEN 0 AND 10000000), hall_fee_mid INTEGER NOT NULL DEFAULT 19900 CHECK(hall_fee_mid BETWEEN 0 AND 10000000), hall_fee_large INTEGER NOT NULL DEFAULT 29900 CHECK(hall_fee_large BETWEEN 0 AND 10000000), home_rate_bp INTEGER NOT NULL DEFAULT 500 CHECK(home_rate_bp BETWEEN 0 AND 3000), home_min_fee INTEGER NOT NULL DEFAULT 300 CHECK(home_min_fee BETWEEN 0 AND 100000), cleaner_rate_bp INTEGER NOT NULL DEFAULT 500 CHECK(cleaner_rate_bp BETWEEN 0 AND 3000));
+, ai_rate_bp INTEGER NOT NULL DEFAULT 1000 CHECK(ai_rate_bp BETWEEN 0 AND 3000), cleaning_rate_bp INTEGER NOT NULL DEFAULT 1000 CHECK(cleaning_rate_bp BETWEEN 0 AND 3000), pair_rate_bp INTEGER NOT NULL DEFAULT 500 CHECK(pair_rate_bp BETWEEN 0 AND 3000), pair_month_cap INTEGER NOT NULL DEFAULT 2000 CHECK(pair_month_cap>=0), plan_charge INTEGER NOT NULL DEFAULT 0 CHECK(plan_charge IN (0,1)), plan_owner_price INTEGER NOT NULL DEFAULT 4900 CHECK(plan_owner_price BETWEEN 0 AND 1000000), plan_cleaner_price INTEGER NOT NULL DEFAULT 1900 CHECK(plan_cleaner_price BETWEEN 0 AND 1000000), plan_trial_days INTEGER NOT NULL DEFAULT 14 CHECK(plan_trial_days BETWEEN 0 AND 90), plan_grace_days INTEGER NOT NULL DEFAULT 3 CHECK(plan_grace_days BETWEEN 0 AND 30), test_payments INTEGER NOT NULL DEFAULT 1 CHECK(test_payments IN (0,1)), charges_stopped_at INTEGER, charges_stopped_by TEXT, charge_confirm_above INTEGER NOT NULL DEFAULT 100000 CHECK(charge_confirm_above>0), charge_daily_limit INTEGER NOT NULL DEFAULT 5000000 CHECK(charge_daily_limit>0), ai_booking_fee INTEGER NOT NULL DEFAULT 490 CHECK(ai_booking_fee BETWEEN 0 AND 100000), ai_month_cap INTEGER NOT NULL DEFAULT 4900 CHECK(ai_month_cap BETWEEN 0 AND 1000000), cleaner_job_fee INTEGER NOT NULL DEFAULT 250 CHECK(cleaner_job_fee BETWEEN 0 AND 100000), cleaner_free_jobs INTEGER NOT NULL DEFAULT 5 CHECK(cleaner_free_jobs BETWEEN 0 AND 1000), cleaner_month_cap INTEGER NOT NULL DEFAULT 6000 CHECK(cleaner_month_cap BETWEEN 0 AND 1000000), hall_small_upto INTEGER NOT NULL DEFAULT 100 CHECK(hall_small_upto BETWEEN 1 AND 100000), hall_mid_upto INTEGER NOT NULL DEFAULT 300 CHECK(hall_mid_upto BETWEEN 1 AND 100000), hall_fee_small INTEGER NOT NULL DEFAULT 9900 CHECK(hall_fee_small BETWEEN 0 AND 10000000), hall_fee_mid INTEGER NOT NULL DEFAULT 19900 CHECK(hall_fee_mid BETWEEN 0 AND 10000000), hall_fee_large INTEGER NOT NULL DEFAULT 29900 CHECK(hall_fee_large BETWEEN 0 AND 10000000), home_rate_bp INTEGER NOT NULL DEFAULT 500 CHECK(home_rate_bp BETWEEN 0 AND 3000), home_min_fee INTEGER NOT NULL DEFAULT 300 CHECK(home_min_fee BETWEEN 0 AND 100000), cleaner_rate_bp INTEGER NOT NULL DEFAULT 500 CHECK(cleaner_rate_bp BETWEEN 0 AND 3000), free_days INTEGER NOT NULL DEFAULT 14 CHECK(free_days BETWEEN 0 AND 90));
 
 -- table platform_commissions
 CREATE TABLE platform_commissions (
@@ -1034,7 +1035,7 @@ CREATE TABLE platform_commissions (
  mode TEXT NOT NULL CHECK(mode IN ('shadow','free','charged')),
  settings_version INTEGER NOT NULL,
  created_at INTEGER NOT NULL
-, managed INTEGER NOT NULL DEFAULT 0 CHECK(managed IN (0,1)));
+, managed INTEGER NOT NULL DEFAULT 0 CHECK(managed IN (0,1)), capacity INTEGER);
 
 -- table price_suggestions
 CREATE TABLE price_suggestions (
@@ -2310,15 +2311,18 @@ BEGIN
   CASE WHEN x.pair=1 AND x.cap>0 THEN MIN(x.raw,MAX(0,x.cap-COALESCE((SELECT SUM(amount) FROM cleaning_commissions c WHERE c.owner_id=NEW.owner_id AND c.cleaner_id=NEW.assigned_to AND c.pair=1 AND c.mode=x.mode
    AND c.created_at>=CAST(strftime('%s',date('now','+5 hours','start of month')) AS INTEGER)-18000),0))) ELSE x.raw END,
   x.pair,x.mode,CAST(strftime('%s','now') AS INTEGER)
- FROM (SELECT y.*,MIN(NEW.fee,MAX(y.least,(NEW.fee*y.rate+5000)/10000)) raw FROM (
+ FROM (SELECT y.*,CASE WHEN y.fresh=1 THEN 0 ELSE MIN(NEW.fee,MAX(y.least,(NEW.fee*y.rate+5000)/10000)) END raw FROM (
   SELECT CASE WHEN p.home=1 THEN s.home_rate_bp WHEN p.pair=1 THEN s.pair_rate_bp ELSE s.cleaning_rate_bp END rate,CASE WHEN p.home=1 THEN s.home_min_fee ELSE 0 END least,s.pair_month_cap cap,p.pair,
-   CASE WHEN s.enabled=1 AND s.starts_at<=CAST(strftime('%s','now') AS INTEGER) THEN 'charged' ELSE 'shadow' END mode
+   CASE WHEN s.enabled=1 AND s.starts_at<=CAST(strftime('%s','now') AS INTEGER) THEN 'charged' ELSE 'shadow' END mode,
+   CASE WHEN s.enabled=1 AND MAX(s.starts_at,COALESCE((SELECT MIN(created_at) FROM properties WHERE owner_id=NEW.owner_id AND demo_owner IS NULL),0))+s.free_days*86400>CAST(strftime('%s','now') AS INTEGER) THEN 1 ELSE 0 END fresh
   FROM platform_billing s,(SELECT EXISTS(SELECT 1 FROM regular_cleaners WHERE property_id=NEW.property_id AND cleaner_id=NEW.assigned_to) pair,
    EXISTS(SELECT 1 FROM property_details WHERE property_id=NEW.property_id AND json_extract(details,'$.type')='home') home) p WHERE s.id='global') y) x
  WHERE NEW.fee>0;
  INSERT OR IGNORE INTO service_fees(id,user_id,role,kind,ref_id,property_id,amount,mode,created_at)
  SELECT lower(hex(randomblob(16))),NEW.assigned_to,'cleaner','cleaning',NEW.id,NEW.property_id,MIN(NEW.fee,(NEW.fee*x.rate+5000)/10000),x.mode,CAST(strftime('%s','now') AS INTEGER)
- FROM (SELECT s.cleaner_rate_bp rate,CASE WHEN s.plan_charge=0 THEN 'shadow' ELSE 'charged' END mode FROM platform_billing s WHERE s.id='global') x
+ FROM (SELECT s.cleaner_rate_bp rate,CASE WHEN s.plan_charge=0 THEN 'shadow'
+   WHEN COALESCE((SELECT MIN(f.created_at) FROM service_fees f WHERE f.user_id=NEW.assigned_to AND f.kind='cleaning' AND f.mode<>'shadow'),CAST(strftime('%s','now') AS INTEGER))+s.free_days*86400>CAST(strftime('%s','now') AS INTEGER) THEN 'free'
+   ELSE 'charged' END mode FROM platform_billing s WHERE s.id='global') x
  WHERE x.rate>0 AND NEW.fee>0
   AND NOT EXISTS(SELECT 1 FROM autopilot_plans ap WHERE ap.user_id=NEW.assigned_to AND ap.role='cleaner' AND ap.tier='all' AND ap.status IN ('trial','active','grace'))
   AND NOT EXISTS(SELECT 1 FROM property_staff WHERE property_id=NEW.property_id AND staff_id=NEW.assigned_to);
