@@ -773,7 +773,7 @@ export class RentalService {
       if(body.confirmed!==true)throw new DomainError('Подтвердите, что перевод уже выполнен вне сервиса.');
       number(body.expectedVersion,'Версия брони',1,10000000);
       const deposit=body.action==='record_deposit_return';
-      if(deposit?!['completed','cancelled','expired'].includes(b.status)||!await this.depositIn(bookingId):!['cancelled','expired'].includes(b.status)||!terms?.paid_amount)throw new DomainError('Для этой брони такой расчёт не ожидается.',409);
+      if(deposit?!['completed','cancelled','expired'].includes(b.status)||(await migrateFinanceEntity(this,'booking',bookingId),!await this.depositIn(bookingId)):!['cancelled','expired'].includes(b.status)||!terms?.paid_amount)throw new DomainError('Для этой брони такой расчёт не ожидается.',409);
       const note=required(body.note||(deposit?'Владелец отметил возврат депозита':'Владелец отметил возврат оплаты'),'Основание отметки расчёта',1000);await migrateFinanceEntity(this,'booking',bookingId);
       const balance=await this.one("SELECT COALESCE(SUM(CASE WHEN kind=? THEN amount WHEN kind=? THEN -amount ELSE 0 END),0) n FROM finance_entries WHERE booking_id=?",deposit?'deposit':'payment',deposit?'deposit_return':'refund',bookingId),remaining=balance?.n||0;
       // After a cancellation the guest is owed what the offer's rules left, not always everything paid.
@@ -855,7 +855,7 @@ export class RentalService {
       if(b.guest_id!==this.userId)throw new DomainError('Сообщить об оплате может гость.',403);
       if(b.status!=='confirmed')throw new DomainError('Оплата нужна после подтверждения брони.',409);
       // What is due now (lib/prepay.ts): the prepayment before the arrival, the rest and the deposit at it.
-      const due=dueNow({...b,terms},now()),left=due.left,deposit=due.deposit,sum=(n:number)=>n.toLocaleString('ru-RU').replace(/ | /g,' ')+' ₸';
+      const due=dueNow({...b,terms:{...terms,deposit_received_amount:await this.depositIn(bookingId)}},now()),left=due.left,deposit=due.deposit,sum=(n:number)=>n.toLocaleString('ru-RU').replace(/ | /g,' ')+' ₸';
       if(!left&&!deposit&&due.phase==='prepay'&&b.amount>(Number(terms?.paid_amount)||0))throw new DomainError((prepayOf(terms)?'Предоплата уже учтена, остальное':'По этой брони оплата')+' — при заселении: реквизиты откроются за 15 минут до '+wordsOf(b).arriveGen+'.',409);
       if(!left&&!deposit)return {message:'Владелец уже подтвердил оплату.'};
       if((!left||terms?.payment_reported_at)&&(!deposit||terms?.deposit_reported_at))return {message:'Владелец уже знает о переводе. Он проверит поступление и подтвердит.'};

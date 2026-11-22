@@ -64,3 +64,13 @@ test('what was kept from a deposit leaves the summary of held deposits, as it le
   assert.equal((await financeState(f.guest,'guest')).totals.heldDeposits,0);
  }finally{f.db.close();}
 });
+test('with a part of the deposit already in, the guest reports and the owner confirms only the rest',async()=>{
+ const f=await fixture();try{
+  await recordFinance(f.owner,{kind:'deposit',bookingId:f.booking,amount:3000,confirmed:true,note:'Часть депозита',requestKey:'d3'});
+  await f.guest.bookingAction(f.booking,{action:'report_paid'});
+  assert.equal(terms(f).deposit_reported_amount,7000);
+  await f.owner.bookingAction(f.booking,{action:'cancel'});
+  await f.owner.bookingAction(f.booking,{action:'received'});
+  assert.equal(entries(f,'deposit'),10000);
+ }finally{f.db.close();}
+});
