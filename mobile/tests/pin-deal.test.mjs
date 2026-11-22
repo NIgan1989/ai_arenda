@@ -2,8 +2,8 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {loadPure} from './helpers/pure.mjs';
 
-const {leftShort, pinAct, ownerDeal, dealChain, threadChain, nextArrival, ownerMargin, ownerPinAct, attention, nextAttention, marginLabel} = await loadPure('mobile/src/pin-deal.ts', 'lib/process-threads.ts', 'lib/ai-move-marks.ts', 'lib/stay-handover-text.ts', 'lib/cancellation.ts', 'lib/stay-words.ts');
-const {ownerThreads, cleanerThreads, guestThreads} = await loadPure('lib/process-threads.ts', 'lib/ai-move-marks.ts', 'lib/stay-handover-text.ts', 'lib/cancellation.ts', 'lib/stay-words.ts');
+const {leftShort, pinAct, ownerDeal, dealChain, threadChain, nextArrival, ownerMargin, ownerPinAct, attention, nextAttention, marginLabel} = await loadPure('mobile/src/pin-deal.ts', 'lib/process-threads.ts', 'lib/ai-move-marks.ts', 'lib/stay-handover-text.ts', 'lib/cancellation.ts', 'lib/stay-words.ts', 'lib/review-window.ts');
+const {ownerThreads, cleanerThreads, guestThreads} = await loadPure('lib/process-threads.ts', 'lib/ai-move-marks.ts', 'lib/stay-handover-text.ts', 'lib/cancellation.ts', 'lib/stay-words.ts', 'lib/review-window.ts');
 
 // 2026-11-19 20:15 in Kazakhstan (UTC+5).
 const now = Date.UTC(2026, 10, 19, 15, 15) / 1000;
