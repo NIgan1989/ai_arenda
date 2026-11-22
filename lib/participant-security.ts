@@ -92,14 +92,17 @@ if(body.status==='approved'&&review&&['owner','cleaner'].includes(review.role)&&
 // them with the agreed address.
 async function tellMovedGuests(db:D1Database,propertyId:string,approved:boolean,reviewId:string,at:number){
  const rooms=JSON.stringify(await roomsOf(db,propertyId));
- const waiting=await rows(db,`SELECT a.booking_id,a.city,a.address,b.guest_id,p.title,p.city new_city,p.address new_address FROM booking_addresses a JOIN bookings b ON b.id=a.booking_id JOIN properties p ON p.id=b.property_id WHERE a.state='review' AND b.property_id IN (SELECT value FROM json_each(?)) AND b.status IN ('requested','confirmed') AND b.occupied_until>?`,rooms,at);
+  // The new address is the lead's: copied rooms take it only at their next synchronisation (lib/room-units.ts).
+ const lead=await one(db,'SELECT title,city,address FROM properties WHERE id=?',propertyId);
+ const waiting=await rows(db,`SELECT a.booking_id,a.city,a.address,b.guest_id,b.status FROM booking_addresses a JOIN bookings b ON b.id=a.booking_id WHERE a.state='review' AND b.property_id IN (SELECT value FROM json_each(?)) AND b.status IN ('requested','confirmed') AND b.occupied_until>?`,rooms,at);
  if(!waiting.length)return;
- const place=(city:string,address:string)=>[city,address].filter(Boolean).join(', ');
+ const place=(city?:string,address?:string)=>[city,address].filter(Boolean).join(', ');
  await db.batch([
   ...(approved?[q(db,`UPDATE booking_addresses SET state='offered',updated_at=? WHERE state='review' AND booking_id IN (SELECT value FROM json_each(?))`,at,JSON.stringify(waiting.map(w=>w.booking_id)))]:[]),
-  ...waiting.map(w=>q(db,'INSERT OR IGNORE INTO notifications(id,user_id,body,dedupe,read,created_at) VALUES (?,?,?,?,0,?)',uuid(),w.guest_id,approved
-   ?'Новый адрес «'+(w.title||'жильё')+'» проверен: '+place(w.new_city,w.new_address)+'. Откройте бронь: примите новый адрес или отмените бронь бесплатно.'
-   :'Новый адрес «'+(w.title||'жильё')+'» не подтверждён администратором. Для вашей брони действует согласованный адрес: '+place(w.city,w.address)+'. Если сомневаетесь, отмените бронь бесплатно или напишите в чат брони.','guest:address-'+(approved?'offered':'refused')+':'+w.booking_id+':'+reviewId,at))]);
+  // The exact address reaches confirmed guests only, as everywhere else; a request hears the step without it.
+  ...waiting.map(w=>{const title=lead?.title||'жильё',exact=w.status==='confirmed';return q(db,'INSERT OR IGNORE INTO notifications(id,user_id,body,dedupe,read,created_at) VALUES (?,?,?,?,0,?)',uuid(),w.guest_id,approved
+   ?(exact?'Новый адрес «'+title+'» проверен: '+place(lead?.city,lead?.address)+'. Откройте бронь: примите новый адрес или отмените бронь бесплатно.':'Новый адрес «'+title+'» проверен. Откройте бронь: примите новый адрес или отмените бронь бесплатно.')
+   :(exact?'Новый адрес «'+title+'» не подтверждён администратором. Для вашей брони действует согласованный адрес: '+place(w.city,w.address)+'. Если сомневаетесь, отмените бронь бесплатно или напишите в чат брони.':'Новый адрес «'+title+'» не подтверждён администратором. Ваша заявка в силе по согласованному адресу. Если сомневаетесь, отмените её бесплатно или напишите в чат брони.'),'guest:address-'+(approved?'offered':'refused')+':'+w.booking_id+':'+reviewId,at);})]);
 }
 // A draft is ready for guests when it has photos and a full description: what the catalogue itself requires.
 export const ADDRESS_REVIEW='Проверка нового адреса';

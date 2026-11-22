@@ -220,8 +220,9 @@ export class RentalService {
     // The exact address goes to confirmed guests only, as everywhere else.
     // A moved flat (publication audit 2026-11-22): the guests of every room keep the address they agreed to until a person
     // checked the new one and the guest accepted it; until then they may cancel for free (lib/participant-security.ts).
+    // A hidden flat with bookings ahead is moved the same way: the bookings are there whether it is shown or not.
     let kept=0;
-    if(shownBefore&&moved){
+    if(moved){
       const rooms=JSON.stringify(await roomsOf(this.db,key)),t=now();
       const ahead=await this.all("SELECT id,guest_id,status FROM bookings WHERE property_id IN (SELECT value FROM json_each(?)) AND (status='confirmed' OR (status='requested' AND expires_at>?)) AND occupied_until>?",rooms,t,t);
       const checked=!(await readPilotPolicy(this.db)).require_owner_review,state=checked?'offered':'review',old=[current.city,current.address].filter(Boolean).join(', '),next=[p.city,p.address].filter(Boolean).join(', ');
@@ -236,7 +237,7 @@ export class RentalService {
     }
     // An approved flat that waited for its photos shows itself once they are there (lib/show-waiting.ts).
     if(propertyId)await showWaiting(this.db,key);
-    return {id:key,moved:shownBefore&&moved,message:(shownBefore&&moved?(kept?'Адрес изменён. Гости действующих броней видят прежний адрес, пока новый не проверен и гость его не принял.':'Адрес изменён.'):published?'Объявление опубликовано. Готовность и даты проверяются отдельно.':'Черновик сохранён. Гости его не видят.')+paused};
+    return {id:key,moved:shownBefore&&moved,message:(kept?'Адрес изменён. Гости действующих броней видят прежний адрес, пока новый не проверен и гость его не принял.':shownBefore&&moved?'Адрес изменён.':published?'Объявление опубликовано. Готовность и даты проверяются отдельно.':'Черновик сохранён. Гости его не видят.')+paused};
   }
   // Removing a flat: one with no history at all is deleted; otherwise it is archived (hidden from guests and
   // from the owner's lists) so bookings, cleanings and money records keep pointing at it.

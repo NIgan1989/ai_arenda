@@ -63,7 +63,7 @@ function PropertyCard({property:p,bookings,busy,open,onToggle,onEdit,onSettings,
  const [marked,setMarked]=useState<Row[]|null>(null),[busyOpen,setBusyOpen]=useState(false),[busyNote,setBusyNote]=useState('');
  // A refused check of the current address (publication audit 2026-11-22): its reason and «Отправить на проверку снова» stay on
  // the card, since the server does not resend a refused address by itself. A flat without a point on the map is not shown to guests.
- const refused=p.review_refused!=null&&!p.published,unmapped=p.mapped===false&&!p.demo_owner,[resent,setResent]=useState('');
+ const refused=p.review_refused!=null,unmapped=p.mapped===false&&!p.demo_owner,[resent,setResent]=useState('');
  const resend=async()=>{if(!onResend)return;try{const r=await onResend() as Row|undefined;setResent(r?.message?String(r.message):t('Отправлено на проверку. Мы напишем, когда администратор посмотрит.'));}catch(r:any){setResent(r?.message||t('Не получилось отправить. Попробуйте ещё раз.'));}};
  // A fresh state of the object wins over the local mark: the person on shift may have marked or freed it meanwhile.
  useEffect(()=>{setMarked(null);},[p.busy_until]);

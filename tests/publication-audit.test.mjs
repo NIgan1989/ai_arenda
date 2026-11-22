@@ -116,3 +116,16 @@ test('a hotel: rooms added after the approval are shown too, and the guests of e
   assert.equal(f.db.raw.prepare('SELECT COUNT(*) n FROM booking_addresses').get().n,3);
  }finally{f.db.close();}
 });
+test('a hidden flat keeps its guests\' agreed address too, and a request never hears an exact address',async()=>{
+ const f=await fixture();try{
+  const ids=await shown(f);
+  const request=(await f.guest.createBooking({propertyId:f.property,start:iso(now()+5*86400),end:iso(now()+5*86400+7200),guests:1,billingMode:'hourly',requestKey:'second',acceptTerms:true})).id;
+  // Hidden and moved in one save: the bookings are still there.
+  await f.owner.saveListing(f.property,body(f,{photos:ids,published:false,address:'Новая улица, 5'}));
+  assert.equal(f.db.raw.prepare('SELECT COUNT(*) n FROM booking_addresses').get().n,2);
+  const b=(await f.guest.roleState('guest')).bookings.find(b=>b.id===f.booking);assert.equal(b.address,'PRIVATE ADDRESS');
+  await ensurePublishReview(f.owner,f.property);rightDoc(f.db,f.property,'owner');await decide(f,'approved');
+  const asked=f.db.raw.prepare("SELECT body FROM notifications WHERE dedupe LIKE ?").get('guest:address-offered:'+request+':%').body;
+  assert.doesNotMatch(asked,/Новая улица|PRIVATE ADDRESS/);assert.match(asked,/проверен\. Откройте бронь/);
+ }finally{f.db.close();}
+});
