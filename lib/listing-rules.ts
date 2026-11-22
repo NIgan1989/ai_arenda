@@ -8,3 +8,5 @@ export function hasContactWays(text:string){
  if(CONTACT.test(text)||/\B@[a-z0-9_.]{3,}/i.test(text))return true;
  return (text.match(/\d[\d\s\-().]{8,}\d/g)||[]).some(m=>{const d=m.replace(/\D/g,'');return d.length===11&&/^[78]7/.test(d)||d.length===10&&d[0]==='7';});
 }
+// The proof belongs to the address it was given for (publication audit 2026-11-22): a new address needs its own.
+export const CURRENT_PROOF='address_revision='+'COALESCE((SELECT revision FROM review_property_bindings b WHERE b.property_id=property_right_docs.property_id),0)';

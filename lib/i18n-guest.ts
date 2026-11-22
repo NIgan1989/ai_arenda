@@ -758,4 +758,10 @@ export const GUEST:Words={
  'Скидка постоянного гостя −{n}%':['Тұрақты қонақ жеңілдігі −{n}%','Regular guest discount −{n}%'],
  'без неё {price}':['жеңілдіксіз {price}','without it {price}'],
  'Оплата по ссылке Kaspi':['Kaspi сілтемесі арқылы төлеу','Pay by the Kaspi link'],
+ 'Принять новый адрес':['Жаңа мекенжайды қабылдау','Accept the new address'],
+ 'Новый адрес: {v}':['Жаңа мекенжай: {v}','New address: {v}'],
+ 'Новый адрес: {v}. Бронь останется в силе.':['Жаңа мекенжай: {v}. Бронь күшінде қалады.','New address: {v}. The booking stays in force.'],
+ 'Бронь останется в силе. Точный адрес откроется после подтверждения брони.':['Бронь күшінде қалады. Нақты мекенжай бронь расталғаннан кейін ашылады.','The booking stays in force. The exact address opens once the booking is confirmed.'],
+ 'Отменить бесплатно':['Тегін бас тарту','Cancel for free'],
+ 'Отменить бронь из-за смены адреса':['Мекенжай өзгергендіктен броньдан бас тарту','Cancel the booking because the address changed'],
 };

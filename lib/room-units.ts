@@ -96,13 +96,16 @@ export async function setRoomCount(s:RentalService,body:Row){
   for(let i=now;i<count;i++){
    const id=uuid();
    add.push(
-    q(s.db,copy('properties',{id:'?',created_at:'?',archived_at:'NULL'}),id,at,p.id),
+    // Created hidden, tied to the card, then shown like the card: the platform's check of the card covers the room only
+    // once the room is tied to it (publication audit 2026-11-22: an approved hotel could not add a room).
+    q(s.db,copy('properties',{id:'?',created_at:'?',archived_at:'NULL',published:'0'}),id,at,p.id),
     q(s.db,copy('property_details',{property_id:'?',updated_at:'?'}),id,at,p.id),
     q(s.db,copy('property_locations',{property_id:'?',updated_at:'?'}),id,at,p.id),
     q(s.db,copy('property_policies',{property_id:'?',updated_at:'?'}),id,at,p.id),
     q(s.db,"INSERT INTO property_operations(property_id,readiness,active_booking_id,version,note,updated_at) VALUES (?,'ready',NULL,1,'',?)",id,at),
     q(s.db,'INSERT INTO property_staff(property_id,staff_id,owner_id,created_at) SELECT ?,staff_id,owner_id,? FROM property_staff WHERE property_id=?',id,at,p.id),
-    q(s.db,'INSERT INTO room_units(property_id,lead_id,created_at) VALUES (?,?,?)',id,p.id,at+i));
+    q(s.db,'INSERT INTO room_units(property_id,lead_id,created_at) VALUES (?,?,?)',id,p.id,at+i),
+    q(s.db,'UPDATE properties SET published=(SELECT l.published FROM properties l WHERE l.id=?) WHERE id=? AND (SELECT l.published FROM properties l WHERE l.id=?)=1',p.id,id,p.id));
   }
   await s.db.batch(add);
  }else if(count<now){

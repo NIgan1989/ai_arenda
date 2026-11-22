@@ -2,7 +2,7 @@ import {DomainError} from './domain';
 import {epoch,uuid,q,one,rows,hash,type Row,type OperationConfig} from './operation-core';
 import {decideParticipantReview} from './participant-security';
 import type {RentalService} from './service';
-import {hasContacts,MIN_PHOTOS} from './listing-rules';
+import {hasContacts,MIN_PHOTOS,CURRENT_PROOF} from './listing-rules';
 export {hasContacts,MIN_PHOTOS};
 
 // The AI administrator's check of a participant review. Every rule is plain and visible to the platform
@@ -70,7 +70,7 @@ async function flatFacts(db:D1Database,review:Row):Promise<FlatFacts|null>{
  if(comparable.length<3)comparable=(await rows(db,'SELECT price FROM properties WHERE city=? AND published=1 AND demo_owner IS NULL AND archived_at IS NULL AND id<>? AND price>0 LIMIT 200',p.city,p.id)).map(r=>r.price);
  const mine=normalAddress(p.city,p.address),others=await rows(db,'SELECT city,address FROM properties WHERE owner_id<>? AND demo_owner IS NULL AND archived_at IS NULL AND city=? LIMIT 2000',p.owner_id,p.city);
  const history=await one(db,"SELECT (SELECT COUNT(*) FROM participant_reviews WHERE user_id=? AND role='owner' AND status='rejected' AND reviewed_at>?) rejected,(SELECT COUNT(*) FROM administrator_issues WHERE owner_id=? AND opened_role='guest' AND status<>'resolved') complaints",p.owner_id,epoch()-HISTORY,p.owner_id);
- const rights=await one(db,'SELECT kind,COUNT(*) n FROM property_right_docs WHERE property_id=? GROUP BY kind ORDER BY MAX(created_at) DESC LIMIT 1',p.id);
+ const rights=await one(db,'SELECT kind,COUNT(*) n FROM property_right_docs WHERE property_id=? AND '+CURRENT_PROOF+' GROUP BY kind ORDER BY MAX(created_at) DESC LIMIT 1',p.id);
  return {description:p.description||'',title:p.title||'',photos:p.photos,mapped:!!p.mapped,price:p.price,comparable,duplicateAddress:others.some(o=>normalAddress(o.city,o.address)===mine),rejectedBefore:history?.rejected||0,openComplaints:history?.complaints||0,rights:Number(rights?.n)||0,rightsKind:rights?.kind||'',identity:Number((await one(db,'SELECT COUNT(*) n FROM identity_docs WHERE user_id=?',p.owner_id))?.n)||0};
 }
 async function cleanerFacts(db:D1Database,review:Row):Promise<CleanerFacts|null>{
