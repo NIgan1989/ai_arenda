@@ -264,7 +264,8 @@ export function tripThread(b: Row, now: number, paymentMode?: string): ProcessTh
       note: out ? w.leaveOk : terms.checkout_reported_at ? tr('Владелец подтверждает {leaveLow}',{leaveLow:w.leaveLow}) : tr('Сообщите {ofLeave}, когда уйдёте',{ofLeave:w.ofLeave}) },
   ];
   const leaving = out || !!terms.checkout_reported_at || now >= b.end;
-  const t = place(steps, [confirmed, paid && !depositDue, inside || over, (inside || over) && leaving, out], i => i === 0 || i === 1 || i === 3 || (i === 2 ? now >= b.start - 15 * 60 : true));
+  // A completed stay is over whatever the money marks say: after the term to review it must not wait for a payment again.
+  const t = place(steps, [confirmed, paid && !depositDue, inside || over, (inside || over) && leaving, out].map(d => d || b.status === 'completed'), i => i === 0 || i === 1 || i === 3 || (i === 2 ? now >= b.start - 15 * 60 : true));
   const review = canRate(b, now);
   const yours = t.finished ? review
     : t.current === 1 ? canPay
