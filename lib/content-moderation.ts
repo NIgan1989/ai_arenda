@@ -28,7 +28,7 @@ export async function moderateContent(s:RentalService,role:Role,action:string,b:
   statements.push(q(s.db,`UPDATE messages SET body=? WHERE id=? AND user_id=? AND scope=? AND ${gate}`,hidden?'Ответ скрыт после рассмотрения жалобы.':original,target,report.user_id,report.role,...args));
   if(hidden)statements.push(q(s.db,`DELETE FROM administrator_search_results WHERE message_id=? AND ${gate}`,target,...args));
   else if(originalSearch)statements.push(q(s.db,`INSERT INTO administrator_search_results SELECT ?,? WHERE ${gate} ON CONFLICT(message_id) DO UPDATE SET result=excluded.result`,target,originalSearch,...args));
- }else statements.push(q(s.db,`UPDATE discussion_messages SET body=?,photo_data=? WHERE seq=? AND room_id=? AND ${gate}`,hidden?'Сообщение скрыто после рассмотрения жалобы.':original,hidden?'':photo,target,room,...args));
+ }else statements.push(q(s.db,`UPDATE discussion_messages SET body=?,photo_data=?,audio_data=CASE WHEN ?=1 THEN '' ELSE audio_data END,place=CASE WHEN ?=1 THEN '' ELSE place END WHERE seq=? AND room_id=? AND ${gate}`,hidden?'Сообщение скрыто после рассмотрения жалобы.':original,hidden?'':photo,hidden,hidden,target,room,...args));
  statements.push(q(s.db,`INSERT INTO moderation_access_events SELECT ?,?,?,?,?,? WHERE ${gate}`,uuid(),s.userId,report.id,b.decision,reason,time,...args));
  statements.push(q(s.db,`UPDATE content_reports SET status='reviewing',resolution=? WHERE id=? AND ${gate}`,hidden?'Материал скрыт на время рассмотрения.':'Отображение материала восстановлено.',report.id,...args));
  const [changed]=await s.db.batch(statements);if(!changed.meta.changes)throw new DomainError('Материал уже изменён. Проверьте его повторно.',409);

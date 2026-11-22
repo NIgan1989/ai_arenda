@@ -62,7 +62,7 @@ export async function discussionAvatar(service:RentalService,role:Role,body:Row)
 }
 export async function readDiscussion(service:RentalService,role:Role,body:Row){
  const {room,context}=await authorisedRoom(service,role,body),before=body.before?number(body.before,'Номер сообщения',1,Number.MAX_SAFE_INTEGER):Number.MAX_SAFE_INTEGER;
- const messages=await rows(service.db,"SELECT m.seq,m.sender_id,m.sender_role,m.body,m.created_at,m.reply_to,(m.photo_data<>'') photo,(m.sender_role='owner' AND m.request_key LIKE 'ai:%') by_ai,r.body reply_body FROM discussion_messages m LEFT JOIN discussion_messages r ON r.seq=m.reply_to AND r.room_id=m.room_id WHERE m.room_id=? AND m.seq<? ORDER BY m.seq DESC LIMIT 100",room.id,before);messages.reverse();
+ const messages=await rows(service.db,"SELECT m.seq,m.sender_id,m.sender_role,m.body,m.created_at,m.reply_to,(m.photo_data<>'') photo,(m.audio_data<>'') voice,m.audio_ms,m.place,(m.sender_role='owner' AND m.request_key LIKE 'ai:%') by_ai,r.body reply_body FROM discussion_messages m LEFT JOIN discussion_messages r ON r.seq=m.reply_to AND r.room_id=m.room_id WHERE m.room_id=? AND m.seq<? ORDER BY m.seq DESC LIMIT 100",room.id,before);messages.reverse();for(const m of messages)m.place=placeOf(m.place);
  const older=messages.length?!!await one(service.db,'SELECT seq FROM discussion_messages WHERE room_id=? AND seq<? LIMIT 1',room.id,messages[0].seq):false;
  if(!body.before&&body.markRead!==false){const seq=messages.at(-1)?.seq||0;await q(service.db,'INSERT INTO discussion_visits(room_id,user_id,role,last_seq,seen_at) VALUES (?,?,?,?,?) ON CONFLICT(room_id,user_id,role) DO UPDATE SET last_seq=MAX(last_seq,excluded.last_seq),seen_at=excluded.seen_at',room.id,service.userId,role,seq,epoch()).run();await q(service.db,"UPDATE notifications SET read=1 WHERE user_id=? AND substr(dedupe,1,length(?))=? AND CAST(substr(dedupe,length(?)+1) AS INTEGER)<=?",service.userId,role+':discussion:'+room.id+':',role+':discussion:'+room.id+':',role+':discussion:'+room.id+':',seq).run();}
  const viewer=await one(service.db,'SELECT show_presence,show_receipts FROM profile_preferences WHERE user_id=?',service.userId);
@@ -73,20 +73,26 @@ export async function readDiscussion(service:RentalService,role:Role,body:Row){
  const subject=await discussionSubject(service,context);
  // The guest of a flat under autopilot is asked once, right in the chat, whether the AI may read their messages.
  const aiHelper=role==='guest'&&room.channel==='stay'&&room.entity_kind==='booking'&&!archived&&await aiAnswersBooking(service.db,room.entity_id)?{active:true,permission:await aiDataPermission(service)}:null;
- return {room:{id:room.id,sendBlocked,title:room.title,channel:room.channel,members,archived},aiHelper,subject,call:archived?{phone:null,note:'Чат в архиве.'}:await discussionCall(service,role,context,subject,sendBlocked),messages,visits,hasOlder:older,userId:service.userId};
+ return {room:{id:room.id,sendBlocked,title:room.title,channel:room.channel,members,archived},aiHelper,subject,call:archived?{phone:null,note:'Чат в архиве.'}:await discussionCall(service,role,context,subject,sendBlocked),media:chatMedia(subject),messages,visits,hasOlder:older,userId:service.userId};
 }
 export async function sendDiscussionMessage(service:RentalService,role:Role,body:Row,config:AIConfig={}){
  const {room,context}=await authorisedRoom(service,role,body);if(room.membership_key!==context.membershipKey)throw new DomainError('Состав участников изменился. Откройте актуальное обсуждение.',409);
  if(await one(service.db,'SELECT room_id FROM discussion_blocks WHERE room_id=?',room.id))throw new DomainError('Переписка заблокирована участником. История и действия по процессу доступны.',403);
- const photo=body.photo?jpegInput(body.photo,'property').data:'',reply=body.replyTo?number(body.replyTo,'Ответ на сообщение',1,Number.MAX_SAFE_INTEGER):null;
+ const photo=body.photo?jpegInput(body.photo,'property').data:'',voice=body.voice?voiceInput(body.voice):null,place=body.place?placeInput(body.place):'',reply=body.replyTo?number(body.replyTo,'Ответ на сообщение',1,Number.MAX_SAFE_INTEGER):null;
  if(reply&&!await one(service.db,'SELECT seq FROM discussion_messages WHERE room_id=? AND seq=?',room.id,reply))throw new DomainError('Исходное сообщение недоступно.',403);
- const text=required(body.text||(photo?'Фотография':''),'Сообщение',4000),key=required(body.requestKey,'Ключ сообщения',100);if(key.startsWith(AI_KEY))throw new DomainError('Некорректный ключ сообщения.');const previous=await one(service.db,'SELECT seq,body,photo_data,reply_to FROM discussion_messages WHERE room_id=? AND sender_id=? AND sender_role=? AND request_key=?',room.id,service.userId,role,key);
+ if([photo,voice,place].filter(Boolean).length>1)throw new DomainError('Отправьте фото, голосовое или точку отдельными сообщениями.');
+ const text=required(body.text||(photo?'Фотография':voice?'Голосовое сообщение':place?'Точка на карте':''),'Сообщение',4000),key=required(body.requestKey,'Ключ сообщения',100);if(key.startsWith(AI_KEY))throw new DomainError('Некорректный ключ сообщения.');const previous=await one(service.db,'SELECT seq,body,photo_data,reply_to,audio_data,place FROM discussion_messages WHERE room_id=? AND sender_id=? AND sender_role=? AND request_key=?',room.id,service.userId,role,key);
  // Between a guest and an owner: no links, no card numbers, no phone or messenger before the phone opens (lib/chat-guard.ts).
- if(room.entity_kind==='booking'&&!key.startsWith(AI_KEY)){const b=await one(service.db,'SELECT status,start FROM bookings WHERE id=?',room.entity_id),guard=chatGuard(text,{phoneOpen:phoneOpens(b)});if(!guard.ok){await q(service.db,'INSERT INTO audit_events VALUES (?,?,?,?,?)',uuid(),service.userId,room.entity_id,'chat.contact_blocked',epoch()).run();throw new DomainError(guard.reason,422);}}
- const same=(m:Row)=>m.body===text&&m.photo_data===photo&&m.reply_to===reply;
+ if(room.entity_kind==='booking'&&!key.startsWith(AI_KEY)){const b=await one(service.db,'SELECT status,start FROM bookings WHERE id=?',room.entity_id),guard=chatGuard(text,{phoneOpen:phoneOpens(b)});const refuse=async(reason:string)=>{await q(service.db,'INSERT INTO audit_events VALUES (?,?,?,?,?)',uuid(),service.userId,room.entity_id,'chat.contact_blocked',epoch()).run();throw new DomainError(reason,422);};
+  if(!guard.ok)await refuse(guard.reason);
+  // A point on the map shows where the home is: only once the booking is confirmed, when the address opens too.
+  if(place&&!['confirmed','completed'].includes(b?.status))throw new DomainError('Точку на карте можно отправить после подтверждения брони: тогда откроется и адрес.',422);
+  // A voice message is open at once, as in a messenger (the user's choice, 2026-11-22): it is not checked for numbers.
+ }
+ const audio=voice?.data||'',same=(m:Row)=>m.body===text&&m.photo_data===photo&&m.reply_to===reply&&(m.audio_data||'')===audio&&(m.place||'')===place;
  if(previous){if(!same(previous))throw new DomainError('Этот ключ использован для другого сообщения.',409);return {sent:true,seq:previous.seq};}
- const message=await q(service.db,`INSERT OR IGNORE INTO discussion_messages(room_id,sender_id,sender_role,body,request_key,created_at,photo_data,reply_to) SELECT ?,?,?,?,?,?,?,? WHERE ${context.gate} AND NOT EXISTS(SELECT 1 FROM discussion_blocks WHERE room_id=?) AND (SELECT COUNT(*) FROM discussion_messages WHERE sender_id=? AND created_at>?)<30 RETURNING seq`,room.id,service.userId,role,text,key,epoch(),photo,reply,...context.gateArgs,room.id,service.userId,epoch()-60).first<Row>();
- if(!message){const replay=await one(service.db,'SELECT seq,body,photo_data,reply_to FROM discussion_messages WHERE room_id=? AND sender_id=? AND sender_role=? AND request_key=?',room.id,service.userId,role,key);if(replay&&same(replay))return {sent:true,seq:replay.seq};throw new DomainError('Сообщение не отправлено: изменился состав участников или достигнут лимит. Обновите чат.',409);}
+ const message=await q(service.db,`INSERT OR IGNORE INTO discussion_messages(room_id,sender_id,sender_role,body,request_key,created_at,photo_data,reply_to,audio_data,audio_ms,place) SELECT ?,?,?,?,?,?,?,?,?,?,? WHERE ${context.gate} AND NOT EXISTS(SELECT 1 FROM discussion_blocks WHERE room_id=?) AND (SELECT COUNT(*) FROM discussion_messages WHERE sender_id=? AND created_at>?)<30 RETURNING seq`,room.id,service.userId,role,text,key,epoch(),photo,reply,audio,voice?.ms||0,place,...context.gateArgs,room.id,service.userId,epoch()-60).first<Row>();
+ if(!message){const replay=await one(service.db,'SELECT seq,body,photo_data,reply_to,audio_data,place FROM discussion_messages WHERE room_id=? AND sender_id=? AND sender_role=? AND request_key=?',room.id,service.userId,role,key);if(replay&&same(replay))return {sent:true,seq:replay.seq};throw new DomainError('Сообщение не отправлено: изменился состав участников или достигнут лимит. Обновите чат.',409);}
  // Under autopilot the AI administrator answers the guest for the owner. A failed answer never fails the guest's message.
  if(role==='guest'&&room.channel==='stay'){try{await answerGuest(service.db,room.id,message.seq,(bookingId,kind,wanted)=>makeStayOffer(service,bookingId,kind,undefined,wanted),guestModel(service,config));}catch(error){console.error('AI administrator: guest answer failed',error);}}
  return {sent:true,seq:message.seq};
@@ -96,6 +102,32 @@ export async function discussionPhoto(service:RentalService,role:Role,body:Row){
  const {room}=await authorisedRoom(service,role,body),message=await one(service.db,"SELECT photo_data FROM discussion_messages WHERE room_id=? AND seq=? AND photo_data<>''",room.id,number(body.seq,'Фотография',1,Number.MAX_SAFE_INTEGER));
  if(!message)throw new DomainError('Фотография недоступна.',404);return {data:message.photo_data};
 }
+export async function discussionAudio(service:RentalService,role:Role,body:Row){
+ const {room}=await authorisedRoom(service,role,body),message=await one(service.db,"SELECT audio_data,audio_ms FROM discussion_messages WHERE room_id=? AND seq=? AND audio_data<>''",room.id,number(body.seq,'Голосовое сообщение',1,Number.MAX_SAFE_INTEGER));
+ if(!message)throw new DomainError('Голосовое сообщение недоступно.',404);return {data:message.audio_data,ms:message.audio_ms};
+}
+// A voice message: a recording of up to a minute.
+export const VOICE_MAX_MS=60000;
+const AUDIO=/^data:audio\/(mp4|m4a|x-m4a|aac|mpeg|webm|ogg|3gpp|wav)(;codecs=[^;,]+)?;base64,[A-Za-z0-9+/]+=*$/;
+export function voiceInput(v:unknown){
+ const o=(v&&typeof v==='object'?v:{}) as Row,data=typeof o.data==='string'?o.data:'',ms=Math.round(Number(o.ms));
+ if(data.length>560000||!AUDIO.test(data))throw new DomainError('Голосовое сообщение не записалось. Попробуйте ещё раз.');
+ if(!Number.isFinite(ms)||ms<500||ms>VOICE_MAX_MS+1000)throw new DomainError('Голосовое сообщение — до одной минуты.');
+ return {data,ms};
+}
+// A point on the map: where I am, or where the entrance is.
+export function placeInput(v:unknown){
+ const o=(v&&typeof v==='object'?v:{}) as Row,lat=Number(o.lat),lon=Number(o.lon);
+ if(!Number.isFinite(lat)||!Number.isFinite(lon)||Math.abs(lat)>90||Math.abs(lon)>180||(lat===0&&lon===0))throw new DomainError('Не удалось определить точку на карте.');
+ return JSON.stringify({lat:Math.round(lat*1e6)/1e6,lon:Math.round(lon*1e6)/1e6});
+}
+// What the composer offers: a voice message always; a point on the map once the booking is confirmed (the address is
+// open then). Between an owner and a cleaner both, as the chat itself.
+export function chatMedia(subject:Row|null){
+ if(subject?.kind!=='booking')return {place:true,voice:true};
+ return {place:['confirmed','completed'].includes(subject.status),voice:true};
+}
+export function placeOf(v:unknown){try{const p=JSON.parse(String(v||''));return Number.isFinite(p?.lat)&&Number.isFinite(p?.lon)?{lat:p.lat,lon:p.lon}:null;}catch{return null;}}
 export async function discussionTyping(service:RentalService,role:Role,body:Row){
  const {room,context}=await authorisedRoom(service,role,body);if(room.membership_key!==context.membershipKey)throw new DomainError('Обсуждение закрыто.',409);
  const pref=await one(service.db,'SELECT show_presence FROM profile_preferences WHERE user_id=?',service.userId);
@@ -104,7 +136,7 @@ export async function discussionTyping(service:RentalService,role:Role,body:Row)
 export async function discussionInbox(service:RentalService,role:Role){
  await service.authorizeWorkspace(role,'operations');
  const rooms=await rows(service.db,"SELECT r.id FROM discussion_rooms r WHERE r.channel<>'shared' AND EXISTS(SELECT 1 FROM json_each(r.members) m WHERE json_extract(m.value,'$.id')=? AND json_extract(m.value,'$.role')=?) ORDER BY COALESCE((SELECT MAX(created_at) FROM discussion_messages WHERE room_id=r.id),r.created_at) DESC LIMIT 100",service.userId,role),items:Row[]=[];
- for(const r of rooms){try{const {room,context}=await authorisedRoom(service,role,{roomId:r.id});const latest=await one(service.db,"SELECT seq,body,created_at,(photo_data<>'') photo FROM discussion_messages WHERE room_id=? ORDER BY seq DESC LIMIT 1",r.id),unread=await one(service.db,'SELECT COUNT(*) n FROM discussion_messages WHERE room_id=? AND sender_id<>? AND seq>COALESCE((SELECT last_seq FROM discussion_visits WHERE room_id=? AND user_id=? AND role=?),0)',r.id,service.userId,r.id,service.userId,role);items.push({id:r.id,title:room.title,kind:room.entity_kind,entityId:room.entity_id,channel:room.channel,members:await currentMembers(service,room,context),archived:room.membership_key!==context.membershipKey,latest,unread:unread?.n||0});}catch(e){if(!(e instanceof DomainError)||![403,409].includes(e.status))throw e;}}
+ for(const r of rooms){try{const {room,context}=await authorisedRoom(service,role,{roomId:r.id});const latest=await one(service.db,"SELECT seq,body,created_at,(photo_data<>'') photo,(audio_data<>'') voice,(place<>'') place FROM discussion_messages WHERE room_id=? ORDER BY seq DESC LIMIT 1",r.id),unread=await one(service.db,'SELECT COUNT(*) n FROM discussion_messages WHERE room_id=? AND sender_id<>? AND seq>COALESCE((SELECT last_seq FROM discussion_visits WHERE room_id=? AND user_id=? AND role=?),0)',r.id,service.userId,r.id,service.userId,role);items.push({id:r.id,title:room.title,kind:room.entity_kind,entityId:room.entity_id,channel:room.channel,members:await currentMembers(service,room,context),archived:room.membership_key!==context.membershipKey,latest,unread:unread?.n||0});}catch(e){if(!(e instanceof DomainError)||![403,409].includes(e.status))throw e;}}
  return {userId:service.userId,rooms:items,unread:items.reduce((sum,r)=>sum+r.unread,0),...(await discussionCandidates(service,role))};
 }
 

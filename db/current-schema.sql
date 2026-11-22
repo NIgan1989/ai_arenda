@@ -89,6 +89,7 @@
 -- migration 0085_read_indexes.sql sha256:7100201f70821f1da31ea5a7a95df6a279e49e755897bc1e793b1b8411654910
 -- migration 0086_percent_tariff.sql sha256:b75a393364bc2a1b27774c6e23f8023f7d30af84f132c88d6cbe14496450d48d
 -- migration 0087_repeat_guest_discount.sql sha256:889cd787c9404b45cfc5bf14dd72e471fccb7ff0da1ba04f0c4138dc3ce089c2
+-- migration 0088_chat_voice_place.sql sha256:887badea01961521b6e4017467c307731745bab0c20450639c7969e8c26c72e3
 
 -- table access_receipts
 CREATE TABLE access_receipts (id TEXT PRIMARY KEY,property_id TEXT NOT NULL,entity_kind TEXT NOT NULL,entity_id TEXT NOT NULL,user_id TEXT NOT NULL,created_at INTEGER NOT NULL,expires_at INTEGER NOT NULL);
@@ -690,7 +691,7 @@ CREATE TABLE discussion_blocks (
 CREATE TABLE discussion_messages (
  seq INTEGER PRIMARY KEY AUTOINCREMENT,room_id TEXT NOT NULL REFERENCES discussion_rooms(id),
  sender_id TEXT NOT NULL,sender_role TEXT NOT NULL CHECK(sender_role IN ('owner','guest','cleaner')),
- body TEXT NOT NULL CHECK(length(body) BETWEEN 1 AND 4000),request_key TEXT NOT NULL,created_at INTEGER NOT NULL, photo_data TEXT NOT NULL DEFAULT '', reply_to INTEGER REFERENCES discussion_messages(seq),
+ body TEXT NOT NULL CHECK(length(body) BETWEEN 1 AND 4000),request_key TEXT NOT NULL,created_at INTEGER NOT NULL, photo_data TEXT NOT NULL DEFAULT '', reply_to INTEGER REFERENCES discussion_messages(seq), audio_data TEXT NOT NULL DEFAULT '', audio_ms INTEGER NOT NULL DEFAULT 0, place TEXT NOT NULL DEFAULT '',
  UNIQUE(room_id,sender_id,sender_role,request_key)
 );
 

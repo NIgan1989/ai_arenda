@@ -35,7 +35,7 @@ import {planState,startOwnerPlan,startCleanerPlan,stopPlan,saveCleanerRules,away
 import {saveIdentityDoc,removeIdentityDoc,listIdentityDocs,readIdentityDoc} from './identity-docs';
 import {saveRightDoc,removeRightDoc,listRightDocs,readRightDoc} from './property-rights';
 import {restrictAccount,restrictionsList,unlistPlace} from './account-restrictions';
-import {discussionCandidates,openDiscussion,readDiscussion,sendDiscussionMessage,discussionInbox,discussionPhoto,discussionTyping,discussionAvatar} from './process-discussions';
+import {discussionCandidates,openDiscussion,readDiscussion,sendDiscussionMessage,discussionInbox,discussionPhoto,discussionAudio,discussionTyping,discussionAvatar} from './process-discussions';
 
 const active=(role:Role,allowed:Role[])=>{if(!allowed.includes(role))throw new DomainError('Операция недоступна в текущей роли.',403);};
 export async function readOperations(service:RentalService,role:Role,path:string[],config:OperationConfig={},platformAdmin=false){
@@ -83,6 +83,7 @@ export async function writeOperations(service:RentalService,role:Role,path:strin
  if(route==='discussion/read')return readDiscussion(service,role,body);
  if(route==='discussion/avatar')return discussionAvatar(service,role,body);
  if(route==='discussion/photo')return discussionPhoto(service,role,body);
+ if(route==='discussion/audio')return discussionAudio(service,role,body);
  if(route==='discussion/typing')return discussionTyping(service,role,body);
  if(route==='discussion/send')return sendDiscussionMessage(service,role,body,config);
  if(route==='ai-budget')return saveAIBudget(service,body);

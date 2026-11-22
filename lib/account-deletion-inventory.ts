@@ -87,7 +87,7 @@ export const accountDeletionColumns:Record<string,string>={
  "delivery_links": "hash,user_id,role,expires_at,used_at",
  "delivery_outbox": "id,notification_id,user_id,role,channel,status,attempts,available_at,lease_until,lease_token,provider_reference,last_error,created_at,sent_at,delivered_at,read_at",
  "discussion_blocks": "room_id,blocker_id,blocker_role,created_at",
- "discussion_messages": "seq,room_id,sender_id,sender_role,body,request_key,created_at,photo_data,reply_to",
+ "discussion_messages": "seq,room_id,sender_id,sender_role,body,request_key,created_at,photo_data,reply_to,audio_data,audio_ms,place",
  "discussion_rooms": "id,entity_kind,entity_id,channel,membership_key,members,title,created_at",
  "discussion_visits": "room_id,user_id,role,last_seq,seen_at,typing_until",
  "evidence_video_chunks": "evidence_id,part,data",

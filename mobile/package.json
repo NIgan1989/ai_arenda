@@ -17,6 +17,7 @@
     "@maplibre/maplibre-react-native": "11.5.0",
     "@types/geojson": "7946.0.16",
     "expo": "~57.0.0",
+    "expo-audio": "~57.0.5",
     "expo-font": "~57.0.4",
     "expo-haptics": "~57.0.3",
     "expo-image-manipulator": "~57.0.21",
