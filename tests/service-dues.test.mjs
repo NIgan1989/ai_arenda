@@ -25,8 +25,8 @@ test('a linked card pays the accrued fees once a week; nothing is topped up and 
   const e=entries(f,'cleaner');assert.equal(e.length,1);assert.equal(e[0].kind,'topup');assert.equal(e[0].amount,1900);assert.match(e[0].note,/Списание с карты •• 0000 за услуги сервиса \(тест\)/);
   assert.ok(f.db.raw.prepare("SELECT settled_at FROM autopilot_charges WHERE user_id='cleaner'").get().settled_at,'the month is settled only by the charge');
   assert.match(notes(f,'cleaner','service:charged:%')[0],/списано 1\s900 ₸.*тестовое списание/);
-  // A new fee in the same week waits for the next Monday.
-  owe(f,'cleaner',500);assert.equal((await sweepDues(f.db,noPlans,at+DAY)).charged,0);assert.equal(await dueOf(f.db,'cleaner'),500);
+  // A new fee in the same week waits for the next Monday (a day later, or just before Monday 10:00 when that comes sooner).
+  owe(f,'cleaner',500);assert.equal((await sweepDues(f.db,noPlans,Math.min(at+DAY,chargeSlot(at)+WEEK-60))).charged,0);assert.equal(await dueOf(f.db,'cleaner'),500);
   assert.equal((await sweepDues(f.db,noPlans,chargeSlot(at)+WEEK+60)).charged,1);assert.equal(await dueOf(f.db,'cleaner'),0);assert.equal(entries(f,'cleaner').length,2);
   // «Оплатить сейчас» does not wait for Monday; the card is unlinked only when nothing is owed.
   owe(f,'cleaner',700);await assert.rejects(writeOperations(f.cleaner,'cleaner',['service-billing'],{action:'unlink'}),e=>e.status===409);
