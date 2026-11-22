@@ -90,7 +90,10 @@
 -- migration 0086_percent_tariff.sql sha256:b75a393364bc2a1b27774c6e23f8023f7d30af84f132c88d6cbe14496450d48d
 -- migration 0087_repeat_guest_discount.sql sha256:889cd787c9404b45cfc5bf14dd72e471fccb7ff0da1ba04f0c4138dc3ce089c2
 -- migration 0088_room_units.sql sha256:873c3debafdd6fd4e3ea5d250b16c3351e45b1951efab6615013d98fa4c71aee
--- migration 0089_reported_transfer.sql sha256:efadcb94c3d777b4dc33766f214a6c73b37b87ab419a25fa48d19f1de5e77185
+-- migration 0089_reported_transfer.sql sha256:b01e5c8309d364403f559d7ea7309e7f845689d2697ec199a65b266bbcacd1b1
+-- migration 0090_chat_voice_place.sql sha256:887badea01961521b6e4017467c307731745bab0c20450639c7969e8c26c72e3
+-- migration 0091_moderation_voice_place.sql sha256:2bff022e636d8d78fe5805b9e8db1302c2b10b7b4f6d65186b46cd533da274e8
+-- migration 0092_chat_calls.sql sha256:11281ac6e7e03c1a90c9ae385b3eb47215ef128392e94bf7740896a927892e70
 
 -- table access_receipts
 CREATE TABLE access_receipts (id TEXT PRIMARY KEY,property_id TEXT NOT NULL,entity_kind TEXT NOT NULL,entity_id TEXT NOT NULL,user_id TEXT NOT NULL,created_at INTEGER NOT NULL,expires_at INTEGER NOT NULL);
@@ -465,6 +468,16 @@ CREATE TABLE card_charges (
  finished_at INTEGER
 );
 
+-- table chat_calls
+CREATE TABLE chat_calls (
+ id TEXT PRIMARY KEY,room_id TEXT NOT NULL REFERENCES discussion_rooms(id),
+ caller_id TEXT NOT NULL,caller_role TEXT NOT NULL,callee_id TEXT NOT NULL,callee_role TEXT NOT NULL,
+ status TEXT NOT NULL CHECK(status IN ('ringing','active','ended','missed','declined','cancelled')),
+ caller_session TEXT NOT NULL DEFAULT '',callee_session TEXT NOT NULL DEFAULT '',
+ caller_seen INTEGER NOT NULL,callee_seen INTEGER NOT NULL DEFAULT 0,
+ created_at INTEGER NOT NULL,answered_at INTEGER,ended_at INTEGER
+);
+
 -- table cleaner_autopilot
 CREATE TABLE cleaner_autopilot (
  user_id TEXT PRIMARY KEY REFERENCES profiles(id),
@@ -692,7 +705,7 @@ CREATE TABLE discussion_blocks (
 CREATE TABLE discussion_messages (
  seq INTEGER PRIMARY KEY AUTOINCREMENT,room_id TEXT NOT NULL REFERENCES discussion_rooms(id),
  sender_id TEXT NOT NULL,sender_role TEXT NOT NULL CHECK(sender_role IN ('owner','guest','cleaner')),
- body TEXT NOT NULL CHECK(length(body) BETWEEN 1 AND 4000),request_key TEXT NOT NULL,created_at INTEGER NOT NULL, photo_data TEXT NOT NULL DEFAULT '', reply_to INTEGER REFERENCES discussion_messages(seq),
+ body TEXT NOT NULL CHECK(length(body) BETWEEN 1 AND 4000),request_key TEXT NOT NULL,created_at INTEGER NOT NULL, photo_data TEXT NOT NULL DEFAULT '', reply_to INTEGER REFERENCES discussion_messages(seq), audio_data TEXT NOT NULL DEFAULT '', audio_ms INTEGER NOT NULL DEFAULT 0, place TEXT NOT NULL DEFAULT '',
  UNIQUE(room_id,sender_id,sender_role,request_key)
 );
 
@@ -887,7 +900,7 @@ CREATE TABLE moderated_content (
  hidden INTEGER NOT NULL CHECK(hidden IN (0,1)),
  version INTEGER NOT NULL,
  operation_key TEXT NOT NULL,
- updated_at INTEGER NOT NULL,
+ updated_at INTEGER NOT NULL, original_audio_data TEXT, original_place TEXT,
  PRIMARY KEY(kind,target_id,room_id)
 );
 
@@ -1453,6 +1466,12 @@ CREATE INDEX card_charges_status ON card_charges(status,created_at);
 
 -- index card_charges_user
 CREATE INDEX card_charges_user ON card_charges(user_id,created_at);
+
+-- index chat_calls_callee
+CREATE INDEX chat_calls_callee ON chat_calls(callee_id,status);
+
+-- index chat_calls_room
+CREATE INDEX chat_calls_room ON chat_calls(room_id,status);
 
 -- index cleaning_commissions_owner
 CREATE INDEX cleaning_commissions_owner ON cleaning_commissions(owner_id,mode);

@@ -3,6 +3,7 @@ name: Publish to Cloudflare
 # Needs one repository secret: CLOUDFLARE_API_TOKEN (Workers Scripts: Edit, D1: Edit, Account Settings: Read).
 # The account and the D1 database are found with that token; CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_D1_DATABASE_ID are optional overrides.
 # Runtime secrets of the Worker are never read or changed here; --keep-vars keeps the ones already stored in Cloudflare.
+# Optional REALTIME_APP_ID and REALTIME_APP_TOKEN (Cloudflare Realtime): saved as Worker secrets, so calls go inside the app.
 # Optional STADIA_API_KEY (Stadia Maps): saved as a Worker secret after publishing, so routes on the map use Stadia instead of the public test router.
 on:
   workflow_run:
@@ -93,6 +94,13 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           STADIA_API_KEY: ${{ secrets.STADIA_API_KEY }}
         run: node scripts/setup-map-key.mjs
+      - name: Save the call keys
+        if: steps.configured.outputs.ready == 'true'
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          REALTIME_APP_ID: ${{ secrets.REALTIME_APP_ID }}
+          REALTIME_APP_TOKEN: ${{ secrets.REALTIME_APP_TOKEN }}
+        run: node scripts/setup-realtime-keys.mjs
       - name: Check the published site
         if: steps.configured.outputs.ready == 'true'
         run: |
