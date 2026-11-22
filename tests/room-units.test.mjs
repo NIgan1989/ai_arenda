@@ -15,7 +15,7 @@ test('a hotel card of three rooms is one card that books three guests and then i
   assert.match((await setRoomCount(f.owner,{propertyId:f.property,count:3})).message,/Таких номеров: 3/);
   const start=dayAt(5,14),end=dayAt(6,12);
   let found=(await search(f,start,end)).properties.filter(p=>p.title==='Test apartment');
-  assert.equal(found.length,1);assert.deepEqual(found[0].rooms,{total:3,free:3});
+  assert.equal(found.length,1);assert.deepEqual(found[0].units,{total:3,free:3});
   const ids=new Set();
   for(const key of ['a','b','c']){const g=await guestNamed(f,'g-'+key),b=await g.createBooking({propertyId:f.property,start:iso(start),end:iso(end),guests:1,billingMode:'daily',requestKey:key,acceptTerms:true});ids.add(f.db.raw.prepare('SELECT property_id FROM bookings WHERE id=?').get(b.id).property_id);}
   assert.equal(ids.size,3,'each guest takes a room of their own');
@@ -23,7 +23,7 @@ test('a hotel card of three rooms is one card that books three guests and then i
   assert.equal((await search(f,start,end)).properties.filter(p=>p.title==='Test apartment').length,0);
   // The owner sees one card with the count, never the copies.
   const own=(await f.owner.roleState('owner')).ownProperties.filter(p=>p.title==='Test apartment');
-  assert.equal(own.length,1);assert.equal(own[0].rooms.total,3);
+  assert.equal(own.length,1);assert.equal(own[0].units.total,3);
   // Rooms with stays ahead are not taken away.
   await assert.rejects(setRoomCount(f.owner,{propertyId:f.property,count:1}),/не меньше 3/);
  }finally{f.db.close();}
@@ -52,5 +52,14 @@ test('each morning the owner of a room card is asked once how many rooms are fre
   assert.equal((await askFreeRooms(f.db,dayAt(2,10))).asked,1,'and again the next day');
   const n=f.db.raw.prepare("SELECT body FROM notifications WHERE user_id=? AND dedupe LIKE 'owner:rooms-free:%'").all(f.owner.userId);
   assert.equal(n.length,2);assert.match(n[0].body,/Сколько номеров «Test apartment» свободно сегодня\? Всего 2/);
+ }finally{f.db.close();}
+});
+test('the card keeps its own number of rooms beside the count of rooms alike',async()=>{
+ const f=await fixture();try{
+  asHotel(f);f.db.raw.prepare('UPDATE properties SET rooms=2 WHERE id=?').run(f.property);await setRoomCount(f.owner,{propertyId:f.property,count:3});
+  const own=(await f.owner.roleState('owner')).ownProperties.find(p=>p.title==='Test apartment');
+  assert.equal(own.rooms,2);assert.equal(own.units.total,3);
+  const start=dayAt(5,14),end=dayAt(6,12),found=(await search(f,start,end)).properties.find(p=>p.title==='Test apartment');
+  assert.equal(found.rooms,2);assert.equal(found.units.total,3);
  }finally{f.db.close();}
 });

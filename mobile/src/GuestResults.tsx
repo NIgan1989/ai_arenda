@@ -255,7 +255,7 @@ export function GuestResults({ preview, draft, mine, onFavorite, selected, onSel
   // A bath or a sauna: the total with its hours and the guests' surcharge beside it (audit of 2026-11-22).
   const bathSum = (flat: Row) => { const e = flat.estimate || {}, n = Number(e.periods) || 0, add = Number(e.surcharge) || 0; if (kindCategoryOf(flat.details?.type) !== 'bath' || e.billingMode !== 'hourly' || !n) return ''; return t('{n} ч × {rate}',{n,rate:money((Number(e.rate) || 0) - add)}) + (add ? ' + ' + t('{v} за гостей',{v:money(add * n)}) : ''); };
   // «Номера одного типа»: one card for many rooms alike, with how many of them are free at the asked time.
-  const roomsLeft = (flat: Row) => (flat.rooms && Number(flat.rooms.total) > 1 ? (flat.rooms.free !== undefined ? t('Свободно номеров: {free} из {total}',{free:flat.rooms.free,total:flat.rooms.total}) : t('Номеров: {total}',{total:flat.rooms.total})) : '');
+  const roomsLeft = (flat: Row) => (flat.units && Number(flat.units.total) > 1 ? (flat.units.free !== undefined ? t('Свободно номеров: {free} из {total}',{free:flat.units.free,total:flat.units.total}) : t('Номеров: {total}',{total:flat.units.total})) : '');
   const perGuest = (flat: Row) => (kindCategoryOf(flat.details?.type) === 'banquet' ? Number(flat.policy?.extra_guest_price) || 0 : 0);
   const least = (flat: Row) => Number(flat.policy?.included_guests) || 0;
   // With the arrival line the card says readiness itself, for the asked time; the general «готово» would repeat it.

@@ -10,7 +10,7 @@ import {T} from './tokens';
 type Row=Record<string,any>;
 
 export function RoomCount({property,call,onChanged}:{property:Row;call:(path:string,body:Row)=>Promise<any>;onChanged?:(rooms:Row)=>void}){
- const start:Row=property.rooms||{total:1,free:1,taken:0,closed:0};
+ const start:Row=property.units||{total:1,free:1,taken:0,closed:0};
  const [rooms,setRooms]=useState<Row>(start),[count,setCount]=useState(Number(start.total)||1),[free,setFree]=useState(Number(start.free)||0);
  const [busy,setBusy]=useState(false),[note,setNote]=useState(''),[error,setError]=useState('');
  async function save(path:string,body:Row){setBusy(true);setError('');setNote('');try{const r=await call(path,{propertyId:property.id,...body});setRooms(r.rooms);setCount(r.rooms.total);setFree(r.rooms.free);setNote(r.message||'');onChanged?.(r.rooms);}catch(x:any){setError(x?.message||t('Не получилось.'));}finally{setBusy(false);}}
