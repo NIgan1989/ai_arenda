@@ -15,6 +15,7 @@ import {EDIT_STEPS,banquetPrice,withBanquetPrice,editBody,editRequest,nextAdvice
 import {amenities,categoryAmenities,checkinMethods,isBath,isBanquet,isVenue,kindCategory} from '../../lib/listings';
 import {KindPicker} from './KindPicker';
 import {PREPAY_CHOICES,prepayNote,prepayState} from '../../lib/prepay';
+import {REPEAT_CHOICES} from '../../lib/rental-policy';
 import {AddressPin,type PinChoice} from './AddressPin';
 import {AddressField} from './AddressSuggest';
 type Row=Record<string,any>;
@@ -127,6 +128,10 @@ export function PropertyEdit({property,onSave,onReview,onRemove,onClose,onOpenHa
     <Text style={e.label}>{t('Как гость платит')}</Text>
     <View style={e.chips}>{PREPAY_CHOICES.map(n=>chip('prepay'+n,n?t('Предоплата {n}%',{n}):t('При заселении'),r.prepayPercent===n,()=>setR({prepayPercent:n}),true))}</View>
     <Text style={e.hint}>{prepayNote(prepayState(r.prepayPercent,Number(p.prepay?.completed)||0))}{r.prepayPercent>0&&r.prepayPercent<100?' '+t('Остальное и депозит гость переводит при заселении.'):''}</Text>
+    {/* «Скидка постоянного гостя» (lib/rental-policy.ts): a guest who already stayed books again in the app, not by phone. */}
+    <Text style={e.label}>{t('Скидка постоянным гостям')}</Text>
+    <View style={e.chips}>{REPEAT_CHOICES.map(n=>chip('repeat'+n,n?'−'+n+'%':t('Нет'),r.repeatDiscount===n,()=>setR({repeatDiscount:n}),true))}</View>
+    <Text style={e.hint}>{r.repeatDiscount?t('Гость, который уже жил у вас, увидит скидку {n}% и забронирует снова через приложение, а не по телефону. Комиссия считается с цены со скидкой.',{n:r.repeatDiscount}):t('Скидка для гостя, который уже жил у вас: так он бронирует снова через приложение, а не по телефону.')}</Text>
    </>}
    {open==='checkin'&&<>
     {!isVenue(d.type)&&<View style={e.row}>{half(text(t('Заезд с'),r.checkinTime,v=>setR({checkinTime:v}),5,'14:00'))}{half(text(t('Выезд до'),r.checkoutTime,v=>setR({checkoutTime:v}),5,'12:00'))}</View>}

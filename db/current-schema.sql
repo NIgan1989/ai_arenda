@@ -88,6 +88,7 @@
 -- migration 0084_user_language.sql sha256:7d46fdf0481c182354cb1d43b51fd99610e5a4ad72f8edfa31bf7a19cf34f8ad
 -- migration 0085_read_indexes.sql sha256:7100201f70821f1da31ea5a7a95df6a279e49e755897bc1e793b1b8411654910
 -- migration 0086_percent_tariff.sql sha256:b75a393364bc2a1b27774c6e23f8023f7d30af84f132c88d6cbe14496450d48d
+-- migration 0087_repeat_guest_discount.sql sha256:889cd787c9404b45cfc5bf14dd72e471fccb7ff0da1ba04f0c4138dc3ce089c2
 
 -- table access_receipts
 CREATE TABLE access_receipts (id TEXT PRIMARY KEY,property_id TEXT NOT NULL,entity_kind TEXT NOT NULL,entity_id TEXT NOT NULL,user_id TEXT NOT NULL,created_at INTEGER NOT NULL,expires_at INTEGER NOT NULL);
@@ -1145,7 +1146,7 @@ CREATE TABLE property_policies (
  version INTEGER NOT NULL DEFAULT 1,
  revision TEXT NOT NULL,
  updated_at INTEGER NOT NULL
-, max_discount_percent INTEGER NOT NULL DEFAULT 0 CHECK(max_discount_percent BETWEEN 0 AND 50), minimum_rate INTEGER NOT NULL DEFAULT 0 CHECK(minimum_rate>=0), repair_budget INTEGER NOT NULL DEFAULT 0 CHECK(repair_budget>=0), auto_extension INTEGER NOT NULL DEFAULT 0 CHECK(auto_extension IN (0,1)), max_extension_hours INTEGER NOT NULL DEFAULT 0 CHECK(max_extension_hours BETWEEN 0 AND 168), mandate_until INTEGER NOT NULL DEFAULT 0, escalation_contact TEXT NOT NULL DEFAULT '', auto_assign INTEGER NOT NULL DEFAULT 0 CHECK(auto_assign IN (0,1)), included_guests INTEGER NOT NULL DEFAULT 0 CHECK(included_guests BETWEEN 0 AND 50), extra_guest_price INTEGER NOT NULL DEFAULT 0 CHECK(extra_guest_price>=0), prep_minutes INTEGER NOT NULL DEFAULT 0 CHECK(prep_minutes BETWEEN 0 AND 720), prepay_percent INTEGER NOT NULL DEFAULT 0 CHECK(prepay_percent IN (0,10,20,30,50,100)));
+, max_discount_percent INTEGER NOT NULL DEFAULT 0 CHECK(max_discount_percent BETWEEN 0 AND 50), minimum_rate INTEGER NOT NULL DEFAULT 0 CHECK(minimum_rate>=0), repair_budget INTEGER NOT NULL DEFAULT 0 CHECK(repair_budget>=0), auto_extension INTEGER NOT NULL DEFAULT 0 CHECK(auto_extension IN (0,1)), max_extension_hours INTEGER NOT NULL DEFAULT 0 CHECK(max_extension_hours BETWEEN 0 AND 168), mandate_until INTEGER NOT NULL DEFAULT 0, escalation_contact TEXT NOT NULL DEFAULT '', auto_assign INTEGER NOT NULL DEFAULT 0 CHECK(auto_assign IN (0,1)), included_guests INTEGER NOT NULL DEFAULT 0 CHECK(included_guests BETWEEN 0 AND 50), extra_guest_price INTEGER NOT NULL DEFAULT 0 CHECK(extra_guest_price>=0), prep_minutes INTEGER NOT NULL DEFAULT 0 CHECK(prep_minutes BETWEEN 0 AND 720), prepay_percent INTEGER NOT NULL DEFAULT 0 CHECK(prepay_percent IN (0,10,20,30,50,100)), repeat_discount INTEGER NOT NULL DEFAULT 0 CHECK(repeat_discount BETWEEN 0 AND 30));
 
 -- table property_right_docs
 CREATE TABLE property_right_docs (

@@ -57,12 +57,15 @@ test('photo messages and replies are private, replay safe and retained after reo
 });
 test('a call opens only while the deal goes through the service, and the chat shows the order it is about',async()=>{
  const {callAllowed}=await load('process-discussions'),t=now();
- assert.equal(callAllowed({kind:'booking',status:'confirmed',end:t+3600},false,t).ok,true);
- assert.equal(callAllowed({kind:'booking',status:'confirmed',end:t-2*86400},false,t).ok,false);
+ assert.equal(callAllowed({kind:'booking',status:'confirmed',start:t-3600,end:t+3600},false,t).ok,true);
+ // Confirmed but the check-in is more than a day ahead: write in the chat, the call opens a day before.
+ assert.match(callAllowed({kind:'booking',status:'confirmed',start:t+2*86400,end:t+3*86400},false,t).note,/за сутки до заезда/);
+ assert.equal(callAllowed({kind:'booking',status:'confirmed',start:t+86400-60,end:t+2*86400},false,t).ok,true);
+ assert.equal(callAllowed({kind:'booking',status:'confirmed',start:t-3*86400,end:t-2*86400},false,t).ok,false);
  assert.equal(callAllowed({kind:'booking',status:'completed',end:t-3600},false,t).ok,true);
  assert.equal(callAllowed({kind:'booking',status:'completed',end:t-2*86400},false,t).ok,false);
  assert.match(callAllowed({kind:'booking',status:'requested',end:t+3600},false,t).note,/после подтверждения/);
- assert.equal(callAllowed({kind:'booking',status:'confirmed',end:t+3600},true,t).ok,false);
+ assert.equal(callAllowed({kind:'booking',status:'confirmed',start:t-3600,end:t+3600},true,t).ok,false);
  assert.equal(callAllowed({kind:'job',status:'assigned'},false,t).ok,true);
  assert.equal(callAllowed({kind:'job',status:'open'},false,t).ok,false);
  assert.equal(callAllowed({kind:'job',status:'completed'},false,t).ok,false);
