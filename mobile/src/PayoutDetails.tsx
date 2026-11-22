@@ -25,10 +25,11 @@ export function PayTo({title,to,amount,parts,waiting,missing,note,children}:{tit
  return <View accessible={false} style={p.card}>
   <View style={p.head}><Text style={p.title}>{title}</Text><Text style={p.sum}>{money(amount)}</Text></View>
   {!!parts&&<Text style={p.meta}>{parts}</Text>}
-  {to?<><View style={p.to}><View style={p.kaspi}><Text style={p.kaspiText}>K</Text></View><View style={{flex:1,minWidth:0}}>{to.phone?<Text selectable accessibilityLabel={t('Номер Kaspi {v}',{v:phoneText(to.phone)})} style={p.phone}>{phoneText(to.phone)}</Text>:<Text style={p.phone}>{t('Оплата по ссылке Kaspi')}</Text>}<Text style={p.meta}>Kaspi · {to.recipient}</Text></View></View>
+  {/* A transfer already reported is on the owner's check: the details are not shown again, so nobody pays twice. */}
+  {waiting?null:to?<><View style={p.to}><View style={p.kaspi}><Text style={p.kaspiText}>K</Text></View><View style={{flex:1,minWidth:0}}>{to.phone?<Text selectable accessibilityLabel={t('Номер Kaspi {v}',{v:phoneText(to.phone)})} style={p.phone}>{phoneText(to.phone)}</Text>:<Text style={p.phone}>{t('Оплата по ссылке Kaspi')}</Text>}<Text style={p.meta}>Kaspi · {to.recipient}</Text></View></View>
    {!!to.link&&<Pressable accessibilityRole="link" onPress={()=>void Linking.openURL(to.link).catch(()=>undefined)} style={({pressed})=>[p.link,pressed&&{opacity:.7}]}><Text style={p.linkText}>{t('Открыть оплату в Kaspi')}</Text></Pressable>}</>
    :<Text style={p.warn}>{missing}</Text>}
-  {!!to?.changed_at&&now-to.changed_at<FRESH&&<Text accessibilityRole="alert" style={p.warn}>{t('Реквизиты изменены {when}. Перед переводом сверьте имя получателя в Kaspi. Если сомневаетесь, уточните в чате брони.',{when:when(to.changed_at)})}</Text>}
+  {!waiting&&!!to?.changed_at&&now-to.changed_at<FRESH&&<Text accessibilityRole="alert" style={p.warn}>{t('Реквизиты изменены {when}. Перед переводом сверьте имя получателя в Kaspi. Если сомневаетесь, уточните в чате брони.',{when:when(to.changed_at)})}</Text>}
   {!!waiting&&<View style={p.wait}><Text style={p.waitText}>{waiting}</Text></View>}
   {children}
   {!!note&&<Text style={p.meta}>{note}</Text>}

@@ -41,6 +41,27 @@ async function arrivals(db:D1Database,at:number,result:Row,admin:string[]){
  }
 }
 
+// The guest is at the door and said «Я оплатил», but the owner has not checked the transfer. Ten minutes later the
+// owner is asked to look at the bank; half an hour after the guest's word the service administrator is called. The
+// access stays closed: only the owner's «Деньги получены» opens it (audit «Запуск», point 1).
+async function transfers(db:D1Database,at:number,result:Row,admin:string[]){
+ const list=await rows(db,`SELECT b.id,b.guest_id,p.owner_id,p.title,${TYPE_SQL},t.checkin_reported_at reported,COALESCE(t.payment_reported_amount,0)+COALESCE(t.deposit_reported_amount,0) sum FROM bookings b JOIN properties p ON p.id=b.property_id JOIN booking_terms t ON t.booking_id=b.id
+  WHERE b.status='confirmed' AND b.end>? AND t.checkin_reported_at IS NOT NULL AND t.checkin_reported_at<=? AND t.actual_checkin IS NULL
+  AND (b.payment_status<>'owner_verified' OR t.deposit_status='pending') AND (t.payment_reported_at IS NOT NULL OR t.deposit_reported_at IS NOT NULL)
+  AND NOT EXISTS(SELECT 1 FROM notifications n WHERE n.user_id=b.guest_id AND n.dedupe='guest:silence-transfer-escalated:'||b.id)
+  ORDER BY t.checkin_reported_at LIMIT 50`,at,at-CHECKIN_WAIT);
+ for(const b of list){
+  const title=b.title||'жильё';
+  await db.batch([notice(db,b.owner_id,'ИИ-администратор: гость ждёт у «'+title+'» и сообщил о переводе '+tenge(b.sum)+'. Проверьте банк и нажмите в брони «Деньги получены» или «Перевод не пришёл».','owner:silence-transfer-ask:'+b.id,at),
+   notice(db,b.guest_id,'ИИ-администратор: ваш перевод на проверке, платить заново не нужно. Я напомнил владельцу. Если он не ответит, подключится администратор сервиса.','guest:silence-transfer-ask:'+b.id,at)]);
+  if(b.reported>at-CHECKIN_HANDOVER||!admin.length)continue;
+  if(said(await db.batch(admin.map(a=>notice(db,a,'Гость больше получаса ждёт у «'+title+'»: сообщил о переводе '+tenge(b.sum)+', владелец не проверил деньги. Свяжитесь с владельцем и гостем.','admin:silence-transfer:'+b.id+':'+a,at))))){
+   await notice(db,b.guest_id,'ИИ-администратор передал вашу бронь «'+title+'» администратору сервиса: владелец не проверил перевод. С вами свяжутся.','guest:silence-transfer-escalated:'+b.id,at).run();
+   result.escalated++;
+  }
+ }
+}
+
 // A cleaning report nobody looked at for a day: a clean one is accepted for the owner, so the cleaner's work is
 // closed and the home is ready; one with remarks goes to the service administrator, and the cleaner is told.
 // A report already handed over leaves the list, so it never takes the place of the next ones.
@@ -155,6 +176,7 @@ export async function sweepSilence(db:D1Database,config:OperationConfig&{PLATFOR
  const result={checkedIn:0,checkedOut:0,accepted:0,told:0,escalated:0},admin=admins(config);
  await departures(db,at,result,admin);
  await arrivals(db,at,result,admin);
+ await transfers(db,at,result,admin);
  await reports(db,at,result,admin);
  await pay(db,at,result,admin);
  await money(db,at,result,admin);

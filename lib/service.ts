@@ -699,6 +699,19 @@ export class RentalService {
   // `ownerReady`: the owner has already said the place will be ready for this start (an accepted quick request),
   // so the preparation time no longer stops the booking. Set only by the server, never from the request body.
   async createBooking(body:Row,options:{ownerReady?:boolean}={}) {
+    // Two guests send a request for the same type of room at once: both are given the same first free room and one
+    // write loses (booking_overlap). A card of many rooms then tries its next free room, so the second guest is refused
+    // only when no room is left (audit «Запуск», point 2).
+    for(let attempt=0;;attempt++){
+      try{return await this.createBookingOnce(body,options);}
+      catch(error){
+        const pid=String(body?.propertyId||'');
+        if(attempt<3&&/booking_overlap/.test(String((error as Error)?.message??error))&&await this.one('SELECT 1 x FROM room_units WHERE lead_id=? OR property_id=? LIMIT 1',pid,pid))continue;
+        throw error;
+      }
+    }
+  }
+  private async createBookingOnce(body:Row,options:{ownerReady?:boolean}={}) {
     await this.requireRole('guest');
     const key=required(body.requestKey,'Ключ запроса',100), existing=await this.one('SELECT id FROM bookings WHERE guest_id=? AND request_key=?',this.userId,key);
     if(existing) return {id:existing.id,message:'Эта заявка уже сохранена.'};
@@ -833,6 +846,25 @@ export class RentalService {
       if(!r[0].meta.changes)throw new DomainError('Бронь изменилась. Обновите карточку.',409);
       return {message:'Владелец предупреждён: вы приедете к '+clockLabel(until)+'. Бронь сохраняется.'};
     }
+    // «Не могу попасть»: the guest is at the door, said «Я оплатил», and the owner has not checked the transfer yet.
+    // The owner hears it at once and the service administrator sees it as an appeal; the access stays closed until
+    // the money is confirmed (audit «Запуск», point 1). Lighter than «Меня не заселили»: nothing is hidden from the map.
+    if(body.action==='door_help'){
+      if(b.guest_id!==this.userId)throw new DomainError('Позвать на помощь может гость.',403);
+      if(b.status!=='confirmed'||terms?.actual_checkin||b.end<=now())throw new DomainError('По этой брони заселение уже отмечено или бронь не подтверждена.',409);
+      if(now()<checkinOpensAt(b.start,terms?.early_checkin_at))throw new DomainError('Позвать на помощь можно с 15 минут до заезда.',409);
+      if(b.payment_status==='owner_verified'&&terms?.deposit_status!=='pending')throw new DomainError('Оплата уже подтверждена. Если вас не пускают, нажмите «Меня не заселили».',409);
+      if(!onReview(terms))throw new DomainError('Сначала переведите владельцу и нажмите «Я оплатил». Если вас не пускают, нажмите «Меня не заселили».',409);
+      const sum=(Number(terms?.payment_reported_amount)||0)+(Number(terms?.deposit_reported_amount)||0),money=(n:number)=>n.toLocaleString('ru-RU').replace(/\u00a0|\u202f/g,' ')+' ₸';
+      const asked=await this.one('SELECT 1 x FROM notifications WHERE user_id=? AND dedupe=?',b.owner_id,'owner:door-help:'+bookingId+':'+terms?.payment_reported_at+':'+terms?.deposit_reported_at);
+      if(asked)return {message:'Владелец и администратор сервиса уже знают, что вы ждёте. Доступ откроется, когда владелец подтвердит перевод.'};
+      const write=await this.issueWrite(b,'booking','Гость у двери и не может попасть: перевод '+money(sum)+' на проверке, владелец ещё не подтвердил деньги.');
+      await this.db.batch([write.statement,
+        this.query('UPDATE booking_terms SET checkin_reported_at=COALESCE(checkin_reported_at,?),version=version+1 WHERE booking_id=? AND actual_checkin IS NULL',now(),bookingId),
+        this.notify(b.owner_id,'Срочно: гость ждёт у «'+b.title+'» и не может попасть. Он сообщил о переводе '+money(sum)+'. Проверьте банк и нажмите в брони «Деньги получены» или «Перевод не пришёл».','door-help:'+bookingId+':'+terms?.payment_reported_at+':'+terms?.deposit_reported_at,'owner'),
+        this.audit(bookingId,'booking.door_help')]);
+      return {message:'Владелец получил срочное сообщение, администратор сервиса видит обращение. Доступ откроется, когда владелец подтвердит перевод. Платить заново не нужно.'};
+    }
     // «Меня не заселили»: the guest is at the door and nobody lets them in (lib/account-restrictions.ts).
     if(body.action==='not_let_in'){
       if(b.guest_id!==this.userId)throw new DomainError('Сообщить об этом может гость.',403);
@@ -912,6 +944,8 @@ export class RentalService {
       // The answer says what is really awaited: the guest's payment, or only the owner's word (the AI gives it after ten minutes).
       const unpaid=b.payment_status!=='owner_verified'?venueOr(b,'проживание','бронь'):terms?.deposit_status==='pending'?'депозит':'';
       const arrival=venueOr(b,'заселение',wordsOf(b).arriveAcc);
+      // The guest already said «Я оплатил»: they are not asked to pay again (audit «Запуск», point 1).
+      if(unpaid&&dueNow({...b,terms},now()).reported)return {message:'Спасибо! Ваш перевод на проверке: владелец сверяет банк. Платить заново не нужно. Доступ откроется, когда владелец подтвердит деньги. Если ответа долго нет, нажмите в брони «Не могу попасть».'};
       return {message:unpaid?'Спасибо! Осталось перевести владельцу '+(unpaid==='депозит'?'депозит':'оплату')+' по реквизитам из карточки брони и нажать «Я оплатил»: когда владелец увидит деньги, '+arrival+' подтвердится.':'Спасибо! Владелец подтвердит '+arrival+'. Если он не ответит за 10 минут, ИИ-администратор подтвердит сам.'};
     }
     if(body.action==='checkin'){
@@ -1105,6 +1139,10 @@ export class RentalService {
     const amount=ownerDelay?Number(b.amount):Math.ceil(pricing.amount*(100-discount)/100);
     if(!ownerDelay&&policy.minimum_rate&&amount<policy.minimum_rate*pricing.periods)throw new DomainError('Стоимость ниже минимальной разрешённой ставки.');
     if(amount<terms.paid_amount)throw new DomainError('Новая сумма меньше подтверждённой оплаты. Сначала согласуйте возврат с владельцем; автоматический возврат не подключён.',409);
+    // A transfer the guest reported and the owner has not checked yet counts too: a lower price would make the owner
+    // confirm less than the guest sent (audit «Запуск», point 8). The owner checks the bank first.
+    const told=terms.payment_reported_at?Number(terms.paid_amount||0)+Number(terms.payment_reported_amount||0):0;
+    if(amount<told)throw new DomainError('Гость сообщил о переводе '+Number(terms.payment_reported_amount).toLocaleString('ru-RU').replace(/\u00a0|\u202f/g,' ')+' ₸, а новая сумма меньше уже отправленных денег. Сначала владелец проверяет перевод, затем согласуйте изменение.',409);
     if(start===b.start&&end===b.end&&amount===b.amount&&mode===terms.billing_mode&&guests===Number(b.guests))throw new DomainError('Условия не изменились.');
     const occupiedUntil=end+b.cleaning_minutes*60;
     await assertCalendarAvailable(this.db,b.property_id,start,occupiedUntil);
