@@ -49,8 +49,11 @@ async function items(db:D1Database,user:string){
 export async function serviceBillingState(service:RentalService,config:OperationConfig={}){
  const db=service.db,at=epoch(),[due,b,list]=await Promise.all([dueOf(db,service.userId),billingOf(db,service.userId),items(db,service.userId)]);
  const slot=chargeSlot(at),charged=!!b?.last_charge_at&&b.last_charge_at>=slot;
- const [rules,open]=await Promise.all([chargeRules(db),one(db,"SELECT status,amount FROM card_charges WHERE user_id=? AND (status IN ('started','unknown') OR (status='held' AND request_key=?)) ORDER BY created_at DESC LIMIT 1",service.userId,'card:'+service.userId+':'+slot)]);
- return {due,stopped:!!rules.stoppedAt,checking:open&&open.status!=='held'?Number(open.amount):0,confirm:open?.status==='held'&&due>0?due:0,card:b?.card_mask?{mask:b.card_mask,test:!!b.card_test}:null,nextChargeAt:charged||!due?slot+WEEK:Math.max(slot,at),payBy:b?.failed_at&&due>0?b.failed_at+PAY_DAYS*DAY:null,paused:!!b?.paused_at,test:testMode(config),payDays:PAY_DAYS,items:list};
+ const [rules,open,r]=await Promise.all([chargeRules(db),one(db,"SELECT status,amount FROM card_charges WHERE user_id=? AND (status IN ('started','unknown') OR (status='held' AND request_key=?)) ORDER BY created_at DESC LIMIT 1",service.userId,'card:'+service.userId+':'+slot),
+  one(db,"SELECT rate_bp,max_fee,cleaner_rate_bp,home_rate_bp,home_min_fee,hall_fee_small,hall_fee_large FROM platform_billing WHERE id='global'")]);
+ // The rates in force, so the screen says what the service takes without repeating numbers the administrator can change.
+ const rates={owner:Number(r?.rate_bp??400),ownerMax:Number(r?.max_fee??15000),cleaner:Number(r?.cleaner_rate_bp??500),home:Number(r?.home_rate_bp??500),homeMin:Number(r?.home_min_fee??300),hallFrom:Number(r?.hall_fee_small??9900),hallTo:Number(r?.hall_fee_large??29900)};
+ return {due,rates,stopped:!!rules.stoppedAt,checking:open&&open.status!=='held'?Number(open.amount):0,confirm:open?.status==='held'&&due>0?due:0,card:b?.card_mask?{mask:b.card_mask,test:!!b.card_test}:null,nextChargeAt:charged||!due?slot+WEEK:Math.max(slot,at),payBy:b?.failed_at&&due>0?b.failed_at+PAY_DAYS*DAY:null,paused:!!b?.paused_at,test:testMode(config),payDays:PAY_DAYS,items:list};
 }
 
 // ── Safe card charges (drizzle/0081_card_charges.sql) ──
