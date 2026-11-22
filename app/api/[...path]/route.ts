@@ -8,6 +8,7 @@ import {isolateTestConfig} from '../../../lib/test-environment';
 import { getAppUser } from '../../session';
 import {authRequest,expireSessionCookie,requestSessionIdentity} from '../../../lib/native-auth';
 import {webPushState,manageWebPush,deliverWebPush} from '../../../lib/web-push';
+import {nativePushState,manageNativePush,deliverNativePush} from '../../../lib/native-push';
 import { RentalService } from '../../../lib/service';
 import { DomainError } from '../../../lib/domain';
 import {isPlatformAdmin} from '../../../lib/account';
@@ -58,7 +59,7 @@ async function handle(request:Request, context:{params:Promise<{path:string[]}>}
       if(!await administratorRunnerAuthorized(request,env.ADMINISTRATOR_RUNNER_SECRET))return json({error:'Нет доступа.'},403);
       const input=JSON.parse(await boundedRequestText(request,500));if(typeof input.id!=='string'||input.id.length>100)return json({error:'Неверный запрос.'},400);
       const entry=await env.DB.prepare('SELECT guest_id FROM matching_requests WHERE id=?').bind(input.id).first<{guest_id:string}>();if(!entry)return json({advanced:false});
-      const result=await matchingState(new RentalService(env.DB,entry.guest_id),input.id);if(result.dispatchChanged)waitUntil(deliverWebPush(env.DB,env,3));return json({advanced:true,status:result.status});
+      const result=await matchingState(new RentalService(env.DB,entry.guest_id),input.id);if(result.dispatchChanged){waitUntil(deliverWebPush(env.DB,env,3));waitUntil(deliverNativePush(env.DB,env,3).catch(()=>undefined));}return json({advanced:true,status:result.status});
     }
     if(route.join('/')==='internal/health'){
       if(!await administratorRunnerAuthorized(request,env.ADMINISTRATOR_RUNNER_SECRET,'GET'))return json({error:'Нет доступа.'},403);
@@ -91,6 +92,7 @@ async function handle(request:Request, context:{params:Promise<{path:string[]}>}
     if(request.method==='GET'&&route[0]==='admin'){if(adminId&&!admin)return factorGate();}
     if(request.method==='GET'&&route[0]==='admin')return json(await readPlatformAdmin(service,route.slice(1).join('/'),Object.fromEntries(new URL(request.url).searchParams),env));
     const activeRole=request.headers.get('X-Workspace-Role');
+    if(request.method==='GET'&&route.join('/')==='push/native'){const identity=await requestSessionIdentity(request);return json(await nativePushState(service,parseRole(activeRole),env,identity?.kind==='mobile'?identity.hash:''));}
     if(request.method==='GET'&&route.join('/')==='push'){const identity=await requestSessionIdentity(request);return json(await webPushState(service,parseRole(activeRole),env,identity?.kind==='web'?identity.hash:''));}
     if(request.method==='GET'&&route.join('/')==='sessions'){await service.authorizeWorkspace(activeRole,'account');return json(await accountSessions(service,request));}
     if(request.method==='GET'&&route.join('/')==='conversation')return json(await clientConversation(service,parseRole(activeRole)));
@@ -130,10 +132,11 @@ async function handle(request:Request, context:{params:Promise<{path:string[]}>}
      if(route.join('/')==='legal/accept')return json(await acceptLegal(env.DB,user.userId,{...body,role:activeRole},client));
      if(client==='mobile'&&!legalOpen(route)){const missing=await legalMissing(env.DB,user.userId,activeRole);if(missing.length)return json({error:'Примите условия сервиса, чтобы продолжить.',legal:missing},428);}}
     if(route.join('/')==='reliability/objection'){const role=await service.authorizeWorkspace(activeRole,'account');return json(await objectReliability(env.DB,user.userId,role,body,env.PLATFORM_ADMIN_IDS));}
+    if(route.join('/')==='push/native'){const identity=await requestSessionIdentity(request);return json(await manageNativePush(service,parseRole(activeRole),body,env,identity?.kind==='mobile'?identity.hash:''));}
     if(route.join('/')==='push'){const identity=await requestSessionIdentity(request);return json(await manageWebPush(service,parseRole(activeRole),body,env,identity?.kind==='web'?identity.hash:''));}
     if(request.method==='POST'&&route.join('/')==='sessions'){await service.authorizeWorkspace(activeRole,'account');return json(await accountSessions(service,request,body));}
     if(request.method==='PUT'&&route.join('/')==='conversation')return json(await clientConversation(service,parseRole(activeRole),body));
-    if(route[0]==='operations'){const result=await writeOperations(service,parseRole(activeRole),route.slice(1),body,env,admin),response=json(result);if(route[1]==='matching'&&(['begin','respond','book'].includes(route[2])||(result as Record<string,any>).dispatchChanged===true))waitUntil(deliverWebPush(env.DB,env,3).catch(()=>({configured:true,sent:0,failed:1})));if((result as Record<string,any>)?.signOut)response.headers.set('Set-Cookie',expireSessionCookie(request));return response;}
+    if(route[0]==='operations'){const result=await writeOperations(service,parseRole(activeRole),route.slice(1),body,env,admin),response=json(result);if(route[1]==='matching'&&(['begin','respond','book'].includes(route[2])||(result as Record<string,any>).dispatchChanged===true)){waitUntil(deliverWebPush(env.DB,env,3).catch(()=>({configured:true,sent:0,failed:1})));waitUntil(deliverNativePush(env.DB,env,3).catch(()=>undefined));}if((result as Record<string,any>)?.signOut)response.headers.set('Set-Cookie',expireSessionCookie(request));return response;}
     if(route.length===2&&route[0]==='onboarding'){
       if(!['guest','owner','cleaner'].includes(route[1]))return json({error:'Такой профиль недоступен.'},400);
       if(!await service.profile())await service.saveProfile({name:user.fullName||'Гость',contact:user.phone,city:body.city||'Павлодар',roles:['guest']});

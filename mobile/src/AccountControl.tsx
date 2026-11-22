@@ -15,6 +15,7 @@ import {experienceFor,joinTitle} from '../../lib/role-experience';
 import {ReliabilityBadge,reliabilityHints} from './Reliability';
 import {ReliabilityObjection} from './ReliabilityObjection';
 import {NativeTelegram} from './NativeTelegram';
+import {NativePush} from './NativePush';
 import {NativeAutopilotPlan,NativePayWay} from './AutopilotPlan';
 import {NativeDecisionRules} from './DecisionRules';
 import {NoticeList} from './Notices';
@@ -93,11 +94,11 @@ export function AccountControl({role:active,staffPlaces=0,notices,onOpenNotice,s
   {view==='payout'&&active!=='guest'&&<PayoutForm initial={payout} pending={payoutPending} role={active} onSaved={(v,next)=>{if(v)setPayout(v);setPayoutPending(next);void onChanged?.();}}/>}
   {view==='billing'&&active!=='guest'&&<ServiceBilling key={'billing:'+active} role={active}/>}
   {view==='money'&&<OwnerAnalytics tint={ink}/>}
-  {view==='notices'&&<Group><NativeTelegram tint={ink} invite/><NoticeList list={events} now={clock} onOpen={n=>active!=='guest'&&String(n.dedupe||'').startsWith('service:')&&!String(n.dedupe).startsWith('service:bypass-warning:')?()=>go('billing'):onOpenNotice?.(n)}/></Group>}
+  {view==='notices'&&<Group><NativePush key={'push:'+active} role={active} tint={ink} invite/><NativeTelegram tint={ink} invite/><NoticeList list={events} now={clock} onOpen={n=>active!=='guest'&&String(n.dedupe||'').startsWith('service:')&&!String(n.dedupe).startsWith('service:bypass-warning:')?()=>go('billing'):onOpenNotice?.(n)}/></Group>}
   {view==='autopilot'&&<>{owner&&<View style={{marginBottom:16}}><AutopilotWeek/></View>}{owner&&<NativePayWay key={'pay:'+active} role="owner"/>}<Group title={t('Что сделал ИИ')}><AiJournal entries={journal} now={clock} onOpen={onOpenEntry}/></Group>{worker?<NativeAutopilotPlan key={'plan:'+active} role="cleaner"/>:<NativeDecisionRules key={'rules:'+active} tint={ink}/>}</>}
   {view==='profile'&&<>{hint}<Group space={!!hint}>{item('user',t('О себе'),p.bio)}{item('languages',t('Языки общения'),p.languages)}{item('pin',t(experience.cityLabel),p.city)}{worker&&<>{item('map',t('Районы работы'),p.districts)}{item('clock',t('График'),p.availability)}{item('badge',t('Опыт и услуги'),p.experience)}</>}{item('phone',t('Телефон'),p.contact)}</Group>{!!account.reliability&&<><View style={{height:16}}/><ReliabilityBadge value={account.reliability} title={owner?t('Как вас видят гости'):t('Как вас видят владельцы')}/><Group title={t('Как повысить надёжность')}>{(reliabilityHints[active]||[]).map(h=><View key={h} style={a.row}><RowIcon icon="check" tint={ink}/><Text style={[a.title,a.wide]}>{h}</Text></View>)}</Group><ReliabilityObjection role={active}/></>}<IdentityDocs role={active}/></>}
   {view==='settings'&&<>
-   <Group title={t('Куда сообщать')}><NativeTelegram tint={ink}/><SwitchRow icon="wallet" tint={ink} title={t('О расчётах и выплатах')} checked={!!account.settings.payment_notifications} disabled={busy} onChange={v=>settings({payment_notifications:v?1:0})}/></Group>
+   <Group title={t('Куда сообщать')}><NativePush key={'push:'+active} role={active} tint={ink}/><NativeTelegram tint={ink}/><SwitchRow icon="wallet" tint={ink} title={t('О расчётах и выплатах')} checked={!!account.settings.payment_notifications} disabled={busy} onChange={v=>settings({payment_notifications:v?1:0})}/></Group>
    <Text style={a.footnote}>{t('Сообщаем только то, что ждёт вас или касается денег. Что ИИ сделал сам, записано в «Автопилот».')}</Text>
    {active==='guest'?<Text style={a.footnote}>{t('Вы платите владельцу напрямую по реквизитам из брони. Сервис деньги за жильё не принимает.')}</Text>:<><Group title={t('Расчёты')}><Row icon="bank" tint={ink} title={t('Реквизиты для оплаты')} value={payout?phoneText(payout.phone):t('не указаны')} onPress={()=>go('payout')}/><Row icon="wallet" tint={ink} title={t('Оплата услуг')} value={bill?(bill.card?t('карта {mask}',{mask:bill.card.mask}):t('карта не привязана')):t('карта и списания')} onPress={()=>go('billing')}/></Group>
    <Text style={a.footnote}>{owner?t('Гости переводят оплату прямо вам на Kaspi. Сервис деньги гостей не принимает.'):t('Заказчики переводят оплату за уборку прямо вам на Kaspi.')}</Text></>}

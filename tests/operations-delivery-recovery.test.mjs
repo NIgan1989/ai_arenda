@@ -67,7 +67,7 @@ test('a notice that needs a decision comes to Telegram with buttons; a tap decid
   const booking=(await f.guest.createBooking({propertyId:f.property,start:iso(now()+86400),end:iso(now()+93600),guests:1,billingMode:'hourly',requestKey:'tg-buttons',acceptTerms:true})).id;
   calls.length=0;assert.equal((await deliverOutbox(f.db,config,30,serviceFor)).sent,1);
   const sent=calls.find(c=>c.method==='sendMessage').body;assert.match(sent.text,/Запрос на бронирование · Test apartment/);assert.ok(!sent.text.includes('PRIVATE ADDRESS'));
-  const [answer,open]=sent.reply_markup.inline_keyboard;assert.equal(answer.length,2);assert.equal(open[0].url,'https://rental.example.test/workspace/owner/map');assert.ok(answer.every(b=>b.callback_data.length<=64));
+  const [answer,open]=sent.reply_markup.inline_keyboard;assert.equal(answer.length,2);assert.equal(open[0].url,'https://rental.example.test/workspace/owner/bookings?entity='+booking,'«Открыть» leads to the booking card');assert.ok(answer.every(b=>b.callback_data.length<=64));
   const tap=(data,from=555)=>acceptTelegramLink(f.db,{callback_query:{id:'q1',data,from:{id:from,is_bot:false},message:{message_id:9,text:sent.text,chat:{type:'private',id:from}}}},config.TELEGRAM_WEBHOOK_SECRET,config,serviceFor);
   // Someone else's chat cannot press the owner's button, and a forged revision is refused.
   assert.equal((await tap(answer[0].callback_data,777)).ignored,true);
@@ -97,11 +97,11 @@ test('a step the AI made alone that asks nothing of the owner is not sent out; a
  const f=await fixture(),fetch=globalThis.fetch,config={WHATSAPP_GATEWAY_URL:'https://gateway.example.test/send',WHATSAPP_GATEWAY_TOKEN:'gateway-token'};try{
   f.db.raw.prepare("INSERT INTO delivery_channels VALUES ('owner','owner','whatsapp','+77770000001',1,?,?)").run(now(),now());
   await f.owner.notify('owner','ИИ-администратор принял уборку «Студия» по фотоотчёту. Жильё готово к заселению.','administrator-approved:job-1','owner').run();
-  await f.owner.notify('owner','Новая заявка на «Студия».','booking:booking-1','owner').run();
+  const booking=(await f.guest.createBooking({propertyId:f.property,start:iso(now()+86400),end:iso(now()+93600),guests:1,billingMode:'hourly',requestKey:'silent-vs-request',acceptTerms:true})).id;
   let calls=0;globalThis.fetch=async()=>{calls++;return Response.json({id:'accepted'});};
   assert.equal((await deliverOutbox(f.db,config)).sent,1);assert.equal(calls,1);
   const states=f.db.raw.prepare('SELECT n.dedupe,o.status FROM delivery_outbox o JOIN notifications n ON n.id=o.notification_id ORDER BY n.dedupe').all().map(r=>r.dedupe+'='+r.status);
-  assert.deepEqual(states,['owner:administrator-approved:job-1=cancelled','owner:booking:booking-1=sent']);
+  assert.deepEqual(states,['owner:administrator-approved:job-1=cancelled','owner:booking:'+booking+'=sent']);
   // The step itself is not lost: it stays among the owner's notices, where the journal reads it.
   assert.equal(f.db.raw.prepare("SELECT COUNT(*) n FROM notifications WHERE dedupe='owner:administrator-approved:job-1'").get().n,1);
  }finally{globalThis.fetch=fetch;f.db.close();}

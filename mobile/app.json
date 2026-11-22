@@ -70,6 +70,14 @@
           "image": "./assets/brand/launch-blank.png",
           "imageWidth": 8
         }
+      ],
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/brand/notification-icon.png",
+          "color": "#1E1B4B",
+          "defaultChannel": "default"
+        }
       ]
     ]
   }

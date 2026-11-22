@@ -102,6 +102,7 @@
 -- migration 0098_reliability_voids.sql sha256:a2d7a652aee86c42af796f53bcd6c97f07b9e750e8a1a16fe9e63d8e7002fc9f
 -- migration 0099_account_exit.sql sha256:32c1a697f6927552c6cb9e5f7a2fae2faa1482c694b1fc87900421364de60d65
 -- migration 0100_too_general.sql sha256:39d4dd856a7c3c1c074778c6ffc6a489e0c077ad8d27144f1cd730d2f66ab914
+-- migration 0101_native_push.sql sha256:0f0f7fe2dbb31e301ddaac6a7ae3032a0162c4f5bea82f91714e58d977b90cf4
 
 -- table access_receipts
 CREATE TABLE access_receipts (id TEXT PRIMARY KEY,property_id TEXT NOT NULL,entity_kind TEXT NOT NULL,entity_id TEXT NOT NULL,user_id TEXT NOT NULL,created_at INTEGER NOT NULL,expires_at INTEGER NOT NULL);
@@ -952,6 +953,38 @@ CREATE TABLE moderation_access_events (
  created_at INTEGER NOT NULL
 );
 
+-- table native_push_deliveries
+CREATE TABLE native_push_deliveries (
+ id TEXT PRIMARY KEY,
+ device_id TEXT NOT NULL REFERENCES native_push_devices(id) ON DELETE CASCADE,
+ notification_id TEXT REFERENCES notifications(id) ON DELETE CASCADE,
+ status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','sending','sent','dead')),
+ attempts INTEGER NOT NULL DEFAULT 0,
+ available_at INTEGER NOT NULL,
+ lease_until INTEGER NOT NULL DEFAULT 0,
+ lease_token TEXT NOT NULL DEFAULT '',
+ last_error TEXT NOT NULL DEFAULT '',
+ ticket TEXT NOT NULL DEFAULT '',
+ created_at INTEGER NOT NULL,
+ sent_at INTEGER,
+ UNIQUE(device_id,notification_id)
+);
+
+-- table native_push_devices
+CREATE TABLE native_push_devices (
+ id TEXT PRIMARY KEY,
+ user_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+ session_hash TEXT NOT NULL REFERENCES auth_mobile_sessions(hash) ON DELETE CASCADE,
+ role TEXT NOT NULL CHECK(role IN ('guest','owner','cleaner')),
+ platform TEXT NOT NULL CHECK(platform IN ('ios','android')),
+ token_hash TEXT NOT NULL,
+ ciphertext TEXT NOT NULL,
+ created_at INTEGER NOT NULL,
+ updated_at INTEGER NOT NULL,
+ last_test_at INTEGER NOT NULL DEFAULT 0,
+ UNIQUE(session_hash,role), UNIQUE(token_hash,role)
+);
+
 -- table notifications
 CREATE TABLE `notifications` (
 	`id` text PRIMARY KEY NOT NULL,
@@ -1650,6 +1683,12 @@ CREATE INDEX messages_user_scope ON messages(user_id,scope,created_at);
 -- index moderation_access_report
 CREATE INDEX moderation_access_report ON moderation_access_events(report_id,created_at);
 
+-- index native_push_due
+CREATE INDEX native_push_due ON native_push_deliveries(status,available_at,lease_until);
+
+-- index native_push_tickets
+CREATE INDEX native_push_tickets ON native_push_deliveries(status,ticket,sent_at);
+
 -- index notification_dedupe
 CREATE UNIQUE INDEX `notification_dedupe` ON `notifications` (`dedupe`);
 
@@ -2116,6 +2155,12 @@ CREATE TRIGGER account_erased_moderation_access_events_insert BEFORE INSERT ON m
 -- trigger account_erased_moderation_access_events_update
 CREATE TRIGGER account_erased_moderation_access_events_update BEFORE UPDATE ON moderation_access_events WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.actor_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END;
 
+-- trigger account_erased_native_push_devices_insert
+CREATE TRIGGER account_erased_native_push_devices_insert BEFORE INSERT ON native_push_devices WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.user_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END;
+
+-- trigger account_erased_native_push_devices_update
+CREATE TRIGGER account_erased_native_push_devices_update BEFORE UPDATE ON native_push_devices WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.user_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END;
+
 -- trigger account_erased_notifications_insert
 CREATE TRIGGER account_erased_notifications_insert BEFORE INSERT ON notifications WHEN EXISTS(SELECT 1 FROM account_erasure_fences WHERE user_id=NEW.user_id) BEGIN SELECT RAISE(ABORT,'account_erased'); END;
 
@@ -2477,6 +2522,15 @@ BEGIN UPDATE journey_sessions SET stopped_at=CAST(strftime('%s','now') AS INTEGE
 CREATE TRIGGER journey_route_erased AFTER UPDATE OF stopped_at,longitude,latitude ON journey_sessions
 WHEN NEW.stopped_at IS NOT NULL OR NEW.longitude IS NULL OR NEW.latitude IS NULL
 BEGIN UPDATE journey_sessions SET route=NULL,route_recorded_at=NULL WHERE id=NEW.id; END;
+
+-- trigger notification_native_push
+CREATE TRIGGER notification_native_push AFTER INSERT ON notifications BEGIN
+ INSERT OR IGNORE INTO native_push_deliveries(id,device_id,notification_id,available_at,created_at)
+ SELECT lower(hex(randomblob(16))),d.id,NEW.id,NEW.created_at,NEW.created_at
+ FROM native_push_devices d JOIN auth_mobile_sessions a ON a.hash=d.session_hash AND a.user_id=d.user_id
+ JOIN auth_accounts c ON c.id=a.user_id AND c.credential_version=a.credential_version
+ WHERE d.user_id=NEW.user_id AND a.expires_at>unixepoch() AND NEW.dedupe LIKE d.role||':%';
+END;
 
 -- trigger notification_outbox
 CREATE TRIGGER notification_outbox AFTER INSERT ON notifications BEGIN

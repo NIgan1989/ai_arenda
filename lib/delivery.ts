@@ -7,6 +7,7 @@ import {noticeIn,silentNotice} from './notice-feed';
 import {isLang,tIn,type Lang} from './i18n';
 import {pushConfigured,pushTarget} from './web-push';
 import {isAdminNotice,adminNotice,adminDecide} from './admin-telegram';
+import {staleAction,urgentNotice} from './notice-stale';
 import {epoch,uuid,q,one,rows,hash,randomToken,httpsEndpoint,safeEqual,type Row,type OperationConfig} from './operation-core';
 
 export function integrationStatus(config:OperationConfig){return {push:pushConfigured(config),telegram:!!(config.TELEGRAM_BOT_TOKEN&&config.TELEGRAM_BOT_USERNAME&&config.TELEGRAM_WEBHOOK_SECRET),sms:!!(config.SMS_GATEWAY_URL&&config.SMS_GATEWAY_TOKEN),whatsapp:!!(config.WHATSAPP_GATEWAY_URL&&config.WHATSAPP_GATEWAY_TOKEN),payments:!!(config.PAYMENT_GATEWAY_URL&&config.PAYMENT_GATEWAY_TOKEN&&config.PAYMENT_WEBHOOK_SECRET),secureAccess:!!config.ACCESS_ENCRYPTION_KEY};}
@@ -42,10 +43,10 @@ export async function noticeDecision(service:RentalService,role:Role,dedupe:stri
 }
 // Only the AI administrator's own explanations leave the service; reports and reasons people wrote stay behind «Открыть».
 const OWN_DETAIL=new Set(['price','window','forecast','listing','stay']);
-export async function decisionMessage(card:Approval,role:Role,base:string|null){
+export async function decisionMessage(card:Approval,role:Role,base:string|null,url?:string|null){
  const code=Object.keys(ROLE_CODES).find(k=>ROLE_CODES[k]===role)!,tag=await revisionTag(card.revision),data=(a:string)=>a+code+card.id+'|'+tag;
  const text='<b>'+html(clip(card.title+(card.subject?' · '+card.subject:''),200))+'</b>\n'+[...card.facts.filter(([,v])=>v).map(([k,v])=>k+': '+v),OWN_DETAIL.has(card.kind)?card.detail||'':''].filter(Boolean).map(line=>html(clip(line,1200))).join('\n');
- const open=base?[{text:'Открыть',url:base+'/workspace/'+role+'/map'}]:[];
+ const open=base?[{text:'Открыть',url:base+(url||'/workspace/'+role+'/map')}]:[];
  if(data('y').length>64)return {text,parse_mode:'HTML',reply_markup:open.length?{inline_keyboard:[open]}:undefined};
  const answer=[{text:card.acceptLabel.slice(0,60),callback_data:data('y')},...(card.requiresReason?[]:[{text:card.rejectLabel.slice(0,60),callback_data:data('n')}])];
  return {text,parse_mode:'HTML',reply_markup:{inline_keyboard:[answer,...(open.length?[open]:[])]}};
@@ -110,7 +111,9 @@ export async function deliverOutbox(db:D1Database,config:OperationConfig,limit=3
   if(!item.enabled||!item.verified_at){await q(db,"UPDATE delivery_outbox SET status='cancelled' WHERE id=?",item.id).run();continue;}
   // A step the AI made alone that asks nothing of the owner stays in the journal «Что сделал ИИ» (lib/notice-feed.ts).
   if(silentNotice(item.dedupe,item.body)){await q(db,"UPDATE delivery_outbox SET status='cancelled' WHERE id=?",item.id).run();continue;}
-  const settings={...defaultAssistantSettings,...(item.settings?JSON.parse(item.settings):{})},urgent=/Требует внимания\.|no-show|overdue/.test(item.body+' '+item.dedupe);
+  // A request cancelled, expired or answered while the notice waited in the queue: only the later notice goes out.
+  if(await staleAction(db,item.dedupe,epoch(),item.body)){await q(db,"UPDATE delivery_outbox SET status='cancelled',last_error='stale' WHERE id=? AND status IN ('pending','sending')",item.id).run();continue;}
+  const settings={...defaultAssistantSettings,...(item.settings?JSON.parse(item.settings):{})},urgent=urgentNotice(item.dedupe,item.body);
   if(quietNow(settings,epoch())&&!(settings.urgentInQuiet&&urgent)){await q(db,'UPDATE delivery_outbox SET available_at=? WHERE id=?',epoch()+300,item.id).run();continue;}
   const token=uuid(),claim=await q(db,"UPDATE delivery_outbox SET status='sending',lease_token=?,lease_until=?,attempts=attempts+1 WHERE id=? AND ((status='pending' AND available_at<=?) OR (status='sending' AND lease_until<=?)) RETURNING attempts",token,epoch()+90,item.id,epoch(),epoch()).first<Row>();if(!claim)continue;
   try{
@@ -128,7 +131,12 @@ export async function deliverOutbox(db:D1Database,config:OperationConfig,limit=3
    if(!response.ok)throw new Error(response.status===429?'rate_limit':'delivery_failed');
    const value=await response.json() as Row;if(item.channel==='telegram'&&value.ok!==true)throw new Error('delivery_failed');const reference=String(item.channel==='telegram'?value.result?.message_id:value.id||'accepted');
    await q(db,"UPDATE delivery_outbox SET status='sent',sent_at=?,provider_reference=?,last_error='',lease_until=0 WHERE id=? AND lease_token=?",epoch(),reference.slice(0,200),item.id,token).run();sent++;
-  }catch(error){const code=['channel_not_configured','rate_limit'].includes((error as Error).message)?(error as Error).message:'delivery_failed';await q(db,"UPDATE delivery_outbox SET status=?,last_error=?,available_at=?,lease_until=0 WHERE id=? AND lease_token=?",claim.attempts>=8?'dead':'pending',code,epoch()+Math.min(3600,30*2**Math.min(claim.attempts,7)),item.id,token).run();failed++;}
+  }catch(error){
+   // No answer at all (a timeout or a lost connection): the message may have reached the chat. It is marked
+   // «outcome_unknown» and tried once more at most, after the check above; a second unknown stops the retries.
+   const message=(error as Error).message,unknown=!['channel_not_configured','rate_limit','delivery_failed'].includes(message);
+   const code=unknown?'outcome_unknown':message,stop=claim.attempts>=8||(unknown&&item.last_error==='outcome_unknown');
+   await q(db,"UPDATE delivery_outbox SET status=?,last_error=?,available_at=?,lease_until=0 WHERE id=? AND lease_token=?",stop?'dead':'pending',code,epoch()+Math.min(3600,30*2**Math.min(claim.attempts,7)),item.id,token).run();failed++;}
  }
  return {sent,failed};
 }
@@ -158,7 +166,7 @@ const PERSON_WRITTEN:[RegExp,string][]=[
 ];
 // The language the person chose in the app (lib/user-language.ts); Russian when unknown.
 const langOf=(item:Row):Lang=>isLang(item.lang)?item.lang:'ru';
-const plainNotice=(item:Row)=>noticeIn(langOf(item),personWritten(item));
+export const plainNotice=(item:Row)=>noticeIn(langOf(item),personWritten(item));
 const personWritten=(item:Row)=>{
  const body=String(item.body||'').trim()||'Есть новое событие. Откройте сервис, чтобы посмотреть.';
  if(String(item.dedupe||'').split(':')[1]==='discussion')return body.replace(/\+?\d[\d\s()-]{8,}\d|\d{4,}/g,'••••');
@@ -177,7 +185,8 @@ export async function plainTelegramNotice(item:Row,base:string|null,target:{url:
 }
 async function telegramNotice(item:Row,text:string,base:string|null,serviceFor?:ServiceFor):Promise<Row>{
  if(isAdminNotice(String(item.dedupe||'')))return serviceFor?adminNotice(serviceFor(item.user_id).db,item,base):{text:String(item.body||text)};
- if(serviceFor)try{const card=await noticeDecision(serviceFor(item.user_id),item.role,item.dedupe);if(card)return decisionMessage(card,item.role,base);}catch{/* the plain notice still goes out */}
  const target=serviceFor?await pushTarget(serviceFor(item.user_id).db,item.user_id,item.role,String(item.dedupe||'')).catch(()=>null):null;
+ // «Открыть» under the buttons leads to the card itself, like the plain notice about the same booking.
+ if(serviceFor)try{const card=await noticeDecision(serviceFor(item.user_id),item.role,item.dedupe);if(card)return decisionMessage(card,item.role,base,target?.url);}catch{/* the plain notice still goes out */}
  return plainTelegramNotice(item,base,target);
 }
