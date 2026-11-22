@@ -252,6 +252,8 @@ export function GuestResults({ preview, draft, mine, onFavorite, selected, onSel
   // The other free halls of the chosen one's venue: the guest switches between them without going back to the list.
   const otherHalls = (flat: Row) => (flat.venue ? flats.filter(x => x.id !== flat.id && x.venue?.id === flat.venue.id) : []);
   const quiet = draft.occasion === 'memorial';
+  // A bath or a sauna: the total with its hours and the guests' surcharge beside it (audit of 2026-11-22).
+  const bathSum = (flat: Row) => { const e = flat.estimate || {}, n = Number(e.periods) || 0, add = Number(e.surcharge) || 0; if (kindCategoryOf(flat.details?.type) !== 'bath' || e.billingMode !== 'hourly' || !n) return ''; return t('{n} ч × {rate}',{n,rate:money((Number(e.rate) || 0) - add)}) + (add ? ' + ' + t('{v} за гостей',{v:money(add * n)}) : ''); };
   const perGuest = (flat: Row) => (kindCategoryOf(flat.details?.type) === 'banquet' ? Number(flat.policy?.extra_guest_price) || 0 : 0);
   const least = (flat: Row) => Number(flat.policy?.included_guests) || 0;
   // With the arrival line the card says readiness itself, for the asked time; the general «готово» would repeat it.
@@ -294,7 +296,7 @@ export function GuestResults({ preview, draft, mine, onFavorite, selected, onSel
   }
 
   const why = (flat: Row) => reasonsOf(flat).slice(0, 3).join(' · ');
-  const what = (flat: Row) => [venueName(flat), mark(flat), perGuest(flat) ? t('{v} за гостя',{v:money(perGuest(flat))}) : '', homeLine(flat), flat.district].filter(Boolean).join(' · ');
+  const what = (flat: Row) => [venueName(flat), mark(flat), perGuest(flat) ? t('{v} за гостя',{v:money(perGuest(flat))}) : '', bathSum(flat), homeLine(flat), bathSum(flat) ? '' : flat.district].filter(Boolean).join(' · ');
   const bestWords = quiet ? t('Подходит лучше других') : t('✦ Лучший выбор');
   const trail = steps.length > 0 && !!onBack && <HelperTrail words={stepWords(steps, draft)} count={flats.length + ' ' + plural(flats.length, 'вариант', 'варианта', 'вариантов')} onBack={onBack} busy={busy} />;
   const tips = <GuestHelpers helpers={helpers} busy={busy} onPress={helper => onStep?.(helper.id, list[index]?.id || '')} />;
