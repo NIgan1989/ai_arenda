@@ -4,6 +4,7 @@ import {PUBLISH_REVIEW} from './listing-edit';
 import {autoReview} from './admin-autocheck';
 import {placeFlatByAddress} from './map-workspace';
 import {epoch,uuid,q,one,rows,hash,httpsEndpoint,safeEqual,type Row,type OperationConfig} from './operation-core';
+import {leadOf} from './room-units';
 
 export async function securityState(service:RentalService,role:Role,platformAdmin=false){
  const phone=await one(service.db,'SELECT phone,verified_at,sent_at,expires_at FROM phone_verifications WHERE user_id=?',service.userId);
@@ -130,6 +131,7 @@ export async function revealPropertyAccess(service:RentalService,role:Role,body:
   entity=await one(service.db,"SELECT j.* FROM cleaning_jobs j JOIN property_operations o ON o.property_id=j.property_id WHERE j.id=? AND j.assigned_to=? AND j.status IN ('assigned','in_progress') AND j.start<=? AND j.end>? AND o.active_booking_id IS NULL AND o.readiness NOT IN ('occupied','maintenance','blocked') AND (j.booking_id IS NULL OR EXISTS(SELECT 1 FROM booking_terms WHERE booking_id=j.booking_id AND actual_checkout IS NOT NULL))",entityId,service.userId,epoch()+3600,epoch());expires=entity?.end||0;
  }else{entity=await one(service.db,'SELECT id property_id FROM properties WHERE id=? AND owner_id=?',required(body.propertyId,'Жильё',100),service.userId);expires=epoch()+300;}
  if(!entity)throw new DomainError('Инструкция пока недоступна: проверьте назначение, время, оплату и освобождение жилья.',403);
- const access=await one(service.db,'SELECT * FROM property_access WHERE property_id=?',entity.property_id);if(!access)throw new DomainError('Владелец ещё не добавил защищённую инструкцию.',404);
+ // A hotel room booked under a card of rooms alike (lib/room-units.ts) opens with the card's instructions.
+ const access=await one(service.db,'SELECT * FROM property_access WHERE property_id=?',await leadOf(service.db,String(entity.property_id)));if(!access)throw new DomainError('Владелец ещё не добавил защищённую инструкцию.',404);
  const instructions=await decryptInstructions(access.ciphertext,config);await q(service.db,'INSERT INTO access_receipts VALUES (?,?,?,?,?,?,?)',uuid(),entity.property_id,kind,entityId,service.userId,epoch(),expires).run();return {instructions,expiresAt:expires,note:'Доступ проверяется при каждом открытии. Код физического замка меняет владелец или интеграция замка.'};
 }

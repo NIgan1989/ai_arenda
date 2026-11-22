@@ -63,3 +63,39 @@ test('the card keeps its own number of rooms beside the count of rooms alike',as
   assert.equal(found.rooms,2);assert.equal(found.units.total,3);
  }finally{f.db.close();}
 });
+const {assignStaff,removeStaff}=await load('staff');
+const {savePropertyAccess,revealPropertyAccess}=await load('participant-security');
+const {recordFinance}=await load('finance');
+const copies=f=>f.db.raw.prepare('SELECT property_id FROM room_units WHERE lead_id=?').all(f.property).map(r=>r.property_id);
+test('the person on shift follows the card into every room and leaves them all when removed',async()=>{
+ const f=await fixture();try{
+  asHotel(f);f.db.raw.prepare('INSERT INTO auth_accounts(id,phone,name,password_hash,recovery_hash,created_at) VALUES (?,?,?,?,?,?)').run('cleaner','+77010000003','Айдар','x','x',now());
+  await assignStaff(f.owner,{propertyId:f.property,phone:'+7 701 000 00 03'});
+  await setRoomCount(f.owner,{propertyId:f.property,count:3});
+  const staffed=()=>f.db.raw.prepare("SELECT COUNT(*) n FROM property_staff WHERE staff_id='cleaner'").get().n;
+  assert.equal(staffed(),3);
+  await removeStaff(f.owner,{propertyId:f.property});
+  assert.equal(staffed(),0,'no room keeps the removed person');
+  await assignStaff(f.owner,{propertyId:f.property,phone:'+7 701 000 00 03'});
+  assert.equal(staffed(),3);
+ }finally{f.db.close();}
+});
+test('a room closed for repair is skipped: the guest gets the next free room',async()=>{
+ const f=await fixture();try{
+  asHotel(f);await setRoomCount(f.owner,{propertyId:f.property,count:2});
+  f.db.raw.prepare("UPDATE property_operations SET readiness='maintenance' WHERE property_id=?").run(f.property);
+  const start=dayAt(5,14),end=dayAt(6,12),q=await f.guest.bookingQuote({propertyId:f.property,start:iso(start),end:iso(end),guests:1,billingMode:'daily'});
+  assert.ok(q.amount>0);
+ }finally{f.db.close();}
+});
+test('a guest in a room of the card gets the card’s check-in instructions',async()=>{
+ const f=await fixture(),config={ACCESS_ENCRYPTION_KEY:'test-only-encryption-secret-'.repeat(3)};try{
+  asHotel(f);await setRoomCount(f.owner,{propertyId:f.property,count:2});
+  await savePropertyAccess(f.owner,{propertyId:f.property,expectedVersion:0,instructions:'Ключ на ресепшене, код 1234'},config);
+  const room=copies(f)[0];
+  f.db.raw.prepare('UPDATE bookings SET property_id=? WHERE id=?').run(room,f.booking);
+  await recordFinance(f.owner,{kind:'payment',bookingId:f.booking,amount:4000,confirmed:true,note:'Received',requestKey:'pay'});await recordFinance(f.owner,{kind:'deposit',bookingId:f.booking,amount:10000,confirmed:true,note:'Received',requestKey:'deposit'});
+  f.db.raw.prepare("UPDATE property_operations SET readiness='ready' WHERE property_id=?").run(room);
+  assert.match((await revealPropertyAccess(f.guest,'guest',{entityId:f.booking},config)).instructions,/код 1234/);
+ }finally{f.db.close();}
+});

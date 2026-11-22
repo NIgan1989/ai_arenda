@@ -32,7 +32,8 @@ const tell=(db:D1Database,userId:string,body:string,dedupe:string,at:number)=>q(
 // ---------- The owner names the person ----------
 
 /** The object and the other halls of its venue that are not archived. */
-const hallIds=async(db:D1Database,propertyId:string)=>[propertyId,...(await rows(db,'SELECT h.property_id id FROM venue_halls h JOIN properties p ON p.id=h.property_id WHERE p.archived_at IS NULL AND h.property_id<>? AND h.venue_id=(SELECT venue_id FROM venue_halls WHERE property_id=?)',propertyId,propertyId)).map(r=>String(r.id))];
+// The rooms under a hotel card (lib/room-units.ts) go with it too: the shift that runs the card runs every room.
+const hallIds=async(db:D1Database,propertyId:string)=>[propertyId,...(await rows(db,'SELECT h.property_id id FROM venue_halls h JOIN properties p ON p.id=h.property_id WHERE p.archived_at IS NULL AND h.property_id<>? AND h.venue_id=(SELECT venue_id FROM venue_halls WHERE property_id=?) UNION SELECT u.property_id FROM room_units u JOIN properties p ON p.id=u.property_id WHERE p.archived_at IS NULL AND u.lead_id=?',propertyId,propertyId,propertyId)).map(r=>String(r.id))];
 
 export async function staffState(s:RentalService,propertyId:string){
  await s.requireRole('owner');
@@ -50,11 +51,11 @@ export async function assignStaff(s:RentalService,body:Row){
  if(person.id===s.userId)throw new DomainError('Это ваш номер. Отметки по объекту у вас уже есть.',409);
  const at=epoch();
  // A venue is run by one shift: the person is named for all its halls at once (lib/venue.ts).
- const halls=await hallIds(s.db,propertyId);
+ const halls=await hallIds(s.db,propertyId),venue=halls.length>1&&!!await one(s.db,'SELECT 1 x FROM venue_halls WHERE property_id=?',propertyId);
  await s.db.batch([
   ...halls.map(id=>q(s.db,'INSERT INTO property_staff(property_id,staff_id,owner_id,created_at) VALUES (?,?,?,?) ON CONFLICT(property_id) DO UPDATE SET staff_id=excluded.staff_id,owner_id=excluded.owner_id,created_at=excluded.created_at',id,person.id,s.userId,at)),
-  tell(s.db,person.id,'Вас назначили сотрудником объекта «'+p.title+'»'+(halls.length>1?' и других залов заведения':'')+'. Откройте «Смена» в меню: там сегодняшние гости и отметки.','staff:assigned:'+propertyId+':'+at,at)]);
- if(halls.length>1)return {...await staffState(s,propertyId),message:person.name+' теперь отмечает гостей во всех залах заведения: '+halls.length+'.'};
+  tell(s.db,person.id,'Вас назначили сотрудником объекта «'+p.title+'»'+(venue?' и других залов заведения':'')+'. Откройте «Смена» в меню: там сегодняшние гости и отметки.','staff:assigned:'+propertyId+':'+at,at)]);
+ if(venue)return {...await staffState(s,propertyId),message:person.name+' теперь отмечает гостей во всех залах заведения: '+halls.length+'.'};
  return {...await staffState(s,propertyId),message:person.name+' теперь отмечает гостей объекта «'+p.title+'».'};
 }
 export async function removeStaff(s:RentalService,body:Row){

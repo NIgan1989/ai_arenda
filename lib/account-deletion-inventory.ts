@@ -71,7 +71,7 @@ export const accountDeletionColumns:Record<string,string>={
  "auth_sessions": "hash,user_id,credential_version,expires_at",
  "background_jobs": "id,kind,scope,payload,status,attempts,max_attempts,available_at,lease_until,lease_token,repeat_seconds,last_completed,last_error,updated_at",
  "booking_changes": "id,booking_id,proposed_by,proposer_role,request_key,base_version,policy_version,start,end,occupied_until,billing_mode,rate,units,discount_percent,amount,reason,status,expires_at,created_at,decided_at",
- "booking_terms": "booking_id,billing_mode,rate,units,amount,deposit,deposit_status,house_rules,policy_version,actual_checkin,actual_checkout,checkout_reported_at,version,discount_percent,paid_amount,original_end,deposit_returned_at,refund_recorded_at,checkin_reported_at,arrival_eta,late_count,refund_due,min_hours,deposit_kept,deposit_kept_note,prepared_at,occasion,early_checkin_at,payment_reported_at,deposit_reported_at,prepay_percent",
+ "booking_terms": "booking_id,billing_mode,rate,units,amount,deposit,deposit_status,house_rules,policy_version,actual_checkin,actual_checkout,checkout_reported_at,version,discount_percent,paid_amount,original_end,deposit_returned_at,refund_recorded_at,checkin_reported_at,arrival_eta,late_count,refund_due,min_hours,deposit_kept,deposit_kept_note,prepared_at,occasion,early_checkin_at,payment_reported_at,deposit_reported_at,prepay_percent,payment_reported_amount,deposit_reported_amount,refund_if_received",
  "decision_rules": "user_id,role,rule,auto,minutes,updated_at",
  "stay_watch": "booking_id,pay_step,arrival_step,checkout_step,pay_for,arrival_for,checkout_for,updated_at",
  "bookings": "id,property_id,guest_id,start,end,occupied_until,guests,amount,status,expires_at,payment_status,request_key,created_at",
