@@ -112,7 +112,7 @@ export async function deliverOutbox(db:D1Database,config:OperationConfig,limit=3
   // A step the AI made alone that asks nothing of the owner stays in the journal «Что сделал ИИ» (lib/notice-feed.ts).
   if(silentNotice(item.dedupe,item.body)){await q(db,"UPDATE delivery_outbox SET status='cancelled' WHERE id=?",item.id).run();continue;}
   // A request cancelled, expired or answered while the notice waited in the queue: only the later notice goes out.
-  if(await staleAction(db,item.dedupe)){await q(db,"UPDATE delivery_outbox SET status='cancelled',last_error='stale' WHERE id=? AND status IN ('pending','sending')",item.id).run();continue;}
+  if(await staleAction(db,item.dedupe,epoch(),item.body)){await q(db,"UPDATE delivery_outbox SET status='cancelled',last_error='stale' WHERE id=? AND status IN ('pending','sending')",item.id).run();continue;}
   const settings={...defaultAssistantSettings,...(item.settings?JSON.parse(item.settings):{})},urgent=urgentNotice(item.dedupe,item.body);
   if(quietNow(settings,epoch())&&!(settings.urgentInQuiet&&urgent)){await q(db,'UPDATE delivery_outbox SET available_at=? WHERE id=?',epoch()+300,item.id).run();continue;}
   const token=uuid(),claim=await q(db,"UPDATE delivery_outbox SET status='sending',lease_token=?,lease_until=?,attempts=attempts+1 WHERE id=? AND ((status='pending' AND available_at<=?) OR (status='sending' AND lease_until<=?)) RETURNING attempts",token,epoch()+90,item.id,epoch(),epoch()).first<Row>();if(!claim)continue;

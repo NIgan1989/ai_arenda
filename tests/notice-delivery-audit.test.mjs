@@ -19,9 +19,10 @@ const request=(f,key,day=1)=>f.guest.createBooking({propertyId:f.property,start:
 test('a request cancelled before the queue ran: the owner gets only the cancellation',async()=>{
  const f=await fixture(),fetch=globalThis.fetch;try{
   const serviceFor=await telegram(f),booking=(await request(f,'cancel-first')).id;
-  assert.equal(await staleAction(f.db,'owner:booking:'+booking),false);
+  const asked=f.db.raw.prepare('SELECT body FROM notifications WHERE dedupe=?').get('owner:booking:'+booking).body;
+  assert.equal(await staleAction(f.db,'owner:booking:'+booking,now(),asked),false);
   await f.guest.bookingAction(booking,{action:'cancel'});
-  assert.equal(await staleAction(f.db,'owner:booking:'+booking),true);
+  assert.equal(await staleAction(f.db,'owner:booking:'+booking,now(),asked),true);
   const texts=[];globalThis.fetch=async(url,r)=>{texts.push(JSON.parse(r.body).text);return Response.json({ok:true,result:{message_id:2}});};
   await deliverOutbox(f.db,tgConfig,30,serviceFor);
   assert.ok(!texts.some(t=>/Новая заявка|Подтвердите/.test(t)),'no request to confirm after the cancellation');
@@ -34,10 +35,19 @@ test('a request cancelled before the queue ran: the owner gets only the cancella
 test('a request that expired or was answered in the app is not sent either',async()=>{
  const f=await fixture();try{
   const answered=(await request(f,'answered')).id;await f.owner.bookingAction(answered,{action:'confirm',cleaningFee:3000});
-  assert.equal(await staleAction(f.db,'owner:booking:'+answered),true);
+  const ask='Новая заявка на «Test». Подтвердите её в течение 15 мин.';
+  assert.equal(await staleAction(f.db,'owner:booking:'+answered,now(),ask),true);
+  // The autopilot's report of a confirmation it made carries the same key and is not a request: it still goes out.
+  assert.equal(await staleAction(f.db,'owner:booking:'+answered,now(),'ИИ-администратор принял бронь на «Test» по вашим правилам.'),false);
   const expired=(await request(f,'expired',3)).id;
   f.db.raw.prepare('UPDATE bookings SET expires_at=? WHERE id=?').run(now()-1,expired);
-  assert.equal(await staleAction(f.db,'owner:booking:'+expired),true);
+  assert.equal(await staleAction(f.db,'owner:booking:'+expired,now(),ask),true);
+  // An application stays actionable until the cleaning window ends, not only until it starts.
+  const job=f.job.id||f.job;await f.cleaner.jobAction(job,{action:'apply'});
+  f.db.raw.prepare('UPDATE cleaning_jobs SET start=?,end=? WHERE id=?').run(now()-600,now()+3600,job);
+  assert.equal(await staleAction(f.db,'owner:application:'+job+':cleaner'),false);
+  f.db.raw.prepare('UPDATE cleaning_jobs SET end=? WHERE id=?').run(now()-1,job);
+  assert.equal(await staleAction(f.db,'owner:application:'+job+':cleaner'),true);
   assert.equal(await staleAction(f.db,'owner:checkin-reported:'+expired),false,'a notice that asks nothing is never stale');
  }finally{f.db.close();}
 });

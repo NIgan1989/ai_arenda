@@ -123,7 +123,7 @@ export async function deliverWebPush(db:D1Database,config:OperationConfig,limit=
   if(item.notification_id&&silentNotice(item.dedupe,item.notice_body)){await q(db,"UPDATE push_deliveries SET status='dead',last_error='silent',lease_until=0 WHERE id=? AND (status='pending' OR (status='sending' AND lease_until<=?))",item.id,epoch()).run();continue;}
   let settings=defaultAssistantSettings;try{settings={...settings,...JSON.parse(item.settings||'{}')};}catch{}
   // A request cancelled, expired or answered while the push waited is not sent (lib/notice-stale.ts).
-  if(item.notification_id&&await staleAction(db,item.dedupe)){await q(db,"UPDATE push_deliveries SET status='dead',last_error='stale',lease_until=0 WHERE id=? AND (status='pending' OR (status='sending' AND lease_until<=?))",item.id,epoch()).run();continue;}
+  if(item.notification_id&&await staleAction(db,item.dedupe,epoch(),item.notice_body)){await q(db,"UPDATE push_deliveries SET status='dead',last_error='stale',lease_until=0 WHERE id=? AND (status='pending' OR (status='sending' AND lease_until<=?))",item.id,epoch()).run();continue;}
   // The same rule of the quiet hours as Telegram: an urgent notice goes out at once when the person allows it.
   const urgent=!!item.notification_id&&urgentNotice(item.dedupe,item.notice_body);
   if(item.notification_id&&quietNow(settings,epoch())&&!(settings.urgentInQuiet&&urgent)){await q(db,"UPDATE push_deliveries SET available_at=?,status='pending',lease_until=0 WHERE id=? AND (status='pending' OR (status='sending' AND lease_until<=?))",epoch()+300,item.id,epoch()).run();continue;}
