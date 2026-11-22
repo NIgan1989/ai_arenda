@@ -230,3 +230,15 @@ test('the performer\'s «Гостя нет» before the end of the stay never cl
   assert.ok(R.prepare('SELECT checkout_reported_at FROM booking_terms WHERE booking_id=?').get(f.booking).checkout_reported_at);
  }finally{f.db.close();}
 });
+test('a finished cleaning says where the money is: marked by the owner, then confirmed by the performer',async()=>{
+ const {cleaningThread,jobThread}=await load('process-threads'),t=now();
+ const j={id:'j1',property_id:'p1',owner_id:'o',assigned_to:'c',status:'completed',fee:5000,settled_at:t-60,settlement_paid:5000,booking_id:'b1',checkout_confirmed:1,start:t-7200,end:t-3600};
+ const owner={user:{id:'o'},applications:[],jobs:[j]},cleaner={user:{id:'c'},applications:[],jobs:[j]};
+ assert.match(cleaningThread(j,owner,t).line,/ждём подтверждения исполнителя/);
+ assert.match(jobThread(j,cleaner,t).line,/Заказчик отметил перевод/);
+ const got={...j,payment_received_at:t};
+ assert.match(cleaningThread(got,owner,t).line,/исполнитель подтвердил получение/);
+ assert.match(jobThread(got,cleaner,t).line,/вы подтвердили получение/);
+ assert.match(cleaningThread({...j,settled_at:null,settlement_paid:0},owner,t).line,/Ждём ваш перевод/);
+ assert.match(jobThread({...j,status:'assigned',checkout_confirmed:0,settled_at:null},cleaner,t-9000).line,/начать можно после подтверждения выезда/);
+});

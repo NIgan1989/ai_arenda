@@ -169,7 +169,7 @@ export function cleaningThread(j: Row, data: Row, now: number): ProcessThread {
       note: working ? (j.end > now ? tr('Исполнитель убирает · ещё {left}',{left:left(j.end - now)}) : tr('Срок уборки прошёл')) : j.arrived_at ? tr('Исполнитель на месте, начнёт уборку') : tr('Уборка в {when}',{when:threadWhen(j.start, now)}) },
     { key: 'check', label: tr('Приёмка'), by: accepted ? (aiAccepts ? 'ai' : 'owner') : auto ? 'ai' : 'you', at: j.submitted_at || j.end,
       note: accepted ? (aiAccepts ? tr('ИИ принял уборку') : tr('Уборка принята')) : auto ? tr('ИИ проверяет фото') : tr('Отчёт ждёт вашей проверки') },
-    { key: 'pay', label: tr('Оплата'), by: service ? 'ai' : 'you', at: j.settled_at || undefined, note: accepted && !j.assigned_to ? tr('Убрано без исполнителя') : paid ? tr('Исполнителю заплачено') : service ? tr('Сервис заплатит из резерва') : tr('Переведите исполнителю напрямую и отметьте оплату') },
+    { key: 'pay', label: tr('Оплата'), by: service ? 'ai' : 'you', at: j.settled_at || undefined, note: accepted && !j.assigned_to ? tr('Убрано без исполнителя') : paid ? (service || j.payment_received_at ? tr('Исполнитель подтвердил получение') : tr('Вы отметили перевод · ждём подтверждения исполнителя')) : service ? tr('Сервис заплатит из резерва') : tr('Ждём ваш перевод · переведите исполнителю напрямую и отметьте оплату') },
   ];
   // Without a booking the step is the performer's arrival: «Я на месте», or the start of the work itself.
   const came = j.booking_id !== null ? !!j.checkout_confirmed : !!j.arrived_at || working || reported;
@@ -178,7 +178,7 @@ export function cleaningThread(j: Row, data: Row, now: number): ProcessThread {
   const mine = j.owner_id === userId;
   const yours = mine && !t.finished && t.steps[t.current].by === 'you' && (t.current !== 0 || pending > 0 || late);
   return { id: j.id, kind: 'job', tag: 'Уборка', title: j.title || tr('Уборка'), propertyId: j.property_id, ...t, yours,
-    status: statusOf(t, now, tr('Готово')), line: lineOf(t, now, paid ? tr('Уборка принята и оплачена') : tr('Уборка принята')), at: j.start };
+    status: statusOf(t, now, tr('Готово')), line: lineOf(t, now, !j.assigned_to ? tr('Уборка принята') : service || j.payment_received_at ? tr('Оплачено · исполнитель подтвердил получение') : tr('Вы отметили перевод · ждём подтверждения исполнителя')), at: j.start };
 }
 
 // ---------- Задание глазами исполнителя ----------
@@ -194,13 +194,13 @@ export function jobThread(j: Row, data: Row, now: number): ProcessThread {
   const steps: Omit<ThreadStep, 'state'>[] = [
     { key: 'apply', label: tr('Отклик'), by: took ? 'ai' : 'you', at: application?.created_at, note: application || isMine ? (took ? tr('Автопилот откликнулся за вас') : tr('Отклик отправлен')) : tr('Можно откликнуться') },
     { key: 'assigned', label: tr('Назначено'), by: 'owner', note: isMine ? tr('Вас назначили') : tr('Ждём решения владельца') },
-    j.booking_id !== null ? { key: 'checkout', label: tr('Выезд гостя'), by: 'guest', at: j.start, note: j.checkout_confirmed ? tr('Гость выехал, можно начинать') : tr('Ждём выезда гостя') }
+    j.booking_id !== null ? { key: 'checkout', label: tr('Выезд гостя'), by: 'guest', at: j.start, note: j.checkout_confirmed ? tr('Гость выехал, можно начинать') : tr('Ждём выезда гостя · начать можно после подтверждения выезда') }
       : { key: 'checkout', label: tr('Приезд'), by: 'you', at: j.arrived_at || j.start, note: j.arrived_at ? tr('Вы на месте, можно начинать') : j.on_way_at ? tr('Вы в пути · на месте нажмите «Я на месте»') : tr('Приезжайте к назначенному времени') },
     { key: 'clean', label: tr('Уборка'), by: 'you', at: j.start, progress: working ? part(Number(j.started_at) || j.start, j.end, now) : undefined,
       note: working ? (j.end > now ? tr('Идёт уборка · ещё {left} · затем отчёт',{left:left(j.end - now)}) : tr('Срок прошёл · отправьте отчёт')) : tr('Начать уборку') },
     { key: 'check', label: tr('Приёмка'), by: did('ИИ принял уборку', 'ИИ проверил отчёт') ? 'ai' : 'owner', at: j.submitted_at || undefined,
       note: accepted ? tr('Уборка принята') : tr('Отчёт на приёмке') },
-    { key: 'pay', label: tr('Оплата'), by: j.guarantee || !Number(j.fee) ? 'ai' : paid && !got ? 'you' : 'owner', at: j.settled_at || undefined, note: paid ? (got ? tr('Оплата получена') : tr('Заказчик отметил оплату · подтвердите, что деньги пришли')) : j.guarantee ? tr('Сервис заплатит из резерва') : tr('Заказчик переведёт вам напрямую после приёмки') },
+    { key: 'pay', label: tr('Оплата'), by: j.guarantee || !Number(j.fee) ? 'ai' : paid && !got ? 'you' : 'owner', at: j.settled_at || undefined, note: paid ? (got ? tr('Вы подтвердили получение') : tr('Заказчик отметил перевод · подтвердите, что деньги пришли')) : j.guarantee ? tr('Сервис заплатит из резерва') : tr('Заказчик переведёт вам напрямую после приёмки') },
   ];
   const came = j.booking_id !== null ? !!j.checkout_confirmed : !!j.arrived_at || working || reported;
   const done = [!!application || isMine, isMine, isMine && came, reported, accepted, got];
@@ -209,7 +209,7 @@ export function jobThread(j: Row, data: Row, now: number): ProcessThread {
   const yours = !t.finished && s.by === 'you' && (t.current !== 3 || !!j.checkout_confirmed);
   const money = Number(j.fee) ? ' · ' + Number(j.fee).toLocaleString('ru-RU').replace(/ /g, ' ') + ' ₸' : '';
   return { id: j.id, kind: 'job', tag: 'Задание', title: j.title || tr('Задание'), propertyId: j.property_id, ...t, yours,
-    status: t.finished ? tr('Оплачено') : statusOf(t, now, tr('Готово')), line: lineOf(t, now, tr('Оплата получена') + money), at: j.start };
+    status: t.finished ? tr('Оплачено') : statusOf(t, now, tr('Готово')), line: lineOf(t, now, tr('Оплачено · вы подтвердили получение') + money), at: j.start };
 }
 
 const RECENT = 6 * 3600, AHEAD = 3 * DAY;
