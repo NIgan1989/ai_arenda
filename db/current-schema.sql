@@ -100,6 +100,7 @@
 -- migration 0096_call_audio.sql sha256:52e6a3b35ded64d49a8ed35daa1b5059fc36d1fc2d302be38b6712f9192bb802
 -- migration 0097_publication_audit.sql sha256:d80919542a01d92e7b01f9979191d433c1d9d80c1dc96796e803ac4fb12dae6b
 -- migration 0098_reliability_voids.sql sha256:a2d7a652aee86c42af796f53bcd6c97f07b9e750e8a1a16fe9e63d8e7002fc9f
+-- migration 0099_account_exit.sql sha256:32c1a697f6927552c6cb9e5f7a2fae2faa1482c694b1fc87900421364de60d65
 
 -- table access_receipts
 CREATE TABLE access_receipts (id TEXT PRIMARY KEY,property_id TEXT NOT NULL,entity_kind TEXT NOT NULL,entity_id TEXT NOT NULL,user_id TEXT NOT NULL,created_at INTEGER NOT NULL,expires_at INTEGER NOT NULL);
@@ -124,6 +125,16 @@ CREATE TABLE account_erasure_receipts (
  operation_key TEXT NOT NULL UNIQUE,
  scope TEXT NOT NULL CHECK(scope='active_database_only'),
  erased_at INTEGER NOT NULL
+);
+
+-- table account_erasure_results
+CREATE TABLE account_erasure_results (
+ receipt_id TEXT NOT NULL REFERENCES account_erasure_receipts(id),
+ category TEXT NOT NULL,
+ action TEXT NOT NULL CHECK(action IN ('deleted','anonymized','kept','pending')),
+ keep_until INTEGER,
+ basis TEXT NOT NULL DEFAULT '',
+ PRIMARY KEY(receipt_id,category)
 );
 
 -- table account_preferences
@@ -599,6 +610,17 @@ CREATE TABLE company_cash_entries (
  created_at INTEGER NOT NULL
 );
 
+-- table company_cost_payments
+CREATE TABLE company_cost_payments (
+ id TEXT PRIMARY KEY,
+ cost_id TEXT NOT NULL REFERENCES company_costs(id),
+ month TEXT NOT NULL,
+ amount INTEGER NOT NULL CHECK(amount BETWEEN 1 AND 10000000000),
+ bank_ref TEXT NOT NULL UNIQUE CHECK(length(bank_ref) BETWEEN 1 AND 80),
+ note TEXT NOT NULL DEFAULT '',
+ created_at INTEGER NOT NULL
+);
+
 -- table company_costs
 CREATE TABLE company_costs (
  id TEXT PRIMARY KEY,
@@ -657,7 +679,7 @@ CREATE TABLE company_tax_payments (
  month TEXT NOT NULL,
  note TEXT NOT NULL DEFAULT '',
  created_at INTEGER NOT NULL
-);
+, bank_ref TEXT NOT NULL DEFAULT '');
 
 -- table content_reports
 CREATE TABLE content_reports (
@@ -682,7 +704,7 @@ CREATE TABLE decision_rules (
 CREATE TABLE deletion_requests (
  user_id TEXT PRIMARY KEY, id TEXT NOT NULL UNIQUE, requested_at INTEGER NOT NULL,
  status TEXT NOT NULL DEFAULT 'requested' CHECK(status IN ('requested','cancelled')), reason TEXT NOT NULL DEFAULT ''
-);
+, previous_id TEXT NOT NULL DEFAULT '');
 
 -- table delivery_channels
 CREATE TABLE delivery_channels (
@@ -976,7 +998,7 @@ CREATE TABLE owner_balance_entries (
  actor_id TEXT NOT NULL,
  request_key TEXT NOT NULL UNIQUE,
  created_at INTEGER NOT NULL
-, test INTEGER NOT NULL DEFAULT 0 CHECK(test IN (0,1)));
+, test INTEGER NOT NULL DEFAULT 0 CHECK(test IN (0,1)), bank_ref TEXT NOT NULL DEFAULT '');
 
 -- table participant_reviews
 CREATE TABLE participant_reviews (id TEXT PRIMARY KEY,user_id TEXT NOT NULL REFERENCES profiles(id),role TEXT NOT NULL,property_id TEXT REFERENCES properties(id),status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','approved','rejected')),method TEXT NOT NULL DEFAULT '',reference TEXT NOT NULL DEFAULT '',reviewer_id TEXT,notes TEXT NOT NULL DEFAULT '',created_at INTEGER NOT NULL,reviewed_at INTEGER,valid_until INTEGER,version INTEGER NOT NULL DEFAULT 1, property_revision INTEGER NOT NULL DEFAULT 0, ai_verdict TEXT NOT NULL DEFAULT '' CHECK(ai_verdict IN ('','approve','fix','escalate')), ai_checks TEXT NOT NULL DEFAULT '[]', ai_checked_at INTEGER);
@@ -1264,6 +1286,16 @@ CREATE TABLE reliability_objections (
  answered_at INTEGER
 , voided TEXT NOT NULL DEFAULT '[]');
 
+-- table retention_rules
+CREATE TABLE retention_rules (
+ category TEXT PRIMARY KEY CHECK(category IN ('deals','money','chats','documents')),
+ label TEXT NOT NULL,
+ basis TEXT NOT NULL,
+ years INTEGER NOT NULL CHECK(years BETWEEN 0 AND 75),
+ draft INTEGER NOT NULL DEFAULT 1 CHECK(draft IN (0,1)),
+ updated_at INTEGER NOT NULL
+);
+
 -- table review_property_bindings
 CREATE TABLE review_property_bindings (
  property_id TEXT PRIMARY KEY REFERENCES properties(id),revision INTEGER NOT NULL DEFAULT 0
@@ -1536,8 +1568,14 @@ CREATE INDEX cleaning_offers_job ON cleaning_offers(job_id,status);
 -- index company_cash_entries_month
 CREATE INDEX company_cash_entries_month ON company_cash_entries(month);
 
+-- index company_cost_payments_month
+CREATE INDEX company_cost_payments_month ON company_cost_payments(month);
+
 -- index company_costs_kind
 CREATE INDEX company_costs_kind ON company_costs(kind,sort);
+
+-- index company_tax_payments_bank
+CREATE UNIQUE INDEX company_tax_payments_bank ON company_tax_payments(bank_ref,tax) WHERE bank_ref<>'';
 
 -- index company_tax_payments_month
 CREATE INDEX company_tax_payments_month ON company_tax_payments(month,tax);
@@ -1622,6 +1660,9 @@ CREATE INDEX operator_history_issue ON operator_history(issue_id,created_at,id);
 
 -- index operator_tickets_queue
 CREATE INDEX operator_tickets_queue ON operator_tickets(status,priority,deadline);
+
+-- index owner_balance_entries_bank
+CREATE UNIQUE INDEX owner_balance_entries_bank ON owner_balance_entries(bank_ref) WHERE bank_ref<>'';
 
 -- index owner_balance_entries_owner
 CREATE INDEX owner_balance_entries_owner ON owner_balance_entries(owner_id,created_at);

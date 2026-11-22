@@ -38,7 +38,7 @@ function cfLines(basis:string,ip:boolean,payouts:boolean):Line[]{return [
  {key:'_op',label:'Операционная деятельность',kind:'section'},
  {key:'inflow',label:basis==='fact'?'Оплата услуг (списания с карт)':'Оплата комиссий и подписок'},
  ...(basis==='fact'&&payouts?[{key:'payouts',label:'Выплаты исполнителям через сервис',sign:-1 as const}]:[]),
- {key:'salaries_net',label:'Зарплаты на руки',sign:-1},{key:'outsource',label:'Аутсорс',sign:-1},{key:'services',label:'Платные сервисы',sign:-1},{key:'opex',label:'Прочие расходы',sign:-1},{key:'acquiring',label:'Комиссия Kaspi Pay',sign:-1},{key:'ai',label:'ИИ (OpenAI)',sign:-1},{key:'taxes_paid',label:'Налоги и взносы уплачены',sign:-1},
+ ...(basis==='fact'?[{key:'costs_paid',label:'Расходы оплачены',sign:-1 as const,hint:'по банковским платежам'}]:[{key:'salaries_net',label:'Зарплаты на руки',sign:-1 as const},{key:'outsource',label:'Аутсорс',sign:-1 as const},{key:'services',label:'Платные сервисы',sign:-1 as const},{key:'opex',label:'Прочие расходы',sign:-1 as const}]),{key:'acquiring',label:'Комиссия Kaspi Pay',sign:-1},{key:'ai',label:'ИИ (OpenAI)',sign:-1},{key:'taxes_paid',label:'Налоги и взносы уплачены',sign:-1},
  {key:'operating',label:'Поток от операций',kind:'subtotal'},
  {key:'_inv',label:'Инвестиции',kind:'section'},{key:'assets',label:'Покупка техники',sign:-1},
  {key:'_fin',label:'Финансирование',kind:'section'},
@@ -49,7 +49,7 @@ function cfLines(basis:string,ip:boolean,payouts:boolean):Line[]{return [
 
 export function AdminFinance({data,busy,save,onParams}:{data:Row;busy:boolean;save:Save;onParams:(p:Row)=>void}){
  const s=data.settings,cur=data.current||{pl:{},cf:{}},pl=cur.pl,b=data.balance;
- const [tab,setTab]=useState<'pl'|'cf'|'balance'|'costs'|'settings'>('pl');
+ const [tab,setTab]=useState<'pl'|'cf'|'balance'|'costs'|'settings'>('pl'),[costPayOpen,setCostPayOpen]=useState(false);
  const [editing,setEditing]=useState<Row|null>(null),[cashOpen,setCashOpen]=useState(false);
  const months=monthList(data.first,data.last),future=data.month>data.now,ip=s.entity==='ip';
  const cashNames:Row=ip?{...cashLabels,capital:'Вложение владельца',dividend:'Изъятие владельца'}:cashLabels;
@@ -95,6 +95,8 @@ export function AdminFinance({data,busy,save,onParams}:{data:Row;busy:boolean;sa
    {tab==='cf'&&<><p className="finance-caption">Движение денежных средств: сколько денег пришло и ушло на самом деле. Налоги попадают сюда, когда бухгалтер отметит их оплату.</p><ReportTable lines={cfLines(data.basis,ip,data.months.some((m:Row)=>m.cf.payouts))} months={data.months} part="cf" active={data.month} opening={data.openingCash}/>
     <div className="finance-subhead"><div><h3>{ip?'Деньги владельца, займы и покупки':'Деньги учредителя, займы и покупки'}</h3><p>Не доход и не расход, но меняют остаток денег и баланс.</p></div><Button variant="outline" disabled={busy} onClick={()=>setCashOpen(true)}><Plus size={16}/>Добавить</Button></div>
     {data.cashEntries.length===0?<p className="finance-empty">Пока записей нет.{ip?' Запишите сюда свои деньги, вложенные в дело, чтобы остаток на счёте Kaspi Pay совпадал с отчётом.':` Уставный капитал ${money(s.share_capital)} учтён в месяце начала учёта.`}</p>:<ul className="revenue-list">{data.cashEntries.map((e:Row)=><li key={e.id}><div className="revenue-row"><span className="finance-dot" data-kind={e.kind}><Banknote size={16}/></span><span><strong>{cashNames[e.kind]}</strong><small>{monthName(e.month)}{e.note?' · '+e.note:''}</small></span><b>{['loan_repay','dividend','asset'].includes(e.kind)?'−':'+'}{money(e.amount)}</b><Button variant="ghost" size="sm" disabled={busy} onClick={()=>save('finance/cash/delete',{id:e.id,confirmed:true})}>Удалить</Button></div></li>)}</ul>}
+    {data.basis==='fact'&&<><div className="finance-subhead"><div><h3>Оплаты расходов</h3><p>В факте ДДС расход попадает сюда, когда деньги ушли со счёта. Один банковский документ записывается один раз.</p></div><Button variant="outline" disabled={busy||!(data.costs as Row[]).length} onClick={()=>setCostPayOpen(true)}><Plus size={16}/>Записать оплату</Button></div>
+    {!(data.costPayments||[]).length?<p className="finance-empty">Оплат пока нет.</p>:<ul className="revenue-list">{(data.costPayments as Row[]).map(p=><li key={p.id}><div className="revenue-row"><span className="finance-dot"><Receipt size={16}/></span><span><strong>{p.name}</strong><small>{monthName(p.month)} · №{p.bank_ref}{p.note?' · '+p.note:''}</small></span><b>−{money(p.amount)}</b><Button variant="ghost" size="sm" disabled={busy} onClick={()=>save('finance/cost-payment/delete',{id:p.id,confirmed:true})}>Удалить</Button></div></li>)}</ul>}</>}
    </>}
    {tab==='balance'&&<BalanceView data={data} onTaxes={()=>setTab('pl')}/>}
    {tab==='costs'&&<CostsView data={data} busy={busy} save={save} onEdit={setEditing}/>}
@@ -102,6 +104,7 @@ export function AdminFinance({data,busy,save,onParams}:{data:Row;busy:boolean;sa
   </section>
 
   <Sheet open={!!editing} onOpenChange={open=>{if(!open)setEditing(null);}}><SheetContent side="right" className="revenue-sheet"><SheetHeader><SheetTitle>{editing?.id?editing.name:'Новый расход'}</SheetTitle><SheetDescription>{kindLabels[editing?.kind]||''}. Сумма попадает в ОПИУ, ДДС и баланс сразу после сохранения.</SheetDescription></SheetHeader>{editing&&<CostForm cost={editing} now={data.now} usdRate={s.usd_rate} busy={busy} save={async b=>{const r=await save('finance/cost',b);if(r)setEditing(null);}} remove={async()=>{const r=await save('finance/cost/delete',{id:editing.id,confirmed:true});if(r)setEditing(null);}}/>}</SheetContent></Sheet>
+  <Sheet open={costPayOpen} onOpenChange={setCostPayOpen}><SheetContent side="right" className="revenue-sheet"><SheetHeader><SheetTitle>Оплата расхода</SheetTitle><SheetDescription>Сумма из банковской выписки. Она попадёт в факт ДДС в месяце оплаты.</SheetDescription></SheetHeader>{costPayOpen&&<CostPaymentForm costs={data.costs} month={data.month} busy={busy} save={async b=>{const r=await save('finance/cost-payment',b);if(r)setCostPayOpen(false);}}/>}</SheetContent></Sheet>
   <Sheet open={cashOpen} onOpenChange={setCashOpen}><SheetContent side="right" className="revenue-sheet"><SheetHeader><SheetTitle>Движение денег</SheetTitle><SheetDescription>{ip?'Вложение или изъятие владельца, займ, возврат займа или покупка техники.':'Взнос учредителя, займ, возврат займа, дивиденды или покупка техники.'}</SheetDescription></SheetHeader>{cashOpen&&<CashForm names={cashNames} month={data.month} busy={busy} save={async b=>{const r=await save('finance/cash',b);if(r)setCashOpen(false);}}/>}</SheetContent></Sheet>
  </div>;
 }
@@ -134,10 +137,12 @@ function BalanceView({data}:{data:Row;onTaxes:()=>void}){
     {line('Техника и оборудование',b.assets.equipment,p?.assets.equipment,'без амортизации')}
     {line('Долги владельцев сервису',b.assets.owners,p?.assets.owners,'отрицательные балансы')}
     {line('Долги исполнителей за услуги сервиса',b.assets.cleaners,p?.assets.cleaners)}
+    {(b.assets.prepaid||p?.assets.prepaid)?line('Расходы оплачены вперёд',b.assets.prepaid,p?.assets.prepaid):null}
    </dl></section>
    <section><h3><Landmark size={18}/>Обязательства и капитал<b>{money(b.totalLiabilities+b.totalEquity)}</b></h3><dl className="revenue-facts">
     {line('Авансы владельцев',b.liabilities.owners,p?.liabilities.owners,'деньги на их балансах')}
     {(b.liabilities.cleaners||p?.liabilities.cleaners)?line('Деньги исполнителей к выплате',b.liabilities.cleaners,p?.liabilities.cleaners):null}
+    {(b.liabilities.suppliers||p?.liabilities.suppliers)?line('Расходы к оплате',b.liabilities.suppliers,p?.liabilities.suppliers,'начислены, но ещё не оплачены'):null}
     {line('Налоги и взносы к уплате',b.liabilities.taxes,p?.liabilities.taxes,'платит Бухгалтерия')}
     {line('Займы',b.liabilities.loans,p?.liabilities.loans)}
     {line(ip?'Вложения владельца':'Уставный капитал и взносы',b.equity.capital,p?.equity.capital)}
@@ -198,6 +203,16 @@ function CostForm({cost,now,usdRate,busy,save,remove}:{cost:Row;now:string;usdRa
  </form>;
 }
 
+function CostPaymentForm({costs,month,busy,save}:{costs:Row[];month:string;busy:boolean;save:(b:Row)=>Promise<void>}){
+ const [costId,setCostId]=useState(costs[0]?.id||''),[m,setM]=useState(month),[amount,setAmount]=useState(''),[bankRef,setBankRef]=useState(''),[note,setNote]=useState('');
+ return <form className="revenue-terms" onSubmit={e=>{e.preventDefault();void save({costId,month:m,amount,bankRef,note});}}>
+  <label>Расход<NativeSelect value={costId} onChange={e=>setCostId(e.target.value)}>{costs.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</NativeSelect></label>
+  <div className="revenue-fields"><label>Сумма, ₸<Input value={amount} inputMode="numeric" required onChange={e=>setAmount(e.target.value.replace(/\D/g,'').slice(0,11))}/></label><label>Месяц оплаты<Input type="month" value={m} required onChange={e=>setM(e.target.value)}/></label></div>
+  <label>Номер банковского документа<Input value={bankRef} maxLength={80} required onChange={e=>setBankRef(e.target.value)} placeholder="Платёжка или операция Kaspi Pay"/></label>
+  <label>Заметка<Input value={note} maxLength={200} onChange={e=>setNote(e.target.value)}/></label>
+  <Button className="revenue-primary" disabled={busy||!costId||!amount||!bankRef.trim()}>Записать оплату</Button>
+ </form>;
+}
 function CashForm({names,month,busy,save}:{names:Row;month:string;busy:boolean;save:(b:Row)=>Promise<void>}){
  const [kind,setKind]=useState('capital'),[m,setM]=useState(month),[amount,setAmount]=useState(''),[note,setNote]=useState('');
  return <form className="revenue-terms" onSubmit={e=>{e.preventDefault();void save({kind,month:m,amount,note});}}>
