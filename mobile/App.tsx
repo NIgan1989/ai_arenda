@@ -229,11 +229,14 @@ function Chat(){
     try{const state=await request(active?(withCatalog?'/api/state':'/api/state?catalog=0'):'/api/access');if(activeRoleRef.current!==active||generation!==getSessionGeneration())return;if(active&&withCatalog)catalogAt.current=Date.now();setData(prev=>!active?{...empty,...state}:withCatalog?state:{...state,properties:prev.properties});setOnline(true);return state;}
     catch(error){if(error instanceof StaleSessionError||generation!==getSessionGeneration()||activeRoleRef.current!==active)return;if(active&&error instanceof ApiError&&error.status===403){setWorkspaceRole(null);activeRoleRef.current=null;setSelectedRole(null);setHistoryReady(false);setMessages([]);setFlow(null);const access=await request('/api/access');if(generation===getSessionGeneration()&&activeRoleRef.current===null)setData({...empty,...access});}throw error;}
   }
-  async function hydrate(role:Role){
+  // `catalog`: the published homes already on the screen, reused when only the role changes (they are the same for
+  // every role), so the switch does not wait for the whole catalogue again.
+  async function hydrate(role:Role,catalog?:Row[]){
     const generation=getSessionGeneration();setHistoryReady(false);setWorkspaceRole(role);activeRoleRef.current=role;
-    const [state,history]=await Promise.all([request('/api/state',undefined,undefined,undefined,role),request('/api/conversation',undefined,undefined,undefined,role)]);
+    const [fetched,history]=await Promise.all([request(catalog?'/api/state?catalog=0':'/api/state',undefined,undefined,undefined,role),request('/api/conversation',undefined,undefined,undefined,role)]);
     if(generation!==getSessionGeneration()||activeRoleRef.current!==role)throw new StaleSessionError();
-    setData(state);catalogAt.current=Date.now();historyEnd.current=pruneHistory(history.messages||[]).at(-1)?.id||'';setMessages(pruneHistory(history.messages||[]));setFlow(history.flow||null);setActor(role);setSelectedRole(role);setPageId(history.flow?'overview':'map');if(history.draftInvalid)setLinkError(tr('Сохранённый ввод не удалось открыть. Начните форму заново; заявки сохранены на сервере.'));setSaveError(false);setOnline(true);(state.notifications||[]).forEach((n:Row)=>seen.current.add(n.id));setHistoryReady(true);seen.current=new Set(state.notifications.map((n:Row)=>n.id));void saveLastRole(state.user?.id||null,role);return state;
+    const state=catalog?{...fetched,properties:catalog}:fetched;
+    setData(state);if(!catalog)catalogAt.current=Date.now();historyEnd.current=pruneHistory(history.messages||[]).at(-1)?.id||'';setMessages(pruneHistory(history.messages||[]));setFlow(history.flow||null);setActor(role);setSelectedRole(role);setPageId(history.flow?'overview':'map');if(history.draftInvalid)setLinkError(tr('Сохранённый ввод не удалось открыть. Начните форму заново; заявки сохранены на сервере.'));setSaveError(false);setOnline(true);(state.notifications||[]).forEach((n:Row)=>seen.current.add(n.id));setHistoryReady(true);seen.current=new Set(state.notifications.map((n:Row)=>n.id));void saveLastRole(state.user?.id||null,role);return state;
   }
   // The map opens first: the role used last on this device, or the only role the account has. The role chooser stays behind «Сменить роль».
   async function openLastRole(state?:Row){
@@ -249,7 +252,8 @@ function Chat(){
   async function pickRole(role:Role){
     const prev=selectedRole;if(locked.current||!prev||role===prev)return;
     locked.current=true;setBusy(true);setRolesOpen(false);showRolePlate(role);
-    try{await hydrate(role);}
+    const fresh=Date.now()-catalogAt.current<CATALOG_EVERY&&Array.isArray(data.properties)&&data.properties.length>0;
+    try{await hydrate(role,fresh?data.properties:undefined);}
     catch(e){if(activeRoleRef.current===role||activeRoleRef.current===null){setWorkspaceRole(prev);activeRoleRef.current=prev;setHistoryReady(true);}if(!(e instanceof StaleSessionError))setLinkError(e instanceof Error?e.message:tr('Не удалось сменить роль. Попробуйте ещё раз.'));}
     finally{locked.current=false;setBusy(false);hideRolePlate();}
   }

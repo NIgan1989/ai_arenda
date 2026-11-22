@@ -1,7 +1,7 @@
 import {t} from '../../lib/i18n';
 import {joinTitle} from '../../lib/role-experience';
 import React,{useEffect,useRef,useState,useSyncExternalStore} from 'react';
-import {AccessibilityInfo,Animated,Easing,Image,Modal,Platform,Pressable,StyleSheet,Text,View} from 'react-native';
+import {AccessibilityInfo,Animated,Easing,Image,Modal,Platform,Pressable,StatusBar,StyleSheet,Text,View} from 'react-native';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import {Dome} from './BrandMoments';
@@ -87,6 +87,7 @@ export function RolePlate(){
  if(!shown)return null;
  const up={opacity:a.words,transform:[{translateY:a.words.interpolate({inputRange:[0,1],outputRange:[10,0]})}]};
  return <Modal visible transparent statusBarTranslucent animationType="none" onRequestClose={()=>undefined}>
+  {/* Light signs over the night plate; the root status bar (EntryStatusBar) is back when the plate goes. */}<StatusBar barStyle="light-content" backgroundColor={C.night}/>
   <Animated.View accessibilityViewIsModal style={[p.plate,{opacity:a.plate}]}>
    <Animated.View style={{opacity:a.sign,transform:[{scale:a.sign.interpolate({inputRange:[0,1],outputRange:[.7,1]})}]}}><Image source={glowImage} style={p.glow}/><Dome size={150} burst={a.burst}/></Animated.View>
    <Animated.View style={[p.words,up]}>
