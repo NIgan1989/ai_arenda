@@ -15,6 +15,7 @@ import {menuIcons} from './AccountRows';
 import {EDIT_STEPS,banquetPrice,withBanquetPrice,editBody,editRequest,nextAdvice,needsReview,reviewRequest,REVIEW_SENT,stepForError,stepLine,stepNeeds,stepTitle,type Advice,type EditBody,type EditStep} from '../../lib/listing-edit';
 import {amenities,categoryAmenities,checkinMethods,isBath,isBanquet,isVenue,kindCategory,roomKinds} from '../../lib/listings';
 import {KindPicker} from './KindPicker';
+import {RightDocs} from './RightDocs';
 import {PREPAY_CHOICES,prepayNote,prepayState} from '../../lib/prepay';
 import {REPEAT_CHOICES} from '../../lib/rental-policy';
 import {AddressPin,type PinChoice} from './AddressPin';
@@ -40,7 +41,9 @@ export function PropertyEdit({property,onSave,onReview,onRemove,onClose,onOpenHa
  const unmapped=!!p.id&&p.mapped===false&&!!base.address.trim();
  const advice:Advice=held&&error?{step:fix,text:t(fix?'Не сохранилось: {error} Заполните это, и сохранится всё вместе.':'Не сохранилось: {error}',{error}),action:fix?t('Заполнить'):undefined}
   :unmapped&&!skipped.includes('pin')?{step:'place',text:t('Метки жилья на карте нет: без неё проверка не пройдёт. Откройте «Адрес» и проверьте, что метка стоит на доме.'),action:t('Поставить метку')}
-  :sent&&!base.published?{step:null,text:t(REVIEW_SENT)}:nextAdvice(base,skipped);
+  :sent&&!base.published?{step:null,text:t(REVIEW_SENT)}:rightsAdvice(nextAdvice(base,skipped));
+ // The document of the right to let is not required, but the AI suggests it once the listing is in order: «Жильё проверено».
+ function rightsAdvice(a:Advice):Advice{return !a.step&&p.id&&!p.verified&&!p.demo_owner?{step:null,text:t('Объявление в порядке. Приложите документ о праве сдавать (ниже): у жилья появится «Жильё проверено», и гости будут доверять ему больше.')}:a;}
  function go(step:EditStep){pick.current=null;if(!held)setDraft(base);setError(held?error:'');setDone('');setOpen(step);}
  // Removing asks once more right here; the server deletes a flat without history and archives one with bookings.
  async function remove(){if(!onRemove||busy)return;setBusy(true);setRemoveError('');try{await onRemove();}catch(x:any){setRemoveError(x?.message||t('Не удалось удалить жильё.'));}finally{setBusy(false);}}
@@ -197,6 +200,7 @@ export function PropertyEdit({property,onSave,onReview,onRemove,onClose,onOpenHa
    <View style={{flex:1,minWidth:0}}><Text style={e.stepTitle} numberOfLines={1}>{t('Календари площадок')}</Text><Text style={e.stepLine} numberOfLines={1}>{t('Airbnb, Booking, Суточно: без двойных броней')}</Text></View>
   </Pressable>
   <View style={e.switchRow}><View style={{flex:1}}><Text style={e.stepTitle}>{t('Показывать гостям')}</Text><Text style={e.stepLine}>{base.published?(p.address_check?t('Появится на карте после проверки адреса'):t('Объявление на карте')):t('Черновик, видите только вы')}</Text></View><Switch accessibilityLabel={t('Показывать гостям')} value={base.published} disabled={busy} onValueChange={v=>commit({...(held?draft:base),published:v},'publish')} trackColor={{true:C.success,false:C.lineStrong}} thumbColor={C.surface}/></View>
+  {!!p.id&&!p.demo_owner&&<RightDocs propertyId={p.id} approved={!!p.verified}/>}
   {onRemove&&(confirm?<View style={e.remove}>
    <Text style={e.adviceText}><Text style={{fontWeight:'700'}}>{t('Удалить «{title}»?',{title:base.title||t('жильё')})} </Text>{t('Гости больше его не увидят. Если по нему были брони, история броней и оплат сохранится.')}</Text>
    {!!removeError&&<Text accessibilityRole="alert" style={e.errorText}>{removeError}</Text>}

@@ -50,8 +50,7 @@ export async function decideParticipantReview(service:RentalService,body:Row,pla
  const id=required(body.id,'Проверка',100),method=required(body.method,'Способ фактической проверки',150),notes=required(body.notes,'Результат проверки',1000),validUntil=body.validUntil?Math.floor(Date.parse(body.validUntil)/1000):null;if(validUntil!==null&&(!Number.isFinite(validUntil)||validUntil<=epoch()))throw new DomainError('Укажите будущий срок действия проверки.');
  const review=await one(service.db,'SELECT r.*,COALESCE(b.revision,0) current_revision,p.owner_id current_owner FROM participant_reviews r LEFT JOIN review_property_bindings b ON b.property_id=r.property_id LEFT JOIN properties p ON p.id=r.property_id WHERE r.id=?',id);
  if(body.status==='approved'&&review?.role==='owner'&&(review.property_revision!==review.current_revision||review.user_id!==review.current_owner))throw new DomainError('Сведения объекта изменились после заявки. Нужна новая проверка текущего адреса.',409);
-if(body.status==='approved'&&review&&['owner','cleaner'].includes(review.role)&&!await one(service.db,'SELECT 1 x FROM identity_docs WHERE user_id=?',review.user_id))throw new DomainError('Участник ещё не приложил фото удостоверения личности. Одобрить можно после проверки удостоверения.',409);
- if(body.status==='approved'&&review?.role==='owner'&&review.property_id&&!await one(service.db,'SELECT 1 x FROM property_right_docs WHERE property_id=? AND address_revision=COALESCE((SELECT revision FROM review_property_bindings b WHERE b.property_id=property_right_docs.property_id),0)',review.property_id))throw new DomainError('Владелец ещё не приложил документ о праве собственности или нотариальное согласие на субаренду. Одобрить жильё можно после проверки документа.',409);
+ // The document of the right to let is not required (owner's decision 2026-11-22): without it the place shows as «Жильё не проверено».
  const event=uuid(),at=epoch(),result=await service.db.batch([
   q(service.db,"UPDATE participant_reviews SET status=?,method=?,reviewer_id=?,notes=?,reviewed_at=?,valid_until=?,version=version+1 WHERE id=? AND status='pending' AND version=?",body.status,method,service.userId,notes,at,validUntil,id,number(body.expectedVersion,'Версия',1,10000000)),
   q(service.db,'INSERT INTO audit_events SELECT ?,?,?,?,? WHERE changes()>0',event,service.userId,id,'participant.review_'+body.status,at)
@@ -68,14 +67,14 @@ if(body.status==='approved'&&review&&['owner','cleaner'].includes(review.role)&&
    q(service.db,'UPDATE property_details SET version=version+1 WHERE property_id=? AND changes()>0',review.property_id)]);shown=!!r[0].meta.changes;}catch(e){if(!/pilot_|property_archived/.test(String((e as Error)?.message)))throw e;}}
   // A new flat starts as «Ожидает проверки»; the platform's approval is that check, so the first guest can move in
   // without the owner hunting for a readiness form. A flat in the middle of a cleaning keeps its state.
-  if(body.status==='approved')await q(service.db,"UPDATE property_operations SET readiness='ready',version=version+1,updated_at=? WHERE property_id=? AND readiness='inspection' AND active_booking_id IS NULL AND NOT EXISTS(SELECT 1 FROM cleaning_jobs WHERE property_id=? AND status IN ('in_progress','submitted'))",at,review.property_id,review.property_id).run();
+  if(body.status==='approved'&&!String(review.reference||'').startsWith(RIGHTS_REVIEW))await q(service.db,"UPDATE property_operations SET readiness='ready',version=version+1,updated_at=? WHERE property_id=? AND readiness='inspection' AND active_booking_id IS NULL AND NOT EXISTS(SELECT 1 FROM cleaning_jobs WHERE property_id=? AND status IN ('in_progress','submitted'))",at,review.property_id,review.property_id).run();
   // Approved but not ready for the map: the owner hears exactly what is missing, and the flat shows itself once it is there.
   const published=(await one(service.db,'SELECT published FROM properties WHERE id=?',review.property_id))?.published===1;
   const missing=body.status==='approved'&&wanted&&!published?await showMissing(service.db,review.property_id):[];
   if(body.status==='approved'&&wanted&&!published)await q(service.db,'INSERT INTO show_waiting(property_id,review_id,created_at) VALUES (?,?,?) ON CONFLICT(property_id) DO UPDATE SET review_id=excluded.review_id,created_at=excluded.created_at',review.property_id,id,at).run();
-  const again=String(review.reference||'').startsWith(ADDRESS_REVIEW),text=body.status==='approved'?'Администратор проверил «'+title+'».'+(again?' Новый адрес подтверждён, гости снова видят жильё.':shown?' Жильё показано гостям на карте.':missing.length?' Чтобы жильё появилось у гостей на карте, осталось: '+missing.join('; ')+'. Как только это будет готово, жильё покажется само.':' Теперь его можно показать гостям.'):'Проверка «'+title+'» не пройдена: '+notes+' Исправьте это и нажмите «Отправить на проверку снова» в «Моё жильё».';
+  const again=String(review.reference||'').startsWith(ADDRESS_REVIEW),rightsOnly=String(review.reference||'').startsWith(RIGHTS_REVIEW),text=rightsOnly?(body.status==='approved'?'Документ о праве сдавать «'+title+'» проверен: гости видят отметку «Жильё проверено».':'Документ о праве сдавать «'+title+'» не принят: '+notes+' Жильё остаётся на карте с отметкой «Жильё не проверено»; можно приложить другой документ.'):body.status==='approved'?'Администратор проверил «'+title+'».'+(again?' Новый адрес подтверждён, гости снова видят жильё.':shown?' Жильё показано гостям на карте.':missing.length?' Чтобы жильё появилось у гостей на карте, осталось: '+missing.join('; ')+'. Как только это будет готово, жильё покажется само.':' Теперь его можно показать гостям.'):'Проверка «'+title+'» не пройдена: '+notes+' Исправьте это и нажмите «Отправить на проверку снова» в «Моё жильё».';
   await q(service.db,'INSERT OR IGNORE INTO notifications(id,user_id,body,dedupe,read,created_at) VALUES (?,?,?,?,0,?)',uuid(),review.user_id,text,'owner:review:'+id+':'+body.status,at).run();
-  await tellMovedGuests(service.db,review.property_id,body.status==='approved',id,at);
+  if(!rightsOnly)await tellMovedGuests(service.db,review.property_id,body.status==='approved',id,at);
  }
  // A cleaner hears the result, and so does every owner whose open cleaning is waiting on this cleaner's response.
  if(review?.role==='cleaner'){
@@ -106,6 +105,9 @@ async function tellMovedGuests(db:D1Database,propertyId:string,approved:boolean,
 }
 // A draft is ready for guests when it has photos and a full description: what the catalogue itself requires.
 export const ADDRESS_REVIEW='Проверка нового адреса';
+// A place already shown to guests whose owner attached the document of the right to let later: the review only checks
+// the document and gives the mark «Жильё проверено»; it neither hides nor shows the place.
+export const RIGHTS_REVIEW='Проверка документа о праве';
 const READY_SQL="length(p.description)>=80 AND COALESCE((SELECT json_array_length(d.photos) FROM property_details d WHERE d.property_id=p.id),0)>0";
 const CURRENT_REVISION='COALESCE((SELECT revision FROM review_property_bindings b WHERE b.property_id=r.property_id),0)';
 // The owner never has to ask for the check by hand: as soon as a saved draft is ready for guests and the platform

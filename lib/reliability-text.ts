@@ -1,6 +1,8 @@
 // Pure part of the reliability rating: shared by the server, the site and the app.
 export type ReliabilityLevel='new'|'excellent'|'good'|'attention';
-export type Reliability={score:number|null;level:ReliabilityLevel;label:string;facts:string[]};
+// identity: the administrator confirmed the participant's ID card (lib/identity-docs.ts); the ID is optional, so the
+// others see «Личность подтверждена» or «Личность не подтверждена» and decide themselves.
+export type Reliability={score:number|null;level:ReliabilityLevel;label:string;facts:string[];identity?:boolean};
 export const reliabilityLabels:Record<ReliabilityLevel,string>={new:'Новый участник',excellent:'Надёжность отличная',good:'Надёжность хорошая',attention:'Есть замечания'};
 export const plural=(n:number,one:string,few:string,many:string)=>{const a=n%10,b=n%100;return n+' '+(a===1&&b!==11?one:a>=2&&a<=4&&(b<12||b>14)?few:many);};
 // ok: things done as promised; bad: weighted failures. A prior of four good events keeps one

@@ -403,6 +403,11 @@ export const COMMON:Words={
   'Работать на уборках':['Тазалаумен айналысу','Work as a cleaner'],
   'Искать жильё':['Баспана іздеу','Look for a place'],
   // Photo of the identity card (mobile/src/IdentityDocs.tsx).
+  'По желанию. После проверки владельцы видят «Личность подтверждена» и охотнее принимают заявку.':['Қалауыңыз бойынша. Тексерілгеннен кейін иелер «Жеке басы расталған» белгісін көріп, өтінімді тезірек қабылдайды.','Optional. Once checked, owners see “Identity verified” and accept your request more readily.'],
+  'По желанию. После проверки гости видят «Личность подтверждена» и больше доверяют жилью.':['Қалауыңыз бойынша. Тексерілгеннен кейін қонақтар «Жеке басы расталған» белгісін көріп, баспанаға көбірек сенеді.','Optional. Once checked, guests see “Identity verified” and trust your place more.'],
+  'По желанию. После проверки владельцы видят «Личность подтверждена» и охотнее выбирают исполнителя.':['Қалауыңыз бойынша. Тексерілгеннен кейін иелер «Жеке басы расталған» белгісін көріп, орындаушыны тезірек таңдайды.','Optional. Once checked, owners see “Identity verified” and choose you more readily.'],
+  '✓ Личность подтверждена':['✓ Жеке басы расталған','✓ Identity verified'],
+  'Личность не подтверждена':['Жеке басы расталмаған','Identity not verified'],
   'Нужно один раз перед первой заявкой на бронь: так владелец знает, что гость настоящий.':['Броньға алғашқы өтінім алдында бір рет керек: иесі қонақтың шынайы екенін осылай біледі.','Needed once before your first booking request: this way the owner knows the guest is real.'],
   'Нужно для проверки жилья: администратор сверит ФИО с документом о праве и получателем Kaspi.':['Баспананы тексеру үшін керек: әкімші аты-жөнді құқық құжатымен және Kaspi алушысымен салыстырады.','Needed to check the place: the administrator compares the full name with the ownership document and the Kaspi recipient.'],
   'Нужно для допуска к уборкам: владелец знает, кого впускает.':['Тазалауға рұқсат алу үшін керек: иесі кімді кіргізетінін біледі.','Needed to be allowed to clean: the owner knows who they let in.'],

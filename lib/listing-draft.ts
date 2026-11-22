@@ -4,7 +4,7 @@
 // can ask the owner to look at it. Only the address, the district and the price are asked for: the day for
 // housing, the hour for a bath, the guest for a banquet hall.
 import {t as tr} from './i18n';
-import {isBanquet,isBath,propertyTypes,amenities,categoryAmenities,kindCategory,checkinMethods,defaultOwnStaff} from './listings';
+import {isBanquet,isBath,propertyTypes,amenities,categoryAmenities,kindCategory,checkinMethods,defaultOwnStaff,maxGuests} from './listings';
 type Row=Record<string,any>;
 
 export type ListingDraft={
@@ -259,3 +259,41 @@ export function draftListingBody(d:ListingDraft,photos:string[],published:boolea
 // A ready-made description the "Пример" chip puts into the line.
 export const DRAFT_EXAMPLE='Однушка на Торайгырова 64, кв 12, район Центр. 4 этаж из 9, 42 м², до 3 гостей. Есть Wi-Fi, кухня, стиралка и кондиционер. 15 000 в сутки, 2 500 в час от 2 часов. Без курения, ключи в сейфе.';
 export const DRAFT_EXAMPLE_BATH='Баня «Берёзка» на Лесной 5, район Дачный. До 10 гостей, в цену входит 6, доплата 1 000 за гостя в час. 5 000 в час от 2 часов. Парилка, бассейн, веники, мангал. Топить за 1,5 часа.';
+
+// «ИИ заполняет поля»: what the model read from the owner's message (lib/listing-understand.ts). The model only fills
+// the gaps the rules left: what the rules read from the text stays, and every value the model gives is checked here,
+// so a wrong type, an amenity we do not have or an absurd number is simply dropped.
+export const MODEL_LISTING_KEYS=['type','rooms','capacity','beds','bathrooms','area','floor','floors','city','district','address','price','hourlyPrice','minHours','nightlyPrice','deposit','cleaningFee','leastGuests','includedGuests','extraGuestPrice','prepMinutes','amenities','pets','smoking','parties','checkinMethod','checkinTime','checkoutTime','ownStaff','name'] as const;
+const LIMITS:Record<string,[number,number]>={rooms:[1,20],capacity:[1,1000],beds:[1,200],bathrooms:[1,20],area:[5,2000],floor:[0,100],floors:[1,100],price:[100,10000000],hourlyPrice:[100,10000000],minHours:[1,24],nightlyPrice:[100,10000000],deposit:[0,10000000],cleaningFee:[100,1000000],leastGuests:[1,1000],includedGuests:[1,50],extraGuestPrice:[100,1000000],prepMinutes:[30,720]};
+export function cleanModelListing(raw:unknown):Partial<ListingDraft>&{name?:string}{
+ const out:Row={};if(!raw||typeof raw!=='object')return out;const r=raw as Row;
+ if(typeof r.type==='string'&&propertyTypes[r.type])out.type=r.type;
+ for(const [key,[lo,hi]] of Object.entries(LIMITS)){const v=r[key];if(typeof v==='number'&&Number.isFinite(v)&&v>=lo&&v<=hi)out[key]=Math.round(v);}
+ if(out.prepMinutes)out.prepMinutes=Math.max(30,Math.round(out.prepMinutes/30)*30);
+ const text=(v:unknown,max:number)=>typeof v==='string'?v.replace(/\s+/g,' ').trim().slice(0,max):'';
+ for(const [key,max] of [['city',80],['district',120],['address',300],['name',40]] as const){const v=text(r[key],max);if(v)out[key]=v;}
+ if(out.district)out.district=out.district.replace(/^(?:район|р-н)\s+|\s+(?:район|р-н)$/i,'').replace(/^./,(c:string)=>c.toLocaleUpperCase('ru'));
+ if(Array.isArray(r.amenities)){const ids=[...new Set(r.amenities.filter((a:unknown)=>typeof a==='string'&&amenities[a as string]))];if(ids.length)out.amenities=ids;}
+ for(const key of ['pets','smoking','parties','ownStaff'])if(typeof r[key]==='boolean')out[key]=r[key];
+ if(typeof r.checkinMethod==='string'&&checkinMethods[r.checkinMethod])out.checkinMethod=r.checkinMethod;
+ for(const key of ['checkinTime','checkoutTime']){const m=typeof r[key]==='string'?/^(\d{1,2})[:.](\d{2})$/.exec(r[key].trim()):null;if(m&&+m[1]<=23&&+m[2]<=59)out[key]=m[1].padStart(2,'0')+':'+m[2];}
+ return out;
+}
+// The rules' draft plus what the model read: a field the rules found stays theirs; the rest comes from the model and is
+// marked as said (not guessed), since the owner did say it. The type decides the defaults, so it goes first.
+export function mergeModelDraft(draft:ListingDraft,found:string[],raw:unknown):{draft:ListingDraft;found:string[]}{
+ const m=cleanModelListing(raw),d:ListingDraft={...draft,amenities:[...draft.amenities],known:[...draft.known]},took=[...found];
+ const free=(key:string)=>!found.includes(key)&&!draft.known.includes(key)||(key==='city'&&!found.includes('city'));
+ const take=(key:string,value:unknown)=>{(d as Row)[key]=value;if(!took.includes(key))took.push(key);};
+ if(m.type&&free('type')){take('type',m.type);if(m.ownStaff===undefined&&free('ownStaff'))d.ownStaff=defaultOwnStaff(m.type);}
+ for(const key of MODEL_LISTING_KEYS){if(key==='type'||key==='name'||key==='amenities')continue;const v=(m as Row)[key];if(v!==undefined&&free(key))take(key,v);}
+ if(m.amenities){const fits=categoryAmenities[kindCategory(d.type)];const all=[...new Set([...d.amenities,...m.amenities])].filter(a=>fits.includes(a));if(all.length!==d.amenities.length)take('amenities',all);}
+ if(m.name&&free('title')&&(isBath(d.type)||isBanquet(d.type)))take('title',(draftKind(d)+' «'+m.name.replace(/[«»"„“”]/g,'')+'»').slice(0,120));
+ // What the counts say together: guests from the rooms when no one said how many, no more guests than the kind takes
+ // (the same limit the save checks, lib/listings.ts), a bed for every guest, a floor not above the last one.
+ if(!took.includes('capacity')&&took.includes('rooms')&&!draft.known.includes('capacity')&&!isBanquet(d.type)&&!isBath(d.type))d.capacity=d.type==='studio'?2:Math.min(50,d.rooms*2);
+ d.capacity=Math.min(d.capacity,maxGuests(d.type));d.beds=Math.min(Math.max(d.beds,d.capacity),maxGuests(d.type));
+ if(d.floor>d.floors)d.floors=d.floor;
+ d.known=[...new Set([...d.known,...took])];
+ return {draft:d,found:took};
+}

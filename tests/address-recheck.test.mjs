@@ -1,5 +1,5 @@
 import {test} from 'node:test';import assert from 'node:assert/strict';
-import {fixture,now,iso,load,rightDoc} from './helpers/platform.mjs';
+import {fixture,now,iso,load} from './helpers/platform.mjs';
 const {readPilotPolicy,savePilotPolicy,pilotPropertyVisibleSql}=await load('pilot-governance');
 const {ensurePublishReview,decideParticipantReview}=await load('participant-security');
 
@@ -36,9 +36,7 @@ test('a new address keeps the flat shown, hides it from new guests and asks for 
   // Further edits while the check is pending save normally and do not pile up requests.
   await f.owner.saveListing(f.property,body(f,{photos:ids,address:'Новая улица, 5',title:'Жильё у парка'}));await ensurePublishReview(f.owner,f.property);
   assert.equal(f.db.raw.prepare("SELECT COUNT(*) n FROM participant_reviews WHERE status='pending'").get().n,1);
-  // Approval brings it back to guests once the owner proved the right to the new address (publication audit 2026-11-22).
-  await assert.rejects(decideParticipantReview(f.owner,{id:pending[0].id,expectedVersion:pending[0].version,status:'approved',method:'fixture',notes:'ok'},true),/документ о праве/);
-  rightDoc(f.db,f.property,'owner');
+  // Approval brings it back to guests; the document of the right is optional (owner's decision 2026-11-22).
   await decideParticipantReview(f.owner,{id:pending[0].id,expectedVersion:pending[0].version,status:'approved',method:'fixture',notes:'ok'},true);
   assert.equal(visible(f),1);
   assert.match(f.db.raw.prepare("SELECT body FROM notifications WHERE user_id='owner' AND dedupe LIKE 'owner:review:%'").get().body,/Новый адрес подтверждён/);

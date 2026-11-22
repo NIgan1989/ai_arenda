@@ -4,6 +4,7 @@ import {jpegInput} from './listings';
 import {CURRENT_PROOF} from './listing-rules';
 import {epoch,uuid,q,one,rows,type Row,type OperationConfig} from './operation-core';
 import {autoReview} from './admin-autocheck';
+import {RIGHTS_REVIEW} from './participant-security';
 import {dropPrivatePhotos,sweepPrivatePhotos} from './private-photos';
 const drop=(db:D1Database,bucket:R2Bucket|undefined,keys:string[])=>dropPrivatePhotos(db,bucket,'property_right_docs',keys);
 export const RIGHTS_PREFIX='property-rights/';
@@ -43,8 +44,10 @@ export async function rightsOf(db:D1Database,propertyId:string){
  const r=await one(db,'SELECT kind,COUNT(*) n FROM property_right_docs WHERE property_id=? AND '+CURRENT_PROOF+' GROUP BY kind ORDER BY MAX(created_at) DESC LIMIT 1',propertyId);
  return r?{kind:r.kind as RightKind,count:Number(r.n)}:null;
 }
-// Settled once a person at the platform approved the place: the proof then stays as it was checked.
-const approved=(db:D1Database,propertyId:string)=>one(db,"SELECT 1 x FROM pilot_property_admissions WHERE id=? AND owner_reviewed=1",propertyId);
+// Settled once a person at the platform checked the document: the proof then stays as it was checked. The document is
+// not required (owner's decision 2026-11-22): a place approved without it can get it later and is then checked again.
+const approved=(db:D1Database,propertyId:string)=>one(db,'SELECT 1 x FROM property_right_docs WHERE property_id=? AND checked_at IS NOT NULL AND '+CURRENT_PROOF,propertyId);
+const placeApproved=(db:D1Database,propertyId:string)=>one(db,"SELECT 1 x FROM pilot_property_admissions WHERE id=? AND owner_reviewed=1",propertyId);
 
 export async function saveRightDoc(s:RentalService,role:Role,body:Row,config:OperationConfig&{PLATFORM_ADMIN_IDS?:string}={}){
  if(role!=='owner')throw new DomainError('Документ прикладывает владелец жилья.',403);
@@ -65,6 +68,8 @@ export async function saveRightDoc(s:RentalService,role:Role,body:Row,config:Ope
  // A waiting review is checked again at once, so the platform administrators hear the place is ready for their look.
  const waiting=await one(s.db,"SELECT id FROM participant_reviews WHERE property_id=? AND user_id=? AND role='owner' AND status='pending' ORDER BY created_at DESC LIMIT 1",p.id,s.userId);
  if(waiting)await autoReview(s.db,waiting.id,config);
+ // Already approved and shown without the document: a review of the document alone, for the mark «Жильё проверено».
+ else if(await placeApproved(s.db,p.id)){const id=uuid();await q(s.db,'INSERT INTO participant_reviews(id,user_id,role,property_id,reference,created_at) VALUES (?,?,?,?,?,?)',id,s.userId,'owner',p.id,RIGHTS_REVIEW+': «'+(p.title||'жильё')+'»',epoch()).run();await autoReview(s.db,id,config);}
  return {id:docId,message:'Фото документа приложено. Его увидит только администратор сервиса.'};
 }
 export async function removeRightDoc(s:RentalService,role:Role,body:Row,config:OperationConfig={}){

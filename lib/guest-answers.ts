@@ -1,4 +1,5 @@
 import {q,one,uuid,epoch,type Row} from './operation-core';
+import {verifiedPlaceSql} from './property-rights';
 import {guestModeSql,guestModeJoins,underAutopilot} from './autopilot';
 import {wantsEarly,wantedHours,stayOfferAnswer} from './stay-offers';
 import {guestFacts,type GuestModel} from './guest-answers-ai';
@@ -75,7 +76,7 @@ export async function answerGuest(db:D1Database,roomId:string,seq:number,offer?:
  if(!message||message.entity_kind!=='booking'||message.channel!=='stay')return false;
  const t=epoch();
  // The AI says the address the guest agreed to while a new one is checked or offered (lib/service.ts).
- const b=await one(db,`SELECT b.*,p.owner_id,COALESCE((SELECT a.city||', '||a.address FROM booking_addresses a WHERE a.booking_id=b.id),p.address) address,p.capacity,p.title,p.description,(SELECT details FROM property_details WHERE property_id=p.id) details,COALESCE(bt.deposit,0) deposit,bt.deposit_status,COALESCE(NULLIF(bt.house_rules,''),pp.house_rules,'') house_rules,${guestModeSql} mode
+ const b=await one(db,`SELECT b.*,p.owner_id,COALESCE((SELECT a.city||', '||a.address FROM booking_addresses a WHERE a.booking_id=b.id),p.address) address,p.capacity,p.title,p.description,(SELECT details FROM property_details WHERE property_id=p.id) details,${verifiedPlaceSql('p.id')} verified,COALESCE(bt.deposit,0) deposit,bt.deposit_status,COALESCE(NULLIF(bt.house_rules,''),pp.house_rules,'') house_rules,${guestModeSql} mode
   FROM bookings b JOIN properties p ON p.id=b.property_id LEFT JOIN booking_terms bt ON bt.booking_id=b.id ${guestModeJoins} WHERE b.id=? AND b.guest_id=?`,t,message.entity_id,message.sender_id);
  if(!b||b.mode!=='auto'||!['requested','confirmed','completed'].includes(b.status))return false;
  // The owner is writing in this chat right now: the AI stays quiet.

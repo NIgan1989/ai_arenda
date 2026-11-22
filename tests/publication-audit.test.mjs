@@ -72,10 +72,10 @@ test('a moved flat: the guest keeps the agreed address until the new one is chec
   let b=await card();
   assert.equal(b.address,'PRIVATE ADDRESS');assert.deepEqual(b.address_change,{state:'review',next:null});
   await assert.rejects(f.guest.bookingAction(f.booking,{action:'address_accept'}),/ещё проверяется/);
-  // The right document proves one address: the new one needs it again before a person approves it.
+  // The right document proves one address; it is optional (owner's decision 2026-11-22), so a person approves the new one
+  // without it, and the place shows as «Жильё не проверено» until the document for the new address is checked.
   await ensurePublishReview(f.owner,f.property);
-  await assert.rejects(decide(f,'approved'),/документ о праве/);
-  rightDoc(f.db,f.property,'owner');await decide(f,'approved');
+  await decide(f,'approved');
   assert.match(notice(f,'guest','guest:address-offered:%'),/проверен: Павлодар, Новая улица, 5\. Откройте бронь/);
   b=await card();
   assert.equal(b.address,'PRIVATE ADDRESS');assert.deepEqual(b.address_change,{state:'offered',next:'Павлодар, Новая улица, 5'});

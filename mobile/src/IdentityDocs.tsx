@@ -8,8 +8,8 @@ import {C,type} from './styles';
 import {T} from './tokens';
 
 // «Удостоверение личности» (lib/identity-docs.ts): every participant attaches a photo of the ID card once.
-// A person at the platform compares it with the profile, then the photo is deleted. Guests need it before the first
-// booking request; owners and performers before their check.
+// Optional for every role: a person at the platform compares it with the profile, then the photo is deleted, and the
+// others see «Личность подтверждена» instead of «Личность не подтверждена».
 type Doc={id:string;uri:string;checked_at:number|null};
 
 export function IdentityDocs({role}:{role:'guest'|'owner'|'cleaner'}){
@@ -28,9 +28,10 @@ export function IdentityDocs({role}:{role:'guest'|'owner'|'cleaner'}){
  async function remove(id:string){setBusy(true);setSaid(null);try{
   const v=await request('/api/operations/identity/remove',{id},undefined,undefined,role);setSaid({text:v.message,error:false});await load();
  }catch(e){setSaid({text:e instanceof Error&&e.message?e.message:t('Не удалось убрать фото.'),error:true});}finally{setBusy(false);}}
- const why=role==='guest'?t('Нужно один раз перед первой заявкой на бронь: так владелец знает, что гость настоящий.'):role==='owner'?t('Нужно для проверки жилья: администратор сверит ФИО с документом о праве и получателем Kaspi.'):t('Нужно для допуска к уборкам: владелец знает, кого впускает.');
+ const why=role==='guest'?t('По желанию. После проверки владельцы видят «Личность подтверждена» и охотнее принимают заявку.'):role==='owner'?t('По желанию. После проверки гости видят «Личность подтверждена» и больше доверяют жилью.'):t('По желанию. После проверки владельцы видят «Личность подтверждена» и охотнее выбирают исполнителя.');
  return <View style={u.card}>
   <Text accessibilityRole="header" style={u.title}>{t('Удостоверение личности')}</Text>
+  <Text style={[u.status,checked?u.ok:u.no]}>{checked?t('✓ Личность подтверждена'):t('Личность не подтверждена')}</Text>
   <Text style={h.note}>{checked?t('Личность подтверждена администратором. Фото удалено после проверки.'):docs.length?t('Фото приложено. Администратор сверит его с профилем, затем фото удалится.'):why}</Text>
   {!checked&&!!docs.length&&<View style={u.row}>{docs.map(d=><View key={d.id} style={{gap:4}}>
    {d.uri?<Image source={{uri:d.uri}} style={u.thumb} alt={t('Удостоверение личности')}/>:<View style={[u.thumb,{backgroundColor:C.surfaceAlt}]}/>}
@@ -46,6 +47,7 @@ const R=T.radius;
 const u=StyleSheet.create({
  card:{gap:8,padding:16,marginTop:16,borderRadius:R.lg,borderWidth:1,borderColor:C.line,backgroundColor:C.surface},
  title:{...type.label,color:C.ink,fontWeight:'600'},
+ status:{...type.caption,fontWeight:'600'},ok:{color:C.success},no:{color:C.warning},
  row:{flexDirection:'row',flexWrap:'wrap',gap:8},
  thumb:{width:96,height:64,borderRadius:R.md},
  remove:{...type.caption,color:C.danger,textAlign:'center'},

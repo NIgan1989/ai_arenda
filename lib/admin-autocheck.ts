@@ -42,13 +42,14 @@ export function flatChecks(f:FlatFacts):ReviewCheck[]{
  checks.push({key:'contacts',label:'Текст',state:contacts?'risk':'ok',note:contacts?'В тексте телефон, ссылка или просьба оплатить напрямую':'Нет контактов и оплаты мимо сервиса'});
  // The right to let the place (lib/property-rights.ts): a photo of the title, or of the notarised consent to sublet.
  // Older callers that do not know the rights pass nothing and are not asked for them.
- if(f.rights!==undefined)checks.push({key:'rights',label:'Право сдавать',state:f.rights>0?'ok':'fix',note:f.rights>0?(f.rightsKind==='sublease'?'Приложены договор аренды и согласие собственника на субаренду: сверит администратор':'Приложен документ о праве собственности: сверит администратор'):'Приложите фото документа о праве собственности или нотариально заверенного согласия собственника на субаренду: «Моё жильё» → «Документы»'});
+ // Not required (owner's decision 2026-11-22): without it the place is shown as «Жильё не проверено», so it is never «fix».
+ if(f.rights!==undefined)checks.push({key:'rights',label:'Право сдавать',state:'ok',note:f.rights>0?(f.rightsKind==='sublease'?'Приложены договор аренды и согласие собственника на субаренду: сверит администратор, после этого у жилья будет «Жильё проверено»':'Приложен документ о праве собственности: сверит администратор, после этого у жилья будет «Жильё проверено»'):'Документа о праве нет: гости увидят «Жильё не проверено». Приложить его можно в любой момент'});
  if(f.identity!==undefined)checks.push(identityCheck(f.identity));
  checks.push({key:'history',label:'История владельца',state:f.rejectedBefore||f.openComplaints?'risk':'ok',note:f.rejectedBefore?'Раньше проверка уже не проходила':f.openComplaints?'Открытые жалобы гостей: '+f.openComplaints:'Отказов и жалоб нет'});
  return checks;
 }
 // The photo of the ID card (lib/identity-docs.ts): a person compares it with the profile.
-const identityCheck=(n:number):ReviewCheck=>({key:'identity',label:'Удостоверение',state:n>0?'ok':'fix',note:n>0?'Приложено фото удостоверения личности: сверит администратор':'Приложите фото удостоверения личности: «Профиль» → «Удостоверение личности»'});
+const identityCheck=(n:number):ReviewCheck=>({key:'identity',label:'Удостоверение',state:'ok',note:n>0?'Приложено фото удостоверения личности: сверит администратор':'Удостоверения нет: другие участники увидят «Личность не подтверждена». Одобрить можно.'});
 export type CleanerFacts={name:string;avatar:boolean;rejectedBefore:number;openComplaints:number;identity?:number};
 // Pure: the rules for a cleaner. Every assignment is still agreed by the flat's owner.
 export function cleanerChecks(f:CleanerFacts):ReviewCheck[]{
@@ -113,7 +114,9 @@ export async function autoReview(db:D1Database,reviewId:string,config:OperationC
   if(auto)return verdict;
  }
  const list=admins(config);if(list.length){
-  const reason=verdict==='escalate'?'ИИ просит вашего решения: '+checksSummary(checks,['risk']):verdict==='fix'?'Не хватает: '+checksSummary(checks,['fix']):review.role==='owner'?'Правила пройдены, документ о праве и удостоверение приложены. Сверьте ФИО с владельцем, получателем Kaspi и адресом и решите':'Правила пройдены, удостоверение приложено. Сверьте его с профилем и решите';
+  const noRights=!!checks.find(c=>c.key==='rights')?.note.startsWith('Документа о праве нет'),noId=!!checks.find(c=>c.key==='identity')?.note.startsWith('Удостоверения нет');
+  const papers=[noRights?'документа о праве нет (жильё будет «не проверено»)':'документ о праве приложен',noId?'удостоверения нет (личность будет «не подтверждена»)':'удостоверение приложено'];
+  const reason=verdict==='escalate'?'ИИ просит вашего решения: '+checksSummary(checks,['risk']):verdict==='fix'?'Не хватает: '+checksSummary(checks,['fix']):review.role==='owner'?'Правила пройдены, '+papers.join(', ')+'. Проверьте поля, фото и описание'+(noRights&&noId?'':', сверьте ФИО с владельцем и получателем Kaspi')+' и решите':'Правила пройдены, '+papers[1]+'. '+(noId?'Проверьте анкету и решите':'Сверьте его с профилем и решите');
   await db.batch(list.map(admin=>note(db,admin,what+' ждёт проверки. '+reason+'. Админка → Проверки.','admin:review:'+reviewId+':'+admin,at)));
  }
  return verdict;

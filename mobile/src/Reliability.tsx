@@ -18,7 +18,7 @@ export function ReliabilityBadge({value,title,compact=false,subtleAttention=fals
  if(compact)return <Text style={[r.chip,value.level==='new'&&r.chipNew]}>{value.score===null?t('✦ новый'):score}</Text>;
  return <View accessibilityLabel={(title||t('Надёжность'))+': '+label} style={[r.box,value.level==='excellent'&&r.excellent,value.level==='attention'&&!subtleAttention&&r.attention]}>
   <View style={r.score}><Text style={[r.scoreText,value.level==='new'&&{color:C.accent}]}>{score}</Text></View>
-  <View style={r.text}>{!!title&&<Text style={r.title}>{title}</Text>}<Text style={[r.label,subtleAttention&&value.level==='attention'&&r.attentionLabel]}>{label}</Text>{value.facts.length>0&&<Text style={r.facts}>{value.facts.map(tLine).join(' · ')}</Text>}</View>
+  <View style={r.text}>{!!title&&<Text style={r.title}>{title}</Text>}<Text style={[r.label,subtleAttention&&value.level==='attention'&&r.attentionLabel]}>{label}</Text>{value.facts.length>0&&<Text style={r.facts}>{value.facts.map(tLine).join(' · ')}</Text>}{value.identity!==undefined&&<Text style={[r.facts,value.identity?r.idOk:r.idNo]}>{value.identity?t('✓ Личность подтверждена'):t('Личность не подтверждена')}</Text>}</View>
  </View>;
 }
 export const reliabilityHints:Record<string,string[]>=L({
@@ -37,6 +37,8 @@ const r=StyleSheet.create({
  title:{fontSize:F.caption[0],lineHeight:F.caption[1],color:C.muted},
  label:{fontSize:F.body[0],lineHeight:F.body[1],fontWeight:'600',color:C.ink},
  facts:{fontSize:F.label[0],lineHeight:F.label[1],color:C.inkSoft},
+ idOk:{color:C.success,fontWeight:'600'},
+ idNo:{color:C.warning},
  chip:{paddingHorizontal:8,borderRadius:R.full,overflow:'hidden',backgroundColor:C.warningSoft,fontSize:F.caption[0],lineHeight:F.caption[1],fontWeight:'600',color:C.ink},
  chipNew:{backgroundColor:C.accentSoft}
 });
