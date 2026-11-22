@@ -91,3 +91,15 @@ test('a change agrees a new number of guests and its price; above the capacity i
   assert.equal(after.guests,4);assert.equal(after.amount,q.amount);
  }finally{f.db.close();}
 });
+// Audit «Запуск» 2026-11-22, point 8: a discount agreed after «Я оплатил» would make the owner confirm less than was sent.
+test('a lower price is not agreed while the guest\'s transfer waits for the owner\'s check',async()=>{
+ const f=await fixture();try{
+  f.db.raw.prepare('UPDATE property_policies SET max_discount_percent=20 WHERE property_id=?').run(f.property);
+  const b=f.db.raw.prepare('SELECT * FROM bookings WHERE id=?').get(f.booking),iso=v=>new Date(v*1000).toISOString();
+  await f.guest.bookingAction(f.booking,{action:'report_paid'});
+  await assert.rejects(f.owner.bookingChangeQuote(f.booking,'owner',{start:iso(b.start),end:iso(b.end),discountPercent:10}),/Сначала владелец проверяет перевод/);
+  // The owner finds the money: the full sum the guest sent is recorded.
+  await f.owner.bookingAction(f.booking,{action:'received'});
+  assert.equal(entries(f,'payment'),b.amount);
+ }finally{f.db.close();}
+});

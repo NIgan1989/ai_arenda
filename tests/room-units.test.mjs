@@ -99,3 +99,27 @@ test('a guest in a room of the card gets the card’s check-in instructions',asy
   assert.match((await revealPropertyAccess(f.guest,'guest',{entityId:f.booking},config)).instructions,/код 1234/);
  }finally{f.db.close();}
 });
+
+// Audit «Запуск» 2026-11-22, points 2 and 3.
+test('two guests booking the same type of room at once both get a room of their own',async()=>{
+ const f=await fixture();try{
+  asHotel(f);await setRoomCount(f.owner,{propertyId:f.property,count:3});
+  const start=dayAt(5,14),end=dayAt(6,12),[a,b]=[await guestNamed(f,'g-a'),await guestNamed(f,'g-b')];
+  const sent=await Promise.all([a,b].map((g,i)=>g.createBooking({propertyId:f.property,start:iso(start),end:iso(end),guests:1,billingMode:'daily',requestKey:'p'+i,acceptTerms:true})));
+  const rooms=new Set(sent.map(r=>f.db.raw.prepare('SELECT property_id FROM bookings WHERE id=?').get(r.id).property_id));
+  assert.equal(rooms.size,2,'no conflict while a room of the type is free');
+  assert.deepEqual((await search(f,start,end)).properties.find(p=>p.title==='Test apartment').units,{total:3,free:1});
+ }finally{f.db.close();}
+});
+test('a room under repair is counted apart, and «Свободно сегодня» closes only rooms that work',async()=>{
+ const f=await fixture();try{
+  asHotel(f);await setRoomCount(f.owner,{propertyId:f.property,count:3});
+  const copy=f.db.raw.prepare('SELECT property_id FROM room_units WHERE lead_id=? ORDER BY created_at LIMIT 1').get(f.property).property_id;
+  f.db.raw.prepare("UPDATE property_operations SET readiness='maintenance' WHERE property_id=?").run(copy);
+  const s=await roomState(f.db,f.property);
+  // The fixture's booking today takes the card itself: one taken, one under repair, one free.
+  assert.deepEqual(s,{total:3,taken:1,closed:0,repair:1,free:1});
+  const r=await setFreeToday(f.owner,{propertyId:f.property,free:0});
+  assert.deepEqual(r.rooms,{total:3,taken:1,closed:1,repair:1,free:0},'the working room is closed, not the one under repair');
+ }finally{f.db.close();}
+});

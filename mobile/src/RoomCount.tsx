@@ -22,7 +22,7 @@ export function RoomCount({property,call,onChanged}:{property:Row;call:(path:str
   {count!==Number(rooms.total)&&<Pressable accessibilityRole="button" disabled={busy} onPress={()=>save('rooms/count',{count})} style={({pressed})=>[s.button,(pressed||busy)&&s.dim]}><Text style={s.buttonText}>{t('Сохранить: {n} номеров',{n:count})}</Text></Pressable>}
   {Number(rooms.total)>1&&<>
    <Stepper label={t('Свободно сегодня')} value={free} text={t('{free} из {total}',{free,total:rooms.total})} min={0} max={open} disabled={busy} onChange={setFree}/>
-   <Text style={s.hint}>{t('Через нас занято: {taken}. Закрыто вами: {closed}.',{taken:rooms.taken||0,closed:rooms.closed||0})}</Text>
+   <Text style={s.hint}>{t('Через нас занято: {taken}. Закрыто вами: {closed}.',{taken:rooms.taken||0,closed:rooms.closed||0})}{rooms.repair?' '+t('На ремонте: {n}.',{n:rooms.repair}):''}</Text>
    {free!==Number(rooms.free)&&<Pressable accessibilityRole="button" disabled={busy} onPress={()=>save('rooms/free',{free})} style={({pressed})=>[s.button,(pressed||busy)&&s.dim]}><Text style={s.buttonText}>{t('Сохранить: свободно {n}',{n:free})}</Text></Pressable>}
   </>}
   {!!note&&<Text accessibilityLiveRegion="polite" style={s.note}>{note}</Text>}

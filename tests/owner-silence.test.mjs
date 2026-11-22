@@ -188,3 +188,45 @@ test('with no service administrator the cleaner is not told the report was hande
   assert.equal((await sweepSilence(f.db,config)).escalated,1);assert.equal(notes(f,'cleaner','cleaner:silence-report:%').length,1);
  }finally{f.db.close();}
 });
+
+// Audit «Запуск» 2026-11-22, point 1: the guest at the door already said «Я оплатил» and the owner is silent.
+test('a guest at the door with a transfer on review is not asked to pay again, can call for help and reaches the administrator',async()=>{
+ const f=await fixture();try{
+  f.db.raw.prepare('UPDATE bookings SET start=?,created_at=? WHERE id=?').run(now()+300,now()-7200,f.booking);
+  await f.guest.bookingAction(f.booking,{action:'report_paid'});
+  const said=await f.guest.bookingAction(f.booking,{action:'report_checkin'});
+  assert.match(said.message,/перевод на проверке/);assert.doesNotMatch(said.message,/перевести владельцу/);
+  const help=await f.guest.bookingAction(f.booking,{action:'door_help'});
+  assert.match(help.message,/Платить заново не нужно/);
+  assert.match(notes(f,'owner','owner:door-help:%')[0],/Срочно: гость ждёт/);
+  assert.match((await f.guest.bookingAction(f.booking,{action:'door_help'})).message,/уже знают/,'said once');
+  assert.ok(f.db.raw.prepare("SELECT 1 FROM administrator_issues WHERE entity_id=? AND description LIKE 'Гость у двери%'").get(f.booking),'the service administrator sees the appeal');
+  // The owner stays silent: asked after ten minutes, the administrator called after half an hour. The access stays closed.
+  f.db.raw.prepare('UPDATE booking_terms SET checkin_reported_at=? WHERE booking_id=?').run(now()-CHECKIN_WAIT-5,f.booking);
+  assert.equal((await sweepSilence(f.db,config)).escalated,0);
+  assert.equal(notes(f,'owner','owner:silence-transfer-ask:%').length,1);assert.match(notes(f,'guest','guest:silence-transfer-ask:%')[0],/платить заново не нужно/);
+  f.db.raw.prepare('UPDATE booking_terms SET checkin_reported_at=? WHERE booking_id=?').run(now()-CHECKIN_HANDOVER-5,f.booking);
+  assert.equal((await sweepSilence(f.db,config)).escalated,1);
+  assert.equal(notes(f,'admin','admin:silence-transfer:%').length,1);assert.equal(checkin(f),null);
+  assert.equal((await sweepSilence(f.db,config)).escalated,0,'once');
+ }finally{f.db.close();}
+});
+test('«Не могу попасть» is only for a transfer on review',async()=>{
+ const f=await fixture();try{
+  f.db.raw.prepare('UPDATE bookings SET start=? WHERE id=?').run(now()+300,f.booking);
+  await assert.rejects(f.guest.bookingAction(f.booking,{action:'door_help'}),/нажмите «Я оплатил»/);
+  await assert.rejects(f.owner.bookingAction(f.booking,{action:'door_help'}),e=>e.status===403);
+ }finally{f.db.close();}
+});
+test('a prepayment reported while the deposit is still unpaid: the guest is asked for the rest, not told to wait',async()=>{
+ const f=await fixture();try{
+  f.db.raw.prepare('UPDATE booking_terms SET prepay_percent=30 WHERE booking_id=?').run(f.booking);
+  f.db.raw.prepare('UPDATE bookings SET start=? WHERE id=?').run(now()+3600,f.booking);
+  await f.guest.bookingAction(f.booking,{action:'report_paid'});
+  f.db.raw.prepare('UPDATE bookings SET start=?,created_at=? WHERE id=?').run(now()+300,now()-7200,f.booking);
+  assert.doesNotMatch((await f.guest.bookingAction(f.booking,{action:'report_checkin'})).message,/перевод на проверке/);
+  await assert.rejects(f.guest.bookingAction(f.booking,{action:'door_help'}),/всё, что осталось/);
+  f.db.raw.prepare('UPDATE booking_terms SET checkin_reported_at=? WHERE booking_id=?').run(now()-CHECKIN_WAIT-5,f.booking);
+  await sweepSilence(f.db,config);assert.equal(notes(f,'owner','owner:silence-transfer-ask:%').length,0);
+ }finally{f.db.close();}
+});

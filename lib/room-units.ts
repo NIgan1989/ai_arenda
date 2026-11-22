@@ -116,12 +116,15 @@ export async function setRoomCount(s:RentalService,body:Row){
  return {rooms:await roomState(s.db,p.id),message:count===1?'Теперь это один номер.':'Таких номеров: '+count+'. Гости видят одну карточку и сколько из них свободно.'};
 }
 
-/** The rooms of a card today: how many there are, taken through the service, closed by hand and free. */
+/** The rooms of a card today: how many there are, taken through the service, closed by hand, under repair and free.
+ *  Each room is counted once, in the first of these that applies (audit «Запуск», point 3). */
 export async function roomState(db:D1Database,leadId:string,at=epoch()){
- const ids=await roomsOf(db,leadId),day=Math.floor((at+18000)/86400)*86400-18000,end=day+86400;
- const taken=(await rows(db,"SELECT DISTINCT property_id FROM bookings WHERE property_id IN (SELECT value FROM json_each(?)) AND (status='confirmed' OR (status='requested' AND expires_at>?)) AND start<? AND occupied_until>?",JSON.stringify(ids),at,end,Math.max(at,day))).length;
- const closed=(await rows(db,"SELECT DISTINCT x.property_id FROM external_blocks x JOIN calendar_sources c ON c.id=x.source_id WHERE c.external_property_id=?||':'||x.property_id AND x.property_id IN (SELECT value FROM json_each(?)) AND x.start<? AND x.end>?",ROOMS_CLOSED,JSON.stringify(ids),end,Math.max(at,day))).length;
- return {total:ids.length,taken,closed,free:Math.max(0,ids.length-taken-closed)};
+ const ids=await roomsOf(db,leadId),day=Math.floor((at+18000)/86400)*86400-18000,end=day+86400,list=JSON.stringify(ids);
+ const takenIds=new Set((await rows(db,"SELECT DISTINCT property_id FROM bookings WHERE property_id IN (SELECT value FROM json_each(?)) AND (status='confirmed' OR (status='requested' AND expires_at>?)) AND start<? AND occupied_until>?",list,at,end,Math.max(at,day))).map(r=>String(r.property_id)));
+ const closedIds=new Set((await rows(db,"SELECT DISTINCT x.property_id FROM external_blocks x JOIN calendar_sources c ON c.id=x.source_id WHERE c.external_property_id=?||':'||x.property_id AND x.property_id IN (SELECT value FROM json_each(?)) AND x.start<? AND x.end>?",ROOMS_CLOSED,list,end,Math.max(at,day))).map(r=>String(r.property_id)).filter(id=>!takenIds.has(id)));
+ const repairIds=(await rows(db,"SELECT property_id FROM property_operations WHERE property_id IN (SELECT value FROM json_each(?)) AND readiness IN ('maintenance','blocked')",list)).map(r=>String(r.property_id)).filter(id=>!takenIds.has(id)&&!closedIds.has(id));
+ const taken=takenIds.size,closed=closedIds.size,repair=repairIds.length;
+ return {total:ids.length,taken,closed,repair,free:Math.max(0,ids.length-taken-closed-repair)};
 }
 
 /** «Свободно сегодня: N». The owner says how many rooms are free in the hotel's own system; the rest of the rooms not
@@ -133,7 +136,9 @@ export async function setFreeToday(s:RentalService,body:Row){
  // What was closed by hand for today is opened again, then closed anew: the last answer is the one that counts.
  const sources=await rows(s.db,"SELECT id,property_id FROM calendar_sources WHERE external_property_id=?||':'||property_id AND property_id IN (SELECT value FROM json_each(?))",ROOMS_CLOSED,JSON.stringify(ids));
  await q(s.db,'DELETE FROM external_blocks WHERE source_id IN (SELECT value FROM json_each(?))',JSON.stringify(sources.map(x=>x.id))).run();
- const open=(await freeRooms(s.db,p.id,at,end)).reverse(),close=open.slice(0,Math.max(0,open.length-free));
+ // A room under repair is not for sale anyway: the closing is spread over the rooms that work.
+ const repair=new Set((await rows(s.db,"SELECT property_id FROM property_operations WHERE property_id IN (SELECT value FROM json_each(?)) AND readiness IN ('maintenance','blocked')",JSON.stringify(ids))).map(r=>String(r.property_id)));
+ const open=(await freeRooms(s.db,p.id,at,end)).filter(id=>!repair.has(id)).reverse(),close=open.slice(0,Math.max(0,open.length-free));
  const add:D1PreparedStatement[]=[];
  for(const id of close){
   let source=sources.find(x=>x.property_id===id)?.id;
