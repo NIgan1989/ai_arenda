@@ -17,7 +17,7 @@ import {defaultAccountSettings,accountSettingsInput,userSearchInput} from './acc
 import {approvalCards} from './approvals';
 import {hasContacts,hasContactWays,MIN_PHOTOS} from './listing-rules';
 import {phoneOpens} from './chat-guard';
-import {listingInput,jpegInput,propertyStatus,cleanerStatus,categories,kindCategory,isBanquet,occasions,occasionLabel,searchCategory} from './listings';
+import {listingInput,jpegInput,propertyStatus,cleanerStatus,categories,kindCategory,isBanquet,isBath,occasions,occasionLabel,searchCategory} from './listings';
 import {mediaKey,dataUrlBytes,mediaData} from './media-store';
 import {CANCELLED_AFTER_ARRIVAL,NOT_LET_IN} from './stay-result';
 import {readAdministratorState} from './administrator';
@@ -71,6 +71,20 @@ const guestPayout=(pay:Row,open:boolean)=>open||!pay.link?pay:{...pay,phone:''};
 // The phone of the other side of a booking opens a day before the check-in of a confirmed booking (lib/chat-guard.ts phoneOpens).
 const PHONE_OPEN_SQL="(b.status='completed' OR (b.status='confirmed' AND CAST(strftime('%s','now') AS INTEGER)>=b.start-86400))";
 const PROFILE_CONTACTS='Уберите из профиля телефон, ссылки и мессенджеры: участники связываются через чат сервиса, а телефон открывается за сутки до заезда.';
+// What a kind of place is sold by, the same for a new booking and for a change of one (audit of 2026-11-22): a bath or
+// a sauna by the hour only, a banquet hall or a cafe only by the lunch or the evening of one day, by the Kazakhstan clock.
+export function kindMode(kind:string,mode:unknown,start:number,end:number){
+  if(isBath(kind)){
+    if(mode!==undefined&&mode!==null&&mode!==''&&mode!=='hourly')throw new DomainError('Баню и сауну бронируют по часам.');
+    return 'hourly';
+  }
+  if(isBanquet(kind)){
+    const slotStart=(start+18000)%86400,slot=slotStart===12*3600?5:slotStart===18*3600?6:0;
+    if((mode!==undefined&&mode!==null&&mode!==''&&mode!=='daily')||!slot||end-start!==slot*3600)throw new DomainError('Банкетный зал бронируют на обед или на вечер одного дня: 12:00–17:00 или 18:00–00:00.');
+    return 'daily';
+  }
+  return mode||'daily';
+}
 export class RentalService {
   constructor(public db: D1Database, public userId: string, private execution?:{propertyId:string;policyVersion:number}) {}
   query(sql: string, ...args: any[]) { return this.db.prepare(sql).bind(...args); }
@@ -521,7 +535,7 @@ export class RentalService {
           if(first<0)first=[...codes].map((c,i)=>c!=='-'?i:-1).filter(i=>i>=0).pop()??-1;
           arrivalOf.set(p.id,codes);
           if(first<0)return [];
-          try{const at=steps[first],price=withGuests(windowQuote(rentalPrice(p.price,p.policy,at,at+length,mode),p.policy.hourly_price,windowAt(stripWindows,p.id,at,at+length)),p.policy,guests);return [{...p,arrival:codes,arrivalFrom:at,estimate:{amount:price.amount,periods:price.periods,rate:price.price,unitLabel:price.unitLabel,billingMode:price.billingMode,...(price.window?{window:price.window}:{})}}];}catch(error){if(error instanceof DomainError)return [];throw error;}
+          try{const at=steps[first],price=withGuests(windowQuote(rentalPrice(p.price,p.policy,at,at+length,mode),p.policy.hourly_price,windowAt(stripWindows,p.id,at,at+length)),p.policy,guests);return [{...p,arrival:codes,arrivalFrom:at,estimate:{amount:price.amount,periods:price.periods,rate:price.price,unitLabel:price.unitLabel,billingMode:price.billingMode,surcharge:Number((price as Row).guestSurcharge)||0,...(price.window?{window:price.window}:{})}}];}catch(error){if(error instanceof DomainError)return [];throw error;}
         });
         arrivalSet={steps,at:start};
       }
@@ -529,7 +543,7 @@ export class RentalService {
         // A place that is made ready before the guests is not offered sooner than that takes.
         &&(options.ignorePrep||options.readyIds?.includes(p.id)||!tooSoon(p.policy,start,now())));
       const windows=mode==='hourly'?await openWindowsFor(this.db,start,end):new Map();
-      items=items.flatMap(p=>{try{const price=withGuests(windowQuote(rentalPrice(p.price,p.policy,start,end,mode),p.policy.hourly_price,windows.get(p.id)),p.policy,guests);return [{...p,estimate:{amount:price.amount,periods:price.periods,rate:price.price,unitLabel:price.unitLabel,billingMode:price.billingMode,...(price.window?{window:price.window}:{})}}];}catch(error){if(error instanceof DomainError)return [];throw error;}});
+      items=items.flatMap(p=>{try{const price=withGuests(windowQuote(rentalPrice(p.price,p.policy,start,end,mode),p.policy.hourly_price,windows.get(p.id)),p.policy,guests);return [{...p,estimate:{amount:price.amount,periods:price.periods,rate:price.price,unitLabel:price.unitLabel,billingMode:price.billingMode,surcharge:Number((price as Row).guestSurcharge)||0,...(price.window?{window:price.window}:{})}}];}catch(error){if(error instanceof DomainError)return [];throw error;}});
       // «Цена выгодная»: compared with the other free flats of the city for the same dates, before any budget or page cuts them.
       items=markDeals(items);
     }
@@ -624,7 +638,8 @@ export class RentalService {
     if(op&&(['maintenance','blocked'].includes(op.readiness)||(start<=now()+60&&op.readiness!=='ready')))throw new DomainError('Жильё сейчас не готово к новым заездам.',409);
     // The owner needs time to get the place ready (to heat a bath): nothing starts sooner, unless the owner says it is ready.
     if(!options.ownerReady&&tooSoon(policy,start,now()))throw new DomainError('Это место готовят к приходу гостей '+prepWords(Number(policy.prep_minutes))+'. Ближайшее начало — '+clockLabel(Math.ceil((now()+prepSeconds(policy))/1800)*1800)+'.',409);
-    const base=rentalPrice(p.price,policy,start,end,body.billingMode||'daily'),guestPricing=withGuests(windowQuote(base,policy.hourly_price,base.billingMode==='hourly'?await openWindowFor(this.db,p.id,start,end):null),policy,guests);
+    const kind=(await this.one("SELECT json_extract(details,'$.type') type FROM property_details WHERE property_id=?",p.id))?.type||'apartment';
+    const base=rentalPrice(p.price,policy,start,end,kindMode(kind,body.billingMode,start,end)),guestPricing=withGuests(windowQuote(base,policy.hourly_price,base.billingMode==='hourly'?await openWindowFor(this.db,p.id,start,end):null),policy,guests);
     // «Скидка постоянного гостя»: the guest already stayed with this owner through the service (lib/rental-policy.ts).
     const regular=Number(policy.repeat_discount)>0&&!!this.userId&&this.userId!==p.owner_id&&!!await this.one("SELECT b.id FROM bookings b JOIN properties x ON x.id=b.property_id WHERE b.guest_id=? AND x.owner_id=? AND b.status='completed' LIMIT 1",this.userId,p.owner_id);
     const pricing=regular?withRepeatDiscount(guestPricing,policy.repeat_discount):guestPricing;
@@ -632,11 +647,6 @@ export class RentalService {
     const occupied=await this.one("SELECT id FROM bookings WHERE property_id=? AND (status='confirmed' OR (status='requested' AND expires_at>?)) AND start<? AND occupied_until>?",p.id,now(),occupiedUntil,start);
     const cleaning=await this.one("SELECT id FROM cleaning_jobs WHERE property_id=? AND status IN ('open','assigned','in_progress','submitted') AND start<? AND end>?",p.id,occupiedUntil,start);
     if(occupied||cleaning) throw new DomainError('Этот интервал уже занят, включая время уборки. Выберите другое время.',409);
-    const kind=(await this.one("SELECT json_extract(details,'$.type') type FROM property_details WHERE property_id=?",p.id))?.type||'apartment';
-    // A banquet hall is taken for a slot of one day, at the price per guest.
-    // Only the two slots of the day (banquetSlots), by the Kazakhstan clock: 12:00–17:00 or 18:00–00:00.
-    const slotStart=(start+18000)%86400,slot=slotStart===12*3600?5:slotStart===18*3600?6:0;
-    if(isBanquet(kind)&&(base.billingMode!=='daily'||!slot||end-start!==slot*3600))throw new DomainError('Банкетный зал бронируют на обед или на вечер одного дня.');
     // How this guest pays the owner (lib/prepay.ts): the owner's share, or at the arrival while the place is new.
     const prepay=await placePrepay(this.db,p.id,policy.prepay_percent),payment={prepayPercent:prepay.percent,prepay:prepaySum(pricing.amount,prepay.percent),label:prepayLabel(prepay.percent),newPlace:prepay.left>0};
     return {propertyId:p.id,title:p.title,kind,start,end,guests,...pricing,cleaningMinutes:p.cleaning_minutes,occupiedUntil,currency:'KZT',quotedAt:now(),policy:publicPolicy(policy),payment};
@@ -997,7 +1007,9 @@ export class RentalService {
     if(!Number.isFinite(start)||!Number.isFinite(end)||end<=start||end<=t||end-start>90*86400)throw new DomainError('Проверьте даты проживания: выезд должен быть в будущем, срок — до 90 дней.');
     if(terms.actual_checkin&&start!==b.start)throw new DomainError('После заселения время заезда изменить нельзя.');
     if(!terms.actual_checkin&&start<t-60&&start!==b.start)throw new DomainError('Новый заезд должен быть в будущем.');
-    const mode=body.billingMode||terms.billing_mode,pricing=withGuests(changeRentalPrice(b.price,policy,start,end,mode),policy,b.guests);
+    // The same rule as at the booking: a bath stays by the hour, a hall moves only to another lunch or evening (kindMode).
+    const kind=(await this.one("SELECT json_extract(details,'$.type') type FROM property_details WHERE property_id=?",b.property_id))?.type||'apartment';
+    const mode=kindMode(kind,body.billingMode||terms.billing_mode,start,end),pricing=withGuests(changeRentalPrice(b.price,policy,start,end,mode),policy,b.guests);
     const discount=number(body.discountPercent??terms.discount_percent??0,'Скидка, %',0,50);
     if(role==='guest'&&discount!==(terms.discount_percent||0))throw new DomainError('Скидку предлагает владелец.',403);
     // The discount already in the terms (a regular guest's, lib/rental-policy.ts) stays with the booking whatever the owner's limit.
