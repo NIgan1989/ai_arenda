@@ -83,6 +83,9 @@ test('a change agrees a new number of guests and its price; above the capacity i
   const q=await f.guest.bookingChangeQuote(f.booking,'guest',{start:iso(b.start),end:iso(b.end),guests:4});
   assert.equal(q.guests,4);assert.ok(q.amount>b.amount,'more guests cost more');
   const c=await f.guest.proposeBookingChange(f.booking,'guest',{start:iso(b.start),end:iso(b.end),guests:4,expectedAmount:q.amount,baseVersion:q.baseVersion,policyVersion:q.policyVersion,acceptTerms:true,reason:'Придут друзья',requestKey:'g4'});
+  // The owner who approves sees the new number of guests, not only the dates and the price.
+  const card=(await f.owner.roleState('owner')).approvals.find(a=>a.kind==='change');
+  assert.deepEqual(card.facts.find(([k])=>k==='Гостей'),['Гостей',b.guests+' → 4']);
   await f.owner.decideBookingChange(f.booking,c.id,'owner',{action:'accept'});
   const after=f.db.raw.prepare('SELECT guests,amount FROM bookings WHERE id=?').get(f.booking);
   assert.equal(after.guests,4);assert.equal(after.amount,q.amount);

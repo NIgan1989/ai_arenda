@@ -205,6 +205,7 @@ export const DEALS:Words={
  'Сообщить, что возврат не пришёл':['Қайтарым келмегенін хабарлау','Report that the refund did not arrive'],
  'Откроется обращение по этому переводу. Его увидят владелец и администратор сервиса.':['Осы аударым бойынша өтініш ашылады. Оны иесі мен сервис әкімшісі көреді.','An appeal about this transfer opens. The owner and the service administrator will see it.'],
  'гостей: {n}':['қонақ: {n}','guests: {n}'],
+ 'гостей: {from} → {to}':['қонақ: {from} → {to}','guests: {from} → {to}'],
  'Перевод не пришёл':['Аударым түскен жоқ','The transfer has not arrived'],
  'Сообщить гостю, что перевод не пришёл':['Қонаққа аударым түспегенін хабарлау','Tell the guest the transfer has not arrived'],
  'Гость получит сообщение и сможет повторить перевод или написать вам.':['Қонақ хабарлама алады да, аударымды қайталай алады немесе сізге жаза алады.','The guest will get a message and can repeat the transfer or write to you.'],

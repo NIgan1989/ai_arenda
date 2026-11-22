@@ -3,6 +3,15 @@
 import type {Words} from './i18n-words';
 
 export const SERVER:Words={
+ 'Звонки в приложении ещё не подключены.':['Қосымшадағы қоңыраулар әлі қосылмаған.','Calls in the app are not connected yet.'],
+ 'Состав участников изменился. Откройте актуальный чат.':['Қатысушылар құрамы өзгерді. Өзекті чатты ашыңыз.','The participants have changed. Open the current chat.'],
+ 'Собеседника нет.':['Әңгімелесуші жоқ.','There is no one to talk to.'],
+ 'В этом чате уже идёт звонок.':['Бұл чатта қоңырау жүріп жатыр.','A call is already going on in this chat.'],
+ 'Ответить может только тот, кому звонят.':['Тек қоңырау шалынған адам ғана жауап бере алады.','Only the person being called can answer.'],
+ 'Звонок уже принят.':['Қоңырау қабылданып қойды.','The call has already been answered.'],
+ 'Собеседник ещё подключается.':['Әңгімелесуші әлі қосылуда.','The other person is still connecting.'],
+ 'Позвонить можно после подтверждения брони.':['Брон расталғаннан кейін қоңырау шалуға болады.','You can call once the booking is confirmed.'],
+ 'Бронь уже не активна.':['Брон енді белсенді емес.','The booking is no longer active.'],
  'Источник запроса не разрешён.':['Сұрау көзіне рұқсат жоқ.','The source of the request is not allowed.'],
  'Ожидается JSON.':['JSON күтіледі.','JSON is expected.'],
  'Некорректный запрос.':['Сұрау дұрыс емес.','The request is not valid.'],
@@ -904,4 +913,10 @@ export const SERVER:Words={
  'Два предупреждения уже были. Следующий шаг — блокировка.':['Екі ескерту болды. Келесі қадам — бұғаттау.','Two warnings were already sent. The next step is a block.'],
  'Первое предупреждение отправлено.':['Бірінші ескерту жіберілді.','The first warning is sent.'],
  'Второе предупреждение отправлено.':['Екінші ескерту жіберілді.','The second warning is sent.'],
+ 'Отправьте фото, голосовое или точку отдельными сообщениями.':['Фотоны, дауыстық хабарды немесе нүктені бөлек хабармен жіберіңіз.','Send a photo, a voice message or a point as separate messages.'],
+ 'Точку на карте можно отправить после подтверждения брони: тогда откроется и адрес.':['Картадағы нүктені бронь расталғаннан кейін жіберуге болады: сонда мекенжай да ашылады.','A point on the map can be sent after the booking is confirmed: the address opens then too.'],
+ 'Голосовое сообщение не записалось. Попробуйте ещё раз.':['Дауыстық хабар жазылмады. Қайталап көріңіз.','The voice message was not recorded. Try again.'],
+ 'Голосовое сообщение — до одной минуты.':['Дауыстық хабар — бір минутқа дейін.','A voice message is up to one minute.'],
+ 'Не удалось определить точку на карте.':['Картадағы нүктені анықтау мүмкін болмады.','Could not read the point on the map.'],
+ 'Голосовое сообщение недоступно.':['Дауыстық хабар қолжетімсіз.','The voice message is not available.'],
 };

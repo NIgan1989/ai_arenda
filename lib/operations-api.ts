@@ -36,7 +36,8 @@ import {planState,startOwnerPlan,startCleanerPlan,stopPlan,saveCleanerRules,away
 import {saveIdentityDoc,removeIdentityDoc,listIdentityDocs,readIdentityDoc} from './identity-docs';
 import {saveRightDoc,removeRightDoc,listRightDocs,readRightDoc} from './property-rights';
 import {restrictAccount,restrictionsList,unlistPlace} from './account-restrictions';
-import {discussionCandidates,openDiscussion,readDiscussion,sendDiscussionMessage,discussionInbox,discussionPhoto,discussionTyping,discussionAvatar} from './process-discussions';
+import {startCall,incomingCall,callState,answerCall,endCall,publishCall,subscribeCall,renegotiateCall} from './chat-calls';
+import {discussionCandidates,openDiscussion,readDiscussion,sendDiscussionMessage,discussionInbox,discussionPhoto,discussionAudio,discussionTyping,discussionAvatar} from './process-discussions';
 
 const active=(role:Role,allowed:Role[])=>{if(!allowed.includes(role))throw new DomainError('Операция недоступна в текущей роли.',403);};
 export async function readOperations(service:RentalService,role:Role,path:string[],config:OperationConfig={},platformAdmin=false){
@@ -81,9 +82,18 @@ export async function writeOperations(service:RentalService,role:Role,path:strin
  if(route==='map/place')return placeFlatByAddress(service,role,body,fetch,config);
  if(path[0]==='map'&&path[1]==='journey')return journeyAction(service,role,path[2],body);
  if(route==='discussion/open')return openDiscussion(service,role,body);
- if(route==='discussion/read')return readDiscussion(service,role,body);
+ if(route==='call/start')return startCall(service,role,body,config);
+ if(route==='call/incoming')return incomingCall(service);
+ if(route==='call/state')return callState(service,role,body);
+ if(route==='call/answer')return answerCall(service,role,body);
+ if(route==='call/end')return endCall(service,role,body);
+ if(route==='call/publish')return publishCall(service,role,body,config);
+ if(route==='call/subscribe')return subscribeCall(service,role,body,config);
+ if(route==='call/renegotiate')return renegotiateCall(service,role,body,config);
+ if(route==='discussion/read')return readDiscussion(service,role,body,config);
  if(route==='discussion/avatar')return discussionAvatar(service,role,body);
  if(route==='discussion/photo')return discussionPhoto(service,role,body);
+ if(route==='discussion/audio')return discussionAudio(service,role,body);
  if(route==='discussion/typing')return discussionTyping(service,role,body);
  if(route==='discussion/send')return sendDiscussionMessage(service,role,body,config);
  if(route==='ai-budget')return saveAIBudget(service,body);
