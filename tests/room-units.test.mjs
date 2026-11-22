@@ -116,6 +116,8 @@ test('a room under repair is counted apart, and «Свободно сегодн�
   asHotel(f);await setRoomCount(f.owner,{propertyId:f.property,count:3});
   const copy=f.db.raw.prepare('SELECT property_id FROM room_units WHERE lead_id=? ORDER BY created_at LIMIT 1').get(f.property).property_id;
   f.db.raw.prepare("UPDATE property_operations SET readiness='maintenance' WHERE property_id=?").run(copy);
+  // The fixture's booking starts in an hour: after 23:00 in Almaty that is tomorrow. It starts now, so it is today's.
+  f.db.raw.prepare('UPDATE bookings SET start=? WHERE id=?').run(now()-60,f.booking);
   const s=await roomState(f.db,f.property);
   // The fixture's booking today takes the card itself: one taken, one under repair, one free.
   assert.deepEqual(s,{total:3,taken:1,closed:0,repair:1,free:1});
