@@ -29,9 +29,11 @@ async function dataUri(uri:string){
 // «Повторить» and «Удалить», and a repeat goes with the same key, so the chat never gets it twice (audit 2026-11-22).
 type Voice={data:string;ms:number;key:string};
 const unsent=new Map<string,Voice>();
+// Kept per account, role and chat; another account on the same phone never gets them (cleared when the account changes).
+export function clearUnsentVoices(){unsent.clear();}
 // The microphone button: a tap starts the recording, a second tap sends it, «✕» throws it away.
-export function VoiceButton({roomId,disabled,onSend,onError}:{roomId:string;disabled:boolean;onSend:(voice:Voice)=>Promise<boolean>;onError:(message:string)=>void}){
- const recorder=useAudioRecorder(VOICE),state=useAudioRecorderState(recorder,250),[busy,setBusy]=useState(false),[failed,setFailed]=useState<Voice|null>(()=>unsent.get(roomId)||null);
+export function VoiceButton({draftKey,disabled,onSend,onError}:{draftKey:string;disabled:boolean;onSend:(voice:Voice)=>Promise<boolean>;onError:(message:string)=>void}){
+ const recorder=useAudioRecorder(VOICE),state=useAudioRecorderState(recorder,250),[busy,setBusy]=useState(false),[failed,setFailed]=useState<Voice|null>(()=>unsent.get(draftKey)||null);
  const recording=state.isRecording,ms=state.durationMillis||0;
  useEffect(()=>{if(recording&&ms>=VOICE_MAX_MS)void finish(true);},[recording,ms]);// eslint-disable-line react-hooks/exhaustive-deps
  // The chat keys this button by its room: leaving the room throws the recording away, so it never goes to another chat.
@@ -48,15 +50,15 @@ export function VoiceButton({roomId,disabled,onSend,onError}:{roomId:string;disa
   try{
    await recorder.stop();await setAudioModeAsync({allowsRecording:false,playsInSilentMode:true});
    if(!send||!recorder.uri)return;if(length<700)throw Error(t('Слишком коротко. Удерживайте запись хотя бы секунду.'));
-   const voice={data:await dataUri(recorder.uri),ms:Math.min(length,VOICE_MAX_MS),key:uid()};unsent.set(roomId,voice);
+   const voice={data:await dataUri(recorder.uri),ms:Math.min(length,VOICE_MAX_MS),key:uid()};unsent.set(draftKey,voice);
    await deliver(voice);
   }catch(e){onError(e instanceof Error&&e.message?e.message:t('Голосовое сообщение не отправлено.'));}finally{setBusy(false);}
  }
  async function deliver(voice:Voice){
-  let sent=false;try{sent=await onSend(voice);}finally{if(sent){unsent.delete(roomId);setFailed(null);}else setFailed(voice);}
+  let sent=false;try{sent=await onSend(voice);}finally{if(sent){unsent.delete(draftKey);setFailed(null);}else setFailed(voice);}
  }
  async function retry(){if(busy||!failed)return;setBusy(true);try{await deliver(failed);}finally{setBusy(false);}}
- function drop(){unsent.delete(roomId);setFailed(null);}
+ function drop(){unsent.delete(draftKey);setFailed(null);}
  if(recording)return <View style={v.recording}>
   <Pressable accessibilityRole="button" accessibilityLabel={t('Удалить запись')} onPress={()=>void finish(false)} style={({pressed})=>[v.round,v.cancel,pressed&&v.pressed]}><Text style={v.cancelText}>✕</Text></Pressable>
   <View style={v.live}><View style={v.dot}/><Text style={v.liveText}>{t('Запись {time} из 1:00',{time:seconds(ms)})}</Text></View>

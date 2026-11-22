@@ -25,7 +25,7 @@ async function gathered(pc:any){
 }
 // One side of the call: its microphone is published first, the other side's voice is received once it is there.
 class Line{
- pc:any=null;stream:any=null;closed=false;subscribed=false;busy=false;linked=false;
+ pc:any=null;stream:any=null;closed=false;subscribed=false;busy=false;linked=false;received=false;remote=false;
  constructor(private call:()=>Call,private onState:(connected:boolean)=>void){}
  api(path:string,body:Record<string,unknown>={}){const c=this.call();return request('/api/operations/call/'+path,{callId:c.id,...body},undefined,undefined,c.role);}
  async publish(){
@@ -33,7 +33,7 @@ class Line{
   await setAudioModeAsync({allowsRecording:true,playsInSilentMode:true}).catch(()=>{});
   this.stream=await microphone();if(this.closed){this.stop();return;}
   const pc=newPeer();this.pc=pc;
-  pc.addEventListener('track',(e:any)=>playRemote(e.track));
+  pc.addEventListener('track',(e:any)=>{playRemote(e.track);this.remote=true;});
   pc.addEventListener('connectionstatechange',()=>{this.linked=pc.connectionState==='connected';this.onState(this.linked);});
   const sender=pc.addTransceiver(this.stream.getAudioTracks()[0],{direction:'sendonly'});
   await pc.setLocalDescription(await pc.createOffer());await gathered(pc);
@@ -46,10 +46,12 @@ class Line{
   try{
    const r=await this.api('subscribe');this.subscribed=true;
    if(r.sdp&&!this.closed){await this.pc.setRemoteDescription(description('offer',r.sdp));await this.pc.setLocalDescription(await this.pc.createAnswer());await gathered(this.pc);await this.api('renegotiate',{sdp:this.pc.localDescription.sdp});}
+   if(!this.closed)this.received=true;
   }finally{this.busy=false;}
  }
  // This side hears the other one: its line to Realtime is up and the other side's voice is received.
- get hearing(){return this.linked&&this.subscribed&&!this.closed;}
+ // Only after the whole receive went through (subscribe, answer, renegotiate) and the other voice's track arrived.
+ get hearing(){return this.linked&&this.received&&this.remote&&!this.closed;}
  mute(on:boolean){this.stream?.getAudioTracks().forEach((track:any)=>{track.enabled=!on;});}
  stop(){this.closed=true;try{this.stream?.getTracks().forEach((track:any)=>track.stop());}catch{}try{this.pc?.close();}catch{}stopRemote();void setAudioModeAsync({allowsRecording:false,playsInSilentMode:true}).catch(()=>{});}
 }
