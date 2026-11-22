@@ -26,6 +26,7 @@ import {saveStayReview} from './stay-reviews';
 import {setFavorite} from './favorites';
 import {staffState,assignStaff,removeStaff,markBusy,freeBusy,staffToday,staffMark} from './staff';
 import {addHall,renameVenue,venueOf} from './venue';
+import {setRoomCount,setFreeToday} from './room-units';
 import {understandSearch} from './search-understand';
 import {saveStayPhoto,listStayPhotos,readStayPhoto,saveHandover} from './stay-handover';
 import {serviceBillingState,serviceBillingAction} from './service-dues';
@@ -114,6 +115,9 @@ export async function writeOperations(service:RentalService,role:Role,path:strin
  if(route==='venue/state'){active(role,['owner']);const id=required(body.propertyId,'Объект',100);if(!await service.one('SELECT id FROM properties WHERE id=? AND owner_id=?',id,service.userId))throw new DomainError('Объект недоступен.',404);return {venue:await venueOf(service.db,id)};}
  if(route==='venue/hall'){active(role,['owner']);return addHall(service,body);}
  if(route==='venue/rename'){active(role,['owner']);return renameVenue(service,body);}
+ // «Номера одного типа» (lib/room-units.ts): how many such rooms, and how many are free today in the hotel's own system.
+ if(route==='rooms/count'){active(role,['owner']);return setRoomCount(service,body);}
+ if(route==='rooms/free'){active(role,['owner']);return setFreeToday(service,body);}
  if(route==='handover'){active(role,['owner']);return saveHandover(service,body);}
  if(route==='payout'){active(role,['owner','cleaner']);return savePayout(service,body,role==='cleaner'?'cleaner':'owner');}
  if(route==='finance'){active(role,['owner']);return recordFinance(service,body);}
