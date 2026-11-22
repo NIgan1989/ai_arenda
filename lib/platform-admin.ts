@@ -22,6 +22,7 @@ import {bypassWatch,warnBypass} from './bypass-watch';
 import {billingState,billingOwners,saveBillingSettings,recordBalanceEntry} from './platform-billing';
 import {plansAdminState,savePlanSettings} from './autopilot-plans';
 import {markCleanerPayout} from './regular-cleaner';
+import {accountingExport,reconcileStatement} from './accounting-export';
 import {companyFinance,saveFinanceSettings,saveCost,toggleCost,deleteCost,addCashEntry,deleteCashEntry,addCostPayment,deleteCostPayment,accountingState,payTaxes,deleteTaxPayment} from './company-finance';
 type Config=OperationConfig&{PLATFORM_ADMIN_IDS?:string;ADMINISTRATOR_RUNNER_SECRET?:string;OPENAI_API_KEY?:string;OPENAI_MODEL?:string};
 type Row=Record<string,any>;
@@ -141,6 +142,8 @@ export async function writePlatformAdmin(service:RentalService,route:string,body
  if(route==='finance/cost-payment/delete')return deleteCostPayment(service,body);
  if(route==='finance/cash/delete')return deleteCashEntry(service,body);
  if(route==='accounting/pay')return payTaxes(service,body);
+ if(route==='accounting/export'){const r=await accountingExport(service.db,body);await service.audit('company-finance','finance.exported').run();return r;}
+ if(route==='accounting/reconcile')return reconcileStatement(service.db,body);
  if(route==='accounting/payment/delete')return deleteTaxPayment(service,body);
  if(route==='background/retry')return retryBackgroundJob(service,body,true);
  throw new DomainError('Операция управления не найдена.',404);

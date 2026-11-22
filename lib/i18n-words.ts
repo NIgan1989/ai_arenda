@@ -8,7 +8,8 @@ import {GUEST} from './i18n-guest';
 import {NOTICES} from './i18n-notices';
 import {OWNER} from './i18n-owner';
 import {SERVER} from './i18n-server';
+import {SERVER_MORE} from './i18n-server-more';
 
 export type Words=Record<string,readonly [kk:string,en:string]>;
 // SERVER goes first: a line the app already translates keeps the app's wording.
-export const WORDS:Words={...SERVER,...NOTICES,...COMMON,...GUEST,...DEALS,...CHATS,...OWNER,...CLEANER};
+export const WORDS:Words={...SERVER,...SERVER_MORE,...NOTICES,...COMMON,...GUEST,...DEALS,...CHATS,...OWNER,...CLEANER};
