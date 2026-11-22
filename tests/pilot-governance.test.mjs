@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {fixture,load,now} from './helpers/platform.mjs';
+import {fixture,load,now,rightDoc} from './helpers/platform.mjs';
 const {assertPilotAllowed,readPilotPolicy,pilotPropertyVisibleSql,governanceState,savePilotPolicy,updateOperatorTicket}=await load('pilot-governance');
 const {requestParticipantReview,decideParticipantReview}=await load('participant-security');
 
@@ -46,6 +46,8 @@ test('changing an approved address invalidates admission and an older pending re
   f.db.raw.prepare('UPDATE properties SET address=? WHERE id=?').run('Changed apartment address',f.property);await assert.rejects(assertPilotAllowed(f.owner,'publish',f.property),e=>e.status===409);assert.equal(f.db.raw.prepare('SELECT COUNT(*) n FROM properties p WHERE '+pilotPropertyVisibleSql()).get().n,0);
   await requestParticipantReview(f.owner,'owner',{propertyId:f.property,reference:'Current address evidence'});const old=f.db.raw.prepare("SELECT * FROM participant_reviews WHERE status='pending'").get();f.db.raw.prepare('UPDATE properties SET district=? WHERE id=?').run('Another district',f.property);
   await assert.rejects(decideParticipantReview(f.owner,{id:old.id,expectedVersion:old.version,status:'approved',method:'Fixture review',notes:'Checked'},true),e=>e.status===409);assert.throws(()=>f.db.raw.prepare("UPDATE participant_reviews SET status='approved' WHERE id=?").run(old.id),/pilot_review_stale/);
+  // The right document is tied to the address it proves (publication audit 2026-11-22): the new address needs it again.
+  rightDoc(f.db,f.property,'owner');
   await requestParticipantReview(f.owner,'owner',{propertyId:f.property,reference:'Updated evidence for current address'});const current=f.db.raw.prepare("SELECT * FROM participant_reviews WHERE status='pending' ORDER BY rowid DESC").get();assert.notEqual(current.id,old.id);await decideParticipantReview(f.owner,{id:current.id,expectedVersion:current.version,status:'approved',method:'Checked current property',notes:'Evidence matches address'},true);await assertPilotAllowed(f.owner,'publish',f.property);
  }finally{f.db.close();}
 });
@@ -106,7 +108,9 @@ test('a flat sent for review from «Показать гостям» reaches the 
   await policy(f,{requireOwnerReview:true,aiReview:false});
   f.db.raw.prepare('UPDATE properties SET published=0 WHERE id=?').run(f.property);
   f.db.raw.prepare("UPDATE properties SET description=? WHERE id=?").run('Светлая квартира в центре: двуспальная кровать, кухня, стиральная машина, быстрый Wi-Fi, рядом остановка и магазины.',f.property);
-  f.db.raw.prepare("INSERT OR REPLACE INTO property_details(property_id,photos,revision,updated_at) VALUES (?,'[\"m1\"]','r1',?)").run(f.property,now());
+  // «На карте» needs three photos and a point for the current address (publication audit 2026-11-22).
+  f.db.raw.prepare("INSERT OR REPLACE INTO property_details(property_id,photos,revision,updated_at) VALUES (?,'[\"m1\",\"m2\",\"m3\"]','r1',?)").run(f.property,now());
+  f.db.raw.prepare("INSERT OR REPLACE INTO property_locations(property_id,longitude,latitude,source,address_fingerprint,updated_at) SELECT ?,76.95,52.28,'owner',city||'|'||district||'|'||address,? FROM properties WHERE id=?").run(f.property,now(),f.property);
   await requestParticipantReview(f.owner,'owner',{propertyId:f.property,reference:PUBLISH_REVIEW+': fixture'},{PLATFORM_ADMIN_IDS:'admin-a, admin-b'});
   const asked=f.db.raw.prepare("SELECT user_id,body FROM notifications WHERE dedupe LIKE 'admin:review:%' ORDER BY user_id").all();
   assert.deepEqual(asked.map(n=>n.user_id),['admin-a','admin-b']);assert.match(asked[0].body,/ждёт проверки/);

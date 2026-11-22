@@ -1,5 +1,5 @@
 import {test} from 'node:test';import assert from 'node:assert/strict';
-import {fixture,now,iso,load} from './helpers/platform.mjs';
+import {fixture,now,iso,load,rightDoc} from './helpers/platform.mjs';
 const {readPilotPolicy,savePilotPolicy,pilotPropertyVisibleSql}=await load('pilot-governance');
 const {ensurePublishReview,decideParticipantReview}=await load('participant-security');
 
@@ -30,12 +30,15 @@ test('a new address keeps the flat shown, hides it from new guests and asks for 
   assert.equal(visible(f),0);
   await ensurePublishReview(f.owner,f.property);
   const pending=f.db.raw.prepare("SELECT * FROM participant_reviews WHERE status='pending'").all();assert.equal(pending.length,1);assert.match(pending[0].reference,/^Проверка нового адреса/);
-  // The guest who already booked hears the new address.
-  assert.match(f.db.raw.prepare("SELECT body FROM notifications WHERE user_id='guest' AND dedupe LIKE 'guest:address:%'").get().body,/Новая улица, 5.*бронь в силе/);
+  // The guest who already booked keeps the agreed address until the new one is checked (publication audit 2026-11-22).
+  const told=f.db.raw.prepare("SELECT body FROM notifications WHERE user_id='guest' AND dedupe LIKE 'guest:address:%'").get().body;
+  assert.match(told,/согласованный адрес: Павлодар, PRIVATE ADDRESS/);assert.doesNotMatch(told,/Новая улица/);
   // Further edits while the check is pending save normally and do not pile up requests.
   await f.owner.saveListing(f.property,body(f,{photos:ids,address:'Новая улица, 5',title:'Жильё у парка'}));await ensurePublishReview(f.owner,f.property);
   assert.equal(f.db.raw.prepare("SELECT COUNT(*) n FROM participant_reviews WHERE status='pending'").get().n,1);
-  // Approval brings it back to guests with nothing more from the owner.
+  // Approval brings it back to guests once the owner proved the right to the new address (publication audit 2026-11-22).
+  await assert.rejects(decideParticipantReview(f.owner,{id:pending[0].id,expectedVersion:pending[0].version,status:'approved',method:'fixture',notes:'ok'},true),/документ о праве/);
+  rightDoc(f.db,f.property,'owner');
   await decideParticipantReview(f.owner,{id:pending[0].id,expectedVersion:pending[0].version,status:'approved',method:'fixture',notes:'ok'},true);
   assert.equal(visible(f),1);
   assert.match(f.db.raw.prepare("SELECT body FROM notifications WHERE user_id='owner' AND dedupe LIKE 'owner:review:%'").get().body,/Новый адрес подтверждён/);
@@ -48,7 +51,8 @@ test('bookings made before the address change keep working while the new address
   await f.owner.saveListing(f.property,body(f,{photos:ids,address:'Новая улица, 5'}));
   // A guest whose request is not confirmed yet hears about the change without the exact address.
   const notes=f.db.raw.prepare("SELECT body FROM notifications WHERE user_id='guest' AND dedupe LIKE 'guest:address:%'").all().map(n=>n.body);
-  assert.equal(notes.length,2);assert.equal(notes.filter(n=>/Новая улица/.test(n)).length,1);assert.equal(notes.filter(n=>/после подтверждения брони/.test(n)).length,1);
+  // Before the check nobody hears the new address; the confirmed guest hears the agreed one.
+  assert.equal(notes.length,2);assert.equal(notes.filter(n=>/Новая улица/.test(n)).length,0);assert.equal(notes.filter(n=>/согласованный адрес/.test(n)).length,1);
   // New guests cannot book until the check passes.
   await assert.rejects(f.other.createBooking({propertyId:f.property,start:iso(now()+9*86400),end:iso(now()+9*86400+7200),guests:1,billingMode:'hourly',requestKey:'third',acceptTerms:true}));
   await f.owner.bookingAction(request,{action:'confirm',cleaningFee:3000});

@@ -4,7 +4,8 @@ import {PUBLISH_REVIEW} from './listing-edit';
 import {autoReview} from './admin-autocheck';
 import {placeFlatByAddress} from './map-workspace';
 import {epoch,uuid,q,one,rows,hash,httpsEndpoint,safeEqual,type Row,type OperationConfig} from './operation-core';
-import {leadOf} from './room-units';
+import {leadOf,roomsOf} from './room-units';
+import {showableSql,showMissing,showWaiting} from './show-waiting';
 
 export async function securityState(service:RentalService,role:Role,platformAdmin=false){
  const phone=await one(service.db,'SELECT phone,verified_at,sent_at,expires_at FROM phone_verifications WHERE user_id=?',service.userId);
@@ -23,7 +24,7 @@ export async function requestPhoneCode(service:RentalService,config:OperationCon
 export async function verifyPhoneCode(service:RentalService,body:Row){
  const code=required(body.code,'Код',6);if(!/^\d{6}$/.test(code))throw new DomainError('Введите шесть цифр.');const row=await one(service.db,'SELECT * FROM phone_verifications WHERE user_id=?',service.userId);
  if(!row||row.expires_at<=epoch()||row.attempts>=5)throw new DomainError('Код истёк или исчерпаны попытки.',409);
- const [salt,expected]=row.code_hash.split(':'),valid=safeEqual(await hash(salt+':'+code),expected),r=await q(service.db,'UPDATE phone_verifications SET attempts=attempts+1,verified_at=CASE WHEN ?=1 THEN ? ELSE verified_at END WHERE user_id=? AND code_hash=? AND expires_at>? AND attempts<5',valid?1:0,epoch(),service.userId,row.code_hash,epoch()).run();if(!r.meta.changes||!valid)throw new DomainError('Код не подходит.');return {message:'Номер телефона подтверждён.'};
+ const [salt,expected]=row.code_hash.split(':'),valid=safeEqual(await hash(salt+':'+code),expected),r=await q(service.db,'UPDATE phone_verifications SET attempts=attempts+1,verified_at=CASE WHEN ?=1 THEN ? ELSE verified_at END WHERE user_id=? AND code_hash=? AND expires_at>? AND attempts<5',valid?1:0,epoch(),service.userId,row.code_hash,epoch()).run();if(!r.meta.changes||!valid)throw new DomainError('Код не подходит.');for(const w of await rows(service.db,'SELECT w.property_id FROM show_waiting w JOIN properties p ON p.id=w.property_id WHERE p.owner_id=?',service.userId))await showWaiting(service.db,String(w.property_id));return {message:'Номер телефона подтверждён.'};
 }
 // A place is approved by a person who looks at the proof of the right to let it (lib/property-rights.ts).
 const HANDED='Жильё, документ о праве и удостоверение переданы администратору: он сверит их вручную, обычно в течение дня.';
@@ -50,7 +51,7 @@ export async function decideParticipantReview(service:RentalService,body:Row,pla
  const review=await one(service.db,'SELECT r.*,COALESCE(b.revision,0) current_revision,p.owner_id current_owner FROM participant_reviews r LEFT JOIN review_property_bindings b ON b.property_id=r.property_id LEFT JOIN properties p ON p.id=r.property_id WHERE r.id=?',id);
  if(body.status==='approved'&&review?.role==='owner'&&(review.property_revision!==review.current_revision||review.user_id!==review.current_owner))throw new DomainError('Сведения объекта изменились после заявки. Нужна новая проверка текущего адреса.',409);
 if(body.status==='approved'&&review&&['owner','cleaner'].includes(review.role)&&!await one(service.db,'SELECT 1 x FROM identity_docs WHERE user_id=?',review.user_id))throw new DomainError('Участник ещё не приложил фото удостоверения личности. Одобрить можно после проверки удостоверения.',409);
- if(body.status==='approved'&&review?.role==='owner'&&review.property_id&&!await one(service.db,'SELECT 1 x FROM property_right_docs WHERE property_id=?',review.property_id))throw new DomainError('Владелец ещё не приложил документ о праве собственности или нотариальное согласие на субаренду. Одобрить жильё можно после проверки документа.',409);
+ if(body.status==='approved'&&review?.role==='owner'&&review.property_id&&!await one(service.db,'SELECT 1 x FROM property_right_docs WHERE property_id=? AND address_revision=COALESCE((SELECT revision FROM review_property_bindings b WHERE b.property_id=property_right_docs.property_id),0)',review.property_id))throw new DomainError('Владелец ещё не приложил документ о праве собственности или нотариальное согласие на субаренду. Одобрить жильё можно после проверки документа.',409);
  const event=uuid(),at=epoch(),result=await service.db.batch([
   q(service.db,"UPDATE participant_reviews SET status=?,method=?,reviewer_id=?,notes=?,reviewed_at=?,valid_until=?,version=version+1 WHERE id=? AND status='pending' AND version=?",body.status,method,service.userId,notes,at,validUntil,id,number(body.expectedVersion,'Версия',1,10000000)),
   q(service.db,'INSERT INTO audit_events SELECT ?,?,?,?,? WHERE changes()>0',event,service.userId,id,'participant.review_'+body.status,at)
@@ -62,13 +63,19 @@ if(body.status==='approved'&&review&&['owner','cleaner'].includes(review.role)&&
   // The decision is already saved: another platform rule (a phone check, say) may still hold publication back,
   // and then the flat simply stays a draft the owner can show later.
   if(body.status==='approved'&&wanted){try{const r=await service.db.batch([
-   q(service.db,"UPDATE properties SET published=1 WHERE id=? AND published=0 AND length(description)>=80 AND EXISTS(SELECT 1 FROM property_details d WHERE d.property_id=properties.id AND json_array_length(d.photos)>0)",review.property_id),
+   // «На карте» only with a point for the current address and three photos (publication audit 2026-11-22).
+   q(service.db,`UPDATE properties SET published=1 WHERE id=? AND published=0 AND ${showableSql('properties')}`,review.property_id),
    q(service.db,'UPDATE property_details SET version=version+1 WHERE property_id=? AND changes()>0',review.property_id)]);shown=!!r[0].meta.changes;}catch(e){if(!/pilot_|property_archived/.test(String((e as Error)?.message)))throw e;}}
   // A new flat starts as «Ожидает проверки»; the platform's approval is that check, so the first guest can move in
   // without the owner hunting for a readiness form. A flat in the middle of a cleaning keeps its state.
   if(body.status==='approved')await q(service.db,"UPDATE property_operations SET readiness='ready',version=version+1,updated_at=? WHERE property_id=? AND readiness='inspection' AND active_booking_id IS NULL AND NOT EXISTS(SELECT 1 FROM cleaning_jobs WHERE property_id=? AND status IN ('in_progress','submitted'))",at,review.property_id,review.property_id).run();
-  const again=String(review.reference||'').startsWith(ADDRESS_REVIEW),text=body.status==='approved'?'Администратор проверил «'+title+'».'+(again?' Новый адрес подтверждён, гости снова видят жильё.':shown?' Жильё показано гостям на карте.':' Теперь его можно показать гостям.'):'Проверка «'+title+'» не пройдена: '+notes;
+  // Approved but not ready for the map: the owner hears exactly what is missing, and the flat shows itself once it is there.
+  const published=(await one(service.db,'SELECT published FROM properties WHERE id=?',review.property_id))?.published===1;
+  const missing=body.status==='approved'&&wanted&&!published?await showMissing(service.db,review.property_id):[];
+  if(body.status==='approved'&&wanted&&!published)await q(service.db,'INSERT INTO show_waiting(property_id,review_id,created_at) VALUES (?,?,?) ON CONFLICT(property_id) DO UPDATE SET review_id=excluded.review_id,created_at=excluded.created_at',review.property_id,id,at).run();
+  const again=String(review.reference||'').startsWith(ADDRESS_REVIEW),text=body.status==='approved'?'Администратор проверил «'+title+'».'+(again?' Новый адрес подтверждён, гости снова видят жильё.':shown?' Жильё показано гостям на карте.':missing.length?' Чтобы жильё появилось у гостей на карте, осталось: '+missing.join('; ')+'. Как только это будет готово, жильё покажется само.':' Теперь его можно показать гостям.'):'Проверка «'+title+'» не пройдена: '+notes+' Исправьте это и нажмите «Отправить на проверку снова» в «Моё жильё».';
   await q(service.db,'INSERT OR IGNORE INTO notifications(id,user_id,body,dedupe,read,created_at) VALUES (?,?,?,?,0,?)',uuid(),review.user_id,text,'owner:review:'+id+':'+body.status,at).run();
+  await tellMovedGuests(service.db,review.property_id,body.status==='approved',id,at);
  }
  // A cleaner hears the result, and so does every owner whose open cleaning is waiting on this cleaner's response.
  if(review?.role==='cleaner'){
@@ -80,6 +87,20 @@ if(body.status==='approved'&&review&&['owner','cleaner'].includes(review.role)&&
  }
  return {message:'Результат фактической проверки сохранён.'};
 }
+// The guests of every room of the place whose address is being changed (lib/service.ts saveListing keeps the address
+// they agreed to): a checked new address is offered to them to accept or to cancel for free; a refused one leaves
+// them with the agreed address.
+async function tellMovedGuests(db:D1Database,propertyId:string,approved:boolean,reviewId:string,at:number){
+ const rooms=JSON.stringify(await roomsOf(db,propertyId));
+ const waiting=await rows(db,`SELECT a.booking_id,a.city,a.address,b.guest_id,p.title,p.city new_city,p.address new_address FROM booking_addresses a JOIN bookings b ON b.id=a.booking_id JOIN properties p ON p.id=b.property_id WHERE a.state='review' AND b.property_id IN (SELECT value FROM json_each(?)) AND b.status IN ('requested','confirmed') AND b.occupied_until>?`,rooms,at);
+ if(!waiting.length)return;
+ const place=(city:string,address:string)=>[city,address].filter(Boolean).join(', ');
+ await db.batch([
+  ...(approved?[q(db,`UPDATE booking_addresses SET state='offered',updated_at=? WHERE state='review' AND booking_id IN (SELECT value FROM json_each(?))`,at,JSON.stringify(waiting.map(w=>w.booking_id)))]:[]),
+  ...waiting.map(w=>q(db,'INSERT OR IGNORE INTO notifications(id,user_id,body,dedupe,read,created_at) VALUES (?,?,?,?,0,?)',uuid(),w.guest_id,approved
+   ?'Новый адрес «'+(w.title||'жильё')+'» проверен: '+place(w.new_city,w.new_address)+'. Откройте бронь: примите новый адрес или отмените бронь бесплатно.'
+   :'Новый адрес «'+(w.title||'жильё')+'» не подтверждён администратором. Для вашей брони действует согласованный адрес: '+place(w.city,w.address)+'. Если сомневаетесь, отмените бронь бесплатно или напишите в чат брони.','guest:address-'+(approved?'offered':'refused')+':'+w.booking_id+':'+reviewId,at))]);
+}
 // A draft is ready for guests when it has photos and a full description: what the catalogue itself requires.
 export const ADDRESS_REVIEW='Проверка нового адреса';
 const READY_SQL="length(p.description)>=80 AND COALESCE((SELECT json_array_length(d.photos) FROM property_details d WHERE d.property_id=p.id),0)>0";
@@ -90,7 +111,7 @@ const CURRENT_REVISION='COALESCE((SELECT revision FROM review_property_bindings 
 // The flat's pin follows its address: a new address (another city, another street) moves the pin by itself,
 // so neither the owner nor the review is left with a pin from the old place. A failed search never fails the save.
 export async function placeQuietly(service:RentalService,propertyId:string,config:OperationConfig={}){
- try{return await placeFlatByAddress(service,'owner',{propertyId},(url,init)=>globalThis.fetch(url,init),config);}catch{return null;}
+ try{const r=await placeFlatByAddress(service,'owner',{propertyId},(url,init)=>globalThis.fetch(url,init),config);await showWaiting(service.db,propertyId);return r;}catch{return null;}
 }
 export async function ensurePublishReview(service:RentalService,propertyId:string,config:OperationConfig&{PLATFORM_ADMIN_IDS?:string}={}){
  await placeQuietly(service,propertyId,config);
@@ -98,6 +119,10 @@ export async function ensurePublishReview(service:RentalService,propertyId:strin
  const p=await one(service.db,`SELECT p.id,p.title,p.city,p.address,p.published FROM properties p WHERE p.id=? AND p.owner_id=? AND p.demo_owner IS NULL AND p.archived_at IS NULL AND ${READY_SQL}`,propertyId,service.userId);if(!p)return null;
  const known=await one(service.db,`SELECT r.status FROM participant_reviews r WHERE r.property_id=? AND r.user_id=? AND r.role='owner' AND r.property_revision=${CURRENT_REVISION} AND (r.status='pending' OR (r.status='approved' AND (r.valid_until IS NULL OR r.valid_until>?))) LIMIT 1`,propertyId,service.userId,epoch());
  if(known)return null;
+ // A refused check of this address is not sent again by any save (a new price, say): the owner fixes the reason and
+ // presses «Отправить на проверку снова»; a new address is a new check by itself (publication audit 2026-11-22).
+ const last=await one(service.db,`SELECT r.status FROM participant_reviews r WHERE r.property_id=? AND r.user_id=? AND r.role='owner' AND r.property_revision=${CURRENT_REVISION} ORDER BY COALESCE(r.reviewed_at,r.created_at) DESC,r.created_at DESC,r.rowid DESC LIMIT 1`,propertyId,service.userId);
+ if(last?.status==='rejected')return null;
  // A shown flat comes here after an address change: the same check, asked for the new address.
  return requestParticipantReview(service,'owner',{propertyId,reference:(p.published?ADDRESS_REVIEW:PUBLISH_REVIEW)+': «'+(p.title||'жильё')+'», '+[p.city,p.address].filter(Boolean).join(', ')},config);
 }
@@ -111,9 +136,8 @@ export async function adminApproveProperty(service:RentalService,body:Row){
  if(!review){const id=uuid();await q(service.db,'INSERT INTO participant_reviews(id,user_id,role,property_id,reference,created_at) VALUES (?,?,?,?,?,?)',id,p.owner_id,'owner',propertyId,PUBLISH_REVIEW+': «'+(p.title||'жильё')+'», '+[p.city,p.address].filter(Boolean).join(', '),epoch()).run();review={id,version:1};}
  await decideParticipantReview(service,{id:review.id,status:'approved',show:true,method:'Администратор в разделе «Недвижимость»',notes:String(body.notes||'').trim()||'Объект и владелец проверены администратором.',expectedVersion:review.version},true);
  const shown=(await one(service.db,'SELECT published FROM properties WHERE id=?',propertyId))?.published===1;
- const phoneMissing=!!(await one(service.db,"SELECT 1 FROM pilot_policy WHERE id='global' AND require_phone=1"))&&!await one(service.db,'SELECT 1 FROM phone_verifications WHERE user_id=? AND verified_at IS NOT NULL',p.owner_id);
- const missing=[!p.photos&&'добавить фото',p.text_length<80&&'дописать описание до 80 символов',phoneMissing&&'подтвердить телефон'].filter(Boolean).join(', ');
- return {message:shown||p.published?'«'+p.title+'» одобрено'+(p.published?'':' и показано гостям на карте')+'. Владелец получил уведомление.':'«'+p.title+'» одобрено, владелец получил уведомление. Чтобы показать его гостям, владельцу осталось '+(missing||'включить показ')+', после этого он опубликует его сам.',shown};
+ const missing=(await showMissing(service.db,propertyId)).join('; ');
+ return {message:shown||p.published?'«'+p.title+'» одобрено'+(p.published?'':' и показано гостям на карте')+'. Владелец получил уведомление.':'«'+p.title+'» одобрено, владелец получил уведомление. Чтобы показать его гостям на карте, владельцу осталось: '+(missing||'включить показ')+'. После этого жильё покажется само.',shown};
 }
 async function accessKey(config:OperationConfig){if(!config.ACCESS_ENCRYPTION_KEY||config.ACCESS_ENCRYPTION_KEY.length<32)throw new DomainError('Серверное шифрование инструкций ещё не настроено.',503);const bytes=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(config.ACCESS_ENCRYPTION_KEY));return crypto.subtle.importKey('raw',bytes,{name:'AES-GCM'},false,['encrypt','decrypt']);}
 const base64=(bytes:Uint8Array)=>{let text='';for(const byte of bytes)text+=String.fromCharCode(byte);return btoa(text);};

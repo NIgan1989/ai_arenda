@@ -8,7 +8,9 @@ const {readPlatformAdmin,writePlatformAdmin}=await load('platform-admin');
 async function requireReview(f){const current=await readPilotPolicy(f.db);await savePilotPolicy(f.owner,{expectedVersion:current.version,requireOwnerReview:true,requireCleanerReview:false,requirePhone:false,confirmed:true},true);f.db.raw.prepare("UPDATE pilot_policy SET ai_review=0 WHERE id='global'").run();}
 function readyDraft(f){
  f.db.raw.prepare('UPDATE properties SET published=0,description=? WHERE id=?').run('Светлое жильё с ремонтом, рядом парк и остановка, есть всё для проживания и работы.'.repeat(2),f.property);
- f.db.raw.prepare('INSERT INTO property_details(property_id,details,photos,revision,updated_at) VALUES (?,?,?,?,1) ON CONFLICT(property_id) DO UPDATE SET photos=excluded.photos').run(f.property,'{}','["photo-1"]',"r1");
+ f.db.raw.prepare('INSERT INTO property_details(property_id,details,photos,revision,updated_at) VALUES (?,?,?,?,1) ON CONFLICT(property_id) DO UPDATE SET photos=excluded.photos').run(f.property,'{}','["photo-1","photo-2","photo-3"]',"r1");
+ // «На карте» needs a point for the current address (publication audit 2026-11-22).
+ f.db.raw.prepare("INSERT OR REPLACE INTO property_locations(property_id,longitude,latitude,source,address_fingerprint,updated_at) SELECT ?,76.95,52.28,'owner',city||'|'||district||'|'||address,1 FROM properties WHERE id=?").run(f.property,f.property);
 }
 
 test('a ready draft goes to the administrator check by itself, once',async()=>{
@@ -70,6 +72,8 @@ test('approval is kept and reported honestly when another rule holds publication
   assert.equal(result.shown,false);assert.match(result.message,/подтвердить телефон/);
   assert.equal(f.db.raw.prepare('SELECT published FROM properties WHERE id=?').get(f.property).published,0);
   assert.equal(f.db.raw.prepare("SELECT status FROM participant_reviews WHERE property_id=?").get(f.property).status,'approved');
-  assert.ok(f.db.raw.prepare("SELECT 1 FROM notifications WHERE user_id='owner' AND body LIKE '%можно показать гостям%'").get());
+  // The owner hears what is left, and the flat waits to show itself once the phone is confirmed.
+  assert.ok(f.db.raw.prepare("SELECT 1 FROM notifications WHERE user_id='owner' AND body LIKE '%осталось: подтвердить телефон в профиле%'").get());
+  assert.equal(f.db.raw.prepare('SELECT COUNT(*) n FROM show_waiting WHERE property_id=?').get(f.property).n,1);
  }finally{f.db.close();}
 });

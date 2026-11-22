@@ -15,8 +15,8 @@ export class TestDatabase{
  close(){this.raw.close();}
 }
 export const now=()=>Math.floor(Date.now()/1000),iso=t=>new Date(t*1000).toISOString();
-// A photo of the title the owner attached to a place, as saveRightDoc stores it.
-export function rightDoc(db,propertyId,ownerId,kind='owner'){db.raw.prepare("INSERT INTO property_right_docs(id,property_id,owner_id,kind,data,width,height,bytes,created_at) VALUES (?,?,?,?,'data:image/jpeg;base64,AA==',1,1,1,?)").run('doc-'+propertyId+'-'+Math.random().toString(36).slice(2,8),propertyId,ownerId,kind,now());}
+// A photo of the title the owner attached to a place, as saveRightDoc stores it: it proves the current address only.
+export function rightDoc(db,propertyId,ownerId,kind='owner'){db.raw.prepare("INSERT INTO property_right_docs(id,property_id,owner_id,kind,data,width,height,bytes,created_at,address_revision) VALUES (?,?,?,?,'data:image/jpeg;base64,AA==',1,1,1,?,COALESCE((SELECT revision FROM review_property_bindings WHERE property_id=?),0))").run('doc-'+propertyId+'-'+Math.random().toString(36).slice(2,8),propertyId,ownerId,kind,now(),propertyId);}
 // A photo of the ID card a participant attached in the profile.
 export function identityDoc(db,userId){db.raw.prepare("INSERT INTO identity_docs(id,user_id,data,width,height,bytes,created_at) VALUES (?,?,'data:image/jpeg;base64,AA==',1,1,1,?)").run('id-'+userId+'-'+Math.random().toString(36).slice(2,8),userId,now());}
 export async function fixture(){

@@ -1,6 +1,7 @@
 import {DomainError,required,type Role} from './domain';
 import type {RentalService} from './service';
 import {jpegInput} from './listings';
+import {CURRENT_PROOF} from './listing-rules';
 import {epoch,uuid,q,one,rows,type Row,type OperationConfig} from './operation-core';
 import {autoReview} from './admin-autocheck';
 import {dropPrivatePhotos,sweepPrivatePhotos} from './private-photos';
@@ -23,7 +24,7 @@ export const RIGHT_DOCS:Record<RightKind,string>={
 export const RIGHT_LIMIT=4;
 // «Жильё проверено»: a person at the platform approved the place by its proof (the guest sees the mark on the card).
 // `id` is a trusted column expression naming the place's id, such as p.id or d.property_id.
-export const verifiedPlaceSql=(id='p.id')=>{if(!/^[a-zA-Z][a-zA-Z0-9_]*\.[a-zA-Z_]+$/.test(id))throw new Error('Invalid column');return `(EXISTS(SELECT 1 FROM property_right_docs rd WHERE rd.property_id=COALESCE((SELECT u.lead_id FROM room_units u WHERE u.property_id=${id}),${id}) AND rd.checked_at IS NOT NULL) AND EXISTS(SELECT 1 FROM pilot_property_admissions pa WHERE pa.id=${id} AND pa.owner_reviewed=1))`;};
+export const verifiedPlaceSql=(id='p.id')=>{if(!/^[a-zA-Z][a-zA-Z0-9_]*\.[a-zA-Z_]+$/.test(id))throw new Error('Invalid column');return `(EXISTS(SELECT 1 FROM property_right_docs rd WHERE rd.property_id=COALESCE((SELECT u.lead_id FROM room_units u WHERE u.property_id=${id}),${id}) AND rd.checked_at IS NOT NULL AND rd.address_revision=COALESCE((SELECT b.revision FROM review_property_bindings b WHERE b.property_id=rd.property_id),0)) AND EXISTS(SELECT 1 FROM pilot_property_admissions pa WHERE pa.id=${id} AND pa.owner_reviewed=1))`;};
 // Once a person approved the place the photos are deleted: only the record of the check stays (kind, who, when).
 // The pointer stays until the storage confirmed the delete; the hourly sweep retries a failed one.
 export async function settleRightDocs(db:D1Database,propertyId:string,reviewerId:string,config:OperationConfig={}){
@@ -37,9 +38,9 @@ async function ownPlace(s:RentalService,propertyId:string){
  if(!p||p.owner_id!==s.userId)throw new DomainError('Жильё не найдено.',404);
  return p;
 }
-// Whether the place has its proof, and of which kind: what the review and the owner's card read.
+// Whether the place has its proof for its current address, and of which kind: what the review and the owner's card read.
 export async function rightsOf(db:D1Database,propertyId:string){
- const r=await one(db,'SELECT kind,COUNT(*) n FROM property_right_docs WHERE property_id=? GROUP BY kind ORDER BY MAX(created_at) DESC LIMIT 1',propertyId);
+ const r=await one(db,'SELECT kind,COUNT(*) n FROM property_right_docs WHERE property_id=? AND '+CURRENT_PROOF+' GROUP BY kind ORDER BY MAX(created_at) DESC LIMIT 1',propertyId);
  return r?{kind:r.kind as RightKind,count:Number(r.n)}:null;
 }
 // Settled once a person at the platform approved the place: the proof then stays as it was checked.
@@ -53,11 +54,11 @@ export async function saveRightDoc(s:RentalService,role:Role,body:Row,config:Ope
  const image=jpegInput(body.data,'property'),docId=uuid(),key=config.BUCKET?'property-rights/'+docId+'.jpg':'';
  if(key){const binary=atob(image.data.split(',')[1]);await config.BUCKET!.put(key,Uint8Array.from(binary,ch=>ch.charCodeAt(0)),{httpMetadata:{contentType:'image/jpeg'}});}
  // One kind per place: choosing the other kind starts the proof over, and the replaced photos leave the storage too.
- const replaced=(await rows(s.db,"SELECT object_key FROM property_right_docs WHERE property_id=? AND kind<>? AND object_key<>''",p.id,kind)).map(d=>String(d.object_key));
+ const replaced=(await rows(s.db,"SELECT object_key FROM property_right_docs WHERE property_id=? AND kind<>? AND object_key<>'' AND "+CURRENT_PROOF,p.id,kind)).map(d=>String(d.object_key));
  const r=await s.db.batch([
-  q(s.db,'DELETE FROM property_right_docs WHERE property_id=? AND kind<>?',p.id,kind),
-  q(s.db,'INSERT INTO property_right_docs(id,property_id,owner_id,kind,data,object_key,width,height,bytes,created_at) SELECT ?,?,?,?,?,?,?,?,?,? WHERE (SELECT COUNT(*) FROM property_right_docs WHERE property_id=?)<?',
-   docId,p.id,s.userId,kind,key?'':image.data,key,image.width,image.height,image.bytes,epoch(),p.id,RIGHT_LIMIT),
+  q(s.db,'DELETE FROM property_right_docs WHERE property_id=? AND kind<>? AND '+CURRENT_PROOF,p.id,kind),
+  q(s.db,'INSERT INTO property_right_docs(id,property_id,owner_id,kind,data,object_key,width,height,bytes,created_at,address_revision) SELECT ?,?,?,?,?,?,?,?,?,?,COALESCE((SELECT revision FROM review_property_bindings WHERE property_id=?),0) WHERE (SELECT COUNT(*) FROM property_right_docs WHERE property_id=? AND '+CURRENT_PROOF+')<?',
+   docId,p.id,s.userId,kind,key?'':image.data,key,image.width,image.height,image.bytes,epoch(),p.id,p.id,RIGHT_LIMIT),
  ]);
  await drop(s.db,config.BUCKET,replaced);
  if(!r[1].meta.changes){if(key)await drop(s.db,config.BUCKET,[key]);throw new DomainError('Приложено максимум фото документа: '+RIGHT_LIMIT+'.',409);}
@@ -78,7 +79,8 @@ export async function removeRightDoc(s:RentalService,role:Role,body:Row,config:O
 export async function listRightDocs(s:RentalService,propertyId:string,platformAdmin=false){
  const p=await one(s.db,'SELECT id,owner_id FROM properties WHERE id=?',required(propertyId,'Жильё',100));
  if(!p||(!platformAdmin&&p.owner_id!==s.userId))throw new DomainError('Жильё не найдено.',404);
- const docs=await rows(s.db,'SELECT id,kind,width,height,created_at,checked_at FROM property_right_docs WHERE property_id=? ORDER BY created_at,id',p.id);
+ // Only the proof for the current address: an old address's check stays in the database, not in the list.
+ const docs=await rows(s.db,'SELECT id,kind,width,height,created_at,checked_at FROM property_right_docs WHERE property_id=? AND '+CURRENT_PROOF+' ORDER BY created_at,id',p.id);
  // The administrator compares the name on the document with the profile and with the Kaspi recipient guests pay.
  const names=platformAdmin?await one(s.db,'SELECT u.name,d.recipient,d.pending_recipient FROM profiles u LEFT JOIN payout_details d ON d.user_id=u.id WHERE u.id=?',p.owner_id):null;
  return {docs,kinds:RIGHT_KINDS,need:RIGHT_DOCS,...(names?{names:{profile:names.name||'',recipient:names.recipient||'',pendingRecipient:names.pending_recipient||''}}:{})};

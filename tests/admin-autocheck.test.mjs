@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {fixture,load,now} from './helpers/platform.mjs';
+import {fixture,load,now,rightDoc} from './helpers/platform.mjs';
 const {flatChecks,cleanerChecks,verdictOf,normalAddress,hasContacts,sweepReviews,AI_REVIEWER}=await load('admin-autocheck');
 const {requestParticipantReview,decideParticipantReview}=await load('participant-security');
 const {readPilotPolicy,savePilotPolicy}=await load('pilot-governance');
@@ -102,7 +102,7 @@ test('a flat changed after the request still reaches the administrator instead o
   const {PUBLISH_REVIEW}=await load('listing-edit');await strict(f);readyFlat(f,1);
   await requestParticipantReview(f.owner,'owner',{propertyId:f.property,reference:PUBLISH_REVIEW+': fixture'},{PLATFORM_ADMIN_IDS:'admin'});
   f.db.raw.prepare("INSERT INTO review_property_bindings(property_id,revision) VALUES (?,1) ON CONFLICT(property_id) DO UPDATE SET revision=revision+1").run(f.property);
-  readyFlat(f,4);f.db.raw.prepare('UPDATE participant_reviews SET ai_checked_at=0').run();
+  readyFlat(f,4);rightDoc(f.db,f.property,'owner');f.db.raw.prepare('UPDATE participant_reviews SET ai_checked_at=0').run();
   assert.equal((await sweepReviews(f.db,{PLATFORM_ADMIN_IDS:'admin'})).approve,1);
   const review=f.db.raw.prepare('SELECT * FROM participant_reviews WHERE property_id=?').get(f.property);
   assert.equal(review.status,'pending');
@@ -144,6 +144,8 @@ test('after the city changes the old pin does not count, and the review request 
   assert.notEqual(missed.verdict,'approve');
   const notified=f.db.raw.prepare("SELECT body FROM notifications WHERE user_id=? ORDER BY created_at DESC").all(f.ownerId||f.owner.userId).map(n=>n.body).join(' ');
   assert.match(notified,/«Адрес»/);
+  // The right document proves one address: the new city needs it again (publication audit 2026-11-22).
+  rightDoc(f.db,f.property,'owner');
   globalThis.fetch=async url=>new Response(JSON.stringify(String(url).includes('nominatim')?[{lon:'76.93',lat:'43.24'}]:[]));
   const placed=await requestParticipantReview(f.owner,'owner',{propertyId:f.property,reference:PUBLISH_REVIEW+': fixture'},{PLATFORM_ADMIN_IDS:'admin'});
   assert.equal(placed.verdict,'escalate','handed to a person with every rule passed');

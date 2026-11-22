@@ -74,7 +74,8 @@ export async function answerGuest(db:D1Database,roomId:string,seq:number,offer?:
  const message=await one(db,"SELECT m.body,m.sender_id,r.entity_kind,r.entity_id,r.channel,r.membership_key FROM discussion_messages m JOIN discussion_rooms r ON r.id=m.room_id WHERE m.room_id=? AND m.seq=? AND m.sender_role='guest'",roomId,seq);
  if(!message||message.entity_kind!=='booking'||message.channel!=='stay')return false;
  const t=epoch();
- const b=await one(db,`SELECT b.*,p.owner_id,p.address,p.capacity,p.title,p.description,(SELECT details FROM property_details WHERE property_id=p.id) details,COALESCE(bt.deposit,0) deposit,bt.deposit_status,COALESCE(NULLIF(bt.house_rules,''),pp.house_rules,'') house_rules,${guestModeSql} mode
+ // The AI says the address the guest agreed to while a new one is checked or offered (lib/service.ts).
+ const b=await one(db,`SELECT b.*,p.owner_id,COALESCE((SELECT a.city||', '||a.address FROM booking_addresses a WHERE a.booking_id=b.id),p.address) address,p.capacity,p.title,p.description,(SELECT details FROM property_details WHERE property_id=p.id) details,COALESCE(bt.deposit,0) deposit,bt.deposit_status,COALESCE(NULLIF(bt.house_rules,''),pp.house_rules,'') house_rules,${guestModeSql} mode
   FROM bookings b JOIN properties p ON p.id=b.property_id LEFT JOIN booking_terms bt ON bt.booking_id=b.id ${guestModeJoins} WHERE b.id=? AND b.guest_id=?`,t,message.entity_id,message.sender_id);
  if(!b||b.mode!=='auto'||!['requested','confirmed','completed'].includes(b.status))return false;
  // The owner is writing in this chat right now: the AI stays quiet.
