@@ -18,6 +18,7 @@ import {approvalCards} from './approvals';
 import {hasContacts,MIN_PHOTOS} from './listing-rules';
 import {listingInput,jpegInput,propertyStatus,cleanerStatus,categories,kindCategory,isBanquet,occasions,occasionLabel,searchCategory} from './listings';
 import {mediaKey,dataUrlBytes,mediaData} from './media-store';
+import {CANCELLED_AFTER_ARRIVAL} from './stay-result';
 import {readAdministratorState} from './administrator';
 import {recordFinance,migrateFinanceEntity} from './finance';
 import {payoutOf,payoutPhoneText} from './payout';
@@ -908,11 +909,18 @@ export class RentalService {
       const c=cancellationTerms({by:owner?'owner':'guest',status:b.status,mode:terms?.billing_mode||'daily',rate:terms?.rate||0,units:terms?.units||1,amount:b.amount,paid:terms?.paid_amount||0,deposit:terms?.deposit_status==='owner_verified'?terms.deposit:0,start:b.start,minHours:terms?.min_hours||policy?.min_hours||1,at:t,banquet:!!terms?.occasion});
       const money=(n:number)=>n.toLocaleString('ru-RU').replace(/\u00a0|\u202f/g,' ')+' ₸',deposit=c.deposit?' Депозит '+money(c.deposit)+' возвращается полностью.':'';
       const who=owner?'Владелец отменил бронь':'Гость отменил бронь',title='«'+b.title+'»';
+      // The guest said they came in, the owner did not confirm it and cancels: the settling-in stays owed
+      // (lib/stay-result.ts); if the guest was not there, the owner disputes the charge and a person decides.
+      const afterArrival=owner&&b.status==='confirmed'&&!!terms?.checkin_reported_at&&!terms?.actual_checkin;
+      const tariffNote=afterArrival?' Гость сообщил, что заселился, поэтому заселение учитывается в тарифе. Если гостя не было, оспорьте начисление в «Мои данные и обращения»: решение примет сотрудник сервиса.':'';
       const forGuest=!terms?.paid_amount&&!c.deposit?'Оплаты не было, возвращать нечего.':c.withheld?'Отмена позже бесплатного срока: по правилам сервиса владельцу остаётся '+money(c.withheld)+', вам вернут '+money(c.refund)+'.'+deposit:'Вам вернут всю оплату: '+money(c.refund)+'.'+deposit;
       const forOwner=!terms?.paid_amount&&!c.deposit?'Оплаты не было, возвращать нечего.':c.withheld?'По правилам отмены у вас остаётся '+money(c.withheld)+(c.refund?', гостю нужно вернуть '+money(c.refund):'')+'.'+deposit:'Верните гостю всю оплату: '+money(c.refund)+'.'+deposit;
       const jobText='Бронь '+title+' отменена, уборка после неё не нужна. Задание снято.';
       const r=await this.db.batch([
         this.query("UPDATE bookings SET status='cancelled' WHERE id=? AND status IN ('requested','confirmed')",bookingId),
+        // Only when this request did the cancelling (a guest who cancelled a moment earlier keeps it free); written
+        // right after the update, so changes() is still its count and the next statement sees the same answer.
+        ...(afterArrival?[this.query('INSERT INTO audit_events SELECT ?,?,?,?,? WHERE changes()>0',id(),this.userId,bookingId,CANCELLED_AFTER_ARRIVAL,t)]:[]),
         // Written once, by the request that cancelled (a concurrent second cancel finds it set). The target is cumulative:
         // refunds recorded before the cancellation count towards it, because paid_amount is already net of them.
         this.query("UPDATE booking_terms SET refund_due=?+COALESCE((SELECT SUM(amount) FROM finance_entries WHERE booking_id=booking_terms.booking_id AND kind='refund'),0),refund_recorded_at=CASE WHEN ?=0 THEN ? ELSE NULL END WHERE booking_id=? AND refund_due IS NULL AND changes()>0",c.refund,c.refund,t,bookingId),
@@ -921,10 +929,10 @@ export class RentalService {
         this.query("INSERT OR IGNORE INTO notifications SELECT ?||a.id,a.user_id,?,'cleaner:booking-cancelled:'||j.id||':'||a.user_id,0,? FROM applications a JOIN cleaning_jobs j ON j.id=a.job_id WHERE j.booking_id=? AND j.status='open' AND a.status='pending'",id()+':',jobText,t,bookingId),
         this.query("UPDATE cleaning_jobs SET status='cancelled' WHERE booking_id=? AND status IN ('open','assigned')",bookingId),
         this.notify(b.guest_id,(owner?who+' '+title+'. ':'Бронь '+title+' отменена. ')+forGuest,`cancelled:${bookingId}`,'guest'),
-        this.notify(b.owner_id,(owner?'Бронь '+title+' отменена. ':who+' '+title+'. ')+forOwner,`cancelled:${bookingId}`,'owner'),
+        this.notify(b.owner_id,(owner?'Бронь '+title+' отменена. ':who+' '+title+'. ')+forOwner+tariffNote,`cancelled:${bookingId}`,'owner'),
         this.audit(bookingId,'booking.cancelled')]);
       if(!r[0].meta.changes)throw new DomainError('Бронь изменилась. Обновите карточку.',409);
-      return {message:'Бронь отменена. '+(owner?forOwner:forGuest),cancel:c};
+      return {message:'Бронь отменена. '+(owner?forOwner+tariffNote:forGuest),cancel:c};
     }
     if(body.action==='paid'&&owner) {
       if(b.status!=='confirmed') throw new DomainError('Сначала подтвердите бронь.');

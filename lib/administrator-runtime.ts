@@ -46,7 +46,7 @@ async function ownerData(service:RentalService){
 async function automaticActions(service:RentalService){
  const policies=await service.all('SELECT pp.* FROM property_policies pp JOIN properties p ON p.id=pp.property_id WHERE p.owner_id=?',service.userId);
  // The owner's own choices in «Автопилот: решения и сроки»: whether the AI decides and how long it waits.
- const accept=await ruleFor(service.db,service.userId,'accept'),assign=await ruleFor(service.db,service.userId,'assign');
+ const accept=await ruleFor(service.db,service.userId,'accept'),fast=await ruleFor(service.db,service.userId,'accept_fast'),assign=await ruleFor(service.db,service.userId,'assign');
  let actions=0;
  for(const policy of policies){
   if(!mandateActive(policy))continue;
@@ -77,18 +77,23 @@ async function automaticActions(service:RentalService){
     }
    }
    // The AI checks each submitted cleaning report. A clean report is offered to the owner for one-tap acceptance;
-   // without an answer in the owner's «accept» time, or when the next guest arrives within two hours, the AI accepts it.
+   // without an answer in the owner's «accept» time the AI accepts it. Before a near arrival it accepts at once only
+   // with the owner's separate permission «Быстрая приёмка перед заездом» (accept_fast, off by default).
    const submitted=await service.all("SELECT j.*,p.title FROM cleaning_jobs j JOIN properties p ON p.id=j.property_id WHERE j.property_id=? AND j.status='submitted' ORDER BY j.end,j.id",policy.property_id);
    for(const job of submitted){
     const t=now(),review=await reviewCleaning(service.db,job),title=job.title||'жильё';
     if(!review.ok){await service.notify(service.userId,'ИИ-администратор проверил отчёт об уборке «'+title+'» и нашёл замечания: '+review.findings.join('; ')+'. Проверьте фото и примите уборку или верните на доработку.','administrator-review-issue:'+job.id+':'+job.version,'owner').run();continue;}
-    const nextGuest=await service.one("SELECT id FROM bookings WHERE property_id=? AND status IN ('requested','confirmed') AND start>? AND start<=?",policy.property_id,t-3600,t+7200);
-    if(!nextGuest||!accept.on){
+    const soon=accept.on&&fast.on?fast.minutes*60:7200;
+    const nextGuest=await service.one("SELECT id FROM bookings WHERE property_id=? AND status IN ('requested','confirmed') AND start>? AND start<=?",policy.property_id,t-3600,t+soon);
+    const quick=!!nextGuest&&accept.on&&fast.on;
+    if(!quick){
      const asked=await service.one('SELECT created_at FROM notifications WHERE user_id=? AND dedupe=?',service.userId,'owner:administrator-review:'+job.id+':'+job.version);
-     if(!asked){await service.notify(service.userId,'ИИ-администратор проверил отчёт об уборке «'+title+'»: фото до ('+review.before+') и после ('+review.after+') сделаны во время уборки, чек-лист выполнен, проблем не указано. Примите уборку в карточке'+(accept.on?', или через '+minutesLabel(accept.minutes)+' ИИ примет сам.':'.'),'administrator-review:'+job.id+':'+job.version,'owner').run();continue;}
+     if(!asked){await service.notify(service.userId,(nextGuest?'Скоро заезд гостя. ':'')+'ИИ-администратор проверил отчёт об уборке «'+title+'»: фото до ('+review.before+') и после ('+review.after+') загружены во время уборки, чек-лист выполнен, проблем не указано. Качество уборки проверьте по фото. Примите уборку в карточке'+(accept.on?', или через '+minutesLabel(accept.minutes)+' ИИ примет сам.':'.'),'administrator-review:'+job.id+':'+job.version,'owner').run();continue;}
      if(!accept.on||asked.created_at+accept.minutes*60>t)continue;
     }
-    try{await delegated.jobAction(job.id,{action:'approve',expectedVersion:job.version});await service.notify(service.userId,'ИИ-администратор принял уборку «'+title+'» по фотоотчёту. Жильё готово к заселению.'+(job.fee>0&&job.assigned_to&&job.assigned_to!==service.userId?' Переведите исполнителю '+job.fee.toLocaleString('ru-RU').replace(/\u00a0|\u202f/g,' ')+' ₸ напрямую и отметьте оплату в карточке уборки.':''),'administrator-approved:'+job.id,'owner').run();actions++;}catch(error){if(!expectedConflict(error))throw error;}
+    // The journal says which of the owner's rules accepted the report and on what it relied.
+    const because=quick?'по вашему правилу «Быстрая приёмка перед заездом»: скоро заезд гостя, в отчёте нет замечаний':'по вашему правилу «Приёмка уборки»: за '+minutesLabel(accept.minutes)+' ответа не было, в отчёте нет замечаний';
+    try{await delegated.jobAction(job.id,{action:'approve',expectedVersion:job.version});await service.notify(service.userId,'ИИ-администратор принял уборку «'+title+'» '+because+' (фото до: '+review.before+', после: '+review.after+'). Жильё готово к заселению.'+(job.fee>0&&job.assigned_to&&job.assigned_to!==service.userId?' Переведите исполнителю '+job.fee.toLocaleString('ru-RU').replace(/\u00a0|\u202f/g,' ')+' ₸ напрямую и отметьте оплату в карточке уборки.':''),'administrator-approved:'+job.id,'owner').run();actions++;}catch(error){if(!expectedConflict(error))throw error;}
    }
   }
   if(policy.auto_assign){
