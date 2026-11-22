@@ -30,6 +30,8 @@ export function VoiceButton({disabled,onSend,onError}:{disabled:boolean;onSend:(
  const recorder=useAudioRecorder(VOICE),state=useAudioRecorderState(recorder,250),[busy,setBusy]=useState(false);
  const recording=state.isRecording,ms=state.durationMillis||0;
  useEffect(()=>{if(recording&&ms>=VOICE_MAX_MS)void finish(true);},[recording,ms]);// eslint-disable-line react-hooks/exhaustive-deps
+ // The chat keys this button by its room: leaving the room throws the recording away, so it never goes to another chat.
+ useEffect(()=>()=>{try{if(recorder.isRecording)void recorder.stop().catch(()=>{});}catch{}},[recorder]);
  async function start(){
   if(busy||disabled)return;setBusy(true);
   try{
