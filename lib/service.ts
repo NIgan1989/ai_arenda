@@ -918,6 +918,9 @@ export class RentalService {
       const jobText='Бронь '+title+' отменена, уборка после неё не нужна. Задание снято.';
       const r=await this.db.batch([
         this.query("UPDATE bookings SET status='cancelled' WHERE id=? AND status IN ('requested','confirmed')",bookingId),
+        // Only when this request did the cancelling (a guest who cancelled a moment earlier keeps it free); written
+        // right after the update, so changes() is still its count and the next statement sees the same answer.
+        ...(afterArrival?[this.query('INSERT INTO audit_events SELECT ?,?,?,?,? WHERE changes()>0',id(),this.userId,bookingId,CANCELLED_AFTER_ARRIVAL,t)]:[]),
         // Written once, by the request that cancelled (a concurrent second cancel finds it set). The target is cumulative:
         // refunds recorded before the cancellation count towards it, because paid_amount is already net of them.
         this.query("UPDATE booking_terms SET refund_due=?+COALESCE((SELECT SUM(amount) FROM finance_entries WHERE booking_id=booking_terms.booking_id AND kind='refund'),0),refund_recorded_at=CASE WHEN ?=0 THEN ? ELSE NULL END WHERE booking_id=? AND refund_due IS NULL AND changes()>0",c.refund,c.refund,t,bookingId),
@@ -927,8 +930,7 @@ export class RentalService {
         this.query("UPDATE cleaning_jobs SET status='cancelled' WHERE booking_id=? AND status IN ('open','assigned')",bookingId),
         this.notify(b.guest_id,(owner?who+' '+title+'. ':'Бронь '+title+' отменена. ')+forGuest,`cancelled:${bookingId}`,'guest'),
         this.notify(b.owner_id,(owner?'Бронь '+title+' отменена. ':who+' '+title+'. ')+forOwner+tariffNote,`cancelled:${bookingId}`,'owner'),
-        this.audit(bookingId,'booking.cancelled'),
-        ...(afterArrival?[this.audit(bookingId,CANCELLED_AFTER_ARRIVAL)]:[])]);
+        this.audit(bookingId,'booking.cancelled')]);
       if(!r[0].meta.changes)throw new DomainError('Бронь изменилась. Обновите карточку.',409);
       return {message:'Бронь отменена. '+(owner?forOwner+tariffNote:forGuest),cancel:c};
     }

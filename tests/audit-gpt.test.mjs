@@ -85,6 +85,19 @@ test('an owner who cancels after the guest said «Я заселился» still 
  }finally{f.db.close();}}
 });
 
+test('an owner whose cancel lost the race to the guest\'s own cancel adds no charge',async()=>{
+ const f=await fixture(),R=f.db.raw;try{
+  R.prepare('UPDATE bookings SET start=?,end=?,occupied_until=? WHERE id=?').run(now()-300,now()+7200,now()+9000,f.booking);
+  await f.guest.bookingAction(f.booking,{action:'report_checkin'});
+  // The owner read the booking as confirmed; the guest's cancel lands before the owner's write.
+  const read=f.owner.one.bind(f.owner);let done=false;
+  f.owner.one=async(sql,...args)=>{const row=await read(sql,...args);if(!done&&/FROM property_operations/.test(sql)){done=true;R.prepare("UPDATE bookings SET status='cancelled' WHERE id=?").run(f.booking);}return row;};
+  await assert.rejects(f.owner.bookingAction(f.booking,{action:'cancel'}),e=>e.status===409);
+  assert.equal(R.prepare("SELECT COUNT(*) n FROM audit_events WHERE entity_id=? AND action='booking.cancelled_after_arrival'").get(f.booking).n,0);
+  assert.equal(stayed(f),0);
+ }finally{f.db.close();}
+});
+
 test('before a near arrival the AI accepts the cleaning at once only with the owner\'s separate permission',async()=>{
  const {checkAdministratorOwner}=await load('administrator-runtime'),{saveEvidence}=await load('evidence');
  for(const fast of [false,true]){const f=await fixture(),R=f.db.raw;try{
