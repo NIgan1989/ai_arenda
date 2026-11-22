@@ -39,12 +39,16 @@ jobs:
       - name: Download OpenStreetMap of Kazakhstan
         run: |
           mkdir -p outputs/osm
-          # Geofabrik first, retried for about ten minutes; if it stays down, the same extract from openstreetmap.fr,
-          # whose file name is read from its folder listing.
+          # Geofabrik first: the file's address comes from its index, retried for about ten minutes. If it stays down,
+          # the same extract from openstreetmap.fr, whose file name is read from its folder listing.
           get(){ curl -fsSL --retry 10 --retry-delay 60 --retry-all-errors -o outputs/osm/kz.osm.pbf "$1" || { rm -f outputs/osm/kz.osm.pbf; false; }; }
-          get https://download.geofabrik.de/asia/kazakhstan-latest.osm.pbf || {
+          url=$(curl -fsSL --retry 3 --retry-all-errors https://download.geofabrik.de/index-v1-nogeom.json | jq -r '.features[].properties|select(.id=="kazakhstan")|.urls.pbf' || true)
+          echo "Geofabrik file: ${url:-not in the index}"
+          get "${url:-https://download.geofabrik.de/asia/kazakhstan-latest.osm.pbf}" || {
             dir=https://download.openstreetmap.fr/extracts/asia/
-            name=$(curl -fsSL --retry 5 --retry-all-errors "$dir" | grep -o 'kazakhstan[^"<>]*\.osm\.pbf' | grep -v '\.md5' | head -1 || true)
+            list=$(curl -fsSL --retry 5 --retry-all-errors "$dir" || true)
+            echo "Mirror listing: ${#list} bytes"
+            name=$(printf '%s' "$list" | grep -oi 'kazakhstan[^"<>]*\.osm\.pbf' | grep -v '\.md5' | head -1 || true)
             echo "Mirror file: ${name:-none}"
             [ -n "$name" ] && get "$dir$name"
           }
