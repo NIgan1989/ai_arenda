@@ -24,10 +24,11 @@ export function NativeDecisionRules({tint}:{tint:string}){
   {rules.map(r=><View key={r.key} accessibilityLabel={r.title}><Group space>
    {r.auto?<SwitchRow icon="sparkles" tint={tint} title={r.title} note={r.auto} checked={!!r.on} disabled={!!busy} onChange={v=>save(r,{on:v})}/>
     :<View style={a.row}><RowIcon icon="sparkles" tint={tint}/><Text style={[a.title,a.wide]}>{r.title}</Text></View>}
-   {/* The time sits under its label: four choices do not fit beside it on a phone. */}
-   <View style={[a.row,{flexWrap:'wrap',rowGap:8}]}><RowIcon icon="clock" tint={tint}/><Text style={[a.title,{flexGrow:1,flexShrink:1,flexBasis:130,minWidth:130}]}>{r.time}</Text>
+   {/* The time sits under its label: four choices do not fit beside it on a phone. A switched-off rule hides its time:
+       it does not act, so a time there would read as if it did (audit of 2026-11-22). */}
+   {(!r.auto||r.on)&&<View style={[a.row,{flexWrap:'wrap',rowGap:8}]}><RowIcon icon="clock" tint={tint}/><Text style={[a.title,{flexGrow:1,flexShrink:1,flexBasis:130,minWidth:130}]}>{r.time}</Text>
     <View accessibilityRole="radiogroup" accessibilityLabel={r.title+': '+r.time} style={[a.seg,{marginLeft:'auto'}]}>{r.choices.map(([m,label]:[number,string])=><Pressable key={m} accessibilityRole="radio" accessibilityState={{checked:r.minutes===m,disabled:!!busy}} disabled={!!busy} onPress={()=>{if(r.minutes!==m)save(r,{minutes:m});}} style={[a.segItem,r.minutes===m&&a.segOn]}><Text style={[a.segText,r.minutes===m&&a.segTextOn]}>{label}</Text></Pressable>)}</View>
-   </View>
+   </View>}
    <View style={[a.row,{minHeight:0,paddingTop:8,paddingBottom:12}]}><Text style={[a.note,a.wide]}>{r.on||!r.off?r.note:r.off}</Text></View>
   </Group></View>)}
  </View>;

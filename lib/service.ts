@@ -19,7 +19,7 @@ import {hasContacts,hasContactWays,MIN_PHOTOS} from './listing-rules';
 import {phoneOpens} from './chat-guard';
 import {listingInput,jpegInput,propertyStatus,cleanerStatus,categories,kindCategory,isBanquet,occasions,occasionLabel,searchCategory} from './listings';
 import {mediaKey,dataUrlBytes,mediaData} from './media-store';
-import {CANCELLED_AFTER_ARRIVAL} from './stay-result';
+import {CANCELLED_AFTER_ARRIVAL,NOT_LET_IN} from './stay-result';
 import {readAdministratorState} from './administrator';
 import {recordFinance,migrateFinanceEntity} from './finance';
 import {payoutOf,payoutPhoneText} from './payout';
@@ -290,6 +290,9 @@ export class RentalService {
   async resolveAdministratorIssue(roleValue:unknown,body:Row){
     const role=await this.authorizeWorkspace(roleValue,'administrator/issues'),issue=await this.one('SELECT * FROM administrator_issues WHERE id=?',required(body.id,'Обращение',100));
     if(!issue||!(role==='owner'&&issue.owner_id===this.userId||issue.other_user===this.userId&&issue.other_role===role))throw new DomainError('Обращение недоступно для решения в этой роли.',403);
+    // «Меня не заселили» is decided by a person at the platform (lib/pilot-governance.ts), never by the owner it is about:
+    // its outcome decides the commission (lib/stay-result.ts) and the hold of the owner's places.
+    if(String(issue.description).startsWith(NOT_LET_IN))throw new DomainError('Жалобу «Меня не заселили» разбирает администратор сервиса. Ответьте в обращении, решение примет он.',403);
     const resolution=required(body.resolution,'Как решено обращение',1500),version=number(body.expectedVersion,'Версия обращения',1,10000000);
     const auditId=id(),r=await this.db.batch([
       this.query("UPDATE administrator_issues SET status='resolved',resolution=?,resolved_at=?,version=version+1 WHERE id=? AND status='open' AND version=?",resolution,now(),issue.id,version),

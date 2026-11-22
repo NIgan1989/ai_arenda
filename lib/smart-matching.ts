@@ -5,6 +5,7 @@ import {geoDistance} from './map-location';
 import {amenities,propertyTypes,categories,occasions,searchCategory} from './listings';
 export {searchCategory};
 import {autoAnswerOffers,setGuestMode,guestModeSql,guestModeJoins} from './autopilot';
+const ZONE_MS=5*3600000; // Kazakhstan time, UTC+5
 import {guestFavorites,favouredFirst} from './favorites';
 
 // Wishes that are the owner's rules or way of check-in, not amenities: «с питомцами», «можно курить», «для вечеринок»,
@@ -134,6 +135,10 @@ export async function emptyHint(s:RentalService,f:Row):Promise<Row>{
   const start=Date.parse(f.start),length=Date.parse(f.end)-start;
   // Shorter than the shortest stay any place here takes: «минимум 2 часа», not «занято».
   if(f.mode==='hourly'){const least=all.filter((p:Row)=>Number(p.policy?.hourly_price)>0&&Number(p.capacity)>=Number(f.guests)).map((p:Row)=>Number(p.policy.min_hours)||1);if(least.length&&Math.min(...least)*3600000>length)return {reason:'minHours',minHours:Math.min(...least)};}
+  // By the hour a later start the same day comes first (audit of 2026-11-22: the guest was sent to tomorrow while the
+  // evening was free). Every half hour, up to six hours later, never past the local midnight (Kazakhstan, UTC+5).
+  if(f.mode==='hourly'){const midnight=(Math.floor((start+ZONE_MS)/86400000)+1)*86400000-ZONE_MS;
+   for(let step=1;step<=12;step++){const from=start+step*1800000;if(from+length>midnight)break;const found=rankMatches(await free(new Date(from).toISOString(),new Date(from+length).toISOString()),{...f,now:false,start:new Date(from).toISOString(),end:new Date(from+length).toISOString()});if(found.length)return {reason:'busy',next:{start:new Date(from).toISOString(),end:new Date(from+length).toISOString(),count:found.length}};}}
   for(let day=1;day<=7;day++){const from=start+day*86400000,found=rankMatches(await free(new Date(from).toISOString(),new Date(from+length).toISOString()),{...f,now:false,start:new Date(from).toISOString(),end:new Date(from+length).toISOString()});if(found.length)return {reason:'busy',next:{start:new Date(from).toISOString(),end:new Date(from+length).toISOString(),count:found.length}};}
   return {reason:'busy'};
  }

@@ -1,6 +1,7 @@
 import {DomainError,required} from './domain';
 import type {RentalService} from './service';
 import {jpegInput} from './listings';
+import {dropPrivatePhotos,sweepPrivatePhotos} from './private-photos';
 import {epoch,uuid,q,one,rows,type Row,type OperationConfig} from './operation-core';
 
 // «Удостоверение личности»: every participant (guest, owner, performer) attaches a photo of the ID card once, in the
@@ -65,34 +66,10 @@ export async function settleIdentity(db:D1Database,userId:string,reviewerId:stri
  await q(db,"UPDATE identity_docs SET data='',checked_at=?,checked_by=? WHERE user_id=? AND checked_at IS NULL",epoch(),reviewerId,userId).run();
  return dropObjects(db,config.BUCKET,keys);
 }
-// Deletes stored ID photos one by one. A checked photo loses its pointer only when its delete succeeded.
-async function dropObjects(db:D1Database,bucket:R2Bucket|undefined,keys:string[]){
- let left=0;
- for(const key of keys){
-  if(!bucket){left++;continue;}
-  try{await bucket.delete(key);await q(db,"UPDATE identity_docs SET object_key='' WHERE object_key=? AND checked_at IS NOT NULL",key).run();}
-  catch{left++;console.error('Identity photo delete failed; the sweep will retry');}
- }
- return left;
-}
+const dropObjects=(db:D1Database,bucket:R2Bucket|undefined,keys:string[])=>dropPrivatePhotos(db,bucket,'identity_docs',keys);
 export const IDENTITY_PREFIX='identity/';
-// Hourly: (1) photos of checked IDs whose delete failed are deleted again; (2) stored photos that no row waits for
-// any more (a refused or removed photo whose delete failed, an upload whose row was never written) are deleted.
-// A photo is written a moment before its row, so an object younger than an hour without a row is left alone.
-// Walks the bucket in pages and keeps its place in the job payload, like the flat photos (lib/media-store.ts).
-export async function sweepIdentityObjects(db:D1Database,bucket:R2Bucket|undefined,cursor=''){
- if(!bucket)return {configured:false,cursor:'',removed:0,left:0};
- const stuck=(await rows(db,"SELECT object_key FROM identity_docs WHERE checked_at IS NOT NULL AND object_key<>'' LIMIT 50")).map(r=>String(r.object_key));
- let left=await dropObjects(db,bucket,stuck),removed=stuck.length-left;
- const listed=await bucket.list({prefix:IDENTITY_PREFIX,limit:90,...(cursor?{cursor}:{})}),keys=listed.objects.map(o=>o.key);
- if(keys.length){
-  const waiting=new Set((await rows(db,`SELECT object_key FROM identity_docs WHERE checked_at IS NULL AND object_key IN (${keys.map(()=>'?').join(',')})`,...keys)).map(r=>String(r.object_key)));
-  const checked=new Set((await rows(db,`SELECT object_key FROM identity_docs WHERE checked_at IS NOT NULL AND object_key IN (${keys.map(()=>'?').join(',')})`,...keys)).map(r=>String(r.object_key)));
-  const gone=listed.objects.filter(o=>!waiting.has(o.key)&&!stuck.includes(o.key)&&(checked.has(o.key)||Date.now()-o.uploaded.getTime()>3600000)).map(o=>o.key);
-  const l=await dropObjects(db,bucket,gone);left+=l;removed+=gone.length-l;
- }
- return {configured:true,removed,left,cursor:listed.truncated?listed.cursor:''};
-}
+// The hourly sweep of ID photos (lib/private-photos.ts).
+export const sweepIdentityObjects=(db:D1Database,bucket:R2Bucket|undefined,cursor='')=>sweepPrivatePhotos(db,bucket,'identity_docs',IDENTITY_PREFIX,cursor);
 // The administrator's queue: participants whose ID waits for a look, oldest first.
 export async function identityQueue(db:D1Database){
  return rows(db,"SELECT d.user_id,u.name,u.roles,COUNT(*) photos,MIN(d.created_at) since FROM identity_docs d JOIN profiles u ON u.id=d.user_id WHERE d.checked_at IS NULL AND NOT EXISTS(SELECT 1 FROM identity_docs c WHERE c.user_id=d.user_id AND c.checked_at IS NOT NULL) GROUP BY d.user_id ORDER BY since LIMIT 100");
