@@ -38,8 +38,12 @@ export type Due={left:number;deposit:number;sum:number;reported:boolean;phase:'p
 export function dueNow(b:Row,now:number):Due{
  const t=b.terms||{},percent=prepayOf(t),paid=Number(t.paid_amount)||0,amount=Number(b.amount)||0;
  const arrival=percent>=100||checkinOpen(Number(b.start),now,t.early_checkin_at);
- const left=Math.max(0,(arrival?amount:prepaySum(amount,percent))-paid);
- const deposit=arrival&&Number(t.deposit)>0&&t.deposit_status==='pending'?Number(t.deposit):0;
+ // Once the guest said «Я оплатил», the sum they named is what the owner checks, even if the price moved since.
+ const told=(at:unknown,sum:unknown,cap:number)=>at&&Number(sum)>0?Math.min(Number(sum),cap):null;
+ const left=told(t.payment_reported_at,t.payment_reported_amount,Math.max(0,amount-paid))??Math.max(0,(arrival?amount:prepaySum(amount,percent))-paid);
+ // A deposit received in part owes only the rest.
+ const depositLeft=Math.max(0,Number(t.deposit)-(Number(t.deposit_received_amount)||0));
+ const deposit=told(t.deposit_reported_at,t.deposit_reported_amount,depositLeft)??(arrival&&depositLeft>0&&t.deposit_status==='pending'?depositLeft:0);
  return {left,deposit,sum:left+deposit,reported:(!left||!!t.payment_reported_at)&&(!deposit||!!t.deposit_reported_at),phase:arrival?'arrival':'prepay'};
 }
 /** The payout details are shown when something can be paid: after the confirmation with a prepayment, at the arrival without. */

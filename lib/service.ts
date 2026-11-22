@@ -86,6 +86,8 @@ export function collapseRooms(items:Row[],leads:Map<string,string>,counts:Map<st
   }
   return out;
 }
+/** The guest said «Я оплатил» and the owner has not answered yet: the transfer is «на проверке». */
+export const onReview=(terms:Row|null|undefined)=>!!(terms?.payment_reported_at||terms?.deposit_reported_at);
 export function kindMode(kind:string,mode:unknown,start:number,end:number){
   if(isBath(kind)){
     if(mode!==undefined&&mode!==null&&mode!==''&&mode!=='hourly')throw new DomainError('Баню и сауну бронируют по часам.');
@@ -735,6 +737,22 @@ export class RentalService {
       return {id:bookingId,amount,message:'Бронь подтверждена автоматически по правилам владельца. Оплата и депозит учитываются отдельно.'};}
     return {id:bookingId,amount,message:'Заявка отправлена. Интервал зарезервирован на '+minutesLabel(answer)+' до решения владельца.'};
   }
+  /** What came in as deposit for a booking, by the journal. */
+  async depositIn(bookingId:string){return Number((await this.one("SELECT COALESCE(SUM(amount),0) n FROM finance_entries WHERE booking_id=? AND kind='deposit'",bookingId))?.n)||0;}
+  /** «Деньги получены» on a cancelled booking: the transfer the guest reported before cancelling did arrive. It is
+   *  recorded as named, and what the cancellation rules return of it is added to what the owner gives back. */
+  async receivedAfterCancel(b:Row,terms:Row){
+    const pay=terms.payment_reported_at?Number(terms.payment_reported_amount)||0:0,deposit=terms.deposit_reported_at?Number(terms.deposit_reported_amount)||0:0;
+    await migrateFinanceEntity(this,'booking',b.id);
+    if(pay)await recordFinance(this,{kind:'payment',bookingId:b.id,amount:Math.min(pay,b.amount),confirmed:true,note:'Перевод гостя до отмены найден владельцем',requestKey:'paid-after-cancel:'+b.id+':'+terms.version});
+    if(deposit)await recordFinance(this,{kind:'deposit',bookingId:b.id,amount:Math.min(deposit,Number(terms.deposit)||deposit),confirmed:true,note:'Депозит гостя до отмены найден владельцем',requestKey:'deposit-after-cancel:'+b.id+':'+terms.version});
+    const back=Number(terms.refund_if_received)||0,sum=(n:number)=>n.toLocaleString('ru-RU').replace(/\u00a0|\u202f/g,' ')+' ₸',total=back+deposit;
+    await this.db.batch([
+      this.query('UPDATE booking_terms SET refund_due=COALESCE(refund_due,0)+refund_if_received,refund_recorded_at=CASE WHEN refund_if_received>0 THEN NULL ELSE refund_recorded_at END,refund_if_received=0,payment_reported_at=NULL,deposit_reported_at=NULL,payment_reported_amount=0,deposit_reported_amount=0,version=version+1 WHERE booking_id=?',b.id),
+      this.notify(b.guest_id,'Владелец нашёл ваш перевод '+sum(pay+deposit)+' за «'+b.title+'».'+(total?' По правилам отмены вам вернут '+sum(total)+'.':' По правилам отмены он остаётся владельцу.'),'paid-after-cancel:'+b.id,'guest'),
+      this.audit(b.id,'booking.paid_after_cancel')]);
+    return {message:'Перевод учтён.'+(total?' Верните гостю '+sum(total)+(deposit?' (из них депозит '+sum(deposit)+')':'')+' и отметьте возврат в брони.':'')};
+  }
   async bookingAction(bookingId:string,body:Row) {
     const b=await this.one('SELECT b.*,p.owner_id,p.cleaning_minutes,p.title,'+TYPE_SQL+' FROM bookings b JOIN properties p ON p.id=b.property_id WHERE b.id=? AND (b.guest_id=? OR p.owner_id=?)',bookingId,this.userId,this.userId);
     if(!b) throw new DomainError('Бронь не найдена.',404);
@@ -755,7 +773,7 @@ export class RentalService {
       if(body.confirmed!==true)throw new DomainError('Подтвердите, что перевод уже выполнен вне сервиса.');
       number(body.expectedVersion,'Версия брони',1,10000000);
       const deposit=body.action==='record_deposit_return';
-      if(deposit?!['completed','cancelled','expired'].includes(b.status)||terms?.deposit_status!=='owner_verified':!['cancelled','expired'].includes(b.status)||!terms?.paid_amount)throw new DomainError('Для этой брони такой расчёт не ожидается.',409);
+      if(deposit?!['completed','cancelled','expired'].includes(b.status)||!await this.depositIn(bookingId):!['cancelled','expired'].includes(b.status)||!terms?.paid_amount)throw new DomainError('Для этой брони такой расчёт не ожидается.',409);
       const note=required(body.note||(deposit?'Владелец отметил возврат депозита':'Владелец отметил возврат оплаты'),'Основание отметки расчёта',1000);await migrateFinanceEntity(this,'booking',bookingId);
       const balance=await this.one("SELECT COALESCE(SUM(CASE WHEN kind=? THEN amount WHEN kind=? THEN -amount ELSE 0 END),0) n FROM finance_entries WHERE booking_id=?",deposit?'deposit':'payment',deposit?'deposit_return':'refund',bookingId),remaining=balance?.n||0;
       // After a cancellation the guest is owed what the offer's rules left, not always everything paid.
@@ -785,7 +803,8 @@ export class RentalService {
       if(!owner)throw new DomainError('Депозит подтверждает владелец.',403);
       if(b.status!=='confirmed'||!terms?.deposit)throw new DomainError('Для этой брони депозит не ожидается.',409);
       await migrateFinanceEntity(this,'booking',bookingId);const balance=await this.one("SELECT COALESCE(SUM(CASE WHEN kind='deposit' THEN amount WHEN kind='deposit_return' THEN -amount ELSE 0 END),0) n FROM finance_entries WHERE booking_id=?",bookingId),remaining=Math.max(0,terms.deposit-(balance?.n||0));if(!remaining)return {message:'Депозит уже учтён.'};
-      return recordFinance(this,{kind:'deposit',bookingId,amount:remaining,confirmed:true,note:'Поступление депозита проверено владельцем',requestKey:'deposit:'+bookingId+':'+terms.version});
+      const amount=body.upTo!==undefined?Math.min(remaining,number(body.upTo,'Сумма',1,remaining)):remaining;
+      return recordFinance(this,{kind:'deposit',bookingId,amount,confirmed:true,note:'Поступление депозита проверено владельцем',requestKey:'deposit:'+bookingId+':'+terms.version});
     }
     if(body.action==='report_checkout'){
       if(b.guest_id!==this.userId)throw new DomainError(venueOr(b,'Сообщить о выезде может гость.','Сообщить '+wordsOf(b).ofLeave+' может гость.'),403);
@@ -842,7 +861,7 @@ export class RentalService {
       if((!left||terms?.payment_reported_at)&&(!deposit||terms?.deposit_reported_at))return {message:'Владелец уже знает о переводе. Он проверит поступление и подтвердит.'};
       const what=left&&deposit?sum(left+deposit)+' ('+wordsOf(b).stay.toLowerCase()+' '+sum(left)+' и депозит '+sum(deposit)+')':left?sum(left):'депозит '+sum(deposit),t=now();
       const r=await this.db.batch([
-        this.query('UPDATE booking_terms SET payment_reported_at=CASE WHEN ?>0 THEN COALESCE(payment_reported_at,?) ELSE payment_reported_at END,deposit_reported_at=CASE WHEN ?>0 THEN COALESCE(deposit_reported_at,?) ELSE deposit_reported_at END,version=version+1 WHERE booking_id=? AND version=?',left,t,deposit,t,bookingId,terms?.version),
+        this.query('UPDATE booking_terms SET payment_reported_at=CASE WHEN ?>0 THEN COALESCE(payment_reported_at,?) ELSE payment_reported_at END,payment_reported_amount=CASE WHEN ?>0 AND payment_reported_at IS NULL THEN ? ELSE payment_reported_amount END,deposit_reported_at=CASE WHEN ?>0 THEN COALESCE(deposit_reported_at,?) ELSE deposit_reported_at END,deposit_reported_amount=CASE WHEN ?>0 AND deposit_reported_at IS NULL THEN ? ELSE deposit_reported_amount END,version=version+1 WHERE booking_id=? AND version=?',left,t,left,left,deposit,t,deposit,deposit,bookingId,terms?.version),
         this.notify(b.owner_id,'Гость сообщил, что перевёл вам '+what+' за «'+b.title+'»'+((await this.one('SELECT 1 x FROM payment_receipts WHERE booking_id=?',bookingId))?' и приложил чек':'')+'. Проверьте поступление в банке и подтвердите в брони.',`paid-reported:${bookingId}:${terms?.version}`,'owner'),
         this.audit(bookingId,'booking.paid_reported')]);
       if(!r[0].meta.changes)throw new DomainError('Бронь изменилась. Обновите карточку.',409);
@@ -851,24 +870,29 @@ export class RentalService {
     // «Деньги получены»: the stay and the deposit confirmed in one swipe, each as its own journal entry.
     if(body.action==='received'){
       if(!owner)throw new DomainError('Получение денег подтверждает владелец.',403);
+      // A transfer the guest reported before cancelling is still checked: it is recorded, and what goes back is added.
+      if(b.status==='cancelled'&&onReview(terms))return this.receivedAfterCancel(b,terms!);
       if(b.status!=='confirmed')throw new DomainError('Сначала подтвердите бронь.');
       const done:string[]=[];
       // Before the arrival only the prepayment is due (lib/prepay.ts): that much is recorded, the rest at the door.
-      const due=dueNow({...b,terms},now()),upTo=due.phase==='prepay'?due.left:undefined;
+      // A sum the guest named («Я оплатил») is recorded as named, even after the price moved (lib/prepay.ts).
+      const due=dueNow({...b,terms:{...terms,deposit_received_amount:await this.depositIn(bookingId)}},now()),upTo=due.phase==='prepay'||Number(terms?.payment_reported_amount)>0?due.left:undefined;
       for(const action of ['paid','deposit_received']){
-        if(action==='deposit_received'&&(!terms?.deposit||due.phase==='prepay'))continue;
+        if(action==='deposit_received'&&(!terms?.deposit||!due.deposit))continue;
         if(action==='paid'&&upTo===0)continue;
-        const r=await this.bookingAction(bookingId,{action,...(upTo!==undefined&&action==='paid'?{upTo}:{})}) as Row;if(r?.id)done.push(action);
+        const r=await this.bookingAction(bookingId,{action,...(upTo!==undefined&&action==='paid'?{upTo}:{}),...(action==='deposit_received'?{upTo:due.deposit}:{})}) as Row;if(r?.id)done.push(action);
       }
       return {message:done.length?'Оплата подтверждена, гость это видит.':'Оплата уже была подтверждена.'};
     }
     // The owner looked at the bank and the transfer is not there: the guest is told and can say «Я оплатил» again.
     if(body.action==='not_received'){
       if(!owner)throw new DomainError('Ответить на сообщение об оплате может владелец.',403);
-      if(b.status!=='confirmed'||!terms?.payment_reported_at&&!terms?.deposit_reported_at)throw new DomainError('Гость не сообщал о переводе по этой брони.',409);
+      const cancelled=b.status==='cancelled'&&onReview(terms);
+      if(!cancelled&&(b.status!=='confirmed'||!terms?.payment_reported_at&&!terms?.deposit_reported_at))throw new DomainError('Гость не сообщал о переводе по этой брони.',409);
+      // Paying again is offered only when the money has not left the guest's bank: a late bank would take it twice.
       const r=await this.db.batch([
-        this.query('UPDATE booking_terms SET payment_reported_at=NULL,deposit_reported_at=NULL,version=version+1 WHERE booking_id=? AND version=?',bookingId,terms.version),
-        this.notify(b.guest_id,'Владелец проверил банк и не видит перевод за «'+b.title+'». Проверьте номер и сумму в карточке брони, повторите перевод или напишите владельцу в чат.',`not-received:${bookingId}:${terms.version}`,'guest'),
+        this.query('UPDATE booking_terms SET payment_reported_at=NULL,deposit_reported_at=NULL,payment_reported_amount=0,deposit_reported_amount=0,refund_if_received=0,version=version+1 WHERE booking_id=? AND version=?',bookingId,terms!.version),
+        this.notify(b.guest_id,cancelled?'Владелец проверил банк и не видит ваш перевод за «'+b.title+'». Бронь отменена, переводить заново не нужно. Если деньги списались, сверьте номер получателя по чеку и напишите владельцу в чат брони.':'Владелец проверил банк и не видит перевод за «'+b.title+'». Сверьте номер получателя и сумму по чеку и напишите владельцу в чат. Переводите заново, только если деньги не списались с вашего счёта.',`not-received:${bookingId}:${terms!.version}`,'guest'),
         this.audit(bookingId,'booking.payment_not_received')]);
       if(!r[0].meta.changes)throw new DomainError('Бронь изменилась. Обновите карточку.',409);
       return {message:'Гость получил сообщение, что перевод не пришёл.'};
@@ -969,16 +993,26 @@ export class RentalService {
       if(!['requested','confirmed'].includes(b.status))throw new DomainError('Эта бронь уже закрыта.',409);
       // The money side is fixed by the guest offer at the moment of cancelling and told to both sides in tenge.
       const policy=terms?.min_hours?null:await this.one('SELECT min_hours FROM property_policies WHERE property_id=?',b.property_id),t=now();
-      if(terms?.paid_amount)await migrateFinanceEntity(this,'booking',bookingId);
-      const c=cancellationTerms({by:owner?'owner':'guest',status:b.status,mode:terms?.billing_mode||'daily',rate:terms?.rate||0,units:terms?.units||1,amount:b.amount,paid:terms?.paid_amount||0,deposit:terms?.deposit_status==='owner_verified'?terms.deposit:0,start:b.start,minHours:terms?.min_hours||policy?.min_hours||1,at:t,banquet:!!terms?.occasion});
+      if(terms?.paid_amount||terms?.deposit)await migrateFinanceEntity(this,'booking',bookingId);
+      // The deposit goes back as far as it really came in, a part of it too, less what was already returned or kept.
+      const depositHeld=terms?.deposit?Math.max(0,(await this.one("SELECT COALESCE(SUM(CASE WHEN kind='deposit' THEN amount WHEN kind='deposit_return' THEN -amount ELSE 0 END),0) n FROM finance_entries WHERE booking_id=?",bookingId))?.n-(Number(terms.deposit_kept)||0)):0;
+      const rules={by:(owner?'owner':'guest') as 'owner'|'guest',status:b.status,mode:terms?.billing_mode||'daily',rate:terms?.rate||0,units:terms?.units||1,amount:b.amount,paid:terms?.paid_amount||0,deposit:depositHeld,start:b.start,minHours:terms?.min_hours||policy?.min_hours||1,at:t,banquet:!!terms?.occasion};
+      const c=cancellationTerms(rules);
+      // «Я оплатил» not yet checked: the transfer stays «на проверке». If the owner finds it, it goes back by the same rules.
+      const toldPay=terms?.payment_reported_at?Number(terms.payment_reported_amount)||0:0,toldDeposit=terms?.deposit_reported_at?Number(terms.deposit_reported_amount)||0:0;
+      const ifReceived=toldPay?cancellationTerms({...rules,paid:rules.paid+toldPay}).refund-c.refund:0;
       const money=(n:number)=>n.toLocaleString('ru-RU').replace(/\u00a0|\u202f/g,' ')+' ₸',deposit=c.deposit?' Депозит '+money(c.deposit)+' возвращается полностью.':'';
+      const told=toldPay+toldDeposit,backIfIn=ifReceived+toldDeposit;
+      const reviewGuest=told?' Вы сообщили о переводе '+money(told)+': владелец проверит поступление. Если деньги пришли, он вернёт '+money(backIfIn)+'. Переводить заново не нужно.':'';
+      const reviewOwner=told?' Гость сообщил о переводе '+money(told)+' до отмены. Проверьте банк: если деньги пришли, нажмите в брони «Деньги получены» и верните гостю '+money(backIfIn)+'; если нет, нажмите «Перевод не пришёл».':'';
       const who=owner?'Владелец отменил бронь':'Гость отменил бронь',title='«'+b.title+'»';
       // The guest said they came in, the owner did not confirm it and cancels: the settling-in stays owed
       // (lib/stay-result.ts); if the guest was not there, the owner disputes the charge and a person decides.
       const afterArrival=owner&&b.status==='confirmed'&&!!terms?.checkin_reported_at&&!terms?.actual_checkin;
       const tariffNote=afterArrival?' Гость сообщил, что заселился, поэтому заселение учитывается в тарифе. Если гостя не было, оспорьте начисление в «Мои данные и обращения»: решение примет сотрудник сервиса.':'';
-      const forGuest=!terms?.paid_amount&&!c.deposit?'Оплаты не было, возвращать нечего.':c.withheld?'Отмена позже бесплатного срока: по правилам сервиса владельцу остаётся '+money(c.withheld)+', вам вернут '+money(c.refund)+'.'+deposit:'Вам вернут всю оплату: '+money(c.refund)+'.'+deposit;
-      const forOwner=!terms?.paid_amount&&!c.deposit?'Оплаты не было, возвращать нечего.':c.withheld?'По правилам отмены у вас остаётся '+money(c.withheld)+(c.refund?', гостю нужно вернуть '+money(c.refund):'')+'.'+deposit:'Верните гостю всю оплату: '+money(c.refund)+'.'+deposit;
+      const forGuest0=!terms?.paid_amount&&!c.deposit?(told?reviewGuest.trim():'Оплаты не было, возвращать нечего.'):c.withheld?'Отмена позже бесплатного срока: по правилам сервиса владельцу остаётся '+money(c.withheld)+', вам вернут '+money(c.refund)+'.'+deposit:'Вам вернут всю оплату: '+money(c.refund)+'.'+deposit;
+      const forOwner0=!terms?.paid_amount&&!c.deposit?(told?reviewOwner.trim():'Оплаты не было, возвращать нечего.'):c.withheld?'По правилам отмены у вас остаётся '+money(c.withheld)+(c.refund?', гостю нужно вернуть '+money(c.refund):'')+'.'+deposit:'Верните гостю всю оплату: '+money(c.refund)+'.'+deposit;
+      const forGuest=forGuest0+(terms?.paid_amount||c.deposit?reviewGuest:''),forOwner=forOwner0+(terms?.paid_amount||c.deposit?reviewOwner:'');
       const jobText='Бронь '+title+' отменена, уборка после неё не нужна. Задание снято.';
       const r=await this.db.batch([
         this.query("UPDATE bookings SET status='cancelled' WHERE id=? AND status IN ('requested','confirmed')",bookingId),
@@ -987,7 +1021,7 @@ export class RentalService {
         ...(afterArrival?[this.query('INSERT INTO audit_events SELECT ?,?,?,?,? WHERE changes()>0',id(),this.userId,bookingId,CANCELLED_AFTER_ARRIVAL,t)]:[]),
         // Written once, by the request that cancelled (a concurrent second cancel finds it set). The target is cumulative:
         // refunds recorded before the cancellation count towards it, because paid_amount is already net of them.
-        this.query("UPDATE booking_terms SET refund_due=?+COALESCE((SELECT SUM(amount) FROM finance_entries WHERE booking_id=booking_terms.booking_id AND kind='refund'),0),refund_recorded_at=CASE WHEN ?=0 THEN ? ELSE NULL END WHERE booking_id=? AND refund_due IS NULL AND changes()>0",c.refund,c.refund,t,bookingId),
+        this.query("UPDATE booking_terms SET refund_due=?+COALESCE((SELECT SUM(amount) FROM finance_entries WHERE booking_id=booking_terms.booking_id AND kind='refund'),0),refund_recorded_at=CASE WHEN ?=0 THEN ? ELSE NULL END,refund_if_received=? WHERE booking_id=? AND refund_due IS NULL AND changes()>0",c.refund,c.refund,t,ifReceived,bookingId),
         // Whoever was going to clean after this stay hears about it: the assigned cleaner and everyone still waiting for an answer.
         this.query("INSERT OR IGNORE INTO notifications SELECT ?||j.id,j.assigned_to,?,'cleaner:booking-cancelled:'||j.id,0,? FROM cleaning_jobs j WHERE j.booking_id=? AND j.status='assigned' AND j.assigned_to IS NOT NULL",id()+':',jobText,t,bookingId),
         this.query("INSERT OR IGNORE INTO notifications SELECT ?||a.id,a.user_id,?,'cleaner:booking-cancelled:'||j.id||':'||a.user_id,0,? FROM applications a JOIN cleaning_jobs j ON j.id=a.job_id WHERE j.booking_id=? AND j.status='open' AND a.status='pending'",id()+':',jobText,t,bookingId),

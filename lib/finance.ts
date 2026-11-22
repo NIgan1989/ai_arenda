@@ -26,7 +26,9 @@ export async function recordFinance(service:RentalService,body:Row,provider?:{ev
  if(!entity)throw new DomainError('Запись недоступна этому владельцу.',403);
  const propertyId=entity.property_id;
  if(bookingId)await migrateFinanceEntity(service,'booking',bookingId);if(jobId)await migrateFinanceEntity(service,'job',jobId);
- if(['payment','deposit'].includes(kind)&&!(provider?['confirmed','cancelled','expired','completed']:['confirmed']).includes(entity.status))throw new DomainError('Поступление недоступно для этой брони.',409);
+ // A transfer the guest reported before a cancellation is still checked and recorded (lib/service.ts receivedAfterCancel).
+ const toldBefore=bookingId&&entity.status==='cancelled'&&['payment','deposit'].includes(kind)?!!await one(db,`SELECT 1 x FROM booking_terms WHERE booking_id=? AND ${kind==='payment'?'payment_reported_at':'deposit_reported_at'} IS NOT NULL`,bookingId):false;
+ if(['payment','deposit'].includes(kind)&&!toldBefore&&!(provider?['confirmed','cancelled','expired','completed']:['confirmed']).includes(entity.status))throw new DomainError('Поступление недоступно для этой брони.',409);
  const jobDue=jobId?(entity.status==='cancelled'?Number(entity.cancel_fee||0):entity.fee):0;
  if(kind==='job_payment'&&entity.status!=='completed'&&!(entity.status==='cancelled'&&jobDue>0))throw new DomainError('Сначала примите результат работы.',409);
  if(kind==='job_payment'&&!entity.assigned_to)throw new DomainError('Уборка закрыта без исполнителя: платить некому.',409);
@@ -70,6 +72,8 @@ export async function financeState(service:RentalService,role:Role){
  const where=role==='owner'?'f.owner_id=?':role==='guest'?'EXISTS(SELECT 1 FROM bookings b WHERE b.id=f.booking_id AND b.guest_id=?)':"f.kind='job_payment' AND EXISTS(SELECT 1 FROM cleaning_jobs j WHERE j.id=f.job_id AND j.assigned_to=?)";
  const entries=await rows(service.db,`SELECT f.id,f.property_id,f.booking_id,f.job_id,f.kind,f.amount,f.currency,f.source,f.created_at,CASE WHEN ?='owner' THEN f.note ELSE '' END note,p.title FROM finance_entries f JOIN properties p ON p.id=f.property_id WHERE ${where} ORDER BY f.created_at DESC,f.id LIMIT 200`,role,service.userId);
  const totals=await one(service.db,`SELECT COALESCE(SUM(${role==='cleaner'?'f.amount':"CASE WHEN f.kind='payment' THEN f.amount WHEN f.kind IN ('refund','job_payment','expense','compensation') THEN -f.amount ELSE 0 END"}),0) operatingBalance,COALESCE(SUM(CASE WHEN f.kind='deposit' THEN f.amount WHEN f.kind='deposit_return' THEN -f.amount ELSE 0 END),0) heldDeposits,COUNT(*) entryCount FROM finance_entries f WHERE ${where}`,service.userId);
+ // What the owner kept from a deposit for damage is no longer held: the card and the summary show the same rest.
+ if(role!=='cleaner'&&totals){const kept=await one(service.db,`SELECT COALESCE(SUM(t.deposit_kept),0) n FROM booking_terms t WHERE t.deposit_kept>0 AND t.booking_id IN (SELECT f.booking_id FROM finance_entries f WHERE ${where} AND f.kind='deposit')`,service.userId);totals.heldDeposits=Math.max(0,Number(totals.heldDeposits)-(Number(kept?.n)||0));}
  const breakdown=await rows(service.db,`SELECT kind,SUM(amount) amount FROM finance_entries f WHERE ${where} GROUP BY kind`,service.userId);
  const history=role==='owner'?await one(service.db,"SELECT (SELECT COUNT(*) FROM bookings b JOIN properties p ON p.id=b.property_id WHERE p.owner_id=? AND NOT EXISTS(SELECT 1 FROM finance_backfill_receipts WHERE entity_key='booking:'||b.id))+(SELECT COUNT(*) FROM cleaning_jobs j WHERE owner_id=? AND NOT EXISTS(SELECT 1 FROM finance_backfill_receipts WHERE entity_key='job:'||j.id)) pending",service.userId,service.userId):null;
  return {entries,totals,breakdown,historyPending:history?.pending||0,currency:'KZT',note:'Учёт записанных операций; банковская выписка сверяется отдельно. Депозиты не включены в поступления минус расходы.'};

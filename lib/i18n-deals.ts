@@ -193,6 +193,8 @@ export const DEALS:Words={
  'Проведите: получено {v}':['Сырғытыңыз: {v} алынды','Swipe: received {v}'],
  'Подтверждаю: {sum} от гостя получены':['Растаймын: қонақтан {sum} алынды','I confirm: {sum} received from the guest'],
  '{stay} {sum} и депозит {deposit}.':['{stay} {sum} және депозит {deposit}.','{stay} {sum} and a deposit of {deposit}.'],
+ 'Бронь отменена: деньги вернутся гостю по правилам отмены.':['Бронь жойылды: ақша қонаққа бас тарту ережесі бойынша қайтарылады.','The booking is cancelled: the money goes back to the guest by the cancellation rules.'],
+ 'Гость получит сообщение. Переводить заново ему не нужно: бронь отменена.':['Қонақ хабарлама алады. Қайта аударудың қажеті жоқ: бронь жойылды.','The guest will be told. They do not need to pay again: the booking is cancelled.'],
  'Перевод не пришёл':['Аударым түскен жоқ','The transfer has not arrived'],
  'Сообщить гостю, что перевод не пришёл':['Қонаққа аударым түспегенін хабарлау','Tell the guest the transfer has not arrived'],
  'Гость получит сообщение и сможет повторить перевод или написать вам.':['Қонақ хабарлама алады да, аударымды қайталай алады немесе сізге жаза алады.','The guest will get a message and can repeat the transfer or write to you.'],
