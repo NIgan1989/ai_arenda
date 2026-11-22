@@ -196,6 +196,8 @@ export async function saveBillingSettings(service:RentalService,body:Row){
  return {message:!body.enabled?'Плата выключена. Сервис продолжает считать прогноз дохода.':notified?`Условия сохранены. Владельцы получили уведомление: ${notified}.`:'Условия сохранены.',version:version+1};
 }
 
+// The number of the bank document (платёжное поручение or the Kaspi Pay operation) a payment is recorded by.
+export function bankReference(value:unknown){const v=String(value??'').trim().replace(/\s+/g,' ');if(v.length<1||v.length>80)throw new DomainError('Укажите номер банковского документа (до 80 знаков).');return v;}
 export async function recordBalanceEntry(service:RentalService,body:Row){
  if(body.confirmed!==true)throw new DomainError('Подтвердите, что деньги фактически получены или бонус согласован.');
  const kind=['topup','bonus','adjustment'].includes(body.kind)?body.kind:null;if(!kind)throw new DomainError('Выберите вид операции.');
@@ -205,9 +207,12 @@ export async function recordBalanceEntry(service:RentalService,body:Row){
  // An owner or a performer (audit «Оплата услуг», point 2): a payment confirmed outside the card closes the debt of either.
  const owner=await one(service.db,`SELECT o.id,o.name FROM profiles o WHERE o.id=? AND ${ownerFilter}`,ownerId);
  if(!owner)throw new DomainError('Участник не найден: оплату можно внести владельцу с объявлением или исполнителю с начислениями.',404);
+ // A payment received outside the card names its bank document: the same payment cannot be entered twice (accounting audit, point 4).
+ const bankRef=kind==='topup'?bankReference(body.bankRef):'';
+ if(bankRef&&await one(service.db,'SELECT 1 x FROM owner_balance_entries WHERE bank_ref=?',bankRef))throw new DomainError('Этот банковский платёж уже записан.',409);
  const at=epoch(),words={topup:'Оплата услуг сервиса',bonus:'Бонус от сервиса',adjustment:'Корректировка учёта'}[kind as 'topup'];
  const results=await service.db.batch([
-  q(service.db,'INSERT OR IGNORE INTO owner_balance_entries(id,owner_id,kind,amount,note,actor_id,request_key,created_at) VALUES (?,?,?,?,?,?,?,?)',uuid(),ownerId,kind,amount,note,service.userId,key,at),
+  q(service.db,'INSERT OR IGNORE INTO owner_balance_entries(id,owner_id,kind,amount,note,actor_id,request_key,created_at,bank_ref) VALUES (?,?,?,?,?,?,?,?,?)',uuid(),ownerId,kind,amount,note,service.userId,key,at,bankRef),
   q(service.db,'INSERT INTO audit_events SELECT ?,?,?,?,? WHERE changes()>0',uuid(),service.userId,'owner-balance:'+ownerId,JSON.stringify({action:'billing.balance_entry',kind,amount}),at),
   q(service.db,'INSERT OR IGNORE INTO notifications SELECT ?,?,?,?,?,? WHERE EXISTS(SELECT 1 FROM owner_balance_entries WHERE request_key=? AND created_at=?)',uuid(),ownerId,`${words}: ${amount>0?'+':''}${new Intl.NumberFormat('ru-RU').format(amount)} ₸. ${note}`,'owner:balance:'+key,0,at,key,at),
  ]);

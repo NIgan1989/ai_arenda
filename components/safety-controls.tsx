@@ -57,7 +57,7 @@ export function AccountSafety({role,admin=false,page='',go}:{role:string;admin?:
   {permission&&!permission.decided&&<button type="button" className="acct-wide" disabled={busy} onClick={()=>void choose(false)}>Оставить выключенным</button>}
   <a className="acct-link" {...legalFromHere('/privacy')}>Как мы обращаемся с данными<ChevronRight size={16}/></a>{note}</div>;
  if(page==='reports')return <div className="acct-stack"><section className="acct-group">{reports.map(r=><div key={r.id} className="acct-row acct-static"><Flag size={20}/><span>{r.target_kind==='ai'?'Ответ ИИ':'Сообщение'}<small>{r.resolution||(r.created_at?'Отправлена '+day(r.created_at):'')}</small></span><em>{r.status==='resolved'?'Рассмотрена':r.status==='reviewing'?'Рассматриваем':'Отправлена'}</em></div>)}{!reports.length&&<p className="acct-row acct-static">Жалоб нет.</p>}</section><p className="acct-lead">Пожаловаться можно прямо в чате: под сообщением есть кнопка «Пожаловаться».</p></div>;
- if(page==='requests'&&admin)return <div className="acct-stack"><p className="acct-lead">Видите только вы как администратор. Жалобы на сообщения — в «Управление сервисом», раздел «Жалобы и безопасность».</p><section className="acct-group">{deletions.map(r=><div key={r.id} className="acct-row acct-static acct-request"><Trash2 size={20}/><span>Запрос №{r.id} от {day(r.requested_at)}<DeletionReview role={role} requestId={r.id} onChanged={load}/></span></div>)}{!deletions.length&&<p className="acct-row acct-static">Новых запросов нет.</p>}</section></div>;
+ if(page==='requests'&&admin)return <div className="acct-stack"><p className="acct-lead">Видите только вы как администратор. Жалобы на сообщения — в «Управление сервисом», раздел «Жалобы и безопасность».</p><section className="acct-group">{deletions.map(r=><div key={r.id} className="acct-row acct-static acct-request"><Trash2 size={20}/><span>Запрос от {day(r.requested_at)}<DeletionReview role={role} requestId={r.id} stage={r.stage} onChanged={load}/></span></div>)}{!deletions.length&&<p className="acct-row acct-static">Новых запросов нет.</p>}</section></div>;
  if(page==='delete')return <div className="acct-stack">{requested?<>
   <section className="acct-group"><div className="acct-row acct-static"><Clock size={20}/><span>Запрос отправлен {state.deletion.requested_at?day(state.deletion.requested_at):''}<small>{details.review?.note||'Проверяем, что нет незавершённых броней, уборок и расчётов. Данные пока на месте.'}</small></span></div></section>
   <AccountDeletion role={role} accountId={state.userId} details={details} onChanged={load}/>
@@ -74,8 +74,16 @@ export function AccountSafety({role,admin=false,page='',go}:{role:string;admin?:
 }
 // The administrator's deletion requests, for the service management page.
 export function AdminDeletionRequests({role}:{role:string}){
- const [list,setList]=useState<Row[]|null>(null),[error,setError]=useState('');
- async function load(){try{setList((await safety(role)).deletions||[]);}catch(e:any){setError(e.message);}}
- useEffect(()=>{void load();},[role]);
- return <div className="acct-stack">{error&&<p role="alert">{error}</p>}{!list&&!error&&<p role="status"><Thinking size="sm" lead/>Загружаем…</p>}{list&&!list.length&&<p>Новых запросов на удаление нет.</p>}{list?.map(r=><div key={r.id}><strong>Запрос №{r.id} от {day(r.requested_at)}</strong><DeletionReview role={role} requestId={r.id} onChanged={load}/></div>)}</div>;
+ const [data,setData]=useState<Row|null>(null),[error,setError]=useState(''),[search,setSearch]=useState(''),[page,setPage]=useState(0);
+ async function load(p=page,query=search){try{setError('');const value=await safety(role,'queues',{page:p,search:query});setData(value);setPage(p);}catch(e:any){setError(e.message);}}
+ useEffect(()=>{void load(0,'');},[role]);
+ const list:Row[]|undefined=data?.deletions,total=Number(data?.deletionTotal||0),size=Number(data?.pageSize||50);
+ return <div className="acct-stack">
+  <form className="inline-form" onSubmit={e=>{e.preventDefault();void load(0,search);}}><label>Номер запроса или участника<input style={{minHeight:44}} value={search} maxLength={100} onChange={e=>setSearch(e.target.value)}/></label><Button type="submit" variant="outline">Найти</Button></form>
+  {error&&<p role="alert">{error}</p>}{!data&&!error&&<p role="status"><Thinking size="sm" lead/>Загружаем…</p>}
+  {list&&<p>Открытых запросов: <strong>{total}</strong></p>}
+  {list&&!list.length&&<p>Новых запросов на удаление нет.</p>}
+  {list?.map(r=><div key={r.id}><strong>Запрос от {day(r.requested_at)}</strong><DeletionReview role={role} requestId={r.id} stage={r.stage} onChanged={()=>load()}/></div>)}
+  {total>size&&<div className="admin-pagination"><Button variant="outline" disabled={page===0} onClick={()=>void load(page-1)}>Назад</Button><span>{page+1} / {Math.ceil(total/size)}</span><Button variant="outline" disabled={(page+1)*size>=total} onClick={()=>void load(page+1)}>Дальше</Button></div>}
+ </div>;
 }

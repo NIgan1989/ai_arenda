@@ -1,6 +1,8 @@
 import {DomainError,number,required} from './domain';
 import type {RentalService} from './service';
 import {epoch,uuid,q,one,rows,type Row} from './operation-core';
+import {stayedSql} from './stay-result';
+import {bankReference} from './platform-billing';
 
 // The service's own books for the platform administrator: P&L (ОПИУ), cash flow (ДДС) and the
 // balance sheet. Revenue is read from the commission tables, costs and tax assumptions are kept
@@ -18,6 +20,9 @@ export const SIMPLIFIED_LIMIT_MRP=600000;
 export const taxNames:Record<string,string>={cit:'КПН',simplified:'Налог по упрощённой декларации',vat:'НДС',ipn:'ИПН с зарплат',opv:'ОПВ (пенсионные)',vosms_employee:'ВОСМС работника',sn:'Социальный налог',so:'Социальные отчисления',opvr:'ОПВР работодателя',vosms_employer:'ООСМС работодателя',self_opv:'ОПВ ИП за себя',self_opvr:'ОПВР ИП за себя',self_so:'СО ИП за себя',self_vosms:'ВОСМС ИП за себя'};
 const OFFSET=5*3600;
 const live="(SELECT status FROM bookings WHERE id=c.booking_id) IN ('confirmed','completed')";
+// «Факт» counts a booking commission once the guest has stayed, in the month the stay began: the same rule
+// the service charges by (lib/service-dues.ts). A paid future stay is not earned yet (accounting audit, point 1).
+const stayed=stayedSql('c.booking_id'),stayStart='(SELECT start FROM bookings WHERE id=c.booking_id)';
 const monthOf=(column:string)=>`strftime('%Y-%m',${column}+${OFFSET},'unixepoch')`;
 const monthRe=/^\d{4}-(0[1-9]|1[0-2])$/;
 
@@ -56,12 +61,13 @@ export async function financeSettings(db:D1Database){
  return s;
 }
 
-type Inputs={settings:FinanceSettings;costs:Cost[];revenue:Row;cash:Row;taxPaid:Row;cashEntries:Row[]};
+type Inputs={settings:FinanceSettings;costs:Cost[];revenue:Row;cash:Row;taxPaid:Row;cashEntries:Row[];costPaid:Row};
 async function inputs(db:D1Database):Promise<Inputs>{
- const [settings,costs,booking,cleaning,autopilot,withheld,balance,holds,ai,cash,taxPaid,first]=await Promise.all([
+ const [settings,costs,booking,earned,cleaning,autopilot,withheld,balance,holds,ai,cash,taxPaid,first,costPaid]=await Promise.all([
   financeSettings(db),
   rows(db,'SELECT * FROM company_costs ORDER BY kind,sort,created_at,id') as Promise<Cost[]>,
   rows(db,`SELECT ${monthOf('c.created_at')} month,COALESCE(SUM(CASE WHEN c.mode='charged' THEN c.amount END),0) charged,COALESCE(SUM(CASE WHEN c.mode='shadow' THEN c.amount END),0) shadow,COALESCE(SUM(CASE WHEN c.mode='charged' THEN c.booking_amount END),0) turnover_charged,COALESCE(SUM(CASE WHEN c.mode IN ('charged','shadow') THEN c.booking_amount END),0) turnover_all,COUNT(*) bookings FROM platform_commissions c WHERE ${live} GROUP BY month`),
+  rows(db,`SELECT ${monthOf(stayStart)} month,COALESCE(SUM(c.amount),0) charged,COALESCE(SUM(c.booking_amount),0) turnover_charged,COUNT(*) bookings FROM platform_commissions c WHERE c.mode='charged' AND ${stayed} GROUP BY month`),
   rows(db,`SELECT ${monthOf('created_at')} month,COALESCE(SUM(CASE WHEN mode='charged' THEN amount END),0) charged,COALESCE(SUM(CASE WHEN mode='shadow' THEN amount END),0) shadow FROM cleaning_commissions GROUP BY month`),
   rows(db,`SELECT ${monthOf('created_at')} month,COALESCE(SUM(CASE WHEN mode='charged' THEN amount END),0) charged,COALESCE(SUM(CASE WHEN mode='shadow' THEN amount END),0) shadow,COALESCE(SUM(CASE WHEN mode='charged' AND role='cleaner' THEN amount END),0) cleaner_charged FROM (SELECT created_at,mode,role,amount FROM autopilot_charges
    UNION ALL SELECT f.created_at,f.mode,f.role,f.amount FROM service_fees f WHERE f.kind<>'ai_booking' OR (SELECT status FROM bookings WHERE id=f.ref_id) IN ('confirmed','completed')) GROUP BY month`),
@@ -72,15 +78,17 @@ async function inputs(db:D1Database):Promise<Inputs>{
   rows(db,`SELECT ${monthOf('created_at')} month,COALESCE(SUM(charged_cost_micros),0) micros,COUNT(*) requests FROM ai_usage_reservations WHERE charged_cost_micros IS NOT NULL GROUP BY month`),
   rows(db,'SELECT id,kind,amount,month,note,created_at FROM company_cash_entries ORDER BY month DESC,created_at DESC,id'),
   rows(db,'SELECT month,tax,COALESCE(SUM(amount),0) amount FROM company_tax_payments GROUP BY month,tax'),
-  one(db,`SELECT (SELECT MIN(created_at) FROM platform_commissions) a,(SELECT MIN(created_at) FROM owner_balance_entries) b,(SELECT MIN(created_at) FROM cleaning_commissions) c,(SELECT MIN(created_at) FROM (SELECT created_at FROM autopilot_charges UNION ALL SELECT created_at FROM service_fees)) d,(SELECT MIN(month) FROM company_cash_entries) e,(SELECT MIN(month) FROM company_tax_payments) f`),
+  one(db,`SELECT (SELECT MIN(created_at) FROM platform_commissions) a,(SELECT MIN(created_at) FROM owner_balance_entries) b,(SELECT MIN(created_at) FROM cleaning_commissions) c,(SELECT MIN(created_at) FROM (SELECT created_at FROM autopilot_charges UNION ALL SELECT created_at FROM service_fees)) d,(SELECT MIN(month) FROM company_cash_entries) e,(SELECT MIN(month) FROM company_tax_payments) f,(SELECT MIN(month) FROM company_cost_payments) g`),
+  // What was really paid for the company's own costs, by bank payment (accounting audit, point 2).
+  rows(db,'SELECT month,COALESCE(SUM(amount),0) amount FROM company_cost_payments GROUP BY month'),
  ]);
  const index=(list:Row[])=>Object.fromEntries(list.map(r=>[r.month,r]));
  // D1 refuses long UNION chains, so the earliest month is picked here from one row of minimums.
- const firstMonth=[first?.a,first?.b,first?.c,first?.d].filter(v=>v!=null).map(v=>monthKey(Number(v))).concat([first?.e,first?.f].filter(Boolean)).sort()[0]||null;
- const revenue={booking:index(booking),cleaning:index(cleaning),autopilot:index(autopilot),ai:index(ai),first:firstMonth};
+ const firstMonth=[first?.a,first?.b,first?.c,first?.d].filter(v=>v!=null).map(v=>monthKey(Number(v))).concat([first?.e,first?.f,first?.g].filter(Boolean)).sort()[0]||null;
+ const revenue={booking:index(booking),earned:index(earned),cleaning:index(cleaning),autopilot:index(autopilot),ai:index(ai),first:firstMonth};
  const cashIndex={withheld:index(withheld),balance:index(balance),holds:index(holds)};
  const paid:Row={};for(const r of taxPaid){(paid[r.month]??={})[r.tax]=Number(r.amount);}
- return {settings,costs,revenue,cash:cashIndex,taxPaid:paid,cashEntries:cash};
+ return {settings,costs,revenue,cash:cashIndex,taxPaid:paid,cashEntries:cash,costPaid:index(costPaid)};
 }
 
 export type Month={month:string;pl:Row;cf:Row;taxes:Row;paid:Row};
@@ -92,8 +100,7 @@ export function computeMonths(input:Inputs,basis:Basis,until:string):Month[]{
  const out:Month[]=[];let ytdProfit=0,ytdCit=0,year='';
  for(const month of monthsBetween(start,until)){
   if(month.slice(0,4)!==year){year=month.slice(0,4);ytdProfit=0;ytdCit=0;}
-  const b=r.booking[month]||{},cl=r.cleaning[month]||{},ap=r.autopilot[month]||{},ai=r.ai[month]||{};
-  const fact=basis==='fact';
+  const fact=basis==='fact',b=(fact?r.earned[month]:r.booking[month])||{},cl=r.cleaning[month]||{},ap=r.autopilot[month]||{},ai=r.ai[month]||{};
   const bookings=Number(b.charged||0)+(fact?0:Number(b.shadow||0)),cleaning=Number(cl.charged||0)+(fact?0:Number(cl.shadow||0)),autopilot=Number(ap.charged||0)+(fact?0:Number(ap.shadow||0));
   const gross=bookings+cleaning+autopilot,vat=s.vat_registered?Math.round(gross*s.vat_bp/(10000+s.vat_bp)):0,revenue=gross-vat;
   // Guests pay owners and owners pay cleaners directly, outside the service. Only the money that
@@ -121,9 +128,11 @@ export function computeMonths(input:Inputs,basis:Basis,until:string):Month[]{
   const paid=input.taxPaid[month]||{},taxesPaid=Object.values(paid).reduce((a:number,v)=>a+Number(v),0) as number;
   const entries=input.cashEntries.filter(e=>e.month===month),sum=(k:string)=>entries.filter(e=>e.kind===k).reduce((a,e)=>a+Number(e.amount),0);
   const payouts=fact?Number(c.holds[month]?.paid||0)-Number(c.withheld[month]?.withheld||0):0;
-  const operatingCash=inflow-payouts-net-outsource-services-opex-acquiring-aiCost-taxesPaid;
+  // Fact: the costs leave the account when they are paid (company_cost_payments), not when the plan says.
+  const costsPaid=fact?Number(input.costPaid[month]?.amount||0):net+outsource+services+opex;
+  const operatingCash=inflow-payouts-costsPaid-acquiring-aiCost-taxesPaid;
   const capital=sum('capital')+(month===s.start_month?s.share_capital:0),loans=sum('loan'),repay=sum('loan_repay'),dividends=sum('dividend'),assets=sum('asset');
-  const cf={inflow,payouts,salaries_net:net,outsource,services,opex,acquiring,ai:aiCost,taxes_paid:taxesPaid,operating:operatingCash,assets,investing:-assets,capital,loans,repay,dividends,financing:capital+loans-repay-dividends,total:operatingCash-assets+capital+loans-repay-dividends};
+  const cf={inflow,payouts,salaries_net:fact?0:net,outsource:fact?0:outsource,services:fact?0:services,opex:fact?0:opex,costs_paid:costsPaid,costs_accrued:net+outsource+services+opex,acquiring,ai:aiCost,taxes_paid:taxesPaid,operating:operatingCash,assets,investing:-assets,capital,loans,repay,dividends,financing:capital+loans-repay-dividends,total:operatingCash-assets+capital+loans-repay-dividends};
   out.push({month,pl,cf,taxes,paid});
  }
  return out;
@@ -139,7 +148,7 @@ async function positions(db:D1Database,end:number){
  // A test card's charge (test=1) settles the debt in the app but brings no money: in the books the participant still owes
  // it, so the balance sheet stays even with the cash flow that leaves test charges out (audit «Оплата услуг», point 1).
  const owners=await rows(db,`SELECT o.owner_id,(COALESCE((SELECT SUM(amount) FROM owner_balance_entries WHERE owner_id=o.owner_id AND test=0 AND created_at<=?),0)
-  -COALESCE((SELECT SUM(c.amount) FROM platform_commissions c WHERE c.owner_id=o.owner_id AND c.mode='charged' AND c.created_at<=? AND ${live}),0)
+  -COALESCE((SELECT SUM(c.amount) FROM platform_commissions c WHERE c.owner_id=o.owner_id AND c.mode='charged' AND ${stayStart}<=? AND ${stayed}),0)
   -COALESCE((SELECT SUM(amount) FROM cleaning_commissions WHERE owner_id=o.owner_id AND mode='charged' AND created_at<=?),0)
   -COALESCE((SELECT SUM(amount) FROM cleaning_holds WHERE owner_id=o.owner_id AND status IN ('held','due','paid') AND created_at<=?),0)
   -COALESCE((SELECT SUM(amount) FROM autopilot_charges WHERE user_id=o.owner_id AND role='owner' AND mode='charged' AND created_at<=?),0)
@@ -161,8 +170,10 @@ export function balanceAt(months:Month[],month:string,s:FinanceSettings,entries:
  const accrued=add(m=>Object.values(m.taxes).reduce((a:number,v)=>a+Number(v),0) as number),paid=add(m=>m.cf.taxes_paid);
  const capital=(upto.some(m=>m.month===s.start_month)?s.share_capital:0)+kind('capital');
  const retained=add(m=>m.pl.net)-kind('dividend');
- const assets={cash,equipment:kind('asset'),owners:pos.receivable,cleaners:pos.cleanerReceivable};
- const liabilities={owners:pos.advances,cleaners:pos.cleanerPayable,taxes:accrued-paid,loans:kind('loan')-kind('loan_repay')};
+ // Costs accrued in the P&L but not paid yet are owed to suppliers and staff; paid ahead, they are an advance.
+ const suppliers=add(m=>Number(m.cf.costs_accrued||0)-Number(m.cf.costs_paid||0));
+ const assets={cash,equipment:kind('asset'),owners:pos.receivable,cleaners:pos.cleanerReceivable,prepaid:Math.max(0,-suppliers)};
+ const liabilities={owners:pos.advances,cleaners:pos.cleanerPayable,suppliers:Math.max(0,suppliers),taxes:accrued-paid,loans:kind('loan')-kind('loan_repay')};
  const equity={capital,retained};
  const totalAssets=Object.values(assets).reduce((a,b)=>a+b,0),totalLiabilities=Object.values(liabilities).reduce((a,b)=>a+b,0),totalEquity=capital+retained;
  return {month,assets,liabilities,equity,totalAssets,totalLiabilities,totalEquity,difference:totalAssets-totalLiabilities-totalEquity};
@@ -196,6 +207,7 @@ export async function companyFinance(db:D1Database,params:Row){
   previousBalance:prev>=first?balanceAt(months,prev,s,input.cashEntries,posPrev):null,
   costs:input.costs.map(c=>({...c,tenge:costTenge(c,s),inMonth:costInMonth(c,month,s),payroll:c.kind==='staff'&&c.employment==='employee'?payroll(costTenge(c,s),s):null})),
   cashEntries:input.cashEntries.slice(0,50),
+  costPayments:await rows(db,'SELECT p.id,p.cost_id,c.name,p.month,p.amount,p.bank_ref,p.note,p.created_at FROM company_cost_payments p JOIN company_costs c ON c.id=p.cost_id ORDER BY p.month DESC,p.created_at DESC LIMIT 50'),
   vat:limitInfo(s,yearRevenue),
  };
 }
@@ -240,9 +252,25 @@ export async function toggleCost(service:RentalService,body:Row){
 }
 export async function deleteCost(service:RentalService,body:Row){
  if(body.confirmed!==true)throw new DomainError('Подтвердите удаление.');
+ if(await one(service.db,'SELECT 1 x FROM company_cost_payments WHERE cost_id=?',String(body.id||'')))throw new DomainError('По расходу уже есть оплаты. Выключите его вместо удаления.',409);
  const r=await q(service.db,'DELETE FROM company_costs WHERE id=?',required(body.id,'Расход',100)).run();
  if(!r.meta.changes)throw new DomainError('Расход уже удалён.',404);
  await service.audit('company-finance','finance.cost_deleted').run();return {message:'Расход удалён.'};
+}
+// A real payment of a cost from the bank account: «Факт» ДДС shows these, not the plan (accounting audit, point 2).
+export async function addCostPayment(service:RentalService,body:Row){
+ const cost=await one(service.db,'SELECT id,name FROM company_costs WHERE id=?',required(body.costId,'Расход',100));if(!cost)throw new DomainError('Расход не найден. Обновите страницу.',404);
+ const month=String(body.month||'');if(!monthRe.test(month))throw new DomainError('Укажите месяц оплаты.');
+ const amount=number(Math.round(Number(String(body.amount).replace(/\s/g,''))),'Сумма',1,1e10),bankRef=bankReference(body.bankRef),note=String(body.note||'').trim().slice(0,200);
+ const r=await service.db.batch([q(service.db,'INSERT OR IGNORE INTO company_cost_payments(id,cost_id,month,amount,bank_ref,note,created_at) VALUES (?,?,?,?,?,?,?)',uuid(),cost.id,month,amount,bankRef,note,epoch()),q(service.db,'INSERT INTO audit_events SELECT ?,?,?,?,? WHERE changes()>0',uuid(),service.userId,'company-finance',JSON.stringify({action:'finance.cost_paid',amount}),epoch())]);
+ if(!r[0].meta.changes)throw new DomainError('Этот банковский платёж уже записан.',409);
+ return {message:`Оплата «${cost.name}» записана в ДДС.`};
+}
+export async function deleteCostPayment(service:RentalService,body:Row){
+ if(body.confirmed!==true)throw new DomainError('Подтвердите удаление.');
+ const r=await q(service.db,'DELETE FROM company_cost_payments WHERE id=?',required(body.id,'Платёж',100)).run();
+ if(!r.meta.changes)throw new DomainError('Платёж уже удалён.',404);
+ await service.audit('company-finance','finance.cost_payment_deleted').run();return {message:'Платёж удалён.'};
 }
 export const cashKinds:Record<string,string>={capital:'Взнос учредителя',loan:'Получен займ',loan_repay:'Возврат займа',dividend:'Дивиденды',asset:'Покупка техники'};
 export async function addCashEntry(service:RentalService,body:Row){
@@ -277,7 +305,7 @@ export async function accountingState(db:D1Database){
  const input=await inputs(db),now=monthKey(),today=new Date((epoch()+OFFSET)*1000).toISOString().slice(0,10);
  const months=computeMonths(input,'fact',now);
  // The journal shows the latest payments only; what is owed is reconciled against every payment.
- const [paidRows,paidTotals,paidYear]=await Promise.all([rows(db,'SELECT id,tax,period,amount,month,note,created_at FROM company_tax_payments ORDER BY created_at DESC,id LIMIT 200'),rows(db,'SELECT tax,period,COALESCE(SUM(amount),0) amount FROM company_tax_payments GROUP BY tax,period'),one(db,'SELECT COALESCE(SUM(amount),0) n FROM company_tax_payments WHERE month LIKE ?',now.slice(0,4)+'-%')]);
+ const [paidRows,paidTotals,paidYear]=await Promise.all([rows(db,'SELECT id,tax,period,amount,month,note,bank_ref,created_at FROM company_tax_payments ORDER BY created_at DESC,id LIMIT 200'),rows(db,'SELECT tax,period,COALESCE(SUM(amount),0) amount FROM company_tax_payments GROUP BY tax,period'),one(db,'SELECT COALESCE(SUM(amount),0) n FROM company_tax_payments WHERE month LIKE ?',now.slice(0,4)+'-%')]);
  const map=new Map<string,Row>();
  for(const m of months)for(const [group,taxes] of Object.entries(groupTaxes)){
   const amount=taxes.reduce((a,t)=>a+Number(m.taxes[t]||0),0);if(!amount)continue;
@@ -302,12 +330,15 @@ export async function payTaxes(service:RentalService,body:Row){
  if(o.left<=0)throw new DomainError('Это начисление уже оплачено.',409);
  const month=String(body.month||'');if(!monthRe.test(month))throw new DomainError('Укажите месяц оплаты.');
  const amount=number(Math.round(Number(String(body.amount).replace(/\s/g,''))),'Сумма',1,o.left);
+ // One bank payment is recorded once (accounting audit, point 3): the unique index refuses a second entry even in a race.
+ const bankRef=bankReference(body.bankRef);
+ if(await one(service.db,'SELECT 1 x FROM company_tax_payments WHERE bank_ref=?',bankRef))throw new DomainError('Этот банковский платёж уже записан.',409);
  // Split the payment over the taxes in proportion to what is still owed on each.
  const paidBy:Row={};for(const r of await rows(service.db,'SELECT tax,COALESCE(SUM(amount),0) amount FROM company_tax_payments WHERE period=? GROUP BY tax',o.period))paidBy[r.tax]=Number(r.amount);
  const owed=Object.entries(o.parts as Row).map(([tax,v])=>[tax,Math.max(0,Number(v)-(paidBy[tax]||0))] as [string,number]).filter(([,v])=>v>0);
  const total=owed.reduce((a,[,v])=>a+v,0);let rest=amount;const at=epoch(),note=String(body.note||'').trim().slice(0,200);
- const statements=owed.map(([tax,v],i)=>{const share=i===owed.length-1?rest:Math.min(rest,Math.round(amount*v/total));rest-=share;return share>0?q(service.db,'INSERT INTO company_tax_payments(id,tax,period,amount,month,note,created_at) VALUES (?,?,?,?,?,?,?)',uuid(),tax,o.period,share,month,note,at):null;}).filter(Boolean) as D1PreparedStatement[];
- await service.db.batch([...statements,service.audit('company-finance','finance.tax_paid')]);
+ const statements=owed.map(([tax,v],i)=>{const share=i===owed.length-1?rest:Math.min(rest,Math.round(amount*v/total));rest-=share;return share>0?q(service.db,'INSERT INTO company_tax_payments(id,tax,period,amount,month,note,created_at,bank_ref) VALUES (?,?,?,?,?,?,?,?)',uuid(),tax,o.period,share,month,note,at,bankRef):null;}).filter(Boolean) as D1PreparedStatement[];
+ try{await service.db.batch([...statements,service.audit('company-finance','finance.tax_paid')]);}catch(e:any){if(/UNIQUE/i.test(String(e?.message)))throw new DomainError('Этот банковский платёж уже записан.',409);throw e;}
  return {message:`Оплата ${new Intl.NumberFormat('ru-RU').format(amount)} ₸ записана. Она уже в ДДС и уменьшила долг в балансе.`};
 }
 export async function deleteTaxPayment(service:RentalService,body:Row){

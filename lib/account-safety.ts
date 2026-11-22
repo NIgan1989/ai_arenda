@@ -4,21 +4,36 @@ import {authorisedRoom} from './process-discussions';
 import {epoch,uuid,q,one,rows,type Row} from './operation-core';
 import {moderateContent} from './content-moderation';
 import {accountDeletionState,accountDeletionAction} from './account-deletion';
-export async function safetyState(s:RentalService,role:Role,admin=false){
+const PAGE=50;
+function queueArgs(b:Row|undefined){const page=Math.max(0,Math.min(1000,Math.floor(Number(b?.page)||0))),search=String(b?.search||'').trim().slice(0,100);return {page,search,offset:page*PAGE};}
+export async function safetyQueues(s:RentalService,b?:Row){
+ const {page,search,offset}=queueArgs(b),like=search?'%'+search.replace(/[%_\\]/g,m=>'\\'+m)+'%':'';
+ const reportWhere="status<>'resolved'"+(search?" AND (id LIKE ? ESCAPE '\\' OR user_id LIKE ? ESCAPE '\\')":''),reportArgs=search?[like,like]:[];
+ const delWhere="d.status='requested'"+(search?" AND (d.id LIKE ? ESCAPE '\\' OR d.previous_id LIKE ? ESCAPE '\\' OR d.user_id LIKE ? ESCAPE '\\')":''),delArgs=search?[like,like,like]:[];
+ const stage="(SELECT status FROM account_deletion_reviews r WHERE r.request_id=d.id ORDER BY created_at DESC,rowid DESC LIMIT 1)";
+ const [queue,queueTotal,deletions,deletionTotal]=await Promise.all([
+  rows(s.db,`SELECT * FROM content_reports WHERE ${reportWhere} ORDER BY created_at LIMIT ${PAGE} OFFSET ${offset}`,...reportArgs),
+  one(s.db,`SELECT COUNT(*) n FROM content_reports WHERE ${reportWhere}`,...reportArgs),
+  rows(s.db,`SELECT d.id,d.user_id,d.requested_at,d.status,d.previous_id,COALESCE(${stage},'new') stage FROM deletion_requests d WHERE ${delWhere} ORDER BY d.requested_at LIMIT ${PAGE} OFFSET ${offset}`,...delArgs),
+  one(s.db,`SELECT COUNT(*) n FROM deletion_requests d WHERE ${delWhere}`,...delArgs)]);
+ return {queue,queueTotal:Number(queueTotal?.n||0),deletions,deletionTotal:Number(deletionTotal?.n||0),page,pageSize:PAGE,search};
+}
+export async function safetyState(s:RentalService,role:Role,admin=false,b?:Row){
  await s.authorizeWorkspace(role,'account');
  const deletionDetails=await accountDeletionState(s,role,admin);
- return {userId:s.userId,deletionDetails,blocks:await rows(s.db,'SELECT room_id FROM discussion_blocks WHERE blocker_id=? AND blocker_role=?',s.userId,role),deletion:await one(s.db,'SELECT id,requested_at,status FROM deletion_requests WHERE user_id=?',s.userId),reports:await rows(s.db,'SELECT id,target_kind,status,created_at,resolution FROM content_reports WHERE user_id=? AND role=? ORDER BY created_at DESC LIMIT 50',s.userId,role),...(admin?{queue:await rows(s.db,"SELECT * FROM content_reports WHERE status<>'resolved' ORDER BY created_at LIMIT 100"),deletions:await rows(s.db,"SELECT id,user_id,requested_at,status FROM deletion_requests WHERE status='requested' ORDER BY requested_at LIMIT 100")}:{})};
+ return {userId:s.userId,deletionDetails,blocks:await rows(s.db,'SELECT room_id FROM discussion_blocks WHERE blocker_id=? AND blocker_role=?',s.userId,role),deletion:await one(s.db,'SELECT id,requested_at,status,previous_id FROM deletion_requests WHERE user_id=?',s.userId),reports:await rows(s.db,'SELECT id,target_kind,status,created_at,resolution FROM content_reports WHERE user_id=? AND role=? ORDER BY created_at DESC LIMIT 50',s.userId,role),...(admin?await safetyQueues(s,b):{})};
 }
 export async function safetyAction(s:RentalService,role:Role,action:string,b:Row,admin=false){
  await s.authorizeWorkspace(role,'account');
  if(action==='account-deletion')return accountDeletionAction(s,role,b,admin);
+ if(action==='queues'){if(!admin)throw new DomainError('Нет полномочий оператора.',403);return safetyQueues(s,b);}
  if(['inspect','moderate'].includes(action))return moderateContent(s,role,action,b,admin);
  if(action==='deletion'){
   if(b.confirmed!==true||!['request','cancel'].includes(b.action))throw new DomainError('Подтвердите действие с запросом удаления.');
   const old=await one(s.db,'SELECT * FROM deletion_requests WHERE user_id=?',s.userId);
   if(b.action==='cancel'){await q(s.db,"UPDATE deletion_requests SET status='cancelled' WHERE user_id=?",s.userId).run();return {message:'Запрос удаления отозван.'};}
   if(old?.status==='requested')return {id:old.id,message:'Запрос уже зарегистрирован. Данные ещё не удалены.'};
-  const id=old?.id||uuid();await q(s.db,"INSERT INTO deletion_requests VALUES (?,?,?,'requested','') ON CONFLICT(user_id) DO UPDATE SET id=excluded.id,requested_at=excluded.requested_at,status='requested'",s.userId,id,epoch()).run();
+  const id=uuid();await q(s.db,"INSERT INTO deletion_requests(user_id,id,requested_at,status,reason,previous_id) VALUES (?,?,?,'requested','',?) ON CONFLICT(user_id) DO UPDATE SET id=excluded.id,requested_at=excluded.requested_at,status='requested',previous_id=excluded.previous_id",s.userId,id,epoch(),old?.id||'').run();
   await s.audit(s.userId,'account.deletion_requested').run();
   return {id,message:'Запрос удаления зарегистрирован. Он требует обработки оператором; данные пока не удалены. Номер обращения: '+id};
  }

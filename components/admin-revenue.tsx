@@ -171,7 +171,7 @@ function OwnerBalances({data,busy,save,phase}:{data:Row;busy:boolean;save:Save;p
 
 function OwnerCard({owner:o,busy,save}:{owner:Row;busy:boolean;save:Save}){
  const [kind,setKind]=useState('topup'),[key]=useState(()=>crypto.randomUUID());
- async function submit(e:FormEvent<HTMLFormElement>){e.preventDefault();const form=new FormData(e.currentTarget);await save('billing/balance',{ownerId:o.id,kind,amount:Number(form.get('amount')),note:String(form.get('note')||''),requestKey:key,confirmed:form.get('confirmed')==='on'});}
+ async function submit(e:FormEvent<HTMLFormElement>){e.preventDefault();const form=new FormData(e.currentTarget);await save('billing/balance',{ownerId:o.id,kind,amount:Number(form.get('amount')),note:String(form.get('note')||''),requestKey:key,...(kind==='topup'?{bankRef:String(form.get('bankRef')||'')}:{}),confirmed:form.get('confirmed')==='on'});}
  return <>
   <SheetHeader><SheetTitle>{o.name}</SheetTitle><SheetDescription>Объектов {o.properties} · броней через сервис {o.bookings}</SheetDescription></SheetHeader>
   <div className="revenue-sheet-body">
@@ -181,6 +181,7 @@ function OwnerCard({owner:o,busy,save}:{owner:Row;busy:boolean;save:Save}){
     <h3>Записать операцию</h3>
     <div className="revenue-segment" role="radiogroup" aria-label="Вид операции">{(['topup','bonus','adjustment'] as const).map(k=><button key={k} type="button" role="radio" aria-checked={kind===k} onClick={()=>setKind(k)}>{kinds[k]}</button>)}</div>
     <label>Сумма, ₸<Input name="amount" type="number" inputMode="numeric" min={kind==='adjustment'?-10000000:1} max={10000000} required/></label>
+    {kind==='topup'&&<label>Номер банковского документа<Input name="bankRef" maxLength={80} required placeholder="Номер платёжки или операции Kaspi Pay"/></label>}
     <label>Комментарий<Input name="note" maxLength={300} required placeholder={kind==='topup'?'Например: перевод Kaspi от 12 ноября':kind==='bonus'?'Например: подарок за первые брони':'Причина, сумма может быть с минусом'}/></label>
     <label className="revenue-confirm"><input name="confirmed" type="checkbox" required/>{kind==='topup'?'Деньги пришли мне на счёт.':'Я согласовал эту операцию.'}</label>
     <Button className="revenue-primary" disabled={busy}>Записать</Button>
