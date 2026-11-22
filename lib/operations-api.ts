@@ -28,6 +28,7 @@ import {staffState,assignStaff,removeStaff,markBusy,freeBusy,staffToday,staffMar
 import {addHall,renameVenue,venueOf} from './venue';
 import {setRoomCount,setFreeToday} from './room-units';
 import {understandSearch} from './search-understand';
+import {understandListing} from './listing-understand';
 import {saveStayPhoto,listStayPhotos,readStayPhoto,saveHandover} from './stay-handover';
 import {serviceBillingState,serviceBillingAction} from './service-dues';
 import {saveReceipt,listReceipts,readReceipt} from './payment-receipts';
@@ -110,6 +111,7 @@ export async function writeOperations(service:RentalService,role:Role,path:strin
  if(route==='receipt'){active(role,['guest','owner']);return saveReceipt(service,role,body,config);}
  if(route==='service-billing'){active(role,['owner','cleaner']);return serviceBillingAction(service,body,config);}
  if(route==='stay-photo'){active(role,['guest','owner']);return saveStayPhoto(service,role,body,config);}
+ if(route==='listing/understand'){active(role,['owner']);return understandListing(service,body,config);}
  if(route==='search/understand'){active(role,['guest']);return understandSearch(service,body,config);}
  if(route==='search/place'){active(role,['guest']);return findPlace(service,body,fetch,config);}
  if(route==='favorite'){active(role,['guest']);return setFavorite(service,body);}

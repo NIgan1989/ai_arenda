@@ -67,3 +67,19 @@ test('a bath asks for the price of an hour, small numbers by «час» are not 
  const h=read('Дом с баней на Лесной 5, 30000 сутки, до 8 гостей').draft;assert.deepEqual([h.type,h.price,h.capacity],['house',30000,8]);
  const f=read('квартира мкр Достык 5, от 2 часов 2500 в час, 15000 сутки').draft;assert.deepEqual([f.hourlyPrice,f.price],[2500,15000]);
 });
+
+test('the model fills what the rules missed, checked: unknown kinds, amenities and absurd numbers are dropped',()=>{
+ const {mergeModelDraft,cleanModelListing}=lib;
+ const r=read('сдаю квартирку возле гагарина парка, двушка, цена 14 тыщ, есть вайфай');
+ const m=mergeModelDraft(r.draft,r.found,{type:'castle',rooms:2,capacity:4,area:999999,address:'Кутузова 10',district:'Район Центр',price:14000,amenities:['wifi','spaceship','steam'],pets:null,checkinTime:'14:00',checkoutTime:'25:00',name:null});
+ assert.equal(m.draft.type,'apartment');assert.equal(m.draft.rooms,2);assert.equal(m.draft.capacity,4);assert.equal(m.draft.area,35);
+ assert.equal(m.draft.address,'Кутузова 10');assert.equal(m.draft.price,14000);assert.ok(m.draft.amenities.includes('wifi')&&!m.draft.amenities.includes('steam'));
+ assert.ok(m.found.includes('address')&&m.found.includes('price'));assert.equal(m.draft.checkoutTime,'12:00');
+ assert.equal(m.draft.district,'Центр');assert.deepEqual(draftQuestions(m.draft),[]);
+ assert.deepEqual(cleanModelListing(null),{});
+});
+test('what the rules read stays theirs, the model does not overwrite it',()=>{
+ const {mergeModelDraft}=lib;const r=read(DRAFT_EXAMPLE);
+ const m=mergeModelDraft(r.draft,r.found,{price:99999,address:'Другая 1',type:'house'});
+ assert.equal(m.draft.price,15000);assert.equal(m.draft.address,'Торайгырова 64, кв. 12');assert.equal(m.draft.type,'apartment');
+});
