@@ -39,11 +39,12 @@ jobs:
       - name: Download OpenStreetMap of Kazakhstan
         run: |
           mkdir -p outputs/osm
-          # Geofabrik first; if it cannot be reached, the same extract from openstreetmap.fr.
-          for u in https://download.geofabrik.de/asia/kazakhstan-latest.osm.pbf https://download.openstreetmap.fr/extracts/asia/kazakhstan-latest.osm.pbf; do
-            curl -fsSL --retry 5 --retry-delay 20 --retry-all-errors -o outputs/osm/kz.osm.pbf "$u" && break
-            rm -f outputs/osm/kz.osm.pbf
-          done
+          # The file's address comes from the Geofabrik index (Kazakhstan moved to asia/kazakhstan/ in November 2026),
+          # retried for about ten minutes. openstreetmap.fr has no Kazakhstan extract, so there is no second source.
+          url=$(curl -fsSL --retry 3 --retry-all-errors https://download.geofabrik.de/index-v1-nogeom.json | jq -r '.features[].properties|select(.id=="kazakhstan")|.urls.pbf' || true)
+          url=${url:-https://download.geofabrik.de/asia/kazakhstan-latest.osm.pbf}
+          echo "Geofabrik file: $url"
+          curl -fsSL --retry 10 --retry-delay 60 --retry-all-errors -o outputs/osm/kz.osm.pbf "$url"
           test -s outputs/osm/kz.osm.pbf
           ls -la outputs/osm
       - name: Keep settlements, borders, streets and houses
