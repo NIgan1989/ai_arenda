@@ -76,6 +76,8 @@ test('the loader reads only the owner\'s own things; the Monday notice carries t
   const {sweepPlans}=await load('autopilot-plans');
   R.prepare("INSERT INTO autopilot_plans(user_id,role,status,started_at,period_end,auto_renew,version,updated_at) VALUES ('owner','owner','trial',?,?,1,1,?)").run(t,t+10*DAY,t);
   const monday=Math.floor((t+5*H)/DAY)*DAY-5*H;let at=monday;while(((Math.floor((at+5*H)/DAY)+3)%7)!==0)at+=DAY;at+=10*H;
+  // The week of the notice is the one before that Monday: an assignment in it, whatever the hour the test runs.
+  R.prepare('INSERT INTO audit_events VALUES (?,?,?,?,?)').run('x2','system:rental-policy',f.job.id,JSON.stringify({action:'job.assigned',onBehalfOf:'owner',propertyId:f.property,policyVersion:1}),at-2*DAY);
   await sweepPlans(f.db,at);
   const n=R.prepare("SELECT body FROM notifications WHERE user_id='owner' AND dedupe LIKE 'owner:autopilot-week:%'").get();
   assert.match(n.body,/^Неделя на автопилоте: ИИ назначил \d+ уборк/);assert.match(n.body,/меню → Автопилот/);
