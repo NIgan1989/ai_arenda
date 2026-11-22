@@ -3,6 +3,15 @@
 import type {Words} from './i18n-words';
 
 export const SERVER:Words={
+ 'Звонки в приложении ещё не подключены.':['Қосымшадағы қоңыраулар әлі қосылмаған.','Calls in the app are not connected yet.'],
+ 'Состав участников изменился. Откройте актуальный чат.':['Қатысушылар құрамы өзгерді. Өзекті чатты ашыңыз.','The participants have changed. Open the current chat.'],
+ 'Собеседника нет.':['Әңгімелесуші жоқ.','There is no one to talk to.'],
+ 'В этом чате уже идёт звонок.':['Бұл чатта қоңырау жүріп жатыр.','A call is already going on in this chat.'],
+ 'Ответить может только тот, кому звонят.':['Тек қоңырау шалынған адам ғана жауап бере алады.','Only the person being called can answer.'],
+ 'Звонок уже принят.':['Қоңырау қабылданып қойды.','The call has already been answered.'],
+ 'Собеседник ещё подключается.':['Әңгімелесуші әлі қосылуда.','The other person is still connecting.'],
+ 'Позвонить можно после подтверждения брони.':['Брон расталғаннан кейін қоңырау шалуға болады.','You can call once the booking is confirmed.'],
+ 'Бронь уже не активна.':['Брон енді белсенді емес.','The booking is no longer active.'],
  'Источник запроса не разрешён.':['Сұрау көзіне рұқсат жоқ.','The source of the request is not allowed.'],
  'Ожидается JSON.':['JSON күтіледі.','JSON is expected.'],
  'Некорректный запрос.':['Сұрау дұрыс емес.','The request is not valid.'],

@@ -60,9 +60,9 @@ export async function discussionAvatar(service:RentalService,role:Role,body:Row)
  const photo=await one(service.db,"SELECT m.data FROM profile_details d JOIN media m ON m.id=d.avatar_id AND m.user_id=d.user_id AND m.kind='avatar' LEFT JOIN profile_preferences x ON x.user_id=d.user_id WHERE d.user_id=? AND (d.user_id=? OR COALESCE(x.avatar_visibility,'participants')='participants')",person,service.userId);
  if(!photo)throw new DomainError('Аватар недоступен.',404);return photo;
 }
-export async function readDiscussion(service:RentalService,role:Role,body:Row){
+export async function readDiscussion(service:RentalService,role:Role,body:Row,config:Row={}){
  const {room,context}=await authorisedRoom(service,role,body),before=body.before?number(body.before,'Номер сообщения',1,Number.MAX_SAFE_INTEGER):Number.MAX_SAFE_INTEGER;
- const messages=await rows(service.db,"SELECT m.seq,m.sender_id,m.sender_role,m.body,m.created_at,m.reply_to,(m.photo_data<>'') photo,(m.audio_data<>'') voice,m.audio_ms,m.place,(m.sender_role='owner' AND m.request_key LIKE 'ai:%') by_ai,r.body reply_body FROM discussion_messages m LEFT JOIN discussion_messages r ON r.seq=m.reply_to AND r.room_id=m.room_id WHERE m.room_id=? AND m.seq<? ORDER BY m.seq DESC LIMIT 100",room.id,before);messages.reverse();for(const m of messages)m.place=placeOf(m.place);
+ const messages=await rows(service.db,"SELECT m.seq,m.sender_id,m.sender_role,m.body,m.created_at,m.reply_to,(m.photo_data<>'') photo,(m.audio_data<>'') voice,m.audio_ms,m.place,(m.request_key LIKE 'call:%') call_log,(m.sender_role='owner' AND m.request_key LIKE 'ai:%') by_ai,r.body reply_body FROM discussion_messages m LEFT JOIN discussion_messages r ON r.seq=m.reply_to AND r.room_id=m.room_id WHERE m.room_id=? AND m.seq<? ORDER BY m.seq DESC LIMIT 100",room.id,before);messages.reverse();for(const m of messages)m.place=placeOf(m.place);
  const older=messages.length?!!await one(service.db,'SELECT seq FROM discussion_messages WHERE room_id=? AND seq<? LIMIT 1',room.id,messages[0].seq):false;
  if(!body.before&&body.markRead!==false){const seq=messages.at(-1)?.seq||0;await q(service.db,'INSERT INTO discussion_visits(room_id,user_id,role,last_seq,seen_at) VALUES (?,?,?,?,?) ON CONFLICT(room_id,user_id,role) DO UPDATE SET last_seq=MAX(last_seq,excluded.last_seq),seen_at=excluded.seen_at',room.id,service.userId,role,seq,epoch()).run();await q(service.db,"UPDATE notifications SET read=1 WHERE user_id=? AND substr(dedupe,1,length(?))=? AND CAST(substr(dedupe,length(?)+1) AS INTEGER)<=?",service.userId,role+':discussion:'+room.id+':',role+':discussion:'+room.id+':',role+':discussion:'+room.id+':',seq).run();}
  const viewer=await one(service.db,'SELECT show_presence,show_receipts FROM profile_preferences WHERE user_id=?',service.userId);
@@ -73,7 +73,7 @@ export async function readDiscussion(service:RentalService,role:Role,body:Row){
  const subject=await discussionSubject(service,context);
  // The guest of a flat under autopilot is asked once, right in the chat, whether the AI may read their messages.
  const aiHelper=role==='guest'&&room.channel==='stay'&&room.entity_kind==='booking'&&!archived&&await aiAnswersBooking(service.db,room.entity_id)?{active:true,permission:await aiDataPermission(service)}:null;
- return {room:{id:room.id,sendBlocked,title:room.title,channel:room.channel,members,archived},aiHelper,subject,call:archived?{phone:null,note:'Чат в архиве.'}:await discussionCall(service,role,context,subject,sendBlocked),media:chatMedia(subject),messages,visits,hasOlder:older,userId:service.userId};
+ return {room:{id:room.id,sendBlocked,title:room.title,channel:room.channel,members,archived},aiHelper,subject,call:archived?{app:realtimeReady(config),phone:null,note:'Чат в архиве.'}:await discussionCall(service,role,context,subject,sendBlocked,config),media:chatMedia(subject),messages,visits,hasOlder:older,userId:service.userId};
 }
 export async function sendDiscussionMessage(service:RentalService,role:Role,body:Row,config:AIConfig={}){
  const {room,context}=await authorisedRoom(service,role,body);if(room.membership_key!==context.membershipKey)throw new DomainError('Состав участников изменился. Откройте актуальное обсуждение.',409);
@@ -141,7 +141,7 @@ export async function discussionInbox(service:RentalService,role:Role){
 }
 
 // The order the chat is about: shown pinned at the top of the chat, and a tap opens it.
-async function discussionSubject(service:RentalService,context:Row){
+export async function discussionSubject(service:RentalService,context:Row){
  const r=context.kind==='job'?await one(service.db,'SELECT id,start,end,status,fee FROM cleaning_jobs WHERE id=?',context.id):await one(service.db,'SELECT id,start,end,status FROM bookings WHERE id=?',context.id);
  return r?{kind:context.kind,id:r.id,title:context.title,status:r.status,start:r.start,end:r.end,...(r.fee!=null?{fee:r.fee}:{})}:null;
 }
@@ -158,7 +158,20 @@ export function callAllowed(subject:Row|null,blocked:boolean,t=epoch()){
  }
  return CALL_JOB.includes(subject.status)?{ok:true,note:''}:{ok:false,note:subject.status==='completed'?'Уборка завершена.':'Позвонить можно, когда исполнитель назначен.'};
 }
-async function discussionCall(service:RentalService,role:Role,context:Row,subject:Row|null,blocked:boolean){
+// A call inside the app shows no number, so it opens once the booking is confirmed (not a day before check-in).
+export function appCallAllowed(subject:Row|null,blocked:boolean,t=epoch()){
+ if(blocked)return {ok:false,note:'Переписка заблокирована.'};
+ if(!subject)return {ok:false,note:'Звонок недоступен.'};
+ if(subject.kind==='booking'){
+  if(['confirmed','completed'].includes(subject.status)&&t<subject.end+86400)return {ok:true,note:''};
+  return {ok:false,note:subject.status==='requested'?'Позвонить можно после подтверждения брони.':'Бронь уже не активна.'};
+ }
+ return CALL_JOB.includes(subject.status)?{ok:true,note:''}:{ok:false,note:subject.status==='completed'?'Уборка завершена.':'Позвонить можно, когда исполнитель назначен.'};
+}
+export const realtimeReady=(config:Row={})=>/^[a-f0-9]{32}$/i.test(String(config.REALTIME_APP_ID||''))&&String(config.REALTIME_APP_TOKEN||'').length>=20;
+async function discussionCall(service:RentalService,role:Role,context:Row,subject:Row|null,blocked:boolean,config:Row={}){
+ // With Cloudflare Realtime set up the call goes through the app and the number is never sent.
+ if(realtimeReady(config)){const allowed=appCallAllowed(subject,blocked);return {app:true,phone:null,note:allowed.ok?'':allowed.note};}
  const allowed=callAllowed(subject,blocked);if(!allowed.ok)return {phone:null,note:allowed.note};
  const other=(context.members as Member[]).find(m=>!(m.id===service.userId&&m.role===role));if(!other)return {phone:null,note:'Собеседника нет.'};
  const row=await one(service.db,'SELECT phone FROM auth_accounts WHERE id=?',other.id);

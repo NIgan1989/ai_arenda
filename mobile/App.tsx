@@ -66,6 +66,7 @@ import {MapHome,type MapStay} from './src/MapHome';
 import {stayISO,occasionTitle} from './src/ai-request';
 import {banquetWhen} from '../lib/map-search-request';
 import {OfflineNotice} from './src/OfflineNotice';
+import {CallCenter} from './src/Calls';
 import {EntrySplash,EntryStatusBar} from './src/EntrySplash';
 import {LoadingBar} from './src/LoadingBar';
 import {ApplicantPick,CleanerNextBox,WorkerRow,applicantStyles} from './src/ApplicantPick';
@@ -730,7 +731,7 @@ function Chat(){
       {saveError&&<Text accessibilityRole="alert" style={s.error}>{tr('История ещё не сохранена. Проверьте связь; заявки хранятся на сервере.')}</Text>}
     </ScrollView>
     {flow?<View style={s.composerWrap}>{flow?.questions[flow.index].choices&&<View style={s.buttonRow}>{flow.questions[flow.index].choices!.map(choice=><Button key={choice.value} title={choice.label} secondary disabled={busy} onPress={()=>send(choice.label)}/>)}</View>}{!!flow&&<View style={s.flowProgress}><Text style={s.flowLabel}>{tr('Вопрос {n} из {total}',{n:flow.index+1,total:flow.questions.length})}</Text><View style={s.buttonRow}>{flow.index>0&&<Button title={tr('Назад')} secondary disabled={busy} onPress={()=>{const previous={...flow,index:flow.index-1};setFlow(previous);say(previous.questions[previous.index].text);}}/>}<Button title={tr('Стоп')} secondary disabled={busy} onPress={()=>send('Стоп')}/></View></View>}<View style={s.composer}><TextInput ref={composer} accessibilityLabel={tr('Ваш ответ')} placeholder={tr('Ваш ответ…')} placeholderTextColor={C.muted} value={input} onChangeText={setInput} style={s.input} maxLength={2500} multiline submitBehavior="submit" onSubmitEditing={()=>send()} editable={ready&&!busy}/><Pressable accessibilityRole="button" accessibilityLabel={tr('Отправить сообщение')} accessibilityState={{disabled:!ready||busy||!input.trim()}} disabled={!ready||busy||!input.trim()} onPress={()=>send()} style={[s.send,(!input.trim()||busy)&&s.disabled]}><Text style={s.sendText}>{busy?tr('Ждите'):tr('Отправить')}</Text></Pressable></View><Text style={s.footnote}>{tr('Данные формы отправятся после проверки и подтверждения.')}</Text></View>:null}</>}</View></PageTransition></View>}</View>
-  </KeyboardAvoidingView>{legalDue&&!legalLater&&<LegalAccept legal={legalDue} role={selectedRole} onAccepted={()=>void load()} onLeave={()=>setLegalLater(true)}/>}</SafeAreaView></ActivityClockProvider>;
+  </KeyboardAvoidingView>{!!userId&&<CallCenter key={userId} userId={userId}/>}{legalDue&&!legalLater&&<LegalAccept legal={legalDue} role={selectedRole} onAccepted={()=>void load()} onLeave={()=>setLegalLater(true)}/>}</SafeAreaView></ActivityClockProvider>;
 }
 // What the performer confirms in the report: a home cleaning has its own list by its kind, the rest keep the usual four.
 const REPORT_ITEMS=/* i18n */['Постельное бельё заменено','Санузел и кухня убраны','Мусор вынесен','Жильё проверено перед заездом'];

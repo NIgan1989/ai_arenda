@@ -106,7 +106,7 @@ export function PlaceBubble({place,mine}:{place:{lat:number;lon:number};mine:boo
  </>;
 }
 
-function MicIcon({color=C.muted}:{color?:string}){return <View style={{alignItems:'center'}}><View style={{width:10,height:15,borderRadius:4,borderWidth:2,borderColor:color}}/><View style={{width:14,height:6,borderBottomLeftRadius:8,borderBottomRightRadius:8,borderWidth:2,borderTopWidth:0,borderColor:color,marginTop:-4}}/><View style={{width:2,height:3,backgroundColor:color}}/></View>;}
+export function MicIcon({color=C.muted}:{color?:string}){return <View style={{alignItems:'center'}}><View style={{width:10,height:15,borderRadius:4,borderWidth:2,borderColor:color}}/><View style={{width:14,height:6,borderBottomLeftRadius:8,borderBottomRightRadius:8,borderWidth:2,borderTopWidth:0,borderColor:color,marginTop:-4}}/><View style={{width:2,height:3,backgroundColor:color}}/></View>;}
 function PinIcon({color=C.muted}:{color?:string}){return <View style={{alignItems:'center'}}><View style={{width:15,height:15,borderRadius:8,borderBottomRightRadius:1,transform:[{rotate:'45deg'}],borderWidth:2,borderColor:color,alignItems:'center',justifyContent:'center'}}><View style={{width:4,height:4,borderRadius:2,backgroundColor:color}}/></View></View>;}
 
 const v=StyleSheet.create({

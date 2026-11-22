@@ -92,6 +92,7 @@
 -- migration 0088_room_units.sql sha256:873c3debafdd6fd4e3ea5d250b16c3351e45b1951efab6615013d98fa4c71aee
 -- migration 0089_chat_voice_place.sql sha256:887badea01961521b6e4017467c307731745bab0c20450639c7969e8c26c72e3
 -- migration 0090_moderation_voice_place.sql sha256:2bff022e636d8d78fe5805b9e8db1302c2b10b7b4f6d65186b46cd533da274e8
+-- migration 0091_chat_calls.sql sha256:11281ac6e7e03c1a90c9ae385b3eb47215ef128392e94bf7740896a927892e70
 
 -- table access_receipts
 CREATE TABLE access_receipts (id TEXT PRIMARY KEY,property_id TEXT NOT NULL,entity_kind TEXT NOT NULL,entity_id TEXT NOT NULL,user_id TEXT NOT NULL,created_at INTEGER NOT NULL,expires_at INTEGER NOT NULL);
@@ -464,6 +465,16 @@ CREATE TABLE card_charges (
  resolved_by TEXT,
  created_at INTEGER NOT NULL,
  finished_at INTEGER
+);
+
+-- table chat_calls
+CREATE TABLE chat_calls (
+ id TEXT PRIMARY KEY,room_id TEXT NOT NULL REFERENCES discussion_rooms(id),
+ caller_id TEXT NOT NULL,caller_role TEXT NOT NULL,callee_id TEXT NOT NULL,callee_role TEXT NOT NULL,
+ status TEXT NOT NULL CHECK(status IN ('ringing','active','ended','missed','declined','cancelled')),
+ caller_session TEXT NOT NULL DEFAULT '',callee_session TEXT NOT NULL DEFAULT '',
+ caller_seen INTEGER NOT NULL,callee_seen INTEGER NOT NULL DEFAULT 0,
+ created_at INTEGER NOT NULL,answered_at INTEGER,ended_at INTEGER
 );
 
 -- table cleaner_autopilot
@@ -1454,6 +1465,12 @@ CREATE INDEX card_charges_status ON card_charges(status,created_at);
 
 -- index card_charges_user
 CREATE INDEX card_charges_user ON card_charges(user_id,created_at);
+
+-- index chat_calls_callee
+CREATE INDEX chat_calls_callee ON chat_calls(callee_id,status);
+
+-- index chat_calls_room
+CREATE INDEX chat_calls_room ON chat_calls(room_id,status);
 
 -- index cleaning_commissions_owner
 CREATE INDEX cleaning_commissions_owner ON cleaning_commissions(owner_id,mode);

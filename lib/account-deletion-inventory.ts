@@ -91,6 +91,7 @@ export const accountDeletionColumns:Record<string,string>={
  "discussion_messages": "seq,room_id,sender_id,sender_role,body,request_key,created_at,photo_data,reply_to,audio_data,audio_ms,place",
  "discussion_rooms": "id,entity_kind,entity_id,channel,membership_key,members,title,created_at",
  "discussion_visits": "room_id,user_id,role,last_seq,seen_at,typing_until",
+ "chat_calls": "id,room_id,caller_id,caller_role,callee_id,callee_role,status,caller_session,callee_session,caller_seen,callee_seen,created_at,answered_at,ended_at",
  "evidence_video_chunks": "evidence_id,part,data",
  "external_blocks": "id,source_id,property_id,event_uid,start,end",
  "finance_backfill_receipts": "entity_key,created_at",
