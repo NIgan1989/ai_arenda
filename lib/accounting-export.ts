@@ -22,10 +22,13 @@ export async function monthBook(db:D1Database,month:string){
   rows(db,`SELECT created_at at,amount,id doc,${name.replace('%','user_id')} party FROM autopilot_charges WHERE mode='charged' AND created_at>=? AND created_at<? ORDER BY created_at`,from,to),
   rows(db,`SELECT f.created_at at,f.amount,f.id doc,f.kind,${name.replace('%','f.user_id')} party FROM service_fees f WHERE f.mode='charged' AND f.created_at>=? AND f.created_at<? AND (f.kind<>'ai_booking' OR (SELECT status FROM bookings WHERE id=f.ref_id) IN ('confirmed','completed')) ORDER BY f.created_at`,from,to),
   rows(db,`SELECT e.created_at at,e.amount,COALESCE(NULLIF(e.bank_ref,''),(SELECT c.bank_ref FROM card_charges c WHERE c.request_key=e.request_key),'') doc,EXISTS(SELECT 1 FROM card_charges c WHERE c.request_key=e.request_key) card,${name.replace('%','e.owner_id')} party FROM owner_balance_entries e WHERE e.kind='topup' AND e.test=0 AND e.created_at>=? AND e.created_at<? ORDER BY e.created_at`,from,to),
-  rows(db,'SELECT created_at at,tax,period,amount,bank_ref doc FROM company_tax_payments WHERE month=? ORDER BY created_at',month),
-  rows(db,'SELECT p.created_at at,p.amount,p.bank_ref doc,c.name FROM company_cost_payments p JOIN company_costs c ON c.id=p.cost_id WHERE p.month=? ORDER BY p.created_at',month),
+  rows(db,'SELECT created_at at,paid_on,tax,period,amount,bank_ref doc FROM company_tax_payments WHERE month=? ORDER BY created_at',month),
+  rows(db,'SELECT p.created_at at,p.paid_on,p.amount,p.bank_ref doc,c.name FROM company_cost_payments p JOIN company_costs c ON c.id=p.cost_id WHERE p.month=? ORDER BY p.created_at',month),
  ]);
- const line=(section:BookLine['section'],r:Row,kind:string,party='')=>({section,date:day(Number(r.at)),kind,party:String(party||''),doc:String(r.doc||''),amount:Number(r.amount)});
+ // A tax or a cost shows the bank date entered with it; an older entry without one shows the day it was entered
+ // only when that day is in the month, otherwise no date rather than a wrong one.
+ const dateOf=(r:Row)=>r.paid_on?String(r.paid_on):r.paid_on===''&&!day(Number(r.at)).startsWith(month)?'':day(Number(r.at));
+ const line=(section:BookLine['section'],r:Row,kind:string,party='')=>({section,date:dateOf(r),kind,party:String(party||''),doc:String(r.doc||''),amount:Number(r.amount)});
  const lines:BookLine[]=[
   ...commissions.map(r=>line('sale',r,'Комиссия за заселение',r.party)),
   ...cleaning.map(r=>line('sale',r,'Комиссия с уборки',r.party)),
@@ -72,7 +75,8 @@ export function parseStatement(text:string):BankLine[]{
  const dateCol=find(/дата|date/),amountCol=find(/^сумма|amount|sum/),creditCol=find(/приход|кредит|зачисл|credit|поступ/),debitCol=find(/расход|дебет|списан|debit/),docCol=find(/номер|№|документ|reference|ref|id/),textCol=find(/назнач|описан|детал|purpose|description|комментар/);
  if(dateCol<0||(amountCol<0&&creditCol<0&&debitCol<0))throw new DomainError('Не нашёл столбцы «Дата» и «Сумма». Выгрузите выписку в CSV с заголовками.');
  const lines:BankLine[]=[];
- for(const raw of all.slice(at+1,at+1+3000)){
+ if(all.length-at-1>5000)throw new DomainError('В выписке больше 5000 строк: загрузите её по частям, за один месяц.');
+ for(const raw of all.slice(at+1)){
   const c=split(raw,sep),date=dateOf(c[dateCol]||'');if(!date)continue;
   let amount:number|null=null;
   if(amountCol>=0)amount=amountOf(c[amountCol]||'');
@@ -87,7 +91,10 @@ const days=(a:string,b:string)=>Math.abs(Date.parse(a)-Date.parse(b))/86400000;
 export async function reconcileStatement(db:D1Database,body:Row){
  const month=exportMonth(body.month),bank=parseStatement(body.statement).filter(l=>l.date.startsWith(month));
  const book=await monthBook(db,month);
- const ours=book.lines.filter(l=>l.section!=='sale').map(l=>({...l,signed:l.section==='in'?l.amount:-l.amount,used:false}));
+ // One tax payment is split over its taxes (payTaxes), but the bank shows one debit: join the parts by bank document.
+ const money:BookLine[]=[];
+ for(const l of book.lines.filter(l=>l.section!=='sale')){const same=l.section==='out'&&l.kind.startsWith('Налог')&&l.doc?money.find(m=>m.section==='out'&&m.kind.startsWith('Налог')&&m.doc===l.doc):null;if(same){same.amount+=l.amount;same.kind='Налоги по документу';}else money.push({...l});}
+ const ours=money.map(l=>({...l,signed:l.section==='in'?l.amount:-l.amount,used:false}));
  const matched:Row[]=[],bankOnly:Row[]=[];
  const pending=bank.map(b=>({b,hit:-1}));
  // By the document number first, then by the amount and a date within three days: the bank books a card charge a day or two later.

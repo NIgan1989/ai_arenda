@@ -101,7 +101,7 @@
 -- migration 0097_publication_audit.sql sha256:d80919542a01d92e7b01f9979191d433c1d9d80c1dc96796e803ac4fb12dae6b
 -- migration 0098_reliability_voids.sql sha256:a2d7a652aee86c42af796f53bcd6c97f07b9e750e8a1a16fe9e63d8e7002fc9f
 -- migration 0099_account_exit.sql sha256:32c1a697f6927552c6cb9e5f7a2fae2faa1482c694b1fc87900421364de60d65
--- migration 0100_too_general.sql sha256:5df2176fba7717e95c8de2515df7c20a3afe26c148d45385ef8cf33143d7f4e7
+-- migration 0100_too_general.sql sha256:39d4dd856a7c3c1c074778c6ffc6a489e0c077ad8d27144f1cd730d2f66ab914
 
 -- table access_receipts
 CREATE TABLE access_receipts (id TEXT PRIMARY KEY,property_id TEXT NOT NULL,entity_kind TEXT NOT NULL,entity_id TEXT NOT NULL,user_id TEXT NOT NULL,created_at INTEGER NOT NULL,expires_at INTEGER NOT NULL);
@@ -620,7 +620,7 @@ CREATE TABLE company_cost_payments (
  bank_ref TEXT NOT NULL UNIQUE CHECK(length(bank_ref) BETWEEN 1 AND 80),
  note TEXT NOT NULL DEFAULT '',
  created_at INTEGER NOT NULL
-);
+, paid_on TEXT NOT NULL DEFAULT '');
 
 -- table company_costs
 CREATE TABLE company_costs (
@@ -680,7 +680,7 @@ CREATE TABLE company_tax_payments (
  month TEXT NOT NULL,
  note TEXT NOT NULL DEFAULT '',
  created_at INTEGER NOT NULL
-, bank_ref TEXT NOT NULL DEFAULT '');
+, bank_ref TEXT NOT NULL DEFAULT '', paid_on TEXT NOT NULL DEFAULT '');
 
 -- table content_reports
 CREATE TABLE content_reports (

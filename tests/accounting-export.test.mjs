@@ -42,5 +42,18 @@ test('the bank statement is matched by document number, then by amount and date;
   const empty=await writePlatformAdmin(f.other,'accounting/reconcile',{month:m,statement:'Дата;Сумма\n'+d+';100'},config(f));
   assert.equal(empty.matched,0);assert.equal(empty.serviceOnly.length,2);
   assert.throws(()=>parseStatement('просто текст'),/заголовков/);
+  // A statement longer than the limit is refused, not cut: a cut file would hide bank lines.
+  assert.throws(()=>parseStatement('Дата;Сумма\n'+Array.from({length:5001},()=>d+';1').join('\n')),/5000 строк/);
+ }finally{f.db.close();}
+});
+
+test('a tax paid in one bank payment over several taxes is matched as one debit, with the bank date of the payment',async()=>{
+ const f=await fixture();try{
+  const m=monthKey(),first=m+'-02',bankDay=first.split('-').reverse().join('.');
+  f.db.raw.prepare("INSERT INTO company_tax_payments(id,tax,period,amount,month,note,created_at,bank_ref,paid_on) VALUES ('t1','ipn',?,1000,?,'',?,'TAX-123',?),('t2','opv',?,2000,?,'',?,'TAX-123',?)").run(m,m,now(),first,m,m,now(),first);
+  const csv=(await writePlatformAdmin(f.other,'accounting/export',{month:m},config(f))).csv;
+  assert.match(csv,new RegExp('Платёж;'+first+';Налог ipn'),'the bank date, not the moment of entry');
+  const r=await writePlatformAdmin(f.other,'accounting/reconcile',{month:m,statement:`Дата;Сумма;Номер\n${bankDay};-3000;TAX-123\n`},config(f));
+  assert.equal(r.matched,1);assert.equal(r.bankOnly.length,0);assert.equal(r.serviceOnly.length,0);
  }finally{f.db.close();}
 });

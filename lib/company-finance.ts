@@ -25,6 +25,8 @@ const live="(SELECT status FROM bookings WHERE id=c.booking_id) IN ('confirmed',
 const stayed=stayedSql('c.booking_id'),stayStart='(SELECT start FROM bookings WHERE id=c.booking_id)';
 const monthOf=(column:string)=>`strftime('%Y-%m',${column}+${OFFSET},'unixepoch')`;
 const monthRe=/^\d{4}-(0[1-9]|1[0-2])$/;
+// The bank date of a payment, when given: it also sets the month the payment falls in.
+function paidOn(body:Row){if(body.paidOn==null||body.paidOn==='')return '';const v=String(body.paidOn);if(!/^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/.test(v)||Number.isNaN(Date.parse(v+'T00:00:00Z')))throw new DomainError('Проверьте дату платежа.');body.month=v.slice(0,7);return v;}
 
 export const pct=(amount:number,bp:number)=>Math.round(amount*bp/10000);
 export function monthKey(at=epoch()){return new Date((at+OFFSET)*1000).toISOString().slice(0,7);}
@@ -260,9 +262,9 @@ export async function deleteCost(service:RentalService,body:Row){
 // A real payment of a cost from the bank account: «Факт» ДДС shows these, not the plan (accounting audit, point 2).
 export async function addCostPayment(service:RentalService,body:Row){
  const cost=await one(service.db,'SELECT id,name FROM company_costs WHERE id=?',required(body.costId,'Расход',100));if(!cost)throw new DomainError('Расход не найден. Обновите страницу.',404);
- const month=String(body.month||'');if(!monthRe.test(month))throw new DomainError('Укажите месяц оплаты.');
+ const day=paidOn(body),month=String(body.month||'');if(!monthRe.test(month))throw new DomainError('Укажите месяц оплаты.');
  const amount=number(Math.round(Number(String(body.amount).replace(/\s/g,''))),'Сумма',1,1e10),bankRef=bankReference(body.bankRef),note=String(body.note||'').trim().slice(0,200);
- const r=await service.db.batch([q(service.db,'INSERT OR IGNORE INTO company_cost_payments(id,cost_id,month,amount,bank_ref,note,created_at) VALUES (?,?,?,?,?,?,?)',uuid(),cost.id,month,amount,bankRef,note,epoch()),q(service.db,'INSERT INTO audit_events SELECT ?,?,?,?,? WHERE changes()>0',uuid(),service.userId,'company-finance',JSON.stringify({action:'finance.cost_paid',amount}),epoch())]);
+ const r=await service.db.batch([q(service.db,'INSERT OR IGNORE INTO company_cost_payments(id,cost_id,month,amount,bank_ref,note,created_at,paid_on) VALUES (?,?,?,?,?,?,?,?)',uuid(),cost.id,month,amount,bankRef,note,epoch(),day),q(service.db,'INSERT INTO audit_events SELECT ?,?,?,?,? WHERE changes()>0',uuid(),service.userId,'company-finance',JSON.stringify({action:'finance.cost_paid',amount}),epoch())]);
  if(!r[0].meta.changes)throw new DomainError('Этот банковский платёж уже записан.',409);
  return {message:`Оплата «${cost.name}» записана в ДДС.`};
 }
@@ -328,7 +330,7 @@ export async function payTaxes(service:RentalService,body:Row){
  const state=await accountingState(service.db),o=state.obligations.find(x=>x.key===body.key);
  if(!o)throw new DomainError('Начисление не найдено. Обновите страницу.',404);
  if(o.left<=0)throw new DomainError('Это начисление уже оплачено.',409);
- const month=String(body.month||'');if(!monthRe.test(month))throw new DomainError('Укажите месяц оплаты.');
+ const day=paidOn(body),month=String(body.month||'');if(!monthRe.test(month))throw new DomainError('Укажите месяц оплаты.');
  const amount=number(Math.round(Number(String(body.amount).replace(/\s/g,''))),'Сумма',1,o.left);
  // One bank payment is recorded once (accounting audit, point 3): the unique index refuses a second entry even in a race.
  const bankRef=bankReference(body.bankRef);
@@ -337,7 +339,7 @@ export async function payTaxes(service:RentalService,body:Row){
  const paidBy:Row={};for(const r of await rows(service.db,'SELECT tax,COALESCE(SUM(amount),0) amount FROM company_tax_payments WHERE period=? GROUP BY tax',o.period))paidBy[r.tax]=Number(r.amount);
  const owed=Object.entries(o.parts as Row).map(([tax,v])=>[tax,Math.max(0,Number(v)-(paidBy[tax]||0))] as [string,number]).filter(([,v])=>v>0);
  const total=owed.reduce((a,[,v])=>a+v,0);let rest=amount;const at=epoch(),note=String(body.note||'').trim().slice(0,200);
- const statements=owed.map(([tax,v],i)=>{const share=i===owed.length-1?rest:Math.min(rest,Math.round(amount*v/total));rest-=share;return share>0?q(service.db,'INSERT INTO company_tax_payments(id,tax,period,amount,month,note,created_at,bank_ref) VALUES (?,?,?,?,?,?,?,?)',uuid(),tax,o.period,share,month,note,at,bankRef):null;}).filter(Boolean) as D1PreparedStatement[];
+ const statements=owed.map(([tax,v],i)=>{const share=i===owed.length-1?rest:Math.min(rest,Math.round(amount*v/total));rest-=share;return share>0?q(service.db,'INSERT INTO company_tax_payments(id,tax,period,amount,month,note,created_at,bank_ref,paid_on) VALUES (?,?,?,?,?,?,?,?,?)',uuid(),tax,o.period,share,month,note,at,bankRef,day):null;}).filter(Boolean) as D1PreparedStatement[];
  try{await service.db.batch([...statements,service.audit('company-finance','finance.tax_paid')]);}catch(e:any){if(/UNIQUE/i.test(String(e?.message)))throw new DomainError('Этот банковский платёж уже записан.',409);throw e;}
  return {message:`Оплата ${new Intl.NumberFormat('ru-RU').format(amount)} ₸ записана. Она уже в ДДС и уменьшила долг в балансе.`};
 }

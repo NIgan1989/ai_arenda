@@ -204,10 +204,10 @@ function CostForm({cost,now,usdRate,busy,save,remove}:{cost:Row;now:string;usdRa
 }
 
 function CostPaymentForm({costs,month,busy,save}:{costs:Row[];month:string;busy:boolean;save:(b:Row)=>Promise<void>}){
- const [costId,setCostId]=useState(costs[0]?.id||''),[m,setM]=useState(month),[amount,setAmount]=useState(''),[bankRef,setBankRef]=useState(''),[note,setNote]=useState('');
- return <form className="revenue-terms" onSubmit={e=>{e.preventDefault();void save({costId,month:m,amount,bankRef,note});}}>
+ const [costId,setCostId]=useState(costs[0]?.id||''),[m,setM]=useState(month+'-01'),[amount,setAmount]=useState(''),[bankRef,setBankRef]=useState(''),[note,setNote]=useState('');
+ return <form className="revenue-terms" onSubmit={e=>{e.preventDefault();void save({costId,paidOn:m,month:m.slice(0,7),amount,bankRef,note});}}>
   <label>Расход<NativeSelect value={costId} onChange={e=>setCostId(e.target.value)}>{costs.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</NativeSelect></label>
-  <div className="revenue-fields"><label>Сумма, ₸<Input value={amount} inputMode="numeric" required onChange={e=>setAmount(e.target.value.replace(/\D/g,'').slice(0,11))}/></label><label>Месяц оплаты<Input type="month" value={m} required onChange={e=>setM(e.target.value)}/></label></div>
+  <div className="revenue-fields"><label>Сумма, ₸<Input value={amount} inputMode="numeric" required onChange={e=>setAmount(e.target.value.replace(/\D/g,'').slice(0,11))}/></label><label>Дата платежа<Input type="date" value={m} required onChange={e=>setM(e.target.value)}/></label></div>
   <label>Номер банковского документа<Input value={bankRef} maxLength={80} required onChange={e=>setBankRef(e.target.value)} placeholder="Платёжка или операция Kaspi Pay"/></label>
   <label>Заметка<Input value={note} maxLength={200} onChange={e=>setNote(e.target.value)}/></label>
   <Button className="revenue-primary" disabled={busy||!costId||!amount||!bankRef.trim()}>Записать оплату</Button>
