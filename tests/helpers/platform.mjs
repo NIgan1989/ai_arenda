@@ -21,6 +21,9 @@ export function rightDoc(db,propertyId,ownerId,kind='owner'){db.raw.prepare("INS
 export function identityDoc(db,userId){db.raw.prepare("INSERT INTO identity_docs(id,user_id,data,width,height,bytes,created_at) VALUES (?,?,'data:image/jpeg;base64,AA==',1,1,1,?)").run('id-'+userId+'-'+Math.random().toString(36).slice(2,8),userId,now());}
 export async function fixture(){
  const {RentalService}=await load('service'),db=new TestDatabase(),owner=new RentalService(db,'owner'),guest=new RentalService(db,'guest'),cleaner=new RentalService(db,'cleaner'),other=new RentalService(db,'other');
+ // The fixture checks what is charged once the free start is over: «14 дней бесплатно» (migration 0095) is switched off
+ // here and tested on its own (tests/service-billing-audit.test.mjs).
+ db.raw.prepare("UPDATE platform_billing SET free_days=0 WHERE id='global'").run();
  for(const [service,name,roles] of [[owner,'Owner',['owner']],[guest,'Guest',['guest']],[cleaner,'Cleaner',['cleaner']],[other,'Other',['owner']]])await service.saveProfile({name,roles,city:'Павлодар',contact:'test',districts:'Центр',experience:'Experienced',availability:'By agreement'});
  const property=(await owner.createProperty({title:'Test apartment',city:'Павлодар',district:'Центр',address:'PRIVATE ADDRESS',description:'Test',price:10000,rooms:1,capacity:2,cleaningMinutes:90})).id;
  const policy={expectedVersion:0,dailyPrice:10000,hourlyPrice:2000,minHours:2,nightlyPrice:9000,checkinTime:'14:00',checkoutTime:'12:00',deposit:10000,houseRules:'No smoking',autoConfirm:false,autoAssign:false,cleaningFee:3000,cleaningBudget:4000};await owner.savePolicy(property,policy);

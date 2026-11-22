@@ -61,6 +61,7 @@ test('a banquet hall pays nothing per booking: a fixed month by capacity, free w
   const again=async amount=>{R.prepare('DELETE FROM platform_commissions WHERE booking_id=?').run(f.booking);R.prepare('UPDATE bookings SET amount=? WHERE id=?').run(amount,f.booking);await accrueCommission(f.db,f.booking,audit,now()).run();return R.prepare('SELECT rate_bp,amount FROM platform_commissions WHERE booking_id=?').get(f.booking);};
   assert.deepEqual({...await again(12000)},{rate_bp:400,amount:480});
   R.prepare("INSERT INTO property_details(property_id,details,revision,updated_at) VALUES (?,'{\"type\":\"banquet\"}','r',?) ON CONFLICT(property_id) DO UPDATE SET details=json_set(details,'$.type','banquet')").run(f.property,now());
+  R.prepare('UPDATE properties SET capacity=200 WHERE id=?').run(f.property);
   assert.deepEqual({...await again(2000000)},{rate_bp:0,amount:0},'a той for 250 guests: no percent');
   const s={hall_small_upto:100,hall_mid_upto:300,hall_fee_small:9900,hall_fee_mid:19900,hall_fee_large:29900};
   assert.deepEqual([60,100,101,300,301,800].map(c=>hallMonthFee(c,s)),[9900,9900,19900,19900,29900,29900]);

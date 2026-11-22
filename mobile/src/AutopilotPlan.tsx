@@ -47,6 +47,8 @@ function PayWay({state,owner}:{state:Data;owner:boolean}){
    </View>
   </View>
   {owner&&state.hallScale&&<Text style={p.hint}>{tr('Залы и кафе платят за месяц: до {a} гостей {small}, до {b} гостей {mid}, больше {large}. Брони без ограничений. Месяц без броней через приложение бесплатный.',{a:state.hallScale.smallUpto,b:state.hallScale.midUpto,small:money(state.hallScale.small),mid:money(state.hallScale.mid),large:money(state.hallScale.large)})}</Text>}
+  {/* «14 дней бесплатно»: from the first listing for an owner, from the first cleaning for a performer. */}
+  {b.freeDays>0&&(!b.freeUntil||b.freeUntil>Date.now()/1000)&&<Text style={p.hint}>{b.freeUntil?tr('Бесплатно до {date}: первые {days} дней.',{date:dateText(b.freeUntil*1000,{day:'numeric',month:'long',timeZone:'Asia/Almaty'}),days:b.freeDays}):owner?tr('Первые {days} дней с первого объявления бесплатно.',{days:b.freeDays}):tr('Первые {days} дней с первой уборки бесплатно.',{days:b.freeDays})}</Text>}
   {b.spent30>0&&<Text style={p.hint}>{tr('За 30 дней: {spent}.',{spent:money(b.spent30)})}</Text>}
   <Text style={p.fine}>{st.charge?tr('Всё копится и списывается одной суммой по понедельникам с привязанной карты.'):tr('Пока плата не взимается: сервис только считает.')}</Text>
  </View>;
@@ -136,7 +138,7 @@ export function NativeAutopilotPlan({role}:{role:'owner'|'cleaner'}){
   <View style={p.card}>
    <Text style={p.badge}>{tr('✦ ИИ-администратор')}</Text>
    <View style={p.head}><View style={{flex:1,gap:4}}><Text style={p.h3}>{owner?tr('Автопилот'):tr('Автопилот исполнителя')}</Text><Text style={p.price}><Text style={p.priceBig}>{priceLine}</Text>{'\n'}{priceNote}</Text></View><Switch accessibilityLabel={tr('Автопилот')} value={open} disabled={busy} onValueChange={v=>v?begin():(setOpen(false),setStep(0))} trackColor={{false:C.lineStrong,true:C.accent}} thumbColor={C.surface}/></View>
-   {plan?.status==='paused'&&<Text style={p.paused}>{tr('Автопилот на паузе. Принятые брони и уборки в силе.')}</Text>}
+   {plan?.status==='paused'&&<Text style={p.paused}>{tr('Автопилот на паузе. Принятые брони и уборки в силе. Когда услуги оплачены, нажмите «Подключить», чтобы включить его снова.')}</Text>}
    {open?wizard:<>
     <View style={{gap:12}}>{FEATURES[role].map(f=><View key={f} style={p.feature}><Text style={p.check}>✓</Text><Text style={p.featureText}>{f}</Text></View>)}</View>
     {owner&&<Text style={p.keep}>{tr('Вам остаются деньги и решения: правка объявления, рискованные брони, споры. ИИ спросит вас кнопкой.')}</Text>}

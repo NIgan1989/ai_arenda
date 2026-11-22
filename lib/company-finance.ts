@@ -67,7 +67,7 @@ async function inputs(db:D1Database):Promise<Inputs>{
    UNION ALL SELECT f.created_at,f.mode,f.role,f.amount FROM service_fees f WHERE f.kind<>'ai_booking' OR (SELECT status FROM bookings WHERE id=f.ref_id) IN ('confirmed','completed')) GROUP BY month`),
   // A part-paid charge has no settlement date yet: its deductions count from the month it was charged.
   rows(db,`SELECT ${monthOf('COALESCE(settled_at,created_at)')} month,COALESCE(SUM(withheld),0) withheld FROM autopilot_charges WHERE role='cleaner' AND mode='charged' AND withheld>0 GROUP BY month`),
-  rows(db,`SELECT ${monthOf('created_at')} month,COALESCE(SUM(CASE WHEN kind='topup' THEN amount END),0) topups,COALESCE(SUM(CASE WHEN kind<>'topup' THEN amount END),0) bonuses FROM owner_balance_entries GROUP BY month`),
+  rows(db,`SELECT ${monthOf('created_at')} month,COALESCE(SUM(CASE WHEN kind='topup' AND test=0 THEN amount END),0) topups,COALESCE(SUM(CASE WHEN kind<>'topup' THEN amount END),0) bonuses FROM owner_balance_entries GROUP BY month`),
   rows(db,`SELECT ${monthOf('paid_at')} month,COALESCE(SUM(amount),0) paid FROM cleaning_holds WHERE status='paid' AND paid_at IS NOT NULL GROUP BY month`),
   rows(db,`SELECT ${monthOf('created_at')} month,COALESCE(SUM(charged_cost_micros),0) micros,COUNT(*) requests FROM ai_usage_reservations WHERE charged_cost_micros IS NOT NULL GROUP BY month`),
   rows(db,'SELECT id,kind,amount,month,note,created_at FROM company_cash_entries ORDER BY month DESC,created_at DESC,id'),

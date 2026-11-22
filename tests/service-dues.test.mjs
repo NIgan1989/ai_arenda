@@ -79,7 +79,8 @@ test('end to end, one tariff in percent: the AI costs nothing extra, a cleaning 
   assert.equal(theirs.due,0);assert.equal(sum(theirs,'cleaner_job'),200);assert.equal(sum(theirs,'payment'),200);
   // «Бухгалтерия»: 200 ₸ of revenue and the same 200 ₸ on the account.
   const report=await companyFinance(f.db,{basis:'fact',month:monthKey()}),pl=report.current.pl,cf=report.current.cf;
-  assert.equal(pl.gross,200);assert.equal(cf.inflow,200);
+  // The card is a test one: the debt is settled, but no real money came in (audit «Оплата услуг», point 1).
+  assert.equal(pl.gross,200);assert.equal(cf.inflow,0);
   assert.equal(report.balance.receivable||0,0,'nobody owes the service anything');
  }finally{f.db.close();}
 });
