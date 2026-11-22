@@ -20,7 +20,8 @@ test('a linked card pays the accrued fees once a week; nothing is topped up and 
   owe(f,'cleaner',1900);assert.equal(await dueOf(f.db,'cleaner'),1900);
   let state=await readOperations(f.cleaner,'cleaner',['service-billing','state']);
   assert.equal(state.due,1900);assert.deepEqual(state.card,{mask:'•• 0000',test:true});assert.equal(state.items[0].kind,'autopilot');assert.equal(state.items[0].amount,1900);
-  const at=now();assert.deepEqual(await sweepDues(f.db,noPlans,at),{charged:1,asked:0,paused:0});
+  // Just after the next Monday charge, so the «same week» below does not cross the next Monday on any weekday.
+  const at=chargeSlot(now())+WEEK+60;assert.deepEqual(await sweepDues(f.db,noPlans,at),{charged:1,asked:0,paused:0});
   assert.equal(await dueOf(f.db,'cleaner'),0);
   const e=entries(f,'cleaner');assert.equal(e.length,1);assert.equal(e[0].kind,'topup');assert.equal(e[0].amount,1900);assert.match(e[0].note,/Списание с карты •• 0000 за услуги сервиса \(тест\)/);
   assert.ok(f.db.raw.prepare("SELECT settled_at FROM autopilot_charges WHERE user_id='cleaner'").get().settled_at,'the month is settled only by the charge');
