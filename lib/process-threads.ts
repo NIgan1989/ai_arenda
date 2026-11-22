@@ -137,7 +137,7 @@ export function bookingThread(b: Row, data: Row, now: number): ProcessThread {
 
 // ---------- Отменённая бронь, по которой владелец ещё должен гостю ----------
 export function refundThread(b: Row, now: number): ProcessThread | null {
-  const refund = refundLeft(b), deposit = b.terms?.deposit_status === 'owner_verified' ? Number(b.terms?.deposit_balance) || 0 : 0;
+  const refund = refundLeft(b), deposit = Number(b.terms?.deposit_balance) || 0;
   if (!['cancelled', 'expired'].includes(b.status) || !(refund || deposit)) return null;
   const what = [refund && tenge(refund), deposit && tr('депозит {sum}',{sum:tenge(deposit)})].filter(Boolean).join(tr(' и '));
   const t = place([{ key: 'cancel', label: tr('Отмена'), by: 'guest', note: tr('Бронь отменена') }, { key: 'refund', label: tr('Возврат'), by: 'you', note: tr('Верните гостю {what} и отметьте возврат',{what}) }], [true, false], () => true);

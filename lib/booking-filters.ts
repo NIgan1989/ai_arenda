@@ -9,7 +9,7 @@ export const bookingTabs:{id:BookingTab;label:string}[]=L([{id:'active',label:'Ð
 export function bookingTab(b:Row,role:string,userId:string):BookingTab{
  if(['requested','confirmed'].includes(b.status))return 'active';
  const owner=role==='owner'&&b.owner_id===userId,closed=['cancelled','expired','rejected'].includes(b.status);
- const owes=owner&&((closed&&refundLeft(b)>0)||(['completed','cancelled','expired'].includes(b.status)&&b.terms?.deposit_status==='owner_verified'&&Number(b.terms?.deposit_balance)>0));
+ const owes=owner&&((closed&&refundLeft(b)>0)||(['completed','cancelled','expired'].includes(b.status)&&Number(b.terms?.deposit_balance)>0));
  if(owes)return 'active';
  return closed?'cancelled':'done';
 }
