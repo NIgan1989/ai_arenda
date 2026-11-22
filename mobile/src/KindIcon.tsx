@@ -16,6 +16,8 @@ const ICONS: Record<string, ImageSourcePropType> = {
   hostel: require('../assets/kinds/hostel.png'),
   hotel: require('../assets/kinds/hotel.png'),
   aparthotel: require('../assets/kinds/aparthotel.png'),
+  // «База отдыха»: houses among the trees, the same line drawing as the guest house.
+  resort: require('../assets/kinds/guesthouse.png'),
   banya: require('../assets/kinds/banya.png'),
   sauna: require('../assets/kinds/sauna.png'),
   banquet: require('../assets/kinds/banquet.png'),

@@ -23,7 +23,7 @@ export const RIGHT_DOCS:Record<RightKind,string>={
 export const RIGHT_LIMIT=4;
 // «Жильё проверено»: a person at the platform approved the place by its proof (the guest sees the mark on the card).
 // `id` is a trusted column expression naming the place's id, such as p.id or d.property_id.
-export const verifiedPlaceSql=(id='p.id')=>{if(!/^[a-zA-Z][a-zA-Z0-9_]*\.[a-zA-Z_]+$/.test(id))throw new Error('Invalid column');return `(EXISTS(SELECT 1 FROM property_right_docs rd WHERE rd.property_id=${id} AND rd.checked_at IS NOT NULL) AND EXISTS(SELECT 1 FROM pilot_property_admissions pa WHERE pa.id=${id} AND pa.owner_reviewed=1))`;};
+export const verifiedPlaceSql=(id='p.id')=>{if(!/^[a-zA-Z][a-zA-Z0-9_]*\.[a-zA-Z_]+$/.test(id))throw new Error('Invalid column');return `(EXISTS(SELECT 1 FROM property_right_docs rd WHERE rd.property_id=COALESCE((SELECT u.lead_id FROM room_units u WHERE u.property_id=${id}),${id}) AND rd.checked_at IS NOT NULL) AND EXISTS(SELECT 1 FROM pilot_property_admissions pa WHERE pa.id=${id} AND pa.owner_reviewed=1))`;};
 // Once a person approved the place the photos are deleted: only the record of the check stays (kind, who, when).
 // The pointer stays until the storage confirmed the delete; the hourly sweep retries a failed one.
 export async function settleRightDocs(db:D1Database,propertyId:string,reviewerId:string,config:OperationConfig={}){

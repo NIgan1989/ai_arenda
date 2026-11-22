@@ -45,6 +45,7 @@ import {staffPlaces} from './staff';
 import {homePlaces,homeDeals} from './home-order';
 import {homeChecklist,homeOrderOf,homeCancel,tenge,HOME_DAMAGE_WINDOW} from './home-cleaning';
 import {venuesFor} from './venue';
+import {pickRoom,roomCounts,roomState} from './room-units';
 import {ownerForecasts,decideForecast} from './load-forecast';
 import {ownerListingTips,decideListingTip} from './listing-quality';
 import {ownerCleaningTips,decideCleaningTip} from './cleaning-price';
@@ -62,7 +63,7 @@ const now = () => Math.floor(Date.now() / 1000);
 const id = () => crypto.randomUUID();
 const clockLabel=(at:number)=>new Intl.DateTimeFormat('ru-RU',{hour:'2-digit',minute:'2-digit',timeZone:'Asia/Almaty'}).format(new Date(at*1000));
 const HISTORY_TABLES=['bookings','cleaning_jobs','finance_entries','platform_commissions','access_receipts','administrator_issues','administrator_tasks','matching_offers','review_property_bindings'];
-const SETTINGS_TABLES=['property_details','property_locations','property_operations','property_policies','operation_rules','matching_preferences','property_access','calendar_exports','property_import_links','guest_favorites','property_staff','venue_halls'];
+const SETTINGS_TABLES=['property_details','property_locations','property_operations','property_policies','operation_rules','matching_preferences','property_access','calendar_exports','property_import_links','guest_favorites','property_staff','venue_halls','room_units'];
 // How far a stay may move its cleaning while the assigned cleaner keeps it: a late checkout or a few extra hours, not another day.
 const KEEP_SHIFT=3*3600;
 // The owner's Kaspi number is the owner's phone as a rule. Before the phone opens (a day before the check-in) a guest
@@ -73,6 +74,18 @@ const PHONE_OPEN_SQL="(b.status='completed' OR (b.status='confirmed' AND CAST(st
 const PROFILE_CONTACTS='Уберите из профиля телефон, ссылки и мессенджеры: участники связываются через чат сервиса, а телефон открывается за сутки до заезда.';
 // What a kind of place is sold by, the same for a new booking and for a change of one (audit of 2026-11-22): a bath or
 // a sauna by the hour only, a banquet hall or a cafe only by the lunch or the evening of one day, by the Kazakhstan clock.
+// One card per lead (lib/room-units.ts): the first of its rooms found stands for it, with the count of rooms found.
+export function collapseRooms(items:Row[],leads:Map<string,string>,counts:Map<string,number>,timed:boolean){
+  const seen=new Map<string,Row>(),out:Row[]=[];
+  for(const row of items){
+    const {room_lead:_lead,...p}=row,lead=leads.get(String(p.id))||String(p.id),total=counts.get(lead)||1;
+    if(total<2){out.push(p);continue;}
+    const first=seen.get(lead);
+    if(first){if(timed)first.rooms.free++;continue;}
+    const card={...p,rooms:timed?{total,free:1}:{total}};seen.set(lead,card);out.push(card);
+  }
+  return out;
+}
 export function kindMode(kind:string,mode:unknown,start:number,end:number){
   if(isBath(kind)){
     if(mode!==undefined&&mode!==null&&mode!==''&&mode!=='hourly')throw new DomainError('Баню и сауну бронируют по часам.');
@@ -209,6 +222,8 @@ export class RentalService {
     const p=await this.one('SELECT * FROM properties WHERE id=? AND owner_id=? AND demo_owner IS NULL AND archived_at IS NULL',propertyId,this.userId);if(!p)throw new DomainError('Жильё не найдено.',404);
     const time=now(),ahead=await this.one("SELECT COUNT(*) n FROM bookings WHERE property_id=? AND (status='confirmed' OR (status='requested' AND expires_at>?)) AND occupied_until>?",propertyId,time,time);
     if(ahead?.n)throw new DomainError('У жилья есть будущие брони ('+ahead.n+'). Сначала отмените их, затем удалите жильё.',409);
+    // «Номера одного типа»: the card goes with its rooms, so the owner first leaves one room (lib/room-units.ts).
+    if(await this.one('SELECT 1 x FROM room_units u JOIN properties r ON r.id=u.property_id WHERE u.lead_id=? AND r.archived_at IS NULL LIMIT 1',propertyId))throw new DomainError('В карточке несколько номеров. Сначала оставьте один номер, затем удалите её.',409);
     if(await this.one("SELECT id FROM cleaning_jobs WHERE property_id=? AND status IN ('open','assigned','in_progress','submitted') LIMIT 1",propertyId))throw new DomainError('По жилью есть незавершённая уборка. Отмените или завершите её, затем удалите жильё.',409);
     const history=await this.one(`SELECT ${HISTORY_TABLES.map(t=>`EXISTS(SELECT 1 FROM ${t} WHERE property_id=?)`).join(' OR ')} OR EXISTS(SELECT 1 FROM participant_reviews WHERE property_id=? AND status<>'pending') OR EXISTS(SELECT 1 FROM calendar_sources WHERE property_id=?) found`,...Array(HISTORY_TABLES.length+2).fill(propertyId));
     if(!history?.found){
@@ -447,8 +462,8 @@ export class RentalService {
   async state(includeCatalog=true) {
     const [profile, properties, ownProperties, bookings, jobs, applications, notifications, messages] = await Promise.all([
       this.profile(),
-      includeCatalog?this.all('SELECT id,title,city,district,description,price,rooms,capacity,cleaning_minutes,demo_owner,published FROM properties p WHERE published=1 AND (demo_owner IS NULL OR demo_owner=?) AND '+pilotPropertyVisibleSql('p')+' ORDER BY created_at DESC', this.userId):Promise.resolve([]),
-      this.all('SELECT p.*,(SELECT c.name FROM regular_cleaners r JOIN profiles c ON c.id=r.cleaner_id WHERE r.property_id=p.id) regular_cleaner_name,(SELECT a.name FROM property_staff x JOIN auth_accounts a ON a.id=x.staff_id WHERE x.property_id=p.id) staff_name,(SELECT MAX(x.end) FROM external_blocks x JOIN calendar_sources c ON c.id=x.source_id WHERE x.property_id=p.id AND c.external_property_id=\'aiqonaq:busy\' AND x.start<=unixepoch() AND x.end>unixepoch()) busy_until,(SELECT COALESCE(SUM(v.shown),0) FROM property_views v WHERE v.property_id=p.id AND v.day>CAST((unixepoch()+18000)/86400 AS INTEGER)-7) views_week FROM properties p WHERE p.owner_id=? AND p.archived_at IS NULL ORDER BY p.created_at DESC', this.userId),
+      includeCatalog?this.all('SELECT id,title,city,district,description,price,rooms,capacity,cleaning_minutes,demo_owner,published FROM properties p WHERE published=1 AND (demo_owner IS NULL OR demo_owner=?) AND '+pilotPropertyVisibleSql('p')+' AND NOT EXISTS(SELECT 1 FROM room_units u WHERE u.property_id=p.id) ORDER BY created_at DESC', this.userId):Promise.resolve([]),
+      this.all('SELECT p.*,(SELECT c.name FROM regular_cleaners r JOIN profiles c ON c.id=r.cleaner_id WHERE r.property_id=p.id) regular_cleaner_name,(SELECT a.name FROM property_staff x JOIN auth_accounts a ON a.id=x.staff_id WHERE x.property_id=p.id) staff_name,(SELECT MAX(x.end) FROM external_blocks x JOIN calendar_sources c ON c.id=x.source_id WHERE x.property_id=p.id AND c.external_property_id=\'aiqonaq:busy\' AND x.start<=unixepoch() AND x.end>unixepoch()) busy_until,(SELECT COALESCE(SUM(v.shown),0) FROM property_views v WHERE v.property_id=p.id AND v.day>CAST((unixepoch()+18000)/86400 AS INTEGER)-7) views_week FROM properties p WHERE p.owner_id=? AND p.archived_at IS NULL AND NOT EXISTS(SELECT 1 FROM room_units u WHERE u.property_id=p.id) ORDER BY p.created_at DESC', this.userId),
       this.all(`SELECT b.*,p.title,(SELECT json_extract(details,'$.type') FROM property_details WHERE property_id=p.id) property_type,p.owner_id,p.city,p.district,p.demo_owner,(SELECT photos FROM property_details WHERE property_id=p.id) property_photos,
         CASE WHEN p.owner_id=? OR (b.guest_id=? AND b.status='confirmed') THEN p.address ELSE NULL END address,
         (SELECT rating FROM stay_reviews r WHERE r.booking_id=b.id) review_rating,
@@ -492,19 +507,22 @@ export class RentalService {
     // Completed stays per own place: prepayments open after five of them (lib/prepay.ts).
     const stays=new Map<string,number>((ownProperties.length?await this.all("SELECT b.property_id,COUNT(*) n FROM bookings b JOIN properties p ON p.id=b.property_id JOIN booking_terms t ON t.booking_id=b.id WHERE p.owner_id=? AND b.status='completed' AND t.actual_checkout IS NOT NULL AND b.guest_id<>p.owner_id GROUP BY b.property_id",this.userId):[]).map(r=>[r.property_id,Number(r.n)]));
     const guests=await reliabilityFor(this.db,'guest',bookings.filter(b=>b.owner_id===this.userId&&b.status==='requested').map(b=>b.guest_id));
-    const state={ profile, properties:await this.enrichProperties(properties.map(p=>({...p,policy:publicPolicy(policyFor(p))}))), ownProperties:await this.enrichProperties(ownProperties.map(p=>({...p,policy:policyFor(p),operation:operations.find(v=>v.property_id===p.id),prepay:prepayState(policyFor(p).prepay_percent,stays.get(p.id)||0)})),true), bookings:bookings.map(({risk_row,handover_row,owner_pay_row,...b}) => ({...b,owner_pay:owner_pay_row&&(b.owner_id===this.userId||payoutOpen({...b,terms:enrichedTerms.find(t=>t.booking_id===b.id)},serverTime))?guestPayout(JSON.parse(owner_pay_row),b.owner_id===this.userId||phoneOpens(b,serverTime)):null,risk:riskFromRow(risk_row?JSON.parse(risk_row):null),handover:handover_row?JSON.parse(handover_row):null,...(b.owner_id===this.userId?{guest_reliability:guests.get(b.guest_id)}:{}),status:b.status==='requested' && b.expires_at<=serverTime?'expired':b.status,terms:enrichedTerms.find(t=>t.booking_id===b.id),cancel_terms:cancelFor(b),changes:changes.filter(c=>c.booking_id===b.id).map(c=>({...c,status:c.status==='pending'&&c.expires_at<=serverTime?'expired':c.status})),readiness:operations.find(o=>o.property_id===b.property_id)?.readiness})), jobs:jobs.map(({open_address,cleaner_pay_row,...j}:Row):Row=>({...j,cleaner_pay:cleaner_pay_row?JSON.parse(cleaner_pay_row):null,street:streetAddress(open_address),settlement_paid:jobPayments.find(p=>p.job_id===j.id)?.paid??(j.settled_at?j.fee:0),checkout_confirmed:!j.booking_id||!!j.checkout_confirmed})), applications, notifications, messages, serverTime, integrations:{ai:false,telegram:false,whatsapp:false,payments:false} };
+    const roomCountsOwn=ownProperties.length?await roomCounts(this.db):new Map<string,number>();
+    const state={ profile, properties:await this.enrichProperties(properties.map(p=>({...p,policy:publicPolicy(policyFor(p))}))), ownProperties:await this.enrichProperties(await Promise.all(ownProperties.map(async p=>({...p,...(roomCountsOwn.has(p.id)?{rooms:await roomState(this.db,p.id)}:{}),policy:policyFor(p),operation:operations.find(v=>v.property_id===p.id),prepay:prepayState(policyFor(p).prepay_percent,stays.get(p.id)||0)}))),true), bookings:bookings.map(({risk_row,handover_row,owner_pay_row,...b}) => ({...b,owner_pay:owner_pay_row&&(b.owner_id===this.userId||payoutOpen({...b,terms:enrichedTerms.find(t=>t.booking_id===b.id)},serverTime))?guestPayout(JSON.parse(owner_pay_row),b.owner_id===this.userId||phoneOpens(b,serverTime)):null,risk:riskFromRow(risk_row?JSON.parse(risk_row):null),handover:handover_row?JSON.parse(handover_row):null,...(b.owner_id===this.userId?{guest_reliability:guests.get(b.guest_id)}:{}),status:b.status==='requested' && b.expires_at<=serverTime?'expired':b.status,terms:enrichedTerms.find(t=>t.booking_id===b.id),cancel_terms:cancelFor(b),changes:changes.filter(c=>c.booking_id===b.id).map(c=>({...c,status:c.status==='pending'&&c.expires_at<=serverTime?'expired':c.status})),readiness:operations.find(o=>o.property_id===b.property_id)?.readiness})), jobs:jobs.map(({open_address,cleaner_pay_row,...j}:Row):Row=>({...j,cleaner_pay:cleaner_pay_row?JSON.parse(cleaner_pay_row):null,street:streetAddress(open_address),settlement_paid:jobPayments.find(p=>p.job_id===j.id)?.paid??(j.settled_at?j.fee:0),checkout_confirmed:!j.booking_id||!!j.checkout_confirmed})), applications, notifications, messages, serverTime, integrations:{ai:false,telegram:false,whatsapp:false,payments:false} };
     return {...state,workspaces:Object.fromEntries(roles.map(role=>[role,operationOverview(state,this.userId,role,serverTime)]))};
   }
-  async publicCatalog(options:{syntheticPreview?:boolean}={}) {
+  async publicCatalog(options:{syntheticPreview?:boolean;rooms?:boolean}={}) {
     const visible=pilotPropertyVisibleSql('p'),visibility=options.syntheticPreview?"("+visible+" OR p.description LIKE 'СИНТЕТИЧЕСКОЕ ОБЪЯВЛЕНИЕ%')":visible;
-    const properties=await this.all('SELECT id,title,city,district,description,price,rooms,capacity,cleaning_minutes,CASE WHEN '+visible+' THEN 0 ELSE 1 END test_preview FROM properties p WHERE published=1 AND demo_owner IS NULL AND '+visibility+' ORDER BY created_at DESC');
+    // The rooms of a card (lib/room-units.ts) are searched one by one, but listed only as their card.
+    const rooms=options.rooms?'':' AND NOT EXISTS(SELECT 1 FROM room_units u WHERE u.property_id=p.id)';
+    const properties=await this.all('SELECT id,title,city,district,description,price,rooms,capacity,cleaning_minutes,CASE WHEN '+visible+' THEN 0 ELSE 1 END test_preview'+(options.rooms?',(SELECT u.lead_id FROM room_units u WHERE u.property_id=p.id) room_lead':'')+' FROM properties p WHERE published=1 AND demo_owner IS NULL AND '+visibility+rooms+' ORDER BY created_at DESC');
     const policies=await this.all('SELECT * FROM property_policies WHERE property_id IN (SELECT value FROM json_each(?))',JSON.stringify(properties.map(p=>p.id)));
     return {properties:await this.enrichProperties(properties.map(p=>({...p,policy:publicPolicy(policies.find(v=>v.property_id===p.id))})))};
   }
   async publicSearch(filters:Record<string,string>={},options:{syntheticPreview?:boolean;matching?:boolean;ignorePrep?:boolean;readyIds?:string[];arrival?:{around:number|null}}={}){
     const city=String(filters.city||'').trim(),mode=filters.mode||'daily',guests=number(filters.guests||1,'Гости',1,1000);
     if(city.length>80||!['daily','hourly','night'].includes(mode))throw new DomainError('Проверьте город и вид аренды.');
-    const catalog=await this.publicCatalog(options),cities=[...new Set(catalog.properties.map(p=>String(p.city)))].sort();
+    const catalog=await this.publicCatalog({...options,rooms:true}),cities=[...new Set(catalog.properties.map(p=>String(p.city)))].sort();
     const cityKey=city.toLocaleLowerCase('ru'),exactCity=catalog.properties.some(p=>String(p.city).toLocaleLowerCase('ru')===cityKey);
     // Homes unless the bath category is asked for by name or by its types: a bath never shows among homes.
     const kinds=Array.isArray(filters.kinds)?filters.kinds:[],category=categories[filters.category]?filters.category:searchCategory(kinds);
@@ -554,6 +572,8 @@ export class RentalService {
     const rate=(p:Row)=>range?p.estimate?.amount:(mode==='hourly'?p.policy.hourly_price:p.price);
     items=items.filter(p=>(!rooms||(filters.roomsExact==='1'?p.rooms===rooms:p.rooms>=rooms))&&rate(p)>=minPrice&&rate(p)<=maxPrice);
     if(sort!=='recommended')items.sort((a,b)=>(sort==='price-asc'?1:-1)*(rate(a)-rate(b))||String(a.id).localeCompare(String(b.id)));
+    // «Номера одного типа»: one card per type of room, saying how many of its rooms are free at the asked time.
+    {const leads=new Map<string,string>(catalog.properties.filter(p=>p.room_lead).map(p=>[String(p.id),String(p.room_lead)]));if(leads.size){const counts=new Map<string,number>();for(const lead of leads.values())counts.set(lead,(counts.get(lead)||1)+1);items=collapseRooms(items,leads,counts,!!range);later=collapseRooms(later,leads,counts,!!range);}}
     const total=items.length,totalPages=Math.max(1,Math.ceil(total/limit)),page=Math.min(pageInput,totalPages);
     let pageItems:Row[]=options.matching?items:items.slice((page-1)*limit,page*limit);
     // The strip: each found home carries its codes; the others free later are kept apart, off the found list.
@@ -628,7 +648,10 @@ export class RentalService {
     try{return await offerPriceAdvice(this.db,propertyId);}catch(error){console.error('Price advice failed',error instanceof Error?error.message:'');return null;}
   }
   async bookingQuote(body:Row,options:{ownerReady?:boolean}={}) {
-    const p=await this.one('SELECT p.*,EXISTS(SELECT 1 FROM account_restrictions r WHERE r.user_id=p.owner_id) restricted FROM properties p WHERE p.id=? AND p.published=1 AND (p.demo_owner IS NULL OR p.demo_owner=?)',required(body.propertyId,'Жильё',100),this.userId);
+    // «Номера одного типа» (lib/room-units.ts): a card of many rooms books its first free room.
+    const asked=required(body.propertyId,'Жильё',100),card=await this.one('SELECT cleaning_minutes FROM properties WHERE id=?',asked);
+    const span=card?interval(body.start,body.end):null,room=span?await pickRoom(this.db,asked,span.start,span.end+(Number(card!.cleaning_minutes)||0)*60):asked;
+    const p=await this.one('SELECT p.*,EXISTS(SELECT 1 FROM account_restrictions r WHERE r.user_id=p.owner_id) restricted FROM properties p WHERE p.id=? AND p.published=1 AND (p.demo_owner IS NULL OR p.demo_owner=?)',room,this.userId);
     if(!p) throw new DomainError('Жильё недоступно.',404);
     await assertPilotAllowed(this,'booking',p.id);
     // An owner on hold after a guest's «Меня не заселили», or blocked, takes no new bookings.
