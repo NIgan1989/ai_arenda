@@ -45,7 +45,8 @@ import {staffPlaces} from './staff';
 import {homePlaces,homeDeals} from './home-order';
 import {homeChecklist,homeOrderOf,homeCancel,tenge,HOME_DAMAGE_WINDOW} from './home-cleaning';
 import {venuesFor} from './venue';
-import {pickRoom,roomCounts,roomState} from './room-units';
+import {pickRoom,roomCounts,roomState,roomsOf} from './room-units';
+import {showWaiting} from './show-waiting';
 import {ownerForecasts,decideForecast} from './load-forecast';
 import {ownerListingTips,decideListingTip} from './listing-quality';
 import {ownerCleaningTips,decideCleaningTip} from './cleaning-price';
@@ -100,6 +101,10 @@ export function kindMode(kind:string,mode:unknown,start:number,end:number){
   }
   return mode||'daily';
 }
+// The address a guest agreed to while the owner's new one is checked or offered (publication audit 2026-11-22):
+// the guest's card shows it, and the new one only once it is offered to accept.
+const agreedOf=(b:Row)=>{try{return b.agreed_row?JSON.parse(b.agreed_row):null;}catch{return null;}};
+function agreedFor(b:Row):Row{const a=agreedOf(b);if(!a)return {agreed_row:undefined};return {agreed_row:undefined,city:a.city,district:a.district,address_change:{state:a.state,next:a.state==='offered'&&b.status==='confirmed'?[b.city,b.address].filter(Boolean).join(', '):null}};}
 export class RentalService {
   constructor(public db: D1Database, public userId: string, private execution?:{propertyId:string;policyVersion:number}) {}
   query(sql: string, ...args: any[]) { return this.db.prepare(sql).bind(...args); }
@@ -213,9 +218,26 @@ export class RentalService {
     const paused=staffOff&&!!currentPolicy?.auto_confirm?' Автопилот приостановлен: укажите цену уборки и снова включите «ИИ».':'';
     // Guests who already booked hear about the new address; their bookings stay in force.
     // The exact address goes to confirmed guests only, as everywhere else.
-    if(shownBefore&&moved){const ahead=await this.all("SELECT id,guest_id,status FROM bookings WHERE property_id=? AND (status='confirmed' OR (status='requested' AND expires_at>?)) AND occupied_until>?",key,now(),now());
-      if(ahead.length)await this.db.batch(ahead.map((b:Row)=>this.query('INSERT OR IGNORE INTO notifications(id,user_id,body,dedupe,read,created_at) VALUES (?,?,?,?,0,?)',id(),b.guest_id,b.status==='confirmed'?'Владелец уточнил адрес «'+p.title+'»: '+[p.city,p.address].filter(Boolean).join(', ')+'. Ваша бронь в силе.':'Владелец уточнил адрес «'+p.title+'». Ваша заявка в силе, точный адрес откроется после подтверждения брони.','guest:address:'+b.id+':'+revision,now())));}
-    return {id:key,moved:shownBefore&&moved,message:(shownBefore&&moved?'Адрес изменён. Действующие брони в силе.':published?'Объявление опубликовано. Готовность и даты проверяются отдельно.':'Черновик сохранён. Гости его не видят.')+paused};
+    // A moved flat (publication audit 2026-11-22): the guests of every room keep the address they agreed to until a person
+    // checked the new one and the guest accepted it; until then they may cancel for free (lib/participant-security.ts).
+    // A hidden flat with bookings ahead is moved the same way: the bookings are there whether it is shown or not.
+    let kept=0;
+    if(moved){
+      const rooms=JSON.stringify(await roomsOf(this.db,key)),t=now();
+      const ahead=await this.all("SELECT id,guest_id,status FROM bookings WHERE property_id IN (SELECT value FROM json_each(?)) AND (status='confirmed' OR (status='requested' AND expires_at>?)) AND occupied_until>?",rooms,t,t);
+      const checked=!(await readPilotPolicy(this.db)).require_owner_review,state=checked?'offered':'review',old=[current.city,current.address].filter(Boolean).join(', '),next=[p.city,p.address].filter(Boolean).join(', ');
+      const pin=await this.one('SELECT longitude,latitude FROM property_locations WHERE property_id=? AND address_fingerprint=?',key,[current.city,current.district,current.address].join('|'));
+      if(ahead.length)await this.db.batch(ahead.flatMap((b:Row)=>[
+        // The first agreed address stays through several changes; only the step goes back to the check.
+        this.query('INSERT INTO booking_addresses(booking_id,city,district,address,longitude,latitude,state,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?) ON CONFLICT(booking_id) DO UPDATE SET state=excluded.state,updated_at=excluded.updated_at',b.id,current.city||'',current.district||'',current.address||'',pin?.longitude??null,pin?.latitude??null,state,t,t),
+        this.query('INSERT OR IGNORE INTO notifications(id,user_id,body,dedupe,read,created_at) VALUES (?,?,?,?,0,?)',id(),b.guest_id,checked
+          ?'Владелец изменил адрес «'+p.title+'»'+(b.status==='confirmed'?': '+next:'')+'. Откройте бронь: примите новый адрес или отмените бронь бесплатно.'
+          :'Владелец меняет адрес «'+p.title+'». Новый адрес сначала проверит администратор.'+(b.status==='confirmed'?' Пока для вашей брони действует согласованный адрес: '+old+'.':'')+' После проверки вы сможете принять новый адрес или отменить бронь бесплатно.','guest:address:'+b.id+':'+revision,t)]));
+      kept=ahead.length;
+    }
+    // An approved flat that waited for its photos shows itself once they are there (lib/show-waiting.ts).
+    if(propertyId)await showWaiting(this.db,key);
+    return {id:key,moved:shownBefore&&moved,message:(kept?'Адрес изменён. Гости действующих броней видят прежний адрес, пока новый не проверен и гость его не принял.':shownBefore&&moved?'Адрес изменён.':published?'Объявление опубликовано. Готовность и даты проверяются отдельно.':'Черновик сохранён. Гости его не видят.')+paused};
   }
   // Removing a flat: one with no history at all is deleted; otherwise it is archived (hidden from guests and
   // from the owner's lists) so bookings, cleanings and money records keep pointing at it.
@@ -255,9 +277,11 @@ export class RentalService {
     const unchecked=owner?await this.all("SELECT a.id FROM pilot_property_admissions a WHERE a.owner_reviewed=0 AND COALESCE((SELECT require_owner_review FROM pilot_policy WHERE id='global'),0)=1 AND a.id IN (SELECT value FROM json_each(?))",JSON.stringify(items.slice(0,500).map(p=>p.id))):[];
     // Approved by a person at the platform: the owner's proof of the right to let it is settled (lib/property-rights.ts).
     const approvedIds=owner?new Set((await this.all('SELECT id FROM pilot_property_admissions WHERE owner_reviewed=1 AND id IN (SELECT value FROM json_each(?))',JSON.stringify(items.slice(0,500).map(p=>p.id)))).map(a=>a.id)):new Set();
+    // A refused check of the current address and its reason stay on the owner's card with «Отправить на проверку снова».
+    const refused=owner?new Map((await this.all("SELECT r.property_id,r.notes FROM participant_reviews r WHERE r.role='owner' AND r.status='rejected' AND r.property_id IN (SELECT value FROM json_each(?)) AND r.property_revision=COALESCE((SELECT revision FROM review_property_bindings b WHERE b.property_id=r.property_id),0) AND NOT EXISTS(SELECT 1 FROM participant_reviews x WHERE x.property_id=r.property_id AND x.role='owner' AND x.rowid>r.rowid AND x.property_revision=r.property_revision)",JSON.stringify(items.slice(0,500).map(p=>p.id)))).map(r=>[r.property_id,r.notes||''])):new Map();
     // «Заведение»: the halls of one place carry its name, for the guest and for the owner (lib/venue.ts).
     const venues=await venuesFor(this.db);
-    return items.map(p=>{const d=details.find(d=>d.property_id===p.id),op=operations.find(o=>o.property_id===p.id);return {...p,...(venues.has(p.id)?{venue:venues.get(p.id)}:{}),...(owner?{address_check:Number(p.published)===1&&!p.demo_owner&&unchecked.some(u=>u.id===p.id),mapped:pins.some(l=>l.property_id===p.id&&l.address_fingerprint===[p.city,p.district,p.address].join('|')),access_version:access.find(a=>a.property_id===p.id)?.version||0,approved:approvedIds.has(p.id)}:{host:hostOf(p.id)||null}),details:d?JSON.parse(d.details):{},photos:d?JSON.parse(d.photos):[],listing_version:d?.version||0,rating:ratings.get(p.id)||null,verified:!!d?.verified,display_status:propertyStatus(p,op,busy.some(b=>b.property_id===p.id)),...(owner?{}:{published:undefined})};});
+    return items.map(p=>{const d=details.find(d=>d.property_id===p.id),op=operations.find(o=>o.property_id===p.id);return {...p,...(venues.has(p.id)?{venue:venues.get(p.id)}:{}),...(owner?{address_check:Number(p.published)===1&&!p.demo_owner&&unchecked.some(u=>u.id===p.id),mapped:pins.some(l=>l.property_id===p.id&&l.address_fingerprint===[p.city,p.district,p.address].join('|')),access_version:access.find(a=>a.property_id===p.id)?.version||0,approved:approvedIds.has(p.id),review_refused:refused.get(p.id)??null}:{host:hostOf(p.id)||null}),details:d?JSON.parse(d.details):{},photos:d?JSON.parse(d.photos):[],listing_version:d?.version||0,rating:ratings.get(p.id)||null,verified:!!d?.verified,display_status:propertyStatus(p,op,busy.some(b=>b.property_id===p.id)),...(owner?{}:{published:undefined})};});
   }
   async workerCard(userId:string){
     const p=await this.one('SELECT p.name,p.city,p.districts,p.experience,p.availability,d.avatar_id,d.work_status FROM profiles p LEFT JOIN profile_details d ON d.user_id=p.id WHERE p.id=?',userId);
@@ -289,7 +313,7 @@ export class RentalService {
   }
   async roleState(value:unknown,options:{catalog?:boolean}={}){
     const role=await this.authorizeWorkspace(value,'state'),state=await this.state(options.catalog!==false);
-    const bookings=state.bookings.filter((b:Row)=>role==='owner'?b.owner_id===this.userId:role==='guest'&&b.guest_id===this.userId).map((b:Row):Row=>role==='owner'?{...b,stay_check:0}:{...b,address:b.status==='confirmed'?b.address:null,owner_contact:phoneOpens(b,state.serverTime)?b.owner_contact:null,stay_check:b.guest_id===this.userId?b.stay_check:0,guest_name:null,guest_contact:null});
+    const bookings=state.bookings.filter((b:Row)=>role==='owner'?b.owner_id===this.userId:role==='guest'&&b.guest_id===this.userId).map((b:Row):Row=>role==='owner'?{...b,agreed_row:undefined,stay_check:0}:{...b,...agreedFor(b),address:b.status==='confirmed'?(agreedOf(b)?.address??b.address):null,owner_contact:phoneOpens(b,state.serverTime)?b.owner_contact:null,stay_check:b.guest_id===this.userId?b.stay_check:0,guest_name:null,guest_contact:null});
     const jobs=role==='guest'?[]:state.jobs.filter((j:Row)=>role==='owner'?j.owner_id===this.userId:j.assigned_to===this.userId||(j.status==='open'&&j.end>state.serverTime)).map((j:Row)=>role==='owner'||j.assigned_to===this.userId&&j.status!=='cancelled'?j:{...j,address:null,owner_contact:null,report:'',checklist:'[]'});
     const jobIds=new Set(jobs.map((j:Row)=>j.id));
     const entityIds=[...bookings,...jobs].map((item:Row)=>item.id);
@@ -472,6 +496,7 @@ export class RentalService {
       this.all('SELECT p.*,(SELECT c.name FROM regular_cleaners r JOIN profiles c ON c.id=r.cleaner_id WHERE r.property_id=p.id) regular_cleaner_name,(SELECT a.name FROM property_staff x JOIN auth_accounts a ON a.id=x.staff_id WHERE x.property_id=p.id) staff_name,(SELECT MAX(x.end) FROM external_blocks x JOIN calendar_sources c ON c.id=x.source_id WHERE x.property_id=p.id AND c.external_property_id=\'aiqonaq:busy\' AND x.start<=unixepoch() AND x.end>unixepoch()) busy_until,(SELECT COALESCE(SUM(v.shown),0) FROM property_views v WHERE v.property_id=p.id AND v.day>CAST((unixepoch()+18000)/86400 AS INTEGER)-7) views_week FROM properties p WHERE p.owner_id=? AND p.archived_at IS NULL AND NOT EXISTS(SELECT 1 FROM room_units u WHERE u.property_id=p.id) ORDER BY p.created_at DESC', this.userId),
       this.all(`SELECT b.*,p.title,(SELECT json_extract(details,'$.type') FROM property_details WHERE property_id=p.id) property_type,p.owner_id,p.city,p.district,p.demo_owner,(SELECT photos FROM property_details WHERE property_id=p.id) property_photos,
         CASE WHEN p.owner_id=? OR (b.guest_id=? AND b.status='confirmed') THEN p.address ELSE NULL END address,
+        (SELECT json_object('state',a.state,'city',a.city,'district',a.district,'address',a.address) FROM booking_addresses a WHERE a.booking_id=b.id) agreed_row,
         (SELECT rating FROM stay_reviews r WHERE r.booking_id=b.id) review_rating,
         (SELECT json_object('verdict',verdict,'issues',json(issues),'note',note,'cleaner_photos',cleaner_photos,'created_at',created_at) FROM stay_handovers h WHERE h.booking_id=b.id) handover_row,
         (SELECT COUNT(*) FROM stay_photos f WHERE f.booking_id=b.id AND f.phase='checkin') checkin_photos,
@@ -509,7 +534,7 @@ export class RentalService {
     const enrichedTerms:Row[]=terms.map(t=>{const f=financeBalances.find(f=>f.booking_id===t.booking_id),received=f?.deposit_received??(t.deposit_status==='owner_verified'?t.deposit:0),returned=f?.deposit_returned??(t.deposit_returned_at?t.deposit:0);return {...t,deposit_received_amount:received,deposit_returned_amount:returned,deposit_balance:Math.max(0,received-returned-(Number(t.deposit_kept)||0)),refunded_amount:f?.refunded||0};});
     const policyFor=(p:Row)=>policies.find(v=>v.property_id===p.id)||defaultPolicy;
     // What cancelling right now would cost, for the card: the same rule the cancel action applies.
-    const cancelFor=(b:Row)=>{const t=enrichedTerms.find(v=>v.booking_id===b.id);if(!t||!['requested','confirmed'].includes(b.status)||t.actual_checkin)return null;return cancellationTerms({by:b.owner_id===this.userId?'owner':'guest',status:b.status,mode:t.billing_mode,rate:t.rate,units:t.units,amount:b.amount,paid:t.paid_amount,deposit:t.deposit_status==='owner_verified'?t.deposit:0,start:b.start,minHours:t.min_hours||policies.find(v=>v.property_id===b.property_id)?.min_hours||1,at:serverTime,banquet:!!t.occasion});};
+    const cancelFor=(b:Row)=>{const t=enrichedTerms.find(v=>v.booking_id===b.id);if(!t||!['requested','confirmed'].includes(b.status)||t.actual_checkin)return null;return cancellationTerms({by:b.owner_id===this.userId||b.agreed_row?'owner':'guest',status:b.status,mode:t.billing_mode,rate:t.rate,units:t.units,amount:b.amount,paid:t.paid_amount,deposit:t.deposit_status==='owner_verified'?t.deposit:0,start:b.start,minHours:t.min_hours||policies.find(v=>v.property_id===b.property_id)?.min_hours||1,at:serverTime,banquet:!!t.occasion});};
     // Completed stays per own place: prepayments open after five of them (lib/prepay.ts).
     const stays=new Map<string,number>((ownProperties.length?await this.all("SELECT b.property_id,COUNT(*) n FROM bookings b JOIN properties p ON p.id=b.property_id JOIN booking_terms t ON t.booking_id=b.id WHERE p.owner_id=? AND b.status='completed' AND t.actual_checkout IS NOT NULL AND b.guest_id<>p.owner_id GROUP BY b.property_id",this.userId):[]).map(r=>[r.property_id,Number(r.n)]));
     const guests=await reliabilityFor(this.db,'guest',bookings.filter(b=>b.owner_id===this.userId&&b.status==='requested').map(b=>b.guest_id));
@@ -846,6 +871,18 @@ export class RentalService {
       if(!r[0].meta.changes)throw new DomainError('Бронь изменилась. Обновите карточку.',409);
       return {message:'Владелец предупреждён: вы приедете к '+clockLabel(until)+'. Бронь сохраняется.'};
     }
+    // «Принять новый адрес»: the owner moved the flat, a person checked the new address, and the guest agrees to it
+    // (publication audit 2026-11-22). Declining is a free cancellation (the «cancel» action below).
+    if(body.action==='address_accept'){
+      if(b.guest_id!==this.userId)throw new DomainError('Новый адрес принимает гость.',403);
+      if(!['requested','confirmed'].includes(b.status))throw new DomainError('Эта бронь уже закрыта.',409);
+      const r=await this.db.batch([
+        this.query("DELETE FROM booking_addresses WHERE booking_id=? AND state='offered'",bookingId),
+        this.query("INSERT OR IGNORE INTO notifications(id,user_id,body,dedupe,read,created_at) SELECT ?,?,?,?,0,? WHERE changes()>0",id(),b.owner_id,'Гость принял новый адрес «'+b.title+'». Бронь в силе.','owner:address-accepted:'+bookingId+':'+now(),now()),
+        this.audit(bookingId,'booking.address_accepted')]);
+      if(!r[0].meta.changes)throw new DomainError('Новый адрес ещё проверяется или уже принят. Обновите карточку.',409);
+      return {message:'Новый адрес принят. Бронь в силе.'};
+    }
     // «Не могу попасть»: the guest is at the door, said «Я оплатил», and the owner has not checked the transfer yet.
     // The owner hears it at once and the service administrator sees it as an appeal; the access stays closed until
     // the money is confirmed (audit «Запуск», point 1). Lighter than «Меня не заселили»: nothing is hidden from the map.
@@ -1037,7 +1074,9 @@ export class RentalService {
       if(terms?.paid_amount||terms?.deposit)await migrateFinanceEntity(this,'booking',bookingId);
       // The deposit goes back as far as it really came in, a part of it too, less what was already returned or kept.
       const depositHeld=terms?.deposit?Math.max(0,(await this.one("SELECT COALESCE(SUM(CASE WHEN kind='deposit' THEN amount WHEN kind='deposit_return' THEN -amount ELSE 0 END),0) n FROM finance_entries WHERE booking_id=?",bookingId))?.n-(Number(terms.deposit_kept)||0)):0;
-      const rules={by:(owner?'owner':'guest') as 'owner'|'guest',status:b.status,mode:terms?.billing_mode||'daily',rate:terms?.rate||0,units:terms?.units||1,amount:b.amount,paid:terms?.paid_amount||0,deposit:depositHeld,start:b.start,minHours:terms?.min_hours||policy?.min_hours||1,at:t,banquet:!!terms?.occasion};
+      // The owner changed the address after the guest agreed: the guest may leave for free, as if the owner cancelled.
+      const moved=!owner&&!!await this.one('SELECT 1 x FROM booking_addresses WHERE booking_id=?',bookingId);
+      const rules={by:(owner||moved?'owner':'guest') as 'owner'|'guest',status:b.status,mode:terms?.billing_mode||'daily',rate:terms?.rate||0,units:terms?.units||1,amount:b.amount,paid:terms?.paid_amount||0,deposit:depositHeld,start:b.start,minHours:terms?.min_hours||policy?.min_hours||1,at:t,banquet:!!terms?.occasion};
       const c=cancellationTerms(rules);
       // «Я оплатил» not yet checked: the transfer stays «на проверке». If the owner finds it, it goes back by the same rules.
       const toldPay=terms?.payment_reported_at?Number(terms.payment_reported_amount)||0:0,toldDeposit=terms?.deposit_reported_at?Number(terms.deposit_reported_amount)||0:0;
@@ -1046,7 +1085,7 @@ export class RentalService {
       const told=toldPay+toldDeposit,backIfIn=ifReceived+toldDeposit;
       const reviewGuest=told?' Вы сообщили о переводе '+money(told)+': владелец проверит поступление. Если деньги пришли, он вернёт '+money(backIfIn)+'. Переводить заново не нужно.':'';
       const reviewOwner=told?' Гость сообщил о переводе '+money(told)+' до отмены. Проверьте банк: если деньги пришли, нажмите в брони «Деньги получены» и верните гостю '+money(backIfIn)+'; если нет, нажмите «Перевод не пришёл».':'';
-      const who=owner?'Владелец отменил бронь':'Гость отменил бронь',title='«'+b.title+'»';
+      const who=owner?'Владелец отменил бронь':moved?'Гость отменил бронь из-за смены адреса':'Гость отменил бронь',title='«'+b.title+'»';
       // The guest said they came in, the owner did not confirm it and cancels: the settling-in stays owed
       // (lib/stay-result.ts); if the guest was not there, the owner disputes the charge and a person decides.
       const afterArrival=owner&&b.status==='confirmed'&&!!terms?.checkin_reported_at&&!terms?.actual_checkin;

@@ -927,4 +927,10 @@ export const SERVER:Words={
  'Голосовое сообщение — до одной минуты.':['Дауыстық хабар — бір минутқа дейін.','A voice message is up to one minute.'],
  'Не удалось определить точку на карте.':['Картадағы нүктені анықтау мүмкін болмады.','Could not read the point on the map.'],
  'Голосовое сообщение недоступно.':['Дауыстық хабар қолжетімсіз.','The voice message is not available.'],
+ 'Новый адрес принимает гость.':['Жаңа мекенжайды қонақ қабылдайды.','The guest accepts the new address.'],
+ 'Новый адрес ещё проверяется или уже принят. Обновите карточку.':['Жаңа мекенжай әлі тексерілуде немесе қабылданып қойған. Карточканы жаңартыңыз.','The new address is still being checked or is already accepted. Refresh the card.'],
+ 'Новый адрес принят. Бронь в силе.':['Жаңа мекенжай қабылданды. Бронь күшінде.','The new address is accepted. The booking stays in force.'],
+ 'Адрес изменён.':['Мекенжай өзгертілді.','The address is changed.'],
+ 'Адрес изменён. Гости действующих броней видят прежний адрес, пока новый не проверен и гость его не принял.':['Мекенжай өзгертілді. Қолданыстағы брондардың қонақтары жаңасы тексеріліп, қонақ оны қабылдағанша бұрынғы мекенжайды көреді.','The address is changed. Guests with current bookings see the previous address until the new one is checked and the guest accepts it.'],
+ '«{title}» одобрено, владелец получил уведомление. Чтобы показать его гостям на карте, владельцу осталось: {v}. После этого жильё покажется само.':['«{title}» мақұлданды, иесі хабарлама алды. Оны қонақтарға картада көрсету үшін иесіне қалғаны: {v}. Содан кейін баспана өзі көрсетіледі.','“{title}” is approved and the owner was notified. To show it to guests on the map, the owner still has to: {v}. After that the home shows by itself.'],
 };

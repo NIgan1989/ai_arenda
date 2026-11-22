@@ -98,7 +98,8 @@
 -- migration 0094_chat_calls.sql sha256:11281ac6e7e03c1a90c9ae385b3eb47215ef128392e94bf7740896a927892e70
 -- migration 0095_service_billing_audit.sql sha256:cf606de2fb9d3d6d53b2f6fb51cb82b94927bfbe0a3885ef3167c3dcdd5d2275
 -- migration 0096_call_audio.sql sha256:52e6a3b35ded64d49a8ed35daa1b5059fc36d1fc2d302be38b6712f9192bb802
--- migration 0097_reliability_voids.sql sha256:a2d7a652aee86c42af796f53bcd6c97f07b9e750e8a1a16fe9e63d8e7002fc9f
+-- migration 0097_publication_audit.sql sha256:d80919542a01d92e7b01f9979191d433c1d9d80c1dc96796e803ac4fb12dae6b
+-- migration 0098_reliability_voids.sql sha256:a2d7a652aee86c42af796f53bcd6c97f07b9e750e8a1a16fe9e63d8e7002fc9f
 
 -- table access_receipts
 CREATE TABLE access_receipts (id TEXT PRIMARY KEY,property_id TEXT NOT NULL,entity_kind TEXT NOT NULL,entity_id TEXT NOT NULL,user_id TEXT NOT NULL,created_at INTEGER NOT NULL,expires_at INTEGER NOT NULL);
@@ -369,6 +370,15 @@ CREATE TABLE background_jobs (
  attempts INTEGER NOT NULL DEFAULT 0, max_attempts INTEGER NOT NULL DEFAULT 8,
  available_at INTEGER NOT NULL, lease_until INTEGER NOT NULL DEFAULT 0, lease_token TEXT NOT NULL DEFAULT '',
  repeat_seconds INTEGER NOT NULL DEFAULT 0, last_completed INTEGER, last_error TEXT NOT NULL DEFAULT '', updated_at INTEGER NOT NULL
+);
+
+-- table booking_addresses
+CREATE TABLE booking_addresses (
+ booking_id TEXT PRIMARY KEY REFERENCES bookings(id),
+ city TEXT NOT NULL,district TEXT NOT NULL DEFAULT '',address TEXT NOT NULL,
+ longitude REAL,latitude REAL,
+ state TEXT NOT NULL CHECK(state IN ('review','offered')),
+ created_at INTEGER NOT NULL,updated_at INTEGER NOT NULL
 );
 
 -- table booking_changes
@@ -1182,7 +1192,7 @@ CREATE TABLE property_right_docs (
  created_at INTEGER NOT NULL,
  checked_at INTEGER,
  checked_by TEXT
-);
+, address_revision INTEGER NOT NULL DEFAULT 0);
 
 -- table property_staff
 CREATE TABLE property_staff (
@@ -1287,6 +1297,12 @@ CREATE TABLE "service_fees" (
  mode TEXT NOT NULL CHECK(mode IN ('shadow','free','charged')),
  created_at INTEGER NOT NULL,
  UNIQUE(kind,ref_id)
+);
+
+-- table show_waiting
+CREATE TABLE show_waiting (
+ property_id TEXT PRIMARY KEY REFERENCES properties(id),
+ review_id TEXT NOT NULL,created_at INTEGER NOT NULL
 );
 
 -- table stay_handovers
