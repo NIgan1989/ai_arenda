@@ -89,6 +89,8 @@ export async function sendDiscussionMessage(service:RentalService,role:Role,body
   if(place&&!['confirmed','completed'].includes(b?.status))throw new DomainError('Точку на карте можно отправить после подтверждения брони: тогда откроется и адрес.',422);
   // A voice message is open at once, as in a messenger (the user's choice, 2026-11-22): it is not checked for numbers.
  }
+ // After the deal a new point is not needed: the points already sent stay in the history for a dispute (audit 2026-11-22).
+ if(place&&!(await placeOpen(service,room)))throw new DomainError(room.entity_kind==='job'?'Точку на карте можно отправить, пока уборка идёт.':'Точку на карте можно отправить до суток после выезда.',422);
  const audio=voice?.data||'',same=(m:Row)=>m.body===text&&m.photo_data===photo&&m.reply_to===reply&&(m.audio_data||'')===audio&&(m.place||'')===place;
  if(previous){if(!same(previous))throw new DomainError('Этот ключ использован для другого сообщения.',409);return {sent:true,seq:previous.seq};}
  const message=await q(service.db,`INSERT OR IGNORE INTO discussion_messages(room_id,sender_id,sender_role,body,request_key,created_at,photo_data,reply_to,audio_data,audio_ms,place) SELECT ?,?,?,?,?,?,?,?,?,?,? WHERE ${context.gate} AND NOT EXISTS(SELECT 1 FROM discussion_blocks WHERE room_id=?) AND (SELECT COUNT(*) FROM discussion_messages WHERE sender_id=? AND created_at>?)<30 RETURNING seq`,room.id,service.userId,role,text,key,epoch(),photo,reply,audio,voice?.ms||0,place,...context.gateArgs,room.id,service.userId,epoch()-60).first<Row>();
@@ -123,9 +125,15 @@ export function placeInput(v:unknown){
 }
 // What the composer offers: a voice message always; a point on the map once the booking is confirmed (the address is
 // open then). Between an owner and a cleaner both, as the chat itself.
-export function chatMedia(subject:Row|null){
- if(subject?.kind!=='booking')return {place:true,voice:true};
- return {place:['confirmed','completed'].includes(subject.status),voice:true};
+// The point closes a day after check-out, and for a cleaning once it is done, like the call (appCallAllowed).
+export function chatMedia(subject:Row|null,t=epoch()){
+ if(!subject)return {place:false,voice:true};
+ if(subject.kind!=='booking')return {place:CALL_JOB.includes(subject.status),voice:true};
+ return {place:['confirmed','completed'].includes(subject.status)&&t<subject.end+86400,voice:true};
+}
+async function placeOpen(service:RentalService,room:Row){
+ const r=room.entity_kind==='job'?await one(service.db,'SELECT start,end,status FROM cleaning_jobs WHERE id=?',room.entity_id):await one(service.db,'SELECT start,end,status FROM bookings WHERE id=?',room.entity_id);
+ return chatMedia(r?{kind:room.entity_kind,...r}:null).place;
 }
 export function placeOf(v:unknown){try{const p=JSON.parse(String(v||''));return Number.isFinite(p?.lat)&&Number.isFinite(p?.lon)?{lat:p.lat,lon:p.lon}:null;}catch{return null;}}
 export async function discussionTyping(service:RentalService,role:Role,body:Row){

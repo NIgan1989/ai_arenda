@@ -7,8 +7,12 @@ import {authorisedRoom,discussionSubject,appCallAllowed,realtimeReady} from './p
 // The voice goes through Cloudflare Realtime (an SFU): each side opens one Realtime session, publishes its microphone
 // as the track «voice» and then receives the other side's track. The API token stays on the server; the app only
 // sends and gets SDP through these routes, and only for a call it takes part in.
-// Without the incoming push yet, a call rings while the other person has the app open (it asks every few seconds).
-export const RING_S=45,ALIVE_S=25;
+// Without the incoming push yet, a call rings while the other person has the app open (it asks every few seconds);
+// the server itself ends a ring nobody took once a minute (sweepCalls), writes «Пропущенный звонок» into the chat and
+// leaves a notice. A call counts from the moment the voice is connected on both sides (each side reports it), and a
+// call answered but never heard ends as «Связь не установлена» (audit 2026-11-22).
+export const RING_S=45,ALIVE_S=25,AUDIO_S=30;
+export const NO_AUDIO='Связь не установлена';
 const LIVE=['ringing','active'];
 type Side='caller'|'callee';
 type Config=Row&{REALTIME_APP_ID?:string;REALTIME_APP_TOKEN?:string;realtimeFetch?:typeof fetch};
@@ -24,25 +28,47 @@ async function sfu(config:Config,path:string,method:'POST'|'PUT',body?:unknown){
 const sdpInput=(v:unknown)=>{if(typeof v!=='string'||!v.startsWith('v=0')||v.length>30000)throw new DomainError('Звонок не соединился. Попробуйте ещё раз.');return v;};
 const sideOf=(c:Row,s:RentalService,role:Role):Side|null=>c.caller_id===s.userId&&c.caller_role===role?'caller':c.callee_id===s.userId&&c.callee_role===role?'callee':null;
 const twoDigits=(n:number)=>String(n).padStart(2,'0');
+// The moment both sides hear each other: the later of the two reports, or 0 while one side has no voice yet.
+const heard=(c:Row)=>c.caller_audio&&c.callee_audio?Math.max(c.caller_audio,c.callee_audio):0;
 
-// Ends a call that is over by time and writes one line about it into the chat, like a messenger does.
+// The same rule for a call already going on as for a new one (appCallAllowed): a cancelled booking, a finished
+// cleaning, a blocked chat or a replaced performer ends it, and both sides see why.
+async function permitted(db:D1Database,c:Row,t:number){
+ const room=await one(db,'SELECT entity_kind,entity_id FROM discussion_rooms WHERE id=?',c.room_id);if(!room)return {ok:false,note:'Звонок недоступен.'};
+ const job=room.entity_kind==='job',r=job?await one(db,'SELECT start,end,status,assigned_to FROM cleaning_jobs WHERE id=?',room.entity_id):await one(db,'SELECT start,end,status FROM bookings WHERE id=?',room.entity_id);
+ if(job&&r&&[[c.caller_id,c.caller_role],[c.callee_id,c.callee_role]].some(([id,role])=>role==='cleaner'&&id!==r.assigned_to))return {ok:false,note:'Исполнитель сменился.'};
+ const blocked=!!await one(db,'SELECT room_id FROM discussion_blocks WHERE room_id=?',c.room_id);
+ return appCallAllowed(r?{kind:room.entity_kind,...r}:null,blocked,t);
+}
+// Ends a call that is over by time or by its deal and writes one line about it into the chat, like a messenger does.
 async function settle(db:D1Database,c:Row,t=epoch()):Promise<Row>{
+ if(!LIVE.includes(c.status))return c;
+ const allowed=await permitted(db,c,t);if(!allowed.ok)return finish(db,c,c.status==='active'?'ended':'cancelled',t,allowed.note);
  if(c.status==='ringing'&&t-c.created_at>RING_S)return finish(db,c,'missed',t);
+ if(c.status==='active'&&!heard(c)&&t-c.answered_at>AUDIO_S)return finish(db,c,'ended',t,NO_AUDIO);
  if(c.status==='active'&&t-Math.min(c.caller_seen,c.callee_seen||c.answered_at)>ALIVE_S)return finish(db,c,'ended',t);
  return c;
 }
-async function finish(db:D1Database,c:Row,status:string,t=epoch()):Promise<Row>{
- const r=await q(db,`UPDATE chat_calls SET status=?,ended_at=? WHERE id=? AND status IN ('ringing','active')`,status,t,c.id).run();
+async function finish(db:D1Database,c:Row,status:string,t=epoch(),reason=''):Promise<Row>{
+ const from=heard(c),silent=status==='ended'&&!from;if(silent&&!reason)reason=NO_AUDIO;
+ const r=await q(db,`UPDATE chat_calls SET status=?,ended_at=?,end_reason=? WHERE id=? AND status IN ('ringing','active')`,status,t,reason,c.id).run();
  if(r.meta.changes){
-  const ms=status==='ended'&&c.answered_at?Math.max(0,t-c.answered_at)*1000:0;
-  const body=ms?'Звонок · '+Math.floor(ms/60000)+':'+twoDigits(Math.floor(ms/1000)%60):status==='declined'?'Звонок отклонён':status==='cancelled'?'Звонок отменён':status==='missed'?'Пропущенный звонок':'Звонок';
+  const ms=status==='ended'&&from?Math.max(0,t-from)*1000:0;
+  const body=ms?'Звонок · '+Math.floor(ms/60000)+':'+twoDigits(Math.floor(ms/1000)%60):silent?NO_AUDIO:status==='declined'?'Звонок отклонён':status==='cancelled'?'Звонок отменён':status==='missed'?'Пропущенный звонок':'Звонок';
   await q(db,'INSERT OR IGNORE INTO discussion_messages(room_id,sender_id,sender_role,body,request_key,created_at,audio_ms) VALUES (?,?,?,?,?,?,?)',c.room_id,c.caller_id,c.caller_role,body,'call:'+c.id,t,ms).run();
+  if(status==='missed')await q(db,'INSERT OR IGNORE INTO notifications(id,user_id,body,dedupe,read,created_at) VALUES (?,?,?,?,0,?)',uuid(),c.callee_id,'Пропущенный звонок в чате. Откройте «Чаты», чтобы перезвонить или написать.',c.callee_role+':missed-call:'+c.id,t).run();
  }
- return {...c,...(await one(db,'SELECT status,ended_at FROM chat_calls WHERE id=?',c.id))};
+ return {...c,...(await one(db,'SELECT status,ended_at,end_reason FROM chat_calls WHERE id=?',c.id))};
+}
+// Once a minute (lib/background.ts): calls nobody is asking about any more are ended by the server itself.
+export async function sweepCalls(db:D1Database,t=epoch()){
+ let ended=0;
+ for(const c of await rows(db,`SELECT * FROM chat_calls WHERE status IN ('ringing','active') ORDER BY created_at LIMIT 50`)){if(!LIVE.includes((await settle(db,c,t)).status))ended++;}
+ return ended;
 }
 async function view(s:RentalService,c:Row,side:Side){
  const otherId=side==='caller'?c.callee_id:c.caller_id,name=(await one(s.db,'SELECT name FROM profiles WHERE id=?',otherId))?.name||'Собеседник';
- return {id:c.id,roomId:c.room_id,status:c.status,side,role:side==='caller'?c.caller_role:c.callee_role,name,createdAt:c.created_at,answeredAt:c.answered_at||null,ready:{me:!!c[side+'_session'],other:!!c[(side==='caller'?'callee':'caller')+'_session']}};
+ return {id:c.id,roomId:c.room_id,status:c.status,side,role:side==='caller'?c.caller_role:c.callee_role,name,createdAt:c.created_at,answeredAt:c.answered_at||null,connected:!!heard(c),reason:c.end_reason||'',ready:{me:!!c[side+'_session'],other:!!c[(side==='caller'?'callee':'caller')+'_session']}};
 }
 async function mine(s:RentalService,role:Role,body:Row){
  await s.authorizeWorkspace(role,'operations');
@@ -76,15 +102,16 @@ export async function incomingCall(s:RentalService){
  }
  return {call:null};
 }
+// Asked every 1.5 seconds during the call; audio:true says this side hears the other one (its voice is connected).
 export async function callState(s:RentalService,role:Role,body:Row){
- const {c,side}=await mine(s,role,body);
- if(LIVE.includes(c.status))await q(s.db,`UPDATE chat_calls SET ${side}_seen=? WHERE id=?`,epoch(),c.id).run();
- return {call:await view(s,c,side)};
+ const {c,side}=await mine(s,role,body);if(!LIVE.includes(c.status))return {call:await view(s,c,side)};
+ const t=epoch();await q(s.db,`UPDATE chat_calls SET ${side}_seen=?,${side}_audio=CASE WHEN ?=1 AND status='active' AND ${side}_audio=0 THEN ? ELSE ${side}_audio END WHERE id=?`,t,body.audio===true?1:0,t,c.id).run();
+ return {call:await view(s,(await one(s.db,'SELECT * FROM chat_calls WHERE id=?',c.id))!,side)};
 }
 export async function answerCall(s:RentalService,role:Role,body:Row){
  const {c,side}=await mine(s,role,body);if(side!=='callee')throw new DomainError('Ответить может только тот, кому звонят.',403);
  const t=epoch(),r=await q(s.db,`UPDATE chat_calls SET status='active',answered_at=?,callee_seen=?,caller_seen=MAX(caller_seen,?) WHERE id=? AND status='ringing'`,t,t,t,c.id).run();
- if(!r.meta.changes)throw new DomainError(c.status==='active'?'Звонок уже принят.':'Звонок уже закончился.',409);
+ if(!r.meta.changes)throw new DomainError(c.status==='active'?'Звонок уже принят.':c.end_reason&&c.end_reason!==NO_AUDIO?c.end_reason:'Звонок уже закончился.',409);
  return {call:await view(s,(await one(s.db,'SELECT * FROM chat_calls WHERE id=?',c.id))!,side)};
 }
 export async function endCall(s:RentalService,role:Role,body:Row){
