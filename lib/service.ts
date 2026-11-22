@@ -854,7 +854,7 @@ export class RentalService {
       if(b.status!=='confirmed'||terms?.actual_checkin||b.end<=now())throw new DomainError('По этой брони заселение уже отмечено или бронь не подтверждена.',409);
       if(now()<checkinOpensAt(b.start,terms?.early_checkin_at))throw new DomainError('Позвать на помощь можно с 15 минут до заезда.',409);
       if(b.payment_status==='owner_verified'&&terms?.deposit_status!=='pending')throw new DomainError('Оплата уже подтверждена. Если вас не пускают, нажмите «Меня не заселили».',409);
-      if(!onReview(terms))throw new DomainError('Сначала переведите владельцу и нажмите «Я оплатил». Если вас не пускают, нажмите «Меня не заселили».',409);
+      if(!onReview(terms)||!dueNow({...b,terms},now()).reported)throw new DomainError('Сначала переведите владельцу всё, что осталось, и нажмите «Я оплатил». Если вас не пускают, нажмите «Меня не заселили».',409);
       const sum=(Number(terms?.payment_reported_amount)||0)+(Number(terms?.deposit_reported_amount)||0),money=(n:number)=>n.toLocaleString('ru-RU').replace(/\u00a0|\u202f/g,' ')+' ₸';
       const asked=await this.one('SELECT 1 x FROM notifications WHERE user_id=? AND dedupe=?',b.owner_id,'owner:door-help:'+bookingId+':'+terms?.payment_reported_at+':'+terms?.deposit_reported_at);
       if(asked)return {message:'Владелец и администратор сервиса уже знают, что вы ждёте. Доступ откроется, когда владелец подтвердит перевод.'};

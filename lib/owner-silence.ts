@@ -46,10 +46,12 @@ async function arrivals(db:D1Database,at:number,result:Row,admin:string[]){
 // access stays closed: only the owner's «Деньги получены» opens it (audit «Запуск», point 1).
 async function transfers(db:D1Database,at:number,result:Row,admin:string[]){
  const list=await rows(db,`SELECT b.id,b.guest_id,p.owner_id,p.title,${TYPE_SQL},t.checkin_reported_at reported,COALESCE(t.payment_reported_amount,0)+COALESCE(t.deposit_reported_amount,0) sum FROM bookings b JOIN properties p ON p.id=b.property_id JOIN booking_terms t ON t.booking_id=b.id
-  WHERE b.status='confirmed' AND b.end>? AND t.checkin_reported_at IS NOT NULL AND t.checkin_reported_at<=? AND t.actual_checkin IS NULL
+  WHERE b.status='confirmed' AND b.end>?1 AND t.checkin_reported_at IS NOT NULL AND t.checkin_reported_at<=?2 AND t.actual_checkin IS NULL
   AND (b.payment_status<>'owner_verified' OR t.deposit_status='pending') AND (t.payment_reported_at IS NOT NULL OR t.deposit_reported_at IS NOT NULL)
+  AND (b.payment_status='owner_verified' OR t.payment_reported_at IS NOT NULL) AND (t.deposit_status<>'pending' OR t.deposit_reported_at IS NOT NULL)
   AND NOT EXISTS(SELECT 1 FROM notifications n WHERE n.user_id=b.guest_id AND n.dedupe='guest:silence-transfer-escalated:'||b.id)
-  ORDER BY t.checkin_reported_at LIMIT 50`,at,at-CHECKIN_WAIT);
+  AND (?3=1 OR NOT EXISTS(SELECT 1 FROM notifications n WHERE n.user_id=p.owner_id AND n.dedupe='owner:silence-transfer-ask:'||b.id))
+  ORDER BY EXISTS(SELECT 1 FROM notifications n WHERE n.user_id=p.owner_id AND n.dedupe='owner:silence-transfer-ask:'||b.id),t.checkin_reported_at LIMIT 50`,at,at-CHECKIN_WAIT,admin.length?1:0);
  for(const b of list){
   const title=b.title||'жильё';
   await db.batch([notice(db,b.owner_id,'ИИ-администратор: гость ждёт у «'+title+'» и сообщил о переводе '+tenge(b.sum)+'. Проверьте банк и нажмите в брони «Деньги получены» или «Перевод не пришёл».','owner:silence-transfer-ask:'+b.id,at),

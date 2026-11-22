@@ -218,3 +218,15 @@ test('«Не могу попасть» is only for a transfer on review',async()
   await assert.rejects(f.owner.bookingAction(f.booking,{action:'door_help'}),e=>e.status===403);
  }finally{f.db.close();}
 });
+test('a prepayment reported while the deposit is still unpaid: the guest is asked for the rest, not told to wait',async()=>{
+ const f=await fixture();try{
+  f.db.raw.prepare('UPDATE booking_terms SET prepay_percent=30 WHERE booking_id=?').run(f.booking);
+  f.db.raw.prepare('UPDATE bookings SET start=? WHERE id=?').run(now()+3600,f.booking);
+  await f.guest.bookingAction(f.booking,{action:'report_paid'});
+  f.db.raw.prepare('UPDATE bookings SET start=?,created_at=? WHERE id=?').run(now()+300,now()-7200,f.booking);
+  assert.doesNotMatch((await f.guest.bookingAction(f.booking,{action:'report_checkin'})).message,/перевод на проверке/);
+  await assert.rejects(f.guest.bookingAction(f.booking,{action:'door_help'}),/всё, что осталось/);
+  f.db.raw.prepare('UPDATE booking_terms SET checkin_reported_at=? WHERE booking_id=?').run(now()-CHECKIN_WAIT-5,f.booking);
+  await sweepSilence(f.db,config);assert.equal(notes(f,'owner','owner:silence-transfer-ask:%').length,0);
+ }finally{f.db.close();}
+});
