@@ -1,0 +1,111 @@
+import {test} from 'node:test';import assert from 'node:assert/strict';
+import {fixture,load,now} from './helpers/platform.mjs';
+import {photo} from './fixtures/photo.mjs';
+// The outside audit of 2026-11-22: the three fixes it asked for before launch.
+const {saveIdentityDoc,decideIdentity,removeIdentityDoc,listIdentityDocs,sweepIdentityObjects}=await load('identity-docs');
+const {stayedSql}=await load('stay-result');
+const {RentalService}=await load('service');
+const {matchingAction}=await load('smart-matching');
+const {saveRule}=await load('decision-rules');
+
+// A storage that can refuse deletes, like R2 on a bad minute.
+function bucket(){
+ const stored=new Map(),b={refuse:false,stored,
+  put:async(k,v)=>{stored.set(k,{v,uploaded:new Date()});},
+  delete:async k=>{if(b.refuse)throw new Error('R2 down');for(const key of [].concat(k))stored.delete(key);},
+  get:async k=>stored.has(k)?{arrayBuffer:async()=>stored.get(k).v.buffer}:null,
+  list:async({prefix})=>({objects:[...stored].filter(([k])=>k.startsWith(prefix)).map(([key,o])=>({key,uploaded:o.uploaded})),truncated:false})};
+ return b;
+}
+
+test('an ID photo whose delete failed keeps its pointer and is deleted by the sweep',async()=>{
+ const f=await fixture(),R=f.db.raw;try{
+  R.prepare('DELETE FROM identity_docs').run();
+  const admin=new RentalService(f.db,'admin'),BUCKET=bucket();
+  await saveIdentityDoc(f.guest,{data:photo},{BUCKET});await saveIdentityDoc(f.cleaner,{data:photo},{BUCKET});
+  BUCKET.refuse=true;
+  const r=await decideIdentity(admin,{userId:'guest',action:'confirm',namesMatch:true},{BUCKET});
+  assert.match(r.message,/в течение часа/,'the administrator hears the delete is pending');
+  assert.equal(BUCKET.stored.size,2);
+  const left=R.prepare("SELECT object_key,checked_at FROM identity_docs WHERE user_id='guest'").get();
+  assert.ok(left.object_key&&left.checked_at,'checked, but the pointer stays until the photo is really gone');
+  assert.match(R.prepare("SELECT body FROM notifications WHERE user_id='guest' AND dedupe LIKE 'identity:checked:%'").get().body,/будет удалено/);
+  // A refused photo whose delete failed has no row any more; the sweep finds it in the storage.
+  await decideIdentity(admin,{userId:'cleaner',action:'reject',reason:'Размыто.'},{BUCKET});
+  assert.equal(BUCKET.stored.size,2);
+  for(const o of BUCKET.stored.values())o.uploaded=new Date(Date.now()-2*3600000);
+  assert.equal((await sweepIdentityObjects(f.db,BUCKET)).left,2,'still down: nothing is lost');
+  BUCKET.refuse=false;
+  const swept=await sweepIdentityObjects(f.db,BUCKET);
+  assert.equal(swept.removed,2);assert.equal(BUCKET.stored.size,0);
+  assert.equal(R.prepare("SELECT object_key FROM identity_docs WHERE user_id='guest'").get().object_key,'');
+ }finally{f.db.close();}
+});
+
+test('the sweep never touches a photo that waits for the check or was just uploaded',async()=>{
+ const f=await fixture(),R=f.db.raw;try{
+  R.prepare('DELETE FROM identity_docs').run();
+  const BUCKET=bucket();
+  await saveIdentityDoc(f.guest,{data:photo},{BUCKET});
+  BUCKET.stored.set('identity/fresh.jpg',{v:new Uint8Array(1),uploaded:new Date()});
+  for(const [k,o] of BUCKET.stored)if(k!=='identity/fresh.jpg')o.uploaded=new Date(Date.now()-5*3600000);
+  await sweepIdentityObjects(f.db,BUCKET);
+  assert.equal(BUCKET.stored.size,2,'waiting photo and fresh upload stay');
+  // The participant removes a photo while the storage is down: the row goes at once, the sweep deletes the file later.
+  const doc=(await listIdentityDocs(f.guest,'')).docs[0];BUCKET.refuse=true;
+  await removeIdentityDoc(f.guest,{id:doc.id},{BUCKET});BUCKET.refuse=false;
+  await sweepIdentityObjects(f.db,BUCKET);
+  assert.deepEqual([...BUCKET.stored.keys()],['identity/fresh.jpg']);
+ }finally{f.db.close();}
+});
+
+const stayed=(f)=>f.db.raw.prepare(`SELECT ${stayedSql('?')} v`).get(f.booking).v;
+
+test('nothing is owed while «Меня не заселили» is open, even after the time of the booking',async()=>{
+ const f=await fixture(),R=f.db.raw;try{
+  R.prepare("UPDATE bookings SET payment_status='owner_verified' WHERE id=?").run(f.booking);
+  R.prepare('UPDATE bookings SET start=?,end=?,occupied_until=? WHERE id=?').run(now()-300,now()+7200,now()+9000,f.booking);
+  await f.guest.bookingAction(f.booking,{action:'not_let_in',text:'Дверь никто не открывает'});
+  R.prepare('UPDATE bookings SET end=? WHERE id=?').run(now()-60,f.booking);
+  assert.equal(stayed(f),0,'disputed: a person decides first');
+  R.prepare("UPDATE administrator_issues SET status='resolved' WHERE entity_id=?").run(f.booking);
+  assert.equal(stayed(f),1,'closed without a no-show: the ended booking counts again (the stay watch closes it as a no-show if nobody marked it)');
+ }finally{f.db.close();}
+});
+
+test('an owner who cancels after the guest said «Я заселился» still owes the settling-in',async()=>{
+ for(const report of [false,true]){const f=await fixture(),R=f.db.raw;try{
+  R.prepare("UPDATE bookings SET payment_status='owner_verified' WHERE id=?").run(f.booking);
+  R.prepare('UPDATE bookings SET start=?,end=?,occupied_until=? WHERE id=?').run(now()-300,now()+7200,now()+9000,f.booking);
+  if(report)await f.guest.bookingAction(f.booking,{action:'report_checkin'});
+  const r=await f.owner.bookingAction(f.booking,{action:'cancel'});
+  assert.equal(R.prepare('SELECT status FROM bookings WHERE id=?').get(f.booking).status,'cancelled');
+  assert.equal(stayed(f),report?1:0);
+  if(report)assert.match(r.message,/оспорьте начисление/);else assert.doesNotMatch(r.message,/оспорьте/);
+ }finally{f.db.close();}}
+});
+
+test('before a near arrival the AI accepts the cleaning at once only with the owner\'s separate permission',async()=>{
+ const {checkAdministratorOwner}=await load('administrator-runtime'),{saveEvidence}=await load('evidence');
+ for(const fast of [false,true]){const f=await fixture(),R=f.db.raw;try{
+  await matchingAction(f.owner,'owner','preference',{propertyId:f.property,mode:'auto'});
+  if(fast)await saveRule(f.db,'owner','owner',{rule:'accept_fast',on:true});
+  await f.cleaner.jobAction(f.job.id,{action:'apply'});const app=R.prepare('SELECT * FROM applications WHERE job_id=?').get(f.job.id);await f.owner.jobAction(f.job.id,{action:'assign',applicationId:app.id});
+  R.prepare('UPDATE bookings SET start=?,end=?,occupied_until=? WHERE id=?').run(now()-600,now()+15,now()+5415,f.booking);R.prepare('UPDATE cleaning_jobs SET start=?,end=? WHERE id=?').run(now()+15,now()+5415,f.job.id);
+  await f.owner.bookingAction(f.booking,{action:'checkout'});await f.cleaner.jobAction(f.job.id,{action:'start'});
+  for(const phase of ['before','after','after'])await saveEvidence(f.cleaner,{jobId:f.job.id,phase,data:photo});
+  await f.cleaner.jobAction(f.job.id,{action:'submit',checklist:[true,true,true,true],report:'Убрано, всё чисто'});
+  // The next guest arrives in about an hour and a half.
+  const row=R.prepare('SELECT * FROM bookings WHERE id=?').get(f.booking),next={...row,id:'next-booking',request_key:'next-booking',status:'confirmed',start:now()+6000,end:now()+9000,occupied_until:now()+10000};
+  R.prepare(`INSERT INTO bookings(${Object.keys(next).join(',')}) VALUES (${Object.keys(next).map(()=>'?').join(',')})`).run(...Object.values(next));
+  f.release();await checkAdministratorOwner(f.db,'owner');
+  const status=R.prepare('SELECT status FROM cleaning_jobs WHERE id=?').get(f.job.id).status;
+  if(fast){
+   assert.equal(status,'completed');
+   assert.match(R.prepare("SELECT body FROM notifications WHERE user_id='owner' AND dedupe LIKE 'owner:administrator-approved:%'").get().body,/по вашему правилу «Быстрая приёмка перед заездом».*фото до: 1, после: 2/);
+  }else{
+   assert.equal(status,'submitted','without the permission the owner decides');
+   assert.match(R.prepare("SELECT body FROM notifications WHERE user_id='owner' AND dedupe LIKE 'owner:administrator-review:%'").get().body,/^Скоро заезд гостя\..*Качество уборки проверьте по фото/);
+  }
+ }finally{f.db.close();}}
+});

@@ -18,6 +18,7 @@ import {sweepSilence} from './owner-silence';
 import {migrateFinanceEntity} from './finance';
 import {encryptInstructions} from './participant-security';
 import {moveMediaToBucket,sweepMediaObjects} from './media-store';
+import {sweepIdentityObjects} from './identity-docs';
 import {applyDuePayouts} from './payout';
 import {sweepAdminFactor} from './admin-factor';
 import {epoch,uuid,q,one,rows,type Row,type OperationConfig} from './operation-core';
@@ -104,7 +105,7 @@ export async function runOperationalTick(db:D1Database,config:OperationConfig={}
   if(job.kind==='finance-history')return migrateHistory(db,job.scope);
   if(job.kind==='backup')return cloudBackup(db,config);
   if(job.kind==='media-move')return moveMediaToBucket(db,config.BUCKET);
-  if(job.kind==='media-sweep'){const r=await sweepMediaObjects(db,config.BUCKET,String(job.payload.cursor||''));await q(db,'UPDATE background_jobs SET payload=? WHERE id=?',JSON.stringify({cursor:r.cursor}),job.id).run();return r;}
+  if(job.kind==='media-sweep'){const r=await sweepMediaObjects(db,config.BUCKET,String(job.payload.cursor||'')),ids=await sweepIdentityObjects(db,config.BUCKET,String(job.payload.identityCursor||''));await q(db,'UPDATE background_jobs SET payload=? WHERE id=?',JSON.stringify({cursor:r.cursor,identityCursor:ids.cursor}),job.id).run();return {...r,identity:ids};}
   throw new Error('Unknown background operation');
  },TICK_JOBS);
  const dead=await one(db,"SELECT COUNT(*) n FROM background_jobs WHERE status='dead'");

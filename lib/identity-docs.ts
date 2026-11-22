@@ -29,7 +29,7 @@ export async function saveIdentityDoc(s:RentalService,body:Row,config:OperationC
  if(key){const binary=atob(image.data.split(',')[1]);await config.BUCKET!.put(key,Uint8Array.from(binary,ch=>ch.charCodeAt(0)),{httpMetadata:{contentType:'image/jpeg'}});}
  const r=await q(s.db,'INSERT INTO identity_docs(id,user_id,data,object_key,width,height,bytes,created_at) SELECT ?,?,?,?,?,?,?,? WHERE (SELECT COUNT(*) FROM identity_docs WHERE user_id=?)<?',
   docId,s.userId,key?'':image.data,key,image.width,image.height,image.bytes,epoch(),s.userId,IDENTITY_LIMIT).run();
- if(!r.meta.changes){if(key)await config.BUCKET!.delete(key).catch(()=>{});throw new DomainError('Приложено максимум фото: '+IDENTITY_LIMIT+' (лицевая и обратная сторона).',409);}
+ if(!r.meta.changes){if(key)await dropObjects(s.db,config.BUCKET,[key]);throw new DomainError('Приложено максимум фото: '+IDENTITY_LIMIT+' (лицевая и обратная сторона).',409);}
  return {id:docId,message:'Фото удостоверения приложено. Его увидит только администратор сервиса, после проверки фото удалится.'};
 }
 export async function removeIdentityDoc(s:RentalService,body:Row,config:OperationConfig={}){
@@ -37,7 +37,8 @@ export async function removeIdentityDoc(s:RentalService,body:Row,config:Operatio
  if(!d)throw new DomainError('Фото не найдено.',404);
  if(d.checked_at)throw new DomainError('Личность уже подтверждена. Чтобы заменить удостоверение, напишите в поддержку.',409);
  await q(s.db,'DELETE FROM identity_docs WHERE id=?',d.id).run();
- if(d.object_key)await config.BUCKET?.delete(d.object_key).catch(()=>{});
+ // If the storage refuses now, the object has no row any more and the hourly sweep removes it (sweepIdentityObjects).
+ if(d.object_key)await dropObjects(s.db,config.BUCKET,[String(d.object_key)]);
  return {message:'Фото убрано.'};
 }
 export async function listIdentityDocs(s:RentalService,userId:string,platformAdmin=false){
@@ -57,10 +58,40 @@ export async function readIdentityDoc(s:RentalService,docId:string,config:Operat
  return {data:'data:image/jpeg;base64,'+btoa(binary)};
 }
 // After a person checked the ID the photos are deleted; only the record of the check stays.
+// The pointer to a stored photo is cleared only after the storage confirmed the delete: a failed delete leaves the
+// pointer, and the hourly sweep tries again. Returns how many photos are still waiting to be deleted.
 export async function settleIdentity(db:D1Database,userId:string,reviewerId:string,config:OperationConfig={}){
  const keys=(await rows(db,"SELECT object_key FROM identity_docs WHERE user_id=? AND checked_at IS NULL AND object_key<>''",userId)).map(r=>String(r.object_key));
- await q(db,"UPDATE identity_docs SET data='',object_key='',checked_at=?,checked_by=? WHERE user_id=? AND checked_at IS NULL",epoch(),reviewerId,userId).run();
- for(const key of keys)await config.BUCKET?.delete(key).catch(()=>{});
+ await q(db,"UPDATE identity_docs SET data='',checked_at=?,checked_by=? WHERE user_id=? AND checked_at IS NULL",epoch(),reviewerId,userId).run();
+ return dropObjects(db,config.BUCKET,keys);
+}
+// Deletes stored ID photos one by one. A checked photo loses its pointer only when its delete succeeded.
+async function dropObjects(db:D1Database,bucket:R2Bucket|undefined,keys:string[]){
+ let left=0;
+ for(const key of keys){
+  if(!bucket){left++;continue;}
+  try{await bucket.delete(key);await q(db,"UPDATE identity_docs SET object_key='' WHERE object_key=? AND checked_at IS NOT NULL",key).run();}
+  catch{left++;console.error('Identity photo delete failed; the sweep will retry');}
+ }
+ return left;
+}
+export const IDENTITY_PREFIX='identity/';
+// Hourly: (1) photos of checked IDs whose delete failed are deleted again; (2) stored photos that no row waits for
+// any more (a refused or removed photo whose delete failed, an upload whose row was never written) are deleted.
+// A photo is written a moment before its row, so an object younger than an hour without a row is left alone.
+// Walks the bucket in pages and keeps its place in the job payload, like the flat photos (lib/media-store.ts).
+export async function sweepIdentityObjects(db:D1Database,bucket:R2Bucket|undefined,cursor=''){
+ if(!bucket)return {configured:false,cursor:'',removed:0,left:0};
+ const stuck=(await rows(db,"SELECT object_key FROM identity_docs WHERE checked_at IS NOT NULL AND object_key<>'' LIMIT 50")).map(r=>String(r.object_key));
+ let left=await dropObjects(db,bucket,stuck),removed=stuck.length-left;
+ const listed=await bucket.list({prefix:IDENTITY_PREFIX,limit:90,...(cursor?{cursor}:{})}),keys=listed.objects.map(o=>o.key);
+ if(keys.length){
+  const waiting=new Set((await rows(db,`SELECT object_key FROM identity_docs WHERE checked_at IS NULL AND object_key IN (${keys.map(()=>'?').join(',')})`,...keys)).map(r=>String(r.object_key)));
+  const checked=new Set((await rows(db,`SELECT object_key FROM identity_docs WHERE checked_at IS NOT NULL AND object_key IN (${keys.map(()=>'?').join(',')})`,...keys)).map(r=>String(r.object_key)));
+  const gone=listed.objects.filter(o=>!waiting.has(o.key)&&!stuck.includes(o.key)&&(checked.has(o.key)||Date.now()-o.uploaded.getTime()>3600000)).map(o=>o.key);
+  const l=await dropObjects(db,bucket,gone);left+=l;removed+=gone.length-l;
+ }
+ return {configured:true,removed,left,cursor:listed.truncated?listed.cursor:''};
 }
 // The administrator's queue: participants whose ID waits for a look, oldest first.
 export async function identityQueue(db:D1Database){
@@ -74,14 +105,15 @@ export async function decideIdentity(s:RentalService,body:Row,config:OperationCo
  const t=epoch(),note=(text:string,key:string)=>q(s.db,'INSERT OR IGNORE INTO notifications(id,user_id,body,dedupe,read,created_at) VALUES (?,?,?,?,0,?)',uuid(),userId,text,key,t);
  if(body.action==='confirm'){
   if(body.namesMatch!==true)throw new DomainError('Отметьте, что ФИО и фото в удостоверении совпадают с профилем.');
-  await settleIdentity(s.db,userId,s.userId,config);
-  await s.db.batch([note('Администратор подтвердил вашу личность. Фото удостоверения удалено.','identity:checked:'+userId),q(s.db,'INSERT INTO audit_events VALUES (?,?,?,?,?)',uuid(),s.userId,userId,'identity.checked',t)]);
-  return {message:'Личность подтверждена, фото удалено.'};
+  const left=await settleIdentity(s.db,userId,s.userId,config);
+  await s.db.batch([note(left?'Администратор подтвердил вашу личность. Фото удостоверения больше никому не показывается и будет удалено из хранилища в течение часа.':'Администратор подтвердил вашу личность. Фото удостоверения удалено.','identity:checked:'+userId),q(s.db,'INSERT INTO audit_events VALUES (?,?,?,?,?)',uuid(),s.userId,userId,'identity.checked',t)]);
+  return {message:left?'Личность подтверждена. Хранилище не ответило, фото удалится автоматически в течение часа.':'Личность подтверждена, фото удалено.'};
  }
  if(body.action==='reject'){
   const reason=required(body.reason,'Причина',500),keys=(await rows(s.db,"SELECT object_key FROM identity_docs WHERE user_id=? AND checked_at IS NULL AND object_key<>''",userId)).map(r=>String(r.object_key));
   await s.db.batch([q(s.db,'DELETE FROM identity_docs WHERE user_id=? AND checked_at IS NULL',userId),note('Удостоверение не принято: '+reason+' Приложите фото заново в профиле.','identity:rejected:'+userId+':'+t),q(s.db,'INSERT INTO audit_events VALUES (?,?,?,?,?)',uuid(),s.userId,userId,JSON.stringify({action:'identity.rejected',reason}),t)]);
-  for(const key of keys)await config.BUCKET?.delete(key).catch(()=>{});
+  // The rows are gone; a photo the storage did not delete now is removed by the hourly sweep.
+  await dropObjects(s.db,config.BUCKET,keys);
   return {message:'Удостоверение не принято, участник получил причину.'};
  }
  throw new DomainError('Выберите: подтвердить или отклонить.');
