@@ -1,4 +1,4 @@
-import {t as tr} from '../../lib/i18n';
+import {t as tr,tServer} from '../../lib/i18n';
 import React,{useEffect,useState} from 'react';
 import {Animated,Pressable,StyleSheet,Text,View} from 'react-native';
 import type {Approval} from '../../lib/approvals';
@@ -47,7 +47,7 @@ function ForecastTipBody({card,busy,onDecide,compact}:{card:Approval;busy:boolea
   {f.advice==='min_hours'&&<View style={t.priceRow} accessible accessibilityLabel={tr('Минимум {from} ч, предлагаю {to} ч',{from:f.from,to:f.to})}>
    <Text style={t.from}>{tr('от {from} ч',{from:f.from})}</Text><Text style={t.arrow}>→</Text><Text style={t.to}>{tr('от {to} ч',{to:f.to})}</Text>
   </View>}
-  {f.advice!=='none'&&<Text numberOfLines={compact?2:4} style={t.rows}>{tr('«{title}» свободна в эти дни',{title:f.title})+(compact?'':'. '+f.reasons.join(' · '))}</Text>}
+  {f.advice!=='none'&&<Text numberOfLines={compact?2:4} style={t.rows}>{tr('«{title}» свободна в эти дни',{title:f.title})+(compact?'':'. '+f.reasons.map(tServer).join(' · '))}</Text>}
   <View style={t.actions}>
    <Pressable accessibilityRole="button" accessibilityLabel={card.acceptLabel} disabled={busy} onPress={()=>onDecide('accept')} style={({pressed})=>[t.accept,(busy||pressed)&&t.dim]}><Text numberOfLines={1} style={t.acceptText}>{card.acceptLabel}</Text></Pressable>
    <Pressable accessibilityRole="button" accessibilityLabel={card.rejectLabel} disabled={busy} onPress={()=>onDecide('reject')} style={({pressed})=>[t.reject,(busy||pressed)&&t.dim]}><Text style={t.rejectText}>{card.rejectLabel}</Text></Pressable>
@@ -120,11 +120,11 @@ function BookingTipBody({card,busy,onDecide}:{card:Approval;busy:boolean;onDecid
  const r=card.risk!,[bg,fg]=riskTone[r.level];
  const btn=(label:string,action:Decision,primary:boolean)=><Pressable key={action} accessibilityRole="button" accessibilityLabel={label} disabled={busy} onPress={()=>onDecide(action)} style={({pressed})=>[primary?t.accept:[t.reject,{flex:1}],(busy||pressed)&&t.dim]}><Text numberOfLines={1} style={primary?t.acceptText:t.rejectText}>{label}</Text></Pressable>;
  return <View>
-  <View style={t.priceRow}><Text style={t.to}>{fact(card,'Проживание')}</Text><Text numberOfLines={1} style={[t.unit,{flexShrink:1}]}>{card.from}</Text><ReliabilityBadge value={card.reliability} compact/></View>
+  <View style={t.priceRow}><Text style={t.to}>{fact(card,'Проживание')}</Text><Text numberOfLines={1} style={[t.unit,{flexShrink:1}]}>{tServer(card.from)}</Text><ReliabilityBadge value={card.reliability} compact/></View>
   <View style={[t.when,{marginTop:4}]}><Text style={t.whenIcon}>◷</Text><Text numberOfLines={1} style={t.whenText}>{fact(card,'Заезд')+' → '+fact(card,'Выезд')}</Text></View>
   <View accessibilityLabel={r.label} style={[t.risk,{backgroundColor:bg,borderColor:r.level==='medium'?C.warningLine:bg}]}>
    <View style={t.riskHead}><View style={[t.riskDot,{backgroundColor:fg}]}/><Text style={t.riskTitle}>{r.label}</Text>{r.held&&<Text style={t.small}>{tr('автоподтверждение остановлено')}</Text>}</View>
-   <Text style={t.riskLine}>{r.reasons.join(' · ')}</Text>
+   <Text style={t.riskLine}>{r.reasons.map(tServer).join(' · ')}</Text>
   </View>
   {!!card.unready&&<Text accessibilityLabel={card.unready} style={[t.riskLine,{color:C.warning}]}>{tr('{what}. Подтверждайте, если успеете подготовить.',{what:card.unready})}</Text>}
   {card.depositLabel?<><View style={t.actions}>{btn(card.depositLabel,'deposit',true)}</View><View style={[t.actions,{marginTop:8}]}>{btn(tr('Без депозита'),'accept',false)}{btn(card.rejectLabel,'reject',false)}</View></>
@@ -145,9 +145,9 @@ export function PriceTipBody({card,busy,onDecide,compact=false}:{card:Approval;b
    <Text style={t.from}>{money(p.from)}</Text><Text style={t.arrow}>→</Text><Text style={t.to}>{money(p.to)}</Text>
    <View style={[t.delta,up?t.deltaUp:t.deltaDown]}><Text style={[t.deltaText,{color:up?C.success:C.warning}]}>{(up?'▲ +':'▼ −')+p.percent}%</Text></View>
   </View>
-  {compact?<Text numberOfLines={2} style={t.rows}>{p.reasons.slice(0,2).join(' · ')}</Text>:<>
+  {compact?<Text numberOfLines={2} style={t.rows}>{p.reasons.slice(0,2).map(tServer).join(' · ')}</Text>:<>
    {p.rows.length>1&&<Text style={t.rows}>{p.rows.slice(1).map(([label,from,to])=>label+': '+money(from)+' → '+money(to)).join('   ')}</Text>}
-   {p.reasons.length>0&&<View style={t.reasons}>{p.reasons.map(reason=><View key={reason} style={t.reason}><Text style={t.reasonText}>{reason}</Text></View>)}</View>}
+   {p.reasons.length>0&&<View style={t.reasons}>{p.reasons.map(reason=><View key={reason} style={t.reason}><Text style={t.reasonText}>{tServer(reason)}</Text></View>)}</View>}
   </>}
   <View style={t.actions}>
    <Pressable accessibilityRole="button" accessibilityLabel={card.acceptLabel} disabled={busy} onPress={()=>onDecide('accept')} style={({pressed})=>[t.accept,(busy||pressed)&&t.dim]}><Text numberOfLines={1} style={t.acceptText}>{card.acceptLabel}</Text></Pressable>
