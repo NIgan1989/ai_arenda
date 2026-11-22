@@ -3,6 +3,11 @@
 import type {Words} from './i18n-words';
 
 export const SERVER:Words={
+ 'Исполнитель сменился.':['Орындаушы ауысты.','The cleaner has changed.'],
+ 'Уборка завершена.':['Тазалау аяқталды.','The cleaning is finished.'],
+ 'Переписка заблокирована.':['Хат алмасу бұғатталған.','The chat is blocked.'],
+ 'Точку на карте можно отправить до суток после выезда.':['Картадағы нүктені шыққаннан кейін бір тәулікке дейін жіберуге болады.','A point on the map can be sent up to a day after check-out.'],
+ 'Точку на карте можно отправить, пока уборка идёт.':['Картадағы нүктені тазалау жүріп жатқанда жіберуге болады.','A point on the map can be sent while the cleaning is under way.'],
  'Звонки в приложении ещё не подключены.':['Қосымшадағы қоңыраулар әлі қосылмаған.','Calls in the app are not connected yet.'],
  'Состав участников изменился. Откройте актуальный чат.':['Қатысушылар құрамы өзгерді. Өзекті чатты ашыңыз.','The participants have changed. Open the current chat.'],
  'Собеседника нет.':['Әңгімелесуші жоқ.','There is no one to talk to.'],

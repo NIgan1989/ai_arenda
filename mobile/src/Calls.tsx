@@ -14,7 +14,7 @@ import type {Role} from './model';
 // One CallCenter lives over the whole app. It asks the server every few seconds whether someone is calling,
 // shows the incoming call, and runs the call itself: the microphone goes to Cloudflare Realtime and the other
 // side's voice comes back from it. A chat starts a call with startCall().
-type Call={id:string;roomId:string;status:string;side:'caller'|'callee';role:Role;name:string;answeredAt:number|null;ready:{me:boolean;other:boolean}};
+type Call={id:string;roomId:string;status:string;side:'caller'|'callee';role:Role;name:string;answeredAt:number|null;connected?:boolean;reason?:string;ready:{me:boolean;other:boolean}};
 const LIVE=['ringing','active'];
 let starter:((roomId:string,role:Role,name:string)=>void)|null=null;
 export function startCall(roomId:string,role:Role,name:string){if(!starter)throw Error(t('Звонок недоступен.'));starter(roomId,role,name);}
@@ -25,7 +25,7 @@ async function gathered(pc:any){
 }
 // One side of the call: its microphone is published first, the other side's voice is received once it is there.
 class Line{
- pc:any=null;stream:any=null;closed=false;subscribed=false;busy=false;
+ pc:any=null;stream:any=null;closed=false;subscribed=false;busy=false;linked=false;received=false;remote=false;
  constructor(private call:()=>Call,private onState:(connected:boolean)=>void){}
  api(path:string,body:Record<string,unknown>={}){const c=this.call();return request('/api/operations/call/'+path,{callId:c.id,...body},undefined,undefined,c.role);}
  async publish(){
@@ -33,8 +33,8 @@ class Line{
   await setAudioModeAsync({allowsRecording:true,playsInSilentMode:true}).catch(()=>{});
   this.stream=await microphone();if(this.closed){this.stop();return;}
   const pc=newPeer();this.pc=pc;
-  pc.addEventListener('track',(e:any)=>playRemote(e.track));
-  pc.addEventListener('connectionstatechange',()=>this.onState(pc.connectionState==='connected'));
+  pc.addEventListener('track',(e:any)=>{playRemote(e.track);this.remote=true;});
+  pc.addEventListener('connectionstatechange',()=>{this.linked=pc.connectionState==='connected';this.onState(this.linked);});
   const sender=pc.addTransceiver(this.stream.getAudioTracks()[0],{direction:'sendonly'});
   await pc.setLocalDescription(await pc.createOffer());await gathered(pc);
   const r=await this.api('publish',{sdp:pc.localDescription.sdp,mid:String(sender.mid)});
@@ -46,14 +46,21 @@ class Line{
   try{
    const r=await this.api('subscribe');this.subscribed=true;
    if(r.sdp&&!this.closed){await this.pc.setRemoteDescription(description('offer',r.sdp));await this.pc.setLocalDescription(await this.pc.createAnswer());await gathered(this.pc);await this.api('renegotiate',{sdp:this.pc.localDescription.sdp});}
+   if(!this.closed)this.received=true;
   }finally{this.busy=false;}
  }
+ // This side hears the other one: its line to Realtime is up and the other side's voice is received.
+ // Only after the whole receive went through (subscribe, answer, renegotiate) and the other voice's track arrived.
+ get hearing(){return this.linked&&this.received&&this.remote&&!this.closed;}
  mute(on:boolean){this.stream?.getAudioTracks().forEach((track:any)=>{track.enabled=!on;});}
  stop(){this.closed=true;try{this.stream?.getTracks().forEach((track:any)=>track.stop());}catch{}try{this.pc?.close();}catch{}stopRemote();void setAudioModeAsync({allowsRecording:false,playsInSilentMode:true}).catch(()=>{});}
 }
 
+// A call that did not get through can be repeated from its own screen: no answer, or no voice.
+const retryable=(c:Call)=>!!c.roomId&&(c.reason==='Связь не установлена'||(c.status==='missed'&&c.side==='caller'));
 const clock=(s:number)=>Math.floor(s/60)+':'+String(s%60).padStart(2,'0');
 function endText(c:Call){
+ if(c.reason)return t(c.reason);
  if(c.status==='missed')return c.side==='caller'?t('Нет ответа'):t('Пропущенный звонок');
  if(c.status==='declined')return c.side==='caller'?t('Собеседник отклонил звонок'):t('Звонок отклонён');
  if(c.status==='cancelled')return t('Звонок отменён');
@@ -67,10 +74,10 @@ export function CallCenter({userId}:{userId:string}){
  function hangUpLocal(){line.current?.stop();line.current=null;setConnected(false);setMuted(false);setSince(0);Vibration.cancel();}
  function settle(next:Call){
   setCall(next);
-  if(!LIVE.includes(next.status)){hangUpLocal();setTimeout(()=>{if(current.current?.id===next.id)setCall(null);},2000);}
+  if(!LIVE.includes(next.status)){hangUpLocal();if(!retryable(next))setTimeout(()=>{if(current.current?.id===next.id)setCall(null);},2000);}
  }
  async function connect(){
-  const l=new Line(()=>current.current!,ok=>{setConnected(ok);if(ok)setSince(s=>s||Date.now());});line.current=l;
+  const l=new Line(()=>current.current!,ok=>{if(!ok)setConnected(false);});line.current=l;
   try{await l.publish();}catch(e){setError(e instanceof Error&&e.message?e.message:t('Звонок не соединился. Попробуйте ещё раз.'));void end();}
  }
  starter=(roomId,role,name)=>{
@@ -88,8 +95,10 @@ export function CallCenter({userId}:{userId:string}){
  // The call itself: its state every 1.5 seconds keeps both sides alive and tells when the other side is ready.
  useEffect(()=>{
   if(!call?.id||!LIVE.includes(call.status))return;
-  const timer=setInterval(()=>{const c=current.current;if(!c?.id)return;void request('/api/operations/call/state',{callId:c.id},undefined,undefined,c.role).then(r=>{
+  const timer=setInterval(()=>{const c=current.current;if(!c?.id)return;void request('/api/operations/call/state',{callId:c.id,audio:!!line.current?.hearing},undefined,undefined,c.role).then(r=>{
    if(current.current?.id!==r.call.id)return;settle(r.call);
+   // The call counts from the moment both sides hear each other (the server knows it), not from «Принять».
+   if(r.call.status==='active'&&r.call.connected){setConnected(true);setSince(s=>s||Date.now());}
    if(r.call.status==='active'){Vibration.cancel();if(r.call.ready.me&&r.call.ready.other)void line.current?.receive().catch(()=>{});}
   }).catch(()=>{});},1500);
   return()=>clearInterval(timer);
@@ -107,7 +116,7 @@ export function CallCenter({userId}:{userId:string}){
  if(!call)return null;
  const live=LIVE.includes(call.status),incoming=call.status==='ringing'&&call.side==='callee';
  const status=error||(!live?endText(call):incoming?t('Входящий звонок через AiQonaq'):call.status==='ringing'?t('Вызов…'):connected?clock(Math.max(0,Math.floor((now-since)/1000))):t('Соединяем…'));
- return <Modal visible animationType="fade" onRequestClose={()=>void end()}>
+ return <Modal visible animationType="fade" onRequestClose={()=>{if(live)void end();else setCall(null);}}>
   <SafeAreaView style={k.screen}>
    <View style={k.top}>
     <View style={k.avatar}><Text style={k.letter}>{(call.name||'?').trim().charAt(0).toUpperCase()}</Text></View>
@@ -123,6 +132,10 @@ export function CallCenter({userId}:{userId:string}){
      <Round label={muted?t('Включить микрофон'):t('Выключить микрофон')} tone={muted?'on':'plain'} onPress={()=>{const next=!muted;setMuted(next);line.current?.mute(next);}}><View style={k.micBox}><MicIcon color={muted?C.ink:C.onAccent}/>{muted&&<View style={k.slash}/>}</View></Round>
      <Round label={t('Завершить звонок')} tone="danger" onPress={()=>void end()}><View style={k.down}><PhoneIcon color={C.onAccent} size={28}/></View></Round>
     </>}
+   </View>}
+   {!live&&retryable(call)&&<View style={k.actions}>
+    <Round label={t('Закрыть')} tone="plain" onPress={()=>setCall(null)}><Text style={k.close}>✕</Text></Round>
+    <Round label={t('Позвонить ещё раз')} tone="success" onPress={()=>{const c=call;setCall(null);current.current=null;starter?.(c.roomId,c.role,c.name);}}><PhoneIcon color={C.onAccent} size={28}/></Round>
    </View>}
   </SafeAreaView>
  </Modal>;
@@ -147,5 +160,6 @@ const k=StyleSheet.create({
  down:{transform:[{rotate:'135deg'}]},
  micBox:{transform:[{scale:1.6}],alignItems:'center',justifyContent:'center'},
  slash:{position:'absolute',width:2,height:26,backgroundColor:C.danger,transform:[{rotate:'45deg'}]},
+ close:{color:C.onAccent,fontSize:22,lineHeight:28,fontWeight:'700'},
  roundLabel:{color:'rgba(255,255,255,0.8)',fontSize:14,lineHeight:20,textAlign:'center'},
 });

@@ -97,6 +97,7 @@
 -- migration 0093_moderation_voice_place.sql sha256:2bff022e636d8d78fe5805b9e8db1302c2b10b7b4f6d65186b46cd533da274e8
 -- migration 0094_chat_calls.sql sha256:11281ac6e7e03c1a90c9ae385b3eb47215ef128392e94bf7740896a927892e70
 -- migration 0095_service_billing_audit.sql sha256:cf606de2fb9d3d6d53b2f6fb51cb82b94927bfbe0a3885ef3167c3dcdd5d2275
+-- migration 0096_call_audio.sql sha256:52e6a3b35ded64d49a8ed35daa1b5059fc36d1fc2d302be38b6712f9192bb802
 
 -- table access_receipts
 CREATE TABLE access_receipts (id TEXT PRIMARY KEY,property_id TEXT NOT NULL,entity_kind TEXT NOT NULL,entity_id TEXT NOT NULL,user_id TEXT NOT NULL,created_at INTEGER NOT NULL,expires_at INTEGER NOT NULL);
@@ -479,7 +480,7 @@ CREATE TABLE chat_calls (
  caller_session TEXT NOT NULL DEFAULT '',callee_session TEXT NOT NULL DEFAULT '',
  caller_seen INTEGER NOT NULL,callee_seen INTEGER NOT NULL DEFAULT 0,
  created_at INTEGER NOT NULL,answered_at INTEGER,ended_at INTEGER
-);
+, caller_audio INTEGER NOT NULL DEFAULT 0, callee_audio INTEGER NOT NULL DEFAULT 0, end_reason TEXT NOT NULL DEFAULT '');
 
 -- table cleaner_autopilot
 CREATE TABLE cleaner_autopilot (
@@ -1472,6 +1473,9 @@ CREATE INDEX card_charges_user ON card_charges(user_id,created_at);
 
 -- index chat_calls_callee
 CREATE INDEX chat_calls_callee ON chat_calls(callee_id,status);
+
+-- index chat_calls_live
+CREATE INDEX chat_calls_live ON chat_calls(status,created_at);
 
 -- index chat_calls_room
 CREATE INDEX chat_calls_room ON chat_calls(room_id,status);

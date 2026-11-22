@@ -15,6 +15,7 @@ const HOT={
  'the bookings by state':['bookings',"SELECT id FROM bookings WHERE status='requested'"],
  'the bookings of a guest':['bookings',"SELECT id FROM bookings WHERE guest_id='x'"],
  'the notices of a person':['notifications',"SELECT id FROM notifications WHERE user_id='x' ORDER BY created_at DESC LIMIT 40"],
+ 'the calls still going on':['chat_calls',"SELECT id FROM chat_calls WHERE status IN ('ringing','active') ORDER BY created_at LIMIT 50"],
  'the offers of a cleaning':['cleaning_offers',"SELECT id FROM cleaning_offers WHERE job_id='x' AND status='offered'"],
 };
 test('the questions asked every minute go by an index, not through the whole table',async()=>{

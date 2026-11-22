@@ -8,7 +8,7 @@ import {LiveMap} from './LiveMap';
 import {locate} from './here';
 import {request} from './api';
 import {C} from './styles';
-import type {Role} from './model';
+import {uid,type Role} from './model';
 
 // The chat like a messenger: a voice message (up to a minute) and a point on our own map.
 // Both go through the service's chat (lib/process-discussions.ts), so nobody needs WhatsApp to say «I am at the door».
@@ -25,9 +25,15 @@ async function dataUri(uri:string){
  return 'data:audio/mp4;base64,'+await new File(uri).base64();
 }
 
+// A recorded voice stays here until the chat confirms it: a send that fails (the network dropped) keeps it with
+// «Повторить» and «Удалить», and a repeat goes with the same key, so the chat never gets it twice (audit 2026-11-22).
+type Voice={data:string;ms:number;key:string};
+const unsent=new Map<string,Voice>();
+// Kept per account, role and chat; another account on the same phone never gets them (cleared when the account changes).
+export function clearUnsentVoices(){unsent.clear();}
 // The microphone button: a tap starts the recording, a second tap sends it, «✕» throws it away.
-export function VoiceButton({disabled,onSend,onError}:{disabled:boolean;onSend:(voice:{data:string;ms:number})=>Promise<void>;onError:(message:string)=>void}){
- const recorder=useAudioRecorder(VOICE),state=useAudioRecorderState(recorder,250),[busy,setBusy]=useState(false);
+export function VoiceButton({draftKey,disabled,onSend,onError}:{draftKey:string;disabled:boolean;onSend:(voice:Voice)=>Promise<boolean>;onError:(message:string)=>void}){
+ const recorder=useAudioRecorder(VOICE),state=useAudioRecorderState(recorder,250),[busy,setBusy]=useState(false),[failed,setFailed]=useState<Voice|null>(()=>unsent.get(draftKey)||null);
  const recording=state.isRecording,ms=state.durationMillis||0;
  useEffect(()=>{if(recording&&ms>=VOICE_MAX_MS)void finish(true);},[recording,ms]);// eslint-disable-line react-hooks/exhaustive-deps
  // The chat keys this button by its room: leaving the room throws the recording away, so it never goes to another chat.
@@ -44,13 +50,24 @@ export function VoiceButton({disabled,onSend,onError}:{disabled:boolean;onSend:(
   try{
    await recorder.stop();await setAudioModeAsync({allowsRecording:false,playsInSilentMode:true});
    if(!send||!recorder.uri)return;if(length<700)throw Error(t('Слишком коротко. Удерживайте запись хотя бы секунду.'));
-   await onSend({data:await dataUri(recorder.uri),ms:Math.min(length,VOICE_MAX_MS)});
+   const voice={data:await dataUri(recorder.uri),ms:Math.min(length,VOICE_MAX_MS),key:uid()};unsent.set(draftKey,voice);
+   await deliver(voice);
   }catch(e){onError(e instanceof Error&&e.message?e.message:t('Голосовое сообщение не отправлено.'));}finally{setBusy(false);}
  }
+ async function deliver(voice:Voice){
+  let sent=false;try{sent=await onSend(voice);}finally{if(sent){unsent.delete(draftKey);setFailed(null);}else setFailed(voice);}
+ }
+ async function retry(){if(busy||!failed)return;setBusy(true);try{await deliver(failed);}finally{setBusy(false);}}
+ function drop(){unsent.delete(draftKey);setFailed(null);}
  if(recording)return <View style={v.recording}>
   <Pressable accessibilityRole="button" accessibilityLabel={t('Удалить запись')} onPress={()=>void finish(false)} style={({pressed})=>[v.round,v.cancel,pressed&&v.pressed]}><Text style={v.cancelText}>✕</Text></Pressable>
   <View style={v.live}><View style={v.dot}/><Text style={v.liveText}>{t('Запись {time} из 1:00',{time:seconds(ms)})}</Text></View>
   <Pressable accessibilityRole="button" accessibilityLabel={t('Отправить голосовое')} onPress={()=>void finish(true)} style={({pressed})=>[v.round,v.send,pressed&&v.pressed]}><Text style={v.sendText}>↑</Text></Pressable>
+ </View>;
+ if(failed)return <View style={v.recording}>
+  <Pressable accessibilityRole="button" accessibilityLabel={t('Удалить голосовое')} disabled={busy} onPress={drop} style={({pressed})=>[v.round,v.cancel,pressed&&v.pressed]}><Text style={v.cancelText}>✕</Text></Pressable>
+  <View style={v.live}><Text style={[v.liveText,{color:C.danger}]} numberOfLines={2}>{t('Голосовое {time} не отправлено',{time:seconds(failed.ms)})}</Text></View>
+  <Pressable accessibilityRole="button" accessibilityLabel={t('Повторить отправку голосового')} disabled={busy||disabled} onPress={()=>void retry()} style={({pressed})=>[v.retry,(busy||disabled)&&v.disabled,pressed&&v.pressed]}><Text style={v.retryText}>{busy?'…':t('Повторить')}</Text></Pressable>
  </View>;
  return <Pressable accessibilityRole="button" accessibilityLabel={t('Записать голосовое')} hitSlop={4} disabled={disabled||busy} onPress={()=>void start()} style={({pressed})=>[v.icon,(disabled||busy)&&v.disabled,pressed&&v.pressed]}><MicIcon/></Pressable>;
 }
@@ -91,6 +108,21 @@ export async function myPlace(){
 export function PlaceButton({disabled,note,onPress}:{disabled:boolean;note?:string;onPress:()=>void}){
  return <Pressable accessibilityRole="button" accessibilityLabel={note?t('Отправить точку. {v}',{v:note}):t('Отправить мою точку на карте')} hitSlop={4} disabled={disabled} onPress={onPress} style={({pressed})=>[v.icon,disabled&&v.disabled,pressed&&v.pressed]}><PinIcon/></Pressable>;
 }
+// The point is shown before it goes: where it is, and to whom (audit 2026-11-22: one tap sent it at once).
+export function PlacePreview({place,to,busy,error,onSend,onCancel}:{place:{lat:number;lon:number}|null;to:string;busy:boolean;error?:string;onSend:()=>void;onCancel:()=>void}){
+ const point:[number,number]|null=place?[place.lon,place.lat]:null;
+ return <Modal visible={!!place} animationType="slide" onRequestClose={onCancel}>
+  <SafeAreaView style={v.mapScreen} edges={['top','bottom']}>
+   <View style={v.mapHead}><Pressable accessibilityRole="button" accessibilityLabel={t('Не отправлять точку')} onPress={onCancel} style={({pressed})=>[v.round,v.close,pressed&&v.pressed]}><Text style={v.cancelText}>‹</Text></Pressable><Text style={v.mapTitle}>{t('Ваша точка')}</Text></View>
+   <View style={{flex:1}}>{point&&<LiveMap center={point} pins={[{key:'place',point,label:t('Я здесь'),tone:'active'}]} focus="place" focusKey="place"/>}</View>
+   <View style={v.previewFoot}>
+    <Text style={v.placeNote}>{t('Точку увидит только {name}. Она останется в истории чата.',{name:to})}</Text>
+    {!!error&&<Text accessibilityRole="alert" style={[v.placeNote,{color:C.danger}]}>{error}</Text>}
+    <Pressable accessibilityRole="button" accessibilityLabel={t('Отправить точку: {name}',{name:to})} disabled={busy} onPress={onSend} style={({pressed})=>[v.sendWide,busy&&v.disabled,pressed&&v.pressed]}><Text style={v.retryText}>{busy?'…':t('Отправить точку')}</Text></Pressable>
+   </View>
+  </SafeAreaView>
+ </Modal>;
+}
 export function PlaceBubble({place,mine}:{place:{lat:number;lon:number};mine:boolean}){
  const [open,setOpen]=useState(false),point:[number,number]=[place.lon,place.lat];
  return <>
@@ -117,6 +149,7 @@ const v=StyleSheet.create({
  cancel:{backgroundColor:C.surfaceAlt},cancelText:{fontSize:18,color:C.ink,fontWeight:'600'},
  send:{backgroundColor:C.accent},sendText:{fontSize:22,color:C.onAccent,fontWeight:'700'},
  live:{flex:1,flexDirection:'row',alignItems:'center',gap:8},dot:{width:10,height:10,borderRadius:4,backgroundColor:C.danger},liveText:{fontSize:16,color:C.ink},
+ retry:{minHeight:44,paddingHorizontal:16,borderRadius:24,backgroundColor:C.accent,alignItems:'center',justifyContent:'center'},retryText:{fontSize:16,color:C.onAccent,fontWeight:'700'},
  bubble:{minWidth:200,gap:4},
  play:{width:40,height:40,borderRadius:24,backgroundColor:C.accent,alignItems:'center',justifyContent:'center',position:'absolute',left:0,top:0},playMine:{backgroundColor:C.surface},
  playText:{color:C.onAccent,fontSize:14,fontWeight:'700'},playTextMine:{color:C.accent},
@@ -126,5 +159,6 @@ const v=StyleSheet.create({
  time:{fontSize:12,color:C.muted},error:{fontSize:12,color:C.danger},
  place:{flexDirection:'row',alignItems:'center',gap:8,padding:8,borderRadius:16,backgroundColor:C.surfaceAlt,minWidth:220},placeMine:{backgroundColor:C.surface},
  placeTitle:{fontSize:16,fontWeight:'600',color:C.ink},placeNote:{fontSize:12,color:C.muted},
+ previewFoot:{padding:16,gap:12},sendWide:{minHeight:56,borderRadius:16,backgroundColor:C.accent,alignItems:'center',justifyContent:'center'},
  mapScreen:{flex:1,backgroundColor:C.bg},mapHead:{flexDirection:'row',alignItems:'center',gap:12,padding:12},close:{backgroundColor:C.surfaceAlt},mapTitle:{fontSize:18,fontWeight:'700',color:C.ink},
 });
