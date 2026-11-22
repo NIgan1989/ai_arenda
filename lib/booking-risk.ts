@@ -1,4 +1,5 @@
-import {epoch,q,one,type Row} from './operation-core';
+import {epoch,q,one,rows,type Row} from './operation-core';
+import {notVoided} from './reliability';
 import type {BookingRisk,RiskLevel} from './booking-risk-text';
 export {riskAdvice,riskLabel} from './booking-risk-text';
 export type {BookingRisk,RiskLevel};
@@ -35,8 +36,8 @@ export async function riskSignals(db:D1Database,guestId:string,booking:{start:nu
  const g=await one(db,`SELECT p.created_at,
   EXISTS(SELECT 1 FROM phone_verifications v WHERE v.user_id=p.id AND v.verified_at IS NOT NULL) phone,
   (SELECT COUNT(*) FROM bookings b JOIN properties lp ON lp.id=b.property_id WHERE b.guest_id=p.id AND b.status='completed' AND lp.demo_owner IS NULL) completed,
-  (SELECT COUNT(DISTINCT a.entity_id) FROM audit_events a JOIN bookings b ON b.id=a.entity_id JOIN properties lp ON lp.id=b.property_id WHERE b.guest_id=p.id AND lp.demo_owner IS NULL AND a.action LIKE '%booking.checkout_disputed%') disputes,
-  (SELECT COUNT(DISTINCT a.entity_id) FROM audit_events a JOIN bookings b ON b.id=a.entity_id JOIN properties lp ON lp.id=b.property_id WHERE a.actor_id=p.id AND b.guest_id=p.id AND lp.demo_owner IS NULL AND a.action='booking.cancelled' AND EXISTS(SELECT 1 FROM audit_events c WHERE c.entity_id=a.entity_id AND c.action LIKE '%booking.confirmed%' AND c.created_at<=a.created_at)) cancels
+  (SELECT COUNT(DISTINCT a.entity_id) FROM audit_events a JOIN bookings b ON b.id=a.entity_id JOIN properties lp ON lp.id=b.property_id WHERE b.guest_id=p.id AND lp.demo_owner IS NULL AND a.action LIKE '%booking.checkout_disputed%' AND ${notVoided('dispute','p.id','guest','b.id')}) disputes,
+  (SELECT COUNT(DISTINCT a.entity_id) FROM audit_events a JOIN bookings b ON b.id=a.entity_id JOIN properties lp ON lp.id=b.property_id WHERE a.actor_id=p.id AND b.guest_id=p.id AND lp.demo_owner IS NULL AND a.action='booking.cancelled' AND ${notVoided('guest_cancel','p.id','guest','b.id')} AND EXISTS(SELECT 1 FROM audit_events c WHERE c.entity_id=a.entity_id AND c.action LIKE '%booking.confirmed%' AND c.created_at<=a.created_at)) cancels
   FROM profiles p WHERE p.id=?`,guestId)||{} as Row;
  const h=localHour(booking.start);
  return {phone:!!g.phone,completed:Number(g.completed||0),disputes:Number(g.disputes||0),cancels:Number(g.cancels||0),accountAge:t-Number(g.created_at||t),lead:booking.start-t,
@@ -52,3 +53,17 @@ export const riskFromRow=(row:Row|null|undefined):BookingRisk|undefined=>{
  let reasons:string[]=[];try{reasons=JSON.parse(row.reasons||'[]');}catch{}
  return {level:row.level,score:row.score,reasons,deposit:row.deposit_advice,phone:!!row.phone_verified,held:!!row.held};
 };
+
+// After the administrator cancels a wrong episode, the guest's requests still waiting for the owner are assessed again,
+// so the advice on the deposit and the autopilot's hold read the corrected history (audit 2026-11-22).
+export async function reassessOpenRequests(db:D1Database,guestId:string,t=epoch()){
+ const open=await rows(db,"SELECT b.id,b.start,b.end,t.billing_mode,t.deposit,p.price FROM bookings b JOIN booking_risks r ON r.booking_id=b.id JOIN booking_terms t ON t.booking_id=b.id JOIN properties p ON p.id=b.property_id WHERE b.guest_id=? AND b.status='requested' AND b.expires_at>?",guestId,t);
+ const writes=[];
+ for(const b of open){
+  const r=assessBookingRisk(await riskSignals(db,guestId,{start:Number(b.start),end:Number(b.end),billingMode:String(b.billing_mode),price:Number(b.price||0),deposit:Number(b.deposit||0)},t));
+  // A hold the autopilot already made stays: the request is with the owner, who now reads the new assessment.
+  writes.push(q(db,'UPDATE booking_risks SET level=?,score=?,reasons=?,deposit_advice=?,phone_verified=? WHERE booking_id=?',r.level,r.score,JSON.stringify(r.reasons),r.deposit,r.phone?1:0,b.id));
+ }
+ if(writes.length)await db.batch(writes);
+ return writes.length;
+}

@@ -16,7 +16,9 @@ test('the line under the guest booking says the step the guest takes now',()=>{
  assert.match(guestLine(booking({payment_status:'owner_verified',readiness:'ready',terms:{paid_amount:20000,deposit:5000,deposit_status:'pending',deposit_reported_at:now}}),now),/^Владелец проверяет перевод и подтвердит депозит/);
  assert.equal(guestLine(booking({payment_status:'owner_verified',terms:{paid_amount:20000,deposit:0}}),now,'test'),null);
  assert.match(guestLine(booking({start:now-3600,end:now+day,terms:{paid_amount:20000,deposit:0,actual_checkin:now-3600}}),now,'test'),/^Вы в жилье → Выезд/);
- assert.match(guestLine(booking({status:'completed'}),now,'test'),/^Проживание завершено/);
+ assert.match(guestLine(booking({status:'completed',terms:{actual_checkout:now-day}}),now,'test'),/^Проживание завершено/);
+ // After the 14 days to review the line no longer asks for a rating (audit 2026-11-22).
+ assert.equal(guestLine(booking({status:'completed',terms:{actual_checkout:now-15*day}}),now,'test'),null);
 });
 test('nothing to do leaves the general hint of the process',()=>{
  assert.equal(guestLine(booking({status:'completed',review_rating:5}),now,'test'),null);

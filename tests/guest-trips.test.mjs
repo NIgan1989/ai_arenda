@@ -31,7 +31,9 @@ test('a row says what the booking waits for, in the guest\'s words',()=>{
  assert.equal(said({start:now-hour,terms:{actual_checkin:now-hour}}),'Вы заселены');
  assert.equal(said({start:now-2*day,end:now-hour}),'Сообщите о выезде');
  assert.equal(said({start:now-2*day,end:now-hour,terms:{checkout_reported_at:now-60}}),'Выезд на проверке');
- assert.equal(said({status:'completed',start:now-2*day,end:now-day}),'Оцените проживание');
+ assert.equal(said({status:'completed',start:now-2*day,end:now-day,terms:{actual_checkout:now-day}}),'Оцените проживание');
+ // Fourteen days after checkout the term to review is over: the row no longer asks for it (audit 2026-11-22).
+ assert.equal(said({status:'completed',start:now-16*day,end:now-15*day,terms:{actual_checkout:now-15*day}}),'Проживание завершено');
  assert.equal(said({status:'completed',start:now-2*day,end:now-day,review_rating:4}),'Проживание завершено');
  assert.equal(said({status:'cancelled'}),'Бронь отменена');
 });
@@ -47,7 +49,8 @@ test('the steps of a booking keep their order; the map offers the first one that
  assert.equal(guestStep(booking('b'),now,'test').label,'Я оплатил 20 000 ₸');
  assert.equal(guestStep(booking('b',{start:now-60,terms:{paid_amount:20000}}),now,'test').id,'checkin');
  assert.deepEqual(ids(booking('b',{start:now-hour,terms:{paid_amount:20000,actual_checkin:now-hour}})),['checkout']);
- assert.deepEqual(ids(booking('b',{status:'completed'})),['review']);
+ assert.deepEqual(ids(booking('b',{status:'completed',terms:{actual_checkout:now-day}})),['review']);
+ assert.deepEqual(ids(booking('b',{status:'completed',terms:{actual_checkout:now-15*day}})),[],'the term to review has passed');
  assert.deepEqual(ids(booking('b',{status:'completed',review_rating:5})),[]);
  assert.deepEqual(ids(booking('b',{status:'requested'})),[]);
  assert.equal(guestStep(null,now,'test'),null);

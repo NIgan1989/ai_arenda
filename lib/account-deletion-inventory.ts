@@ -15,7 +15,7 @@ export const accountDeletionColumns:Record<string,string>={
  "payout_details":"user_id,phone,recipient,link,version,updated_at,pending_phone,pending_recipient,pending_link,pending_role,pending_until,changed_at",
  "admin_factor":"session_hash,user_id,code_hash,code_sent_at,attempts,verified_at,expires_at,created_at",
  "legal_acceptances":"id,user_id,document,edition,client,accepted_at",
- "reliability_objections":"id,user_id,role,body,status,created_at,due_at,answer,answered_by,answered_at",
+ "reliability_objections":"id,user_id,role,body,status,created_at,due_at,answer,answered_by,answered_at,voided",
  "service_billing":"user_id,card_mask,card_token,card_test,card_at,last_charge_at,failed_at,paused_at,version,updated_at",
  "user_language":"user_id,lang,updated_at",
  "card_charges":"id,user_id,request_key,amount,status,reason,card_mask,test,bank_ref,error,resolved_by,created_at,finished_at",

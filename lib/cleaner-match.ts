@@ -1,4 +1,5 @@
 import {rows,type Row} from './operation-core';
+import {notVoided} from './reliability';
 
 // Who gets a cleaning first. Of the cleaners who are free and work in the flat's city, the AI administrator
 // offers the cleaning to the one most likely to come and do it well: no missed cleanings, answers offers,
@@ -28,7 +29,8 @@ export async function cleanerStats(db:D1Database,candidates:Row[],propertyId:str
  const ids=candidates.map(c=>c.id),marks=ids.map(()=>'?').join(',');
  const [done,missed,offers]=await Promise.all([
   rows(db,`SELECT assigned_to id,COUNT(*) n,SUM(property_id=?) here FROM cleaning_jobs WHERE status='completed' AND assigned_to IN (${marks}) GROUP BY assigned_to`,propertyId,...ids),
-  rows(db,`SELECT user_id id,COUNT(*) n FROM notifications WHERE dedupe LIKE 'cleaner:no-show:%' AND user_id IN (${marks}) GROUP BY user_id`,...ids),
+  // A no-show the administrator cancelled in the answer to an objection does not count here either (lib/reliability.ts).
+  rows(db,`SELECT x.user_id id,COUNT(*) n FROM notifications x WHERE x.dedupe LIKE 'cleaner:no-show:%' AND x.user_id IN (${marks}) AND NOT EXISTS(SELECT 1 FROM cleaning_jobs j WHERE x.dedupe LIKE 'cleaner:no-show:'||j.id||':%' AND NOT ${notVoided('no_show','x.user_id','cleaner','j.id')}) GROUP BY x.user_id`,...ids),
   rows(db,`SELECT worker_id id,SUM(status='accepted') accepted,SUM(status IN ('declined','expired')) refused FROM cleaning_offers WHERE worker_id IN (${marks}) AND created_at>? GROUP BY worker_id`,...ids,t-180*86400)
  ]);
  const by=(list:Row[])=>new Map(list.map(r=>[r.id,r]));

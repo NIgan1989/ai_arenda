@@ -5,7 +5,8 @@ import {venueOr,wordsOf,TYPE_SQL} from './stay-words';
 
 // After checkout the AI administrator asks the guest to rate the stay, once. A rating needs a
 // completed booking of this guest; the text goes only to the owner, the average is public.
-export const REVIEW_ASK_AFTER=3600,REVIEW_WINDOW=14*86400;
+import {REVIEW_ASK_AFTER,REVIEW_WINDOW} from './review-window';
+export {REVIEW_ASK_AFTER,REVIEW_WINDOW};
 
 export async function saveStayReview(s:RentalService,body:Row){
  await s.requireRole('guest');
@@ -25,11 +26,14 @@ export async function saveStayReview(s:RentalService,body:Row){
  return {message:'Спасибо за оценку! Владелец её увидит.'};
 }
 
-// Public rating per flat: average and count.
+// Public rating per card: average and count. Rooms of one type («таких номеров 12», lib/room-units.ts) share one rating,
+// the lead's and every room's together: the search shows whichever room is free, the rating stays the same (audit 2026-11-22).
 export async function ratingsFor(db:D1Database,ids:string[]){
  if(!ids.length)return new Map<string,Row>();
- // Small lists bind their ids; a large catalog page reads the grouped table once (D1 caps bound parameters).
- const list=ids.length<=90?await rows(db,`SELECT property_id,ROUND(AVG(rating),1) average,COUNT(*) count FROM stay_reviews WHERE property_id IN (${ids.map(()=>'?').join(',')}) GROUP BY property_id`,...ids):await rows(db,'SELECT property_id,ROUND(AVG(rating),1) average,COUNT(*) count FROM stay_reviews GROUP BY property_id');
+ // One JSON parameter for the whole list: D1 caps bound parameters at 100 per statement.
+ const list=await rows(db,`WITH asked AS (SELECT value id,COALESCE((SELECT lead_id FROM room_units WHERE property_id=value),value) lead FROM json_each(?)),
+  rated AS (SELECT COALESCE(u.lead_id,r.property_id) lead,ROUND(AVG(r.rating),1) average,COUNT(*) count FROM stay_reviews r LEFT JOIN room_units u ON u.property_id=r.property_id WHERE COALESCE(u.lead_id,r.property_id) IN (SELECT lead FROM asked) GROUP BY 1)
+  SELECT asked.id property_id,rated.average,rated.count FROM asked JOIN rated ON rated.lead=asked.lead`,JSON.stringify([...new Set(ids)]));
  return new Map(list.map(r=>[r.property_id,{average:r.average,count:r.count}]));
 }
 
