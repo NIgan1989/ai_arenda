@@ -90,7 +90,9 @@
 -- migration 0086_percent_tariff.sql sha256:b75a393364bc2a1b27774c6e23f8023f7d30af84f132c88d6cbe14496450d48d
 -- migration 0087_repeat_guest_discount.sql sha256:889cd787c9404b45cfc5bf14dd72e471fccb7ff0da1ba04f0c4138dc3ce089c2
 -- migration 0088_room_units.sql sha256:873c3debafdd6fd4e3ea5d250b16c3351e45b1951efab6615013d98fa4c71aee
--- migration 0089_reported_transfer.sql sha256:efadcb94c3d777b4dc33766f214a6c73b37b87ab419a25fa48d19f1de5e77185
+-- migration 0089_reported_transfer.sql sha256:b01e5c8309d364403f559d7ea7309e7f845689d2697ec199a65b266bbcacd1b1
+-- migration 0090_refund_confirmed.sql sha256:c648ce5ceba462c918590d408c9d6637749e08bbaabfab44b5e5657ae12d55cb
+-- migration 0091_change_guests.sql sha256:6d7fd8581b42b282f394d78d69c7be6825103f1e23972e10262ddd1540cec061
 
 -- table access_receipts
 CREATE TABLE access_receipts (id TEXT PRIMARY KEY,property_id TEXT NOT NULL,entity_kind TEXT NOT NULL,entity_id TEXT NOT NULL,user_id TEXT NOT NULL,created_at INTEGER NOT NULL,expires_at INTEGER NOT NULL);
@@ -372,7 +374,7 @@ CREATE TABLE booking_changes (
  billing_mode TEXT NOT NULL, rate INTEGER NOT NULL, units INTEGER NOT NULL,
  discount_percent INTEGER NOT NULL, amount INTEGER NOT NULL CHECK(amount>=0),
  reason TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','accepted','rejected','expired')),
- expires_at INTEGER NOT NULL, created_at INTEGER NOT NULL, decided_at INTEGER,
+ expires_at INTEGER NOT NULL, created_at INTEGER NOT NULL, decided_at INTEGER, guests INTEGER CHECK(guests IS NULL OR guests>0),
  UNIQUE(proposed_by,request_key)
 );
 
@@ -400,7 +402,7 @@ CREATE TABLE booking_terms (
  deposit_status TEXT NOT NULL DEFAULT 'not_required' CHECK(deposit_status IN ('not_required','pending','owner_verified')),
  house_rules TEXT NOT NULL DEFAULT '', policy_version INTEGER NOT NULL DEFAULT 0,
  actual_checkin INTEGER, actual_checkout INTEGER, checkout_reported_at INTEGER
-, version INTEGER NOT NULL DEFAULT 1, discount_percent INTEGER NOT NULL DEFAULT 0, paid_amount INTEGER NOT NULL DEFAULT 0, original_end INTEGER NOT NULL DEFAULT 0, deposit_returned_at INTEGER, refund_recorded_at INTEGER, checkin_reported_at INTEGER, arrival_eta INTEGER, late_count INTEGER NOT NULL DEFAULT 0, refund_due INTEGER, min_hours INTEGER, deposit_kept INTEGER NOT NULL DEFAULT 0, deposit_kept_note TEXT NOT NULL DEFAULT '', prepared_at INTEGER, occasion text NOT NULL DEFAULT '', `early_checkin_at` integer, payment_reported_at INTEGER, deposit_reported_at INTEGER, prepay_percent INTEGER CHECK(prepay_percent IS NULL OR prepay_percent IN (0,10,20,30,50,100)), payment_reported_amount INTEGER NOT NULL DEFAULT 0, deposit_reported_amount INTEGER NOT NULL DEFAULT 0, refund_if_received INTEGER NOT NULL DEFAULT 0);
+, version INTEGER NOT NULL DEFAULT 1, discount_percent INTEGER NOT NULL DEFAULT 0, paid_amount INTEGER NOT NULL DEFAULT 0, original_end INTEGER NOT NULL DEFAULT 0, deposit_returned_at INTEGER, refund_recorded_at INTEGER, checkin_reported_at INTEGER, arrival_eta INTEGER, late_count INTEGER NOT NULL DEFAULT 0, refund_due INTEGER, min_hours INTEGER, deposit_kept INTEGER NOT NULL DEFAULT 0, deposit_kept_note TEXT NOT NULL DEFAULT '', prepared_at INTEGER, occasion text NOT NULL DEFAULT '', `early_checkin_at` integer, payment_reported_at INTEGER, deposit_reported_at INTEGER, prepay_percent INTEGER CHECK(prepay_percent IS NULL OR prepay_percent IN (0,10,20,30,50,100)), payment_reported_amount INTEGER NOT NULL DEFAULT 0, deposit_reported_amount INTEGER NOT NULL DEFAULT 0, refund_if_received INTEGER NOT NULL DEFAULT 0, refund_confirmed_at INTEGER);
 
 -- table bookings
 CREATE TABLE `bookings` (
