@@ -10,8 +10,13 @@ on:
     types: [completed]
     branches: [main]
   workflow_dispatch:
+  # Every night at 05:10 Almaty (00:10 UTC), just after D1's free daily limit of rows read is renewed: a publication
+  # that failed on the limit during the day goes out before the day's reads begin. Publishing the same main again is harmless.
+  schedule:
+    - cron: '10 0 * * *'
 permissions:
   contents: read
+  actions: read
 concurrency:
   group: publish-cloudflare
   cancel-in-progress: false
@@ -21,12 +26,20 @@ jobs:
   publish:
     if: >-
       github.event_name == 'workflow_dispatch' ||
+      github.event_name == 'schedule' ||
       (github.event.workflow_run.conclusion == 'success' &&
        github.event.workflow_run.event == 'push' &&
        github.event.workflow_run.head_branch == 'main')
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
+      - name: The nightly run publishes only a main whose checks passed
+        if: github.event_name == 'schedule'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          state=$(gh api "repos/${{ github.repository }}/actions/workflows/check.yml/runs?head_sha=${{ github.sha }}&per_page=1" --jq '.workflow_runs[0].conclusion // "none"')
+          if [ "$state" != "success" ]; then echo "::error::The checks of main ${{ github.sha }} did not pass ($state): nothing is published."; exit 1; fi
       - name: Check that publishing is configured
         id: configured
         env:

@@ -86,3 +86,13 @@ test('the Stadia Maps key from a GitHub secret is saved as a Worker secret after
  await assert.rejects(saveMapKey({key:'abcd-1234-efgh',account:'acc',cfToken:'cf',fetcher:async()=>Response.json({success:false},{status:403})}),/did not save STADIA_API_KEY \(403\)/);
  const workflow=(await import('node:fs')).readFileSync('.github/workflows/deploy.yml','utf8');assert.ok(workflow.indexOf('Publish the Worker')<workflow.indexOf('setup-map-key.mjs'));assert.match(workflow,/STADIA_API_KEY: \$\{\{ secrets\.STADIA_API_KEY \}\}/);
 });
+
+test('a nightly run right after the D1 limit is renewed publishes main, and only when its checks passed',async()=>{
+ const workflow=(await import('node:fs')).readFileSync('.github/workflows/deploy.yml','utf8');
+ assert.match(workflow,/schedule:\n\s+- cron: '10 0 \* \* \*'/);
+ assert.match(workflow,/github\.event_name == 'schedule' \|\|/);
+ const gate=workflow.indexOf('The nightly run publishes only a main whose checks passed');
+ assert.ok(gate>0&&gate<workflow.indexOf('Check that publishing is configured'));
+ assert.match(workflow.slice(gate,workflow.indexOf('Check that publishing is configured')),/actions\/workflows\/check\.yml\/runs\?head_sha=/);
+ assert.match(workflow,/actions: read/);
+});
