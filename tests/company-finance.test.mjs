@@ -21,8 +21,16 @@ test('payroll follows the 2026 rates: withheld from the employee and paid on top
 
 const settingsBody={entity:'ip',companyName:'AiQonaq',mzp:85000,ownerBase:85000,vosmsSelf:5,startMonth:'2026-11',taxRegime:'simplified',cit:20,simplified:4,vatRegistered:false,vat:16,vatThresholdMrp:10000,mrp:4325,usdRate:500,opv:10,vosmsEmployee:2,ipn:10,ipnDeductionMrp:30,sn:6,so:5,opvr:3.5,vosmsEmployer:3,acquiring:0.95,shareCapital:0};
 
+// Most of these tests were written for an ИП on the simplified declaration: they put the settings back to it.
+const asIp=f=>f.db.raw.prepare("UPDATE company_finance_settings SET entity='ip',tax_regime='simplified',version=1 WHERE id='global'").run();
+test('a new database starts as a ТОО on the general regime (decision of 2026-11-20)',async()=>{
+ const f=await fixture();try{
+  const s=(await readPlatformAdmin(f.other,'finance',{},config(f))).settings;assert.equal(s.entity,'too');assert.equal(s.tax_regime,'general');assert.equal(s.cit_bp,2000);
+ }finally{f.db.close();}
+});
 test('the three reports reconcile: assets equal liabilities plus equity in fact and forecast',async()=>{
  const f=await fixture();try{
+  asIp(f);
   await assert.rejects(readPlatformAdmin(f.owner,'finance',{},config(f)),e=>e.status===403);
   await writePlatformAdmin(f.other,'billing/settings',{confirmed:true,enabled:true,ratePercent:10,minFee:0,maxFee:0,startsAt:now(),freeBookings:0,expectedVersion:1},config(f));
   const id=(await f.guest.createBooking({propertyId:f.property,start:iso(now()+3*86400),end:iso(now()+3*86400+7200),guests:1,billingMode:'hourly',requestKey:'cf1',acceptTerms:true})).id;
@@ -96,6 +104,7 @@ test('the three reports reconcile: assets equal liabilities plus equity in fact 
 
 test('settings are validated and versioned',async()=>{
  const f=await fixture();try{
+  asIp(f);
   const state=await readPlatformAdmin(f.other,'finance',{},config(f));
   const body={...settingsBody,expectedVersion:1,entity:'too',companyName:'Тест'};
   await assert.rejects(writePlatformAdmin(f.other,'finance/settings',{...body,cit:80},config(f)),/КПН/);
@@ -108,6 +117,7 @@ test('settings are validated and versioned',async()=>{
 
 test('accounting lists what is owed, a payment lands in ДДС and keeps the balance whole',async()=>{
  const f=await fixture();try{
+  asIp(f);
   const month=monthKey();
   let state=await readPlatformAdmin(f.other,'accounting',{},config(f));
   const payrollDue=state.obligations.find(o=>o.group==='self'&&o.period===month);

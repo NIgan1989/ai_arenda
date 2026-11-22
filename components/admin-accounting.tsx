@@ -59,10 +59,36 @@ export function AdminAccounting({data,busy,save,onFinance}:{data:Row;busy:boolea
    {data.payments.length===0?<p className="finance-empty">Платежей пока нет.</p>:<ul className="revenue-list">{data.payments.map((p:Row)=><li key={p.id}><div className="revenue-row"><span className="finance-dot"><CheckCircle2 size={16}/></span><span><strong>{p.name}</strong><small>период {p.period} · оплачено в {monthName(p.month,'long').toLowerCase()}{p.note?' · '+p.note:''}</small></span><b>{money(p.amount)}</b><Button variant="ghost" size="sm" disabled={busy} onClick={()=>save('accounting/payment/delete',{id:p.id,confirmed:true})}>Удалить</Button></div></li>)}</ul>}
   </section>
 
+  <ForAccountant now={data.now} busy={busy} save={save}/>
+
   <div className="finance-note"><Info size={18}/><p>{regime?`Сроки для ${ip?'ИП':'ТОО'} на упрощённой декларации по Налоговому кодексу РК 2026 года: взносы${ip?' ИП за себя и':''} с зарплат до 25 числа следующего месяца, декларация 910.00 за полугодие до 15 августа и 15 февраля, налог до 25 числа.`:`Сроки по Налоговому кодексу РК 2026 года: налоги с зарплаты до 25 числа следующего месяца, форма 200.00 раз в квартал, налог с прибыли по годовой декларации до 10 апреля${data.vat.registered?', НДС по декларации 300.00 до 25 числа второго месяца после квартала':''}. Авансовые платежи не считаются.`} Платить удобно из Kaspi Pay в разделе налоговых платежей. Сверьте с бухгалтером.</p></div>
 
   <Sheet open={!!paying} onOpenChange={v=>{if(!v)setPaying(null);}}><SheetContent side="right" className="revenue-sheet"><SheetHeader><SheetTitle>Отметить оплату</SheetTitle><SheetDescription>{paying?`${paying.name} ${periodText(paying)}. Срок ${date(paying.due)}.`:''}</SheetDescription></SheetHeader>{paying&&<PayForm o={paying} now={data.now} busy={busy} save={async b=>{const r=await save('accounting/pay',b);if(r)setPaying(null);}}/>}</SheetContent></Sheet>
  </div>;
+}
+
+// Для бухгалтера (decision of 2026-11-22): the official books of the ТОО stay in the accountant's program; the
+// service gives a month of data as a file for 1С or Excel and checks its money against the bank statement.
+function ForAccountant({now,busy,save}:{now:string;busy:boolean;save:Save}){
+ const [month,setMonth]=useState(now),[statement,setStatement]=useState(''),[result,setResult]=useState<Row|null>(null);
+ async function download(){const r=await save('accounting/export',{month});if(!r?.csv)return;const url=URL.createObjectURL(new Blob([r.csv],{type:'text/csv;charset=utf-8'})),a=document.createElement('a');a.href=url;a.download=r.filename;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
+ async function reconcile(){const r=await save('accounting/reconcile',{month,statement});if(r)setResult(r);}
+ const row=(l:Row,i:number)=><li key={i}><div className="revenue-row"><span><strong>{l.kind||l.text||'Операция'}</strong><small>{l.date}{l.doc?' · №'+l.doc:''}{l.party?' · '+l.party:''}</small></span><b>{money(l.signed??l.amount)}</b></div></li>;
+ return <section className="admin-surface">
+  <div className="admin-section-heading"><div><h2>Для бухгалтера</h2><p>Официальный учёт ТОО ведёт бухгалтер в своей программе. Отсюда берите данные за месяц и сверяйте деньги с банком.</p></div><Receipt size={20}/></div>
+  <div className="revenue-fields"><label>Месяц<Input type="month" value={month} max={now} onChange={e=>{setMonth(e.target.value);setResult(null);}}/></label></div>
+  <Button className="revenue-primary" variant="outline" disabled={busy||!month} onClick={()=>void download()}>Скачать выгрузку (CSV для 1С и Excel)</Button>
+  <p className="admin-muted">В файле выручка месяца (комиссии по месяцу заселения, уборки, «Автопилот»), поступления на счёт и платежи налогов и расходов с номерами документов.</p>
+  <h3>Сверка с выпиской Kaspi Pay</h3>
+  <label className="revenue-terms">Выписка за месяц в CSV<input type="file" accept=".csv,.txt,text/csv" onChange={async e=>{const file=e.target.files?.[0];if(file)setStatement(await file.text());}}/></label>
+  <label className="revenue-terms">или вставьте текст выписки<textarea rows={4} value={statement} onChange={e=>setStatement(e.target.value)} placeholder="Дата;Сумма;Номер документа;Назначение"/></label>
+  <Button className="revenue-primary" disabled={busy||!statement.trim()} onClick={()=>void reconcile()}>Сверить</Button>
+  {result&&<div>
+   <p role="status">{result.message}</p>
+   {result.bankOnly.length>0&&<><h3>Есть в банке, нет в сервисе</h3><ul className="revenue-list">{result.bankOnly.map(row)}</ul></>}
+   {result.serviceOnly.length>0&&<><h3>Есть в сервисе, нет в банке</h3><ul className="revenue-list">{result.serviceOnly.map(row)}</ul></>}
+  </div>}
+ </section>;
 }
 
 function Stat({Icon,label,value,note}:{Icon:typeof Landmark;label:string;value:string;note:string}){return <section className="revenue-stat"><span><Icon size={18}/></span><div><small>{label}</small><strong>{value}</strong><em>{note}</em></div></section>;}
@@ -78,10 +104,10 @@ function Obligation({o,busy,onPay}:{o:Row;busy:boolean;onPay?:()=>void}){
 }
 
 function PayForm({o,now,busy,save}:{o:Row;now:string;busy:boolean;save:(b:Row)=>Promise<void>}){
- const [amount,setAmount]=useState(String(o.left)),[month,setMonth]=useState(now),[note,setNote]=useState(''),[bankRef,setBankRef]=useState(''),[agreed,setAgreed]=useState(false);
- return <form className="revenue-terms" onSubmit={e=>{e.preventDefault();void save({key:o.key,amount,month,note,bankRef,confirmed:agreed});}}>
+ const [amount,setAmount]=useState(String(o.left)),[paidOn,setPaidOn]=useState(new Date(Date.now()+18000000).toISOString().slice(0,10)),[note,setNote]=useState(''),[bankRef,setBankRef]=useState(''),[agreed,setAgreed]=useState(false);
+ return <form className="revenue-terms" onSubmit={e=>{e.preventDefault();void save({key:o.key,amount,paidOn,month:paidOn.slice(0,7),note,bankRef,confirmed:agreed});}}>
   <div className="revenue-balance"><small>Осталось оплатить</small><strong>{money(o.left)}</strong><span>начислено {money(o.accrued)}{o.paid?`, оплачено ${money(o.paid)}`:''}</span></div>
-  <div className="revenue-fields"><label>Сумма, ₸<Input value={amount} inputMode="numeric" required onChange={e=>setAmount(e.target.value.replace(/\D/g,'').slice(0,11))}/></label><label>Месяц оплаты<Input type="month" value={month} required onChange={e=>setMonth(e.target.value)}/></label></div>
+  <div className="revenue-fields"><label>Сумма, ₸<Input value={amount} inputMode="numeric" required onChange={e=>setAmount(e.target.value.replace(/\D/g,'').slice(0,11))}/></label><label>Дата платежа<Input type="date" value={paidOn} required onChange={e=>setPaidOn(e.target.value)}/></label></div>
   <label>Номер платёжного документа<Input value={bankRef} maxLength={80} required onChange={e=>setBankRef(e.target.value)} placeholder="Например: платёжка № 12 из Kaspi Business"/></label>
   <label>Комментарий<Input value={note} maxLength={200} onChange={e=>setNote(e.target.value)}/></label>
   <label className="revenue-confirm"><input type="checkbox" checked={agreed} onChange={e=>setAgreed(e.target.checked)} required/>Платёж отправлен в бюджет.</label>
