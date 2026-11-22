@@ -18,8 +18,11 @@ test('the guest attaches a Kaspi receipt to the booking; the owner sees it, a st
   for(let i=1;i<RECEIPT_LIMIT;i++)await saveReceipt(f.guest,'guest',{bookingId:f.booking,data:photo});
   await assert.rejects(saveReceipt(f.guest,'guest',{bookingId:f.booking,data:photo}),/максимум чеков: 3/);
   const state=await f.owner.state('owner');assert.equal(state.bookings.find(b=>b.id===f.booking).receipts,RECEIPT_LIMIT);
-  f.db.raw.prepare("UPDATE bookings SET status='cancelled' WHERE id=?").run(f.booking);f.db.raw.prepare('DELETE FROM payment_receipts').run();
+  // A request not yet confirmed takes no receipt; a cancelled booking does, as proof in a dispute about money.
+  f.db.raw.prepare("UPDATE bookings SET status='requested' WHERE id=?").run(f.booking);f.db.raw.prepare('DELETE FROM payment_receipts').run();
   await assert.rejects(saveReceipt(f.guest,'guest',{bookingId:f.booking,data:photo}),e=>e.status===409);
+  f.db.raw.prepare("UPDATE bookings SET status='cancelled' WHERE id=?").run(f.booking);
+  await saveReceipt(f.guest,'guest',{bookingId:f.booking,data:photo});
  }finally{f.db.close();}
 });
 

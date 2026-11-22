@@ -347,6 +347,10 @@ export class RentalService {
   async issueWrite(entity:Row,kind:'booking'|'job',description:string){
     const other=entity.owner_id===this.userId?(kind==='booking'?entity.guest_id:entity.assigned_to):entity.owner_id;
     const open=await this.one("SELECT id FROM administrator_issues WHERE entity_kind=? AND entity_id=? AND opened_by=? AND other_user IS ? AND status='open' ORDER BY created_at DESC LIMIT 1",kind,entity.id,this.userId,other??null);
+    // The other side already has an open appeal on the same booking or cleaning: the answer joins it, signed, so the
+    // administrator reads both accounts of one transfer in one place instead of two appeals.
+    const theirs=!open&&other?await this.one("SELECT id FROM administrator_issues WHERE entity_kind=? AND entity_id=? AND opened_by=? AND other_user=? AND status='open' ORDER BY created_at DESC LIMIT 1",kind,entity.id,other,this.userId):null;
+    if(theirs){const who=entity.owner_id===this.userId?'владелец':kind==='booking'?'гость':'исполнитель';return {added:true,statement:this.query("UPDATE administrator_issues SET description=substr(description||char(10)||?||?,1,6000),version=version+1 WHERE id=? AND status='open'",'Ответ второй стороны ('+who+', '+new Date(now()*1000).toISOString().slice(0,16).replace('T',' ')+' UTC): ',description,theirs.id)};}
     if(!open)return {added:false,statement:this.administratorIssueStatement(entity,kind,description)};
     return {added:true,statement:this.query("UPDATE administrator_issues SET description=substr(description||char(10)||'Дополнение: '||?,1,6000),version=version+1 WHERE id=? AND status='open'",description,open.id)};
   }
@@ -1039,6 +1043,24 @@ export class RentalService {
       // «Деньги получены» before the arrival records only the prepayment (lib/prepay.ts).
       const amount=body.upTo!==undefined?Math.min(remaining,number(body.upTo,'Сумма',1,remaining)):remaining;
       return recordFinance(this,{kind:'payment',bookingId,amount,confirmed:true,note:'Поступление проживания проверено владельцем',requestKey:'paid:'+bookingId+':'+terms?.version});
+    }
+    // After a refund or a returned deposit the guest closes the money in one tap, or says it did not arrive: the second
+    // opens an appeal on this transfer that the service administrator sees (audit 2026-11-22, «Возвраты и споры»).
+    if(body.action==='refund_received'||body.action==='refund_missing'){
+      if(b.guest_id!==this.userId)throw new DomainError('Ответить о возврате может гость.',403);
+      const back=await this.one("SELECT COALESCE(SUM(CASE WHEN kind='refund' THEN amount ELSE 0 END),0) refund,COALESCE(SUM(CASE WHEN kind='deposit_return' THEN amount ELSE 0 END),0) deposit,MAX(CASE WHEN kind IN ('refund','deposit_return') THEN created_at END) at FROM finance_entries WHERE booking_id=?",bookingId);
+      const total=(Number(back?.refund)||0)+(Number(back?.deposit)||0),sum=(n:number)=>n.toLocaleString('ru-RU').replace(/\u00a0|\u202f/g,' ')+' ₸';
+      if(!total)throw new DomainError('Владелец ещё не отмечал возврат по этой брони.',409);
+      if(body.action==='refund_received'){
+        await this.db.batch([this.query('UPDATE booking_terms SET refund_confirmed_at=?,version=version+1 WHERE booking_id=?',now(),bookingId),
+          this.notify(b.owner_id,'Гость подтвердил, что получил возврат '+sum(total)+' за «'+b.title+'».','refund-confirmed:'+bookingId+':'+back?.at,'owner'),this.audit(bookingId,'booking.refund_confirmed')]);
+        return {message:'Спасибо! Расчёт по брони закрыт.'};
+      }
+      const issue='Гость не получил возврат '+sum(total)+': владелец отметил его в сервисе, но денег нет.'+(body.issue?' '+required(body.issue,'Пояснение',1000):'');
+      const write=await this.issueWrite(b,'booking',issue);
+      await this.db.batch([write.statement,this.query('UPDATE booking_terms SET refund_confirmed_at=NULL,version=version+1 WHERE booking_id=?',bookingId),
+        this.notify(b.owner_id,'Гость пишет, что не получил возврат '+sum(total)+' за «'+b.title+'». Проверьте перевод и приложите чек возврата в брони.','refund-missing:'+bookingId+':'+now(),'owner'),this.audit(bookingId,'booking.refund_missing')]);
+      return {message:'Обращение по возврату открыто. Владелец получил сообщение, администратор сервиса видит его.'};
     }
     if(body.action==='issue') {
       const issue=required(body.issue,'Описание проблемы',1500);

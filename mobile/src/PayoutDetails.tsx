@@ -38,12 +38,13 @@ export function PayTo({title,to,amount,parts,waiting,missing,note,children}:{tit
 const RECEIPT_LIMIT=3;
 /** The bank receipt next to «Я оплатил» (lib/payment-receipts.ts). The payer attaches a screenshot from Kaspi with `canAdd`;
  *  the receiver only looks. A tap opens the receipt large enough to read. Nothing is drawn for a receiver with no receipts. */
-export function Receipts({kind,id,role,count=0,canAdd=false,title}:{kind:'booking'|'job';id:string;role:'guest'|'owner'|'cleaner';count?:number;canAdd?:boolean;title?:string}){
+export function Receipts({kind,id,role,count=0,canAdd=false,title,from}:{kind:'booking'|'job';id:string;role:'guest'|'owner'|'cleaner';count?:number;canAdd?:boolean;title?:string;from?:'payment'|'refund'}){
  const [list,setList]=useState<{id:string;uri:string}[]>([]),[busy,setBusy]=useState(false),[error,setError]=useState(''),[open,setOpen]=useState('');
  const load=useCallback(async()=>{
-  const found=(await request('/api/operations/receipts/'+kind+'/'+id,undefined,undefined,undefined,role))?.receipts||[];
+  // A booking keeps two kinds apart: the guest's payment receipts and the owner's refund receipts (lib/payment-receipts.ts).
+  const found=((await request('/api/operations/receipts/'+kind+'/'+id,undefined,undefined,undefined,role))?.receipts||[]).filter((r:{kind?:string})=>!from||(r.kind||'payment')===from);
   return Promise.all(found.map(async(r:{id:string})=>({id:r.id,uri:(await request('/api/operations/receipts/photo/'+r.id,undefined,undefined,undefined,role).catch(()=>null))?.data||''})));
- },[kind,id,role]);
+ },[kind,id,role,from]);
  // `count` comes from the state the app refreshes in the background: a receipt added by the other side, or a first
  // load that failed, is picked up on the next refresh.
  useEffect(()=>{let live=true;load().then(found=>{if(live)setList(found);}).catch(()=>{});return()=>{live=false;};},[load,count]);
