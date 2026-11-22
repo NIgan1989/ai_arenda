@@ -67,7 +67,7 @@ export type ChipId = 'now' | 'night' | 'daily' | 'hourly' | 'weekend' | 'evening
 // free of server code; mobile/tests/ai-request.test.mjs checks that the two lists match.
 export const HOME_KINDS: Record<string, string> = L({
   apartment: 'Квартира', studio: 'Студия', room: 'Комната', house: 'Дом',
-  guesthouse: 'Гостевой дом', hostel: 'Хостел', hotel: 'Гостиница', aparthotel: 'Апарт-отель',
+  guesthouse: 'Гостевой дом', hostel: 'Хостел', hotel: 'Гостиница', aparthotel: 'Апарт-отель', resort: 'База отдыха',
   banya: 'Баня', sauna: 'Сауна',
   banquet: 'Банкетный зал', cafe: 'Кафе'
 });

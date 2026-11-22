@@ -1,3 +1,4 @@
+import {leadOf} from './room-units';
 import {DomainError,required,number,type Role} from './domain';
 import type {RentalService} from './service';
 import {epoch,uuid,q,one,rows,hash,type Row,type OperationConfig} from './operation-core';
@@ -51,7 +52,7 @@ export async function assertPilotAllowed(service:RentalService,capability:'publi
  if(capability==='publish'&&property.owner_id!==service.userId)throw new DomainError('Жильё недоступно.',403);
  if(property.demo_owner){if(property.demo_owner!==service.userId&&capability!=='assignment')throw new DomainError('Учебное жильё недоступно.',403);return;}
  const policy=await pilotPolicy(service);
- if(['publish','booking'].includes(capability)&&policy.require_owner_review&&!await reviewed(service,property.owner_id,'owner',property.id)&&!(existing&&capability==='booking'&&await addressRecheck(service,property.id)))throw new DomainError('Публикация и новые брони доступны после действующей проверки владельца и этого объекта.',409);
+ if(['publish','booking'].includes(capability)&&policy.require_owner_review&&!await reviewed(service,property.owner_id,'owner',property.id)&&!(existing&&capability==='booking'&&await addressRecheck(service,await leadOf(service.db,property.id))))throw new DomainError('Публикация и новые брони доступны после действующей проверки владельца и этого объекта.',409);
  if(capability==='assignment'){
   const worker=workerId?await one(service.db,"SELECT id FROM profiles WHERE id=? AND EXISTS(SELECT 1 FROM json_each(roles) WHERE value='cleaner')",workerId):null;
   if(!worker)throw new DomainError('Исполнитель недоступен.',403);

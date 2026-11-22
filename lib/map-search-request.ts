@@ -188,6 +188,7 @@ export function statedOccasion(text: string): string {
 const KINDS: [RegExp, string][] = [
   [/студи/, 'studio'],
   [/апарт[- ]?отел/, 'aparthotel'],
+  [/баз[а-я]*\s+отдых|дом[а-я]*\s+отдых|зон[а-я]*\s+отдых|курорт|пансионат/, 'resort'],
   [/гостев[а-я]*\s+дом/, 'guesthouse'],
   [/гостиниц|(?:^|[^а-я])отел[ьяеию]|(?:^|[^а-я])номер(?:ок|а|е)?(?=$|[^а-я])/, 'hotel'],
   [/хостел/, 'hostel'],
@@ -221,7 +222,7 @@ export function statedRooms(text: string): string {
 /** The types of home the text names, in the order of KINDS. */
 export function statedKinds(text: string): string[] {
   const kinds = KINDS.filter(([pattern]) => pattern.test(text)).map(([, id]) => id);
-  return kinds.filter(id => !(id === 'house' && kinds.includes('guesthouse')) && !(id === 'hotel' && kinds.includes('aparthotel')));
+  return kinds.filter(id => !(id === 'house' && (kinds.includes('guesthouse') || kinds.includes('resort'))) && !(id === 'hotel' && kinds.includes('aparthotel')));
 }
 
 // Towns the service has no homes in yet, with the service city nearest to each. A guest who names one is told so

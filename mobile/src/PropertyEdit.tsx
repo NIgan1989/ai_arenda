@@ -10,9 +10,10 @@ import {FlatCalendars} from './FlatCalendars';
 import {RegularCleaner} from './RegularCleaner';
 import {PropertyStaff} from './PropertyStaff';
 import {VenueHalls} from './VenueHalls';
+import {RoomCount} from './RoomCount';
 import {menuIcons} from './AccountRows';
 import {EDIT_STEPS,banquetPrice,withBanquetPrice,editBody,editRequest,nextAdvice,needsReview,reviewRequest,REVIEW_SENT,stepForError,stepLine,stepNeeds,stepTitle,type Advice,type EditBody,type EditStep} from '../../lib/listing-edit';
-import {amenities,categoryAmenities,checkinMethods,isBath,isBanquet,isVenue,kindCategory} from '../../lib/listings';
+import {amenities,categoryAmenities,checkinMethods,isBath,isBanquet,isVenue,kindCategory,roomKinds} from '../../lib/listings';
 import {KindPicker} from './KindPicker';
 import {PREPAY_CHOICES,prepayNote,prepayState} from '../../lib/prepay';
 import {REPEAT_CHOICES} from '../../lib/rental-policy';
@@ -181,7 +182,8 @@ export function PropertyEdit({property,onSave,onReview,onRemove,onClose,onOpenHa
    <View style={e.icoBox}><Text style={e.ico}>🧹</Text></View>
    <View style={{flex:1,minWidth:0}}><Text style={e.stepTitle} numberOfLines={1}>{t('Постоянный исполнитель')}</Text><Text style={e.stepLine} numberOfLines={1}>{p.regular_cleaner_name?t('{regular_cleaner_name}: уборки приходят сначала к нему',{regular_cleaner_name:p.regular_cleaner_name}):t('Закрепите своего: уборки, оплата и замена через сервис')}</Text></View>
   </Pressable>}
-  {!!p.id&&!!call&&<Pressable accessibilityRole="button" accessibilityLabel={t('Залы: {v}',{v:(p.venue?t('{title}, залов {halls}',{title:p.venue.title,halls:p.venue.halls}):t('один зал'))})} onPress={()=>{setDone('');setHalls(true);}} style={({pressed})=>[e.step,{width:'100%'},pressed&&e.pressed]}>
+  {!!p.id&&!!call&&roomKinds.includes(d.type)&&<RoomCount property={p} call={call} onChanged={units=>setP((o:Row)=>({...o,units}))}/>}
+  {!!p.id&&!!call&&!roomKinds.includes(d.type)&&<Pressable accessibilityRole="button" accessibilityLabel={t('Залы: {v}',{v:(p.venue?t('{title}, залов {halls}',{title:p.venue.title,halls:p.venue.halls}):t('один зал'))})} onPress={()=>{setDone('');setHalls(true);}} style={({pressed})=>[e.step,{width:'100%'},pressed&&e.pressed]}>
    <View style={e.icoBox}><Image source={menuIcons.building} style={{width:16,height:16,tintColor:C.accent}}/></View>
    <View style={{flex:1,minWidth:0}}><Text style={e.stepTitle} numberOfLines={1}>{t('Залы')}</Text><Text style={e.stepLine} numberOfLines={1}>{p.venue?t('{title} · залов: {halls}',{title:p.venue.title,halls:p.venue.halls}):t('Несколько залов по одному адресу? Добавьте их')}</Text></View>
   </Pressable>}

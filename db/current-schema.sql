@@ -89,7 +89,8 @@
 -- migration 0085_read_indexes.sql sha256:7100201f70821f1da31ea5a7a95df6a279e49e755897bc1e793b1b8411654910
 -- migration 0086_percent_tariff.sql sha256:b75a393364bc2a1b27774c6e23f8023f7d30af84f132c88d6cbe14496450d48d
 -- migration 0087_repeat_guest_discount.sql sha256:889cd787c9404b45cfc5bf14dd72e471fccb7ff0da1ba04f0c4138dc3ce089c2
--- migration 0088_chat_voice_place.sql sha256:887badea01961521b6e4017467c307731745bab0c20450639c7969e8c26c72e3
+-- migration 0088_room_units.sql sha256:873c3debafdd6fd4e3ea5d250b16c3351e45b1951efab6615013d98fa4c71aee
+-- migration 0089_chat_voice_place.sql sha256:887badea01961521b6e4017467c307731745bab0c20450639c7969e8c26c72e3
 
 -- table access_receipts
 CREATE TABLE access_receipts (id TEXT PRIMARY KEY,property_id TEXT NOT NULL,entity_kind TEXT NOT NULL,entity_id TEXT NOT NULL,user_id TEXT NOT NULL,created_at INTEGER NOT NULL,expires_at INTEGER NOT NULL);
@@ -1240,6 +1241,14 @@ CREATE TABLE review_property_bindings (
  property_id TEXT PRIMARY KEY REFERENCES properties(id),revision INTEGER NOT NULL DEFAULT 0
 );
 
+-- table room_units
+CREATE TABLE room_units (
+ property_id TEXT PRIMARY KEY REFERENCES properties(id),
+ lead_id TEXT NOT NULL REFERENCES properties(id),
+ created_at INTEGER NOT NULL,
+ CHECK(property_id<>lead_id)
+);
+
 -- table service_billing
 CREATE TABLE service_billing (
  user_id TEXT PRIMARY KEY REFERENCES profiles(id),
@@ -1634,6 +1643,9 @@ CREATE INDEX reliability_objections_open ON reliability_objections(status,due_at
 -- index reliability_objections_user
 CREATE INDEX reliability_objections_user ON reliability_objections(user_id,role,created_at);
 
+-- index room_units_lead
+CREATE INDEX room_units_lead ON room_units(lead_id);
+
 -- index service_fees_month
 CREATE INDEX service_fees_month ON service_fees(kind,property_id,created_at);
 
@@ -1662,8 +1674,8 @@ CREATE INDEX venue_halls_venue ON venue_halls(venue_id);
 CREATE VIEW pilot_property_admissions AS
  SELECT p.id,p.owner_id,
  COALESCE((SELECT r.status='approved' AND (r.valid_until IS NULL OR r.valid_until>unixepoch())
-  FROM participant_reviews r WHERE r.user_id=p.owner_id AND r.role='owner' AND r.property_id=p.id
-  AND r.property_revision=COALESCE((SELECT revision FROM review_property_bindings b WHERE b.property_id=p.id),0)
+  FROM participant_reviews r WHERE r.user_id=p.owner_id AND r.role='owner' AND r.property_id=COALESCE((SELECT u.lead_id FROM room_units u WHERE u.property_id=p.id),p.id)
+  AND r.property_revision=COALESCE((SELECT revision FROM review_property_bindings b WHERE b.property_id=COALESCE((SELECT u.lead_id FROM room_units u WHERE u.property_id=p.id),p.id)),0)
   ORDER BY COALESCE(r.reviewed_at,r.created_at) DESC,r.created_at DESC,r.rowid DESC LIMIT 1),0) owner_reviewed,
  EXISTS(SELECT 1 FROM phone_verifications v WHERE v.user_id=p.owner_id AND v.verified_at IS NOT NULL) owner_phone_verified
  FROM properties p;

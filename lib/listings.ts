@@ -3,12 +3,12 @@ import {DomainError,number,required} from './domain';
 type Row=Record<string,any>;
 // Kinds of housing. The service is not only about flats: a hostel, a hotel or an apart-hotel has its own staff,
 // so for them the AI administrator does not look for executors (own_staff, see staffedTypes).
-export const propertyTypes:Record<string,string>=L({apartment:'Квартира',studio:'Студия',room:'Комната',house:'Дом',guesthouse:'Гостевой дом',hostel:'Хостел',hotel:'Гостиница',aparthotel:'Апарт-отель',banya:'Баня',sauna:'Сауна',banquet:'Банкетный зал',cafe:'Кафе'});
+export const propertyTypes:Record<string,string>=L({apartment:'Квартира',studio:'Студия',room:'Комната',house:'Дом',guesthouse:'Гостевой дом',hostel:'Хостел',hotel:'Гостиница',aparthotel:'Апарт-отель',resort:'База отдыха',banya:'Баня',sauna:'Сауна',banquet:'Банкетный зал',cafe:'Кафе'});
 // Categories a guest chooses on the map, like the tariffs of a taxi (since 2026-11-17). «Жильё» is a place to stay,
 // «Баня» a bath or a sauna taken whole for a few hours. A search without a category is a search for «Жильё»:
 // a guest who asks for a flat never sees a sauna.
 export const categories:Record<string,{label:string;types:string[]}>=L({
- stay:{label:'Жильё',types:['apartment','studio','room','house','guesthouse','hostel','hotel','aparthotel']},
+ stay:{label:'Жильё',types:['apartment','studio','room','house','guesthouse','hostel','hotel','aparthotel','resort']},
  bath:{label:'Баня',types:['banya','sauna']},
  // «Банкет» (2026-11-17): a hall taken whole for a wedding, a той, an anniversary or a memorial meal. The price is
  // per guest with a least number of guests, the time is a slot of the day (banquetSlots), not a night.
@@ -32,7 +32,9 @@ export const occasions:Record<string,string>=L({toi:'Свадьба, той',uza
 export const occasionLabel=(id?:string)=>occasions[id||'']||'';
 // Kinds that usually clean with their own staff: «Свой персонал» is on by default, the owner can change it.
 // A sauna is mostly a complex with an administrator; a «баня» is often a private one, cleaned by our executor.
-export const staffedTypes=['hostel','hotel','aparthotel','sauna','banquet','cafe'];
+export const staffedTypes=['hostel','hotel','aparthotel','resort','sauna','banquet','cafe'];
+// «Номера одного типа» (lib/room-units.ts): the kinds sold by the room, many rooms alike under one roof.
+export const roomKinds=['hotel','hostel','aparthotel','resort'];
 export const defaultOwnStaff=(type:string)=>staffedTypes.includes(type);
 // «home» — частный адрес заказчика уборки на дом (lib/home-cleaning.ts): не сдаётся, в списках типов его нет.
 export const kindLabel=(type?:string)=>type==='home'?tr('Мой дом'):propertyTypes[type||'']||tr('Жильё');
