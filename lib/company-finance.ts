@@ -78,13 +78,13 @@ async function inputs(db:D1Database):Promise<Inputs>{
   rows(db,`SELECT ${monthOf('created_at')} month,COALESCE(SUM(charged_cost_micros),0) micros,COUNT(*) requests FROM ai_usage_reservations WHERE charged_cost_micros IS NOT NULL GROUP BY month`),
   rows(db,'SELECT id,kind,amount,month,note,created_at FROM company_cash_entries ORDER BY month DESC,created_at DESC,id'),
   rows(db,'SELECT month,tax,COALESCE(SUM(amount),0) amount FROM company_tax_payments GROUP BY month,tax'),
-  one(db,`SELECT (SELECT MIN(created_at) FROM platform_commissions) a,(SELECT MIN(created_at) FROM owner_balance_entries) b,(SELECT MIN(created_at) FROM cleaning_commissions) c,(SELECT MIN(created_at) FROM (SELECT created_at FROM autopilot_charges UNION ALL SELECT created_at FROM service_fees)) d,(SELECT MIN(month) FROM company_cash_entries) e,(SELECT MIN(month) FROM company_tax_payments) f`),
+  one(db,`SELECT (SELECT MIN(created_at) FROM platform_commissions) a,(SELECT MIN(created_at) FROM owner_balance_entries) b,(SELECT MIN(created_at) FROM cleaning_commissions) c,(SELECT MIN(created_at) FROM (SELECT created_at FROM autopilot_charges UNION ALL SELECT created_at FROM service_fees)) d,(SELECT MIN(month) FROM company_cash_entries) e,(SELECT MIN(month) FROM company_tax_payments) f,(SELECT MIN(month) FROM company_cost_payments) g`),
   // What was really paid for the company's own costs, by bank payment (accounting audit, point 2).
   rows(db,'SELECT month,COALESCE(SUM(amount),0) amount FROM company_cost_payments GROUP BY month'),
  ]);
  const index=(list:Row[])=>Object.fromEntries(list.map(r=>[r.month,r]));
  // D1 refuses long UNION chains, so the earliest month is picked here from one row of minimums.
- const firstMonth=[first?.a,first?.b,first?.c,first?.d].filter(v=>v!=null).map(v=>monthKey(Number(v))).concat([first?.e,first?.f].filter(Boolean)).sort()[0]||null;
+ const firstMonth=[first?.a,first?.b,first?.c,first?.d].filter(v=>v!=null).map(v=>monthKey(Number(v))).concat([first?.e,first?.f,first?.g].filter(Boolean)).sort()[0]||null;
  const revenue={booking:index(booking),earned:index(earned),cleaning:index(cleaning),autopilot:index(autopilot),ai:index(ai),first:firstMonth};
  const cashIndex={withheld:index(withheld),balance:index(balance),holds:index(holds)};
  const paid:Row={};for(const r of taxPaid){(paid[r.month]??={})[r.tax]=Number(r.amount);}

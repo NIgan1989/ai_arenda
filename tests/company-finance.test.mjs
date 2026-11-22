@@ -55,6 +55,10 @@ test('the three reports reconcile: assets equal liabilities plus equity in fact 
   await writePlatformAdmin(f.other,'finance/cost-payment',{costId:operator.id,month,amount:'100000',bankRef:'CP-1'},config(f));
   await assert.rejects(writePlatformAdmin(f.other,'finance/cost-payment',{costId:operator.id,month,amount:'100000',bankRef:'CP-1'},config(f)),e=>e.status===409);
   await assert.rejects(writePlatformAdmin(f.other,'finance/cost/delete',{id:operator.id,confirmed:true},config(f)),e=>e.status===409);
+  // A payment made before the books start still counts: the reports begin with its month.
+  const early=shiftMonth((await readPlatformAdmin(f.other,'finance',{},config(f))).first,-1);
+  await writePlatformAdmin(f.other,'finance/cost-payment',{costId:operator.id,month:early,amount:'5000',bankRef:'CP-0'},config(f));
+  const before=await readPlatformAdmin(f.other,'finance',{basis:'fact',month:early},config(f));assert.equal(before.month,early);assert.equal(before.current.cf.costs_paid,5000);
 
   for(const basis of ['fact','forecast'])for(const m of [month,shiftMonth(month,3)]){
    const state=await readPlatformAdmin(f.other,'finance',{basis,month:m},config(f));

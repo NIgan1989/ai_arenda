@@ -65,6 +65,12 @@ test('an active booking blocks erasure, the operator answer notifies the person,
   assert.deepEqual(f.db.raw.prepare('SELECT status,payment_status,amount FROM bookings WHERE id=?').get(f.booking),before);
  }finally{f.db.close();}
 });
+test('an unpaid compensation for a cancelled cleaning blocks deletion of both sides',async()=>{
+ const f=await fixture();try{
+  f.db.raw.prepare("UPDATE cleaning_jobs SET status='cancelled',assigned_to='cleaner',cancel_fee=1000,settled_at=NULL WHERE id=?").run(f.job.id);
+  for(const [s,role] of [[f.owner,'owner'],[f.cleaner,'cleaner']])assert.ok((await accountDeletionState(s,role)).blockers.some(b=>b.code==='unpaid_jobs'),role);
+ }finally{f.db.close();}
+});
 test('a repeated request gets a new number linked to the previous one',async()=>{
  const f=await unused();try{
   await safetyAction(f.s,'guest','deletion',{action:'cancel',confirmed:true});await safetyAction(f.s,'guest','deletion',{action:'request',confirmed:true});
@@ -77,6 +83,7 @@ test('closed history: the operator completes the deletion, the name goes and the
   f.db.raw.prepare("INSERT INTO content_reports(id,user_id,role,target_kind,target_id,room_id,reason,created_at,status) VALUES ('rep',?,'guest','message','1','','spam',?,'resolved')").run(f.s.userId,now());
   const state=await accountDeletionState(f.s,'guest');assert.equal(state.canEraseActiveDatabase,true);assert.equal(state.mode,'archive');
   assert.ok(state.groups.some(g=>g.category==='documents'&&g.action==='kept'&&g.keep_until>now()));
+  f.db.raw.prepare("INSERT INTO phone_verifications(user_id,phone,code_hash,expires_at,sent_at,verified_at) VALUES (?,'+77771112233','x',0,0,1)").run(f.s.userId);
   const admin=new RentalService(f.db,'operator');await admin.saveProfile({name:'Operator',roles:['guest'],city:'Павлодар',contact:'op'});
   await assert.rejects(accountDeletionAction(admin,'guest',{action:'complete',requestId:f.requestId,confirmed:true}),e=>e.status===403);
   const result=await accountDeletionAction(admin,'guest',{action:'complete',requestId:f.requestId,confirmed:true},true);
@@ -84,6 +91,7 @@ test('closed history: the operator completes the deletion, the name goes and the
   assert.equal(f.db.raw.prepare('SELECT name,contact FROM profiles WHERE id=?').get(f.s.userId).name,'Удалённый участник');
   assert.equal(f.db.raw.prepare('SELECT COUNT(*) n FROM auth_accounts WHERE id=?').get(f.s.userId).n,0);
   assert.equal(f.db.raw.prepare('SELECT COUNT(*) n FROM content_reports WHERE id=?').get('rep').n,1);
+  assert.equal(f.db.raw.prepare('SELECT COUNT(*) n FROM phone_verifications WHERE user_id=?').get(f.s.userId).n,0);
   assert.ok(f.db.raw.prepare('SELECT COUNT(*) n FROM account_erasure_results WHERE receipt_id=?').get(result.receipt.id).n>=2);
  }finally{f.db.close();}
 });

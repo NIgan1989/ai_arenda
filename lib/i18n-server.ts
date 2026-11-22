@@ -938,7 +938,7 @@ export const SERVER:Words={
  'Есть действующие брони или заявки. Завершите или отмените их.':['Белсенді брондар немесе өтінімдер бар. Оларды аяқтаңыз немесе болдырмаңыз.','There are active bookings or requests. Finish or cancel them.'],
  'По отменённой брони не записан возврат денег или депозита.':['Болдырылмаған брон бойынша ақшаның немесе кепілақының қайтарылуы жазылмаған.','A refund of money or deposit for a cancelled booking is not recorded.'],
  'Есть незавершённые уборки.':['Аяқталмаған тазалаулар бар.','There are unfinished cleanings.'],
- 'Оплата исполнителю за уборку ещё не записана.':['Орындаушыға тазалау үшін төлем әлі жазылмаған.','The payment to the cleaner for a cleaning is not recorded yet.'],
+ 'Оплата исполнителю за уборку или компенсация за отмену ещё не записана.':['Орындаушыға тазалау үшін төлем немесе болдырмау өтемақысы әлі жазылмаған.','The payment or cancellation compensation to the cleaner is not recorded yet.'],
  'Списание с карты ещё проверяется.':['Картадан есептен шығару әлі тексерілуде.','A card charge is still being checked.'],
  'Есть открытое обращение или спор. Удаление подождёт, пока его не закроют.':['Ашық өтініш немесе дау бар. Жою ол жабылғанша күтеді.','There is an open case or dispute. The deletion waits until it is closed.'],
  'Оператор указал, что запрос требует дополнительных действий.':['Оператор сұрауға қосымша әрекеттер қажет екенін көрсетті.','The operator noted that the request needs further steps.'],
