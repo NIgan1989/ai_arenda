@@ -37,7 +37,7 @@ export function RightDocs({propertyId,approved}:{propertyId:string;approved:bool
  const switching=docs.length>0&&docs[0].kind!==kind,big=docs.find(d=>d.id===open);
  return <View style={r.card}>
   <Text accessibilityRole="header" style={r.title}>{t('Право сдавать жильё')}</Text>
-  <Text style={h.note}>{approved?t('Документ проверен администратором. Чтобы заменить его, напишите в поддержку.'):docs.length?t('Документ приложен. Администратор сверит его вручную, обычно в течение дня.'):t('Гости увидят жильё после того, как администратор проверит документ.')}</Text>
+  <Text style={h.note}>{approved?t('Документ проверен администратором. Чтобы заменить его, напишите в поддержку.'):docs.length?t('Документ приложен. Администратор сверит его вручную, обычно в течение дня, и у жилья появится «Жильё проверено».'):t('Необязательно, но с документом гости видят «Жильё проверено» и доверяют больше. Без него на карточке будет «Жильё не проверено».')}</Text>
   {!approved&&<Chips name={t('Кто вы')} value={kind} options={[['owner',t('Я собственник')],['sublease',t('Сдаю в субаренду')]]} onChange={setKind} disabled={busy}/>}
   {!approved&&!!need[kind]&&<Text style={h.note}>{t('Нужно фото: {v}.',{v:t(need[kind])})}</Text>}
   {switching&&<Text style={r.warn}>{t('Новое фото заменит уже приложенные документы.')}</Text>}

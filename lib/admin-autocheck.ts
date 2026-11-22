@@ -42,7 +42,8 @@ export function flatChecks(f:FlatFacts):ReviewCheck[]{
  checks.push({key:'contacts',label:'Текст',state:contacts?'risk':'ok',note:contacts?'В тексте телефон, ссылка или просьба оплатить напрямую':'Нет контактов и оплаты мимо сервиса'});
  // The right to let the place (lib/property-rights.ts): a photo of the title, or of the notarised consent to sublet.
  // Older callers that do not know the rights pass nothing and are not asked for them.
- if(f.rights!==undefined)checks.push({key:'rights',label:'Право сдавать',state:f.rights>0?'ok':'fix',note:f.rights>0?(f.rightsKind==='sublease'?'Приложены договор аренды и согласие собственника на субаренду: сверит администратор':'Приложен документ о праве собственности: сверит администратор'):'Приложите фото документа о праве собственности или нотариально заверенного согласия собственника на субаренду: «Моё жильё» → «Документы»'});
+ // Not required (owner's decision 2026-11-22): without it the place is shown as «Жильё не проверено», so it is never «fix».
+ if(f.rights!==undefined)checks.push({key:'rights',label:'Право сдавать',state:'ok',note:f.rights>0?(f.rightsKind==='sublease'?'Приложены договор аренды и согласие собственника на субаренду: сверит администратор, после этого у жилья будет «Жильё проверено»':'Приложен документ о праве собственности: сверит администратор, после этого у жилья будет «Жильё проверено»'):'Документа о праве нет: гости увидят «Жильё не проверено». Приложить его можно в любой момент'});
  if(f.identity!==undefined)checks.push(identityCheck(f.identity));
  checks.push({key:'history',label:'История владельца',state:f.rejectedBefore||f.openComplaints?'risk':'ok',note:f.rejectedBefore?'Раньше проверка уже не проходила':f.openComplaints?'Открытые жалобы гостей: '+f.openComplaints:'Отказов и жалоб нет'});
  return checks;
@@ -113,7 +114,7 @@ export async function autoReview(db:D1Database,reviewId:string,config:OperationC
   if(auto)return verdict;
  }
  const list=admins(config);if(list.length){
-  const reason=verdict==='escalate'?'ИИ просит вашего решения: '+checksSummary(checks,['risk']):verdict==='fix'?'Не хватает: '+checksSummary(checks,['fix']):review.role==='owner'?'Правила пройдены, документ о праве и удостоверение приложены. Сверьте ФИО с владельцем, получателем Kaspi и адресом и решите':'Правила пройдены, удостоверение приложено. Сверьте его с профилем и решите';
+  const reason=verdict==='escalate'?'ИИ просит вашего решения: '+checksSummary(checks,['risk']):verdict==='fix'?'Не хватает: '+checksSummary(checks,['fix']):review.role==='owner'?(checks.find(c=>c.key==='rights')?.note.startsWith('Документа о праве нет')?'Правила пройдены, удостоверение приложено, документа о праве нет (жильё будет «не проверено»). Проверьте поля, фото и описание, сверьте ФИО с владельцем и получателем Kaspi и решите':'Правила пройдены, документ о праве и удостоверение приложены. Сверьте ФИО с владельцем, получателем Kaspi и адресом и решите'):'Правила пройдены, удостоверение приложено. Сверьте его с профилем и решите';
   await db.batch(list.map(admin=>note(db,admin,what+' ждёт проверки. '+reason+'. Админка → Проверки.','admin:review:'+reviewId+':'+admin,at)));
  }
  return verdict;

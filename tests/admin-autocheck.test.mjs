@@ -47,11 +47,14 @@ test('a complete flat with its document goes to a person: the AI never approves 
   assert.equal(JSON.parse(review.ai_checks).find(c=>c.key==='rights').state,'ok');
   assert.equal(f.db.raw.prepare('SELECT published FROM properties WHERE id=?').get(f.property).published,0);
   assert.match(f.db.raw.prepare("SELECT body FROM notifications WHERE dedupe LIKE 'admin:review:%'").get().body,/документ о праве и удостоверение приложены/);
-  // Without the document the owner is told what to attach, and an administrator cannot approve it either.
+  // The document is not required (owner's decision 2026-11-22): without it the check says the place will be
+  // «Жильё не проверено», and an administrator can still approve it after looking at the fields, photos and text.
   f.db.raw.prepare('DELETE FROM property_right_docs WHERE property_id=?').run(f.property);
   f.db.raw.prepare('UPDATE participant_reviews SET ai_checked_at=NULL').run();await sweepReviews(f.db,{});
-  assert.equal(JSON.parse(f.db.raw.prepare('SELECT ai_checks FROM participant_reviews WHERE id=?').get(review.id).ai_checks).find(c=>c.key==='rights').state,'fix');
-  await assert.rejects(decideParticipantReview(f.owner,{id:review.id,expectedVersion:review.version,status:'approved',method:'fixture',notes:'ok'},true),e=>e.status===409&&/документ/.test(e.message));
+  const rights=JSON.parse(f.db.raw.prepare('SELECT ai_checks FROM participant_reviews WHERE id=?').get(review.id).ai_checks).find(c=>c.key==='rights');
+  assert.equal(rights.state,'ok');assert.match(rights.note,/Жильё не проверено/);
+  await decideParticipantReview(f.owner,{id:review.id,expectedVersion:f.db.raw.prepare('SELECT version FROM participant_reviews WHERE id=?').get(review.id).version,status:'approved',method:'fixture',notes:'ok'},true);
+  assert.equal(f.db.raw.prepare('SELECT status FROM participant_reviews WHERE id=?').get(review.id).status,'approved');
  }finally{f.db.close();}
 });
 test('a flat with too few photos waits for the owner and is approved by the sweep once fixed',async()=>{

@@ -43,6 +43,8 @@ export function guestFacts(b:Row,details:Row={}):GuestFacts{
   ...(details.menu?{menu:redactAIText(clean(details.menu,800))}:{}),
   houseRules:redactAIText(clean(b.house_rules,800))||'владелец не указал особых правил',
   description:redactAIText(clean(b.description,1200)),
+  // «Жильё проверено» only when a person at the platform checked the owner's document of the right to let it.
+  checked:b.verified?'Жильё проверено: сервис сверил документ владельца о праве сдавать':'Жильё не проверено: сервис не сверял документ о праве владельца сдавать; гость бронирует на свой риск, платить только по реквизитам в карточке брони',
  };
 }
 

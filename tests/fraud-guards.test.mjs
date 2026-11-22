@@ -26,9 +26,15 @@ test('the owner attaches the proof of the right to let; one kind per place, sett
   assert.match((await readRightDoc(new RentalService(f.db,'admin'),docs[0].id,{},true)).data,/^data:image\/jpeg/,'the platform administrator sees it');
   await removeRightDoc(f.owner,'owner',{id:docs[0].id});
   assert.equal((await listRightDocs(f.owner,f.property)).docs.length,0);
-  // Approved by a person: the proof stays as it was checked.
+  // Approved by a person without the document (it is not required): attaching it later asks for a check of the document alone.
+  const {adminApproveProperty,decideParticipantReview,RIGHTS_REVIEW}=await load('participant-security'),{settleRightDocs,verifiedPlaceSql}=await load('property-rights'),admin=new RentalService(f.db,'admin');
+  await adminApproveProperty(admin,{propertyId:f.property});
   await saveRightDoc(f.owner,'owner',{propertyId:f.property,kind:'owner',data:photo});
-  const {adminApproveProperty}=await load('participant-security');await adminApproveProperty(new RentalService(f.db,'admin'),{propertyId:f.property});
+  const later=R.prepare("SELECT * FROM participant_reviews WHERE property_id=? AND status='pending' AND reference LIKE ?").get(f.property,RIGHTS_REVIEW+'%');assert.ok(later,'a review of the document');
+  await decideParticipantReview(admin,{id:later.id,status:'approved',method:'fixture',notes:'ok',expectedVersion:later.version},true);await settleRightDocs(f.db,f.property,'admin',{});
+  assert.equal(R.prepare(`SELECT ${verifiedPlaceSql('p.id')} v FROM properties p WHERE p.id=?`).get(f.property).v,1,'«Жильё проверено»');
+  assert.match(R.prepare("SELECT body FROM notifications WHERE dedupe LIKE ? ORDER BY created_at DESC").get('owner:review:'+later.id+'%').body,/Жильё проверено/);
+  // Checked: the proof stays as it was checked.
   await assert.rejects(saveRightDoc(f.owner,'owner',{propertyId:f.property,kind:'owner',data:photo}),e=>e.status===409);
  }finally{f.db.close();}
 });
@@ -114,7 +120,7 @@ test('the chat refuses a link from the owner and a phone before the booking is c
 });
 
 test('the offers tell every role the new rules, in a new edition everyone accepts again',()=>{
- assert.equal(LEGAL_EDITION,'25 ноября 2026');
+ assert.equal(LEGAL_EDITION,'26 ноября 2026');
  const text=id=>LEGAL_DOCUMENTS.find(d=>d.id===id).sections.flatMap(s=>s.p).join(' ');
  assert.match(text('terms'),/Меня не заселили/);assert.match(text('terms'),/ссылки, номера банковских карт/);
  assert.match(text('guest'),/меньше 5 завершённых броней/);assert.match(text('guest'),/Оплата при заселении/);

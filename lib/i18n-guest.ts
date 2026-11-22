@@ -765,4 +765,7 @@ export const GUEST:Words={
  'Бронь останется в силе. Точный адрес откроется после подтверждения брони.':['Бронь күшінде қалады. Нақты мекенжай бронь расталғаннан кейін ашылады.','The booking stays in force. The exact address opens once the booking is confirmed.'],
  'Отменить бесплатно':['Тегін бас тарту','Cancel for free'],
  'Отменить бронь из-за смены адреса':['Мекенжай өзгергендіктен броньдан бас тарту','Cancel the booking because the address changed'],
+ 'Жильё не проверено: сервис не сверял документ о праве владельца сдавать его. Бронируя, вы принимаете этот риск. Платите только по реквизитам в карточке брони.':['Баспана тексерілмеген: сервис иесінің оны тапсыру құқығы туралы құжатын салыстырмаған. Брондай отырып, сіз бұл тәуекелді қабылдайсыз. Тек бронь карточкасындағы деректемелер бойынша төлеңіз.','Unverified place: the service has not checked the owner\'s document of the right to let it. By booking you accept this risk. Pay only to the details in the booking card.'],
+ 'Жильё не проверено: сервис не сверял документ о праве сдавать, бронирование на ваш риск':['Баспана тексерілмеген: сервис тапсыру құқығы туралы құжатты салыстырмаған, брондау өз тәуекеліңізбен','Unverified place: the service has not checked the right to let it, you book at your own risk'],
+ 'Жильё не проверено':['Баспана тексерілмеген','Unverified place'],
 };
