@@ -99,7 +99,7 @@ export const accountDeletionColumns:Record<string,string>={
  "journey_sessions": "id,entity_kind,entity_id,sender_id,sender_role,owner_id,mode,created_at,expires_at,stopped_at,longitude,latitude,accuracy,recorded_at,received_at,route,route_recorded_at",
  "media": "id,user_id,kind,data,width,height,bytes,created_at,object_key",
  "messages": "id,user_id,scope,sender,body,created_at",
- "moderated_content": "kind,target_id,room_id,original_body,original_photo_data,original_search_result,hidden,version,operation_key,updated_at",
+ "moderated_content": "kind,target_id,room_id,original_body,original_photo_data,original_search_result,hidden,version,operation_key,updated_at,original_audio_data,original_place",
  "moderation_access_events": "id,actor_id,report_id,action,reason,created_at",
  "notifications": "id,user_id,body,dedupe,read,created_at",
  "operation_receipts": "user_id,kind,request_key,payload_hash,result,created_at",

@@ -91,6 +91,7 @@
 -- migration 0087_repeat_guest_discount.sql sha256:889cd787c9404b45cfc5bf14dd72e471fccb7ff0da1ba04f0c4138dc3ce089c2
 -- migration 0088_room_units.sql sha256:873c3debafdd6fd4e3ea5d250b16c3351e45b1951efab6615013d98fa4c71aee
 -- migration 0089_chat_voice_place.sql sha256:887badea01961521b6e4017467c307731745bab0c20450639c7969e8c26c72e3
+-- migration 0090_moderation_voice_place.sql sha256:2bff022e636d8d78fe5805b9e8db1302c2b10b7b4f6d65186b46cd533da274e8
 
 -- table access_receipts
 CREATE TABLE access_receipts (id TEXT PRIMARY KEY,property_id TEXT NOT NULL,entity_kind TEXT NOT NULL,entity_id TEXT NOT NULL,user_id TEXT NOT NULL,created_at INTEGER NOT NULL,expires_at INTEGER NOT NULL);
@@ -887,7 +888,7 @@ CREATE TABLE moderated_content (
  hidden INTEGER NOT NULL CHECK(hidden IN (0,1)),
  version INTEGER NOT NULL,
  operation_key TEXT NOT NULL,
- updated_at INTEGER NOT NULL,
+ updated_at INTEGER NOT NULL, original_audio_data TEXT, original_place TEXT,
  PRIMARY KEY(kind,target_id,room_id)
 );
 

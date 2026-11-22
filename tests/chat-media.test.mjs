@@ -34,3 +34,17 @@ test('in a booking chat a voice message goes at once, and a point once the booki
   assert.equal((await discussionInbox(f.guest,'guest')).rooms.find(r=>r.id===room.roomId).latest.voice,1);
  }finally{f.db.close();}
 });
+test('hiding a voice message or a point keeps a copy, and restoring brings it back',async()=>{
+ const {safetyAction,safetyState}=await load('account-safety');
+ const f=await fixture();try{
+  const room=await openDiscussion(f.guest,'guest',{kind:'booking',entityId:f.booking});
+  const voice=await sendDiscussionMessage(f.owner,'owner',{...room,voice:{data:AUDIO,ms:3000},requestKey:'v'});
+  await safetyAction(f.guest,'guest','report',{...room,kind:'message',targetId:String(voice.seq),reason:'Review'});
+  const report=(await safetyState(f.owner,'owner',true)).queue[0],body={reportId:report.id,reason:'Review',decision:'hide',expectedVersion:0};
+  await safetyAction(f.owner,'owner','moderate',body,true);
+  assert.equal((await readDiscussion(f.guest,'guest',room)).messages.find(m=>m.seq===voice.seq).voice,0);
+  await assert.rejects(discussionAudio(f.guest,'guest',{...room,seq:voice.seq}));
+  await safetyAction(f.owner,'owner','moderate',{...body,decision:'restore',expectedVersion:1},true);
+  assert.equal((await discussionAudio(f.guest,'guest',{...room,seq:voice.seq})).data,AUDIO);
+ }finally{f.db.close();}
+});
