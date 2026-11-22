@@ -84,7 +84,7 @@ export const CATEGORIES: { id: Category; title: string; any: string; hint: strin
   { id: 'banquet', title: 'Банкет', any: 'Любой зал', hint: 'той, юбилей, поминки' }
 ]);
 // What a hall is taken for (lib/listings.ts occasions). A memorial meal is spoken of quietly on every screen.
-export const OCCASIONS: [string, string][] = L([['toi', 'Той, свадьба'], ['party', 'Юбилей, праздник'], ['memorial', 'Поминки, ас'], ['other', 'Другое']]);
+export const OCCASIONS: [string, string][] = L([['toi', 'Свадьба, той'], ['uzatu', 'Қыз ұзату'], ['kudalyk', 'Құдалық, сватовство'], ['betashar', 'Беташар'], ['sundet', 'Сүндет той'], ['tusau', 'Тұсаукесер'], ['besik', 'Бесік той, шілдехана'], ['party', 'Юбилей, мерейтой'], ['birthday', 'День рождения'], ['corporate', 'Корпоратив'], ['graduation', 'Выпускной'], ['newyear', 'Новый год'], ['kids', 'Детский праздник'], ['conference', 'Конференция, семинар'], ['memorial', 'Поминки: ас, жетісі, қырқы'], ['other', 'Другое']]);
 export const occasionTitle = (id?: string) => OCCASIONS.find(([known]) => known === id)?.[1] || '';
 // A guest asks for a cleaning of their own home, not for a place: «уборка завтра», «нужна уборка», «клининг», «убраться
 // в квартире». A stay that merely mentions cleaning («квартира после уборки») is still a search.

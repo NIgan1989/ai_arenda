@@ -59,11 +59,12 @@ test('no reserve on assignment: the balance stays free, the pair fee is charged 
  }finally{f.db.close();}
 });
 
-test('an ordinary cleaning reserves nothing either and writes the base rate as shadow while billing is off',async()=>{
+test('an ordinary cleaning reserves nothing either: the owner pays no match fee, the performer 5% as a forecast while billing is off',async()=>{
  const f=await fixture();try{
   topUp(f,5000);await f.cleaner.jobAction(f.job.id,{action:'apply'});const app=f.db.raw.prepare('SELECT id FROM applications WHERE job_id=?').get(f.job.id);
   await f.owner.jobAction(f.job.id,{action:'assign',applicationId:app.id});assert.equal(hold(f),undefined);assert.equal(await ownerAvailable(f.db,'owner'),5000);
-  await finish(f);const c=f.db.raw.prepare('SELECT * FROM cleaning_commissions WHERE job_id=?').get(f.job.id);assert.equal(c.pair,0);assert.equal(c.mode,'shadow');assert.equal(c.amount,300);
+  await finish(f);const c=f.db.raw.prepare('SELECT * FROM cleaning_commissions WHERE job_id=?').get(f.job.id);assert.equal(c.pair,0);assert.equal(c.mode,'shadow');assert.equal(c.amount,0,'the match is part of the owner tariff');
+  const fee=f.db.raw.prepare("SELECT * FROM service_fees WHERE kind='cleaning' AND ref_id=?").get(f.job.id);assert.deepEqual([fee.user_id,fee.amount,fee.mode],['cleaner',Math.floor((job(f).fee*500+5000)/10000),'shadow']);
  }finally{f.db.close();}
 });
 

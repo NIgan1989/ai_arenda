@@ -2,6 +2,7 @@ import {DomainError,number,required} from './domain';
 import type {RentalService} from './service';
 import {epoch,uuid,q,one,rows,type Row} from './operation-core';
 import {underAutopilot} from './autopilot';
+import {stayedSql} from './stay-result';
 import {availableSql,cleanerPayouts} from './regular-cleaner';
 
 // Platform revenue model: the owner pays a commission for every booking confirmed
@@ -19,6 +20,40 @@ export function commissionFor(amount:number,s:Pick<BillingSettings,'rate_bp'|'mi
  fee=Math.max(fee,s.min_fee);
  return Math.max(0,Math.min(fee,amount));
 }
+// A banquet hall or a café (2026-11-22): no percent of the event. A fixed sum for a calendar month by capacity,
+// written by sweepHallMonths for a month that had a booking through the app (the first such month is free).
+export type HallTariff={hall_small_upto:number;hall_mid_upto:number;hall_fee_small:number;hall_fee_mid:number;hall_fee_large:number};
+export const hallMonthFee=(capacity:number,s:HallTariff)=>capacity<=s.hall_small_upto?s.hall_fee_small:capacity<=s.hall_mid_upto?s.hall_fee_mid:s.hall_fee_large;
+const HALL_TYPES="('banquet','cafe')";
+/** The month before `at` (Asia/Qyzylorda): its start, its end and its name 'YYYY-MM'. */
+export function previousMonth(at:number){
+ const local=new Date((at+18000)*1000),y=local.getUTCFullYear(),m=local.getUTCMonth();
+ const end=Date.UTC(y,m,1)/1000-18000,start=Date.UTC(y,m-1,1)/1000-18000,d=new Date((start+18000)*1000);
+ return {start,end,name:d.getUTCFullYear()+'-'+String(d.getUTCMonth()+1).padStart(2,'0')};
+}
+/** Writes the month of every hall that had a booking through the app last month. Safe to run again: one row a month. */
+export async function sweepHallMonths(db:D1Database,at=epoch()){
+ // A month counts the events that took place in it (lib/stay-result.ts), by the start of the event.
+ const month=previousMonth(at),held=stayedSql('c.booking_id'),startOf='(SELECT start FROM bookings WHERE id=c.booking_id)';
+ const halls=await rows(db,`SELECT p.id,p.owner_id,p.title,p.capacity,s.hall_small_upto,s.hall_mid_upto,s.hall_fee_small,s.hall_fee_mid,s.hall_fee_large,
+   CASE WHEN s.enabled=1 AND s.starts_at<? THEN 1 ELSE 0 END active,
+   (SELECT COUNT(*) FROM platform_commissions c WHERE c.property_id=p.id AND ${startOf}>=? AND ${startOf}<? AND ${held}) bookings,
+   EXISTS(SELECT 1 FROM platform_commissions c WHERE c.property_id=p.id AND ${startOf}<? AND ${held}) before
+  FROM properties p JOIN property_details d ON d.property_id=p.id JOIN platform_billing s ON s.id='global'
+  WHERE p.demo_owner IS NULL AND json_extract(d.details,'$.type') IN ${HALL_TYPES}
+   AND NOT EXISTS(SELECT 1 FROM service_fees f WHERE f.kind='hall_month' AND f.ref_id=p.id||':'||?)`,month.end,month.start,month.end,month.start,month.name);
+ let written=0;
+ for(const h of halls){
+  if(!Number(h.bookings))continue;
+  const fee=hallMonthFee(Number(h.capacity)||0,h as unknown as HallTariff),mode=!h.active?'shadow':h.before?'charged':'free';
+  const r=await q(db,"INSERT OR IGNORE INTO service_fees(id,user_id,role,kind,ref_id,property_id,amount,mode,created_at) VALUES (?,?,'owner','hall_month',?,?,?,?,?)",uuid(),h.owner_id,h.id+':'+month.name,h.id,fee,mode,month.end).run();
+  if(!r.meta.changes)continue;written++;
+  if(mode!=='shadow')await q(db,'INSERT OR IGNORE INTO notifications(id,user_id,body,dedupe,read,created_at) VALUES (?,?,?,?,0,?)',uuid(),h.owner_id,
+   mode==='free'?`«${h.title}»: первый месяц с бронями через приложение бесплатный (броней: ${h.bookings}).`:`«${h.title}»: за месяц броней через приложение ${h.bookings}, плата за месяц ${new Intl.NumberFormat('ru-RU').format(fee)} ₸. Спишется в понедельник вместе с остальными услугами.`,
+   'owner:hall-month:'+h.id+':'+month.name,at).run();
+ }
+ return written;
+}
 
 // Statement for the booking-confirmation batch. The amount is computed in SQL from the
 // settings row read in the same batch, so a concurrent settings change cannot split it.
@@ -26,11 +61,14 @@ export function commissionFor(amount:number,s:Pick<BillingSettings,'rate_bp'|'mi
 // (accrueAiBookingFee). An owner on «Всё включено» pays no commission at all: the row is written with 0 ₸.
 export const allInclusiveSql=(user:string,role:'owner'|'cleaner')=>`EXISTS(SELECT 1 FROM autopilot_plans ap WHERE ap.user_id=${user} AND ap.role='${role}' AND ap.tier='all' AND ap.status IN ('trial','active','grace'))`;
 export function accrueCommission(db:D1Database,bookingId:string,auditId:string,at:number){
- const fee="CASE WHEN x.included=1 THEN 0 ELSE MIN(x.amount,MAX(x.min_fee,CASE WHEN x.max_fee>0 THEN MIN(x.max_fee,(x.amount*x.rate+5000)/10000) ELSE (x.amount*x.rate+5000)/10000 END)) END";
+ // A hall pays by the month (sweepHallMonths), so its booking is written with 0 ₸: it still counts for the month.
+ const fee="CASE WHEN x.included=1 OR x.hall=1 THEN 0 ELSE MIN(x.amount,MAX(x.min_fee,CASE WHEN x.max_fee>0 THEN MIN(x.max_fee,(x.amount*x.rate+5000)/10000) ELSE (x.amount*x.rate+5000)/10000 END)) END";
  const used=`(SELECT COUNT(*) FROM platform_commissions c WHERE c.owner_id=x.owner_id AND c.mode IN ('free','charged') AND ${live})`;
+ // A banquet hall or a café pays by the month, not by the booking (migration 0086).
+ const hall="COALESCE((SELECT json_extract(d.details,'$.type') FROM property_details d WHERE d.property_id=b.property_id),'') IN ('banquet','cafe')";
  return q(db,`INSERT OR IGNORE INTO platform_commissions(booking_id,owner_id,property_id,booking_amount,rate_bp,amount,mode,settings_version,created_at,managed)
   SELECT x.id,x.owner_id,x.property_id,x.amount,x.rate,${fee},CASE WHEN x.enabled=1 AND x.starts_at<=? THEN CASE WHEN ${used}<x.free_bookings THEN 'free' ELSE 'charged' END ELSE 'shadow' END,x.version,?,x.managed
-  FROM (SELECT z.*,CASE WHEN ${allInclusiveSql('z.owner_id','owner')} THEN 1 ELSE 0 END included,CASE WHEN ${allInclusiveSql('z.owner_id','owner')} THEN 0 ELSE z.rate_bp END rate FROM (SELECT b.id,p.owner_id,b.property_id,b.amount,s.min_fee,s.max_fee,s.enabled,s.starts_at,s.free_bookings,s.version,s.rate_bp,s.ai_rate_bp,CASE WHEN ${underAutopilot('b.property_id')} THEN 1 ELSE 0 END managed
+  FROM (SELECT z.*,CASE WHEN ${allInclusiveSql('z.owner_id','owner')} THEN 1 ELSE 0 END included,CASE WHEN ${allInclusiveSql('z.owner_id','owner')} THEN 0 ELSE z.rate_bp END rate FROM (SELECT b.id,p.owner_id,b.property_id,b.amount,s.min_fee,s.max_fee,s.enabled,s.starts_at,s.free_bookings,s.version,CASE WHEN ${hall} THEN 0 ELSE s.rate_bp END rate_bp,CASE WHEN ${hall} THEN 1 ELSE 0 END hall,s.ai_rate_bp,CASE WHEN ${underAutopilot('b.property_id')} THEN 1 ELSE 0 END managed
    FROM bookings b JOIN properties p ON p.id=b.property_id JOIN platform_billing s ON s.id='global'
    WHERE b.id=? AND b.status='confirmed' AND p.demo_owner IS NULL AND EXISTS(SELECT 1 FROM audit_events WHERE id=?)) z) x`,at,at,at,bookingId,auditId);
 }
