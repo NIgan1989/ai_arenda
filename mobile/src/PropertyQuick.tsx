@@ -35,7 +35,9 @@ export function PropertyQuick({city,onSave,onGuestMode,onPlace,onReview,onClose,
  const questions=useMemo(()=>{const q:{key:string;label:string;question:string;placeholder:string}[]=draftQuestions(draft);return !draft.ownStaff&&!(draft.cleaningFee>=100)?[...q,{key:'cleaningFee',label:t('Уборка'),question:t('Сколько платите за уборку после гостей? Убираете сами, напишите «сами».'),placeholder:t('Например, 3 000 или «сами»')}]:q;},[draft,mode]);
  const ask=questions[0];
  const [place,setPlace]=useState('');
- const patch=(value:Partial<ListingDraft>)=>setDraft(d=>({...d,...value,known:[...new Set([...d.known,...Object.keys(value)])]}));
+ // Fields only the model read: a new reading of the story may change them; a field the owner edits himself is his.
+ const [modelKeys,setModelKeys]=useState<string[]>([]);
+ const patch=(value:Partial<ListingDraft>)=>{setModelKeys(k=>k.filter(key=>!(key in value)));setDraft(d=>({...d,...value,known:[...new Set([...d.known,...Object.keys(value)])]}));};
  const guessed=(key:string)=>!draft.known.includes(key);
  // Не объявление, а уборка своего жилья (lib/home-ask.ts): форма ведёт в заказ уборки с тем, что уже понято из текста.
  // «Нет, это объявление»: человек сам решает, если ИИ ошибся. Новый текст спрашивает заново.
@@ -44,9 +46,10 @@ export function PropertyQuick({city,onSave,onGuestMode,onPlace,onReview,onClose,
  // The rules read at once; the model, when the server has one and the owner allowed it, fills what they missed.
  // No answer from the model is not an error: the owner checks the lines either way.
  async function read(){if(!text.trim()||reading)return;if(homeAsk&&onHome){onHome(homeAsk);return;}
-  let next=readListingText(text,draft);setError('');setReading(true);
-  try{const ai=onUnderstand?await onUnderstand(text.slice(0,2000)):null;if(ai?.status==='ok')next=mergeModelDraft(next.draft,next.found,ai.fields);}catch{/* the rules' reading stays */}
-  setReading(false);setDraft(next.draft);setFound(next.found);setOpen('');setStep(1);onTop?.();}
+  const base={...draft,known:draft.known.filter(k=>!modelKeys.includes(k))};
+  const rules=readListingText(text,base);let next=rules;setError('');setReading(true);
+  try{const ai=onUnderstand?await onUnderstand(text.slice(0,2000)):null;if(ai?.status==='ok')next=mergeModelDraft(rules.draft,rules.found,ai.fields);}catch{/* the rules' reading stays */}
+  setReading(false);setModelKeys(next.found.filter(k=>!rules.found.includes(k)));setDraft(next.draft);setFound(next.found);setOpen('');setStep(1);onTop?.();}
  function reply(){if(!ask||!answer.trim())return;
   // «Сами», «сам убираю», «свой персонал»: nobody is ordered, the owner marks the place ready himself.
   if(ask.key==='cleaningFee'){const v=moneyAnswer(answer);if(v>=100)patch({cleaningFee:v});else if(/(?:^|[^а-я])(?:сам[аи]?|сво[йиея][а-я]*\s+(?:персонал|горничн|уборщ|сотрудник))(?=$|[^а-я])/i.test(answer)||/өзім|өз\s+қызметкер|ourselves|myself|own\s+staff/i.test(answer))patch({ownStaff:true});else{setError(t('Напишите сумму числом, от 100 ₸, или «сами».'));return;}}
@@ -118,7 +121,7 @@ export function PropertyQuick({city,onSave,onGuestMode,onPlace,onReview,onClose,
     {row('kind',t('Тип'),[propertyTypes[draft.type as keyof typeof propertyTypes],draft.ownStaff?t('свой персонал'):''].filter(Boolean).join(' · '),guessed('type'),<KindPicker inline kind={draft.type} ownStaff={draft.ownStaff} onChange={v=>{patch(v);if(v.type)setOpen("");}}/>)}
     {row('size',venue?t('Вместимость'):t('Размер'),sizeLine,anyGuess(...(venue?['capacity']:['rooms','capacity','area','floor'])),<>
      <View style={q.grid}>{!venue&&<View style={q.half}><Stepper label={t('Комнаты')} value={draft.rooms} text={String(draft.rooms)} min={1} max={20} onChange={v=>patch({rooms:v})}/></View>}<View style={q.half}><Stepper label={bath?t('Вмещает гостей'):t('Гостей')} value={draft.capacity} text={String(draft.capacity)} min={1} max={hall?1000:50} step={hall?10:1} onChange={v=>setDraft(d=>({...d,capacity:v,beds:Math.max(d.beds,v),known:[...new Set([...d.known,'capacity'])]}))}/></View></View>
-     <View style={q.grid}>{num('area',t('Площадь, м²'),5000)}{!bath&&num('floor',t('Этаж'),100)}{!venue&&num('floors',t('Этажей в доме'),100)}</View>
+     <View style={q.grid}>{num('area',t('Площадь, м²'),2000)}{!bath&&num('floor',t('Этаж'),100)}{!venue&&num('floors',t('Этажей в доме'),100)}</View>
     </>)}
     {row('address',t('Адрес'),addressLine,anyGuess('address','district'),<>
      <AddressField kind="city" label={t('Город или село')} value={String(draft.city||'')} max={80} labelStyle={q.tileLabel} inputStyle={q.input} style={q.field} onChange={v=>{setPlace('');patch({city:v});}} onPick={c=>setPlace(c.id||'')}/>

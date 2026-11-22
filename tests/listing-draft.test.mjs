@@ -83,3 +83,10 @@ test('what the rules read stays theirs, the model does not overwrite it',()=>{
  const m=mergeModelDraft(r.draft,r.found,{price:99999,address:'Другая 1',type:'house'});
  assert.equal(m.draft.price,15000);assert.equal(m.draft.address,'Торайгырова 64, кв. 12');assert.equal(m.draft.type,'apartment');
 });
+test('the model\'s counts agree with what the save checks: guests from rooms get beds, limits of the kind hold',()=>{
+ const {mergeModelDraft}=lib;
+ const m=mergeModelDraft(emptyDraft('Павлодар'),[],{type:'apartment',rooms:3,area:3000,district:'Центр',address:'Кутузова 10',price:15000});
+ assert.equal(m.draft.capacity,6);assert.equal(m.draft.beds,6);assert.equal(m.draft.area,35);
+ const big=mergeModelDraft(emptyDraft('Павлодар'),[],{type:'house',capacity:300});assert.ok(big.draft.capacity<=50&&big.draft.beds<=50);
+ assert.doesNotThrow(()=>listingInput(draftListingBody(m.draft,[],false)));
+});
