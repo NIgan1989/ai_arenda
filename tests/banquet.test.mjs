@@ -91,7 +91,7 @@ test('a guest books a slot of a banquet hall for a memorial meal',async()=>{
   assert.deepEqual([quote.amount,quote.periods,quote.price,quote.kind],[640000,1,640000,'banquet']);
   const made=await f.guest.createBooking({propertyId:id,start:iso(start),end:iso(end),guests:80,billingMode:'daily',occasion:'memorial',requestKey:'banquet-1',acceptTerms:true,expectedAmount:640000});
   assert.equal(f.db.raw.prepare('SELECT occasion FROM booking_terms WHERE booking_id=?').get(made.id).occasion,'memorial');
-  assert.ok(f.db.raw.prepare("SELECT 1 FROM notifications WHERE body LIKE '%Поминки, ас, гостей: 80%'").get());
+  assert.ok(f.db.raw.prepare("SELECT 1 FROM notifications WHERE body LIKE '%Поминки: ас, жетісі, қырқы, гостей: 80%'").get());
   // The evening of the same day stays free for another party: the hall is ready an hour after lunch.
   assert.equal((await f.guest.publicSearch({city:'Павлодар',mode:'daily',guests:'60',kinds:['banquet','cafe'],start:iso(day+13*3600),end:iso(day+19*3600)})).properties.length,1);
   await f.owner.bookingAction(made.id,{action:'confirm',cleaningFee:0});

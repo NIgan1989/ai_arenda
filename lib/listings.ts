@@ -26,7 +26,9 @@ export const maxGuests=(type?:string)=>isBanquet(type)?1000:50;
 // The two slots of a banquet day, Kazakhstan time; the evening ends at midnight.
 export const banquetSlots:Record<string,{label:string;from:string;to:string}>=L({lunch:{label:'Обед',from:'12:00',to:'17:00'},evening:{label:'Вечер',from:'18:00',to:'00:00'}});
 // What the hall is taken for. A memorial meal is spoken of quietly everywhere: no festive words, no celebration.
-export const occasions:Record<string,string>=L({toi:'Той, свадьба',party:'Юбилей, праздник',memorial:'Поминки, ас',other:'Другое'});
+// Every kind of event a hall in Kazakhstan is taken for (2026-11-22): the family тои, the holidays, work events and
+// the memorial meals. 'toi', 'party' and 'memorial' are the old ids and stay.
+export const occasions:Record<string,string>=L({toi:'Свадьба, той',uzatu:'Қыз ұзату',kudalyk:'Құдалық, сватовство',betashar:'Беташар',sundet:'Сүндет той',tusau:'Тұсаукесер',besik:'Бесік той, шілдехана',party:'Юбилей, мерейтой',birthday:'День рождения',corporate:'Корпоратив',graduation:'Выпускной',newyear:'Новый год',kids:'Детский праздник',conference:'Конференция, семинар',memorial:'Поминки: ас, жетісі, қырқы',other:'Другое'});
 export const occasionLabel=(id?:string)=>occasions[id||'']||'';
 // Kinds that usually clean with their own staff: «Свой персонал» is on by default, the owner can change it.
 // A sauna is mostly a complex with an administrator; a «баня» is often a private one, cleaned by our executor.

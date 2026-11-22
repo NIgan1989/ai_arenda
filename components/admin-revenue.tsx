@@ -212,30 +212,29 @@ function CleanerPayouts({data:c,busy,save}:{data:Row;busy:boolean;save:Save}){
  </>;
 }
 
-// Тарифы: the hybrid tariff (2026-11-20). For the result by default («Автопилот» per booking the AI confirmed,
-// the performer's fee per cleaning, each with a monthly cap) or «Всё включено» by choice. Charging stays off until
-// the bank's recurring charges work; until then the service records what it would have taken.
+// Тарифы: one tariff in percent (2026-11-22). The owner pays the commission of «Условия оплаты» (4%) of every booking,
+// the performer cleanerRate (5%) of every accepted cleaning; «Автопилот» and the match are included. Charging stays off
+// until the bank's recurring charges work; until then the service records what it would have taken.
 function AutopilotPlans({data,busy,save}:{data:Row;busy:boolean;save:Save}){
  const s=data.settings||{},o=data.owner||{},c=data.cleaner||{};
- const [form,setForm]=useState(()=>({aiBookingFee:String(s.aiBookingFee??490),aiMonthCap:String(s.aiMonthCap??4900),ownerPrice:String(s.ownerPrice??9900),cleanerJobFee:String(s.cleanerJobFee??250),cleanerFreeJobs:String(s.cleanerFreeJobs??5),cleanerMonthCap:String(s.cleanerMonthCap??6000),cleanerPrice:String(s.cleanerPrice??2900),graceDays:String(s.graceDays??3)})),[agreed,setAgreed]=useState(false);
- const field=(key:keyof typeof form,label:string,suffix:string)=><label className="plans-field">{label}<span><Input inputMode="numeric" value={form[key]} disabled={busy} onChange={e=>setForm({...form,[key]:e.target.value.replace(/\D/g,'').slice(0,7)})}/><em>{suffix}</em></span></label>;
- const submit=(charge:boolean)=>save('billing/plans',{charge,confirmed:true,...Object.fromEntries(Object.entries(form).map(([k,v])=>[k,Number(v||0)]))}).then(r=>{if(r)setAgreed(false);});
+ const [form,setForm]=useState(()=>({cleanerRatePercent:String((s.cleanerRate??500)/100).replace('.',','),graceDays:String(s.graceDays??3)})),[agreed,setAgreed]=useState(false);
+ const field=(key:keyof typeof form,label:string,suffix:string,decimal=false)=><label className="plans-field">{label}<span><Input inputMode={decimal?'decimal':'numeric'} value={form[key]} disabled={busy} onChange={e=>setForm({...form,[key]:e.target.value.replace(decimal?/[^\d,.]/g:/\D/g,'').slice(0,decimal?4:7)})}/><em>{suffix}</em></span></label>;
+ const submit=(charge:boolean)=>save('billing/plans',{charge,confirmed:true,cleanerRatePercent:Number(form.cleanerRatePercent.replace(',','.')||0),graceDays:Number(form.graceDays||0)}).then(r=>{if(r)setAgreed(false);});
  const stat=(n:number,label:string)=><div><dt>{label}</dt><dd>{n}</dd></div>;
+ const pct=(bp:number)=>String((bp||0)/100).replace('.',',')+'%';
  return <div className="plans">
-  <div className={'plans-charge'+(s.charge?' is-on':'')}><div><strong>{s.charge?'Плата за «Автопилот», уборки и «Всё включено» включена.':'Плата за «Автопилот», уборки и «Всё включено» выключена.'}</strong><p>{s.charge?'Всё копится и списывается с привязанной карты по понедельникам. Не оплачено 7 дней: пауза.':'Все пользуются бесплатно. Сервис считает, сколько заработал бы. Включите, когда заработают списания через банк.'}</p></div>
+  <div className={'plans-charge'+(s.charge?' is-on':'')}><div><strong>{s.charge?'Плата исполнителей за уборки включена.':'Плата исполнителей за уборки выключена.'}</strong><p>{s.charge?'Всё копится и списывается с привязанной карты по понедельникам.':'Сервис только считает, сколько взял бы.'}</p></div>
    {s.charge?<Button variant="outline" disabled={busy} onClick={()=>submit(false)}>Выключить плату</Button>:<label className="plans-agree"><input type="checkbox" checked={agreed} disabled={busy} onChange={e=>setAgreed(e.target.checked)}/>Участники получат уведомление</label>}
    {!s.charge&&<Button disabled={busy||!agreed} onClick={()=>submit(true)}>Включить плату</Button>}</div>
   <div className="plans-cols">
-   <section className="plans-card"><h3>Владельцы</h3><p>По умолчанию платят за брони, которые провёл ИИ. «Всё включено»: одна сумма за каждый объект, без комиссий.</p>
-    <dl className="revenue-facts">{stat(o.pay||0,'За результат')}{stat(o.all||0,'«Всё включено»')}{stat(o.paused||0,'На паузе')}{stat(o.flats||0,'Объектов под ИИ')}{stat(o.results30||0,'Броней ИИ за 30 дней')}</dl>
-    <p className="plans-sum">{s.charge?'За 30 дней: за брони ИИ '+money(o.fees30)+', «Всё включено» '+money(o.charged30):'Было бы за 30 дней: '+money((o.feesShadow30||0)+(o.shadow30||0))}</p></section>
-   <section className="plans-card"><h3>Исполнители</h3><p>По умолчанию платят за каждую принятую уборку, «Автопилот» бесплатно. «Всё включено»: одна сумма в месяц.</p>
-    <dl className="revenue-facts">{stat(c.pay||0,'За результат')}{stat(c.all||0,'«Всё включено»')}{stat(c.paused||0,'На паузе')}{stat(c.results30||0,'Уборок за 30 дней')}{stat(c.taken30||0,'Взял ИИ')}</dl>
-    <p className="plans-sum">{s.charge?'За 30 дней: за уборки '+money(c.fees30)+', «Всё включено» '+money(c.charged30)+(c.free30?', бесплатно '+money(c.free30):''):'Было бы за 30 дней: '+money((c.feesShadow30||0)+(c.shadow30||0))}</p></section>
+   <section className="plans-card"><h3>Владельцы</h3><p>{pct(s.ownerRate)} с каждого заселения (комиссия в «Условиях оплаты»). Автопилот, ИИ и подбор исполнителя входят.</p>
+    <dl className="revenue-facts">{stat(o.pay||0,'Автопилот включён')}{stat(o.paused||0,'На паузе')}{stat(o.flats||0,'Объектов под ИИ')}</dl></section>
+   <section className="plans-card"><h3>Исполнители</h3><p>{pct(s.cleanerRate)} с каждой выполненной уборки, автопилот бесплатно.</p>
+    <dl className="revenue-facts">{stat(c.pay||0,'Автопилот включён')}{stat(c.paused||0,'На паузе')}{stat(c.results30||0,'Уборок за 30 дней')}{stat(c.taken30||0,'Взял ИИ')}</dl>
+    <p className="plans-sum">{s.charge?'За 30 дней: '+money(c.fees30):'Было бы за 30 дней: '+money(c.feesShadow30||0)}</p></section>
   </div>
   <section className="plans-card"><h3>Условия</h3>
-   <div className="plans-fields">{field('aiBookingFee','Бронь, которую провёл ИИ','₸')}{field('aiMonthCap','Потолок за объект','₸ в месяц')}{field('ownerPrice','«Всё включено», объект','₸ в месяц')}
-    {field('cleanerJobFee','Исполнитель, за уборку','₸')}{field('cleanerFreeJobs','Бесплатно новичку','уборок')}{field('cleanerMonthCap','Потолок исполнителя','₸ в месяц')}{field('cleanerPrice','«Всё включено», исполнитель','₸ в месяц')}{field('graceDays','Отсрочка','дней')}</div>
+   <div className="plans-fields">{field('cleanerRatePercent','Исполнитель, с уборки','%',true)}{field('graceDays','Отсрочка','дней')}</div>
    <Button disabled={busy} onClick={()=>submit(!!s.charge)}>Сохранить условия</Button></section>
  </div>;
 }
