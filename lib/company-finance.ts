@@ -136,7 +136,9 @@ export function computeMonths(input:Inputs,basis:Basis,until:string):Month[]{
 // without having been withheld from payouts in full, and the rest came off the balance.
 const fromBalance="role='cleaner' AND mode='charged' AND settled_at IS NOT NULL AND withheld<amount";
 async function positions(db:D1Database,end:number){
- const owners=await rows(db,`SELECT o.owner_id,(COALESCE((SELECT SUM(amount) FROM owner_balance_entries WHERE owner_id=o.owner_id AND created_at<=?),0)
+ // A test card's charge (test=1) settles the debt in the app but brings no money: in the books the participant still owes
+ // it, so the balance sheet stays even with the cash flow that leaves test charges out (audit «Оплата услуг», point 1).
+ const owners=await rows(db,`SELECT o.owner_id,(COALESCE((SELECT SUM(amount) FROM owner_balance_entries WHERE owner_id=o.owner_id AND test=0 AND created_at<=?),0)
   -COALESCE((SELECT SUM(c.amount) FROM platform_commissions c WHERE c.owner_id=o.owner_id AND c.mode='charged' AND c.created_at<=? AND ${live}),0)
   -COALESCE((SELECT SUM(amount) FROM cleaning_commissions WHERE owner_id=o.owner_id AND mode='charged' AND created_at<=?),0)
   -COALESCE((SELECT SUM(amount) FROM cleaning_holds WHERE owner_id=o.owner_id AND status IN ('held','due','paid') AND created_at<=?),0)
