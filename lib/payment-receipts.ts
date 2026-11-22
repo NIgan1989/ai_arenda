@@ -7,7 +7,7 @@ import {epoch,uuid,q,one,rows,type Row,type OperationConfig} from './operation-c
 // the bank receipt (a screenshot from Kaspi) next to «Я оплатил»: the guest for a booking, the customer for a cleaning.
 // The receiver sees it in the same card; the service administrator sees it when the sides argue.
 export const RECEIPT_LIMIT=3;
-type Deal={kind:'booking'|'job';id:string;payer:string;receiver:string|null;open:boolean};
+type Deal={kind:'booking'|'job';id:string;payer:string;receiver:string|null;open:boolean;closed?:boolean;refunded?:boolean};
 
 async function dealOf(s:RentalService,body:Row):Promise<Deal>{
  if(body.jobId){
@@ -15,28 +15,34 @@ async function dealOf(s:RentalService,body:Row):Promise<Deal>{
   if(!j)throw new DomainError('Уборка не найдена.',404);
   return {kind:'job',id:j.id,payer:j.owner_id,receiver:j.assigned_to||null,open:j.status==='completed'&&!j.payment_received_at};
  }
- const b=await one(s.db,'SELECT b.id,b.guest_id,b.status,b.payment_status,p.owner_id FROM bookings b JOIN properties p ON p.id=b.property_id WHERE b.id=?',required(body.bookingId,'Бронь',100));
+ const b=await one(s.db,"SELECT b.id,b.guest_id,b.status,b.payment_status,p.owner_id,EXISTS(SELECT 1 FROM finance_entries f WHERE f.booking_id=b.id AND f.kind IN ('refund','deposit_return')) refunded FROM bookings b JOIN properties p ON p.id=b.property_id WHERE b.id=?",required(body.bookingId,'Бронь',100));
  if(!b)throw new DomainError('Бронь не найдена.',404);
- return {kind:'booking',id:b.id,payer:b.guest_id,receiver:b.owner_id,open:b.status==='confirmed'};
+ // After a cancellation or the stay both sides still bring proof to a dispute about money: the guest the receipt of the
+ // payment, the owner the receipt of the refund once one is marked (audit 2026-11-22, «Возвраты и споры» 4).
+ const closed=['cancelled','expired','completed'].includes(b.status);
+ return {kind:'booking',id:b.id,payer:b.guest_id,receiver:b.owner_id,open:b.status==='confirmed'||closed,closed,refunded:!!b.refunded};
 }
 const column=(d:Deal)=>d.kind==='job'?'job_id':'booking_id';
 
 export async function saveReceipt(s:RentalService,role:Role,body:Row,config:OperationConfig={}){
  const d=await dealOf(s,body);
- if(d.payer!==s.userId||role!==(d.kind==='job'?'owner':'guest'))throw new DomainError(s.userId===d.receiver?'Чек прикладывает тот, кто платит.':d.kind==='job'?'Уборка не найдена.':'Бронь не найдена.',s.userId===d.receiver?403:404);
+ // The owner's refund receipt: the one who returns money is the payer of that transfer.
+ const refund=d.kind==='booking'&&role==='owner'&&d.receiver===s.userId&&!!d.closed;
+ if(refund&&!d.refunded)throw new DomainError('Чек возврата прикладывают после отметки возврата в брони.',409);
+ if(!refund&&(d.payer!==s.userId||role!==(d.kind==='job'?'owner':'guest')))throw new DomainError(s.userId===d.receiver?'Чек прикладывает тот, кто платит.':d.kind==='job'?'Уборка не найдена.':'Бронь не найдена.',s.userId===d.receiver?403:404);
  if(!d.open)throw new DomainError(d.kind==='job'?'Чек можно приложить после принятой уборки, пока исполнитель не подтвердил оплату.':'Чек можно приложить к подтверждённой брони.',409);
  const image=jpegInput(body.data,'property'),receiptId=uuid(),key=config.BUCKET?'payment-receipts/'+receiptId+'.jpg':'',c=column(d);
  if(key){const binary=atob(image.data.split(',')[1]);await config.BUCKET!.put(key,Uint8Array.from(binary,ch=>ch.charCodeAt(0)),{httpMetadata:{contentType:'image/jpeg'}});}
- const r=await q(s.db,`INSERT INTO payment_receipts(id,${c},user_id,data,object_key,width,height,bytes,created_at) SELECT ?,?,?,?,?,?,?,?,? WHERE (SELECT COUNT(*) FROM payment_receipts WHERE ${c}=?)<?`,
-  receiptId,d.id,s.userId,key?'':image.data,key,image.width,image.height,image.bytes,epoch(),d.id,RECEIPT_LIMIT).run();
+ const r=await q(s.db,`INSERT INTO payment_receipts(id,${c},user_id,data,object_key,width,height,bytes,created_at) SELECT ?,?,?,?,?,?,?,?,? WHERE (SELECT COUNT(*) FROM payment_receipts WHERE ${c}=? AND user_id=?)<?`,
+  receiptId,d.id,s.userId,key?'':image.data,key,image.width,image.height,image.bytes,epoch(),d.id,s.userId,RECEIPT_LIMIT).run();
  if(!r.meta.changes){if(key)await config.BUCKET!.delete(key).catch(()=>{});throw new DomainError('Приложено максимум чеков: '+RECEIPT_LIMIT+'.',409);}
- return {id:receiptId,message:d.kind==='job'?'Чек приложен. Его увидит исполнитель.':'Чек приложен. Его увидит владелец.'};
+ return {id:receiptId,message:d.kind==='job'?'Чек приложен. Его увидит исполнитель.':refund?'Чек возврата приложен. Его увидит гость.':'Чек приложен. Его увидит владелец.'};
 }
 
 export async function listReceipts(s:RentalService,kind:string,dealId:string,platformAdmin=false){
  const d=await dealOf(s,kind==='job'?{jobId:dealId}:{bookingId:dealId});
  if(!platformAdmin&&s.userId!==d.payer&&s.userId!==d.receiver)throw new DomainError(d.kind==='job'?'Уборка не найдена.':'Бронь не найдена.',404);
- return {receipts:await rows(s.db,`SELECT id,width,height,created_at FROM payment_receipts WHERE ${column(d)}=? ORDER BY created_at,id`,d.id)};
+ return {receipts:await rows(s.db,`SELECT id,width,height,created_at,CASE WHEN user_id=? THEN 'refund' ELSE 'payment' END kind FROM payment_receipts WHERE ${column(d)}=? ORDER BY created_at,id`,d.receiver||'',d.id)};
 }
 
 export async function readReceipt(s:RentalService,receiptId:string,config:OperationConfig={},platformAdmin=false){
