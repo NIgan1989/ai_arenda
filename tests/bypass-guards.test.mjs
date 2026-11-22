@@ -35,6 +35,7 @@ test('a profile others read carries no phone, link or messenger',async()=>{
   await assert.rejects(f.cleaner.editProfile({...body,bio:'Звоните 8 701 123 45 67'}),e=>e.status===422&&/Уберите из профиля телефон/.test(e.message));
   await assert.rejects(f.cleaner.editProfile({...body,experience:'Опыт 3 года, пишите в WhatsApp'}),/Уберите из профиля/);
   await f.cleaner.editProfile({...body,bio:'Аккуратно и в срок'});
+  await assert.rejects(f.cleaner.saveProfile({name:'Cleaner',contact:'test',city:'Павлодар',roles:['cleaner'],districts:'Центр',experience:'Звоните 87011234567',availability:'Пн–Пт'}),/Уберите из профиля/);
  }finally{f.db.close();}
 });
 test('the morning summary names owners whose confirmed bookings are cancelled again and again',async()=>{
@@ -63,6 +64,11 @@ test('a regular guest gets the owner discount, a new guest pays the full price',
   assert.equal((await f.other.bookingQuote(ask)).repeat,undefined,'another guest without a stay');
   const booked=await f.guest.createBooking({...ask,requestKey:'again',acceptTerms:true,expectedAmount:18000});
   assert.equal(R.prepare('SELECT amount FROM bookings WHERE id=?').get(booked.id).amount,18000);
+  // The discount stays with the booking: a longer stay costs 3 × 9 000, not 3 × 10 000.
+  assert.equal(R.prepare('SELECT discount_percent FROM booking_terms WHERE booking_id=?').get(booked.id).discount_percent,10);
+  await f.owner.bookingAction(booked.id,{action:'confirm',cleaningFee:3000});
+  const longer=await f.guest.bookingChangeQuote(booked.id,'guest',{start:ask.start,end:iso(now()+13*86400)});
+  assert.equal(longer.amount,27000);
  }finally{f.db.close();}
 });
 test('after a cancelled confirmed booking the guest is asked once whether they stayed; a «yes» reaches the morning summary',async()=>{
@@ -76,5 +82,16 @@ test('after a cancelled confirmed booking the guest is asked once whether they s
   await f.guest.decideApproval('guest',{id:c.id,revision:c.revision,action:'accept'});
   assert.equal(await card(),undefined,'asked once');
   assert.match(digestText(await digestFacts(f.db)),/жили по отменённой брони: Owner \(1\)/);
+ }finally{f.db.close();}
+});
+test('before the phone opens a prepaying guest gets the Kaspi link without the number, when the owner gave a link',async()=>{
+ const f=await fixture(),R=f.db.raw;try{
+  R.prepare("INSERT OR REPLACE INTO payout_details(user_id,phone,recipient,link,updated_at) VALUES ('owner','+77011234567','Owner O.','https://pay.kaspi.kz/pay/abc',0)").run();
+  R.prepare('UPDATE booking_terms SET prepay_percent=50 WHERE booking_id=?').run(f.booking);
+  R.prepare('UPDATE bookings SET start=?,end=?+7200,occupied_until=?+14400 WHERE id=?').run(now()+3*86400,now()+3*86400,now()+3*86400,f.booking);
+  const pay=async()=>(await f.guest.roleState('guest',{catalog:false})).bookings.find(b=>b.id===f.booking).owner_pay;
+  assert.deepEqual([(await pay()).phone,(await pay()).link],['','https://pay.kaspi.kz/pay/abc']);
+  R.prepare('UPDATE bookings SET start=?,end=?+7200,occupied_until=?+14400 WHERE id=?').run(now()+3600,now()+3600,now()+3600,f.booking);
+  assert.equal((await pay()).phone,'+77011234567');
  }finally{f.db.close();}
 });
