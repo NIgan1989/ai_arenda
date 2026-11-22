@@ -45,3 +45,14 @@ test('after the cancellation the guest adds a payment receipt and the owner a re
   assert.deepEqual(kinds,['payment','refund']);
  }finally{f.db.close();}
 });
+test('a second return after the guest confirmed the first asks the guest again',async()=>{
+ const f=await fixture();try{
+  await recordFinance(f.owner,{kind:'payment',bookingId:f.booking,amount:4000,confirmed:true,note:'Оплата',requestKey:'p'});
+  await recordFinance(f.owner,{kind:'deposit',bookingId:f.booking,amount:10000,confirmed:true,note:'Депозит',requestKey:'d'});
+  await f.owner.bookingAction(f.booking,{action:'cancel'});
+  await f.owner.bookingAction(f.booking,{action:'record_refund',confirmed:true,expectedVersion:terms(f).version});
+  await f.guest.bookingAction(f.booking,{action:'refund_received'});assert.ok(terms(f).refund_confirmed_at);
+  await f.owner.bookingAction(f.booking,{action:'record_deposit_return',confirmed:true,expectedVersion:terms(f).version});
+  assert.equal(terms(f).refund_confirmed_at,null);
+ }finally{f.db.close();}
+});
