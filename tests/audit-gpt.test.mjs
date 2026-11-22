@@ -195,3 +195,38 @@ test('by the hour, a later free start the same day comes before tomorrow',async(
   assert.equal(Date.parse(r.empty.next.end)/1000-next,3*3600);
  }finally{f.db.close();}
 });
+
+// The audit of the owner and the performer, 2026-11-22.
+test('extending a cleaning stops at a stay from an outside calendar, like «Опаздываю»',async()=>{
+ const f=await fixture(),R=f.db.raw;try{
+  R.prepare("UPDATE cleaning_jobs SET assigned_to='cleaner',status='in_progress',booking_id=NULL,start=?,end=? WHERE id=?").run(now()-7200,now()-60,f.job.id);
+  R.prepare("UPDATE bookings SET status='cancelled' WHERE id=?").run(f.booking);
+  R.prepare('INSERT INTO calendar_sources(id,property_id,owner_id,label,url,created_at) VALUES (?,?,?,?,?,?)').run('src',f.property,'owner','Booking','https://calendar.example.test/x',now());
+  R.prepare("INSERT INTO external_blocks(id,source_id,property_id,event_uid,start,end) VALUES ('ext-1','src',?,'ext:1',?,?)").run(f.property,now()+600,now()+4*3600);
+  await assert.rejects(f.cleaner.jobAction(f.job.id,{action:'extend',minutes:30}),e=>e.status===409&&/внешнему календарю/.test(e.message));
+  // Passing it on gives the new performer only the time before the outside stay.
+  const {releaseWindow}=await load('overdue-cleaning');
+  const w=await releaseWindow(f.db,R.prepare('SELECT * FROM cleaning_jobs WHERE id=?').get(f.job.id),now());
+  assert.equal(w,null,'ten minutes before the outside guest there is no window of half an hour');
+ }finally{f.db.close();}
+});
+
+test('the performer\'s «Гостя нет» before the end of the stay never closes it by itself',async()=>{
+ const {checkAdministratorOwner}=await load('administrator-runtime');
+ const f=await fixture(),R=f.db.raw;try{
+  await matchingAction(f.owner,'owner','preference',{propertyId:f.property,mode:'auto'});
+  R.prepare("UPDATE bookings SET payment_status='owner_verified',start=?,end=?,occupied_until=? WHERE id=?").run(now()-7200,now()+1200,now()+6600,f.booking);
+  R.prepare("UPDATE cleaning_jobs SET assigned_to='cleaner',status='assigned',start=?,end=? WHERE id=?").run(now()+1200,now()+6600,f.job.id);
+  const r=await f.cleaner.jobAction(f.job.id,{action:'vacant'});
+  assert.match(r.message,/гость или владелец подтвердят выезд/);
+  assert.equal(R.prepare('SELECT checkout_reported_at FROM booking_terms WHERE booking_id=?').get(f.booking).checkout_reported_at,null);
+  f.release();await checkAdministratorOwner(f.db,'owner');
+  assert.equal(R.prepare('SELECT actual_checkout FROM booking_terms WHERE booking_id=?').get(f.booking).actual_checkout,null,'the autopilot does not end the stay on the performer\'s word');
+  assert.match(R.prepare("SELECT body FROM notifications WHERE user_id='guest' AND dedupe LIKE 'guest:cleaner-vacant:%'").get().body,/Сообщить о выезде/);
+  // After the end of the stay the word counts as a report, as before.
+  R.prepare('UPDATE bookings SET end=? WHERE id=?').run(now()-60,f.booking);
+  R.prepare("DELETE FROM notifications WHERE dedupe LIKE '%cleaner-vacant:%'").run();
+  await f.cleaner.jobAction(f.job.id,{action:'vacant'});
+  assert.ok(R.prepare('SELECT checkout_reported_at FROM booking_terms WHERE booking_id=?').get(f.booking).checkout_reported_at);
+ }finally{f.db.close();}
+});

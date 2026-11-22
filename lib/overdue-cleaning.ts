@@ -17,7 +17,11 @@ export async function releaseWindow(db:D1Database,job:Row,at:number){
  if(await q(db,"SELECT 1 FROM bookings WHERE property_id=? AND status='confirmed' AND start<=? AND id<>COALESCE(?,'')",job.property_id,at,job.booking_id).first())return null;
  const length=Math.max(3600,Number(job.end)-Number(job.start));
  const next=await q(db,"SELECT MIN(start) start FROM bookings WHERE property_id=? AND status='confirmed' AND start>=? AND id<>COALESCE(?,'')",job.property_id,at,job.booking_id).first<Row>();
- const end=next?.start?Math.min(at+length,Number(next.start)):at+length;
+ // A stay from an outside calendar (Airbnb, Booking…) ends the window the same way as ours.
+ const outside=await q(db,'SELECT MIN(x.start) start FROM external_blocks x JOIN calendar_sources c ON c.id=x.source_id WHERE x.property_id=? AND c.enabled=1 AND x.end>?',job.property_id,at).first<Row>();
+ if(outside?.start&&Number(outside.start)<=at)return null;
+ const limits=[next?.start,outside?.start].filter(v=>v!=null&&v!==undefined).map(Number);
+ const end=limits.length?Math.min(at+length,...limits):at+length;
  return end-at>=1800?{start:at,end}:null;
 }
 // The reserve returns (trigger), the previous cleaner's response is closed so the job leaves their list.
