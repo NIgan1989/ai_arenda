@@ -70,7 +70,8 @@ export async function reliabilityFor(db:D1Database,role:Role,ids:string[],t=epoc
 }
 
 // The episodes that lower a participant's rating, one by one, for the administrator who answers an objection
-// (audit 2026-11-22): what happened, where and when, and whether it was already cancelled.
+// (audit 2026-11-22): what happened, where and when, and whether it was already cancelled. Every episode that counts
+// is listed (up to 500 of a kind), so any of them can be cancelled.
 export type Episode={kind:VoidKind;id:string;title:string;at:number;note:string;voided:boolean};
 const reasonOf=(action:unknown,marker:string)=>{let a=String(action||'');if(a.startsWith('{'))try{a=String(JSON.parse(a).action||'');}catch{/* a plain action */}const i=a.indexOf(marker+':');return i<0?'':a.slice(i+marker.length+1).trim();};
 const withNote=(head:string,more:string)=>more?head+': '+more:head;
@@ -81,14 +82,14 @@ export async function ratingEpisodes(db:D1Database,userId:string,role:Role,t=epo
  const add=(kind:VoidKind,found:Row[],note:(r:Row)=>string)=>{for(const r of found)list.push({kind,id:String(r.id),title:String(r.title||''),at:n(r.at),note:note(r)});};
  const confirmedBefore="EXISTS(SELECT 1 FROM audit_events c WHERE c.entity_id=a.entity_id AND c.action LIKE '%booking.confirmed%' AND c.created_at<=a.created_at)";
  if(role==='guest'){
-  add('dispute',await rows(db,`SELECT b.id,p.title,MAX(a.created_at) at,MAX(a.action) action FROM audit_events a JOIN bookings b ON b.id=a.entity_id JOIN properties p ON p.id=b.property_id WHERE a.action LIKE '%booking.checkout_disputed%' AND p.demo_owner IS NULL AND b.guest_id=? GROUP BY b.id ORDER BY at DESC LIMIT 20`,userId),r=>withNote('Спор при выезде',reasonOf(r.action,'booking.checkout_disputed')));
-  add('guest_cancel',await rows(db,`SELECT b.id,p.title,MAX(a.created_at) at FROM audit_events a JOIN bookings b ON b.id=a.entity_id JOIN properties p ON p.id=b.property_id WHERE a.action='booking.cancelled' AND a.actor_id=b.guest_id AND p.demo_owner IS NULL AND b.guest_id=? AND ${confirmedBefore} GROUP BY b.id ORDER BY at DESC LIMIT 20`,userId),()=>'Отмена после подтверждения');
+  add('dispute',await rows(db,`SELECT b.id,p.title,MAX(a.created_at) at,MAX(a.action) action FROM audit_events a JOIN bookings b ON b.id=a.entity_id JOIN properties p ON p.id=b.property_id WHERE a.action LIKE '%booking.checkout_disputed%' AND p.demo_owner IS NULL AND b.guest_id=? GROUP BY b.id ORDER BY at DESC LIMIT 500`,userId),r=>withNote('Спор при выезде',reasonOf(r.action,'booking.checkout_disputed')));
+  add('guest_cancel',await rows(db,`SELECT b.id,p.title,MAX(a.created_at) at FROM audit_events a JOIN bookings b ON b.id=a.entity_id JOIN properties p ON p.id=b.property_id WHERE a.action='booking.cancelled' AND a.actor_id=b.guest_id AND p.demo_owner IS NULL AND b.guest_id=? AND ${confirmedBefore} GROUP BY b.id ORDER BY at DESC LIMIT 500`,userId),()=>'Отмена после подтверждения');
  }else if(role==='cleaner'){
-  add('no_show',await rows(db,`SELECT j.id,p.title,MAX(x.created_at) at FROM notifications x JOIN cleaning_jobs j ON ${jobMark('no-show')} JOIN properties p ON p.id=j.property_id WHERE x.user_id=? AND x.dedupe LIKE 'cleaner:no-show:%' AND p.demo_owner IS NULL GROUP BY j.id ORDER BY at DESC LIMIT 20`,userId),()=>'Срыв: начало уборки не отмечено');
-  add('revision',await rows(db,`SELECT j.id,p.title,MAX(x.created_at) at,COUNT(*) times,MAX(x.body) body FROM notifications x JOIN cleaning_jobs j ON ${jobMark('revision')} JOIN properties p ON p.id=j.property_id WHERE x.user_id=? AND x.dedupe LIKE 'cleaner:revision:%' AND p.demo_owner IS NULL GROUP BY j.id ORDER BY at DESC LIMIT 20`,userId),r=>withNote(n(r.times)>1?'Возвратов отчёта: '+n(r.times):'Отчёт возвращён на доработку',String(r.body||'').replace(/^Доработайте уборку:\s*/,'')));
+  add('no_show',await rows(db,`SELECT j.id,p.title,MAX(x.created_at) at FROM notifications x JOIN cleaning_jobs j ON ${jobMark('no-show')} JOIN properties p ON p.id=j.property_id WHERE x.user_id=? AND x.dedupe LIKE 'cleaner:no-show:%' AND p.demo_owner IS NULL GROUP BY j.id ORDER BY at DESC LIMIT 500`,userId),()=>'Срыв: начало уборки не отмечено');
+  add('revision',await rows(db,`SELECT j.id,p.title,MAX(x.created_at) at,COUNT(*) times,MAX(x.body) body FROM notifications x JOIN cleaning_jobs j ON ${jobMark('revision')} JOIN properties p ON p.id=j.property_id WHERE x.user_id=? AND x.dedupe LIKE 'cleaner:revision:%' AND p.demo_owner IS NULL GROUP BY j.id ORDER BY at DESC LIMIT 500`,userId),r=>withNote(n(r.times)>1?'Возвратов отчёта: '+n(r.times):'Отчёт возвращён на доработку',String(r.body||'').replace(/^Доработайте уборку:\s*/,'')));
  }else{
-  add('owner_cancel',await rows(db,`SELECT b.id,p.title,MAX(a.created_at) at FROM audit_events a JOIN bookings b ON b.id=a.entity_id JOIN properties p ON p.id=b.property_id WHERE a.action='booking.cancelled' AND a.actor_id=p.owner_id AND p.demo_owner IS NULL AND p.owner_id=? AND ${confirmedBefore} GROUP BY b.id ORDER BY at DESC LIMIT 20`,userId),()=>'Отмена владельцем после подтверждения');
-  add('unanswered',await rows(db,"SELECT b.id,p.title,b.expires_at at FROM bookings b JOIN properties p ON p.id=b.property_id WHERE p.demo_owner IS NULL AND p.owner_id=? AND b.status IN ('requested','expired') AND b.expires_at<=? ORDER BY b.expires_at DESC LIMIT 20",userId,t),()=>'Заявка осталась без ответа');
+  add('owner_cancel',await rows(db,`SELECT b.id,p.title,MAX(a.created_at) at FROM audit_events a JOIN bookings b ON b.id=a.entity_id JOIN properties p ON p.id=b.property_id WHERE a.action='booking.cancelled' AND a.actor_id=p.owner_id AND p.demo_owner IS NULL AND p.owner_id=? AND ${confirmedBefore} GROUP BY b.id ORDER BY at DESC LIMIT 500`,userId),()=>'Отмена владельцем после подтверждения');
+  add('unanswered',await rows(db,"SELECT b.id,p.title,b.expires_at at FROM bookings b JOIN properties p ON p.id=b.property_id WHERE p.demo_owner IS NULL AND p.owner_id=? AND b.status IN ('requested','expired') AND b.expires_at<=? ORDER BY b.expires_at DESC LIMIT 500",userId,t),()=>'Заявка осталась без ответа');
  }
  return list.map(e=>({...e,voided:off.has(e.kind+':'+e.id)})).sort((a,b)=>b.at-a.at);
 }
