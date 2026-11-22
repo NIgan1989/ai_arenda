@@ -255,7 +255,7 @@ export class RentalService {
   }
   async roleState(value:unknown,options:{catalog?:boolean}={}){
     const role=await this.authorizeWorkspace(value,'state'),state=await this.state(options.catalog!==false);
-    const bookings=state.bookings.filter((b:Row)=>role==='owner'?b.owner_id===this.userId:role==='guest'&&b.guest_id===this.userId).map((b:Row)=>role==='owner'?b:{...b,address:b.status==='confirmed'?b.address:null,owner_contact:phoneOpens(b,state.serverTime)?b.owner_contact:null,guest_name:null,guest_contact:null});
+    const bookings=state.bookings.filter((b:Row)=>role==='owner'?b.owner_id===this.userId:role==='guest'&&b.guest_id===this.userId).map((b:Row):Row=>role==='owner'?{...b,stay_check:0}:{...b,address:b.status==='confirmed'?b.address:null,owner_contact:phoneOpens(b,state.serverTime)?b.owner_contact:null,stay_check:b.guest_id===this.userId?b.stay_check:0,guest_name:null,guest_contact:null});
     const jobs=role==='guest'?[]:state.jobs.filter((j:Row)=>role==='owner'?j.owner_id===this.userId:j.assigned_to===this.userId||(j.status==='open'&&j.end>state.serverTime)).map((j:Row)=>role==='owner'||j.assigned_to===this.userId&&j.status!=='cancelled'?j:{...j,address:null,owner_contact:null,report:'',checklist:'[]'});
     const jobIds=new Set(jobs.map((j:Row)=>j.id));
     const entityIds=[...bookings,...jobs].map((item:Row)=>item.id);
@@ -392,6 +392,9 @@ export class RentalService {
     if(card.kind==='listing')return decideListingTip(this,card.id.slice(8),accept);
     if(card.kind==='cleaning-fee')return decideCleaningTip(this,card.id.slice(13),accept);
     if(card.kind==='stay')return decideStayOffer(this,card.id.slice(5),accept);
+    // «Вы заселились?» (lib/approvals.ts): the guest's answer about a cancelled booking. The owner never sees it;
+    // the administrator's morning summary counts the «yes» answers by owner (lib/admin-digest.ts).
+    if(card.kind==='stay-check'){await this.audit(card.entityId,accept?'stay.checked:yes':'stay.checked:no').run();return {message:accept?'Спасибо, ответ записан. Владелец его не видит.':'Спасибо, ответ записан.'};}
     if(card.kind==='checkout')return this.bookingAction(card.entityId,{action:accept?'checkout':'dispute_checkout',reason:body.reason,expectedVersion:state.bookings.find(b=>b.id===card.entityId)?.terms?.version});
     const job=state.jobs.find(j=>j.id===card.entityId);
     return this.jobAction(card.entityId,{action:card.kind==='application'?(accept?'assign':'reject_application'):(accept?'approve':'revise'),applicationId:card.id.slice(12),reason:body.reason,expectedVersion:job?.version});
@@ -429,7 +432,8 @@ export class RentalService {
         CASE WHEN p.owner_id=? OR (b.guest_id=? AND b.status='confirmed') THEN (SELECT json_object('phone',phone,'recipient',recipient,'link',link,'changed_at',changed_at) FROM payout_details d WHERE d.user_id=p.owner_id AND d.phone<>'') ELSE NULL END owner_pay_row,
         CASE WHEN p.owner_id=? THEN g.name ELSE NULL END guest_name,
         CASE WHEN p.owner_id=? AND ${PHONE_OPEN_SQL} THEN g.contact ELSE NULL END guest_contact,
-        CASE WHEN p.owner_id=? THEN (SELECT json_object('level',level,'score',score,'reasons',reasons,'deposit_advice',deposit_advice,'phone_verified',phone_verified,'held',held) FROM booking_risks WHERE booking_id=b.id) ELSE NULL END risk_row
+        CASE WHEN p.owner_id=? THEN (SELECT json_object('level',level,'score',score,'reasons',reasons,'deposit_advice',deposit_advice,'phone_verified',phone_verified,'held',held) FROM booking_risks WHERE booking_id=b.id) ELSE NULL END risk_row,
+        CASE WHEN b.status='cancelled' AND EXISTS(SELECT 1 FROM platform_commissions pc WHERE pc.booking_id=b.id) AND NOT EXISTS(SELECT 1 FROM audit_events a WHERE a.entity_id=b.id AND a.action LIKE 'stay.checked:%') THEN 1 ELSE 0 END stay_check
         FROM bookings b JOIN properties p ON p.id=b.property_id LEFT JOIN profiles o ON o.id=p.owner_id LEFT JOIN profiles g ON g.id=b.guest_id
         WHERE b.guest_id=? OR p.owner_id=? ORDER BY b.start DESC`, ...Array(13).fill(this.userId)),
       this.all(`SELECT j.*,EXISTS(SELECT 1 FROM regular_cleaners rc WHERE rc.property_id=j.property_id AND rc.cleaner_id=COALESCE(j.assigned_to,?)) regular,CASE WHEN j.owner_id=? OR j.assigned_to=? THEN (SELECT status FROM cleaning_holds h WHERE h.job_id=j.id AND h.cleaner_id=j.assigned_to AND h.status<>'returned') END guarantee,(j.booking_id IS NULL OR EXISTS(SELECT 1 FROM booking_terms t WHERE t.booking_id=j.booking_id AND t.actual_checkout IS NOT NULL)) checkout_confirmed,COALESCE((SELECT require_photos FROM operation_rules r WHERE r.property_id=j.property_id),0) photos_required,p.title,p.city,p.district,p.rooms,p.capacity,p.cleaning_minutes,p.demo_owner,(SELECT photos FROM property_details WHERE property_id=p.id) property_photos,(SELECT details FROM property_details WHERE property_id=p.id) property_details,CASE WHEN j.status='open' THEN p.address END open_address,

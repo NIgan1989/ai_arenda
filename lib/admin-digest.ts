@@ -14,6 +14,12 @@ export async function bypassSuspects(db:D1Database,at=epoch()){
   WHERE b.status='cancelled' AND c.created_at>? GROUP BY c.owner_id HAVING COUNT(*)>=? ORDER BY n DESC LIMIT 5`).bind(at-BYPASS_DAYS*86400,BYPASS_MIN).all<{owner_id:string;name:string;n:number}>();
  return results||[];
 }
+/** Guests who answered «Да» to «Вы заселились?» about a cancelled booking (lib/approvals.ts), by owner, 30 days. */
+export async function staysAfterCancel(db:D1Database,at=epoch()){
+ const {results}=await db.prepare(`SELECT c.owner_id,COALESCE(p.name,'Владелец') name,COUNT(*) n FROM audit_events a JOIN platform_commissions c ON c.booking_id=a.entity_id LEFT JOIN profiles p ON p.id=c.owner_id
+  WHERE a.action='stay.checked:yes' AND a.created_at>? GROUP BY c.owner_id ORDER BY n DESC LIMIT 5`).bind(at-BYPASS_DAYS*86400).all<{owner_id:string;name:string;n:number}>();
+ return results||[];
+}
 export async function digestFacts(db:D1Database,at=epoch()){
  const since=at-86400,n=async(sql:string,...a:unknown[])=>Number((await one(db,sql,...a))?.n||0);
  return {
@@ -30,7 +36,8 @@ export async function digestFacts(db:D1Database,at=epoch()){
   confirmed:await n("SELECT COUNT(*) n FROM bookings WHERE created_at>? AND status IN ('confirmed','completed')",since),
   income:await n("SELECT COALESCE(SUM(amount),0) n FROM platform_commissions WHERE created_at>?",since),
   failures:await n("SELECT COUNT(*) n FROM background_jobs WHERE status='dead'"),
-  bypass:await bypassSuspects(db,at)
+  bypass:await bypassSuspects(db,at),
+  stayed:await staysAfterCancel(db,at)
  };
 }
 export function digestText(f:Awaited<ReturnType<typeof digestFacts>>){
@@ -41,6 +48,7 @@ export function digestText(f:Awaited<ReturnType<typeof digestFacts>>){
  if(f.waitingParticipant)lines.push('Ждут, пока участник допишет: '+f.waitingParticipant+'.');
  lines.push('Обращения: новых '+f.newIssues+', решено '+f.resolvedIssues+'.');
  lines.push('Брони: новых '+f.bookings+', подтверждено '+f.confirmed+'. Комиссия сервиса: '+money(f.income)+'.');
+ if(f.stayed.length)lines.push('Гости сказали, что жили по отменённой брони: '+f.stayed.map(o=>o.name+' ('+o.n+')').join(', ')+'. Это похоже на сделку в обход.');
  if(f.bypass.length)lines.push('Проверьте, нет ли сделок в обход: отмены после подтверждения за 30 дней у '+f.bypass.map(o=>o.name+' ('+o.n+')').join(', ')+'.');
  if(f.failures)lines.push('Сбои фоновых задач: '+f.failures+'. Админка → Состояние сервиса.');
  return lines.join('\n');

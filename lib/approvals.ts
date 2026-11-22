@@ -30,6 +30,7 @@ export const listingRevision=(l:Row)=>JSON.stringify([l.id,l.status,l.kind,l.sub
 export const stayRevision=(o:Row)=>JSON.stringify([o.id,o.status,o.start,o.end,o.amount,o.base_version,o.policy_version]);
 const money=(n:number)=>new Intl.NumberFormat('ru-RU').format(n)+' ₸';
 const date=(n:number)=>new Date(n*1000).toLocaleString('ru-RU',{timeZone:'Asia/Almaty',day:'numeric',month:'long',hour:'2-digit',minute:'2-digit'});
+export const STAY_CHECK_DAYS=7;
 export function approvalCards(data:Row,role:Role,userId:string,t:number):Approval[]{
  const cards:Approval[]=[];
  for(const b of data.bookings||[]){
@@ -45,6 +46,9 @@ export function approvalCards(data:Row,role:Role,userId:string,t:number):Approva
   for(const c of b.changes||[])if(c.status==='pending'&&c.expires_at>t){
    cards.push({id:'change:'+c.id,kind:'change',entityId:b.id,revision:JSON.stringify([c.id,c.status,c.base_version,terms.version,c.policy_version,c.start,c.end,c.amount,c.expires_at]),title:'Согласование новых условий',subject:b.title,from:c.proposer_role===role?'Вы':c.proposer_role==='owner'?'Владелец':'Гость',to:c.proposer_role!==role?'Вам':'Другой стороне',canDecide:c.proposer_role!==role,expiresAt:c.expires_at,facts:[['Заезд',date(c.start)],['Выезд',date(c.end)],['Новая стоимость',money(c.amount)],['Подтверждено оплаты',money(terms.paid_amount||0)],['Депозит',money(terms.deposit||0)]],detail:c.reason,acceptLabel:'Принимаю условия',rejectLabel:'Отклонить'});
   }
+  // A confirmed booking that was cancelled: after its dates the guest is asked once whether they stayed after all.
+  // A «yes» is a deal taken out of the service; only the administrator sees it (lib/admin-digest.ts).
+  if(!owner&&b.stay_check&&b.status==='cancelled'&&t>=b.start&&t<b.end+STAY_CHECK_DAYS*86400)cards.push({id:'stay-check:'+b.id,kind:'stay-check',entityId:b.id,revision:JSON.stringify([b.id,b.status]),title:'Вы заселились?',subject:b.title,from:'ИИ-администратор',to:'Вам',canDecide:true,facts:[['Заезд',date(b.start)],['Выезд',date(b.end)]],detail:'Эту бронь отменили. Если вы всё же жили там в эти даты, ответьте «Да». Владелец ваш ответ не увидит, а сервис следит, чтобы брони шли честно.',acceptLabel:'Да',rejectLabel:'Нет'});
   if(b.status==='confirmed'&&terms.checkout_reported_at&&!terms.actual_checkout)cards.push({id:'checkout:'+b.id,kind:'checkout',entityId:b.id,revision:JSON.stringify([b.status,terms.version,terms.checkout_reported_at,terms.actual_checkout]),title:'Гость сообщил о выезде',subject:b.title,from:owner?(b.guest_name||'Гость'):'Вы',to:owner?'Вам':'Владельцу',canDecide:owner,facts:[['Сообщение о выезде',date(terms.checkout_reported_at)],['Согласованный выезд',date(b.end)]],detail:'Подтверждайте только после проверки, что жильё освобождено. Таймер и статус готовности сами по себе этого не подтверждают.',acceptLabel:'Жильё освобождено',rejectLabel:'Выезд не подтверждён',requiresReason:true});
  }
  for(const j of data.jobs||[]){

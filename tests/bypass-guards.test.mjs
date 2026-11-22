@@ -65,3 +65,16 @@ test('a regular guest gets the owner discount, a new guest pays the full price',
   assert.equal(R.prepare('SELECT amount FROM bookings WHERE id=?').get(booked.id).amount,18000);
  }finally{f.db.close();}
 });
+test('after a cancelled confirmed booking the guest is asked once whether they stayed; a «yes» reaches the morning summary',async()=>{
+ const f=await fixture(),R=f.db.raw;try{
+  const card=async()=>(await f.guest.roleState('guest',{catalog:false})).approvals.find(c=>c.kind==='stay-check');
+  R.prepare("UPDATE bookings SET status='cancelled',start=?,end=?,occupied_until=? WHERE id=?").run(now()-7200,now()-3600,now()-1800,f.booking);
+  assert.ok(R.prepare('SELECT 1 FROM platform_commissions WHERE booking_id=?').get(f.booking),'the booking was confirmed first');
+  const c=await card();assert.equal(c.title,'Вы заселились?');assert.equal(c.canDecide,true);
+  assert.equal((await f.owner.roleState('owner',{catalog:false})).approvals.some(a=>a.kind==='stay-check'),false,'the owner is not asked');
+  assert.equal((await f.owner.roleState('owner',{catalog:false})).bookings.find(b=>b.id===f.booking).stay_check,0,'the owner does not see it');
+  await f.guest.decideApproval('guest',{id:c.id,revision:c.revision,action:'accept'});
+  assert.equal(await card(),undefined,'asked once');
+  assert.match(digestText(await digestFacts(f.db)),/жили по отменённой брони: Owner \(1\)/);
+ }finally{f.db.close();}
+});
