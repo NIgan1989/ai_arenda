@@ -99,6 +99,7 @@
 -- migration 0095_service_billing_audit.sql sha256:cf606de2fb9d3d6d53b2f6fb51cb82b94927bfbe0a3885ef3167c3dcdd5d2275
 -- migration 0096_call_audio.sql sha256:52e6a3b35ded64d49a8ed35daa1b5059fc36d1fc2d302be38b6712f9192bb802
 -- migration 0097_publication_audit.sql sha256:d80919542a01d92e7b01f9979191d433c1d9d80c1dc96796e803ac4fb12dae6b
+-- migration 0098_reliability_voids.sql sha256:a2d7a652aee86c42af796f53bcd6c97f07b9e750e8a1a16fe9e63d8e7002fc9f
 
 -- table access_receipts
 CREATE TABLE access_receipts (id TEXT PRIMARY KEY,property_id TEXT NOT NULL,entity_kind TEXT NOT NULL,entity_id TEXT NOT NULL,user_id TEXT NOT NULL,created_at INTEGER NOT NULL,expires_at INTEGER NOT NULL);
@@ -1261,7 +1262,7 @@ CREATE TABLE reliability_objections (
  answer TEXT,
  answered_by TEXT,
  answered_at INTEGER
-);
+, voided TEXT NOT NULL DEFAULT '[]');
 
 -- table review_property_bindings
 CREATE TABLE review_property_bindings (
@@ -1684,6 +1685,9 @@ CREATE INDEX reliability_objections_open ON reliability_objections(status,due_at
 
 -- index reliability_objections_user
 CREATE INDEX reliability_objections_user ON reliability_objections(user_id,role,created_at);
+
+-- index reliability_objections_voided
+CREATE INDEX reliability_objections_voided ON reliability_objections(user_id,role) WHERE voided<>'[]';
 
 -- index room_units_lead
 CREATE INDEX room_units_lead ON room_units(lead_id);

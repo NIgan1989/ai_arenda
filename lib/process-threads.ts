@@ -1,13 +1,14 @@
 import {L,forms,t as tr} from './i18n';
 // «Нити» автопилота: каждая бронь, уборка и задание — нить шагов от начала до конца и шаг, на котором дело сейчас.
 // Блок «Автопилот» в шторке карты показывает их при входе, чтобы было видно, как дела идут без человека.
-// Чистая логика (только lib/ai-move-marks.ts, lib/cancellation.ts и lib/stay-handover-text.ts): её берут и сайт (components/autopilot-threads.tsx), и приложение (mobile/src/AutopilotThreads.tsx).
+// Чистая логика (только lib/ai-move-marks.ts, lib/cancellation.ts, lib/stay-handover-text.ts и lib/review-window.ts): её берут и сайт (components/autopilot-threads.tsx), и приложение (mobile/src/AutopilotThreads.tsx).
 // Тесты: tests/process-threads.test.mjs.
 
 import { aiNoteOf, aiSays, aiSaysAll } from './ai-move-marks';
 import {handoverState} from './stay-handover-text';
 import { refundLeft } from './cancellation';
 import { isHome, wordsOf } from './stay-words';
+import { canRate } from './review-window';
 
 type Row = Record<string, any>;
 const tenge = (n: number) => Number(n).toLocaleString('ru-RU').replace(/\u00a0|\u202f/g, ' ') + ' ₸';
@@ -263,8 +264,9 @@ export function tripThread(b: Row, now: number, paymentMode?: string): ProcessTh
       note: out ? w.leaveOk : terms.checkout_reported_at ? tr('Владелец подтверждает {leaveLow}',{leaveLow:w.leaveLow}) : tr('Сообщите {ofLeave}, когда уйдёте',{ofLeave:w.ofLeave}) },
   ];
   const leaving = out || !!terms.checkout_reported_at || now >= b.end;
-  const t = place(steps, [confirmed, paid && !depositDue, inside || over, (inside || over) && leaving, out], i => i === 0 || i === 1 || i === 3 || (i === 2 ? now >= b.start - 15 * 60 : true));
-  const review = b.status === 'completed' && !b.review_rating;
+  // A completed stay is over whatever the money marks say: after the term to review it must not wait for a payment again.
+  const t = place(steps, [confirmed, paid && !depositDue, inside || over, (inside || over) && leaving, out].map(d => d || b.status === 'completed'), i => i === 0 || i === 1 || i === 3 || (i === 2 ? now >= b.start - 15 * 60 : true));
+  const review = canRate(b, now);
   const yours = t.finished ? review
     : t.current === 1 ? canPay
     : t.current === 2 ? t.steps[2].state === 'now' && !terms.checkin_reported_at

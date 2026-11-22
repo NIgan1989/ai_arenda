@@ -33,16 +33,24 @@ function Objections({list,busy,save}:{list:Row[];busy:boolean;save:Save}){
  const open=list.filter(o=>o.status==='open'),done=list.filter(o=>o.status!=='open');
  return <section className="reviews-group"><header><h2>Возражения на оценку надёжности</h2><span>{open.length}</span></header>
   {open.length===0?<div className="reviews-empty"><CheckCircle2 size={24}/><p>Открытых возражений нет.</p></div>:<div className="reviews-list">{open.map(o=><ObjectionCard key={o.id} o={o} busy={busy} save={save}/>)}</div>}
-  {done.length>0&&<ul className="reviews-done">{done.map(o=><li key={o.id}><span className="reviews-role"><CheckCircle2 size={16}/></span><span><strong>{o.name||'Участник'}: {o.answer}</strong><small>Возражение: {o.body}</small></span></li>)}</ul>}
+  {done.length>0&&<ul className="reviews-done">{done.map(o=><li key={o.id}><span className="reviews-role"><CheckCircle2 size={16}/></span><span><strong>{o.name||'Участник'}: {o.answer}</strong><small>Возражение: {o.body}{o.cancelled?' · отменено отметок: '+o.cancelled:''}</small></span></li>)}</ul>}
  </section>;
 }
+// The card shows the rating and the episodes it is made of (audit 2026-11-22): an episode found wrong is ticked and
+// cancelled with the answer, the rating and the risk of the guest's waiting requests are counted again at once.
 function ObjectionCard({o,busy,save}:{o:Row;busy:boolean;save:Save}){
- const [answer,setAnswer]=useState('');
+ const [answer,setAnswer]=useState(''),[cancel,setCancel]=useState<string[]>([]);
+ const episodes:Row[]=o.episodes||[],key=(e:Row)=>e.kind+':'+e.id;
+ const toggle=(k:string)=>setCancel(v=>v.includes(k)?v.filter(x=>x!==k):[...v,k]);
  return <article className="review-card">
   <div className="review-head"><span className="reviews-role"><Flag size={18}/></span><div><span className="review-kind">{roles[o.role]||'Участник'} · {when(o.created_at)}</span><h3>{o.name||'Участник'}</h3><p>{o.late?'Срок ответа прошёл: ':'Ответить до '}{when(o.due_at)}</p></div></div>
   <p className="issue-text"><MessageSquareText size={16}/>{o.body}</p>
+  {o.reliability&&<p className="review-verdict">Оценка сейчас: {o.reliability.score?String(o.reliability.score).replace('.',','):'нет'} · {(o.reliability.facts||[]).join(', ')||o.reliability.label}</p>}
+  {episodes.length>0?<fieldset style={{display:'grid',gap:6,border:0,padding:0,margin:0}}><legend style={{fontWeight:600,marginBottom:4}}>Что снижает оценку. Отметьте ошибочное, чтобы отменить вместе с ответом</legend>
+   {episodes.map(e=><label key={key(e)} style={{display:'flex',gap:8,alignItems:'flex-start',opacity:e.voided?.6:1}}><input type="checkbox" disabled={busy||e.voided} checked={e.voided||cancel.includes(key(e))} onChange={()=>toggle(key(e))}/><span><strong>{e.note}</strong><small style={{display:'block'}}>{e.title} · {when(e.at)}{e.voided?' · уже отменено':''}</small></span></label>)}
+  </fieldset>:<p className="review-verdict">Отметок, которые снижают оценку, нет.</p>}
   <textarea aria-label="Ответ участнику" value={answer} onChange={e=>setAnswer(e.target.value)} maxLength={2000} rows={3} placeholder="Что проверили и что решили" style={{width:'100%'}}/>
-  <div className="review-actions"><Button disabled={busy||answer.trim().length<10} onClick={async()=>{if(await save('objections/answer',{id:o.id,answer}))setAnswer('');}}>Ответить</Button></div>
+  <div className="review-actions"><Button disabled={busy||answer.trim().length<10} onClick={async()=>{if(await save('objections/answer',{id:o.id,answer,cancel})){setAnswer('');setCancel([]);}}}>{cancel.length?'Ответить и отменить отмеченное: '+cancel.length:'Ответить'}</Button></div>
  </article>;
 }
 

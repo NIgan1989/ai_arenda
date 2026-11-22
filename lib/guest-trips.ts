@@ -4,6 +4,7 @@ import { dueNow } from './prepay';
 import { wordsOf } from './stay-words';
 import { recordSpan } from './record-span';
 import { lateOpen, lateNote, lateLabel } from './late-arrival';
+import { canRate } from './review-window';
 
 type Row = Record<string, any>;
 
@@ -30,7 +31,7 @@ function state(b: Row, now: number): Pick<GuestTrip, 'status' | 'tone'> {
     return b.expires_at && b.expires_at <= now ? { status: PAST.expired, tone: 'neutral' } : { status: tr('Ждём ответа владельца'), tone: 'warning' };
   }
   if (b.status !== 'confirmed') {
-    return b.status === 'completed' && !b.review_rating
+    return canRate(b, now)
       ? { status: w.rate, tone: 'active' }
       : { status: b.status === 'completed' ? w.done : PAST[b.status] || tr('Бронь закрыта'), tone: 'neutral' };
   }
@@ -81,7 +82,7 @@ export function payDue(b: Row, now = Math.floor(Date.now() / 1000)): { left: num
 
 export function guestSteps(b: Row, now: number, paymentMode?: string): GuestStep[] {
   const w = wordsOf(b);
-  if (b.status === 'completed') return b.review_rating ? [] : [{ id: 'review', label: w.rateBtn }];
+  if (b.status === 'completed') return canRate(b, now) ? [{ id: 'review', label: w.rateBtn }] : [];
   if (b.status !== 'confirmed') return [];
   const steps: GuestStep[] = [];
   // The guest transfers the stay and the deposit straight to the owner and says so in one tap («Я оплатил»);
