@@ -30,7 +30,8 @@ async function warningsOf(db:D1Database,at:number){
 export async function bypassWatch(db:D1Database,at=epoch()):Promise<Suspect[]>{
  const since=at-WATCH_DAYS*86400,warned=await warningsOf(db,at);
  const [cancels,stayed,contacts,jobs]=await Promise.all([
-  rows(db,"SELECT c.owner_id uid,c.created_at t FROM platform_commissions c JOIN bookings b ON b.id=c.booking_id WHERE b.status='cancelled' AND c.created_at>?",since),
+  // The time of the cancellation (its audit event), not of the confirmation; an old row without the event falls back to the confirmation.
+  rows(db,"SELECT uid,t FROM (SELECT c.owner_id uid,COALESCE((SELECT MAX(a.created_at) FROM audit_events a WHERE a.entity_id=b.id AND a.action LIKE 'booking.cancelled%'),c.created_at) t FROM platform_commissions c JOIN bookings b ON b.id=c.booking_id WHERE b.status='cancelled') WHERE t>?",since),
   rows(db,"SELECT c.owner_id uid,a.created_at t FROM audit_events a JOIN platform_commissions c ON c.booking_id=a.entity_id WHERE a.action='stay.checked:yes' AND a.created_at>?",since),
   rows(db,"SELECT p.owner_id uid,a.created_at t FROM audit_events a JOIN bookings b ON b.id=a.entity_id JOIN properties p ON p.id=b.property_id WHERE a.action='chat.contact_blocked' AND a.actor_id=p.owner_id AND a.created_at>?",since),
   rows(db,"SELECT owner_id,assigned_to,cancelled_at t FROM cleaning_jobs WHERE status='cancelled' AND assigned_to IS NOT NULL AND cancelled_at>?",since),
@@ -68,9 +69,13 @@ export async function warnBypass(s:RentalService,body:Row,platformAdmin:boolean)
  const n=(await warningsOf(s.db,t)).get(userId)?.n||0;
  if(!Number.isInteger(seen)||seen!==n)throw new DomainError('Список устарел: обновите его.',409);
  if(n>=WARNINGS_BEFORE_BLOCK)throw new DomainError('Два предупреждения уже были. Следующий шаг — блокировка.',409);
- await s.db.batch([
-  q(s.db,'INSERT INTO audit_events VALUES (?,?,?,?,?)',uuid(),s.userId,userId,'bypass.warning:'+(n+1),t),
-  q(s.db,'INSERT OR IGNORE INTO notifications(id,user_id,body,dedupe,read,created_at) VALUES (?,?,?,?,0,?)',uuid(),userId,WARNING_TEXT[n],'service:bypass-warning:'+userId+':'+(n+1),t),
+ // One step at a time even with two administrators: the warning is written only while the count is still n,
+ // and the notice only when this very warning was written (the batch runs as one transaction).
+ const mark=uuid();
+ const [written]=await s.db.batch([
+  q(s.db,"INSERT INTO audit_events SELECT ?,?,?,?,? WHERE (SELECT COUNT(*) FROM audit_events WHERE entity_id=? AND action LIKE 'bypass.warning:%' AND created_at>?)=?",mark,s.userId,userId,'bypass.warning:'+(n+1),t,userId,t-365*86400,n),
+  q(s.db,'INSERT OR IGNORE INTO notifications(id,user_id,body,dedupe,read,created_at) SELECT ?,?,?,?,0,? WHERE EXISTS(SELECT 1 FROM audit_events WHERE id=?)',uuid(),userId,WARNING_TEXT[n],'service:bypass-warning:'+userId+':'+(n+1),t,mark),
  ]);
+ if(!written.meta.changes)throw new DomainError('Список устарел: обновите его.',409);
  return {message:n===0?'Первое предупреждение отправлено.':'Второе предупреждение отправлено.',warnings:n+1};
 }

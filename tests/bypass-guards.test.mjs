@@ -120,7 +120,13 @@ test('the administrator sees who looks like dealing outside the service and warn
   // After a warning the count starts again: the owner comes back only if it goes on.
   assert.equal((await bypassWatch(f.db)).some(p=>p.userId==='owner'),false);
   assert.equal((await bypassWatch(f.db)).some(p=>p.userId==='cleaner'),true,'the cleaner was not warned');
-  cancel('c3',now()+5);cancel('c4',now()+5);
+  // A booking confirmed before the warning and cancelled after it counts by the time of the cancellation.
+  cancel('c3',now()-86400);R.prepare("INSERT INTO audit_events VALUES ('x3','owner','c3','booking.cancelled',?)").run(now()+5);cancel('c4',now()+5);
+  // Two administrators at once: the count moves by one, and only one notice goes out.
+  const both=await Promise.allSettled([writePlatformAdmin(f.guest,'bypass/warn',{userId:'cleaner',warnings:0},admin),writePlatformAdmin(f.guest,'bypass/warn',{userId:'cleaner',warnings:0},admin)]);
+  assert.equal(both.filter(r=>r.status==='fulfilled').length,1);
+  assert.equal(R.prepare("SELECT COUNT(*) n FROM audit_events WHERE entity_id='cleaner' AND action LIKE 'bypass.warning:%'").get().n,1);
+  assert.equal(R.prepare("SELECT COUNT(*) n FROM notifications WHERE user_id='cleaner' AND dedupe LIKE 'service:bypass-warning:%'").get().n,1);
   const again=(await bypassWatch(f.db,now()+10)).find(p=>p.userId==='owner');assert.equal(again.warnings,1);assert.equal(again.signals.cancels,2);
   assert.match((await writePlatformAdmin(f.guest,'bypass/warn',{userId:'owner',warnings:1},admin)).message,/Второе/);
   await assert.rejects(writePlatformAdmin(f.guest,'bypass/warn',{userId:'owner',warnings:2},admin),/блокировка/);
