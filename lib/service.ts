@@ -726,17 +726,20 @@ export class RentalService {
     const unready=unreadyNote((await this.one('SELECT readiness FROM property_operations WHERE property_id=?',p.id))?.readiness,start,now());
     // A banquet always has an occasion: it marks the booking as a banquet and tells the owner what to get ready for.
     const occasion=isBanquet(checked.kind)?(Object.hasOwn(occasions,String(body.occasion))?String(body.occasion):'other'):'',event=occasion?' '+(occasion==='other'?'Банкет':occasionLabel(occasion))+', гостей: '+guests+'.':'';
+    // «Принял бронь» is said only once the confirmation is written: the autopilot may be switched off in between (audit 2026-11-22).
+    const accepting=autoConfirm&&!risk.held&&!unready;
     await this.db.batch([
       this.query('INSERT INTO bookings(id,property_id,guest_id,start,end,occupied_until,guests,amount,status,expires_at,payment_status,request_key,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)',bookingId,p.id,this.userId,start,end,end+p.cleaning_minutes*60,guests,amount,'requested',now()+answer*60,'unpaid',key,now()),
       this.query('INSERT INTO booking_terms(booking_id,billing_mode,rate,units,amount,deposit,deposit_status,house_rules,policy_version,original_end,min_hours,occasion,prepay_percent,discount_percent) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)',bookingId,checked.billingMode,checked.price,checked.periods,amount,checked.policy.deposit,checked.policy.deposit?'pending':'not_required',checked.policy.house_rules,checked.policy.version,end,Math.max(1,Number(checked.policy.min_hours)||1),occasion,checked.payment.prepayPercent,Number((checked as Row).repeat?.percent)||0),
-      this.notify(owner!.owner_id,risk.held?`ИИ-администратор не подтвердил заявку на «${checked.title}» сам: ${riskLabel.high.toLowerCase()} (${risk.reasons.slice(0,2).join(', ')}).${unready?' '+unready+'.':''} Решите в течение ${minutesLabel(answer)}.`:autoConfirm&&unready?`ИИ-администратор не подтвердил заявку на «${checked.title}» сам: ${unready[0].toLowerCase()+unready.slice(1)}. Отметьте «Жильё готово», если успеете, или решите сами в течение ${minutesLabel(answer)}.`:autoConfirm?`ИИ-администратор принял бронь на «${checked.title}» по вашим правилам.${event} ${riskLabel[risk.level]}.`:`Новая заявка на «${checked.title}».${event} ${riskLabel[risk.level]}.${unready?' '+unready+'.':''} Подтвердите её в течение ${minutesLabel(answer)}.`,`booking:${bookingId}`,'owner'),this.audit(bookingId,'booking.requested'),
+      ...(accepting?[]:[this.notify(owner!.owner_id,risk.held?`ИИ-администратор не подтвердил заявку на «${checked.title}» сам: ${riskLabel.high.toLowerCase()} (${risk.reasons.slice(0,2).join(', ')}).${unready?' '+unready+'.':''} Решите в течение ${minutesLabel(answer)}.`:autoConfirm&&unready?`ИИ-администратор не подтвердил заявку на «${checked.title}» сам: ${unready[0].toLowerCase()+unready.slice(1)}. Отметьте «Жильё готово», если успеете, или решите сами в течение ${minutesLabel(answer)}.`:autoConfirm?`ИИ-администратор принял бронь на «${checked.title}» по вашим правилам.${event} ${riskLabel[risk.level]}.`:`Новая заявка на «${checked.title}».${event} ${riskLabel[risk.level]}.${unready?' '+unready+'.':''} Подтвердите её в течение ${minutesLabel(answer)}.`,`booking:${bookingId}`,'owner')]),this.audit(bookingId,'booking.requested'),
       saveRiskSql(this.db,bookingId,p.id,this.userId,owner!.owner_id,risk),
       ...(!risk.phone&&risk.level!=='low'&&!(autoConfirm&&!risk.held&&!unready)?[this.notify(this.userId,'Подтвердите телефон в профиле: владельцу так спокойнее, и заявку на «'+checked.title+'» подтвердят быстрее.','phone-ask:'+bookingId,'guest')]:[])
     ]);
     const policy=policyNow!;
     if(autoConfirm&&!risk.held&&!unready){
       // The owner was told the AI accepted it; if the confirmation fails after all, the owner decides and is told so.
-      try{await new RentalService(this.db,owner!.owner_id,{propertyId:p.id,policyVersion:policy.version}).bookingAction(bookingId,{action:'confirm',cleaningFee:policy.cleaning_fee});}
+      try{await new RentalService(this.db,owner!.owner_id,{propertyId:p.id,policyVersion:policy.version}).bookingAction(bookingId,{action:'confirm',cleaningFee:policy.cleaning_fee});
+        await this.notify(owner!.owner_id,`ИИ-администратор принял бронь на «${checked.title}» по вашим правилам.${event} ${riskLabel[risk.level]}.`,`booking:${bookingId}`,'owner').run();}
       catch(error){if(!(error instanceof DomainError))throw error;await this.notify(owner!.owner_id,`ИИ-администратор не смог подтвердить заявку на «${checked.title}» сам: ${error.message} Решите в течение ${minutesLabel(answer)}.`,`booking-held:${bookingId}`,'owner').run();return {id:bookingId,amount,message:'Заявка отправлена. Интервал зарезервирован на '+minutesLabel(answer)+' до решения владельца.'};}
       return {id:bookingId,amount,message:'Бронь подтверждена автоматически по правилам владельца. Оплата и депозит учитываются отдельно.'};}
     return {id:bookingId,amount,message:'Заявка отправлена. Интервал зарезервирован на '+minutesLabel(answer)+' до решения владельца.'};
@@ -1073,7 +1076,7 @@ export class RentalService {
   }
   async changeContext(bookingId:string,roleValue:unknown){
     const role=parseRole(roleValue);if(role==='cleaner')throw new DomainError('Изменения проживания доступны гостю и владельцу.',403);await this.requireRole(role);
-    const b=await this.one(`SELECT b.*,p.owner_id,p.price,p.cleaning_minutes,p.title FROM bookings b JOIN properties p ON p.id=b.property_id WHERE b.id=? AND ${role==='owner'?'p.owner_id':'b.guest_id'}=?`,bookingId,this.userId);
+    const b=await this.one(`SELECT b.*,p.owner_id,p.price,p.cleaning_minutes,p.title,p.capacity FROM bookings b JOIN properties p ON p.id=b.property_id WHERE b.id=? AND ${role==='owner'?'p.owner_id':'b.guest_id'}=?`,bookingId,this.userId);
     if(!b)throw new DomainError('Бронь не найдена.',404);
     const terms=await this.one('SELECT * FROM booking_terms WHERE booking_id=?',bookingId),policy=await this.one('SELECT * FROM property_policies WHERE property_id=?',b.property_id);
     if(b.status!=='confirmed'||!terms||terms.actual_checkout||terms.checkout_reported_at)throw new DomainError('Изменение доступно только для действующего проживания до сообщения о выезде.',409);
@@ -1088,7 +1091,9 @@ export class RentalService {
     if(!terms.actual_checkin&&start<t-60&&start!==b.start)throw new DomainError('Новый заезд должен быть в будущем.');
     // The same rule as at the booking: a bath stays by the hour, a hall moves only to another lunch or evening (kindMode).
     const kind=(await this.one("SELECT json_extract(details,'$.type') type FROM property_details WHERE property_id=?",b.property_id))?.type||'apartment';
-    const mode=kindMode(kind,body.billingMode||terms.billing_mode,start,end),pricing=withGuests(changeRentalPrice(b.price,policy,start,end,mode),policy,b.guests);
+    // A new number of guests is agreed in the same change: checked against the capacity and priced like at the booking.
+    const guests=body.guests===undefined||body.guests===null||body.guests===''?Number(b.guests):number(body.guests,'Гости',1,Math.max(1,Number(b.capacity)||1));
+    const mode=kindMode(kind,body.billingMode||terms.billing_mode,start,end),pricing=withGuests(changeRentalPrice(b.price,policy,start,end,mode),policy,guests);
     const discount=number(body.discountPercent??terms.discount_percent??0,'Скидка, %',0,50);
     if(role==='guest'&&discount!==(terms.discount_percent||0))throw new DomainError('Скидку предлагает владелец.',403);
     // The discount already in the terms (a regular guest's, lib/rental-policy.ts) stays with the booking whatever the owner's limit.
@@ -1096,11 +1101,11 @@ export class RentalService {
     // An owner asking the guest to come a little later (a late cleaning, «Сдвинуть заезд») keeps the agreed price: the
     // guest pays nothing more and gets nothing less for the owner's delay. The rule depends only on the terms, so the
     // proposal and the guest's acceptance compute the same amount.
-    const ownerDelay=role==='owner'&&start>b.start&&start-b.start<=SHIFT_LIMIT&&mode===terms.billing_mode&&discount===(terms.discount_percent||0)&&(end===b.end||end-start===b.end-b.start);
+    const ownerDelay=role==='owner'&&guests===Number(b.guests)&&start>b.start&&start-b.start<=SHIFT_LIMIT&&mode===terms.billing_mode&&discount===(terms.discount_percent||0)&&(end===b.end||end-start===b.end-b.start);
     const amount=ownerDelay?Number(b.amount):Math.ceil(pricing.amount*(100-discount)/100);
     if(!ownerDelay&&policy.minimum_rate&&amount<policy.minimum_rate*pricing.periods)throw new DomainError('Стоимость ниже минимальной разрешённой ставки.');
     if(amount<terms.paid_amount)throw new DomainError('Новая сумма меньше подтверждённой оплаты. Сначала согласуйте возврат с владельцем; автоматический возврат не подключён.',409);
-    if(start===b.start&&end===b.end&&amount===b.amount&&mode===terms.billing_mode)throw new DomainError('Условия не изменились.');
+    if(start===b.start&&end===b.end&&amount===b.amount&&mode===terms.billing_mode&&guests===Number(b.guests))throw new DomainError('Условия не изменились.');
     const occupiedUntil=end+b.cleaning_minutes*60;
     await assertCalendarAvailable(this.db,b.property_id,start,occupiedUntil);
     const occupied=await this.one("SELECT id FROM bookings WHERE property_id=? AND id<>? AND (status='confirmed' OR (status='requested' AND expires_at>?)) AND start<? AND occupied_until>?",b.property_id,bookingId,t,occupiedUntil,start);
@@ -1109,8 +1114,8 @@ export class RentalService {
     if(occupied||cleaning||started)throw new DomainError('Изменение пересекает другую бронь или уборку.',409);
     const op=await this.one('SELECT * FROM property_operations WHERE property_id=?',b.property_id);
     if(op&&['maintenance','blocked'].includes(op.readiness))throw new DomainError('Заезды в это жильё закрыты.',409);
-    const automatic=role==='guest'&&!!policy.auto_extension&&mandateActive(policy)&&terms.policy_version===policy.version&&start===b.start&&end>b.end&&end-(terms.original_end||b.end)<=policy.max_extension_hours*3600&&mode===terms.billing_mode&&discount===(terms.discount_percent||0);
-    return {bookingId,start,end,occupiedUntil,billingMode:pricing.billingMode,rate:pricing.price,units:pricing.periods,extraHours:pricing.extraHours,extraRate:pricing.extraRate,discountPercent:discount,amount,previousAmount:b.amount,paidAmount:terms.paid_amount,amountDue:Math.max(0,amount-terms.paid_amount),baseVersion:terms.version,policyVersion:policy.version,automatic,cleanerReconfirmation:end!==b.end&&!!await this.one("SELECT id FROM cleaning_jobs WHERE booking_id=? AND assigned_to IS NOT NULL AND status='assigned' AND abs(start-?)>?",bookingId,end,KEEP_SHIFT),currency:'KZT'};
+    const automatic=role==='guest'&&guests===Number(b.guests)&&!!policy.auto_extension&&mandateActive(policy)&&terms.policy_version===policy.version&&start===b.start&&end>b.end&&end-(terms.original_end||b.end)<=policy.max_extension_hours*3600&&mode===terms.billing_mode&&discount===(terms.discount_percent||0);
+    return {bookingId,guests,start,end,occupiedUntil,billingMode:pricing.billingMode,rate:pricing.price,units:pricing.periods,extraHours:pricing.extraHours,extraRate:pricing.extraRate,discountPercent:discount,amount,previousAmount:b.amount,paidAmount:terms.paid_amount,amountDue:Math.max(0,amount-terms.paid_amount),baseVersion:terms.version,policyVersion:policy.version,automatic,cleanerReconfirmation:end!==b.end&&!!await this.one("SELECT id FROM cleaning_jobs WHERE booking_id=? AND assigned_to IS NOT NULL AND status='assigned' AND abs(start-?)>?",bookingId,end,KEEP_SHIFT),currency:'KZT'};
   }
   async proposeBookingChange(bookingId:string,roleValue:unknown,body:Row){
     const role=parseRole(roleValue);await this.changeContext(bookingId,role);
@@ -1123,7 +1128,7 @@ export class RentalService {
     // The other side gets the same time to answer as the owner has for a booking request (15 minutes unless the owner chose another).
     const wait=(await ruleFor(this.db,b.owner_id,'request')).minutes;
     await this.db.batch([
-      this.query('INSERT INTO booking_changes(id,booking_id,proposed_by,proposer_role,request_key,base_version,policy_version,start,end,occupied_until,billing_mode,rate,units,discount_percent,amount,reason,expires_at,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',changeId,bookingId,this.userId,role,key,q.baseVersion,q.policyVersion,q.start,q.end,q.occupiedUntil,q.billingMode,q.rate,q.units,q.discountPercent,q.amount,reason,now()+wait*60,now()),
+      this.query('INSERT INTO booking_changes(id,booking_id,proposed_by,proposer_role,request_key,base_version,policy_version,start,end,occupied_until,billing_mode,rate,units,discount_percent,amount,reason,expires_at,created_at,guests) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',changeId,bookingId,this.userId,role,key,q.baseVersion,q.policyVersion,q.start,q.end,q.occupiedUntil,q.billingMode,q.rate,q.units,q.discountPercent,q.amount,reason,now()+wait*60,now(),q.guests===Number(b.guests)?null:q.guests),
       this.notify(role==='owner'?b.guest_id:b.owner_id,'Предложено изменение проживания. Проверьте даты и стоимость в брони.','change:'+changeId,role==='owner'?'guest':'owner'),this.audit(bookingId,'booking.change_proposed:'+changeId)
     ]);
     if(q.automatic){try{const result=await new RentalService(this.db,b.owner_id).decideBookingChange(bookingId,changeId,'owner',{action:'accept'},true);return {id:changeId,...result};}catch(error){if(!(error instanceof DomainError))throw error;}}
@@ -1139,14 +1144,14 @@ export class RentalService {
     if(body.action!=='accept')throw new DomainError('Выберите принятие или отклонение.');
     if(c.base_version!==terms.version||c.policy_version!==policy.version)throw new DomainError('Условия брони или правила владельца изменились. Нужен новый расчёт.',409);
     // Validate as the proposer, so only an owner can originate a discount.
-    const q=await new RentalService(this.db,c.proposed_by).bookingChangeQuote(bookingId,c.proposer_role,{start:new Date(c.start*1000).toISOString(),end:new Date(c.end*1000).toISOString(),billingMode:c.billing_mode,discountPercent:c.discount_percent});
+    const q=await new RentalService(this.db,c.proposed_by).bookingChangeQuote(bookingId,c.proposer_role,{start:new Date(c.start*1000).toISOString(),end:new Date(c.end*1000).toISOString(),billingMode:c.billing_mode,discountPercent:c.discount_percent,...(c.guests?{guests:c.guests}:{})});
     if(q.amount!==c.amount||q.baseVersion!==c.base_version||q.policyVersion!==c.policy_version)throw new DomainError('Стоимость изменилась. Нужен новый расчёт.',409);
     if(automatic&&(!q.automatic||role!=='owner'))throw new DomainError('Автоматическое изменение выходит за полномочия владельца.',403);
     const job=await this.one("SELECT * FROM cleaning_jobs WHERE booking_id=? AND status IN ('open','assigned')",bookingId),movesCleaning=b.end!==c.end;
     const gate="EXISTS(SELECT 1 FROM booking_changes c JOIN booking_terms t ON t.booking_id=c.booking_id WHERE c.id=? AND c.status='accepted' AND t.version=c.base_version)";
     const statements=[
       this.query("UPDATE booking_changes SET status='accepted',decided_at=? WHERE id=? AND status='pending' AND expires_at>? AND EXISTS(SELECT 1 FROM booking_terms WHERE booking_id=? AND version=? AND actual_checkout IS NULL AND checkout_reported_at IS NULL AND paid_amount<=?) AND EXISTS(SELECT 1 FROM property_policies WHERE property_id=? AND version=? AND (?=0 OR mandate_until=0 OR mandate_until>?)) AND EXISTS(SELECT 1 FROM bookings WHERE id=? AND status='confirmed')",now(),changeId,now(),bookingId,c.base_version,c.amount,b.property_id,c.policy_version,automatic?1:0,now(),bookingId),
-      this.query(`UPDATE bookings SET start=?,end=?,occupied_until=?,amount=?,payment_status=CASE WHEN ?>=(SELECT paid_amount FROM booking_terms WHERE booking_id=?) AND ?>(SELECT paid_amount FROM booking_terms WHERE booking_id=?) THEN 'unpaid' ELSE payment_status END WHERE id=? AND ${gate}`,c.start,c.end,c.occupied_until,c.amount,c.amount,bookingId,c.amount,bookingId,bookingId,changeId)
+      this.query(`UPDATE bookings SET guests=COALESCE((SELECT guests FROM booking_changes WHERE id=?),guests),start=?,end=?,occupied_until=?,amount=?,payment_status=CASE WHEN ?>=(SELECT paid_amount FROM booking_terms WHERE booking_id=?) AND ?>(SELECT paid_amount FROM booking_terms WHERE booking_id=?) THEN 'unpaid' ELSE payment_status END WHERE id=? AND ${gate}`,changeId,c.start,c.end,c.occupied_until,c.amount,c.amount,bookingId,c.amount,bookingId,bookingId,changeId)
     ];
     // A later arrival gives the cleaning before it the time it needs (lib/arrival-shift.ts).
     if(c.start>b.start)statements.push(extendCleaningBefore(this.db,b,c.start,gate,changeId));

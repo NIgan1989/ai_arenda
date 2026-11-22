@@ -74,3 +74,17 @@ test('with a part of the deposit already in, the guest reports and the owner con
   assert.equal(entries(f,'deposit'),10000);
  }finally{f.db.close();}
 });
+test('a change agrees a new number of guests and its price; above the capacity it is refused',async()=>{
+ const f=await fixture();try{
+  f.db.raw.prepare('UPDATE properties SET capacity=6 WHERE id=?').run(f.property);
+  f.db.raw.prepare('UPDATE property_policies SET included_guests=2,extra_guest_price=500 WHERE property_id=?').run(f.property);
+  const b=f.db.raw.prepare('SELECT * FROM bookings WHERE id=?').get(f.booking),iso=v=>new Date(v*1000).toISOString();
+  await assert.rejects(f.guest.bookingChangeQuote(f.booking,'guest',{start:iso(b.start),end:iso(b.end),guests:9}),/Гости/);
+  const q=await f.guest.bookingChangeQuote(f.booking,'guest',{start:iso(b.start),end:iso(b.end),guests:4});
+  assert.equal(q.guests,4);assert.ok(q.amount>b.amount,'more guests cost more');
+  const c=await f.guest.proposeBookingChange(f.booking,'guest',{start:iso(b.start),end:iso(b.end),guests:4,expectedAmount:q.amount,baseVersion:q.baseVersion,policyVersion:q.policyVersion,acceptTerms:true,reason:'Придут друзья',requestKey:'g4'});
+  await f.owner.decideBookingChange(f.booking,c.id,'owner',{action:'accept'});
+  const after=f.db.raw.prepare('SELECT guests,amount FROM bookings WHERE id=?').get(f.booking);
+  assert.equal(after.guests,4);assert.equal(after.amount,q.amount);
+ }finally{f.db.close();}
+});
