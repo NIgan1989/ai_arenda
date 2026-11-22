@@ -242,3 +242,35 @@ test('a finished cleaning says where the money is: marked by the owner, then con
  assert.match(cleaningThread({...j,settled_at:null,settlement_paid:0},owner,t).line,/Ждём ваш перевод/);
  assert.match(jobThread({...j,status:'assigned',checkout_confirmed:0,settled_at:null},cleaner,t-9000).line,/начать можно после подтверждения выезда/);
 });
+// Audit of 2026-11-22 (baths, halls): the kind decides the tariff at the booking and at every change of it.
+const kindOf=(f,type)=>f.db.raw.prepare("INSERT INTO property_details(property_id,details,revision,updated_at) VALUES (?,?,'t',0) ON CONFLICT(property_id) DO UPDATE SET details=excluded.details").run(f.property,JSON.stringify({type}));
+const dayAt=(days,hour)=>Math.floor((now()+18000)/86400+days)*86400-18000+hour*3600;
+test('a bath or a sauna is priced by the hour even when the request asks for days',async()=>{
+ const f=await fixture();try{
+  kindOf(f,'sauna');const start=dayAt(3,15),end=start+3*3600;
+  const q=await f.guest.bookingQuote({propertyId:f.property,start:iso(start),end:iso(end),guests:1});
+  assert.equal(q.billingMode,'hourly');assert.equal(q.amount,3*2000);
+  await assert.rejects(f.guest.bookingQuote({propertyId:f.property,start:iso(start),end:iso(end),guests:1,billingMode:'daily'}),/по часам/);
+  // A change of the fixture's stay to days is refused as well.
+  await assert.rejects(f.guest.bookingChangeQuote(f.booking,'guest',{start:iso(now()+3600),end:iso(now()+86400+3600),billingMode:'daily'}),/по часам/);
+ }finally{f.db.close();}
+});
+test('a banquet hall moves only to another lunch or evening, never across both',async()=>{
+ const f=await fixture();try{
+  kindOf(f,'banquet');
+  await assert.rejects(f.guest.bookingQuote({propertyId:f.property,start:iso(dayAt(3,15)),end:iso(dayAt(3,21)),guests:1,billingMode:'daily'}),/обед/);
+  const lunch=await f.guest.bookingQuote({propertyId:f.property,start:iso(dayAt(3,12)),end:iso(dayAt(3,17)),guests:1});
+  assert.equal(lunch.billingMode,'daily');
+  // The fixture's booking stands for a confirmed banquet: moving it to 15:00–21:00 is refused, to an evening allowed.
+  f.db.raw.prepare("UPDATE booking_terms SET billing_mode='daily' WHERE booking_id=?").run(f.booking);
+  await assert.rejects(f.owner.bookingChangeQuote(f.booking,'owner',{start:iso(dayAt(4,15)),end:iso(dayAt(4,21))}),/обед/);
+  const evening=await f.owner.bookingChangeQuote(f.booking,'owner',{start:iso(dayAt(4,18)),end:iso(dayAt(5,0))});
+  assert.equal(evening.billingMode,'daily');
+ }finally{f.db.close();}
+});
+test('a hall request says its slot, guests and occasion beside the sum',async()=>{
+ const {hallLine}=await load('record-span'),start=dayAt(3,18);
+ assert.equal(hallLine({property_type:'banquet',start,guests:80,terms:{occasion:'toi'}}),'Вечер · 80 гостей · Свадьба, той');
+ assert.equal(hallLine({property_type:'cafe',start:dayAt(3,12),guests:20,terms:{occasion:'other'}}),'Обед · 20 гостей · Банкет');
+ assert.equal(hallLine({property_type:'hotel',start,guests:2}),'');
+});
