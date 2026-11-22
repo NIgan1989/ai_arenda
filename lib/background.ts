@@ -12,6 +12,7 @@ import {RentalService} from './service';
 import {checkAdministratorOwner} from './administrator-runtime';
 import {deliverOutbox} from './delivery';
 import {deliverWebPush} from './web-push';
+import {deliverNativePush} from './native-push';
 import {advanceMatchingRequests} from './matching-background';
 import {refreshCalendar} from './external-calendar';
 import {sweepSilence} from './owner-silence';
@@ -108,7 +109,7 @@ export async function runOperationalTick(db:D1Database,config:OperationConfig={}
   if(job.kind==='admin-autocheck')return sweepReviews(db,config as OperationConfig&{PLATFORM_ADMIN_IDS?:string});
   if(job.kind==='matching-dispatch')return advanceMatchingRequests(db,config);
   if(job.kind==='owner')return checkAdministratorOwner(db,job.scope);
-  if(job.kind==='delivery')return {external:await deliverOutbox(db,config,12,id=>new RentalService(db,id)),push:await deliverWebPush(db,config,12)};
+  if(job.kind==='delivery')return {external:await deliverOutbox(db,config,12,id=>new RentalService(db,id)),push:await deliverWebPush(db,config,12),app:await deliverNativePush(db,config,12)};
   if(job.kind==='calendar')return refreshCalendar(db,job.payload.sourceId,config);
   if(job.kind==='finance-history')return migrateHistory(db,job.scope);
   if(job.kind==='backup')return cloudBackup(db,config);

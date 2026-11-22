@@ -1,7 +1,7 @@
 import {DomainError,number,required} from './domain';
 export type Row=Record<string,any>;
 import type {AIBudgetConfig} from './ai-budget';
-export type PushConfig={VAPID_PUBLIC_KEY?:string;VAPID_PRIVATE_KEY?:string;VAPID_SUBJECT?:string};
+export type PushConfig={VAPID_PUBLIC_KEY?:string;VAPID_PRIVATE_KEY?:string;VAPID_SUBJECT?:string;EXPO_ACCESS_TOKEN?:string};
 export type MatchingRunnerConfig={ADMINISTRATOR_RUNNER_SECRET?:string};
 export type OperationConfig=AIBudgetConfig&PushConfig&MatchingRunnerConfig&{TEST_DATA_ONLY?:string;ROUTING_FOOT_URL?:string;ROUTING_CAR_URL?:string;STADIA_API_KEY?:string;REALTIME_APP_ID?:string;REALTIME_APP_TOKEN?:string;SITE_PUBLIC_URL?:string;TELEGRAM_BOT_TOKEN?:string;TELEGRAM_BOT_USERNAME?:string;TELEGRAM_WEBHOOK_SECRET?:string;SMS_GATEWAY_URL?:string;SMS_GATEWAY_TOKEN?:string;WHATSAPP_GATEWAY_URL?:string;WHATSAPP_GATEWAY_TOKEN?:string;DELIVERY_WEBHOOK_SECRET?:string;PAYMENT_GATEWAY_URL?:string;PAYMENT_GATEWAY_TOKEN?:string;PAYMENT_WEBHOOK_SECRET?:string;ACCESS_ENCRYPTION_KEY?:string;CALENDAR_ALLOWED_HOSTS?:string;BUCKET?:R2Bucket};
 export const epoch=()=>Math.floor(Date.now()/1000);

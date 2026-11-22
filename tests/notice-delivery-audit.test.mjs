@@ -57,7 +57,7 @@ test('an urgent notice in the quiet hours goes to the browser at once when the o
   f.db.raw.prepare('INSERT OR IGNORE INTO auth_accounts(id,phone,name,password_hash,recovery_hash,created_at) VALUES (?,?,?,?,?,?)').run('owner','+77770000002','owner','x','x',now());
   f.db.raw.prepare('INSERT INTO auth_sessions VALUES (?,?,1,?)').run('owner-s','owner',now()+3600);
   await manageWebPush(f.owner,'owner',{action:'subscribe',subscription:device()},pushConfig,'owner-s');
-  const quiet=allow=>f.db.raw.prepare('INSERT OR REPLACE INTO assistant_preferences VALUES (?,?,?,?,?)').run('owner','owner',JSON.stringify({quietEnabled:true,quietStart:'00:00',quietEnd:'23:59',urgentInQuiet:allow}),1,now());
+  const quiet=allow=>f.db.raw.prepare('INSERT OR REPLACE INTO assistant_preferences VALUES (?,?,?,?,?)').run('owner','owner',JSON.stringify({quietEnabled:true,quietStart:'00:00',quietEnd:'00:00',urgentInQuiet:allow}),1,now());
   quiet(true);
   await f.owner.notify('owner','Требует внимания. Проверьте заезд гостя.','overdue:x1','owner').run();
   await f.owner.notify('owner','Гость оставил отзыв.','review:x1','owner').run();

@@ -166,7 +166,7 @@ const PERSON_WRITTEN:[RegExp,string][]=[
 ];
 // The language the person chose in the app (lib/user-language.ts); Russian when unknown.
 const langOf=(item:Row):Lang=>isLang(item.lang)?item.lang:'ru';
-const plainNotice=(item:Row)=>noticeIn(langOf(item),personWritten(item));
+export const plainNotice=(item:Row)=>noticeIn(langOf(item),personWritten(item));
 const personWritten=(item:Row)=>{
  const body=String(item.body||'').trim()||'Есть новое событие. Откройте сервис, чтобы посмотреть.';
  if(String(item.dedupe||'').split(':')[1]==='discussion')return body.replace(/\+?\d[\d\s()-]{8,}\d|\d{4,}/g,'••••');

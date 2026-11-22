@@ -35,6 +35,7 @@ import {prepayLabel,prepayOf} from '../lib/prepay';
 import {PayTo,Receipts} from './src/PayoutDetails';
 import {isHome,wordsOf} from '../lib/stay-words';
 import {useProcessLinks} from './src/use-process-links';
+import {registerPush,setupNotifications,usePushTaps} from './src/NativePush';
 import {resolveProcessLink} from './src/deep-links';
 import { API_URL,ApiError,StaleSessionError,getSessionGeneration,isOffline,onLegalRequired,onServerReach,request,restoreLastRole,restoreSession,saveLastRole,saveSession,setWorkspaceRole } from './src/api';
 import { baseQuestions,cleanerQuestions,date,empty,labels,money,parseDate,propertyQuestions,uid,type Flow,type Message,type Question,type Role,type Row } from './src/model';
@@ -217,6 +218,11 @@ function Chat(){
       if(history.flow)setLinkError(tr('В этой роли сохранён незавершённый ввод. Завершите или отмените его, затем откройте ссылку повторно.'));else if(view.block)say(tr('Открыто по ссылке.'),view.block,view.payload);
     }finally{locked.current=false;setBusy(false);}
   }});
+  // A tap on a push: the card it is about, through the same check as a link; a chat opens its room.
+  usePushTaps(link=>{
+    if(link.kind==='chat'&&link.role===activeRoleRef.current){setChatInitial(link.roomId?{roomId:link.roomId}:null);setPageId('chats');return;}
+    processLinks.acceptURL(link.kind==='link'?link.url:'aiarenda://workspace/'+link.role+'/map');
+  });
   const finish=(id:string,result=tr('Сохранено'))=>setMessages(prev=>prev.map(m=>m.id===id?{...m,done:true,result}:m));
   async function signedOut(result?:Row){
     try{await saveSession(null);await saveLastRole(null,null);}finally{session.current=false;setWorkspaceRole(null);activeRoleRef.current=null;setSelectedRole(null);setHistoryReady(false);setData(empty);setMessages([]);setFlow(null);setInput('');setChatInitial(null);setChatsActive(false);setRecoveryCode('');if(result?.receipt)setErasureResult(result);}
@@ -239,6 +245,8 @@ function Chat(){
     if(generation!==getSessionGeneration()||activeRoleRef.current!==role)throw new StaleSessionError();
     const state=catalog?{...fetched,properties:catalog}:fetched;
     setData(state);if(!catalog)catalogAt.current=Date.now();historyEnd.current=pruneHistory(history.messages||[]).at(-1)?.id||'';setMessages(pruneHistory(history.messages||[]));setFlow(history.flow||null);setActor(role);setSelectedRole(role);setPageId(history.flow?'overview':'map');if(history.draftInvalid)setLinkError(tr('Сохранённый ввод не удалось открыть. Начните форму заново; заявки сохранены на сервере.'));setSaveError(false);setOnline(true);(state.notifications||[]).forEach((n:Row)=>seen.current.add(n.id));setHistoryReady(true);seen.current=new Set(state.notifications.map((n:Row)=>n.id));void saveLastRole(state.user?.id||null,role);return state;
+    // Push to this phone for the role that opened (src/NativePush.tsx): the system question once per phone.
+    void registerPush(role,'once').catch(()=>undefined);
   }
   // The map opens first: the role used last on this device, or the only role the account has. The role chooser stays behind «Сменить роль».
   async function openLastRole(state?:Row){
@@ -797,4 +805,5 @@ function Fonted({children}:{children:React.ReactNode}){const [fonts,fontError]=u
 // The language is known before the first frame (the phone's, then the saved choice: src/lang.ts); a change draws
 // the whole app again, so every screen speaks the new language at once.
 startLang();
+setupNotifications();
 export default function App(){useLang();return <SafeAreaProvider><View style={{flex:1}} onStartShouldSetResponderCapture={markGesture}><EntryStatusBar/><Fonted><Chat/></Fonted><LoadingBar/><BrandMoment/><RolePlate/><EntrySplash/></View></SafeAreaProvider>;}
