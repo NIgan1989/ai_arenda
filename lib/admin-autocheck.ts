@@ -49,7 +49,7 @@ export function flatChecks(f:FlatFacts):ReviewCheck[]{
  return checks;
 }
 // The photo of the ID card (lib/identity-docs.ts): a person compares it with the profile.
-const identityCheck=(n:number):ReviewCheck=>({key:'identity',label:'Удостоверение',state:n>0?'ok':'fix',note:n>0?'Приложено фото удостоверения личности: сверит администратор':'Приложите фото удостоверения личности: «Профиль» → «Удостоверение личности»'});
+const identityCheck=(n:number):ReviewCheck=>({key:'identity',label:'Удостоверение',state:'ok',note:n>0?'Приложено фото удостоверения личности: сверит администратор':'Удостоверения нет: другие участники увидят «Личность не подтверждена». Одобрить можно.'});
 export type CleanerFacts={name:string;avatar:boolean;rejectedBefore:number;openComplaints:number;identity?:number};
 // Pure: the rules for a cleaner. Every assignment is still agreed by the flat's owner.
 export function cleanerChecks(f:CleanerFacts):ReviewCheck[]{
@@ -114,7 +114,9 @@ export async function autoReview(db:D1Database,reviewId:string,config:OperationC
   if(auto)return verdict;
  }
  const list=admins(config);if(list.length){
-  const reason=verdict==='escalate'?'ИИ просит вашего решения: '+checksSummary(checks,['risk']):verdict==='fix'?'Не хватает: '+checksSummary(checks,['fix']):review.role==='owner'?(checks.find(c=>c.key==='rights')?.note.startsWith('Документа о праве нет')?'Правила пройдены, удостоверение приложено, документа о праве нет (жильё будет «не проверено»). Проверьте поля, фото и описание, сверьте ФИО с владельцем и получателем Kaspi и решите':'Правила пройдены, документ о праве и удостоверение приложены. Сверьте ФИО с владельцем, получателем Kaspi и адресом и решите'):'Правила пройдены, удостоверение приложено. Сверьте его с профилем и решите';
+  const noRights=!!checks.find(c=>c.key==='rights')?.note.startsWith('Документа о праве нет'),noId=!!checks.find(c=>c.key==='identity')?.note.startsWith('Удостоверения нет');
+  const papers=[noRights?'документа о праве нет (жильё будет «не проверено»)':'документ о праве приложен',noId?'удостоверения нет (личность будет «не подтверждена»)':'удостоверение приложено'];
+  const reason=verdict==='escalate'?'ИИ просит вашего решения: '+checksSummary(checks,['risk']):verdict==='fix'?'Не хватает: '+checksSummary(checks,['fix']):review.role==='owner'?'Правила пройдены, '+papers.join(', ')+'. Проверьте поля, фото и описание'+(noRights&&noId?'':', сверьте ФИО с владельцем и получателем Kaspi')+' и решите':'Правила пройдены, '+papers[1]+'. '+(noId?'Проверьте анкету и решите':'Сверьте его с профилем и решите');
   await db.batch(list.map(admin=>note(db,admin,what+' ждёт проверки. '+reason+'. Админка → Проверки.','admin:review:'+reviewId+':'+admin,at)));
  }
  return verdict;

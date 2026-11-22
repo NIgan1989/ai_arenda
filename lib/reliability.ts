@@ -38,22 +38,25 @@ export async function reliabilityFor(db:D1Database,role:Role,ids:string[],t=epoc
  const list=[...new Set(ids.filter(Boolean))].slice(0,500),out=new Map<string,Reliability>();
  if(!list.length)return out;
  const m='SELECT value FROM json_each(?)',ids_=JSON.stringify(list);
+ // A confirmed ID card rides on the last query of each role (n=-1), so the rating costs no extra database query.
+ const ID=` UNION ALL SELECT DISTINCT user_id id,-1 n FROM identity_docs WHERE checked_at IS NOT NULL AND user_id IN (${m})`,known=new Set<string>();
+ const split=(list:Row[])=>list.filter(r=>{if(Number(r.n)!==-1)return true;known.add(String(r.id));return false;});
  if(role==='guest'){
   const [done,disputes,cancels,phones]=await Promise.all([
    rows(db,`SELECT b.guest_id id,COUNT(*) n FROM bookings b WHERE b.status='completed' AND ${live('b')} AND b.guest_id IN (${m}) GROUP BY b.guest_id`,ids_),
    rows(db,`SELECT b.guest_id id,COUNT(DISTINCT a.entity_id) n FROM audit_events a JOIN bookings b ON b.id=a.entity_id WHERE a.action LIKE '%booking.checkout_disputed%' AND ${live('b')} AND ${notVoided('dispute','b.guest_id','guest','b.id')} AND b.guest_id IN (${m}) GROUP BY b.guest_id`,ids_),
    rows(db,`SELECT b.guest_id id,COUNT(DISTINCT a.entity_id) n FROM audit_events a JOIN bookings b ON b.id=a.entity_id WHERE a.action='booking.cancelled' AND a.actor_id=b.guest_id AND ${live('b')} AND ${notVoided('guest_cancel','b.guest_id','guest','b.id')} AND b.guest_id IN (${m}) AND EXISTS(SELECT 1 FROM audit_events c WHERE c.entity_id=a.entity_id AND c.action LIKE '%booking.confirmed%' AND c.created_at<=a.created_at) GROUP BY b.guest_id`,ids_),
-   rows(db,`SELECT user_id id,1 n FROM phone_verifications WHERE verified_at IS NOT NULL AND user_id IN (${m})`,ids_)
+   rows(db,`SELECT user_id id,1 n FROM phone_verifications WHERE verified_at IS NOT NULL AND user_id IN (${m})`+ID,ids_,ids_)
   ]);
-  const d=byId(done),x=byId(disputes),c=byId(cancels),p=byId(phones);
+  const d=byId(done),x=byId(disputes),c=byId(cancels),p=byId(split(phones));
   for(const id of list)out.set(id,guestReliability({completed:n(d.get(id)?.n),disputes:n(x.get(id)?.n),cancels:n(c.get(id)?.n),phone:p.has(id)}));
  }else if(role==='cleaner'){
   const [done,missed,returned]=await Promise.all([
    rows(db,`SELECT j.assigned_to id,COUNT(*) n,ROUND(AVG(j.rating),1) rating FROM cleaning_jobs j WHERE j.status='completed' AND ${live('j')} AND j.assigned_to IN (${m}) GROUP BY j.assigned_to`,ids_),
    rows(db,`SELECT x.user_id id,COUNT(*) n FROM notifications x WHERE x.dedupe LIKE 'cleaner:no-show:%' AND x.user_id IN (${m}) AND NOT EXISTS(SELECT 1 FROM cleaning_jobs j JOIN properties lp ON lp.id=j.property_id WHERE ${jobMark('no-show')} AND (lp.demo_owner IS NOT NULL OR NOT ${notVoided('no_show','x.user_id','cleaner','j.id')})) GROUP BY x.user_id`,ids_),
-   rows(db,`SELECT x.user_id id,COUNT(*) n FROM notifications x JOIN cleaning_jobs j ON ${jobMark('revision')} WHERE x.dedupe LIKE 'cleaner:revision:%' AND x.user_id IN (${m}) AND ${live('j')} AND ${notVoided('revision','x.user_id','cleaner','j.id')} GROUP BY x.user_id`,ids_)
+   rows(db,`SELECT x.user_id id,COUNT(*) n FROM notifications x JOIN cleaning_jobs j ON ${jobMark('revision')} WHERE x.dedupe LIKE 'cleaner:revision:%' AND x.user_id IN (${m}) AND ${live('j')} AND ${notVoided('revision','x.user_id','cleaner','j.id')} GROUP BY x.user_id`+ID,ids_,ids_)
   ]);
-  const d=byId(done),x=byId(missed),r=byId(returned);
+  const d=byId(done),x=byId(missed),r=byId(split(returned));
   for(const id of list)out.set(id,cleanerReliability({completed:n(d.get(id)?.n),noShows:n(x.get(id)?.n),returned:n(r.get(id)?.n),rating:d.get(id)?.rating||null}));
  }else{
   const [answered,unanswered,done,cancels,ratings]=await Promise.all([
@@ -61,11 +64,12 @@ export async function reliabilityFor(db:D1Database,role:Role,ids:string[],t=epoc
    rows(db,`SELECT p.owner_id id,COUNT(*) n FROM bookings b JOIN properties p ON p.id=b.property_id WHERE p.demo_owner IS NULL AND p.owner_id IN (${m}) AND b.status IN ('requested','expired') AND b.expires_at<=? AND ${notVoided('unanswered','p.owner_id','owner','b.id')} GROUP BY p.owner_id`,ids_,t),
    rows(db,`SELECT p.owner_id id,COUNT(*) n FROM bookings b JOIN properties p ON p.id=b.property_id WHERE p.demo_owner IS NULL AND p.owner_id IN (${m}) AND b.status='completed' GROUP BY p.owner_id`,ids_),
    rows(db,`SELECT p.owner_id id,COUNT(DISTINCT a.entity_id) n FROM audit_events a JOIN bookings b ON b.id=a.entity_id JOIN properties p ON p.id=b.property_id WHERE a.action='booking.cancelled' AND a.actor_id=p.owner_id AND p.demo_owner IS NULL AND ${notVoided('owner_cancel','p.owner_id','owner','b.id')} AND p.owner_id IN (${m}) AND EXISTS(SELECT 1 FROM audit_events c WHERE c.entity_id=a.entity_id AND c.action LIKE '%booking.confirmed%' AND c.created_at<=a.created_at) GROUP BY p.owner_id`,ids_),
-   rows(db,`SELECT r.owner_id id,AVG(r.rating) n FROM stay_reviews r WHERE ${live('r')} AND r.owner_id IN (${m}) GROUP BY r.owner_id`,ids_)
+   rows(db,`SELECT r.owner_id id,AVG(r.rating) n FROM stay_reviews r WHERE ${live('r')} AND r.owner_id IN (${m}) GROUP BY r.owner_id`+ID,ids_,ids_)
   ]);
-  const a=byId(answered),u=byId(unanswered),d=byId(done),c=byId(cancels),r=byId(ratings);
+  const a=byId(answered),u=byId(unanswered),d=byId(done),c=byId(cancels),r=byId(split(ratings));
   for(const id of list)out.set(id,ownerReliability({answered:n(a.get(id)?.n),unanswered:n(u.get(id)?.n),completed:n(d.get(id)?.n),cancels:n(c.get(id)?.n),rating:r.get(id)?.n?Number(r.get(id)!.n):null}));
  }
+ for(const [id,v] of out)v.identity=known.has(id);
  return out;
 }
 

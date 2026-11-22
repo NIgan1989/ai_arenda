@@ -7,20 +7,15 @@ import {epoch,uuid,q,one,rows,type Row,type OperationConfig} from './operation-c
 // «Удостоверение личности»: every participant (guest, owner, performer) attaches a photo of the ID card once, in the
 // profile. A person at the platform compares it with the profile; for an owner also with the document of the right to
 // let (lib/property-rights.ts) and the Kaspi recipient. Then the photo is deleted and only the record stays.
-// - A guest sends a booking request only with the ID attached; the check itself runs in the background.
-// - An owner's place and a performer's admission are approved only with the ID attached.
+// The ID is optional for every role (decision 2026-11-22): with a confirmed ID the others see «Личность подтверждена»,
+// without it «Личность не подтверждена» (Reliability.identity), and they decide themselves whether to take the risk.
 // The photos are seen only by the participant and the platform administrators.
 export const IDENTITY_LIMIT=2; // the front and the back
-export const IDENTITY_NEED='Приложите фото удостоверения личности в профиле («Профиль» → «Удостоверение личности»). Его видит только администратор сервиса, после проверки фото удаляется.';
 
 export type IdentityState={attached:number;checked:boolean};
 export async function identityOf(db:D1Database,userId:string):Promise<IdentityState>{
  const r=await one(db,'SELECT COUNT(*) n,MAX(checked_at) checked FROM identity_docs WHERE user_id=?',userId);
  return {attached:Number(r?.n)||0,checked:!!r?.checked};
-}
-/** Throws the participant's own words when no ID is attached yet. */
-export async function requireIdentity(db:D1Database,userId:string,what=IDENTITY_NEED){
- if(!(await identityOf(db,userId)).attached)throw new DomainError(what,409);
 }
 
 export async function saveIdentityDoc(s:RentalService,body:Row,config:OperationConfig={}){

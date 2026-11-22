@@ -54,7 +54,7 @@ import {releaseStatements,releaseWindow} from './overdue-cleaning';
 import {lateUntil,LATE_OPENS} from './late-arrival';
 import {reportNotLetIn,BLOCKED_TEXT} from './account-restrictions';
 import {verifiedPlaceSql} from './property-rights';
-import {requireIdentity,identityOf} from './identity-docs';
+import {identityOf} from './identity-docs';
 import {ruleFor,minutesLabel} from './decision-rules';
 import {ownerWindows,decideCalendarWindow,openWindowFor,openWindowsFor,openWindowsIn,windowAt,windowQuote} from './calendar-windows';
 import {languageOf} from './user-language';
@@ -741,7 +741,6 @@ export class RentalService {
     const key=required(body.requestKey,'Ключ запроса',100), existing=await this.one('SELECT id FROM bookings WHERE guest_id=? AND request_key=?',this.userId,key);
     if(existing) return {id:existing.id,message:'Эта заявка уже сохранена.'};
     // A guest sends a request only with a photo of the ID attached (lib/identity-docs.ts); a person checks it later.
-    await requireIdentity(this.db,this.userId,'Перед первой заявкой приложите фото удостоверения личности в профиле. Его видит только администратор сервиса, после проверки фото удаляется.');
     const checked=await this.bookingQuote(body,{ownerReady:options.ownerReady===true}), {start,end,guests,amount}=checked;
     // An owner who has not paid the service for over a week takes no new bookings (lib/service-dues.ts).
     if(await this.one('SELECT 1 x FROM service_billing sb JOIN properties p ON p.owner_id=sb.user_id WHERE p.id=? AND sb.paused_at IS NOT NULL',String(body.propertyId||'')))throw new DomainError('Это жильё временно не принимает новые брони. Выберите другое.',409);

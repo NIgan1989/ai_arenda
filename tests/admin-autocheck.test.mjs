@@ -46,7 +46,7 @@ test('a complete flat with its document goes to a person: the AI never approves 
   assert.equal(review.status,'pending');assert.equal(review.ai_verdict,'approve');
   assert.equal(JSON.parse(review.ai_checks).find(c=>c.key==='rights').state,'ok');
   assert.equal(f.db.raw.prepare('SELECT published FROM properties WHERE id=?').get(f.property).published,0);
-  assert.match(f.db.raw.prepare("SELECT body FROM notifications WHERE dedupe LIKE 'admin:review:%'").get().body,/документ о праве и удостоверение приложены/);
+  assert.match(f.db.raw.prepare("SELECT body FROM notifications WHERE dedupe LIKE 'admin:review:%'").get().body,/документ о праве приложен, удостоверение приложено/);
   // The document is not required (owner's decision 2026-11-22): without it the check says the place will be
   // «Жильё не проверено», and an administrator can still approve it after looking at the fields, photos and text.
   f.db.raw.prepare('DELETE FROM property_right_docs WHERE property_id=?').run(f.property);

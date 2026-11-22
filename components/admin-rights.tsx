@@ -25,7 +25,7 @@ export function RightDocsAdmin({propertyId}:{propertyId:string}){
 }
 
 /** Asked before a place is approved: the administrator confirms the names match (lib/platform-admin.ts, namesChecked). */
-export const namesMatch=()=>window.confirm('ФИО и фото в удостоверении (и в документе о праве для жилья) совпадают с профилем и с получателем Kaspi?');
+export const namesMatch=()=>window.confirm('Сведения, фото и описание проверены? Если приложены удостоверение или документ о праве: ФИО и фото в них совпадают с профилем и с получателем Kaspi?');
 
 // «Снять с показа» and «Заблокировать владельца»: always with a reason the owner reads.
 export function RestrictActions({propertyId,ownerId,restriction,busy,save}:{propertyId:string;ownerId:string;restriction?:string|null;busy:boolean;save:Save}){
