@@ -68,7 +68,7 @@ test('the administrator records a payment for a performer, and a paused particip
   R.prepare("INSERT INTO service_fees(id,user_id,role,kind,ref_id,property_id,amount,mode,created_at) VALUES ('fee','cleaner','cleaner','cleaning','job-x',?,4900,'charged',?)").run(f.property,now());
   R.prepare("INSERT INTO service_billing(user_id,failed_at,paused_at,updated_at) VALUES ('cleaner',?,?,?)").run(now()-8*86400,now()-86400,now());
   assert.equal(await dueOf(f.db,'cleaner'),4900);
-  const r=await writePlatformAdmin(f.other,'billing/balance',{ownerId:'cleaner',kind:'topup',amount:4900,note:'Kaspi, чек 123',confirmed:true,requestKey:'c1'},config(f));
+  const r=await writePlatformAdmin(f.other,'billing/balance',{ownerId:'cleaner',kind:'topup',amount:4900,note:'Kaspi, чек 123',bankRef:'123',confirmed:true,requestKey:'c1'},config(f));
   assert.match(r.message,/записано/);assert.equal(await dueOf(f.db,'cleaner'),0);
   await sweepDues(f.db,async()=>{},now());
   assert.equal(R.prepare("SELECT paused_at FROM service_billing WHERE user_id='cleaner'").get().paused_at,null);

@@ -50,8 +50,11 @@ test('enabled billing gives free bookings first, then charges the owner balance;
 
   await assert.rejects(writePlatformAdmin(f.other,'billing/balance',{confirmed:true,ownerId:'owner',kind:'topup',amount:-5,note:'Kaspi',requestKey:'t0'},config(f)),/больше нуля/);
   await assert.rejects(writePlatformAdmin(f.other,'billing/balance',{confirmed:true,ownerId:'guest',kind:'topup',amount:500,note:'Kaspi',requestKey:'t0'},config(f)),e=>e.status===404);
-  await writePlatformAdmin(f.other,'billing/balance',{confirmed:true,ownerId:'owner',kind:'topup',amount:1000,note:'Перевод Kaspi',requestKey:'t1'},config(f));
-  await assert.rejects(writePlatformAdmin(f.other,'billing/balance',{confirmed:true,ownerId:'owner',kind:'topup',amount:1000,note:'Перевод Kaspi',requestKey:'t1'},config(f)),e=>e.status===409);
+  await writePlatformAdmin(f.other,'billing/balance',{confirmed:true,ownerId:'owner',kind:'topup',amount:1000,note:'Перевод Kaspi',requestKey:'t1',bankRef:'KP-77'},config(f));
+  // A new request key with the same bank document is still the same payment (accounting audit, point 4).
+  await assert.rejects(writePlatformAdmin(f.other,'billing/balance',{confirmed:true,ownerId:'owner',kind:'topup',amount:1000,note:'Перевод Kaspi',requestKey:'t2',bankRef:'KP-77'},config(f)),e=>e.status===409&&/уже записан/.test(e.message));
+  await assert.rejects(writePlatformAdmin(f.other,'billing/balance',{confirmed:true,ownerId:'owner',kind:'topup',amount:1000,note:'Перевод Kaspi',requestKey:'t3'},config(f)),/банковского документа/);
+  await assert.rejects(writePlatformAdmin(f.other,'billing/balance',{confirmed:true,ownerId:'owner',kind:'topup',amount:1000,note:'Перевод Kaspi',requestKey:'t1',bankRef:'KP-78'},config(f)),e=>e.status===409);
   state=await readPlatformAdmin(f.other,'billing',{},config(f));assert.equal(ownerRow(state).balance,1000-fee);assert.equal(state.topups.length,1);
 
   // A booking cancelled after confirmation stops counting against the owner.

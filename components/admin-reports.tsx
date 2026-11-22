@@ -13,11 +13,11 @@ const roles:Row={guest:'Гость',owner:'Владелец',cleaner:'Испол
 // around the service, obscene words). The administrator decides the rest: open the message (an audited
 // look), hide it or close the report, and can bring back anything the AI hid.
 export function AdminReports({data,busy,save}:{data:Row;busy:boolean;save:Save}){
- const queue:Row[]=data.queue||[],hidden:Row[]=data.hidden||[];
+ const queue:Row[]=data.queue||[],waiting=Number(data.queueTotal??queue.length),hidden:Row[]=data.hidden||[];
  return <div className="admin-reviews">
   <section className="reviews-ai"><div className="reviews-ai-copy"><span className="reviews-ai-badge"><Sparkles size={16}/>ИИ-администратор</span><h2>Убирает явные нарушения сам</h2><p>Сообщения с телефонами, ссылками, просьбой оплатить мимо сервиса или матом скрывает сразу. Оригинал сохраняется, вернуть можно одной кнопкой.</p></div>
-   <div className="reviews-ai-side"><dl className="reviews-stats"><div><dt>Ждут вас</dt><dd>{queue.length}</dd></div><div><dt>ИИ скрыл за неделю</dt><dd>{hidden.length}</dd></div></dl></div></section>
-  <section className="reviews-group"><header><h2>Нужно ваше решение</h2><span>{queue.length}</span></header>
+   <div className="reviews-ai-side"><dl className="reviews-stats"><div><dt>Ждут вас</dt><dd>{waiting}</dd></div><div><dt>ИИ скрыл за неделю</dt><dd>{hidden.length}</dd></div></dl></div></section>
+  <section className="reviews-group"><header><h2>Нужно ваше решение</h2><span>{waiting}</span></header>
    {queue.length===0?<div className="reviews-empty"><CheckCircle2 size={24}/><p>Новых жалоб нет.</p></div>:<div className="reviews-list">{queue.map(r=><ReportCard key={r.id+':'+(r.version||0)} r={r} busy={busy} save={save}/>)}</div>}
   </section>
   {hidden.length>0&&<section className="reviews-group"><header><h2>Скрыто ИИ за неделю</h2><span>{hidden.length}</span></header>

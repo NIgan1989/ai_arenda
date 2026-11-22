@@ -28,10 +28,11 @@ test('actual Workerd D1 executes deletion preflight and the atomic erase guard w
   const receipt=await env.DB.prepare('SELECT id FROM account_erasure_receipts WHERE id=?').bind(result.receipt.id).first();
   const next={...credentials,phone:'+77774440002'},registration=await authRequest(env.DB,auth('register',next),'register'),nextUser=await sessionUser(env.DB,registration.headers.get('set-cookie')),owner=new RentalService(env.DB,nextUser.userId);
   await owner.connectRole('owner',{});const property=(await owner.createProperty({title:'Used D1 fixture',city:'Павлодар',district:'Центр',address:'Fixture address',description:'Fixture',price:10000,rooms:1,capacity:2,cleaningMinutes:60})).id;
-  await safetyAction(owner,'owner','deletion',{action:'request',confirmed:true});const used=await accountDeletionState(owner,'owner');let blocked=false;
-  try{await accountDeletionAction(owner,'owner',{action:'erase',requestId:used.request.id,password:next.password,confirmed:true,confirmation:'УДАЛИТЬ АККАУНТ'});}catch(error){blocked=error.status===409;}
-  const retained=!!await env.DB.prepare('SELECT id FROM properties WHERE id=?').bind(property).first();
-  return Response.json({eligible:state.canEraseActiveDatabase,erased:result.erased,webGone,mobileGone,profileGone,receiptSaved:!!receipt,usedBlocked:blocked,usedRetained:retained});
+  await safetyAction(owner,'owner','deletion',{action:'request',confirmed:true});const used=await accountDeletionState(owner,'owner');
+  // Closed history (an object without bookings) is kept without the name: the archive path runs on real D1 too.
+  const archived=await accountDeletionAction(owner,'owner',{action:'erase',requestId:used.request.id,password:next.password,confirmed:true,confirmation:'УДАЛИТЬ АККАУНТ'});
+  const retained=!!await env.DB.prepare('SELECT id FROM properties WHERE id=? AND published=0 AND archived_at IS NOT NULL').bind(property).first(),anonymous=(await env.DB.prepare('SELECT name FROM profiles WHERE id=?').bind(nextUser.userId).first())?.name==='Удалённый участник';
+  return Response.json({eligible:state.canEraseActiveDatabase,erased:result.erased,webGone,mobileGone,profileGone,receiptSaved:!!receipt,usedArchived:archived.receipt.mode==='archive'&&anonymous,usedRetained:retained});
  }catch(error){return Response.json({error:String(error.message||error)},{status:500});}}};
  `);
  const mf=new Miniflare({modules:true,modulesRoot:resolve('outputs'),modulesRules:[{type:'ESModule',include:['**/*.js','**/*.mjs']}],scriptPath:script,compatibilityDate:'2026-05-15',compatibilityFlags:['nodejs_compat'],d1Databases:{DB:'deletion-d1-fixture'},d1Persist:false,log:undefined});
@@ -48,6 +49,6 @@ test('actual Workerd D1 executes deletion preflight and the atomic erase guard w
   }
   const response=await mf.dispatchFetch('http://localhost/test'),result=await response.json();
   assert.equal(response.status,200,JSON.stringify(result));
-  assert.deepEqual(result,{eligible:true,erased:true,webGone:true,mobileGone:true,profileGone:true,receiptSaved:true,usedBlocked:true,usedRetained:true});
+  assert.deepEqual(result,{eligible:true,erased:true,webGone:true,mobileGone:true,profileGone:true,receiptSaved:true,usedArchived:true,usedRetained:true});
  }finally{fixture.close();await mf.dispose();}
 });

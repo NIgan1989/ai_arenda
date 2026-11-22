@@ -78,12 +78,13 @@ function Obligation({o,busy,onPay}:{o:Row;busy:boolean;onPay?:()=>void}){
 }
 
 function PayForm({o,now,busy,save}:{o:Row;now:string;busy:boolean;save:(b:Row)=>Promise<void>}){
- const [amount,setAmount]=useState(String(o.left)),[month,setMonth]=useState(now),[note,setNote]=useState(''),[agreed,setAgreed]=useState(false);
- return <form className="revenue-terms" onSubmit={e=>{e.preventDefault();void save({key:o.key,amount,month,note,confirmed:agreed});}}>
+ const [amount,setAmount]=useState(String(o.left)),[month,setMonth]=useState(now),[note,setNote]=useState(''),[bankRef,setBankRef]=useState(''),[agreed,setAgreed]=useState(false);
+ return <form className="revenue-terms" onSubmit={e=>{e.preventDefault();void save({key:o.key,amount,month,note,bankRef,confirmed:agreed});}}>
   <div className="revenue-balance"><small>Осталось оплатить</small><strong>{money(o.left)}</strong><span>начислено {money(o.accrued)}{o.paid?`, оплачено ${money(o.paid)}`:''}</span></div>
   <div className="revenue-fields"><label>Сумма, ₸<Input value={amount} inputMode="numeric" required onChange={e=>setAmount(e.target.value.replace(/\D/g,'').slice(0,11))}/></label><label>Месяц оплаты<Input type="month" value={month} required onChange={e=>setMonth(e.target.value)}/></label></div>
-  <label>Комментарий<Input value={note} maxLength={200} onChange={e=>setNote(e.target.value)} placeholder="Например: платёжка № 12 из Kaspi Business"/></label>
+  <label>Номер платёжного документа<Input value={bankRef} maxLength={80} required onChange={e=>setBankRef(e.target.value)} placeholder="Например: платёжка № 12 из Kaspi Business"/></label>
+  <label>Комментарий<Input value={note} maxLength={200} onChange={e=>setNote(e.target.value)}/></label>
   <label className="revenue-confirm"><input type="checkbox" checked={agreed} onChange={e=>setAgreed(e.target.checked)} required/>Платёж отправлен в бюджет.</label>
-  <Button className="revenue-primary" disabled={busy||!agreed}>Записать оплату</Button>
+  <Button className="revenue-primary" disabled={busy||!agreed||!bankRef.trim()}>Записать оплату</Button>
  </form>;
 }

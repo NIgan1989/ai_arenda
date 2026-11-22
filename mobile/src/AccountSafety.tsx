@@ -1,4 +1,4 @@
-import {dateText,L,plural,t} from '../../lib/i18n';
+import {dateText,L,plural,t,tServer} from '../../lib/i18n';
 import {NativeAccountDeletion} from './AccountDeletion';
 import {ThinkingLine} from './Thinking';
 import React,{useEffect,useRef,useState} from 'react';
@@ -11,6 +11,10 @@ import {Group,Row,SwitchRow,a} from './AccountRows';
 export type SafetyPage=''|'devices'|'ai'|'delete'|'reports'|'requests';
 export const safetyTitles:Record<Exclude<SafetyPage,''>,string>=L({devices:'Вход и устройства',ai:'ИИ-помощник',delete:'Удаление аккаунта',reports:'Мои жалобы',requests:'Запросы на удаление'});
 const day=(t:number)=>dateText(new Date(t*1000),{day:'numeric',month:'long'});
+// What happens to each kind of data after the deletion (lib/account-deletion.ts keptGroups).
+const groupNames:Record<string,string>=L({profile:'Профиль и контакты',id_files:'Фото удостоверения',deals:'Брони и уборки',money:'Суммы и оплаты',chats:'Переписка по сделкам',documents:'Согласия и проверки'});
+const groupActions:Record<string,string>=L({deleted:'Удалим',pending:'Удалим из хранилища в течение часа',anonymized:'Останутся без имени',kept:'Сохраним'});
+const fullDay=(t:number)=>dateText(new Date(t*1000),{day:'numeric',month:'long',year:'numeric'});
 const devices=(n:number)=>n+' '+plural(n,['устройство','устройства','устройств'],['device','devices'],'құрылғы');
 export function NativeAccountSafety({role,page,go,admin=false,onSignedOut,tint}:{tint?:string;role:string;page:SafetyPage;go:(page:SafetyPage)=>void;admin?:boolean;onSignedOut:(result?:Record<string,any>)=>void|Promise<void>}){
  const [state,setState]=useState<any>(null),[sessions,setSessions]=useState<any[]|null>(null),[permission,setPermission]=useState<any>(null),[confirmed,setConfirmed]=useState(false),[busy,setBusy]=useState(false),[notice,setNotice]=useState(''),[loading,setLoading]=useState(true),[loadError,setLoadError]=useState('');
@@ -42,9 +46,11 @@ export function NativeAccountSafety({role,page,go,admin=false,onSignedOut,tint}:
   {permission&&!permission.decided&&wide(t('Оставить выключенным'),()=>void choose(false))}
   <Group space>{link(t('Как мы обращаемся с данными'),'/privacy')}</Group>{shown}</View>;
  if(page==='reports')return <View><Group>{reports.map(r=><View key={r.id} style={a.row}><View style={a.wide}><Text style={a.title}>{r.target_kind==='ai'?t('Ответ ИИ'):t('Сообщение')}</Text>{!!(r.resolution||r.created_at)&&<Text style={a.note}>{r.resolution||t('Отправлена {v}',{v:day(r.created_at)})}</Text>}</View><Text style={a.note}>{r.status==='resolved'?t('Рассмотрена'):r.status==='reviewing'?t('Рассматриваем'):t('Отправлена')}</Text></View>)}{!reports.length&&<View style={a.row}><Text style={a.note}>{t('Жалоб нет.')}</Text></View>}</Group>{lead(t('Пожаловаться можно прямо в чате, на конкретное сообщение.'))}</View>;
- if(page==='requests'&&admin)return <View>{lead(t('Видите только вы как администратор. Ответить на запрос и посмотреть жалобы можно в «Управление сервисом» на сайте.'))}<Group>{deletions.map(r=><View key={r.id} style={a.row}><Text style={a.title}>{t('Запрос №{id} от {day}',{id:r.id,day:day(r.requested_at)})}</Text></View>)}{!deletions.length&&<View style={a.row}><Text style={a.note}>{t('Новых запросов нет.')}</Text></View>}</Group>{wide(t('Открыть управление сервисом'),()=>void Linking.openURL(API_URL+'/admin?section=moderation').catch(()=>undefined),false)}</View>;
+ if(page==='requests'&&admin)return <View>{lead(t('Видите только вы как администратор. Ответить на запрос и посмотреть жалобы можно в «Управление сервисом» на сайте.'))}<Group>{deletions.map(r=><View key={r.id} style={a.row}><Text style={a.title}>{t('Запрос №{id} от {day}',{id:r.id,day:day(r.requested_at)})+(r.stage==='needs_action'?' · '+t('ждём участника'):r.stage==='reviewing'?' · '+t('в работе'):'')}</Text></View>)}{!deletions.length&&<View style={a.row}><Text style={a.note}>{t('Новых запросов нет.')}</Text></View>}</Group>{wide(t('Открыть управление сервисом'),()=>void Linking.openURL(API_URL+'/admin?section=moderation').catch(()=>undefined),false)}</View>;
  if(page==='delete')return <View>{requested?<>
-  <Group><View style={a.row}><View style={a.wide}><Text style={a.title}>{state.deletion.requested_at?t('Запрос отправлен {day}',{day:day(state.deletion.requested_at)}):t('Запрос отправлен')}</Text><Text style={a.note}>{details.review?.note||t('Проверяем, что нет незавершённых броней, уборок и расчётов. Данные пока на месте.')}</Text></View></View></Group>
+  <Group><View style={a.row}><View style={a.wide}><Text style={a.title}>{state.deletion.requested_at?t('Запрос отправлен {day}',{day:day(state.deletion.requested_at)}):t('Запрос отправлен')}</Text><Text style={a.note}>{details.review?.note?t('Ответ оператора {day}: {note}',{day:day(details.review.created_at),note:details.review.note}):t('Проверяем, что нет незавершённых броней, уборок и расчётов. Данные пока на месте.')}</Text></View></View></Group>
+  {(details.blockers||[]).length>0&&<>{lead(t('Что мешает удалить сейчас'))}<Group>{details.blockers.map((b:any)=><View key={b.code} style={a.row}><Text style={[a.note,a.wide]}>{tServer(b.label)}</Text></View>)}</Group></>}
+  {(details.groups||[]).length>0&&<>{lead(t('Что будет с данными'))}<Group>{details.groups.map((g:any)=><View key={g.category} style={a.row}><View style={a.wide}><Text style={a.title}>{groupNames[g.category]||g.category}</Text><Text style={a.note}>{(groupActions[g.action]||g.action)+(g.keep_until?' '+t('до {v}',{v:fullDay(g.keep_until)}):'')}</Text>{!!g.basis&&<Text style={a.note}>{tServer(g.basis)}</Text>}{g.draft&&<Text style={a.note}>{t('Срок пока предварительный, уточним с бухгалтером и юристом.')}</Text>}</View></View>)}</Group></>}
   <NativeAccountDeletion details={details} onChanged={load} onSignedOut={onSignedOut}/>
   {wide(t('Отозвать запрос'),()=>void act('/api/operations/safety/deletion',{action:'cancel'}),busy||loading)}</>:<>
   {lead(t('Удалим аккаунт целиком, со всеми ролями: гостя, владельца и исполнителя. Сначала проверим, что нет незавершённых броней, уборок и расчётов, и напишем вам результат.'))}
@@ -54,7 +60,7 @@ export function NativeAccountSafety({role,page,go,admin=false,onSignedOut,tint}:
  return <View>
   <Group><Row icon="key" tint={tint} title={t('Вход и устройства')} value={sessions?devices(sessions.length):undefined} onPress={()=>go('devices')}/><Row icon="sparkles" tint={tint} title={t('ИИ-помощник')} value={aiValue} onPress={()=>go('ai')}/>{reports.length>0&&<Row icon="flag" tint={tint} title={t('Мои жалобы')} value={reports.length} onPress={()=>go('reports')}/>}</Group>
   <Group space>{link(t('Политика конфиденциальности'),'/privacy')}{link(t('Условия сервиса'),'/terms')}</Group>
-  {admin&&<Group space><Row icon="alert" tint={tint} title={t('Запросы на удаление')} value={deletions.length||t('нет')} onPress={()=>go('requests')}/></Group>}
+  {admin&&<Group space><Row icon="alert" tint={tint} title={t('Запросы на удаление')} value={state.deletionTotal||deletions.length||t('нет')} onPress={()=>go('requests')}/></Group>}
   <Group space><Row icon="trash" title={t('Удалить аккаунт')} value={requested?t('запрос отправлен'):undefined} danger onPress={()=>go('delete')}/></Group>
  </View>;
 }

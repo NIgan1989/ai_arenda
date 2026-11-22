@@ -28,7 +28,7 @@ test('the three reports reconcile: assets equal liabilities plus equity in fact 
   const id=(await f.guest.createBooking({propertyId:f.property,start:iso(now()+3*86400),end:iso(now()+3*86400+7200),guests:1,billingMode:'hourly',requestKey:'cf1',acceptTerms:true})).id;
   await f.owner.bookingAction(id,{action:'confirm',cleaningFee:0});
   const fee=f.db.raw.prepare('SELECT amount FROM platform_commissions WHERE booking_id=?').get(id).amount;assert.ok(fee>0);
-  await writePlatformAdmin(f.other,'billing/balance',{confirmed:true,ownerId:'owner',kind:'topup',amount:50000,note:'Kaspi',requestKey:'t1'},config(f));
+  await writePlatformAdmin(f.other,'billing/balance',{confirmed:true,ownerId:'owner',kind:'topup',amount:50000,note:'Kaspi',requestKey:'t1',bankRef:'KP-1'},config(f));
   await writePlatformAdmin(f.other,'billing/balance',{confirmed:true,ownerId:'owner',kind:'bonus',amount:2000,note:'Подарок',requestKey:'t2'},config(f));
   // A cleaner's money: a paid cleaning with part of the «Автопилот» fee withheld (the charge is not settled yet).
   const at=now();
@@ -38,7 +38,7 @@ test('the three reports reconcile: assets equal liabilities plus equity in fact 
 
   // Direct payments: a cleaner tops up a balance of their own and the fee is taken from it at once.
   const entry=f.db.raw.prepare("SELECT * FROM owner_balance_entries WHERE kind='topup' LIMIT 1").get();
-  const cols=Object.keys(entry),copy={...entry,id:'cleaner-topup',owner_id:'cleaner',amount:5000,request_key:'ct1'};
+  const cols=Object.keys(entry),copy={...entry,id:'cleaner-topup',owner_id:'cleaner',amount:5000,request_key:'ct1',bank_ref:''};
   f.db.raw.prepare(`INSERT INTO owner_balance_entries(${cols.join(',')}) VALUES (${cols.map(()=>'?').join(',')})`).run(...cols.map(c=>copy[c]));
   f.db.raw.prepare("INSERT INTO autopilot_charges(id,user_id,role,period_start,period_end,units,amount,withheld,mode,settled_at,created_at) VALUES ('ap2','cleaner','cleaner',?,?,1,700,0,'charged',?,?)").run(at+86400,at+2*86400,at,at);
 
@@ -50,6 +50,15 @@ test('the three reports reconcile: assets equal liabilities plus equity in fact 
   await writePlatformAdmin(f.other,'finance/cash',{kind:'asset',amount:'300000',month},config(f));
   await writePlatformAdmin(f.other,'finance/cash',{kind:'loan',amount:'200000',month},config(f));
   await assert.rejects(writePlatformAdmin(f.other,'finance/cash',{kind:'gift',amount:'1',month},config(f)),/Выберите/);
+  // A real payment of a cost from the bank (accounting audit, point 2): «Факт» ДДС shows it, the unpaid rest is owed.
+  const operator=(await readPlatformAdmin(f.other,'finance',{},config(f))).costs.find(c=>c.name==='Оператор');
+  await writePlatformAdmin(f.other,'finance/cost-payment',{costId:operator.id,month,amount:'100000',bankRef:'CP-1'},config(f));
+  await assert.rejects(writePlatformAdmin(f.other,'finance/cost-payment',{costId:operator.id,month,amount:'100000',bankRef:'CP-1'},config(f)),e=>e.status===409);
+  await assert.rejects(writePlatformAdmin(f.other,'finance/cost/delete',{id:operator.id,confirmed:true},config(f)),e=>e.status===409);
+  // A payment made before the books start still counts: the reports begin with its month.
+  const early=shiftMonth((await readPlatformAdmin(f.other,'finance',{},config(f))).first,-1);
+  await writePlatformAdmin(f.other,'finance/cost-payment',{costId:operator.id,month:early,amount:'5000',bankRef:'CP-0'},config(f));
+  const before=await readPlatformAdmin(f.other,'finance',{basis:'fact',month:early},config(f));assert.equal(before.month,early);assert.equal(before.current.cf.costs_paid,5000);
 
   for(const basis of ['fact','forecast'])for(const m of [month,shiftMonth(month,3)]){
    const state=await readPlatformAdmin(f.other,'finance',{basis,month:m},config(f));
@@ -57,16 +66,21 @@ test('the three reports reconcile: assets equal liabilities plus equity in fact 
   }
   const fact=await readPlatformAdmin(f.other,'finance',{basis:'fact',month},config(f));
   const pl=fact.current.pl;
-  assert.equal(pl.bookings,fee);assert.equal(pl.cleaning,300);assert.equal(pl.autopilot,2600);assert.equal(pl.bonuses,2000);
+  // The stay is three days ahead: its commission is not earned yet in «Факт», the plan already counts it (accounting audit, point 1).
+  assert.equal(pl.bookings,0);assert.ok((await readPlatformAdmin(f.other,'finance',{basis:'forecast',month},config(f))).current.pl.bookings>=fee);assert.equal(pl.cleaning,300);assert.equal(pl.autopilot,2600);assert.equal(pl.bonuses,2000);
   assert.equal(pl.services,Math.round(10*fact.settings.usd_rate)+Math.round(20*fact.settings.usd_rate)+170000,'the seeded Stadia Maps and AI subscriptions plus the new hosting');assert.equal(pl.opex,10000);
   const director=payroll(500000,fact.settings),self=selfContributions(fact.settings),selfTotal=self.self_opv+self.self_opvr+self.self_so+self.self_vosms;
   assert.equal(fact.settings.entity,'ip');assert.equal(fact.settings.tax_regime,'simplified');assert.equal(director.sn,0);
   assert.equal(pl.salaries,500000);assert.equal(pl.outsource,30000);assert.equal(pl.self,selfTotal);assert.equal(selfTotal,21675);
   assert.equal(pl.employer,director.sn+director.so+director.opvr+director.vosms_employer);
   assert.equal(pl.profit_tax,Math.round(pl.revenue*0.04),'the simplified declaration taxes income, not profit');
-  assert.equal(fact.current.cf.inflow,55000);assert.equal(fact.current.cf.payouts,2000);
+  assert.equal(fact.current.cf.inflow,55000);assert.equal(fact.current.cf.payouts,2000);assert.equal(fact.current.cf.costs_paid,100000);assert.ok(fact.balance.liabilities.suppliers>0);
   assert.equal(fact.balance.assets.cleaners,900);assert.equal(fact.balance.liabilities.loans,200000);
-  assert.equal(fact.balance.liabilities.owners,50000+2000-fee-300-3000+5000-700);
+  assert.equal(fact.balance.liabilities.owners,50000+2000-300-3000+5000-700);
+  // Once the guest has stayed the commission is earned in the month the stay began, and the books still reconcile.
+  f.db.raw.prepare("UPDATE bookings SET status='completed' WHERE id=?").run(id);
+  const stayMonth=monthKey(now()+3*86400),stayed=await readPlatformAdmin(f.other,'finance',{basis:'fact',month:stayMonth},config(f));
+  assert.equal(stayed.current.pl.bookings,fee);assert.equal(stayed.balance.difference,0);
   assert.equal(fact.balance.liabilities.taxes,director.ipn+director.opv+director.vosms_employee+director.sn+director.so+director.opvr+director.vosms_employer+selfTotal+pl.profit_tax);
   assert.equal(fact.balance.equity.capital,1000000);
 
@@ -102,13 +116,16 @@ test('accounting lists what is owed, a payment lands in ДДС and keeps the bal
   assert.equal(state.obligations.some(o=>o.group==='simplified'),false,'no charged income yet, so no income tax');
   assert.equal(payrollDue.due,shiftMonth(month,1)+'-25');
   await assert.rejects(writePlatformAdmin(f.other,'accounting/pay',{key:payrollDue.key,amount:payrollDue.accrued+1,month,confirmed:true},config(f)),/допустимо/);
-  await writePlatformAdmin(f.other,'accounting/pay',{key:payrollDue.key,amount:10000,month,confirmed:true},config(f));
+  await assert.rejects(writePlatformAdmin(f.other,'accounting/pay',{key:payrollDue.key,amount:10000,month,confirmed:true},config(f)),/банковского документа/);
+  await writePlatformAdmin(f.other,'accounting/pay',{key:payrollDue.key,amount:10000,month,bankRef:'PP-1',confirmed:true},config(f));
+  // The same bank payment cannot be recorded twice (accounting audit, point 3).
+  await assert.rejects(writePlatformAdmin(f.other,'accounting/pay',{key:payrollDue.key,amount:100,month,bankRef:'PP-1',confirmed:true},config(f)),e=>e.status===409);
   state=await readPlatformAdmin(f.other,'accounting',{},config(f));
   const after=state.obligations.find(o=>o.key===payrollDue.key);assert.equal(after.paid,10000);assert.equal(after.left,payrollDue.accrued-10000);
-  await writePlatformAdmin(f.other,'accounting/pay',{key:payrollDue.key,amount:after.left,month,confirmed:true},config(f));
+  await writePlatformAdmin(f.other,'accounting/pay',{key:payrollDue.key,amount:after.left,month,bankRef:'PP-2',confirmed:true},config(f));
   state=await readPlatformAdmin(f.other,'accounting',{},config(f));
   assert.equal(state.obligations.find(o=>o.key===payrollDue.key).status,'paid');
-  await assert.rejects(writePlatformAdmin(f.other,'accounting/pay',{key:payrollDue.key,amount:1,month,confirmed:true},config(f)),e=>e.status===409);
+  await assert.rejects(writePlatformAdmin(f.other,'accounting/pay',{key:payrollDue.key,amount:1,month,bankRef:'PP-3',confirmed:true},config(f)),e=>e.status===409);
   assert.equal(state.totals.paidYear,payrollDue.accrued);
   const fin=await readPlatformAdmin(f.other,'finance',{basis:'fact',month},config(f));
   assert.equal(fin.current.cf.taxes_paid,payrollDue.accrued);assert.equal(fin.balance.liabilities.taxes,0);assert.equal(fin.balance.difference,0);

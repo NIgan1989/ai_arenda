@@ -22,7 +22,7 @@ import {bypassWatch,warnBypass} from './bypass-watch';
 import {billingState,billingOwners,saveBillingSettings,recordBalanceEntry} from './platform-billing';
 import {plansAdminState,savePlanSettings} from './autopilot-plans';
 import {markCleanerPayout} from './regular-cleaner';
-import {companyFinance,saveFinanceSettings,saveCost,toggleCost,deleteCost,addCashEntry,deleteCashEntry,accountingState,payTaxes,deleteTaxPayment} from './company-finance';
+import {companyFinance,saveFinanceSettings,saveCost,toggleCost,deleteCost,addCashEntry,deleteCashEntry,addCostPayment,deleteCostPayment,accountingState,payTaxes,deleteTaxPayment} from './company-finance';
 type Config=OperationConfig&{PLATFORM_ADMIN_IDS?:string;ADMINISTRATOR_RUNNER_SECRET?:string;OPENAI_API_KEY?:string;OPENAI_MODEL?:string};
 type Row=Record<string,any>;
 export function requirePlatformAdmin(userId:string,config:Config){if(!isPlatformAdmin(userId,config.PLATFORM_ADMIN_IDS))throw new DomainError('Управление сервисом доступно только администратору.',403);}
@@ -45,9 +45,12 @@ export async function readPlatformAdmin(service:RentalService,route:string,param
  }
  if(route==='reports'){
   // Message text stays behind an audited «Открыть»; the list carries only who reported, why, and what the AI concluded.
-  const queue=await service.all("SELECT r.id,r.role,r.target_kind,r.reason,r.status,r.created_at,(SELECT e.reason FROM moderation_access_events e WHERE e.id='ai-check:'||r.id) ai_note,(SELECT version FROM moderated_content m WHERE m.kind=r.target_kind AND m.target_id=r.target_id AND m.room_id=r.room_id) version FROM content_reports r WHERE r.status<>'resolved' ORDER BY r.created_at LIMIT 100");
+  // Pages of 50 with the full count, and a search by report number (audit 11, point 7).
+  const page=Math.max(0,Math.min(1000,Math.floor(Number(params.page)||0))),search=String(params.search||'').trim().slice(0,100),where=search?" AND r.id LIKE ? ESCAPE '\\'":'',args=search?['%'+search.replace(/[%_\\]/g,m=>'\\'+m)+'%']:[];
+  const queue=await service.all("SELECT r.id,r.role,r.target_kind,r.reason,r.status,r.created_at,(SELECT e.reason FROM moderation_access_events e WHERE e.id='ai-check:'||r.id) ai_note,(SELECT version FROM moderated_content m WHERE m.kind=r.target_kind AND m.target_id=r.target_id AND m.room_id=r.room_id) version FROM content_reports r WHERE r.status<>'resolved'"+where+" ORDER BY r.created_at LIMIT 50 OFFSET "+page*50,...args);
+  const queueTotal=Number((await service.one("SELECT COUNT(*) n FROM content_reports r WHERE r.status<>'resolved'"+where,...args))?.n||0);
   const hidden=await service.all("SELECT r.id,r.role,r.target_kind,r.reason,r.resolution,e.created_at,(SELECT version FROM moderated_content m WHERE m.kind=r.target_kind AND m.target_id=r.target_id AND m.room_id=r.room_id) version,(SELECT hidden FROM moderated_content m WHERE m.kind=r.target_kind AND m.target_id=r.target_id AND m.room_id=r.room_id) hidden FROM moderation_access_events e JOIN content_reports r ON r.id=e.report_id WHERE e.actor_id='ai-administrator' AND e.action='hide' AND e.created_at>? ORDER BY e.created_at DESC LIMIT 50",Math.floor(Date.now()/1000)-7*86400);
-  await service.audit(service.userId,'admin.reports_viewed').run();return {queue,hidden,objections:await objectionQueue(service.db)};
+  await service.audit(service.userId,'admin.reports_viewed').run();return {queue,queueTotal,limit:50,total:queueTotal,hidden,objections:await objectionQueue(service.db)};
  }
  if(route==='identity')return {queue:await identityQueue(service.db)};
  if(route==='identity/docs')return listIdentityDocs(service,String(params.userId||''),true);
@@ -134,6 +137,8 @@ export async function writePlatformAdmin(service:RentalService,route:string,body
  if(route==='finance/cost/toggle')return toggleCost(service,body);
  if(route==='finance/cost/delete')return deleteCost(service,body);
  if(route==='finance/cash')return addCashEntry(service,body);
+ if(route==='finance/cost-payment')return addCostPayment(service,body);
+ if(route==='finance/cost-payment/delete')return deleteCostPayment(service,body);
  if(route==='finance/cash/delete')return deleteCashEntry(service,body);
  if(route==='accounting/pay')return payTaxes(service,body);
  if(route==='accounting/payment/delete')return deleteTaxPayment(service,body);
