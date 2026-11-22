@@ -3,6 +3,8 @@ import {fixture,load,now} from './helpers/platform.mjs';
 const {dueOf,chargeSlot,sweepDues,serviceBillingState,serviceBillingAction,PAY_DAYS}=await load('service-dues');
 const {readOperations,writeOperations}=await load('operations-api'),{companyFinance,monthKey}=await load('company-finance');
 const DAY=86400,WEEK=7*DAY,noPlans=async()=>{};
+// A day later, but still before the next Monday's charge: on a Sunday a plain «a day later» is already the next week.
+const sameWeek=at=>Math.min(at+DAY,chargeSlot(at)+WEEK-1);
 const billing=(f,user)=>f.db.raw.prepare('SELECT * FROM service_billing WHERE user_id=?').get(user);
 const entries=(f,user)=>f.db.raw.prepare('SELECT * FROM owner_balance_entries WHERE owner_id=? ORDER BY created_at,rowid').all(user);
 let seq=0;const owe=(f,user,amount,role='cleaner')=>f.db.raw.prepare("INSERT INTO autopilot_charges(id,user_id,role,period_start,period_end,units,amount,mode,settled_at,created_at) VALUES (?,?,?,?,?,1,?,'charged',?,?)").run('c'+Math.random(),user,role,now()+(seq++),now()+30*DAY,amount,role==='owner'?now():null,now());
@@ -26,7 +28,7 @@ test('a linked card pays the accrued fees once a week; nothing is topped up and 
   assert.ok(f.db.raw.prepare("SELECT settled_at FROM autopilot_charges WHERE user_id='cleaner'").get().settled_at,'the month is settled only by the charge');
   assert.match(notes(f,'cleaner','service:charged:%')[0],/списано 1\s900 ₸.*тестовое списание/);
   // A new fee in the same week waits for the next Monday.
-  owe(f,'cleaner',500);assert.equal((await sweepDues(f.db,noPlans,at+DAY)).charged,0);assert.equal(await dueOf(f.db,'cleaner'),500);
+  owe(f,'cleaner',500);assert.equal((await sweepDues(f.db,noPlans,sameWeek(at))).charged,0);assert.equal(await dueOf(f.db,'cleaner'),500);
   assert.equal((await sweepDues(f.db,noPlans,chargeSlot(at)+WEEK+60)).charged,1);assert.equal(await dueOf(f.db,'cleaner'),0);assert.equal(entries(f,'cleaner').length,2);
   // «Оплатить сейчас» does not wait for Monday; the card is unlinked only when nothing is owed.
   owe(f,'cleaner',700);await assert.rejects(writeOperations(f.cleaner,'cleaner',['service-billing'],{action:'unlink'}),e=>e.status===409);
@@ -39,7 +41,7 @@ test('a linked card pays the accrued fees once a week; nothing is topped up and 
 test('without a card: one ask, seven days, then a pause that a payment lifts',async()=>{
  const f=await fixture();try{
   owe(f,'owner',4900,'owner');const at=now();
-  assert.deepEqual(await sweepDues(f.db,noPlans,at),{charged:0,asked:1,paused:0});assert.equal((await sweepDues(f.db,noPlans,at+DAY)).asked,0);
+  assert.deepEqual(await sweepDues(f.db,noPlans,at),{charged:0,asked:1,paused:0});assert.equal((await sweepDues(f.db,noPlans,sameWeek(at))).asked,0);
   assert.equal((await serviceBillingState(f.owner)).payBy,at+PAY_DAYS*DAY);
   let paused=0;assert.equal((await sweepDues(f.db,async()=>{paused++;},at+PAY_DAYS*DAY+1)).paused,1);assert.equal(paused,1);assert.ok(billing(f,'owner').paused_at);
   assert.match(notes(f,'owner','service:paused:%')[0],/Пауза: 4\s900 ₸/);assert.equal((await serviceBillingState(f.owner)).paused,true);
