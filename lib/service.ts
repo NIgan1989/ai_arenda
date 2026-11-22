@@ -308,10 +308,12 @@ export class RentalService {
     const issueId=id();
     return this.query('INSERT INTO administrator_issues(id,owner_id,property_id,entity_kind,entity_id,opened_by,opened_role,other_user,other_role,description,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)',issueId,entity.owner_id,entity.property_id,kind,entity.id,this.userId,role,other,owner?(kind==='booking'?'guest':'cleaner'):'owner',description,now());
   }
-  // One open issue per participant and booking or cleaning: pressing «Есть проблема» again adds to it instead of
-  // opening a second one, so the other side and the AI administrator follow a single thread.
+  // One open issue per pair of participants and booking or cleaning: pressing «Есть проблема» again adds to it instead of
+  // opening a second one, so the other side and the AI administrator follow a single thread. A cleaning that passed
+  // to another cleaner gets a new thread: the next cleaner never reads, and is never sent into, the previous one's.
   async issueWrite(entity:Row,kind:'booking'|'job',description:string){
-    const open=await this.one("SELECT id FROM administrator_issues WHERE entity_kind=? AND entity_id=? AND opened_by=? AND status='open' ORDER BY created_at DESC LIMIT 1",kind,entity.id,this.userId);
+    const other=entity.owner_id===this.userId?(kind==='booking'?entity.guest_id:entity.assigned_to):entity.owner_id;
+    const open=await this.one("SELECT id FROM administrator_issues WHERE entity_kind=? AND entity_id=? AND opened_by=? AND other_user IS ? AND status='open' ORDER BY created_at DESC LIMIT 1",kind,entity.id,this.userId,other??null);
     if(!open)return {added:false,statement:this.administratorIssueStatement(entity,kind,description)};
     return {added:true,statement:this.query("UPDATE administrator_issues SET description=substr(description||char(10)||'Дополнение: '||?,1,6000),version=version+1 WHERE id=? AND status='open'",description,open.id)};
   }
