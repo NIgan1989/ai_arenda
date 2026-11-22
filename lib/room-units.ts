@@ -45,7 +45,10 @@ export async function roomCounts(db:D1Database):Promise<Map<string,number>>{
 /** Writes the lead's card, rules, place and photos over its rooms. */
 export async function syncRoomUnits(db:D1Database,leadId:string){
  if(!await one(db,'SELECT 1 x FROM room_units WHERE lead_id=? LIMIT 1',leadId))return;
- await db.batch(SYNCED.map(t=>q(db,syncSql(t),leadId)));
+ await db.batch([...SYNCED.map(t=>q(db,syncSql(t),leadId)),
+  // The person on shift follows the card: a new one is let into every room, a removed one loses them all (lib/staff.ts).
+  q(db,'DELETE FROM property_staff WHERE property_id IN (SELECT property_id FROM room_units WHERE lead_id=?1) AND staff_id IS NOT (SELECT staff_id FROM property_staff WHERE property_id=?1)',leadId),
+  q(db,'INSERT OR IGNORE INTO property_staff(property_id,staff_id,owner_id,created_at) SELECT u.property_id,l.staff_id,l.owner_id,l.created_at FROM property_staff l JOIN room_units u ON u.lead_id=l.property_id JOIN properties p ON p.id=u.property_id AND p.archived_at IS NULL WHERE l.property_id=?1',leadId)]);
 }
 /** Every lead in step with its rooms: the background sweep, for edits made anywhere. */
 export async function syncAllRoomUnits(db:D1Database){
@@ -59,9 +62,11 @@ const FREE=`NOT EXISTS(SELECT 1 FROM bookings b WHERE b.property_id=r.id AND (b.
  AND NOT EXISTS(SELECT 1 FROM cleaning_jobs j WHERE j.property_id=r.id AND j.status IN ('open','assigned','in_progress','submitted') AND j.start<?2 AND j.end>?1)
  AND NOT EXISTS(SELECT 1 FROM external_blocks x JOIN calendar_sources s ON s.id=x.source_id WHERE x.property_id=r.id AND s.enabled=1 AND x.start<?2 AND x.end>?1)`;
 /** The rooms of a lead free over [start, until), the lead first. */
-export async function freeRooms(db:D1Database,leadId:string,start:number,until:number):Promise<string[]>{
+// A room the quote would refuse (closed for repair, or not ready for a stay starting now) is not handed to a guest.
+const BOOKABLE=` AND NOT EXISTS(SELECT 1 FROM property_operations o WHERE o.property_id=r.id AND (o.readiness IN ('maintenance','blocked') OR (?1<=?3+60 AND o.readiness<>'ready')))`;
+export async function freeRooms(db:D1Database,leadId:string,start:number,until:number,bookable=false):Promise<string[]>{
  const ids=await roomsOf(db,leadId);
- const free=new Set((await rows(db,`SELECT r.id FROM properties r WHERE r.id IN (SELECT value FROM json_each(?4)) AND ${FREE}`,start,until,epoch(),JSON.stringify(ids))).map(r=>String(r.id)));
+ const free=new Set((await rows(db,`SELECT r.id FROM properties r WHERE r.id IN (SELECT value FROM json_each(?4)) AND ${FREE}${bookable?BOOKABLE:''}`,start,until,epoch(),JSON.stringify(ids))).map(r=>String(r.id)));
  return ids.filter(id=>free.has(id));
 }
 /** The room a booking of this card takes: the first free one, or the card itself when none is (the quote then says so). */
@@ -69,7 +74,7 @@ export async function pickRoom(db:D1Database,propertyId:string,start:number,unti
  const lead=await leadOf(db,propertyId);
  if(lead===propertyId&&!await one(db,'SELECT 1 x FROM room_units WHERE lead_id=? LIMIT 1',lead))return propertyId;
  await syncRoomUnits(db,lead);
- return (await freeRooms(db,lead,start,until))[0]||propertyId;
+ return (await freeRooms(db,lead,start,until,true))[0]||propertyId;
 }
 
 async function ownLead(s:RentalService,propertyId:string){
