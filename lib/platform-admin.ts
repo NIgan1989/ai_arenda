@@ -18,6 +18,7 @@ import {safetyAction} from './account-safety';
 import {listRightDocs,readRightDoc,settleRightDocs} from './property-rights';
 import {listIdentityDocs,readIdentityDoc,settleIdentity,identityQueue,decideIdentity} from './identity-docs';
 import {restrictAccount,restrictionsList,unlistPlace} from './account-restrictions';
+import {bypassWatch,warnBypass} from './bypass-watch';
 import {billingState,billingOwners,saveBillingSettings,recordBalanceEntry} from './platform-billing';
 import {plansAdminState,savePlanSettings} from './autopilot-plans';
 import {markCleanerPayout} from './regular-cleaner';
@@ -54,6 +55,7 @@ export async function readPlatformAdmin(service:RentalService,route:string,param
  if(route==='rights')return listRightDocs(service,String(params.propertyId||''),true);
  if(route==='rights/photo')return readRightDoc(service,String(params.id||''),config,true);
  if(route==='restrictions')return restrictionsList(service,true);
+ if(route==='bypass'){const items=await bypassWatch(service.db);await service.audit(service.userId,'admin.bypass_viewed').run();return {items};}
  if(route==='billing/owners')return billingOwners(service,params);
  if(route==='billing/plans')return plansAdminState(service.db);
  if(route==='billing'){const state={...await billingState(service),plans:await plansAdminState(service.db),charges:await cardChargesAdmin(service.db),testPayments:(await one(service.db,"SELECT test_payments FROM platform_billing WHERE id='global'"))?.test_payments===1};await service.audit(service.userId,'admin.billing_viewed').run();return state;}
@@ -100,6 +102,7 @@ export async function writePlatformAdmin(service:RentalService,route:string,body
  if(route==='properties/approve'){if(body.confirmed!==true)throw new DomainError('Подтвердите, что проверили жильё и владельца.');namesChecked(body);const r=await adminApproveProperty(service,body);await settleRightDocs(service.db,String(body.propertyId),service.userId,config);const owner=await one(service.db,'SELECT owner_id FROM properties WHERE id=?',String(body.propertyId));if(owner)await settleIdentity(service.db,owner.owner_id,service.userId,config);return r;}
  if(route==='identity/decide')return decideIdentity(service,body,config);
  if(route==='restrictions/decide')return restrictAccount(service,body,true);
+ if(route==='bypass/warn')return warnBypass(service,body,true);
  if(route==='properties/unlist')return unlistPlace(service,body,true);
  if(route==='reviews/decide'){
   if(body.confirmed!==true)throw new DomainError('Подтвердите фактическую проверку сведений.');

@@ -95,3 +95,42 @@ test('before the phone opens a prepaying guest gets the Kaspi link without the n
   assert.equal((await pay()).phone,'+77011234567');
  }finally{f.db.close();}
 });
+test('the administrator sees who looks like dealing outside the service and warns in steps: warning, second warning, block',async()=>{
+ const {bypassWatch}=await load('bypass-watch'),{readPlatformAdmin,writePlatformAdmin}=await load('platform-admin'),{openDiscussion,sendDiscussionMessage}=await load('process-discussions');
+ const f=await fixture(),R=f.db.raw,admin={PLATFORM_ADMIN_IDS:'guest'};try{
+  assert.deepEqual(await bypassWatch(f.db),[]);
+  const cancel=(id,t=now())=>{R.prepare("INSERT INTO bookings(id,property_id,guest_id,start,end,occupied_until,guests,amount,status,expires_at,payment_status,request_key,created_at) VALUES (?,?,'guest',?,?,?,1,10000,'cancelled',0,'unpaid',?,?)").run(id,f.property,now()+86400,now()+2*86400,now()+2*86400,id,t);
+   R.prepare("INSERT INTO platform_commissions(booking_id,owner_id,property_id,booking_amount,rate_bp,amount,mode,settings_version,created_at) VALUES (?,'owner',?,10000,400,400,'shadow',1,?)").run(id,f.property,t);};
+  const job=(id)=>R.prepare("INSERT INTO cleaning_jobs(id,property_id,owner_id,start,end,fee,description,status,assigned_to,created_at,cancelled_at) VALUES (?,?,'owner',?,?,3000,'x','cancelled','cleaner',?,?)").run(id,f.property,now()+86400,now()+90000,now(),now());
+  cancel('c1');assert.deepEqual(await bypassWatch(f.db),[],'one cancellation is not a sign');
+  // A link in the booking chat is refused, and the attempt is written down.
+  const room=await openDiscussion(f.owner,'owner',{kind:'booking',entityId:f.booking});
+  await assert.rejects(sendDiscussionMessage(f.owner,'owner',{...room,text:'Пишите https://wa.me/77011234567',requestKey:'k1'}),e=>e.status===422);
+  assert.ok(R.prepare("SELECT 1 FROM audit_events WHERE action='chat.contact_blocked' AND actor_id='owner'").get());
+  cancel('c2');job('j1');job('j2');
+  const {items}=await readPlatformAdmin(f.guest,'bypass',{},admin);
+  const owner=items.find(p=>p.userId==='owner'),cleaner=items.find(p=>p.userId==='cleaner');
+  assert.deepEqual(owner.signals,{cancels:2,stayed:0,contacts:1,jobs:2});assert.equal(owner.warnings,0);assert.equal(owner.role,'owner');
+  assert.equal(cleaner.role,'cleaner');assert.equal(cleaner.signals.jobs,2);
+  await assert.rejects(writePlatformAdmin(f.owner,'bypass/warn',{userId:'owner',warnings:0},admin),e=>e.status===403);
+  assert.match((await writePlatformAdmin(f.guest,'bypass/warn',{userId:'owner',warnings:0},admin)).message,/Первое/);
+  await assert.rejects(writePlatformAdmin(f.guest,'bypass/warn',{userId:'owner',warnings:0},admin),/обновите/,'a second tap does not warn twice');
+  assert.match(R.prepare("SELECT body FROM notifications WHERE user_id='owner' AND dedupe='service:bypass-warning:owner:1'").get().body,/Предупреждение администратора/);
+  assert.ok((await f.owner.roleState('owner',{catalog:false})).notifications.some(n=>n.dedupe==='service:bypass-warning:owner:1'),'the owner sees the warning');
+  // After a warning the count starts again: the owner comes back only if it goes on.
+  assert.equal((await bypassWatch(f.db)).some(p=>p.userId==='owner'),false);
+  assert.equal((await bypassWatch(f.db)).some(p=>p.userId==='cleaner'),true,'the cleaner was not warned');
+  // A booking confirmed before the warning and cancelled after it counts by the time of the cancellation.
+  cancel('c3',now()-86400);R.prepare("INSERT INTO audit_events VALUES ('x3','owner','c3','booking.cancelled',?)").run(now()+5);cancel('c4',now()+5);
+  // Two administrators at once: the count moves by one, and only one notice goes out.
+  const both=await Promise.allSettled([writePlatformAdmin(f.guest,'bypass/warn',{userId:'cleaner',warnings:0},admin),writePlatformAdmin(f.guest,'bypass/warn',{userId:'cleaner',warnings:0},admin)]);
+  assert.equal(both.filter(r=>r.status==='fulfilled').length,1);
+  assert.equal(R.prepare("SELECT COUNT(*) n FROM audit_events WHERE entity_id='cleaner' AND action LIKE 'bypass.warning:%'").get().n,1);
+  assert.equal(R.prepare("SELECT COUNT(*) n FROM notifications WHERE user_id='cleaner' AND dedupe LIKE 'service:bypass-warning:%'").get().n,1);
+  const again=(await bypassWatch(f.db,now()+10)).find(p=>p.userId==='owner');assert.equal(again.warnings,1);assert.equal(again.signals.cancels,2);
+  assert.match((await writePlatformAdmin(f.guest,'bypass/warn',{userId:'owner',warnings:1},admin)).message,/Второе/);
+  await assert.rejects(writePlatformAdmin(f.guest,'bypass/warn',{userId:'owner',warnings:2},admin),/блокировка/);
+  await writePlatformAdmin(f.guest,'restrictions/decide',{userId:'cleaner',action:'block',reason:'Обход сервиса после двух предупреждений.'},admin);
+  assert.equal((await bypassWatch(f.db)).some(p=>p.userId==='cleaner'),false,'a blocked account leaves the list');
+ }finally{f.db.close();}
+});

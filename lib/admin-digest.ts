@@ -1,4 +1,5 @@
 import {epoch,uuid,q,one,type OperationConfig} from './operation-core';
+import {bypassWatch} from './bypass-watch';
 
 // The platform administrator's morning summary (09:00 Kazakhstan time, UTC+5): what the AI administrator
 // decided by itself over the last day, what waits for the administrator, and how the service did.
@@ -37,7 +38,8 @@ export async function digestFacts(db:D1Database,at=epoch()){
   income:await n("SELECT COALESCE(SUM(amount),0) n FROM platform_commissions WHERE created_at>?",since),
   failures:await n("SELECT COUNT(*) n FROM background_jobs WHERE status='dead'"),
   bypass:await bypassSuspects(db,at),
-  stayed:await staysAfterCancel(db,at)
+  stayed:await staysAfterCancel(db,at),
+  watch:(await bypassWatch(db,at)).length
  };
 }
 export function digestText(f:Awaited<ReturnType<typeof digestFacts>>){
@@ -50,6 +52,7 @@ export function digestText(f:Awaited<ReturnType<typeof digestFacts>>){
  lines.push('Брони: новых '+f.bookings+', подтверждено '+f.confirmed+'. Комиссия сервиса: '+money(f.income)+'.');
  if(f.stayed.length)lines.push('Гости сказали, что жили по отменённой брони: '+f.stayed.map(o=>o.name+' ('+o.n+')').join(', ')+'. Это похоже на сделку в обход.');
  if(f.bypass.length)lines.push('Проверьте, нет ли сделок в обход: отмены после подтверждения за 30 дней у '+f.bypass.map(o=>o.name+' ('+o.n+')').join(', ')+'.');
+ if(f.watch)lines.push('Похожи на обход сервиса: '+f.watch+'. Профиль → «Обход сервиса», там можно предупредить.');
  if(f.failures)lines.push('Сбои фоновых задач: '+f.failures+'. Админка → Состояние сервиса.');
  return lines.join('\n');
 }

@@ -266,6 +266,8 @@ export class RentalService {
     const notifications=state.notifications.filter((n:Row)=>{
       if(accountPreference?.payment_notifications===0&&/:(paid|payment|deposit):/.test(n.dedupe))return false;
       if(/^(guest|owner|cleaner):/.test(n.dedupe))return n.dedupe.startsWith(role+':');
+      // The service's own notices to the person (fees, warnings about deals outside the service): every role but the guest.
+      if(n.dedupe.startsWith('service:'))return role!=='guest';
       const legacyRole=/^(booking|checkout-reported|application|submitted|overdue):/.test(n.dedupe)?'owner':/^(confirmed|paid):/.test(n.dedupe)?'guest':/^(assigned|approved):/.test(n.dedupe)?'cleaner':null;
       return legacyRole===role&&entityIds.some(entityId=>n.dedupe.includes(entityId));
     });
