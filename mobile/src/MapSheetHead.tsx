@@ -41,11 +41,14 @@ type Props = {
   onService?: () => void;
   // The picker opened or closed: the sheet makes room for it and returns to where it was.
   onPicker?: (open: boolean) => void;
+  // Guest only: the request the shown results came from. The empty line keeps saying it instead of the examples, so
+  // what is on the map and what the line says never disagree (GPT audit 2026-11-22).
+  recent?: string;
   children?: ReactNode;
 };
 
 // The default state of the bottom sheet: one AI line, a row of chips and the "Сейчас" card when there is one.
-export function MapSheetHead({ role, text, onText, onSend, onChip, chips = true, quick = true, busy = false, conditions, now, onNow, counts, category = 'stay', kind = '', choice, onKind, onService, onPicker, children }: Props) {
+export function MapSheetHead({ role, text, onText, onSend, onChip, chips = true, quick = true, busy = false, conditions, now, onNow, counts, category = 'stay', kind = '', choice, onKind, onService, onPicker, recent = '', children }: Props) {
   const line = headLine(role, Date.now(), category);
   // The picker takes the place of the chips: a list of the categories, one of them opened; a tap on a type chooses and closes.
   const [picking, setPicking] = useState(false);
@@ -55,7 +58,7 @@ export function MapSheetHead({ role, text, onText, onSend, onChip, chips = true,
   const show = (open: boolean) => { if (open) setOpened(category); setPicking(open); onPicker?.(open); };
   const pick = (to: Category, id: string | null) => { show(false); onKind?.(to, id); };
   return (
-    <View style={s.head}><AiLine value={text} onChangeText={onText} onSend={onSend} busy={busy} placeholder={line.placeholder} shortPlaceholder={line.shortPlaceholder} label={line.label} />{/* The chips of every role fit one row of a 360px phone; the row still scrolls for a larger system font. */}{picker && <View style={s.picker}><View style={s.pickerHead}><Text accessibilityRole="header" style={s.pickerTitle}>{t('Что ищете')}</Text><Pressable accessibilityRole="button" accessibilityLabel={t('Закрыть выбор категории')} onPress={() => show(false)} hitSlop={8} style={s.pickerClose}><Text style={s.pickerCloseText}>✕</Text></Pressable></View>{/* A list that opens: one row per category, only the opened one shows its types. */}{CATEGORIES.map((c, at) => {
+    <View style={s.head}><AiLine value={text} onChangeText={onText} onSend={onSend} busy={busy} placeholder={recent || line.placeholder} shortPlaceholder={recent || line.shortPlaceholder} label={line.label} />{/* The chips of every role fit one row of a 360px phone; the row still scrolls for a larger system font. */}{picker && <View style={s.picker}><View style={s.pickerHead}><Text accessibilityRole="header" style={s.pickerTitle}>{t('Что ищете')}</Text><Pressable accessibilityRole="button" accessibilityLabel={t('Закрыть выбор категории')} onPress={() => show(false)} hitSlop={8} style={s.pickerClose}><Text style={s.pickerCloseText}>✕</Text></Pressable></View>{/* A list that opens: one row per category, only the opened one shows its types. */}{CATEGORIES.map((c, at) => {
           const open = c.id === opened, chosen = c.id === category;
           return (
             <View key={c.id} style={[s.group, at > 0 && s.groupNext]}><Pressable accessibilityRole="button" accessibilityLabel={c.title + ': ' + c.hint} accessibilityState={{ expanded: open }} disabled={busy} onPress={() => setOpened(open ? null : c.id)} style={({ pressed }) => [s.groupHead, pressed && s.groupPressed]}><KindIcon id={c.id} size={18} color={chosen ? C.accent : C.inkSoft} /><Text style={[s.groupTitle, chosen && s.groupTitleOn]}>{c.title}</Text><Text numberOfLines={1} style={s.groupHint}>{chosen && !open && choice && choice.title !== c.title ? choice.title : c.hint}</Text><Image source={chevron} style={[s.groupChevron, open && s.groupChevronOpen]} accessibilityIgnoresInvertColors /></Pressable>{open && <View style={s.kinds} accessibilityRole="radiogroup" accessibilityLabel={c.title}>{[['', c.any] as [string, string], ...categoryKinds(c.id)].map(([id, title]) => {
