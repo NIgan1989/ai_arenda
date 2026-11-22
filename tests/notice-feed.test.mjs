@@ -75,3 +75,10 @@ test('события одной роли, новые первыми, и что �
  assert.deepEqual(freshEvents(list,new Set(['owner:booking:b1']),'owner').map(v=>v.dedupe),['owner:payment:b2','owner:overdue-escalated:j1']);
  assert.deepEqual(freshEvents(list,new Set(list.map(v=>v.id)),'owner'),[]);
 });
+
+test('the service fees reach the owner and the performer, never the guest',()=>{
+ const list=[{dedupe:'service:card-ask:u1:100',body:'К оплате за услуги сервиса 1 200 ₸.',created_at:100},{dedupe:'owner:booking:b1',body:'',created_at:50}];
+ assert.deepEqual(roleEvents(list,'owner').map(v=>v.dedupe),['service:card-ask:u1:100','owner:booking:b1']);
+ assert.deepEqual(roleEvents(list,'cleaner').map(v=>v.dedupe),['service:card-ask:u1:100']);
+ assert.deepEqual(roleEvents(list,'guest'),[]);
+});

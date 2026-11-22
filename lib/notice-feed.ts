@@ -25,11 +25,13 @@ export function noticeTone(n:{dedupe?:unknown;body?:unknown;created_at?:unknown}
 export function silentNotice(dedupe:unknown,body?:unknown){
  return typeof dedupe==='string'&&dedupe.startsWith('owner:')&&noticeTone({dedupe,body})==='calm';
 }
-// The notices of one role (the key of a notice starts with its role), newest first, events only. A key may end with
+// The notices of one role (the key of a notice starts with its role), newest first, events only. The fees of the
+// service (lib/service-dues.ts, keys «service:…») belong to the person, not to one role: the owner and the performer
+// both see them; a guest pays the service nothing. A key may end with
 // the revision of its task or the version of its cleaning: a later notice about the same thing replaces the earlier.
 export function roleEvents<T extends {dedupe?:unknown;body?:unknown;created_at?:unknown}>(list:T[]|null|undefined,role:string):T[]{
  const seen=new Set<string>();
- return (list||[]).filter(n=>typeof n?.dedupe==='string'&&n.dedupe.startsWith(role+':')&&noticeTone(n)==='event')
+ return (list||[]).filter(n=>typeof n?.dedupe==='string'&&(n.dedupe.startsWith(role+':')||(role!=='guest'&&n.dedupe.startsWith('service:')))&&noticeTone(n)==='event')
   .sort((a,b)=>(Number(b.created_at)||0)-(Number(a.created_at)||0))
   .filter(n=>{const key=String(n.dedupe).replace(/:\d+$/,'');if(seen.has(key))return false;seen.add(key);return true;});
 }
