@@ -4,7 +4,7 @@ const {LEGAL_DOCUMENTS,LEGAL_EDITION}=await load('legal-documents');
 const text=id=>LEGAL_DOCUMENTS.find(d=>d.id===id).sections.flatMap(s=>s.p).join(' ');
 
 test('the offers cover the launch risks in one new edition',()=>{
- assert.equal(LEGAL_EDITION,'23 ноября 2026');
+ assert.equal(LEGAL_EDITION,'24 ноября 2026');
  const terms=text('terms');
  assert.match(terms,/непреодолимой силой/);
  assert.match(terms,/повторно списанную сумму/);

@@ -1,4 +1,4 @@
-import {chatGuard} from './chat-guard';
+import {chatGuard,phoneOpens} from './chat-guard';
 import {DomainError,required,number,type Role} from './domain';
 import type {RentalService} from './service';
 import {q,one,rows,uuid,epoch,hash,type Row} from './operation-core';
@@ -81,8 +81,8 @@ export async function sendDiscussionMessage(service:RentalService,role:Role,body
  const photo=body.photo?jpegInput(body.photo,'property').data:'',reply=body.replyTo?number(body.replyTo,'Ответ на сообщение',1,Number.MAX_SAFE_INTEGER):null;
  if(reply&&!await one(service.db,'SELECT seq FROM discussion_messages WHERE room_id=? AND seq=?',room.id,reply))throw new DomainError('Исходное сообщение недоступно.',403);
  const text=required(body.text||(photo?'Фотография':''),'Сообщение',4000),key=required(body.requestKey,'Ключ сообщения',100);if(key.startsWith(AI_KEY))throw new DomainError('Некорректный ключ сообщения.');const previous=await one(service.db,'SELECT seq,body,photo_data,reply_to FROM discussion_messages WHERE room_id=? AND sender_id=? AND sender_role=? AND request_key=?',room.id,service.userId,role,key);
- // Between a guest and an owner: no links, no card numbers, no phone before the confirmation (lib/chat-guard.ts).
- if(room.entity_kind==='booking'&&!key.startsWith(AI_KEY)){const b=await one(service.db,'SELECT status FROM bookings WHERE id=?',room.entity_id),guard=chatGuard(text,{confirmed:['confirmed','completed'].includes(b?.status)});if(!guard.ok)throw new DomainError(guard.reason,422);}
+ // Between a guest and an owner: no links, no card numbers, no phone or messenger before the phone opens (lib/chat-guard.ts).
+ if(room.entity_kind==='booking'&&!key.startsWith(AI_KEY)){const b=await one(service.db,'SELECT status,start FROM bookings WHERE id=?',room.entity_id),guard=chatGuard(text,{phoneOpen:phoneOpens(b)});if(!guard.ok)throw new DomainError(guard.reason,422);}
  const same=(m:Row)=>m.body===text&&m.photo_data===photo&&m.reply_to===reply;
  if(previous){if(!same(previous))throw new DomainError('Этот ключ использован для другого сообщения.',409);return {sent:true,seq:previous.seq};}
  const message=await q(service.db,`INSERT OR IGNORE INTO discussion_messages(room_id,sender_id,sender_role,body,request_key,created_at,photo_data,reply_to) SELECT ?,?,?,?,?,?,?,? WHERE ${context.gate} AND NOT EXISTS(SELECT 1 FROM discussion_blocks WHERE room_id=?) AND (SELECT COUNT(*) FROM discussion_messages WHERE sender_id=? AND created_at>?)<30 RETURNING seq`,room.id,service.userId,role,text,key,epoch(),photo,reply,...context.gateArgs,room.id,service.userId,epoch()-60).first<Row>();
@@ -114,13 +114,16 @@ async function discussionSubject(service:RentalService,context:Row){
  return r?{kind:context.kind,id:r.id,title:context.title,status:r.status,start:r.start,end:r.end,...(r.fee!=null?{fee:r.fee}:{})}:null;
 }
 // A call to the other participant. The number opens only while the deal already goes through the service:
-// a confirmed stay up to a day after check-out, or a cleaning with an assigned performer, so a call does not
-// replace the booking or the payment through the service.
+// a confirmed stay from a day before the check-in (phoneOpens) up to a day after check-out, or a cleaning with an
+// assigned performer, so a call does not replace the booking or the payment through the service.
 const CALL_JOB=['assigned','in_progress','submitted'];
 export function callAllowed(subject:Row|null,blocked:boolean,t=epoch()){
  if(blocked)return {ok:false,note:'Переписка заблокирована.'};
  if(!subject)return {ok:false,note:'Звонок недоступен.'};
- if(subject.kind==='booking')return ['confirmed','completed'].includes(subject.status)&&t<subject.end+86400?{ok:true,note:''}:{ok:false,note:subject.status==='requested'?'Позвонить можно после подтверждения брони.':'Бронь уже не действует.'};
+ if(subject.kind==='booking'){
+  if(!['confirmed','completed'].includes(subject.status)||t>=subject.end+86400)return {ok:false,note:subject.status==='requested'?'Позвонить можно после подтверждения брони, за сутки до заезда.':'Бронь уже не действует.'};
+  return phoneOpens(subject,t)?{ok:true,note:''}:{ok:false,note:'Позвонить можно за сутки до заезда. До этого пишите в чате.'};
+ }
  return CALL_JOB.includes(subject.status)?{ok:true,note:''}:{ok:false,note:subject.status==='completed'?'Уборка завершена.':'Позвонить можно, когда исполнитель назначен.'};
 }
 async function discussionCall(service:RentalService,role:Role,context:Row,subject:Row|null,blocked:boolean){

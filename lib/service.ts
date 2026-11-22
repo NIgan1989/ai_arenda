@@ -10,12 +10,13 @@ import { ratingsFor } from './stay-reviews';
 import { markDeals } from './price-deal';
 import { generateAnswer, assistantContext, type AIConfig,type AIToolExecutor } from './ai';
 import { operationOverview } from './operations';
-import { defaultPolicy,publicPolicy,policyInput,rentalPrice,changeRentalPrice,mandateActive ,withGuests,tooSoon,prepSeconds,prepWords} from './rental-policy';
+import { defaultPolicy,publicPolicy,policyInput,rentalPrice,changeRentalPrice,mandateActive ,withGuests,withRepeatDiscount,tooSoon,prepSeconds,prepWords} from './rental-policy';
 import { parseRole,commandRole } from './access';
 import {assistantBrief,defaultAssistantSettings} from './assistant';
 import {defaultAccountSettings,accountSettingsInput,userSearchInput} from './account';
 import {approvalCards} from './approvals';
-import {hasContacts,MIN_PHOTOS} from './listing-rules';
+import {hasContacts,hasContactWays,MIN_PHOTOS} from './listing-rules';
+import {phoneOpens} from './chat-guard';
 import {listingInput,jpegInput,propertyStatus,cleanerStatus,categories,kindCategory,isBanquet,occasions,occasionLabel,searchCategory} from './listings';
 import {mediaKey,dataUrlBytes,mediaData} from './media-store';
 import {CANCELLED_AFTER_ARRIVAL} from './stay-result';
@@ -64,6 +65,12 @@ const HISTORY_TABLES=['bookings','cleaning_jobs','finance_entries','platform_com
 const SETTINGS_TABLES=['property_details','property_locations','property_operations','property_policies','operation_rules','matching_preferences','property_access','calendar_exports','property_import_links','guest_favorites','property_staff','venue_halls'];
 // How far a stay may move its cleaning while the assigned cleaner keeps it: a late checkout or a few extra hours, not another day.
 const KEEP_SHIFT=3*3600;
+// The owner's Kaspi number is the owner's phone as a rule. Before the phone opens (a day before the check-in) a guest
+// who prepays gets only the Kaspi pay link when the owner gave one; without a link the number is needed to pay at all.
+const guestPayout=(pay:Row,open:boolean)=>open||!pay.link?pay:{...pay,phone:''};
+// The phone of the other side of a booking opens a day before the check-in of a confirmed booking (lib/chat-guard.ts phoneOpens).
+const PHONE_OPEN_SQL="(b.status='completed' OR (b.status='confirmed' AND CAST(strftime('%s','now') AS INTEGER)>=b.start-86400))";
+const PROFILE_CONTACTS='Уберите из профиля телефон, ссылки и мессенджеры: участники связываются через чат сервиса, а телефон открывается за сутки до заезда.';
 export class RentalService {
   constructor(public db: D1Database, public userId: string, private execution?:{propertyId:string;policyVersion:number}) {}
   query(sql: string, ...args: any[]) { return this.db.prepare(sql).bind(...args); }
@@ -109,6 +116,8 @@ export class RentalService {
     if(JSON.parse(p.roles).includes('cleaner')&&(!districts||!experience||!availability))throw new DomainError('Заполните районы, опыт и график исполнителя.');
     const bio=String(body.bio??p.bio??'').trim(),languages=String(body.languages??p.languages??'').trim(),visibility=body.avatarVisibility??p.avatar_visibility??'participants';
     if(bio.length>500||languages.length>100||!['participants','self'].includes(visibility))throw new DomainError('Проверьте описание, языки и видимость профиля.');
+    // Other participants read «О себе» and the cleaner's form: no phone, links or messengers there (lib/chat-guard.ts).
+    if([bio,experience,availability,districts].some(hasContactWays))throw new DomainError(PROFILE_CONTACTS,422);
     const presence=body.showPresence===undefined?(p.show_presence??1):body.showPresence===true?1:0,receipts=body.showReceipts===undefined?(p.show_receipts??1):body.showReceipts===true?1:0;
     const revision=id(),r=await this.db.batch([
       this.query('INSERT INTO profile_details VALUES (?,?,?,?,?,?) ON CONFLICT(user_id) DO UPDATE SET avatar_id=excluded.avatar_id,work_status=excluded.work_status,version=excluded.version,revision=excluded.revision,updated_at=excluded.updated_at WHERE profile_details.version=?',this.userId,avatar,body.workStatus,version+1,revision,now(),version),
@@ -249,7 +258,7 @@ export class RentalService {
   }
   async roleState(value:unknown,options:{catalog?:boolean}={}){
     const role=await this.authorizeWorkspace(value,'state'),state=await this.state(options.catalog!==false);
-    const bookings=state.bookings.filter((b:Row)=>role==='owner'?b.owner_id===this.userId:role==='guest'&&b.guest_id===this.userId).map((b:Row)=>role==='owner'?b:{...b,address:b.status==='confirmed'?b.address:null,owner_contact:b.status==='confirmed'?b.owner_contact:null,guest_name:null,guest_contact:null});
+    const bookings=state.bookings.filter((b:Row)=>role==='owner'?b.owner_id===this.userId:role==='guest'&&b.guest_id===this.userId).map((b:Row):Row=>role==='owner'?{...b,stay_check:0}:{...b,address:b.status==='confirmed'?b.address:null,owner_contact:phoneOpens(b,state.serverTime)?b.owner_contact:null,stay_check:b.guest_id===this.userId?b.stay_check:0,guest_name:null,guest_contact:null});
     const jobs=role==='guest'?[]:state.jobs.filter((j:Row)=>role==='owner'?j.owner_id===this.userId:j.assigned_to===this.userId||(j.status==='open'&&j.end>state.serverTime)).map((j:Row)=>role==='owner'||j.assigned_to===this.userId&&j.status!=='cancelled'?j:{...j,address:null,owner_contact:null,report:'',checklist:'[]'});
     const jobIds=new Set(jobs.map((j:Row)=>j.id));
     const entityIds=[...bookings,...jobs].map((item:Row)=>item.id);
@@ -386,6 +395,9 @@ export class RentalService {
     if(card.kind==='listing')return decideListingTip(this,card.id.slice(8),accept);
     if(card.kind==='cleaning-fee')return decideCleaningTip(this,card.id.slice(13),accept);
     if(card.kind==='stay')return decideStayOffer(this,card.id.slice(5),accept);
+    // «Вы заселились?» (lib/approvals.ts): the guest's answer about a cancelled booking. The owner never sees it;
+    // the administrator's morning summary counts the «yes» answers by owner (lib/admin-digest.ts).
+    if(card.kind==='stay-check'){await this.audit(card.entityId,accept?'stay.checked:yes':'stay.checked:no').run();return {message:accept?'Спасибо, ответ записан. Владелец его не видит.':'Спасибо, ответ записан.'};}
     if(card.kind==='checkout')return this.bookingAction(card.entityId,{action:accept?'checkout':'dispute_checkout',reason:body.reason,expectedVersion:state.bookings.find(b=>b.id===card.entityId)?.terms?.version});
     const job=state.jobs.find(j=>j.id===card.entityId);
     return this.jobAction(card.entityId,{action:card.kind==='application'?(accept?'assign':'reject_application'):(accept?'approve':'revise'),applicationId:card.id.slice(12),reason:body.reason,expectedVersion:job?.version});
@@ -419,11 +431,12 @@ export class RentalService {
         (SELECT COUNT(*) FROM stay_photos f WHERE f.booking_id=b.id AND f.phase='handover' AND EXISTS(SELECT 1 FROM stay_handovers x WHERE x.booking_id=b.id)) handover_photos,
         CASE WHEN p.owner_id=? THEN (SELECT COUNT(*) FROM job_evidence e JOIN cleaning_jobs j ON j.id=e.job_id WHERE j.booking_id=b.id AND e.phase IN ('before','damage')) ELSE 0 END cleaner_photos,
         CASE WHEN p.owner_id=? THEN (SELECT COUNT(*) FROM job_evidence e JOIN cleaning_jobs j ON j.id=e.job_id WHERE j.booking_id=b.id AND e.phase='damage') ELSE 0 END cleaner_damage,
-        CASE WHEN p.owner_id=? OR (b.guest_id=? AND b.status='confirmed') THEN o.contact ELSE NULL END owner_contact,
+        CASE WHEN p.owner_id=? OR (b.guest_id=? AND ${PHONE_OPEN_SQL}) THEN o.contact ELSE NULL END owner_contact,
         CASE WHEN p.owner_id=? OR (b.guest_id=? AND b.status='confirmed') THEN (SELECT json_object('phone',phone,'recipient',recipient,'link',link,'changed_at',changed_at) FROM payout_details d WHERE d.user_id=p.owner_id AND d.phone<>'') ELSE NULL END owner_pay_row,
         CASE WHEN p.owner_id=? THEN g.name ELSE NULL END guest_name,
-        CASE WHEN p.owner_id=? THEN g.contact ELSE NULL END guest_contact,
-        CASE WHEN p.owner_id=? THEN (SELECT json_object('level',level,'score',score,'reasons',reasons,'deposit_advice',deposit_advice,'phone_verified',phone_verified,'held',held) FROM booking_risks WHERE booking_id=b.id) ELSE NULL END risk_row
+        CASE WHEN p.owner_id=? AND ${PHONE_OPEN_SQL} THEN g.contact ELSE NULL END guest_contact,
+        CASE WHEN p.owner_id=? THEN (SELECT json_object('level',level,'score',score,'reasons',reasons,'deposit_advice',deposit_advice,'phone_verified',phone_verified,'held',held) FROM booking_risks WHERE booking_id=b.id) ELSE NULL END risk_row,
+        CASE WHEN b.status='cancelled' AND EXISTS(SELECT 1 FROM platform_commissions pc WHERE pc.booking_id=b.id) AND NOT EXISTS(SELECT 1 FROM audit_events a WHERE a.entity_id=b.id AND a.action LIKE 'stay.checked:%') THEN 1 ELSE 0 END stay_check
         FROM bookings b JOIN properties p ON p.id=b.property_id LEFT JOIN profiles o ON o.id=p.owner_id LEFT JOIN profiles g ON g.id=b.guest_id
         WHERE b.guest_id=? OR p.owner_id=? ORDER BY b.start DESC`, ...Array(13).fill(this.userId)),
       this.all(`SELECT j.*,EXISTS(SELECT 1 FROM regular_cleaners rc WHERE rc.property_id=j.property_id AND rc.cleaner_id=COALESCE(j.assigned_to,?)) regular,CASE WHEN j.owner_id=? OR j.assigned_to=? THEN (SELECT status FROM cleaning_holds h WHERE h.job_id=j.id AND h.cleaner_id=j.assigned_to AND h.status<>'returned') END guarantee,(j.booking_id IS NULL OR EXISTS(SELECT 1 FROM booking_terms t WHERE t.booking_id=j.booking_id AND t.actual_checkout IS NOT NULL)) checkout_confirmed,COALESCE((SELECT require_photos FROM operation_rules r WHERE r.property_id=j.property_id),0) photos_required,p.title,p.city,p.district,p.rooms,p.capacity,p.cleaning_minutes,p.demo_owner,(SELECT photos FROM property_details WHERE property_id=p.id) property_photos,(SELECT details FROM property_details WHERE property_id=p.id) property_details,CASE WHEN j.status='open' THEN p.address END open_address,
@@ -452,7 +465,7 @@ export class RentalService {
     // Completed stays per own place: prepayments open after five of them (lib/prepay.ts).
     const stays=new Map<string,number>((ownProperties.length?await this.all("SELECT b.property_id,COUNT(*) n FROM bookings b JOIN properties p ON p.id=b.property_id JOIN booking_terms t ON t.booking_id=b.id WHERE p.owner_id=? AND b.status='completed' AND t.actual_checkout IS NOT NULL AND b.guest_id<>p.owner_id GROUP BY b.property_id",this.userId):[]).map(r=>[r.property_id,Number(r.n)]));
     const guests=await reliabilityFor(this.db,'guest',bookings.filter(b=>b.owner_id===this.userId&&b.status==='requested').map(b=>b.guest_id));
-    const state={ profile, properties:await this.enrichProperties(properties.map(p=>({...p,policy:publicPolicy(policyFor(p))}))), ownProperties:await this.enrichProperties(ownProperties.map(p=>({...p,policy:policyFor(p),operation:operations.find(v=>v.property_id===p.id),prepay:prepayState(policyFor(p).prepay_percent,stays.get(p.id)||0)})),true), bookings:bookings.map(({risk_row,handover_row,owner_pay_row,...b}) => ({...b,owner_pay:owner_pay_row&&(b.owner_id===this.userId||payoutOpen({...b,terms:enrichedTerms.find(t=>t.booking_id===b.id)},serverTime))?JSON.parse(owner_pay_row):null,risk:riskFromRow(risk_row?JSON.parse(risk_row):null),handover:handover_row?JSON.parse(handover_row):null,...(b.owner_id===this.userId?{guest_reliability:guests.get(b.guest_id)}:{}),status:b.status==='requested' && b.expires_at<=serverTime?'expired':b.status,terms:enrichedTerms.find(t=>t.booking_id===b.id),cancel_terms:cancelFor(b),changes:changes.filter(c=>c.booking_id===b.id).map(c=>({...c,status:c.status==='pending'&&c.expires_at<=serverTime?'expired':c.status})),readiness:operations.find(o=>o.property_id===b.property_id)?.readiness})), jobs:jobs.map(({open_address,cleaner_pay_row,...j}:Row):Row=>({...j,cleaner_pay:cleaner_pay_row?JSON.parse(cleaner_pay_row):null,street:streetAddress(open_address),settlement_paid:jobPayments.find(p=>p.job_id===j.id)?.paid??(j.settled_at?j.fee:0),checkout_confirmed:!j.booking_id||!!j.checkout_confirmed})), applications, notifications, messages, serverTime, integrations:{ai:false,telegram:false,whatsapp:false,payments:false} };
+    const state={ profile, properties:await this.enrichProperties(properties.map(p=>({...p,policy:publicPolicy(policyFor(p))}))), ownProperties:await this.enrichProperties(ownProperties.map(p=>({...p,policy:policyFor(p),operation:operations.find(v=>v.property_id===p.id),prepay:prepayState(policyFor(p).prepay_percent,stays.get(p.id)||0)})),true), bookings:bookings.map(({risk_row,handover_row,owner_pay_row,...b}) => ({...b,owner_pay:owner_pay_row&&(b.owner_id===this.userId||payoutOpen({...b,terms:enrichedTerms.find(t=>t.booking_id===b.id)},serverTime))?guestPayout(JSON.parse(owner_pay_row),b.owner_id===this.userId||phoneOpens(b,serverTime)):null,risk:riskFromRow(risk_row?JSON.parse(risk_row):null),handover:handover_row?JSON.parse(handover_row):null,...(b.owner_id===this.userId?{guest_reliability:guests.get(b.guest_id)}:{}),status:b.status==='requested' && b.expires_at<=serverTime?'expired':b.status,terms:enrichedTerms.find(t=>t.booking_id===b.id),cancel_terms:cancelFor(b),changes:changes.filter(c=>c.booking_id===b.id).map(c=>({...c,status:c.status==='pending'&&c.expires_at<=serverTime?'expired':c.status})),readiness:operations.find(o=>o.property_id===b.property_id)?.readiness})), jobs:jobs.map(({open_address,cleaner_pay_row,...j}:Row):Row=>({...j,cleaner_pay:cleaner_pay_row?JSON.parse(cleaner_pay_row):null,street:streetAddress(open_address),settlement_paid:jobPayments.find(p=>p.job_id===j.id)?.paid??(j.settled_at?j.fee:0),checkout_confirmed:!j.booking_id||!!j.checkout_confirmed})), applications, notifications, messages, serverTime, integrations:{ai:false,telegram:false,whatsapp:false,payments:false} };
     return {...state,workspaces:Object.fromEntries(roles.map(role=>[role,operationOverview(state,this.userId,role,serverTime)]))};
   }
   async publicCatalog(options:{syntheticPreview?:boolean}={}) {
@@ -531,6 +544,7 @@ export class RentalService {
     const name=required(role==='guest'?profile.name:body.name??profile.name,'Имя',100),contact=required(role==='guest'?profile.contact:body.contact??profile.contact,'Контакт',120),city=required(role==='guest'?profile.city:body.city??profile.city,'Город',80);
     const districts=String(body.districts??profile.districts??'').trim(),experience=String(body.experience??profile.experience??'').trim(),availability=String(body.availability??profile.availability??'').trim();
     if(role==='cleaner'&&(!districts||!experience||!availability||districts.length>300||experience.length>1000||availability.length>300))throw new DomainError('Для работы на уборках укажите районы, опыт и график.');
+    if(role==='cleaner'&&[districts,experience,availability].some(hasContactWays))throw new DomainError(PROFILE_CONTACTS,422);
     await this.db.batch([
       this.query("UPDATE profiles SET roles=CASE WHEN EXISTS(SELECT 1 FROM json_each(roles) WHERE value='guest') THEN roles ELSE json_insert(roles,'$[#]','guest') END WHERE id=?",this.userId),
       this.query("UPDATE profiles SET name=?,contact=?,city=?,roles=CASE WHEN EXISTS(SELECT 1 FROM json_each(roles) WHERE value=?) THEN roles ELSE json_insert(roles,'$[#]',?) END,districts=CASE WHEN ?='cleaner' THEN ? ELSE districts END,experience=CASE WHEN ?='cleaner' THEN ? ELSE experience END,availability=CASE WHEN ?='cleaner' THEN ? ELSE availability END WHERE id=?",name,contact,city,role,role,role,districts,role,experience,role,availability,this.userId),
@@ -597,7 +611,10 @@ export class RentalService {
     if(op&&(['maintenance','blocked'].includes(op.readiness)||(start<=now()+60&&op.readiness!=='ready')))throw new DomainError('Жильё сейчас не готово к новым заездам.',409);
     // The owner needs time to get the place ready (to heat a bath): nothing starts sooner, unless the owner says it is ready.
     if(!options.ownerReady&&tooSoon(policy,start,now()))throw new DomainError('Это место готовят к приходу гостей '+prepWords(Number(policy.prep_minutes))+'. Ближайшее начало — '+clockLabel(Math.ceil((now()+prepSeconds(policy))/1800)*1800)+'.',409);
-    const base=rentalPrice(p.price,policy,start,end,body.billingMode||'daily'),pricing=withGuests(windowQuote(base,policy.hourly_price,base.billingMode==='hourly'?await openWindowFor(this.db,p.id,start,end):null),policy,guests);
+    const base=rentalPrice(p.price,policy,start,end,body.billingMode||'daily'),guestPricing=withGuests(windowQuote(base,policy.hourly_price,base.billingMode==='hourly'?await openWindowFor(this.db,p.id,start,end):null),policy,guests);
+    // «Скидка постоянного гостя»: the guest already stayed with this owner through the service (lib/rental-policy.ts).
+    const regular=Number(policy.repeat_discount)>0&&!!this.userId&&this.userId!==p.owner_id&&!!await this.one("SELECT b.id FROM bookings b JOIN properties x ON x.id=b.property_id WHERE b.guest_id=? AND x.owner_id=? AND b.status='completed' LIMIT 1",this.userId,p.owner_id);
+    const pricing=regular?withRepeatDiscount(guestPricing,policy.repeat_discount):guestPricing;
     await assertCalendarAvailable(this.db,p.id,start,occupiedUntil);
     const occupied=await this.one("SELECT id FROM bookings WHERE property_id=? AND (status='confirmed' OR (status='requested' AND expires_at>?)) AND start<? AND occupied_until>?",p.id,now(),occupiedUntil,start);
     const cleaning=await this.one("SELECT id FROM cleaning_jobs WHERE property_id=? AND status IN ('open','assigned','in_progress','submitted') AND start<? AND end>?",p.id,occupiedUntil,start);
@@ -617,6 +634,7 @@ export class RentalService {
     if (!selected.length) throw new DomainError('Выберите хотя бы одну роль.');
     const districts=String(body.districts||'').slice(0,300), experience=String(body.experience||'').slice(0,1000), availability=String(body.availability||'').slice(0,300);
     if(selected.includes('cleaner') && (!districts.trim()||!experience.trim()||!availability.trim())) throw new DomainError('Для анкеты исполнителя укажите районы, опыт и график.');
+    if([districts,experience,availability].some(hasContactWays))throw new DomainError(PROFILE_CONTACTS,422);
     await this.db.batch([this.query(`INSERT INTO profiles VALUES (?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name,contact=excluded.contact,city=excluded.city,roles=excluded.roles,districts=excluded.districts,experience=excluded.experience,availability=excluded.availability`,this.userId,name,contact,city,JSON.stringify(selected),districts,experience,availability,now()),this.query('UPDATE profile_details SET version=version+1,revision=?,updated_at=? WHERE user_id=?',id(),now(),this.userId),this.audit(this.userId,'profile.updated')]);
     return {message:'Профиль сохранён. Роли подключены.'};
   }
@@ -658,7 +676,7 @@ export class RentalService {
     const occasion=isBanquet(checked.kind)?(Object.hasOwn(occasions,String(body.occasion))?String(body.occasion):'other'):'',event=occasion?' '+(occasion==='other'?'Банкет':occasionLabel(occasion))+', гостей: '+guests+'.':'';
     await this.db.batch([
       this.query('INSERT INTO bookings(id,property_id,guest_id,start,end,occupied_until,guests,amount,status,expires_at,payment_status,request_key,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)',bookingId,p.id,this.userId,start,end,end+p.cleaning_minutes*60,guests,amount,'requested',now()+answer*60,'unpaid',key,now()),
-      this.query('INSERT INTO booking_terms(booking_id,billing_mode,rate,units,amount,deposit,deposit_status,house_rules,policy_version,original_end,min_hours,occasion,prepay_percent) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)',bookingId,checked.billingMode,checked.price,checked.periods,amount,checked.policy.deposit,checked.policy.deposit?'pending':'not_required',checked.policy.house_rules,checked.policy.version,end,Math.max(1,Number(checked.policy.min_hours)||1),occasion,checked.payment.prepayPercent),
+      this.query('INSERT INTO booking_terms(booking_id,billing_mode,rate,units,amount,deposit,deposit_status,house_rules,policy_version,original_end,min_hours,occasion,prepay_percent,discount_percent) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)',bookingId,checked.billingMode,checked.price,checked.periods,amount,checked.policy.deposit,checked.policy.deposit?'pending':'not_required',checked.policy.house_rules,checked.policy.version,end,Math.max(1,Number(checked.policy.min_hours)||1),occasion,checked.payment.prepayPercent,Number((checked as Row).repeat?.percent)||0),
       this.notify(owner!.owner_id,risk.held?`ИИ-администратор не подтвердил заявку на «${checked.title}» сам: ${riskLabel.high.toLowerCase()} (${risk.reasons.slice(0,2).join(', ')}).${unready?' '+unready+'.':''} Решите в течение ${minutesLabel(answer)}.`:autoConfirm&&unready?`ИИ-администратор не подтвердил заявку на «${checked.title}» сам: ${unready[0].toLowerCase()+unready.slice(1)}. Отметьте «Жильё готово», если успеете, или решите сами в течение ${minutesLabel(answer)}.`:autoConfirm?`ИИ-администратор принял бронь на «${checked.title}» по вашим правилам.${event} ${riskLabel[risk.level]}.`:`Новая заявка на «${checked.title}».${event} ${riskLabel[risk.level]}.${unready?' '+unready+'.':''} Подтвердите её в течение ${minutesLabel(answer)}.`,`booking:${bookingId}`,'owner'),this.audit(bookingId,'booking.requested'),
       saveRiskSql(this.db,bookingId,p.id,this.userId,owner!.owner_id,risk),
       ...(!risk.phone&&risk.level!=='low'&&!(autoConfirm&&!risk.held&&!unready)?[this.notify(this.userId,'Подтвердите телефон в профиле: владельцу так спокойнее, и заявку на «'+checked.title+'» подтвердят быстрее.','phone-ask:'+bookingId,'guest')]:[])
@@ -969,7 +987,8 @@ export class RentalService {
     const mode=body.billingMode||terms.billing_mode,pricing=withGuests(changeRentalPrice(b.price,policy,start,end,mode),policy,b.guests);
     const discount=number(body.discountPercent??terms.discount_percent??0,'Скидка, %',0,50);
     if(role==='guest'&&discount!==(terms.discount_percent||0))throw new DomainError('Скидку предлагает владелец.',403);
-    if(discount>policy.max_discount_percent)throw new DomainError('Скидка превышает установленный владельцем предел.');
+    // The discount already in the terms (a regular guest's, lib/rental-policy.ts) stays with the booking whatever the owner's limit.
+    if(discount>policy.max_discount_percent&&discount!==(terms.discount_percent||0))throw new DomainError('Скидка превышает установленный владельцем предел.');
     // An owner asking the guest to come a little later (a late cleaning, «Сдвинуть заезд») keeps the agreed price: the
     // guest pays nothing more and gets nothing less for the owner's delay. The rule depends only on the terms, so the
     // proposal and the guest's acceptance compute the same amount.

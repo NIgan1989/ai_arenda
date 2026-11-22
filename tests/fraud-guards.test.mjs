@@ -85,12 +85,16 @@ test('«Снять с показа»: the place leaves the map and comes back on
 });
 
 // The chat between a guest and an owner carries no links, no card numbers, and no phone before the confirmation.
-test('the chat guard: links and cards never, a phone after the confirmation, never with a transfer',()=>{
- const before={confirmed:false},after={confirmed:true};
+test('the chat guard: links and cards never, a phone a day before the check-in, never with a transfer',()=>{
+ const before={phoneOpen:false},after={phoneOpen:true};
  for(const text of ['Оплатите тут https://pay.example','Сайт kaspi-pay.site','Пишите t.me/owner','www.example.kz'])assert.equal(chatGuard(text,after).ok,false,text);
  assert.equal(chatGuard('Карта 4400 4301 2345 6789',after).ok,false);
  assert.equal(chatGuard('Мой номер +7 701 123 45 67',before).ok,false);
- assert.equal(chatGuard('Мой номер +7 701 123 45 67',after).ok,true,'contacts after the confirmation');
+ assert.equal(chatGuard('Мой номер +7 701 123 45 67',after).ok,true,'contacts once the phone opens');
+ // A deal taken out of the service: messengers, a @nick and a number with every digit apart wait for the phone too.
+ for(const text of ['Пишите в WhatsApp','Мой ватсап, там договоримся','Телеграм @owner_kz','Номер 8 7 0 1 1 2 3 4 5 6 7','8.701.123.45.67'])assert.equal(chatGuard(text,before).ok,false,text);
+ for(const text of ['Пишите в WhatsApp','Телеграм @owner_kz'])assert.equal(chatGuard(text,after).ok,true,text);
+ for(const text of ['Заезд 22.11.2026 в 14:00','С 10 00 до 12 00 уберём'])assert.equal(chatGuard(text,before).ok,true,text);
  assert.equal(chatGuard('Переведите предоплату на 8 701 123 45 67',after).ok,false);
  for(const text of ['Заезд после 14:00, код домофона 1234','Буду в 19:30, нас двое','Стоимость 15 000 ₸, депозит 5 000 ₸'])assert.equal(chatGuard(text,before).ok,true,text);
 });
@@ -99,14 +103,18 @@ test('the chat refuses a link from the owner and a phone before the booking is c
   const room=await openDiscussion(f.guest,'guest',{kind:'booking',entityId:f.booking});
   await assert.rejects(sendDiscussionMessage(f.owner,'owner',{...room,text:'Оплатите по ссылке https://pay.example',requestKey:'l'}),e=>e.status===422&&/Ссылки/.test(e.message));
   await assert.rejects(sendDiscussionMessage(f.owner,'owner',{...room,text:'Переведите аванс на Kaspi +7 701 123 45 67',requestKey:'k'}),/только в карточке брони/);
+  // A confirmed booking far ahead: the phone is not open yet, a day before the check-in it is.
+  R.prepare('UPDATE bookings SET start=?,end=?+7200,occupied_until=?+14400 WHERE id=?').run(now()+3*86400,now()+3*86400,now()+3*86400,f.booking);
+  await assert.rejects(sendDiscussionMessage(f.owner,'owner',{...room,text:'Позвоните мне: +7 701 123 45 67',requestKey:'p0'}),/за сутки до заезда/);
+  R.prepare('UPDATE bookings SET start=?,end=?+7200,occupied_until=?+14400 WHERE id=?').run(now()+3600,now()+3600,now()+3600,f.booking);
   await sendDiscussionMessage(f.owner,'owner',{...room,text:'Позвоните мне: +7 701 123 45 67',requestKey:'p'});
   R.prepare("UPDATE bookings SET status='requested' WHERE id=?").run(f.booking);
-  await assert.rejects(sendDiscussionMessage(f.guest,'guest',{...room,text:'Мой номер 87011234567',requestKey:'g'}),/после подтверждения/);
+  await assert.rejects(sendDiscussionMessage(f.guest,'guest',{...room,text:'Мой номер 87011234567',requestKey:'g'}),/за сутки до заезда/);
  }finally{f.db.close();}
 });
 
 test('the offers tell every role the new rules, in a new edition everyone accepts again',()=>{
- assert.equal(LEGAL_EDITION,'23 ноября 2026');
+ assert.equal(LEGAL_EDITION,'24 ноября 2026');
  const text=id=>LEGAL_DOCUMENTS.find(d=>d.id===id).sections.flatMap(s=>s.p).join(' ');
  assert.match(text('terms'),/Меня не заселили/);assert.match(text('terms'),/ссылки, номера банковских карт/);
  assert.match(text('guest'),/меньше 5 завершённых броней/);assert.match(text('guest'),/Оплата при заселении/);

@@ -2,9 +2,9 @@ import {t as tr} from './i18n';
 import {DomainError,number,required} from './domain';
 import {prepayChoice} from './prepay';
 type Row=Record<string,any>;
-export const defaultPolicy={hourly_price:0,min_hours:2,nightly_price:0,checkin_minutes:840,checkout_minutes:720,deposit:0,house_rules:'',auto_confirm:0,auto_assign:0,cleaning_fee:0,cleaning_budget:0,max_discount_percent:0,minimum_rate:0,repair_budget:0,auto_extension:0,max_extension_hours:0,mandate_until:0,escalation_contact:'',included_guests:0,extra_guest_price:0,prep_minutes:0,prepay_percent:0,version:0};
+export const defaultPolicy={hourly_price:0,min_hours:2,nightly_price:0,checkin_minutes:840,checkout_minutes:720,deposit:0,house_rules:'',auto_confirm:0,auto_assign:0,cleaning_fee:0,cleaning_budget:0,max_discount_percent:0,minimum_rate:0,repair_budget:0,auto_extension:0,max_extension_hours:0,mandate_until:0,escalation_contact:'',included_guests:0,extra_guest_price:0,prep_minutes:0,prepay_percent:0,repeat_discount:0,version:0};
 export function mandateActive(policy:Row,t=Math.floor(Date.now()/1000)){return !policy.mandate_until||policy.mandate_until>t;}
-export function publicPolicy(policy:Row=defaultPolicy){const {hourly_price,min_hours,nightly_price,checkin_minutes,checkout_minutes,deposit,house_rules,auto_confirm,included_guests,extra_guest_price,prep_minutes,prepay_percent,version}={...defaultPolicy,...policy};return {hourly_price,min_hours,nightly_price,checkin_minutes,checkout_minutes,deposit,house_rules,included_guests,extra_guest_price,prep_minutes,prepay_percent,auto_confirm:mandateActive(policy)?auto_confirm:0,version};}
+export function publicPolicy(policy:Row=defaultPolicy){const {hourly_price,min_hours,nightly_price,checkin_minutes,checkout_minutes,deposit,house_rules,auto_confirm,included_guests,extra_guest_price,prep_minutes,prepay_percent,repeat_discount,version}={...defaultPolicy,...policy};return {hourly_price,min_hours,nightly_price,checkin_minutes,checkout_minutes,deposit,house_rules,included_guests,extra_guest_price,prep_minutes,prepay_percent,repeat_discount,auto_confirm:mandateActive(policy)?auto_confirm:0,version};}
 export function clock(minutes:number){return String(Math.floor(minutes/60)).padStart(2,'0')+':'+String(minutes%60).padStart(2,'0');}
 export function minutes(value:unknown){const match=String(value).match(/^(\d{2}):(\d{2})$/);if(!match||+match[1]>23||+match[2]>59)throw new DomainError('Укажите время в формате ЧЧ:ММ.');return +match[1]*60 + +match[2];}
 export function policyInput(body:Row){
@@ -24,7 +24,16 @@ export function policyInput(body:Row){
   if(body.prepMinutes!==undefined)extra.prep_minutes=number(body.prepMinutes,'Подготовка, минут',0,720);
   // «Предоплата или оплата при заселении» (lib/prepay.ts): 0, 10, 20, 30, 50 or 100 percent paid before the arrival.
   if(body.prepayPercent!==undefined){const share=prepayChoice(body.prepayPercent);if(share===null)throw new DomainError('Выберите предоплату: при заселении, 10, 20, 30, 50 или 100%.');extra.prepay_percent=share;}
+  // «Скидка постоянного гостя»: 0 (off), 5, 10 or 15 percent for a guest who already stayed with this owner.
+  if(body.repeatDiscount!==undefined){const v=Number(body.repeatDiscount);if(!REPEAT_CHOICES.includes(v))throw new DomainError('Выберите скидку постоянного гостя: нет, 5, 10 или 15%.');extra.repeat_discount=v;}
   return {...policy,...mandate,auto_assign:body.autoAssign===true?1:0,...extra};
+}
+export const REPEAT_CHOICES=[0,5,10,15];
+/** The price of a unit for a regular guest: the owner's percent off, the amount stays periods × price. */
+export function withRepeatDiscount<T extends {periods:number;price:number;amount:number}>(pricing:T,percent:number):T&{repeat?:{percent:number;regular:number}}{
+  const pct=Math.floor(Number(percent)||0);if(pct<=0||pct>30)return pricing;
+  const price=Math.max(0,Math.round(pricing.price*(100-pct)/100));
+  return price<pricing.price?{...pricing,price,amount:price*pricing.periods,repeat:{percent:pct,regular:pricing.price}}:pricing;
 }
 // Guests above the number the price covers pay extra for every hour (or day): «2 000 ₸ в час с человека сверх шести».
 // The surcharge is part of the rate, so the amount stays periods × price everywhere (terms, cancellation, changes).

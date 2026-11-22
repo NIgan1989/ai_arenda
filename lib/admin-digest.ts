@@ -5,6 +5,21 @@ import {epoch,uuid,q,one,type OperationConfig} from './operation-core';
 export const DIGEST_HOUR=9,TZ=5*3600;
 const money=(n:number)=>Math.round(n||0).toLocaleString('ru-RU').replace(/ /g,' ')+' ₸';
 export function digestDay(at:number){const local=new Date((at+TZ)*1000);return {date:local.toISOString().slice(0,10),due:local.getUTCHours()>=DIGEST_HOUR};}
+// A deal taken out of the service often looks like this: the owner confirms, the two get in touch, the booking is
+// cancelled and the guest stays anyway, paid in WhatsApp. A confirmation writes a commission row (lib/platform-billing.ts),
+// so a cancelled booking with such a row was confirmed first. Two or more in 30 days are worth a look.
+export const BYPASS_DAYS=30,BYPASS_MIN=2;
+export async function bypassSuspects(db:D1Database,at=epoch()){
+ const {results}=await db.prepare(`SELECT c.owner_id,COALESCE(p.name,'Владелец') name,COUNT(*) n FROM platform_commissions c JOIN bookings b ON b.id=c.booking_id LEFT JOIN profiles p ON p.id=c.owner_id
+  WHERE b.status='cancelled' AND c.created_at>? GROUP BY c.owner_id HAVING COUNT(*)>=? ORDER BY n DESC LIMIT 5`).bind(at-BYPASS_DAYS*86400,BYPASS_MIN).all<{owner_id:string;name:string;n:number}>();
+ return results||[];
+}
+/** Guests who answered «Да» to «Вы заселились?» about a cancelled booking (lib/approvals.ts), by owner, 30 days. */
+export async function staysAfterCancel(db:D1Database,at=epoch()){
+ const {results}=await db.prepare(`SELECT c.owner_id,COALESCE(p.name,'Владелец') name,COUNT(*) n FROM audit_events a JOIN platform_commissions c ON c.booking_id=a.entity_id LEFT JOIN profiles p ON p.id=c.owner_id
+  WHERE a.action='stay.checked:yes' AND a.created_at>? GROUP BY c.owner_id ORDER BY n DESC LIMIT 5`).bind(at-BYPASS_DAYS*86400).all<{owner_id:string;name:string;n:number}>();
+ return results||[];
+}
 export async function digestFacts(db:D1Database,at=epoch()){
  const since=at-86400,n=async(sql:string,...a:unknown[])=>Number((await one(db,sql,...a))?.n||0);
  return {
@@ -20,7 +35,9 @@ export async function digestFacts(db:D1Database,at=epoch()){
   bookings:await n('SELECT COUNT(*) n FROM bookings WHERE created_at>?',since),
   confirmed:await n("SELECT COUNT(*) n FROM bookings WHERE created_at>? AND status IN ('confirmed','completed')",since),
   income:await n("SELECT COALESCE(SUM(amount),0) n FROM platform_commissions WHERE created_at>?",since),
-  failures:await n("SELECT COUNT(*) n FROM background_jobs WHERE status='dead'")
+  failures:await n("SELECT COUNT(*) n FROM background_jobs WHERE status='dead'"),
+  bypass:await bypassSuspects(db,at),
+  stayed:await staysAfterCancel(db,at)
  };
 }
 export function digestText(f:Awaited<ReturnType<typeof digestFacts>>){
@@ -31,6 +48,8 @@ export function digestText(f:Awaited<ReturnType<typeof digestFacts>>){
  if(f.waitingParticipant)lines.push('Ждут, пока участник допишет: '+f.waitingParticipant+'.');
  lines.push('Обращения: новых '+f.newIssues+', решено '+f.resolvedIssues+'.');
  lines.push('Брони: новых '+f.bookings+', подтверждено '+f.confirmed+'. Комиссия сервиса: '+money(f.income)+'.');
+ if(f.stayed.length)lines.push('Гости сказали, что жили по отменённой брони: '+f.stayed.map(o=>o.name+' ('+o.n+')').join(', ')+'. Это похоже на сделку в обход.');
+ if(f.bypass.length)lines.push('Проверьте, нет ли сделок в обход: отмены после подтверждения за 30 дней у '+f.bypass.map(o=>o.name+' ('+o.n+')').join(', ')+'.');
  if(f.failures)lines.push('Сбои фоновых задач: '+f.failures+'. Админка → Состояние сервиса.');
  return lines.join('\n');
 }

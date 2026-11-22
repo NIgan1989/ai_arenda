@@ -119,7 +119,7 @@ export const accountDeletionColumns:Record<string,string>={
  "property_imports": "id,owner_id,source,payload_hash,rows_json,status,version,created_at,expires_at,commit_hash,result",
  "property_locations": "property_id,longitude,latitude,source,address_fingerprint,version,updated_at",
  "property_operations": "property_id,readiness,active_booking_id,version,note,updated_at",
- "property_policies": "property_id,hourly_price,min_hours,nightly_price,checkin_minutes,checkout_minutes,deposit,house_rules,auto_confirm,cleaning_fee,cleaning_budget,version,revision,updated_at,max_discount_percent,minimum_rate,repair_budget,auto_extension,max_extension_hours,mandate_until,escalation_contact,auto_assign,included_guests,extra_guest_price,prep_minutes,prepay_percent",
+ "property_policies": "property_id,hourly_price,min_hours,nightly_price,checkin_minutes,checkout_minutes,deposit,house_rules,auto_confirm,cleaning_fee,cleaning_budget,version,revision,updated_at,max_discount_percent,minimum_rate,repair_budget,auto_extension,max_extension_hours,mandate_until,escalation_contact,auto_assign,included_guests,extra_guest_price,prep_minutes,prepay_percent,repeat_discount",
  "provider_events": "provider,event_id,intent_id,payload_hash,created_at",
  "review_property_bindings": "property_id,revision",
  "worker_dispatch": "user_id,receive_offers,updated_at",

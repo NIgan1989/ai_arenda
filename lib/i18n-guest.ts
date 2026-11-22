@@ -752,4 +752,7 @@ export const GUEST:Words={
  'Около {n} минуты на машине':['Көлікпен шамамен {n} минут','About {n} min by car'],
  'Около {n} минут на машине':['Көлікпен шамамен {n} минут','About {n} min by car'],
  'Примерно {n} км от выбранного места':['Таңдалған жерден шамамен {n} км','About {n} km from the chosen place'],
+ 'Скидка постоянного гостя −{n}%':['Тұрақты қонақ жеңілдігі −{n}%','Regular guest discount −{n}%'],
+ 'без неё {price}':['жеңілдіксіз {price}','without it {price}'],
+ 'Оплата по ссылке Kaspi':['Kaspi сілтемесі арқылы төлеу','Pay by the Kaspi link'],
 };
