@@ -1,7 +1,7 @@
 import {t} from '../../lib/i18n';
 import {joinTitle} from '../../lib/role-experience';
 import React,{useEffect,useRef,useState,useSyncExternalStore} from 'react';
-import {AccessibilityInfo,Animated,Easing,Image,Modal,Platform,Pressable,StatusBar,StyleSheet,Text,View} from 'react-native';
+import {AccessibilityInfo,Animated,BackHandler,Easing,Image,Modal,Platform,Pressable,StatusBar,StyleSheet,Text,View} from 'react-native';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import {Dome} from './BrandMoments';
@@ -84,6 +84,8 @@ export function RolePlate(){
   return()=>{alive=false;if(timer)clearTimeout(timer);};
  // eslint-disable-next-line react-hooks/exhaustive-deps
  },[role,a]);
+ // Back does nothing while the plate is up: the role is changing and there is nothing to go back to yet.
+ useEffect(()=>{if(!shown)return;const sub=BackHandler.addEventListener('hardwareBackPress',()=>true);return()=>sub.remove();},[shown]);
  if(!shown)return null;
  const up={opacity:a.words,transform:[{translateY:a.words.interpolate({inputRange:[0,1],outputRange:[10,0]})}]};
  // Not a Modal: on iPhone a second Modal cannot open while the roles sheet (itself a Modal) is still closing, and
