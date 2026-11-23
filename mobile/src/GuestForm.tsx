@@ -5,6 +5,7 @@ import { Action, Chips, Stepper, h } from './SheetParts';
 import { C, type } from './styles';
 import { T } from './tokens';
 import { mapCities } from './map-math';
+import { AddressField } from './AddressSuggest';
 import { OCCASIONS, allKinds, maxGuestsOf, wishesOf, draftSlot, withSlot, categoryKinds, categoryOf, dayChoices, draftUnits, withDay, withMode, withTime, withUnits, type GuestDraft } from './ai-request';
 import { SECTION_TITLES, sectionWords, type Section } from './guest-tokens';
 import { BANQUET_SLOTS, addDays, kzToday, type BanquetSlot } from '../../lib/map-search-request';
@@ -111,16 +112,18 @@ export function GuestForm({ draft, only = 'all', onChange, onPickPoint, onNearMe
         options={Object.keys(mapCities).map(city => [city, city])}
         onChange={city => onChange(city === draft.city ? draft : { ...draft, city, district: '', near: null })}
         disabled={busy}
-      /><View><Text style={h.label}>{t('Район')}</Text><TextInput
-          accessibilityLabel={t('Район')}
-          style={h.input}
+      /><AddressField
+          kind="district"
+          label={t('Район')}
+          labelStyle={h.label}
+          inputStyle={h.input}
+          city={draft.city}
           placeholder={t('Любой')}
-          placeholderTextColor={C.muted}
-          maxLength={120}
+          max={120}
           value={draft.district}
-          onChangeText={district => onChange({ ...draft, district })}
-          editable={!busy}
-        /></View><View style={h.row}><Text style={[h.note, h.grow]}>{draft.near ? t('Ищем в 5 км от выбранной точки.') : t('Ищем по всему городу.')}</Text><Pressable
+          onChange={district => onChange({ ...draft, district })}
+          disabled={busy}
+        /><View style={h.row}><Text style={[h.note, h.grow]}>{draft.near ? t('Ищем в 5 км от выбранной точки.') : t('Ищем по всему городу.')}</Text><Pressable
           accessibilityRole="button"
           disabled={busy}
           onPress={() => {

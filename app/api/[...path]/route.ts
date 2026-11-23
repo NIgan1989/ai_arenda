@@ -152,20 +152,20 @@ async function handle(request:Request, context:{params:Promise<{path:string[]}>}
         case 'approvals':return json(await service.decideApproval(activeRole,body));
         case 'account':return json(await service.saveAccountSettings(body));
         case 'quote':return json(await service.bookingQuote(body));
-        case 'profile':return json(await service.saveProfile(body));
+        case 'profile':return json(await service.saveProfile(await withCanonicalCity(env.BUCKET,body)));
         case 'media':return json(await service.uploadMedia(body,env.BUCKET));
         case 'listings':return json(await withPublishReview(service,await service.saveListing(null,await withCanonicalCity(env.BUCKET,body)),env));
         case 'properties':return json(await service.createProperty(body));
         case 'bookings':return json(await service.createBooking(body));
         case 'jobs':return json(await service.createJob(body));
-        case 'home-cleaning':return json(await orderHomeCleaning(service,body,env));
+        case 'home-cleaning':return json(await orderHomeCleaning(service,await withCanonicalCity(env.BUCKET,body),env));
         case 'chat':{if(env.OPENAI_API_KEY&&env.OPENAI_MODEL)await reserveAIRequest(env.DB,user.userId);const turn=crypto.randomUUID();return json(await service.chat(body,env,(args,callId)=>prepareAdministratorCommand(service,parseRole(activeRole),args,turn+':'+callId.slice(0,60))));}
         case 'demo':return json(await service.demo());
         case 'maintenance':return json(await service.maintenance());
         case 'notifications':await service.query('UPDATE notifications SET read=1 WHERE user_id=?',user.userId).run();return json({message:'Уведомления прочитаны.'});
       }
     }
-    if(route.length===2&&route[0]==='profile'&&route[1]==='edit')return json(await service.editProfile(body));
+    if(route.length===2&&route[0]==='profile'&&route[1]==='edit')return json(await service.editProfile(await withCanonicalCity(env.BUCKET,body)));
     if(route.length===2&&route[0]==='media'&&body.action==='remove')return json(await service.deleteMedia(route[1],env.BUCKET));
     if(route.length===3&&route[0]==='listings'&&route[2]==='remove')return json(await service.removeProperty(route[1]));
     if(route.length===2&&route[0]==='listings')return json(await withPublishReview(service,await service.saveListing(route[1],await withCanonicalCity(env.BUCKET,body)),env));
