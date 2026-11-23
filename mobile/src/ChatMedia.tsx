@@ -8,6 +8,7 @@ import {LiveMap} from './LiveMap';
 import {locate} from './here';
 import {request} from './api';
 import {C} from './styles';
+import {MicIcon as FieldMicIcon,PinIcon} from './ChatIcons';
 import {uid,type Role} from './model';
 
 // The chat like a messenger: a voice message (up to a minute) and a point on our own map.
@@ -69,7 +70,7 @@ export function VoiceButton({draftKey,disabled,onSend,onError}:{draftKey:string;
   <View style={v.live}><Text style={[v.liveText,{color:C.danger}]} numberOfLines={2}>{t('Голосовое {time} не отправлено',{time:seconds(failed.ms)})}</Text></View>
   <Pressable accessibilityRole="button" accessibilityLabel={t('Повторить отправку голосового')} disabled={busy||disabled} onPress={()=>void retry()} style={({pressed})=>[v.retry,(busy||disabled)&&v.disabled,pressed&&v.pressed]}><Text style={v.retryText}>{busy?'…':t('Повторить')}</Text></Pressable>
  </View>;
- return <Pressable accessibilityRole="button" accessibilityLabel={t('Записать голосовое')} hitSlop={4} disabled={disabled||busy} onPress={()=>void start()} style={({pressed})=>[v.icon,(disabled||busy)&&v.disabled,pressed&&v.pressed]}><MicIcon/></Pressable>;
+ return <Pressable accessibilityRole="button" accessibilityLabel={t('Записать голосовое')} hitSlop={4} disabled={disabled||busy} onPress={()=>void start()} style={({pressed})=>[v.icon,(disabled||busy)&&v.disabled,pressed&&v.pressed]}><FieldMicIcon color={C.muted}/></Pressable>;
 }
 
 // A voice message in the chat: play and pause, with its length. The recording is fetched only when played.
@@ -106,7 +107,7 @@ export async function myPlace(){
  return {lat:point[1],lon:point[0]};
 }
 export function PlaceButton({disabled,note,onPress}:{disabled:boolean;note?:string;onPress:()=>void}){
- return <Pressable accessibilityRole="button" accessibilityLabel={note?t('Отправить точку. {v}',{v:note}):t('Отправить мою точку на карте')} hitSlop={4} disabled={disabled} onPress={onPress} style={({pressed})=>[v.icon,disabled&&v.disabled,pressed&&v.pressed]}><PinIcon/></Pressable>;
+ return <Pressable accessibilityRole="button" accessibilityLabel={note?t('Отправить точку. {v}',{v:note}):t('Отправить мою точку на карте')} hitSlop={4} disabled={disabled} onPress={onPress} style={({pressed})=>[v.icon,disabled&&v.disabled,pressed&&v.pressed]}><PinIcon color={C.muted}/></Pressable>;
 }
 // The point is shown before it goes: where it is, and to whom (audit 2026-11-22: one tap sent it at once).
 export function PlacePreview({place,to,busy,error,onSend,onCancel}:{place:{lat:number;lon:number}|null;to:string;busy:boolean;error?:string;onSend:()=>void;onCancel:()=>void}){
@@ -138,11 +139,11 @@ export function PlaceBubble({place,mine}:{place:{lat:number;lon:number};mine:boo
  </>;
 }
 
+// The call screen's microphone; the message field draws its own in ChatIcons.
 export function MicIcon({color=C.muted}:{color?:string}){return <View style={{alignItems:'center'}}><View style={{width:10,height:15,borderRadius:4,borderWidth:2,borderColor:color}}/><View style={{width:14,height:6,borderBottomLeftRadius:8,borderBottomRightRadius:8,borderWidth:2,borderTopWidth:0,borderColor:color,marginTop:-4}}/><View style={{width:2,height:3,backgroundColor:color}}/></View>;}
-function PinIcon({color=C.muted}:{color?:string}){return <View style={{alignItems:'center'}}><View style={{width:15,height:15,borderRadius:8,borderBottomRightRadius:1,transform:[{rotate:'45deg'}],borderWidth:2,borderColor:color,alignItems:'center',justifyContent:'center'}}><View style={{width:4,height:4,borderRadius:2,backgroundColor:color}}/></View></View>;}
 
 const v=StyleSheet.create({
- icon:{width:40,height:40,alignItems:'center',justifyContent:'center'},disabled:{opacity:.4},pressed:{opacity:.7},
+ icon:{width:40,height:48,alignItems:'center',justifyContent:'center'},disabled:{opacity:.4},pressed:{opacity:.7},
  // Over the whole message field while recording, as in a messenger.
  recording:{position:'absolute',left:0,right:0,top:0,bottom:0,zIndex:2,flexDirection:'row',alignItems:'center',gap:8,paddingHorizontal:8,borderRadius:24,backgroundColor:C.surface},
  round:{width:44,height:44,borderRadius:24,alignItems:'center',justifyContent:'center'},
