@@ -48,6 +48,7 @@ import type {HubTab} from '../../lib/property-hub';
 import {cleanerLine,cleanerStep} from '../../lib/job-steps';
 import {ownerWaiting} from '../../lib/now-card';
 import {FlatHub,FlatHubHead} from './FlatHub';
+import {RevealProvider,useKeyboardReveal} from './Keyboard';
 import {ECHO_WINDOW,pinStates,recallMap,rememberMap,stageOf,targetPin,withEchoes,type MapTarget} from './map-memory';
 
 // Map-first home screen, like a taxi app: a full-screen map and one bottom sheet.
@@ -571,6 +572,8 @@ export function MapHome({ role, accountId, data, menu, chats, onChanged, onOpenP
   // What is chosen replaces the list in the same scroll view: it is shown from its top, not from where the list was.
   // Back to the list, the sheet returns to where the guest left it, so the next card is compared from the same place.
   const scrollY = useRef(0), listY = useRef(0), wasSelected = useRef(selected);
+  // Fields of the sheet (the district of the search) bring their suggestions above the keyboard.
+  const reveal = useKeyboardReveal(scroll, scrollY, false);
   useEffect(() => {
     const before = wasSelected.current;
     wasSelected.current = selected;
@@ -848,13 +851,13 @@ export function MapHome({ role, accountId, data, menu, chats, onChanged, onOpenP
             accessibilityLabel={snap === 0 ? tr('Развернуть панель') : tr('Свернуть панель')}
             onPress={() => setSnap(snap === 0 ? 1 : 0)}
             style={h.handleArea}
-          ><Grip color={mood === 'calm' ? undefined : MOOD_COLOR[mood]} /></Pressable></View><View style={h.grow} {...drag.body.panHandlers}><ScrollView ref={scroll} scrollEnabled={scrollable} onScroll={e => { scrollY.current = e.nativeEvent.contentOffset.y; }} scrollEventThrottle={64} keyboardShouldPersistTaps="handled" contentContainerStyle={h.sheetContent} showsVerticalScrollIndicator={false}>{role === 'guest' ? (
+          ><Grip color={mood === 'calm' ? undefined : MOOD_COLOR[mood]} /></Pressable></View><View style={h.grow} {...drag.body.panHandlers}><ScrollView ref={scroll} scrollEnabled={scrollable} onScroll={e => { scrollY.current = e.nativeEvent.contentOffset.y; }} scrollEventThrottle={64} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" contentContainerStyle={h.sheetContent} showsVerticalScrollIndicator={false}><RevealProvider value={reveal}>{role === 'guest' ? (
               <GuestPanel {...common} held={held} aimed={!!aim.current} picking={picking} setPicking={setPicking} mapCenter={mapCenter} setCity={setCity} />
             ) : role === 'owner' ? (
               <OwnerPanel {...common} />
             ) : (
               <CleanerPanel {...common} />
-            )}</ScrollView></View></Animated.View></View>
+            )}</RevealProvider></ScrollView></View></Animated.View></View>
   );
 }
 
