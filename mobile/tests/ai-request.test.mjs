@@ -337,6 +337,9 @@ test('the AI line says what the model understood and what the search leaves out'
   assert.match(L.notUnderstoodNote('permission', []), /разрешите/);
   assert.match(L.notUnderstoodNote('none', ['с видом на реку']), /^Пока не ищу по условиям: с видом на реку\. Назовите день и срок/);
   for (const status of ['off', 'busy', 'none', undefined]) assert.match(L.notUnderstoodNote(status, []), /^Не понял запрос\. Назовите день и срок/);
+  // A hall is asked for by its day and guests, a bath by its day and hours: not by «сутки на двоих».
+  assert.equal(L.notUnderstoodNote('none', [], 'banquet'), 'Не понял запрос. Назовите день и число гостей, например: «5 декабря на 150 гостей».');
+  assert.match(L.notUnderstoodNote('off', [], 'bath'), /«сегодня в 18:00 на 3 часа»/);
 });
 
 test('phrases in the words the model is told to use pass the rules', () => {

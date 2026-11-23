@@ -37,17 +37,20 @@ export function GuestTokens({ tokens, blamed = [], open = '', onOpen, onClear, l
               <Pressable accessibilityRole="button" accessibilityLabel={t('Убрать условие: {title}',{title:token.title})} accessibilityState={{ disabled: busy }} disabled={busy} onPress={() => onClear(token)} hitSlop={{ top: 6, bottom: 6, right: 4 }} style={({ pressed }) => [s.cross, pressed && s.pressed]}><View style={[s.crossDot, bad && s.crossDotBad]}><Text style={[s.crossText, bad && s.textBad]}>✕</Text></View></Pressable>
             )}</View>
         );
-      })}<Pressable accessibilityRole="button" accessibilityLabel={t('Все условия поиска')} accessibilityState={{ expanded: open === 'all', disabled: busy }} disabled={busy} onPress={() => onOpen('all')} hitSlop={{ top: 6, bottom: 6 }} style={({ pressed }) => [s.token, s.more, open === 'all' && s.active, pressed && s.pressed]}><Text style={s.moreText}>{t('+ Условия')}</Text></Pressable></>
+      })}</>
   );
-  if (line) return <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="handled" style={s.scroll} contentContainerStyle={s.row} accessibilityLabel={t('Условия поиска')}>{items}</ScrollView>;
-  return <View style={s.wrap} accessibilityLabel={t('Условия поиска')}>{items}</View>;
+  const more = (label: string) => <Pressable accessibilityRole="button" accessibilityLabel={t('Все условия поиска')} accessibilityState={{ expanded: open === 'all', disabled: busy }} disabled={busy} onPress={() => onOpen('all')} hitSlop={{ top: 6, bottom: 6 }} style={({ pressed }) => [s.token, s.more, open === 'all' && s.active, pressed && s.pressed]}><Text style={s.moreText}>{label}</Text></Pressable>;
+  // Over the results the row scrolls sideways; «Условия» stays at its start, so it is never pushed past the edge.
+  if (line) return <View style={s.lineWrap}>{more(t('Условия'))}<ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="handled" style={s.scroll} contentContainerStyle={s.row} accessibilityLabel={t('Условия поиска')}>{items}</ScrollView></View>;
+  return <View style={s.wrap} accessibilityLabel={t('Условия поиска')}>{items}{more(t('+ Условия'))}</View>;
 }
 
 const H = 36;
 const s = StyleSheet.create({
   wrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  scroll: { marginHorizontal: -16, flexGrow: 0 },
-  row: { gap: 8, paddingHorizontal: 16 },
+  lineWrap: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  scroll: { marginRight: -16, flexGrow: 0, flexShrink: 1 },
+  row: { gap: 8, paddingRight: 16 },
   token: { height: H, maxWidth: '100%', flexDirection: 'row', alignItems: 'center', borderRadius: T.radius.full, borderWidth: 1, borderColor: C.line, backgroundColor: C.surface },
   set: { borderColor: C.accentLine, backgroundColor: C.accentSoft },
   bad: { borderColor: C.danger, backgroundColor: C.dangerSoft },

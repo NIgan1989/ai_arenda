@@ -456,11 +456,17 @@ export function understoodNote(phrase: string, dropped: unknown): string {
   return t('ИИ понял так: «{phrase}».',{phrase}) + (left.length ? ' ' + t('Пока не ищу по условиям: {list}.',{list:left.join(', ')}) : '');
 }
 /** The model did not help: why, and what the guest can do. */
-export function notUnderstoodNote(status: unknown, dropped: unknown): string {
+/** What to say instead, with an example for the kind of place searched: a hall is asked for by its day and guests. */
+export function askExample(category: Category = 'stay'): string {
+  if (category === 'banquet') return t('Назовите день и число гостей, например: «5 декабря на 150 гостей».');
+  if (category === 'bath') return t('Назовите день и время, например: «сегодня в 18:00 на 3 часа».');
+  return t('Назовите день и срок, например: «завтра на сутки на двоих».');
+}
+export function notUnderstoodNote(status: unknown, dropped: unknown, category: Category = 'stay'): string {
   const left = droppedWords(dropped);
   if (status === 'permission') return t('Не понял запрос. ИИ разберёт такие фразы, если вы разрешите передавать ему ваши сообщения: спросите ИИ-администратора.');
-  if (status === 'none' && left.length) return t('Пока не ищу по условиям: {list}. Назовите день и срок, например: «завтра на сутки на двоих».',{list:left.join(', ')});
-  return t('Не понял запрос. Назовите день и срок, например: «завтра на сутки на двоих».');
+  if (status === 'none' && left.length) return t('Пока не ищу по условиям: {list}.',{list:left.join(', ')}) + ' ' + askExample(category);
+  return t('Не понял запрос.') + ' ' + askExample(category);
 }
 
 // ---------- A landmark ----------

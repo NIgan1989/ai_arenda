@@ -28,7 +28,7 @@ export type {MapLine};
 // (key, the focusKey of then) is on the map, and the pins of that return do not drop in again. onView: each settled view.
 export type HeatPoint={point:MapPoint;weight:number};
 export type MapRestore={view:{center:MapPoint;zoom:number};key:string};
-export type MapProps={center:MapPoint;pins:MapPin[];selected?:string;focus?:string;lines?:MapLine[];heat?:HeatPoint[];sparks?:MapPoint[];onSelect?:(key:string)=>void;onAct?:(act:PinAct)=>void;visit?:boolean;bottomInset?:number;topInset?:number;focusKey?:string;picking?:boolean;scanning?:boolean;onCenter?:(center:MapPoint)=>void;restore?:MapRestore|null;onView?:(view:{center:MapPoint;zoom:number})=>void;me?:HereFix|null;locating?:boolean;onLocate?:()=>void;meFly?:number;onLongPress?:(point:MapPoint)=>void};
+export type MapProps={center:MapPoint;pins:MapPin[];selected?:string;focus?:string;lines?:MapLine[];heat?:HeatPoint[];sparks?:MapPoint[];onSelect?:(key:string)=>void;onAct?:(act:PinAct)=>void;visit?:boolean;bottomInset?:number;topInset?:number;focusKey?:string;picking?:boolean;scanning?:boolean;onCenter?:(center:MapPoint)=>void;restore?:MapRestore|null;onView?:(view:{center:MapPoint;zoom:number})=>void;me?:HereFix|null;locating?:boolean;onLocate?:()=>void;meFly?:number;onLongPress?:(point:MapPoint)=>void;areaLabel?:string};
 // onLongPress: a finger held on the map puts a point there (the guest's search «рядом с этой точкой»).
 // me: where the person is (here.ts), a blue dot; onLocate: the «Где я» button; locating: the phone is being asked;
 // meFly: each new value flies the map to the person.

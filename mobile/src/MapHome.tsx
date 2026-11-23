@@ -187,7 +187,7 @@ function GuestPanel({setScanning,setQuiet,accountId,data,mapData,publish,selecte
   // pass the same rules. No model on the server, no permission or no answer: the guest is told, never guessed for.
   if(lock.current)return;
   // The model reads free text only for someone signed in; without an account the guest is asked for the usual words.
-  if(!accountId){setHint({text:tr('Не понял запрос. Напишите день, срок, тип жилья или бюджет, например «завтра на сутки до 15 000». ИИ разберёт любой текст после входа.')});return;}
+  if(!accountId){const kind=categoryOf(draft);setHint({text:tr('Не понял запрос. Напишите, например: {example} ИИ разберёт любой текст после входа.',{example:kind==='banquet'?tr('«5 декабря на 150 гостей».'):kind==='bath'?tr('«сегодня в 18:00 на 3 часа».'):tr('«завтра на сутки до 15 000».')})});return;}
   lock.current=true;setWorking(true);setHint({text:tr('ИИ разбирает запрос…')});
   void (async()=>{
    let ai:Row|null=null;
@@ -195,7 +195,7 @@ function GuestPanel({setScanning,setQuiet,accountId,data,mapData,publish,selecte
    lock.current=false;setWorking(false);
    const again=ai?.status==='ok'?guestRequestFromText(String(ai.phrase),draft,cities):null;
    if(again?.understood){take(again,understoodNote(String(ai!.phrase),ai!.dropped),text);return;}
-   setHint({text:notUnderstoodNote(ai?.status,ai?.dropped),ask:text});
+   setHint({text:notUnderstoodNote(ai?.status,ai?.dropped,categoryOf(draft)),ask:text});
   })();
  };
  // «Сейчас»: the nearest first, counted from where the guest is when the phone knows it and it is in the searched city.
@@ -569,8 +569,17 @@ export function MapHome({ role, accountId, data, menu, chats, onChanged, onOpenP
     if (snap === 0) scroll.current?.scrollTo({ y: 0, animated: false });
   }, [snap]);
   // What is chosen replaces the list in the same scroll view: it is shown from its top, not from where the list was.
+  // Back to the list, the sheet returns to where the guest left it, so the next card is compared from the same place.
+  const scrollY = useRef(0), listY = useRef(0), wasSelected = useRef(selected);
   useEffect(() => {
-    scroll.current?.scrollTo({ y: 0, animated: false });
+    const before = wasSelected.current;
+    wasSelected.current = selected;
+    if (!before && selected) listY.current = scrollY.current;
+    const y = before && !selected ? listY.current : 0;
+    if (!y) { scroll.current?.scrollTo({ y: 0, animated: false }); return; }
+    // The list is laid out again first; the offset is set once it is there.
+    const frame = requestAnimationFrame(() => scroll.current?.scrollTo({ y, animated: false }));
+    return () => cancelAnimationFrame(frame);
   }, [selected]);
 
   // The sheet follows the finger and settles in the nearest position. The handle always drags it;
@@ -605,14 +614,16 @@ export function MapHome({ role, accountId, data, menu, chats, onChanged, onOpenP
 
   // Android's back button closes what is open on this screen before it leaves the app.
   useEffect(() => {
-    if (Platform.OS !== 'android' || (snap === 0 && !picking)) return;
+    // One step at a time: the point picker, then the open card (back to the list it came from), then the sheet.
+    if (Platform.OS !== 'android' || (snap === 0 && !picking && !selected)) return;
     const back = BackHandler.addEventListener('hardwareBackPress', () => {
       if (picking) setPicking(false);
+      else if (selected) setSelected('');
       else setSnap(0);
       return true;
     });
     return () => back.remove();
-  }, [snap, picking]);
+  }, [snap, picking, selected]);
 
   // One city drives the map query, the viewport and the guest's request, so a picked point always lies in the searched city.
   const [city, setCity] = useState<string>(() => {
@@ -820,6 +831,7 @@ export function MapHome({ role, accountId, data, menu, chats, onChanged, onOpenP
         me={here.fix}
         locating={seeking}
         onLocate={() => void findMe()}
+        areaLabel={role === 'guest' ? tr('К области поиска') : undefined}
         meFly={meFly}
         onLongPress={role === 'guest' ? point => { setHeld({ point, n: Date.now() }); setSnap(1); } : undefined}
         onView={view => rememberMap(scope, shownKey.current ? { view, viewKey: shownKey.current } : { view })}
@@ -836,7 +848,7 @@ export function MapHome({ role, accountId, data, menu, chats, onChanged, onOpenP
             accessibilityLabel={snap === 0 ? tr('Развернуть панель') : tr('Свернуть панель')}
             onPress={() => setSnap(snap === 0 ? 1 : 0)}
             style={h.handleArea}
-          ><Grip color={mood === 'calm' ? undefined : MOOD_COLOR[mood]} /></Pressable></View><View style={h.grow} {...drag.body.panHandlers}><ScrollView ref={scroll} scrollEnabled={scrollable} keyboardShouldPersistTaps="handled" contentContainerStyle={h.sheetContent} showsVerticalScrollIndicator={false}>{role === 'guest' ? (
+          ><Grip color={mood === 'calm' ? undefined : MOOD_COLOR[mood]} /></Pressable></View><View style={h.grow} {...drag.body.panHandlers}><ScrollView ref={scroll} scrollEnabled={scrollable} onScroll={e => { scrollY.current = e.nativeEvent.contentOffset.y; }} scrollEventThrottle={64} keyboardShouldPersistTaps="handled" contentContainerStyle={h.sheetContent} showsVerticalScrollIndicator={false}>{role === 'guest' ? (
               <GuestPanel {...common} held={held} aimed={!!aim.current} picking={picking} setPicking={setPicking} mapCenter={mapCenter} setCity={setCity} />
             ) : role === 'owner' ? (
               <OwnerPanel {...common} />
