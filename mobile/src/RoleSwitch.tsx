@@ -1,7 +1,7 @@
 import {t} from '../../lib/i18n';
 import {joinTitle} from '../../lib/role-experience';
 import React,{useEffect,useRef,useState,useSyncExternalStore} from 'react';
-import {AccessibilityInfo,Animated,Easing,Image,Modal,Platform,Pressable,StatusBar,StyleSheet,Text,View} from 'react-native';
+import {AccessibilityInfo,Animated,BackHandler,Easing,Image,Modal,Platform,Pressable,StatusBar,StyleSheet,Text,View} from 'react-native';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import {Dome} from './BrandMoments';
@@ -84,9 +84,13 @@ export function RolePlate(){
   return()=>{alive=false;if(timer)clearTimeout(timer);};
  // eslint-disable-next-line react-hooks/exhaustive-deps
  },[role,a]);
+ // Back does nothing while the plate is up: the role is changing and there is nothing to go back to yet.
+ useEffect(()=>{if(!shown)return;const sub=BackHandler.addEventListener('hardwareBackPress',()=>true);return()=>sub.remove();},[shown]);
  if(!shown)return null;
  const up={opacity:a.words,transform:[{translateY:a.words.interpolate({inputRange:[0,1],outputRange:[10,0]})}]};
- return <Modal visible transparent statusBarTranslucent animationType="none" onRequestClose={()=>undefined}>
+ // Not a Modal: on iPhone a second Modal cannot open while the roles sheet (itself a Modal) is still closing, and
+ // the plate never showed. A layer over the whole app, mounted last at its root, covers everything the same way.
+ return <View style={p.layer}>
   {/* Light signs over the night plate; the root status bar (EntryStatusBar) is back when the plate goes. */}<StatusBar barStyle="light-content" backgroundColor={C.night}/>
   <Animated.View accessibilityViewIsModal style={[p.plate,{opacity:a.plate}]}>
    <Animated.View style={{opacity:a.sign,transform:[{scale:a.sign.interpolate({inputRange:[0,1],outputRange:[.7,1]})}]}}><Image source={glowImage} style={p.glow}/><Dome size={150} burst={a.burst}/></Animated.View>
@@ -95,7 +99,7 @@ export function RolePlate(){
     <Text accessibilityRole="header" accessibilityLiveRegion="polite" style={p.role}>{name(shown)}</Text>
    </Animated.View>
   </Animated.View>
- </Modal>;
+ </View>;
 }
 
 const R=T.radius,H=T.control,shadow={shadowColor:C.ink,shadowOpacity:.12,shadowRadius:12,shadowOffset:{width:0,height:4},elevation:4};
@@ -115,6 +119,7 @@ const b=StyleSheet.create({
  link:{minHeight:H.touch,alignItems:'center',justifyContent:'center',marginTop:4},linkText:{...type.body,fontWeight:'600',color:C.accent},
 });
 const p=StyleSheet.create({
+ layer:{position:'absolute',top:0,right:0,bottom:0,left:0,zIndex:1000,elevation:1000},
  plate:{flex:1,backgroundColor:C.night,alignItems:'center',justifyContent:'center',gap:28,padding:24},
  glow:{position:'absolute',left:-130,top:-130,width:410,height:410},
  words:{alignItems:'center',gap:8},
