@@ -48,7 +48,7 @@ import type {HubTab} from '../../lib/property-hub';
 import {cleanerLine,cleanerStep} from '../../lib/job-steps';
 import {ownerWaiting} from '../../lib/now-card';
 import {FlatHub,FlatHubHead} from './FlatHub';
-import {RevealProvider,useKeyboardReveal} from './Keyboard';
+import {RevealProvider,useKeyboardOpen,useKeyboardReveal} from './Keyboard';
 import {ECHO_WINDOW,pinStates,recallMap,rememberMap,stageOf,targetPin,withEchoes,type MapTarget} from './map-memory';
 
 // Map-first home screen, like a taxi app: a full-screen map and one bottom sheet.
@@ -518,6 +518,7 @@ export function MapHome({ role, accountId, data, menu, chats, onChanged, onOpenP
   const [height, setHeight] = useState(0);
   const [top, setTop] = useState(0);
   const [snap, setSnap] = useState(0);
+  const typing = useKeyboardOpen();
   const [head, setHead] = useState(0);
   const [reach, setReach] = useState(0);
   const [pins, setPins] = useState<MapPin[]>([]);
@@ -550,7 +551,9 @@ export function MapHome({ role, accountId, data, menu, chats, onChanged, onOpenP
   // A head that needs even more scrolls inside the sheet instead of being cut.
   const wanted = handleHeight + head + 12;
   const topEdge = screen.height >= 700 ? 0.5 : 0.36;
-  const cap = Math.max(handleHeight + T.control.primary + 24, Math.round(top + height - screen.height * topEdge));
+  // While the keyboard is open the map above it is short: the half-screen rule would squeeze the line being typed in
+  // to a strip. The sheet then stands on the keyboard with its whole head (the line, the chips), the map above it.
+  const cap = typing ? Math.round(height * 0.88) : Math.max(handleHeight + T.control.primary + 24, Math.round(top + height - screen.height * topEdge));
   const collapsed = head ? Math.min(cap, wanted) : Math.max(132, Math.round(height * 0.2));
   // The answer is shown down to «Забронировать» of the card in view or of the chosen flat: the half-open sheet grows for
   // it, so the button is never under the tabs. The results say where that is, and take it back when they go.
@@ -563,17 +566,21 @@ export function MapHome({ role, accountId, data, menu, chats, onChanged, onOpenP
   // the map: the collapsed sheet is the line and the chips, and the card is shown when the sheet is opened.
   const showNow = screen.height >= 700 ? snap === 0 : snap > 0;
 
+  // The keyboard moves the sheet with it, evenly: no spring overshoot while it rises or hides.
+  const typedBefore = useRef(typing);
   useEffect(() => {
-    if (sheetHeight) settle(sheetHeight);
-  }, [sheetHeight, sheet]);
+    if (!sheetHeight) return;
+    if (typedBefore.current !== typing) { typedBefore.current = typing; Animated.timing(sheet, { toValue: sheetHeight, duration: T.motion.base, useNativeDriver: false }).start(); return; }
+    settle(sheetHeight);
+  }, [sheetHeight, sheet, typing]);
   useEffect(() => {
     if (snap === 0) scroll.current?.scrollTo({ y: 0, animated: false });
   }, [snap]);
   // What is chosen replaces the list in the same scroll view: it is shown from its top, not from where the list was.
   // Back to the list, the sheet returns to where the guest left it, so the next card is compared from the same place.
   const scrollY = useRef(0), listY = useRef(0), wasSelected = useRef(selected);
-  // Fields of the sheet (the district of the search) bring their suggestions above the keyboard.
-  const reveal = useKeyboardReveal(scroll, scrollY, false);
+  // The field typed in (the search line, the district) and its suggestions come above the keyboard.
+  const reveal = useKeyboardReveal(scroll, scrollY);
   useEffect(() => {
     const before = wasSelected.current;
     wasSelected.current = selected;
