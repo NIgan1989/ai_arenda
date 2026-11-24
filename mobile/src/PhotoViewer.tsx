@@ -1,6 +1,7 @@
 import {t} from '../../lib/i18n';
 import React,{useEffect,useRef,useState} from 'react';
 import {AccessibilityInfo,Animated,Image,Modal,PanResponder,Platform,Pressable,StatusBar,StyleSheet,Text,View,useWindowDimensions} from 'react-native';
+import {C} from './styles';
 import {SafeAreaProvider,useSafeAreaInsets} from 'react-native-safe-area-context';
 
 // A photo opened from a chat: over the whole screen on black, at its own proportions, with a close button that is always
@@ -128,11 +129,11 @@ function Viewer({uri,onClose,size:known,title,caption}:Props){
 }
 
 const v=StyleSheet.create({
- root:{flex:1},backdrop:{backgroundColor:'#000'},stage:{flex:1,alignItems:'center',justifyContent:'center'},
- top:{position:'absolute',left:0,right:0,top:0,flexDirection:'row',alignItems:'center',gap:12,paddingBottom:10,backgroundColor:'rgba(0,0,0,0.35)'},
- close:{width:44,height:44,borderRadius:22,backgroundColor:'rgba(255,255,255,0.18)',alignItems:'center',justifyContent:'center'},
- cross:{position:'absolute',width:20,height:2,borderRadius:1,backgroundColor:'#fff'},pressed:{opacity:.6},
- title:{flex:1,color:'#fff',fontSize:16,lineHeight:20,fontWeight:'600'},
+ root:{flex:1},backdrop:{backgroundColor:C.ink},stage:{flex:1,alignItems:'center',justifyContent:'center'},
+ top:{position:'absolute',left:0,right:0,top:0,flexDirection:'row',alignItems:'center',gap:12,paddingBottom:8,backgroundColor:'rgba(0,0,0,0.35)'},
+ close:{width:44,height:44,borderRadius:24,backgroundColor:'rgba(255,255,255,0.18)',alignItems:'center',justifyContent:'center'},
+ cross:{position:'absolute',width:20,height:2,borderRadius:1,backgroundColor:C.onAccent},pressed:{opacity:.6},
+ title:{flex:1,color:C.onAccent,fontSize:16,lineHeight:20,fontWeight:'600'},
  bottom:{position:'absolute',left:0,right:0,bottom:0,paddingTop:12,backgroundColor:'rgba(0,0,0,0.45)'},
- caption:{color:'#fff',fontSize:16,lineHeight:22},failed:{color:'#fff',fontSize:16},
+ caption:{color:C.onAccent,fontSize:16,lineHeight:24},failed:{color:C.onAccent,fontSize:16},
 });

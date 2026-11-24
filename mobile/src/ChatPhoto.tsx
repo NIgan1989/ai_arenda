@@ -58,7 +58,7 @@ export function OutgoingPhoto({item,time,onRetry,onDelete}:{item:Outgoing;time:s
  const [open,setOpen]=useState(false),failed=item.status==='failed',percent=Math.round(item.progress*100),caption=item.text.trim();
  return <View style={[p.bubble,caption?p.withCaption:null]}>
   <PhotoFrame uri={item.photo} size={item.size} dim={!failed} onOpen={()=>setOpen(true)} stamp={caption?null:{time,ticks:failed?'!':'🕓'}}>
-   {!failed&&<View pointerEvents="none" style={p.center}><View style={p.progressBox}><Thinking size="sm" color="#fff"/><Text style={p.progressText}>{percent>0&&percent<100?percent+'%':t('Отправляем…')}</Text></View></View>}
+   {!failed&&<View pointerEvents="none" style={p.center}><View style={p.progressBox}><Thinking size="sm" color={C.onAccent}/><Text style={p.progressText}>{percent>0&&percent<100?percent+'%':t('Отправляем…')}</Text></View></View>}
    {!failed&&<View pointerEvents="none" style={p.track}><View style={[p.bar,{width:`${Math.max(4,percent)}%`}]}/></View>}
   </PhotoFrame>
   {!!caption&&<Text style={p.caption}>{caption}</Text>}
@@ -74,13 +74,13 @@ export function OutgoingPhoto({item,time,onRetry,onDelete}:{item:Outgoing;time:s
 const p=StyleSheet.create({
  frame:{borderRadius:12,overflow:'hidden',backgroundColor:C.surfaceAlt,maxWidth:'100%'},pressed:{opacity:.85},dim:{opacity:.6},
  center:{position:'absolute',left:0,right:0,top:0,bottom:0,alignItems:'center',justifyContent:'center',gap:4,padding:12},
- retryIcon:{fontSize:24,lineHeight:28,color:C.ink},retryText:{fontSize:14,lineHeight:20,fontWeight:'600',color:C.ink,textAlign:'center'},retryHint:{fontSize:12,lineHeight:16,color:C.muted,textAlign:'center'},
+ retryIcon:{fontSize:22,lineHeight:28,color:C.ink},retryText:{fontSize:14,lineHeight:20,fontWeight:'600',color:C.ink,textAlign:'center'},retryHint:{fontSize:12,lineHeight:16,color:C.muted,textAlign:'center'},
  badge:{position:'absolute',right:6,bottom:6,flexDirection:'row',alignItems:'center',gap:4,paddingHorizontal:8,paddingVertical:2,borderRadius:999,backgroundColor:'rgba(0,0,0,0.5)'},
- badgeText:{fontSize:12,lineHeight:16,color:'#fff',fontWeight:'500'},read:{color:'#9fd8ff'},
- progressBox:{alignItems:'center',gap:4,paddingHorizontal:12,paddingVertical:8,borderRadius:12,backgroundColor:'rgba(0,0,0,0.45)'},progressText:{fontSize:12,lineHeight:16,color:'#fff',fontWeight:'600'},
+ badgeText:{fontSize:12,lineHeight:16,color:C.onAccent,fontWeight:'500'},read:{color:C.domeTo},
+ progressBox:{alignItems:'center',gap:4,paddingHorizontal:12,paddingVertical:8,borderRadius:12,backgroundColor:'rgba(0,0,0,0.45)'},progressText:{fontSize:12,lineHeight:16,color:C.onAccent,fontWeight:'600'},
  track:{position:'absolute',left:0,right:0,bottom:0,height:4,backgroundColor:'rgba(0,0,0,0.25)'},bar:{height:4,backgroundColor:C.accent},
  bubble:{alignSelf:'flex-end',maxWidth:'88%',padding:4,borderTopLeftRadius:16,borderBottomLeftRadius:16,borderTopRightRadius:0,borderBottomRightRadius:0,backgroundColor:C.bubbleMine,gap:4,marginVertical:2},withCaption:{paddingBottom:4},
- caption:{fontSize:16,lineHeight:22,color:C.ink,paddingHorizontal:8},row:{flexDirection:'row',justifyContent:'flex-end',gap:4,paddingHorizontal:8},time:{fontSize:12,lineHeight:16,color:C.muted},
+ caption:{fontSize:16,lineHeight:24,color:C.ink,paddingHorizontal:8},row:{flexDirection:'row',justifyContent:'flex-end',gap:4,paddingHorizontal:8},time:{fontSize:12,lineHeight:16,color:C.muted},
  failed:{paddingHorizontal:8,paddingBottom:4,gap:4},failedText:{fontSize:12,lineHeight:16,color:C.danger},actions:{flexDirection:'row',gap:8},
  action:{minHeight:36,paddingHorizontal:12,borderRadius:999,justifyContent:'center',backgroundColor:C.glassInk},actionMain:{backgroundColor:C.accent},actionText:{fontSize:14,fontWeight:'600',color:C.ink},actionMainText:{fontSize:14,fontWeight:'600',color:C.onAccent},
 });
