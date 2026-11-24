@@ -46,7 +46,7 @@ function Viewer({uri,onClose,size:known,title,caption}:Props){
  const [chrome,setChrome]=useState(true),[reduce,setReduce]=useState(false),[failed,setFailed]=useState(false);
  const scale=useRef(new Animated.Value(1)).current,x=useRef(new Animated.Value(0)).current,y=useRef(new Animated.Value(0)).current,drop=useRef(new Animated.Value(0)).current;
  // The gesture's own numbers. The view is moved by translate, then scaled around its centre.
- const g=useRef({scale:1,x:0,y:0,mode:'' as ''|'drop'|'pan'|'pinch',from:{scale:1,x:0,y:0,px:0,py:0,dist:1},start:0,moved:0,lastTap:0,tapTimer:null as any,closing:false}).current;
+ const g=useRef({scale:1,x:0,y:0,mode:'' as ''|'drop'|'pan'|'pinch',from:{scale:1,x:0,y:0,px:0,py:0,dist:1},start:0,moved:0,multi:false,lastTap:0,tapTimer:null as any,closing:false}).current;
  const view=useRef({window,box,reduce,onClose}).current;view.window=window;view.box=box;view.reduce=reduce;view.onClose=onClose;
  useEffect(()=>{void AccessibilityInfo.isReduceMotionEnabled().then(setReduce);return()=>clearTimeout(g.tapTimer);},[]);
  // How far the photo may move at this zoom so that its edge never leaves the screen's edge.
@@ -73,9 +73,10 @@ function Viewer({uri,onClose,size:known,title,caption}:Props){
  };
  const responder=useRef(PanResponder.create({
   onStartShouldSetPanResponder:()=>true,onMoveShouldSetPanResponder:()=>true,onPanResponderTerminationRequest:()=>false,onShouldBlockNativeResponder:()=>true,
-  onPanResponderGrant:e=>{g.start=Date.now();g.moved=0;begin(e.nativeEvent.touches as any);},
+  onPanResponderGrant:e=>{g.start=Date.now();g.moved=0;g.multi=e.nativeEvent.touches.length>1;begin(e.nativeEvent.touches as any);},
   onPanResponderMove:(e,s)=>{
    const touches=e.nativeEvent.touches as any[];if(!touches.length)return;
+   if(touches.length>1)g.multi=true;
    const want=touches.length>1?'pinch':g.scale>1.01?'pan':'drop';
    // A finger added or lifted mid gesture: carry on from where the photo is now.
    if(want!==g.mode&&!(g.mode==='drop'&&want==='pan'))begin(touches);
@@ -93,7 +94,8 @@ function Viewer({uri,onClose,size:known,title,caption}:Props){
   },
   onPanResponderRelease:(_e,s)=>{
    const mode=g.mode;g.mode='';
-   if(g.moved<10&&Date.now()-g.start<300){
+   // A gesture with two fingers is never a tap, even a quick pinch whose centre stayed still: it always settles.
+   if(!g.multi&&g.moved<10&&Date.now()-g.start<300){
     const now=Date.now();
     if(now-g.lastTap<300){clearTimeout(g.tapTimer);g.lastTap=0;zoomAt(s.x0,s.y0);}
     else{g.lastTap=now;clearTimeout(g.tapTimer);g.tapTimer=setTimeout(()=>setChrome(v=>!v),300);}
