@@ -29,6 +29,17 @@
       "ios": {
         "simulator": false
       }
+    },
+    "testflight": {
+      "extends": "production",
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://ai-arenda.ai-arenda-kz.workers.dev"
+      }
+    }
+  },
+  "submit": {
+    "testflight": {
+      "ios": {}
     }
   }
 }

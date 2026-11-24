@@ -1,7 +1,8 @@
 {
   "expo": {
     "name": "AiQonaq",
-    "slug": "ai-arenda",
+    "slug": "aiqonaq",
+    "owner": "dulat89s-team",
     "version": "0.1.0",
     "icon": "./assets/brand/icon.png",
     "orientation": "portrait",
@@ -9,7 +10,10 @@
     "scheme": "aiarenda",
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "app.aiarenda.assistant"
+      "bundleIdentifier": "app.aiarenda.assistant",
+      "config": {
+        "usesNonExemptEncryption": false
+      }
     },
     "android": {
       "package": "app.aiarenda.assistant",
@@ -79,6 +83,11 @@
           "defaultChannel": "default"
         }
       ]
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "75eb8c2d-581f-4217-ab51-66133938a8f6"
+      }
+    }
   }
 }
