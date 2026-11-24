@@ -41,17 +41,29 @@ export async function saveSession(value:string|null){
   // Browser preview keeps the origin-bound record in memory; phones use Keychain.
   await sessions.save(value,checkedServer());
 }
-export async function request(path:string,body?:unknown,method?:string,requestKey?:string,role?:string):Promise<any>{
+// fetch has no upload progress, so a request that shows one (a photo in a chat) goes through XMLHttpRequest with the same
+// headers, the same timeout and the same answers.
+function send(url:string,init:{method:string;headers:Record<string,string>;body?:string;signal:AbortSignal},onUpload:(fraction:number)=>void):Promise<{ok:boolean;status:number;json:()=>Promise<any>}>{
+  return new Promise((resolve,reject)=>{
+    const xhr=new XMLHttpRequest();xhr.open(init.method,url);for(const [k,v] of Object.entries(init.headers))xhr.setRequestHeader(k,v);
+    xhr.upload&&(xhr.upload.onprogress=e=>{if(e.lengthComputable&&e.total>0)onUpload(e.loaded/e.total);});
+    xhr.onload=()=>{onUpload(1);const text=xhr.responseText;resolve({ok:xhr.status>=200&&xhr.status<300,status:xhr.status,json:async()=>JSON.parse(text)});};
+    xhr.onerror=()=>reject(new TypeError('Network request failed'));xhr.ontimeout=xhr.onerror;xhr.onabort=()=>reject(new DOMException('Aborted','AbortError'));
+    init.signal.addEventListener('abort',()=>xhr.abort());xhr.send(init.body??null);
+  });
+}
+export async function request(path:string,body?:unknown,method?:string,requestKey?:string,role?:string,onUpload?:(fraction:number)=>void):Promise<any>{
   checkedServer();if(!/^\/(?:api\/|auth\/)/.test(path))throw Error(t('Неверный адрес операции.'));
   const snapshot=sessions.snapshot();if(snapshot.transitioning)throw new StaleSessionError();
   const requestRole=role||workspaceRole;
   const target=path.startsWith('/auth/')?'/api/mobile'+path:path;
   const key=body&&typeof body==='object'&&'requestKey' in body&&typeof body.requestKey==='string'?body.requestKey:requestKey;
-  const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),target==='/api/chat'?40000:15000);
+  const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),target==='/api/chat'?40000:onUpload?60000:15000);
   const verb=method||(body===undefined?'GET':'POST');
   const settle=trackRequest();
   try {
-    const response=await fetch(API_URL+target,{method:verb,credentials:'omit',redirect:'error',headers:{...(snapshot.token?{Authorization:'Bearer '+snapshot.token}:{}),...(requestRole?{'X-Workspace-Role':requestRole}:{}),...(body!==undefined?{'Content-Type':'application/json'}:{}),...(key?{'Idempotency-Key':key}:{})},body:body===undefined?undefined:JSON.stringify(body),signal:controller.signal});
+    const headers={...(snapshot.token?{Authorization:'Bearer '+snapshot.token}:{}),...(requestRole?{'X-Workspace-Role':requestRole}:{}),...(body!==undefined?{'Content-Type':'application/json'}:{}),...(key?{'Idempotency-Key':key}:{})},payload=body===undefined?undefined:JSON.stringify(body);
+    const response=onUpload?await send(API_URL+target,{method:verb,headers,body:payload,signal:controller.signal},onUpload):await fetch(API_URL+target,{method:verb,credentials:'omit',redirect:'error',headers,body:payload,signal:controller.signal});
     const data=await response.json();
     sessions.assertCurrent(snapshot);
     reachListener?.(true);
