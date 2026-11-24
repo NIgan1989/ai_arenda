@@ -1,0 +1,147 @@
+name: iPhone to TestFlight
+# Builds a signed iPhone app on Expo (EAS Build) and uploads it to TestFlight (EAS Submit). See docs/TESTFLIGHT.md.
+#
+# Pull requests that touch the Expo settings only run the "check" job: it proves that the EXPO_TOKEN secret works and
+# that mobile/app.json points at the right Expo project. Nothing is built and nothing is sent to Apple.
+# A build starts only by hand: Actions, "iPhone to TestFlight", "Run workflow" on main. The free Expo plan has a monthly
+# limit of iOS builds, so this workflow does not run on every push.
+#
+# Repository secrets: EXPO_TOKEN (Expo robot token), ASC_KEY_P8 (text of the App Store Connect API key file),
+# ASC_KEY_ID, ASC_ISSUER_ID, APPLE_TEAM_ID. Repository variable: ASC_APP_ID (Apple ID of the app in App Store Connect,
+# needed only to upload; without it the build still runs and the upload step explains what is missing).
+on:
+  workflow_dispatch:
+    inputs:
+      upload:
+        description: 'Upload the build to TestFlight'
+        type: boolean
+        default: true
+  pull_request:
+    paths:
+      - 'mobile/app.json'
+      - 'mobile/eas.json'
+      - '.github/workflows/testflight.yml'
+permissions:
+  contents: read
+concurrency:
+  group: testflight-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: mobile
+    env:
+      EXPO_NO_TELEMETRY: '1'
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Require the Expo token
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          if [ -z "$EXPO_TOKEN" ]; then
+            echo "::error::Нет секрета EXPO_TOKEN (Settings, Secrets and variables, Actions)."
+            exit 1
+          fi
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+      - uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+      - name: Check the token and the Expo project
+        run: |
+          eas whoami
+          eas project:info | tee "$RUNNER_TEMP/project.txt"
+          expected=$(jq -r '.expo.extra.eas.projectId' app.json)
+          if ! grep -qi "$expected" "$RUNNER_TEMP/project.txt"; then
+            echo "::error::Expo project ID does not match mobile/app.json ($expected)."
+            exit 1
+          fi
+          echo "Expo project $expected is reachable with EXPO_TOKEN." >> "$GITHUB_STEP_SUMMARY"
+
+  build:
+    if: github.event_name == 'workflow_dispatch'
+    needs: check
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    defaults:
+      run:
+        working-directory: mobile
+    env:
+      EXPO_NO_TELEMETRY: '1'
+      EXPO_APPLE_TEAM_TYPE: INDIVIDUAL
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Require the Apple secrets
+        env:
+          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          missing=""
+          for name in ASC_KEY_P8 ASC_KEY_ID ASC_ISSUER_ID APPLE_TEAM_ID; do
+            [ -n "${!name}" ] || missing="$missing $name"
+          done
+          if [ -n "$missing" ]; then
+            echo "::error::Нет секретов:$missing. См. docs/TESTFLIGHT.md."
+            exit 1
+          fi
+          # The key file lives only on this runner and is never committed or uploaded as an artifact.
+          printf '%s\n' "$ASC_KEY_P8" > "$RUNNER_TEMP/asc-key.p8"
+          chmod 600 "$RUNNER_TEMP/asc-key.p8"
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+      - uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+      - name: Install locked mobile dependencies
+        run: npm ci
+      - name: Check the app configuration and the server address
+        env:
+          EXPO_PUBLIC_API_URL: https://ai-arenda.ai-arenda-kz.workers.dev
+          SITE_PUBLIC_URL: https://ai-arenda.ai-arenda-kz.workers.dev
+        run: |
+          node ../scripts/check-mobile-release.mjs --profile preview
+          test "$(jq -r '.build.testflight.env.EXPO_PUBLIC_API_URL' eas.json)" = "$EXPO_PUBLIC_API_URL"
+      # The App Store Connect key lets EAS create the certificate and the provisioning profile without a Mac.
+      - name: Build the signed iPhone app on Expo
+        env:
+          EXPO_ASC_API_KEY_PATH: ${{ runner.temp }}/asc-key.p8
+          EXPO_ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          EXPO_ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          EXPO_APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          eas build --platform ios --profile testflight --non-interactive --wait --json > "$RUNNER_TEMP/build.json"
+          jq -r '.[0] | "Build \(.id), version \(.appVersion) (\(.appBuildVersion)), status \(.status)"' "$RUNNER_TEMP/build.json" | tee -a "$GITHUB_STEP_SUMMARY"
+          jq -r '.[0].id' "$RUNNER_TEMP/build.json" > "$RUNNER_TEMP/build-id"
+      - name: Upload the build to TestFlight
+        if: inputs.upload
+        env:
+          ASC_APP_ID: ${{ vars.ASC_APP_ID }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+        run: |
+          if [ -z "$ASC_APP_ID" ]; then
+            echo "::error::Сборка готова, но нет переменной ASC_APP_ID (Apple ID приложения из App Store Connect). См. docs/TESTFLIGHT.md."
+            exit 1
+          fi
+          # The upload settings are written only on this runner; eas.json in the repository keeps no Apple data.
+          jq --arg app "$ASC_APP_ID" --arg key "$RUNNER_TEMP/asc-key.p8" --arg kid "$ASC_KEY_ID" --arg iss "$ASC_ISSUER_ID" \
+            '.submit.testflight.ios = {ascAppId: $app, ascApiKeyPath: $key, ascApiKeyId: $kid, ascApiKeyIssuerId: $iss}' \
+            eas.json > "$RUNNER_TEMP/eas.json"
+          mv "$RUNNER_TEMP/eas.json" eas.json
+          eas submit --platform ios --profile testflight --id "$(cat "$RUNNER_TEMP/build-id")" --non-interactive --wait
+          echo "Uploaded to TestFlight. Apple processes the build in about 10–30 minutes." >> "$GITHUB_STEP_SUMMARY"
