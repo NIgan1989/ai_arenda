@@ -25,10 +25,12 @@ import {boundedRequestText} from './request-body';
 import {saveStayReview} from './stay-reviews';
 import {setFavorite} from './favorites';
 import {staffState,assignStaff,removeStaff,markBusy,freeBusy,staffToday,staffMark} from './staff';
+import {closeDay,openDay} from './closed-days';
 import {addHall,renameVenue,venueOf} from './venue';
 import {setRoomCount,setFreeToday} from './room-units';
 import {understandSearch} from './search-understand';
 import {understandListing} from './listing-understand';
+import {similarRange} from './price-advice';
 import {saveStayPhoto,listStayPhotos,readStayPhoto,saveHandover} from './stay-handover';
 import {serviceBillingState,serviceBillingAction} from './service-dues';
 import {saveReceipt,listReceipts,readReceipt} from './payment-receipts';
@@ -112,6 +114,7 @@ export async function writeOperations(service:RentalService,role:Role,path:strin
  if(route==='service-billing'){active(role,['owner','cleaner']);return serviceBillingAction(service,body,config);}
  if(route==='stay-photo'){active(role,['guest','owner']);return saveStayPhoto(service,role,body,config);}
  if(route==='listing/understand'){active(role,['owner']);return understandListing(service,body,config);}
+ if(route==='listing/price-hint'){active(role,['owner']);return similarRange(service,body);}
  if(route==='search/understand'){active(role,['guest']);return understandSearch(service,body,config);}
  if(route==='search/place'){active(role,['guest']);return findPlace(service,body,fetch,config);}
  if(route==='favorite'){active(role,['guest']);return setFavorite(service,body);}
@@ -123,6 +126,9 @@ export async function writeOperations(service:RentalService,role:Role,path:strin
  if(route==='staff/mark')return staffMark(service,body);
  if(route==='staff/busy')return markBusy(service,body);
  if(route==='staff/free')return freeBusy(service,body);
+ // «Закрыть день» in the owner's calendar (lib/closed-days.ts).
+ if(route==='calendar/close-day'){active(role,['owner']);return closeDay(service,body);}
+ if(route==='calendar/open-day'){active(role,['owner']);return openDay(service,body);}
  // «Заведение с залами» (lib/venue.ts).
  if(route==='venue/state'){active(role,['owner']);const id=required(body.propertyId,'Объект',100);if(!await service.one('SELECT id FROM properties WHERE id=? AND owner_id=?',id,service.userId))throw new DomainError('Объект недоступен.',404);return {venue:await venueOf(service.db,id)};}
  if(route==='venue/hall'){active(role,['owner']);return addHall(service,body);}

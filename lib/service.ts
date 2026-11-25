@@ -42,6 +42,8 @@ import {offerPriceAdvice,ownerPriceSuggestions,decidePriceSuggestion} from './pr
 import {guestStayOffers,decideStayOffer} from './stay-offers';
 import {guestFavorites} from './favorites';
 import {staffPlaces} from './staff';
+import {cleanerOffers} from './dispatch';
+import {ownerClosedDays} from './closed-days';
 import {homePlaces,homeDeals} from './home-order';
 import {homeChecklist,homeOrderOf,homeCancel,tenge,HOME_DAMAGE_WINDOW} from './home-cleaning';
 import {venuesFor} from './venue';
@@ -334,6 +336,10 @@ export class RentalService {
       admission:a.job_demo?'not_required':role==='owner'?workers.get(a.user_id)?.admission:ownAdmission})),messages:state.messages.filter(m=>m.scope===role)};
     if(role==='owner'){(result as Row).priceSuggestions=await ownerPriceSuggestions(this.db,this.userId,state.serverTime);(result as Row).calendarWindows=await ownerWindows(this.db,this.userId,state.serverTime);(result as Row).loadForecasts=await ownerForecasts(this.db,this.userId,state.serverTime);(result as Row).listingTips=await ownerListingTips(this.db,this.userId,state.serverTime);(result as Row).cleaningTips=await ownerCleaningTips(this.db,this.userId,state.serverTime);}
     if(role==='guest'){(result as Row).stayOffers=await guestStayOffers(this.db,this.userId,state.serverTime);Object.assign(result,await guestFavorites(this.db,this.userId));}
+    // The owner's closed days (lib/closed-days.ts) for the calendar; the cleaner's own offers with their time to answer
+    // and how many objects the cleaner is pinned to as «Постоянный исполнитель» (lib/dispatch.ts).
+    if(role==='owner')(result as Row).closedDays=await ownerClosedDays(this.db,this.userId,state.serverTime);
+    if(role==='cleaner')Object.assign(result,await cleanerOffers(this.db,this.userId,state.serverTime));
     // «Смена»: how many objects this person marks guests for (lib/staff.ts), in any role.
     (result as Row).staffPlaces=await staffPlaces(this.db,this.userId);
     // The private addresses of home cleanings (lib/home-order.ts): a repeated order takes two taps, in any role.

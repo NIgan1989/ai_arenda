@@ -1,12 +1,13 @@
 import {t as tr} from '../../lib/i18n';
 import React,{useEffect,useRef,useState} from 'react';
-import {StyleSheet,Text,View} from 'react-native';
+import {Image,Pressable,StyleSheet,Text,View} from 'react-native';
 import * as Location from 'expo-location';
 import {request} from './api';
 import {C,type} from './styles';
 import {T} from './tokens';
-import {Action,h} from './SheetParts';
+import {h} from './SheetParts';
 import {SwipeConfirm} from './SwipeConfirm';
+import {menuIcons,type MenuIcon} from './AccountRows';
 import {arrived,distanceText,minutesText,navState,offRoute,turnArrow,type NavRoute,type NavState} from './navigation';
 import type {MapPoint} from './map-math';
 import {locate,offerFix,openLocationSettings} from './here';
@@ -74,19 +75,23 @@ export function useTrip(role:'cleaner'|'guest',skew:number){
 export type TripControl=ReturnType<typeof useTrip>;
 
 // What the sheet shows during a trip (concept of 2026-11-25, «В пути»): a coloured strip with the time and the way
-// left and the next turn, the address large, two buttons, and for a cleaning the swipe «я на месте», which tells the owner.
-export function TripHead({nav,onOpen,address,detail,onArrived}:{nav:TripControl;onOpen:()=>void;address?:string;detail?:string;onArrived?:()=>Promise<unknown>|void}){
+// left and the next turn, the address large, and one row of three buttons as in a courier app (talabat): the deal, the
+// chat with the owner and a call through the app (the number is not shown). For a cleaning the swipe «я на месте»,
+// which tells the owner. Ending the route is a quiet link under it.
+export function TripHead({nav,onOpen,address,detail,onArrived,onChat,onCall}:{nav:TripControl;onOpen:()=>void;address?:string;detail?:string;onArrived?:()=>Promise<unknown>|void;onChat?:()=>void;onCall?:()=>void}){
  const {trip,status,state}=nav;if(!trip)return null;
  const waiting=status==='locating'||status==='routing'||!state,there=status==='arrived';
  const strip=there?tr('Вы на месте'):status==='locating'?tr('Ищем вас на карте…'):waiting?tr('Строим маршрут…'):tr('Через {time} на месте · {left}',{time:minutesText(state.secondsLeft),left:distanceText(state.left)});
  const turn=!there&&!waiting?turnArrow(state.next)+'  '+distanceText(state.toNext)+' · '+(state.next?.text||tr('Двигайтесь по линии маршрута')):'';
+ const button=(title:string,icon:MenuIcon,onPress:()=>void)=><Pressable key={title} accessibilityRole="button" accessibilityLabel={title} onPress={onPress} style={({pressed})=>[n.button,pressed&&n.pressed]}><Image source={menuIcons[icon]} style={n.icon} accessibilityElementsHidden importantForAccessibility="no"/><Text numberOfLines={1} style={n.buttonText}>{title}</Text></Pressable>;
  return <View style={n.card} accessibilityLiveRegion="polite">
   <View style={[n.strip,there&&n.stripThere]}><Text numberOfLines={1} style={n.stripText}>{strip}</Text>{!!turn&&<Text numberOfLines={1} style={n.turn}>{turn}</Text>}</View>
   <View style={n.body}>
-   <Text numberOfLines={2} style={n.big}>{address||trip.title}</Text>
-   {!!(detail||address)&&<Text numberOfLines={1} style={h.note}>{detail||trip.title}</Text>}
-   <View style={n.buttons}><View style={h.grow}><Action secondary title={trip.kind==='booking'?tr('Бронь'):tr('Задание')} onPress={onOpen}/></View><View style={h.grow}><Action secondary title={there?tr('Закрыть'):tr('Завершить')} onPress={there?nav.close:()=>void nav.stop()}/></View></View>
+   <View><Text numberOfLines={2} style={n.big}>{address||trip.title}</Text>
+   {!!(detail||address)&&<Text numberOfLines={1} style={h.note}>{detail||trip.title}</Text>}</View>
+   <View style={n.buttons}>{[button(trip.kind==='booking'?tr('Бронь'):tr('Задание'),'file',onOpen),onChat&&button(tr('Владелец'),'messages',onChat),onCall&&button(tr('Звонок'),'phone',onCall)]}</View>
    {!!onArrived&&<SwipeConfirm label={tr('Проведите: я на месте')} onConfirm={()=>void onArrived()}/>}
+   <Pressable accessibilityRole="button" accessibilityLabel={there?tr('Закрыть маршрут'):tr('Завершить маршрут')} onPress={there?nav.close:()=>void nav.stop()} style={({pressed})=>[n.quiet,pressed&&n.pressed]}><Text style={n.quietText}>{there?tr('Закрыть маршрут'):tr('Завершить маршрут')}</Text></Pressable>
   </View>
  </View>;
 }
@@ -95,5 +100,9 @@ const n=StyleSheet.create({
  wrap:{gap:12},row:{flexDirection:'row',alignItems:'center',gap:12},
  arrow:{width:T.control.primary,height:T.control.primary,borderRadius:T.radius.md,backgroundColor:C.accent,alignItems:'center',justifyContent:'center'},arrived:{backgroundColor:C.success},
  arrowText:{...type.heading,color:C.surface,fontWeight:'700'},big:{...type.title,color:C.ink,fontWeight:'700'},text:{...type.body,color:C.ink},
- card:{borderRadius:T.radius.xl,overflow:'hidden',backgroundColor:C.surface,borderWidth:1,borderColor:C.line},strip:{paddingHorizontal:16,paddingVertical:12,gap:2,backgroundColor:C.accent},stripThere:{backgroundColor:C.success},stripText:{...type.body,color:C.onAccent,fontWeight:'700'},turn:{...type.label,color:C.onAccent,opacity:.9},body:{padding:16,gap:12},buttons:{flexDirection:'row',gap:8}
+ card:{borderRadius:T.radius.xl,overflow:'hidden',backgroundColor:C.surface,borderWidth:1,borderColor:C.line},strip:{paddingHorizontal:16,paddingVertical:12,gap:2,backgroundColor:C.accent},stripThere:{backgroundColor:C.success},stripText:{...type.body,color:C.onAccent,fontWeight:'700'},turn:{...type.label,color:C.onAccent,opacity:.9},body:{padding:16,gap:12},buttons:{flexDirection:'row',gap:8},
+ // Icon over the word, as a courier's buttons: three fit in a row on a narrow phone and in any language.
+ button:{flex:1,minHeight:T.control.primary+8,paddingHorizontal:4,paddingVertical:8,borderRadius:T.radius.lg,borderWidth:1,borderColor:C.lineStrong,backgroundColor:C.surface,alignItems:'center',justifyContent:'center',gap:4},
+ icon:{width:20,height:20,tintColor:C.ink},buttonText:{...type.caption,color:C.ink,fontWeight:'600',textAlign:'center'},pressed:{opacity:.6},
+ quiet:{minHeight:T.control.touch,alignItems:'center',justifyContent:'center',marginTop:-4},quietText:{...type.label,color:C.muted,fontWeight:'600'}
 });
