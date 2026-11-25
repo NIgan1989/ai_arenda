@@ -151,6 +151,14 @@ if(!group)group=(await api('POST','/v1/betaGroups',{type:'betaGroups',
 await api('POST',`/v1/betaGroups/${group.id}/relationships/builds`,[{type:'builds',id:build.id}]);
 summary(`Сборка ${build.attributes.version} в группе «${group.attributes.name}».`);
 
+// Without automatic notification an approved build waits for a manual "distribute" click, so turn it on first.
+const betaDetail=(await api('GET',`/v1/builds/${build.id}/buildBetaDetail`)).data;
+if(!betaDetail.attributes.autoNotifyEnabled){
+  await api('PATCH',`/v1/buildBetaDetails/${betaDetail.id}`,{type:'buildBetaDetails',id:betaDetail.id,attributes:{autoNotifyEnabled:true}});
+  // A build Apple already approved is announced to the testers now; 409 means it was announced before.
+  if(reviewState==='APPROVED')await api('POST','/v1/buildBetaNotifications',
+    {type:'buildBetaNotifications',relationships:{build:ref('builds',build.id)}},{allow:[409]});
+}
 if(reviewState)summary(`Проверка Apple: ${reviewState}.`);
 else{
   await api('POST','/v1/betaAppReviewSubmissions',{type:'betaAppReviewSubmissions',relationships:{build:ref('builds',build.id)}});
