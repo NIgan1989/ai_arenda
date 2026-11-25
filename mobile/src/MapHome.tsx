@@ -298,11 +298,14 @@ function GuestPanel({setFloat,setScanning,setQuiet,accountId,data,mapData,publis
  useEffect(()=>{if(!arrival||!selected)return;const p=[...shown,...later].find(x=>x.id===selected);if(!p)return;const state=homeAt(p,arrival,at);if(state.state==='later'&&state.from)arriveBy(state.from);},[selected]);
  // What the card of a found home says about its readiness at the searched arrival.
  const readiness=(p:Row)=>{if(!arrival)return null;const state=homeAt(p,arrival,arrival.at);return state.state==='ready'||state.state==='check'?{text:cardWords(state,arrival.at),check:state.state==='check'}:null;};
+ // Prices the guest has opened turn grey on the map, as on Airbnb; the set lives as long as the map does.
+ const [opened,setOpened]=useState<string[]>([]);
+ useEffect(()=>{if(selected&&!opened.includes(selected))setOpened(v=>[...v,selected]);},[selected]);
  useEffect(()=>{
   // The guest's map says the price alone, as Airbnb and Vrbo do (the user's rule of 2026-11-25): no heart, no sign, no «+N».
   // A home whose owner the guest waits for breathes on the map, as the car on its way in a taxi app.
   const clockNow=serverNow(data),waiting=new Set((data.bookings||[]).filter((b:Row)=>b.guest_id===data.user?.id&&b.status==='requested'&&Number(b.expires_at)>clockNow).map((b:Row)=>b.property_id));
-  const pin=(p:Row,tone:MapPin['tone']):MapPin[]=>{const point=pointOf(p),amount=p.estimate?.amount??p.price;return point?[{key:p.id,point,title:p.title,label:short(amount),tone:waiting.has(p.id)&&(tone==='home'||tone==='booking')?'pending':tone,plain:true,rank:typeof amount==='number'?amount:0}]:[];};
+  const pin=(p:Row,tone:MapPin['tone']):MapPin[]=>{const point=pointOf(p),amount=p.estimate?.amount??p.price;return point?[{key:p.id,point,title:p.title,label:short(amount),tone:waiting.has(p.id)&&(tone==='home'||tone==='booking')?'pending':tone,plain:true,seen:opened.includes(p.id),rank:typeof amount==='number'?amount:0}]:[];};
   // On the way the map shows only the way: the home, the guest's point and the road between them.
   if(nav.trip){
    const target=stays.filter(v=>v.id===nav.trip!.id).map(({id,start,canGo,...m})=>m),me:MapPin[]=nav.here&&nav.status!=='arrived'?[{key:'me',point:nav.here.point,title:tr('Вы'),label:tr('Вы'),tone:'active'}]:[];
@@ -334,7 +337,7 @@ function GuestPanel({setFloat,setScanning,setQuiet,accountId,data,mapData,publis
   }
   // The guest's own stays are not on the map: they are in «Мои брони» under the line (the concept of 2026-11-25).
   else publish((mapData?.properties||[]).flatMap((p:Row)=>pin(p,'home')),stageKey+':'+(mapData?.properties?.length||0));
- },[requestId,live,preview,shown.map((p:Row)=>p.id).join(),mapData,data.bookings,draft.city,staysKey,nav.trip,nav.here,nav.route,nav.rerouted,roads,mine.favorites.join(),at]);
+ },[requestId,live,preview,shown.map((p:Row)=>p.id).join(),mapData,data.bookings,draft.city,staysKey,nav.trip,nav.here,nav.route,nav.rerouted,roads,mine.favorites.join(),at,opened.join()]);
  // Where the guest is: on the first point from the phone the search moves to the guest's city, and once that city's
  // homes are on the map, the map flies to the guest. Anything the guest is already doing (a search, a request, a trip,
  // «На карте» from a page) wins: then the point is only a dot on the map.
@@ -448,7 +451,7 @@ function OwnerPanel({accountId,data,mapData,publish,snap,showNow,expand,onHead,o
    // The deal of the place has come to its end: the calm pin says «Готово ✓» for a while instead of the price.
    const spare=calm.tone==='alert'||calm.tone==='active'||calm.tone==='pending'?'':marginLabel(ownerMargin(data,p.id,clock));
    const state=spare?{label:spare,tone:'job' as const}:deal?.finished&&calm.tone==='home'?{label:tr('Готово ✓'),tone:'booked' as const}:calm,quiet=asked.has(p.id)||sent;
-   return point?[{key:'property:'+p.id,point,title:p.title,act:quiet?undefined:ownerPinAct(threads,data,p.id,clock)||undefined,chain:deal?dealChain(deal):undefined,label:asked.has(p.id)?tr('Запрос'):sent?tr('Ответ отправлен'):state.label,rank:typeof p.price==='number'?p.price:0,tone:asked.has(p.id)?'pending':sent?'offer':state.tone,best:!asked.has(p.id)&&!sent&&state.best,until:asked.get(p.id),progress:asked.has(p.id)||sent?undefined:state.progress,ai:aiMove}]:[];});
+   return point?[{key:'property:'+p.id,point,round:true,title:p.title,act:quiet?undefined:ownerPinAct(threads,data,p.id,clock)||undefined,chain:deal?dealChain(deal):undefined,label:asked.has(p.id)?tr('Запрос'):sent?tr('Ответ отправлен'):state.label,rank:typeof p.price==='number'?p.price:0,tone:asked.has(p.id)?'pending':sent?'offer':state.tone,best:!asked.has(p.id)&&!sent&&state.best,until:asked.get(p.id),progress:asked.has(p.id)||sent?undefined:state.progress,ai:aiMove}]:[];});
   const moving=travellers(mapData?.journeys||[]).map((t):MapPin=>({...t,title:t.label,tone:'active'}));
   // Demand: the heat of the city, and sparks over the busiest places while guests are asking owners right now.
   const cells:Row[]=mapData?.demand?.cells||[],searching=Number(mapData?.demand?.searching)||0;
@@ -548,6 +551,8 @@ export function MapHome({ role, accountId, data, menu, chats, onChanged, onOpenP
   const [head, setHead] = useState(0);
   const [reach, setReach] = useState(0);
   const [pins, setPins] = useState<MapPin[]>([]);
+  // The owner's filter over the map (concept 2026-11-25): only what waits, only the stays, only the cleanings.
+  const [only, setOnly] = useState<OwnerFilter>('');
   const [focusKey, setFocusKey] = useState('');
   const [selected, setSelected] = useState(aim.current ? '' : kept?.selected || '');
   const [notice, setNotice] = useState('');
@@ -851,7 +856,7 @@ export function MapHome({ role, accountId, data, menu, chats, onChanged, onOpenP
       }}
     ><LiveMap
         center={center}
-        pins={pins}
+        pins={role === 'owner' ? pins.filter(p => !p.round || ownerShows(p, only)) : pins}
         selected={selected}
         focus={spotted ? spotKey : focus}
         lines={lines}
@@ -884,7 +889,7 @@ export function MapHome({ role, accountId, data, menu, chats, onChanged, onOpenP
             ))}</View></View>
       )}{!!notice && (
         <Text accessibilityLiveRegion="polite" style={h.mapNotice}>{notice}</Text>
-      )}{(role === 'owner' || role === 'guest') && !selected && <PriceTip role={role} cards={data.approvals || []} onChanged={onChanged} onEdit={onEdit} />}{/* Without an account the round slot widens for the «Войти» word. */}{!!menu && !floating && <View style={[h.menu, { width: 'auto' }]}>{menu}</View>}{!!chats && !floating && <View style={h.chats}>{chats}</View>}{floating && <View pointerEvents="box-none" style={h.floatBar}>{floatBar}</View>}{!picking && <MapMood mood={mood} joy={joy} still={calm || quiet} bottom={covered ? cardEdge : sheet} />}<Animated.View style={[h.sheet, snap === 2 && !floating && h.sheetSolid, floating && h.sheetFloat, { height: sheet, opacity: veil }]} accessibilityViewIsModal={false}><View {...drag.handle.panHandlers} style={floating ? h.gone : undefined}><Pressable
+      )}{(role === 'owner' || role === 'guest') && !selected && <PriceTip role={role} cards={data.approvals || []} onChanged={onChanged} onEdit={onEdit} />}{/* Without an account the round slot widens for the «Войти» word. */}{!!menu && !floating && <View style={[h.menu, { width: 'auto' }]}>{menu}</View>}{role === 'owner' && !selected && !picking && pins.filter(p => p.round).length > 1 && <OwnerFilters pins={pins} only={only} onOnly={setOnly} onList={() => setSnap(2)} />}{!!chats && !floating && <View style={h.chats}>{chats}</View>}{floating && <View pointerEvents="box-none" style={h.floatBar}>{floatBar}</View>}{!picking && <MapMood mood={mood} joy={joy} still={calm || quiet} bottom={covered ? cardEdge : sheet} />}<Animated.View style={[h.sheet, snap === 2 && !floating && h.sheetSolid, floating && h.sheetFloat, { height: sheet, opacity: veil }]} accessibilityViewIsModal={false}><View {...drag.handle.panHandlers} style={floating ? h.gone : undefined}><Pressable
             accessibilityRole="button"
             accessibilityLabel={snap === 0 ? tr('Развернуть панель') : tr('Свернуть панель')}
             onPress={() => setSnap(snap === 0 ? 1 : 0)}
@@ -907,4 +912,41 @@ const w = StyleSheet.create({
   tipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   tipButton: { minHeight: T.control.compact, paddingHorizontal: 12, borderRadius: T.radius.full, backgroundColor: C.accentSoft, borderWidth: 1, borderColor: C.accentLine, alignItems: 'center', justifyContent: 'center' },
   tipButtonText: { fontSize: T.font.label[0], lineHeight: T.font.label[1], color: C.accent, fontWeight: '600' }
+});
+
+// ---------- The owner's filter over the map ----------
+type OwnerFilter = '' | 'yours' | 'stay' | 'clean';
+function ownerShows(pin: MapPin, only: OwnerFilter) {
+  const tone = pin.tone || 'home';
+  if (only === 'yours') return !!pin.act || tone === 'pending' || tone === 'alert';
+  if (only === 'stay') return tone === 'booking' || tone === 'booked';
+  if (only === 'clean') return tone === 'job' || tone === 'active';
+  return true;
+}
+// A row of pills under the top buttons, as the filters of Google Maps: a pill shows its count, a second tap shows all.
+function OwnerFilters({ pins, only, onOnly, onList }: { pins: MapPin[]; only: OwnerFilter; onOnly: (v: OwnerFilter) => void; onList: () => void }) {
+  const own = pins.filter(p => p.round);
+  const items: [OwnerFilter, string][] = [['yours', tr('Ждут вас')], ['stay', tr('Живут')], ['clean', tr('Уборка')]];
+  return (
+    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={f.row} contentContainerStyle={f.content} accessibilityRole="tablist">
+      {items.map(([id, title]) => {
+        const n = own.filter(p => ownerShows(p, id)).length, on = only === id;
+        return (
+          <Pressable key={id} accessibilityRole="tab" accessibilityState={{ selected: on }} accessibilityLabel={title + ': ' + n} onPress={() => onOnly(on ? '' : id)} style={({ pressed }) => [f.pill, on && f.pillOn, pressed && { opacity: 0.8 }]}>
+            {id === 'yours' && n > 0 && <View style={f.dot} />}<Text style={[f.text, on && f.textOn]}>{title}{n ? ' · ' + n : ''}</Text>
+          </Pressable>
+        );
+      })}
+      <Pressable accessibilityRole="button" accessibilityLabel={tr('Список: {n}', { n: own.length })} onPress={onList} style={({ pressed }) => [f.pill, pressed && { opacity: 0.8 }]}><Text style={f.text}>{tr('Список')}</Text></Pressable>
+    </ScrollView>
+  );
+}
+const f = StyleSheet.create({
+  row: { position: 'absolute', top: 64, left: 0, right: 0, flexGrow: 0 },
+  content: { paddingHorizontal: 12, gap: 8 },
+  pill: { minHeight: 36, paddingHorizontal: 14, borderRadius: T.radius.full, flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: C.surface, borderWidth: 1, borderColor: C.line, shadowColor: C.ink, shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.12, shadowRadius: 6, elevation: 3 },
+  pillOn: { backgroundColor: C.ink, borderColor: C.ink },
+  text: { fontSize: 14, lineHeight: 20, fontWeight: '600', color: C.ink },
+  textOn: { color: C.surface },
+  dot: { width: 8, height: 8, borderRadius: 4, backgroundColor: C.gold },
 });

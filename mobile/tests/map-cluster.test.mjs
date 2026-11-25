@@ -35,3 +35,39 @@ test('pins one above another are separate when their boxes do not meet', () => {
   assert.equal(groupPins([box('a', 100, 100), box('b', 100, 125)]).length, 1);
   assert.deepEqual(groupPins([]), []);
 });
+
+const {planGroup} = await loadPure('mobile/src/map-math.ts');
+const at = (key, lng, lat, important) => ({key, point: [lng, lat], important});
+
+test('a pin alone stays a pin', () => {
+  assert.deepEqual(planGroup([at('a', 76.95, 52.28)]), {kind: 'pin', key: 'a', dots: []});
+});
+
+test('homes in one building become one mark «N в доме»', () => {
+  const plan = planGroup([at('a', 76.95, 52.28), at('b', 76.95005, 52.28005), at('c', 76.9501, 52.2799)]);
+  assert.deepEqual(plan, {kind: 'cluster', key: 'a', members: ['a', 'b', 'c'], house: true});
+});
+
+test('a small group keeps its first pin and shows the others as dots', () => {
+  assert.deepEqual(planGroup([at('a', 76.95, 52.28), at('b', 76.952, 52.281)]), {kind: 'pin', key: 'a', dots: ['b']});
+});
+
+test('a large group of ordinary pins becomes one round mark with the count', () => {
+  const plan = planGroup([0, 1, 2, 3, 4].map(i => at('p' + i, 76.95 + i * 0.002, 52.28)));
+  assert.equal(plan.kind, 'cluster');
+  assert.equal(plan.house, false);
+  assert.equal(plan.members.length, 5);
+});
+
+test('a small group with a pin that waits keeps that pin and dots, a large one folds into a round mark', () => {
+  assert.deepEqual(planGroup([at('ask', 76.95, 52.28, true), at('p1', 76.952, 52.28)]), {kind: 'pin', key: 'ask', dots: ['p1']});
+  const plan = planGroup([at('ask', 76.95, 52.28, true), ...[1, 2, 3, 4].map(i => at('p' + i, 76.95 + i * 0.002, 52.28))]);
+  assert.equal(plan.kind, 'cluster');
+  assert.equal(plan.key, 'ask');
+});
+
+const {roundLabels} = await loadPure('mobile/src/map-math.ts');
+test('round marks close together: the first keeps its label, the next one goes without', () => {
+  const marks = [{x: 100, y: 100, pin: {key: 'ask', label: 'Заявка'}}, {x: 150, y: 120, pin: {key: 'stay', label: 'Гость до 12:00'}}, {x: 300, y: 300, pin: {key: 'far', label: '10 тыс.'}}];
+  assert.deepEqual([...roundLabels(marks)], ['stay']);
+});
