@@ -135,11 +135,13 @@ else await api('POST','/v1/betaBuildLocalizations',{type:'betaBuildLocalizations
 
 // 6. The external group, the build in it and the build sent to Apple's beta review.
 const groups=(await api('GET',`/v1/apps/${appId}/betaGroups?limit=200`)).data;
-let group=groups.find(g=>g.attributes.name===GROUP&&!g.attributes.isInternalGroup);
+const external=groups.filter(g=>!g.attributes.isInternalGroup);
+// The group made by hand in App Store Connect is kept when it is the only outside group, so there are no two of them.
+let group=external.find(g=>g.attributes.name===GROUP)||(external.length===1?external[0]:undefined);
 const submission=await api('GET',`/v1/builds/${build.id}/betaAppReviewSubmission`,undefined,{allow:[404]});
 const reviewState=submission?.data?.attributes?.betaReviewState||null;
 if(check){
-  console.log(`Группа «${GROUP}»: ${group?'есть':'нет, создам'}. Все группы: ${groups.map(g=>g.attributes.name).join(', ')||'нет'}.`);
+  console.log(`Внешняя группа: ${group?`«${group.attributes.name}»`:`нет, создам «${GROUP}»`}. Все группы: ${groups.map(g=>`${g.attributes.name}${g.attributes.isInternalGroup?' (внутр.)':''}`).join(', ')||'нет'}.`);
   summary(`Проверка Apple для этой сборки: ${reviewState||'ещё не отправлена'}.`);
   summary('Только чтение: ничего не изменено.');
   process.exit(0);
@@ -147,7 +149,7 @@ if(check){
 if(!group)group=(await api('POST','/v1/betaGroups',{type:'betaGroups',
   attributes:{name:GROUP,feedbackEnabled:true},relationships:{app:ref('apps',appId)}})).data;
 await api('POST',`/v1/betaGroups/${group.id}/relationships/builds`,[{type:'builds',id:build.id}]);
-summary(`Сборка ${build.attributes.version} в группе «${GROUP}».`);
+summary(`Сборка ${build.attributes.version} в группе «${group.attributes.name}».`);
 
 if(reviewState)summary(`Проверка Apple: ${reviewState}.`);
 else{
