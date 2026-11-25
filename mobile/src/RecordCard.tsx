@@ -48,7 +48,9 @@ export function AnswerWait({item,bare=false}:{item:Row;bare?:boolean}){
 }
 if(Platform.OS==='android')UIManager.setLayoutAnimationEnabledExperimental?.(true);
 const smooth=()=>LayoutAnimation.configureNext(LayoutAnimation.create(220,LayoutAnimation.Types.easeInEaseOut,LayoutAnimation.Properties.opacity));
-export function DealCard({kind,item,role,userId,application,thread,line:own,actions,busy,always,details,extra,onMap,compact=false,startOpen=false}:{kind:'booking'|'job';item:Row;role:string;userId:string;application?:Row;thread?:ProcessThread|null;line?:string|null;actions:Maybe<RecordAction>[];busy:boolean;always?:React.ReactNode;details?:React.ReactNode;extra?:React.ReactNode;onMap?:()=>void;compact?:boolean;startOpen?:boolean}){
+// The owner's quick answer to a request: the approval card of the booking and how to send the decision.
+export type OwnerAsk={card:Row;onDecide:(body:Row)=>void;onReview:()=>void};
+export function DealCard({kind,item,role,userId,application,thread,line:own,actions,busy,always,details,extra,onMap,compact=false,startOpen=false,request}:{request?:OwnerAsk;kind:'booking'|'job';item:Row;role:string;userId:string;application?:Row;thread?:ProcessThread|null;line?:string|null;actions:Maybe<RecordAction>[];busy:boolean;always?:React.ReactNode;details?:React.ReactNode;extra?:React.ReactNode;onMap?:()=>void;compact?:boolean;startOpen?:boolean}){
  const [open,setOpen]=useState(false),[more,setMore]=useState(false),[unfolded,setUnfolded]=useState(startOpen),clock=useActivityClock();
  const status=processStatus(kind,item,role,userId,application),[bg,ink]=tones[status.tone]||tones.neutral,flow=processJourney(kind,item);
  const total=thread?thread.steps.length:flow.labels.length,done=thread?thread.finished:flow.done,step=Math.min(thread?thread.current:flow.current,total-1),line=flow.stopped?flow.hint:thread?thread.line:own||flow.hint;
@@ -62,6 +64,31 @@ export function DealCard({kind,item,role,userId,application,thread,line:own,acti
    <Text numberOfLines={1} style={r.rowWhen}>{recordSpan(item.start,item.end)}{kind==='booking'&&!!hallLine(item)&&<Text>{' · '+hallLine(item)}</Text>}{!!item.demo_owner&&<Text style={r.rowDemo}>{' · '+(kind==='job'?t('Учебное'):t('Учебная'))}</Text>}</Text>
    <View style={r.rowTop}><View style={[r.dot,{backgroundColor:ink}]}/><Text numberOfLines={1} style={[r.rowStatus,{color:ink},r.grow]}>{status.label}{!!main&&!said&&<Text style={r.rowDo}>{' · '+next}</Text>}</Text><Text style={r.chevron}>⌄</Text></View>
   </Pressable>;
+ }
+ // The owner answers a guest's request, as a driver takes an order (concept 2026-11-25): who asks, a round timer of the
+ // 15 minutes, when, which home, what the owner gets; accept with a swipe, decline with one word. The rest under «Ещё».
+ if(kind==='booking'&&item.status==='requested'&&!!request&&clock>0&&Number(item.expires_at)>clock&&(!compact||unfolded)){
+  const card=request.card,left=Number(item.expires_at)-clock,from=Number(item.created_at)||Number(item.expires_at)-900,share=Math.max(0,Math.min(1,left/Math.max(60,Number(item.expires_at)-from)));
+  const mm=Math.floor(left/60),ss=String(Math.floor(left%60)).padStart(2,'0'),guests=Number(item.guests)||1;
+  const low=(v:string)=>v.charAt(0).toLowerCase()+v.slice(1),action=card.depositLabel?'deposit':'accept',fee=Number(card.cleaningFee)||0;
+  const decide=(what:string)=>request.onDecide({id:card.id,revision:card.revision,action:what,reason:'',cleaningFee:fee});
+  const risk=card.risk,calm=!risk||risk.level==='low';
+  const others=rest.filter(Boolean);
+  return <View style={r.card}>
+   <View style={r.askHead}>
+    <View style={r.grow}><Text style={r.askCaption}>{t('Новая заявка')}</Text><Text accessibilityRole="header" numberOfLines={2} style={r.askWho}>{(item.guest_name||t('Гость'))+', '+guests+' '+(guests===1?t('гость'):guests<5?t('гостя'):t('гостей'))}</Text>{!!card.reliability?.label&&<Text style={r.rowWhen}>{card.reliability.label}</Text>}</View>
+    <View accessible accessibilityLabel={t('Осталось {v}',{v:mm+':'+ss})} style={r.ring}><View style={[r.ringArc,{borderTopColor:share>0?C.accent:'transparent',borderRightColor:share>0.25?C.accent:'transparent',borderBottomColor:share>0.5?C.accent:'transparent',borderLeftColor:share>0.75?C.accent:'transparent'}]}/><Text style={r.ringText}>{mm}:{ss}</Text></View>
+   </View>
+   <View style={r.askRow}><Text style={r.askKey}>{t('Когда')}</Text><Text style={r.askValue}>{recordSpan(item.start,item.end)}</Text></View>
+   <View style={r.askRow}><Text style={r.askKey}>{t('Жильё')}</Text><Text numberOfLines={2} style={r.askValue}>{item.title}</Text></View>
+   <View style={[r.askRow,r.askLast]}><View style={r.grow}><Text style={r.askKey}>{t('Вы получите')}</Text><Text style={r.askSum}>{money(item.amount)}</Text></View><Text style={[r.askTag,!calm&&r.askTagRisk]}>{calm?t('Надёжный гость'):(risk.label||t('Проверьте гостя'))}</Text></View>
+   {always}
+   <SwipeConfirm label={card.depositLabel?t('Проведите: {v}',{v:low(t('Подтвердить {v}',{v:low(card.depositLabel)}))}):t('Проведите, чтобы принять')} disabled={busy} onConfirm={()=>decide(action)}/>
+   <Pressable accessibilityRole="button" accessibilityLabel={t('Отклонить заявку')} disabled={busy} onPress={()=>card.requiresReason?request.onReview():decide('reject')} style={({pressed})=>[r.askReject,(pressed||busy)&&r.dim]}><Text style={r.askRejectText}>{t('Отклонить')}</Text></Pressable>
+   <View style={r.waitLinks}><Pressable accessibilityRole="button" accessibilityState={{expanded:open}} onPress={()=>setOpen(v=>!v)} style={r.waitLink}><Text style={r.waitLinkText}>{open?t('Свернуть'):t('Подробнее')}</Text></Pressable><Pressable accessibilityRole="button" accessibilityState={{expanded:more}} onPress={()=>setMore(v=>!v)} style={r.waitLink}><Text style={r.waitLinkText}>{more?t('Скрыть'):t('Ещё')}</Text></Pressable></View>
+   {open&&details}
+   {more&&<><RecordActions soft busy={busy} actions={[{title:t('Рассмотреть подробно'),kind:'side',onPress:request.onReview},...others]}/>{extra}</>}
+  </View>;
  }
  // The guest waits for the owner's answer, as a rider waits for a taxi (concept, Mobbin: Uber, Bolt): the big timer on top,
  // the place in one row marked «Ждём», then two buttons, «Написать» and «Отменить». The rest is under «Ещё».
@@ -123,6 +150,11 @@ const r=StyleSheet.create({
  waitLinks:{flexDirection:'row',justifyContent:'center',gap:24},waitLink:{minHeight:H.touch,justifyContent:'center',paddingHorizontal:8},waitLinkText:{...type.label,color:C.accentPressed,fontWeight:'600'},
  waitBare:{padding:0,borderWidth:0,backgroundColor:'transparent'},
  waitPlace:{flexDirection:'row',alignItems:'center',gap:12,padding:12,borderRadius:R.lg,backgroundColor:C.surfaceAlt},waitThumb:{width:56,height:56,borderRadius:R.md,overflow:'hidden',backgroundColor:C.surface},
+ askHead:{flexDirection:'row',alignItems:'center',gap:12},askCaption:{...type.caption,color:C.muted},askWho:{...type.title,color:C.ink,fontWeight:'800'},
+ ring:{width:88,height:88,alignItems:'center',justifyContent:'center'},ringArc:{position:'absolute',top:0,left:0,width:88,height:88,borderRadius:999,borderWidth:6,transform:[{rotate:'45deg'}]},ringText:{...type.body,fontWeight:'800',color:C.ink,fontVariant:['tabular-nums']},
+ askRow:{gap:2,paddingVertical:8,borderBottomWidth:1,borderBottomColor:C.line},askLast:{flexDirection:'row',alignItems:'center',borderBottomWidth:0},askKey:{...type.caption,color:C.muted},askValue:{...type.body,color:C.ink,fontWeight:'600'},askSum:{...type.title,color:C.ink,fontWeight:'800'},
+ askTag:{...type.caption,fontWeight:'700',color:C.success,backgroundColor:C.successSoft,paddingHorizontal:8,paddingVertical:4,borderRadius:R.sm,overflow:'hidden'},askTagRisk:{color:C.warning,backgroundColor:C.warningSoft},
+ askReject:{minHeight:H.touch,alignItems:'center',justifyContent:'center'},askRejectText:{...type.label,color:C.inkSoft,fontWeight:'600'},
  waitTag:{...type.caption,fontWeight:'700',color:C.warning,backgroundColor:C.warningSoft,paddingHorizontal:8,paddingVertical:4,borderRadius:R.sm,overflow:'hidden'},
  waitButtons:{flexDirection:'row',gap:8},waitButton:{flex:1,minHeight:H.primary,borderRadius:R.md,alignItems:'center',justifyContent:'center'},
  waitChat:{backgroundColor:C.accentSoft},waitChatText:{...type.body,color:C.accentPressed},waitCancel:{backgroundColor:C.surfaceAlt},waitCancelText:{...type.body,color:C.inkSoft},
