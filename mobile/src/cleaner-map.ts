@@ -28,7 +28,9 @@ export function progress(startedAt:unknown,end:unknown,now:number){
 }
 
 // One job's pin. On the route a stop carries its number; the cleaning under way says until when and fills its strip.
-export type CleanerPin={label:string;tone:PinTone;order?:number;progress?:number};
+export type CleanerPin={label:string;tone:PinTone;order?:number;progress?:number;plain?:boolean;rank?:number};
+// «3 000 ₸»: an open job on the map says what it pays, as a price on the guest's map (concept of 2026-11-25).
+export const feeLabel=(fee:unknown)=>String(Math.round(Number(fee)||0)).replace(/\B(?=(\d{3})+(?!\d))/g,' ')+' ₸';
 export function cleanerPin(job:Row,stop:Stop|undefined,now:number,applied:boolean):CleanerPin{
  const status=String(job.status);
  // Past the deadline: the report is due now.
@@ -45,7 +47,8 @@ export function cleanerPin(job:Row,stop:Stop|undefined,now:number,applied:boolea
   if(ready&&Number(job.start)+900<=now)return {label:t('Пора начинать'),tone:'alert',order:stop.order};
   return {label:Number(job.start)<=now?(ready?t('Начинайте'):t('Ждём выезда')):soon(Number(job.start),now)||t('Сегодня'),tone:'offer',order:stop.order};
  }
- return applied?{label:t('Отклик ✓'),tone:'job'}:{label:t('Уборка'),tone:'job'};
+ // The better paid open job is the one shown when pins meet.
+ return applied?{label:t('Отклик ✓'),tone:'job'}:{label:feeLabel(job.fee),tone:'home',plain:true,rank:Math.max(0,1e6-(Number(job.fee)||0))};
 }
 
 // The route as lines from one stop to the next, in order; stops without a point on the map are skipped.

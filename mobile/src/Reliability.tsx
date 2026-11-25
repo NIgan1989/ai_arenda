@@ -6,7 +6,7 @@ import {T} from './tokens';
 import type {Reliability} from '../../lib/reliability-text';
 const F=T.font,R=T.radius;
 // The label comes from the server in Russian (lib/reliability-text.ts reliabilityLabels): its four values are translated here.
-const LABELS=/* i18n */['Новый участник','Надёжность отличная','Надёжность хорошая','Есть замечания'];
+export const LABELS=/* i18n */['Новый участник','Надёжность отличная','Надёжность хорошая','Есть замечания'];
 // The facts come from the server in Russian too (lib/reliability.ts); tLine finds them here with {n} for the number.
 export const FACTS=/* i18n */['{n} проживание','{n} проживания','{n} проживаний','споров при выезде: {n}','отмен после подтверждения: {n}','телефон подтверждён',
  '{n} уборка','{n} уборки','{n} уборок','оценка заказчиков {n}','срывов: {n}','возвратов на доработку: {n}','без срывов',

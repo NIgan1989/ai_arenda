@@ -79,3 +79,35 @@ export function groupPins(boxes: PinBox[], gap = 6): PinGroup[] {
   }
   return shown.map(({ box, members }) => ({ key: box.key, members }));
 }
+
+// ---------- How a group is drawn (Mobbin, 2026-11-25: Airbnb, Google Maps, InPost) ----------
+// A group of pins that would cover each other is not one pin with «+N» any more:
+// - homes in one building (all within HOUSE degrees, about 20 m) are one mark «N в доме»; a tap lists them;
+// - a small group keeps its first pin and draws the others as dots on their own places, so nothing disappears;
+// - a larger group becomes one round mark with the count, gold when something in it waits for the person
+//   (GroupMember.important); a tap brings the map closer.
+export const HOUSE = 0.0002, DOTS_UP_TO = 3;
+export type GroupMember = { key: string; point: [number, number]; important?: boolean };
+export type GroupPlan =
+  | { kind: 'pin'; key: string; dots: string[] }
+  | { kind: 'cluster'; key: string; members: string[]; house: boolean };
+
+export function planGroup(members: GroupMember[]): GroupPlan {
+  const [host, ...rest] = members;
+  if (!rest.length) return { kind: 'pin', key: host.key, dots: [] };
+  const house = rest.every(m => Math.abs(m.point[0] - host.point[0]) < HOUSE && Math.abs(m.point[1] - host.point[1]) < HOUSE);
+  if (house) return { kind: 'cluster', key: host.key, members: members.map(m => m.key), house: true };
+  if (members.length <= DOTS_UP_TO) return { kind: 'pin', key: host.key, dots: rest.map(m => m.key) };
+  return { kind: 'cluster', key: host.key, members: members.map(m => m.key), house: false };
+}
+
+// The owner's round marks keep their label under the circle only where it does not run into a neighbour's label;
+// the more important mark (earlier in the list) keeps its own. Returns the keys drawn without a label.
+export function roundLabels(marks: { x: number; y: number; pin: { key: string; label: string } }[]) {
+  const width = (label: string) => Math.max(56, label.length * 7 + 20), kept: typeof marks = [], bare = new Set<string>();
+  for (const a of marks) {
+    if (kept.some(b => Math.abs(b.x - a.x) < (width(a.pin.label) + width(b.pin.label)) / 2 + 4 && Math.abs(b.y - a.y) < 64)) bare.add(a.pin.key);
+    else kept.push(a);
+  }
+  return bare;
+}

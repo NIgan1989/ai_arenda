@@ -1,11 +1,12 @@
 import {t} from '../../lib/i18n';
 import {jobPayNote} from '../../lib/regular-cleaner-text';
-import React,{useState} from 'react';
+import React,{useEffect,useState} from 'react';
 import {View,Text,Pressable,StyleSheet,Platform,LayoutAnimation,UIManager} from 'react-native';
 import {C,type} from './styles';
 import {T} from './tokens';
 import {SwipeConfirm} from './SwipeConfirm';
 import {useActivityClock} from './ActivityTimer';
+import {request} from './api';
 import {money,type Row} from './model';
 import {Photo} from './ListingMedia';
 import {processJourney} from '../../lib/process-journey';
@@ -48,8 +49,30 @@ export function AnswerWait({item,bare=false}:{item:Row;bare?:boolean}){
 }
 if(Platform.OS==='android')UIManager.setLayoutAnimationEnabledExperimental?.(true);
 const smooth=()=>LayoutAnimation.configureNext(LayoutAnimation.create(220,LayoutAnimation.Types.easeInEaseOut,LayoutAnimation.Properties.opacity));
-export function DealCard({kind,item,role,userId,application,thread,line:own,actions,busy,always,details,extra,onMap,compact=false,startOpen=false}:{kind:'booking'|'job';item:Row;role:string;userId:string;application?:Row;thread?:ProcessThread|null;line?:string|null;actions:Maybe<RecordAction>[];busy:boolean;always?:React.ReactNode;details?:React.ReactNode;extra?:React.ReactNode;onMap?:()=>void;compact?:boolean;startOpen?:boolean}){
+// The owner's fee for one booking, to show the sum as top apps do (Airtasker, alias): what the guest pays, minus the
+// service's fee, what stays. The rate and its cap come from the server; during the free start the fee is zero.
+type OwnerFee={rate:number;max:number;freeUntil:number|null};
+let feeCache:Promise<OwnerFee>|null=null;
+function useOwnerFee(on:boolean){
+ const [fee,setFee]=useState<OwnerFee|null>(null);
+ useEffect(()=>{if(!on)return;let live=true;
+  feeCache=feeCache||Promise.all([request('/api/operations/service-billing/state',undefined,undefined,undefined,'owner'),request('/api/operations/autopilot/state').catch(()=>null)]).then(([b,a]:any[])=>({rate:Number(b?.rates?.owner??400),max:Number(b?.rates?.ownerMax??0),freeUntil:a?.billing?.freeUntil??null}));
+  feeCache.then(v=>{if(live)setFee(v);}).catch(()=>{feeCache=null;});
+  return()=>{live=false;};},[on]);
+ return fee;
+}
+export function feeOf(amount:number,fee:OwnerFee,at:number){
+ if(fee.freeUntil&&fee.freeUntil>at)return 0;
+ let v=Math.floor((amount*fee.rate+5000)/10000);if(fee.max>0)v=Math.min(v,fee.max);return Math.max(0,Math.min(v,amount));
+}
+// The owner's quick answer to a request: the approval card of the booking and how to send the decision.
+// payout: the owner's Kaspi details (where the guest transfers); onMethod opens «Реквизиты для оплаты».
+export type OwnerAsk={card:Row;onDecide:(body:Row)=>void;onReview:()=>void;payout?:Row|null;onMethod?:(page:'payout')=>void};
+// «•• 45 67»: only the last digits of a Kaspi number, as a bank card shows «•• 0222».
+const tail=(phone:string)=>{const d=String(phone||'').replace(/\D/g,'');return d.length>=4?'•• '+d.slice(-4,-2)+' '+d.slice(-2):'';};
+export function DealCard({kind,item,role,userId,application,thread,line:own,actions,busy,always,details,extra,onMap,compact=false,startOpen=false,request}:{request?:OwnerAsk;kind:'booking'|'job';item:Row;role:string;userId:string;application?:Row;thread?:ProcessThread|null;line?:string|null;actions:Maybe<RecordAction>[];busy:boolean;always?:React.ReactNode;details?:React.ReactNode;extra?:React.ReactNode;onMap?:()=>void;compact?:boolean;startOpen?:boolean}){
  const [open,setOpen]=useState(false),[more,setMore]=useState(false),[unfolded,setUnfolded]=useState(startOpen),clock=useActivityClock();
+ const ownerFee=useOwnerFee(kind==='booking'&&!!request);
  const status=processStatus(kind,item,role,userId,application),[bg,ink]=tones[status.tone]||tones.neutral,flow=processJourney(kind,item);
  const total=thread?thread.steps.length:flow.labels.length,done=thread?thread.finished:flow.done,step=Math.min(thread?thread.current:flow.current,total-1),line=flow.stopped?flow.hint:thread?thread.line:own||flow.hint;
  const all=actions.filter(Boolean) as RecordAction[],main=all.find(a=>a.kind==='main'),rest:Maybe<RecordAction>[]=[...all.filter(a=>a!==main),!!onMap&&{title:t('Показать на карте'),kind:'side' as const,onPress:onMap}];
@@ -62,6 +85,45 @@ export function DealCard({kind,item,role,userId,application,thread,line:own,acti
    <Text numberOfLines={1} style={r.rowWhen}>{recordSpan(item.start,item.end)}{kind==='booking'&&!!hallLine(item)&&<Text>{' · '+hallLine(item)}</Text>}{!!item.demo_owner&&<Text style={r.rowDemo}>{' · '+(kind==='job'?t('Учебное'):t('Учебная'))}</Text>}</Text>
    <View style={r.rowTop}><View style={[r.dot,{backgroundColor:ink}]}/><Text numberOfLines={1} style={[r.rowStatus,{color:ink},r.grow]}>{status.label}{!!main&&!said&&<Text style={r.rowDo}>{' · '+next}</Text>}</Text><Text style={r.chevron}>⌄</Text></View>
   </Pressable>;
+ }
+ // The owner answers a guest's request, as a driver takes an order (concept 2026-11-25): who asks, a round timer of the
+ // 15 minutes, when, which home, what the owner gets; accept with a swipe, decline with one word. The rest under «Ещё».
+ if(kind==='booking'&&item.status==='requested'&&!!request&&clock>0&&Number(item.expires_at)>clock&&(!compact||unfolded)){
+  const card=request.card,left=Number(item.expires_at)-clock,from=Number(item.created_at)||Number(item.expires_at)-900,share=Math.max(0,Math.min(1,left/Math.max(60,Number(item.expires_at)-from)));
+  const mm=Math.floor(left/60),ss=String(Math.floor(left%60)).padStart(2,'0'),guests=Number(item.guests)||1;
+  const low=(v:string)=>v.charAt(0).toLowerCase()+v.slice(1),action=card.depositLabel?'deposit':'accept',fee=Number(card.cleaningFee)||0;
+  const decide=(what:string)=>request.onDecide({id:card.id,revision:card.revision,action:what,reason:'',cleaningFee:fee});
+  const risk=card.risk,calm=!risk||risk.level==='low';
+  const others=rest.filter(Boolean);
+  const method=(title:string,note:string,missing:boolean)=><Pressable accessibilityRole="button" accessibilityLabel={title+'. '+note+'. '+(missing?t('Добавить'):t('Изменить'))} disabled={!request.onMethod} onPress={()=>request.onMethod?.('payout')} style={({pressed})=>[r.payRow,pressed&&r.dim]}>
+   <View style={[r.payMark,r.payKaspi]}><Text style={r.payMarkText}>K</Text></View>
+   <View style={r.grow}><Text numberOfLines={1} style={r.payTitle}>{title}</Text><Text numberOfLines={1} style={[r.payNote,missing&&r.payWarn]}>{note}</Text></View>
+   <Text style={r.payEdit}>{missing?t('Добавить'):t('Изменить')}</Text>
+  </Pressable>;
+  return <View style={r.card}>
+   <View style={r.askHead}>
+    <View style={r.grow}><Text style={r.askCaption}>{t('Новая заявка')}</Text><Text accessibilityRole="header" numberOfLines={2} style={r.askWho}>{(item.guest_name||t('Гость'))+', '+guests+' '+(guests===1?t('гость'):guests<5?t('гостя'):t('гостей'))}</Text>{!!card.reliability?.label&&<Text style={r.rowWhen}>{card.reliability.label}</Text>}</View>
+    <View accessible accessibilityLabel={t('Осталось {v}',{v:mm+':'+ss})} style={r.ring}><View style={[r.ringArc,{borderTopColor:share>0?C.accent:'transparent',borderRightColor:share>0.25?C.accent:'transparent',borderBottomColor:share>0.5?C.accent:'transparent',borderLeftColor:share>0.75?C.accent:'transparent'}]}/><Text style={r.ringText}>{mm}:{ss}</Text></View>
+   </View>
+   <View style={r.askRow}><Text style={r.askKey}>{t('Когда')}</Text><Text style={r.askValue}>{recordSpan(item.start,item.end)}</Text></View>
+   <View style={r.askRow}><Text style={r.askKey}>{t('Жильё')}</Text><Text numberOfLines={2} style={r.askValue}>{item.title}</Text></View>
+   <View style={r.askMoney}>
+    <View style={r.askLine}><Text style={r.askKey}>{t('Гость платит')}</Text><Text style={r.askValue}>{money(item.amount)}</Text></View>
+    {!!ownerFee&&<View style={r.askLine}><Text style={r.askKey}>{feeOf(Number(item.amount)||0,ownerFee,clock)?t('Комиссия сервиса {n}%',{n:String(ownerFee.rate/100).replace('.',',')}):t('Комиссия сервиса · бесплатный старт')}</Text><Text style={r.askValue}>{'−'+money(feeOf(Number(item.amount)||0,ownerFee,clock))}</Text></View>}
+    <View style={[r.askLine,r.askTotal]}><Text style={r.askTotalKey}>{t('Вы получите')}</Text><Text style={r.askSum}>{money((Number(item.amount)||0)-(ownerFee?feeOf(Number(item.amount)||0,ownerFee,clock):0))}</Text></View>
+   </View>
+   {/* Where the guest pays, as «Payment method» in Airbnb or Fresha: the bank, the last digits, «Изменить». */}
+   <View style={r.payBox}>
+    {method(request.payout?.phone?t('Kaspi {v}',{v:tail(request.payout.phone)}):t('Kaspi не указан'),request.payout?.phone?t('сюда переведёт гость'):t('гость не увидит, куда платить'),!request.payout?.phone)}
+   </View>
+   <Text style={[r.askTag,r.askTagAlone,!calm&&r.askTagRisk]}>{calm?t('Надёжный гость'):(risk.label||t('Проверьте гостя'))}</Text>
+   {always}
+   <SwipeConfirm label={card.depositLabel?t('Проведите: {v}',{v:low(t('Подтвердить {v}',{v:low(card.depositLabel)}))}):t('Проведите, чтобы принять')} disabled={busy} onConfirm={()=>decide(action)}/>
+   <Pressable accessibilityRole="button" accessibilityLabel={t('Отклонить заявку')} disabled={busy} onPress={()=>card.requiresReason?request.onReview():decide('reject')} style={({pressed})=>[r.askReject,(pressed||busy)&&r.dim]}><Text style={r.askRejectText}>{t('Отклонить')}</Text></Pressable>
+   <View style={r.waitLinks}><Pressable accessibilityRole="button" accessibilityState={{expanded:open}} onPress={()=>setOpen(v=>!v)} style={r.waitLink}><Text style={r.waitLinkText}>{open?t('Свернуть'):t('Подробнее')}</Text></Pressable><Pressable accessibilityRole="button" accessibilityState={{expanded:more}} onPress={()=>setMore(v=>!v)} style={r.waitLink}><Text style={r.waitLinkText}>{more?t('Скрыть'):t('Ещё')}</Text></Pressable></View>
+   {open&&details}
+   {more&&<><RecordActions soft busy={busy} actions={[{title:t('Рассмотреть подробно'),kind:'side',onPress:request.onReview},...others]}/>{extra}</>}
+  </View>;
  }
  // The guest waits for the owner's answer, as a rider waits for a taxi (concept, Mobbin: Uber, Bolt): the big timer on top,
  // the place in one row marked «Ждём», then two buttons, «Написать» and «Отменить». The rest is under «Ещё».
@@ -123,6 +185,12 @@ const r=StyleSheet.create({
  waitLinks:{flexDirection:'row',justifyContent:'center',gap:24},waitLink:{minHeight:H.touch,justifyContent:'center',paddingHorizontal:8},waitLinkText:{...type.label,color:C.accentPressed,fontWeight:'600'},
  waitBare:{padding:0,borderWidth:0,backgroundColor:'transparent'},
  waitPlace:{flexDirection:'row',alignItems:'center',gap:12,padding:12,borderRadius:R.lg,backgroundColor:C.surfaceAlt},waitThumb:{width:56,height:56,borderRadius:R.md,overflow:'hidden',backgroundColor:C.surface},
+ askHead:{flexDirection:'row',alignItems:'center',gap:12},askCaption:{...type.caption,color:C.muted},askWho:{...type.title,color:C.ink,fontWeight:'800'},
+ ring:{width:88,height:88,alignItems:'center',justifyContent:'center'},ringArc:{position:'absolute',top:0,left:0,width:88,height:88,borderRadius:999,borderWidth:6,transform:[{rotate:'45deg'}]},ringText:{...type.body,fontWeight:'800',color:C.ink,fontVariant:['tabular-nums']},
+ askRow:{gap:2,paddingVertical:8,borderBottomWidth:1,borderBottomColor:C.line},askLast:{flexDirection:'row',alignItems:'center',borderBottomWidth:0},askKey:{...type.caption,color:C.muted},askValue:{...type.body,color:C.ink,fontWeight:'600'},askSum:{...type.title,color:C.ink,fontWeight:'800'},
+ askMoney:{gap:8,paddingVertical:12},askLine:{flexDirection:'row',alignItems:'center',justifyContent:'space-between',gap:12},askTotal:{paddingTop:8,borderTopWidth:1,borderTopColor:C.line},askTotalKey:{...type.body,color:C.ink,fontWeight:'700'},askTagAlone:{alignSelf:'flex-start'},payBox:{borderWidth:1,borderColor:C.line,borderRadius:T.radius.lg,paddingHorizontal:12},payRow:{flexDirection:'row',alignItems:'center',gap:12,minHeight:56,paddingVertical:8},payMark:{width:40,height:28,borderRadius:T.radius.sm,alignItems:'center',justifyContent:'center'},payKaspi:{backgroundColor:C.danger},payMarkText:{...type.label,color:C.onAccent,fontWeight:'800'},payTitle:{...type.body,color:C.ink,fontWeight:'600'},payNote:{...type.caption,color:C.muted},payWarn:{color:C.warning},payEdit:{...type.label,color:C.accent,fontWeight:'600'},
+ askTag:{...type.caption,fontWeight:'700',color:C.success,backgroundColor:C.successSoft,paddingHorizontal:8,paddingVertical:4,borderRadius:R.sm,overflow:'hidden'},askTagRisk:{color:C.warning,backgroundColor:C.warningSoft},
+ askReject:{minHeight:H.touch,alignItems:'center',justifyContent:'center'},askRejectText:{...type.label,color:C.inkSoft,fontWeight:'600'},
  waitTag:{...type.caption,fontWeight:'700',color:C.warning,backgroundColor:C.warningSoft,paddingHorizontal:8,paddingVertical:4,borderRadius:R.sm,overflow:'hidden'},
  waitButtons:{flexDirection:'row',gap:8},waitButton:{flex:1,minHeight:H.primary,borderRadius:R.md,alignItems:'center',justifyContent:'center'},
  waitChat:{backgroundColor:C.accentSoft},waitChatText:{...type.body,color:C.accentPressed},waitCancel:{backgroundColor:C.surfaceAlt},waitCancelText:{...type.body,color:C.inkSoft},

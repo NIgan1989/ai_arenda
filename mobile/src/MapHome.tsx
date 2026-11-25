@@ -23,6 +23,8 @@ import {TripHead,useTrip} from './Navigator';
 import {SwipeConfirm} from './SwipeConfirm';
 import {ROAD_BEAMS,beamOrigin,beams,mapMood,moodJoy,roadBeams,roadKey,type BeamRoads,type PinTone} from './map-motion';
 import {MOOD_COLOR,MapMood} from './MapMood';
+import {OwnerToday} from './OwnerToday';
+import {CleanerOffer} from './CleanerOffer';
 import {getHere,locate,openLocationSettings,useHere} from './here';
 import {hereNote,isFresh,nearestCity,type HereAction,type HereNote} from './here-rules';
 import {countdown,mapCities,validPoint,type MapPoint} from './map-math';
@@ -297,11 +299,14 @@ function GuestPanel({setFloat,setScanning,setQuiet,accountId,data,mapData,publis
  useEffect(()=>{if(!arrival||!selected)return;const p=[...shown,...later].find(x=>x.id===selected);if(!p)return;const state=homeAt(p,arrival,at);if(state.state==='later'&&state.from)arriveBy(state.from);},[selected]);
  // What the card of a found home says about its readiness at the searched arrival.
  const readiness=(p:Row)=>{if(!arrival)return null;const state=homeAt(p,arrival,arrival.at);return state.state==='ready'||state.state==='check'?{text:cardWords(state,arrival.at),check:state.state==='check'}:null;};
+ // Prices the guest has opened turn grey on the map, as on Airbnb; the set lives as long as the map does.
+ const [opened,setOpened]=useState<string[]>([]);
+ useEffect(()=>{if(selected&&!opened.includes(selected))setOpened(v=>[...v,selected]);},[selected]);
  useEffect(()=>{
   // The guest's map says the price alone, as Airbnb and Vrbo do (the user's rule of 2026-11-25): no heart, no sign, no «+N».
   // A home whose owner the guest waits for breathes on the map, as the car on its way in a taxi app.
   const clockNow=serverNow(data),waiting=new Set((data.bookings||[]).filter((b:Row)=>b.guest_id===data.user?.id&&b.status==='requested'&&Number(b.expires_at)>clockNow).map((b:Row)=>b.property_id));
-  const pin=(p:Row,tone:MapPin['tone']):MapPin[]=>{const point=pointOf(p),amount=p.estimate?.amount??p.price;return point?[{key:p.id,point,title:p.title,label:short(amount),tone:waiting.has(p.id)&&(tone==='home'||tone==='booking')?'pending':tone,plain:true,rank:typeof amount==='number'?amount:0}]:[];};
+  const pin=(p:Row,tone:MapPin['tone']):MapPin[]=>{const point=pointOf(p),amount=p.estimate?.amount??p.price;return point?[{key:p.id,point,title:p.title,label:short(amount),tone:waiting.has(p.id)&&(tone==='home'||tone==='booking')?'pending':tone,plain:true,seen:opened.includes(p.id),rank:typeof amount==='number'?amount:0}]:[];};
   // On the way the map shows only the way: the home, the guest's point and the road between them.
   if(nav.trip){
    const target=stays.filter(v=>v.id===nav.trip!.id).map(({id,start,canGo,...m})=>m),me:MapPin[]=nav.here&&nav.status!=='arrived'?[{key:'me',point:nav.here.point,title:tr('Вы'),label:tr('Вы'),tone:'active'}]:[];
@@ -333,7 +338,7 @@ function GuestPanel({setFloat,setScanning,setQuiet,accountId,data,mapData,publis
   }
   // The guest's own stays are not on the map: they are in «Мои брони» under the line (the concept of 2026-11-25).
   else publish((mapData?.properties||[]).flatMap((p:Row)=>pin(p,'home')),stageKey+':'+(mapData?.properties?.length||0));
- },[requestId,live,preview,shown.map((p:Row)=>p.id).join(),mapData,data.bookings,draft.city,staysKey,nav.trip,nav.here,nav.route,nav.rerouted,roads,mine.favorites.join(),at]);
+ },[requestId,live,preview,shown.map((p:Row)=>p.id).join(),mapData,data.bookings,draft.city,staysKey,nav.trip,nav.here,nav.route,nav.rerouted,roads,mine.favorites.join(),at,opened.join()]);
  // Where the guest is: on the first point from the phone the search moves to the guest's city, and once that city's
  // homes are on the map, the map flies to the guest. Anything the guest is already doing (a search, a request, a trip,
  // «На карте» from a page) wins: then the point is only a dot on the map.
@@ -447,7 +452,7 @@ function OwnerPanel({accountId,data,mapData,publish,snap,showNow,expand,onHead,o
    // The deal of the place has come to its end: the calm pin says «Готово ✓» for a while instead of the price.
    const spare=calm.tone==='alert'||calm.tone==='active'||calm.tone==='pending'?'':marginLabel(ownerMargin(data,p.id,clock));
    const state=spare?{label:spare,tone:'job' as const}:deal?.finished&&calm.tone==='home'?{label:tr('Готово ✓'),tone:'booked' as const}:calm,quiet=asked.has(p.id)||sent;
-   return point?[{key:'property:'+p.id,point,title:p.title,act:quiet?undefined:ownerPinAct(threads,data,p.id,clock)||undefined,chain:deal?dealChain(deal):undefined,label:asked.has(p.id)?tr('Запрос'):sent?tr('Ответ отправлен'):state.label,rank:typeof p.price==='number'?p.price:0,tone:asked.has(p.id)?'pending':sent?'offer':state.tone,best:!asked.has(p.id)&&!sent&&state.best,until:asked.get(p.id),progress:asked.has(p.id)||sent?undefined:state.progress,ai:aiMove}]:[];});
+   return point?[{key:'property:'+p.id,point,round:true,title:p.title,act:quiet?undefined:ownerPinAct(threads,data,p.id,clock)||undefined,chain:deal?dealChain(deal):undefined,label:asked.has(p.id)?tr('Запрос'):sent?tr('Ответ отправлен'):state.label,rank:typeof p.price==='number'?p.price:0,tone:asked.has(p.id)?'pending':sent?'offer':state.tone,best:!asked.has(p.id)&&!sent&&state.best,until:asked.get(p.id),progress:asked.has(p.id)||sent?undefined:state.progress,ai:aiMove}]:[];});
   const moving=travellers(mapData?.journeys||[]).map((t):MapPin=>({...t,title:t.label,tone:'active'}));
   // Demand: the heat of the city, and sparks over the busiest places while guests are asking owners right now.
   const cells:Row[]=mapData?.demand?.cells||[],searching=Number(mapData?.demand?.searching)||0;
@@ -462,11 +467,11 @@ function OwnerPanel({accountId,data,mapData,publish,snap,showNow,expand,onHead,o
  const flat=selected.startsWith('property:')?flats.find(p=>'property:'+p.id===selected):undefined;
  useEffect(()=>{setTab('today');},[flat?.id]);
  if(flat)return <View style={h.block}><HeadSlot onHeight={onHead}><FlatHubHead flat={flat} data={data} now={serverNow(data)} tab={tab} open={snap>0} onTab={next=>{setTab(next);if(snap===0)expand(1);}} onBack={()=>{setSelected('');expand(0);}} onOpen={onOpenProcess}/></HeadSlot>{snap>0&&<FlatHub flat={flat} data={data} now={serverNow(data)} tab={tab} onOpen={onOpenProcess} onEdit={step=>step==='job'?onIntent(flat.details?.type==='home'?'home-cleaning:'+flat.id:'job'):onEdit?.(flat.id,step)} onChanged={onChanged}/>}</View>;
- return <View style={h.block}><HeadSlot onHeight={onHead}><MapSheetHead role="owner" counts={{requests:ownerWaiting(data,data.user?.id||'',clock)}} text={asked} onText={setAsked} onSend={text=>{setAsked('');onAsk(text);}} onChip={action=>{/* A guest waiting for a quick answer is in this sheet; other requests are on their page. */if(action==='requests'){if(offers.length)expand(1);else onOpenPage('bookings');}else if(action==='calendar')onOpenPage('calendar');else if(action==='properties')onOpenPage('properties');}} now={null} onNow={()=>{}}>{waiting.length>0&&<Pressable accessibilityRole="button" accessibilityLabel={tr('Требуют внимания: {length}. Показать следующий объект на карте',{length:waiting.length})} onPress={walk} style={({pressed})=>[h.attention,pressed&&h.dim]}><View style={h.attentionDot}/><Text numberOfLines={1} style={[h.eventTitle,h.grow]}>{tr('Требуют внимания · {n}',{n:waiting.length})}</Text><Text style={h.attentionGo}>{waiting.length>1?tr('Следующий ›'):tr('Показать ›')}</Text></Pressable>}{/* The feed: what waits for the owner on top, then a row for every booking and cleaning the autopilot leads. */}{(flats.length>0||needs.length>0)&&<AutopilotThreads role="owner" data={data} now={serverNow(data)} needs={needs} onOpen={(kind,id)=>onOpenProcess(kind,id)}/>}{/* What the owner still does by hand and the AI can take: one row, one tap. */}{flats.length>0&&<AutopilotHandoff role="owner" accountId={accountId} stamp={flats.map(p=>p.id+':'+(p.policy?.version??'')+':'+(p.policy?.cleaning_fee??'')+':'+(p.policy?.auto_confirm??'')).join('|')} tick={Number(data.serverTime)||0} compact={snap===0} onExpand={()=>expand(2)} onChanged={onChanged} onSetup={id=>{if(id)onEdit?.(id,'prices');}}/>}{snap===0&&Array.isArray(data.ownProperties)&&!flats.length&&<Text style={h.note}>{tr('Добавьте первое жильё, и оно появится на карте.')}</Text>}{snap===0&&!needs.length&&searching>0&&<Text style={h.note}>{plural(searching,'Сейчас {n} гость ищет жильё в городе.','Сейчас {n} гостя ищут жильё в городе.','Сейчас {n} гостей ищут жильё в городе.').replace('{n}',String(searching))}{' '}{tr('Где спрос выше, карта светится ярче.')}</Text>}</MapSheetHead></HeadSlot>{snap>0&&<>{!!error&&<Text accessibilityRole="alert" style={h.error}>{error}</Text>}{offers.length>0&&<Text accessibilityRole="header" style={h.cardTitle}>{tr('Гость ждёт ответа')}</Text>}{offers.map(o=><View key={o.id} style={[h.card,h.urgent]}><View style={h.row}><Text style={[h.cardTitle,h.grow]}>{o.title}</Text><Text style={h.timerSmall} accessibilityLabel={tr('На ответ осталось {v}',{v:countdown(o.expires_at-now)})}>{countdown(o.expires_at-now)}</Text></View><Text style={h.note}>{date(Date.parse(o.filters.start)/1000)} → {date(Date.parse(o.filters.end)/1000)}{'\n'}{o.filters.mode==='hourly'?tr('На часы'):o.filters.mode==='night'?tr('На ночь'):tr('На сутки')}{tr(' · гостей: {n}',{n:o.filters.guests})}</Text><Text style={h.price}>{money(o.amount)}</Text>{/* One swipe answers «Готов»; the words on the track are the promise the owner gives with it. */}<SwipeConfirm label={tr('Проведите: свободно и готово')} disabled={working} onConfirm={()=>act('respond',{offerId:o.id,decision:'accept',ready:true})}/><Action secondary title={tr('Отказать')} disabled={working} onPress={()=>act('respond',{offerId:o.id,decision:'decline'})}/><Text style={h.note}>{tr('Ответ не создаёт бронь и не меняет цену. Если гость выберет ваше жильё, заявка придёт в «Заявки гостей».')}</Text></View>)}{/* As on the site (components/map-workspace.tsx): the objects with their photo and state, then the bookings and
+ return <View style={h.block}><HeadSlot onHeight={onHead}><MapSheetHead role="owner" counts={{requests:ownerWaiting(data,data.user?.id||'',clock)}} text={asked} onText={setAsked} onSend={text=>{setAsked('');onAsk(text);}} onChip={action=>{/* A guest waiting for a quick answer is in this sheet; other requests are on their page. */if(action==='requests'){if(offers.length)expand(1);else onOpenPage('bookings');}else if(action==='calendar')onOpenPage('calendar');else if(action==='properties')onOpenPage('properties');}} now={null} onNow={()=>{}}>{/* With the day feed on screen its gold rows say what waits; the walk over the pins stays for an empty feed. */}{waiting.length>0&&!(flats.length>0||needs.length>0)&&<Pressable accessibilityRole="button" accessibilityLabel={tr('Требуют внимания: {length}. Показать следующий объект на карте',{length:waiting.length})} onPress={walk} style={({pressed})=>[h.attention,pressed&&h.dim]}><View style={h.attentionDot}/><Text numberOfLines={1} style={[h.eventTitle,h.grow]}>{tr('Требуют внимания · {n}',{n:waiting.length})}</Text><Text style={h.attentionGo}>{waiting.length>1?tr('Следующий ›'):tr('Показать ›')}</Text></Pressable>}{/* The feed: what waits for the owner on top, then a row for every booking and cleaning the autopilot leads. */}{(flats.length>0||needs.length>0)&&<OwnerToday data={data} now={serverNow(data)} needs={needs} onOpen={(kind,id)=>onOpenProcess(kind,id)}/>}{/* What the owner still does by hand and the AI can take: one row, one tap. */}{flats.length>0&&<AutopilotHandoff role="owner" accountId={accountId} stamp={flats.map(p=>p.id+':'+(p.policy?.version??'')+':'+(p.policy?.cleaning_fee??'')+':'+(p.policy?.auto_confirm??'')).join('|')} tick={Number(data.serverTime)||0} compact={snap===0} onExpand={()=>expand(2)} onChanged={onChanged} onSetup={id=>{if(id)onEdit?.(id,'prices');}}/>}{snap===0&&Array.isArray(data.ownProperties)&&!flats.length&&<Text style={h.note}>{tr('Добавьте первое жильё, и оно появится на карте.')}</Text>}{snap===0&&!needs.length&&searching>0&&<Text style={h.note}>{plural(searching,'Сейчас {n} гость ищет жильё в городе.','Сейчас {n} гостя ищут жильё в городе.','Сейчас {n} гостей ищут жильё в городе.').replace('{n}',String(searching))}{' '}{tr('Где спрос выше, карта светится ярче.')}</Text>}</MapSheetHead></HeadSlot>{snap>0&&<>{!!error&&<Text accessibilityRole="alert" style={h.error}>{error}</Text>}{offers.length>0&&<Text accessibilityRole="header" style={h.cardTitle}>{tr('Гость ждёт ответа')}</Text>}{offers.map(o=><View key={o.id} style={[h.card,h.urgent]}><View style={h.row}><Text style={[h.cardTitle,h.grow]}>{o.title}</Text><Text style={h.timerSmall} accessibilityLabel={tr('На ответ осталось {v}',{v:countdown(o.expires_at-now)})}>{countdown(o.expires_at-now)}</Text></View><Text style={h.note}>{date(Date.parse(o.filters.start)/1000)} → {date(Date.parse(o.filters.end)/1000)}{'\n'}{o.filters.mode==='hourly'?tr('На часы'):o.filters.mode==='night'?tr('На ночь'):tr('На сутки')}{tr(' · гостей: {n}',{n:o.filters.guests})}</Text><Text style={h.price}>{money(o.amount)}</Text>{/* One swipe answers «Готов»; the words on the track are the promise the owner gives with it. */}<SwipeConfirm label={tr('Проведите: свободно и готово')} disabled={working} onConfirm={()=>act('respond',{offerId:o.id,decision:'accept',ready:true})}/><Action secondary title={tr('Отказать')} disabled={working} onPress={()=>act('respond',{offerId:o.id,decision:'decline'})}/><Text style={h.note}>{tr('Ответ не создаёт бронь и не меняет цену. Если гость выберет ваше жильё, заявка придёт в «Заявки гостей».')}</Text></View>)}{/* As on the site (components/map-workspace.tsx): the objects with their photo and state, then the bookings and
        cleanings under way, then «Быстрые запросы гостей», which opens who answers guests for each object. */}<SheetHeading icon="building" title={tr('Мои объекты')} count={String(flats.length)}/>{flats.map(p=>{const m=(mapData?.properties||[]).find((x:Row)=>x.id===p.id)||p;return <SheetRow key={p.id} label={tr('Мои объекты: {title}',{title:p.title})} title={p.title} photo={(m.photos||p.photos||[])[0]} line={[kindLabel((m.details||p.details)?.type),tr(m.display_status?.label||p.display_status?.label||'Статус уточняется'),m.city||p.city].filter(Boolean).join(' · ')+(m.location?'':' · '+tr('нет точки на карте'))} onPress={()=>{setSelected('property:'+p.id);expand(1);}}/>;})}{!flats.length&&<Text style={h.note}>{tr('Объектов пока нет.')}</Text>}{!!inbox&&<SheetRow icon="zap" title={tr('Быстрые запросы гостей')} line={quickOn?tr('Включены: {found}',{found:quickOn+' '+plural(quickOn,'объект','объекта','объектов')}):tr('Выключены')} onPress={()=>setQuick(v=>!v)}/>}{quick&&!!inbox&&<View style={h.card}><Text accessibilityRole="header" style={h.label}>{tr('Кто отвечает гостям')}</Text><Text style={h.note}>{tr('ИИ — это автопилот: сразу отвечает гостю, подтверждает бронь, заказывает уборку и назначает исполнителя по вашим тарифам. Оплату и депозит проверяете вы.')}</Text>{!!saved&&<Text accessibilityLiveRegion="polite" style={h.note}>{saved}</Text>}{(inbox.preferences||[]).map((p:Row)=><GuestMode key={p.id} flat={p} busy={working} onChange={body=>act('preference',body)}/>)}{!inbox.preferences.length&&<Text style={h.note}>{tr('Включить можно после добавления жилья.')}</Text>}</View>}</>}</View>;
 }
 
-function CleanerPanel({accountId,data,mapData,city,publish,snap,showNow,expand,onHead,onAsk,onChanged,onOpenProcess,onOpenPage}:Common){
+function CleanerPanel({accountId,data,mapData,city,publish,snap,showNow,expand,onHead,onAsk,onChanged,onOpenProcess,onOpenPage,setFocus}:Common){
  const [asked,setAsked]=useState(''),clock=serverNow(data);
  const [error,setError]=useState(''),[working,setWorking]=useState(''),lock=useRef(false);
  const userId=data.user?.id,jobs:Row[]=data.jobs||[],applications:Row[]=data.applications||[];
@@ -483,11 +488,15 @@ function CleanerPanel({accountId,data,mapData,city,publish,snap,showNow,expand,o
  // "Рядом" is the city the map shows (the cleaner's own): the same open jobs as the pins, matched the way the server matches them.
  // Jobs in other cities are one tap away, on the page of all jobs.
  const nearby=open.filter(j=>String(j.city||'').toLocaleLowerCase('ru').includes(city.trim().toLocaleLowerCase('ru'))),nearbyIds=nearby.map(j=>j.id).join();
+ // «Новое задание» (CleanerOffer.tsx): the best paid open job nearby the cleaner has not answered or skipped, while no cleaning is under way.
+ const [skipped,setSkipped]=useState<string[]>([]);
+ const offers=nearby.filter(j=>!applied(j.id)&&!skipped.includes(j.id)).sort((a,b)=>Number(b.fee)-Number(a.fee)||a.start-b.start);
+ const offer=!mine.some(j=>j.status==='in_progress')&&!nav.trip?offers[0]:undefined,offerId=offer?.id||'';
  useEffect(()=>{
   // Each job says what to do now; the day's stops carry their number and are joined by the route line in order.
   const shown=(mapData?.processes||[]).filter((p:Row)=>p.kind==='job'&&(p.status!=='open'||nearby.some(j=>j.id===p.id)));
   const at=serverNow(mapData||data),byId=new Map(jobs.map(j=>[j.id,j])),threads=cleanerThreads(data,at);
-  const pins=shown.flatMap((p:Row):MapPin[]=>{const point=pointOf(p);if(!point)return [];const state=cleanerPin({...byId.get(p.id),...p},route.find(r=>r.id===p.id),at,applied(p.id));const thread=threads.find(t=>t.id===p.id);return [{key:'job:'+p.id,point,title:p.title,...state,act:pinAct('cleaner',threads,data,at,t=>t.id===p.id)||undefined,chain:thread&&p.status!=='open'?threadChain(thread):undefined,ai:latestMove(mapData?.aiMarks,[{kind:'job',id:String(p.id)}],at)}];});
+  const pins=shown.flatMap((p:Row):MapPin[]=>{const point=pointOf(p);if(!point)return [];const state=cleanerPin({...byId.get(p.id),...p},route.find(r=>r.id===p.id),at,applied(p.id));const thread=threads.find(t=>t.id===p.id);return [{key:'job:'+p.id,point,title:p.title,...state,best:p.id===offerId,act:pinAct('cleaner',threads,data,at,t=>t.id===p.id)||undefined,chain:thread&&p.status!=='open'?threadChain(thread):undefined,ai:latestMove(mapData?.aiMarks,[{kind:'job',id:String(p.id)}],at)}];});
   const placed=new Map<string,MapPoint|null>(shown.map((p:Row)=>[p.id,pointOf(p)]));
   // On a trip the map shows only the way: the object, the cleaner's point and the road between them; it frames them at the start and after a new route.
   if(nav.trip){
@@ -497,11 +506,17 @@ function CleanerPanel({accountId,data,mapData,city,publish,snap,showNow,expand,o
    return;
   }
   publish(pins,'cleaner:'+(mapData?.processes?.length||0),{lines:routeLines(route.map(r=>placed.get(r.id)))});
- },[mapData,nearbyIds,data.applications,data.jobs,routeIds,nav.trip,nav.here,nav.route,nav.rerouted]);
+ },[mapData,nearbyIds,data.applications,data.jobs,routeIds,nav.trip,nav.here,nav.route,nav.rerouted,offerId]);
+ // The offered job's pin is the chosen one on the map: dark, with the ✦, as the order in a taxi app. It runs after the
+ // pins are published, which clears the focus of a new set of pins.
+ useEffect(()=>{setFocus(offerId?'job:'+offerId:'');},[offerId,mapData]);
  // The step of a job taken right on the map: an answer to an open one, the start of the one the guest has left.
- async function act(id:string,action:'apply'|'start'){if(lock.current)return;lock.current=true;setWorking(id);setError('');try{await request('/api/jobs/'+id,{action},undefined,'map-'+action+':'+id,'cleaner');await onChanged();}catch(e){setError(message(e));}finally{lock.current=false;setWorking('');}}
+ async function act(id:string,action:'apply'|'start'|'arrived'){if(lock.current)return;lock.current=true;setWorking(id);setError('');try{await request('/api/jobs/'+id,{action},undefined,'map-'+action+':'+id,'cleaner');await onChanged();}catch(e){setError(message(e));}finally{lock.current=false;setWorking('');}}
  const apply=(id:string)=>act(id,'apply');
- return <View style={h.block}><HeadSlot onHeight={onHead}>{nav.trip?<TripHead nav={nav} onOpen={()=>{const id=nav.trip!.id;nav.close();onOpenProcess('job',id);}}/>:<MapSheetHead role="cleaner" text={asked} onText={setAsked} onSend={text=>{setAsked('');onAsk(text);}} onChip={action=>{if(action==='nearby')expand(1);else if(action==='schedule')onOpenPage('calendar');}} now={null} onNow={()=>{}}>{!!nav.error&&<Text accessibilityRole="alert" style={h.error}>{nav.error}</Text>}<AutopilotThreads role="cleaner" data={data} now={clock} calendar={snap>0} onOpen={(kind,id)=>onOpenProcess(kind,id)}/><AutopilotHandoff role="cleaner" accountId={accountId} tick={Number(data.serverTime)||0} compact={snap===0} onExpand={()=>expand(2)} onChanged={onChanged} onSetup={()=>onOpenPage('account')}/></MapSheetHead>}</HeadSlot>{snap>0&&<>{mine.length>0&&<Text accessibilityRole="header" style={h.cardTitle}>{route.length?tr('Маршрут дня'):tr('Ваше задание')}</Text>}{!!summary&&<Text style={h.note}>{summary}</Text>}{mine.map(j=>{
+ // As a taxi order in the concept: while there is a new job, the collapsed sheet is its card alone; the AI line and the
+ // rest are one pull of the sheet away, with the card on top of them.
+ const offerCard=offer?<CleanerOffer job={offer} left={offers.length-1} busy={!!working} onApply={()=>apply(offer.id)} onSkip={()=>setSkipped(v=>[...v,offer.id])} onOpen={()=>onOpenProcess('job',offer.id)}/>:null;
+ return <View style={h.block}><HeadSlot onHeight={onHead}>{nav.trip?(()=>{const id=nav.trip!.id,j=jobs.find(x=>x.id===id);return <TripHead nav={nav} address={j?.address||j?.open_address} detail={j?[j.title,money(j.fee)].join(' · '):undefined} onOpen={()=>{nav.close();onOpenProcess('job',id);}} onArrived={j&&j.status==='assigned'&&!j.arrived_at?async()=>{await act(id,'arrived');nav.close();onOpenProcess('job',id);}:undefined}/>;})():offer&&snap===0?<>{!!nav.error&&<Text accessibilityRole="alert" style={h.error}>{nav.error}</Text>}{offerCard}</>:<MapSheetHead role="cleaner" text={asked} onText={setAsked} onSend={text=>{setAsked('');onAsk(text);}} onChip={action=>{if(action==='nearby')expand(1);else if(action==='schedule')onOpenPage('calendar');}} now={null} onNow={()=>{}}>{!!nav.error&&<Text accessibilityRole="alert" style={h.error}>{nav.error}</Text>}{offerCard}<AutopilotThreads role="cleaner" data={data} now={clock} calendar={snap>0} onOpen={(kind,id)=>onOpenProcess(kind,id)}/><AutopilotHandoff role="cleaner" accountId={accountId} tick={Number(data.serverTime)||0} compact={snap===0} onExpand={()=>expand(2)} onChanged={onChanged} onSetup={()=>onOpenPage('account')}/></MapSheetHead>}</HeadSlot>{snap>0&&<>{mine.length>0&&<Text accessibilityRole="header" style={h.cardTitle}>{route.length?tr('Маршрут дня'):tr('Ваше задание')}</Text>}{!!summary&&<Text style={h.note}>{summary}</Text>}{mine.map(j=>{
     // One main button a stop: the step that is due (start, report); before it, the way there.
     const step=cleanerStep(j,undefined,userId),isNext=j.id===next;
     return <View key={j.id} style={[h.card,isNext||j.status==='in_progress'?h.urgent:null]}><Text style={h.cardTitle}>{order.get(j.id)?order.get(j.id)+'. ':''}{j.title}</Text><Text style={h.note}>{date(j.start)} → {date(j.end)}{j.address?'\n'+j.address:''}</Text><Text style={h.price}>{money(j.fee)}</Text><Text style={h.note}>{cleanerLine(j)}.</Text>{step?.id==='start'&&<Action title={working===j.id?tr('Начинаем…'):step.label} disabled={!!working} onPress={()=>act(j.id,'start')}/>}{step?.id==='report'&&<Action title={step.label} onPress={()=>onOpenProcess('job',j.id)}/>}{isNext&&<><Action secondary={!!step} title={tr('Поехали')} disabled={!!nav.trip} onPress={()=>go(j)}/></>}{step?.id!=='report'&&<Action secondary={!!step||isNext} title={tr('Открыть задание')} onPress={()=>onOpenProcess('job',j.id)}/>}</View>;
@@ -547,6 +562,8 @@ export function MapHome({ role, accountId, data, menu, chats, onChanged, onOpenP
   const [head, setHead] = useState(0);
   const [reach, setReach] = useState(0);
   const [pins, setPins] = useState<MapPin[]>([]);
+  // The owner's filter over the map (concept 2026-11-25): only what waits, only the stays, only the cleanings.
+  const [only, setOnly] = useState<OwnerFilter>('');
   const [focusKey, setFocusKey] = useState('');
   const [selected, setSelected] = useState(aim.current ? '' : kept?.selected || '');
   const [notice, setNotice] = useState('');
@@ -850,7 +867,7 @@ export function MapHome({ role, accountId, data, menu, chats, onChanged, onOpenP
       }}
     ><LiveMap
         center={center}
-        pins={pins}
+        pins={role === 'owner' ? pins.filter(p => !p.round || ownerShows(p, only)) : pins}
         selected={selected}
         focus={spotted ? spotKey : focus}
         lines={lines}
@@ -883,7 +900,7 @@ export function MapHome({ role, accountId, data, menu, chats, onChanged, onOpenP
             ))}</View></View>
       )}{!!notice && (
         <Text accessibilityLiveRegion="polite" style={h.mapNotice}>{notice}</Text>
-      )}{(role === 'owner' || role === 'guest') && !selected && <PriceTip role={role} cards={data.approvals || []} onChanged={onChanged} onEdit={onEdit} />}{/* Without an account the round slot widens for the «Войти» word. */}{!!menu && !floating && <View style={[h.menu, { width: 'auto' }]}>{menu}</View>}{!!chats && !floating && <View style={h.chats}>{chats}</View>}{floating && <View pointerEvents="box-none" style={h.floatBar}>{floatBar}</View>}{!picking && <MapMood mood={mood} joy={joy} still={calm || quiet} bottom={covered ? cardEdge : sheet} />}<Animated.View style={[h.sheet, snap === 2 && !floating && h.sheetSolid, floating && h.sheetFloat, { height: sheet, opacity: veil }]} accessibilityViewIsModal={false}><View {...drag.handle.panHandlers} style={floating ? h.gone : undefined}><Pressable
+      )}{(role === 'owner' || role === 'guest') && !selected && <PriceTip role={role} cards={data.approvals || []} onChanged={onChanged} onEdit={onEdit} />}{/* Without an account the round slot widens for the «Войти» word. */}{!!menu && !floating && <View style={[h.menu, { width: 'auto' }]}>{menu}</View>}{role === 'owner' && !selected && !picking && pins.filter(p => p.round).length > 1 && <OwnerFilters pins={pins} only={only} onOnly={setOnly} onList={() => setSnap(2)} />}{!!chats && !floating && <View style={h.chats}>{chats}</View>}{floating && <View pointerEvents="box-none" style={h.floatBar}>{floatBar}</View>}{!picking && <MapMood mood={mood} joy={joy} still={calm || quiet} bottom={covered ? cardEdge : sheet} />}<Animated.View style={[h.sheet, snap === 2 && !floating && h.sheetSolid, floating && h.sheetFloat, { height: sheet, opacity: veil }]} accessibilityViewIsModal={false}><View {...drag.handle.panHandlers} style={floating ? h.gone : undefined}><Pressable
             accessibilityRole="button"
             accessibilityLabel={snap === 0 ? tr('Развернуть панель') : tr('Свернуть панель')}
             onPress={() => setSnap(snap === 0 ? 1 : 0)}
@@ -906,4 +923,41 @@ const w = StyleSheet.create({
   tipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   tipButton: { minHeight: T.control.compact, paddingHorizontal: 12, borderRadius: T.radius.full, backgroundColor: C.accentSoft, borderWidth: 1, borderColor: C.accentLine, alignItems: 'center', justifyContent: 'center' },
   tipButtonText: { fontSize: T.font.label[0], lineHeight: T.font.label[1], color: C.accent, fontWeight: '600' }
+});
+
+// ---------- The owner's filter over the map ----------
+type OwnerFilter = '' | 'yours' | 'stay' | 'clean';
+function ownerShows(pin: MapPin, only: OwnerFilter) {
+  const tone = pin.tone || 'home';
+  if (only === 'yours') return !!pin.act || tone === 'pending' || tone === 'alert';
+  if (only === 'stay') return tone === 'booking' || tone === 'booked';
+  if (only === 'clean') return tone === 'job' || tone === 'active';
+  return true;
+}
+// A row of pills under the top buttons, as the filters of Google Maps: a pill shows its count, a second tap shows all.
+function OwnerFilters({ pins, only, onOnly, onList }: { pins: MapPin[]; only: OwnerFilter; onOnly: (v: OwnerFilter) => void; onList: () => void }) {
+  const own = pins.filter(p => p.round);
+  const items: [OwnerFilter, string][] = [['yours', tr('Ждут вас')], ['stay', tr('Живут')], ['clean', tr('Уборка')]];
+  return (
+    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={f.row} contentContainerStyle={f.content} accessibilityRole="tablist">
+      {items.map(([id, title]) => {
+        const n = own.filter(p => ownerShows(p, id)).length, on = only === id;
+        return (
+          <Pressable key={id} accessibilityRole="tab" accessibilityState={{ selected: on }} accessibilityLabel={title + ': ' + n} onPress={() => onOnly(on ? '' : id)} style={({ pressed }) => [f.pill, on && f.pillOn, pressed && { opacity: 0.8 }]}>
+            {id === 'yours' && n > 0 && <View style={f.dot} />}<Text style={[f.text, on && f.textOn]}>{title}{n ? ' · ' + n : ''}</Text>
+          </Pressable>
+        );
+      })}
+      <Pressable accessibilityRole="button" accessibilityLabel={tr('Список: {n}', { n: own.length })} onPress={onList} style={({ pressed }) => [f.pill, pressed && { opacity: 0.8 }]}><Text style={f.text}>{tr('Список')}</Text></Pressable>
+    </ScrollView>
+  );
+}
+const f = StyleSheet.create({
+  row: { position: 'absolute', top: 64, left: 0, right: 0, flexGrow: 0 },
+  content: { paddingHorizontal: 12, gap: 8 },
+  pill: { minHeight: 36, paddingHorizontal: 14, borderRadius: T.radius.full, flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: C.surface, borderWidth: 1, borderColor: C.line, shadowColor: C.ink, shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.12, shadowRadius: 6, elevation: 3 },
+  pillOn: { backgroundColor: C.ink, borderColor: C.ink },
+  text: { fontSize: 14, lineHeight: 20, fontWeight: '600', color: C.ink },
+  textOn: { color: C.surface },
+  dot: { width: 8, height: 8, borderRadius: 4, backgroundColor: C.gold },
 });

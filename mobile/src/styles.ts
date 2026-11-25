@@ -25,7 +25,7 @@ export const s=StyleSheet.create({
   // One opened booking or cleaning: the sheet is as tall as its card, so the map stays in view above it.
   // It must never carry `flex`: on a phone `flex:1` beats `flexBasis:'auto'` (Yoga reads «auto» as «not set»), and the sheet gets no height at all.
   pageSheetFit:{flexGrow:0,flexShrink:1,marginTop:'auto',maxHeight:'92%'},fitScroll:{flexGrow:0,flexShrink:1},fitContent:{flexGrow:0},
-  sheetHead:{minHeight:H.primary,paddingTop:16,paddingBottom:4,paddingLeft:20,paddingRight:8,flexDirection:'row',alignItems:'center',gap:8},sheetGrab:{position:'absolute',top:8,left:'50%',marginLeft:-20,width:40,height:4,borderRadius:R.xs,backgroundColor:C.lineStrong},
+  sheetTitle:{...body,flex:1,textAlign:'center',color:C.ink,fontWeight:'700'},sheetSide:{width:H.touch},sheetHead:{minHeight:H.primary,paddingTop:16,paddingBottom:4,paddingLeft:20,paddingRight:8,flexDirection:'row',alignItems:'center',gap:8},sheetGrab:{position:'absolute',top:8,left:'50%',marginLeft:-20,width:40,height:4,borderRadius:R.xs,backgroundColor:C.lineStrong},
   sheetClose:{width:H.touch,height:H.touch,borderRadius:R.full,alignItems:'center',justifyContent:'center'},sheetCloseText:{width:32,height:32,borderRadius:R.full,backgroundColor:C.surfaceAlt,color:C.ink,textAlign:'center',lineHeight:32,fontSize:16,overflow:'hidden'},
   header:{minHeight:H.primary,paddingVertical:4,paddingLeft:16,paddingRight:8,flexDirection:'row',alignItems:'center',gap:8},
   headerTitle:{...title,...brandFont,color:C.ink},

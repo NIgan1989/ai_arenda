@@ -44,21 +44,19 @@ export function OwnerAnalytics({tint=C.accent}:{tint?:string}){
  const occTone=s.occupancy>=70?C.success:s.occupancy>=40?C.goldInk:C.warning;
  return <View>
   {seg}
-  {/* The hero: night indigo and gold, the colours of the sign. */}
-  <View accessible accessibilityLabel={tr('Чистая прибыль {sum}',{sum:tenge(m.net)})+(net?', '+net+' '+vs:'')} style={st.hero}>
-   <Text style={st.heroLabel}>{tr('Чистая прибыль')}</Text>
-   <Text style={[st.heroValue,m.net<0&&{color:C.dangerSoft}]} adjustsFontSizeToFit numberOfLines={1}>{tenge(m.net)}</Text>
-   <View style={st.heroRow}>{!!net&&<View style={[st.badge,{backgroundColor:(m.change.net||0)>=0?'rgba(34,197,94,.18)':'rgba(239,68,68,.2)'}]}><Text style={[st.badgeText,{color:(m.change.net||0)>=0?C.successSoft:C.dangerSoft}]}>{net} {vs}</Text></View>}{m.margin!==null&&<Text style={st.heroMeta}>{tr('маржа {n}%',{n:m.margin})}</Text>}</View>
-   <View style={st.heroSplit}><View style={{flex:1}}><Text style={st.heroMeta}>{tr('Выручка')}</Text><Text style={st.heroSmall}>{tenge(m.revenue)}{rev?<Text style={st.heroMeta}>  {rev}</Text>:null}</Text></View><View style={{flex:1}}><Text style={st.heroMeta}>{tr('Расходы')}</Text><Text style={st.heroSmall}>{tenge(m.expenses)}</Text></View></View>
-   <View accessibilityLabel={tr('Выручка и чистая прибыль за шесть месяцев')} style={st.chart}>{data.trend.map((t,i)=><View key={t.month} style={st.col}><View style={st.bars}><View style={st.barSlot}><Grow vertical delay={i*60} value={t.revenue/peak} style={st.barRev}/></View><View style={st.barSlot}><Grow vertical delay={i*60+30} value={Math.max(0,t.net)/peak} style={st.barNet}/></View></View><Text style={[st.colLabel,i===5&&{color:C.gold}]}>{monthName(t.month,t.label)}</Text></View>)}</View>
-   <View style={st.legend}><View style={[st.dot,{backgroundColor:'rgba(165,180,252,.55)'}]}/><Text style={st.heroMeta}>{tr('выручка')}</Text><View style={[st.dot,{backgroundColor:C.gold,marginLeft:12}]}/><Text style={st.heroMeta}>{tr('чистыми')}</Text></View>
+  {/* Concept of 2026-11-25: first one big number, then the months as bars, then three rows: stays, cleanings, the
+      service's fee. No tables; the details are in the cards under it. */}
+  <View accessible accessibilityLabel={tr('Чистая прибыль {sum}',{sum:tenge(m.net)})+(net?', '+net+' '+vs:'')} style={st.earned}>
+   <Text accessibilityRole="header" style={st.earnedTitle}>{tr('Вы заработали')}</Text>
+   <Text style={[st.earnedValue,m.net<0&&{color:C.danger}]} adjustsFontSizeToFit numberOfLines={1}>{tenge(m.net)}</Text>
+   <Text style={st.earnedChange}>{[period==='week'?tr('за неделю'):period==='year'?tr('за год'):tr('за месяц'),net?net+' '+vs:''].filter(Boolean).join(' · ')}</Text>
   </View>
-  {/* Four tiles: the numbers an owner asks first. */}
-  <View style={st.tiles}>
-   <View style={st.tile}><Text style={st.tileLabel}>{tc('Загрузка','occupancy')}</Text><Text style={[st.tileValue,{color:occTone}]}>{s.occupancy}%</Text><View style={st.track}><Grow value={s.occupancy/100} style={[st.fill,{backgroundColor:occTone}]}/></View>{!!s.occupancyChange&&<Text style={st.tileNote}>{(s.occupancyChange||0)>0?'+':'−'}{tr('{n} п. {vs}',{n:Math.abs(s.occupancyChange||0),vs})}</Text>}</View>
-   <View style={st.tile}><Text style={st.tileLabel}>{tr('Брони')}</Text><Text style={st.tileValue}>{s.sold}</Text><Text style={st.tileNote}>{s.nights>=1?tr('{nights} сут. · заявок {requests}',{nights:s.nights,requests:s.requests}):tr('{hours} ч · заявок {requests}',{hours:s.hours,requests:s.requests})}</Text></View>
-   <View style={st.tile}><Text style={st.tileLabel}>{tr('Средний чек')}</Text><Text style={st.tileValue}>{s.average?shortTenge(s.average):'—'}</Text><Text style={st.tileNote}>{s.perNight?tr('{v} за сутки',{v:shortTenge(s.perNight)}):tr('за бронь')}</Text></View>
-   <View style={st.tile}><Text style={st.tileLabel}>{tr('Оценка гостей')}</Text><Text style={st.tileValue}>{s.rating?'★ '+String(s.rating).replace('.',','):'—'}</Text><Text style={st.tileNote}>{s.reviews?tr('отзывов {reviews}',{reviews:s.reviews}):tr('отзывов пока нет')}</Text></View>
+  <View accessibilityLabel={tr('Выручка и чистая прибыль за шесть месяцев')} style={st.months}>{data.trend.map((t,i)=><View key={t.month} style={st.col}><View style={st.monthSlot}><Grow vertical delay={i*60} value={Math.max(.04,t.revenue/peak)} style={[st.monthBar,i===5&&{backgroundColor:tint}]}/></View><Text style={[st.colLabel,{color:i===5?C.ink:C.muted}]}>{monthName(t.month,t.label)}</Text></View>)}</View>
+  {/* Three lines and their sums, nothing under them: the details open in the cards below. */}
+  <View style={st.rows}>
+   <View style={st.row}><RowIcon icon="key" tint={C.goldInk}/><Text style={st.rowTitle}>{tr('Заселения')}</Text><Text style={st.rowSum}>{s.sold}</Text></View>
+   <View style={st.row}><RowIcon icon="sparkles" tint={C.aiTo}/><Text style={st.rowTitle}>{tr('Уборки')}</Text><Text style={st.rowSum}>{tenge(m.cleaning)}</Text></View>
+   <View style={[st.row,st.rowLast]}><RowIcon icon="file" tint={C.accent}/><Text style={st.rowTitle}>{tr('Комиссия сервиса')}</Text><Text style={st.rowSum}>{tenge(m.commission)}</Text></View>
   </View>
   {/* The AI reads the numbers and says what to do: rules, one line each. */}
   {data.advice.length>0&&<View style={st.advice}><View style={{flexDirection:'row',alignItems:'center',gap:8}}><RowIcon icon="sparkles" tint={C.aiTo}/><Text style={st.adviceTitle}>{tr('Совет ИИ')}</Text></View>{data.advice.map(a=><Text key={a} style={st.adviceText}>{a}</Text>)}</View>}
@@ -83,6 +81,9 @@ export function OwnerAnalytics({tint=C.accent}:{tint?:string}){
 }
 
 const st=StyleSheet.create({
+ earned:{gap:4,marginTop:16},earnedTitle:{...type.title,fontSize:28,lineHeight:36,fontWeight:'800',color:C.ink},earnedValue:{...type.title,fontSize:40,lineHeight:48,fontWeight:'800',color:C.accent,fontVariant:['tabular-nums']},earnedChange:{...type.label,color:C.muted},
+ months:{flexDirection:'row',alignItems:'stretch',gap:8,height:150,marginTop:16},monthSlot:{flex:1,alignSelf:'stretch',justifyContent:'flex-end'},monthBar:{width:'100%',borderRadius:8,backgroundColor:C.accentSoft},
+ rows:{marginTop:16,paddingHorizontal:16,borderRadius:T.radius.lg,backgroundColor:C.surface,borderWidth:1,borderColor:C.line},row:{flexDirection:'row',alignItems:'center',gap:12,paddingVertical:12,borderBottomWidth:1,borderBottomColor:C.line},rowLast:{borderBottomWidth:0},rowText:{flex:1,gap:2},rowTitle:{...type.body,flex:1,color:C.ink,fontWeight:'600'},rowSum:{...type.body,color:C.ink,fontWeight:'700',fontVariant:['tabular-nums']},rowNote:{...type.caption,color:C.muted},
  seg:{flexDirection:'row',padding:4,borderRadius:T.radius.md,backgroundColor:C.surfaceAlt,marginBottom:12},segItem:{flex:1,minHeight:36,borderRadius:T.radius.sm,alignItems:'center',justifyContent:'center'},segOn:{backgroundColor:C.surface},segText:{...type.label,color:C.muted,fontWeight:'500'},segTextOn:{color:C.ink,fontWeight:'600'},
  hero:{borderRadius:T.radius.xl,padding:20,backgroundColor:C.night,overflow:'hidden'},
  heroLabel:{...type.caption,color:'rgba(255,255,255,.7)',letterSpacing:1,textTransform:'uppercase'},

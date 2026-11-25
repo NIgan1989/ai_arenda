@@ -215,18 +215,19 @@ export function jobThread(j: Row, data: Row, now: number): ProcessThread {
 
 const RECENT = 6 * 3600, AHEAD = 3 * DAY;
 // Дела, которые видны в блоке: идущие, ближайшие три дня и законченные за последние шесть часов.
-const visible = (start: number, end: number, finished: boolean, now: number) => finished ? end > now - RECENT : start < now + AHEAD || end <= now + AHEAD;
+const visible = (start: number, end: number, finished: boolean, now: number, ahead = AHEAD) => finished ? end > now - RECENT : start < now + ahead || end <= now + ahead;
 const order = (a: ProcessThread, b: ProcessThread) =>
   Number(b.yours) - Number(a.yours) || Number(a.finished) - Number(b.finished)
   || Number(b.steps[b.current]?.state === 'now') - Number(a.steps[a.current]?.state === 'now') || a.at - b.at;
 
-export function ownerThreads(data: Row | null | undefined, now: number): ProcessThread[] {
+// ahead: how far forward the deals are shown; the owner's day feed («Скоро») looks a week ahead.
+export function ownerThreads(data: Row | null | undefined, now: number, ahead = AHEAD): ProcessThread[] {
   const userId = data?.user?.id;
   if (!userId) return [];
   const bookings = (data!.bookings || []).filter((b: Row) => b.owner_id === userId && ['requested', 'confirmed', 'completed'].includes(b.status))
-    .map((b: Row) => ({ b, t: bookingThread(b, data!, now) })).filter(({ b, t }: Row) => visible(b.start, Number(b.terms?.actual_checkout) || b.end, t.finished, now)).map(({ t }: Row) => t);
+    .map((b: Row) => ({ b, t: bookingThread(b, data!, now) })).filter(({ b, t }: Row) => visible(b.start, Number(b.terms?.actual_checkout) || b.end, t.finished, now, ahead)).map(({ t }: Row) => t);
   const jobs = (data!.jobs || []).filter((j: Row) => j.owner_id === userId && j.status !== 'cancelled')
-    .map((j: Row) => ({ j, t: cleaningThread(j, data!, now) })).filter(({ j, t }: Row) => visible(j.start, Number(j.completed_at) || j.end, t.finished, now)).map(({ t }: Row) => t);
+    .map((j: Row) => ({ j, t: cleaningThread(j, data!, now) })).filter(({ j, t }: Row) => visible(j.start, Number(j.completed_at) || j.end, t.finished, now, ahead)).map(({ t }: Row) => t);
   // Money owed to a guest after a cancellation stays in front of the owner until it is marked returned.
   const refunds = (data!.bookings || []).filter((b: Row) => b.owner_id === userId).map((b: Row) => refundThread(b, now)).filter(Boolean) as ProcessThread[];
   return [...refunds, ...bookings, ...jobs].sort(order);
