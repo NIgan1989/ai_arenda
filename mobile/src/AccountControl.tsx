@@ -5,20 +5,23 @@ import {journalToday} from '../../lib/ai-move-marks';
 import {ThinkingLine} from './Thinking';
 import {NativeAccountSafety,safetyTitles,type SafetyPage} from './AccountSafety';
 import React,{useEffect,useState} from 'react';
-import {View,Text,TextInput,Pressable,Linking} from 'react-native';
+import {View,Text,TextInput,Pressable,Linking,StyleSheet} from 'react-native';
 import {ProfileEditor} from './ProfileEditor';
 import {LangSwitch} from './LangSwitch';
+import {useLang} from './lang';
+import {LANGS} from '../../lib/i18n';
 import {Photo} from './ListingMedia';
 import {Choice,Group,Row,RowIcon,SwitchRow,a,menuInk,type MenuIcon} from './AccountRows';
 import {ProfileRing} from './ProfileRing';
 import {experienceFor,joinTitle} from '../../lib/role-experience';
 import {ReliabilityBadge,reliabilityHints} from './Reliability';
+import {tLine} from '../../lib/i18n';
 import {ReliabilityObjection} from './ReliabilityObjection';
 import {NativeTelegram} from './NativeTelegram';
 import {NativePush} from './NativePush';
 import {NativeAutopilotPlan,NativePayWay} from './AutopilotPlan';
 import {NativeDecisionRules} from './DecisionRules';
-import {NoticeList} from './Notices';
+import {NoticeList,type NoticeWaiting} from './Notices';
 import {eventsToday,roleEvents} from '../../lib/notice-feed';
 import {request,API_URL} from './api';
 import {roleNames,rolePages} from './RoleEntry';
@@ -31,7 +34,9 @@ import {AdminFactor} from './AdminFactor';
 import {BypassWatch} from './BypassWatch';
 import {ServiceBilling} from './ServiceBilling';
 import {AutopilotWeek} from './AutopilotWeek';
-import {s,C} from './styles';
+import {s,C,type} from './styles';
+import {T} from './tokens';
+import {LABELS as TRUST_LABELS} from './Reliability';
 import type {Row as Data,Role} from './model';
 type Row_=Data;
 const money=(n:number)=>new Intl.NumberFormat('ru-RU').format(n||0).replace(/\s/g,' ')+' ₸';
@@ -47,11 +52,13 @@ const shortRole:Record<Role,string>=L({guest:'Гость',owner:'Владеле�
 // money: the owner's business numbers, «Доходы» (OwnerAnalytics.tsx); the row shows the month's net profit.
 // settings: channels, the bank, privacy, and inside it the data and safety pages and joining another role.
 type MenuView=''|'money'|'notices'|'autopilot'|'profile'|'settings'|'safety'|`safety:${Exclude<SafetyPage,''>}`|'shift'|'payout'|'billing';
-export function AccountControl({jobs=[],userId='',role:active,staffPlaces=0,notices,onOpenNotice,start,onChanged,onSignedOut,onSwitchRole,onPickRole,onJoinRole,onAskAdministrator,onLogout,onOpenPage,onOpenEntry}:{jobs?:Data[];userId?:string;staffPlaces?:number;notices?:Data[];onOpenNotice?:(notice:Data)=>(()=>void)|undefined;start?:'notices'|'billing'|'payout';onPickRole?:(role:Role)=>void;onJoinRole?:(role:Role)=>void;onAskAdministrator?:()=>void;onOpenPage?:(id:string)=>void;onOpenEntry?:(open:JournalOpen)=>(()=>void)|undefined;role:Role;onEdit:()=>void;onChanged?:()=>Promise<unknown>;onSignedOut:(result?:Row_)=>void|Promise<void>;onSwitchRole?:()=>void;onLogout?:()=>void}){
- const [view,setView]=useState<MenuView>(start||''),[editing,setEditing]=useState(false),[readUpTo,setReadUpTo]=useState(0);
+export function AccountControl({waiting=[],jobs=[],userId='',role:active,staffPlaces=0,notices,onOpenNotice,start,onChanged,onSignedOut,onSwitchRole,onPickRole,onJoinRole,onAskAdministrator,onLogout,onOpenPage,onOpenEntry}:{waiting?:NoticeWaiting[];jobs?:Data[];userId?:string;staffPlaces?:number;notices?:Data[];onOpenNotice?:(notice:Data)=>(()=>void)|undefined;start?:'notices'|'billing'|'payout';onPickRole?:(role:Role)=>void;onJoinRole?:(role:Role)=>void;onAskAdministrator?:()=>void;onOpenPage?:(id:string)=>void;onOpenEntry?:(open:JournalOpen)=>(()=>void)|undefined;role:Role;onEdit:()=>void;onChanged?:()=>Promise<unknown>;onSignedOut:(result?:Row_)=>void|Promise<void>;onSwitchRole?:()=>void;onLogout?:()=>void}){
+ const [view,setView]=useState<MenuView>(start||''),[editing,setEditing]=useState(false),[readUpTo,setReadUpTo]=useState(0),[langOpen,setLangOpen]=useState(false),lang=useLang();
+ // What was new when «Уведомления» opened keeps its dot while the page is open, though the opening marks it read.
+ const [freshIds,setFreshIds]=useState<string[]>([]);
  // Every opening of «Уведомления» marks what is there as read: the counter in the menu then shows only what came after.
  // A failed mark is not repeated on its own; the next opening sends it again.
- useEffect(()=>{if(view!=='notices')return;setReadUpTo(Math.max(0,...(notices||[]).map(n=>Number(n.created_at)||0)));request('/api/notifications',{}).catch(()=>{});},[view]); // eslint-disable-line react-hooks/exhaustive-deps
+ useEffect(()=>{if(view!=='notices')return;setFreshIds((notices||[]).filter(n=>!Number(n.read)&&Number(n.created_at)>readUpTo).map(n=>String(n.id)));setReadUpTo(Math.max(0,...(notices||[]).map(n=>Number(n.created_at)||0)));request('/api/notifications',{}).catch(()=>{});},[view]); // eslint-disable-line react-hooks/exhaustive-deps
  const [account,setAccount]=useState<Row_|null>(null),[busy,setBusy]=useState(false),[error,setError]=useState(''),[message,setMessage]=useState(''),[users,setUsers]=useState<Row_|null>(null),[role,setRole]=useState(''),[search,setSearch]=useState(''),[finding,setFinding]=useState(false);
  // «Реквизиты для оплаты» (PayoutDetails.tsx): where guests and customers transfer money directly.
  const [payout,setPayout]=useState<Payout|null>(null),[payoutPending,setPayoutPending]=useState<PendingPayout|null>(null);
@@ -84,18 +91,28 @@ export function AccountControl({jobs=[],userId='',role:active,staffPlaces=0,noti
  const titles={payout:t('Реквизиты для оплаты'),billing:t('Оплата услуг'),money:worker?t('Заработок'):t('Доходы'),shift:t('Смена'),notices:t('Уведомления'),autopilot:t('Автопилот'),profile:t(experience.profileTitle),settings:t('Настройки'),safety:t('Данные и безопасность')};
  const clock=account.serverTime||Date.now()/1000,events=roleEvents(notices,active),eventsNow=eventsToday(events.filter(n=>!Number(n.read)&&Number(n.created_at)>readUpTo),clock),trust=String(account.reliability?.label||'').replace(/^Надёжность\s+/,'');
  const hint=steps.length>0&&<Pressable accessibilityRole="button" onPress={edit} style={a.next}><RowIcon icon="sparkles" tint={C.aiTo}/><View style={{flex:1}}><Text style={a.title}>{steps[0]}</Text>{steps.length>1&&<Text style={a.note}>{t('и ещё {n} {word} до полного профиля',{n:steps.length-1,word:plural(steps.length-1,['шаг','шага','шагов'],['step','steps'],'қадам')})}</Text>}</View><Text style={[a.chevron,{color:C.ink}]}>›</Text></Pressable>;
+ const since=Number(p.created_at)?new Date(Number(p.created_at)*1000).getUTCFullYear():0,trustValue=account.reliability as {score:number|null;label:string;facts:string[];identity?:boolean}|undefined;
+ const reputation=[trustValue?.score!=null?'★ '+trustValue.score.toFixed(1).replace('.',','):trustValue?.label?(TRUST_LABELS.includes(trustValue.label)?t(trustValue.label):trustValue.label):'',trustValue?.facts?.[0]?tLine(trustValue.facts[0]):'',since?t('с {year} года',{year:since}):''].filter(Boolean).join(' · ')||p.city||'';
+ const idOk=!!(trustValue?.identity??account.identity?.checked);
+ // The pages of the role that are not in the sheet of the map (the guest's search and bookings, the owner's objects and
+ // the cleaner's search for jobs live there) close the first group, as the concept keeps the menu to two groups.
+ const more=onOpenPage?rolePages[active].filter(v=>!['map','account','chats','overview',...(active==='guest'?['catalog','bookings','calendar']:active==='owner'?['properties']:['jobs'])].includes(v.id)):[];
+ // The other mode in one button at the bottom, as Airbnb's «Switch to hosting»: the guest goes to the owner, the others to the guest.
+ const other:Role=active==='guest'?'owner':'guest',toOther=roles.includes(other)?(onPickRole?()=>onPickRole(other):onSwitchRole):onJoinRole?()=>onJoinRole(other):undefined;
  return <View>
   {!!view&&(()=>{const sub=view.startsWith('safety:'),title=sub?safetyTitles[view.slice(7) as Exclude<SafetyPage,''>]:titles[view as keyof typeof titles];return <View style={{flexDirection:'row',alignItems:'center',gap:4,minHeight:44,marginBottom:4}}><Pressable accessibilityRole="button" accessibilityLabel={sub?t('Назад: Данные и безопасность'):view==='safety'||view==='payout'||view==='billing'?t('Назад: Настройки'):t('Назад в меню')} hitSlop={8} onPress={()=>go(sub?'safety':view==='safety'||view==='payout'||view==='billing'?'settings':'')} style={{width:44,height:44,marginLeft:-12,alignItems:'center',justifyContent:'center'}}><Text style={{fontSize:28,lineHeight:32,color:C.ink}}>‹</Text></Pressable><Text accessibilityRole="header" style={[a.name,{fontSize:22,lineHeight:28,flex:1}]}>{title}</Text></View>;})()}
-  {!view&&<><View style={a.head}><ProfileRing photoId={p.avatar_id} name={p.name} progress={completion/100} ink={ink} onPress={edit}/><View style={{flex:1,minWidth:0}}><Text style={a.name}>{p.name||t('Мой профиль')}</Text><Text style={s.meta}>{p.city||t('Город не указан')} · {completion<100?t('профиль на {completion}%',{completion}):t('профиль заполнен')}</Text></View><Pressable accessibilityRole="button" onPress={edit} style={a.edit}><Text style={a.editText}>{t('Изменить')}</Text></Pressable></View>
-  {roles.length>1&&!!onPickRole&&<View accessibilityRole="tablist" accessibilityLabel={t('Роль')} style={[a.seg,{marginTop:16,padding:4,borderRadius:12}]}>{(['guest','owner','cleaner'] as Role[]).filter(r=>roles.includes(r)).map(r=><Pressable key={r} accessibilityRole="tab" accessibilityState={{selected:r===active}} onPress={()=>{if(r!==active)onPickRole(r);}} style={[a.segItem,{flex:1,minHeight:40,alignItems:'center'},r===active&&a.segOn]}><Text style={[a.segText,{fontWeight:'600'},r===active&&a.segTextOn]}>{shortRole[r]}</Text></Pressable>)}</View>}</>}
+  {/* As in the concept (Airbnb's profile): you in the middle, your reputation in one line and whether your ID is confirmed. */}
+  {!view&&<View style={m.hero}><ProfileRing photoId={p.avatar_id} name={p.name} progress={completion/100} ink={ink} onPress={edit}/><Text accessibilityRole="header" numberOfLines={2} style={m.name}>{p.name||t('Мой профиль')}</Text><Text numberOfLines={2} style={m.line}>{reputation}</Text>
+   <Pressable accessibilityRole="button" accessibilityLabel={idOk?t('✓ Личность подтверждена'):t('Личность не подтверждена')+'. '+t(experience.profileTitle)} disabled={idOk} onPress={()=>go('profile')} style={[m.id,idOk&&m.idOk]}><Text style={[m.idText,idOk&&m.idTextOk]}>{idOk?t('✓ Личность подтверждена'):t('Личность не подтверждена')}</Text></Pressable>
+   <Pressable accessibilityRole="button" accessibilityLabel={t('Изменить профиль')} onPress={edit} style={({pressed})=>[a.edit,m.edit,pressed&&a.pressed]}><Text style={a.editText}>{t('Изменить')}</Text></Pressable></View>}
   {!!error&&<Text accessibilityRole="alert" style={s.error}>{error}</Text>}{!!message&&<Text accessibilityLiveRegion="polite" style={a.saved}>{message}</Text>}
   {!view&&!!bill&&!bill.card&&(bill.due>0||bill.paused)&&<Pressable accessibilityRole="button" onPress={()=>go('billing')} style={[a.next,{marginTop:16}]}><RowIcon icon="wallet" tint={C.warning}/><View style={{flex:1}}><Text style={a.title}>{t('Привяжите карту для оплаты сервиса')}</Text><Text style={a.note}>{bill.paused?t('Новые брони и «Автопилот» на паузе до оплаты {v}.',{v:money(bill.due)}):bill.payBy?t('К оплате {v}. Привяжите до {date}, иначе будет пауза.',{v:money(bill.due),date:dateText(bill.payBy*1000,{timeZone:'Asia/Qyzylorda',day:'numeric',month:'long'})}):t('К оплате {v}. Спишется в понедельник.',{v:money(bill.due)})}</Text></View><Text style={[a.chevron,{color:C.ink}]}>›</Text></Pressable>}
-  {!view&&<Group space>{worker&&<SwitchRow icon="briefcase" tint={ink} title={t('Принимаю предложения')} note={/^(Принимает|Не принимает)/.test(account.workerStatus?.label||'')?undefined:t(account.workerStatus?.label||'')} checked={(p.work_status||'available')==='available'} disabled={busy} onChange={work}/>}{staffPlaces>0&&<Row icon="key" tint={ink} title={t('Смена')} value={staffPlaces===1?t('гости сегодня'):t('объектов: {staffPlaces}',{staffPlaces})} onPress={()=>go('shift')}/>}{worker&&<Row icon="chart" tint={ink} title={t('Заработок')} value={t('{v} за неделю',{v:shortTenge(cleanerWeek(jobs,userId,Date.now()/1000).sum)})} onPress={()=>go('money')}/>}{owner&&<Row icon="chart" tint={ink} title={t('Доходы')} value={netMonth===null?undefined:t('{v} за месяц',{v:((netMonth>0?'+':'')+shortTenge(netMonth))})} onPress={()=>go('money')}/>}<Row icon="bell" tint={ink} title={t('Уведомления')} value={eventsNow?t('{eventsNow} новых',{eventsNow}):undefined} onPress={()=>go('notices')}/><Row icon="sparkles" tint={ink} title={t('Автопилот')} value={today?t('ИИ: {today} сегодня',{today}):undefined} onPress={()=>go('autopilot')}/><Row icon="user" tint={ink} title={t(experience.profileTitle)} value={completion<100?completion+'%':trust||t('заполнен')} onPress={()=>go('profile')}/></Group>}
+  {!view&&<Group space>{worker&&<SwitchRow icon="briefcase" tint={ink} title={t('Принимаю предложения')} note={/^(Принимает|Не принимает)/.test(account.workerStatus?.label||'')?undefined:t(account.workerStatus?.label||'')} checked={(p.work_status||'available')==='available'} disabled={busy} onChange={work}/>}{staffPlaces>0&&<Row icon="key" tint={ink} title={t('Смена')} value={staffPlaces===1?t('гости сегодня'):t('объектов: {staffPlaces}',{staffPlaces})} onPress={()=>go('shift')}/>}{worker&&<Row icon="chart" tint={ink} title={t('Заработок')} value={t('{v} за неделю',{v:shortTenge(cleanerWeek(jobs,userId,Date.now()/1000).sum)})} onPress={()=>go('money')}/>}{owner&&<Row icon="chart" tint={ink} title={t('Доходы')} value={netMonth===null?undefined:t('{v} за месяц',{v:((netMonth>0?'+':'')+shortTenge(netMonth))})} onPress={()=>go('money')}/>}{active==='guest'&&!!onOpenPage&&<Row icon="bookings" tint={ink} title={t('Мои брони')} onPress={()=>onOpenPage('bookings')}/>}<Row icon="sparkles" tint={ink} title={t('Автопилот')} value={today?t('ИИ: {today} сегодня',{today}):undefined} onPress={()=>go('autopilot')}/><Row icon="user" tint={ink} title={t(experience.profileTitle)} value={completion<100?completion+'%':trust||t('заполнен')} onPress={()=>go('profile')}/>{more.map(v=><Row key={v.id} icon={v.id as MenuIcon} tint={ink} title={v.title} onPress={()=>onOpenPage?.(v.id)}/>)}</Group>}
   {view==='shift'&&<Shift/>}
   {view==='payout'&&active!=='guest'&&<PayoutForm initial={payout} pending={payoutPending} role={active} onSaved={(v,next)=>{if(v)setPayout(v);setPayoutPending(next);void onChanged?.();}}/>}
   {view==='billing'&&active!=='guest'&&<ServiceBilling key={'billing:'+active} role={active}/>}
   {view==='money'&&(worker?<CleanerEarnings jobs={jobs} userId={userId} now={Date.now()/1000}/>:<OwnerAnalytics tint={ink}/>)}
-  {view==='notices'&&<Group><NativePush key={'push:'+active} role={active} tint={ink} invite/><NativeTelegram tint={ink} invite/><NoticeList list={events} now={clock} onOpen={n=>active!=='guest'&&String(n.dedupe||'').startsWith('service:')&&!String(n.dedupe).startsWith('service:bypass-warning:')?()=>go('billing'):onOpenNotice?.(n)}/></Group>}
+  {view==='notices'&&<><View style={m.invites}><NativePush key={'push:'+active} role={active} tint={ink} invite/><NativeTelegram tint={ink} invite/></View><NoticeList list={events} now={clock} waiting={waiting} fresh={n=>freshIds.includes(String(n.id))} onOpen={n=>active!=='guest'&&String(n.dedupe||'').startsWith('service:')&&!String(n.dedupe).startsWith('service:bypass-warning:')?()=>go('billing'):onOpenNotice?.(n)}/></>}
   {view==='autopilot'&&<>{owner&&<View style={{marginBottom:16}}><AutopilotWeek/></View>}{owner&&<NativePayWay key={'pay:'+active} role="owner"/>}<Group title={t('Что сделал ИИ')}><AiJournal entries={journal} now={clock} onOpen={onOpenEntry}/></Group>{worker?<NativeAutopilotPlan key={'plan:'+active} role="cleaner"/>:<NativeDecisionRules key={'rules:'+active} tint={ink}/>}</>}
   {view==='profile'&&<>{hint}<Group space={!!hint}>{item('user',t('О себе'),p.bio)}{item('languages',t('Языки общения'),p.languages)}{item('pin',t(experience.cityLabel),p.city)}{worker&&<>{item('map',t('Районы работы'),p.districts)}{item('clock',t('График'),p.availability)}{item('badge',t('Опыт и услуги'),p.experience)}</>}{item('phone',t('Телефон'),p.contact)}</Group>{!!account.reliability&&<><View style={{height:16}}/><ReliabilityBadge value={account.reliability} title={owner?t('Как вас видят гости'):t('Как вас видят владельцы')}/><Group title={t('Как повысить надёжность')}>{(reliabilityHints[active]||[]).map(h=><View key={h} style={a.row}><RowIcon icon="check" tint={ink}/><Text style={[a.title,a.wide]}>{h}</Text></View>)}</Group><ReliabilityObjection role={active}/></>}<IdentityDocs role={active}/></>}
   {view==='settings'&&<>
@@ -107,12 +124,25 @@ export function AccountControl({jobs=[],userId='',role:active,staffPlaces=0,noti
    <Text style={a.footnote}>{t('Если скрыть своё, вы тоже не увидите «в сети» и прочтение у собеседника.')}</Text>
    <Group title={t('Аккаунт')}><Row icon="lock" tint={ink} title={t('Данные и безопасность')} onPress={()=>go('safety')}/>{join.map(v=><Row key={v} icon="plus" tint={ink} title={t(joinTitle(v))} onPress={()=>onJoinRole?.(v)}/>)}</Group></>}
   {(view==='safety'||view.startsWith('safety:'))&&<NativeAccountSafety tint={ink} role={active} admin={!!account.adminVerified} page={view.startsWith('safety:')?view.slice(7) as SafetyPage:''} go={p=>go(p?`safety:${p}` as MenuView:'safety')} onSignedOut={onSignedOut}/>}
-  {!view&&<>{(()=>{/* The guest's search, its results and the bookings live in the sheet of the map; so do the owner's objects and the cleaner's search for jobs. */const more=onOpenPage?rolePages[active].filter(v=>!['map','account','chats','overview',...(active==='guest'?['catalog','bookings','calendar']:active==='owner'?['properties']:['jobs'])].includes(v.id)):[];return more.length>0&&<Group title={t('Разделы')}>{more.map(v=><Row key={v.id} icon={v.id as MenuIcon} tint={ink} title={v.title} onPress={()=>onOpenPage?.(v.id)}/>)}</Group>;})()}
-  <Group title={t('Язык')}><View style={[a.row,{paddingHorizontal:8}]}><View style={{flex:1}}><LangSwitch label={t('Язык')}/></View></View></Group>
-  <Group space><Row icon="sliders" tint={ink} title={t('Настройки')} onPress={()=>go('settings')}/>{!!onAskAdministrator&&<Row icon="messages" tint={ink} title={t('Помощь')} value={t('ИИ-администратор')} onPress={onAskAdministrator}/>}{account.platformAdmin&&<Row icon="shield" tint={ink} title={t('Управление сервисом')} note={t('Пользователи, проверки, обращения')} onPress={()=>void Linking.openURL(API_URL+'/admin').catch(()=>undefined)}/>}{!onPickRole&&!!onSwitchRole&&roles.length>1&&<Row icon="users" tint={ink} title={t('Сменить роль')} value={shortRole[active]} onPress={onSwitchRole}/>}{!!onLogout&&<Row icon="logout" title={t('Выйти из аккаунта')} danger onPress={onLogout}/>}</Group>
+  {!view&&<>
+  <Group space><Row icon="bell" tint={ink} title={t('Уведомления')} value={eventsNow?t('{eventsNow} новых',{eventsNow}):undefined} onPress={()=>go('notices')}/><Row icon="languages" tint={ink} title={t('Язык')} value={LANGS.find(l=>l.id===lang)?.title} open={langOpen} onPress={()=>setLangOpen(v=>!v)}/>{langOpen&&<View style={[a.row,{paddingHorizontal:8}]}><View style={{flex:1}}><LangSwitch label={t('Язык')}/></View></View>}<Row icon="sliders" tint={ink} title={t('Настройки')} onPress={()=>go('settings')}/>{!!onAskAdministrator&&<Row icon="messages" tint={ink} title={t('Помощь')} value={t('ИИ-администратор')} onPress={onAskAdministrator}/>}{account.platformAdmin&&<Row icon="shield" tint={ink} title={t('Управление сервисом')} note={t('Пользователи, проверки, обращения')} onPress={()=>void Linking.openURL(API_URL+'/admin').catch(()=>undefined)}/>}{!onPickRole&&!!onSwitchRole&&roles.length>1&&<Row icon="users" tint={ink} title={t('Сменить роль')} value={shortRole[active]} onPress={onSwitchRole}/>}{!!onLogout&&<Row icon="logout" title={t('Выйти из аккаунта')} danger onPress={onLogout}/>}</Group>
   {account.platformAdmin&&!account.adminVerified&&<Group space><AdminFactor tint={ink} onVerified={()=>void request('/api/account').then(setAccount).catch(()=>undefined)}/></Group>}
   {account.platformAdmin&&account.adminVerified&&<Group space><BypassWatch tint={ink}/></Group>}
   {account.platformAdmin&&account.adminVerified&&<Group space><Row icon="users" tint={ink} title={t('Поиск пользователей')} open={finding} onPress={()=>setFinding(v=>!v)}/>{finding&&<View style={a.body}><Text style={s.meta}>{t('Поиск пользователей доступен только администратору. Просмотр записывается в журнал.')}</Text><Choice title={t('Роль')} value={role} options={[['',t('Все')],['guest',t('Гости')],['owner',t('Владельцы')],['cleaner',t('Исполнители')]]} onChange={setRole}/><Text style={s.fieldLabel}>{t('Имя или контакт')}</Text><TextInput accessibilityLabel={t('Имя или контакт')} value={search} onChangeText={setSearch} maxLength={100} style={s.field}/>{button(t('Показать пользователей'),()=>list())}{users&&<><Text style={s.meta}>{t('Найдено: {n}',{n:users.total})}</Text>{users.users.map((u:Row_)=><View style={s.card} key={u.id}><Text style={s.eventTitle}>{u.name}</Text><Text style={s.meta}>{u.roles.map((r:Role)=>roleNames[r]).join(', ')}{'\n'}{u.city} · {u.contact}{'\n'}{t('Объекты: {properties} · брони: {bookings} · уборки: {jobs}',{properties:u.property_count,bookings:u.booking_count,jobs:u.assignment_count})}</Text></View>)}<View style={{flexDirection:'row',gap:8}}><View style={{flex:1}}>{button(t('Назад'),()=>list(users.page-1),busy||users.page===0)}</View><View style={{flex:1}}>{button(t('Далее'),()=>list(users.page+1),busy||(users.page+1)*users.limit>=users.total)}</View></View></>}</View>}</Group>}
-  {roles.length>1&&<Text style={a.footnote}>{t('Имя и фото общие для всех ваших ролей.')}</Text>}</>}
+  {!!toOther&&<Pressable accessibilityRole="button" onPress={toOther} style={({pressed})=>[m.mode,pressed&&a.pressed]}><Text style={m.modeText}>{other==='owner'?t('Перейти в режим владельца'):t('Перейти в режим гостя')}</Text></Pressable>}
+  {roles.length>1&&<Text style={[a.footnote,{textAlign:'center'}]}>{t('Имя и фото общие для всех ваших ролей.')}</Text>}</>}
  </View>;
 }
+const m=StyleSheet.create({
+ hero:{alignItems:'center',gap:4,paddingTop:4},
+ invites:{borderRadius:T.radius.lg,overflow:'hidden',backgroundColor:C.surface},
+ name:{...type.title,color:C.ink,fontWeight:'800',textAlign:'center',marginTop:8},
+ line:{...type.label,color:C.muted,textAlign:'center'},
+ id:{marginTop:4,minHeight:28,paddingHorizontal:12,borderRadius:T.radius.full,justifyContent:'center',backgroundColor:C.surfaceAlt},
+ idOk:{backgroundColor:C.successSoft},
+ idText:{...type.caption,color:C.muted,fontWeight:'600'},
+ idTextOk:{color:C.success},
+ edit:{position:'absolute',top:0,right:0},
+ mode:{alignSelf:'center',minHeight:T.control.primary,marginTop:24,paddingHorizontal:24,borderRadius:T.radius.full,alignItems:'center',justifyContent:'center',backgroundColor:C.night},
+ modeText:{...type.label,color:C.onAccent,fontWeight:'700'},
+});
