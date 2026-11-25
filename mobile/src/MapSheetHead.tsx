@@ -25,8 +25,9 @@ type Props = {
   // so a guest who has searched can still switch to a bath, a hall or a cleaning.
   quick?: boolean;
   busy?: boolean;
-  // Guest only: the conditions the search will use, as tokens (GuestTokens.tsx).
-  conditions?: ReactNode;
+  // Guest only: the conditions the search will use, as tokens (GuestTokens.tsx). As a function it takes the category
+  // button and the row of chips is gone: the button stands at the start of the plate «где · когда» (concept of 2026-11-25).
+  conditions?: ReactNode | ((category: ReactNode) => ReactNode);
   now: NowCardModel | null;
   onNow: () => void;
   // A number on a chip: what waits behind it (the owner's «Заявки»: guests' requests and cleaners' responses).
@@ -49,7 +50,7 @@ type Props = {
 
 // The default state of the bottom sheet: one AI line, a row of chips and the "Сейчас" card when there is one.
 export function MapSheetHead({ role, text, onText, onSend, onChip, chips = true, quick = true, busy = false, conditions, now, onNow, counts, category = 'stay', kind = '', choice, onKind, onService, onPicker, recent = '', children }: Props) {
-  const line = headLine(role, Date.now(), category);
+  const line = headLine(role, Date.now(), category), inPlate = typeof conditions === 'function';
   // The picker takes the place of the chips: a list of the categories, one of them opened; a tap on a type chooses and closes.
   const [picking, setPicking] = useState(false);
   const picker = !!onKind && chips && picking;
@@ -57,6 +58,7 @@ export function MapSheetHead({ role, text, onText, onSend, onChip, chips = true,
   const [opened, setOpened] = useState<Category | null>(category);
   const show = (open: boolean) => { if (open) setOpened(category); setPicking(open); onPicker?.(open); };
   const pick = (to: Category, id: string | null) => { show(false); onKind?.(to, id); };
+  const catButton = !!onKind && !!choice ? <Pressable accessibilityRole="button" accessibilityLabel={t('Категория: {title}. Выбрать',{title:choice.title})} accessibilityState={{ expanded: false }} disabled={busy} onPress={() => show(true)} style={({ pressed }) => [s.chip, s.catChip, inPlate && s.catSmall, pressed && s.chipPressed]}><KindIcon id={choice.id} size={18} color={C.accentPressed} />{!inPlate && <Text style={s.catText}>{choice.title}</Text>}<Image source={chevron} style={s.catChevron} accessibilityIgnoresInvertColors /></Pressable> : null;
   return (
     <View style={s.head}><AiLine value={text} onChangeText={onText} onSend={onSend} busy={busy} placeholder={recent || line.placeholder} shortPlaceholder={recent || line.shortPlaceholder} label={line.label} />{/* The chips of every role fit one row of a 360px phone; the row still scrolls for a larger system font. */}{picker && <View style={s.picker}><View style={s.pickerHead}><Text accessibilityRole="header" style={s.pickerTitle}>{t('Что ищете')}</Text><Pressable accessibilityRole="button" accessibilityLabel={t('Закрыть выбор категории')} onPress={() => show(false)} hitSlop={8} style={s.pickerClose}><Text style={s.pickerCloseText}>✕</Text></Pressable></View>{/* A list that opens: one row per category, only the opened one shows its types. */}{CATEGORIES.map((c, at) => {
           const open = c.id === opened, chosen = c.id === category;
@@ -68,8 +70,8 @@ export function MapSheetHead({ role, text, onText, onSend, onChip, chips = true,
                   );
                 })}</View>}</View>
           );
-        })}{!!onService && <View style={[s.group, s.groupNext]}><Pressable accessibilityRole="button" accessibilityLabel={t('Уборка: закажите уборку у себя дома')} disabled={busy} onPress={() => { show(false); onService(); }} style={({ pressed }) => [s.groupHead, pressed && s.groupPressed]}><KindIcon id="cleaning" size={18} color={C.inkSoft} /><Text style={s.groupTitle}>{t('Уборка')}</Text><Text numberOfLines={1} style={s.groupHint}>{t('у вас дома, по вашей цене')}</Text>{/* This row does not open a list, it leads to the order: the arrow looks forward. */}<Image source={chevron} style={[s.groupChevron, { transform: [{ rotate: '0deg' }] }]} accessibilityIgnoresInvertColors /></Pressable></View>}</View>}{chips && !picker && <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="handled" style={s.chipsScroll} contentContainerStyle={s.chips}>{!!onKind && !!choice && (
-          <Pressable accessibilityRole="button" accessibilityLabel={t('Категория: {title}. Выбрать',{title:choice.title})} accessibilityState={{ expanded: false }} disabled={busy} onPress={() => show(true)} style={({ pressed }) => [s.chip, s.catChip, pressed && s.chipPressed]}><KindIcon id={choice.id} size={18} color={C.accentPressed} /><Text style={s.catText}>{choice.title}</Text><Image source={chevron} style={s.catChevron} accessibilityIgnoresInvertColors /></Pressable>
+        })}{!!onService && <View style={[s.group, s.groupNext]}><Pressable accessibilityRole="button" accessibilityLabel={t('Уборка: закажите уборку у себя дома')} disabled={busy} onPress={() => { show(false); onService(); }} style={({ pressed }) => [s.groupHead, pressed && s.groupPressed]}><KindIcon id="cleaning" size={18} color={C.inkSoft} /><Text style={s.groupTitle}>{t('Уборка')}</Text><Text numberOfLines={1} style={s.groupHint}>{t('у вас дома, по вашей цене')}</Text>{/* This row does not open a list, it leads to the order: the arrow looks forward. */}<Image source={chevron} style={[s.groupChevron, { transform: [{ rotate: '0deg' }] }]} accessibilityIgnoresInvertColors /></Pressable></View>}</View>}{chips && !picker && !inPlate && <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="handled" style={s.chipsScroll} contentContainerStyle={s.chips}>{!!onKind && !!choice && (
+          catButton
         )}{quick && line.chips.map(chip => (
           <Pressable
             key={chip.id}
@@ -79,7 +81,7 @@ export function MapSheetHead({ role, text, onText, onSend, onChip, chips = true,
             onPress={() => onChip(chip.action)}
             style={({ pressed }) => [s.chip, !!counts?.[chip.action] && s.chipActive, pressed && s.chipPressed]}
           ><Text style={[s.chipText, !!counts?.[chip.action] && s.chipTextActive]}>{chip.title}</Text>{!!counts?.[chip.action] && <Text style={s.chipCount}>{counts[chip.action]}</Text>}</Pressable>
-        ))}</ScrollView>}{conditions}{children}{now && <NowCard card={now} onOpen={onNow} />}</View>
+        ))}</ScrollView>}{inPlate ? (picker ? null : (conditions as (category: ReactNode) => ReactNode)(catButton)) : conditions as ReactNode}{children}{now && <NowCard card={now} onOpen={onNow} />}</View>
   );
 }
 
@@ -87,6 +89,7 @@ const s = StyleSheet.create({
   head: { gap: 12 },
   // The category button: the first chip of the row, in the soft accent, with what is chosen.
   catChip: { backgroundColor: C.accentSoft, paddingLeft: 12, paddingRight: 10 },
+  catSmall: { minHeight: 40, paddingLeft: 10, paddingRight: 8, gap: 2, backgroundColor: C.surface },
   catText: { ...type.label, color: C.accentPressed, fontWeight: '700' },
   catChevron: { width: 14, height: 14, tintColor: C.accentPressed, transform: [{ rotate: '90deg' }] },
   // The picker: a title, then each category as a named group of outlined chips, a hairline between the groups.

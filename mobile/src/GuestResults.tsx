@@ -59,6 +59,12 @@ type Props = {
   full?: boolean;
   // «Готово к 18:00» or «Уточняем готовность»: the home at the searched arrival (arrival.ts); null when the answer has no strip.
   readiness?: (flat: Row) => { text: string; check: boolean } | null;
+  // The answer over the map (concept of 2026-11-25): the strip of cards alone, a pin tapped scrolls it to its card;
+  // the quick steps go up to the bar on top of the map through onChips.
+  float?: boolean;
+  onChips?: (chips: React.ReactNode) => void;
+  // The full list opened by «Список»: «На карте» returns to the map.
+  onMap?: () => void;
 };
 
 // The carousel: a card is a little narrower than the screen, so the next one peeks out and says «swipe».
@@ -170,13 +176,13 @@ export function homeLine(flat: Row) {
   return [kind, rooms > 0 && flat.details?.type !== 'studio' && kindCategoryOf(flat.details?.type) === 'stay' ? t('{rooms} комн.',{rooms}) : '', capacity > 0 ? t('до {guests}',{guests:capacity + ' ' + plural(capacity, 'гостя', 'гостей', 'гостей')}) : ''].filter(Boolean).join(' · ');
 }
 
-export function GuestResults({ preview, draft, mine, onFavorite, selected, onSelect, onFocus, onBook, onOpen, onRefine, onWiden, onTry, onBookEdge, busy, steps = [], tried = [], from = null, onStep, onBack, anchor = '', full = false, readiness }: Props) {
+export function GuestResults({ preview, draft, mine, onFavorite, selected, onSelect, onFocus, onBook, onOpen, onRefine, onWiden, onTry, onBookEdge, busy, steps = [], tried = [], from = null, onStep, onBack, anchor = '', full = false, readiness, float = false, onChips, onMap }: Props) {
   const found: Row[] = preview.properties || [];
   // Dear cards the guest swiped past without reading, in this answer.
   const [pricey, setPricey] = useState(0);
   const context = { draft, from, tried, pricey, taken: steps };
   const flats = steps.length ? narrowed(found, steps, context) : found;
-  const chosen = flats.find(flat => flat.id === selected);
+  const chosen = float ? undefined : flats.find(flat => flat.id === selected);
   const width = useWindowDimensions().width,
     card = Math.min(CARD_MAX, width - 64),
     step = card + GAP;
@@ -272,6 +278,24 @@ export function GuestResults({ preview, draft, mine, onFavorite, selected, onSel
     return said ? <Text numberOfLines={long ? 2 : 1} style={[r.ready, said.check && r.readyCheck]}>{said.check ? (long ? said.text : t('Уточняем готовность')) : '✓ ' + said.text}</Text> : null;
   };
 
+  const why = (flat: Row) => reasonsOf(flat).slice(0, 3).join(' · ');
+  const what = (flat: Row) => [venueName(flat), mark(flat), perGuest(flat) ? t('{v} за гостя',{v:money(perGuest(flat))}) : '', bathSum(flat), roomsLeft(flat), homeLine(flat), bathSum(flat) ? '' : flat.district].filter(Boolean).join(' · ');
+  const bestWords = quiet ? t('Подходит лучше других') : t('✦ Лучший выбор');
+  const trail = steps.length > 0 && !!onBack && <HelperTrail words={stepWords(steps, draft)} count={flats.length + ' ' + plural(flats.length, 'вариант', 'варианта', 'вариантов')} onBack={onBack} busy={busy} />;
+  const tips = <GuestHelpers helpers={helpers} busy={busy} onPress={helper => onStep?.(helper.id, list[index]?.id || '')} />;
+
+  // Over the map: the quick steps go up to the bar, and a pin tapped brings its card into view.
+  const chipsKey = helpers.map(x => x.id + ':' + x.count).join() + '|' + steps.join() + '|' + busy;
+  useEffect(() => { if (!float || !onChips) return; onChips(<View style={r.floatChips}>{trail}{tips}</View>); }, [float, chipsKey]);
+  useEffect(() => () => { if (float) onChips?.(null); }, [float]);
+  useEffect(() => {
+    if (!float || !selected) return;
+    const at = list.findIndex(flat => flat.id === selected);
+    if (at < 0 || at === index) return;
+    setIndex(at); if (at > seen) setSeen(at);
+    strip.current?.scrollTo({ x: at * step, animated: true });
+  }, [float, selected]);
+
   if (!flats.length) {
     const answer = emptyAnswer(preview.empty, draft, !!onWiden), way = answer.action;
     // The way out says how many places it opens, when the server counted them.
@@ -297,23 +321,17 @@ export function GuestResults({ preview, draft, mine, onFavorite, selected, onSel
     );
   }
 
-  const why = (flat: Row) => reasonsOf(flat).slice(0, 3).join(' · ');
-  const what = (flat: Row) => [venueName(flat), mark(flat), perGuest(flat) ? t('{v} за гостя',{v:money(perGuest(flat))}) : '', bathSum(flat), roomsLeft(flat), homeLine(flat), bathSum(flat) ? '' : flat.district].filter(Boolean).join(' · ');
-  const bestWords = quiet ? t('Подходит лучше других') : t('✦ Лучший выбор');
-  const trail = steps.length > 0 && !!onBack && <HelperTrail words={stepWords(steps, draft)} count={flats.length + ' ' + plural(flats.length, 'вариант', 'варианта', 'вариантов')} onBack={onBack} busy={busy} />;
-  const tips = <GuestHelpers helpers={helpers} busy={busy} onPress={helper => onStep?.(helper.id, list[index]?.id || '')} />;
-
   if (full) {
     // Every found place at once: the guest who wants the whole list pulls the sheet up.
     return (
-      <>{trail}{tips}<Text accessibilityRole="header" style={h.cardTitle}>{t('Свободно на {stay}: {n}',{stay:stayWords(draft),n:flats.length})}</Text><View>{list.map(flat => (
+      <>{!onMap && <>{trail}{tips}</>}<View style={r.listHead}><Text accessibilityRole="header" style={[h.cardTitle, h.grow]}>{t('Свободно на {stay}: {n}',{stay:stayWords(draft),n:flats.length})}</Text>{!!onMap && <Pressable accessibilityRole="button" onPress={onMap} style={({ pressed }) => [r.onMap, pressed && h.dim]}><Text style={r.onMapText}>{t('На карте')}</Text></Pressable>}</View><View>{list.map(flat => (
             <Pressable key={flat.id} accessibilityRole="button" accessibilityLabel={flat.title + ', ' + money(flat.estimate.amount)} onPress={() => { onFocus?.(flat.id); onSelect(flat.id); }} style={({ pressed }) => [r.line, pressed && r.cardPressed]}><View style={r.lineThumb}><Photo id={flat.photos?.[0]} alt={t('{title}, фото',{title:flat.title})} fill /></View><View style={h.grow}><View style={r.cardTop}><Text numberOfLines={1} style={[h.eventTitle, h.grow]}>{flat.title}</Text><Text style={h.rowPrice}>{money(flat.estimate.amount)}</Text></View><Text numberOfLines={1} style={h.note}>{what(flat) || t('за {v}',{v:stayWords(draft)})}</Text>{ready(flat)}{!!why(flat) && <Text numberOfLines={1} style={r.why}>{why(flat)}</Text>}</View></Pressable>
           ))}</View></>
     );
   }
 
   return (
-    <View style={r.strip} onLayout={e => setStripBottom(Math.round(e.nativeEvent.layout.y + e.nativeEvent.layout.height))}>{trail}{tips}<View style={r.counter}><Text accessibilityRole="header" style={h.cardTitle}>{list.length > 1 ? t('{v} из {length}',{v:(index + 1),length:list.length}) : t('Свободно на {v}',{v:stayWords(draft)})}</Text>{list.length > 1 && <Text style={h.note}>{t('на {stay}',{stay:stayWords(draft)})}</Text>}</View><ScrollView
+    <View style={r.strip} onLayout={e => setStripBottom(Math.round(e.nativeEvent.layout.y + e.nativeEvent.layout.height))}>{!float && trail}<ScrollView
         ref={strip}
         horizontal
         showsHorizontalScrollIndicator={false}
@@ -322,29 +340,30 @@ export function GuestResults({ preview, draft, mine, onFavorite, selected, onSel
         disableIntervalMomentum
         scrollEventThrottle={32}
         onScroll={e => scrolled(e.nativeEvent.contentOffset.x)}
-        style={r.carousel}
+        style={[r.carousel, float && r.carouselFloat]}
         contentContainerStyle={r.carouselContent}
       >{list.map((flat, i) => (
           <Pressable
             key={flat.id}
             accessibilityRole="button"
-            accessibilityLabel={(flat.match?.best ? (quiet ? t('Подходит лучше других. ') : t('Лучший выбор для вас. ')) : '') + flat.title + ', ' + money(flat.estimate.amount)}
+            accessibilityLabel={t('Забронировать: {title}',{title:(flat.match?.best ? (quiet ? t('Подходит лучше других. ') : t('Лучший выбор для вас. ')) : '') + flat.title + ', ' + money(flat.estimate.amount)})}
             onPress={() => {
               // The map flies to the chosen card's pin, even when the swipe that showed it has not settled yet.
               clearTimeout(settle.current);
               setIndex(i);
               onFocus?.(flat.id);
-              onSelect(flat.id);
+              onBook(flat);
             }}
-            style={({ pressed }) => [r.card, { width: card }, i === index && r.cardInView, pressed && r.cardPressed]}
-          ><View style={r.cardRow}><View style={r.cardPhoto}><Photo id={Math.abs(i - index) <= 2 || i <= seen + 2 ? flat.photos?.[0] : null} alt={t('{title}, фото',{title:flat.title})} fill />{!!mine && !!onFavorite && <View style={r.heartOnPhoto}><Heart on={mine.favorites.includes(flat.id)} title={flat.title} onPress={() => onFavorite(flat.id)} /></View>}</View><View style={r.cardBody}>{!!flat.match?.best && <Text style={r.bestTag}>{bestWords}</Text>}<Text numberOfLines={1} style={h.eventTitle}>{flat.title}</Text>{ready(flat)}<Text numberOfLines={1} style={h.note}>{what(flat) || t('за {v}',{v:stayWords(draft)})}</Text><View style={r.priceRow}><Text style={h.rowPrice}>{money(flat.estimate.amount)}</Text>{!!flat.estimate.window && <Text style={r.window}>−{flat.estimate.window.percent}%</Text>}{!!flat.estimate.deal && <Text style={r.deal}>{t('Цена выгодная')}</Text>}</View></View></View>{/* Why this place answers the request, in the guest's own conditions. */}{!!why(flat) && <Text numberOfLines={1} style={r.why}>{why(flat)}</Text>}{/* Two taps to a booking: this button, then «Отправить заявку» on the check of the booking. */}<Pressable accessibilityRole="button" accessibilityLabel={t('Забронировать: {title}',{title:flat.title})} disabled={busy} onPress={() => onBook(flat)} style={({ pressed }) => [r.book, (pressed || busy) && h.dim]}><Text style={r.bookText}>{t('Забронировать')}</Text></Pressable></Pressable>
-        ))}</ScrollView>{list.length > 1 && (
+            disabled={busy}
+            style={({ pressed }) => [r.card, { width: card }, pressed && r.cardPressed]}
+          ><View style={r.cardRow}><View style={r.cardPhoto}><Photo id={Math.abs(i - index) <= 2 || i <= seen + 2 ? flat.photos?.[0] : null} alt={t('{title}, фото',{title:flat.title})} fill />{!!mine && !!onFavorite && <View style={r.heartOnPhoto}><Heart on={mine.favorites.includes(flat.id)} title={flat.title} onPress={() => onFavorite(flat.id)} /></View>}{!!flat.match?.best && <Text style={[r.bestTag, r.bestOnPhoto]}>{bestWords}</Text>}</View><View style={r.cardBody}><View style={r.cardTop}><Text numberOfLines={1} style={[h.eventTitle, h.grow]}>{flat.title}</Text>{Number(flat.rating?.count) > 0 && <Text style={r.rating}>★ {Number(flat.rating.average).toFixed(1).replace('.', ',')} ({flat.rating.count})</Text>}</View><Text numberOfLines={1} style={h.note}>{what(flat) || t('за {v}',{v:stayWords(draft)})}</Text>{ready(flat)}<View style={r.priceRow}><Text style={r.cardPrice}>{money(flat.estimate.amount)}</Text><Text style={h.note}>{t('за {stay}',{stay:stayWords(draft)})}</Text>{!!flat.estimate.window && <Text style={r.window}>−{flat.estimate.window.percent}%</Text>}<Text style={r.freeTag}>{t('✓ Отмена бесплатно')}</Text></View></View></View></Pressable>
+        ))}</ScrollView>{list.length > 1 && !float && (
         <View style={r.dots} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">{Array.from({ length: Math.min(DOTS, list.length) }, (_, i) => {
             // More cards than dots: the dots follow the card in view like a window over the strip.
             const first = Math.max(0, Math.min(list.length - DOTS, index - Math.floor(DOTS / 2)));
             return <View key={i} style={[r.dot, first + i === index && r.dotOn]} />;
           })}</View>
-      )}</View>
+      )}{!float && <Text accessibilityRole="header" style={r.counterText}>{list.length > 1 ? t('{v} из {length}',{v:(index + 1),length:list.length}) + ' · ' + t('на {stay}',{stay:stayWords(draft)}) : t('Свободно на {v}',{v:stayWords(draft)})}</Text>}{!float && tips}</View>
   );
 }
 
@@ -356,21 +375,31 @@ const r = StyleSheet.create({
   hallName: { ...type.label, color: C.ink, fontWeight: '600' },
   hallMeta: { ...type.caption, color: C.muted },
   carousel: { marginHorizontal: -16, marginBottom: 4 },
-  carouselContent: { paddingHorizontal: 16, gap: GAP },
-  card: { borderRadius: T.radius.lg, borderWidth: 1, borderColor: C.line, backgroundColor: C.surface, overflow: 'hidden', padding: 12, gap: 8 },
-  cardInView: { borderColor: C.accent, borderWidth: 2 },
+  carouselFloat: { marginHorizontal: 0, marginBottom: 0 },
+  carouselContent: { paddingHorizontal: 16, paddingVertical: 8, gap: GAP },
+  card: { borderRadius: T.radius.lg, backgroundColor: C.surface, padding: 8, gap: 8, shadowColor: C.ink, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.12, shadowRadius: 14, elevation: 4 },
   cardPressed: { opacity: 0.85 },
-  cardRow: { flexDirection: 'row', gap: 12 },
-  cardPhoto: { width: 88, height: 88, borderRadius: T.radius.md, overflow: 'hidden', backgroundColor: C.surfaceAlt },
+  // The photo comes first and wide, as on the big rental apps (Mobbin, Airbnb): the guest chooses by the picture,
+  // then reads the name and the price under it.
+  cardRow: { gap: 10 },
+  cardPhoto: { width: '100%', height: 156, borderRadius: T.radius.md, overflow: 'hidden', backgroundColor: C.surfaceAlt },
+  bestOnPhoto: { position: 'absolute', left: 8, top: 8 },
   bestTag: { ...type.caption, alignSelf: 'flex-start', paddingHorizontal: 8, paddingVertical: 2, borderRadius: T.radius.full, overflow: 'hidden', backgroundColor: C.aiFrom, color: C.onAccent, fontWeight: '600' },
-  heartOnPhoto: { position: 'absolute', right: 2, top: 2 },
-  cardBody: { flex: 1, minWidth: 0, gap: 2, justifyContent: 'center' },
+  heartOnPhoto: { position: 'absolute', right: 4, top: 4 },
+  cardBody: { flex: 1, minWidth: 0, gap: 2, justifyContent: 'center', paddingHorizontal: 4, paddingBottom: 4 },
+  rating: { ...type.caption, color: C.ink, fontWeight: '600' },
+  cardPrice: { ...type.subtitle, color: C.ink, fontWeight: '800' },
+  freeTag: { ...type.caption, marginLeft: 'auto', paddingHorizontal: 8, paddingVertical: 2, borderRadius: T.radius.sm, overflow: 'hidden', backgroundColor: C.successSoft, color: C.success, fontWeight: '600' },
   priceRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', columnGap: 8 },
   why: { ...type.caption, color: C.muted, fontWeight: '600' },
   ready: { ...type.caption, color: C.success, fontWeight: '600' },
   readyCheck: { color: C.warning },
   strip: { gap: 12 },
-  counter: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', gap: 8 },
+  floatChips: { gap: 8 },
+  listHead: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  onMap: { minHeight: 40, justifyContent: 'center', paddingHorizontal: 8 },
+  onMapText: { ...type.label, color: C.accent, fontWeight: '600' },
+  counterText: { ...type.label, color: C.inkSoft, fontWeight: '600', textAlign: 'center' },
   dots: { flexDirection: 'row', justifyContent: 'center', gap: 6, marginBottom: 4 },
   dot: { width: 6, height: 6, borderRadius: 3, backgroundColor: C.lineStrong },
   dotOn: { width: 18, backgroundColor: C.accent },

@@ -16,11 +16,13 @@ type Props = {
   // One row that scrolls (over the results) instead of wrapping (on the map and in the form).
   line?: boolean;
   busy?: boolean;
+  // At the start of the plate instead of its pin: the category button (MapSheetHead.tsx).
+  lead?: React.ReactNode;
 };
 
 // The guest's conditions under the AI line. A tap on a token opens its part of the form; the cross takes the
 // condition off and the search runs again. «Условия» opens the whole form.
-export function GuestTokens({ tokens, blamed = [], open = '', onOpen, onClear, line = false, busy = false }: Props) {
+export function GuestTokens({ tokens, blamed = [], open = '', onOpen, onClear, line = false, busy = false, lead }: Props) {
   const items = (
     <>{tokens.map(token => {
         const bad = blamed.includes(token.id), set = !!token.clear, active = open === token.section;
@@ -40,6 +42,14 @@ export function GuestTokens({ tokens, blamed = [], open = '', onOpen, onClear, l
       })}</>
   );
   const more = (label: string) => <Pressable accessibilityRole="button" accessibilityLabel={t('Все условия поиска')} accessibilityState={{ expanded: open === 'all', disabled: busy }} disabled={busy} onPress={() => onOpen('all')} hitSlop={{ top: 6, bottom: 6 }} style={({ pressed }) => [s.token, s.more, open === 'all' && s.active, pressed && s.pressed]}><Text style={s.moreText}>{label}</Text></Pressable>;
+  // On the map and over the results, as in the concept (Mobbin: Uber, Airbnb): one plate «where · when · how many» with
+  // «Изменить», instead of a row of tokens. The tokens come back when an empty answer blames one of them.
+  if (line && !blamed.length) {
+    const city = tokens.filter(token => token.id === 'city' || token.id === 'district').map(token => token.title).join(', ');
+    const rest = tokens.filter(token => token.id !== 'city' && token.id !== 'district').map(token => token.title).join(' · ');
+    const plate = <Pressable accessibilityRole="button" accessibilityLabel={t('Условия поиска: {v}. Изменить',{v:[city, rest].filter(Boolean).join(', ')})} accessibilityState={{ expanded: open === 'all', disabled: busy }} disabled={busy} onPress={() => onOpen('all')} style={({ pressed }) => [s.plate, !!lead && s.plateLead, pressed && s.pressed]}>{!lead && <View style={s.pin}><View style={s.pinDot} /></View>}<View style={s.plateText}><Text numberOfLines={1} style={s.plateTitle}>{city}</Text>{!!rest && <Text numberOfLines={1} style={s.plateLine}>{rest}</Text>}</View><Text style={s.moreText}>{t('Изменить')}</Text></Pressable>;
+    return lead ? <View style={s.plateRow}>{lead}{plate}</View> : plate;
+  }
   // Over the results the row scrolls sideways; «Условия» stays at its start, so it is never pushed past the edge.
   if (line) return <View style={s.lineWrap}>{more(t('Условия'))}<ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="handled" style={s.scroll} contentContainerStyle={s.row} accessibilityLabel={t('Условия поиска')}>{items}</ScrollView></View>;
   return <View style={s.wrap} accessibilityLabel={t('Условия поиска')}>{items}{more(t('+ Условия'))}</View>;
@@ -66,5 +76,13 @@ const s = StyleSheet.create({
   crossText: { fontSize: 10, lineHeight: 12, color: C.accentPressed, fontWeight: '700' },
   more: { paddingHorizontal: 12, borderStyle: 'dashed', borderColor: C.accentLine, justifyContent: 'center' },
   moreText: { ...type.label, color: C.accent, fontWeight: '600' },
-  pressed: { opacity: 0.6 }
+  pressed: { opacity: 0.6 },
+  plate: { minHeight: 56, flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 12, paddingVertical: 8, borderRadius: T.radius.md, backgroundColor: C.surfaceAlt },
+  plateRow: { flexDirection: 'row', alignItems: 'center', gap: 8, padding: 4, paddingLeft: 4, borderRadius: T.radius.md, backgroundColor: C.surfaceAlt },
+  plateLead: { flex: 1, minWidth: 0, paddingLeft: 4, minHeight: 48, backgroundColor: 'transparent' },
+  pin: { width: 20, height: 20, borderRadius: 10, alignItems: 'center', justifyContent: 'center', backgroundColor: C.dangerSoft },
+  pinDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: C.danger },
+  plateText: { flex: 1, minWidth: 0, gap: 2 },
+  plateTitle: { ...type.label, color: C.ink, fontWeight: '600' },
+  plateLine: { ...type.caption, color: C.muted }
 });
