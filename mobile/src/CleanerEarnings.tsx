@@ -1,4 +1,4 @@
-import {t} from '../../lib/i18n';
+import {forms,t} from '../../lib/i18n';
 import React from 'react';
 import {StyleSheet,Text,View} from 'react-native';
 import {RowIcon} from './AccountRows';
@@ -25,8 +25,9 @@ export function cleanerWeek(jobs:Row[],userId:string,now:number){
 }
 
 // «Заработок» of the cleaner (concept of 2026-11-25): the week's money large with how it went, the days as bars,
-// then two rows: what tomorrow holds and how the owners pay. No tiles, no advice: one look.
-export function CleanerEarnings({jobs,userId,now}:{jobs:Row[];userId:string;now:number}){
+// the «Постоянный исполнитель» card (a status as in OpenTable: the owner pins the cleaner to a home, there is no
+// counter to reach it), then two rows: what tomorrow holds and how the owners pay. No tiles, no advice: one look.
+export function CleanerEarnings({jobs,userId,now,regular=0}:{jobs:Row[];userId:string;now:number;regular?:number}){
  const w=cleanerWeek(jobs,userId,now),top=Math.max(1,...w.days);
  const facts=[t('уборок: {n}',{n:w.count}),w.rating?'★ '+w.rating.toFixed(1).replace('.',','):'',w.count?(w.late?t('опозданий: {n}',{n:w.late}):t('без опозданий')):''].filter(Boolean).join(' · ');
  const next=w.tomorrow.map(j=>clock(Number(j.start))).join(t(' и '));
@@ -34,6 +35,10 @@ export function CleanerEarnings({jobs,userId,now}:{jobs:Row[];userId:string;now:
   <View style={e.head}><Text style={e.caption}>{t('Эта неделя')}</Text><Text accessibilityRole="header" style={e.sum}>{tenge(w.sum)}</Text><Text style={e.facts}>{facts}</Text></View>
   <View style={e.bars} accessibilityLabel={t('По дням: {v}',{v:w.days.map((v,i)=>t(DAYS[i])+' '+tenge(v)).join(', ')})}>
    {w.days.map((v,i)=><View key={i} style={e.col}><View style={e.track}><View style={[e.bar,{height:Math.max(v?8:4,Math.round(112*v/top))},i===w.todayIndex?e.barNow:v?e.barDone:null]}/></View><Text style={[e.day,i===w.todayIndex&&e.dayNow]}>{t(DAYS[i])}</Text></View>)}
+  </View>
+  <View style={e.status} accessible accessibilityLabel={t('Постоянный исполнитель')+'. '+(regular?t('Объектов: {n}. Их уборки приходят вам первыми, а ваше «да» сразу назначает.',{n:regular}):t('Владелец может закрепить вас за жильём после хороших уборок. Тогда его уборки будут приходить вам первыми.'))}>
+   <View style={e.statusHead}><RowIcon icon="star" tint={C.ink}/><Text style={e.title}>{t('Постоянный исполнитель')}</Text>{regular>0&&<Text style={e.statusTag}>{t(forms(regular,'{n} объект','{n} объекта','{n} объектов'),{n:regular})}</Text>}</View>
+   <Text style={e.statusText}>{regular?t('Уборки этих владельцев приходят вам первыми, а ваше «да» сразу назначает.'):t('Владелец может закрепить вас за жильём после хороших уборок. Тогда его уборки будут приходить вам первыми.')}</Text>
   </View>
   <View style={e.rows}>
    <View style={e.row}><RowIcon icon="clock" tint={C.success}/><View style={e.grow}><Text style={e.title}>{w.tomorrow.length?t('Завтра уборок: {n}',{n:w.tomorrow.length}):t('Завтра свободно')}</Text>{!!next&&<Text style={e.note}>{next}</Text>}</View></View>
@@ -56,6 +61,10 @@ const e=StyleSheet.create({
  barNow:{backgroundColor:C.success},
  day:{...type.caption,color:C.muted},
  dayNow:{color:C.ink,fontWeight:'700'},
+ status:{gap:8,padding:16,borderRadius:T.radius.lg,backgroundColor:C.surface,borderWidth:1,borderColor:C.line},
+ statusHead:{flexDirection:'row',alignItems:'center',gap:8},
+ statusTag:{...type.caption,color:C.ink,fontWeight:'700',marginLeft:'auto',paddingHorizontal:8,paddingVertical:4,borderRadius:T.radius.full,backgroundColor:C.surfaceAlt,overflow:'hidden'},
+ statusText:{...type.label,color:C.inkSoft},
  rows:{borderRadius:T.radius.lg,backgroundColor:C.surface,borderWidth:1,borderColor:C.line,paddingHorizontal:16},
  row:{flexDirection:'row',alignItems:'center',gap:12,minHeight:64,paddingVertical:12,borderBottomWidth:1,borderBottomColor:C.line},
  rowLast:{borderBottomWidth:0},

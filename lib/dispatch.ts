@@ -17,6 +17,16 @@ export async function dispatchState(service:RentalService,role:Role){
  if(role==='guest')return {offers:[],rules:[],receiveOffers:false};
  const owner=role==='owner';return {regular:owner?null:await cleanerRegulars(service),offers:await rows(service.db,`SELECT o.*,p.title,p.city,p.district,EXISTS(SELECT 1 FROM regular_cleaners rc WHERE rc.property_id=j.property_id AND rc.cleaner_id=o.worker_id) regular,CASE WHEN o.fee>0 AND ${availableSql('j.owner_id')}>=o.fee THEN 1 ELSE 0 END guaranteed FROM cleaning_offers o JOIN cleaning_jobs j ON j.id=o.job_id JOIN properties p ON p.id=j.property_id WHERE ${owner?'j.owner_id=?':'o.worker_id=?'} ORDER BY o.created_at DESC LIMIT 100`,service.userId),rules:owner?await rows(service.db,'SELECT r.*,p.title FROM operation_rules r JOIN properties p ON p.id=r.property_id WHERE p.owner_id=?',service.userId):[],receiveOffers:!!(await one(service.db,'SELECT receive_offers FROM worker_dispatch WHERE user_id=?',service.userId))?.receive_offers};
 }
+// The cleaner's own offers still open (the autopilot or the owner offered this cleaning to this person, with a time to
+// answer: operation_rules.offer_minutes), soonest to expire first, and the objects the cleaner is pinned to.
+// The map shows the first one as «Вам предлагают уборку» with the time left going round (mobile/src/CleanerOffer.tsx).
+export async function cleanerOffers(db:D1Database,userId:string,at=epoch()){
+ const [offers,pinned]=await Promise.all([
+  rows(db,"SELECT o.id,o.job_id,o.fee,o.start,o.end,o.created_at,o.expires_at FROM cleaning_offers o JOIN cleaning_jobs j ON j.id=o.job_id WHERE o.worker_id=? AND o.status='offered' AND o.expires_at>? AND j.status='open' AND j.version=o.job_version ORDER BY o.expires_at LIMIT 20",userId,at),
+  one(db,'SELECT COUNT(*) n FROM regular_cleaners WHERE cleaner_id=?',userId),
+ ]);
+ return {cleaningOffers:offers,regularPlaces:Number(pinned?.n)||0};
+}
 export async function decideOffer(service:RentalService,body:Row){
  await service.requireRole('cleaner');const offer=await one(service.db,'SELECT o.*,j.status job_status,j.version current_version,j.start current_start,j.end current_end,j.fee current_fee FROM cleaning_offers o JOIN cleaning_jobs j ON j.id=o.job_id WHERE o.id=? AND o.worker_id=?',required(body.id,'Предложение',100),service.userId);
  if(!offer)throw new DomainError('Предложение недоступно.',403);

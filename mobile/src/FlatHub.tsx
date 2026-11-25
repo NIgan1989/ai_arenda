@@ -96,7 +96,7 @@ export function FlatHub({flat,data,now,tab,onOpen,onEdit,onChanged}:Omit<Props,'
   :!Number(flat.own_staff)&&<Action secondary title={tr('Создать уборку')} onPress={()=>onEdit('job')}/>}
  </View>;
  if(tab==='calendar')return <View style={f.panel}>
-  <RentalCalendar data={data} role="owner" busy={false} onOpen={(kind,id)=>onOpen(kind as 'booking'|'job',id)} propertyId={flat.id}/>
+  <RentalCalendar data={data} role="owner" busy={false} onOpen={(kind,id)=>onOpen(kind as 'booking'|'job',id)} propertyId={flat.id} onChanged={onChanged}/>
   {row(tr('Календари площадок'),tr('Airbnb, Booking, Суточно: без двойных броней'),()=>onEdit('calendars'))}
  </View>;
  if(tab==='price'){

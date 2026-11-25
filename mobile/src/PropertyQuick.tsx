@@ -3,11 +3,11 @@ import {L,forms,t} from '../../lib/i18n';
 // The AI asks only what it could not read (address, district, daily price), one question at a time.
 // Same reading as on the site: lib/listing-draft.ts.
 import {homeAskFromText,type HomeAsk} from '../../lib/home-ask';
-import React,{useMemo,useState} from 'react';
-import {View,Text,TextInput,Pressable,StyleSheet} from 'react-native';
+import React,{useEffect,useMemo,useState} from 'react';
+import {Platform,View,Text,TextInput,Pressable,StyleSheet} from 'react-native';
 import {Thinking} from './Thinking';
 import {AddressField} from './AddressSuggest';
-import {C,type,brandFont} from './styles';
+import {C,type} from './styles';
 import {T} from './tokens';
 import {Photo} from './ListingMedia';
 import {PhotoGrid} from './PhotoGrid';
@@ -18,23 +18,31 @@ import {RightDocs} from './RightDocs';
 import {needsReview,reviewRequest} from '../../lib/listing-edit';
 import {DRAFT_EXAMPLE,DRAFT_EXAMPLE_BATH,answerDraft,draftDescription,draftListingBody,draftQuestions,draftRules,draftTitle,emptyDraft,mergeModelDraft,moneyAnswer,readListingText,type ListingDraft} from '../../lib/listing-draft';
 import {plural} from '../../lib/map-search-request';
+import {feeOf,useOwnerFee} from './RecordCard';
 type Row=Record<string,any>;
 type Saved={id:string;message:string;published:boolean;placed?:boolean};
 const R=T.radius,H=T.control;
-const money=(n:number)=>new Intl.NumberFormat('ru-RU').format(n)+' ₸';
-const STEPS=L(['Расскажите','Проверьте','Готово']);
+const digits=(n:number)=>new Intl.NumberFormat('ru-RU').format(n);
+const money=(n:number)=>digits(n)+' ₸';
+const percent=(bp:number)=>String(bp/100).replace('.',',')+'%';
 // House rules said plainly; parties are not a rule the owner sets here.
 const RULES:[keyof ListingDraft,string,string][]=L([['pets','Питомцы разрешены','Без питомцев'],['smoking','Курение разрешено','Курение запрещено']]);
 
 // Adding a place: the owner tells about it in his own words, the AI fills the fields (the rules at once, the model for
 // what the rules could not read), and the check screen is a short list of lines, one per thing: a tap opens that line to fix it.
-export function PropertyQuick({city,onSave,onGuestMode,onPlace,onReview,onClose,onMap,onDone,onHome,onUnderstand,onTop}:{city:string;onHome?:(ask?:HomeAsk)=>void;onSave:(body:Row)=>Promise<Row>;onGuestMode:(body:Row)=>Promise<unknown>;onPlace?:(body:Row)=>Promise<unknown>;onReview?:(body:Row)=>Promise<unknown>;onClose:()=>void;onMap?:(id:string)=>void;onDone:(saved:Saved)=>void;onUnderstand?:(text:string)=>Promise<Row|null>;onTop?:()=>void}){
+// Laid out as Airbnb adds a place (concept of 2026-11-25): «Закрыть» and «Шаг N из 3» on top, one big heading, and each
+// question the AI could not answer from the story is a screen of its own; at the bottom the step bar, «Назад» and «Далее».
+export function PropertyQuick({city,onSave,onGuestMode,onPlace,onReview,onClose,onMap,onDone,onHome,onUnderstand,onTop,onPriceHint}:{city:string;onHome?:(ask?:HomeAsk)=>void;onSave:(body:Row)=>Promise<Row>;onGuestMode:(body:Row)=>Promise<unknown>;onPlace?:(body:Row)=>Promise<unknown>;onReview?:(body:Row)=>Promise<unknown>;onClose:()=>void;onMap?:(id:string)=>void;onDone:(saved:Saved)=>void;onUnderstand?:(text:string)=>Promise<Row|null>;onTop?:()=>void;onPriceHint?:(body:Row)=>Promise<Row>}){
  const [step,setStep]=useState(0),[text,setText]=useState(''),[draft,setDraft]=useState<ListingDraft>(()=>emptyDraft(city)),[found,setFound]=useState<string[]>([]);
  const [photos,setPhotos]=useState<string[]>([]),[uploading,setUploading]=useState(false),[answer,setAnswer]=useState(''),[mode,setMode]=useState<'auto'|'manual'>('auto'),[open,setOpen]=useState('');
  const [busy,setBusy]=useState(false),[reading,setReading]=useState(false),[error,setError]=useState(''),[saved,setSaved]=useState<Saved|null>(null);
- const questions=useMemo(()=>{const q:{key:string;label:string;question:string;placeholder:string}[]=draftQuestions(draft);return !draft.ownStaff&&!(draft.cleaningFee>=100)?[...q,{key:'cleaningFee',label:t('Уборка'),question:t('Сколько платите за уборку после гостей? Убираете сами, напишите «сами».'),placeholder:t('Например, 3 000 или «сами»')}]:q;},[draft,mode]);
+ const questions=useMemo(()=>{const q:{key:string;label:string;question:string;placeholder:string}[]=draftQuestions(draft);return !draft.ownStaff&&!(draft.cleaningFee>=100)?[...q,{key:'cleaningFee',label:t('Уборка'),question:t('Сколько платите за уборку после гостей?'),placeholder:'0'}]:q;},[draft,mode]);
  const ask=questions[0];
  const [place,setPlace]=useState('');
+ // The check screen, once reached, stays: clearing a line while fixing it does not throw the owner back to a question.
+ const [checking,setChecking]=useState(false);
+ useEffect(()=>{if(step===1&&!questions.length)setChecking(true);},[step,questions.length]);
+ const asking=step===1&&!!ask&&!checking;
  // Fields only the model read: a new reading of the story may change them; a field the owner edits himself is his.
  const [modelKeys,setModelKeys]=useState<string[]>([]);
  const patch=(value:Partial<ListingDraft>)=>{setModelKeys(k=>k.filter(key=>!(key in value)));setDraft(d=>({...d,...value,known:[...new Set([...d.known,...Object.keys(value)])]}));};
@@ -49,12 +57,12 @@ export function PropertyQuick({city,onSave,onGuestMode,onPlace,onReview,onClose,
   const base={...draft,known:draft.known.filter(k=>!modelKeys.includes(k))};
   const rules=readListingText(text,base);let next=rules;setError('');setReading(true);
   try{const ai=onUnderstand?await onUnderstand(text.slice(0,2000)):null;if(ai?.status==='ok')next=mergeModelDraft(rules.draft,rules.found,ai.fields);}catch{/* the rules' reading stays */}
-  setReading(false);setModelKeys(next.found.filter(k=>!rules.found.includes(k)));setDraft(next.draft);setFound(next.found);setOpen('');setStep(1);onTop?.();}
+  setReading(false);setModelKeys(next.found.filter(k=>!rules.found.includes(k)));setDraft(next.draft);setFound(next.found);setOpen('');setChecking(false);setStep(1);onTop?.();}
  function reply(){if(!ask||!answer.trim())return;
   // «Сами», «сам убираю», «свой персонал»: nobody is ordered, the owner marks the place ready himself.
-  if(ask.key==='cleaningFee'){const v=moneyAnswer(answer);if(v>=100)patch({cleaningFee:v});else if(/(?:^|[^а-я])(?:сам[аи]?|сво[йиея][а-я]*\s+(?:персонал|горничн|уборщ|сотрудник))(?=$|[^а-я])/i.test(answer)||/өзім|өз\s+қызметкер|ourselves|myself|own\s+staff/i.test(answer))patch({ownStaff:true});else{setError(t('Напишите сумму числом, от 100 ₸, или «сами».'));return;}}
+  if(ask.key==='cleaningFee'){const v=moneyAnswer(answer);if(v>=100)patch({cleaningFee:v});else if(/(?:^|[^а-я])(?:сам[аи]?|сво[йиея][а-я]*\s+(?:персонал|горничн|уборщ|сотрудник))(?=$|[^а-я])/i.test(answer)||/өзім|өз\s+қызметкер|ourselves|myself|own\s+staff/i.test(answer))patch({ownStaff:true});else{setError(t('Напишите сумму от 100 ₸ или нажмите «Убираем сами».'));return;}}
   else setDraft(d=>answerDraft(d,ask.key as 'address'|'district'|'price',answer));
-  setAnswer('');setError('');}
+  setAnswer('');setError('');onTop?.();}
  async function save(){
   if(busy||uploading||questions.length)return;setBusy(true);setError('');
   try{
@@ -72,6 +80,14 @@ export function PropertyQuick({city,onSave,onGuestMode,onPlace,onReview,onClose,
  const hall=['banquet','cafe'].includes(draft.type),bath=isBath(draft.type),venue=hall||bath;
  // A bath or a hall is not «жильё»: the screen names what the owner adds.
  const sort=hall?0:bath?1:2;
+ // «Сколько стоят сутки?»: what the guest pays, the service's fee (lib/service-dues.ts rates) and what stays, and what similar
+ // flats in the city ask, when there are at least three to compare with (lib/price-advice.ts similarRange).
+ const fee=useOwnerFee(asking&&ask?.key==='price'&&!hall);
+ const [hint,setHint]=useState<{low:number;high:number}|null>(null);
+ const hintFor=asking&&ask?.key==='price'&&!venue&&!!onPriceHint&&!!String(draft.city||'').trim()?draft.city+':'+draft.rooms:'';
+ useEffect(()=>{if(!hintFor||!onPriceHint)return;let live=true;
+  onPriceHint({city:draft.city,rooms:draft.rooms}).then(v=>{if(live)setHint(Number(v?.low)>=100?{low:Number(v.low),high:Number(v.high)}:null);}).catch(()=>{});
+  return()=>{live=false;};},[hintFor]);
  const priceLine=hall?(draft.price>=100?t('{v} за гостя',{v:money(draft.price)}):''):bath?(draft.hourlyPrice>=100?t('{v} / час · от {minHours} ч',{v:money(draft.hourlyPrice),minHours:draft.minHours}):''):[draft.price>=100&&t('{v} / сутки',{v:money(draft.price)}),draft.hourlyPrice>=100&&t('{v} / час',{v:money(draft.hourlyPrice)}),draft.nightlyPrice>=100&&t('{v} / ночь',{v:money(draft.nightlyPrice)})].filter(Boolean).join(' · ');
  const chip=(key:string,label:string,on:boolean,onPress:()=>void,radio=false)=><Pressable key={key} accessibilityRole={radio?'radio':'checkbox'} accessibilityState={{checked:on}} onPress={onPress} style={[q.chip,on&&q.chipOn]}><Text style={[q.chipText,on&&q.chipTextOn]}>{on&&!radio?'✓ ':''}{label}</Text></Pressable>;
  const num=(key:keyof ListingDraft,label:string,max=10000000)=><View style={q.tile} key={key}><Text style={q.tileLabel}>{label}</Text><TextInput accessibilityLabel={label} style={q.tileValue} keyboardType="number-pad" returnKeyType="done" value={draft[key]?String(draft[key]):''} placeholder="0" placeholderTextColor={C.muted} onChangeText={v=>patch({[key]:Math.min(max,Number(v.replace(/[^\d]/g,''))||0)} as Partial<ListingDraft>)}/></View>;
@@ -94,28 +110,58 @@ export function PropertyQuick({city,onSave,onGuestMode,onPlace,onReview,onClose,
  const entryLine=venue?methodName:[t('заезд с {a}, выезд до {b}',{a:draft.checkinTime,b:draft.checkoutTime}),methodName].filter(Boolean).join(' · ');
  const textLine=draftDescription(draft).replace(/\s+/g,' ').slice(0,90);
 
+ const stepNo=step===0?1:step===1?2:3;
+ const money_=(key:string)=>key==='price'||key==='cleaningFee';
+ const value=Number(answer)||0,cut=fee&&value>=100?feeOf(value,fee,Date.now()/1000):0,free=!!fee?.freeUntil&&fee.freeUntil>Date.now()/1000;
+ const heading=(title:string,sub?:string,note?:string)=><View style={q.heading}><Text accessibilityRole="header" style={q.title}>{title}</Text>{!!sub&&<Text style={q.sub}>{sub}</Text>}{!!note&&<Text style={q.hint}>{note}</Text>}</View>;
+ const foot=(back:(()=>void)|null,label:string,onNext:()=>void,off:boolean,working?:string)=><View style={q.foot}>
+  <View style={q.seg} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">{[0,1,2].map(i=><View key={i} style={[q.segBar,i<=step&&q.segOn]}/>)}</View>
+  <View style={q.footRow}>
+   {back?<Pressable accessibilityRole="button" onPress={back} disabled={busy} hitSlop={12} style={({pressed})=>pressed&&{opacity:.55}}><Text style={q.back}>{t('Назад')}</Text></Pressable>:<View/>}
+   <Pressable accessibilityRole="button" accessibilityState={{disabled:off,busy:!!working}} disabled={off||!!working} onPress={onNext} style={({pressed})=>[q.next,off&&q.nextOff,pressed&&{opacity:.85}]}>{working?<View style={q.readingRow}><Thinking size="sm" color={C.onAccent}/><Text style={q.nextText}>{working}</Text></View>:<Text style={q.nextText}>{label}</Text>}</Pressable>
+  </View>
+ </View>;
+ const toStory=()=>{setStep(0);setChecking(false);setAnswer('');setError('');onTop?.();};
+
  return <View style={q.sheet}>
-  <View style={q.head}><View style={q.orb}><Text style={q.orbText}>✦</Text></View><View style={{flex:1}}><Text accessibilityRole="header" style={q.title}>{step===0?t('Новый объект'):hall?t('Новый зал'):bath?(draft.type==='sauna'?t('Новая сауна'):t('Новая баня')):t('Новое жильё')}</Text><Text style={q.sub}>{[t('ИИ заполнит объявление по вашему рассказу'),t('ИИ заполнил карточку. Проверьте и поправьте'),t(['Зал добавлен','Объект добавлен','Жильё добавлено'][sort])][step]}</Text></View>{step<2&&<Pressable accessibilityRole="button" accessibilityLabel={t('Закрыть')} onPress={onClose} disabled={busy} style={q.close}><Text style={q.closeText}>✕</Text></Pressable>}</View>
-  <View style={q.steps} accessibilityLabel={t('Шаг {v} из 3',{v:(step+1)})}>{STEPS.map((label,i)=><View key={label} style={q.stepItem}><View style={[q.stepBar,i<step&&q.stepDone,i===step&&q.stepNow]}/><Text style={[q.stepText,i===step&&q.stepTextNow]}>{label}</Text></View>)}</View>
-  {!!error&&<Text accessibilityRole="alert" style={q.error}>{error}</Text>}
+  <View style={q.top}>
+   {step<2?<Pressable accessibilityRole="button" accessibilityLabel={t('Закрыть')} onPress={onClose} disabled={busy} style={({pressed})=>[q.pill,pressed&&{opacity:.6}]}><Text style={q.pillText}>{t('Закрыть')}</Text></Pressable>:<View/>}
+   <View style={q.pill}><Text style={q.pillText}>{t('Шаг {v} из 3',{v:stepNo})}</Text></View>
+  </View>
 
   {step===0&&<View style={q.body}>
+   {heading(t('Расскажите об объекте'),t('ИИ заполнит объявление по вашему рассказу'))}
    <View style={q.line}><TextInput accessibilityLabel={t('Расскажите об объекте')} style={q.lineInput} multiline editable={!reading} value={text} onChangeText={setText} maxLength={2000} placeholder={t('Например: однушка на Торайгырова 64, 4 этаж, до 3 гостей, есть Wi-Fi и стиралка, 15 000 в сутки, 2 500 в час')} placeholderTextColor={C.muted} textAlignVertical="top"/>
     <View style={q.lineBar}><View style={q.grid}><Pressable accessibilityRole="button" onPress={()=>setText(DRAFT_EXAMPLE)} style={q.chip}><Text style={q.chipText}>{t('Пример: жильё')}</Text></Pressable><Pressable accessibilityRole="button" onPress={()=>setText(DRAFT_EXAMPLE_BATH)} style={q.chip}><Text style={q.chipText}>{t('Пример: баня')}</Text></Pressable></View><Text style={q.hint}>{text.length?text.length+' / 2000':''}</Text></View></View>
    <PhotoGrid photos={photos} onChange={setPhotos} onBusy={setUploading}/>
    <Text style={q.hint}>{t('Пишите как другу: тип, адрес, район, цены, гости, удобства, правила. ИИ сам разложит всё по полям, вы только проверите.')}</Text>
    {!!onHome&&!homeAsk&&<Pressable accessibilityRole="button" accessibilityLabel={t('Не сдаёте жильё, нужна только уборка? Заказать уборку дома')} onPress={()=>onHome()} style={({pressed})=>[q.homeLink,pressed&&{opacity:.55}]}><Text style={q.homeLinkText}>{t('Не сдаёте, нужна только уборка?')}{' '}<Text style={q.homeLinkGo}>{t('Заказать уборку дома ›')}</Text></Text></Pressable>}
    {!!homeAsk&&<View accessibilityLiveRegion="polite" style={q.homeAsk}><Text style={q.homeAskTitle}>{t('Похоже, вам нужна уборка своего жилья')}</Text><Text style={q.homeAskText}>{homeAsk.address?t('Объявление не нужно: закажем уборку по адресу {address}. Цену поставите сами, ИИ подскажет.',{address:homeAsk.address}):t('Объявление не нужно: закажем уборку. Цену поставите сами, ИИ подскажет.')}</Text><Pressable accessibilityRole="button" accessibilityLabel={t('Нет, это объявление для сдачи')} onPress={()=>setListing(text)} hitSlop={8}><Text style={q.homeLinkGo}>{t('Нет, это объявление ›')}</Text></Pressable></View>}
-   <Pressable accessibilityRole="button" accessibilityState={{disabled:!text.trim()||uploading||reading,busy:reading}} disabled={!text.trim()||uploading||reading} onPress={()=>void read()} style={[q.primary,(!text.trim()||uploading)&&q.primaryOff]}>{reading?<View style={q.readingRow}><Thinking size="sm" color={C.onAccent}/><Text style={q.primaryText}>{t('ИИ читает рассказ…')}</Text></View>:<Text style={q.primaryText}>{homeAsk?t('✦  Заказать уборку'):t('✦  Заполнить с ИИ')}</Text>}</Pressable>
+   {foot(null,homeAsk?t('Заказать уборку'):t('Далее'),()=>void read(),!text.trim()||uploading,reading?t('ИИ читает рассказ…'):undefined)}
   </View>}
 
-  {step===1&&<View style={q.body}>
-   {ask?<View style={q.ask}><View style={[q.orb,q.orbSm]}><Text style={q.orbTextSm}>✦</Text></View><View style={{flex:1,minWidth:0,gap:8}}><Text style={q.askQ}>{ask.question}</Text><Text style={q.hint}>{questions.length>1?t('Ещё вопросов: {v}',{v:(questions.length-1)}):t('Последний вопрос')}</Text>
-     <View style={q.askRow}><TextInput accessibilityLabel={ask.label} style={q.askInput} value={answer} onChangeText={setAnswer} placeholder={ask.placeholder} placeholderTextColor={C.muted} onSubmitEditing={reply} returnKeyType="send" keyboardType={ask.key==='price'||ask.key==='cleaningFee'?'number-pad':'default'}/><Pressable accessibilityRole="button" accessibilityLabel={t('Ответить')} disabled={!answer.trim()} onPress={reply} style={[q.send,!answer.trim()&&q.primaryOff]}><Text style={q.primaryText}>↑</Text></Pressable></View></View></View>
-   :<Text style={q.ready}>{found.length?t(forms(found.length,'✓ Всё нужное есть. ИИ понял из рассказа: {n} деталь.','✓ Всё нужное есть. ИИ понял из рассказа: {n} детали.','✓ Всё нужное есть. ИИ понял из рассказа: {n} деталей.'),{n:found.length}):t('✓ Всё нужное есть.')}</Text>}
+  {asking&&ask&&<View style={q.body}>
+   {heading(ask.question,t('ИИ не нашёл это в вашем рассказе.'),questions.length>1?t('Ещё вопросов: {v}',{v:(questions.length-1)}):t('Последний вопрос'))}
+   {!!error&&<Text accessibilityRole="alert" style={q.error}>{error}</Text>}
+   {money_(ask.key)?<>
+    <View style={q.bigRow}><TextInput accessibilityLabel={ask.label} autoFocus style={[q.big,{width:Math.max(1,(answer?digits(Number(answer)):'0').length)*21+6}]} value={answer?digits(Number(answer)):''} onChangeText={v=>setAnswer(v.replace(/\D/g,'').slice(0,8))} placeholder="0" placeholderTextColor={C.lineStrong} keyboardType="number-pad" returnKeyType="done" onSubmitEditing={reply}/><Text style={q.bigUnit}>₸</Text></View>
+    {ask.key==='price'&&!hall&&!!fee&&value>=100&&<View style={q.sum}>
+     <View style={q.sumRow}><Text style={q.sumText}>{t('Гость платит')}</Text><Text style={q.sumText}>{money(value)}</Text></View>
+     <View style={q.sumRow}><Text style={q.sumMuted}>{free?t('Комиссия сервиса · бесплатный старт'):t('Комиссия сервиса {rate}',{rate:percent(fee.rate)})}</Text><Text style={q.sumMuted}>{cut?'−'+money(cut):money(0)}</Text></View>
+     <View style={[q.sumRow,q.sumTotal]}><Text style={q.sumStrong}>{t('Вы получите')}</Text><Text style={q.sumStrong}>{money(value-cut)}</Text></View>
+    </View>}
+    {ask.key==='price'&&!!hint&&<View style={q.advice}><View style={q.spark}><Text style={q.sparkText}>✦</Text></View><Text style={q.adviceText}>{hint.low===hint.high?t('Похожее жильё в городе сдают примерно за {v} ₸ в сутки.',{v:digits(hint.low)}):t('Похожее жильё в городе сдают за {low}–{high} ₸ в сутки.',{low:digits(hint.low),high:digits(hint.high)})}</Text></View>}
+    {ask.key==='cleaningFee'&&<View style={q.chips}><Pressable accessibilityRole="button" onPress={()=>{patch({ownStaff:true});setAnswer('');setError('');}} style={q.chip}><Text style={q.chipText}>{t('Убираем сами')}</Text></Pressable></View>}
+   </>:<AddressField kind={ask.key==='address'?'street':'district'} label={ask.label} value={answer} city={String(draft.city||'')} place={place} max={ask.key==='address'?300:120} placeholder={ask.placeholder} labelStyle={q.tileLabel} inputStyle={q.input} style={q.field} onChange={setAnswer} onPick={c=>{if(ask.key==='address'&&c.district&&!String(draft.district||'').trim())patch({district:c.district});}}/>}
+   {foot(toStory,t('Далее'),reply,!answer.trim())}
+  </View>}
+
+  {step===1&&!asking&&<View style={q.body}>
+   {heading(t('Проверьте объявление'),t('Нажмите на строку, чтобы поправить.'),found.length?t(forms(found.length,'✓ Всё нужное есть. ИИ понял из рассказа: {n} деталь.','✓ Всё нужное есть. ИИ понял из рассказа: {n} детали.','✓ Всё нужное есть. ИИ понял из рассказа: {n} деталей.'),{n:found.length}):undefined)}
+   {!!error&&<Text accessibilityRole="alert" style={q.error}>{error}</Text>}
    <View style={q.preview}>
     <View style={[q.cover,!!photos[0]&&q.coverPhoto]}>{photos[0]?<Photo id={photos[0]} alt={t('Обложка')}/>:<Text style={q.coverEmpty}>{t(['Без фото: зал сохранится черновиком','Без фото: объект сохранится черновиком','Без фото: жильё сохранится черновиком'][sort])}</Text>}</View>
-    <View style={q.previewBody}><TextInput accessibilityLabel={t('Название')} style={q.previewTitle} value={draftTitle(draft)} maxLength={120} onChangeText={v=>patch({title:v})}/><Text style={q.sub}>📍 {[draft.district||t('Район не указан'),draft.city].filter(Boolean).join(' · ')}</Text><Text style={q.price}>{priceLine||t('Цена не указана')}</Text></View>
+    <View style={q.previewBody}><TextInput accessibilityLabel={t('Название')} style={q.previewTitle} value={draftTitle(draft)} maxLength={120} onChangeText={v=>patch({title:v})}/><Text style={q.sub}>{[draft.district||t('Район не указан'),draft.city].filter(Boolean).join(' · ')}</Text><Text style={q.price}>{priceLine||t('Цена не указана')}</Text></View>
    </View>
    <View style={q.rows}>
     {row('kind',t('Тип'),[propertyTypes[draft.type as keyof typeof propertyTypes],draft.ownStaff?t('свой персонал'):''].filter(Boolean).join(' · '),guessed('type'),<KindPicker inline kind={draft.type} ownStaff={draft.ownStaff} onChange={v=>{patch(v);if(v.type)setOpen("");}}/>)}
@@ -148,74 +194,71 @@ export function PropertyQuick({city,onSave,onGuestMode,onPlace,onReview,onClose,
    </View>
    <Text style={q.h}>{t('КТО ОТВЕЧАЕТ ГОСТЯМ')}</Text>
    <View style={q.grid} accessibilityRole="radiogroup">
-    <Pressable accessibilityRole="radio" accessibilityState={{checked:mode==='auto'}} onPress={()=>setMode('auto')} style={[q.mode,mode==='auto'&&q.modeOn]}><Text style={q.modeTitle}>{t('✦ ИИ')}</Text><Text style={q.hint}>{draft.ownStaff?t('Отвечает за минуту и подтверждает бронь'):t('Отвечает за минуту, подтверждает бронь и заказывает уборку')}</Text></Pressable>
+    <Pressable accessibilityRole="radio" accessibilityState={{checked:mode==='auto'}} onPress={()=>setMode('auto')} style={[q.mode,mode==='auto'&&q.modeOn]}><Text style={q.modeTitle}>{t('ИИ')}</Text><Text style={q.hint}>{draft.ownStaff?t('Отвечает за минуту и подтверждает бронь'):t('Отвечает за минуту, подтверждает бронь и заказывает уборку')}</Text></Pressable>
     <Pressable accessibilityRole="radio" accessibilityState={{checked:mode==='manual'}} onPress={()=>setMode('manual')} style={[q.mode,mode==='manual'&&q.modeOn]}><Text style={q.modeTitle}>{t('Я сам')}</Text><Text style={q.hint}>{t('Запросы приходят вам, вы решаете')}</Text></Pressable>
    </View>
    {mode==='auto'&&!draft.ownStaff&&draft.cleaningFee>=100&&<View style={q.grid}>{num('cleaningFee',t('Уборка после гостя, ₸'),1000000)}</View>}
-   {!!questions.length&&<Pressable accessibilityRole="button" onPress={onTop} hitSlop={8}><Text style={q.wait}>{t(forms(questions.length,'Осталось ответить ИИ на {n} вопрос вверху ↑','Осталось ответить ИИ на {n} вопроса вверху ↑','Осталось ответить ИИ на {n} вопросов вверху ↑'),{n:questions.length})}</Text></Pressable>}
-   <View style={q.actions}><Pressable accessibilityRole="button" onPress={()=>{setStep(0);onTop?.();}} disabled={busy} style={q.ghost}><Text style={q.ghostText}>{t('← Назад')}</Text></Pressable><Pressable accessibilityRole="button" accessibilityState={{disabled:busy||uploading||!!questions.length}} disabled={busy||uploading||!!questions.length} onPress={save} style={[q.primary,{flex:1},(busy||uploading||!!questions.length)&&q.primaryOff]}><Text style={q.primaryText}>{busy?t('Сохраняю…'):photos.length?t('Опубликовать'):t('Сохранить черновик')}</Text></Pressable></View>
+   {/* A line cleared while fixing it brings its question back: «Далее» asks it, nothing is saved half-filled. */}
+   {foot(toStory,questions.length?t('Далее'):photos.length?t('Опубликовать'):t('Сохранить черновик'),()=>{if(questions.length){setChecking(false);onTop?.();}else void save();},uploading,busy?t('Сохраняю…'):undefined)}
   </View>}
 
-  {step===2&&saved&&<View style={[q.body,{alignItems:'center'}]}>
+  {step===2&&saved&&<View style={q.body}>
    <View style={q.doneMark}><Text style={q.doneMarkText}>✓</Text></View>
-   <Text style={[q.title,{textAlign:'center'}]}>{draftTitle(draft)}</Text><Text style={[q.sub,{textAlign:'center'}]}>{saved.message}</Text>
-   <Text style={[q.hint,{textAlign:'center'}]}>{(saved.placed?t('Метку на карте ИИ поставил сам по адресу.')+' ':'')+(mode==='auto'?t('Гостям отвечает ИИ: он подтвердит бронь по вашим ценам и закажет уборку.'):t('Запросы гостей будут приходить вам.'))}</Text>
+   {heading(draftTitle(draft),saved.message,(saved.placed?t('Метку на карте ИИ поставил сам по адресу.')+' ':'')+(mode==='auto'?t('Гостям отвечает ИИ: он подтвердит бронь по вашим ценам и закажет уборку.'):t('Запросы гостей будут приходить вам.')))}
    {/* «Право сдавать жильё» right here, not only in the place's card on the map: the owner finds it while the place is fresh. */}
-   <View style={{alignSelf:'stretch'}}><RightDocs propertyId={saved.id} approved={false}/></View>
-   {onMap&&<Pressable accessibilityRole="button" onPress={()=>onMap(saved.id)} style={[q.primary,{alignSelf:'stretch'}]}><Text style={q.primaryText}>{saved.placed?t('Метка по адресу: посмотреть'):t('Показать на карте')}</Text></Pressable>}
-   <Pressable accessibilityRole="button" onPress={()=>onDone(saved)} style={[onMap?q.ghost:q.primary,{alignSelf:'stretch'}]}><Text style={onMap?q.ghostText:q.primaryText}>{t('Готово')}</Text></Pressable>
+   <RightDocs propertyId={saved.id} approved={false}/>
+   <View style={q.seg} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">{[0,1,2].map(i=><View key={i} style={[q.segBar,q.segOn]}/>)}</View>
+   {onMap&&<Pressable accessibilityRole="button" onPress={()=>onMap(saved.id)} style={({pressed})=>[q.next,q.wide,pressed&&{opacity:.85}]}><Text style={q.nextText}>{saved.placed?t('Метка по адресу: посмотреть'):t('Показать на карте')}</Text></Pressable>}
+   <Pressable accessibilityRole="button" onPress={()=>onDone(saved)} style={({pressed})=>[onMap?q.outline:q.next,q.wide,pressed&&{opacity:.85}]}><Text style={onMap?q.outlineText:q.nextText}>{t('Готово')}</Text></Pressable>
   </View>}
  </View>;
 }
 
+// Monochrome as the apps on Mobbin: ink for what is chosen and for the main button, neutral lines, no tinted boxes.
 const q=StyleSheet.create({
- sheet:{backgroundColor:C.surface,borderRadius:R.xl,padding:16,gap:16,borderWidth:1,borderColor:C.line,shadowColor:C.aiFrom,shadowOpacity:.18,shadowRadius:24,shadowOffset:{width:0,height:12},elevation:4},
- head:{flexDirection:'row',alignItems:'center',gap:12},
- orb:{width:H.touch,height:H.touch,borderRadius:R.full,backgroundColor:C.aiFrom,alignItems:'center',justifyContent:'center',borderWidth:3,borderColor:C.accentLine},
- orbSm:{width:32,height:32,borderWidth:2},
- orbText:{color:C.onAccent,...type.subtitle,fontWeight:'700'},orbTextSm:{color:C.onAccent,...type.label,fontWeight:'700'},
- title:{color:C.ink,...type.subtitle,...brandFont},sub:{color:C.muted,...type.label},
- close:{width:H.touch,height:H.touch,borderRadius:R.full,backgroundColor:C.surfaceAlt,alignItems:'center',justifyContent:'center'},closeText:{color:C.inkSoft,...type.subtitle},
- steps:{flexDirection:'row',gap:8},stepItem:{flex:1,gap:4},stepBar:{height:4,borderRadius:R.full,backgroundColor:C.line},stepNow:{backgroundColor:C.gold},stepDone:{backgroundColor:C.night},
- stepText:{color:C.muted,...type.caption,fontWeight:'600'},stepTextNow:{color:C.ink},
+ sheet:{backgroundColor:C.surface,borderRadius:R.xl,padding:16,gap:16,borderWidth:1,borderColor:C.line},
+ top:{flexDirection:'row',alignItems:'center',justifyContent:'space-between',gap:8},
+ pill:{minHeight:36,paddingHorizontal:16,borderRadius:R.full,borderWidth:1,borderColor:C.line,backgroundColor:C.surface,justifyContent:'center'},pillText:{color:C.ink,...type.label,fontWeight:'600'},
+ heading:{gap:4},title:{color:C.ink,...type.title,fontWeight:'800',letterSpacing:-.3},sub:{color:C.muted,...type.label},
  error:{color:C.danger,backgroundColor:C.dangerSoft,borderRadius:R.md,padding:12,...type.label},
  body:{gap:12},
- line:{borderWidth:2,borderColor:C.aiFrom,borderRadius:R.lg,backgroundColor:C.surface,overflow:'hidden'},
+ line:{borderWidth:1,borderColor:C.lineStrong,borderRadius:R.lg,backgroundColor:C.surface,overflow:'hidden'},
  lineInput:{minHeight:136,padding:16,color:C.ink,...type.body},
  lineBar:{flexDirection:'row',alignItems:'center',justifyContent:'space-between',gap:8,paddingHorizontal:12,paddingBottom:12},
  hint:{color:C.muted,...type.caption},
- homeLink:{paddingVertical:8},homeAsk:{gap:4,padding:12,borderRadius:R.lg,backgroundColor:C.accentSoft},homeAskTitle:{color:C.accentPressed,...type.label,fontWeight:'700'},homeAskText:{color:C.inkSoft,...type.caption},homeLinkText:{color:C.inkSoft,...type.label},homeLinkGo:{color:C.accentPressed,fontWeight:'600'},
- photos:{flexDirection:'row',flexWrap:'wrap',gap:8},photo:{width:88,height:88,borderRadius:R.md,overflow:'hidden'},
- photoX:{position:'absolute',top:4,right:4,width:24,height:24,borderRadius:R.full,backgroundColor:C.scrim,alignItems:'center',justifyContent:'center'},photoXText:{color:C.onAccent,...type.caption},
- primary:{minHeight:H.primary,borderRadius:R.full,backgroundColor:C.aiFrom,alignItems:'center',justifyContent:'center',paddingHorizontal:24},primaryOff:{backgroundColor:C.lineStrong},
- primaryText:{color:C.onAccent,...type.body,fontWeight:'700'},
- ghost:{minHeight:H.primary,borderRadius:R.full,backgroundColor:C.surfaceAlt,alignItems:'center',justifyContent:'center',paddingHorizontal:20},ghostText:{color:C.ink,...type.body,fontWeight:'700'},
+ homeLink:{paddingVertical:8},homeAsk:{gap:4,padding:12,borderRadius:R.lg,borderWidth:1,borderColor:C.line},homeAskTitle:{color:C.ink,...type.label,fontWeight:'700'},homeAskText:{color:C.inkSoft,...type.caption},homeLinkText:{color:C.inkSoft,...type.label},homeLinkGo:{color:C.ink,fontWeight:'700'},
+ foot:{gap:16,marginTop:8},seg:{flexDirection:'row',gap:4},segBar:{flex:1,height:4,borderRadius:R.full,backgroundColor:C.line},segOn:{backgroundColor:C.ink},
+ footRow:{flexDirection:'row',alignItems:'center',justifyContent:'space-between',gap:16},
+ back:{color:C.ink,...type.body,fontWeight:'600',textDecorationLine:'underline'},
+ next:{minHeight:H.primary,minWidth:132,borderRadius:R.full,backgroundColor:C.ink,alignItems:'center',justifyContent:'center',paddingHorizontal:24},nextOff:{backgroundColor:C.lineStrong},
+ nextText:{color:C.onAccent,...type.body,fontWeight:'700'},wide:{alignSelf:'stretch'},
+ outline:{minHeight:H.primary,borderRadius:R.full,borderWidth:1,borderColor:C.lineStrong,backgroundColor:C.surface,alignItems:'center',justifyContent:'center',paddingHorizontal:20},outlineText:{color:C.ink,...type.body,fontWeight:'600'},
+ bigRow:{flexDirection:'row',alignItems:'baseline',justifyContent:'center',gap:8,paddingVertical:16},
+ big:{maxWidth:'80%',color:C.ink,...type.display,fontWeight:'800',letterSpacing:-1,textAlign:'center',padding:0,...(Platform.OS==='web'?({outlineStyle:'none'} as object):null)},bigUnit:{color:C.ink,...type.display,fontWeight:'800'},
+ sum:{borderRadius:R.lg,borderWidth:1.5,borderColor:C.ink,paddingHorizontal:16,paddingVertical:12,gap:4},
+ sumRow:{flexDirection:'row',justifyContent:'space-between',gap:12},sumTotal:{borderTopWidth:1,borderTopColor:C.line,paddingTop:8,marginTop:4},
+ sumText:{color:C.ink,...type.body},sumMuted:{color:C.muted,...type.body,flexShrink:1},sumStrong:{color:C.ink,...type.body,fontWeight:'700'},
+ advice:{flexDirection:'row',alignItems:'flex-start',gap:12,padding:12,borderRadius:R.lg,backgroundColor:C.bg},spark:{width:28,height:28,borderRadius:R.full,backgroundColor:C.accent,alignItems:'center',justifyContent:'center'},sparkText:{...type.label,color:C.onAccent,fontWeight:'700'},adviceText:{flex:1,color:C.ink,...type.label,paddingTop:4},
  preview:{borderRadius:R.lg,borderWidth:1,borderColor:C.line,overflow:'hidden'},
- cover:{minHeight:56,backgroundColor:C.accentSoft,alignItems:'center',justifyContent:'center'},coverPhoto:{aspectRatio:16/9},coverEmpty:{color:C.accent,...type.label,fontWeight:'600',textAlign:'center',padding:16},
- previewBody:{padding:12,gap:4},previewTitle:{color:C.ink,...type.subtitle,fontWeight:'700',padding:0},price:{color:C.accent,...type.body,fontWeight:'700'},
- ask:{flexDirection:'row',gap:12,padding:16,borderRadius:R.lg,backgroundColor:C.accentSoft,borderWidth:1,borderColor:C.accentLine},
- askQ:{color:C.ink,...type.body,fontWeight:'600'},askRow:{flexDirection:'row',gap:8},
- askInput:{flex:1,minWidth:0,minHeight:H.field,borderRadius:R.full,borderWidth:1,borderColor:C.lineStrong,backgroundColor:C.surface,paddingHorizontal:16,color:C.ink,...type.body},
- send:{width:H.field,height:H.field,borderRadius:R.full,backgroundColor:C.accent,alignItems:'center',justifyContent:'center'},
- ready:{color:C.success,backgroundColor:C.successSoft,borderRadius:R.md,padding:12,...type.label,fontWeight:'600'},
+ cover:{minHeight:56,backgroundColor:C.surfaceAlt,alignItems:'center',justifyContent:'center'},coverPhoto:{aspectRatio:16/9},coverEmpty:{color:C.inkSoft,...type.label,fontWeight:'600',textAlign:'center',padding:16},
+ previewBody:{padding:12,gap:4},previewTitle:{color:C.ink,...type.subtitle,fontWeight:'700',padding:0},price:{color:C.ink,...type.body,fontWeight:'700'},
+ readingRow:{flexDirection:'row',alignItems:'center',gap:12},
  h:{color:C.muted,...type.caption,fontWeight:'700',letterSpacing:.8,marginTop:8},
  chips:{flexDirection:'row',flexWrap:'wrap',gap:8},
  chip:{minHeight:H.compact,justifyContent:'center',paddingHorizontal:16,borderRadius:R.full,borderWidth:1,borderColor:C.lineStrong,backgroundColor:C.surface},
- chipOn:{backgroundColor:C.accent,borderColor:C.accent},chipText:{color:C.inkSoft,...type.label},chipTextOn:{color:C.onAccent,fontWeight:'600'},
+ chipOn:{backgroundColor:C.ink,borderColor:C.ink},chipText:{color:C.ink,...type.label},chipTextOn:{color:C.onAccent,fontWeight:'600'},
  grid:{flexDirection:'row',gap:8},half:{flex:1},
  tile:{flex:1,minHeight:76,padding:12,borderRadius:R.md,borderWidth:1,borderColor:C.line,backgroundColor:C.surface,justifyContent:'space-between'},
  tileLabel:{color:C.muted,...type.caption,fontWeight:'600'},guess:{color:C.warning,...type.caption},
  tileValue:{color:C.ink,...type.subtitle,fontWeight:'700',padding:0},
- field:{gap:4},input:{minHeight:H.field,borderRadius:R.md,borderWidth:1,borderColor:C.line,backgroundColor:C.surface,paddingHorizontal:16,paddingVertical:12,color:C.ink,...type.body},
+ field:{gap:4},input:{minHeight:H.field,borderRadius:R.md,borderWidth:1,borderColor:C.lineStrong,backgroundColor:C.surface,paddingHorizontal:16,paddingVertical:12,color:C.ink,...type.body},
  area:{minHeight:112,textAlignVertical:'top',...type.label},
  rows:{borderRadius:R.lg,borderWidth:1,borderColor:C.line,backgroundColor:C.surface,overflow:'hidden'},
- row:{borderTopWidth:1,borderTopColor:C.line},rowOn:{backgroundColor:C.surfaceAlt},
+ row:{borderTopWidth:1,borderTopColor:C.line},rowOn:{backgroundColor:C.bg},
  rowHead:{flexDirection:'row',alignItems:'center',gap:12,minHeight:60,paddingHorizontal:16,paddingVertical:8},
  rowLabel:{color:C.muted,...type.caption,fontWeight:'700'},rowValue:{color:C.ink,...type.body},rowEmpty:{color:C.danger},
- rowGo:{color:C.accent,...type.label,fontWeight:'600'},rowBody:{gap:12,paddingHorizontal:16,paddingBottom:16},
- readingRow:{flexDirection:'row',alignItems:'center',gap:12},wait:{color:C.warning,...type.label,fontWeight:'600',textAlign:'center'},
- mode:{flex:1,padding:12,borderRadius:R.lg,borderWidth:2,borderColor:C.line,backgroundColor:C.surface,gap:4},modeOn:{borderColor:C.aiFrom,backgroundColor:C.accentSoft},
+ rowGo:{color:C.ink,...type.label,fontWeight:'600',textDecorationLine:'underline'},rowBody:{gap:12,paddingHorizontal:16,paddingBottom:16},
+ mode:{flex:1,padding:12,borderRadius:R.lg,borderWidth:1,borderColor:C.line,backgroundColor:C.surface,gap:4},modeOn:{borderColor:C.ink,borderWidth:2,padding:12},
  modeTitle:{color:C.ink,...type.body,fontWeight:'700'},
- actions:{flexDirection:'row',gap:12,marginTop:8},
- doneMark:{width:64,height:64,borderRadius:R.full,backgroundColor:C.aiFrom,alignItems:'center',justifyContent:'center'},doneMarkText:{color:C.onAccent,...type.heading,fontWeight:'700'}
+ doneMark:{width:56,height:56,borderRadius:R.full,backgroundColor:C.ink,alignItems:'center',justifyContent:'center'},doneMarkText:{color:C.onAccent,...type.title,fontWeight:'700'}
 });

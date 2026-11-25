@@ -51,9 +51,9 @@ if(Platform.OS==='android')UIManager.setLayoutAnimationEnabledExperimental?.(tru
 const smooth=()=>LayoutAnimation.configureNext(LayoutAnimation.create(220,LayoutAnimation.Types.easeInEaseOut,LayoutAnimation.Properties.opacity));
 // The owner's fee for one booking, to show the sum as top apps do (Airtasker, alias): what the guest pays, minus the
 // service's fee, what stays. The rate and its cap come from the server; during the free start the fee is zero.
-type OwnerFee={rate:number;max:number;freeUntil:number|null};
+export type OwnerFee={rate:number;max:number;freeUntil:number|null};
 let feeCache:Promise<OwnerFee>|null=null;
-function useOwnerFee(on:boolean){
+export function useOwnerFee(on:boolean){
  const [fee,setFee]=useState<OwnerFee|null>(null);
  useEffect(()=>{if(!on)return;let live=true;
   feeCache=feeCache||Promise.all([request('/api/operations/service-billing/state',undefined,undefined,undefined,'owner'),request('/api/operations/autopilot/state').catch(()=>null)]).then(([b,a]:any[])=>({rate:Number(b?.rates?.owner??400),max:Number(b?.rates?.ownerMax??0),freeUntil:a?.billing?.freeUntil??null}));

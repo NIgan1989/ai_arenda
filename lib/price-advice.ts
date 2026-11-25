@@ -160,3 +160,13 @@ export async function decidePriceSuggestion(s:RentalService,suggestionId:string,
  if(!r[0].meta.changes)throw new DomainError('Тарифы уже изменились. Обновите экран.',409);
  return {message:'Готово: «'+p.title+'» теперь '+money(p.to_daily)+' за сутки. Гости увидят новую цену сразу.'};
 }
+
+// «Сколько стоят сутки?» while the owner adds a flat: what similar flats in the city ask (rooms ±1, the middle half of
+// their daily prices). Nothing is said when there are fewer than three to compare with, so the hint is never made up.
+export async function similarRange(s:RentalService,body:Row){
+ const city=required(body.city,'Город',80),rooms=Math.max(1,Math.min(20,Math.round(Number(body.rooms)||1)));
+ const prices=(await rows(s.db,`SELECT p.price FROM properties p LEFT JOIN property_details d ON d.property_id=p.id WHERE p.city=? AND p.owner_id<>? AND p.published=1 AND p.archived_at IS NULL AND p.demo_owner IS NULL AND p.rooms BETWEEN ? AND ? AND p.price>=100 AND COALESCE(json_extract(d.details,'$.type'),'') NOT IN ('banquet','cafe','banya','sauna') ORDER BY p.price`,city,s.userId,rooms-1,rooms+1)).map(r=>Number(r.price));
+ if(prices.length<3)return {similar:prices.length,low:null,high:null};
+ const at=(share:number)=>prices[Math.round(share*(prices.length-1))];
+ return {similar:prices.length,low:at(.25),high:at(.75)};
+}

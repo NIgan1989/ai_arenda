@@ -42,6 +42,8 @@ import {offerPriceAdvice,ownerPriceSuggestions,decidePriceSuggestion} from './pr
 import {guestStayOffers,decideStayOffer} from './stay-offers';
 import {guestFavorites} from './favorites';
 import {staffPlaces} from './staff';
+import {cleanerOffers} from './dispatch';
+import {ownerClosedDays} from './closed-days';
 import {homePlaces,homeDeals} from './home-order';
 import {homeChecklist,homeOrderOf,homeCancel,tenge,HOME_DAMAGE_WINDOW} from './home-cleaning';
 import {venuesFor} from './venue';
@@ -334,6 +336,10 @@ export class RentalService {
       admission:a.job_demo?'not_required':role==='owner'?workers.get(a.user_id)?.admission:ownAdmission})),messages:state.messages.filter(m=>m.scope===role)};
     if(role==='owner'){(result as Row).priceSuggestions=await ownerPriceSuggestions(this.db,this.userId,state.serverTime);(result as Row).calendarWindows=await ownerWindows(this.db,this.userId,state.serverTime);(result as Row).loadForecasts=await ownerForecasts(this.db,this.userId,state.serverTime);(result as Row).listingTips=await ownerListingTips(this.db,this.userId,state.serverTime);(result as Row).cleaningTips=await ownerCleaningTips(this.db,this.userId,state.serverTime);}
     if(role==='guest'){(result as Row).stayOffers=await guestStayOffers(this.db,this.userId,state.serverTime);Object.assign(result,await guestFavorites(this.db,this.userId));}
+    // The owner's closed days (lib/closed-days.ts) for the calendar; the cleaner's own offers with their time to answer
+    // and how many objects the cleaner is pinned to as «Постоянный исполнитель» (lib/dispatch.ts).
+    if(role==='owner')(result as Row).closedDays=await ownerClosedDays(this.db,this.userId,state.serverTime);
+    if(role==='cleaner')Object.assign(result,await cleanerOffers(this.db,this.userId,state.serverTime));
     // «Смена»: how many objects this person marks guests for (lib/staff.ts), in any role.
     (result as Row).staffPlaces=await staffPlaces(this.db,this.userId);
     // The private addresses of home cleanings (lib/home-order.ts): a repeated order takes two taps, in any role.
@@ -493,7 +499,7 @@ export class RentalService {
     const [profile, properties, ownProperties, bookings, jobs, applications, notifications, messages] = await Promise.all([
       this.profile(),
       includeCatalog?this.all('SELECT id,title,city,district,description,price,rooms,capacity,cleaning_minutes,demo_owner,published FROM properties p WHERE published=1 AND (demo_owner IS NULL OR demo_owner=?) AND '+pilotPropertyVisibleSql('p')+' AND NOT EXISTS(SELECT 1 FROM room_units u WHERE u.property_id=p.id) ORDER BY created_at DESC', this.userId):Promise.resolve([]),
-      this.all('SELECT p.*,(SELECT c.name FROM regular_cleaners r JOIN profiles c ON c.id=r.cleaner_id WHERE r.property_id=p.id) regular_cleaner_name,(SELECT a.name FROM property_staff x JOIN auth_accounts a ON a.id=x.staff_id WHERE x.property_id=p.id) staff_name,(SELECT MAX(x.end) FROM external_blocks x JOIN calendar_sources c ON c.id=x.source_id WHERE x.property_id=p.id AND c.external_property_id=\'aiqonaq:busy\' AND x.start<=unixepoch() AND x.end>unixepoch()) busy_until,(SELECT COALESCE(SUM(v.shown),0) FROM property_views v WHERE v.property_id=p.id AND v.day>CAST((unixepoch()+18000)/86400 AS INTEGER)-7) views_week FROM properties p WHERE p.owner_id=? AND p.archived_at IS NULL AND NOT EXISTS(SELECT 1 FROM room_units u WHERE u.property_id=p.id) ORDER BY p.created_at DESC', this.userId),
+      this.all('SELECT p.*,(SELECT c.name FROM regular_cleaners r JOIN profiles c ON c.id=r.cleaner_id WHERE r.property_id=p.id) regular_cleaner_name,(SELECT a.name FROM property_staff x JOIN auth_accounts a ON a.id=x.staff_id WHERE x.property_id=p.id) staff_name,(SELECT MAX(x.end) FROM external_blocks x JOIN calendar_sources c ON c.id=x.source_id WHERE x.property_id=p.id AND c.external_property_id IN (\'aiqonaq:busy\',\'aiqonaq:busy:\'||p.id) AND x.start<=unixepoch() AND x.end>unixepoch()) busy_until,(SELECT COALESCE(SUM(v.shown),0) FROM property_views v WHERE v.property_id=p.id AND v.day>CAST((unixepoch()+18000)/86400 AS INTEGER)-7) views_week FROM properties p WHERE p.owner_id=? AND p.archived_at IS NULL AND NOT EXISTS(SELECT 1 FROM room_units u WHERE u.property_id=p.id) ORDER BY p.created_at DESC', this.userId),
       this.all(`SELECT b.*,p.title,(SELECT json_extract(details,'$.type') FROM property_details WHERE property_id=p.id) property_type,p.owner_id,p.city,p.district,p.demo_owner,(SELECT photos FROM property_details WHERE property_id=p.id) property_photos,
         CASE WHEN p.owner_id=? OR (b.guest_id=? AND b.status='confirmed') THEN p.address ELSE NULL END address,
         (SELECT json_object('state',a.state,'city',a.city,'district',a.district,'address',a.address) FROM booking_addresses a WHERE a.booking_id=b.id) agreed_row,
