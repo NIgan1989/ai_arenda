@@ -313,7 +313,7 @@ export function GuestResults({ preview, draft, mine, onFavorite, selected, onSel
   }
 
   return (
-    <View style={r.strip} onLayout={e => setStripBottom(Math.round(e.nativeEvent.layout.y + e.nativeEvent.layout.height))}>{trail}{tips}<View style={r.counter}><Text accessibilityRole="header" style={h.cardTitle}>{list.length > 1 ? t('{v} из {length}',{v:(index + 1),length:list.length}) : t('Свободно на {v}',{v:stayWords(draft)})}</Text>{list.length > 1 && <Text style={h.note}>{t('на {stay}',{stay:stayWords(draft)})}</Text>}</View><ScrollView
+    <View style={r.strip} onLayout={e => setStripBottom(Math.round(e.nativeEvent.layout.y + e.nativeEvent.layout.height))}>{trail}<ScrollView
         ref={strip}
         horizontal
         showsHorizontalScrollIndicator={false}
@@ -328,23 +328,24 @@ export function GuestResults({ preview, draft, mine, onFavorite, selected, onSel
           <Pressable
             key={flat.id}
             accessibilityRole="button"
-            accessibilityLabel={(flat.match?.best ? (quiet ? t('Подходит лучше других. ') : t('Лучший выбор для вас. ')) : '') + flat.title + ', ' + money(flat.estimate.amount)}
+            accessibilityLabel={t('Забронировать: {title}',{title:(flat.match?.best ? (quiet ? t('Подходит лучше других. ') : t('Лучший выбор для вас. ')) : '') + flat.title + ', ' + money(flat.estimate.amount)})}
             onPress={() => {
               // The map flies to the chosen card's pin, even when the swipe that showed it has not settled yet.
               clearTimeout(settle.current);
               setIndex(i);
               onFocus?.(flat.id);
-              onSelect(flat.id);
+              onBook(flat);
             }}
-            style={({ pressed }) => [r.card, { width: card }, i === index && r.cardInView, pressed && r.cardPressed]}
-          ><View style={r.cardRow}><View style={r.cardPhoto}><Photo id={Math.abs(i - index) <= 2 || i <= seen + 2 ? flat.photos?.[0] : null} alt={t('{title}, фото',{title:flat.title})} fill />{!!mine && !!onFavorite && <View style={r.heartOnPhoto}><Heart on={mine.favorites.includes(flat.id)} title={flat.title} onPress={() => onFavorite(flat.id)} /></View>}{!!flat.match?.best && <Text style={[r.bestTag, r.bestOnPhoto]}>{bestWords}</Text>}</View><View style={r.cardBody}><Text numberOfLines={1} style={h.eventTitle}>{flat.title}</Text>{ready(flat)}<Text numberOfLines={1} style={h.note}>{what(flat) || t('за {v}',{v:stayWords(draft)})}</Text><View style={r.priceRow}><Text style={h.rowPrice}>{money(flat.estimate.amount)}</Text>{!!flat.estimate.window && <Text style={r.window}>−{flat.estimate.window.percent}%</Text>}{!!flat.estimate.deal && <Text style={r.deal}>{t('Цена выгодная')}</Text>}</View></View></View>{/* Why this place answers the request, in the guest's own conditions. */}{!!why(flat) && <Text numberOfLines={1} style={r.why}>{why(flat)}</Text>}{/* Two taps to a booking: this button, then «Отправить заявку» on the check of the booking. */}<Pressable accessibilityRole="button" accessibilityLabel={t('Забронировать: {title}',{title:flat.title})} disabled={busy} onPress={() => onBook(flat)} style={({ pressed }) => [r.book, (pressed || busy) && h.dim]}><Text style={r.bookText}>{t('Забронировать')}</Text></Pressable></Pressable>
+            disabled={busy}
+            style={({ pressed }) => [r.card, { width: card }, pressed && r.cardPressed]}
+          ><View style={r.cardRow}><View style={r.cardPhoto}><Photo id={Math.abs(i - index) <= 2 || i <= seen + 2 ? flat.photos?.[0] : null} alt={t('{title}, фото',{title:flat.title})} fill />{!!mine && !!onFavorite && <View style={r.heartOnPhoto}><Heart on={mine.favorites.includes(flat.id)} title={flat.title} onPress={() => onFavorite(flat.id)} /></View>}{!!flat.match?.best && <Text style={[r.bestTag, r.bestOnPhoto]}>{bestWords}</Text>}</View><View style={r.cardBody}><View style={r.cardTop}><Text numberOfLines={1} style={[h.eventTitle, h.grow]}>{flat.title}</Text>{Number(flat.rating?.count) > 0 && <Text style={r.rating}>★ {Number(flat.rating.average).toFixed(1).replace('.', ',')} ({flat.rating.count})</Text>}</View><Text numberOfLines={1} style={h.note}>{what(flat) || t('за {v}',{v:stayWords(draft)})}</Text>{ready(flat)}<View style={r.priceRow}><Text style={r.cardPrice}>{money(flat.estimate.amount)}</Text><Text style={h.note}>{t('за {stay}',{stay:stayWords(draft)})}</Text>{!!flat.estimate.window && <Text style={r.window}>−{flat.estimate.window.percent}%</Text>}<Text style={r.freeTag}>{t('✓ Отмена бесплатно')}</Text></View></View></View></Pressable>
         ))}</ScrollView>{list.length > 1 && (
         <View style={r.dots} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">{Array.from({ length: Math.min(DOTS, list.length) }, (_, i) => {
             // More cards than dots: the dots follow the card in view like a window over the strip.
             const first = Math.max(0, Math.min(list.length - DOTS, index - Math.floor(DOTS / 2)));
             return <View key={i} style={[r.dot, first + i === index && r.dotOn]} />;
           })}</View>
-      )}</View>
+      )}<Text accessibilityRole="header" style={r.counterText}>{list.length > 1 ? t('{v} из {length}',{v:(index + 1),length:list.length}) + ' · ' + t('на {stay}',{stay:stayWords(draft)}) : t('Свободно на {v}',{v:stayWords(draft)})}</Text>{tips}</View>
   );
 }
 
@@ -356,24 +357,26 @@ const r = StyleSheet.create({
   hallName: { ...type.label, color: C.ink, fontWeight: '600' },
   hallMeta: { ...type.caption, color: C.muted },
   carousel: { marginHorizontal: -16, marginBottom: 4 },
-  carouselContent: { paddingHorizontal: 16, gap: GAP },
-  card: { borderRadius: T.radius.lg, borderWidth: 1, borderColor: C.line, backgroundColor: C.surface, overflow: 'hidden', padding: 12, gap: 8 },
-  cardInView: { borderColor: C.accent, borderWidth: 2 },
+  carouselContent: { paddingHorizontal: 16, paddingVertical: 8, gap: GAP },
+  card: { borderRadius: T.radius.lg, backgroundColor: C.surface, padding: 8, gap: 8, shadowColor: C.ink, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.12, shadowRadius: 14, elevation: 4 },
   cardPressed: { opacity: 0.85 },
   // The photo comes first and wide, as on the big rental apps (Mobbin, Airbnb): the guest chooses by the picture,
   // then reads the name and the price under it.
   cardRow: { gap: 10 },
-  cardPhoto: { width: '100%', height: 148, borderRadius: T.radius.md, overflow: 'hidden', backgroundColor: C.surfaceAlt },
+  cardPhoto: { width: '100%', height: 156, borderRadius: T.radius.md, overflow: 'hidden', backgroundColor: C.surfaceAlt },
   bestOnPhoto: { position: 'absolute', left: 8, top: 8 },
   bestTag: { ...type.caption, alignSelf: 'flex-start', paddingHorizontal: 8, paddingVertical: 2, borderRadius: T.radius.full, overflow: 'hidden', backgroundColor: C.aiFrom, color: C.onAccent, fontWeight: '600' },
   heartOnPhoto: { position: 'absolute', right: 4, top: 4 },
-  cardBody: { flex: 1, minWidth: 0, gap: 2, justifyContent: 'center' },
+  cardBody: { flex: 1, minWidth: 0, gap: 2, justifyContent: 'center', paddingHorizontal: 4, paddingBottom: 4 },
+  rating: { ...type.caption, color: C.ink, fontWeight: '600' },
+  cardPrice: { ...type.subtitle, color: C.ink, fontWeight: '800' },
+  freeTag: { ...type.caption, marginLeft: 'auto', paddingHorizontal: 8, paddingVertical: 2, borderRadius: T.radius.sm, overflow: 'hidden', backgroundColor: C.successSoft, color: C.success, fontWeight: '600' },
   priceRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', columnGap: 8 },
   why: { ...type.caption, color: C.muted, fontWeight: '600' },
   ready: { ...type.caption, color: C.success, fontWeight: '600' },
   readyCheck: { color: C.warning },
   strip: { gap: 12 },
-  counter: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', gap: 8 },
+  counterText: { ...type.label, color: C.inkSoft, fontWeight: '600', textAlign: 'center' },
   dots: { flexDirection: 'row', justifyContent: 'center', gap: 6, marginBottom: 4 },
   dot: { width: 6, height: 6, borderRadius: 3, backgroundColor: C.lineStrong },
   dotOn: { width: 18, backgroundColor: C.accent },

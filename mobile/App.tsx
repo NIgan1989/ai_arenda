@@ -121,29 +121,44 @@ function BookingReview({flow,photo,busy,done,result,onConfirm,onEdit}:{flow:Flow
   const perGuest=Number(quote?.policy?.extra_guest_price)||0,least=Number(quote?.policy?.included_guests)||0,occasion=hall?occasionTitle(String(flow.answers.occasion||'')):'';
   const guestsText=guests+' '+forms(guests,'гость','гостя','гостей'),depositSum=money(deposit),minutes=quote?.cleaningMinutes;
   // The place comes first with its photo, as on the big rental apps: the guest sees what is being booked.
-  return <View style={s.card}><View style={rv.head}>{!!photo&&<View style={rv.thumb}><Photo id={photo} alt={tr('{title}, фото',{title:String(quote?.title||'')})} fill/></View>}<Text accessibilityRole="header" style={[s.cardTitle,rv.title]}>{quote?.title||tr('Условия бронирования')}</Text></View>
+  // As in the concept (Mobbin: Airbnb, Booking): the place with its photo, then one row for each thing the guest checks,
+  // each with its own button, the free cancellation as a green line and the send by a swipe.
+  const unit=tr('Итого');
+  const when=quote?(hall?[occasion&&flow.answers.occasion!=='other'?occasion:'',banquetWhen(new Date((Number(quote.start)+18000)*1000).toISOString().slice(0,16))].filter(Boolean).join(' · '):date(quote.start)+' → '+date(quote.end)):'';
+  const rated=Number(quote?.rating?.count)>0?'★ '+Number(quote!.rating.average).toFixed(1).replace('.',',')+' ('+quote!.rating.count+')':'';
+  return <View style={[s.card,rv.card]}><View style={rv.head}>{!!photo&&<View style={rv.thumb}><Photo id={photo} alt={tr('{title}, фото',{title:String(quote?.title||'')})} fill/></View>}<View style={rv.title}><Text accessibilityRole="header" numberOfLines={2} style={rv.name}>{quote?.title||tr('Условия бронирования')}</Text>{!!quote&&<Text numberOfLines={1} style={rv.sub}>{[rated,guestsText].filter(Boolean).join(' · ')}</Text>}</View></View>
     {checking&&<View style={s.progressRow}><Thinking size="sm"/><Text style={s.meta}>{tr('Проверяю стоимость и свободный интервал…')}</Text></View>}
     {!!error&&<><Text accessibilityRole="alert" style={s.error}>{error}</Text><Button title={tr('Проверить ещё раз')} secondary disabled={busy||checking} onPress={()=>setAttempt(v=>v+1)}/></>}
     {quote&&!error&&!checking&&<>
-      <Text style={s.text}>{hall?[occasion&&flow.answers.occasion!=='other'?occasion:'',banquetWhen(new Date((Number(quote.start)+18000)*1000).toISOString().slice(0,16)),guestsText].filter(Boolean).join(' · '):date(quote.start)+' → '+date(quote.end)+' · '+guestsText}</Text>
-      <View style={s.quoteTotal}><Text style={s.key}>{bath?tr('Стоимость'):tr('Стоимость проживания')}</Text><Text style={s.price}>{money(quote.amount)}</Text></View>
-      <Text style={rv.free}>{'✓ '+freeCancelLine(quote,String(flow.answers.billingMode||''))}</Text>
-      {!!quote.repeat&&<Text style={s.meta}>{tr('Скидка постоянного гостя −{n}%',{n:quote.repeat.percent})}{' · '+tr('без неё {price}',{price:money(quote.repeat.regular*Number(quote.periods))})}</Text>}
-      <Text style={s.meta}>{deposit?(hall?tr('Депозит {sum} вернётся после мероприятия.',{sum:depositSum}):bath?tr('Депозит {sum} вернётся после ухода.',{sum:depositSum}):tr('Депозит {sum} вернётся после выезда.',{sum:depositSum}))+' ':''}{auto?tr('Обычно бронь подтверждается сразу, иначе владелец ответит за 15 минут.'):tr('Владелец ответит за 15 минут.')}{' '}{tr('Сейчас деньги не списываются.')}</Text>
+      <View style={rv.row}><View style={rv.grow}><Text style={rv.key}>{hall?tr('Дата'):tr('Даты')}</Text><Text style={rv.value}>{when}</Text></View><Pressable accessibilityRole="button" accessibilityLabel={hall?tr('Изменить'):tr('Изменить даты')} disabled={busy} onPress={onEdit} style={({pressed})=>[rv.small,pressed&&rv.pressed]}><Text style={rv.smallText}>{tr('Изменить')}</Text></Pressable></View>
+      <View style={rv.row}><View style={rv.grow}><Text style={rv.key}>{bath?tr('Стоимость'):unit}</Text><Text style={rv.value}>{money(quote.amount)}</Text>{!!quote.repeat&&<Text style={rv.note}>{tr('Скидка постоянного гостя −{n}%',{n:quote.repeat.percent})}{' · '+tr('без неё {price}',{price:money(quote.repeat.regular*Number(quote.periods))})}</Text>}</View><Pressable accessibilityRole="button" accessibilityLabel={more?tr('Свернуть'):tr('Правила и расчёт')} accessibilityState={{expanded:more}} disabled={busy} onPress={()=>setMore(v=>!v)} style={({pressed})=>[rv.small,pressed&&rv.pressed]}><Text style={rv.smallText}>{more?tr('Свернуть'):tr('Расчёт')}</Text></Pressable></View>
+      {more&&<View style={rv.more}>{!hall&&<Text style={s.meta}>{quote.periods} × {money(quote.price)} · {tr(quote.unitLabel)}. {bath?tr('После вас {minutes} мин. на уборку.',{minutes}):tr('После выезда {minutes} мин. на подготовку жилья.',{minutes})}</Text>}{!!quote.policy.house_rules&&<Text style={s.meta}>{quote.policy.house_rules}</Text>}</View>}
       {hall&&perGuest>0&&<Text style={s.meta}>{tr('{price} за гостя × {n}.',{price:money(perGuest),n:Math.max(guests,least)})}{guests<least?' '+tr('Наименьший заказ зала: {least} гостей.',{least}):''}{' '}{tr('При отмене вся оплата возвращается: заведение может заявить только расходы на ваш заказ, подтверждённые документами.')}</Text>}
       {bath&&!hall&&extra>0&&<Text style={s.meta}>{tr('В цене гостей: {included}. Доплата за ещё {extra}: {sum}.',{included:guests-extra,extra,sum:money(Number(quote.guestSurcharge)*Number(quote.periods))})}</Text>}
-      {more&&<>{!hall&&<Text style={s.meta}>{quote.periods} × {money(quote.price)} · {tr(quote.unitLabel)}. {bath?tr('После вас {minutes} мин. на уборку.',{minutes}):tr('После выезда {minutes} мин. на подготовку жилья.',{minutes})}</Text>}{!!quote.policy.house_rules&&<Text style={s.meta}>{quote.policy.house_rules}</Text>}</>}
-      <Text style={s.meta}>{hall?tr('Нажимая кнопку, вы соглашаетесь с датой, ценой на гостя, депозитом и правилами зала.'):bath?tr('Нажимая кнопку, вы соглашаетесь с датами, тарифом, депозитом и правилами объекта.'):tr('Нажимая кнопку, вы соглашаетесь с датами, тарифом, депозитом и правилами жилья.')}</Text>
+      {deposit>0&&<View style={rv.row}><View style={rv.grow}><Text style={rv.key}>{tr('Депозит')}</Text><Text style={rv.value}>{hall?tr('{sum}, вернётся после мероприятия',{sum:depositSum}):bath?tr('{sum}, вернётся после ухода',{sum:depositSum}):tr('{sum}, вернётся после выезда',{sum:depositSum})}</Text></View></View>}
+      <Text style={rv.free}>{'✓ '+freeCancelLine(quote,String(flow.answers.billingMode||''))}</Text>
+      <View style={rv.calm}><Text style={rv.calmText}>{auto?tr('Обычно бронь подтверждается сразу, иначе владелец ответит за 15 минут.'):tr('Деньги не спишутся, пока владелец не ответит. Он ответит за 15 минут.')}</Text></View>
       {/* One gesture sends the request, as every main confirmation of the app («Проведите»). */}
       <SwipeConfirm label={auto?tr('Проведите: забронировать за {v}',{v:money(quote.amount)}):tr('Проведите: отправить заявку')} disabled={busy} onConfirm={()=>onConfirm(quote)}/>
+      <Text style={rv.agree}>{hall?tr('Нажимая кнопку, вы соглашаетесь с датой, ценой на гостя, депозитом и правилами зала.'):bath?tr('Нажимая кнопку, вы соглашаетесь с датами, тарифом, депозитом и правилами объекта.'):tr('Нажимая кнопку, вы соглашаетесь с датами, тарифом, депозитом и правилами жилья.')}</Text>
     </>}
-    <View style={s.buttonRow}>{quote&&!error&&!checking&&<Button title={more?tr('Свернуть'):tr('Правила и расчёт')} secondary disabled={busy} onPress={()=>setMore(v=>!v)}/>}<Button title={hall?tr('Изменить'):tr('Изменить даты')} secondary disabled={busy||checking} onPress={onEdit}/></View>
+    {(!quote||!!error)&&!checking&&<View style={s.buttonRow}><Button title={hall?tr('Изменить'):tr('Изменить даты')} secondary disabled={busy} onPress={onEdit}/></View>}
   </View>;
 }
 const rv=StyleSheet.create({
-  head:{flexDirection:'row',alignItems:'center',gap:12},title:{flex:1,minWidth:0},
+  card:{gap:0},
+  head:{flexDirection:'row',alignItems:'center',gap:12,paddingBottom:12},title:{flex:1,minWidth:0,gap:2},
+  name:{...type.subtitle,color:C.ink,fontWeight:'700'},sub:{...type.caption,color:C.muted},
   thumb:{width:64,height:64,borderRadius:T.radius.md,overflow:'hidden',backgroundColor:C.surfaceAlt},
-  free:{...type.caption,alignSelf:'flex-start',paddingHorizontal:8,paddingVertical:4,borderRadius:T.radius.sm,overflow:'hidden',backgroundColor:C.successSoft,color:C.success,fontWeight:'600'}
+  row:{flexDirection:'row',alignItems:'center',gap:12,paddingVertical:12,borderTopWidth:StyleSheet.hairlineWidth,borderTopColor:C.line},
+  grow:{flex:1,minWidth:0,gap:2},
+  key:{...type.caption,color:C.muted},value:{...type.body,color:C.ink,fontWeight:'600'},note:{...type.caption,color:C.muted},
+  small:{minHeight:36,paddingHorizontal:12,borderRadius:T.radius.full,backgroundColor:C.surfaceAlt,alignItems:'center',justifyContent:'center'},
+  smallText:{...type.label,color:C.ink,fontWeight:'600'},pressed:{opacity:.6},
+  more:{gap:4,paddingBottom:12},
+  free:{...type.caption,alignSelf:'flex-start',marginTop:4,marginBottom:12,paddingHorizontal:8,paddingVertical:4,borderRadius:T.radius.sm,overflow:'hidden',backgroundColor:C.successSoft,color:C.success,fontWeight:'600'},
+  calm:{padding:12,marginBottom:12,borderRadius:T.radius.md,backgroundColor:C.surfaceAlt},calmText:{...type.caption,color:C.inkSoft},
+  agree:{...type.caption,color:C.muted,marginTop:8}
 });
 function Auth({onSubmit,busy,titled=true}:{titled?:boolean;onSubmit:(mode:string,phone:string,password:string,name?:string,city?:string,recovery?:string)=>Promise<void>;busy:boolean}){
   const [mode,setMode]=useState('login'),[phone,setPhone]=useState(''),[password,setPassword]=useState(''),[name,setName]=useState(''),[city,setCity]=useState(''),[recovery,setRecovery]=useState(''),[error,setError]=useState('');

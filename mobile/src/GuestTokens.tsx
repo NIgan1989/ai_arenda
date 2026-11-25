@@ -40,6 +40,13 @@ export function GuestTokens({ tokens, blamed = [], open = '', onOpen, onClear, l
       })}</>
   );
   const more = (label: string) => <Pressable accessibilityRole="button" accessibilityLabel={t('Все условия поиска')} accessibilityState={{ expanded: open === 'all', disabled: busy }} disabled={busy} onPress={() => onOpen('all')} hitSlop={{ top: 6, bottom: 6 }} style={({ pressed }) => [s.token, s.more, open === 'all' && s.active, pressed && s.pressed]}><Text style={s.moreText}>{label}</Text></Pressable>;
+  // On the map and over the results, as in the concept (Mobbin: Uber, Airbnb): one plate «where · when · how many» with
+  // «Изменить», instead of a row of tokens. The tokens come back when an empty answer blames one of them.
+  if (line && !blamed.length) {
+    const city = tokens.filter(token => token.id === 'city' || token.id === 'district').map(token => token.title).join(', ');
+    const rest = tokens.filter(token => token.id !== 'city' && token.id !== 'district').map(token => token.title).join(' · ');
+    return <Pressable accessibilityRole="button" accessibilityLabel={t('Условия поиска: {v}. Изменить',{v:[city, rest].filter(Boolean).join(', ')})} accessibilityState={{ expanded: open === 'all', disabled: busy }} disabled={busy} onPress={() => onOpen('all')} style={({ pressed }) => [s.plate, pressed && s.pressed]}><View style={s.pin}><View style={s.pinDot} /></View><View style={s.plateText}><Text numberOfLines={1} style={s.plateTitle}>{city}</Text>{!!rest && <Text numberOfLines={1} style={s.plateLine}>{rest}</Text>}</View><Text style={s.moreText}>{t('Изменить')}</Text></Pressable>;
+  }
   // Over the results the row scrolls sideways; «Условия» stays at its start, so it is never pushed past the edge.
   if (line) return <View style={s.lineWrap}>{more(t('Условия'))}<ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="handled" style={s.scroll} contentContainerStyle={s.row} accessibilityLabel={t('Условия поиска')}>{items}</ScrollView></View>;
   return <View style={s.wrap} accessibilityLabel={t('Условия поиска')}>{items}{more(t('+ Условия'))}</View>;
@@ -66,5 +73,11 @@ const s = StyleSheet.create({
   crossText: { fontSize: 10, lineHeight: 12, color: C.accentPressed, fontWeight: '700' },
   more: { paddingHorizontal: 12, borderStyle: 'dashed', borderColor: C.accentLine, justifyContent: 'center' },
   moreText: { ...type.label, color: C.accent, fontWeight: '600' },
-  pressed: { opacity: 0.6 }
+  pressed: { opacity: 0.6 },
+  plate: { minHeight: 56, flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 12, paddingVertical: 8, borderRadius: T.radius.md, backgroundColor: C.surfaceAlt },
+  pin: { width: 20, height: 20, borderRadius: 10, alignItems: 'center', justifyContent: 'center', backgroundColor: C.dangerSoft },
+  pinDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: C.danger },
+  plateText: { flex: 1, minWidth: 0, gap: 2 },
+  plateTitle: { ...type.label, color: C.ink, fontWeight: '600' },
+  plateLine: { ...type.caption, color: C.muted }
 });

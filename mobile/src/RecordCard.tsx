@@ -7,6 +7,7 @@ import {T} from './tokens';
 import {SwipeConfirm} from './SwipeConfirm';
 import {useActivityClock} from './ActivityTimer';
 import {money,type Row} from './model';
+import {Photo} from './ListingMedia';
 import {processJourney} from '../../lib/process-journey';
 import {processStatus} from '../../lib/process-status';
 import {recordSpan,hallLine} from '../../lib/record-span';
@@ -39,16 +40,16 @@ type Maybe<V>=V|false|null|undefined|''|0;
 // into the whole card by a tap; the title row of an open card folds it back. `startOpen` opens it at once (a stay going on now).
 // A guest's request waits for the owner's answer: the time left, large, with a line that runs out, as a taxi app says
 // when the car comes. The interval is held for the guest and nothing is charged yet.
-export function AnswerWait({item}:{item:Row}){
+export function AnswerWait({item,bare=false}:{item:Row;bare?:boolean}){
  const now=useActivityClock(),until=Number(item.expires_at)||0,from=Number(item.created_at)||until-900,left=until-now;
  if(!now||!until||left<=0)return null;
  const share=Math.max(0,Math.min(1,left/Math.max(60,until-from))),mm=Math.floor(left/60),ss=String(left%60).padStart(2,'0');
- return <View accessible accessibilityLabel={t('Владелец ответит через {v}',{v:mm+':'+ss})} style={r.wait}><Text style={r.waitLabel}>{t('Владелец ответит через')}</Text><Text style={r.waitDigits}>{mm}:{ss}</Text><View style={r.waitBar}><View style={[r.waitFill,{width:`${Math.round(share*100)}%` as const}]}/></View><Text style={r.waitNote}>{t('Время придержано для вас. Деньги не списаны.')}</Text></View>;
+ return <View accessible accessibilityLabel={t('Владелец ответит через {v}',{v:mm+':'+ss})} style={[r.wait,bare&&r.waitBare]}><Text style={r.waitLabel}>{t('Владелец ответит через')}</Text><Text style={r.waitDigits}>{mm}:{ss}</Text><View style={r.waitBar}><View style={[r.waitFill,{width:`${Math.round(share*100)}%` as const}]}/></View><Text style={r.waitNote}>{t('Время придержано для вас. Деньги не списаны.')}</Text></View>;
 }
 if(Platform.OS==='android')UIManager.setLayoutAnimationEnabledExperimental?.(true);
 const smooth=()=>LayoutAnimation.configureNext(LayoutAnimation.create(220,LayoutAnimation.Types.easeInEaseOut,LayoutAnimation.Properties.opacity));
 export function DealCard({kind,item,role,userId,application,thread,line:own,actions,busy,always,details,extra,onMap,compact=false,startOpen=false}:{kind:'booking'|'job';item:Row;role:string;userId:string;application?:Row;thread?:ProcessThread|null;line?:string|null;actions:Maybe<RecordAction>[];busy:boolean;always?:React.ReactNode;details?:React.ReactNode;extra?:React.ReactNode;onMap?:()=>void;compact?:boolean;startOpen?:boolean}){
- const [open,setOpen]=useState(false),[more,setMore]=useState(false),[unfolded,setUnfolded]=useState(startOpen);
+ const [open,setOpen]=useState(false),[more,setMore]=useState(false),[unfolded,setUnfolded]=useState(startOpen),clock=useActivityClock();
  const status=processStatus(kind,item,role,userId,application),[bg,ink]=tones[status.tone]||tones.neutral,flow=processJourney(kind,item);
  const total=thread?thread.steps.length:flow.labels.length,done=thread?thread.finished:flow.done,step=Math.min(thread?thread.current:flow.current,total-1),line=flow.stopped?flow.hint:thread?thread.line:own||flow.hint;
  const all=actions.filter(Boolean) as RecordAction[],main=all.find(a=>a.kind==='main'),rest:Maybe<RecordAction>[]=[...all.filter(a=>a!==main),!!onMap&&{title:t('Показать на карте'),kind:'side' as const,onPress:onMap}];
@@ -61,6 +62,22 @@ export function DealCard({kind,item,role,userId,application,thread,line:own,acti
    <Text numberOfLines={1} style={r.rowWhen}>{recordSpan(item.start,item.end)}{kind==='booking'&&!!hallLine(item)&&<Text>{' · '+hallLine(item)}</Text>}{!!item.demo_owner&&<Text style={r.rowDemo}>{' · '+(kind==='job'?t('Учебное'):t('Учебная'))}</Text>}</Text>
    <View style={r.rowTop}><View style={[r.dot,{backgroundColor:ink}]}/><Text numberOfLines={1} style={[r.rowStatus,{color:ink},r.grow]}>{status.label}{!!main&&!said&&<Text style={r.rowDo}>{' · '+next}</Text>}</Text><Text style={r.chevron}>⌄</Text></View>
   </Pressable>;
+ }
+ // The guest waits for the owner's answer, as a rider waits for a taxi (concept, Mobbin: Uber, Bolt): the big timer on top,
+ // the place in one row marked «Ждём», then two buttons, «Написать» and «Отменить». The rest is under «Ещё».
+ if(kind==='booking'&&item.status==='requested'&&item.guest_id===userId&&clock>0&&Number(item.expires_at)>clock&&(!compact||unfolded)){
+  const chat=all.find(a=>a.title===t('Открыть чат')),cancel=all.find(a=>a.kind==='danger'),others=rest.filter(a=>a&&a!==chat&&a!==cancel);
+  let photos:string[]=[];try{photos=Array.isArray(item.property_photos)?item.property_photos:JSON.parse(item.property_photos||'[]');}catch{photos=[];}
+  const button=(a:RecordAction|undefined,title:string,style:object,text:object)=>a?<Pressable accessibilityRole="button" accessibilityLabel={a.title} disabled={busy} onPress={a.onPress} style={({pressed})=>[r.waitButton,style,(pressed||busy)&&r.dim]}><Text style={[r.actionText,text]}>{title}</Text></Pressable>:null;
+  return <View style={r.card}>
+   <AnswerWait item={item} bare/>
+   <View style={r.waitPlace}>{!!photos[0]&&<View style={r.waitThumb}><Photo id={photos[0]} alt={t('{title}, фото',{title:item.title})} fill/></View>}<View style={r.grow}><Text numberOfLines={1} style={r.dealTitle}>{item.title}</Text><Text numberOfLines={2} style={r.rowWhen}>{recordSpan(item.start,item.end)} · {money(item.amount)}</Text></View><Text style={r.waitTag}>{t('Ждём')}</Text></View>
+   {always}
+   <View style={r.waitButtons}>{button(chat,t('Написать'),r.waitChat,r.waitChatText)}{button(cancel,t('Отменить'),r.waitCancel,r.waitCancelText)}</View>
+   <View style={r.waitLinks}><Pressable accessibilityRole="button" accessibilityState={{expanded:open}} onPress={()=>setOpen(v=>!v)} style={r.waitLink}><Text style={r.waitLinkText}>{open?t('Свернуть'):t('Подробнее')}</Text></Pressable>{(others.length>0||!!extra)&&<Pressable accessibilityRole="button" accessibilityState={{expanded:more}} onPress={()=>setMore(v=>!v)} style={r.waitLink}><Text style={r.waitLinkText}>{more?t('Скрыть'):t('Ещё')}</Text></Pressable>}</View>
+   {open&&details}
+   {more&&<><RecordActions soft busy={busy} actions={others}/>{extra}</>}
+  </View>;
  }
  const fold=compact?()=>{smooth();setUnfolded(false);setOpen(false);setMore(false);}:undefined;
  return <View style={r.card}>
@@ -103,6 +120,12 @@ const r=StyleSheet.create({
  whereRow:{flexDirection:'row',alignItems:'center',gap:8},whereText:{flex:1,minWidth:0},
  wait:{gap:4,padding:16,borderRadius:R.lg,backgroundColor:C.surface,borderWidth:1,borderColor:C.line},waitLabel:{...type.label,color:C.muted},waitDigits:{...type.display,color:C.ink,fontWeight:'800',letterSpacing:-1,fontVariant:['tabular-nums']},
  waitBar:{height:6,borderRadius:R.full,backgroundColor:C.surfaceAlt,overflow:'hidden',marginTop:4},waitFill:{height:'100%',borderRadius:R.full,backgroundColor:C.accent},waitNote:{...type.caption,color:C.muted,marginTop:4},
+ waitLinks:{flexDirection:'row',justifyContent:'center',gap:24},waitLink:{minHeight:H.touch,justifyContent:'center',paddingHorizontal:8},waitLinkText:{...type.label,color:C.accentPressed,fontWeight:'600'},
+ waitBare:{padding:0,borderWidth:0,backgroundColor:'transparent'},
+ waitPlace:{flexDirection:'row',alignItems:'center',gap:12,padding:12,borderRadius:R.lg,backgroundColor:C.surfaceAlt},waitThumb:{width:56,height:56,borderRadius:R.md,overflow:'hidden',backgroundColor:C.surface},
+ waitTag:{...type.caption,fontWeight:'700',color:C.warning,backgroundColor:C.warningSoft,paddingHorizontal:8,paddingVertical:4,borderRadius:R.sm,overflow:'hidden'},
+ waitButtons:{flexDirection:'row',gap:8},waitButton:{flex:1,minHeight:H.primary,borderRadius:R.md,alignItems:'center',justifyContent:'center'},
+ waitChat:{backgroundColor:C.accentSoft},waitChatText:{...type.body,color:C.accentPressed},waitCancel:{backgroundColor:C.surfaceAlt},waitCancelText:{...type.body,color:C.inkSoft},
  mapLink:{flexDirection:'row',alignItems:'center',gap:4,minHeight:32,paddingHorizontal:12,borderRadius:R.full,backgroundColor:C.accentSoft},mapLinkText:{...type.caption,fontWeight:'600',color:C.accentPressed},
  mapPin:{width:12,height:12,borderRadius:R.full,borderBottomRightRadius:0,backgroundColor:C.accentPressed,transform:[{rotate:'45deg'}],alignItems:'center',justifyContent:'center'},mapPinDot:{width:4,height:4,borderRadius:R.full,backgroundColor:C.accentSoft},
 });
