@@ -1,8 +1,9 @@
 name: iPhone to TestFlight
 # Builds a signed iPhone app on Expo (EAS Build) and uploads it to TestFlight (EAS Submit). See docs/TESTFLIGHT.md.
 #
-# Pull requests that touch the Expo settings only run the "check" job: it proves that the EXPO_TOKEN secret works and
-# that mobile/app.json points at the right Expo project. Nothing is built and nothing is sent to Apple.
+# Pull requests that touch the Expo settings run the "check" job (the EXPO_TOKEN secret works and mobile/app.json points
+# at the right Expo project) and the "credentials" job (the signing certificate and profile exist on Expo).
+# Nothing is built and no app is sent to Apple.
 # A build starts only by hand: Actions, "iPhone to TestFlight", "Run workflow" on main. The free Expo plan has a monthly
 # limit of iOS builds, so this workflow does not run on every push.
 #
@@ -21,6 +22,7 @@ on:
       - 'mobile/app.json'
       - 'mobile/eas.json'
       - '.github/workflows/testflight.yml'
+      - 'docs/TESTFLIGHT.md'
 permissions:
   contents: read
 concurrency:
@@ -71,9 +73,67 @@ jobs:
           fi
           echo "Expo project $expected is reachable with EXPO_TOKEN." >> "$GITHUB_STEP_SUMMARY"
 
+  # EAS creates the iOS distribution certificate only in interactive mode, even with an App Store Connect API key.
+  # This job answers the prompts with their defaults (generate the certificate and the App Store provisioning profile,
+  # reuse them when they already exist) inside a pseudo-terminal, so the build below can then run non-interactively.
+  # It is safe to repeat: with valid credentials on Expo it only checks and keeps them.
+  credentials:
+    needs: check
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: mobile
+    env:
+      EXPO_NO_TELEMETRY: '1'
+      EXPO_APPLE_TEAM_TYPE: INDIVIDUAL
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Require the Apple secrets
+        env:
+          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          missing=""
+          for name in ASC_KEY_P8 ASC_KEY_ID ASC_ISSUER_ID APPLE_TEAM_ID; do
+            [ -n "${!name}" ] || missing="$missing $name"
+          done
+          if [ -n "$missing" ]; then
+            echo "::error::Нет секретов:$missing. См. docs/TESTFLIGHT.md."
+            exit 1
+          fi
+          printf '%s\n' "$ASC_KEY_P8" > "$RUNNER_TEMP/asc-key.p8"
+          chmod 600 "$RUNNER_TEMP/asc-key.p8"
+          grep -q 'BEGIN PRIVATE KEY' "$RUNNER_TEMP/asc-key.p8" || { echo "::error::ASC_KEY_P8 не похож на файл .p8 (нет строки BEGIN PRIVATE KEY)."; exit 1; }
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+      - uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+      - name: Install locked mobile dependencies
+        run: npm ci
+      - name: Set up the iPhone signing credentials on Expo
+        env:
+          EXPO_ASC_API_KEY_PATH: ${{ runner.temp }}/asc-key.p8
+          EXPO_ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          EXPO_ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          EXPO_APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          # "script" gives eas a terminal; the loop presses Enter every 3 seconds to accept each default answer.
+          ( while true; do printf '\r'; sleep 3; done ) | timeout 600 script -qefc \
+            "eas credentials:configure-build --platform ios --profile testflight" "$RUNNER_TEMP/credentials.log"
+
   build:
     if: github.event_name == 'workflow_dispatch'
-    needs: check
+    needs: credentials
     runs-on: ubuntu-latest
     timeout-minutes: 120
     defaults:
