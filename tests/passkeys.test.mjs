@@ -132,6 +132,18 @@ test('a key is added only right after a sign-in or with the password; a password
  }finally{f.raw.close();}
 });
 
+test('a key checked against a session that a password reset ended meanwhile is not kept',async()=>{
+ const f=fixture();try{
+  const token=(await (await f.auth('register',user)).json()).token,device=await phone();
+  const asked=await f.call('passkey-register-options',{},token);
+  // The reset lands between the server's session check and the insert of the key.
+  const prepare=f.db.prepare.bind(f.db);
+  f.db.prepare=sql=>{if(sql.startsWith('INSERT INTO auth_passkeys'))f.raw.prepare('UPDATE auth_accounts SET credential_version=credential_version+1').run();return prepare(sql);};
+  await assert.rejects(f.call('passkey-register',{challengeId:asked.challengeId,response:await device.create(asked.options)},token),e=>e.status===401);
+  assert.equal(f.raw.prepare('SELECT count(*) n FROM auth_passkeys').get().n,0);
+ }finally{f.raw.close();}
+});
+
 test('the domain files name the iPhone app by its team and the Android app by its certificate',async()=>{
  const get=(path,config)=>appLinksResponse(new Request('https://'+PASSKEY_RP_ID+path),config);
  assert.equal(get('/.well-known/apple-app-site-association',{}).status,404);

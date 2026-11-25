@@ -7,10 +7,11 @@ import {Passkey} from 'react-native-passkey';
 export function passkeyAvailable(){try{return Passkey.isSupported();}catch{return false;}}
 export async function passkeyCreate(options:Record<string,any>){return await Passkey.create(options as any) as Record<string,any>;}
 export async function passkeyGet(options:Record<string,any>){return await Passkey.get(options as any) as Record<string,any>;}
-// «cancelled»: the person closed the sheet, nothing to say; «none»: this phone holds no key for the service.
-export function passkeyFailure(error:unknown):'cancelled'|'none'|'failed'{
+// «cancelled»: the person closed the sheet, nothing to say; «none»: this phone holds no key for the service;
+// «exists»: this phone already holds a key of the account (a synced one, for example).
+export function passkeyFailure(error:unknown):'cancelled'|'none'|'exists'|'failed'{
  const code=(error as {error?:string})?.error;
- return code==='UserCancelled'?'cancelled':code==='NoCredentials'?'none':'failed';
+ return code==='UserCancelled'?'cancelled':code==='NoCredentials'?'none':code==='CredentialAlreadyExists'?'exists':'failed';
 }
 // Which account turned the passkey on with this phone, and who was already asked: kept on the phone only.
 export async function readPasskeyNote(key:string){try{return await SecureStore.getItemAsync('aiarenda.passkey.'+key);}catch{return null;}}

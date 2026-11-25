@@ -15,7 +15,7 @@ export async function passkeyGet(options:Record<string,any>){
  const r=credential.response;
  return {id:credential.id,rawId:toBase64url(credential.rawId),type:credential.type,authenticatorAttachment:credential.authenticatorAttachment,clientExtensionResults:credential.getClientExtensionResults(),response:{clientDataJSON:toBase64url(r.clientDataJSON),authenticatorData:toBase64url(r.authenticatorData),signature:toBase64url(r.signature),...(r.userHandle?{userHandle:toBase64url(r.userHandle)}:{})}};
 }
-export function passkeyFailure(error:unknown):'cancelled'|'none'|'failed'{return (error as {name?:string})?.name==='NotAllowedError'?'cancelled':'failed';}
+export function passkeyFailure(error:unknown):'cancelled'|'none'|'exists'|'failed'{const name=(error as {name?:string})?.name;return name==='NotAllowedError'?'cancelled':name==='InvalidStateError'?'exists':'failed';}
 const store=()=>{try{return globalThis.localStorage??null;}catch{return null;}};
 export async function readPasskeyNote(key:string){try{return store()?.getItem('aiarenda.passkey.'+key)??null;}catch{return null;}}
 export async function writePasskeyNote(key:string,value:string|null){try{if(value===null)store()?.removeItem('aiarenda.passkey.'+key);else store()?.setItem('aiarenda.passkey.'+key,value);}catch{/* the stand only */}}

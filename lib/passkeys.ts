@@ -29,7 +29,7 @@ export function passkeySetup(config:PasskeyConfig={}){
 }
 
 type Stored={id:string;user_id:string;public_key:string;counter:number;transports:string};
-type Account={id:string;name:string;phone:string;password_hash:string;credential_version:number;expires_at:number};
+type Account={id:string;name:string;phone:string;password_hash:string;credential_version:number;expires_at:number;hash:string};
 function reply(data:unknown,status=200){return Response.json(data,{status,headers:{'Cache-Control':'no-store','X-Content-Type-Options':'nosniff'}});}
 function credentialResponse(value:unknown){
  const r=value as {id?:unknown;rawId?:unknown;type?:unknown;response?:unknown}|null;
@@ -53,7 +53,7 @@ async function keysOf(db:D1Database,userId:string){
 async function signedIn(db:D1Database,request:Request){
  const identity=await requestSessionIdentity(request);
  if(!identity||identity.kind!=='mobile')return null;
- return await query(db,'SELECT a.id,a.name,a.phone,a.password_hash,a.credential_version,s.expires_at FROM auth_mobile_sessions s JOIN auth_accounts a ON a.id=s.user_id AND a.credential_version=s.credential_version WHERE s.hash=? AND s.expires_at>?',identity.hash,now()).first<Account>();
+ return await query(db,'SELECT a.id,a.name,a.phone,a.password_hash,a.credential_version,s.expires_at,s.hash FROM auth_mobile_sessions s JOIN auth_accounts a ON a.id=s.user_id AND a.credential_version=s.credential_version WHERE s.hash=? AND s.expires_at>?',identity.hash,now()).first<Account>();
 }
 
 export async function passkeyRequest(db:D1Database,request:Request,action:string,config:PasskeyConfig={}){
@@ -122,8 +122,13 @@ export async function passkeyRequest(db:D1Database,request:Request,action:string
   try{const result=await verifyRegistrationResponse({response,expectedChallenge,expectedOrigin:origins,expectedRPID:rpID,requireUserVerification:true});info=result.verified?result.registrationInfo:null;}catch{info=null;}
   if(!info)throw new DomainError('Телефон не подтвердил ключ. Попробуйте ещё раз.',400);
   const device=String(body.device??'').replace(/[^\p{L}\p{N} .,()-]/gu,'').trim().slice(0,60);
-  const saved=await query(db,'INSERT INTO auth_passkeys(id,user_id,public_key,counter,transports,device,backed_up,created_at,last_used_at) VALUES (?,?,?,?,?,?,?,?,0) ON CONFLICT(id) DO NOTHING',info.credential.id,account.id,base64url(info.credential.publicKey),info.credential.counter,(info.credential.transports||[]).join(','),device,info.credentialBackedUp?1:0,now()).run();
-  if(saved.meta.changes!==1)throw new DomainError('Этот ключ уже добавлен.',409);
+  // The key is kept only while this session is still the account's own: a password reset that ran meanwhile changed the
+  // credential version and removed the keys, so a key checked against the old session is not added after it.
+  const saved=await query(db,'INSERT INTO auth_passkeys(id,user_id,public_key,counter,transports,device,backed_up,created_at,last_used_at) SELECT ?,?,?,?,?,?,?,?,0 WHERE EXISTS(SELECT 1 FROM auth_mobile_sessions s JOIN auth_accounts a ON a.id=s.user_id AND a.credential_version=s.credential_version WHERE s.hash=? AND s.user_id=? AND s.credential_version=? AND s.expires_at>?) ON CONFLICT(id) DO NOTHING',info.credential.id,account.id,base64url(info.credential.publicKey),info.credential.counter,(info.credential.transports||[]).join(','),device,info.credentialBackedUp?1:0,now(),account.hash,account.id,account.credential_version,now()).run();
+  if(saved.meta.changes!==1){
+   if(!await signedIn(db,request))throw new DomainError('Войдите, чтобы настроить вход без пароля.',401);
+   throw new DomainError('Этот ключ уже добавлен.',409);
+  }
   return reply({message:'Вход без пароля включён.',passkeys:await keysOf(db,account.id)},201);
  }
  return reply({error:'Маршрут не найден.'},404);

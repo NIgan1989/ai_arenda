@@ -27,7 +27,9 @@ export function passkeyWords(){
 // an hour adds a key only with the password (the server answers 403 without it).
 export async function turnOnPasskey(userId:string,password?:string){
  const asked=await request('/auth/passkey-register-options',password?{password}:{});
- const response=await passkeyCreate(asked.options);
+ let response;
+ // The phone already holds a key of this account (made here or synced from another phone): it is on here already.
+ try{response=await passkeyCreate(asked.options);}catch(error){if(passkeyFailure(error)!=='exists')throw error;await writePasskeyNote('on',userId||'1');return {message:t('На этом телефоне уже включено.')};}
  const saved=await request('/auth/passkey-register',{challengeId:asked.challengeId,response,device:system()==='ios'?'iPhone':system()==='android'?'Android':t('Браузер')});
  await writePasskeyNote('on',userId||'1');
  return saved;

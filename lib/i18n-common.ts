@@ -470,4 +470,6 @@ export const COMMON:Words={
   'Телефон не подтвердил вход. Попробуйте ещё раз.':['Телефон кіруді растамады. Қайталап көріңіз.','The phone did not confirm the sign-in. Please try again.'],
   'Включён · {v}':['Қосулы · {v}','On · {v}'],
   'Подтвердите паролем: вы вошли давно, а ключ будет открывать аккаунт без пароля.':['Құпиясөзбен растаңыз: сіз көптен бері кірдіңіз, ал кілт аккаунтты құпиясөзсіз ашады.','Confirm with your password: you signed in a while ago, and the key will open the account without a password.'],
+  'Включить на этом телефоне':['Осы телефонда қосу','Turn on for this phone'],
+  'На этом телефоне уже включено.':['Бұл телефонда қосылып тұр.','Already on for this phone.'],
 };
