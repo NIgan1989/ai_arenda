@@ -36,7 +36,7 @@ export function NativeAccountSafety({role,page,go,admin=false,onSignedOut,tint}:
  if(page==='devices'&&!sessions)return missing(t('список входов'));
  if(page==='ai'&&!permission)return missing(t('настройку ИИ'));
  if(page==='devices'){const others=(sessions||[]).some(v=>!v.current);return <View>
-  {lead(t('Вы входите по номеру телефона и паролю. Забыли пароль — нажмите «Забыли пароль?» на экране входа и введите резервный код.'))}
+  {lead(t('Вы входите по номеру телефона и паролю. Забыли пароль — нажмите «Забыли пароль?» на экране входа: код для нового пароля придёт в Telegram.'))}
   <Group>{(sessions||[]).map(v=><View key={v.kind+v.id} style={a.row}><View style={a.wide}><Text style={a.title}>{v.kind==='mobile'?t('Приложение'):t('Браузер')}</Text><Text style={a.note}>{v.current?t('Это устройство'):t('Вход действует до {v}',{v:day(v.expires_at)})}</Text></View>{!v.current&&<Pressable accessibilityRole="button" accessibilityLabel={t('Выйти: {v}',{v:(v.kind==='mobile'?t('приложение'):t('браузер'))})} disabled={busy} onPress={()=>void act('/api/sessions',{action:'one',kind:v.kind,id:v.id})} style={[a.edit,busy&&s.disabled]}><Text style={a.editText}>{t('Выйти')}</Text></Pressable>}</View>)}{sessions&&!sessions.length&&<View style={a.row}><Text style={a.note}>{t('Других входов нет.')}</Text></View>}</Group>
   {others&&wide(t('Выйти на всех других устройствах'),()=>void act('/api/sessions',{action:'others'}))}{shown}</View>;}
  if(page==='ai')return <View>

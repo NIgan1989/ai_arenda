@@ -292,7 +292,7 @@ export const COMMON:Words={
   'Не выбрано':['Таңдалмаған','Not chosen'],
   'список входов':['Кіру тізімі','the sign-in list'],
   'настройку ИИ':['ЖИ баптауы','the AI setting'],
-  'Вы входите по номеру телефона и паролю. Забыли пароль — нажмите «Забыли пароль?» на экране входа и введите резервный код.':['Сіз телефон нөмірі мен құпиясөз арқылы кіресіз. Құпиясөзді ұмытсаңыз, кіру экранында «Құпиясөзді ұмыттыңыз ба?» түймесін басып, резервтік кодты енгізіңіз.','You sign in with your phone number and password. If you forget the password, tap “Forgot password?” on the sign-in screen and enter your backup code.'],
+  'Вы входите по номеру телефона и паролю. Забыли пароль — нажмите «Забыли пароль?» на экране входа: код для нового пароля придёт в Telegram.':['Сіз телефон нөмірі мен құпиясөз арқылы кіресіз. Құпиясөзді ұмытсаңыз, кіру экранында «Құпиясөзді ұмыттыңыз ба?» түймесін басыңыз: жаңа құпиясөзге код Telegram-ға келеді.','You sign in with your phone number and password. If you forget the password, tap “Forgot password?” on the sign-in screen: a code for a new password comes in Telegram.'],
   'Приложение':['Қолданба','App'],
   'Браузер':['Браузер','Browser'],
   'Это устройство':['Осы құрылғы','This device'],
@@ -451,4 +451,5 @@ export const COMMON:Words={
   'Ваш номер телефона':['Телефон нөміріңіз','Your phone number'],
   'Введите пароль':['Құпиясөзді енгізіңіз','Enter your password'],
   'Изменить номер':['Нөмірді өзгерту','Change number'],
+  'нужен профиль':['профиль керек','profile needed'],
 };

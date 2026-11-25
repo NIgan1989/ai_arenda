@@ -198,24 +198,24 @@ function Auth({onSubmit,busy,titled=true}:{titled?:boolean;onSubmit:(mode:string
     </>}
     <Pressable accessibilityRole="button" disabled={locked} onPress={()=>{setStep('phone');go('register');}} style={au.link}><Text style={au.linkText}>{t('Создать новый аккаунт')}</Text></Pressable>
   </View>;
-  const title=mode==='register'?t('Один аккаунт для всех устройств'):forgot?t('Новый пароль'):mode==='recover'?t('Вход по резервному коду'):t('С возвращением');
-  return <View style={s.card}>
-    {(titled||mode!=='login')&&<Text style={s.cardTitle}>{title}</Text>}
+  const title=mode==='register'?t('Один аккаунт для всех устройств'):forgot?t('Новый пароль'):t('С возвращением');
+  // A new password goes the way sign-in goes: one question, large fields, the other ways as plain links.
+  const plain=forgot,field=plain?au.big:s.field,link=(title:string,onPress:()=>void)=>plain?<Pressable accessibilityRole="button" disabled={locked} onPress={onPress} style={au.link}><Text style={au.linkText}>{title}</Text></Pressable>:<Button secondary title={title} disabled={locked} onPress={onPress}/>;
+  return <View style={plain?au.box:s.card}>
+    {(titled||mode!=='login')&&<Text style={plain?au.ask:s.cardTitle}>{title}</Text>}
     <Text style={s.meta}>{forgot?(codeSent||t('Укажите номер, на который зарегистрирован аккаунт. Мы пришлём код для смены пароля.')):t('Номер телефона и пароль те же, что на сайте. Брони и чаты общие.')}</Text>
     {mode==='register'&&<><Text style={s.fieldLabel}>{t('Имя')}</Text><TextInput accessibilityLabel={t('Имя')} style={s.field} value={name} onChangeText={setName} maxLength={100} editable={!locked}/>{locked?<><Text style={s.fieldLabel}>{t('Город')}</Text><TextInput accessibilityLabel={t('Город')} style={s.field} value={city} maxLength={80} editable={false}/></>:<AddressField kind="city" label={t('Город')} value={city} onChange={setCity} max={80} placeholder={t('Например, Алматы')} labelStyle={s.fieldLabel} inputStyle={s.field}/>}</>}
-    <Text style={s.fieldLabel}>{t('Номер телефона')}</Text><TextInput accessibilityLabel={t('Номер телефона')} style={s.field} placeholder="+7 777 123 45 67" placeholderTextColor={C.muted} value={phone} onChangeText={v=>{setPhone(v);if(codeSent)setCodeSent('');}} keyboardType="phone-pad" autoComplete="tel" maxLength={30} editable={!locked}/>
-    {forgot&&!!codeSent&&<><Text style={s.fieldLabel}>{t('Код из сообщения')}</Text><TextInput accessibilityLabel={t('Код из сообщения')} style={s.field} placeholder={t('6 цифр')} placeholderTextColor={C.muted} value={recovery} onChangeText={v=>setRecovery(v.replace(/\D/g,'').slice(0,6))} keyboardType="number-pad" autoComplete="one-time-code" textContentType="oneTimeCode" maxLength={6} editable={!locked}/></>}
-    {mode==='recover'&&<><Text style={s.fieldLabel}>{t('Резервный код')}</Text><TextInput accessibilityLabel={t('Резервный код')} style={s.field} value={recovery} onChangeText={setRecovery} maxLength={80} autoCapitalize="none" autoCorrect={false} editable={!locked}/><Text style={s.meta}>{t('Код выдавали при регистрации. Смена пароля завершит прежние сеансы на всех устройствах.')}</Text></>}
-    {!waiting&&<><Text style={s.fieldLabel}>{forgot||mode==='recover'?t('Новый пароль'):t('Пароль')}</Text><TextInput accessibilityLabel={t('Пароль')} style={s.field} placeholder={t('От 10 символов')} placeholderTextColor={C.muted} value={password} onChangeText={setPassword} secureTextEntry autoCapitalize="none" autoCorrect={false} autoComplete={mode==='login'?'current-password':'new-password'} maxLength={128} editable={!locked}/></>}
+    <Text style={s.fieldLabel}>{t('Номер телефона')}</Text><TextInput accessibilityLabel={t('Номер телефона')} style={field} placeholder="+7 777 123 45 67" placeholderTextColor={C.muted} value={phone} onChangeText={v=>{setPhone(v);if(codeSent)setCodeSent('');}} keyboardType="phone-pad" autoComplete="tel" maxLength={30} editable={!locked}/>
+    {forgot&&!!codeSent&&<><Text style={s.fieldLabel}>{t('Код из сообщения')}</Text><TextInput accessibilityLabel={t('Код из сообщения')} style={field} placeholder={t('6 цифр')} placeholderTextColor={C.muted} value={recovery} onChangeText={v=>setRecovery(v.replace(/\D/g,'').slice(0,6))} keyboardType="number-pad" autoComplete="one-time-code" textContentType="oneTimeCode" maxLength={6} editable={!locked}/></>}
+    {!waiting&&<><Text style={s.fieldLabel}>{forgot?t('Новый пароль'):t('Пароль')}</Text><TextInput accessibilityLabel={t('Пароль')} style={field} placeholder={t('От 10 символов')} placeholderTextColor={C.muted} value={password} onChangeText={setPassword} secureTextEntry autoCapitalize="none" autoCorrect={false} autoComplete={mode==='login'?'current-password':'new-password'} maxLength={128} editable={!locked}/></>}
     {mode==='register'&&<View style={{flexDirection:'row',alignItems:'flex-start',gap:12,marginTop:12}}><Pressable accessibilityRole="checkbox" accessibilityLabel={t('Принимаю соглашение и даю согласие на обработку данных')} accessibilityState={{checked:accepted,disabled:locked}} disabled={locked} onPress={()=>setAccepted(v=>!v)} hitSlop={10} style={[s.checkBox,accepted&&s.checkBoxOn]}>{accepted&&<Text style={s.checkTick}>✓</Text>}</Pressable><Text style={[s.meta,{flex:1}]} onPress={locked?undefined:()=>setAccepted(v=>!v)}>{tParts(tr('Принимаю {terms} и даю {consent}')).map((part,i)=>typeof part==='string'?part:part.slot==='terms'?<Text key={i} accessibilityRole="link" style={s.inlineLink} onPress={()=>legal('/terms')}>{t('Пользовательское соглашение')}</Text>:<Text key={i} accessibilityRole="link" style={s.inlineLink} onPress={()=>legal('/privacy/consent')}>{t('согласие на обработку персональных данных')}</Text>)}{lang()!=='ru'&&t(' (документы на русском языке)')}</Text></View>}
     {!!error&&<Text accessibilityRole="alert" style={s.error}>{error}</Text>}
     {waiting?<Button title={sending?t('Отправляю…'):t('Получить код')} disabled={locked||!phone.trim()} onPress={askCode}/>
-    :<Button title={mode==='register'?t('Создать аккаунт'):forgot?t('Сменить пароль и войти'):mode==='recover'?t('Обновить пароль'):t('Войти')} disabled={locked||mode==='register'&&!accepted||forgot&&recovery.length!==6} onPress={()=>{setError('');onSubmit(forgot?'reset':mode,phone,password,name,city,recovery).then(()=>setPassword('')).catch(e=>setError(isOffline(e)?t('Нет связи. Проверьте интернет и повторите.'):e.message));}}/>}
-    {forgot&&!!codeSent&&<Button secondary title={sending?t('Отправляю…'):t('Прислать код ещё раз')} disabled={locked} onPress={askCode}/>}
+    :<Button title={mode==='register'?t('Создать аккаунт'):forgot?t('Сменить пароль и войти'):t('Войти')} disabled={locked||mode==='register'&&!accepted||forgot&&recovery.length!==6} onPress={()=>{setError('');onSubmit(forgot?'reset':mode,phone,password,name,city,recovery).then(()=>setPassword('')).catch(e=>setError(isOffline(e)?t('Нет связи. Проверьте интернет и повторите.'):e.message));}}/>}
+    {forgot&&!!codeSent&&link(sending?t('Отправляю…'):t('Прислать код ещё раз'),askCode)}
     {mode==='login'&&<Button secondary title={t('Забыли пароль?')} disabled={locked} onPress={()=>go('forgot')}/>}
-    {forgot&&<Button secondary title={t('У меня есть резервный код')} disabled={locked} onPress={()=>go('recover')}/>}
     {mode==='login'||mode==='register'?<Button secondary title={mode==='register'?t('Уже есть аккаунт'):t('Создать новый аккаунт')} disabled={locked} onPress={()=>go(mode==='register'?'login':'register')}/>
-    :<Button secondary title={t('Назад ко входу')} disabled={locked} onPress={()=>go('login')}/>}
+    :link(t('Назад ко входу'),()=>go('login'))}
   </View>;
 }
 
@@ -228,7 +228,7 @@ function Chat(){
   const scrollY=useRef(0),scroll=useRef<ScrollView>(null),composer=useRef<TextInput>(null),locked=useRef(false),session=useRef(false),pending=useRef(''),seen=useRef(new Set<string>());
   // The field being typed in comes above the keyboard once, smoothly; the page never jumps (src/Keyboard.tsx).
   const revealField=useKeyboardReveal(scroll,scrollY);
-  const [recoveryCode,setRecoveryCode]=useState(''),[linkError,setLinkError]=useState('');
+  const [linkError,setLinkError]=useState('');
   // «Сдавать жильё» / «Работать на уборках» in the menu: the role entry opens straight on that role's short form.
   const [joinRole,setJoinRole]=useState<Role|null>(null);
   const [retrying,setRetrying]=useState(false),[opening,setOpening]=useState(false);
@@ -275,7 +275,7 @@ function Chat(){
   useEffect(()=>{if(pageId!=='overview')setDeal(null);},[pageId]);
   useEffect(()=>{dealRef.current=deal&&pageId==='overview'?deal.kind:'';},[deal,pageId]);
   const say=(text:string,block?:string,payload?:Row)=>{const id=uid();scrollMessage.current=id;setMessages(prev=>[...prev,{id,sender:'assistant' as const,text,block,payload}].slice(-120));};
-  const processLinks=useProcessLinks({apiUrl:API_URL,ready,accountId:userId||null,blocked:busy||!!flow||!!recoveryCode||chatsActive,onError:message=>setLinkError(message),onOpen:async(link,guard)=>{
+  const processLinks=useProcessLinks({apiUrl:API_URL,ready,accountId:userId||null,blocked:busy||!!flow||chatsActive,onError:message=>setLinkError(message),onOpen:async(link,guard)=>{
     if(locked.current||!session.current||!guard.isCurrent())return;
     setLinkError('');locked.current=true;setBusy(true);
     try{
@@ -293,7 +293,7 @@ function Chat(){
   });
   const finish=(id:string,result=tr('Сохранено'))=>setMessages(prev=>prev.map(m=>m.id===id?{...m,done:true,result}:m));
   async function signedOut(result?:Row){
-    try{await saveSession(null);await saveLastRole(null,null);}finally{session.current=false;setWorkspaceRole(null);activeRoleRef.current=null;setSelectedRole(null);setHistoryReady(false);setData(empty);setMessages([]);setFlow(null);setInput('');setChatInitial(null);setChatsActive(false);setRecoveryCode('');if(result?.receipt)setErasureResult(result);}
+    try{await saveSession(null);await saveLastRole(null,null);}finally{session.current=false;setWorkspaceRole(null);activeRoleRef.current=null;setSelectedRole(null);setHistoryReady(false);setData(empty);setMessages([]);setFlow(null);setInput('');setChatInitial(null);setChatsActive(false);if(result?.receipt)setErasureResult(result);}
   }
   // «Избранное» on a home's card; the map's panel keeps its own copy, both follow the state.
   const favorites=useFavorites(data,()=>load());
@@ -513,7 +513,7 @@ function Chat(){
   async function authenticate(mode:string,phone:string,password:string,id:string,intent:string,name?:string,city?:string,recovery?:string){
     if(locked.current)return;locked.current=true;setBusy(true);
     try{
-      const result=await request('/auth/'+mode,{phone,password,...(mode==='register'?{name,city:city?.trim()||cityHere(),accept:true}:mode==='recover'?{recoveryCode:recovery}:mode==='reset'?{code:recovery}:{})});if(result.recoveryCode)setRecoveryCode(result.recoveryCode);if(mode==='recover'){await saveSession(null);session.current=false;setWorkspaceRole(null);activeRoleRef.current=null;setSelectedRole(null);setData(empty);setMessages([]);setFlow(null);return;}if(typeof result.token!=='string')throw Error(tr('Сервер не подтвердил вход.'));await saveSession(result.token);session.current=true;
+      const result=await request('/auth/'+mode,{phone,password,...(mode==='register'?{name,city:city?.trim()||cityHere(),accept:true}:mode==='reset'?{code:recovery}:{})});/* The server still returns a backup code (the site keeps it); the app no longer shows one: a forgotten password is reset by a code in Telegram. */if(typeof result.token!=='string')throw Error(tr('Сервер не подтвердил вход.'));await saveSession(result.token);session.current=true;
       setWorkspaceRole(null);activeRoleRef.current=null;setSelectedRole(null);
       // While the last role is opening the chooser is not shown, so the map is the first thing seen after «Войти».
       // Signed in to book or to see something from the visitor map: the guest's pages open, and that goes on there.
@@ -803,7 +803,6 @@ function Chat(){
   const ids=allIds.slice(0,listed.page===pageId?listed.count:12),hidden=allIds.length-ids.length;
   const primary:Message={id:'page-'+pageId,sender:'assistant',text:'',block:pageId==='overview'?(flow?undefined:'workspace'):pageId==='properties'||pageId==='catalog'?'properties':pageId==='bookings'?'bookings':['cleaning','jobs','assignments'].includes(pageId)?'jobs':undefined,payload:{ids,role:selectedRole,mode:selectedRole==='owner'?'owner':'guest'}};
   if(erasureResult)return <SafeAreaView style={s.screen}><ScrollView contentContainerStyle={s.transcript}><View style={s.card}><Text style={s.cardTitle}>{tr('Результат удаления')}</Text><Text style={s.text}>{erasureResult.message}</Text><Text selectable style={s.meta}>{tr('Квитанция: {id}',{id:erasureResult.receipt.id})}</Text><Button title={tr('Продолжить')} onPress={()=>setErasureResult(null)}/></View></ScrollView></SafeAreaView>;
-  if(recoveryCode)return <SafeAreaView style={s.screen}><ScrollView contentContainerStyle={s.transcript}><View style={s.card}><Text style={s.cardTitle}>{tr('Сохраните резервный код')}</Text><Text style={s.text}>{tr('Он понадобится для восстановления доступа к общему аккаунту. Код показывается один раз и не сохраняется в переписке.')}</Text><Text selectable style={s.value}>{recoveryCode}</Text><Button title={tr('Код сохранён — продолжить')} onPress={()=>setRecoveryCode('')}/></View></ScrollView></SafeAreaView>;
   // No account: the map as a guest sees it. Search, pins, cards and prices work; booking, the chats and the menu ask to sign in.
   if(!selectedRole&&ready&&!opening&&!data.user&&signIn===null)return <ActivityClockProvider serverTime={data.serverTime}><SafeAreaView style={s.screen} edges={['top','bottom']}><KeyboardAvoidingView style={s.shell} behavior="padding">
     {offline}{!!linkError&&<Text accessibilityRole="alert" style={s.error}>{linkError}</Text>}<View style={s.stage}><MapHome key="visitor" role="guest" accountId="" data={data} menu={<SignInButton busy={busy} onPress={()=>askSignIn('',null)}/>} onChanged={async()=>{}} onOpenPage={()=>askSignIn(tr('Войдите, чтобы открыть этот раздел.'),null)} onOpenProcess={()=>askSignIn('',null)} onAsk={text=>askSignIn(tr('Войдите, и ИИ-администратор ответит на ваш вопрос.'),{kind:'ask',text})} onIntent={(intent,stay)=>intent.startsWith('favorite:')?askSignIn(tr('Войдите, чтобы сохранять жильё в избранное.'),null):askSignIn(intent.startsWith('home-cleaning')?tr('Уборку своего жилья заказывает владелец: войдите по номеру телефона и выберите роль «Владелец».'):tr('Войдите, чтобы открыть объявление целиком. Даты и гости сохранятся.'),{kind:'open',intent,stay})} onBook={(property,stay)=>askSignIn(tr('Чтобы забронировать «{v}», войдите по номеру телефона. Даты и гости сохранятся.',{v:String(property.title||tr('жильё'))}),{kind:'book',property,stay})}/></View>
