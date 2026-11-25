@@ -51,12 +51,12 @@ if(Platform.OS==='android')UIManager.setLayoutAnimationEnabledExperimental?.(tru
 const smooth=()=>LayoutAnimation.configureNext(LayoutAnimation.create(220,LayoutAnimation.Types.easeInEaseOut,LayoutAnimation.Properties.opacity));
 // The owner's fee for one booking, to show the sum as top apps do (Airtasker, alias): what the guest pays, minus the
 // service's fee, what stays. The rate and its cap come from the server; during the free start the fee is zero.
-type OwnerFee={rate:number;max:number;freeUntil:number|null;card:string};
+type OwnerFee={rate:number;max:number;freeUntil:number|null};
 let feeCache:Promise<OwnerFee>|null=null;
 function useOwnerFee(on:boolean){
  const [fee,setFee]=useState<OwnerFee|null>(null);
  useEffect(()=>{if(!on)return;let live=true;
-  feeCache=feeCache||Promise.all([request('/api/operations/service-billing/state',undefined,undefined,undefined,'owner'),request('/api/operations/autopilot/state').catch(()=>null)]).then(([b,a]:any[])=>({rate:Number(b?.rates?.owner??400),max:Number(b?.rates?.ownerMax??0),freeUntil:a?.billing?.freeUntil??null,card:String(b?.card?.mask||'')}));
+  feeCache=feeCache||Promise.all([request('/api/operations/service-billing/state',undefined,undefined,undefined,'owner'),request('/api/operations/autopilot/state').catch(()=>null)]).then(([b,a]:any[])=>({rate:Number(b?.rates?.owner??400),max:Number(b?.rates?.ownerMax??0),freeUntil:a?.billing?.freeUntil??null}));
   feeCache.then(v=>{if(live)setFee(v);}).catch(()=>{feeCache=null;});
   return()=>{live=false;};},[on]);
  return fee;
@@ -66,8 +66,8 @@ export function feeOf(amount:number,fee:OwnerFee,at:number){
  let v=Math.floor((amount*fee.rate+5000)/10000);if(fee.max>0)v=Math.min(v,fee.max);return Math.max(0,Math.min(v,amount));
 }
 // The owner's quick answer to a request: the approval card of the booking and how to send the decision.
-// payout: the owner's Kaspi details (where the guest transfers); onMethod opens «Реквизиты» or «Оплата услуг».
-export type OwnerAsk={card:Row;onDecide:(body:Row)=>void;onReview:()=>void;payout?:Row|null;onMethod?:(page:'payout'|'billing')=>void};
+// payout: the owner's Kaspi details (where the guest transfers); onMethod opens «Реквизиты для оплаты».
+export type OwnerAsk={card:Row;onDecide:(body:Row)=>void;onReview:()=>void;payout?:Row|null;onMethod?:(page:'payout')=>void};
 // «•• 45 67»: only the last digits of a Kaspi number, as a bank card shows «•• 0222».
 const tail=(phone:string)=>{const d=String(phone||'').replace(/\D/g,'');return d.length>=4?'•• '+d.slice(-4,-2)+' '+d.slice(-2):'';};
 export function DealCard({kind,item,role,userId,application,thread,line:own,actions,busy,always,details,extra,onMap,compact=false,startOpen=false,request}:{request?:OwnerAsk;kind:'booking'|'job';item:Row;role:string;userId:string;application?:Row;thread?:ProcessThread|null;line?:string|null;actions:Maybe<RecordAction>[];busy:boolean;always?:React.ReactNode;details?:React.ReactNode;extra?:React.ReactNode;onMap?:()=>void;compact?:boolean;startOpen?:boolean}){
@@ -95,8 +95,8 @@ export function DealCard({kind,item,role,userId,application,thread,line:own,acti
   const decide=(what:string)=>request.onDecide({id:card.id,revision:card.revision,action:what,reason:'',cleaningFee:fee});
   const risk=card.risk,calm=!risk||risk.level==='low';
   const others=rest.filter(Boolean);
-  const method=(mark:'kaspi'|'card',title:string,note:string,missing:boolean,page:'payout'|'billing')=><Pressable accessibilityRole="button" accessibilityLabel={title+'. '+note+'. '+(missing?t('Добавить'):t('Изменить'))} disabled={!request.onMethod} onPress={()=>request.onMethod?.(page)} style={({pressed})=>[r.payRow,pressed&&r.dim]}>
-   <View style={[r.payMark,mark==='kaspi'?r.payKaspi:r.payCard]}><Text style={r.payMarkText}>{mark==='kaspi'?'K':'▭'}</Text></View>
+  const method=(title:string,note:string,missing:boolean)=><Pressable accessibilityRole="button" accessibilityLabel={title+'. '+note+'. '+(missing?t('Добавить'):t('Изменить'))} disabled={!request.onMethod} onPress={()=>request.onMethod?.('payout')} style={({pressed})=>[r.payRow,pressed&&r.dim]}>
+   <View style={[r.payMark,r.payKaspi]}><Text style={r.payMarkText}>K</Text></View>
    <View style={r.grow}><Text numberOfLines={1} style={r.payTitle}>{title}</Text><Text numberOfLines={1} style={[r.payNote,missing&&r.payWarn]}>{note}</Text></View>
    <Text style={r.payEdit}>{missing?t('Добавить'):t('Изменить')}</Text>
   </Pressable>;
@@ -112,11 +112,9 @@ export function DealCard({kind,item,role,userId,application,thread,line:own,acti
     {!!ownerFee&&<View style={r.askLine}><Text style={r.askKey}>{feeOf(Number(item.amount)||0,ownerFee,clock)?t('Комиссия сервиса {n}%',{n:String(ownerFee.rate/100).replace('.',',')}):t('Комиссия сервиса · бесплатный старт')}</Text><Text style={r.askValue}>{'−'+money(feeOf(Number(item.amount)||0,ownerFee,clock))}</Text></View>}
     <View style={[r.askLine,r.askTotal]}><Text style={r.askTotalKey}>{t('Вы получите')}</Text><Text style={r.askSum}>{money((Number(item.amount)||0)-(ownerFee?feeOf(Number(item.amount)||0,ownerFee,clock):0))}</Text></View>
    </View>
-   {/* How the money goes, as «Payment method» in Airbnb or Fresha: the bank, the last digits, «Изменить». */}
+   {/* Where the guest pays, as «Payment method» in Airbnb or Fresha: the bank, the last digits, «Изменить». */}
    <View style={r.payBox}>
-    {method('kaspi',request.payout?.phone?t('Kaspi {v}',{v:tail(request.payout.phone)}):t('Kaspi не указан'),request.payout?.phone?t('сюда переведёт гость'):t('гость не увидит, куда платить'),!request.payout?.phone,'payout')}
-    {!!ownerFee&&<View style={r.payGap}/>}
-    {!!ownerFee&&method('card',ownerFee.card?t('Карта {v}',{v:ownerFee.card}):t('Карта не привязана'),ownerFee.card?t('для комиссии сервиса'):t('нужна для комиссии сервиса'),!ownerFee.card,'billing')}
+    {method(request.payout?.phone?t('Kaspi {v}',{v:tail(request.payout.phone)}):t('Kaspi не указан'),request.payout?.phone?t('сюда переведёт гость'):t('гость не увидит, куда платить'),!request.payout?.phone)}
    </View>
    <Text style={[r.askTag,r.askTagAlone,!calm&&r.askTagRisk]}>{calm?t('Надёжный гость'):(risk.label||t('Проверьте гостя'))}</Text>
    {always}
@@ -190,7 +188,7 @@ const r=StyleSheet.create({
  askHead:{flexDirection:'row',alignItems:'center',gap:12},askCaption:{...type.caption,color:C.muted},askWho:{...type.title,color:C.ink,fontWeight:'800'},
  ring:{width:88,height:88,alignItems:'center',justifyContent:'center'},ringArc:{position:'absolute',top:0,left:0,width:88,height:88,borderRadius:999,borderWidth:6,transform:[{rotate:'45deg'}]},ringText:{...type.body,fontWeight:'800',color:C.ink,fontVariant:['tabular-nums']},
  askRow:{gap:2,paddingVertical:8,borderBottomWidth:1,borderBottomColor:C.line},askLast:{flexDirection:'row',alignItems:'center',borderBottomWidth:0},askKey:{...type.caption,color:C.muted},askValue:{...type.body,color:C.ink,fontWeight:'600'},askSum:{...type.title,color:C.ink,fontWeight:'800'},
- askMoney:{gap:8,paddingVertical:12},askLine:{flexDirection:'row',alignItems:'center',justifyContent:'space-between',gap:12},askTotal:{paddingTop:8,borderTopWidth:1,borderTopColor:C.line},askTotalKey:{...type.body,color:C.ink,fontWeight:'700'},askTagAlone:{alignSelf:'flex-start'},payBox:{borderWidth:1,borderColor:C.line,borderRadius:T.radius.lg,paddingHorizontal:12},payGap:{height:1,backgroundColor:C.line},payRow:{flexDirection:'row',alignItems:'center',gap:12,minHeight:56,paddingVertical:8},payMark:{width:40,height:28,borderRadius:T.radius.sm,alignItems:'center',justifyContent:'center'},payKaspi:{backgroundColor:C.danger},payCard:{backgroundColor:C.ink},payMarkText:{...type.label,color:C.onAccent,fontWeight:'800'},payTitle:{...type.body,color:C.ink,fontWeight:'600'},payNote:{...type.caption,color:C.muted},payWarn:{color:C.warning},payEdit:{...type.label,color:C.accent,fontWeight:'600'},
+ askMoney:{gap:8,paddingVertical:12},askLine:{flexDirection:'row',alignItems:'center',justifyContent:'space-between',gap:12},askTotal:{paddingTop:8,borderTopWidth:1,borderTopColor:C.line},askTotalKey:{...type.body,color:C.ink,fontWeight:'700'},askTagAlone:{alignSelf:'flex-start'},payBox:{borderWidth:1,borderColor:C.line,borderRadius:T.radius.lg,paddingHorizontal:12},payRow:{flexDirection:'row',alignItems:'center',gap:12,minHeight:56,paddingVertical:8},payMark:{width:40,height:28,borderRadius:T.radius.sm,alignItems:'center',justifyContent:'center'},payKaspi:{backgroundColor:C.danger},payMarkText:{...type.label,color:C.onAccent,fontWeight:'800'},payTitle:{...type.body,color:C.ink,fontWeight:'600'},payNote:{...type.caption,color:C.muted},payWarn:{color:C.warning},payEdit:{...type.label,color:C.accent,fontWeight:'600'},
  askTag:{...type.caption,fontWeight:'700',color:C.success,backgroundColor:C.successSoft,paddingHorizontal:8,paddingVertical:4,borderRadius:R.sm,overflow:'hidden'},askTagRisk:{color:C.warning,backgroundColor:C.warningSoft},
  askReject:{minHeight:H.touch,alignItems:'center',justifyContent:'center'},askRejectText:{...type.label,color:C.inkSoft,fontWeight:'600'},
  waitTag:{...type.caption,fontWeight:'700',color:C.warning,backgroundColor:C.warningSoft,paddingHorizontal:8,paddingVertical:4,borderRadius:R.sm,overflow:'hidden'},
