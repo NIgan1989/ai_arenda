@@ -40,7 +40,8 @@ function timeLabel(at: number, now: number) {
 export function OwnerToday({ data, now, needs = [], onOpen }: Props) {
   const [tab, setTab] = useState<Tab>('today');
   const [all, setAll] = useState(false);
-  const threads = useMemo(() => ownerThreads(data, now), [data, now]);
+  // A week and a day ahead, so «Скоро» holds the whole next week; «Сегодня» and «Все» cut it themselves.
+  const threads = useMemo(() => ownerThreads(data, now, 8 * DAY), [data, now]);
   const today = dayOf(now);
   const live = threads.filter(t => !t.finished);
   const arrivals = live.filter(t => t.kind === 'booking' && t.tag === 'Бронь' && dayOf(t.at) === today).length;
@@ -48,28 +49,22 @@ export function OwnerToday({ data, now, needs = [], onOpen }: Props) {
   const yours = threads.filter(t => t.yours);
   const asks = needs.length + yours.length;
   const calm = threads.filter(t => !t.yours).sort((a, b) => whenOf(a) - whenOf(b));
-  const inTab = (t: ProcessThread) => {
-    const day = dayOf(whenOf(t));
-    return tab === 'all' ? true : tab === 'today' ? day <= today : day > today && day <= today + 7;
-  };
+  const dayIn = (t: ProcessThread, id: Tab) => { const day = dayOf(whenOf(t)); return id === 'today' ? day <= today : day > today && day <= today + 7; };
+  const inTab = (t: ProcessThread) => tab === 'all' || dayIn(t, tab);
   const shown = calm.filter(inTab);
   const rows = all ? shown : shown.slice(0, FOLDED);
   const parts = [arrivals ? count(arrivals, 'заезд', 'заезда', 'заездов') : '', cleanings ? count(cleanings, 'уборка', 'уборки', 'уборок') : ''].filter(Boolean);
-  const tabButton = (id: Tab, title: string) => (
+  const todayCount = calm.filter(t => dayIn(t, 'today')).length + asks, soonCount = calm.filter(t => dayIn(t, 'soon')).length;
+  const tabButton = (id: Tab, title: string, n?: number) => (
     <Pressable key={id} accessibilityRole="tab" accessibilityState={{ selected: tab === id }} onPress={() => { setTab(id); setAll(false); }} style={[o.tab, tab === id && o.tabOn]}>
-      <Text style={[o.tabText, tab === id && o.tabTextOn]}>{title}</Text>
+      <Text style={[o.tabText, tab === id && o.tabTextOn]}>{title}{n ? ' · ' + n : ''}</Text>
     </Pressable>
   );
   return (
     <View style={o.box} accessibilityLabel={tr('Сегодня')}>
-      <Text accessibilityRole="header" style={o.title}>
-        {tr('Сегодня')}{parts.length ? ' ' : ''}
-        {!!parts[0] && <Text style={o.titleAccent}>{parts[0]}</Text>}
-        {parts.length > 1 ? '\n' + tr('и') + ' ' + parts[1] : ''}
-        {!parts.length ? ' ' + tr('спокойно') : ''}
-      </Text>
-      <Text style={o.lead}>{asks ? tr('Автопилот ведёт всё сам. Нужны вы: {n}.', { n: asks }) : tr('Автопилот ведёт всё сам. От вас ничего не нужно.')}</Text>
-      <View style={o.tabs} accessibilityRole="tablist">{tabButton('today', tr('Сегодня'))}{tabButton('soon', tr('Скоро'))}{tabButton('all', tr('Все'))}</View>
+      {/* As Airbnb's «Today» for hosts: no big headline, two pills and the feed; the day's sum is one quiet line. */}
+      <View style={o.tabs} accessibilityRole="tablist">{tabButton('today', tr('Сегодня'), todayCount)}{tabButton('soon', tr('Скоро'), soonCount)}{tabButton('all', tr('Все'))}</View>
+      <Text style={o.lead}>{[parts.join(' · ') || tr('Сегодня спокойно'), asks ? tr('нужны вы: {n}', { n: asks }) : tr('остальное ведёт автопилот')].join(' · ')}</Text>
       {needs.map(n => (
         <View key={n.key} style={[o.row, o.rowYours]} accessibilityLabel={tr('Ждёт вас: {title}. {line}', { title: n.title, line: n.line })}>
           <Text style={[o.time, o.timeNow]}>{tr('сейчас')}</Text>
@@ -106,11 +101,11 @@ const o = StyleSheet.create({
   title: { ...type.title, fontSize: 28, lineHeight: 34, fontWeight: '800', color: C.ink },
   titleAccent: { color: C.accent },
   lead: { ...type.label, color: C.muted },
-  tabs: { flexDirection: 'row', gap: 4, padding: 4, marginTop: 4, marginBottom: 4, borderRadius: T.radius.md, backgroundColor: C.surfaceAlt },
-  tab: { flex: 1, minHeight: 40, alignItems: 'center', justifyContent: 'center', borderRadius: T.radius.sm },
-  tabOn: { backgroundColor: C.surface, shadowColor: C.ink, shadowOpacity: 0.08, shadowRadius: 4, shadowOffset: { width: 0, height: 1 }, elevation: 1 },
-  tabText: { ...type.label, color: C.muted, fontWeight: '600' },
-  tabTextOn: { color: C.ink },
+  tabs: { flexDirection: 'row', gap: 8, marginTop: 4 },
+  tab: { minHeight: 40, paddingHorizontal: 16, alignItems: 'center', justifyContent: 'center', borderRadius: T.radius.full, backgroundColor: C.surfaceAlt },
+  tabOn: { backgroundColor: C.ink },
+  tabText: { ...type.label, color: C.ink, fontWeight: '600' },
+  tabTextOn: { color: C.surface },
   row: { flexDirection: 'row', alignItems: 'center', gap: 12, minHeight: 64, paddingVertical: 8, paddingHorizontal: 12, borderRadius: T.radius.lg, backgroundColor: C.surface, borderWidth: 1, borderColor: C.line },
   rowYours: { borderWidth: 2, borderColor: C.gold },
   time: { ...type.caption, width: 48, color: C.muted, fontWeight: '600', fontVariant: ['tabular-nums'] },

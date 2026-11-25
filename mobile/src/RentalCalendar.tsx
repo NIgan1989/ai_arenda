@@ -25,7 +25,9 @@ export function RentalCalendar({data,role,busy,onOpen,propertyId=''}:{data:Row;r
  const owner=role==='owner',flats:Row[]=data.ownProperties||[],flat=propertyId?flats.find(p=>p.id===propertyId):flats.length===1?flats[0]:undefined;
  const short=(v:number)=>v>=1000?tr('{n} тыс',{n:String(Math.round(v/100)/10).replace('.',',')}):String(v);
  const who=(e:CalendarEntry)=>{if(e.kind!=='booking')return tr('Уборка');const b=(data.bookings||[]).find((x:Row)=>x.id===e.id);const name=String(b?.guest_name||'').trim().split(/\s+/)[0];return e.tone==='request'?tr('Заявка'):name||tr('Бронь');};
- const inMonth=grid.filter(d=>sameMonth(d,shown)),busyDays=inMonth.filter(d=>entriesOn(entries,d).some(e=>e.kind==='booking'&&e.tone!=='request')).length,busyShare=inMonth.length?Math.round(busyDays/inMonth.length*100):0;
+ const inMonth=grid.filter(d=>sameMonth(d,shown)),places=propertyId?1:Math.max(1,flats.length),placeOf=(e:CalendarEntry)=>(data.bookings||[]).find((b:Row)=>b.id===e.id)?.property_id||e.id;
+ // Busy property-days against all property-days of the month: one of two homes booked all month is 50%, not 100%.
+ const busyDays=inMonth.reduce((n,d)=>n+new Set(entriesOn(entries,d).filter(e=>e.kind==='booking'&&e.tone!=='request').map(placeOf)).size,0),busyShare=inMonth.length?Math.min(100,Math.round(busyDays/(inMonth.length*places)*100)):0;
  const row=(e:CalendarEntry,on:number,withDate=false)=><Pressable key={e.key} accessibilityRole="button" accessibilityLabel={[e.kind==='job'?tr('Уборка'):tr('Бронь'),e.title,dayLine(e,on),e.status].join(', ')} disabled={busy} onPress={()=>onOpen(e.kind,e.id)} style={({pressed})=>[c.entry,pressed&&c.pressed]}><View style={[c.bar,{backgroundColor:dot[e.tone]}]}/><View style={c.copy}><Text style={c.time}>{withDate?words(dayStart(e.start),{day:'numeric',month:'long'})+' · ':''}{dayLine(e,on)}</Text><Text style={c.name}>{e.kind==='job'?tr('Уборка · {what}',{what:e.title}):e.title}</Text><Text style={[c.status,e.tone==='late'&&{color:C.danger}]}>{e.status}</Text></View><Text style={c.chevron}>›</Text></Pressable>;
  return <View style={c.wrap}>
   <View style={c.card}>

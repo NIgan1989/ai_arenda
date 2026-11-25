@@ -1,11 +1,12 @@
 import {t} from '../../lib/i18n';
 import {jobPayNote} from '../../lib/regular-cleaner-text';
-import React,{useState} from 'react';
+import React,{useEffect,useState} from 'react';
 import {View,Text,Pressable,StyleSheet,Platform,LayoutAnimation,UIManager} from 'react-native';
 import {C,type} from './styles';
 import {T} from './tokens';
 import {SwipeConfirm} from './SwipeConfirm';
 import {useActivityClock} from './ActivityTimer';
+import {request} from './api';
 import {money,type Row} from './model';
 import {Photo} from './ListingMedia';
 import {processJourney} from '../../lib/process-journey';
@@ -48,10 +49,27 @@ export function AnswerWait({item,bare=false}:{item:Row;bare?:boolean}){
 }
 if(Platform.OS==='android')UIManager.setLayoutAnimationEnabledExperimental?.(true);
 const smooth=()=>LayoutAnimation.configureNext(LayoutAnimation.create(220,LayoutAnimation.Types.easeInEaseOut,LayoutAnimation.Properties.opacity));
+// The owner's fee for one booking, to show the sum as top apps do (Airtasker, alias): what the guest pays, minus the
+// service's fee, what stays. The rate and its cap come from the server; during the free start the fee is zero.
+type OwnerFee={rate:number;max:number;freeUntil:number|null};
+let feeCache:Promise<OwnerFee>|null=null;
+function useOwnerFee(on:boolean){
+ const [fee,setFee]=useState<OwnerFee|null>(null);
+ useEffect(()=>{if(!on)return;let live=true;
+  feeCache=feeCache||Promise.all([request('/api/operations/service-billing/state',undefined,undefined,undefined,'owner'),request('/api/operations/autopilot/state').catch(()=>null)]).then(([b,a]:any[])=>({rate:Number(b?.rates?.owner??400),max:Number(b?.rates?.ownerMax??0),freeUntil:a?.billing?.freeUntil??null}));
+  feeCache.then(v=>{if(live)setFee(v);}).catch(()=>{feeCache=null;});
+  return()=>{live=false;};},[on]);
+ return fee;
+}
+export function feeOf(amount:number,fee:OwnerFee,at:number){
+ if(fee.freeUntil&&fee.freeUntil>at)return 0;
+ let v=Math.floor((amount*fee.rate+5000)/10000);if(fee.max>0)v=Math.min(v,fee.max);return Math.max(0,Math.min(v,amount));
+}
 // The owner's quick answer to a request: the approval card of the booking and how to send the decision.
 export type OwnerAsk={card:Row;onDecide:(body:Row)=>void;onReview:()=>void};
 export function DealCard({kind,item,role,userId,application,thread,line:own,actions,busy,always,details,extra,onMap,compact=false,startOpen=false,request}:{request?:OwnerAsk;kind:'booking'|'job';item:Row;role:string;userId:string;application?:Row;thread?:ProcessThread|null;line?:string|null;actions:Maybe<RecordAction>[];busy:boolean;always?:React.ReactNode;details?:React.ReactNode;extra?:React.ReactNode;onMap?:()=>void;compact?:boolean;startOpen?:boolean}){
  const [open,setOpen]=useState(false),[more,setMore]=useState(false),[unfolded,setUnfolded]=useState(startOpen),clock=useActivityClock();
+ const ownerFee=useOwnerFee(kind==='booking'&&!!request);
  const status=processStatus(kind,item,role,userId,application),[bg,ink]=tones[status.tone]||tones.neutral,flow=processJourney(kind,item);
  const total=thread?thread.steps.length:flow.labels.length,done=thread?thread.finished:flow.done,step=Math.min(thread?thread.current:flow.current,total-1),line=flow.stopped?flow.hint:thread?thread.line:own||flow.hint;
  const all=actions.filter(Boolean) as RecordAction[],main=all.find(a=>a.kind==='main'),rest:Maybe<RecordAction>[]=[...all.filter(a=>a!==main),!!onMap&&{title:t('Показать на карте'),kind:'side' as const,onPress:onMap}];
@@ -81,7 +99,12 @@ export function DealCard({kind,item,role,userId,application,thread,line:own,acti
    </View>
    <View style={r.askRow}><Text style={r.askKey}>{t('Когда')}</Text><Text style={r.askValue}>{recordSpan(item.start,item.end)}</Text></View>
    <View style={r.askRow}><Text style={r.askKey}>{t('Жильё')}</Text><Text numberOfLines={2} style={r.askValue}>{item.title}</Text></View>
-   <View style={[r.askRow,r.askLast]}><View style={r.grow}><Text style={r.askKey}>{t('Вы получите')}</Text><Text style={r.askSum}>{money(item.amount)}</Text></View><Text style={[r.askTag,!calm&&r.askTagRisk]}>{calm?t('Надёжный гость'):(risk.label||t('Проверьте гостя'))}</Text></View>
+   <View style={r.askMoney}>
+    <View style={r.askLine}><Text style={r.askKey}>{t('Гость платит')}</Text><Text style={r.askValue}>{money(item.amount)}</Text></View>
+    {!!ownerFee&&<View style={r.askLine}><Text style={r.askKey}>{feeOf(Number(item.amount)||0,ownerFee,clock)?t('Комиссия сервиса {n}%',{n:String(ownerFee.rate/100).replace('.',',')}):t('Комиссия сервиса · бесплатный старт')}</Text><Text style={r.askValue}>{'−'+money(feeOf(Number(item.amount)||0,ownerFee,clock))}</Text></View>}
+    <View style={[r.askLine,r.askTotal]}><Text style={r.askTotalKey}>{t('Вы получите')}</Text><Text style={r.askSum}>{money((Number(item.amount)||0)-(ownerFee?feeOf(Number(item.amount)||0,ownerFee,clock):0))}</Text></View>
+   </View>
+   <Text style={[r.askTag,r.askTagAlone,!calm&&r.askTagRisk]}>{calm?t('Надёжный гость'):(risk.label||t('Проверьте гостя'))}</Text>
    {always}
    <SwipeConfirm label={card.depositLabel?t('Проведите: {v}',{v:low(t('Подтвердить {v}',{v:low(card.depositLabel)}))}):t('Проведите, чтобы принять')} disabled={busy} onConfirm={()=>decide(action)}/>
    <Pressable accessibilityRole="button" accessibilityLabel={t('Отклонить заявку')} disabled={busy} onPress={()=>card.requiresReason?request.onReview():decide('reject')} style={({pressed})=>[r.askReject,(pressed||busy)&&r.dim]}><Text style={r.askRejectText}>{t('Отклонить')}</Text></Pressable>
@@ -153,6 +176,7 @@ const r=StyleSheet.create({
  askHead:{flexDirection:'row',alignItems:'center',gap:12},askCaption:{...type.caption,color:C.muted},askWho:{...type.title,color:C.ink,fontWeight:'800'},
  ring:{width:88,height:88,alignItems:'center',justifyContent:'center'},ringArc:{position:'absolute',top:0,left:0,width:88,height:88,borderRadius:999,borderWidth:6,transform:[{rotate:'45deg'}]},ringText:{...type.body,fontWeight:'800',color:C.ink,fontVariant:['tabular-nums']},
  askRow:{gap:2,paddingVertical:8,borderBottomWidth:1,borderBottomColor:C.line},askLast:{flexDirection:'row',alignItems:'center',borderBottomWidth:0},askKey:{...type.caption,color:C.muted},askValue:{...type.body,color:C.ink,fontWeight:'600'},askSum:{...type.title,color:C.ink,fontWeight:'800'},
+ askMoney:{gap:8,paddingVertical:12},askLine:{flexDirection:'row',alignItems:'center',justifyContent:'space-between',gap:12},askTotal:{paddingTop:8,borderTopWidth:1,borderTopColor:C.line},askTotalKey:{...type.body,color:C.ink,fontWeight:'700'},askTagAlone:{alignSelf:'flex-start'},
  askTag:{...type.caption,fontWeight:'700',color:C.success,backgroundColor:C.successSoft,paddingHorizontal:8,paddingVertical:4,borderRadius:R.sm,overflow:'hidden'},askTagRisk:{color:C.warning,backgroundColor:C.warningSoft},
  askReject:{minHeight:H.touch,alignItems:'center',justifyContent:'center'},askRejectText:{...type.label,color:C.inkSoft,fontWeight:'600'},
  waitTag:{...type.caption,fontWeight:'700',color:C.warning,backgroundColor:C.warningSoft,paddingHorizontal:8,paddingVertical:4,borderRadius:R.sm,overflow:'hidden'},
