@@ -116,7 +116,7 @@ export function DealCard({kind,item,role,userId,application,thread,line:own,acti
    <View style={r.payBox}>
     {method('kaspi',request.payout?.phone?t('Kaspi {v}',{v:tail(request.payout.phone)}):t('Kaspi не указан'),request.payout?.phone?t('сюда переведёт гость'):t('гость не увидит, куда платить'),!request.payout?.phone,'payout')}
     {!!ownerFee&&<View style={r.payGap}/>}
-    {!!ownerFee&&method('card',ownerFee.card?t('Карта {v}',{v:ownerFee.card}):t('Карта не привязана'),ownerFee.card?t('комиссия по понедельникам'):t('нужна для комиссии сервиса'),!ownerFee.card,'billing')}
+    {!!ownerFee&&method('card',ownerFee.card?t('Карта {v}',{v:ownerFee.card}):t('Карта не привязана'),ownerFee.card?t('для комиссии сервиса'):t('нужна для комиссии сервиса'),!ownerFee.card,'billing')}
    </View>
    <Text style={[r.askTag,r.askTagAlone,!calm&&r.askTagRisk]}>{calm?t('Надёжный гость'):(risk.label||t('Проверьте гостя'))}</Text>
    {always}
