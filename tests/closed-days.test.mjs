@@ -85,3 +85,23 @@ test('while adding a flat the owner sees what similar flats in the city ask, onl
   await assert.rejects(similarRange(f.owner,{rooms:2}),/./);
  }finally{f.db.close();}
 });
+
+test('an owner with two places closes a day and marks «Занято» on each: the calendar sources do not collide',async()=>{
+ const f=await fixture();try{
+  const {markBusy,busyBlocks}=await load('staff');
+  const columns=f.db.raw.prepare('PRAGMA table_info(properties)').all().map(c=>c.name);
+  f.db.raw.prepare(`INSERT INTO properties(${columns.join(',')}) SELECT ${columns.map(c=>c==='id'?"'second'":c).join(',')} FROM properties WHERE id=?`).run(f.property);
+  const day=dayOf(now())+9*DAY;
+  await closeDay(f.owner,{propertyId:f.property,day});
+  const both=await closeDay(f.owner,{propertyId:'second',day});
+  assert.deepEqual(both.closedDays.map(d=>d.property_id).sort(),[f.property,'second'].sort());
+  // Opening one place's day leaves the other's closed.
+  assert.deepEqual((await openDay(f.owner,{propertyId:f.property,day})).closedDays,[{property_id:'second',day}]);
+  // «Занято» made before the key named the place is still found; a second place gets its own source.
+  f.db.raw.prepare("INSERT INTO calendar_sources(id,property_id,owner_id,label,url,created_at,provider,external_property_id) VALUES ('old-busy',?,'owner','Занято','',?,'manual','aiqonaq:busy')").run(f.property,now());
+  await markBusy(f.owner,{propertyId:f.property,hours:1});await markBusy(f.owner,{propertyId:'second',hours:1});
+  assert.equal((await busyBlocks(f.db,f.property)).length,1);assert.equal((await busyBlocks(f.db,'second')).length,1);
+  assert.equal(f.db.raw.prepare("SELECT COUNT(*) n FROM external_blocks WHERE source_id='old-busy'").get().n,1);
+  const {flatCalendars}=await load('external-calendar');assert.deepEqual((await flatCalendars(f.owner,{propertyId:'second'})).sources,[]);
+ }finally{f.db.close();}
+});

@@ -14,6 +14,9 @@ import {q,one,rows,epoch,uuid,type Row} from './operation-core';
 
 /** «Занято» is kept as a calendar source of the object, so every search, quote and booking already respects it. */
 export const BUSY_SOURCE='aiqonaq:busy';
+// One source a place: a calendar source is unique per owner, provider and key (drizzle/0015), so the key names the place.
+// A source made before that has the bare key; it is still found and used.
+export const busyKey=(propertyId:string)=>BUSY_SOURCE+':'+propertyId;
 export const MAX_BUSY_HOURS=12;
 export const MARKS=['heated','arrived','left','ready'] as const;
 export type Mark=typeof MARKS[number];
@@ -72,7 +75,7 @@ export async function removeStaff(s:RentalService,body:Row){
 // ---------- «Занято» ----------
 
 /** What is busy by hand now or later, soonest first. */
-export const busyBlocks=(db:D1Database,propertyId:string,at=epoch())=>rows(db,'SELECT x.id,x.start,x.end FROM external_blocks x JOIN calendar_sources c ON c.id=x.source_id WHERE x.property_id=? AND c.external_property_id=? AND c.enabled=1 AND x.end>? ORDER BY x.start',propertyId,BUSY_SOURCE,at);
+export const busyBlocks=(db:D1Database,propertyId:string,at=epoch())=>rows(db,'SELECT x.id,x.start,x.end FROM external_blocks x JOIN calendar_sources c ON c.id=x.source_id WHERE x.property_id=? AND c.external_property_id IN (?,?) AND c.enabled=1 AND x.end>? ORDER BY x.start',propertyId,BUSY_SOURCE,busyKey(propertyId),at);
 
 export async function markBusy(s:RentalService,body:Row){
  const p=await place(s,required(body.propertyId,'Объект',100)),at=epoch();
@@ -80,8 +83,8 @@ export async function markBusy(s:RentalService,body:Row){
  // A stay booked in the service is not written over: the person on shift is told which one stands in the way.
  const taken=await one(s.db,"SELECT start,end FROM bookings WHERE property_id=? AND (status='confirmed' OR (status='requested' AND expires_at>?)) AND start<? AND occupied_until>? ORDER BY start LIMIT 1",p.id,at,end,start);
  if(taken)throw new DomainError('На это время уже есть бронь через сервис: '+clock(taken.start)+'–'+clock(taken.end)+'. Отметьте меньше часов.',409);
- let source=await one(s.db,'SELECT id FROM calendar_sources WHERE property_id=? AND external_property_id=?',p.id,BUSY_SOURCE);
- if(!source){source={id:uuid()};await q(s.db,"INSERT INTO calendar_sources(id,property_id,owner_id,label,url,created_at,provider,external_property_id) VALUES (?,?,?,'Занято','',?,'manual',?)",source.id,p.id,p.owner_id,at,BUSY_SOURCE).run();}
+ let source=await one(s.db,'SELECT id FROM calendar_sources WHERE property_id=? AND external_property_id IN (?,?)',p.id,BUSY_SOURCE,busyKey(p.id));
+ if(!source){source={id:uuid()};await q(s.db,"INSERT INTO calendar_sources(id,property_id,owner_id,label,url,created_at,provider,external_property_id) VALUES (?,?,?,'Занято','',?,'manual',?)",source.id,p.id,p.owner_id,at,busyKey(p.id)).run();}
  // The check above only words the refusal. The write itself is guarded: a stay booked between the check and the
  // write is not written over, and the last mark is replaced only when the new one is in.
  const mark=uuid(),free="NOT EXISTS(SELECT 1 FROM bookings WHERE property_id=? AND (status='confirmed' OR (status='requested' AND expires_at>?)) AND start<? AND occupied_until>?)";
@@ -95,7 +98,7 @@ export async function markBusy(s:RentalService,body:Row){
 }
 export async function freeBusy(s:RentalService,body:Row){
  const p=await place(s,required(body.propertyId,'Объект',100)),at=epoch();
- await q(s.db,'DELETE FROM external_blocks WHERE property_id=? AND source_id IN (SELECT id FROM calendar_sources WHERE property_id=? AND external_property_id=?)',p.id,p.id,BUSY_SOURCE).run();
+ await q(s.db,'DELETE FROM external_blocks WHERE property_id=? AND source_id IN (SELECT id FROM calendar_sources WHERE property_id=? AND external_property_id IN (?,?))',p.id,p.id,BUSY_SOURCE,busyKey(p.id)).run();
  return {busy:await busyBlocks(s.db,p.id,at),message:'Свободно: гости снова могут бронировать.'};
 }
 
