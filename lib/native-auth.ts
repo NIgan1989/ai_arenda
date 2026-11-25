@@ -4,6 +4,8 @@ import {LEGAL_EDITION} from './legal-documents';
 
 export const sessionCookie='arenda_session';
 const lifetime=30*86400;
+// A session is never extended, so its start is its end minus this (lib/passkeys.ts tells a fresh sign-in by it).
+export const SESSION_LIFETIME=lifetime;
 const encoder=new TextEncoder();
 const hex=(bytes:ArrayBuffer|Uint8Array)=>Array.from(bytes instanceof Uint8Array?bytes:new Uint8Array(bytes),b=>b.toString(16).padStart(2,'0')).join('');
 const random=(size=32)=>hex(crypto.getRandomValues(new Uint8Array(size)));
@@ -39,6 +41,13 @@ function guestProfile(db:D1Database,id:string,name:string,phone:string,city='П�
  return query(db,`INSERT INTO profiles(id,name,contact,city,roles,districts,experience,availability,created_at) VALUES (?,?,?,?,'["guest"]','','','',?) ON CONFLICT(id) DO UPDATE SET roles=CASE WHEN EXISTS(SELECT 1 FROM json_each(profiles.roles) WHERE value='guest') THEN profiles.roles ELSE json_insert(profiles.roles,'$[#]','guest') END`,id,name,phone,city,now());
 }
 
+// A phone signed in by a passkey (lib/passkeys.ts) gets the same session a password gives.
+export async function openMobileSession(db:D1Database,account:{id:string;name:string;phone:string;credential_version:number}){
+ const token=random();
+ await db.batch([guestProfile(db,account.id,account.name,account.phone),query(db,'INSERT INTO auth_mobile_sessions VALUES (?,?,?,?)',await digest(token),account.id,account.credential_version,now()+lifetime)]);
+ return token;
+}
+
 function cookieToken(cookie:string|null){return cookie?.split(';').map(v=>v.trim()).find(v=>v.startsWith(sessionCookie+'='))?.slice(sessionCookie.length+1);}
 function bearerToken(authorization:string|null){return authorization?.match(/^Bearer ([a-f0-9]{64})$/)?.[1];}
 export async function requestSessionIdentity(request:Request){const kind=request.headers.has('authorization')?'mobile':'web',token=kind==='mobile'?bearerToken(request.headers.get('authorization')):cookieToken(request.headers.get('cookie'));return token&&/^[a-f0-9]{64}$/.test(token)?{kind,hash:await digest(token)}:null;}
@@ -52,7 +61,7 @@ export async function sessionUser(db:D1Database,cookie:string|null,authorization
 function cookie(value:string,request:Request,age=lifetime){return `${sessionCookie}=${value}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${age}${new URL(request.url).protocol==='https:'?'; Secure':''}`;}
 export function expireSessionCookie(request:Request){return cookie('',request,0);}
 function response(data:unknown,setCookie?:string,status=200){return Response.json(data,{status,headers:{'Cache-Control':'no-store','X-Content-Type-Options':'nosniff',...(setCookie?{'Set-Cookie':setCookie}:{})}});}
-async function limit(db:D1Database,key:string,max:number){
+export async function limit(db:D1Database,key:string,max:number){
  const time=now();
  const value=await query(db,`INSERT INTO auth_attempt_limits(key,attempts,expires_at) VALUES (?,1,?) ON CONFLICT(key) DO UPDATE SET attempts=CASE WHEN expires_at<=? THEN 1 ELSE attempts+1 END,expires_at=CASE WHEN expires_at<=? THEN excluded.expires_at ELSE expires_at END RETURNING attempts`,key,time+900,time,time).first<{attempts:number}>();
  if(!value||value.attempts>max)throw new DomainError('Слишком много попыток. Попробуйте через 15 минут.',429);
@@ -144,8 +153,9 @@ export async function authRequest(db:D1Database,request:Request,action:string,cl
   const code=recoveryCode();
   const updated=await query(db,'UPDATE auth_accounts SET password_hash=?,recovery_hash=?,credential_version=credential_version+1 WHERE id=? AND recovery_hash=? AND credential_version=?',await hashPassword(password),await recoveryDigest(code),account.id,codeHash,account.credential_version).run();
   if(updated.meta.changes!==1)throw new DomainError('Код уже использован. Повторите вход.',409);
-  // Recovery revokes every credential issued before it, including a reset code still on its way.
+  // Recovery revokes every credential issued before it, including a reset code still on its way and the passkeys.
   await query(db,'DELETE FROM auth_reset_codes WHERE user_id=?',account.id).run();
+  await query(db,'DELETE FROM auth_passkeys WHERE user_id=?',account.id).run();
   await query(db,'DELETE FROM auth_sessions WHERE user_id=? AND credential_version<=?',account.id,account.credential_version).run();
   await query(db,'DELETE FROM auth_mobile_sessions WHERE user_id=? AND credential_version<=?',account.id,account.credential_version).run();
   return response({message:'Пароль изменён. Войдите с новым паролем.',recoveryCode:code},client==='web'?cookie('',request,0):undefined);
@@ -165,7 +175,9 @@ export async function authRequest(db:D1Database,request:Request,action:string,cl
   const version=account.credential_version+1,token=random();
   const updated=await query(db,'UPDATE auth_accounts SET password_hash=?,credential_version=? WHERE id=? AND credential_version=?',await hashPassword(password),version,account.id,account.credential_version).run();
   if(updated.meta.changes!==1)throw new DomainError('Пароль только что изменили. Запросите новый код.',409);
-  // Every old session ends; this device is signed in with the new password straight away.
+  // Every old session ends, and so does sign-in by Face ID or a fingerprint: whoever took the account cannot keep a key
+  // to it. This device is signed in with the new password straight away and may turn the passkey on again.
+  await query(db,'DELETE FROM auth_passkeys WHERE user_id=?',account.id).run();
   await query(db,'DELETE FROM auth_sessions WHERE user_id=? AND credential_version<?',account.id,version).run();
   await query(db,'DELETE FROM auth_mobile_sessions WHERE user_id=? AND credential_version<?',account.id,version).run();
   await db.batch([guestProfile(db,account.id,account.name,account.phone),query(db,`INSERT INTO ${sessions} VALUES (?,?,?,?)`,await digest(token),account.id,version,now()+lifetime)]);

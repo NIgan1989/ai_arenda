@@ -103,6 +103,7 @@
 -- migration 0099_account_exit.sql sha256:32c1a697f6927552c6cb9e5f7a2fae2faa1482c694b1fc87900421364de60d65
 -- migration 0100_too_general.sql sha256:39d4dd856a7c3c1c074778c6ffc6a489e0c077ad8d27144f1cd730d2f66ab914
 -- migration 0101_native_push.sql sha256:0f0f7fe2dbb31e301ddaac6a7ae3032a0162c4f5bea82f91714e58d977b90cf4
+-- migration 0102_passkeys.sql sha256:3f764759d661b1a859e959faaa0c45c757c1a3271fe51939bcad7ecf949b43cb
 
 -- table access_receipts
 CREATE TABLE access_receipts (id TEXT PRIMARY KEY,property_id TEXT NOT NULL,entity_kind TEXT NOT NULL,entity_id TEXT NOT NULL,user_id TEXT NOT NULL,created_at INTEGER NOT NULL,expires_at INTEGER NOT NULL);
@@ -327,6 +328,28 @@ CREATE TABLE auth_mobile_sessions (
  user_id TEXT NOT NULL REFERENCES auth_accounts(id) ON DELETE CASCADE,
  credential_version INTEGER NOT NULL,
  expires_at INTEGER NOT NULL
+);
+
+-- table auth_passkey_challenges
+CREATE TABLE auth_passkey_challenges (
+ id TEXT PRIMARY KEY,
+ user_id TEXT REFERENCES auth_accounts(id) ON DELETE CASCADE,
+ purpose TEXT NOT NULL CHECK(purpose IN ('login','register')),
+ challenge TEXT NOT NULL,
+ expires_at INTEGER NOT NULL
+);
+
+-- table auth_passkeys
+CREATE TABLE auth_passkeys (
+ id TEXT PRIMARY KEY,
+ user_id TEXT NOT NULL REFERENCES auth_accounts(id) ON DELETE CASCADE,
+ public_key TEXT NOT NULL,
+ counter INTEGER NOT NULL DEFAULT 0,
+ transports TEXT NOT NULL DEFAULT '',
+ device TEXT NOT NULL DEFAULT '',
+ backed_up INTEGER NOT NULL DEFAULT 0,
+ created_at INTEGER NOT NULL,
+ last_used_at INTEGER NOT NULL DEFAULT 0
 );
 
 -- table auth_reset_codes
@@ -1496,6 +1519,12 @@ CREATE INDEX auth_mobile_sessions_expiry ON auth_mobile_sessions(expires_at);
 
 -- index auth_mobile_sessions_user
 CREATE INDEX auth_mobile_sessions_user ON auth_mobile_sessions(user_id);
+
+-- index auth_passkey_challenges_expiry
+CREATE INDEX auth_passkey_challenges_expiry ON auth_passkey_challenges(expires_at);
+
+-- index auth_passkeys_user
+CREATE INDEX auth_passkeys_user ON auth_passkeys(user_id);
 
 -- index auth_sessions_expiry
 CREATE INDEX auth_sessions_expiry ON auth_sessions(expires_at);

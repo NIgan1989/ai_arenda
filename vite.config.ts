@@ -80,7 +80,7 @@ export default defineConfig(async ({ command }) => {
         config: {
           ...localBindingConfig,
           ...(command==='build'?{triggers:{crons:['* * * * *']}}:{}),
-          ...(command==='serve'&&process.env.ARENDA_BROWSER_QA==='1'?{vars:{PLATFORM_ADMIN_IDS:'qa-owner',TEST_DATA_ONLY:'1',TEST_AI_ENABLED:process.env.ARENDA_QA_LIVE_AI==='1'?'1':'0'}}:{}),
+          ...(command==='serve'&&process.env.ARENDA_BROWSER_QA==='1'?{vars:{PLATFORM_ADMIN_IDS:'qa-owner',TEST_DATA_ONLY:'1',PASSKEY_RP_ID:'localhost',PASSKEY_ORIGINS:'http://localhost:8090',TEST_AI_ENABLED:process.env.ARENDA_QA_LIVE_AI==='1'?'1':'0'}}:{}),
           ...(command === "serve"
             ? {
                 services: [

@@ -7,6 +7,7 @@ import { waitUntil, env as workerEnv } from 'cloudflare:workers';
 import {isolateTestConfig} from '../../../lib/test-environment';
 import { getAppUser } from '../../session';
 import {authRequest,expireSessionCookie,requestSessionIdentity} from '../../../lib/native-auth';
+import {passkeyRequest} from '../../../lib/passkeys';
 import {webPushState,manageWebPush,deliverWebPush} from '../../../lib/web-push';
 import {nativePushState,manageNativePush,deliverNativePush} from '../../../lib/native-push';
 import { RentalService } from '../../../lib/service';
@@ -80,6 +81,8 @@ async function handle(request:Request, context:{params:Promise<{path:string[]}>}
     if(request.method==='GET'&&route.join('/')==='public/address')return json(await addressRequest(env.BUCKET,env.DB,new URL(request.url).searchParams));
     if(request.method==='GET'&&route.length===3&&route[0]==='public'&&route[1]==='media')return json(await new RentalService(env.DB,'').publicMedia(route[2],env.BUCKET));
     if(route.length===2&&route[0]==='auth')return await authRequest(env.DB,request,route[1],'web',env);
+    // Face ID or a fingerprint instead of the password, in the phone app only (lib/passkeys.ts).
+    if(route.length===3&&route[0]==='mobile'&&route[1]==='auth'&&route[2].startsWith('passkey-'))return await passkeyRequest(env.DB,request,route[2],env);
     if(route.length===3&&route[0]==='mobile'&&route[1]==='auth')return await authRequest(env.DB,request,route[2],'mobile',env);
     const user=await getAppUser(request);
     if(!user) return json({error:'Войдите, чтобы сохранить данные.',signIn:'/'},401);
