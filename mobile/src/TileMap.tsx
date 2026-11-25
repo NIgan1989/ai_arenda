@@ -18,7 +18,8 @@ import type {PinAct,PinChain} from './pin-deal';
 // order: the stop's number on the cleaner's route of the day; progress: how far a cleaning under way has gone (0..1), a strip that fills.
 // was: how the pin looked when the person left the map (map-memory.ts); the pin plays that change once when they come back.
 // dim: a home not free at the arrival the guest chose (arrival.ts): its pin stays, quieter.
-export type MapPin={key:string;point:MapPoint;label:string;tone?:PinTone;dim?:boolean;title?:string;rank?:number;until?:number;best?:boolean;order?:number;progress?:number;act?:PinAct;chain?:PinChain;was?:PinState;ai?:{move:AiMove;at:number;type?:string}};
+// plain: the guest's map, where a pin is its price alone: no sign, no «+N» of the pins hidden under it, no star.
+export type MapPin={key:string;point:MapPoint;label:string;plain?:boolean;tone?:PinTone;dim?:boolean;title?:string;rank?:number;until?:number;best?:boolean;order?:number;progress?:number;act?:PinAct;chain?:PinChain;was?:PinState;ai?:{move:AiMove;at:number;type?:string}};
 export type {MapLine};
 // scanning: a search is running; the map sends radar waves from the middle of what is visible.
 // visit: see the effect in TileMap. focus: the pin of the card the guest is looking at in the carousel: it lifts and the map flies to it.

@@ -3,7 +3,8 @@ import {background} from './loading';
 import {ReliabilityBadge} from './Reliability';
 import React,{useEffect,useRef,useState,type ReactNode} from 'react';
 import {Thinking} from './Thinking';
-import {AccessibilityInfo,Animated,AppState,BackHandler,PanResponder,Platform,Pressable,ScrollView,StyleSheet,Text,View,useWindowDimensions} from 'react-native';
+import {AccessibilityInfo,Animated,AppState,BackHandler,Image,PanResponder,Platform,Pressable,ScrollView,StyleSheet,Text,View,useWindowDimensions} from 'react-native';
+const backIcon=require('../assets/ui/chevron.png');
 import {NO_BUDGET,plural} from '../../lib/map-search-request';
 import {ApiError,isOffline,request} from './api';
 import {Photo} from './ListingMedia';
@@ -61,7 +62,7 @@ type Publish=(pins:MapPin[],focusKey:string,extra?:MapExtra)=>void;
 // The stay a guest books from the map: Kazakhstan time, as the request form keeps it.
 export type MapStay={mode:'daily'|'hourly'|'nightly';start:string;end:string;guests:number;occasion?:string};
 // showNow: whether the "Сейчас" card has its place in the sheet as it is now (see MapHome).
-type Common={setScanning:(on:boolean)=>void;setQuiet:(on:boolean)=>void;accountId:string;data:Row;mapData:Row|null;city:string;publish:Publish;selected:string;setSelected:(key:string)=>void;focus:string;setFocus:(key:string)=>void;snap:number;showNow:boolean;expand:(snap:number)=>void;onHead:(height:number)=>void;onReach:(bottom:number)=>void;onAsk:(text:string)=>void;onIntent:(intent:string,stay?:MapStay)=>void;onBook:(property:Row,stay:MapStay)=>void;onChanged:()=>Promise<unknown>;onOpenProcess:(kind:'booking'|'job',id:string)=>void;onOpenPage:(id:string)=>void;onEdit?:(id:string,step:string|null)=>void;flyMe:()=>void;notify:(text:string)=>void};
+type Common={setFloat?:(bar:ReactNode|null)=>void;setScanning:(on:boolean)=>void;setQuiet:(on:boolean)=>void;accountId:string;data:Row;mapData:Row|null;city:string;publish:Publish;selected:string;setSelected:(key:string)=>void;focus:string;setFocus:(key:string)=>void;snap:number;showNow:boolean;expand:(snap:number)=>void;onHead:(height:number)=>void;onReach:(bottom:number)=>void;onAsk:(text:string)=>void;onIntent:(intent:string,stay?:MapStay)=>void;onBook:(property:Row,stay:MapStay)=>void;onChanged:()=>Promise<unknown>;onOpenProcess:(kind:'booking'|'job',id:string)=>void;onOpenPage:(id:string)=>void;onEdit?:(id:string,step:string|null)=>void;flyMe:()=>void;notify:(text:string)=>void};
 const liveRequests=new Map<string,string>();
 // The least room above an open card of a deal, under the buttons of the map, in which the pin of that deal is shown.
 const SPOT_ROOM=72;
@@ -96,7 +97,12 @@ function HeadSlot({onHeight,children}:{onHeight:(height:number)=>void;children:R
 }
 function useNow(active:boolean){const [now,setNow]=useState(Date.now()/1000);useEffect(()=>{if(!active)return;const timer=setInterval(()=>setNow(Date.now()/1000),1000);return()=>clearInterval(timer);},[active]);return now;}
 
-function GuestPanel({setScanning,setQuiet,accountId,data,mapData,publish,selected,setSelected,setFocus,snap,showNow,expand,onHead,onReach,onAsk,onIntent,onBook,onChanged,onOpenProcess,onOpenPage,picking,setPicking,mapCenter,city,setCity,aimed,flyMe,notify,held}:Common&{held:{point:MapPoint;n:number}|null;aimed:boolean;picking:boolean;setPicking:(value:boolean)=>void;mapCenter:React.RefObject<MapPoint|null>;setCity:(city:string)=>void}){
+// The guest's answer on top of the map: back, the conditions in a capsule (a tap changes them), the filters, and the quick
+// steps under them (concept of 2026-11-25, as Airbnb and Vrbo).
+function GuestFloatBar({title,line,busy,chips,onBack,onEdit}:{title:string;line:string;busy:boolean;chips:ReactNode;onBack:()=>void;onEdit:()=>void}){
+ return <><View style={h.capRow}><Pressable accessibilityRole="button" accessibilityLabel={tr('Назад к поиску')} onPress={onBack} style={({pressed})=>[h.capRound,pressed&&h.dim]}><Image source={backIcon} style={h.capBack} accessibilityIgnoresInvertColors/></Pressable><Pressable accessibilityRole="button" accessibilityLabel={tr('Условия поиска: {v}. Изменить',{v:[title,line].filter(Boolean).join(', ')})} disabled={busy} onPress={onEdit} style={({pressed})=>[h.capsule,pressed&&h.dim]}><Text numberOfLines={1} style={h.capTitle}>{title}</Text>{!!line&&<Text numberOfLines={1} style={h.capLine}>{line}</Text>}</Pressable><Pressable accessibilityRole="button" accessibilityLabel={tr('Фильтры')} disabled={busy} onPress={onEdit} style={({pressed})=>[h.capRound,pressed&&h.dim]}><View style={h.sliders}><View style={[h.slider,{width:16}]}/><View style={[h.slider,{width:10}]}/><View style={[h.slider,{width:16}]}/></View></Pressable></View>{chips}</>;
+}
+function GuestPanel({setFloat,setScanning,setQuiet,accountId,data,mapData,publish,selected,setSelected,setFocus,snap,showNow,expand,onHead,onReach,onAsk,onIntent,onBook,onChanged,onOpenProcess,onOpenPage,picking,setPicking,mapCenter,city,setCity,aimed,flyMe,notify,held}:Common&{held:{point:MapPoint;n:number}|null;aimed:boolean;picking:boolean;setPicking:(value:boolean)=>void;mapCenter:React.RefObject<MapPoint|null>;setCity:(city:string)=>void}){
  // «На карте» from a page wins over the search the guest left: the panel starts clean in the target's city.
  const kept=useRef(aimed?undefined:guestSearches.get(accountId)).current,foundAt=useRef(kept?.foundAt||0),recent=!!kept?.preview&&Date.now()-kept.foundAt<SEARCH_KEEP;
  const [draft,setDraft]=useState<GuestDraft>(()=>kept?.draft||newDraft(city));
@@ -217,6 +223,7 @@ function GuestPanel({setScanning,setQuiet,accountId,data,mapData,publish,selecte
  const openPart=(part:Section|'all')=>{if(snap>0&&refine===part){setRefine('');expand(preview?1:0);}else{setRefine(part);expand(2);}},toggleRefine=()=>openPart('all');
  // «Помогайки»: the steps that narrow the answer on the phone, each with the card that was in view when it was taken;
  // the ones taken back are not offered again. A new answer starts clean.
+ const [listOpen,setListOpen]=useState(false),[floatChips,setFloatChips]=useState<ReactNode>(null);
  const [steps,setSteps]=useState<{id:string;at:string}[]>([]),[tried,setTried]=useState<string[]>([]),[anchor,setAnchor]=useState('');
  useEffect(()=>{setSteps([]);setTried([]);setAnchor('');},[preview?.frame||preview?.serverTime]);
  const stepIds=steps.map(v=>v.id);
@@ -262,7 +269,7 @@ function GuestPanel({setScanning,setQuiet,accountId,data,mapData,publish,selecte
  // «Маршрут» leads to the home on our own map, the same way the cleaner is led (Navigator.tsx).
  const mapSkew=mapData?.serverTime&&mapData?.receivedAt?Number(mapData.serverTime)-Number(mapData.receivedAt):0,nav=useTrip('guest',mapSkew);
  const stayNow=serverNow(mapData||data);
- const tripThreads=guestThreads(data,stayNow,data.paymentMode);
+ const tripThreads=guestThreads(data,stayNow,data.paymentMode),tripWaiting=tripThreads.filter(t=>t.yours).length;
  const stays:(MapPin&{id:string;start:number;canGo:boolean})[]=(mapData?.processes||[]).flatMap((p:Row)=>{
   const own=p.kind==='booking'?(data.bookings||[]).find((b:Row)=>b.id===p.id):null,point=pointOf(p),state=own?guestPin(own,stayNow,data.paymentMode):null;
   return own&&point&&state?[{key:'booking:'+p.id,id:String(p.id),point,title:p.title,label:state.label,tone:state.tone,act:pinAct('guest',tripThreads,data,stayNow,t=>t.id===p.id)||undefined,chain:(t=>t?threadChain(t):undefined)(tripThreads.find(t=>t.id===p.id)),start:Number(own.start),canGo:p.location?.precision==='exact'&&!own.terms?.actual_checkin&&!own.terms?.actual_checkout&&own.start<stayNow+86400&&own.end>stayNow}]:[];
@@ -291,7 +298,10 @@ function GuestPanel({setScanning,setQuiet,accountId,data,mapData,publish,selecte
  // What the card of a found home says about its readiness at the searched arrival.
  const readiness=(p:Row)=>{if(!arrival)return null;const state=homeAt(p,arrival,arrival.at);return state.state==='ready'||state.state==='check'?{text:cardWords(state,arrival.at),check:state.state==='check'}:null;};
  useEffect(()=>{
-  const pin=(p:Row,tone:MapPin['tone']):MapPin[]=>{const point=pointOf(p),amount=p.estimate?.amount??p.price;return point?[{key:p.id,point,title:p.title,label:(mine.favorites.includes(p.id)?'♥ ':'')+short(amount),tone,rank:typeof amount==='number'?amount:0}]:[];};
+  // The guest's map says the price alone, as Airbnb and Vrbo do (the user's rule of 2026-11-25): no heart, no sign, no «+N».
+  // A home whose owner the guest waits for breathes on the map, as the car on its way in a taxi app.
+  const clockNow=serverNow(data),waiting=new Set((data.bookings||[]).filter((b:Row)=>b.guest_id===data.user?.id&&b.status==='requested'&&Number(b.expires_at)>clockNow).map((b:Row)=>b.property_id));
+  const pin=(p:Row,tone:MapPin['tone']):MapPin[]=>{const point=pointOf(p),amount=p.estimate?.amount??p.price;return point?[{key:p.id,point,title:p.title,label:short(amount),tone:waiting.has(p.id)&&(tone==='home'||tone==='booking')?'pending':tone,plain:true,rank:typeof amount==='number'?amount:0}]:[];};
   // On the way the map shows only the way: the home, the guest's point and the road between them.
   if(nav.trip){
    const target=stays.filter(v=>v.id===nav.trip!.id).map(({id,start,canGo,...m})=>m),me:MapPin[]=nav.here&&nav.status!=='arrived'?[{key:'me',point:nav.here.point,title:tr('Вы'),label:tr('Вы'),tone:'active'}]:[];
@@ -314,15 +324,16 @@ function GuestPanel({setScanning,setQuiet,accountId,data,mapData,publish,selecte
    const found:MapPin[]=[...shown,...later].flatMap((p:Row)=>pin(p,p.quickRequest?'booking':'home').map(m=>{
     if(!arrival)return p.match?.best&&!isQuiet(draft)?{...m,best:true}:m;
     const state=homeAt(p,arrival,at),away=state.state==='later'||state.state==='busy';
-    const words=pinWords(state);
-    return {...m,label:words?(mine.favorites.includes(p.id)?'♥ ':'')+words:m.label,...(state.state==='check'?{tone:'job' as const}:{}),...(away?{dim:true}:{}),...(p.match?.best&&!away&&!isQuiet(draft)?{best:true}:{})};
+     // The price stays the label; a home not ready at the chosen arrival is only quieter.
+    return {...m,...(away?{dim:true}:{})};
    }));
    // Searched around a point held on the map: thin beams from that point to what was found, so the guest sees the zone.
    const held0=heldAt.current,from=held0&&draft.near&&nearOf(held0).longitude===draft.near.longitude&&nearOf(held0).latitude===draft.near.latitude?held0:null;
    publish(found,stageKey,{lines:from?found.slice(0,8).map(m=>({key:'beam:'+m.key,from,to:m.point,tone:'answer' as const})):[]});
   }
-  else publish([...(mapData?.properties||[]).flatMap((p:Row)=>pin(p,'home')),...stays.map(({id,start,canGo,...m})=>m)],stageKey+':'+(mapData?.properties?.length||0));
- },[requestId,live,preview,shown.map((p:Row)=>p.id).join(),mapData,draft.city,staysKey,nav.trip,nav.here,nav.route,nav.rerouted,roads,mine.favorites.join(),at]);
+  // The guest's own stays are not on the map: they are in «Мои брони» under the line (the concept of 2026-11-25).
+  else publish((mapData?.properties||[]).flatMap((p:Row)=>pin(p,'home')),stageKey+':'+(mapData?.properties?.length||0));
+ },[requestId,live,preview,shown.map((p:Row)=>p.id).join(),mapData,data.bookings,draft.city,staysKey,nav.trip,nav.here,nav.route,nav.rerouted,roads,mine.favorites.join(),at]);
  // Where the guest is: on the first point from the phone the search moves to the guest's city, and once that city's
  // homes are on the map, the map flies to the guest. Anything the guest is already doing (a search, a request, a trip,
  // «На карте» from a page) wins: then the point is only a dot on the map.
@@ -390,12 +401,26 @@ function GuestPanel({setScanning,setQuiet,accountId,data,mapData,publish,selecte
  const formOnly=!!refine&&snap>0;
  // Where the sheet stood before the category picker opened: it returns there when the picker closes.
  const before=useRef(0);
- const head=<MapSheetHead role="guest" text={asked} onText={setAsked} onSend={ask} onChip={chip} chips={!formOnly} quick={!preview} category={categoryOf(draft)} kind={draft.kinds.length===1?draft.kinds[0]:''} choice={kindChoice(draft)} recent={lastAsk} onKind={(c,k)=>{setAsked('');setLastAsk('');const next=withKind(draft,c,k);change(next);/* Another category is another map: its places are shown at once, not the homes left from before. */if(categoryOf(next)!==categoryOf(draft))void find(next);}} onPicker={open=>{if(open){before.current=snap;if(snap<1)expand(1);}else if(before.current<1&&snap===1)expand(0);}} busy={working} conditions={<GuestTokens tokens={tokens} blamed={blamed} open={snap>0?(refine||(preview?'':'all')):''} line={(snap===0||!!preview)&&!formOnly&&blamed.length===0} busy={working} onOpen={openPart} onClear={token=>retry({...draft,...token.clear})}/>} now={null} onNow={()=>{}}>{/* As in the concept: under the plate «where · when · how many», one button that searches. */}{!preview&&!picked&&!stay&&!formOnly&&<Action title={working?tr('Ищем…'):tr('Показать варианты')} disabled={working} onPress={()=>void find()}/>}{!!hint&&<View style={h.picked}><Text accessibilityRole={hint.error?'alert':undefined} accessibilityLiveRegion="polite" style={hint.error?h.error:h.note}>{hint.text}</Text>{!!hint.ask&&<Action secondary title={tr('Спросить ИИ-администратора')} onPress={()=>onAsk(hint.ask!)}/>}</View>}{!!error&&<Text accessibilityRole="alert" style={h.error}>{error}</Text>}{!!nav.error&&<Text accessibilityRole="alert" style={h.error}>{nav.error}</Text>}{stay&&<View style={h.listRow}><View style={h.grow}><Text numberOfLines={1} style={h.eventTitle}>{stay.title}</Text><Text numberOfLines={1} style={h.note}>{stay.label}</Text></View>{stay.canGo&&<Action title={tr('Маршрут')} onPress={()=>go(stay)}/>}<Action secondary title={tr('Открыть')} onPress={()=>onOpenProcess('booking',stay.id)}/></View>}{!stay&&near&&!preview&&!picked&&!formOnly&&<View style={h.listRow}><View style={h.grow}><Text numberOfLines={1} style={h.eventTitle}>{near.title}</Text><Text numberOfLines={1} style={h.note}>{near.label}</Text></View><Action secondary title={tr('Маршрут')} onPress={()=>go(near)}/></View>}{/* The guest's own stays as the same feed: what waits for the guest on top, a row for every other booking. */}{!preview&&!picked&&!stay&&!formOnly&&<AutopilotThreads role="guest" data={data} now={serverNow(data)} paymentMode={data.paymentMode} onOpen={(kind,id)=>onOpenProcess(kind,id)} onAll={trips.length?()=>onOpenPage('bookings'):undefined}/>}{!preview&&!picked&&!stay&&!formOnly&&<AgainRow properties={data.properties||[]} mine={mine} onOpen={again}/>}{/* The sheet is down over an answer: the whole of it in one line, and one tap to the cards. */}{!!preview&&snap===0&&shown.length>0&&!stay&&<Pressable accessibilityRole="button" accessibilityLabel={tr('{v}. Показать',{v:foundLine(shown,plural)})} onPress={()=>expand(1)} style={({pressed})=>[h.listRow,pressed&&h.dim]}><Text numberOfLines={1} style={[h.eventTitle,h.grow]}>{foundLine(shown,plural)}</Text><Text style={[h.note,{color:C.accent,fontWeight:'600'}]}>{tr('Показать')}</Text></Pressable>}{picked&&<View style={h.listRow}><Heart plain on={mine.favorites.includes(picked.id)} title={picked.title} onPress={()=>heart(picked.id)}/><View style={h.grow}><Text numberOfLines={1} style={h.eventTitle}>{picked.title}</Text><Text numberOfLines={1} style={h.note}>{[typeof picked.price==='number'?tr('{v} за сутки',{v:money(picked.price)}):'',picked.district].filter(Boolean).join(' · ')}</Text></View><Action secondary title={tr('Открыть')} onPress={()=>onIntent('property:'+picked.id)}/></View>}</MapSheetHead>;
+ // As in the concept of 2026-11-25 (Bolt, Freenow): the line, one plate «где · когда» with the category at its start, one button.
+ const plateOn=(snap===0||!!preview)&&!formOnly&&blamed.length===0;
+ const head=<MapSheetHead role="guest" text={asked} onText={setAsked} onSend={ask} onChip={chip} chips={!formOnly} quick={false} category={categoryOf(draft)} kind={draft.kinds.length===1?draft.kinds[0]:''} choice={kindChoice(draft)} recent={lastAsk} onKind={(c,k)=>{setAsked('');setLastAsk('');const next=withKind(draft,c,k);change(next);/* Another category is another map: its places are shown at once, not the homes left from before. */if(categoryOf(next)!==categoryOf(draft))void find(next);}} onPicker={open=>{if(open){before.current=snap;if(snap<1)expand(1);}else if(before.current<1&&snap===1)expand(0);}} busy={working} conditions={plateOn?(category:ReactNode)=><GuestTokens tokens={tokens} blamed={blamed} open={snap>0?(refine||(preview?'':'all')):''} line busy={working} lead={category} onOpen={openPart} onClear={token=>retry({...draft,...token.clear})}/>:<GuestTokens tokens={tokens} blamed={blamed} open={snap>0?(refine||(preview?'':'all')):''} busy={working} onOpen={openPart} onClear={token=>retry({...draft,...token.clear})}/>} now={null} onNow={()=>{}}>{/* As in the concept: under the plate «where · when · how many», one button that searches. */}{!preview&&!picked&&!stay&&!formOnly&&<Action title={working?tr('Ищем…'):tr('Показать варианты')} disabled={working} onPress={()=>void find()}/>}{!!hint&&<View style={h.picked}><Text accessibilityRole={hint.error?'alert':undefined} accessibilityLiveRegion="polite" style={hint.error?h.error:h.note}>{hint.text}</Text>{!!hint.ask&&<Action secondary title={tr('Спросить ИИ-администратора')} onPress={()=>onAsk(hint.ask!)}/>}</View>}{!!error&&<Text accessibilityRole="alert" style={h.error}>{error}</Text>}{!!nav.error&&<Text accessibilityRole="alert" style={h.error}>{nav.error}</Text>}{stay&&<View style={h.listRow}><View style={h.grow}><Text numberOfLines={1} style={h.eventTitle}>{stay.title}</Text><Text numberOfLines={1} style={h.note}>{stay.label}</Text></View>{stay.canGo&&<Action title={tr('Маршрут')} onPress={()=>go(stay)}/>}<Action secondary title={tr('Открыть')} onPress={()=>onOpenProcess('booking',stay.id)}/></View>}{/* The guest's own bookings in one line, as in the concept: the feed of them is on the page «Мои брони». */}{!preview&&!picked&&!stay&&!formOnly&&tripThreads.length>0&&<Pressable accessibilityRole="button" accessibilityLabel={tr('Мои брони')+(tripWaiting?'. '+tr('Ждёт вас: {n}',{n:tripWaiting}):'')} onPress={()=>onOpenPage('bookings')} style={({pressed})=>[h.tripsLine,pressed&&h.dim]}>{tripWaiting>0&&<View style={h.tripsDot}/>}<Text style={h.tripsTitle}>{tr('Мои брони')}</Text><Text numberOfLines={1} style={[h.note,h.grow]}>{tripWaiting?' · '+tr('{n} ждёт вас',{n:tripWaiting}):' · '+tripThreads.filter(t=>!t.finished).length}</Text><Text style={h.tripsGo}>›</Text></Pressable>}{/* The sheet is down over an answer: the whole of it in one line, and one tap to the cards. */}{!!preview&&snap===0&&shown.length>0&&!stay&&<Pressable accessibilityRole="button" accessibilityLabel={tr('{v}. Показать',{v:foundLine(shown,plural)})} onPress={()=>expand(1)} style={({pressed})=>[h.listRow,pressed&&h.dim]}><Text numberOfLines={1} style={[h.eventTitle,h.grow]}>{foundLine(shown,plural)}</Text><Text style={[h.note,{color:C.accent,fontWeight:'600'}]}>{tr('Показать')}</Text></Pressable>}{picked&&<View style={h.listRow}><Heart plain on={mine.favorites.includes(picked.id)} title={picked.title} onPress={()=>heart(picked.id)}/><View style={h.grow}><Text numberOfLines={1} style={h.eventTitle}>{picked.title}</Text><Text numberOfLines={1} style={h.note}>{[typeof picked.price==='number'?tr('{v} за сутки',{v:money(picked.price)}):'',picked.district].filter(Boolean).join(' · ')}</Text></View><Action secondary title={tr('Открыть')} onPress={()=>onIntent('property:'+picked.id)}/></View>}</MapSheetHead>;
  // The form and the results live in the opened sheet only; a running request to owners keeps its place in any state.
  const body=requestId?renderLive():snap===0?null:preview&&!refine
-  ?<><GuestResults preview={preview} draft={draft} readiness={readiness} mine={mine} onFavorite={heart} selected={selected} onSelect={setSelected} onFocus={setFocus} onBook={bookFlat} onOpen={property=>onIntent('property:'+property.id,{mode:tariffOf(draft,property),start:draft.start,end:draft.end,guests:draft.guests})} onRefine={toggleRefine} onWiden={narrowed?widen:undefined} onTry={patch=>retry({...draft,...patch})} onBookEdge={onReach} busy={working} steps={stepIds} tried={tried} from={from} onStep={stepOn} onBack={stepBack} anchor={anchor} full={snap===2&&!selected}/>{/* The arrival strip is under the card: the card comes first, as in the concept. */}{snap<2&&!!preview&&!!arrival&&!stay&&!picked&&!formOnly&&counts.some(n=>n>0)&&<ArrivalStrip arrival={arrival} at={at} asked={Date.parse(around.current)/1000} counts={counts} onPick={arriveBy}/>}</>
+  ?<><GuestResults preview={preview} draft={draft} readiness={readiness} mine={mine} onFavorite={heart} selected={selected} onSelect={setSelected} onFocus={setFocus} onBook={bookFlat} onOpen={property=>onIntent('property:'+property.id,{mode:tariffOf(draft,property),start:draft.start,end:draft.end,guests:draft.guests})} onRefine={toggleRefine} onWiden={narrowed?widen:undefined} onTry={patch=>retry({...draft,...patch})} onBookEdge={onReach} busy={working} steps={stepIds} tried={tried} from={from} onStep={stepOn} onBack={stepBack} anchor={anchor} full={snap===2&&!selected} onMap={listOpen?()=>{setListOpen(false);expand(0);}:undefined}/>{/* The arrival strip is under the card: the card comes first, as in the concept. */}{snap<2&&!!preview&&!!arrival&&!stay&&!picked&&!formOnly&&counts.some(n=>n>0)&&<ArrivalStrip arrival={arrival} at={at} asked={Date.parse(around.current)/1000} counts={counts} onPick={arriveBy}/>}</>
   :<GuestForm key={refine||'all'} only={refine||'all'} draft={draft} onChange={change} onNearMe={meInCity?()=>change({...draft,near:nearOf(here.fix!.point)}):undefined} onPickPoint={()=>{setPicking(true);expand(0);}} onSubmit={()=>void find()} busy={working}/>;
- return <View style={h.block}><HeadSlot onHeight={onHead}>{picking?pickView:nav.trip?<TripHead nav={nav} onOpen={()=>{const id=nav.trip!.id;nav.close();onOpenProcess('booking',id);}}/>:requestId?null:head}</HeadSlot>{!picking&&body}</View>;
+ // The answer as in the concept of 2026-11-25 (Airbnb, Vrbo): the sheet steps aside, the conditions stand on top of the map
+ // with the quick steps under them, one card floats at the bottom. «Список» opens every answer in the sheet, «На карте» returns.
+ const floatOn=!!preview&&!refine&&!requestId&&!picking&&!nav.trip&&!listOpen&&shown.length>0;
+ const capsule=tokens.filter(t=>t.id==='city'||t.id==='district').map(t=>t.title).join(', '),capsuleLine=tokens.filter(t=>t.id!=='city'&&t.id!=='district').map(t=>t.title).join(' · ');
+ useEffect(()=>{if(listOpen&&snap===0)setListOpen(false);},[snap]);
+ useEffect(()=>{if(floatOn&&snap!==0)expand(0);},[floatOn]);
+ useEffect(()=>{
+  if(!floatOn){setFloat?.(null);return;}
+  setFloat?.(<GuestFloatBar title={capsule} line={capsuleLine} busy={working} chips={floatChips} onBack={()=>{setSelected('');setFocus('');setPreview(null);}} onEdit={()=>openPart('all')}/>);
+ },[floatOn,capsule,capsuleLine,working,floatChips]);
+ useEffect(()=>()=>setFloat?.(null),[]);
+ const floatHead=floatOn?<View style={h.floatHead}><Pressable accessibilityRole="button" accessibilityLabel={tr('Список: {n}',{n:shown.length})} onPress={()=>{setListOpen(true);setSelected('');expand(2);}} style={({pressed})=>[h.listPill,pressed&&h.dim]}><Text style={h.listPillText}>☰  {tr('Список · {n}',{n:shown.length})}</Text></Pressable><GuestResults preview={preview!} draft={draft} readiness={readiness} mine={mine} onFavorite={heart} selected={selected} onSelect={setSelected} onFocus={setFocus} onBook={bookFlat} onOpen={property=>onIntent('property:'+property.id,{mode:tariffOf(draft,property),start:draft.start,end:draft.end,guests:draft.guests})} onRefine={toggleRefine} onWiden={narrowed?widen:undefined} onTry={patch=>retry({...draft,...patch})} busy={working} steps={stepIds} tried={tried} from={from} onStep={stepOn} onBack={stepBack} anchor={anchor} float onChips={setFloatChips}/></View>:null;
+ return <View style={h.block}><HeadSlot onHeight={onHead}>{picking?pickView:nav.trip?<TripHead nav={nav} onOpen={()=>{const id=nav.trip!.id;nav.close();onOpenProcess('booking',id);}}/>:requestId||listOpen?null:floatHead||head}</HeadSlot>{!picking&&!floatOn&&body}</View>;
 }
 
 function OwnerPanel({accountId,data,mapData,publish,snap,showNow,expand,onHead,onAsk,onIntent,onChanged,onOpenProcess,onOpenPage,onEdit,selected,setSelected,setFocus}:Common){
@@ -534,6 +559,11 @@ export function MapHome({ role, accountId, data, menu, chats, onChanged, onOpenP
   const [mapData, setMapData] = useState<Row | null>(kept?.data || null);
   const [picking, setPicking] = useState(false);
   const [scanning, setScanning] = useState(false);
+  // The guest's answer as in the concept of 2026-11-25 (Airbnb, Vrbo): no sheet, the conditions on top of the map,
+  // one card floating at the bottom. The guest's panel hands its top bar here; null is the usual sheet.
+  const [floatBar, setFloatBar] = useState<ReactNode | null>(null);
+  // A booking card over the map (the wait for the owner) hides the top bar: only the map and that card stay.
+  const floating = role === 'guest' && !!floatBar && !(spot && cover > 0);
   const host = useRef<View>(null);
   const scroll = useRef<ScrollView>(null);
   const mapCenter = useRef<MapPoint | null>(null);
@@ -549,7 +579,7 @@ export function MapHome({ role, accountId, data, menu, chats, onChanged, onOpenP
   // A phone shorter than 700px never has the "Сейчас" card there, so a head taller than that is a message with
   // its button: the sheet may rise to 36% of the screen for it instead of hiding the button under the tabs.
   // A head that needs even more scrolls inside the sheet instead of being cut.
-  const wanted = handleHeight + head + 12;
+  const wanted = (floating ? 0 : handleHeight) + head + 12;
   const topEdge = screen.height >= 700 ? 0.5 : 0.36;
   // While the keyboard is open the map above it is short: the half-screen rule would squeeze the line being typed in
   // to a strip. The sheet then stands on the keyboard with its whole head (the line, the chips), the map above it.
@@ -753,7 +783,7 @@ export function MapHome({ role, accountId, data, menu, chats, onChanged, onOpenP
     if (covered) cardEdge.setValue(cover);
     Animated.timing(veil, { toValue: covered ? 0 : 1, duration: calmRef.current ? 0 : T.motion.base, useNativeDriver: false }).start();
   }, [covered, cover]);
-  const common: Common = { setScanning, setQuiet, accountId, data, mapData, city, publish, selected, setSelected, focus, setFocus, snap, showNow, expand: setSnap, onHead: setHead, onReach: setReach, onAsk, onIntent, onBook, onChanged, onOpenProcess, onOpenPage, onEdit, flyMe: () => setMeFly(n => n + 1), notify: setNotice };
+  const common: Common = { setFloat: setFloatBar, setScanning, setQuiet, accountId, data, mapData, city, publish, selected, setSelected, focus, setFocus, snap, showNow, expand: setSnap, onHead: setHead, onReach: setReach, onAsk, onIntent, onBook, onChanged, onOpenProcess, onOpenPage, onEdit, flyMe: () => setMeFly(n => n + 1), notify: setNotice };
   const center = mapCities[city] || validPoint(mapData?.center) || mapCities['Павлодар'];
 
   // Where the person is (here.ts). The first visit of the map asks the phone (the system prompt appears only if it was
@@ -853,12 +883,12 @@ export function MapHome({ role, accountId, data, menu, chats, onChanged, onOpenP
             ))}</View></View>
       )}{!!notice && (
         <Text accessibilityLiveRegion="polite" style={h.mapNotice}>{notice}</Text>
-      )}{(role === 'owner' || role === 'guest') && !selected && <PriceTip role={role} cards={data.approvals || []} onChanged={onChanged} onEdit={onEdit} />}{/* Without an account the round slot widens for the «Войти» word. */}{!!menu && <View style={[h.menu, { width: 'auto' }]}>{menu}</View>}{!!chats && <View style={h.chats}>{chats}</View>}{!picking && <MapMood mood={mood} joy={joy} still={calm || quiet} bottom={covered ? cardEdge : sheet} />}<Animated.View style={[h.sheet, { height: sheet, opacity: veil }]} accessibilityViewIsModal={false}><View {...drag.handle.panHandlers}><Pressable
+      )}{(role === 'owner' || role === 'guest') && !selected && <PriceTip role={role} cards={data.approvals || []} onChanged={onChanged} onEdit={onEdit} />}{/* Without an account the round slot widens for the «Войти» word. */}{!!menu && !floating && <View style={[h.menu, { width: 'auto' }]}>{menu}</View>}{!!chats && !floating && <View style={h.chats}>{chats}</View>}{floating && <View pointerEvents="box-none" style={h.floatBar}>{floatBar}</View>}{!picking && <MapMood mood={mood} joy={joy} still={calm || quiet} bottom={covered ? cardEdge : sheet} />}<Animated.View style={[h.sheet, snap === 2 && !floating && h.sheetSolid, floating && h.sheetFloat, { height: sheet, opacity: veil }]} accessibilityViewIsModal={false}><View {...drag.handle.panHandlers} style={floating ? h.gone : undefined}><Pressable
             accessibilityRole="button"
             accessibilityLabel={snap === 0 ? tr('Развернуть панель') : tr('Свернуть панель')}
             onPress={() => setSnap(snap === 0 ? 1 : 0)}
             style={h.handleArea}
-          ><Grip color={mood === 'calm' ? undefined : MOOD_COLOR[mood]} /></Pressable></View><View style={h.grow} {...drag.body.panHandlers}><ScrollView ref={scroll} scrollEnabled={scrollable} onScroll={e => { scrollY.current = e.nativeEvent.contentOffset.y; }} scrollEventThrottle={64} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" contentContainerStyle={h.sheetContent} showsVerticalScrollIndicator={false}><RevealProvider value={reveal}>{role === 'guest' ? (
+          ><Grip color={mood === 'calm' ? undefined : MOOD_COLOR[mood]} /></Pressable></View><View style={h.grow} {...drag.body.panHandlers}><ScrollView ref={scroll} scrollEnabled={scrollable} onScroll={e => { scrollY.current = e.nativeEvent.contentOffset.y; }} scrollEventThrottle={64} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" contentContainerStyle={[h.sheetContent, floating && h.sheetContentFloat]} showsVerticalScrollIndicator={false}><RevealProvider value={reveal}>{role === 'guest' ? (
               <GuestPanel {...common} held={held} aimed={!!aim.current} picking={picking} setPicking={setPicking} mapCenter={mapCenter} setCity={setCity} />
             ) : role === 'owner' ? (
               <OwnerPanel {...common} />

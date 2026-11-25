@@ -36,12 +36,22 @@ export function Grip({color}:{color?:string}){
 }
 const R=T.radius,H=T.control,shadow={shadowColor:C.ink,shadowOffset:{width:0,height:2},shadowOpacity:.12,shadowRadius:8,elevation:3};
 export const h=StyleSheet.create({
+ // «Мои брони» in one line under the guest's button (concept of 2026-11-25).
+ tripsLine:{minHeight:48,flexDirection:'row',alignItems:'center',gap:8,paddingHorizontal:12,borderRadius:16,backgroundColor:C.surfaceAlt},tripsDot:{width:8,height:8,borderRadius:4,backgroundColor:C.warning},tripsTitle:{...type.label,color:C.ink,fontWeight:'600'},tripsGo:{...type.body,color:C.accent,fontWeight:'600'},
  attention:{minHeight:44,flexDirection:'row',alignItems:'center',gap:8,paddingHorizontal:12,borderRadius:12,backgroundColor:C.dangerSoft},attentionDot:{width:8,height:8,borderRadius:4,backgroundColor:C.danger},attentionGo:{fontSize:14,lineHeight:20,color:C.danger,fontWeight:'600'},
  host:{flex:1,backgroundColor:C.bg},
  // A short line over the map, under the avatar: what «На карте» could not show.
  mapNotice:{position:'absolute',top:68,left:16,right:16,alignSelf:'center',textAlign:'center',paddingVertical:8,paddingHorizontal:16,borderRadius:R.lg,backgroundColor:C.glassStrong,borderWidth:1,borderColor:C.glassLine,...type.label,color:C.ink,...shadow},
  menu:{position:'absolute',top:12,left:12,width:H.touch,height:H.touch,borderRadius:R.full,backgroundColor:C.glassStrong,borderWidth:1,borderColor:C.glassLine,alignItems:'center',justifyContent:'center',...shadow},
  chats:{position:'absolute',top:12,right:12,width:H.touch,height:H.touch,borderRadius:R.full,backgroundColor:C.glassStrong,borderWidth:1,borderColor:C.glassLine,alignItems:'center',justifyContent:'center',...shadow},
+ // The guest's answer: the sheet steps aside, its card floats over the map (MapHome floating).
+ sheetSolid:{backgroundColor:C.surface},sheetFloat:{backgroundColor:'transparent',borderTopWidth:0,shadowOpacity:0,elevation:0},sheetContentFloat:{paddingHorizontal:0,paddingBottom:12},gone:{height:0,overflow:'hidden'},floatBar:{position:'absolute',top:12,left:12,right:12,gap:8},
+ capRow:{flexDirection:'row',alignItems:'center',gap:8},
+ capRound:{width:48,height:48,borderRadius:R.full,backgroundColor:C.surface,alignItems:'center',justifyContent:'center',...shadow},capBack:{width:18,height:18,tintColor:C.ink,transform:[{rotate:'180deg'}]},
+ capsule:{flex:1,minWidth:0,minHeight:56,borderRadius:R.full,backgroundColor:C.surface,alignItems:'center',justifyContent:'center',paddingHorizontal:16,...shadow},
+ capTitle:{...type.label,color:C.ink,fontWeight:'700'},capLine:{...type.caption,color:C.muted},
+ sliders:{gap:4,alignItems:'center'},slider:{height:2,borderRadius:1,backgroundColor:C.ink},
+ floatHead:{gap:12,alignItems:'stretch'},listPill:{alignSelf:'center',minHeight:40,paddingHorizontal:16,borderRadius:R.full,backgroundColor:C.ink,justifyContent:'center',...shadow},listPillText:{...type.label,color:C.surface,fontWeight:'700'},
  sheet:{position:'absolute',left:0,right:0,bottom:0,backgroundColor:C.glassStrong,borderTopLeftRadius:R.xl,borderTopRightRadius:R.xl,borderTopWidth:1,borderColor:C.glassLine,shadowColor:C.ink,shadowOffset:{width:0,height:-4},shadowOpacity:.1,shadowRadius:12,elevation:12},
  handleArea:{height:handleHeight,alignItems:'center',paddingTop:12,gap:8},handle:{width:40,height:4,borderRadius:R.xs,backgroundColor:C.lineStrong},ornament:{width:264,maxWidth:'100%',height:12,tintColor:C.gold,opacity:.9},sheetContent:{paddingHorizontal:16,paddingBottom:16},
  block:{gap:12},head:{},grow:{flex:1,minWidth:0},title:{...type.subtitle,...brandFont,color:C.ink},note:{...type.label,color:C.muted},label:{...type.caption,color:C.muted,marginBottom:4},
