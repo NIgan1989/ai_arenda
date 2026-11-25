@@ -1,0 +1,50 @@
+name: TestFlight testers
+# Opens the latest iPhone build in App Store Connect to the outside testers (scripts/testflight-testers.mjs,
+# docs/TESTFLIGHT.md): beta texts, details for Apple's beta review, the group «Павлодар бета», the build in it,
+# the beta review request and the public link. Every step is safe to repeat.
+#
+# Runs by hand (Actions, "TestFlight testers", "Run workflow" on main) and after each upload of "iPhone to TestFlight".
+# A pull request that touches it only reads App Store Connect: nothing is changed and nothing is sent to Apple.
+#
+# Secrets: ASC_KEY_P8, ASC_KEY_ID, ASC_ISSUER_ID (App Store Connect API key, role Admin), BETA_DEMO_PASSWORD (password
+# of the demo guest +7 700 000 03 01 for Apple's reviewer), BETA_CONTACT_PHONE. Variable: ASC_APP_ID.
+on:
+  workflow_dispatch:
+  workflow_call:
+    inputs:
+      build_number:
+        description: 'Build number to open (empty: the latest build)'
+        type: string
+        default: ''
+  pull_request:
+    paths:
+      - 'scripts/testflight-testers.mjs'
+      - '.github/workflows/testflight-testers.yml'
+      - 'docs/TESTFLIGHT.md'
+permissions:
+  contents: read
+concurrency:
+  group: testflight-testers-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  testers:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+      - name: Open the build to the testers
+        env:
+          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_APP_ID: ${{ vars.ASC_APP_ID }}
+          BETA_DEMO_PASSWORD: ${{ secrets.BETA_DEMO_PASSWORD }}
+          BETA_CONTACT_PHONE: ${{ secrets.BETA_CONTACT_PHONE }}
+          BUILD_NUMBER: ${{ inputs.build_number }}
+          MODE: ${{ github.event_name == 'pull_request' && '--check' || '' }}
+        run: node scripts/testflight-testers.mjs $MODE
