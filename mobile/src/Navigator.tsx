@@ -6,6 +6,7 @@ import {request} from './api';
 import {C,type} from './styles';
 import {T} from './tokens';
 import {Action,h} from './SheetParts';
+import {SwipeConfirm} from './SwipeConfirm';
 import {arrived,distanceText,minutesText,navState,offRoute,turnArrow,type NavRoute,type NavState} from './navigation';
 import type {MapPoint} from './map-math';
 import {locate,offerFix,openLocationSettings} from './here';
@@ -72,29 +73,27 @@ export function useTrip(role:'cleaner'|'guest',skew:number){
 }
 export type TripControl=ReturnType<typeof useTrip>;
 
-// What the sheet shows during a trip, instead of the AI line: the turn ahead, what is left, and the way out.
-export function TripHead({nav,onOpen}:{nav:TripControl;onOpen:()=>void}){
+// What the sheet shows during a trip (concept of 2026-11-25, «В пути»): a coloured strip with the time and the way
+// left and the next turn, the address large, two buttons, and for a cleaning the swipe «я на месте», which tells the owner.
+export function TripHead({nav,onOpen,address,detail,onArrived}:{nav:TripControl;onOpen:()=>void;address?:string;detail?:string;onArrived?:()=>Promise<unknown>|void}){
  const {trip,status,state}=nav;if(!trip)return null;
- if(status==='arrived')return <View style={n.wrap}>
-  <View style={n.row}><View style={[n.arrow,n.arrived]}><Text style={n.arrowText}>⚑</Text></View><View style={h.grow}><Text style={n.big}>{tr('Вы на месте')}</Text><Text numberOfLines={1} style={h.note}>{trip.title}</Text></View></View>
-  <Action title={trip.kind==='booking'?tr('Открыть бронь'):tr('Открыть задание')} onPress={onOpen}/><Action secondary title={tr('Закрыть')} onPress={nav.close}/>
- </View>;
- const waiting=status==='locating'||status==='routing'||!state;
- return <View style={n.wrap} accessibilityLiveRegion="polite">
-  <View style={n.row}>
-   <View style={n.arrow}><Text style={n.arrowText}>{waiting?'…':turnArrow(state.next)}</Text></View>
-   <View style={h.grow}>
-    <Text style={n.big}>{status==='locating'?tr('Ищем вас на карте…'):waiting?tr('Строим маршрут…'):distanceText(state.toNext)}</Text>
-    <Text numberOfLines={2} style={n.text}>{waiting?trip.title:state.next?.text||tr('Двигайтесь по линии маршрута')}</Text>
-   </View>
+ const waiting=status==='locating'||status==='routing'||!state,there=status==='arrived';
+ const strip=there?tr('Вы на месте'):status==='locating'?tr('Ищем вас на карте…'):waiting?tr('Строим маршрут…'):tr('Через {time} на месте · {left}',{time:minutesText(state.secondsLeft),left:distanceText(state.left)});
+ const turn=!there&&!waiting?turnArrow(state.next)+'  '+distanceText(state.toNext)+' · '+(state.next?.text||tr('Двигайтесь по линии маршрута')):'';
+ return <View style={n.card} accessibilityLiveRegion="polite">
+  <View style={[n.strip,there&&n.stripThere]}><Text numberOfLines={1} style={n.stripText}>{strip}</Text>{!!turn&&<Text numberOfLines={1} style={n.turn}>{turn}</Text>}</View>
+  <View style={n.body}>
+   <Text numberOfLines={2} style={n.big}>{address||trip.title}</Text>
+   {!!(detail||address)&&<Text numberOfLines={1} style={h.note}>{detail||trip.title}</Text>}
+   <View style={n.buttons}><View style={h.grow}><Action secondary title={trip.kind==='booking'?tr('Бронь'):tr('Задание')} onPress={onOpen}/></View><View style={h.grow}><Action secondary title={there?tr('Закрыть'):tr('Завершить')} onPress={there?nav.close:()=>void nav.stop()}/></View></View>
+   {!!onArrived&&<SwipeConfirm label={tr('Проведите: я на месте')} onConfirm={()=>void onArrived()}/>}
   </View>
-  {!waiting&&<Text numberOfLines={1} style={h.note}>{tr('Осталось {left}',{left:distanceText(state.left)})} · {minutesText(state.secondsLeft)} · {trip.title}</Text>}
-  <Action secondary title={tr('Завершить поездку')} onPress={()=>void nav.stop()}/>
  </View>;
 }
 
 const n=StyleSheet.create({
  wrap:{gap:12},row:{flexDirection:'row',alignItems:'center',gap:12},
  arrow:{width:T.control.primary,height:T.control.primary,borderRadius:T.radius.md,backgroundColor:C.accent,alignItems:'center',justifyContent:'center'},arrived:{backgroundColor:C.success},
- arrowText:{...type.heading,color:C.surface,fontWeight:'700'},big:{...type.heading,color:C.ink,fontWeight:'700'},text:{...type.body,color:C.ink}
+ arrowText:{...type.heading,color:C.surface,fontWeight:'700'},big:{...type.title,color:C.ink,fontWeight:'700'},text:{...type.body,color:C.ink},
+ card:{borderRadius:T.radius.xl,overflow:'hidden',backgroundColor:C.surface,borderWidth:1,borderColor:C.line},strip:{paddingHorizontal:16,paddingVertical:12,gap:2,backgroundColor:C.accent},stripThere:{backgroundColor:C.success},stripText:{...type.body,color:C.onAccent,fontWeight:'700'},turn:{...type.label,color:C.onAccent,opacity:.9},body:{padding:16,gap:12},buttons:{flexDirection:'row',gap:8}
 });

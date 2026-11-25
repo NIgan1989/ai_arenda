@@ -24,6 +24,7 @@ import {SwipeConfirm} from './SwipeConfirm';
 import {ROAD_BEAMS,beamOrigin,beams,mapMood,moodJoy,roadBeams,roadKey,type BeamRoads,type PinTone} from './map-motion';
 import {MOOD_COLOR,MapMood} from './MapMood';
 import {OwnerToday} from './OwnerToday';
+import {CleanerOffer} from './CleanerOffer';
 import {getHere,locate,openLocationSettings,useHere} from './here';
 import {hereNote,isFresh,nearestCity,type HereAction,type HereNote} from './here-rules';
 import {countdown,mapCities,validPoint,type MapPoint} from './map-math';
@@ -470,7 +471,7 @@ function OwnerPanel({accountId,data,mapData,publish,snap,showNow,expand,onHead,o
        cleanings under way, then «Быстрые запросы гостей», which opens who answers guests for each object. */}<SheetHeading icon="building" title={tr('Мои объекты')} count={String(flats.length)}/>{flats.map(p=>{const m=(mapData?.properties||[]).find((x:Row)=>x.id===p.id)||p;return <SheetRow key={p.id} label={tr('Мои объекты: {title}',{title:p.title})} title={p.title} photo={(m.photos||p.photos||[])[0]} line={[kindLabel((m.details||p.details)?.type),tr(m.display_status?.label||p.display_status?.label||'Статус уточняется'),m.city||p.city].filter(Boolean).join(' · ')+(m.location?'':' · '+tr('нет точки на карте'))} onPress={()=>{setSelected('property:'+p.id);expand(1);}}/>;})}{!flats.length&&<Text style={h.note}>{tr('Объектов пока нет.')}</Text>}{!!inbox&&<SheetRow icon="zap" title={tr('Быстрые запросы гостей')} line={quickOn?tr('Включены: {found}',{found:quickOn+' '+plural(quickOn,'объект','объекта','объектов')}):tr('Выключены')} onPress={()=>setQuick(v=>!v)}/>}{quick&&!!inbox&&<View style={h.card}><Text accessibilityRole="header" style={h.label}>{tr('Кто отвечает гостям')}</Text><Text style={h.note}>{tr('ИИ — это автопилот: сразу отвечает гостю, подтверждает бронь, заказывает уборку и назначает исполнителя по вашим тарифам. Оплату и депозит проверяете вы.')}</Text>{!!saved&&<Text accessibilityLiveRegion="polite" style={h.note}>{saved}</Text>}{(inbox.preferences||[]).map((p:Row)=><GuestMode key={p.id} flat={p} busy={working} onChange={body=>act('preference',body)}/>)}{!inbox.preferences.length&&<Text style={h.note}>{tr('Включить можно после добавления жилья.')}</Text>}</View>}</>}</View>;
 }
 
-function CleanerPanel({accountId,data,mapData,city,publish,snap,showNow,expand,onHead,onAsk,onChanged,onOpenProcess,onOpenPage}:Common){
+function CleanerPanel({accountId,data,mapData,city,publish,snap,showNow,expand,onHead,onAsk,onChanged,onOpenProcess,onOpenPage,setFocus}:Common){
  const [asked,setAsked]=useState(''),clock=serverNow(data);
  const [error,setError]=useState(''),[working,setWorking]=useState(''),lock=useRef(false);
  const userId=data.user?.id,jobs:Row[]=data.jobs||[],applications:Row[]=data.applications||[];
@@ -487,11 +488,15 @@ function CleanerPanel({accountId,data,mapData,city,publish,snap,showNow,expand,o
  // "Рядом" is the city the map shows (the cleaner's own): the same open jobs as the pins, matched the way the server matches them.
  // Jobs in other cities are one tap away, on the page of all jobs.
  const nearby=open.filter(j=>String(j.city||'').toLocaleLowerCase('ru').includes(city.trim().toLocaleLowerCase('ru'))),nearbyIds=nearby.map(j=>j.id).join();
+ // «Новое задание» (CleanerOffer.tsx): the best paid open job nearby the cleaner has not answered or skipped, while no cleaning is under way.
+ const [skipped,setSkipped]=useState<string[]>([]);
+ const offers=nearby.filter(j=>!applied(j.id)&&!skipped.includes(j.id)).sort((a,b)=>Number(b.fee)-Number(a.fee)||a.start-b.start);
+ const offer=!mine.some(j=>j.status==='in_progress')&&!nav.trip?offers[0]:undefined,offerId=offer?.id||'';
  useEffect(()=>{
   // Each job says what to do now; the day's stops carry their number and are joined by the route line in order.
   const shown=(mapData?.processes||[]).filter((p:Row)=>p.kind==='job'&&(p.status!=='open'||nearby.some(j=>j.id===p.id)));
   const at=serverNow(mapData||data),byId=new Map(jobs.map(j=>[j.id,j])),threads=cleanerThreads(data,at);
-  const pins=shown.flatMap((p:Row):MapPin[]=>{const point=pointOf(p);if(!point)return [];const state=cleanerPin({...byId.get(p.id),...p},route.find(r=>r.id===p.id),at,applied(p.id));const thread=threads.find(t=>t.id===p.id);return [{key:'job:'+p.id,point,title:p.title,...state,act:pinAct('cleaner',threads,data,at,t=>t.id===p.id)||undefined,chain:thread&&p.status!=='open'?threadChain(thread):undefined,ai:latestMove(mapData?.aiMarks,[{kind:'job',id:String(p.id)}],at)}];});
+  const pins=shown.flatMap((p:Row):MapPin[]=>{const point=pointOf(p);if(!point)return [];const state=cleanerPin({...byId.get(p.id),...p},route.find(r=>r.id===p.id),at,applied(p.id));const thread=threads.find(t=>t.id===p.id);return [{key:'job:'+p.id,point,title:p.title,...state,best:p.id===offerId,act:pinAct('cleaner',threads,data,at,t=>t.id===p.id)||undefined,chain:thread&&p.status!=='open'?threadChain(thread):undefined,ai:latestMove(mapData?.aiMarks,[{kind:'job',id:String(p.id)}],at)}];});
   const placed=new Map<string,MapPoint|null>(shown.map((p:Row)=>[p.id,pointOf(p)]));
   // On a trip the map shows only the way: the object, the cleaner's point and the road between them; it frames them at the start and after a new route.
   if(nav.trip){
@@ -501,11 +506,14 @@ function CleanerPanel({accountId,data,mapData,city,publish,snap,showNow,expand,o
    return;
   }
   publish(pins,'cleaner:'+(mapData?.processes?.length||0),{lines:routeLines(route.map(r=>placed.get(r.id)))});
- },[mapData,nearbyIds,data.applications,data.jobs,routeIds,nav.trip,nav.here,nav.route,nav.rerouted]);
+ },[mapData,nearbyIds,data.applications,data.jobs,routeIds,nav.trip,nav.here,nav.route,nav.rerouted,offerId]);
+ // The offered job's pin is the chosen one on the map: dark, with the ✦, as the order in a taxi app. It runs after the
+ // pins are published, which clears the focus of a new set of pins.
+ useEffect(()=>{setFocus(offerId?'job:'+offerId:'');},[offerId,mapData]);
  // The step of a job taken right on the map: an answer to an open one, the start of the one the guest has left.
- async function act(id:string,action:'apply'|'start'){if(lock.current)return;lock.current=true;setWorking(id);setError('');try{await request('/api/jobs/'+id,{action},undefined,'map-'+action+':'+id,'cleaner');await onChanged();}catch(e){setError(message(e));}finally{lock.current=false;setWorking('');}}
+ async function act(id:string,action:'apply'|'start'|'arrived'){if(lock.current)return;lock.current=true;setWorking(id);setError('');try{await request('/api/jobs/'+id,{action},undefined,'map-'+action+':'+id,'cleaner');await onChanged();}catch(e){setError(message(e));}finally{lock.current=false;setWorking('');}}
  const apply=(id:string)=>act(id,'apply');
- return <View style={h.block}><HeadSlot onHeight={onHead}>{nav.trip?<TripHead nav={nav} onOpen={()=>{const id=nav.trip!.id;nav.close();onOpenProcess('job',id);}}/>:<MapSheetHead role="cleaner" text={asked} onText={setAsked} onSend={text=>{setAsked('');onAsk(text);}} onChip={action=>{if(action==='nearby')expand(1);else if(action==='schedule')onOpenPage('calendar');}} now={null} onNow={()=>{}}>{!!nav.error&&<Text accessibilityRole="alert" style={h.error}>{nav.error}</Text>}<AutopilotThreads role="cleaner" data={data} now={clock} calendar={snap>0} onOpen={(kind,id)=>onOpenProcess(kind,id)}/><AutopilotHandoff role="cleaner" accountId={accountId} tick={Number(data.serverTime)||0} compact={snap===0} onExpand={()=>expand(2)} onChanged={onChanged} onSetup={()=>onOpenPage('account')}/></MapSheetHead>}</HeadSlot>{snap>0&&<>{mine.length>0&&<Text accessibilityRole="header" style={h.cardTitle}>{route.length?tr('Маршрут дня'):tr('Ваше задание')}</Text>}{!!summary&&<Text style={h.note}>{summary}</Text>}{mine.map(j=>{
+ return <View style={h.block}><HeadSlot onHeight={onHead}>{nav.trip?(()=>{const id=nav.trip!.id,j=jobs.find(x=>x.id===id);return <TripHead nav={nav} address={j?.address||j?.open_address} detail={j?[j.title,money(j.fee)].join(' · '):undefined} onOpen={()=>{nav.close();onOpenProcess('job',id);}} onArrived={j&&j.status==='assigned'&&!j.arrived_at?async()=>{await act(id,'arrived');nav.close();onOpenProcess('job',id);}:undefined}/>;})():<MapSheetHead role="cleaner" text={asked} onText={setAsked} onSend={text=>{setAsked('');onAsk(text);}} onChip={action=>{if(action==='nearby')expand(1);else if(action==='schedule')onOpenPage('calendar');}} now={null} onNow={()=>{}}>{!!nav.error&&<Text accessibilityRole="alert" style={h.error}>{nav.error}</Text>}{!!offer&&<CleanerOffer job={offer} left={offers.length-1} busy={!!working} onApply={()=>apply(offer.id)} onSkip={()=>setSkipped(v=>[...v,offer.id])} onOpen={()=>onOpenProcess('job',offer.id)}/>}<AutopilotThreads role="cleaner" data={data} now={clock} calendar={snap>0} onOpen={(kind,id)=>onOpenProcess(kind,id)}/><AutopilotHandoff role="cleaner" accountId={accountId} tick={Number(data.serverTime)||0} compact={snap===0} onExpand={()=>expand(2)} onChanged={onChanged} onSetup={()=>onOpenPage('account')}/></MapSheetHead>}</HeadSlot>{snap>0&&<>{mine.length>0&&<Text accessibilityRole="header" style={h.cardTitle}>{route.length?tr('Маршрут дня'):tr('Ваше задание')}</Text>}{!!summary&&<Text style={h.note}>{summary}</Text>}{mine.map(j=>{
     // One main button a stop: the step that is due (start, report); before it, the way there.
     const step=cleanerStep(j,undefined,userId),isNext=j.id===next;
     return <View key={j.id} style={[h.card,isNext||j.status==='in_progress'?h.urgent:null]}><Text style={h.cardTitle}>{order.get(j.id)?order.get(j.id)+'. ':''}{j.title}</Text><Text style={h.note}>{date(j.start)} → {date(j.end)}{j.address?'\n'+j.address:''}</Text><Text style={h.price}>{money(j.fee)}</Text><Text style={h.note}>{cleanerLine(j)}.</Text>{step?.id==='start'&&<Action title={working===j.id?tr('Начинаем…'):step.label} disabled={!!working} onPress={()=>act(j.id,'start')}/>}{step?.id==='report'&&<Action title={step.label} onPress={()=>onOpenProcess('job',j.id)}/>}{isNext&&<><Action secondary={!!step} title={tr('Поехали')} disabled={!!nav.trip} onPress={()=>go(j)}/></>}{step?.id!=='report'&&<Action secondary={!!step||isNext} title={tr('Открыть задание')} onPress={()=>onOpenProcess('job',j.id)}/>}</View>;

@@ -44,7 +44,7 @@ test('a job pin says what to do now', () => {
   assert.deepEqual(cleanerPin(job('a', 'submitted', at(8), at(10)), undefined, now, false), {label: 'На приёмке', tone: 'booking'});
   assert.deepEqual(cleanerPin(job('a', 'assigned', at(11, 0, 1), at(14, 0, 1)), undefined, now, false), {label: 'завтра 11:00', tone: 'offer'});
   assert.deepEqual(cleanerPin(job('a', 'open', at(11), at(14)), undefined, now, true), {label: 'Отклик ✓', tone: 'job'});
-  assert.deepEqual(cleanerPin(job('a', 'open', at(11), at(14)), undefined, now, false), {label: 'Уборка', tone: 'job'});
+  assert.deepEqual(cleanerPin(job('a', 'open', at(11), at(14), {fee: 3000}), undefined, now, false), {label: '3 000 ₸', tone: 'home', plain: true, rank: 997000});
 });
 
 test('the route joins the stops in order and has no search point', () => {
