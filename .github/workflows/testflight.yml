@@ -135,6 +135,8 @@ jobs:
     if: github.event_name == 'workflow_dispatch'
     needs: credentials
     runs-on: ubuntu-latest
+    outputs:
+      build_number: ${{ steps.eas_build.outputs.build_number }}
     timeout-minutes: 120
     defaults:
       run:
@@ -184,6 +186,7 @@ jobs:
           test "$(jq -r '.build.testflight.env.EXPO_PUBLIC_API_URL' eas.json)" = "$EXPO_PUBLIC_API_URL"
       # The App Store Connect key lets EAS create the certificate and the provisioning profile without a Mac.
       - name: Build the signed iPhone app on Expo
+        id: eas_build
         env:
           EXPO_ASC_API_KEY_PATH: ${{ runner.temp }}/asc-key.p8
           EXPO_ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
@@ -193,6 +196,7 @@ jobs:
           eas build --platform ios --profile testflight --non-interactive --wait --json > "$RUNNER_TEMP/build.json"
           jq -r '.[0] | "Build \(.id), version \(.appVersion) (\(.appBuildVersion)), status \(.status)"' "$RUNNER_TEMP/build.json" | tee -a "$GITHUB_STEP_SUMMARY"
           jq -r '.[0].id' "$RUNNER_TEMP/build.json" > "$RUNNER_TEMP/build-id"
+          echo "build_number=$(jq -r '.[0].appBuildVersion' "$RUNNER_TEMP/build.json")" >> "$GITHUB_OUTPUT"
       - name: Upload the build to TestFlight
         if: inputs.upload
         env:
@@ -211,3 +215,12 @@ jobs:
           mv "$RUNNER_TEMP/eas.json" eas.json
           eas submit --platform ios --profile testflight --id "$(cat "$RUNNER_TEMP/build-id")" --non-interactive --wait
           echo "Uploaded to TestFlight. Apple processes the build in about 10–30 minutes." >> "$GITHUB_STEP_SUMMARY"
+
+  # After the upload the same build goes to the group «Павлодар бета» and to Apple's beta review.
+  testers:
+    if: github.event_name == 'workflow_dispatch' && inputs.upload
+    needs: build
+    uses: ./.github/workflows/testflight-testers.yml
+    with:
+      build_number: ${{ needs.build.outputs.build_number }}
+    secrets: inherit
