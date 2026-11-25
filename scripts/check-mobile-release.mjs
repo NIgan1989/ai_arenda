@@ -37,6 +37,8 @@ export async function checkMobileRelease({root=process.cwd(),env={},profile='pro
  required('no_unsigned_profile',settings.withoutCredentials!==true&&settings.android.withoutCredentials!==true&&settings.ios.withoutCredentials!==true);
  const apiOrigin=publicOrigin(env.EXPO_PUBLIC_API_URL),siteOrigin=publicOrigin(env.SITE_PUBLIC_URL);
  required('EXPO_PUBLIC_API_URL',!!apiOrigin);required('SITE_PUBLIC_URL',!!siteOrigin);required('shared_api_origin',!!apiOrigin&&apiOrigin===siteOrigin);
+ // Sign-in with Face ID works only where the iPhone app is tied to the server it talks to (lib/passkeys.ts PASSKEY_RP_ID).
+ if(apiOrigin&&!(app?.ios?.associatedDomains||[]).includes('webcredentials:'+new URL(apiOrigin).hostname))warnings.push('Passkey_domain_differs_from_the_API_address');
  const imagePicker=app?.plugins?.find(item=>Array.isArray(item)&&item[0]==='expo-image-picker')?.[1];
  required('camera_permission_explanation',typeof imagePicker?.cameraPermission==='string'&&imagePicker.cameraPermission.trim().length>=20);
  required('photos_permission_explanation',typeof imagePicker?.photosPermission==='string'&&imagePicker.photosPermission.trim().length>=20);

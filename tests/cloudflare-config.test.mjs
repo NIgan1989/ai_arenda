@@ -77,6 +77,15 @@ test('publishing connects the Telegram bot from one GitHub secret without printi
  await assert.rejects(setupTelegram({token:'bad',account:'acc',cfToken:'cf',site:'https://x.dev',fetcher:async()=>Response.json({ok:false,description:'Unauthorized'})}),/getMe failed/);
  const workflow=(await import('node:fs')).readFileSync('.github/workflows/deploy.yml','utf8');assert.ok(workflow.indexOf('Publish the Worker')<workflow.indexOf('setup-telegram.mjs'));assert.match(workflow,/TELEGRAM_BOT_TOKEN: \$\{\{ secrets\.TELEGRAM_BOT_TOKEN \}\}/);
 });
+test('the Apple team from the TestFlight secret is saved for the Worker after publishing (sign-in with Face ID)',async()=>{
+ const {saveAppleTeam}=await import('../scripts/setup-apple-team.mjs');const calls=[];
+ const fetcher=async(url,init)=>{calls.push({url,body:JSON.parse(init.body)});return Response.json({success:true});};
+ assert.deepEqual(await saveAppleTeam({team:' ab12cd34ef ',account:'acc',cfToken:'cf',fetcher}),{saved:true});
+ assert.equal(calls[0].url,'https://api.cloudflare.com/client/v4/accounts/acc/workers/scripts/ai-arenda/secrets');assert.deepEqual(calls[0].body,{name:'APPLE_TEAM_ID',text:'AB12CD34EF',type:'secret_text'});
+ await assert.rejects(saveAppleTeam({team:'team',account:'acc',cfToken:'cf',fetcher}),/does not look like/);
+ await assert.rejects(saveAppleTeam({team:'AB12CD34EF',account:'acc',cfToken:'cf',fetcher:async()=>Response.json({success:false},{status:403})}),/did not save APPLE_TEAM_ID \(403\)/);
+ const workflow=(await import('node:fs')).readFileSync('.github/workflows/deploy.yml','utf8');assert.ok(workflow.indexOf('Publish the Worker')<workflow.indexOf('setup-apple-team.mjs'));assert.match(workflow,/APPLE_TEAM_ID: \$\{\{ secrets\.APPLE_TEAM_ID \}\}/);
+});
 test('the Stadia Maps key from a GitHub secret is saved as a Worker secret after publishing, never printed',async()=>{
  const {saveMapKey}=await import('../scripts/setup-map-key.mjs');const calls=[];
  const fetcher=async(url,init)=>{calls.push({url,body:JSON.parse(init.body)});return Response.json({success:true});};

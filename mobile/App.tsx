@@ -20,7 +20,7 @@ import {lateOpen,lateNote,lateLabel} from '../lib/late-arrival';
 const CATALOG_EVERY=5*60*1000;
 // The stay as «Задерживаюсь на час» reads it (lib/late-arrival.ts).
 const lateStay=(b:Record<string,any>)=>({start:b.start,end:b.end,arrival_eta:b.terms?.arrival_eta,late_count:b.terms?.late_count});
-import { Animated,AppState,BackHandler,KeyboardAvoidingView,Linking,Platform,Pressable,ScrollView,StyleSheet,Text,TextInput,View } from 'react-native';
+import { Animated,AppState,BackHandler,Image,KeyboardAvoidingView,Linking,Platform,Pressable,ScrollView,StyleSheet,Text,TextInput,View } from 'react-native';
 import { SafeAreaProvider,SafeAreaView } from 'react-native-safe-area-context';
 import {NativeChats,type NativeChatInitial} from './src/NativeChats';
 import {StayRequest,CleaningRequest,HomeCleaningOrder} from './src/StayRequest';
@@ -39,6 +39,8 @@ import {isHome,wordsOf} from '../lib/stay-words';
 import {useProcessLinks} from './src/use-process-links';
 import {registerPush,setupNotifications,usePushTaps} from './src/NativePush';
 import {resolveProcessLink} from './src/deep-links';
+import { PasskeyOfferHost,offerPasskey,passkeyError,passkeyWords,signInWithPasskey } from './src/PasskeyOffer';
+import { passkeyAvailable,readPasskeyNote } from './src/passkey';
 import { API_URL,ApiError,StaleSessionError,getSessionGeneration,isOffline,onLegalRequired,onServerReach,request,restoreLastRole,restoreSession,saveLastRole,saveSession,setWorkspaceRole } from './src/api';
 import { baseQuestions,cleanerQuestions,date,empty,labels,money,parseDate,propertyQuestions,uid,type Flow,type Message,type Question,type Role,type Row } from './src/model';
 import { C,s,type } from './src/styles';
@@ -169,7 +171,12 @@ const au=StyleSheet.create({
   big:{minHeight:64,paddingHorizontal:16,borderRadius:T.radius.lg,borderWidth:2,borderColor:C.accentLine,backgroundColor:C.surface,...type.title,color:C.ink,fontWeight:'700',fontVariant:['tabular-nums'],letterSpacing:.5},
   link:{minHeight:T.control.touch,alignItems:'center',justifyContent:'center'},
   linkText:{...type.label,color:C.accent,fontWeight:'600'},
+  key:{flexDirection:'row',gap:8,minHeight:56,borderRadius:T.radius.full,borderWidth:1,borderColor:C.lineStrong,alignItems:'center',justifyContent:'center',backgroundColor:C.surface},
+  keyIcon:{width:20,height:20,tintColor:C.ink},
+  keyText:{...type.body,color:C.ink,fontWeight:'600'},
 });
+// The phone's own passkey sheet opens by itself once a launch, when this phone already signed in with it.
+let passkeyAsked=false;
 function Auth({onSubmit,busy,titled=true}:{titled?:boolean;onSubmit:(mode:string,phone:string,password:string,name?:string,city?:string,recovery?:string)=>Promise<void>;busy:boolean}){
   const [mode,setMode]=useState('login'),[phone,setPhone]=useState(''),[password,setPassword]=useState(''),[name,setName]=useState(''),[city,setCity]=useState(''),[recovery,setRecovery]=useState(''),[error,setError]=useState('');
   // «Забыли пароль?»: first the number, then the code that came in Telegram or that the administrator dictated, and a new password.
@@ -182,12 +189,17 @@ function Auth({onSubmit,busy,titled=true}:{titled?:boolean;onSubmit:(mode:string
   const [step,setStep]=useState<'phone'|'password'>('phone'),digits=phone.replace(/\D/g,''),numberReady=digits.length>=10;
   const toPassword=()=>{if(!numberReady||locked)return;setError('');setStep('password');};
   const login=()=>{setError('');onSubmit('login',phone,password).then(()=>setPassword('')).catch(e=>setError(isOffline(e)?t('Нет связи. Проверьте интернет и повторите.'):e.message));};
+  // Face ID or a fingerprint instead of the number and the password (src/PasskeyOffer.tsx): the phone offers its key.
+  const keys=passkeyAvailable(),words=passkeyWords();
+  const withKey=()=>{if(locked)return;setError('');onSubmit('passkey','','').catch(e=>setError(passkeyError(e)||''));};
+  useEffect(()=>{if(!keys||passkeyAsked||mode!=='login')return;let live=true;void readPasskeyNote('on').then(v=>{if(live&&v&&!passkeyAsked){passkeyAsked=true;withKey();}});return()=>{live=false;};},[]);
   if(mode==='login')return <View style={au.box}>
     {step==='phone'?<>
       <Text style={au.ask}>{t('Ваш номер телефона')}</Text>
       <TextInput accessibilityLabel={t('Номер телефона')} style={au.big} placeholder="+7 777 123 45 67" placeholderTextColor={C.lineStrong} value={phone} onChangeText={setPhone} keyboardType="phone-pad" autoComplete="tel" textContentType="telephoneNumber" maxLength={30} editable={!locked} returnKeyType="next" onSubmitEditing={toPassword}/>
       {!!error&&<Text accessibilityRole="alert" style={s.error}>{error}</Text>}
       <Button title={t('Продолжить')} disabled={locked||!numberReady} onPress={toPassword}/>
+      {keys&&<Pressable accessibilityRole="button" disabled={locked} onPress={withKey} style={({pressed})=>[au.key,(pressed||locked)&&{opacity:.6}]}><Image source={words.icon} style={au.keyIcon}/><Text style={au.keyText}>{words.sign}</Text></Pressable>}
     </>:<>
       <Text style={au.ask}>{t('Введите пароль')}</Text>
       <Text style={au.sent}>{maskedPhone(digits)}{' · '}<Text accessibilityRole="link" style={s.inlineLink} onPress={locked?undefined:()=>{setPassword('');setError('');setStep('phone');}}>{t('Изменить номер')}</Text></Text>
@@ -513,11 +525,13 @@ function Chat(){
   async function authenticate(mode:string,phone:string,password:string,id:string,intent:string,name?:string,city?:string,recovery?:string){
     if(locked.current)return;locked.current=true;setBusy(true);
     try{
-      const result=await request('/auth/'+mode,{phone,password,...(mode==='register'?{name,city:city?.trim()||cityHere(),accept:true}:mode==='reset'?{code:recovery}:{})});/* The server still returns a backup code (the site keeps it); the app no longer shows one: a forgotten password is reset by a code in Telegram. */if(typeof result.token!=='string')throw Error(tr('Сервер не подтвердил вход.'));await saveSession(result.token);session.current=true;
+      const result=mode==='passkey'?await signInWithPasskey():await request('/auth/'+mode,{phone,password,...(mode==='register'?{name,city:city?.trim()||cityHere(),accept:true}:mode==='reset'?{code:recovery}:{})});/* The server still returns a backup code (the site keeps it); the app no longer shows one: a forgotten password is reset by a code in Telegram. */if(typeof result.token!=='string')throw Error(tr('Сервер не подтвердил вход.'));await saveSession(result.token);session.current=true;
       setWorkspaceRole(null);activeRoleRef.current=null;setSelectedRole(null);
       // While the last role is opening the chooser is not shown, so the map is the first thing seen after «Войти».
       // Signed in to book or to see something from the visitor map: the guest's pages open, and that goes on there.
       setOpening(true);try{const state=await load();if(afterSignIn.current&&state?.user)await hydrate('guest');else await openLastRole(state);}finally{setOpening(false);}
+      // Signed in by the password: once, the offer to sign in by Face ID or a fingerprint next time.
+      if(mode!=='passkey'&&result.user?.id)void offerPasskey(String(result.user.id));
     }finally{locked.current=false;setBusy(false);}
   }
   async function send(value=input){
@@ -885,4 +899,4 @@ function Fonted({children}:{children:React.ReactNode}){const [fonts,fontError]=u
 // the whole app again, so every screen speaks the new language at once.
 startLang();
 setupNotifications();
-export default function App(){useLang();return <SafeAreaProvider><View style={{flex:1}} onStartShouldSetResponderCapture={markGesture}><EntryStatusBar/><Fonted><Chat/></Fonted><LoadingBar/><BrandMoment/><RolePlate/><EntrySplash/></View></SafeAreaProvider>;}
+export default function App(){useLang();return <SafeAreaProvider><View style={{flex:1}} onStartShouldSetResponderCapture={markGesture}><EntryStatusBar/><Fonted><Chat/></Fonted><LoadingBar/><BrandMoment/><RolePlate/><EntrySplash/><PasskeyOfferHost/></View></SafeAreaProvider>;}

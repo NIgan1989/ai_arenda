@@ -19,6 +19,12 @@ declare namespace Cloudflare {
     EXPO_ACCESS_TOKEN?: string;
     TELEGRAM_BOT_TOKEN?: string;
     STADIA_API_KEY?: string;
+    // Sign-in with Face ID or a fingerprint (lib/passkeys.ts, lib/app-links.ts). All optional: the defaults fit the
+    // workers.dev address and the Android test app; APPLE_TEAM_ID is saved by the publish workflow.
+    PASSKEY_RP_ID?: string;
+    PASSKEY_ORIGINS?: string;
+    ANDROID_CERT_SHA256?: string;
+    APPLE_TEAM_ID?: string;
     TELEGRAM_BOT_USERNAME?: string;
     TELEGRAM_WEBHOOK_SECRET?: string;
     SMS_GATEWAY_URL?: string;
