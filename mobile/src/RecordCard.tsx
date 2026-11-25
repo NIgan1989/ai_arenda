@@ -5,6 +5,7 @@ import {View,Text,Pressable,StyleSheet,Platform,LayoutAnimation,UIManager} from 
 import {C,type} from './styles';
 import {T} from './tokens';
 import {SwipeConfirm} from './SwipeConfirm';
+import {useActivityClock} from './ActivityTimer';
 import {money,type Row} from './model';
 import {processJourney} from '../../lib/process-journey';
 import {processStatus} from '../../lib/process-status';
@@ -36,6 +37,14 @@ export function RecordActions({actions,busy,soft=false}:{actions:(RecordAction|f
 type Maybe<V>=V|false|null|undefined|''|0;
 // `compact` (the «Мои брони» list): the card is one short row (what, how much, when, the status) and opens in place
 // into the whole card by a tap; the title row of an open card folds it back. `startOpen` opens it at once (a stay going on now).
+// A guest's request waits for the owner's answer: the time left, large, with a line that runs out, as a taxi app says
+// when the car comes. The interval is held for the guest and nothing is charged yet.
+export function AnswerWait({item}:{item:Row}){
+ const now=useActivityClock(),until=Number(item.expires_at)||0,from=Number(item.created_at)||until-900,left=until-now;
+ if(!now||!until||left<=0)return null;
+ const share=Math.max(0,Math.min(1,left/Math.max(60,until-from))),mm=Math.floor(left/60),ss=String(left%60).padStart(2,'0');
+ return <View accessible accessibilityLabel={t('Владелец ответит через {v}',{v:mm+':'+ss})} style={r.wait}><Text style={r.waitLabel}>{t('Владелец ответит через')}</Text><Text style={r.waitDigits}>{mm}:{ss}</Text><View style={r.waitBar}><View style={[r.waitFill,{width:`${Math.round(share*100)}%` as const}]}/></View><Text style={r.waitNote}>{t('Время придержано для вас. Деньги не списаны.')}</Text></View>;
+}
 if(Platform.OS==='android')UIManager.setLayoutAnimationEnabledExperimental?.(true);
 const smooth=()=>LayoutAnimation.configureNext(LayoutAnimation.create(220,LayoutAnimation.Types.easeInEaseOut,LayoutAnimation.Properties.opacity));
 export function DealCard({kind,item,role,userId,application,thread,line:own,actions,busy,always,details,extra,onMap,compact=false,startOpen=false}:{kind:'booking'|'job';item:Row;role:string;userId:string;application?:Row;thread?:ProcessThread|null;line?:string|null;actions:Maybe<RecordAction>[];busy:boolean;always?:React.ReactNode;details?:React.ReactNode;extra?:React.ReactNode;onMap?:()=>void;compact?:boolean;startOpen?:boolean}){
@@ -62,6 +71,7 @@ export function DealCard({kind,item,role,userId,application,thread,line:own,acti
   </Pressable>
   {!flow.stopped&&<View style={r.bar} accessible accessibilityLabel={done?t('Завершено'):t('Шаг {v} из {total}',{v:(step+1),total})}>{Array.from({length:total},(_,index)=><View key={index} style={[r.segment,done||index<step?{backgroundColor:C.night}:index===step?{backgroundColor:C.gold}:null]}/>)}</View>}
   {!(flow.stopped&&kind==='booking')&&<Text style={r.dealLine}>{line}</Text>}
+  {kind==='booking'&&item.status==='requested'&&item.guest_id===userId&&<AnswerWait item={item}/>}
   {always}
   {!!main&&<RecordActions busy={busy} actions={[main]}/>}
   <View style={r.sideRow}>{toggle(open?t('Свернуть'):t('Подробнее'),open,()=>setOpen(v=>!v),true)}{hasMore&&toggle(more?t('Скрыть'):t('Ещё'),more,()=>setMore(v=>!v),false)}</View>
@@ -91,6 +101,8 @@ const r=StyleSheet.create({
  rowStatus:{...type.caption,fontWeight:'600'},rowDo:{color:C.accentPressed},rowDemo:{color:C.muted,fontWeight:'600'},dot:{width:8,height:8,borderRadius:R.full},
  chevron:{...type.label,color:C.muted,lineHeight:16},chevronUp:{transform:[{rotate:'180deg'}]},pressed:{opacity:.7},dealTitle:{...type.body,color:C.ink,fontWeight:'700'},dealLine:{...type.label,color:C.inkSoft},
  whereRow:{flexDirection:'row',alignItems:'center',gap:8},whereText:{flex:1,minWidth:0},
+ wait:{gap:4,padding:16,borderRadius:R.lg,backgroundColor:C.surface,borderWidth:1,borderColor:C.line},waitLabel:{...type.label,color:C.muted},waitDigits:{...type.display,color:C.ink,fontWeight:'800',letterSpacing:-1,fontVariant:['tabular-nums']},
+ waitBar:{height:6,borderRadius:R.full,backgroundColor:C.surfaceAlt,overflow:'hidden',marginTop:4},waitFill:{height:'100%',borderRadius:R.full,backgroundColor:C.accent},waitNote:{...type.caption,color:C.muted,marginTop:4},
  mapLink:{flexDirection:'row',alignItems:'center',gap:4,minHeight:32,paddingHorizontal:12,borderRadius:R.full,backgroundColor:C.accentSoft},mapLinkText:{...type.caption,fontWeight:'600',color:C.accentPressed},
  mapPin:{width:12,height:12,borderRadius:R.full,borderBottomRightRadius:0,backgroundColor:C.accentPressed,transform:[{rotate:'45deg'}],alignItems:'center',justifyContent:'center'},mapPinDot:{width:4,height:4,borderRadius:R.full,backgroundColor:C.accentSoft},
 });

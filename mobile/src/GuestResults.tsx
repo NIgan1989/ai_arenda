@@ -337,7 +337,7 @@ export function GuestResults({ preview, draft, mine, onFavorite, selected, onSel
               onSelect(flat.id);
             }}
             style={({ pressed }) => [r.card, { width: card }, i === index && r.cardInView, pressed && r.cardPressed]}
-          ><View style={r.cardRow}><View style={r.cardPhoto}><Photo id={Math.abs(i - index) <= 2 || i <= seen + 2 ? flat.photos?.[0] : null} alt={t('{title}, фото',{title:flat.title})} fill />{!!mine && !!onFavorite && <View style={r.heartOnPhoto}><Heart on={mine.favorites.includes(flat.id)} title={flat.title} onPress={() => onFavorite(flat.id)} /></View>}</View><View style={r.cardBody}>{!!flat.match?.best && <Text style={r.bestTag}>{bestWords}</Text>}<Text numberOfLines={1} style={h.eventTitle}>{flat.title}</Text>{ready(flat)}<Text numberOfLines={1} style={h.note}>{what(flat) || t('за {v}',{v:stayWords(draft)})}</Text><View style={r.priceRow}><Text style={h.rowPrice}>{money(flat.estimate.amount)}</Text>{!!flat.estimate.window && <Text style={r.window}>−{flat.estimate.window.percent}%</Text>}{!!flat.estimate.deal && <Text style={r.deal}>{t('Цена выгодная')}</Text>}</View></View></View>{/* Why this place answers the request, in the guest's own conditions. */}{!!why(flat) && <Text numberOfLines={1} style={r.why}>{why(flat)}</Text>}{/* Two taps to a booking: this button, then «Отправить заявку» on the check of the booking. */}<Pressable accessibilityRole="button" accessibilityLabel={t('Забронировать: {title}',{title:flat.title})} disabled={busy} onPress={() => onBook(flat)} style={({ pressed }) => [r.book, (pressed || busy) && h.dim]}><Text style={r.bookText}>{t('Забронировать')}</Text></Pressable></Pressable>
+          ><View style={r.cardRow}><View style={r.cardPhoto}><Photo id={Math.abs(i - index) <= 2 || i <= seen + 2 ? flat.photos?.[0] : null} alt={t('{title}, фото',{title:flat.title})} fill />{!!mine && !!onFavorite && <View style={r.heartOnPhoto}><Heart on={mine.favorites.includes(flat.id)} title={flat.title} onPress={() => onFavorite(flat.id)} /></View>}{!!flat.match?.best && <Text style={[r.bestTag, r.bestOnPhoto]}>{bestWords}</Text>}</View><View style={r.cardBody}><Text numberOfLines={1} style={h.eventTitle}>{flat.title}</Text>{ready(flat)}<Text numberOfLines={1} style={h.note}>{what(flat) || t('за {v}',{v:stayWords(draft)})}</Text><View style={r.priceRow}><Text style={h.rowPrice}>{money(flat.estimate.amount)}</Text>{!!flat.estimate.window && <Text style={r.window}>−{flat.estimate.window.percent}%</Text>}{!!flat.estimate.deal && <Text style={r.deal}>{t('Цена выгодная')}</Text>}</View></View></View>{/* Why this place answers the request, in the guest's own conditions. */}{!!why(flat) && <Text numberOfLines={1} style={r.why}>{why(flat)}</Text>}{/* Two taps to a booking: this button, then «Отправить заявку» on the check of the booking. */}<Pressable accessibilityRole="button" accessibilityLabel={t('Забронировать: {title}',{title:flat.title})} disabled={busy} onPress={() => onBook(flat)} style={({ pressed }) => [r.book, (pressed || busy) && h.dim]}><Text style={r.bookText}>{t('Забронировать')}</Text></Pressable></Pressable>
         ))}</ScrollView>{list.length > 1 && (
         <View style={r.dots} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">{Array.from({ length: Math.min(DOTS, list.length) }, (_, i) => {
             // More cards than dots: the dots follow the card in view like a window over the strip.
@@ -360,10 +360,13 @@ const r = StyleSheet.create({
   card: { borderRadius: T.radius.lg, borderWidth: 1, borderColor: C.line, backgroundColor: C.surface, overflow: 'hidden', padding: 12, gap: 8 },
   cardInView: { borderColor: C.accent, borderWidth: 2 },
   cardPressed: { opacity: 0.85 },
-  cardRow: { flexDirection: 'row', gap: 12 },
-  cardPhoto: { width: 88, height: 88, borderRadius: T.radius.md, overflow: 'hidden', backgroundColor: C.surfaceAlt },
+  // The photo comes first and wide, as on the big rental apps (Mobbin, Airbnb): the guest chooses by the picture,
+  // then reads the name and the price under it.
+  cardRow: { gap: 10 },
+  cardPhoto: { width: '100%', height: 148, borderRadius: T.radius.md, overflow: 'hidden', backgroundColor: C.surfaceAlt },
+  bestOnPhoto: { position: 'absolute', left: 8, top: 8 },
   bestTag: { ...type.caption, alignSelf: 'flex-start', paddingHorizontal: 8, paddingVertical: 2, borderRadius: T.radius.full, overflow: 'hidden', backgroundColor: C.aiFrom, color: C.onAccent, fontWeight: '600' },
-  heartOnPhoto: { position: 'absolute', right: 2, top: 2 },
+  heartOnPhoto: { position: 'absolute', right: 4, top: 4 },
   cardBody: { flex: 1, minWidth: 0, gap: 2, justifyContent: 'center' },
   priceRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', columnGap: 8 },
   why: { ...type.caption, color: C.muted, fontWeight: '600' },

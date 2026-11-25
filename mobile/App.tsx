@@ -20,7 +20,7 @@ import {lateOpen,lateNote,lateLabel} from '../lib/late-arrival';
 const CATALOG_EVERY=5*60*1000;
 // The stay as «Задерживаюсь на час» reads it (lib/late-arrival.ts).
 const lateStay=(b:Record<string,any>)=>({start:b.start,end:b.end,arrival_eta:b.terms?.arrival_eta,late_count:b.terms?.late_count});
-import { Animated,AppState,BackHandler,KeyboardAvoidingView,Linking,Platform,Pressable,ScrollView,Text,TextInput,View } from 'react-native';
+import { Animated,AppState,BackHandler,KeyboardAvoidingView,Linking,Platform,Pressable,ScrollView,StyleSheet,Text,TextInput,View } from 'react-native';
 import { SafeAreaProvider,SafeAreaView } from 'react-native-safe-area-context';
 import {NativeChats,type NativeChatInitial} from './src/NativeChats';
 import {StayRequest,CleaningRequest,HomeCleaningOrder} from './src/StayRequest';
@@ -41,7 +41,8 @@ import {registerPush,setupNotifications,usePushTaps} from './src/NativePush';
 import {resolveProcessLink} from './src/deep-links';
 import { API_URL,ApiError,StaleSessionError,getSessionGeneration,isOffline,onLegalRequired,onServerReach,request,restoreLastRole,restoreSession,saveLastRole,saveSession,setWorkspaceRole } from './src/api';
 import { baseQuestions,cleanerQuestions,date,empty,labels,money,parseDate,propertyQuestions,uid,type Flow,type Message,type Question,type Role,type Row } from './src/model';
-import { C,s } from './src/styles';
+import { C,s,type } from './src/styles';
+import { T } from './src/tokens';
 import {ActivityClockProvider,ActivityTimer} from './src/ActivityTimer';
 import {ApprovalCard} from './src/ApprovalCard';
 import {PropertyControl,upcomingStays,readinessLabels} from './src/PropertyControl';
@@ -85,7 +86,8 @@ import {background,entryReady,markGesture} from './src/loading';
 import {getHere,startHere} from './src/here';
 import {startLang,useLang} from './src/lang';
 import {nearestCity} from './src/here-rules';
-import {refundLeft} from '../lib/cancellation';
+import {refundLeft,FREE_DAILY,FREE_HOURLY} from '../lib/cancellation';
+import {Photo} from './src/ListingMedia';
 
 // What cancelling costs, in the words of the confirmation: the server counts it by the guest offer (lib/cancellation.ts).
 function cancelLine(c:Row|null|undefined,owner:boolean,paid:number){
@@ -99,7 +101,14 @@ function Button({title,onPress,secondary=false,disabled=false}:{title:string;onP
   const [focused,setFocused]=useState(false);
   return <Pressable accessibilityRole="button" accessibilityLabel={title} accessibilityState={{disabled}} disabled={disabled} onPress={onPress} onFocus={(e:any)=>{if(Platform.OS!=='web'||e?.target?.matches?.(':focus-visible'))setFocused(true);}} onBlur={()=>setFocused(false)} style={({pressed})=>[s.button,secondary&&s.secondary,focused&&s.focusRing,(disabled||pressed)&&s.disabled]}><Text style={[s.buttonText,secondary&&s.secondaryText]}>{title}</Text></Pressable>;
 }
-function BookingReview({flow,busy,done,result,onConfirm,onEdit}:{flow:Flow;busy:boolean;done?:boolean;result?:string;onConfirm:(quote:Row)=>void;onEdit:()=>void}){
+// The free cancellation of a stay as the guest offer says it (lib/cancellation.ts): a request is free until the owner
+// confirms it; a confirmed stay is free until a day before (two hours before an hourly one), a hall always.
+export function freeCancelLine(quote:Row,mode:string,now=Math.floor(Date.now()/1000)){
+  if(['banquet','cafe'].includes(quote?.kind))return tr('Отмена бесплатно: вся оплата возвращается');
+  const until=Number(quote?.start)-(mode==='hourly'?FREE_HOURLY:FREE_DAILY);
+  return until>now?tr('Отмена бесплатно до {v}',{v:date(until)}):tr('Отмена бесплатно, пока владелец не подтвердил');
+}
+function BookingReview({flow,photo,busy,done,result,onConfirm,onEdit}:{flow:Flow;photo?:string;busy:boolean;done?:boolean;result?:string;onConfirm:(quote:Row)=>void;onEdit:()=>void}){
   const [quote,setQuote]=useState<Row|null>(null),[error,setError]=useState(''),[checking,setChecking]=useState(false),[attempt,setAttempt]=useState(0);
   const [more,setMore]=useState(false);
   useEffect(()=>{let active=true;if(done)return;setChecking(true);setError('');request('/api/quote',{...flow.answers,...flow.extra}).then(value=>{if(active)setQuote(value);}).catch(e=>{if(active)setError(e.message);}).finally(()=>{if(active)setChecking(false);});return()=>{active=false;};},[flow,attempt,done]);
@@ -111,23 +120,31 @@ function BookingReview({flow,busy,done,result,onConfirm,onEdit}:{flow:Flow;busy:
   // A banquet hall: the slot of the day, what it is for, the price per guest and the least order.
   const perGuest=Number(quote?.policy?.extra_guest_price)||0,least=Number(quote?.policy?.included_guests)||0,occasion=hall?occasionTitle(String(flow.answers.occasion||'')):'';
   const guestsText=guests+' '+forms(guests,'гость','гостя','гостей'),depositSum=money(deposit),minutes=quote?.cleaningMinutes;
-  return <View style={s.card}><Text accessibilityRole="header" style={s.cardTitle}>{quote?.title||tr('Условия бронирования')}</Text>
+  // The place comes first with its photo, as on the big rental apps: the guest sees what is being booked.
+  return <View style={s.card}><View style={rv.head}>{!!photo&&<View style={rv.thumb}><Photo id={photo} alt={tr('{title}, фото',{title:String(quote?.title||'')})} fill/></View>}<Text accessibilityRole="header" style={[s.cardTitle,rv.title]}>{quote?.title||tr('Условия бронирования')}</Text></View>
     {checking&&<View style={s.progressRow}><Thinking size="sm"/><Text style={s.meta}>{tr('Проверяю стоимость и свободный интервал…')}</Text></View>}
     {!!error&&<><Text accessibilityRole="alert" style={s.error}>{error}</Text><Button title={tr('Проверить ещё раз')} secondary disabled={busy||checking} onPress={()=>setAttempt(v=>v+1)}/></>}
     {quote&&!error&&!checking&&<>
       <Text style={s.text}>{hall?[occasion&&flow.answers.occasion!=='other'?occasion:'',banquetWhen(new Date((Number(quote.start)+18000)*1000).toISOString().slice(0,16)),guestsText].filter(Boolean).join(' · '):date(quote.start)+' → '+date(quote.end)+' · '+guestsText}</Text>
       <View style={s.quoteTotal}><Text style={s.key}>{bath?tr('Стоимость'):tr('Стоимость проживания')}</Text><Text style={s.price}>{money(quote.amount)}</Text></View>
+      <Text style={rv.free}>{'✓ '+freeCancelLine(quote,String(flow.answers.billingMode||''))}</Text>
       {!!quote.repeat&&<Text style={s.meta}>{tr('Скидка постоянного гостя −{n}%',{n:quote.repeat.percent})}{' · '+tr('без неё {price}',{price:money(quote.repeat.regular*Number(quote.periods))})}</Text>}
       <Text style={s.meta}>{deposit?(hall?tr('Депозит {sum} вернётся после мероприятия.',{sum:depositSum}):bath?tr('Депозит {sum} вернётся после ухода.',{sum:depositSum}):tr('Депозит {sum} вернётся после выезда.',{sum:depositSum}))+' ':''}{auto?tr('Обычно бронь подтверждается сразу, иначе владелец ответит за 15 минут.'):tr('Владелец ответит за 15 минут.')}{' '}{tr('Сейчас деньги не списываются.')}</Text>
       {hall&&perGuest>0&&<Text style={s.meta}>{tr('{price} за гостя × {n}.',{price:money(perGuest),n:Math.max(guests,least)})}{guests<least?' '+tr('Наименьший заказ зала: {least} гостей.',{least}):''}{' '}{tr('При отмене вся оплата возвращается: заведение может заявить только расходы на ваш заказ, подтверждённые документами.')}</Text>}
       {bath&&!hall&&extra>0&&<Text style={s.meta}>{tr('В цене гостей: {included}. Доплата за ещё {extra}: {sum}.',{included:guests-extra,extra,sum:money(Number(quote.guestSurcharge)*Number(quote.periods))})}</Text>}
       {more&&<>{!hall&&<Text style={s.meta}>{quote.periods} × {money(quote.price)} · {tr(quote.unitLabel)}. {bath?tr('После вас {minutes} мин. на уборку.',{minutes}):tr('После выезда {minutes} мин. на подготовку жилья.',{minutes})}</Text>}{!!quote.policy.house_rules&&<Text style={s.meta}>{quote.policy.house_rules}</Text>}</>}
       <Text style={s.meta}>{hall?tr('Нажимая кнопку, вы соглашаетесь с датой, ценой на гостя, депозитом и правилами зала.'):bath?tr('Нажимая кнопку, вы соглашаетесь с датами, тарифом, депозитом и правилами объекта.'):tr('Нажимая кнопку, вы соглашаетесь с датами, тарифом, депозитом и правилами жилья.')}</Text>
-      <Button title={auto?tr('Забронировать за {v}',{v:money(quote.amount)}):tr('Отправить заявку')} disabled={busy} onPress={()=>onConfirm(quote)}/>
+      {/* One gesture sends the request, as every main confirmation of the app («Проведите»). */}
+      <SwipeConfirm label={auto?tr('Проведите: забронировать за {v}',{v:money(quote.amount)}):tr('Проведите: отправить заявку')} disabled={busy} onConfirm={()=>onConfirm(quote)}/>
     </>}
     <View style={s.buttonRow}>{quote&&!error&&!checking&&<Button title={more?tr('Свернуть'):tr('Правила и расчёт')} secondary disabled={busy} onPress={()=>setMore(v=>!v)}/>}<Button title={hall?tr('Изменить'):tr('Изменить даты')} secondary disabled={busy||checking} onPress={onEdit}/></View>
   </View>;
 }
+const rv=StyleSheet.create({
+  head:{flexDirection:'row',alignItems:'center',gap:12},title:{flex:1,minWidth:0},
+  thumb:{width:64,height:64,borderRadius:T.radius.md,overflow:'hidden',backgroundColor:C.surfaceAlt},
+  free:{...type.caption,alignSelf:'flex-start',paddingHorizontal:8,paddingVertical:4,borderRadius:T.radius.sm,overflow:'hidden',backgroundColor:C.successSoft,color:C.success,fontWeight:'600'}
+});
 function Auth({onSubmit,busy,titled=true}:{titled?:boolean;onSubmit:(mode:string,phone:string,password:string,name?:string,city?:string,recovery?:string)=>Promise<void>;busy:boolean}){
   const [mode,setMode]=useState('login'),[phone,setPhone]=useState(''),[password,setPassword]=useState(''),[name,setName]=useState(''),[city,setCity]=useState(''),[recovery,setRecovery]=useState(''),[error,setError]=useState('');
   // «Забыли пароль?»: first the number, then the code that came in Telegram or that the administrator dictated, and a new password.
@@ -510,7 +527,7 @@ function Chat(){
   function confirm(path:string,body:Row,title:string,after?:string,note?:string){const id=path.split('/')[1],item=(path.startsWith('bookings/')?data.bookings:data.jobs).find((v:Row)=>v.id===id);say(tr('Подтвердите действие: {v}.',{v:title.toLowerCase()}),'confirm',{path,body:{...body,expectedVersion:path.startsWith('bookings/')?item?.terms?.version:item?.version},title,note,subject:item?.title,dates:item?date(item.start)+' → '+date(item.end):'',amount:item?.amount??item?.fee,after});}
   function review(m:Message){
     const f=m.payload!.flow as Flow;
-    if(f.kind==='booking')return <><BookingReview flow={f} busy={busy} done={m.done} result={m.result} onConfirm={quote=>perform(f.endpoint,{...f.answers,...f.extra,expectedAmount:quote.amount,expectedPolicyVersion:quote.policy.version,acceptTerms:true},m.id,f.after)} onEdit={()=>{finish(m.id,tr('Изменено'));const next={...f,index:0};setFlow(next);say(next.questions[0].text);}}/>{!!m.payload!.back&&!m.done&&!dealOpen&&<Button title={tr('Назад к вариантам')} secondary disabled={busy} onPress={backToMap}/>}</>;
+    if(f.kind==='booking')return <><BookingReview flow={f} photo={m.payload!.photo} busy={busy} done={m.done} result={m.result} onConfirm={quote=>perform(f.endpoint,{...f.answers,...f.extra,expectedAmount:quote.amount,expectedPolicyVersion:quote.policy.version,acceptTerms:true},m.id,f.after)} onEdit={()=>{finish(m.id,tr('Изменено'));const next={...f,index:0};setFlow(next);say(next.questions[0].text);}}/>{!!m.payload!.back&&!m.done&&!dealOpen&&<Button title={tr('Назад к вариантам')} secondary disabled={busy} onPress={backToMap}/>}</>;
     const questions=f.kind==='profile'?[...baseQuestions,...cleanerQuestions]:f.kind==='property'?propertyQuestions:f.questions;
     return <View style={s.card}><Text style={s.cardTitle}>{({profile:tr('Ваш профиль'),property:tr('Ваше жильё'),job:tr('Уборка'),report:tr('Отчёт'),confirm:tr('Подтверждение')} as Row)[f.kind]||tr('Проверьте сведения')}</Text>
       {questions.filter(q=>f.answers[q.key]!==undefined).map(q=><View key={q.key} style={s.keyval}><Text style={s.key}>{q.label}</Text><Text style={s.value}>{q.date?date(Date.parse(f.answers[q.key])/1000):String(f.answers[q.key])}</Text></View>)}
@@ -545,7 +562,7 @@ function Chat(){
     const next:Flow={kind:'booking',questions,index:questions.length,answers:{billingMode:stay.mode,...stayISO(stay),guests:stay.guests,...(stay.occasion?{occasion:stay.occasion}:{})},endpoint:'bookings',after:'bookings',role:'guest',extra:{propertyId:property.id,requestKey:uid()}};
     // The check of the booking is a sheet of its own: one card, the map behind it, nothing of the earlier talk.
     setDealCover(0);setDeal({kind:'review',id:property.id,after:messages.length?messages[messages.length-1].id:''});
-    setActor('guest');say('','review',{flow:next,back:true});
+    setActor('guest');say('','review',{flow:next,back:true,photo:found.photos?.[0]||property.photos?.[0]});
   }
   // From a flat or a booking check opened on the map: back to the map, where the list of found flats is kept.
   // Brings a block that has just opened inside a card (changing the dates of a booking) into view: a tall block from its
