@@ -29,7 +29,7 @@ export function ConfirmSheet({ask,busy,onConfirm,onClose}:{ask:ConfirmAsk|null;b
 const c=StyleSheet.create({
  subject:{...type.title,color:C.ink},
  note:{marginTop:12},
- done:{flexDirection:'row',alignItems:'flex-start',gap:10,marginTop:16},
+ done:{flexDirection:'row',alignItems:'flex-start',gap:8,marginTop:16},
  tick:{...type.title,color:C.success},
  doneText:{...type.body,color:C.ink,flex:1},
 });
