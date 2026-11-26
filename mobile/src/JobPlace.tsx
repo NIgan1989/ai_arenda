@@ -1,6 +1,6 @@
 import {t as tr,tc} from '../../lib/i18n';
 import React,{useState} from 'react';
-import {View,Text,ScrollView,StyleSheet,type NativeScrollEvent,type NativeSyntheticEvent} from 'react-native';
+import {View,Text,ScrollView,Pressable,StyleSheet,LayoutAnimation,type NativeScrollEvent,type NativeSyntheticEvent} from 'react-native';
 import {C,type} from './styles';
 import {T} from './tokens';
 import {Photo} from './ListingMedia';
@@ -11,14 +11,19 @@ const R=T.radius;
 // The place to clean, as on the site (components/job-place.tsx): photos to swipe, the kind of housing, the area of
 // the city with the address hidden until the assignment, its size and what to clean.
 // compact: one row for a list of jobs, with the first photo and the short line.
-export function JobPlace({job,compact=false}:{job:Row;compact?:boolean}){
- const v=jobPlace(job),alt=tr('Фото жилья: {v}',{v:job.title||v.kind}),[width,setWidth]=useState(0),[page,setPage]=useState(0);
- if(compact)return <View style={p.row}>
+// fold: the place in a job's card, high under its title: one row, and a tap opens the photos and all its details below it.
+export function JobPlace({job,compact=false,fold=false}:{job:Row;compact?:boolean;fold?:boolean}){
+ const v=jobPlace(job),alt=tr('Фото жилья: {v}',{v:job.title||v.kind}),[width,setWidth]=useState(0),[page,setPage]=useState(0),[open,setOpen]=useState(false);
+ const row=(chevron:boolean)=><>
   <View style={p.thumb}><Photo id={v.photos[0]} fill alt={alt}/>{v.photos.length>1&&<Text style={p.thumbCount}>{v.photos.length}</Text>}</View>
-  <View style={p.rowText}><Text numberOfLines={1} style={p.rowTitle}>{v.summary}</Text>{!!(v.street||v.where)&&<Text numberOfLines={1} style={p.rowNote}>{v.street||v.where}</Text>}{!!v.tasks.length&&<Text numberOfLines={1} style={p.rowNote}>{v.tasks.join(' · ')}</Text>}</View>
- </View>;
+  <View style={p.rowText}><Text numberOfLines={1} style={p.rowTitle}>{v.summary}</Text>{!!(v.street||v.where)&&<Text numberOfLines={1} style={p.rowNote}>{v.street||v.where}</Text>}{!!v.tasks.length&&!open&&<Text numberOfLines={1} style={p.rowNote}>{v.tasks.join(' · ')}</Text>}</View>
+  {chevron&&<Text style={[p.chevron,open&&p.chevronUp]}>⌄</Text>}
+ </>;
+ if(compact)return <View style={p.row}>{row(false)}</View>;
  const shown=v.photos.slice(0,8),onScroll=(e:NativeSyntheticEvent<NativeScrollEvent>)=>{if(width)setPage(Math.round(e.nativeEvent.contentOffset.x/width));};
- return <View style={p.card} accessibilityLabel={tr('Жильё для уборки')}>
+ const head=fold?<Pressable accessibilityRole="button" accessibilityLabel={tr('Жильё для уборки')+': '+v.summary} accessibilityHint={open?undefined:tr('Открыть подробности')} accessibilityState={{expanded:open}} onPress={()=>{LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);setOpen(x=>!x);}} style={({pressed})=>[p.row,p.foldRow,pressed&&p.pressed]}>{row(true)}</Pressable>:null;
+ if(fold&&!open)return <View style={p.card}>{head}</View>;
+ return <View style={p.card} accessibilityLabel={fold?undefined:tr('Жильё для уборки')}>{head}
   {/* Without photos there is no empty half-screen: the kind of housing opens the first line instead (concept, Wolt). */}
   {shown.length>0&&<View style={p.gallery} onLayout={e=>setWidth(e.nativeEvent.layout.width)}>
    {width?<ScrollView horizontal pagingEnabled showsHorizontalScrollIndicator={false} onMomentumScrollEnd={onScroll} onScroll={onScroll} scrollEventThrottle={64}>
@@ -59,7 +64,8 @@ const p=StyleSheet.create({
  taskText:{...type.body,color:C.inkSoft,flex:1},
  kit:{flexDirection:'row',flexWrap:'wrap',alignItems:'center',gap:8},kitLabel:{...type.caption,color:C.muted,marginRight:4},
  chip:{...type.caption,color:C.inkSoft,paddingHorizontal:12,paddingVertical:4,borderRadius:R.full,borderWidth:1,borderColor:C.line,overflow:'hidden'},
- row:{flexDirection:'row',alignItems:'center',gap:12},
+ row:{flexDirection:'row',alignItems:'center',gap:12},foldRow:{padding:12},pressed:{opacity:0.7},
+ chevron:{...type.label,color:C.muted},chevronUp:{transform:[{rotate:'180deg'}]},
  thumb:{width:64,height:64,borderRadius:R.md,overflow:'hidden',backgroundColor:C.surfaceAlt},
  thumbCount:{position:'absolute',right:4,bottom:4,minWidth:20,paddingHorizontal:8,borderRadius:R.full,overflow:'hidden',backgroundColor:'rgba(14,19,36,0.6)',color:C.onAccent,fontSize:12,lineHeight:20,textAlign:'center'},
  rowText:{flex:1,minWidth:0,gap:2},rowTitle:{...type.label,fontWeight:'600',color:C.ink},rowNote:{...type.caption,color:C.muted},

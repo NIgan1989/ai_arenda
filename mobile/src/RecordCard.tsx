@@ -73,7 +73,7 @@ export function feeOf(amount:number,fee:OwnerFee,at:number){
 export type OwnerAsk={card:Row;onDecide:(body:Row)=>void;onReview:()=>void;payout?:Row|null;onMethod?:(page:'payout')=>void};
 // «•• 45 67»: only the last digits of a Kaspi number, as a bank card shows «•• 0222».
 const tail=(phone:string)=>{const d=String(phone||'').replace(/\D/g,'');return d.length>=4?'•• '+d.slice(-4,-2)+' '+d.slice(-2):'';};
-export function DealCard({kind,item,role,userId,application,thread,line:own,actions,busy,always,details,extra,onMap,compact=false,startOpen=false,request}:{request?:OwnerAsk;kind:'booking'|'job';item:Row;role:string;userId:string;application?:Row;thread?:ProcessThread|null;line?:string|null;actions:Maybe<RecordAction>[];busy:boolean;always?:React.ReactNode;details?:React.ReactNode;extra?:React.ReactNode;onMap?:()=>void;compact?:boolean;startOpen?:boolean}){
+export function DealCard({kind,item,role,userId,application,thread,line:own,actions,busy,always,details,extra,onMap,compact=false,startOpen=false,request,place}:{request?:OwnerAsk;kind:'booking'|'job';item:Row;role:string;userId:string;application?:Row;thread?:ProcessThread|null;line?:string|null;actions:Maybe<RecordAction>[];busy:boolean;always?:React.ReactNode;details?:React.ReactNode;extra?:React.ReactNode;onMap?:()=>void;compact?:boolean;startOpen?:boolean;place?:React.ReactNode}){
  const [open,setOpen]=useState(false),[more,setMore]=useState(false),[unfolded,setUnfolded]=useState(startOpen),clock=useActivityClock();
  const ownerFee=useOwnerFee(kind==='booking'&&!!request);
  let pics:string[]=[];try{pics=Array.isArray(item.property_photos)?item.property_photos:JSON.parse(item.property_photos||'[]');}catch{pics=[];}
@@ -157,12 +157,16 @@ export function DealCard({kind,item,role,userId,application,thread,line:own,acti
    <Text style={[r.chevron,shown&&r.chevronUp]}>⌄</Text>
   </Pressable>
   {halves&&<View style={r.halves}><View style={r.half}><Text style={r.halfKey}>{t('Заезд')}</Text><Text style={r.halfValue}>{recordSpan(item.start)}</Text></View><View style={[r.half,r.halfLine]}><Text style={r.halfKey}>{t('Выезд')}</Text><Text style={r.halfValue}>{recordSpan(item.end)}</Text></View></View>}
+  {/* A job: the place right under the title, and the line with the main button at the very bottom, under the details. */}
+  {place}
+  {!!place&&shown&&<Text style={[r.sumNote,!!item.payment_received_at&&{color:C.success}]}>{money(item.fee)} {jobPayNote(item)}</Text>}
+  {!!place&&shown&&details}
   {!(flow.stopped&&kind==='booking')&&!done&&<Text style={r.dealLine}>{line}</Text>}
   {kind==='booking'&&item.status==='requested'&&item.guest_id===userId&&<AnswerWait item={item}/>}
   {always}
   {!!main&&<RecordActions busy={busy} actions={[main]}/>}
-  {shown&&kind==='job'&&<Text style={[r.sumNote,!!item.payment_received_at&&{color:C.success}]}>{money(item.fee)} {jobPayNote(item)}</Text>}
-  {shown&&details}
+  {!place&&shown&&kind==='job'&&<Text style={[r.sumNote,!!item.payment_received_at&&{color:C.success}]}>{money(item.fee)} {jobPayNote(item)}</Text>}
+  {!place&&shown&&details}
   {more&&<><RecordActions soft busy={busy} actions={rest}/>{extra}</>}
  </View>;
 }
