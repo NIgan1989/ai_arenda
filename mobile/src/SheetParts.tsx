@@ -47,8 +47,9 @@ export const h=StyleSheet.create({
  plate:{top:10,width:'auto',height:48,alignItems:'stretch'},
  chats:{position:'absolute',top:12,right:12,width:H.touch,height:H.touch,borderRadius:R.full,backgroundColor:C.glassStrong,borderWidth:1,borderColor:C.glassLine,alignItems:'center',justifyContent:'center',...shadow},
  // The guest's answer: the sheet steps aside, its card floats over the map (MapHome floating).
- sheetSolid:{backgroundColor:C.surface},sheetFloat:{backgroundColor:'transparent',borderTopWidth:0,shadowOpacity:0,elevation:0},sheetContentFloat:{paddingHorizontal:0,paddingBottom:12},gone:{height:0,overflow:'hidden'},floatBar:{position:'absolute',top:12,left:12,right:12,gap:8},
- capRow:{flexDirection:'row',alignItems:'center',gap:8},
+ sheetSolid:{backgroundColor:C.surface},sheetFloat:{backgroundColor:'transparent',borderTopWidth:0,shadowOpacity:0,elevation:0},sheetContentFloat:{paddingHorizontal:0,paddingBottom:12},gone:{height:0,overflow:'hidden'},floatBar:{position:'absolute',top:72,left:12,right:12,gap:8},
+ capRow:{flexDirection:'row',alignItems:'center',gap:8},capKind:{width:56,height:56,flexDirection:'row',gap:2},capChevron:{width:10,height:10,tintColor:C.muted,transform:[{rotate:'90deg'}]},capsuleRow:{flexDirection:'row',alignItems:'center',justifyContent:'flex-start',gap:12},
+ floatCard:{backgroundColor:C.surface,borderRadius:R.lg,padding:12,marginHorizontal:12,...shadow},floatTrips:{backgroundColor:C.surface,marginHorizontal:12,...shadow},
  capRound:{width:48,height:48,borderRadius:R.full,backgroundColor:C.surface,alignItems:'center',justifyContent:'center',...shadow},capBack:{width:18,height:18,tintColor:C.ink,transform:[{rotate:'180deg'}]},
  capsule:{flex:1,minWidth:0,minHeight:56,borderRadius:R.full,backgroundColor:C.surface,alignItems:'center',justifyContent:'center',paddingHorizontal:16,...shadow},
  capTitle:{...type.label,color:C.ink,fontWeight:'700'},capLine:{...type.caption,color:C.muted},
