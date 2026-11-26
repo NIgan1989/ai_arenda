@@ -37,14 +37,15 @@ export function usePhotoSize(uri:string,known?:Size|null){
 // onPrev/onNext: a set of photos (a cleaning report, the photos of a place) is leafed by a swipe to the side or with «‹ ›».
 // loading: the photo is still on its way; the viewer opens at once with a quiet spinner instead of waiting.
 // id: which photo of the set this is, so a new one starts fresh even before its picture has come; alt: its spoken name.
-type Props={id?:string;alt?:string;loading?:boolean;uri:string;visible:boolean;onClose:()=>void;size?:Size|null;title?:string;caption?:string;onPrev?:()=>void;onNext?:()=>void};
+// dots: where this photo is in its set, as thin marks at the bottom (a set of up to a dozen).
+type Props={dots?:{count:number;index:number};id?:string;alt?:string;loading?:boolean;uri:string;visible:boolean;onClose:()=>void;size?:Size|null;title?:string;caption?:string;onPrev?:()=>void;onNext?:()=>void};
 export function PhotoViewer(props:Props){
  return <Modal visible={props.visible} transparent animationType="fade" statusBarTranslucent navigationBarTranslucent supportedOrientations={['portrait','landscape']} onRequestClose={props.onClose}>
   {props.visible&&<SafeAreaProvider><Viewer key={props.id||props.uri} {...props}/></SafeAreaProvider>}
  </Modal>;
 }
 
-function Viewer({uri,alt,loading,onClose,size:known,title,caption,onPrev,onNext}:Props){
+function Viewer({dots,uri,alt,loading,onClose,size:known,title,caption,onPrev,onNext}:Props){
  // The viewer's own area as laid out, so the photo is centred even where the window and the modal differ.
  const screen=useWindowDimensions(),[area,setArea]=useState<Size|null>(null),window=area||screen,insets=useSafeAreaInsets(),size=usePhotoSize(uri,known),box=fit(size,window);
  const [chrome,setChrome]=useState(true),[reduce,setReduce]=useState(false),[failed,setFailed]=useState(false);
@@ -145,6 +146,7 @@ function Viewer({uri,alt,loading,onClose,size:known,title,caption,onPrev,onNext}
    <Pressable accessibilityRole="button" accessibilityLabel={t('Закрыть фото')} hitSlop={8} onPress={()=>close()} style={({pressed})=>[v.close,pressed&&v.pressed]}><View style={[v.cross,{transform:[{rotate:'45deg'}]}]}/><View style={[v.cross,{transform:[{rotate:'-45deg'}]}]}/></Pressable>
   </View>}
   {chrome&&[[onPrev,'‹',t('Предыдущее фото'),{left:Math.max(insets.left,8)}],[onNext,'›',t('Следующее фото'),{right:Math.max(insets.right,8)}]].map(([go,mark,label,side]:any)=>!!go&&<Pressable key={mark} accessibilityRole="button" accessibilityLabel={label} hitSlop={8} onPress={go} style={({pressed})=>[v.close,v.side2,side,pressed&&v.pressed]}><Text style={v.mark}>{mark}</Text></Pressable>)}
+  {chrome&&!caption&&!!dots&&dots.count>1&&dots.count<=12&&<View pointerEvents="none" style={[v.dots,{bottom:Math.max(insets.bottom,12)+12}]}>{Array.from({length:dots.count},(_,k)=><View key={k} style={[v.dot,k===dots.index&&v.dotOn]}/>)}</View>}
   {chrome&&!!caption&&<View pointerEvents="none" style={[v.bottom,{paddingBottom:Math.max(insets.bottom,12)+8,paddingLeft:Math.max(insets.left,16),paddingRight:Math.max(insets.right,16)}]}><Text numberOfLines={4} style={v.caption}>{caption}</Text></View>}
  </View>;
 }
@@ -157,5 +159,6 @@ const v=StyleSheet.create({
  cross:{position:'absolute',width:20,height:2,borderRadius:1,backgroundColor:C.onAccent},pressed:{opacity:.6},
  title:{flex:1,textAlign:'center',color:C.onAccent,fontSize:16,lineHeight:20,fontWeight:'600'},
  bottom:{position:'absolute',left:0,right:0,bottom:0,paddingTop:12,backgroundColor:'rgba(0,0,0,0.45)'},
+ dots:{position:'absolute',left:0,right:0,flexDirection:'row',justifyContent:'center',gap:6},dot:{width:6,height:6,borderRadius:3,backgroundColor:'rgba(255,255,255,0.35)'},dotOn:{width:18,backgroundColor:C.onAccent},
  caption:{color:C.onAccent,fontSize:16,lineHeight:24},failed:{color:C.onAccent,fontSize:16},
 });
