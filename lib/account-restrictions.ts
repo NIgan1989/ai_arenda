@@ -12,6 +12,9 @@ export type Restriction='hold'|'blocked';
 
 export const restrictedOwnerSql=(alias='p')=>{if(!/^[a-zA-Z][a-zA-Z0-9_]*$/.test(alias))throw new Error('Invalid table alias');return `NOT EXISTS(SELECT 1 FROM account_restrictions ar WHERE ar.user_id=${alias}.owner_id)`;};
 export async function restrictionOf(db:D1Database,userId:string){return one(db,'SELECT kind,reason,booking_id,created_at FROM account_restrictions WHERE user_id=?',userId);}
+// A hold the background put for an unreturned refund (lib/owner-silence.ts): it lifts itself once the money is back.
+// A guest's «Меня не заселили» takes such a hold over, so only a person lifts it then.
+export const REFUND_HOLD_BY='ai-administrator:refund';
 export const BLOCKED_TEXT='Аккаунт заблокирован администратором сервиса. Если это ошибка, напишите в поддержку.';
 
 // The guest is at the door (from 15 minutes before the arrival) and nobody lets them in, or the home is not there.
@@ -21,7 +24,7 @@ export async function reportNotLetIn(s:RentalService,b:Row,terms:Row|null,text:s
  const unpaid=await rows(s.db,"SELECT b.id,b.guest_id,p.title FROM bookings b JOIN properties p ON p.id=b.property_id JOIN booking_terms tt ON tt.booking_id=b.id WHERE p.owner_id=? AND b.id<>? AND b.status IN ('requested','confirmed') AND b.start>? AND tt.paid_amount=0 AND tt.actual_checkin IS NULL",b.owner_id,b.id,t);
  await s.db.batch([
   issue.statement,
-  q(s.db,"INSERT OR IGNORE INTO account_restrictions(user_id,kind,reason,booking_id,created_by,created_at) VALUES (?,'hold',?,?,?,?)",b.owner_id,'Гость сообщил, что его не заселили в «'+title+'».',b.id,s.userId,t),
+  q(s.db,"INSERT INTO account_restrictions(user_id,kind,reason,booking_id,created_by,created_at) VALUES (?,'hold',?,?,?,?) ON CONFLICT(user_id) DO UPDATE SET reason=excluded.reason,booking_id=excluded.booking_id,created_by=excluded.created_by,created_at=excluded.created_at WHERE account_restrictions.created_by=?",b.owner_id,'Гость сообщил, что его не заселили в «'+title+'».',b.id,s.userId,t,REFUND_HOLD_BY),
   q(s.db,'UPDATE booking_terms SET checkin_reported_at=NULL,version=version+1 WHERE booking_id=? AND actual_checkin IS NULL',b.id),
   s.notify(b.owner_id,'Гость сообщил, что его не заселили в «'+title+'». Пока администратор разбирается, ваши объекты скрыты с карты и не принимают новые брони. Ответьте в обращении по брони и верните гостю деньги, если он их переводил.','not-let-in:'+b.id,'owner'),
   ...unpaid.map(u=>s.notify(u.guest_id,'По «'+u.title+'» администратор проверяет жалобу другого гостя. Пока проверка идёт, не переводите деньги заранее: платите только при заселении, когда вы внутри.','owner-hold:'+u.id,'guest')),

@@ -33,7 +33,8 @@ import {payoutOf,payoutState} from '../../../lib/payout';
 import {adminFactorPassed,adminFactorState,adminFactorAction,adminTelegramRelinkBlocked} from '../../../lib/admin-factor';
 import {readPlatformAdmin,writePlatformAdmin} from '../../../lib/platform-admin';
 import {requestCleanerAdmission} from '../../../lib/pilot-governance';
-import {ensurePublishReview} from '../../../lib/participant-security';
+import {ensurePublishReview,phoneCheck} from '../../../lib/participant-security';
+import type {OperationConfig} from '../../../lib/operation-core';
 import {addressRequest,withCanonicalCity} from '../../../lib/address-api';
 export const dynamic='force-dynamic';
 // Routes that stay open before the documents are accepted: the person's own settings, leaving and deleting the account,
@@ -103,7 +104,7 @@ async function handle(request:Request, context:{params:Promise<{path:string[]}>}
     if(request.method==='GET'&&route.join('/')==='legal')return json({legal:await legalState(env.DB,user.userId,activeRole)});
     if(request.method==='GET'&&route[0]==='operations')return json(await readOperations(service,parseRole(activeRole),route.slice(1),env,admin));
     if(request.method==='GET'&&route.length===2&&route[0]==='media'){const mediaRole=await service.authorizeWorkspace(activeRole,'media');return json(await service.readMedia(route[1],mediaRole,env.BUCKET));}
-    if(request.method==='GET'&&route.length===1&&route[0]==='account'){await service.authorizeWorkspace(activeRole,'account');return json({...await service.accountState(activeRole==='guest'||activeRole==='owner'||activeRole==='cleaner'?activeRole:undefined),aiJournal:activeRole==='guest'||activeRole==='owner'||activeRole==='cleaner'?await aiJournal(env.DB,user.userId,activeRole):[],...await (async()=>{const p=await payoutState(env.DB,user.userId);return {payout:p.payout,payoutPending:p.pending};})(),serverTime:Math.floor(Date.now()/1000),platformAdmin:adminId,adminVerified:admin,modelConfigured:!!(env.OPENAI_API_KEY&&env.OPENAI_MODEL)});}
+    if(request.method==='GET'&&route.length===1&&route[0]==='account'){await service.authorizeWorkspace(activeRole,'account');return json({...await service.accountState(activeRole==='guest'||activeRole==='owner'||activeRole==='cleaner'?activeRole:undefined),aiJournal:activeRole==='guest'||activeRole==='owner'||activeRole==='cleaner'?await aiJournal(env.DB,user.userId,activeRole):[],...await (async()=>{const p=await payoutState(env.DB,user.userId);return {payout:p.payout,payoutPending:p.pending};})(),phoneCheck:await phoneCheck(env.DB,user.userId,env as unknown as OperationConfig),serverTime:Math.floor(Date.now()/1000),platformAdmin:adminId,adminVerified:admin,modelConfigured:!!(env.OPENAI_API_KEY&&env.OPENAI_MODEL)});}
     if(request.method==='GET'&&route.join('/')==='owner/autopilot-week'){const role=await service.authorizeWorkspace(activeRole,'account');if(role!=='owner')throw new DomainError('Отчёт автопилота видит только владелец.',403);return json(await autopilotWeek(env.DB,user.userId));}
     if(request.method==='GET'&&route.join('/')==='owner/analytics'){const role=await service.authorizeWorkspace(activeRole,'account');if(role!=='owner')throw new DomainError('«Доходы» видит только владелец.',403);return json(await ownerAnalytics(env.DB,user.userId,new URL(request.url).searchParams.get('period')));}
     if(request.method==='GET'&&route.join('/')==='admin/users'){await service.authorizeWorkspace(activeRole,'admin/users');const url=new URL(request.url);return json(await service.listUsers(admin,{role:url.searchParams.get('role'),search:url.searchParams.get('search'),page:url.searchParams.get('page')||0}));}

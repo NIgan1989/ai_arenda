@@ -29,6 +29,7 @@ import {Shift} from './Shift';
 import {OwnerAnalytics,loadAnalytics,shortTenge} from './OwnerAnalytics';
 import {CleanerEarnings,cleanerWeek} from './CleanerEarnings';
 import {IdentityDocs} from './IdentityDocs';
+import {PhoneCheck} from './PhoneCheck';
 import {PayoutForm,type Payout,type PendingPayout} from './PayoutDetails';
 import {AdminFactor} from './AdminFactor';
 import {BypassWatch} from './BypassWatch';
@@ -55,7 +56,7 @@ const shortRole:Record<Role,string>=L({guest:'Гость',owner:'Владеле�
 // settings: channels, the bank, privacy, and inside it the data and safety pages and joining another role.
 type MenuView=''|'money'|'notices'|'autopilot'|'profile'|'settings'|'safety'|`safety:${Exclude<SafetyPage,''>}`|'shift'|'payout'|'billing';
 export function AccountControl({waiting=[],jobs=[],userId='',role:active,staffPlaces=0,regularPlaces=0,notices,onOpenNotice,start,onChanged,onSignedOut,onSwitchRole,onPickRole,onRoles,onJoinRole,onAskAdministrator,onLogout,onOpenPage,onOpenEntry,onLeftNotices}:{waiting?:NoticeWaiting[];jobs?:Data[];userId?:string;staffPlaces?:number;regularPlaces?:number;notices?:Data[];onOpenNotice?:(notice:Data)=>(()=>void)|undefined;start?:'notices'|'billing'|'payout'|'money';onPickRole?:(role:Role)=>void;onRoles?:()=>void;onJoinRole?:(role:Role)=>void;onAskAdministrator?:()=>void;onOpenPage?:(id:string)=>void;onOpenEntry?:(open:JournalOpen)=>(()=>void)|undefined;role:Role;onEdit:()=>void;onChanged?:()=>Promise<unknown>;onSignedOut:(result?:Row_)=>void|Promise<void>;onSwitchRole?:()=>void;onLogout?:()=>void;onLeftNotices?:()=>void}){
- const [view,setView]=useState<MenuView>(start||''),[editing,setEditing]=useState(false),[idOpen,setIdOpen]=useState(false),[readUpTo,setReadUpTo]=useState(0),[langOpen,setLangOpen]=useState(false),lang=useLang();
+ const [view,setView]=useState<MenuView>(start||''),[editing,setEditing]=useState(false),[idOpen,setIdOpen]=useState(false),[phoneOpen,setPhoneOpen]=useState(false),[readUpTo,setReadUpTo]=useState(0),[langOpen,setLangOpen]=useState(false),lang=useLang();
  // What was new when «Уведомления» opened keeps its dot while the page is open, though the opening marks it read.
  const [freshIds,setFreshIds]=useState<string[]>([]);
  // Every opening of «Уведомления» marks what is there as read: the counter in the menu then shows only what came after.
@@ -132,6 +133,8 @@ export function AccountControl({waiting=[],jobs=[],userId='',role:active,staffPl
    </View>
    <Pressable accessibilityRole="button" accessibilityState={{expanded:idOpen}} disabled={idOk} onPress={()=>setIdOpen(v=>!v)} style={({pressed})=>[m.idRow,pressed&&a.pressed]}><RowIcon icon="shield"/><Text style={[a.title,a.wide]}>{idOk?t('✓ Личность подтверждена'):t('Личность не подтверждена')}</Text>{!idOk&&<Text style={m.link}>{idOpen?t('Свернуть'):t('Подтвердить')}</Text>}</Pressable>
    {idOpen&&!idOk&&<IdentityDocs role={active}/>}
+   {!!account.phoneCheck&&<Pressable accessibilityRole="button" accessibilityState={{expanded:phoneOpen}} disabled={account.phoneCheck.verified} onPress={()=>setPhoneOpen(v=>!v)} style={({pressed})=>[m.idRow,{marginTop:4},pressed&&a.pressed]}><RowIcon icon="check"/><Text style={[a.title,a.wide]}>{account.phoneCheck.verified?t('✓ Номер подтверждён'):t('Номер не подтверждён')}</Text>{!account.phoneCheck.verified&&<Text style={m.link}>{phoneOpen?t('Свернуть'):t('Подтвердить')}</Text>}</Pressable>}
+   {phoneOpen&&!!account.phoneCheck&&!account.phoneCheck.verified&&<PhoneCheck state={account.phoneCheck} role={active} onDone={()=>{setPhoneOpen(false);void request('/api/account').then(setAccount).catch(()=>undefined);}}/>}
    {hint}
    <Group title={t('О вас')}>{info(t('О себе'),p.bio)}{info(t('Языки общения'),p.languages)}{info(t(experience.cityLabel),p.city)}{worker&&<>{info(t('Районы работы'),p.districts)}{info(t('График'),p.availability)}{info(t('Опыт и услуги'),p.experience)}</>}{info(t('Телефон'),p.contact)}</Group>
    {!!account.reliability&&<><Group title={t('Как поднять оценку')}>{(reliabilityHints[active]||[]).map(h=><View key={h} style={a.row}><RowIcon icon="check"/><Text style={[a.title,a.wide]}>{h}</Text></View>)}</Group><ReliabilityObjection role={active}/></>}

@@ -16,6 +16,9 @@ export async function saveStayReview(s:RentalService,body:Row){
  if(!b)throw new DomainError('Бронь не найдена.',404);
  if(b.status!=='completed'||!b.actual_checkout)throw new DomainError(venueOr(b,'Оценить проживание можно после выезда.','Оценка доступна '+wordsOf(b).afterLeave+'.'),409);
  if(b.actual_checkout<epoch()-REVIEW_WINDOW)throw new DomainError('Срок для отзыва по этой брони прошёл.',409);
+ // When the service requires confirmed numbers (an SMS provider is connected), a review counts only from a confirmed one:
+ // a rating bought from throwaway accounts is the cheapest way to dress up a fake home (fraud check, step 2).
+ if((await one(s.db,"SELECT require_phone FROM pilot_policy WHERE id='global'"))?.require_phone&&!await one(s.db,'SELECT 1 x FROM phone_verifications v JOIN auth_accounts a ON a.id=v.user_id AND a.phone=v.phone WHERE v.user_id=? AND v.verified_at IS NOT NULL',s.userId))throw new DomainError('Чтобы оставить отзыв, подтвердите номер телефона: Меню → Профиль → «Подтвердить номер».',409);
  const t=epoch(),stars='★'.repeat(rating)+'☆'.repeat(5-rating);
  const result=await s.db.batch([
   q(s.db,"INSERT OR IGNORE INTO stay_reviews(booking_id,property_id,guest_id,owner_id,rating,body,created_at) SELECT ?,?,?,?,?,?,? WHERE EXISTS(SELECT 1 FROM bookings WHERE id=? AND guest_id=? AND status='completed')",b.id,b.property_id,s.userId,b.owner_id,rating,text,t,b.id,s.userId),
