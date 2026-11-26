@@ -1,6 +1,6 @@
 import {t} from '../../lib/i18n';
 import React,{useEffect,useRef,useState} from 'react';
-import {Modal,Platform,Pressable,StyleSheet,Text,View} from 'react-native';
+import {Image,Modal,Platform,Pressable,StyleSheet,Text,View} from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import {AudioQuality,IOSOutputFormat,createAudioPlayer,requestRecordingPermissionsAsync,setAudioModeAsync,useAudioRecorder,useAudioRecorderState,type AudioPlayer,type RecordingOptions} from 'expo-audio';
 import {File,Paths} from 'expo-file-system';
@@ -8,6 +8,8 @@ import {LiveMap} from './LiveMap';
 import {locate} from './here';
 import {request} from './api';
 import {C} from './styles';
+import {T} from './tokens';
+import {TILE,visibleTiles} from './map-math';
 import {MicIcon as FieldMicIcon,PinIcon} from './ChatIcons';
 import {uid,type Role} from './model';
 
@@ -62,7 +64,7 @@ export function VoiceButton({draftKey,disabled,onSend,onError}:{draftKey:string;
  function drop(){unsent.delete(draftKey);setFailed(null);}
  if(recording)return <View style={v.recording}>
   <Pressable accessibilityRole="button" accessibilityLabel={t('Удалить запись')} onPress={()=>void finish(false)} style={({pressed})=>[v.round,v.cancel,pressed&&v.pressed]}><Text style={v.cancelText}>✕</Text></Pressable>
-  <View style={v.live}><View style={v.dot}/><Text style={v.liveText}>{t('Запись {time} из 1:00',{time:seconds(ms)})}</Text></View>
+  <View style={v.live} accessibilityLabel={t('Запись {time} из 1:00',{time:seconds(ms)})}><View style={v.dot}/><Text style={v.liveText}>{seconds(ms)}</Text><View style={v.limit}><View style={[v.limitFill,{width:`${Math.min(1,ms/VOICE_MAX_MS)*100}%`}]}/></View></View>
   <Pressable accessibilityRole="button" accessibilityLabel={t('Отправить голосовое')} onPress={()=>void finish(true)} style={({pressed})=>[v.round,v.send,pressed&&v.pressed]}><Text style={v.sendText}>↑</Text></Pressable>
  </View>;
  if(failed)return <View style={v.recording}>
@@ -74,7 +76,7 @@ export function VoiceButton({draftKey,disabled,onSend,onError}:{draftKey:string;
 }
 
 // A voice message in the chat: play and pause, with its length. The recording is fetched only when played.
-export function VoiceBubble({roomId,seq,ms,role,mine}:{roomId:string;seq:number;ms:number;role:Role;mine:boolean}){
+export function VoiceBubble({roomId,seq,ms,role}:{roomId:string;seq:number;ms:number;role:Role;mine:boolean}){
  const player=useRef<AudioPlayer|null>(null),[playing,setPlaying]=useState(false),[at,setAt]=useState(0),[busy,setBusy]=useState(false),[error,setError]=useState('');
  useEffect(()=>()=>{player.current?.remove();player.current=null;},[]);
  async function toggle(){
@@ -93,8 +95,9 @@ export function VoiceBubble({roomId,seq,ms,role,mine}:{roomId:string;seq:number;
  }
  const share=ms?Math.min(1,at/ms):0;
  return <View style={v.bubble}>
-  <Pressable accessibilityRole="button" accessibilityLabel={playing?t('Пауза'):t('Слушать голосовое, {time}',{time:seconds(ms)})} onPress={()=>void toggle()} style={({pressed})=>[v.play,mine&&v.playMine,pressed&&v.pressed]}><Text style={[v.playText,mine&&v.playTextMine]}>{busy?'…':playing?'❚❚':'▶'}</Text></Pressable>
-  <View style={v.track}><View style={[v.bar,mine&&v.barMine]}><View style={[v.fill,mine&&v.fillMine,{width:`${share*100}%`}]}/></View><Text style={v.time}>{seconds(playing||at?at:ms)}</Text></View>
+  {/* ▶, the wave and the time in one row, as in a messenger (board «Экраны старой версии», 2026-11-26). */}
+  <View style={v.voiceRow}><Pressable accessibilityRole="button" accessibilityLabel={playing?t('Пауза'):t('Слушать голосовое, {time}',{time:seconds(ms)})} onPress={()=>void toggle()} style={({pressed})=>[v.play,pressed&&v.pressed]}><Text style={v.playText}>{busy?'…':playing?'❚❚':'▶'}</Text></Pressable>
+   <View style={v.wave}>{waveOf(seq,ms).map((height,i,all)=><View key={i} style={[v.waveBar,{height},i/all.length<share&&v.waveBarOn]}/>)}</View><Text style={v.time}>{seconds(playing||at?at:ms)}</Text></View>
   {!!error&&<Text style={v.error}>{error}</Text>}
  </View>;
 }
@@ -114,29 +117,40 @@ export function PlacePreview({place,to,busy,error,onSend,onCancel}:{place:{lat:n
  const point:[number,number]|null=place?[place.lon,place.lat]:null;
  return <Modal visible={!!place} animationType="slide" onRequestClose={onCancel}>
   <SafeAreaView style={v.mapScreen} edges={['top','bottom']}>
-   <View style={v.mapHead}><Pressable accessibilityRole="button" accessibilityLabel={t('Не отправлять точку')} onPress={onCancel} style={({pressed})=>[v.round,v.close,pressed&&v.pressed]}><Text style={v.cancelText}>‹</Text></Pressable><Text style={v.mapTitle}>{t('Ваша точка')}</Text></View>
+   <View style={v.mapHead}><View style={v.round}/><Text accessibilityRole="header" style={v.mapTitle}>{t('Ваша точка')}</Text><Pressable accessibilityRole="button" accessibilityLabel={t('Не отправлять точку')} onPress={onCancel} style={({pressed})=>[v.round,v.close,pressed&&v.pressed]}><Text style={v.cancelText}>✕</Text></Pressable></View>
    <View style={{flex:1}}>{point&&<LiveMap center={point} pins={[{key:'place',point,label:t('Я здесь'),tone:'active'}]} focus="place" focusKey="place"/>}</View>
    <View style={v.previewFoot}>
-    <Text style={v.placeNote}>{t('Точку увидит только {name}. Она останется в истории чата.',{name:to})}</Text>
+    <Text style={v.placeNote}>{t('Увидит только {name}',{name:to})}</Text>
     {!!error&&<Text accessibilityRole="alert" style={[v.placeNote,{color:C.danger}]}>{error}</Text>}
     <Pressable accessibilityRole="button" accessibilityLabel={t('Отправить точку: {name}',{name:to})} disabled={busy} onPress={onSend} style={({pressed})=>[v.sendWide,busy&&v.disabled,pressed&&v.pressed]}><Text style={v.retryText}>{busy?'…':t('Отправить точку')}</Text></Pressable>
    </View>
   </SafeAreaView>
  </Modal>;
 }
-export function PlaceBubble({place,mine}:{place:{lat:number;lon:number};mine:boolean}){
+export function PlaceBubble({place}:{place:{lat:number;lon:number};mine:boolean}){
  const [open,setOpen]=useState(false),point:[number,number]=[place.lon,place.lat];
  return <>
-  <Pressable accessibilityRole="button" accessibilityLabel={t('Открыть точку на карте')} onPress={()=>setOpen(true)} style={({pressed})=>[v.place,mine&&v.placeMine,pressed&&v.pressed]}>
-   <PinIcon color={C.accent}/><View style={{flex:1}}><Text style={v.placeTitle}>{t('Точка на карте')}</Text><Text style={v.placeNote}>{t('Нажмите, чтобы открыть на карте')}</Text></View>
+  {/* A piece of the map with the pin right in the bubble, as Telegram's location (board «Экраны старой версии»). */}
+  <Pressable accessibilityRole="button" accessibilityLabel={t('Точка на карте. Открыть')} onPress={()=>setOpen(true)} style={({pressed})=>[v.placeMap,pressed&&v.pressed]}>
+   <MiniMap point={point}/>
   </Pressable>
   <Modal visible={open} animationType="slide" onRequestClose={()=>setOpen(false)}>
    <SafeAreaView style={v.mapScreen} edges={['top','bottom']}>
-    <View style={v.mapHead}><Pressable accessibilityRole="button" accessibilityLabel={t('Закрыть карту')} onPress={()=>setOpen(false)} style={({pressed})=>[v.round,v.close,pressed&&v.pressed]}><Text style={v.cancelText}>‹</Text></Pressable><Text style={v.mapTitle}>{t('Точка на карте')}</Text></View>
+    <View style={v.mapHead}><View style={v.round}/><Text accessibilityRole="header" style={v.mapTitle}>{t('Точка на карте')}</Text><Pressable accessibilityRole="button" accessibilityLabel={t('Закрыть карту')} onPress={()=>setOpen(false)} style={({pressed})=>[v.round,v.close,pressed&&v.pressed]}><Text style={v.cancelText}>✕</Text></Pressable></View>
     <View style={{flex:1}}>{open&&<LiveMap center={point} pins={[{key:'place',point,label:t('Здесь'),tone:'active'}]} focus="place" focusKey="place"/>}</View>
    </SafeAreaView>
   </Modal>
  </>;
+}
+
+// The wave of a voice message: the same bars every time for the same message (it is not the sound itself, the
+// recording is fetched only when played), about one bar per second and a half, between 16 and 32 bars.
+function waveOf(seq:number,ms:number){const n=Math.max(16,Math.min(32,Math.round(ms/1500)));let x=(seq*2654435761)>>>0;return Array.from({length:n},()=>{x=(x*1103515245+12345)>>>0;return 6+((x>>>16)%20);});}
+// A still piece of the map around the point, from the same tiles as the app's map (TileMap.tsx), with the pin in the middle.
+const MINI={width:232,height:140,zoom:15},tileHeaders={'User-Agent':'AIArenda-mobile/0.1'};
+function MiniMap({point}:{point:[number,number]}){
+ const tiles=visibleTiles(point,MINI.zoom,MINI.width,MINI.height);
+ return <View style={{width:MINI.width,height:MINI.height}} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">{tiles.map(x=><Image key={x.key} source={{uri:'https://tile.openstreetmap.org/'+MINI.zoom+'/'+x.x+'/'+x.y+'.png',headers:tileHeaders}} style={[v.tile,{left:x.left,top:x.top}]}/>)}<View style={[v.pinDot,{left:MINI.width/2,top:MINI.height/2}]}/></View>;
 }
 
 // The call screen's microphone; the message field draws its own in ChatIcons.
@@ -149,17 +163,17 @@ const v=StyleSheet.create({
  round:{width:44,height:44,borderRadius:24,alignItems:'center',justifyContent:'center'},
  cancel:{backgroundColor:C.surfaceAlt},cancelText:{fontSize:18,color:C.ink,fontWeight:'600'},
  send:{backgroundColor:C.accent},sendText:{fontSize:22,color:C.onAccent,fontWeight:'700'},
- live:{flex:1,flexDirection:'row',alignItems:'center',gap:8},dot:{width:10,height:10,borderRadius:4,backgroundColor:C.danger},liveText:{fontSize:16,color:C.ink},
+ live:{flex:1,flexDirection:'row',alignItems:'center',gap:8},dot:{width:8,height:8,borderRadius:4,backgroundColor:C.danger},liveText:{fontSize:16,color:C.ink,fontWeight:'600',fontVariant:['tabular-nums'],minWidth:40},
+ limit:{flex:1,height:2,borderRadius:1,backgroundColor:C.line,overflow:'hidden'},limitFill:{height:2,backgroundColor:C.ink},
  retry:{minHeight:44,paddingHorizontal:16,borderRadius:24,backgroundColor:C.accent,alignItems:'center',justifyContent:'center'},retryText:{fontSize:16,color:C.onAccent,fontWeight:'700'},
- bubble:{minWidth:200,gap:4},
- play:{width:40,height:40,borderRadius:24,backgroundColor:C.accent,alignItems:'center',justifyContent:'center',position:'absolute',left:0,top:0},playMine:{backgroundColor:C.surface},
- playText:{color:C.onAccent,fontSize:14,fontWeight:'700'},playTextMine:{color:C.accent},
- track:{marginLeft:48,minHeight:40,justifyContent:'center',gap:4},
- bar:{height:4,borderRadius:2,backgroundColor:C.line,overflow:'hidden'},barMine:{backgroundColor:C.surfaceAlt},
- fill:{height:4,backgroundColor:C.accent},fillMine:{backgroundColor:C.accentPressed},
- time:{fontSize:12,color:C.muted},error:{fontSize:12,color:C.danger},
- place:{flexDirection:'row',alignItems:'center',gap:8,padding:8,borderRadius:16,backgroundColor:C.surfaceAlt,minWidth:220},placeMine:{backgroundColor:C.surface},
+ bubble:{minWidth:220,gap:4},
+ voiceRow:{flexDirection:'row',alignItems:'center',gap:8},
+ play:{width:36,height:36,borderRadius:16,backgroundColor:C.ink,alignItems:'center',justifyContent:'center'},playText:{color:C.onAccent,fontSize:14,fontWeight:'700'},
+ wave:{flex:1,height:28,flexDirection:'row',alignItems:'center',justifyContent:'space-between'},waveBar:{width:3,borderRadius:1.5,backgroundColor:C.lineStrong},waveBarOn:{backgroundColor:C.ink},
+ time:{fontSize:12,color:C.muted,fontVariant:['tabular-nums']},error:{fontSize:12,color:C.danger},
+ placeMap:{width:232,height:140,borderRadius:12,overflow:'hidden',backgroundColor:C.surfaceAlt},
+ tile:{position:'absolute',width:TILE,height:TILE},pinDot:{position:'absolute',width:16,height:16,borderRadius:8,marginLeft:-8,marginTop:-8,backgroundColor:C.ink,borderWidth:3,borderColor:C.surface},
  placeTitle:{fontSize:16,fontWeight:'600',color:C.ink},placeNote:{fontSize:12,color:C.muted},
- previewFoot:{padding:16,gap:12},sendWide:{minHeight:56,borderRadius:16,backgroundColor:C.accent,alignItems:'center',justifyContent:'center'},
- mapScreen:{flex:1,backgroundColor:C.bg},mapHead:{flexDirection:'row',alignItems:'center',gap:12,padding:12},close:{backgroundColor:C.surfaceAlt},mapTitle:{fontSize:18,fontWeight:'700',color:C.ink},
+ previewFoot:{padding:16,gap:12},sendWide:{minHeight:56,borderRadius:T.radius.full,backgroundColor:C.ink,alignItems:'center',justifyContent:'center'},
+ mapScreen:{flex:1,backgroundColor:C.bg},mapHead:{flexDirection:'row',alignItems:'center',gap:12,padding:12},close:{backgroundColor:C.surfaceAlt},mapTitle:{flex:1,textAlign:'center',fontSize:16,fontWeight:'700',color:C.ink},
 });

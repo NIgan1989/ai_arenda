@@ -121,19 +121,21 @@ function Viewer({uri,onClose,size:known,title,caption}:Props){
    </Animated.View>
   </View>
   {chrome&&<View pointerEvents="box-none" style={[v.top,{paddingTop:Math.max(insets.top,12)+4,paddingLeft:Math.max(insets.left,12),paddingRight:Math.max(insets.right,12)}]}>
+   {/* As Telegram's viewer: who and when in the middle, «×» on the right, on black. */}
+   <View style={v.side}/>
+   <Text numberOfLines={1} style={v.title}>{title||''}</Text>
    <Pressable accessibilityRole="button" accessibilityLabel={t('Закрыть фото')} hitSlop={8} onPress={()=>close()} style={({pressed})=>[v.close,pressed&&v.pressed]}><View style={[v.cross,{transform:[{rotate:'45deg'}]}]}/><View style={[v.cross,{transform:[{rotate:'-45deg'}]}]}/></Pressable>
-   {!!title&&<Text numberOfLines={1} style={v.title}>{title}</Text>}
   </View>}
   {chrome&&!!caption&&<View pointerEvents="none" style={[v.bottom,{paddingBottom:Math.max(insets.bottom,12)+8,paddingLeft:Math.max(insets.left,16),paddingRight:Math.max(insets.right,16)}]}><Text numberOfLines={4} style={v.caption}>{caption}</Text></View>}
  </View>;
 }
 
 const v=StyleSheet.create({
- root:{flex:1},backdrop:{backgroundColor:C.ink},stage:{flex:1,alignItems:'center',justifyContent:'center'},
- top:{position:'absolute',left:0,right:0,top:0,flexDirection:'row',alignItems:'center',gap:12,paddingBottom:8,backgroundColor:'rgba(0,0,0,0.35)'},
+ root:{flex:1},backdrop:{backgroundColor:C.ink},side:{width:44},stage:{flex:1,alignItems:'center',justifyContent:'center'},
+ top:{position:'absolute',left:0,right:0,top:0,flexDirection:'row',alignItems:'center',gap:12,paddingBottom:8},
  close:{width:44,height:44,borderRadius:24,backgroundColor:'rgba(255,255,255,0.18)',alignItems:'center',justifyContent:'center'},
  cross:{position:'absolute',width:20,height:2,borderRadius:1,backgroundColor:C.onAccent},pressed:{opacity:.6},
- title:{flex:1,color:C.onAccent,fontSize:16,lineHeight:20,fontWeight:'600'},
+ title:{flex:1,textAlign:'center',color:C.onAccent,fontSize:16,lineHeight:20,fontWeight:'600'},
  bottom:{position:'absolute',left:0,right:0,bottom:0,paddingTop:12,backgroundColor:'rgba(0,0,0,0.45)'},
  caption:{color:C.onAccent,fontSize:16,lineHeight:24},failed:{color:C.onAccent,fontSize:16},
 });
