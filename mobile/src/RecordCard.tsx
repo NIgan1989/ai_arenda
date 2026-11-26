@@ -13,6 +13,8 @@ import {processJourney} from '../../lib/process-journey';
 import {processStatus} from '../../lib/process-status';
 import {recordSpan,hallLine} from '../../lib/record-span';
 import type {ProcessThread} from '../../lib/process-threads';
+import type {MenuIcon} from './AccountRows';
+import {PopRow,PopSheet} from './PopSheet';
 const tones:Record<string,[string,string]>={success:[C.successSoft,C.success],warning:[C.warningSoft,C.warning],active:[C.goldSoft,C.goldInk],neutral:[C.surfaceAlt,C.muted],danger:[C.dangerSoft,C.danger]};
 // «На карте»: a small pill next to the place of a booking, a cleaning or an object, in a chat's subject line too.
 // It opens the home map on that pin (MapHome, map-memory.ts targetPin).
@@ -26,13 +28,13 @@ export function RecordFacts({rows}:{rows:(readonly [string,string,boolean?]|fals
 // `swipe`: the action confirms a fact or a promise, so as the main action of a card it is a track to swipe; the words on the
 // track say what is confirmed, and `onSwipe` (when given) sends it at once, without the «Подтвердите действие» card.
 // Under «Ещё» the same action stays an ordinary button with its confirmation card.
-export type RecordAction={title:string;onPress:()=>void;kind:'main'|'side'|'danger';disabled?:boolean;note?:string;swipe?:string;onSwipe?:()=>void};
+export type RecordAction={title:string;onPress:()=>void;kind:'main'|'side'|'danger';disabled?:boolean;note?:string;swipe?:string;onSwipe?:()=>void;icon?:MenuIcon};
 export function RecordActions({actions,busy,soft=false}:{actions:(RecordAction|false|null|undefined|''|0)[];busy:boolean;soft?:boolean}){
  const [focused,setFocused]=useState(''),all=actions.filter(Boolean) as RecordAction[],mains=all.filter(a=>a.kind==='main'),side=all.filter(a=>a.kind==='side'),danger=all.filter(a=>a.kind==='danger');
  if(!all.length)return null;
  const button=(a:RecordAction,box:any,text:any)=><Pressable key={a.title} accessibilityRole="button" accessibilityLabel={a.title} accessibilityState={{disabled:busy||!!a.disabled}} disabled={busy||!!a.disabled} onPress={a.onPress} onFocus={(e:any)=>{if(Platform.OS!=='web'||e?.target?.matches?.(':focus-visible'))setFocused(a.title);}} onBlur={()=>setFocused('')} style={({pressed})=>[r.action,box,focused===a.title&&r.focus,(pressed||busy||a.disabled)&&r.dim]}><Text style={[r.actionText,text]}>{a.title}</Text></Pressable>;
  // Under «Ещё» every action is a row of a list, as the rows of a booking in Airbnb («Написать», «Как добраться», «Правила»).
- if(soft)return <View style={r.list}>{[...mains,...side,...danger].map(a=><Pressable key={a.title} accessibilityRole="button" accessibilityLabel={a.title} accessibilityState={{disabled:busy||!!a.disabled}} disabled={busy||!!a.disabled} onPress={a.onPress} style={({pressed})=>[r.listRow,(pressed||busy||a.disabled)&&r.dim]}><Text style={[r.listText,a.kind==='danger'&&r.dangerText]}>{a.title}</Text>{a.kind!=='danger'&&<Text style={r.listGo}>›</Text>}</Pressable>)}</View>;
+ if(soft){const list=[...mains,...side,...danger];return <View>{list.map((a,i)=><PopRow key={a.title} icon={a.icon||(a.kind==='danger'?'trash':'dot')} title={a.title} danger={a.kind==='danger'} disabled={busy||!!a.disabled} last={i===list.length-1} onPress={a.onPress}/>)}</View>;}
  return <View style={r.actions}>{mains.map((a,i)=><React.Fragment key={a.title}>{a.swipe&&!i&&!soft?<SwipeConfirm key={a.swipe} label={a.swipe} disabled={busy||!!a.disabled} onConfirm={a.onSwipe||a.onPress}/>:button(a,i||soft?r.next:r.main,i||soft?r.nextText:r.mainText)}{!!a.note&&<Text style={r.actionNote}>{a.note}</Text>}</React.Fragment>)}{side.length>0&&<View style={r.sideRow}>{side.map(a=>button(a,r.side,r.sideText))}</View>}{danger.map(a=>button(a,r.danger,r.dangerText))}</View>;
 }
 // A booking, a cleaning or a task in short: what, when, how much, the step it is at and one line on what happens now.
@@ -51,6 +53,14 @@ export function AnswerWait({item,bare=false}:{item:Row;bare?:boolean}){
  return <View accessible accessibilityLabel={t('Владелец ответит через {v}',{v:mm+':'+ss})} style={[r.wait,bare&&r.waitBare]}><Text style={r.waitLabel}>{t('Владелец ответит через')}</Text><Text style={r.waitDigits}>{mm}:{ss}</Text><View style={r.waitBar}><View style={[r.waitFill,{width:`${Math.round(share*100)}%` as const}]}/></View><Text style={r.waitNote}>{t('Время придержано для вас. Деньги не списаны.')}</Text></View>;
 }
 if(Platform.OS==='android')UIManager.setLayoutAnimationEnabledExperimental?.(true);
+// «Ещё»: the three dots open a small sheet of rows (board «Экраны старой версии», 2026-11-26, as «Что изменить?» in Airbnb)
+// instead of a list at the very end of a long card. A row closes the sheet first; on iPhone the next sheet waits for
+// this one to slide away, since two modals cannot move at once.
+function MoreSheet({open,onClose,actions,busy,extra}:{open:boolean;onClose:()=>void;actions:Maybe<RecordAction>[];busy:boolean;extra?:React.ReactNode}){
+ const later=(run:()=>void)=>()=>{onClose();setTimeout(run,Platform.OS==='ios'?450:0);};
+ const rows=(actions.filter(Boolean) as RecordAction[]).map(a=>({...a,onPress:later(a.onPress)}));
+ return <>{extra}<PopSheet visible={open} title={t('Ещё')} onClose={onClose}><RecordActions soft busy={busy} actions={rows}/></PopSheet></>;
+}
 const smooth=()=>LayoutAnimation.configureNext(LayoutAnimation.create(220,LayoutAnimation.Types.easeInEaseOut,LayoutAnimation.Properties.opacity));
 // The owner's fee for one booking, to show the sum as top apps do (Airtasker, alias): what the guest pays, minus the
 // service's fee, what stays. The rate and its cap come from the server; during the free start the fee is zero.
@@ -79,7 +89,7 @@ export function DealCard({kind,item,role,userId,application,thread,line:own,acti
  let pics:string[]=[];try{pics=Array.isArray(item.property_photos)?item.property_photos:JSON.parse(item.property_photos||'[]');}catch{pics=[];}
  const status=processStatus(kind,item,role,userId,application),[,ink]=tones[status.tone]||tones.neutral,flow=processJourney(kind,item);
  const total=thread?thread.steps.length:flow.labels.length,done=thread?thread.finished:flow.done,step=Math.min(thread?thread.current:flow.current,total-1),line=flow.stopped?flow.hint:thread?thread.line:own||flow.hint;
- const all=actions.filter(Boolean) as RecordAction[],main=all.find(a=>a.kind==='main'),rest:Maybe<RecordAction>[]=[...all.filter(a=>a!==main),!!onMap&&{title:t('Показать на карте'),kind:'side' as const,onPress:onMap}];
+ const all=actions.filter(Boolean) as RecordAction[],main=all.find(a=>a.kind==='main'),rest:Maybe<RecordAction>[]=[...all.filter(a=>a!==main),!!onMap&&{title:t('Показать на карте'),kind:'side' as const,icon:'map' as const,onPress:onMap}];
  const hasMore=rest.some(Boolean)||!!extra;
  const dots=(on:boolean,show:boolean)=>show?<Pressable accessibilityRole="button" accessibilityLabel={on?t('Скрыть'):t('Ещё')} accessibilityState={{expanded:on}} hitSlop={8} onPress={()=>{smooth();setMore(v=>!v);}} style={({pressed})=>[r.dots,pressed&&r.dim]}><Text style={r.dotsText}>•••</Text></Pressable>:null;
  const flip=()=>{smooth();setOpen(v=>!v);};
@@ -127,7 +137,7 @@ export function DealCard({kind,item,role,userId,application,thread,line:own,acti
    <SwipeConfirm label={card.depositLabel?t('Проведите: {v}',{v:low(t('Подтвердить {v}',{v:low(card.depositLabel)}))}):t('Проведите, чтобы принять')} disabled={busy} onConfirm={()=>decide(action)}/>
    <Pressable accessibilityRole="button" accessibilityLabel={t('Отклонить заявку')} disabled={busy} onPress={()=>card.requiresReason?request.onReview():decide('reject')} style={({pressed})=>[r.askReject,(pressed||busy)&&r.dim]}><Text style={r.askRejectText}>{t('Отклонить')}</Text></Pressable>
    {open&&details}
-   {more&&<><RecordActions soft busy={busy} actions={[{title:t('Рассмотреть подробно'),kind:'side',onPress:request.onReview},...others]}/>{extra}</>}
+   <MoreSheet open={more} onClose={()=>setMore(false)} busy={busy} extra={extra} actions={[{title:t('Рассмотреть подробно'),kind:'side',icon:'read',onPress:request.onReview},...others]}/>
   </View>;
  }
  // The guest waits for the owner's answer, as a rider waits for a taxi (concept, Mobbin: Uber, Bolt): the big timer on top,
@@ -142,7 +152,7 @@ export function DealCard({kind,item,role,userId,application,thread,line:own,acti
    {always}
    <View style={r.waitButtons}>{button(chat,t('Написать'),r.waitChat,r.waitChatText)}{button(cancel,t('Отменить'),r.waitCancel,r.waitCancelText)}</View>
    {open&&details}
-   {more&&<><RecordActions soft busy={busy} actions={others}/>{extra}</>}
+   <MoreSheet open={more} onClose={()=>setMore(false)} busy={busy} extra={extra} actions={others}/>
   </View>;
  }
  const fold=compact?()=>{smooth();setUnfolded(false);setOpen(false);setMore(false);}:undefined;
@@ -167,7 +177,7 @@ export function DealCard({kind,item,role,userId,application,thread,line:own,acti
   {!!main&&<RecordActions busy={busy} actions={[main]}/>}
   {!place&&shown&&kind==='job'&&<Text style={[r.sumNote,!!item.payment_received_at&&{color:C.success}]}>{money(item.fee)} {jobPayNote(item)}</Text>}
   {!place&&shown&&details}
-  {more&&<><RecordActions soft busy={busy} actions={rest}/>{extra}</>}
+  <MoreSheet open={more} onClose={()=>setMore(false)} busy={busy} extra={extra} actions={rest}/>
  </View>;
 }
 const R=T.radius,H=T.control;

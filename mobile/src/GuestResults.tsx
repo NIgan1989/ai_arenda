@@ -283,13 +283,14 @@ export function GuestResults({ preview, draft, mine, onFavorite, selected, onSel
 
   const why = (flat: Row) => reasonsOf(flat).slice(0, 3).join(' · ');
   const what = (flat: Row) => [venueName(flat), mark(flat), perGuest(flat) ? t('{v} за гостя',{v:money(perGuest(flat))}) : '', bathSum(flat), roomsLeft(flat), homeLine(flat), bathSum(flat) ? '' : flat.district].filter(Boolean).join(' · ');
-  const bestWords = quiet ? t('Подходит лучше других') : t('✦ Лучший выбор');
+  const bestWords = quiet ? t('Подходит лучше других') : t('Лучший выбор');
   const trail = steps.length > 0 && !!onBack && <HelperTrail words={stepWords(steps, draft)} count={flats.length + ' ' + plural(flats.length, 'вариант', 'варианта', 'вариантов')} onBack={onBack} busy={busy} />;
   const tips = <GuestHelpers helpers={helpers} busy={busy} onPress={helper => onStep?.(helper.id, list[index]?.id || '')} />;
 
   // Over the map: the quick steps go up to the bar, and a pin tapped brings its card into view.
   const chipsKey = helpers.map(x => x.id + ':' + x.count).join() + '|' + steps.join() + '|' + busy;
-  useEffect(() => { if (!float || !onChips) return; onChips(<View style={r.floatChips}>{trail}{tips}</View>); }, [float, chipsKey]);
+  // On the map only the prices (the user's rule): the quick phrases stay in the list, the map keeps only «↩ Вернуть».
+  useEffect(() => { if (!float || !onChips) return; onChips(trail ? <View style={r.floatChips}>{trail}</View> : null); }, [float, chipsKey]);
   useEffect(() => () => { if (float) onChips?.(null); }, [float]);
   useEffect(() => {
     if (!float || !selected) return;
@@ -327,7 +328,7 @@ export function GuestResults({ preview, draft, mine, onFavorite, selected, onSel
   if (full) {
     // Every found place at once: the guest who wants the whole list pulls the sheet up.
     return (
-      <>{!onMap && <>{trail}{tips}</>}<View style={r.listHead}><Text accessibilityRole="header" style={[h.cardTitle, h.grow]}>{t('Свободно на {stay}: {n}',{stay:stayWords(draft),n:flats.length})}</Text>{!!onMap && <Pressable accessibilityRole="button" onPress={onMap} style={({ pressed }) => [r.onMap, pressed && h.dim]}><Text style={r.onMapText}>{t('На карте')}</Text></Pressable>}</View><View>{list.map(flat => (
+      <>{trail}{tips}<View style={r.listHead}><Text accessibilityRole="header" style={[h.cardTitle, h.grow]}>{t('Свободно на {stay}: {n}',{stay:stayWords(draft),n:flats.length})}</Text>{!!onMap && <Pressable accessibilityRole="button" onPress={onMap} style={({ pressed }) => [r.onMap, pressed && h.dim]}><Text style={r.onMapText}>{t('На карте')}</Text></Pressable>}</View><View>{list.map(flat => (
             <Pressable key={flat.id} accessibilityRole="button" accessibilityLabel={flat.title + ', ' + money(flat.estimate.amount)} onPress={() => { onFocus?.(flat.id); onSelect(flat.id); }} style={({ pressed }) => [r.line, pressed && r.cardPressed]}><View style={r.lineThumb}><Photo id={flat.photos?.[0]} alt={t('{title}, фото',{title:flat.title})} fill /></View><View style={h.grow}><View style={r.cardTop}><Text numberOfLines={1} style={[h.eventTitle, h.grow]}>{flat.title}</Text><Text style={h.rowPrice}>{money(flat.estimate.amount)}</Text></View><Text numberOfLines={1} style={h.note}>{what(flat) || t('за {v}',{v:stayWords(draft)})}</Text>{ready(flat)}{!!why(flat) && <Text numberOfLines={1} style={r.why}>{why(flat)}</Text>}</View></Pressable>
           ))}</View></>
     );
@@ -388,7 +389,7 @@ const r = StyleSheet.create({
   cardRow: { gap: 10 },
   cardPhoto: { width: '100%', height: 156, borderRadius: T.radius.md, overflow: 'hidden', backgroundColor: C.surfaceAlt },
   bestOnPhoto: { position: 'absolute', left: 8, top: 8 },
-  bestTag: { ...type.caption, alignSelf: 'flex-start', paddingHorizontal: 8, paddingVertical: 2, borderRadius: T.radius.full, overflow: 'hidden', backgroundColor: C.aiFrom, color: C.onAccent, fontWeight: '600' },
+  bestTag: { ...type.caption, alignSelf: 'flex-start', paddingHorizontal: 8, paddingVertical: 2, borderRadius: T.radius.full, overflow: 'hidden', backgroundColor: C.surface, color: C.ink, fontWeight: '600' },
   heartOnPhoto: { position: 'absolute', right: 4, top: 4 },
   cardBody: { flex: 1, minWidth: 0, gap: 2, justifyContent: 'center', paddingHorizontal: 4, paddingBottom: 4 },
   rating: { ...type.caption, color: C.ink, fontWeight: '600' },

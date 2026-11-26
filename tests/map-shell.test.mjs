@@ -66,7 +66,9 @@ test('the menu is short: a few rows open their own screens, the rest stays one t
     assert.match(text, /view==='settings'&&[\s\S]*title=\{t\('Данные и безопасность'\)\} onPress=\{\(\)=>go\('safety'\)\}\/>\{join\.map/);
     assert.match(text, /'properties'\]:\['jobs'\]/, "the owner's objects and the cleaner's search for jobs live on the map");
     assert.doesNotMatch(text, /title=\{t\('Уведомления'\)\}/, 'no row for the notices in the menu: the bell is on the map');
-    assert.match(text, /\{!!view&&view!=='notices'&&/);
+    // A page of the menu gives its name and «‹» to the sheet's own head (one head per sheet); without that head it draws its own.
+  assert.match(text, /\{!onHead&&!!view&&view!=='notices'&&/);
+  assert.match(read('mobile/App.tsx'), /<AccountControl onHead=\{setMenuHead\}/);
     // The language is chosen in the menu itself, not hidden in the settings.
     assert.match(text, /!view&&[\s\S]*<LangSwitch /);
     // The notices of the menu are the events of the role; a new one is said over the map, not written into the chat.

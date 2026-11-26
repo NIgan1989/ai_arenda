@@ -3,6 +3,20 @@
 import type {Words} from './i18n-words';
 
 export const OWNER:Words={
+ 'На час меньше':['Бір сағатқа азырақ','One hour less'],
+ 'На час больше':['Бір сағатқа көбірек','One hour more'],
+ 'Закрываю время…':['Уақытты жауып жатырмын…','Closing the time…'],
+ 'Проведите: закрыть время':['Сырғытыңыз: уақытты жабу','Swipe: close the time'],
+ 'Выключаю…':['Өшіріп жатырмын…','Turning off…'],
+ 'Выключить автопилот':['Автопилотты өшіру','Turn off autopilot'],
+ 'Проведите: включить автопилот':['Сырғытыңыз: автопилотты қосу','Swipe: turn on autopilot'],
+ 'Никто':['Ешкім','Nobody'],
+ 'Кто отвечает гостям на быстрые запросы.':['Жылдам сұраныстарға қонақтарға кім жауап береді.','Who answers guests on quick requests.'],
+ 'Быстрые запросы не приходят':['Жылдам сұраныстар келмейді','Quick requests do not come'],
+ 'Отвечаете гостям сами':['Қонақтарға өзіңіз жауап бересіз','You answer guests yourself'],
+ 'ИИ отвечает, подтверждает бронь и заказывает уборку':['ЖИ жауап береді, броньды растайды және тазалауға тапсырыс береді','AI answers, confirms the booking and orders cleaning'],
+ 'Автопилот · {n}':['Автопилот · {n}','Autopilot · {n}'],
+ 'Автопилот отвечает гостям и заказывает уборку. Оплату проверяете вы.':['Автопилот қонақтарға жауап береді және тазалауға тапсырыс береді. Төлемді өзіңіз тексересіз.','Autopilot answers guests and orders cleaning. You check the payment.'],
  'сегодня {time}':['бүгін {time}','today {time}'],
  'завтра {time}':['ертең {time}','tomorrow {time}'],
  'Гости до {when}':['Қонақтар {when} дейін','Guests until {when}'],
@@ -36,6 +50,7 @@ export const OWNER:Words={
  'Отклики · {length}':['Өтінімдер · {length}','Applications · {length}'],
  'Назначить: {name}':['Тағайындау: {name}','Assign: {name}'],
  '✓  Назначить':['✓  Тағайындау','✓  Assign'],
+ 'Выбрать: {name}':['Таңдау: {name}','Choose: {name}'],
  'Отклонить отклик: {name}':['Өтінімді қабылдамау: {name}','Decline the application: {name}'],
  'Срок ответа истёк. Обновите данные.':['Жауап беру мерзімі өтті. Деректерді жаңартыңыз.','The time to answer has passed. Refresh the data.'],
  'Анкету заполняет исполнитель, платформа её пока не проверяет.':['Сауалнаманы орындаушы өзі толтырады, платформа оны әзірге тексермейді.','The cleaner fills in the profile, the platform does not check it yet.'],

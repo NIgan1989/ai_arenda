@@ -11,11 +11,12 @@ type Props = {
   busy?: boolean;
 };
 
-// «Помогайки»: one row of short phrases over the found places. A tap narrows what is shown, right here.
+// «Помогайки»: one row of short grey phrases over the list of found places, as the chips under Airbnb's search: no ✦ and
+// no counters (board «Экраны старой версии», 2026-11-26); the count stays in the screen reader's words. A tap narrows the list.
 export function GuestHelpers({ helpers, onPress, busy = false }: Props) {
   if (!helpers.length) return null;
   return (
-    <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="handled" style={s.scroll} contentContainerStyle={s.row} accessibilityLabel={t('Подсказки: сузить выбор')}><Text style={s.spark} accessibilityElementsHidden importantForAccessibility="no">✦</Text>{helpers.map(helper => (
+    <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="handled" style={s.scroll} contentContainerStyle={s.row} accessibilityLabel={t('Подсказки: сузить выбор')}>{helpers.map(helper => (
         <Pressable
           key={helper.id}
           accessibilityRole="button"
@@ -25,9 +26,7 @@ export function GuestHelpers({ helpers, onPress, busy = false }: Props) {
           onPress={() => onPress(helper)}
           hitSlop={{ top: 6, bottom: 6 }}
           style={({ pressed }) => [s.chip, helper.hot && s.hot, helper.off && s.off, pressed && s.pressed]}
-        ><Text numberOfLines={1} style={[s.text, helper.hot && s.textHot, helper.off && s.textOff]}>{helper.title}</Text>{!helper.off && (
-            <View style={[s.count, helper.hot && s.countHot]}><Text style={[s.countText, helper.hot && s.textHot]}>{helper.count}</Text></View>
-          )}</Pressable>
+        ><Text numberOfLines={1} style={[s.text, helper.hot && s.textHot, helper.off && s.textOff]}>{helper.title}</Text></Pressable>
       ))}</ScrollView>
   );
 }
@@ -43,17 +42,13 @@ const H = 36;
 const s = StyleSheet.create({
   scroll: { marginHorizontal: -16, flexGrow: 0 },
   row: { paddingHorizontal: 16, gap: 8, alignItems: 'center' },
-  spark: { ...type.label, color: C.aiFrom },
-  chip: { height: H, flexDirection: 'row', alignItems: 'center', gap: 6, paddingLeft: 12, paddingRight: 6, borderRadius: T.radius.full, borderWidth: 1.5, borderColor: C.accentLine, backgroundColor: C.surface },
+  chip: { height: H, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, borderRadius: T.radius.full, borderWidth: 1, borderColor: C.line, backgroundColor: C.surface },
   hot: { backgroundColor: C.accent, borderColor: C.accent },
-  off: { borderColor: C.line, paddingRight: 12 },
+  off: { borderColor: C.line },
   pressed: { opacity: 0.6 },
-  text: { ...type.label, color: C.accent, fontWeight: '600' },
+  text: { ...type.label, color: C.ink, fontWeight: '500' },
   textHot: { color: C.onAccent },
   textOff: { color: C.muted, textDecorationLine: 'line-through', fontWeight: '400' },
-  count: { minWidth: 22, height: 22, borderRadius: 11, paddingHorizontal: 6, alignItems: 'center', justifyContent: 'center', backgroundColor: C.accentSoft },
-  countHot: { backgroundColor: 'rgba(255,255,255,0.22)' },
-  countText: { ...type.caption, color: C.accent, fontWeight: '700' },
   trail: { minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: 8, paddingLeft: 12, paddingRight: 4, borderRadius: T.radius.md, borderWidth: 1, borderColor: C.accentLine, backgroundColor: C.accentSoft },
   trailText: { ...type.label, flex: 1, color: C.accent },
   trailWords: { fontWeight: '700' },

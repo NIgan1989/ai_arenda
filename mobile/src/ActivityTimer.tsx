@@ -20,6 +20,9 @@ export function ActivityTimer({kind,item,compact=false}:{kind:'booking'|'job';it
  const t=useActivityClock(),clock=activity(kind,item,t),breathe=useRef(new Animated.Value(0)).current,phase=clock?.phase;
  useEffect(()=>{if(phase!=='running'&&phase!=='overdue')return;const loop=Animated.loop(Animated.sequence([Animated.timing(breathe,{toValue:1,duration:phase==='overdue'?800:1000,useNativeDriver:true}),Animated.timing(breathe,{toValue:0,duration:phase==='overdue'?800:1000,useNativeDriver:true})]));loop.start();return()=>loop.stop();},[phase,breathe]);
  if(!clock||!t)return null;
+ // A booking shows the clock only while the stay runs: before the check-in the card's line says what comes next, and a
+ // finished stay needs no «затрачено» (board «Экраны старой версии», 2026-11-26).
+ if(kind==='booking'&&!compact&&(clock.phase==='waiting'||clock.phase==='stopped'))return null;
  const at=(x:number)=>(day(x)===day(t)?'':day(x)+', ')+hm(x),known=clock.seconds!==null&&clock.seconds!==undefined,late=clock.phase==='overdue';
  const digits=known?(late?'+':'')+duration(clock.seconds as number):'—';
  const flag=late&&clock.started?Math.min(.85,Math.max(.4,(clock.deadline-clock.started)/Math.max(1,t-clock.started))):1;
@@ -35,7 +38,7 @@ export function ActivityTimer({kind,item,compact=false}:{kind:'booking'|'job';it
  const note=clock.phase==='running'?tr('осталось до {v}',{v:at(clock.deadline)}):late?tr('сверх срока'):clock.phase==='stopped'?tr('затрачено'):'';
  if(compact)return <View style={[a.box,a.compact]}><View style={a.row}><Text style={a.label}>{clock.label}</Text>{clock.phase!=='waiting'&&<Text accessibilityLiveRegion="none" style={[a.small,late&&a.red]}>{digits}</Text>}</View>{bar}</View>;
  return <View accessibilityLabel={clock.label} style={[a.box,late&&a.lateBox]}>
-  <Text style={a.label}>{clock.label.toUpperCase()}</Text>
+  <Text style={a.label}>{clock.label}</Text>
   {clock.phase==='waiting'?<Text style={a.wait}>{kind==='booking'?(isHome(item)?tr('Таймер пойдёт с фактического заезда.'):tr('Таймер пойдёт, когда отметят {arriveAcc}.',{arriveAcc:wordsOf(item).arriveAcc})):tr('Таймер пойдёт, когда исполнитель нажмёт «Начать уборку».')}</Text>
   :<View style={a.top}><Text accessibilityLiveRegion="none" style={[a.digits,late&&a.red]}>{digits}</Text><Text style={a.note}>{note}</Text></View>}
   {bar}
@@ -45,7 +48,7 @@ export function ActivityTimer({kind,item,compact=false}:{kind:'booking'|'job';it
 const a=StyleSheet.create({
  box:{gap:T.space[3],marginVertical:T.space[3],padding:T.space[5],borderRadius:T.radius.xl,borderWidth:1,borderColor:C.line,backgroundColor:C.surface},
  lateBox:{borderColor:C.dangerSoft},
- label:{fontSize:12,lineHeight:16,fontWeight:'600',letterSpacing:.6,color:C.muted},
+ label:{fontSize:14,lineHeight:20,fontWeight:'600',color:C.inkSoft},
  top:{flexDirection:'row',justifyContent:'space-between',alignItems:'flex-end',gap:T.space[4],flexWrap:'wrap'},
  digits:{fontSize:36,lineHeight:44,fontWeight:'800',letterSpacing:-.8,fontVariant:['tabular-nums'],color:C.ink},
  red:{color:C.danger},

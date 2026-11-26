@@ -27,8 +27,9 @@ export function ApplicantPick({applications,approvals,busy,onDecide,bare=false}:
   {applications.map((x,i)=>{const card=approvals.find(c=>c.id==='application:'+x.id),admission=x.admission??x.worker?.admission,blocked=!!admission&&admission in admissionNotes,off=busy||!card,decide=(action:string)=>card&&onDecide({id:card.id,revision:card.revision,action}),name=x.worker?.name||x.name||tr('исполнитель');
    return <View key={x.id} style={[a.option,i>0&&a.optionLine]}><WorkerRow worker={{...x,...(x.worker||{}),experience:x.worker?.experience||x.experience}}/>{!!x.worker?.reliability&&<View style={{marginTop:8}}><ReliabilityBadge value={x.worker.reliability} title={tr('Исполнитель')}/></View>}
     <View style={a.decide}>
-     <Pressable accessibilityRole="button" accessibilityLabel={tr('Назначить: {name}',{name})} disabled={off||blocked} onPress={()=>decide('accept')} style={({pressed})=>[a.btn,a.accept,(pressed||off||blocked)&&a.dim]}><Text style={a.acceptText}>{tr('✓  Назначить')}</Text></Pressable>
-     <Pressable accessibilityRole="button" accessibilityLabel={tr('Отклонить отклик: {name}',{name})} disabled={off} onPress={()=>decide('reject')} style={({pressed})=>[a.btn,a.reject,(pressed||off)&&a.dim]}><Text style={a.rejectText}>{tr('Отклонить')}</Text></Pressable>
+     <Pressable accessibilityRole="button" accessibilityLabel={tr('Выбрать: {name}',{name})} disabled={off||blocked} onPress={()=>decide('accept')} style={({pressed})=>[a.btn,a.accept,(pressed||off||blocked)&&a.dim]}><Text style={a.acceptText}>{tr('Выбрать')}</Text></Pressable>
+     {/* Board «Экраны старой версии», 2026-11-26: one main button; «Отклонить» is a quiet word beside it. */}
+     <Pressable accessibilityRole="button" accessibilityLabel={tr('Отклонить отклик: {name}',{name})} disabled={off} onPress={()=>decide('reject')} hitSlop={8} style={({pressed})=>[a.reject,(pressed||off)&&a.dim]}><Text style={a.rejectText}>{tr('Отклонить')}</Text></Pressable>
     </View>
     {blocked&&<Text style={[a.admission,admission==='rejected'&&a.admissionBad]}>{tr(admissionNotes[admission])}</Text>}
     {!card&&!blocked&&<Text style={[a.note,{color:C.danger}]}>{tr('Срок ответа истёк. Обновите данные.')}</Text>}
@@ -49,13 +50,13 @@ const a=StyleSheet.create({
  row:{gap:12},who:{flexDirection:'row',alignItems:'center',gap:12},
  label:{...type.caption,color:C.muted,fontWeight:'600',letterSpacing:.6},name:{...type.body,color:C.ink,fontWeight:'600'},where:{...type.caption,color:C.muted},
  tags:{flexDirection:'row',flexWrap:'wrap',gap:8,alignItems:'center'},tag:{...type.caption,color:C.inkSoft,backgroundColor:C.surfaceAlt,paddingHorizontal:12,paddingVertical:4,borderRadius:R.full,overflow:'hidden'},
- box:{gap:12,padding:16,borderRadius:R.xl,borderWidth:1,borderColor:C.accentLine,backgroundColor:C.surface},bare:{borderWidth:0,borderRadius:0},
+ box:{gap:12,padding:16,borderRadius:R.xl,borderWidth:1,borderColor:C.line,backgroundColor:C.surface},bare:{borderWidth:0,borderRadius:0},
  empty:{borderStyle:'dashed',borderColor:C.line,backgroundColor:C.surfaceAlt,gap:4},emptyTitle:{...type.label,color:C.ink,fontWeight:'600'},
  title:{...type.body,color:C.ink,fontWeight:'600'},
  option:{gap:12},optionLine:{paddingTop:12,borderTopWidth:1,borderTopColor:C.line},
- decide:{flexDirection:'row',gap:8},btn:{minHeight:H.primary,borderRadius:R.md,alignItems:'center',justifyContent:'center',paddingHorizontal:12},
- accept:{flex:1.6,backgroundColor:C.accent},acceptText:{...type.body,fontWeight:'600',color:C.onAccent},
- reject:{flex:1,backgroundColor:C.surface,borderWidth:1,borderColor:C.line},rejectText:{...type.body,fontWeight:'600',color:C.ink},
+ decide:{flexDirection:'row',alignItems:'center',gap:16},btn:{minHeight:H.primary,borderRadius:R.md,alignItems:'center',justifyContent:'center',paddingHorizontal:12},
+ accept:{flex:1,borderRadius:R.full,backgroundColor:C.ink},acceptText:{...type.body,fontWeight:'600',color:C.onAccent},
+ reject:{minHeight:H.primary,justifyContent:'center',paddingHorizontal:4},rejectText:{...type.body,fontWeight:'600',color:C.ink,textDecorationLine:'underline'},
  dim:{opacity:.55},note:{...type.caption,color:C.muted},
  admission:{...type.label,color:C.ink,padding:12,borderRadius:R.md,borderWidth:1,borderColor:C.warningLine,backgroundColor:C.warningSoft,overflow:'hidden'},admissionBad:{borderColor:C.danger,backgroundColor:C.dangerSoft},
  next:{gap:4,padding:16,borderRadius:R.lg,borderWidth:1,borderColor:C.infoLine,backgroundColor:C.infoSoft,marginTop:8},nextWarn:{borderColor:C.warningLine,backgroundColor:C.warningSoft},nextBad:{borderColor:C.danger,backgroundColor:C.dangerSoft},nextTitle:{...type.label,color:C.ink,fontWeight:'600'},nextText:{...type.label,color:C.inkSoft,marginBottom:4},

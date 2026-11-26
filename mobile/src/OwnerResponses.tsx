@@ -33,9 +33,9 @@ const o=StyleSheet.create({
  block:{gap:12,marginTop:12,marginBottom:12},
  head:{flexDirection:'row',alignItems:'center',gap:8},title:{...type.subtitle,fontWeight:'700',color:C.ink},
  count:{...type.caption,fontWeight:'700',color:C.onAccent,backgroundColor:C.accent,minWidth:24,paddingHorizontal:8,paddingVertical:2,borderRadius:R.full,overflow:'hidden',textAlign:'center'},
- card:{overflow:'hidden',borderRadius:R.xl,borderWidth:1,borderColor:C.accentLine,backgroundColor:C.surface},
+ card:{overflow:'hidden',borderRadius:R.xl,borderWidth:1,borderColor:C.line,backgroundColor:C.surface},
  job:{flexDirection:'row',alignItems:'center',gap:12,paddingHorizontal:16,paddingVertical:12,borderBottomWidth:1,borderBottomColor:C.line},
  thumb:{width:56,height:56,borderRadius:R.md,overflow:'hidden',backgroundColor:C.surfaceAlt},
- autopilot:{...type.caption,color:C.accentPressed,backgroundColor:C.accentSoft,paddingHorizontal:16,paddingVertical:8},
+ autopilot:{...type.caption,color:C.muted,paddingHorizontal:16,paddingTop:8},
  jobTitle:{...type.body,fontWeight:'600',color:C.ink},jobNote:{...type.caption,color:C.muted},chevron:{fontSize:22,lineHeight:28,color:C.muted},
 });

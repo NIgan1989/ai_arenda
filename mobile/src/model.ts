@@ -1,7 +1,8 @@
 import {dateText,L,lang,t as tr} from '../../lib/i18n';
 export type Row=Record<string,any>;
 export type Role='guest'|'owner'|'cleaner';
-export type Message={id:string;sender:'user'|'assistant';text:string;block?:string;payload?:Row;done?:boolean;result?:string};
+// screen: a screen the person opened by a tap (rules, editor), not something the AI administrator said: it stays out of «История».
+export type Message={id:string;sender:'user'|'assistant';text:string;block?:string;payload?:Row;done?:boolean;result?:string;screen?:boolean};
 export type Question={key:string;text:string;label:string;min?:number;max?:number;date?:boolean;choices?:{label:string;value:string}[]};
 export type Flow={kind:string;questions:Question[];index:number;answers:Row;after:string;role:Role;endpoint:string;extra?:Row};
 export const empty={user:null,profile:null,properties:[],ownProperties:[],bookings:[],jobs:[],applications:[],notifications:[]};
