@@ -1,4 +1,5 @@
 import {DomainError} from './domain';
+import {smsReady,sendSms} from './sms';
 import {boundedRequestText} from './request-body';
 import {LEGAL_EDITION} from './legal-documents';
 
@@ -84,10 +85,7 @@ async function sendResetCode(db:D1Database,config:AdminLoginConfig,account:{id:s
  const bot=config.TELEGRAM_BOT_TOKEN;let sent=false;
  if(bot)for(const chat of await chatsOf(db,[account.id]))sent=await telegramSend(bot,chat,resetText(code))||sent;
  if(sent)return true;
- if(config.SMS_GATEWAY_URL&&config.SMS_GATEWAY_TOKEN&&/^https:\/\//.test(config.SMS_GATEWAY_URL)){
-  try{const r=await fetch(config.SMS_GATEWAY_URL,{method:'POST',headers:{Authorization:'Bearer '+config.SMS_GATEWAY_TOKEN,'Content-Type':'application/json'},body:JSON.stringify({id:'reset:'+account.id+':'+now(),to:account.phone,text:resetText(code),category:'verification'}),redirect:'manual',signal:AbortSignal.timeout(15000)});if(r.ok)return true;}
-  catch{console.error('Password reset SMS failed');}
- }
+ if(smsReady(config)){if(await sendSms(config,{id:'reset:'+account.id+':'+now(),to:account.phone,text:resetText(code)}))return true;console.error('Password reset SMS failed');}
  const admins=String(config.PLATFORM_ADMIN_IDS||'').split(',').map(v=>v.trim()).filter(Boolean);
  if(bot)for(const chat of await chatsOf(db,admins))sent=await telegramSend(bot,chat,'🔑 Восстановление доступа\n'+account.name+', '+account.phone+' забыл(а) пароль.\n\nПозвоните на этот номер и убедитесь, что говорите с владельцем аккаунта. Только тогда продиктуйте код: '+code+'\nКод действует 30 минут.')||sent;
  return sent;

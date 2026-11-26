@@ -96,7 +96,20 @@ export async function applyDuePayouts(db:D1Database,at=epoch()){
  for(const d of due){
   const r=await q(db,"UPDATE payout_details SET phone=pending_phone,recipient=pending_recipient,link=COALESCE(pending_link,''),changed_at=?,pending_phone=NULL,pending_recipient=NULL,pending_link=NULL,pending_role=NULL,pending_until=NULL,version=version+1,updated_at=? WHERE user_id=? AND pending_until IS NOT NULL AND pending_until<=?",at,at,d.user_id,at).run();
   if(!r.meta.changes)continue;applied++;
-  await db.batch([auditOf(db,d.user_id,{action:'payout.changed'},at),note(db,d.user_id,d.pending_role==='cleaner'?'cleaner':'owner',`Новые реквизиты для оплаты вступили в силу: Kaspi ${payoutPhoneText(d.pending_phone)} (${d.pending_recipient}).`,'changed',at)]);
+  // Guests of confirmed bookings were given the old details: they hear at once that the details changed.
+  const guests=await rows(db,"SELECT b.id,b.guest_id,p.title FROM bookings b JOIN properties p ON p.id=b.property_id JOIN booking_payouts x ON x.booking_id=b.id WHERE p.owner_id=? AND b.status='confirmed' AND b.end>? AND b.guest_id<>p.owner_id AND (x.phone<>? OR x.recipient<>?) LIMIT 50",d.user_id,at,d.pending_phone,d.pending_recipient);
+  await db.batch([auditOf(db,d.user_id,{action:'payout.changed'},at),note(db,d.user_id,d.pending_role==='cleaner'?'cleaner':'owner',`Новые реквизиты для оплаты вступили в силу: Kaspi ${payoutPhoneText(d.pending_phone)} (${d.pending_recipient}).`,'changed',at),
+   ...guests.map(g=>q(db,'INSERT OR IGNORE INTO notifications(id,user_id,body,dedupe,read,created_at) VALUES (?,?,?,?,0,?)',uuid(),g.guest_id,`Владелец «${g.title||'жильё'}» сменил реквизиты для оплаты после подтверждения брони. Не переводите деньги, пока не уточните в чате брони. Если владелец не отвечает или просит перевести срочно, напишите в поддержку.`,'guest:payout-changed:'+g.id+':'+at,at))]);
  }
  return applied;
+}
+
+// The details fixed in a booking when it was confirmed (drizzle/0103 booking_payouts) against the owner's details now.
+// When they differ the guest sees a red warning with the old recipient and the last digits of the old number: a
+// transfer to new details after the confirmation is the moment a stolen account or a scammer takes the money.
+export function payChange(locked:string|null|undefined,current:string|null|undefined){
+ if(!locked||!current)return null;
+ let was:Row,now:Row;try{was=JSON.parse(locked);now=JSON.parse(current);}catch{return null;}
+ if(was.phone===now.phone&&was.recipient===now.recipient&&(was.link||'')===(now.link||''))return null;
+ return {recipient:String(was.recipient||''),tail:String(was.phone||'').replace(/\D/g,'').slice(-4),locked_at:Number(was.locked_at)||0,changed_at:Number(now.changed_at)||0};
 }

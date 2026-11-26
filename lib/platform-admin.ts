@@ -1,3 +1,4 @@
+import {smsReady} from './sms';
 import {answerObjection,objectionQueue} from './reliability-objection';
 import {DomainError,number} from './domain';
 import {isPlatformAdmin} from './account';
@@ -122,7 +123,7 @@ export async function writePlatformAdmin(service:RentalService,route:string,body
  }
  if(route==='governance/policy'){
   if(config.TEST_DATA_ONLY==='1'&&[body.requireOwnerReview,body.requireCleanerReview,body.requirePhone].some(v=>v===true))throw new DomainError('Правила рабочего сервиса настраиваются вне учебного стенда.',409);
-  return savePilotPolicy(service,body,true);
+  return savePilotPolicy(service,body,true,smsReady(config as {SMS_GATEWAY_URL?:string;SMS_GATEWAY_TOKEN?:string}));
  }
  if(route==='objections/answer')return answerObjection(service.db,service.userId,body);
  if(route==='reports/action'){

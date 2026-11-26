@@ -22,6 +22,8 @@ export const accountDeletionColumns:Record<string,string>={
  "payment_receipts":"id,booking_id,job_id,user_id,data,object_key,width,height,bytes,created_at",
  "identity_docs":"id,user_id,data,object_key,width,height,bytes,created_at,checked_at,checked_by",
  "property_right_docs":"id,property_id,owner_id,kind,data,object_key,width,height,bytes,created_at,checked_at,checked_by,address_revision",
+ "booking_payouts":"booking_id,phone,recipient,link,locked_at",
+ "media_prints":"media_id,print,created_at",
  "booking_addresses":"booking_id,city,district,address,longitude,latitude,state,created_at,updated_at",
  "show_waiting":"property_id,review_id,created_at",
  "account_restrictions":"user_id,kind,reason,booking_id,created_by,created_at",

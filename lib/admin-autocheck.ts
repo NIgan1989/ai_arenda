@@ -3,6 +3,7 @@ import {epoch,uuid,q,one,rows,hash,type Row,type OperationConfig} from './operat
 import {decideParticipantReview} from './participant-security';
 import type {RentalService} from './service';
 import {hasContacts,MIN_PHOTOS,CURRENT_PROOF} from './listing-rules';
+import {photoTwins,twinsNote} from './photo-print';
 export {hasContacts,MIN_PHOTOS};
 
 // The AI administrator's check of a participant review. Every rule is plain and visible to the platform
@@ -26,7 +27,7 @@ export function normalAddress(city:string,address:string){
 const median=(n:number[])=>{const s=[...n].sort((a,b)=>a-b),m=s.length>>1;return s.length?(s.length%2?s[m]:(s[m-1]+s[m])/2):0;};
 const money=(n:number)=>Math.round(n).toLocaleString('ru-RU').replace(/ /g,' ')+' ₸';
 
-export type FlatFacts={description:string;title:string;photos:number;mapped:boolean;price:number;comparable:number[];duplicateAddress:boolean;rejectedBefore:number;openComplaints:number;rights?:number;rightsKind?:string;identity?:number};
+export type FlatFacts={description:string;title:string;photos:number;mapped:boolean;price:number;comparable:number[];duplicateAddress:boolean;rejectedBefore:number;openComplaints:number;rights?:number;rightsKind?:string;identity?:number;twins?:string};
 // Pure: the rules for an owner and the flat they want to show guests.
 export function flatChecks(f:FlatFacts):ReviewCheck[]{
  const checks:ReviewCheck[]=[];
@@ -37,6 +38,8 @@ export function flatChecks(f:FlatFacts):ReviewCheck[]{
  if(f.comparable.length>=3){const m=median(f.comparable),ratio=f.price/m,odd=ratio<PRICE_LOW||ratio>PRICE_HIGH;
   checks.push({key:'price',label:'Цена',state:odd?'risk':'ok',note:(odd?'Цена '+money(f.price)+' сильно '+(ratio<1?'ниже':'выше')+' обычной в городе':'Цена '+money(f.price)+' в пределах рынка')+' (обычно '+money(m)+')'});}
  else checks.push({key:'price',label:'Цена',state:f.price>0?'ok':'risk',note:f.price>0?'Цена указана, сравнить пока не с чем':'Цена не указана'});
+ // The same photo on a home of another owner (lib/photo-print.ts): stolen photos are the first sign of a fake home.
+ if(f.twins!==undefined)checks.push({key:'photo-twins',label:'Фото не повторяются',state:f.twins?'risk':'ok',note:f.twins||'Фото не повторяют другие объекты'});
  checks.push({key:'address',label:'Адрес',state:f.duplicateAddress?'risk':'ok',note:f.duplicateAddress?'Такой же адрес уже у жилья другого владельца':'Адрес не повторяется'});
  const contacts=hasContacts(f.title+' '+f.description);
  checks.push({key:'contacts',label:'Текст',state:contacts?'risk':'ok',note:contacts?'В тексте телефон, ссылка или просьба оплатить напрямую':'Нет контактов и оплаты мимо сервиса'});
@@ -72,7 +75,7 @@ async function flatFacts(db:D1Database,review:Row):Promise<FlatFacts|null>{
  const mine=normalAddress(p.city,p.address),others=await rows(db,'SELECT city,address FROM properties WHERE owner_id<>? AND demo_owner IS NULL AND archived_at IS NULL AND city=? LIMIT 2000',p.owner_id,p.city);
  const history=await one(db,"SELECT (SELECT COUNT(*) FROM participant_reviews WHERE user_id=? AND role='owner' AND status='rejected' AND reviewed_at>?) rejected,(SELECT COUNT(*) FROM administrator_issues WHERE owner_id=? AND opened_role='guest' AND status<>'resolved') complaints",p.owner_id,epoch()-HISTORY,p.owner_id);
  const rights=await one(db,'SELECT kind,COUNT(*) n FROM property_right_docs WHERE property_id=? AND '+CURRENT_PROOF+' GROUP BY kind ORDER BY MAX(created_at) DESC LIMIT 1',p.id);
- return {description:p.description||'',title:p.title||'',photos:p.photos,mapped:!!p.mapped,price:p.price,comparable,duplicateAddress:others.some(o=>normalAddress(o.city,o.address)===mine),rejectedBefore:history?.rejected||0,openComplaints:history?.complaints||0,rights:Number(rights?.n)||0,rightsKind:rights?.kind||'',identity:Number((await one(db,'SELECT COUNT(*) n FROM identity_docs WHERE user_id=?',p.owner_id))?.n)||0};
+ return {description:p.description||'',title:p.title||'',photos:p.photos,mapped:!!p.mapped,price:p.price,comparable,duplicateAddress:others.some(o=>normalAddress(o.city,o.address)===mine),rejectedBefore:history?.rejected||0,openComplaints:history?.complaints||0,rights:Number(rights?.n)||0,rightsKind:rights?.kind||'',twins:await (async()=>{const t=await photoTwins(db,p.id);return t.length?twinsNote(t):'';})(),identity:Number((await one(db,'SELECT COUNT(*) n FROM identity_docs WHERE user_id=?',p.owner_id))?.n)||0};
 }
 async function cleanerFacts(db:D1Database,review:Row):Promise<CleanerFacts|null>{
  const p=await one(db,"SELECT p.name,d.avatar_id,(SELECT COUNT(*) FROM participant_reviews r WHERE r.user_id=p.id AND r.role='cleaner' AND r.status='rejected' AND r.reviewed_at>?) rejected,(SELECT COUNT(*) FROM administrator_issues i WHERE i.other_user=p.id AND i.other_role='cleaner' AND i.status<>'resolved') complaints FROM profiles p LEFT JOIN profile_details d ON d.user_id=p.id WHERE p.id=?",epoch()-HISTORY,review.user_id);

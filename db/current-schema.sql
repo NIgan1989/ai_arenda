@@ -104,7 +104,8 @@
 -- migration 0100_too_general.sql sha256:39d4dd856a7c3c1c074778c6ffc6a489e0c077ad8d27144f1cd730d2f66ab914
 -- migration 0101_native_push.sql sha256:0f0f7fe2dbb31e301ddaac6a7ae3032a0162c4f5bea82f91714e58d977b90cf4
 -- migration 0102_passkeys.sql sha256:3f764759d661b1a859e959faaa0c45c757c1a3271fe51939bcad7ecf949b43cb
--- migration 0103_stay_classes.sql sha256:a6ac265367913acbd4318cc7ede0c85f595a3ea19a99b7c85db51f07d1b8e0b7
+-- migration 0103_fraud_guards_two.sql sha256:3c6784fdb55095e3f045c9b7841ef409ecbbc872cde04729edda14260af47f18
+-- migration 0104_stay_classes.sql sha256:a6ac265367913acbd4318cc7ede0c85f595a3ea19a99b7c85db51f07d1b8e0b7
 
 -- table access_receipts
 CREATE TABLE access_receipts (id TEXT PRIMARY KEY,property_id TEXT NOT NULL,entity_kind TEXT NOT NULL,entity_id TEXT NOT NULL,user_id TEXT NOT NULL,created_at INTEGER NOT NULL,expires_at INTEGER NOT NULL);
@@ -429,6 +430,15 @@ CREATE TABLE booking_changes (
  reason TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','accepted','rejected','expired')),
  expires_at INTEGER NOT NULL, created_at INTEGER NOT NULL, decided_at INTEGER, guests INTEGER CHECK(guests IS NULL OR guests>0),
  UNIQUE(proposed_by,request_key)
+);
+
+-- table booking_payouts
+CREATE TABLE booking_payouts (
+ booking_id TEXT PRIMARY KEY REFERENCES bookings(id) ON DELETE CASCADE,
+ phone TEXT NOT NULL,
+ recipient TEXT NOT NULL,
+ link TEXT NOT NULL DEFAULT '',
+ locked_at INTEGER NOT NULL
 );
 
 -- table booking_risks
@@ -941,6 +951,13 @@ CREATE TABLE media (
  kind TEXT NOT NULL CHECK(kind IN ('property','avatar')), data TEXT NOT NULL,
  width INTEGER NOT NULL, height INTEGER NOT NULL, bytes INTEGER NOT NULL, created_at INTEGER NOT NULL
 , object_key TEXT NOT NULL DEFAULT '');
+
+-- table media_prints
+CREATE TABLE media_prints (
+ media_id TEXT PRIMARY KEY REFERENCES media(id) ON DELETE CASCADE,
+ print TEXT NOT NULL,
+ created_at INTEGER NOT NULL
+);
 
 -- table messages
 CREATE TABLE `messages` (
@@ -1707,6 +1724,9 @@ CREATE INDEX media_object_key ON media(object_key) WHERE object_key<>'';
 -- index media_owner
 CREATE INDEX media_owner ON media(user_id,kind);
 
+-- index media_prints_created
+CREATE INDEX media_prints_created ON media_prints(created_at);
+
 -- index messages_user_scope
 CREATE INDEX messages_user_scope ON messages(user_id,scope,created_at);
 
@@ -2418,6 +2438,30 @@ CREATE TRIGGER booking_insert_guard BEFORE INSERT ON bookings BEGIN
   SELECT CASE WHEN (NEW.status='confirmed' OR (NEW.status='requested' AND NEW.expires_at>unixepoch())) AND EXISTS (
     SELECT 1 FROM cleaning_jobs j WHERE j.property_id=NEW.property_id AND j.status IN ('open','assigned','in_progress','submitted') AND (j.booking_id IS NULL OR j.booking_id<>NEW.id) AND j.start<NEW.occupied_until AND j.end>NEW.start
   ) THEN RAISE(ABORT, 'booking_overlap') END;
+END;
+
+-- trigger booking_payout_first_insert
+CREATE TRIGGER booking_payout_first_insert AFTER INSERT ON payout_details WHEN NEW.phone<>'' BEGIN
+ INSERT OR IGNORE INTO booking_payouts(booking_id,phone,recipient,link,locked_at)
+  SELECT b.id,NEW.phone,NEW.recipient,NEW.link,unixepoch() FROM bookings b JOIN properties p ON p.id=b.property_id WHERE p.owner_id=NEW.user_id AND b.status='confirmed';
+END;
+
+-- trigger booking_payout_first_update
+CREATE TRIGGER booking_payout_first_update AFTER UPDATE OF phone ON payout_details WHEN OLD.phone='' AND NEW.phone<>'' BEGIN
+ INSERT OR IGNORE INTO booking_payouts(booking_id,phone,recipient,link,locked_at)
+  SELECT b.id,NEW.phone,NEW.recipient,NEW.link,unixepoch() FROM bookings b JOIN properties p ON p.id=b.property_id WHERE p.owner_id=NEW.user_id AND b.status='confirmed';
+END;
+
+-- trigger booking_payout_lock
+CREATE TRIGGER booking_payout_lock AFTER UPDATE OF status ON bookings WHEN NEW.status='confirmed' AND OLD.status<>'confirmed' BEGIN
+ INSERT OR IGNORE INTO booking_payouts(booking_id,phone,recipient,link,locked_at)
+  SELECT NEW.id,d.phone,d.recipient,d.link,unixepoch() FROM properties p JOIN payout_details d ON d.user_id=p.owner_id WHERE p.id=NEW.property_id AND d.phone<>'';
+END;
+
+-- trigger booking_payout_lock_insert
+CREATE TRIGGER booking_payout_lock_insert AFTER INSERT ON bookings WHEN NEW.status='confirmed' BEGIN
+ INSERT OR IGNORE INTO booking_payouts(booking_id,phone,recipient,link,locked_at)
+  SELECT NEW.id,d.phone,d.recipient,d.link,unixepoch() FROM properties p JOIN payout_details d ON d.user_id=p.owner_id WHERE p.id=NEW.property_id AND d.phone<>'';
 END;
 
 -- trigger booking_update_cleaning_guard
