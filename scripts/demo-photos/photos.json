@@ -1,0 +1,506 @@
+{
+ "note": "Свободные фото для тестовых объектов (CC0, общественное достояние, CC BY/CC BY-SA с указанием автора). Подобраны вручную по типу объекта.",
+ "kinds": {
+  "apartment": [
+   {
+    "id": "commons:45234678",
+    "url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/1/1f/JPAD_living_room.jpg/1280px-JPAD_living_room.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+    "license": "CC BY-SA 4.0",
+    "creator": "Jannahplace",
+    "source": "wikimedia",
+    "page": "https://commons.wikimedia.org/wiki/File:JPAD_living_room.jpg",
+    "title": "File:JPAD living room.jpg"
+   },
+   {
+    "id": "commons:62125506",
+    "url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/e/ea/Living_room_%28Unsplash%29.jpg/1280px-Living_room_%28Unsplash%29.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+    "license": "CC0",
+    "creator": "Jarosław Ceborski jarson",
+    "source": "wikimedia",
+    "page": "https://commons.wikimedia.org/wiki/File:Living_room_(Unsplash).jpg",
+    "title": "File:Living room (Unsplash).jpg"
+   },
+   {
+    "id": "commons:77551885",
+    "url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/e/e8/Brier_Living_Room.jpg/1280px-Brier_Living_Room.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+    "license": "CC BY-SA 4.0",
+    "creator": "ChrisCaparro",
+    "source": "wikimedia",
+    "page": "https://commons.wikimedia.org/wiki/File:Brier_Living_Room.jpg",
+    "title": "File:Brier Living Room.jpg"
+   },
+   {
+    "id": "commons:83210999",
+    "url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/7/72/Bilioth%C3%A8que_ALBI_et_bureau_VOLGA.jpg/1280px-Bilioth%C3%A8que_ALBI_et_bureau_VOLGA.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+    "license": "CC BY-SA 4.0",
+    "creator": "TEMAHOME President",
+    "source": "wikimedia",
+    "page": "https://commons.wikimedia.org/wiki/File:Bilioth%C3%A8que_ALBI_et_bureau_VOLGA.jpg",
+    "title": "File:Biliothèque ALBI et bureau VOLGA.jpg"
+   },
+   {
+    "id": "commons:49748865",
+    "url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/d/d1/Brand.Darina.jpg/1280px-Brand.Darina.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+    "license": "CC BY-SA 4.0",
+    "creator": "N.faskhutdinova",
+    "source": "wikimedia",
+    "page": "https://commons.wikimedia.org/wiki/File:Brand.Darina.jpg",
+    "title": "File:Brand.Darina.jpg"
+   }
+  ],
+  "studio": [
+   {
+    "id": "commons:83210999",
+    "url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/7/72/Bilioth%C3%A8que_ALBI_et_bureau_VOLGA.jpg/1280px-Bilioth%C3%A8que_ALBI_et_bureau_VOLGA.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+    "license": "CC BY-SA 4.0",
+    "creator": "TEMAHOME President",
+    "source": "wikimedia",
+    "page": "https://commons.wikimedia.org/wiki/File:Bilioth%C3%A8que_ALBI_et_bureau_VOLGA.jpg",
+    "title": "File:Biliothèque ALBI et bureau VOLGA.jpg"
+   },
+   {
+    "id": "commons:62125506",
+    "url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/e/ea/Living_room_%28Unsplash%29.jpg/1280px-Living_room_%28Unsplash%29.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+    "license": "CC0",
+    "creator": "Jarosław Ceborski jarson",
+    "source": "wikimedia",
+    "page": "https://commons.wikimedia.org/wiki/File:Living_room_(Unsplash).jpg",
+    "title": "File:Living room (Unsplash).jpg"
+   },
+   {
+    "id": "commons:49748865",
+    "url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/d/d1/Brand.Darina.jpg/1280px-Brand.Darina.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+    "license": "CC BY-SA 4.0",
+    "creator": "N.faskhutdinova",
+    "source": "wikimedia",
+    "page": "https://commons.wikimedia.org/wiki/File:Brand.Darina.jpg",
+    "title": "File:Brand.Darina.jpg"
+   },
+   {
+    "id": "commons:116018695",
+    "url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/6/60/Bedroom_with_marine_puzzles_on_wall.jpg/1280px-Bedroom_with_marine_puzzles_on_wall.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+    "license": "CC BY-SA 3.0",
+    "creator": "aismallard",
+    "source": "wikimedia",
+    "page": "https://commons.wikimedia.org/wiki/File:Bedroom_with_marine_puzzles_on_wall.jpg",
+    "title": "File:Bedroom with marine puzzles on wall.jpg"
+   }
+  ],
+  "room": [
+   {
+    "id": "commons:26285695",
+    "url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/a/af/Holiday_Inn_Moscow_Sokolniki%2C_interiors_%288034785305%29.jpg/1280px-Holiday_Inn_Moscow_Sokolniki%2C_interiors_%288034785305%29.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+    "license": "CC BY 2.0",
+    "creator": "jimmyweee",
+    "source": "wikimedia",
+    "page": "https://commons.wikimedia.org/wiki/File:Holiday_Inn_Moscow_Sokolniki,_interiors_(8034785305).jpg",
+    "title": "File:Holiday Inn Moscow Sokolniki, interiors (8034785305).jpg"
+   },
+   {
+    "id": "commons:99550426",
+    "url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/b/bf/Lake_Bedroom_Guatemala_2018.jpg/1280px-Lake_Bedroom_Guatemala_2018.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+    "license": "CC BY 2.0",
+    "creator": "jjmusgrove",
+    "source": "wikimedia",
+    "page": "https://commons.wikimedia.org/wiki/File:Lake_Bedroom_Guatemala_2018.jpg",
+    "title": "File:Lake Bedroom Guatemala 2018.jpg"
+   },
+   {
+    "id": "commons:116018695",
+    "url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/6/60/Bedroom_with_marine_puzzles_on_wall.jpg/1280px-Bedroom_with_marine_puzzles_on_wall.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+    "license": "CC BY-SA 3.0",
+    "creator": "aismallard",
+    "source": "wikimedia",
+    "page": "https://commons.wikimedia.org/wiki/File:Bedroom_with_marine_puzzles_on_wall.jpg",
+    "title": "File:Bedroom with marine puzzles on wall.jpg"
+   },
+   {
+    "id": "commons:116710649",
+    "url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/9/99/Bedroom_of_guesthouse.jpg/1280px-Bedroom_of_guesthouse.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+    "license": "CC BY-SA 4.0",
+    "creator": "Fquasie",
+    "source": "wikimedia",
+    "page": "https://commons.wikimedia.org/wiki/File:Bedroom_of_guesthouse.jpg",
+    "title": "File:Bedroom of guesthouse.jpg"
+   }
+  ],
+  "house": [
+   {
+    "id": "commons:201181379",
+    "url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/5/5a/Dacha_with_blackened_wood_siding_%28Moscow_Oblast%2C_Russia%2C_Sept_2026%29_02.jpg/1280px-Dacha_with_blackened_wood_siding_%28Moscow_Oblast%2C_Russia%2C_Sept_2026%29_02.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+    "license": "CC0",
+    "creator": "Retired electrician",
+    "source": "wikimedia",
+    "page": "https://commons.wikimedia.org/wiki/File:Dacha_with_blackened_wood_siding_(Moscow_Oblast,_Russia,_Sept_2026)_02.jpg",
+    "title": "File:Dacha with blackened wood siding (Moscow Oblast, Russia, Sept 2026) 02.jpg"
+   },
+   {
+    "id": "commons:31851660",
+    "url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/e/e8/Alabuga.jpg/1280px-Alabuga.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+    "license": "CC BY-SA 3.0",
+    "creator": "Julia172010",
+    "source": "wikimedia",
+    "page": "https://commons.wikimedia.org/wiki/File:Alabuga.jpg",
+    "title": "File:Alabuga.jpg"
+   },
+   {
+    "id": "commons:201181381",
+    "url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/1/17/Dacha_with_blackened_wood_siding_%28Moscow_Oblast%2C_Russia%2C_Sept_2026%29_06.jpg/1280px-Dacha_with_blackened_wood_siding_%28Moscow_Oblast%2C_Russia%2C_Sept_2026%29_06.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+    "license": "CC0",
+    "creator": "Retired electrician",
+    "source": "wikimedia",
+    "page": "https://commons.wikimedia.org/wiki/File:Dacha_with_blackened_wood_siding_(Moscow_Oblast,_Russia,_Sept_2026)_06.jpg",
+    "title": "File:Dacha with blackened wood siding (Moscow Oblast, Russia, Sept 2026) 06.jpg"
+   },
+   {
+    "id": "commons:97454659",
+    "url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/4/4b/Kornienko_house.jpg/1280px-Kornienko_house.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+    "license": "CC BY-SA 4.0",
+    "creator": "Master lpc",
+    "source": "wikimedia",
+    "page": "https://commons.wikimedia.org/wiki/File:Kornienko_house.jpg",
+    "title": "File:Kornienko house.jpg"
+   },
+   {
+    "id": "commons:32694532",
+    "url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/7/7c/House_in_Karaganda.jpg/1280px-House_in_Karaganda.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+    "license": "CC BY 3.0",
+    "creator": "Aiviq-2",
+    "source": "wikimedia",
+    "page": "https://commons.wikimedia.org/wiki/File:House_in_Karaganda.jpg",
+    "title": "File:House in Karaganda.jpg"
+   }
+  ],
+  "guesthouse": [
+   {
+    "id": "commons:201181381",
+    "url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/1/17/Dacha_with_blackened_wood_siding_%28Moscow_Oblast%2C_Russia%2C_Sept_2026%29_06.jpg/1280px-Dacha_with_blackened_wood_siding_%28Moscow_Oblast%2C_Russia%2C_Sept_2026%29_06.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+    "license": "CC0",
+    "creator": "Retired electrician",
+    "source": "wikimedia",
+    "page": "https://commons.wikimedia.org/wiki/File:Dacha_with_blackened_wood_siding_(Moscow_Oblast,_Russia,_Sept_2026)_06.jpg",
+    "title": "File:Dacha with blackened wood siding (Moscow Oblast, Russia, Sept 2026) 06.jpg"
+   },
+   {
+    "id": "commons:99550426",
+    "url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/b/bf/Lake_Bedroom_Guatemala_2018.jpg/1280px-Lake_Bedroom_Guatemala_2018.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+    "license": "CC BY 2.0",
+    "creator": "jjmusgrove",
+    "source": "wikimedia",
+    "page": "https://commons.wikimedia.org/wiki/File:Lake_Bedroom_Guatemala_2018.jpg",
+    "title": "File:Lake Bedroom Guatemala 2018.jpg"
+   },
+   {
+    "id": "commons:201181379",
+    "url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/5/5a/Dacha_with_blackened_wood_siding_%28Moscow_Oblast%2C_Russia%2C_Sept_2026%29_02.jpg/1280px-Dacha_with_blackened_wood_siding_%28Moscow_Oblast%2C_Russia%2C_Sept_2026%29_02.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+    "license": "CC0",
+    "creator": "Retired electrician",
+    "source": "wikimedia",
+    "page": "https://commons.wikimedia.org/wiki/File:Dacha_with_blackened_wood_siding_(Moscow_Oblast,_Russia,_Sept_2026)_02.jpg",
+    "title": "File:Dacha with blackened wood siding (Moscow Oblast, Russia, Sept 2026) 02.jpg"
+   },
+   {
+    "id": "commons:26285695",
+    "url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/a/af/Holiday_Inn_Moscow_Sokolniki%2C_interiors_%288034785305%29.jpg/1280px-Holiday_Inn_Moscow_Sokolniki%2C_interiors_%288034785305%29.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+    "license": "CC BY 2.0",
+    "creator": "jimmyweee",
+    "source": "wikimedia",
+    "page": "https://commons.wikimedia.org/wiki/File:Holiday_Inn_Moscow_Sokolniki,_interiors_(8034785305).jpg",
+    "title": "File:Holiday Inn Moscow Sokolniki, interiors (8034785305).jpg"
+   }
+  ],
+  "hostel": [
+   {
+    "id": "commons:123204035",
+    "url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/3/38/Qsh_twin_%2810942953985%29.jpg/1280px-Qsh_twin_%2810942953985%29.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+    "license": "CC BY 2.0",
+    "creator": "Barnacles Budget Accommodation from Ireland",
+    "source": "wikimedia",
+    "page": "https://commons.wikimedia.org/wiki/File:Qsh_twin_(10942953985).jpg",
+    "title": "File:Qsh twin (10942953985).jpg"
+   },
+   {
+    "id": "commons:116757403",
+    "url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/6/64/Bunked_double_bed_with_a_wooden_frame._%2851539646151%29.jpg/1280px-Bunked_double_bed_with_a_wooden_frame._%2851539646151%29.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+    "license": "CC BY 2.0",
+    "creator": "Nenad Stojkovic",
+    "source": "wikimedia",
+    "page": "https://commons.wikimedia.org/wiki/File:Bunked_double_bed_with_a_wooden_frame._(51539646151).jpg",
+    "title": "File:Bunked double bed with a wooden frame. (51539646151).jpg"
+   },
+   {
+    "id": "commons:63821912",
+    "url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/c/c6/Bunk_bed_%28wooden%29.jpg/1280px-Bunk_bed_%28wooden%29.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+    "license": "CC BY-SA 4.0",
+    "creator": "Steven Pavlov",
+    "source": "wikimedia",
+    "page": "https://commons.wikimedia.org/wiki/File:Bunk_bed_(wooden).jpg",
+    "title": "File:Bunk bed (wooden).jpg"
+   },
+   {
+    "id": "commons:75611628",
+    "url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/2/25/The_cabin.jpg/1280px-The_cabin.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+    "license": "CC BY-SA 4.0",
+    "creator": "Gsanjeev",
+    "source": "wikimedia",
+    "page": "https://commons.wikimedia.org/wiki/File:The_cabin.jpg",
+    "title": "File:The cabin.jpg"
+   },
+   {
+    "id": "commons:53279997",
+    "url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/6/68/Bunk_beds_%28panoramio_%281297%29%29.jpg/1280px-Bunk_beds_%28panoramio_%281297%29%29.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+    "license": "CC BY 3.0",
+    "creator": "logan watson",
+    "source": "wikimedia",
+    "page": "https://commons.wikimedia.org/wiki/File:Bunk_beds_(panoramio_(1297)).jpg",
+    "title": "File:Bunk beds (panoramio (1297)).jpg"
+   }
+  ],
+  "hotel": [
+   {
+    "id": "commons:26285695",
+    "url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/a/af/Holiday_Inn_Moscow_Sokolniki%2C_interiors_%288034785305%29.jpg/1280px-Holiday_Inn_Moscow_Sokolniki%2C_interiors_%288034785305%29.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+    "license": "CC BY 2.0",
+    "creator": "jimmyweee",
+    "source": "wikimedia",
+    "page": "https://commons.wikimedia.org/wiki/File:Holiday_Inn_Moscow_Sokolniki,_interiors_(8034785305).jpg",
+    "title": "File:Holiday Inn Moscow Sokolniki, interiors (8034785305).jpg"
+   },
+   {
+    "id": "commons:34385020",
+    "url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/f/f9/The_Grove_Lobby.jpg/1280px-The_Grove_Lobby.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+    "license": "CC BY-SA 4.0",
+    "creator": "Rockwell Land",
+    "source": "wikimedia",
+    "page": "https://commons.wikimedia.org/wiki/File:The_Grove_Lobby.jpg",
+    "title": "File:The Grove Lobby.jpg"
+   },
+   {
+    "id": "commons:175693079",
+    "url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/a/ad/20230520_Hotel_room_in_Saint_Petersburg_05.jpg/1280px-20230520_Hotel_room_in_Saint_Petersburg_05.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+    "license": "CC BY 4.0",
+    "creator": "Sergey A.",
+    "source": "wikimedia",
+    "page": "https://commons.wikimedia.org/wiki/File:20230520_Hotel_room_in_Saint_Petersburg_05.jpg",
+    "title": "File:20230520 Hotel room in Saint Petersburg 05.jpg"
+   },
+   {
+    "id": "commons:9874927",
+    "url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/e/ee/Chzlobby.JPG/1280px-Chzlobby.JPG?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+    "license": "CC BY-SA 3.0",
+    "creator": "ZaraHotels",
+    "source": "wikimedia",
+    "page": "https://commons.wikimedia.org/wiki/File:Chzlobby.JPG",
+    "title": "File:Chzlobby.JPG"
+   },
+   {
+    "id": "commons:52439456",
+    "url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/d/d8/MezzanineHotelChristianiaTeater.jpg/1280px-MezzanineHotelChristianiaTeater.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+    "license": "CC BY-SA 4.0",
+    "creator": "Orjanarvola",
+    "source": "wikimedia",
+    "page": "https://commons.wikimedia.org/wiki/File:MezzanineHotelChristianiaTeater.jpg",
+    "title": "File:MezzanineHotelChristianiaTeater.jpg"
+   }
+  ],
+  "aparthotel": [
+   {
+    "id": "commons:77551885",
+    "url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/e/e8/Brier_Living_Room.jpg/1280px-Brier_Living_Room.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+    "license": "CC BY-SA 4.0",
+    "creator": "ChrisCaparro",
+    "source": "wikimedia",
+    "page": "https://commons.wikimedia.org/wiki/File:Brier_Living_Room.jpg",
+    "title": "File:Brier Living Room.jpg"
+   },
+   {
+    "id": "commons:175693079",
+    "url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/a/ad/20230520_Hotel_room_in_Saint_Petersburg_05.jpg/1280px-20230520_Hotel_room_in_Saint_Petersburg_05.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+    "license": "CC BY 4.0",
+    "creator": "Sergey A.",
+    "source": "wikimedia",
+    "page": "https://commons.wikimedia.org/wiki/File:20230520_Hotel_room_in_Saint_Petersburg_05.jpg",
+    "title": "File:20230520 Hotel room in Saint Petersburg 05.jpg"
+   },
+   {
+    "id": "commons:49748865",
+    "url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/d/d1/Brand.Darina.jpg/1280px-Brand.Darina.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+    "license": "CC BY-SA 4.0",
+    "creator": "N.faskhutdinova",
+    "source": "wikimedia",
+    "page": "https://commons.wikimedia.org/wiki/File:Brand.Darina.jpg",
+    "title": "File:Brand.Darina.jpg"
+   },
+   {
+    "id": "commons:45234678",
+    "url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/1/1f/JPAD_living_room.jpg/1280px-JPAD_living_room.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+    "license": "CC BY-SA 4.0",
+    "creator": "Jannahplace",
+    "source": "wikimedia",
+    "page": "https://commons.wikimedia.org/wiki/File:JPAD_living_room.jpg",
+    "title": "File:JPAD living room.jpg"
+   }
+  ],
+  "banya": [
+   {
+    "id": "commons:151018054",
+    "url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/0/05/Harvia_Ventura_sauna.jpg/1280px-Harvia_Ventura_sauna.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+    "license": "CC BY-SA 4.0",
+    "creator": "Johnnidian",
+    "source": "wikimedia",
+    "page": "https://commons.wikimedia.org/wiki/File:Harvia_Ventura_sauna.jpg",
+    "title": "File:Harvia Ventura sauna.jpg"
+   },
+   {
+    "id": "commons:79982879",
+    "url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/b/ba/Sauna_in_Merem%C3%A4e%2C_Setomaa.jpg/1280px-Sauna_in_Merem%C3%A4e%2C_Setomaa.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+    "license": "CC BY-SA 4.0",
+    "creator": "Klarqa",
+    "source": "wikimedia",
+    "page": "https://commons.wikimedia.org/wiki/File:Sauna_in_Merem%C3%A4e,_Setomaa.jpg",
+    "title": "File:Sauna in Meremäe, Setomaa.jpg"
+   },
+   {
+    "id": "commons:174127690",
+    "url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/4/4c/Sha2017-sauna.jpg/1280px-Sha2017-sauna.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+    "license": "CC BY-SA 4.0",
+    "creator": "Korrupt",
+    "source": "wikimedia",
+    "page": "https://commons.wikimedia.org/wiki/File:Sha2017-sauna.jpg",
+    "title": "File:Sha2017-sauna.jpg"
+   },
+   {
+    "id": "commons:98981393",
+    "url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/f/f5/Saunask%C3%A4ik..jpg/1280px-Saunask%C3%A4ik..jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+    "license": "CC BY-SA 4.0",
+    "creator": "Sillerkiil",
+    "source": "wikimedia",
+    "page": "https://commons.wikimedia.org/wiki/File:Saunask%C3%A4ik..jpg",
+    "title": "File:Saunaskäik..jpg"
+   }
+  ],
+  "sauna": [
+   {
+    "id": "commons:151018054",
+    "url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/0/05/Harvia_Ventura_sauna.jpg/1280px-Harvia_Ventura_sauna.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+    "license": "CC BY-SA 4.0",
+    "creator": "Johnnidian",
+    "source": "wikimedia",
+    "page": "https://commons.wikimedia.org/wiki/File:Harvia_Ventura_sauna.jpg",
+    "title": "File:Harvia Ventura sauna.jpg"
+   },
+   {
+    "id": "commons:21248642",
+    "url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/d/da/Ribka.jpg/1280px-Ribka.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+    "license": "CC BY-SA 3.0",
+    "creator": "PressGPNS",
+    "source": "wikimedia",
+    "page": "https://commons.wikimedia.org/wiki/File:Ribka.jpg",
+    "title": "File:Ribka.jpg"
+   },
+   {
+    "id": "commons:113885333",
+    "url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/0/0e/Swimming_pool_Gan_Shmuel.jpg/1280px-Swimming_pool_Gan_Shmuel.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+    "license": "CC BY-SA 4.0",
+    "creator": "Laliv g",
+    "source": "wikimedia",
+    "page": "https://commons.wikimedia.org/wiki/File:Swimming_pool_Gan_Shmuel.jpg",
+    "title": "File:Swimming pool Gan Shmuel.jpg"
+   },
+   {
+    "id": "commons:140504700",
+    "url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/2/23/Seaside_sauna_in_Kirkkonummi.jpg/1280px-Seaside_sauna_in_Kirkkonummi.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+    "license": "CC BY-SA 4.0",
+    "creator": "JIP",
+    "source": "wikimedia",
+    "page": "https://commons.wikimedia.org/wiki/File:Seaside_sauna_in_Kirkkonummi.jpg",
+    "title": "File:Seaside sauna in Kirkkonummi.jpg"
+   }
+  ],
+  "banquet": [
+   {
+    "id": "commons:198122808",
+    "url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/b/b1/Puri_Bali_Grand_Ballroom_at_Paradisus_by_Meli%C3%A1_Bali.jpg/1280px-Puri_Bali_Grand_Ballroom_at_Paradisus_by_Meli%C3%A1_Bali.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+    "license": "CC BY-SA 4.0",
+    "creator": "Paradisus Bali",
+    "source": "wikimedia",
+    "page": "https://commons.wikimedia.org/wiki/File:Puri_Bali_Grand_Ballroom_at_Paradisus_by_Meli%C3%A1_Bali.jpg",
+    "title": "File:Puri Bali Grand Ballroom at Paradisus by Meliá Bali.jpg"
+   },
+   {
+    "id": "commons:117653913",
+    "url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/c/cc/Event_Hall_in_Colombia.jpg/1280px-Event_Hall_in_Colombia.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+    "license": "CC BY-SA 4.0",
+    "creator": "PapiPijuan",
+    "source": "wikimedia",
+    "page": "https://commons.wikimedia.org/wiki/File:Event_Hall_in_Colombia.jpg",
+    "title": "File:Event Hall in Colombia.jpg"
+   },
+   {
+    "id": "commons:115724120",
+    "url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/e/e4/Fnp_venues.jpg/1280px-Fnp_venues.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+    "license": "CC BY-SA 4.0",
+    "creator": "Fnpvenues11",
+    "source": "wikimedia",
+    "page": "https://commons.wikimedia.org/wiki/File:Fnp_venues.jpg",
+    "title": "File:Fnp venues.jpg"
+   },
+   {
+    "id": "commons:137311068",
+    "url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/8/8a/M4ROOT.00_00_26_19.Still004.jpg/1280px-M4ROOT.00_00_26_19.Still004.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+    "license": "CC BY-SA 4.0",
+    "creator": "Mahmoud123hissein",
+    "source": "wikimedia",
+    "page": "https://commons.wikimedia.org/wiki/File:M4ROOT.00_00_26_19.Still004.jpg",
+    "title": "File:M4ROOT.00 00 26 19.Still004.jpg"
+   },
+   {
+    "id": "commons:193337709",
+    "url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/1/1d/Banqueting_Room_of_the_Adelaide_Town_Hall%2C_June_2026_%28DSCF7369%29.jpg/1280px-Banqueting_Room_of_the_Adelaide_Town_Hall%2C_June_2026_%28DSCF7369%29.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+    "license": "CC BY-SA 4.0",
+    "creator": "Yu Chu Chin",
+    "source": "wikimedia",
+    "page": "https://commons.wikimedia.org/wiki/File:Banqueting_Room_of_the_Adelaide_Town_Hall,_June_2026_(DSCF7369).jpg",
+    "title": "File:Banqueting Room of the Adelaide Town Hall, June 2026 (DSCF7369).jpg"
+   }
+  ],
+  "cafe": [
+   {
+    "id": "commons:107659189",
+    "url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/f/f9/Restaurant_in_Place_D%27Youville%2C_Quebec_City.jpg/1280px-Restaurant_in_Place_D%27Youville%2C_Quebec_City.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+    "license": "CC0",
+    "creator": "Wilfredor",
+    "source": "wikimedia",
+    "page": "https://commons.wikimedia.org/wiki/File:Restaurant_in_Place_D%27Youville,_Quebec_City.jpg",
+    "title": "File:Restaurant in Place D'Youville, Quebec City.jpg"
+   },
+   {
+    "id": "commons:94298133",
+    "url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/e/ef/Restaurant_N%C3%A4sinneula.jpg/1280px-Restaurant_N%C3%A4sinneula.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+    "license": "CC BY-SA 4.0",
+    "creator": "kallerna",
+    "source": "wikimedia",
+    "page": "https://commons.wikimedia.org/wiki/File:Restaurant_N%C3%A4sinneula.jpg",
+    "title": "File:Restaurant Näsinneula.jpg"
+   },
+   {
+    "id": "commons:145035425",
+    "url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/7/7e/Restaurant_interior_-_geograph.org.uk_-_6262847.jpg/1280px-Restaurant_interior_-_geograph.org.uk_-_6262847.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+    "license": "CC BY-SA 2.0",
+    "creator": "Bob Harvey",
+    "source": "wikimedia",
+    "page": "https://commons.wikimedia.org/wiki/File:Restaurant_interior_-_geograph.org.uk_-_6262847.jpg",
+    "title": "File:Restaurant interior - geograph.org.uk - 6262847.jpg"
+   },
+   {
+    "id": "commons:86137083",
+    "url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/7/7a/Interior_of_a_Chinese_restaurant_in_Kolkata.jpg/1280px-Interior_of_a_Chinese_restaurant_in_Kolkata.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+    "license": "CC BY-SA 4.0",
+    "creator": "Kritzolina",
+    "source": "wikimedia",
+    "page": "https://commons.wikimedia.org/wiki/File:Interior_of_a_Chinese_restaurant_in_Kolkata.jpg",
+    "title": "File:Interior of a Chinese restaurant in Kolkata.jpg"
+   }
+  ]
+ }
+}

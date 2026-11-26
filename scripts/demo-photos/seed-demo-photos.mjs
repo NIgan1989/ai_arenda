@@ -46,7 +46,7 @@ const ready=new Map();
 async function prepare(photo){
  if(ready.has(photo.id))return ready.get(photo.id);
  const raw=`${dir}/${photo.id}.src`,out=`${dir}/${photo.id}.jpg`;
- let ok=false;for(let i=1;i<=4&&!ok;i++){try{const r=await fetch(photo.url,{headers:{'user-agent':'ai-arenda-demo-seed'}});if(r.ok){writeFileSync(raw,Buffer.from(await r.arrayBuffer()));ok=true;}else await pause(3000*i);}catch{await pause(3000*i);}}
+ let ok=false;for(let i=1;i<=4&&!ok;i++){try{const r=await fetch(photo.url,{headers:{'user-agent':'ai-arenda-demo-photos/1.0 (https://github.com/NIgan1989/ai_arenda)'}});if(r.ok){writeFileSync(raw,Buffer.from(await r.arrayBuffer()));ok=true;}else await pause(3000*i);}catch{await pause(3000*i);}}
  if(!ok)throw Error('photo not fetched: '+photo.url);
  for(const q of [80,72,64,56]){execFileSync('convert',[raw+'[0]','-auto-orient','-resize','1280x1280>','-strip','-interlace','JPEG','-quality',String(q),out]);if(statSync(out).size<340000)break;}
  const [w,h]=execFileSync('identify',['-format','%w %h',out]).toString().trim().split(' ').map(Number);
