@@ -1,4 +1,3 @@
-import jpeg from 'jpeg-js';
 import {epoch,q,rows} from './operation-core';
 import {dataUrlBytes} from './media-store';
 import {sweepTwins} from './photo-print';
@@ -7,9 +6,10 @@ const W=9,H=8;
 // The print of each photo of a home (lib/photo-print.ts), made in the background a few photos at a time: a new photo
 // gets it within minutes, the photos uploaded before the prints existed get it the same way.
 /** The print of a JPEG as 16 hex digits, or '' when the photo cannot be read or is one flat colour. */
-export function photoPrint(bytes:Uint8Array):string{
+// The decoder is loaded on first use, so modules that only import this file (the mobile test copy has no jpeg-js) still load.
+export async function photoPrint(bytes:Uint8Array):Promise<string>{
  let image:{width:number;height:number;data:Uint8Array};
- try{image=jpeg.decode(bytes,{useTArray:true,formatAsRGBA:false,maxResolutionInMP:4,maxMemoryUsageInMB:64}) as typeof image;}catch{return '';}
+ try{const jpeg=(await import('jpeg-js')).default;image=jpeg.decode(bytes,{useTArray:true,formatAsRGBA:false,maxResolutionInMP:4,maxMemoryUsageInMB:64}) as typeof image;}catch{return '';}
  const {width,height,data}=image;if(!width||!height)return '';
  // The average brightness of each of the 9×8 cells.
  const sum=new Float64Array(W*H),count=new Uint32Array(W*H);
@@ -26,7 +26,7 @@ export function photoPrint(bytes:Uint8Array):string{
 }
 /** Stores the print of a freshly uploaded photo of a home. A photo that cannot be read keeps an empty print. */
 export async function savePrint(db:D1Database,mediaId:string,bytes:Uint8Array){
- await q(db,'INSERT OR IGNORE INTO media_prints(media_id,print,created_at) VALUES (?,?,?)',mediaId,photoPrint(bytes),epoch()).run();
+ await q(db,'INSERT OR IGNORE INTO media_prints(media_id,print,created_at) VALUES (?,?,?)',mediaId,await photoPrint(bytes),epoch()).run();
 }
 
 export async function sweepPrints(db:D1Database,bucket:R2Bucket|undefined,admins:string[],limit=12){

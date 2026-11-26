@@ -2,6 +2,7 @@ import {stayWords,wordsOf,venueOr,TYPE_SQL} from './stay-words';
 import {epoch,uuid,q,rows,type OperationConfig} from './operation-core';
 import {RentalService} from './service';
 import {DomainError} from './domain';
+import {REFUND_HOLD_BY} from './account-restrictions';
 import {reviewCleaning} from './cleaning-review';
 type Row=Record<string,any>; // eslint-disable-line @typescript-eslint/no-explicit-any
 
@@ -178,7 +179,8 @@ async function money(db:D1Database,at:number,result:Row,admin:string[]){
 // cancellation takes no new bookings. The pause is the one of «Меня не заселили» (lib/account-restrictions.ts): the
 // places leave the map, the bookings already made go on. It lifts by itself once every such refund is marked; a pause
 // or block put by a person is never touched here.
-export const REFUND_HOLD=72*3600,REFUND_HOLD_BY='ai-administrator:refund';
+export const REFUND_HOLD=72*3600;
+export {REFUND_HOLD_BY};
 // paid_amount is already net of the refunds (lib/finance.ts); refund_due counts the refunds made before it was set.
 const LEFT=`CASE WHEN t.refund_due IS NULL THEN t.paid_amount ELSE t.refund_due-COALESCE(${SUM('refund')},0) END`;
 const OWED=`b.status IN ('cancelled','expired') AND b.guest_id<>p.owner_id AND t.paid_amount>0 AND t.refund_recorded_at IS NULL AND ${LEFT}>0`;

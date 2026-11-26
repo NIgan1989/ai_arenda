@@ -37,9 +37,9 @@ export function twinsNote(twins:PhotoTwin[]){
 export async function sweepTwins(db:D1Database,admins:string[]){
  let told=0;
  if(!admins.length)return {told};
- // Only homes whose photos changed since the last look: a print newer than the last note about the home.
+ // Only homes whose photos changed since the last look: a print or a photo list newer than the last note about the home.
  const shown=await rows(db,`SELECT p.id,p.title FROM properties p JOIN property_details d ON d.property_id=p.id WHERE p.published=1 AND p.demo_owner IS NULL AND p.archived_at IS NULL
-  AND EXISTS(SELECT 1 FROM json_each(d.photos) f JOIN media_prints m ON m.media_id=f.value WHERE m.print<>'' AND m.created_at>COALESCE((SELECT MAX(a.created_at) FROM audit_events a WHERE a.entity_id=p.id AND a.action='photos.twins_checked'),0)) LIMIT 20`);
+  AND EXISTS(SELECT 1 FROM json_each(d.photos) f JOIN media_prints m ON m.media_id=f.value WHERE m.print<>'' AND MAX(m.created_at,d.updated_at)>COALESCE((SELECT MAX(a.created_at) FROM audit_events a WHERE a.entity_id=p.id AND a.action='photos.twins_checked'),0)) LIMIT 20`);
  const at=epoch();
  for(const p of shown){
   const twins=await photoTwins(db,p.id);

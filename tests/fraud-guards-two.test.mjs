@@ -36,14 +36,14 @@ function picture(seed,size=96){
  return {data,width:size,height:size};
 }
 const bytes=(img,quality)=>new Uint8Array(jpeg.encode(img,quality).data);
-test('a photo saved again keeps its print, another photo does not',()=>{
- const a=photoPrint(bytes(picture(2),90)),again=photoPrint(bytes(picture(2),40)),other=photoPrint(bytes(picture(5),90));
+test('a photo saved again keeps its print, another photo does not',async()=>{
+ const a=await photoPrint(bytes(picture(2),90)),again=await photoPrint(bytes(picture(2),40)),other=await photoPrint(bytes(picture(5),90));
  assert.match(a,/^[0-9a-f]{16}$/);
  assert.ok(samePhoto(a,again),'recompressed: '+printDistance(a,again));
  assert.ok(!samePhoto(a,other),'another photo: '+printDistance(a,other));
- assert.equal(photoPrint(new Uint8Array([1,2,3])),'','unreadable');
+ assert.equal(await photoPrint(new Uint8Array([1,2,3])),'','unreadable');
  const flat={data:new Uint8Array(32*32*4).fill(200),width:32,height:32};
- assert.equal(photoPrint(bytes(flat,90)),'','one colour matches nothing');
+ assert.equal(await photoPrint(bytes(flat,90)),'','one colour matches nothing');
 });
 test('homes of different owners sharing a photo go to the administrator',async()=>{
  const f=await fixture(),R=f.db.raw;try{
@@ -53,7 +53,7 @@ test('homes of different owners sharing a photo go to the administrator',async()
   assert.equal(R.prepare('SELECT COUNT(*) n FROM media_prints').get().n,0);
   assert.equal((await sweepPrints(f.db,undefined,[])).printed,3);
   const second=(await f.other.createProperty({title:'Copied',city:'Павлодар',district:'Центр',address:'OTHER',description:'Test',price:10000,rooms:1,capacity:2,cleaningMinutes:90})).id;
-  const photos=(id,list)=>R.prepare("INSERT INTO property_details(property_id,details,photos,revision,updated_at) VALUES (?,'{}',?,'r',?) ON CONFLICT(property_id) DO UPDATE SET photos=excluded.photos").run(id,JSON.stringify(list),now());
+  const photos=(id,list)=>R.prepare("INSERT INTO property_details(property_id,details,photos,revision,updated_at) VALUES (?,'{}',?,'r',?) ON CONFLICT(property_id) DO UPDATE SET photos=excluded.photos,updated_at=excluded.updated_at").run(id,JSON.stringify(list),now());
   photos(f.property,[own]);photos(second,[fresh]);
   assert.deepEqual(await photoTwins(f.db,second),[]);
   photos(second,[fresh,copy]);
@@ -68,6 +68,14 @@ test('homes of different owners sharing a photo go to the administrator',async()
   assert.equal((await sweepPrints(f.db,undefined,['admin'])).told,2);
   assert.match(R.prepare("SELECT body FROM notifications WHERE user_id='admin' AND dedupe LIKE 'admin:photo-twins:%'").get().body,/Copied|Test apartment/);
   assert.equal((await sweepPrints(f.db,undefined,['admin'])).told,0);
+  // A home looked at without the copy, then given the copy (already printed, so no new print): looked at again.
+  R.prepare('UPDATE media_prints SET created_at=created_at-3600').run();R.prepare('UPDATE property_details SET updated_at=updated_at-3600').run();
+  const earlier=()=>R.prepare("UPDATE audit_events SET created_at=created_at-1800 WHERE action='photos.twins_checked'").run();
+  R.prepare("DELETE FROM notifications WHERE user_id='admin'").run();
+  earlier();photos(second,[fresh]);assert.equal((await sweepPrints(f.db,undefined,['admin'])).told,0);
+  earlier();photos(second,[fresh,copy]);
+  assert.equal((await sweepPrints(f.db,undefined,['admin'])).told,1);
+  assert.match(R.prepare("SELECT body FROM notifications WHERE user_id='admin' AND dedupe LIKE 'admin:photo-twins:'||?||':%'").get(second).body,/Copied/);
  }finally{f.db.close();}
 });
 
@@ -93,6 +101,19 @@ test('an unreturned refund puts the owner on pause after three days; marking it 
   assert.equal(R.prepare('SELECT 1 x FROM account_restrictions').get(),undefined);
   R.prepare("INSERT INTO account_restrictions(user_id,kind,reason,booking_id,created_by,created_at) VALUES ('owner','hold','person',NULL,'admin',?)").run(now());
   assert.equal((await sweepRefundHolds(f.db,{})).lifted,0);
+ }finally{f.db.close();}
+});
+
+test('a guest left at the door takes over a refund pause, so it is never lifted by itself',async()=>{
+ const f=await fixture(),R=f.db.raw;try{
+  R.prepare("INSERT INTO account_restrictions(user_id,kind,reason,booking_id,created_by,created_at) VALUES ('owner','hold','refund',NULL,?,?)").run(REFUND_HOLD_BY,now());
+  R.prepare('UPDATE bookings SET start=?,end=? WHERE id=?').run(now()-300,now()+7200,f.booking);
+  await f.guest.bookingAction(f.booking,{action:'not_let_in',text:'Дверь никто не открывает'});
+  const hold=R.prepare('SELECT * FROM account_restrictions WHERE user_id=?').get('owner');
+  assert.equal(hold.created_by,'guest');assert.equal(hold.booking_id,f.booking);
+  // Nothing is owed to anyone, yet the pause stays for a person to lift.
+  assert.equal((await sweepRefundHolds(f.db,{})).lifted,0);
+  assert.ok(R.prepare('SELECT 1 x FROM account_restrictions WHERE user_id=?').get('owner'));
  }finally{f.db.close();}
 });
 
