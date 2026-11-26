@@ -54,12 +54,12 @@ export function SwipeConfirm({label,onConfirm,disabled=false}:{label:string;onCo
  </View>;
 }
 const sw=StyleSheet.create({
- track:{height:KNOB+2*PAD,borderRadius:T.radius.full,backgroundColor:C.night,borderWidth:1,borderColor:C.night,justifyContent:'center',overflow:'hidden'},
+ track:{height:KNOB+2*PAD,borderRadius:T.radius.full,backgroundColor:C.ink,borderWidth:1,borderColor:C.ink,justifyContent:'center',overflow:'hidden'},
  off:{opacity:.5},
- fill:{position:'absolute',left:-400,top:0,bottom:0,width:400+KNOB+PAD,backgroundColor:C.nightGlow,borderRadius:T.radius.full},
+ fill:{position:'absolute',left:-400,top:0,bottom:0,width:400+KNOB+PAD,backgroundColor:C.inkSoft,borderRadius:T.radius.full},
  glow:{position:'absolute',left:0,top:0,bottom:0,width:56,backgroundColor:C.onAccent,opacity:.14},
  text:{...type.label,color:C.onAccent,fontWeight:'600',textAlign:'center',paddingLeft:KNOB+2*PAD+8,paddingRight:16},
  knob:{position:'absolute',left:PAD,top:PAD,width:KNOB,height:KNOB,borderRadius:T.radius.full,backgroundColor:C.gold,alignItems:'center',justifyContent:'center',shadowColor:C.ink,shadowOffset:{width:0,height:2},shadowOpacity:.18,shadowRadius:5,elevation:3},
  knobDone:{backgroundColor:C.surface},
- arrow:{...type.subtitle,color:C.night,fontWeight:'700'},arrowDone:{color:C.night}
+ arrow:{...type.subtitle,color:C.ink,fontWeight:'700'},arrowDone:{color:C.ink}
 });

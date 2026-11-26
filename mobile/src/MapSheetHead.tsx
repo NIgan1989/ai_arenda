@@ -127,8 +127,8 @@ const s = StyleSheet.create({
     justifyContent: 'center'
   },
   chipPressed: { backgroundColor: C.line },
-  chipActive: { backgroundColor: C.accentSoft },
-  chipTextActive: { color: C.accentPressed, fontWeight: '600' },
-  chipCount: { ...type.caption, fontWeight: '700', color: C.onAccent, backgroundColor: C.accent, minWidth: 20, paddingHorizontal: 6, borderRadius: 999, overflow: 'hidden', textAlign: 'center' },
+  chipActive: { backgroundColor: C.surfaceAlt },
+  chipTextActive: { color: C.ink, fontWeight: '700' },
+  chipCount: { ...type.caption, fontWeight: '700', color: C.surface, backgroundColor: C.ink, minWidth: 20, paddingHorizontal: 6, borderRadius: 999, overflow: 'hidden', textAlign: 'center' },
   chipText: { ...type.label, color: C.ink, fontWeight: '500' }
 });
