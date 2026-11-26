@@ -25,4 +25,11 @@ for(const [name,icon] of Object.entries(types)){
  const svg=renderToStaticMarkup(React.createElement(icons[icon],{size:72,strokeWidth:1.75,color:'#000000'}));
  await sharp(Buffer.from(svg)).png().toFile(fileURLToPath(new URL(name+'.png',kinds)));
 }
+// The guest's wishes (mobile/src/ai-request.ts WISHES, BATH_WISHES, BANQUET_WISHES): thin black icons on the chips of the form.
+const wishes=new URL('../mobile/assets/wishes/',import.meta.url);await mkdir(wishes,{recursive:true});
+const wishIcons={parking:'SquareParking',wifi:'Wifi',kitchen:'CookingPot',workspace:'Laptop',pets:'PawPrint',aircon:'AirVent',washer:'WashingMachine',tv:'Tv',balcony:'Fence',elevator:'ArrowUpDown',crib:'Baby',hairdryer:'Wind',iron:'Shirt',linen:'BedDouble',towels:'Layers',jacuzzi:'Waves',selfcheckin:'KeyRound',nodeposit:'BadgeCheck',smoking:'Cigarette',parties:'Music',steam:'CloudFog',pool:'WavesLadder',plunge:'Droplets',brooms:'Leaf',karaoke:'MicVocal',grill:'Flame',billiards:'Circle',halal:'BadgeCheck',prayer:'Moon',stage:'Presentation',sound:'Speaker',dancefloor:'Disc3',ownfood:'ShoppingBasket',kidsroom:'Blocks'};
+for(const [name,icon] of Object.entries(wishIcons)){
+ const svg=renderToStaticMarkup(React.createElement(icons[icon],{size:54,strokeWidth:1.75,color:'#000000'}));
+ await sharp(Buffer.from(svg)).png().toFile(fileURLToPath(new URL(name+'.png',wishes)));
+}
 console.log('Exported '+Object.keys(names).length+' navigation and '+Object.keys(rows).length+' menu icons for the app.');
