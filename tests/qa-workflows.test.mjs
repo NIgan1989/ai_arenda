@@ -6,7 +6,7 @@ test('isolated QA cannot accidentally activate blocking identity requirements, w
  const f=await fixture();try{
   await assert.rejects(writeOperations(f.owner,'owner',['governance','policy'],policy(1,true),{TEST_DATA_ONLY:'1'},true),e=>e.status===409);
   await assert.rejects(writeOperations(f.owner,'owner',['governance','policy'],policy(1,false),{TEST_DATA_ONLY:'1'},false),e=>e.status===403);
-  await writeOperations(f.owner,'owner',['governance','policy'],policy(1,true),{},true);
+  await writeOperations(f.owner,'owner',['governance','policy'],policy(1,true),{SMS_GATEWAY_URL:'https://sms.example/send',SMS_GATEWAY_TOKEN:'t'},true);
   assert.equal((await f.guest.publicSearch()).total,0);
   await writeOperations(f.owner,'owner',['governance','policy'],policy(2,false),{TEST_DATA_ONLY:'1'},true);
   assert.equal((await f.guest.publicSearch()).total,1);

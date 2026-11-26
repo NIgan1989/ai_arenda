@@ -6,18 +6,26 @@ import {placeFlatByAddress} from './map-workspace';
 import {epoch,uuid,q,one,rows,hash,httpsEndpoint,safeEqual,type Row,type OperationConfig} from './operation-core';
 import {leadOf,roomsOf} from './room-units';
 import {showableSql,showMissing,showWaiting} from './show-waiting';
+import {smsReady,sendSms} from './sms';
 
 export async function securityState(service:RentalService,role:Role,platformAdmin=false){
  const phone=await one(service.db,'SELECT phone,verified_at,sent_at,expires_at FROM phone_verifications WHERE user_id=?',service.userId);
  return {phone:phone?{...phone,phone:phone.phone.replace(/.(?=.{4})/g,'•')}:null,reviews:await rows(service.db,'SELECT * FROM participant_reviews WHERE user_id=? AND role=? ORDER BY created_at DESC LIMIT 30',service.userId,role),pendingReviews:platformAdmin?await rows(service.db,"SELECT r.*,p.name FROM participant_reviews r JOIN profiles p ON p.id=r.user_id WHERE r.status='pending' ORDER BY r.created_at LIMIT 100"):[]};
 }
+// «Номер подтверждён» in the app's profile (fraud check, step 2): the state of the account's own number and whether
+// SMS can be sent at all. The number is the one the person signs in with.
+export async function phoneCheck(db:D1Database,userId:string,config:OperationConfig){
+ const [row,account,policy]=await Promise.all([one(db,'SELECT phone,verified_at,sent_at,expires_at FROM phone_verifications WHERE user_id=?',userId),one(db,'SELECT phone FROM auth_accounts WHERE id=?',userId).catch(()=>null),one(db,"SELECT require_phone FROM pilot_policy WHERE id='global'")]);
+ const verified=!!row?.verified_at&&!!account&&row.phone===account.phone;
+ return {verified,phone:account?String(account.phone).replace(/.(?=.{4})/g,'•'):'',sms:smsReady(config),required:!!policy?.require_phone,waiting:!verified&&!!row&&!row.verified_at&&Number(row.expires_at)>epoch()};
+}
 export async function requestPhoneCode(service:RentalService,config:OperationConfig){
- if(!config.SMS_GATEWAY_TOKEN||!config.SMS_GATEWAY_URL)throw new DomainError('Подтверждение телефона ожидает подключения SMS-провайдера.',503);
+ if(!smsReady(config))throw new DomainError('Подтверждение номера по SMS заработает, когда подключим SMS-провайдера. Пока ничего делать не нужно.',503);
  let account:Row|null;try{account=await one(service.db,'SELECT phone FROM auth_accounts WHERE id=?',service.userId);}catch{throw new DomainError('Подтверждение номера доступно в веб-аккаунте с номером телефона.',409);}if(!account)throw new DomainError('Аккаунт с номером телефона не найден.',409);
  const current=await one(service.db,'SELECT sent_at FROM phone_verifications WHERE user_id=?',service.userId);if(current&&current.sent_at>epoch()-60)throw new DomainError('Повторный код можно запросить через минуту.',429);
  const code=String(crypto.getRandomValues(new Uint32Array(1))[0]%1000000).padStart(6,'0'),salt=uuid(),digest=await hash(salt+':'+code),at=epoch();
  const r=await q(service.db,'INSERT INTO phone_verifications VALUES (?,?,?,?,0,?,NULL) ON CONFLICT(user_id) DO UPDATE SET phone=excluded.phone,code_hash=excluded.code_hash,expires_at=excluded.expires_at,attempts=0,sent_at=excluded.sent_at,verified_at=NULL WHERE phone_verifications.sent_at<=?',service.userId,account.phone,salt+':'+digest,at+600,at,at-60).run();if(!r.meta.changes)throw new DomainError('Повторный запрос слишком рано.',429);
- try{const response=await fetch(httpsEndpoint(config.SMS_GATEWAY_URL),{method:'POST',headers:{Authorization:'Bearer '+config.SMS_GATEWAY_TOKEN,'Content-Type':'application/json','Idempotency-Key':'otp:'+service.userId+':'+salt},body:JSON.stringify({id:'otp:'+salt,to:account.phone,text:'Код AiQonaq: '+code+'. Не сообщайте его другим. Срок 10 минут.',category:'verification'}),redirect:'manual',signal:AbortSignal.timeout(15000)});if(!response.ok)throw new Error('SMS failed');}
+ try{httpsEndpoint(config.SMS_GATEWAY_URL!);if(!await sendSms(config,{id:'otp:'+salt,to:account.phone,text:'Код AiQonaq: '+code+'. Никому его не сообщайте, даже сотрудникам сервиса. Срок 10 минут.'}))throw new Error('SMS failed');}
  catch{await q(service.db,'UPDATE phone_verifications SET expires_at=? WHERE user_id=? AND code_hash=?',at-1,service.userId,salt+':'+digest).run();throw new DomainError('Провайдер не подтвердил отправку кода. Проверьте подключение.',503);}
  return {message:'Код отправлен на номер вашего аккаунта.',expiresAt:at+600};
 }

@@ -5,7 +5,7 @@ import {readFileSync,writeFileSync,mkdirSync} from 'node:fs';
 import {pathToFileURL} from 'node:url';
 import ts from 'typescript';
 mkdirSync('outputs/auth-test',{recursive:true});
-for(const name of ['domain','request-body','legal-documents','native-auth'])writeFileSync(`outputs/auth-test/${name}.js`,ts.transpileModule(readFileSync(`lib/${name}.ts`,'utf8'),{compilerOptions:{module:ts.ModuleKind.ES2022,target:ts.ScriptTarget.ES2022}}).outputText.replace(/from '(\.\/[^']+)'/g,(_,name)=>`from '${name}.js'`));
+for(const name of ['domain','request-body','legal-documents','sms','native-auth'])writeFileSync(`outputs/auth-test/${name}.js`,ts.transpileModule(readFileSync(`lib/${name}.ts`,'utf8'),{compilerOptions:{module:ts.ModuleKind.ES2022,target:ts.ScriptTarget.ES2022}}).outputText.replace(/from '(\.\/[^']+)'/g,(_,name)=>`from '${name}.js'`));
 const {authRequest,sessionUser,normalizePhone,digest}=await import(pathToFileURL(process.cwd()+'/outputs/auth-test/native-auth.js'));
 function fixture(){
  const raw=new DatabaseSync(':memory:');raw.exec(readFileSync('drizzle/0000_boring_unus.sql','utf8'));raw.exec(readFileSync('drizzle/0007_native_auth.sql','utf8'));raw.exec(readFileSync('drizzle/0027_shared_mobile_api.sql','utf8'));raw.exec(readFileSync('drizzle/0052_password_reset.sql','utf8'));raw.exec(readFileSync('drizzle/0102_passkeys.sql','utf8'));raw.exec(readFileSync('drizzle/0076_legal_acceptances.sql','utf8').split('CREATE TRIGGER')[0]);

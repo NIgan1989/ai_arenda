@@ -9,7 +9,7 @@ import {isoCBOR} from '@simplewebauthn/server/helpers';
 // Sign-in with Face ID or a fingerprint (lib/passkeys.ts): a phone is played by a P-256 key made here, signing the way
 // iCloud Keychain and Google Password Manager do (attestation «none», user verified).
 mkdirSync('outputs/passkey-test',{recursive:true});
-for(const name of ['domain','request-body','legal-documents','native-auth','app-links','passkeys'])writeFileSync(`outputs/passkey-test/${name}.js`,ts.transpileModule(readFileSync(`lib/${name}.ts`,'utf8'),{compilerOptions:{module:ts.ModuleKind.ES2022,target:ts.ScriptTarget.ES2022}}).outputText.replace(/from '(\.\/[^']+)'/g,(_,name)=>`from '${name}.js'`));
+for(const name of ['domain','request-body','legal-documents','sms','native-auth','app-links','passkeys'])writeFileSync(`outputs/passkey-test/${name}.js`,ts.transpileModule(readFileSync(`lib/${name}.ts`,'utf8'),{compilerOptions:{module:ts.ModuleKind.ES2022,target:ts.ScriptTarget.ES2022}}).outputText.replace(/from '(\.\/[^']+)'/g,(_,name)=>`from '${name}.js'`));
 const {authRequest,sessionUser}=await import(pathToFileURL(process.cwd()+'/outputs/passkey-test/native-auth.js'));
 const {passkeyRequest,passkeySetup,PASSKEY_RP_ID}=await import(pathToFileURL(process.cwd()+'/outputs/passkey-test/passkeys.js'));
 const {appLinksResponse,DEBUG_CERT_SHA256}=await import(pathToFileURL(process.cwd()+'/outputs/passkey-test/app-links.js'));

@@ -19,7 +19,9 @@ export const phoneText=(phone:string)=>/^\+7\d{10}$/.test(phone)?`+7 ${phone.sli
 const money=(n:number)=>new Intl.NumberFormat('ru-RU').format(n).replace(/\s/g,' ')+' ₸';
 
 /** Where to transfer and how much. `parts` explains a sum made of several things (the stay and the deposit). */
-export function PayTo({title,to,amount,parts,waiting,missing,note,children}:{title:string;to:Payout|null|undefined;amount:number;parts?:string;waiting?:string;missing:string;note?:string;children?:React.ReactNode}){
+// The details fixed in the booking when it was confirmed differ from the owner's details now (lib/payout.ts payChange).
+export type PayChange={recipient:string;tail:string;locked_at:number;changed_at:number};
+export function PayTo({title,to,amount,parts,waiting,missing,note,change,memo,children}:{title:string;to:Payout|null|undefined;amount:number;parts?:string;waiting?:string;missing:string;note?:string;change?:PayChange|null;memo?:string;children?:React.ReactNode}){
  // Read once per card: a warning that appears or disappears while the card is open would only distract.
  const [now]=useState(()=>Date.now()/1000);
  return <View accessible={false} style={p.card}>
@@ -30,9 +32,12 @@ export function PayTo({title,to,amount,parts,waiting,missing,note,children}:{tit
    {!!to.link&&<Pressable accessibilityRole="link" onPress={()=>void Linking.openURL(to.link).catch(()=>undefined)} style={({pressed})=>[p.link,pressed&&{opacity:.7}]}><Text style={p.linkText}>{t('Открыть оплату в Kaspi')}</Text></Pressable>}</>
    :<Text style={p.warn}>{missing}</Text>}
   {!waiting&&!!to?.changed_at&&now-to.changed_at<FRESH&&<Text accessibilityRole="alert" style={p.warn}>{t('Реквизиты изменены {when}. Перед переводом сверьте имя получателя в Kaspi. Если сомневаетесь, уточните в чате брони.',{when:when(to.changed_at)})}</Text>}
+  {/* Red, above all: the owner changed the details after the booking was confirmed. Fraud step 2, point 2. */}
+  {!waiting&&!!change&&<View accessibilityRole="alert" style={p.danger}><Text style={p.dangerTitle}>{t('Реквизиты сменились после подтверждения брони')}</Text><Text style={p.dangerText}>{t('При подтверждении были: {who}, номер на {tail}. Не переводите, пока владелец не подтвердит новые реквизиты в чате брони. Если он торопит или не отвечает, напишите в поддержку.',{who:change.recipient,tail:change.tail})}</Text></View>}
   {!!waiting&&<View style={p.wait}><Text style={p.waitText}>{waiting}</Text></View>}
   {children}
   {!!note&&<Text style={p.meta}>{note}</Text>}
+  {!!memo&&<View style={p.memo}><Text style={p.memoText}>{memo}</Text></View>}
  </View>;
 }
 
@@ -128,6 +133,11 @@ const p=StyleSheet.create({
  link:{minHeight:44,borderRadius:R.md,borderWidth:1,borderColor:C.accentLine,backgroundColor:C.surface,alignItems:'center',justifyContent:'center',paddingHorizontal:16},
  linkText:{...type.label,color:C.accent,fontWeight:'600'},
  warn:{...type.label,color:C.warning},
+ danger:{borderRadius:R.md,borderWidth:1,borderColor:C.danger,backgroundColor:C.dangerSoft,padding:12,gap:4},
+ dangerTitle:{...type.label,color:C.danger,fontWeight:'700'},
+ dangerText:{...type.label,color:C.ink},
+ memo:{borderRadius:R.md,backgroundColor:C.surface,padding:12},
+ memoText:{...type.caption,color:C.inkSoft},
  wait:{borderRadius:R.md,backgroundColor:C.surface,padding:12},
  waitText:{...type.label,color:C.inkSoft},
  receipts:{flexDirection:'row',gap:8},

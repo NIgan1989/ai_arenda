@@ -174,6 +174,44 @@ async function money(db:D1Database,at:number,result:Row,admin:string[]){
  }
 }
 
+// «Отменил и не вернул» (fraud check, step 2, 2026-11-26): an owner who holds a guest's money three days after a
+// cancellation takes no new bookings. The pause is the one of «Меня не заселили» (lib/account-restrictions.ts): the
+// places leave the map, the bookings already made go on. It lifts by itself once every such refund is marked; a pause
+// or block put by a person is never touched here.
+export const REFUND_HOLD=72*3600,REFUND_HOLD_BY='ai-administrator:refund';
+// paid_amount is already net of the refunds (lib/finance.ts); refund_due counts the refunds made before it was set.
+const LEFT=`CASE WHEN t.refund_due IS NULL THEN t.paid_amount ELSE t.refund_due-COALESCE(${SUM('refund')},0) END`;
+const OWED=`b.status IN ('cancelled','expired') AND b.guest_id<>p.owner_id AND t.paid_amount>0 AND t.refund_recorded_at IS NULL AND ${LEFT}>0`;
+async function refundHolds(db:D1Database,at:number,result:{held:number;lifted:number},admin:string[]){
+ const late=await rows(db,`SELECT b.id,b.guest_id,p.owner_id,p.title,${LEFT} owed FROM bookings b JOIN properties p ON p.id=b.property_id JOIN booking_terms t ON t.booking_id=b.id
+  WHERE ${OWED} AND b.end>?1 AND ${SEEN}<=?2 AND NOT EXISTS(SELECT 1 FROM account_restrictions r WHERE r.user_id=p.owner_id) ORDER BY b.end LIMIT 20`,at-60*86400,at-REFUND_HOLD);
+ for(const b of late){
+  const title=b.title||'жильё';
+  const unpaid=await rows(db,"SELECT x.id,x.guest_id,q.title FROM bookings x JOIN properties q ON q.id=x.property_id JOIN booking_terms tt ON tt.booking_id=x.id WHERE q.owner_id=? AND x.status IN ('requested','confirmed') AND x.start>? AND tt.paid_amount=0 AND tt.actual_checkin IS NULL",b.owner_id,at);
+  const r=await db.batch([
+   q(db,"INSERT OR IGNORE INTO account_restrictions(user_id,kind,reason,booking_id,created_by,created_at) VALUES (?,'hold',?,?,?,?)",b.owner_id,'Не вернул гостю '+tenge(b.owed)+' за отменённую бронь «'+title+'» за трое суток.',b.id,REFUND_HOLD_BY,at),
+   q(db,"INSERT INTO audit_events SELECT ?,'ai-administrator',?,?,? WHERE changes()>0",uuid(),b.owner_id,'account.hold:refund:'+b.id,at),
+  ]);
+  if(!r[0].meta.changes)continue;
+  await db.batch([
+   notice(db,b.owner_id,'Новые брони на паузе: вы не вернули гостю '+tenge(b.owed)+' за отменённую бронь «'+title+'» за трое суток. Объекты скрыты с карты, принятые брони в силе. Переведите деньги и нажмите «Вернул гостю» в брони: пауза снимется сама.','owner:refund-hold:'+b.id,at),
+   notice(db,b.guest_id,'ИИ-администратор: владелец «'+title+'» трое суток не возвращает вам '+tenge(b.owed)+'. Его объекты поставлены на паузу, пока он не вернёт деньги. Если перевод придёт, подтвердите это в брони.','guest:refund-hold:'+b.id,at),
+   ...unpaid.map(u=>notice(db,u.guest_id,'По «'+u.title+'» владелец задерживает возврат денег другому гостю. Не переводите деньги заранее: платите только при заселении, когда вы внутри.','guest:owner-hold:'+u.id,at)),
+   ...admin.map(a=>notice(db,a,'Владелец «'+title+'» трое суток не возвращает гостю '+tenge(b.owed)+' за отменённую бронь. Новые брони владельца поставлены на паузу автоматически.','admin:refund-hold:'+b.id+':'+a,at)),
+  ]);
+  result.held++;
+ }
+ // Lifted by itself once nothing is owed any more.
+ const done=await rows(db,`SELECT r.user_id FROM account_restrictions r WHERE r.kind='hold' AND r.created_by=? AND NOT EXISTS(SELECT 1 FROM bookings b JOIN properties p ON p.id=b.property_id JOIN booking_terms t ON t.booking_id=b.id WHERE p.owner_id=r.user_id AND ${OWED}) LIMIT 50`,REFUND_HOLD_BY);
+ for(const d of done){
+  const r=await q(db,"DELETE FROM account_restrictions WHERE user_id=? AND kind='hold' AND created_by=?",d.user_id,REFUND_HOLD_BY).run();
+  if(!r.meta.changes)continue;
+  await db.batch([q(db,"INSERT INTO audit_events VALUES (?,'ai-administrator',?,?,?)",uuid(),d.user_id,JSON.stringify({action:'account.restriction_lifted',was:'hold',reason:'refund_marked'}),at),
+   notice(db,d.user_id,'Возврат отмечен, пауза снята: объекты снова видны гостям и принимают брони.','owner:refund-hold-lifted:'+d.user_id+':'+at,at)]);
+  result.lifted++;
+ }
+}
+
 export async function sweepSilence(db:D1Database,config:OperationConfig&{PLATFORM_ADMIN_IDS?:string}={},at=epoch()){
  const result={checkedIn:0,checkedOut:0,accepted:0,told:0,escalated:0},admin=admins(config);
  await departures(db,at,result,admin);
@@ -183,4 +221,8 @@ export async function sweepSilence(db:D1Database,config:OperationConfig&{PLATFOR
  await pay(db,at,result,admin);
  await money(db,at,result,admin);
  return result;
+}
+/** Runs with the silence sweep (lib/background.ts): the pauses for unreturned refunds and their lifting. */
+export async function sweepRefundHolds(db:D1Database,config:{PLATFORM_ADMIN_IDS?:string}={},at=epoch()){
+ const result={held:0,lifted:0};await refundHolds(db,at,result,admins(config));return result;
 }

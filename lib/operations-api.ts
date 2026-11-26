@@ -16,6 +16,7 @@ import {calendarSources,saveCalendarSource,refreshCalendar,commitCalendarImport,
 import {importState,previewPropertyImport,commitPropertyImport} from './property-import';
 import {governanceState,savePilotPolicy,updateOperatorTicket} from './pilot-governance';
 import {deliveryState,createTelegramLink,telegramStatus,setDeliveryChannel,acceptTelegramLink,integrationStatus,acceptDeliveryReceipt} from './delivery';
+import {smsReady} from './sms';
 import {securityState,requestPhoneCode,verifyPhoneCode,requestParticipantReview,decideParticipantReview,savePropertyAccess,revealPropertyAccess} from './participant-security';
 import {operationalHealth,retryBackgroundJob} from './background';
 import {listCommands,decideAdministratorCommand} from './administrator-commands';
@@ -103,7 +104,7 @@ export async function writeOperations(service:RentalService,role:Role,path:strin
  if(route==='commands')return decideAdministratorCommand(service,role,body);
  if(route==='import/preview'){active(role,['owner']);return previewPropertyImport(service,body);}
  if(route==='import/commit'){active(role,['owner']);return commitPropertyImport(service,body);}
- if(route==='governance/policy'){if(platformAdmin&&config.TEST_DATA_ONLY==='1'&&[body.requireOwnerReview,body.requireCleanerReview,body.requirePhone].some(v=>v===true))throw new DomainError('На учебном стенде обязательные проверки отключены, чтобы проходить тестовые процессы. Рабочие проверки настраиваются отдельно.',409);return savePilotPolicy(service,body,platformAdmin);}
+ if(route==='governance/policy'){if(platformAdmin&&config.TEST_DATA_ONLY==='1'&&[body.requireOwnerReview,body.requireCleanerReview,body.requirePhone].some(v=>v===true))throw new DomainError('На учебном стенде обязательные проверки отключены, чтобы проходить тестовые процессы. Рабочие проверки настраиваются отдельно.',409);return savePilotPolicy(service,body,platformAdmin,smsReady(config));}
  if(route==='governance/ticket')return updateOperatorTicket(service,role,body,platformAdmin);
  if(route==='delivery/telegram')return createTelegramLink(service,role,config);
  if(route==='delivery/status')return telegramStatus(service,role,config);
