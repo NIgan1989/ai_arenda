@@ -144,15 +144,6 @@
     "title": "File:Alabuga.jpg"
    },
    {
-    "id": "commons:201181381",
-    "url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/1/17/Dacha_with_blackened_wood_siding_%28Moscow_Oblast%2C_Russia%2C_Sept_2026%29_06.jpg/1280px-Dacha_with_blackened_wood_siding_%28Moscow_Oblast%2C_Russia%2C_Sept_2026%29_06.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
-    "license": "CC0",
-    "creator": "Retired electrician",
-    "source": "wikimedia",
-    "page": "https://commons.wikimedia.org/wiki/File:Dacha_with_blackened_wood_siding_(Moscow_Oblast,_Russia,_Sept_2026)_06.jpg",
-    "title": "File:Dacha with blackened wood siding (Moscow Oblast, Russia, Sept 2026) 06.jpg"
-   },
-   {
     "id": "commons:97454659",
     "url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/4/4b/Kornienko_house.jpg/1280px-Kornienko_house.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
     "license": "CC BY-SA 4.0",
@@ -191,15 +182,6 @@
     "title": "File:Lake Bedroom Guatemala 2018.jpg"
    },
    {
-    "id": "commons:201181379",
-    "url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/5/5a/Dacha_with_blackened_wood_siding_%28Moscow_Oblast%2C_Russia%2C_Sept_2026%29_02.jpg/1280px-Dacha_with_blackened_wood_siding_%28Moscow_Oblast%2C_Russia%2C_Sept_2026%29_02.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
-    "license": "CC0",
-    "creator": "Retired electrician",
-    "source": "wikimedia",
-    "page": "https://commons.wikimedia.org/wiki/File:Dacha_with_blackened_wood_siding_(Moscow_Oblast,_Russia,_Sept_2026)_02.jpg",
-    "title": "File:Dacha with blackened wood siding (Moscow Oblast, Russia, Sept 2026) 02.jpg"
-   },
-   {
     "id": "commons:26285695",
     "url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/a/af/Holiday_Inn_Moscow_Sokolniki%2C_interiors_%288034785305%29.jpg/1280px-Holiday_Inn_Moscow_Sokolniki%2C_interiors_%288034785305%29.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
     "license": "CC BY 2.0",
@@ -207,6 +189,15 @@
     "source": "wikimedia",
     "page": "https://commons.wikimedia.org/wiki/File:Holiday_Inn_Moscow_Sokolniki,_interiors_(8034785305).jpg",
     "title": "File:Holiday Inn Moscow Sokolniki, interiors (8034785305).jpg"
+   },
+   {
+    "id": "commons:175693079",
+    "url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/a/ad/20230520_Hotel_room_in_Saint_Petersburg_05.jpg/1280px-20230520_Hotel_room_in_Saint_Petersburg_05.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+    "license": "CC BY 4.0",
+    "creator": "Sergey A.",
+    "source": "wikimedia",
+    "page": "https://commons.wikimedia.org/wiki/File:20230520_Hotel_room_in_Saint_Petersburg_05.jpg",
+    "title": "File:20230520 Hotel room in Saint Petersburg 05.jpg"
    }
   ],
   "hostel": [
