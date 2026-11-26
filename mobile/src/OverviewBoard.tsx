@@ -41,8 +41,8 @@ export function OverviewBoard({workspace,approvals,data,now,busy,onDecide,onOpen
 
 function Line({item,expanded,onPress}:{item:BoardItem;expanded?:boolean;onPress:()=>void}){
  const folding=expanded!==undefined;
- return <Pressable accessibilityRole="button" accessibilityLabel={[item.title,item.detail,item.when].filter(Boolean).join(', ')} accessibilityHint={folding?(expanded?tr('Свернуть'):tr('Открыть и ответить')):tr('Открыть')} accessibilityState={folding?{expanded}:undefined} onPress={onPress} style={({pressed})=>[b.line,item.urgent&&b.lineUrgent,pressed&&b.pressed]}>
-  <View style={[b.dot,{backgroundColor:item.urgent?C.warning:C.accent}]}/>
+ return <Pressable accessibilityRole="button" accessibilityLabel={[item.title,item.detail,item.when].filter(Boolean).join(', ')} accessibilityHint={folding?(expanded?tr('Свернуть'):tr('Открыть и ответить')):tr('Открыть')} accessibilityState={folding?{expanded}:undefined} onPress={onPress} style={({pressed})=>[b.line,pressed&&b.pressed]}>
+  <View style={[b.dot,{backgroundColor:item.urgent?C.warning:C.lineStrong}]}/>
   <View style={b.body}>
    <Text numberOfLines={1} style={b.title}>{item.title}</Text>
    <Text numberOfLines={1} style={b.detail}>{[item.when&&item.when.charAt(0).toUpperCase()+item.when.slice(1),item.detail].filter(Boolean).join(' · ')}</Text>
@@ -81,10 +81,10 @@ export function HistoryFold({messages,render,onClear}:{messages:HistoryMessage[]
 }
 
 const b=StyleSheet.create({
- wrap:{gap:8},
+ wrap:{gap:0},
  empty:{...type.label,color:C.muted,textAlign:'center',marginTop:16,marginBottom:8,paddingHorizontal:16},
- line:{flexDirection:'row',alignItems:'center',gap:12,minHeight:56,paddingHorizontal:16,paddingVertical:12,borderRadius:R.lg,borderWidth:1,borderColor:C.line,backgroundColor:C.surface},
- lineUrgent:{borderColor:C.warningLine,backgroundColor:C.warningSoft},
+ // Board «Экраны старой версии», 2026-11-26: plain rows divided by a line, no fills; only the dot says «срочно».
+ line:{flexDirection:'row',alignItems:'center',gap:12,minHeight:56,paddingVertical:12,borderBottomWidth:1,borderBottomColor:C.line},
  pressed:{opacity:.7},
  dot:{width:8,height:8,borderRadius:R.full},
  body:{flex:1,minWidth:0,gap:2},
