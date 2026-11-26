@@ -2,7 +2,7 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {loadPure} from './helpers/pure.mjs';
 
-const {placeNow} = await loadPure('mobile/src/own-place.ts');
+const {placeNow, takenNow} = await loadPure('mobile/src/own-place.ts');
 // 15 November 2026, 12:00 in Almaty (UTC+5).
 const now = Date.UTC(2026, 10, 15, 7, 0) / 1000, h = 3600;
 
@@ -40,4 +40,14 @@ test('a guest past the planned end is still inside; a missed arrival is awaited'
   assert.equal(waiting.line, 'Ждём гостя, заезд сегодня 11:00');
   const gone = placeNow('p1', [{property_id: 'p1', status: 'confirmed', start: now - 26 * h, end: now - 2 * h, terms: {actual_checkin: now - 25 * h, actual_checkout: now - 3 * h}}], now);
   assert.equal(gone.line, 'Свободно, броней впереди нет');
+});
+
+test('taken now: a guest inside or a stay whose time has come, not a later arrival', () => {
+  const b = (o) => ({property_id: 'p1', status: 'confirmed', start: now - h, end: now + 20 * h, ...o});
+  assert.equal(takenNow('p1', [b({})], now), true);
+  assert.equal(takenNow('p1', [b({start: now - 26 * h, end: now - 2 * h, terms: {actual_checkin: now - 25 * h}})], now), true);
+  assert.equal(takenNow('p1', [b({start: now + 2 * h, end: now + 26 * h})], now), false);
+  assert.equal(takenNow('p1', [b({status: 'requested'})], now), false);
+  assert.equal(takenNow('p1', [b({terms: {actual_checkin: now - h, actual_checkout: now - 60}})], now), false);
+  assert.equal(takenNow('p2', [b({})], now), false);
 });

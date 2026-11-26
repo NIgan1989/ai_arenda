@@ -33,3 +33,12 @@ export function placeNow(propertyId: string, bookings: Row[], now = Date.now() /
   if (next) return { line: t(Number(next.start) <= now ? (bath ? 'Ждём гостей, бронь {when}' : 'Ждём гостя, заезд {when}') : bath ? 'Гости {when}' : 'Заезд {when}', { when: when(Number(next.start), now) }), busy: false, requests };
   return { line: t('Свободно, броней впереди нет'), busy: false, requests };
 }
+
+// Taken now, for the owner's top plate «{a} из {b} заняты» (MapHome.tsx): guests inside, or a confirmed stay whose time
+// has come, as the map's «Гость до …» says. An arrival later, a request or «Готово к заезду» is not a guest.
+export function takenNow(propertyId: string, bookings: Row[], now = Date.now() / 1000) {
+  return bookings.some(b => {
+    const terms = (b.terms || {}) as Row;
+    return b.property_id === propertyId && b.status === 'confirmed' && !terms.actual_checkout && (!!terms.actual_checkin || (Number(b.start) <= now && now < Number(b.end)));
+  });
+}

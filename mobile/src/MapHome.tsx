@@ -34,6 +34,7 @@ import {MapSheetHead} from './MapSheetHead';
 import {AutopilotThreads,type FeedNeed} from './AutopilotThreads';
 import {AutopilotHandoff} from './AutopilotHandoff';
 import {PlacePicker,RolePlate,type PickPlace} from './RolePlate';
+import {takenNow} from './own-place';
 import {cleaningAsk,BATH_TYPES as BATH_KINDS,allKinds,kindCategoryOf,isQuiet,occasionTitle,categoryOf,withKind,kindChoice,PAST_TEXT,nearPlace,placeMissedNote,pinPrice,askFirst,understoodNote,notUnderstoodNote,chipDraft,freshDraft,guestRequestFromText,matchingBody,newDraft,shownReasons,type GuestDraft} from './ai-request';
 import type {HeadAction} from './head-line';
 import {Action,Grip,SheetHeading,SheetRow,Stage,h,handleHeight,topInset} from './SheetParts';
@@ -916,25 +917,44 @@ export function MapHome({ role, accountId, data, menu, account, chats, onChanged
   const flatDot = (p: Row) => { const tone = placeOf(p).display_status?.tone; return tone === 'ready' || tone === 'good' ? C.success : tone === 'danger' ? C.danger : tone === 'warning' || tone === 'warn' ? C.warning : C.muted; };
   const flatState = (p: Row) => tr(placeOf(p).display_status?.label || p.display_status?.label || 'Статус уточняется');
   const chosenFlat = role === 'owner' && selected.startsWith('property:') ? ownFlats.find(p => 'property:' + p.id === selected) : undefined;
-  const living = pins.filter(p => p.round && ownerShows(p, 'stay')).length, ownerLine = ownerDay(data, clockNow).line;
+  // Taken from the bookings themselves (own-place.ts), not from the pins' tones: an arrival tomorrow is not a guest.
+  const living = ownFlats.filter(p => takenNow(p.id, data.bookings || [], clockNow)).length, ownerLine = ownerDay(data, clockNow).line;
   const workOn = away === null ? (data.profile?.work_status || 'available') !== 'away' : !away;
   const todayLine = role === 'cleaner' ? routeSummary(dayRoute(data.jobs || [], data.user?.id, clockNow).map(r => ({ fee: Number((data.jobs || []).find((j: Row) => j.id === r.id)?.fee) || 0 }))) : '';
+  // The profile may have changed in the menu since the last load (its privacy switches): on a version conflict the switch
+  // reads the profile again and saves once more; any other failure reloads, so the next tap starts from the server's state.
   async function setWork(on: boolean) {
     const p = data.profile;
     if (!p || switching) return;
     setSwitching(true); setAway(!on); setNotice('');
+    const save = (q: Row) => request('/api/profile/edit', { name: q.name, contact: q.contact, city: q.city, districts: q.districts, experience: q.experience, availability: q.availability, avatarId: q.avatar_id || null, workStatus: on ? 'available' : 'away', expectedVersion: q.profile_version || 0 });
     try {
-      await request('/api/profile/edit', { name: p.name, contact: p.contact, city: p.city, districts: p.districts, experience: p.experience, availability: p.availability, avatarId: p.avatar_id || null, workStatus: on ? 'available' : 'away', expectedVersion: p.profile_version || 0 });
+      try { await save(p); } catch (e) {
+        if (!(e instanceof ApiError && e.status === 409)) throw e;
+        const fresh = (await request('/api/account'))?.profile;
+        if (!fresh) throw e;
+        await save(fresh);
+      }
       await onChanged();
-    } catch (e) { setNotice(e instanceof Error ? e.message : tr('Не удалось сохранить.')); } finally { setAway(null); setSwitching(false); }
+    } catch (e) { setNotice(e instanceof Error ? e.message : tr('Не удалось сохранить.')); await onChanged().catch(() => undefined); } finally { setAway(null); setSwitching(false); }
   }
+  // «Что показать на карте»: the chosen object is selected and the map flies to it, as «На карте» does; one in another city
+  // loads that city first (the aim effect above selects it when its pin comes), one without a place says so.
+  const pickPlace = (id: string) => {
+    setPlacesOpen(false); setOnly('');
+    const flat = ownFlats.find(p => 'property:' + p.id === id), where = String(flat?.city || '');
+    if (!flat) { setSelected(''); setFocus(''); return; }
+    if (!pins.some(p => p.key === id) && mapCities[where] && where !== cityRef.current) { aim.current = { key: id, city: where }; setCity(where); return; }
+    setSelected(id); setFocus('');
+    if (pins.some(p => p.key === id)) setTimeout(() => setFocus(id), 0); else setNotice(tr(NOT_ON_MAP));
+  };
   const pickPlaces: PickPlace[] = ownFlats.map(p => ({ id: 'property:' + p.id, title: p.title, photo: (placeOf(p).photos || p.photos || [])[0], dot: flatDot(p), state: flatState(p), price: typeof p.price === 'number' ? money(p.price) : undefined }));
   const plate = !account || floating ? null : role === 'owner' ? (
     <RolePlate {...account} width={plateWidth} caret={ownFlats.length > 1} expanded={placesOpen}
       title={chosenFlat ? chosenFlat.title : ownFlats.length === 1 ? ownFlats[0].title : ownFlats.length ? tr('Все объекты') : tr('Моё жильё')}
       line={chosenFlat ? flatState(chosenFlat) : !ownFlats.length ? tr('Добавьте первое объявление') : [ownFlats.length === 1 ? (living ? tr('гости в доме') : tr('свободно')) : tr('{a} из {b} заняты', { a: living, b: ownFlats.length }), ownerLine === tr('спокойно') ? '' : ownerLine].filter(Boolean).join(' · ')}
       dot={chosenFlat ? flatDot(chosenFlat) : undefined}
-      onPress={() => { if (!ownFlats.length) { onOpenPage('properties'); return; } if (ownFlats.length === 1) { setSelected('property:' + ownFlats[0].id); return; } setPlacesOpen(true); }} />
+      onPress={() => { if (!ownFlats.length) { onOpenPage('properties'); return; } if (ownFlats.length === 1) { pickPlace('property:' + ownFlats[0].id); return; } setPlacesOpen(true); }} />
   ) : role === 'cleaner' ? (
     <RolePlate {...account} width={plateWidth} dot={workOn ? C.success : C.muted}
       title={workOn ? tr('На линии') : tr('Не на линии')}
@@ -987,7 +1007,7 @@ export function MapHome({ role, accountId, data, menu, account, chats, onChanged
             ))}</View></View>
       )}{!!notice && (
         <Text accessibilityLiveRegion="polite" style={h.mapNotice}>{notice}</Text>
-      )}{role === 'guest' && !selected && <PriceTip role={role} cards={data.approvals || []} onChanged={onChanged} onEdit={onEdit} />}{/* Without an account the round slot widens for the «Войти» word. */}{!!plate && !floating ? <View style={[h.menu, h.plate]}>{plate}</View> : !!menu && !floating && <View style={[h.menu, { width: 'auto' }]}>{menu}</View>}{role === 'owner' && !selected && !picking && pins.filter(p => p.round).length > 1 && <OwnerFilters pins={pins} only={only} onOnly={setOnly} onList={() => setSnap(2)} />}{/* The bell and the chats share one pill in the corner. */}{!!chats && !floating && <View style={[h.chats, { width: 'auto', flexDirection: 'row' }]}>{chats}</View>}{floating && <View pointerEvents="box-none" style={h.floatBar}>{floatBar}</View>}{role === 'owner' && <PlacePicker visible={placesOpen} places={pickPlaces} all={ownFlats.length + ' ' + plural(ownFlats.length, 'объект', 'объекта', 'объектов')} selected={chosenFlat ? 'property:' + chosenFlat.id : ''} onClose={() => setPlacesOpen(false)} onPick={id => { setPlacesOpen(false); setOnly(''); setSelected(id); }} />}{!picking && <MapMood mood={mood} joy={joy} still={calm || quiet} bottom={covered ? cardEdge : sheet} />}<Animated.View style={[h.sheet, snap === 2 && !floating && h.sheetSolid, floating && h.sheetFloat, { height: sheet, opacity: veil }]} accessibilityViewIsModal={false}><View {...drag.handle.panHandlers} style={floating ? h.gone : undefined}><Pressable
+      )}{role === 'guest' && !selected && <PriceTip role={role} cards={data.approvals || []} onChanged={onChanged} onEdit={onEdit} />}{/* Without an account the round slot widens for the «Войти» word. */}{!!plate && !floating ? <View style={[h.menu, h.plate]}>{plate}</View> : !!menu && !floating && <View style={[h.menu, { width: 'auto' }]}>{menu}</View>}{role === 'owner' && !selected && !picking && pins.filter(p => p.round).length > 1 && <OwnerFilters pins={pins} only={only} onOnly={setOnly} onList={() => setSnap(2)} />}{/* The bell and the chats share one pill in the corner. */}{!!chats && !floating && <View style={[h.chats, { width: 'auto', flexDirection: 'row' }]}>{chats}</View>}{floating && <View pointerEvents="box-none" style={h.floatBar}>{floatBar}</View>}{role === 'owner' && <PlacePicker visible={placesOpen} places={pickPlaces} all={ownFlats.length + ' ' + plural(ownFlats.length, 'объект', 'объекта', 'объектов')} selected={chosenFlat ? 'property:' + chosenFlat.id : ''} onClose={() => setPlacesOpen(false)} onPick={pickPlace} />}{!picking && <MapMood mood={mood} joy={joy} still={calm || quiet} bottom={covered ? cardEdge : sheet} />}<Animated.View style={[h.sheet, snap === 2 && !floating && h.sheetSolid, floating && h.sheetFloat, { height: sheet, opacity: veil }]} accessibilityViewIsModal={false}><View {...drag.handle.panHandlers} style={floating ? h.gone : undefined}><Pressable
             accessibilityRole="button"
             accessibilityLabel={snap === 0 ? tr('Развернуть панель') : tr('Свернуть панель')}
             onPress={() => setSnap(snap === 0 ? 1 : 0)}

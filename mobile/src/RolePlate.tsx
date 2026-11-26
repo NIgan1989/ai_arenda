@@ -14,10 +14,10 @@ const native=Platform.OS!=='web';
 export type PlateToggle={on:boolean;label:string;busy:boolean;onChange:(on:boolean)=>void};
 export function RolePlate({avatarId,avatarName,busy,open,onProfile,title,line,dot,caret=false,expanded,onPress,toggle,width}:{avatarId?:string|null;avatarName?:string;busy:boolean;open:boolean;onProfile:()=>void;title:string;line:string;dot?:string;caret?:boolean;expanded?:boolean;onPress:()=>void;toggle?:PlateToggle;width:number}){
  return <View style={[p.plate,{width}]}>
-  <Pressable accessibilityRole="button" accessibilityLabel={t('Меню и профиль')} accessibilityState={{expanded:open,disabled:busy}} disabled={busy} onPress={onProfile} style={p.photo}><Photo id={avatarId} size={36} avatar name={avatarName} alt={t('Профиль')}/></Pressable>
+  <Pressable accessibilityRole="button" accessibilityLabel={t('Меню и профиль')} accessibilityState={{expanded:open,disabled:busy}} disabled={busy} onPress={onProfile} hitSlop={{top:6,bottom:6,left:8,right:4}} style={p.photo}><Photo id={avatarId} size={36} avatar name={avatarName} alt={t('Профиль')}/></Pressable>
   <Pressable accessibilityRole="button" accessibilityLabel={title+'. '+line} accessibilityState={caret?{expanded:!!expanded}:undefined} onPress={onPress} hitSlop={{top:4,bottom:4}} style={({pressed})=>[p.words,pressed&&p.dim]}>
-   <Text numberOfLines={1} style={p.title}>{!!dot&&<Text style={{color:dot}}>● </Text>}{title}{caret&&<Text style={p.caret}>{expanded?'  ⌃':'  ⌄'}</Text>}</Text>
-   <Text numberOfLines={1} style={p.line}>{line}</Text>
+   <Text numberOfLines={1} maxFontSizeMultiplier={1.25} style={p.title}>{!!dot&&<Text style={{color:dot}}>● </Text>}{title}{caret&&<Text style={p.caret}>{expanded?'  ⌃':'  ⌄'}</Text>}</Text>
+   <Text numberOfLines={1} maxFontSizeMultiplier={1.25} style={p.line}>{line}</Text>
   </Pressable>
   {!!toggle&&<Switch accessibilityLabel={toggle.label} value={toggle.on} disabled={toggle.busy} onValueChange={toggle.onChange} trackColor={{false:C.lineStrong,true:C.ink}} thumbColor={C.surface} {...({activeThumbColor:C.surface} as object)} style={p.switch}/>}
  </View>;
