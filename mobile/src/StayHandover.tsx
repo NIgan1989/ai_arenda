@@ -1,6 +1,9 @@
 import {t} from '../../lib/i18n';
 import React,{useCallback,useEffect,useState} from 'react';
-import {View,Text,TextInput,Pressable,Image,StyleSheet} from 'react-native';
+import {View,Text,TextInput,Pressable,Image,StyleSheet,Platform} from 'react-native';
+import {menuIcons} from './AccountRows';
+import {PopRow,PopSheet} from './PopSheet';
+import {Thinking} from './Thinking';
 import {request} from './api';
 import {pickImages,jpegData} from './ListingMedia';
 import {s,C} from './styles';
@@ -14,7 +17,7 @@ const button=(title:string,onPress:()=>void,disabled:boolean,secondary=false)=><
 // Each photo goes to the server as soon as it is taken (operations/stay-photo), so nothing is lost if the app closes.
 // readOnly: only the previews, nothing when there are none (a finished stay, the other side's photos).
 export function StayPhotos({bookingId,phase,role,disabled=false,readOnly=false,onCount}:{bookingId:string;phase:Phase;role:'guest'|'owner';disabled?:boolean;readOnly?:boolean;onCount?:(n:number)=>void}){
- const [photos,setPhotos]=useState<{id:string;uri:string}[]>([]),[busy,setBusy]=useState(false),[error,setError]=useState('');
+ const [photos,setPhotos]=useState<{id:string;uri:string}[]>([]),[busy,setBusy]=useState(false),[error,setError]=useState(''),[ask,setAsk]=useState(false);
  const fetchPhotos=useCallback(async()=>{
   const list=((await request('/api/operations/stay-photos/'+bookingId,undefined,undefined,undefined,role))?.photos||[]).filter((p:{phase:string})=>p.phase===phase);
   return Promise.all(list.map(async(p:{id:string})=>({id:p.id,uri:(await request('/api/operations/stay-photos/'+p.id+'/photo',undefined,undefined,undefined,role).catch(()=>null))?.data||''})));
@@ -28,11 +31,17 @@ export function StayPhotos({bookingId,phase,role,disabled=false,readOnly=false,o
  }catch(e){setError(e instanceof Error&&e.message?e.message:t('Не удалось добавить фото.'));}finally{setBusy(false);}}
  const full=photos.length>=STAY_PHOTO_LIMIT,off=busy||disabled||full;
  if(readOnly)return photos.length?<View style={h.grid}>{photos.map(p=>p.uri?<Image key={p.id} source={{uri:p.uri}} style={h.view} alt={t('Фото жилья')} accessibilityLabel={t('Фото жилья')}/>:<View key={p.id} style={[h.view,{backgroundColor:C.surfaceAlt}]}/>)}</View>:null;
+ // As Turo's car photos: the shots in a row and one «+» tile after them; the tile asks «Снять фото» or «Из галереи».
  return <View style={{gap:8}}>
-  {!!photos.length&&<View style={h.grid}>{photos.map(p=>p.uri?<Image key={p.id} source={{uri:p.uri}} style={h.thumb} alt={t('Фото жилья')} accessibilityLabel={t('Фото жилья')}/>:<View key={p.id} style={[h.thumb,{backgroundColor:C.surfaceAlt}]}/>)}</View>}
+  <View style={h.grid}>{photos.map(p=>p.uri?<Image key={p.id} source={{uri:p.uri}} style={h.thumb} alt={t('Фото жилья')} accessibilityLabel={t('Фото жилья')}/>:<View key={p.id} style={[h.thumb,{backgroundColor:C.surfaceAlt}]}/>)}
+   {!full&&<Pressable accessibilityRole="button" accessibilityLabel={photos.length?t('Добавить ещё фото'):t('Добавить фото')} accessibilityState={{disabled:off,busy}} disabled={off} onPress={()=>setAsk(true)} style={({pressed})=>[h.thumb,h.add,(pressed||off)&&h.pressed]}>{busy?<Thinking size="sm"/>:<><Image source={menuIcons.camera} style={h.addIcon}/><Text style={h.addText}>{photos.length?t('Ещё'):t('Добавить')}</Text></>}</Pressable>}
+  </View>
   <Text style={s.meta}>{busy?t('Сохраняю фото…'):photos.length?t('Добавлено {length} из {STAY_PHOTO_LIMIT}.',{length:photos.length,STAY_PHOTO_LIMIT}):t('Пока нет фото.')}</Text>
-  {!full&&<View style={h.row}><View style={h.grow}>{button(t('Снять фото'),()=>add(true),off)}</View><View style={h.grow}>{button(t('Из галереи'),()=>add(false),off,true)}</View></View>}
   {!!error&&<Text accessibilityRole="alert" style={[s.meta,{color:C.danger}]}>{error}</Text>}
+  <PopSheet visible={ask} title={t('Добавить фото')} onClose={()=>setAsk(false)}>
+   <PopRow icon="camera" title={t('Снять фото')} onPress={()=>{setAsk(false);setTimeout(()=>void add(true),Platform.OS==='ios'?450:0);}}/>
+   <PopRow icon="file" title={t('Из галереи')} last onPress={()=>{setAsk(false);setTimeout(()=>void add(false),Platform.OS==='ios'?450:0);}}/>
+  </PopSheet>
  </View>;
 }
 
@@ -40,7 +49,7 @@ export function StayPhotos({bookingId,phase,role,disabled=false,readOnly=false,o
 export function CheckinPhotos({bookingId,count,venue=false}:{bookingId:string;count:number;venue?:boolean}){
  return <View style={[s.card,{gap:8}]}>
   <Text style={s.eventTitle}>{count?(venue?t('Фото в начале'):t('Фото при заселении')):venue?t('Сфотографируйте помещение'):t('Сфотографируйте жильё')}</Text>
-  {!count&&<Text style={s.text}>{venue?t('3–5 снимков помещения и того, что уже сломано или испачкано. Тогда это не запишут на вас, когда уйдёте.'):t('3–5 снимков комнат и того, что уже сломано или испачкано. Тогда это не запишут на вас при выезде.')}{' '}{t('Фото видите только вы и владелец.')}</Text>}
+  {!count&&<Text style={s.meta}>{venue?t('3–5 снимков: что уже сломано, на вас не запишут. Видите только вы и владелец.'):t('3–5 снимков комнат: что уже сломано, на вас не запишут. Видите только вы и владелец.')}</Text>}
   <StayPhotos bookingId={bookingId} phase="checkin" role="guest"/>
  </View>;
 }
@@ -87,7 +96,8 @@ export function handoverLine(h:Handover|null|undefined,silent:boolean,guest=fals
 
 const h=StyleSheet.create({
  row:{flexDirection:'row',gap:8},grow:{flex:1},pressed:{opacity:.85},
- grid:{flexDirection:'row',flexWrap:'wrap',gap:8},thumb:{width:72,height:72,borderRadius:12},view:{width:104,height:104,borderRadius:12},
+ grid:{flexDirection:'row',flexWrap:'wrap',gap:8},thumb:{width:72,height:72,borderRadius:12},
+ add:{borderWidth:1,borderStyle:'dashed',borderColor:C.lineStrong,alignItems:'center',justifyContent:'center',gap:2},addIcon:{width:20,height:20,tintColor:C.ink},addText:{fontSize:12,lineHeight:16,color:C.ink,fontWeight:'600'},view:{width:104,height:104,borderRadius:12},
  chips:{flexDirection:'row',flexWrap:'wrap',gap:8},chip:{minHeight:40,paddingVertical:8,paddingHorizontal:12},
  chipOn:{backgroundColor:C.accent,borderColor:C.accent},chipTextOn:{color:C.onAccent},
 });

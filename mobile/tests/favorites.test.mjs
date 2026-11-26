@@ -16,7 +16,7 @@ test('a favourite is marked before «Вы здесь жили»', () => {
   assert.equal(markOf('a', mine), 'favorite');
   assert.equal(markOf('b', mine), 'stayed');
   assert.equal(markOf('c', mine), '');
-  assert.equal(markLabel('favorite'), '♥ Ваше избранное');
+  assert.equal(markLabel('favorite'), '');
   assert.equal(markLabel('stayed'), 'Вы здесь жили');
   assert.equal(markLabel('stayed', true), 'Вы здесь были');
   assert.equal(markLabel(''), '');
