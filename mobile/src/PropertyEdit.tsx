@@ -37,7 +37,7 @@ export function PropertyEdit({property,onSave,onReview,onRemove,onClose,onOpenHa
  const [p,setP]=useState(property),[base,setBase]=useState<EditBody>(()=>editBody(property)),[draft,setDraft]=useState<EditBody>(base);
  const [open,setOpen]=useState<EditStep|null>(step&&EDIT_STEPS.some(x=>x.key===step)?step as EditStep:null),[sub,setSub]=useState<Sub|null>(step&&!EDIT_STEPS.some(x=>x.key===step)?step as Sub:null);
  const [busy,setBusy]=useState(false),[uploading,setUploading]=useState(false),[error,setError]=useState(''),[done,setDone]=useState(''),[held,setHeld]=useState(false),[sent,setSent]=useState(false);
- const pick=useRef<PinChoice|null>(null),errorRu=useRef(''),photoPick=useRef<((camera:boolean)=>void)|null>(null),tried=useRef('');
+ const pick=useRef<PinChoice|null>(null),errorRu=useRef(''),photoPick=useRef<((camera:boolean)=>void)|null>(null),tried=useRef<string|null>(null);
  // The screen the editor was opened on (a tip, a row of the place's tabs): «‹» there goes back where the owner came from.
  const entry=useRef<string|null>(step||null);
  if(!open&&!sub)entry.current=null;
@@ -52,7 +52,7 @@ export function PropertyEdit({property,onSave,onReview,onRemove,onClose,onOpenHa
  const unmapped=!!p.id&&p.mapped===false&&!!base.address.trim();
  // The next thing worth doing gets the dot on its row instead of a card of advice above the list.
  const next=nextAdvice(base).step;
- function go(step:EditStep){pick.current=null;tried.current='';if(!held)setDraft(base);setError(held?error:'');setDone('');setOpen(step);}
+ function go(step:EditStep){pick.current=null;tried.current=null;if(!held)setDraft(base);setError(held?error:'');setDone('');setOpen(step);}
  const back=(key:string,to:()=>void)=>()=>{if(entry.current===key){onClose();return;}entry.current=null;to();};
  const toList=()=>{setOpen(null);if(!held)setError('');};
  // Removing is confirmed with a swipe; the server deletes a place without history and archives one with bookings.
