@@ -31,11 +31,11 @@ export function BookingRiskBox({risk}:{risk:NonNullable<Approval['risk']>}){
  </View>;
 }
 const k=StyleSheet.create({
- kicker:{fontSize:F.caption[0],lineHeight:F.caption[1],fontWeight:'700',color:C.muted,letterSpacing:.4,textTransform:'uppercase'},
+ kicker:{fontSize:F.caption[0],lineHeight:F.caption[1],fontWeight:'600',color:C.muted},
  box:{marginTop:12,marginBottom:8,padding:12,borderRadius:R.md,borderWidth:1},
  head:{flexDirection:'row',alignItems:'center',flexWrap:'wrap',gap:8},
  dot:{width:8,height:8,borderRadius:R.full},
- title:{fontSize:F.body[0],lineHeight:F.body[1],fontWeight:'700',color:C.ink},
+ title:{fontSize:F.body[0],lineHeight:F.body[1],fontWeight:'600',color:C.ink},
  held:{fontSize:F.caption[0],lineHeight:F.caption[1],color:C.muted},
  reasons:{flexDirection:'row',flexWrap:'wrap',gap:8,marginTop:8},
  reason:{paddingVertical:2,paddingHorizontal:8,borderRadius:R.full,backgroundColor:C.surface,overflow:'hidden',fontSize:F.label[0],lineHeight:F.label[1],color:C.inkSoft},

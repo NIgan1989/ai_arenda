@@ -66,9 +66,9 @@ function AdminCode({onVerified}:{onVerified:()=>void}){
   {sent?<>
    <Pressable accessible={false} style={h.cells}>{[0,1,2,3,4,5].map(i=><View key={i} style={[h.cell,i===code.length&&h.cellOn]}><Text style={h.cellText}>{code[i]||''}</Text></View>)}
     <TextInput accessibilityLabel={t('Код из Telegram')} value={code} onChangeText={v=>setCode(v.replace(/\D/g,'').slice(0,6))} keyboardType="number-pad" textContentType="oneTimeCode" autoFocus maxLength={6} style={h.hidden}/></Pressable>
-   <Btn title={busy?t('Проверяю…'):t('Войти')} disabled={busy||code.length!==6} onPress={()=>void verify()}/>
+   <Btn title={busy?t('Проверяем…'):t('Войти')} disabled={busy||code.length!==6} onPress={()=>void verify()}/>
    <Link title={t('Прислать код ещё раз')} disabled={busy} onPress={()=>void send()}/>
-  </>:<Btn title={busy?t('Отправляю…'):t('Прислать код в Telegram')} disabled={busy} onPress={()=>void send()}/>}
+  </>:<Btn title={busy?t('Отправляем…'):t('Прислать код в Telegram')} disabled={busy} onPress={()=>void send()}/>}
   {!!info&&<Text style={[s.meta,{marginTop:12}]}>{info}</Text>}
   <Said error={error}/>
  </View>;
@@ -219,6 +219,6 @@ function Admins(){
 const h=StyleSheet.create({
  cells:{flexDirection:'row',gap:8,marginTop:8,marginBottom:4,position:'relative'},
  cell:{flex:1,height:56,borderRadius:T.radius.md,borderWidth:1.5,borderColor:C.line,alignItems:'center',justifyContent:'center',backgroundColor:C.surface},cellOn:{borderColor:C.ink},
- cellText:{...type.title,color:C.ink,fontWeight:'700'},
+ cellText:{...type.title,color:C.ink,fontWeight:'600'},
  hidden:{position:'absolute',left:0,right:0,top:0,bottom:0,opacity:0.02,color:'transparent',fontSize:1},
 });

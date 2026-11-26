@@ -22,10 +22,10 @@ export function PropertyStaff({propertyId,kind,onBack,onClose,onChanged}:{proper
  async function run(path:string,body:Row){if(busy)return;setBusy(true);setError('');setNote('');try{const r=await request('/api/operations/staff/'+path,{propertyId,...body});setState(r);setNote(r?.message||'');setConfirm(false);onChanged?.(r?.staff?.name||'');}catch(x:any){setError(x?.message||t('Не получилось.'));}finally{setBusy(false);}}
  const s=state?.staff,ready=phone.replace(/\D/g,'').length>=11;
  // The pinned button: «Назначить» before anyone is named, «Снять» and «Отмена» while removing is being confirmed.
- const foot=state&&!s?<EditButton title={t('Назначить')} disabled={!ready} busy={busy&&t('Назначаю…')} onPress={()=>run('assign',{phone})}/>
-  :s&&confirm?<><EditButton title={t('Снять')} busy={busy&&t('Снимаю…')} onPress={()=>run('remove',{})}/><EditButton line title={t('Отмена')} disabled={busy} onPress={()=>setConfirm(false)}/></>:undefined;
+ const foot=state&&!s?<EditButton title={t('Назначить')} disabled={!ready} busy={busy&&t('Назначаем…')} onPress={()=>run('assign',{phone})}/>
+  :s&&confirm?<><EditButton title={t('Снять')} busy={busy&&t('Снимаем…')} onPress={()=>run('remove',{})}/><EditButton line title={t('Отмена')} disabled={busy} onPress={()=>setConfirm(false)}/></>:undefined;
  return <EditSheet title={t('Сотрудник')} onBack={onBack} onClose={onClose} busy={busy} foot={foot} menu={s&&!confirm?[{title:t('Снять'),icon:'trash',danger:true,onPress:()=>setConfirm(true)}]:undefined}>
-  {!state&&!error&&<ThinkingLine style={editStyles.note} text={t('Загружаю…')}/>}
+  {!state&&!error&&<ThinkingLine style={editStyles.note} text={t('Загружаем…')}/>}
   {state&&!s&&<>
    <Text style={f.lead}>{whoFor(kind||'')}</Text>
    <EditField label={t('Телефон')} value={phone} onChange={setPhone} max={20} keyboard="phone-pad" placeholder="+7 777 123 45 67"/>

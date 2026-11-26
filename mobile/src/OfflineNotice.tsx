@@ -23,6 +23,6 @@ const o = StyleSheet.create({
   dot: { width: 6, height: 6, borderRadius: 3, backgroundColor: C.danger },
   text: { ...type.label, color: C.onAccent, fontWeight: '600' },
   retry: { minHeight: 36, paddingHorizontal: 12, justifyContent: 'center' },
-  retryText: { ...type.label, color: C.onAccent, fontWeight: '700', textDecorationLine: 'underline' },
+  retryText: { ...type.label, color: C.onAccent, fontWeight: '600', textDecorationLine: 'underline' },
   dim: { opacity: 0.45 }
 });

@@ -90,7 +90,7 @@ export function RightsRow({propertyId,approved,onPress,last=false}:{propertyId:s
 export function RightsSheet({propertyId,approved,onBack,onClose}:{propertyId:string;approved:boolean;onBack:()=>void;onClose:()=>void}){
  const x=useRightsEdit(propertyId);
  const menu:EditMenuItem[]=approved?[]:x.docs.map((d,i)=>({title:x.docs.length>1?t('Убрать страницу {n}',{n:i+1}):t('Убрать фото документа'),icon:'trash',danger:true,onPress:()=>void x.remove(d.id)}));
- const foot=!approved&&x.docs.length<4?<EditButton title={x.addTitle} busy={x.busy&&t('Прикладываю…')} onPress={()=>void x.add()}/>:undefined;
+ const foot=!approved&&x.docs.length<4?<EditButton title={x.addTitle} busy={x.busy&&t('Прикладываем…')} onPress={()=>void x.add()}/>:undefined;
  return <EditSheet title={t('Документ о праве')} onBack={onBack} onClose={onClose} menu={menu} foot={foot} busy={x.busy}>
   <RightsState approved={approved} count={x.docs.length} loading={x.loading}/>
   {!approved&&<EditChips label={t('Кто вы')} value={x.kind} options={[['owner',t('Я собственник')],['sublease',t('Сдаю в субаренду')]]} onChange={x.setKind} disabled={x.busy}/>}
@@ -112,7 +112,7 @@ export function RightDocs({propertyId,approved}:{propertyId:string;approved:bool
   {!approved&&!!x.need[x.kind]&&<Text style={r.note}>{t('Нужно фото: {v}.',{v:t(x.need[x.kind])})}</Text>}
   {x.switching&&<Text style={r.note}><Text style={{color:editDot.missing}}>● </Text>{t('Новое фото заменит уже приложенные документы.')}</Text>}
   <RightsPages docs={x.docs} open={x.open} setOpen={x.setOpen} busy={x.busy} onRemove={approved?undefined:id=>void x.remove(id)}/>
-  {!approved&&x.docs.length<4&&<EditButton line title={x.addTitle} busy={x.busy&&t('Прикладываю…')} onPress={()=>void x.add()}/>}
+  {!approved&&x.docs.length<4&&<EditButton line title={x.addTitle} busy={x.busy&&t('Прикладываем…')} onPress={()=>void x.add()}/>}
   {!!x.said&&<EditNote text={x.said.text} tone={x.said.error?'error':undefined}/>}
  </View>;
 }

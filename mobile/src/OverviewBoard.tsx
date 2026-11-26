@@ -94,7 +94,7 @@ const b=StyleSheet.create({
  history:{marginTop:16,borderRadius:R.lg,borderWidth:1,borderColor:C.line,backgroundColor:C.surface,overflow:'hidden'},
  historyHead:{flexDirection:'row',alignItems:'center',gap:12,minHeight:56,paddingHorizontal:16,paddingVertical:12},
  historyList:{borderTopWidth:1,borderTopColor:C.line,paddingHorizontal:16,paddingBottom:12},
- day:{...type.caption,color:C.muted,fontWeight:'600',letterSpacing:.4,textTransform:'uppercase',marginTop:12,marginBottom:4},
+ day:{...type.caption,color:C.muted,fontWeight:'600',marginTop:12,marginBottom:4},
  historyRow:{flexDirection:'row',alignItems:'flex-start',gap:12,minHeight:44,paddingVertical:12,borderBottomWidth:1,borderBottomColor:C.line},
  historyText:{...type.label,color:C.inkSoft,flex:1,minWidth:0},historyMine:{color:C.muted},
  time:{...type.caption,color:C.muted,paddingTop:2},

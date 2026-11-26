@@ -57,12 +57,12 @@ export type Outgoing={key:string;roomId:string;photo:string;size?:Size|null;text
 export function OutgoingPhoto({item,time,onRetry,onDelete}:{item:Outgoing;time:string;onRetry:()=>void;onDelete:()=>void}){
  const [open,setOpen]=useState(false),failed=item.status==='failed',percent=Math.round(item.progress*100),caption=item.text.trim();
  return <View style={[p.bubble,caption?p.withCaption:null]}>
-  <PhotoFrame uri={item.photo} size={item.size} dim={!failed} onOpen={()=>setOpen(true)} stamp={caption?null:{time,ticks:failed?'!':'🕓'}}>
+  <PhotoFrame uri={item.photo} size={item.size} dim={!failed} onOpen={()=>setOpen(true)} stamp={caption?null:{time,ticks:failed?'!':'◷'}}>
    {!failed&&<View pointerEvents="none" style={p.center}><View style={p.progressBox}><Thinking size="sm" color={C.onAccent}/><Text style={p.progressText}>{percent>0&&percent<100?percent+'%':t('Отправляем…')}</Text></View></View>}
    {!failed&&<View pointerEvents="none" style={p.track}><View style={[p.bar,{width:`${Math.max(4,percent)}%`}]}/></View>}
   </PhotoFrame>
   {!!caption&&<Text style={p.caption}>{caption}</Text>}
-  {!!caption&&<View style={p.row}><Text style={p.time}>{time}</Text><Text style={p.time}>{failed?'!':'🕓'}</Text></View>}
+  {!!caption&&<View style={p.row}><Text style={p.time}>{time}</Text><Text style={p.time}>{failed?'!':'◷'}</Text></View>}
   {failed&&<View style={p.failed}><Text accessibilityRole="alert" style={p.failedText}>{item.error||t('Фото не отправлено')}</Text><View style={p.actions}>
    <Pressable accessibilityRole="button" accessibilityLabel={t('Повторить отправку фото')} onPress={onRetry} style={({pressed})=>[p.action,p.actionMain,pressed&&p.pressed]}><Text style={p.actionMainText}>{t('Повторить')}</Text></Pressable>
    <Pressable accessibilityRole="button" accessibilityLabel={t('Удалить неотправленное фото')} onPress={onDelete} style={({pressed})=>[p.action,pressed&&p.pressed]}><Text style={p.actionText}>{t('Удалить')}</Text></Pressable>

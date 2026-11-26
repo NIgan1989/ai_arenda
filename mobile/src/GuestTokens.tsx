@@ -73,7 +73,7 @@ const s = StyleSheet.create({
   cross: { width: 32, height: H, alignItems: 'center', justifyContent: 'center' },
   crossDot: { width: 20, height: 20, borderRadius: 10, alignItems: 'center', justifyContent: 'center', backgroundColor: C.accentLine },
   crossDotBad: { backgroundColor: C.surface },
-  crossText: { fontSize: 10, lineHeight: 12, color: C.accentPressed, fontWeight: '700' },
+  crossText: { fontSize: 10, lineHeight: 12, color: C.accentPressed, fontWeight: '600' },
   more: { paddingHorizontal: 12, borderStyle: 'dashed', borderColor: C.accentLine, justifyContent: 'center' },
   moreText: { ...type.label, color: C.accent, fontWeight: '600' },
   pressed: { opacity: 0.6 },

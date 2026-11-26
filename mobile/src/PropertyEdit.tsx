@@ -104,8 +104,8 @@ export function PropertyEdit({property,onSave,onReview,onRemove,onClose,onOpenHa
  </EditSheet>;
 
  if(open){
-  const title=stepTitle(draft.details.type,open),working=busy?t('Сохраняю…'):uploading?t('Загружаю фото…'):false;
-  const save=<EditButton title={open==='place'?t('Сохранить адрес'):t('Сохранить')} busy={working||(accessState==='…'&&t('Сохраняю…'))} onPress={async()=>{if(open==='checkin'&&!(await saveAccess()))return;void commit(draft,open);}}/>;
+  const title=stepTitle(draft.details.type,open),working=busy?t('Сохраняем…'):uploading?t('Загружаем фото…'):false;
+  const save=<EditButton title={open==='place'?t('Сохранить адрес'):t('Сохранить')} busy={working||(accessState==='…'&&t('Сохраняем…'))} onPress={async()=>{if(open==='checkin'&&!(await saveAccess()))return;void commit(draft,open);}}/>;
   const foot=open==='photos'?<EditButton title={t('Добавить фото')} busy={working} disabled={draft.photos.length>=8} onPress={()=>photoPick.current?.(false)}/>:save;
   return <EditSheet title={title} onBack={back(open,toList)} onClose={onClose} busy={busy||uploading} foot={foot}>
    {open==='photos'&&<>
@@ -241,5 +241,5 @@ const x=StyleSheet.create({
  pair:{flexDirection:'row',gap:12},half:{flex:1},
  group:{marginTop:12,borderTopWidth:8,borderTopColor:C.bg,marginHorizontal:-16,paddingHorizontal:16},
  link:{...type.label,color:C.ink,fontWeight:'600'},
- confirm:{gap:12},confirmText:{...type.label,color:C.ink},strong:{fontWeight:'700'},
+ confirm:{gap:12},confirmText:{...type.label,color:C.ink},strong:{fontWeight:'600'},
 });

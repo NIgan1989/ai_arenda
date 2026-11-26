@@ -76,7 +76,7 @@ export function OwnerToday({ data, now, needs = [], onOpen }: Props) {
   return (
     <View style={o.box} accessibilityLabel={tr('Сегодня')}>
       <View style={o.tabs} accessibilityRole="tablist">{tabButton('today', tr('Сегодня'), todayCount)}{tabButton('soon', tr('Скоро'), soonCount)}{tabButton('all', tr('Все'))}</View>
-      <Text style={o.lead}>{[parts.join(' · ') || tr('Сегодня спокойно'), asks ? tr('нужны вы: {n}', { n: asks }) : tr('остальное ведёт автопилот')].join(' · ')}</Text>
+      {total > 0 && <Text style={o.lead}>{[parts.join(' · ') || tr('Сегодня спокойно'), asks ? tr('нужны вы: {n}', { n: asks }) : tr('остальное ведёт автопилот')].join(' · ')}</Text>}
       <View>
         {needs.map(n => <TimeRow key={n.key} now time={tr('сейчас')} title={n.title} line={n.line} button={n.action} onButton={n.onPress} last={last()} label={tr('Ждёт вас: {title}. {line}', { title: n.title, line: n.line })} />)}
         {yours.map(t => {
@@ -98,11 +98,11 @@ export function OwnerToday({ data, now, needs = [], onOpen }: Props) {
 const o = StyleSheet.create({
   box: { gap: 8 },
   lead: { ...type.label, color: C.muted },
-  tabs: { flexDirection: 'row', gap: 8, marginTop: 4 },
-  tab: { minHeight: 40, paddingHorizontal: 16, alignItems: 'center', justifyContent: 'center', borderRadius: T.radius.full, backgroundColor: C.surfaceAlt },
-  tabOn: { backgroundColor: C.ink },
-  tabText: { ...type.label, color: C.ink, fontWeight: '600' },
-  tabTextOn: { color: C.surface },
+  tabs: { flexDirection: 'row', gap: 20, marginTop: 4, borderBottomWidth: 1, borderBottomColor: C.line },
+  tab: { minHeight: 40, alignItems: 'center', justifyContent: 'center', borderBottomWidth: 2, borderBottomColor: 'transparent', marginBottom: -1 },
+  tabOn: { borderBottomColor: C.ink },
+  tabText: { ...type.label, color: C.muted, fontWeight: '600' },
+  tabTextOn: { color: C.ink },
   empty: { ...type.label, color: C.muted, paddingVertical: 8 },
   more: { minHeight: 40, alignItems: 'center', justifyContent: 'center' },
   moreText: { ...type.label, color: C.ink, fontWeight: '600' },

@@ -8,6 +8,7 @@ import {Platform,View,Text,TextInput,Pressable,StyleSheet} from 'react-native';
 import {Thinking} from './Thinking';
 import {AddressField} from './AddressSuggest';
 import {C,type} from './styles';
+import {AiMark} from './AiMark';
 import {T} from './tokens';
 import {Photo} from './ListingMedia';
 import {PhotoGrid} from './PhotoGrid';
@@ -165,7 +166,7 @@ export function PropertyQuick({city,onSave,onGuestMode,onPlace,onReview,onClose,
      <View style={q.sumRow}><Text style={q.sumMuted}>{free?t('Комиссия сервиса · бесплатный старт'):t('Комиссия сервиса {rate}',{rate:percent(fee.rate)})}</Text><Text style={q.sumMuted}>{cut?'−'+money(cut):money(0)}</Text></View>
      <View style={[q.sumRow,q.sumTotal]}><Text style={q.sumStrong}>{t('Вы получите')}</Text><Text style={q.sumStrong}>{money(value-cut)}</Text></View>
     </View>}
-    {ask.key==='price'&&!!hint&&<View style={q.advice}><View style={q.spark}><Text style={q.sparkText}>✦</Text></View><Text style={q.adviceText}>{hint.stayClass?(hint.low===hint.high?t('Жильё класса «{c}» в городе сдают примерно за {v} ₸ в сутки.',{c:classLabel(hint.stayClass),v:digits(hint.low)}):t('Жильё класса «{c}» в городе сдают за {low}–{high} ₸ в сутки.',{c:classLabel(hint.stayClass),low:digits(hint.low),high:digits(hint.high)})):hint.low===hint.high?t('Похожее жильё в городе сдают примерно за {v} ₸ в сутки.',{v:digits(hint.low)}):t('Похожее жильё в городе сдают за {low}–{high} ₸ в сутки.',{low:digits(hint.low),high:digits(hint.high)})}</Text></View>}
+    {ask.key==='price'&&!!hint&&<View style={q.advice}><AiMark/><Text style={q.adviceText}>{hint.stayClass?(hint.low===hint.high?t('Жильё класса «{c}» в городе сдают примерно за {v} ₸ в сутки.',{c:classLabel(hint.stayClass),v:digits(hint.low)}):t('Жильё класса «{c}» в городе сдают за {low}–{high} ₸ в сутки.',{c:classLabel(hint.stayClass),low:digits(hint.low),high:digits(hint.high)})):hint.low===hint.high?t('Похожее жильё в городе сдают примерно за {v} ₸ в сутки.',{v:digits(hint.low)}):t('Похожее жильё в городе сдают за {low}–{high} ₸ в сутки.',{low:digits(hint.low),high:digits(hint.high)})}</Text></View>}
     {ask.key==='cleaningFee'&&<View style={q.chips}><Pressable accessibilityRole="button" onPress={()=>{patch({ownStaff:true});setAnswer('');setError('');}} style={q.chip}><Text style={q.chipText}>{t('Убираем сами')}</Text></Pressable></View>}
    </>:<AddressField kind={ask.key==='address'?'street':'district'} label={ask.label} value={answer} city={String(draft.city||'')} place={place} max={ask.key==='address'?300:120} placeholder={ask.placeholder} labelStyle={q.tileLabel} inputStyle={q.input} style={q.field} onChange={setAnswer} onPick={c=>{if(ask.key==='address'&&c.district&&!String(draft.district||'').trim())patch({district:c.district});}}/>}
    {foot(toStory,t('Далее'),reply,!answer.trim())}
@@ -208,14 +209,14 @@ export function PropertyQuick({city,onSave,onGuestMode,onPlace,onReview,onClose,
      <View style={q.field}><Text style={q.tileLabel}>{venue?t('Правила'):t('Правила проживания')}</Text><TextInput accessibilityLabel={venue?t('Правила'):t('Правила проживания')} multiline scrollEnabled={false} style={[q.input,q.area]} value={draftRules(draft)} maxLength={2500} onChangeText={v=>setDraft(d=>({...d,houseRules:v}))}/></View>
     </>)}
    </View>
-   <Text style={q.h}>{t('КТО ОТВЕЧАЕТ ГОСТЯМ')}</Text>
+   <Text style={q.h}>{t('Кто отвечает гостям')}</Text>
    <View style={q.grid} accessibilityRole="radiogroup">
     <Pressable accessibilityRole="radio" accessibilityState={{checked:mode==='auto'}} onPress={()=>setMode('auto')} style={[q.mode,mode==='auto'&&q.modeOn]}><Text style={q.modeTitle}>{t('ИИ')}</Text><Text style={q.hint}>{draft.ownStaff?t('Отвечает за минуту и подтверждает бронь'):t('Отвечает за минуту, подтверждает бронь и заказывает уборку')}</Text></Pressable>
     <Pressable accessibilityRole="radio" accessibilityState={{checked:mode==='manual'}} onPress={()=>setMode('manual')} style={[q.mode,mode==='manual'&&q.modeOn]}><Text style={q.modeTitle}>{t('Я сам')}</Text><Text style={q.hint}>{t('Запросы приходят вам, вы решаете')}</Text></Pressable>
    </View>
    {mode==='auto'&&!draft.ownStaff&&draft.cleaningFee>=100&&<View style={q.grid}>{num('cleaningFee',t('Уборка после гостя, ₸'),1000000)}</View>}
    {/* A line cleared while fixing it brings its question back: «Далее» asks it, nothing is saved half-filled. */}
-   {foot(toStory,questions.length?t('Далее'):photos.length?t('Опубликовать'):t('Сохранить черновик'),()=>{if(questions.length){setChecking(false);onTop?.();}else void save();},uploading,busy?t('Сохраняю…'):undefined)}
+   {foot(toStory,questions.length?t('Далее'):photos.length?t('Опубликовать'):t('Сохранить черновик'),()=>{if(questions.length){setChecking(false);onTop?.();}else void save();},uploading,busy?t('Сохраняем…'):undefined)}
   </View>}
 
   {step===2&&saved&&<View style={q.body}>
@@ -235,46 +236,46 @@ const q=StyleSheet.create({
  sheet:{backgroundColor:C.surface,borderRadius:R.xl,padding:16,gap:16,borderWidth:1,borderColor:C.line},
  top:{flexDirection:'row',alignItems:'center',justifyContent:'space-between',gap:8},
  pill:{minHeight:36,paddingHorizontal:16,borderRadius:R.full,borderWidth:1,borderColor:C.line,backgroundColor:C.surface,justifyContent:'center'},pillText:{color:C.ink,...type.label,fontWeight:'600'},
- heading:{gap:4},title:{color:C.ink,...type.title,fontWeight:'800',letterSpacing:-.3},sub:{color:C.muted,...type.label},
+ heading:{gap:4},title:{color:C.ink,...type.title,fontWeight:'600',letterSpacing:-.3},sub:{color:C.muted,...type.label},
  error:{color:C.danger,backgroundColor:C.dangerSoft,borderRadius:R.md,padding:12,...type.label},
  body:{gap:12},
  line:{borderWidth:1,borderColor:C.lineStrong,borderRadius:R.lg,backgroundColor:C.surface,overflow:'hidden'},
  lineInput:{minHeight:136,padding:16,color:C.ink,...type.body},
  lineBar:{flexDirection:'row',alignItems:'center',justifyContent:'space-between',gap:8,paddingHorizontal:12,paddingBottom:12},
  hint:{color:C.muted,...type.caption},
- homeLink:{paddingVertical:8},homeAsk:{gap:4,padding:12,borderRadius:R.lg,borderWidth:1,borderColor:C.line},homeAskTitle:{color:C.ink,...type.label,fontWeight:'700'},homeAskText:{color:C.inkSoft,...type.caption},homeLinkText:{color:C.inkSoft,...type.label},homeLinkGo:{color:C.ink,fontWeight:'700'},
+ homeLink:{paddingVertical:8},homeAsk:{gap:4,padding:12,borderRadius:R.lg,borderWidth:1,borderColor:C.line},homeAskTitle:{color:C.ink,...type.label,fontWeight:'600'},homeAskText:{color:C.inkSoft,...type.caption},homeLinkText:{color:C.inkSoft,...type.label},homeLinkGo:{color:C.ink,fontWeight:'600'},
  foot:{gap:16,marginTop:8},seg:{flexDirection:'row',gap:4},segBar:{flex:1,height:4,borderRadius:R.full,backgroundColor:C.line},segOn:{backgroundColor:C.ink},
  footRow:{flexDirection:'row',alignItems:'center',justifyContent:'space-between',gap:16},
  back:{color:C.ink,...type.body,fontWeight:'600',textDecorationLine:'underline'},
  next:{minHeight:H.primary,minWidth:132,borderRadius:R.full,backgroundColor:C.ink,alignItems:'center',justifyContent:'center',paddingHorizontal:24},nextOff:{backgroundColor:C.lineStrong},
- nextText:{color:C.onAccent,...type.body,fontWeight:'700'},wide:{alignSelf:'stretch'},
+ nextText:{color:C.onAccent,...type.body,fontWeight:'600'},wide:{alignSelf:'stretch'},
  outline:{minHeight:H.primary,borderRadius:R.full,borderWidth:1,borderColor:C.lineStrong,backgroundColor:C.surface,alignItems:'center',justifyContent:'center',paddingHorizontal:20},outlineText:{color:C.ink,...type.body,fontWeight:'600'},
  bigRow:{flexDirection:'row',alignItems:'baseline',justifyContent:'center',gap:8,paddingVertical:16},
- big:{maxWidth:'80%',color:C.ink,...type.display,fontWeight:'800',letterSpacing:-1,textAlign:'center',padding:0,...(Platform.OS==='web'?({outlineStyle:'none'} as object):null)},bigUnit:{color:C.ink,...type.display,fontWeight:'800'},
+ big:{maxWidth:'80%',color:C.ink,...type.display,fontWeight:'600',letterSpacing:-1,textAlign:'center',padding:0,...(Platform.OS==='web'?({outlineStyle:'none'} as object):null)},bigUnit:{color:C.ink,...type.display,fontWeight:'600'},
  sum:{borderRadius:R.lg,borderWidth:1.5,borderColor:C.ink,paddingHorizontal:16,paddingVertical:12,gap:4},
  sumRow:{flexDirection:'row',justifyContent:'space-between',gap:12},sumTotal:{borderTopWidth:1,borderTopColor:C.line,paddingTop:8,marginTop:4},
- sumText:{color:C.ink,...type.body},sumMuted:{color:C.muted,...type.body,flexShrink:1},sumStrong:{color:C.ink,...type.body,fontWeight:'700'},
- advice:{flexDirection:'row',alignItems:'flex-start',gap:12,padding:12,borderRadius:R.lg,backgroundColor:C.bg},spark:{width:28,height:28,borderRadius:R.full,backgroundColor:C.accent,alignItems:'center',justifyContent:'center'},sparkText:{...type.label,color:C.onAccent,fontWeight:'700'},adviceText:{flex:1,color:C.ink,...type.label,paddingTop:4},
+ sumText:{color:C.ink,...type.body},sumMuted:{color:C.muted,...type.body,flexShrink:1},sumStrong:{color:C.ink,...type.body,fontWeight:'600'},
+ advice:{flexDirection:'row',alignItems:'flex-start',gap:12,paddingVertical:12},adviceText:{flex:1,color:C.ink,...type.label,paddingTop:4},
  preview:{borderRadius:R.lg,borderWidth:1,borderColor:C.line,overflow:'hidden'},
  cover:{minHeight:56,backgroundColor:C.surfaceAlt,alignItems:'center',justifyContent:'center'},coverPhoto:{aspectRatio:16/9},coverEmpty:{color:C.inkSoft,...type.label,fontWeight:'600',textAlign:'center',padding:16},
- previewBody:{padding:12,gap:4},previewTitle:{color:C.ink,...type.subtitle,fontWeight:'700',padding:0},price:{color:C.ink,...type.body,fontWeight:'700'},
+ previewBody:{padding:12,gap:4},previewTitle:{color:C.ink,...type.subtitle,fontWeight:'600',padding:0},price:{color:C.ink,...type.body,fontWeight:'600'},
  readingRow:{flexDirection:'row',alignItems:'center',gap:12},
- h:{color:C.muted,...type.caption,fontWeight:'700',letterSpacing:.8,marginTop:8},
+ h:{color:C.muted,...type.caption,fontWeight:'600',marginTop:8},
  chips:{flexDirection:'row',flexWrap:'wrap',gap:8},
  chip:{minHeight:H.compact,justifyContent:'center',paddingHorizontal:16,borderRadius:R.full,borderWidth:1,borderColor:C.lineStrong,backgroundColor:C.surface},
  chipOn:{backgroundColor:C.ink,borderColor:C.ink},chipText:{color:C.ink,...type.label},chipTextOn:{color:C.onAccent,fontWeight:'600'},
  grid:{flexDirection:'row',gap:8},half:{flex:1},
  tile:{flex:1,minHeight:76,padding:12,borderRadius:R.md,borderWidth:1,borderColor:C.line,backgroundColor:C.surface,justifyContent:'space-between'},
  tileLabel:{color:C.muted,...type.caption,fontWeight:'600'},guess:{color:C.warning,...type.caption},
- tileValue:{color:C.ink,...type.subtitle,fontWeight:'700',padding:0},
+ tileValue:{color:C.ink,...type.subtitle,fontWeight:'600',padding:0},
  field:{gap:4},input:{minHeight:H.field,borderRadius:R.md,borderWidth:1,borderColor:C.lineStrong,backgroundColor:C.surface,paddingHorizontal:16,paddingVertical:12,color:C.ink,...type.body},
  area:{minHeight:112,textAlignVertical:'top',...type.label},
  rows:{borderRadius:R.lg,borderWidth:1,borderColor:C.line,backgroundColor:C.surface,overflow:'hidden'},
  row:{borderTopWidth:1,borderTopColor:C.line},rowOn:{backgroundColor:C.bg},
  rowHead:{flexDirection:'row',alignItems:'center',gap:12,minHeight:60,paddingHorizontal:16,paddingVertical:8},
- rowLabel:{color:C.muted,...type.caption,fontWeight:'700'},rowValue:{color:C.ink,...type.body},rowEmpty:{color:C.danger},
+ rowLabel:{color:C.muted,...type.caption,fontWeight:'600'},rowValue:{color:C.ink,...type.body},rowEmpty:{color:C.danger},
  rowGo:{color:C.ink,...type.label,fontWeight:'600',textDecorationLine:'underline'},rowBody:{gap:12,paddingHorizontal:16,paddingBottom:16},
  mode:{flex:1,padding:12,borderRadius:R.lg,borderWidth:1,borderColor:C.line,backgroundColor:C.surface,gap:4},modeOn:{borderColor:C.ink,borderWidth:2,padding:12},
- modeTitle:{color:C.ink,...type.body,fontWeight:'700'},
- doneMark:{width:56,height:56,borderRadius:R.full,backgroundColor:C.ink,alignItems:'center',justifyContent:'center'},doneMarkText:{color:C.onAccent,...type.title,fontWeight:'700'}
+ modeTitle:{color:C.ink,...type.body,fontWeight:'600'},
+ doneMark:{width:56,height:56,borderRadius:R.full,backgroundColor:C.ink,alignItems:'center',justifyContent:'center'},doneMarkText:{color:C.onAccent,...type.title,fontWeight:'600'}
 });

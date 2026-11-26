@@ -31,8 +31,8 @@ export function OwnerResponses({rows,approvals,busy,onDecide,onOpen,autopilot}:{
 }
 const o=StyleSheet.create({
  block:{gap:12,marginTop:12,marginBottom:12},
- head:{flexDirection:'row',alignItems:'center',gap:8},title:{...type.subtitle,fontWeight:'700',color:C.ink},
- count:{...type.caption,fontWeight:'700',color:C.onAccent,backgroundColor:C.accent,minWidth:24,paddingHorizontal:8,paddingVertical:2,borderRadius:R.full,overflow:'hidden',textAlign:'center'},
+ head:{flexDirection:'row',alignItems:'center',gap:8},title:{...type.subtitle,fontWeight:'600',color:C.ink},
+ count:{...type.caption,fontWeight:'600',color:C.onAccent,backgroundColor:C.accent,minWidth:24,paddingHorizontal:8,paddingVertical:2,borderRadius:R.full,overflow:'hidden',textAlign:'center'},
  card:{overflow:'hidden',borderRadius:R.xl,borderWidth:1,borderColor:C.line,backgroundColor:C.surface},
  job:{flexDirection:'row',alignItems:'center',gap:12,paddingHorizontal:16,paddingVertical:12,borderBottomWidth:1,borderBottomColor:C.line},
  thumb:{width:56,height:56,borderRadius:R.md,overflow:'hidden',backgroundColor:C.surfaceAlt},

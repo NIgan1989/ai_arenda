@@ -55,7 +55,7 @@ const p=StyleSheet.create({
  where:{...type.body,fontWeight:'600',color:C.ink},lock:{...type.caption,color:C.muted},
  facts:{flexDirection:'row',flexWrap:'wrap',gap:8},
  fact:{flexGrow:1,flexBasis:'40%',flexDirection:'row',alignItems:'baseline',gap:8,paddingVertical:12,paddingHorizontal:12,borderRadius:R.md,backgroundColor:C.surfaceAlt},
- factValue:{...type.body,fontWeight:'700',color:C.ink},factLine:{...type.label,color:C.inkSoft},factLabel:{...type.caption,color:C.muted},
+ factValue:{...type.body,fontWeight:'600',color:C.ink},factLine:{...type.label,color:C.inkSoft},factLabel:{...type.caption,color:C.muted},
  todoHead:{flexDirection:'row',alignItems:'center',justifyContent:'space-between',gap:8},todoTitle:{...type.label,fontWeight:'600',color:C.ink},
  time:{...type.caption,fontWeight:'600',color:C.muted},
  task:{flexDirection:'row',alignItems:'flex-start',gap:8},

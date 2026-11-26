@@ -27,7 +27,7 @@ export function ServiceBilling({role}:{role:'owner'|'cleaner'}){
   try{const r=await request('/api/operations/service-billing',{action},undefined,undefined,role);setMessage(r?.message||'');if(r?.state)setState(r.state);}
   catch(e:any){setError(e?.message||tr('Не получилось.'));}finally{setBusy(false);}
  }
- if(!state)return error?<Text accessibilityRole="alert" style={s.error}>{error}</Text>:<ThinkingLine style={s.meta} text={tr('Загружаю…')}/>;
+ if(!state)return error?<Text accessibilityRole="alert" style={s.error}>{error}</Text>:<ThinkingLine style={s.meta} text={tr('Загружаем…')}/>;
  // A charge is never repeated while the bank's answer is checked; a large week waits for the person's own «Оплатить сейчас».
  const hold=state.stopped?tr('Списания временно остановлены сервисом. Ничего не спишется, пока их не включат.'):state.checking?tr('Уточняем в банке прошлое списание {sum}. Повторно не спишем, итог пришлём.',{sum:money(state.checking)}):state.confirm?(state.payBy?tr('Сумма крупная, поэтому сама не спишется. Подтвердите её кнопкой ниже до {v}.',{v:day(state.payBy)}):tr('Сумма крупная, поэтому сама не спишется. Подтвердите её кнопкой ниже.')):'';
  const when=hold||(state.paused?tr('Пауза: новые брони и «Автопилот» остановлены до оплаты.'):state.payBy?(state.card?tr('Оплатите до {v}, иначе новые брони и «Автопилот» встанут на паузу.',{v:day(state.payBy)}):tr('Привяжите карту до {v}, иначе новые брони и «Автопилот» встанут на паузу.',{v:day(state.payBy)})):state.due>0?(state.card?tr('Спишется с карты {v}.',{v:day(state.nextChargeAt)}):tr('Привяжите карту: списание раз в неделю, по понедельникам.')):tr('Сейчас платить нечего.'));
@@ -61,7 +61,7 @@ export function ServiceBilling({role}:{role:'owner'|'cleaner'}){
 const b=StyleSheet.create({
  top:{gap:2},
  label:{...type.label,color:C.muted},
- sum:{fontSize:36,lineHeight:40,fontWeight:'800',letterSpacing:-.6,color:C.ink,fontVariant:['tabular-nums']},
+ sum:{fontSize:36,lineHeight:40,fontWeight:'600',letterSpacing:-.6,color:C.ink,fontVariant:['tabular-nums']},
  meta:{...type.label,color:C.inkSoft},
  done:{...type.label,color:C.success,marginTop:12},
  itemSum:{...type.label,color:C.ink,fontWeight:'600'},

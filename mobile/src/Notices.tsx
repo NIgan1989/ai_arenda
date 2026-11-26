@@ -23,7 +23,7 @@ export function noticeParts(text:string):[string,string]{const i=text.indexOf('.
 export function NoticeList({list,now,onOpen,waiting=[],fresh}:{list:Row[];now:number;onOpen?:(notice:Row)=>(()=>void)|undefined;waiting?:NoticeWaiting[];fresh?:(notice:Row)=>boolean}){
  const [all,setAll]=useState(false),[full,setFull]=useState(''),[allAsks,setAllAsks]=useState(false),shown=all?list:list.slice(0,8);
  // Three decisions at most on top, so the day's events stay in view; the rest open in place.
- const asks=waiting.length>0&&<View style={n.block}><Text accessibilityRole="header" style={n.day}>{t('Нужно ваше решение').toUpperCase()}</Text>{(allAsks?waiting:waiting.slice(0,3)).map(w=><View key={w.key} style={n.ask}>
+ const asks=waiting.length>0&&<View style={n.block}><Text accessibilityRole="header" style={n.day}>{t('Нужно ваше решение')}</Text>{(allAsks?waiting:waiting.slice(0,3)).map(w=><View key={w.key} style={n.ask}>
    <RowIcon icon="clock" tint={C.goldInk}/>
    <View style={n.text}><Text numberOfLines={2} style={n.title}>{w.title}</Text>{!!w.line&&<Text numberOfLines={2} style={n.when}>{w.line}</Text>}</View>
    <Pressable accessibilityRole="button" accessibilityLabel={w.action+': '+w.title} onPress={w.onPress} style={({pressed})=>[n.answer,pressed&&n.pressedSoft]}><Text style={n.answerText}>{w.action}</Text></Pressable>
@@ -36,7 +36,7 @@ export function NoticeList({list,now,onOpen,waiting=[],fresh}:{list:Row[];now:nu
    const at=Number(v.created_at)||0,head=journalDay(at,now),first=head!==day,go=onOpen?.(v),isNew=!!fresh?.(v);day=head;
    const open=full===v.id,[title,rest]=noticeParts(noticeText(v.body));
    return <View key={v.id}>
-    {first&&<Text accessibilityRole="header" style={n.day}>{head.toUpperCase()}</Text>}
+    {first&&<Text accessibilityRole="header" style={n.day}>{head}</Text>}
     <Pressable accessibilityRole="button" accessibilityLabel={(isNew?t('Новое')+'. ':'')+noticeText(v.body)+'. '+journalClock(at)} accessibilityHint={go?t('Открыть'):undefined} accessibilityState={go?undefined:{expanded:open}} onPress={go||(()=>setFull(open?'':v.id))} style={({pressed})=>[n.line,pressed&&n.pressed]}>
      <View style={[n.dot,isNew&&n.dotOn]}/>
      <View style={n.text}><Text numberOfLines={open?undefined:1} style={[n.title,!isNew&&n.titleRead]}>{title}</Text><Text numberOfLines={open?undefined:2} style={n.when}>{[rest,journalClock(at)].filter(Boolean).join(' · ')}</Text></View>
@@ -70,12 +70,12 @@ export function NoticeToast({notice,more=0,onPress,onDone}:{notice:Row;more?:num
 
 const n=StyleSheet.create({
  block:{marginBottom:8},
- day:{paddingTop:16,paddingBottom:8,...type.caption,fontWeight:'700',letterSpacing:.5,color:C.muted},
+ day:{paddingTop:16,paddingBottom:8,...type.caption,fontWeight:'600',color:C.muted},
  ask:{flexDirection:'row',alignItems:'center',gap:12,minHeight:T.control.primary,paddingHorizontal:12,paddingVertical:12,marginBottom:8,borderRadius:T.radius.lg,borderWidth:2,borderColor:C.gold,backgroundColor:C.surface},
- answer:{minHeight:T.control.compact,paddingHorizontal:16,borderRadius:T.radius.md,alignItems:'center',justifyContent:'center',backgroundColor:C.ink},answerText:{...type.label,color:C.onAccent,fontWeight:'700'},
+ answer:{minHeight:T.control.compact,paddingHorizontal:16,borderRadius:T.radius.md,alignItems:'center',justifyContent:'center',backgroundColor:C.ink},answerText:{...type.label,color:C.onAccent,fontWeight:'600'},
  line:{flexDirection:'row',alignItems:'center',gap:12,minHeight:T.control.primary,paddingHorizontal:16,paddingVertical:12,marginBottom:8,borderRadius:T.radius.lg,backgroundColor:C.surface},pressed:{backgroundColor:C.accentSoft},pressedSoft:{opacity:.6},
  dot:{width:8,height:8,borderRadius:4,marginLeft:-4},dotOn:{backgroundColor:C.ink},
- text:{flex:1,minWidth:0,gap:2},body:{...type.label,color:C.ink},title:{...type.label,color:C.ink,fontWeight:'700'},titleRead:{fontWeight:'600'},when:{...type.caption,color:C.muted,fontVariant:['tabular-nums']},
+ text:{flex:1,minWidth:0,gap:2},body:{...type.label,color:C.ink},title:{...type.label,color:C.ink,fontWeight:'600'},titleRead:{fontWeight:'600'},when:{...type.caption,color:C.muted,fontVariant:['tabular-nums']},
  go:{...type.body,color:C.muted},
  more:{minHeight:T.control.touch,alignItems:'center',justifyContent:'center'},moreText:{...type.label,fontWeight:'600',color:C.ink},
  empty:{padding:16,...type.label,color:C.muted},

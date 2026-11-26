@@ -70,7 +70,7 @@ export function BookingChanges({booking:b,capacity=0,role,busy,editing,onEditing
    {mode==='nightly'&&<Stepper label={t('Поздний выезд')} value={late} min={0} max={12} disabled={busy} format={n=>n?t('+{n} ч',{n}):t('нет')} onChange={n=>{setTouched(true);setLate(n);}}/>}
    {role==='owner'&&<Stepper label={t('Скидка')} value={discount} min={0} max={90} step={5} disabled={busy} format={n=>n+'%'} onChange={setDiscount}/>}
    {same?<Text style={c.note}>{t('Выберите новое время или число гостей.')}</Text>
-    :checking&&!q?<View style={c.wait}><Thinking size="sm"/><Text style={c.note}>{t('Считаю новую цену…')}</Text></View>
+    :checking&&!q?<View style={c.wait}><Thinking size="sm"/><Text style={c.note}>{t('Считаем новую цену…')}</Text></View>
     :error?<Text accessibilityRole="alert" style={c.error}>{error}</Text>
     :q?<View style={[c.price,checking&&{opacity:.5}]}><Text style={c.sum}>{money(q.amount)}</Text><Text style={c.note}>{q.amountDue>0?t('Останется оплатить {due}',{due:money(q.amountDue)}):t('Доплаты нет')}{q.extraHours>0?' · '+t('сверх ночи {hours} ч × {rate}',{hours:q.extraHours,rate:money(q.extraRate)}):''}</Text>{q.cleanerReconfirmation&&<Text style={c.note}>{t('Исполнителю уборки нужно заново согласовать время.')}</Text>}</View>:null}
   </PopSheet>
@@ -79,5 +79,5 @@ export function BookingChanges({booking:b,capacity=0,role,busy,editing,onEditing
 const c=StyleSheet.create({
  now:{...type.label,color:C.muted},note:{...type.caption,color:C.muted},error:{...type.label,color:C.danger},
  wait:{flexDirection:'row',alignItems:'center',gap:8},
- price:{gap:4,paddingVertical:12,borderTopWidth:1,borderTopColor:C.line},sum:{...type.title,color:C.ink,fontWeight:'700'},
+ price:{gap:4,paddingVertical:12,borderTopWidth:1,borderTopColor:C.line},sum:{...type.title,color:C.ink,fontWeight:'600'},
 });

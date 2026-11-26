@@ -48,7 +48,7 @@ export function CleanerNextBox({job,application,admission,userId,busy,onRequestR
 const R=T.radius,H=T.control;
 const a=StyleSheet.create({
  row:{gap:12},who:{flexDirection:'row',alignItems:'center',gap:12},
- label:{...type.caption,color:C.muted,fontWeight:'600',letterSpacing:.6},name:{...type.body,color:C.ink,fontWeight:'600'},where:{...type.caption,color:C.muted},
+ label:{...type.caption,color:C.muted,fontWeight:'600'},name:{...type.body,color:C.ink,fontWeight:'600'},where:{...type.caption,color:C.muted},
  tags:{flexDirection:'row',flexWrap:'wrap',gap:8,alignItems:'center'},tag:{...type.caption,color:C.inkSoft,backgroundColor:C.surfaceAlt,paddingHorizontal:12,paddingVertical:4,borderRadius:R.full,overflow:'hidden'},
  box:{gap:12,padding:16,borderRadius:R.xl,borderWidth:1,borderColor:C.line,backgroundColor:C.surface},bare:{borderWidth:0,borderRadius:0},
  empty:{borderStyle:'dashed',borderColor:C.line,backgroundColor:C.surfaceAlt,gap:4},emptyTitle:{...type.label,color:C.ink,fontWeight:'600'},

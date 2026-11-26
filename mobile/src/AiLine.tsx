@@ -8,7 +8,8 @@ import { AI_LINE_MAX, cleanAiText } from '../../lib/ai-line';
 import { useVoice } from './useVoice';
 import { VOICE_LANGS } from './voice';
 
-const sparkle = require('../assets/ui/sparkle.png');
+// The AI administrator's mark: the crown of the sign, not the sparkles of every generated app.
+const sparkle = require('../assets/menu/shanyrak.png');
 const arrow = require('../assets/ui/arrow-up.png');
 const mic = require('../assets/ui/mic.png');
 const stopIcon = require('../assets/ui/stop.png');
@@ -52,7 +53,7 @@ export function AiLine({ value, onChangeText, onSend, placeholder, shortPlacehol
   return (
     <View style={a.box}><View style={[a.line, (focused || voice.listening) && a.lineFocused]}><Image source={sparkle} style={a.mark} accessibilityIgnoresInvertColors /><View style={a.field} onLayout={e => setRoom(e.nativeEvent.layout.width)}>{/* The example is drawn as text, not as a native placeholder, so that its size can follow the room it has. */}{!value && (
           // The box takes no touches: a tap anywhere on the line must reach the input under it.
-          <View style={a.exampleBox}><Text numberOfLines={1} style={[a.example, example.compact && a.exampleCompact]} importantForAccessibility="no" accessibilityElementsHidden>{voice.listening ? t('Слушаю…') : example.text}</Text><Text numberOfLines={1} style={a.measure} onLayout={e => setNatural(e.nativeEvent.layout.width)} importantForAccessibility="no" accessibilityElementsHidden>{placeholder}</Text>{!!shortPlaceholder && (
+          <View style={a.exampleBox}><Text numberOfLines={1} style={[a.example, example.compact && a.exampleCompact]} importantForAccessibility="no" accessibilityElementsHidden>{voice.listening ? t('Слушаем…') : example.text}</Text><Text numberOfLines={1} style={a.measure} onLayout={e => setNatural(e.nativeEvent.layout.width)} importantForAccessibility="no" accessibilityElementsHidden>{placeholder}</Text>{!!shortPlaceholder && (
               <Text numberOfLines={1} style={a.measure} onLayout={e => setShortWidth(e.nativeEvent.layout.width)} importantForAccessibility="no" accessibilityElementsHidden>{shortPlaceholder}</Text>
             )}</View>
         )}<TextInput
@@ -132,7 +133,7 @@ const a = StyleSheet.create({
     elevation: 4
   },
   lineFocused: { borderColor: C.ink },
-  mark: { width: 24, height: 24, tintColor: C.ink },
+  mark: { width: 20, height: 20, tintColor: C.ink },
   field: { flex: 1, minWidth: 0, justifyContent: 'center' },
   exampleBox: { position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, justifyContent: 'center', pointerEvents: 'none' },
   example: { ...type.body, color: C.muted },

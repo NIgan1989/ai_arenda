@@ -69,7 +69,7 @@ export function NativeAutopilotPlan({role}:{role:'owner'|'cleaner'}){
  const [from,setFrom]=useState('10:00'),[to,setTo]=useState('19:00');
  useEffect(()=>{let live=true;request('/api/operations/autopilot/state').then(v=>{if(!live)return;setState(v);if(v.rules){setRules(v.rules);setFrom(hhmm(v.rules.fromMinute));setTo(hhmm(Math.min(v.rules.toMinute,1439)));}setPicked((v.flats||[]).filter((f:Data)=>f.managed||f.ready).map((f:Data)=>f.id));}).catch(e=>live&&setError(e.message));return()=>{live=false;};},[role]);
  async function run(path:string,body:Data={}){setBusy(true);setError('');setMessage('');try{const r=await request('/api/'+path,body);setMessage(r.message||tr('Сохранено.'));const next=r.state||await request('/api/operations/autopilot/state');setState(next);if(next.live&&!path.endsWith('/tier')){setOpen(false);setStep(0);}setConfirmOff(false);}catch(e){setError((e as Error).message);}finally{setBusy(false);}}
- if(!state)return <Group title={tr('Тариф')}>{error?<Text accessibilityRole="alert" style={[s.error,{padding:16}]}>{error}</Text>:<View style={{padding:16}}><ThinkingLine style={s.meta} text={tr('Загружаю тариф…')}/></View>}</Group>;
+ if(!state)return <Group title={tr('Тариф')}>{error?<Text accessibilityRole="alert" style={[s.error,{padding:16}]}>{error}</Text>:<View style={{padding:16}}><ThinkingLine style={s.meta} text={tr('Загружаем тариф…')}/></View>}</Group>;
  const st=state.settings||{},plan=state.plan,live=!!state.live,flats:Data[]=state.flats||[];
  const terms=termsIn(state.terms);
  const statusLine=!plan?'':(terms.pay||'')+(st.charge?'':' '+tr('Пока бесплатно.'));
@@ -135,7 +135,6 @@ export function NativeAutopilotPlan({role}:{role:'owner'|'cleaner'}){
   <Group space><View style={a.row}><View style={a.wide}><Text style={a.title}>{owner?tr('Сам'):tr('Обычный')}</Text><Text style={a.note}>{owner?tr('Брони и уборки подтверждаете вы. ИИ подсказывает.'):tr('На каждое предложение уборки отвечаете вы.')}</Text></View></View></Group>
   {notice}
   <View style={p.card}>
-   <Text style={p.badge}>{tr('✦ ИИ-администратор')}</Text>
    <View style={p.head}><View style={{flex:1,gap:4}}><Text style={p.h3}>{owner?tr('Автопилот'):tr('Автопилот исполнителя')}</Text><Text style={p.price}><Text style={p.priceBig}>{priceLine}</Text>{'\n'}{priceNote}</Text></View><Switch accessibilityLabel={tr('Автопилот')} value={open} disabled={busy} onValueChange={v=>v?begin():(setOpen(false),setStep(0))} trackColor={{false:C.lineStrong,true:C.ink}} thumbColor={C.surface}/></View>
    {plan?.status==='paused'&&<Text style={p.paused}>{tr('Автопилот на паузе. Принятые брони и уборки в силе. Когда услуги оплачены, нажмите «Подключить», чтобы включить его снова.')}</Text>}
    {open?wizard:<>
@@ -173,15 +172,15 @@ const p=StyleSheet.create({
  badge:{alignSelf:'flex-start',...type.caption,fontWeight:'600',color:C.ink,backgroundColor:C.surfaceAlt,borderWidth:1,borderColor:C.line,borderRadius:T.radius.full,paddingHorizontal:12,paddingVertical:4,overflow:'hidden'},
  head:{flexDirection:'row',alignItems:'center',gap:12},
  h3:{...type.subtitle,...brandFont,color:C.ink},
- price:{...type.label,color:C.muted},priceBig:{...type.subtitle,fontWeight:'700',color:C.ink},
- feature:{flexDirection:'row',gap:12},check:{...type.body,color:C.ink,fontWeight:'700'},featureText:{...type.body,color:C.inkSoft,flex:1},
+ price:{...type.label,color:C.muted},priceBig:{...type.subtitle,fontWeight:'600',color:C.ink},
+ feature:{flexDirection:'row',gap:12},check:{...type.body,color:C.ink,fontWeight:'600'},featureText:{...type.body,color:C.inkSoft,flex:1},
  keep:{...type.label,color:C.inkSoft,backgroundColor:C.bg,borderRadius:T.radius.md,padding:12},
  paused:{...type.label,color:C.warning,backgroundColor:C.warningSoft,borderRadius:T.radius.md,padding:8,overflow:'hidden'},
  btn:{flex:1,minHeight:T.control.primary,borderRadius:T.radius.lg,backgroundColor:C.ink,alignItems:'center',justifyContent:'center',paddingHorizontal:12},btnText:{...type.body,color:C.onAccent,fontWeight:'600',textAlign:'center'},
  btnLine:{backgroundColor:C.surface,borderWidth:1,borderColor:C.lineStrong},btnLineText:{color:C.ink},btnDanger:{backgroundColor:C.danger},
  nav:{flexDirection:'row',gap:8},
  fine:{...type.caption,color:C.muted,textAlign:'center'},
- connect:{gap:12},lead:{...type.label,color:C.inkSoft},h4:{...type.caption,color:C.muted,fontWeight:'600',letterSpacing:.4,textTransform:'uppercase',marginTop:4},
+ connect:{gap:12},lead:{...type.label,color:C.inkSoft},h4:{...type.caption,color:C.muted,fontWeight:'600',marginTop:4},
  steps:{flexDirection:'row',alignItems:'flex-start'},step:{alignItems:'center',gap:4,minWidth:T.control.touch,minHeight:T.control.touch},
  stepLine:{flex:1,height:2,marginTop:16,marginHorizontal:4,borderRadius:T.radius.full,backgroundColor:C.lineStrong},stepLineOn:{backgroundColor:C.ink},
  dot:{width:32,height:32,borderRadius:T.radius.full,borderWidth:2,borderColor:C.lineStrong,backgroundColor:C.surface,alignItems:'center',justifyContent:'center'},
@@ -190,7 +189,7 @@ const p=StyleSheet.create({
  stepLabel:{...type.caption,color:C.muted},stepLabelOn:{color:C.ink,fontWeight:'600'},
  list:{borderWidth:1,borderColor:C.line,borderRadius:T.radius.lg,overflow:'hidden'},flat:{paddingHorizontal:16,paddingVertical:12,gap:8},flatLine:{borderTopWidth:1,borderTopColor:C.line},
  flatRow:{minHeight:T.control.touch,flexDirection:'row',alignItems:'center',gap:12,paddingHorizontal:16,paddingVertical:8},
- box:{width:24,height:24,borderRadius:T.radius.sm,borderWidth:1,borderColor:C.lineStrong,alignItems:'center',justifyContent:'center'},boxOn:{backgroundColor:C.ink,borderColor:C.ink},tick:{...type.label,color:C.onAccent,fontWeight:'700'},
+ box:{width:24,height:24,borderRadius:T.radius.sm,borderWidth:1,borderColor:C.lineStrong,alignItems:'center',justifyContent:'center'},boxOn:{backgroundColor:C.ink,borderColor:C.ink},tick:{...type.label,color:C.onAccent,fontWeight:'600'},
  review:{flexDirection:'row',justifyContent:'space-between',gap:12,paddingHorizontal:16,paddingVertical:12},reviewValue:{...type.label,color:C.ink,fontWeight:'600',flexShrink:1,textAlign:'right'},
  switchRow:{flexDirection:'row',alignItems:'center',gap:12,minHeight:T.control.touch},
  sum:{flexDirection:'row',flexWrap:'wrap',rowGap:8,backgroundColor:C.surfaceAlt,borderWidth:1,borderColor:C.line,borderRadius:T.radius.lg,padding:16},
@@ -200,9 +199,9 @@ const p=StyleSheet.create({
  chipOn:{backgroundColor:C.surfaceAlt,borderColor:C.ink},chipText:{...type.label,color:C.inkSoft},chipOnText:{color:C.ink,fontWeight:'600'},
  days:{flexDirection:'row',gap:4},day:{flex:1,minHeight:T.control.touch,paddingHorizontal:0,borderRadius:T.radius.md,alignItems:'center'},dayOn:{backgroundColor:C.ink,borderColor:C.ink},dayOnText:{color:C.onAccent,fontWeight:'600'},
  two:{flexDirection:'row',gap:8},half:{flex:1,gap:4},
- on:{borderRadius:T.radius.xl,padding:20,backgroundColor:C.ink,gap:8},onLabel:{...type.caption,color:C.surfaceAlt,fontWeight:'600'},onTitle:{...type.title,color:C.onAccent,fontWeight:'700'},onNote:{...type.label,color:C.surfaceAlt},
+ on:{borderRadius:T.radius.xl,padding:20,backgroundColor:C.ink,gap:8},onLabel:{...type.caption,color:C.surfaceAlt,fontWeight:'600'},onTitle:{...type.title,color:C.onAccent,fontWeight:'600'},onNote:{...type.label,color:C.surfaceAlt},
  off:{marginTop:12,gap:8,padding:16,borderRadius:T.radius.lg,backgroundColor:C.dangerSoft},
- stats:{flexDirection:'row',flexWrap:'wrap',gap:12},stat:{flexGrow:1,flexBasis:96,backgroundColor:C.surface,borderWidth:1,borderColor:C.line,borderRadius:T.radius.lg,paddingHorizontal:16,paddingVertical:12},statValue:{...type.title,fontWeight:'700',color:C.ink},
+ stats:{flexDirection:'row',flexWrap:'wrap',gap:12},stat:{flexGrow:1,flexBasis:96,backgroundColor:C.surface,borderWidth:1,borderColor:C.line,borderRadius:T.radius.lg,paddingHorizontal:16,paddingVertical:12},statValue:{...type.title,fontWeight:'600',color:C.ink},
  payWay:{},
  way:{flexDirection:'row',alignItems:'center',gap:12,padding:12,borderRadius:T.radius.lg,borderWidth:1,borderColor:C.line,backgroundColor:C.surface},wayOn:{borderColor:C.ink,backgroundColor:C.surfaceAlt},
  radio:{width:22,height:22,borderRadius:T.radius.full,borderWidth:2,borderColor:C.lineStrong,alignItems:'center',justifyContent:'center'},radioOn:{borderColor:C.ink},radioDot:{width:10,height:10,borderRadius:T.radius.full,backgroundColor:C.ink},

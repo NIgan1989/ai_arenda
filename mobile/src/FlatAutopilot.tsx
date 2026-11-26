@@ -25,9 +25,9 @@ export function FlatAutopilotRow({propertyId,onChanged}:{propertyId:string;onCha
   {!!notice&&!!state&&!open&&<Text accessibilityLiveRegion="polite" style={h.note}>{notice}</Text>}
   <SheetModal visible={open} title={t('Автопилот')} note={state?flatAutopilotNote(state):''} onClose={()=>setOpen(false)}>
    {!!notice&&<Text accessibilityLiveRegion="polite" style={h.note}>{notice}</Text>}
-   {state?.managed?<SheetButton title={busy?t('Выключаю…'):t('Выключить автопилот')} disabled={busy} onPress={()=>void off().then(()=>setOpen(false))}/>
+   {state?.managed?<SheetButton title={busy?t('Выключаем…'):t('Выключить автопилот')} disabled={busy} onPress={()=>void off().then(()=>setOpen(false))}/>
     :<>{needFee&&<><Text style={s.fieldLabel}>{t('Сколько платить за уборку, ₸')}</Text><TextInput accessibilityLabel={t('Стоимость уборки')} style={s.field} keyboardType="number-pad" value={fee} onChangeText={v=>setFee(v.replace(/\D/g,''))} maxLength={7}/></>}
-     <SwipeConfirm label={busy?t('Включаю…'):t('Проведите: включить автопилот')} disabled={busy||!state?.ready||(needFee&&Number(fee)<100)} onConfirm={()=>void on(needFee?Number(fee):undefined).then(()=>setOpen(false))}/></>}
+     <SwipeConfirm label={busy?t('Включаем…'):t('Проведите: включить автопилот')} disabled={busy||!state?.ready||(needFee&&Number(fee)<100)} onConfirm={()=>void on(needFee?Number(fee):undefined).then(()=>setOpen(false))}/></>}
   </SheetModal>
  </>;
 }

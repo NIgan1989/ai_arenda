@@ -16,7 +16,7 @@ export function AiJournal({entries,now,onOpen}:{entries:JournalEntry[];now:numbe
  if(!entries.length)return <BrandEmpty title={t('Пока пусто')} text={t('Здесь появится короткая запись о каждом действии ИИ: что подтвердил, кого назначил, о чём напомнил.')}/>;
  return <View>
   {journalGroups(shown,now).map(g=><View key={g.day}>
-   <Text accessibilityRole="header" style={j.day}>{g.day.toUpperCase()}</Text>
+   <Text accessibilityRole="header" style={j.day}>{g.day}</Text>
    {g.lines.map((e,i)=>{
     const go=e.open?onOpen?.(e.open):undefined,meta=journalMeta(e);
     const body=<>
@@ -31,7 +31,7 @@ export function AiJournal({entries,now,onOpen}:{entries:JournalEntry[];now:numbe
  </View>;
 }
 const j=StyleSheet.create({
- day:{paddingHorizontal:16,paddingTop:12,paddingBottom:4,fontSize:12,lineHeight:16,fontWeight:'600',letterSpacing:.5,color:C.muted},
+ day:{paddingHorizontal:16,paddingTop:12,paddingBottom:4,fontSize:12,lineHeight:16,fontWeight:'600',color:C.muted},
  line:{flexDirection:'row',gap:12,minHeight:56,paddingHorizontal:16,alignItems:'stretch',borderBottomWidth:1,borderBottomColor:C.line},pressed:{backgroundColor:C.surfaceAlt},
  text:{flex:1,gap:2,paddingVertical:8},head:{flexDirection:'row',gap:8,alignItems:'baseline',justifyContent:'space-between'},what:{flex:1,fontSize:16,lineHeight:20,fontWeight:'500',color:C.ink},title:{fontSize:14,lineHeight:20,color:C.muted},meta:{fontSize:12,lineHeight:16,color:C.muted},
  when:{fontSize:12,lineHeight:20,color:C.muted,fontVariant:['tabular-nums']},go:{alignSelf:'center',fontSize:16,lineHeight:20,color:C.muted},

@@ -22,16 +22,16 @@ export function PhoneCheck({state,role,onDone}:{state:PhoneState;role:'guest'|'o
   <Text style={h.note}>{state.phone?t('Номер входа: {phone}',{phone:state.phone}):t('Номер входа не найден.')}</Text>
   <Text style={h.note}>{why}</Text>
   {!state.sms?<View style={u.soon}><Text style={u.soonText}>{t('Подтверждение по SMS заработает, когда подключим SMS-провайдера. Пока ничего делать не нужно.')}</Text></View>:<>
-   {!sent&&<Btn title={busy?t('Отправляю…'):t('Получить код по SMS')} disabled={busy||!state.phone} onPress={()=>void call('phone/request',{}).then(ok=>{if(ok)setSent(true);})}/>}
+   {!sent&&<Btn title={busy?t('Отправляем…'):t('Получить код по SMS')} disabled={busy||!state.phone} onPress={()=>void call('phone/request',{}).then(ok=>{if(ok)setSent(true);})}/>}
    {sent&&<>
     <Text style={s.fieldLabel}>{t('Код из SMS')}</Text>
     <TextInput accessibilityLabel={t('Код из SMS')} value={code} onChangeText={v=>setCode(v.replace(/\D/g,'').slice(0,6))} keyboardType="number-pad" textContentType="oneTimeCode" autoComplete="sms-otp" maxLength={6} style={s.field}/>
-    <Btn title={busy?t('Проверяю…'):t('Подтвердить номер')} disabled={busy||code.length!==6} onPress={()=>void call('phone/verify',{code}).then(ok=>{if(ok)onDone();})}/>
+    <Btn title={busy?t('Проверяем…'):t('Подтвердить номер')} disabled={busy||code.length!==6} onPress={()=>void call('phone/verify',{code}).then(ok=>{if(ok)onDone();})}/>
     <Btn kind="line" title={t('Прислать код ещё раз')} disabled={busy} onPress={()=>void call('phone/request',{})}/>
    </>}
   </>}
   {!!said&&<Text accessibilityLiveRegion="polite" style={said.error?h.error:h.note}>{said.text}</Text>}
-  <Text style={u.privacy}>{t('🔒 Сервис никогда не спрашивает этот код. Не сообщайте его никому.')}</Text>
+  <Text style={u.privacy}>{t('Сервис никогда не спрашивает этот код. Не сообщайте его никому.')}</Text>
  </View>;
 }
 

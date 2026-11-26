@@ -23,7 +23,7 @@ export function SignInButton({busy,onPress}:{busy:boolean;onPress:()=>void}){
  return <Pressable accessibilityRole="button" accessibilityLabel={t('Войти')} accessibilityState={{disabled:busy}} disabled={busy} onPress={onPress} style={({pressed})=>[n.signIn,pressed&&{opacity:.7}]}><Text style={n.signInText}>{t('Войти')}</Text></Pressable>;
 }
 const n=StyleSheet.create({
- signIn:{height:T.control.touch,paddingHorizontal:T.space[5],borderRadius:T.radius.full,alignItems:'center',justifyContent:'center'},signInText:{fontSize:T.font.body[0],lineHeight:T.font.body[1],fontWeight:'700',color:C.accent},
- unread:{position:'absolute',top:-2,right:-2,minWidth:20,height:20,borderRadius:T.radius.full,paddingHorizontal:4,backgroundColor:C.danger,alignItems:'center',justifyContent:'center'},unreadText:{fontSize:T.font.caption[0],lineHeight:T.font.caption[1],fontWeight:'700',color:C.onAccent},
+ signIn:{height:T.control.touch,paddingHorizontal:T.space[5],borderRadius:T.radius.full,alignItems:'center',justifyContent:'center'},signInText:{fontSize:T.font.body[0],lineHeight:T.font.body[1],fontWeight:'600',color:C.accent},
+ unread:{position:'absolute',top:-2,right:-2,minWidth:20,height:20,borderRadius:T.radius.full,paddingHorizontal:4,backgroundColor:C.danger,alignItems:'center',justifyContent:'center'},unreadText:{fontSize:T.font.caption[0],lineHeight:T.font.caption[1],fontWeight:'600',color:C.onAccent},
  menu:{width:T.control.field,height:T.control.field,borderRadius:T.radius.full,alignItems:'center',justifyContent:'center'},menuAvatar:{width:T.control.touch,height:T.control.touch,borderRadius:T.radius.full,alignItems:'center',justifyContent:'center'},
  icon:{width:24,height:24}});
