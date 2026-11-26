@@ -1,7 +1,8 @@
 import {t} from '../../lib/i18n';
 import React,{useEffect,useRef,useState} from 'react';
-import {AccessibilityInfo,ActivityIndicator,Animated,Image,Modal,PanResponder,Platform,Pressable,StatusBar,StyleSheet,Text,View,useWindowDimensions} from 'react-native';
+import {AccessibilityInfo,Animated,Image,Modal,PanResponder,Platform,Pressable,StatusBar,StyleSheet,Text,View,useWindowDimensions} from 'react-native';
 import {C} from './styles';
+import {Thinking} from './Thinking';
 import {SafeAreaProvider,useSafeAreaInsets} from 'react-native-safe-area-context';
 
 // A photo opened from a chat: over the whole screen on black, at its own proportions, with a close button that is always
@@ -136,7 +137,7 @@ function Viewer({dots,uri,alt,loading,onClose,size:known,title,caption,onPrev,on
   <Animated.View style={[StyleSheet.absoluteFill,v.backdrop,{opacity:fade}]}/>
   <View style={StyleSheet.absoluteFill} {...responder.panHandlers}>
    <Animated.View style={[v.stage,{transform:[{translateX:slide},{translateY:drop}]}]}>
-    {loading?<ActivityIndicator color={C.onAccent}/>:failed||!uri?<Text style={v.failed}>{t('Не удалось открыть фото')}</Text>:<Animated.Image source={{uri}} accessibilityLabel={alt||caption||t('Фотография сообщения')} resizeMode="contain" onError={()=>setFailed(true)} style={{width:box.width,height:box.height,transform:[{translateX:x},{translateY:y},{scale}]}}/>}
+    {loading?<Thinking size="lg" color={C.onAccent}/>:failed||!uri?<Text style={v.failed}>{t('Не удалось открыть фото')}</Text>:<Animated.Image source={{uri}} accessibilityLabel={alt||caption||t('Фотография сообщения')} resizeMode="contain" onError={()=>setFailed(true)} style={{width:box.width,height:box.height,transform:[{translateX:x},{translateY:y},{scale}]}}/>}
    </Animated.View>
   </View>
   {chrome&&<View pointerEvents="box-none" style={[v.top,{paddingTop:Math.max(insets.top,12)+4,paddingLeft:Math.max(insets.left,12),paddingRight:Math.max(insets.right,12)}]}>
@@ -159,6 +160,6 @@ const v=StyleSheet.create({
  cross:{position:'absolute',width:20,height:2,borderRadius:1,backgroundColor:C.onAccent},pressed:{opacity:.6},
  title:{flex:1,textAlign:'center',color:C.onAccent,fontSize:16,lineHeight:20,fontWeight:'600'},
  bottom:{position:'absolute',left:0,right:0,bottom:0,paddingTop:12,backgroundColor:'rgba(0,0,0,0.45)'},
- dots:{position:'absolute',left:0,right:0,flexDirection:'row',justifyContent:'center',gap:6},dot:{width:6,height:6,borderRadius:3,backgroundColor:'rgba(255,255,255,0.35)'},dotOn:{width:18,backgroundColor:C.onAccent},
+ dots:{position:'absolute',left:0,right:0,flexDirection:'row',justifyContent:'center',gap:8},dot:{width:6,height:6,borderRadius:4,backgroundColor:'rgba(255,255,255,0.35)'},dotOn:{width:18,backgroundColor:C.onAccent},
  caption:{color:C.onAccent,fontSize:16,lineHeight:24},failed:{color:C.onAccent,fontSize:16},
 });
