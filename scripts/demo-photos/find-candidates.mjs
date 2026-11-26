@@ -26,7 +26,7 @@ for(const [kind,{q,want}] of Object.entries(KINDS)){
  for(const query of q){
   const u='https://api.openverse.org/v1/images/?page_size=50&source=stocksnap,rawpixel&license=cc0,pdm&category=photograph&size=large&mature=false&q='+encodeURIComponent(query);
   // Openverse lets an anonymous client ask only a little per minute: one search every ~15 s, and a minute's rest on 429.
-  let r=null;for(let i=0;i<4;i++){try{r=await fetch(u,{headers:{accept:'application/json'},signal:AbortSignal.timeout(30000)});}catch(e){console.log(kind,query,'search failed',e.message);r=null;}await pause(15000);if(r?.status!==429)break;console.log(kind,query,'429, waiting');await pause(60000);}
+  let r=null;for(let i=0;i<2;i++){try{r=await fetch(u,{headers:{accept:'application/json'},signal:AbortSignal.timeout(30000)});}catch(e){console.log(kind,query,'search failed',e.message);r=null;}await pause(15000);if(r?.status!==429)break;console.log(kind,query,'429, waiting');await pause(20000);}
   if(!r)continue;
   if(!r.ok){console.log(kind,query,'search',r.status);continue;}
   for(const p of (await r.json()).results||[]){
@@ -35,6 +35,22 @@ for(const [kind,{q,want}] of Object.entries(KINDS)){
    if(AVOID.test(words)||!want.test(words))continue;
    if(!p.width||!p.height||p.width/p.height<1.25||p.width/p.height>1.9||p.width<1600)continue;
    pool.push({id:p.id,url:p.url,license:p.license,creator:p.creator||'',source:p.source,page:p.foreign_landing_url,title:p.title||'',query});
+  }
+ }
+ // Too few from Openverse (it limits anonymous use hard): Wikimedia Commons, only free licences, the author kept.
+ if(pool.length<PER)for(const query of q){
+  const u='https://commons.wikimedia.org/w/api.php?action=query&format=json&generator=search&gsrnamespace=6&gsrlimit=40&prop=imageinfo&iiprop=url|size|extmetadata&iiurlwidth=1280&gsrsearch='+encodeURIComponent(query+' filetype:bitmap');
+  let body=null;try{const r=await fetch(u,{headers:{'user-agent':'ai-arenda-demo-photos/1.0 (https://github.com/NIgan1989/ai_arenda)'},signal:AbortSignal.timeout(30000)});if(r.ok)body=await r.json();else console.log(kind,query,'commons',r.status);}catch(e){console.log(kind,query,'commons failed',e.message);}
+  await pause(1500);
+  for(const page of Object.values(body?.query?.pages||{})){
+   const info=page.imageinfo?.[0],meta=info?.extmetadata||{};if(!info?.thumburl)continue;
+   const licence=String(meta.LicenseShortName?.value||''),author=String(meta.Artist?.value||'').replace(/<[^>]+>/g,'').trim();
+   if(!/^(CC0|Public domain|CC BY(-SA)? [0-9.]+)/i.test(licence))continue;
+   const words=(page.title+' '+String(meta.ImageDescription?.value||'').replace(/<[^>]+>/g,' ')+' '+String(meta.Categories?.value||'')).toLowerCase();
+   if(AVOID.test(words)||!want.test(words))continue;
+   if(!info.width||!info.height||info.width/info.height<1.25||info.width/info.height>1.9||info.width<1600)continue;
+   if(seen.has(page.title))continue;seen.add(page.title);
+   pool.push({id:'commons:'+page.pageid,url:info.thumburl,license:licence,creator:author.slice(0,120),source:'wikimedia',page:info.descriptionurl,title:page.title,query});
   }
  }
  // Different queries take turns, so a kind shows several rooms and not eight photos of one.
