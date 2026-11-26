@@ -346,13 +346,14 @@ export function GuestResults({ preview, draft, mine, onFavorite, selected, onSel
           <Pressable
             key={flat.id}
             accessibilityRole="button"
-            accessibilityLabel={t('Забронировать: {title}',{title:(flat.match?.best ? (quiet ? t('Подходит лучше других. ') : t('Лучший выбор для вас. ')) : '') + flat.title + ', ' + money(flat.estimate.amount)})}
+            accessibilityLabel={t('Открыть: {title}',{title:(flat.match?.best ? (quiet ? t('Подходит лучше других. ') : t('Лучший выбор для вас. ')) : '') + flat.title + ', ' + money(flat.estimate.amount)})}
             onPress={() => {
               // The map flies to the chosen card's pin, even when the swipe that showed it has not settled yet.
+              // The card opens the page of the place (photos, rules, «Забронировать» at the bottom), as in Airbnb.
               clearTimeout(settle.current);
               setIndex(i);
               onFocus?.(flat.id);
-              onBook(flat);
+              onOpen(flat);
             }}
             disabled={busy}
             style={({ pressed }) => [r.card, { width: card }, pressed && r.cardPressed]}
@@ -389,7 +390,7 @@ const r = StyleSheet.create({
   cardBody: { flex: 1, minWidth: 0, gap: 2, justifyContent: 'center', paddingHorizontal: 4, paddingBottom: 4 },
   rating: { ...type.caption, color: C.ink, fontWeight: '600' },
   cardPrice: { ...type.subtitle, color: C.ink, fontWeight: '800' },
-  freeTag: { ...type.caption, marginLeft: 'auto', paddingHorizontal: 8, paddingVertical: 2, borderRadius: T.radius.sm, overflow: 'hidden', backgroundColor: C.successSoft, color: C.success, fontWeight: '600' },
+  freeTag: { ...type.caption, marginLeft: 'auto', color: C.inkSoft, fontWeight: '600' },
   priceRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', columnGap: 8 },
   why: { ...type.caption, color: C.muted, fontWeight: '600' },
   ready: { ...type.caption, color: C.success, fontWeight: '600' },

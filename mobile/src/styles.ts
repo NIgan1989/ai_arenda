@@ -1,6 +1,11 @@
 import { StyleSheet,Platform } from 'react-native';
 import {T} from './tokens';
-export const C=T.color;
+// The app paints in one ink, as the main screen and the menu do: the indigo of the tokens stays on the site, the
+// splash and the brand moments (night, dome, gold). Status colours (success, warning, danger) keep their meaning.
+const ink=T.color.ink,soft=T.color.inkSoft;
+export const C={...T.color,accent:ink,accentPressed:soft,accentSoft:T.color.surfaceAlt,accentLine:T.color.lineStrong,
+ aiFrom:ink,aiMid:soft,aiTo:T.color.muted,focus:ink,info:soft,infoSoft:T.color.surfaceAlt,infoLine:T.color.line,
+ bubbleMine:T.color.line,chatWall:T.color.bg};
 // Every size below comes from design/tokens.json: 4pt spacing, seven text sizes, five radii, 44/48/56 controls.
 const [caption,label,body,subtitle,title,heading,display]=Object.values(T.font).map(([fontSize,lineHeight])=>({fontSize,lineHeight}));
 const R=T.radius,H=T.control;
@@ -26,7 +31,7 @@ export const s=StyleSheet.create({
   // It must never carry `flex`: on a phone `flex:1` beats `flexBasis:'auto'` (Yoga reads «auto» as «not set»), and the sheet gets no height at all.
   pageSheetFit:{flexGrow:0,flexShrink:1,marginTop:'auto',maxHeight:'92%'},fitScroll:{flexGrow:0,flexShrink:1},fitContent:{flexGrow:0},
   sheetTitle:{...body,flex:1,textAlign:'center',color:C.ink,fontWeight:'700'},sheetSide:{width:H.touch},sheetHead:{minHeight:H.primary,paddingTop:16,paddingBottom:4,paddingLeft:20,paddingRight:8,flexDirection:'row',alignItems:'center',gap:8},sheetGrab:{position:'absolute',top:8,left:'50%',marginLeft:-20,width:40,height:4,borderRadius:R.xs,backgroundColor:C.lineStrong},
-  sheetClose:{width:H.touch,height:H.touch,borderRadius:R.full,alignItems:'center',justifyContent:'center'},sheetCloseText:{width:32,height:32,borderRadius:R.full,backgroundColor:C.surfaceAlt,color:C.ink,textAlign:'center',lineHeight:32,fontSize:16,overflow:'hidden'},
+  sheetClose:{width:H.touch,height:H.touch,borderRadius:R.full,alignItems:'center',justifyContent:'center'},sheetBackText:{fontSize:28,lineHeight:32,color:C.ink,fontWeight:'500'},sheetCloseText:{width:32,height:32,borderRadius:R.full,backgroundColor:C.surfaceAlt,color:C.ink,textAlign:'center',lineHeight:32,fontSize:16,overflow:'hidden'},
   header:{minHeight:H.primary,paddingVertical:4,paddingLeft:16,paddingRight:8,flexDirection:'row',alignItems:'center',gap:8},
   headerTitle:{...title,...brandFont,color:C.ink},
   headerAI:{width:H.touch,height:H.touch,borderRadius:R.full,backgroundColor:C.accent,alignItems:'center',justifyContent:'center'},headerAIText:{...label,color:C.onAccent,fontWeight:'700'},

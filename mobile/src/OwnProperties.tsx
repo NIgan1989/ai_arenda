@@ -24,30 +24,36 @@ type Props={properties:Row[];bookings:Row[];busy:boolean;onAdd?:()=>void;onHome?
 
 export function OwnProperties({properties,bookings,busy,onAdd,onHome,onEdit,onSettings,onCleaning,onMap,onResend}:Props){
  const [open,setOpen]=useState(properties.length===1?properties[0].id:'');
+ // As in the concept: the places are rows of one list (photo, name, a dot of the state, the price), and adding one
+ // is the last row, not a coloured tile on top.
  return <View style={o.list}>
-  {!!onAdd&&<Pressable accessibilityRole="button" accessibilityLabel={t('Добавить объект')} disabled={busy} onPress={onAdd} style={({pressed})=>[o.add,(pressed||busy)&&o.dim]}>
-   <View style={o.addOrb}><Text style={o.addPlus}>+</Text></View>
-   <View style={o.grow}><Text style={o.addTitle}>{t('Добавить объект')}</Text><Text style={o.addSub}>{t('Жильё, баня или зал: расскажите одним сообщением, ИИ заполнит объявление')}</Text></View>
-  </Pressable>}
-  {/* Своё жильё, которое не сдаётся: только уборка (lib/home-cleaning.ts). Без объявления, цены и правил. */}
-  {!!onHome&&<Pressable accessibilityRole="button" accessibilityLabel={t('Мой дом: только уборка. Найти исполнителя на уборку своего жилья, которое вы не сдаёте')} disabled={busy} onPress={onHome} style={({pressed})=>[o.add,o.home,(pressed||busy)&&o.dim]}>
-   <View style={[o.addOrb,o.homeOrb]}><KindIcon id="cleaning" size={22} color={C.accent}/></View>
-   <View style={o.grow}><Text style={o.addTitle}>{t('Мой дом: только уборка')}</Text><Text style={o.addSub}>{t('Не сдаёте? Укажите адрес и свою цену, ИИ найдёт исполнителя')}</Text></View>
-  </Pressable>}
   {!properties.length&&<BrandEmpty title={t('Пока пусто')} text={t('Здесь появятся ваши объекты: их состояние, брони и цена.')}/>}
-  {properties.map(p=>isHome(p.details?.type)?<HomeCard key={p.id} place={p} busy={busy} onCleaning={()=>onCleaning(p.id)} onMap={onMap(p.id)}/>:<PropertyCard key={p.id} property={p} bookings={bookings} busy={busy} open={open===p.id} onToggle={()=>setOpen((v:string)=>v===p.id?'':p.id)} onEdit={()=>onEdit(p.id)} onSettings={()=>onSettings(p.id)} onCleaning={()=>onCleaning(p.id)} onMap={onMap(p.id)} onResend={onResend&&(()=>onResend(p))}/>)}
+  {(properties.length>0||!!onAdd||!!onHome)&&<View style={o.group}>
+   {properties.map((p,i)=>isHome(p.details?.type)?<HomeCard key={p.id} first={i===0} place={p} busy={busy} onCleaning={()=>onCleaning(p.id)} onMap={onMap(p.id)}/>:<PropertyCard key={p.id} first={i===0} property={p} bookings={bookings} busy={busy} open={open===p.id} onToggle={()=>setOpen((v:string)=>v===p.id?'':p.id)} onEdit={()=>onEdit(p.id)} onSettings={()=>onSettings(p.id)} onCleaning={()=>onCleaning(p.id)} onMap={onMap(p.id)} onResend={onResend&&(()=>onResend(p))}/>)}
+   {!!onAdd&&<Pressable accessibilityRole="button" accessibilityLabel={t('Добавить жильё')} disabled={busy} onPress={onAdd} style={({pressed})=>[o.item,!properties.length&&o.first,o.addRow,(pressed||busy)&&o.dim]}>
+    <View style={o.addOrb}><Text style={o.addPlus}>+</Text></View>
+    <View style={o.grow}><Text style={o.addTitle}>{t('Добавить жильё')}</Text><Text numberOfLines={2} style={o.addSub}>{t('Жильё, баня или зал: расскажите одним сообщением, ИИ заполнит объявление')}</Text></View>
+    <Text style={o.go}>›</Text>
+   </Pressable>}
+   {/* Своё жильё, которое не сдаётся: только уборка (lib/home-cleaning.ts). Без объявления, цены и правил. */}
+   {!!onHome&&<Pressable accessibilityRole="button" accessibilityLabel={t('Мой дом: только уборка. Найти исполнителя на уборку своего жилья, которое вы не сдаёте')} disabled={busy} onPress={onHome} style={({pressed})=>[o.item,!properties.length&&!onAdd&&o.first,o.addRow,(pressed||busy)&&o.dim]}>
+    <View style={o.addOrb}><KindIcon id="cleaning" size={20} color={C.ink}/></View>
+    <View style={o.grow}><Text style={o.addTitle}>{t('Мой дом: только уборка')}</Text><Text numberOfLines={2} style={o.addSub}>{t('Не сдаёте? Укажите адрес и свою цену, ИИ найдёт исполнителя')}</Text></View>
+    <Text style={o.go}>›</Text>
+   </Pressable>}
+  </View>}
  </View>;
 }
 
 // A private home that is only cleaned (lib/home-cleaning.ts): nothing to rent, so no listing, price or rules. One thing to do.
-function HomeCard({place:p,busy,onCleaning,onMap}:{place:Row;busy:boolean;onCleaning:()=>void;onMap?:()=>void}){
- return <View style={o.card}>
+function HomeCard({place:p,first,busy,onCleaning,onMap}:{place:Row;first:boolean;busy:boolean;onCleaning:()=>void;onMap?:()=>void}){
+ return <View style={[o.item,first&&o.first]}>
   <View style={o.row}>
-   <View style={[o.thumb,o.homeThumb]}><KindIcon id="cleaning" size={28} color={C.accent}/></View>
+   <View style={[o.thumb,o.homeThumb]}><KindIcon id="cleaning" size={24} color={C.ink}/></View>
    <View style={o.grow}>
     <Text numberOfLines={1} style={o.title}>{p.title}</Text>
     <Text numberOfLines={1} style={o.meta}>{[p.city,p.address].filter(Boolean).join(', ')}</Text>
-    <View style={o.tags}><Text style={[o.status,{backgroundColor:C.surfaceAlt,color:C.muted}]}>{t('Мой дом · не сдаётся')}</Text></View>
+    <Text numberOfLines={1} style={o.state}>{t('Мой дом · не сдаётся')}</Text>
    </View>
   </View>
   <Text style={o.note}>{t('Адрес видите только вы и назначенный исполнитель.')}</Text>
@@ -55,8 +61,8 @@ function HomeCard({place:p,busy,onCleaning,onMap}:{place:Row;busy:boolean;onClea
  </View>;
 }
 
-function PropertyCard({property:p,bookings,busy,open,onToggle,onEdit,onSettings,onCleaning,onMap,onResend}:{property:Row;bookings:Row[];busy:boolean;open:boolean;onToggle:()=>void;onEdit:()=>void;onSettings:()=>void;onCleaning:()=>void;onMap?:()=>void;onResend?:()=>Promise<unknown>}){
- const d=p.details||{},policy=p.policy||{},found=processStatus('property',p,'owner',''),status=isVenue((p.details||{}).type)?{...found,label:found.label.replace('к заселению','к приёму гостей')}:found,[bg,ink]=tones[status.tone]||tones.neutral,hall=isBanquet(d.type),bath=isBath(d.type),now=placeNow(p.id,bookings,undefined,bath||hall);
+function PropertyCard({property:p,first,bookings,busy,open,onToggle,onEdit,onSettings,onCleaning,onMap,onResend}:{property:Row;first:boolean;bookings:Row[];busy:boolean;open:boolean;onToggle:()=>void;onEdit:()=>void;onSettings:()=>void;onCleaning:()=>void;onMap?:()=>void;onResend?:()=>Promise<unknown>}){
+ const d=p.details||{},policy=p.policy||{},found=processStatus('property',p,'owner',''),status=isVenue((p.details||{}).type)?{...found,label:found.label.replace('к заселению','к приёму гостей')}:found,ink=(tones[status.tone]||tones.neutral)[1],hall=isBanquet(d.type),bath=isBath(d.type),now=placeNow(p.id,bookings,undefined,bath||hall);
  const perGuest=hall?Number(policy.extra_guest_price)||0:0,least=Number(policy.included_guests)||1;
  const kind=propertyTypes[d.type]||t('Жильё');
  // «Занято»: guests who came without the service. The card keeps the mark it was given until the state is read again.
@@ -76,17 +82,19 @@ function PropertyCard({property:p,bookings,busy,open,onToggle,onEdit,onSettings,
   !!onMap&&{title:t('На карте'),kind:'side',onPress:onMap},
   !now.busy&&{title:t('Занято'),kind:'side',onPress:()=>{setBusyNote('');setBusyOpen(v=>!v);}},
  ];
- return <View style={[o.card,open&&o.cardOpen]}>
+ const price=hall?(perGuest?t('{v} за гостя',{v:money(perGuest)}):''):bath&&policy.hourly_price?t('{v} / час',{v:money(policy.hourly_price)}):money(p.price);
+ const warn=refused?t('Проверка не пройдена'):unmapped?t('Поставьте адрес на карту'):p.address_check?t('Адрес на проверке'):'';
+ return <View style={[o.item,first&&o.first]}>
   <Pressable accessibilityRole="button" accessibilityState={{expanded:open}} accessibilityLabel={[p.title,status.label,now.line,open?t('Свернуть'):t('Подробнее')].join('. ')} onPress={onToggle} style={({pressed})=>[o.row,pressed&&o.dim]}>
    <View style={o.thumb}><Photo id={p.photos?.[0]} alt={p.title} fill/></View>
    <View style={o.grow}>
     <Text numberOfLines={1} style={o.title}>{p.title}</Text>
-    <Text numberOfLines={1} style={o.meta}>{p.venue&&p.venue.title!==p.title?p.venue.title:kind} · {hall?(perGuest?t('{v} за гостя',{v:money(perGuest)}):t('цена не задана')):bath&&policy.hourly_price?t('{v} / час',{v:money(policy.hourly_price)}):t('{v} / сутки',{v:money(p.price)})}</Text>
-    <View style={o.tags}><Text style={[o.status,{backgroundColor:bg,color:ink}]}>{status.label}</Text>{!!p.address_check&&<Text style={[o.status,{backgroundColor:C.warningSoft,color:C.warning}]}>{t('Адрес на проверке')}</Text>}{refused&&<Text style={[o.status,{backgroundColor:C.dangerSoft,color:C.danger}]}>{t('Проверка не пройдена')}</Text>}{unmapped&&<Text style={[o.status,{backgroundColor:C.warningSoft,color:C.warning}]}>{t('Поставьте адрес на карту')}</Text>}{!!held&&<Text style={[o.status,{backgroundColor:C.warningSoft,color:C.warning}]}>{t('Занято до {time}',{time:hhmm(Number(held.end))})}</Text>}{!!p.demo_owner&&<Text style={[o.status,{backgroundColor:C.surfaceAlt,color:C.muted}]}>{t('Учебный')}</Text>}{!!p.published&&!p.demo_owner&&<Text accessibilityLabel={t('Гости видели карточку в поиске: {v}',{v:shownWords(Number(p.views_week)||0).toLowerCase()})} style={[o.status,{backgroundColor:C.surfaceAlt,color:C.inkSoft}]}>{shownWords(Number(p.views_week)||0)}</Text>}</View>
+    <View style={o.stateRow}><View style={[o.dot,{backgroundColor:now.busy?C.ink:ink}]}/><Text numberOfLines={1} style={o.state}>{[status.label,now.requests?t('{line} · заявок: {n}',{line:now.line,n:now.requests}):now.line].filter(Boolean).join(' · ')}</Text></View>
+    {!!warn&&<Text numberOfLines={1} style={[o.state,{color:refused?C.danger:C.warning}]}>{warn}</Text>}
    </View>
+   {!!price&&<Text style={o.price}>{price}</Text>}
    <Text style={[o.chevron,open&&o.chevronOpen]}>›</Text>
   </Pressable>
-  <View style={o.nowRow}><View style={[o.dot,{backgroundColor:now.busy?C.accent:status.tone==='success'?C.success:C.muted}]}/><Text numberOfLines={1} style={o.now}>{now.requests?t('{line} · заявок: {n}',{line:now.line,n:now.requests}):now.line}</Text></View>
   {open&&<>
    <RecordFacts rows={[
     [t('Адрес'),[p.city,p.district,p.address].filter(Boolean).join(', ')],
@@ -111,16 +119,19 @@ export const shownWords=(n:number)=>n>0?t(forms(n,'{n} показ за неде�
 
 const R=T.radius,H=T.control;
 const o=StyleSheet.create({
- list:{gap:12,marginTop:4},grow:{flex:1,minWidth:0,gap:4},dim:{opacity:.55},
+ list:{gap:12,marginTop:4},group:{borderRadius:R.xl,borderWidth:1,borderColor:C.line,backgroundColor:C.surface,overflow:'hidden'},
+ item:{gap:12,paddingVertical:12,paddingHorizontal:12,borderTopWidth:1,borderTopColor:C.line},first:{borderTopWidth:0},
+ addRow:{flexDirection:'row',alignItems:'center',gap:12},go:{...type.title,color:C.muted,paddingHorizontal:4},
+ stateRow:{flexDirection:'row',alignItems:'center',gap:8},state:{...type.caption,color:C.inkSoft,flexShrink:1},price:{...type.label,color:C.ink,fontWeight:'700'},grow:{flex:1,minWidth:0,gap:4},dim:{opacity:.55},
  add:{flexDirection:'row',alignItems:'center',gap:12,minHeight:H.primary,padding:12,borderRadius:R.xl,backgroundColor:C.accentSoft,borderWidth:1,borderColor:C.glassLine},
- addOrb:{width:40,height:40,borderRadius:R.full,backgroundColor:C.accent,alignItems:'center',justifyContent:'center'},addPlus:{...type.title,color:C.onAccent,fontWeight:'600',marginTop:-2},
- addTitle:{...type.body,color:C.accentPressed,fontWeight:'700'},addSub:{...type.caption,color:C.inkSoft},
+ addOrb:{width:56,height:56,borderRadius:R.lg,borderWidth:1,borderColor:C.lineStrong,alignItems:'center',justifyContent:'center'},addPlus:{...type.title,color:C.ink,fontWeight:'500',marginTop:-2},
+ addTitle:{...type.body,color:C.ink,fontWeight:'700'},addSub:{...type.caption,color:C.muted},
  empty:{...type.label,color:C.muted,textAlign:'center',paddingVertical:16},note:{...type.caption,color:C.inkSoft,paddingHorizontal:4},
  card:{gap:12,padding:12,borderRadius:R.xl,borderWidth:1,borderColor:C.glassLine,backgroundColor:C.glassStrong},cardOpen:{borderColor:C.accentSoft},
  row:{flexDirection:'row',alignItems:'center',gap:12},
  home:{backgroundColor:C.glassStrong},homeOrb:{backgroundColor:C.accentSoft},
  homeThumb:{alignItems:'center',justifyContent:'center',backgroundColor:C.accentSoft},
- thumb:{width:72,height:72,borderRadius:R.lg,overflow:'hidden',backgroundColor:C.surfaceAlt},
+ thumb:{width:56,height:56,borderRadius:R.lg,overflow:'hidden',backgroundColor:C.surfaceAlt},
  title:{...type.body,color:C.ink,fontWeight:'700'},meta:{...type.label,color:C.inkSoft},
  tags:{flexDirection:'row',flexWrap:'wrap',gap:8},status:{...type.caption,fontWeight:'500',paddingHorizontal:8,paddingVertical:2,borderRadius:R.sm,overflow:'hidden'},
  chevron:{...type.title,color:C.muted,paddingHorizontal:4},chevronOpen:{transform:[{rotate:'90deg'}]},
