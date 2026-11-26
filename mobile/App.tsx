@@ -276,6 +276,8 @@ function Chat(){
   const freed=()=>{const open=nextSheet.current;nextSheet.current=null;if(open)setTimeout(open,400);};
   const pop=(title:string,block:string,payload:Row)=>setStep({id:uid(),title,block,payload});
   const closeStep=()=>{setStep(null);freed();};
+  // A sign-out or another role leaves no sheet of the last account behind, open or queued.
+  const dropSheets=()=>{nextSheet.current=null;setAsk(null);setStep(null);};
   // The buttons of the open booking or cleaning, pinned under the sheet's scroll (RecordCard DealFootContext): the last card that gave them.
   const [feet,setFeet]=useState<{key:string;node:ReactNode}[]>([]);
   const setFoot=useCallback((key:string,node:ReactNode|null)=>setFeet(prev=>{const rest=prev.filter(f=>f.key!==key);return node?[...rest,{key,node}]:rest;}),[]);
@@ -344,7 +346,7 @@ function Chat(){
   });
   const finish=(id:string,result=tr('Сохранено'))=>setMessages(prev=>prev.map(m=>m.id===id?{...m,done:true,result}:m));
   async function signedOut(result?:Row){
-    try{await saveSession(null);await saveLastRole(null,null);}finally{session.current=false;setWorkspaceRole(null);activeRoleRef.current=null;setSelectedRole(null);setHistoryReady(false);setData(empty);setMessages([]);setFlow(null);setInput('');setChatInitial(null);setChatsActive(false);if(result?.receipt)setErasureResult(result);}
+    try{await saveSession(null);await saveLastRole(null,null);}finally{session.current=false;setWorkspaceRole(null);activeRoleRef.current=null;setSelectedRole(null);setHistoryReady(false);setData(empty);setMessages([]);setFlow(null);setInput('');setChatInitial(null);setChatsActive(false);dropSheets();if(result?.receipt)setErasureResult(result);}
   }
   // «Избранное» on a home's card; the map's panel keeps its own copy, both follow the state.
   const favorites=useFavorites(data,()=>load());
@@ -386,7 +388,7 @@ function Chat(){
     catch(e){if(activeRoleRef.current===role||activeRoleRef.current===null){setWorkspaceRole(prev);activeRoleRef.current=prev;setHistoryReady(true);}if(!(e instanceof StaleSessionError))setLinkError(e instanceof Error?e.message:tr('Не удалось сменить роль. Попробуйте ещё раз.'));}
     finally{locked.current=false;setBusy(false);hideRolePlate();}
   }
-  function switchRole(){if(locked.current)return;setWorkspaceRole(null);activeRoleRef.current=null;setSelectedRole(null);setHistoryReady(false);setMessages([]);setFlow(null);setInput('');setData({...empty,user:data.user,profile:data.profile});}
+  function switchRole(){if(locked.current)return;dropSheets();setWorkspaceRole(null);activeRoleRef.current=null;setSelectedRole(null);setHistoryReady(false);setMessages([]);setFlow(null);setInput('');setData({...empty,user:data.user,profile:data.profile});}
   async function handleError(error:any){
     if(error instanceof StaleSessionError)return;
     if(error instanceof ApiError&&error.status===401&&session.current){
