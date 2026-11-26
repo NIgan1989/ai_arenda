@@ -1,9 +1,11 @@
 import {t} from '../../lib/i18n';
 import React,{useEffect,useRef,useState} from 'react';
 import {StyleSheet,Text,View} from 'react-native';
+import {Thinking} from './Thinking';
 import {C,type} from './styles';
 import {T} from './tokens';
 import {LiveMap} from './LiveMap';
+import {editDot} from './EditSheet';
 import {geoDistance} from '../../lib/map-location';
 import type {MapPoint} from './map-math';
 type Row=Record<string,any>;
@@ -13,8 +15,9 @@ type Row=Record<string,any>;
 export type PinChoice={point:MapPoint|null;moved:boolean;saved:boolean};
 export type Spot={longitude:number;latitude:number;found:boolean;saved:boolean;version:number};
 
-// The flat's pin in the «Адрес» step. The service finds the house by the address being typed (city, district, address)
-// and the map flies there; the pin stays in the middle and the owner moves the map under it if the house is a bit off.
+// The flat's pin in the «Адрес» step, as Uber's: a tall map with one black pin in the middle and one grey line under it.
+// The service finds the house by the address being typed (city, district, address) and the map flies there; the owner
+// moves the map under the pin if the house is a bit off.
 export function AddressPin({propertyId,city,district,address,place='',call,onChoice}:{propertyId:string;city:string;district:string;address:string;place?:string;call:(path:string,body:Row)=>Promise<Row>;onChoice:(choice:PinChoice)=>void}){
  const [spot,setSpot]=useState<Spot|null>(null),[answered,setAnswered]=useState(''),[moved,setMoved]=useState(false),[failed,setFailed]=useState(false),[round,setRound]=useState(0);
  const report=useRef(onChoice);useEffect(()=>{report.current=onChoice;},[onChoice]);
@@ -42,27 +45,23 @@ export function AddressPin({propertyId,city,district,address,place='',call,onCho
   if(away!==moved)setMoved(away);
   report.current(away?{point:[Number(c[0].toFixed(6)),Number(c[1].toFixed(6))],moved:true,saved:false}:{point:spot.found?[spot.longitude,spot.latitude]:null,moved:false,saved:spot.saved});
  };
+ // One grey line: what the service is doing or what to do; a small dot when the house was not found or the map failed.
+ const warn=failed||(!looking&&!moved&&!!spot&&!spot.found);
  const note=failed?t('Карта не ответила. Адрес сохранится, метку поставим по нему.')
-  :looking&&!spot?t('Ищу дом по адресу…')
-  :moved?t('Метка будет здесь. Нажмите «Сохранить».')
-  :looking?t('Ищу дом по новому адресу…')
-  :spot?.saved?t('Метка стоит на доме. Если чуть мимо, передвиньте карту.')
-  :spot?.found?t('Нашёл дом по адресу. Проверьте метку и сохраните.')
-  :t('Не нашёл дом по адресу. Передвиньте карту так, чтобы метка стояла на вашем доме.');
- const warn=!looking&&!moved&&!!spot&&!spot.found;
+  :looking?t('Ищу дом по адресу…')
+  :warn?t('Не нашёл дом по адресу. Передвиньте карту так, чтобы метка стояла на вашем доме.')
+  :t('Двигайте карту, чтобы метка встала на дом');
  return <View style={a.box}>
-  <Text style={a.label}>{t('Метка на карте')}</Text>
   <View style={a.map}>
    {spot?<LiveMap key={'pin:'+round} center={[spot.longitude,spot.latitude]} pins={[]} picking focusKey={'pin:'+round} restore={{view:{center:[spot.longitude,spot.latitude],zoom:spot.found?16:12},key:'pin:'+round}} onCenter={onCenter}/>
-    :<View style={a.wait}><Text style={a.note}>{t('Ищу дом по адресу…')}</Text></View>}
+    :<View style={a.wait}>{!failed&&<Thinking color={C.muted}/>}</View>}
   </View>
-  <Text accessibilityLiveRegion="polite" style={[a.note,warn&&a.warn]}>{note}</Text>
+  <Text accessibilityLiveRegion="polite" style={a.note}>{warn&&<Text style={{color:editDot.missing}}>● </Text>}{note}</Text>
  </View>;
 }
 const a=StyleSheet.create({
- box:{gap:4},
- label:{color:C.muted,...type.caption,fontWeight:'600'},
- map:{height:220,borderRadius:T.radius.md,overflow:'hidden',borderWidth:1,borderColor:C.line,backgroundColor:C.surfaceAlt},
+ box:{gap:8},
+ map:{height:320,borderRadius:T.radius.lg,overflow:'hidden',borderWidth:StyleSheet.hairlineWidth,borderColor:C.lineStrong,backgroundColor:C.surfaceAlt},
  wait:{flex:1,alignItems:'center',justifyContent:'center'},
- note:{color:C.muted,...type.caption},warn:{color:C.warning,fontWeight:'600'}
+ note:{color:C.muted,...type.label},
 });

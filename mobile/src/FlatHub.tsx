@@ -17,7 +17,8 @@ import {DealLine} from './DealLine';
 import {ownerDeal,ownerPinAct} from './pin-deal';
 import {ownerThreads} from '../../lib/process-threads';
 import {T} from './tokens';
-import {RightDocs} from './RightDocs';
+import {RightsRow} from './RightDocs';
+import {EditRow} from './EditSheet';
 
 const words=(t:number)=>dateText(t*1000,{timeZone:'Asia/Almaty',day:'numeric',month:'long'});
 
@@ -110,12 +111,15 @@ export function FlatHub({flat,data,now,tab,onOpen,onEdit,onChanged}:Omit<Props,'
    <Action secondary title={tr('Изменить цены')} onPress={()=>onEdit('prices')}/>
   </View>;
  }
+ // «Настройки»: rows as in the editor itself (EditSheet.tsx), each opens its own sheet; the document is one row with its state.
  return <View style={f.panel}>
   <FlatAutopilotRow propertyId={flat.id} onChanged={onChanged}/>
-  {row(tr('Объявление'),tr('Фото, описание, удобства, заезд'),()=>onEdit(null))}
-  {row(tr('Правила и готовность'),tr('Автоподтверждение, депозит, готовность к заселению'),()=>onEdit('settings'))}
-  {!flat.demo_owner&&<RightDocs propertyId={flat.id} approved={!!flat.approved}/>}
-  {!Number(flat.own_staff)&&row(tr('Постоянный исполнитель'),flat.regular_cleaner_name||tr('Закрепите своего: уборки приходят сначала к нему'),()=>onEdit('cleaner'))}
+  <View>
+   <EditRow icon="file" title={tr('Объявление')} line={tr('Фото, описание, удобства, заезд')} onPress={()=>onEdit(null)}/>
+   <EditRow icon="shield" title={tr('Правила и готовность')} line={tr('Цены, депозит, подтверждение броней')} onPress={()=>onEdit('settings')} last={!!flat.demo_owner&&!!Number(flat.own_staff)}/>
+   {!flat.demo_owner&&<RightsRow propertyId={flat.id} approved={!!flat.approved} onPress={()=>onEdit('rights')} last={!!Number(flat.own_staff)}/>}
+   {!Number(flat.own_staff)&&<EditRow icon="users" title={tr('Постоянный исполнитель')} line={flat.regular_cleaner_name||tr('Не закреплён')} onPress={()=>onEdit('cleaner')} last/>}
+  </View>
  </View>;
 }
 
