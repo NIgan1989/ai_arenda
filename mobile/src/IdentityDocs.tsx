@@ -3,7 +3,8 @@ import {Image,Pressable,StyleSheet,Text,View} from 'react-native';
 import {t} from '../../lib/i18n';
 import {pickImages,jpegData} from './ListingMedia';
 import {request} from './api';
-import {Action,h} from './SheetParts';
+import {h} from './SheetParts';
+import {Btn} from './AccountRows';
 import {C,type} from './styles';
 import {T} from './tokens';
 
@@ -31,13 +32,13 @@ export function IdentityDocs({role}:{role:'guest'|'owner'|'cleaner'}){
  const why=role==='guest'?t('По желанию. После проверки владельцы видят «Личность подтверждена» и охотнее принимают заявку.'):role==='owner'?t('По желанию. После проверки гости видят «Личность подтверждена» и больше доверяют жилью.'):t('По желанию. После проверки владельцы видят «Личность подтверждена» и охотнее выбирают исполнителя.');
  return <View style={u.card}>
   <Text accessibilityRole="header" style={u.title}>{t('Удостоверение личности')}</Text>
-  <Text style={[u.status,checked?u.ok:u.no]}>{checked?t('✓ Личность подтверждена'):t('Личность не подтверждена')}</Text>
+  {/* Whether the identity is confirmed is the line above this card in the profile (AccountControl.tsx). */}
   <Text style={h.note}>{checked?t('Личность подтверждена администратором. Фото удалено после проверки.'):docs.length?t('Фото приложено. Администратор сверит его с профилем, затем фото удалится.'):why}</Text>
   {!checked&&!!docs.length&&<View style={u.row}>{docs.map(d=><View key={d.id} style={{gap:4}}>
    {d.uri?<Image source={{uri:d.uri}} style={u.thumb} alt={t('Удостоверение личности')}/>:<View style={[u.thumb,{backgroundColor:C.surfaceAlt}]}/>}
    <Pressable accessibilityRole="button" accessibilityLabel={t('Убрать фото удостоверения')} disabled={busy} onPress={()=>void remove(d.id)}><Text style={u.remove}>{t('Убрать')}</Text></Pressable>
   </View>)}</View>}
-  {!checked&&docs.length<2&&<><Action title={busy?t('Прикладываю…'):docs.length?t('Добавить обратную сторону'):t('Сфотографировать удостоверение')} disabled={busy} onPress={()=>void add(true)}/><Action secondary title={t('Выбрать из галереи')} disabled={busy} onPress={()=>void add(false)}/></>}
+  {!checked&&docs.length<2&&<><Btn title={busy?t('Прикладываю…'):docs.length?t('Добавить обратную сторону'):t('Сфотографировать удостоверение')} disabled={busy} onPress={()=>void add(true)}/><Btn kind="line" title={t('Выбрать из галереи')} disabled={busy} onPress={()=>void add(false)}/></>}
   {!!said&&<Text accessibilityLiveRegion="polite" style={said.error?h.error:h.note}>{said.text}</Text>}
   <Text style={u.privacy}>{t('🔒 Фото видит только администратор сервиса')}</Text>
  </View>;
@@ -45,9 +46,8 @@ export function IdentityDocs({role}:{role:'guest'|'owner'|'cleaner'}){
 
 const R=T.radius;
 const u=StyleSheet.create({
- card:{gap:8,padding:16,marginTop:16,borderRadius:R.lg,borderWidth:1,borderColor:C.line,backgroundColor:C.surface},
+ card:{gap:8,padding:16,marginTop:8,borderRadius:R.lg,borderWidth:1,borderColor:C.line,backgroundColor:C.surface},
  title:{...type.label,color:C.ink,fontWeight:'600'},
- status:{...type.caption,fontWeight:'600'},ok:{color:C.success},no:{color:C.warning},
  row:{flexDirection:'row',flexWrap:'wrap',gap:8},
  thumb:{width:96,height:64,borderRadius:R.md},
  remove:{...type.caption,color:C.danger,textAlign:'center'},
