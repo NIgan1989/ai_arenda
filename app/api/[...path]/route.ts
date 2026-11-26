@@ -5,6 +5,7 @@ import {aiJournal} from '../../../lib/ai-moves';
 import {orderHomeCleaning} from '../../../lib/home-order';
 import { waitUntil, env as workerEnv } from 'cloudflare:workers';
 import {isolateTestConfig} from '../../../lib/test-environment';
+import {withAdmins} from '../../../lib/platform-admins';
 import { getAppUser } from '../../session';
 import {authRequest,expireSessionCookie,requestSessionIdentity} from '../../../lib/native-auth';
 import {passkeyRequest} from '../../../lib/passkeys';
@@ -52,7 +53,8 @@ async function withPublishReview(service:RentalService,result:{id?:string;messag
  return result;
 }
 async function handle(request:Request, context:{params:Promise<{path:string[]}>}) {
-  const env=isolateTestConfig(workerEnv);
+  // The administrators the main one added in the app join the secret's list for every check (lib/platform-admins.ts).
+  const env=await withAdmins(isolateTestConfig(workerEnv));
   try {
     const route=(await context.params).path;
     if(!env.DB) return json({error:'База данных ещё не подключена.'},503);
@@ -205,7 +207,7 @@ async function handle(request:Request, context:{params:Promise<{path:string[]}>}
 }
 export const GET=handle;
 export async function POST(request:Request,context:{params:Promise<{path:string[]}>}){
- const env=isolateTestConfig(workerEnv);
+ const env=await withAdmins(isolateTestConfig(workerEnv));
  const response=await handle(request,context);
  // Domain actions take effect first; the coordinator then advances affected workspaces.
  if(response.ok&&env.DB&&request.headers.has('X-Workspace-Role')){

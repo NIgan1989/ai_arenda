@@ -106,6 +106,7 @@
 -- migration 0102_passkeys.sql sha256:3f764759d661b1a859e959faaa0c45c757c1a3271fe51939bcad7ecf949b43cb
 -- migration 0103_fraud_guards_two.sql sha256:3c6784fdb55095e3f045c9b7841ef409ecbbc872cde04729edda14260af47f18
 -- migration 0104_stay_classes.sql sha256:a6ac265367913acbd4318cc7ede0c85f595a3ea19a99b7c85db51f07d1b8e0b7
+-- migration 0105_platform_admins.sql sha256:dc2f2773ff7c4a4f9c928368376ab02f98129d84e7e126942bfd072a6aa96c61
 
 -- table access_receipts
 CREATE TABLE access_receipts (id TEXT PRIMARY KEY,property_id TEXT NOT NULL,entity_kind TEXT NOT NULL,entity_id TEXT NOT NULL,user_id TEXT NOT NULL,created_at INTEGER NOT NULL,expires_at INTEGER NOT NULL);
@@ -1118,6 +1119,13 @@ CREATE TABLE pilot_policy (
  require_phone INTEGER NOT NULL DEFAULT 0 CHECK(require_phone IN (0,1)),
  version INTEGER NOT NULL DEFAULT 1, updated_by TEXT NOT NULL DEFAULT '',updated_at INTEGER NOT NULL DEFAULT 0
 , ai_review INTEGER NOT NULL DEFAULT 1 CHECK(ai_review IN (0,1)));
+
+-- table platform_admins
+CREATE TABLE platform_admins (
+ user_id TEXT PRIMARY KEY REFERENCES auth_accounts(id) ON DELETE CASCADE,
+ added_by TEXT NOT NULL,
+ added_at INTEGER NOT NULL
+);
 
 -- table platform_billing
 CREATE TABLE platform_billing (
