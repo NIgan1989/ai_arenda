@@ -11,13 +11,14 @@ import {T} from './tokens';
 import type {Role} from './model';
 
 // Changing the role without leaving the map: a chip next to the round profile button names the role, a sheet lists
-// the roles, and while the new role loads the night plate with the шаңырақ says which role the person is now in.
+// the roles, and while the new role loads a white plate with the black шаңырақ (the same as the splash, EntrySplash.tsx)
+// says which role the person is now in.
 const ORDER:Role[]=['guest','owner','cleaner'];
 const icons:Record<Role,any>={guest:require('../assets/navigation/catalog.png'),owner:require('../assets/navigation/properties.png'),cleaner:require('../assets/navigation/cleaning.png')};
 const name=(role:Role)=>role==='guest'?t('Гость'):role==='owner'?t('Владелец'):t('Исполнитель уборки');
 const short=(role:Role)=>role==='cleaner'?t('Исполнитель'):name(role);
 const about=(role:Role)=>role==='guest'?t('Поиск жилья, бронирования и проживание'):role==='owner'?t('Жильё, заявки гостей и уборки'):t('Доступные задания, назначения и отчёты');
-const native=Platform.OS!=='web',glowImage=require('../assets/brand/glow.png');
+const native=Platform.OS!=='web';
 
 /** Over the map, in place of the round profile button: the photo opens the profile, the role next to it opens the roles. */
 export function MapAccountButton({role,busy,open,avatarId,avatarName,onProfile,onRoles}:{role:Role;busy:boolean;open:boolean;avatarId?:string|null;avatarName?:string;onProfile:()=>void;onRoles:()=>void}){
@@ -53,7 +54,7 @@ export function RoleSheet({visible,role,roles,onPick,onJoin,onProfile,onClose}:{
  </Modal>;
 }
 
-// ── The night plate while the role changes ───────────────────────────────────────────────────────────────────
+// ── The plate while the role changes (white and monochrome since 2026-11-26, as the splash) ───────────────────────────────────────────────────────────────────
 let plate:Role|null=null;const watchers=new Set<()=>void>();
 const tell=()=>watchers.forEach(run=>run());
 /** Cover the screen with the plate for `role`; `hideRolePlate` lifts it once the role has loaded. */
@@ -91,9 +92,9 @@ export function RolePlate(){
  // Not a Modal: on iPhone a second Modal cannot open while the roles sheet (itself a Modal) is still closing, and
  // the plate never showed. A layer over the whole app, mounted last at its root, covers everything the same way.
  return <View style={p.layer}>
-  {/* Light signs over the night plate; the root status bar (EntryStatusBar) is back when the plate goes. */}<StatusBar barStyle="light-content" backgroundColor={C.night}/>
+  {/* Dark signs over the white plate; the root status bar (EntryStatusBar) is back when the plate goes. */}<StatusBar barStyle="dark-content" backgroundColor={C.surface}/>
   <Animated.View accessibilityViewIsModal style={[p.plate,{opacity:a.plate}]}>
-   <Animated.View style={{opacity:a.sign,transform:[{scale:a.sign.interpolate({inputRange:[0,1],outputRange:[.7,1]})}]}}><Image source={glowImage} style={p.glow}/><Dome size={150} burst={a.burst}/></Animated.View>
+   <Animated.View style={{opacity:a.sign,transform:[{scale:a.sign.interpolate({inputRange:[0,1],outputRange:[.7,1]})}]}}><Dome size={150} ink={C.ink} gold={C.ink} burst={a.burst}/></Animated.View>
    <Animated.View style={[p.words,up]}>
     <Text style={p.eyebrow}>{t('ВЫ В РОЛИ')}</Text>
     <Text accessibilityRole="header" accessibilityLiveRegion="polite" style={p.role}>{name(shown)}</Text>
@@ -120,9 +121,8 @@ const b=StyleSheet.create({
 });
 const p=StyleSheet.create({
  layer:{position:'absolute',top:0,right:0,bottom:0,left:0,zIndex:1000,elevation:1000},
- plate:{flex:1,backgroundColor:C.night,alignItems:'center',justifyContent:'center',gap:28,padding:24},
- glow:{position:'absolute',left:-130,top:-130,width:410,height:410},
+ plate:{flex:1,backgroundColor:C.surface,alignItems:'center',justifyContent:'center',gap:28,padding:24},
  words:{alignItems:'center',gap:8},
- eyebrow:{...type.caption,letterSpacing:2,fontWeight:'700',color:C.gold},
- role:{...type.heading,...brandFont,color:C.onAccent,textAlign:'center'},
+ eyebrow:{...type.caption,letterSpacing:2,fontWeight:'700',color:C.muted},
+ role:{...type.heading,...brandFont,color:C.ink,textAlign:'center'},
 });
