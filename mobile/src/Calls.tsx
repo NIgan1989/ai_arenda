@@ -147,8 +147,8 @@ const k=StyleSheet.create({
  screen:{flex:1,backgroundColor:C.ink,justifyContent:'space-between',padding:24},
  top:{alignItems:'center',gap:12,marginTop:64},
  avatar:{width:96,height:96,borderRadius:999,backgroundColor:C.inkSoft,alignItems:'center',justifyContent:'center'},
- letter:{color:C.onAccent,fontSize:36,lineHeight:44,fontWeight:'700'},
- name:{color:C.onAccent,fontSize:28,lineHeight:36,fontWeight:'700'},
+ letter:{color:C.onAccent,fontSize:36,lineHeight:44,fontWeight:'600'},
+ name:{color:C.onAccent,fontSize:28,lineHeight:36,fontWeight:'600'},
  status:{color:'rgba(255,255,255,0.8)',fontSize:18,lineHeight:24},
  error:{color:C.warning},
  note:{color:'rgba(255,255,255,0.6)',fontSize:14,lineHeight:20,textAlign:'center',marginTop:8},
@@ -160,6 +160,6 @@ const k=StyleSheet.create({
  down:{transform:[{rotate:'135deg'}]},
  micBox:{transform:[{scale:1.6}],alignItems:'center',justifyContent:'center'},
  slash:{position:'absolute',width:2,height:26,backgroundColor:C.danger,transform:[{rotate:'45deg'}]},
- close:{color:C.onAccent,fontSize:22,lineHeight:28,fontWeight:'700'},
+ close:{color:C.onAccent,fontSize:22,lineHeight:28,fontWeight:'600'},
  roundLabel:{color:'rgba(255,255,255,0.8)',fontSize:14,lineHeight:20,textAlign:'center'},
 });

@@ -18,7 +18,7 @@ const DOT: Record<Dot, string> = { ok: C.success, wait: C.gold, alert: C.danger,
 export function NowFrame({ dot = 'ink', kicker, timer, title, line, label, children }: { dot?: Dot; kicker: string; timer?: string; title: string; line?: string; label?: string; children?: ReactNode }) {
   return (
     <View style={m.now} accessibilityLabel={label}>
-      <View style={m.kick}><View style={[m.dot, { backgroundColor: DOT[dot] }]} /><Text numberOfLines={1} style={m.kickText}>{kicker}</Text>{!!timer && <Text style={m.timer} accessibilityLabel={tr('Осталось {v}', { v: timer })}>{timer}</Text>}</View>
+      <View style={m.kick}>{(dot === 'wait' || dot === 'alert') && <View style={[m.dot, { backgroundColor: DOT[dot] }]} />}<Text numberOfLines={1} style={m.kickText}>{kicker}</Text>{!!timer && <Text style={m.timer} accessibilityLabel={tr('Осталось {v}', { v: timer })}>{timer}</Text>}</View>
       <Text numberOfLines={2} style={m.nowTitle}>{title}</Text>
       {!!line && <Text numberOfLines={2} style={m.nowLine}>{line}</Text>}
       {children}
@@ -108,13 +108,13 @@ const m = StyleSheet.create({
   kick: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 2 },
   dot: { width: 8, height: 8, borderRadius: 4 },
   kickText: { flex: 1, minWidth: 0, ...type.caption, color: C.inkSoft, fontWeight: '600' },
-  timer: { ...type.caption, color: C.goldInk, fontWeight: '700', backgroundColor: C.goldSoft, paddingHorizontal: 8, paddingVertical: 2, borderRadius: R.full, overflow: 'hidden', fontVariant: ['tabular-nums'] },
-  nowTitle: { ...type.subtitle, color: C.ink, fontWeight: '800' },
+  timer: { ...type.caption, color: C.goldInk, fontWeight: '600', backgroundColor: C.goldSoft, paddingHorizontal: 8, paddingVertical: 2, borderRadius: R.full, overflow: 'hidden', fontVariant: ['tabular-nums'] },
+  nowTitle: { ...type.subtitle, color: C.ink, fontWeight: '600' },
   nowLine: { ...type.label, color: C.muted, marginBottom: 8 },
   dark: { minHeight: H.field, borderRadius: R.full, backgroundColor: C.ink, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 20, marginTop: 4 },
-  darkText: { ...type.body, color: C.surface, fontWeight: '700' },
+  darkText: { ...type.body, color: C.surface, fontWeight: '600' },
   small: { minHeight: 36, borderRadius: R.full, backgroundColor: C.ink, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 14 },
-  smallText: { ...type.label, color: C.surface, fontWeight: '700' },
+  smallText: { ...type.label, color: C.surface, fontWeight: '600' },
   quiet: { minHeight: H.touch, alignItems: 'center', justifyContent: 'center' },
   quietText: { ...type.label, color: C.muted, fontWeight: '600' },
   dim: { opacity: 0.6 },
@@ -125,7 +125,7 @@ const m = StyleSheet.create({
   lineValue: { flex: 1, minWidth: 0, textAlign: 'right', ...type.label, color: C.muted },
   chev: { width: 16, height: 16, tintColor: C.lineStrong, marginLeft: 'auto' },
   head: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 8 },
-  headTitle: { flex: 1, minWidth: 0, ...type.subtitle, color: C.ink, fontWeight: '800' },
+  headTitle: { flex: 1, minWidth: 0, ...type.subtitle, color: C.ink, fontWeight: '600' },
   headMore: { ...type.label, color: C.muted, fontWeight: '600' },
   row: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, minHeight: 56 },
   time: { width: 52, ...type.caption, color: C.muted, fontWeight: '600', paddingTop: 2, fontVariant: ['tabular-nums'] },
@@ -136,7 +136,7 @@ const m = StyleSheet.create({
   railLine: { flex: 1, width: 2, backgroundColor: C.line, marginTop: 2 },
   rowText: { flex: 1, minWidth: 0, gap: 1, paddingBottom: 12 },
   placeText: { flex: 1, minWidth: 0, gap: 2 },
-  rowTitle: { ...type.body, color: C.ink, fontWeight: '700' },
+  rowTitle: { ...type.body, color: C.ink, fontWeight: '600' },
   rowLine: { ...type.caption, color: C.muted },
   place: { flexDirection: 'row', alignItems: 'center', gap: 12, minHeight: 64, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: C.line },
   thumb: { width: 48, height: 48, borderRadius: R.md, overflow: 'hidden', backgroundColor: C.surfaceAlt },
@@ -145,7 +145,7 @@ const m = StyleSheet.create({
   price: { ...type.label, color: C.muted, fontVariant: ['tabular-nums'] },
   pin: { flexDirection: 'row', alignItems: 'center', gap: 12, minHeight: 56 },
   pinThumb: { width: 52, height: 52, borderRadius: R.md, overflow: 'hidden', backgroundColor: C.surfaceAlt },
-  pinTitle: { ...type.body, color: C.ink, fontWeight: '700' },
+  pinTitle: { ...type.body, color: C.ink, fontWeight: '600' },
   open: { minHeight: 40, paddingHorizontal: 16, borderRadius: R.full, borderWidth: 1, borderColor: C.lineStrong, alignItems: 'center', justifyContent: 'center' },
-  openText: { ...type.label, color: C.ink, fontWeight: '700' },
+  openText: { ...type.label, color: C.ink, fontWeight: '600' },
 });

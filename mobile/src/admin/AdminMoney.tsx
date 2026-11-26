@@ -43,7 +43,7 @@ export function Revenue(_:Nav){
   <Group title={t('Условия')}>
    <Line icon="zap" title={t(phases[b.phase]||'Плата')} value={b.phase==='scheduled'?day(st.starts_at):b.phase==='active'?t('с {v}',{v:day(st.starts_at)}):undefined} dot={b.phase==='active'?'ink':'grey'}/>
    <Line icon="wallet" title={t('С заселения')} value={percent(st.rate_bp)+(st.max_fee?' · '+t('до {v}',{v:money(st.max_fee)}):'')}/>
-   <Line icon="sparkles" title={t('С уборки')} value={percent(st.cleaning_rate_bp)}/>
+   <Line icon="brush" title={t('С уборки')} value={percent(st.cleaning_rate_bp)}/>
    <Line icon="star" title={t('Бесплатный старт')} value={t('{n} дней',{n:st.free_days||14})}/>
   </Group>
   <Link title={t('Изменить условия')} onPress={()=>setEditing(true)}/>

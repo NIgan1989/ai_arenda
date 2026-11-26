@@ -14,8 +14,8 @@ export const FACTS=/* i18n */['{n} проживание','{n} проживани
 // The reliability rating: a score out of five with what it is made of.
 export function ReliabilityBadge({value,title,compact=false,subtleAttention=false}:{value?:Reliability|null;title?:string;compact?:boolean;subtleAttention?:boolean}){
  if(!value)return null;
- const score=value.score===null?'✦':'★ '+value.score.toFixed(1).replace('.',','),label=LABELS.includes(value.label)?t(value.label):value.label;
- if(compact)return <Text style={[r.chip,value.level==='new'&&r.chipNew]}>{value.score===null?t('✦ новый'):score}</Text>;
+ const score=value.score===null?'—':'★ '+value.score.toFixed(1).replace('.',','),label=LABELS.includes(value.label)?t(value.label):value.label;
+ if(compact)return <Text style={[r.chip,value.level==='new'&&r.chipNew]}>{value.score===null?t('новый'):score}</Text>;
  return <View accessibilityLabel={(title||t('Надёжность'))+': '+label} style={[r.box,value.level==='excellent'&&r.excellent,value.level==='attention'&&!subtleAttention&&r.attention]}>
   <View style={r.score}><Text style={[r.scoreText,value.level==='new'&&{color:C.accent}]}>{score}</Text></View>
   <View style={r.text}>{!!title&&<Text style={r.title}>{title}</Text>}<Text style={[r.label,subtleAttention&&value.level==='attention'&&r.attentionLabel]}>{label}</Text>{value.facts.length>0&&<Text style={r.facts}>{value.facts.map(tLine).join(' · ')}</Text>}{value.identity!==undefined&&<Text style={[r.facts,value.identity?r.idOk:r.idNo]}>{value.identity?t('✓ Личность подтверждена'):t('Личность не подтверждена')}</Text>}</View>
@@ -32,7 +32,7 @@ const r=StyleSheet.create({
  attentionLabel:{color:C.warning},
  attention:{backgroundColor:C.warningSoft,borderColor:C.warningLine},
  score:{minWidth:64,height:44,paddingHorizontal:8,borderRadius:R.sm,backgroundColor:C.surface,alignItems:'center',justifyContent:'center'},
- scoreText:{fontSize:F.subtitle[0],lineHeight:F.subtitle[1],fontWeight:'700',color:C.ink},
+ scoreText:{fontSize:F.subtitle[0],lineHeight:F.subtitle[1],fontWeight:'600',color:C.ink},
  text:{flex:1,minWidth:0,gap:2},
  title:{fontSize:F.caption[0],lineHeight:F.caption[1],color:C.muted},
  label:{fontSize:F.body[0],lineHeight:F.body[1],fontWeight:'600',color:C.ink},

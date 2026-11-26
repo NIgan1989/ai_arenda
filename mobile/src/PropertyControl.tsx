@@ -70,7 +70,7 @@ export function PropertyControl({property,busy,onSave,onReadiness,upcoming,note,
  // under «Сохранить» when both are there).
  const check=free&&!ready&&!closed;
  const foot=dirty||check?<>
-  {dirty&&<EditButton title={tr('Сохранить')} busy={busy&&tr('Сохраняю…')} onPress={()=>{setEdit(null);onSave(controlRequest(property,v));}}/>}
+  {dirty&&<EditButton title={tr('Сохранить')} busy={busy&&tr('Сохраняем…')} onPress={()=>{setEdit(null);onSave(controlRequest(property,v));}}/>}
   {check&&<EditButton line={dirty} title={tr('Жильё готово')} disabled={busy} onPress={markReady}/>}
  </>:null;
  const body=<>

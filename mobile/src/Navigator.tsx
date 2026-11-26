@@ -99,8 +99,8 @@ export function TripHead({nav,onOpen,address,detail,onArrived,onChat,onCall}:{na
 const n=StyleSheet.create({
  wrap:{gap:12},row:{flexDirection:'row',alignItems:'center',gap:12},
  arrow:{width:T.control.primary,height:T.control.primary,borderRadius:T.radius.md,backgroundColor:C.accent,alignItems:'center',justifyContent:'center'},arrived:{backgroundColor:C.success},
- arrowText:{...type.heading,color:C.surface,fontWeight:'700'},big:{...type.title,color:C.ink,fontWeight:'700'},text:{...type.body,color:C.ink},
- card:{borderRadius:T.radius.xl,overflow:'hidden',backgroundColor:C.surface,borderWidth:1,borderColor:C.line},strip:{paddingHorizontal:16,paddingVertical:12,gap:2,backgroundColor:C.accent},stripThere:{backgroundColor:C.success},stripText:{...type.body,color:C.onAccent,fontWeight:'700'},turn:{...type.label,color:C.onAccent,opacity:.9},body:{padding:16,gap:12},buttons:{flexDirection:'row',gap:8},
+ arrowText:{...type.heading,color:C.surface,fontWeight:'600'},big:{...type.title,color:C.ink,fontWeight:'600'},text:{...type.body,color:C.ink},
+ card:{borderRadius:T.radius.xl,overflow:'hidden',backgroundColor:C.surface,borderWidth:1,borderColor:C.line},strip:{paddingHorizontal:16,paddingVertical:12,gap:2,backgroundColor:C.accent},stripThere:{backgroundColor:C.success},stripText:{...type.body,color:C.onAccent,fontWeight:'600'},turn:{...type.label,color:C.onAccent,opacity:.9},body:{padding:16,gap:12},buttons:{flexDirection:'row',gap:8},
  // Icon over the word, as a courier's buttons: three fit in a row on a narrow phone and in any language.
  button:{flex:1,minHeight:T.control.primary+8,paddingHorizontal:4,paddingVertical:8,borderRadius:T.radius.lg,borderWidth:1,borderColor:C.lineStrong,backgroundColor:C.surface,alignItems:'center',justifyContent:'center',gap:4},
  icon:{width:20,height:20,tintColor:C.ink},buttonText:{...type.caption,color:C.ink,fontWeight:'600',textAlign:'center'},pressed:{opacity:.6},

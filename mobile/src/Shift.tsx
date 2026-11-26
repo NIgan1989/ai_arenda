@@ -20,7 +20,7 @@ export function Shift(){
  const load=useCallback(async()=>{try{setState(await request('/api/operations/staff/today',{}));}catch(x:any){setError(x?.message||tr('Не удалось загрузить.'));}},[]);
  useEffect(()=>{load();const t=setInterval(load,60000);return()=>clearInterval(t);},[load]);
  async function mark(bookingId:string,name:string){if(wait)return;setWait(bookingId);setError('');setNote('');try{const r=await request('/api/operations/staff/mark',{bookingId,mark:name});setState(r);setNote(r?.message||'');}catch(x:any){setError(x?.message||tr('Не получилось.'));}finally{setWait('');}}
- if(!state)return <View style={h.list}>{error?<Text accessibilityRole="alert" style={h.error}>{error}</Text>:<ThinkingLine style={h.meta} text={tr('Загружаю смену…')}/>}</View>;
+ if(!state)return <View style={h.list}>{error?<Text accessibilityRole="alert" style={h.error}>{error}</Text>:<ThinkingLine style={h.meta} text={tr('Загружаем смену…')}/>}</View>;
  const now=Number(state.serverTime)||Date.now()/1000,places:Row[]=state.places||[];
  return <View style={h.list}>
   {!places.length&&<Text style={h.empty}>{tr('Вас пока не назначили ни на один объект. Назначает владелец в настройках объекта, по вашему номеру телефона.')}</Text>}
@@ -34,7 +34,7 @@ export function Shift(){
     {(p.stays||[]).map((b:Row)=><View key={b.id} style={[h.stay,b.stage==='here'&&h.stayOn]}>
      <View style={h.stayRow}><Text style={h.time}>{day(Number(b.start),now)}{hhmm(Number(b.start))}–{hhmm(Number(b.end))}</Text><Text numberOfLines={1} style={h.who}>{b.guestName} · {people(Number(b.guests)||1)}</Text></View>
      <Text style={h.stage}>{STAGE[b.stage]||''}</Text>
-     {!!b.next&&<Pressable accessibilityRole="button" accessibilityLabel={MARK[b.next]+': '+b.guestName+', '+hhmm(Number(b.start))} disabled={!!wait} onPress={()=>mark(b.id,b.next)} style={({pressed})=>[h.go,(pressed||(!!wait&&wait!==b.id))&&h.dim]}><Text style={h.goText}>{wait===b.id?tr('Отмечаю…'):'✓  '+MARK[b.next]}</Text></Pressable>}
+     {!!b.next&&<Pressable accessibilityRole="button" accessibilityLabel={MARK[b.next]+': '+b.guestName+', '+hhmm(Number(b.start))} disabled={!!wait} onPress={()=>mark(b.id,b.next)} style={({pressed})=>[h.go,(pressed||(!!wait&&wait!==b.id))&&h.dim]}><Text style={h.goText}>{wait===b.id?tr('Отмечаем…'):'✓  '+MARK[b.next]}</Text></Pressable>}
     </View>)}
     {!inside&&<BusyMark propertyId={p.id} busy={p.busy} onChange={(busy,message)=>{setState(v=>v&&({...v,places:v.places.map((x:Row)=>x.id===p.id?{...x,busy}:x)}));setNote(message);setError('');}}/>}
    </View>;})}
@@ -44,13 +44,13 @@ const R=T.radius,H=T.control;
 const h=StyleSheet.create({
  list:{gap:12,marginTop:4},
  card:{gap:12,padding:12,borderRadius:R.xl,borderWidth:1,borderColor:C.line,backgroundColor:C.surface},
- head:{flexDirection:'row',alignItems:'center',gap:8},title:{...type.body,color:C.ink,fontWeight:'700'},meta:{...type.caption,color:C.muted},
+ head:{flexDirection:'row',alignItems:'center',gap:8},title:{...type.body,color:C.ink,fontWeight:'600'},meta:{...type.caption,color:C.muted},
  tag:{...type.caption,fontWeight:'600',paddingHorizontal:8,paddingVertical:2,borderRadius:R.sm,overflow:'hidden'},tagFree:{backgroundColor:C.successSoft,color:C.success},tagBusy:{backgroundColor:C.warningSoft,color:C.warning},
  none:{...type.label,color:C.muted},
  stay:{gap:8,padding:12,borderRadius:R.md,backgroundColor:C.surfaceAlt},stayOn:{backgroundColor:C.surface,borderWidth:1,borderColor:C.ink},
- stayRow:{flexDirection:'row',alignItems:'baseline',gap:8},time:{...type.body,color:C.ink,fontWeight:'700'},who:{...type.label,color:C.inkSoft,flex:1,textAlign:'right'},
+ stayRow:{flexDirection:'row',alignItems:'baseline',gap:8},time:{...type.body,color:C.ink,fontWeight:'600'},who:{...type.label,color:C.inkSoft,flex:1,textAlign:'right'},
  stage:{...type.caption,color:C.muted},
- go:{minHeight:H.primary,borderRadius:R.full,backgroundColor:C.ink,alignItems:'center',justifyContent:'center',paddingHorizontal:24},goText:{color:C.onAccent,...type.body,fontWeight:'700'},dim:{opacity:.45},
+ go:{minHeight:H.primary,borderRadius:R.full,backgroundColor:C.ink,alignItems:'center',justifyContent:'center',paddingHorizontal:24},goText:{color:C.onAccent,...type.body,fontWeight:'600'},dim:{opacity:.45},
  empty:{...type.label,color:C.muted,textAlign:'center',paddingVertical:16},
  note:{padding:12,borderRadius:R.md,backgroundColor:C.surfaceAlt,color:C.ink,...type.label},
  error:{padding:12,borderRadius:R.md,backgroundColor:C.dangerSoft,color:C.danger,...type.label}

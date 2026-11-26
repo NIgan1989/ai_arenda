@@ -93,5 +93,5 @@ const m=StyleSheet.create({
  sum:{...type.body,color:C.domeFrom,textAlign:'center'},
  card:{alignSelf:'stretch',marginTop:16,padding:16,gap:4,borderRadius:R.lg,borderWidth:1,borderColor:'rgba(255,255,255,.14)',backgroundColor:'rgba(255,255,255,.07)'},
  line:{...type.label,color:C.onAccent},
- action:{minHeight:H.primary,borderRadius:R.lg,backgroundColor:C.gold,alignItems:'center',justifyContent:'center'},actionText:{...type.body,color:C.night,fontWeight:'700'},
+ action:{minHeight:H.primary,borderRadius:R.lg,backgroundColor:C.gold,alignItems:'center',justifyContent:'center'},actionText:{...type.body,color:C.night,fontWeight:'600'},
 });

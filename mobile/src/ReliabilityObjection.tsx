@@ -26,7 +26,7 @@ export function ReliabilityObjection({role}:{role:string}){
    <TextInput accessibilityLabel={t('Возражение на оценку')} value={text} onChangeText={setText} multiline maxLength={2000} placeholder={t('Например: спор при выезде был по ошибке')} placeholderTextColor={C.muted} style={[s.field,{minHeight:96,textAlignVertical:'top'}]}/>
    {!!error&&<Text accessibilityRole="alert" style={s.error}>{error}</Text>}
    <View style={s.buttonRow}>
-    <Pressable accessibilityRole="button" disabled={busy||text.trim().length<10} onPress={()=>void send()} style={[s.button,(busy||text.trim().length<10)&&s.disabled]}><Text style={s.buttonText}>{busy?t('Отправляю…'):t('Отправить')}</Text></Pressable>
+    <Pressable accessibilityRole="button" disabled={busy||text.trim().length<10} onPress={()=>void send()} style={[s.button,(busy||text.trim().length<10)&&s.disabled]}><Text style={s.buttonText}>{busy?t('Отправляем…'):t('Отправить')}</Text></Pressable>
     <Pressable accessibilityRole="button" disabled={busy} onPress={()=>{setOpen(false);setError('');}} style={[s.button,s.secondary]}><Text style={[s.buttonText,s.secondaryText]}>{t('Отмена')}</Text></Pressable>
    </View>
   </>}

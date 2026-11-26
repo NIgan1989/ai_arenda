@@ -45,7 +45,7 @@ export function LegalAccept({legal,role,onAccepted,onLeave}:{legal:LegalState;ro
     <Text style={l.body}>{tParts(docs.length>1?t('Нажимая «Принимаю», вы соглашаетесь с документами: {links}.'):t('Нажимая «Принимаю», вы соглашаетесь с документом: {links}.')).map((part,i)=>typeof part==='string'?part:<React.Fragment key={i}>{links}</React.Fragment>)}{lang()!=='ru'&&t(' (документы на русском языке)')}</Text>
     <Text style={s.meta}>{about?about.note+' ':''}{t('Редакция от {edition}',{edition:editionText(legal.edition)})}.</Text>
     {!!error&&<Text accessibilityRole="alert" style={s.error}>{error}</Text>}
-    <Pressable accessibilityRole="button" accessibilityState={{disabled:busy}} disabled={busy} onPress={()=>void accept()} style={({pressed})=>[s.button,(busy||pressed)&&s.disabled]}><Text style={s.buttonText}>{busy?t('Сохраняю…'):t('Принимаю')}</Text></Pressable>
+    <Pressable accessibilityRole="button" accessibilityState={{disabled:busy}} disabled={busy} onPress={()=>void accept()} style={({pressed})=>[s.button,(busy||pressed)&&s.disabled]}><Text style={s.buttonText}>{busy?t('Сохраняем…'):t('Принимаю')}</Text></Pressable>
     <Pressable accessibilityRole="button" onPress={onLeave} disabled={busy} style={l.later}><Text style={s.meta}>{t('Не сейчас')}</Text></Pressable>
     </ScrollView>
    </SafeAreaView>

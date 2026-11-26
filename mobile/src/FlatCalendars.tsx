@@ -26,7 +26,7 @@ export function FlatCalendars({propertyId,onBack,onClose}:{propertyId:string;onB
  const send=(v:string)=>{Share.share({message:v}).catch(()=>{});};
  const copy=()=>link?send(link):run(async()=>{const r=await request('/api/operations/calendar/export',{propertyId});setLink(r.url);if(r.url)send(r.url);});
  const sources:Row[]=state?.sources||[];
- const foot=adding?<EditButton title={t('Подключить')} busy={busy&&t('Подключаю…')} disabled={!url.trim()} onPress={connect}/>
+ const foot=adding?<EditButton title={t('Подключить')} busy={busy&&t('Подключаем…')} disabled={!url.trim()} onPress={connect}/>
   :<EditButton title={t('Подключить площадку')} disabled={busy} onPress={()=>{setNote('');setError('');setAdding(true);}}/>;
  return <EditSheet title={adding?t('Подключить площадку'):t('Календари площадок')} onBack={adding?()=>setAdding(false):onBack} onClose={onClose} foot={foot} busy={busy}>
   {adding?<>
@@ -36,7 +36,7 @@ export function FlatCalendars({propertyId,onBack,onClose}:{propertyId:string;onB
     {help&&<View style={f.help}>{CALENDAR_HELP.map(h=><Text key={h.name} style={e.note}><Text style={f.name}>{h.name}: </Text>{h.where}</Text>)}</View>}
    </View>
   </>:<>
-   {!state&&!error&&<ThinkingLine style={e.note} text={t('Загружаю…')}/>}
+   {!state&&!error&&<ThinkingLine style={e.note} text={t('Загружаем…')}/>}
    {!!state&&!sources.length&&<EditNote text={t('Если жильё есть на Airbnb, Booking или Суточно, свяжите календари, и одно жильё не забронируют дважды.')}/>}
    <View>
     {sources.map(s=>{const st=calendarStatus(s);return <EditRow key={s.id} icon="calendar" title={s.label} line={st.text} dot={st.tone==='warn'?editDot.wait:st.tone==='off'?editDot.off:false}

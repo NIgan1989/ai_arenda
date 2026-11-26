@@ -51,7 +51,7 @@ const s = StyleSheet.create({
   textOff: { color: C.muted, textDecorationLine: 'line-through', fontWeight: '400' },
   trail: { minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: 8, paddingLeft: 12, paddingRight: 4, borderRadius: T.radius.md, borderWidth: 1, borderColor: C.accentLine, backgroundColor: C.accentSoft },
   trailText: { ...type.label, flex: 1, color: C.accent },
-  trailWords: { fontWeight: '700' },
+  trailWords: { fontWeight: '600' },
   undo: { height: H, paddingHorizontal: 12, borderRadius: T.radius.full, borderWidth: 1, borderColor: C.accentLine, backgroundColor: C.surface, alignItems: 'center', justifyContent: 'center' },
-  undoText: { ...type.label, color: C.accent, fontWeight: '700' }
+  undoText: { ...type.label, color: C.accent, fontWeight: '600' }
 });

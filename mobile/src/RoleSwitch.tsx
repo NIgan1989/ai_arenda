@@ -96,7 +96,7 @@ export function RolePlate(){
   <Animated.View accessibilityViewIsModal style={[p.plate,{opacity:a.plate}]}>
    <Animated.View style={{opacity:a.sign,transform:[{scale:a.sign.interpolate({inputRange:[0,1],outputRange:[.7,1]})}]}}><Dome size={150} ink={C.ink} gold={C.ink} burst={a.burst}/></Animated.View>
    <Animated.View style={[p.words,up]}>
-    <Text style={p.eyebrow}>{t('ВЫ В РОЛИ')}</Text>
+    <Text style={p.eyebrow}>{t('Вы в роли')}</Text>
     <Text accessibilityRole="header" accessibilityLiveRegion="polite" style={p.role}>{name(shown)}</Text>
    </Animated.View>
   </Animated.View>
@@ -111,18 +111,18 @@ const b=StyleSheet.create({
  roleText:{...type.label,fontWeight:'600',color:C.ink,flexShrink:1},caret:{fontSize:12,color:C.muted,marginTop:1},
  sheet:{position:'absolute',left:0,right:0,bottom:0,backgroundColor:C.surface,borderTopLeftRadius:24,borderTopRightRadius:24,paddingTop:8,paddingHorizontal:16,...shadow},
  grip:{alignSelf:'center',width:40,height:5,borderRadius:4,backgroundColor:C.lineStrong,marginBottom:12},
- title:{...type.subtitle,fontWeight:'700',color:C.ink,marginBottom:12,marginLeft:4},
+ title:{...type.subtitle,fontWeight:'600',color:C.ink,marginBottom:12,marginLeft:4},
  row:{flexDirection:'row',alignItems:'center',gap:12,minHeight:68,padding:12,borderRadius:R.lg,borderWidth:1,borderColor:C.line,marginBottom:8},
  rowOn:{borderWidth:2,borderColor:C.accent,backgroundColor:C.accentSoft},rowNew:{borderStyle:'dashed'},
  icon:{width:40,height:40,borderRadius:12,backgroundColor:C.surfaceAlt,alignItems:'center',justifyContent:'center'},
  name:{...type.body,fontWeight:'600',color:C.ink},note:{...type.caption,color:C.muted,marginTop:2},
- mark:{fontSize:18,fontWeight:'700',color:C.accent,minWidth:16,textAlign:'center'},
+ mark:{fontSize:18,fontWeight:'600',color:C.accent,minWidth:16,textAlign:'center'},
  link:{minHeight:H.touch,alignItems:'center',justifyContent:'center',marginTop:4},linkText:{...type.body,fontWeight:'600',color:C.accent},
 });
 const p=StyleSheet.create({
  layer:{position:'absolute',top:0,right:0,bottom:0,left:0,zIndex:1000,elevation:1000},
  plate:{flex:1,backgroundColor:C.surface,alignItems:'center',justifyContent:'center',gap:28,padding:24},
  words:{alignItems:'center',gap:8},
- eyebrow:{...type.caption,letterSpacing:2,fontWeight:'700',color:C.muted},
+ eyebrow:{...type.caption,fontWeight:'600',color:C.muted},
  role:{...type.heading,...brandFont,color:C.ink,textAlign:'center'},
 });

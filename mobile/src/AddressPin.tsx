@@ -48,7 +48,7 @@ export function AddressPin({propertyId,city,district,address,place='',call,onCho
  // One grey line: what the service is doing or what to do; a small dot when the house was not found or the map failed.
  const warn=failed||(!looking&&!moved&&!!spot&&!spot.found);
  const note=failed?t('Карта не ответила. Адрес сохранится, метку поставим по нему.')
-  :looking?t('Ищу дом по адресу…')
+  :looking?t('Ищем дом по адресу…')
   :warn?t('Не нашёл дом по адресу. Передвиньте карту так, чтобы метка стояла на вашем доме.')
   :t('Двигайте карту, чтобы метка встала на дом');
  return <View style={a.box}>

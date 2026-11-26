@@ -23,7 +23,7 @@ export function RoomCount({property,call,onChanged,onBack,onClose}:{property:Row
  async function save(path:string,body:Row){setBusy(true);setError('');setNote('');try{const r=await call(path,{propertyId:property.id,...body});setRooms(r.rooms);setCount(r.rooms.total);setFree(r.rooms.free);setNote(r.message||'');onChanged?.(r.rooms);}catch(x:any){setError(x?.message||t('Не получилось.'));}finally{setBusy(false);}}
  const open=Math.max(0,Number(rooms.total)-Number(rooms.taken||0)),many=count!==Number(rooms.total),freed=free!==Number(rooms.free);
  // One button saves what changed: the number of rooms first (its answer brings the free ones anew), then the free ones.
- const foot=<EditButton title={many?t('Сохранить: {n} номеров',{n:count}):freed?t('Сохранить: свободно {n}',{n:free}):t('Сохранить')} disabled={!many&&!freed} busy={busy&&t('Сохраняю…')} onPress={()=>many?save('rooms/count',{count}):save('rooms/free',{free})}/>;
+ const foot=<EditButton title={many?t('Сохранить: {n} номеров',{n:count}):freed?t('Сохранить: свободно {n}',{n:free}):t('Сохранить')} disabled={!many&&!freed} busy={busy&&t('Сохраняем…')} onPress={()=>many?save('rooms/count',{count}):save('rooms/free',{free})}/>;
  return <EditSheet title={t('Номера')} onBack={onBack} onClose={onClose} busy={busy} foot={foot}>
   <EditCount title={t('Таких номеров')} value={count} min={1} max={200} disabled={busy} onChange={setCount}/>
   <EditNote text={t('Одна карточка на все одинаковые номера. Гость видит, сколько из них свободно.')}/>

@@ -16,9 +16,9 @@ export function AdminFactor({tint,onVerified}:{tint?:string;onVerified:()=>void}
   <Row icon="shield" tint={tint} title={t('Подтвердить вход администратора')} note={t('Код придёт в Telegram')} open={open} onPress={()=>setOpen(v=>!v)}/>
   {open&&<View style={a.body}>
    <Text style={s.meta}>{t('Инструменты администратора открываются после кода из Telegram. Вход действует 8 часов.')}</Text>
-   {!sent?<Pressable accessibilityRole="button" disabled={busy} onPress={()=>void send()} style={[s.button,busy&&s.disabled]}><Text style={s.buttonText}>{busy?t('Отправляю…'):t('Прислать код в Telegram')}</Text></Pressable>
+   {!sent?<Pressable accessibilityRole="button" disabled={busy} onPress={()=>void send()} style={[s.button,busy&&s.disabled]}><Text style={s.buttonText}>{busy?t('Отправляем…'):t('Прислать код в Telegram')}</Text></Pressable>
     :<><Text style={s.fieldLabel}>{t('Код из Telegram')}</Text><TextInput accessibilityLabel={t('Код из Telegram')} value={code} onChangeText={v=>setCode(v.replace(/\D/g,''))} keyboardType="number-pad" textContentType="oneTimeCode" maxLength={6} placeholder={t('6 цифр')} placeholderTextColor={C.muted} style={s.field}/>
-     <Pressable accessibilityRole="button" disabled={busy||code.length!==6} onPress={()=>void verify()} style={[s.button,(busy||code.length!==6)&&s.disabled]}><Text style={s.buttonText}>{busy?t('Проверяю…'):t('Войти')}</Text></Pressable></>}
+     <Pressable accessibilityRole="button" disabled={busy||code.length!==6} onPress={()=>void verify()} style={[s.button,(busy||code.length!==6)&&s.disabled]}><Text style={s.buttonText}>{busy?t('Проверяем…'):t('Войти')}</Text></Pressable></>}
    {!!info&&<Text style={s.meta}>{info}</Text>}
    {!!error&&<Text accessibilityRole="alert" style={s.error}>{error}</Text>}
   </View>}

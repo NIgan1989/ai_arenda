@@ -50,7 +50,7 @@ const p=StyleSheet.create({
  head:{flexDirection:'row',alignItems:'center',minHeight:56,paddingHorizontal:8,borderBottomWidth:1,borderBottomColor:C.line},
  side:{width:T.control.touch,height:T.control.touch,alignItems:'center',justifyContent:'center'},
  sign:{fontSize:28,lineHeight:32,color:C.ink},close:{...type.body,color:C.ink,fontWeight:'600'},
- title:{...type.body,flex:1,textAlign:'center',color:C.ink,fontWeight:'700'},
+ title:{...type.body,flex:1,textAlign:'center',color:C.ink,fontWeight:'600'},
  body:{flexGrow:0},content:{paddingHorizontal:20,paddingTop:12,paddingBottom:12,gap:12},
  footer:{paddingHorizontal:20,paddingTop:12,gap:8,borderTopWidth:1,borderTopColor:C.line},
  row:{flexDirection:'row',alignItems:'center',gap:12,minHeight:56,borderBottomWidth:1,borderBottomColor:C.line},last:{borderBottomWidth:0},

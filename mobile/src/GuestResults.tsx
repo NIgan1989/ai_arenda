@@ -394,7 +394,7 @@ const r = StyleSheet.create({
   heartOnPhoto: { position: 'absolute', right: 4, top: 4 },
   cardBody: { flex: 1, minWidth: 0, gap: 2, justifyContent: 'center', paddingHorizontal: 4, paddingBottom: 4 },
   rating: { ...type.caption, color: C.ink, fontWeight: '600' },
-  cardPrice: { ...type.subtitle, color: C.ink, fontWeight: '800' },
+  cardPrice: { ...type.subtitle, color: C.ink, fontWeight: '600' },
   freeTag: { ...type.caption, marginLeft: 'auto', color: C.inkSoft, fontWeight: '600' },
   priceRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', columnGap: 8 },
   why: { ...type.caption, color: C.muted, fontWeight: '600' },

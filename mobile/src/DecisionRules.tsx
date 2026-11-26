@@ -20,7 +20,7 @@ export function NativeDecisionRules({tint}:{tint:string}){
   setRules(rules.map(r=>r.key===rule.key?{...r,...patch}:r));
   try{const r=await request('/api/operations/decision-rules',{rule:rule.key,...patch});setRules(shown(r.rules));setMessage(r.message||t('Сохранено.'));}catch(e:any){setRules(before);setError(e.message);}finally{setBusy('');}
  }
- if(!rules)return error?<Text accessibilityRole="alert" style={s.error}>{error}</Text>:<ThinkingLine style={s.meta} text={t('Загружаю настройки…')}/>;
+ if(!rules)return error?<Text accessibilityRole="alert" style={s.error}>{error}</Text>:<ThinkingLine style={s.meta} text={t('Загружаем настройки…')}/>;
  // As the concept of the menu: one row per question with what happens now on the right («15 мин», «выключено»); the
  // switch, the time and the note open under the row.
  return <View>
@@ -30,7 +30,7 @@ export function NativeDecisionRules({tint}:{tint:string}){
    return <View key={r.key} accessibilityLabel={r.title}>
     <Line title={r.title} value={shut?t('выключено'):time} open={here} onPress={()=>setOpen(here?'':r.key)}/>
     {here&&<>
-     {!!r.auto&&<SwitchRow icon="sparkles" tint={tint} title={r.auto} checked={!!r.on} disabled={!!busy} onChange={v=>save(r,{on:v})}/>}
+     {!!r.auto&&<SwitchRow icon="shanyrak" tint={tint} title={r.auto} checked={!!r.on} disabled={!!busy} onChange={v=>save(r,{on:v})}/>}
      {/* The time sits under its label: four choices do not fit beside it on a phone. A switched-off rule hides its time:
          it does not act, so a time there would read as if it did (audit of 2026-11-22). */}
      {!shut&&!!r.time&&<View style={[a.row,{flexWrap:'wrap',rowGap:8}]}><RowIcon icon="clock" tint={tint}/><Text style={[a.title,{flexGrow:1,flexShrink:1,flexBasis:130,minWidth:130}]}>{r.time}</Text>

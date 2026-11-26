@@ -24,13 +24,13 @@ export function BusyMark({propertyId,busy,onChange}:{propertyId:string;busy?:Row
  return <View style={b.box}>
   {held?<View style={b.row}>
    <View style={b.dot}/><Text style={b.held}>{t('Занято до {time}',{time:hhmm(Number(held.end))})}</Text>
-   <Pressable accessibilityRole="button" accessibilityLabel={t('Освободить')} disabled={!!wait} onPress={()=>send('free',0)} style={[b.free,!!wait&&b.dim]}><Text style={b.freeText}>{wait?t('Освобождаю…'):t('Освободить')}</Text></Pressable>
+   <Pressable accessibilityRole="button" accessibilityLabel={t('Освободить')} disabled={!!wait} onPress={()=>send('free',0)} style={[b.free,!!wait&&b.dim]}><Text style={b.freeText}>{wait?t('Освобождаем…'):t('Освободить')}</Text></Pressable>
   </View>:<>
    <View style={b.row}>
     <View style={{flex:1,minWidth:0}}><Text accessibilityLiveRegion="polite" style={b.held}>{t('Занято до {time}',{time:until})}</Text><Text style={b.hint}>{t('Гостям из приложения это время не предлагается.')}</Text></View>
     {step(-1,'−',t('На час меньше'))}<Text style={b.hours}>{t('{h} ч',{h:hours})}</Text>{step(1,'+',t('На час больше'))}
    </View>
-   <SwipeConfirm label={wait?t('Закрываю время…'):t('Проведите: закрыть время')} disabled={!!wait} onConfirm={()=>void send('busy',hours)}/>
+   <SwipeConfirm label={wait?t('Закрываем время…'):t('Проведите: закрыть время')} disabled={!!wait} onConfirm={()=>void send('busy',hours)}/>
   </>}
   {!!error&&<Text accessibilityRole="alert" style={b.error}>{error}</Text>}
  </View>;
@@ -40,10 +40,10 @@ const R=T.radius,H=T.control;
 const b=StyleSheet.create({
  box:{gap:12,padding:12,borderRadius:R.md,borderWidth:1,borderColor:C.line,backgroundColor:C.surface},
  row:{flexDirection:'row',alignItems:'center',gap:8},dot:{width:8,height:8,borderRadius:R.full,backgroundColor:C.ink},
- held:{flex:1,color:C.ink,...type.label,fontWeight:'700'},
+ held:{flex:1,color:C.ink,...type.label,fontWeight:'600'},
  free:{minHeight:H.compact,justifyContent:'center',paddingHorizontal:16,borderRadius:R.full,borderWidth:1,borderColor:C.lineStrong},freeText:{color:C.ink,...type.label,fontWeight:'600'},
  step:{width:36,height:36,borderRadius:R.full,borderWidth:1,borderColor:C.lineStrong,alignItems:'center',justifyContent:'center'},stepText:{color:C.ink,fontSize:22,lineHeight:24},
- hours:{minWidth:36,textAlign:'center',color:C.ink,...type.label,fontWeight:'700'},
+ hours:{minWidth:36,textAlign:'center',color:C.ink,...type.label,fontWeight:'600'},
  hint:{color:C.muted,...type.caption},dim:{opacity:.45},
  error:{color:C.danger,...type.caption}
 });

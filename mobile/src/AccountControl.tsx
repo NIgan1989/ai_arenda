@@ -87,7 +87,7 @@ export function AccountControl({onHead,waiting=[],jobs=[],userId='',role:active,
  useEffect(()=>()=>onHead?.(null),[]); // eslint-disable-line react-hooks/exhaustive-deps
  // Without the profile one quiet line: the reason when the server answered, or «Загружаю профиль…» (the line about the
  // connection is already over the screen, OfflineNotice.tsx, so it is not said twice).
- if(!account)return <View>{error?<Text accessibilityRole="alert" style={s.meta}>{error}</Text>:<ThinkingLine style={s.meta} text={t('Загружаю профиль…')}/>}</View>;
+ if(!account)return <View>{error?<Text accessibilityRole="alert" style={s.meta}>{error}</Text>:<ThinkingLine style={s.meta} text={t('Загружаем профиль…')}/>}</View>;
  const p=account.profile||{},worker=active==='cleaner',owner=active==='owner';let roles:Role[]=[];try{roles=JSON.parse(p.roles||'[]');}catch{}
  const filled=[p.name,p.city,p.avatar_id,p.bio,p.languages,...(worker?[p.districts,p.experience,p.availability]:[])],completion=Math.round(filled.filter(Boolean).length/filled.length*100);
  const steps=[!p.avatar_id&&t('Добавьте фото профиля'),!p.bio&&(worker?t('Опишите свою работу и услуги'):owner?t('Расскажите, как вы принимаете гостей'):t('Добавьте пару слов о себе для владельцев')),!p.languages&&t('Укажите языки общения')].filter(Boolean) as string[];
@@ -107,7 +107,7 @@ export function AccountControl({onHead,waiting=[],jobs=[],userId='',role:active,
  const join=onJoinRole?(['guest','owner','cleaner'] as Role[]).filter(v=>v!==active&&!roles.includes(v)):[];
  const titles=headTitles(active);
  const clock=account.serverTime||Date.now()/1000,events=roleEvents(notices,active),trust=String(account.reliability?.label||'').replace(/^Надёжность\s+/,'');
- const hint=steps.length>0&&<Pressable accessibilityRole="button" onPress={edit} style={a.next}><RowIcon icon="sparkles"/><View style={{flex:1}}><Text style={a.title}>{steps[0]}</Text>{steps.length>1&&<Text style={a.note}>{t('и ещё {n} {word} до полного профиля',{n:steps.length-1,word:plural(steps.length-1,['шаг','шага','шагов'],['step','steps'],'қадам')})}</Text>}</View><Text style={[a.chevron,{color:C.ink}]}>›</Text></Pressable>;
+ const hint=steps.length>0&&<Pressable accessibilityRole="button" onPress={edit} style={a.next}><RowIcon icon="shanyrak"/><View style={{flex:1}}><Text style={a.title}>{steps[0]}</Text>{steps.length>1&&<Text style={a.note}>{t('и ещё {n} {word} до полного профиля',{n:steps.length-1,word:plural(steps.length-1,['шаг','шага','шагов'],['step','steps'],'қадам')})}</Text>}</View><Text style={[a.chevron,{color:C.ink}]}>›</Text></Pressable>;
  const since=Number(p.created_at)?new Date(Number(p.created_at)*1000).getUTCFullYear():0,trustValue=account.reliability as {score:number|null;label:string;facts:string[];identity?:boolean}|undefined;
  const reputation=[trustValue?.score!=null?'★ '+trustValue.score.toFixed(1).replace('.',','):trustValue?.label?(TRUST_LABELS.includes(trustValue.label)?t(trustValue.label):trustValue.label):'',trustValue?.facts?.[0]?tLine(trustValue.facts[0]):'',since?t('с {year} года',{year:since}):''].filter(Boolean).join(' · ')||p.city||'';
  const idOk=!!(trustValue?.identity??account.identity?.checked);
@@ -125,7 +125,7 @@ export function AccountControl({onHead,waiting=[],jobs=[],userId='',role:active,
    <Pressable accessibilityRole="button" accessibilityLabel={t('Изменить профиль')} onPress={edit} style={({pressed})=>[a.edit,m.edit,pressed&&a.pressed]}><Text style={a.editText}>{t('Изменить')}</Text></Pressable></View>}
   {!!error&&<Text accessibilityRole="alert" style={s.error}>{error}</Text>}{!!message&&<Text accessibilityLiveRegion="polite" style={a.saved}>{message}</Text>}
   {!view&&!!bill&&!bill.card&&(bill.due>0||bill.paused)&&<Pressable accessibilityRole="button" onPress={()=>go('billing')} style={[a.next,{marginTop:16}]}><RowIcon icon="wallet" tint={C.warning}/><View style={{flex:1}}><Text style={a.title}>{t('Привяжите карту для оплаты сервиса')}</Text><Text style={a.note}>{bill.paused?t('Новые брони и «Автопилот» на паузе до оплаты {v}.',{v:money(bill.due)}):bill.payBy?t('К оплате {v}. Привяжите до {date}, иначе будет пауза.',{v:money(bill.due),date:dateText(bill.payBy*1000,{timeZone:'Asia/Qyzylorda',day:'numeric',month:'long'})}):t('К оплате {v}. Спишется в понедельник.',{v:money(bill.due)})}</Text></View><Text style={[a.chevron,{color:C.ink}]}>›</Text></Pressable>}
-  {!view&&<Group space>{worker&&<SwitchRow icon="briefcase" tint={ink} title={t('Принимаю предложения')} note={/^(Принимает|Не принимает)/.test(account.workerStatus?.label||'')?undefined:t(account.workerStatus?.label||'')} checked={(p.work_status||'available')==='available'} disabled={busy} onChange={work}/>}{staffPlaces>0&&<Row icon="key" tint={ink} title={t('Смена')} value={staffPlaces===1?t('гости сегодня'):t('объектов: {staffPlaces}',{staffPlaces})} onPress={()=>go('shift')}/>}{worker&&<Row icon="chart" tint={ink} title={t('Заработок')} value={t('{v} за неделю',{v:shortTenge(cleanerWeek(jobs,userId,Date.now()/1000).sum)})} onPress={()=>go('money')}/>}{owner&&<Row icon="chart" tint={ink} title={t('Доходы')} value={netMonth===null?undefined:t('{v} за месяц',{v:((netMonth>0?'+':'')+shortTenge(netMonth))})} onPress={()=>go('money')}/>}{active==='guest'&&!!onOpenPage&&<Row icon="bookings" tint={ink} title={t('Мои брони')} onPress={()=>onOpenPage('bookings')}/>}<Row icon="sparkles" tint={ink} title={t('Автопилот')} value={today?t('ИИ: {today} сегодня',{today}):undefined} onPress={()=>go('autopilot')}/><Row icon="user" tint={ink} title={t(experience.profileTitle)} value={completion<100?completion+'%':trust||t('заполнен')} onPress={()=>go('profile')}/>{more.map(v=><Row key={v.id} icon={v.id as MenuIcon} tint={ink} title={v.title} onPress={()=>onOpenPage?.(v.id)}/>)}</Group>}
+  {!view&&<Group space>{worker&&<SwitchRow icon="briefcase" tint={ink} title={t('Принимаю предложения')} note={/^(Принимает|Не принимает)/.test(account.workerStatus?.label||'')?undefined:t(account.workerStatus?.label||'')} checked={(p.work_status||'available')==='available'} disabled={busy} onChange={work}/>}{staffPlaces>0&&<Row icon="key" tint={ink} title={t('Смена')} value={staffPlaces===1?t('гости сегодня'):t('объектов: {staffPlaces}',{staffPlaces})} onPress={()=>go('shift')}/>}{worker&&<Row icon="chart" tint={ink} title={t('Заработок')} value={t('{v} за неделю',{v:shortTenge(cleanerWeek(jobs,userId,Date.now()/1000).sum)})} onPress={()=>go('money')}/>}{owner&&<Row icon="chart" tint={ink} title={t('Доходы')} value={netMonth===null?undefined:t('{v} за месяц',{v:((netMonth>0?'+':'')+shortTenge(netMonth))})} onPress={()=>go('money')}/>}{active==='guest'&&!!onOpenPage&&<Row icon="bookings" tint={ink} title={t('Мои брони')} onPress={()=>onOpenPage('bookings')}/>}<Row icon="shanyrak" tint={ink} title={t('Автопилот')} value={today?t('ИИ: {today} сегодня',{today}):undefined} onPress={()=>go('autopilot')}/><Row icon="user" tint={ink} title={t(experience.profileTitle)} value={completion<100?completion+'%':trust||t('заполнен')} onPress={()=>go('profile')}/>{more.map(v=><Row key={v.id} icon={v.id as MenuIcon} tint={ink} title={v.title} onPress={()=>onOpenPage?.(v.id)}/>)}</Group>}
   {view==='shift'&&<Shift/>}
   {view==='payout'&&active!=='guest'&&<PayoutForm initial={payout} pending={payoutPending} role={active} onSaved={(v,next)=>{if(v)setPayout(v);setPayoutPending(next);void onChanged?.();}}/>}
   {view==='billing'&&active!=='guest'&&<ServiceBilling key={'billing:'+active} role={active}/>}
@@ -165,7 +165,7 @@ export function AccountControl({onHead,waiting=[],jobs=[],userId='',role:active,
 const m=StyleSheet.create({
  hero:{alignItems:'center',gap:4,paddingTop:4},
  invites:{borderRadius:T.radius.lg,overflow:'hidden',backgroundColor:C.surface},
- name:{...type.title,color:C.ink,fontWeight:'800',textAlign:'center',marginTop:8},
+ name:{...type.title,color:C.ink,fontWeight:'600',textAlign:'center',marginTop:8},
  line:{...type.label,color:C.muted,textAlign:'center'},
  id:{marginTop:8,minHeight:28,paddingHorizontal:12,borderRadius:T.radius.full,flexDirection:'row',alignItems:'center',gap:8,borderWidth:1,borderColor:C.line,backgroundColor:C.surface},
  idIcon:{width:14,height:14,tintColor:C.inkSoft},
@@ -173,11 +173,11 @@ const m=StyleSheet.create({
  idTextOk:{color:C.ink},
  card:{flexDirection:'row',alignItems:'center',gap:16,padding:16,borderRadius:T.radius.xl,borderWidth:1,borderColor:C.line,backgroundColor:C.surface,shadowColor:C.ink,shadowOpacity:.06,shadowRadius:12,shadowOffset:{width:0,height:4},elevation:2},
  stat:{paddingVertical:8},statLine:{borderTopWidth:1,borderTopColor:C.line},
- statValue:{...type.subtitle,color:C.ink,fontWeight:'800'},statLabel:{...type.caption,color:C.muted},fact:{...type.label,color:C.ink,fontWeight:'600'},
+ statValue:{...type.subtitle,color:C.ink,fontWeight:'600'},statLabel:{...type.caption,color:C.muted},fact:{...type.label,color:C.ink,fontWeight:'600'},
  idRow:{minHeight:T.control.field,flexDirection:'row',alignItems:'center',gap:12,marginTop:12},
  link:{...type.label,color:C.ink,fontWeight:'600',textDecorationLine:'underline'},
  info:{minHeight:T.control.primary,flexDirection:'row',alignItems:'center',gap:12,paddingHorizontal:16,paddingVertical:8,borderTopWidth:1,borderTopColor:C.line},
  edit:{position:'absolute',top:0,right:0},
  mode:{alignSelf:'center',minHeight:T.control.primary,marginTop:24,paddingHorizontal:24,borderRadius:T.radius.full,alignItems:'center',justifyContent:'center',backgroundColor:C.ink},
- modeText:{...type.label,color:C.onAccent,fontWeight:'700'},
+ modeText:{...type.label,color:C.onAccent,fontWeight:'600'},
 });

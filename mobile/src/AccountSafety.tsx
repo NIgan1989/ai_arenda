@@ -65,7 +65,7 @@ export function NativeAccountSafety({role,page,go,admin=false,onSignedOut,tint}:
   </Group>
   <Text style={a.footnote}>{t('Забыли пароль — нажмите «Забыли пароль?» на экране входа, код придёт в Telegram.')}</Text>{shown}</View>;}
  if(page==='ai')return <View>
-  <Group><SwitchRow icon="sparkles" tint={tint} title={t('Разрешить ИИ видеть мои данные')} note={!permission?.decided&&!permission?.allowed?t('Вы ещё не выбрали'):permission?.allowed?t('ИИ отвечает с учётом ваших броней и жилья'):t('ИИ отвечает только по правилам сервиса')} checked={!!permission?.allowed} disabled={busy||!permission} onChange={v=>void choose(v)}/></Group>
+  <Group><SwitchRow icon="shanyrak" tint={tint} title={t('Разрешить ИИ видеть мои данные')} note={!permission?.decided&&!permission?.allowed?t('Вы ещё не выбрали'):permission?.allowed?t('ИИ отвечает с учётом ваших броней и жилья'):t('ИИ отвечает только по правилам сервиса')} checked={!!permission?.allowed} disabled={busy||!permission} onChange={v=>void choose(v)}/></Group>
   {lead(t('Так ИИ-администратор отвечает точнее: он видит ваш вопрос, несколько последних сообщений и данные вашей роли. Фото, личные чаты и коды от замков он не видит.'))}
   {lead(t('Ответы готовит внешний сервис OpenAI, данные могут обрабатываться за рубежом. Выключить можно в любой момент. Без разрешения ИИ всё равно ищет жильё и подсказывает по правилам.'))}
   {permission&&!permission.decided&&wide(t('Оставить выключенным'),()=>void choose(false))}
@@ -86,7 +86,7 @@ export function NativeAccountSafety({role,page,go,admin=false,onSignedOut,tint}:
   <View style={{marginTop:24}}><SwipeConfirm label={(details.blockers||[]).length?t('Удаление станет доступно после дел'):t('Проведите: запросить удаление')} disabled={busy||loading||(details.blockers||[]).length>0} onConfirm={()=>void act('/api/operations/safety/deletion',{action:'request'})}/></View></>}
   <Group space>{link(t('Что удаляется и что остаётся'),'/data-deletion')}</Group>{shown}</View>;
  return <View>
-  <Group><Row icon="key" tint={tint} title={t('Вход и устройства')} value={sessions?(sessions.length>1?t('это и ещё {n}',{n:sessions.length-1}):t('только это')):undefined} onPress={()=>go('devices')}/><Row icon="sparkles" tint={tint} title={t('ИИ-помощник')} value={aiValue} onPress={()=>go('ai')}/>{reports.length>0&&<Row icon="flag" tint={tint} title={t('Мои жалобы')} value={reports.length} onPress={()=>go('reports')}/>}</Group>
+  <Group><Row icon="key" tint={tint} title={t('Вход и устройства')} value={sessions?(sessions.length>1?t('это и ещё {n}',{n:sessions.length-1}):t('только это')):undefined} onPress={()=>go('devices')}/><Row icon="shanyrak" tint={tint} title={t('ИИ-помощник')} value={aiValue} onPress={()=>go('ai')}/>{reports.length>0&&<Row icon="flag" tint={tint} title={t('Мои жалобы')} value={reports.length} onPress={()=>go('reports')}/>}</Group>
   <Group space>{link(t('Политика конфиденциальности'),'/privacy')}{link(t('Условия сервиса'),'/terms')}</Group>
   {admin&&<Group space><Row icon="alert" tint={tint} title={t('Запросы на удаление')} value={state.deletionTotal||deletions.length||t('нет')} onPress={()=>go('requests')}/></Group>}
   {/* The way out is a quiet black row of its own, as Uber's: red waits for the last step. */}<Group space><Row icon="trash" tint={tint} title={t('Удалить аккаунт')} value={requested?t('запрос отправлен'):undefined} onPress={()=>go('delete')}/></Group>

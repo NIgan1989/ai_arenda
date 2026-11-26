@@ -38,7 +38,7 @@ export function useAdmin(path:string|null){
 export function Said({error,note}:{error?:string;note?:string}){
  return <>{!!error&&<Text accessibilityRole="alert" style={[s.error,k.said]}>{error}</Text>}{!!note&&!error&&<Text accessibilityLiveRegion="polite" style={[a.saved,k.said]}>{note}</Text>}</>;
 }
-export function Loading({error}:{error?:string}){return error?<Text accessibilityRole="alert" style={[s.error,k.said]}>{error}</Text>:<Text style={[s.meta,k.said]}>{t('Загружаю…')}</Text>;}
+export function Loading({error}:{error?:string}){return error?<Text accessibilityRole="alert" style={[s.error,k.said]}>{error}</Text>:<Text style={[s.meta,k.said]}>{t('Загружаем…')}</Text>;}
 
 /** Tabs with a count, as «Ждут вас 3 · Ведёт ИИ 4 · Решены» (Spotify for Creators, ClickUp). */
 export function Tabs<V extends string>({items,value,onChange}:{items:[V,string,number?][];value:V;onChange:(v:V)=>void}){
@@ -102,14 +102,14 @@ const k=StyleSheet.create({
  tabText:{...type.label,color:C.ink,fontWeight:'600'},tabTextOn:{color:C.onAccent},
  dot:{width:8,height:8,borderRadius:4,backgroundColor:C.ink,flexShrink:0},
  sum:{flexDirection:'row',alignItems:'center',gap:12,minHeight:44,paddingHorizontal:16,paddingVertical:8,borderTopWidth:1,borderTopColor:C.line},sumPart:{paddingLeft:32,minHeight:40},
- sumText:{...type.label,color:C.ink,fontWeight:'700'},sumPartText:{fontWeight:'500',color:C.inkSoft},
- big:{paddingTop:8,paddingBottom:12,gap:2},bigValue:{...type.display,color:C.ink,fontWeight:'800',letterSpacing:-.6},
+ sumText:{...type.label,color:C.ink,fontWeight:'600'},sumPartText:{fontWeight:'500',color:C.inkSoft},
+ big:{paddingTop:8,paddingBottom:12,gap:2},bigValue:{...type.display,color:C.ink,fontWeight:'600',letterSpacing:-.6},
  state:{flexDirection:'row',alignItems:'center',gap:10,minHeight:52,paddingHorizontal:14,borderRadius:T.radius.lg,borderWidth:1,borderColor:C.line,backgroundColor:C.surface,marginTop:4},
  quote:{...type.body,color:C.ink,backgroundColor:C.surfaceAlt,borderRadius:T.radius.lg,padding:12,marginTop:8},
- check:{flexDirection:'row',alignItems:'flex-start',gap:10,paddingVertical:6},checkMark:{width:20,height:20,borderRadius:10,borderWidth:1.5,borderColor:C.ink,textAlign:'center',lineHeight:17,fontSize:11,fontWeight:'800',color:C.ink,overflow:'hidden'},checkText:{...type.label,color:C.ink,flex:1},
+ check:{flexDirection:'row',alignItems:'flex-start',gap:10,paddingVertical:6},checkMark:{width:20,height:20,borderRadius:10,borderWidth:1.5,borderColor:C.ink,textAlign:'center',lineHeight:17,fontSize:11,fontWeight:'600',color:C.ink,overflow:'hidden'},checkText:{...type.label,color:C.ink,flex:1},
  note:{...type.caption,color:C.muted,marginTop:12,marginHorizontal:4},
- titleBox:{paddingTop:4,paddingBottom:8,gap:2},title:{...type.subtitle,color:C.ink,fontWeight:'800'},
+ titleBox:{paddingTop:4,paddingBottom:8,gap:2},title:{...type.subtitle,color:C.ink,fontWeight:'600'},
  empty:{...type.label,color:C.muted,paddingVertical:20,textAlign:'center'},
- link:{minHeight:44,alignItems:'center',justifyContent:'center',marginTop:8},linkText:{...type.label,color:C.ink,fontWeight:'700'},
+ link:{minHeight:44,alignItems:'center',justifyContent:'center',marginTop:8},linkText:{...type.label,color:C.ink,fontWeight:'600'},
  bottom:{marginTop:20,gap:4},
 });

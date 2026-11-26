@@ -24,7 +24,7 @@ export function SheetModal({visible,title,note,onClose,children}:{visible:boolea
 }
 export function ChoiceRows<V extends string>({value,options,onChange,disabled=false,label}:{value:V;options:{id:V;title:string;note?:string}[];onChange:(v:V)=>void;disabled?:boolean;label?:string}){
  return <View accessibilityRole="radiogroup" accessibilityLabel={label}>{options.map(o=>{const on=o.id===value;return <Pressable key={o.id} accessibilityRole="radio" accessibilityLabel={o.title+(o.note?'. '+o.note:'')} accessibilityState={{checked:on,disabled}} disabled={disabled} onPress={()=>onChange(o.id)} style={({pressed})=>[c.row,pressed&&c.dim]}>
-  <View style={{flex:1,minWidth:0}}><Text style={[c.rowTitle,on&&{fontWeight:'700'}]}>{o.title}</Text>{!!o.note&&<Text style={c.rowNote}>{o.note}</Text>}</View>
+  <View style={{flex:1,minWidth:0}}><Text style={[c.rowTitle,on&&{fontWeight:'600'}]}>{o.title}</Text>{!!o.note&&<Text style={c.rowNote}>{o.note}</Text>}</View>
   <View style={[c.radio,on&&c.radioOn]}>{on&&<View style={c.radioDot}/>}</View>
  </Pressable>;})}</View>;
 }
@@ -41,11 +41,11 @@ const c=StyleSheet.create({
  shade:{flex:1,backgroundColor:C.scrim},
  sheet:{paddingHorizontal:20,paddingTop:8,paddingBottom:32,gap:8,borderTopLeftRadius:T.radius.xl,borderTopRightRadius:T.radius.xl,backgroundColor:C.surface},
  grab:{alignSelf:'center',width:40,height:4,borderRadius:T.radius.full,backgroundColor:C.lineStrong,marginBottom:8},
- title:{...type.subtitle,color:C.ink,fontWeight:'700'},note:{...type.label,color:C.muted},
+ title:{...type.subtitle,color:C.ink,fontWeight:'600'},note:{...type.label,color:C.muted},
  row:{flexDirection:'row',alignItems:'center',gap:12,minHeight:T.control.touch+12,paddingVertical:8,borderTopWidth:1,borderTopColor:C.line},
  rowTitle:{...type.body,color:C.ink},rowNote:{...type.caption,color:C.muted},
  radio:{width:22,height:22,borderRadius:T.radius.full,borderWidth:2,borderColor:C.lineStrong,alignItems:'center',justifyContent:'center'},radioOn:{borderColor:C.ink},radioDot:{width:10,height:10,borderRadius:T.radius.full,backgroundColor:C.ink},
- button:{minHeight:T.control.primary,borderRadius:T.radius.full,backgroundColor:C.ink,alignItems:'center',justifyContent:'center',marginTop:8},buttonText:{...type.body,color:C.onAccent,fontWeight:'700'},
+ button:{minHeight:T.control.primary,borderRadius:T.radius.full,backgroundColor:C.ink,alignItems:'center',justifyContent:'center',marginTop:8},buttonText:{...type.body,color:C.onAccent,fontWeight:'600'},
  value:{flexDirection:'row',alignItems:'center',gap:12,minHeight:T.control.primary,paddingVertical:8,borderBottomWidth:1,borderBottomColor:C.line},
  valueTitle:{...type.body,color:C.ink,flex:1,minWidth:0},valueText:{...type.label,color:C.muted,maxWidth:'45%'},chevron:{...type.subtitle,color:C.lineStrong},
  dim:{opacity:.5},

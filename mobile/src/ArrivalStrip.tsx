@@ -41,7 +41,7 @@ export function ArrivalStrip({ arrival, at, counts, asked, onPick, busy }: { arr
 const a = StyleSheet.create({
   row: { flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: T.control.touch, marginBottom: 8, paddingHorizontal: 12, borderRadius: T.radius.md, borderWidth: 1, borderColor: C.line, backgroundColor: C.surface },
   key: { ...type.label, color: C.muted },
-  value: { ...type.label, color: C.ink, fontWeight: '700' },
+  value: { ...type.label, color: C.ink, fontWeight: '600' },
   note: { ...type.label, flex: 1, color: C.inkSoft },
   chevron: { ...type.subtitle, color: C.muted },
   pressed: { opacity: 0.7 },
