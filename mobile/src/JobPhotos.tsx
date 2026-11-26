@@ -4,6 +4,7 @@ import {View,Text,TextInput,Pressable,Image,StyleSheet} from 'react-native';
 import {request} from './api';
 import {pickImages,jpegData} from './ListingMedia';
 import {SwipeConfirm} from './SwipeConfirm';
+import {SheetPane} from './PopSheet';
 import {PhotoSource} from './PhotoSource';
 import {PhotoViewer} from './PhotoViewer';
 import {T} from './tokens';
@@ -98,26 +99,24 @@ const q=StyleSheet.create({
 const words=/* i18n */['Выберите оценку','Плохо','Так себе','Нормально','Хорошо','Отлично'];
 export function JobRating({busy,onSubmit}:{busy:boolean;onSubmit:(rating:number,note:string)=>void}){
  const [rating,setRating]=useState(0),[note,setNote]=useState('');
- return <View style={[s.card,p.block]}>
+ return <SheetPane style={[s.card,p.block]} footer={<SwipeConfirm label={t('Проведите: отправить оценку')} disabled={busy||!rating} onConfirm={()=>onSubmit(rating,note.trim())}/>}>
   <Text style={s.eventTitle}>{t('Как убрал исполнитель?')}</Text>
   <View accessibilityRole="radiogroup" accessibilityLabel={t('Оценка исполнителя')} style={p.stars}>
    {[1,2,3,4,5].map(n=><Pressable key={n} accessibilityRole="radio" accessibilityLabel={t('{n} из 5',{n})} accessibilityState={{checked:rating===n,disabled:busy}} disabled={busy} onPress={()=>setRating(n)} hitSlop={4} style={p.star}><Text style={[p.starText,{color:n<=rating?C.accent:C.lineStrong}]}>★</Text></Pressable>)}
   </View>
   <Text style={s.meta}>{t('{word}. Оценку увидят следующие заказчики.',{word:t(words[rating])})}</Text>
   <TextInput accessibilityLabel={t('Отзыв для исполнителя')} placeholder={t('Что понравилось или что улучшить (необязательно)')} placeholderTextColor={C.muted} value={note} onChangeText={setNote} maxLength={1000} multiline style={s.field} editable={!busy}/>
-  <SwipeConfirm label={t('Проведите: отправить оценку')} disabled={busy||!rating} onConfirm={()=>onSubmit(rating,note.trim())}/>
- </View>;
+ </SheetPane>;
 }
 
 // A complaint about damage: photos first (they are the proof), then what happened in a line.
 export function DamageClaim({jobId,busy,onSubmit}:{jobId:string;busy:boolean;onSubmit:(text:string)=>void}){
  const [count,setCount]=useState(0),[text,setText]=useState('');
- return <View style={[s.card,p.block]}>
+ return <SheetPane style={[s.card,p.block]} footer={<SwipeConfirm label={t('Проведите: отправить жалобу')} disabled={busy||!count||!text.trim()} onConfirm={()=>onSubmit(text.trim())}/>}>
   <JobPhotos jobId={jobId} phase="damage" role="owner" mine title={t('Фото повреждения')} limit={DAMAGE_PHOTO_LIMIT} disabled={busy} onCount={setCount}/>
   <TextInput accessibilityLabel={t('Что повреждено')} placeholder={t('Что повреждено и где')} placeholderTextColor={C.muted} value={text} onChangeText={setText} maxLength={1500} multiline style={s.field} editable={!busy}/>
   <Text style={s.meta}>{t('Жалобу и фото увидит исполнитель. Если не договоритесь, подключится администратор сервиса.')}</Text>
-  <SwipeConfirm label={t('Проведите: отправить жалобу')} disabled={busy||!count||!text.trim()} onConfirm={()=>onSubmit(text.trim())}/>
- </View>;
+ </SheetPane>;
 }
 
 const p=StyleSheet.create({
