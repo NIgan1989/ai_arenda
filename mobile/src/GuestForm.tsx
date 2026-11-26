@@ -1,5 +1,5 @@
 import {t} from '../../lib/i18n';
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Image, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Action, Chips, Stepper, h } from './SheetParts';
 import { C, type } from './styles';
@@ -25,6 +25,8 @@ type Props = {
   // Shown when the phone knows where the guest is and it is in the searched city.
   onNearMe?: () => void;
   onSubmit: () => void;
+  // The map's sheet pins the button bar under its scroll (MapHome footBar): the form then hands the bar up instead of drawing it.
+  onFoot?: (bar: React.ReactNode | null) => void;
   busy: boolean;
   // What the conditions find while they are chosen (useFormCount.ts): the number on the button, the classes, the prices.
   count?: FormCount | null;
@@ -65,7 +67,7 @@ function Pick({ title, on, icon, onPress, disabled }: { title: string; on: boole
 
 // The guest's conditions as fields, for those who prefer them to free text. The AI line fills the same conditions,
 // so what was typed there is already chosen here. Only the look follows the concept; the search is the same.
-export function GuestForm({ draft, only = 'all', onChange, onPickPoint, onNearMe, onSubmit, busy, count }: Props) {
+export function GuestForm({ draft, only = 'all', onChange, onPickPoint, onNearMe, onSubmit, busy, count, onFoot }: Props) {
   const hourly = draft.mode === 'hourly';
   const startMinutes = Number(draft.start.slice(11, 13)) * 60 + Number(draft.start.slice(14, 16));
   const units = draftUnits(draft);
@@ -217,8 +219,15 @@ export function GuestForm({ draft, only = 'all', onChange, onPickPoint, onNearMe
   // The button says what it will find (Airbnb «Show 307 places»); «Сбросить» takes off what was chosen.
   const found = count && count.total > 0 ? t('Показать {n} {word}', { n: count.total, word: plural(count.total, 'вариант', 'варианта', 'вариантов') }) : t('Показать варианты');
   const reset = hasChoices(draft);
+  // The pinned bar lives in the parent's state: it calls the latest handlers through refs, so it is handed up only when what it shows changes.
+  const latest = useRef({ onChange, onSubmit, draft });
+  latest.current = { onChange, onSubmit, draft };
+  const bar = <View style={f.bar}>{reset && <Pressable accessibilityRole="button" disabled={busy} onPress={() => latest.current.onChange(resetDraft(latest.current.draft))} style={({ pressed }) => [f.reset, (pressed || busy) && h.dim]}><Text style={f.resetText}>{t('Сбросить')}</Text></Pressable>}<View style={h.grow}><Action title={busy ? t('Ищем…') : found} disabled={busy} onPress={() => latest.current.onSubmit()} /></View></View>;
+  // As Airbnb's «Show 305 places»: the button stays at the bottom of the sheet however far the form is scrolled.
+  useEffect(() => { onFoot?.(bar); }, [onFoot, found, reset, busy]);
+  useEffect(() => () => onFoot?.(null), [onFoot]);
   const foot = <><Text style={h.note}>{hall ? t('Цена зала считается на гостя. При отмене вся оплата возвращается.') : (hourly ? t('Депозит оплачивается отдельно.') : t('Выезд до 12:00. Депозит оплачивается отдельно.'))}</Text>
-    <View style={f.bar}>{reset && <Pressable accessibilityRole="button" disabled={busy} onPress={() => onChange(resetDraft(draft))} style={({ pressed }) => [f.reset, (pressed || busy) && h.dim]}><Text style={f.resetText}>{t('Сбросить')}</Text></Pressable>}<View style={h.grow}><Action title={busy ? t('Ищем…') : found} disabled={busy} onPress={onSubmit} /></View></View></>;
+    {!onFoot && bar}</>;
   // One token was tapped: only its part of the form, with the way to the rest.
   if (only !== 'all') return <>{sections(partsOf(only), false)}{foot}</>;
   return <>{sections((Object.keys(PARTS) as Section[]).flatMap(partsOf), true)}{foot}</>;
