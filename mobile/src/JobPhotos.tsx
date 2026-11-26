@@ -4,7 +4,10 @@ import {View,Text,TextInput,Pressable,Image,StyleSheet} from 'react-native';
 import {request} from './api';
 import {pickImages,jpegData} from './ListingMedia';
 import {SwipeConfirm} from './SwipeConfirm';
-import {s,C} from './styles';
+import {PhotoSource} from './PhotoSource';
+import {PhotoViewer} from './PhotoViewer';
+import {T} from './tokens';
+import {s,C,type} from './styles';
 import {DAMAGE_PHOTO_LIMIT} from '../../lib/home-cleaning';
 
 // Photos of one cleaning (operations/evidence): the performer's «до» and «после» of the report, and the photos of
@@ -40,6 +43,56 @@ export function JobPhotos({jobId,phase,role,title,mine,readOnly=false,disabled=f
   {!!error&&<Text accessibilityRole="alert" style={[s.meta,{color:C.danger}]}>{error}</Text>}
  </View>;
 }
+
+// The report's «до» and «после» side by side (board «Экраны старой версии», 2026-11-26; Thumbtack): two big places,
+// a tap opens «Снять фото / Выбрать из галереи», a filled place shows its photos and how many. readOnly is the owner's
+// view of the same report: the places without a plus, a tap on a photo opens it over the whole screen.
+export function JobPhotoPair({jobId,role,readOnly=false,disabled=false,limit=JOB_PHOTO_LIMIT,onBefore,onAfter}:{jobId:string;role:'owner'|'cleaner';readOnly?:boolean;disabled?:boolean;limit?:number;onBefore?:(n:number)=>void;onAfter?:(n:number)=>void}){
+ const [counts,setCounts]=useState({before:-1,after:-1});
+ const seen=(phase:'before'|'after',fn?:(n:number)=>void)=>(n:number)=>{setCounts(c=>({...c,[phase]:n}));fn?.(n);};
+ const onB=useCallback(seen('before',onBefore),[onBefore]),onA=useCallback(seen('after',onAfter),[onAfter]); // eslint-disable-line react-hooks/exhaustive-deps
+ if(readOnly&&counts.before===0&&counts.after===0)return null;
+ return <View style={q.pair}>
+  <PhotoPlace jobId={jobId} role={role} phase="before" title={t('До уборки')} readOnly={readOnly} disabled={disabled} limit={limit} onCount={onB}/>
+  <PhotoPlace jobId={jobId} role={role} phase="after" title={t('После уборки')} readOnly={readOnly} disabled={disabled} limit={limit} onCount={onA}/>
+ </View>;
+}
+function PhotoPlace({jobId,role,phase,title,readOnly,disabled,limit,onCount}:{jobId:string;role:'owner'|'cleaner';phase:'before'|'after';title:string;readOnly:boolean;disabled:boolean;limit:number;onCount:(n:number)=>void}){
+ const [photos,setPhotos]=useState<Shot[]>([]),[busy,setBusy]=useState(false),[error,setError]=useState(''),[asking,setAsking]=useState(false),[open,setOpen]=useState(-1);
+ const fetchPhotos=useCallback(async()=>{
+  const list=((await request('/api/operations/evidence/'+jobId,undefined,undefined,undefined,role))?.photos||[]).filter((x:{phase:string;mime:string})=>x.phase===phase&&x.mime==='image/jpeg');
+  return Promise.all(list.map(async(x:{id:string})=>({id:x.id,uri:(await request('/api/operations/evidence/'+x.id+'/photo',undefined,undefined,undefined,role).catch(()=>null))?.data||''})));
+ },[jobId,phase,role]);
+ const show=useCallback((shown:Shot[])=>{setPhotos(shown);onCount(shown.length);},[onCount]);
+ useEffect(()=>{let live=true;fetchPhotos().then(shown=>{if(live)show(shown);}).catch(()=>{});return()=>{live=false;};},[fetchPhotos,show]);
+ async function add(camera:boolean){setAsking(false);setBusy(true);setError('');try{
+  const images=await pickImages(camera,camera?1:Math.max(1,limit-photos.length));
+  for(const image of images)await request('/api/operations/evidence',{jobId,phase,data:await jpegData(image)},undefined,undefined,role);
+  if(images.length)show(await fetchPhotos());
+ }catch(e){setError(e instanceof Error&&e.message?e.message:t('Не удалось добавить фото.'));}finally{setBusy(false);}}
+ const full=photos.length>=limit,off=busy||disabled||full,cover=photos.slice(0,4);
+ const mosaic=<View style={q.mosaic}>{cover.map((x,i)=><Pressable key={x.id} accessibilityRole="imagebutton" accessibilityLabel={t('Открыть фото: {title}',{title})} disabled={!readOnly||!x.uri} onPress={()=>setOpen(i)} style={cover.length===1?q.one:cover.length===2?q.half:q.quarter}>{x.uri?<Image source={{uri:x.uri}} style={q.img} alt={title}/>:<View style={[q.img,{backgroundColor:C.line}]}/>}{i===3&&photos.length>4&&<View style={q.more}><Text style={q.moreText}>+{photos.length-4}</Text></View>}</Pressable>)}</View>;
+ const body=<>
+  {photos.length?mosaic:<View style={q.empty}><View style={q.plus}><Image source={require('../assets/menu/camera.png')} style={q.plusIcon} accessibilityElementsHidden importantForAccessibility="no"/></View></View>}
+  <View style={[q.caption,!!photos.length&&q.captionOver]}><Text numberOfLines={1} style={[q.captionText,!!photos.length&&{color:C.onAccent}]}>{busy?t('Сохраняю…'):title}</Text>{!!photos.length&&!busy&&<Text style={q.count}>{photos.length}</Text>}</View>
+ </>;
+ return <View style={q.place}>
+  {readOnly?<View style={q.box}>{body}</View>:<Pressable accessibilityRole="button" accessibilityLabel={photos.length?t('{title}: {n} фото. Добавить ещё',{title,n:photos.length}):t('{title}: добавить фото',{title})} accessibilityState={{disabled:off}} disabled={off} onPress={()=>setAsking(true)} style={({pressed})=>[q.box,!photos.length&&q.boxEmpty,pressed&&{opacity:.8}]}>{body}</Pressable>}
+  {!!error&&<Text accessibilityRole="alert" style={[s.meta,{color:C.danger}]}>{error}</Text>}
+  {!readOnly&&<PhotoSource visible={asking} title={title} busy={busy} onClose={()=>setAsking(false)} onCamera={()=>void add(true)} onGallery={()=>void add(false)}/>}
+  {/* Every photo of the phase opens in the viewer and leafs with «‹ ›», the cover shows only four (+N on the last). */}
+  {readOnly&&<PhotoViewer uri={photos[open]?.uri||''} visible={open>=0&&!!photos[open]?.uri} title={t('{title} · {n} из {total}',{title,n:open+1,total:photos.length})} onClose={()=>setOpen(-1)} onPrev={open>0?()=>setOpen(open-1):undefined} onNext={open<photos.length-1?()=>setOpen(open+1):undefined}/>}
+ </View>;
+}
+const q=StyleSheet.create({
+ pair:{flexDirection:'row',gap:8},place:{flex:1,gap:4},
+ box:{aspectRatio:4/3,borderRadius:T.radius.lg,overflow:'hidden',backgroundColor:C.surfaceAlt},boxEmpty:{borderWidth:1,borderColor:C.lineStrong,borderStyle:'dashed',backgroundColor:C.surface},
+ empty:{flex:1,alignItems:'center',justifyContent:'center'},plus:{width:48,height:48,borderRadius:24,backgroundColor:C.surfaceAlt,alignItems:'center',justifyContent:'center'},plusIcon:{width:22,height:22,tintColor:C.ink},
+ mosaic:{flex:1,flexDirection:'row',flexWrap:'wrap',gap:2},one:{width:'100%',height:'100%'},half:{flex:1,height:'100%'},quarter:{width:'48.5%',height:'48.5%'},img:{width:'100%',height:'100%'},
+ more:{position:'absolute',left:0,right:0,top:0,bottom:0,alignItems:'center',justifyContent:'center',backgroundColor:'rgba(14,19,36,0.55)'},moreText:{...type.subtitle,color:C.onAccent,fontWeight:'700'},
+ caption:{position:'absolute',left:0,right:0,bottom:0,flexDirection:'row',alignItems:'center',gap:8,paddingHorizontal:12,paddingVertical:8},captionOver:{backgroundColor:'rgba(14,19,36,0.55)'},
+ captionText:{flex:1,...type.label,color:C.ink,fontWeight:'600'},count:{minWidth:24,height:24,borderRadius:12,paddingHorizontal:8,overflow:'hidden',backgroundColor:C.surface,color:C.ink,textAlign:'center',...type.caption,lineHeight:24,fontWeight:'700'},
+});
 
 // The customer rates the performer after the acceptance: five stars and an optional note.
 const words=/* i18n */['Выберите оценку','Плохо','Так себе','Нормально','Хорошо','Отлично'];
