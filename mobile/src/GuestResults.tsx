@@ -327,9 +327,10 @@ export function GuestResults({ preview, draft, mine, onFavorite, selected, onSel
 
   if (full) {
     // Every found place at once: the guest who wants the whole list pulls the sheet up.
+    // A row opens the place's own page with «Забронировать» (2026-11-26): no short card in between that says the same.
     return (
       <>{trail}{tips}<View style={r.listHead}><Text accessibilityRole="header" style={[h.cardTitle, h.grow]}>{t('Свободно на {stay}: {n}',{stay:stayWords(draft),n:flats.length})}</Text>{!!onMap && <Pressable accessibilityRole="button" onPress={onMap} style={({ pressed }) => [r.onMap, pressed && h.dim]}><Text style={r.onMapText}>{t('На карте')}</Text></Pressable>}</View><View>{list.map(flat => (
-            <Pressable key={flat.id} accessibilityRole="button" accessibilityLabel={flat.title + ', ' + money(flat.estimate.amount)} onPress={() => { onFocus?.(flat.id); onSelect(flat.id); }} style={({ pressed }) => [r.line, pressed && r.cardPressed]}><View style={r.lineThumb}><Photo id={flat.photos?.[0]} alt={t('{title}, фото',{title:flat.title})} fill /></View><View style={h.grow}><View style={r.cardTop}><Text numberOfLines={1} style={[h.eventTitle, h.grow]}>{flat.title}</Text><Text style={h.rowPrice}>{money(flat.estimate.amount)}</Text></View><Text numberOfLines={1} style={h.note}>{what(flat) || t('за {v}',{v:stayWords(draft)})}</Text>{ready(flat)}{!!why(flat) && <Text numberOfLines={1} style={r.why}>{why(flat)}</Text>}</View></Pressable>
+            <Pressable key={flat.id} accessibilityRole="button" accessibilityLabel={flat.title + ', ' + money(flat.estimate.amount)} onPress={() => { onFocus?.(flat.id); onOpen(flat); }} style={({ pressed }) => [r.line, pressed && r.cardPressed]}><View style={r.lineThumb}><Photo id={flat.photos?.[0]} alt={t('{title}, фото',{title:flat.title})} fill /></View><View style={h.grow}><View style={r.cardTop}><Text numberOfLines={1} style={[h.eventTitle, h.grow]}>{flat.title}</Text><Text style={h.rowPrice}>{money(flat.estimate.amount)}</Text></View><Text numberOfLines={1} style={h.note}>{what(flat) || t('за {v}',{v:stayWords(draft)})}</Text>{ready(flat)}{!!why(flat) && <Text numberOfLines={1} style={r.why}>{why(flat)}</Text>}</View></Pressable>
           ))}</View></>
     );
   }
