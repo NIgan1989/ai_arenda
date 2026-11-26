@@ -14,10 +14,9 @@ test('the count asks without the class and applies the class on the phone', () =
   assert.deepEqual(countDraft(draft).classes, []);
   const count = formCount(draft, list);
   assert.equal(count.total, 3);
-  assert.equal(count.more, false);
   assert.deepEqual(count.classes, {economy: 1, standard: 2, comfort: 2, premium: 1});
   assert.equal(formCount({...draft, classes: []}, list).total, 6);
-  assert.equal(formCount(draft, Array.from({length: 60}, (_, i) => place('comfort', 10000 + i))).more, true);
+  assert.equal(formCount(draft, Array.from({length: 80}, (_, i) => place('comfort', 10000 + i))).total, 80);
 });
 
 test('the usual price is the middle half per day, and only without a budget', () => {

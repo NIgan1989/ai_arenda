@@ -7,7 +7,6 @@ import { allKinds, categoryOf, draftUnits, type GuestDraft } from './ai-request'
 type Row = Record<string, any>;
 export type FormCount = {
   total: number; // what «Показать» will find
-  more: boolean; // the answer stopped at its limit: «60+»
   classes: Record<string, number>; // places of each class among those found without the class
   low: number | null; // what a place usually costs per day (per hour, per guest): the middle half of the prices
   high: number | null;
@@ -19,8 +18,8 @@ export const countDraft = (draft: GuestDraft): GuestDraft => ({ ...draft, classe
 const round = (v: number) => (v >= 5000 ? Math.round(v / 1000) * 1000 : Math.round(v / 100) * 100);
 const quartile = (sorted: number[], q: number) => sorted[Math.min(sorted.length - 1, Math.max(0, Math.round((sorted.length - 1) * q)))];
 
-/** The count of an answer found for countDraft(draft); limit is the answer's own (lib/smart-matching.ts previewMatches). */
-export function formCount(draft: GuestDraft, properties: Row[], limit = 60): FormCount {
+/** The count of an answer found for countDraft(draft): a matching search returns every match (lib/service.ts publicSearch). */
+export function formCount(draft: GuestDraft, properties: Row[]): FormCount {
   const classes: Record<string, number> = {};
   for (const p of properties) if (p.stay_class) classes[p.stay_class] = (classes[p.stay_class] || 0) + 1;
   const asked = draft.classes || [];
@@ -29,7 +28,7 @@ export function formCount(draft: GuestDraft, properties: Row[], limit = 60): For
   const per = categoryOf(draft) === 'banquet' ? Math.max(1, draft.guests) : Math.max(1, draftUnits(draft));
   const prices = draft.maxPrice ? [] : properties.map(p => Number(p.estimate?.amount) / per).filter(v => v > 0).sort((a, b) => a - b);
   const enough = prices.length >= 5;
-  return { total, more: properties.length >= limit, classes, low: enough ? round(quartile(prices, 0.25)) : null, high: enough ? round(quartile(prices, 0.75)) : null };
+  return { total, classes, low: enough ? round(quartile(prices, 0.25)) : null, high: enough ? round(quartile(prices, 0.75)) : null };
 }
 
 /** «Сбросить»: what the guest chose is taken off; the day, the guests, the city and the category stay. */

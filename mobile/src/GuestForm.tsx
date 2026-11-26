@@ -85,7 +85,10 @@ export function GuestForm({ draft, only = 'all', onChange, onPickPoint, onNearMe
   const dayText = (date: string) => { const d = new Date(date + 'T00:00:00Z'); return [t('вс'), t('пн'), t('вт'), t('ср'), t('чт'), t('пт'), t('сб')][d.getUTCDay()] + ', ' + d.getUTCDate() + ' ' + [t('янв'), t('фев'), t('мар'), t('апр'), t('мая'), t('июн'), t('июл'), t('авг'), t('сен'), t('окт'), t('ноя'), t('дек')][d.getUTCMonth()]; };
   const budgetLabel = hall ? (draft.perUnit || !draft.maxPrice ? t('Цена на гостя до, ₸') : t('Бюджет на всё, ₸')) : draft.perUnit || !draft.maxPrice ? (hourly ? t('Цена за час до, ₸') : draft.mode === 'night' ? t('Цена за ночь до, ₸') : t('Цена за сутки до, ₸')) : t('Бюджет на весь срок, ₸');
   const budgets = hall ? BUDGETS.banquet : hourly ? BUDGETS.hourly : BUDGETS.stay;
-  const budgetChosen = !draft.maxPrice ? '' : draft.perUnit && budgets.includes(Number(draft.maxPrice)) ? draft.maxPrice : 'own';
+  // A price typed in the field stays the field's while it is typed, even when it passes a chip's value («10000» on the way to «100000»).
+  const [typedPrice, setTypedPrice] = useState('');
+  const typing = !!typedPrice && typedPrice === draft.maxPrice;
+  const budgetChosen = !draft.maxPrice ? '' : !typing && draft.perUnit && budgets.includes(Number(draft.maxPrice)) ? draft.maxPrice : 'own';
   // What places usually cost: counted while no budget cuts the list, then kept for this city and tariff.
   const priceKey = draft.city + '|' + category + '|' + draft.mode, usual = useRef<{ key: string; low: number; high: number } | null>(null);
   if (count?.low && count.high) usual.current = { key: priceKey, low: count.low, high: count.high };
@@ -144,7 +147,7 @@ export function GuestForm({ draft, only = 'all', onChange, onPickPoint, onNearMe
           onChange={guests => onChange({ ...draft, guests })}
           disabled={busy}
         /></>,
-    price: <><View style={f.picks} accessibilityRole="radiogroup" accessibilityLabel={budgetLabel}>{[['', t('Любая')] as [string, string], ...budgets.map(v => [String(v), t('до {sum}', { sum: money(v) })] as [string, string])].map(([v, title]) => <Pressable key={v} accessibilityRole="radio" accessibilityState={{ checked: budgetChosen === v, disabled: busy }} disabled={busy} onPress={() => onChange({ ...draft, maxPrice: v, perUnit: true })} style={[h.chip, budgetChosen === v && h.chipOn]}><Text style={[h.chipText, budgetChosen === v && h.chipTextOn]}>{title}</Text></Pressable>)}</View><View><Text style={h.label}>{budgetChosen === 'own' ? budgetLabel : t('Или своя цена')}</Text><TextInput
+    price: <><View style={f.picks} accessibilityRole="radiogroup" accessibilityLabel={budgetLabel}>{[['', t('Любая')] as [string, string], ...budgets.map(v => [String(v), t('до {sum}', { sum: money(v) })] as [string, string])].map(([v, title]) => <Pressable key={v} accessibilityRole="radio" accessibilityState={{ checked: budgetChosen === v, disabled: busy }} disabled={busy} onPress={() => { setTypedPrice(''); onChange({ ...draft, maxPrice: v, perUnit: true }); }} style={[h.chip, budgetChosen === v && h.chipOn]}><Text style={[h.chipText, budgetChosen === v && h.chipTextOn]}>{title}</Text></Pressable>)}</View><View><Text style={h.label}>{budgetChosen === 'own' ? budgetLabel : t('Или своя цена')}</Text><TextInput
             accessibilityLabel={budgetLabel.replace(', ₸', ' в тенге')}
             style={h.input}
             keyboardType="number-pad"
@@ -152,7 +155,7 @@ export function GuestForm({ draft, only = 'all', onChange, onPickPoint, onNearMe
             placeholder={t('Например, {sum}', { sum: money(budgets[1] + budgets[0] / 5) })}
             placeholderTextColor={C.muted}
             value={budgetChosen === 'own' ? draft.maxPrice : ''}
-            onChangeText={text => onChange({ ...draft, maxPrice: text.replace(/[^\d]/g, ''), perUnit: text ? draft.perUnit : true })}
+            onChangeText={text => { const maxPrice = text.replace(/[^\d]/g, ''); setTypedPrice(maxPrice); onChange({ ...draft, maxPrice, perUnit: text ? draft.perUnit : true }); }}
             editable={!busy}
           /></View>{!!usualPrice && <Text style={f.hint}>{t('Обычно здесь сдают за {low} – {high} ₸', { low: money(usualPrice.low), high: money(usualPrice.high) }) + ' ' + (hall ? t('на гостя') : hourly ? t('в час') : draft.mode === 'night' ? t('за ночь') : t('в сутки')) + '.'}</Text>}</>,
     where: <><Chips
@@ -212,7 +215,7 @@ export function GuestForm({ draft, only = 'all', onChange, onPickPoint, onNearMe
     </View>;
   })}</View>;
   // The button says what it will find (Airbnb «Show 307 places»); «Сбросить» takes off what was chosen.
-  const found = count && count.total > 0 ? t('Показать {n} {word}', { n: count.total + (count.more ? '+' : ''), word: plural(count.total, 'вариант', 'варианта', 'вариантов') }) : t('Показать варианты');
+  const found = count && count.total > 0 ? t('Показать {n} {word}', { n: count.total, word: plural(count.total, 'вариант', 'варианта', 'вариантов') }) : t('Показать варианты');
   const reset = hasChoices(draft);
   const foot = <><Text style={h.note}>{hall ? t('Цена зала считается на гостя. При отмене вся оплата возвращается.') : (hourly ? t('Депозит оплачивается отдельно.') : t('Выезд до 12:00. Депозит оплачивается отдельно.'))}</Text>
     <View style={f.bar}>{reset && <Pressable accessibilityRole="button" disabled={busy} onPress={() => onChange(resetDraft(draft))} style={({ pressed }) => [f.reset, (pressed || busy) && h.dim]}><Text style={f.resetText}>{t('Сбросить')}</Text></Pressable>}<View style={h.grow}><Action title={busy ? t('Ищем…') : found} disabled={busy} onPress={onSubmit} /></View></View></>;
