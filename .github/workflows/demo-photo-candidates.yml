@@ -18,6 +18,7 @@ jobs:
         with:
           node-version: '24'
 
+      - run: command -v montage || (sudo apt-get update -qq && sudo apt-get install -y -qq imagemagick)
       - run: node scripts/demo-photos/find-candidates.mjs
       - uses: actions/upload-artifact@v7
         with:
