@@ -58,7 +58,7 @@ for(const [kind,{q,want,cats}] of Object.entries(KINDS)){
   }
  }
  // Different queries take turns, so a kind shows several rooms and not eight photos of one.
- const byQuery=q.map(x=>pool.filter(p=>p.query===x)),pick=[];
+ const byQuery=[...new Set(pool.map(p=>p.query))].map(x=>pool.filter(p=>p.query===x)),pick=[];
  for(let i=0;pick.length<PER&&i<30;i++)for(const list of byQuery)if(list[i]&&pick.length<PER)pick.push(list[i]);
  result[kind]=[];
  for(const [i,p] of pick.entries()){
