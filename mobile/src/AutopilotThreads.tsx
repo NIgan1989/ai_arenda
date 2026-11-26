@@ -116,7 +116,7 @@ export function AutopilotThreads({ role, data, now, paymentMode, needs = [], cal
           <View style={a.ticks}>{!!width && ribbon.ticks.map(t => <Text key={t.at} style={[a.tick, { left: ribbonX(ribbon, t.at) / 100 * width - 20 }]}>{t.label}</Text>)}</View>
           <View style={a.track}>
             {ribbon.bars.map(b => (
-              <Pressable key={b.id} accessibilityRole="button" accessibilityLabel={b.title + ', ' + b.label} onPress={() => { setOpen(b.id); setAll(true); }}
+              <Pressable key={b.id} accessibilityRole="button" accessibilityLabel={b.title + ', ' + b.label} onPress={() => { if (weekOnly) onOpen('job', b.id); else { setOpen(b.id); setAll(true); } }}
                 style={[a.seg, b.state === 'done' && a.segDone, b.state === 'now' && a.segNow, b.state === 'next' && a.segNext, { left: pct(ribbonX(ribbon, b.from)), width: pct(Math.max(2, ribbonX(ribbon, b.to) - ribbonX(ribbon, b.from))) }]} />
             ))}
             {ribbon.now !== null && <View style={[a.nowLine, { left: pct(ribbonX(ribbon, ribbon.now)) }]} />}
