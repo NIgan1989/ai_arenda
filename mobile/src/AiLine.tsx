@@ -75,7 +75,7 @@ export function AiLine({ value, onChangeText, onSend, placeholder, shortPlacehol
             accessibilityHint={voice.listening ? undefined : t('Скажите, что ищете')}
             onPress={voice.listening ? voice.stop : () => void voice.start()}
             style={({ pressed }) => [a.send, a.mic, voice.listening && a.micOn, pressed && a.micPressed]}
-          ><Image source={voice.listening ? stopIcon : mic} style={[a.arrow, { tintColor: voice.listening ? C.onAccent : C.accent }]} accessibilityIgnoresInvertColors /></Pressable></View>
+          ><Image source={voice.listening ? stopIcon : mic} style={[a.arrow, { tintColor: voice.listening ? C.onAccent : C.ink }]} accessibilityIgnoresInvertColors /></Pressable></View>
       ) : (
       /* The round send button: dimmed until there is something to send. */
       <Pressable
@@ -102,18 +102,18 @@ const a = StyleSheet.create({
   box: { gap: 8 },
   voice: { width: T.control.touch, height: T.control.touch, alignItems: 'center', justifyContent: 'center' },
   pulse: { position: 'absolute', width: T.control.touch, height: T.control.touch, borderRadius: T.radius.full, backgroundColor: C.dangerSoft },
-  mic: { backgroundColor: C.accentSoft },
+  mic: { backgroundColor: C.surfaceAlt },
   micOn: { backgroundColor: C.danger },
   micPressed: { opacity: 0.6 },
   langs: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   say: { flex: 1, minWidth: 0, ...type.label, color: C.muted },
   lang: { minHeight: 32, paddingHorizontal: 12, borderRadius: T.radius.full, borderWidth: 1, borderColor: C.line, backgroundColor: C.surface, justifyContent: 'center' },
-  langOn: { borderColor: C.accent, backgroundColor: C.accentSoft },
+  langOn: { borderColor: C.ink, backgroundColor: C.surfaceAlt },
   langText: { ...type.caption, color: C.inkSoft, fontWeight: '600' },
-  langTextOn: { color: C.accentPressed },
+  langTextOn: { color: C.inkSoft },
   note: { gap: 4 },
   noteText: { ...type.label, color: C.inkSoft },
-  noteLink: { ...type.label, color: C.accent, fontWeight: '600' },
+  noteLink: { ...type.label, color: C.ink, fontWeight: '600' },
   line: {
     minHeight: T.control.primary,
     flexDirection: 'row',
@@ -123,16 +123,16 @@ const a = StyleSheet.create({
     paddingRight: 4,
     borderRadius: T.radius.full,
     borderWidth: 2,
-    borderColor: C.accentLine,
+    borderColor: C.line,
     backgroundColor: C.surface,
-    shadowColor: C.aiFrom,
+    shadowColor: C.ink,
     shadowOpacity: 0.16,
     shadowRadius: 16,
     shadowOffset: { width: 0, height: 4 },
     elevation: 4
   },
-  lineFocused: { borderColor: C.aiFrom },
-  mark: { width: 24, height: 24, tintColor: C.aiFrom },
+  lineFocused: { borderColor: C.ink },
+  mark: { width: 24, height: 24, tintColor: C.ink },
   field: { flex: 1, minWidth: 0, justifyContent: 'center' },
   exampleBox: { position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, justifyContent: 'center', pointerEvents: 'none' },
   example: { ...type.body, color: C.muted },
@@ -145,8 +145,8 @@ const a = StyleSheet.create({
     color: C.ink,
     ...(Platform.OS === 'web' ? ({ outlineStyle: 'none' } as object) : null)
   },
-  send: { width: T.control.touch, height: T.control.touch, borderRadius: T.radius.full, backgroundColor: C.aiFrom, alignItems: 'center', justifyContent: 'center' },
+  send: { width: T.control.touch, height: T.control.touch, borderRadius: T.radius.full, backgroundColor: C.ink, alignItems: 'center', justifyContent: 'center' },
   sendIdle: { opacity: 0.45 },
-  sendPressed: { backgroundColor: C.accentPressed },
+  sendPressed: { backgroundColor: C.inkSoft },
   arrow: { width: 24, height: 24, tintColor: C.onAccent }
 });

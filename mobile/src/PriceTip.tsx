@@ -18,7 +18,7 @@ function WindowTipBody({card,busy,onDecide,compact}:{card:Approval;busy:boolean;
   <View style={t.when}><Text style={t.whenIcon}>◷</Text><Text numberOfLines={1} style={t.whenText}>{w.when}</Text><View style={t.hours}><Text style={t.hoursText}>{tr('{hours} ч',{hours:w.hours})}</Text></View></View>
   <View style={t.priceRow} accessible accessibilityLabel={tr('Час сейчас {v}, в окне {v2}',{v:money(w.from),v2:money(w.to)})}>
    <Text style={t.from}>{money(w.from)}</Text><Text style={t.arrow}>→</Text><Text style={t.to}>{money(w.to)}<Text style={t.unit}>{' '}{tr('/ час')}</Text></Text>
-   <View style={[t.delta,t.deltaWindow]}><Text style={[t.deltaText,{color:C.accent}]}>{'−'+w.percent+'%'}</Text></View>
+   <View style={[t.delta,t.deltaWindow]}><Text style={[t.deltaText,{color:C.ink}]}>{'−'+w.percent+'%'}</Text></View>
   </View>
   <Text numberOfLines={2} style={t.rows}>{tr('Пустует между бронями. Скидку гости увидят только в эти часы.')}</Text>
   <View style={t.actions}>
@@ -65,7 +65,7 @@ function ListingTipBody({card,busy,onDecide,compact}:{card:Approval;busy:boolean
   <View style={t.compare} accessible accessibilityLabel={compare[0].join(' ')+'; '+compare[1].join(' ')}>
    <View style={t.cmpMine}><Text numberOfLines={1} style={t.cmpValue}>{compare[0][0]}</Text><Text style={t.cmpLabel}>{compare[0][1]}</Text></View>
    <View style={t.cmpIcon}><Text style={t.cmpIconText}>{icon}</Text></View>
-   <View style={t.cmpThem}><Text numberOfLines={1} style={[t.cmpValue,{color:C.accent}]}>{compare[1][0]}</Text><Text style={t.cmpLabel}>{compare[1][1]}</Text></View>
+   <View style={t.cmpThem}><Text numberOfLines={1} style={t.cmpValue}>{compare[1][0]}</Text><Text style={t.cmpLabel}>{compare[1][1]}</Text></View>
   </View>
   <Text numberOfLines={compact?4:6} style={t.rows}>{l.text}</Text>
   <View style={t.actions}>
@@ -83,7 +83,7 @@ function CleaningTipBody({card,busy,onDecide,compact}:{card:Approval;busy:boolea
   <View style={t.compare} accessible accessibilityLabel={compare[0].join(' ')+'; '+compare[1].join(' ')}>
    <View style={t.cmpMine}><Text numberOfLines={1} style={t.cmpValue}>{compare[0][0]}</Text><Text style={t.cmpLabel}>{compare[0][1]}</Text></View>
    <View style={t.cmpIcon}><Text style={t.cmpIconText}>→</Text></View>
-   <View style={t.cmpThem}><Text numberOfLines={1} style={[t.cmpValue,{color:C.accent}]}>{compare[1][0]}</Text><Text style={t.cmpLabel}>{compare[1][1]}</Text></View>
+   <View style={t.cmpThem}><Text numberOfLines={1} style={t.cmpValue}>{compare[1][0]}</Text><Text style={t.cmpLabel}>{compare[1][1]}</Text></View>
   </View>
   <Text numberOfLines={compact?4:6} style={t.rows}>{c.text}</Text>
   <View style={t.actions}>
@@ -157,23 +157,32 @@ export function PriceTipBody({card,busy,onDecide,compact=false}:{card:Approval;b
  </View>;
 }
 
-export function PriceTip({cards,onChanged,onEdit,role='owner'}:{cards:Approval[];onChanged?:()=>unknown;onEdit?:(id:string,step:string|null)=>void;role?:'owner'|'guest'}){
+// The cards the AI administrator asks about: a new booking request first, then the advice (price, free hours, time of
+// stay, the week ahead, the listing, the price of a cleaning). `tipKind` tells them apart for the owner's sheet.
+export const isRequestTip=(c:Approval)=>c.kind==='booking'&&!!c.risk&&!!c.canDecide;
+export const isAdviceTip=(c:Approval)=>!!(c.kind==='price'&&c.price||c.kind==='window'&&c.window||c.kind==='stay'&&c.stay||c.kind==='forecast'&&c.forecast||c.kind==='listing'&&c.listing||c.kind==='cleaning-fee'&&c.cleaningTip)&&!!c.canDecide;
+
+// inline: a block of the owner's sheet (concept «Один стандарт», 2026-11-26), not a card over the map. pick: which
+// cards it shows. fallback: what stands in its place when there is nothing to ask (the «Сейчас» card goes on to the next).
+export function PriceTip({cards,onChanged,onEdit,role='owner',inline=false,pick,fallback=null}:{cards:Approval[];onChanged?:()=>unknown;onEdit?:(id:string,step:string|null)=>void;role?:'owner'|'guest';inline?:boolean;pick?:(card:Approval)=>boolean;fallback?:React.ReactNode}){
  const [later,setLater]=useState<string[]>([]),[busy,setBusy]=useState(false),[result,setResult]=useState<{text:string;error:boolean}|null>(null);
- const [slide]=useState(()=>new Animated.Value(0));
- const card=cards.find(c=>c.kind==='booking'&&c.risk&&c.canDecide&&!later.includes(c.id))||cards.find(c=>(c.kind==='price'&&c.price||c.kind==='window'&&c.window||c.kind==='stay'&&c.stay||c.kind==='forecast'&&c.forecast||c.kind==='listing'&&c.listing||c.kind==='cleaning-fee'&&c.cleaningTip)&&c.canDecide&&!later.includes(c.id));
+ const [slide]=useState(()=>new Animated.Value(inline?1:0));
+ const open=(c:Approval)=>!later.includes(c.id)&&(!pick||pick(c));
+ const card=cards.find(c=>isRequestTip(c)&&open(c))||cards.find(c=>isAdviceTip(c)&&open(c));
  const visible=!!card||!!result;
- useEffect(()=>{Animated.spring(slide,{toValue:visible?1:0,useNativeDriver:true,friction:8,tension:60}).start();},[visible,card?.id]);
+ useEffect(()=>{if(inline)return;Animated.spring(slide,{toValue:visible?1:0,useNativeDriver:true,friction:8,tension:60}).start();},[visible,card?.id]);
  useEffect(()=>{if(!result)return;const timer=setTimeout(()=>setResult(null),result.error?8000:5000);return()=>clearTimeout(timer);},[result]);
- if(!visible)return null;
- const style={opacity:slide,transform:[{translateY:slide.interpolate({inputRange:[0,1],outputRange:[-40,0]})}]};
- if(result||!card)return <Animated.View style={[t.box,t.resultBox,style]} accessibilityLiveRegion="polite"><View style={[t.icon,result?.error&&{backgroundColor:C.danger}]}><Text style={t.iconText}>{result?.error?'!':'✓'}</Text></View><Text style={t.resultText}>{result?.text}</Text></Animated.View>;
+ if(!visible)return <>{fallback}</>;
+ const style=inline?null:{opacity:slide,transform:[{translateY:slide.interpolate({inputRange:[0,1],outputRange:[-40,0]})}]};
+ const box=inline?t.inline:t.box;
+ if(result||!card)return <Animated.View style={[box,t.resultBox,style]} accessibilityLiveRegion="polite"><View style={[t.icon,result?.error&&{backgroundColor:C.danger}]}><Text style={t.iconText}>{result?.error?'!':'✓'}</Text></View><Text style={t.resultText}>{result?.text}</Text></Animated.View>;
  async function decide(action:Decision){
   if(!card)return;setBusy(true);
   try{const v=await request('/api/approvals',{id:card.id,revision:card.revision,action},undefined,uid()+':'+card.kind+':'+action,role);if(v.edit&&onEdit){await onChanged?.();onEdit(v.edit.propertyId,v.edit.step);return;}setResult({text:v.message||tr('Готово.'),error:false});await onChanged?.();}
   catch(error){setResult({text:error instanceof Error?error.message:tr('Не получилось. Обновите экран.'),error:true});}
   finally{setBusy(false);}
  }
- return <Animated.View style={[t.box,style]} accessibilityLabel={card.risk?tr('Новая заявка на бронирование'):card.cleaningTip?tr('Совет ИИ-администратора по цене уборки'):card.listing?tr('Совет ИИ-администратора по объявлению'):card.forecast?tr('Прогноз загрузки на неделю от ИИ-администратора'):card.stay?tr('Предложение ИИ-администратора по времени проживания'):card.window?tr('Окно в календаре от ИИ-администратора'):tr('Совет ИИ-администратора по цене')}>
+ return <Animated.View style={[box,style]} accessibilityLabel={card.risk?tr('Новая заявка на бронирование'):card.cleaningTip?tr('Совет ИИ-администратора по цене уборки'):card.listing?tr('Совет ИИ-администратора по объявлению'):card.forecast?tr('Прогноз загрузки на неделю от ИИ-администратора'):card.stay?tr('Предложение ИИ-администратора по времени проживания'):card.window?tr('Окно в календаре от ИИ-администратора'):tr('Совет ИИ-администратора по цене')}>
   <View style={t.head}>
    <View style={t.icon}><Text style={t.iconText}>{card.risk?'◷':card.forecast?'▥':card.listing?'★':card.cleaningTip?'✧':'✦'}</Text></View>
    <View style={t.titleBox}><Text style={t.small}>{tr('ИИ-администратор · {v}',{v:(card.risk?tr('новая заявка'):card.cleaningTip?tr('цена уборки'):card.listing?card.listing.title.toLocaleLowerCase('ru'):card.forecast?tr('прогноз на неделю'):card.stay?(card.stay.kind==='late'?tr('поздний выезд'):tr('ранний заезд')):card.window?tr('окно в календаре'):card.price?.direction==='up'?tr('спрос вырос'):tr('спрос снизился'))})}</Text><Text numberOfLines={1} style={t.title}>{card.subject}</Text></View>
@@ -185,10 +194,11 @@ export function PriceTip({cards,onChanged,onEdit,role='owner'}:{cards:Approval[]
 
 const R=T.radius,H=T.control,F=T.font;
 const t=StyleSheet.create({
- box:{position:'absolute',top:68,left:12,right:12,zIndex:100,paddingTop:12,paddingBottom:16,paddingHorizontal:16,borderRadius:R.xl,backgroundColor:C.surface,borderWidth:1.5,borderColor:C.accentLine,shadowColor:C.ink,shadowOffset:{width:0,height:8},shadowOpacity:.18,shadowRadius:24,elevation:8},
+ box:{position:'absolute',top:68,left:12,right:12,zIndex:100,paddingTop:12,paddingBottom:16,paddingHorizontal:16,borderRadius:R.xl,backgroundColor:C.surface,borderWidth:1,borderColor:C.line,shadowColor:C.ink,shadowOffset:{width:0,height:8},shadowOpacity:.18,shadowRadius:24,elevation:8},
+ inline:{paddingTop:12,paddingBottom:16,paddingHorizontal:16,borderRadius:R.xl,backgroundColor:C.surface,borderWidth:1,borderColor:C.line},
  resultBox:{flexDirection:'row',alignItems:'center',gap:12},
  head:{flexDirection:'row',alignItems:'flex-start',gap:12},
- icon:{width:36,height:36,borderRadius:R.full,backgroundColor:C.accent,alignItems:'center',justifyContent:'center'},
+ icon:{width:36,height:36,borderRadius:R.full,backgroundColor:C.ink,alignItems:'center',justifyContent:'center'},
  iconText:{color:C.onAccent,fontSize:F.subtitle[0],lineHeight:F.subtitle[1],fontWeight:'700'},
  titleBox:{flex:1,minWidth:0,gap:2},
  small:{fontSize:F.caption[0],lineHeight:F.caption[1],color:C.muted},
@@ -201,19 +211,19 @@ const t=StyleSheet.create({
  to:{fontSize:F.heading[0],lineHeight:F.heading[1],fontWeight:'700',color:C.ink},
  delta:{paddingHorizontal:8,paddingVertical:2,borderRadius:R.full},deltaUp:{backgroundColor:C.successSoft},deltaDown:{backgroundColor:C.warningSoft},
  deltaText:{fontSize:F.label[0],lineHeight:F.label[1],fontWeight:'600'},
- deltaWindow:{backgroundColor:C.accentSoft},
+ deltaWindow:{backgroundColor:C.surfaceAlt},
  unit:{fontSize:F.label[0],lineHeight:F.label[1],fontWeight:'500',color:C.muted},
  when:{flexDirection:'row',alignItems:'center',gap:8,marginTop:8},
- whenIcon:{fontSize:F.body[0],lineHeight:F.body[1],color:C.accent},
+ whenIcon:{fontSize:F.body[0],lineHeight:F.body[1],color:C.ink},
  whenText:{flex:1,fontSize:F.label[0],lineHeight:F.label[1],color:C.inkSoft},
  hours:{paddingHorizontal:8,paddingVertical:2,borderRadius:R.full,backgroundColor:C.surfaceAlt},
  hoursText:{fontSize:F.label[0],lineHeight:F.label[1],fontWeight:'600',color:C.ink},
  rows:{marginTop:4,fontSize:F.label[0],lineHeight:F.label[1],color:C.inkSoft},
  reasons:{flexDirection:'row',flexWrap:'wrap',gap:8,marginTop:12},
- reason:{paddingHorizontal:12,paddingVertical:4,borderRadius:R.full,backgroundColor:C.accentSoft,borderWidth:1,borderColor:C.accentLine},
+ reason:{paddingHorizontal:12,paddingVertical:4,borderRadius:R.full,backgroundColor:C.surfaceAlt},
  reasonText:{fontSize:F.label[0],lineHeight:F.label[1],color:C.inkSoft},
  actions:{flexDirection:'row',gap:8,marginTop:12},
- accept:{flex:1,minHeight:H.field,borderRadius:R.full,backgroundColor:C.accent,alignItems:'center',justifyContent:'center',paddingHorizontal:16},
+ accept:{flex:1,minHeight:H.field,borderRadius:R.full,backgroundColor:C.ink,alignItems:'center',justifyContent:'center',paddingHorizontal:16},
  acceptText:{fontSize:F.body[0],lineHeight:F.body[1],fontWeight:'600',color:C.onAccent},
  reject:{minHeight:H.field,borderRadius:R.full,borderWidth:1,borderColor:C.line,backgroundColor:C.surface,alignItems:'center',justifyContent:'center',paddingHorizontal:16},
  rejectText:{fontSize:F.body[0],lineHeight:F.body[1],fontWeight:'600',color:C.ink},
@@ -222,17 +232,17 @@ const t=StyleSheet.create({
  days:{flexDirection:'row',gap:4,marginTop:12},
  day:{flex:1,alignItems:'center',gap:2},
  bar:{width:'100%',maxWidth:32,height:56,borderRadius:R.sm,backgroundColor:C.surfaceAlt,overflow:'hidden',justifyContent:'flex-end'},
- fill:{width:'100%',borderRadius:R.sm,backgroundColor:C.accentLine},fillBusy:{backgroundColor:C.accent},fillQuiet:{backgroundColor:C.lineStrong},
+ fill:{width:'100%',borderRadius:R.sm,backgroundColor:C.lineStrong},fillBusy:{backgroundColor:C.ink},fillQuiet:{backgroundColor:C.lineStrong},
  dayLabel:{fontSize:F.caption[0],lineHeight:F.caption[1],fontWeight:'600',color:C.ink},
- dayLoad:{fontSize:F.caption[0],lineHeight:F.caption[1],color:C.muted},dayLoadBusy:{color:C.accent,fontWeight:'600'},
+ dayLoad:{fontSize:F.caption[0],lineHeight:F.caption[1],color:C.muted},dayLoadBusy:{color:C.ink,fontWeight:'700'},
  summary:{marginTop:8,fontSize:F.label[0],lineHeight:F.label[1],fontWeight:'500',color:C.ink},
  compare:{flexDirection:'row',alignItems:'center',gap:8,marginTop:12},
  cmpMine:{flex:1,minWidth:0,gap:2,paddingVertical:8,paddingHorizontal:12,borderRadius:R.md,backgroundColor:C.surfaceAlt},
- cmpThem:{flex:1,minWidth:0,gap:2,paddingVertical:8,paddingHorizontal:12,borderRadius:R.md,backgroundColor:C.accentSoft,borderWidth:1,borderColor:C.accentLine},
+ cmpThem:{flex:1,minWidth:0,gap:2,paddingVertical:8,paddingHorizontal:12,borderRadius:R.md,backgroundColor:C.surface,borderWidth:1,borderColor:C.ink},
  cmpValue:{fontSize:F.title[0],lineHeight:F.title[1],fontWeight:'700',color:C.ink},
  cmpLabel:{fontSize:F.caption[0],lineHeight:F.caption[1],color:C.muted},
  cmpIcon:{width:32,height:32,borderRadius:R.full,borderWidth:1,borderColor:C.line,backgroundColor:C.surface,alignItems:'center',justifyContent:'center'},
- cmpIconText:{fontSize:F.label[0],lineHeight:F.label[1],color:C.accent},
+ cmpIconText:{fontSize:F.label[0],lineHeight:F.label[1],color:C.ink},
  dim:{opacity:.6},
  risk:{marginTop:12,paddingVertical:8,paddingHorizontal:12,borderRadius:R.md,borderWidth:1},
  riskHead:{flexDirection:'row',alignItems:'center',flexWrap:'wrap',gap:8},

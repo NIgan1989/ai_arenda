@@ -37,7 +37,7 @@ export function Grip({color}:{color?:string}){
 const R=T.radius,H=T.control,shadow={shadowColor:C.ink,shadowOffset:{width:0,height:2},shadowOpacity:.12,shadowRadius:8,elevation:3};
 export const h=StyleSheet.create({
  // «Мои брони» in one line under the guest's button (concept of 2026-11-25).
- tripsLine:{minHeight:48,flexDirection:'row',alignItems:'center',gap:8,paddingHorizontal:12,borderRadius:16,backgroundColor:C.surfaceAlt},tripsDot:{width:8,height:8,borderRadius:4,backgroundColor:C.warning},tripsTitle:{...type.label,color:C.ink,fontWeight:'600'},tripsGo:{...type.body,color:C.accent,fontWeight:'600'},
+ tripsLine:{minHeight:48,flexDirection:'row',alignItems:'center',gap:8,paddingHorizontal:12,borderRadius:16,backgroundColor:C.surfaceAlt},tripsDot:{width:8,height:8,borderRadius:4,backgroundColor:C.warning},tripsTitle:{...type.label,color:C.ink,fontWeight:'600'},tripsGo:{...type.body,color:C.ink,fontWeight:'600'},
  attention:{minHeight:44,flexDirection:'row',alignItems:'center',gap:8,paddingHorizontal:12,borderRadius:12,backgroundColor:C.dangerSoft},attentionDot:{width:8,height:8,borderRadius:4,backgroundColor:C.danger},attentionGo:{fontSize:14,lineHeight:20,color:C.danger,fontWeight:'600'},
  host:{flex:1,backgroundColor:C.bg},
  // A short line over the map, under the avatar: what «На карте» could not show.
@@ -55,16 +55,16 @@ export const h=StyleSheet.create({
  sheet:{position:'absolute',left:0,right:0,bottom:0,backgroundColor:C.glassStrong,borderTopLeftRadius:R.xl,borderTopRightRadius:R.xl,borderTopWidth:1,borderColor:C.glassLine,shadowColor:C.ink,shadowOffset:{width:0,height:-4},shadowOpacity:.1,shadowRadius:12,elevation:12},
  handleArea:{height:handleHeight,alignItems:'center',paddingTop:12,gap:8},handle:{width:40,height:4,borderRadius:R.xs,backgroundColor:C.lineStrong},ornament:{width:264,maxWidth:'100%',height:12,tintColor:C.gold,opacity:.9},sheetContent:{paddingHorizontal:16,paddingBottom:16},
  block:{gap:12},head:{},grow:{flex:1,minWidth:0},title:{...type.subtitle,...brandFont,color:C.ink},note:{...type.label,color:C.muted},label:{...type.caption,color:C.muted,marginBottom:4},
- field:{gap:0},chipsScroll:{marginHorizontal:-16,flexGrow:0},chips:{gap:8,paddingHorizontal:16},chip:{minHeight:H.touch,paddingHorizontal:16,borderRadius:R.full,borderWidth:1,borderColor:C.accentLine,backgroundColor:C.glassStrong,justifyContent:'center'},chipOn:{backgroundColor:C.accent,borderColor:C.accent},chipText:{...type.label,color:C.ink},chipTextOn:{color:C.onAccent,fontWeight:'600'},
+ field:{gap:0},chipsScroll:{marginHorizontal:-16,flexGrow:0},chips:{gap:8,paddingHorizontal:16},chip:{minHeight:H.touch,paddingHorizontal:16,borderRadius:R.full,borderWidth:1,borderColor:C.line,backgroundColor:C.glassStrong,justifyContent:'center'},chipOn:{backgroundColor:C.ink,borderColor:C.ink},chipText:{...type.label,color:C.ink},chipTextOn:{color:C.surface,fontWeight:'600'},
  pair:{flexDirection:'row',gap:8},stepper:{flex:1},stepperRow:{flexDirection:'row',alignItems:'center',borderWidth:1,borderColor:C.line,borderRadius:R.md,backgroundColor:C.surface,height:H.field},step:{width:H.touch,height:H.touch,alignItems:'center',justifyContent:'center'},stepText:{...type.title,color:C.ink},stepValue:{flex:1,textAlign:'center',...type.body,color:C.ink,fontWeight:'600'},
  input:{height:H.field,borderWidth:1,borderColor:C.line,borderRadius:R.md,backgroundColor:C.surface,paddingHorizontal:12,fontSize:16,color:C.ink},
- action:{minHeight:H.field,borderRadius:R.full,backgroundColor:C.accent,alignItems:'center',justifyContent:'center',paddingHorizontal:16,paddingVertical:12},actionSecondary:{backgroundColor:C.surface,borderWidth:1,borderColor:C.lineStrong},actionText:{...type.body,color:C.onAccent,fontWeight:'600',textAlign:'center'},actionSecondaryText:{...type.body,color:C.ink,fontWeight:'500',textAlign:'center'},dangerText:{color:C.danger},dim:{opacity:.45},
+ action:{minHeight:H.field,borderRadius:R.full,backgroundColor:C.ink,alignItems:'center',justifyContent:'center',paddingHorizontal:16,paddingVertical:12},actionSecondary:{backgroundColor:C.surface,borderWidth:1,borderColor:C.lineStrong},actionText:{...type.body,color:C.surface,fontWeight:'600',textAlign:'center'},actionSecondaryText:{...type.body,color:C.ink,fontWeight:'500',textAlign:'center'},dangerText:{color:C.danger},dim:{opacity:.45},
  row:{flexDirection:'row',alignItems:'center',gap:8},card:{borderWidth:1,borderColor:C.glassLine,borderRadius:R.lg,backgroundColor:C.glassStrong,padding:16,gap:8},urgent:{borderColor:C.warningLine,backgroundColor:C.warningSoft},cardTitle:{...type.subtitle,color:C.ink,fontWeight:'600'},price:{...type.title,color:C.ink,fontWeight:'700',letterSpacing:-.4},
  reason:{...type.label,color:C.success},timer:{...type.display,color:C.ink,fontWeight:'300',letterSpacing:-1},timerSmall:{...type.label,color:C.warning,fontWeight:'600'},
- check:{flexDirection:'row',alignItems:'center',gap:12,minHeight:H.touch},checkBox:{...type.title,color:C.accent},checkText:{flex:1,...type.label,color:C.ink},
+ check:{flexDirection:'row',alignItems:'center',gap:12,minHeight:H.touch},checkBox:{...type.title,color:C.ink},checkText:{flex:1,...type.label,color:C.ink},
  listRow:{flexDirection:'row',alignItems:'center',gap:12,minHeight:H.field},asked:{flexDirection:'row',alignItems:'center',gap:8,minHeight:H.compact},askedDot:{width:8,height:8,borderRadius:4},eventTitle:{...type.body,color:C.ink,fontWeight:'500'},rowPrice:{...type.body,color:C.ink,fontWeight:'600'},picked:{gap:8},
  error:{...type.label,color:C.danger,backgroundColor:C.dangerSoft,borderRadius:R.md,padding:12},
- stages:{flexDirection:'row',gap:4},stage:{flex:1,gap:4},stageBar:{height:4,borderRadius:R.xs,backgroundColor:C.line},stageBarOn:{backgroundColor:C.night},stageBarNow:{backgroundColor:C.gold},stageText:{...type.caption,color:C.muted},stageTextOn:{color:C.ink,fontWeight:'600'}
+ stages:{flexDirection:'row',gap:4},stage:{flex:1,gap:4},stageBar:{height:4,borderRadius:R.xs,backgroundColor:C.line},stageBarOn:{backgroundColor:C.ink},stageBarNow:{backgroundColor:C.gold},stageText:{...type.caption,color:C.muted},stageTextOn:{color:C.ink,fontWeight:'600'}
 });
 
 // A row of the sheet's lists, as on the site (components/map-workspace.tsx, MapRow): a photo of the place, an icon of the
@@ -72,7 +72,7 @@ export const h=StyleSheet.create({
 export function SheetRow({title,line,photo,icon,order,onPress,label}:{title:string;line?:string;photo?:string|null;icon?:MenuIcon;order?:number;onPress:()=>void;label?:string}){
  return <Pressable accessibilityRole="button" accessibilityLabel={label} onPress={onPress} style={({pressed})=>[r.row,pressed&&{backgroundColor:C.bg}]}>
   {order?<View style={[r.thumb,r.order]}><Text style={r.orderText}>{order}</Text></View>
-   :icon?<View style={[r.thumb,r.icon]}><Image source={menuIcons[icon]} style={{width:20,height:20,tintColor:C.accent}}/></View>
+   :icon?<View style={[r.thumb,r.icon]}><Image source={menuIcons[icon]} style={{width:20,height:20,tintColor:C.ink}}/></View>
    :<View style={r.thumb}><Photo id={photo} fill alt={t('Фото: {title}',{title})}/></View>}
   <View style={r.text}><Text numberOfLines={2} style={r.title}>{title}</Text>{!!line&&<Text numberOfLines={2} style={r.line}>{line}</Text>}</View>
   <Image source={menuIcons.chevron} style={{width:18,height:18,tintColor:C.muted}}/>
@@ -85,7 +85,7 @@ export function SheetHeading({icon,title,count}:{icon:MenuIcon;title:string;coun
 const r=StyleSheet.create({
  row:{flexDirection:'row',alignItems:'center',gap:12,minHeight:64,paddingVertical:8,paddingHorizontal:4,borderRadius:T.radius.md},
  thumb:{width:T.control.field,height:T.control.field,borderRadius:T.radius.md,overflow:'hidden',backgroundColor:C.surfaceAlt,alignItems:'center',justifyContent:'center'},
- icon:{backgroundColor:C.accentSoft},order:{backgroundColor:C.accent},orderText:{...type.body,color:C.onAccent,fontWeight:'700'},
+ icon:{backgroundColor:C.surfaceAlt},order:{backgroundColor:C.ink},orderText:{...type.body,color:C.surface,fontWeight:'700'},
  text:{flex:1,minWidth:0,gap:2},title:{...type.body,color:C.ink,fontWeight:'600'},line:{...type.label,color:C.muted},
  heading:{flexDirection:'row',alignItems:'center',gap:8,minHeight:T.control.touch,paddingHorizontal:4},
 });

@@ -125,10 +125,10 @@ const f=StyleSheet.create({
  tabs:{flexDirection:'row',gap:4,padding:4,marginTop:8,borderRadius:R.lg,backgroundColor:C.surfaceAlt},
  // The tabs share the row by the length of their words, so «Сегодня» keeps its counter without being cut.
  tab:{flexGrow:1,flexShrink:1,minHeight:H.touch,flexDirection:'row',alignItems:'center',justifyContent:'center',gap:4,borderRadius:R.md,paddingHorizontal:8},tabOn:{backgroundColor:C.surface},
- tabText:{...type.label,color:C.inkSoft,fontWeight:'500'},tabTextOn:{color:C.accent,fontWeight:'600'},
+ tabText:{...type.label,color:C.inkSoft,fontWeight:'500'},tabTextOn:{color:C.ink,fontWeight:'600'},
  count:{minWidth:16,height:16,borderRadius:R.full,paddingHorizontal:4,backgroundColor:C.danger,alignItems:'center',justifyContent:'center'},countText:{...type.caption,color:C.onAccent,fontWeight:'700'},
  panel:{gap:8},heading:{...type.label,color:C.muted,fontWeight:'600',marginTop:4},
  row:{flexDirection:'row',alignItems:'center',gap:12,minHeight:H.field,paddingVertical:8,paddingHorizontal:12,borderRadius:R.lg,backgroundColor:C.surfaceAlt},arrow:{...type.title,color:C.muted},
  facts:{borderWidth:1,borderColor:C.line,borderRadius:R.lg,backgroundColor:C.surface},fact:{flexDirection:'row',alignItems:'center',justifyContent:'space-between',gap:12,paddingVertical:12,paddingHorizontal:16},factLine:{borderTopWidth:1,borderTopColor:C.line},factValue:{...type.label,color:C.ink,fontWeight:'600',textAlign:'right',flexShrink:1},
- advice:{gap:8,padding:16,borderWidth:1,borderColor:C.accentLine,borderRadius:R.lg,backgroundColor:C.accentSoft},adviceTitle:{...type.label,color:C.accent,fontWeight:'600'},
+ advice:{gap:8,padding:16,borderWidth:1,borderColor:C.line,borderRadius:R.lg,backgroundColor: C.surfaceAlt},adviceTitle:{...type.label,color:C.ink,fontWeight:'600'},
 });
