@@ -96,7 +96,7 @@ const shift=(m:string,n:number)=>{const [y,mm]=m.split('-').map(Number);const d=
 const cashKinds:[string,string][]=[['capital','Взнос учредителя'],['loan','Получен займ'],['loan_repay','Возврат займа'],['dividend','Дивиденды'],['asset','Покупка техники']];
 export function Finance({go}:Nav){
  const [basis,setBasis]=useState<'fact'|'plan'>('fact'),[month,setMonth]=useState(''),[tab,setTab]=useState<'pl'|'cf'|'bs'>('pl'),[cash,setCash]=useState(false),[kind,setKind]=useState('capital');
- const d=useAdmin('finance?'+new URLSearchParams(month?{basis,month}:{basis}).toString());
+ const d=useAdmin('finance?'+new URLSearchParams(month?{basis:basis==='plan'?'forecast':'fact',month}:{basis:basis==='plan'?'forecast':'fact'}).toString());
  if(!d.data)return <Loading error={d.error}/>;
  const f=d.data,m:string=f.month,row=(f.months as Row[]|undefined)?.find(x=>x.month===m)||f.current||{},pl=row.pl||{},cf=row.cf||{},bs=f.balance||{};
  const costs:Row[]=f.costs||[];
