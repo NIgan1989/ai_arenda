@@ -2,62 +2,59 @@ import {t} from '../../lib/i18n';
 import React,{useEffect,useState} from 'react';
 import {ThinkingLine} from './Thinking';
 import {Pressable,Share,StyleSheet,Text,TextInput,View} from 'react-native';
-import {C,type,brandFont} from './styles';
+import {C,type} from './styles';
 import {T} from './tokens';
 import {request} from './api';
 import {calendarStatus,CALENDAR_HELP} from '../../lib/flat-calendars';
+import {EditButton,EditNote,EditRow,EditSheet,editDot,editStyles as e} from './EditSheet';
 type Row=Record<string,any>;
 const R=T.radius,H=T.control;
 
-// Linking a flat with its listings on other platforms (same screen as components/flat-calendars.tsx):
-// paste the platform's link here, send this service's link there.
-export function FlatCalendars({propertyId,onBack}:{propertyId:string;onBack:()=>void}){
- const [state,setState]=useState<Row|null>(null),[url,setUrl]=useState(''),[busy,setBusy]=useState(false),[error,setError]=useState(''),[note,setNote]=useState(''),[link,setLink]=useState(''),[help,setHelp]=useState(false);
+// Linking a flat with its listings on other platforms (same screen as components/flat-calendars.tsx), as one sheet
+// (board «Экраны старой версии», Luma's «Calendars»): the connected platforms are rows with when they were last
+// read, the link for other platforms is one row with «Скопировать», and «Подключить площадку» at the bottom opens
+// the step of pasting a link, whose «‹» comes back to the list.
+export function FlatCalendars({propertyId,onBack,onClose}:{propertyId:string;onBack:()=>void;onClose:()=>void}){
+ const [state,setState]=useState<Row|null>(null),[url,setUrl]=useState(''),[busy,setBusy]=useState(false),[error,setError]=useState(''),[note,setNote]=useState(''),[link,setLink]=useState(''),[help,setHelp]=useState(false),[adding,setAdding]=useState(false);
  async function load(){try{setState(await request('/api/operations/calendar/flat',{propertyId}));}catch(x:any){setError(x?.message||t('Не удалось загрузить календари.'));}}
  useEffect(()=>{load();},[propertyId]);
  async function run(action:()=>Promise<void>){if(busy)return;setBusy(true);setError('');setNote('');try{await action();await load();}catch(x:any){setError(x?.message||t('Не получилось.'));}finally{setBusy(false);}}
- const connect=()=>run(async()=>{const r=await request('/api/operations/calendar/connect',{propertyId,url});setNote(r.message);if(!r.failed)setUrl('');});
+ // A link that connected takes the owner back to the list, where the new platform now stands.
+ const connect=()=>run(async()=>{const r=await request('/api/operations/calendar/connect',{propertyId,url});setNote(r.message);if(!r.failed){setUrl('');setAdding(false);}});
  const toggle=(s:Row)=>run(async()=>{const r=await request('/api/operations/calendar/source',{id:s.id,propertyId,label:s.label,expectedVersion:s.version,enabled:!s.enabled});setNote(r.message||'');});
- const share=()=>run(async()=>{const r=await request('/api/operations/calendar/export',{propertyId});setLink(r.url);});
- return <View style={f.sheet}>
-  <View style={f.bar}><Pressable accessibilityRole="button" accessibilityLabel={t('Назад к списку')} onPress={onBack} disabled={busy} style={f.round}><Text style={f.roundText}>←</Text></Pressable><Text accessibilityRole="header" style={f.title}>{t('Календари площадок')}</Text></View>
-  <Text style={f.hint}>{t('Если жильё есть на Airbnb, Booking или Суточно, свяжите календари, и одно жильё не забронируют дважды.')}</Text>
-  <Text style={f.h}>{t('ЗАНЯТОСТЬ С ДРУГИХ ПЛОЩАДОК')}</Text>
-  {!state&&!error&&<ThinkingLine style={f.hint} text={t('Загружаю…')}/>}
-  {(state?.sources||[]).map((s:Row)=>{const st=calendarStatus(s);return <View key={s.id} style={[f.row,st.tone==='warn'&&f.rowWarn,st.tone==='off'&&f.rowOff]}>
-   <View style={[f.ico,st.tone==='warn'&&f.icoWarn]}><Text style={f.icoText}>📅</Text></View>
-   <View style={{flex:1,minWidth:0}}><Text style={f.name}>{s.label}</Text><Text style={[f.line,st.tone==='ok'&&f.lineOk,st.tone==='warn'&&f.lineWarn]}>{st.text}</Text></View>
-   {s.automatic===1&&<Pressable accessibilityRole="button" disabled={busy} onPress={()=>toggle(s)} style={f.small}><Text style={f.smallText}>{s.enabled?t('Отключить'):t('Включить')}</Text></Pressable>}
-  </View>;})}
-  <View style={{gap:4}}><Text style={f.label}>{t('Ссылка на календарь площадки')}</Text><TextInput accessibilityLabel={t('Ссылка на календарь площадки')} style={f.input} value={url} onChangeText={setUrl} maxLength={2000} autoCapitalize="none" autoCorrect={false} keyboardType="url" placeholder="https://www.airbnb.ru/calendar/ical/…" placeholderTextColor={C.muted}/></View>
-  <Pressable accessibilityRole="button" onPress={()=>setHelp(v=>!v)} style={f.small}><Text style={f.link}>{help?t('Скрыть подсказку'):t('Где взять ссылку')}</Text></Pressable>
-  {help&&<View style={{gap:4}}>{CALENDAR_HELP.map(h=><Text key={h.name} style={f.hint}><Text style={{fontWeight:'700'}}>{h.name}: </Text>{h.where}</Text>)}</View>}
-  <Pressable accessibilityRole="button" disabled={busy||!url.trim()} onPress={connect} style={[f.primary,(busy||!url.trim())&&f.disabled]}><Text style={f.primaryText}>{busy?t('Подключаю…'):t('Подключить')}</Text></Pressable>
-  <Text style={f.h}>{t('ССЫЛКА ДЛЯ ДРУГИХ ПЛОЩАДОК')}</Text>
-  <Text style={f.hint}>{t('Вставьте её в импорт календаря на Airbnb или Booking, тогда брони отсюда закроют даты и там. В ссылке только занятые даты, без имён и адресов.')}</Text>
-  {link?<><Text selectable style={f.linkBox}>{link}</Text><Pressable accessibilityRole="button" onPress={()=>Share.share({message:link}).catch(()=>{})} style={f.primary}><Text style={f.primaryText}>{t('Отправить ссылку')}</Text></Pressable></>
-   :<Pressable accessibilityRole="button" disabled={busy} onPress={share} style={f.ghost}><Text style={f.ghostText}>{t('Получить ссылку')}</Text></Pressable>}
-  {!!note&&<Text accessibilityRole="text" style={f.note}>{note}</Text>}
-  {!!error&&<Text accessibilityRole="alert" style={f.error}>{error}</Text>}
- </View>;
+ // «Скопировать»: the first press asks for the link, then the system share sheet (with its «Copy») sends it on.
+ const send=(v:string)=>{Share.share({message:v}).catch(()=>{});};
+ const copy=()=>link?send(link):run(async()=>{const r=await request('/api/operations/calendar/export',{propertyId});setLink(r.url);if(r.url)send(r.url);});
+ const sources:Row[]=state?.sources||[];
+ const foot=adding?<EditButton title={t('Подключить')} busy={busy&&t('Подключаю…')} disabled={!url.trim()} onPress={connect}/>
+  :<EditButton title={t('Подключить площадку')} disabled={busy} onPress={()=>{setNote('');setError('');setAdding(true);}}/>;
+ return <EditSheet title={adding?t('Подключить площадку'):t('Календари площадок')} onBack={adding?()=>setAdding(false):onBack} onClose={onClose} foot={foot} busy={busy}>
+  {adding?<>
+   <View style={e.field}><Text style={e.label}>{t('Ссылка на календарь площадки')}</Text><TextInput accessibilityLabel={t('Ссылка на календарь площадки')} style={e.input} value={url} onChangeText={setUrl} maxLength={2000} autoCapitalize="none" autoCorrect={false} keyboardType="url" placeholder="https://www.airbnb.ru/calendar/ical/…" placeholderTextColor={C.muted}/></View>
+   <View>
+    <EditRow title={t('Где взять ссылку')} line={CALENDAR_HELP.map(h=>h.name).join(', ')} onPress={()=>setHelp(v=>!v)} last={!help}/>
+    {help&&<View style={f.help}>{CALENDAR_HELP.map(h=><Text key={h.name} style={e.note}><Text style={f.name}>{h.name}: </Text>{h.where}</Text>)}</View>}
+   </View>
+  </>:<>
+   {!state&&!error&&<ThinkingLine style={e.note} text={t('Загружаю…')}/>}
+   {!!state&&!sources.length&&<EditNote text={t('Если жильё есть на Airbnb, Booking или Суточно, свяжите календари, и одно жильё не забронируют дважды.')}/>}
+   <View>
+    {sources.map(s=>{const st=calendarStatus(s);return <EditRow key={s.id} icon="calendar" title={s.label} line={st.text} dot={st.tone==='warn'?editDot.wait:st.tone==='off'?editDot.off:false}
+     right={s.automatic===1?<Pressable accessibilityRole="button" accessibilityLabel={(s.enabled?t('Отключить'):t('Включить'))+': '+s.label} disabled={busy} onPress={()=>toggle(s)} hitSlop={4} style={({pressed})=>[f.quiet,(pressed||busy)&&e.dim]}><Text style={f.quietText}>{s.enabled?t('Отключить'):t('Включить')}</Text></Pressable>:undefined}/>;})}
+    <EditRow icon="send" title={t('Ссылка для других площадок')} line={link||t('Только занятые даты, без имён и адресов')} last
+     right={<Pressable accessibilityRole="button" accessibilityLabel={t('Скопировать')} disabled={busy} onPress={copy} style={({pressed})=>[f.copy,(pressed||busy)&&e.dim]}><Text style={f.copyText}>{t('Скопировать')}</Text></Pressable>}/>
+   </View>
+  </>}
+  {!!note&&<EditNote tone="done" text={note}/>}
+  {!!error&&<EditNote tone="error" text={error}/>}
+ </EditSheet>;
 }
 const f=StyleSheet.create({
- sheet:{backgroundColor:C.surface,borderRadius:R.xl,padding:16,gap:12,borderWidth:1,borderColor:C.line},
- bar:{flexDirection:'row',alignItems:'center',gap:12},
- round:{width:H.touch,height:H.touch,borderRadius:R.full,backgroundColor:C.surfaceAlt,alignItems:'center',justifyContent:'center'},roundText:{color:C.inkSoft,...type.subtitle},
- title:{color:C.ink,...type.subtitle,...brandFont},
- h:{color:C.muted,...type.caption,fontWeight:'700',marginTop:4},
- hint:{color:C.muted,...type.caption},
- row:{flexDirection:'row',alignItems:'center',gap:8,minHeight:56,paddingHorizontal:12,paddingVertical:8,borderRadius:R.md,borderWidth:1,borderColor:C.line},
- rowWarn:{borderColor:C.warningLine},rowOff:{opacity:.7},
- ico:{width:32,height:32,borderRadius:R.full,backgroundColor:C.accentSoft,alignItems:'center',justifyContent:'center'},icoWarn:{backgroundColor:C.warningSoft},icoText:{...type.label},
- name:{color:C.ink,...type.label,fontWeight:'600'},line:{color:C.muted,...type.caption},lineOk:{color:C.success},lineWarn:{color:C.warning},
- small:{minHeight:H.compact,justifyContent:'center',paddingHorizontal:4},smallText:{color:C.muted,...type.label},link:{color:C.accent,...type.label,fontWeight:'600'},
- label:{color:C.muted,...type.caption,fontWeight:'600'},
- input:{minHeight:H.field,paddingHorizontal:16,borderRadius:R.md,borderWidth:1,borderColor:C.line,backgroundColor:C.surface,color:C.ink,...type.body},
- primary:{minHeight:H.primary,borderRadius:R.full,backgroundColor:C.accent,alignItems:'center',justifyContent:'center',paddingHorizontal:24},primaryText:{color:C.onAccent,...type.body,fontWeight:'700'},disabled:{backgroundColor:C.lineStrong},
- ghost:{minHeight:H.primary,borderRadius:R.full,backgroundColor:C.surfaceAlt,alignItems:'center',justifyContent:'center',paddingHorizontal:24},ghostText:{color:C.ink,...type.body,fontWeight:'700'},
- linkBox:{padding:12,borderRadius:R.md,backgroundColor:C.surfaceAlt,color:C.ink,...type.caption},
- note:{padding:12,borderRadius:R.md,backgroundColor:C.accentSoft,color:C.ink,...type.label},
- error:{padding:12,borderRadius:R.md,backgroundColor:C.dangerSoft,color:C.danger,...type.label}
+ // The help opens under its row, in line with the row's text.
+ help:{gap:8,paddingBottom:12,borderBottomWidth:1,borderBottomColor:C.line},
+ name:{color:C.ink,fontWeight:'600'},
+ // A quiet word at the row's end: switching a platform off is rare, so it does not look like a button.
+ quiet:{minHeight:H.compact,justifyContent:'center',paddingHorizontal:4},quietText:{...type.label,color:C.muted},
+ copy:{minHeight:H.compact,justifyContent:'center',paddingHorizontal:16,borderRadius:R.full,borderWidth:1,borderColor:C.lineStrong,backgroundColor:C.surface},
+ copyText:{...type.label,color:C.ink,fontWeight:'600'},
 });

@@ -2,54 +2,44 @@ import {t} from '../../lib/i18n';
 // «Залы» of one venue (lib/venue.ts): the owner adds the next hall from one that is already filled in. The address,
 // the pin, the photos, the rules and the person on shift come with it; the name, the capacity and the price are the
 // hall's own. Each hall is booked on its own and has its own calendar.
+// One sheet (board «Экраны старой версии», 2026-11-26): the halls are short rows that open the hall, «Добавить зал»
+// is pinned at the bottom and turns the sheet into one field; the venue's name is a row that turns into its field.
 import React,{useEffect,useState} from 'react';
-import {Pressable,StyleSheet,Text,TextInput,View} from 'react-native';
+import {StyleSheet,Text} from 'react-native';
 import {ThinkingLine} from './Thinking';
-import {C,type,brandFont} from './styles';
-import {T} from './tokens';
+import {C,type} from './styles';
+import {EditButton,EditField,EditNote,EditRow,EditSheet,editDot,editStyles} from './EditSheet';
 type Row=Record<string,any>;
 
-export function VenueHalls({property,call,onBack,onOpen,onChanged}:{property:Row;call:(path:string,body:Row)=>Promise<any>;onBack:()=>void;onOpen?:(id:string)=>void|Promise<void>;onChanged?:(venue:Row|null)=>void}){
- const [venue,setVenue]=useState<Row|null|undefined>(undefined),[busy,setBusy]=useState(false),[error,setError]=useState(''),[note,setNote]=useState(''),[title,setTitle]=useState(''),[name,setName]=useState(''),[naming,setNaming]=useState(false);
+export function VenueHalls({property,call,onBack,onClose,onOpen,onChanged}:{property:Row;call:(path:string,body:Row)=>Promise<any>;onBack:()=>void;onClose:()=>void;onOpen?:(id:string)=>void|Promise<void>;onChanged?:(venue:Row|null)=>void}){
+ const [venue,setVenue]=useState<Row|null|undefined>(undefined),[busy,setBusy]=useState(false),[error,setError]=useState(''),[note,setNote]=useState(''),[title,setTitle]=useState(''),[name,setName]=useState(''),[naming,setNaming]=useState(false),[adding,setAdding]=useState(false);
  useEffect(()=>{let live=true;call('venue/state',{propertyId:property.id}).then(v=>{if(live){setVenue(v.venue||null);setName(v.venue?.title||property.title||'');}}).catch(x=>{if(live)setError(x?.message||t('Не удалось загрузить.'));});return()=>{live=false;};},[property.id]); // eslint-disable-line react-hooks/exhaustive-deps
- async function add(){if(busy||!title.trim())return;setBusy(true);setError('');setNote('');try{const r=await call('venue/hall',{propertyId:property.id,title:title.trim(),venueTitle:name.trim()||property.title});setVenue(r.venue);onChanged?.(r.venue);setTitle('');if(onOpen)await onOpen(r.id);else setNote(r.message||'');}catch(x:any){setError(x?.message||t('Не получилось.'));}finally{setBusy(false);}}
+ async function add(){if(busy||!title.trim())return;setBusy(true);setError('');setNote('');try{const r=await call('venue/hall',{propertyId:property.id,title:title.trim(),venueTitle:name.trim()||property.title});setVenue(r.venue);onChanged?.(r.venue);setTitle('');setAdding(false);if(onOpen)await onOpen(r.id);else setNote(r.message||'');}catch(x:any){setError(x?.message||t('Не получилось.'));}finally{setBusy(false);}}
  async function rename(){if(busy||!name.trim())return;setBusy(true);setError('');setNote('');try{const r=await call('venue/rename',{propertyId:property.id,title:name.trim()});setVenue(r.venue);onChanged?.(r.venue);setNote(r.message||'');setNaming(false);}catch(x:any){setError(x?.message||t('Не получилось.'));}finally{setBusy(false);}}
  const halls:Row[]=venue?.halls||[];
- return <View style={f.sheet}>
-  <View style={f.bar}><Pressable accessibilityRole="button" accessibilityLabel={t('Назад к списку')} onPress={onBack} disabled={busy} style={f.round}><Text style={f.roundText}>←</Text></Pressable><Text accessibilityRole="header" style={f.title}>{t('Залы')}</Text></View>
-  {venue===undefined&&!error&&<ThinkingLine style={f.hint} text={t('Загружаю…')}/>}
-  {venue===null&&<Text style={f.hint}>{t('Если у вас несколько залов или парных по одному адресу, добавьте их сюда. Гость выберет свободный зал, а у каждого будет своя цена и свой календарь.')}</Text>}
-  {!!venue&&<>
-   {naming?<View style={f.field}><Text style={f.label}>{t('Название заведения')}</Text><View style={f.line}><TextInput accessibilityLabel={t('Название заведения')} style={[f.input,{flex:1}]} value={name} onChangeText={setName} maxLength={120}/><Pressable accessibilityRole="button" accessibilityLabel={t('Сохранить название')} disabled={busy||!name.trim()} onPress={rename} style={[f.send,(busy||!name.trim())&&f.off]}><Text style={f.sendText}>{t('Сохранить')}</Text></Pressable></View></View>
-   :<Pressable accessibilityRole="button" accessibilityLabel={t('Заведение: {title}. Переименовать',{title:venue.title})} onPress={()=>{setNote('');setNaming(true);}} style={({pressed})=>[f.venue,pressed&&f.pressed]}><View style={{flex:1,minWidth:0}}><Text style={f.label}>{t('ЗАВЕДЕНИЕ')}</Text><Text numberOfLines={1} style={f.venueTitle}>{venue.title}</Text></View><Text style={f.link}>{t('Изменить')}</Text></Pressable>}
-   {halls.map(h=><Pressable key={h.id} accessibilityRole="button" accessibilityLabel={t(h.id===property.id?'Зал: {title}, открыт сейчас':'Зал: {title}',{title:h.title})} disabled={busy||h.id===property.id||!onOpen} onPress={()=>onOpen?.(h.id)} style={({pressed})=>[f.row,h.id===property.id&&f.current,pressed&&f.pressed]}>
-    <View style={{flex:1,minWidth:0}}><Text numberOfLines={1} style={f.name}>{h.title}</Text><Text style={f.meta}>{Number(h.published)?t('до {n} гостей · гости видят',{n:h.capacity}):t('до {n} гостей · черновик',{n:h.capacity})}</Text></View>
-    <Text style={f.meta}>{h.id===property.id?t('этот зал'):'›'}</Text>
-   </Pressable>)}
+ // «‹» from a field goes back to the list of halls; from the list, back to the place.
+ const back=adding||naming?()=>{setAdding(false);setNaming(false);setError('');}:onBack;
+ const open=(next:'add'|'name')=>{setNote('');setError('');setAdding(next==='add');setNaming(next==='name');};
+ const foot=adding?<EditButton title={t('Добавить')} disabled={!title.trim()} busy={busy&&t('Добавляю…')} onPress={add}/>
+  :naming?<EditButton title={t('Сохранить')} disabled={!name.trim()} busy={busy&&t('Сохраняю…')} onPress={rename}/>
+  :venue!==undefined?<EditButton title={t('Добавить зал')} disabled={busy} onPress={()=>open('add')}/>:undefined;
+ return <EditSheet title={adding?t('Новый зал'):naming?t('Название заведения'):t('Залы')} onBack={back} onClose={onClose} busy={busy} foot={foot}>
+  {venue===undefined&&!error&&<ThinkingLine style={editStyles.note} text={t('Загружаю…')}/>}
+  {adding?<>
+   {venue===null&&<EditField label={t('Название заведения')} value={name} onChange={setName} placeholder={t('Сауна «Жар»')}/>}
+   <EditField label={t('Название нового зала')} value={title} onChange={setTitle} placeholder={t('Малый зал')}/>
+   <EditNote text={t('Адрес, фото, правила и сотрудник скопируются из этого зала. Останется указать вместимость и цену.')}/>
+  </>:naming?<EditField label={t('Название заведения')} value={name} onChange={setName}/>
+  :<>
+   {venue===null&&<EditNote text={t('Залы по одному адресу: у каждого своя цена и свой календарь.')}/>}
+   {!!venue&&<EditRow icon="building" title={t('Название заведения')} line={venue.title} label={t('Заведение: {title}. Переименовать',{title:venue.title})} disabled={busy} onPress={()=>open('name')}/>}
+   {halls.map((h,i)=>{const here=h.id===property.id;
+    return <EditRow key={h.id} title={h.title} line={Number(h.published)?t('до {n} гостей · гости видят',{n:h.capacity}):t('до {n} гостей · черновик',{n:h.capacity})} dot={Number(h.published)?editDot.ok:editDot.off} label={t(here?'Зал: {title}, открыт сейчас':'Зал: {title}',{title:h.title})} last={i===halls.length-1} disabled={busy} onPress={here||!onOpen?undefined:()=>onOpen(h.id)} right={here?<Text style={f.here}>{t('этот зал')}</Text>:undefined}/>;})}
   </>}
-  {venue!==undefined&&<>
-   {venue===null&&<View style={f.field}><Text style={f.label}>{t('Название заведения')}</Text><TextInput accessibilityLabel={t('Название заведения')} style={f.input} value={name} onChangeText={setName} maxLength={120} placeholder={t('Сауна «Жар»')} placeholderTextColor={C.muted}/></View>}
-   <View style={f.field}><Text style={f.label}>{t('Название нового зала')}</Text><TextInput accessibilityLabel={t('Название нового зала')} style={f.input} value={title} onChangeText={setTitle} maxLength={120} placeholder={t('Малый зал')} placeholderTextColor={C.muted}/></View>
-   <Text style={f.hint}>{t('Адрес, фото, правила и сотрудник скопируются из этого зала. Останется указать вместимость и цену.')}</Text>
-   <Pressable accessibilityRole="button" accessibilityLabel={t('Добавить зал')} disabled={busy||!title.trim()} onPress={add} style={[f.primary,(busy||!title.trim())&&f.off]}><Text style={f.primaryText}>{busy?t('Добавляю…'):t('+  Добавить зал')}</Text></Pressable>
-  </>}
-  {!!note&&<Text accessibilityLiveRegion="polite" style={f.note}>{note}</Text>}
-  {!!error&&<Text accessibilityRole="alert" style={f.error}>{error}</Text>}
- </View>;
+  {!!note&&<EditNote tone="done" text={note}/>}
+  {!!error&&<EditNote tone="error" text={error}/>}
+ </EditSheet>;
 }
-const R=T.radius,H=T.control;
 const f=StyleSheet.create({
- sheet:{backgroundColor:C.surface,borderRadius:R.xl,padding:16,gap:12,borderWidth:1,borderColor:C.line},
- bar:{flexDirection:'row',alignItems:'center',gap:12},
- round:{width:H.touch,height:H.touch,borderRadius:R.full,backgroundColor:C.surfaceAlt,alignItems:'center',justifyContent:'center'},roundText:{color:C.inkSoft,...type.subtitle},
- title:{color:C.ink,...type.subtitle,...brandFont},hint:{color:C.muted,...type.caption},
- venue:{flexDirection:'row',alignItems:'center',gap:12,padding:12,borderRadius:R.md,backgroundColor:C.accentSoft},venueTitle:{color:C.ink,...type.body,fontWeight:'700'},link:{color:C.accent,...type.label,fontWeight:'600'},
- row:{flexDirection:'row',alignItems:'center',gap:12,minHeight:56,paddingHorizontal:12,paddingVertical:8,borderRadius:R.md,borderWidth:1,borderColor:C.line},current:{borderColor:C.accent},pressed:{backgroundColor:C.surfaceAlt},
- name:{color:C.ink,...type.label,fontWeight:'600'},meta:{color:C.muted,...type.caption},
- field:{gap:4},label:{color:C.muted,...type.caption,fontWeight:'600'},line:{flexDirection:'row',alignItems:'center',gap:8},
- input:{minHeight:H.field,borderRadius:R.md,borderWidth:1,borderColor:C.line,backgroundColor:C.surface,paddingHorizontal:16,paddingVertical:12,color:C.ink,...type.body},
- send:{minHeight:H.compact,borderRadius:R.full,backgroundColor:C.accent,alignItems:'center',justifyContent:'center',paddingHorizontal:16},sendText:{color:C.onAccent,...type.label,fontWeight:'700'},
- primary:{minHeight:H.primary,borderRadius:R.full,backgroundColor:C.aiFrom,alignItems:'center',justifyContent:'center',paddingHorizontal:24},off:{backgroundColor:C.lineStrong},primaryText:{color:C.onAccent,...type.body,fontWeight:'700'},
- note:{padding:12,borderRadius:R.md,backgroundColor:C.accentSoft,color:C.ink,...type.label},
- error:{padding:12,borderRadius:R.md,backgroundColor:C.dangerSoft,color:C.danger,...type.label}
+ here:{...type.label,color:C.muted},
 });

@@ -1,37 +1,37 @@
-import {t} from '../../lib/i18n';
+import {forms,t} from '../../lib/i18n';
 // «Номера одного типа» (lib/room-units.ts): a hotel, a hostel, an apart-hotel or a holiday resort fills one card for
 // all its rooms alike and says how many there are. Guests see one card and how many of its rooms are free. «Свободно
 // сегодня» is the one number the hotel gives from its own system: the rest of the rooms are closed until midnight.
+// Board «Экраны старой версии» (2026-11-26): the row «Номера · 1 ›» in the place's list opens this sheet with the
+// counters and one button pinned at the bottom.
 import React,{useState} from 'react';
-import {Pressable,StyleSheet,Text,View} from 'react-native';
-import {Stepper} from './SheetParts';
-import {C,type} from './styles';
-import {T} from './tokens';
+import {EditButton,EditCount,EditNote,EditSheet} from './EditSheet';
 type Row=Record<string,any>;
 
-export function RoomCount({property,call,onChanged}:{property:Row;call:(path:string,body:Row)=>Promise<any>;onChanged?:(rooms:Row)=>void}){
+// The line of the row «Номера» in the list: how many rooms and, with more than one, how many are free today. A card
+// without units from the server is a single room.
+export function roomsLine(property:Row):string{
+ if(!property.id)return t('Не указано');
+ const u:Row|undefined=property.units,total=Number(u?.total)||1;
+ return total>1&&u?.free!==undefined?t('Свободно номеров: {free} из {total}',{free:u.free,total}):t(forms(total,'{n} номер','{n} номера','{n} номеров'),{n:total});
+}
+
+export function RoomCount({property,call,onChanged,onBack,onClose}:{property:Row;call:(path:string,body:Row)=>Promise<any>;onChanged?:(rooms:Row)=>void;onBack:()=>void;onClose:()=>void}){
  const start:Row=property.units||{total:1,free:1,taken:0,closed:0};
  const [rooms,setRooms]=useState<Row>(start),[count,setCount]=useState(Number(start.total)||1),[free,setFree]=useState(Number(start.free)||0);
  const [busy,setBusy]=useState(false),[note,setNote]=useState(''),[error,setError]=useState('');
  async function save(path:string,body:Row){setBusy(true);setError('');setNote('');try{const r=await call(path,{propertyId:property.id,...body});setRooms(r.rooms);setCount(r.rooms.total);setFree(r.rooms.free);setNote(r.message||'');onChanged?.(r.rooms);}catch(x:any){setError(x?.message||t('Не получилось.'));}finally{setBusy(false);}}
- const open=Math.max(0,Number(rooms.total)-Number(rooms.taken||0));
- return <View style={s.box}>
-  <Text style={s.title}>{t('Номера этого типа')}</Text>
-  <Text style={s.hint}>{t('Одна карточка на все одинаковые номера. Гость видит, сколько из них свободно.')}</Text>
-  <Stepper label={t('Таких номеров')} value={count} text={String(count)} min={1} max={200} disabled={busy} onChange={setCount}/>
-  {count!==Number(rooms.total)&&<Pressable accessibilityRole="button" disabled={busy} onPress={()=>save('rooms/count',{count})} style={({pressed})=>[s.button,(pressed||busy)&&s.dim]}><Text style={s.buttonText}>{t('Сохранить: {n} номеров',{n:count})}</Text></Pressable>}
+ const open=Math.max(0,Number(rooms.total)-Number(rooms.taken||0)),many=count!==Number(rooms.total),freed=free!==Number(rooms.free);
+ // One button saves what changed: the number of rooms first (its answer brings the free ones anew), then the free ones.
+ const foot=<EditButton title={many?t('Сохранить: {n} номеров',{n:count}):freed?t('Сохранить: свободно {n}',{n:free}):t('Сохранить')} disabled={!many&&!freed} busy={busy&&t('Сохраняю…')} onPress={()=>many?save('rooms/count',{count}):save('rooms/free',{free})}/>;
+ return <EditSheet title={t('Номера')} onBack={onBack} onClose={onClose} busy={busy} foot={foot}>
+  <EditCount title={t('Таких номеров')} value={count} min={1} max={200} disabled={busy} onChange={setCount}/>
+  <EditNote text={t('Одна карточка на все одинаковые номера. Гость видит, сколько из них свободно.')}/>
   {Number(rooms.total)>1&&<>
-   <Stepper label={t('Свободно сегодня')} value={free} text={t('{free} из {total}',{free,total:rooms.total})} min={0} max={open} disabled={busy} onChange={setFree}/>
-   <Text style={s.hint}>{t('Через нас занято: {taken}. Закрыто вами: {closed}.',{taken:rooms.taken||0,closed:rooms.closed||0})}{rooms.repair?' '+t('На ремонте: {n}.',{n:rooms.repair}):''}</Text>
-   {free!==Number(rooms.free)&&<Pressable accessibilityRole="button" disabled={busy} onPress={()=>save('rooms/free',{free})} style={({pressed})=>[s.button,(pressed||busy)&&s.dim]}><Text style={s.buttonText}>{t('Сохранить: свободно {n}',{n:free})}</Text></Pressable>}
+   <EditCount title={t('Свободно сегодня')} value={free} text={t('{free} из {total}',{free,total:rooms.total})} min={0} max={open} disabled={busy||many} onChange={setFree}/>
+   <EditNote text={t('Через нас занято: {taken}. Закрыто вами: {closed}.',{taken:rooms.taken||0,closed:rooms.closed||0})+(rooms.repair?' '+t('На ремонте: {n}.',{n:rooms.repair}):'')}/>
   </>}
-  {!!note&&<Text accessibilityLiveRegion="polite" style={s.note}>{note}</Text>}
-  {!!error&&<Text accessibilityRole="alert" style={s.error}>{error}</Text>}
- </View>;
+  {!!note&&<EditNote tone="done" text={note}/>}
+  {!!error&&<EditNote tone="error" text={error}/>}
+ </EditSheet>;
 }
-const s=StyleSheet.create({
- box:{gap:8,padding:16,borderRadius:T.radius.lg,borderWidth:1,borderColor:C.line,backgroundColor:C.surface,width:'100%'},
- title:{...type.label,color:C.ink,fontWeight:'700'},hint:{...type.caption,color:C.muted},
- button:{minHeight:44,borderRadius:T.radius.md,backgroundColor:C.accent,alignItems:'center',justifyContent:'center',paddingHorizontal:16},buttonText:{...type.label,color:C.onAccent,fontWeight:'700'},
- dim:{opacity:0.6},note:{...type.caption,color:C.success},error:{...type.caption,color:C.danger},
-});

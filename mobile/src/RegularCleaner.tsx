@@ -2,62 +2,58 @@ import {t} from '../../lib/i18n';
 import React,{useEffect,useState} from 'react';
 import {ThinkingLine} from './Thinking';
 import {Pressable,StyleSheet,Text,View} from 'react-native';
-import {C,type,brandFont} from './styles';
+import {C,type} from './styles';
 import {T} from './tokens';
 import {request} from './api';
 import {regularBenefits,regularSince} from '../../lib/regular-cleaner-text';
+import {EditButton,EditNote,EditRow,EditSheet,editStyles as e,type EditMenuItem} from './EditSheet';
 type Row=Record<string,any>;
-const R=T.radius,H=T.control;
-const ICONS:Record<string,string>={first:'⚡',backup:'🛟',guarantee:'🛡',fee:'％',proof:'📷'};
+const R=T.radius;
+// The three gains named when «Что даёт закрепление» opens: short titles only, the long texts stay on the site.
+const SHORT=['first','backup','proof'];
 
-// «Постоянный исполнитель» for one flat (same screen as components/regular-cleaner.tsx): pin the cleaner the owner
-// already works with and see what the pair gets from the service.
-export function RegularCleaner({propertyId,onBack}:{propertyId:string;onBack:()=>void}){
- const [state,setState]=useState<Row|null>(null),[busy,setBusy]=useState(false),[error,setError]=useState(''),[note,setNote]=useState(''),[confirm,setConfirm]=useState(false);
+// «Постоянный исполнитель» for one flat (same screen as components/regular-cleaner.tsx), as one sheet (board «Экраны
+// старой версии»): the pinned cleaner is one card with what they did here; without one, the people to pin are rows to
+// choose from and «Закрепить» is pinned at the bottom. «Снять закрепление» is rare, so it lives in «⋯» and asks first.
+export function RegularCleaner({propertyId,onBack,onClose}:{propertyId:string;onBack:()=>void;onClose:()=>void}){
+ const [state,setState]=useState<Row|null>(null),[busy,setBusy]=useState(false),[error,setError]=useState(''),[note,setNote]=useState(''),[confirm,setConfirm]=useState(false),[pick,setPick]=useState(''),[more,setMore]=useState(false);
  async function load(){try{setState(await request('/api/operations/regular/state',{propertyId}));}catch(x:any){setError(x?.message||t('Не удалось загрузить.'));}}
  useEffect(()=>{load();},[propertyId]);
  async function run(path:string,body:Row){if(busy)return;setBusy(true);setError('');setNote('');try{const r=await request(path,{propertyId,...body});setNote(r?.message||'');setConfirm(false);await load();}catch(x:any){setError(x?.message||t('Не получилось.'));}finally{setBusy(false);}}
- const r=state?.regular,benefits=state?regularBenefits(state):[];
- const avatar=(name:string)=><View style={f.avatar}><Text style={f.avatarText}>{(name||'?').slice(0,1)}</Text></View>;
- return <View style={f.sheet}>
-  <View style={f.bar}><Pressable accessibilityRole="button" accessibilityLabel={t('Назад к списку')} onPress={onBack} disabled={busy} style={f.round}><Text style={f.roundText}>←</Text></Pressable><Text accessibilityRole="header" style={f.title}>{t('Постоянный исполнитель')}</Text></View>
-  {!state&&!error&&<ThinkingLine style={f.hint} text={t('Загружаю…')}/>}
-  {r&&<View style={[f.row,f.pinned]}>{avatar(r.name)}<View style={{flex:1,minWidth:0}}><Text style={f.name}>{r.name}</Text><Text style={f.line}>{regularSince(r)}</Text></View><Text style={f.badge}>{t('Постоянный')}</Text></View>}
-  {state&&!r&&<>
-   <Text style={f.hint}>{t('Закрепите исполнителя, с которым уже работаете, и уборки этого жилья будут сами приходить к нему.')}</Text>
-   {state.candidates.length?state.candidates.map((c:Row)=><View key={c.id} style={f.row}>{avatar(c.name)}<View style={{flex:1,minWidth:0}}><Text style={f.name}>{c.name}</Text><Text style={f.line}>{regularSince(c)}</Text></View>
-    <Pressable accessibilityRole="button" accessibilityLabel={t('Закрепить {name}',{name:c.name})} disabled={busy} onPress={()=>run('/api/operations/regular/pin',{cleanerId:c.id})} style={[f.send,busy&&f.disabled]}><Text style={f.sendText}>{t('Закрепить')}</Text></Pressable></View>)
-    :<Text style={f.empty}>{t('Пока закрепить некого. После первой уборки через сервис здесь появится тот, кто её сделал.')}</Text>}
-  </>}
-  {state&&<><Text style={f.h}>{r?t('ЧТО ЭТО ДАЁТ'):t('ЧТО ДАСТ ЗАКРЕПЛЕНИЕ')}</Text>
-   {benefits.map(b=><View key={b.key} style={f.benefit}><View style={[f.ico,b.warn&&f.icoWarn]}><Text style={f.icoText}>{ICONS[b.key]}</Text></View><View style={{flex:1,minWidth:0}}><Text style={[f.name,b.warn&&{color:C.warning}]}>{b.title}</Text><Text style={f.line}>{b.text}</Text></View></View>)}</>}
-  {!!note&&<Text accessibilityRole="text" style={f.note}>{note}</Text>}
-  {!!error&&<Text accessibilityRole="alert" style={f.error}>{error}</Text>}
-  {r&&(confirm?<View style={f.remove}>
-   <Text style={f.label}><Text style={{fontWeight:'700'}}>{t('Снять закрепление: {name}?',{name:r.name})} </Text>{t('Уже назначенные уборки останутся за ним, новые ИИ будет предлагать лучшим свободным исполнителям.')}</Text>
-   <View style={{flexDirection:'row',gap:12,alignItems:'center'}}><Pressable accessibilityRole="button" disabled={busy} onPress={()=>run('/api/operations/regular/unpin',{})} style={f.danger}><Text style={f.dangerText}>{busy?t('Снимаю…'):t('Снять')}</Text></Pressable><Pressable accessibilityRole="button" disabled={busy} onPress={()=>setConfirm(false)} style={f.small}><Text style={f.smallText}>{t('Отмена')}</Text></Pressable></View>
-  </View>:<Pressable accessibilityRole="button" disabled={busy} onPress={()=>setConfirm(true)} style={[f.small,{alignSelf:'center'}]}><Text style={f.smallText}>{t('Снять закрепление')}</Text></Pressable>)}
- </View>;
+ const r=state?.regular,benefits=state?regularBenefits(state).filter(b=>SHORT.includes(b.key)):[],candidates:Row[]=state?.candidates||[];
+ // The best-ranked person is chosen until the owner taps another; the button names who will be pinned.
+ const chosen=r?null:candidates.find(c=>c.id===pick)||candidates[0]||null;
+ const avatar=(name:string,big=false)=><View style={[f.avatar,big&&f.avatarBig]} accessibilityElementsHidden importantForAccessibility="no"><Text style={f.avatarText}>{(name||'?').slice(0,1).toUpperCase()}</Text></View>;
+ const menu:EditMenuItem[]=r&&!confirm?[{title:t('Снять закрепление'),danger:true,onPress:()=>setConfirm(true)}]:[];
+ const foot=r&&confirm?<><EditButton title={t('Снять')} busy={busy&&t('Снимаю…')} onPress={()=>run('/api/operations/regular/unpin',{})}/><EditButton line title={t('Отмена')} disabled={busy} onPress={()=>setConfirm(false)}/></>
+  :chosen?<EditButton title={t('Закрепить {name}',{name:chosen.name})} busy={busy&&t('Закрепляю…')} onPress={()=>run('/api/operations/regular/pin',{cleanerId:chosen.id})}/>:undefined;
+ return <EditSheet title={t('Постоянный исполнитель')} onBack={confirm?()=>setConfirm(false):onBack} onClose={onClose} menu={menu} foot={foot} busy={busy}>
+  {!state&&!error&&<ThinkingLine style={e.note} text={t('Загружаю…')}/>}
+  {r&&<View accessible accessibilityLabel={[r.name,regularSince(r)].filter(Boolean).join('. ')} style={f.card}>{avatar(r.name,true)}<View style={e.rowText}><Text numberOfLines={1} style={e.rowTitle}>{r.name}</Text>{!!regularSince(r)&&<Text numberOfLines={1} style={e.rowLine}>{regularSince(r)}</Text>}</View></View>}
+  {r&&confirm&&<View style={f.ask}><Text style={f.askTitle}>{t('Снять закрепление: {name}?',{name:r.name})}</Text><EditNote text={t('Уже назначенные уборки останутся за ним, новые ИИ будет предлагать лучшим свободным исполнителям.')}/></View>}
+  {state&&!r&&(candidates.length?<>
+   <EditNote text={t('Закрепите исполнителя, с которым уже работаете, и уборки этого жилья будут сами приходить к нему.')}/>
+   <View accessibilityRole="radiogroup">{candidates.map((c,i)=>{const on=chosen?.id===c.id,line=regularSince(c);return <Pressable key={c.id} accessibilityRole="radio" accessibilityLabel={[c.name,line].filter(Boolean).join('. ')} accessibilityState={{checked:on,disabled:busy}} disabled={busy} onPress={()=>setPick(c.id)} style={({pressed})=>[e.row,i<candidates.length-1&&e.rowLineBottom,pressed&&e.pressed]}>
+    {avatar(c.name)}<View style={e.rowText}><Text numberOfLines={1} style={e.rowTitle}>{c.name}</Text>{!!line&&<Text numberOfLines={1} style={e.rowLine}>{line}</Text>}</View>
+    <View style={[f.radio,on&&f.radioOn]}>{on&&<View style={f.radioDot}/>}</View>
+   </Pressable>;})}</View>
+  </>:<EditNote text={t('Пока закрепить некого. После первой уборки через сервис здесь появится тот, кто её сделал.')}/>)}
+  {state&&!confirm&&<View>
+   <EditRow icon="star" title={t('Что даёт закрепление')} onPress={()=>setMore(v=>!v)} last={!more}/>
+   {more&&<View style={f.more}>{benefits.map(b=><Text key={b.key} style={e.note}>{b.title}</Text>)}</View>}
+  </View>}
+  {!!note&&<EditNote tone="done" text={note}/>}
+  {!!error&&<EditNote tone="error" text={error}/>}
+ </EditSheet>;
 }
 const f=StyleSheet.create({
- sheet:{backgroundColor:C.surface,borderRadius:R.xl,padding:16,gap:12,borderWidth:1,borderColor:C.line},
- bar:{flexDirection:'row',alignItems:'center',gap:12},
- round:{width:H.touch,height:H.touch,borderRadius:R.full,backgroundColor:C.surfaceAlt,alignItems:'center',justifyContent:'center'},roundText:{color:C.inkSoft,...type.subtitle},
- title:{color:C.ink,...type.subtitle,...brandFont},
- h:{color:C.muted,...type.caption,fontWeight:'700',marginTop:4},
- hint:{color:C.muted,...type.caption},
- row:{flexDirection:'row',alignItems:'center',gap:12,minHeight:64,padding:12,borderRadius:R.md,borderWidth:1,borderColor:C.line},
- pinned:{borderColor:C.accent,backgroundColor:C.accentSoft},
- avatar:{width:40,height:40,borderRadius:R.full,backgroundColor:C.accent,alignItems:'center',justifyContent:'center'},avatarText:{color:C.onAccent,...type.body,fontWeight:'700'},
- badge:{paddingHorizontal:8,paddingVertical:4,borderRadius:R.full,backgroundColor:C.surface,color:C.accent,...type.caption,fontWeight:'600',overflow:'hidden'},
- name:{color:C.ink,...type.label,fontWeight:'600'},line:{color:C.muted,...type.caption},label:{color:C.ink,...type.label},
- benefit:{flexDirection:'row',alignItems:'flex-start',gap:12,paddingVertical:4},
- ico:{width:32,height:32,borderRadius:R.full,backgroundColor:C.accentSoft,alignItems:'center',justifyContent:'center'},icoWarn:{backgroundColor:C.warningSoft},icoText:{...type.label},
- send:{minHeight:H.compact,borderRadius:R.full,backgroundColor:C.accent,alignItems:'center',justifyContent:'center',paddingHorizontal:16},sendText:{color:C.onAccent,...type.label,fontWeight:'700'},disabled:{opacity:.45},
- empty:{padding:12,borderRadius:R.md,backgroundColor:C.surfaceAlt,color:C.muted,...type.label},
- small:{minHeight:H.compact,justifyContent:'center',paddingHorizontal:4},smallText:{color:C.muted,...type.label},
- remove:{gap:8,padding:12,borderRadius:R.md,borderWidth:1,borderColor:C.danger,backgroundColor:C.dangerSoft},
- danger:{minHeight:H.compact,borderRadius:R.full,backgroundColor:C.danger,alignItems:'center',justifyContent:'center',paddingHorizontal:16},dangerText:{color:C.onAccent,...type.label,fontWeight:'700'},
- note:{padding:12,borderRadius:R.md,backgroundColor:C.accentSoft,color:C.ink,...type.label},
- error:{padding:12,borderRadius:R.md,backgroundColor:C.dangerSoft,color:C.danger,...type.label}
+ // The pinned cleaner: the whole card, outlined, no «›» because the app has no profile screen to open.
+ card:{flexDirection:'row',alignItems:'center',gap:12,minHeight:72,padding:12,borderRadius:R.lg,borderWidth:1,borderColor:C.line},
+ avatar:{width:40,height:40,borderRadius:R.full,backgroundColor:C.surfaceAlt,borderWidth:1,borderColor:C.line,alignItems:'center',justifyContent:'center'},
+ avatarBig:{width:48,height:48},avatarText:{...type.body,color:C.ink,fontWeight:'700'},
+ ask:{gap:4},askTitle:{...type.body,color:C.ink,fontWeight:'600'},
+ radio:{width:24,height:24,borderRadius:R.full,borderWidth:2,borderColor:C.lineStrong,alignItems:'center',justifyContent:'center'},
+ radioOn:{borderColor:C.ink},radioDot:{width:12,height:12,borderRadius:R.full,backgroundColor:C.ink},
+ // The gains open under their row, in line with its title (icon 24 + gap 12).
+ more:{gap:4,paddingLeft:36,paddingBottom:12,borderBottomWidth:1,borderBottomColor:C.line},
 });
