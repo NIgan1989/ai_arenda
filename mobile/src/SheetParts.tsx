@@ -43,6 +43,8 @@ export const h=StyleSheet.create({
  // A short line over the map, under the avatar: what «На карте» could not show.
  mapNotice:{position:'absolute',top:68,left:16,right:16,alignSelf:'center',textAlign:'center',paddingVertical:8,paddingHorizontal:16,borderRadius:R.lg,backgroundColor:C.glassStrong,borderWidth:1,borderColor:C.glassLine,...type.label,color:C.ink,...shadow},
  menu:{position:'absolute',top:12,left:12,width:H.touch,height:H.touch,borderRadius:R.full,backgroundColor:C.glassStrong,borderWidth:1,borderColor:C.glassLine,alignItems:'center',justifyContent:'center',...shadow},
+ // The owner's and the cleaner's plate (RolePlate.tsx): the same glass, a little taller for its two lines.
+ plate:{top:10,width:'auto',height:48,alignItems:'stretch'},
  chats:{position:'absolute',top:12,right:12,width:H.touch,height:H.touch,borderRadius:R.full,backgroundColor:C.glassStrong,borderWidth:1,borderColor:C.glassLine,alignItems:'center',justifyContent:'center',...shadow},
  // The guest's answer: the sheet steps aside, its card floats over the map (MapHome floating).
  sheetSolid:{backgroundColor:C.surface},sheetFloat:{backgroundColor:'transparent',borderTopWidth:0,shadowOpacity:0,elevation:0},sheetContentFloat:{paddingHorizontal:0,paddingBottom:12},gone:{height:0,overflow:'hidden'},floatBar:{position:'absolute',top:12,left:12,right:12,gap:8},
