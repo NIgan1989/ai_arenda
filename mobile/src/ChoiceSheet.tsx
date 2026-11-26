@@ -1,6 +1,6 @@
 import {t} from '../../lib/i18n';
 import React from 'react';
-import {Modal,Pressable,StyleSheet,Text,View} from 'react-native';
+import {Keyboard,KeyboardAvoidingView,Modal,Platform,Pressable,StyleSheet,Text,View} from 'react-native';
 import {C,type} from './styles';
 import {T} from './tokens';
 
@@ -8,14 +8,18 @@ import {T} from './tokens';
 // a title, one line of explanation, the options as rows with a mark on the chosen one, then one button at the bottom.
 // A row with the value stays on the screen; this sheet replaces chips and forms under the row.
 export function SheetModal({visible,title,note,onClose,children}:{visible:boolean;title:string;note?:string;onClose:()=>void;children:React.ReactNode}){
+ // A fee typed into the sheet raises the number pad: the sheet rides up over it (iOS), a tap on the sheet or on the
+ // shade first puts the keyboard away (the number pad has no «Готово»), and only a second tap on the shade closes.
  return <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-  <Pressable accessibilityLabel={t('Закрыть')} onPress={onClose} style={c.shade}/>
-  <View style={c.sheet} accessibilityViewIsModal>
-   <View style={c.grab}/>
-   <Text accessibilityRole="header" numberOfLines={2} style={c.title}>{title}</Text>
-   {!!note&&<Text style={c.note}>{note}</Text>}
-   {children}
-  </View>
+  <KeyboardAvoidingView style={{flex:1}} behavior={Platform.OS==='ios'?'padding':undefined}>
+   <Pressable accessibilityLabel={t('Закрыть')} onPress={()=>{if(Keyboard.isVisible())Keyboard.dismiss();else onClose();}} style={c.shade}/>
+   <Pressable accessible={false} onPress={Keyboard.dismiss} style={c.sheet} accessibilityViewIsModal>
+    <View style={c.grab}/>
+    <Text accessibilityRole="header" numberOfLines={2} style={c.title}>{title}</Text>
+    {!!note&&<Text style={c.note}>{note}</Text>}
+    {children}
+   </Pressable>
+  </KeyboardAvoidingView>
  </Modal>;
 }
 export function ChoiceRows<V extends string>({value,options,onChange,disabled=false,label}:{value:V;options:{id:V;title:string;note?:string}[];onChange:(v:V)=>void;disabled?:boolean;label?:string}){
