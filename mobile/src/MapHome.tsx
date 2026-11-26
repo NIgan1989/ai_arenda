@@ -1,6 +1,7 @@
 import {t as tr} from '../../lib/i18n';
 import {background} from './loading';
 import {ReliabilityBadge} from './Reliability';
+import type {Reliability} from '../../lib/reliability-text';
 import React,{useEffect,useRef,useState,type ReactNode} from 'react';
 import {Thinking} from './Thinking';
 import {AccessibilityInfo,Animated,AppState,BackHandler,Image,PanResponder,Platform,Pressable,ScrollView,StyleSheet,Text,View,useWindowDimensions} from 'react-native';
@@ -69,7 +70,7 @@ type MapExtra={lines?:MapLine[];heat?:HeatPoint[];sparks?:MapPoint[]};
 type Publish=(pins:MapPin[],focusKey:string,extra?:MapExtra)=>void;
 // The stay a guest books from the map: Kazakhstan time, as the request form keeps it.
 // amount: the searched price of this stay, shown at the bottom of the place's page; the booking itself asks for a fresh quote.
-export type MapStay={mode:'daily'|'hourly'|'nightly';start:string;end:string;guests:number;occasion?:string;amount?:number};
+export type MapStay={mode:'daily'|'hourly'|'nightly';start:string;end:string;guests:number;occasion?:string;amount?:number;host?:Reliability|null};
 // showNow: whether the "Сейчас" card has its place in the sheet as it is now (see MapHome).
 type Common={setFloat?:(bar:ReactNode|null)=>void;setFoot?:(bar:ReactNode|null)=>void;setScanning:(on:boolean)=>void;setQuiet:(on:boolean)=>void;accountId:string;data:Row;mapData:Row|null;city:string;publish:Publish;selected:string;setSelected:(key:string)=>void;focus:string;setFocus:(key:string)=>void;snap:number;showNow:boolean;expand:(snap:number)=>void;onHead:(height:number)=>void;onReach:(bottom:number)=>void;onAsk:(text:string)=>void;onIntent:(intent:string,stay?:MapStay)=>void;onBook:(property:Row,stay:MapStay)=>void;onChanged:()=>Promise<unknown>;onOpenProcess:(kind:'booking'|'job',id:string)=>void;onOpenPage:(id:string)=>void;onEdit?:(id:string,step:string|null)=>void;onChat?:(kind:'booking'|'job',id:string,call?:boolean)=>void;flyMe:()=>void;notify:(text:string)=>void};
 const liveRequests=new Map<string,string>();
@@ -227,7 +228,8 @@ function GuestPanel({setFloat,setFoot,setScanning,setQuiet,accountId,data,mapDat
   onBook(property,stayOf(property));};
  // The searched stay for one place (with the event of a banquet), and its page opened with that stay and its searched price.
  const stayOf=(property:Row):MapStay=>({mode:tariffOf(draft,property),start:draft.start,end:draft.end,guests:draft.guests,...(draft.occasion?{occasion:draft.occasion}:{})});
- const openFlat=(property:Row)=>onIntent('property:'+property.id,{...stayOf(property),...(Number(property.estimate?.amount)>0?{amount:Number(property.estimate.amount)}:{})});
+ // The owner's reliability found by the search goes with it: the page says it too, as the short card did.
+ const openFlat=(property:Row)=>onIntent('property:'+property.id,{...stayOf(property),...(Number(property.estimate?.amount)>0?{amount:Number(property.estimate.amount)}:{}),...(property.host?{host:property.host}:{})});
  // What narrows a search beyond the place, the time and the guests. An empty result offers to drop these and look again.
  const narrowed=!!(draft.district||draft.maxPrice||draft.features.length||draft.priority!=='balanced'||draft.near||(categoryOf(draft)!=='stay'?draft.kinds.length<allKinds(categoryOf(draft)).length:draft.kinds.length)||draft.rooms||draft.now);
  const retry=(next:GuestDraft)=>{setHint(null);setError('');setDraft(next);setPreview(null);void find(next);};
