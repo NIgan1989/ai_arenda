@@ -6,6 +6,7 @@ import {View,Text,Pressable,Linking,TextInput} from 'react-native';
 import {ApiError,StaleSessionError,request,API_URL} from './api';
 import {s,C} from './styles';
 import {Btn,Group,Row,RowIcon,SwitchRow,a,menuIcons,type MenuIcon} from './AccountRows';
+import {SwipeConfirm} from './SwipeConfirm';
 import {passkeyAvailable,readPasskeyNote,writePasskeyNote} from './passkey';
 import {passkeyError,passkeyWords,turnOnPasskey} from './PasskeyOffer';
 // «Данные и безопасность»: a short list, each row opens its own screen, the same as on the site.
@@ -77,17 +78,17 @@ export function NativeAccountSafety({role,page,go,admin=false,onSignedOut,tint}:
   {(details.groups||[]).length>0&&<>{lead(t('Что будет с данными'))}<Group>{details.groups.map((g:any)=><View key={g.category} style={a.row}><View style={a.wide}><Text style={a.title}>{groupNames[g.category]||g.category}</Text><Text style={a.note}>{(groupActions[g.action]||g.action)+(g.keep_until?' '+t('до {v}',{v:fullDay(g.keep_until)}):'')}</Text>{!!g.basis&&<Text style={a.note}>{tServer(g.basis)}</Text>}{g.draft&&<Text style={a.note}>{t('Срок пока предварительный, уточним с бухгалтером и юристом.')}</Text>}</View></View>)}</Group></>}
   <NativeAccountDeletion details={details} onChanged={load} onSignedOut={onSignedOut}/>
   {wide(t('Отозвать запрос'),()=>void act('/api/operations/safety/deletion',{action:'cancel'}),busy||loading)}</>:<>
-  {lead(t('Удалим аккаунт целиком, со всеми ролями: гостя, владельца и исполнителя. Сначала проверим, что нет незавершённых броней, уборок и расчётов, и напишем вам результат.'))}
-  {/* As the concept of the menu (Tempo): what happens to each kind of data first, then one box and one button. */}
-  {(details.blockers||[]).length>0&&<Group title={t('Что мешает удалить сейчас')}>{details.blockers.map((b:any)=><View key={b.code} style={a.row}><RowIcon icon="alert" tint={tint}/><Text style={[a.title,a.wide]}>{tServer(b.label)}</Text></View>)}</Group>}
-  {(details.groups||[]).length>0&&<Group title={t('Что будет с данными')}>{details.groups.map((g:any)=><View key={g.category} style={a.row}><RowIcon icon={groupIcons[g.category]||'file'} tint={tint}/><View style={a.wide}><Text style={a.title}>{groupNames[g.category]||g.category}</Text><Text style={a.note}>{(groupActions[g.action]||g.action)+(g.keep_until?' '+t('до {v}',{v:fullDay(g.keep_until)}):'')}</Text></View></View>)}</Group>}
-  <Pressable accessibilityRole="checkbox" accessibilityState={{checked:confirmed,disabled:busy||loading}} disabled={busy||loading} onPress={()=>setConfirmed(v=>!v)} style={{flexDirection:'row',alignItems:'center',gap:12,minHeight:48,marginTop:16}}><View style={[s.checkBox,confirmed&&{backgroundColor:C.ink,borderColor:C.ink}]}>{confirmed&&<Text style={s.checkTick}>✓</Text>}</View><Text style={[a.title,a.wide]}>{t('Понимаю, что удалятся все мои роли')}</Text></Pressable>
-  {wide(t('Запросить удаление'),()=>void act('/api/operations/safety/deletion',{action:'request'}),busy||loading||!confirmed,true)}</>}
+  {/* Board «Экраны старой версии» (2026-11-26): one line of what happens, what stands in the way as rows, what is kept
+      folded into one row, and one swipe at the bottom that works only when nothing stands in the way. */}
+  {lead(t('Удалим все ваши роли. Сначала проверим, что нет незавершённых дел.'))}
+  {(details.blockers||[]).length>0&&<Group title={t('Сначала завершите')}>{details.blockers.map((b:any)=><View key={b.code} style={a.row}><RowIcon icon="alert" tint={tint}/><Text style={[a.title,a.wide]}>{tServer(b.label)}</Text></View>)}</Group>}
+  {(details.groups||[]).length>0&&<Group space><Row icon="file" tint={tint} title={t('Что удалим и что останется')} open={kindOpen==='groups'} onPress={()=>setKindOpen(v=>v==='groups'?'':'groups')}/>{kindOpen==='groups'&&details.groups.map((g:any)=><View key={g.category} style={a.row}><RowIcon icon={groupIcons[g.category]||'file'} tint={tint}/><View style={a.wide}><Text style={a.title}>{groupNames[g.category]||g.category}</Text><Text style={a.note}>{(groupActions[g.action]||g.action)+(g.keep_until?' '+t('до {v}',{v:fullDay(g.keep_until)}):'')}</Text></View></View>)}</Group>}
+  <View style={{marginTop:24}}><SwipeConfirm label={(details.blockers||[]).length?t('Удаление станет доступно после дел'):t('Проведите: запросить удаление')} disabled={busy||loading||(details.blockers||[]).length>0} onConfirm={()=>void act('/api/operations/safety/deletion',{action:'request'})}/></View></>}
   <Group space>{link(t('Что удаляется и что остаётся'),'/data-deletion')}</Group>{shown}</View>;
  return <View>
-  <Group><Row icon="key" tint={tint} title={t('Вход и устройства')} value={sessions?devices(sessions.length):undefined} onPress={()=>go('devices')}/><Row icon="sparkles" tint={tint} title={t('ИИ-помощник')} value={aiValue} onPress={()=>go('ai')}/>{reports.length>0&&<Row icon="flag" tint={tint} title={t('Мои жалобы')} value={reports.length} onPress={()=>go('reports')}/>}</Group>
+  <Group><Row icon="key" tint={tint} title={t('Вход и устройства')} value={sessions?(sessions.length>1?t('это и ещё {n}',{n:sessions.length-1}):t('только это')):undefined} onPress={()=>go('devices')}/><Row icon="sparkles" tint={tint} title={t('ИИ-помощник')} value={aiValue} onPress={()=>go('ai')}/>{reports.length>0&&<Row icon="flag" tint={tint} title={t('Мои жалобы')} value={reports.length} onPress={()=>go('reports')}/>}</Group>
   <Group space>{link(t('Политика конфиденциальности'),'/privacy')}{link(t('Условия сервиса'),'/terms')}</Group>
   {admin&&<Group space><Row icon="alert" tint={tint} title={t('Запросы на удаление')} value={state.deletionTotal||deletions.length||t('нет')} onPress={()=>go('requests')}/></Group>}
-  <Group space><Row icon="trash" title={t('Удалить аккаунт')} value={requested?t('запрос отправлен'):undefined} danger onPress={()=>go('delete')}/></Group>
+  {/* The way out is a quiet black row of its own, as Uber's: red waits for the last step. */}<Group space><Row icon="trash" tint={tint} title={t('Удалить аккаунт')} value={requested?t('запрос отправлен'):undefined} onPress={()=>go('delete')}/></Group>
  </View>;
 }

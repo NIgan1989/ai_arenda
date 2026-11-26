@@ -20,9 +20,9 @@ test('the splash of the site paints with the colours of the tokens before the st
  assert.deepEqual(named,{NIGHT:color.night,GLOW:color.nightGlow,GOLD:color.gold,DOME_FROM:color.domeFrom,DOME_TO:color.domeTo});
 });
 
-test('the app starts on the same night plate and every image it names is there',()=>{
+test('the app starts on the white plate of its monochrome splash and every image it names is there',()=>{
  const app=JSON.parse(read('mobile/app.json')).expo,splash=app.plugins.find(p=>Array.isArray(p)&&p[0]==='expo-splash-screen')[1];
- assert.equal(splash.backgroundColor,color.night);
+ assert.equal(splash.backgroundColor,color.surface);
  assert.equal(app.name,brand.BRAND_NAME);
  for(const file of [app.icon,splash.image,...Object.values(app.android.adaptiveIcon).filter(v=>typeof v==='string'&&v.endsWith('.png'))])assert.ok(existsSync(new URL('../mobile/'+file,import.meta.url)),file);
  // An image the app shows at a fixed size comes in three densities.

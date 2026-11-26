@@ -50,10 +50,10 @@ test('every wait in the product uses the one «thinking» sign, not a spinner of
  assert.match(loader,/<Thinking size="sm"\/>/);assert.match(loader,/localThinking\(\)/);assert.match(css,/@keyframes thinking-turn/);assert.match(loader,/querySelectorAll\('\.thinking-sign'\)/);assert.match(readFileSync('components/thinking.tsx','utf8'),/'thinking-sign'/);
 });
 
-test('the entry story is long enough to be watched and still releases itself',()=>{
+test('the entry story is short in the app, long enough to be watched on the site, and always releases itself',()=>{
  const app=readFileSync('mobile/src/EntrySplash.tsx','utf8'),site=readFileSync('components/entry-splash.tsx','utf8');
  const story=Number(app.match(/MIN_STORY=(\d+)/)[1]),cap=Number(app.match(/MAX_WAIT=(\d+)/)[1]);
- assert.ok(story>=3000&&story<=4500,'app story '+story);assert.ok(cap>story&&cap<=8000);
+ assert.ok(story>=1000&&story<=2000,'app story '+story);assert.ok(cap>story&&cap<=8000);
  const siteStory=Number(site.match(/calm\?450:(\d+)/)[1]),siteCap=Number(site.match(/setTimeout\(leave,(\d+)\)/)[1]);
  assert.ok(siteStory>=3000&&siteStory<=4500,'site story '+siteStory);assert.ok(siteCap>siteStory&&siteCap<=8000);
 });
