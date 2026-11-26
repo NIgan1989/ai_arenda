@@ -58,7 +58,7 @@ export function JobPhotoPair({jobId,role,readOnly=false,disabled=false,limit=JOB
  </View>;
 }
 function PhotoPlace({jobId,role,phase,title,readOnly,disabled,limit,onCount}:{jobId:string;role:'owner'|'cleaner';phase:'before'|'after';title:string;readOnly:boolean;disabled:boolean;limit:number;onCount:(n:number)=>void}){
- const [photos,setPhotos]=useState<Shot[]>([]),[busy,setBusy]=useState(false),[error,setError]=useState(''),[asking,setAsking]=useState(false),[open,setOpen]=useState('');
+ const [photos,setPhotos]=useState<Shot[]>([]),[busy,setBusy]=useState(false),[error,setError]=useState(''),[asking,setAsking]=useState(false),[open,setOpen]=useState(-1);
  const fetchPhotos=useCallback(async()=>{
   const list=((await request('/api/operations/evidence/'+jobId,undefined,undefined,undefined,role))?.photos||[]).filter((x:{phase:string;mime:string})=>x.phase===phase&&x.mime==='image/jpeg');
   return Promise.all(list.map(async(x:{id:string})=>({id:x.id,uri:(await request('/api/operations/evidence/'+x.id+'/photo',undefined,undefined,undefined,role).catch(()=>null))?.data||''})));
@@ -71,7 +71,7 @@ function PhotoPlace({jobId,role,phase,title,readOnly,disabled,limit,onCount}:{jo
   if(images.length)show(await fetchPhotos());
  }catch(e){setError(e instanceof Error&&e.message?e.message:t('Не удалось добавить фото.'));}finally{setBusy(false);}}
  const full=photos.length>=limit,off=busy||disabled||full,cover=photos.slice(0,4);
- const mosaic=<View style={q.mosaic}>{cover.map(x=><Pressable key={x.id} accessibilityRole="imagebutton" accessibilityLabel={t('Открыть фото: {title}',{title})} disabled={!readOnly||!x.uri} onPress={()=>setOpen(x.uri)} style={cover.length===1?q.one:cover.length===2?q.half:q.quarter}>{x.uri?<Image source={{uri:x.uri}} style={q.img} alt={title}/>:<View style={[q.img,{backgroundColor:C.line}]}/>}</Pressable>)}</View>;
+ const mosaic=<View style={q.mosaic}>{cover.map((x,i)=><Pressable key={x.id} accessibilityRole="imagebutton" accessibilityLabel={t('Открыть фото: {title}',{title})} disabled={!readOnly||!x.uri} onPress={()=>setOpen(i)} style={cover.length===1?q.one:cover.length===2?q.half:q.quarter}>{x.uri?<Image source={{uri:x.uri}} style={q.img} alt={title}/>:<View style={[q.img,{backgroundColor:C.line}]}/>}{i===3&&photos.length>4&&<View style={q.more}><Text style={q.moreText}>+{photos.length-4}</Text></View>}</Pressable>)}</View>;
  const body=<>
   {photos.length?mosaic:<View style={q.empty}><View style={q.plus}><Image source={require('../assets/menu/camera.png')} style={q.plusIcon} accessibilityElementsHidden importantForAccessibility="no"/></View></View>}
   <View style={[q.caption,!!photos.length&&q.captionOver]}><Text numberOfLines={1} style={[q.captionText,!!photos.length&&{color:C.onAccent}]}>{busy?t('Сохраняю…'):title}</Text>{!!photos.length&&!busy&&<Text style={q.count}>{photos.length}</Text>}</View>
@@ -80,7 +80,8 @@ function PhotoPlace({jobId,role,phase,title,readOnly,disabled,limit,onCount}:{jo
   {readOnly?<View style={q.box}>{body}</View>:<Pressable accessibilityRole="button" accessibilityLabel={photos.length?t('{title}: {n} фото. Добавить ещё',{title,n:photos.length}):t('{title}: добавить фото',{title})} accessibilityState={{disabled:off}} disabled={off} onPress={()=>setAsking(true)} style={({pressed})=>[q.box,!photos.length&&q.boxEmpty,pressed&&{opacity:.8}]}>{body}</Pressable>}
   {!!error&&<Text accessibilityRole="alert" style={[s.meta,{color:C.danger}]}>{error}</Text>}
   {!readOnly&&<PhotoSource visible={asking} title={title} busy={busy} onClose={()=>setAsking(false)} onCamera={()=>void add(true)} onGallery={()=>void add(false)}/>}
-  {readOnly&&<PhotoViewer uri={open} visible={!!open} title={title} onClose={()=>setOpen('')}/>}
+  {/* Every photo of the phase opens in the viewer and leafs with «‹ ›», the cover shows only four (+N on the last). */}
+  {readOnly&&<PhotoViewer uri={photos[open]?.uri||''} visible={open>=0&&!!photos[open]?.uri} title={t('{title} · {n} из {total}',{title,n:open+1,total:photos.length})} onClose={()=>setOpen(-1)} onPrev={open>0?()=>setOpen(open-1):undefined} onNext={open<photos.length-1?()=>setOpen(open+1):undefined}/>}
  </View>;
 }
 const q=StyleSheet.create({
@@ -88,6 +89,7 @@ const q=StyleSheet.create({
  box:{aspectRatio:4/3,borderRadius:T.radius.lg,overflow:'hidden',backgroundColor:C.surfaceAlt},boxEmpty:{borderWidth:1,borderColor:C.lineStrong,borderStyle:'dashed',backgroundColor:C.surface},
  empty:{flex:1,alignItems:'center',justifyContent:'center'},plus:{width:48,height:48,borderRadius:24,backgroundColor:C.surfaceAlt,alignItems:'center',justifyContent:'center'},plusIcon:{width:22,height:22,tintColor:C.ink},
  mosaic:{flex:1,flexDirection:'row',flexWrap:'wrap',gap:2},one:{width:'100%',height:'100%'},half:{flex:1,height:'100%'},quarter:{width:'48.5%',height:'48.5%'},img:{width:'100%',height:'100%'},
+ more:{position:'absolute',left:0,right:0,top:0,bottom:0,alignItems:'center',justifyContent:'center',backgroundColor:'rgba(14,19,36,0.55)'},moreText:{...type.subtitle,color:C.onAccent,fontWeight:'700'},
  caption:{position:'absolute',left:0,right:0,bottom:0,flexDirection:'row',alignItems:'center',gap:8,paddingHorizontal:12,paddingVertical:8},captionOver:{backgroundColor:'rgba(14,19,36,0.55)'},
  captionText:{flex:1,...type.label,color:C.ink,fontWeight:'600'},count:{minWidth:24,height:24,borderRadius:12,paddingHorizontal:8,overflow:'hidden',backgroundColor:C.surface,color:C.ink,textAlign:'center',...type.caption,lineHeight:24,fontWeight:'700'},
 });
