@@ -2,6 +2,7 @@ import {t as tr} from '../../lib/i18n';
 import React,{useEffect,useState} from 'react';
 import {View,Text,Pressable,StyleSheet} from 'react-native';
 import {T} from './tokens';
+import {C} from './styles';
 import type {Row} from './model';
 import {extendChoices,extendLabel,isUnclaimed,overdueNote} from '../../lib/overdue-text';
 
@@ -19,7 +20,7 @@ export function OverdueHelp({job,role,busy,onAction}:{job:Row;role:'owner'|'clea
   <Text accessibilityRole="header" style={o.title}>⏱  {note.title}</Text>
   <Text style={o.text}>{note.text}</Text>
   <Text style={o.ai}>✦  {note.ai}</Text>
-  {ask?<View style={o.confirm}><Text style={[o.text,{color:T.color.ink}]}>{ask.text}</Text>{btn(ask.label,()=>act(ask.body),'main')}{btn(tr('Назад'),()=>setAsk(null))}</View>:unclaimed?<>
+  {ask?<View style={o.confirm}><Text style={[o.text,{color:C.ink}]}>{ask.text}</Text>{btn(ask.label,()=>act(ask.body),'main')}{btn(tr('Назад'),()=>setAsk(null))}</View>:unclaimed?<>
    {btn(tr('Искать на новое время'),()=>act({action:'repost'}),'main')}
    {btn(tr('Убрали сами, закрыть'),()=>setAsk({label:tr('Да, убрали сами'),text:tr('Закрыть уборку без исполнителя? Жильё будет отмечено готовым, платить никому не нужно.'),body:{action:'close',confirmed:true}}))}
    {btn(tr('Отменить уборку'),()=>setAsk({label:tr('Отменить уборку'),text:tr('Отменить уборку совсем? Готовность жилья нужно будет отметить отдельно.'),body:{action:'cancel',reason:'Уборка просрочена'}}),'danger')}
@@ -33,18 +34,18 @@ export function OverdueHelp({job,role,busy,onAction}:{job:Row;role:'owner'|'clea
  </View>;
 }
 const o=StyleSheet.create({
- box:{gap:T.space[4],marginTop:T.space[4],padding:T.space[5],borderWidth:1,borderColor:T.color.warningLine,borderRadius:T.radius.xl,backgroundColor:T.color.warningSoft},
- title:{fontSize:16,lineHeight:24,fontWeight:'600',color:T.color.ink},
- text:{fontSize:14,lineHeight:20,color:T.color.inkSoft},
- ai:{fontSize:12,lineHeight:16,color:T.color.inkSoft,backgroundColor:T.color.surface,borderRadius:T.radius.md,paddingVertical:T.space[3],paddingHorizontal:T.space[4],overflow:'hidden'},
- label:{fontSize:12,lineHeight:16,fontWeight:'600',color:T.color.muted,letterSpacing:.6},
+ box:{gap:T.space[4],marginTop:T.space[4],padding:T.space[5],borderWidth:1,borderColor:C.warningLine,borderRadius:T.radius.xl,backgroundColor:C.warningSoft},
+ title:{fontSize:16,lineHeight:24,fontWeight:'600',color:C.ink},
+ text:{fontSize:14,lineHeight:20,color:C.inkSoft},
+ ai:{fontSize:12,lineHeight:16,color:C.inkSoft,backgroundColor:C.surface,borderRadius:T.radius.md,paddingVertical:T.space[3],paddingHorizontal:T.space[4],overflow:'hidden'},
+ label:{fontSize:12,lineHeight:16,fontWeight:'600',color:C.muted,letterSpacing:.6},
  chips:{flexDirection:'row',gap:T.space[3]},
- btn:{minHeight:T.control.touch,justifyContent:'center',alignItems:'center',paddingHorizontal:T.space[3],paddingVertical:T.space[3],borderRadius:T.radius.md,borderWidth:1,borderColor:T.color.line,backgroundColor:T.color.surface},
- main:{backgroundColor:T.color.accent,borderColor:T.color.accent},
+ btn:{minHeight:T.control.touch,justifyContent:'center',alignItems:'center',paddingHorizontal:T.space[3],paddingVertical:T.space[3],borderRadius:T.radius.md,borderWidth:1,borderColor:C.line,backgroundColor:C.surface},
+ main:{backgroundColor:C.accent,borderColor:C.accent},
  ghost:{backgroundColor:'transparent',borderColor:'transparent',minHeight:36},
  dim:{opacity:.6},
- btnText:{fontSize:16,lineHeight:20,fontWeight:'600',color:T.color.ink,textAlign:'center'},
- mainText:{color:T.color.onAccent},
- dangerText:{color:T.color.danger},
- confirm:{gap:T.space[3],padding:T.space[4],borderRadius:T.radius.md,backgroundColor:T.color.surface}
+ btnText:{fontSize:16,lineHeight:20,fontWeight:'600',color:C.ink,textAlign:'center'},
+ mainText:{color:C.onAccent},
+ dangerText:{color:C.danger},
+ confirm:{gap:T.space[3],padding:T.space[4],borderRadius:T.radius.md,backgroundColor:C.surface}
 });

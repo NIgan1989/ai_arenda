@@ -37,8 +37,10 @@ export function FlatHubHead({flat,data,now,tab,open,onTab,onBack,onOpen}:Pick<Pr
  // The step that waits for the owner at this place is the button of the head, the same words as the tag on its pin.
  const act=ownerPinAct(ownerThreads(data,now),data,flat.id,now),deal=ownerDeal(data,flat.id,now);
  return <View style={f.head}>
-  <Pressable accessibilityRole="button" accessibilityLabel={tr('Назад к карте')} onPress={onBack} style={f.back}><Text style={f.backText}>{tr('‹ Назад')}</Text></Pressable>
-  <Text accessibilityRole="header" numberOfLines={2} style={h.cardTitle}>{flat.title}</Text>
+  {/* One head for every sheet: «‹» on the left, the name in the middle, the cross on the right. */}
+  <View style={f.bar}><Pressable accessibilityRole="button" accessibilityLabel={tr('Назад к карте')} onPress={onBack} style={({pressed})=>[f.side,pressed&&f.dim]}><Text style={f.backText}>‹</Text></Pressable>
+   <Text accessibilityRole="header" numberOfLines={1} style={f.title}>{flat.title}</Text>
+   <Pressable accessibilityRole="button" accessibilityLabel={tr('Закрыть и вернуться на карту')} onPress={onBack} style={({pressed})=>[f.side,pressed&&f.dim]}><Text style={f.close}>✕</Text></Pressable></View>
   {late?<Pressable accessibilityRole="button" accessibilityLabel={tr('{status}, открыть',{status:late.status})} onPress={()=>onOpen(late.kind,late.id)} hitSlop={8}><Text numberOfLines={1} style={[h.note,f.late]}>{late.status} ›</Text></Pressable>:<Text numberOfLines={1} style={h.note}>{hubLine(entries,now)}</Text>}
   {!!act?.why&&<Text numberOfLines={2} style={[h.note,act.urgent&&f.late]}>{act.why}</Text>}
   {!!act&&<Action title={act.label} onPress={()=>onOpen(act.kind,act.id)}/>}
@@ -66,7 +68,7 @@ function HomeRepeat({flat,data,now,onChanged}:Pick<Props,'flat'|'data'|'now'|'on
  }
  return <View style={f.repeat}>
   <Chips<number> label={tr('Повторять уборку')} value={every} disabled={busy} onChange={save} options={[[0,tr('Не повторять')],...REPEAT_DAYS.map(d=>[d,repeatLabel(d)] as [number,string])]}/>
-  {said?<Text accessibilityRole={said.error?'alert':undefined} style={[h.note,said.error&&{color:T.color.danger}]}>{said.text}</Text>
+  {said?<Text accessibilityRole={said.error?'alert':undefined} style={[h.note,said.error&&{color:C.danger}]}>{said.text}</Text>
    :<Text style={h.note}>{!every?(last?tr('ИИ-администратор сам закажет следующую уборку: те же условия, цена и время.'):tr('Сначала закажите первую уборку: повтор возьмёт её условия.')):ahead?tr('Следующая уборка {v} уже заказана.',{v:at(next)}):tr(next-now>REPEAT_AHEAD?'Следующая уборка {when}. Заказ появится сам за три дня.':'Следующая уборка {when}. Заказ появится в течение часа.',{when:at(next)})}</Text>}
  </View>;
 }
@@ -120,8 +122,10 @@ export function FlatHub({flat,data,now,tab,onOpen,onEdit,onChanged}:Omit<Props,'
 const R=T.radius,H=T.control;
 const f=StyleSheet.create({
  repeat:{gap:8,marginTop:8},
- late:{color:T.color.danger,fontWeight:'600'},
- head:{gap:4},back:{minHeight:H.touch,justifyContent:'center',alignSelf:'flex-start',paddingRight:16},backText:{...type.label,color:C.inkSoft,fontWeight:'500'},
+ late:{color:C.danger,fontWeight:'600'},
+ head:{gap:4},bar:{flexDirection:'row',alignItems:'center',gap:4,marginBottom:4},side:{width:H.touch,height:H.touch,alignItems:'center',justifyContent:'center'},dim:{opacity:.55},
+ backText:{fontSize:28,lineHeight:32,color:C.ink,fontWeight:'500'},title:{...type.body,flex:1,textAlign:'center',color:C.ink,fontWeight:'700'},
+ close:{width:32,height:32,borderRadius:16,backgroundColor:C.surfaceAlt,color:C.ink,textAlign:'center',lineHeight:32,fontSize:16,overflow:'hidden'},
  tabs:{flexDirection:'row',gap:4,padding:4,marginTop:8,borderRadius:R.lg,backgroundColor:C.surfaceAlt},
  // The tabs share the row by the length of their words, so «Сегодня» keeps its counter without being cut.
  tab:{flexGrow:1,flexShrink:1,minHeight:H.touch,flexDirection:'row',alignItems:'center',justifyContent:'center',gap:4,borderRadius:R.md,paddingHorizontal:8},tabOn:{backgroundColor:C.surface},

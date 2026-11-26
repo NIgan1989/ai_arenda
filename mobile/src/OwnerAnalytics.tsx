@@ -85,7 +85,7 @@ const st=StyleSheet.create({
  months:{flexDirection:'row',alignItems:'stretch',gap:8,height:150,marginTop:16},monthSlot:{flex:1,alignSelf:'stretch',justifyContent:'flex-end'},monthBar:{width:'100%',borderRadius:8,backgroundColor:C.accentSoft},
  rows:{marginTop:16,paddingHorizontal:16,borderRadius:T.radius.lg,backgroundColor:C.surface,borderWidth:1,borderColor:C.line},row:{flexDirection:'row',alignItems:'center',gap:12,paddingVertical:12,borderBottomWidth:1,borderBottomColor:C.line},rowLast:{borderBottomWidth:0},rowText:{flex:1,gap:2},rowTitle:{...type.body,flex:1,color:C.ink,fontWeight:'600'},rowSum:{...type.body,color:C.ink,fontWeight:'700',fontVariant:['tabular-nums']},rowNote:{...type.caption,color:C.muted},
  seg:{flexDirection:'row',padding:4,borderRadius:T.radius.md,backgroundColor:C.surfaceAlt,marginBottom:12},segItem:{flex:1,minHeight:36,borderRadius:T.radius.sm,alignItems:'center',justifyContent:'center'},segOn:{backgroundColor:C.surface},segText:{...type.label,color:C.muted,fontWeight:'500'},segTextOn:{color:C.ink,fontWeight:'600'},
- hero:{borderRadius:T.radius.xl,padding:20,backgroundColor:C.night,overflow:'hidden'},
+ hero:{borderRadius:T.radius.xl,padding:20,backgroundColor:C.ink,overflow:'hidden'},
  heroLabel:{...type.caption,color:'rgba(255,255,255,.7)',letterSpacing:1,textTransform:'uppercase'},
  heroValue:{...type.heading,...brandFont,color:C.gold,marginTop:8},
  heroRow:{flexDirection:'row',alignItems:'center',gap:8,marginTop:8,flexWrap:'wrap'},

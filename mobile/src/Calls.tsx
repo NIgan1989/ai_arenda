@@ -144,9 +144,9 @@ function Round({label,tone,onPress,children}:{label:string;tone:'danger'|'succes
  return <View style={k.roundWrap}><Pressable accessibilityRole="button" accessibilityLabel={label} onPress={onPress} style={({pressed})=>[k.round,k[tone],pressed&&k.pressed]}>{children}</Pressable><Text style={k.roundLabel}>{label}</Text></View>;
 }
 const k=StyleSheet.create({
- screen:{flex:1,backgroundColor:C.night,justifyContent:'space-between',padding:24},
+ screen:{flex:1,backgroundColor:C.ink,justifyContent:'space-between',padding:24},
  top:{alignItems:'center',gap:12,marginTop:64},
- avatar:{width:96,height:96,borderRadius:999,backgroundColor:C.nightGlow,alignItems:'center',justifyContent:'center'},
+ avatar:{width:96,height:96,borderRadius:999,backgroundColor:C.inkSoft,alignItems:'center',justifyContent:'center'},
  letter:{color:C.onAccent,fontSize:36,lineHeight:44,fontWeight:'700'},
  name:{color:C.onAccent,fontSize:28,lineHeight:36,fontWeight:'700'},
  status:{color:'rgba(255,255,255,0.8)',fontSize:18,lineHeight:24},
