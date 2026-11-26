@@ -68,8 +68,10 @@ export function pilotPropertyVisibleSql(alias='p'){
  if(!/^[a-zA-Z][a-zA-Z0-9_]*$/.test(alias))throw new Error('Invalid table alias');
  return `(NOT EXISTS(SELECT 1 FROM account_restrictions ar WHERE ar.user_id=${alias}.owner_id) AND (${alias}.demo_owner IS NOT NULL OR ((COALESCE((SELECT require_owner_review FROM pilot_policy WHERE id='global'),0)=0 OR EXISTS(SELECT 1 FROM pilot_property_admissions a WHERE a.id=${alias}.id AND a.owner_reviewed=1)) AND (COALESCE((SELECT require_phone FROM pilot_policy WHERE id='global'),0)=0 OR EXISTS(SELECT 1 FROM pilot_property_admissions a WHERE a.id=${alias}.id AND a.owner_phone_verified=1)))))`;
 }
-export async function savePilotPolicy(service:RentalService,body:Row,platformAdmin:boolean){
+export async function savePilotPolicy(service:RentalService,body:Row,platformAdmin:boolean,sms=true){
  if(!platformAdmin)throw new DomainError('Правила допуска меняет администратор платформы.',403);
+ // Without an SMS provider nobody can confirm a number, so requiring it would stop every new booking and assignment.
+ if(body.requirePhone===true&&!sms&&!(await readPilotPolicy(service.db)).require_phone)throw new DomainError('Сначала подключите SMS-провайдера: без него никто не сможет подтвердить номер, и новые брони остановятся.',409);
  if(body.confirmed!==true)throw new DomainError('Подтвердите правила допуска и их влияние на новые операции.');
  for(const field of ['requireOwnerReview','requireCleanerReview','requirePhone'])if(typeof body[field]!=='boolean')throw new DomainError('Проверьте правила допуска.');
  if(body.aiReview!==undefined&&typeof body.aiReview!=='boolean')throw new DomainError('Проверьте правила допуска.');
