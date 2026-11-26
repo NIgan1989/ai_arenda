@@ -5,7 +5,7 @@ import {s,C,type} from './styles';
 import {date,money,uid,type Row} from './model';
 import {isBath,isBanquet} from '../../lib/listings';
 import {recordSpan} from '../../lib/record-span';
-import {settleStay,stayDay,stayFromInterval,stayInterval,stayLimits,stayStamp,type StayChoice,type StayMode} from '../../lib/stay-choice';
+import {settleStay,stayFromInterval,stayInterval,stayLimits,stayStamp,type StayChoice,type StayMode} from '../../lib/stay-choice';
 import {useActivityClock} from './ActivityTimer';
 import {Days,GuestsRow,Segments,Stepper,StayWhen} from './StayRequest';
 import {PopSheet} from './PopSheet';
@@ -24,11 +24,11 @@ export function BookingChanges({booking:b,capacity=0,role,busy,editing,onEditing
  // The booking's own hours stand for the owner's check-in and check-out: a night keeps them.
  const policy={checkin_minutes:minutesOf(b.start),checkout_minutes:minutesOf(b.end),min_hours:1};
  const clock=useActivityClock(),now=clock||Math.floor(Date.now()/1000);
- const first=()=>stayFromInterval(mode,b.start,b.end,policy);
+ const first=()=>stayFromInterval(mode,b.start,b.end,policy),base=first();
  const [choice,setChoice]=useState<StayChoice>(first),[guests,setGuests]=useState(Number(b.guests)||1),[discount,setDiscount]=useState(Number(b.terms?.discount_percent)||0);
  const [slot,setSlot]=useState<'lunch'|'evening'>(((b.start+18000)%86400)===18*3600?'evening':'lunch');
- const [q,setQuote]=useState<Row|null>(null),[error,setError]=useState(''),[checking,setChecking]=useState(false),[key,setKey]=useState(uid),[touched,setTouched]=useState(false),round=useRef(0);
- useEffect(()=>{if(editing){setChoice(first());setTouched(false);setGuests(Number(b.guests)||1);setQuote(null);setError('');setKey(uid());}},[editing]);
+ const [q,setQuote]=useState<Row|null>(null),[error,setError]=useState(''),[checking,setChecking]=useState(false),[key,setKey]=useState(uid),[touched,setTouched]=useState(false),[late,setLate]=useState(0),round=useRef(0);
+ useEffect(()=>{if(editing){setChoice(first());setTouched(false);setLate(0);setGuests(Number(b.guests)||1);setQuote(null);setError('');setKey(uid());}},[editing]);
  const change=(next:Partial<StayChoice>)=>{
   setTouched(true);
   if(inside){const limits=stayLimits(mode,policy);setChoice({...choice,count:Math.min(limits.max,Math.max(limits.min,next.count??choice.count))});return;}
@@ -38,7 +38,10 @@ export function BookingChanges({booking:b,capacity=0,role,busy,editing,onEditing
  const span=()=>{
   if(!touched)return {start:b.start,end:b.end};
   if(hall){const [hour,length]=SLOTS[slot],start=choice.day+hour*3600;return {start,end:start+length*3600};}
-  if(inside){const unit=mode==='hourly'?3600:86400;return mode==='nightly'?{start:b.start,end:stayDay(b.start)+choice.count*86400+policy.checkout_minutes*60}:{start:b.start,end:b.start+choice.count*unit};}
+  // A night moves from the booking's own dates: an arrival after midnight belongs to the night before (lib/rental-policy.ts
+  // nightOf), so the nights are counted from the booked checkout, and a late checkout adds hours priced as extra hours.
+  if(mode==='nightly'){const shift=inside?0:choice.day-base.day,more=(choice.count-base.count)*86400+late*3600;return {start:b.start+shift,end:b.end+shift+more};}
+  if(inside){const unit=mode==='hourly'?3600:86400;return {start:b.start,end:b.start+choice.count*unit};}
   return stayInterval(choice,policy);
  };
  const {start,end}=span(),same=start===b.start&&end===b.end&&guests===(Number(b.guests)||1)&&discount===(Number(b.terms?.discount_percent)||0);
@@ -64,6 +67,7 @@ export function BookingChanges({booking:b,capacity=0,role,busy,editing,onEditing
    {hall?<><Days label={t('День мероприятия')} value={choice.day} now={now} disabled={busy} onChange={day=>{setTouched(true);setChoice({...choice,day});}}/><Segments label={t('Время')} value={slot} disabled={busy} onChange={v=>{setTouched(true);setSlot(v);}} options={[{id:'lunch',title:t('Обед'),note:'12:00–17:00'},{id:'evening',title:t('Вечер'),note:'18:00–00:00'}]}/></>
     :<StayWhen title={inside?t('Выезд'):t('Когда')} choice={choice} modes={[mode]} policy={policy} now={now} disabled={busy} fixedStart={inside} shown={{start,end}} onChange={change}/>}
    <GuestsRow value={guests} max={Math.max(guests,capacity||20)} disabled={busy} onChange={setGuests}/>
+   {mode==='nightly'&&<Stepper label={t('Поздний выезд')} value={late} min={0} max={12} disabled={busy} format={n=>n?t('+{n} ч',{n}):t('нет')} onChange={n=>{setTouched(true);setLate(n);}}/>}
    {role==='owner'&&<Stepper label={t('Скидка')} value={discount} min={0} max={90} step={5} disabled={busy} format={n=>n+'%'} onChange={setDiscount}/>}
    {same?<Text style={c.note}>{t('Выберите новое время или число гостей.')}</Text>
     :checking&&!q?<View style={c.wait}><Thinking size="sm"/><Text style={c.note}>{t('Считаю новую цену…')}</Text></View>
