@@ -9,7 +9,7 @@ import { windowBadge } from '../../lib/window-badge';
 import { C, type } from './styles';
 import { T } from './tokens';
 import { ReliabilityBadge } from './Reliability';
-import { HOME_KINDS, WISHES, BANQUET_WISHES, BANQUET_TYPES, BATH_TYPES, askFirst, categoryOf, draftUnits, homeWords, kindCategoryOf, shownReasons, withMode, withUnits, type GuestDraft } from './ai-request';
+import { HOME_KINDS, WISHES, BANQUET_WISHES, BANQUET_TYPES, BATH_TYPES, askFirst, categoryOf, classWords, draftUnits, homeWords, kindCategoryOf, shownReasons, withMode, withUnits, type GuestDraft } from './ai-request';
 import { carouselIndex } from './map-motion';
 import { Heart } from './Favorites';
 import { markLabel, markOf, type Mine } from './favorites';
@@ -159,6 +159,7 @@ export function emptyAnswer(empty: Row | undefined, draft: GuestDraft, narrowed:
     const free = t('Без этого условия свободно: {count}.',{count});
     if (count && empty.blocker === 'kinds' && categoryOf(draft) === 'bath') return { title: t('Свободной нет: {v}',{v:homeWords({ kinds: draft.kinds, rooms: '' })}), note: t('Других бань и саун на это время свободно: {count}.',{count}), action: { title: t('Показать любую баню'), patch: { kinds: [...BATH_TYPES] } } };
     if (count && empty.blocker === 'kinds') return { title: t('Нет свободного жилья такого типа: {v}',{v:homeWords({ kinds: draft.kinds, rooms: '' })}), note: t('Другого жилья на это время свободно: {count}.',{count}), action: { title: t('Показать любое жильё'), patch: { kinds: [] } } };
+    if (count && empty.blocker === 'classes') return { title: t('Свободного жилья класса «{v}» нет',{v:classWords(draft.classes)}), note: t('Другого класса свободно: {count}.',{count}), action: { title: t('Показать любой класс'), patch: { classes: [] } } };
     if (count && empty.blocker === 'rooms') return { title: t('С таким числом комнат свободного нет'), note: free, action: { title: t('Показать с любым числом комнат'), patch: { rooms: '' } } };
     if (count && empty.blocker === 'district') return { title: t('В районе {district} свободного нет',{district:draft.district}), note: t('В других районах свободно: {count}.',{count}), action: { title: t('Искать по всему городу'), patch: { district: '' } } };
     if (count && empty.blocker === 'features') return { title: t('Свободного жилья с этим нет: {v}',{v:WISHES.filter(([id]) => draft.features.includes(id)).map(([, name]) => (name === 'Wi-Fi' ? name : name.toLocaleLowerCase('ru'))).join(', ')}), note: free, action: { title: t('Искать без пожеланий'), patch: { features: [] } } };
@@ -173,7 +174,9 @@ export function emptyAnswer(empty: Row | undefined, draft: GuestDraft, narrowed:
 // "Студия · 1 комн. · до 2 гостей": what the home is, said on the card before why it was chosen.
 export function homeLine(flat: Row) {
   const kind = HOME_KINDS[flat.details?.type] || '', rooms = Number(flat.rooms), capacity = Number(flat.capacity);
-  return [kind, rooms > 0 && flat.details?.type !== 'studio' && kindCategoryOf(flat.details?.type) === 'stay' ? t('{rooms} комн.',{rooms}) : '', capacity > 0 ? t('до {guests}',{guests:capacity + ' ' + plural(capacity, 'гостя', 'гостей', 'гостей')}) : ''].filter(Boolean).join(' · ');
+  // The class (lib/stay-class.ts) right after the type: «Квартира · Комфорт · 2 комн. · до 4 гостей».
+  const level = kindCategoryOf(flat.details?.type) === 'stay' ? classWords(flat.stay_class ? [flat.stay_class] : []) : '';
+  return [kind, level, rooms > 0 && flat.details?.type !== 'studio' && kindCategoryOf(flat.details?.type) === 'stay' ? t('{rooms} комн.',{rooms}) : '', capacity > 0 ? t('до {guests}',{guests:capacity + ' ' + plural(capacity, 'гостя', 'гостей', 'гостей')}) : ''].filter(Boolean).join(' · ');
 }
 
 export function GuestResults({ preview, draft, mine, onFavorite, selected, onSelect, onFocus, onBook, onOpen, onRefine, onWiden, onTry, onBookEdge, busy, steps = [], tried = [], from = null, onStep, onBack, anchor = '', full = false, readiness, float = false, onChips, onMap }: Props) {

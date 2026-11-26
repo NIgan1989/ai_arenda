@@ -1,3 +1,4 @@
+import {guessStayClass,setStayClass} from './stay-class-db';
 import {safetyState,safetyAction} from './account-safety';
 import {matchingAction} from './smart-matching';
 import {aiDataPermission,saveAIDataPermission} from './ai-data-permission';
@@ -116,6 +117,9 @@ export async function writeOperations(service:RentalService,role:Role,path:strin
  if(route==='stay-photo'){active(role,['guest','owner']);return saveStayPhoto(service,role,body,config);}
  if(route==='listing/understand'){active(role,['owner']);return understandListing(service,body,config);}
  if(route==='listing/price-hint'){active(role,['owner']);return similarRange(service,body);}
+ // Классы жилья (lib/stay-class.ts): the AI's guess while the owner adds a place, and the owner's choice.
+ if(route==='listing/class-guess'){active(role,['owner']);return guessStayClass(service,body,config);}
+ if(route==='listing/class'){active(role,['owner']);return setStayClass(service,body);}
  if(route==='search/understand'){active(role,['guest']);return understandSearch(service,body,config);}
  if(route==='search/place'){active(role,['guest']);return findPlace(service,body,fetch,config);}
  if(route==='favorite'){active(role,['guest']);return setFavorite(service,body);}

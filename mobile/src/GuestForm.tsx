@@ -6,7 +6,7 @@ import { C, type } from './styles';
 import { T } from './tokens';
 import { mapCities } from './map-math';
 import { AddressField } from './AddressSuggest';
-import { OCCASIONS, allKinds, maxGuestsOf, wishesOf, draftSlot, withSlot, categoryKinds, categoryOf, dayChoices, draftUnits, withDay, withMode, withTime, withUnits, type GuestDraft } from './ai-request';
+import { OCCASIONS, STAY_CLASS_LIST, allKinds, maxGuestsOf, wishesOf, draftSlot, withSlot, categoryKinds, categoryOf, dayChoices, draftUnits, withDay, withMode, withTime, withUnits, type GuestDraft } from './ai-request';
 import { SECTION_TITLES, sectionWords, type Section } from './guest-tokens';
 import { BANQUET_SLOTS, addDays, kzToday, type BanquetSlot } from '../../lib/map-search-request';
 
@@ -147,7 +147,20 @@ export function GuestForm({ draft, only = 'all', onChange, onPickPoint, onNearMe
                 style={[h.chip, on && h.chipOn]}
               ><Text style={[h.chipText, on && h.chipTextOn]}>{title}</Text></Pressable>
             );
-          })}</View></View>{!venue && <Chips label={t('Комнат')} value={draft.rooms} options={roomOptions} onChange={rooms => onChange({ ...draft, rooms })} disabled={busy} />}</>,
+          })}</View></View>{!venue && <View><Text style={h.label}>{t('Класс жилья')}</Text><View style={f.wishes}>{STAY_CLASS_LIST.map(([id, title]) => {
+            const on = !!draft.classes?.includes(id);
+            return (
+              <Pressable
+                key={id}
+                accessibilityRole="checkbox"
+                accessibilityLabel={title}
+                accessibilityState={{ checked: on, disabled: busy }}
+                disabled={busy}
+                onPress={() => onChange({ ...draft, classes: on ? (draft.classes || []).filter(v => v !== id) : [...(draft.classes || []), id] })}
+                style={[h.chip, on && h.chipOn]}
+              ><Text style={[h.chipText, on && h.chipTextOn]}>{title}</Text></Pressable>
+            );
+          })}</View></View>}{!venue && <Chips label={t('Комнат')} value={draft.rooms} options={roomOptions} onChange={rooms => onChange({ ...draft, rooms })} disabled={busy} />}</>,
     wishes: <><View><Text style={h.label}>{venue ? t('Обязательно') : t('Обязательно в жилье')}</Text><View style={f.wishes}>{wishesOf(category).map(([id, title]) => {
             const on = draft.features.includes(id);
             return (

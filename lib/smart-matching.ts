@@ -3,6 +3,7 @@ import type {RentalService} from './service';
 import {epoch,uuid,q,one,rows,type Row} from './operation-core';
 import {geoDistance} from './map-location';
 import {amenities,propertyTypes,categories,occasions,searchCategory} from './listings';
+import {STAY_CLASSES,isStayClass} from './stay-class';
 export {searchCategory};
 import {autoAnswerOffers,setGuestMode,guestModeSql,guestModeJoins} from './autopilot';
 const ZONE_MS=5*3600000; // Kazakhstan time, UTC+5
@@ -27,10 +28,13 @@ export function matchingInput(body:Row){
  const kinds=Array.isArray(body.kinds)?body.kinds:[],rooms=body.rooms===undefined||body.rooms===null?'':String(body.rooms);
  if(kinds.length>Object.keys(propertyTypes).length||kinds.some((v:unknown)=>typeof v!=='string'||!Object.hasOwn(propertyTypes,v)))throw new DomainError('Проверьте тип жилья.');
  if(rooms&&!/^[1-9]\+?$/.test(rooms))throw new DomainError('Проверьте число комнат.');
+ // Классы жилья (lib/stay-class.ts): any of the chosen; none chosen is any class.
+ const classes=Array.isArray(body.classes)?body.classes:[];
+ if(classes.length>STAY_CLASSES.length||classes.some((v:unknown)=>!isStayClass(v)))throw new DomainError('Проверьте класс жилья.');
  let near:Row|null=null;
  if(body.near){const {longitude,latitude}=body.near;if(typeof longitude!=='number'||!Number.isFinite(longitude)||Math.abs(longitude)>180||typeof latitude!=='number'||!Number.isFinite(latitude)||Math.abs(latitude)>85)throw new DomainError('Проверьте точку поиска.');near={longitude:Math.round(longitude*100)/100,latitude:Math.round(latitude*100)/100,radius:number(body.near.radius||5000,'Радиус',1000,20000)};}
  if(priority==='closer'&&!near)throw new DomainError('Для приоритета «Ближе» выберите точку на карте или зону рядом с вами.');
- return {city:required(body.city,'Город',80),district:String(body.district||'').trim().slice(0,120),start:new Date(start*1000).toISOString(),end:new Date(end*1000).toISOString(),guests:String(number(body.guests,'Гости',1,searchCategory(kinds)==='banquet'?1000:50)),mode,maxPrice:String(number(body.maxPrice,'Бюджет за период',100,100000000)),priority,features:[...new Set(features)],near,kinds:[...new Set(kinds as string[])],rooms,now:body.now===true,...(maxFloor?{maxFloor}:{}),
+ return {city:required(body.city,'Город',80),district:String(body.district||'').trim().slice(0,120),start:new Date(start*1000).toISOString(),end:new Date(end*1000).toISOString(),guests:String(number(body.guests,'Гости',1,searchCategory(kinds)==='banquet'?1000:50)),mode,maxPrice:String(number(body.maxPrice,'Бюджет за период',100,100000000)),priority,features:[...new Set(features)],near,kinds:[...new Set(kinds as string[])],rooms,...(classes.length?{classes:[...new Set(classes as string[])]}:{}),now:body.now===true,...(maxFloor?{maxFloor}:{}),
   // «Забронировать» on a home that needs its owner's answer: that home is asked first, the next best with it.
   // What a banquet hall is taken for; the owner reads it in the request.
   ...(searchCategory(kinds)==='banquet'&&typeof body.occasion==='string'&&Object.hasOwn(occasions,body.occasion)?{occasion:body.occasion}:{}),
@@ -54,9 +58,9 @@ export function responseText(seconds:number){return 'Отвечает в сре�
 // Minutes by car across a city: the straight line times 1.3 for the streets, at 30 km/h, at least 3.
 export const driveMinutes=(metres:number)=>Math.max(3,Math.round(metres*1.3/500));
 export function rankMatches(properties:Row[],filters:Row):Row[]{
- const budget=Number(filters.maxPrice),district=filters.district.toLocaleLowerCase('ru'),kinds:string[]=filters.kinds||[],rooms=String(filters.rooms||''),least=rooms.endsWith('+'),count=parseInt(rooms);
+ const budget=Number(filters.maxPrice),district=filters.district.toLocaleLowerCase('ru'),kinds:string[]=filters.kinds||[],classes:string[]=filters.classes||[],rooms=String(filters.rooms||''),least=rooms.endsWith('+'),count=parseInt(rooms);
  // «Сейчас»: only a home that is ready and confirms at once, so the guest can go there right away.
- const home=(p:Row)=>(!filters.now||(p.display_status?.code==='ready'&&!!p.instant))&&(kinds.length?kinds.includes(p.details?.type):categories.stay.types.includes(p.details?.type||'apartment'))&&(!rooms||(least?Number(p.rooms)>=count:Number(p.rooms)===count));
+ const home=(p:Row)=>(!filters.now||(p.display_status?.code==='ready'&&!!p.instant))&&(kinds.length?kinds.includes(p.details?.type):categories.stay.types.includes(p.details?.type||'apartment'))&&(!rooms||(least?Number(p.rooms)>=count:Number(p.rooms)===count))&&(!classes.length||classes.includes(p.stay_class));
  const ranked=properties.filter(p=>!p.test_preview&&home(p)&&(!district||String(p.district).toLocaleLowerCase('ru').includes(district))&&filters.features.every((a:string)=>hasFeature(p,a))&&(!filters.maxFloor||Number(p.details?.floor??1)<=filters.maxFloor)).flatMap<Row>(p=>{
   const amount=p.estimate?.amount;if(!Number.isInteger(amount)||amount>budget)return [];
   const distance=filters.near&&p.location?geoDistance([filters.near.longitude,filters.near.latitude],[p.location.longitude,p.location.latitude]):null;
@@ -145,9 +149,9 @@ export async function emptyHint(s:RentalService,f:Row):Promise<Row>{
  const anyPrice=rankMatches(open,{...f,maxPrice:'100000000'});
  if(anyPrice.length)return {reason:'budget',cheapest:Math.min(...anyPrice.map(p=>p.estimate.amount)),count:anyPrice.length};
  // The one condition that empties the answer on its own is named («гостиниц здесь нет»), with what is free without it.
- const loose=f.priority==='closer'?'balanced':f.priority,any=searchCategory(f.kinds)==='stay'?[]:categories[searchCategory(f.kinds)].types,without:[string,Row][]=[['kinds',{kinds:any}],['rooms',{rooms:''}],['district',{district:''}],['features',{features:[]}],['maxFloor',{maxFloor:0}],['near',{near:null,priority:loose}]];
+ const loose=f.priority==='closer'?'balanced':f.priority,any=searchCategory(f.kinds)==='stay'?[]:categories[searchCategory(f.kinds)].types,without:[string,Row][]=[['kinds',{kinds:any}],['classes',{classes:[]}],['rooms',{rooms:''}],['district',{district:''}],['features',{features:[]}],['maxFloor',{maxFloor:0}],['near',{near:null,priority:loose}]];
  for(const [blocker,patch] of without){const set=blocker==='near'?!!f.near:Array.isArray(f[blocker])?f[blocker].length>0:!!f[blocker];if(!set)continue;const count=rankMatches(open,{...f,...patch}).length;if(count)return {reason:'filters',blocker,count};}
- return {reason:'filters',count:rankMatches(open,{...f,now:false,district:'',features:[],maxFloor:0,near:null,kinds:any,rooms:'',priority:loose}).length};
+ return {reason:'filters',count:rankMatches(open,{...f,now:false,district:'',features:[],maxFloor:0,near:null,kinds:any,classes:[],rooms:'',priority:loose}).length};
 }
 async function expire(s:RentalService){const t=epoch();await s.db.batch([q(s.db,"UPDATE matching_requests SET status='expired' WHERE expires_at<=? AND status IN ('searching','ready')",t),q(s.db,"UPDATE matching_offers SET status='expired' WHERE expires_at<=? AND status IN ('pending','accepted')",t)]);}
 async function guestRequest(s:RentalService,id:unknown){await s.requireRole('guest');const r=await one(s.db,'SELECT * FROM matching_requests WHERE id=? AND guest_id=?',required(id,'Запрос',100),s.userId);if(!r)throw new DomainError('Запрос недоступен.',404);return r;}

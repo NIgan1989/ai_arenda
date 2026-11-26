@@ -4,7 +4,7 @@ import {L,t as tr} from '../../lib/i18n';
 // and the city are always there and open their part of the form. Nothing is decided here: each token only says
 // what the draft holds and what the draft is without it. Covered by mobile/tests/guest-tokens.test.mjs.
 import { banquetWhen, plural, stayWhen, CHECKIN_TIME } from '../../lib/map-search-request';
-import { BANQUET_WISHES, BATH_WISHES, WISHES, allKinds, budgetWords, categoryOf, homeWords, occasionTitle, wishesOf, type GuestDraft } from './ai-request';
+import { BANQUET_WISHES, BATH_WISHES, WISHES, allKinds, budgetWords, categoryOf, classWords, homeWords, occasionTitle, wishesOf, type GuestDraft } from './ai-request';
 
 // The parts of the form a token opens.
 export type Section = 'when' | 'guests' | 'price' | 'where' | 'home' | 'wishes' | 'priority';
@@ -40,6 +40,8 @@ export function guestTokens(draft: GuestDraft, now = Date.now()): GuestToken[] {
   // The type: any home, or the whole of «Баня» or «Банкет», is not a condition.
   const typed = venue ? draft.kinds.length < every.length : draft.kinds.length > 0;
   if (typed || draft.rooms) tokens.push({ id: 'home', title: cap(homeWords(typed ? draft : { kinds: [], rooms: draft.rooms })), section: 'home', clear: { kinds: every, rooms: '' } });
+  // The class of the home («Комфорт или Премиум»), only for «Жильё».
+  if (!venue && draft.classes?.length) tokens.push({ id: 'class', title: classWords(draft.classes), section: 'home', clear: { classes: [] } });
   // «Сейчас» takes its point from the phone: taken off, the point goes with it.
   const mine = draft.now && !!draft.near && !draft.near.label;
   if (draft.now) tokens.push({ id: 'now', title: mine ? tr('Сейчас, рядом с вами') : tr('Готово сейчас'), section: 'when', clear: { now: false, ...(mine ? { near: null, priority: 'balanced' as const } : {}) } });
@@ -94,7 +96,7 @@ export function sectionWords(draft: GuestDraft, section: Section, now = Date.now
   if (section === 'where') return [draft.city, draft.district.trim(), draft.near ? nearWords(draft) : ''].filter(Boolean).join(' · ');
   if (section === 'home') {
     const typed = venue ? draft.kinds.length < allKinds(category).length : draft.kinds.length > 0;
-    return cap(homeWords(typed ? draft : { kinds: [], rooms: draft.rooms })) || (category === 'bath' ? tr('Любая') : category === 'banquet' ? tr('Любой') : tr('Любое'));
+    return cap([homeWords(typed ? draft : { kinds: [], rooms: draft.rooms }), category === 'stay' ? classWords(draft.classes) : ''].filter(Boolean).join(', ')) || (category === 'bath' ? tr('Любая') : category === 'banquet' ? tr('Любой') : tr('Любое'));
   }
   if (section === 'wishes') return draft.features.map(id => wishTitle(id, draft)).filter(Boolean).join(', ') || tr('Не важно');
   return PRIORITY[draft.priority] || PRIORITY.balanced;
@@ -106,7 +108,7 @@ export const SECTION_TITLES = (draft: GuestDraft): [Section, string][] => {
     ['guests', tr('Гости')],
     ['price', category === 'banquet' ? tr('Цена на гостя') : tr('Цена')],
     ['where', tr('Где')],
-    ['home', category === 'banquet' ? tr('Зал или кафе') : category === 'bath' ? tr('Баня или сауна') : tr('Тип и комнаты')],
+    ['home', category === 'banquet' ? tr('Зал или кафе') : category === 'bath' ? tr('Баня или сауна') : tr('Тип, класс, комнаты')],
     ['wishes', category === 'stay' ? tr('Удобства и правила') : tr('Обязательно')],
     ['priority', tr('Что важнее')]
   ];

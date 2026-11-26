@@ -46,6 +46,7 @@ export type GuestDraft = {
   near: { longitude: number; latitude: number; radius: number; label?: string } | null;
   kinds: string[]; // types of home (lib/listings.ts propertyTypes); [] for any
   rooms: string; // '2' exactly two rooms, '2+' at least two; '' for any
+  classes?: string[]; // классы жилья (lib/stay-class.ts): any of these; absent or [] for any
   now: boolean; // «Сейчас»: only homes ready now that confirm at once, the nearest first
   maxFloor?: number; // «первый этаж», «не выше 3 этажа»: the highest floor; absent or 0 for any
   occasion?: string; // «Банкет» only: what the hall is taken for (OCCASIONS); 'memorial' keeps every word quiet
@@ -188,6 +189,16 @@ const MONTHS = L(['января', 'февраля', 'марта', 'апреля'
 const WEEKDAYS = L(['вс', 'пн', 'вт', 'ср', 'чт', 'пт', 'сб']);
 const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
 
+// Классы жилья as lib/stay-class.ts names them; mobile/tests/ai-request.test.mjs checks that the two lists match.
+export const STAY_CLASS_LIST: [string, string][] = L([['economy', 'Эконом'], ['standard', 'Стандарт'], ['comfort', 'Комфорт'], ['premium', 'Премиум']]);
+const CLASS_WORDS: [string, RegExp][] = [['economy', /эконом|economy|үнемді/], ['standard', /стандарт|standard/], ['comfort', /комфорт|comfort|жайлы/], ['premium', /премиум|люкс|lux|vip|вип|элитн|бизнес[- ]?класс|premium/]];
+/** The classes a phrase names, in their order: «комфорт или премиум» → comfort, premium. */
+export function classesFromText(text: string) {
+  const low = text.toLocaleLowerCase('ru');
+  return CLASS_WORDS.filter(([, re]) => re.test(low)).map(([id]) => id);
+}
+export const classWords = (classes: string[] = []) => STAY_CLASS_LIST.filter(([id]) => classes.includes(id)).map(([, title]) => title).join(t(' или '));
+
 /** What the form starts with: today until tomorrow, two guests, no budget. */
 export function newDraft(city: string, now = Date.now()): GuestDraft {
   return { city, district: '', ...defaultStay('daily', now), guests: 2, maxPrice: '', perUnit: true, priority: 'balanced', features: [], near: null, kinds: [], rooms: '', now: false, maxFloor: 0 };
@@ -228,7 +239,9 @@ export function guestRequestFromText(text: string, draft: GuestDraft, cities: st
   const filters = result.filters;
   const kinds: string[] = Array.isArray(filters.kinds) ? filters.kinds.filter((id: unknown) => typeof id === 'string' && Object.prototype.hasOwnProperty.call(HOME_KINDS, id)) : [];
   const to = categoryOf({ kinds }), hall = to === 'banquet';
-  const { occasion: _before, ...plain } = base;
+  const { occasion: _before, classes: _classes, ...plain } = base;
+  // «комфорт», «премиум», «эконом»: a class named is a new choice; a refinement that names none keeps the classes.
+  const named = classesFromText(text), classes = to === 'stay' ? (named.length ? named : refining ? base.classes || [] : []) : [];
   const next: GuestDraft = {
     ...plain,
     // A hall named in «Жильё» or «Баня» without its guests starts at fifty, the party a hall is taken for.
@@ -247,6 +260,7 @@ export function guestRequestFromText(text: string, draft: GuestDraft, cities: st
     near: filters.near || null,
     kinds,
     rooms: typeof filters.rooms === 'string' && /^[1-9]\+?$/.test(filters.rooms) ? filters.rooms : '',
+    ...(classes.length ? { classes } : {}),
     now: filters.now === true,
     maxFloor: Number(filters.maxFloor) >= 1 ? Number(filters.maxFloor) : 0
   };
@@ -258,7 +272,8 @@ export function guestRequestFromText(text: string, draft: GuestDraft, cities: st
     draft: next,
     nearby: result.nearby,
     ...(result.place ? { place: result.place } : {}),
-    understood: result.understood,
+    // A class alone («премиум», «только люкс») is a condition the search understands.
+    understood: result.understood || (to === 'stay' && named.length > 0),
     ...(result.past ? { past: result.past } : {}),
     note: [...(result.remarks || []), reset ? t('Срок не назван: ищу на сутки с сегодня.') : ''].filter(Boolean).join(' ')
   };
@@ -359,6 +374,7 @@ export function matchingBody(draft: GuestDraft) {
     near: draft.near ? { longitude: draft.near.longitude, latitude: draft.near.latitude, radius: draft.near.radius } : null,
     kinds: draft.kinds || [],
     rooms: draft.rooms || '',
+    ...(categoryOf(draft) === 'stay' && draft.classes?.length ? { classes: draft.classes } : {}),
     now: !!draft.now,
     ...(draft.maxFloor ? { maxFloor: draft.maxFloor } : {}),
     ...(categoryOf(draft) === 'banquet' && draft.occasion ? { occasion: draft.occasion } : {})
