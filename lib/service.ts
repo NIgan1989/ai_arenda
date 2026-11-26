@@ -46,7 +46,8 @@ import {staffPlaces} from './staff';
 import {cleanerOffers} from './dispatch';
 import {ownerClosedDays} from './closed-days';
 import {homePlaces,homeDeals} from './home-order';
-import {homeChecklist,homeOrderOf,homeCancel,tenge,HOME_DAMAGE_WINDOW} from './home-cleaning';
+import {homeOrderOf,homeCancel,tenge,HOME_DAMAGE_WINDOW} from './home-cleaning';
+import {reportNamesFit} from './cleaning-report';
 import {venuesFor} from './venue';
 import {pickRoom,roomCounts,roomState,roomsOf} from './room-units';
 import {showWaiting} from './show-waiting';
@@ -1416,10 +1417,10 @@ export class RentalService {
       const checklist=Array.isArray(body.checklist)?body.checklist:[];
       // A home cleaning has its own list by its kind (lib/home-cleaning.ts homeChecklist), never shorter than the usual four.
       if(checklist.length<4||checklist.length>12||checklist.some((v:any)=>v!==true)) throw new DomainError('Подтвердите все пункты чек-листа.');
-      // The app sends the names of the points it showed (a home cleaning has its own list): they are kept as they were
+      // The app sends the names of the points it showed (a home cleaning has its own list, a home after guests the room list): they are kept as they were
       // confirmed, so the customer reads exactly what the performer ticked. The site's four ticks stay four ticks.
-      const order=homeOrderOf(j.description),named=Array.isArray(body.items)?body.items.map(String):null;
-      if(named&&(!order||named.length!==checklist.length||named.join('|')!==homeChecklist(order).join('|')))throw new DomainError('Чек-лист изменился. Откройте отчёт заново.',409);
+      const named=Array.isArray(body.items)?body.items.map(String):null;
+      if(named&&(named.length!==checklist.length||!reportNamesFit(j.description,named)))throw new DomainError('Чек-лист изменился. Откройте отчёт заново.',409);
       const kept=named||checklist;
       const report=required(body.report,'Отчёт о работе',1500);
       if(j.status!=='in_progress')throw new DomainError('Сначала отметьте начало работы.',409);
