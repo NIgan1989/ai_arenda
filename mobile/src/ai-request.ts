@@ -272,7 +272,8 @@ export function guestRequestFromText(text: string, draft: GuestDraft, cities: st
     draft: next,
     nearby: result.nearby,
     ...(result.place ? { place: result.place } : {}),
-    understood: result.understood,
+    // A class alone («премиум», «только люкс») is a condition the search understands.
+    understood: result.understood || (to === 'stay' && named.length > 0),
     ...(result.past ? { past: result.past } : {}),
     note: [...(result.remarks || []), reset ? t('Срок не назван: ищу на сутки с сегодня.') : ''].filter(Boolean).join(' ')
   };

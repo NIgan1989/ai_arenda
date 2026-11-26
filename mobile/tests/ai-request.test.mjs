@@ -610,6 +610,9 @@ test('классы жилья: named in the line, kept by a refinement, sent to 
   assert.deepEqual(classesFromText('люкс в центре'), ['premium']);
   const first = parse('эконом на сутки');
   assert.deepEqual(first.draft.classes, ['economy']);
+  // A class alone is understood: the search runs with it.
+  assert.equal(parse('премиум').understood, true);
+  assert.deepEqual(parse('только люкс').draft.classes, ['premium']);
   assert.deepEqual(matchingBody(first.draft).classes, ['economy']);
   // «а с парковкой» refines: the class stays; a new phrase without a class lets it go.
   assert.deepEqual(parse('а с парковкой', morning, first.draft).draft.classes, ['economy']);

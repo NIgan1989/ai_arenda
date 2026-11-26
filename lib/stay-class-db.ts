@@ -5,6 +5,7 @@ import {askModelJSON,modelReady} from './ai-json';
 import {mediaData} from './media-store';
 import {one,rows,q,uuid,epoch,type Row} from './operation-core';
 import {amenities as AMENITIES} from './listings';
+import {leadOf} from './room-units';
 import {RENOVATIONS,STAY_CLASSES,classOfRow,hasClass,isStayClass,suggestClass,type Renovation} from './stay-class';
 
 // The class of a place to stay on the server (lib/stay-class.ts): the AI's guess while the owner adds a place, the
@@ -45,7 +46,9 @@ export async function guessStayClass(s:RentalService,body:Row,config:AIConfig&{B
 }
 
 // Who may set the class: the owner of the place ('owner', or 'ai' when he keeps the AI's guess) or a platform administrator.
-async function writeClass(s:RentalService,propertyId:string,stayClass:unknown,by:'ai'|'owner'|'admin'){
+async function writeClass(s:RentalService,asked:string,stayClass:unknown,by:'ai'|'owner'|'admin'){
+ // Rooms of one type (lib/room-units.ts) copy their card: the class is set on the card and on every room of it at once.
+ const propertyId=await leadOf(s.db,asked);
  if(!isStayClass(stayClass))throw new DomainError('Выберите класс: '+STAY_CLASSES.length+' варианта.');
  const p=await one(s.db,"SELECT p.id,p.owner_id,p.stay_class,p.stay_class_by,json_extract(d.details,'$.type') type FROM properties p LEFT JOIN property_details d ON d.property_id=p.id WHERE p.id=? AND p.archived_at IS NULL",propertyId);
  if(!p||(by!=='admin'&&p.owner_id!==s.userId))throw new DomainError('Жильё не найдено.',404);
@@ -53,7 +56,7 @@ async function writeClass(s:RentalService,propertyId:string,stayClass:unknown,by
  if(p.stay_class_by==='admin'&&by!=='admin')throw new DomainError('Класс поправил администратор сервиса. Если не согласны, напишите ИИ-администратору.',409);
  if(p.stay_class===stayClass&&p.stay_class_by===by)return {stayClass,by};
  await s.db.batch([
-  q(s.db,'UPDATE properties SET stay_class=?,stay_class_by=? WHERE id=?',stayClass,by,propertyId),
+  q(s.db,'UPDATE properties SET stay_class=?,stay_class_by=? WHERE id=? OR id IN (SELECT property_id FROM room_units WHERE lead_id=?)',stayClass,by,propertyId,propertyId),
   q(s.db,'INSERT INTO audit_events VALUES (?,?,?,?,?)',uuid(),s.userId,propertyId,JSON.stringify({action:'property.class',from:p.stay_class||null,to:stayClass,by}),epoch()),
  ]);
  return {stayClass,by};
@@ -71,7 +74,7 @@ export async function adminClassList(s:RentalService,params:Row){
  // The administrator's own city by default (the pilot is one city); ?city= names another, ?city=* every city.
  const asked=String(params.city||'').trim().slice(0,80),city=asked==='*'?'':asked||String((await s.profile())?.city||'');
  const list=await rows(s.db,`SELECT p.id,p.title,p.city,p.district,p.price,p.rooms,p.capacity,p.description,p.stay_class,p.stay_class_by,d.details FROM properties p LEFT JOIN property_details d ON d.property_id=p.id
-  WHERE p.published=1 AND p.archived_at IS NULL AND p.demo_owner IS NULL AND (?='' OR p.city=?) ORDER BY CASE WHEN p.stay_class_by='admin' THEN 1 ELSE 0 END,p.created_at DESC LIMIT 100`,city,city);
+  WHERE p.published=1 AND p.archived_at IS NULL AND p.demo_owner IS NULL AND NOT EXISTS(SELECT 1 FROM room_units u WHERE u.property_id=p.id) AND (?='' OR p.city=?) ORDER BY CASE WHEN p.stay_class_by='admin' THEN 1 ELSE 0 END,p.created_at DESC LIMIT 100`,city,city);
  return {items:list.filter(p=>hasClass(JSON.parse(p.details||'{}').type||'apartment')).map(p=>({id:p.id,title:p.title,city:p.city,district:p.district,price:p.price,stayClass:classOfRow(p),by:p.stay_class_by||'estimate'}))};
 }
 export async function adminSetClass(s:RentalService,body:Row){

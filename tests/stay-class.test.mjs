@@ -34,8 +34,16 @@ test('the owner sets the class of his place, an administrator corrects it and th
   await assert.rejects(setStayClass(f.owner,{propertyId:f.property,stayClass:'premium'}),e=>e.status===409);
   const list=await adminClassList(f.other,{city:'Павлодар'});
   assert.deepEqual(list.items.find(p=>p.id===f.property)&&{c:list.items.find(p=>p.id===f.property).stayClass,by:list.items.find(p=>p.id===f.property).by},{c:'economy',by:'admin'});
+  // Rooms of one type: a correction of a room goes to its card and to every room, so a sync never undoes it; rooms are not listed.
+  const columns=f.db.raw.prepare('PRAGMA table_info(properties)').all().map(c=>c.name);
+  f.db.raw.prepare(`INSERT INTO properties(${columns.join(',')}) SELECT ${columns.map(c=>c==='id'?"'room2'":c).join(',')} FROM properties WHERE id=?`).run(f.property);
+  f.db.raw.prepare('INSERT INTO room_units(property_id,lead_id,created_at) VALUES (?,?,?)').run('room2',f.property,now());
+  await adminSetClass(f.other,{propertyId:'room2',stayClass:'premium'});
+  assert.deepEqual(f.db.raw.prepare("SELECT id,stay_class FROM properties WHERE id IN (?,?) ORDER BY id").all(f.property,'room2').map(r=>r.stay_class),['premium','premium']);
+  assert.ok(!(await adminClassList(f.other,{city:'*'})).items.some(p=>p.id==='room2'));
+  await adminSetClass(f.other,{propertyId:f.property,stayClass:'economy'});
   const audit=f.db.raw.prepare("SELECT action FROM audit_events WHERE entity_id=? AND action LIKE '%property.class%'").all(f.property);
-  assert.equal(audit.length,3);
+  assert.equal(audit.length,5);
  }finally{f.db.close();}
 });
 
