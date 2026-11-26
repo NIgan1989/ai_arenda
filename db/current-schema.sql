@@ -104,6 +104,7 @@
 -- migration 0100_too_general.sql sha256:39d4dd856a7c3c1c074778c6ffc6a489e0c077ad8d27144f1cd730d2f66ab914
 -- migration 0101_native_push.sql sha256:0f0f7fe2dbb31e301ddaac6a7ae3032a0162c4f5bea82f91714e58d977b90cf4
 -- migration 0102_passkeys.sql sha256:3f764759d661b1a859e959faaa0c45c757c1a3271fe51939bcad7ecf949b43cb
+-- migration 0103_stay_classes.sql sha256:a6ac265367913acbd4318cc7ede0c85f595a3ea19a99b7c85db51f07d1b8e0b7
 
 -- table access_receipts
 CREATE TABLE access_receipts (id TEXT PRIMARY KEY,property_id TEXT NOT NULL,entity_kind TEXT NOT NULL,entity_id TEXT NOT NULL,user_id TEXT NOT NULL,created_at INTEGER NOT NULL,expires_at INTEGER NOT NULL);
@@ -1191,7 +1192,7 @@ CREATE TABLE `properties` (
 	`cleaning_minutes` integer DEFAULT 90 NOT NULL,
 	`published` integer DEFAULT 1 NOT NULL,
 	`created_at` integer NOT NULL
-, archived_at INTEGER, own_staff INTEGER NOT NULL DEFAULT 0 CHECK(own_staff IN (0,1)));
+, archived_at INTEGER, own_staff INTEGER NOT NULL DEFAULT 0 CHECK(own_staff IN (0,1)), stay_class TEXT CHECK(stay_class IS NULL OR stay_class IN ('economy','standard','comfort','premium')), stay_class_by TEXT CHECK(stay_class_by IS NULL OR stay_class_by IN ('ai','owner','admin')));
 
 -- table property_access
 CREATE TABLE property_access (property_id TEXT PRIMARY KEY REFERENCES properties(id),ciphertext TEXT NOT NULL,version INTEGER NOT NULL DEFAULT 1,updated_at INTEGER NOT NULL);

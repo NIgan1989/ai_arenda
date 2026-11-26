@@ -1,6 +1,7 @@
 import {DomainError,required} from './domain';
 import type {RentalService} from './service';
 import {epoch,uuid,q,one,rows,type Row} from './operation-core';
+import {classOfRow,isStayClass} from './stay-class';
 
 // The AI administrator's price advice for the next guest.
 // The moment is chosen so that the advice is useful and not annoying: right after the owner accepts
@@ -93,8 +94,15 @@ export async function priceSignals(db:D1Database,property:Row,policy:Row,t:numbe
 export function expireStaleSql(){return "UPDATE price_suggestions SET status='expired',decided_at=? WHERE status='pending' AND (expires_at<=? OR NOT EXISTS(SELECT 1 FROM property_policies pp JOIN properties p ON p.id=pp.property_id WHERE pp.property_id=price_suggestions.property_id AND pp.version=price_suggestions.policy_version AND p.price=price_suggestions.from_daily AND p.published=1 AND p.archived_at IS NULL))";}
 
 // Daily prices of similar flats in the same city (rooms ±1), and their median when there are at least three.
+// Since 2026-11-26 a place is compared with places of its own class (lib/stay-class.ts) when there are three of them.
 async function similarPrices(db:D1Database,property:Row){
- return (await rows(db,`SELECT price FROM properties WHERE city=? AND id<>? AND published=1 AND archived_at IS NULL AND demo_owner IS NULL AND rooms BETWEEN ? AND ? AND price>=100 ORDER BY price`,property.city,property.id,Number(property.rooms)-1,Number(property.rooms)+1)).map(r=>Number(r.price));
+ const list=await rows(db,`SELECT p.price,p.stay_class,p.capacity,p.rooms,p.description,d.details FROM properties p LEFT JOIN property_details d ON d.property_id=p.id WHERE p.city=? AND p.id<>? AND p.published=1 AND p.archived_at IS NULL AND p.demo_owner IS NULL AND p.rooms BETWEEN ? AND ? AND p.price>=100 ORDER BY p.price`,property.city,property.id,Number(property.rooms)-1,Number(property.rooms)+1);
+ return sameClass(list,classOfRow(property,(await one(db,'SELECT details FROM property_details WHERE property_id=?',property.id))?.details)).prices;
+}
+// The places of the same class when there are at least three of them, else all: a hint from two places would be a guess.
+function sameClass(list:Row[],stayClass:string|null){
+ const mine=stayClass?list.filter(p=>classOfRow(p,p.details)===stayClass):[];
+ return mine.length>=3?{prices:mine.map(p=>Number(p.price)),stayClass}:{prices:list.map(p=>Number(p.price)),stayClass:null};
 }
 const medianOf=(prices:number[])=>prices.length>=3?(prices.length%2?prices[(prices.length-1)/2]:Math.round((prices[prices.length/2-1]+prices[prices.length/2])/2)):null;
 export async function similarMedian(db:D1Database,property:Row){return medianOf(await similarPrices(db,property));}
@@ -165,8 +173,9 @@ export async function decidePriceSuggestion(s:RentalService,suggestionId:string,
 // their daily prices). Nothing is said when there are fewer than three to compare with, so the hint is never made up.
 export async function similarRange(s:RentalService,body:Row){
  const city=required(body.city,'Город',80),rooms=Math.max(1,Math.min(20,Math.round(Number(body.rooms)||1)));
- const prices=(await rows(s.db,`SELECT p.price FROM properties p LEFT JOIN property_details d ON d.property_id=p.id WHERE p.city=? AND p.owner_id<>? AND p.published=1 AND p.archived_at IS NULL AND p.demo_owner IS NULL AND p.rooms BETWEEN ? AND ? AND p.price>=100 AND COALESCE(json_extract(d.details,'$.type'),'') NOT IN ('banquet','cafe','banya','sauna') ORDER BY p.price`,city,s.userId,rooms-1,rooms+1)).map(r=>Number(r.price));
- if(prices.length<3)return {similar:prices.length,low:null,high:null};
+ const list=await rows(s.db,`SELECT p.price,p.stay_class,p.capacity,p.rooms,p.description,d.details FROM properties p LEFT JOIN property_details d ON d.property_id=p.id WHERE p.city=? AND p.owner_id<>? AND p.published=1 AND p.archived_at IS NULL AND p.demo_owner IS NULL AND p.rooms BETWEEN ? AND ? AND p.price>=100 AND COALESCE(json_extract(d.details,'$.type'),'') NOT IN ('banquet','cafe','banya','sauna') ORDER BY p.price`,city,s.userId,rooms-1,rooms+1);
+ const {prices,stayClass}=sameClass(list,isStayClass(body.stayClass)?body.stayClass:null);
+ if(prices.length<3)return {similar:prices.length,low:null,high:null,stayClass:null};
  const at=(share:number)=>prices[Math.round(share*(prices.length-1))];
- return {similar:prices.length,low:at(.25),high:at(.75)};
+ return {similar:prices.length,low:at(.25),high:at(.75),stayClass};
 }

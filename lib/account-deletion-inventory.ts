@@ -123,7 +123,7 @@ export const accountDeletionColumns:Record<string,string>={
  "profile_details": "user_id,avatar_id,work_status,version,revision,updated_at",
  "profile_preferences": "user_id,bio,languages,avatar_visibility,show_presence,show_receipts",
  "profiles": "id,name,contact,city,roles,districts,experience,availability,created_at",
- "properties": "id,owner_id,demo_owner,title,city,district,address,description,price,rooms,capacity,cleaning_minutes,published,created_at,archived_at,own_staff",
+ "properties": "id,owner_id,demo_owner,title,city,district,address,description,price,rooms,capacity,cleaning_minutes,published,created_at,archived_at,own_staff,stay_class,stay_class_by",
  "property_access": "property_id,ciphertext,version,updated_at",
  "property_details": "property_id,details,photos,version,revision,updated_at",
  "property_import_links": "owner_id,source,external_id,address_key,property_id,created_at",

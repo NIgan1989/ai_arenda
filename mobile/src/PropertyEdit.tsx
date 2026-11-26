@@ -15,6 +15,8 @@ import {menuIcons} from './AccountRows';
 import {EDIT_STEPS,banquetPrice,withBanquetPrice,editBody,editRequest,nextAdvice,needsReview,reviewRequest,REVIEW_SENT,stepForError,stepLine,stepNeeds,stepTitle,type Advice,type EditBody,type EditStep} from '../../lib/listing-edit';
 import {amenities,categoryAmenities,checkinMethods,isBath,isBanquet,isVenue,kindCategory,roomKinds} from '../../lib/listings';
 import {KindPicker} from './KindPicker';
+import {StayClassPicker} from './StayClassPicker';
+import {classOfRow,hasClass} from '../../lib/stay-class';
 import {RightDocs} from './RightDocs';
 import {PREPAY_CHOICES,prepayNote,prepayState} from '../../lib/prepay';
 import {REPEAT_CHOICES} from '../../lib/rental-policy';
@@ -31,6 +33,7 @@ export function PropertyEdit({property,onSave,onReview,onRemove,onClose,onOpenHa
  const [p,setP]=useState(property),[base,setBase]=useState<EditBody>(()=>editBody(property)),[draft,setDraft]=useState<EditBody>(base);
  const [open,setOpen]=useState<EditStep|null>(step&&EDIT_STEPS.some(x=>x.key===step)?step as EditStep:null),[busy,setBusy]=useState(false),[uploading,setUploading]=useState(false),[error,setError]=useState(''),[done,setDone]=useState(''),[skipped,setSkipped]=useState<string[]>([]),[held,setHeld]=useState(false),[sent,setSent]=useState(false);
  const pick=useRef<PinChoice|null>(null),errorRu=useRef('');
+ const [classNote,setClassNote]=useState('');
  const [access,setAccess]=useState(''),[accessState,setAccessState]=useState(''),[place,setPlace]=useState('');
  async function saveAccess(){if(!call||!p.id||!access.trim())return;setAccessState('…');try{await call('access/save',{propertyId:p.id,instructions:access.trim(),expectedVersion:p.access_version||0});setP((o:Row)=>({...o,access_version:(o.access_version||0)+1}));setAccess('');setAccessState(t('Инструкция сохранена. Гость увидит её перед заездом, исполнитель — когда начнёт уборку.'));}catch(r:any){setAccessState(r?.message||t('Не удалось сохранить инструкцию.'));}}
  const [confirm,setConfirm]=useState(false),[removeError,setRemoveError]=useState(''),[calendars,setCalendars]=useState(step==='calendars'),[cleaner,setCleaner]=useState(step==='cleaner'),[staff,setStaff]=useState(step==='staff'),[halls,setHalls]=useState(step==='halls');
@@ -86,6 +89,11 @@ export function PropertyEdit({property,onSave,onReview,onRemove,onClose,onOpenHa
    {open==='photos'&&<PhotoGrid photos={draft.photos} onChange={photos=>set({photos})} onBusy={setUploading} disabled={busy}/>}
    {open==='flat'&&<>
     <KindPicker kind={d.type} ownStaff={draft.ownStaff} onChange={v=>setDraft(o=>({...o,ownStaff:v.ownStaff??o.ownStaff,details:{...o.details,type:v.type??o.details.type}}))}/>
+    {/* «Класс жилья» (lib/stay-class.ts) is saved at once by its own tap, apart from the rest of the step. */}
+    {hasClass(d.type)&&!!p.id&&!!call&&<><Text style={e.label}>{t('Класс жилья')}{p.stay_class_by==='ai'||!p.stay_class?<Text style={e.label}>{'  '}{t('ИИ предложил')}</Text>:null}</Text>
+     <StayClassPicker value={p.stay_class||classOfRow(p,p.details)} locked={p.stay_class_by==='admin'} onChange={async v=>{const was=p.stay_class,by=p.stay_class_by;setP((o:Row)=>({...o,stay_class:v,stay_class_by:'owner'}));setClassNote('');
+      try{await call('listing/class',{propertyId:p.id,stayClass:v,by:'owner'});setClassNote(t('Класс сохранён.'));}catch(x:any){setP((o:Row)=>({...o,stay_class:was,stay_class_by:by}));setClassNote(x?.message||t('Не удалось сохранить.'));}}}/>
+     {!!classNote&&<Text accessibilityLiveRegion="polite" style={e.hint}>{classNote}</Text>}</>}
     {isBanquet(d.type)?<View style={e.row}>{num(t('Вмещает гостей'),draft.capacity,n=>setDraft(o=>({...o,capacity:Math.max(1,n),details:{...o.details,beds:Math.max(1,n)}})),1000)}{num(t('Площадь, м²'),d.area,n=>setD({area:n}),2000)}</View>:isBath(d.type)?<View style={e.row}>{half(<Stepper label={t('Гостей')} value={draft.capacity} text={String(draft.capacity)} min={1} max={50} onChange={n=>setDraft(o=>({...o,capacity:n,details:{...o.details,beds:Math.max(o.details.beds,n)}}))}/>)}{half(num(t('Площадь, м²'),d.area,n=>setD({area:n}),2000))}</View>:<>
       <View style={e.row}>{half(<Stepper label={t('Комнаты')} value={draft.rooms} text={String(draft.rooms)} min={1} max={20} onChange={n=>set({rooms:n})}/>)}{half(<Stepper label={t('Гостей')} value={draft.capacity} text={String(draft.capacity)} min={1} max={50} onChange={n=>setDraft(o=>({...o,capacity:n,details:{...o.details,beds:Math.max(o.details.beds,n)}}))}/>)}</View>
       <View style={e.row}>{half(<Stepper label={t('Спальных мест')} value={d.beds} text={String(d.beds)} min={1} max={50} onChange={n=>setD({beds:n})}/>)}{half(<Stepper label={t('Санузлы')} value={d.bathrooms} text={String(d.bathrooms)} min={1} max={20} onChange={n=>setD({bathrooms:n})}/>)}</View>

@@ -14,6 +14,8 @@ import {PhotoGrid} from './PhotoGrid';
 import {Stepper} from './SheetParts';
 import {amenities,categoryAmenities,checkinMethods,isBath,kindCategory,propertyTypes} from '../../lib/listings';
 import {KindPicker} from './KindPicker';
+import {StayClassPicker} from './StayClassPicker';
+import {classLabel,hasClass,suggestClass,type ClassGuess} from '../../lib/stay-class';
 import {RightDocs} from './RightDocs';
 import {needsReview,reviewRequest} from '../../lib/listing-edit';
 import {DRAFT_EXAMPLE,DRAFT_EXAMPLE_BATH,answerDraft,draftDescription,draftListingBody,draftQuestions,draftRules,draftTitle,emptyDraft,mergeModelDraft,moneyAnswer,readListingText,type ListingDraft} from '../../lib/listing-draft';
@@ -32,16 +34,27 @@ const RULES:[keyof ListingDraft,string,string][]=L([['pets','Питомцы ра
 // what the rules could not read), and the check screen is a short list of lines, one per thing: a tap opens that line to fix it.
 // Laid out as Airbnb adds a place (concept of 2026-11-25): «Закрыть» and «Шаг N из 3» on top, one big heading, and each
 // question the AI could not answer from the story is a screen of its own; at the bottom the step bar, «Назад» and «Далее».
-export function PropertyQuick({city,onSave,onGuestMode,onPlace,onReview,onClose,onMap,onDone,onHome,onUnderstand,onTop,onPriceHint}:{city:string;onHome?:(ask?:HomeAsk)=>void;onSave:(body:Row)=>Promise<Row>;onGuestMode:(body:Row)=>Promise<unknown>;onPlace?:(body:Row)=>Promise<unknown>;onReview?:(body:Row)=>Promise<unknown>;onClose:()=>void;onMap?:(id:string)=>void;onDone:(saved:Saved)=>void;onUnderstand?:(text:string)=>Promise<Row|null>;onTop?:()=>void;onPriceHint?:(body:Row)=>Promise<Row>}){
+export function PropertyQuick({city,onSave,onGuestMode,onPlace,onReview,onClose,onMap,onDone,onHome,onUnderstand,onTop,onPriceHint,onClassGuess,onClass}:{onClassGuess?:(body:Row)=>Promise<Row>;onClass?:(body:Row)=>Promise<unknown>;city:string;onHome?:(ask?:HomeAsk)=>void;onSave:(body:Row)=>Promise<Row>;onGuestMode:(body:Row)=>Promise<unknown>;onPlace?:(body:Row)=>Promise<unknown>;onReview?:(body:Row)=>Promise<unknown>;onClose:()=>void;onMap?:(id:string)=>void;onDone:(saved:Saved)=>void;onUnderstand?:(text:string)=>Promise<Row|null>;onTop?:()=>void;onPriceHint?:(body:Row)=>Promise<Row>}){
  const [step,setStep]=useState(0),[text,setText]=useState(''),[draft,setDraft]=useState<ListingDraft>(()=>emptyDraft(city)),[found,setFound]=useState<string[]>([]);
  const [photos,setPhotos]=useState<string[]>([]),[uploading,setUploading]=useState(false),[answer,setAnswer]=useState(''),[mode,setMode]=useState<'auto'|'manual'>('auto'),[open,setOpen]=useState('');
  const [busy,setBusy]=useState(false),[reading,setReading]=useState(false),[error,setError]=useState(''),[saved,setSaved]=useState<Saved|null>(null);
  const questions=useMemo(()=>{const q:{key:string;label:string;question:string;placeholder:string}[]=draftQuestions(draft);return !draft.ownStaff&&!(draft.cleaningFee>=100)?[...q,{key:'cleaningFee',label:t('Уборка'),question:t('Сколько платите за уборку после гостей?'),placeholder:'0'}]:q;},[draft,mode]);
  const ask=questions[0];
  const [place,setPlace]=useState('');
+ // «Класс жилья» (lib/stay-class.ts): the rules guess at once from the story, the space and the amenities; with photos the
+ // server lets the model look at the renovation. The owner's tap is his choice; untouched, the AI's guess is saved as the AI's.
+ const [chosenClass,setChosenClass]=useState<string|null>(null),[photoGuess,setPhotoGuess]=useState<ClassGuess&{key:string}|null>(null);
+ const classFacts={type:draft.type,area:draft.area,capacity:draft.capacity,rooms:draft.rooms,amenities:draft.amenities,text};
+ const classKey=[draft.type,draft.area,draft.capacity,draft.amenities.join(','),photos.slice(0,3).join(',')].join('|');
+ const ruleGuess=useMemo(()=>hasClass(draft.type)?suggestClass(classFacts):null,[classKey,text]);
+ const classGuess=hasClass(draft.type)?(photoGuess?.key===classKey?photoGuess:ruleGuess):null;
+ const stayClass=hasClass(draft.type)?chosenClass||classGuess?.stayClass||null:null;
  // The check screen, once reached, stays: clearing a line while fixing it does not throw the owner back to a question.
  const [checking,setChecking]=useState(false);
  useEffect(()=>{if(step===1&&!questions.length)setChecking(true);},[step,questions.length]);
+ useEffect(()=>{if(step!==1||!photos.length||!onClassGuess||!hasClass(draft.type)||photoGuess?.key===classKey)return;let live=true;const key=classKey;
+  onClassGuess({...classFacts,photos:photos.slice(0,3)}).then(v=>{if(live&&v?.from==='photos'&&v.stayClass)setPhotoGuess({stayClass:v.stayClass,reasons:v.reasons||[],from:'photos',key});}).catch(()=>{});
+  return()=>{live=false;};},[step,classKey]);
  const asking=step===1&&!!ask&&!checking;
  // Fields only the model read: a new reading of the story may change them; a field the owner edits himself is his.
  const [modelKeys,setModelKeys]=useState<string[]>([]);
@@ -71,6 +84,8 @@ export function PropertyQuick({city,onSave,onGuestMode,onPlace,onReview,onClose,
    catch(e:any){if(!published||!/провер|допуск/i.test(String(e?.ru??e?.message)))throw e;published=false;result=await onSave(draftListingBody(draft,photos,false));
     if(onReview&&needsReview(String(e?.ru??e?.message))){try{await onReview(reviewRequest({id:result.id,title:draftTitle(draft),city:draft.city,address:draft.address}));review=true;}catch{/* the owner can still ask from «Допуск» */}}}
    // The flat goes on the map by its address right away; the owner only checks the pin.
+   // The class goes with the place: the owner's choice, or the AI's guess he did not change.
+   if(stayClass&&onClass){try{await onClass({propertyId:result.id,stayClass,by:chosenClass?'owner':'ai'});}catch{/* the class can be set later in the editor */}}
    let placed=false;try{placed=!!((await onPlace?.({propertyId:result.id,...(place?{place}:{})})) as Row|undefined)?.saved;}catch{/* the map pin can be set later */}
    let note='';try{await onGuestMode({propertyId:result.id,mode,cleaningFee:!draft.ownStaff&&draft.cleaningFee>=100?draft.cleaningFee:undefined});}catch(e:any){note=' '+(e?.message||'');}
    setSaved({id:result.id,published,placed,message:(published?t(['Зал опубликован, гости уже видят его на карте.','Объект опубликован, гости уже видят его на карте.','Жильё опубликовано, гости уже видят его на карте.'][sort]):review?t('Сохранено черновиком и отправлено на проверку администратору: после проверки появится на карте само.'):photos.length?t('Сохранено черновиком: чтобы показать гостям, пройдите проверку в «Управление → Допуск».'):t('Сохранено черновиком. Добавьте фото, и его можно будет показать гостям.'))+note});setStep(2);onTop?.();
@@ -83,10 +98,10 @@ export function PropertyQuick({city,onSave,onGuestMode,onPlace,onReview,onClose,
  // «Сколько стоят сутки?»: what the guest pays, the service's fee (lib/service-dues.ts rates) and what stays, and what similar
  // flats in the city ask, when there are at least three to compare with (lib/price-advice.ts similarRange).
  const fee=useOwnerFee(asking&&ask?.key==='price'&&!hall);
- const [hint,setHint]=useState<{low:number;high:number}|null>(null);
- const hintFor=asking&&ask?.key==='price'&&!venue&&!!onPriceHint&&!!String(draft.city||'').trim()?draft.city+':'+draft.rooms:'';
+ const [hint,setHint]=useState<{low:number;high:number;stayClass?:string}|null>(null);
+ const hintFor=asking&&ask?.key==='price'&&!venue&&!!onPriceHint&&!!String(draft.city||'').trim()?draft.city+':'+draft.rooms+':'+(stayClass||''):'';
  useEffect(()=>{if(!hintFor||!onPriceHint)return;let live=true;
-  onPriceHint({city:draft.city,rooms:draft.rooms}).then(v=>{if(live)setHint(Number(v?.low)>=100?{low:Number(v.low),high:Number(v.high)}:null);}).catch(()=>{});
+  onPriceHint({city:draft.city,rooms:draft.rooms,...(stayClass?{stayClass}:{})}).then(v=>{if(live)setHint(Number(v?.low)>=100?{low:Number(v.low),high:Number(v.high),stayClass:v.stayClass||undefined}:null);}).catch(()=>{});
   return()=>{live=false;};},[hintFor]);
  const priceLine=hall?(draft.price>=100?t('{v} за гостя',{v:money(draft.price)}):''):bath?(draft.hourlyPrice>=100?t('{v} / час · от {minHours} ч',{v:money(draft.hourlyPrice),minHours:draft.minHours}):''):[draft.price>=100&&t('{v} / сутки',{v:money(draft.price)}),draft.hourlyPrice>=100&&t('{v} / час',{v:money(draft.hourlyPrice)}),draft.nightlyPrice>=100&&t('{v} / ночь',{v:money(draft.nightlyPrice)})].filter(Boolean).join(' · ');
  const chip=(key:string,label:string,on:boolean,onPress:()=>void,radio=false)=><Pressable key={key} accessibilityRole={radio?'radio':'checkbox'} accessibilityState={{checked:on}} onPress={onPress} style={[q.chip,on&&q.chipOn]}><Text style={[q.chipText,on&&q.chipTextOn]}>{on&&!radio?'✓ ':''}{label}</Text></Pressable>;
@@ -150,7 +165,7 @@ export function PropertyQuick({city,onSave,onGuestMode,onPlace,onReview,onClose,
      <View style={q.sumRow}><Text style={q.sumMuted}>{free?t('Комиссия сервиса · бесплатный старт'):t('Комиссия сервиса {rate}',{rate:percent(fee.rate)})}</Text><Text style={q.sumMuted}>{cut?'−'+money(cut):money(0)}</Text></View>
      <View style={[q.sumRow,q.sumTotal]}><Text style={q.sumStrong}>{t('Вы получите')}</Text><Text style={q.sumStrong}>{money(value-cut)}</Text></View>
     </View>}
-    {ask.key==='price'&&!!hint&&<View style={q.advice}><View style={q.spark}><Text style={q.sparkText}>✦</Text></View><Text style={q.adviceText}>{hint.low===hint.high?t('Похожее жильё в городе сдают примерно за {v} ₸ в сутки.',{v:digits(hint.low)}):t('Похожее жильё в городе сдают за {low}–{high} ₸ в сутки.',{low:digits(hint.low),high:digits(hint.high)})}</Text></View>}
+    {ask.key==='price'&&!!hint&&<View style={q.advice}><View style={q.spark}><Text style={q.sparkText}>✦</Text></View><Text style={q.adviceText}>{hint.stayClass?(hint.low===hint.high?t('Жильё класса «{c}» в городе сдают примерно за {v} ₸ в сутки.',{c:classLabel(hint.stayClass),v:digits(hint.low)}):t('Жильё класса «{c}» в городе сдают за {low}–{high} ₸ в сутки.',{c:classLabel(hint.stayClass),low:digits(hint.low),high:digits(hint.high)})):hint.low===hint.high?t('Похожее жильё в городе сдают примерно за {v} ₸ в сутки.',{v:digits(hint.low)}):t('Похожее жильё в городе сдают за {low}–{high} ₸ в сутки.',{low:digits(hint.low),high:digits(hint.high)})}</Text></View>}
     {ask.key==='cleaningFee'&&<View style={q.chips}><Pressable accessibilityRole="button" onPress={()=>{patch({ownStaff:true});setAnswer('');setError('');}} style={q.chip}><Text style={q.chipText}>{t('Убираем сами')}</Text></Pressable></View>}
    </>:<AddressField kind={ask.key==='address'?'street':'district'} label={ask.label} value={answer} city={String(draft.city||'')} place={place} max={ask.key==='address'?300:120} placeholder={ask.placeholder} labelStyle={q.tileLabel} inputStyle={q.input} style={q.field} onChange={setAnswer} onPick={c=>{if(ask.key==='address'&&c.district&&!String(draft.district||'').trim())patch({district:c.district});}}/>}
    {foot(toStory,t('Далее'),reply,!answer.trim())}
@@ -165,6 +180,7 @@ export function PropertyQuick({city,onSave,onGuestMode,onPlace,onReview,onClose,
    </View>
    <View style={q.rows}>
     {row('kind',t('Тип'),[propertyTypes[draft.type as keyof typeof propertyTypes],draft.ownStaff?t('свой персонал'):''].filter(Boolean).join(' · '),guessed('type'),<KindPicker inline kind={draft.type} ownStaff={draft.ownStaff} onChange={v=>{patch(v);if(v.type)setOpen("");}}/>)}
+    {!!stayClass&&row('class',t('Класс'),classLabel(stayClass),!chosenClass,<StayClassPicker value={stayClass} guess={classGuess?.stayClass} reasons={classGuess?.reasons} onChange={v=>{setChosenClass(v);setOpen('');}}/>)}
     {row('size',venue?t('Вместимость'):t('Размер'),sizeLine,anyGuess(...(venue?['capacity']:['rooms','capacity','area','floor'])),<>
      <View style={q.grid}>{!venue&&<View style={q.half}><Stepper label={t('Комнаты')} value={draft.rooms} text={String(draft.rooms)} min={1} max={20} onChange={v=>patch({rooms:v})}/></View>}<View style={q.half}><Stepper label={bath?t('Вмещает гостей'):t('Гостей')} value={draft.capacity} text={String(draft.capacity)} min={1} max={hall?1000:50} step={hall?10:1} onChange={v=>setDraft(d=>({...d,capacity:v,beds:Math.max(d.beds,v),known:[...new Set([...d.known,'capacity'])]}))}/></View></View>
      <View style={q.grid}>{num('area',t('Площадь, м²'),2000)}{!bath&&num('floor',t('Этаж'),100)}{!venue&&num('floors',t('Этажей в доме'),100)}</View>

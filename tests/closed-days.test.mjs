@@ -77,9 +77,14 @@ test('while adding a flat the owner sees what similar flats in the city ask, onl
   // Flats of another owner in the same city, as published listings.
   const copy=(id,price)=>f.db.raw.prepare(`INSERT INTO properties(${columns.join(',')}) SELECT ${columns.map(c=>c==='id'||c==='price'?'?':c==='owner_id'?"'other'":c==='published'?'1':c==='archived_at'||c==='demo_owner'?'NULL':c).join(',')} FROM properties WHERE id=?`).run(...columns.filter(c=>c==='id'||c==='price').map(c=>c==='id'?id:price),f.property);
   copy('a',10000);copy('b',12000);
-  assert.deepEqual(await similarRange(f.owner,{city:p.city,rooms:p.rooms}),{similar:2,low:null,high:null});
+  assert.deepEqual(await similarRange(f.owner,{city:p.city,rooms:p.rooms}),{similar:2,low:null,high:null,stayClass:null});
   copy('c',13000);copy('d',20000);copy('e',9000);
-  assert.deepEqual(await similarRange(f.owner,{city:p.city,rooms:p.rooms}),{similar:5,low:10000,high:13000});
+  assert.deepEqual(await similarRange(f.owner,{city:p.city,rooms:p.rooms}),{similar:5,low:10000,high:13000,stayClass:null});
+  // Классы жилья: with three of the same class the hint compares only with them; with fewer, with all similar flats.
+  const setClass=(ids,c)=>{for(const id of ids)f.db.raw.prepare("UPDATE properties SET stay_class=?,stay_class_by='owner' WHERE id=?").run(c,id);};
+  setClass(['a','b','e'],'economy');setClass(['c','d'],'premium');
+  assert.deepEqual(await similarRange(f.owner,{city:p.city,rooms:p.rooms,stayClass:'economy'}),{similar:3,low:10000,high:12000,stayClass:'economy'});
+  assert.deepEqual(await similarRange(f.owner,{city:p.city,rooms:p.rooms,stayClass:'premium'}),{similar:5,low:10000,high:13000,stayClass:null});
   // The owner's own flats and another city are not compared with.
   assert.equal((await similarRange(f.owner,{city:'Другой город',rooms:p.rooms})).similar,0);
   await assert.rejects(similarRange(f.owner,{rooms:2}),/./);

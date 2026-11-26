@@ -603,3 +603,19 @@ test('the examples the app shows in Kazakh and in English are read as the Russia
   // Russian is read as before: a Russian word is never taken for a Kazakh or an English one.
   assert.equal(read('Екибастуз завтра на сутки').draft.guests, 2);
 });
+
+test('классы жилья: named in the line, kept by a refinement, sent to the server, the same as the owners choose', async () => {
+  const {STAY_CLASS_LIST, classesFromText, classWords} = await loadPure('mobile/src/ai-request.ts', 'lib/map-search-request.ts');
+  assert.deepEqual(classesFromText('комфорт или премиум на сутки'), ['comfort', 'premium']);
+  assert.deepEqual(classesFromText('люкс в центре'), ['premium']);
+  const first = parse('эконом на сутки');
+  assert.deepEqual(first.draft.classes, ['economy']);
+  assert.deepEqual(matchingBody(first.draft).classes, ['economy']);
+  // «а с парковкой» refines: the class stays; a new phrase without a class lets it go.
+  assert.deepEqual(parse('а с парковкой', morning, first.draft).draft.classes, ['economy']);
+  assert.equal(parse('двушка завтра', morning, first.draft).draft.classes, undefined);
+  assert.equal(matchingBody(draft).classes, undefined);
+  assert.equal(classWords(['premium', 'comfort']), 'Комфорт или Премиум');
+  const lib = await import('node:fs').then(fs => fs.readFileSync(new URL('../../lib/stay-class.ts', import.meta.url), 'utf8'));
+  for (const [id, title] of STAY_CLASS_LIST) assert.ok(lib.includes(id + ":'" + title + "'"), id);
+});
