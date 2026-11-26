@@ -1,5 +1,5 @@
 import {t} from '../../lib/i18n';
-import React, { useState, type ReactNode } from 'react';
+import React, { useEffect, useState, type ReactNode } from 'react';
 import { Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { AiLine } from './AiLine';
 import { NowCard } from './NowCard';
@@ -42,6 +42,8 @@ type Props = {
   onService?: () => void;
   // The picker opened or closed: the sheet makes room for it and returns to where it was.
   onPicker?: (open: boolean) => void;
+  // Opens the picker from outside (the type button on the guest's top bar).
+  pickerOpen?: boolean;
   // Guest only: the request the shown results came from. The empty line keeps saying it instead of the examples, so
   // what is on the map and what the line says never disagree (GPT audit 2026-11-22).
   recent?: string;
@@ -49,7 +51,7 @@ type Props = {
 };
 
 // The default state of the bottom sheet: one AI line, a row of chips and the "Сейчас" card when there is one.
-export function MapSheetHead({ role, text, onText, onSend, onChip, chips = true, quick = true, busy = false, conditions, now, onNow, counts, category = 'stay', kind = '', choice, onKind, onService, onPicker, recent = '', children }: Props) {
+export function MapSheetHead({ role, text, onText, onSend, onChip, chips = true, quick = true, busy = false, conditions, now, onNow, counts, category = 'stay', kind = '', choice, onKind, onService, onPicker, pickerOpen = false, recent = '', children }: Props) {
   const line = headLine(role, Date.now(), category), inPlate = typeof conditions === 'function';
   // The picker takes the place of the chips: a list of the categories, one of them opened; a tap on a type chooses and closes.
   const [picking, setPicking] = useState(false);
@@ -57,6 +59,7 @@ export function MapSheetHead({ role, text, onText, onSend, onChip, chips = true,
   // The category whose types are shown: the chosen one when the list opens, another by a tap on its row.
   const [opened, setOpened] = useState<Category | null>(category);
   const show = (open: boolean) => { if (open) setOpened(category); setPicking(open); onPicker?.(open); };
+  useEffect(() => { if (pickerOpen && !picking) show(true); }, [pickerOpen]);
   const pick = (to: Category, id: string | null) => { show(false); onKind?.(to, id); };
   const catButton = !!onKind && !!choice ? <Pressable accessibilityRole="button" accessibilityLabel={t('Категория: {title}. Выбрать',{title:choice.title})} accessibilityState={{ expanded: false }} disabled={busy} onPress={() => show(true)} style={({ pressed }) => [s.chip, s.catChip, inPlate && s.catSmall, pressed && s.chipPressed]}><KindIcon id={choice.id} size={18} color={C.accentPressed} />{!inPlate && <Text style={s.catText}>{choice.title}</Text>}<Image source={chevron} style={s.catChevron} accessibilityIgnoresInvertColors /></Pressable> : null;
   return (
