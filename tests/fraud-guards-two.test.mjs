@@ -104,7 +104,7 @@ test('a confirmed number cannot be required without SMS, and reviews need it onc
   const {phoneCheck,requestPhoneCode}=await load('participant-security');
   R.prepare("INSERT OR IGNORE INTO auth_accounts(id,phone,name,password_hash,recovery_hash,created_at) VALUES ('guest','+77010000001','Guest','x','x',?)").run(now());
   const state=await phoneCheck(f.db,'guest',{});
-  assert.deepEqual({verified:state.verified,sms:state.sms,phone:state.phone},{verified:false,sms:false,phone:'••••••••0001'});
+  assert.deepEqual({verified:state.verified,sms:state.sms,phone:state.phone},{verified:false,sms:false,phone:'+7 701 ••• 00 01'});
   await assert.rejects(requestPhoneCode(f.guest,{}),/SMS-провайдера/);
   // With a provider: the code goes through the one SMS door (lib/sms.ts).
   const real=globalThis.fetch;let sent=null;globalThis.fetch=async(url,init)=>{sent={url:String(url),body:JSON.parse(init.body)};return new Response('{}');};

@@ -14,10 +14,11 @@ export async function securityState(service:RentalService,role:Role,platformAdmi
 }
 // «Номер подтверждён» in the app's profile (fraud check, step 2): the state of the account's own number and whether
 // SMS can be sent at all. The number is the one the person signs in with.
+const maskPhone=(p:string)=>/^\+7\d{10}$/.test(p)?`+7 ${p.slice(2,5)} ••• ${p.slice(8,10)} ${p.slice(10)}`:p.replace(/.(?=.{4})/g,'•');
 export async function phoneCheck(db:D1Database,userId:string,config:OperationConfig){
  const [row,account,policy]=await Promise.all([one(db,'SELECT phone,verified_at,sent_at,expires_at FROM phone_verifications WHERE user_id=?',userId),one(db,'SELECT phone FROM auth_accounts WHERE id=?',userId).catch(()=>null),one(db,"SELECT require_phone FROM pilot_policy WHERE id='global'")]);
  const verified=!!row?.verified_at&&!!account&&row.phone===account.phone;
- return {verified,phone:account?String(account.phone).replace(/.(?=.{4})/g,'•'):'',sms:smsReady(config),required:!!policy?.require_phone,waiting:!verified&&!!row&&!row.verified_at&&Number(row.expires_at)>epoch()};
+ return {verified,phone:account?maskPhone(String(account.phone)):'',sms:smsReady(config),required:!!policy?.require_phone,waiting:!verified&&!!row&&!row.verified_at&&Number(row.expires_at)>epoch()};
 }
 export async function requestPhoneCode(service:RentalService,config:OperationConfig){
  if(!smsReady(config))throw new DomainError('Подтверждение номера по SMS заработает, когда подключим SMS-провайдера. Пока ничего делать не нужно.',503);

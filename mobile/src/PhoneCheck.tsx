@@ -16,7 +16,7 @@ export function PhoneCheck({state,role,onDone}:{state:PhoneState;role:'guest'|'o
  async function call(path:string,body:object){setBusy(true);setSaid(null);try{
   const v=await request('/api/operations/'+path,body,undefined,undefined,role);setSaid({text:v.message,error:false});return true;
  }catch(e){setSaid({text:e instanceof Error&&e.message?e.message:t('Не получилось. Попробуйте ещё раз.'),error:true});return false;}finally{setBusy(false);}}
- const why=role==='guest'?t('Отзывы считаются только от подтверждённых номеров. Так владельцы и другие гости знают, что вы настоящий человек.'):role==='owner'?t('Гости видят, что номер владельца подтверждён. Так мошеннику не завести аккаунт на чужой номер.'):t('Владельцы видят, что номер исполнителя подтверждён. Так мошеннику не завести аккаунт на чужой номер.');
+ const why=role==='guest'?t('Подтверждённый номер показывает владельцам, что вы настоящий человек. Отзывы таких гостей весомее.'):role==='owner'?t('Подтверждённый номер повышает доверие гостей. Так мошеннику не завести аккаунт на чужой номер.'):t('Подтверждённый номер повышает доверие владельцев. Так мошеннику не завести аккаунт на чужой номер.');
  return <View style={u.card}>
   <Text accessibilityRole="header" style={u.title}>{t('Номер телефона')}</Text>
   <Text style={h.note}>{state.phone?t('Номер входа: {phone}',{phone:state.phone}):t('Номер входа не найден.')}</Text>
