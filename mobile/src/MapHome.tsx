@@ -435,11 +435,12 @@ function GuestPanel({setFloat,setFoot,setScanning,setQuiet,accountId,data,mapDat
  const floatOn=!refine&&!catOpen&&!requestId&&!picking&&!nav.trip&&!listOpen,found=!!preview&&shown.length>0;
  // Nothing to show yet: the search runs by itself, for the conditions the guest has (a new city, a closed filter, a new type).
  useEffect(()=>{if(floatOn&&!preview&&!lock.current&&!error)void find();},[floatOn,preview,error]);
- // The filter pulled down without «Показать»: it closes, and what it changed is searched.
- useEffect(()=>{if(snap===0&&refine)setRefine('');},[snap]);
+ // The filter or the list pulled down (one step is enough, 2026-11-26): it closes and the map returns with its card,
+ // never the half-open sheet of the old results. What the filter changed is searched.
+ useEffect(()=>{if(snap<2&&(refine||listOpen)){setRefine('');setListOpen(false);}},[snap]);
  const capsule=tokens.filter(t=>t.id==='city'||t.id==='district').map(t=>t.title).join(', '),capsuleLine=tokens.filter(t=>t.id!=='city'&&t.id!=='district').map(t=>t.title).join(' · ');
- useEffect(()=>{if(listOpen&&snap===0)setListOpen(false);},[snap]);
- useEffect(()=>{if(floatOn&&snap!==0)expand(0);},[floatOn]);
+ // The map with its card has no half-open sheet: a search that ends (find opens the sheet) or a held point puts it down.
+ useEffect(()=>{if(floatOn&&snap!==0)expand(0);},[floatOn,snap]);
  useEffect(()=>{
   if(!floatOn){setFloat?.(null);return;}
   setFloat?.(<GuestFloatBar title={capsule} line={capsuleLine} busy={working} chips={found?floatChips:null} choice={kindChoice(draft)} onKind={()=>{setSelected('');setCatOpen(true);}} onEdit={()=>openPart('all')}/>);
