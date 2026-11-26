@@ -3,7 +3,7 @@ import {t as tr,L,dateText} from './i18n';
 // Since 2026-11-18 the app shows on a page only what was said after it opened; on «Сводка» the rest folds into one list
 // «История» (a line per message, by day), and anything older than a week is dropped when the conversation loads.
 type Row=Record<string,any>;
-export type HistoryMessage={id:string;sender:'user'|'assistant';text:string;block?:string;payload?:Row;done?:boolean;result?:string};
+export type HistoryMessage={id:string;sender:'user'|'assistant';text:string;block?:string;payload?:Row;done?:boolean;result?:string;screen?:boolean};
 export const HISTORY_DAYS=7;
 const DAY=86400000,SHIFT=5*3600000; // Kazakhstan, UTC+5
 // A message id starts with the time it was said, in base 36 (mobile/src/model.ts uid). Other ids have no time: 0.
@@ -28,6 +28,20 @@ const BLOCKS:Record<string,string>=L({
  'property-editor':'Изменение жилья','property-quick':'Новое жильё','property-settings':'Правила жилья','stay-form':'Бронирование',
  'job-form':'Заказ уборки','home-order':'Уборка на дом',review:'Проверка брони',report:'Отчёт об уборке',auth:'Вход',help:'Подсказки'
 });
+// What goes into «История»: what the AI administrator said and what the person wrote. A screen opened by a tap («Правила
+// и готовность», the listing editor) is marked `screen` and stays out, so opening the rules ten times adds no ten lines.
+// Before 2026-11-26 such opens had no mark: an open of the rules or the editor with no text, or with the line the app itself
+// puts over it, is recognised by its block, that line and a payload of only an id (and a step).
+const SCREENS=new Set(['property-settings','property-editor']);
+const OPEN_LINES=/* i18n */['Правила и готовность жилья.','Полномочия и готовность жилья.'];
+const opened=(m:HistoryMessage)=>{
+ if(m.sender!=='assistant'||m.done||!SCREENS.has(String(m.block))||!Object.keys(m.payload||{}).every(k=>k==='id'||k==='step'))return false;
+ const text=String(m.text||'').trim();
+ return !text||OPEN_LINES.some(line=>line===text||tr(line)===text);
+};
+export function historyOf<T extends HistoryMessage>(messages:T[]):T[]{
+ return (messages||[]).filter(m=>!m.screen&&!opened(m));
+}
 // One line for a message: what the person wrote, or what the AI said and what it showed.
 export function historyLine(m:HistoryMessage):string{
  const text=String(m.text||'').replace(/\s+/g,' ').trim();

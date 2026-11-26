@@ -8,5 +8,6 @@ const checkoutOf=(b:Row)=>Number(b.actual_checkout??b.terms?.actual_checkout)||0
 export const reviewUntil=(b:Row)=>{const out=checkoutOf(b);return out?out+REVIEW_WINDOW:0;};
 /** A completed stay without a rating whose term is still open. */
 export const canRate=(b:Row|null|undefined,now:number)=>!!b&&b.status==='completed'&&!b.review_rating&&reviewUntil(b)>=now;
-/** A completed stay without a rating whose term has passed. */
-export const rateClosed=(b:Row|null|undefined,now:number)=>!!b&&b.status==='completed'&&!b.review_rating&&!canRate(b,now);
+/** A completed stay without a rating whose term has passed. Without a known checkout nothing is said: the term counts
+ *  from it, and «срок прошёл» the day after a stay misled the guest (board of old screens, 2026-11-26). */
+export const rateClosed=(b:Row|null|undefined,now:number)=>!!b&&b.status==='completed'&&!b.review_rating&&reviewUntil(b)>0&&reviewUntil(b)<now;
