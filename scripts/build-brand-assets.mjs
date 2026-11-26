@@ -43,13 +43,14 @@ await png('public/icon-maskable-512.png',b.badgeSvg(c,{size:512,round:0,scale:.6
 await png('public/apple-touch-icon.png',b.badgeSvg(c,{size:180,detail:'compact',round:0}),{opaque:true});
 
 // ── The app icon ─────────────────────────────────────────────────────────────────────────────────────────────
-await png('mobile/assets/brand/icon.png',b.badgeSvg(c,{size:1024,round:0,scale:.7}),{opaque:true});
+// Monochrome since 2026-11-26, like the entry splash: a white plate and the whole sign, rays too, in ink. The person taps
+// the icon and the splash draws the same sign on the same white.
+const inkSign=(color,k)=>`<g transform="translate(50 50) scale(${k}) translate(-50 -50)">${b.domeMarkup({stroke:color,gold:color})}</g>`;
+await png('mobile/assets/brand/icon.png',svg(1024,1024,'0 0 100 100',`<rect width="100" height="100" fill="${c.surface}"/>`+inkSign(c.ink,.7)),{opaque:true});
 // Android cuts its icon from two layers and shows only the middle two thirds of them.
-const plate=`<defs><linearGradient id="plate" x1=".2" y1="0" x2=".8" y2="1"><stop offset="0" stop-color="${c.nightGlow}"/><stop offset="1" stop-color="${c.night}"/></linearGradient></defs><rect width="100" height="100" fill="url(#plate)"/>`;
-const middle=body=>`<g transform="translate(50 50) scale(.5) translate(-50 -50)">${body}</g>`;
-await png('mobile/assets/brand/adaptive-background.png',svg(1024,1024,'0 0 100 100',plate),{opaque:true});
-await png('mobile/assets/brand/adaptive-foreground.png',svg(1024,1024,'0 0 100 100',`<defs>${b.domeGradient('dome',c)}</defs>`+middle(b.domeMarkup({stroke:'url(#dome)',gold:c.gold}))));
-await png('mobile/assets/brand/adaptive-monochrome.png',svg(1024,1024,'0 0 100 100',middle(b.domeMarkup({stroke:'#fff',gold:'#fff'}))));
+await png('mobile/assets/brand/adaptive-background.png',svg(1024,1024,'0 0 100 100',`<rect width="100" height="100" fill="${c.surface}"/>`),{opaque:true});
+await png('mobile/assets/brand/adaptive-foreground.png',svg(1024,1024,'0 0 100 100',inkSign(c.ink,.5)));
+await png('mobile/assets/brand/adaptive-monochrome.png',svg(1024,1024,'0 0 100 100',inkSign('#fff',.5)));
 // The screen the system shows before the app starts is the night colour alone; the splash then draws the sign on it.
 await png('mobile/assets/brand/launch-blank.png',svg(8,8,'0 0 8 8',''));
 
