@@ -544,7 +544,7 @@ function Chat(){
         if(rated&&ratedHome&&ratedHome.details?.type===HOME_TYPE&&!ratedHome.regular_cleaner_name&&rated.assigned_to)say(tr('Понравилась работа? Закрепите исполнителя за домом: следующие заказы сначала придут к нему.'),'confirm',{path:'operations/regular/pin',body:{propertyId:rated.property_id,cleanerId:rated.assigned_to},title:tr('Закрепить исполнителя'),subject:rated.worker?.name||ratedHome.title,note:tr('Его «да» сразу назначает его на уборку. Открепить можно в карточке дома.'),dates:''});
       }catch(e){await handleError(e);}
       return String(result?.message||tr('Готово'));
-    }catch(e){if(quiet&&e instanceof ApiError&&e.status!==401)throw e;await handleError(e);return null;}
+    }catch(e){/* The sheet says the server's refusal and a lost connection (the action may have gone through) where the swipe was. */if(quiet&&!(e instanceof StaleSessionError)&&!(e instanceof ApiError&&e.status===401)){if(!(e instanceof ApiError))setOnline(false);throw e;}await handleError(e);return null;}
     finally{locked.current=false;setBusy(false);}
   }
   // A city left empty at sign-up is the one the phone sees the person in; the server takes its own default otherwise.
