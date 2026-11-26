@@ -5,16 +5,16 @@ import {journalToday} from '../../lib/ai-move-marks';
 import {ThinkingLine} from './Thinking';
 import {NativeAccountSafety,safetyTitles,type SafetyPage} from './AccountSafety';
 import React,{useEffect,useState} from 'react';
-import {View,Text,TextInput,Pressable,Linking,StyleSheet} from 'react-native';
+import {View,Text,TextInput,Pressable,Linking,StyleSheet,Image} from 'react-native';
 import {ProfileEditor} from './ProfileEditor';
 import {LangSwitch} from './LangSwitch';
 import {useLang} from './lang';
 import {LANGS} from '../../lib/i18n';
 import {Photo} from './ListingMedia';
-import {Choice,Group,Row,RowIcon,SwitchRow,a,menuInk,type MenuIcon} from './AccountRows';
+import {Choice,FlatMenu,Group,Row,RowIcon,SwitchRow,a,menuIcons,menuInk,type MenuIcon} from './AccountRows';
 import {ProfileRing} from './ProfileRing';
 import {experienceFor,joinTitle} from '../../lib/role-experience';
-import {ReliabilityBadge,reliabilityHints} from './Reliability';
+import {reliabilityHints} from './Reliability';
 import {tLine} from '../../lib/i18n';
 import {ReliabilityObjection} from './ReliabilityObjection';
 import {NativeTelegram} from './NativeTelegram';
@@ -29,7 +29,7 @@ import {Shift} from './Shift';
 import {OwnerAnalytics,loadAnalytics,shortTenge} from './OwnerAnalytics';
 import {CleanerEarnings,cleanerWeek} from './CleanerEarnings';
 import {IdentityDocs} from './IdentityDocs';
-import {PayoutForm,phoneText,type Payout,type PendingPayout} from './PayoutDetails';
+import {PayoutForm,type Payout,type PendingPayout} from './PayoutDetails';
 import {AdminFactor} from './AdminFactor';
 import {BypassWatch} from './BypassWatch';
 import {ServiceBilling} from './ServiceBilling';
@@ -53,7 +53,7 @@ const shortRole:Record<Role,string>=L({guest:'Гость',owner:'Владеле�
 // settings: channels, the bank, privacy, and inside it the data and safety pages and joining another role.
 type MenuView=''|'money'|'notices'|'autopilot'|'profile'|'settings'|'safety'|`safety:${Exclude<SafetyPage,''>}`|'shift'|'payout'|'billing';
 export function AccountControl({waiting=[],jobs=[],userId='',role:active,staffPlaces=0,regularPlaces=0,notices,onOpenNotice,start,onChanged,onSignedOut,onSwitchRole,onPickRole,onJoinRole,onAskAdministrator,onLogout,onOpenPage,onOpenEntry}:{waiting?:NoticeWaiting[];jobs?:Data[];userId?:string;staffPlaces?:number;regularPlaces?:number;notices?:Data[];onOpenNotice?:(notice:Data)=>(()=>void)|undefined;start?:'notices'|'billing'|'payout';onPickRole?:(role:Role)=>void;onJoinRole?:(role:Role)=>void;onAskAdministrator?:()=>void;onOpenPage?:(id:string)=>void;onOpenEntry?:(open:JournalOpen)=>(()=>void)|undefined;role:Role;onEdit:()=>void;onChanged?:()=>Promise<unknown>;onSignedOut:(result?:Row_)=>void|Promise<void>;onSwitchRole?:()=>void;onLogout?:()=>void}){
- const [view,setView]=useState<MenuView>(start||''),[editing,setEditing]=useState(false),[readUpTo,setReadUpTo]=useState(0),[langOpen,setLangOpen]=useState(false),lang=useLang();
+ const [view,setView]=useState<MenuView>(start||''),[editing,setEditing]=useState(false),[idOpen,setIdOpen]=useState(false),[readUpTo,setReadUpTo]=useState(0),[langOpen,setLangOpen]=useState(false),lang=useLang();
  // What was new when «Уведомления» opened keeps its dot while the page is open, though the opening marks it read.
  const [freshIds,setFreshIds]=useState<string[]>([]);
  // Every opening of «Уведомления» marks what is there as read: the counter in the menu then shows only what came after.
@@ -80,7 +80,9 @@ export function AccountControl({waiting=[],jobs=[],userId='',role:active,staffPl
  const filled=[p.name,p.city,p.avatar_id,p.bio,p.languages,...(worker?[p.districts,p.experience,p.availability]:[])],completion=Math.round(filled.filter(Boolean).length/filled.length*100);
  const steps=[!p.avatar_id&&t('Добавьте фото профиля'),!p.bio&&(worker?t('Опишите свою работу и услуги'):owner?t('Расскажите, как вы принимаете гостей'):t('Добавьте пару слов о себе для владельцев')),!p.languages&&t('Укажите языки общения')].filter(Boolean) as string[];
  const ink=menuInk(active),experience=experienceFor(active);
- const edit=()=>setEditing(true),item=(icon:MenuIcon,title:string,value:any)=><Row icon={icon} tint={ink} title={title} value={value||t('Добавить')} empty={!value} onPress={edit}/>;
+ const edit=()=>setEditing(true);
+ // A line of «О вас», as Airbnb's personal info: the name, the value under it, and «Изменить» or «Добавить» on the right.
+ const info=(title:string,value:any)=><Pressable key={title} accessibilityRole="button" accessibilityLabel={title+'. '+(value?t('Изменить'):t('Добавить'))} onPress={edit} style={({pressed})=>[m.info,pressed&&a.pressed]}><View style={a.wide}><Text style={a.title}>{title}</Text><Text numberOfLines={2} style={a.note}>{value||t('Не указано')}</Text></View><Text style={m.link}>{value?t('Изменить'):t('Добавить')}</Text></Pressable>;
  const privacy=(patch:Data,body:Data)=>instant(o=>({...o,profile:{...o.profile,...patch}}),()=>request('/api/profile/edit',{name:p.name,contact:p.contact,city:p.city,districts:p.districts,experience:p.experience,availability:p.availability,avatarId:p.avatar_id||null,workStatus:p.work_status||'available',expectedVersion:p.profile_version||0,...body}));
  const work=(v:boolean)=>instant(o=>({...o,profile:{...o.profile,work_status:v?'available':'away'}}),async()=>{await request('/api/profile/edit',{name:p.name,contact:p.contact,city:p.city,districts:p.districts,experience:p.experience,availability:p.availability,avatarId:p.avatar_id||null,workStatus:v?'available':'away',expectedVersion:p.profile_version||0});await onChanged?.();});
  if(editing)return <ProfileEditor profile={p} onClose={()=>setEditing(false)} onSaved={async()=>{setAccount(await request('/api/account'));setMessage(t('Профиль сохранён.'));await onChanged?.();}}/>;
@@ -90,20 +92,21 @@ export function AccountControl({waiting=[],jobs=[],userId='',role:active,staffPl
  const join=onJoinRole?(['guest','owner','cleaner'] as Role[]).filter(v=>v!==active&&!roles.includes(v)):[];
  const titles={payout:t('Реквизиты для оплаты'),billing:t('Оплата услуг'),money:worker?t('Заработок'):t('Доходы'),shift:t('Смена'),notices:t('Уведомления'),autopilot:t('Автопилот'),profile:t(experience.profileTitle),settings:t('Настройки'),safety:t('Данные и безопасность')};
  const clock=account.serverTime||Date.now()/1000,events=roleEvents(notices,active),eventsNow=eventsToday(events.filter(n=>!Number(n.read)&&Number(n.created_at)>readUpTo),clock),trust=String(account.reliability?.label||'').replace(/^Надёжность\s+/,'');
- const hint=steps.length>0&&<Pressable accessibilityRole="button" onPress={edit} style={a.next}><RowIcon icon="sparkles" tint={C.aiTo}/><View style={{flex:1}}><Text style={a.title}>{steps[0]}</Text>{steps.length>1&&<Text style={a.note}>{t('и ещё {n} {word} до полного профиля',{n:steps.length-1,word:plural(steps.length-1,['шаг','шага','шагов'],['step','steps'],'қадам')})}</Text>}</View><Text style={[a.chevron,{color:C.ink}]}>›</Text></Pressable>;
+ const hint=steps.length>0&&<Pressable accessibilityRole="button" onPress={edit} style={a.next}><RowIcon icon="sparkles"/><View style={{flex:1}}><Text style={a.title}>{steps[0]}</Text>{steps.length>1&&<Text style={a.note}>{t('и ещё {n} {word} до полного профиля',{n:steps.length-1,word:plural(steps.length-1,['шаг','шага','шагов'],['step','steps'],'қадам')})}</Text>}</View><Text style={[a.chevron,{color:C.ink}]}>›</Text></Pressable>;
  const since=Number(p.created_at)?new Date(Number(p.created_at)*1000).getUTCFullYear():0,trustValue=account.reliability as {score:number|null;label:string;facts:string[];identity?:boolean}|undefined;
  const reputation=[trustValue?.score!=null?'★ '+trustValue.score.toFixed(1).replace('.',','):trustValue?.label?(TRUST_LABELS.includes(trustValue.label)?t(trustValue.label):trustValue.label):'',trustValue?.facts?.[0]?tLine(trustValue.facts[0]):'',since?t('с {year} года',{year:since}):''].filter(Boolean).join(' · ')||p.city||'';
  const idOk=!!(trustValue?.identity??account.identity?.checked);
+ const scoreText=trustValue?.score!=null?trustValue.score.toFixed(1).replace('.',',')+' ★':'',trustLabel=trustValue?.label?(TRUST_LABELS.includes(trustValue.label)?t(trustValue.label):trustValue.label):'';
  // The pages of the role that are not in the sheet of the map (the guest's search and bookings, the owner's objects and
  // the cleaner's search for jobs live there) close the first group, as the concept keeps the menu to two groups.
  const more=onOpenPage?rolePages[active].filter(v=>!['map','account','chats','overview',...(active==='guest'?['catalog','bookings','calendar']:active==='owner'?['properties']:['jobs'])].includes(v.id)):[];
  // The other mode in one button at the bottom, as Airbnb's «Switch to hosting»: the guest goes to the owner, the others to the guest.
  const other:Role=active==='guest'?'owner':'guest',toOther=roles.includes(other)?(onPickRole?()=>onPickRole(other):onSwitchRole):onJoinRole?()=>onJoinRole(other):undefined;
- return <View>
+ return <FlatMenu.Provider value><View>
   {!!view&&(()=>{const sub=view.startsWith('safety:'),title=sub?safetyTitles[view.slice(7) as Exclude<SafetyPage,''>]:titles[view as keyof typeof titles];return <View style={{flexDirection:'row',alignItems:'center',gap:4,minHeight:44,marginBottom:4}}><Pressable accessibilityRole="button" accessibilityLabel={sub?t('Назад: Данные и безопасность'):view==='safety'||view==='payout'||view==='billing'?t('Назад: Настройки'):t('Назад в меню')} hitSlop={8} onPress={()=>go(sub?'safety':view==='safety'||view==='payout'||view==='billing'?'settings':'')} style={{width:44,height:44,marginLeft:-12,alignItems:'center',justifyContent:'center'}}><Text style={{fontSize:28,lineHeight:32,color:C.ink}}>‹</Text></Pressable><Text accessibilityRole="header" style={[a.name,{fontSize:22,lineHeight:28,flex:1}]}>{title}</Text></View>;})()}
   {/* As in the concept (Airbnb's profile): you in the middle, your reputation in one line and whether your ID is confirmed. */}
   {!view&&<View style={m.hero}><ProfileRing photoId={p.avatar_id} name={p.name} progress={completion/100} ink={ink} onPress={edit}/><Text accessibilityRole="header" numberOfLines={2} style={m.name}>{p.name||t('Мой профиль')}</Text><Text numberOfLines={2} style={m.line}>{reputation}</Text>
-   <Pressable accessibilityRole="button" accessibilityLabel={idOk?t('✓ Личность подтверждена'):t('Личность не подтверждена')+'. '+t(experience.profileTitle)} disabled={idOk} onPress={()=>go('profile')} style={[m.id,idOk&&m.idOk]}><Text style={[m.idText,idOk&&m.idTextOk]}>{idOk?t('✓ Личность подтверждена'):t('Личность не подтверждена')}</Text></Pressable>
+   <Pressable accessibilityRole="button" accessibilityLabel={idOk?t('✓ Личность подтверждена'):t('Личность не подтверждена')+'. '+t(experience.profileTitle)} disabled={idOk} onPress={()=>go('profile')} style={m.id}><Image source={menuIcons.shield} style={m.idIcon}/><Text style={[m.idText,idOk&&m.idTextOk]}>{idOk?t('✓ Личность подтверждена'):t('Личность не подтверждена')}</Text></Pressable>
    <Pressable accessibilityRole="button" accessibilityLabel={t('Изменить профиль')} onPress={edit} style={({pressed})=>[a.edit,m.edit,pressed&&a.pressed]}><Text style={a.editText}>{t('Изменить')}</Text></Pressable></View>}
   {!!error&&<Text accessibilityRole="alert" style={s.error}>{error}</Text>}{!!message&&<Text accessibilityLiveRegion="polite" style={a.saved}>{message}</Text>}
   {!view&&!!bill&&!bill.card&&(bill.due>0||bill.paused)&&<Pressable accessibilityRole="button" onPress={()=>go('billing')} style={[a.next,{marginTop:16}]}><RowIcon icon="wallet" tint={C.warning}/><View style={{flex:1}}><Text style={a.title}>{t('Привяжите карту для оплаты сервиса')}</Text><Text style={a.note}>{bill.paused?t('Новые брони и «Автопилот» на паузе до оплаты {v}.',{v:money(bill.due)}):bill.payBy?t('К оплате {v}. Привяжите до {date}, иначе будет пауза.',{v:money(bill.due),date:dateText(bill.payBy*1000,{timeZone:'Asia/Qyzylorda',day:'numeric',month:'long'})}):t('К оплате {v}. Спишется в понедельник.',{v:money(bill.due)})}</Text></View><Text style={[a.chevron,{color:C.ink}]}>›</Text></Pressable>}
@@ -114,12 +117,25 @@ export function AccountControl({waiting=[],jobs=[],userId='',role:active,staffPl
   {view==='money'&&(worker?<CleanerEarnings jobs={jobs} userId={userId} now={Date.now()/1000} regular={regularPlaces}/>:<OwnerAnalytics tint={ink}/>)}
   {view==='notices'&&<><View style={m.invites}><NativePush key={'push:'+active} role={active} tint={ink} invite/><NativeTelegram tint={ink} invite/></View><NoticeList list={events} now={clock} waiting={waiting} fresh={n=>freshIds.includes(String(n.id))} onOpen={n=>active!=='guest'&&String(n.dedupe||'').startsWith('service:')&&!String(n.dedupe).startsWith('service:bypass-warning:')?()=>go('billing'):onOpenNotice?.(n)}/></>}
   {view==='autopilot'&&<>{owner&&<View style={{marginBottom:16}}><AutopilotWeek/></View>}{owner&&<NativePayWay key={'pay:'+active} role="owner"/>}<Group title={t('Что сделал ИИ')}><AiJournal entries={journal} now={clock} onOpen={onOpenEntry}/></Group>{worker?<NativeAutopilotPlan key={'plan:'+active} role="cleaner"/>:<NativeDecisionRules key={'rules:'+active} tint={ink}/>}</>}
-  {view==='profile'&&<>{hint}<Group space={!!hint}>{item('user',t('О себе'),p.bio)}{item('languages',t('Языки общения'),p.languages)}{item('pin',t(experience.cityLabel),p.city)}{worker&&<>{item('map',t('Районы работы'),p.districts)}{item('clock',t('График'),p.availability)}{item('badge',t('Опыт и услуги'),p.experience)}</>}{item('phone',t('Телефон'),p.contact)}</Group>{!!account.reliability&&<><View style={{height:16}}/><ReliabilityBadge value={account.reliability} title={owner?t('Как вас видят гости'):t('Как вас видят владельцы')}/><Group title={t('Как повысить надёжность')}>{(reliabilityHints[active]||[]).map(h=><View key={h} style={a.row}><RowIcon icon="check" tint={ink}/><Text style={[a.title,a.wide]}>{h}</Text></View>)}</Group><ReliabilityObjection role={active}/></>}<IdentityDocs role={active}/></>}
+  {/* As the concept (Airbnb's host profile): a card with the photo and the numbers others see, the identity in one
+      line with «Подтвердить», then the data as rows with «Изменить». The photo of the ID is taken after the tap. */}
+  {view==='profile'&&<>
+   <View accessible accessibilityLabel={(owner?t('Как вас видят гости'):t('Как вас видят владельцы'))+': '+[scoreText,trustLabel,...(trustValue?.facts||[]).map(tLine)].filter(Boolean).join(', ')} style={m.card}>
+    <Photo id={p.avatar_id} avatar size={72} name={p.name} alt={t('Мой профиль')}/>
+    <View style={{flex:1,minWidth:0}}>
+     <View style={m.stat}><Text style={m.statValue}>{scoreText||trustLabel||'—'}</Text>{!!scoreText&&!!trustLabel&&<Text style={m.statLabel}>{trustLabel}</Text>}</View>
+     {(trustValue?.facts||[]).slice(0,3).map(f=><View key={f} style={[m.stat,m.statLine]}><Text style={m.fact}>{tLine(f)}</Text></View>)}
+    </View>
+   </View>
+   <Pressable accessibilityRole="button" accessibilityState={{expanded:idOpen}} disabled={idOk} onPress={()=>setIdOpen(v=>!v)} style={({pressed})=>[m.idRow,pressed&&a.pressed]}><RowIcon icon="shield"/><Text style={[a.title,a.wide]}>{idOk?t('✓ Личность подтверждена'):t('Личность не подтверждена')}</Text>{!idOk&&<Text style={m.link}>{idOpen?t('Свернуть'):t('Подтвердить')}</Text>}</Pressable>
+   {idOpen&&!idOk&&<IdentityDocs role={active}/>}
+   {hint}
+   <Group title={t('О вас')}>{info(t('О себе'),p.bio)}{info(t('Языки общения'),p.languages)}{info(t(experience.cityLabel),p.city)}{worker&&<>{info(t('Районы работы'),p.districts)}{info(t('График'),p.availability)}{info(t('Опыт и услуги'),p.experience)}</>}{info(t('Телефон'),p.contact)}</Group>
+   {!!account.reliability&&<><Group title={t('Как поднять оценку')}>{(reliabilityHints[active]||[]).map(h=><View key={h} style={a.row}><RowIcon icon="check"/><Text style={[a.title,a.wide]}>{h}</Text></View>)}</Group><ReliabilityObjection role={active}/></>}
+  </>}
   {view==='settings'&&<>
    <Group title={t('Куда сообщать')}><NativePush key={'push:'+active} role={active} tint={ink}/><NativeTelegram tint={ink}/><SwitchRow icon="wallet" tint={ink} title={t('О расчётах и выплатах')} checked={!!account.settings.payment_notifications} disabled={busy} onChange={v=>settings({payment_notifications:v?1:0})}/></Group>
-   <Text style={a.footnote}>{t('Сообщаем только то, что ждёт вас или касается денег. Что ИИ сделал сам, записано в «Автопилот».')}</Text>
-   {active==='guest'?<Text style={a.footnote}>{t('Вы платите владельцу напрямую по реквизитам из брони. Сервис деньги за жильё не принимает.')}</Text>:<><Group title={t('Расчёты')}><Row icon="bank" tint={ink} title={t('Реквизиты для оплаты')} value={payout?phoneText(payout.phone):t('не указаны')} onPress={()=>go('payout')}/><Row icon="wallet" tint={ink} title={t('Оплата услуг')} value={bill?(bill.card?t('карта {mask}',{mask:bill.card.mask}):t('карта не привязана')):t('карта и списания')} onPress={()=>go('billing')}/></Group>
-   <Text style={a.footnote}>{owner?t('Гости переводят оплату прямо вам на Kaspi. Сервис деньги гостей не принимает.'):t('Заказчики переводят оплату за уборку прямо вам на Kaspi.')}</Text></>}
+   {active==='guest'?<Text style={a.footnote}>{t('Вы платите владельцу напрямую по реквизитам из брони. Сервис деньги за жильё не принимает.')}</Text>:<><Group title={t('Расчёты')}><Row icon="bank" tint={ink} title={t('Реквизиты для оплаты')} value={payout?'Kaspi •• '+String(payout.phone).replace(/\D/g,'').slice(-4):t('не указаны')} onPress={()=>go('payout')}/><Row icon="wallet" tint={ink} title={t('Оплата услуг')} value={bill?(bill.card?bill.card.mask:t('карта не привязана')):undefined} onPress={()=>go('billing')}/></Group></>}
    <Group title={t('Приватность')}><Choice icon="eye" tint={ink} title={t('Моё фото')} value={p.avatar_visibility||'participants'} options={[['participants',t('Участникам')],['self',t('Только мне')]]} disabled={busy} onChange={v=>privacy({avatar_visibility:v},{avatarVisibility:v})}/><SwitchRow icon="dot" tint={ink} title={t('Показывать, что я в сети')} checked={p.show_presence!==0} disabled={busy} onChange={v=>privacy({show_presence:v?1:0},{showPresence:v})}/><SwitchRow icon="read" tint={ink} title={t('Отметки прочтения')} checked={p.show_receipts!==0} disabled={busy} onChange={v=>privacy({show_receipts:v?1:0},{showReceipts:v})}/></Group>
    <Text style={a.footnote}>{t('Если скрыть своё, вы тоже не увидите «в сети» и прочтение у собеседника.')}</Text>
    <Group title={t('Аккаунт')}><Row icon="lock" tint={ink} title={t('Данные и безопасность')} onPress={()=>go('safety')}/>{join.map(v=><Row key={v} icon="plus" tint={ink} title={t(joinTitle(v))} onPress={()=>onJoinRole?.(v)}/>)}</Group></>}
@@ -131,18 +147,24 @@ export function AccountControl({waiting=[],jobs=[],userId='',role:active,staffPl
   {account.platformAdmin&&account.adminVerified&&<Group space><Row icon="users" tint={ink} title={t('Поиск пользователей')} open={finding} onPress={()=>setFinding(v=>!v)}/>{finding&&<View style={a.body}><Text style={s.meta}>{t('Поиск пользователей доступен только администратору. Просмотр записывается в журнал.')}</Text><Choice title={t('Роль')} value={role} options={[['',t('Все')],['guest',t('Гости')],['owner',t('Владельцы')],['cleaner',t('Исполнители')]]} onChange={setRole}/><Text style={s.fieldLabel}>{t('Имя или контакт')}</Text><TextInput accessibilityLabel={t('Имя или контакт')} value={search} onChangeText={setSearch} maxLength={100} style={s.field}/>{button(t('Показать пользователей'),()=>list())}{users&&<><Text style={s.meta}>{t('Найдено: {n}',{n:users.total})}</Text>{users.users.map((u:Row_)=><View style={s.card} key={u.id}><Text style={s.eventTitle}>{u.name}</Text><Text style={s.meta}>{u.roles.map((r:Role)=>roleNames[r]).join(', ')}{'\n'}{u.city} · {u.contact}{'\n'}{t('Объекты: {properties} · брони: {bookings} · уборки: {jobs}',{properties:u.property_count,bookings:u.booking_count,jobs:u.assignment_count})}</Text></View>)}<View style={{flexDirection:'row',gap:8}}><View style={{flex:1}}>{button(t('Назад'),()=>list(users.page-1),busy||users.page===0)}</View><View style={{flex:1}}>{button(t('Далее'),()=>list(users.page+1),busy||(users.page+1)*users.limit>=users.total)}</View></View></>}</View>}</Group>}
   {!!toOther&&<Pressable accessibilityRole="button" onPress={toOther} style={({pressed})=>[m.mode,pressed&&a.pressed]}><Text style={m.modeText}>{other==='owner'?t('Перейти в режим владельца'):t('Перейти в режим гостя')}</Text></Pressable>}
   {roles.length>1&&<Text style={[a.footnote,{textAlign:'center'}]}>{t('Имя и фото общие для всех ваших ролей.')}</Text>}</>}
- </View>;
+ </View></FlatMenu.Provider>;
 }
 const m=StyleSheet.create({
  hero:{alignItems:'center',gap:4,paddingTop:4},
  invites:{borderRadius:T.radius.lg,overflow:'hidden',backgroundColor:C.surface},
  name:{...type.title,color:C.ink,fontWeight:'800',textAlign:'center',marginTop:8},
  line:{...type.label,color:C.muted,textAlign:'center'},
- id:{marginTop:4,minHeight:28,paddingHorizontal:12,borderRadius:T.radius.full,justifyContent:'center',backgroundColor:C.surfaceAlt},
- idOk:{backgroundColor:C.successSoft},
- idText:{...type.caption,color:C.muted,fontWeight:'600'},
- idTextOk:{color:C.success},
+ id:{marginTop:8,minHeight:28,paddingHorizontal:12,borderRadius:T.radius.full,flexDirection:'row',alignItems:'center',gap:8,borderWidth:1,borderColor:C.line,backgroundColor:C.surface},
+ idIcon:{width:14,height:14,tintColor:C.inkSoft},
+ idText:{...type.caption,color:C.inkSoft,fontWeight:'600'},
+ idTextOk:{color:C.ink},
+ card:{flexDirection:'row',alignItems:'center',gap:16,padding:16,borderRadius:T.radius.xl,borderWidth:1,borderColor:C.line,backgroundColor:C.surface,shadowColor:C.ink,shadowOpacity:.06,shadowRadius:12,shadowOffset:{width:0,height:4},elevation:2},
+ stat:{paddingVertical:8},statLine:{borderTopWidth:1,borderTopColor:C.line},
+ statValue:{...type.subtitle,color:C.ink,fontWeight:'800'},statLabel:{...type.caption,color:C.muted},fact:{...type.label,color:C.ink,fontWeight:'600'},
+ idRow:{minHeight:T.control.field,flexDirection:'row',alignItems:'center',gap:12,marginTop:12},
+ link:{...type.label,color:C.ink,fontWeight:'600',textDecorationLine:'underline'},
+ info:{minHeight:T.control.primary,flexDirection:'row',alignItems:'center',gap:12,paddingHorizontal:16,paddingVertical:8,borderTopWidth:1,borderTopColor:C.line},
  edit:{position:'absolute',top:0,right:0},
- mode:{alignSelf:'center',minHeight:T.control.primary,marginTop:24,paddingHorizontal:24,borderRadius:T.radius.full,alignItems:'center',justifyContent:'center',backgroundColor:C.night},
+ mode:{alignSelf:'center',minHeight:T.control.primary,marginTop:24,paddingHorizontal:24,borderRadius:T.radius.full,alignItems:'center',justifyContent:'center',backgroundColor:C.ink},
  modeText:{...type.label,color:C.onAccent,fontWeight:'700'},
 });

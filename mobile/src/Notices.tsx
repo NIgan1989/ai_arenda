@@ -60,7 +60,7 @@ export function NoticeToast({notice,more=0,onPress,onDone}:{notice:Row;more?:num
  },[notice.id]);
  return <Animated.View style={[n.toast,{opacity:shown,transform:[{translateY:shown.interpolate({inputRange:[0,1],outputRange:[-12,0]})}]}]}>
   <Pressable accessibilityRole="button" accessibilityLabel={t('Новое событие: {v}',{v:noticeText(notice.body)})} accessibilityHint={t('Открыть')} onPress={onPress} style={({pressed})=>[n.toastMain,pressed&&n.pressedSoft]}>
-   <RowIcon icon="bell" tint={C.accent}/>
+   <RowIcon icon="bell" tint={C.ink}/>
    <View style={n.toastText}><Text numberOfLines={2} style={n.toastBody}>{noticeText(notice.body)}</Text>{more>0&&<Text style={n.when}>{t('и ещё {more}',{more})}</Text>}</View>
    <Text style={n.go}>›</Text>
   </Pressable>
@@ -72,12 +72,12 @@ const n=StyleSheet.create({
  block:{marginBottom:8},
  day:{paddingTop:16,paddingBottom:8,...type.caption,fontWeight:'700',letterSpacing:.5,color:C.muted},
  ask:{flexDirection:'row',alignItems:'center',gap:12,minHeight:T.control.primary,paddingHorizontal:12,paddingVertical:12,marginBottom:8,borderRadius:T.radius.lg,borderWidth:2,borderColor:C.gold,backgroundColor:C.surface},
- answer:{minHeight:T.control.compact,paddingHorizontal:16,borderRadius:T.radius.md,alignItems:'center',justifyContent:'center',backgroundColor:C.accent},answerText:{...type.label,color:C.onAccent,fontWeight:'700'},
+ answer:{minHeight:T.control.compact,paddingHorizontal:16,borderRadius:T.radius.md,alignItems:'center',justifyContent:'center',backgroundColor:C.ink},answerText:{...type.label,color:C.onAccent,fontWeight:'700'},
  line:{flexDirection:'row',alignItems:'center',gap:12,minHeight:T.control.primary,paddingHorizontal:16,paddingVertical:12,marginBottom:8,borderRadius:T.radius.lg,backgroundColor:C.surface},pressed:{backgroundColor:C.accentSoft},pressedSoft:{opacity:.6},
- dot:{width:8,height:8,borderRadius:4,marginLeft:-4},dotOn:{backgroundColor:C.accent},
+ dot:{width:8,height:8,borderRadius:4,marginLeft:-4},dotOn:{backgroundColor:C.ink},
  text:{flex:1,minWidth:0,gap:2},body:{...type.label,color:C.ink},title:{...type.label,color:C.ink,fontWeight:'700'},titleRead:{fontWeight:'600'},when:{...type.caption,color:C.muted,fontVariant:['tabular-nums']},
  go:{...type.body,color:C.muted},
- more:{minHeight:T.control.touch,alignItems:'center',justifyContent:'center'},moreText:{...type.label,fontWeight:'600',color:C.accent},
+ more:{minHeight:T.control.touch,alignItems:'center',justifyContent:'center'},moreText:{...type.label,fontWeight:'600',color:C.ink},
  empty:{padding:16,...type.label,color:C.muted},
  toast:{position:'absolute',top:68,left:12,right:12,zIndex:120,flexDirection:'row',alignItems:'center',borderRadius:T.radius.lg,borderWidth:1,borderColor:C.accentLine,backgroundColor:C.surface,shadowColor:C.ink,shadowOffset:{width:0,height:8},shadowOpacity:.16,shadowRadius:24,elevation:8},
  toastMain:{flex:1,minWidth:0,flexDirection:'row',alignItems:'center',gap:12,minHeight:T.control.primary,paddingLeft:16,paddingVertical:8},toastText:{flex:1,minWidth:0,gap:2},toastBody:{...type.label,color:C.ink,fontWeight:'600'},

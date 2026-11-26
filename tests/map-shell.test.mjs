@@ -60,7 +60,8 @@ test('the menu is short: a few rows open their own screens, the rest stays one t
     for (const title of ['Уведомления', 'Автопилот', 'Настройки', 'Помощь']) assert.match(text, new RegExp("<Row (?:[^<>]*? )?title=\\{t\\('" + title + "'\\)\\}"), title);
     assert.doesNotMatch(text, /title=\{t\('(Надёжность|Что сделал ИИ|Тариф и автопилот)'\)\}[^\n]*onPress=\{\(\)=>go/, 'no separate rows for what the three rows hold');
     assert.match(text, /view==='autopilot'&&[^\n]*<AiJournal [^\n]*worker\?<NativeAutopilotPlan [^\n]*:<NativeDecisionRules /);
-    assert.match(text, /view==='profile'&&[^\n]*<ReliabilityBadge /);
+    // The profile opens with the reliability card: the score, its word and up to three facts.
+    assert.match(text, /view==='profile'&&<>\s*<View accessible accessibilityLabel=\{[^\n]*scoreText,trustLabel/);
     assert.match(text, /view==='settings'&&[\s\S]*title=\{t\('Данные и безопасность'\)\} onPress=\{\(\)=>go\('safety'\)\}\/>\{join\.map/);
     assert.match(text, /'properties'\]:\['jobs'\]/, "the owner's objects and the cleaner's search for jobs live on the map");
     // The language is chosen in the menu itself, not hidden in the settings.

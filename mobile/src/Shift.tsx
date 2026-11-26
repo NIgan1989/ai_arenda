@@ -47,11 +47,11 @@ const h=StyleSheet.create({
  head:{flexDirection:'row',alignItems:'center',gap:8},title:{...type.body,color:C.ink,fontWeight:'700'},meta:{...type.caption,color:C.muted},
  tag:{...type.caption,fontWeight:'600',paddingHorizontal:8,paddingVertical:2,borderRadius:R.sm,overflow:'hidden'},tagFree:{backgroundColor:C.successSoft,color:C.success},tagBusy:{backgroundColor:C.warningSoft,color:C.warning},
  none:{...type.label,color:C.muted},
- stay:{gap:8,padding:12,borderRadius:R.md,backgroundColor:C.surfaceAlt},stayOn:{backgroundColor:C.accentSoft},
+ stay:{gap:8,padding:12,borderRadius:R.md,backgroundColor:C.surfaceAlt},stayOn:{backgroundColor:C.surface,borderWidth:1,borderColor:C.ink},
  stayRow:{flexDirection:'row',alignItems:'baseline',gap:8},time:{...type.body,color:C.ink,fontWeight:'700'},who:{...type.label,color:C.inkSoft,flex:1,textAlign:'right'},
  stage:{...type.caption,color:C.muted},
- go:{minHeight:H.primary,borderRadius:R.full,backgroundColor:C.accent,alignItems:'center',justifyContent:'center',paddingHorizontal:24},goText:{color:C.onAccent,...type.body,fontWeight:'700'},dim:{opacity:.45},
+ go:{minHeight:H.primary,borderRadius:R.full,backgroundColor:C.ink,alignItems:'center',justifyContent:'center',paddingHorizontal:24},goText:{color:C.onAccent,...type.body,fontWeight:'700'},dim:{opacity:.45},
  empty:{...type.label,color:C.muted,textAlign:'center',paddingVertical:16},
- note:{padding:12,borderRadius:R.md,backgroundColor:C.accentSoft,color:C.ink,...type.label},
+ note:{padding:12,borderRadius:R.md,backgroundColor:C.surfaceAlt,color:C.ink,...type.label},
  error:{padding:12,borderRadius:R.md,backgroundColor:C.dangerSoft,color:C.danger,...type.label}
 });

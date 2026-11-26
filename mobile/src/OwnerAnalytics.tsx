@@ -54,12 +54,12 @@ export function OwnerAnalytics({tint=C.accent}:{tint?:string}){
   <View accessibilityLabel={tr('Выручка и чистая прибыль за шесть месяцев')} style={st.months}>{data.trend.map((t,i)=><View key={t.month} style={st.col}><View style={st.monthSlot}><Grow vertical delay={i*60} value={Math.max(.04,t.revenue/peak)} style={[st.monthBar,i===5&&{backgroundColor:tint}]}/></View><Text style={[st.colLabel,{color:i===5?C.ink:C.muted}]}>{monthName(t.month,t.label)}</Text></View>)}</View>
   {/* Three lines and their sums, nothing under them: the details open in the cards below. */}
   <View style={st.rows}>
-   <View style={st.row}><RowIcon icon="key" tint={C.goldInk}/><Text style={st.rowTitle}>{tr('Заселения')}</Text><Text style={st.rowSum}>{s.sold}</Text></View>
-   <View style={st.row}><RowIcon icon="sparkles" tint={C.aiTo}/><Text style={st.rowTitle}>{tr('Уборки')}</Text><Text style={st.rowSum}>{tenge(m.cleaning)}</Text></View>
-   <View style={[st.row,st.rowLast]}><RowIcon icon="file" tint={C.accent}/><Text style={st.rowTitle}>{tr('Комиссия сервиса')}</Text><Text style={st.rowSum}>{tenge(m.commission)}</Text></View>
+   <View style={st.row}><RowIcon icon="key" tint={C.ink}/><Text style={st.rowTitle}>{tr('Заселения')}</Text><Text style={st.rowSum}>{s.sold}</Text></View>
+   <View style={st.row}><RowIcon icon="sparkles" tint={C.ink}/><Text style={st.rowTitle}>{tr('Уборки')}</Text><Text style={st.rowSum}>{tenge(m.cleaning)}</Text></View>
+   <View style={[st.row,st.rowLast]}><RowIcon icon="file" tint={C.ink}/><Text style={st.rowTitle}>{tr('Комиссия сервиса')}</Text><Text style={st.rowSum}>{tenge(m.commission)}</Text></View>
   </View>
   {/* The AI reads the numbers and says what to do: rules, one line each. */}
-  {data.advice.length>0&&<View style={st.advice}><View style={{flexDirection:'row',alignItems:'center',gap:8}}><RowIcon icon="sparkles" tint={C.aiTo}/><Text style={st.adviceTitle}>{tr('Совет ИИ')}</Text></View>{data.advice.map(a=><Text key={a} style={st.adviceText}>{a}</Text>)}</View>}
+  {data.advice.length>0&&<View style={st.advice}><View style={{flexDirection:'row',alignItems:'center',gap:8}}><RowIcon icon="sparkles" tint={C.ink}/><Text style={st.adviceTitle}>{tr('Совет ИИ')}</Text></View>{data.advice.map(a=><Text key={a} style={st.adviceText}>{a}</Text>)}</View>}
   {data.ahead.count>0&&<View style={st.ahead}><Text style={st.aheadText}>{tr(forms(data.ahead.count,'Впереди {n} бронь','Впереди {n} брони','Впереди {n} броней'),{n:data.ahead.count})}</Text><Text style={st.aheadValue}>{tenge(data.ahead.amount)}</Text></View>}
   <Card title={tr('Расходы')} value={tenge(m.expenses)} open={open==='costs'} onPress={()=>toggle('costs')}>
    {costs.length?costs.map(([label,v,c])=><Line key={label} label={label} value={tenge(v)} share={m.expenses?v/m.expenses:0} tint={c}/>):<Text style={st.note}>{tr('За этот срок расходов нет.')}</Text>}
@@ -101,7 +101,7 @@ const st=StyleSheet.create({
  tile:{flexBasis:'48%',flexGrow:1,minHeight:104,padding:12,borderRadius:T.radius.lg,borderWidth:1,borderColor:C.line,backgroundColor:C.surface,gap:4},
  tileLabel:{...type.caption,color:C.muted},tileValue:{...type.title,...brandFont,fontSize:22,color:C.ink},tileNote:{...type.caption,color:C.muted},
  track:{height:6,borderRadius:T.radius.full,backgroundColor:C.surfaceAlt,overflow:'hidden'},fill:{height:6,borderRadius:T.radius.full},
- advice:{marginTop:12,padding:16,borderRadius:T.radius.lg,borderWidth:1,borderColor:C.aiTo,backgroundColor:C.surface,gap:8},
+ advice:{marginTop:12,padding:16,borderRadius:T.radius.lg,borderWidth:1,borderColor:C.line,backgroundColor:C.surface,gap:8},
  adviceTitle:{...type.label,color:C.ink,fontWeight:'700'},adviceText:{...type.label,color:C.inkSoft},
  ahead:{marginTop:12,flexDirection:'row',alignItems:'center',justifyContent:'space-between',padding:16,borderRadius:T.radius.lg,backgroundColor:C.goldSoft,borderWidth:1,borderColor:C.goldLine},
  aheadText:{...type.label,color:C.goldInk,fontWeight:'600'},aheadValue:{...type.subtitle,color:C.goldInk,fontWeight:'700'},
