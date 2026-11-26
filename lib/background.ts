@@ -1,3 +1,4 @@
+import {withAdmins} from './platform-admins';
 import {DomainError,type Role} from './domain';
 import {sweepReviews} from './admin-autocheck';
 import {sweepIssues} from './admin-issues';
@@ -91,7 +92,9 @@ export async function cloudBackup(db:D1Database,config:OperationConfig,page=BACK
 }
 // One tick a minute; the 35-second deadline inside runBackgroundJobs is what really bounds it.
 export const TICK_JOBS=40;
-export async function runOperationalTick(db:D1Database,config:OperationConfig={}){
+export async function runOperationalTick(db:D1Database,base:OperationConfig={}){
+ // The notices and sweeps reach the administrators the main one added in the app too (lib/platform-admins.ts).
+ const config=await withAdmins(base as OperationConfig&{PLATFORM_ADMIN_IDS?:string},db);
  await enqueueJob(db,'matching-dispatch','matching-dispatch','system',{},30);
  // Payout details whose 24 hours passed go into use; expired administrator codes and sessions are dropped.
  try{await applyDuePayouts(db);await sweepAdminFactor(db);}catch{console.error('Account protection sweep failed');}

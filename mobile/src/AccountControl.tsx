@@ -5,7 +5,7 @@ import {journalToday} from '../../lib/ai-move-marks';
 import {ThinkingLine} from './Thinking';
 import {NativeAccountSafety,safetyTitles,type SafetyPage} from './AccountSafety';
 import React,{useEffect,useState} from 'react';
-import {View,Text,TextInput,Pressable,Linking,StyleSheet,Image} from 'react-native';
+import {View,Text,Pressable,StyleSheet,Image} from 'react-native';
 import {ProfileEditor} from './ProfileEditor';
 import {LangSwitch} from './LangSwitch';
 import {useLang} from './lang';
@@ -23,17 +23,15 @@ import {NativeAutopilotPlan,NativePayWay} from './AutopilotPlan';
 import {NativeDecisionRules} from './DecisionRules';
 import {NoticeList,type NoticeWaiting} from './Notices';
 import {roleEvents} from '../../lib/notice-feed';
-import {request,API_URL} from './api';
-import {roleNames,rolePages} from './RoleEntry';
+import {request} from './api';
+import {rolePages} from './RoleEntry';
 import {Shift} from './Shift';
 import {OwnerAnalytics,loadAnalytics,shortTenge} from './OwnerAnalytics';
 import {CleanerEarnings,cleanerWeek} from './CleanerEarnings';
 import {IdentityDocs} from './IdentityDocs';
 import {PhoneCheck} from './PhoneCheck';
 import {PayoutForm,type Payout,type PendingPayout} from './PayoutDetails';
-import {AdminFactor} from './AdminFactor';
-import {AdminClasses} from './AdminClasses';
-import {BypassWatch} from './BypassWatch';
+import {AdminHub} from './admin/AdminHub';
 import {ServiceBilling} from './ServiceBilling';
 import {AutopilotWeek} from './AutopilotWeek';
 import {s,C,type} from './styles';
@@ -57,7 +55,7 @@ const shortRole:Record<Role,string>=L({guest:'Гость',owner:'Владеле�
 // settings: channels, the bank, privacy, and inside it the data and safety pages and joining another role.
 // The names of the menu's pages, as their heads show them.
 const headTitles=(role:Role)=>({payout:t('Реквизиты для оплаты'),billing:t('Оплата услуг'),money:role==='cleaner'?t('Заработок'):t('Доходы'),shift:t('Смена'),notices:t('Уведомления'),autopilot:t('Автопилот'),profile:t(experienceFor(role).profileTitle),settings:t('Настройки'),safety:t('Данные и безопасность')});
-type MenuView=''|'money'|'notices'|'autopilot'|'profile'|'settings'|'safety'|`safety:${Exclude<SafetyPage,''>}`|'shift'|'payout'|'billing';
+type MenuView=''|'money'|'notices'|'autopilot'|'profile'|'settings'|'safety'|`safety:${Exclude<SafetyPage,''>}`|'shift'|'payout'|'billing'|'admin';
 export type MenuHead={title:string;label:string;back:()=>void}|null;
 export function AccountControl({onHead,waiting=[],jobs=[],userId='',role:active,staffPlaces=0,regularPlaces=0,notices,onOpenNotice,start,onChanged,onSignedOut,onSwitchRole,onPickRole,onRoles,onJoinRole,onAskAdministrator,onLogout,onOpenPage,onOpenEntry,onLeftNotices}:{onHead?:(head:MenuHead)=>void;waiting?:NoticeWaiting[];jobs?:Data[];userId?:string;staffPlaces?:number;regularPlaces?:number;notices?:Data[];onOpenNotice?:(notice:Data)=>(()=>void)|undefined;start?:'notices'|'billing'|'payout'|'money';onPickRole?:(role:Role)=>void;onRoles?:()=>void;onJoinRole?:(role:Role)=>void;onAskAdministrator?:()=>void;onOpenPage?:(id:string)=>void;onOpenEntry?:(open:JournalOpen)=>(()=>void)|undefined;role:Role;onEdit:()=>void;onChanged?:()=>Promise<unknown>;onSignedOut:(result?:Row_)=>void|Promise<void>;onSwitchRole?:()=>void;onLogout?:()=>void;onLeftNotices?:()=>void}){
  const [view,setView]=useState<MenuView>(start||''),[editing,setEditing]=useState(false),[idOpen,setIdOpen]=useState(false),[phoneOpen,setPhoneOpen]=useState(false),[readUpTo,setReadUpTo]=useState(0),[langOpen,setLangOpen]=useState(false),[channelsOpen,setChannelsOpen]=useState(false),lang=useLang();
@@ -66,7 +64,7 @@ export function AccountControl({onHead,waiting=[],jobs=[],userId='',role:active,
  // Every opening of «Уведомления» marks what is there as read: the counter in the menu then shows only what came after.
  // A failed mark is not repeated on its own; the next opening sends it again.
  useEffect(()=>{if(view!=='notices')return;setFreshIds((notices||[]).filter(n=>!Number(n.read)&&Number(n.created_at)>readUpTo).map(n=>String(n.id)));setReadUpTo(Math.max(0,...(notices||[]).map(n=>Number(n.created_at)||0)));request('/api/notifications',{}).catch(()=>{});},[view]); // eslint-disable-line react-hooks/exhaustive-deps
- const [account,setAccount]=useState<Row_|null>(null),[busy,setBusy]=useState(false),[error,setError]=useState(''),[message,setMessage]=useState(''),[users,setUsers]=useState<Row_|null>(null),[role,setRole]=useState(''),[search,setSearch]=useState(''),[finding,setFinding]=useState(false);
+ const [account,setAccount]=useState<Row_|null>(null),[busy,setBusy]=useState(false),[error,setError]=useState(''),[message,setMessage]=useState('');
  // «Реквизиты для оплаты» (PayoutDetails.tsx): where guests and customers transfer money directly.
  const [payout,setPayout]=useState<Payout|null>(null),[payoutPending,setPayoutPending]=useState<PendingPayout|null>(null);
  // The owner's row «Доходы» shows the last 30 days' net profit; a failure leaves the row without a value.
@@ -77,17 +75,15 @@ export function AccountControl({onHead,waiting=[],jobs=[],userId='',role:active,
  useEffect(()=>{if(active==='guest'||view)return;let live=true;request('/api/operations/service-billing/state',undefined,undefined,undefined,active).then(v=>{if(live)setBill(v);}).catch(()=>{});return()=>{live=false;};},[active,view]);
  useEffect(()=>{if(active!=='owner')return;let live=true;loadAnalytics('month').then(r=>{if(live)setNetMonth(r.money.net);}).catch(()=>{});return()=>{live=false;};},[active]);
  useEffect(()=>{let live=true;request('/api/account').then(v=>{if(live){setAccount(v);setPayout(v.payout||null);setPayoutPending(v.payoutPending||null);}}).catch(e=>{if(live)setError(e.message);});return()=>{live=false;};},[]);
- const button=(title:string,fn:()=>void,disabled=busy)=><Pressable accessibilityRole="button" disabled={disabled} onPress={fn} style={[s.button,s.secondary,disabled&&s.disabled]}><Text style={[s.buttonText,s.secondaryText]}>{title}</Text></Pressable>;
  // Instant save: show the new value at once, roll back if the server refuses.
  async function instant(change:(v:Row_)=>Row_,send:()=>Promise<unknown>){if(busy||!account)return;const before=account;setBusy(true);setError('');setMessage('');setAccount(change(account));try{await send();setAccount(await request('/api/account'));setMessage(t('Сохранено.'));}catch(e:any){setAccount(before);setError(e.message);}finally{setBusy(false);}}
  const settings=(patch:Row_)=>instant(v=>({...v,settings:{...v.settings,...patch}}),()=>request('/api/account',{paymentProvider:patch.payment_provider??account!.settings.payment_provider,paymentNotifications:!!(patch.payment_notifications??account!.settings.payment_notifications),expectedVersion:account!.settings.version}));
- async function list(page=0){setBusy(true);setError('');try{setUsers(await request('/api/admin/users?role='+encodeURIComponent(role)+'&search='+encodeURIComponent(search)+'&page='+page));}catch(e:any){setError(e.message);}finally{setBusy(false);}}
  // One head per sheet: the open page's name and «‹» go up into the sheet's head (App.tsx), the page draws none.
  // The profile editor sets its own (it has pages inside); the menu itself and «Уведомления» have the sheet's.
  const sub=view.startsWith('safety:'),backTo:MenuView=sub?'safety':view==='safety'||view==='payout'||view==='billing'?'settings':'';
  const headTitle=!view||view==='notices'?'':sub?safetyTitles[view.slice(7) as Exclude<SafetyPage,''>]:headTitles(active)[view as keyof ReturnType<typeof headTitles>]||'';
  const headLabel=sub?t('Назад: Данные и безопасность'):backTo==='settings'?t('Назад: Настройки'):t('Назад в меню');
- useEffect(()=>{if(!onHead||editing)return;onHead(headTitle?{title:headTitle,label:headLabel,back:()=>{setMessage('');setError('');setView(backTo);}}:null);},[onHead,headTitle,editing,backTo]); // eslint-disable-line react-hooks/exhaustive-deps
+ useEffect(()=>{if(!onHead||editing||view==='admin')return;onHead(headTitle?{title:headTitle,label:headLabel,back:()=>{setMessage('');setError('');setView(backTo);}}:null);},[onHead,headTitle,editing,backTo,view]); // eslint-disable-line react-hooks/exhaustive-deps
  useEffect(()=>()=>onHead?.(null),[]); // eslint-disable-line react-hooks/exhaustive-deps
  // Without the profile one quiet line: the reason when the server answered, or «Загружаю профиль…» (the line about the
  // connection is already over the screen, OfflineNotice.tsx, so it is not said twice).
@@ -105,6 +101,8 @@ export function AccountControl({onHead,waiting=[],jobs=[],userId='',role:active,
  const journal:JournalEntry[]=account.aiJournal||[],today=journalToday(journal,account.serverTime||0);
  // A notice about service fees leads from the notices to «Оплата услуг»: the sheet is the menu again (onLeftNotices).
  const go=(to:MenuView)=>{setMessage('');setError('');if(view==='notices'&&to!=='notices')onLeftNotices?.();setView(to);};
+ // «Управление сервисом» is its own stack of pages in this sheet (mobile/src/admin): it puts its own head.
+ if(view==='admin')return <FlatMenu.Provider value><AdminHub verified={!!account.adminVerified} onVerified={()=>void request('/api/account').then(setAccount).catch(()=>undefined)} onHead={onHead} onExit={()=>go('')}/></FlatMenu.Provider>;
  // Joining another role is offered in the settings, as a thing done once.
  const join=onJoinRole?(['guest','owner','cleaner'] as Role[]).filter(v=>v!==active&&!roles.includes(v)):[];
  const titles=headTitles(active);
@@ -159,11 +157,7 @@ export function AccountControl({onHead,waiting=[],jobs=[],userId='',role:active,
    <Group title={t('Аккаунт')}><Row icon="lock" tint={ink} title={t('Данные и безопасность')} onPress={()=>go('safety')}/>{join.map(v=><Row key={v} icon="plus" tint={ink} title={t(joinTitle(v))} onPress={()=>onJoinRole?.(v)}/>)}</Group></>}
   {(view==='safety'||view.startsWith('safety:'))&&<NativeAccountSafety tint={ink} role={active} admin={!!account.adminVerified} page={view.startsWith('safety:')?view.slice(7) as SafetyPage:''} go={p=>go(p?`safety:${p}` as MenuView:'safety')} onSignedOut={onSignedOut}/>}
   {!view&&<>
-  <Group space><Row icon="languages" tint={ink} title={t('Язык')} value={LANGS.find(l=>l.id===lang)?.title} open={langOpen} onPress={()=>setLangOpen(v=>!v)}/>{langOpen&&<View style={[a.row,{paddingHorizontal:8}]}><View style={{flex:1}}><LangSwitch label={t('Язык')}/></View></View>}<Row icon="sliders" tint={ink} title={t('Настройки')} onPress={()=>go('settings')}/>{!!onAskAdministrator&&<Row icon="messages" tint={ink} title={t('Помощь')} value={t('ИИ-администратор')} onPress={onAskAdministrator}/>}{account.platformAdmin&&<Row icon="shield" tint={ink} title={t('Управление сервисом')} note={t('Пользователи, проверки, обращения')} onPress={()=>void Linking.openURL(API_URL+'/admin').catch(()=>undefined)}/>}{/* The owner's and the cleaner's map plate has no role chip (RolePlate.tsx): the roles open from here. */}{!!onRoles&&active!=='guest'?<Row icon="users" tint={ink} title={t('Сменить роль')} value={shortRole[active]} onPress={onRoles}/>:!onPickRole&&!!onSwitchRole&&roles.length>1&&<Row icon="users" tint={ink} title={t('Сменить роль')} value={shortRole[active]} onPress={onSwitchRole}/>}{!!onLogout&&<Row icon="logout" title={t('Выйти из аккаунта')} danger onPress={onLogout}/>}</Group>
-  {account.platformAdmin&&!account.adminVerified&&<Group space><AdminFactor tint={ink} onVerified={()=>void request('/api/account').then(setAccount).catch(()=>undefined)}/></Group>}
-  {account.platformAdmin&&account.adminVerified&&<Group space><BypassWatch tint={ink}/></Group>}
-  {account.platformAdmin&&account.adminVerified&&<Group space><AdminClasses tint={ink}/></Group>}
-  {account.platformAdmin&&account.adminVerified&&<Group space><Row icon="users" tint={ink} title={t('Поиск пользователей')} open={finding} onPress={()=>setFinding(v=>!v)}/>{finding&&<View style={a.body}><Text style={s.meta}>{t('Поиск пользователей доступен только администратору. Просмотр записывается в журнал.')}</Text><Choice title={t('Роль')} value={role} options={[['',t('Все')],['guest',t('Гости')],['owner',t('Владельцы')],['cleaner',t('Исполнители')]]} onChange={setRole}/><Text style={s.fieldLabel}>{t('Имя или контакт')}</Text><TextInput accessibilityLabel={t('Имя или контакт')} value={search} onChangeText={setSearch} maxLength={100} style={s.field}/>{button(t('Показать пользователей'),()=>list())}{users&&<><Text style={s.meta}>{t('Найдено: {n}',{n:users.total})}</Text>{users.users.map((u:Row_)=><View style={s.card} key={u.id}><Text style={s.eventTitle}>{u.name}</Text><Text style={s.meta}>{u.roles.map((r:Role)=>roleNames[r]).join(', ')}{'\n'}{u.city} · {u.contact}{'\n'}{t('Объекты: {properties} · брони: {bookings} · уборки: {jobs}',{properties:u.property_count,bookings:u.booking_count,jobs:u.assignment_count})}</Text></View>)}<View style={{flexDirection:'row',gap:8}}><View style={{flex:1}}>{button(t('Назад'),()=>list(users.page-1),busy||users.page===0)}</View><View style={{flex:1}}>{button(t('Далее'),()=>list(users.page+1),busy||(users.page+1)*users.limit>=users.total)}</View></View></>}</View>}</Group>}
+  <Group space><Row icon="languages" tint={ink} title={t('Язык')} value={LANGS.find(l=>l.id===lang)?.title} open={langOpen} onPress={()=>setLangOpen(v=>!v)}/>{langOpen&&<View style={[a.row,{paddingHorizontal:8}]}><View style={{flex:1}}><LangSwitch label={t('Язык')}/></View></View>}<Row icon="sliders" tint={ink} title={t('Настройки')} onPress={()=>go('settings')}/>{!!onAskAdministrator&&<Row icon="messages" tint={ink} title={t('Помощь')} value={t('ИИ-администратор')} onPress={onAskAdministrator}/>}{account.platformAdmin&&<Row icon="shield" tint={ink} title={t('Управление сервисом')} note={t('Проверки, обращения, деньги')} onPress={()=>go('admin')}/>}{/* The owner's and the cleaner's map plate has no role chip (RolePlate.tsx): the roles open from here. */}{!!onRoles&&active!=='guest'?<Row icon="users" tint={ink} title={t('Сменить роль')} value={shortRole[active]} onPress={onRoles}/>:!onPickRole&&!!onSwitchRole&&roles.length>1&&<Row icon="users" tint={ink} title={t('Сменить роль')} value={shortRole[active]} onPress={onSwitchRole}/>}{!!onLogout&&<Row icon="logout" title={t('Выйти из аккаунта')} danger onPress={onLogout}/>}</Group>
   {!!toOther&&<Pressable accessibilityRole="button" onPress={toOther} style={({pressed})=>[m.mode,pressed&&a.pressed]}><Text style={m.modeText}>{other==='owner'?t('Перейти в режим владельца'):t('Перейти в режим гостя')}</Text></Pressable>}
   {roles.length>1&&<Text style={[a.footnote,{textAlign:'center'}]}>{t('Имя и фото общие для всех ваших ролей.')}</Text>}</>}
  </View></FlatMenu.Provider>;
