@@ -49,7 +49,8 @@ test('the menu is short: a few rows open their own screens, the rest stays one t
     assert.match(text, /'properties'\]:\['jobs'\]/, "the owner's objects and the cleaner's search for jobs live on the map");
   }
   {
-    // The app is shorter still: three rows about what goes on (notices, the autopilot, the profile), then settings and help.
+    // The app is shorter still: two rows about what goes on (the autopilot, the profile), then settings and help.
+    // The notices open from the bell over the map, next to the chats, in a sheet of their own name.
     // «autopilot» holds the journal for every role, the decision rules of the guest and the owner, the plan of the cleaner.
     // Reliability is read inside the profile; the data pages and joining another role are inside the settings.
     const text = read('mobile/src/AccountControl.tsx');
@@ -57,13 +58,15 @@ test('the menu is short: a few rows open their own screens, the rest stays one t
     assert.match(text, /type MenuView=''\|'money'\|'notices'\|'autopilot'\|'profile'\|'settings'\|'safety'/);
     assert.match(text, /owner&&<Row icon="chart"[^>]*title=\{t\('Доходы'\)\}/, 'only the owner has «Доходы»');
     for (const view of ['notices', 'autopilot', 'profile', 'settings']) assert.ok(text.includes("view==='" + view + "'"), view);
-    for (const title of ['Уведомления', 'Автопилот', 'Настройки', 'Помощь']) assert.match(text, new RegExp("<Row (?:[^<>]*? )?title=\\{t\\('" + title + "'\\)\\}"), title);
+    for (const title of ['Автопилот', 'Настройки', 'Помощь']) assert.match(text, new RegExp("<Row (?:[^<>]*? )?title=\\{t\\('" + title + "'\\)\\}"), title);
     assert.doesNotMatch(text, /title=\{t\('(Надёжность|Что сделал ИИ|Тариф и автопилот)'\)\}[^\n]*onPress=\{\(\)=>go/, 'no separate rows for what the three rows hold');
     assert.match(text, /view==='autopilot'&&[^\n]*<AiJournal [^\n]*worker\?<NativeAutopilotPlan [^\n]*:<NativeDecisionRules /);
     // The profile opens with the reliability card: the score, its word and up to three facts.
     assert.match(text, /view==='profile'&&<>\s*<View accessible accessibilityLabel=\{[^\n]*scoreText,trustLabel/);
     assert.match(text, /view==='settings'&&[\s\S]*title=\{t\('Данные и безопасность'\)\} onPress=\{\(\)=>go\('safety'\)\}\/>\{join\.map/);
     assert.match(text, /'properties'\]:\['jobs'\]/, "the owner's objects and the cleaner's search for jobs live on the map");
+    assert.doesNotMatch(text, /title=\{t\('Уведомления'\)\}/, 'no row for the notices in the menu: the bell is on the map');
+    assert.match(text, /\{!!view&&view!=='notices'&&/);
     // The language is chosen in the menu itself, not hidden in the settings.
     assert.match(text, /!view&&[\s\S]*<LangSwitch /);
     // The notices of the menu are the events of the role; a new one is said over the map, not written into the chat.
@@ -75,4 +78,6 @@ test('the menu is short: a few rows open their own screens, the rest stays one t
   }
   assert.match(read('mobile/src/WorkspaceNavigation.tsx'), /Чаты, непрочитанных: /);
   assert.match(read('mobile/App.tsx'), /<MapChatsButton busy=\{busy\} unread=\{unread\}/);
+  assert.match(read('mobile/App.tsx'), /chats=\{<><MapNoticesButton busy=\{busy\} unread=\{newNotices\} onPress=\{\(\)=>\{setMenuStart\('notices'\);openPage\('account'\);\}\}\/><MapChatsButton /);
+  assert.match(read('mobile/src/WorkspaceNavigation.tsx'), /Уведомления, новых: /);
 });

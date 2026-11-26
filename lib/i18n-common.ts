@@ -97,6 +97,7 @@ export const COMMON:Words={
   'Ещё разделы':['Басқа бөлімдер','More sections'],
   'Профиль':['Профиль','Profile'],
   'Чаты, непрочитанных: {unread}':['Чаттар, оқылмағаны: {unread}','Chats, unread: {unread}'],
+  'Уведомления, новых: {unread}':['Хабарландырулар, жаңасы: {unread}','Notifications, new: {unread}'],
 
   // ── The menu ──
   'Не выбран':['Таңдалмаған','Not chosen'],
@@ -135,7 +136,6 @@ export const COMMON:Words={
   'гости сегодня':['бүгін қонақтар бар','guests today'],
   'объектов: {staffPlaces}':['нысан: {staffPlaces}','properties: {staffPlaces}'],
   '{v} за месяц':['айына {v}','{v} this month'],
-  '{eventsNow} новых':['{eventsNow} жаңа','{eventsNow} new'],
   'ИИ: {today} сегодня':['ЖИ: бүгін {today}','AI: {today} today'],
   'заполнен':['толтырылған','complete'],
   'Что сделал ИИ':['ЖИ не істеді','What the AI did'],
