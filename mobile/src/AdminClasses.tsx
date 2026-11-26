@@ -24,7 +24,7 @@ export function AdminClasses({tint}:{tint?:string}){
  return <>
   <Row icon="star" tint={tint} title={t('Классы жилья')} note={t('Проверить класс, который поставили ИИ и владельцы')} open={open} onPress={toggle}/>
   {open&&<View style={a.body}>
-   {busy==='list'&&!items&&<Text style={s.meta}>{t('Загружаю…')}</Text>}
+   {busy==='list'&&!items&&<Text style={s.meta}>{t('Загружаем…')}</Text>}
    {items&&!items.length&&<Text style={s.meta}>{t('Опубликованного жилья пока нет.')}</Text>}
    {items?.map(p=><View style={s.card} key={p.id}>
     <Text style={s.eventTitle}>{p.title}</Text>

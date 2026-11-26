@@ -20,11 +20,11 @@ export function VenueHalls({property,call,onBack,onClose,onOpen,onChanged}:{prop
  // «‹» from a field goes back to the list of halls; from the list, back to the place.
  const back=adding||naming?()=>{setAdding(false);setNaming(false);setError('');}:onBack;
  const open=(next:'add'|'name')=>{setNote('');setError('');setAdding(next==='add');setNaming(next==='name');};
- const foot=adding?<EditButton title={t('Добавить')} disabled={!title.trim()} busy={busy&&t('Добавляю…')} onPress={add}/>
-  :naming?<EditButton title={t('Сохранить')} disabled={!name.trim()} busy={busy&&t('Сохраняю…')} onPress={rename}/>
+ const foot=adding?<EditButton title={t('Добавить')} disabled={!title.trim()} busy={busy&&t('Добавляем…')} onPress={add}/>
+  :naming?<EditButton title={t('Сохранить')} disabled={!name.trim()} busy={busy&&t('Сохраняем…')} onPress={rename}/>
   :venue!==undefined?<EditButton title={t('Добавить зал')} disabled={busy} onPress={()=>open('add')}/>:undefined;
  return <EditSheet title={adding?t('Новый зал'):naming?t('Название заведения'):t('Залы')} onBack={back} onClose={onClose} busy={busy} foot={foot}>
-  {venue===undefined&&!error&&<ThinkingLine style={editStyles.note} text={t('Загружаю…')}/>}
+  {venue===undefined&&!error&&<ThinkingLine style={editStyles.note} text={t('Загружаем…')}/>}
   {adding?<>
    {venue===null&&<EditField label={t('Название заведения')} value={name} onChange={setName} placeholder={t('Сауна «Жар»')}/>}
    <EditField label={t('Название нового зала')} value={title} onChange={setTitle} placeholder={t('Малый зал')}/>

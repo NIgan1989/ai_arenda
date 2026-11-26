@@ -65,7 +65,7 @@ export function Receipts({kind,id,role,count=0,canAdd=false,title,from}:{kind:'b
   {!!title&&!!list.length&&<Text style={p.title}>{title}</Text>}
   {!!list.length&&<View style={p.receipts}>{list.map(r=><Pressable key={r.id} accessibilityRole="imagebutton" accessibilityLabel={open===r.id?t('Свернуть чек'):t('Открыть чек')} onPress={()=>setOpen(open===r.id?'':r.id)}>{r.uri?<Image source={{uri:r.uri}} style={p.receipt} alt={t('Чек об оплате')}/>:<View style={[p.receipt,{backgroundColor:C.surfaceAlt}]}/>}</Pressable>)}</View>}
   {!!big?.uri&&<Pressable accessibilityRole="imagebutton" accessibilityLabel={t('Свернуть чек')} onPress={()=>setOpen('')}><Image source={{uri:big.uri}} style={p.receiptBig} resizeMode="contain" alt={t('Чек об оплате')}/></Pressable>}
-  {canAdd&&list.length<RECEIPT_LIMIT&&<Pressable accessibilityRole="button" disabled={busy} onPress={()=>void add()} style={({pressed})=>[p.link,(pressed||busy)&&{opacity:.7}]}><Text style={p.linkText}>{busy?t('Прикладываю…'):list.length?t('Приложить ещё чек'):t('Приложить чек из Kaspi')}</Text></Pressable>}
+  {canAdd&&list.length<RECEIPT_LIMIT&&<Pressable accessibilityRole="button" disabled={busy} onPress={()=>void add()} style={({pressed})=>[p.link,(pressed||busy)&&{opacity:.7}]}><Text style={p.linkText}>{busy?t('Прикладываем…'):list.length?t('Приложить ещё чек'):t('Приложить чек из Kaspi')}</Text></Pressable>}
   {canAdd&&!list.length&&<Text style={p.meta}>{t('Снимок чека видит только получатель. С чеком он подтвердит оплату быстрее.')}</Text>}
   {!!error&&<Text accessibilityRole="alert" style={p.warn}>{error}</Text>}
  </View>;
@@ -101,7 +101,7 @@ export function PayoutForm({initial,pending:initialPending,role,onSaved}:{initia
    <View><Text style={s.fieldLabel}>{t('Ссылка Kaspi Pay, если есть')}</Text><TextInput accessibilityLabel={t('Ссылка Kaspi Pay')} value={link} onChangeText={v=>{setLink(v);setDone('');}} autoCapitalize="none" autoCorrect={false} keyboardType="url" maxLength={300} placeholder="https://pay.kaspi.kz/…" placeholderTextColor={C.muted} style={s.field}/></View>
    {changed&&<View><Text style={s.fieldLabel}>{t('Пароль от аккаунта')}</Text><TextInput accessibilityLabel={t('Пароль от аккаунта')} value={password} onChangeText={setPassword} secureTextEntry autoCapitalize="none" autoCorrect={false} maxLength={128} style={s.field}/>
     <Text style={[s.meta,{marginTop:8}]}>{t('Новые реквизиты вступят в силу через 24 часа. Мы пришлём оповещение, чтобы замену можно было отменить, если это не вы.')}</Text></View>}
-   <Pressable accessibilityRole="button" disabled={busy||(changed&&!password)} onPress={()=>void send({phone,recipient,link,...(changed?{password}:{})},t('Сохранено'))} style={[pf.btn,(busy||(changed&&!password))&&s.disabled]}><Text style={pf.btnText}>{busy?t('Сохраняю…'):changed?t('Заменить реквизиты'):t('Сохранить реквизиты')}</Text></Pressable>
+   <Pressable accessibilityRole="button" disabled={busy||(changed&&!password)} onPress={()=>void send({phone,recipient,link,...(changed?{password}:{})},t('Сохранено'))} style={[pf.btn,(busy||(changed&&!password))&&s.disabled]}><Text style={pf.btnText}>{busy?t('Сохраняем…'):changed?t('Заменить реквизиты'):t('Сохранить реквизиты')}</Text></Pressable>
    {!!current&&<Pressable accessibilityRole="button" disabled={busy} onPress={()=>{reset(current);setEditing(false);}} style={({pressed})=>[pf.text,pressed&&{opacity:.6}]}><Text style={pf.textLink}>{t('Отмена')}</Text></Pressable>}
   </>}
   {!!error&&<Text accessibilityRole="alert" style={s.error}>{error}</Text>}
@@ -112,10 +112,10 @@ export function PayoutForm({initial,pending:initialPending,role,onSaved}:{initia
 const pf=StyleSheet.create({
  card:{borderRadius:R.lg,borderWidth:1,borderColor:C.line,backgroundColor:C.surface,padding:16,gap:12},
  head:{flexDirection:'row',alignItems:'center',gap:12},
- logo:{width:44,height:44,borderRadius:R.md,backgroundColor:C.surfaceAlt,alignItems:'center',justifyContent:'center'},logoText:{...type.caption,color:C.ink,fontWeight:'800'},
- phone:{...type.subtitle,color:C.ink,fontWeight:'700'},
+ logo:{width:44,height:44,borderRadius:R.md,backgroundColor:C.surfaceAlt,alignItems:'center',justifyContent:'center'},logoText:{...type.caption,color:C.ink,fontWeight:'600'},
+ phone:{...type.subtitle,color:C.ink,fontWeight:'600'},
  line:{flexDirection:'row',alignItems:'center',justifyContent:'space-between',gap:12,paddingTop:12,borderTopWidth:1,borderTopColor:C.line},lineTitle:{...type.label,color:C.ink,fontWeight:'500'},
- btn:{minHeight:T.control.primary,borderRadius:R.full,backgroundColor:C.ink,alignItems:'center',justifyContent:'center',paddingHorizontal:24},btnLine:{backgroundColor:C.surface,borderWidth:1,borderColor:C.lineStrong},btnText:{...type.body,color:C.onAccent,fontWeight:'700'},
+ btn:{minHeight:T.control.primary,borderRadius:R.full,backgroundColor:C.ink,alignItems:'center',justifyContent:'center',paddingHorizontal:24},btnLine:{backgroundColor:C.surface,borderWidth:1,borderColor:C.lineStrong},btnText:{...type.body,color:C.onAccent,fontWeight:'600'},
  text:{minHeight:T.control.touch,alignSelf:'flex-start',justifyContent:'center'},textLink:{...type.label,color:C.ink,fontWeight:'600',textDecorationLine:'underline'},
  wait:{borderRadius:R.md,borderWidth:1,borderColor:C.warningLine,backgroundColor:C.warningSoft,padding:12},
 });
@@ -128,13 +128,13 @@ const p=StyleSheet.create({
  meta:{...type.label,color:C.muted},
  to:{flexDirection:'row',alignItems:'center',gap:12,backgroundColor:C.surface,borderRadius:R.md,padding:12},
  kaspi:{width:40,height:40,borderRadius:24,backgroundColor:C.danger,alignItems:'center',justifyContent:'center'},
- kaspiText:{...type.subtitle,color:C.onAccent,fontWeight:'700'},
+ kaspiText:{...type.subtitle,color:C.onAccent,fontWeight:'600'},
  phone:{...type.subtitle,color:C.ink,fontWeight:'600',letterSpacing:.2},
  link:{minHeight:44,borderRadius:R.md,borderWidth:1,borderColor:C.accentLine,backgroundColor:C.surface,alignItems:'center',justifyContent:'center',paddingHorizontal:16},
  linkText:{...type.label,color:C.accent,fontWeight:'600'},
  warn:{...type.label,color:C.warning},
  danger:{borderRadius:R.md,borderWidth:1,borderColor:C.danger,backgroundColor:C.dangerSoft,padding:12,gap:4},
- dangerTitle:{...type.label,color:C.danger,fontWeight:'700'},
+ dangerTitle:{...type.label,color:C.danger,fontWeight:'600'},
  dangerText:{...type.label,color:C.ink},
  memo:{borderRadius:R.md,backgroundColor:C.surface,padding:12},
  memoText:{...type.caption,color:C.inkSoft},

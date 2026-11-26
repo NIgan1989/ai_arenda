@@ -135,7 +135,7 @@ function BookingReview({flow,photo,busy,done,result,onConfirm,onEdit}:{flow:Flow
   const when=quote?(hall?[occasion&&flow.answers.occasion!=='other'?occasion:'',banquetWhen(new Date((Number(quote.start)+18000)*1000).toISOString().slice(0,16))].filter(Boolean).join(' · '):date(quote.start)+' → '+date(quote.end)):'';
   const rated=Number(quote?.rating?.count)>0?'★ '+Number(quote!.rating.average).toFixed(1).replace('.',',')+' ('+quote!.rating.count+')':'';
   return <View style={[s.card,rv.card]}><View style={rv.head}>{!!photo&&<View style={rv.thumb}><Photo id={photo} alt={tr('{title}, фото',{title:String(quote?.title||'')})} fill/></View>}<View style={rv.title}><Text accessibilityRole="header" numberOfLines={2} style={rv.name}>{quote?.title||tr('Условия бронирования')}</Text>{!!quote&&<Text numberOfLines={1} style={rv.sub}>{[rated,guestsText].filter(Boolean).join(' · ')}</Text>}</View></View>
-    {checking&&<View style={s.progressRow}><Thinking size="sm"/><Text style={s.meta}>{tr('Проверяю стоимость и свободный интервал…')}</Text></View>}
+    {checking&&<View style={s.progressRow}><Thinking size="sm"/><Text style={s.meta}>{tr('Проверяем стоимость и свободный интервал…')}</Text></View>}
     {!!error&&<><Text accessibilityRole="alert" style={s.error}>{error}</Text><Button title={tr('Проверить ещё раз')} secondary disabled={busy||checking} onPress={()=>setAttempt(v=>v+1)}/></>}
     {quote&&!error&&!checking&&<>
       {/* As in Airbnb: the stay as two halves, «Заезд | Выезд», and one word to change it. */}
@@ -158,7 +158,7 @@ function BookingReview({flow,photo,busy,done,result,onConfirm,onEdit}:{flow:Flow
 const rv=StyleSheet.create({
   card:{gap:0},
   head:{flexDirection:'row',alignItems:'center',gap:12,paddingBottom:12},title:{flex:1,minWidth:0,gap:2},
-  name:{...type.subtitle,color:C.ink,fontWeight:'700'},sub:{...type.caption,color:C.muted},
+  name:{...type.subtitle,color:C.ink,fontWeight:'600'},sub:{...type.caption,color:C.muted},
   thumb:{width:64,height:64,borderRadius:T.radius.md,overflow:'hidden',backgroundColor:C.surfaceAlt},
   row:{flexDirection:'row',alignItems:'center',gap:12,paddingVertical:12,borderTopWidth:StyleSheet.hairlineWidth,borderTopColor:C.line},
   grow:{flex:1,minWidth:0,gap:2},
@@ -175,9 +175,9 @@ const rv=StyleSheet.create({
 function maskedPhone(d:string){return d.length<10?d:'+'+d.slice(0,d.length-10)+' '+d.slice(-10,-7)+' ••• '+d.slice(-4,-2)+' '+d.slice(-2);}
 const au=StyleSheet.create({
   box:{gap:12,marginTop:8},
-  ask:{...type.subtitle,color:C.ink,fontWeight:'700'},
+  ask:{...type.subtitle,color:C.ink,fontWeight:'600'},
   sent:{...type.label,color:C.muted},
-  big:{minHeight:64,paddingHorizontal:16,borderRadius:T.radius.lg,borderWidth:2,borderColor:C.accentLine,backgroundColor:C.surface,...type.title,color:C.ink,fontWeight:'700',fontVariant:['tabular-nums'],letterSpacing:.5},
+  big:{minHeight:64,paddingHorizontal:16,borderRadius:T.radius.lg,borderWidth:2,borderColor:C.accentLine,backgroundColor:C.surface,...type.title,color:C.ink,fontWeight:'600',fontVariant:['tabular-nums'],letterSpacing:.5},
   link:{minHeight:T.control.touch,alignItems:'center',justifyContent:'center'},
   linkText:{...type.label,color:C.accent,fontWeight:'600'},
   key:{flexDirection:'row',gap:8,minHeight:56,borderRadius:T.radius.full,borderWidth:1,borderColor:C.lineStrong,alignItems:'center',justifyContent:'center',backgroundColor:C.surface},
@@ -231,9 +231,9 @@ function Auth({onSubmit,busy,titled=true}:{titled?:boolean;onSubmit:(mode:string
     {!waiting&&<><Text style={s.fieldLabel}>{forgot?t('Новый пароль'):t('Пароль')}</Text><TextInput accessibilityLabel={t('Пароль')} style={field} placeholder={t('От 10 символов')} placeholderTextColor={C.muted} value={password} onChangeText={setPassword} secureTextEntry autoCapitalize="none" autoCorrect={false} autoComplete={mode==='login'?'current-password':'new-password'} maxLength={128} editable={!locked}/></>}
     {mode==='register'&&<View style={{flexDirection:'row',alignItems:'flex-start',gap:12,marginTop:12}}><Pressable accessibilityRole="checkbox" accessibilityLabel={t('Принимаю соглашение и даю согласие на обработку данных')} accessibilityState={{checked:accepted,disabled:locked}} disabled={locked} onPress={()=>setAccepted(v=>!v)} hitSlop={10} style={[s.checkBox,accepted&&s.checkBoxOn]}>{accepted&&<Text style={s.checkTick}>✓</Text>}</Pressable><Text style={[s.meta,{flex:1}]} onPress={locked?undefined:()=>setAccepted(v=>!v)}>{tParts(tr('Принимаю {terms} и даю {consent}')).map((part,i)=>typeof part==='string'?part:part.slot==='terms'?<Text key={i} accessibilityRole="link" style={s.inlineLink} onPress={()=>legal('/terms')}>{t('Пользовательское соглашение')}</Text>:<Text key={i} accessibilityRole="link" style={s.inlineLink} onPress={()=>legal('/privacy/consent')}>{t('согласие на обработку персональных данных')}</Text>)}{lang()!=='ru'&&t(' (документы на русском языке)')}</Text></View>}
     {!!error&&<Text accessibilityRole="alert" style={s.error}>{error}</Text>}
-    {waiting?<Button title={sending?t('Отправляю…'):t('Получить код')} disabled={locked||!phone.trim()} onPress={askCode}/>
+    {waiting?<Button title={sending?t('Отправляем…'):t('Получить код')} disabled={locked||!phone.trim()} onPress={askCode}/>
     :<Button title={mode==='register'?t('Создать аккаунт'):forgot?t('Сменить пароль и войти'):t('Войти')} disabled={locked||mode==='register'&&!accepted||forgot&&recovery.length!==6} onPress={()=>{setError('');onSubmit(forgot?'reset':mode,phone,password,name,city,recovery).then(()=>setPassword('')).catch(e=>setError(isOffline(e)?t('Нет связи. Проверьте интернет и повторите.'):e.message));}}/>}
-    {forgot&&!!codeSent&&link(sending?t('Отправляю…'):t('Прислать код ещё раз'),askCode)}
+    {forgot&&!!codeSent&&link(sending?t('Отправляем…'):t('Прислать код ещё раз'),askCode)}
     {mode==='login'&&<Button secondary title={t('Забыли пароль?')} disabled={locked} onPress={()=>go('forgot')}/>}
     {mode==='login'||mode==='register'?<Button secondary title={mode==='register'?t('Уже есть аккаунт'):t('Создать новый аккаунт')} disabled={locked} onPress={()=>go(mode==='register'?'login':'register')}/>
     :link(t('Назад ко входу'),()=>go('login'))}
@@ -900,12 +900,12 @@ function Report({items=REPORT_ITEMS,jobId,job,photos=false,busy,onSubmit,onProbl
   const due=Number(job?.end)?dateText(new Date(Number(job!.end)*1000),{timeZone:'Asia/Almaty',hour:'2-digit',minute:'2-digit'}):'';
   const minutesLeft=Number(job?.end)?Math.max(0,Math.round((Number(job!.end)-Date.now()/1000)/60)):0;
   return <View style={[s.card,{gap:12}]}>
-    {!!job&&<View style={{flexDirection:'row',alignItems:'center',justifyContent:'space-between',gap:12}}><View style={{flex:1,gap:2}}><Text accessibilityRole="header" style={s.eventTitle}>{tr('Уборка · {done} из {length}',{done,length:items.length})}</Text><Text numberOfLines={1} style={s.meta}>{[job.title,Number(job.fee)>0?money(Number(job.fee)):''].filter(Boolean).join(' · ')}</Text></View>{!!due&&<View style={{minHeight:32,paddingHorizontal:12,borderRadius:T.radius.full,justifyContent:'center',backgroundColor:minutesLeft<=15?C.warningSoft:C.successSoft}}><Text style={[s.meta,{fontWeight:'700',color:minutesLeft<=15?C.warning:C.success}]}>{minutesLeft>0?tr('{m} мин',{m:minutesLeft}):tr('до {due}',{due})}</Text></View>}</View>}
+    {!!job&&<View style={{flexDirection:'row',alignItems:'center',justifyContent:'space-between',gap:12}}><View style={{flex:1,gap:2}}><Text accessibilityRole="header" style={s.eventTitle}>{tr('Уборка · {done} из {length}',{done,length:items.length})}</Text><Text numberOfLines={1} style={s.meta}>{[job.title,Number(job.fee)>0?money(Number(job.fee)):''].filter(Boolean).join(' · ')}</Text></View>{!!due&&<View style={{minHeight:32,paddingHorizontal:12,borderRadius:T.radius.full,justifyContent:'center',backgroundColor:minutesLeft<=15?C.warningSoft:C.successSoft}}><Text style={[s.meta,{fontWeight:'600',color:minutesLeft<=15?C.warning:C.success}]}>{minutesLeft>0?tr('{m} мин',{m:minutesLeft}):tr('до {due}',{due})}</Text></View>}</View>}
     <View accessibilityRole="progressbar" accessibilityLabel={tr('Чек-лист: {done} из {length}',{done,length:items.length})} accessibilityValue={{min:0,max:items.length,now:done}} style={{gap:8}}>
       <View style={{flexDirection:'row',gap:4}}>{items.map((label,i)=><View key={label} style={{flex:1,height:4,borderRadius:2,backgroundColor:checks[i]?C.success:C.line}}/>)}</View>
     </View>
-    <View>{items.map((label,i)=>{const last=left===1&&!checks[i],room=roomOf(label),head=!!room&&room!==roomOf(items[i-1]||'');return <React.Fragment key={label}>{head&&<Text accessibilityRole="header" style={[s.meta,{marginTop:i?12:0,fontWeight:'700',letterSpacing:.5}]}>{tr(room).toUpperCase()}</Text>}<Pressable accessibilityRole="checkbox" accessibilityLabel={tr(label)} accessibilityState={{checked:checks[i],disabled:busy}} disabled={busy} onPress={()=>setChecks(prev=>prev.map((v,k)=>k===i?!v:v))} style={({pressed})=>[{minHeight:48,flexDirection:'row',alignItems:'center',gap:12,paddingVertical:8,borderBottomWidth:1,borderBottomColor:C.line},pressed&&{opacity:.7}]}>
-      <View style={{width:24,height:24,borderRadius:8,borderWidth:2,alignItems:'center',justifyContent:'center',borderColor:checks[i]?C.success:last?C.accent:C.lineStrong,backgroundColor:checks[i]?C.success:C.surface}}>{checks[i]&&<Text style={{color:C.surface,fontSize:14,fontWeight:'700',lineHeight:20}}>✓</Text>}</View>
+    <View>{items.map((label,i)=>{const last=left===1&&!checks[i],room=roomOf(label),head=!!room&&room!==roomOf(items[i-1]||'');return <React.Fragment key={label}>{head&&<Text accessibilityRole="header" style={[s.meta,{marginTop:i?12:0,fontWeight:'600'}]}>{tr(room)}</Text>}<Pressable accessibilityRole="checkbox" accessibilityLabel={tr(label)} accessibilityState={{checked:checks[i],disabled:busy}} disabled={busy} onPress={()=>setChecks(prev=>prev.map((v,k)=>k===i?!v:v))} style={({pressed})=>[{minHeight:48,flexDirection:'row',alignItems:'center',gap:12,paddingVertical:8,borderBottomWidth:1,borderBottomColor:C.line},pressed&&{opacity:.7}]}>
+      <View style={{width:24,height:24,borderRadius:8,borderWidth:2,alignItems:'center',justifyContent:'center',borderColor:checks[i]?C.success:last?C.accent:C.lineStrong,backgroundColor:checks[i]?C.success:C.surface}}>{checks[i]&&<Text style={{color:C.surface,fontSize:14,fontWeight:'600',lineHeight:20}}>✓</Text>}</View>
       <Text style={[s.text,{flex:1},checks[i]&&{color:C.muted,textDecorationLine:'line-through'}]}>{tr(label)}</Text>{last&&<Text style={[s.meta,{color:C.accent,fontWeight:'600'}]}>{tr('Отметить')}</Text>}
     </Pressable></React.Fragment>;})}</View>
     {photos&&!!jobId&&<><JobPhotoPair jobId={jobId} role="cleaner" disabled={busy} onBefore={setBefore} onAfter={setAfter}/></>}

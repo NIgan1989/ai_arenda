@@ -55,7 +55,7 @@ export function SuggestList({kind,items,onChoose,onPressIn,onLayout,style}:{kind
  if(!items.length)return null;
  return <View accessibilityRole="list" style={[a.list,style]} onLayout={onLayout}>
   {items.map((item,i)=>{const l=line(kind,item);return <Pressable key={i+':'+l.title+':'+(item.id||'')} accessibilityRole="button" accessibilityLabel={[l.title,l.sub].filter(Boolean).join(', ')} onPressIn={onPressIn} onPress={()=>onChoose(item)} style={({pressed})=>[a.row,i>0&&a.rowLine,pressed&&a.rowOn]}>
-   <Text style={a.icon}>{kind==='street'?(item.kind==='house'?'⌂':'⟶'):'📍'}</Text>
+   <Text style={a.icon}>{kind==='street'?(item.kind==='house'?'⌂':'⟶'):'⌖'}</Text>
    <View style={a.grow}><Text numberOfLines={1} style={a.title}>{l.title}</Text>{!!l.sub&&<Text numberOfLines={1} style={a.sub}>{l.sub}</Text>}</View>
   </Pressable>;})}
  </View>;

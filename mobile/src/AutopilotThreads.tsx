@@ -6,6 +6,7 @@ import {
 } from '../../lib/process-threads';
 import { t as tr } from '../../lib/i18n';
 import { C, type } from './styles';
+import { AiMark } from './AiMark';
 import { T } from './tokens';
 
 type Row = Record<string, any>;
@@ -128,11 +129,11 @@ export function AutopilotThreads({ role, data, now, paymentMode, needs = [], cal
   return (
     <View style={a.box} accessibilityLabel={tr('Автопилот')}>
       <View style={a.head}>
-        <Text style={role === 'guest' ? a.guestLabel : a.badge}>{role === 'guest' ? tr('Мои брони') : '✦ ' + tr('Автопилот')}</Text>
+        <Text style={role === 'guest' ? a.guestLabel : a.badge}>{role === 'guest' ? tr('Мои брони') : tr('Автопилот')}</Text>
         <Text style={a.sum}>{threadsSummary(role, threads)}</Text>
         <Text style={a.clock}>{threadClock(now)}</Text>
       </View>
-      {last && <View style={a.last}><Text style={a.lastTime}>✦ {threadClock(last.at)}</Text><Text numberOfLines={1} style={a.lastText}>{last.text}{last.title ? ' · ' + last.title : ''}</Text></View>}
+      {last && <View style={a.last}><Text style={a.lastTime}>{threadClock(last.at)}</Text><Text numberOfLines={1} style={a.lastText}>{last.text}{last.title ? ' · ' + last.title : ''}</Text></View>}
       {needs.map(n => (
         <View key={n.key} style={a.need} accessibilityLabel={tr('Ждёт вас: {title}. {line}', { title: n.title, line: n.line })}>
           <View style={a.needDot}><Text style={a.needMark}>!</Text></View>
@@ -155,7 +156,7 @@ export function AutopilotThreads({ role, data, now, paymentMode, needs = [], cal
           <View key={t.kind + t.id} style={[a.item, isOpen && a.itemOpen]}>
             <Pressable accessibilityRole="button" accessibilityState={{ expanded: isOpen }} accessibilityLabel={tr(t.tag) + ' ' + t.title + '. ' + t.status + '. ' + t.line} onPress={() => setOpen(isOpen ? '' : t.id)} style={a.row}>
               {t.finished ? <View style={[a.mark, a.markDone]}><Text style={[a.markText, a.markTextDone]}>✓</Text></View>
-                : t.steps[t.current]?.by === 'ai' ? <View style={a.mark}><Text style={a.markText}>✦</Text></View>
+                : t.steps[t.current]?.by === 'ai' ? <View style={a.mark}><AiMark size={16} /></View>
                 : <View style={[a.mark, a.markWait]}><View style={a.markRing} /></View>}
               <View style={a.rowText}>
                 <Text numberOfLines={1} style={a.title}>{tr(t.tag)} · {t.title}</Text>
@@ -183,8 +184,8 @@ export function AutopilotThreads({ role, data, now, paymentMode, needs = [], cal
 const a = StyleSheet.create({
   box: { gap: 12, padding: 12, borderRadius: T.radius.lg, borderWidth: 1, borderColor: C.line, backgroundColor: C.surface },
   head: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  guestLabel: { ...type.caption, color: C.ink, fontWeight: '700' },
-  badge: { ...type.caption, fontWeight: '700', color: C.gold, backgroundColor: C.ink, paddingHorizontal: 8, paddingVertical: 2, borderRadius: T.radius.full, overflow: 'hidden' },
+  guestLabel: { ...type.caption, color: C.ink, fontWeight: '600' },
+  badge: { ...type.caption, color: C.ink, fontWeight: '600' },
   sum: { ...type.label, flex: 1, minWidth: 0, color: C.inkSoft, fontWeight: '500' },
   clock: { ...type.caption, color: C.muted, fontVariant: ['tabular-nums'] },
   last: { flexDirection: 'row', gap: 8, paddingHorizontal: 8, paddingVertical: 4, borderRadius: T.radius.sm, backgroundColor: C.surfaceAlt },
@@ -203,13 +204,13 @@ const a = StyleSheet.create({
   mark: { width: 28, height: 28, borderRadius: T.radius.sm, alignItems: 'center', justifyContent: 'center', backgroundColor: C.surfaceAlt },
   markDone: { backgroundColor: C.successSoft },
   markWait: { backgroundColor: C.surfaceAlt },
-  markText: { ...type.label, color: C.ink, fontWeight: '700' },
+  markText: { ...type.label, color: C.ink, fontWeight: '600' },
   markTextDone: { color: C.success },
   markRing: { width: 12, height: 12, borderRadius: T.radius.full, borderWidth: 2, borderColor: C.muted },
   chevron: { ...type.body, color: C.muted },
   need: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 12, borderRadius: T.radius.md, borderWidth: 1, borderColor: C.warningLine, backgroundColor: C.warningSoft },
   needDot: { width: 28, height: 28, borderRadius: T.radius.sm, alignItems: 'center', justifyContent: 'center', backgroundColor: C.surface },
-  needMark: { ...type.label, color: C.warning, fontWeight: '700' },
+  needMark: { ...type.label, color: C.warning, fontWeight: '600' },
   needButton: { minHeight: 36, paddingHorizontal: 16, borderRadius: T.radius.full, alignItems: 'center', justifyContent: 'center', backgroundColor: C.ink },
   needButtonText: { ...type.label, color: C.onAccent, fontWeight: '600' },
   pressed: { opacity: 0.6 },

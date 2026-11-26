@@ -25,10 +25,10 @@ export function RegularCleaner({propertyId,onBack,onClose}:{propertyId:string;on
  const chosen=r?null:candidates.find(c=>c.id===pick)||candidates[0]||null;
  const avatar=(name:string,big=false)=><View style={[f.avatar,big&&f.avatarBig]} accessibilityElementsHidden importantForAccessibility="no"><Text style={f.avatarText}>{(name||'?').slice(0,1).toUpperCase()}</Text></View>;
  const menu:EditMenuItem[]=r&&!confirm?[{title:t('Снять закрепление'),danger:true,onPress:()=>setConfirm(true)}]:[];
- const foot=r&&confirm?<><EditButton title={t('Снять')} busy={busy&&t('Снимаю…')} onPress={()=>run('/api/operations/regular/unpin',{})}/><EditButton line title={t('Отмена')} disabled={busy} onPress={()=>setConfirm(false)}/></>
-  :chosen?<EditButton title={t('Закрепить {name}',{name:chosen.name})} busy={busy&&t('Закрепляю…')} onPress={()=>run('/api/operations/regular/pin',{cleanerId:chosen.id})}/>:undefined;
+ const foot=r&&confirm?<><EditButton title={t('Снять')} busy={busy&&t('Снимаем…')} onPress={()=>run('/api/operations/regular/unpin',{})}/><EditButton line title={t('Отмена')} disabled={busy} onPress={()=>setConfirm(false)}/></>
+  :chosen?<EditButton title={t('Закрепить {name}',{name:chosen.name})} busy={busy&&t('Закрепляем…')} onPress={()=>run('/api/operations/regular/pin',{cleanerId:chosen.id})}/>:undefined;
  return <EditSheet title={t('Постоянный исполнитель')} onBack={confirm?()=>setConfirm(false):onBack} onClose={onClose} menu={menu} foot={foot} busy={busy}>
-  {!state&&!error&&<ThinkingLine style={e.note} text={t('Загружаю…')}/>}
+  {!state&&!error&&<ThinkingLine style={e.note} text={t('Загружаем…')}/>}
   {r&&<View accessible accessibilityLabel={[r.name,regularSince(r)].filter(Boolean).join('. ')} style={f.card}>{avatar(r.name,true)}<View style={e.rowText}><Text numberOfLines={1} style={e.rowTitle}>{r.name}</Text>{!!regularSince(r)&&<Text numberOfLines={1} style={e.rowLine}>{regularSince(r)}</Text>}</View></View>}
   {r&&confirm&&<View style={f.ask}><Text style={f.askTitle}>{t('Снять закрепление: {name}?',{name:r.name})}</Text><EditNote text={t('Уже назначенные уборки останутся за ним, новые ИИ будет предлагать лучшим свободным исполнителям.')}/></View>}
   {state&&!r&&(candidates.length?<>
@@ -50,7 +50,7 @@ const f=StyleSheet.create({
  // The pinned cleaner: the whole card, outlined, no «›» because the app has no profile screen to open.
  card:{flexDirection:'row',alignItems:'center',gap:12,minHeight:72,padding:12,borderRadius:R.lg,borderWidth:1,borderColor:C.line},
  avatar:{width:40,height:40,borderRadius:R.full,backgroundColor:C.surfaceAlt,borderWidth:1,borderColor:C.line,alignItems:'center',justifyContent:'center'},
- avatarBig:{width:48,height:48},avatarText:{...type.body,color:C.ink,fontWeight:'700'},
+ avatarBig:{width:48,height:48},avatarText:{...type.body,color:C.ink,fontWeight:'600'},
  ask:{gap:4},askTitle:{...type.body,color:C.ink,fontWeight:'600'},
  radio:{width:24,height:24,borderRadius:R.full,borderWidth:2,borderColor:C.lineStrong,alignItems:'center',justifyContent:'center'},
  radioOn:{borderColor:C.ink},radioDot:{width:12,height:12,borderRadius:R.full,backgroundColor:C.ink},

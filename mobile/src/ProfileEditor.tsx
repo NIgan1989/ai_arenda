@@ -38,11 +38,11 @@ export function ProfileEditor({profile:p,onSaved,onClose,onHead}:{profile:Row;on
    ?<AddressField kind={field.id==='city'?'city':'district'} multi={field.id==='districts'} label={t(field.label)} labelStyle={e.hidden} inputStyle={e.input} value={value} city={String(values.city||'')} place={String(values.cityId||'')} max={field.max} placeholder={field.placeholder?t(field.placeholder):''} disabled={busy} onChange={v=>setDraft(d=>({...d,[field.id]:v,...(field.id==='city'?{cityId:''}:{})}))} onPick={c=>field.id==='city'&&setDraft(d=>({...d,cityId:c.id||''}))}/>
    :<TextInput accessibilityLabel={t(field.label)} autoFocus value={value} onChangeText={v=>setDraft(d=>({...d,[field.id]:v}))} maxLength={field.max} multiline={!!field.multiline} placeholder={field.placeholder?t(field.placeholder):''} placeholderTextColor={C.muted} editable={!busy} style={[e.input,field.multiline&&e.area]}/>;
   return <View style={e.page}>{head(t(field.label),()=>setOpen(null),t('Назад: Изменить профиль'))}{input}<Text style={e.count}>{value.length} / {field.max}</Text>{failed}
-   <Pressable accessibilityRole="button" accessibilityState={{disabled:busy||!changed}} disabled={busy||!changed} onPress={()=>void save(draft).then(ok=>{if(ok)setOpen(null);})} style={({pressed})=>[e.save,(busy||!changed||pressed)&&e.dim]}><Text style={e.saveText}>{busy?t('Сохраняю…'):t('Сохранить')}</Text></Pressable></View>;
+   <Pressable accessibilityRole="button" accessibilityState={{disabled:busy||!changed}} disabled={busy||!changed} onPress={()=>void save(draft).then(ok=>{if(ok)setOpen(null);})} style={({pressed})=>[e.save,(busy||!changed||pressed)&&e.dim]}><Text style={e.saveText}>{busy?t('Сохраняем…'):t('Сохранить')}</Text></Pressable></View>;
  }
  return <View style={e.page}>
   {head(t('Изменить профиль'),onClose,t('Назад в меню'))}
-  <View style={e.photo}><Pressable accessibilityRole="button" accessibilityLabel={t('Фото профиля. Изменить')} disabled={busy} onPress={()=>setPhotoOpen(true)}><Photo id={values.avatarId} avatar size={104} name={values.name} alt={t('Фото профиля')}/></Pressable><Pressable accessibilityRole="button" disabled={busy} onPress={()=>setPhotoOpen(true)} hitSlop={8}><Text style={e.link}>{busy&&!open?t('Сохраняю…'):values.avatarId?t('Изменить'):t('Добавить фото')}</Text></Pressable></View>
+  <View style={e.photo}><Pressable accessibilityRole="button" accessibilityLabel={t('Фото профиля. Изменить')} disabled={busy} onPress={()=>setPhotoOpen(true)}><Photo id={values.avatarId} avatar size={104} name={values.name} alt={t('Фото профиля')}/></Pressable><Pressable accessibilityRole="button" disabled={busy} onPress={()=>setPhotoOpen(true)} hitSlop={8}><Text style={e.link}>{busy&&!open?t('Сохраняем…'):values.avatarId?t('Изменить'):t('Добавить фото')}</Text></Pressable></View>
   {failed}
   <View style={e.rows}>{FIELDS.filter(f=>!f.cleaner||cleaner).map(f=><Pressable key={f.id} accessibilityRole="button" accessibilityLabel={t(f.label)+'. '+(values[f.id]||t('Не указано'))} disabled={busy} onPress={()=>edit(f.id)} style={({pressed})=>[e.row,pressed&&{backgroundColor:C.surfaceAlt}]}>
    <View style={{flex:1,minWidth:0}}><Text style={e.rowTitle}>{t(f.label)}</Text><Text numberOfLines={2} style={[e.rowValue,!values[f.id]&&{color:C.muted}]}>{values[f.id]||t('Не указано')}</Text></View><Text style={e.chevron}>›</Text>
@@ -54,7 +54,7 @@ export function ProfileEditor({profile:p,onSaved,onClose,onHead}:{profile:Row;on
 const e=StyleSheet.create({
  page:{gap:12},
  head:{flexDirection:'row',alignItems:'center',gap:4,minHeight:44},back:{width:44,height:44,marginLeft:-12,alignItems:'center',justifyContent:'center'},backText:{fontSize:28,lineHeight:32,color:C.ink},
- title:{...type.title,color:C.ink,fontWeight:'700',letterSpacing:-.3,flex:1},
+ title:{...type.title,color:C.ink,fontWeight:'600',letterSpacing:-.3,flex:1},
  photo:{alignItems:'center',gap:8,paddingVertical:8},link:{...type.label,color:C.ink,fontWeight:'600',textDecorationLine:'underline'},
  rows:{marginHorizontal:-16,borderTopWidth:1,borderTopColor:C.line},
  row:{minHeight:T.control.primary,flexDirection:'row',alignItems:'center',gap:12,paddingHorizontal:16,paddingVertical:12,borderBottomWidth:1,borderBottomColor:C.line},
@@ -62,6 +62,6 @@ const e=StyleSheet.create({
  hidden:{display:'none'},
  input:{minHeight:T.control.primary,borderWidth:1,borderColor:C.lineStrong,borderRadius:T.radius.md,backgroundColor:C.surface,paddingHorizontal:16,paddingVertical:12,fontSize:16,lineHeight:24,color:C.ink},area:{minHeight:140,textAlignVertical:'top'},
  count:{...type.caption,color:C.muted,textAlign:'right'},
- save:{minHeight:T.control.primary,borderRadius:T.radius.full,backgroundColor:C.ink,alignItems:'center',justifyContent:'center',marginTop:8},saveText:{...type.body,color:C.onAccent,fontWeight:'700'},dim:{opacity:.45},
+ save:{minHeight:T.control.primary,borderRadius:T.radius.full,backgroundColor:C.ink,alignItems:'center',justifyContent:'center',marginTop:8},saveText:{...type.body,color:C.onAccent,fontWeight:'600'},dim:{opacity:.45},
 });
 export function CleanerCard({worker:p}:{worker:Row}){return <View style={s.card}><View style={m.heading}><Photo id={p.avatar_id} avatar alt={t('Фото: {name}',{name:p.name})}/><View style={{flex:1}}><Text style={s.cardTitle}>{p.name}</Text><Text style={s.meta}>{p.city} · {p.districts}</Text></View></View><Badge status={p.display_status}/>{p.display_status?.upcoming&&<Text style={s.meta}>{t('Есть предстоящие назначения. Время проверяется при назначении.')}</Text>}<Text style={s.text}>{p.experience}</Text><Text style={s.meta}>{t('График: {v}',{v:p.availability})}</Text><Text style={s.meta}>{t('Анкета заполнена исполнителем. Квалификация платформой пока не подтверждена.')}</Text></View>;}

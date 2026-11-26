@@ -55,7 +55,7 @@ export function User({user:u,back}:{user:Row}&Nav){
    {u.created_at!==undefined&&<Line icon="clock" title={t('С нами с')} value={day(u.created_at)}/>}
    {u.property_count!==undefined&&<Line icon="building" title={t('Жильё')} value={String(u.property_count)}/>}
    {u.booking_count!==undefined&&<Line icon="star" title={t('Брони как гость')} value={String(u.booking_count)}/>}
-   {u.assignment_count!==undefined&&<Line icon="sparkles" title={t('Уборки')} value={String(u.assignment_count)}/>}
+   {u.assignment_count!==undefined&&<Line icon="brush" title={t('Уборки')} value={String(u.assignment_count)}/>}
   </Group>
   <Group space><Docs path={'identity/docs?userId='+encodeURIComponent(u.id)} photo="identity/photo?id=" title={t('Удостоверение')}/></Group>
   <Note text={t('Просмотр контакта и документов записывается в журнал.')}/>

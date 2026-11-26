@@ -238,7 +238,7 @@ const f = StyleSheet.create({
   linkText: { ...type.label, color: C.ink, fontWeight: '600', textDecorationLine: 'underline' },
   sectionNext: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: C.line },
   head: { minHeight: 56, flexDirection: 'row', alignItems: 'center', gap: 8 },
-  title: { ...type.subtitle, color: C.ink, fontWeight: '700' },
+  title: { ...type.subtitle, color: C.ink, fontWeight: '600' },
   value: { flex: 1, minWidth: 0, textAlign: 'right', ...type.label, color: C.muted },
   chevron: { width: 14, height: 14, tintColor: C.muted, transform: [{ rotate: '90deg' }] },
   chevronOpen: { transform: [{ rotate: '-90deg' }] },

@@ -50,7 +50,7 @@ const a=StyleSheet.create({
  lateBox:{borderColor:C.dangerSoft},
  label:{fontSize:14,lineHeight:20,fontWeight:'600',color:C.inkSoft},
  top:{flexDirection:'row',justifyContent:'space-between',alignItems:'flex-end',gap:T.space[4],flexWrap:'wrap'},
- digits:{fontSize:36,lineHeight:44,fontWeight:'800',letterSpacing:-.8,fontVariant:['tabular-nums'],color:C.ink},
+ digits:{fontSize:36,lineHeight:44,fontWeight:'600',letterSpacing:-.8,fontVariant:['tabular-nums'],color:C.ink},
  red:{color:C.danger},
  note:{fontSize:14,lineHeight:20,color:C.muted,paddingBottom:T.space[2]},
  wait:{fontSize:14,lineHeight:20,color:C.inkSoft},
@@ -69,5 +69,5 @@ const a=StyleSheet.create({
  end:{fontSize:12,lineHeight:16,color:C.muted},
  endB:{fontWeight:'600',color:C.ink},
  compact:{alignSelf:'stretch',padding:T.space[4],gap:T.space[2],borderRadius:T.radius.md},
- small:{fontSize:14,lineHeight:20,fontWeight:'700',fontVariant:['tabular-nums'],color:C.ink}
+ small:{fontSize:14,lineHeight:20,fontWeight:'600',fontVariant:['tabular-nums'],color:C.ink}
 });

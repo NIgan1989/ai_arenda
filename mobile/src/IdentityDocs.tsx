@@ -38,9 +38,9 @@ export function IdentityDocs({role}:{role:'guest'|'owner'|'cleaner'}){
    {d.uri?<Image source={{uri:d.uri}} style={u.thumb} alt={t('Удостоверение личности')}/>:<View style={[u.thumb,{backgroundColor:C.surfaceAlt}]}/>}
    <Pressable accessibilityRole="button" accessibilityLabel={t('Убрать фото удостоверения')} disabled={busy} onPress={()=>void remove(d.id)}><Text style={u.remove}>{t('Убрать')}</Text></Pressable>
   </View>)}</View>}
-  {!checked&&docs.length<2&&<><Btn title={busy?t('Прикладываю…'):docs.length?t('Добавить обратную сторону'):t('Сфотографировать удостоверение')} disabled={busy} onPress={()=>void add(true)}/><Btn kind="line" title={t('Выбрать из галереи')} disabled={busy} onPress={()=>void add(false)}/></>}
+  {!checked&&docs.length<2&&<><Btn title={busy?t('Прикладываем…'):docs.length?t('Добавить обратную сторону'):t('Сфотографировать удостоверение')} disabled={busy} onPress={()=>void add(true)}/><Btn kind="line" title={t('Выбрать из галереи')} disabled={busy} onPress={()=>void add(false)}/></>}
   {!!said&&<Text accessibilityLiveRegion="polite" style={said.error?h.error:h.note}>{said.text}</Text>}
-  <Text style={u.privacy}>{t('🔒 Фото видит только администратор сервиса')}</Text>
+  <Text style={u.privacy}>{t('Фото видит только администратор сервиса')}</Text>
  </View>;
 }
 

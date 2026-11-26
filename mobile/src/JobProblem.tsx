@@ -34,7 +34,7 @@ const p=StyleSheet.create({
  shade:{flex:1,backgroundColor:'rgba(15,23,42,0.32)'},
  sheet:{paddingHorizontal:20,paddingTop:8,paddingBottom:32,gap:4,borderTopLeftRadius:T.radius.xl,borderTopRightRadius:T.radius.xl,backgroundColor:C.surface},
  grab:{alignSelf:'center',width:40,height:4,borderRadius:T.radius.full,backgroundColor:C.lineStrong,marginBottom:12},
- title:{...type.subtitle,color:C.ink,fontWeight:'700'},
+ title:{...type.subtitle,color:C.ink,fontWeight:'600'},
  lead:{...type.label,color:C.muted,marginBottom:8},
  row:{flexDirection:'row',alignItems:'center',gap:12,minHeight:56,borderBottomWidth:1,borderBottomColor:C.line},
  last:{borderBottomWidth:0},

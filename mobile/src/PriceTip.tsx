@@ -5,6 +5,7 @@ import type {Approval} from '../../lib/approvals';
 import {request} from './api';
 import {uid} from './model';
 import {C} from './styles';
+import {AiMark} from './AiMark';
 import {T} from './tokens';
 import {ReliabilityBadge} from './Reliability';
 
@@ -184,7 +185,7 @@ export function PriceTip({cards,onChanged,onEdit,role='owner',inline=false,pick,
  }
  return <Animated.View style={[box,style]} accessibilityLabel={card.risk?tr('Новая заявка на бронирование'):card.cleaningTip?tr('Совет ИИ-администратора по цене уборки'):card.listing?tr('Совет ИИ-администратора по объявлению'):card.forecast?tr('Прогноз загрузки на неделю от ИИ-администратора'):card.stay?tr('Предложение ИИ-администратора по времени проживания'):card.window?tr('Окно в календаре от ИИ-администратора'):tr('Совет ИИ-администратора по цене')}>
   <View style={t.head}>
-   <View style={t.icon}><Text style={t.iconText}>{card.risk?'◷':card.forecast?'▥':card.listing?'★':card.cleaningTip?'✧':'✦'}</Text></View>
+   <AiMark size={24}/>
    <View style={t.titleBox}><Text style={t.small}>{tr('ИИ-администратор · {v}',{v:(card.risk?tr('новая заявка'):card.cleaningTip?tr('цена уборки'):card.listing?card.listing.title.toLocaleLowerCase('ru'):card.forecast?tr('прогноз на неделю'):card.stay?(card.stay.kind==='late'?tr('поздний выезд'):tr('ранний заезд')):card.window?tr('окно в календаре'):card.price?.direction==='up'?tr('спрос вырос'):tr('спрос снизился'))})}</Text><Text numberOfLines={1} style={t.title}>{card.subject}</Text></View>
    <Pressable accessibilityRole="button" accessibilityLabel={tr('Позже')} onPress={()=>setLater(v=>[...v,card.id])} style={t.close}><Text style={t.closeText}>×</Text></Pressable>
   </View>
@@ -199,16 +200,16 @@ const t=StyleSheet.create({
  resultBox:{flexDirection:'row',alignItems:'center',gap:12},
  head:{flexDirection:'row',alignItems:'flex-start',gap:12},
  icon:{width:36,height:36,borderRadius:R.full,backgroundColor:C.ink,alignItems:'center',justifyContent:'center'},
- iconText:{color:C.onAccent,fontSize:F.subtitle[0],lineHeight:F.subtitle[1],fontWeight:'700'},
+ iconText:{color:C.onAccent,fontSize:F.subtitle[0],lineHeight:F.subtitle[1],fontWeight:'600'},
  titleBox:{flex:1,minWidth:0,gap:2},
  small:{fontSize:F.caption[0],lineHeight:F.caption[1],color:C.muted},
- title:{fontSize:F.body[0],lineHeight:F.body[1],fontWeight:'700',color:C.ink},
+ title:{fontSize:F.body[0],lineHeight:F.body[1],fontWeight:'600',color:C.ink},
  close:{width:H.touch,height:H.touch,marginTop:-8,marginRight:-8,alignItems:'center',justifyContent:'center'},
  closeText:{fontSize:F.title[0],lineHeight:F.title[1],color:C.muted},
  priceRow:{flexDirection:'row',alignItems:'center',flexWrap:'wrap',gap:8,marginTop:8},
  from:{fontSize:F.body[0],lineHeight:F.body[1],color:C.muted,textDecorationLine:'line-through'},
  arrow:{fontSize:F.body[0],lineHeight:F.body[1],color:C.muted},
- to:{fontSize:F.heading[0],lineHeight:F.heading[1],fontWeight:'700',color:C.ink},
+ to:{fontSize:F.heading[0],lineHeight:F.heading[1],fontWeight:'600',color:C.ink},
  delta:{paddingHorizontal:8,paddingVertical:2,borderRadius:R.full},deltaUp:{backgroundColor:C.successSoft},deltaDown:{backgroundColor:C.warningSoft},
  deltaText:{fontSize:F.label[0],lineHeight:F.label[1],fontWeight:'600'},
  deltaWindow:{backgroundColor:C.surfaceAlt},
@@ -234,12 +235,12 @@ const t=StyleSheet.create({
  bar:{width:'100%',maxWidth:32,height:56,borderRadius:R.sm,backgroundColor:C.surfaceAlt,overflow:'hidden',justifyContent:'flex-end'},
  fill:{width:'100%',borderRadius:R.sm,backgroundColor:C.lineStrong},fillBusy:{backgroundColor:C.ink},fillQuiet:{backgroundColor:C.lineStrong},
  dayLabel:{fontSize:F.caption[0],lineHeight:F.caption[1],fontWeight:'600',color:C.ink},
- dayLoad:{fontSize:F.caption[0],lineHeight:F.caption[1],color:C.muted},dayLoadBusy:{color:C.ink,fontWeight:'700'},
+ dayLoad:{fontSize:F.caption[0],lineHeight:F.caption[1],color:C.muted},dayLoadBusy:{color:C.ink,fontWeight:'600'},
  summary:{marginTop:8,fontSize:F.label[0],lineHeight:F.label[1],fontWeight:'500',color:C.ink},
  compare:{flexDirection:'row',alignItems:'center',gap:8,marginTop:12},
  cmpMine:{flex:1,minWidth:0,gap:2,paddingVertical:8,paddingHorizontal:12,borderRadius:R.md,backgroundColor:C.surfaceAlt},
  cmpThem:{flex:1,minWidth:0,gap:2,paddingVertical:8,paddingHorizontal:12,borderRadius:R.md,backgroundColor:C.surface,borderWidth:1,borderColor:C.ink},
- cmpValue:{fontSize:F.title[0],lineHeight:F.title[1],fontWeight:'700',color:C.ink},
+ cmpValue:{fontSize:F.title[0],lineHeight:F.title[1],fontWeight:'600',color:C.ink},
  cmpLabel:{fontSize:F.caption[0],lineHeight:F.caption[1],color:C.muted},
  cmpIcon:{width:32,height:32,borderRadius:R.full,borderWidth:1,borderColor:C.line,backgroundColor:C.surface,alignItems:'center',justifyContent:'center'},
  cmpIconText:{fontSize:F.label[0],lineHeight:F.label[1],color:C.ink},
@@ -247,6 +248,6 @@ const t=StyleSheet.create({
  risk:{marginTop:12,paddingVertical:8,paddingHorizontal:12,borderRadius:R.md,borderWidth:1},
  riskHead:{flexDirection:'row',alignItems:'center',flexWrap:'wrap',gap:8},
  riskDot:{width:8,height:8,borderRadius:R.full},
- riskTitle:{fontSize:F.body[0],lineHeight:F.body[1],fontWeight:'700',color:C.ink},
+ riskTitle:{fontSize:F.body[0],lineHeight:F.body[1],fontWeight:'600',color:C.ink},
  riskLine:{marginTop:4,fontSize:F.label[0],lineHeight:F.label[1],color:C.inkSoft},
 });

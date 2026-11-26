@@ -23,7 +23,7 @@ const c=StyleSheet.create({
  box:{gap:8},
  list:{borderRadius:R.md,borderWidth:1,borderColor:C.line,backgroundColor:C.surface,overflow:'hidden'},
  option:{flexDirection:'row',alignItems:'center',gap:12,minHeight:56,paddingHorizontal:16,paddingVertical:8},line:{borderTopWidth:1,borderTopColor:C.line},on:{backgroundColor:C.bg},
- title:{...type.body,color:C.inkSoft},titleOn:{color:C.ink,fontWeight:'700'},ai:{...type.caption,color:C.muted,fontWeight:'600'},note:{...type.caption,color:C.muted},
+ title:{...type.body,color:C.inkSoft},titleOn:{color:C.ink,fontWeight:'600'},ai:{...type.caption,color:C.muted,fontWeight:'600'},note:{...type.caption,color:C.muted},
  radio:{width:22,height:22,borderRadius:R.full,borderWidth:1.5,borderColor:C.lineStrong,alignItems:'center',justifyContent:'center'},radioOn:{borderColor:C.ink},dot:{width:12,height:12,borderRadius:R.full,backgroundColor:C.ink},
  hint:{...type.caption,color:C.muted},
 });

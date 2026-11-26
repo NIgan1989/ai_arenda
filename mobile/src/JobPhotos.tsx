@@ -38,7 +38,7 @@ export function JobPhotos({jobId,phase,role,title,mine,readOnly=false,disabled=f
  return <View style={p.block}>
   {!!title&&<Text style={s.eventTitle}>{title}</Text>}
   {grid}
-  <Text style={s.meta}>{busy?t('Сохраняю фото…'):photos.length?t('Добавлено {length} из {limit}.',{length:photos.length,limit}):t('Пока нет фото.')}</Text>
+  <Text style={s.meta}>{busy?t('Сохраняем фото…'):photos.length?t('Добавлено {length} из {limit}.',{length:photos.length,limit}):t('Пока нет фото.')}</Text>
   {!full&&<View style={p.row}>{button(t('Снять фото'),()=>add(true),off)}{button(t('Из галереи'),()=>add(false),off,true)}</View>}
   {!!error&&<Text accessibilityRole="alert" style={[s.meta,{color:C.danger}]}>{error}</Text>}
  </View>;
@@ -74,7 +74,7 @@ function PhotoPlace({jobId,role,phase,title,readOnly,disabled,limit,onCount}:{jo
  const mosaic=<View style={q.mosaic}>{cover.map((x,i)=><Pressable key={x.id} accessibilityRole="imagebutton" accessibilityLabel={t('Открыть фото: {title}',{title})} disabled={!readOnly||!x.uri} onPress={()=>setOpen(i)} style={cover.length===1?q.one:cover.length===2?q.half:q.quarter}>{x.uri?<Image source={{uri:x.uri}} style={q.img} alt={title}/>:<View style={[q.img,{backgroundColor:C.line}]}/>}{i===3&&photos.length>4&&<View style={q.more}><Text style={q.moreText}>+{photos.length-4}</Text></View>}</Pressable>)}</View>;
  const body=<>
   {photos.length?mosaic:<View style={q.empty}><View style={q.plus}><Image source={require('../assets/menu/camera.png')} style={q.plusIcon} accessibilityElementsHidden importantForAccessibility="no"/></View></View>}
-  <View style={[q.caption,!!photos.length&&q.captionOver]}><Text numberOfLines={1} style={[q.captionText,!!photos.length&&{color:C.onAccent}]}>{busy?t('Сохраняю…'):title}</Text>{!!photos.length&&!busy&&<Text style={q.count}>{photos.length}</Text>}</View>
+  <View style={[q.caption,!!photos.length&&q.captionOver]}><Text numberOfLines={1} style={[q.captionText,!!photos.length&&{color:C.onAccent}]}>{busy?t('Сохраняем…'):title}</Text>{!!photos.length&&!busy&&<Text style={q.count}>{photos.length}</Text>}</View>
  </>;
  return <View style={q.place}>
   {readOnly?<View style={q.box}>{body}</View>:<Pressable accessibilityRole="button" accessibilityLabel={photos.length?t('{title}: {n} фото. Добавить ещё',{title,n:photos.length}):t('{title}: добавить фото',{title})} accessibilityState={{disabled:off}} disabled={off} onPress={()=>setAsking(true)} style={({pressed})=>[q.box,!photos.length&&q.boxEmpty,pressed&&{opacity:.8}]}>{body}</Pressable>}
@@ -89,9 +89,9 @@ const q=StyleSheet.create({
  box:{aspectRatio:4/3,borderRadius:T.radius.lg,overflow:'hidden',backgroundColor:C.surfaceAlt},boxEmpty:{borderWidth:1,borderColor:C.lineStrong,borderStyle:'dashed',backgroundColor:C.surface},
  empty:{flex:1,alignItems:'center',justifyContent:'center'},plus:{width:48,height:48,borderRadius:24,backgroundColor:C.surfaceAlt,alignItems:'center',justifyContent:'center'},plusIcon:{width:22,height:22,tintColor:C.ink},
  mosaic:{flex:1,flexDirection:'row',flexWrap:'wrap',gap:2},one:{width:'100%',height:'100%'},half:{flex:1,height:'100%'},quarter:{width:'48.5%',height:'48.5%'},img:{width:'100%',height:'100%'},
- more:{position:'absolute',left:0,right:0,top:0,bottom:0,alignItems:'center',justifyContent:'center',backgroundColor:'rgba(14,19,36,0.55)'},moreText:{...type.subtitle,color:C.onAccent,fontWeight:'700'},
+ more:{position:'absolute',left:0,right:0,top:0,bottom:0,alignItems:'center',justifyContent:'center',backgroundColor:'rgba(14,19,36,0.55)'},moreText:{...type.subtitle,color:C.onAccent,fontWeight:'600'},
  caption:{position:'absolute',left:0,right:0,bottom:0,flexDirection:'row',alignItems:'center',gap:8,paddingHorizontal:12,paddingVertical:8},captionOver:{backgroundColor:'rgba(14,19,36,0.55)'},
- captionText:{flex:1,...type.label,color:C.ink,fontWeight:'600'},count:{minWidth:24,height:24,borderRadius:12,paddingHorizontal:8,overflow:'hidden',backgroundColor:C.surface,color:C.ink,textAlign:'center',...type.caption,lineHeight:24,fontWeight:'700'},
+ captionText:{flex:1,...type.label,color:C.ink,fontWeight:'600'},count:{minWidth:24,height:24,borderRadius:12,paddingHorizontal:8,overflow:'hidden',backgroundColor:C.surface,color:C.ink,textAlign:'center',...type.caption,lineHeight:24,fontWeight:'600'},
 });
 
 // The customer rates the performer after the acceptance: five stars and an optional note.

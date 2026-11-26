@@ -63,7 +63,7 @@ const g=StyleSheet.create({
  cameraIcon:{width:24,height:24,tintColor:C.ink},cameraText:{...type.caption,color:C.ink,fontWeight:'600'},
  badge:{position:'absolute',left:4,bottom:4,paddingHorizontal:8,paddingVertical:2,borderRadius:R.full,backgroundColor:'rgba(14,19,36,0.72)'},badgeText:{color:C.surface,...type.caption,fontWeight:'600'},
  round:{position:'absolute',top:4,width:28,height:28,borderRadius:R.full,backgroundColor:'rgba(14,19,36,0.55)',alignItems:'center',justifyContent:'center'},left:{left:4},right:{right:4},
- roundText:{color:C.surface,...type.label,fontWeight:'700'},roundIcon:{width:16,height:16,tintColor:C.surface},
+ roundText:{color:C.surface,...type.label,fontWeight:'600'},roundIcon:{width:16,height:16,tintColor:C.surface},
  count:{color:C.muted,...type.caption},
  dim:{opacity:.5},
 });

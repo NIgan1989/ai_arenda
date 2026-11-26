@@ -41,7 +41,7 @@ export function Docs({path,photo,title}:{path:string;photo:string;title:string})
  async function load(){setOpen(o=>!o);if(v)return;try{const r=await request('/api/admin/'+path);const docs=await Promise.all((r.docs||[]).filter((d:Row)=>!d.checked_at).map(async(d:Row)=>({...d,uri:(await request('/api/admin/'+photo+encodeURIComponent(d.id)).catch(()=>null))?.data||''})));setV({...r,docs});}catch(e){setError(e instanceof Error?e.message:t('Не получилось.'));}}
  const n=v?.docs?.length;
  return <><Line icon="file" title={title} value={v?(v.checked?t('проверено'):n?t('фото: {n}',{n}):t('не приложено')):undefined} onPress={()=>void load()}/>
-  {open&&<View style={w.docs}>{error?<Text style={a.note}>{error}</Text>:!v?<Text style={a.note}>{t('Загружаю…')}</Text>:<>
+  {open&&<View style={w.docs}>{error?<Text style={a.note}>{error}</Text>:!v?<Text style={a.note}>{t('Загружаем…')}</Text>:<>
    {!!v.names&&<Text style={a.note}>{t('Профиль: {a} · Получатель Kaspi: {b}',{a:v.names.profile||'—',b:v.names.recipient||t('не указан')})}</Text>}
    <View style={w.photos}>{(v.docs as Row[]).map(d=>d.uri?<Image key={d.id} source={{uri:d.uri}} style={w.photo} accessibilityLabel={title}/>:null)}</View>
    {!n&&<Text style={a.note}>{v.checked?t('Уже проверено, фото удалено.'):t('Не приложено. Гости увидят «не проверено».')}</Text>}
@@ -154,7 +154,7 @@ export function Report({report:r,back}:{report:Row}&Nav){
  async function keep(){if(await d.save('reports/action',{action:'review',id:r.id,status:'resolved',resolution:'Нарушения нет, сообщение оставлено.'},false))back();}
  return <View>
   <Title title={r.target_kind==='ai'?t('Ответ ИИ-администратора'):t('Сообщение в чате')} note={t('{who} пожаловался · {v}',{who:t(roleName[r.role]||'Участник'),v:when(r.created_at)})}/>
-  <Quote text={material?.body||t('Загружаю сообщение…')}/>
+  <Quote text={material?.body||t('Загружаем сообщение…')}/>
   <Group>
    <Line title={t('Причина жалобы')} note={r.reason}/>
    <Line title={t('ИИ')} note={r.ai_note?upper(r.ai_note):t('ИИ ещё не проверял')}/>

@@ -28,9 +28,10 @@ const weekName=(w:{from:number;to:number;label:string})=>{if(lang()==='ru')retur
 export function AutopilotWeek(){
  const [data,setData]=useState<Week|null>(null),[error,setError]=useState(''),[open,setOpen]=useState('');
  useEffect(()=>{let live=true;request('/api/owner/autopilot-week',undefined,undefined,undefined,'owner').then(r=>{if(live)setData(r);}).catch(e=>{if(live)setError(e.message||tr('Не удалось загрузить отчёт.'));});return()=>{live=false;};},[]);
- if(!data)return error?<Text accessibilityRole="alert" style={w.error}>{error}</Text>:<ThinkingLine style={w.note} text={tr('Считаю неделю…')}/>;
+ if(!data)return error?<Text accessibilityRole="alert" style={w.error}>{error}</Text>:<ThinkingLine style={w.note} text={tr('Считаем неделю…')}/>;
  const share=data.arrivals?data.onTime/data.arrivals:0,toggle=(id:string)=>setOpen(v=>v===id?'':id);
- const stat=(value:string,label:string,tone?:string)=><View style={w.stat}><Text style={[w.statValue,!!tone&&{color:tone}]} adjustsFontSizeToFit numberOfLines={1}>{value}</Text><Text style={w.statLabel}>{label}</Text></View>;
+ // One line each, the number first: the week's main figure is the steps above, these only add to it.
+ const stat=(value:string,label:string,tone?:string)=><View style={w.stat}><Text style={[w.statValue,!!tone&&{color:tone}]}>{value}</Text><Text style={w.statLabel}>{label}</Text></View>;
  return <View>
   <View accessible accessibilityLabel={tr('Неделя автопилота, {label}. {summary}',{label:weekName(data),summary:data.summary})} style={w.hero}>
    <View><Text style={w.heroLabel}>{tr('Неделя · {label}',{label:weekName(data)})}</Text>
@@ -58,16 +59,16 @@ export function AutopilotWeek(){
 const w=StyleSheet.create({
  hero:{gap:12},
  heroLabel:{...type.label,color:C.muted},
- heroValue:{fontSize:36,lineHeight:40,fontWeight:'800',letterSpacing:-.6,color:C.ink,fontVariant:['tabular-nums']},
+ heroValue:{fontSize:36,lineHeight:40,fontWeight:'600',letterSpacing:-.6,color:C.ink,fontVariant:['tabular-nums']},
  heroSub:{...type.label,color:C.inkSoft},
  heroMeta:{...type.caption,color:C.muted},
- stats:{flexDirection:'row',gap:8,paddingTop:12,borderTopWidth:1,borderTopColor:C.line},
- stat:{flex:1,gap:2},statValue:{...type.subtitle,fontWeight:'800',color:C.ink,fontVariant:['tabular-nums']},statLabel:{...type.caption,color:C.muted},
+ stats:{gap:4,paddingTop:12,borderTopWidth:1,borderTopColor:C.line},
+ stat:{flexDirection:'row',alignItems:'baseline',gap:8},statValue:{...type.label,fontWeight:'600',color:C.ink,fontVariant:['tabular-nums'],minWidth:40},statLabel:{...type.label,color:C.inkSoft,flex:1},
  track:{height:6,borderRadius:T.radius.full,backgroundColor:C.surfaceAlt,overflow:'hidden'},fill:{height:6,borderRadius:T.radius.full,backgroundColor:C.ink},
  card:{borderTopWidth:1,borderTopColor:C.line,marginHorizontal:-16},
  cardHead:{minHeight:T.control.field+4,flexDirection:'row',alignItems:'center',gap:8,paddingHorizontal:16},
  cardTitle:{...type.label,color:C.ink,fontWeight:'600',flex:1},cardValue:{...type.label,color:C.muted},chev:{...type.subtitle,color:C.lineStrong,width:14,textAlign:'center'},
  cardBody:{paddingHorizontal:16,paddingBottom:16,gap:12},
  placeTitle:{...type.label,color:C.ink,fontWeight:'600'},
- note:{...type.caption,color:C.muted},error:{...type.label,color:C.danger},foot:{...type.caption,color:C.muted,marginTop:12,marginHorizontal:4},
+ note:{...type.caption,color:C.muted},error:{...type.label,color:C.danger},foot:{...type.caption,color:C.muted,marginTop:12},
 });

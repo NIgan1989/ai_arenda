@@ -35,12 +35,12 @@ export function BypassWatch({tint}:{tint?:string}){
   <Row icon="shield" tint={tint} title={t('Обход сервиса')} note={t('Кто похож на сделки мимо сервиса')} value={items?.length?String(items.length):undefined} open={open} onPress={toggle}/>
   {open&&<View style={a.body}>
    <Text style={s.meta}>{t('Признаки за 30 дней. После предупреждения счёт идёт заново. Шаги по оферте: предупреждение, второе предупреждение, блокировка.')}</Text>
-   {busy==='list'&&!items&&<Text style={s.meta}>{t('Загружаю…')}</Text>}
+   {busy==='list'&&!items&&<Text style={s.meta}>{t('Загружаем…')}</Text>}
    {items&&!items.length&&<Text style={s.meta}>{t('Сейчас никого нет.')}</Text>}
    {items?.map(p=><View style={s.card} key={p.userId+p.role}>
     <Text style={s.eventTitle}>{p.name} · {p.role==='owner'?t('владелец'):t('исполнитель')}</Text>
     <Text style={s.meta}>{signs(p)}{'\n'}{p.warnings?t('Предупреждений: {n}',{n:p.warnings}):t('Предупреждений не было')}</Text>
-    <Pressable accessibilityRole="button" disabled={!!busy} onPress={()=>void act(p)} style={[s.button,p.warnings<2&&s.secondary,p.warnings>=2&&{backgroundColor:C.danger},!!busy&&s.disabled]}><Text style={[s.buttonText,p.warnings<2&&s.secondaryText]}>{busy===p.userId?t('Отправляю…'):step(p)}</Text></Pressable>
+    <Pressable accessibilityRole="button" disabled={!!busy} onPress={()=>void act(p)} style={[s.button,p.warnings<2&&s.secondary,p.warnings>=2&&{backgroundColor:C.danger},!!busy&&s.disabled]}><Text style={[s.buttonText,p.warnings<2&&s.secondaryText]}>{busy===p.userId?t('Отправляем…'):step(p)}</Text></Pressable>
    </View>)}
    {!!info&&<Text style={s.meta}>{info}</Text>}
    {!!error&&<Text accessibilityRole="alert" style={s.error}>{error}</Text>}

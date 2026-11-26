@@ -3,6 +3,7 @@ import React,{useEffect,useState} from 'react';
 import {View,Text,Pressable,StyleSheet} from 'react-native';
 import {T} from './tokens';
 import {C} from './styles';
+import { AiMark } from './AiMark';
 import type {Row} from './model';
 import {extendChoices,extendLabel,isUnclaimed,overdueNote} from '../../lib/overdue-text';
 
@@ -17,9 +18,9 @@ export function OverdueHelp({job,role,busy,onAction}:{job:Row;role:'owner'|'clea
  const act=(body:Row)=>{setAsk(null);onAction({...body,expectedVersion:job.version});};
  const btn=(label:string,onPress:()=>void,kind:'main'|'side'|'danger'='side')=><Pressable key={label} accessibilityRole="button" accessibilityLabel={label} disabled={busy} onPress={onPress} style={({pressed})=>[o.btn,kind==='main'&&o.main,kind==='danger'&&o.ghost,(pressed||busy)&&o.dim]}><Text style={[o.btnText,kind==='main'&&o.mainText,kind==='danger'&&o.dangerText]}>{label}</Text></Pressable>;
  return <View style={o.box} accessibilityLabel={note.title}>
-  <Text accessibilityRole="header" style={o.title}>⏱  {note.title}</Text>
+  <Text accessibilityRole="header" style={o.title}>{note.title}</Text>
   <Text style={o.text}>{note.text}</Text>
-  <Text style={o.ai}>✦  {note.ai}</Text>
+  <View style={o.aiRow}><AiMark size={16}/><Text style={o.ai}>{note.ai}</Text></View>
   {ask?<View style={o.confirm}><Text style={[o.text,{color:C.ink}]}>{ask.text}</Text>{btn(ask.label,()=>act(ask.body),'main')}{btn(tr('Назад'),()=>setAsk(null))}</View>:unclaimed?<>
    {btn(tr('Искать на новое время'),()=>act({action:'repost'}),'main')}
    {btn(tr('Убрали сами, закрыть'),()=>setAsk({label:tr('Да, убрали сами'),text:tr('Закрыть уборку без исполнителя? Жильё будет отмечено готовым, платить никому не нужно.'),body:{action:'close',confirmed:true}}))}
@@ -37,8 +38,8 @@ const o=StyleSheet.create({
  box:{gap:T.space[4],marginTop:T.space[4],padding:T.space[5],borderWidth:1,borderColor:C.warningLine,borderRadius:T.radius.xl,backgroundColor:C.warningSoft},
  title:{fontSize:16,lineHeight:24,fontWeight:'600',color:C.ink},
  text:{fontSize:14,lineHeight:20,color:C.inkSoft},
- ai:{fontSize:12,lineHeight:16,color:C.inkSoft,backgroundColor:C.surface,borderRadius:T.radius.md,paddingVertical:T.space[3],paddingHorizontal:T.space[4],overflow:'hidden'},
- label:{fontSize:12,lineHeight:16,fontWeight:'600',color:C.muted,letterSpacing:.6},
+ aiRow:{flexDirection:'row',alignItems:'flex-start',gap:8},ai:{flex:1,fontSize:12,lineHeight:16,color:C.inkSoft},
+ label:{fontSize:12,lineHeight:16,fontWeight:'600',color:C.muted},
  chips:{flexDirection:'row',gap:T.space[3]},
  btn:{minHeight:T.control.touch,justifyContent:'center',alignItems:'center',paddingHorizontal:T.space[3],paddingVertical:T.space[3],borderRadius:T.radius.md,borderWidth:1,borderColor:C.line,backgroundColor:C.surface},
  main:{backgroundColor:C.accent,borderColor:C.accent},

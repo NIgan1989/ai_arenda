@@ -93,12 +93,12 @@ const s = StyleSheet.create({
   // The category button: the first chip of the row, in the soft accent, with what is chosen.
   catChip: { backgroundColor: C.accentSoft, paddingLeft: 12, paddingRight: 10 },
   catSmall: { minHeight: 40, paddingLeft: 10, paddingRight: 8, gap: 2, backgroundColor: C.surface },
-  catText: { ...type.label, color: C.accentPressed, fontWeight: '700' },
+  catText: { ...type.label, color: C.accentPressed, fontWeight: '600' },
   catChevron: { width: 14, height: 14, tintColor: C.accentPressed, transform: [{ rotate: '90deg' }] },
   // The picker: a title, then each category as a named group of outlined chips, a hairline between the groups.
   picker: { gap: 4 },
   pickerHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  pickerTitle: { ...type.label, color: C.ink, fontWeight: '700' },
+  pickerTitle: { ...type.label, color: C.ink, fontWeight: '600' },
   pickerClose: { width: 32, height: 32, borderRadius: T.radius.full, backgroundColor: C.surfaceAlt, alignItems: 'center', justifyContent: 'center' },
   pickerCloseText: { ...type.caption, color: C.inkSoft },
   group: {},
@@ -131,7 +131,7 @@ const s = StyleSheet.create({
   },
   chipPressed: { backgroundColor: C.line },
   chipActive: { backgroundColor: C.surfaceAlt },
-  chipTextActive: { color: C.ink, fontWeight: '700' },
-  chipCount: { ...type.caption, fontWeight: '700', color: C.surface, backgroundColor: C.ink, minWidth: 20, paddingHorizontal: 6, borderRadius: 999, overflow: 'hidden', textAlign: 'center' },
+  chipTextActive: { color: C.ink, fontWeight: '600' },
+  chipCount: { ...type.caption, fontWeight: '600', color: C.surface, backgroundColor: C.ink, minWidth: 20, paddingHorizontal: 6, borderRadius: 999, overflow: 'hidden', textAlign: 'center' },
   chipText: { ...type.label, color: C.ink, fontWeight: '500' }
 });

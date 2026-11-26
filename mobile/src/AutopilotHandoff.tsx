@@ -4,6 +4,7 @@ import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { cleanerHandoff, ownerHandoff } from '../../lib/autopilot-handoff';
 import { request } from './api';
 import { C, type } from './styles';
+import { AiMark } from './AiMark';
 import { T } from './tokens';
 import type { Row } from './model';
 
@@ -30,7 +31,7 @@ export function AutopilotHandoff({ role, accountId, stamp = '', tick = 0, compac
   useEffect(() => { if (stale.current) { stale.current = false; void load(); } }, [tick]);
   const setup = (flatId?: string) => { stale.current = true; onSetup(flatId); };
   const owner = role === 'owner' ? ownerHandoff(state) : null, cleaner = role === 'cleaner' ? cleanerHandoff(state) : null, offer = owner || cleaner;
-  if (!offer || hidden) return notice ? <Text accessibilityLiveRegion="polite" style={a.done}>✦ {notice}</Text> : null;
+  if (!offer || hidden) return notice ? <Text accessibilityLiveRegion="polite" style={a.done}>{notice}</Text> : null;
   const missing = owner ? owner.needFee.some(f => Number(fees[f.id] || 0) < 100) : false, none = owner ? !owner.ready.length : false;
   async function start() {
     setBusy(true); setNotice('');
@@ -51,13 +52,13 @@ export function AutopilotHandoff({ role, accountId, stamp = '', tick = 0, compac
   }
   if (compact && !open) return (
     <Pressable accessibilityRole="button" accessibilityLabel={t('Передать ИИ: {title}',{title:offer.title})} onPress={() => { setNotice(''); setOpen(true); onExpand?.(); }} style={({ pressed }) => [a.slim, pressed && a.pressed]}>
-      <Text style={a.slimMark}>✦</Text><Text numberOfLines={1} style={[a.linkText, a.text]}>{owner ? t('Передать жильё ИИ') : t('ИИ может брать уборки за вас')}</Text><Text style={a.linkText}>›</Text>
+      <AiMark size={16}/><Text numberOfLines={1} style={[a.linkText, a.text]}>{owner ? t('Передать жильё ИИ') : t('ИИ может брать уборки за вас')}</Text><Text style={a.linkText}>›</Text>
     </Pressable>
   );
   return (
     <View style={a.box} accessibilityLabel={t('Передать ИИ: {title}',{title:offer.title})}>
       <View style={a.row}>
-        <View style={a.mark}><Text style={a.markText}>✦</Text></View>
+        <AiMark/>
         <View style={a.text}><Text numberOfLines={2} style={a.title}>{offer.title}</Text><Text numberOfLines={open ? undefined : 2} style={a.line}>{offer.line}</Text></View>
         {!open && <Pressable accessibilityRole="button" accessibilityLabel={(owner ? t('Передать ИИ') : t('Включить')) + ': ' + offer.title} onPress={() => { setNotice(''); setOpen(true); }} style={({ pressed }) => [a.button, pressed && a.pressed]}><Text style={a.buttonText}>{owner ? t('Передать ИИ') : t('Включить')}</Text></Pressable>}
       </View>
@@ -79,7 +80,7 @@ export function AutopilotHandoff({ role, accountId, stamp = '', tick = 0, compac
         {!none && <Text style={a.fact}>{offer.price}{' '}{t('Отключить можно в любой момент.')}</Text>}
         {!!notice && <Text accessibilityRole="alert" style={a.error}>{notice}</Text>}
         <View style={a.actions}>
-          {!none && <Pressable accessibilityRole="button" accessibilityLabel={t('Включить автопилот')} disabled={busy || missing} onPress={() => void start()} style={({ pressed }) => [a.button, a.grow, (busy || missing) && a.off, pressed && a.pressed]}><Text style={a.buttonText}>{busy ? t('Включаю…') : t('Включить')}</Text></Pressable>}
+          {!none && <Pressable accessibilityRole="button" accessibilityLabel={t('Включить автопилот')} disabled={busy || missing} onPress={() => void start()} style={({ pressed }) => [a.button, a.grow, (busy || missing) && a.off, pressed && a.pressed]}><Text style={a.buttonText}>{busy ? t('Включаем…') : t('Включить')}</Text></Pressable>}
           {cleaner && <Pressable accessibilityRole="button" disabled={busy} onPress={() => setup()} style={a.link}><Text style={a.linkText}>{t('Изменить правила')}</Text></Pressable>}
           <Pressable accessibilityRole="button" disabled={busy} onPress={() => { later.add(key); setHidden(true); }} style={a.link}><Text style={a.linkMuted}>{t('Не сейчас')}</Text></Pressable>
         </View>
@@ -89,10 +90,8 @@ export function AutopilotHandoff({ role, accountId, stamp = '', tick = 0, compac
 }
 
 const a = StyleSheet.create({
-  box: { gap: 12, padding: 12, borderRadius: T.radius.lg, borderWidth: 1, borderColor: C.line, backgroundColor: C.surfaceAlt },
+  box: { gap: 12, paddingVertical: 12, borderTopWidth: 1, borderBottomWidth: 1, borderColor: C.line },
   row: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  mark: { width: 28, height: 28, borderRadius: T.radius.sm, alignItems: 'center', justifyContent: 'center', backgroundColor: C.ink },
-  markText: { ...type.label, color: C.gold, fontWeight: '700' },
   text: { flex: 1, minWidth: 0, gap: 2 },
   title: { ...type.label, color: C.ink, fontWeight: '600' },
   line: { ...type.caption, color: C.muted },
@@ -107,7 +106,6 @@ const a = StyleSheet.create({
   linkText: { ...type.label, color: C.ink, fontWeight: '600' },
   linkMuted: { ...type.label, color: C.muted, fontWeight: '600' },
   slim: { flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 36, paddingHorizontal: 12, borderRadius: T.radius.full, backgroundColor: C.surfaceAlt },
-  slimMark: { ...type.label, color: C.ink, fontWeight: '700' },
   fee: { gap: 4 },
   feeLabel: { ...type.caption, color: C.inkSoft },
   field: { ...type.body, minHeight: T.control.field, paddingHorizontal: 12, borderRadius: T.radius.md, borderWidth: 1, borderColor: C.line, backgroundColor: C.surface, color: C.ink },

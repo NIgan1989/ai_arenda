@@ -26,7 +26,7 @@ const p=StyleSheet.create({
  shade:{flex:1,backgroundColor:C.scrim},
  sheet:{paddingHorizontal:20,paddingTop:8,paddingBottom:32,gap:4,borderTopLeftRadius:T.radius.xl,borderTopRightRadius:T.radius.xl,backgroundColor:C.surface},
  grab:{alignSelf:'center',width:40,height:4,borderRadius:T.radius.full,backgroundColor:C.lineStrong,marginBottom:12},
- title:{...type.subtitle,color:C.ink,fontWeight:'700',marginBottom:4},
+ title:{...type.subtitle,color:C.ink,fontWeight:'600',marginBottom:4},
  row:{flexDirection:'row',alignItems:'center',gap:12,minHeight:56,borderTopWidth:1,borderTopColor:C.line},
  icon:{width:22,height:22,tintColor:C.ink},
  rowText:{...type.body,color:C.ink,flex:1},

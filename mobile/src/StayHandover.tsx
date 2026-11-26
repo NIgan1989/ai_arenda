@@ -36,7 +36,7 @@ export function StayPhotos({bookingId,phase,role,disabled=false,readOnly=false,o
   <View style={h.grid}>{photos.map(p=>p.uri?<Image key={p.id} source={{uri:p.uri}} style={h.thumb} alt={t('Фото жилья')} accessibilityLabel={t('Фото жилья')}/>:<View key={p.id} style={[h.thumb,{backgroundColor:C.surfaceAlt}]}/>)}
    {!full&&<Pressable accessibilityRole="button" accessibilityLabel={photos.length?t('Добавить ещё фото'):t('Добавить фото')} accessibilityState={{disabled:off,busy}} disabled={off} onPress={()=>setAsk(true)} style={({pressed})=>[h.thumb,h.add,(pressed||off)&&h.pressed]}>{busy?<Thinking size="sm"/>:<><Image source={menuIcons.camera} style={h.addIcon}/><Text style={h.addText}>{photos.length?t('Ещё'):t('Добавить')}</Text></>}</Pressable>}
   </View>
-  <Text style={s.meta}>{busy?t('Сохраняю фото…'):photos.length?t('Добавлено {length} из {STAY_PHOTO_LIMIT}.',{length:photos.length,STAY_PHOTO_LIMIT}):t('Пока нет фото.')}</Text>
+  <Text style={s.meta}>{busy?t('Сохраняем фото…'):photos.length?t('Добавлено {length} из {STAY_PHOTO_LIMIT}.',{length:photos.length,STAY_PHOTO_LIMIT}):t('Пока нет фото.')}</Text>
   {!!error&&<Text accessibilityRole="alert" style={[s.meta,{color:C.danger}]}>{error}</Text>}
   <PopSheet visible={ask} title={t('Добавить фото')} onClose={()=>setAsk(false)}>
    <PopRow icon="camera" title={t('Снять фото')} onPress={()=>{setAsk(false);setTimeout(()=>void add(true),Platform.OS==='ios'?450:0);}}/>
