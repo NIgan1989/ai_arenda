@@ -39,8 +39,9 @@ export function AgainRow({properties,mine,onOpen}:{properties:Row[];mine:Mine;on
 const f=StyleSheet.create({
  heart:{width:36,height:36,borderRadius:T.radius.full,alignItems:'center',justifyContent:'center',backgroundColor:C.surface,borderWidth:1,borderColor:C.line},
  heartPlain:{backgroundColor:'transparent',borderWidth:0},
- heartText:{...type.title,color:C.muted},
- heartOn:{color:C.danger},
+ // Black outline, black when saved: no red (board «Экраны старой версии», 2026-11-26).
+ heartText:{...type.title,color:C.ink},
+ heartOn:{color:C.ink},
  dim:{opacity:0.6},
  title:{...type.caption,color:C.muted,marginTop:8},
  strip:{marginHorizontal:-16,marginTop:4},
