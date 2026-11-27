@@ -23,7 +23,7 @@ export const s=StyleSheet.create({
   urgentRecommendation:{backgroundColor:C.warningSoft,borderColor:C.warningLine},
   recommendationLabel:{...caption,color:C.muted},
   screen:{flex:1,backgroundColor:C.bg},shell:{flex:1,width:'100%',maxWidth:760,alignSelf:'center'},
-  stage:{flex:1,minHeight:0},sheetLayer:{position:'absolute',top:0,right:0,bottom:0,left:0},sheetScrim:{position:'absolute',top:0,right:0,bottom:0,left:0,backgroundColor:C.scrim},
+  stage:{flex:1,minHeight:0},sheetLayer:{position:'absolute',top:0,right:0,bottom:0,left:0},flash:{position:'absolute',top:72,left:16,right:16,zIndex:50,elevation:12,paddingVertical:12,paddingHorizontal:16,borderRadius:T.radius.lg,backgroundColor:C.ink},flashText:{...type.label,color:C.surface,fontWeight:'600'},sheetScrim:{position:'absolute',top:0,right:0,bottom:0,left:0,backgroundColor:C.scrim},
   // Over the map with the card of one deal: the map stays bright, so the pin of that deal and its mood are seen.
   sheetScrimDeal:{opacity:.4},
   pageSheetFill:{flex:1,marginTop:44},pageSheet:{minHeight:0,backgroundColor:C.bg,borderTopLeftRadius:R.xl,borderTopRightRadius:R.xl,overflow:'hidden'},pageSheetFull:{marginTop:0,borderTopLeftRadius:0,borderTopRightRadius:0},
