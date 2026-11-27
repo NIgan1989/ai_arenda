@@ -9,6 +9,7 @@ import { windowBadge } from '../../lib/window-badge';
 import { C, type } from './styles';
 import { T } from './tokens';
 import { ReliabilityBadge } from './Reliability';
+import { titleSaysKind, titleSaysRooms } from '../../lib/listing-title';
 import { HOME_KINDS, WISHES, BANQUET_WISHES, BANQUET_TYPES, BATH_TYPES, askFirst, categoryOf, classWords, draftUnits, homeWords, kindCategoryOf, shownReasons, withMode, withUnits, type GuestDraft } from './ai-request';
 import { carouselIndex } from './map-motion';
 import { Heart } from './Favorites';
@@ -173,9 +174,10 @@ export function emptyAnswer(empty: Row | undefined, draft: GuestDraft, narrowed:
   return { title: t('На эти условия свободного жилья нет'), note: narrowed ? t('Поиск сужают район, бюджет или пожелания. Можно искать без них.') : t('Попробуйте другое время или другой срок.') };
 }
 
-// "Студия · 1 комн. · до 2 гостей": what the home is, said on the card before why it was chosen.
+// "Стандарт · до 2 гостей": what the home is, said on the card before why it was chosen. The title in its one format
+// (lib/listing-title.ts) already says the type and the rooms of a flat, so the line does not say them again.
 export function homeLine(flat: Row) {
-  const kind = HOME_KINDS[flat.details?.type] || '', rooms = Number(flat.rooms), capacity = Number(flat.capacity);
+  const kind = titleSaysKind(flat.title) ? '' : HOME_KINDS[flat.details?.type] || '', rooms = titleSaysRooms(flat.title) ? 0 : Number(flat.rooms), capacity = Number(flat.capacity);
   // The class (lib/stay-class.ts) right after the type: «Квартира · Комфорт · 2 комн. · до 4 гостей».
   const level = kindCategoryOf(flat.details?.type) === 'stay' ? classWords(flat.stay_class ? [flat.stay_class] : []) : '';
   return [kind, level, rooms > 0 && flat.details?.type !== 'studio' && kindCategoryOf(flat.details?.type) === 'stay' ? t('{rooms} комн.',{rooms}) : '', capacity > 0 ? t('до {guests}',{guests:capacity + ' ' + plural(capacity, 'гостя', 'гостей', 'гостей')}) : ''].filter(Boolean).join(' · ');

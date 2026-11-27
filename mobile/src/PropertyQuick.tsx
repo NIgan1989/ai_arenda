@@ -15,6 +15,7 @@ import {PhotoGrid} from './PhotoGrid';
 import {Stepper} from './SheetParts';
 import {amenities,categoryAmenities,checkinMethods,isBath,kindCategory,propertyTypes} from '../../lib/listings';
 import {KindPicker} from './KindPicker';
+import {TitleField} from './TitleField';
 import {StayClassPicker} from './StayClassPicker';
 import {classLabel,hasClass,suggestClass,type ClassGuess} from '../../lib/stay-class';
 import {RightDocs} from './RightDocs';
@@ -177,9 +178,10 @@ export function PropertyQuick({city,onSave,onGuestMode,onPlace,onReview,onClose,
    {!!error&&<Text accessibilityRole="alert" style={q.error}>{error}</Text>}
    <View style={q.preview}>
     <View style={[q.cover,!!photos[0]&&q.coverPhoto]}>{photos[0]?<Photo id={photos[0]} alt={t('Обложка')}/>:<Text style={q.coverEmpty}>{t(['Без фото: зал сохранится черновиком','Без фото: объект сохранится черновиком','Без фото: жильё сохранится черновиком'][sort])}</Text>}</View>
-    <View style={q.previewBody}><TextInput accessibilityLabel={t('Название')} style={q.previewTitle} value={draftTitle(draft)} maxLength={120} onChangeText={v=>patch({title:v})}/><Text style={q.sub}>{[draft.district||t('Район не указан'),draft.city].filter(Boolean).join(' · ')}</Text><Text style={q.price}>{priceLine||t('Цена не указана')}</Text></View>
+    <View style={q.previewBody}><Text style={q.previewTitle}>{draftTitle(draft)}</Text><Text style={q.sub}>{[draft.district||t('Район не указан'),draft.city].filter(Boolean).join(' · ')}</Text><Text style={q.price}>{priceLine||t('Цена не указана')}</Text></View>
    </View>
    <View style={q.rows}>
+    {row('title',t('Заголовок'),draftTitle(draft),false,<TitleField kind={draft.type} rooms={draft.rooms} title={draft.title} place={{district:draft.district,city:draft.city}} onChange={v=>patch({title:v})}/>)}
     {row('kind',t('Тип'),[propertyTypes[draft.type as keyof typeof propertyTypes],draft.ownStaff?t('свой персонал'):''].filter(Boolean).join(' · '),guessed('type'),<KindPicker inline kind={draft.type} ownStaff={draft.ownStaff} onChange={v=>{patch(v);if(v.type)setOpen("");}}/>)}
     {!!stayClass&&row('class',t('Класс'),classLabel(stayClass),!chosenClass,<StayClassPicker value={stayClass} guess={classGuess?.stayClass} reasons={classGuess?.reasons} onChange={v=>{setChosenClass(v);setOpen('');}}/>)}
     {row('size',venue?t('Вместимость'):t('Размер'),sizeLine,anyGuess(...(venue?['capacity']:['rooms','capacity','area','floor'])),<>

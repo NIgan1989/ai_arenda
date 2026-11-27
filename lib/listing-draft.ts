@@ -3,6 +3,7 @@
 // Everything the text does not say gets a safe default and is marked as guessed, so the check screen
 // can ask the owner to look at it. Only the address, the district and the price are asked for: the day for
 // housing, the hour for a bath, the guest for a banquet hall.
+import {formatTitle} from './listing-title';
 import {t as tr} from './i18n';
 import {isBanquet,isBath,propertyTypes,amenities,categoryAmenities,kindCategory,checkinMethods,defaultOwnStaff,maxGuests} from './listings';
 type Row=Record<string,any>;
@@ -199,7 +200,8 @@ export function draftKind(d:ListingDraft){
   default:return d.rooms>1?'Апарт-отель, '+d.rooms+' комн.':'Апарт-отель';
  }
 }
-export function draftTitle(d:ListingDraft){return (d.title.trim()||[draftKind(d),d.district.trim()].filter(Boolean).join(' · ')).slice(0,120);}
+// The title in the one format (lib/listing-title.ts): the start from the type and the rooms, then what the owner wrote.
+export function draftTitle(d:ListingDraft){return formatTitle(d.title,d.type,d.rooms,{district:d.district,city:d.city});}
 export function draftDescription(d:ListingDraft){
  if(d.description.trim())return d.description.trim().slice(0,2500);
  const where=[d.city,d.district&&('район '+d.district)].filter(Boolean).join(', ');

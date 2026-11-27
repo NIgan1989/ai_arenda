@@ -1,3 +1,4 @@
+import {formatTitle} from './listing-title';
 import {classOfRow} from './stay-class';
 import {wordsOf,venueOr,TYPE_SQL} from './stay-words';
 import {unreadyNote} from './unready';
@@ -174,6 +175,8 @@ export class RentalService {
     const current=propertyId?await this.one('SELECT p.*,COALESCE(d.version,0) listing_version FROM properties p LEFT JOIN property_details d ON d.property_id=p.id WHERE p.id=? AND p.owner_id=? AND p.archived_at IS NULL',propertyId,this.userId):null;
     if(propertyId&&!current)throw new DomainError('Объявление не найдено.',404);
     if((current?.listing_version||0)!==expectedVersion)throw new DomainError('Объявление уже изменилось. Обновите форму.',409);
+    // «Заголовок» in one format (lib/listing-title.ts): «2-комнатная · у набережной». A hall of a venue keeps its own name.
+    if(!(propertyId&&await this.one('SELECT 1 FROM venue_halls WHERE property_id=?',propertyId)))p.title=formatTitle(p.title,(details as Row).type,p.rooms,p);
     if(current&&await this.one("SELECT id FROM bookings WHERE property_id=? AND guests>? AND (status='confirmed' OR (status='requested' AND expires_at>?)) AND occupied_until>?",propertyId,p.capacity,now(),now()))throw new DomainError('Вместимость меньше числа гостей в действующей брони.',409);
     const currentPolicy=propertyId?await this.one('SELECT * FROM property_policies WHERE property_id=?',propertyId):null;
     const policyVersion=number(body.policyVersion??0,'Версия тарифов',0,10000000);
