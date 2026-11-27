@@ -120,7 +120,7 @@ test('the chat refuses a link from the owner and a phone before the booking is c
 });
 
 test('the offers tell every role the new rules, in a new edition everyone accepts again',()=>{
- assert.equal(LEGAL_EDITION,'26 ноября 2026');
+ assert.equal(LEGAL_EDITION,'27 ноября 2026');
  const text=id=>LEGAL_DOCUMENTS.find(d=>d.id===id).sections.flatMap(s=>s.p).join(' ');
  assert.match(text('terms'),/Меня не заселили/);assert.match(text('terms'),/ссылки, номера банковских карт/);
  assert.match(text('guest'),/меньше 5 завершённых броней/);assert.match(text('guest'),/Оплата при заселении/);

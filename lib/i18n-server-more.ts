@@ -460,4 +460,15 @@ export const SERVER_MORE:Words={
  'В этот день живёт гость. Закрыть его нельзя.':['Бұл күні қонақ тұрады. Оны жабуға болмайды.','A guest stays on this day. It can’t be closed.'],
  'На этот день уже есть бронь или заявка. Закрыть его нельзя.':['Бұл күнге бронь немесе өтінім бар. Оны жабуға болмайды.','This day already has a booking or a request. It can’t be closed.'],
  'На этот день только что появилась бронь. Закрыть его нельзя.':['Бұл күнге жаңа ғана бронь түсті. Оны жабуға болмайды.','A booking just came in for this day. It can’t be closed.'],
+ // Приглашения и промокоды (lib/invites.ts).
+ 'Проверьте код: латинские буквы и цифры, от 4 до 24 знаков.':['Кодты тексеріңіз: латын әріптері мен сандар, 4-тен 24 таңбаға дейін.','Check the code: Latin letters and digits, 4 to 24 characters.'],
+ 'Такого кода нет или он больше не действует.':['Мұндай код жоқ немесе ол енді жарамсыз.','There’s no such code, or it no longer works.'],
+ 'Это ваш код. Его вводит владелец, которого вы пригласили.':['Бұл сіздің кодыңыз. Оны сіз шақырған иесі енгізеді.','This is your code. The owner you invited enters it.'],
+ 'Код уже введён. Ввести можно один раз.':['Код енгізілген. Оны бір рет қана енгізуге болады.','A code is already entered. It can be entered once.'],
+ 'Код вводят до первой брони через приложение. У вас брони уже были.':['Код қосымша арқылы алғашқы броньға дейін енгізіледі. Сізде броньдар болған.','A code is entered before the first booking through the app. You’ve already had bookings.'],
+ 'Этот владелец пришёл по вашему коду. Обменяться кодами нельзя.':['Бұл иесі сіздің кодыңызбен келген. Кодтармен алмасуға болмайды.','This owner came with your code. Codes can’t be swapped.'],
+ 'Код не применён: у вас уже есть бронь через приложение или код только что отключили.':['Код қолданылмады: сізде қосымша арқылы бронь бар немесе код жаңа ғана өшірілді.','The code wasn’t applied: you already have a booking through the app, or the code was just switched off.'],
+ 'Не удалось выдать код. Откройте экран ещё раз.':['Код беру мүмкін болмады. Экранды қайта ашыңыз.','Couldn’t issue a code. Open the screen again.'],
+ 'По вашему коду пришёл новый владелец. С его первой брони через приложение у вас обоих начнётся месяц без комиссии.':['Сіздің кодыңызбен жаңа иесі келді. Оның қосымша арқылы алғашқы броньынан бастап екеуіңізде бір ай комиссиясыз басталады.','A new owner came with your code. From their first booking through the app you both get a month without commission.'],
+ 'По вашему коду пришёл новый владелец. Ваш лимит приглашений на этот год исчерпан: месяц без комиссии получит только он.':['Сіздің кодыңызбен жаңа иесі келді. Осы жылғы шақыру лимитіңіз таусылды: комиссиясыз айды тек ол алады.','A new owner came with your code. Your invite limit for this year is reached: only they get the month without commission.'],
 };

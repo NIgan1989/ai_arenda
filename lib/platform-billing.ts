@@ -65,7 +65,10 @@ export const allInclusiveSql=(user:string,role:'owner'|'cleaner')=>`EXISTS(SELEC
 // «14 дней бесплатно» (2026-11-22): free_days calendar days from the owner's first listing, or from the start of
 // billing if that is later, a stay confirmed through the service costs nothing (mode 'free'). The cleaning trigger
 // (migration 0095) applies the same days to «Мой дом» and, from the first charged cleaning, to the performer.
-export const freshSql=(owner:string,at:string)=>`(SELECT CASE WHEN MAX(s2.starts_at,COALESCE((SELECT MIN(created_at) FROM properties WHERE owner_id=${owner} AND demo_owner IS NULL),0))+s2.free_days*86400>${at} THEN 1 ELSE 0 END FROM platform_billing s2 WHERE s2.id='global')`;
+// «Месяц без комиссии» by an invite (lib/invites.ts, migration 0106): the days of a bonus once it started, or the first
+// booking of the one who came by a code, which starts their days. The moment is read once (n.t), so `at` stays one bind.
+export const inviteFreeSql=(owner:string,at:string)=>`EXISTS(SELECT 1 FROM invite_bonuses ib WHERE ib.user_id=${owner} AND ib.role='owner' AND (${at} BETWEEN ib.starts_at AND ib.starts_at+ib.days*86400-1 OR (ib.starts_at IS NULL AND ib.source_id=ib.user_id)))`;
+export const freshSql=(owner:string,at:string)=>`(SELECT CASE WHEN MAX(s2.starts_at,COALESCE((SELECT MIN(created_at) FROM properties WHERE owner_id=${owner} AND demo_owner IS NULL),0))+s2.free_days*86400>n.t OR ${inviteFreeSql(owner,'n.t')} THEN 1 ELSE 0 END FROM platform_billing s2,(SELECT ${at} t) n WHERE s2.id='global')`;
 export function accrueCommission(db:D1Database,bookingId:string,auditId:string,at:number){
  // A hall pays by the month (sweepHallMonths), so its booking is written with 0 ₸: it still counts for the month.
  const fee="CASE WHEN x.included=1 OR x.hall=1 THEN 0 ELSE MIN(x.amount,MAX(x.min_fee,CASE WHEN x.max_fee>0 THEN MIN(x.max_fee,(x.amount*x.rate+5000)/10000) ELSE (x.amount*x.rate+5000)/10000 END)) END";

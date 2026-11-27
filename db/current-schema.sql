@@ -107,6 +107,7 @@
 -- migration 0103_fraud_guards_two.sql sha256:3c6784fdb55095e3f045c9b7841ef409ecbbc872cde04729edda14260af47f18
 -- migration 0104_stay_classes.sql sha256:a6ac265367913acbd4318cc7ede0c85f595a3ea19a99b7c85db51f07d1b8e0b7
 -- migration 0105_platform_admins.sql sha256:dc2f2773ff7c4a4f9c928368376ab02f98129d84e7e126942bfd072a6aa96c61
+-- migration 0106_invites.sql sha256:f81e43b17ff40e2f5f80ed7d6d9c015b768e54f787e9e5d5bd5356b77f46cd3e
 
 -- table access_receipts
 CREATE TABLE access_receipts (id TEXT PRIMARY KEY,property_id TEXT NOT NULL,entity_kind TEXT NOT NULL,entity_id TEXT NOT NULL,user_id TEXT NOT NULL,created_at INTEGER NOT NULL,expires_at INTEGER NOT NULL);
@@ -840,6 +841,43 @@ CREATE TABLE identity_docs (
  created_at INTEGER NOT NULL,
  checked_at INTEGER,
  checked_by TEXT
+);
+
+-- table invite_bonuses
+CREATE TABLE invite_bonuses (
+ user_id TEXT NOT NULL REFERENCES profiles(id),
+ role TEXT NOT NULL CHECK(role IN ('owner')),
+ source_id TEXT NOT NULL,
+ code TEXT NOT NULL,
+ days INTEGER NOT NULL CHECK(days BETWEEN 1 AND 180),
+ starts_at INTEGER,
+ created_at INTEGER NOT NULL,
+ PRIMARY KEY(user_id,role,source_id)
+);
+
+-- table invite_codes
+CREATE TABLE invite_codes (
+ code TEXT PRIMARY KEY CHECK(length(code) BETWEEN 4 AND 24 AND code=upper(code)),
+ kind TEXT NOT NULL CHECK(kind IN ('friend','partner')),
+ user_id TEXT REFERENCES profiles(id),
+ role TEXT NOT NULL DEFAULT 'owner' CHECK(role IN ('owner')),
+ days INTEGER NOT NULL DEFAULT 30 CHECK(days BETWEEN 1 AND 180),
+ label TEXT NOT NULL DEFAULT '' CHECK(length(label)<=80),
+ expires_at INTEGER,
+ active INTEGER NOT NULL DEFAULT 1 CHECK(active IN (0,1)),
+ created_by TEXT NOT NULL,
+ created_at INTEGER NOT NULL,
+ CHECK((kind='friend')=(user_id IS NOT NULL))
+);
+
+-- table invite_redemptions
+CREATE TABLE invite_redemptions (
+ user_id TEXT NOT NULL REFERENCES profiles(id),
+ role TEXT NOT NULL CHECK(role IN ('owner')),
+ code TEXT NOT NULL,
+ inviter_id TEXT,
+ redeemed_at INTEGER NOT NULL,
+ PRIMARY KEY(user_id,role)
 );
 
 -- table job_evidence
@@ -1698,6 +1736,18 @@ CREATE INDEX guest_favorites_property ON guest_favorites(property_id);
 
 -- index identity_docs_user
 CREATE INDEX identity_docs_user ON identity_docs(user_id,created_at);
+
+-- index invite_bonuses_source
+CREATE INDEX invite_bonuses_source ON invite_bonuses(source_id) WHERE starts_at IS NULL;
+
+-- index invite_codes_friend
+CREATE UNIQUE INDEX invite_codes_friend ON invite_codes(user_id,role) WHERE kind='friend';
+
+-- index invite_redemptions_code
+CREATE INDEX invite_redemptions_code ON invite_redemptions(code);
+
+-- index invite_redemptions_inviter
+CREATE INDEX invite_redemptions_inviter ON invite_redemptions(inviter_id);
 
 -- index job_applicant
 CREATE UNIQUE INDEX `job_applicant` ON `applications` (`job_id`,`user_id`);
@@ -2579,6 +2629,16 @@ CREATE TRIGGER finance_no_delete BEFORE DELETE ON finance_entries BEGIN SELECT R
 
 -- trigger finance_no_update
 CREATE TRIGGER finance_no_update BEFORE UPDATE ON finance_entries BEGIN SELECT RAISE(ABORT,'immutable_finance_entry'); END;
+
+-- trigger invite_bonus_start
+CREATE TRIGGER invite_bonus_start AFTER INSERT ON platform_commissions
+WHEN NEW.mode<>'shadow' AND EXISTS(SELECT 1 FROM invite_bonuses WHERE source_id=NEW.owner_id AND starts_at IS NULL)
+BEGIN
+ UPDATE invite_bonuses SET starts_at=MAX(NEW.created_at,
+   COALESCE((SELECT MAX(b.starts_at+b.days*86400) FROM invite_bonuses b WHERE b.user_id=invite_bonuses.user_id AND b.role=invite_bonuses.role AND b.starts_at IS NOT NULL),0),
+   COALESCE((SELECT MAX(s.starts_at,(SELECT MIN(p.created_at) FROM properties p WHERE p.owner_id=invite_bonuses.user_id AND p.demo_owner IS NULL))+s.free_days*86400 FROM platform_billing s WHERE s.id='global'),0))
+ WHERE source_id=NEW.owner_id AND starts_at IS NULL;
+END;
 
 -- trigger journey_assignment_revoked
 CREATE TRIGGER journey_assignment_revoked AFTER UPDATE OF assigned_to,status,owner_id ON cleaning_jobs

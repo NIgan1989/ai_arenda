@@ -1,4 +1,4 @@
-import {t} from '../../../lib/i18n';
+import {plural,t} from '../../../lib/i18n';
 import React,{useEffect,useState} from 'react';
 import {View,Text,TextInput,Pressable,StyleSheet,Switch} from 'react-native';
 import {request} from '../api';
@@ -52,6 +52,8 @@ export function AdminHub({verified,onVerified,onHead,onExit}:{verified:boolean;o
   case 'policy':return <Policy/>;
   case 'health':return <Health/>;
   case 'admins':return <Admins/>;
+  case 'promos':return <Promos {...props}/>;
+  case 'promo':return <Promo code={String(p.code||'')}/>;
   default:return <Home {...props}/>;
  }
 }
@@ -95,7 +97,7 @@ function Home({go}:{go:Go}){
   {items.length>5&&<Link title={all?t('Свернуть'):t('Показать все {n}',{n:items.length})} onPress={()=>setAll(v=>!v)}/>}
   <Group title={t('Разделы')}>
    <Line icon="shield" title={t('Работа')} note={t('Проверки, обращения, жалобы')} value={[c.reviews||0,c.issues||0,c.reports||0].join(' · ')} onPress={()=>go({id:'work',title:'Работа'})}/>
-   <Line icon="users" title={t('Участники')} note={t('Люди, жильё, классы, обход')} value={String(c.users||0)} onPress={()=>go({id:'people',title:'Участники'})}/>
+   <Line icon="users" title={t('Участники')} note={t('Люди, жильё, промокоды, обход')} value={String(c.users||0)} onPress={()=>go({id:'people',title:'Участники'})}/>
    <Line icon="wallet" title={t('Деньги')} note={t('Доход, бухгалтерия, финансист')} value={money_?money(money_.net):undefined} onPress={()=>go({id:'money',title:'Деньги'})}/>
    <Line icon="sliders" title={t('Настройки')} note={t('Правила допуска, состояние, администраторы')} onPress={()=>go({id:'settings',title:'Настройки'})}/>
   </Group>
@@ -118,6 +120,7 @@ function PeopleGroup({go}:{go:Go}){
  return <View><Group>
   <Line icon="users" title={t('Люди')} note={t('Гости, владельцы, исполнители')} value={String(c.users??'')} onPress={()=>go({id:'users',title:'Люди'})}/>
   <Line icon="building" title={t('Объекты')} note={c.unmapped?t('Без точки на карте: {n}',{n:c.unmapped}):t('Объявления и их проверка')} value={String(c.properties??'')} onPress={()=>go({id:'properties',title:'Объекты'})}/>
+  <Line icon="badge" title={t('Промокоды')} note={t('Коды партнёров и приглашения владельцев')} onPress={()=>go({id:'promos',title:'Промокоды'})}/>
  </Group>
  <Group space><AdminClasses/></Group>
  <Group space><BypassWatch/></Group></View>;
@@ -212,6 +215,46 @@ function Admins(){
   <Note text={t('Новый администратор видит и решает всё, кроме этого списка. Вход — тем же кодом из Telegram на его телефоне.')}/>
   <FormSheet visible={adding} title={t('Новый администратор')} note={t('Номер аккаунта, с которым человек входит в приложение.')} fields={[{key:'phone',label:t('Номер телефона'),placeholder:'+7 777 123 45 67'}]} initial={{phone}} button={t('Дальше')} onClose={()=>setAdding(false)} onSubmit={v=>{setPhone(String(v.phone||''));setAdding(false);}}/>
   {!!phone&&!adding&&<Bottom><Text style={[a.title,{textAlign:'center'}]}>{phone}</Text><SwipeConfirm label={t('Проведите: дать доступ к управлению')} disabled={d.busy} onConfirm={async()=>{if(await d.save('admins/add',{phone,confirmed:true}))setPhone('');}}/><Link title={t('Отмена')} onPress={()=>setPhone('')}/></Bottom>}
+  <Said error={d.error} note={d.note}/>
+ </View>;
+}
+
+// Промокоды (concept 2026-11-27, lib/invites.ts): the codes of partner companies and promotions, each with the owners it
+// brought; the owners' own codes in one line. A code opens to its numbers and to «Отключить».
+const objects=(n:number)=>t('{n} {word}',{n,word:plural(n,['объект','объекта','объектов'],['place','places'],'нысан')});
+function Promo({code}:{code:string}){
+ const d=useAdmin('invites');
+ if(!d.data)return <Loading error={d.error}/>;
+ const now:Row|undefined=(d.data.partners||[]).find((p:Row)=>p.code===code);
+ if(!now)return <Loading error={t('Код не найден.')}/>;
+ return <View>
+  <Title title={now.code} note={now.label}/>
+  <Group>
+   <Line title={t('Дней без комиссии')} value={String(now.days)}/>
+   <Line title={t('Ввели код')} value={String(now.came)}/>
+   <Line title={t('Получили первую бронь')} value={String(now.booked)}/>
+   <Line title={t('Объекты у них')} value={String(now.places)}/>
+   <Line title={t('Действует')} value={!now.active?t('отключён'):now.expiresAt?t('до {v}',{v:day(now.expiresAt)}):t('без срока')}/>
+  </Group>
+  <Link title={now.active?t('Отключить код'):t('Включить снова')} danger={now.active} disabled={d.busy} onPress={()=>void d.save('invites/active',{code:now.code,active:!now.active})}/>
+  <Note text={t('Кто уже ввёл код, свои дни сохраняет. Отключённый код больше не принимается.')}/>
+  <Said error={d.error} note={d.note}/>
+ </View>;
+}
+function Promos({go}:{go:Go}){
+ const d=useAdmin('invites');
+ const [adding,setAdding]=useState(false);
+ if(!d.data)return <Loading error={d.error}/>;
+ const partners:Row[]=d.data.partners||[],f:Row=d.data.friends||{};
+ return <View>
+  <Text style={[a.note,{marginBottom:8}]}>{t('Коды компаний-партнёров и акций. Видно, кого привёл каждый.')}</Text>
+  <Group>
+   {partners.map(p=><Line key={p.code} title={p.code} note={[p.label,t('{n} дн.',{n:p.days}),!p.active?t('отключён'):p.expiresAt?t('до {v}',{v:day(p.expiresAt)}):''].filter(Boolean).join(' · ')} value={objects(p.places)} dot={p.active?undefined:'grey'} onPress={()=>go({id:'promo',title:p.code,param:{code:p.code}})}/>)}
+   <Line title={t('Друзья')} note={t('Личные коды владельцев · пригласили: {a}, пришли: {b}',{a:f.inviters||0,b:f.came||0})} value={objects(f.places||0)}/>
+  </Group>
+  {!partners.length&&<Note text={t('Кодов партнёров пока нет. Создайте код для компании, которая приводит владельцев.')}/>}
+  <Btn title={t('Новый код')} onPress={()=>{d.setNote('');setAdding(true);}}/>
+  <FormSheet visible={adding} title={t('Новый код')} note={t('Латинские буквы и цифры. Владелец вводит код один раз, до первой брони.')} fields={[{key:'code',label:t('Код'),placeholder:'PVLUYUT'},{key:'label',label:t('Чей код'),placeholder:t('Партнёр «Уют Сервис»')},{key:'days',label:t('Дней без комиссии'),numeric:true,placeholder:'30'},{key:'until',label:t('Действует до, ГГГГ-ММ-ДД (можно пусто)'),placeholder:'2026-12-31'}]} initial={{days:'30'}} button={t('Создать код')} busy={d.busy} onClose={()=>setAdding(false)} onSubmit={v=>void d.save('invites/create',{code:v.code,label:v.label,days:Number(v.days)||30,until:String(v.until||'').trim()||null}).then(r=>{if(r)setAdding(false);})}/>
   <Said error={d.error} note={d.note}/>
  </View>;
 }

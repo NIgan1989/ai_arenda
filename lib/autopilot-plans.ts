@@ -212,8 +212,13 @@ async function freeStart(db:D1Database,user:string,role:PlanRole){
  const r=await one(db,role==='owner'
   ?"SELECT s.free_days days,s.enabled,MAX(s.starts_at,(SELECT MIN(created_at) FROM properties WHERE owner_id=? AND demo_owner IS NULL)) since FROM platform_billing s WHERE s.id='global'"
   :"SELECT s.free_days days,s.plan_charge enabled,(SELECT MIN(created_at) FROM service_fees WHERE user_id=? AND kind='cleaning' AND mode<>'shadow') since FROM platform_billing s WHERE s.id='global'",user);
- const days=Number(r?.days||0),since=r?.since==null?null:Number(r.since);
- return {freeDays:days,freeUntil:days&&since!=null&&r?.enabled?since+days*DAY:null};
+ const days=Number(r?.days||0),since=r?.since==null?null:Number(r.since),until=days&&since!=null&&r?.enabled?since+days*DAY:null;
+ if(role!=='owner'||!r?.enabled)return {freeDays:days,freeUntil:until,inviteUntil:null};
+ // Invite days (lib/invites.ts) follow each other and the free start, so the latest end of those running or ahead is the
+ // end of the free time.
+ const invite=await one(db,"SELECT MAX(starts_at+days*86400) until FROM invite_bonuses WHERE user_id=? AND role='owner' AND starts_at IS NOT NULL AND starts_at+days*86400>?",user,epoch());
+ const inviteUntil=invite?.until==null?null:Number(invite.until);
+ return {freeDays:days,freeUntil:inviteUntil!=null&&inviteUntil>(until??0)?inviteUntil:until,inviteUntil};
 }
 export async function planState(service:RentalService,role:PlanRole){
  const db=service.db,at=epoch(),s=await planSettings(db),plan=await planOf(db,service.userId,role),week=at-7*DAY;
