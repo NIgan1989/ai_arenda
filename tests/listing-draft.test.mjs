@@ -11,7 +11,7 @@ test('one message fills the listing: rooms, floor, area, guests, tariffs, amenit
  assert.deepEqual([d.price,d.hourlyPrice,d.minHours],[15000,2500,2]);
  assert.deepEqual(d.amenities,['wifi','kitchen','washer','aircon']);
  assert.equal(d.address,'Торайгырова 64, кв. 12');assert.equal(d.district,'Центр');assert.equal(d.checkinMethod,'lockbox');assert.equal(d.smoking,false);
- assert.equal(draftTitle(d),'1-комнатная квартира · Центр');
+ assert.equal(draftTitle(d),'1-комнатная');
  assert.deepEqual(draftQuestions(d),[]);assert.ok(found.includes('address')&&found.includes('price'));
 });
 test('thousands, slashed floors, deposits, pets, night tariff and check-in hours are understood',()=>{
@@ -35,7 +35,7 @@ test('the draft becomes a body the listing validator accepts, and the public tex
 });
 test('the owner\'s own title and text win over the generated ones',()=>{
  const {draft}=read(DRAFT_EXAMPLE),d={...draft,title:'Вид на Иртыш',description:'Свой текст'};
- const body=draftListingBody(d,[],false);assert.equal(body.title,'Вид на Иртыш');assert.equal(body.description,'Свой текст');
+ const body=draftListingBody(d,[],false);assert.equal(body.title,'1-комнатная · вид на Иртыш');assert.equal(body.description,'Свой текст');
 });
 test('negated amenities are not advertised and an earlier mention is withdrawn',()=>{
  const {draft:d}=read('Однушка, без лифта, без балкона, нет кондиционера, есть Wi-Fi');assert.deepEqual(d.amenities,['wifi']);

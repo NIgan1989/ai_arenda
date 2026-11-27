@@ -52,7 +52,7 @@ test('a bath booking speaks of «бронь» and «приход», not of «п�
   f.db.raw.prepare("UPDATE bookings SET status='completed' WHERE id=?").run(booking);
   f.db.raw.prepare('UPDATE booking_terms SET actual_checkin=?,actual_checkout=? WHERE booking_id=?').run(now()-7200,now()-3700,booking);
   await askForReviews(f.owner);
-  const ask=notes(f,'guest','%review-request:'+booking).join(' ');assert.match(ask,/как всё прошло в «Баня на дровах»/);
+  const ask=notes(f,'guest','%review-request:'+booking).join(' ');assert.match(ask,/как всё прошло в «Баня · на дровах»/);
   await saveStayReview(f.guest,{bookingId:booking,rating:5,text:''});
   assert.match(notes(f,'owner','owner:stay-review:'+booking).join(' '),/Гость оценил отдых/);
  }finally{f.db.close();}

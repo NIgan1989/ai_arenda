@@ -11,6 +11,7 @@ import {RoomCount,roomsLine} from './RoomCount';
 import {SwipeConfirm} from './SwipeConfirm';
 import {EditButton,EditChips,EditCount,EditField,EditNote,EditNumber,EditRow,EditSheet,EditSwitch,editDot} from './EditSheet';
 import type {MenuIcon} from './AccountRows';
+import {TitleField} from './TitleField';
 import {EDIT_STEPS,banquetPrice,withBanquetPrice,editBody,editRequest,nextAdvice,needsReview,reviewRequest,stepForError,stepLine,stepNeeds,stepTitle,type EditBody,type EditStep} from '../../lib/listing-edit';
 import {amenities,categoryAmenities,checkinMethods,isBath,isBanquet,isVenue,kindCategory,kindLabel,roomKinds} from '../../lib/listings';
 import {KindPicker} from './KindPicker';
@@ -144,7 +145,7 @@ export function PropertyEdit({property,onSave,onReview,onRemove,onClose,onOpenHa
     {!!call&&!!p.id&&<AddressPin propertyId={p.id} city={draft.city} district={draft.district} address={draft.address} place={place} call={call} onChoice={c=>{pick.current=c;}}/>}
    </>}
    {open==='text'&&<>
-    <EditField label={t('Название')} value={draft.title} onChange={v=>set({title:v})} max={120}/>
+    <TitleField label={t('Заголовок')} kind={d.type} rooms={draft.rooms} title={draft.title} place={{district:draft.district,city:draft.city}} onChange={v=>set({title:v})}/>
     <EditField label={t('Описание')} value={draft.description} onChange={v=>set({description:v})} max={2500} multiline/>
     <Text style={x.hint}>{draft.description.trim().length<80&&<Text style={{color:editDot.missing}}>● </Text>}{draft.description.trim().length<80?t('{n} знаков · для показа гостям нужно от 80',{n:draft.description.trim().length}):t('{n} знаков',{n:draft.description.trim().length})}</Text>
    </>}

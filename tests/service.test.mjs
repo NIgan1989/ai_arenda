@@ -65,7 +65,7 @@ test('listing validation refuses stolen media, malformed details, incomplete pub
   const d=await f.o.saveListing(null,b);
   await f.o.saveListing(d.id,{...b,title:'New version',expectedVersion:1,policyVersion:1});
   await assert.rejects(f.o.saveListing(d.id,{...b,title:'Stale overwrite',expectedVersion:1,policyVersion:1}),e=>e.status===409);
-  assert.equal((await f.o.state()).ownProperties.find(p=>p.id===d.id).title,'New version');
+  assert.equal((await f.o.state()).ownProperties.find(p=>p.id===d.id).title,'Студия · New version');
   assert.deepEqual(await f.g.authorizeWorkspace('guest','profile/edit'), 'guest');
   await assert.rejects(f.g.authorizeWorkspace('guest','listings'),e=>e.status===403);
   await assert.rejects(f.g.authorizeWorkspace('guest','media',{kind:'property'}),e=>e.status===403);
