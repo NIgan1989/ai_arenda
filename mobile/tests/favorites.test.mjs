@@ -2,7 +2,7 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {loadPure} from './helpers/pure.mjs';
 
-const {mineOf, markOf, markLabel, favouredFirst, againList, toggled} = await loadPure('mobile/src/favorites.ts');
+const {mineOf, markOf, markLabel, favouredFirst, againList, toggled, savedList} = await loadPure('mobile/src/favorites.ts');
 const homes = ['a', 'b', 'c', 'd'].map(id => ({id, title: id.toUpperCase()}));
 
 test('the state gives the favourites and the homes of earlier stays; anything else is an empty list', () => {
@@ -36,4 +36,12 @@ test('the heart tapped: on puts the home first, off takes it out, stays are unto
   const mine = {favorites: ['a'], stayed: ['b']};
   assert.deepEqual(toggled(mine, 'c', true), {favorites: ['c', 'a'], stayed: ['b']});
   assert.deepEqual(toggled(mine, 'a', false), {favorites: [], stayed: ['b']});
+});
+
+test('«Избранное» in the list: newest first, the found copy with its price, the catalogue for the rest', () => {
+  const found = [{id: 'b', estimate: {amount: 9000}}];
+  const list = savedList(found, homes, {favorites: ['c', 'b', 'gone'], stayed: ['a']});
+  assert.deepEqual(list.map(p => p.id), ['c', 'b']);
+  assert.equal(list[1].estimate.amount, 9000);
+  assert.deepEqual(savedList(found, homes, {favorites: [], stayed: ['a']}), []);
 });
