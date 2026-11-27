@@ -347,7 +347,7 @@ function Chat(){
       if(!session.current||!guard.isCurrent())return;
       const view=resolveProcessLink(link,state,guard.accountId);
       setWorkspaceRole(link.role);activeRoleRef.current=link.role;setData(state);historyEnd.current=pruneHistory(history.messages||[]).at(-1)?.id||'';setMessages(pruneHistory(history.messages||[]));setFlow(keptFlow(history.flow));setActor(link.role);setSelectedRole(link.role);setPageId(keptFlow(history.flow)?'overview':view.section);setHistoryReady(true);setOnline(true);seen.current=new Set(state.notifications.map((n:Row)=>n.id));
-      if(history.flow)setLinkError(tr('В этой роли сохранён незавершённый ввод. Завершите или отмените его, затем откройте ссылку повторно.'));else if(view.block)say(tr('Открыто по ссылке.'),view.block,view.payload);
+      if(keptFlow(history.flow))setLinkError(tr('В этой роли сохранён незавершённый ввод. Завершите или отмените его, затем откройте ссылку повторно.'));else if(view.block)say(tr('Открыто по ссылке.'),view.block,view.payload);
     }finally{locked.current=false;setBusy(false);}
   }});
   // A place a friend shared (src/ShareStay.tsx): the app opens it as the guest, with the dates of the link if it has them.

@@ -95,18 +95,21 @@ export function StayRequest({property,initial,busy,done,result,onQuote,onConfirm
   const from=initial?.start&&initial?.end&&initial.start>opened?stayFromInterval(mode,initial.start,initial.end,policy):defaultStay(mode,policy,opened);
   return settleStay({...from,mode},policy,opened);
  });
+ // The stay of the search or of the booking being changed is kept as it was (a late arrival on a night too) until
+ // the guest changes it: a choice of tariff, day and time cannot always say it (Codex, PR #284).
+ const [kept,setKept]=useState<{start:number;end:number}|null>(()=>!hall&&initial?.start&&initial?.end&&initial.start>opened&&initial.end>initial.start?{start:initial.start,end:initial.end}:null);
  const [when,setWhen]=useState(()=>{const start=initial?.start&&initial.start>opened?initial.start:0,day=start?stayDay(start):stayDay(opened)+86400,slot:Slot=start&&(start-day)/60<SLOT.evening.from-60?'lunch':'evening';return settleSlot(day,slot,opened);});
  const [occasion,setOccasion]=useState(()=>OCCASIONS.some(([id])=>id===initial?.occasion)?String(initial!.occasion):'');
  const [guests,setGuests]=useState(()=>Math.min(cap,Math.max(1,Number(initial?.guests)||(hall?Math.min(cap,least||20):1))));
  const [quote,setQuote]=useState<Row|null>(null),[checking,setChecking]=useState(false),[error,setError]=useState(''),[sheet,setSheet]=useState<''|'price'|'risk'|'when'|'occasion'>('');
- const span=hall?{start:when.day+SLOT[when.slot].from*60,end:when.day+(SLOT[when.slot].from+SLOT[when.slot].hours*60)*60}:stayInterval(choice,policy);
+ const span=hall?{start:when.day+SLOT[when.slot].from*60,end:when.day+(SLOT[when.slot].from+SLOT[when.slot].hours*60)*60}:kept||stayInterval(choice,policy);
  const round=useRef(0),body=()=>({propertyId:property.id,start:stayStamp(span.start),end:stayStamp(span.end),guests,billingMode:hall?'daily':choice.mode,...(hall?{occasion:occasion||'other'}:{})});
- const change=(next:Partial<StayChoice>)=>{const mode=next.mode||choice.mode,first=defaultStay(mode,policy,now);setChoice(settleStay(next.mode&&next.mode!==choice.mode?{...first,day:choice.day,...(mode==='hourly'&&choice.day!==first.day?{time:policy.checkin_minutes??840}:{})}:{...choice,...next},policy,now));};
+ const change=(next:Partial<StayChoice>)=>{setKept(null);const mode=next.mode||choice.mode,first=defaultStay(mode,policy,now);setChoice(settleStay(next.mode&&next.mode!==choice.mode?{...first,day:choice.day,...(mode==='hourly'&&choice.day!==first.day?{time:policy.checkin_minutes??840}:{})}:{...choice,...next},policy,now));};
  useEffect(()=>{
   if(done)return;const id=++round.current;setChecking(true);
   const timer=setTimeout(()=>{onQuote(body()).then(value=>{if(id===round.current){setQuote(value);setError('');}}).catch(e=>{if(id===round.current){setQuote(null);setError(e?.message||tr('Не удалось проверить это время.'));}}).finally(()=>{if(id===round.current)setChecking(false);});},350);
   return()=>clearTimeout(timer);
- },[choice.mode,choice.day,choice.time,choice.count,when.day,when.slot,occasion,guests,done]);
+ },[choice.mode,choice.day,choice.time,choice.count,when.day,when.slot,occasion,guests,done,kept]);
  if(done)return <Closed text={result||tr('Заявка отправлена')} note={tr('Заявка и её статус доступны в «Мои брони».')}/>;
  const ready=!!quote&&!checking&&!busy,risky=!property.verified&&!property.demo_owner;
  // The price in one line, as Airbnb: «10 000 ₸ + депозит 5 000 ₸ ›»; what it is made of opens by a tap.
@@ -120,7 +123,7 @@ export function StayRequest({property,initial,busy,done,result,onQuote,onConfirm
   {hall?<>
    <LineRow title={tr('Когда')} value={dayWord(when.day)+', '+slotTitle(when.slot).toLocaleLowerCase()} disabled={busy} onPress={()=>setSheet('when')}/>
    <LineRow title={tr('Повод')} value={occasion?occasionTitle(occasion):tr('Выбрать')} disabled={busy} onPress={()=>setSheet('occasion')}/>
-  </>:<StayWhen choice={choice} modes={modes} policy={policy} now={now} disabled={busy} onChange={change} rate={mode=>stayRate(property,mode)}/>}
+  </>:<StayWhen choice={choice} modes={modes} policy={policy} now={now} disabled={busy} onChange={change} rate={mode=>stayRate(property,mode)} shown={kept||undefined}/>}
   {cap>1&&<GuestsRow value={guests} max={cap} step={guestStep} disabled={busy} onChange={setGuests}/>}
   {quote?<LineRow title={tr('Цена')} value={priceLine} disabled={checking} onPress={()=>setSheet('price')}/>
    :error?<Text accessibilityRole="alert" style={p.error}>{error}</Text>
