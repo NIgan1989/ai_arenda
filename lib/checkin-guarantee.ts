@@ -51,7 +51,7 @@ export async function guaranteeOptions(s:RentalService,b:Row,at=epoch()){
   .sort((a,b)=>(a.distance??NEAR+1)-(b.distance??NEAR+1)||a.p.estimate.amount-b.p.estimate.amount||String(a.p.id).localeCompare(String(b.p.id)))
   .slice(0,SHOWN)
   .map(({p,distance})=>({propertyId:String(p.id),title:String(p.title),district:String(p.district||''),type:String(p.details?.type||'apartment'),photo:(Array.isArray(p.photos)?p.photos[0]:null)||null,
-   amount:Number(p.estimate.amount),billingMode:String(p.estimate.billingMode),policyVersion:version.get(p.id)!,start,end,distance:distance===null?null:metres(distance),
+   amount:Number(p.estimate.amount),deposit:Number(p.policy?.deposit)||0,billingMode:String(p.estimate.billingMode),policyVersion:version.get(p.id)!,start,end,distance:distance===null?null:metres(distance),
    checkin:checkinMethods[String(p.details?.checkinMethod||'')]||''}));
 }
 

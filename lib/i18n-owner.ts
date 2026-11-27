@@ -3,6 +3,10 @@
 import type {Words} from './i18n-words';
 
 export const OWNER:Words={
+ 'Сейчас · гость не может заселиться':['Қазір · қонақ кіре алмай тұр','Now · the guest cannot get in'],
+ 'Гость не может заселиться':['Қонақ кіре алмай тұр','The guest cannot check in'],
+ 'Гость сообщил: {what}. Ответьте в чате брони или позвоните. С {time} гостю покажем другое жильё рядом, и вам нужно будет вернуть ему оплату.':['Қонақ хабарлады: {what}. Брондағы чатта жауап беріңіз немесе қоңырау шалыңыз. {time} бастап қонаққа жақын жердегі басқа баспананы көрсетеміз, ал сіз оған төлемді қайтаруыңыз керек болады.','The guest says: {what}. Answer in the booking chat or call. From {time} the guest will see another place nearby, and you will need to return the payment.'],
+ 'Гость сообщил: {what}. Ответьте в чате брони или позвоните.':['Қонақ хабарлады: {what}. Брондағы чатта жауап беріңіз немесе қоңырау шалыңыз.','The guest says: {what}. Answer in the booking chat or call.'],
  'На час меньше':['Бір сағатқа азырақ','One hour less'],
  'На час больше':['Бір сағатқа көбірек','One hour more'],
  'Закрываю время…':['Уақытты жауып жатырмын…','Closing the time…'],

@@ -1,4 +1,4 @@
-import {test} from 'node:test';import assert from 'node:assert/strict';import {fixture,load,now,iso} from './helpers/platform.mjs';
+import {test} from 'node:test';import assert from 'node:assert/strict';import {fixture,load,now} from './helpers/platform.mjs';
 // «Гарантия заселения» (2026-11-27): not let in, ten minutes for the owner, then a place nearby no dearer, confirmed at once.
 const {guaranteeState,switchStay,GUARANTEE_WAIT}=await load('checkin-guarantee');
 const {RentalService}=await load('service');
@@ -28,7 +28,7 @@ const later=(f,seconds)=>f.db.raw.prepare('UPDATE checkin_guarantees SET reporte
 test('the owner has ten minutes; then up to three places nearby, no dearer, that confirm at once',async()=>{
  const f=await fixture(),R=f.db.raw;try{
   const near=await place(f,'other','Студия Лермонтова',{price:9000,metres:600});
-  const second=await place(f,'third','Квартира Кутузова',{price:10000,metres:1200});
+  await place(f,'third','Квартира Кутузова',{price:10000,metres:1200});
   await place(f,'third','Дорогая',{price:15000,metres:300});
   await place(f,'third','Далеко',{price:8000,metres:9000});
   await place(f,'fourth','По заявке',{price:8000,metres:400,instant:false});
@@ -49,7 +49,7 @@ test('the owner has ten minutes; then up to three places nearby, no dearer, that
   later(f,GUARANTEE_WAIT);
   const open=await guaranteeState(f.guest,f.booking);
   assert.equal(open.step,'options');
-  assert.deepEqual(open.options.map(o=>[o.title,o.amount,o.distance]),[['Студия Лермонтова',9000,600],['Квартира Кутузова',10000,1200]]);
+  assert.deepEqual(open.options.map(o=>[o.title,o.amount,o.distance,o.deposit]),[['Студия Лермонтова',9000,600,0],['Квартира Кутузова',10000,1200,0]]);
   // Another guest's own booking and the owner's other side never see it.
   await assert.rejects(guaranteeState(f.owner,f.booking),e=>e.status===404);
   // The card already says leaving is free now.
