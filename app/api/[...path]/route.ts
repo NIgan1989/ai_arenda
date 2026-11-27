@@ -1,3 +1,4 @@
+import {shareCard,dataUrlBytes} from '../../../lib/stay-share';
 import {recordViews} from '../../../lib/property-views';
 import {ownerAnalytics} from '../../../lib/owner-analytics-db';
 import {autopilotWeek} from '../../../lib/autopilot-week-db';
@@ -82,6 +83,8 @@ async function handle(request:Request, context:{params:Promise<{path:string[]}>}
     if(request.method==='GET'&&route.join('/')==='public/matching'){const input=new URL(request.url).searchParams.get('q')||'{}';if(input.length>2500)return json({error:'Слишком длинные условия поиска.'},400);let filters;try{filters=JSON.parse(input);}catch{return json({error:'Проверьте формат условий поиска.'},400);}return json(await previewMatches(new RentalService(env.DB,''),filters));}
     if(request.method==='POST'&&route.join('/')==='public/views'){let body;try{body=JSON.parse(await boundedRequestText(request,6000)||'{}');}catch{return json({error:'Проверьте формат запроса.'},400);}return json(await recordViews(env.DB,body));}
     if(request.method==='GET'&&route.join('/')==='public/address')return json(await addressRequest(env.BUCKET,env.DB,new URL(request.url).searchParams));
+    // The photo of a shared place for the preview in WhatsApp and Telegram (lib/stay-share.ts): the bytes, not a data URL.
+    if(request.method==='GET'&&route.length===4&&route[0]==='public'&&route[1]==='stay'&&route[3]==='photo'){const card=await shareCard(env.DB,route[2]);if(!card?.photo)return json({error:'Фото недоступно.'},404);const image=dataUrlBytes((await new RentalService(env.DB,'').publicMedia(card.photo,env.BUCKET)).data);if(!image)return json({error:'Фото недоступно.'},404);return new Response(image.bytes,{headers:{'Content-Type':image.type,'Cache-Control':'public, max-age=3600','X-Content-Type-Options':'nosniff'}});}
     if(request.method==='GET'&&route.length===3&&route[0]==='public'&&route[1]==='media')return json(await new RentalService(env.DB,'').publicMedia(route[2],env.BUCKET));
     if(route.length===2&&route[0]==='auth')return await authRequest(env.DB,request,route[1],'web',env);
     // Face ID or a fingerprint instead of the password, in the phone app only (lib/passkeys.ts).
