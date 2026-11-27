@@ -9,10 +9,12 @@ import {C,type} from './styles';
 import {T} from './tokens';
 import {money,type Row} from './model';
 import {useActivityClock} from './ActivityTimer';
-import {defaultStay,settleStay,stayClock,stayDay,stayDays,stayInterval,stayLimits,stayModes,stayRate,stayStamp,stayTimes,stayUnit,type StayChoice,type StayMode} from '../../lib/stay-choice';
+import {stayFromInterval,defaultStay,settleStay,stayClock,stayDay,stayDays,stayInterval,stayLimits,stayModes,stayRate,stayStamp,stayTimes,stayUnit,type StayChoice,type StayMode} from '../../lib/stay-choice';
 import {recordSpan} from '../../lib/record-span';
 import {homeKinds,homeMinutes,homeAdvice,homeRooms,HOME_MAX_ROOMS,HOME_MAX_WINDOWS,HOME_MIN_FEE,HOME_FEE_STEP,type HomeKind,type HomeDeal} from '../../lib/home-cleaning';
 import {SwipeConfirm} from './SwipeConfirm';
+import {isBanquet,isBath} from '../../lib/listings';
+import {OCCASIONS,occasionTitle} from './ai-request';
 import {AddressField} from './AddressSuggest';
 import {LineRow,PopSheet,SheetPane,useInSheet} from './PopSheet';
 // A stay request and a new cleaning on one screen each, built from the same parts as on the site:
@@ -60,50 +62,91 @@ export function StayWhen({choice,modes,policy,now,disabled,onChange,rate,fixedSt
  </>;
 }
 // «Гости · 2 гостя ›»: the count on its own small sheet, as «Кто?» in Airbnb.
-export function GuestsRow({value,max,disabled,onChange}:{value:number;max:number;disabled:boolean;onChange:(n:number)=>void}){
+export function GuestsRow({value,max,step=1,disabled,onChange}:{value:number;max:number;step?:number;disabled:boolean;onChange:(n:number)=>void}){
  const [open,setOpen]=useState(false);
  return <>
   <LineRow title={tr('Гости')} value={guestsWord(value)} disabled={disabled} onPress={()=>setOpen(true)}/>
   <PopSheet visible={open} title={tr('Гости')} onClose={()=>setOpen(false)} footer={<Send title={tr('Готово')} disabled={false} busy={false} onPress={()=>setOpen(false)}/>}>
-   <Stepper label={tr('Сколько гостей')} value={value} min={1} max={max} disabled={disabled} format={guestsWord} onChange={onChange}/>
+   <Stepper label={tr('Сколько гостей')} value={value} min={1} max={max} step={1} disabled={disabled} format={guestsWord} onChange={onChange}/>{step>1&&<View style={p.tasks}>{[-step,step].map(d=>{const next=Math.min(max,Math.max(1,value+d)),off=disabled||next===value;return <Pressable key={d} accessibilityRole="button" accessibilityState={{disabled:off}} disabled={off} onPress={()=>onChange(next)} style={[p.task,off&&p.dim]}><Text style={p.taskText}>{(d>0?'+':'−')+step}</Text></Pressable>;})}</View>}
    <Text style={p.note}>{tr('Не больше {guests}.',{guests:guestsWord(max)})}</Text>
   </PopSheet>
  </>;
 }
-export function StayRequest({property,busy,done,result,onQuote,onConfirm}:{property:Row;busy:boolean;done?:boolean;result?:string;onQuote:(body:Row)=>Promise<Row>;onConfirm:(body:Row)=>void}){
- const policy=property.policy||{},modes=useMemo(()=>stayModes(property),[property.price,policy.hourly_price,policy.nightly_price]);
+// The stay a request opens with: from the search the place was found by, or from a booking check being changed.
+export type StayStart={mode?:StayMode;start?:number;end?:number;guests?:number;occasion?:string};
+type Slot='lunch'|'evening';
+const SLOT:Record<Slot,{from:number;hours:number}>={lunch:{from:12*60,hours:5},evening:{from:18*60,hours:6}};
+const slotTitle=(slot:Slot)=>slot==='lunch'?tr('Обед')+' 12:00–17:00':tr('Вечер')+' 18:00–00:00';
+// A slot of a hall still ahead: lunch today is gone at noon, the evening at six, then the next day's lunch.
+function settleSlot(day:number,slot:Slot,now:number):{day:number;slot:Slot}{
+ if(day+SLOT[slot].from*60>now)return {day,slot};
+ if(slot==='lunch'&&day+SLOT.evening.from*60>now)return {day,slot:'evening'};
+ return {day:stayDay(now)+86400>day?stayDay(now)+86400:day+86400,slot:'lunch'};
+}
+// A request without the chat (2026-11-27): a home by the tariff, days, times and guests; a bath by the hour; a hall or
+// a cafe by the lunch or the evening of one day, with what it is taken for and how many come (server lib/service.ts kindMode).
+export function StayRequest({property,initial,busy,done,result,onQuote,onConfirm}:{property:Row;initial?:StayStart;busy:boolean;done?:boolean;result?:string;onQuote:(body:Row)=>Promise<Row>;onConfirm:(body:Row)=>void}){
+ const policy=property.policy||{},type=String(property.details?.type||property.type||''),hall=isBanquet(type),bath=isBath(type);
+ const modes=useMemo<StayMode[]>(()=>bath?['hourly']:hall?['daily']:stayModes(property),[bath,hall,property.price,policy.hourly_price,policy.nightly_price]);
  const clock=useActivityClock(),[opened]=useState(()=>Math.floor(Date.now()/1000)),now=clock||opened;
- const [choice,setChoice]=useState<StayChoice>(()=>settleStay(defaultStay('daily',policy,opened),policy,opened)),[guests,setGuests]=useState(1);
- const [quote,setQuote]=useState<Row|null>(null),[checking,setChecking]=useState(false),[error,setError]=useState(''),[sheet,setSheet]=useState<''|'price'|'risk'>('');
- const round=useRef(0),span=stayInterval(choice,policy),body=()=>({propertyId:property.id,start:stayStamp(span.start),end:stayStamp(span.end),guests,billingMode:choice.mode});
- const change=(next:Partial<StayChoice>)=>{const mode=next.mode||choice.mode,first=defaultStay(mode,policy,now);setChoice(settleStay(next.mode&&next.mode!==choice.mode?{...first,day:choice.day,...(mode==='hourly'&&choice.day!==first.day?{time:policy.checkin_minutes??840}:{})}:{...choice,...next},policy,now));};
+ const cap=Math.max(1,Number(property.capacity)||(hall?100:1)),least=hall?Math.max(0,Number(policy.included_guests)||0):0;
+ const [choice,setChoice]=useState<StayChoice>(()=>{
+  const mode:StayMode=initial?.mode&&modes.includes(initial.mode)?initial.mode:modes[0];
+  const from=initial?.start&&initial?.end&&initial.start>opened?stayFromInterval(mode,initial.start,initial.end,policy):defaultStay(mode,policy,opened);
+  return settleStay({...from,mode},policy,opened);
+ });
+ // The stay of the search or of the booking being changed is kept as it was (a late arrival on a night too) until
+ // the guest changes it: a choice of tariff, day and time cannot always say it (Codex, PR #284).
+ const [kept,setKept]=useState<{start:number;end:number}|null>(()=>!hall&&initial?.start&&initial?.end&&initial.start>opened&&initial.end>initial.start?{start:initial.start,end:initial.end}:null);
+ const [when,setWhen]=useState(()=>{const start=initial?.start&&initial.start>opened?initial.start:0,day=start?stayDay(start):stayDay(opened)+86400,slot:Slot=start&&(start-day)/60<SLOT.evening.from-60?'lunch':'evening';return settleSlot(day,slot,opened);});
+ const [occasion,setOccasion]=useState(()=>OCCASIONS.some(([id])=>id===initial?.occasion)?String(initial!.occasion):'');
+ const [guests,setGuests]=useState(()=>Math.min(cap,Math.max(1,Number(initial?.guests)||(hall?Math.min(cap,least||20):1))));
+ const [quote,setQuote]=useState<Row|null>(null),[checking,setChecking]=useState(false),[error,setError]=useState(''),[sheet,setSheet]=useState<''|'price'|'risk'|'when'|'occasion'>('');
+ const span=hall?{start:when.day+SLOT[when.slot].from*60,end:when.day+(SLOT[when.slot].from+SLOT[when.slot].hours*60)*60}:kept||stayInterval(choice,policy);
+ const round=useRef(0),body=()=>({propertyId:property.id,start:stayStamp(span.start),end:stayStamp(span.end),guests,billingMode:hall?'daily':choice.mode,...(hall?{occasion:occasion||'other'}:{})});
+ const change=(next:Partial<StayChoice>)=>{setKept(null);const mode=next.mode||choice.mode,first=defaultStay(mode,policy,now);setChoice(settleStay(next.mode&&next.mode!==choice.mode?{...first,day:choice.day,...(mode==='hourly'&&choice.day!==first.day?{time:policy.checkin_minutes??840}:{})}:{...choice,...next},policy,now));};
  useEffect(()=>{
   if(done)return;const id=++round.current;setChecking(true);
   const timer=setTimeout(()=>{onQuote(body()).then(value=>{if(id===round.current){setQuote(value);setError('');}}).catch(e=>{if(id===round.current){setQuote(null);setError(e?.message||tr('Не удалось проверить это время.'));}}).finally(()=>{if(id===round.current)setChecking(false);});},350);
   return()=>clearTimeout(timer);
- },[choice.mode,choice.day,choice.time,choice.count,guests,done]);
+ },[choice.mode,choice.day,choice.time,choice.count,when.day,when.slot,occasion,guests,done,kept]);
  if(done)return <Closed text={result||tr('Заявка отправлена')} note={tr('Заявка и её статус доступны в «Мои брони».')}/>;
  const ready=!!quote&&!checking&&!busy,risky=!property.verified&&!property.demo_owner;
  // The price in one line, as Airbnb: «10 000 ₸ + депозит 5 000 ₸ ›»; what it is made of opens by a tap.
  const priceLine=quote?money(quote.amount)+(quote.policy?.deposit?' + '+tr('депозит {v}',{v:money(quote.policy.deposit)}):''):'';
  const perk=quote?.window?windowBadge(quote.window):quote?.repeat?tr('Скидка постоянного гостя −{n}%',{n:quote.repeat.percent}):'';
+ const perGuest=Number(quote?.policy?.extra_guest_price)||0,guestStep=hall&&cap>=40?5:1;
+ const dayWord=(day:number)=>day===stayDay(now)?tr('сегодня'):day===stayDay(now)+86400?tr('завтра'):words(day,{day:'numeric',month:'long'});
  return <View style={p.card}>
   <View style={p.head}><Text accessibilityRole="header" style={p.title}>{property.title}</Text><Text style={p.note}>{[property.city,property.district].filter(Boolean).join(', ')}{property.capacity?' · '+tr('до {guests}',{guests:guestsWord(property.capacity)}):''}</Text></View>
   {risky&&<LineRow dot={C.warning} title={tr('Жильё не проверено')} onPress={()=>setSheet('risk')}/>}
-  <StayWhen choice={choice} modes={modes} policy={policy} now={now} disabled={busy} onChange={change} rate={mode=>stayRate(property,mode)}/>
-  {(property.capacity||1)>1&&<GuestsRow value={guests} max={property.capacity} disabled={busy} onChange={setGuests}/>}
+  {hall?<>
+   <LineRow title={tr('Когда')} value={dayWord(when.day)+', '+slotTitle(when.slot).toLocaleLowerCase()} disabled={busy} onPress={()=>setSheet('when')}/>
+   <LineRow title={tr('Повод')} value={occasion?occasionTitle(occasion):tr('Выбрать')} disabled={busy} onPress={()=>setSheet('occasion')}/>
+  </>:<StayWhen choice={choice} modes={modes} policy={policy} now={now} disabled={busy} onChange={change} rate={mode=>stayRate(property,mode)} shown={kept||undefined}/>}
+  {cap>1&&<GuestsRow value={guests} max={cap} step={guestStep} disabled={busy} onChange={setGuests}/>}
   {quote?<LineRow title={tr('Цена')} value={priceLine} disabled={checking} onPress={()=>setSheet('price')}/>
    :error?<Text accessibilityRole="alert" style={p.error}>{error}</Text>
    :<View style={p.wait}><Thinking size="sm"/><Text style={p.fact}>{tr('Проверяем свободное время и цену…')}</Text></View>}
   {!!perk&&<Text style={p.note}>{perk}</Text>}
+  {hall&&guests<least&&<Text style={p.note}>{tr('Наименьший заказ зала: {least} гостей.',{least})}</Text>}
   <Text style={p.note}>{tr('Проводя, вы соглашаетесь с временем, ценой, оплатой, депозитом и правилами проживания. Деньги сейчас не списываются.')}</Text>
   <SwipeConfirm label={tr('Проведите: отправить заявку')} disabled={!ready} onConfirm={()=>{if(quote)onConfirm({...body(),expectedAmount:quote.amount,expectedPolicyVersion:quote.policy.version,acceptTerms:true});}}/>
+  <PopSheet visible={sheet==='when'} title={tr('Когда')} onClose={()=>setSheet('')} footer={<Send title={tr('Готово')} disabled={false} busy={false} onPress={()=>setSheet('')}/>}>
+   <Days label={tr('Дата')} value={when.day} now={now} disabled={busy} onChange={day=>setWhen(settleSlot(day,when.slot,now))}/>
+   <Segments label={tr('Время')} value={when.slot} disabled={busy} onChange={slot=>setWhen(settleSlot(when.day,slot,now))} options={(['lunch','evening'] as Slot[]).filter(slot=>when.day+SLOT[slot].from*60>now).map(slot=>({id:slot,title:slot==='lunch'?tr('Обед'):tr('Вечер'),note:slot==='lunch'?'12:00–17:00':'18:00–00:00'}))}/>
+   <Text style={p.note}>{tr('Время Казахстана.')}</Text>
+  </PopSheet>
+  <PopSheet visible={sheet==='occasion'} title={tr('Повод')} onClose={()=>setSheet('')}>
+   <View style={p.tasks}>{OCCASIONS.map(([id,title])=>{const on=id===occasion;return <Pressable key={id} accessibilityRole="radio" accessibilityState={{selected:on}} onPress={()=>{setOccasion(id);setSheet('');}} style={[p.task,on&&p.on]}><Text style={[p.taskText,on&&p.onText]}>{title}</Text></Pressable>;})}</View>
+  </PopSheet>
   <PopSheet visible={sheet==='risk'} title={tr('Жильё не проверено')} onClose={()=>setSheet('')}><Text style={p.fact}>{tr('Сервис не сверял документ о праве владельца сдавать это жильё. Бронируя, вы принимаете этот риск.')}</Text><Text style={p.fact}>{tr('Платите только по реквизитам в карточке брони.')}</Text></PopSheet>
   <PopSheet visible={sheet==='price'&&!!quote} title={tr('Цена')} onClose={()=>setSheet('')}>{!!quote&&<>
    <Text style={p.span}>{recordSpan(span.start,span.end)}</Text>
-   <View style={p.sum}><Text style={p.amount}>{money(quote.amount)}</Text><Text style={p.sumNote}>{quote.periods} × {money(quote.price)} · {tr(quote.unitLabel)}</Text></View>
+   <View style={p.sum}><Text style={p.amount}>{money(quote.amount)}</Text>{hall?(perGuest>0&&<Text style={p.sumNote}>{tr('{price} за гостя × {n}.',{price:money(perGuest),n:Math.max(guests,least)})}</Text>):<Text style={p.sumNote}>{quote.periods} × {money(quote.price)} · {tr(quote.unitLabel)}</Text>}</View>
    {!!quote.window&&<Text style={p.fact}>{windowBadge(quote.window)}{' · '+tr('обычно {price}/час',{price:money(quote.window.regular)})}</Text>}
    {!!quote.repeat&&<Text style={p.fact}>{tr('Скидка постоянного гостя −{n}%',{n:quote.repeat.percent})}{' · '+tr('без неё {price}',{price:money(quote.repeat.regular*quote.periods)})}</Text>}
+   {bath&&Number(quote.extraGuests)>0&&<Text style={p.fact}>{tr('В цене гостей: {included}. Доплата за ещё {extra}: {sum}.',{included:guests-Number(quote.extraGuests),extra:Number(quote.extraGuests),sum:money(Number(quote.guestSurcharge)*Number(quote.periods))})}</Text>}
    <Text style={p.fact}>{quote.policy.deposit?tr('Депозит: {v}, отдельно от проживания',{v:money(quote.policy.deposit)}):tr('Депозит: не нужен')}</Text>
    {!!quote.payment&&<Text style={p.fact}>{quote.payment.prepayPercent?tr('{label}: {sum} после подтверждения.',{label:prepayLabel(Number(quote.payment.prepayPercent)),sum:money(quote.payment.prepay)}):tr('Оплата при заселении: владельцу, когда вы на месте.')}</Text>}
    <Text style={p.fact}>{quote.policy.auto_confirm?tr('Подтверждается сразу, по правилам владельца.'):tr('Владелец отвечает в течение 15 минут.')}</Text>
