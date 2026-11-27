@@ -97,3 +97,34 @@ test('«Сдавать почасово» sets the hourly price the leaders sugg
   await assert.rejects(f.owner.decideApproval('owner',{id:card.id,revision:card.revision,action:'accept'}),e=>e.status===409);
  }finally{f.db.close();}
 });
+
+
+test('transient D1 disconnect while expiring tips retries once, without retrying SQL failures',async()=>{
+ const f=await fixture();
+ try{
+  const prepare=f.db.prepare.bind(f.db);
+  let attempts=0;
+  f.db.prepare=sql=>{
+   const statement=prepare(sql);
+   if(sql.startsWith("UPDATE listing_tips SET status='expired'")){
+    const run=statement.run.bind(statement);
+    statement.run=async()=>{
+     attempts++;
+     if(attempts===1)throw new Error('Network connection lost.');
+     return run();
+    };
+   }
+   return statement;
+  };
+  assert.equal(await offerListingTip(f.db,'owner',now()),null);
+  assert.equal(attempts,2,'only the idempotent expiry UPDATE is retried');
+  f.db.prepare=sql=>{
+   const statement=prepare(sql);
+   if(sql.startsWith("UPDATE listing_tips SET status='expired'"))
+    statement.run=async()=>{attempts++;throw new Error('too many terms in compound SELECT: SQLITE_ERROR');};
+   return statement;
+  };
+  await assert.rejects(offerListingTip(f.db,'owner',now()),/too many terms in compound SELECT/);
+  assert.equal(attempts,3,'deterministic SQL errors must not be retried');
+ }finally{f.db.close();}
+});
