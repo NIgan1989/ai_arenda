@@ -54,6 +54,8 @@ import { C,s,type } from './src/styles';
 import { T } from './src/tokens';
 import {ActivityClockProvider,ActivityTimer} from './src/ActivityTimer';
 import {ApprovalCard} from './src/ApprovalCard';
+import {StayCheck} from './src/StayCheck';
+import type {Approval} from '../lib/approvals';
 import {PropertyControl,upcomingStays,readinessLabels} from './src/PropertyControl';
 import {BookingChanges} from './src/BookingChanges';
 import {StayReview} from './src/StayReview';
@@ -123,9 +125,10 @@ export function freeCancelLine(quote:Row,mode:string,now=Math.floor(Date.now()/1
   const until=Number(quote?.start)-(mode==='hourly'?FREE_HOURLY:FREE_DAILY);
   return until>now?tr('Отмена бесплатно до {v}',{v:date(until)}):tr('Отмена бесплатно, пока владелец не подтвердил');
 }
-// A booking questionnaire saved by an older version (dates typed in the chat) is not opened again: a booking is chosen
-// on its form (StayRequest) since 2026-11-27.
-const keptFlow=(flow:Flow|null|undefined)=>flow&&!(flow.kind==='booking'&&flow.questions?.length)?flow:null;
+// A questionnaire saved by an older version (dates, a change, a profile typed in the chat) is not opened again: it used
+// to open «Сводка» on start with its questions, and «Стоп» left that sheet and the chat under it (2026-11-27). Everything
+// is filled in on its own form now, so the app always starts on the map.
+const keptFlow=(_flow:Flow|null|undefined):Flow|null=>null;
 function BookingReview({flow,photo,busy,done,result,onConfirm,onEdit}:{flow:Flow;photo?:string;busy:boolean;done?:boolean;result?:string;onConfirm:(quote:Row)=>void;onEdit:()=>void}){
   const [quote,setQuote]=useState<Row|null>(null),[error,setError]=useState(''),[checking,setChecking]=useState(false),[attempt,setAttempt]=useState(0);
   const [more,setMore]=useState(false);
@@ -331,6 +334,8 @@ function Chat(){
   const [noticesSeen,setNoticesSeen]=useState(0);
   // The booking whose «Изменить бронь» sheet is open (BookingChanges): it opens from «Ещё».
   const [changing,setChanging]=useState('');
+  // «Вы заселились?» answered on a guest's booking: the short line the card keeps after the question is gone.
+  const [stayChecked,setStayChecked]=useState<Record<string,string>>({});
   useEffect(()=>{setNoticesSeen(0);},[userId,selectedRole]);
   useEffect(()=>{if(pageId==='account'&&menuStart==='notices')setNoticesSeen(Math.max(0,...(data.notifications||[]).map((n:Row)=>Number(n.created_at)||0)));},[pageId,menuStart]); // eslint-disable-line react-hooks/exhaustive-deps
   const newNotices=selectedRole?roleEvents(data.notifications as Row[],selectedRole).filter(n=>!Number(n.read)&&Number(n.created_at)>noticesSeen).length:0;
@@ -777,6 +782,7 @@ function Chat(){
    if(pageId==='properties'&&!toMap){if(editor)void load().then(state=>{if(state)catalog(state,'owner');});return;}
    if(editor)void load();backToMap();};
   // A deal opened from a list (Мои брони, Заявки, Уборки) goes back to that list by «‹» in the head of its sheet.
+  const stayCheckOf=(id:string)=>(data.approvals||[]).find((c:Row)=>c.id==='stay-check:'+id&&c.canDecide) as Approval|undefined;
   const openDeal=(kind:'booking'|'job',id:string)=>{dealFrom.current=['map','overview','account','chats'].includes(pageId)?'':pageId;scrollMessage.current=null;setDealCover(0);setDeal({kind,id,after:messages.length?messages[messages.length-1].id:''});setPageId('overview');scroll.current?.scrollTo({y:0,animated:false});};
   const openPage=(id:string)=>{scrollMessage.current=null;setPageId(id);};
   let accountRoles:Role[]=[];try{accountRoles=JSON.parse(data.profile?.roles||'[]');}catch{}
@@ -835,7 +841,7 @@ function Chat(){
       // The owner answers a request right in the card: its approval decides it (concept 2026-11-25).
       const card=owner&&b.status==='requested'?(data.approvals||[]).find((c:Row)=>c.id==='booking:'+id&&c.canDecide):undefined,ask=card?{card,onDecide:(body:Row)=>perform('approvals',body,uid()),onReview:()=>pop(tr('Заявка'),'approval',{id:'booking:'+id}),payout:data.payout||null,onMethod:(page:'payout')=>{setMenuStart(page);openPage('account');}}:undefined;
       return <Fragment key={id}>{!!title&&!(m.id==='page-bookings'&&['done','cancelled'].includes(tabNow))&&<Text accessibilityRole="header" style={s.groupTitle}>{title}</Text>}<DealCard kind="booking" compact={m.id==='page-bookings'} startOpen={recordGroup(b,clock)==='now'} request={ask} item={b} role={payload.role} userId={userId||''} thread={owner?bookingThread(b,data,clock):null} line={owner?null:guestLine(b,clock,data.paymentMode)} busy={busy} onMap={onMap('booking',id)}
-        always={<>{!owner&&<CheckinGuarantee key={'guarantee:'+id} booking={b} stay={kindCategory(b.property_type||'apartment')==='stay'} busy={busy} replacement={b.guarantee?.replacedBy?data.bookings.find((x:Row)=>x.id===b.guarantee.replacedBy):null}
+        always={<>{!owner&&(stayChecked[id]||stayCheckOf(id))&&<StayCheck key={'stay-check:'+id} card={stayCheckOf(id)} said={stayChecked[id]} busy={busy} onAnswer={async body=>{const said=await perform('approvals',body,uid(),undefined,false,true);if(said)setStayChecked(v=>({...v,[id]:said}));}}/>}{!owner&&<CheckinGuarantee key={'guarantee:'+id} booking={b} stay={kindCategory(b.property_type||'apartment')==='stay'} busy={busy} replacement={b.guarantee?.replacedBy?data.bookings.find((x:Row)=>x.id===b.guarantee.replacedBy):null}
           canReport={confirmed&&!b.terms?.actual_checkin&&!b.guarantee&&checkinOpen(b.start,data.serverTime,b.terms?.early_checkin_at)&&b.end+86400>data.serverTime}
           onReport={()=>setAsk({id:uid(),path:'bookings/'+id,body:{action:'not_let_in',expectedVersion:b.terms?.version},title:tr('Что случилось?'),choices:guaranteeChoices(),choiceKey:'reason',swipe:tr('позвать помощь'),note:kindCategory(b.property_type||'apartment')==='stay'?tr('Мы напишем владельцу и позовём его. Если он не ответит за 10 минут, предложим жильё рядом.'):tr('Мы напишем владельцу и администратору сервиса. Объекты владельца скроются, пока идёт проверка.')})}
           onPick={o=>setAsk({id:uid(),path:'operations/guarantee/switch',body:{bookingId:id,propertyId:o.propertyId,shownAmount:o.amount},title:tr('Забронировать замену'),subject:o.title,dates:date(o.start)+' → '+date(o.end),amount:o.amount,swipe:tr('забронировать'),note:o.deposit?tr('Бронь подтвердится сразу. Новому владельцу нужен депозит {sum}, он вернётся после выезда. Первую бронь отменим, её владелец вернёт вам всю оплату.',{sum:money(o.deposit)}):tr('Бронь подтвердится сразу. Первую бронь отменим, владелец вернёт вам всю оплату.')})}/>}
@@ -981,11 +987,20 @@ function Chat(){
   const sheetOpen=pageId!=='map'||!!flow;
   // Dictation belongs to the visible map: a page over it must not get a late search.
   useEffect(()=>{if(sheetOpen)cancelVoice();},[sheetOpen]);
+  // No role has «Сводка» any more (2026-11-27): each thing it listed has its own place — the guest's in «Мои брони» and
+  // on the map (with «Вы заселились?»), the owner's and the cleaner's on the main screen of the map, in «Заявки», «Уборки»,
+  // «Задания» and the cards of the bookings and jobs. The sheet is still the frame of a place, a request, a booking's or
+  // a job's card, its check and the editor of a place; once none of them is left in it, the map comes back instead of
+  // a board and the chat said under it.
+  // A form still open (a refusal of the server said under it) keeps the sheet: the person sees why and keeps what was chosen.
+  const openForm=said.some(m=>['stay-form','review','property-quick','property-editor','property-settings','auth'].includes(String(m.block))&&!m.done);
+  const bareSheet=!!selectedRole&&pageId==='overview'&&!dealOpen&&!flow&&!placeMsg&&!stayMsg&&!editMsg&&!openForm;
+  useEffect(()=>{if(bareSheet)backToMap();},[bareSheet]);
   const nextTask=data.assistantBrief?.automatic?data.assistantBrief.prompts[0]:null;
   const homeCity=String(data.profile?.city||''),cityFlats=pageId==='catalog'&&homeCity?data.properties.filter((p:Row)=>p.city===homeCity):[],byCity=cityFlats.length>0&&!allCities;
   // Tabs of the list pages (lib/booking-filters.ts, lib/job-filters.ts): which tabs the page has, and the tab of each item on it.
   const pageTabs:{tabs:{id:string;label:string}[];of:(item:Row)=>string;items:Row[];label:string}|null=pageId==='bookings'&&selectedRole==='owner'?{tabs:ownerRequestTabs,of:b=>ownerRequestTab(b,userId||'',data.serverTime||Date.now()/1000),items:data.bookings,label:tr('Заявки')}
-   :pageId==='bookings'?{tabs:bookingTabs,of:b=>bookingTab(b,selectedRole||'',userId||''),items:data.bookings,label:tr('Брони')}
+   :pageId==='bookings'?{tabs:bookingTabs,of:b=>selectedRole==='guest'&&(stayCheckOf(b.id)||stayChecked[b.id])?'active':bookingTab(b,selectedRole||'',userId||''),items:data.bookings,label:tr('Брони')}
    :pageId==='cleaning'&&selectedRole==='owner'?{tabs:ownerJobTabs,of:ownerJobTab,items:cleaningFlat?data.jobs.filter((j:Row)=>String(j.property_id)===cleaningFlat):data.jobs,label:tr('Уборки')}
    :pageId==='assignments'?{tabs:cleanerJobTabs,of:j=>cleanerJobTab(j,userId||'',data.applications.find((a:Row)=>a.job_id===j.id&&a.user_id===userId)),items:data.jobs.filter((j:Row)=>j.assigned_to===userId||data.applications.some((a:Row)=>a.job_id===j.id&&a.user_id===userId)),label:tr('Задания')}:null;
   // The owner's «Новые» also count the cleaners' responses shown above the guests' requests.
@@ -993,7 +1008,7 @@ function Chat(){
   const tabCount:Record<string,number>=pageTabs?{...tabCounts(pageTabs.tabs,pageTabs.items,pageTabs.of),...(responses?{new:tabCounts(pageTabs.tabs,pageTabs.items,pageTabs.of).new+responses}:{})}:{},tabNow=pageTabs?(tabPick[pageId]&&pageTabs.tabs.some(t=>t.id===tabPick[pageId])?tabPick[pageId]:firstTab(pageTabs.tabs,tabCount)):'',firstTabNow=pageTabs?.tabs[0]?.id===tabNow;
   const allIds:string[]=pageId==='catalog'?(byCity?cityFlats:data.properties).map((p:Row)=>p.id):pageId==='properties'?data.ownProperties.map((p:Row)=>p.id):pageTabs?pageTabs.items.filter((item:Row)=>pageTabs.of(item)===tabNow).sort((x:Row,y:Row)=>tabNow==='archive'||pageId==='cleaning'&&tabNow!=='now'?y.start-x.start:0).map((item:Row)=>item.id):data.jobs.map((j:Row)=>j.id);
   const ids=allIds.slice(0,listed.page===pageId?listed.count:12),hidden=allIds.length-ids.length;
-  const primary:Message={id:'page-'+pageId,sender:'assistant',text:'',block:pageId==='overview'?(flow?undefined:'workspace'):pageId==='properties'||pageId==='catalog'?'properties':pageId==='bookings'?'bookings':['cleaning','jobs','assignments'].includes(pageId)?'jobs':undefined,payload:{ids,role:selectedRole,mode:selectedRole==='owner'?'owner':'guest'}};
+  const primary:Message={id:'page-'+pageId,sender:'assistant',text:'',block:pageId==='overview'?undefined:pageId==='properties'||pageId==='catalog'?'properties':pageId==='bookings'?'bookings':['cleaning','jobs','assignments'].includes(pageId)?'jobs':undefined,payload:{ids,role:selectedRole,mode:selectedRole==='owner'?'owner':'guest'}};
   if(erasureResult)return <SafeAreaView style={s.screen}><ScrollView contentContainerStyle={s.transcript}><View style={s.card}><Text style={s.cardTitle}>{tr('Результат удаления')}</Text><Text style={s.text}>{erasureResult.message}</Text><Text selectable style={s.meta}>{tr('Квитанция: {id}',{id:erasureResult.receipt.id})}</Text><Button title={tr('Продолжить')} onPress={()=>setErasureResult(null)}/></View></ScrollView></SafeAreaView>;
   // No account: the map as a guest sees it. Search, pins, cards and prices work; booking, the chats and the menu ask to sign in.
   if(!selectedRole&&ready&&!opening&&!data.user&&signIn===null)return <ActivityClockProvider serverTime={data.serverTime}><SafeAreaView style={s.screen} edges={['top','bottom']}><KeyboardAvoidingView style={s.shell} behavior="padding">
