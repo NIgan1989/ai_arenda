@@ -10,6 +10,7 @@ export const COMMON:Words={
   '{title}: {n} фото. Добавить ещё':['{title}: {n} фото. Тағы қосу','{title}: {n} photos. Add more'],
   '{title}: добавить фото':['{title}: фото қосу','{title}: add a photo'],
   'Открыть фото: {title}':['Фотоны ашу: {title}','Open photo: {title}'],
+  'Листайте фото в сторону':['Фотоларды бүйірге қарай парақтаңыз','Swipe sideways for more photos'],
   'Предыдущее фото':['Алдыңғы фото','Previous photo'],
   'Следующее фото':['Келесі фото','Next photo'],
   '{title} · {n} из {total}':['{title} · {n}/{total}','{title} · {n} of {total}'],

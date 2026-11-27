@@ -7,6 +7,7 @@ import {T} from './tokens';
 import {menuIcons} from './AccountRows';
 import {EditNote} from './EditSheet';
 import {Photo,pickImages,uploadImage} from './ListingMedia';
+import {PhotoTap} from './PhotoGallery';
 const R=T.radius,GAP=8;
 
 // Photos of a place as an even grid of three (board «Фотографии», 2026-11-26; Airbnb's photo tour): the first one is
@@ -39,7 +40,7 @@ export function PhotoGrid({photos,onChange,max=8,onBusy,disabled=false,slots,pic
  return <View style={g.box} onLayout={e=>setWidth(e.nativeEvent.layout.width)}>
   {width>0&&<View style={g.grid}>
    {photos.map((id,i)=><View key={id} style={[g.tile,size]}>
-    <Photo id={id} alt={i===0?t('Обложка'):t('Фото {v}',{v:(i+1)})} fill/>
+    <PhotoTap ids={photos} index={i} title={t('Фото жилья')} style={StyleSheet.absoluteFill}><Photo id={id} alt={i===0?t('Обложка'):t('Фото {v}',{v:(i+1)})} fill/></PhotoTap>
     {i===0?<View style={g.badge}><Text style={g.badgeText}>{t('Обложка')}</Text></View>
      :<Pressable accessibilityRole="button" accessibilityLabel={t('Сделать фото {v} обложкой',{v:(i+1)})} disabled={disabled} hitSlop={6} onPress={()=>onChange([id,...photos.filter(x=>x!==id)])} style={[g.round,g.left]}><Image source={menuIcons.star} style={g.roundIcon} accessibilityElementsHidden importantForAccessibility="no"/></Pressable>}
     <Pressable accessibilityRole="button" accessibilityLabel={t('Убрать фото {v}',{v:(i+1)})} disabled={disabled} hitSlop={6} onPress={()=>onChange(photos.filter(x=>x!==id))} style={[g.round,g.right]}><Text style={g.roundText}>✕</Text></Pressable>

@@ -4,6 +4,7 @@ import {View,Text,ScrollView,Pressable,StyleSheet,LayoutAnimation,type NativeScr
 import {C,type} from './styles';
 import {T} from './tokens';
 import {Photo} from './ListingMedia';
+import {PhotoTap} from './PhotoGallery';
 import type {Row} from './model';
 import {cleaningTime,jobPlace} from '../../lib/job-place';
 const R=T.radius;
@@ -27,7 +28,7 @@ export function JobPlace({job,compact=false,fold=false}:{job:Row;compact?:boolea
   {/* Without photos there is no empty half-screen: the kind of housing opens the first line instead (concept, Wolt). */}
   {shown.length>0&&<View style={p.gallery} onLayout={e=>setWidth(e.nativeEvent.layout.width)}>
    {width?<ScrollView horizontal pagingEnabled showsHorizontalScrollIndicator={false} onMomentumScrollEnd={onScroll} onScroll={onScroll} scrollEventThrottle={64}>
-     {shown.map((id,i)=><View key={id} style={{width,height:'100%'}}><Photo id={id} fill alt={shown.length>1?tr('Фото жилья: {v}, {n} из {length}',{v:job.title||v.kind,n:i+1,length:shown.length}):alt}/></View>)}
+     {shown.map((id,i)=><PhotoTap key={id} ids={shown} index={i} title={job.title||v.kind} style={{width,height:'100%'}}><Photo id={id} fill alt={shown.length>1?tr('Фото жилья: {v}, {n} из {length}',{v:job.title||v.kind,n:i+1,length:shown.length}):alt}/></PhotoTap>)}
     </ScrollView>
     :null}
    <Text style={p.kind}>{v.kind}</Text>

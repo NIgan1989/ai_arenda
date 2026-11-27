@@ -1,0 +1,41 @@
+name: Photos of the test listings
+# Gives the test listings of the live base (ids a10e0000-0000-4000-8001-…) real photos of their kind:
+# scripts/demo-photos/seed-demo-photos.mjs with the list in scripts/demo-photos/photos.json (CC0 photos, authors kept there).
+# Runs after a merge into main that changes the list or the script, and by hand. Other branches never write.
+# Needs CLOUDFLARE_API_TOKEN (the one publishing uses: D1 Edit and Workers R2 Storage: Edit).
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - scripts/demo-photos/photos.json
+      - scripts/demo-photos/seed-demo-photos.mjs
+      - .github/workflows/demo-photos.yml
+permissions:
+  contents: read
+concurrency:
+  group: demo-photos
+  cancel-in-progress: false
+jobs:
+  seed:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+      - run: command -v convert || (sudo apt-get update -qq && sudo apt-get install -y -qq imagemagick)
+      - name: Find the account
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_D1_DATABASE_ID: ${{ secrets.CLOUDFLARE_D1_DATABASE_ID }}
+        run: node scripts/resolve-cloudflare-ids.mjs
+      - name: Photos into R2 and the listings
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: node scripts/demo-photos/seed-demo-photos.mjs

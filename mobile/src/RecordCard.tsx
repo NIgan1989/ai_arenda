@@ -9,6 +9,7 @@ import {useActivityClock} from './ActivityTimer';
 import {request} from './api';
 import {money,type Row} from './model';
 import {Photo} from './ListingMedia';
+import {PhotoTap} from './PhotoGallery';
 import {processJourney} from '../../lib/process-journey';
 import {processStatus} from '../../lib/process-status';
 import {recordSpan,hallLine} from '../../lib/record-span';
@@ -163,7 +164,7 @@ export function DealCard({kind,item,role,userId,application,thread,line:own,acti
   const photos=pics;
   return <View style={r.card}>
    <View style={r.dealTop}><View style={r.grow}><AnswerWait item={item} bare/></View>{dots(more,others.length>0||!!extra)}</View>
-   <Pressable accessibilityRole="button" accessibilityState={{expanded:open}} accessibilityHint={t('Открыть подробности')} onPress={flip} style={({pressed})=>[r.waitPlace,pressed&&r.pressed]}>{!!photos[0]&&<View style={r.waitThumb}><Photo id={photos[0]} alt={t('{title}, фото',{title:item.title})} fill/></View>}<View style={r.grow}><Text numberOfLines={1} style={r.dealTitle}>{item.title}</Text><Text numberOfLines={2} style={r.rowWhen}>{recordSpan(item.start,item.end)} · {money(item.amount)}</Text></View><View style={r.state}><View style={[r.dot,{backgroundColor:C.gold}]}/><Text style={r.stateText}>{t('Ждём')}</Text></View></Pressable>
+   <Pressable accessibilityRole="button" accessibilityState={{expanded:open}} accessibilityHint={t('Открыть подробности')} onPress={flip} style={({pressed})=>[r.waitPlace,pressed&&r.pressed]}>{!!photos[0]&&<PhotoTap ids={photos} title={item.title} style={r.waitThumb}><Photo id={photos[0]} alt={t('{title}, фото',{title:item.title})} fill/></PhotoTap>}<View style={r.grow}><Text numberOfLines={1} style={r.dealTitle}>{item.title}</Text><Text numberOfLines={2} style={r.rowWhen}>{recordSpan(item.start,item.end)} · {money(item.amount)}</Text></View><View style={r.state}><View style={[r.dot,{backgroundColor:C.gold}]}/><Text style={r.stateText}>{t('Ждём')}</Text></View></Pressable>
    {always}
    {!pinned&&waitRow}
    {open&&details}
@@ -176,7 +177,7 @@ export function DealCard({kind,item,role,userId,application,thread,line:own,acti
  return <View style={r.card}>
   <View style={r.dealTop}><View style={[r.tags,r.grow]}><View style={r.state}><View style={[r.dot,{backgroundColor:ink}]}/><Text style={r.stateText}>{status.label}</Text></View>{!!item.demo_owner&&<Text style={r.tag}>{kind==='job'?t('Учебное'):t('Учебная')}</Text>}{kind==='job'&&!!item.regular&&<Text style={r.tag}>{t('Постоянный исполнитель')}</Text>}</View>{dots(more,hasMore)}</View>
   <Pressable accessibilityRole="button" accessibilityLabel={fold?t('Свернуть: {title}',{title:item.title}):item.title} accessibilityHint={fold?undefined:t('Открыть подробности')} accessibilityState={{expanded:shown}} onPress={fold||flip} style={({pressed})=>[r.dealHead,pressed&&r.pressed]}>
-   {kind==='booking'&&!!pics[0]&&<View style={r.waitThumb}><Photo id={pics[0]} alt={t('{title}, фото',{title:item.title})} fill/></View>}
+   {kind==='booking'&&!!pics[0]&&<PhotoTap ids={pics} title={item.title} style={r.waitThumb}><Photo id={pics[0]} alt={t('{title}, фото',{title:item.title})} fill/></PhotoTap>}
    <View style={r.grow}><Text accessibilityRole="header" numberOfLines={2} style={r.dealTitle}>{item.title}</Text>
    <Text style={r.when}>{halves?money(item.amount):recordSpan(item.start,item.end)+' · '+money(kind==='job'?item.fee:item.amount)}</Text></View>
    <Text style={[r.chevron,shown&&r.chevronUp]}>⌄</Text>

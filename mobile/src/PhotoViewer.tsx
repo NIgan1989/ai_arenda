@@ -2,6 +2,7 @@ import {t} from '../../lib/i18n';
 import React,{useEffect,useRef,useState} from 'react';
 import {AccessibilityInfo,Animated,Image,Modal,PanResponder,Platform,Pressable,StatusBar,StyleSheet,Text,View,useWindowDimensions} from 'react-native';
 import {C} from './styles';
+import {Thinking} from './Thinking';
 import {SafeAreaProvider,useSafeAreaInsets} from 'react-native-safe-area-context';
 
 // A photo opened from a chat: over the whole screen on black, at its own proportions, with a close button that is always
@@ -34,22 +35,25 @@ export function usePhotoSize(uri:string,known?:Size|null){
  return size;
 }
 
-// onPrev/onNext: a set of photos (a cleaning report) is leafed with «‹ ›» at the sides.
-type Props={uri:string;visible:boolean;onClose:()=>void;size?:Size|null;title?:string;caption?:string;onPrev?:()=>void;onNext?:()=>void};
+// onPrev/onNext: a set of photos (a cleaning report, the photos of a place) is leafed by a swipe to the side or with «‹ ›».
+// loading: the photo is still on its way; the viewer opens at once with a quiet spinner instead of waiting.
+// id: which photo of the set this is, so a new one starts fresh even before its picture has come; alt: its spoken name.
+// dots: where this photo is in its set, as thin marks at the bottom (a set of up to a dozen).
+type Props={dots?:{count:number;index:number};id?:string;alt?:string;loading?:boolean;uri:string;visible:boolean;onClose:()=>void;size?:Size|null;title?:string;caption?:string;onPrev?:()=>void;onNext?:()=>void};
 export function PhotoViewer(props:Props){
  return <Modal visible={props.visible} transparent animationType="fade" statusBarTranslucent navigationBarTranslucent supportedOrientations={['portrait','landscape']} onRequestClose={props.onClose}>
-  {props.visible&&<SafeAreaProvider><Viewer key={props.uri} {...props}/></SafeAreaProvider>}
+  {props.visible&&<SafeAreaProvider><Viewer key={props.id||props.uri} {...props}/></SafeAreaProvider>}
  </Modal>;
 }
 
-function Viewer({uri,onClose,size:known,title,caption,onPrev,onNext}:Props){
+function Viewer({dots,uri,alt,loading,onClose,size:known,title,caption,onPrev,onNext}:Props){
  // The viewer's own area as laid out, so the photo is centred even where the window and the modal differ.
  const screen=useWindowDimensions(),[area,setArea]=useState<Size|null>(null),window=area||screen,insets=useSafeAreaInsets(),size=usePhotoSize(uri,known),box=fit(size,window);
  const [chrome,setChrome]=useState(true),[reduce,setReduce]=useState(false),[failed,setFailed]=useState(false);
- const scale=useRef(new Animated.Value(1)).current,x=useRef(new Animated.Value(0)).current,y=useRef(new Animated.Value(0)).current,drop=useRef(new Animated.Value(0)).current;
+ const scale=useRef(new Animated.Value(1)).current,x=useRef(new Animated.Value(0)).current,y=useRef(new Animated.Value(0)).current,drop=useRef(new Animated.Value(0)).current,slide=useRef(new Animated.Value(0)).current;
  // The gesture's own numbers. The view is moved by translate, then scaled around its centre.
- const g=useRef({scale:1,x:0,y:0,mode:'' as ''|'drop'|'pan'|'pinch',from:{scale:1,x:0,y:0,px:0,py:0,dist:1},start:0,moved:0,multi:false,lastTap:0,tapTimer:null as any,closing:false}).current;
- const view=useRef({window,box,reduce,onClose}).current;view.window=window;view.box=box;view.reduce=reduce;view.onClose=onClose;
+ const g=useRef({scale:1,x:0,y:0,mode:'' as ''|'drop'|'pan'|'pinch',from:{scale:1,x:0,y:0,px:0,py:0,dist:1},start:0,moved:0,multi:false,lastTap:0,tapTimer:null as any,closing:false,axis:'' as ''|'x'|'y'}).current;
+ const view=useRef({window,box,reduce,onClose,onPrev,onNext}).current;view.window=window;view.box=box;view.reduce=reduce;view.onClose=onClose;view.onPrev=onPrev;view.onNext=onNext;
  useEffect(()=>{void AccessibilityInfo.isReduceMotionEnabled().then(setReduce);return()=>clearTimeout(g.tapTimer);},[]);
  // How far the photo may move at this zoom so that its edge never leaves the screen's edge.
  const bounds=(s:number)=>({x:Math.max(0,(view.box.width*s-view.window.width)/2),y:Math.max(0,(view.box.height*s-view.window.height)/2)});
@@ -70,6 +74,7 @@ function Viewer({uri,onClose,size:known,title,caption,onPrev,onNext}:Props){
  }
  const begin=(touches:any[])=>{
   const [a,b]=touches;g.from={scale:g.scale,x:g.x,y:g.y,px:a.pageX,py:a.pageY,dist:1};
+  g.axis='';
   if(b){g.mode='pinch';g.from.px=(a.pageX+b.pageX)/2;g.from.py=(a.pageY+b.pageY)/2;g.from.dist=Math.max(1,Math.hypot(a.pageX-b.pageX,a.pageY-b.pageY));}
   else g.mode=g.scale>1.01?'pan':'drop';
  };
@@ -92,7 +97,13 @@ function Viewer({uri,onClose,size:known,title,caption,onPrev,onNext}:Props){
     g.scale=k;g.x=px-cx-qx*k;g.y=py-cy-qy*k;scale.setValue(k);x.setValue(g.x);y.setValue(g.y);
    }else if(g.mode==='pan'){
     g.x=g.from.x+a.pageX-g.from.px;g.y=g.from.y+a.pageY-g.from.py;x.setValue(g.x);y.setValue(g.y);
-   }else if(g.mode==='drop')drop.setValue(a.pageY-g.from.py);
+   }else if(g.mode==='drop'){
+    // Unzoomed, the first clear move decides: sideways leafs the set (when there is one), up or down closes.
+    const dx=a.pageX-g.from.px,dy=a.pageY-g.from.py;
+    if(!g.axis&&Math.max(Math.abs(dx),Math.abs(dy))>10)g.axis=Math.abs(dx)>Math.abs(dy)&&(view.onPrev||view.onNext)?'x':'y';
+    // Past the first or the last photo the set gives only a little, as a page that has nothing behind it.
+    if(g.axis==='x')slide.setValue((dx<0?view.onNext:view.onPrev)?dx:dx/4);else if(g.axis==='y')drop.setValue(dy);
+   }
   },
   onPanResponderRelease:(_e,s)=>{
    const mode=g.mode;g.mode='';
@@ -103,6 +114,14 @@ function Viewer({uri,onClose,size:known,title,caption,onPrev,onNext}:Props){
     else{g.lastTap=now;clearTimeout(g.tapTimer);g.tapTimer=setTimeout(()=>setChrome(v=>!v),300);}
     if(mode==='drop')drop.setValue(0);return;
    }
+   if(mode==='drop'&&g.axis==='x'){
+    const go=s.dx<0?view.onNext:view.onPrev;
+    if(go&&(Math.abs(s.dx)>view.window.width*.22||Math.abs(s.vx)>.6)){
+     if(view.reduce){go();return;}
+     Animated.timing(slide,{toValue:(s.dx<0?-1:1)*view.window.width,duration:160,useNativeDriver:true}).start(()=>go());
+    }else if(view.reduce)slide.setValue(0);else Animated.spring(slide,{toValue:0,useNativeDriver:true,bounciness:0,speed:20}).start();
+    return;
+   }
    if(mode==='drop'){
     const dy=s.dy;if(Math.abs(dy)>110||Math.abs(s.vy)>1.1)close(dy<0?-1:1);
     else if(view.reduce)drop.setValue(0);else Animated.spring(drop,{toValue:0,useNativeDriver:true,bounciness:0,speed:20}).start();
@@ -110,15 +129,15 @@ function Viewer({uri,onClose,size:known,title,caption,onPrev,onNext}:Props){
    }
    settle(g.scale,g.x,g.y);
   },
-  onPanResponderTerminate:()=>{g.mode='';drop.setValue(0);settle(g.scale,g.x,g.y);},
+  onPanResponderTerminate:()=>{g.mode='';drop.setValue(0);slide.setValue(0);settle(g.scale,g.x,g.y);},
  })).current;
  const fade=drop.interpolate({inputRange:[-400,0,400],outputRange:[.25,1,.25],extrapolate:'clamp'});
  return <View style={v.root} onLayout={e=>{const {width,height}=e.nativeEvent.layout;if(width&&height)setArea({width,height});}} accessibilityViewIsModal onAccessibilityEscape={()=>close()}>
   {Platform.OS!=='web'&&<StatusBar barStyle="light-content" animated/>}
   <Animated.View style={[StyleSheet.absoluteFill,v.backdrop,{opacity:fade}]}/>
   <View style={StyleSheet.absoluteFill} {...responder.panHandlers}>
-   <Animated.View style={[v.stage,{transform:[{translateY:drop}]}]}>
-    {failed?<Text style={v.failed}>{t('Не удалось открыть фото')}</Text>:<Animated.Image source={{uri}} accessibilityLabel={caption||t('Фотография сообщения')} resizeMode="contain" onError={()=>setFailed(true)} style={{width:box.width,height:box.height,transform:[{translateX:x},{translateY:y},{scale}]}}/>}
+   <Animated.View style={[v.stage,{transform:[{translateX:slide},{translateY:drop}]}]}>
+    {loading?<Thinking size="lg" color={C.onAccent}/>:failed||!uri?<Text style={v.failed}>{t('Не удалось открыть фото')}</Text>:<Animated.Image source={{uri}} accessibilityLabel={alt||caption||t('Фотография сообщения')} resizeMode="contain" onError={()=>setFailed(true)} style={{width:box.width,height:box.height,transform:[{translateX:x},{translateY:y},{scale}]}}/>}
    </Animated.View>
   </View>
   {chrome&&<View pointerEvents="box-none" style={[v.top,{paddingTop:Math.max(insets.top,12)+4,paddingLeft:Math.max(insets.left,12),paddingRight:Math.max(insets.right,12)}]}>
@@ -128,6 +147,7 @@ function Viewer({uri,onClose,size:known,title,caption,onPrev,onNext}:Props){
    <Pressable accessibilityRole="button" accessibilityLabel={t('Закрыть фото')} hitSlop={8} onPress={()=>close()} style={({pressed})=>[v.close,pressed&&v.pressed]}><View style={[v.cross,{transform:[{rotate:'45deg'}]}]}/><View style={[v.cross,{transform:[{rotate:'-45deg'}]}]}/></Pressable>
   </View>}
   {chrome&&[[onPrev,'‹',t('Предыдущее фото'),{left:Math.max(insets.left,8)}],[onNext,'›',t('Следующее фото'),{right:Math.max(insets.right,8)}]].map(([go,mark,label,side]:any)=>!!go&&<Pressable key={mark} accessibilityRole="button" accessibilityLabel={label} hitSlop={8} onPress={go} style={({pressed})=>[v.close,v.side2,side,pressed&&v.pressed]}><Text style={v.mark}>{mark}</Text></Pressable>)}
+  {chrome&&!caption&&!!dots&&dots.count>1&&dots.count<=12&&<View pointerEvents="none" style={[v.dots,{bottom:Math.max(insets.bottom,12)+12}]}>{Array.from({length:dots.count},(_,k)=><View key={k} style={[v.dot,k===dots.index&&v.dotOn]}/>)}</View>}
   {chrome&&!!caption&&<View pointerEvents="none" style={[v.bottom,{paddingBottom:Math.max(insets.bottom,12)+8,paddingLeft:Math.max(insets.left,16),paddingRight:Math.max(insets.right,16)}]}><Text numberOfLines={4} style={v.caption}>{caption}</Text></View>}
  </View>;
 }
@@ -140,5 +160,6 @@ const v=StyleSheet.create({
  cross:{position:'absolute',width:20,height:2,borderRadius:1,backgroundColor:C.onAccent},pressed:{opacity:.6},
  title:{flex:1,textAlign:'center',color:C.onAccent,fontSize:16,lineHeight:20,fontWeight:'600'},
  bottom:{position:'absolute',left:0,right:0,bottom:0,paddingTop:12,backgroundColor:'rgba(0,0,0,0.45)'},
+ dots:{position:'absolute',left:0,right:0,flexDirection:'row',justifyContent:'center',gap:8},dot:{width:6,height:6,borderRadius:4,backgroundColor:'rgba(255,255,255,0.35)'},dotOn:{width:18,backgroundColor:C.onAccent},
  caption:{color:C.onAccent,fontSize:16,lineHeight:24},failed:{color:C.onAccent,fontSize:16},
 });
