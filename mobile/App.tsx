@@ -585,13 +585,18 @@ function Chat(){
   async function orderHome(body:Row,id:string){
     if(locked.current)return;locked.current=true;setBusy(true);
     try{
-      const result=await request('/api/home-cleaning',body,undefined,id+':home-cleaning');finish(id,result.message||tr('Заказ принят'));
+      setStep(v=>v&&v.id===id?{...v,error:''}:v);const result=await request('/api/home-cleaning',body,undefined,id+':home-cleaning');finish(id,result.message||tr('Заказ принят'));
       // From its own sheet: the sheet closes, the order opens as its card.
       if(stepRef.current?.id===id){setStep(null);freed();}
       if(activeRoleRef.current!=='owner')await hydrate('owner');else await load();
       say(result.message||tr('Заказ принят. Ищем исполнителя.'));
       if(result?.id)openDeal('job',result.id);
-    }catch(e){await handleError(e);}
+    }catch(e){
+      // From its own sheet the refusal is said in the sheet, over the form, not in the chat hidden behind it.
+      const fromStep=stepRef.current?.id===id;
+      if(fromStep&&!(e instanceof StaleSessionError)&&!(e instanceof ApiError&&e.status===401)){if(!(e instanceof ApiError))setOnline(false);setStep(v=>v&&v.id===id?{...v,error:(e as Error).message||tr('Не получилось. Попробуйте ещё раз.')}:v);}
+      else await handleError(e);
+    }
     finally{locked.current=false;setBusy(false);}
   }
   // keep: the form stays open after a success (the «Правила» sheet: what the service said shows inside it).
