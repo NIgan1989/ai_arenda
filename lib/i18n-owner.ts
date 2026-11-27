@@ -1240,4 +1240,6 @@ export const OWNER:Words={
  'Название, как его знают гости. Можно добавить примету: «Арасан» на дровах':['Қонақтар білетін атау. Белгі қосуға болады: «Арасан» отынмен','The name guests know it by. You can add a detail: «Арасан» wood-fired'],
  'Чем выделяется: место рядом, улица или вид. Коротко, со строчной буквы':['Немен ерекшеленеді: жанындағы орын, көше немесе көрініс. Қысқа, кіші әріппен','What sets it apart: a place nearby, a street or a view. Short, in lower case'],
  'Гости увидят: {title}':['Қонақтар көреді: {title}','Guests will see: {title}'],
+ 'В рассказе этого нет.':['Әңгімеде бұл жоқ.','This isn’t in your description.'],
+ '✓ Всё нужное есть. Из рассказа заполнено: {n}.':['✓ Қажеттінің бәрі бар. Әңгімеден толтырылды: {n}.','✓ Everything needed is here. Filled from your story: {n}.'],
 };
