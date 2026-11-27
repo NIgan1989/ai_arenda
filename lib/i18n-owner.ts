@@ -1256,4 +1256,6 @@ export const OWNER:Words={
  'Рядом':['Жақын жерде','Nearby'],
  'Уборки · {title}':['Тазалау · {title}','Cleanings · {title}'],
  'Прошлые':['Өткендер','Past'],
+ 'В рассказе этого нет.':['Әңгімеде бұл жоқ.','This isn’t in your description.'],
+ '✓ Всё нужное есть. Из рассказа заполнено: {n}.':['✓ Қажеттінің бәрі бар. Әңгімеден толтырылды: {n}.','✓ Everything needed is here. Filled from your story: {n}.'],
 };

@@ -112,7 +112,7 @@ export function PropertyQuick({city,onSave,onGuestMode,onPlace,onReview,onClose,
  // One line per thing: what the AI filled, a mark when it only guessed, and a tap to open that line and fix it.
  const row=(id:string,label:string,value:string,guess:boolean,content:React.ReactNode)=>{const on=open===id;return <View key={id} style={[q.row,on&&q.rowOn]}>
   <Pressable accessibilityRole="button" accessibilityState={{expanded:on}} accessibilityLabel={label+': '+(value||t('не указано'))} onPress={()=>setOpen(on?'':id)} style={({pressed})=>[q.rowHead,pressed&&{opacity:.6}]}>
-   <View style={{flex:1,minWidth:0,gap:2}}><Text style={q.rowLabel}>{label}{guess?<Text style={q.guess}>{'  '}{t('ИИ предположил')}</Text>:null}</Text><Text style={[q.rowValue,!value&&q.rowEmpty]} numberOfLines={on?1:2}>{value||t('не указано')}</Text></View>
+   <View style={{flex:1,minWidth:0,gap:2}}><Text style={q.rowLabel}>{label}{guess?<Text style={q.guess}>{'  '}{t('Проверьте')}</Text>:null}</Text><Text style={[q.rowValue,!value&&q.rowEmpty]} numberOfLines={on?1:2}>{value||t('не указано')}</Text></View>
    <Text style={q.rowGo}>{on?t('Готово'):t('Изменить')}</Text>
   </Pressable>
   {on&&<View style={q.rowBody}>{content}</View>}
@@ -158,7 +158,7 @@ export function PropertyQuick({city,onSave,onGuestMode,onPlace,onReview,onClose,
   </View>}
 
   {asking&&ask&&<View style={q.body}>
-   {heading(ask.question,t('ИИ не нашёл это в вашем рассказе.'),questions.length>1?t('Ещё вопросов: {v}',{v:(questions.length-1)}):t('Последний вопрос'))}
+   {heading(ask.question,t('В рассказе этого нет.'),questions.length>1?t('Ещё вопросов: {v}',{v:(questions.length-1)}):t('Последний вопрос'))}
    {!!error&&<Text accessibilityRole="alert" style={q.error}>{error}</Text>}
    {money_(ask.key)?<>
     <View style={q.bigRow}><TextInput accessibilityLabel={ask.label} autoFocus style={[q.big,{width:Math.max(1,(answer?digits(Number(answer)):'0').length)*21+6}]} value={answer?digits(Number(answer)):''} onChangeText={v=>setAnswer(v.replace(/\D/g,'').slice(0,8))} placeholder="0" placeholderTextColor={C.lineStrong} keyboardType="number-pad" returnKeyType="done" onSubmitEditing={reply}/><Text style={q.bigUnit}>₸</Text></View>
@@ -174,7 +174,7 @@ export function PropertyQuick({city,onSave,onGuestMode,onPlace,onReview,onClose,
   </View>}
 
   {step===1&&!asking&&<View style={q.body}>
-   {heading(t('Проверьте объявление'),t('Нажмите на строку, чтобы поправить.'),found.length?t(forms(found.length,'✓ Всё нужное есть. ИИ понял из рассказа: {n} деталь.','✓ Всё нужное есть. ИИ понял из рассказа: {n} детали.','✓ Всё нужное есть. ИИ понял из рассказа: {n} деталей.'),{n:found.length}):undefined)}
+   {heading(t('Проверьте объявление'),t('Нажмите на строку, чтобы поправить.'),found.length?t('✓ Всё нужное есть. Из рассказа заполнено: {n}.',{n:found.length}):undefined)}
    {!!error&&<Text accessibilityRole="alert" style={q.error}>{error}</Text>}
    <View style={q.preview}>
     <View style={[q.cover,!!photos[0]&&q.coverPhoto]}>{photos[0]?<Photo id={photos[0]} alt={t('Обложка')}/>:<Text style={q.coverEmpty}>{t(['Без фото: зал сохранится черновиком','Без фото: объект сохранится черновиком','Без фото: жильё сохранится черновиком'][sort])}</Text>}</View>
