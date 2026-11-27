@@ -987,14 +987,15 @@ function Chat(){
   const sheetOpen=pageId!=='map'||!!flow;
   // Dictation belongs to the visible map: a page over it must not get a late search.
   useEffect(()=>{if(sheetOpen)cancelVoice();},[sheetOpen]);
-  // The guest has no «Сводка» (2026-11-27): what it showed is in «Мои брони» and on the map. The sheet is still the frame
-  // of a place, a request, a booking's card and its check; once none of them is left in it, the guest is back on the map
-  // instead of a board and the chat said under it.
-  // A request form or a booking's check still open (a refusal of the server said under it) keeps the sheet: the guest
-  // sees why and keeps the dates and guests chosen.
-  const guestForm=said.some(m=>(m.block==='stay-form'||m.block==='review')&&!m.done);
-  const guestBare=selectedRole==='guest'&&pageId==='overview'&&!dealOpen&&!flow&&!placeMsg&&!stayMsg&&!editMsg&&!guestForm;
-  useEffect(()=>{if(guestBare)backToMap();},[guestBare]);
+  // No role has «Сводка» any more (2026-11-27): each thing it listed has its own place — the guest's in «Мои брони» and
+  // on the map (with «Вы заселились?»), the owner's and the cleaner's on the main screen of the map, in «Заявки», «Уборки»,
+  // «Задания» and the cards of the bookings and jobs. The sheet is still the frame of a place, a request, a booking's or
+  // a job's card, its check and the editor of a place; once none of them is left in it, the map comes back instead of
+  // a board and the chat said under it.
+  // A form still open (a refusal of the server said under it) keeps the sheet: the person sees why and keeps what was chosen.
+  const openForm=said.some(m=>['stay-form','review','property-quick','property-editor','property-settings','auth'].includes(String(m.block))&&!m.done);
+  const bareSheet=!!selectedRole&&pageId==='overview'&&!dealOpen&&!flow&&!placeMsg&&!stayMsg&&!editMsg&&!openForm;
+  useEffect(()=>{if(bareSheet)backToMap();},[bareSheet]);
   const nextTask=data.assistantBrief?.automatic?data.assistantBrief.prompts[0]:null;
   const homeCity=String(data.profile?.city||''),cityFlats=pageId==='catalog'&&homeCity?data.properties.filter((p:Row)=>p.city===homeCity):[],byCity=cityFlats.length>0&&!allCities;
   // Tabs of the list pages (lib/booking-filters.ts, lib/job-filters.ts): which tabs the page has, and the tab of each item on it.
@@ -1007,7 +1008,7 @@ function Chat(){
   const tabCount:Record<string,number>=pageTabs?{...tabCounts(pageTabs.tabs,pageTabs.items,pageTabs.of),...(responses?{new:tabCounts(pageTabs.tabs,pageTabs.items,pageTabs.of).new+responses}:{})}:{},tabNow=pageTabs?(tabPick[pageId]&&pageTabs.tabs.some(t=>t.id===tabPick[pageId])?tabPick[pageId]:firstTab(pageTabs.tabs,tabCount)):'',firstTabNow=pageTabs?.tabs[0]?.id===tabNow;
   const allIds:string[]=pageId==='catalog'?(byCity?cityFlats:data.properties).map((p:Row)=>p.id):pageId==='properties'?data.ownProperties.map((p:Row)=>p.id):pageTabs?pageTabs.items.filter((item:Row)=>pageTabs.of(item)===tabNow).sort((x:Row,y:Row)=>tabNow==='archive'||pageId==='cleaning'&&tabNow!=='now'?y.start-x.start:0).map((item:Row)=>item.id):data.jobs.map((j:Row)=>j.id);
   const ids=allIds.slice(0,listed.page===pageId?listed.count:12),hidden=allIds.length-ids.length;
-  const primary:Message={id:'page-'+pageId,sender:'assistant',text:'',block:pageId==='overview'?(flow?undefined:'workspace'):pageId==='properties'||pageId==='catalog'?'properties':pageId==='bookings'?'bookings':['cleaning','jobs','assignments'].includes(pageId)?'jobs':undefined,payload:{ids,role:selectedRole,mode:selectedRole==='owner'?'owner':'guest'}};
+  const primary:Message={id:'page-'+pageId,sender:'assistant',text:'',block:pageId==='overview'?undefined:pageId==='properties'||pageId==='catalog'?'properties':pageId==='bookings'?'bookings':['cleaning','jobs','assignments'].includes(pageId)?'jobs':undefined,payload:{ids,role:selectedRole,mode:selectedRole==='owner'?'owner':'guest'}};
   if(erasureResult)return <SafeAreaView style={s.screen}><ScrollView contentContainerStyle={s.transcript}><View style={s.card}><Text style={s.cardTitle}>{tr('Результат удаления')}</Text><Text style={s.text}>{erasureResult.message}</Text><Text selectable style={s.meta}>{tr('Квитанция: {id}',{id:erasureResult.receipt.id})}</Text><Button title={tr('Продолжить')} onPress={()=>setErasureResult(null)}/></View></ScrollView></SafeAreaView>;
   // No account: the map as a guest sees it. Search, pins, cards and prices work; booking, the chats and the menu ask to sign in.
   if(!selectedRole&&ready&&!opening&&!data.user&&signIn===null)return <ActivityClockProvider serverTime={data.serverTime}><SafeAreaView style={s.screen} edges={['top','bottom']}><KeyboardAvoidingView style={s.shell} behavior="padding">
