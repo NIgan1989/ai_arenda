@@ -98,16 +98,20 @@ export function DealCard({kind,item,role,userId,application,thread,line:own,acti
  const dots=(on:boolean,show:boolean)=>show?<Pressable accessibilityRole="button" accessibilityLabel={on?t('Скрыть'):t('Ещё')} accessibilityState={{expanded:on}} hitSlop={8} onPress={()=>{smooth();setMore(v=>!v);}} style={({pressed})=>[r.dots,pressed&&r.dim]}><Text style={r.dotsText}>•••</Text></Pressable>:null;
  const flip=()=>{smooth();setOpen(v=>!v);};
  // Pinned under the sheet's scroll: the guest's «Написать | Отменить» while the owner answers, else the main action.
- const footing=useContext(DealFootContext),foot=footing?.set,latest=useRef({main,all});latest.current={main,all};
+ const footing=useContext(DealFootContext),foot=footing?.set,latest=useRef({main,all,request});latest.current={main,all,request};
  const waiting=kind==='booking'&&item.status==='requested'&&item.guest_id===userId&&clock>0&&Number(item.expires_at)>clock&&!request;
  const chat=all.find(a=>a.title===t('Открыть чат')),cancel=all.find(a=>a.kind==='danger');
  const press=(pick:()=>RecordAction|undefined)=>()=>pick()?.onPress();
  const button=(a:RecordAction|undefined,title:string,style:object,text:object,pick:()=>RecordAction|undefined)=>a?<Pressable accessibilityRole="button" accessibilityLabel={a.title} disabled={busy} onPress={press(pick)} style={({pressed})=>[r.waitButton,style,(pressed||busy)&&r.dim]}><Text style={[r.actionText,text]}>{title}</Text></Pressable>:null;
  const waitRow=<View style={r.waitButtons}>{button(chat,t('Написать'),r.waitChat,r.waitChatText,()=>latest.current.all.find(a=>a.title===t('Открыть чат')))}{button(cancel,t('Отменить'),r.waitCancel,r.waitCancelText,()=>latest.current.all.find(a=>a.kind==='danger'))}</View>;
  const ownerAsk=kind==='booking'&&item.status==='requested'&&!!request&&clock>0&&Number(item.expires_at)>clock;
- const visible=!compact||unfolded,offer=!!foot&&visible&&!ownerAsk&&(waiting?!!(chat||cancel):!!main),pinned=offer&&footing?.active===item.id;
- const pinnedNode=!offer?null:waiting?waitRow:<RecordActions busy={busy} actions={[{...main!,onPress:()=>latest.current.main?.onPress(),onSwipe:()=>{const m=latest.current.main;(m?.onSwipe||m?.onPress)?.();}}]}/>;
- useEffect(()=>{if(!foot)return;foot(item.id,pinnedNode);return()=>foot(item.id,null);},[foot,offer,waiting,ownerAsk,busy,main?.title,main?.swipe,main?.disabled,main?.note,!!chat,!!cancel,item.id]);
+ const visible=!compact||unfolded,offer=!!foot&&visible&&(ownerAsk||(waiting?!!(chat||cancel):!!main)),pinned=offer&&footing?.active===item.id;
+ // The owner's answer to a request: the swipe «принять» and «Отклонить», pinned as well (2026-11-26).
+ const askCard=ownerAsk?request!.card:null,askLow=(v:string)=>v.charAt(0).toLowerCase()+v.slice(1);
+ const askDecide=(what:string)=>{const q=latest.current.request;if(!q)return;const c=q.card;q.onDecide({id:c.id,revision:c.revision,action:what,reason:'',cleaningFee:Number(c.cleaningFee)||0});};
+ const askRow=askCard?<View style={r.askButtons}><SwipeConfirm label={askCard.depositLabel?t('Проведите: {v}',{v:askLow(t('Подтвердить {v}',{v:askLow(askCard.depositLabel)}))}):t('Проведите, чтобы принять')} disabled={busy} onConfirm={()=>askDecide(latest.current.request?.card.depositLabel?'deposit':'accept')}/><Pressable accessibilityRole="button" accessibilityLabel={t('Отклонить заявку')} disabled={busy} onPress={()=>{const q=latest.current.request;if(q?.card.requiresReason)q.onReview();else askDecide('reject');}} style={({pressed})=>[r.askReject,(pressed||busy)&&r.dim]}><Text style={r.askRejectText}>{t('Отклонить')}</Text></Pressable></View>:null;
+ const pinnedNode=!offer?null:ownerAsk?askRow:waiting?waitRow:<RecordActions busy={busy} actions={[{...main!,onPress:()=>latest.current.main?.onPress(),onSwipe:()=>{const m=latest.current.main;(m?.onSwipe||m?.onPress)?.();}}]}/>;
+ useEffect(()=>{if(!foot)return;foot(item.id,pinnedNode);return()=>foot(item.id,null);},[foot,offer,waiting,ownerAsk,busy,askCard?.id,askCard?.revision,askCard?.depositLabel,main?.title,main?.swipe,main?.disabled,main?.note,!!chat,!!cancel,item.id]);
  if(compact&&!unfolded){
   const sum=money(kind==='job'?item.fee:item.amount),said=!!main&&status.label.toLowerCase().includes(main.title.toLowerCase().slice(0,8)),next=main?main.title.replace(/^Оплатил /,'Оплатить ').replace(/^Вернул /,'Вернуть '):'',label=item.title+', '+sum+', '+recordSpan(item.start,item.end)+', '+status.label+(item.demo_owner?t(', учебная'):'')+(main&&!said?t(', дальше: {next}',{next}):'');
   return <Pressable accessibilityRole="button" accessibilityLabel={label} accessibilityHint={t('Открыть подробности')} accessibilityState={{expanded:false}} onPress={()=>{smooth();setUnfolded(true);}} style={({pressed})=>[r.card,r.row,pressed&&r.pressed]}>
@@ -121,8 +125,6 @@ export function DealCard({kind,item,role,userId,application,thread,line:own,acti
  if(kind==='booking'&&item.status==='requested'&&!!request&&clock>0&&Number(item.expires_at)>clock&&(!compact||unfolded)){
   const card=request.card,left=Number(item.expires_at)-clock,from=Number(item.created_at)||Number(item.expires_at)-900,share=Math.max(0,Math.min(1,left/Math.max(60,Number(item.expires_at)-from)));
   const mm=Math.floor(left/60),ss=String(Math.floor(left%60)).padStart(2,'0'),guests=Number(item.guests)||1;
-  const low=(v:string)=>v.charAt(0).toLowerCase()+v.slice(1),action=card.depositLabel?'deposit':'accept',fee=Number(card.cleaningFee)||0;
-  const decide=(what:string)=>request.onDecide({id:card.id,revision:card.revision,action:what,reason:'',cleaningFee:fee});
   const risk=card.risk,calm=!risk||risk.level==='low';
   const others=rest.filter(Boolean);
   const method=(title:string,note:string,missing:boolean)=><Pressable accessibilityRole="button" accessibilityLabel={title+'. '+note+'. '+(missing?t('Добавить'):t('Изменить'))} disabled={!request.onMethod} onPress={()=>request.onMethod?.('payout')} style={({pressed})=>[r.payRow,pressed&&r.dim]}>
@@ -149,8 +151,7 @@ export function DealCard({kind,item,role,userId,application,thread,line:own,acti
    </View>
    <View style={r.state}><View style={[r.dot,{backgroundColor:calm?C.success:C.warning}]}/><Text style={r.stateText}>{calm?t('Надёжный гость'):(risk.label||t('Проверьте гостя'))}</Text></View>
    {always}
-   <SwipeConfirm label={card.depositLabel?t('Проведите: {v}',{v:low(t('Подтвердить {v}',{v:low(card.depositLabel)}))}):t('Проведите, чтобы принять')} disabled={busy} onConfirm={()=>decide(action)}/>
-   <Pressable accessibilityRole="button" accessibilityLabel={t('Отклонить заявку')} disabled={busy} onPress={()=>card.requiresReason?request.onReview():decide('reject')} style={({pressed})=>[r.askReject,(pressed||busy)&&r.dim]}><Text style={r.askRejectText}>{t('Отклонить')}</Text></Pressable>
+   {!pinned&&askRow}
    {open&&details}
    <MoreSheet open={more} onClose={()=>setMore(false)} busy={busy} extra={extra} actions={[{title:t('Рассмотреть подробно'),kind:'side',icon:'read',onPress:request.onReview},...others]}/>
   </View>;
@@ -229,7 +230,7 @@ const r=StyleSheet.create({
  askRow:{gap:2,paddingVertical:8,borderBottomWidth:1,borderBottomColor:C.line},askLast:{flexDirection:'row',alignItems:'center',borderBottomWidth:0},askKey:{...type.caption,color:C.muted},askValue:{...type.body,color:C.ink,fontWeight:'600'},askSum:{...type.title,color:C.ink,fontWeight:'600'},
  askMoney:{gap:8,paddingVertical:12},askLine:{flexDirection:'row',alignItems:'center',justifyContent:'space-between',gap:12},askTotal:{paddingTop:8,borderTopWidth:1,borderTopColor:C.line},askTotalKey:{...type.body,color:C.ink,fontWeight:'600'},askTagAlone:{alignSelf:'flex-start'},payBox:{borderWidth:1,borderColor:C.line,borderRadius:T.radius.lg,paddingHorizontal:12},payRow:{flexDirection:'row',alignItems:'center',gap:12,minHeight:56,paddingVertical:8},payMark:{width:40,height:28,borderRadius:T.radius.sm,alignItems:'center',justifyContent:'center'},payKaspi:{backgroundColor:C.danger},payMarkText:{...type.label,color:C.onAccent,fontWeight:'600'},payTitle:{...type.body,color:C.ink,fontWeight:'600'},payNote:{...type.caption,color:C.muted},payWarn:{color:C.warning},payEdit:{...type.label,color:C.accent,fontWeight:'600'},
  askTag:{...type.caption,fontWeight:'600',color:C.success,backgroundColor:C.successSoft,paddingHorizontal:8,paddingVertical:4,borderRadius:R.sm,overflow:'hidden'},askTagRisk:{color:C.warning,backgroundColor:C.warningSoft},
- askReject:{minHeight:H.touch,alignItems:'center',justifyContent:'center'},askRejectText:{...type.label,color:C.inkSoft,fontWeight:'600'},
+ askButtons:{gap:8},askReject:{minHeight:H.touch,alignItems:'center',justifyContent:'center'},askRejectText:{...type.label,color:C.inkSoft,fontWeight:'600'},
  waitTag:{...type.caption,fontWeight:'600',color:C.warning,backgroundColor:C.warningSoft,paddingHorizontal:8,paddingVertical:4,borderRadius:R.sm,overflow:'hidden'},
  waitButtons:{flexDirection:'row',gap:8},waitButton:{flex:1,minHeight:H.primary,borderRadius:R.md,alignItems:'center',justifyContent:'center'},
  waitChat:{backgroundColor:C.accentSoft},waitChatText:{...type.body,color:C.accentPressed},waitCancel:{backgroundColor:C.surfaceAlt},waitCancelText:{...type.body,color:C.inkSoft},

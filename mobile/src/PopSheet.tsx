@@ -1,6 +1,6 @@
 import {t} from '../../lib/i18n';
-import React,{type ReactNode} from 'react';
-import {Image,KeyboardAvoidingView,Modal,Platform,Pressable,ScrollView,StyleSheet,Text,View} from 'react-native';
+import React,{createContext,useContext,type ReactNode} from 'react';
+import {Image,KeyboardAvoidingView,Modal,Platform,Pressable,ScrollView,StyleSheet,Text,View,type StyleProp,type ViewStyle} from 'react-native';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {menuIcons,type MenuIcon} from './AccountRows';
 import {C,type} from './styles';
@@ -9,7 +9,9 @@ import {T} from './tokens';
 // One small sheet over the screen for one choice or one step (board «Экраны старой версии», 2026-11-26): one head
 // («‹» on the left when there is a step back, the name in the middle, «✕» on the right), the content, and the main
 // button pinned to the bottom. As Airbnb opens «Кто?» or «Что изменить?» on its own sheet.
-export function PopSheet({visible,title,onClose,onBack,children,footer}:{visible:boolean;title:string;onClose:()=>void;onBack?:()=>void;children:ReactNode;footer?:ReactNode}){
+// bare: the content lays itself out with SheetPane (its own scroll and its own pinned buttons), as a form that keeps
+// its swipe in its own state (the rating, the report of a cleaning, a decision) does.
+export function PopSheet({visible,title,onClose,onBack,children,footer,bare=false}:{visible:boolean;title:string;onClose:()=>void;onBack?:()=>void;children:ReactNode;footer?:ReactNode;bare?:boolean}){
  const insets=useSafeAreaInsets();
  return <Modal visible={visible} transparent animationType="slide" statusBarTranslucent onRequestClose={onBack||onClose}>
   <KeyboardAvoidingView behavior={Platform.OS==='ios'?'padding':undefined} style={p.fill}>
@@ -20,11 +22,21 @@ export function PopSheet({visible,title,onClose,onBack,children,footer}:{visible
      <Text accessibilityRole="header" numberOfLines={1} style={p.title}>{title}</Text>
      <Pressable accessibilityRole="button" accessibilityLabel={t('Закрыть')} hitSlop={8} onPress={onClose} style={p.side}><Text style={p.close}>✕</Text></Pressable>
     </View>
-    <ScrollView style={p.body} contentContainerStyle={p.content} keyboardShouldPersistTaps="handled">{children}</ScrollView>
+    {bare?<PaneContext.Provider value><View style={p.bare}>{children}</View></PaneContext.Provider>:<ScrollView style={p.body} contentContainerStyle={p.content} keyboardShouldPersistTaps="handled">{children}</ScrollView>}
     {!!footer&&<View style={p.footer}>{footer}</View>}
    </View>
   </KeyboardAvoidingView>
  </Modal>;
+}
+// The body of a form and its main buttons. In a bare PopSheet the body scrolls and the buttons stay pinned to the
+// bottom however long the body is (2026-11-26: «любые кнопки снизу и зафиксированы»); elsewhere (a card in a list)
+// the buttons simply follow the body.
+const PaneContext=createContext(false);
+// style: the card the form is drawn in outside a sheet (a sheet is its own card).
+export function SheetPane({children,footer,style}:{children:ReactNode;footer?:ReactNode;style?:StyleProp<ViewStyle>}){
+ const inSheet=useContext(PaneContext);
+ if(!inSheet)return <View style={style}>{children}{footer}</View>;
+ return <><ScrollView style={p.body} contentContainerStyle={p.content} keyboardShouldPersistTaps="handled">{children}</ScrollView>{!!footer&&<View style={p.footer}>{footer}</View>}</>;
 }
 // A row of a sheet's list: a black line icon, the words, «›». Danger rows are red and have no arrow.
 export function PopRow({icon,title,value,onPress,danger=false,disabled=false,last=false}:{icon?:MenuIcon;title:string;value?:string;onPress:()=>void;danger?:boolean;disabled?:boolean;last?:boolean}){
@@ -51,7 +63,7 @@ const p=StyleSheet.create({
  side:{width:T.control.touch,height:T.control.touch,alignItems:'center',justifyContent:'center'},
  sign:{fontSize:28,lineHeight:32,color:C.ink},close:{...type.body,color:C.ink,fontWeight:'600'},
  title:{...type.body,flex:1,textAlign:'center',color:C.ink,fontWeight:'600'},
- body:{flexGrow:0},content:{paddingHorizontal:20,paddingTop:12,paddingBottom:12,gap:12},
+ body:{flexGrow:0,flexShrink:1},bare:{flexShrink:1},content:{paddingHorizontal:20,paddingTop:12,paddingBottom:12,gap:12},
  footer:{paddingHorizontal:20,paddingTop:12,gap:8,borderTopWidth:1,borderTopColor:C.line},
  row:{flexDirection:'row',alignItems:'center',gap:12,minHeight:56,borderBottomWidth:1,borderBottomColor:C.line},last:{borderBottomWidth:0},
  icon:{width:20,height:20,tintColor:C.ink},rowText:{...type.body,flex:1,color:C.ink},value:{...type.label,color:C.muted,maxWidth:'45%'},
