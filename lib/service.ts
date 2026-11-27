@@ -58,6 +58,8 @@ import {ownerCleaningTips,decideCleaningTip} from './cleaning-price';
 import {releaseStatements,releaseWindow} from './overdue-cleaning';
 import {lateUntil,LATE_OPENS} from './late-arrival';
 import {reportNotLetIn,BLOCKED_TEXT} from './account-restrictions';
+import {guaranteeReason,GUARANTEE_WAIT} from './guarantee-text';
+import {notLetInWaitedSql} from './checkin-guarantee';
 import {verifiedPlaceSql} from './property-rights';
 import {identityOf} from './identity-docs';
 import {ruleFor,minutesLabel} from './decision-rules';
@@ -508,6 +510,8 @@ export class RentalService {
       this.all(`SELECT b.*,p.title,(SELECT json_extract(details,'$.type') FROM property_details WHERE property_id=p.id) property_type,p.owner_id,p.city,p.district,p.demo_owner,(SELECT photos FROM property_details WHERE property_id=p.id) property_photos,
         CASE WHEN p.owner_id=? OR (b.guest_id=? AND b.status='confirmed') THEN p.address ELSE NULL END address,
         (SELECT json_object('state',a.state,'city',a.city,'district',a.district,'address',a.address) FROM booking_addresses a WHERE a.booking_id=b.id) agreed_row,
+        (SELECT json_object('reason',g.reason,'reportedAt',g.reported_at,'replacedBy',g.replaced_by) FROM checkin_guarantees g WHERE g.booking_id=b.id) guarantee_row,
+        CASE WHEN b.guest_id=? THEN (SELECT json_object('bookingId',g.booking_id,'title',gp.title,'refund',COALESCE(gt.refund_due,0)) FROM checkin_guarantees g JOIN bookings gb ON gb.id=g.booking_id JOIN properties gp ON gp.id=gb.property_id LEFT JOIN booking_terms gt ON gt.booking_id=gb.id WHERE g.replaced_by=b.id) ELSE NULL END replaces_row,
         (SELECT rating FROM stay_reviews r WHERE r.booking_id=b.id) review_rating,
         (SELECT json_object('verdict',verdict,'issues',json(issues),'note',note,'cleaner_photos',cleaner_photos,'created_at',created_at) FROM stay_handovers h WHERE h.booking_id=b.id) handover_row,
         (SELECT COUNT(*) FROM stay_photos f WHERE f.booking_id=b.id AND f.phase='checkin') checkin_photos,
@@ -523,7 +527,7 @@ export class RentalService {
         CASE WHEN p.owner_id=? THEN (SELECT json_object('level',level,'score',score,'reasons',reasons,'deposit_advice',deposit_advice,'phone_verified',phone_verified,'held',held) FROM booking_risks WHERE booking_id=b.id) ELSE NULL END risk_row,
         CASE WHEN b.status='cancelled' AND EXISTS(SELECT 1 FROM platform_commissions pc WHERE pc.booking_id=b.id) AND NOT EXISTS(SELECT 1 FROM audit_events a WHERE a.entity_id=b.id AND a.action LIKE 'stay.checked:%') THEN 1 ELSE 0 END stay_check
         FROM bookings b JOIN properties p ON p.id=b.property_id LEFT JOIN profiles o ON o.id=p.owner_id LEFT JOIN profiles g ON g.id=b.guest_id
-        WHERE b.guest_id=? OR p.owner_id=? ORDER BY b.start DESC`, ...Array(15).fill(this.userId)),
+        WHERE b.guest_id=? OR p.owner_id=? ORDER BY b.start DESC`, ...Array(16).fill(this.userId)),
       this.all(`SELECT j.*,EXISTS(SELECT 1 FROM regular_cleaners rc WHERE rc.property_id=j.property_id AND rc.cleaner_id=COALESCE(j.assigned_to,?)) regular,CASE WHEN j.owner_id=? OR j.assigned_to=? THEN (SELECT status FROM cleaning_holds h WHERE h.job_id=j.id AND h.cleaner_id=j.assigned_to AND h.status<>'returned') END guarantee,(j.booking_id IS NULL OR EXISTS(SELECT 1 FROM booking_terms t WHERE t.booking_id=j.booking_id AND t.actual_checkout IS NOT NULL)) checkout_confirmed,COALESCE((SELECT require_photos FROM operation_rules r WHERE r.property_id=j.property_id),0) photos_required,p.title,p.city,p.district,p.rooms,p.capacity,p.cleaning_minutes,p.demo_owner,(SELECT photos FROM property_details WHERE property_id=p.id) property_photos,(SELECT details FROM property_details WHERE property_id=p.id) property_details,CASE WHEN j.status='open' THEN p.address END open_address,
         CASE WHEN j.owner_id=? OR j.assigned_to=? THEN p.address ELSE NULL END address,
         CASE WHEN j.owner_id=? OR j.assigned_to=? THEN o.contact ELSE NULL END owner_contact,
@@ -546,12 +550,14 @@ export class RentalService {
     const enrichedTerms:Row[]=terms.map(t=>{const f=financeBalances.find(f=>f.booking_id===t.booking_id),received=f?.deposit_received??(t.deposit_status==='owner_verified'?t.deposit:0),returned=f?.deposit_returned??(t.deposit_returned_at?t.deposit:0);return {...t,deposit_received_amount:received,deposit_returned_amount:returned,deposit_balance:Math.max(0,received-returned-(Number(t.deposit_kept)||0)),refunded_amount:f?.refunded||0};});
     const policyFor=(p:Row)=>policies.find(v=>v.property_id===p.id)||defaultPolicy;
     // What cancelling right now would cost, for the card: the same rule the cancel action applies.
-    const cancelFor=(b:Row)=>{const t=enrichedTerms.find(v=>v.booking_id===b.id);if(!t||!['requested','confirmed'].includes(b.status)||t.actual_checkin)return null;return cancellationTerms({by:b.owner_id===this.userId||b.agreed_row?'owner':'guest',status:b.status,mode:t.billing_mode,rate:t.rate,units:t.units,amount:b.amount,paid:t.paid_amount,deposit:t.deposit_status==='owner_verified'?t.deposit:0,start:b.start,minHours:t.min_hours||policies.find(v=>v.property_id===b.property_id)?.min_hours||1,at:serverTime,banquet:!!t.occasion});};
+    const cancelFor=(b:Row)=>{const t=enrichedTerms.find(v=>v.booking_id===b.id);if(!t||!['requested','confirmed'].includes(b.status)||t.actual_checkin)return null;// Not let in and waited ten minutes (lib/checkin-guarantee.ts): the guest leaves by the owner's terms.
+      const waited=(()=>{try{const g=b.guarantee_row?JSON.parse(b.guarantee_row):null;return !!g&&Number(g.reportedAt)+GUARANTEE_WAIT<=serverTime&&!t.checkin_reported_at;}catch{return false;}})();
+      return cancellationTerms({by:b.owner_id===this.userId||b.agreed_row||waited?'owner':'guest',status:b.status,mode:t.billing_mode,rate:t.rate,units:t.units,amount:b.amount,paid:t.paid_amount,deposit:t.deposit_status==='owner_verified'?t.deposit:0,start:b.start,minHours:t.min_hours||policies.find(v=>v.property_id===b.property_id)?.min_hours||1,at:serverTime,banquet:!!t.occasion});};
     // Completed stays per own place: prepayments open after five of them (lib/prepay.ts).
     const stays=new Map<string,number>((ownProperties.length?await this.all("SELECT b.property_id,COUNT(*) n FROM bookings b JOIN properties p ON p.id=b.property_id JOIN booking_terms t ON t.booking_id=b.id WHERE p.owner_id=? AND b.status='completed' AND t.actual_checkout IS NOT NULL AND b.guest_id<>p.owner_id GROUP BY b.property_id",this.userId):[]).map(r=>[r.property_id,Number(r.n)]));
     const guests=await reliabilityFor(this.db,'guest',bookings.filter(b=>b.owner_id===this.userId&&b.status==='requested').map(b=>b.guest_id));
     const roomCountsOwn=ownProperties.length?await roomCounts(this.db):new Map<string,number>();
-    const state={ profile, properties:(await this.enrichProperties(properties.map(p=>({...p,policy:publicPolicy(policyFor(p))})))).map((p:Row):Row=>({...p,stay_class:classOfRow(p,p.details)})), ownProperties:await this.enrichProperties(await Promise.all(ownProperties.map(async p=>({...p,...(roomCountsOwn.has(p.id)?{units:await roomState(this.db,p.id)}:{}),policy:policyFor(p),operation:operations.find(v=>v.property_id===p.id),prepay:prepayState(policyFor(p).prepay_percent,stays.get(p.id)||0)}))),true), bookings:bookings.map(({risk_row,handover_row,owner_pay_row,locked_pay_row,...b}) => ({...b,pay_change:payChange(locked_pay_row,owner_pay_row),owner_pay:owner_pay_row&&(b.owner_id===this.userId||payoutOpen({...b,terms:enrichedTerms.find(t=>t.booking_id===b.id)},serverTime))?guestPayout(JSON.parse(owner_pay_row),b.owner_id===this.userId||phoneOpens(b,serverTime)):null,risk:riskFromRow(risk_row?JSON.parse(risk_row):null),handover:handover_row?JSON.parse(handover_row):null,...(b.owner_id===this.userId?{guest_reliability:guests.get(b.guest_id)}:{}),status:b.status==='requested' && b.expires_at<=serverTime?'expired':b.status,terms:enrichedTerms.find(t=>t.booking_id===b.id),cancel_terms:cancelFor(b),changes:changes.filter(c=>c.booking_id===b.id).map(c=>({...c,status:c.status==='pending'&&c.expires_at<=serverTime?'expired':c.status})),readiness:operations.find(o=>o.property_id===b.property_id)?.readiness})), jobs:jobs.map(({open_address,cleaner_pay_row,...j}:Row):Row=>({...j,cleaner_pay:cleaner_pay_row?JSON.parse(cleaner_pay_row):null,street:streetAddress(open_address),settlement_paid:jobPayments.find(p=>p.job_id===j.id)?.paid??(j.settled_at?j.fee:0),checkout_confirmed:!j.booking_id||!!j.checkout_confirmed})), applications, notifications, messages, serverTime, integrations:{ai:false,telegram:false,whatsapp:false,payments:false} };
+    const state={ profile, properties:(await this.enrichProperties(properties.map(p=>({...p,policy:publicPolicy(policyFor(p))})))).map((p:Row):Row=>({...p,stay_class:classOfRow(p,p.details)})), ownProperties:await this.enrichProperties(await Promise.all(ownProperties.map(async p=>({...p,...(roomCountsOwn.has(p.id)?{units:await roomState(this.db,p.id)}:{}),policy:policyFor(p),operation:operations.find(v=>v.property_id===p.id),prepay:prepayState(policyFor(p).prepay_percent,stays.get(p.id)||0)}))),true), bookings:bookings.map(({risk_row,handover_row,owner_pay_row,locked_pay_row,guarantee_row,replaces_row,...b}) => ({...b,guarantee:guarantee_row?JSON.parse(guarantee_row):null,replaces:replaces_row?JSON.parse(replaces_row):null,pay_change:payChange(locked_pay_row,owner_pay_row),owner_pay:owner_pay_row&&(b.owner_id===this.userId||payoutOpen({...b,terms:enrichedTerms.find(t=>t.booking_id===b.id)},serverTime))?guestPayout(JSON.parse(owner_pay_row),b.owner_id===this.userId||phoneOpens(b,serverTime)):null,risk:riskFromRow(risk_row?JSON.parse(risk_row):null),handover:handover_row?JSON.parse(handover_row):null,...(b.owner_id===this.userId?{guest_reliability:guests.get(b.guest_id)}:{}),status:b.status==='requested' && b.expires_at<=serverTime?'expired':b.status,terms:enrichedTerms.find(t=>t.booking_id===b.id),cancel_terms:cancelFor({...b,guarantee_row}),changes:changes.filter(c=>c.booking_id===b.id).map(c=>({...c,status:c.status==='pending'&&c.expires_at<=serverTime?'expired':c.status})),readiness:operations.find(o=>o.property_id===b.property_id)?.readiness})), jobs:jobs.map(({open_address,cleaner_pay_row,...j}:Row):Row=>({...j,cleaner_pay:cleaner_pay_row?JSON.parse(cleaner_pay_row):null,street:streetAddress(open_address),settlement_paid:jobPayments.find(p=>p.job_id===j.id)?.paid??(j.settled_at?j.fee:0),checkout_confirmed:!j.booking_id||!!j.checkout_confirmed})), applications, notifications, messages, serverTime, integrations:{ai:false,telegram:false,whatsapp:false,payments:false} };
     return {...state,workspaces:Object.fromEntries(roles.map(role=>[role,operationOverview(state,this.userId,role,serverTime)]))};
   }
   async publicCatalog(options:{syntheticPreview?:boolean;rooms?:boolean}={}) {
@@ -736,7 +742,7 @@ export class RentalService {
   }
   // `ownerReady`: the owner has already said the place will be ready for this start (an accepted quick request),
   // so the preparation time no longer stops the booking. Set only by the server, never from the request body.
-  async createBooking(body:Row,options:{ownerReady?:boolean}={}) {
+  async createBooking(body:Row,options:{ownerReady?:boolean;replacing?:string}={}) {
     // Two guests send a request for the same type of room at once: both are given the same first free room and one
     // write loses (booking_overlap). A card of many rooms then tries its next free room, so the second guest is refused
     // only when no room is left (audit «Запуск», point 2).
@@ -749,7 +755,7 @@ export class RentalService {
       }
     }
   }
-  private async createBookingOnce(body:Row,options:{ownerReady?:boolean}={}) {
+  private async createBookingOnce(body:Row,options:{ownerReady?:boolean;replacing?:string}={}) {
     await this.requireRole('guest');
     const key=required(body.requestKey,'Ключ запроса',100), existing=await this.one('SELECT id FROM bookings WHERE guest_id=? AND request_key=?',this.userId,key);
     if(existing) return {id:existing.id,message:'Эта заявка уже сохранена.'};
@@ -764,12 +770,17 @@ export class RentalService {
     const owner=await this.one('SELECT owner_id,price FROM properties WHERE id=?',p.id);
     if(owner?.owner_id===this.userId)throw new DomainError('Это ваше жильё: забронировать его как гость нельзя. Чтобы закрыть даты, нажмите «Закрыть заезды» в правилах жилья.',403);
     // One guest does not hold the same time in two homes without paying: the first request is paid or cancelled first.
-    const held=await this.one("SELECT p.title FROM bookings b JOIN properties p ON p.id=b.property_id WHERE b.guest_id=? AND b.property_id<>? AND b.start<? AND b.end>? AND ((b.status='requested' AND b.expires_at>?) OR (b.status='confirmed' AND b.payment_status<>'owner_verified')) LIMIT 1",this.userId,p.id,end,start,now());
+    // `replacing`: the booking the guest was not let in to (lib/checkin-guarantee.ts); it is cancelled right after this one.
+    const held=await this.one("SELECT p.title FROM bookings b JOIN properties p ON p.id=b.property_id WHERE b.guest_id=? AND b.property_id<>? AND b.id<>? AND b.start<? AND b.end>? AND ((b.status='requested' AND b.expires_at>?) OR (b.status='confirmed' AND b.payment_status<>'owner_verified')) LIMIT 1",this.userId,p.id,options.replacing||'',end,start,now());
     if(held)throw new DomainError('На это время у вас уже есть неоплаченная бронь: «'+held.title+'». Оплатите или отмените её, затем бронируйте другое жильё.',409);
     const policyNow=await this.one('SELECT * FROM property_policies WHERE property_id=?',p.id),autoConfirm=!!policyNow?.auto_confirm&&mandateActive(policyNow)&&policyNow.version===checked.policy.version;
     // The owner's own time to answer a request («Автопилот: решения и сроки»).
     const answer=(await ruleFor(this.db,owner!.owner_id,'request')).minutes;
-    const risk=assessBookingRisk(await riskSignals(this.db,this.userId,{start,end,billingMode:checked.billingMode,price:Number(owner!.price||0),deposit:checked.policy.deposit}));
+    const signals=await riskSignals(this.db,this.userId,{start,end,billingMode:checked.billingMode,price:Number(owner!.price||0),deposit:checked.policy.deposit});
+    // A guest moved by «Гарантия заселения» books at the last minute because the first owner did not let them in,
+    // not by their own choice: the short lead is not held against them.
+    if(options.replacing)signals.lead=Math.max(signals.lead,86400);
+    const risk=assessBookingRisk(signals);
     // Under autopilot a high risk is not confirmed automatically: the owner decides.
     risk.held=autoConfirm&&risk.level==='high';
     // A home not ready with the arrival close: the owner is told in the request, the autopilot leaves the decision to them.
@@ -920,7 +931,7 @@ export class RentalService {
       if(b.status!=='confirmed'||terms?.actual_checkin)throw new DomainError('По этой брони заселение уже отмечено или бронь не подтверждена. Если что-то не так, нажмите «Есть проблема».',409);
       if(now()<checkinOpensAt(b.start,terms?.early_checkin_at))throw new DomainError('Сообщить, что вас не заселили, можно с 15 минут до заезда.',409);
       if(now()>b.end+86400)throw new DomainError('Бронь уже закончилась. Нажмите «Есть проблема» в брони.',409);
-      return reportNotLetIn(this,b,terms,String(body.text||''));
+      return reportNotLetIn(this,b,terms,String(body.text||''),guaranteeReason(body.reason));
     }
     // The home is ready before the next guest: «Можно заселиться раньше» (lib/arrival-shift.ts).
     if(body.action==='early_checkin'){
@@ -1088,7 +1099,9 @@ export class RentalService {
       const depositHeld=terms?.deposit?Math.max(0,(await this.one("SELECT COALESCE(SUM(CASE WHEN kind='deposit' THEN amount WHEN kind='deposit_return' THEN -amount ELSE 0 END),0) n FROM finance_entries WHERE booking_id=?",bookingId))?.n-(Number(terms.deposit_kept)||0)):0;
       // The owner changed the address after the guest agreed: the guest may leave for free, as if the owner cancelled.
       const moved=!owner&&!!await this.one('SELECT 1 x FROM booking_addresses WHERE booking_id=?',bookingId);
-      const rules={by:(owner||moved?'owner':'guest') as 'owner'|'guest',status:b.status,mode:terms?.billing_mode||'daily',rate:terms?.rate||0,units:terms?.units||1,amount:b.amount,paid:terms?.paid_amount||0,deposit:depositHeld,start:b.start,minHours:terms?.min_hours||policy?.min_hours||1,at:t,banquet:!!terms?.occasion};
+      // «Гарантия заселения» (lib/checkin-guarantee.ts): the guest was not let in and waited ten minutes; leaving is free, as if the owner cancelled.
+      const notLetIn=!owner&&!!await this.one(`SELECT 1 x WHERE ${notLetInWaitedSql('?')}`,bookingId,t);
+      const rules={by:(owner||moved||notLetIn?'owner':'guest') as 'owner'|'guest',status:b.status,mode:terms?.billing_mode||'daily',rate:terms?.rate||0,units:terms?.units||1,amount:b.amount,paid:terms?.paid_amount||0,deposit:depositHeld,start:b.start,minHours:terms?.min_hours||policy?.min_hours||1,at:t,banquet:!!terms?.occasion};
       const c=cancellationTerms(rules);
       // «Я оплатил» not yet checked: the transfer stays «на проверке». If the owner finds it, it goes back by the same rules.
       const toldPay=terms?.payment_reported_at?Number(terms.payment_reported_amount)||0:0,toldDeposit=terms?.deposit_reported_at?Number(terms.deposit_reported_amount)||0:0;
@@ -1097,7 +1110,7 @@ export class RentalService {
       const told=toldPay+toldDeposit,backIfIn=ifReceived+toldDeposit;
       const reviewGuest=told?' Вы сообщили о переводе '+money(told)+': владелец проверит поступление. Если деньги пришли, он вернёт '+money(backIfIn)+'. Переводить заново не нужно.':'';
       const reviewOwner=told?' Гость сообщил о переводе '+money(told)+' до отмены. Проверьте банк: если деньги пришли, нажмите в брони «Деньги получены» и верните гостю '+money(backIfIn)+'; если нет, нажмите «Перевод не пришёл».':'';
-      const who=owner?'Владелец отменил бронь':moved?'Гость отменил бронь из-за смены адреса':'Гость отменил бронь',title='«'+b.title+'»';
+      const who=owner?'Владелец отменил бронь':moved?'Гость отменил бронь из-за смены адреса':notLetIn?'Гостя не заселили, и он отменил бронь':'Гость отменил бронь',title='«'+b.title+'»';
       // The guest said they came in, the owner did not confirm it and cancels: the settling-in stays owed
       // (lib/stay-result.ts); if the guest was not there, the owner disputes the charge and a person decides.
       const afterArrival=owner&&b.status==='confirmed'&&!!terms?.checkin_reported_at&&!terms?.actual_checkin;

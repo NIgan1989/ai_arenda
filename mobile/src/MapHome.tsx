@@ -35,6 +35,7 @@ import {MapSheetHead} from './MapSheetHead';
 import {AiLine} from './AiLine';
 import {headLine} from './head-line';
 import {ownerJobTab} from '../../lib/job-filters';
+import {GUARANTEE_REASONS,GUARANTEE_WAIT,guaranteeReason} from '../../lib/guarantee-text';
 import {AutopilotThreads,type FeedNeed} from './AutopilotThreads';
 import {AutopilotHandoff} from './AutopilotHandoff';
 import {PlacePicker,RolePlate,type PickPlace} from './RolePlate';
@@ -55,7 +56,7 @@ import {GuestMode} from './GuestMode';
 import {ArrivalStrip} from './ArrivalStrip';
 import {arrivalOf,cardWords,countsAt,homeAt,pinWords,shiftDraft} from './arrival';
 import {PriceTip,isAdviceTip,isRequestTip} from './PriceTip';
-import {kindLabel} from '../../lib/listings';
+import {kindCategory,kindLabel} from '../../lib/listings';
 import {guestPin,guestTrips} from '../../lib/guest-trips';
 import type {HubTab} from '../../lib/property-hub';
 import {cleanerLine,cleanerStep} from '../../lib/job-steps';
@@ -487,7 +488,10 @@ function ownerCleanings(jobs:Row[]){
 function OwnerPanel({accountId,data,mapData,publish,snap,showNow,expand,onHead,onAsk,onIntent,onChanged,onOpenProcess,onOpenPage,onEdit,selected,setSelected,setFocus}:Common){
  const [asked,setAsked]=useState(''),[tab,setTab]=useState<HubTab>('today'),[quick,setQuick]=useState(false),[sheetTab,setSheetTab]=useState<'today'|'soon'|'flats'>('today');
  const [inbox,setInbox]=useState<Row|null>(null),[error,setError]=useState(''),[working,setWorking]=useState(false),[skew,setSkew]=useState(0);
- const lock=useRef(false),seen=useRef(0),now=useNow(!!inbox?.offers?.length)+skew;
+ // A guest at the door who cannot get in comes before everything else: ten minutes to answer, then the guest sees other
+ // places nearby (lib/checkin-guarantee.ts). Gone once someone is inside or the guest moved.
+ const door=(data.bookings||[]).find((b:Row)=>b.guarantee&&!b.guarantee.replacedBy&&b.status==='confirmed'&&!b.terms?.actual_checkin&&!b.terms?.checkin_reported_at&&(data.ownProperties||[]).some((p:Row)=>p.id===b.property_id));
+ const lock=useRef(false),seen=useRef(0),now=useNow(!!inbox?.offers?.length||!!door)+skew;
  // An answer just sent shows on the flat's pin for a few seconds: «Ответ отправлен» after «Готов», the price again after a refusal.
  const [answered,setAnswered]=useState<Record<string,number>>({});
  const [saved,setSaved]=useState('');
@@ -528,7 +532,9 @@ function OwnerPanel({accountId,data,mapData,publish,snap,showNow,expand,onHead,o
  // Calm: no empty card, one line of the day (concept «Главный экран владельца», 2026-11-27); a new owner adds a home.
  const calm=Array.isArray(data.ownProperties)&&!flats.length?<NowFrame dot="calm" kicker={tr('Сейчас')} title={tr('Добавьте первое жильё')} line={tr('Добавьте первое жильё, и оно появится на карте.')}><DarkButton title={tr('Добавить жильё')} onPress={()=>onOpenPage('properties')}/></NowFrame>
   :<DayLine border={false} icon="calendar" title={tr('Всё по плану')} value={day.line} onPress={()=>expand(1)}/>;
- const nowCard=offers[0]?guestWaits(offers[0]):<PriceTip inline role="owner" cards={cards} pick={isRequestTip} onChanged={onChanged} onEdit={onEdit} fallback={decision?<NowFrame dot="wait" kicker={tr('Сейчас · нужно ваше решение')} title={tr(decision.tag)+' · '+decision.title} line={decision.line}><DarkButton title={tr('Решить')} onPress={()=>onOpenProcess(decision.kind,decision.id)}/></NowFrame>:calm}/>;
+ const doorLeft=door&&kindCategory(door.property_type||'apartment')==='stay'?Number(door.guarantee.reportedAt)+GUARANTEE_WAIT-now:0;
+ const doorCard=door&&<NowFrame key={'door:'+door.id} dot="alert" kicker={tr('Сейчас · гость не может заселиться')} timer={doorLeft>0?countdown(doorLeft):undefined} title={door.title} line={tr('Гость сообщил: {what}. Ответьте в чате брони или позвоните.',{what:tr(GUARANTEE_REASONS[guaranteeReason(door.guarantee.reason)]).toLocaleLowerCase('ru')})}><DarkButton title={tr('Открыть бронь')} onPress={()=>onOpenProcess('booking',door.id)}/></NowFrame>;
+ const nowCard=doorCard?doorCard:offers[0]?guestWaits(offers[0]):<PriceTip inline role="owner" cards={cards} pick={isRequestTip} onChanged={onChanged} onEdit={onEdit} fallback={decision?<NowFrame dot="wait" kicker={tr('Сейчас · нужно ваше решение')} title={tr(decision.tag)+' · '+decision.title} line={decision.line}><DarkButton title={tr('Решить')} onPress={()=>onOpenProcess(decision.kind,decision.id)}/></NowFrame>:calm}/>;
  const dot=(p:Row):Dot=>{const tone=placeOf(p).display_status?.tone;return tone==='ready'||tone==='good'?'ok':tone==='danger'?'alert':tone==='warning'||tone==='warn'?'wait':'calm';};
  const pilot=flats.length>0?<AutopilotLine role="owner" onOpen={()=>onOpenPage('account:autopilot')}/>:null;
  const ask=<AskLine role="owner" text={asked} onText={setAsked} onSend={text=>{setAsked('');onAsk(text);}}/>;
