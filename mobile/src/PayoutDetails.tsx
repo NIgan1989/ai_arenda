@@ -44,7 +44,8 @@ export function PayTo({title,to,amount,parts,waiting,missing,note,change,memo,ch
 const RECEIPT_LIMIT=3;
 /** The bank receipt next to «Я оплатил» (lib/payment-receipts.ts). The payer attaches a screenshot from Kaspi with `canAdd`;
  *  the receiver only looks. A tap opens the receipt large enough to read. Nothing is drawn for a receiver with no receipts. */
-export function Receipts({kind,id,role,count=0,canAdd=false,title,from}:{kind:'booking'|'job';id:string;role:'guest'|'owner'|'cleaner';count?:number;canAdd?:boolean;title?:string;from?:'payment'|'refund'}){
+// `nudge`: the payer has already said «Я оплатил» without a receipt, so the card asks for it plainly.
+export function Receipts({kind,id,role,count=0,canAdd=false,title,from,nudge=false}:{kind:'booking'|'job';id:string;role:'guest'|'owner'|'cleaner';count?:number;canAdd?:boolean;title?:string;from?:'payment'|'refund';nudge?:boolean}){
  const [list,setList]=useState<{id:string;uri:string}[]>([]),[busy,setBusy]=useState(false),[error,setError]=useState(''),[open,setOpen]=useState('');
  const load=useCallback(async()=>{
   // A booking keeps two kinds apart: the guest's payment receipts and the owner's refund receipts (lib/payment-receipts.ts).
@@ -65,8 +66,9 @@ export function Receipts({kind,id,role,count=0,canAdd=false,title,from}:{kind:'b
   {!!title&&!!list.length&&<Text style={p.title}>{title}</Text>}
   {!!list.length&&<View style={p.receipts}>{list.map(r=><Pressable key={r.id} accessibilityRole="imagebutton" accessibilityLabel={open===r.id?t('Свернуть чек'):t('Открыть чек')} onPress={()=>setOpen(open===r.id?'':r.id)}>{r.uri?<Image source={{uri:r.uri}} style={p.receipt} alt={t('Чек об оплате')}/>:<View style={[p.receipt,{backgroundColor:C.surfaceAlt}]}/>}</Pressable>)}</View>}
   {!!big?.uri&&<Pressable accessibilityRole="imagebutton" accessibilityLabel={t('Свернуть чек')} onPress={()=>setOpen('')}><Image source={{uri:big.uri}} style={p.receiptBig} resizeMode="contain" alt={t('Чек об оплате')}/></Pressable>}
-  {canAdd&&list.length<RECEIPT_LIMIT&&<Pressable accessibilityRole="button" disabled={busy} onPress={()=>void add()} style={({pressed})=>[p.link,(pressed||busy)&&{opacity:.7}]}><Text style={p.linkText}>{busy?t('Прикладываем…'):list.length?t('Приложить ещё чек'):t('Приложить чек из Kaspi')}</Text></Pressable>}
-  {canAdd&&!list.length&&<Text style={p.meta}>{t('Снимок чека видит только получатель. С чеком он подтвердит оплату быстрее.')}</Text>}
+  {canAdd&&nudge&&!list.length&&<Text accessibilityRole="alert" style={p.warn}>{t('Приложите снимок чека из Kaspi. Без чека владелец может дольше искать ваш перевод.')}</Text>}
+  {canAdd&&list.length<RECEIPT_LIMIT&&<Pressable accessibilityRole="button" disabled={busy} onPress={()=>void add()} style={({pressed})=>[p.link,nudge&&!list.length&&p.linkMain,(pressed||busy)&&{opacity:.7}]}><Text style={[p.linkText,nudge&&!list.length&&p.linkMainText]}>{busy?t('Прикладываем…'):list.length?t('Приложить ещё чек'):t('Приложить чек из Kaspi')}</Text></Pressable>}
+  {canAdd&&!nudge&&!list.length&&<Text style={p.meta}>{t('Снимок чека видит только получатель. С чеком он подтвердит оплату быстрее.')}</Text>}
   {!!error&&<Text accessibilityRole="alert" style={p.warn}>{error}</Text>}
  </View>;
 }
@@ -132,6 +134,7 @@ const p=StyleSheet.create({
  phone:{...type.subtitle,color:C.ink,fontWeight:'600',letterSpacing:.2},
  link:{minHeight:44,borderRadius:R.md,borderWidth:1,borderColor:C.accentLine,backgroundColor:C.surface,alignItems:'center',justifyContent:'center',paddingHorizontal:16},
  linkText:{...type.label,color:C.accent,fontWeight:'600'},
+ linkMain:{backgroundColor:C.accent,borderColor:C.accent},linkMainText:{color:C.onAccent},
  warn:{...type.label,color:C.warning},
  danger:{borderRadius:R.md,borderWidth:1,borderColor:C.danger,backgroundColor:C.dangerSoft,padding:12,gap:4},
  dangerTitle:{...type.label,color:C.danger,fontWeight:'600'},
