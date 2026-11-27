@@ -5,7 +5,7 @@ import {C} from './styles';
 import {T} from './tokens';
 import {ShareIcon} from './ChatIcons';
 import {shareLink,shareMessage,readShareStay,readStayLink,type ShareStay} from '../../lib/stay-share-text';
-import {dailyStay} from '../../lib/map-search-request';
+import {dailyStay,kzToday} from '../../lib/map-search-request';
 import type {MapStay} from './MapHome';
 import type {Row} from './model';
 import {isBath,isVenue} from '../../lib/listings';
@@ -31,9 +31,10 @@ export async function shareStay(property:Row,apiUrl:string,stay?:MapStay|null){
 }
 
 // A link from a friend (lib/stay-share-text.ts), with its days turned into the times of a daily stay.
-export function parseStayLink(value:unknown,apiUrl:string):{id:string;stay:MapStay|null}|null{
+// Days that already began are not moved to today (Codex, PR #278): the friend picks new dates on the page of the place.
+export function parseStayLink(value:unknown,apiUrl:string,now=Date.now()):{id:string;stay:MapStay|null}|null{
  const found=readStayLink(value,apiUrl);if(!found)return null;
- const local=found.stay?dailyStay(found.stay.start,found.stay.end):null;
+ const local=found.stay&&found.stay.start>=kzToday(now)?dailyStay(found.stay.start,found.stay.end,now):null;
  return {id:found.id,stay:found.stay&&local?{mode:'daily',start:local.start,end:local.end,guests:found.stay.guests}:null};
 }
 

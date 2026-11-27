@@ -362,7 +362,8 @@ function Chat(){
     return;
    }
    if(!Array.isArray(data.properties)||!data.properties.length)return;
-   const {id,stay}=sharedStay;setSharedStay(null);dropSheets();openMapIntent('property:'+id,stay||undefined);
+   // A booking or a review open on the overview would cover the place (Codex, PR #278): it closes first.
+   const {id,stay}=sharedStay;setSharedStay(null);dropSheets();setDeal(null);openMapIntent('property:'+id,stay||undefined);
   },[sharedStay,ready,busy,chatsActive,selectedRole,data.properties,!!data.user]); // eslint-disable-line react-hooks/exhaustive-deps
   // A tap on a push: the card it is about, through the same check as a link; a chat opens its room.
   usePushTaps(link=>{
