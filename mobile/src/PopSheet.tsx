@@ -32,6 +32,8 @@ export function PopSheet({visible,title,onClose,onBack,children,footer,bare=fals
 // bottom however long the body is (2026-11-26: «любые кнопки снизу и зафиксированы»); elsewhere (a card in a list)
 // the buttons simply follow the body.
 const PaneContext=createContext(false);
+// Inside a bare sheet: the sheet's head already names the step, so a form leaves out its own small heading.
+export const useInSheet=()=>useContext(PaneContext);
 // style: the card the form is drawn in outside a sheet (a sheet is its own card).
 export function SheetPane({children,footer,style}:{children:ReactNode;footer?:ReactNode;style?:StyleProp<ViewStyle>}){
  const inSheet=useContext(PaneContext);
