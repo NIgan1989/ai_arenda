@@ -37,6 +37,7 @@ import {saveStayPhoto,listStayPhotos,readStayPhoto,saveHandover} from './stay-ha
 import {serviceBillingState,serviceBillingAction} from './service-dues';
 import {saveReceipt,listReceipts,readReceipt} from './payment-receipts';
 import {rulesState,saveRule,type RuleRole} from './decision-rules';
+import {inviteState,redeemInvite} from './invites';
 import {planState,startOwnerPlan,startCleanerPlan,stopPlan,saveCleanerRules,awayToday,planRequired,setTier} from './autopilot-plans';
 import {saveIdentityDoc,removeIdentityDoc,listIdentityDocs,readIdentityDoc} from './identity-docs';
 import {saveRightDoc,removeRightDoc,listRightDocs,readRightDoc} from './property-rights';
@@ -57,6 +58,7 @@ export async function readOperations(service:RentalService,role:Role,path:string
  if(route==='commands')return {commands:await listCommands(service,role)};
  if(route==='import/state'){active(role,['owner']);return importState(service);}
  if(route==='autopilot/state')return planState(service,planRequired(role));
+ if(route==='invite/state'){active(role,['owner']);return inviteState(service);}
  if(route==='service-billing/state'){active(role,['owner','cleaner']);return serviceBillingState(service,config);}
  if(route==='decision-rules/state')return rulesState(service.db,service.userId,role as RuleRole);
  if(path[0]==='receipts'&&path[1]&&path[2])return path[1]==='photo'?readReceipt(service,path[2],config,platformAdmin):listReceipts(service,path[1],path[2],platformAdmin);
@@ -149,6 +151,7 @@ export async function writeOperations(service:RentalService,role:Role,path:strin
  if(route==='dispatch/preferences'){active(role,['cleaner']);return saveWorkerDispatch(service,body);}
  if(route==='autopilot/start')return planRequired(role)==='owner'?startOwnerPlan(service,body):startCleanerPlan(service,body);
  if(route==='autopilot/stop')return stopPlan(service,planRequired(role));
+ if(route==='invite/redeem'){active(role,['owner']);return redeemInvite(service,body);}
  if(route==='autopilot/tier')return setTier(service,planRequired(role),body);
  if(route==='decision-rules')return saveRule(service.db,service.userId,role as RuleRole,body);
  if(route==='autopilot/rules'){active(role,['cleaner']);await saveCleanerRules(service,body);return {message:'Правила сохранены.',state:await planState(service,'cleaner')};}

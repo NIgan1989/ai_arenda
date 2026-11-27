@@ -1,3 +1,4 @@
+import {adminInvites,createPartnerCode,setPartnerCodeActive} from './invites';
 import {smsReady} from './sms';
 import {answerObjection,objectionQueue} from './reliability-objection';
 import {DomainError,number} from './domain';
@@ -33,6 +34,7 @@ export function requirePlatformAdmin(userId:string,config:Config){if(!isPlatform
 export async function readPlatformAdmin(service:RentalService,route:string,params:Row,config:Config){
  requirePlatformAdmin(service.userId,config);
  if(route==='admins')return adminList(service,config);
+ if(route==='invites')return adminInvites(service);
  if(route==='map'){
   const entries=await service.all("SELECT p.id,p.title,p.city,p.district,p.price,p.published,l.longitude,l.latitude,(SELECT COUNT(*) FROM bookings b WHERE b.property_id=p.id AND (b.status='confirmed' OR (b.status='requested' AND b.expires_at>unixepoch()))) bookings,(SELECT COUNT(*) FROM cleaning_jobs j WHERE j.property_id=p.id AND j.status IN ('open','assigned','in_progress','submitted')) jobs FROM properties p LEFT JOIN property_locations l ON l.property_id=p.id AND l.address_fingerprint=p.city||'|'||p.district||'|'||p.address WHERE p.demo_owner IS NULL ORDER BY p.created_at DESC,p.id LIMIT 60");
   const matching=await service.one("SELECT COUNT(*) active,SUM(status='ready') ready FROM matching_requests WHERE status IN ('searching','ready','booking') AND expires_at>unixepoch()");
@@ -104,6 +106,8 @@ export async function writePlatformAdmin(service:RentalService,route:string,body
  requirePlatformAdmin(service.userId,config);
  if(route==='admins/add')return addAdmin(service,body,config);
  if(route==='admins/remove')return removeAdmin(service,body,config);
+ if(route==='invites/create')return createPartnerCode(service,body);
+ if(route==='invites/active')return setPartnerCodeActive(service,body);
  if(route==='reviews/ai'){
   if(typeof body.enabled!=='boolean')throw new DomainError('Выберите, кто проверяет заявки.');
   await service.db.batch([service.query("UPDATE pilot_policy SET ai_review=?,version=version+1,updated_by=?,updated_at=unixepoch() WHERE id='global'",body.enabled?1:0,service.userId),service.audit(service.userId,'admin.ai_review_'+(body.enabled?'on':'off')),...(body.enabled?[service.query("UPDATE participant_reviews SET ai_checked_at=NULL WHERE status='pending' AND ai_verdict IN ('approve','fix')")]:[])]);
