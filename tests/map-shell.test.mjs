@@ -60,7 +60,12 @@ test('the menu is short: a few rows open their own screens, the rest stays one t
     for (const view of ['notices', 'autopilot', 'profile', 'settings']) assert.ok(text.includes("view==='" + view + "'"), view);
     for (const title of ['Автопилот', 'Настройки', 'Помощь']) assert.match(text, new RegExp("<Row (?:[^<>]*? )?title=\\{t\\('" + title + "'\\)\\}"), title);
     assert.doesNotMatch(text, /title=\{t\('(Надёжность|Что сделал ИИ|Тариф и автопилот)'\)\}[^\n]*onPress=\{\(\)=>go/, 'no separate rows for what the three rows hold');
-    assert.match(text, /view==='autopilot'&&[^\n]*<AiJournal [^\n]*worker\?<NativeAutopilotPlan [^\n]*:<NativeDecisionRules /);
+    // The owner's autopilot is its own screen (journal and rules in tabs), the performer's journal lives in its plan screen.
+    assert.match(text, /view==='autopilot'&&owner&&<OwnerAutopilot [^\n]*journal=\{journal\}/);
+    assert.match(text, /view==='autopilot'&&worker&&<NativeAutopilotPlan [^\n]*journal=\{journal\}/);
+    assert.match(text, /view==='autopilot'&&!owner&&!worker&&<><Group title=\{t\('Что сделал ИИ'\)\}><AiJournal [^\n]*<NativeDecisionRules /);
+    const pilot = read('mobile/src/OwnerAutopilot.tsx');
+    assert.match(pilot, /<AiJournal [^\n]*icons\/><\/Group>:<NativeDecisionRules /);
     // The profile opens with the reliability card: the score, its word and up to three facts.
     assert.match(text, /view==='profile'&&<>\s*<View accessible accessibilityLabel=\{[^\n]*scoreText,trustLabel/);
     assert.match(text, /view==='settings'&&[\s\S]*title=\{t\('Данные и безопасность'\)\} onPress=\{\(\)=>go\('safety'\)\}\/>\{join\.map/);
