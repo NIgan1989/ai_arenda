@@ -144,7 +144,9 @@ export function NativeAutopilotPlan({role,journal,now,onOpen}:{role:'owner'|'cle
   </View>
  </View>;
  const notice=<>{!!error&&<Text accessibilityRole="alert" style={s.error}>{error}</Text>}{!!message&&<Text accessibilityLiveRegion="polite" style={a.saved}>{message}</Text>}</>;
+ // The journal stays readable with the autopilot off: offers, moves and reminders come without it too.
  if(!live)return <>
+  {!owner&&!!journal&&<Group title={tr('Что сделал ИИ')}><AiJournal entries={journal} now={now||Date.now()/1000} onOpen={onOpen} icons/></Group>}
   {/* The mode now; its rate is the row «Тариф» under the plan (PayWay). */}
   <Group space><View style={a.row}><View style={a.wide}><Text style={a.title}>{owner?tr('Сам'):tr('Обычный')}</Text><Text style={a.note}>{owner?tr('Брони и уборки подтверждаете вы. ИИ подсказывает.'):tr('На каждое предложение уборки отвечаете вы.')}</Text></View></View></Group>
   {notice}
@@ -164,7 +166,9 @@ export function NativeAutopilotPlan({role,journal,now,onOpen}:{role:'owner'|'cle
  // The performer's screen (2026-11-27), as the owner's (concept autopilot-v2): the state in one card with the switch,
  // the week as one number with bars by day, three numbers in a row, then tabs: what the AI did, today's plan, the rules.
  if(!owner&&journal){
-  const zone=5*3600,day=86400,clock=now||Date.now()/1000,midnight=Math.floor((clock+zone)/day)*day-zone,monday=midnight-((new Date((clock+zone)*1000).getUTCDay()+6)%7)*day;
+  // The number and the bars speak of the same: cleanings the autopilot took (lib/ai-move-marks.ts «took») in the last
+  // seven days, today the last bar, as week.taken of lib/autopilot-plans.ts counts them.
+  const zone=5*3600,day=86400,clock=now||Date.now()/1000,midnight=Math.floor((clock+zone)/day)*day-zone,from=midnight-6*day,took=journal.filter(e=>/взял уборку/.test(e.text));
   const taken=Number(state.week?.taken)||0,place=rules.districts.length?String(rules.districts.length):tr('все');
   const cell=(value:string,label:string,last=false)=><View style={[p.cell,last&&p.cellLast]}><Text style={p.cellValue}>{value}</Text><Text style={p.stateNote}>{label}</Text></View>;
   return <>
@@ -177,8 +181,8 @@ export function NativeAutopilotPlan({role,journal,now,onOpen}:{role:'owner'|'cle
    {confirmOff&&<View accessibilityRole="alert" style={p.off}><Text style={a.title}>{tr('Отключить автопилот?')}</Text><Text style={a.note}>{offNote}</Text><View style={p.nav}>{btn(tr('Оставить'),()=>setConfirmOff(false),'line')}{btn(tr('Отключить'),()=>void run('operations/autopilot/stop'),'danger')}</View></View>}
    {notice}
    <View style={p.week}>
-    <View><Text style={p.weekLabel}>{tr('Эта неделя')}</Text><Text style={p.weekValue}>{tr(forms(taken,'{n} уборка','{n} уборки','{n} уборок'),{n:taken})}<Text style={p.weekSub}>{'  '+tr('ИИ взял без вас')}</Text></Text></View>
-    <Bars from={monday} journal={journal} now={clock}/>
+    <View><Text style={p.weekLabel}>{tr('Последние 7 дней')}</Text><Text style={p.weekValue}>{tr(forms(taken,'{n} уборка','{n} уборки','{n} уборок'),{n:taken})}<Text style={p.weekSub}>{'  '+tr('ИИ взял без вас')}</Text></Text></View>
+    <Bars from={from} journal={took} now={clock}/>
     <View style={p.cells}>{cell(money(state.week?.earned||0),tr('заработано'))}{cell(String(n),tr('на сегодня'))}{cell(place,rules.districts.length?tr(forms(rules.districts.length,'район','района','районов')):tr('районы'),true)}</View>
    </View>
    <View style={{marginTop:20,marginBottom:4}}><SheetTabs value={tab} onChange={setTab} tabs={[{id:'done',title:tr('Что сделал')},{id:'today',title:tr('Сегодня'),count:n||undefined},{id:'rules',title:tr('Правила')}]}/></View>
