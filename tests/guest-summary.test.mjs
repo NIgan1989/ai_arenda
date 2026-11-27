@@ -7,7 +7,8 @@ test('a questionnaire saved by an older version never reopens «Сводка» o
 });
 
 test('the guest has no «Сводка»: an empty sheet goes back to the map instead of the board and the chat under it',()=>{
- assert.match(app,/const guestBare=selectedRole==='guest'&&pageId==='overview'&&!dealOpen&&!flow&&!placeMsg&&!stayMsg&&!editMsg;/);
+ assert.match(app,/const guestBare=selectedRole==='guest'&&pageId==='overview'&&!dealOpen&&!flow&&!placeMsg&&!stayMsg&&!editMsg&&!guestForm;/);
+ assert.match(app,/const guestForm=said\.some\(m=>\(m\.block==='stay-form'\|\|m\.block==='review'\)&&!m\.done\);/);
  assert.match(app,/useEffect\(\(\)=>\{if\(guestBare\)backToMap\(\);\},\[guestBare\]\);/);
 });
 

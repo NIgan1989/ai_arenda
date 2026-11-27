@@ -990,7 +990,10 @@ function Chat(){
   // The guest has no «Сводка» (2026-11-27): what it showed is in «Мои брони» and on the map. The sheet is still the frame
   // of a place, a request, a booking's card and its check; once none of them is left in it, the guest is back on the map
   // instead of a board and the chat said under it.
-  const guestBare=selectedRole==='guest'&&pageId==='overview'&&!dealOpen&&!flow&&!placeMsg&&!stayMsg&&!editMsg;
+  // A request form or a booking's check still open (a refusal of the server said under it) keeps the sheet: the guest
+  // sees why and keeps the dates and guests chosen.
+  const guestForm=said.some(m=>(m.block==='stay-form'||m.block==='review')&&!m.done);
+  const guestBare=selectedRole==='guest'&&pageId==='overview'&&!dealOpen&&!flow&&!placeMsg&&!stayMsg&&!editMsg&&!guestForm;
   useEffect(()=>{if(guestBare)backToMap();},[guestBare]);
   const nextTask=data.assistantBrief?.automatic?data.assistantBrief.prompts[0]:null;
   const homeCity=String(data.profile?.city||''),cityFlats=pageId==='catalog'&&homeCity?data.properties.filter((p:Row)=>p.city===homeCity):[],byCity=cityFlats.length>0&&!allCities;
