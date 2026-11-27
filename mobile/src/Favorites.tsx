@@ -26,14 +26,14 @@ export function useFavorites(data:Row,onChanged:()=>Promise<unknown>|unknown){
 
 /** The heart on a photo or beside a title. */
 export function Heart({on,title,onPress,plain}:{on:boolean;title:string;onPress:()=>void;plain?:boolean}){
- return <Pressable accessibilityRole="button" accessibilityState={{selected:on}} accessibilityLabel={(on?t('Убрать из избранного: '):t('В избранное: '))+title} hitSlop={8} onPress={onPress} style={({pressed})=>[f.heart,plain&&f.heartPlain,pressed&&f.dim]}><Text style={[f.heartText,on&&f.heartOn]}>{on?'♥':'♡'}</Text></Pressable>;
+ return <Pressable accessibilityRole="button" accessibilityState={{selected:on}} accessibilityLabel={(on?t('Убрать из избранного: '):t('В избранное: '))+title} hitSlop={8} onPress={onPress} style={({pressed})=>[f.heart,plain&&f.heartPlain,pressed&&f.dim]}><Text style={[f.heartText,on&&f.heartOn]}>{on?'♥\uFE0E':'♡'}</Text></Pressable>;
 }
 
 /** «Снова туда же»: the guest's favourites and the homes of earlier stays, one tap from the map. */
 export function AgainRow({properties,mine,onOpen}:{properties:Row[];mine:Mine;onOpen:(property:Row)=>void}){
  const list=againList(properties,mine);
  if(!list.length)return null;
- return <View><Text style={f.title}>{t('Снова туда же')}</Text><ScrollView horizontal showsHorizontalScrollIndicator={false} style={f.strip} contentContainerStyle={f.stripContent} keyboardShouldPersistTaps="handled">{list.map(p=>{const fav=markOf(p.id,mine)==='favorite';return <Pressable key={p.id} accessibilityRole="button" accessibilityLabel={(fav?t('Избранное: '):['banya','sauna','banquet','cafe'].includes(p.details?.type||p.type)?t('Вы здесь были: '):t('Вы здесь жили: '))+p.title} onPress={()=>onOpen(p)} style={({pressed})=>[f.chip,pressed&&f.dim]}><Text style={[f.chipMark,fav&&f.heartOn]}>{fav?'♥':'↻'}</Text><Text numberOfLines={1} style={f.chipText}>{p.title}</Text></Pressable>;})}</ScrollView></View>;
+ return <View><Text style={f.title}>{t('Снова туда же')}</Text><ScrollView horizontal showsHorizontalScrollIndicator={false} style={f.strip} contentContainerStyle={f.stripContent} keyboardShouldPersistTaps="handled">{list.map(p=>{const fav=markOf(p.id,mine)==='favorite';return <Pressable key={p.id} accessibilityRole="button" accessibilityLabel={(fav?t('Избранное: '):['banya','sauna','banquet','cafe'].includes(p.details?.type||p.type)?t('Вы здесь были: '):t('Вы здесь жили: '))+p.title} onPress={()=>onOpen(p)} style={({pressed})=>[f.chip,pressed&&f.dim]}><Text style={[f.chipMark,fav&&f.heartOn]}>{fav?'♥\uFE0E':'↻'}</Text><Text numberOfLines={1} style={f.chipText}>{p.title}</Text></Pressable>;})}</ScrollView></View>;
 }
 
 const f=StyleSheet.create({
