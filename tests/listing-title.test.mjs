@@ -23,6 +23,9 @@ test('a bath, a hotel or a hall is known by its name in «»',()=>{
  assert.equal(f('Берёзка','banya'),'Баня «Берёзка»');
  assert.equal(f('Гостиница «Шаңырақ»','hotel'),'Гостиница «Шаңырақ»');
  assert.equal(f('Хостел в центре','hostel',4),'Хостел · в центре');
+ // A quoted place nearby is not the bath's own name.
+ assert.equal(f('Баня · возле ТРЦ «Батыр Молл»','banya'),'Баня · возле ТРЦ «Батыр Молл»');
+ assert.equal(f('Баня возле ТРЦ «Батыр Молл»','banya'),'Баня · возле ТРЦ «Батыр Молл»');
 });
 test('the field holds only the owner part and keeps the space being typed',()=>{
  assert.equal(joinTitle('у парка ','apartment',2),'2-комнатная · у парка ');
@@ -30,6 +33,10 @@ test('the field holds only the owner part and keeps the space being typed',()=>{
  assert.equal(titleInput('Баня «Арасан» · на дровах'),'«Арасан» · на дровах');
  assert.equal(f(joinTitle('Арасан','banya'),'banya'),'Баня «Арасан»');
  assert.ok(titleSaysKind('Студия · у парка')&&titleSaysRooms('2-комнатная')&&!titleSaysKind('Малый зал'));
+});
+test('a hall of a venue keeps its plain name in the editor',async()=>{
+ const src=(await import('node:fs')).readFileSync('mobile/src/PropertyEdit.tsx','utf8');
+ assert.match(src,/p\.venue\?<EditField label=\{t\('Название'\)\}/);
 });
 test('the owner app saves the title in the one format',async()=>{
  const {draftTitle,emptyDraft}=await load('listing-draft');

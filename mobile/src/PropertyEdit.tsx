@@ -145,7 +145,8 @@ export function PropertyEdit({property,onSave,onReview,onRemove,onClose,onOpenHa
     {!!call&&!!p.id&&<AddressPin propertyId={p.id} city={draft.city} district={draft.district} address={draft.address} place={place} call={call} onChoice={c=>{pick.current=c;}}/>}
    </>}
    {open==='text'&&<>
-    <TitleField label={t('Заголовок')} kind={d.type} rooms={draft.rooms} title={draft.title} place={{district:draft.district,city:draft.city}} onChange={v=>set({title:v})}/>
+    {/* A hall of a venue keeps its own name («Малый зал»), as the server does (lib/service.ts saveListing). */}
+    {p.venue?<EditField label={t('Название')} value={draft.title} onChange={v=>set({title:v})} max={120}/>:<TitleField label={t('Заголовок')} kind={d.type} rooms={draft.rooms} title={draft.title} place={{district:draft.district,city:draft.city}} onChange={v=>set({title:v})}/>}
     <EditField label={t('Описание')} value={draft.description} onChange={v=>set({description:v})} max={2500} multiline/>
     <Text style={x.hint}>{draft.description.trim().length<80&&<Text style={{color:editDot.missing}}>● </Text>}{draft.description.trim().length<80?t('{n} знаков · для показа гостям нужно от 80',{n:draft.description.trim().length}):t('{n} знаков',{n:draft.description.trim().length})}</Text>
    </>}

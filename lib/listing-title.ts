@@ -25,6 +25,8 @@ const CONTACTS=/https?:\/\/\S*|www\.\S*|\S+\.(?:kz|ru|com)\S*|t\.me\/\S*|wa\.me\
 const EMOJI=/[\p{Extended_Pictographic}\u{1F1E6}-\u{1F1FF}️‍⃣]/gu;
 // The words a title may start with in lower case: «у набережной», «с баней», «вид на Иртыш».
 const SOFT=/^(?:у|в|во|на|возле|около|рядом|напротив|с|со|для|за|под|над|недалеко|близко|между|при|от|до|по|вид|видом|новостройк\p{L}*|свеж\p{L}*|уютн\p{L}*|просторн\p{L}*|светл\p{L}*|т[её]пл\p{L}*|русск\p{L}*|финск\p{L}*|турецк\p{L}*|больш\p{L}*|мал\p{L}*|нов\p{L}*|тих\p{L}*|семейн\p{L}*|центр)$/iu;
+// The word before a quoted place nearby: «у ТРЦ «…»», «возле «…»».
+const NEARBY=/^(?:трц|тц|тк|жк|бц|рк|парк\p{L}*|сквер\p{L}*|ресторан\p{L}*|магазин\p{L}*|станци\p{L}*|остановк\p{L}*|у|в|во|на|возле|около|рядом|напротив|с|со|за|под|до|от|недалеко)$/iu;
 const QUOTED=/[«"„“]([^«»"„“”]{1,40})[»"“”]/u;
 const lowerShout=(s:string)=>s.replace(/[\p{Lu}]{5,}/gu,w=>w.toLocaleLowerCase('ru'));
 const cap=(s:string)=>s.charAt(0).toLocaleUpperCase('ru')+s.slice(1);
@@ -44,7 +46,9 @@ export function titleParts(raw:string,type?:string,place:Place={}){
  // «Сауна · у реки»: what comes after the dot is a place-word, not a name.
  const dotted=/^\s*·/.test(text);
  const quoted=QUOTED.exec(text);
- if(quoted&&isNamedKind(type)){name=tidy(lowerShout(quoted[1]).replace(CONTACTS,' ').replace(EMOJI,' '));rest=text.replace(quoted[0],' ');}
+ // «возле ТРЦ «Батыр Молл»»: a quoted place nearby stays in the detail; only a name of the place itself is taken out.
+ const before=quoted?text.slice(0,quoted.index).trim().split(/\s+/).pop()||'':'';
+ if(quoted&&isNamedKind(type)&&!dotted&&!NEARBY.test(before)){name=tidy(lowerShout(quoted[1]).replace(CONTACTS,' ').replace(EMOJI,' '));rest=text.replace(quoted[0],' ');}
  let tail=clean(rest,type);
  if(isNamedKind(type)&&!name&&tail&&!dotted){const first=tail.split(' ')[0];if(!SOFT.test(first)&&!/^[\p{Ll}]/u.test(first)){name=tail;tail='';}}
  if(tail){const first=tail.split(' ')[0];if(SOFT.test(first))tail=tail.charAt(0).toLocaleLowerCase('ru')+tail.slice(1);}
