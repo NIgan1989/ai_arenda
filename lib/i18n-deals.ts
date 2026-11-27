@@ -475,6 +475,8 @@ export const DEALS:Words={
  'Прикладываем…':['Тіркеп жатырмын…','Attaching…'],
  'Приложить ещё чек':['Тағы чек тіркеу','Attach another receipt'],
  'Приложить чек из Kaspi':['Kaspi чегін тіркеу','Attach a Kaspi receipt'],
+ 'Приложите снимок чека из Kaspi. Без чека владелец может дольше искать ваш перевод.':['Kaspi-дегі чектің суретін тіркеңіз. Чексіз иесі аударымыңызды ұзағырақ іздеуі мүмкін.','Attach a screenshot of the Kaspi receipt. Without it the owner may take longer to find your transfer.'],
+ 'Потом приложите снимок чека из Kaspi: так владелец быстрее найдёт перевод.':['Содан кейін Kaspi-дегі чектің суретін тіркеңіз: иесі аударымды тезірек табады.','Then attach a screenshot of the Kaspi receipt: the owner will find the transfer faster.'],
  'Снимок чека видит только получатель. С чеком он подтвердит оплату быстрее.':['Чек суретін тек алушы көреді. Чек болса, ол төлемді тезірек растайды.','Only the recipient sees the receipt. With a receipt they will confirm the payment faster.'],
  'Не удалось сохранить.':['Сақтау мүмкін болмады.','Could not save.'],
  'Гости переводят оплату и депозит прямо вам. Сервис эти деньги не принимает и не удерживает.':['Қонақтар төлем мен депозитті тікелей сізге аударады. Сервис бұл ақшаны қабылдамайды да, ұстап қалмайды.','Guests transfer the payment and the deposit straight to you. The service does not take or hold this money.'],
