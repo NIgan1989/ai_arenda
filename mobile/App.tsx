@@ -28,6 +28,7 @@ const lateStay=(b:Record<string,any>)=>({start:b.start,end:b.end,arrival_eta:b.t
 import { Animated,AppState,BackHandler,Image,KeyboardAvoidingView,Linking,Platform,Pressable,ScrollView,StyleSheet,Text,TextInput,View } from 'react-native';
 import { SafeAreaProvider,SafeAreaView } from 'react-native-safe-area-context';
 import {NativeChats,type NativeChatInitial} from './src/NativeChats';
+import {IssueForm,KeepDepositForm} from './src/CardForms';
 import {StayRequest,CleaningRequest,HomeCleaningOrder} from './src/StayRequest';
 import {KeyboardBar,RevealProvider,useKeyboardReveal} from './src/Keyboard';
 import {AnswerSuggest} from './src/AddressSuggest';
@@ -301,14 +302,13 @@ function Chat(){
   useEffect(()=>{if(pageId!=='properties')beforeOwn.current=messages[messages.length-1]?.id||'';},[pageId,messages]);
   const userId=data.user?.id;
   const messageY=useRef<Record<string,number>>({});
-  // «Есть проблема» pressed again: the open question is shown again instead of a second one; an issue already sent
-  // for this booking or cleaning gets an addition, not a twin.
+  // «Есть проблема» on a booking or a cleaning: its own sheet over the card with one field and a swipe (2026-11-28),
+  // not a question in the AI chat. An issue already sent for it gets an addition, not a twin (the server joins them).
   function raiseIssue(kind:'job'|'booking',entityId:string,role:Role){
     const endpoint=(kind==='job'?'jobs/':'bookings/')+entityId;
-    if(flow?.kind==='issue'&&flow.endpoint===endpoint){const q=[...messages].reverse().find(m=>m.sender==='assistant'&&m.text===flow.questions[0]?.text);if(q&&messageY.current[q.id]!==undefined)scroll.current?.scrollTo({y:Math.max(0,messageY.current[q.id]-12),animated:true});return;}
     const open=(data.administrator?.issues||[]).find((i:Row)=>i.status==='open'&&i.entity_kind===kind&&i.entity_id===entityId&&i.opened_by===userId);
-    const text=open?tr('Обращение уже открыто: «{v}». ИИ-администратор следит за ответом. Что добавить?',{v:String(open.description).slice(0,200)}):kind==='job'?tr('Что произошло? Сообщение получит другой участник задания.'):tr('Что произошло? Сообщение получит другая сторона бронирования.');
-    beginFlow('issue',[{key:'issue',text,label:open?tr('Дополнение'):tr('Проблема')}],{},endpoint,kind==='job'?(role==='owner'?'owner-jobs':'my-jobs'):'bookings',role,{action:'issue'});
+    const lead=open?tr('Обращение уже открыто: «{v}». ИИ-администратор следит за ответом. Что добавить?',{v:String(open.description).slice(0,200)}):kind==='job'?tr('Что произошло? Сообщение получит другой участник задания.'):tr('Что произошло? Сообщение получит другая сторона бронирования.');
+    setActor(role);pop(tr('Есть проблема'),'issue',{endpoint,lead,after:kind==='job'?(role==='owner'?'owner-jobs':'my-jobs'):'bookings'});
   }
   // A booking, a cleaning or a task opened from the map, the calendar or a link: the sheet shows that one card and what
   // was done from it, not the whole overview. `after` is the last message before it was opened.
@@ -517,7 +517,9 @@ function Chat(){
     if(!edit&&roles.includes(role))return true;
     const answers={...p,roles:[...new Set([...roles,role])]};
     const questions=[...baseQuestions,...(role==='cleaner'?cleanerQuestions:[])].filter(q=>edit||!answers[q.key]);
-    say(role==='cleaner'?tr('Подготовим анкету исполнителя. Назначение на уборку подтверждает заказчик.'):tr('Познакомимся. Я задам несколько коротких вопросов.'));
+    // A role not yet joined is filled in on the role's own form (RoleEntry), as «Добавить роль» in the menu, not by
+    // questions in the chat (2026-11-28).
+    if(!edit){setJoinRole(role);switchRole();return false;}
     beginFlow('profile',questions,answers,'profile',after,role);return false;
   }
   function catalog(state:Row,mode='guest',query=''){
@@ -882,7 +884,7 @@ function Chat(){
           owner&&['cancelled','expired'].includes(b.status)&&refundLeft(b)>0&&{title:tr('Вернул гостю {v}',{v:money(refundLeft(b))}),kind:'main',swipe:tr('Проведите: вернул гостю {v}',{v:money(refundLeft(b))}),onSwipe:()=>swiped('bookings/'+id,{action:'record_refund',confirmed:true},'owner-bookings'),onPress:()=>confirm('bookings/'+id,{action:'record_refund',confirmed:true},tr('Вернул гостю {v}',{v:money(refundLeft(b))}),'owner-bookings',tr('Подтверждаю, что уже перевёл гостю эту сумму за отменённую бронь.'))},
           owner&&['completed','cancelled','expired'].includes(b.status)&&b.terms?.deposit_balance>0&&{title:tr('Вернул депозит {v}',{v:money(b.terms.deposit_balance)}),kind:handed==='ask'?'side':'main',swipe:tr('Проведите: вернул депозит {v}',{v:money(b.terms.deposit_balance)}),onSwipe:()=>swiped('bookings/'+id,{action:'record_deposit_return',confirmed:true},'owner-bookings'),onPress:()=>confirm('bookings/'+id,{action:'record_deposit_return',confirmed:true},tr('Вернул депозит {v}',{v:money(b.terms.deposit_balance)}),'owner-bookings',tr('Подтверждаю, что уже перевёл гостю депозит.'))},
           // Damage after the stay: the owner keeps a part of the deposit once, with a reason the guest sees.
-          owner&&b.status==='completed'&&b.terms?.deposit_status==='owner_verified'&&b.terms?.deposit_balance>0&&!b.terms?.deposit_kept&&{title:tr('Удержать часть депозита'),kind:'side',onPress:()=>beginFlow('keep-deposit',[{key:'amount',text:tr('Какую сумму удержать из депозита {v}? Гость увидит сумму и причину.',{v:money(b.terms.deposit_balance)}),label:tr('Удержать, ₸'),min:1,max:b.terms.deposit_balance},{key:'reason',text:tr('За что удерживаете? Напишите коротко, что повреждено или пропало.'),label:tr('Причина')}],{},'bookings/'+id,'owner-bookings','owner',{action:'keep_deposit'})},
+          owner&&b.status==='completed'&&b.terms?.deposit_status==='owner_verified'&&b.terms?.deposit_balance>0&&!b.terms?.deposit_kept&&{title:tr('Удержать часть депозита'),kind:'side',onPress:()=>{setActor('owner');pop(tr('Удержать часть депозита'),'keep-deposit',{id,balance:b.terms.deposit_balance});}},
         ]}/>
 
 
@@ -940,6 +942,8 @@ function Chat(){
       </Fragment>;
     })}{payload.role==='owner'&&m.id!=='deal'&&<Button title={tr('Создать уборку')} secondary disabled={busy} onPress={()=>run(cleaningFlat&&cleanable(data).some((p:Row)=>String(p.id)===cleaningFlat)?'job:'+cleaningFlat:'job')}/>}</View>;
     if(m.block==='rate')return m.done?null:<JobRating busy={busy} onSubmit={(rating,note)=>act(m,'jobs/'+payload.id,{action:'rate',rating,note},'owner-jobs')}/>;
+    if(m.block==='issue')return m.done?null:<IssueForm lead={payload.lead} busy={busy} onSubmit={issue=>act(m,payload.endpoint,{action:'issue',issue},payload.after)}/>;
+    if(m.block==='keep-deposit')return m.done?null:<KeepDepositForm balance={Number(payload.balance)||0} busy={busy} onSubmit={body=>act(m,'bookings/'+payload.id,{action:'keep_deposit',...body},'owner-bookings')}/>;
     if(m.block==='damage')return m.done?null:<DamageClaim jobId={payload.id} busy={busy} onSubmit={text=>act(m,'jobs/'+payload.id,{action:'damage',text},'owner-jobs')}/>;
     if(m.block==='report')return <Report items={reportItems(data.jobs.find((j:Row)=>j.id===payload.id))} jobId={payload.id} job={data.jobs.find((j:Row)=>j.id===payload.id)} photos={!!data.jobs.find((j:Row)=>j.id===payload.id)?.photos_required} busy={busy||!!m.done} onSubmit={(body:Row)=>act(m,'jobs/'+payload.id,{action:'submit',...body},'my-jobs')} onProblem={issue=>void(m.id===stepRef.current?.id?stepNote('jobs/'+payload.id,{action:'issue',issue}):perform('jobs/'+payload.id,{action:'issue',issue},uid()))} onOther={()=>{if(m.id===stepRef.current?.id)setStep(null);raiseIssue('job',payload.id,'cleaner');}} onOwner={()=>{if(m.id===stepRef.current?.id)setStep(null);setChatInitial({kind:'job',entityId:payload.id,channel:'cleaning'});setPageId('chats');}}/>;
     if(m.block==='notifications')return <View>{data.notifications.slice(0,20).map((n:Row)=><View style={s.card} key={n.id}><Text style={s.text}>{n.body}</Text><Text style={s.meta}>{date(n.created_at)}</Text></View>)}</View>;
