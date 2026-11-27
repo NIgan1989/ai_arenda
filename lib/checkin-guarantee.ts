@@ -11,7 +11,7 @@ export {GUARANTEE_WAIT,GUARANTEE_REASONS,guaranteeReason,type GuaranteeReason} f
 // later nobody has let the guest in, the guest sees up to three free places nearby that are no dearer and confirm a
 // booking at once. Picking one books it and cancels the first booking by the owner's terms: a full refund the owner
 // makes, as the refund mark and reminders already ask (lib/service.ts cancel).
-const NEAR=5000,SHOWN=3,MIN_LEFT=3600;
+const NEAR=5000,SHOWN=3,MIN_LEFT=3600,SWITCH_HOLD=60;
 // SQL: the guest of this booking may leave it by the owner's terms (one ? for now): they said they were not let in,
 // the ten minutes passed and nobody marked them inside since.
 export const notLetInWaitedSql=(booking:string)=>`EXISTS(SELECT 1 FROM checkin_guarantees g JOIN booking_terms gt ON gt.booking_id=g.booking_id WHERE g.booking_id=${booking} AND g.reported_at+${GUARANTEE_WAIT}<=? AND gt.actual_checkin IS NULL AND gt.checkin_reported_at IS NULL)`;
@@ -28,7 +28,8 @@ async function reported(s:RentalService,bookingId:string){
 const metres=(m:number)=>m<1000?Math.max(100,Math.round(m/100)*100):Math.round(m/100)*100;
 
 // The places that take the guest instead: the same city and kind of stay, free from now to the end of the booking,
-// no dearer than it, of another owner, ready now and confirming by themselves. The nearest first, within 5 km.
+// no dearer than it, of another owner, ready now and confirming by themselves. The nearest first, within 5 km;
+// both pins must be known, so a place with no current pin, or a booking whose own pin is gone, offers nothing.
 export async function guaranteeOptions(s:RentalService,b:Row,at=epoch()){
  if(kindCategory(b.type||'apartment')!=='stay')return [];
  const start=Math.max(Number(b.start),Math.ceil(at/60)*60),end=Number(b.end);
@@ -47,11 +48,12 @@ export async function guaranteeOptions(s:RentalService,b:Row,at=epoch()){
  const at0=points.find(l=>l.property_id===b.property_id),pointOf=new Map(points.map(l=>[l.property_id,[Number(l.longitude),Number(l.latitude)] as [number,number]]));
  return fit.filter((p:Row)=>ownerOf.get(p.id)&&ownerOf.get(p.id)!==b.owner_id&&version.has(p.id))
   .map((p:Row)=>{const there=pointOf.get(p.id),distance=at0&&there?geoDistance([Number(at0.longitude),Number(at0.latitude)],there):null;return {p,distance};})
-  .filter(x=>x.distance===null||x.distance<=NEAR)
-  .sort((a,b)=>(a.distance??NEAR+1)-(b.distance??NEAR+1)||a.p.estimate.amount-b.p.estimate.amount||String(a.p.id).localeCompare(String(b.p.id)))
+  // Only a place whose distance is known: «рядом» is a promise, and an unknown pin could be across the city.
+  .filter((x):x is {p:Row;distance:number}=>x.distance!==null&&x.distance<=NEAR)
+  .sort((a,b)=>a.distance-b.distance||a.p.estimate.amount-b.p.estimate.amount||String(a.p.id).localeCompare(String(b.p.id)))
   .slice(0,SHOWN)
   .map(({p,distance})=>({propertyId:String(p.id),title:String(p.title),district:String(p.district||''),type:String(p.details?.type||'apartment'),photo:(Array.isArray(p.photos)?p.photos[0]:null)||null,
-   amount:Number(p.estimate.amount),deposit:Number(p.policy?.deposit)||0,billingMode:String(p.estimate.billingMode),policyVersion:version.get(p.id)!,start,end,distance:distance===null?null:metres(distance),
+   amount:Number(p.estimate.amount),deposit:Number(p.policy?.deposit)||0,billingMode:String(p.estimate.billingMode),policyVersion:version.get(p.id)!,start,end,distance:metres(distance),
    checkin:checkinMethods[String(p.details?.checkinMethod||'')]||''}));
 }
 
@@ -82,17 +84,32 @@ export async function switchStay(s:RentalService,body:Row){
  if(!option)throw new DomainError('Это жильё уже заняли. Выберите другой вариант.',409);
  if(body.shownAmount!==undefined&&option.amount>Number(body.shownAmount))throw new DomainError('Цена изменилась. Посмотрите варианты ещё раз.',409);
  const iso=(v:number)=>new Date(v*1000).toISOString();
- const made=await s.createBooking({propertyId,start:iso(option.start),end:iso(option.end),guests:b.guests,billingMode:option.billingMode,expectedAmount:option.amount,expectedPolicyVersion:option.policyVersion,acceptTerms:true,requestKey:'guarantee:'+b.id+':'+propertyId},{replacing:b.id});
+ // One choice at a time: the tap that takes the guarantee books, a second tap meanwhile (the same place or another)
+ // is told to wait. A choice left half-way (the worker stopped) frees itself after a minute.
+ const claim=await q(s.db,'UPDATE checkin_guarantees SET switching_at=? WHERE booking_id=? AND replaced_by IS NULL AND (switching_at IS NULL OR switching_at<=?)',at,b.id,at-SWITCH_HOLD).run();
+ if(!claim.meta.changes)throw new DomainError('Замена уже бронируется. Подождите минуту и откройте бронь снова.',409);
+ const free=()=>q(s.db,'UPDATE checkin_guarantees SET switching_at=NULL WHERE booking_id=? AND switching_at=?',b.id,at).run();
+ let made:Row;
+ try{
+  made=await s.createBooking({propertyId,start:iso(option.start),end:iso(option.end),guests:b.guests,billingMode:option.billingMode,expectedAmount:option.amount,expectedPolicyVersion:option.policyVersion,acceptTerms:true,requestKey:'guarantee:'+b.id+':'+propertyId},{replacing:b.id});
+ }catch(error){await free();throw error;}
  const fresh=await one(s.db,'SELECT status FROM bookings WHERE id=?',made.id);
  if(fresh?.status!=='confirmed'){
   if(fresh?.status==='requested')await s.bookingAction(made.id,{action:'cancel'}).catch(()=>undefined);
+  await free();
   throw new DomainError('Это жильё не смогло подтвердить бронь сразу. Выберите другой вариант.',409);
  }
- const mark=await q(s.db,'UPDATE checkin_guarantees SET replaced_by=?,replaced_at=? WHERE booking_id=? AND replaced_by IS NULL',made.id,at,b.id).run();
- if(!mark.meta.changes){await s.bookingAction(made.id,{action:'cancel'}).catch(()=>undefined);throw new DomainError('Замена уже выбрана. Она в ваших бронях.',409);}
+ const mark=await q(s.db,'UPDATE checkin_guarantees SET replaced_by=?,replaced_at=?,switching_at=NULL WHERE booking_id=? AND replaced_by IS NULL AND switching_at=?',made.id,at,b.id,at).run();
+ if(!mark.meta.changes){
+  // The hold ran out and another tap chose meanwhile. The same booking (the same place gives the same request key)
+  // is that choice and stays; a booking of another place is let go.
+  const chosen=await one(s.db,'SELECT replaced_by FROM checkin_guarantees WHERE booking_id=?',b.id);
+  if(chosen?.replaced_by===made.id)return {bookingId:made.id,message:'Бронь в «'+option.title+'» подтверждена. Первая бронь отменена.'};
+  await s.bookingAction(made.id,{action:'cancel'}).catch(()=>undefined);throw new DomainError('Замена уже выбрана. Она в ваших бронях.',409);
+ }
  try{
   const cancelled=await s.bookingAction(b.id,{action:'cancel'});
-  const refund=Number(cancelled?.cancel?.refund)||0,money=(n:number)=>n.toLocaleString('ru-RU').replace(/ | /g,' ')+' ₸';
+  const refund=Number(cancelled?.cancel?.refund)||0,money=(n:number)=>n.toLocaleString('ru-RU').replace(/[\u00a0\u202f]/g,' ')+' ₸';
   return {bookingId:made.id,message:refund?'Бронь в «'+option.title+'» подтверждена. Первая бронь отменена, владелец вернёт вам '+money(refund)+'.':'Бронь в «'+option.title+'» подтверждена. Первая бронь отменена.'};
  }catch(error){
   // The owner let the guest in a moment before: the first booking stands, the new one is let go.

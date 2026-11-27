@@ -78,6 +78,34 @@ test('picking a place books it confirmed and cancels the first by the owner\'s t
  }finally{f.db.close();}
 });
 
+test('two taps on the same place keep the one replacement, and a place with no pin is not offered',async()=>{
+ const f=await fixture(),R=f.db.raw;try{
+  const near=await place(f,'other','Студия Лермонтова',{price:9000,metres:600});
+  const lost=await place(f,'third','Без точки',{price:8000,metres:300});
+  await atTheDoor(f);later(f,GUARANTEE_WAIT);
+  R.prepare('DELETE FROM property_locations WHERE property_id=?').run(lost);
+  assert.deepEqual((await guaranteeState(f.guest,f.booking)).options.map(o=>o.title),['Студия Лермонтова']);
+  // The guest taps twice before the first answer comes back: one tap books, the other is told to wait.
+  const taps=await Promise.allSettled([switchStay(f.guest,{bookingId:f.booking,propertyId:near}),switchStay(f.guest,{bookingId:f.booking,propertyId:near})]);
+  const won=taps.filter(t=>t.status==='fulfilled'),refused=taps.filter(t=>t.status==='rejected');
+  assert.equal(won.length,1);assert.equal(refused.length,1);assert.match(refused[0].reason.message,/уже бронируется/);
+  const made=won[0].value.bookingId;
+  assert.equal(R.prepare('SELECT status FROM bookings WHERE id=?').get(made).status,'confirmed');
+  assert.equal(R.prepare('SELECT status FROM bookings WHERE id=?').get(f.booking).status,'cancelled');
+  assert.deepEqual({...R.prepare('SELECT replaced_by,switching_at FROM checkin_guarantees WHERE booking_id=?').get(f.booking)},{replaced_by:made,switching_at:null});
+  assert.equal(R.prepare("SELECT COUNT(*) n FROM bookings WHERE property_id=? AND status<>'cancelled'").get(near).n,1);
+ }finally{f.db.close();}
+});
+
+test('without the pin of the booked home no place is offered as nearby',async()=>{
+ const f=await fixture(),R=f.db.raw;try{
+  await place(f,'other','Студия Лермонтова',{price:9000,metres:600});
+  await atTheDoor(f);later(f,GUARANTEE_WAIT);
+  R.prepare('DELETE FROM property_locations WHERE property_id=?').run(f.property);
+  assert.deepEqual((await guaranteeState(f.guest,f.booking)).options,[]);
+ }finally{f.db.close();}
+});
+
 test('no replacement once the guest is inside, and the guest\'s plain cancel follows the same terms',async()=>{
  const f=await fixture(),R=f.db.raw;try{
   const near=await place(f,'other','Студия Лермонтова');

@@ -8,6 +8,8 @@ CREATE TABLE IF NOT EXISTS checkin_guarantees (
  reason TEXT NOT NULL CHECK(reason IN ('no_answer','key','not_as_photo','other')),
  reported_at INTEGER NOT NULL,
  replaced_by TEXT REFERENCES bookings(id),
- replaced_at INTEGER
+ replaced_at INTEGER,
+ -- A replacement being booked right now (one choice at a time; a stale hold frees itself after a minute).
+ switching_at INTEGER
 );
 CREATE UNIQUE INDEX IF NOT EXISTS checkin_guarantees_replacement ON checkin_guarantees(replaced_by) WHERE replaced_by IS NOT NULL;

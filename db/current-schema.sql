@@ -108,7 +108,7 @@
 -- migration 0104_stay_classes.sql sha256:a6ac265367913acbd4318cc7ede0c85f595a3ea19a99b7c85db51f07d1b8e0b7
 -- migration 0105_platform_admins.sql sha256:dc2f2773ff7c4a4f9c928368376ab02f98129d84e7e126942bfd072a6aa96c61
 -- migration 0106_invites.sql sha256:f81e43b17ff40e2f5f80ed7d6d9c015b768e54f787e9e5d5bd5356b77f46cd3e
--- migration 0107_checkin_guarantee.sql sha256:f624b557125396b0cbc072167e8fce914b53d09917106461610d6536093f3f05
+-- migration 0107_checkin_guarantee.sql sha256:8016ef051b552c9733f082796867b266f0430ad4fc36c1d32b1862ed36ef93da
 
 -- table access_receipts
 CREATE TABLE access_receipts (id TEXT PRIMARY KEY,property_id TEXT NOT NULL,entity_kind TEXT NOT NULL,entity_id TEXT NOT NULL,user_id TEXT NOT NULL,created_at INTEGER NOT NULL,expires_at INTEGER NOT NULL);
@@ -549,7 +549,9 @@ CREATE TABLE checkin_guarantees (
  reason TEXT NOT NULL CHECK(reason IN ('no_answer','key','not_as_photo','other')),
  reported_at INTEGER NOT NULL,
  replaced_by TEXT REFERENCES bookings(id),
- replaced_at INTEGER
+ replaced_at INTEGER,
+ -- A replacement being booked right now (one choice at a time; a stale hold frees itself after a minute).
+ switching_at INTEGER
 );
 
 -- table cleaner_autopilot

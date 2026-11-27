@@ -13,12 +13,12 @@ import {GUARANTEE_REASONS,GUARANTEE_WAIT,guaranteeReason,type GuaranteeReason} f
 // one row that says it exists and, from 15 minutes before the arrival, the quiet button «Не получается заселиться».
 // After it: the owner is called and has ten minutes; then up to three free places nearby, no dearer, that confirm
 // at once. On the booking that replaced the first one: the first is cancelled and its owner returns the money.
-export type GuaranteeOption={propertyId:string;title:string;district:string;type:string;photo:string|null;amount:number;deposit?:number;distance:number|null;checkin:string;start:number;end:number};
+export type GuaranteeOption={propertyId:string;title:string;district:string;type:string;photo:string|null;amount:number;deposit?:number;distance:number;checkin:string;start:number;end:number};
 type State={reported:boolean;reason?:string;reportedAt?:number;waitUntil?:number;now?:number;ownerAnsweredAt?:number|null;step?:'waiting'|'options'|'inside'|'closed'|'moved';amount?:number;options?:GuaranteeOption[]};
 const ICONS:Record<GuaranteeReason,MenuIcon>={no_answer:'bell',key:'key',not_as_photo:'camera',other:'dot'};
 export const guaranteeChoices=()=>(Object.keys(GUARANTEE_REASONS) as GuaranteeReason[]).map(value=>({value,label:t(GUARANTEE_REASONS[value]),icon:ICONS[value],...(value==='not_as_photo'?{note:t('Снимок можно приложить в чате брони')}:{})}));
 const clock=(at:number)=>dateText(at*1000,{hour:'2-digit',minute:'2-digit',timeZone:'Asia/Almaty'});
-const far=(m:number|null)=>m===null?'':m<1000?t('{v} м от вас',{v:m}):t('{v} км',{v:String(Math.round(m/100)/10).replace('.',',')});
+const far=(m:number)=>m<1000?t('{v} м от вас',{v:m}):t('{v} км',{v:String(Math.round(m/100)/10).replace('.',',')});
 
 export function CheckinGuarantee({booking,stay,canReport,busy,replacement,onReport,onPick}:{booking:Row;stay:boolean;canReport:boolean;busy:boolean;replacement?:Row|null;onReport:()=>void;onPick:(o:GuaranteeOption)=>void}){
  const g=booking.guarantee as Row|null,open=booking.status==='confirmed'&&!booking.terms?.actual_checkin;
@@ -35,7 +35,8 @@ export function CheckinGuarantee({booking,stay,canReport,busy,replacement,onRepo
  if(booking.replaces)return <View style={v.box}><Line icon="shield" title={t('Замена по гарантии заселения')} note={Number(booking.replaces.refund)>0?t('Первая бронь «{title}» отменена. Владелец вернёт вам {sum}: следим за возвратом и напомним ему.',{title:booking.replaces.title,sum:money(Number(booking.replaces.refund))}):t('Первая бронь «{title}» отменена. Оплаты не было, возвращать нечего.',{title:booking.replaces.title})}/></View>;
  // The first booking, cancelled when the guest moved.
  if(g?.replacedBy&&booking.status==='cancelled')return <View style={v.box}><Line icon="shield" title={t('Вы выбрали замену')} note={replacement?t('«{title}» · бронь подтверждена',{title:replacement.title}):t('Новая бронь в ваших бронях')}/></View>;
- if(!open||!stay&&!g)return null;
+ // A bath, a hall or a café has no replacement, but the guest still reports not being let in from here.
+ if(!open||!stay&&!g&&!canReport)return null;
  if(!reported)return <View style={v.gap}>
   {stay&&<Line icon="shield" title={t('Гарантия заселения')} note={t('Не заселили: за 10 минут найдём жильё рядом')}/>}
   {canReport&&<Btn kind="line" title={t('Не получается заселиться')} disabled={busy} onPress={onReport}/>}
