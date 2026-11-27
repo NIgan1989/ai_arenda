@@ -1,5 +1,6 @@
 import {L,dateText,plural,t} from '../../lib/i18n';
 import {AiJournal,type JournalEntry} from './AiJournal';
+import {OwnerAutopilot} from './OwnerAutopilot';
 import type {JournalOpen} from '../../lib/ai-move-marks';
 import {journalToday} from '../../lib/ai-move-marks';
 import {ThinkingLine} from './Thinking';
@@ -19,7 +20,7 @@ import {tLine} from '../../lib/i18n';
 import {ReliabilityObjection} from './ReliabilityObjection';
 import {NativeTelegram} from './NativeTelegram';
 import {NativePush} from './NativePush';
-import {NativeAutopilotPlan,NativePayWay} from './AutopilotPlan';
+import {NativeAutopilotPlan} from './AutopilotPlan';
 import {NativeDecisionRules} from './DecisionRules';
 import {NoticeList,type NoticeWaiting} from './Notices';
 import {roleEvents} from '../../lib/notice-feed';
@@ -33,7 +34,6 @@ import {PhoneCheck} from './PhoneCheck';
 import {PayoutForm,type Payout,type PendingPayout} from './PayoutDetails';
 import {AdminHub} from './admin/AdminHub';
 import {ServiceBilling} from './ServiceBilling';
-import {AutopilotWeek} from './AutopilotWeek';
 import {InviteOwners} from './InviteOwners';
 import {s,C,type} from './styles';
 import {T} from './tokens';
@@ -50,7 +50,7 @@ const shortRole:Record<Role,string>=L({guest:'Гость',owner:'Владеле�
 // map (MapNoticesButton in App.tsx), not from a row of the menu: the sheet is then called «Уведомления» and its ✕
 // returns to the map, so the page has no head of its own.
 // autopilot: everything the AI did alone (its journal) and what it may decide (the rules; the performer's plan);
-// for the owner, on top, the week of the plan in numbers (AutopilotWeek.tsx).
+// for the owner, its own screen with the state, the week and two tabs (OwnerAutopilot.tsx).
 // profile: what others read about me and how reliable I look to them.
 // money: the owner's business numbers, «Доходы» (OwnerAnalytics.tsx); the row shows the month's net profit.
 // invite: «Пригласить владельца» (InviteOwners.tsx), a month without the commission for both; a link opens it with the code.
@@ -134,7 +134,7 @@ export function AccountControl({onHead,waiting=[],jobs=[],userId='',role:active,
   {view==='billing'&&active!=='guest'&&<ServiceBilling key={'billing:'+active} role={active}/>}
   {view==='money'&&(worker?<CleanerEarnings jobs={jobs} userId={userId} now={Date.now()/1000} regular={regularPlaces}/>:<OwnerAnalytics tint={ink}/>)}
   {view==='notices'&&<><View style={m.invites}><NativePush key={'push:'+active} role={active} tint={ink} invite/><NativeTelegram tint={ink} invite/></View><NoticeList list={events} now={clock} waiting={waiting} fresh={n=>freshIds.includes(String(n.id))} onOpen={n=>active!=='guest'&&String(n.dedupe||'').startsWith('service:')&&!String(n.dedupe).startsWith('service:bypass-warning:')?()=>go('billing'):onOpenNotice?.(n)}/></>}
-  {view==='autopilot'&&<>{owner&&<View style={{marginBottom:16}}><AutopilotWeek/></View>}{owner&&<NativePayWay key={'pay:'+active} role="owner"/>}<Group title={t('Что сделал ИИ')}><AiJournal entries={journal} now={clock} onOpen={onOpenEntry}/></Group>{worker?<NativeAutopilotPlan key={'plan:'+active} role="cleaner"/>:<NativeDecisionRules key={'rules:'+active} tint={ink}/>}</>}
+  {view==='autopilot'&&owner&&<OwnerAutopilot key={'autopilot:'+active} journal={journal} now={clock} tint={ink} onOpen={onOpenEntry}/>}{view==='autopilot'&&worker&&<NativeAutopilotPlan key={'plan:'+active} role="cleaner" journal={journal} now={clock} onOpen={onOpenEntry}/>}{view==='autopilot'&&!owner&&!worker&&<><Group title={t('Что сделал ИИ')}><AiJournal entries={journal} now={clock} onOpen={onOpenEntry}/></Group><NativeDecisionRules key={'rules:'+active} tint={ink}/></>}
   {/* As the concept (Airbnb's host profile): a card with the photo and the numbers others see, the identity in one
       line with «Подтвердить», then the data as rows with «Изменить». The photo of the ID is taken after the tap. */}
   {view==='profile'&&<>
