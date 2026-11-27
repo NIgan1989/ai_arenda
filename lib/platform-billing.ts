@@ -35,23 +35,27 @@ export function previousMonth(at:number){
 export async function sweepHallMonths(db:D1Database,at=epoch()){
  // A month counts the events that took place in it (lib/stay-result.ts), by the start of the event.
  const month=previousMonth(at),held=stayedSql('c.booking_id'),startOf='(SELECT start FROM bookings WHERE id=c.booking_id)';
+ // `invited`: the seconds of the month that the owner's «Месяц без комиссии» days cover (lib/invites.ts, offer 5.13).
  const halls=await rows(db,`SELECT p.id,p.owner_id,p.title,p.capacity,s.hall_small_upto,s.hall_mid_upto,s.hall_fee_small,s.hall_fee_mid,s.hall_fee_large,
    CASE WHEN s.enabled=1 AND s.starts_at<? THEN 1 ELSE 0 END active,
    (SELECT COUNT(*) FROM platform_commissions c WHERE c.property_id=p.id AND ${startOf}>=? AND ${startOf}<? AND ${held}) bookings,
    (SELECT MAX(c.capacity) FROM platform_commissions c WHERE c.property_id=p.id AND ${startOf}>=? AND ${startOf}<? AND ${held}) month_capacity,
-   EXISTS(SELECT 1 FROM platform_commissions c WHERE c.property_id=p.id AND ${startOf}<? AND ${held}) before
+   EXISTS(SELECT 1 FROM platform_commissions c WHERE c.property_id=p.id AND ${startOf}<? AND ${held}) before,
+   (SELECT COALESCE(SUM(MAX(0,MIN(ib.starts_at+ib.days*86400,?)-MAX(ib.starts_at,?))),0) FROM invite_bonuses ib WHERE ib.user_id=p.owner_id AND ib.role='owner' AND ib.starts_at IS NOT NULL) invited
   FROM properties p JOIN property_details d ON d.property_id=p.id JOIN platform_billing s ON s.id='global'
   WHERE p.demo_owner IS NULL AND json_extract(d.details,'$.type') IN ${HALL_TYPES}
-   AND NOT EXISTS(SELECT 1 FROM service_fees f WHERE f.kind='hall_month' AND f.ref_id=p.id||':'||?)`,month.end,month.start,month.end,month.start,month.end,month.start,month.name);
+   AND NOT EXISTS(SELECT 1 FROM service_fees f WHERE f.kind='hall_month' AND f.ref_id=p.id||':'||?)`,month.end,month.start,month.end,month.start,month.end,month.start,month.end,month.start,month.name);
  let written=0;
  for(const h of halls){
   if(!Number(h.bookings))continue;
   // The capacity the hall had when this month's bookings were confirmed, not a later edit of the card (audit 2026-11-22).
-  const fee=hallMonthFee(Number(h.month_capacity??h.capacity)||0,h as unknown as HallTariff),mode=!h.active?'shadow':h.before?'charged':'free';
+  // Invite days take their share of the month off the fee; a month they cover whole is free.
+  const full=hallMonthFee(Number(h.month_capacity??h.capacity)||0,h as unknown as HallTariff),left=Math.max(0,1-Math.min(Number(h.invited)||0,month.end-month.start)/(month.end-month.start));
+  const invited=!!h.active&&!!h.before&&left<1,fee=invited&&left>0?Math.round(full*left):full,mode=!h.active?'shadow':h.before&&left>0?'charged':'free';
   const r=await q(db,"INSERT OR IGNORE INTO service_fees(id,user_id,role,kind,ref_id,property_id,amount,mode,created_at) VALUES (?,?,'owner','hall_month',?,?,?,?,?)",uuid(),h.owner_id,h.id+':'+month.name,h.id,fee,mode,month.end).run();
   if(!r.meta.changes)continue;written++;
   if(mode!=='shadow')await q(db,'INSERT OR IGNORE INTO notifications(id,user_id,body,dedupe,read,created_at) VALUES (?,?,?,?,0,?)',uuid(),h.owner_id,
-   mode==='free'?`«${h.title}»: первый месяц с бронями через приложение бесплатный (броней: ${h.bookings}).`:`«${h.title}»: за месяц броней через приложение ${h.bookings}, плата за месяц ${new Intl.NumberFormat('ru-RU').format(fee)} ₸. Спишется в понедельник вместе с остальными услугами.`,
+   mode==='free'?(invited?`«${h.title}»: месяц без платы по приглашению (броней через приложение: ${h.bookings}).`:`«${h.title}»: первый месяц с бронями через приложение бесплатный (броней: ${h.bookings}).`):`«${h.title}»: за месяц броней через приложение ${h.bookings}, плата за месяц ${new Intl.NumberFormat('ru-RU').format(fee)} ₸${invited?' (дни без комиссии по приглашению учтены)':''}. Спишется в понедельник вместе с остальными услугами.`,
    'owner:hall-month:'+h.id+':'+month.name,at).run();
  }
  return written;

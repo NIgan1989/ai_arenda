@@ -67,11 +67,12 @@ export async function redeemInvite(service:RentalService,body:Row){
  const r=await db.batch([
   q(db,"INSERT OR IGNORE INTO invite_redemptions(user_id,role,code,inviter_id,redeemed_at) SELECT ?,'owner',?,?,? WHERE NOT EXISTS(SELECT 1 FROM platform_commissions WHERE owner_id=?) AND EXISTS(SELECT 1 FROM invite_codes WHERE code=? AND active=1)",me,code,inviter,at,me,code),
   q(db,`INSERT OR IGNORE INTO invite_bonuses(user_id,role,source_id,code,days,starts_at,created_at) SELECT ?,'owner',?,?,?,NULL,? WHERE ${mine}`,me,me,code,days,at,me,code,at),
-  ...(inviter&&!capped?[q(db,`INSERT OR IGNORE INTO invite_bonuses(user_id,role,source_id,code,days,starts_at,created_at) SELECT ?,'owner',?,?,?,NULL,? WHERE ${mine}`,inviter,me,code,days,at,me,code,at)]:[]),
-  ...(inviter?[q(db,`INSERT OR IGNORE INTO notifications(id,user_id,body,dedupe,read,created_at) SELECT ?,?,?,?,0,? WHERE ${mine}`,uuid(),inviter,
-   capped?'По вашему коду пришёл новый владелец. Ваш лимит приглашений на этот год исчерпан: месяц без комиссии получит только он.':'По вашему коду пришёл новый владелец. С его первой брони через приложение у вас обоих начнётся месяц без комиссии.',
+  // The yearly cap is counted again here: two owners entering one code at once cannot both take the sixth month.
+  ...(inviter&&!capped?[q(db,`INSERT OR IGNORE INTO invite_bonuses(user_id,role,source_id,code,days,starts_at,created_at) SELECT ?,'owner',?,?,?,NULL,? WHERE ${mine} AND (SELECT COUNT(*) FROM invite_bonuses WHERE user_id=? AND role='owner' AND source_id<>user_id AND created_at>?)<?`,inviter,me,code,days,at,me,code,at,inviter,at-YEAR,INVITER_YEAR_CAP)]:[]),
+  ...(inviter?[q(db,`INSERT OR IGNORE INTO notifications(id,user_id,body,dedupe,read,created_at) SELECT ?,?,CASE WHEN EXISTS(SELECT 1 FROM invite_bonuses WHERE user_id=? AND role='owner' AND source_id=?) THEN ? ELSE ? END,?,0,? WHERE ${mine}`,uuid(),inviter,inviter,me,
+   'По вашему коду пришёл новый владелец. С его первой брони через приложение у вас обоих начнётся месяц без комиссии.','По вашему коду пришёл новый владелец. Ваш лимит приглашений на этот год исчерпан: месяц без комиссии получит только он.',
    'owner:invite:'+me,at,me,code,at)]:[]),
-  q(db,`INSERT INTO audit_events SELECT ?,?,?,?,? WHERE ${mine}`,uuid(),me,'invite:'+code,JSON.stringify({action:'invite.redeemed',code,kind:c.kind,inviter,capped,days}),at,me,code,at),
+  q(db,`INSERT INTO audit_events SELECT ?,?,?,CASE WHEN ? AND NOT EXISTS(SELECT 1 FROM invite_bonuses WHERE user_id=? AND role='owner' AND source_id=?) THEN ? ELSE ? END,? WHERE ${mine}`,uuid(),me,'invite:'+code,inviter?1:0,inviter,me,JSON.stringify({action:'invite.redeemed',code,kind:c.kind,inviter,capped:true,days}),JSON.stringify({action:'invite.redeemed',code,kind:c.kind,inviter,capped:false,days}),at,me,code,at),
  ]);
  if(!r[0].meta.changes)throw new DomainError('Код не применён: у вас уже есть бронь через приложение или код только что отключили.',409);
  return {message:`Код принят. ${days} дней без комиссии начнутся с первой брони через приложение.`,state:await inviteState(service)};
