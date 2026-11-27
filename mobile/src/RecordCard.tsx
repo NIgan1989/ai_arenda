@@ -1,6 +1,6 @@
 import {t} from '../../lib/i18n';
 import {jobPayNote} from '../../lib/regular-cleaner-text';
-import React,{useEffect,useState} from 'react';
+import React,{createContext,useContext,useEffect,useRef,useState} from 'react';
 import {View,Text,Pressable,StyleSheet,Platform,LayoutAnimation,UIManager} from 'react-native';
 import {C,type} from './styles';
 import {T} from './tokens';
@@ -27,6 +27,10 @@ export function RecordFacts({rows}:{rows:(readonly [string,string,boolean?]|fals
 }
 // `swipe`: the action confirms a fact or a promise, so as the main action of a card it is a track to swipe; the words on the
 // track say what is confirmed, and `onSwipe` (when given) sends it at once, without the «Подтвердите действие» card.
+// The sheet a card is shown in may pin its buttons at the bottom (2026-11-26): however long the card, its main action
+// stays in sight under the scroll. The sheet gives this setter; a card then hands it its buttons instead of drawing them.
+// Several open cards may offer their buttons; the sheet pins the last one's (active) and the others keep theirs inline.
+export const DealFootContext=createContext<{set:(key:string,node:React.ReactNode|null)=>void;active:string}|null>(null);
 // Under «Ещё» the same action stays an ordinary button with its confirmation card.
 export type RecordAction={title:string;onPress:()=>void;kind:'main'|'side'|'danger';disabled?:boolean;note?:string;swipe?:string;onSwipe?:()=>void;icon?:MenuIcon};
 export function RecordActions({actions,busy,soft=false}:{actions:(RecordAction|false|null|undefined|''|0)[];busy:boolean;soft?:boolean}){
@@ -93,6 +97,17 @@ export function DealCard({kind,item,role,userId,application,thread,line:own,acti
  const hasMore=rest.some(Boolean)||!!extra;
  const dots=(on:boolean,show:boolean)=>show?<Pressable accessibilityRole="button" accessibilityLabel={on?t('Скрыть'):t('Ещё')} accessibilityState={{expanded:on}} hitSlop={8} onPress={()=>{smooth();setMore(v=>!v);}} style={({pressed})=>[r.dots,pressed&&r.dim]}><Text style={r.dotsText}>•••</Text></Pressable>:null;
  const flip=()=>{smooth();setOpen(v=>!v);};
+ // Pinned under the sheet's scroll: the guest's «Написать | Отменить» while the owner answers, else the main action.
+ const footing=useContext(DealFootContext),foot=footing?.set,latest=useRef({main,all});latest.current={main,all};
+ const waiting=kind==='booking'&&item.status==='requested'&&item.guest_id===userId&&clock>0&&Number(item.expires_at)>clock&&!request;
+ const chat=all.find(a=>a.title===t('Открыть чат')),cancel=all.find(a=>a.kind==='danger');
+ const press=(pick:()=>RecordAction|undefined)=>()=>pick()?.onPress();
+ const button=(a:RecordAction|undefined,title:string,style:object,text:object,pick:()=>RecordAction|undefined)=>a?<Pressable accessibilityRole="button" accessibilityLabel={a.title} disabled={busy} onPress={press(pick)} style={({pressed})=>[r.waitButton,style,(pressed||busy)&&r.dim]}><Text style={[r.actionText,text]}>{title}</Text></Pressable>:null;
+ const waitRow=<View style={r.waitButtons}>{button(chat,t('Написать'),r.waitChat,r.waitChatText,()=>latest.current.all.find(a=>a.title===t('Открыть чат')))}{button(cancel,t('Отменить'),r.waitCancel,r.waitCancelText,()=>latest.current.all.find(a=>a.kind==='danger'))}</View>;
+ const ownerAsk=kind==='booking'&&item.status==='requested'&&!!request&&clock>0&&Number(item.expires_at)>clock;
+ const visible=!compact||unfolded,offer=!!foot&&visible&&!ownerAsk&&(waiting?!!(chat||cancel):!!main),pinned=offer&&footing?.active===item.id;
+ const pinnedNode=!offer?null:waiting?waitRow:<RecordActions busy={busy} actions={[{...main!,onPress:()=>latest.current.main?.onPress(),onSwipe:()=>{const m=latest.current.main;(m?.onSwipe||m?.onPress)?.();}}]}/>;
+ useEffect(()=>{if(!foot)return;foot(item.id,pinnedNode);return()=>foot(item.id,null);},[foot,offer,waiting,ownerAsk,busy,main?.title,main?.swipe,main?.disabled,main?.note,!!chat,!!cancel,item.id]);
  if(compact&&!unfolded){
   const sum=money(kind==='job'?item.fee:item.amount),said=!!main&&status.label.toLowerCase().includes(main.title.toLowerCase().slice(0,8)),next=main?main.title.replace(/^Оплатил /,'Оплатить ').replace(/^Вернул /,'Вернуть '):'',label=item.title+', '+sum+', '+recordSpan(item.start,item.end)+', '+status.label+(item.demo_owner?t(', учебная'):'')+(main&&!said?t(', дальше: {next}',{next}):'');
   return <Pressable accessibilityRole="button" accessibilityLabel={label} accessibilityHint={t('Открыть подробности')} accessibilityState={{expanded:false}} onPress={()=>{smooth();setUnfolded(true);}} style={({pressed})=>[r.card,r.row,pressed&&r.pressed]}>
@@ -143,14 +158,13 @@ export function DealCard({kind,item,role,userId,application,thread,line:own,acti
  // The guest waits for the owner's answer, as a rider waits for a taxi (concept, Mobbin: Uber, Bolt): the big timer on top,
  // the place in one row marked «Ждём», then two buttons, «Написать» and «Отменить». The rest is under «Ещё».
  if(kind==='booking'&&item.status==='requested'&&item.guest_id===userId&&clock>0&&Number(item.expires_at)>clock&&(!compact||unfolded)){
-  const chat=all.find(a=>a.title===t('Открыть чат')),cancel=all.find(a=>a.kind==='danger'),others=rest.filter(a=>a&&a!==chat&&a!==cancel);
+  const others=rest.filter(a=>a&&a!==chat&&a!==cancel);
   const photos=pics;
-  const button=(a:RecordAction|undefined,title:string,style:object,text:object)=>a?<Pressable accessibilityRole="button" accessibilityLabel={a.title} disabled={busy} onPress={a.onPress} style={({pressed})=>[r.waitButton,style,(pressed||busy)&&r.dim]}><Text style={[r.actionText,text]}>{title}</Text></Pressable>:null;
   return <View style={r.card}>
    <View style={r.dealTop}><View style={r.grow}><AnswerWait item={item} bare/></View>{dots(more,others.length>0||!!extra)}</View>
    <Pressable accessibilityRole="button" accessibilityState={{expanded:open}} accessibilityHint={t('Открыть подробности')} onPress={flip} style={({pressed})=>[r.waitPlace,pressed&&r.pressed]}>{!!photos[0]&&<View style={r.waitThumb}><Photo id={photos[0]} alt={t('{title}, фото',{title:item.title})} fill/></View>}<View style={r.grow}><Text numberOfLines={1} style={r.dealTitle}>{item.title}</Text><Text numberOfLines={2} style={r.rowWhen}>{recordSpan(item.start,item.end)} · {money(item.amount)}</Text></View><View style={r.state}><View style={[r.dot,{backgroundColor:C.gold}]}/><Text style={r.stateText}>{t('Ждём')}</Text></View></Pressable>
    {always}
-   <View style={r.waitButtons}>{button(chat,t('Написать'),r.waitChat,r.waitChatText)}{button(cancel,t('Отменить'),r.waitCancel,r.waitCancelText)}</View>
+   {!pinned&&waitRow}
    {open&&details}
    <MoreSheet open={more} onClose={()=>setMore(false)} busy={busy} extra={extra} actions={others}/>
   </View>;
@@ -174,7 +188,7 @@ export function DealCard({kind,item,role,userId,application,thread,line:own,acti
   {!(flow.stopped&&kind==='booking')&&!done&&<Text style={r.dealLine}>{line}</Text>}
   {kind==='booking'&&item.status==='requested'&&item.guest_id===userId&&<AnswerWait item={item}/>}
   {always}
-  {!!main&&<RecordActions busy={busy} actions={[main]}/>}
+  {!!main&&!pinned&&<RecordActions busy={busy} actions={[main]}/>}
   {!place&&shown&&kind==='job'&&<Text style={[r.sumNote,!!item.payment_received_at&&{color:C.success}]}>{money(item.fee)} {jobPayNote(item)}</Text>}
   {!place&&shown&&details}
   <MoreSheet open={more} onClose={()=>setMore(false)} busy={busy} extra={extra} actions={rest}/>
