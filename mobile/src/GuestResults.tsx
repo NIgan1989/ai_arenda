@@ -200,7 +200,7 @@ export function GuestResults({ preview, draft, mine, onFavorite, selected, onSel
   const helpers = onStep ? guestHelpers(flats, context) : [];
   const middle = [...flats.map(flat => Number(flat.estimate?.amount) || 0)].sort((x, y) => x - y)[Math.floor((flats.length - 1) / 2)] || 0;
   const arrived = useRef(Date.now());
-  useEffect(() => { setPricey(0); }, [preview]);
+  useEffect(() => { setPricey(0); setFavOnly(false); }, [preview]);
   // Another set of cards (a step forward or back): the strip opens on the remembered card, else on the first.
   const listKey = flats.map(flat => flat.id).join();
   useEffect(() => {
@@ -304,12 +304,16 @@ export function GuestResults({ preview, draft, mine, onFavorite, selected, onSel
     strip.current?.scrollTo({ x: at * step, animated: true });
   }, [float, selected]);
 
-  if (!flats.length) {
+  // «Избранное»: saved homes, newest first; one this search found keeps its price for these dates.
+  const saved: Row[] = mine ? savedList(found, catalog, mine) : [];
+
+  // Nothing found: the saved homes stay one tap away, since this is when the guest needs them most.
+  if (!flats.length && !favOnly) {
     const answer = emptyAnswer(preview.empty, draft, !!onWiden), way = answer.action;
     // The way out says how many places it opens, when the server counted them.
     const opens = way && (preview.empty?.reason === 'now' || (preview.empty?.reason === 'filters' && preview.empty?.blocker)) ? Number(preview.empty?.count) || 0 : 0;
     return (
-      <><Text accessibilityRole="header" style={h.cardTitle}>{answer.title}</Text><Text style={h.note}>{answer.note}</Text>{!!way && !!onTry && <Action title={busy ? t('Ищем…') : way.title + (opens ? ' · ' + opens : '')} disabled={busy} onPress={() => onTry(way.patch)} />}{!way && !!onWiden && preview.empty?.reason !== 'city' && <Action title={busy ? t('Ищем…') : t('Искать без этих условий')} disabled={busy} onPress={onWiden} />}<Action secondary title={t('Изменить условия')} disabled={busy} onPress={onRefine} /></>
+      <><Text accessibilityRole="header" style={h.cardTitle}>{answer.title}</Text><Text style={h.note}>{answer.note}</Text>{!!way && !!onTry && <Action title={busy ? t('Ищем…') : way.title + (opens ? ' · ' + opens : '')} disabled={busy} onPress={() => onTry(way.patch)} />}{saved.length > 0 && <Action secondary title={'♡ ' + t('Избранное: {n}',{n:saved.length})} onPress={() => setFavOnly(true)} />}{!way && !!onWiden && preview.empty?.reason !== 'city' && <Action title={busy ? t('Ищем…') : t('Искать без этих условий')} disabled={busy} onPress={onWiden} />}<Action secondary title={t('Изменить условия')} disabled={busy} onPress={onRefine} /></>
     );
   }
 
@@ -329,10 +333,7 @@ export function GuestResults({ preview, draft, mine, onFavorite, selected, onSel
     );
   }
 
-  // «Избранное»: saved homes, newest first; one this search found keeps its price for these dates.
-  const saved: Row[] = mine ? savedList(found, catalog, mine) : [];
-
-  if (full) {
+  if (full || favOnly) {
     // Every found place at once: the guest who wants the whole list pulls the sheet up.
     // A row opens the place's own page with «Забронировать» (2026-11-26): no short card in between that says the same.
     return (
