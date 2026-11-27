@@ -75,6 +75,7 @@ import {RentalCalendar} from './src/RentalCalendar';
 import {RoleEntry,roleNames,rolePages,intentRole} from './src/RoleEntry';
 import {MapAccountButton,RolePlate,RoleSheet,hideRolePlate,showRolePlate} from './src/RoleSwitch';
 import {useFavorites} from './src/Favorites';
+import {parseStayLink,shareStay} from './src/ShareStay';
 import {MapHome,type MapStay} from './src/MapHome';
 import {stayISO,occasionTitle} from './src/ai-request';
 import {banquetWhen} from '../lib/map-search-request';
@@ -342,6 +343,27 @@ function Chat(){
       if(history.flow)setLinkError(tr('В этой роли сохранён незавершённый ввод. Завершите или отмените его, затем откройте ссылку повторно.'));else if(view.block)say(tr('Открыто по ссылке.'),view.block,view.payload);
     }finally{locked.current=false;setBusy(false);}
   }});
+  // A place a friend shared (src/ShareStay.tsx): the app opens it as the guest, with the dates of the link if it has them.
+  const [sharedStay,setSharedStay]=useState<{id:string;stay:MapStay|null;switched?:boolean}|null>(null);
+  useEffect(()=>{let active=true;const take=(url:unknown)=>{const found=parseStayLink(url,API_URL);if(found)setSharedStay(found);};
+   const sub=Linking.addEventListener('url',e=>take(e.url));void Linking.getInitialURL().then(url=>{if(active&&url)take(url);}).catch(()=>{});
+   return()=>{active=false;sub.remove();};},[]);
+  useEffect(()=>{
+   if(!sharedStay||!ready||busy||locked.current||chatsActive)return;
+   // Without an account the link goes the way a tap on a card does: sign in, then the same place with the same dates.
+   if(!data.user&&!selectedRole){const {id,stay}=sharedStay;setSharedStay(null);askSignIn(tr('Войдите, чтобы открыть объявление целиком. Даты и гости сохранятся.'),{kind:'open',intent:'property:'+id,stay:stay||undefined});return;}
+   // One attempt to become the guest: if the role did not change, the link is dropped instead of trying forever.
+   if(selectedRole!=='guest'){
+    if(sharedStay.switched){setSharedStay(null);return;}
+    setSharedStay({...sharedStay,switched:true});
+    if(!selectedRole)void chooseRole('guest').catch(()=>setSharedStay(null));
+    else if(accountRoles.includes('guest'))void pickRole('guest');
+    else{setLinkError(tr('Жильё по ссылке видно в роли «Гость».'));setSharedStay(null);}
+    return;
+   }
+   if(!Array.isArray(data.properties)||!data.properties.length)return;
+   const {id,stay}=sharedStay;setSharedStay(null);dropSheets();openMapIntent('property:'+id,stay||undefined);
+  },[sharedStay,ready,busy,chatsActive,selectedRole,data.properties,!!data.user]); // eslint-disable-line react-hooks/exhaustive-deps
   // A tap on a push: the card it is about, through the same check as a link; a chat opens its room.
   usePushTaps(link=>{
     if(link.kind==='chat'&&link.role===activeRoleRef.current){setChatInitial(link.roomId?{roomId:link.roomId}:null);setPageId('chats');return;}
@@ -738,7 +760,7 @@ function Chat(){
      return <PropertyEdit key={property.id} property={property} step={payload.step} onOpenHall={async id=>{finish(m.id,tr('Изменения сохранены'));await load();say('','property-editor',{id},true);}} call={(path,body)=>request('/api/operations/'+path,body,undefined,undefined,'owner')} onClose={()=>closeEdit(m)} onReview={body=>request('/api/operations/reviews/request',body,undefined,undefined,'owner')} onRemove={async()=>{const r=await request('/api/listings/'+property.id+'/remove',{},undefined,undefined,'owner');finish(m.id,r?.message||tr('Жильё удалено'));const state=await load();if(pageId==='properties'){if(state)catalog(state,'owner');}else{say(r?.message||tr('Жильё удалено'));backToMap();}}} onSave={async body=>{await request('/api/listings/'+property.id,body);const state=await load();return state?.ownProperties?.find((p:Row)=>p.id===property.id);}}/>;}
     // The owner's own objects are short cards («Моё жильё»); the page's own list carries «Добавить жильё» on top.
     if(m.block==='properties'&&payload.mode==='owner')return <OwnProperties properties={payload.ids.map((id:string)=>data.ownProperties.find((p:Row)=>p.id===id)).filter(Boolean)} bookings={data.bookings} busy={busy} onAdd={m.id==='page-properties'?()=>run('property'):undefined} onHome={m.id==='page-properties'?()=>openMapIntent('home-cleaning'):undefined} onEdit={id=>say('','property-editor',{id},true)} onSettings={id=>say(tr('Правила и готовность жилья.'),'property-settings',{id},true)} onCleaning={id=>run('job:'+id)} onMap={id=>onMap('property',id)} onResend={async p=>{const r=await request('/api/operations/reviews/request',{propertyId:p.id,reference:(p.published?'Проверка нового адреса':'Показать гостям после проверки')+': «'+p.title+'»'},undefined,undefined,'owner');await load();return r;}}/>;
-    if(m.block==='properties')return <View>{payload.ids.map((id:string)=>{const p=[...data.properties,...data.ownProperties].find((p:Row)=>p.id===id);if(!p)return null;const stay:MapStay|undefined=payload.mode==='guest'?payload.stay:undefined;return <PropertyListing key={id} bar={m===placeMsg} property={p} host={stay?.host} owner={payload.mode==='owner'} chooseTitle={stay?tr('Забронировать'):payload.mode==='job'?tr('Убрать здесь'):undefined} onChoose={()=>stay?bookFromMap(p,stay):run((payload.mode==='owner'||payload.mode==='job'?'job:':'book:')+id)} onEdit={()=>say('','property-editor',{id},true)} onSettings={()=>say(tr('Полномочия и готовность жилья.'),'property-settings',{id},true)} onMap={onMap('property',id)} {...(payload.mode==='guest'&&selectedRole==='guest'&&!p.demo_owner?{favorite:favorites.mine.favorites.includes(id),onFavorite:()=>void favorites.toggle(id).then(text=>{if(text)say(text);})}:{})}/>;})}{!payload.ids.length&&<Button title={payload.mode==='guest'?tr('Посмотреть учебный пример'):tr('Добавить жильё')} secondary disabled={busy} onPress={()=>send(payload.mode==='guest'?tr('Покажи учебный пример'):tr('Хочу сдать жильё'))}/>}</View>;
+    if(m.block==='properties')return <View>{payload.ids.map((id:string)=>{const p=[...data.properties,...data.ownProperties].find((p:Row)=>p.id===id);if(!p)return null;const stay:MapStay|undefined=payload.mode==='guest'?payload.stay:undefined;return <PropertyListing key={id} bar={m===placeMsg} property={p} host={stay?.host} owner={payload.mode==='owner'} chooseTitle={stay?tr('Забронировать'):payload.mode==='job'?tr('Убрать здесь'):undefined} onChoose={()=>stay?bookFromMap(p,stay):run((payload.mode==='owner'||payload.mode==='job'?'job:':'book:')+id)} onEdit={()=>say('','property-editor',{id},true)} onSettings={()=>say(tr('Полномочия и готовность жилья.'),'property-settings',{id},true)} onMap={onMap('property',id)} {...(payload.mode==='guest'&&selectedRole==='guest'&&!p.demo_owner?{favorite:favorites.mine.favorites.includes(id),onFavorite:()=>void favorites.toggle(id).then(text=>{if(text)say(text);})}:{})}{...(payload.mode==='guest'&&!p.demo_owner&&Number(p.published)!==0?{onShare:()=>void shareStay(p,API_URL,stay)}:{})}/>;})}{!payload.ids.length&&<Button title={payload.mode==='guest'?tr('Посмотреть учебный пример'):tr('Добавить жильё')} secondary disabled={busy} onPress={()=>send(payload.mode==='guest'?tr('Покажи учебный пример'):tr('Хочу сдать жильё'))}/>}</View>;
     if(m.block==='bookings')return <View>{payload.role==='owner'&&m.id==='page-bookings'&&tabNow==='new'&&<OwnerResponses autopilot={(job,apps)=>autopilotPick(data,job,apps,data.serverTime||Date.now()/1000)} rows={ownerResponses(data,userId||'',data.serverTime||Date.now()/1000)} approvals={data.approvals||[]} busy={busy} onDecide={body=>perform('approvals',body,uid())} onOpen={id=>openDeal('job',id)}/>}{payload.role==='owner'&&m.id==='page-bookings'&&tabNow==='new'&&payload.ids.length>0&&ownerResponses(data,userId||'',data.serverTime||Date.now()/1000).length>0&&<Text accessibilityRole="header" style={s.groupTitle}>{tr('Заявки гостей')}</Text>}{(m.id==='page-bookings'&&tabNow==='archive'?byMonth:byTime)(payload.ids,data.bookings).map(({id,title}:{id:string;title:string})=>{
       const b=data.bookings.find((b:Row)=>b.id===id);if(!b)return null;const owner=b.owner_id===userId&&payload.role==='owner';
       const expired=b.status==='expired',confirmed=b.status==='confirmed',started=b.start<=data.serverTime,rest=Math.max(0,b.amount-(b.terms?.paid_amount||0)),owed=payDue(b,data.serverTime||Date.now()/1000),left=owed.left,depositDue=owed.deposit,due=owed.sum,guests=Number(b.guests)||1,closed=['cancelled','expired','completed'].includes(b.status),returned=(Number(b.terms?.refunded_amount)||0)+(Number(b.terms?.deposit_returned_amount)||0),moneyMoved=(Number(b.terms?.paid_amount)||0)+returned+(Number(b.terms?.deposit_received_amount)||0)>0||!!b.terms?.payment_reported_at||!!b.terms?.deposit_reported_at||Number(b.receipts)>0,toldSum=(b.terms?.payment_reported_at?Number(b.terms.payment_reported_amount)||0:0)+(b.terms?.deposit_reported_at?Number(b.terms.deposit_reported_amount)||0:0);
