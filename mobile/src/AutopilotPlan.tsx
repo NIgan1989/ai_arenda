@@ -1,8 +1,12 @@
 import {L,dateText,forms,t as tr,tServer} from '../../lib/i18n';
 import React,{useContext,useEffect,useState} from 'react';
-import {View,Text,TextInput,Pressable,Switch,StyleSheet} from 'react-native';
-import {FlatMenu,Group,Row,a} from './AccountRows';
+import {View,Text,TextInput,Pressable,Switch,StyleSheet,Image} from 'react-native';
+import {FlatMenu,Group,Row,a,menuIcons} from './AccountRows';
 import {ThinkingLine} from './Thinking';
+import {AiJournal,type JournalEntry} from './AiJournal';
+import {Bars} from './AutopilotWeek';
+import {SheetTabs} from './MainParts';
+import type {JournalOpen} from '../../lib/ai-move-marks';
 import {request} from './api';
 import {s,C,type,brandFont} from './styles';
 import {T} from './tokens';
@@ -35,13 +39,22 @@ function Steps({steps,current,onPick}:{steps:string[];current:number;onPick:(i:n
 // The tariff on the «Автопилот» screen (one tariff in percent since 2026-11-22): what the participant pays and what is
 // included, and what the last 30 days cost. Nothing to choose.
 const pct=(bp:unknown)=>String(Number(bp??0)/100).replace('.',',')+'%';
-function PayWay({state,owner}:{state:Data;owner:boolean}){
+function PayWay({state,owner,status=false}:{state:Data;owner:boolean;status?:boolean}){
  const b=state.billing||{},st=state.settings||{},flat=useContext(FlatMenu),[open,setOpen]=useState(false);
- const rate=pct(owner?st.ownerRate:st.cleanerRate);
+ const rate=pct(owner?st.ownerRate:st.cleanerRate),price=owner?tr('{rate} с заселения',{rate}):tr('{rate} с уборки',{rate});
+ // The owner's screen (concept autopilot-v2): the state on top as Muse's «Connected»: whether the AI works and on how
+ // many objects, the tariff under it; the same terms open under the card.
+ const managed=((state.flats||[]) as Data[]).filter(f=>f.managed).length,paused=state.plan?.status==='paused';
+ const head=status&&owner?<Pressable accessibilityRole="button" accessibilityState={{expanded:open}} onPress={()=>setOpen(v=>!v)} style={({pressed})=>[p.state,pressed&&{opacity:.7}]}>
+  <View style={p.stateRing}><Image source={menuIcons.shanyrak} style={p.stateIcon} accessibilityIgnoresInvertColors/></View>
+  <View style={{flex:1,gap:2}}><View style={{flexDirection:'row',alignItems:'center',gap:8}}>{managed>0&&!paused&&<View style={p.stateDot}/>}<Text style={p.stateTitle}>{paused?tr('На паузе'):managed?tr(forms(managed,'Включён · {n} объект','Включён · {n} объекта','Включён · {n} объектов'),{n:managed}):tr('Выключен')}</Text></View>
+   <Text style={p.stateNote}>{managed||paused?tr('Тариф {price}',{price}):tr('Включите «Автопилот» в настройках объекта')}</Text></View>
+  <Text style={[p.stateChev,open&&{transform:[{rotate:'90deg'}]}]}>›</Text>
+ </Pressable>:null;
  // As the concept of the menu: the tariff is one row with its rate; what it includes and what it cost open under it.
- return <View style={[p.payWay,flat&&{marginHorizontal:-16}]}>
-  <Row icon="wallet" title={tr('Тариф')} value={owner?tr('{rate} с заселения',{rate}):tr('{rate} с уборки',{rate})} open={open} onPress={()=>setOpen(v=>!v)}/>
-  {open&&<View style={a.body}>
+ return <View style={[p.payWay,flat&&!head&&{marginHorizontal:-16}]}>
+  {head||<Row icon="wallet" title={tr('Тариф')} value={price} open={open} onPress={()=>setOpen(v=>!v)}/>}
+  {open&&<View style={[a.body,!!head&&{paddingHorizontal:4,paddingTop:12,paddingBottom:0}]}>
    <Text style={a.note}>{owner?tr('Автопилот, ИИ-администратор, подбор исполнителя, защита и аналитика входят. Доплат нет. Платите, только когда гость заселился.'):tr('Автопилот и заказы рядом бесплатно. Платите только с уборок, которые выполнили.')}</Text>
    {owner&&state.hallScale&&<Text style={a.note}>{tr('Залы и кафе платят за месяц: до {a} гостей {small}, до {b} гостей {mid}, больше {large}. Брони без ограничений. Месяц без броней через приложение бесплатный.',{a:state.hallScale.smallUpto,b:state.hallScale.midUpto,small:money(state.hallScale.small),mid:money(state.hallScale.mid),large:money(state.hallScale.large)})}</Text>}
    {/* «14 дней бесплатно»: from the first listing for an owner, from the first cleaning for a performer. */}
@@ -54,15 +67,16 @@ function PayWay({state,owner}:{state:Data;owner:boolean}){
 
 // The owner's «Как платить» on the «Автопилот» screen: the owner turns the AI on per object (FlatAutopilot.tsx),
 // so here is only the way to pay and the hint.
-export function NativePayWay({role}:{role:'owner'|'cleaner'}){
+export function NativePayWay({role,status=false}:{role:'owner'|'cleaner';status?:boolean}){
  const [state,setState]=useState<Data|null>(null),[error,setError]=useState('');
  useEffect(()=>{let live=true;request('/api/operations/autopilot/state').then(v=>{if(live)setState(v);}).catch(e=>live&&setError(e.message));return()=>{live=false;};},[role]);
  if(!state)return error?<Text accessibilityRole="alert" style={s.error}>{error}</Text>:null;
- return <View style={{marginBottom:16}}><PayWay state={state} owner={role==='owner'}/></View>;
+ return <View style={{marginBottom:16}}><PayWay state={state} owner={role==='owner'} status={status}/></View>;
 }
 
 // The «Автопилот» plan on the account screen: what it gives, how to turn it on, how it runs.
-export function NativeAutopilotPlan({role}:{role:'owner'|'cleaner'}){
+export function NativeAutopilotPlan({role,journal,now,onOpen}:{role:'owner'|'cleaner';journal?:JournalEntry[];now?:number;onOpen?:(open:JournalOpen)=>(()=>void)|undefined}){
+ const [tab,setTab]=useState<'done'|'today'|'rules'>('done');
  const owner=role==='owner';
  const [state,setState]=useState<Data|null>(null),[open,setOpen]=useState(false),[step,setStep]=useState(0),[confirmOff,setConfirmOff]=useState(false),[busy,setBusy]=useState(false),[error,setError]=useState(''),[message,setMessage]=useState('');
  const [picked,setPicked]=useState<string[]>([]),[fees,setFees]=useState<Data>({}),[rules,setRules]=useState<Data>({districts:[],days:63,fromMinute:600,toMinute:1140,minFee:0,maxPerDay:4,askNewOwner:true});
@@ -130,7 +144,9 @@ export function NativeAutopilotPlan({role}:{role:'owner'|'cleaner'}){
   </View>
  </View>;
  const notice=<>{!!error&&<Text accessibilityRole="alert" style={s.error}>{error}</Text>}{!!message&&<Text accessibilityLiveRegion="polite" style={a.saved}>{message}</Text>}</>;
+ // The journal stays readable with the autopilot off: offers, moves and reminders come without it too.
  if(!live)return <>
+  {!owner&&!!journal&&<Group title={tr('Что сделал ИИ')}><AiJournal entries={journal} now={now||Date.now()/1000} onOpen={onOpen} icons/></Group>}
   {/* The mode now; its rate is the row «Тариф» under the plan (PayWay). */}
   <Group space><View style={a.row}><View style={a.wide}><Text style={a.title}>{owner?tr('Сам'):tr('Обычный')}</Text><Text style={a.note}>{owner?tr('Брони и уборки подтверждаете вы. ИИ подсказывает.'):tr('На каждое предложение уборки отвечаете вы.')}</Text></View></View></Group>
   {notice}
@@ -147,6 +163,37 @@ export function NativeAutopilotPlan({role}:{role:'owner'|'cleaner'}){
   <PayWay state={state} owner={owner}/>
  </>;
  const n=state.today?.length||0;
+ // The performer's screen (2026-11-27), as the owner's (concept autopilot-v2): the state in one card with the switch,
+ // the week as one number with bars by day, three numbers in a row, then tabs: what the AI did, today's plan, the rules.
+ if(!owner&&journal){
+  // The number and the bars speak of the same: cleanings the autopilot took (lib/ai-move-marks.ts «took») in the last
+  // seven days, today the last bar, as week.taken of lib/autopilot-plans.ts counts them.
+  const zone=5*3600,day=86400,clock=now||Date.now()/1000,midnight=Math.floor((clock+zone)/day)*day-zone,from=midnight-6*day,took=journal.filter(e=>/взял уборку/.test(e.text));
+  const taken=Number(state.week?.taken)||0,place=rules.districts.length?String(rules.districts.length):tr('все');
+  const cell=(value:string,label:string,last=false)=><View style={[p.cell,last&&p.cellLast]}><Text style={p.cellValue}>{value}</Text><Text style={p.stateNote}>{label}</Text></View>;
+  return <>
+   <View style={p.state}>
+    <View style={p.stateRing}><Image source={menuIcons.shanyrak} style={p.stateIcon} accessibilityIgnoresInvertColors/></View>
+    <View style={{flex:1,gap:2}}><View style={{flexDirection:'row',alignItems:'center',gap:8}}>{plan?.status!=='grace'&&<View style={p.stateDot}/>}<Text style={p.stateTitle}>{plan?.status==='grace'?tr('Нужна оплата'):tr('Включён')}</Text></View>
+     <Text style={p.stateNote}>{tr('Тариф {price}',{price:tr('{rate} с уборки',{rate:pct(st.cleanerRate)})})}{st.charge?'':' · '+tr('пока бесплатно')}</Text></View>
+    <Switch accessibilityLabel={tr('Автопилот включён')} value={!confirmOff} disabled={busy} onValueChange={v=>setConfirmOff(!v)} trackColor={{false:C.lineStrong,true:C.ink}} thumbColor={C.surface} {...({activeThumbColor:C.surface} as object)}/>
+   </View>
+   {confirmOff&&<View accessibilityRole="alert" style={p.off}><Text style={a.title}>{tr('Отключить автопилот?')}</Text><Text style={a.note}>{offNote}</Text><View style={p.nav}>{btn(tr('Оставить'),()=>setConfirmOff(false),'line')}{btn(tr('Отключить'),()=>void run('operations/autopilot/stop'),'danger')}</View></View>}
+   {notice}
+   <View style={p.week}>
+    <View><Text style={p.weekLabel}>{tr('Последние 7 дней')}</Text><Text style={p.weekValue}>{tr(forms(taken,'{n} уборка','{n} уборки','{n} уборок'),{n:taken})}<Text style={p.weekSub}>{'  '+tr('ИИ взял без вас')}</Text></Text></View>
+    <Bars from={from} journal={took} now={clock}/>
+    <View style={p.cells}>{cell(money(state.week?.earned||0),tr('заработано'))}{cell(String(n),tr('на сегодня'))}{cell(place,rules.districts.length?tr(forms(rules.districts.length,'район','района','районов')):tr('районы'),true)}</View>
+   </View>
+   <View style={{marginTop:20,marginBottom:4}}><SheetTabs value={tab} onChange={setTab} tabs={[{id:'done',title:tr('Что сделал')},{id:'today',title:tr('Сегодня'),count:n||undefined},{id:'rules',title:tr('Правила')}]}/></View>
+   {tab==='done'&&<Group><AiJournal entries={journal} now={clock} onOpen={onOpen} icons/></Group>}
+   {tab==='today'&&<Group>{n?state.today.map((j:Data)=><View key={j.id} style={a.row}><View style={a.wide}><Text style={a.title}>{j.from}–{j.to} · {j.title}</Text><Text style={a.note}>{[j.district,j.address].filter(Boolean).join(', ')} · {money(j.fee)}</Text></View></View>):<View style={a.row}><Text style={a.note}>{tr('На сегодня уборок нет')}</Text></View>}
+    {n>0&&<Row title={tr('Не могу сегодня, найти замену')} note={tr('ИИ вернёт уборки владельцам и найдёт замену')} disabled={busy} onPress={()=>void run('operations/autopilot/away')}/>}</Group>}
+   {tab==='rules'&&<Group>{open?<View style={[a.body,{paddingTop:12}]}>{wizard}</View>:<>
+    {([[tr('Районы'),rules.districts.length?rules.districts.join(', '):tr('весь город')],[tr('Дни и часы'),DAYS.filter((_,i)=>rules.days>>i&1).join(', ')+' · '+from+'–'+to],[tr('Оплата'),tr('{v} · до {maxPerDay} в день',{v:(rules.minFee?tr('от {v}',{v:money(rules.minFee)}):tr('любая')),maxPerDay:rules.maxPerDay})],[tr('Новый владелец'),rules.askNewOwner?tr('спросить меня'):tr('брать сразу')]] as [string,string][]).map(([k,v])=><View key={k} style={a.row}><View style={a.wide}><Text style={a.note}>{k}</Text><Text style={a.title}>{v}</Text></View></View>)}
+    <Row title={tr('Изменить правила')} onPress={()=>{setOpen(true);setStep(0);}}/></>}</Group>}
+  </>;
+ }
  return <>
   <Text accessibilityRole="header" style={a.label}>{tr('Тариф')}</Text>
   <View style={p.on}>
@@ -203,6 +250,11 @@ const p=StyleSheet.create({
  off:{marginTop:12,gap:8,padding:16,borderRadius:T.radius.lg,backgroundColor:C.dangerSoft},
  stats:{flexDirection:'row',flexWrap:'wrap',gap:12},stat:{flexGrow:1,flexBasis:96,backgroundColor:C.surface,borderWidth:1,borderColor:C.line,borderRadius:T.radius.lg,paddingHorizontal:16,paddingVertical:12},statValue:{...type.title,fontWeight:'600',color:C.ink},
  payWay:{},
+ week:{gap:16,marginTop:20},weekLabel:{...type.label,color:C.muted},weekValue:{fontSize:40,lineHeight:44,fontWeight:'600',letterSpacing:-.6,color:C.ink,fontVariant:['tabular-nums']},weekSub:{...type.label,fontWeight:'500',letterSpacing:0,color:C.muted},
+ cells:{flexDirection:'row',borderTopWidth:1,borderBottomWidth:1,borderColor:C.line},cell:{flex:1,paddingVertical:12,paddingRight:8,gap:2,borderRightWidth:1,borderRightColor:C.line,marginRight:12},cellLast:{borderRightWidth:0,marginRight:0},cellValue:{fontSize:22,lineHeight:28,fontWeight:'600',color:C.ink,fontVariant:['tabular-nums']},
+ state:{flexDirection:'row',alignItems:'center',gap:12,paddingVertical:12,paddingHorizontal:12,borderWidth:1,borderColor:C.line,borderRadius:T.radius.lg},
+ stateRing:{width:40,height:40,borderRadius:T.radius.full,borderWidth:1,borderColor:C.line,alignItems:'center',justifyContent:'center'},stateIcon:{width:22,height:22,tintColor:C.ink},
+ stateDot:{width:8,height:8,borderRadius:T.radius.full,backgroundColor:C.ink},stateTitle:{...type.label,fontWeight:'600',color:C.ink},stateNote:{...type.caption,color:C.muted},stateChev:{...type.subtitle,color:C.lineStrong,width:14,textAlign:'center'},
  way:{flexDirection:'row',alignItems:'center',gap:12,padding:12,borderRadius:T.radius.lg,borderWidth:1,borderColor:C.line,backgroundColor:C.surface},wayOn:{borderColor:C.ink,backgroundColor:C.surfaceAlt},
  radio:{width:22,height:22,borderRadius:T.radius.full,borderWidth:2,borderColor:C.lineStrong,alignItems:'center',justifyContent:'center'},radioOn:{borderColor:C.ink},radioDot:{width:10,height:10,borderRadius:T.radius.full,backgroundColor:C.ink},
  hint:{...type.label,color:C.inkSoft,backgroundColor:C.bg,borderRadius:T.radius.md,padding:12,overflow:'hidden'},hintOn:{color:C.ink,backgroundColor:C.surfaceAlt,fontWeight:'600'},

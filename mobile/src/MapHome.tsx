@@ -11,6 +11,7 @@ import {ApiError,isOffline,request} from './api';
 import {Photo} from './ListingMedia';
 import {date,labels,money,uid,type Role,type Row} from './model';
 import {windowBadge} from '../../lib/window-badge';
+import {ownerRequestTab} from '../../lib/booking-filters';
 import {dealBadge} from '../../lib/price-deal';
 import {C} from './styles';
 import {T} from './tokens';
@@ -529,6 +530,9 @@ function OwnerPanel({accountId,data,mapData,publish,snap,showNow,expand,onHead,o
  const guestWaits=(o:Row)=><NowFrame key={o.id} dot="wait" kicker={tr('Сейчас · гость ждёт ответа')} timer={countdown(o.expires_at-now)} title={o.title} line={[date(Date.parse(o.filters.start)/1000)+' → '+date(Date.parse(o.filters.end)/1000),tr('гостей: {n}',{n:o.filters.guests}),money(o.amount)].join(' · ')}>{/* One swipe answers «Готов»; the words on the track are the promise the owner gives with it. */}<SwipeConfirm label={tr('Проведите: свободно и готово')} disabled={working} onConfirm={()=>act('respond',{offerId:o.id,decision:'accept',ready:true})}/><QuietButton title={tr('Отказать')} disabled={working} onPress={()=>act('respond',{offerId:o.id,decision:'decline'})}/></NowFrame>;
  const decision=day.yours[0];
  const waits=ownerWaiting(data,data.user?.id||'',clock);
+ // «Заявки» is always a line of «Сегодня» (2026-11-27): the page of requests and bookings is one tap away, not only
+ // when a guest waits; the count is the bookings ahead (the tab «Брони» of that page).
+ const booked=(data.bookings||[]).filter((b:Row)=>b.owner_id===data.user?.id&&ownerRequestTab(b,data.user?.id||'',clock)==='booked').length;
  // Calm: no empty card, one line of the day (concept «Главный экран владельца», 2026-11-27); a new owner adds a home.
  const calm=Array.isArray(data.ownProperties)&&!flats.length?<NowFrame dot="calm" kicker={tr('Сейчас')} title={tr('Добавьте первое жильё')} line={tr('Добавьте первое жильё, и оно появится на карте.')}><DarkButton title={tr('Добавить жильё')} onPress={()=>onOpenPage('properties')}/></NowFrame>
   :<DayLine border={false} icon="calendar" title={tr('Всё по плану')} value={day.line} onPress={()=>expand(1)}/>;
@@ -546,7 +550,7 @@ function OwnerPanel({accountId,data,mapData,publish,snap,showNow,expand,onHead,o
  const tabs=<SheetTabs value={sheetTab} onChange={setSheetTab} tabs={[{id:'today',title:tr('Сегодня'),count:offers.length+day.yours.length||undefined},{id:'soon',title:tr('Скоро')},{id:'flats',title:tr('Объекты'),count:flats.length||undefined}]}/>;
  const body=sheetTab==='flats'?<><View>{flats.map(p=>{const m=placeOf(p);return <PlaceRow key={p.id} label={tr('Мои объекты: {title}',{title:p.title})} title={p.title} photo={(m.photos||p.photos||[])[0]} dot={dot(p)} state={[tr(m.display_status?.label||p.display_status?.label||'Статус уточняется'),m.location?'':tr('нет точки на карте')].filter(Boolean).join(' · ')} price={typeof p.price==='number'?money(p.price):undefined} onPress={()=>{setSelected('property:'+p.id);expand(1);}}/>;})}{!flats.length&&<Text style={h.note}>{tr('Объектов пока нет.')}</Text>}<IconRow icon="plus" title={tr('Добавить жильё')} onPress={()=>onOpenPage('properties')}/>{!!inbox&&<IconRow icon="shanyrak" title={tr('Кто отвечает гостям')} value={quickAuto?tr('Автопилот · {n}',{n:quickAuto}):quickOn?tr('Вы'):tr('Никто')} label={tr('Кто отвечает гостям')+': '+(quickOn?tr('Включены: {found}',{found:quickOn+' '+plural(quickOn,'объект','объекта','объектов')}):tr('Выключены'))} onPress={()=>setQuick(v=>!v)}/>}</View>{quick&&!!inbox&&<View style={h.card}><Text accessibilityRole="header" style={h.label}>{tr('Кто отвечает гостям')}</Text><Text style={h.note}>{tr('Автопилот отвечает гостям и заказывает уборку. Оплату проверяете вы.')}</Text>{!!saved&&<Text accessibilityLiveRegion="polite" style={h.note}>{saved}</Text>}{(inbox.preferences||[]).map((p:Row)=><GuestMode key={p.id} flat={p} busy={working} onChange={body=>act('preference',body)}/>)}{!inbox.preferences.length&&<Text style={h.note}>{tr('Включить можно после добавления жилья.')}</Text>}</View>}</>
   :sheetTab==='soon'?<View>{flats.length>0?<OwnerToday view="soon" data={data} now={serverNow(data)} onOpen={(kind,id)=>onOpenProcess(kind,id)}/>:<Text style={h.note}>{tr('Объектов пока нет.')}</Text>}<IconRow icon="calendar" title={tr('Календарь')} onPress={()=>onOpenPage('calendar')}/></View>
-  :<>{offers.map(guestWaits)}{offers.length>0&&<Text style={h.note}>{tr('Ответ не создаёт бронь и не меняет цену. Если гость выберет ваше жильё, заявка придёт в «Заявки гостей».')}</Text>}<PriceTip inline role="owner" cards={cards} pick={isRequestTip} onChanged={onChanged} onEdit={onEdit}/>{(flats.length>0||day.yours.length>0)&&<OwnerToday view="today" data={data} now={serverNow(data)} onOpen={(kind,id)=>onOpenProcess(kind,id)}/>}{!flats.length&&calm}<View>{waits>0&&<IconRow icon="messages" title={tr('Заявки')} value={tr('ждут ответа: {n}',{n:waits})} onPress={()=>onOpenPage('bookings')}/>}{flats.length>0&&<IconRow icon="brush" title={tr('Уборки')} value={cleaning} onPress={()=>onOpenPage('cleaning')}/>}{pilot}</View><PriceTip inline role="owner" cards={cards} pick={isAdviceTip} onChanged={onChanged} onEdit={onEdit}/>{flats.length>0&&<AutopilotHandoff role="owner" accountId={accountId} stamp={flats.map(p=>p.id+':'+(p.policy?.version??'')+':'+(p.policy?.cleaning_fee??'')+':'+(p.policy?.auto_confirm??'')).join('|')} tick={Number(data.serverTime)||0} compact onExpand={()=>expand(2)} onChanged={onChanged} onSetup={id=>{if(id)onEdit?.(id,'prices');}}/>}</>;
+  :<>{offers.map(guestWaits)}{offers.length>0&&<Text style={h.note}>{tr('Ответ не создаёт бронь и не меняет цену. Если гость выберет ваше жильё, заявка придёт в «Заявки гостей».')}</Text>}<PriceTip inline role="owner" cards={cards} pick={isRequestTip} onChanged={onChanged} onEdit={onEdit}/>{(flats.length>0||day.yours.length>0)&&<OwnerToday view="today" data={data} now={serverNow(data)} onOpen={(kind,id)=>onOpenProcess(kind,id)}/>}{!flats.length&&calm}<View>{flats.length>0&&<IconRow icon="messages" title={tr('Заявки')} value={waits>0?tr('ждут ответа: {n}',{n:waits}):booked>0?tr('впереди: {n}',{n:booked}):undefined} onPress={()=>onOpenPage('bookings')}/>}{flats.length>0&&<IconRow icon="brush" title={tr('Уборки')} value={cleaning} onPress={()=>onOpenPage('cleaning')}/>}{pilot}</View><PriceTip inline role="owner" cards={cards} pick={isAdviceTip} onChanged={onChanged} onEdit={onEdit}/>{flats.length>0&&<AutopilotHandoff role="owner" accountId={accountId} stamp={flats.map(p=>p.id+':'+(p.policy?.version??'')+':'+(p.policy?.cleaning_fee??'')+':'+(p.policy?.auto_confirm??'')).join('|')} tick={Number(data.serverTime)||0} compact onExpand={()=>expand(2)} onChanged={onChanged} onSetup={id=>{if(id)onEdit?.(id,'prices');}}/>}</>;
  return <View style={h.block}><HeadSlot onHeight={onHead}>{tabs}</HeadSlot>{!!error&&<Text accessibilityRole="alert" style={h.error}>{error}</Text>}{body}{ask}</View>;
 }
 
@@ -691,8 +695,6 @@ export function MapHome({ role, accountId, data, menu, account, chats, onChanged
   const [head, setHead] = useState(0);
   const [reach, setReach] = useState(0);
   const [pins, setPins] = useState<MapPin[]>([]);
-  // The owner's filter over the map (concept 2026-11-25): only what waits, only the stays, only the cleanings.
-  const [only, setOnly] = useState<OwnerFilter>('');
   const [focusKey, setFocusKey] = useState('');
   const [selected, setSelected] = useState(aim.current ? '' : kept?.selected || '');
   const [notice, setNotice] = useState('');
@@ -1021,7 +1023,7 @@ export function MapHome({ role, accountId, data, menu, account, chats, onChanged
   // «Что показать на карте»: the chosen object is selected and the map flies to it, as «На карте» does; one in another city
   // loads that city first (the aim effect above selects it when its pin comes), one without a place says so.
   const pickPlace = (id: string) => {
-    setPlacesOpen(false); setOnly('');
+    setPlacesOpen(false);
     const flat = ownFlats.find(p => 'property:' + p.id === id), where = String(flat?.city || '');
     if (!flat) { setSelected(''); setFocus(''); return; }
     if (!pins.some(p => p.key === id) && mapCities[where] && where !== cityRef.current) { aim.current = { key: id, city: where }; setCity(where); return; }
@@ -1054,7 +1056,7 @@ export function MapHome({ role, accountId, data, menu, account, chats, onChanged
       }}
     ><LiveMap
         center={center}
-        pins={role === 'owner' ? pins.filter(p => !p.round || ownerShows(p, only)) : pins}
+        pins={pins}
         selected={selected}
         focus={spotted ? spotKey : focus}
         lines={lines}
@@ -1087,7 +1089,7 @@ export function MapHome({ role, accountId, data, menu, account, chats, onChanged
             ))}</View></View>
       )}{!!notice && (
         <Text accessibilityLiveRegion="polite" style={h.mapNotice}>{notice}</Text>
-      )}{role === 'guest' && !selected && <PriceTip role={role} cards={data.approvals || []} onChanged={onChanged} onEdit={onEdit} />}{/* Without an account the round slot widens for the «Войти» word. */}{!!plate && !floating ? <View style={[h.menu, h.plate]}>{plate}</View> : !!menu && <View style={[h.menu, { width: 'auto' }]}>{menu}</View>}{role === 'owner' && !selected && !picking && pins.filter(p => p.round).length > 1 && <OwnerFilters pins={pins} only={only} onOnly={setOnly} onList={() => setSnap(2)} />}{/* The bell and the chats share one pill in the corner. */}{!!chats && <View style={[h.chats, { width: 'auto', flexDirection: 'row' }]}>{chats}</View>}{floating && <View pointerEvents="box-none" style={h.floatBar}>{floatBar}</View>}{role === 'owner' && <PlacePicker visible={placesOpen} places={pickPlaces} all={ownFlats.length + ' ' + plural(ownFlats.length, 'объект', 'объекта', 'объектов')} selected={chosenFlat ? 'property:' + chosenFlat.id : ''} onClose={() => setPlacesOpen(false)} onPick={pickPlace} />}{!picking && <MapMood mood={mood} joy={joy} still={calm || quiet} bottom={covered ? cardEdge : sheet} />}<Animated.View style={[h.sheet, snap === 2 && !floating && h.sheetSolid, floating && h.sheetFloat, { height: sheet, opacity: veil }]} accessibilityViewIsModal={false}><View {...drag.handle.panHandlers} style={floating ? h.gone : undefined}><Pressable
+      )}{role === 'guest' && !selected && <PriceTip role={role} cards={data.approvals || []} onChanged={onChanged} onEdit={onEdit} />}{/* Without an account the round slot widens for the «Войти» word. */}{!!plate && !floating ? <View style={[h.menu, h.plate]}>{plate}</View> : !!menu && <View style={[h.menu, { width: 'auto' }]}>{menu}</View>}{/* The bell and the chats share one pill in the corner. */}{!!chats && <View style={[h.chats, { width: 'auto', flexDirection: 'row' }]}>{chats}</View>}{floating && <View pointerEvents="box-none" style={h.floatBar}>{floatBar}</View>}{role === 'owner' && <PlacePicker visible={placesOpen} places={pickPlaces} all={ownFlats.length + ' ' + plural(ownFlats.length, 'объект', 'объекта', 'объектов')} selected={chosenFlat ? 'property:' + chosenFlat.id : ''} onClose={() => setPlacesOpen(false)} onPick={pickPlace} />}{!picking && <MapMood mood={mood} joy={joy} still={calm || quiet} bottom={covered ? cardEdge : sheet} />}<Animated.View style={[h.sheet, snap === 2 && !floating && h.sheetSolid, floating && h.sheetFloat, { height: sheet, opacity: veil }]} accessibilityViewIsModal={false}><View {...drag.handle.panHandlers} style={floating ? h.gone : undefined}><Pressable
             accessibilityRole="button"
             accessibilityLabel={snap === 0 ? tr('Развернуть панель') : tr('Свернуть панель')}
             onPress={() => setSnap(snap === 0 ? 1 : 0)}
@@ -1111,41 +1113,4 @@ const w = StyleSheet.create({
   tipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   tipButton: { minHeight: T.control.compact, paddingHorizontal: 12, borderRadius: T.radius.full, backgroundColor: C.accentSoft, borderWidth: 1, borderColor: C.accentLine, alignItems: 'center', justifyContent: 'center' },
   tipButtonText: { fontSize: T.font.label[0], lineHeight: T.font.label[1], color: C.accent, fontWeight: '600' }
-});
-
-// ---------- The owner's filter over the map ----------
-type OwnerFilter = '' | 'yours' | 'stay' | 'clean';
-function ownerShows(pin: MapPin, only: OwnerFilter) {
-  const tone = pin.tone || 'home';
-  if (only === 'yours') return !!pin.act || tone === 'pending' || tone === 'alert';
-  if (only === 'stay') return tone === 'booking' || tone === 'booked';
-  if (only === 'clean') return tone === 'job' || tone === 'active';
-  return true;
-}
-// A row of pills under the top buttons, as the filters of Google Maps: a pill shows its count, a second tap shows all.
-function OwnerFilters({ pins, only, onOnly, onList }: { pins: MapPin[]; only: OwnerFilter; onOnly: (v: OwnerFilter) => void; onList: () => void }) {
-  const own = pins.filter(p => p.round);
-  const items: [OwnerFilter, string][] = [['yours', tr('Ждут вас')], ['stay', tr('Живут')], ['clean', tr('Уборка')]];
-  return (
-    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={f.row} contentContainerStyle={f.content} accessibilityRole="tablist">
-      {items.map(([id, title]) => {
-        const n = own.filter(p => ownerShows(p, id)).length, on = only === id;
-        return (
-          <Pressable key={id} accessibilityRole="tab" accessibilityState={{ selected: on }} accessibilityLabel={title + ': ' + n} onPress={() => onOnly(on ? '' : id)} style={({ pressed }) => [f.pill, on && f.pillOn, pressed && { opacity: 0.8 }]}>
-            {id === 'yours' && n > 0 && <View style={f.dot} />}<Text style={[f.text, on && f.textOn]}>{title}{n ? ' · ' + n : ''}</Text>
-          </Pressable>
-        );
-      })}
-      <Pressable accessibilityRole="button" accessibilityLabel={tr('Список: {n}', { n: own.length })} onPress={onList} style={({ pressed }) => [f.pill, pressed && { opacity: 0.8 }]}><Text style={f.text}>{tr('Список')}</Text></Pressable>
-    </ScrollView>
-  );
-}
-const f = StyleSheet.create({
-  row: { position: 'absolute', top: 64, left: 0, right: 0, flexGrow: 0 },
-  content: { paddingHorizontal: 12, gap: 8 },
-  pill: { minHeight: 36, paddingHorizontal: 14, borderRadius: T.radius.full, flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: C.surface, borderWidth: 1, borderColor: C.line, shadowColor: C.ink, shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.12, shadowRadius: 6, elevation: 3 },
-  pillOn: { backgroundColor: C.ink, borderColor: C.ink },
-  text: { fontSize: 14, lineHeight: 20, fontWeight: '600', color: C.ink },
-  textOn: { color: C.surface },
-  dot: { width: 8, height: 8, borderRadius: 4, backgroundColor: C.gold },
 });
