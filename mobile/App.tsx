@@ -122,11 +122,14 @@ export function freeCancelLine(quote:Row,mode:string,now=Math.floor(Date.now()/1
   const until=Number(quote?.start)-(mode==='hourly'?FREE_HOURLY:FREE_DAILY);
   return until>now?tr('Отмена бесплатно до {v}',{v:date(until)}):tr('Отмена бесплатно, пока владелец не подтвердил');
 }
+// A booking questionnaire saved by an older version (dates typed in the chat) is not opened again: a booking is chosen
+// on its form (StayRequest) since 2026-11-27.
+const keptFlow=(flow:Flow|null|undefined)=>flow&&!(flow.kind==='booking'&&flow.questions?.length)?flow:null;
 function BookingReview({flow,photo,busy,done,result,onConfirm,onEdit}:{flow:Flow;photo?:string;busy:boolean;done?:boolean;result?:string;onConfirm:(quote:Row)=>void;onEdit:()=>void}){
   const [quote,setQuote]=useState<Row|null>(null),[error,setError]=useState(''),[checking,setChecking]=useState(false),[attempt,setAttempt]=useState(0);
   const [more,setMore]=useState(false);
   useEffect(()=>{let active=true;if(done)return;setChecking(true);setError('');request('/api/quote',{...flow.answers,...flow.extra}).then(value=>{if(active)setQuote(value);}).catch(e=>{if(active)setError(e.message);}).finally(()=>{if(active)setChecking(false);});return()=>{active=false;};},[flow,attempt,done]);
-  if(done)return <View style={s.card}><Text style={s.badge}>{result||tr('Сохранено')}</Text><Text style={s.meta}>{result===tr('Изменено')||result==='Изменено'?tr('Этот расчёт закрыт. Продолжите ввод в разговоре.'):tr('Заявка и её статус доступны в «Мои брони».')}</Text></View>;
+  if(done)return result===tr('Изменено')||result==='Изменено'?null:<View style={s.card}><Text style={s.badge}>{result||tr('Сохранено')}</Text><Text style={s.meta}>{tr('Заявка и её статус доступны в «Мои брони».')}</Text></View>;
   // The final action confirms the dates, price, deposit and house rules shown in the review.
   // A home that confirms by itself still leaves a risky request to its owner (lib/service.ts risk.held), so «сразу» is not promised.
   const guests=Number(quote?.guests)||1,auto=!!quote?.policy?.auto_confirm,deposit=Number(quote?.policy?.deposit)||0;
@@ -158,7 +161,7 @@ function BookingReview({flow,photo,busy,done,result,onConfirm,onEdit}:{flow:Flow
       <SwipeConfirm label={auto?tr('Проведите: забронировать за {v}',{v:money(quote.amount)}):tr('Проведите: отправить заявку')} disabled={busy} onConfirm={()=>onConfirm(quote)}/>
       <Text style={rv.agree}>{hall?tr('Нажимая кнопку, вы соглашаетесь с датой, ценой на гостя, депозитом и правилами зала.'):bath?tr('Нажимая кнопку, вы соглашаетесь с датами, тарифом, депозитом и правилами объекта.'):tr('Нажимая кнопку, вы соглашаетесь с датами, тарифом, депозитом и правилами жилья.')}</Text>
     </>}
-    {(!quote||!!error)&&!checking&&<View style={s.buttonRow}><Button title={hall?tr('Изменить'):tr('Изменить даты')} secondary disabled={busy} onPress={onEdit}/></View>}
+    {(!quote||!!error)&&!checking&&<View style={s.buttonRow}><Button title={tr('Изменить')} secondary disabled={busy} onPress={onEdit}/></View>}
   </View>;
 }
 const rv=StyleSheet.create({
@@ -343,7 +346,7 @@ function Chat(){
       const [state,history]=await Promise.all([request('/api/state',undefined,undefined,undefined,link.role),request('/api/conversation',undefined,undefined,undefined,link.role)]);
       if(!session.current||!guard.isCurrent())return;
       const view=resolveProcessLink(link,state,guard.accountId);
-      setWorkspaceRole(link.role);activeRoleRef.current=link.role;setData(state);historyEnd.current=pruneHistory(history.messages||[]).at(-1)?.id||'';setMessages(pruneHistory(history.messages||[]));setFlow(history.flow||null);setActor(link.role);setSelectedRole(link.role);setPageId(history.flow?'overview':view.section);setHistoryReady(true);setOnline(true);seen.current=new Set(state.notifications.map((n:Row)=>n.id));
+      setWorkspaceRole(link.role);activeRoleRef.current=link.role;setData(state);historyEnd.current=pruneHistory(history.messages||[]).at(-1)?.id||'';setMessages(pruneHistory(history.messages||[]));setFlow(keptFlow(history.flow));setActor(link.role);setSelectedRole(link.role);setPageId(keptFlow(history.flow)?'overview':view.section);setHistoryReady(true);setOnline(true);seen.current=new Set(state.notifications.map((n:Row)=>n.id));
       if(history.flow)setLinkError(tr('В этой роли сохранён незавершённый ввод. Завершите или отмените его, затем откройте ссылку повторно.'));else if(view.block)say(tr('Открыто по ссылке.'),view.block,view.payload);
     }finally{locked.current=false;setBusy(false);}
   }});
@@ -413,7 +416,7 @@ function Chat(){
     const [fetched,history]=await Promise.all([request(catalog?'/api/state?catalog=0':'/api/state',undefined,undefined,undefined,role),request('/api/conversation',undefined,undefined,undefined,role)]);
     if(generation!==getSessionGeneration()||activeRoleRef.current!==role)throw new StaleSessionError();
     const state=catalog?{...fetched,properties:catalog}:fetched;
-    setData(state);if(!catalog)catalogAt.current=Date.now();historyEnd.current=pruneHistory(history.messages||[]).at(-1)?.id||'';setMessages(pruneHistory(history.messages||[]));setFlow(history.flow||null);setActor(role);setSelectedRole(role);setPageId(history.flow?'overview':'map');if(history.draftInvalid)setLinkError(tr('Сохранённый ввод не удалось открыть. Начните форму заново; заявки сохранены на сервере.'));setSaveError(false);setOnline(true);(state.notifications||[]).forEach((n:Row)=>seen.current.add(n.id));setHistoryReady(true);seen.current=new Set(state.notifications.map((n:Row)=>n.id));void saveLastRole(state.user?.id||null,role);return state;
+    setData(state);if(!catalog)catalogAt.current=Date.now();historyEnd.current=pruneHistory(history.messages||[]).at(-1)?.id||'';setMessages(pruneHistory(history.messages||[]));setFlow(keptFlow(history.flow));setActor(role);setSelectedRole(role);setPageId(keptFlow(history.flow)?'overview':'map');if(history.draftInvalid)setLinkError(tr('Сохранённый ввод не удалось открыть. Начните форму заново; заявки сохранены на сервере.'));setSaveError(false);setOnline(true);(state.notifications||[]).forEach((n:Row)=>seen.current.add(n.id));setHistoryReady(true);seen.current=new Set(state.notifications.map((n:Row)=>n.id));void saveLastRole(state.user?.id||null,role);return state;
     // Push to this phone for the role that opened (src/NativePush.tsx): the system question once per phone.
     void registerPush(role,'once').catch(()=>undefined);
   }
@@ -527,7 +530,6 @@ function Chat(){
     say(items.length?(mode==='job'?tr('Для какого жилья нужна уборка?'):mode==='owner'?tr('Ваши объекты.'):tr('Посмотрим, что вам подойдёт.')):(mode==='guest'?tr('В этом городе пока нет предложений. Можем посмотреть учебный пример.'):tr('Сначала добавим ваше жильё.')),'properties',{ids:items.map((p:Row)=>p.id),mode});
   }
   // The four answers a booking needs. The map's results already carry all of them; the chat asks for them one by one.
-  const bookingQuestions=(property:Row):Question[]=>[{key:'billingMode',text:tr('Какой тариф выбираете? По ночам заезд и выезд строго в часы, указанные владельцем.'),label:tr('Тариф'),choices:[{label:tr('Сутки'),value:'daily'},...(property.policy?.hourly_price?[{label:tr('Почасово'),value:'hourly'}]:[]),...(property.policy?.nightly_price?[{label:tr('По ночам'),value:'nightly'}]:[])]},{key:'start',text:tr('Когда заедете? Напишите дату и время: ДД.ММ.ГГГГ ЧЧ:ММ.'),label:tr('Заезд'),date:true},{key:'end',text:tr('Когда выезжаете? Такой же формат: ДД.ММ.ГГГГ ЧЧ:ММ.'),label:tr('Выезд'),date:true},{key:'guests',text:tr('Сколько будет гостей?'),label:tr('Гостей'),min:1,max:property.capacity}];
   // Objects a cleaning is published for: rented ones without their own staff (a home of one's own has its own order).
   const cleanable=(state:Row)=>(state.ownProperties||[]).filter((p:Row)=>p.details?.type!==HOME_TYPE&&!Number(p.own_staff));
   function run(intent:string,state=data){
@@ -720,7 +722,7 @@ function Chat(){
   function confirm(path:string,body:Row,title:string,after?:string,note?:string){const id=path.split('/')[1],item=(path.startsWith('bookings/')?data.bookings:data.jobs).find((v:Row)=>v.id===id);setAsk({id:uid(),path,body:{...body,expectedVersion:path.startsWith('bookings/')?item?.terms?.version:item?.version},title,note,subject:item?.title,dates:item?date(item.start)+' → '+date(item.end):'',amount:item?.amount??item?.fee,after});}
   function review(m:Message){
     const f=m.payload!.flow as Flow;
-    if(f.kind==='booking')return <><BookingReview flow={f} photo={m.payload!.photo} busy={busy} done={m.done} result={m.result} onConfirm={quote=>perform(f.endpoint,{...f.answers,...f.extra,expectedAmount:quote.amount,expectedPolicyVersion:quote.policy.version,acceptTerms:true},m.id,f.after)} onEdit={()=>{finish(m.id,tr('Изменено'));const next={...f,index:0};setFlow(next);say(next.questions[0].text);}}/>{!!m.payload!.back&&!m.done&&!dealOpen&&<Button title={tr('Назад к вариантам')} secondary disabled={busy} onPress={backToMap}/>}</>;
+    if(f.kind==='booking')return <><BookingReview flow={f} photo={m.payload!.photo} busy={busy} done={m.done} result={m.result} onConfirm={quote=>perform(f.endpoint,{...f.answers,...f.extra,expectedAmount:quote.amount,expectedPolicyVersion:quote.policy.version,acceptTerms:true},m.id,f.after)} onEdit={()=>editBooking(m,f)}/>{!!m.payload!.back&&!m.done&&!dealOpen&&<Button title={tr('Назад к вариантам')} secondary disabled={busy} onPress={backToMap}/>}</>;
     const questions=f.kind==='profile'?[...baseQuestions,...cleanerQuestions]:f.kind==='property'?propertyQuestions:f.questions;
     return <View style={s.card}><Text style={s.cardTitle}>{({profile:tr('Ваш профиль'),property:tr('Ваше жильё'),job:tr('Уборка'),report:tr('Отчёт'),confirm:tr('Подтверждение')} as Row)[f.kind]||tr('Проверьте сведения')}</Text>
       {questions.filter(q=>f.answers[q.key]!==undefined).map(q=><View key={q.key} style={s.keyval}><Text style={s.key}>{q.label}</Text><Text style={s.value}>{q.date?date(Date.parse(f.answers[q.key])/1000):String(f.answers[q.key])}</Text></View>)}
@@ -751,16 +753,22 @@ function Chat(){
   function bookFromMap(found:Row,stay:MapStay){
     scrollMessage.current=null;setPageId('overview');
     if(!ensure('guest','bookings'))return;
-    const property=data.properties.find((p:Row)=>p.id===found.id)||found,questions=bookingQuestions(property);
+    const property=data.properties.find((p:Row)=>p.id===found.id)||found;
     // A stay kept from an earlier visit may already be behind: the dates are asked again instead of sending the past.
     if(Date.parse(stayISO(stay).start)<Date.now()){run('book:'+property.id);return;}
-    const next:Flow={kind:'booking',questions,index:questions.length,answers:{billingMode:stay.mode,...stayISO(stay),guests:stay.guests,...(stay.occasion?{occasion:stay.occasion}:{})},endpoint:'bookings',after:'bookings',role:'guest',extra:{propertyId:property.id,requestKey:uid()}};
+    const next:Flow={kind:'booking',questions:[],index:0,answers:{billingMode:stay.mode,...stayISO(stay),guests:stay.guests,...(stay.occasion?{occasion:stay.occasion}:{})},endpoint:'bookings',after:'bookings',role:'guest',extra:{propertyId:property.id,requestKey:uid()}};
     // The check of the booking is a sheet of its own: one card, the map behind it, nothing of the earlier talk.
     setDealCover(0);setDeal({kind:'review',id:property.id,after:messages.length?messages[messages.length-1].id:''});
     setActor('guest');say('','review',{flow:next,back:true,photo:found.photos?.[0]||property.photos?.[0]});
   }
   // From a flat or a booking check opened on the map: back to the map, where the list of found flats is kept.
   const backToMap=()=>{scrollMessage.current=null;setPageId('map');};
+  // «Изменить» on the check of a booking (any kind: a home, a bath, a hall, a cafe) opens the request form with the same
+  // stay, guests and occasion: the tariff, the day and the time are chosen by buttons, not typed in the chat (2026-11-27).
+  const editBooking=(m:Message,f:Flow)=>{
+    finish(m.id,tr('Изменено'));setDeal(null);const a=f.answers,at=(v:unknown)=>{const t=Date.parse(String(v||''));return Number.isFinite(t)?Math.floor(t/1000):undefined;};
+    say('','stay-form',{propertyId:f.extra?.propertyId,requestKey:uid(),initial:{mode:a.billingMode,start:at(a.start),end:at(a.end),guests:Number(a.guests)||undefined,occasion:a.occasion}});
+  };
   // The editor of a place or its «Правила» closes one way from «‹», «✕», Android's back and the scrim: the form is
   // finished; from «Моё жильё» the list comes back (the editor's changes in it), otherwise the map (the scrim always goes to the map).
   const closeEdit=(m:Message,toMap=false)=>{const editor=m.block==='property-editor';finish(m.id,editor?tr('Изменения сохранены'):tr('Готово'));
@@ -801,7 +809,7 @@ function Chat(){
     }
     if(m.block==='auth')return session.current?<Text style={s.meta}>{tr('Вход выполнен.')}</Text>:<Auth key={m.id} busy={busy} onSubmit={(mode,phone,password,name,city,recovery)=>authenticate(mode,phone,password,m.id,payload.intent,name,city,recovery)}/>;
     if(m.block==='review')return review(m);
-    if(m.block==='stay-form'){const property=data.properties.find((p:Row)=>p.id===payload.propertyId);return property?<StayRequest property={property} busy={busy} done={m.done} result={m.result} onQuote={body=>request('/api/quote',body)} onConfirm={body=>perform('bookings',{...body,requestKey:payload.requestKey},m.id,'bookings')}/>:<Text style={s.meta}>{tr('Жильё больше недоступно.')}</Text>;}
+    if(m.block==='stay-form'){const property=data.properties.find((p:Row)=>p.id===payload.propertyId);return property?<StayRequest property={property} initial={payload.initial} busy={busy} done={m.done} result={m.result} onQuote={body=>request('/api/quote',body)} onConfirm={body=>perform('bookings',{...body,requestKey:payload.requestKey},m.id,'bookings')}/>:<Text style={s.meta}>{tr('Жильё больше недоступно.')}</Text>;}
     if(m.block==='job-form'){const property=data.ownProperties.find((p:Row)=>p.id===payload.propertyId);return property?<CleaningRequest property={property} busy={busy} done={m.done} result={m.result} onSubmit={body=>act(m,'jobs',body,'owner-jobs')}/>:<Text style={s.meta}>{tr('Жильё недоступно.')}</Text>;}
     if(m.block==='job-pick'){const flats=cleanable(data);return <SheetPane>{flats.length?<Text style={s.meta}>{tr('Для какого объекта?')}</Text>:<Text style={s.text}>{tr('Сначала добавьте жильё, и уборку можно будет заказать.')}</Text>}{flats.map((p:Row,i:number)=><PopRow key={p.id} title={String(p.title||tr('Объект'))} value={[p.district,p.city].filter(Boolean)[0]} disabled={busy} last={i===flats.length-1} onPress={()=>run('job:'+p.id)}/>)}{!flats.length&&<PopRow icon="plus" title={tr('Добавить жильё')} last onPress={()=>{closeStep();setPageId('properties');run('property');}}/>}</SheetPane>;}
     if(m.block==='home-order')return m.done?null:<HomeCleaningOrder places={(data as Row).homePlaces||[]} deals={(data as Row).homeDeals||[]} city={data.profile?.city||tr('Павлодар')} propertyId={payload.propertyId} initial={payload.initial} busy={busy} done={m.done} result={m.result} onSubmit={body=>orderHome({...body,requestKey:payload.requestKey},m.id)}/>;
