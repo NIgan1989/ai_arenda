@@ -12,7 +12,7 @@ import { ReliabilityBadge } from './Reliability';
 import { HOME_KINDS, WISHES, BANQUET_WISHES, BANQUET_TYPES, BATH_TYPES, askFirst, categoryOf, classWords, draftUnits, homeWords, kindCategoryOf, shownReasons, withMode, withUnits, type GuestDraft } from './ai-request';
 import { carouselIndex } from './map-motion';
 import { Heart } from './Favorites';
-import { markLabel, markOf, type Mine } from './favorites';
+import { markLabel, markOf, savedList, type Mine } from './favorites';
 import { GuestHelpers, HelperTrail } from './GuestHelpers';
 import { guestHelpers, narrowed, stepWords, type Point } from './guest-helpers';
 import { noteViews, takeViews, viewLog } from './guest-views';
@@ -65,6 +65,8 @@ type Props = {
   onChips?: (chips: React.ReactNode) => void;
   // The full list opened by «Список»: «На карте» returns to the map.
   onMap?: () => void;
+  // The guest's catalogue (state.properties): a favourite that this search did not find is still shown in «Избранное».
+  catalog?: Row[];
 };
 
 // The carousel: a card is a little narrower than the screen, so the next one peeks out and says «swipe».
@@ -179,7 +181,9 @@ export function homeLine(flat: Row) {
   return [kind, level, rooms > 0 && flat.details?.type !== 'studio' && kindCategoryOf(flat.details?.type) === 'stay' ? t('{rooms} комн.',{rooms}) : '', capacity > 0 ? t('до {guests}',{guests:capacity + ' ' + plural(capacity, 'гостя', 'гостей', 'гостей')}) : ''].filter(Boolean).join(' · ');
 }
 
-export function GuestResults({ preview, draft, mine, onFavorite, selected, onSelect, onFocus, onBook, onOpen, onRefine, onWiden, onTry, onBookEdge, busy, steps = [], tried = [], from = null, onStep, onBack, anchor = '', full = false, readiness, float = false, onChips, onMap }: Props) {
+export function GuestResults({ preview, draft, mine, onFavorite, selected, onSelect, onFocus, onBook, onOpen, onRefine, onWiden, onTry, onBookEdge, busy, steps = [], tried = [], from = null, onStep, onBack, anchor = '', full = false, readiness, float = false, onChips, onMap, catalog = [] }: Props) {
+  // «Избранное» in the full list: the heart in its head shows only the homes the guest saved (2026-11-27).
+  const [favOnly, setFavOnly] = useState(false);
   const found: Row[] = preview.properties || [];
   // Dear cards the guest swiped past without reading, in this answer.
   const [pricey, setPricey] = useState(0);
@@ -196,7 +200,7 @@ export function GuestResults({ preview, draft, mine, onFavorite, selected, onSel
   const helpers = onStep ? guestHelpers(flats, context) : [];
   const middle = [...flats.map(flat => Number(flat.estimate?.amount) || 0)].sort((x, y) => x - y)[Math.floor((flats.length - 1) / 2)] || 0;
   const arrived = useRef(Date.now());
-  useEffect(() => { setPricey(0); }, [preview]);
+  useEffect(() => { setPricey(0); setFavOnly(false); }, [preview]);
   // Another set of cards (a step forward or back): the strip opens on the remembered card, else on the first.
   const listKey = flats.map(flat => flat.id).join();
   useEffect(() => {
@@ -300,12 +304,16 @@ export function GuestResults({ preview, draft, mine, onFavorite, selected, onSel
     strip.current?.scrollTo({ x: at * step, animated: true });
   }, [float, selected]);
 
-  if (!flats.length) {
+  // «Избранное»: saved homes, newest first; one this search found keeps its price for these dates.
+  const saved: Row[] = mine ? savedList(found, catalog, mine) : [];
+
+  // Nothing found: the saved homes stay one tap away, since this is when the guest needs them most.
+  if (!flats.length && !favOnly) {
     const answer = emptyAnswer(preview.empty, draft, !!onWiden), way = answer.action;
     // The way out says how many places it opens, when the server counted them.
     const opens = way && (preview.empty?.reason === 'now' || (preview.empty?.reason === 'filters' && preview.empty?.blocker)) ? Number(preview.empty?.count) || 0 : 0;
     return (
-      <><Text accessibilityRole="header" style={h.cardTitle}>{answer.title}</Text><Text style={h.note}>{answer.note}</Text>{!!way && !!onTry && <Action title={busy ? t('Ищем…') : way.title + (opens ? ' · ' + opens : '')} disabled={busy} onPress={() => onTry(way.patch)} />}{!way && !!onWiden && preview.empty?.reason !== 'city' && <Action title={busy ? t('Ищем…') : t('Искать без этих условий')} disabled={busy} onPress={onWiden} />}<Action secondary title={t('Изменить условия')} disabled={busy} onPress={onRefine} /></>
+      <><Text accessibilityRole="header" style={h.cardTitle}>{answer.title}</Text><Text style={h.note}>{answer.note}</Text>{!!way && !!onTry && <Action title={busy ? t('Ищем…') : way.title + (opens ? ' · ' + opens : '')} disabled={busy} onPress={() => onTry(way.patch)} />}{saved.length > 0 && <Action secondary title={'♡ ' + t('Избранное: {n}',{n:saved.length})} onPress={() => setFavOnly(true)} />}{!way && !!onWiden && preview.empty?.reason !== 'city' && <Action title={busy ? t('Ищем…') : t('Искать без этих условий')} disabled={busy} onPress={onWiden} />}<Action secondary title={t('Изменить условия')} disabled={busy} onPress={onRefine} /></>
     );
   }
 
@@ -325,13 +333,16 @@ export function GuestResults({ preview, draft, mine, onFavorite, selected, onSel
     );
   }
 
-  if (full) {
+  if (full || favOnly) {
     // Every found place at once: the guest who wants the whole list pulls the sheet up.
     // A row opens the place's own page with «Забронировать» (2026-11-26): no short card in between that says the same.
     return (
-      <>{trail}{tips}<View style={r.listHead}><Text accessibilityRole="header" style={[h.cardTitle, h.grow]}>{t('Свободно на {stay}: {n}',{stay:stayWords(draft),n:flats.length})}</Text>{!!onMap && <Pressable accessibilityRole="button" onPress={onMap} style={({ pressed }) => [r.onMap, pressed && h.dim]}><Text style={r.onMapText}>{t('На карте')}</Text></Pressable>}</View><View>{list.map(flat => (
+      <>{!favOnly && trail}{!favOnly && tips}<View style={r.listHead}><Text accessibilityRole="header" style={[h.cardTitle, h.grow]}>{favOnly ? t('Избранное: {n}',{n:saved.length}) : t('Свободно на {stay}: {n}',{stay:stayWords(draft),n:flats.length})}</Text>{!!mine && <Pressable accessibilityRole="button" accessibilityState={{ selected: favOnly }} accessibilityLabel={favOnly ? t('Показать все варианты') : t('Показать избранное: {n}',{n:saved.length})} hitSlop={4} onPress={() => setFavOnly(!favOnly)} style={({ pressed }) => [r.favToggle, favOnly && r.favToggleOn, pressed && h.dim]}><Text style={[r.favToggleText, favOnly && r.favToggleTextOn]}>{favOnly ? '♥' : '♡'}{saved.length ? ' ' + saved.length : ''}</Text></Pressable>}{!!onMap && <Pressable accessibilityRole="button" onPress={onMap} style={({ pressed }) => [r.onMap, pressed && h.dim]}><Text style={r.onMapText}>{t('На карте')}</Text></Pressable>}</View>{favOnly ? <View>{saved.length ? saved.map(flat => {
+            const here = !!flat.estimate;
+            return <Pressable key={flat.id} accessibilityRole="button" accessibilityLabel={flat.title + (here ? ', ' + money(flat.estimate.amount) : '')} onPress={() => { if (here) onFocus?.(flat.id); onOpen(flat); }} style={({ pressed }) => [r.line, pressed && r.cardPressed]}><View style={r.lineThumb}><Photo id={flat.photos?.[0]} alt={t('{title}, фото',{title:flat.title})} fill /></View><View style={h.grow}><View style={r.cardTop}><Text numberOfLines={1} style={[h.eventTitle, h.grow]}>{flat.title}</Text>{here ? <Text style={h.rowPrice}>{money(flat.estimate.amount)}</Text> : typeof flat.price === 'number' && <Text style={h.rowPrice}>{money(flat.price)}</Text>}</View><Text numberOfLines={1} style={h.note}>{here ? (what(flat) || t('за {v}',{v:stayWords(draft)})) : [flat.district, typeof flat.price === 'number' ? t('за сутки') : ''].filter(Boolean).join(' · ')}</Text><Text numberOfLines={1} style={here ? r.why : h.note}>{here ? t('Свободно на {v}',{v:stayWords(draft)}) : t('Не нашлось на эти условия')}</Text></View>{!!onFavorite && <Heart plain on title={flat.title} onPress={() => onFavorite(flat.id)} />}</Pressable>;
+          }) : <Text style={[h.note, r.favEmpty]}>{t('Пока пусто. Нажмите ♡ на карточке жилья, и оно появится здесь.')}</Text>}</View> : <View>{list.map(flat => (
             <Pressable key={flat.id} accessibilityRole="button" accessibilityLabel={flat.title + ', ' + money(flat.estimate.amount)} onPress={() => { onFocus?.(flat.id); onOpen(flat); }} style={({ pressed }) => [r.line, pressed && r.cardPressed]}><View style={r.lineThumb}><Photo id={flat.photos?.[0]} alt={t('{title}, фото',{title:flat.title})} fill /></View><View style={h.grow}><View style={r.cardTop}><Text numberOfLines={1} style={[h.eventTitle, h.grow]}>{flat.title}</Text><Text style={h.rowPrice}>{money(flat.estimate.amount)}</Text></View><Text numberOfLines={1} style={h.note}>{what(flat) || t('за {v}',{v:stayWords(draft)})}</Text>{ready(flat)}{!!why(flat) && <Text numberOfLines={1} style={r.why}>{why(flat)}</Text>}</View></Pressable>
-          ))}</View></>
+          ))}</View>}</>
     );
   }
 
@@ -405,6 +416,12 @@ const r = StyleSheet.create({
   listHead: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   onMap: { minHeight: 40, justifyContent: 'center', paddingHorizontal: 8 },
   onMapText: { ...type.label, color: C.accent, fontWeight: '600' },
+  // The heart in the list's head: outline when off, black pill when it shows only the saved homes. No red.
+  favToggle: { minWidth: 40, height: 36, paddingHorizontal: 12, borderRadius: T.radius.full, borderWidth: 1, borderColor: C.line, alignItems: 'center', justifyContent: 'center' },
+  favToggleOn: { backgroundColor: C.ink, borderColor: C.ink },
+  favToggleText: { ...type.label, color: C.ink, fontWeight: '600' },
+  favToggleTextOn: { color: C.surface },
+  favEmpty: { paddingVertical: 16 },
   counterText: { ...type.label, color: C.inkSoft, fontWeight: '600', textAlign: 'center' },
   dots: { flexDirection: 'row', justifyContent: 'center', gap: 6, marginBottom: 4 },
   dot: { width: 6, height: 6, borderRadius: 3, backgroundColor: C.lineStrong },

@@ -27,3 +27,9 @@ export function againList(properties:Row[],mine:Mine,limit=6):Row[]{
 
 /** The heart was tapped: the list as it will be once the server agrees. */
 export const toggled=(mine:Mine,id:string,on:boolean):Mine=>({...mine,favorites:on?[id,...mine.favorites.filter(x=>x!==id)]:mine.favorites.filter(x=>x!==id)});
+
+/** «Избранное» in the guest's list: saved homes, newest first. One the search found keeps its price for these dates;
+ * one it did not is taken from the catalogue; one that left the catalogue is not shown. */
+export function savedList(found:Row[],catalog:Row[],mine:Mine):Row[]{
+ return mine.favorites.flatMap(id=>{const p=found.find(f=>f.id===id)||catalog.find(f=>f.id===id);return p?[p]:[];});
+}
