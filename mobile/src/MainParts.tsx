@@ -102,8 +102,27 @@ export function PinRow({ photo, title, line, onOpen }: { photo?: string | null; 
   );
 }
 
+// One row of tabs at the top of the opened sheet (concept «Главный экран владельца и исполнителя», 2026-11-27,
+// mobbin/home-roles), as the segments of Airbnb's «Today / Upcoming»: it takes the place of the chips and of the second
+// row of tabs. A number after the name says how many things are behind it.
+export function SheetTabs<T extends string>({ tabs, value, onChange }: { tabs: { id: T; title: string; count?: number }[]; value: T; onChange: (id: T) => void }) {
+  return (
+    <View style={m.seg} accessibilityRole="tablist">
+      {tabs.map(tab => {
+        const on = tab.id === value, title = tab.title + (tab.count ? ' · ' + tab.count : '');
+        return <Pressable key={tab.id} accessibilityRole="tab" accessibilityLabel={title} accessibilityState={{ selected: on }} onPress={() => onChange(tab.id)} style={({ pressed }) => [m.segItem, on && m.segOn, pressed && !on && m.dim]}><Text numberOfLines={1} style={[m.segText, on && m.segTextOn]}>{title}</Text></Pressable>;
+      })}
+    </View>
+  );
+}
+
 const R = T.radius, H = T.control;
 const m = StyleSheet.create({
+  seg: { flexDirection: 'row', padding: 4, borderRadius: R.lg, backgroundColor: C.surfaceAlt },
+  segItem: { flex: 1, minHeight: 40, borderRadius: R.md, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 6 },
+  segOn: { backgroundColor: C.surface, shadowColor: C.ink, shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.1, shadowRadius: 3, elevation: 1 },
+  segText: { ...type.label, color: C.muted, fontWeight: '600' },
+  segTextOn: { color: C.ink },
   now: { gap: 4, padding: 16, borderRadius: R.xl, backgroundColor: C.surface, borderWidth: 1, borderColor: C.line },
   kick: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 2 },
   dot: { width: 8, height: 8, borderRadius: 4 },

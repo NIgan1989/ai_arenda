@@ -1,14 +1,14 @@
 import {test} from 'node:test';import assert from 'node:assert/strict';import {load} from './helpers/platform.mjs';
 const {ownerJobTab,cleanerJobTab,ownerJobTabs,cleanerJobTabs,tabCounts,firstTab}=await load('job-filters');
-test('the owner sees cleanings by what they wait for',()=>{
- assert.equal(ownerJobTab({status:'open'}),'need');
- for(const status of ['assigned','in_progress','submitted'])assert.equal(ownerJobTab({status,assigned_to:'c'}),'work');
- assert.equal(ownerJobTab({status:'completed',owner_id:'o',assigned_to:'c',fee:5000,settlement_paid:0}),'work');
- assert.equal(ownerJobTab({status:'completed',owner_id:'o',assigned_to:'c',fee:5000,settlement_paid:5000}),'done');
+test('the owner sees cleanings now, past and cancelled',()=>{
+ assert.equal(ownerJobTab({status:'open'}),'now');
+ for(const status of ['assigned','in_progress','submitted'])assert.equal(ownerJobTab({status,assigned_to:'c'}),'now');
+ assert.equal(ownerJobTab({status:'completed',owner_id:'o',assigned_to:'c',fee:5000,settlement_paid:0}),'now');
+ assert.equal(ownerJobTab({status:'completed',owner_id:'o',assigned_to:'c',fee:5000,settlement_paid:5000}),'past');
  // Cleaned by the owner's own staff: nothing to pay.
- assert.equal(ownerJobTab({status:'completed',owner_id:'o',assigned_to:'o',fee:5000}),'done');
- assert.equal(ownerJobTab({status:'cancelled',cancel_fee:1500,settlement_paid:0}),'work');
- assert.equal(ownerJobTab({status:'cancelled'}),'done');
+ assert.equal(ownerJobTab({status:'completed',owner_id:'o',assigned_to:'o',fee:5000}),'past');
+ assert.equal(ownerJobTab({status:'cancelled',cancel_fee:1500,settlement_paid:0}),'now');
+ assert.equal(ownerJobTab({status:'cancelled'}),'cancelled');
 });
 test('the performer sees what is ahead, done and cancelled',()=>{
  assert.equal(cleanerJobTab({status:'assigned',assigned_to:'c'},'c'),'ahead');
@@ -21,8 +21,9 @@ test('the performer sees what is ahead, done and cancelled',()=>{
 });
 test('tabs count their items and open on the first that has any',()=>{
  const counts=tabCounts(ownerJobTabs,[{status:'assigned',assigned_to:'c'},{status:'cancelled'}],ownerJobTab);
- assert.deepEqual(counts,{need:0,work:1,done:1});
- assert.equal(firstTab(ownerJobTabs,counts),'work');
+ assert.deepEqual(counts,{now:1,past:0,cancelled:1});
+ assert.equal(firstTab(ownerJobTabs,counts),'now');
+ assert.deepEqual(ownerJobTabs.map(t=>t.label),['Сейчас','Прошлые','Отменённые']);
  assert.equal(firstTab(cleanerJobTabs,{ahead:0,done:0,cancelled:0}),'ahead');
  assert.deepEqual(cleanerJobTabs.map(t=>t.label),['Предстоящие','Выполненные','Отменённые']);
 });

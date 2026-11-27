@@ -19,19 +19,22 @@ import {ownerPin,travellers,withAiResult} from './owner-map';
 import {cleanerPin,dayRoute,routeLines,routeSummary} from './cleaner-map';
 import {dealChain,marginLabel,ownerDeal,ownerMargin,ownerPinAct,pinAct,threadChain} from './pin-deal';
 import {cleanerThreads,guestThreads,ownerThreads} from '../../lib/process-threads';
-import {latestMove} from '../../lib/ai-move-marks';
+import {journalToday,latestMove} from '../../lib/ai-move-marks';
 import {TripHead,useTrip} from './Navigator';
 import {SwipeConfirm} from './SwipeConfirm';
 import {ROAD_BEAMS,beamOrigin,beams,mapMood,moodJoy,roadBeams,roadKey,type BeamRoads,type PinTone} from './map-motion';
 import {MOOD_COLOR,MapMood} from './MapMood';
 import {OwnerToday,ownerDay,timeLabel} from './OwnerToday';
 import {cleanerWeek} from './CleanerEarnings';
-import {BlockHead,DarkButton,DayLine,IconRow,NowFrame,PinRow,PlaceRow,QuietButton,TimeRow,type Dot} from './MainParts';
+import {BlockHead,DarkButton,DayLine,IconRow,NowFrame,PinRow,PlaceRow,QuietButton,SheetTabs,TimeRow,type Dot} from './MainParts';
 import {CleanerOffer} from './CleanerOffer';
 import {getHere,locate,openLocationSettings,useHere} from './here';
 import {hereNote,isFresh,nearestCity,type HereAction,type HereNote} from './here-rules';
 import {countdown,mapCities,validPoint,type MapPoint} from './map-math';
 import {MapSheetHead} from './MapSheetHead';
+import {AiLine} from './AiLine';
+import {headLine} from './head-line';
+import {ownerJobTab} from '../../lib/job-filters';
 import {AutopilotThreads,type FeedNeed} from './AutopilotThreads';
 import {AutopilotHandoff} from './AutopilotHandoff';
 import {PlacePicker,RolePlate,type PickPlace} from './RolePlate';
@@ -461,8 +464,28 @@ function GuestPanel({setFloat,setFoot,setScanning,setQuiet,accountId,data,mapDat
  return <View style={h.block}><HeadSlot onHeight={onHead}>{picking?pickView:nav.trip?<TripHead nav={nav} onOpen={()=>{const id=nav.trip!.id;nav.close();onOpenProcess('booking',id);}} onChat={onChat?()=>onChat('booking',nav.trip!.id):undefined} onCall={onChat?()=>onChat('booking',nav.trip!.id,true):undefined}/>:requestId||listOpen?null:floatHead||head}</HeadSlot>{!picking&&!floatOn&&body}</View>;
 }
 
+// The line of the AI under the opened sheet of the owner and of the cleaner (concept of 2026-11-27): the question is
+// asked where the person ends reading, as the field of a chat; the folded sheet keeps only the one deal.
+function AskLine({role,text,onText,onSend}:{role:Role;text:string;onText:(v:string)=>void;onSend:(v:string)=>void}){
+ const line=headLine(role,Date.now(),'stay');
+ return <View style={{marginTop:4}}><AiLine value={text} onChangeText={onText} onSend={onSend} placeholder={line.placeholder} shortPlaceholder={line.shortPlaceholder} label={line.label}/></View>;
+}
+// «Автопилот · 4 действия сегодня ›»: what the AI did alone today, from the journal of the menu (/api/account); a tap
+// opens that journal. Read when the sheet opens and once a minute after.
+function AutopilotLine({role,onOpen}:{role:'owner'|'cleaner';onOpen:()=>void}){
+ const [today,setToday]=useState<number|null>(null),[last,setLast]=useState('');
+ usePoll(async()=>{try{const a:Row=await request('/api/account',undefined,undefined,undefined,role);const list:Row[]=Array.isArray(a?.aiJournal)?a.aiJournal:[];setToday(journalToday(list as {at:number}[],Number(a?.serverTime)||Date.now()/1000));setLast(String(list[0]?.text||''));}catch{/* The line stays without its number. */}},60000,true);
+ const value=today===null?'':today?plural(today,'{n} действие сегодня','{n} действия сегодня','{n} действий сегодня').replace('{n}',String(today)):last?tr('сегодня пока ничего'):'';
+ return <IconRow icon="shanyrak" title={role==='owner'?tr('Автопилот'):tr('Что сделал ИИ')} value={value} label={tr('Автопилот: что сделал ИИ')+(value?'. '+value:'')} onPress={onOpen}/>;
+}
+// «1 в работе · 1 ищем»: the owner's cleanings as one line; «нет текущих» when all are in the past.
+function ownerCleanings(jobs:Row[]){
+ const now=jobs.filter(j=>ownerJobTab(j)==='now'),need=now.filter(j=>j.status==='open'&&!j.assigned_to).length,work=now.length-need;
+ return [work?tr('в работе: {n}',{n:work}):'',need?tr('ищем: {n}',{n:need}):''].filter(Boolean).join(' · ')||tr('нет текущих');
+}
+
 function OwnerPanel({accountId,data,mapData,publish,snap,showNow,expand,onHead,onAsk,onIntent,onChanged,onOpenProcess,onOpenPage,onEdit,selected,setSelected,setFocus}:Common){
- const [asked,setAsked]=useState(''),[tab,setTab]=useState<HubTab>('today'),[quick,setQuick]=useState(false);
+ const [asked,setAsked]=useState(''),[tab,setTab]=useState<HubTab>('today'),[quick,setQuick]=useState(false),[sheetTab,setSheetTab]=useState<'today'|'soon'|'flats'>('today');
  const [inbox,setInbox]=useState<Row|null>(null),[error,setError]=useState(''),[working,setWorking]=useState(false),[skew,setSkew]=useState(0);
  const lock=useRef(false),seen=useRef(0),now=useNow(!!inbox?.offers?.length)+skew;
  // An answer just sent shows on the flat's pin for a few seconds: «Ответ отправлен» after «Готов», the price again after a refusal.
@@ -495,27 +518,34 @@ function OwnerPanel({accountId,data,mapData,publish,snap,showNow,expand,onHead,o
  const flat=selected.startsWith('property:')?flats.find(p=>'property:'+p.id===selected):undefined;
  useEffect(()=>{setTab('today');},[flat?.id]);
  const placeOf=(p:Row)=>(mapData?.properties||[]).find((x:Row)=>x.id===p.id)||p;
- const head=(chips:boolean,children?:ReactNode)=><MapSheetHead role="owner" chips={chips} counts={{requests:ownerWaiting(data,data.user?.id||'',clock)}} text={asked} onText={setAsked} onSend={text=>{setAsked('');onAsk(text);}} onChip={action=>{/* A guest waiting for a quick answer is in this sheet; other requests are on their page. */if(action==='requests'){if(offers.length)expand(1);else onOpenPage('bookings');}else if(action==='calendar')onOpenPage('calendar');else if(action==='properties')onOpenPage('properties');}} now={null} onNow={()=>{}}>{children}</MapSheetHead>;
- if(flat&&snap===0){const m=placeOf(flat);return <View style={h.block}><HeadSlot onHeight={onHead}>{head(false,<PinRow photo={(m.photos||flat.photos||[])[0]} title={flat.title} line={[tr(m.display_status?.label||flat.display_status?.label||'Статус уточняется'),typeof flat.price==='number'?tr('{v} за сутки',{v:money(flat.price)}):''].filter(Boolean).join(' · ')} onOpen={()=>expand(1)}/>)}</HeadSlot></View>;}
- if(flat)return <View style={h.block}><HeadSlot onHeight={onHead}><FlatHubHead flat={flat} data={data} now={serverNow(data)} tab={tab} open={snap>0} onTab={next=>{setTab(next);if(snap===0)expand(1);}} onBack={()=>{setSelected('');expand(0);}} onOpen={onOpenProcess}/></HeadSlot>{snap>0&&<FlatHub flat={flat} data={data} now={serverNow(data)} tab={tab} onOpen={onOpenProcess} onEdit={step=>step==='job'?onIntent(flat.details?.type==='home'?'home-cleaning:'+flat.id:'job'):onEdit?.(flat.id,step)} onChanged={onChanged}/>}</View>;
+ if(flat&&snap===0){const m=placeOf(flat);return <View style={h.block}><HeadSlot onHeight={onHead}><PinRow photo={(m.photos||flat.photos||[])[0]} title={flat.title} line={[tr(m.display_status?.label||flat.display_status?.label||'Статус уточняется'),typeof flat.price==='number'?tr('{v} за сутки',{v:money(flat.price)}):''].filter(Boolean).join(' · ')} onOpen={()=>expand(1)}/></HeadSlot></View>;}
+ if(flat)return <View style={h.block}><HeadSlot onHeight={onHead}><FlatHubHead flat={flat} data={data} now={serverNow(data)} tab={tab} open={snap>0} onTab={next=>{setTab(next);if(snap===0)expand(1);}} onBack={()=>{setSelected('');expand(0);}} onOpen={onOpenProcess}/></HeadSlot>{snap>0&&<FlatHub flat={flat} data={data} now={serverNow(data)} tab={tab} onOpen={onOpenProcess} onEdit={step=>step==='job'?onIntent(flat.details?.type==='home'?'home-cleaning:'+flat.id:'job'):onEdit?.(flat.id,step)} onChanged={onChanged}/>}{snap>0&&<IconRow icon="brush" title={tr('Уборки этого жилья')} onPress={()=>onOpenPage('cleaning:'+flat.id)}/>}</View>;
  // «Сейчас» (concept «Один стандарт», 2026-11-26): one deal, one dark button or a swipe. A guest waiting for a quick
  // answer first, then a new booking request, then what waits for the owner's decision, then the AI's advice, then calm.
  const guestWaits=(o:Row)=><NowFrame key={o.id} dot="wait" kicker={tr('Сейчас · гость ждёт ответа')} timer={countdown(o.expires_at-now)} title={o.title} line={[date(Date.parse(o.filters.start)/1000)+' → '+date(Date.parse(o.filters.end)/1000),tr('гостей: {n}',{n:o.filters.guests}),money(o.amount)].join(' · ')}>{/* One swipe answers «Готов»; the words on the track are the promise the owner gives with it. */}<SwipeConfirm label={tr('Проведите: свободно и готово')} disabled={working} onConfirm={()=>act('respond',{offerId:o.id,decision:'accept',ready:true})}/><QuietButton title={tr('Отказать')} disabled={working} onPress={()=>act('respond',{offerId:o.id,decision:'decline'})}/></NowFrame>;
  const decision=day.yours[0];
+ const waits=ownerWaiting(data,data.user?.id||'',clock);
+ // Calm: no empty card, one line of the day (concept «Главный экран владельца», 2026-11-27); a new owner adds a home.
  const calm=Array.isArray(data.ownProperties)&&!flats.length?<NowFrame dot="calm" kicker={tr('Сейчас')} title={tr('Добавьте первое жильё')} line={tr('Добавьте первое жильё, и оно появится на карте.')}><DarkButton title={tr('Добавить жильё')} onPress={()=>onOpenPage('properties')}/></NowFrame>
-  :<NowFrame dot="ok" kicker={tr('Сейчас')} title={tr('Всё идёт по плану')} line={searching>0?plural(searching,'Сейчас {n} гость ищет жильё в городе.','Сейчас {n} гостя ищут жильё в городе.','Сейчас {n} гостей ищут жильё в городе.').replace('{n}',String(searching)):tr('остальное ведёт автопилот')}/>;
- const advice=<PriceTip inline role="owner" cards={cards} pick={isAdviceTip} onChanged={onChanged} onEdit={onEdit} fallback={calm}/>;
- const nowCard=offers[0]?guestWaits(offers[0]):<PriceTip inline role="owner" cards={cards} pick={isRequestTip} onChanged={onChanged} onEdit={onEdit} fallback={decision?<NowFrame dot="wait" kicker={tr('Сейчас · нужно ваше решение')} title={tr(decision.tag)+' · '+decision.title} line={decision.line}><DarkButton title={tr('Решить')} onPress={()=>onOpenProcess(decision.kind,decision.id)}/></NowFrame>:advice}/>;
+  :<DayLine border={false} icon="calendar" title={tr('Всё по плану')} value={day.line} onPress={()=>expand(1)}/>;
+ const nowCard=offers[0]?guestWaits(offers[0]):<PriceTip inline role="owner" cards={cards} pick={isRequestTip} onChanged={onChanged} onEdit={onEdit} fallback={decision?<NowFrame dot="wait" kicker={tr('Сейчас · нужно ваше решение')} title={tr(decision.tag)+' · '+decision.title} line={decision.line}><DarkButton title={tr('Решить')} onPress={()=>onOpenProcess(decision.kind,decision.id)}/></NowFrame>:calm}/>;
  const dot=(p:Row):Dot=>{const tone=placeOf(p).display_status?.tone;return tone==='ready'||tone==='good'?'ok':tone==='danger'?'alert':tone==='warning'||tone==='warn'?'wait':'calm';};
- if(snap===0)return <View style={h.block}><HeadSlot onHeight={onHead}>{head(false,<>{/* An answer or a step sent from the folded sheet that failed says so here too. */}{!!error&&<Text accessibilityRole="alert" style={h.error}>{error}</Text>}{nowCard}{flats.length>0&&<DayLine icon="calendar" title={tr('Сегодня')} value={day.line} onPress={()=>expand(1)}/>}</>)}</HeadSlot></View>;
- // The opened sheet, in the same order for every role: the chips of the sections, the day by time, then the blocks
- // of the owner: the AI's advice (it no longer covers the map), the objects with the dot of their state, adding one,
- // who answers guests. As on the site (components/map-workspace.tsx) a flat in the list opens its card.
- return <View style={h.block}><HeadSlot onHeight={onHead}>{head(true)}</HeadSlot>{!!error&&<Text accessibilityRole="alert" style={h.error}>{error}</Text>}{offers.map(guestWaits)}{offers.length>0&&<Text style={h.note}>{tr('Ответ не создаёт бронь и не меняет цену. Если гость выберет ваше жильё, заявка придёт в «Заявки гостей».')}</Text>}<PriceTip inline role="owner" cards={cards} pick={isRequestTip} onChanged={onChanged} onEdit={onEdit}/>{(flats.length>0||day.yours.length>0)&&<OwnerToday data={data} now={serverNow(data)} onOpen={(kind,id)=>onOpenProcess(kind,id)}/>}<PriceTip inline role="owner" cards={cards} pick={isAdviceTip} onChanged={onChanged} onEdit={onEdit}/>{flats.length>0&&<AutopilotHandoff role="owner" accountId={accountId} stamp={flats.map(p=>p.id+':'+(p.policy?.version??'')+':'+(p.policy?.cleaning_fee??'')+':'+(p.policy?.auto_confirm??'')).join('|')} tick={Number(data.serverTime)||0} compact={false} onExpand={()=>expand(2)} onChanged={onChanged} onSetup={id=>{if(id)onEdit?.(id,'prices');}}/>}<View><BlockHead title={tr('Мои объекты')+' · '+flats.length} more={tr('Все')} onMore={()=>onOpenPage('properties')}/>{flats.map(p=>{const m=placeOf(p);return <PlaceRow key={p.id} label={tr('Мои объекты: {title}',{title:p.title})} title={p.title} photo={(m.photos||p.photos||[])[0]} dot={dot(p)} state={[tr(m.display_status?.label||p.display_status?.label||'Статус уточняется'),m.location?'':tr('нет точки на карте')].filter(Boolean).join(' · ')} price={typeof p.price==='number'?money(p.price):undefined} onPress={()=>{setSelected('property:'+p.id);expand(1);}}/>;})}{!flats.length&&<Text style={h.note}>{tr('Объектов пока нет.')}</Text>}<IconRow icon="plus" title={tr('Добавить жильё')} onPress={()=>onOpenPage('properties')}/>{!!inbox&&<IconRow icon="shanyrak" title={tr('Кто отвечает гостям')} value={quickAuto?tr('Автопилот · {n}',{n:quickAuto}):quickOn?tr('Вы'):tr('Никто')} label={tr('Кто отвечает гостям')+': '+(quickOn?tr('Включены: {found}',{found:quickOn+' '+plural(quickOn,'объект','объекта','объектов')}):tr('Выключены'))} onPress={()=>setQuick(v=>!v)}/>}</View>{quick&&!!inbox&&<View style={h.card}><Text accessibilityRole="header" style={h.label}>{tr('Кто отвечает гостям')}</Text><Text style={h.note}>{tr('Автопилот отвечает гостям и заказывает уборку. Оплату проверяете вы.')}</Text>{!!saved&&<Text accessibilityLiveRegion="polite" style={h.note}>{saved}</Text>}{(inbox.preferences||[]).map((p:Row)=><GuestMode key={p.id} flat={p} busy={working} onChange={body=>act('preference',body)}/>)}{!inbox.preferences.length&&<Text style={h.note}>{tr('Включить можно после добавления жилья.')}</Text>}</View>}</View>;
+ const pilot=flats.length>0?<AutopilotLine role="owner" onOpen={()=>onOpenPage('account:autopilot')}/>:null;
+ const ask=<AskLine role="owner" text={asked} onText={setAsked} onSend={text=>{setAsked('');onAsk(text);}}/>;
+ if(snap===0)return <View style={h.block}><HeadSlot onHeight={onHead}><View style={{gap:4}}>{/* An answer or a step sent from the folded sheet that failed says so here too. */}{!!error&&<Text accessibilityRole="alert" style={h.error}>{error}</Text>}{nowCard}{pilot}</View></HeadSlot></View>;
+ // The opened sheet: one row of tabs instead of the chips and the pills (Airbnb «Today / Upcoming»). «Сегодня»: what
+ // waits, the day by time, the cleanings and the requests as lines, the AI's advice and the autopilot. «Скоро»: the
+ // week ahead and the calendar. «Объекты»: the homes, adding one, who answers guests. The AI line is at the bottom.
+ const cleaning=ownerCleanings(data.jobs||[]);
+ const tabs=<SheetTabs value={sheetTab} onChange={setSheetTab} tabs={[{id:'today',title:tr('Сегодня'),count:offers.length+day.yours.length||undefined},{id:'soon',title:tr('Скоро')},{id:'flats',title:tr('Объекты'),count:flats.length||undefined}]}/>;
+ const body=sheetTab==='flats'?<><View>{flats.map(p=>{const m=placeOf(p);return <PlaceRow key={p.id} label={tr('Мои объекты: {title}',{title:p.title})} title={p.title} photo={(m.photos||p.photos||[])[0]} dot={dot(p)} state={[tr(m.display_status?.label||p.display_status?.label||'Статус уточняется'),m.location?'':tr('нет точки на карте')].filter(Boolean).join(' · ')} price={typeof p.price==='number'?money(p.price):undefined} onPress={()=>{setSelected('property:'+p.id);expand(1);}}/>;})}{!flats.length&&<Text style={h.note}>{tr('Объектов пока нет.')}</Text>}<IconRow icon="plus" title={tr('Добавить жильё')} onPress={()=>onOpenPage('properties')}/>{!!inbox&&<IconRow icon="shanyrak" title={tr('Кто отвечает гостям')} value={quickAuto?tr('Автопилот · {n}',{n:quickAuto}):quickOn?tr('Вы'):tr('Никто')} label={tr('Кто отвечает гостям')+': '+(quickOn?tr('Включены: {found}',{found:quickOn+' '+plural(quickOn,'объект','объекта','объектов')}):tr('Выключены'))} onPress={()=>setQuick(v=>!v)}/>}</View>{quick&&!!inbox&&<View style={h.card}><Text accessibilityRole="header" style={h.label}>{tr('Кто отвечает гостям')}</Text><Text style={h.note}>{tr('Автопилот отвечает гостям и заказывает уборку. Оплату проверяете вы.')}</Text>{!!saved&&<Text accessibilityLiveRegion="polite" style={h.note}>{saved}</Text>}{(inbox.preferences||[]).map((p:Row)=><GuestMode key={p.id} flat={p} busy={working} onChange={body=>act('preference',body)}/>)}{!inbox.preferences.length&&<Text style={h.note}>{tr('Включить можно после добавления жилья.')}</Text>}</View>}</>
+  :sheetTab==='soon'?<View>{flats.length>0?<OwnerToday view="soon" data={data} now={serverNow(data)} onOpen={(kind,id)=>onOpenProcess(kind,id)}/>:<Text style={h.note}>{tr('Объектов пока нет.')}</Text>}<IconRow icon="calendar" title={tr('Календарь')} onPress={()=>onOpenPage('calendar')}/></View>
+  :<>{offers.map(guestWaits)}{offers.length>0&&<Text style={h.note}>{tr('Ответ не создаёт бронь и не меняет цену. Если гость выберет ваше жильё, заявка придёт в «Заявки гостей».')}</Text>}<PriceTip inline role="owner" cards={cards} pick={isRequestTip} onChanged={onChanged} onEdit={onEdit}/>{(flats.length>0||day.yours.length>0)&&<OwnerToday view="today" data={data} now={serverNow(data)} onOpen={(kind,id)=>onOpenProcess(kind,id)}/>}{!flats.length&&calm}<View>{waits>0&&<IconRow icon="messages" title={tr('Заявки')} value={tr('ждут ответа: {n}',{n:waits})} onPress={()=>onOpenPage('bookings')}/>}{flats.length>0&&<IconRow icon="brush" title={tr('Уборки')} value={cleaning} onPress={()=>onOpenPage('cleaning')}/>}{pilot}</View><PriceTip inline role="owner" cards={cards} pick={isAdviceTip} onChanged={onChanged} onEdit={onEdit}/>{flats.length>0&&<AutopilotHandoff role="owner" accountId={accountId} stamp={flats.map(p=>p.id+':'+(p.policy?.version??'')+':'+(p.policy?.cleaning_fee??'')+':'+(p.policy?.auto_confirm??'')).join('|')} tick={Number(data.serverTime)||0} compact onExpand={()=>expand(2)} onChanged={onChanged} onSetup={id=>{if(id)onEdit?.(id,'prices');}}/>}</>;
+ return <View style={h.block}><HeadSlot onHeight={onHead}>{tabs}</HeadSlot>{!!error&&<Text accessibilityRole="alert" style={h.error}>{error}</Text>}{body}{ask}</View>;
 }
 
 function CleanerPanel({accountId,data,mapData,city,publish,snap,showNow,expand,onHead,onAsk,onChanged,onOpenProcess,onOpenPage,onChat,setFocus}:Common){
- const [asked,setAsked]=useState(''),clock=serverNow(data);
+ const [asked,setAsked]=useState(''),clock=serverNow(data),[sheetTab,setSheetTab]=useState<'day'|'near'|'week'>('day');
  const [error,setError]=useState(''),[working,setWorking]=useState(''),lock=useRef(false);
  const userId=data.user?.id,jobs:Row[]=data.jobs||[],applications:Row[]=data.applications||[];
  const mine=jobs.filter(j=>j.assigned_to===userId&&['assigned','in_progress','submitted'].includes(j.status)).sort((a,b)=>a.start-b.start);
@@ -581,19 +611,36 @@ function CleanerPanel({accountId,data,mapData,city,publish,snap,showNow,expand,o
  const nowCard=lead==='offer'?offerCard:lead==='decision'&&decision?<NowFrame dot="wait" kicker={tr('Сейчас · нужно ваше решение')} title={tr(decision.tag)+' · '+decision.title} line={decision.line}><DarkButton title={tr('Решить')} onPress={()=>onOpenProcess(decision.kind,decision.id)}/></NowFrame>
   :lead==='doing'&&doing?stopNow(doing):lead==='next'&&coming?stopNow(coming)
   :<NowFrame dot="calm" kicker={tr('Сейчас')} title={tr('Новых заданий рядом нет')} line={tr('{city}: открытых заданий сейчас нет. Адрес виден только назначенному исполнителю.',{city})}/>;
- const head=(chips:boolean,children?:ReactNode)=><MapSheetHead role="cleaner" chips={chips} counts={{nearby:nearby.filter(j=>!applied(j.id)).length}} text={asked} onText={setAsked} onSend={text=>{setAsked('');onAsk(text);}} onChip={action=>{if(action==='nearby')expand(2);else if(action==='schedule')onOpenPage('calendar');}} now={null} onNow={()=>{}}>{!!nav.error&&<Text accessibilityRole="alert" style={h.error}>{nav.error}</Text>}{children}</MapSheetHead>;
  const week=cleanerWeek(jobs,userId||'',clock);
  if(nav.trip)return <View style={h.block}><HeadSlot onHeight={onHead}>{(()=>{const id=nav.trip!.id,j=jobs.find(x=>x.id===id);return <TripHead nav={nav} address={j?.address||j?.open_address} detail={j?[j.title,money(j.fee)].join(' · '):undefined} onOpen={()=>{nav.close();onOpenProcess('job',id);}} onChat={j&&onChat&&j.assigned_to===userId?()=>onChat('job',id):undefined} onCall={j&&onChat&&j.assigned_to===userId?()=>onChat('job',id,true):undefined} onArrived={j&&j.status==='assigned'&&!j.arrived_at?async()=>{await act(id,'arrived');nav.close();onOpenProcess('job',id);}:undefined}/>;})()}</HeadSlot></View>;
- // The AI line always shows, as the guest's; under it the one deal and the one line of the day.
- if(snap===0)return <View style={h.block}><HeadSlot onHeight={onHead}>{head(false,<>{/* An answer or a step sent from the folded sheet that failed says so here too. */}{!!error&&<Text accessibilityRole="alert" style={h.error}>{error}</Text>}{nowCard}<DayLine icon="calendar" title={tr('Мой день')} value={summary||tr('Сегодня спокойно')} onPress={()=>expand(1)}/></>)}</HeadSlot></View>;
- // The opened sheet: the chips, the offer, the day's route as stops on one rail, the switch of the autopilot, the jobs
- // nearby as rows with «Отклик», the week, the money of the week.
- return <View style={h.block}><HeadSlot onHeight={onHead}>{head(true)}</HeadSlot>{!!error&&<Text accessibilityRole="alert" style={h.error}>{error}</Text>}{offerCard}{lead==='decision'&&nowCard}{mine.length>0&&<View><BlockHead title={route.length?tr('Мой день'):tr('Ваше задание')}/>{!!summary&&<Text style={[h.note,{marginBottom:8}]}>{summary}</Text>}{mine.map((j,i)=>{
+ const navError=!!nav.error&&<Text accessibilityRole="alert" style={h.error}>{nav.error}</Text>;
+ // The folded sheet: the one deal and the one line of the day (the AI line is at the bottom of the opened sheet).
+ if(snap===0)return <View style={h.block}><HeadSlot onHeight={onHead}><View style={{gap:4}}>{navError}{/* An answer or a step sent from the folded sheet that failed says so here too. */}{!!error&&<Text accessibilityRole="alert" style={h.error}>{error}</Text>}{nowCard}<DayLine icon="calendar" title={tr('Мой день')} value={summary||tr('Сегодня спокойно')} onPress={()=>expand(1)}/></View></HeadSlot></View>;
+ // The opened sheet (concept «Главный экран исполнителя», 2026-11-27): one row of tabs instead of the chips; the deal of
+ // the folded sheet stays on top of «Мой день», so opening the sheet never changes what is first. «Рядом»: the jobs as
+ // rows, a tap opens the job with its swipe «беру». «Неделя»: the days with their cleanings and the money.
+ const free=nearby.filter(j=>!applied(j.id));
+ const tabs=<SheetTabs value={sheetTab} onChange={setSheetTab} tabs={[{id:'day',title:tr('Мой день'),count:mine.length||undefined},{id:'near',title:tr('Рядом'),count:free.length||undefined},{id:'week',title:tr('Неделя')}]}/>;
+ const ask=<AskLine role="cleaner" text={asked} onText={setAsked} onSend={text=>{setAsked('');onAsk(text);}}/>;
+ const body=sheetTab==='near'?<View>{nearby.slice(0,12).map((j,i,list)=><TimeRow key={j.id} last={i===list.length-1} time={timeLabel(j.start,clock)} title={money(j.fee)+' · '+j.title} line={[applied(j.id)?tr('Отклик отправлен'):'',date(j.start)+' → '+date(j.end),j.district].filter(Boolean).join(' · ')} onPress={()=>onOpenProcess('job',j.id)}/>)}{!nearby.length&&<Text style={h.note}>{tr('{city}: открытых заданий сейчас нет. Адрес виден только назначенному исполнителю.',{city})}</Text>}<IconRow icon="briefcase" title={tr('Все задания')} value={open.length?String(open.length):undefined} onPress={()=>onOpenPage('jobs')}/></View>
+  :sheetTab==='week'?<View><WeekDays jobs={jobs} userId={userId||''} now={clock} onOpen={()=>onOpenPage('calendar')}/><IconRow icon="calendar" title={tr('График')} onPress={()=>onOpenPage('calendar')}/><IconRow icon="wallet" title={tr('Заработок за неделю')} value={money(week.sum)} onPress={()=>onOpenPage('account:money')}/></View>
+  :<>{nowCard}{lead!=='offer'&&offerCard}{mine.length>0&&<View><BlockHead title={route.length?tr('Мой день'):tr('Ваше задание')}/>{!!summary&&<Text style={[h.note,{marginBottom:8}]}>{summary}</Text>}{mine.map((j,i)=>{
     const step=cleanerStep(j,undefined,userId),isNext=j.id===next;
     const button=step?.id==='start'?{title:working===j.id?tr('Начинаем…'):step.label,run:()=>act(j.id,'start')}:step?.id==='report'?{title:step.label,run:()=>onOpenProcess('job',j.id)}:isNext?{title:tr('Поехали'),run:()=>go(j)}:null;
     return <TimeRow key={j.id} now={isNext||j.status==='in_progress'} last={i===mine.length-1} time={timeLabel(j.start,clock)} title={(order.get(j.id)?order.get(j.id)+' · ':'')+j.title} line={cleanerLine(j)} button={button?.title} onButton={button?.run} busy={!!working||(!!nav.trip&&button?.title===tr('Поехали'))} onPress={()=>onOpenProcess('job',j.id)}/>;
-   })}</View>}<AutopilotHandoff role="cleaner" accountId={accountId} tick={Number(data.serverTime)||0} compact={false} onExpand={()=>expand(2)} onChanged={onChanged} onSetup={()=>onOpenPage('account')}/><View><BlockHead title={tr('Задания рядом · {city}',{city})} more={open.length>nearby.length?tr('Все')+' · '+open.length:tr('Все')} onMore={()=>onOpenPage('jobs')}/>{nearby.slice(0,8).map((j,i,list)=><TimeRow key={j.id} last={i===list.length-1} time={timeLabel(j.start,clock)} title={money(j.fee)+' · '+j.title} line={[date(j.start)+' → '+date(j.end),j.district].filter(Boolean).join(' · ')} button={applied(j.id)?tr('Отклик отправлен'):working===j.id?tr('Отправляем…'):tr('Откликнуться')} busy={!!working||applied(j.id)} onButton={()=>apply(j.id)} onPress={()=>onOpenProcess('job',j.id)}/>)}{!nearby.length&&<Text style={h.note}>{tr('{city}: открытых заданий сейчас нет. Адрес виден только назначенному исполнителю.',{city})}</Text>}</View><View><BlockHead title={tr('Неделя')} more={tr('График')} onMore={()=>onOpenPage('calendar')}/><AutopilotThreads role="cleaner" data={data} now={clock} calendar weekOnly onOpen={(kind,id)=>onOpenProcess(kind,id)}/></View><DayLine icon="wallet" title={tr('Заработок за неделю')} value={money(week.sum)} onPress={()=>onOpenPage('account:money')}/></View>;
+   })}</View>}<View><AutopilotLine role="cleaner" onOpen={()=>onOpenPage('account:autopilot')}/></View><AutopilotHandoff role="cleaner" accountId={accountId} tick={Number(data.serverTime)||0} compact onExpand={()=>expand(2)} onChanged={onChanged} onSetup={()=>onOpenPage('account')}/></>;
+ return <View style={h.block}><HeadSlot onHeight={onHead}>{tabs}</HeadSlot>{navError}{!!error&&<Text accessibilityRole="alert" style={h.error}>{error}</Text>}{body}{ask}</View>;
 }
+
+// «Неделя» of the cleaner: seven days from today, each with its cleanings and their money, as the days of ClickUp.
+function WeekDays({jobs,userId,now,onOpen}:{jobs:Row[];userId:string;now:number;onOpen:()=>void}){
+ const zone=5*3600,dayOf=(t:number)=>Math.floor((t+zone)/86400),today=dayOf(now);
+ const names=[tr('Чт'),tr('Пт'),tr('Сб'),tr('Вс'),tr('Пн'),tr('Вт'),tr('Ср')];
+ const mine=jobs.filter(j=>j.assigned_to===userId&&j.status!=='cancelled');
+ const days=Array.from({length:7},(_,i)=>{const d=today+i,list=mine.filter(j=>dayOf(Number(j.start))===d);return {d,list,sum:list.reduce((s,j)=>s+(Number(j.fee)||0),0),date:new Date(d*86400*1000).getUTCDate()};});
+ return <View>{days.map((x,i)=><TimeRow key={x.d} now={i===0} last={i===6} time={names[((x.d%7)+7)%7]+' '+x.date} title={x.list.length?plural(x.list.length,'{n} уборка','{n} уборки','{n} уборок').replace('{n}',String(x.list.length))+' · '+money(x.sum):tr('Свободно')} line={x.list.length?x.list.map(j=>j.title).join(', '):undefined} onPress={x.list.length?onOpen:undefined}/>)}</View>;
+}
+
 type Props = {
   role: Role;
   accountId: string;

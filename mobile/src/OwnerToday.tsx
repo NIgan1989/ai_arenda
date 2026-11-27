@@ -9,7 +9,8 @@ import { T } from './tokens';
 
 type Row = Record<string, any>;
 type Tab = 'today' | 'soon' | 'all';
-type Props = { data: Row; now: number; needs?: FeedNeed[]; onOpen: (kind: 'booking' | 'job', id: string) => void };
+// view: the tab is chosen outside (the one row of tabs of the opened sheet, 2026-11-27); the own pills are hidden then.
+type Props = { data: Row; now: number; needs?: FeedNeed[]; view?: 'today' | 'soon'; onOpen: (kind: 'booking' | 'job', id: string) => void };
 
 const ZONE = 5 * 3600, DAY = 86400;
 const dayOf = (at: number) => Math.floor((at + ZONE) / DAY);
@@ -47,8 +48,9 @@ export function ownerDay(data: Row, now: number) {
 // «Сегодня» of the owner (concept «Один стандарт», 2026-11-26): two pills as Airbnb's «Today» for hosts, one quiet line
 // of the day's sum, then the day by time on one rail. Where the owner is needed the dot is filled and the row has one
 // small dark button; the rest the autopilot does.
-export function OwnerToday({ data, now, needs = [], onOpen }: Props) {
-  const [tab, setTab] = useState<Tab>('today');
+export function OwnerToday({ data, now, needs = [], view, onOpen }: Props) {
+  const [own, setTab] = useState<Tab>('today');
+  const tab: Tab = view || own;
   const [all, setAll] = useState(false);
   // A week and a day ahead, so «Скоро» holds the whole next week; «Сегодня» and «Все» cut it themselves.
   const threads = useMemo(() => ownerThreads(data, now, 8 * DAY), [data, now]);
@@ -56,7 +58,9 @@ export function OwnerToday({ data, now, needs = [], onOpen }: Props) {
   const live = threads.filter(t => !t.finished);
   const arrivals = live.filter(t => t.kind === 'booking' && t.tag === 'Бронь' && dayOf(t.at) === today).length;
   const cleanings = live.filter(t => t.kind === 'job' && dayOf(t.at) === today).length;
-  const yours = threads.filter(t => t.yours);
+  // In the outer «Скоро» what waits for the owner now stays in «Сегодня», where it is answered.
+  const yours = view === 'soon' ? [] : threads.filter(t => t.yours);
+  if (view === 'soon') needs = [];
   const asks = needs.length + yours.length;
   const calm = threads.filter(t => !t.yours).sort((a, b) => whenOf(a) - whenOf(b));
   const dayIn = (t: ProcessThread, id: Tab) => { const day = dayOf(whenOf(t)); return id === 'today' ? day <= today : day > today && day <= today + 7; };
@@ -75,8 +79,8 @@ export function OwnerToday({ data, now, needs = [], onOpen }: Props) {
   const last = () => ++at === total;
   return (
     <View style={o.box} accessibilityLabel={tr('Сегодня')}>
-      <View style={o.tabs} accessibilityRole="tablist">{tabButton('today', tr('Сегодня'), todayCount)}{tabButton('soon', tr('Скоро'), soonCount)}{tabButton('all', tr('Все'))}</View>
-      {total > 0 && <Text style={o.lead}>{[parts.join(' · ') || tr('Сегодня спокойно'), asks ? tr('нужны вы: {n}', { n: asks }) : tr('остальное ведёт автопилот')].join(' · ')}</Text>}
+      {!view && <View style={o.tabs} accessibilityRole="tablist">{tabButton('today', tr('Сегодня'), todayCount)}{tabButton('soon', tr('Скоро'), soonCount)}{tabButton('all', tr('Все'))}</View>}
+      {total > 0 && view !== 'soon' && <Text style={o.lead}>{[parts.join(' · ') || tr('Сегодня спокойно'), asks ? tr('нужны вы: {n}', { n: asks }) : tr('остальное ведёт автопилот')].join(' · ')}</Text>}
       <View>
         {needs.map(n => <TimeRow key={n.key} now time={tr('сейчас')} title={n.title} line={n.line} button={n.action} onButton={n.onPress} last={last()} label={tr('Ждёт вас: {title}. {line}', { title: n.title, line: n.line })} />)}
         {yours.map(t => {
