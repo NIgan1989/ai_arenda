@@ -1,7 +1,8 @@
 import {DomainError,required,number} from './domain';
 import {RentalService} from './service';
 import {normalizePhone} from './native-auth';
-import {isBath} from './listings';
+import {isAuto,isBath} from './listings';
+import {bayPosts} from './bays';
 import {venuesFor} from './venue';
 import {q,one,rows,epoch,uuid,type Row} from './operation-core';
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -24,12 +25,16 @@ const clock=(at:number)=>new Intl.DateTimeFormat('ru-RU',{hour:'2-digit',minute:
 const kindOf=(details:unknown)=>{try{return String(JSON.parse(String(details||'{}')).type||'');}catch{return '';}};
 
 /** The object and who asks: its owner, or the person the owner named. Anyone else gets nothing. */
+// Several people on shift may be named for one object (a car wash run by admins in turns, 2026-11-28).
 async function place(s:RentalService,propertyId:string){
- const p=await one(s.db,`SELECT p.id,p.title,p.owner_id,p.cleaning_minutes,(SELECT staff_id FROM property_staff WHERE property_id=p.id) staff_id,
-  (SELECT details FROM property_details WHERE property_id=p.id) details FROM properties p WHERE p.id=? AND p.archived_at IS NULL`,propertyId);
- if(!p||(p.owner_id!==s.userId&&p.staff_id!==s.userId))throw new DomainError('Объект недоступен.',404);
+ const p=await one(s.db,`SELECT p.id,p.title,p.owner_id,p.cleaning_minutes,EXISTS(SELECT 1 FROM property_staff WHERE property_id=p.id AND staff_id=?) named,
+  (SELECT details FROM property_details WHERE property_id=p.id) details FROM properties p WHERE p.id=? AND p.archived_at IS NULL`,s.userId,propertyId);
+ if(!p||(p.owner_id!==s.userId&&!Number(p.named)))throw new DomainError('Объект недоступен.',404);
  return {...p,mine:p.owner_id===s.userId,type:kindOf(p.details)} as Row;
 }
+export const staffPlace=place;
+/** How many people one object may have on shift. */
+export const MAX_STAFF=5;
 const tell=(db:D1Database,userId:string,body:string,dedupe:string,at:number)=>q(db,'INSERT OR IGNORE INTO notifications(id,user_id,body,dedupe,read,created_at) VALUES (?,?,?,?,0,?)',uuid(),userId,body,dedupe,at);
 
 // ---------- The owner names the person ----------
@@ -41,8 +46,9 @@ const hallIds=async(db:D1Database,propertyId:string)=>[propertyId,...(await rows
 export async function staffState(s:RentalService,propertyId:string){
  await s.requireRole('owner');
  if(!await one(s.db,'SELECT id FROM properties WHERE id=? AND owner_id=?',propertyId,s.userId))throw new DomainError('Объект недоступен.',404);
- const staff=await one(s.db,'SELECT a.name,a.phone,x.created_at since FROM property_staff x JOIN auth_accounts a ON a.id=x.staff_id WHERE x.property_id=?',propertyId);
- return {staff:staff||null,busy:await busyBlocks(s.db,propertyId)};
+ const team=await rows(s.db,'SELECT a.name,a.phone,x.created_at since FROM property_staff x JOIN auth_accounts a ON a.id=x.staff_id WHERE x.property_id=? ORDER BY x.created_at',propertyId);
+ // `staff`: the first one, for an older app that knows one person only.
+ return {staff:team[0]||null,team,max:MAX_STAFF,busy:await busyBlocks(s.db,propertyId)};
 }
 export async function assignStaff(s:RentalService,body:Row){
  await s.requireRole('owner');
@@ -52,11 +58,14 @@ export async function assignStaff(s:RentalService,body:Row){
  const person=await one(s.db,'SELECT id,name FROM auth_accounts WHERE phone=?',phone);
  if(!person)throw new DomainError('С этим номером в приложении никто не зарегистрирован. Попросите сотрудника установить приложение и создать аккаунт, затем назначьте его снова.',404);
  if(person.id===s.userId)throw new DomainError('Это ваш номер. Отметки по объекту у вас уже есть.',409);
+ const named=await rows(s.db,'SELECT staff_id FROM property_staff WHERE property_id=?',propertyId);
+ if(named.some(r=>r.staff_id===person.id))throw new DomainError(person.name+' уже назначен на этот объект.',409);
+ if(named.length>=MAX_STAFF)throw new DomainError('На объект можно назначить до '+MAX_STAFF+' сотрудников. Снимите кого-то, чтобы назначить нового.',409);
  const at=epoch();
  // A venue is run by one shift: the person is named for all its halls at once (lib/venue.ts).
  const halls=await hallIds(s.db,propertyId),venue=halls.length>1&&!!await one(s.db,'SELECT 1 x FROM venue_halls WHERE property_id=?',propertyId);
  await s.db.batch([
-  ...halls.map(id=>q(s.db,'INSERT INTO property_staff(property_id,staff_id,owner_id,created_at) VALUES (?,?,?,?) ON CONFLICT(property_id) DO UPDATE SET staff_id=excluded.staff_id,owner_id=excluded.owner_id,created_at=excluded.created_at',id,person.id,s.userId,at)),
+  ...halls.map(id=>q(s.db,'INSERT INTO property_staff(property_id,staff_id,owner_id,created_at) VALUES (?,?,?,?) ON CONFLICT(property_id,staff_id) DO NOTHING',id,person.id,s.userId,at)),
   tell(s.db,person.id,'Вас назначили сотрудником объекта «'+p.title+'»'+(venue?' и других залов заведения':'')+'. Откройте «Смена» в меню: там сегодняшние гости и отметки.','staff:assigned:'+propertyId+':'+at,at)]);
  if(venue)return {...await staffState(s,propertyId),message:person.name+' теперь отмечает гостей во всех залах заведения: '+halls.length+'.'};
  return {...await staffState(s,propertyId),message:person.name+' теперь отмечает гостей объекта «'+p.title+'».'};
@@ -64,12 +73,16 @@ export async function assignStaff(s:RentalService,body:Row){
 export async function removeStaff(s:RentalService,body:Row){
  await s.requireRole('owner');
  const propertyId=required(body.propertyId,'Объект',100),at=epoch();
- const row=await one(s.db,'SELECT x.staff_id,p.title FROM property_staff x JOIN properties p ON p.id=x.property_id WHERE x.property_id=? AND p.owner_id=?',propertyId,s.userId);
- if(!row)return {...await staffState(s,propertyId),message:'Сотрудник не назначен.'};
- const halls=await hallIds(s.db,propertyId);
- await s.db.batch([...halls.map(id=>q(s.db,'DELETE FROM property_staff WHERE property_id=? AND owner_id=?',id,s.userId)),
+ // The person by phone; an older app sends none, and then the object has one person at most to take off.
+ const phone=body.phone?normalizePhone(body.phone):'';
+ const list=await rows(s.db,'SELECT x.staff_id,p.title FROM property_staff x JOIN properties p ON p.id=x.property_id JOIN auth_accounts a ON a.id=x.staff_id WHERE x.property_id=? AND p.owner_id=? AND (?=\'\' OR a.phone=?)',propertyId,s.userId,phone,phone);
+ if(!list.length)return {...await staffState(s,propertyId),message:'Сотрудник не назначен.'};
+ if(list.length>1)throw new DomainError('Выберите, кого снять.',409);
+ const row=list[0],halls=await hallIds(s.db,propertyId);
+ await s.db.batch([...halls.map(id=>q(s.db,'DELETE FROM property_staff WHERE property_id=? AND owner_id=? AND staff_id=?',id,s.userId,row.staff_id)),
   tell(s.db,row.staff_id,'Владелец снял вас с объекта «'+row.title+'».','staff:removed:'+propertyId+':'+at,at)]);
- return {...await staffState(s,propertyId),message:'Сотрудник снят. Отметки снова только у вас.'};
+ const left=(await staffState(s,propertyId)) as Row;
+ return {...left,message:left.team.length?'Сотрудник снят.':'Сотрудник снят. Отметки снова только у вас.'};
 }
 
 // ---------- «Занято» ----------
@@ -113,16 +126,20 @@ export function stayStep(b:{start:number;end:number;prepared_at?:number|null;act
 }
 export const MARK_TITLE:Record<Mark,string>={heated:'Затоплено',arrived:'Гости пришли',left:'Гости ушли',ready:'Готово'};
 
-export async function staffPlaces(db:D1Database,userId:string){return Number((await one(db,'SELECT COUNT(*) n FROM property_staff x JOIN properties p ON p.id=x.property_id WHERE x.staff_id=? AND p.archived_at IS NULL',userId))?.n||0);}
+// A box of a car place is not an object of its own: the person on shift sees the card with its «Посты» (lib/bays.ts).
+const AUTO_COPY="(COALESCE(json_extract((SELECT details FROM property_details WHERE property_id=p.id),'$.type'),'') IN ('carwash','tires','carservice','detailing') AND EXISTS(SELECT 1 FROM room_units u WHERE u.property_id=p.id))";
+export async function staffPlaces(db:D1Database,userId:string){return Number((await one(db,`SELECT COUNT(*) n FROM property_staff x JOIN properties p ON p.id=x.property_id WHERE x.staff_id=? AND p.archived_at IS NULL AND NOT ${AUTO_COPY}`,userId))?.n||0);}
 
 export async function staffToday(s:RentalService){
  const at=epoch(),from=at-12*3600,to=at+36*3600;
  const places=await rows(s.db,`SELECT p.id,p.title,p.city,p.district,p.address,(SELECT details FROM property_details WHERE property_id=p.id) details,
   COALESCE((SELECT readiness FROM property_operations WHERE property_id=p.id),'ready') readiness,(SELECT name FROM profiles WHERE id=p.owner_id) owner_name
-  FROM property_staff x JOIN properties p ON p.id=x.property_id WHERE x.staff_id=? AND p.archived_at IS NULL ORDER BY p.title`,s.userId);
+  FROM property_staff x JOIN properties p ON p.id=x.property_id WHERE x.staff_id=? AND p.archived_at IS NULL AND NOT ${AUTO_COPY} ORDER BY p.title`,s.userId);
  const out:Row[]=[],venues=places.length?await venuesFor(s.db):new Map();
  for(const p of places){
   const bath=isBath(kindOf(p.details));
+  // A car place: its boxes, marked one tap each, instead of a list of guests.
+  if(isAuto(kindOf(p.details))){out.push({id:p.id,title:p.title,venue:'',place:[p.city,p.district,p.address].filter(Boolean).join(', '),auto:true,posts:await bayPosts(s.db,p.id,at)});continue;}
   const stays=await rows(s.db,`SELECT b.id,b.start,b.end,b.guests,b.status,t.prepared_at,t.actual_checkin,t.actual_checkout,(SELECT name FROM profiles WHERE id=b.guest_id) guest_name
    FROM bookings b LEFT JOIN booking_terms t ON t.booking_id=b.id WHERE b.property_id=? AND b.status IN ('confirmed','completed') AND ((b.end>? AND b.start<?)
     -- A stay that still needs a mark stays on the list however late it is: guests inside, or the last checkout while the object is not ready.

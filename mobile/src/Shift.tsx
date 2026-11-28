@@ -9,6 +9,7 @@ import {T} from './tokens';
 import {request} from './api';
 import type {Row} from './model';
 import {BusyMark,busyNow,hhmm} from './BusyMark';
+import {Posts} from './Posts';
 
 const MARK:Record<string,string>=L({heated:'Затоплено',arrived:'Гости пришли',left:'Гости ушли',ready:'Готово'});
 const STAGE:Record<string,string>=L({wait:'Ждём гостей',here:'Гости на месте',left:'Гости ушли, наведите порядок'});
@@ -26,7 +27,13 @@ export function Shift(){
   {!places.length&&<Text style={h.empty}>{tr('Вас пока не назначили ни на один объект. Назначает владелец в настройках объекта, по вашему номеру телефона.')}</Text>}
   {!!note&&<Text accessibilityLiveRegion="polite" style={h.note}>{note}</Text>}
   {!!error&&<Text accessibilityRole="alert" style={h.error}>{error}</Text>}
-  {places.map(p=>{const held=busyNow(p.busy,now),inside=(p.stays||[]).some((b:Row)=>b.stage==='here');
+  {places.map(p=>{
+   // A car place: its boxes («Посты», lib/bays.ts) instead of a list of guests.
+   if(p.auto&&p.posts)return <View key={p.id} style={h.card}>
+    <View style={h.head}><View style={{flex:1,minWidth:0}}><Text numberOfLines={1} style={h.title}>{p.title}</Text><Text numberOfLines={1} style={h.meta}>{p.place}</Text></View></View>
+    <Posts place={p.posts} onChange={(posts,message)=>{setState(v=>v&&({...v,places:v.places.map((x:Row)=>x.id===p.id?{...x,posts}:x)}));setNote(message);setError('');}}/>
+   </View>;
+   const held=busyNow(p.busy,now),inside=(p.stays||[]).some((b:Row)=>b.stage==='here');
    return <View key={p.id} style={h.card}>
     <View style={h.head}><View style={{flex:1,minWidth:0}}><Text numberOfLines={1} style={h.title}>{p.title}</Text><Text numberOfLines={1} style={h.meta}>{p.venue&&p.venue!==p.title?p.venue:p.place}</Text></View>
      <Text style={[h.tag,inside||held||p.readiness!=='ready'?h.tagBusy:h.tagFree]}>{inside?tr('Гости на месте'):held?tr('Занято до {v}',{v:hhmm(Number(held.end))}):p.readiness==='ready'?tr('Свободно'):tr('Наводим порядок')}</Text></View>

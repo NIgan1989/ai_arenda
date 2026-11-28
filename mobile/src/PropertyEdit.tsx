@@ -13,6 +13,8 @@ import {EditButton,EditChips,EditCount,EditField,EditHeading,EditNote,EditNumber
 import type {MenuIcon} from './AccountRows';
 import {TitleField} from './TitleField';
 import {EDIT_STEPS,banquetPrice,withBanquetPrice,editBody,editRequest,nextAdvice,needsReview,reviewRequest,stepForError,stepLine,stepNeeds,stepTitle,type EditBody,type EditStep} from '../../lib/listing-edit';
+import {PostsOf} from './Posts';
+import {bayPlan,LATE_CHOICES} from '../../lib/bay-plan';
 import {MAX_SERVICES,minutesWords,SERVICE_STARTERS,type VenueService} from '../../lib/venue-services';
 import {amenities,categoryAmenities,checkinMethods,isAuto,isBath,isBanquet,isHourlyVenue,isVenue,kindCategory,kindLabel,unitKinds,unitWords} from '../../lib/listings';
 import {KindPicker} from './KindPicker';
@@ -25,7 +27,7 @@ import {AddressPin,type PinChoice} from './AddressPin';
 import {AddressField} from './AddressSuggest';
 type Row=Record<string,any>;
 // The screens of the editor besides the eight steps: each is a sheet of its own with «‹» back to the list.
-type Sub='calendars'|'cleaner'|'staff'|'halls'|'rooms'|'rights'|'kind';
+type Sub='calendars'|'cleaner'|'staff'|'halls'|'rooms'|'rights'|'kind'|'posts';
 const ICONS:Record<EditStep,MenuIcon>={photos:'camera',flat:'properties',place:'pin',text:'file',amenities:'check',prices:'wallet',checkin:'key',rules:'shield'};
 const SAVED:Record<EditStep|'publish',string>=L({photos:'Фото сохранены.',flat:'Сохранено.',place:'Адрес сохранён.',text:'Описание сохранено.',amenities:'Удобства сохранены.',prices:'Цены сохранены.',checkin:'Заезд сохранён.',rules:'Правила сохранены.',publish:'Готово.'});
 // What to shoot, in the empty cells of the photos (Airbnb's photo tour): for a home, a bath and a hall.
@@ -98,6 +100,7 @@ export function PropertyEdit({property,onSave,onReview,onRemove,onClose,onOpenHa
  if(sub==='calendars'&&p.id)return <FlatCalendars propertyId={p.id} onBack={back('calendars',toOverview)} onClose={onClose}/>;
  if(sub==='cleaner'&&p.id)return <RegularCleaner propertyId={p.id} onBack={back('cleaner',toOverview)} onClose={onClose}/>;
  if(sub==='halls'&&p.id&&call)return <VenueHalls property={p} call={call} onBack={back('halls',toOverview)} onClose={onClose} onOpen={onOpenHall} onChanged={venue=>setP((o:Row)=>({...o,venue:venue?{id:venue.id,title:venue.title,halls:venue.halls.length}:undefined}))}/>;
+ if(sub==='posts'&&p.id)return <EditSheet title={t('Посты')} onBack={back('posts',toOverview)} onClose={onClose}><PostsOf propertyId={p.id}/></EditSheet>;
  if(sub==='staff'&&p.id)return <PropertyStaff propertyId={p.id} kind={base.details.type} onBack={back('staff',toOverview)} onClose={onClose} onChanged={name=>setP((o:Row)=>({...o,staff_name:name}))}/>;
  if(sub==='rooms'&&p.id&&call)return <RoomCount property={p} call={call} onBack={back('rooms',toOverview)} onClose={onClose} onChanged={units=>setP((o:Row)=>({...o,units}))}/>;
  if(sub==='rights'&&p.id)return <RightsSheet propertyId={p.id} approved={!!p.verified} onBack={back('rights',toOverview)} onClose={onClose}/>;
@@ -180,6 +183,19 @@ export function PropertyEdit({property,onSave,onReview,onRemove,onClose,onOpenHa
     {list.length<MAX_SERVICES&&<EditButton line title={t('Добавить услугу')} onPress={()=>setD({services:[...list,{name:'',minutes:30,price:3000}]})}/>}
     <EditNote text={t('Гость выбирает услугу, бокс занят на её время. Цена за час — для брони без услуги.')}/>
    </>;})()}
+   {open==='prices'&&isAuto(d.type)&&(()=>{const total=Number(p.units?.total)||1,plan=bayPlan(d,total);return <View style={x.block}>
+    {/* «Запись и живая очередь» (lib/bay-plan.ts): the first boxes take bookings, the rest are the queue. */}
+    <Text style={x.label}>{t('Запись и очередь')}</Text>
+    <EditSwitch icon="users" title={t('Самообслуживание')} line={plan.selfService?t('Записи нет, гости приезжают сами'):t('Мойщики на месте')} value={plan.selfService} onChange={v=>setD(v?{selfService:true}:{selfService:undefined})}/>
+    {!plan.selfService&&<>
+     <EditCount title={t('Боксов под запись')} line={t('Остальные — живая очередь')} value={plan.booked} text={t('{n} из {total}',{n:plan.booked,total})} min={0} max={total} onChange={n=>setD({bookedBays:n})}/>
+     {plan.booked>0&&<EditChips label={t('Ждать опоздавшего')} value={plan.lateMinutes} options={LATE_CHOICES.map(n=>[n,t('{n} мин',{n})] as [number,string])} onChange={n=>setD({lateMinutes:n})}/>}
+     {plan.booked>0&&<EditChips label={t('Как принимать запись')} value={plan.instant?1:0} options={[[1,t('Сразу')],[0,t('Заявкой')]]} onChange={n=>setD({instantConfirm:n?undefined:false})}/>}
+     {plan.booked>0&&<Text style={x.hint}>{plan.instant?t('Гость выбирает свободное время, запись подтверждается сама.'):t('Гость оставляет заявку, а вы в «Постах» подтверждаете её или назначаете другое время.')}</Text>}
+    </>}
+    {(plan.selfService||plan.booked<total)&&<EditSwitch icon="eye" title={t('Показывать загрузку гостям')} line={plan.showLoad?t('Спросим про каждый бокс'):t('Гости видят только часы работы')} value={plan.showLoad} onChange={v=>setD({showLoad:v?undefined:false})} last/>}
+    <EditNote text={plan.selfService?t('Гости видят посты и часы работы. Загрузка видна, только если её отмечают в «Постах».'):plan.booked<total?(plan.showLoad?t('Отмечайте боксы в «Постах»: гости видят свободные боксы и очередь.'):t('Гости видят «Живая очередь, без записи» и часы работы.')):t('Все боксы по записи. Уберите часть под живую очередь, если машины приезжают без записи.')}/>
+   </View>;})()}
    {open==='prices'&&isBanquet(d.type)&&(()=>{const q=banquetPrice(draft);return <>
     {/* A hall is priced per guest with a least party; the service keeps it as the price of the slot (lib/listing-edit.ts). */}
     <View>
@@ -231,7 +247,9 @@ export function PropertyEdit({property,onSave,onReview,onRemove,onClose,onOpenHa
   ...(p.id&&call&&unitKinds.includes(base.details.type)?[{key:'rooms' as Sub,icon:'building' as MenuIcon,title:t(unitWords(base.details.type).title),line:roomsLine(p)}]:[]),
   ...(p.id&&call&&(venue||!!p.venue)?[{key:'halls' as Sub,icon:'building' as MenuIcon,title:t('Залы'),line:p.venue?t('{title} · залов: {halls}',{title:p.venue.title,halls:p.venue.halls}):t('Один зал')}]:[]),
   // The person on shift is named here, in the settings of the object, and nowhere else.
-  ...(p.id?[{key:'staff' as Sub,icon:'user' as MenuIcon,title:t('Сотрудник'),line:p.staff_name||t('Не назначен')}]:[]),
+  // «Посты» of a car place (lib/bays.ts): the boxes marked by the person on shift, here for the owner too.
+  ...(p.id&&isAuto(base.details.type)?[{key:'posts' as Sub,icon:'calendar' as MenuIcon,title:t('Посты'),line:t('Боксы и очередь сейчас')}]:[]),
+  ...(p.id?[{key:'staff' as Sub,icon:'user' as MenuIcon,title:t('Сотрудники'),line:p.staff_name||t('Не назначены')}]:[]),
   ...(p.id&&!base.ownStaff?[{key:'cleaner' as Sub,icon:'users' as MenuIcon,title:t('Постоянный исполнитель'),line:p.regular_cleaner_name||t('Не закреплён')}]:[]),
   ...(p.id?[{key:'calendars' as Sub,icon:'calendar' as MenuIcon,title:t('Календари площадок'),line:t('Airbnb, Booking, Суточно')}]:[]),
  ];

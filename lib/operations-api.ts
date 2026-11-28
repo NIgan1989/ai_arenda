@@ -27,6 +27,7 @@ import {boundedRequestText} from './request-body';
 import {saveStayReview} from './stay-reviews';
 import {setFavorite} from './favorites';
 import {staffState,assignStaff,removeStaff,markBusy,freeBusy,staffToday,staffMark} from './staff';
+import {postsOf,bayMark,bayWaiting,bayNoShow,requestTimes,answerRequest} from './bays';
 import {closeDay,openDay} from './closed-days';
 import {addHall,renameVenue,venueOf} from './venue';
 import {setRoomCount,setFreeToday} from './room-units';
@@ -136,6 +137,13 @@ export async function writeOperations(service:RentalService,role:Role,path:strin
  if(route==='staff/mark')return staffMark(service,body);
  if(route==='staff/busy')return markBusy(service,body);
  if(route==='staff/free')return freeBusy(service,body);
+ // «Посты» of a car place (lib/bays.ts): the boxes, the cars waiting, «Не приехал».
+ if(route==='staff/posts')return postsOf(service,body);
+ if(route==='staff/bay')return bayMark(service,body);
+ if(route==='staff/waiting')return bayWaiting(service,body);
+ if(route==='staff/no-show')return bayNoShow(service,body);
+ if(route==='staff/request-times')return requestTimes(service,body);
+ if(route==='staff/request')return answerRequest(service,body);
  // «Закрыть день» in the owner's calendar (lib/closed-days.ts).
  if(route==='calendar/close-day'){active(role,['owner']);return closeDay(service,body);}
  if(route==='calendar/open-day'){active(role,['owner']);return openDay(service,body);}
