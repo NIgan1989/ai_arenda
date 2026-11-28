@@ -71,3 +71,10 @@ test('a game club counts its seats',async()=>{
  const {readListingText,emptyDraft}=await load('listing-draft');
  assert.equal(readListingText('Игровой клуб «PS Zone» на Толстого 8, PlayStation 5, 6 мест. 2 000 в час.',emptyDraft('Павлодар')).draft.capacity,6);
 });
+
+test('parking spaces and an impossible count are not seats',async()=>{
+ const {readListingText,emptyDraft}=await load('listing-draft');
+ assert.equal(readListingText('Игровой клуб на Толстого 8, 5 мест на парковке, 2 000 в час.',emptyDraft('Павлодар')).draft.capacity,10);
+ assert.ok(readListingText('Игровой клуб на Толстого 8, 100 компьютеров, 2 000 в час.',emptyDraft('Павлодар')).draft.capacity<=50);
+ assert.equal(readListingText('Лофт на Ломова 5, 5 мест на парковке, 8 000 в час.',emptyDraft('Павлодар')).draft.capacity,10);
+});
