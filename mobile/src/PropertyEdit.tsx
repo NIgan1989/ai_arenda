@@ -170,7 +170,10 @@ export function PropertyEdit({property,onSave,onReview,onRemove,onClose,onOpenHa
     {list.map((s,i)=><View key={i}>
      <EditField label={t('Услуга {n}',{n:i+1})} value={s.name} onChange={v=>put(i,{name:v})} max={60} placeholder={t('Например, Комплекс')}/>
      <EditCount title={t('Время')} value={s.minutes} text={minutesWords(s.minutes)} min={15} max={720} step={15} onChange={n=>put(i,{minutes:n})}/>
-     <EditNumber title={t('Цена')} unit="₸" value={s.price} onChange={n=>put(i,{price:n})} last/>
+     <EditNumber title={t('Цена')} unit="₸" line={t('Легковая')} value={s.price} onChange={n=>put(i,{price:n})}/>
+     {/* «Цена по классу машины»: 0 — как у легковой (lib/venue-services.ts servicePrice). */}
+     <EditNumber title={t('Кроссовер')} unit="₸" line={t('0 — как легковая')} value={s.prices?.crossover||0} onChange={n=>put(i,{prices:{...s.prices,crossover:n}})}/>
+     <EditNumber title={t('Джип, минивэн')} unit="₸" line={t('0 — как легковая')} value={s.prices?.suv||0} onChange={n=>put(i,{prices:{...s.prices,suv:n}})} last/>
      <EditButton line title={t('Убрать услугу')} onPress={()=>setD({services:list.filter((_,j)=>j!==i)})}/>
     </View>)}
     {!list.length&&!!SERVICE_STARTERS[d.type]&&<EditButton line title={t('Взять обычные услуги')} onPress={()=>setD({services:SERVICE_STARTERS[d.type]})}/>}

@@ -21,7 +21,7 @@ export function commandRole(path:string,body:Record<string,any>):Role[]|null{
   if(path==='listings'||path.startsWith('listings/')||(path==='media'&&body.kind==='property'))return ['owner'];
   // Уборку своего жилья заказывает только владелец (решение 2026-11-18): у гостя этого входа нет.
   if(path==='home-cleaning')return ['owner'];
-  if(path==='quote'||path==='bookings')return ['guest'];
+  if(path==='quote'||path==='bookings'||path==='service-slots')return ['guest'];
   if(path==='properties'||path.startsWith('properties/')||path==='jobs')return ['owner'];
   if(path.startsWith('bookings/'))return ['confirm','reject','paid','deposit_received','checkin','checkout','dispute_checkout','record_deposit_return','record_refund','keep_deposit'].includes(body.action)?['owner']:['report_checkout','report_checkin','report_late','door_help','address_accept'].includes(body.action)?['guest']:['owner','guest'];
   if(path.startsWith('jobs/'))return ['apply','withdraw','start','submit','vacant','at_door','guest_here','late','on_way','arrived'].includes(body.action)?['cleaner']:['issue','extend','release'].includes(body.action)?['owner','cleaner']:['owner'];

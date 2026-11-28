@@ -109,3 +109,31 @@ test('a car wash sells its services: the box is held for the service\'s minutes 
   assert.equal(kept.length,3);
  }finally{f.db.close();}
 });
+
+test('a crossover pays its own price, and the queue offers only the free starts of the day',async()=>{
+ const f=await fixture();try{
+  const {SERVICE_STARTERS,freeStarts,servicesInput}=await load('venue-services');
+  const wash=(await f.owner.saveListing(null,listing('carwash',{details:{...listing('carwash').details,services:SERVICE_STARTERS.carwash}}))).id;
+  f.db.raw.prepare('UPDATE properties SET published=1').run();f.db.raw.prepare("UPDATE property_operations SET readiness='ready'").run();
+  const start=at(10),ask=(service,minutes,carClass)=>({propertyId:wash,start:iso(start),end:iso(start+minutes*60),guests:1,billingMode:'hourly',service,car:'Toyota RAV4',carClass});
+  assert.equal((await f.guest.bookingQuote(ask('Комплекс',60))).amount,6000);
+  const cross=await f.guest.bookingQuote(ask('Комплекс',60,'crossover'));
+  assert.equal(cross.amount,7000);assert.equal(cross.serviceLine,'Комплекс · Кроссовер · Toyota RAV4');
+  assert.equal((await f.guest.bookingQuote(ask('Комплекс',60,'suv'))).amount,8000);
+  // A service without its own class price costs the car's price; an unknown class is a car.
+  assert.equal((await f.guest.bookingQuote(ask('Мойка двигателя',30,'suv'))).amount,4000);
+  assert.equal((await f.guest.bookingQuote(ask('Комплекс',60,'tank'))).amount,6000);
+  assert.throws(()=>servicesInput('carwash',[{name:'Кузов',minutes:30,price:3000,prices:{suv:50}}]),/цена от 100/);
+  // The queue: 09:00–21:00, every 15 minutes; a booked hour and its cleaning are skipped.
+  const day=at(0),slots=async()=>(await f.guest.serviceSlots({propertyId:wash,service:'Комплекс',day})).starts;
+  const before=await slots();
+  assert.equal(before[0],at(9));assert.equal(before.at(-1),at(20));assert.ok(before.includes(at(10)));
+  await f.guest.createBooking({...ask('Комплекс',60,'crossover'),requestKey:'q1',acceptTerms:true,expectedAmount:7000});
+  const after=await slots();
+  // 10:00–11:00 is booked and cleaned until 11:30; a 09:00 wash with its own cleaning would run into it too.
+  assert.equal(after[0],at(11)+1800);assert.ok(!after.includes(at(9)));assert.equal(after.length,before.length-10);
+  await assert.rejects(f.guest.serviceSlots({propertyId:wash,service:'Полёт',day}),/Такой услуги здесь нет/);
+  // The pure rule: a start before the earliest moment or outside the hours is not offered.
+  assert.deepEqual(freeStarts({day:0,minutes:30,busy:[[3600,7200]],earliest:1800,fits:(a,b)=>b<=3*3600}),[1800,7200,8100,9000]);
+ }finally{f.db.close();}
+});

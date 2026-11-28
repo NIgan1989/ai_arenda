@@ -51,8 +51,8 @@ import {homePlaces,homeDeals} from './home-order';
 import {homeOrderOf,homeCancel,tenge,HOME_DAMAGE_WINDOW} from './home-cleaning';
 import {reportNamesFit} from './cleaning-report';
 import {venuesFor} from './venue';
-import {pickRoom,roomCounts,roomState,roomsOf} from './room-units';
-import {carInput,minutesWords,serviceLine,serviceNamed,serviceQuote} from './venue-services';
+import {leadOf,pickRoom,roomCounts,roomState,roomsOf} from './room-units';
+import {carClassInput,carInput,freeStarts,minutesWords,serviceLine,serviceNamed,serviceQuote} from './venue-services';
 import {showWaiting} from './show-waiting';
 import {ownerForecasts,decideForecast} from './load-forecast';
 import {ownerListingTips,decideListingTip} from './listing-quality';
@@ -708,6 +708,28 @@ export class RentalService {
   async priceAdviceAfterReady(propertyId:string){
     try{return await offerPriceAdvice(this.db,propertyId);}catch(error){console.error('Price advice failed',error instanceof Error?error.message:'');return null;}
   }
+  // «Очередь» of a car place (2026-11-28): the free starts of one day for one service, every 15 minutes, any free box of
+  // the card counted (lib/room-units.ts). The guest sees only these; a busy time is never offered.
+  async serviceSlots(body:Row){
+    const asked=required(body.propertyId,'Жильё',100),p=await this.one('SELECT p.id,p.cleaning_minutes FROM properties p WHERE p.id=? AND p.published=1 AND (p.demo_owner IS NULL OR p.demo_owner=?)',asked,this.userId);
+    if(!p)throw new DomainError('Жильё недоступно.',404);
+    const row=await this.one('SELECT details FROM property_details WHERE property_id=?',p.id);let details:Row={};try{details=JSON.parse(String(row?.details||'{}'))||{};}catch{/* no details */}
+    const kind=String(details.type||''),service=isAuto(kind)?serviceNamed(details,body.service):null;
+    if(!service)throw new DomainError('Такой услуги здесь нет. Выберите услугу из списка.',409);
+    const day=Math.floor((Number(body.day)+18000)/86400)*86400-18000;if(!Number.isFinite(day))throw new DomainError('Выберите день.');
+    const policy={...defaultPolicy,...await this.one('SELECT * FROM property_policies WHERE property_id=?',p.id)},hours=venueHours(kind,policy.venue_hours);
+    const rooms=await roomsOf(this.db,await leadOf(this.db,p.id)),ids=rooms.length?rooms:[p.id],t=now(),earliest=Math.max(t,t+prepSeconds(policy));
+    const busyOf=async(id:string):Promise<[number,number][]>=>[...await this.all("SELECT start,occupied_until e FROM bookings WHERE property_id=? AND (status='confirmed' OR (status='requested' AND expires_at>?)) AND start<? AND occupied_until>?",id,t,day+2*86400,day),
+      ...await this.all("SELECT start,end e FROM cleaning_jobs WHERE property_id=? AND status IN ('open','assigned','in_progress','submitted') AND start<? AND end>?",id,day+2*86400,day),
+      ...await this.all('SELECT x.start,x.end e FROM external_blocks x JOIN calendar_sources s ON s.id=x.source_id WHERE x.property_id=? AND s.enabled=1 AND x.start<? AND x.end>?',id,day+2*86400,day)].map((r:Row)=>[Number(r.start),Number(r.e)] as [number,number]);
+    const free=new Set<number>();
+    // A box under repair or closed takes no cars; one not marked ready takes none in the next minute (as bookingQuote, Codex PR #292).
+    const states=new Map((await this.all('SELECT property_id,readiness FROM property_operations WHERE property_id IN (SELECT value FROM json_each(?))',JSON.stringify(ids))).map((r:Row)=>[String(r.property_id),String(r.readiness)]));
+    for(const id of ids){const state=states.get(id);if(state==='maintenance'||state==='blocked')continue;
+      const from=state&&state!=='ready'?Math.max(earliest,t+61):earliest;
+      for(const start of freeStarts({day,minutes:service.minutes,cleanMinutes:Number(p.cleaning_minutes)||0,busy:await busyOf(id),earliest:from,fits:(a,b)=>!hours||fitsHours(hours,a,b)}))free.add(start);}
+    return {service:service.name,minutes:service.minutes,day,starts:[...free].sort((a,b)=>a-b)};
+  }
   async bookingQuote(body:Row,options:{ownerReady?:boolean}={}) {
     // «Номера одного типа» (lib/room-units.ts): a card of many rooms books its first free room.
     const asked=required(body.propertyId,'Жильё',100),card=await this.one('SELECT cleaning_minutes FROM properties WHERE id=?',asked);
@@ -727,8 +749,8 @@ export class RentalService {
     // «Авто»: a booking for one of the place's services costs that service and holds the box for its minutes (lib/venue-services.ts).
     const service=isAuto(kind)&&body.service?serviceNamed(details,body.service):null;
     if(isAuto(kind)&&body.service&&!service)throw new DomainError('Такой услуги здесь нет. Выберите услугу из списка.',409);
-    const car=service?carInput(body.car):'';
-    const base=service?serviceQuote(service,start,end):rentalPrice(p.price,policy,start,end,mode),guestPricing=service?base:withGuests(windowQuote(base,policy.hourly_price,base.billingMode==='hourly'?await openWindowFor(this.db,p.id,start,end):null),policy,guests);
+    const car=service?carInput(body.car):'',carClass=carClassInput(body.carClass);
+    const base=service?serviceQuote(service,start,end,carClass):rentalPrice(p.price,policy,start,end,mode),guestPricing=service?base:withGuests(windowQuote(base,policy.hourly_price,base.billingMode==='hourly'?await openWindowFor(this.db,p.id,start,end):null),policy,guests);
     // «Скидка постоянного гостя»: the guest already stayed with this owner through the service (lib/rental-policy.ts).
     const regular=Number(policy.repeat_discount)>0&&!!this.userId&&this.userId!==p.owner_id&&!!await this.one("SELECT b.id FROM bookings b JOIN properties x ON x.id=b.property_id WHERE b.guest_id=? AND x.owner_id=? AND b.status='completed' LIMIT 1",this.userId,p.owner_id);
     const pricing=regular?withRepeatDiscount(guestPricing,policy.repeat_discount):guestPricing;
@@ -739,7 +761,7 @@ export class RentalService {
     if(occupied||cleaning) throw new DomainError('Этот интервал уже занят, включая время уборки. Выберите другое время.',409);
     // How this guest pays the owner (lib/prepay.ts): the owner's share, or at the arrival while the place is new.
     const prepay=await placePrepay(this.db,p.id,policy.prepay_percent),payment={prepayPercent:prepay.percent,prepay:prepaySum(pricing.amount,prepay.percent),label:prepayLabel(prepay.percent),newPlace:prepay.left>0};
-    return {propertyId:p.id,title:p.title,kind,start,end,guests,...pricing,...(service?{service:service.name,serviceLine:serviceLine(service,car),...(car?{car}:{})}:{}),cleaningMinutes:p.cleaning_minutes,occupiedUntil,currency:'KZT',quotedAt:now(),policy:publicPolicy(policy),payment};
+    return {propertyId:p.id,title:p.title,kind,start,end,guests,...pricing,...(service?{service:service.name,serviceLine:serviceLine(service,car,carClass),carClass,...(car?{car}:{})}:{}),cleaningMinutes:p.cleaning_minutes,occupiedUntil,currency:'KZT',quotedAt:now(),policy:publicPolicy(policy),payment};
   }
   async saveProfile(body: Row) {
     const name=required(body.name,'Имя',100), contact=required(body.contact,'Контакт',120), city=required(body.city,'Город',80);

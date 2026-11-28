@@ -106,6 +106,7 @@ export function createApp({filename=':memory:',origins=['http://localhost:8081',
     const listingPath=path.match(/^\/api\/listings\/([a-zA-Z0-9-]+)$/);
     if(listingPath)return service.saveListing(listingPath[1],input);
     if(path==='/api/quote')return service.bookingQuote(input);
+    if(path==='/api/service-slots')return service.serviceSlots(input);
     if(path==='/api/assistant-settings')return service.saveAssistantSettings(activeRole,input);
     if(path==='/api/account')return service.saveAccountSettings(input);
     if(path==='/api/properties')return service.createProperty(input);
