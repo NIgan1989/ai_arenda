@@ -15,6 +15,8 @@ export function OverdueHelp({job,role,busy,onAction}:{job:Row;role:'owner'|'clea
  useEffect(()=>{const timer=setInterval(()=>setT(Math.floor(Date.now()/1000)),15000);return()=>clearInterval(timer);},[]);
  const note=overdueNote(job,role,t);if(!note)return null;
  const owner=role==='owner',started=job.status==='in_progress',unclaimed=isUnclaimed(job,t);
+ // The cleaning after a stay that has not ended: cancelling it leaves nobody to clean after this guest.
+ const afterStay=!!job.booking_id&&job.checkout_confirmed===false;
  const act=(body:Row)=>{setAsk(null);onAction({...body,expectedVersion:job.version});};
  const btn=(label:string,onPress:()=>void,kind:'main'|'side'|'danger'='side')=><Pressable key={label} accessibilityRole="button" accessibilityLabel={label} disabled={busy} onPress={onPress} style={({pressed})=>[o.btn,kind==='main'&&o.main,kind==='danger'&&o.ghost,(pressed||busy)&&o.dim]}><Text style={[o.btnText,kind==='main'&&o.mainText,kind==='danger'&&o.dangerText]}>{label}</Text></Pressable>;
  return <View style={o.box} accessibilityLabel={note.title}>
@@ -24,13 +26,13 @@ export function OverdueHelp({job,role,busy,onAction}:{job:Row;role:'owner'|'clea
   {ask?<View style={o.confirm}><Text style={[o.text,{color:C.ink}]}>{ask.text}</Text>{btn(ask.label,()=>act(ask.body),'main')}{btn(tr('Назад'),()=>setAsk(null))}</View>:unclaimed?<>
    {btn(tr('Искать на новое время'),()=>act({action:'repost'}),'main')}
    {btn(tr('Убрали сами, закрыть'),()=>setAsk({label:tr('Да, убрали сами'),text:tr('Закрыть уборку без исполнителя? Жильё будет отмечено готовым, платить никому не нужно.'),body:{action:'close',confirmed:true}}))}
-   {btn(tr('Отменить уборку'),()=>setAsk({label:tr('Отменить уборку'),text:tr('Отменить уборку совсем? Готовность жилья нужно будет отметить отдельно.'),body:{action:'cancel',reason:'Уборка просрочена'}}),'danger')}
+   {btn(tr('Отменить уборку'),()=>setAsk({label:tr('Отменить уборку'),text:afterStay?tr('После выезда гостя убирать будет некому. Уберите сами или своим персоналом и нажмите «Жильё готово», иначе следующего гостя не заселить.'):tr('Отменить уборку совсем? Готовность жилья нужно будет отметить отдельно.'),body:{action:'cancel',reason:'Уборка просрочена'}}),'danger')}
   </>:<>
    <Text style={o.label}>{owner?tr('ПРОДЛИТЬ СРОК'):tr('НУЖНО ЕЩЁ ВРЕМЯ')}</Text>
    <View style={o.chips}>{extendChoices.map(m=><View key={m} style={{flex:1}}>{btn('+'+extendLabel(m),()=>act({action:'extend',minutes:m}))}</View>)}</View>
    {owner&&started&&btn(tr('Уборка сделана, закрыть'),()=>setAsk({label:tr('Да, уборка выполнена'),text:tr('Закрыть уборку без отчёта исполнителя? Жильё будет отмечено готовым, оплата исполнителю пройдёт как за принятую работу.'),body:{action:'close',confirmed:true}}),'main')}
    {btn(owner?tr('Найти другого исполнителя'):tr('Не смогу закончить'),()=>setAsk(owner?{label:tr('Найти другого'),text:tr('Снять текущего исполнителя и вернуть уборку в поиск? Он получит уведомление, резерв оплаты вернётся.'),body:{action:'release'}}:{label:tr('Да, отказаться'),text:tr('Отказаться от задания? Уборка вернётся в поиск, владелец получит уведомление.'),body:{action:'release'}}))}
-   {owner&&btn(tr('Отменить уборку'),()=>setAsk({label:tr('Отменить уборку'),text:tr('Отменить уборку совсем? Готовность жилья нужно будет отметить отдельно.'),body:{action:'cancel',reason:'Уборка просрочена'}}),'danger')}
+   {owner&&btn(tr('Отменить уборку'),()=>setAsk({label:tr('Отменить уборку'),text:afterStay?tr('После выезда гостя убирать будет некому. Уберите сами или своим персоналом и нажмите «Жильё готово», иначе следующего гостя не заселить.'):tr('Отменить уборку совсем? Готовность жилья нужно будет отметить отдельно.'),body:{action:'cancel',reason:'Уборка просрочена'}}),'danger')}
   </>}
  </View>;
 }

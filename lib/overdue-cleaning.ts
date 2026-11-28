@@ -10,22 +10,27 @@ type Row=Record<string,any>;
 const notice=(db:D1Database,user:string,body:string,dedupe:string,at:number)=>q(db,'INSERT OR IGNORE INTO notifications(id,user_id,body,dedupe,read,created_at) VALUES (?,?,?,?,0,?)',uuid(),user,body,dedupe,at);
 const admins=(config:{PLATFORM_ADMIN_IDS?:string})=>typeof config.PLATFORM_ADMIN_IDS==='string'?config.PLATFORM_ADMIN_IDS.split(',').map(v=>v.trim()).filter(Boolean):[];
 
-// The cleaning goes back to the search for a new cleaner: a fresh window of the same length from now, cut at the
-// next confirmed arrival so the job never advertises time inside a stay; null when there is no room left before it
-// or a later guest is already inside.
+// The cleaning goes back to the search for a new cleaner: a fresh window of the same length, cut at the next confirmed
+// arrival so the job never advertises time inside a stay; null when there is no room left before it or a later guest is
+// already inside. The window never opens before the job's own planned time or, for a cleaning after a stay, before that
+// guest's checkout (28.11, Торайгырова 64: a release at 11:10 moved the cleaning after the stay to the morning before the
+// guest even arrived, the cleaner then waited for a checkout that could not come and the job went overdue).
 export async function releaseWindow(db:D1Database,job:Row,at:number){
  // Another guest already lives there: a cleaning now would run into the stay.
  if(await q(db,"SELECT 1 FROM bookings WHERE property_id=? AND status='confirmed' AND start<=? AND id<>COALESCE(?,'')",job.property_id,at,job.booking_id).first())return null;
  const length=Math.max(3600,Number(job.end)-Number(job.start));
- const next=await q(db,"SELECT MIN(start) start FROM bookings WHERE property_id=? AND status='confirmed' AND start>=? AND id<>COALESCE(?,'')",job.property_id,at,job.booking_id).first<Row>();
+ // The stay this cleaning follows has not ended yet: its planned checkout is the earliest start.
+ const own=job.booking_id?await q(db,"SELECT b.end FROM bookings b LEFT JOIN booking_terms t ON t.booking_id=b.id WHERE b.id=? AND b.status IN ('requested','confirmed') AND t.actual_checkout IS NULL",job.booking_id).first<Row>():null;
+ const from=Math.max(at,Number(job.start)||0,Number(own?.end)||0);
+ const next=await q(db,"SELECT MIN(start) start FROM bookings WHERE property_id=? AND status='confirmed' AND start>=? AND id<>COALESCE(?,'')",job.property_id,from,job.booking_id).first<Row>();
  // A stay from an outside calendar (Airbnb, Booking…) ends the window the same way as ours.
- const outside=await q(db,'SELECT MIN(x.start) start FROM external_blocks x JOIN calendar_sources c ON c.id=x.source_id WHERE x.property_id=? AND c.enabled=1 AND x.end>?',job.property_id,at).first<Row>();
- if(outside?.start&&Number(outside.start)<=at)return null;
+ const outside=await q(db,'SELECT MIN(x.start) start FROM external_blocks x JOIN calendar_sources c ON c.id=x.source_id WHERE x.property_id=? AND c.enabled=1 AND x.end>?',job.property_id,from).first<Row>();
+ if(outside?.start&&Number(outside.start)<=from)return null;
  const limits=[next?.start,outside?.start].filter(v=>v!=null&&v!==undefined).map(Number);
  // At night nobody comes: the new window opens in the morning when the next guest leaves room for it (lib/night-hours.ts).
- if(isQuiet(at)){const morning=morningAfter(at),late=limits.length?Math.min(morning+length,...limits):morning+length;if(late-morning>=Math.min(length,3600))return {start:morning,end:late};}
- const end=limits.length?Math.min(at+length,...limits):at+length;
- return end-at>=1800?{start:at,end}:null;
+ if(isQuiet(from)){const morning=morningAfter(from),late=limits.length?Math.min(morning+length,...limits):morning+length;if(late-morning>=Math.min(length,3600))return {start:morning,end:late};}
+ const end=limits.length?Math.min(from+length,...limits):from+length;
+ return end-from>=1800?{start:from,end}:null;
 }
 // The reserve returns (trigger), the previous cleaner's response is closed so the job leaves their list.
 export function releaseStatements(db:D1Database,job:Row,window:{start:number;end:number},at:number){

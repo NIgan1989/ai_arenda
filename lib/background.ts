@@ -4,6 +4,7 @@ import {sweepReviews} from './admin-autocheck';
 import {sweepIssues} from './admin-issues';
 import {sweepOverdueJobs} from './overdue-cleaning';
 import {sweepArrivals} from './arrival-autopilot';
+import {sweepUnreadyArrivals} from './unready-arrival';
 import {sweepStays} from './stay-watch';
 import {sweepPrep,sweepReadyBefore} from './bath-prep';
 import {sweepPlans} from './autopilot-plans';
@@ -112,7 +113,7 @@ export async function runOperationalTick(db:D1Database,base:OperationConfig={}){
   if(job.kind==='room-units')return {leads:await syncAllRoomUnits(db)};
   if(job.kind==='photo-prints')return sweepPrints(db,config.BUCKET,String((config as {PLATFORM_ADMIN_IDS?:string}).PLATFORM_ADMIN_IDS||'').split(',').map(v=>v.trim()).filter(Boolean));
   if(job.kind==='autopilot-plans')return sweepPlans(db,undefined,config as OperationConfig&{PLATFORM_ADMIN_IDS?:string});
-  if(job.kind==='admin-issues')return {issues:await sweepIssues(db,config as OperationConfig&{PLATFORM_ADMIN_IDS?:string}),overdue:await sweepOverdueJobs(db,config as OperationConfig&{PLATFORM_ADMIN_IDS?:string}),arrivals:await sweepArrivals(db),stays:await sweepStays(db,config as OperationConfig&{PLATFORM_ADMIN_IDS?:string}),prep:await sweepPrep(db),readyBefore:await sweepReadyBefore(db),silence:await sweepSilence(db,config as OperationConfig&{PLATFORM_ADMIN_IDS?:string}),refundHolds:await sweepRefundHolds(db,config as OperationConfig&{PLATFORM_ADMIN_IDS?:string}),reports:await sweepReports(db),digest:await sendDigest(db,config as OperationConfig&{PLATFORM_ADMIN_IDS?:string}),rooms:await askFreeRooms(db)};
+  if(job.kind==='admin-issues')return {issues:await sweepIssues(db,config as OperationConfig&{PLATFORM_ADMIN_IDS?:string}),overdue:await sweepOverdueJobs(db,config as OperationConfig&{PLATFORM_ADMIN_IDS?:string}),arrivals:await sweepArrivals(db),stays:await sweepStays(db,config as OperationConfig&{PLATFORM_ADMIN_IDS?:string}),prep:await sweepPrep(db),readyBefore:await sweepReadyBefore(db),unready:await sweepUnreadyArrivals(db),silence:await sweepSilence(db,config as OperationConfig&{PLATFORM_ADMIN_IDS?:string}),refundHolds:await sweepRefundHolds(db,config as OperationConfig&{PLATFORM_ADMIN_IDS?:string}),reports:await sweepReports(db),digest:await sendDigest(db,config as OperationConfig&{PLATFORM_ADMIN_IDS?:string}),rooms:await askFreeRooms(db)};
   if(job.kind==='admin-autocheck')return sweepReviews(db,config as OperationConfig&{PLATFORM_ADMIN_IDS?:string});
   if(job.kind==='matching-dispatch')return advanceMatchingRequests(db,config);
   if(job.kind==='owner')return checkAdministratorOwner(db,job.scope);

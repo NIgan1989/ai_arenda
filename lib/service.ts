@@ -1091,6 +1091,9 @@ export class RentalService {
         // Own staff cleans here: nobody reports the cleaning in the service, so the flat is ready only when the owner says so
         // (one tap, «Жильё готово»), never by itself right after the guest leaves.
         this.query(`INSERT OR IGNORE INTO notifications SELECT ?,owner_id,?,'owner:own-staff-clean:'||?,0,? FROM properties WHERE id=? AND own_staff=1 AND ${checkedOut}`,id(),venueOr(b,'Гость выехал из «'+b.title+'». Когда ваш персонал уберёт, нажмите «Жильё готово», и следующего гостя можно будет заселить.',wordsOf(b).guestOut+' из «'+b.title+'». Когда ваш персонал уберёт, нажмите «'+wordsOf(b).ready+'», и можно будет принимать следующих гостей.'),bookingId,t,b.property_id,bookingId),
+        // Nobody cleans after this guest (the owner cancelled the cleaning, or none was ordered) and no own staff: the
+        // owner hears it at once, since the next guest is let in only when the home is marked ready (28.11, Торайгырова 64).
+        this.query(`INSERT OR IGNORE INTO notifications SELECT ?,owner_id,?,'owner:no-cleaning-after:'||?,0,? FROM properties WHERE id=? AND own_staff=0 AND NOT EXISTS(SELECT 1 FROM cleaning_jobs WHERE property_id=? AND status IN ('open','assigned','in_progress','submitted')) AND ${checkedOut}`,id(),venueOr(b,'Гость выехал из «'+b.title+'», а уборки после него нет. Уберите сами и нажмите «Жильё готово» или создайте уборку: пока жильё не готово, следующего гостя не заселить.',wordsOf(b).guestOut+' из «'+b.title+'», а уборки после этого нет. Уберите сами и нажмите «'+wordsOf(b).ready+'» или создайте уборку.'),bookingId,t,b.property_id,b.property_id,bookingId),
         // The guest left after the cleaning's planned start: the assigned cleaner keeps the job and it simply moves to now,
         // with the same length. Only when the new time clashes with the cleaner's other work or the next stay is the
         // assignment released below, as before.
@@ -1557,7 +1560,9 @@ export class RentalService {
       if(!r.meta.changes)throw new DomainError(home&&['open','assigned'].includes(j.status)?'Заказ изменился. Обновите карточку.':'Начатую работу нельзя отменить этим действием.',409);
       const said=home?'Заказчик отменил уборку «'+(j.title||'дом')+'». '+(terms.fee?'Отмена позже бесплатного срока: вам положено '+tenge(terms.fee)+' за отложенное время.':'Отмена в бесплатный срок.'):'Владелец отменил уборку «'+(j.title||'жильё')+'». Причина: '+reason;
       await this.db.batch([this.audit(jobId,'job.cancelled:'+reason),...(j.assigned_to?[this.notify(j.assigned_to,said,'cancelled:'+jobId,'cleaner')]:[])]);
-      return {message:home?(terms.fee?'Заказ отменён. Исполнителю положено '+tenge(terms.fee)+': переведите и отметьте оплату в карточке.':'Заказ отменён бесплатно.'):'Задание отменено. Готовность жилья нужно проверить отдельно.',cancelFee:terms.fee};
+      // The cleaning after a stay that has not ended: nobody will clean after this guest, the owner hears it plainly.
+      const afterStay=!home&&!!j.booking_id&&!!(await this.one("SELECT 1 FROM bookings b LEFT JOIN booking_terms t ON t.booking_id=b.id WHERE b.id=? AND b.status='confirmed' AND t.actual_checkout IS NULL",j.booking_id));
+      return {message:home?(terms.fee?'Заказ отменён. Исполнителю положено '+tenge(terms.fee)+': переведите и отметьте оплату в карточке.':'Заказ отменён бесплатно.'):afterStay?'Уборка отменена: после выезда гостя убирать будет некому. Уберите сами или своим персоналом и нажмите «Жильё готово», иначе следующего гостя не заселить.':'Задание отменено. Готовность жилья нужно проверить отдельно.',cancelFee:terms.fee};
     }
     // After the work is accepted the customer rates the performer once: the average is shown to the next customers.
     if(body.action==='rate'&&j.owner_id===this.userId){
