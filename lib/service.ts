@@ -722,7 +722,11 @@ export class RentalService {
       ...await this.all("SELECT start,end e FROM cleaning_jobs WHERE property_id=? AND status IN ('open','assigned','in_progress','submitted') AND start<? AND end>?",id,day+2*86400,day),
       ...await this.all('SELECT x.start,x.end e FROM external_blocks x JOIN calendar_sources s ON s.id=x.source_id WHERE x.property_id=? AND s.enabled=1 AND x.start<? AND x.end>?',id,day+2*86400,day)].map((r:Row)=>[Number(r.start),Number(r.e)] as [number,number]);
     const free=new Set<number>();
-    for(const id of ids){for(const start of freeStarts({day,minutes:service.minutes,cleanMinutes:Number(p.cleaning_minutes)||0,busy:await busyOf(id),earliest,fits:(a,b)=>!hours||fitsHours(hours,a,b)}))free.add(start);}
+    // A box under repair or closed takes no cars; one not marked ready takes none in the next minute (as bookingQuote, Codex PR #292).
+    const states=new Map((await this.all('SELECT property_id,readiness FROM property_operations WHERE property_id IN (SELECT value FROM json_each(?))',JSON.stringify(ids))).map((r:Row)=>[String(r.property_id),String(r.readiness)]));
+    for(const id of ids){const state=states.get(id);if(state==='maintenance'||state==='blocked')continue;
+      const from=state&&state!=='ready'?Math.max(earliest,t+61):earliest;
+      for(const start of freeStarts({day,minutes:service.minutes,cleanMinutes:Number(p.cleaning_minutes)||0,busy:await busyOf(id),earliest:from,fits:(a,b)=>!hours||fitsHours(hours,a,b)}))free.add(start);}
     return {service:service.name,minutes:service.minutes,day,starts:[...free].sort((a,b)=>a-b)};
   }
   async bookingQuote(body:Row,options:{ownerReady?:boolean}={}) {

@@ -135,7 +135,9 @@ export function StayRequest({property,initial,busy,done,result,onQuote,onSlots,o
   return()=>{live=false;};
  },[service?.name,day,done]);
  if(done)return <Closed text={result||tr('Заявка отправлена')} note={tr('Заявка и её статус доступны в «Мои брони».')}/>;
- const ready=!!quote&&!checking&&!busy,risky=!property.verified&&!property.demo_owner;
+ // A car place books only a start the day's free times offer: a day with none, or still loading, cannot be sent (Codex, PR #292).
+ const slotOk=!service||!onSlots||(!!slots&&slots.includes(span.start));
+ const ready=!!quote&&!checking&&!busy&&slotOk,risky=!property.verified&&!property.demo_owner;
  // The price in one line, as Airbnb: «10 000 ₸ + депозит 5 000 ₸ ›»; what it is made of opens by a tap.
  const priceLine=quote?money(quote.amount)+(quote.policy?.deposit?' + '+tr('депозит {v}',{v:money(quote.policy.deposit)}):''):'';
  const perk=quote?.window?windowBadge(quote.window):quote?.repeat?tr('Скидка постоянного гостя −{n}%',{n:quote.repeat.percent}):'';
