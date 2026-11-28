@@ -31,3 +31,26 @@ test('a court, a billiard table and a quest get their usual company and an hour 
  const wash=draftListingBody({...readListingText('Автомойка на Ломова 5, свои мойщики',emptyDraft('Павлодар')).draft,ownStaff:true,address:'Ломова 5',district:'Центр'},[],false);
  assert.equal(wash.cleaningMinutes,0);
 });
+
+test('the editor keeps a zero break of a car bay',async()=>{
+ const {editBody}=await load('listing-edit');
+ assert.equal(editBody({cleaning_minutes:0,details:{type:'carwash'},policy:{}}).cleaningMinutes,0);
+ assert.equal(editBody({details:{type:'apartment'},policy:{}}).cleaningMinutes,90);
+});
+
+test('a finished visit to a loft with its own staff keeps its break, a finished stay in a home does not',async()=>{
+ const {fixture,now,iso}=await import('./helpers/platform.mjs');
+ const f=await fixture();try{
+  const body=type=>({title:'Место для проверки',city:'Павлодар',district:'Центр',address:'PRIVATE PLACE ADDRESS',description:'Просторное место на час для компании, есть всё нужное, приходите вовремя и уходите вовремя, спасибо.',price:60000,rooms:1,capacity:6,cleaningMinutes:30,ownStaff:type==='loft',photos:[],published:false,expectedVersion:0,policyVersion:0,
+   details:{type,area:80,beds:type==='apartment'?4:6,bathrooms:1,floor:1,floors:1,checkinMethod:'meet',amenities:[],pets:false,smoking:false,parties:false},
+   rental:{hourlyPrice:5000,minHours:1,nightlyPrice:0,checkinTime:'00:00',checkoutTime:'00:00',deposit:0,houseRules:'Приходите вовремя.',includedGuests:0,extraGuestPrice:0}});
+  const loft=(await f.owner.saveListing(null,body('loft'))).id;
+  f.db.raw.prepare('UPDATE properties SET published=1').run();f.db.raw.prepare("UPDATE property_operations SET readiness='ready'").run();
+  const day=Math.floor((now()+5*3600)/86400)*86400+86400-5*3600,start=day+12*3600;
+  // Finished at 12:00 tomorrow (a test clock trick: the break runs to 12:30, and now() is before it).
+  f.db.raw.prepare("INSERT INTO bookings(id,property_id,guest_id,start,end,occupied_until,guests,amount,status,expires_at,payment_status,request_key,created_at) VALUES ('done1',?,'other',?,?,?,1,5000,'completed',0,'owner_verified','k-done1',?)").run(loft,start-3600,start,start+1800,now());
+  await assert.rejects(f.guest.bookingQuote({propertyId:loft,start:iso(start),end:iso(start+3600),guests:1,billingMode:'hourly'}),/занят|недоступ|время/i);
+  f.db.raw.prepare('UPDATE properties SET own_staff=0 WHERE id=?').run(loft);
+  assert.equal((await f.guest.bookingQuote({propertyId:loft,start:iso(start),end:iso(start+3600),guests:1,billingMode:'hourly'})).amount,5000);
+ }finally{f.db.close();}
+});

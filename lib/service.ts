@@ -119,6 +119,10 @@ export function kindMode(kind:string,mode:unknown,start:number,end:number,stored
 // the guest's card shows it, and the new one only once it is offered to accept.
 const agreedOf=(b:Row)=>{try{return b.agreed_row?JSON.parse(b.agreed_row):null;}catch{return null;}};
 function agreedFor(b:Row):Row{const a=agreedOf(b);if(!a)return {agreed_row:undefined};return {agreed_row:undefined,city:a.city,district:a.district,address_change:{state:a.state,next:a.state==='offered'&&b.status==='confirmed'?[b.city,b.address].filter(Boolean).join(', '):null}};}
+// A finished visit to a loft, a field or a car bay with its own staff keeps the break after it (occupied_until is set at the checkout):
+// the place reopens by itself, but not before its staff has had the break. Homes and baths reopen as before.
+const QUICK_TYPES=['leisure','sport','auto'].flatMap(c=>(categories as Record<string,{types:string[]}>)[c].types).map(t=>"'"+t+"'").join(',');
+const quickDone=(b:string)=>`(${b}status='completed' AND ${b}occupied_until>? AND EXISTS(SELECT 1 FROM properties q JOIN property_details qd ON qd.property_id=q.id WHERE q.id=${b}property_id AND q.own_staff=1 AND json_extract(qd.details,'$.type') IN (${QUICK_TYPES})))`;
 export class RentalService {
   constructor(public db: D1Database, public userId: string, private execution?:{propertyId:string;policyVersion:number}) {}
   query(sql: string, ...args: any[]) { return this.db.prepare(sql).bind(...args); }
@@ -594,7 +598,7 @@ export class RentalService {
       const steps=options.arrival?arrivalSteps(start,options.arrival.around,now()):[];
       const strip=options.arrival?await busyAround(this.db,steps[0],steps[steps.length-1]+end-start,now()):null;
       const [booked,cleaning,external,stale]=strip?[strip.filter(b=>{const p=items.find(p=>p.id===b.property_id);return !!p&&b.start<end+(Number(p.cleaning_minutes)||0)*60&&b.until>start;}),[],[],await this.all("SELECT DISTINCT property_id FROM calendar_sources WHERE enabled=1 AND url<>'' AND (last_success IS NULL OR last_success<? OR last_error<>'')",now()-3600)]:await Promise.all([
-        this.all("SELECT DISTINCT b.property_id FROM bookings b JOIN properties p ON p.id=b.property_id WHERE (b.status='confirmed' OR (b.status='requested' AND b.expires_at>?)) AND b.start<?+p.cleaning_minutes*60 AND b.occupied_until>?",now(),end,start),
+        this.all("SELECT DISTINCT b.property_id FROM bookings b JOIN properties p ON p.id=b.property_id WHERE (b.status='confirmed' OR (b.status='requested' AND b.expires_at>?) OR "+quickDone('b.')+") AND b.start<?+p.cleaning_minutes*60 AND b.occupied_until>?",now(),now(),end,start),
         this.all("SELECT DISTINCT j.property_id FROM cleaning_jobs j JOIN properties p ON p.id=j.property_id WHERE j.status IN ('open','assigned','in_progress','submitted') AND MIN(j.start,COALESCE((SELECT end FROM bookings WHERE id=j.booking_id),j.start))<?+p.cleaning_minutes*60 AND j.end>?",end,start),
         this.all('SELECT DISTINCT x.property_id FROM external_blocks x JOIN calendar_sources s ON s.id=x.source_id JOIN properties p ON p.id=x.property_id WHERE s.enabled=1 AND x.start<?+p.cleaning_minutes*60 AND x.end>?',end,start),
         this.all("SELECT DISTINCT property_id FROM calendar_sources WHERE enabled=1 AND url<>'' AND (last_success IS NULL OR last_success<? OR last_error<>'')",now()-3600),
@@ -720,7 +724,7 @@ export class RentalService {
     const day=Math.floor((Number(body.day)+18000)/86400)*86400-18000;if(!Number.isFinite(day))throw new DomainError('Выберите день.');
     const policy={...defaultPolicy,...await this.one('SELECT * FROM property_policies WHERE property_id=?',p.id)},hours=venueHours(kind,policy.venue_hours);
     const rooms=await roomsOf(this.db,await leadOf(this.db,p.id)),ids=rooms.length?rooms:[p.id],t=now(),earliest=Math.max(t,t+prepSeconds(policy));
-    const busyOf=async(id:string):Promise<[number,number][]>=>[...await this.all("SELECT start,occupied_until e FROM bookings WHERE property_id=? AND (status='confirmed' OR (status='requested' AND expires_at>?)) AND start<? AND occupied_until>?",id,t,day+2*86400,day),
+    const busyOf=async(id:string):Promise<[number,number][]>=>[...await this.all("SELECT start,occupied_until e FROM bookings WHERE property_id=? AND (status='confirmed' OR (status='requested' AND expires_at>?) OR "+quickDone('bookings.')+") AND start<? AND occupied_until>?",id,t,t,day+2*86400,day),
       ...await this.all("SELECT start,end e FROM cleaning_jobs WHERE property_id=? AND status IN ('open','assigned','in_progress','submitted') AND start<? AND end>?",id,day+2*86400,day),
       ...await this.all('SELECT x.start,x.end e FROM external_blocks x JOIN calendar_sources s ON s.id=x.source_id WHERE x.property_id=? AND s.enabled=1 AND x.start<? AND x.end>?',id,day+2*86400,day)].map((r:Row)=>[Number(r.start),Number(r.e)] as [number,number]);
     const free=new Set<number>();
@@ -756,7 +760,7 @@ export class RentalService {
     const regular=Number(policy.repeat_discount)>0&&!!this.userId&&this.userId!==p.owner_id&&!!await this.one("SELECT b.id FROM bookings b JOIN properties x ON x.id=b.property_id WHERE b.guest_id=? AND x.owner_id=? AND b.status='completed' LIMIT 1",this.userId,p.owner_id);
     const pricing=regular?withRepeatDiscount(guestPricing,policy.repeat_discount):guestPricing;
     await assertCalendarAvailable(this.db,p.id,start,occupiedUntil);
-    const occupied=await this.one("SELECT id FROM bookings WHERE property_id=? AND (status='confirmed' OR (status='requested' AND expires_at>?)) AND start<? AND occupied_until>?",p.id,now(),occupiedUntil,start);
+    const occupied=await this.one("SELECT id FROM bookings WHERE property_id=? AND (status='confirmed' OR (status='requested' AND expires_at>?) OR "+quickDone('bookings.')+") AND start<? AND occupied_until>?",p.id,now(),now(),occupiedUntil,start);
     // A cleaning moved to the morning after a night checkout holds the place from the checkout on (lib/night-hours.ts).
     const cleaning=await this.one("SELECT id FROM cleaning_jobs WHERE property_id=? AND status IN ('open','assigned','in_progress','submitted') AND MIN(start,COALESCE((SELECT end FROM bookings WHERE id=cleaning_jobs.booking_id),start))<? AND end>?",p.id,occupiedUntil,start);
     if(occupied||cleaning) throw new DomainError('Этот интервал уже занят, включая время уборки. Выберите другое время.',409);
@@ -1084,7 +1088,7 @@ export class RentalService {
       const result=await this.db.batch([
         // Under execution the mandate and the guest's report are checked again inside the batch,
         // so a revoked autopilot or a disputed report stops the automatic checkout.
-        this.query("UPDATE bookings SET status='completed' WHERE id=? AND status='confirmed' AND EXISTS(SELECT 1 FROM booking_terms WHERE booking_id=? AND actual_checkout IS NULL AND version=? AND (?=0 OR checkout_reported_at IS NOT NULL)) AND (?=0 OR EXISTS(SELECT 1 FROM property_policies WHERE property_id=? AND version=? AND auto_confirm=1 AND auto_assign=1 AND (mandate_until=0 OR mandate_until>?)))",bookingId,bookingId,body.expectedVersion??terms?.version,this.execution?1:0,this.execution?1:0,b.property_id,this.execution?.policyVersion??0,t),
+        this.query("UPDATE bookings SET status='completed',occupied_until=CASE WHEN ?=1 THEN MAX(end,?)+(SELECT cleaning_minutes*60 FROM properties WHERE id=bookings.property_id) ELSE occupied_until END WHERE id=? AND status='confirmed' AND EXISTS(SELECT 1 FROM booking_terms WHERE booking_id=? AND actual_checkout IS NULL AND version=? AND (?=0 OR checkout_reported_at IS NOT NULL)) AND (?=0 OR EXISTS(SELECT 1 FROM property_policies WHERE property_id=? AND version=? AND auto_confirm=1 AND auto_assign=1 AND (mandate_until=0 OR mandate_until>?)))",quickTurn&&ownStaffHere?1:0,t,bookingId,bookingId,body.expectedVersion??terms?.version,this.execution?1:0,this.execution?1:0,b.property_id,this.execution?.policyVersion??0,t),
         // A loft, a field or a car bay with its own staff is tidied inside the break between bookings: it is ready for the
         // next visitor at once, the owner does not tap «Место готово» after every car (simulation of 2026-11-28).
         this.query("UPDATE property_operations SET readiness=CASE WHEN readiness IN ('maintenance','blocked') THEN readiness WHEN ?=1 AND EXISTS(SELECT 1 FROM properties WHERE id=property_operations.property_id AND own_staff=1) THEN 'ready' ELSE 'awaiting_cleaning' END,active_booking_id=NULL,version=version+1,updated_at=? WHERE property_id=? AND (active_booking_id IS NULL OR active_booking_id=?) AND EXISTS(SELECT 1 FROM booking_terms t JOIN bookings b ON b.id=t.booking_id WHERE b.id=? AND b.status='completed' AND t.actual_checkout IS NULL)",quickTurn?1:0,t,b.property_id,bookingId,bookingId),
