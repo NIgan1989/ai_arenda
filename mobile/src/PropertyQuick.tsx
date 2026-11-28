@@ -18,7 +18,7 @@ import {T} from './tokens';
 import {Photo} from './ListingMedia';
 import {PhotoGrid} from './PhotoGrid';
 import {KindIcon} from './KindIcon';
-import {defaultOwnStaff,isBanquet,isHourlyVenue,isVenue,propertyTypes} from '../../lib/listings';
+import {defaultOwnStaff,isBanquet,isHourlyVenue,isVenue,propertyTypes,roomKinds} from '../../lib/listings';
 import {KindPicker} from './KindPicker';
 import {TitleField} from './TitleField';
 import {StayClassPicker} from './StayClassPicker';
@@ -59,14 +59,19 @@ export function PropertyQuick({city,onSave,onUpdate,call,onGuestMode,onPlace,onR
   return()=>{live=false;};},[step,classKey]);
  // A field the owner sets himself is known: it loses its «Проверьте».
  const patch=(value:Partial<ListingDraft>)=>{setDraft(d=>({...d,...value,known:[...new Set([...d.known,...Object.keys(value)])]}));};
- const guessed=(key:string)=>!draft.known.includes(key);
+ // «Проверьте» marks what the AI guessed from a story; a kind picked from the list with no story has nothing guessed.
+ const guessed=(key:string)=>found.length>0&&!draft.known.includes(key);
  const ex=extras&&extras.type===draft.type?extras:startExtras(draft,extras);
  const putExtras=(v:Partial<FormExtras>)=>setExtras({...ex,...v});
  // Не объявление, а уборка своего жилья (lib/home-ask.ts): форма ведёт в заказ уборки с тем, что уже понято из текста.
  // «Нет, это объявление»: человек сам решает, если ИИ ошибся. Новый текст спрашивает заново.
  const [listing,setListing]=useState('');
  const homeAsk=useMemo(()=>onHome&&listing!==text?homeAskFromText(text):null,[text,onHome,listing]);
- const withKind=(d:ListingDraft,kind:string,staffFound:boolean)=>kind&&kind!==d.type||kind&&!d.known.includes('type')?{...d,type:kind,ownStaff:staffFound?d.ownStaff:defaultOwnStaff(kind),known:[...new Set([...d.known,'type'])]}:d;
+ // A hotel or a base meets its guests at the reception unless the story says otherwise.
+ const withKind=(d:ListingDraft,kind:string,staffFound:boolean)=>{const next=kind&&kind!==d.type||kind&&!d.known.includes('type')?{...d,type:kind,ownStaff:staffFound?d.ownStaff:defaultOwnStaff(kind),known:[...new Set([...d.known,'type'])]}:d;
+  // A hall takes thirty guests at least unless the story says otherwise.
+  const hall=isBanquet(next.type)&&!(next.leastGuests||0)?{...next,leastGuests:Math.min(30,next.capacity)}:next;
+  return roomKinds.includes(hall.type)&&!hall.known.includes('checkinMethod')?{...hall,checkinMethod:'reception'}:hall;};
  // «Далее» on step 1: the rules read at once; the model, when the server has one and the owner allowed it, fills what
  // they missed. A kind nobody could read opens the list: the form of step 2 depends on it.
  async function next(){if(reading)return;if(homeAsk&&onHome){onHome(homeAsk);return;}
@@ -78,11 +83,11 @@ export function PropertyQuick({city,onSave,onUpdate,call,onGuestMode,onPlace,onR
    setReading(false);setFound(read_.found);setReadText(text);
    const d=withKind(read_.draft,picked,read_.found.includes('ownStaff'));setDraft(d);
    if(!d.known.includes('type')){setListOpen(true);setError(t('Не понял, что это за объект. Выберите тип из списка.'));return;}
-   setExtras(startExtras(d,null));setStep(1);setOpen('');onTop?.();return;
+   setExtras(startExtras(d,null,text));setStep(1);setOpen('');onTop?.();return;
   }
   const kind=picked||(draft.known.includes('type')?draft.type:'');
   if(!kind){setListOpen(true);setError(t('Выберите тип из списка или расскажите об объекте.'));return;}
-  const d=withKind(text.trim()?draft:emptyDraft(city),kind,found.includes('ownStaff'));setDraft(d);setExtras(e=>startExtras(d,e));setStep(1);setOpen('');onTop?.();
+  const d=withKind(text.trim()?draft:emptyDraft(city),kind,found.includes('ownStaff'));setDraft(d);setExtras(e=>startExtras(d,e,text));setStep(1);setOpen('');onTop?.();
  }
  const missing=missingFields(draft,ex);
  function toPlace(){const left=missing.filter(m=>m.step===1);if(left.length){setError(t('Заполните: {v}.',{v:left.map(m=>m.label).join(', ')}));return;}setError('');setStep(2);onTop?.();}

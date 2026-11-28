@@ -72,3 +72,12 @@ test('a banquet hall saves its menu and its further halls with their own capacit
  assert.equal(venue.title,plan.venueTitle);
  assert.deepEqual(venue.halls.map(h=>[h.title,h.capacity]).sort(),[[plan.cards[0].body.title,300],['Малый зал',60]].sort());
 });
+
+test('the story tells how many alike',async()=>{
+ const {unitsFromText}=await load('listing-forms');
+ assert.equal(unitsFromText('Автомойка, 4 бокса, с 9 до 21','carwash'),4);
+ assert.equal(unitsFromText('Гостиница, 12 номеров','hotel'),12);
+ assert.equal(unitsFromText('Мини-футбол, 2 поля','field'),2);
+ assert.equal(unitsFromText('Квартира, 2 комнаты','apartment'),0);
+ assert.equal(startExtras({...emptyDraft('Павлодар'),type:'carwash'},null,'4 бокса').units,4);
+});

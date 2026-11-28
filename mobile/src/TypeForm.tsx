@@ -84,7 +84,8 @@ export function TypeForm({draft:d,extras:x,patch,onExtras,guessed,feeLine}:Props
    {sec('services',t('Услуги'),<>
     {list.map((s,i)=><View key={i} style={f.item}>
      <View style={f.itemHead}><View style={f.grow}>{text(t('Услуга'),s.name,v=>put(i,{name:v}),60,t('Кузов, комплекс…'))}</View>{list.length>1&&remove(t('Убрать услугу «{v}»',{v:s.name}),()=>onExtras({services:list.filter((_,j)=>j!==i)}))}</View>
-     <View style={f.grid}><View style={f.half}><Stepper label={t('Длится')} value={s.minutes} text={minutesText(s.minutes)} min={15} max={720} step={15} onChange={v=>put(i,{minutes:v})}/></View>{money(t('Цена, ₸'),s.price,v=>put(i,{price:v}),1000000)}</View>
+     <Stepper label={t('Длится')} value={s.minutes} text={minutesText(s.minutes)} min={15} max={720} step={15} onChange={v=>put(i,{minutes:v})}/>
+     <View style={f.grid}>{money(t('Цена, ₸'),s.price,v=>put(i,{price:v}),1000000)}</View>
     </View>)}
     {list.length<MAX_SERVICES&&link(t('+ Добавить услугу'),()=>onExtras({services:[...list,{name:'',minutes:30,price:0}]}))}
     <Text style={f.hint}>{t('Цены для кроссоверов и джипов можно задать потом в редакторе.')}</Text>

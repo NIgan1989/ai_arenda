@@ -26,15 +26,24 @@ export const MAX_ROOM_TYPES=10,MAX_HALLS=12,MAX_UNITS=200;
 
 /** The start of a kind's form, from what the story told: one room type, one hall, the usual services and hours.
  * The same kind keeps what the owner already filled; another kind starts its own form. */
-export function startExtras(d:ListingDraft,prev?:FormExtras|null):FormExtras{
+export function startExtras(d:ListingDraft,prev?:FormExtras|null,text=''):FormExtras{
  if(prev&&prev.type===d.type)return prev;
+ const told=unitsFromText(text,d.type);
  const h=venueHours(d.type,undefined);
  return {type:d.type,
-  roomTypes:[{name:d.type==='hostel'?tr('Место в общем номере'):tr('Стандарт'),count:1,capacity:d.type==='hostel'?1:Math.max(1,d.capacity),price:d.price}],
+  roomTypes:[{name:d.type==='hostel'?tr('Место в общем номере'):tr('Стандарт'),count:Math.max(1,told),capacity:d.type==='hostel'?1:Math.max(1,d.capacity),price:d.price}],
   halls:[{name:tr('Основной зал'),capacity:Math.max(1,d.capacity)}],
-  units:1,services:SERVICE_STARTERS[d.type]||[],bookedBays:1,selfService:false,
+  units:Math.max(1,told),services:SERVICE_STARTERS[d.type]||[],bookedBays:1,selfService:false,
   hours:h?{open:hhmm(h.open),close:hhmm(h.close),sessions:h.sessions.map(s=>({label:s.label,from:hhmm(s.from),to:hhmm(s.to)}))}:null,
   menu:''};
+}
+
+/** «4 бокса», «2 поля», «12 номеров» in the owner's story: how many alike the place has. */
+export function unitsFromText(text:string,type:string):number{
+ const word:Record<string,string>={field:'пол',court:'корт',billiard:'стол',gameclub:'(?:мест|компьютер|пк)',karaoke_room:'кабин',hotel:'номер',hostel:'(?:мест|кроват|коек|койк)',aparthotel:'(?:номер|апартамент)',resort:'(?:номер|домик|коттедж)'};
+ const w=word[type]||(isAuto(type)?'(?:бокс|пост)':'');if(!w)return 0;
+ const m=text.toLocaleLowerCase('ru').match(new RegExp('(\\d{1,3})\\s*'+w,'u'));
+ return m?Math.max(0,Math.min(MAX_UNITS,Number(m[1]))):0;
 }
 
 /** What still has to be filled, in the order of the form: step 1 is the kind's form, step 2 the address. */
