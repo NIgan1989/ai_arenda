@@ -124,6 +124,20 @@ test('a guest who said they left is checked out after half an hour of the owner\
  }finally{f.db.close();}
 });
 
+test('with «Выезд гостя» off only the owner confirms the checkout; the autopilot and the silence do not',async()=>{
+ const {saveRule}=await load('decision-rules');
+ const f=await fixture();try{
+  await saveRule(f.db,'owner','owner',{rule:'guest_left',on:false});
+  assert.match((await left(f,CHECKOUT_WAIT+5)).message,/^Спасибо, выезд отмечен\. Владелец подтвердит его\.$/);
+  assert.equal((await sweepSilence(f.db,config)).checkedOut,0);assert.equal(terms(f).actual_checkout,null);
+  await saveRule(f.db,'owner','owner',{rule:'guest_left',on:true,minutes:60});
+  assert.equal((await sweepSilence(f.db,config)).checkedOut,0,'an hour is not over yet');
+  f.db.raw.prepare('UPDATE booking_terms SET checkout_reported_at=? WHERE booking_id=?').run(now()-3605,f.booking);
+  assert.equal((await sweepSilence(f.db,config)).checkedOut,1);
+  assert.match(notes(f,'owner','owner:silence-checkout-done:%')[0],/1 ч ответа не было/);
+ }finally{f.db.close();}
+});
+
 test('a checkout the owner disputed is left alone',async()=>{
  const f=await fixture();try{
   await left(f,CHECKOUT_WAIT+5);await f.owner.bookingAction(f.booking,{action:'dispute_checkout',reason:'Гость ещё в жилье'});

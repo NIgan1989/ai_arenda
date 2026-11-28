@@ -14,13 +14,13 @@ const set=(f,user,role,rule,body)=>saveRule(f.db,user,role,{rule,...body});
 test('every question has a default that keeps what the service did before',()=>{
  assert.equal(minutesLabel(15),'15 мин');assert.equal(minutesLabel(60),'1 ч');assert.equal(minutesLabel(720),'12 ч');assert.equal(minutesLabel(90),'1 ч 30 мин');
  for(const r of DECISION_RULES){assert.ok(r.options.includes(r.minutes),r.key);assert.ok(!r.auto||r.off,r.key+' says what happens when it is off');}
- assert.deepEqual(DECISION_RULES.filter(r=>r.role==='owner').map(r=>r.key),['request','assign','accept','accept_fast','accept_day','unpaid','no_show','overdue_job','checkout']);
+ assert.deepEqual(DECISION_RULES.filter(r=>r.role==='owner').map(r=>r.key),['request','assign','accept','accept_fast','accept_day','unpaid','no_show','overdue_job','guest_left','checkout']);
 });
 
 test('the owner and the guest each see and change only their own questions',async()=>{
  const f=await fixture();try{
   const owner=await rulesState(f.db,'owner','owner'),guest=await rulesState(f.db,'guest','guest');
-  assert.equal(owner.rules.length,9);assert.deepEqual(guest.rules.map(r=>r.key),['pay_remind']);
+  assert.equal(owner.rules.length,10);assert.deepEqual(guest.rules.map(r=>r.key),['pay_remind']);
   assert.deepEqual((await rulesState(f.db,'cleaner','cleaner')).rules,[]);
   assert.deepEqual(owner.rules.find(r=>r.key==='assign').choices,[[15,'15 мин'],[30,'30 мин'],[60,'1 ч']]);
   const saved=await set(f,'owner','owner','assign',{on:false});

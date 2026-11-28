@@ -33,7 +33,9 @@ export function RecordFacts({rows}:{rows:(readonly [string,string,boolean?]|fals
 // Several open cards may offer their buttons; the sheet pins the last one's (active) and the others keep theirs inline.
 export const DealFootContext=createContext<{set:(key:string,node:React.ReactNode|null)=>void;active:string}|null>(null);
 // Under «Ещё» the same action stays an ordinary button with its confirmation card.
-export type RecordAction={title:string;onPress:()=>void;kind:'main'|'side'|'danger';disabled?:boolean;note?:string;swipe?:string;onSwipe?:()=>void;icon?:MenuIcon};
+// row: a side action shown in the card as a plain button under the status line, not under «Ещё» (the performer's
+// «Я на месте» / «Гость ещё здесь», the owner's «Подождать 30 минут» while the guest is still inside).
+export type RecordAction={title:string;onPress:()=>void;kind:'main'|'side'|'danger';disabled?:boolean;note?:string;swipe?:string;onSwipe?:()=>void;icon?:MenuIcon;row?:boolean};
 export function RecordActions({actions,busy,soft=false}:{actions:(RecordAction|false|null|undefined|''|0)[];busy:boolean;soft?:boolean}){
  const [focused,setFocused]=useState(''),all=actions.filter(Boolean) as RecordAction[],mains=all.filter(a=>a.kind==='main'),side=all.filter(a=>a.kind==='side'),danger=all.filter(a=>a.kind==='danger');
  if(!all.length)return null;
@@ -94,7 +96,7 @@ export function DealCard({kind,item,role,userId,application,thread,line:own,acti
  let pics:string[]=[];try{pics=Array.isArray(item.property_photos)?item.property_photos:JSON.parse(item.property_photos||'[]');}catch{pics=[];}
  const status=processStatus(kind,item,role,userId,application),[,ink]=tones[status.tone]||tones.neutral,flow=processJourney(kind,item);
  const total=thread?thread.steps.length:flow.labels.length,done=thread?thread.finished:flow.done,step=Math.min(thread?thread.current:flow.current,total-1),line=flow.stopped?flow.hint:thread?thread.line:own||flow.hint;
- const all=actions.filter(Boolean) as RecordAction[],main=all.find(a=>a.kind==='main'),rest:Maybe<RecordAction>[]=[...all.filter(a=>a!==main),!!onMap&&{title:t('Показать на карте'),kind:'side' as const,icon:'map' as const,onPress:onMap}];
+ const all=actions.filter(Boolean) as RecordAction[],main=all.find(a=>a.kind==='main'),rowed=all.filter(a=>a.row&&a!==main),rest:Maybe<RecordAction>[]=[...all.filter(a=>a!==main&&!rowed.includes(a)),!!onMap&&{title:t('Показать на карте'),kind:'side' as const,icon:'map' as const,onPress:onMap}];
  const hasMore=rest.some(Boolean)||!!extra;
  const dots=(on:boolean,show:boolean)=>show?<Pressable accessibilityRole="button" accessibilityLabel={on?t('Скрыть'):t('Ещё')} accessibilityState={{expanded:on}} hitSlop={8} onPress={()=>{smooth();setMore(v=>!v);}} style={({pressed})=>[r.dots,pressed&&r.dim]}><Text style={r.dotsText}>•••</Text></Pressable>:null;
  const flip=()=>{smooth();setOpen(v=>!v);};
@@ -189,6 +191,7 @@ export function DealCard({kind,item,role,userId,application,thread,line:own,acti
   {!!place&&shown&&details}
   {!(flow.stopped&&kind==='booking')&&!done&&<Text style={r.dealLine}>{line}</Text>}
   {kind==='booking'&&item.status==='requested'&&item.guest_id===userId&&<AnswerWait item={item}/>}
+  {rowed.length>0&&<View style={r.waitButtons}>{rowed.map(a=><Pressable key={a.title} accessibilityRole="button" accessibilityLabel={a.title} disabled={busy||!!a.disabled} onPress={()=>latest.current.all.find(v=>v.title===a.title)?.onPress()} style={({pressed})=>[r.waitButton,r.waitCancel,(pressed||busy)&&r.dim]}><Text style={[r.actionText,r.waitCancelText]}>{a.title}</Text></Pressable>)}</View>}
   {always}
   {!!main&&!pinned&&<RecordActions busy={busy} actions={[main]}/>}
   {!place&&shown&&kind==='job'&&<Text style={[r.sumNote,!!item.payment_received_at&&{color:C.success}]}>{money(item.fee)} {jobPayNote(item)}</Text>}
