@@ -41,11 +41,18 @@ export async function administratorSearch(s:RentalService,text:string,current:Re
  const kinds=said.length?said:isSearchRefinement(text)?before:[];
  const filters:Record<string,any>={...parsed.filters,...(kinds.length?{kinds}:{})};
  // A bath, a field or a car wash is taken by the hour.
- if(kinds.length&&kinds.every(k=>HOURLY_KINDS.includes(k)))filters.mode='hourly';
+ // «Баня» alone is the whole bath category, as on the map.
+ if(kinds.includes('banya')&&!kinds.includes('sauna')&&!/русск|дров/i.test(text))kinds.push('sauna');
+ // A bath, a field or a car wash is taken by the hour. «Завтра» alone gives a day from 14:00: that is not an hour, so the
+ // time is asked instead of pricing a whole day by the hour.
+ if(kinds.length&&kinds.every(k=>HOURLY_KINDS.includes(k))){
+  if(filters.mode!=='hourly'){delete filters.start;delete filters.end;}
+  filters.mode='hourly';
+ }
  const queryFilters={...filters};
  // datetime-local is explicitly interpreted as Kazakhstan time, on every host.
  for(const key of ['start','end'])if(queryFilters[key]&&/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(queryFilters[key]))queryFilters[key]+='+05:00';
- const found=await s.publicSearch({...queryFilters,limit:'6'},options);
+ const found=await s.publicSearch({...queryFilters,limit:'6'},{...options,exactKinds:true});
  const result={filters,checkedAt:Math.floor(Date.now()/1000),total:found.total,availabilityChecked:found.availabilityChecked,properties:found.properties.map(p=>({id:p.id,title:p.title,city:p.city,testPreview:p.test_preview===1,amount:p.estimate?.amount??(filters.mode==='hourly'?p.policy.hourly_price:p.price),unit:found.availabilityChecked?'за выбранный период':filters.mode==='hourly'?'за час':'за сутки',status:p.display_status}))};
  const lines=result.properties.map(p=>`${p.title} · ${p.amount.toLocaleString('ru-RU')} ₸ ${p.unit}${p.status?.label?' · '+p.status.label:''}${p.testPreview?' · учебный просмотр':''}`);
  const scope=filters.city||'все города';
