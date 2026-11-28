@@ -4,6 +4,7 @@ import {RentalService} from './service';
 import {DomainError} from './domain';
 import {REFUND_HOLD_BY} from './account-restrictions';
 import {reviewCleaning} from './cleaning-review';
+import {ruleFor,minutesLabel} from './decision-rules';
 type Row=Record<string,any>; // eslint-disable-line @typescript-eslint/no-explicit-any
 
 // Nobody waits forever for an owner who is silent, with the autopilot or without it. Three places where a
@@ -11,7 +12,7 @@ type Row=Record<string,any>; // eslint-disable-line @typescript-eslint/no-explic
 // the guest's deposit and the refund after a cancellation. Each has a
 // time after which the AI administrator acts by itself or calls the service administrator; each notice is said once.
 export const CHECKIN_WAIT=600,CHECKIN_HANDOVER=1800,ACCEPT_WAIT=24*3600,PAY_TELL=24*3600,PAY_HANDOVER=72*3600,
- CHECKOUT_WAIT=1800,CHECKOUT_HANDOVER=7200,MONEY_TELL=24*3600,MONEY_HANDOVER=72*3600;
+ CHECKOUT_WAIT=1800,CHECKOUT_HANDOVER=7200,GUEST_LEFT_MIN=900,DOOR_REMIND=900,DOOR_HANDOVER=1800,MONEY_TELL=24*3600,MONEY_HANDOVER=72*3600;
 const admins=(config:{PLATFORM_ADMIN_IDS?:string})=>typeof config.PLATFORM_ADMIN_IDS==='string'?config.PLATFORM_ADMIN_IDS.split(',').map(v=>v.trim()).filter(Boolean):[];
 const notice=(db:D1Database,user:string,body:string,dedupe:string,at:number)=>q(db,'INSERT OR IGNORE INTO notifications(id,user_id,body,dedupe,read,created_at) VALUES (?,?,?,?,0,?)',uuid(),user,body,dedupe,at);
 const tenge=(n:number)=>Number(n).toLocaleString('ru-RU').replace(/ | /g,' ')+' ₸';
@@ -114,18 +115,19 @@ async function pay(db:D1Database,at:number,result:Row,admin:string[]){
  }
 }
 
-// The guest (or the cleaner at the door) said the home is free and the owner is silent. Half an hour later the
-// checkout is confirmed for the owner, so the cleaning can start and the home stops being «occupied». The deposit
+// The guest said they left and the owner is silent. After the owner's «Выезд гостя» time (half an hour unless changed) the
+// checkout is confirmed for the owner; the performer's word never counts (2026-11-28), so the cleaning can start and the home stops being «occupied». The deposit
 // stays the owner's decision. A checkout that cannot be confirmed goes to the service administrator after two hours.
 async function departures(db:D1Database,at:number,result:Row,admin:string[]){
  const list=await rows(db,`SELECT b.id,b.guest_id,p.owner_id,p.title,${TYPE_SQL},t.checkout_reported_at reported,t.deposit_status FROM bookings b JOIN properties p ON p.id=b.property_id JOIN booking_terms t ON t.booking_id=b.id
   WHERE b.status='confirmed' AND t.checkout_reported_at IS NOT NULL AND t.checkout_reported_at<=? AND t.actual_checkout IS NULL
-  AND NOT EXISTS(SELECT 1 FROM notifications n WHERE n.user_id=p.owner_id AND n.dedupe='owner:silence-checkout-escalated:'||b.id) ORDER BY t.checkout_reported_at LIMIT 50`,at-CHECKOUT_WAIT);
+  AND NOT EXISTS(SELECT 1 FROM notifications n WHERE n.user_id=p.owner_id AND n.dedupe='owner:silence-checkout-escalated:'||b.id) ORDER BY t.checkout_reported_at LIMIT 50`,at-GUEST_LEFT_MIN);
  for(const b of list){
-  const title=b.title||'жильё';
-  try{
+  const title=b.title||'жильё',left=await ruleFor(db,b.owner_id,'guest_left');
+  // «Выезд гостя» off: the owner confirms by themselves; the wait still goes to the service administrator below.
+  if(left.on&&b.reported<=at-left.minutes*60)try{
    await new RentalService(db,b.owner_id).bookingAction(b.id,{action:'checkout'});
-   await db.batch([notice(db,b.owner_id,venueOr(b,'ИИ-администратор подтвердил выезд гостя из «'+title+'»: гость сообщил о выезде, полчаса ответа не было.'+(b.deposit_status==='owner_verified'?' Проверьте жильё и верните депозит или удержите часть с причиной.':''),'ИИ-администратор подтвердил: '+wordsOf(b).swipeGuestOut+' из «'+title+'». Гость сообщил '+wordsOf(b).ofLeave+', полчаса ответа не было.'+(b.deposit_status==='owner_verified'?' Проверьте всё и верните депозит или удержите часть с причиной.':'')),'owner:silence-checkout-done:'+b.id,at),
+   await db.batch([notice(db,b.owner_id,venueOr(b,'ИИ-администратор подтвердил выезд гостя из «'+title+'»: гость сообщил о выезде, '+minutesLabel(left.minutes)+' ответа не было.'+(b.deposit_status==='owner_verified'?' Проверьте жильё и верните депозит или удержите часть с причиной.':''),'ИИ-администратор подтвердил: '+wordsOf(b).swipeGuestOut+' из «'+title+'». Гость сообщил '+wordsOf(b).ofLeave+', '+minutesLabel(left.minutes)+' ответа не было.'+(b.deposit_status==='owner_verified'?' Проверьте всё и верните депозит или удержите часть с причиной.':'')),'owner:silence-checkout-done:'+b.id,at),
     notice(db,b.guest_id,venueOr(b,'ИИ-администратор подтвердил ваш выезд из «'+title+'». Спасибо, что выбрали нас!'+(b.deposit_status==='owner_verified'?' Депозит владелец вернёт после проверки жилья.':''),'ИИ-администратор: «'+title+'», '+wordsOf(b).leaveOk.toLowerCase()+'. Спасибо, что выбрали нас!'+(b.deposit_status==='owner_verified'?' Депозит владелец вернёт после проверки.':'')),'guest:silence-checkout-done:'+b.id,at)]);
    result.checkedOut++;continue;
   }catch(error){if(!(error instanceof DomainError))throw error;}
@@ -214,9 +216,26 @@ async function refundHolds(db:D1Database,at:number,result:{held:number;lifted:nu
  }
 }
 
+// The performer waits at the door after guests («Я на месте» or «Гость ещё здесь») and the owner gives no signal.
+// Fifteen minutes later the owner is asked again, half an hour later the service administrator is called and the
+// performer is told they may refuse the task. The performer never confirms the checkout themselves.
+async function doorWaits(db:D1Database,at:number,result:Row,admin:string[]){
+ const list=await rows(db,`SELECT j.id,j.owner_id,j.assigned_to,j.arrived_at,j.guest_here_at,p.title FROM cleaning_jobs j JOIN properties p ON p.id=j.property_id JOIN bookings b ON b.id=j.booking_id JOIN booking_terms t ON t.booking_id=b.id
+  WHERE j.status='assigned' AND j.assigned_to IS NOT NULL AND j.arrived_at IS NOT NULL AND j.arrived_at<=? AND j.arrived_at>? AND b.status='confirmed' AND t.actual_checkout IS NULL
+  AND NOT EXISTS(SELECT 1 FROM notifications n WHERE n.user_id=j.assigned_to AND n.dedupe='cleaner:door-wait-escalated:'||j.id||':'||j.arrived_at) ORDER BY j.arrived_at LIMIT 50`,at-DOOR_REMIND,at-86400);
+ for(const j of list){
+  const title=j.title||'жильё',what=j.guest_here_at?'гость ещё в жилье, решите: подождать 30 минут или отпустить исполнителя.':'подтвердите выезд гостя, и уборка начнётся.';
+  if(said(await db.batch([notice(db,j.owner_id,'ИИ-администратор: исполнитель ждёт у двери «'+title+'» уже '+minutesLabel(Math.floor((at-Number(j.arrived_at))/60))+': '+what,'owner:door-wait:'+j.id+':'+j.arrived_at,at)])))result.told++;
+  if(Number(j.arrived_at)>at-DOOR_HANDOVER)continue;
+  const handed=admin.length?said(await db.batch(admin.map(a=>notice(db,a,'Исполнитель полчаса ждёт у двери «'+title+'», владелец не подтвердил выезд гостя и не ответил. Свяжитесь с владельцем.','admin:door-wait:'+j.id+':'+j.arrived_at+':'+a,at)))):false;
+  if(said(await db.batch([notice(db,j.assigned_to,'ИИ-администратор: владелец полчаса не отвечает'+(handed?', я передал это администратору сервиса':'')+'. Если не можете ждать, откажитесь от задания в карточке.','cleaner:door-wait-escalated:'+j.id+':'+j.arrived_at,at)]))&&handed)result.escalated++;
+ }
+}
+
 export async function sweepSilence(db:D1Database,config:OperationConfig&{PLATFORM_ADMIN_IDS?:string}={},at=epoch()){
  const result={checkedIn:0,checkedOut:0,accepted:0,told:0,escalated:0},admin=admins(config);
  await departures(db,at,result,admin);
+ await doorWaits(db,at,result,admin);
  await arrivals(db,at,result,admin);
  await transfers(db,at,result,admin);
  await reports(db,at,result,admin);

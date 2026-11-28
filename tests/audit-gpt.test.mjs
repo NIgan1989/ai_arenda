@@ -211,23 +211,19 @@ test('extending a cleaning stops at a stay from an outside calendar, like «Оп
  }finally{f.db.close();}
 });
 
-test('the performer\'s «Гостя нет» before the end of the stay never closes it by itself',async()=>{
+test('the performer\'s word never closes a stay, before or after its end',async()=>{
  const {checkAdministratorOwner}=await load('administrator-runtime');
  const f=await fixture(),R=f.db.raw;try{
   await matchingAction(f.owner,'owner','preference',{propertyId:f.property,mode:'auto'});
   R.prepare("UPDATE bookings SET payment_status='owner_verified',start=?,end=?,occupied_until=? WHERE id=?").run(now()-7200,now()+1200,now()+6600,f.booking);
   R.prepare("UPDATE cleaning_jobs SET assigned_to='cleaner',status='assigned',start=?,end=? WHERE id=?").run(now()+1200,now()+6600,f.job.id);
-  const r=await f.cleaner.jobAction(f.job.id,{action:'vacant'});
-  assert.match(r.message,/гость или владелец подтвердят выезд/);
+  await f.cleaner.jobAction(f.job.id,{action:'vacant'});
+  R.prepare('UPDATE bookings SET end=? WHERE id=?').run(now()-60,f.booking);
+  R.prepare("UPDATE cleaning_jobs SET arrived_at=NULL WHERE id=?").run(f.job.id);
+  await f.cleaner.jobAction(f.job.id,{action:'at_door'});
   assert.equal(R.prepare('SELECT checkout_reported_at FROM booking_terms WHERE booking_id=?').get(f.booking).checkout_reported_at,null);
   f.release();await checkAdministratorOwner(f.db,'owner');
   assert.equal(R.prepare('SELECT actual_checkout FROM booking_terms WHERE booking_id=?').get(f.booking).actual_checkout,null,'the autopilot does not end the stay on the performer\'s word');
-  assert.match(R.prepare("SELECT body FROM notifications WHERE user_id='guest' AND dedupe LIKE 'guest:cleaner-vacant:%'").get().body,/Сообщить о выезде/);
-  // After the end of the stay the word counts as a report, as before.
-  R.prepare('UPDATE bookings SET end=? WHERE id=?').run(now()-60,f.booking);
-  R.prepare("DELETE FROM notifications WHERE dedupe LIKE '%cleaner-vacant:%'").run();
-  await f.cleaner.jobAction(f.job.id,{action:'vacant'});
-  assert.ok(R.prepare('SELECT checkout_reported_at FROM booking_terms WHERE booking_id=?').get(f.booking).checkout_reported_at);
  }finally{f.db.close();}
 });
 test('a finished cleaning says where the money is: marked by the owner, then confirmed by the performer',async()=>{
@@ -240,7 +236,7 @@ test('a finished cleaning says where the money is: marked by the owner, then con
  assert.match(cleaningThread(got,owner,t).line,/исполнитель подтвердил получение/);
  assert.match(jobThread(got,cleaner,t).line,/вы подтвердили получение/);
  assert.match(cleaningThread({...j,settled_at:null,settlement_paid:0},owner,t).line,/Ждём ваш перевод/);
- assert.match(jobThread({...j,status:'assigned',checkout_confirmed:0,settled_at:null},cleaner,t-9000).line,/начать можно после подтверждения выезда/);
+ assert.match(jobThread({...j,status:'assigned',checkout_confirmed:0,settled_at:null},cleaner,t-9000).line,/Ждём сигнала владельца · выезд подтверждает он или его автопилот/);
 });
 // Audit of 2026-11-22 (baths, halls): the kind decides the tariff at the booking and at every change of it.
 const kindOf=(f,type)=>f.db.raw.prepare("INSERT INTO property_details(property_id,details,revision,updated_at) VALUES (?,?,'t',0) ON CONFLICT(property_id) DO UPDATE SET details=excluded.details").run(f.property,JSON.stringify({type}));

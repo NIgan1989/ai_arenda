@@ -55,24 +55,72 @@ test('a late checkout still releases the cleaner when the new time clashes with 
  }finally{f.db.close();}
 });
 
-test('the cleaner at the door says the guest is gone; the owner confirms in one tap and the cleaning starts',async()=>{
+test('the cleaner at the door only says what they see; the owner confirms the checkout and the cleaner hears «Можно начинать»',async()=>{
  const f=await fixture();try{
   endedStay(f,300);
-  await assert.rejects(f.guest.jobAction(f.job.id,{action:'vacant'}),/Нет доступа/);
-  const r=await f.cleaner.jobAction(f.job.id,{action:'vacant'});assert.match(r.message,/Владелец получил сообщение/);
-  assert.ok(f.db.raw.prepare('SELECT checkout_reported_at FROM booking_terms WHERE booking_id=?').get(f.booking).checkout_reported_at);
-  assert.match(note(f,'owner','owner:cleaner-vacant:%').body,/гостя нет/);
-  assert.match(note(f,'guest','guest:cleaner-vacant:%').body,/напишите в чат брони/);
-  assert.match((await f.cleaner.jobAction(f.job.id,{action:'vacant'})).message,/уже отмечен/);
+  await assert.rejects(f.guest.jobAction(f.job.id,{action:'at_door'}),/Нет доступа/);
+  const r=await f.cleaner.jobAction(f.job.id,{action:'at_door'});assert.match(r.message,/Сигнал «Можно начинать» придёт сюда/);
+  const terms=()=>f.db.raw.prepare('SELECT checkout_reported_at,actual_checkout FROM booking_terms WHERE booking_id=?').get(f.booking);
+  assert.equal(terms().checkout_reported_at,null,'the performer\'s word is not the guest\'s report');
+  assert.ok(job(f).arrived_at);
+  assert.match(note(f,'owner','owner:cleaner-at-door:%').body,/ждёт вашего сигнала/);
+  assert.match(note(f,'guest','guest:cleaner-at-door:%').body,/Сообщить о выезде/);
+  assert.match((await f.cleaner.jobAction(f.job.id,{action:'at_door'})).message,/уже знает/);
+  // An older app build still sends «vacant»: it means the same and frees nothing.
+  assert.match((await f.cleaner.jobAction(f.job.id,{action:'vacant'})).message,/уже знает/);
+  await assert.rejects(f.cleaner.jobAction(f.job.id,{action:'start'}));
   await f.owner.bookingAction(f.booking,{action:'checkout'});
+  // The cleaning's time has come already: it is kept and starts now (the guest left after the planned start).
+  assert.match(note(f,'cleaner','cleaner:checkout-shift:%').body,/начинается сейчас/);
   await f.cleaner.jobAction(f.job.id,{action:'start'});assert.equal(job(f).status,'in_progress');
  }finally{f.db.close();}
 });
 
-test('«Жильё свободно» waits until the stay is about to end',async()=>{
+test('«Гость ещё здесь»: the owner chooses to wait half an hour or to let the cleaner go',async()=>{
+ const f=await fixture();try{
+  endedStay(f,300);
+  await assert.rejects(f.owner.jobAction(f.job.id,{action:'guest_here'}));
+  const r=await f.cleaner.jobAction(f.job.id,{action:'guest_here'});assert.match(r.message,/решение придёт сюда/);
+  assert.ok(job(f).guest_here_at);assert.match(note(f,'owner','owner:guest-here:%').body,/подождать 30 минут или отпустить/);
+  await assert.rejects(f.cleaner.jobAction(f.job.id,{action:'wait_guest'}));
+  const before=job(f);
+  assert.match((await f.owner.jobAction(f.job.id,{action:'wait_guest'})).message,/подождёт/);
+  const after=job(f);assert.ok(after.start>=Math.max(before.start,now())+1790);assert.equal(after.end-after.start,before.end-before.start);
+  assert.equal(after.guest_here_at,null,'the cleaner can say it again');
+  assert.match(note(f,'cleaner','cleaner:wait-guest:%').body,/подождать/);
+  await f.cleaner.jobAction(f.job.id,{action:'guest_here'});
+  assert.match((await f.owner.jobAction(f.job.id,{action:'let_go'})).message,/снова в поиске/);
+  const free=job(f);assert.equal(free.status,'open');assert.equal(free.assigned_to,null);assert.equal(free.guest_here_at,null);assert.equal(free.arrived_at,null);
+  assert.match(note(f,'cleaner','cleaner:let-go:%').body,/не считается вашим отказом/);
+ }finally{f.db.close();}
+});
+
+test('the owner who gives no signal is asked again, then the service administrator is called',async()=>{
+ const {sweepSilence}=await load('owner-silence');
+ const f=await fixture();try{
+  endedStay(f,300);
+  await f.cleaner.jobAction(f.job.id,{action:'at_door'});
+  const R=f.db.raw;R.prepare('UPDATE cleaning_jobs SET arrived_at=? WHERE id=?').run(now()-20*60,f.job.id);
+  await sweepSilence(f.db,{PLATFORM_ADMIN_IDS:'admin'});
+  assert.match(note(f,'owner','owner:door-wait:%').body,/ждёт у двери/);
+  assert.equal(R.prepare("SELECT COUNT(*) n FROM notifications WHERE dedupe LIKE 'admin:door-wait:%'").get().n,0);
+  R.prepare('UPDATE cleaning_jobs SET arrived_at=? WHERE id=?').run(now()-35*60,f.job.id);
+  await sweepSilence(f.db,{PLATFORM_ADMIN_IDS:'admin'});
+  assert.equal(R.prepare("SELECT COUNT(*) n FROM notifications WHERE dedupe LIKE 'admin:door-wait:%'").get().n,1);
+  assert.match(note(f,'cleaner','cleaner:door-wait-escalated:%').body,/откажитесь от задания/);
+  assert.equal(R.prepare('SELECT actual_checkout FROM booking_terms WHERE booking_id=?').get(f.booking).actual_checkout,null,'nobody frees the home on the performer\'s word');
+ }finally{f.db.close();}
+});
+
+test('«Я на месте» waits until the stay is about to end; a checkout before the cleaning\'s time says «Можно начинать»',async()=>{
  const f=await fixture();try{
   endedStay(f,-7200);
-  await assert.rejects(f.cleaner.jobAction(f.job.id,{action:'vacant'}),/за полчаса/);
+  await assert.rejects(f.cleaner.jobAction(f.job.id,{action:'at_door'}),/за полчаса/);
+  f.db.raw.prepare("DELETE FROM applications WHERE id='app-1'").run();endedStay(f,-600);
+  await f.cleaner.jobAction(f.job.id,{action:'at_door'});
+  assert.equal(note(f,'guest','guest:cleaner-at-door:%'),undefined,'before the end of the stay the guest is not disturbed');
+  await f.owner.bookingAction(f.booking,{action:'checkout'});
+  assert.match(note(f,'cleaner','cleaner:checkout-go:%').body,/Можно начинать уборку .*подтвердил владелец/);
  }finally{f.db.close();}
 });
 

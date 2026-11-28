@@ -109,6 +109,7 @@
 -- migration 0105_platform_admins.sql sha256:dc2f2773ff7c4a4f9c928368376ab02f98129d84e7e126942bfd072a6aa96c61
 -- migration 0106_invites.sql sha256:f81e43b17ff40e2f5f80ed7d6d9c015b768e54f787e9e5d5bd5356b77f46cd3e
 -- migration 0107_checkin_guarantee.sql sha256:8016ef051b552c9733f082796867b266f0430ad4fc36c1d32b1862ed36ef93da
+-- migration 0108_guest_still_here.sql sha256:ed0dd8a1b3ddc6f7897274c0a9fa29b735548996be6db20c995c187d65f48bae
 
 -- table access_receipts
 CREATE TABLE access_receipts (id TEXT PRIMARY KEY,property_id TEXT NOT NULL,entity_kind TEXT NOT NULL,entity_id TEXT NOT NULL,user_id TEXT NOT NULL,created_at INTEGER NOT NULL,expires_at INTEGER NOT NULL);
@@ -629,7 +630,7 @@ CREATE TABLE `cleaning_jobs` (
 	`assigned_to` text,
 	`checklist` text DEFAULT '[]' NOT NULL,
 	`report` text DEFAULT '' NOT NULL,
-	`created_at` integer NOT NULL, started_at INTEGER, submitted_at INTEGER, completed_at INTEGER, version INTEGER NOT NULL DEFAULT 1, settled_at INTEGER, overdue_step INTEGER NOT NULL DEFAULT 0, on_way_at integer, arrived_at integer, cancel_fee integer NOT NULL DEFAULT 0, cancelled_at integer, rating integer, rating_note text NOT NULL DEFAULT '', rated_at integer, payment_received_at INTEGER,
+	`created_at` integer NOT NULL, started_at INTEGER, submitted_at INTEGER, completed_at INTEGER, version INTEGER NOT NULL DEFAULT 1, settled_at INTEGER, overdue_step INTEGER NOT NULL DEFAULT 0, on_way_at integer, arrived_at integer, cancel_fee integer NOT NULL DEFAULT 0, cancelled_at integer, rating integer, rating_note text NOT NULL DEFAULT '', rated_at integer, payment_received_at INTEGER, guest_here_at integer,
 	FOREIGN KEY (`property_id`) REFERENCES `properties`(`id`) ON UPDATE no action ON DELETE no action
 );
 
@@ -2588,8 +2589,8 @@ END;
 
 -- trigger cleaning_job_arrival_reset
 CREATE TRIGGER cleaning_job_arrival_reset AFTER UPDATE OF assigned_to ON cleaning_jobs
-WHEN NEW.assigned_to IS NOT OLD.assigned_to AND (NEW.on_way_at IS NOT NULL OR NEW.arrived_at IS NOT NULL)
-BEGIN UPDATE cleaning_jobs SET on_way_at=NULL,arrived_at=NULL WHERE id=NEW.id; END;
+WHEN NEW.assigned_to IS NOT OLD.assigned_to AND (NEW.on_way_at IS NOT NULL OR NEW.arrived_at IS NOT NULL OR NEW.guest_here_at IS NOT NULL)
+BEGIN UPDATE cleaning_jobs SET on_way_at=NULL,arrived_at=NULL,guest_here_at=NULL WHERE id=NEW.id; END;
 
 -- trigger cleaning_job_completed
 CREATE TRIGGER cleaning_job_completed AFTER UPDATE OF status ON cleaning_jobs

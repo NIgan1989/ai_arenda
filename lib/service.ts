@@ -877,7 +877,11 @@ export class RentalService {
     if(body.action==='report_checkout'){
       if(b.guest_id!==this.userId)throw new DomainError(venueOr(b,'Сообщить о выезде может гость.','Сообщить '+wordsOf(b).ofLeave+' может гость.'),403);
       if(b.status!=='confirmed'||b.start>now())throw new DomainError(venueOr(b,'Проживание ещё не началось или уже завершено.','Бронь ещё не началась или уже завершена.'),409);
-      await this.db.batch([this.query('UPDATE booking_terms SET checkout_reported_at=?,version=version+1 WHERE booking_id=? AND checkout_reported_at IS NULL',now(),bookingId),this.notify(b.owner_id,venueOr(b,'Гость сообщил о выезде. Проверьте освобождение жилья.','Гость сообщил '+wordsOf(b).ofLeave+' в «'+b.title+'». Проверьте и подтвердите.'),'checkout-reported:'+bookingId,'owner'),this.audit(bookingId,'booking.checkout_reported')]);return {message:venueOr(b,'Спасибо, выезд отмечен. Владелец подтвердит его; если он не ответит за полчаса, ИИ-администратор подтвердит сам.','Спасибо, отметили. Владелец подтвердит; если он не ответит за полчаса, ИИ-администратор подтвердит сам.')};
+      await this.db.batch([this.query('UPDATE booking_terms SET checkout_reported_at=?,version=version+1 WHERE booking_id=? AND checkout_reported_at IS NULL',now(),bookingId),this.notify(b.owner_id,venueOr(b,'Гость сообщил о выезде. Проверьте освобождение жилья.','Гость сообщил '+wordsOf(b).ofLeave+' в «'+b.title+'». Проверьте и подтвердите.'),'checkout-reported:'+bookingId,'owner'),this.audit(bookingId,'booking.checkout_reported')]);
+      // The owner's «Выезд гостя» says who confirms without the owner and after how long (lib/decision-rules.ts).
+      const left=await ruleFor(this.db,b.owner_id,'guest_left'),wait=left.minutes===30?'полчаса':minutesLabel(left.minutes);
+      if(!left.on)return {message:venueOr(b,'Спасибо, выезд отмечен. Владелец подтвердит его.','Спасибо, отметили. Владелец подтвердит.')};
+      return {message:venueOr(b,'Спасибо, выезд отмечен. Владелец подтвердит его; если он не ответит за '+wait+', ИИ-администратор подтвердит сам.','Спасибо, отметили. Владелец подтвердит; если он не ответит за '+wait+', ИИ-администратор подтвердит сам.')};
     }
     if(body.action==='report_late'){
       if(b.guest_id!==this.userId)throw new DomainError('Сообщить о задержке может гость.',403);
@@ -1039,6 +1043,10 @@ export class RentalService {
         // so a revoked autopilot or a disputed report stops the automatic checkout.
         this.query("UPDATE bookings SET status='completed' WHERE id=? AND status='confirmed' AND EXISTS(SELECT 1 FROM booking_terms WHERE booking_id=? AND actual_checkout IS NULL AND version=? AND (?=0 OR checkout_reported_at IS NOT NULL)) AND (?=0 OR EXISTS(SELECT 1 FROM property_policies WHERE property_id=? AND version=? AND auto_confirm=1 AND auto_assign=1 AND (mandate_until=0 OR mandate_until>?)))",bookingId,bookingId,body.expectedVersion??terms?.version,this.execution?1:0,this.execution?1:0,b.property_id,this.execution?.policyVersion??0,t),
         this.query("UPDATE property_operations SET readiness=CASE WHEN readiness IN ('maintenance','blocked') THEN readiness ELSE 'awaiting_cleaning' END,active_booking_id=NULL,version=version+1,updated_at=? WHERE property_id=? AND (active_booking_id IS NULL OR active_booking_id=?) AND EXISTS(SELECT 1 FROM booking_terms t JOIN bookings b ON b.id=t.booking_id WHERE b.id=? AND b.status='completed' AND t.actual_checkout IS NULL)",t,b.property_id,bookingId,bookingId),
+        // The signal the performer waits for (2026-11-28): the checkout is confirmed by the owner or the owner's autopilot,
+        // never by the performer, and the performer hears «Можно начинать». A cleaning whose time already passed hears
+        // below that it starts now (or goes back to the search).
+        this.query(`INSERT OR IGNORE INTO notifications SELECT ?||id,assigned_to,?,'cleaner:checkout-go:'||id,0,? FROM cleaning_jobs WHERE booking_id=? AND status='assigned' AND assigned_to IS NOT NULL AND start>=? AND ${checkedOut}`,id()+':','Можно начинать уборку «'+b.title+'»: выезд гостя подтвердил '+(this.execution?'автопилот владельца':'владелец')+'.',t,bookingId,t-60,bookingId),
         // Own staff cleans here: nobody reports the cleaning in the service, so the flat is ready only when the owner says so
         // (one tap, «Жильё готово»), never by itself right after the guest leaves.
         this.query(`INSERT OR IGNORE INTO notifications SELECT ?,owner_id,?,'owner:own-staff-clean:'||?,0,? FROM properties WHERE id=? AND own_staff=1 AND ${checkedOut}`,id(),venueOr(b,'Гость выехал из «'+b.title+'». Когда ваш персонал уберёт, нажмите «Жильё готово», и следующего гостя можно будет заселить.',wordsOf(b).guestOut+' из «'+b.title+'». Когда ваш персонал уберёт, нажмите «'+wordsOf(b).ready+'», и можно будет принимать следующих гостей.'),bookingId,t,b.property_id,bookingId),
@@ -1359,33 +1367,55 @@ export class RentalService {
       if(!results[0].meta.changes) throw new DomainError('Исполнитель уже назначен или задание истекло.',409);
       return {message:'Исполнитель назначен.'};
     }
-    // The cleaner is at the door and the guest is gone, but nobody pressed «Я выехал»: the cleaner says so. It counts as a
-    // report of leaving: the owner's autopilot confirms the checkout at once, without it the owner confirms in one tap.
-    if(body.action==='vacant'&&j.assigned_to===this.userId){
-      if(j.status!=='assigned'||!j.booking_id)throw new DomainError('Сообщить, что жильё свободно, можно по назначенной уборке после выезда гостя.',409);
-      const b=await this.one('SELECT b.id,b.guest_id,b.end,b.status,t.checkout_reported_at,t.actual_checkout FROM bookings b JOIN booking_terms t ON t.booking_id=b.id WHERE b.id=?',j.booking_id);
+    // At the door after guests the performer never decides that the guest has left (2026-11-28): the checkout is the
+    // owner's, or the owner's autopilot by the guest's own «Я выехал». The performer only says what they see:
+    // «Я на месте» (at_door; «vacant» of older app builds means the same) or «Гость ещё здесь» (guest_here). Neither
+    // frees the home or counts as the guest's report; the owner gets one tap («Гость выехал») or a choice.
+    if((body.action==='at_door'||body.action==='vacant'||body.action==='guest_here')&&j.assigned_to===this.userId){
+      const here=body.action==='guest_here',t=now(),title=j.title||'жильё';
+      if(j.status!=='assigned'||!j.booking_id)throw new DomainError('Сообщить владельцу можно по назначенной уборке после гостей, до её начала.',409);
+      const b=await this.one('SELECT b.id,b.guest_id,b.end,b.status,t.actual_checkout FROM bookings b JOIN booking_terms t ON t.booking_id=b.id WHERE b.id=?',j.booking_id);
       if(b?.status==='completed'||b?.actual_checkout)return {message:'Выезд уже подтверждён, можно начинать уборку.'};
       if(!b||b.status!=='confirmed')throw new DomainError('Бронь уже закрыта. Обновите задание.',409);
-      if(now()<Number(b.end)-1800)throw new DomainError('Гость живёт до '+clockLabel(Number(b.end))+'. Сообщить, что жильё свободно, можно за полчаса до этого времени.',409);
-      if(b.checkout_reported_at)return {message:'Выезд уже отмечен, ждём подтверждения. Начните уборку, как только кнопка станет активной.'};
-      // Before the end of the stay the performer's word is not the guest's: the guest may be out for a walk. It is told
-      // to the owner and the guest; the checkout is confirmed by the guest («Сообщить о выезде») or the owner, never by
-      // the autopilot on the performer's word (audit of 2026-11-22). From the end of the stay it counts as a report.
-      if(now()<Number(b.end)){
-        const title=j.title||'жильё';
-        await this.db.batch([
-          this.notify(j.owner_id,'Исполнитель на месте в «'+title+'»: говорит, что гостя нет и жильё свободно. Бронь идёт до '+clockLabel(Number(b.end))+'. Если гость выехал, подтвердите выезд, и уборка начнётся.','cleaner-vacant:'+b.id,'owner'),
-          this.notify(b.guest_id,'Исполнитель пришёл на уборку «'+title+'» и видит, что жильё свободно. Если вы уже выехали, нажмите «Сообщить о выезде» в брони. Если вы ещё здесь, ничего делать не нужно: бронь идёт до '+clockLabel(Number(b.end))+'.','cleaner-vacant:'+b.id,'guest'),
-          this.audit(b.id,'booking.vacant_seen_by_cleaner')]);
-        return {message:'Владелец и гость получили сообщение. Начать уборку можно, когда гость или владелец подтвердят выезд.'};
-      }
+      if(t<Math.min(Number(b.end),Number(j.start))-1800)throw new DomainError('Гость живёт до '+clockLabel(Number(b.end))+'. Сообщить владельцу можно за полчаса до этого времени.',409);
+      if(here?j.guest_here_at:j.arrived_at)return {message:here?'Владелец уже знает, что гость ещё в жилье. Его решение придёт сюда.':'Владелец уже знает, что вы на месте. Сигнал «Можно начинать» придёт сюда.'};
       const r=await this.db.batch([
-        this.query('UPDATE booking_terms SET checkout_reported_at=?,version=version+1 WHERE booking_id=? AND checkout_reported_at IS NULL AND actual_checkout IS NULL',now(),b.id),
-        this.notify(j.owner_id,'Исполнитель на месте в «'+(j.title||'жильё')+'»: гостя нет, жильё свободно. Подтвердите выезд, чтобы началась уборка.','cleaner-vacant:'+b.id,'owner'),
-        this.notify(b.guest_id,'Исполнитель пришёл на уборку «'+(j.title||'жильё')+'» и отметил, что вы выехали. Если вы ещё в жилье, напишите в чат брони.','cleaner-vacant:'+b.id,'guest'),
-        this.audit(b.id,'booking.checkout_reported_by_cleaner')]);
-      if(!r[0].meta.changes)throw new DomainError('Бронь изменилась. Обновите задание.',409);
-      return {message:'Владелец получил сообщение. Как только выезд подтвердится, кнопка «Начать уборку» станет активной.'};
+        this.query(here?"UPDATE cleaning_jobs SET guest_here_at=?,arrived_at=COALESCE(arrived_at,?) WHERE id=? AND assigned_to=? AND status='assigned' AND version=? AND guest_here_at IS NULL":"UPDATE cleaning_jobs SET arrived_at=? WHERE id=? AND assigned_to=? AND status='assigned' AND version=? AND arrived_at IS NULL",...(here?[t,t]:[t]),jobId,this.userId,j.version),
+        here?this.notify(j.owner_id,'Исполнитель у двери «'+title+'»: гость ещё в жилье. Решите в карточке уборки: подождать 30 минут или отпустить исполнителя. Когда гость уйдёт, подтвердите выезд.','guest-here:'+jobId+':'+t,'owner')
+          :this.notify(j.owner_id,'Исполнитель на месте в «'+title+'» и ждёт вашего сигнала. Гость выехал? Подтвердите выезд, и уборка начнётся.','cleaner-at-door:'+jobId+':'+j.version,'owner'),
+        // After the end of the stay the guest is reminded, in their own words, how to say they left; the reminder is all.
+        ...(!here&&t>=Number(b.end)?[this.notify(b.guest_id,'Исполнитель пришёл на уборку «'+title+'». Если вы уже выехали, нажмите «Сообщить о выезде» в брони.','cleaner-at-door:'+b.id,'guest')]:[]),
+        this.audit(jobId,here?'job.guest_still_here':'job.cleaner_at_door')]);
+      if(!r[0].meta.changes)throw new DomainError('Задание изменилось. Обновите карточку.',409);
+      return {message:here?'Владелец знает, что гость ещё в жилье. Его решение придёт сюда.':'Владелец знает, что вы на месте. Сигнал «Можно начинать» придёт сюда.'};
+    }
+    // The owner's answer to «Гость ещё здесь»: wait half an hour (the cleaning moves when the next guest leaves room for
+    // it) or let the performer go (the cleaning goes back to the search and starts after the checkout; not the performer's refusal).
+    if((body.action==='wait_guest'||body.action==='let_go')&&j.owner_id===this.userId){
+      const t=now(),title=j.title||'жильё';
+      if(j.status!=='assigned'||!j.booking_id||!j.assigned_to)throw new DomainError('Решение нужно по назначенной уборке после гостей, до её начала.',409);
+      if(await this.one("SELECT 1 FROM booking_terms WHERE booking_id=? AND actual_checkout IS NOT NULL",j.booking_id))throw new DomainError('Выезд уже подтверждён. Обновите карточку.',409);
+      if(body.action==='let_go'){
+        const r=await this.db.batch([
+          this.query("UPDATE cleaning_jobs SET status='open',assigned_to=NULL,overdue_step=0 WHERE id=? AND version=? AND status='assigned'",jobId,j.version),
+          this.query("UPDATE applications SET status='rejected' WHERE job_id=? AND user_id=? AND EXISTS(SELECT 1 FROM cleaning_jobs WHERE id=? AND status='open' AND assigned_to IS NULL)",jobId,j.assigned_to,jobId),
+          this.notify(j.assigned_to,'Владелец отпустил вас с уборки «'+title+'»: гость ещё в жилье. Это не считается вашим отказом.','let-go:'+jobId+':'+j.version,'cleaner'),
+          this.audit(jobId,'job.cleaner_let_go')]);
+        if(!r[0].meta.changes)throw new DomainError('Задание изменилось. Обновите карточку.',409);
+        return {message:'Исполнитель свободен. Уборка снова в поиске и начнётся после выезда гостя.'};
+      }
+      const start=Math.max(Number(j.start),t)+1800,end=start+(Number(j.end)-Number(j.start));
+      const next=await this.one("SELECT start FROM bookings WHERE property_id=? AND id<>? AND (status='confirmed' OR (status='requested' AND expires_at>?)) AND start<? AND occupied_until>? ORDER BY start LIMIT 1",j.property_id,j.booking_id,t,end,start);
+      if(next)throw new DomainError('Следующий гость заезжает в '+clockLabel(Number(next.start))+': подождать полчаса нельзя. Свяжитесь с гостем или отпустите исполнителя.',409);
+      if(await this.one('SELECT x.id FROM external_blocks x JOIN calendar_sources c ON c.id=x.source_id WHERE x.property_id=? AND c.enabled=1 AND x.start<? AND x.end>? LIMIT 1',j.property_id,end,Number(j.end)))throw new DomainError('Следующий гость по внешнему календарю заезжает раньше: подождать полчаса нельзя.',409);
+      let r;
+      try{r=await this.db.batch([
+        this.query("UPDATE cleaning_jobs SET start=?,end=?,overdue_step=0,guest_here_at=NULL WHERE id=? AND version=? AND status='assigned'",start,end,jobId,j.version),
+        this.notify(j.assigned_to,'Владелец просит подождать: гость ещё собирается. Уборка «'+title+'» с '+clockLabel(start)+'. Сигнал «Можно начинать» придёт сюда.','wait-guest:'+jobId+':'+start,'cleaner'),
+        this.audit(jobId,'job.wait_for_guest')]);}
+      catch(error){if(/cleaner_overlap/.test(String((error as Error)?.message)))throw new DomainError('У исполнителя после этого другая уборка: подождать полчаса нельзя. Отпустите исполнителя.',409);throw error;}
+      if(!r[0].meta.changes)throw new DomainError('Задание изменилось. Обновите карточку.',409);
+      return {message:'Исполнитель подождёт. Уборка с '+clockLabel(start)+'.'};
     }
     // «Опаздываю на 30 минут»: once per cleaning, before the cleaner is overdue to start; the job moves by half an hour
     // when the next guest leaves room for it, and the owner is told the new time.

@@ -164,7 +164,7 @@ export function cleaningThread(j: Row, data: Row, now: number): ProcessThread {
         : pending ? (auto ? tr('Откликнулись: {pending} · ИИ выберет сам',{pending}) : tr('Откликнулись: {pending} · выберите исполнителя',{pending}))
           : auto ? tr('ИИ ищет исполнителя') : tr('Ждём откликов исполнителей') },
     // A cleaning without a booking (a home cleaning, the owner's own order) waits for nobody's departure, only for its time.
-    j.booking_id !== null ? { key: 'checkout', label: tr('Выезд гостя'), by: 'guest', at: j.start, note: j.checkout_confirmed ? tr('Гость выехал') : tr('Ждём выезда гостя') }
+    j.booking_id !== null ? { key: 'checkout', label: tr('Выезд гостя'), by: 'guest', at: j.start, note: j.checkout_confirmed ? tr('Гость выехал') : j.guest_here_at ? tr('Исполнитель у двери: гость ещё здесь · решите, подождать или отпустить') : j.arrived_at ? tr('Исполнитель у двери и ждёт вашего сигнала') : tr('Ждём выезда гостя') }
       : { key: 'checkout', label: tr('Приезд'), by: 'cleaner', at: j.arrived_at || j.start, note: j.arrived_at ? tr('Исполнитель на месте') : j.on_way_at ? tr('Исполнитель в пути') : tr('Исполнитель приедет к назначенному времени') },
     { key: 'clean', label: tr('Уборка'), by: 'cleaner', at: j.start, progress: working ? part(Number(j.started_at) || j.start, j.end, now) : undefined,
       note: working ? (j.end > now ? tr('Исполнитель убирает · ещё {left}',{left:left(j.end - now)}) : tr('Срок уборки прошёл')) : j.arrived_at ? tr('Исполнитель на месте, начнёт уборку') : tr('Уборка в {when}',{when:threadWhen(j.start, now)}) },
@@ -195,7 +195,7 @@ export function jobThread(j: Row, data: Row, now: number): ProcessThread {
   const steps: Omit<ThreadStep, 'state'>[] = [
     { key: 'apply', label: tr('Отклик'), by: took ? 'ai' : 'you', at: application?.created_at, note: application || isMine ? (took ? tr('Автопилот откликнулся за вас') : tr('Отклик отправлен')) : tr('Можно откликнуться') },
     { key: 'assigned', label: tr('Назначено'), by: 'owner', note: isMine ? tr('Вас назначили') : tr('Ждём решения владельца') },
-    j.booking_id !== null ? { key: 'checkout', label: tr('Выезд гостя'), by: 'guest', at: j.start, note: j.checkout_confirmed ? tr('Гость выехал, можно начинать') : tr('Ждём выезда гостя · начать можно после подтверждения выезда') }
+    j.booking_id !== null ? { key: 'checkout', label: tr('Выезд гостя'), by: 'guest', at: j.start, note: j.checkout_confirmed ? tr('Гость выехал, можно начинать') : j.guest_here_at ? tr('Гость ещё в жилье · решение владельца придёт сюда') : j.arrived_at ? tr('Вы на месте, владелец знает · сигнал «Можно начинать» придёт сюда') : tr('Ждём сигнала владельца · выезд подтверждает он или его автопилот') }
       : { key: 'checkout', label: tr('Приезд'), by: 'you', at: j.arrived_at || j.start, note: j.arrived_at ? tr('Вы на месте, можно начинать') : j.on_way_at ? tr('Вы в пути · на месте нажмите «Я на месте»') : tr('Приезжайте к назначенному времени') },
     { key: 'clean', label: tr('Уборка'), by: 'you', at: j.start, progress: working ? part(Number(j.started_at) || j.start, j.end, now) : undefined,
       note: working ? (j.end > now ? tr('Идёт уборка · ещё {left} · затем отчёт',{left:left(j.end - now)}) : tr('Срок прошёл · отправьте отчёт')) : tr('Начать уборку') },
