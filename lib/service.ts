@@ -37,7 +37,8 @@ import {publicPoint} from './map-workspace';
 import {streetAddress} from './job-place';
 import {createAIBudgetLifecycle} from './ai-budget';
 import {aiDataPermission} from './ai-data-permission';
-import {administratorSearch,isPropertySearch,isSearchRefinement,previousAdministratorSearch} from './administrator-search';
+import {splitScreen,withScreen} from './assistant-screens';
+import {administratorSearch,isPropertySearch,isSearchRefinement,mayNeedCatalog,previousAdministratorSearch} from './administrator-search';
 import {readAdministratorProcesses,processReadIntent} from './administrator-process-read';
 import {accrueCommission,accrueAiBookingFee,recalcCommission} from './platform-billing';
 import {offerPriceAdvice,ownerPriceSuggestions,decidePriceSuggestion} from './price-advice';
@@ -544,7 +545,7 @@ export class RentalService {
         WHERE (j.owner_id=? OR j.assigned_to=? OR (j.status='open' AND j.end>?)) AND (p.demo_owner IS NULL OR p.demo_owner=?) ORDER BY j.start`, this.userId,this.userId,this.userId,this.userId,this.userId,this.userId,this.userId,this.userId,this.userId,this.userId,now(),this.userId),
       this.all(`SELECT a.*,p.name,p.experience,p.availability,p.districts,(SELECT pr.demo_owner FROM properties pr WHERE pr.id=j.property_id) job_demo FROM applications a JOIN cleaning_jobs j ON j.id=a.job_id JOIN profiles p ON p.id=a.user_id WHERE a.user_id=? OR j.owner_id=?`, this.userId,this.userId),
       this.all('SELECT * FROM notifications WHERE user_id=? ORDER BY created_at DESC LIMIT 40', this.userId),
-      this.all('SELECT * FROM (SELECT * FROM messages WHERE user_id=? ORDER BY created_at DESC,rowid DESC LIMIT 100) ORDER BY created_at', this.userId),
+      this.all('SELECT * FROM (SELECT * FROM messages WHERE user_id=? ORDER BY created_at DESC,rowid DESC LIMIT 100) ORDER BY created_at', this.userId).then(rows=>rows.map(m=>({...m,...splitScreen(m.body)}) as Row)),
     ]);
     const serverTime=now();
     // Only the rules of the places this person sees: the whole table would be read on every refresh of the app.
@@ -1583,7 +1584,7 @@ export class RentalService {
       if(inherited?.start&&Date.parse(inherited.start+(inherited.start.length===16?'+05:00':''))<=Date.now()){delete inherited.start;delete inherited.end;}
       return administratorSearch(this,text,inherited||current,{syntheticPreview:config.TEST_DATA_ONLY==='1'});
     };
-    let mode='scenario',errorCode:string|undefined,commands:Row[]=[],fromAccount=false;
+    let mode='scenario',errorCode:string|undefined,commands:Row[]=[],fromAccount=false,screen:string|undefined;
     if(role==='guest'&&(isPropertySearch(text)||previous&&isSearchRefinement(text))){
       const found=await readSearch();
       reply.text=found.text;reply.action='properties';search=found.result;
@@ -1591,21 +1592,21 @@ export class RentalService {
       // Answered from the person's own bookings and cleaning jobs: no model is needed and none is asked.
       reply.text=(await readAdministratorProcesses(this,role,text)).text;reply.action=role==='cleaner'?'jobs':'bookings';fromAccount=true;
     }else if(permission.allowed&&config.OPENAI_API_KEY&&config.OPENAI_MODEL){
-      const history=await this.all('SELECT sender,body FROM (SELECT sender,body,created_at FROM messages WHERE user_id=? AND scope=? ORDER BY created_at DESC LIMIT 8) ORDER BY created_at',this.userId,role);
+      const history=(await this.all('SELECT sender,body FROM (SELECT sender,body,created_at FROM messages WHERE user_id=? AND scope=? ORDER BY created_at DESC LIMIT 8) ORDER BY created_at',this.userId,role)).map(m=>({...m,body:splitScreen(m.body).body}));
       const context=assistantContext(await this.roleState(role),role);
       const budget=createAIBudgetLifecycle(this.db,this.userId,config);
-      const generated=await generateAnswer(config,text,role,history as {sender:string;body:string}[],reply.text,context,toolExecutor,{...budget,beforeRequest:async body=>{if(!(await aiDataPermission(this)).allowed)throw new DomainError('Передача данных отозвана. Поиск и формы доступны.');await budget.beforeRequest(body);}},role==='guest'?readSearch:undefined,()=>readAdministratorProcesses(this,role),await languageOf(this.db,this.userId));
+      const generated=await generateAnswer(config,text,role,history as {sender:string;body:string}[],reply.text,context,toolExecutor,{...budget,beforeRequest:async body=>{if(!(await aiDataPermission(this)).allowed)throw new DomainError('Передача данных отозвана. Поиск и формы доступны.');await budget.beforeRequest(body);}},role==='guest'&&mayNeedCatalog(text)?readSearch:undefined,()=>readAdministratorProcesses(this,role),await languageOf(this.db,this.userId));
       reply.text=generated.text;
-      mode=generated.mode;errorCode=generated.errorCode;commands=generated.commands||[];
+      mode=generated.mode;errorCode=generated.errorCode;commands=generated.commands||[];screen=generated.screen;
       if(generated.search){search=generated.search;reply.action='properties';}
     }
     const answerId=id();
     await this.db.batch([
       this.query('INSERT INTO messages VALUES (?,?,?,?,?,?)',id(),this.userId,role,'user',text,ts),
-      this.query('INSERT INTO messages VALUES (?,?,?,?,?,?)',answerId,this.userId,role,'assistant',reply.text,ts+1),
+      this.query('INSERT INTO messages VALUES (?,?,?,?,?,?)',answerId,this.userId,role,'assistant',withScreen(reply.text,screen||null),ts+1),
       ...(search?[this.query('INSERT INTO administrator_search_results VALUES (?,?)',answerId,JSON.stringify(search))]:[])
     ]);
-    return {...reply,mode,commands,permissionRequired:!permission.allowed,...(fromAccount?{fromAccount}:{}),...(search?{search}:{}),...(errorCode?{errorCode}:{})};
+    return {...reply,mode,commands,...(screen?{screen}:{}),permissionRequired:!permission.allowed,...(fromAccount?{fromAccount}:{}),...(search?{search}:{}),...(errorCode?{errorCode}:{})};
   }
   async demo() {
     const existing=await this.one('SELECT id FROM properties WHERE demo_owner=? LIMIT 1',this.userId);
