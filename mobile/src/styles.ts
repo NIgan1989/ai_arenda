@@ -1,11 +1,13 @@
 import { StyleSheet,Platform } from 'react-native';
 import {T} from './tokens';
-// The app paints in one ink, as the main screen and the menu do: the indigo of the tokens stays on the site, the
-// splash and the brand moments (night, dome, gold). Status colours (success, warning, danger) keep their meaning.
-const ink=T.color.ink,soft=T.color.inkSoft;
-export const C={...T.color,accent:ink,accentPressed:soft,accentSoft:T.color.surfaceAlt,accentLine:T.color.lineStrong,
- aiFrom:ink,aiMid:soft,aiTo:T.color.muted,focus:ink,info:soft,infoSoft:T.color.surfaceAlt,infoLine:T.color.line,
- bubbleMine:T.color.line,chatWall:T.color.bg};
+// The app paints in the palette «Киіз үй» (design/tokens.json → appColor, Radix Colors): the warm grey of felt for
+// the ground and the text, the brown of the wood of a кереге for the main action, the gold of the шаңырақ for the swipe.
+// Ink stays for what is chosen (tabs, chips, dots); brown only for the one main action of a screen, links and the chosen
+// price on the map. Status colours (success, warning, danger) keep their meaning. The site keeps tokens.color.
+const A=T.appColor,ink=A.ink,soft=A.inkSoft;
+export const C={...T.color,...A,accent:A.action,accentPressed:A.actionPressed,accentSoft:A.surfaceAlt,accentLine:A.lineStrong,onAccent:A.surface,
+ aiFrom:ink,aiMid:soft,aiTo:A.muted,focus:ink,info:soft,infoSoft:A.surfaceAlt,infoLine:A.line,
+ bubbleMine:A.line,chatWall:A.bg};
 // Every size below comes from design/tokens.json: 4pt spacing, seven text sizes, five radii, 44/48/56 controls.
 const [caption,label,body,subtitle,title,heading,display]=Object.values(T.font).map(([fontSize,lineHeight])=>({fontSize,lineHeight}));
 const R=T.radius,H=T.control;

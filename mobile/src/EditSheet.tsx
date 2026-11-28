@@ -108,7 +108,7 @@ export const editStyles=StyleSheet.create({
  menu:{position:'absolute',top:H.primary,right:12,minWidth:220,borderRadius:R.lg,backgroundColor:C.surface,borderWidth:1,borderColor:C.line,shadowColor:C.ink,shadowOffset:{width:0,height:4},shadowOpacity:.14,shadowRadius:16,elevation:6,overflow:'hidden'},
  menuRow:{flexDirection:'row',alignItems:'center',gap:12,minHeight:H.field,paddingHorizontal:16},menuLine:{borderTopWidth:1,borderTopColor:C.line},
  menuText:{...type.body,color:C.ink},danger:{color:C.danger},
- button:{minHeight:H.primary,borderRadius:R.full,backgroundColor:C.ink,alignItems:'center',justifyContent:'center',paddingHorizontal:24},
+ button:{minHeight:H.primary,borderRadius:R.full,backgroundColor:C.accent,alignItems:'center',justifyContent:'center',paddingHorizontal:24},
  buttonLine:{backgroundColor:C.surface,borderWidth:1,borderColor:C.lineStrong},
  buttonText:{...type.body,color:C.surface,fontWeight:'600',textAlign:'center'},buttonLineText:{color:C.ink},
  row:{flexDirection:'row',alignItems:'center',gap:12,minHeight:64,paddingVertical:8},rowLineBottom:{borderBottomWidth:1,borderBottomColor:C.line},

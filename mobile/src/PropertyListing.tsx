@@ -39,11 +39,11 @@ export function PlaceBar({property:p,stay,busy,onChoose}:{property:Row;stay?:{st
 const l=StyleSheet.create({
  // «Гарантия заселения» (concept 2026-11-27): one quiet row instead of an advert.
  guarantee:{flexDirection:'row',alignItems:'center',gap:12,marginTop:12,paddingTop:12,borderTopWidth:StyleSheet.hairlineWidth,borderTopColor:C.line},guaranteeText:{flex:1,minWidth:0},guaranteeTitle:{...type.body,color:C.ink,fontWeight:'500'},
- photos:{borderRadius:16,overflow:'hidden',backgroundColor:C.surfaceAlt},count:{position:'absolute',right:12,bottom:12,...type.caption,color:C.onAccent,fontWeight:'600',paddingHorizontal:8,paddingVertical:4,borderRadius:T.radius.full,backgroundColor:'rgba(14,19,36,0.6)',overflow:'hidden'},
+ photos:{borderRadius:16,overflow:'hidden',backgroundColor:C.surfaceAlt},count:{position:'absolute',right:12,bottom:12,...type.caption,color:C.onAccent,fontWeight:'600',paddingHorizontal:8,paddingVertical:4,borderRadius:T.radius.full,backgroundColor:'rgba(33,32,28,0.6)',overflow:'hidden'},
  states:{flexDirection:'row',flexWrap:'wrap',columnGap:12,rowGap:4},state:{...type.caption,color:C.inkSoft,fontWeight:'600'},warn:{color:C.warning},stateQuiet:{color:C.muted,fontWeight:'400'},
  more:{flexDirection:'row',alignItems:'center',minHeight:T.control.touch,borderTopWidth:1,borderTopColor:C.line,borderBottomWidth:1,borderBottomColor:C.line},moreText:{...type.body,flex:1,color:C.ink,fontWeight:'600'},
  chevron:{...type.label,color:C.muted},chevronUp:{transform:[{rotate:'180deg'}]},
  bar:{flexDirection:'row',alignItems:'center',gap:12,paddingHorizontal:20,paddingTop:12,paddingBottom:20,borderTopWidth:1,borderTopColor:C.line,backgroundColor:C.surface},
  barText:{flex:1,minWidth:0},barPrice:{...type.subtitle,color:C.ink,fontWeight:'600'},barWhen:{...type.label,color:C.inkSoft},
- barButton:{minHeight:T.control.primary,paddingHorizontal:24,borderRadius:T.radius.full,backgroundColor:C.ink,alignItems:'center',justifyContent:'center'},barButtonText:{...type.body,color:C.onAccent,fontWeight:'600'},
+ barButton:{minHeight:T.control.primary,paddingHorizontal:24,borderRadius:T.radius.full,backgroundColor:C.accent,alignItems:'center',justifyContent:'center'},barButtonText:{...type.body,color:C.onAccent,fontWeight:'600'},
 });

@@ -90,8 +90,8 @@ const q=StyleSheet.create({
  box:{aspectRatio:4/3,borderRadius:T.radius.lg,overflow:'hidden',backgroundColor:C.surfaceAlt},boxEmpty:{borderWidth:1,borderColor:C.lineStrong,borderStyle:'dashed',backgroundColor:C.surface},
  empty:{flex:1,alignItems:'center',justifyContent:'center'},plus:{width:48,height:48,borderRadius:24,backgroundColor:C.surfaceAlt,alignItems:'center',justifyContent:'center'},plusIcon:{width:22,height:22,tintColor:C.ink},
  mosaic:{flex:1,flexDirection:'row',flexWrap:'wrap',gap:2},one:{width:'100%',height:'100%'},half:{flex:1,height:'100%'},quarter:{width:'48.5%',height:'48.5%'},img:{width:'100%',height:'100%'},
- more:{position:'absolute',left:0,right:0,top:0,bottom:0,alignItems:'center',justifyContent:'center',backgroundColor:'rgba(14,19,36,0.55)'},moreText:{...type.subtitle,color:C.onAccent,fontWeight:'600'},
- caption:{position:'absolute',left:0,right:0,bottom:0,flexDirection:'row',alignItems:'center',gap:8,paddingHorizontal:12,paddingVertical:8},captionOver:{backgroundColor:'rgba(14,19,36,0.55)'},
+ more:{position:'absolute',left:0,right:0,top:0,bottom:0,alignItems:'center',justifyContent:'center',backgroundColor:'rgba(33,32,28,0.55)'},moreText:{...type.subtitle,color:C.onAccent,fontWeight:'600'},
+ caption:{position:'absolute',left:0,right:0,bottom:0,flexDirection:'row',alignItems:'center',gap:8,paddingHorizontal:12,paddingVertical:8},captionOver:{backgroundColor:'rgba(33,32,28,0.55)'},
  captionText:{flex:1,...type.label,color:C.ink,fontWeight:'600'},count:{minWidth:24,height:24,borderRadius:12,paddingHorizontal:8,overflow:'hidden',backgroundColor:C.surface,color:C.ink,textAlign:'center',...type.caption,lineHeight:24,fontWeight:'600'},
 });
 

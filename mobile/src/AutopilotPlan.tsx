@@ -223,7 +223,7 @@ const p=StyleSheet.create({
  feature:{flexDirection:'row',gap:12},check:{...type.body,color:C.ink,fontWeight:'600'},featureText:{...type.body,color:C.inkSoft,flex:1},
  keep:{...type.label,color:C.inkSoft,backgroundColor:C.bg,borderRadius:T.radius.md,padding:12},
  paused:{...type.label,color:C.warning,backgroundColor:C.warningSoft,borderRadius:T.radius.md,padding:8,overflow:'hidden'},
- btn:{flex:1,minHeight:T.control.primary,borderRadius:T.radius.lg,backgroundColor:C.ink,alignItems:'center',justifyContent:'center',paddingHorizontal:12},btnText:{...type.body,color:C.onAccent,fontWeight:'600',textAlign:'center'},
+ btn:{flex:1,minHeight:T.control.primary,borderRadius:T.radius.lg,backgroundColor:C.accent,alignItems:'center',justifyContent:'center',paddingHorizontal:12},btnText:{...type.body,color:C.onAccent,fontWeight:'600',textAlign:'center'},
  btnLine:{backgroundColor:C.surface,borderWidth:1,borderColor:C.lineStrong},btnLineText:{color:C.ink},btnDanger:{backgroundColor:C.danger},
  nav:{flexDirection:'row',gap:8},
  fine:{...type.caption,color:C.muted,textAlign:'center'},

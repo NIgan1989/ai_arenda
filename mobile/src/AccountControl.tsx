@@ -181,6 +181,6 @@ const m=StyleSheet.create({
  link:{...type.label,color:C.ink,fontWeight:'600',textDecorationLine:'underline'},
  info:{minHeight:T.control.primary,flexDirection:'row',alignItems:'center',gap:12,paddingHorizontal:16,paddingVertical:8,borderTopWidth:1,borderTopColor:C.line},
  edit:{position:'absolute',top:0,right:0},
- mode:{alignSelf:'center',minHeight:T.control.primary,marginTop:24,paddingHorizontal:24,borderRadius:T.radius.full,alignItems:'center',justifyContent:'center',backgroundColor:C.ink},
+ mode:{alignSelf:'center',minHeight:T.control.primary,marginTop:24,paddingHorizontal:24,borderRadius:T.radius.full,alignItems:'center',justifyContent:'center',backgroundColor:C.accent},
  modeText:{...type.label,color:C.onAccent,fontWeight:'600'},
 });

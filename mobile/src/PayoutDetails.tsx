@@ -117,7 +117,7 @@ const pf=StyleSheet.create({
  logo:{width:44,height:44,borderRadius:R.md,backgroundColor:C.surfaceAlt,alignItems:'center',justifyContent:'center'},logoText:{...type.caption,color:C.ink,fontWeight:'600'},
  phone:{...type.subtitle,color:C.ink,fontWeight:'600'},
  line:{flexDirection:'row',alignItems:'center',justifyContent:'space-between',gap:12,paddingTop:12,borderTopWidth:1,borderTopColor:C.line},lineTitle:{...type.label,color:C.ink,fontWeight:'500'},
- btn:{minHeight:T.control.primary,borderRadius:R.full,backgroundColor:C.ink,alignItems:'center',justifyContent:'center',paddingHorizontal:24},btnLine:{backgroundColor:C.surface,borderWidth:1,borderColor:C.lineStrong},btnText:{...type.body,color:C.onAccent,fontWeight:'600'},
+ btn:{minHeight:T.control.primary,borderRadius:R.full,backgroundColor:C.accent,alignItems:'center',justifyContent:'center',paddingHorizontal:24},btnLine:{backgroundColor:C.surface,borderWidth:1,borderColor:C.lineStrong},btnText:{...type.body,color:C.onAccent,fontWeight:'600'},
  text:{minHeight:T.control.touch,alignSelf:'flex-start',justifyContent:'center'},textLink:{...type.label,color:C.ink,fontWeight:'600',textDecorationLine:'underline'},
  wait:{borderRadius:R.md,borderWidth:1,borderColor:C.warningLine,backgroundColor:C.warningSoft,padding:12},
 });

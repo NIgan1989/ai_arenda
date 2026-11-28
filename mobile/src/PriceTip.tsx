@@ -224,7 +224,7 @@ const t=StyleSheet.create({
  reason:{paddingHorizontal:12,paddingVertical:4,borderRadius:R.full,backgroundColor:C.surfaceAlt},
  reasonText:{fontSize:F.label[0],lineHeight:F.label[1],color:C.inkSoft},
  actions:{flexDirection:'row',gap:8,marginTop:12},
- accept:{flex:1,minHeight:H.field,borderRadius:R.full,backgroundColor:C.ink,alignItems:'center',justifyContent:'center',paddingHorizontal:16},
+ accept:{flex:1,minHeight:H.field,borderRadius:R.full,backgroundColor:C.accent,alignItems:'center',justifyContent:'center',paddingHorizontal:16},
  acceptText:{fontSize:F.body[0],lineHeight:F.body[1],fontWeight:'600',color:C.onAccent},
  reject:{minHeight:H.field,borderRadius:R.full,borderWidth:1,borderColor:C.line,backgroundColor:C.surface,alignItems:'center',justifyContent:'center',paddingHorizontal:16},
  rejectText:{fontSize:F.body[0],lineHeight:F.body[1],fontWeight:'600',color:C.ink},

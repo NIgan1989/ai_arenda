@@ -74,7 +74,7 @@ const h=StyleSheet.create({
  bay:{gap:8,padding:12,borderRadius:R.md,backgroundColor:C.surfaceAlt},bayOn:{backgroundColor:C.surface,borderWidth:1,borderColor:C.ink},
  row:{flexDirection:'row',alignItems:'center',gap:8},title:{...type.body,color:C.ink,fontWeight:'600'},mode:{...type.caption,color:C.muted,flex:1},meta:{...type.caption,color:C.muted},
  tag:{...type.caption,fontWeight:'600',paddingHorizontal:8,paddingVertical:2,borderRadius:R.sm,overflow:'hidden'},tagFree:{backgroundColor:C.successSoft,color:C.success},tagBusy:{backgroundColor:C.warningSoft,color:C.warning},tagOff:{backgroundColor:C.surface,color:C.muted},
- go:{minHeight:H.primary,borderRadius:R.full,backgroundColor:C.ink,alignItems:'center',justifyContent:'center',paddingHorizontal:24},goText:{color:C.onAccent,...type.body,fontWeight:'600'},
+ go:{minHeight:H.primary,borderRadius:R.full,backgroundColor:C.accent,alignItems:'center',justifyContent:'center',paddingHorizontal:24},goText:{color:C.onAccent,...type.body,fontWeight:'600'},
  line:{minHeight:H.primary,borderRadius:R.full,borderWidth:1,borderColor:C.ink,alignItems:'center',justifyContent:'center',paddingHorizontal:24},lineText:{color:C.ink,...type.body,fontWeight:'600'},
  chips:{flexDirection:'row',flexWrap:'wrap',gap:8},chip:{minHeight:44,minWidth:64,paddingHorizontal:12,borderRadius:R.full,borderWidth:1,borderColor:C.line,backgroundColor:C.surface,alignItems:'center',justifyContent:'center'},chipText:{...type.body,color:C.ink},
  dim:{opacity:.45},

@@ -174,6 +174,6 @@ const v=StyleSheet.create({
  placeMap:{width:232,height:140,borderRadius:12,overflow:'hidden',backgroundColor:C.surfaceAlt},
  tile:{position:'absolute',width:TILE,height:TILE},pinDot:{position:'absolute',width:16,height:16,borderRadius:8,marginLeft:-8,marginTop:-8,backgroundColor:C.ink,borderWidth:3,borderColor:C.surface},
  placeTitle:{fontSize:16,fontWeight:'600',color:C.ink},placeNote:{fontSize:12,color:C.muted},
- previewFoot:{padding:16,gap:12},sendWide:{minHeight:56,borderRadius:T.radius.full,backgroundColor:C.ink,alignItems:'center',justifyContent:'center'},
+ previewFoot:{padding:16,gap:12},sendWide:{minHeight:56,borderRadius:T.radius.full,backgroundColor:C.accent,alignItems:'center',justifyContent:'center'},
  mapScreen:{flex:1,backgroundColor:C.bg},mapHead:{flexDirection:'row',alignItems:'center',gap:12,padding:12},close:{backgroundColor:C.surfaceAlt},mapTitle:{flex:1,textAlign:'center',fontSize:16,fontWeight:'600',color:C.ink},
 });

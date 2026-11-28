@@ -59,7 +59,7 @@ export function LineRow({title,value,onPress,disabled=false,dot,label}:{title:st
 }
 const p=StyleSheet.create({
  fill:{flex:1},
- shade:{flex:1,backgroundColor:'rgba(15,23,42,0.32)'},
+ shade:{flex:1,backgroundColor:'rgba(33,32,28,0.32)'},
  sheet:{maxHeight:'88%',borderTopLeftRadius:T.radius.xl,borderTopRightRadius:T.radius.xl,backgroundColor:C.surface},
  head:{flexDirection:'row',alignItems:'center',minHeight:56,paddingHorizontal:8,borderBottomWidth:1,borderBottomColor:C.line},
  side:{width:T.control.touch,height:T.control.touch,alignItems:'center',justifyContent:'center'},
