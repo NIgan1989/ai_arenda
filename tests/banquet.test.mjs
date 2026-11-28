@@ -83,9 +83,9 @@ test('a guest books a slot of a banquet hall for a memorial meal',async()=>{
   assert.deepEqual(found.properties.map(p=>[p.id,p.estimate.amount,p.details.menu]),[[id,640000,'Бешбармак, баурсаки, чай']]);
   // A hall never shows among homes, and a home never among halls.
   assert.ok(!(await f.guest.publicSearch({city:'Павлодар',mode:'daily',guests:'2',start:iso(start),end:iso(end)})).properties.some(p=>p.id===id));
-  await assert.rejects(f.guest.bookingQuote({propertyId:id,start:iso(start),end:iso(start+2*86400),guests:80,billingMode:'daily'}),/на обед или на вечер/);
+  await assert.rejects(f.guest.bookingQuote({propertyId:id,start:iso(start),end:iso(start+2*86400),guests:80,billingMode:'daily'}),/Зал принимает мероприятия/);
    // 15:00–21:00 would take both slots of the day.
-  await assert.rejects(f.guest.bookingQuote({propertyId:id,start:iso(start+3*3600),end:iso(start+9*3600),guests:80,billingMode:'daily'}),/на обед или на вечер/);
+  await assert.rejects(f.guest.bookingQuote({propertyId:id,start:iso(start+3*3600),end:iso(start+9*3600),guests:80,billingMode:'daily'}),/Зал принимает мероприятия/);
  await assert.rejects(f.guest.bookingQuote({propertyId:id,start:iso(start),end:iso(end),guests:201,billingMode:'daily'}),/Гости/);
   const quote=await f.guest.bookingQuote({propertyId:id,start:iso(start),end:iso(end),guests:80,billingMode:'daily'});
   assert.deepEqual([quote.amount,quote.periods,quote.price,quote.kind],[640000,1,640000,'banquet']);

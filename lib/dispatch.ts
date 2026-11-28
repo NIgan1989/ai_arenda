@@ -5,6 +5,7 @@ import {cleanerStats,rankCleaners} from './cleaner-match';
 import {assertPilotAllowed} from './pilot-governance';
 import {availableSql,cleanerRegulars} from './regular-cleaner';
 import {autopilotFits,livePlanSql} from './autopilot-plans';
+import {isQuiet,nightCleaning,urgentNote} from './night-hours';
 
 export async function saveOperationRules(service:RentalService,body:Row){
  await service.requireRole('owner');const propertyId=required(body.propertyId,'Жильё',100);if(!await service.one('SELECT id FROM properties WHERE id=? AND owner_id=?',propertyId,service.userId))throw new DomainError('Жильё недоступно.',403);
@@ -84,16 +85,26 @@ export async function coordinateDispatch(service:RentalService){
   WHERE j.owner_id=? AND j.status='open' AND j.end>? AND (rc.cleaner_id IS NOT NULL OR (r.auto_offers=1 AND j.fee<=pp.cleaning_budget AND (pp.mandate_until=0 OR pp.mandate_until>?))) ORDER BY j.start LIMIT 50`,service.userId,at,at);
  let offered=0;
  for(const job of jobs){
+  // «Тихие часы» (lib/night-hours.ts): from 23:00 to 08:00 the AI wakes nobody. A day cleaning waits for the morning;
+  // a night one (the next guest comes before a morning cleaning would end) goes only to cleaners whose own autopilot
+  // hours take it, and the owner is told once, in time to clean or send someone.
+  const night=nightCleaning(Number(job.start),Number(job.end)-Number(job.start)),quiet=isQuiet(at);
+  if(night)await q(db,'INSERT OR IGNORE INTO notifications(id,user_id,body,dedupe,read,created_at) VALUES (?,?,?,?,0,?)',uuid(),service.userId,urgentNote(job.title,Number(job.start)),'owner:night-cleaning:'+job.id+':'+job.version,at).run();
   if(await one(db,"SELECT id FROM cleaning_offers WHERE job_id=? AND job_version=? AND status IN ('offered','accepted') AND (status='accepted' OR expires_at>?)",job.id,job.version,at))continue;
+  if(quiet&&!night)continue;
   // The regular cleaner always comes first, whatever her general offer setting or city, if she is free and has not answered this cleaning yet.
-  const regular=job.regular_id&&await one(db,"SELECT p.id FROM profiles p WHERE p.id=? AND NOT EXISTS(SELECT 1 FROM profile_details WHERE user_id=p.id AND work_status='away') AND NOT EXISTS(SELECT 1 FROM cleaning_jobs WHERE assigned_to=p.id AND status IN ('assigned','in_progress','submitted') AND start<? AND end>?) AND NOT EXISTS(SELECT 1 FROM cleaning_offers WHERE job_id=? AND worker_id=p.id AND (job_version=? OR status IN ('declined','expired') AND start=? AND end=? AND fee=? AND (status='declined' OR replacement_allowed=1)))",job.regular_id,job.end,job.start,job.id,job.version,job.start,job.end,job.fee);
+  let regular=job.regular_id&&await one(db,"SELECT p.id FROM profiles p WHERE p.id=? AND NOT EXISTS(SELECT 1 FROM profile_details WHERE user_id=p.id AND work_status='away') AND NOT EXISTS(SELECT 1 FROM cleaning_jobs WHERE assigned_to=p.id AND status IN ('assigned','in_progress','submitted') AND start<? AND end>?) AND NOT EXISTS(SELECT 1 FROM cleaning_offers WHERE job_id=? AND worker_id=p.id AND (job_version=? OR status IN ('declined','expired') AND start=? AND end=? AND fee=? AND (status='declined' OR replacement_allowed=1)))",job.regular_id,job.end,job.start,job.id,job.version,job.start,job.end,job.fee);
   let worker:{id:string;name?:string;reasons:string[]}|undefined,auto=false;
+  // At night the regular cleaner is asked only when her own autopilot hours take the cleaning; otherwise others who work at night.
+  if(regular&&quiet&&!await autopilotFits(db,job.regular_id,job,at))regular=null;
   if(regular){worker={id:job.regular_id,name:job.regular_name,reasons:['ваш постоянный исполнитель']};auto=await autopilotFits(db,job.regular_id,job,at);}
   else{
    const candidates=await rows(db,`SELECT p.id,p.name FROM profiles p LEFT JOIN worker_dispatch d ON d.user_id=p.id WHERE (d.receive_offers=1 OR ${livePlanSql('p.id','cleaner')}) AND p.city=? AND EXISTS(SELECT 1 FROM json_each(p.roles) WHERE value='cleaner') AND p.id<>? AND NOT EXISTS(SELECT 1 FROM profile_details WHERE user_id=p.id AND work_status='away') AND NOT EXISTS(SELECT 1 FROM cleaning_jobs WHERE assigned_to=p.id AND status IN ('assigned','in_progress','submitted') AND start<? AND end>?) AND NOT EXISTS(SELECT 1 FROM cleaning_offers WHERE job_id=? AND worker_id=p.id AND (job_version=? OR status IN ('declined','expired') AND start=? AND end=? AND fee=? AND (status='declined' OR replacement_allowed=1))) ORDER BY (SELECT COUNT(*) FROM cleaning_jobs WHERE assigned_to=p.id AND status='completed') DESC,p.created_at,p.id LIMIT 20`,job.city,service.userId,job.end,job.start,job.id,job.version,job.start,job.end,job.fee);
    // Cleaners on the «Автопилот» plan whose rules fit this cleaning get it first; among them, as among
    // everyone else, the most reliable one and the one who knows this flat comes first.
    const fitting:Row[]=[];for(const c of candidates)if(await autopilotFits(db,c.id,job,at))fitting.push(c);
+   // At night only those who said they work at night: their autopilot hours take this cleaning.
+   if(quiet&&!fitting.length)continue;
    worker=rankCleaners(await cleanerStats(db,fitting.length?fitting:candidates,job.property_id,at))[0];
    auto=!!worker&&fitting.some(c=>c.id===worker!.id);
   }

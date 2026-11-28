@@ -156,7 +156,7 @@ export function emptyAnswer(empty: Row | undefined, draft: GuestDraft, narrowed:
     if (categoryOf(draft) === 'banquet') {
       if (count && empty.blocker === 'features') return { title: t('Свободного зала с этим нет: {v}',{v:BANQUET_WISHES.filter(([id]) => draft.features.includes(id)).map(([, name]) => name.toLocaleLowerCase('ru')).join(', ')}), note: t('Без этого условия свободно: {count}.',{count}), action: { title: t('Искать без пожеланий'), patch: { features: [] } } };
       if (count && empty.blocker === 'kinds') return { title: t('Такого зала свободного нет'), note: t('Других залов на это время свободно: {count}.',{count}), action: { title: t('Показать любой зал'), patch: { kinds: [...BANQUET_TYPES] } } };
-      if (!count || !empty.blocker) return { title: t('С этими условиями свободного зала нет'), note: count ? t('Без района и пожеланий свободно: {count}.',{count}) : t('Попробуйте другой день, обед вместо вечера или меньше гостей.') };
+      if (!count || !empty.blocker) return { title: t('С этими условиями свободного зала нет'), note: count ? t('Без района и пожеланий свободно: {count}.',{count}) : t('Попробуйте другой день, другое время или меньше гостей.') };
     }
     // One condition empties the answer on its own: it is named, with one tap to search without it.
     const free = t('Без этого условия свободно: {count}.',{count});
@@ -170,7 +170,7 @@ export function emptyAnswer(empty: Row | undefined, draft: GuestDraft, narrowed:
     if (count && empty.blocker === 'near') return { title: t('Рядом с этим местом свободного нет'), note: t('В городе свободно: {count}.',{count}), action: { title: t('Искать по всему городу'), patch: { near: null, priority: 'balanced' } } };
     return { title: t('С этими условиями свободного нет'), note: count ? t('Без района, типа жилья и пожеланий свободно: {count}.',{count}) : t('Даже без района, типа жилья и пожеланий свободного нет. Попробуйте другое время.') };
   }
-  if (categoryOf(draft) === 'banquet') return { title: t('На этот день свободного зала нет'), note: narrowed ? t('Поиск сужают район, цена на гостя или пожелания. Можно искать без них.') : t('Попробуйте другой день, обед вместо вечера или меньше гостей.') };
+  if (categoryOf(draft) === 'banquet') return { title: t('На этот день свободного зала нет'), note: narrowed ? t('Поиск сужают район, цена на гостя или пожелания. Можно искать без них.') : t('Попробуйте другой день, другое время или меньше гостей.') };
   return { title: t('На эти условия свободного жилья нет'), note: narrowed ? t('Поиск сужают район, бюджет или пожелания. Можно искать без них.') : t('Попробуйте другое время или другой срок.') };
 }
 

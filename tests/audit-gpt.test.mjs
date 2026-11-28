@@ -251,22 +251,22 @@ test('a bath or a sauna is priced by the hour even when the request asks for day
   await assert.rejects(f.guest.bookingChangeQuote(f.booking,'guest',{start:iso(now()+3600),end:iso(now()+86400+3600),billingMode:'daily'}),/по часам/);
  }finally{f.db.close();}
 });
-test('a banquet hall moves only to another lunch or evening, never across both',async()=>{
+test('a banquet hall moves only to another of its own times of events',async()=>{
  const f=await fixture();try{
   kindOf(f,'banquet');
-  await assert.rejects(f.guest.bookingQuote({propertyId:f.property,start:iso(dayAt(3,15)),end:iso(dayAt(3,21)),guests:1,billingMode:'daily'}),/обед/);
+  await assert.rejects(f.guest.bookingQuote({propertyId:f.property,start:iso(dayAt(3,15)),end:iso(dayAt(3,21)),guests:1,billingMode:'daily'}),/Зал принимает мероприятия/);
   const lunch=await f.guest.bookingQuote({propertyId:f.property,start:iso(dayAt(3,12)),end:iso(dayAt(3,17)),guests:1});
   assert.equal(lunch.billingMode,'daily');
   // The fixture's booking stands for a confirmed banquet: moving it to 15:00–21:00 is refused, to an evening allowed.
   f.db.raw.prepare("UPDATE booking_terms SET billing_mode='daily' WHERE booking_id=?").run(f.booking);
-  await assert.rejects(f.owner.bookingChangeQuote(f.booking,'owner',{start:iso(dayAt(4,15)),end:iso(dayAt(4,21))}),/обед/);
+  await assert.rejects(f.owner.bookingChangeQuote(f.booking,'owner',{start:iso(dayAt(4,15)),end:iso(dayAt(4,21))}),/Зал принимает мероприятия/);
   const evening=await f.owner.bookingChangeQuote(f.booking,'owner',{start:iso(dayAt(4,18)),end:iso(dayAt(5,0))});
   assert.equal(evening.billingMode,'daily');
  }finally{f.db.close();}
 });
-test('a hall request says its slot, guests and occasion beside the sum',async()=>{
+test('a hall request says its time, guests and occasion beside the sum',async()=>{
  const {hallLine}=await load('record-span'),start=dayAt(3,18);
- assert.equal(hallLine({property_type:'banquet',start,guests:80,terms:{occasion:'toi'}}),'Вечер · 80 гостей · Свадьба, той');
- assert.equal(hallLine({property_type:'cafe',start:dayAt(3,12),guests:20,terms:{occasion:'other'}}),'Обед · 20 гостей · Банкет');
+ assert.equal(hallLine({property_type:'banquet',start,end:dayAt(4,0),guests:80,terms:{occasion:'toi'}}),'18:00–24:00 · 80 гостей · Свадьба, той');
+ assert.equal(hallLine({property_type:'cafe',start:dayAt(3,12),end:dayAt(3,13.5),guests:20,terms:{occasion:'other'}}),'12:00–13:30 · 20 гостей · Банкет');
  assert.equal(hallLine({property_type:'hotel',start,guests:2}),'');
 });

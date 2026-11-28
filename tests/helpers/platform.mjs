@@ -6,6 +6,9 @@ import ts from 'typescript';
 const output=process.cwd()+'/outputs/platform-tests-'+process.pid;mkdirSync(output,{recursive:true});
 for(const file of readdirSync('lib').filter(f=>f.endsWith('.ts')&&!f.endsWith('.d.ts'))){const js=ts.transpileModule(readFileSync('lib/'+file,'utf8'),{compilerOptions:{module:ts.ModuleKind.ES2022,target:ts.ScriptTarget.ES2022}}).outputText.replace(/from '(\.\/[^']+)'/g,(_,name)=>`from '${/\.(js|mjs)$/.test(name)?name:name+'.js'}'`);writeFileSync(output+'/'+file.replace(/\.ts$/,'.js'),js);}
 export const load=name=>import(pathToFileURL(output+'/'+name+'.js'));
+// «Тихие часы» depend on the time of day; the tests' times follow the real clock, so the rule is off here and
+// switched on in tests/night-hours.test.mjs.
+(await load('night-hours')).nightRule.on=false;
 // The map's address search never leaves the tests: by default it finds nothing, a test that needs a find stubs it itself.
 {const real=globalThis.fetch;globalThis.fetch=async(url,init)=>/nominatim\.openstreetmap\.org|api\.stadiamaps\.com\/geocoding/.test(String(url))?new Response('[]',{headers:{'content-type':'application/json'}}):real(url,init);}
 export class TestDatabase{
