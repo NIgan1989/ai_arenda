@@ -7,9 +7,9 @@ import {C} from './styles';
 
 // The layers of the sign, drawn by scripts/build-brand-assets.mjs from the same drawing as the site's (lib/brand.ts).
 const ringImage=require('../assets/brand/dome-ring.png'),barsUpright=require('../assets/brand/dome-bars-v.png'),barsLevel=require('../assets/brand/dome-bars-h.png');
-// Monochrome since 2026-11-26 (the new style of the app, board «Экраны старой версии»): a white plate, the sign and the
-// name in ink, no glow and no gold. The story is the same drawing, only quicker.
-const nameImage=require('../assets/brand/wordmark.png');
+// «Алтын шаңырақ» since 2026-11-28, the same as the app icon (scripts/build-brand-assets.mjs): a white plate, the crown
+// in ink, its rays in gold, the name with «Ai» in brown; one line of the ornament opens under the name.
+const nameImage=require('../assets/brand/wordmark.png'),ornament=require('../assets/brand/ornament.png');
 // The story is short: about a second and a half, longer only while the first data is still on its way.
 // K squeezes the timings of the drawing (they were made for three and a half seconds) into that time.
 const SIZE=160,HALF=SIZE/2,U=SIZE/100,MIN_STORY=1500,MAX_WAIT=6000,K=.42;
@@ -24,7 +24,7 @@ const native=Platform.OS!=='web';
 
 const values=()=>({
   ring:new Animated.Value(0),bars:BAR_STARTS.map(()=>new Animated.Value(0)),
-  rays:new Animated.Value(0),spread:new Animated.Value(0),name:new Animated.Value(0),line:new Animated.Value(0),
+  rays:new Animated.Value(0),spread:new Animated.Value(0),shine:new Animated.Value(0),name:new Animated.Value(0),line:new Animated.Value(0),orn:new Animated.Value(0),
   // What the opening takes away: the lid of the window, the words, the bars, the sign itself; and the plain fade for calm motion.
   lid:new Animated.Value(1),words:new Animated.Value(1),lattice:new Animated.Value(1),sign:new Animated.Value(1),open:new Animated.Value(0),fade:new Animated.Value(1),
 });
@@ -41,7 +41,8 @@ export function EntryStatusBar(){
 // (the site keeps its night plate):
 //   1. the шаңырақ, the crown of a yurt, is put together line by line — the ring is drawn, the four bars cross it;
 //   2. the roof poles spread around it as rays;
-//   3. the name comes up under it, then the line «Сервис поиска аренды жилья и досуга»;
+//   2b. when the last ray is in, the crown breathes once (a small swell and back), as the sun in the шаңырақ;
+//   3. the name comes up under it, the line of the ornament opens from its middle, then «Сервис поиска аренды жилья и досуга»;
 //   4. the crown opens: its ring becomes a window, and the window widens until the whole screen is in it.
 // It waits for the first data (so the map is ready under it), but never longer than a few seconds.
 // There is no vector drawing in the app, so the sign is made of pictures behind moving windows, and the plate with its
@@ -69,12 +70,13 @@ export function EntrySplash(){
     timers.push(setTimeout(exit,MAX_WAIT));
     AccessibilityInfo.isReduceMotionEnabled().catch(()=>false).then(reduced=>{
       if(!alive)return;calm=!!reduced;
-      if(calm){[a.ring,...a.bars,a.rays,a.spread,a.name,a.line].forEach(value=>value.setValue(1));timers.push(setTimeout(()=>{storyDone=true;maybeExit();},450));return;}
+      if(calm){[a.ring,...a.bars,a.rays,a.spread,a.name,a.line,a.orn].forEach(value=>value.setValue(1));timers.push(setTimeout(()=>{storyDone=true;maybeExit();},450));return;}
       const fast=(value:Animated.Value,toValue:number,duration:number,delay=0,easing?:(t:number)=>number)=>to(value,toValue,duration*K,delay*K,easing);
       Animated.parallel([
         fast(a.ring,1,900,150,PEN),...a.bars.map((bar,i)=>fast(bar,1,600,BAR_STARTS[i],PEN)),
         fast(a.spread,1,1500,1400,SOFT),fast(a.rays,1,RAYS_TIME,1400,Easing.linear),
-        fast(a.name,1,700,1900,SOFT),fast(a.line,1,700,2250,SOFT),
+        Animated.sequence([Animated.delay((1400+RAYS_TIME)*K),fast(a.shine,1,260,0,SOFT),fast(a.shine,0,420,0,PEN)]),
+        fast(a.name,1,700,1900,SOFT),fast(a.orn,1,800,2050,SOFT),fast(a.line,1,700,2250,SOFT),
       ]).start();
       timers.push(setTimeout(()=>{storyDone=true;maybeExit();},Math.max(0,MIN_STORY-(Date.now()-started))));
     });
@@ -91,7 +93,7 @@ export function EntrySplash(){
       <View style={st.sign}>
         <Animated.View style={[st.lid,{opacity:a.lid}]}/>
         <Animated.View style={[st.plate,plate,{transform:[{scale:grow(1,reach/WINDOW*1.06)}]}]}/>
-        <Animated.View style={[st.box,{opacity:a.sign,transform:[{scale:grow(1,2.4)}]}]}>
+        <Animated.View style={[st.box,{opacity:a.sign,transform:[{scale:grow(1,2.4)},{scale:a.shine.interpolate({inputRange:[0,1],outputRange:[1,1.06]})}]}]}>
           <Animated.View style={[st.box,{transform:[{rotate:a.spread.interpolate({inputRange:[0,1],outputRange:['-14deg','0deg']})},{scale:a.spread.interpolate({inputRange:[0,1],outputRange:[.84,1]})}]}]}>
             {RAYS.map(i=><View key={i} style={[st.box,{transform:[{rotate:`${i*360/DOME_RAYS}deg`}]}]}>
               <Animated.View style={[st.ray,{opacity:a.rays.interpolate({inputRange:[i*RAY_STEP/RAYS_TIME,(i*RAY_STEP+RAY_FADE)/RAYS_TIME],outputRange:[0,1],extrapolate:'clamp'})}]}/>
@@ -107,7 +109,8 @@ export function EntrySplash(){
         </Animated.View>
       </View>
       <Animated.View style={[st.words,{opacity:a.words,transform:[{translateY:a.words.interpolate({inputRange:[0,1],outputRange:[8,0]})}]}]}>
-        <Animated.Image source={nameImage} style={[st.name,st.ink,up(a.name)]}/>
+        <Animated.Image source={nameImage} style={[st.name,up(a.name)]}/>
+        <Animated.Image source={ornament} resizeMode="contain" accessibilityIgnoresInvertColors style={[st.ornament,{opacity:a.orn,transform:[{scaleX:a.orn}]}]}/>
         <Animated.Text style={[st.line,up(a.line)]}>{t(BRAND_LINE)}</Animated.Text>
       </Animated.View>
     </View>
@@ -157,8 +160,9 @@ const st=StyleSheet.create({
   rightHalf:{position:'absolute',left:HALF,top:0,width:HALF,height:SIZE,overflow:'hidden'},
   upperHalf:{position:'absolute',left:0,top:0,width:SIZE,height:HALF,overflow:'hidden'},
   lowerHalf:{position:'absolute',left:0,top:HALF,width:SIZE,height:HALF,overflow:'hidden'},
-  ray:{position:'absolute',left:HALF-RAY_WIDE/2,top:HALF-DOME_RAY_TO*U,width:RAY_WIDE,height:RAY_LONG,borderRadius:RAY_WIDE/2,backgroundColor:C.ink},
+  ray:{position:'absolute',left:HALF-RAY_WIDE/2,top:HALF-DOME_RAY_TO*U,width:RAY_WIDE,height:RAY_LONG,borderRadius:RAY_WIDE/2,backgroundColor:C.gold},
   words:{alignItems:'center',gap:4},
   name:{width:240,height:64},
+  ornament:{width:264,height:12,marginVertical:4,tintColor:C.accent},
   line:{fontSize:14,lineHeight:20,letterSpacing:.1,color:C.muted},
 });
