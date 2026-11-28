@@ -2,7 +2,7 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {loadPure} from './helpers/pure.mjs';
 
-const {dayRoute, progress, cleanerPin, routeLines, routeSummary} = await loadPure('mobile/src/cleaner-map.ts', 'mobile/src/owner-map.ts');
+const {dayRoute, progress, cleanerPin, routeLines, routeSummary} = await loadPure('mobile/src/cleaner-map.ts', 'mobile/src/owner-map.ts', 'lib/stay-words.ts');
 const {lineOrigin} = await loadPure('mobile/src/map-motion.ts');
 
 // 2026-11-13 10:00 in Kazakhstan (UTC+5).

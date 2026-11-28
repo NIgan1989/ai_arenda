@@ -28,8 +28,9 @@ async function card(db:D1Database,propertyId:string){
  return {lead,ids,p,details,policy,plan:bayPlan(details,ids.length),hours:venueHours(String(details.type||''),policy.venue_hours)};
 }
 /** What holds a box over [from, to): bookings with their time after, cleanings and calendar blocks. */
+// A finished wash at a place with its own staff still holds its break (lib/service.ts quickDone, PR #295).
 export async function busyIntervals(db:D1Database,id:string,from:number,to:number,at:number,except=''):Promise<[number,number][]>{
- return [...await rows(db,"SELECT start,occupied_until e FROM bookings WHERE property_id=? AND (status='confirmed' OR (status='requested' AND expires_at>?)) AND start<? AND occupied_until>? AND id<>?",id,at,to,from,except),
+ return [...await rows(db,"SELECT start,occupied_until e FROM bookings WHERE property_id=? AND (status='confirmed' OR (status='requested' AND expires_at>?) OR (status='completed' AND occupied_until>? AND EXISTS(SELECT 1 FROM properties q WHERE q.id=bookings.property_id AND q.own_staff=1))) AND start<? AND occupied_until>? AND id<>?",id,at,at,to,from,except),
   ...await rows(db,"SELECT start,end e FROM cleaning_jobs WHERE property_id=? AND status IN ('open','assigned','in_progress','submitted') AND start<? AND end>?",id,to,from),
   ...await rows(db,'SELECT x.start,x.end e FROM external_blocks x JOIN calendar_sources s ON s.id=x.source_id WHERE x.property_id=? AND s.enabled=1 AND x.start<? AND x.end>?',id,to,from)].map(r=>[Number(r.start),Number(r.e)] as [number,number]);
 }

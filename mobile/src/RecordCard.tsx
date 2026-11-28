@@ -1,5 +1,6 @@
 import {t} from '../../lib/i18n';
 import {jobPayNote} from '../../lib/regular-cleaner-text';
+import {wordsOf} from '../../lib/stay-words';
 import React,{createContext,useContext,useEffect,useRef,useState} from 'react';
 import {View,Text,Pressable,StyleSheet,Platform,LayoutAnimation,UIManager} from 'react-native';
 import {C,type} from './styles';
@@ -186,7 +187,7 @@ export function DealCard({kind,item,role,userId,application,thread,line:own,acti
    <Text style={r.when}>{halves?money(item.amount):recordSpan(item.start,item.end)+' · '+money(kind==='job'?item.fee:item.amount)}</Text></View>
    <Text style={[r.chevron,shown&&r.chevronUp]}>⌄</Text>
   </Pressable>
-  {halves&&<View style={r.halves}><View style={r.half}><Text style={r.halfKey}>{t('Заезд')}</Text><Text style={r.halfValue}>{recordSpan(item.start)}</Text></View><View style={[r.half,r.halfLine]}><Text style={r.halfKey}>{t('Выезд')}</Text><Text style={r.halfValue}>{recordSpan(item.end)}</Text></View></View>}
+  {halves&&<View style={r.halves}><View style={r.half}><Text style={r.halfKey}>{wordsOf(item).arrive}</Text><Text style={r.halfValue}>{recordSpan(item.start)}</Text></View><View style={[r.half,r.halfLine]}><Text style={r.halfKey}>{wordsOf(item).leave}</Text><Text style={r.halfValue}>{recordSpan(item.end)}</Text></View></View>}
   {/* A job: the place right under the title, and the line with the main button at the very bottom, under the details. */}
   {place}
   {!!place&&shown&&<Text style={[r.sumNote,!!item.payment_received_at&&{color:C.success}]}>{money(item.fee)} {jobPayNote(item)}</Text>}

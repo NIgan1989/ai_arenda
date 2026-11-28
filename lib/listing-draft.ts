@@ -28,6 +28,8 @@ export type ListingDraft={
 };
 export type DraftQuestion={key:'address'|'district'|'price';label:string;question:string;placeholder:string};
 
+// The usual company of a place when the owner did not say: a court or a billiard table takes four, a quest six.
+const TEAM:Record<string,number>={court:4,billiard:4,quest:6,gameclub:10,field:14,sporthall:20};
 export function emptyDraft(city=''):ListingDraft{
  return {type:'apartment',rooms:1,capacity:2,beds:2,bathrooms:1,area:35,floor:1,floors:5,city,district:'',address:'',
   price:0,hourlyPrice:0,minHours:2,nightlyPrice:0,deposit:0,cleaningFee:0,amenities:[],pets:false,smoking:false,parties:false,
@@ -120,14 +122,16 @@ export function readListingText(text:string,base:ListingDraft):{draft:ListingDra
  // «баня „Берёзка“», «зал «Сарыарка»»: a place guests know by its name keeps it in the title.
  const timed=isHourlyVenue(d.type);
  if(timed||hall){const name=/[«"„“]([^«»"„“”\n]{2,40})[»"“”]/u.exec(text);if(name&&!d.known.includes('title'))set('title',(draftKind(d)+' «'+name[1].trim()+'»').slice(0,120));}
- const guests=hall||isAuto(d.type)?null:rest.match(/(?:до|на|для)\s*(\d{1,2})\s*(?:-?х\s*)?(?:гост|человек|чел(?![а-я])|персон)/)||rest.match(/(\d{1,2})\s*(?:гост|человек|чел(?![а-я]))/)||rest.match(/(?:вместимость|спит|размест[а-я]*)\s*(?:до\s*)?(\d{1,2})/);
+ const guests=hall||isAuto(d.type)?null:rest.match(/(?:до|на|для)\s*(\d{1,2})\s*(?:-?х\s*)?(?:гост|человек|чел(?![а-я])|персон|дет|ребен|игрок|мест(?![а-я]*\s*(?:в\s*)?(?:парк|машин)))/)||rest.match(/(\d{1,2})\s*(?:гост|человек|чел(?![а-я]))/)||rest.match(/(?:вместимость|спит|размест[а-я]*)\s*(?:до\s*)?(\d{1,2})/);
  if(guests&&+guests[1]>0&&+guests[1]<=50)set('capacity',Number(guests[1]));
  const beds=t.match(/(\d{1,2})\s*спальн[а-я]*\s*мест/);if(beds&&+beds[1]>0)set('beds',Number(beds[1]));
  if(!found.includes('capacity')&&found.includes('beds'))set('capacity',d.beds);
  if(!found.includes('capacity')&&found.includes('rooms')&&!d.known.includes('capacity'))d.capacity=d.type==='studio'?2:Math.min(50,d.rooms*2);
  if(bath&&!found.includes('capacity')&&!d.known.includes('capacity'))d.capacity=Math.max(d.includedGuests||0,6);
  // A place of «Досуг» or «Спорт» takes a company or a team; «Авто» takes one car.
- if(timed&&!bath&&!found.includes('capacity')&&!d.known.includes('capacity'))d.capacity=isAuto(d.type)?1:kindCategory(d.type)==='sport'?14:10;
+ if(timed&&!bath&&!found.includes('capacity')&&!d.known.includes('capacity'))d.capacity=isAuto(d.type)?1:TEAM[d.type]||(kindCategory(d.type)==='sport'?14:10);
+ // A quest game, a billiard table, a court or a game club is usually taken for an hour.
+ if(timed&&['quest','billiard','court','gameclub'].includes(d.type)&&!d.known.includes('minHours'))d.minHours=1;
  if(d.beds<d.capacity)d.beds=d.capacity;
 
  const daily=hall?0:priceNear(t,'(?:сут(?:ки|ок)?|день|дня|в день|посуточн)');if(daily>=100)set('price',daily);
@@ -260,6 +264,14 @@ export function draftRules(d:ListingDraft){
 }
 
 // The body POST /api/listings expects (see listingInput), built from the draft.
+// The break between two bookings of a place taken by the hour, unless the owner named it (simulation of 2026-11-28):
+// the 90 minutes of a flat would hold a car bay for two hours after a half-hour wash. Own staff tidies a room in a
+// quarter of an hour and a bay is free for the next car at once; our executor needs half an hour.
+function venueCleaning(d:ListingDraft,type:string){
+ if(d.known.includes('cleaningMinutes'))return d.cleaningMinutes;
+ if(!d.ownStaff)return 30;
+ return isAuto(type)?0:15;
+}
 export function draftListingBody(d:ListingDraft,photos:string[],published:boolean):Row{
  const type=propertyTypes[d.type]?d.type:'apartment',method=checkinMethods[d.checkinMethod]?d.checkinMethod:'meet';
  // A banquet hall: the price of the slot is the least party at the price per guest (lib/listing-edit.ts banquetPrice).
@@ -269,7 +281,7 @@ export function draftListingBody(d:ListingDraft,photos:string[],published:boolea
   details:{type,area:d.area,beds:d.capacity,bathrooms:d.bathrooms,floor:d.floor,floors:Math.max(d.floors,d.floor,1),checkinMethod:method,amenities:d.amenities.filter(a=>amenities[a]),pets:false,smoking:d.smoking,parties:true},
   rental:{hourlyPrice:0,minHours:d.minHours,nightlyPrice:0,checkinTime:'12:00',checkoutTime:'00:00',deposit:d.deposit,houseRules:draftRules(d),includedGuests:least,extraGuestPrice:d.price}};
  // A bath is taken by the hour. The day price the service needs is twelve hours, as in the editor (PropertyEdit).
- if(isHourlyVenue(type))return {title:draftTitle(d),city:d.city.trim(),district:d.district.trim(),address:d.address.trim(),description:draftDescription(d),price:d.price>=100?d.price:Math.max(100,d.hourlyPrice*12),rooms:d.rooms,capacity:d.capacity,cleaningMinutes:d.cleaningMinutes,ownStaff:!!d.ownStaff,
+ if(isHourlyVenue(type))return {title:draftTitle(d),city:d.city.trim(),district:d.district.trim(),address:d.address.trim(),description:draftDescription(d),price:d.price>=100?d.price:Math.max(100,d.hourlyPrice*12),rooms:d.rooms,capacity:d.capacity,cleaningMinutes:venueCleaning(d,type),ownStaff:!!d.ownStaff,
   photos,published,expectedVersion:0,policyVersion:0,
   details:{type,area:d.area,beds:d.capacity,bathrooms:d.bathrooms,floor:d.floor,floors:Math.max(d.floors,d.floor,1),checkinMethod:method,amenities:d.amenities.filter(a=>amenities[a]&&categoryAmenities[kindCategory(type)].includes(a)),pets:false,smoking:d.smoking,parties:true,...(SERVICE_STARTERS[type]?{services:SERVICE_STARTERS[type]}:{})},
   rental:{hourlyPrice:d.hourlyPrice,minHours:isAuto(type)?1:Math.max(1,d.minHours),nightlyPrice:0,checkinTime:d.checkinTime,checkoutTime:d.checkoutTime,deposit:d.deposit,houseRules:draftRules(d),includedGuests:d.extraGuestPrice?Math.min(d.capacity,d.includedGuests||0):0,extraGuestPrice:d.includedGuests?d.extraGuestPrice||0:0,prepMinutes:d.prepMinutes||0}};

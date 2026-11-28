@@ -224,7 +224,7 @@ export function PropertyEdit({property,onSave,onReview,onRemove,onClose,onOpenHa
    {open==='checkin'&&<>
     {!isVenue(d.type)&&<View style={x.pair}><View style={x.half}><EditField label={t('Заезд с')} value={r.checkinTime} onChange={v=>setR({checkinTime:v})} max={5} placeholder="14:00" keyboard="numbers-and-punctuation"/></View><View style={x.half}><EditField label={t('Выезд до')} value={r.checkoutTime} onChange={v=>setR({checkoutTime:v})} max={5} placeholder="12:00" keyboard="numbers-and-punctuation"/></View></View>}
     <EditChips label={isVenue(d.type)?t('Как гости попадут внутрь'):t('Как гость получит ключи')} value={d.checkinMethod} options={Object.entries(checkinMethods) as [string,string][]} onChange={id=>setD({checkinMethod:id})}/>
-    <View><EditNumber title={t('Уборка между гостями')} unit={t('мин')} value={draft.cleaningMinutes} max={1440} onChange={n=>set({cleaningMinutes:n})} last/></View>
+    <View><EditNumber title={isVenue(d.type)?t('Перерыв между бронями'):t('Уборка между гостями')} unit={t('мин')} value={draft.cleaningMinutes} max={1440} onChange={n=>set({cleaningMinutes:n})} last/></View>
     {!!call&&!!p.id&&<>
      <EditField label={t('Инструкция для заселения')} value={access} onChange={setAccess} max={2500} placeholder={t('Подъезд 2, код домофона 45, ключ в сейфе у двери, код 1234')} multiline/>
      <EditNote text={accessState&&accessState!=='…'?accessState:p.access_version>0?t('Инструкция уже сохранена. Новая заменит её.'):t('Её увидят только гость перед заездом и исполнитель на уборке. Хранится зашифрованной.')} tone={accessState&&accessState!=='…'?'error':undefined}/>

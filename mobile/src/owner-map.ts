@@ -2,6 +2,7 @@ import {t} from '../../lib/i18n';
 // What the owner's live map says about each of his objects, in one short label on its pin.
 // Pure functions, covered by mobile/tests/owner-map.test.mjs. Times are Kazakhstan time (UTC+5).
 import type {PinTone} from './map-motion';
+import {isHome,isHourlyKind} from '../../lib/stay-words';
 
 type Row=Record<string,any>;
 export type OwnerPin={label:string;tone:PinTone;best?:boolean;progress?:number};
@@ -17,26 +18,32 @@ export function priceChange(from:number,to:number){return from>=10000&&to>=10000
 // The most urgent thing about the object wins: cleaning under way, a departure not confirmed, a guest inside, a report to accept, a request,
 // an arrival or a cleaning within a day; otherwise its price, or the AI's price advice with the AI ring.
 export function ownerPin(property:Row,processes:Row[],now:number,advice?:{from:number;to:number}|null):OwnerPin{
+ // A bath, a loft or a car wash is not moved into: its pin says «Бронь», not «Заезд».
+ const venue=!!(property.details||{}).type&&!isHome({property_type:(property.details||{}).type});
  const mine=processes.filter(p=>p.propertyId===property.id),of=(kind:string,...status:string[])=>mine.filter(p=>p.kind===kind&&status.includes(p.status)).sort((a,b)=>Number(a.start)-Number(b.start));
  // Trouble first, in red: a cleaning past its deadline, then an arrival within the hour (or already due) while a cleaning that began before it is not accepted.
  // The same rules the AI administrator uses for its reminders (lib/administrator.ts).
  if(of('job','open','assigned','in_progress').some(j=>Number(j.end)<=now))return {label:t('Уборка просрочена'),tone:'alert'};
  const unfinished=of('job','open','assigned','in_progress','submitted'),risky=unfinished.length?of('booking','confirmed').find(b=>Number(b.end)>now&&Number(b.start)<=now+3600&&unfinished.some(j=>Number(j.start)<Number(b.start))):undefined;
- if(risky)return {label:t('Заезд под угрозой'),tone:'alert'};
+ if(risky)return {label:venue?t('Бронь под угрозой'):t('Заезд под угрозой'),tone:'alert'};
  // Cleaning under way fills a strip on the pin, from its start to the end of its window (see cleaner-map.ts).
  const working=of('job','in_progress')[0];if(working){const a=Number(working.startedAt),b=Number(working.end);return {label:t('Уборка идёт'),tone:'active',...(a>0&&b>a?{progress:Math.max(0,Math.min(1,(now-a)/(b-a)))}:{})};}
  // A stay past its end without a confirmed departure still needs the owner: the map keeps it until the checkout is confirmed.
- if(of('booking','confirmed').some(b=>Number(b.start)<=now&&now>=Number(b.end)))return {label:t('Выезд не подтверждён'),tone:'pending'};
+ if(of('booking','confirmed').some(b=>Number(b.start)<=now&&now>=Number(b.end)))return {label:venue?t('Уход не подтверждён'):t('Выезд не подтверждён'),tone:'pending'};
  const inside=of('booking','confirmed').find(b=>Number(b.start)<=now&&now<Number(b.end));if(inside)return {label:t('Гость до {when}',{when:soon(Number(inside.end),now)||clock(Number(inside.end))}),tone:'booking'};
  if(of('job','submitted')[0])return {label:t('Уборка на приёмке'),tone:'job'};
  // Assigned, the time has come a quarter of an hour ago, and nobody has started.
  if(of('job','assigned').some(j=>Number(j.start)+900<=now))return {label:t('Исполнитель не начал'),tone:'alert'};
  if(of('booking','requested')[0])return {label:t('Заявка'),tone:'pending'};
- const arrival=of('booking','confirmed').find(b=>Number(b.start)>now&&soon(Number(b.start),now));if(arrival)return {label:t('Заезд {when}',{when:soon(Number(arrival.start),now)}),tone:'booking'};
+ const arrival=of('booking','confirmed').find(b=>Number(b.start)>now&&soon(Number(b.start),now));if(arrival)return {label:venue?t('Бронь {when}',{when:soon(Number(arrival.start),now)}):t('Заезд {when}',{when:soon(Number(arrival.start),now)}),tone:'booking'};
  const cleaning=of('job','open','assigned').find(j=>soon(Number(j.start),now));if(cleaning)return {label:t('Уборка {when}',{when:soon(Number(cleaning.start),now)}),tone:'job'};
- const price=Number(property.price);
+ // A place taken by the hour shows its hour or its cheapest service, never the technical day price (simulation of 2026-11-28).
+ // What a guest pays (as lib/place-words.ts ownerPrice): the cheapest service of a car place, the hour of an hourly place,
+ // never the hidden day price of twelve hours.
+ const d=property.details||{},services:Row[]=Array.isArray(d.services)?d.services:[],hour=Number(property.policy?.hourly_price)||0;
+ const price=services.length?Math.min(...services.map(s=>Number(s.price)||0)):isHourlyKind(d.type)&&hour?hour:Number(property.price)||0;
  if(advice&&advice.from>0&&advice.to>0&&advice.from!==advice.to)return {label:priceChange(advice.from,advice.to),tone:'home',best:true};
- return {label:price>0?thousands(price):t('Жильё'),tone:'home'};
+ return {label:price>0?thousands(price):t('Объект'),tone:'home'};
 }
 
 // What the AI has just finished shows as a result for a while: a cleaning it accepted makes the calm pin say «Готово к заезду» in green.
