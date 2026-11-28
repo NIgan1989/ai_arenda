@@ -20,7 +20,7 @@ const FOLDED = 5;
 // «2 заезда», «1 уборка»: Russian has three forms, the other languages take the row of i18n.
 // Today's arrivals: «2 заезда» for homes, «3 брони» for a loft, a bath or a car bay (lib/stay-words.ts).
 function arrivalWords(data: Row, live: ProcessThread[], today: number) {
-  const homes = new Map<string, boolean>((data?.bookings || []).map((b: Row) => ['booking:' + b.id, isHome(b)]));
+  const homes = new Map<string, boolean>((data?.bookings || []).map((b: Row) => [String(b.id), isHome(b)]));
   const due = live.filter(t => t.kind === 'booking' && t.tag === 'Бронь' && dayOf(t.at) === today);
   const stays = due.filter(t => homes.get(t.id) !== false).length, visits = due.length - stays;
   return [stays ? count(stays, 'заезд', 'заезда', 'заездов') : '', visits ? count(visits, 'бронь', 'брони', 'броней') : ''];
