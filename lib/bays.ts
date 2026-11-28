@@ -154,6 +154,8 @@ async function requestOf(s:RentalService,bookingId:string){
  const b=await one(s.db,"SELECT b.id,b.property_id,b.guest_id,b.start,b.end,b.status,b.expires_at,p.title FROM bookings b JOIN properties p ON p.id=b.property_id WHERE b.id=?",bookingId);
  if(!b)throw new DomainError('Заявка не найдена.',404);
  const p=await staffPlace(s,b.property_id);
+ // Only a car place's requests are answered here: elsewhere confirming a booking stays the owner's own decision.
+ if(!isAuto(p.type))throw new DomainError('Заявки здесь есть только у автомоек и автосервисов.',409);
  if(b.status!=='requested'||Number(b.expires_at)<=epoch())throw new DomainError('Заявка уже рассмотрена или срок ответа истёк.',409);
  return {b,p,c:await card(s.db,b.property_id)};
 }

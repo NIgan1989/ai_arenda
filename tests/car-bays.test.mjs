@@ -105,7 +105,13 @@ test('«Не приехал»: after the wait the booking is closed as a no-show
   await assert.rejects(bayNoShow(f.owner,{bookingId:b.id}),/через 10 минут/);
   // Move the booking into the past: started 15 minutes ago.
   const t=now()-15*60;f.db.raw.prepare('UPDATE bookings SET start=?,end=?,occupied_until=? WHERE id=?').run(t,t+1800,t+3600,b.id);
+  // A guest's open «Меня не заселили» is decided by the platform, not by the place it names.
+  const issue=f.db.raw.prepare("INSERT INTO administrator_issues(id,owner_id,property_id,entity_kind,entity_id,opened_by,opened_role,other_user,other_role,description,status,created_at) VALUES ('i-1',?,?,'booking',?,?,'guest',?,'owner','Меня не заселили: бокс закрыт','open',?)");
+  issue.run(f.owner.userId,id,b.id,f.guest.userId,f.owner.userId,now());
+  await assert.rejects(bayNoShow(f.owner,{bookingId:b.id}),/уже нельзя/);f.db.raw.prepare("UPDATE administrator_issues SET status='resolved' WHERE id='i-1'").run();
+  f.db.raw.prepare("INSERT INTO cleaning_jobs(id,property_id,owner_id,booking_id,status,start,end,fee,description,created_at) VALUES ('j-1',?,?,?,'open',?,?,0,'',0)").run(id,f.owner.userId,b.id,t+1800,t+3600);
   const r=await bayNoShow(f.owner,{bookingId:b.id});
+  assert.equal(f.db.raw.prepare("SELECT status FROM cleaning_jobs WHERE id='j-1'").get().status,'cancelled','the cleaning after it is taken off');
   assert.match(r.message,/не приехал/);
   assert.equal(f.db.raw.prepare('SELECT status FROM bookings WHERE id=?').get(b.id).status,'cancelled');
   await assert.rejects(bayNoShow(f.owner,{bookingId:b.id}),/уже нельзя/);

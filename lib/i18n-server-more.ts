@@ -515,4 +515,5 @@ export const SERVER_MORE:Words={
  'Выберите: подтвердить или назначить другое время.':['Таңдаңыз: растау немесе басқа уақыт тағайындау.','Choose: confirm or name another time.'],
  'Запись подтверждена.':['Жазылу расталды.','The booking is confirmed.'],
  'Заявка уже рассмотрена.':['Өтініш қаралып қойған.','The request was already answered.'],
+ 'Заявки здесь есть только у автомоек и автосервисов.':['Мұнда өтініштер тек жуу орындары мен автосервистерде бар.','Requests here exist only at car washes and car services.'],
 };
