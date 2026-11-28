@@ -87,6 +87,9 @@ test('«Гость ещё здесь»: the owner chooses to wait half an hour o
   assert.match((await f.owner.jobAction(f.job.id,{action:'wait_guest'})).message,/подождёт/);
   const after=job(f);assert.ok(after.start>=Math.max(before.start,now())+1790);assert.equal(after.end-after.start,before.end-before.start);
   assert.equal(after.guest_here_at,null,'the cleaner can say it again');
+  assert.equal(after.arrived_at,after.start,'the wait at the door counts again from the agreed new start');
+  const {sweepSilence}=await load('owner-silence');await sweepSilence(f.db,{PLATFORM_ADMIN_IDS:'admin'});
+  assert.equal(note(f,'owner','owner:door-wait:%'),undefined,'no «owner is silent» during the agreed wait');
   assert.match(note(f,'cleaner','cleaner:wait-guest:%').body,/подождать/);
   await f.cleaner.jobAction(f.job.id,{action:'guest_here'});
   assert.match((await f.owner.jobAction(f.job.id,{action:'let_go'})).message,/снова в поиске/);

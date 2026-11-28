@@ -1410,7 +1410,9 @@ export class RentalService {
       if(await this.one('SELECT x.id FROM external_blocks x JOIN calendar_sources c ON c.id=x.source_id WHERE x.property_id=? AND c.enabled=1 AND x.start<? AND x.end>? LIMIT 1',j.property_id,end,Number(j.end)))throw new DomainError('Следующий гость по внешнему календарю заезжает раньше: подождать полчаса нельзя.',409);
       let r;
       try{r=await this.db.batch([
-        this.query("UPDATE cleaning_jobs SET start=?,end=?,overdue_step=0,guest_here_at=NULL WHERE id=? AND version=? AND status='assigned'",start,end,jobId,j.version),
+        // The owner answered: the wait at the door counts again from the new start, so the reminders of lib/owner-silence.ts
+        // (doorWaits) do not call the owner silent during the half hour they agreed to.
+        this.query("UPDATE cleaning_jobs SET start=?,end=?,overdue_step=0,guest_here_at=NULL,arrived_at=CASE WHEN arrived_at IS NULL THEN NULL ELSE ? END WHERE id=? AND version=? AND status='assigned'",start,end,start,jobId,j.version),
         this.notify(j.assigned_to,'Владелец просит подождать: гость ещё собирается. Уборка «'+title+'» с '+clockLabel(start)+'. Сигнал «Можно начинать» придёт сюда.','wait-guest:'+jobId+':'+start,'cleaner'),
         this.audit(jobId,'job.wait_for_guest')]);}
       catch(error){if(/cleaner_overlap/.test(String((error as Error)?.message)))throw new DomainError('У исполнителя после этого другая уборка: подождать полчаса нельзя. Отпустите исполнителя.',409);throw error;}
