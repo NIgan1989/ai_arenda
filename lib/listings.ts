@@ -88,22 +88,27 @@ export function listingInput(b:Row){
  if(!Array.isArray(details.amenities)||details.amenities.some((v:unknown)=>typeof v!=='string'||!amenities[v]))throw new DomainError('Выберите удобства из списка.');
  if(!Array.isArray(b.photos)||b.photos.length>8||b.photos.some((v:unknown)=>typeof v!=='string'||v.length>100)||new Set(b.photos).size!==b.photos.length)throw new DomainError('Можно добавить до 8 разных фотографий.');
  if(typeof b.published!=='boolean')throw new DomainError('Выберите видимость объявления.');
- const p={title:required(b.title,'Название',120),city:required(b.city,'Город',80),district:required(b.district,'Район',120),address:required(b.address,'Точный адрес',300),description:required(b.description,'Описание',2500),price:number(b.price,'Цена за сутки',100,10000000),rooms:number(b.rooms,'Комнаты',1,20),capacity:number(b.capacity,'Гости',1,maxGuests(details.type)),cleaningMinutes:number(b.cleaningMinutes,'Время уборки',30,1440),ownStaff:(typeof b.ownStaff==='boolean'?b.ownStaff:defaultOwnStaff(details.type))?1:0};
+ const p={title:required(b.title,'Название',120),city:required(b.city,'Город',80),district:required(b.district,'Район',120),address:required(b.address,'Точный адрес',300),description:required(b.description,'Описание',2500),price:number(b.price,'Цена за сутки',100,10000000),rooms:number(b.rooms,'Комнаты',1,20),capacity:number(b.capacity,'Гости',1,maxGuests(details.type)),cleaningMinutes:number(b.cleaningMinutes,'Время уборки',0,1440),ownStaff:(typeof b.ownStaff==='boolean'?b.ownStaff:defaultOwnStaff(details.type))?1:0};
  const d={type:details.type,area:number(details.area,'Площадь',5,2000),beds:number(details.beds,'Спальные места',1,maxGuests(details.type)),bathrooms:number(details.bathrooms,'Санузлы',1,20),floor:number(details.floor,'Этаж',0,100),floors:number(details.floors,'Этажей в доме',1,100),checkinMethod:details.checkinMethod,amenities:[...new Set<string>(details.amenities)],pets:details.pets===true,smoking:details.smoking===true,parties:details.parties===true,
   // The menu of a banquet hall, as the owner writes it; other kinds keep none.
   ...(isBanquet(details.type)&&typeof details.menu==='string'&&details.menu.trim()?{menu:details.menu.trim().slice(0,1500)}:{}),
   // «Авто»: the services the place sells, each with its own minutes and price (lib/venue-services.ts).
   ...(isAuto(details.type)&&details.services!==undefined?{services:servicesInput(details.type,details.services)}:{})};
  if(d.floor>d.floors)throw new DomainError('Этаж не может быть выше этажности дома.');
+ // A home needs half an hour at least to be cleaned; a place taken by the hour may be ready at once: a car bay is free
+ // for the next car, a loft is tidied by its own staff in a quarter of an hour (simulation of 2026-11-28).
+ if(!isHourlyVenue(d.type)&&p.cleaningMinutes<30)throw new DomainError('Время уборки: от 30 минут.');
  // A bath has no beds: its guests come for a few hours, so the beds follow the guests there.
  if(isVenue(d.type))d.beds=Math.max(d.beds,p.capacity);
  if(d.beds<p.capacity)throw new DomainError('Спальных мест должно хватать для заявленного числа гостей.');
  if(b.published&&(!b.photos.length||p.description.length<80))throw new DomainError('Для публикации добавьте фото и описание от 80 символов. Черновик можно сохранить сейчас.');
  return {p,details:d,photos:b.photos as string[],published:b.published?1:0,expectedVersion:number(b.expectedVersion??0,'Версия объявления',0,10000000)};
 }
-export function propertyStatus(p:Row,operation?:Row,busy=false){
+export function propertyStatus(p:Row,operation?:Row,busy=false,type=''){
  if(p.published===0)return {code:'draft',label:tr('Черновик'),tone:'muted'};
- const map:Record<string,string>={ready:tr('Готово к заселению'),inspection:tr('Требует проверки'),occupied:tr('Проживают гости'),awaiting_cleaning:tr('Ожидает уборки'),cleaning:tr('На уборке'),maintenance:tr('На ремонте'),blocked:tr('Временно недоступно')};
+ // Places other than housing are not moved into: a car wash takes cars, a loft or a bath takes guests for hours.
+ const car=isAuto(type),venue=isVenue(type);
+ const map:Record<string,string>={ready:car?tr('Готово к приёму машин'):venue?tr('Готово к приходу гостей'):tr('Готово к заселению'),inspection:tr('Требует проверки'),occupied:car?tr('Бокс занят'):venue?tr('Гости на месте'):tr('Проживают гости'),awaiting_cleaning:tr('Ожидает уборки'),cleaning:tr('На уборке'),maintenance:tr('На ремонте'),blocked:tr('Временно недоступно')};
  const code=operation?.active_booking_id?'occupied':operation?.readiness||'inspection';
  return {code,label:map[code]||map.inspection,tone:code==='ready'?'good':['maintenance','blocked'].includes(code)?'danger':'warning',reservedNow:busy};
 }

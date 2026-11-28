@@ -12,7 +12,8 @@ type Row=Record<string,any>; // eslint-disable-line @typescript-eslint/no-explic
 export const PREPAY_AFTER=5;
 export const PREPAY_CHOICES=[0,10,20,30,50,100] as const;
 export function prepayChoice(value:unknown){const n=Number(value);return (PREPAY_CHOICES as readonly number[]).includes(n)?n:null;}
-export const prepayLabel=(percent:number)=>percent>0?(percent>=100?t('Предоплата 100%'):t('Предоплата {percent}%, остальное при заселении',{percent})):t('Оплата при заселении');
+// `venue`: a bath, a loft or a car wash is not moved into, the rest is paid on the spot.
+export const prepayLabel=(percent:number,venue=false)=>percent>0?(percent>=100?t('Предоплата 100%'):venue?t('Предоплата {percent}%, остальное на месте',{percent}):t('Предоплата {percent}%, остальное при заселении',{percent})):venue?t('Оплата на месте'):t('Оплата при заселении');
 
 export type PrepayState={wanted:number;percent:number;completed:number;left:number};
 // The owner's choice and the share in force now: 0 while the place has fewer than PREPAY_AFTER completed stays.

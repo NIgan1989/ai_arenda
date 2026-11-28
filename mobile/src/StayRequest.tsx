@@ -196,7 +196,7 @@ export function StayRequest({property,initial,busy,done,result,onQuote,onSlots,o
    {!!quote.repeat&&<Text style={p.fact}>{tr('Скидка постоянного гостя −{n}%',{n:quote.repeat.percent})}{' · '+tr('без неё {price}',{price:money(quote.repeat.regular*quote.periods)})}</Text>}
    {bath&&Number(quote.extraGuests)>0&&<Text style={p.fact}>{tr('В цене гостей: {included}. Доплата за ещё {extra}: {sum}.',{included:guests-Number(quote.extraGuests),extra:Number(quote.extraGuests),sum:money(Number(quote.guestSurcharge)*Number(quote.periods))})}</Text>}
    <Text style={p.fact}>{quote.policy.deposit?tr('Депозит: {v}, отдельно от проживания',{v:money(quote.policy.deposit)}):tr('Депозит: не нужен')}</Text>
-   {!!quote.payment&&<Text style={p.fact}>{quote.payment.prepayPercent?tr('{label}: {sum} после подтверждения.',{label:prepayLabel(Number(quote.payment.prepayPercent)),sum:money(quote.payment.prepay)}):tr('Оплата при заселении: владельцу, когда вы на месте.')}</Text>}
+   {!!quote.payment&&<Text style={p.fact}>{quote.payment.prepayPercent?tr('{label}: {sum} после подтверждения.',{label:prepayLabel(Number(quote.payment.prepayPercent),hall||bath),sum:money(quote.payment.prepay)}):tr('Оплата при заселении: владельцу, когда вы на месте.')}</Text>}
    <Text style={p.fact}>{quote.policy.auto_confirm?tr('Подтверждается сразу, по правилам владельца.'):tr('Владелец отвечает в течение 15 минут.')}</Text>
    {!!quote.policy.house_rules&&<Text style={p.fact}>{tr('Правила проживания: {v}',{v:quote.policy.house_rules})}</Text>}
   </>}</PopSheet>

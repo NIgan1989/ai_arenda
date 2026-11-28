@@ -39,7 +39,7 @@ export function CheckinGuarantee({booking,stay,canReport,busy,replacement,onRepo
  if(!open||!stay&&!g&&!canReport)return null;
  if(!reported)return <View style={v.gap}>
   {stay&&<Line icon="shield" title={t('Гарантия заселения')} note={t('Не заселили: за 10 минут найдём жильё рядом')}/>}
-  {canReport&&<Btn kind="line" title={t('Не получается заселиться')} disabled={busy} onPress={onReport}/>}
+  {canReport&&<Btn kind="line" title={stay?t('Не получается заселиться'):t('Не получается войти')} disabled={busy} onPress={onReport}/>}
  </View>;
  if(!state)return error?<Text accessibilityRole="alert" style={v.error}>{error}</Text>:null;
  if(state.step!=='waiting'&&state.step!=='options')return null;

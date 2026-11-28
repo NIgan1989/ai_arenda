@@ -1,6 +1,7 @@
 import {t as tr} from './i18n';
 import {DomainError,number,required} from './domain';
 import {prepayChoice} from './prepay';
+import {servicesOf} from './venue-services';
 type Row=Record<string,any>;
 export const defaultPolicy={hourly_price:0,min_hours:2,nightly_price:0,checkin_minutes:840,checkout_minutes:720,deposit:0,house_rules:'',auto_confirm:0,auto_assign:0,cleaning_fee:0,cleaning_budget:0,max_discount_percent:0,minimum_rate:0,repair_budget:0,auto_extension:0,max_extension_hours:0,mandate_until:0,escalation_contact:'',included_guests:0,extra_guest_price:0,prep_minutes:0,prepay_percent:0,repeat_discount:0,venue_hours:'',version:0};
 export function mandateActive(policy:Row,t=Math.floor(Date.now()/1000)){return !policy.mandate_until||policy.mandate_until>t;}
@@ -55,8 +56,16 @@ function nightOf(policy:Row,start:number){
   return null;
 }
 // The names of the units as the app shows them through t(quote.unitLabel): listed for scripts/i18n-missing.mjs.
-export const UNIT_LABELS=/* i18n */['начатые сутки (24 часа)','начатый час','ночь'] as const;
+export const UNIT_LABELS=/* i18n */['начатые сутки (24 часа)','начатый час','ночь','услуга'] as const;
 export type RentalPrice={billingMode:string;periods:number;price:number;amount:number;unitLabel:string};
+/** The price a search shows for a place (simulation of 2026-11-28): a car place sells services, so its card shows the
+ * cheapest service («от 3 000 ₸ за услугу») whatever time was asked, never the hour price and never «nothing found»
+ * for half an hour. Every other place is priced by its tariff. */
+export function placePrice(p:Row,start:number,end:number,mode:unknown='daily'):RentalPrice{
+  const services=servicesOf(p.details);
+  if(services.length&&mode==='hourly'){const least=Math.min(...services.map(s=>s.price));return {billingMode:'hourly',periods:1,price:least,amount:least,unitLabel:'услуга'};}
+  return rentalPrice(p.price,p.policy,start,end,mode);
+}
 export function rentalPrice(dailyPrice:number,policy:Row,start:number,end:number,mode:unknown='daily'):RentalPrice{
   let units:number,price:number,label:string;
   if(mode==='daily'){units=Math.ceil((end-start)/86400);price=dailyPrice;label='начатые сутки (24 часа)';}

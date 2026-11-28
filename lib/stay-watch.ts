@@ -1,6 +1,6 @@
 import {wordsOf,venueOr,TYPE_SQL} from './stay-words';
 import {epoch,uuid,q,rows,type OperationConfig} from './operation-core';
-import {arrivalDue} from './late-arrival';
+import {arrivalDue,lateUntil} from './late-arrival';
 import {assertCalendarAvailable} from './external-calendar';
 import {ruleFor,minutesLabel,type RuleKey,type RuleValue} from './decision-rules';
 import {cancellationTerms} from './cancellation';
@@ -169,7 +169,7 @@ async function arrivals(db:D1Database,at:number,result:Row,rule:Rules){
   }
   if(at>=askAt&&s<1){
    if(moved(await db.batch([step(db,b.id,'arrival',due,s,1,at),
-    q(db,"INSERT OR IGNORE INTO notifications SELECT ?,?,?,?,0,? WHERE changes()>0",uuid(),b.guest_id,venueOr(b,'ИИ-администратор: вы едете в «'+title+'»? Если задерживаетесь, нажмите «Задерживаюсь на час» в брони; если уже на месте, нажмите «Я заселился».','ИИ-администратор: вы едете в «'+title+'»? Если задерживаетесь, нажмите «Задерживаюсь на час» в брони; если уже на месте, нажмите «'+wordsOf(b).iAmIn+'».')+(releases?' Без ответа до '+clock(actAt)+' бронь может быть снята.':''),'guest:stay-arrival-ask:'+b.id+':'+due,at),
+    q(db,"INSERT OR IGNORE INTO notifications SELECT ?,?,?,?,0,? WHERE changes()>0",uuid(),b.guest_id,venueOr(b,'ИИ-администратор: вы едете в «'+title+'»? Если задерживаетесь, нажмите «Задерживаюсь на час» в брони; если уже на месте, нажмите «Я заселился».','ИИ-администратор: вы едете в «'+title+'»? '+(lateUntil({start:Number(b.start),end:Number(b.end),arrival_eta:b.arrival_eta,late_count:b.late_count},at)?'Если задерживаетесь, нажмите «Задерживаюсь на час» в брони':'Если задерживаетесь, напишите владельцу в чате брони')+'; если уже на месте, нажмите «'+wordsOf(b).iAmIn+'».')+(releases?' Без ответа до '+clock(actAt)+' бронь может быть снята.':''),'guest:stay-arrival-ask:'+b.id+':'+due,at),
     notice(db,b.owner_id,venueOr(b,'ИИ-администратор: гость ещё не заселился в «'+title+'». Я спросил, едет ли он.','ИИ-администратор: '+wordsOf(b).notIn+' в «'+title+'». Я спросил, едут ли.'),'owner:stay-arrival-ask:'+b.id+':'+due,at)])))result.reminded++;
   }
  }
