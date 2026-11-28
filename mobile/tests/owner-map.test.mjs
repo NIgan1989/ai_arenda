@@ -2,7 +2,7 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {loadPure} from './helpers/pure.mjs';
 
-const {ownerPin, withAiResult, soon, priceChange, thousands, travellers} = await loadPure('mobile/src/owner-map.ts');
+const {ownerPin, withAiResult, soon, priceChange, thousands, travellers} = await loadPure('mobile/src/owner-map.ts', 'lib/stay-words.ts');
 // 2026-11-13 10:00 in Kazakhstan (UTC+5).
 const now = Date.UTC(2026, 10, 13, 5, 0) / 1000;
 const flat = {id: 'p1', price: 11000};

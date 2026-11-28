@@ -2,6 +2,7 @@ import {forms,t} from '../../lib/i18n';
 // «Моё жильё»: the owner's objects as short cards, opened from the «Жильё» shortcut of the home sheet.
 // A card says what it is, its state, its price and what is happening there now; a tap opens the facts and
 // the actions. Changing an object is the step editor (PropertyEdit), adding one is the AI form (PropertyQuick).
+import {ownerPrice} from '../../lib/place-words';
 import React,{useEffect,useState} from 'react';
 import {View,Text,Pressable,StyleSheet} from 'react-native';
 import {C,type} from './styles';
@@ -10,7 +11,8 @@ import {T} from './tokens';
 import {money,type Row} from './model';
 import {Photo} from './ListingMedia';
 import {RecordFacts,RecordActions,type RecordAction} from './RecordCard';
-import {propertyTypes,isBath,isBanquet,isVenue} from '../../lib/listings';
+import {propertyTypes,isBanquet,isVenue,isHourlyVenue} from '../../lib/listings';
+import {servicesOf} from '../../lib/venue-services';
 import {processStatus} from '../../lib/process-status';
 import {clock} from '../../lib/rental-policy';
 import {placeNow} from './own-place';
@@ -31,9 +33,9 @@ export function OwnProperties({properties,bookings,busy,onAdd,onHome,onEdit,onSe
   {!properties.length&&<BrandEmpty title={t('Пока пусто')} text={t('Здесь появятся ваши объекты: их состояние, брони и цена.')}/>}
   {(properties.length>0||!!onAdd||!!onHome)&&<View style={o.group}>
    {properties.map((p,i)=>isHome(p.details?.type)?<HomeCard key={p.id} first={i===0} place={p} busy={busy} onCleaning={()=>onCleaning(p.id)} onMap={onMap(p.id)}/>:<PropertyCard key={p.id} first={i===0} property={p} bookings={bookings} busy={busy} open={open===p.id} onToggle={()=>setOpen((v:string)=>v===p.id?'':p.id)} onEdit={()=>onEdit(p.id)} onSettings={()=>onSettings(p.id)} onCleaning={()=>onCleaning(p.id)} onMap={onMap(p.id)} onResend={onResend&&(()=>onResend(p))}/>)}
-   {!!onAdd&&<Pressable accessibilityRole="button" accessibilityLabel={t('Добавить жильё')} disabled={busy} onPress={onAdd} style={({pressed})=>[o.item,!properties.length&&o.first,o.addRow,(pressed||busy)&&o.dim]}>
+   {!!onAdd&&<Pressable accessibilityRole="button" accessibilityLabel={t('Добавить объект')} disabled={busy} onPress={onAdd} style={({pressed})=>[o.item,!properties.length&&o.first,o.addRow,(pressed||busy)&&o.dim]}>
     <View style={o.addOrb}><Text style={o.addPlus}>+</Text></View>
-    <View style={o.grow}><Text style={o.addTitle}>{t('Добавить жильё')}</Text><Text numberOfLines={2} style={o.addSub}>{t('Жильё, баня или зал: расскажите одним сообщением, ИИ заполнит объявление')}</Text></View>
+    <View style={o.grow}><Text style={o.addTitle}>{t('Добавить объект')}</Text><Text numberOfLines={2} style={o.addSub}>{t('Жильё, баня или зал: расскажите одним сообщением, ИИ заполнит объявление')}</Text></View>
     <Text style={o.go}>›</Text>
    </Pressable>}
    {/* Своё жильё, которое не сдаётся: только уборка (lib/home-cleaning.ts). Без объявления, цены и правил. */}
@@ -63,7 +65,7 @@ function HomeCard({place:p,first,busy,onCleaning,onMap}:{place:Row;first:boolean
 }
 
 function PropertyCard({property:p,first,bookings,busy,open,onToggle,onEdit,onSettings,onCleaning,onMap,onResend}:{property:Row;first:boolean;bookings:Row[];busy:boolean;open:boolean;onToggle:()=>void;onEdit:()=>void;onSettings:()=>void;onCleaning:()=>void;onMap?:()=>void;onResend?:()=>Promise<unknown>}){
- const d=p.details||{},policy=p.policy||{},found=processStatus('property',p,'owner',''),status=isVenue((p.details||{}).type)?{...found,label:found.label.replace('к заселению','к приёму гостей')}:found,ink=(tones[status.tone]||tones.neutral)[1],hall=isBanquet(d.type),bath=isBath(d.type),now=placeNow(p.id,bookings,undefined,bath||hall);
+ const d=p.details||{},policy=p.policy||{},found=processStatus('property',p,'owner',''),status=isVenue((p.details||{}).type)?{...found,label:found.label.replace('к заселению','к приёму гостей')}:found,ink=(tones[status.tone]||tones.neutral)[1],hall=isBanquet(d.type),bath=isHourlyVenue(d.type),now=placeNow(p.id,bookings,undefined,bath||hall);
  const perGuest=hall?Number(policy.extra_guest_price)||0:0,least=Number(policy.included_guests)||1;
  const kind=propertyTypes[d.type]||t('Жильё');
  // «Занято»: guests who came without the service. The card keeps the mark it was given until the state is read again.
@@ -83,7 +85,7 @@ function PropertyCard({property:p,first,bookings,busy,open,onToggle,onEdit,onSet
   !!onMap&&{title:t('На карте'),kind:'side',onPress:onMap},
   !now.busy&&{title:t('Занято'),kind:'side',onPress:()=>{setBusyNote('');setBusyOpen(v=>!v);}},
  ];
- const price=hall?(perGuest?t('{v} за гостя',{v:money(perGuest)}):''):bath&&policy.hourly_price?t('{v} / час',{v:money(policy.hourly_price)}):money(p.price);
+ const price=ownerPrice(p).line;
  const warn=refused?t('Проверка не пройдена'):unmapped?t('Поставьте адрес на карту'):p.address_check?t('Адрес на проверке'):'';
  return <View style={[o.item,first&&o.first]}>
   <Pressable accessibilityRole="button" accessibilityState={{expanded:open}} accessibilityLabel={[p.title,status.label,now.line,open?t('Свернуть'):t('Подробнее')].join('. ')} onPress={onToggle} style={({pressed})=>[o.row,pressed&&o.dim]}>
@@ -100,7 +102,7 @@ function PropertyCard({property:p,first,bookings,busy,open,onToggle,onEdit,onSet
    <RecordFacts rows={[
     [t('Адрес'),[p.city,p.district,p.address].filter(Boolean).join(', ')],
     [t('Гостей'),[bath||hall?t('до {n}',{n:p.capacity||1}):t('{n} · {rooms} комн.',{n:p.capacity||1,rooms:p.rooms||1}),d.area?t('{area} м²',{area:d.area}):''].filter(Boolean).join(' · ')],
-    [t('Цена'),hall?(perGuest?t('{v} за гостя · от {least} гост.',{v:money(perGuest),least}):t('не задана')):bath&&policy.hourly_price?[t('{v} / ч',{v:money(policy.hourly_price)}),policy.min_hours?t('от {minHours} ч',{minHours:policy.min_hours}):''].filter(Boolean).join(' · '):[t('{v} / сутки',{v:money(p.price)}),policy.hourly_price?t('{v} / ч',{v:money(policy.hourly_price)}):''].filter(Boolean).join(' · ')],
+    [t('Цена'),bath&&servicesOf(d).length?ownerPrice(p).line:hall?(perGuest?t('{v} за гостя · от {least} гост.',{v:money(perGuest),least}):t('не задана')):bath&&policy.hourly_price?[t('{v} / ч',{v:money(policy.hourly_price)}),policy.min_hours?t('от {minHours} ч',{minHours:policy.min_hours}):''].filter(Boolean).join(' · '):[t('{v} / сутки',{v:money(p.price)}),policy.hourly_price?t('{v} / ч',{v:money(policy.hourly_price)}):''].filter(Boolean).join(' · ')],
     (hall||bath)&&[t('Время'),venueSummary(d.type,policy.venue_hours)],
     !bath&&!hall&&[t('Заезд'),t('{v} · выезд {v2}',{v:clock(policy.checkin_minutes??840),v2:clock(policy.checkout_minutes??720)})],
     [t('Фото'),p.photos?.length?String(p.photos.length):t('нет, добавьте, чтобы показать гостям')],

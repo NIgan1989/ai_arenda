@@ -2,6 +2,7 @@ import {DomainError,required} from './domain';
 import type {RentalService} from './service';
 import {epoch,uuid,q,one,rows,type Row} from './operation-core';
 import {similarMedian,PRICE_COOLDOWN} from './price-advice';
+import {categories} from './listings';
 
 // The week ahead. Once a week (Monday from 09:00 in Almaty, or the first check after it) the AI
 // administrator looks at the owner's city: how full the evenings usually are on each weekday over
@@ -77,19 +78,22 @@ export function adviseWeek(days:ForecastDay[],flats:ForecastFlat[]):ForecastAdvi
 const expireSql="UPDATE load_forecasts SET status='expired',decided_at=? WHERE status='suggested' AND (expires_at<=? OR (advice<>'none' AND NOT EXISTS(SELECT 1 FROM property_policies pp JOIN properties p ON p.id=pp.property_id WHERE pp.property_id=load_forecasts.property_id AND pp.version=load_forecasts.policy_version AND p.published=1 AND p.archived_at IS NULL AND (load_forecasts.advice='min_hours' OR p.price=load_forecasts.from_value))))";
 
 // Runs with the AI administrator's regular check of an owner. Returns the forecast id or null.
+// The forecast prices the day of a home (simulation of 2026-11-28): a bath, a hall, a loft or a car wash is sold by the
+// hour, the service or the guest, and its stored day price is only a technical number, never offered to be changed.
+const HOUSING=`COALESCE((SELECT json_extract(d.details,'$.type') FROM property_details d WHERE d.property_id=p.id),'apartment') IN (${categories.stay.types.map(t=>"'"+t+"'").join(',')})`;
 export async function offerWeeklyForecast(db:D1Database,ownerId:string,t=epoch()):Promise<string|null>{
  const week=weekStart(t);
  if(t<week+FORECAST_START_HOUR*HOUR)return null;
  if(await one(db,'SELECT 1 FROM load_forecasts WHERE owner_id=? AND week_start=?',ownerId,week))return null;
  const own=await rows(db,`SELECT p.id,p.title,p.city,p.price,p.rooms,COALESCE(pp.hourly_price,0) hourly,COALESCE(pp.nightly_price,0) nightly,COALESCE(pp.min_hours,2) min_hours,COALESCE(pp.minimum_rate,0) minimum_rate,pp.version
-  FROM properties p JOIN property_policies pp ON pp.property_id=p.id WHERE p.owner_id=? AND p.published=1 AND p.archived_at IS NULL AND p.demo_owner IS NULL ORDER BY p.id`,ownerId);
+  FROM properties p JOIN property_policies pp ON pp.property_id=p.id WHERE p.owner_id=? AND p.published=1 AND p.archived_at IS NULL AND p.demo_owner IS NULL AND ${HOUSING} ORDER BY p.id`,ownerId);
  if(!own.length)return null;
  // The city where the owner has the most flats: the forecast is about one market.
  const byCity=new Map<string,number>();for(const p of own)byCity.set(p.city,(byCity.get(p.city)||0)+1);
  const city=[...byCity.entries()].sort((a,b)=>b[1]-a[1])[0][0],from=localDay(t);
- const flats=Number((await one(db,'SELECT COUNT(*) n FROM properties WHERE city=? AND published=1 AND archived_at IS NULL AND demo_owner IS NULL',city))?.n||0);
+ const flats=Number((await one(db,`SELECT COUNT(*) n FROM properties p WHERE p.city=? AND p.published=1 AND p.archived_at IS NULL AND p.demo_owner IS NULL AND ${HOUSING}`,city))?.n||0);
  const stays=(await rows(db,`SELECT b.property_id,b.start,b.end FROM bookings b JOIN properties p ON p.id=b.property_id WHERE p.city=? AND p.published=1 AND p.archived_at IS NULL AND p.demo_owner IS NULL
-  AND (b.status IN ('confirmed','completed') OR (b.status='requested' AND b.expires_at>?)) AND b.end>? AND b.start<?`,city,t,from-HISTORY_WEEKS*7*DAY,from+7*DAY+DAY)).map(r=>({property_id:String(r.property_id),start:Number(r.start),end:Number(r.end)}));
+  AND ${HOUSING} AND (b.status IN ('confirmed','completed') OR (b.status='requested' AND b.expires_at>?)) AND b.end>? AND b.start<?`,city,t,from-HISTORY_WEEKS*7*DAY,from+7*DAY+DAY)).map(r=>({property_id:String(r.property_id),start:Number(r.start),end:Number(r.end)}));
  // No bookings in the city for a month and none ahead: nothing to base a forecast on yet.
  if(!stays.length)return null;
  const days=forecastWeek(stays,flats,from),mine=own.filter(p=>p.city===city);

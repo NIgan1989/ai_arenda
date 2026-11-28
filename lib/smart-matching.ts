@@ -1,4 +1,5 @@
 import {DomainError,required,number,interval,type Role} from './domain';
+import {servicesOf} from './venue-services';
 import type {RentalService} from './service';
 import {epoch,uuid,q,one,rows,type Row} from './operation-core';
 import {geoDistance} from './map-location';
@@ -138,7 +139,7 @@ export async function emptyHint(s:RentalService,f:Row):Promise<Row>{
  if(!open.length){
   const start=Date.parse(f.start),length=Date.parse(f.end)-start;
   // Shorter than the shortest stay any place here takes: «минимум 2 часа», not «занято».
-  if(f.mode==='hourly'){const least=all.filter((p:Row)=>Number(p.policy?.hourly_price)>0&&Number(p.capacity)>=Number(f.guests)).map((p:Row)=>Number(p.policy.min_hours)||1);if(least.length&&Math.min(...least)*3600000>length)return {reason:'minHours',minHours:Math.min(...least)};}
+  if(f.mode==='hourly'){const least=all.filter((p:Row)=>Number(p.policy?.hourly_price)>0&&Number(p.capacity)>=Number(f.guests)&&!servicesOf(p.details).length).map((p:Row)=>Number(p.policy.min_hours)||1);if(least.length&&Math.min(...least)*3600000>length)return {reason:'minHours',minHours:Math.min(...least)};}
   // By the hour a later start the same day comes first (audit of 2026-11-22: the guest was sent to tomorrow while the
   // evening was free). Every half hour, up to six hours later, never past the local midnight (Kazakhstan, UTC+5).
   if(f.mode==='hourly'){const midnight=(Math.floor((start+ZONE_MS)/86400000)+1)*86400000-ZONE_MS;

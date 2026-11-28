@@ -66,3 +66,5 @@ export const isHome = (b?: { property_type?: string | null } | null) => wordsOf(
 export const venueOr = (b: { property_type?: string | null } | null | undefined, home: string, venue: string) => isHome(b) ? home : venue;
 // Тип объекта рядом с бронью в запросе, где properties идёт как p.
 export const TYPE_SQL = "(SELECT json_extract(details,'$.type') FROM property_details WHERE property_id=p.id) property_type";
+// Taken by the hour (a bath, «Досуг», «Спорт», «Авто»), for the pins of the owner's map that may not load lib/listings.ts.
+export const isHourlyKind = (type?: string | null) => BATH.includes(type || '') || VISIT.includes(type || '');

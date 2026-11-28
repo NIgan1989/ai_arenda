@@ -30,7 +30,7 @@ export type PlaceWords={
 
 export function placeWords(p:Row):PlaceWords{
  const d=p.details||{},policy=p.policy||{},type=String(d.type||''),name=propertyTypes[type as keyof typeof propertyTypes];
- const how=checkinMethods[d.checkinMethod as keyof typeof checkinMethods],deposit=t('Депозит: {v}',{v:money(policy.deposit||0)}),smoking=d.smoking?t('Курение: разрешено'):t('Курение: запрещено'),area=d.area?t(' · {area} м²',{area:d.area}):'';
+ const how=d.checkinMethod==='meet'&&(isHourlyVenue(type)||isBanquet(type))?t('Встречает администратор'):checkinMethods[d.checkinMethod as keyof typeof checkinMethods],deposit=t('Депозит: {v}',{v:money(policy.deposit||0)}),smoking=d.smoking?t('Курение: разрешено'):t('Курение: запрещено'),area=d.area&&!isAuto(type)?t(' · {area} м²',{area:d.area}):'';
  if(isHourlyVenue(type)){
   const included=Number(policy.included_guests)||0,above=Number(policy.extra_guest_price)||0,prep=Number(policy.prep_minutes)||0,hour=Number(policy.hourly_price)||0,car=isAuto(type);
   // A car place shows its services, and its price is the cheapest of them («от 3 000 ₸»).
@@ -60,4 +60,19 @@ export function placeWords(p:Row):PlaceWords{
   rulesTitle:t('Правила проживания'),allowed:[smoking,d.pets?t('питомцы: разрешены'):t('питомцы: не допускаются'),d.parties?t('вечеринки: разрешены'):t('вечеринки: запрещены')].join(' · '),
   addressNote:t('Точный адрес доступен после подтверждения брони. Доступность проверим на выбранные даты с учётом уборки.'),
   price:money(p.price),priceNote:t('За начатые сутки · 24 часа'),choose:t('Проверить даты')};
+}
+
+/** The price an owner sees for one of their places, in the list and on its pin (simulation of 2026-11-28). A home has
+ * its day; a bath, a loft or a field its hour; a car place its cheapest service; a hall its price per guest. The stored
+ * day price of a place taken by the hour is only a technical number and is never shown. */
+export function ownerPrice(p:Row):{amount:number;line:string}{
+ const d=p.details||{},policy=p.policy||{},type=String(d.type||'');
+ if(isHourlyVenue(type)){
+  const services=servicesOf(d);
+  if(services.length){const least=Math.min(...services.map(s=>s.price));return {amount:least,line:t('от {v}',{v:money(least)})};}
+  const hour=Number(policy.hourly_price)||0;
+  return hour?{amount:hour,line:t('{v} / час',{v:money(hour)})}:{amount:0,line:''};
+ }
+ if(isBanquet(type)){const each=Number(policy.extra_guest_price)||0;return each?{amount:each,line:t('{v} за гостя',{v:money(each)})}:{amount:0,line:''};}
+ return {amount:Number(p.price)||0,line:money(Number(p.price)||0)};
 }

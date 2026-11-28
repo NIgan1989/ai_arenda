@@ -13,6 +13,7 @@ import {T} from './tokens';
 import {Photo} from './ListingMedia';
 import {PhotoGrid} from './PhotoGrid';
 import {Stepper} from './SheetParts';
+import {SERVICE_STARTERS} from '../../lib/venue-services';
 import {amenities,categoryAmenities,checkinMethods,isAuto,isBath,isHourlyVenue,kindCategory,propertyTypes} from '../../lib/listings';
 import {KindPicker} from './KindPicker';
 import {TitleField} from './TitleField';
@@ -106,7 +107,9 @@ export function PropertyQuick({city,onSave,onGuestMode,onPlace,onReview,onClose,
  useEffect(()=>{if(!hintFor||!onPriceHint)return;let live=true;
   onPriceHint({city:draft.city,rooms:draft.rooms,...(stayClass?{stayClass}:{})}).then(v=>{if(live)setHint(Number(v?.low)>=100?{low:Number(v.low),high:Number(v.high),stayClass:v.stayClass||undefined}:null);}).catch(()=>{});
   return()=>{live=false;};},[hintFor]);
- const priceLine=hall?(draft.price>=100?t('{v} за гостя',{v:money(draft.price)}):''):bath?(draft.hourlyPrice>=100?t('{v} / час · от {minHours} ч',{v:money(draft.hourlyPrice),minHours:draft.minHours}):''):[draft.price>=100&&t('{v} / сутки',{v:money(draft.price)}),draft.hourlyPrice>=100&&t('{v} / час',{v:money(draft.hourlyPrice)}),draft.nightlyPrice>=100&&t('{v} / ночь',{v:money(draft.nightlyPrice)})].filter(Boolean).join(' · ');
+ // A car place is booked for a service: the usual services come with it (lib/venue-services.ts), the owner edits them later.
+ const starters=car?SERVICE_STARTERS[draft.type]||[]:[];
+ const priceLine=hall?(draft.price>=100?t('{v} за гостя',{v:money(draft.price)}):''):starters.length?t('Услуги от {v}',{v:money(Math.min(...starters.map(x=>x.price)))}):bath?(draft.hourlyPrice>=100?t('{v} / час · от {minHours} ч',{v:money(draft.hourlyPrice),minHours:draft.minHours}):''):[draft.price>=100&&t('{v} / сутки',{v:money(draft.price)}),draft.hourlyPrice>=100&&t('{v} / час',{v:money(draft.hourlyPrice)}),draft.nightlyPrice>=100&&t('{v} / ночь',{v:money(draft.nightlyPrice)})].filter(Boolean).join(' · ');
  const chip=(key:string,label:string,on:boolean,onPress:()=>void,radio=false)=><Pressable key={key} accessibilityRole={radio?'radio':'checkbox'} accessibilityState={{checked:on}} onPress={onPress} style={[q.chip,on&&q.chipOn]}><Text style={[q.chipText,on&&q.chipTextOn]}>{on&&!radio?'✓ ':''}{label}</Text></Pressable>;
  const num=(key:keyof ListingDraft,label:string,max=10000000)=><View style={q.tile} key={key}><Text style={q.tileLabel}>{label}</Text><TextInput accessibilityLabel={label} style={q.tileValue} keyboardType="number-pad" returnKeyType="done" value={draft[key]?String(draft[key]):''} placeholder="0" placeholderTextColor={C.muted} onChangeText={v=>patch({[key]:Math.min(max,Number(v.replace(/[^\d]/g,''))||0)} as Partial<ListingDraft>)}/></View>;
  const field=(key:keyof ListingDraft,label:string,placeholder='',max=120)=><View key={key} style={q.field}><Text style={q.tileLabel}>{label}</Text><TextInput accessibilityLabel={label} style={q.input} value={String(draft[key]||'')} placeholder={placeholder} placeholderTextColor={C.muted} maxLength={max} onChangeText={v=>patch({[key]:v} as Partial<ListingDraft>)}/></View>;
