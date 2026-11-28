@@ -30,7 +30,7 @@ export function NativeTelegram({tint,invite}:{tint?:string;invite?:boolean}={}){
 const t=StyleSheet.create({
  row:{flexDirection:'row',gap:8},
  button:{minHeight:T.control.touch,paddingHorizontal:16,borderRadius:T.radius.full,alignItems:'center',justifyContent:'center'},
- primary:{backgroundColor:C.ink},secondary:{borderWidth:1,borderColor:C.line,backgroundColor:C.surface},dim:{opacity:.6},
+ primary:{backgroundColor:C.accent},secondary:{borderWidth:1,borderColor:C.line,backgroundColor:C.surface},dim:{opacity:.6},
  primaryText:{...type.label,color:C.onAccent,fontWeight:'600'},secondaryText:{...type.label,color:C.ink,fontWeight:'600'},
  error:{...type.label,color:C.danger}
 });

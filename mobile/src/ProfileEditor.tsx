@@ -62,6 +62,6 @@ const e=StyleSheet.create({
  hidden:{display:'none'},
  input:{minHeight:T.control.primary,borderWidth:1,borderColor:C.lineStrong,borderRadius:T.radius.md,backgroundColor:C.surface,paddingHorizontal:16,paddingVertical:12,fontSize:16,lineHeight:24,color:C.ink},area:{minHeight:140,textAlignVertical:'top'},
  count:{...type.caption,color:C.muted,textAlign:'right'},
- save:{minHeight:T.control.primary,borderRadius:T.radius.full,backgroundColor:C.ink,alignItems:'center',justifyContent:'center',marginTop:8},saveText:{...type.body,color:C.onAccent,fontWeight:'600'},dim:{opacity:.45},
+ save:{minHeight:T.control.primary,borderRadius:T.radius.full,backgroundColor:C.accent,alignItems:'center',justifyContent:'center',marginTop:8},saveText:{...type.body,color:C.onAccent,fontWeight:'600'},dim:{opacity:.45},
 });
 export function CleanerCard({worker:p}:{worker:Row}){return <View style={s.card}><View style={m.heading}><Photo id={p.avatar_id} avatar alt={t('Фото: {name}',{name:p.name})}/><View style={{flex:1}}><Text style={s.cardTitle}>{p.name}</Text><Text style={s.meta}>{p.city} · {p.districts}</Text></View></View><Badge status={p.display_status}/>{p.display_status?.upcoming&&<Text style={s.meta}>{t('Есть предстоящие назначения. Время проверяется при назначении.')}</Text>}<Text style={s.text}>{p.experience}</Text><Text style={s.meta}>{t('График: {v}',{v:p.availability})}</Text><Text style={s.meta}>{t('Анкета заполнена исполнителем. Квалификация платформой пока не подтверждена.')}</Text></View>;}

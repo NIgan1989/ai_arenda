@@ -31,7 +31,7 @@ export function JobProblem({visible,busy,onClose,onSend,onOther}:{visible:boolea
 }
 
 const p=StyleSheet.create({
- shade:{flex:1,backgroundColor:'rgba(15,23,42,0.32)'},
+ shade:{flex:1,backgroundColor:'rgba(33,32,28,0.32)'},
  sheet:{paddingHorizontal:20,paddingTop:8,paddingBottom:32,gap:4,borderTopLeftRadius:T.radius.xl,borderTopRightRadius:T.radius.xl,backgroundColor:C.surface},
  grab:{alignSelf:'center',width:40,height:4,borderRadius:T.radius.full,backgroundColor:C.lineStrong,marginBottom:12},
  title:{...type.subtitle,color:C.ink,fontWeight:'600'},

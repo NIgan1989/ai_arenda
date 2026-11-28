@@ -55,7 +55,7 @@ const a=StyleSheet.create({
  title:{...type.body,color:C.ink,fontWeight:'600'},
  option:{gap:12},optionLine:{paddingTop:12,borderTopWidth:1,borderTopColor:C.line},
  decide:{flexDirection:'row',alignItems:'center',gap:16},btn:{minHeight:H.primary,borderRadius:R.md,alignItems:'center',justifyContent:'center',paddingHorizontal:12},
- accept:{flex:1,borderRadius:R.full,backgroundColor:C.ink},acceptText:{...type.body,fontWeight:'600',color:C.onAccent},
+ accept:{flex:1,borderRadius:R.full,backgroundColor:C.accent},acceptText:{...type.body,fontWeight:'600',color:C.onAccent},
  reject:{minHeight:H.primary,justifyContent:'center',paddingHorizontal:4},rejectText:{...type.body,fontWeight:'600',color:C.ink,textDecorationLine:'underline'},
  dim:{opacity:.55},note:{...type.caption,color:C.muted},
  admission:{...type.label,color:C.ink,padding:12,borderRadius:R.md,borderWidth:1,borderColor:C.warningLine,backgroundColor:C.warningSoft,overflow:'hidden'},admissionBad:{borderColor:C.danger,backgroundColor:C.dangerSoft},

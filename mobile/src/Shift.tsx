@@ -57,7 +57,7 @@ const h=StyleSheet.create({
  stay:{gap:8,padding:12,borderRadius:R.md,backgroundColor:C.surfaceAlt},stayOn:{backgroundColor:C.surface,borderWidth:1,borderColor:C.ink},
  stayRow:{flexDirection:'row',alignItems:'baseline',gap:8},time:{...type.body,color:C.ink,fontWeight:'600'},who:{...type.label,color:C.inkSoft,flex:1,textAlign:'right'},
  stage:{...type.caption,color:C.muted},
- go:{minHeight:H.primary,borderRadius:R.full,backgroundColor:C.ink,alignItems:'center',justifyContent:'center',paddingHorizontal:24},goText:{color:C.onAccent,...type.body,fontWeight:'600'},dim:{opacity:.45},
+ go:{minHeight:H.primary,borderRadius:R.full,backgroundColor:C.accent,alignItems:'center',justifyContent:'center',paddingHorizontal:24},goText:{color:C.onAccent,...type.body,fontWeight:'600'},dim:{opacity:.45},
  empty:{...type.label,color:C.muted,textAlign:'center',paddingVertical:16},
  note:{padding:12,borderRadius:R.md,backgroundColor:C.surfaceAlt,color:C.ink,...type.label},
  error:{padding:12,borderRadius:R.md,backgroundColor:C.dangerSoft,color:C.danger,...type.label}

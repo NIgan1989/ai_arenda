@@ -72,7 +72,7 @@ const n=StyleSheet.create({
  block:{marginBottom:8},
  day:{paddingTop:16,paddingBottom:8,...type.caption,fontWeight:'600',color:C.muted},
  ask:{flexDirection:'row',alignItems:'center',gap:12,minHeight:T.control.primary,paddingHorizontal:12,paddingVertical:12,marginBottom:8,borderRadius:T.radius.lg,borderWidth:2,borderColor:C.gold,backgroundColor:C.surface},
- answer:{minHeight:T.control.compact,paddingHorizontal:16,borderRadius:T.radius.md,alignItems:'center',justifyContent:'center',backgroundColor:C.ink},answerText:{...type.label,color:C.onAccent,fontWeight:'600'},
+ answer:{minHeight:T.control.compact,paddingHorizontal:16,borderRadius:T.radius.md,alignItems:'center',justifyContent:'center',backgroundColor:C.accent},answerText:{...type.label,color:C.onAccent,fontWeight:'600'},
  line:{flexDirection:'row',alignItems:'center',gap:12,minHeight:T.control.primary,paddingHorizontal:16,paddingVertical:12,marginBottom:8,borderRadius:T.radius.lg,backgroundColor:C.surface},pressed:{backgroundColor:C.accentSoft},pressedSoft:{opacity:.6},
  dot:{width:8,height:8,borderRadius:4,marginLeft:-4},dotOn:{backgroundColor:C.ink},
  text:{flex:1,minWidth:0,gap:2},body:{...type.label,color:C.ink},title:{...type.label,color:C.ink,fontWeight:'600'},titleRead:{fontWeight:'600'},when:{...type.caption,color:C.muted,fontVariant:['tabular-nums']},

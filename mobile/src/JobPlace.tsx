@@ -68,6 +68,6 @@ const p=StyleSheet.create({
  row:{flexDirection:'row',alignItems:'center',gap:12},foldRow:{padding:12},pressed:{opacity:0.7},
  chevron:{...type.label,color:C.muted},chevronUp:{transform:[{rotate:'180deg'}]},
  thumb:{width:64,height:64,borderRadius:R.md,overflow:'hidden',backgroundColor:C.surfaceAlt},
- thumbCount:{position:'absolute',right:4,bottom:4,minWidth:20,paddingHorizontal:8,borderRadius:R.full,overflow:'hidden',backgroundColor:'rgba(14,19,36,0.6)',color:C.onAccent,fontSize:12,lineHeight:20,textAlign:'center'},
+ thumbCount:{position:'absolute',right:4,bottom:4,minWidth:20,paddingHorizontal:8,borderRadius:R.full,overflow:'hidden',backgroundColor:'rgba(33,32,28,0.6)',color:C.onAccent,fontSize:12,lineHeight:20,textAlign:'center'},
  rowText:{flex:1,minWidth:0,gap:2},rowTitle:{...type.label,fontWeight:'600',color:C.ink},rowNote:{...type.caption,color:C.muted},
 });

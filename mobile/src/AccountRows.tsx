@@ -40,7 +40,7 @@ export const a=StyleSheet.create({
  label:{...type.caption,color:C.muted,fontWeight:'600',marginTop:20,marginBottom:8,marginHorizontal:4},
  heading:{...type.label,color:C.ink,fontWeight:'600',marginTop:24,marginBottom:4},
  flat:{marginHorizontal:-16,overflow:'hidden'},band:{marginTop:16,borderTopWidth:8,borderTopColor:C.bg},
- btn:{minHeight:T.control.primary,borderRadius:T.radius.full,backgroundColor:C.ink,alignItems:'center',justifyContent:'center',paddingHorizontal:24,marginTop:16},btnLine:{backgroundColor:C.surface,borderWidth:1,borderColor:C.lineStrong},btnDanger:{backgroundColor:C.danger},btnText:{...type.body,color:C.onAccent,fontWeight:'600',textAlign:'center'},
+ btn:{minHeight:T.control.primary,borderRadius:T.radius.full,backgroundColor:C.accent,alignItems:'center',justifyContent:'center',paddingHorizontal:24,marginTop:16},btnLine:{backgroundColor:C.surface,borderWidth:1,borderColor:C.lineStrong},btnDanger:{backgroundColor:C.danger},btnText:{...type.body,color:C.onAccent,fontWeight:'600',textAlign:'center'},
  group:{borderWidth:1,borderColor:C.line,backgroundColor:C.surface,borderTopWidth:0,borderRadius:T.radius.lg,overflow:'hidden'},
  row:{minHeight:T.control.field,flexDirection:'row',alignItems:'center',gap:12,paddingHorizontal:16,paddingVertical:8,borderTopWidth:1,borderTopColor:C.line},
  pressed:{backgroundColor:C.surfaceAlt},grow:{flexGrow:0,flexShrink:0,maxWidth:'62%'},wide:{flex:1,minWidth:0},

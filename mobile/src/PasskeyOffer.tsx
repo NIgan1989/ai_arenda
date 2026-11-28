@@ -78,14 +78,14 @@ export function PasskeyOfferHost(){
 }
 
 const p=StyleSheet.create({
- shade:{flex:1,backgroundColor:'rgba(15,23,42,0.32)'},
+ shade:{flex:1,backgroundColor:'rgba(33,32,28,0.32)'},
  sheet:{paddingHorizontal:24,paddingTop:32,paddingBottom:40,gap:12,alignItems:'center',borderTopLeftRadius:T.radius.xl,borderTopRightRadius:T.radius.xl,backgroundColor:C.surface},
  ring:{width:64,height:64,borderRadius:T.radius.full,borderWidth:1,borderColor:C.line,alignItems:'center',justifyContent:'center',marginBottom:4},
  icon:{width:32,height:32,tintColor:C.ink},
  title:{...type.subtitle,color:C.ink,fontWeight:'600',textAlign:'center'},
  text:{...type.label,color:C.muted,textAlign:'center',maxWidth:320},
  error:{...type.caption,color:C.danger,textAlign:'center'},
- main:{alignSelf:'stretch',minHeight:56,marginTop:12,borderRadius:T.radius.full,alignItems:'center',justifyContent:'center',backgroundColor:C.ink},
+ main:{alignSelf:'stretch',minHeight:56,marginTop:12,borderRadius:T.radius.full,alignItems:'center',justifyContent:'center',backgroundColor:C.accent},
  mainText:{...type.body,color:C.surface,fontWeight:'600'},
  skip:{alignSelf:'stretch',minHeight:T.control.touch,alignItems:'center',justifyContent:'center'},
  skipText:{...type.label,color:C.ink,fontWeight:'600'},

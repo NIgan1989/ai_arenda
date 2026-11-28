@@ -253,7 +253,7 @@ const q=StyleSheet.create({
  foot:{gap:16,marginTop:8},seg:{flexDirection:'row',gap:4},segBar:{flex:1,height:4,borderRadius:R.full,backgroundColor:C.line},segOn:{backgroundColor:C.ink},
  footRow:{flexDirection:'row',alignItems:'center',justifyContent:'space-between',gap:16},
  back:{color:C.ink,...type.body,fontWeight:'600',textDecorationLine:'underline'},
- next:{minHeight:H.primary,minWidth:132,borderRadius:R.full,backgroundColor:C.ink,alignItems:'center',justifyContent:'center',paddingHorizontal:24},nextOff:{backgroundColor:C.lineStrong},
+ next:{minHeight:H.primary,minWidth:132,borderRadius:R.full,backgroundColor:C.accent,alignItems:'center',justifyContent:'center',paddingHorizontal:24},nextOff:{backgroundColor:C.lineStrong},
  nextText:{color:C.onAccent,...type.body,fontWeight:'600'},wide:{alignSelf:'stretch'},
  outline:{minHeight:H.primary,borderRadius:R.full,borderWidth:1,borderColor:C.lineStrong,backgroundColor:C.surface,alignItems:'center',justifyContent:'center',paddingHorizontal:20},outlineText:{color:C.ink,...type.body,fontWeight:'600'},
  bigRow:{flexDirection:'row',alignItems:'baseline',justifyContent:'center',gap:8,paddingVertical:16},

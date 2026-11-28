@@ -45,7 +45,7 @@ const c=StyleSheet.create({
  row:{flexDirection:'row',alignItems:'center',gap:12,minHeight:T.control.touch+12,paddingVertical:8,borderTopWidth:1,borderTopColor:C.line},
  rowTitle:{...type.body,color:C.ink},rowNote:{...type.caption,color:C.muted},
  radio:{width:22,height:22,borderRadius:T.radius.full,borderWidth:2,borderColor:C.lineStrong,alignItems:'center',justifyContent:'center'},radioOn:{borderColor:C.ink},radioDot:{width:10,height:10,borderRadius:T.radius.full,backgroundColor:C.ink},
- button:{minHeight:T.control.primary,borderRadius:T.radius.full,backgroundColor:C.ink,alignItems:'center',justifyContent:'center',marginTop:8},buttonText:{...type.body,color:C.onAccent,fontWeight:'600'},
+ button:{minHeight:T.control.primary,borderRadius:T.radius.full,backgroundColor:C.accent,alignItems:'center',justifyContent:'center',marginTop:8},buttonText:{...type.body,color:C.onAccent,fontWeight:'600'},
  value:{flexDirection:'row',alignItems:'center',gap:12,minHeight:T.control.primary,paddingVertical:8,borderBottomWidth:1,borderBottomColor:C.line},
  valueTitle:{...type.body,color:C.ink,flex:1,minWidth:0},valueText:{...type.label,color:C.muted,maxWidth:'45%'},chevron:{...type.subtitle,color:C.lineStrong},
  dim:{opacity:.5},
