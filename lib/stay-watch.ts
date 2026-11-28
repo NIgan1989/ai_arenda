@@ -1,5 +1,5 @@
 import {wordsOf,venueOr,TYPE_SQL} from './stay-words';
-import {epoch,uuid,q,rows,type OperationConfig} from './operation-core';
+import {epoch,uuid,q,rows,one,type OperationConfig} from './operation-core';
 import {arrivalDue,lateUntil} from './late-arrival';
 import {assertCalendarAvailable} from './external-calendar';
 import {ruleFor,minutesLabel,type RuleKey,type RuleValue} from './decision-rules';
@@ -231,4 +231,22 @@ export async function similarFree(db:D1Database,bookingId:string,limit=3){
 export function similarText(list:Row[]){
  if(!list.length)return '';
  return ' Похожие свободные варианты на эти даты: '+list.map(p=>'«'+p.title+'»').join(', ')+'. Найдите их на карте.';
+}
+
+// «Не приехал» at a car place (lib/bays.ts): the person on shift says the booked car did not come. It is closed as the
+// AI closes a no-show, by the cancellation rules; nobody is charged for the tap itself. False: arrived, or not open.
+export async function closeNoShow(db:D1Database,bookingId:string,at:number,actor:string){
+ const b=await one(db,STAY_SQL+" WHERE b.id=?2 AND b.status='confirmed' AND t.actual_checkin IS NULL AND t.checkin_reported_at IS NULL AND t.actual_checkout IS NULL AND b.start<=?1 AND "+NOT_DISPUTED,at,bookingId);
+ if(!b)return false;
+ const title=b.title||'место',{c,forGuest,forOwner}=noShowTerms(b,at),done="EXISTS(SELECT 1 FROM bookings WHERE id=? AND status='cancelled')";
+ const r=await db.batch([
+  q(db,"UPDATE bookings SET status='cancelled' WHERE id=? AND status='confirmed' AND NOT EXISTS(SELECT 1 FROM booking_terms WHERE booking_id=? AND (actual_checkin IS NOT NULL OR checkin_reported_at IS NOT NULL))",b.id,b.id),
+  // A cleaning ordered after the booking is not needed: the job is taken off and its cleaner told.
+  q(db,`INSERT OR IGNORE INTO notifications SELECT ?||j.id,j.assigned_to,?,'cleaner:booking-cancelled:'||j.id,0,? FROM cleaning_jobs j WHERE j.booking_id=? AND j.status='assigned' AND j.assigned_to IS NOT NULL AND ${done}`,uuid()+':','Машина по записи в «'+title+'» не приехала, уборка после этой записи не нужна. Задание снято.',at,b.id,b.id),
+  q(db,`UPDATE cleaning_jobs SET status='cancelled' WHERE booking_id=? AND status IN ('open','assigned') AND ${done}`,b.id,b.id),
+  settle(db,b.id,c.refund,at),
+  q(db,`INSERT OR IGNORE INTO notifications SELECT ?,?,?,?,0,? WHERE ${done}`,uuid(),b.guest_id,('Вы не приехали в «'+title+'» к записи, запись снята. '+forGuest).trim(),'guest:stay-no-show:'+b.id,at,b.id),
+  q(db,`INSERT OR IGNORE INTO notifications SELECT ?,?,?,?,0,? WHERE ${done}`,uuid(),b.owner_id,('Машина по записи в «'+title+'» не приехала, запись снята. '+forOwner).trim(),'owner:stay-no-show:'+b.id,at,b.id),
+  q(db,`INSERT INTO audit_events SELECT ?,?,?,'booking.no_show_marked',? WHERE ${done}`,uuid(),actor,b.id,at,b.id)]);
+ return !!r[0].meta.changes;
 }

@@ -48,7 +48,8 @@ export async function syncRoomUnits(db:D1Database,leadId:string){
  if(!await one(db,'SELECT 1 x FROM room_units WHERE lead_id=? LIMIT 1',leadId))return;
  await db.batch([...SYNCED.map(t=>q(db,syncSql(t),leadId)),
   // The person on shift follows the card: a new one is let into every room, a removed one loses them all (lib/staff.ts).
-  q(db,'DELETE FROM property_staff WHERE property_id IN (SELECT property_id FROM room_units WHERE lead_id=?1) AND staff_id IS NOT (SELECT staff_id FROM property_staff WHERE property_id=?1)',leadId),
+  // Several people may be on shift (lib/staff.ts MAX_STAFF): a room keeps exactly the people of its card.
+  q(db,'DELETE FROM property_staff WHERE property_id IN (SELECT property_id FROM room_units WHERE lead_id=?1) AND NOT EXISTS(SELECT 1 FROM property_staff l WHERE l.property_id=?1 AND l.staff_id=property_staff.staff_id)',leadId),
   q(db,'INSERT OR IGNORE INTO property_staff(property_id,staff_id,owner_id,created_at) SELECT u.property_id,l.staff_id,l.owner_id,l.created_at FROM property_staff l JOIN room_units u ON u.lead_id=l.property_id JOIN properties p ON p.id=u.property_id AND p.archived_at IS NULL WHERE l.property_id=?1',leadId)]);
 }
 /** Every lead in step with its rooms: the background sweep, for edits made anywhere. */
@@ -71,11 +72,13 @@ export async function freeRooms(db:D1Database,leadId:string,start:number,until:n
  return ids.filter(id=>free.has(id));
 }
 /** The room a booking of this card takes: the first free one, or the card itself when none is (the quote then says so). */
-export async function pickRoom(db:D1Database,propertyId:string,start:number,until:number){
+// only: the first rooms that may be taken (a car place's boxes «по записи», lib/bay-plan.ts); all of them when not given.
+export async function pickRoom(db:D1Database,propertyId:string,start:number,until:number,only?:number){
  const lead=await leadOf(db,propertyId);
  if(lead===propertyId&&!await one(db,'SELECT 1 x FROM room_units WHERE lead_id=? LIMIT 1',lead))return propertyId;
  await syncRoomUnits(db,lead);
- return (await freeRooms(db,lead,start,until,true))[0]||propertyId;
+ const allowed=only===undefined?null:new Set((await roomsOf(db,lead)).slice(0,only));
+ return (await freeRooms(db,lead,start,until,true)).find(id=>!allowed||allowed.has(id))||(allowed&&!allowed.has(propertyId)?lead:propertyId);
 }
 
 async function ownLead(s:RentalService,propertyId:string){

@@ -9,30 +9,32 @@ import {ThinkingLine} from './Thinking';
 import {C,type} from './styles';
 import {request} from './api';
 import {EditButton,EditField,EditNote,EditRow,EditSheet,editStyles} from './EditSheet';
-import {isBanquet,isBath,isHourlyVenue} from '../../lib/listings';
+import {isAuto,isBanquet,isBath,isHourlyVenue} from '../../lib/listings';
 type Row=Record<string,any>;
 const pretty=(v:string)=>v.replace(/^\+7(\d{3})(\d{3})(\d{2})(\d{2})$/,'+7 $1 $2 $3 $4');
 const since=(at:number)=>t('с {v}',{v:dateText(at*1000,{timeZone:'Asia/Almaty',day:'numeric',month:'long'})});
 // Who meets the guests, by the kind of the object: a home has no bath attendant.
-const whoFor=(kind:string)=>isBath(kind)?t('Администратор или банщик'):isBanquet(kind)?t('Администратор зала'):isHourlyVenue(kind)?t('Администратор или мастер на смене'):t('Тот, кто встречает гостей и отмечает «Занято»');
+const whoFor=(kind:string)=>isAuto(kind)?t('Администратор мойки: отмечает боксы и очередь в «Постах»'):isBath(kind)?t('Администратор или банщик'):isBanquet(kind)?t('Администратор зала'):isHourlyVenue(kind)?t('Администратор или мастер на смене'):t('Тот, кто встречает гостей и отмечает «Занято»');
 
+// Several people on shift (2026-11-28): the admins of a car wash work in turns. Each one is a row; «Снять» asks once.
 export function PropertyStaff({propertyId,kind,onBack,onClose,onChanged}:{propertyId:string;kind?:string;onBack:()=>void;onClose:()=>void;onChanged?:(name:string)=>void}){
- const [state,setState]=useState<Row|null>(null),[busy,setBusy]=useState(false),[error,setError]=useState(''),[note,setNote]=useState(''),[phone,setPhone]=useState('+7'),[confirm,setConfirm]=useState(false);
+ const [state,setState]=useState<Row|null>(null),[busy,setBusy]=useState(false),[error,setError]=useState(''),[note,setNote]=useState(''),[phone,setPhone]=useState('+7'),[confirm,setConfirm]=useState<Row|null>(null);
  useEffect(()=>{let live=true;request('/api/operations/staff/state',{propertyId}).then(v=>{if(live)setState(v);}).catch(x=>{if(live)setError(x?.message||t('Не удалось загрузить.'));});return()=>{live=false;};},[propertyId]);
- async function run(path:string,body:Row){if(busy)return;setBusy(true);setError('');setNote('');try{const r=await request('/api/operations/staff/'+path,{propertyId,...body});setState(r);setNote(r?.message||'');setConfirm(false);onChanged?.(r?.staff?.name||'');}catch(x:any){setError(x?.message||t('Не получилось.'));}finally{setBusy(false);}}
- const s=state?.staff,ready=phone.replace(/\D/g,'').length>=11;
- // The pinned button: «Назначить» before anyone is named, «Снять» and «Отмена» while removing is being confirmed.
- const foot=state&&!s?<EditButton title={t('Назначить')} disabled={!ready} busy={busy&&t('Назначаем…')} onPress={()=>run('assign',{phone})}/>
-  :s&&confirm?<><EditButton title={t('Снять')} busy={busy&&t('Снимаем…')} onPress={()=>run('remove',{})}/><EditButton line title={t('Отмена')} disabled={busy} onPress={()=>setConfirm(false)}/></>:undefined;
- return <EditSheet title={t('Сотрудник')} onBack={onBack} onClose={onClose} busy={busy} foot={foot} menu={s&&!confirm?[{title:t('Снять'),icon:'trash',danger:true,onPress:()=>setConfirm(true)}]:undefined}>
+ async function run(path:string,body:Row){if(busy)return;setBusy(true);setError('');setNote('');try{const r=await request('/api/operations/staff/'+path,{propertyId,...body});setState(r);setNote(r?.message||'');setConfirm(null);setPhone('+7');onChanged?.((r?.team||(r?.staff?[r.staff]:[])).map((x:Row)=>x.name).join(', '));}catch(x:any){setError(x?.message||t('Не получилось.'));}finally{setBusy(false);}}
+ const team:Row[]=state?.team||(state?.staff?[state.staff]:[]),room=team.length<(Number(state?.max)||1),ready=phone.replace(/\D/g,'').length>=11;
+ // The pinned button: «Назначить» while there is room, «Снять» and «Отмена» while removing is being confirmed.
+ const foot=confirm?<><EditButton title={t('Снять')} busy={busy&&t('Снимаем…')} onPress={()=>run('remove',{phone:confirm.phone})}/><EditButton line title={t('Отмена')} disabled={busy} onPress={()=>setConfirm(null)}/></>
+  :state&&room?<EditButton title={team.length?t('Назначить ещё'):t('Назначить')} disabled={!ready} busy={busy&&t('Назначаем…')} onPress={()=>run('assign',{phone})}/>:undefined;
+ return <EditSheet title={t('Сотрудники')} onBack={onBack} onClose={onClose} busy={busy} foot={foot}>
   {!state&&!error&&<ThinkingLine style={editStyles.note} text={t('Загружаем…')}/>}
-  {state&&!s&&<>
-   <Text style={f.lead}>{whoFor(kind||'')}</Text>
-   <EditField label={t('Телефон')} value={phone} onChange={setPhone} max={20} keyboard="phone-pad" placeholder="+7 777 123 45 67"/>
+  {confirm?<><Text style={f.lead}>{t('Снять: {name}?',{name:confirm.name})}</Text><EditNote text={t('Объект пропадёт из его «Смены».')}/></>:<>
+   {team.map((x,i)=><EditRow key={x.phone} icon="user" title={String(x.name||'')} line={pretty(String(x.phone||''))+' · '+since(Number(x.since))} onPress={()=>setConfirm(x)} last={i===team.length-1}/>)}
+   {state&&room&&<>
+    {!team.length&&<Text style={f.lead}>{whoFor(kind||'')}</Text>}
+    <EditField label={team.length?t('Телефон ещё одного сотрудника'):t('Телефон')} value={phone} onChange={setPhone} max={20} keyboard="phone-pad" placeholder="+7 777 123 45 67"/>
+   </>}
+   {state&&<EditNote text={team.length?t('Нажмите на сотрудника, чтобы снять. Видят гостей на сегодня и отмечают их, цены и деньги остаются у вас.'):t('Видит гостей на сегодня и отмечает их. Цены и деньги остаются у вас.')}/>}
   </>}
-  {s&&<EditRow icon="user" title={String(s.name||'')} line={pretty(String(s.phone||''))+' · '+since(Number(s.since))} last/>}
-  {s&&confirm?<><Text style={f.lead}>{t('Снять: {name}?',{name:s.name})}</Text><EditNote text={t('Объект пропадёт из его «Смены», отметки снова будут только у вас.')}/></>
-   :state&&<EditNote text={t('Видит гостей на сегодня и отмечает их. Цены и деньги остаются у вас.')}/>}
   {!!note&&<EditNote tone="done" text={note}/>}
   {!!error&&<EditNote tone="error" text={error}/>}
  </EditSheet>;

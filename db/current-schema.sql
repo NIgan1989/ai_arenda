@@ -112,6 +112,7 @@
 -- migration 0108_venue_hours.sql sha256:5e40d18c17baf56b1902533a52ffc9c426fa534a3bd657ccd9abf0cf3b9dd53b
 -- migration 0109_guest_still_here.sql sha256:ed0dd8a1b3ddc6f7897274c0a9fa29b735548996be6db20c995c187d65f48bae
 -- migration 0110_venue_services.sql sha256:819e64c811c836728e2104f0bce6bb878a27a2c23d7a11cbb9f9c13b01b302a9
+-- migration 0111_bay_posts.sql sha256:99816e2340d2a3b833c57970685e2943ae3e12e839d5f46b857d699548b62e4c
 
 -- table access_receipts
 CREATE TABLE access_receipts (id TEXT PRIMARY KEY,property_id TEXT NOT NULL,entity_kind TEXT NOT NULL,entity_id TEXT NOT NULL,user_id TEXT NOT NULL,created_at INTEGER NOT NULL,expires_at INTEGER NOT NULL);
@@ -414,6 +415,15 @@ CREATE TABLE background_jobs (
  attempts INTEGER NOT NULL DEFAULT 0, max_attempts INTEGER NOT NULL DEFAULT 8,
  available_at INTEGER NOT NULL, lease_until INTEGER NOT NULL DEFAULT 0, lease_token TEXT NOT NULL DEFAULT '',
  repeat_seconds INTEGER NOT NULL DEFAULT 0, last_completed INTEGER, last_error TEXT NOT NULL DEFAULT '', updated_at INTEGER NOT NULL
+);
+
+-- table bay_live
+CREATE TABLE bay_live (
+ property_id TEXT PRIMARY KEY REFERENCES properties(id),
+ busy_since INTEGER,
+ waiting INTEGER NOT NULL DEFAULT 0 CHECK(waiting BETWEEN 0 AND 99),
+ avg_minutes INTEGER,
+ marked_at INTEGER
 );
 
 -- table booking_addresses
@@ -1353,11 +1363,12 @@ CREATE TABLE property_right_docs (
 , address_revision INTEGER NOT NULL DEFAULT 0);
 
 -- table property_staff
-CREATE TABLE property_staff (
- property_id TEXT PRIMARY KEY REFERENCES properties(id),
+CREATE TABLE "property_staff" (
+ property_id TEXT NOT NULL REFERENCES properties(id),
  staff_id TEXT NOT NULL REFERENCES profiles(id),
  owner_id TEXT NOT NULL REFERENCES profiles(id),
- created_at INTEGER NOT NULL
+ created_at INTEGER NOT NULL,
+ PRIMARY KEY(property_id,staff_id)
 );
 
 -- table property_views
