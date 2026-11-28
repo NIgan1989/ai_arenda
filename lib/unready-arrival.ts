@@ -18,9 +18,10 @@ export const CLEANING_IN_TIME=(property:string,start:string,at:string)=>`EXISTS(
 export async function sweepUnreadyArrivals(db:D1Database,at=epoch()){
  const due=await rows(db,`SELECT b.id,b.start,b.guest_id,p.owner_id,p.title,(SELECT json_extract(details,'$.type') FROM property_details WHERE property_id=p.id) type
   FROM bookings b JOIN properties p ON p.id=b.property_id JOIN property_operations o ON o.property_id=p.id JOIN booking_terms t ON t.booking_id=b.id
-  WHERE b.status='confirmed' AND p.own_staff=0 AND o.readiness IN ('awaiting_cleaning','inspection') AND b.start>?1 AND b.start<=?1+${UNREADY_AHEAD}
+  WHERE b.status='confirmed' AND p.own_staff=0 AND o.readiness IN ('awaiting_cleaning','cleaning','inspection') AND b.start>?1 AND b.start<=?1+${UNREADY_AHEAD}
   AND t.actual_checkin IS NULL AND NOT ${CLEANING_IN_TIME('p.id','b.start','?1')}
   AND NOT EXISTS(SELECT 1 FROM bookings x WHERE x.property_id=b.property_id AND x.id<>b.id AND x.status='confirmed' AND x.start>?1 AND x.start<b.start)
+  AND NOT EXISTS(SELECT 1 FROM notifications n WHERE n.dedupe='owner:unready-arrival:'||b.id||':'||b.start)
   ORDER BY b.start LIMIT 50`,at) as Row[];
  let asked=0;
  for(const b of due){

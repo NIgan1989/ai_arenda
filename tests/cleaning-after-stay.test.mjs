@@ -70,6 +70,12 @@ test('the home not ready before an arrival: the guest is not let in, the owner d
   const guest=f.db.raw.prepare("SELECT body FROM notifications WHERE user_id='guest' AND dedupe LIKE 'guest:unready-arrival:%'").get().body;
   assert.match(guest,/ещё готовят/);
   for(const body of [owner,guest])for(const l of ['kk','en'])assert.notEqual(noticeIn(l,body),body,body);
+  // A cleaning that started but will not end before the arrival is the same case (readiness «cleaning»).
+  f.db.raw.prepare("DELETE FROM notifications WHERE dedupe LIKE '%unready-arrival:%'").run();
+  f.db.raw.prepare("UPDATE property_operations SET readiness='cleaning' WHERE property_id=?").run(f.property);
+  f.db.raw.prepare("UPDATE cleaning_jobs SET status='in_progress',end=? WHERE id='before'").run(start+1800);
+  assert.equal((await sweepUnreadyArrivals(f.db,start-1700)).asked,1);
+  f.db.raw.prepare("UPDATE property_operations SET readiness='awaiting_cleaning' WHERE property_id=?").run(f.property);
   // The check-in stays closed while the home is not ready.
   f.db.raw.prepare("UPDATE cleaning_jobs SET status='cancelled' WHERE id='before'").run();
   f.db.raw.prepare("UPDATE bookings SET start=?,payment_status='owner_verified' WHERE id=?").run(now()-60,f.booking);
