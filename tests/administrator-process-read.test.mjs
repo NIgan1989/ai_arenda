@@ -17,7 +17,7 @@ test('model process tool accepts no IDs from the model and returns server result
  const original=globalThis.fetch;let executed=0,payload;const read=async()=>{executed++;return {text:'Актуальное состояние.'};};
  try{
   globalThis.fetch=async(_,options)=>{payload=JSON.parse(options.body);return Response.json({output:[{type:'function_call',name:'read_process_status',arguments:'{}'},{type:'message',content:[{type:'output_text',text:'Оплата проведена.'}]}]});};
-  const r=await generateAnswer({OPENAI_API_KEY:'fixture',OPENAI_MODEL:'fixture'},'Как сейчас дела?','owner',[],'fallback',{},undefined,undefined,undefined,read);assert.equal(r.text,'Актуальное состояние.');assert.equal(executed,1);assert.ok(payload.tools.some(t=>t.name==='read_process_status'));
+  const r=await generateAnswer({OPENAI_API_KEY:'fixture',OPENAI_MODEL:'fixture'},'Как сейчас дела?','owner',[],'fallback',{},undefined,undefined,undefined,read);assert.equal(r.text,'Актуальное состояние.');assert.equal(r.screen,'bookings');assert.equal(executed,1);assert.ok(payload.tools.some(t=>t.name==='read_process_status'));
   globalThis.fetch=async()=>Response.json({output:[{type:'function_call',name:'read_process_status',arguments:'{"userId":"other"}'}]});await generateAnswer({OPENAI_API_KEY:'fixture',OPENAI_MODEL:'fixture'},'Статус','owner',[],'fallback',{},undefined,undefined,undefined,read);assert.equal(executed,1);
  }finally{globalThis.fetch=original;}
 });
