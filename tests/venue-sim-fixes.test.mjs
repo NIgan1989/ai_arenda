@@ -66,3 +66,8 @@ test('a loft has no made-up area, and the owner\'s tasks speak of a visit',async
  assert.doesNotMatch(titles,/заселен|заезд|выезд|жиль/i,titles);
  assert.match(titles,/Проверить приход/);
 });
+
+test('a game club counts its seats',async()=>{
+ const {readListingText,emptyDraft}=await load('listing-draft');
+ assert.equal(readListingText('Игровой клуб «PS Zone» на Толстого 8, PlayStation 5, 6 мест. 2 000 в час.',emptyDraft('Павлодар')).draft.capacity,6);
+});

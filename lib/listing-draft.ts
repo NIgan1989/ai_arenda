@@ -128,6 +128,8 @@ export function readListingText(text:string,base:ListingDraft):{draft:ListingDra
  if(!found.includes('capacity')&&found.includes('beds'))set('capacity',d.beds);
  if(!found.includes('capacity')&&found.includes('rooms')&&!d.known.includes('capacity'))d.capacity=d.type==='studio'?2:Math.min(50,d.rooms*2);
  if(bath&&!found.includes('capacity')&&!d.known.includes('capacity'))d.capacity=Math.max(d.includedGuests||0,6);
+ // «PlayStation 5, 6 мест», «10 компьютеров»: a game club counts its seats.
+ if(timed&&!bath&&!isAuto(d.type)&&!found.includes('capacity')&&!d.known.includes('capacity')){const seats=rest.match(/(\d{1,3})\s*(?:мест(?![а-я]*\s*(?:в\s*)?(?:парк|машин))|компьютер|приставк|игров[а-я]* мест)/);if(seats&&+seats[1]>0&&+seats[1]<=1000)set('capacity',Number(seats[1]));}
  // A place of «Досуг» or «Спорт» takes a company or a team; «Авто» takes one car.
  if(timed&&!bath&&!found.includes('capacity')&&!d.known.includes('capacity'))d.capacity=isAuto(d.type)?1:TEAM[d.type]||(kindCategory(d.type)==='sport'?14:10);
  // A quest game, a billiard table, a court or a game club is usually taken for an hour.
