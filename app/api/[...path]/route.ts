@@ -161,6 +161,7 @@ async function handle(request:Request, context:{params:Promise<{path:string[]}>}
         case 'approvals':return json(await service.decideApproval(activeRole,body));
         case 'account':return json(await service.saveAccountSettings(body));
         case 'quote':return json(await service.bookingQuote(body));
+        case 'service-slots':return json(await service.serviceSlots(body));
         case 'profile':return json(await service.saveProfile(await withCanonicalCity(env.BUCKET,body)));
         case 'media':return json(await service.uploadMedia(body,env.BUCKET));
         case 'listings':return json(await withPublishReview(service,await service.saveListing(null,await withCanonicalCity(env.BUCKET,body)),env));

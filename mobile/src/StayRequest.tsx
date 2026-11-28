@@ -15,7 +15,7 @@ import {homeKinds,homeMinutes,homeAdvice,homeRooms,HOME_MAX_ROOMS,HOME_MAX_WINDO
 import {SwipeConfirm} from './SwipeConfirm';
 import {isAuto,isBanquet,isHourlyVenue} from '../../lib/listings';
 import {venueHours,sessionLine,hhmm,type Session} from '../../lib/venue-hours';
-import {minutesWords,servicesOf,type VenueService} from '../../lib/venue-services';
+import {CAR_CLASSES,hasClassPrices,minutesWords,servicePrice,servicesOf,type CarClass,type VenueService} from '../../lib/venue-services';
 import {OCCASIONS,occasionTitle} from './ai-request';
 import {AddressField} from './AddressSuggest';
 import {LineRow,PopSheet,SheetPane,useInSheet} from './PopSheet';
@@ -91,7 +91,7 @@ export function HallTimes({label,value,sessions,day,now,disabled,onChange}:{labe
 }
 // A request without the chat (2026-11-27): a home by the tariff, days, times and guests; a bath by the hour; a hall or
 // a cafe by one of its own times of events, with what it is taken for and how many come (server lib/service.ts kindMode).
-export function StayRequest({property,initial,busy,done,result,onQuote,onConfirm}:{property:Row;initial?:StayStart;busy:boolean;done?:boolean;result?:string;onQuote:(body:Row)=>Promise<Row>;onConfirm:(body:Row)=>void}){
+export function StayRequest({property,initial,busy,done,result,onQuote,onSlots,onConfirm}:{property:Row;initial?:StayStart;busy:boolean;done?:boolean;result?:string;onQuote:(body:Row)=>Promise<Row>;onSlots?:(body:Row)=>Promise<Row>;onConfirm:(body:Row)=>void}){
  const policy=property.policy||{},type=String(property.details?.type||property.type||''),hall=isBanquet(type),bath=isHourlyVenue(type);
  const modes=useMemo<StayMode[]>(()=>bath?['hourly']:hall?['daily']:stayModes(property),[bath,hall,property.price,policy.hourly_price,policy.nightly_price]);
  const clock=useActivityClock(),[opened]=useState(()=>Math.floor(Date.now()/1000)),now=clock||opened;
@@ -114,15 +114,26 @@ export function StayRequest({property,initial,busy,done,result,onQuote,onConfirm
  // A car place (2026-11-28): the guest picks a service, it takes its own minutes, and names the car and its number.
  const services=useMemo<VenueService[]>(()=>servicesOf(property.details),[property.details]);
  const [serviceIdx,setServiceIdx]=useState(0),[car,setCar]=useState(''),service=services[serviceIdx]||null;
+ // «Цена по классу машины» and «очередь»: the class sets the price; only the free starts of the day are offered.
+ const [carClass,setCarClass]=useState<CarClass>('car'),classed=hasClassPrices(services);
+ const [slotDay,setSlotDay]=useState(0),[slots,setSlots]=useState<number[]|null>(null);
  const picked=sessions[when.idx],first=kept||stayInterval(choice,policy);
  const span=hall&&picked?{start:when.day+picked.from*60,end:when.day+picked.to*60}:service?{start:first.start,end:first.start+service.minutes*60}:first;
- const round=useRef(0),body=()=>({propertyId:property.id,start:stayStamp(span.start),end:stayStamp(span.end),guests,billingMode:hall?'daily':choice.mode,...(hall?{occasion:occasion||'other'}:{}),...(service?{service:service.name,car:car.trim()}:{})});
+ const round=useRef(0),body=()=>({propertyId:property.id,start:stayStamp(span.start),end:stayStamp(span.end),guests,billingMode:hall?'daily':choice.mode,...(hall?{occasion:occasion||'other'}:{}),...(service?{service:service.name,car:car.trim(),carClass}:{})});
  const change=(next:Partial<StayChoice>)=>{setKept(null);const mode=next.mode||choice.mode,first=defaultStay(mode,policy,now);setChoice(settleStay(next.mode&&next.mode!==choice.mode?{...first,day:choice.day,...(mode==='hourly'&&choice.day!==first.day?{time:policy.checkin_minutes??840}:{})}:{...choice,...next},policy,now));};
  useEffect(()=>{
   if(done)return;const id=++round.current;setChecking(true);
   const timer=setTimeout(()=>{onQuote(body()).then(value=>{if(id===round.current){setQuote(value);setError('');}}).catch(e=>{if(id===round.current){setQuote(null);setError(e?.message||tr('Не удалось проверить это время.'));}}).finally(()=>{if(id===round.current)setChecking(false);});},350);
   return()=>clearTimeout(timer);
- },[choice.mode,choice.day,choice.time,choice.count,when.day,when.idx,occasion,guests,done,kept,serviceIdx]);
+ },[choice.mode,choice.day,choice.time,choice.count,when.day,when.idx,occasion,guests,done,kept,serviceIdx,carClass]);
+ // The free starts of the chosen day for the chosen service; a start that is taken moves to the first free one.
+ const day=slotDay||stayDay(span.start);
+ useEffect(()=>{
+  if(done||!service||!onSlots)return;let live=true;setSlots(null);
+  onSlots({propertyId:property.id,service:service.name,day}).then(v=>{if(!live)return;const starts:number[]=(v?.starts||[]).map(Number);setSlots(starts);
+   if(starts.length&&!starts.includes(span.start))setKept({start:starts[0],end:starts[0]+service.minutes*60});}).catch(()=>{if(live)setSlots([]);});
+  return()=>{live=false;};
+ },[service?.name,day,done]);
  if(done)return <Closed text={result||tr('Заявка отправлена')} note={tr('Заявка и её статус доступны в «Мои брони».')}/>;
  const ready=!!quote&&!checking&&!busy,risky=!property.verified&&!property.demo_owner;
  // The price in one line, as Airbnb: «10 000 ₸ + депозит 5 000 ₸ ›»; what it is made of opens by a tap.
@@ -138,7 +149,8 @@ export function StayRequest({property,initial,busy,done,result,onQuote,onConfirm
    <LineRow title={tr('Повод')} value={occasion?occasionTitle(occasion):tr('Выбрать')} disabled={busy} onPress={()=>setSheet('occasion')}/>
   </>:service?<>
    <LineRow title={tr('Услуга')} value={service.name+' · '+minutesWords(service.minutes)} disabled={busy} onPress={()=>setSheet('service')}/>
-   <LineRow title={tr('Когда')} value={recordSpan(span.start,span.end)} disabled={busy} onPress={()=>setSheet('start')}/>
+   {classed&&<View style={p.field}><Text style={p.label}>{tr('Класс машины')}</Text><View accessibilityRole="radiogroup" style={p.tasks}>{CAR_CLASSES.map(([id,title])=>{const on=id===carClass;return <Pressable key={id} accessibilityRole="radio" accessibilityState={{selected:on,disabled:busy}} disabled={busy} onPress={()=>setCarClass(id)} style={[p.task,on&&p.on]}><Text style={[p.taskText,on&&p.onText]}>{tr(title)}</Text></Pressable>;})}</View></View>}
+   <LineRow title={tr('Когда')} value={slots&&!slots.length?tr('Нет свободного времени: выберите другой день'):recordSpan(span.start,span.end)} disabled={busy} onPress={()=>setSheet('start')}/>
    <View style={p.field}><Text style={p.label}>{tr('Машина и номер')}</Text><TextInput accessibilityLabel={tr('Машина и номер')} style={[p.input,p.line]} value={car} onChangeText={setCar} editable={!busy} maxLength={60} autoCapitalize="words" placeholder={tr('Например, Toyota Camry, 123 ABC 14')} placeholderTextColor={C.muted}/></View>
   </>:<StayWhen choice={choice} modes={modes} policy={policy} now={now} disabled={busy} onChange={change} rate={mode=>stayRate(property,mode)} shown={kept||undefined}/>}
   {cap>1&&<GuestsRow value={guests} max={cap} step={guestStep} disabled={busy} onChange={setGuests}/>}
@@ -155,11 +167,20 @@ export function StayRequest({property,initial,busy,done,result,onQuote,onConfirm
    <Text style={p.note}>{tr('Время Казахстана.')}</Text>
   </PopSheet>
   <PopSheet visible={sheet==='service'} title={tr('Услуга')} onClose={()=>setSheet('')}>
-   <View style={p.tasks}>{services.map((x,i)=>{const on=i===serviceIdx;return <Pressable key={x.name} accessibilityRole="radio" accessibilityState={{selected:on}} onPress={()=>{setServiceIdx(i);setSheet('');}} style={[p.task,on&&p.on]}><Text style={[p.taskText,on&&p.onText]}>{x.name+' · '+minutesWords(x.minutes)+' · '+money(x.price)}</Text></Pressable>;})}</View>
+   <View style={p.tasks}>{services.map((x,i)=>{const on=i===serviceIdx;return <Pressable key={x.name} accessibilityRole="radio" accessibilityState={{selected:on}} onPress={()=>{setServiceIdx(i);setSheet('');}} style={[p.task,on&&p.on]}><Text style={[p.taskText,on&&p.onText]}>{x.name+' · '+minutesWords(x.minutes)+' · '+money(servicePrice(x,carClass))}</Text></Pressable>;})}</View>
   </PopSheet>
   <PopSheet visible={sheet==='start'} title={tr('Когда')} onClose={()=>setSheet('')} footer={<Send title={tr('Готово')} disabled={false} busy={false} onPress={()=>setSheet('')}/>}>
-   <Days label={tr('Дата')} value={stayDay(span.start)} now={now} disabled={busy} onChange={day=>change({day,time:Math.round((span.start-stayDay(span.start))/60)})}/>
-   <Times label={tr('Начало')} value={Math.round((span.start-stayDay(span.start))/60)} day={stayDay(span.start)} now={now} disabled={busy} onChange={time=>change({day:stayDay(span.start),time})}/>
+   {onSlots?<>
+    <Days label={tr('Дата')} value={day} now={now} disabled={busy} onChange={setSlotDay}/>
+    <View style={p.field}><Text style={p.label}>{tr('Свободное время')}</Text>
+     {slots===null?<View style={p.wait}><Thinking size="sm"/><Text style={p.fact}>{tr('Смотрим свободное время…')}</Text></View>
+     :slots.length?<View style={p.tasks}>{slots.map(t=>{const on=t===span.start;return <Pressable key={t} accessibilityRole="radio" accessibilityState={{selected:on,disabled:busy}} disabled={busy} onPress={()=>setKept({start:t,end:t+service!.minutes*60})} style={[p.task,on&&p.on]}><Text style={[p.taskText,on&&p.onText]}>{stayClock(Math.round((t-stayDay(t))/60))}</Text></Pressable>;})}</View>
+     :<Text style={p.note}>{tr('В этот день всё занято. Выберите другой день.')}</Text>}
+    </View>
+   </>:<>
+    <Days label={tr('Дата')} value={stayDay(span.start)} now={now} disabled={busy} onChange={day=>change({day,time:Math.round((span.start-stayDay(span.start))/60)})}/>
+    <Times label={tr('Начало')} value={Math.round((span.start-stayDay(span.start))/60)} day={stayDay(span.start)} now={now} disabled={busy} onChange={time=>change({day:stayDay(span.start),time})}/>
+   </>}
    {!!service&&<Text style={p.note}>{tr('Конец посчитается сам: {v}. Время Казахстана.',{v:minutesWords(service.minutes)})}</Text>}
   </PopSheet>
   <PopSheet visible={sheet==='occasion'} title={tr('Повод')} onClose={()=>setSheet('')}>
