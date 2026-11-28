@@ -5,7 +5,7 @@ import {epoch,q,rows,type Row} from './operation-core';
 // chooses: whether the AI decides by itself when nobody answers, and how long it waits. The defaults are what the
 // service did before the settings existed, so nothing changes for a person who never opens them.
 export type RuleRole='guest'|'owner'|'cleaner';
-export type RuleKey='request'|'assign'|'accept'|'accept_fast'|'accept_day'|'unpaid'|'no_show'|'overdue_job'|'checkout'|'pay_remind';
+export type RuleKey='request'|'assign'|'accept'|'accept_fast'|'accept_day'|'unpaid'|'no_show'|'overdue_job'|'checkout'|'guest_left'|'pay_remind';
 type Rule={key:RuleKey;role:RuleRole;title:string;auto?:string;off?:string;note:string;time:string;options:number[];minutes:number;on:boolean};
 
 export const DECISION_RULES:Rule[]=[
@@ -20,6 +20,9 @@ export const DECISION_RULES:Rule[]=[
  {key:'unpaid',off:'Выключено: ИИ сообщит, что срок оплаты прошёл, а решаете вы.',role:'owner',title:'Гость не оплатил',auto:'ИИ снимает неоплаченную бронь',note:'Частично оплаченную бронь ИИ не снимает никогда, это решаете вы.',time:'Ждать после срока оплаты',options:[30,60,120],minutes:30,on:true},
  {key:'no_show',off:'Выключено: ИИ спросит гостя и сообщит вам, а бронь снимаете вы.',role:'owner',title:'Гость не приехал',auto:'ИИ снимает бронь при неявке',note:'Только для жилья в режиме «ИИ»; без него решаете вы. Для почасовой брони ИИ ждёт не дольше 30 минут.',time:'Ждать после заезда',options:[60,120,240],minutes:120,on:true},
  {key:'overdue_job',off:'Выключено: ИИ напомнит исполнителю и сообщит вам, а замену ищете вы.',role:'owner',title:'Исполнитель не начал уборку',auto:'ИИ возвращает уборку в поиск',note:'Если жильё свободно и исполнитель не ответил на напоминание.',time:'Ждать после срока',options:[15,30,60],minutes:30,on:true},
+ // «Выезд гостя» (2026-11-28): only the guest's own «Я выехал» can free the home without the owner; the performer's word
+ // never does. On: the autopilot confirms at once, and without the autopilot the AI confirms after the owner's silence.
+ {key:'guest_left',off:'Выключено: выезд подтверждаете только вы, исполнитель ждёт вашего сигнала.',role:'owner',title:'Выезд гостя',auto:'ИИ подтверждает выезд по сообщению гостя «Я выехал»',note:'В режиме «ИИ» выезд подтверждается сразу, без него — если вы не ответили за это время. Слово исполнителя выездом не считается: он только сообщает, что на месте или что гость ещё здесь.',time:'Без автопилота ждать',options:[15,30,60],minutes:30,on:true},
  {key:'checkout',off:'Выключено: администратор сервиса не подключается, решаете вы.',role:'owner',title:'Гость не выехал',auto:'ИИ передаёт задержку администратору сервиса',note:'Через 30 минут после выезда ИИ в любом случае сообщит вам и исполнителю.',time:'Передать через',options:[60,120,240],minutes:120,on:true},
  {key:'pay_remind',off:'Выключено: ИИ не напоминает об оплате заранее.',role:'guest',title:'Оплата брони',auto:'Напоминать об оплате заранее',note:'Неоплаченная бронь снимается после срока оплаты, ИИ предупредит вас.',time:'Напомнить за',options:[60,180,720],minutes:180,on:true}
 ];

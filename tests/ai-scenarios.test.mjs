@@ -21,3 +21,14 @@ test('context instructions do not authorise commands; text claims cannot fake ex
 test('redaction keeps ISO timezone and UUID references while removing phone, email and key',()=>{
  const iso='2026-11-01T14:00:00+05:00',id='12345678-1234-1234-1234-123456789012',redacted=redactAIText(iso+' '+id+' +7 777 123 45 67 private@example.com sk-FIXTURESECRET01234567890');assert.ok(redacted.includes(iso));assert.ok(redacted.includes(id));assert.ok(!redacted.includes('777'));assert.ok(!redacted.includes('private@'));assert.ok(!redacted.includes('sk-'));
 });
+test('the chat knows what the service has and does not search the catalog for unrelated requests',async()=>{
+ const original=globalThis.fetch;let payload;globalThis.fetch=async(_url,init)=>{payload=JSON.parse(init.body);return Response.json({output:[{type:'message',content:[{type:'output_text',text:'Автомойки у нас пока нет.'}]}]});};
+ try{
+  const r=await generateAnswer(config,'Хочу помыть машину','guest',[],'Могу подобрать жильё.',context,undefined,undefined,async()=>({text:'list',result:{}}));
+  assert.equal(r.text,'Автомойки у нас пока нет.');assert.equal(r.mode,'model');
+  assert.match(payload.instructions,/Автомоек, такси, доставки/);assert.match(payload.instructions,/прошлый поиск в истории не повод искать снова/);
+  assert.match(payload.instructions,/может не подходить к вопросу/);assert.doesNotMatch(payload.instructions,/Базовая рекомендация/);
+  assert.match(payload.tools.find(t=>t.name==='search_rental_catalog').description,/Не вызывай, если сообщение о другом/);
+  assert.equal(payload.reasoning.effort,'low');
+ }finally{globalThis.fetch=original;}
+});

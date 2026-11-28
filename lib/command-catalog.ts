@@ -24,6 +24,7 @@ export const COMMAND_CATALOG:Record<string,CatalogCommand>={
  withdraw_application:{role:'cleaner',entity:'job',action:'withdraw',title:'Отозвать отклик',hint:'исполнитель передумал до ответа владельца'},
  start_cleaning:{role:'cleaner',entity:'job',action:'start',title:'Начать уборку',hint:'исполнитель начинает назначенную уборку'},
  report_cleaner_late:{role:'cleaner',entity:'job',action:'late',title:'Предупредить об опоздании на уборку',hint:'исполнитель опаздывает на 30 минут'},
- report_vacant:{role:'cleaner',entity:'job',action:'vacant',title:'Сообщить, что гостя нет и жильё свободно',hint:'исполнитель пришёл, гость уже уехал'},
+ report_at_door:{role:'cleaner',entity:'job',action:'at_door',title:'Сообщить владельцу: я на месте',hint:'исполнитель у двери после гостей и ждёт сигнала владельца; выезд подтверждает владелец'},
+ report_guest_here:{role:'cleaner',entity:'job',action:'guest_here',title:'Сообщить владельцу: гость ещё здесь',hint:'исполнитель пришёл, а гость ещё в жилье; решает владелец'},
 };
 export const catalogText=()=>Object.entries(COMMAND_CATALOG).map(([k,c])=>k+' ('+({guest:'гость',owner:'владелец',cleaner:'исполнитель'} as Record<string,string>)[c.role]+', '+(c.entity==='booking'?'bookingId':'jobId')+'): '+c.hint).join('; ');

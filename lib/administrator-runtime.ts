@@ -56,8 +56,9 @@ async function automaticActions(service:RentalService){
    for(const b of requests){try{await delegated.bookingAction(b.id,{action:'confirm',cleaningFee:policy.cleaning_fee});await service.notify(service.userId,'ИИ-администратор подтвердил заявку по вашим правилам. Оплата и депозит проверяются отдельно.','administrator-confirmed:'+b.id,'owner').run();actions++;}catch(error){if(!expectedConflict(error))throw error;}}
   }
   if(policy.auto_assign&&policy.auto_confirm){
-   // The guest said they left: free the flat so the cleaner can start. The owner is told.
-   const left=await service.all("SELECT b.id,"+TYPE_SQL+" FROM bookings b JOIN properties p ON p.id=b.property_id JOIN booking_terms t ON t.booking_id=b.id WHERE b.property_id=? AND b.status='confirmed' AND t.checkout_reported_at IS NOT NULL AND t.actual_checkout IS NULL",policy.property_id);
+   // The guest said they left: free the flat so the cleaner can start. The owner is told. With «Выезд гостя» off the owner
+   // confirms by themselves (lib/decision-rules.ts).
+   const left=!(await ruleFor(service.db,service.userId,'guest_left')).on?[]:await service.all("SELECT b.id,"+TYPE_SQL+" FROM bookings b JOIN properties p ON p.id=b.property_id JOIN booking_terms t ON t.booking_id=b.id WHERE b.property_id=? AND b.status='confirmed' AND t.checkout_reported_at IS NOT NULL AND t.actual_checkout IS NULL",policy.property_id);
    for(const b of left){try{await delegated.bookingAction(b.id,{action:'checkout'});await service.notify(service.userId,venueOr(b,'ИИ-администратор подтвердил выезд по сообщению гостя. Жильё ждёт уборки.','ИИ-администратор подтвердил '+wordsOf(b).leaveLow+' по сообщению гостя. Объект ждёт уборки.'),'administrator-checkout:'+b.id,'owner').run();actions++;}catch(error){if(!expectedConflict(error))throw error;}}
    // The guest says they arrived: with payment and deposit verified the AI confirms the check-in for the owner;
    // otherwise the owner is told once that only the payment check is missing.
