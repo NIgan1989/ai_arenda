@@ -46,6 +46,7 @@ test('a hotel saves one card per room type with its count, a car wash its boxes,
  const w={...startExtras(wash),units:4,bookedBays:1,hours:{open:'08:00',close:'22:00',sessions:[]}};
  const [card]=formPlan(wash,w,[],false).cards;
  assert.equal(card.units,4);
+ assert.ok(card.body.rental.hourlyPrice>=100,'a car wash is found by the hour');
  const id=(await f.owner.saveListing(null,card.body)).id;
  const details=JSON.parse(f.db.raw.prepare('SELECT details FROM property_details WHERE property_id=?').get(id).details);
  assert.equal(details.bookedBays,1);

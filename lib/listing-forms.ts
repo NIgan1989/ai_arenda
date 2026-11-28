@@ -72,6 +72,9 @@ export function formPlan(d:ListingDraft,x:FormExtras,photos:string[],published:b
  const form=formKind(d.type),title=draftTitle(d);
  const withExtras=(body:Row):Row=>{
   const details={...body.details},rental={...body.rental};
+  // A car place is found by the hour (lib/service.ts publicSearch): without an hourly price of its own, the hour of its
+  // cheapest service is the price (Codex, PR #301).
+  if(isAuto(d.type)&&!(Number(rental.hourlyPrice)>=100)&&x.services.length)rental.hourlyPrice=Math.max(100,Math.min(...x.services.map(s=>Math.round(s.price*60/Math.max(15,s.minutes)))));
   if(isAuto(d.type)){details.services=x.services.map(s=>({...s,name:s.name.trim()}));if(x.selfService)details.selfService=true;else details.bookedBays=Math.max(0,Math.min(x.units,x.bookedBays));}
   if(isBanquet(d.type)&&x.menu.trim())details.menu=x.menu.trim().slice(0,1500);
   if(isVenue(d.type)&&x.hours)rental.venueHours=x.hours;

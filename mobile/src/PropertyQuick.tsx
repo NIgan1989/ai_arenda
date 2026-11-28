@@ -87,7 +87,7 @@ export function PropertyQuick({city,onSave,onUpdate,call,onGuestMode,onPlace,onR
   }
   const kind=picked||(draft.known.includes('type')?draft.type:'');
   if(!kind){setListOpen(true);setError(t('Выберите тип из списка или расскажите об объекте.'));return;}
-  const d=withKind(text.trim()?draft:emptyDraft(city),kind,found.includes('ownStaff'));setDraft(d);setExtras(e=>startExtras(d,e,text));setStep(1);setOpen('');onTop?.();
+  const d=withKind(text.trim()||draft.known.includes('type')?draft:emptyDraft(city),kind,found.includes('ownStaff'));setDraft(d);setExtras(e=>startExtras(d,e,text));setStep(1);setOpen('');onTop?.();
  }
  const missing=missingFields(draft,ex);
  function toPlace(){const left=missing.filter(m=>m.step===1);if(left.length){setError(t('Заполните: {v}.',{v:left.map(m=>m.label).join(', ')}));return;}setError('');setStep(2);onTop?.();}
