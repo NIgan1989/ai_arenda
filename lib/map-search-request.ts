@@ -158,6 +158,14 @@ export const BATH_EVENING = '19:00';
 export const BATH_KINDS = ['banya', 'sauna'];
 /** The types of the category «Банкет» (lib/listings.ts categories.banquet): a hall taken whole, priced per guest. */
 export const BANQUET_KINDS = ['banquet', 'cafe'];
+/** «Досуг», «Спорт», «Авто» (lib/listings.ts categories, 2026-11-28): taken by the hour, as a bath is. */
+export const LEISURE_KINDS = ['loft', 'photostudio', 'meeting', 'karaoke_room', 'playroom', 'gazebo', 'quest'];
+export const SPORT_KINDS = ['field', 'court', 'sporthall', 'billiard', 'gameclub'];
+export const AUTO_KINDS = ['carwash', 'tires', 'carservice', 'detailing'];
+export const PLACE_KINDS = [...LEISURE_KINDS, ...SPORT_KINDS, ...AUTO_KINDS];
+/** Every type searched by the hour only: a bath and the places of «Досуг», «Спорт», «Авто». */
+export const HOURLY_KINDS = ['banya', 'sauna', ...PLACE_KINDS];
+const categoryOfKind = (id: string) => (LEISURE_KINDS.includes(id) ? 'leisure' : SPORT_KINDS.includes(id) ? 'sport' : AUTO_KINDS.includes(id) ? 'auto' : 'other');
 export const MAX_BANQUET_GUESTS = 1000;
 /** The two parts of a banquet day the search looks in; the evening ends at midnight. Each hall books its own times
  *  of events inside them (lib/venue-hours.ts), the guest picks one on the hall's page. */
@@ -201,6 +209,24 @@ const KINDS: [RegExp, string][] = [
   // A hall for an event: the category «Банкет», a slot of one day at a price per guest.
   [/банкет|тойхан|зал[а-я]*\s+(?:для\s+)?(?:торжеств|свадьб|праздник)|ресторан/, 'banquet'],
   [/(?:^|[^а-я])кафе(?=$|[^а-я])/, 'cafe'],
+  // «Досуг», «Спорт», «Авто»: a place taken whole for a few hours (statedKinds keeps them apart from a home or a bath).
+  [/лофт/, 'loft'],
+  [/фото-?студи|студи[а-я]*\s+(?:для\s+)?(?:фото|съ[её]м)/, 'photostudio'],
+  [/конференц|переговорн|коворкинг/, 'meeting'],
+  [/караоке/, 'karaoke_room'],
+  [/(?:детск[а-я]*|игров[а-я]*)\s+(?:игров[а-я]*\s+)?комнат/, 'playroom'],
+  [/беседк|тапчан|(?:^|[^а-я])юрт(?:а|у|ы|е)?(?=$|[^а-я])/, 'gazebo'],
+  [/квест/, 'quest'],
+  [/футбол|мини-?пол[еяю]|(?:^|[^а-я])манеж/, 'field'],
+  [/(?:^|[^а-я])корт|теннис|падел|бадминтон/, 'court'],
+  [/спортзал|спортивн[а-я]*\s+зал|волейбол|баскетбол/, 'sporthall'],
+  [/бильярд/, 'billiard'],
+  [/игров[а-я]*\s+клуб|компьютерн[а-я]*\s+клуб|киберклуб|плейстейшн|playstation|(?:^|[^а-яa-z])ps\s?[345]?(?=$|[^а-яa-z])/, 'gameclub'],
+  [/автомойк|(?:^|[^а-я])мойк[аиу](?=$|[^а-я])|помыть\s+(?:машин|авто)|самомойк/, 'carwash'],
+  [/шиномонтаж|переобу|(?:^|[^а-я])шин(?:ы|у)?(?=$|[^а-я])/, 'tires'],
+  // «СТО» said alone; «на сто гостей» is a number.
+  [/автосервис|(?:^|[^а-я])сто(?!\s*(?:гост|человек|чел|мест|тысяч|метр|грамм|\d))(?=$|[^а-я])(?<!на\s+сто)(?<!до\s+сто)|ремонт[а-я]*\s+(?:авто|машин)|автомастерск|автоэлектрик|развал/, 'carservice'],
+  [/детейлинг|полировк|химчистк[а-я]*\s+(?:салон|авто|машин)|керамик/, 'detailing'],
 ];
 const ROOM_WORDS: [RegExp, number][] = [
   [/однушк|однокомнат|(?:^|[^а-я])одно\s*комнат/, 1],
@@ -223,7 +249,18 @@ export function statedRooms(text: string): string {
 /** The types of home the text names, in the order of KINDS. */
 export function statedKinds(text: string): string[] {
   const kinds = KINDS.filter(([pattern]) => pattern.test(text)).map(([, id]) => id);
-  return kinds.filter(id => !(id === 'house' && (kinds.includes('guesthouse') || kinds.includes('resort'))) && !(id === 'hotel' && kinds.includes('aparthotel')));
+  const named = kinds.filter(id => !(id === 'house' && (kinds.includes('guesthouse') || kinds.includes('resort'))) && !(id === 'hotel' && kinds.includes('aparthotel')) && !(id === 'studio' && kinds.includes('photostudio')));
+  // «Баня с бильярдом», «квартира с караоке»: a home, a bath or a hall that has it, not a place of «Досуг» or «Спорт».
+  const others = named.filter(id => !PLACE_KINDS.includes(id));
+  if (others.length || /квартир|жиль[её]|однушк|двушк|тр[её]шк/.test(text)) return others;
+  // «Лофт с караоке», «бар с бильярдом»: what a place has, said after «с», is not a place of its own.
+  const had = (id: string) => (id === 'karaoke_room' && /(?:^|[^а-я])с\s+(?:[а-я]+\s+)?караоке/.test(text)) || (id === 'billiard' && /(?:^|[^а-я])с\s+(?:[а-я]+\s+)?бильярд/.test(text));
+  return statedKindsOf(named.filter(id => !had(id) || named.every(had)));
+}
+// Of the new places only one category is searched: the one named first.
+function statedKindsOf(named: string[]) {
+  const first = named.length ? categoryOfKind(named[0]) : '';
+  return named.filter(id => categoryOfKind(id) === first);
 }
 
 // Towns the service has no homes in yet, with the service city nearest to each. A guest who names one is told so
@@ -781,7 +818,7 @@ export function guestSearchRequest(text: string, current: Row, cities: string[],
   const party = PARTY.find(([pattern]) => pattern.test(request))?.[1];
   // A bath or a hall is taken for a party: «баня на 6 в 20:00», «той на 150, 5 декабря». The bare number is the party
   // when a time, a day or the end of the phrase follows it; «на 3 часа» stays a length.
-  const venueAsked = banquet || (filters.kinds || current.kinds || []).some((id: string) => BATH_KINDS.includes(id));
+  const venueAsked = banquet || (filters.kinds || current.kinds || []).some((id: string) => HOURLY_KINDS.includes(id));
   const counted = request.match(/(?:^|\D)(\d{1,4})\s*(?:гост|человек|чел(?![а-я])|взросл|персон)/)
     || (venueAsked ? request.match(/(?:^|[^а-я])на\s+(\d{1,4})(?=\s*(?:$|,|в\s+\d|\d{1,2}\s+[а-я]|сегодня|завтра|послезавтра|вечером|днем|утром))/) : null);
   const most = banquet ? MAX_BANQUET_GUESTS : MAX_GUESTS;
@@ -808,13 +845,16 @@ export function guestSearchRequest(text: string, current: Row, cities: string[],
     stated.wishes = true;
   }
   // A bath or a sauna is taken by the hour: «баня на вечер» is a few hours, not a day.
-  const bath = (filters.kinds || current.kinds || []).length > 0 && (filters.kinds || current.kinds || []).every((k: string) => BATH_KINDS.includes(k));
+  // So are the places of «Досуг», «Спорт», «Авто»; `sauna` is the bath itself, with its own wishes and words.
+  const bath = (filters.kinds || current.kinds || []).length > 0 && (filters.kinds || current.kinds || []).every((k: string) => HOURLY_KINDS.includes(k));
+  const sauna = bath && (filters.kinds || current.kinds || []).every((k: string) => BATH_KINDS.includes(k));
   // «Без парковки», «без животных»: what follows «без» is taken off the wishes, not asked for.
   const without = [...request.matchAll(/(?:^|[^а-я])без\s+([а-яa-z -]+?)(?=$|[,.;!?]|\s+(?:с|со|но|а|зато|и\s+со?)\s)/g)].map(match => match[1]).join(' , ');
   const asked = without ? request.replace(/(?:^|[^а-я])без\s+[а-яa-z -]+?(?=$|[,.;!?]|\s+(?:с|со|но|а|зато|и\s+со?)\s)/g, ' ') : request;
   // Only what the owners of the category can mark: a bath has no balcony, a home no pool.
   const known = banquet ? [...BANQUET_WISHES, ...WISHES.filter(([, id]) => ['parking', 'aircon', 'wifi'].includes(id))]
-    : bath ? [...BATH_WISHES, ...WISHES.filter(([, id]) => ['wifi', 'kitchen', 'tv', 'parking'].includes(id))]
+    : sauna ? [...BATH_WISHES, ...WISHES.filter(([, id]) => ['wifi', 'kitchen', 'tv', 'parking'].includes(id))]
+    : bath ? WISHES.filter(([, id]) => ['wifi', 'kitchen', 'tv', 'parking', 'aircon'].includes(id))
     : [...WISHES, ...RULES];
   const wishes = known.filter(([pattern]) => pattern.test(asked)).map(([, id]) => id);
   // «Без депозита», «без залога»: a home whose owner asks for none.
@@ -843,7 +883,7 @@ export function guestSearchRequest(text: string, current: Row, cities: string[],
   const kept = current.mode === 'hourly' || current.mode === 'night' ? current.mode : 'daily';
   // «Баня на сутки» or «на ночь» is still by the hour, and the guest is told: days are not read as hours.
   const daysOfBath = bath && ((!!said.mode && said.mode !== 'hourly') || /ночевк|переночев/.test(request));
-  if (daysOfBath) remarks.push(tr('Баню бронируют по часам, ищу на 3 часа.'));
+  if (daysOfBath) remarks.push(sauna ? tr('Баню бронируют по часам, ищу на 3 часа.') : tr('Это место бронируют по часам, ищу на 3 часа.'));
   const length = daysOfBath ? { mode: 'hourly' as const, units: null } : said;
   const mode: 'daily' | 'hourly' | 'night' = banquet ? 'daily' : length.mode ?? (bath ? 'hourly' : dates?.to || dates?.weekend ? (kept === 'night' ? 'night' : 'daily') : kept);
   if (urgent) filters.now = true;

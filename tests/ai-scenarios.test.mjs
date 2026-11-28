@@ -24,9 +24,9 @@ test('redaction keeps ISO timezone and UUID references while removing phone, ema
 test('the chat knows what the service has and does not search the catalog for unrelated requests',async()=>{
  const original=globalThis.fetch;let payload;globalThis.fetch=async(_url,init)=>{payload=JSON.parse(init.body);return Response.json({output:[{type:'message',content:[{type:'output_text',text:'Автомойки у нас пока нет.'}]}]});};
  try{
-  const r=await generateAnswer(config,'Хочу помыть машину','guest',[],'Могу подобрать жильё.',context,undefined,undefined,async()=>({text:'list',result:{}}));
+  const r=await generateAnswer(config,'Вызови такси','guest',[],'Могу подобрать жильё.',context,undefined,undefined,async()=>({text:'list',result:{}}));
   assert.equal(r.text,'Автомойки у нас пока нет.');assert.equal(r.mode,'model');
-  assert.match(payload.instructions,/Автомоек, такси, доставки/);assert.match(payload.instructions,/прошлый поиск в истории не повод искать снова/);
+  assert.match(payload.instructions,/автомойка, шиномонтаж/);assert.match(payload.instructions,/Такси, доставки еды/);assert.doesNotMatch(payload.instructions,/Автомоек/);assert.match(payload.instructions,/прошлый поиск в истории не повод искать снова/);
   assert.match(payload.instructions,/может не подходить к вопросу/);assert.doesNotMatch(payload.instructions,/Базовая рекомендация/);
   assert.match(payload.tools.find(t=>t.name==='search_rental_catalog').description,/Не вызывай, если сообщение о другом/);
   assert.equal(payload.reasoning.effort,'low');
@@ -34,7 +34,8 @@ test('the chat knows what the service has and does not search the catalog for un
 });
 test('the catalog tool is not offered for a message that names nothing about a stay',async()=>{
  const {mayNeedCatalog}=await load('administrator-search');
- for(const t of ['Хочу помыть машину','Hochu pomyt mashinu','Вызови такси','Привет'])assert.equal(mayNeedCatalog(t),false,t);
+ for(const t of ['Hochu pomyt mashinu','Вызови такси','Привет','Как дела?'])assert.equal(mayNeedCatalog(t),false,t);
+ for(const t of ['Хочу помыть машину','Нужен шиномонтаж','Поле на вечер','Караоке на субботу'])assert.equal(mayNeedCatalog(t),true,t);
  for(const t of ['Найди жильё в Павлодаре','а подешевле?','на завтра','на троих','баня на вечер','Сколько стоит?','Есть свободное?','Naidi zhilyo v Pavlodare na sutki','Түнге пәтер керек'])assert.equal(mayNeedCatalog(t),true,t);
 });
 test('the answer can point to a screen of the role, and the screen rides with the stored message',async()=>{

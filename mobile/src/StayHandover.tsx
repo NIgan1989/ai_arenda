@@ -61,7 +61,7 @@ export function StayHandover({bookingId,kind,cleanerPhotos,cleanerDamage,checkin
  const flip=(code:string)=>setPicked(list=>list.includes(code)?list.filter(c=>c!==code):[...list,code]);
  const ready=picked.length>0&&(!!note.trim()||photos>0||cleanerPhotos>0),w=stayWords(kind),venue=w!==stayWords();
  return <View style={[s.card,{gap:12}]}>
-  <Text style={s.eventTitle}>{venue?(w===stayWords('banya')?t('Как гости оставили баню?'):t('Как гости оставили зал?')):t('Как гость оставил жильё?')}</Text>
+  <Text style={s.eventTitle}>{venue?(w===stayWords('banya')?t('Как гости оставили баню?'):w===stayWords('banquet')?t('Как гости оставили зал?'):t('Как гости оставили место?')):t('Как гость оставил жильё?')}</Text>
   {checkinPhotos>0&&<StayPhotos bookingId={bookingId} phase="checkin" role="owner" readOnly/>}
   <Text style={s.meta}>{[cleanerPhotos?t('Фото исполнителя до уборки: {cleanerPhotos}, приложатся сами',{cleanerPhotos}):'',cleanerDamage?t('исполнитель снял повреждения'):'',checkinPhotos?(venue?t('гость снял помещение в начале: '):t('гость снял жильё при заселении: '))+checkinPhotos:''].filter(Boolean).join(' · ')||(venue?t('Не отметите за двое суток, бронь засчитается без замечаний.'):t('Не отметите за двое суток — проживание засчитается без замечаний.'))}</Text>
   {!issuesOpen&&<View style={{gap:8}}>{button(t('Всё хорошо'),()=>onSubmit({verdict:'ok'}),busy)}{button(t('Есть замечания'),()=>setIssuesOpen(true),busy,true)}</View>}

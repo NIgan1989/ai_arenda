@@ -3,7 +3,7 @@ import React,{useEffect,useMemo,useRef,useState} from 'react';
 import {View,Text,Pressable,StyleSheet} from 'react-native';
 import {s,C,type} from './styles';
 import {date,money,uid,type Row} from './model';
-import {isBath,isBanquet} from '../../lib/listings';
+import {isHourlyVenue,isBanquet} from '../../lib/listings';
 import {recordSpan} from '../../lib/record-span';
 import {settleStay,stayFromInterval,stayInterval,stayLimits,stayStamp,type StayChoice,type StayMode} from '../../lib/stay-choice';
 import {useActivityClock} from './ActivityTimer';
@@ -19,7 +19,7 @@ const minutesOf=(at:number)=>Math.round(((at+18000)%86400)/60);
 // choice of days and hours as in the request, the guests, the new price in one line, and «Проведите» at the bottom.
 // The tariff stays the booking's own; nothing is typed as a date. The reason the server keeps is written from the choice.
 export function BookingChanges({booking:b,capacity=0,role,busy,editing,onEditing,onQuote,onPropose,onDecide,onReview}:{booking:Row;capacity?:number;role:string;busy:boolean;editing:boolean;onEditing:(open:boolean)=>void;onQuote:(body:Row)=>Promise<Row>;onPropose:(body:Row)=>void;onDecide:(id:string,action:string)=>void;onReview?:(id:string)=>void}){
- const bath=isBath(b.property_type),hall=isBanquet(b.property_type),inside=!!b.terms?.actual_checkin;
+ const bath=isHourlyVenue(b.property_type),hall=isBanquet(b.property_type),inside=!!b.terms?.actual_checkin;
  const mode:StayMode=bath?'hourly':hall?'daily':b.terms?.billing_mode==='legacy'?'daily':(b.terms?.billing_mode||'daily');
  // The booking's own hours stand for the owner's check-in and check-out: a night keeps them.
  const policy={checkin_minutes:minutesOf(b.start),checkout_minutes:minutesOf(b.end),min_hours:1};

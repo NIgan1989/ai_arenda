@@ -21,7 +21,11 @@ export function KindPicker({kind,ownStaff,onChange,inline=false,staff=true}:{inl
  const ids=Object.keys(propertyTypes),groups:[string,string[]][]=[
   [t('Жильё'),ids.filter(id=>kindCategory(id)==='stay'&&!roomKinds.includes(id))],
   [t('Гостиница и база'),ids.filter(id=>roomKinds.includes(id))],
-  [t('Баня и зал'),ids.filter(id=>kindCategory(id)!=='stay')],
+  [t('Баня и зал'),ids.filter(id=>kindCategory(id)==='bath'||kindCategory(id)==='banquet')],
+  // «Досуг», «Спорт», «Авто» (2026-11-28): places taken for a few hours, with their own people.
+  [t('Досуг'),ids.filter(id=>kindCategory(id)==='leisure')],
+  [t('Спорт'),ids.filter(id=>kindCategory(id)==='sport')],
+  [t('Авто'),ids.filter(id=>kindCategory(id)==='auto')],
  ];
  return <View style={k.box}>
   {!inline&&<Pressable accessibilityRole="button" accessibilityLabel={t('Тип объекта')+': '+(name||t('Выберите тип'))} accessibilityState={{expanded:open}} onPress={()=>setOpen(v=>!v)} style={({pressed})=>[k.select,open&&k.selectOpen,pressed&&k.pressed]}>

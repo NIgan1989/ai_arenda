@@ -8,7 +8,7 @@ import {shareLink,shareMessage,readShareStay,readStayLink,type ShareStay} from '
 import {dailyStay,kzToday} from '../../lib/map-search-request';
 import type {MapStay} from './MapHome';
 import type {Row} from './model';
-import {isBath,isVenue} from '../../lib/listings';
+import {isHourlyVenue,isVenue} from '../../lib/listings';
 
 // «Поделиться жильём» (concept 2026-11-27): a round button next to ♡ on the page of a place. The system sheet
 // opens with the name, the price and a short link; with the dates of the search the friend sees the same stay.
@@ -24,7 +24,7 @@ export function stayOfMap(stay?:MapStay|null):ShareStay|null{
 }
 
 export async function shareStay(property:Row,apiUrl:string,stay?:MapStay|null){
- const days=stayOfMap(stay),link=shareLink(apiUrl,String(property.id),days),type=String(property.details?.type||''),bath=isBath(type),hall=isVenue(type)&&!bath;
+ const days=stayOfMap(stay),link=shareLink(apiUrl,String(property.id),days),type=String(property.details?.type||''),bath=isHourlyVenue(type),hall=isVenue(type)&&!bath;
  // A hall's price depends on the guests and the evening: the friend sees it in the app, not in the message.
  const card={title:String(property.title||''),city:String(property.city||''),price:hall?0:bath?Number(property.policy?.hourly_price)||0:Number(property.price)||0,unit:(hall?'':bath?'hour':'day') as ''|'hour'|'day'};
  try{await Share.share({message:shareMessage(card,link,days),title:card.title});}catch{/* the sheet was closed */}

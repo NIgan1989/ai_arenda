@@ -1,9 +1,14 @@
 import {L,t as tr} from './i18n';
 import {DomainError,number,required} from './domain';
+import {servicesInput} from './venue-services';
 type Row=Record<string,any>;
 // Kinds of housing. The service is not only about flats: a hostel, a hotel or an apart-hotel has its own staff,
 // so for them the AI administrator does not look for executors (own_staff, see staffedTypes).
-export const propertyTypes:Record<string,string>=L({apartment:'Квартира',studio:'Студия',room:'Комната',house:'Дом',guesthouse:'Гостевой дом',hostel:'Хостел',hotel:'Гостиница',aparthotel:'Апарт-отель',resort:'База отдыха',banya:'Баня',sauna:'Сауна',banquet:'Банкетный зал',cafe:'Кафе'});
+export const propertyTypes:Record<string,string>=L({apartment:'Квартира',studio:'Студия',room:'Комната',house:'Дом',guesthouse:'Гостевой дом',hostel:'Хостел',hotel:'Гостиница',aparthotel:'Апарт-отель',resort:'База отдыха',banya:'Баня',sauna:'Сауна',banquet:'Банкетный зал',cafe:'Кафе',
+ // «Досуг», «Спорт», «Авто» (2026-11-28): places taken whole for a few hours, by the hour, with their own staff.
+ loft:'Лофт',photostudio:'Фотостудия',meeting:'Конференц-зал',karaoke_room:'Караоке-кабинка',playroom:'Детская комната',gazebo:'Беседка, юрта',quest:'Квест',
+ field:'Футбольное поле',court:'Корт',sporthall:'Спортзал',billiard:'Бильярд',gameclub:'Игровой клуб',
+ carwash:'Автомойка',tires:'Шиномонтаж',carservice:'Автосервис',detailing:'Детейлинг'});
 // Categories a guest chooses on the map, like the tariffs of a taxi (since 2026-11-17). «Жильё» is a place to stay,
 // «Баня» a bath or a sauna taken whole for a few hours. A search without a category is a search for «Жильё»:
 // a guest who asks for a flat never sees a sauna.
@@ -13,12 +18,23 @@ export const categories:Record<string,{label:string;types:string[]}>=L({
  // «Банкет» (2026-11-17): a hall taken whole for a wedding, a той, an anniversary or a memorial meal. The price is
  // per guest with a least number of guests, the time is a slot of the day (banquetSlots), not a night.
  banquet:{label:'Банкет',types:['banquet','cafe']},
+ // «Досуг», «Спорт», «Авто» (thread «Найти новые виды заведений», 2026-11-28): each is taken by the hour, as a bath is,
+ // inside the hours the place sets itself (lib/venue-hours.ts). A field, a table or a box of one kind comes in
+ // a number alike (lib/room-units.ts unitKinds): the guest books the first free one.
+ leisure:{label:'Досуг',types:['loft','photostudio','meeting','karaoke_room','playroom','gazebo','quest']},
+ sport:{label:'Спорт',types:['field','court','sporthall','billiard','gameclub']},
+ auto:{label:'Авто',types:['carwash','tires','carservice','detailing']},
 });
 export const kindCategory=(type?:string)=>Object.entries(categories).find(([,c])=>c.types.includes(type||''))?.[0]||'stay';
 // The category a search is in: «Баня» or «Банкет» when every type asked for is of it, «Жильё» otherwise, also when no type is named.
 export const searchCategory=(kinds:string[]=[])=>{const found=kinds.length?kindCategory(kinds[0]):'stay';return found!=='stay'&&kinds.every(k=>kindCategory(k)===found)?found:'stay';};
 export const isBath=(type?:string)=>kindCategory(type)==='bath';
 export const isBanquet=(type?:string)=>kindCategory(type)==='banquet';
+// Taken whole by the hour inside the place's own hours: a bath, and every place of «Досуг», «Спорт», «Авто».
+export const HOURLY_CATEGORIES=['bath','leisure','sport','auto'];
+export const isHourlyVenue=(type?:string)=>HOURLY_CATEGORIES.includes(kindCategory(type));
+// A car is brought, not a company: «Авто» counts no guests and is booked for a service of the place (lib/venue-services.ts).
+export const isAuto=(type?:string)=>kindCategory(type)==='auto';
 // A place where nobody sleeps: its guests come for a few hours.
 export const isVenue=(type?:string)=>kindCategory(type)!=='stay';
 // The largest party: fifty in a home or a bath, a thousand in a banquet hall.
@@ -32,18 +48,38 @@ export const occasions:Record<string,string>=L({toi:'Свадьба, той',uza
 export const occasionLabel=(id?:string)=>occasions[id||'']||'';
 // Kinds that usually clean with their own staff: «Свой персонал» is on by default, the owner can change it.
 // A sauna is mostly a complex with an administrator; a «баня» is often a private one, cleaned by our executor.
-export const staffedTypes=['hostel','hotel','aparthotel','resort','sauna','banquet','cafe'];
+// Every place of «Досуг», «Спорт», «Авто» works with its own people (2026-11-28): no cleaning is looked for by default.
+export const staffedTypes=['hostel','hotel','aparthotel','resort','sauna','banquet','cafe',...categories.leisure.types,...categories.sport.types,...categories.auto.types];
 // «Номера одного типа» (lib/room-units.ts): the kinds sold by the room, many rooms alike under one roof.
 export const roomKinds=['hotel','hostel','aparthotel','resort'];
+// «N одинаковых» (2026-11-28): the same card for many alike also sells fields, courts, tables, cabins, gaming seats and
+// car bays. The guest books the card, the service gives the first free one (lib/room-units.ts pickRoom).
+export const unitKinds=[...roomKinds,'field','court','billiard','gameclub','karaoke_room','carwash','tires','carservice','detailing'];
+type UnitWords={title:string;count:string;free:string;forms:[string,string,string]};
+const ROOM_WORDS:UnitWords={title:'Номера',count:'Таких номеров',free:'Свободно номеров: {free} из {total}',forms:['{n} номер','{n} номера','{n} номеров']};
+const UNIT_WORDS:Record<string,UnitWords>={
+ field:{title:'Поля',count:'Таких полей',free:'Свободно полей: {free} из {total}',forms:['{n} поле','{n} поля','{n} полей']},
+ court:{title:'Корты',count:'Таких кортов',free:'Свободно кортов: {free} из {total}',forms:['{n} корт','{n} корта','{n} кортов']},
+ billiard:{title:'Столы',count:'Таких столов',free:'Свободно столов: {free} из {total}',forms:['{n} стол','{n} стола','{n} столов']},
+ gameclub:{title:'Места',count:'Таких мест',free:'Свободно мест: {free} из {total}',forms:['{n} место','{n} места','{n} мест']},
+ karaoke_room:{title:'Кабинки',count:'Таких кабинок',free:'Свободно кабинок: {free} из {total}',forms:['{n} кабинка','{n} кабинки','{n} кабинок']},
+};
+const BAY_WORDS:UnitWords={title:'Боксы',count:'Таких боксов',free:'Свободно боксов: {free} из {total}',forms:['{n} бокс','{n} бокса','{n} боксов']};
+/** The Russian words of the units of a kind: rooms of a hotel, fields, tables, bays. The screen translates them with t(). */
+export const unitWords=(type?:string):UnitWords=>UNIT_WORDS[type||'']||(kindCategory(type)==='auto'?BAY_WORDS:ROOM_WORDS);
 export const defaultOwnStaff=(type:string)=>staffedTypes.includes(type);
 // «home» — частный адрес заказчика уборки на дом (lib/home-cleaning.ts): не сдаётся, в списках типов его нет.
 export const kindLabel=(type?:string)=>type==='home'?tr('Мой дом'):propertyTypes[type||'']||tr('Жильё');
-export const amenities:Record<string,string>=L({wifi:'Wi-Fi',kitchen:'Кухня',washer:'Стиральная машина',aircon:'Кондиционер',tv:'Телевизор',workspace:'Рабочее место',parking:'Парковка',balcony:'Балкон',elevator:'Лифт',linen:'Постельное бельё',towels:'Полотенца',hairdryer:'Фен',iron:'Утюг',crib:'Детская кроватка',steam:'Парилка',pool:'Бассейн',plunge:'Купель',brooms:'Веники',karaoke:'Караоке',billiards:'Бильярд',grill:'Мангал',stage:'Сцена',sound:'Звук и микрофон',dancefloor:'Танцпол',prayer:'Комната для намаза',halal:'Халяль',ownfood:'Можно свои продукты',kidsroom:'Детская комната',jacuzzi:'Джакузи'});
+export const amenities:Record<string,string>=L({wifi:'Wi-Fi',kitchen:'Кухня',washer:'Стиральная машина',aircon:'Кондиционер',tv:'Телевизор',workspace:'Рабочее место',parking:'Парковка',balcony:'Балкон',elevator:'Лифт',linen:'Постельное бельё',towels:'Полотенца',hairdryer:'Фен',iron:'Утюг',crib:'Детская кроватка',steam:'Парилка',pool:'Бассейн',plunge:'Купель',brooms:'Веники',karaoke:'Караоке',billiards:'Бильярд',grill:'Мангал',stage:'Сцена',sound:'Звук и микрофон',dancefloor:'Танцпол',prayer:'Комната для намаза',halal:'Халяль',ownfood:'Можно свои продукты',kidsroom:'Детская комната',jacuzzi:'Джакузи',
+ projector:'Проектор',studiolight:'Студийный свет',lockers:'Раздевалка',shower:'Душ',indoor:'Крытое, тёплое',inventory:'Инвентарь',lighting:'Вечернее освещение',waitroom:'Зона ожидания',coffee:'Кофе',lift:'Подъёмник',warmbox:'Тёплый бокс',bigcars:'Большие машины'});
 // The amenities each category shows the owner and the guest; a stored id of the other category stays valid.
 export const categoryAmenities:Record<string,string[]>={
  stay:['wifi','kitchen','washer','aircon','tv','workspace','parking','balcony','elevator','linen','towels','hairdryer','iron','crib','jacuzzi'],
  bath:['steam','pool','plunge','jacuzzi','brooms','towels','karaoke','billiards','grill','tv','wifi','parking','kitchen'],
  banquet:['halal','prayer','stage','sound','dancefloor','karaoke','ownfood','kidsroom','aircon','parking','wifi'],
+ leisure:['wifi','projector','studiolight','sound','karaoke','tv','aircon','kitchen','ownfood','grill','parking'],
+ sport:['indoor','lockers','shower','inventory','lighting','parking','wifi','tv'],
+ auto:['warmbox','lift','bigcars','waitroom','coffee','wifi','parking'],
 };
 export const checkinMethods:Record<string,string>=L({meet:'Встреча с хозяином',lockbox:'Сейф для ключей',smartlock:'Умный замок',reception:'Стойка регистрации'});
 export function listingInput(b:Row){
@@ -55,7 +91,9 @@ export function listingInput(b:Row){
  const p={title:required(b.title,'Название',120),city:required(b.city,'Город',80),district:required(b.district,'Район',120),address:required(b.address,'Точный адрес',300),description:required(b.description,'Описание',2500),price:number(b.price,'Цена за сутки',100,10000000),rooms:number(b.rooms,'Комнаты',1,20),capacity:number(b.capacity,'Гости',1,maxGuests(details.type)),cleaningMinutes:number(b.cleaningMinutes,'Время уборки',30,1440),ownStaff:(typeof b.ownStaff==='boolean'?b.ownStaff:defaultOwnStaff(details.type))?1:0};
  const d={type:details.type,area:number(details.area,'Площадь',5,2000),beds:number(details.beds,'Спальные места',1,maxGuests(details.type)),bathrooms:number(details.bathrooms,'Санузлы',1,20),floor:number(details.floor,'Этаж',0,100),floors:number(details.floors,'Этажей в доме',1,100),checkinMethod:details.checkinMethod,amenities:[...new Set<string>(details.amenities)],pets:details.pets===true,smoking:details.smoking===true,parties:details.parties===true,
   // The menu of a banquet hall, as the owner writes it; other kinds keep none.
-  ...(isBanquet(details.type)&&typeof details.menu==='string'&&details.menu.trim()?{menu:details.menu.trim().slice(0,1500)}:{})};
+  ...(isBanquet(details.type)&&typeof details.menu==='string'&&details.menu.trim()?{menu:details.menu.trim().slice(0,1500)}:{}),
+  // «Авто»: the services the place sells, each with its own minutes and price (lib/venue-services.ts).
+  ...(isAuto(details.type)&&details.services!==undefined?{services:servicesInput(details.type,details.services)}:{})};
  if(d.floor>d.floors)throw new DomainError('Этаж не может быть выше этажности дома.');
  // A bath has no beds: its guests come for a few hours, so the beds follow the guests there.
  if(isVenue(d.type))d.beds=Math.max(d.beds,p.capacity);

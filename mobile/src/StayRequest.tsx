@@ -13,8 +13,9 @@ import {stayFromInterval,defaultStay,settleStay,stayClock,stayDay,stayDays,stayI
 import {recordSpan} from '../../lib/record-span';
 import {homeKinds,homeMinutes,homeAdvice,homeRooms,HOME_MAX_ROOMS,HOME_MAX_WINDOWS,HOME_MIN_FEE,HOME_FEE_STEP,type HomeKind,type HomeDeal} from '../../lib/home-cleaning';
 import {SwipeConfirm} from './SwipeConfirm';
-import {isBanquet,isBath} from '../../lib/listings';
+import {isAuto,isBanquet,isHourlyVenue} from '../../lib/listings';
 import {venueHours,sessionLine,hhmm,type Session} from '../../lib/venue-hours';
+import {minutesWords,servicesOf,type VenueService} from '../../lib/venue-services';
 import {OCCASIONS,occasionTitle} from './ai-request';
 import {AddressField} from './AddressSuggest';
 import {LineRow,PopSheet,SheetPane,useInSheet} from './PopSheet';
@@ -91,7 +92,7 @@ export function HallTimes({label,value,sessions,day,now,disabled,onChange}:{labe
 // A request without the chat (2026-11-27): a home by the tariff, days, times and guests; a bath by the hour; a hall or
 // a cafe by one of its own times of events, with what it is taken for and how many come (server lib/service.ts kindMode).
 export function StayRequest({property,initial,busy,done,result,onQuote,onConfirm}:{property:Row;initial?:StayStart;busy:boolean;done?:boolean;result?:string;onQuote:(body:Row)=>Promise<Row>;onConfirm:(body:Row)=>void}){
- const policy=property.policy||{},type=String(property.details?.type||property.type||''),hall=isBanquet(type),bath=isBath(type);
+ const policy=property.policy||{},type=String(property.details?.type||property.type||''),hall=isBanquet(type),bath=isHourlyVenue(type);
  const modes=useMemo<StayMode[]>(()=>bath?['hourly']:hall?['daily']:stayModes(property),[bath,hall,property.price,policy.hourly_price,policy.nightly_price]);
  const clock=useActivityClock(),[opened]=useState(()=>Math.floor(Date.now()/1000)),now=clock||opened;
  const cap=Math.max(1,Number(property.capacity)||(hall?100:1)),least=hall?Math.max(0,Number(policy.included_guests)||0):0;
@@ -109,15 +110,19 @@ export function StayRequest({property,initial,busy,done,result,onQuote,onConfirm
   const idx=sessions.reduce((best,x,i)=>Math.abs(x.from-minute)<Math.abs((sessions[best]?.from??1e9)-minute)?i:best,0);return settleSession(day,idx,opened,sessions);});
  const [occasion,setOccasion]=useState(()=>OCCASIONS.some(([id])=>id===initial?.occasion)?String(initial!.occasion):'');
  const [guests,setGuests]=useState(()=>Math.min(cap,Math.max(1,Number(initial?.guests)||(hall?Math.min(cap,least||20):1))));
- const [quote,setQuote]=useState<Row|null>(null),[checking,setChecking]=useState(false),[error,setError]=useState(''),[sheet,setSheet]=useState<''|'price'|'risk'|'when'|'occasion'>('');
- const picked=sessions[when.idx],span=hall&&picked?{start:when.day+picked.from*60,end:when.day+picked.to*60}:kept||stayInterval(choice,policy);
- const round=useRef(0),body=()=>({propertyId:property.id,start:stayStamp(span.start),end:stayStamp(span.end),guests,billingMode:hall?'daily':choice.mode,...(hall?{occasion:occasion||'other'}:{})});
+ const [quote,setQuote]=useState<Row|null>(null),[checking,setChecking]=useState(false),[error,setError]=useState(''),[sheet,setSheet]=useState<''|'price'|'risk'|'when'|'occasion'|'start'|'service'>('');
+ // A car place (2026-11-28): the guest picks a service, it takes its own minutes, and names the car and its number.
+ const services=useMemo<VenueService[]>(()=>servicesOf(property.details),[property.details]);
+ const [serviceIdx,setServiceIdx]=useState(0),[car,setCar]=useState(''),service=services[serviceIdx]||null;
+ const picked=sessions[when.idx],first=kept||stayInterval(choice,policy);
+ const span=hall&&picked?{start:when.day+picked.from*60,end:when.day+picked.to*60}:service?{start:first.start,end:first.start+service.minutes*60}:first;
+ const round=useRef(0),body=()=>({propertyId:property.id,start:stayStamp(span.start),end:stayStamp(span.end),guests,billingMode:hall?'daily':choice.mode,...(hall?{occasion:occasion||'other'}:{}),...(service?{service:service.name,car:car.trim()}:{})});
  const change=(next:Partial<StayChoice>)=>{setKept(null);const mode=next.mode||choice.mode,first=defaultStay(mode,policy,now);setChoice(settleStay(next.mode&&next.mode!==choice.mode?{...first,day:choice.day,...(mode==='hourly'&&choice.day!==first.day?{time:policy.checkin_minutes??840}:{})}:{...choice,...next},policy,now));};
  useEffect(()=>{
   if(done)return;const id=++round.current;setChecking(true);
   const timer=setTimeout(()=>{onQuote(body()).then(value=>{if(id===round.current){setQuote(value);setError('');}}).catch(e=>{if(id===round.current){setQuote(null);setError(e?.message||tr('Не удалось проверить это время.'));}}).finally(()=>{if(id===round.current)setChecking(false);});},350);
   return()=>clearTimeout(timer);
- },[choice.mode,choice.day,choice.time,choice.count,when.day,when.idx,occasion,guests,done,kept]);
+ },[choice.mode,choice.day,choice.time,choice.count,when.day,when.idx,occasion,guests,done,kept,serviceIdx]);
  if(done)return <Closed text={result||tr('Заявка отправлена')} note={tr('Заявка и её статус доступны в «Мои брони».')}/>;
  const ready=!!quote&&!checking&&!busy,risky=!property.verified&&!property.demo_owner;
  // The price in one line, as Airbnb: «10 000 ₸ + депозит 5 000 ₸ ›»; what it is made of opens by a tap.
@@ -126,11 +131,15 @@ export function StayRequest({property,initial,busy,done,result,onQuote,onConfirm
  const perGuest=Number(quote?.policy?.extra_guest_price)||0,guestStep=hall&&cap>=40?5:1;
  const dayWord=(day:number)=>day===stayDay(now)?tr('сегодня'):day===stayDay(now)+86400?tr('завтра'):words(day,{day:'numeric',month:'long'});
  return <View style={p.card}>
-  <View style={p.head}><Text accessibilityRole="header" style={p.title}>{property.title}</Text><Text style={p.note}>{[property.city,property.district].filter(Boolean).join(', ')}{property.capacity?' · '+tr('до {guests}',{guests:guestsWord(property.capacity)}):''}</Text></View>
-  {risky&&<LineRow dot={C.warning} title={tr('Жильё не проверено')} onPress={()=>setSheet('risk')}/>}
+  <View style={p.head}><Text accessibilityRole="header" style={p.title}>{property.title}</Text><Text style={p.note}>{[property.city,property.district].filter(Boolean).join(', ')}{property.capacity&&!isAuto(type)?' · '+tr('до {guests}',{guests:guestsWord(property.capacity)}):''}</Text></View>
+  {risky&&<LineRow dot={C.warning} title={bath?tr('Место не проверено'):tr('Жильё не проверено')} onPress={()=>setSheet('risk')}/>}
   {hall?<>
    <LineRow title={tr('Когда')} value={dayWord(when.day)+(picked?', '+sessionLine(picked):'')} disabled={busy} onPress={()=>setSheet('when')}/>
    <LineRow title={tr('Повод')} value={occasion?occasionTitle(occasion):tr('Выбрать')} disabled={busy} onPress={()=>setSheet('occasion')}/>
+  </>:service?<>
+   <LineRow title={tr('Услуга')} value={service.name+' · '+minutesWords(service.minutes)} disabled={busy} onPress={()=>setSheet('service')}/>
+   <LineRow title={tr('Когда')} value={recordSpan(span.start,span.end)} disabled={busy} onPress={()=>setSheet('start')}/>
+   <View style={p.field}><Text style={p.label}>{tr('Машина и номер')}</Text><TextInput accessibilityLabel={tr('Машина и номер')} style={[p.input,p.line]} value={car} onChangeText={setCar} editable={!busy} maxLength={60} autoCapitalize="words" placeholder={tr('Например, Toyota Camry, 123 ABC 14')} placeholderTextColor={C.muted}/></View>
   </>:<StayWhen choice={choice} modes={modes} policy={policy} now={now} disabled={busy} onChange={change} rate={mode=>stayRate(property,mode)} shown={kept||undefined}/>}
   {cap>1&&<GuestsRow value={guests} max={cap} step={guestStep} disabled={busy} onChange={setGuests}/>}
   {quote?<LineRow title={tr('Цена')} value={priceLine} disabled={checking} onPress={()=>setSheet('price')}/>
@@ -138,17 +147,25 @@ export function StayRequest({property,initial,busy,done,result,onQuote,onConfirm
    :<View style={p.wait}><Thinking size="sm"/><Text style={p.fact}>{tr('Проверяем свободное время и цену…')}</Text></View>}
   {!!perk&&<Text style={p.note}>{perk}</Text>}
   {hall&&guests<least&&<Text style={p.note}>{tr('Наименьший заказ зала: {least} гостей.',{least})}</Text>}
-  <Text style={p.note}>{tr('Проводя, вы соглашаетесь с временем, ценой, оплатой, депозитом и правилами проживания. Деньги сейчас не списываются.')}</Text>
+  <Text style={p.note}>{(bath?tr('Проводя, вы соглашаетесь с временем, ценой, оплатой, депозитом и правилами места. Деньги сейчас не списываются.'):tr('Проводя, вы соглашаетесь с временем, ценой, оплатой, депозитом и правилами проживания. Деньги сейчас не списываются.'))}</Text>
   <SwipeConfirm label={tr('Проведите: отправить заявку')} disabled={!ready} onConfirm={()=>{if(quote)onConfirm({...body(),expectedAmount:quote.amount,expectedPolicyVersion:quote.policy.version,acceptTerms:true});}}/>
   <PopSheet visible={sheet==='when'} title={tr('Когда')} onClose={()=>setSheet('')} footer={<Send title={tr('Готово')} disabled={false} busy={false} onPress={()=>setSheet('')}/>}>
    <Days label={tr('Дата')} value={when.day} now={now} disabled={busy} onChange={day=>setWhen(settleSession(day,when.idx,now,sessions))}/>
    <HallTimes label={tr("Время")} value={when.idx} sessions={sessions} day={when.day} now={now} disabled={busy} onChange={idx=>setWhen(settleSession(when.day,idx,now,sessions))}/>
    <Text style={p.note}>{tr('Время Казахстана.')}</Text>
   </PopSheet>
+  <PopSheet visible={sheet==='service'} title={tr('Услуга')} onClose={()=>setSheet('')}>
+   <View style={p.tasks}>{services.map((x,i)=>{const on=i===serviceIdx;return <Pressable key={x.name} accessibilityRole="radio" accessibilityState={{selected:on}} onPress={()=>{setServiceIdx(i);setSheet('');}} style={[p.task,on&&p.on]}><Text style={[p.taskText,on&&p.onText]}>{x.name+' · '+minutesWords(x.minutes)+' · '+money(x.price)}</Text></Pressable>;})}</View>
+  </PopSheet>
+  <PopSheet visible={sheet==='start'} title={tr('Когда')} onClose={()=>setSheet('')} footer={<Send title={tr('Готово')} disabled={false} busy={false} onPress={()=>setSheet('')}/>}>
+   <Days label={tr('Дата')} value={stayDay(span.start)} now={now} disabled={busy} onChange={day=>change({day,time:Math.round((span.start-stayDay(span.start))/60)})}/>
+   <Times label={tr('Начало')} value={Math.round((span.start-stayDay(span.start))/60)} day={stayDay(span.start)} now={now} disabled={busy} onChange={time=>change({day:stayDay(span.start),time})}/>
+   {!!service&&<Text style={p.note}>{tr('Конец посчитается сам: {v}. Время Казахстана.',{v:minutesWords(service.minutes)})}</Text>}
+  </PopSheet>
   <PopSheet visible={sheet==='occasion'} title={tr('Повод')} onClose={()=>setSheet('')}>
    <View style={p.tasks}>{OCCASIONS.map(([id,title])=>{const on=id===occasion;return <Pressable key={id} accessibilityRole="radio" accessibilityState={{selected:on}} onPress={()=>{setOccasion(id);setSheet('');}} style={[p.task,on&&p.on]}><Text style={[p.taskText,on&&p.onText]}>{title}</Text></Pressable>;})}</View>
   </PopSheet>
-  <PopSheet visible={sheet==='risk'} title={tr('Жильё не проверено')} onClose={()=>setSheet('')}><Text style={p.fact}>{tr('Сервис не сверял документ о праве владельца сдавать это жильё. Бронируя, вы принимаете этот риск.')}</Text><Text style={p.fact}>{tr('Платите только по реквизитам в карточке брони.')}</Text></PopSheet>
+  <PopSheet visible={sheet==='risk'} title={bath?tr('Место не проверено'):tr('Жильё не проверено')} onClose={()=>setSheet('')}><Text style={p.fact}>{tr('Сервис не сверял документ о праве владельца сдавать это жильё. Бронируя, вы принимаете этот риск.')}</Text><Text style={p.fact}>{tr('Платите только по реквизитам в карточке брони.')}</Text></PopSheet>
   <PopSheet visible={sheet==='price'&&!!quote} title={tr('Цена')} onClose={()=>setSheet('')}>{!!quote&&<>
    <Text style={p.span}>{recordSpan(span.start,span.end)}</Text>
    <View style={p.sum}><Text style={p.amount}>{money(quote.amount)}</Text>{hall?(perGuest>0&&<Text style={p.sumNote}>{tr('{price} за гостя × {n}.',{price:money(perGuest),n:Math.max(guests,least)})}</Text>):<Text style={p.sumNote}>{quote.periods} × {money(quote.price)} · {tr(quote.unitLabel)}</Text>}</View>

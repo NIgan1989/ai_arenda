@@ -1,7 +1,7 @@
 import {one,type Row} from './operation-core';
 import {pilotPropertyVisibleSql} from './pilot-governance';
 import {ratingsFor} from './stay-reviews';
-import {isBath,isVenue} from './listings';
+import {isHourlyVenue,isVenue} from './listings';
 import {SHARE_ID,type ShareCard} from './stay-share-text';
 export * from './stay-share-text';
 
@@ -12,7 +12,7 @@ export async function shareCard(db:D1Database,id:string):Promise<ShareCard|null>
   WHERE p.id=? AND p.published=1 AND p.archived_at IS NULL AND p.demo_owner IS NULL AND ${pilotPropertyVisibleSql('p')}`,id) as Row|null;
  if(!p)return null;
  let photos:unknown=[];try{photos=JSON.parse(String(p.photos||'[]'));}catch{/* no photo */}
- const type=String(p.type||''),bath=isBath(type),hall=isVenue(type)&&!bath;
+ const type=String(p.type||''),bath=isHourlyVenue(type),hall=isVenue(type)&&!bath;
  const price=bath?Number(p.hourly_price)||0:hall?0:Number(p.price)||0;
  const rating=(await ratingsFor(db,[String(p.id)])).get(String(p.id)) as {average?:number;count?:number}|undefined;
  return {id:String(p.id),title:String(p.title||''),city:String(p.city||''),district:String(p.district||''),price,unit:price?(bath?'hour':'day'):'',photo:Array.isArray(photos)&&typeof photos[0]==='string'?photos[0]:'',rating:rating&&Number(rating.count)>0?{average:Number(rating.average),count:Number(rating.count)}:null};

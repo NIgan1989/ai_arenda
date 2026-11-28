@@ -9,9 +9,10 @@ import {q,one,rows,epoch,uuid,type Row} from './operation-core';
 // follow the lead: syncRoomUnits() writes the lead's card, rules and photos over them before every quote and on the
 // background sweep. The guest sees one card with «свободно N», the owner one card with the count.
 
-import {roomKinds} from './listings';
-/** The kinds sold by the room: many rooms alike under one roof. */
-export const ROOM_KINDS=roomKinds;
+import {roomKinds,unitKinds} from './listings';
+const roomKind=(type:unknown)=>roomKinds.includes(String(type));
+/** The kinds sold one of many alike: rooms under one roof, and fields, courts, tables, cabins and bays (2026-11-28). */
+export const ROOM_KINDS=unitKinds;
 export const MAX_ROOMS=200;
 /** The calendar source that holds the rooms the owner closed by hand («Свободно сегодня»), one per room: its key is this and the room id. */
 export const ROOMS_CLOSED='aiqonaq:rooms-closed';
@@ -89,7 +90,7 @@ const copy=(table:string,change:Record<string,string>)=>{const c=cols(table);ret
 export async function setRoomCount(s:RentalService,body:Row){
  await s.requireRole('owner');
  const p=await ownLead(s,required(body.propertyId,'Объект',100)),count=number(body.count,'Сколько таких номеров',1,MAX_ROOMS),at=epoch();
- if(!ROOM_KINDS.includes(String(p.type)))throw new DomainError('Номера одного типа есть у гостиницы, хостела, апарт-отеля и базы отдыха.',409);
+ if(!ROOM_KINDS.includes(String(p.type)))throw new DomainError('Одинаковые места бывают у гостиницы, хостела, апарт-отеля, базы отдыха, у полей, кортов, бильярда, игрового клуба, караоке и автосервисов.',409);
  const rooms=await roomsOf(s.db,p.id),now=rooms.length;
  if(count>now){
   const add:D1PreparedStatement[]=[];
@@ -116,7 +117,7 @@ export async function setRoomCount(s:RentalService,body:Row){
   await s.db.batch(spare.map(id=>q(s.db,'UPDATE properties SET published=0,archived_at=? WHERE id=? AND archived_at IS NULL',at,id)));
  }
  await syncRoomUnits(s.db,p.id);
- return {rooms:await roomState(s.db,p.id),message:count===1?'Теперь это один номер.':'Таких номеров: '+count+'. Гости видят одну карточку и сколько из них свободно.'};
+ return {rooms:await roomState(s.db,p.id),message:count===1?(roomKind(p.type)?'Теперь это один номер.':'Теперь это одно место.'):(roomKind(p.type)?'Таких номеров: ':'Таких мест: ')+count+'. Гости видят одну карточку и сколько из них свободно.'};
 }
 
 /** The rooms of a card today: how many there are, taken through the service, closed by hand, under repair and free.
