@@ -77,6 +77,8 @@ export async function reserveAIRequest(db:D1Database,userId:string){
  }
 }
 const failures:Record<string,string>={billing:'Помощник временно ограничен. Действия через формы доступны.',authentication:'Помощник временно недоступен. Действия через формы доступны.',model:'Помощник временно недоступен. Действия через формы доступны.',rate_limit:'Слишком много обращений к помощнику. Попробуйте немного позже.',unavailable:'Помощник временно недоступен. Попробуйте ещё раз.',timeout:'Ответ задерживается. Попробуйте ещё раз.',network:'Не удалось получить ответ помощника. Попробуйте позже.'};
+// A read tool answers with server text, not the model's JSON: the button goes to the screen where the same facts live.
+const TOOL_SCREENS={processes:{guest:'bookings',owner:'bookings',cleaner:'assignments'} as Record<Role,string>};
 // Informational answers only. All mutations stay in authenticated service methods.
 export async function generateAnswer(config:AIConfig,text:string,role:Role,history:{sender:string;body:string}[],fallback:string,context?:unknown,toolExecutor?:AIToolExecutor,budget?:AIBudgetLifecycle,readSearch?:AIReadSearch,readProcesses?:AIReadProcesses,lang:Lang='ru'):Promise<AIResult>{
   if(!config.OPENAI_API_KEY||!config.OPENAI_MODEL)return {text:fallback,mode:'scenario'};
@@ -115,7 +117,7 @@ export async function generateAnswer(config:AIConfig,text:string,role:Role,histo
       if(!args||typeof args!=='object'||Array.isArray(args))return fail('unavailable');
       if(calls[0].name==='read_process_status'){
         if(!readProcesses||Object.keys(args).length)return fail('unavailable');
-        try{return {text:(await readProcesses()).text,mode:'model'};}catch(error){if(error instanceof DomainError)return {text:error.message,mode:'model'};throw error;}
+        try{return {text:(await readProcesses()).text,mode:'model',screen:TOOL_SCREENS.processes[role]};}catch(error){if(error instanceof DomainError)return {text:error.message,mode:'model'};throw error;}
       }
       if(calls[0].name==='search_rental_catalog'){
         if(!readSearch||role!=='guest'||Object.keys(args).length)return fail('unavailable');

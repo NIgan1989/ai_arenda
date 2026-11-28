@@ -1,5 +1,6 @@
 import type {RentalService} from './service';
-import {mapSearchFilters,mapSearchRequest,statedKinds} from './map-search-request';
+import {HOURLY_KINDS,mapSearchFilters,mapSearchRequest,statedKinds} from './map-search-request';
+import {kindLabel} from './listings';
 import {mapCities} from './map-location';
 
 // A search for a flat is "Найди жильё…" or a request with no search verb that names when or for whom:
@@ -34,15 +35,29 @@ export async function administratorSearch(s:RentalService,text:string,current:Re
  const profile=await s.profile();
  const catalog=await s.publicSearch({limit:'1'},options);
  const parsed=mapSearchRequest(text,mapSearchFilters({...current,city:typeof current.city==='string'?current.city:profile?.city||''}),[...Object.keys(mapCities),...catalog.cities]);
- const filters={...parsed.filters},queryFilters={...filters};
+ // What is asked for: «автомойка», «баня», «поле» search that kind, not homes. A bare refinement («а подешевле») keeps
+ // the kinds of the search before it.
+ const said=statedKinds(text.toLocaleLowerCase('ru').replace(/ё/g,'е')),before=Array.isArray(current.kinds)?current.kinds.filter((k):k is string=>typeof k==='string').slice(0,8):[];
+ const kinds=said.length?said:isSearchRefinement(text)?before:[];
+ const filters:Record<string,any>={...parsed.filters,...(kinds.length?{kinds}:{})};
+ // A bath, a field or a car wash is taken by the hour.
+ // «Баня» alone is the whole bath category, as on the map.
+ if(kinds.includes('banya')&&!kinds.includes('sauna')&&!/русск|дров/i.test(text))kinds.push('sauna');
+ // A bath, a field or a car wash is taken by the hour. «Завтра» alone gives a day from 14:00: that is not an hour, so the
+ // time is asked instead of pricing a whole day by the hour.
+ if(kinds.length&&kinds.every(k=>HOURLY_KINDS.includes(k))){
+  if(filters.mode!=='hourly'){delete filters.start;delete filters.end;}
+  filters.mode='hourly';
+ }
+ const queryFilters={...filters};
  // datetime-local is explicitly interpreted as Kazakhstan time, on every host.
  for(const key of ['start','end'])if(queryFilters[key]&&/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(queryFilters[key]))queryFilters[key]+='+05:00';
- const found=await s.publicSearch({...queryFilters,limit:'6'},options);
+ const found=await s.publicSearch({...queryFilters,limit:'6'},{...options,exactKinds:true});
  const result={filters,checkedAt:Math.floor(Date.now()/1000),total:found.total,availabilityChecked:found.availabilityChecked,properties:found.properties.map(p=>({id:p.id,title:p.title,city:p.city,testPreview:p.test_preview===1,amount:p.estimate?.amount??(filters.mode==='hourly'?p.policy.hourly_price:p.price),unit:found.availabilityChecked?'за выбранный период':filters.mode==='hourly'?'за час':'за сутки',status:p.display_status}))};
  const lines=result.properties.map(p=>`${p.title} · ${p.amount.toLocaleString('ru-RU')} ₸ ${p.unit}${p.status?.label?' · '+p.status.label:''}${p.testPreview?' · учебный просмотр':''}`);
  const scope=filters.city||'все города';
  let answer=found.total?`${found.availabilityChecked?'Проверена занятость на выбранные даты':'Найдены варианты без проверки дат'} · ${scope}. Найдено: ${found.total}.\n${lines.join('\n')}`:`По указанным условиям в опубликованном каталоге вариантов нет · ${scope}. Измените город, даты или бюджет.`;
- const conditions=[filters.rooms&&+filters.rooms>0?(filters.roomsExact==='1'?'ровно ':'от ')+filters.rooms+' комн.':'',filters.guests+' гостей',filters.mode==='hourly'?'на часы':'на сутки',filters.minPrice?'от '+filters.minPrice+' ₸':'',filters.maxPrice?'до '+filters.maxPrice+' ₸'+(found.availabilityChecked?' за весь период':''):'',filters.start&&filters.end?filters.start.replace('T',' ')+' → '+filters.end.replace('T',' '):'',filters.sort==='price-asc'?'сначала дешевле':filters.sort==='price-desc'?'сначала дороже':''].filter(Boolean);
+ const conditions=[kinds.length?[...new Set(kinds.map(k=>kindLabel(k)))].join(', '):'',filters.rooms&&+filters.rooms>0?(filters.roomsExact==='1'?'ровно ':'от ')+filters.rooms+' комн.':'',kinds.length&&kinds.every(k=>HOURLY_KINDS.includes(k))?'':filters.guests+' гостей',filters.mode==='hourly'?'на часы':'на сутки',filters.minPrice?'от '+filters.minPrice+' ₸':'',filters.maxPrice?'до '+filters.maxPrice+' ₸'+(found.availabilityChecked?' за весь период':''):'',filters.start&&filters.end?filters.start.replace('T',' ')+' → '+filters.end.replace('T',' '):'',filters.sort==='price-asc'?'сначала дешевле':filters.sort==='price-desc'?'сначала дороже':''].filter(Boolean);
  answer+='\nУсловия: '+conditions.join(' · ')+'.';
  if(!found.availabilityChecked)answer+='\nУкажите заезд и выезд — проверим свободные интервалы и стоимость.';
  else answer+='\nПроверено сейчас. До подтверждения заявки доступность и стоимость могут измениться; форма бронирования проверит их повторно.';

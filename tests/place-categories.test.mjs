@@ -137,3 +137,24 @@ test('a crossover pays its own price, and the queue offers only the free starts 
   assert.deepEqual(freeStarts({day:0,minutes:30,busy:[[3600,7200]],earliest:1800,fits:(a,b)=>b<=3*3600}),[1800,7200,8100,9000]);
  }finally{f.db.close();}
 });
+
+test('the AI administrator search finds the kind that is asked for: a car wash, not homes',async()=>{
+ const f=await fixture();try{
+  const wash=(await f.owner.saveListing(null,listing('carwash'))).id,flat=(await f.owner.saveListing(null,listing('apartment'))).id;
+  const tires=(await f.owner.saveListing(null,listing('tires'))).id;
+  f.db.raw.prepare('UPDATE properties SET published=1').run();f.db.raw.prepare("UPDATE property_operations SET readiness='ready'").run();
+  const {administratorSearch}=await load('administrator-search');
+  const found=await administratorSearch(f.guest,'Хочу помыть машину в Павлодаре');
+  assert.deepEqual(found.result.properties.map(p=>p.id),[wash]);
+  assert.deepEqual(found.result.filters.kinds,['carwash']);
+  assert.equal(found.result.filters.mode,'hourly');
+  // Only the kind asked for: a tire shop of the same section is not a car wash.
+  assert.ok(!found.result.properties.some(p=>p.id===tires));
+  // «Завтра» with a budget is not a whole day priced by the hour.
+  assert.deepEqual((await administratorSearch(f.guest,'Найди автомойку завтра до 10000')).result.properties.map(p=>p.id),[wash]);
+  assert.match(found.text,/Автомойка/);assert.doesNotMatch(found.text,/гостей/);
+  // «А подешевле?» after it keeps the car wash; a new ask for a home finds the home.
+  assert.deepEqual((await administratorSearch(f.guest,'а подешевле?',found.result.filters)).result.properties.map(p=>p.id),[wash]);
+  const homes=(await administratorSearch(f.guest,'Найди жильё в Павлодаре на сутки',found.result.filters)).result.properties.map(p=>p.id);assert.ok(homes.includes(flat)&&!homes.includes(wash));
+ }finally{f.db.close();}
+});
