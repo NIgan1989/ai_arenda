@@ -67,11 +67,14 @@ const VENUE_SAYS:[string,string,string][]=[
  ['ИИ передал задержку выезда администратору','ИИ передал задержку ухода администратору','ИИ передал задержку окончания администратору'],
  ['ИИ предупредил: гость ещё в жилье','ИИ предупредил: гость ещё в бане','ИИ предупредил: гости ещё в зале']
 ];
-const venueOf=(type?:string|null)=>type==='banya'||type==='sauna'?1:type==='banquet'||type==='cafe'?2:0;
+// «Досуг», «Спорт», «Авто» (lib/listings.ts, 2026-11-28) say the bath's words with «место» for «баня».
+const VISIT=['loft','photostudio','meeting','karaoke_room','playroom','gazebo','quest','field','court','sporthall','billiard','gameclub','carwash','tires','carservice','detailing'];
+const venueOf=(type?:string|null)=>type==='banya'||type==='sauna'?1:type==='banquet'||type==='cafe'?2:VISIT.includes(type||'')?3:0;
+const visitWords=(bath:string)=>bath.replace('в бане','на месте').replace('бани','места');
 // The line in the words of the object's kind; a home keeps the line as it is.
-export function aiSays(text:string,type?:string|null){const v=venueOf(type);if(!v)return text;const hit=VENUE_SAYS.find(x=>x[0]===text);return hit?hit[v]:text;}
+export function aiSays(text:string,type?:string|null){const v=venueOf(type);if(!v)return text;const hit=VENUE_SAYS.find(x=>x[0]===text);return hit?(v===3?visitWords(hit[1]):hit[v]):text;}
 // Every way one line may be said, to recognise it whatever the kind of the object.
-export function aiSaysAll(text:string){const hit=VENUE_SAYS.find(x=>x[0]===text);return hit?[...hit]:[text];}
+export function aiSaysAll(text:string){const hit=VENUE_SAYS.find(x=>x[0]===text);return hit?[...new Set([...hit,visitWords(hit[1])])]:[text];}
 
 // The newest move about any of these things, still within the window: the one a pin shows.
 export function latestMove(marks:unknown,about:{kind:string;id:string}[],now:number):{move:AiMove;at:number;type?:string}|undefined{

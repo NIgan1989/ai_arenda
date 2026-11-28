@@ -1,5 +1,5 @@
 import {DomainError} from './domain';
-import {isBanquet,isBath} from './listings';
+import {isBanquet,isBath,isHourlyVenue,kindCategory} from './listings';
 import {t} from './i18n';
 type Row=Record<string,any>;
 
@@ -23,7 +23,12 @@ export const HALL_DEFAULT:VenueHours={open:600,close:1440,sessions:[
 export const BATH_DEFAULT:VenueHours={open:0,close:1440,sessions:[]};
 export const roundTheClock=(h:VenueHours)=>h.open===0&&h.close===1440||h.open===h.close;
 
-export function venueDefault(kind?:string):VenueHours|null{return isBanquet(kind)?HALL_DEFAULT:isBath(kind)?BATH_DEFAULT:null;}
+// «Досуг» opens from 10:00 to midnight, «Спорт» from 08:00, «Авто» works by day, 09:00–21:00 (2026-11-28); the place changes them.
+export const LEISURE_DEFAULT:VenueHours={open:600,close:1440,sessions:[]};
+export const SPORT_DEFAULT:VenueHours={open:480,close:1440,sessions:[]};
+export const AUTO_DEFAULT:VenueHours={open:540,close:1260,sessions:[]};
+const HOURLY_DEFAULT:Record<string,VenueHours>={bath:BATH_DEFAULT,leisure:LEISURE_DEFAULT,sport:SPORT_DEFAULT,auto:AUTO_DEFAULT};
+export function venueDefault(kind?:string):VenueHours|null{return isBanquet(kind)?HALL_DEFAULT:isBath(kind)?BATH_DEFAULT:isHourlyVenue(kind)?HOURLY_DEFAULT[kindCategory(kind)]:null;}
 // The hours stored for a place, or its kind's default.
 export function venueHours(kind:string|undefined,stored:unknown):VenueHours|null{
  const base=venueDefault(kind);if(!base)return null;

@@ -9,11 +9,12 @@ import {PropertyStaff} from './PropertyStaff';
 import {VenueHalls} from './VenueHalls';
 import {RoomCount,roomsLine} from './RoomCount';
 import {SwipeConfirm} from './SwipeConfirm';
-import {EditButton,EditChips,EditCount,EditField,EditNote,EditNumber,EditRow,EditSheet,EditSwitch,editDot} from './EditSheet';
+import {EditButton,EditChips,EditCount,EditField,EditHeading,EditNote,EditNumber,EditRow,EditSheet,EditSwitch,editDot} from './EditSheet';
 import type {MenuIcon} from './AccountRows';
 import {TitleField} from './TitleField';
 import {EDIT_STEPS,banquetPrice,withBanquetPrice,editBody,editRequest,nextAdvice,needsReview,reviewRequest,stepForError,stepLine,stepNeeds,stepTitle,type EditBody,type EditStep} from '../../lib/listing-edit';
-import {amenities,categoryAmenities,checkinMethods,isBath,isBanquet,isVenue,kindCategory,kindLabel,roomKinds} from '../../lib/listings';
+import {MAX_SERVICES,minutesWords,SERVICE_STARTERS,type VenueService} from '../../lib/venue-services';
+import {amenities,categoryAmenities,checkinMethods,isAuto,isBath,isBanquet,isHourlyVenue,isVenue,kindCategory,kindLabel,unitKinds,unitWords} from '../../lib/listings';
 import {KindPicker} from './KindPicker';
 import {StayClassPicker} from './StayClassPicker';
 import {classOfRow,hasClass} from '../../lib/stay-class';
@@ -28,7 +29,8 @@ type Sub='calendars'|'cleaner'|'staff'|'halls'|'rooms'|'rights'|'kind';
 const ICONS:Record<EditStep,MenuIcon>={photos:'camera',flat:'properties',place:'pin',text:'file',amenities:'check',prices:'wallet',checkin:'key',rules:'shield'};
 const SAVED:Record<EditStep|'publish',string>=L({photos:'Фото сохранены.',flat:'Сохранено.',place:'Адрес сохранён.',text:'Описание сохранено.',amenities:'Удобства сохранены.',prices:'Цены сохранены.',checkin:'Заезд сохранён.',rules:'Правила сохранены.',publish:'Готово.'});
 // What to shoot, in the empty cells of the photos (Airbnb's photo tour): for a home, a bath and a hall.
-const SLOTS=L({stay:['Комната','Кухня','Санузел','Вид из окна','Вход'],bath:['Парная','Комната отдыха','Душ','Двор','Вход'],banquet:['Зал','Столы','Сцена','Вход','Парковка']});
+const SLOTS=L({stay:['Комната','Кухня','Санузел','Вид из окна','Вход'],bath:['Парная','Комната отдыха','Душ','Двор','Вход'],banquet:['Зал','Столы','Сцена','Вход','Парковка'],
+ leisure:['Помещение','Зона отдыха','Оборудование','Вход','Парковка'],sport:['Поле или зал','Раздевалка','Инвентарь','Вход','Парковка'],auto:['Бокс','Оборудование','Зона ожидания','Въезд','Вывеска']});
 
 // Editing a place in the app (board «Экраны старой версии», 2026-11-26; Turo «Your car»): a sheet of its own with the
 // name in the head, the steps as rows with a black line icon and one grey line of what is there, a dot where
@@ -123,7 +125,9 @@ export function PropertyEdit({property,onSave,onReview,onRemove,onClose,onOpenHa
     {isBanquet(d.type)?<>
      <EditNumber title={t('Вмещает гостей')} value={draft.capacity} max={1000} onChange={n=>setDraft(o=>({...o,capacity:Math.max(1,n),details:{...o.details,beds:Math.max(1,n)}}))}/>
      <EditNumber title={t('Площадь')} unit={t('м²')} value={d.area} max={2000} onChange={n=>setD({area:n})}/>
-    </>:isBath(d.type)?<>
+    </>:isAuto(d.type)?<>
+     <EditNumber title={t('Площадь')} unit={t('м²')} value={d.area} max={2000} onChange={n=>setD({area:n})}/>
+    </>:isHourlyVenue(d.type)?<>
      <EditCount title={t('Гостей')} value={draft.capacity} min={1} max={50} onChange={n=>setDraft(o=>({...o,capacity:n,details:{...o.details,beds:Math.max(o.details.beds,n)}}))}/>
      <EditNumber title={t('Площадь')} unit={t('м²')} value={d.area} max={2000} onChange={n=>setD({area:n})}/>
     </>:<>
@@ -151,15 +155,28 @@ export function PropertyEdit({property,onSave,onReview,onRemove,onClose,onOpenHa
     <Text style={x.hint}>{draft.description.trim().length<80&&<Text style={{color:editDot.missing}}>● </Text>}{draft.description.trim().length<80?t('{n} знаков · для показа гостям нужно от 80',{n:draft.description.trim().length}):t('{n} знаков',{n:draft.description.trim().length})}</Text>
    </>}
    {open==='amenities'&&<EditChips many value={d.amenities} options={categoryAmenities[kindCategory(d.type)].map(id=>[id,amenities[id]] as [string,string])} onChange={id=>setD({amenities:d.amenities.includes(id)?d.amenities.filter(a=>a!==id):[...d.amenities,id]})}/>}
-   {open==='prices'&&isBath(d.type)&&<View>
+   {open==='prices'&&isHourlyVenue(d.type)&&<View>
     {/* A bath is taken by the hour. The day price the service needs is twelve hours, kept in step with the hour. */}
     <EditNumber title={t('Час')} unit="₸" value={r.hourlyPrice} onChange={n=>setDraft(o=>({...o,price:Math.max(100,n*12),rental:{...o.rental,hourlyPrice:n}}))}/>
-    <EditCount title={t('Минимум часов')} value={r.minHours} min={1} max={24} onChange={n=>setR({minHours:n})}/>
-    <EditNumber title={t('Гостей в цене')} line={t('0 — цена не зависит')} value={r.includedGuests} max={50} onChange={n=>setR({includedGuests:n})}/>
-    <EditNumber title={t('Доплата за гостя в час')} unit="₸" value={r.extraGuestPrice} max={1000000} onChange={n=>setR({extraGuestPrice:n})}/>
-    <EditCount title={t('Подготовка перед гостями')} line={t('Напомню затопить и не приму бронь раньше')} value={r.prepMinutes} text={r.prepMinutes?(r.prepMinutes%60?t('{prepMinutes} мин',{prepMinutes:r.prepMinutes}):t('{v} ч',{v:r.prepMinutes/60})):t('нет')} min={0} max={360} step={30} onChange={n=>setR({prepMinutes:n})}/>
+    {!isAuto(d.type)&&<EditCount title={t('Минимум часов')} value={r.minHours} min={1} max={24} onChange={n=>setR({minHours:n})}/>}
+    {!isAuto(d.type)&&<><EditNumber title={t('Гостей в цене')} line={t('0 — цена не зависит')} value={r.includedGuests} max={50} onChange={n=>setR({includedGuests:n})}/>
+    <EditNumber title={t('Доплата за гостя в час')} unit="₸" value={r.extraGuestPrice} max={1000000} onChange={n=>setR({extraGuestPrice:n})}/></>}
+    <EditCount title={t('Подготовка перед гостями')} line={isBath(d.type)?t('Напомню затопить и не приму бронь раньше'):t('Напомню подготовить и не приму бронь раньше')} value={r.prepMinutes} text={r.prepMinutes?(r.prepMinutes%60?t('{prepMinutes} мин',{prepMinutes:r.prepMinutes}):t('{v} ч',{v:r.prepMinutes/60})):t('нет')} min={0} max={360} step={30} onChange={n=>setR({prepMinutes:n})}/>
     <EditNumber title={t('Депозит')} unit="₸" value={r.deposit} onChange={n=>setR({deposit:n})} last/>
    </View>}
+   {open==='prices'&&isAuto(d.type)&&(()=>{const list=d.services||[],put=(i:number,v:Partial<VenueService>)=>setD({services:list.map((s,j)=>j===i?{...s,...v}:s)});return <>
+    {/* «Услуги» of a car place (lib/venue-services.ts): the guest picks one, it holds the box for its minutes at its price. */}
+    <EditHeading title={t('Услуги')}/>
+    {list.map((s,i)=><View key={i}>
+     <EditField label={t('Услуга {n}',{n:i+1})} value={s.name} onChange={v=>put(i,{name:v})} max={60} placeholder={t('Например, Комплекс')}/>
+     <EditCount title={t('Время')} value={s.minutes} text={minutesWords(s.minutes)} min={15} max={720} step={15} onChange={n=>put(i,{minutes:n})}/>
+     <EditNumber title={t('Цена')} unit="₸" value={s.price} onChange={n=>put(i,{price:n})} last/>
+     <EditButton line title={t('Убрать услугу')} onPress={()=>setD({services:list.filter((_,j)=>j!==i)})}/>
+    </View>)}
+    {!list.length&&!!SERVICE_STARTERS[d.type]&&<EditButton line title={t('Взять обычные услуги')} onPress={()=>setD({services:SERVICE_STARTERS[d.type]})}/>}
+    {list.length<MAX_SERVICES&&<EditButton line title={t('Добавить услугу')} onPress={()=>setD({services:[...list,{name:'',minutes:30,price:3000}]})}/>}
+    <EditNote text={t('Гость выбирает услугу, бокс занят на её время. Цена за час — для брони без услуги.')}/>
+   </>;})()}
    {open==='prices'&&isBanquet(d.type)&&(()=>{const q=banquetPrice(draft);return <>
     {/* A hall is priced per guest with a least party; the service keeps it as the price of the slot (lib/listing-edit.ts). */}
     <View>
@@ -208,7 +225,7 @@ export function PropertyEdit({property,onSave,onReview,onRemove,onClose,onOpenHa
   :sent?{dot:editDot.wait,text:t('На проверке у администратора')}:{dot:editDot.off,text:t('Скрыто от гостей')};
  const venue=isVenue(base.details.type);
  const extra:{key:Sub;icon:MenuIcon;title:string;line:string}[]=[
-  ...(p.id&&call&&roomKinds.includes(base.details.type)?[{key:'rooms' as Sub,icon:'building' as MenuIcon,title:t('Номера'),line:roomsLine(p)}]:[]),
+  ...(p.id&&call&&unitKinds.includes(base.details.type)?[{key:'rooms' as Sub,icon:'building' as MenuIcon,title:t(unitWords(base.details.type).title),line:roomsLine(p)}]:[]),
   ...(p.id&&call&&(venue||!!p.venue)?[{key:'halls' as Sub,icon:'building' as MenuIcon,title:t('Залы'),line:p.venue?t('{title} · залов: {halls}',{title:p.venue.title,halls:p.venue.halls}):t('Один зал')}]:[]),
   // The person on shift is named here, in the settings of the object, and nowhere else.
   ...(p.id?[{key:'staff' as Sub,icon:'user' as MenuIcon,title:t('Сотрудник'),line:p.staff_name||t('Не назначен')}]:[]),

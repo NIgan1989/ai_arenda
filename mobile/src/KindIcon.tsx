@@ -22,7 +22,27 @@ const ICONS: Record<string, ImageSourcePropType> = {
   sauna: require('../assets/kinds/sauna.png'),
   banquet: require('../assets/kinds/banquet.png'),
   cafe: require('../assets/kinds/cafe.png'),
-  cleaning: require('../assets/kinds/cleaning.png')
+  cleaning: require('../assets/kinds/cleaning.png'),
+  // «Досуг», «Спорт», «Авто» and their kinds (2026-11-28).
+  leisure: require('../assets/kinds/leisure.png'),
+  sport: require('../assets/kinds/sport.png'),
+  auto: require('../assets/kinds/auto.png'),
+  loft: require('../assets/kinds/loft.png'),
+  photostudio: require('../assets/kinds/photostudio.png'),
+  meeting: require('../assets/kinds/meeting.png'),
+  karaoke_room: require('../assets/kinds/karaoke_room.png'),
+  playroom: require('../assets/kinds/playroom.png'),
+  gazebo: require('../assets/kinds/gazebo.png'),
+  quest: require('../assets/kinds/quest.png'),
+  field: require('../assets/kinds/field.png'),
+  court: require('../assets/kinds/court.png'),
+  sporthall: require('../assets/kinds/sporthall.png'),
+  billiard: require('../assets/kinds/billiard.png'),
+  gameclub: require('../assets/kinds/gameclub.png'),
+  carwash: require('../assets/kinds/carwash.png'),
+  tires: require('../assets/kinds/tires.png'),
+  carservice: require('../assets/kinds/carservice.png'),
+  detailing: require('../assets/kinds/detailing.png')
 };
 
 export function KindIcon({ id, size = 20, color = C.inkSoft }: { id: string; size?: number; color?: string }) {

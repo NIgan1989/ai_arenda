@@ -28,7 +28,9 @@ for(const [name,icon] of Object.entries(rows)){
  await sharp(Buffer.from(svg)).png().toFile(fileURLToPath(new URL('shanyrak.png',menu)));}
 // The types of objects and their categories (lib/listings.ts): the guest's category picker and the owner's type picker.
 const kinds=new URL('../mobile/assets/kinds/',import.meta.url);await mkdir(kinds,{recursive:true});
-const types={any:'LayoutGrid',stay:'House',bath:'Flame',apartment:'Building2',studio:'Sofa',room:'DoorOpen',house:'House',guesthouse:'TreePine',hostel:'BedDouble',hotel:'Hotel',aparthotel:'Building',banya:'FlameKindling',sauna:'Heater',banquet:'Utensils',cafe:'Coffee',cleaning:'Sparkles'};
+const types={any:'LayoutGrid',stay:'House',bath:'Flame',apartment:'Building2',studio:'Sofa',room:'DoorOpen',house:'House',guesthouse:'TreePine',hostel:'BedDouble',hotel:'Hotel',aparthotel:'Building',banya:'FlameKindling',sauna:'Heater',banquet:'Utensils',cafe:'Coffee',cleaning:'Sparkles',
+ leisure:'PartyPopper',sport:'Trophy',auto:'CarFront',loft:'Warehouse',photostudio:'Camera',meeting:'Presentation',karaoke_room:'MicVocal',playroom:'Blocks',gazebo:'Tent',quest:'Puzzle',
+ field:'Goal',court:'Volleyball',sporthall:'Dumbbell',billiard:'CircleDot',gameclub:'Gamepad2',carwash:'Droplets',tires:'LifeBuoy',carservice:'Wrench',detailing:'Paintbrush'};
 for(const [name,icon] of Object.entries(types)){
  const svg=renderToStaticMarkup(React.createElement(icons[icon],{size:72,strokeWidth:1.75,color:'#000000'}));
  await sharp(Buffer.from(svg)).png().toFile(fileURLToPath(new URL(name+'.png',kinds)));

@@ -211,7 +211,7 @@ function GuestPanel({setFloat,setFoot,setScanning,setQuiet,accountId,data,mapDat
   // pass the same rules. No model on the server, no permission or no answer: the guest is told, never guessed for.
   if(lock.current)return;
   // The model reads free text only for someone signed in; without an account the guest is asked for the usual words.
-  if(!accountId){const kind=categoryOf(draft);setHint({text:tr('Не понял запрос. Напишите, например: {example} ИИ разберёт любой текст после входа.',{example:kind==='banquet'?tr('«5 декабря на 150 гостей».'):kind==='bath'?tr('«сегодня в 18:00 на 3 часа».'):tr('«завтра на сутки до 15 000».')})});return;}
+  if(!accountId){const kind=categoryOf(draft);setHint({text:tr('Не понял запрос. Напишите, например: {example} ИИ разберёт любой текст после входа.',{example:kind==='banquet'?tr('«5 декабря на 150 гостей».'):kind==='auto'?tr('«завтра в 10:00 на час».'):kind!=='stay'?tr('«сегодня в 18:00 на 3 часа».'):tr('«завтра на сутки до 15 000».')})});return;}
   lock.current=true;setWorking(true);setHint({text:tr('ИИ разбирает запрос…')});
   void (async()=>{
    let ai:Row|null=null;

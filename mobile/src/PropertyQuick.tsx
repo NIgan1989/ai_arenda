@@ -13,7 +13,7 @@ import {T} from './tokens';
 import {Photo} from './ListingMedia';
 import {PhotoGrid} from './PhotoGrid';
 import {Stepper} from './SheetParts';
-import {amenities,categoryAmenities,checkinMethods,isBath,kindCategory,propertyTypes} from '../../lib/listings';
+import {amenities,categoryAmenities,checkinMethods,isAuto,isBath,isHourlyVenue,kindCategory,propertyTypes} from '../../lib/listings';
 import {KindPicker} from './KindPicker';
 import {TitleField} from './TitleField';
 import {StayClassPicker} from './StayClassPicker';
@@ -94,7 +94,8 @@ export function PropertyQuick({city,onSave,onGuestMode,onPlace,onReview,onClose,
   }catch(e:any){setError(e?.message||t(['Не удалось сохранить зал.','Не удалось сохранить объект.','Не удалось сохранить жильё.'][sort]));}finally{setBusy(false);}
  }
  // A banquet hall: `price` is the price per guest, with the least party (lib/listing-draft.ts).
- const hall=['banquet','cafe'].includes(draft.type),bath=isBath(draft.type),venue=hall||bath;
+ // «Досуг», «Спорт», «Авто» go by the hour as a bath does; only a bath is heated, and «Авто» counts no guests.
+ const hall=['banquet','cafe'].includes(draft.type),bath=isHourlyVenue(draft.type),venue=hall||bath,heated=isBath(draft.type),car=isAuto(draft.type);
  // A bath or a hall is not «жильё»: the screen names what the owner adds.
  const sort=hall?0:bath?1:2;
  // «Сколько стоят сутки?»: what the guest pays, the service's fee (lib/service-dues.ts rates) and what stays, and what similar
@@ -118,7 +119,7 @@ export function PropertyQuick({city,onSave,onGuestMode,onPlace,onReview,onClose,
   {on&&<View style={q.rowBody}>{content}</View>}
  </View>;};
  const anyGuess=(...keys:string[])=>keys.some(guessed);
- const sizeLine=[!venue&&t(forms(draft.rooms,'{n} комната','{n} комнаты','{n} комнат'),{n:draft.rooms}),t(forms(draft.capacity,'до {n} гостя','до {n} гостей','до {n} гостей'),{n:draft.capacity}),draft.area?t('{n} м²',{n:draft.area}):'',!bath&&draft.floor?t('{floor} этаж из {floors}',{floor:draft.floor,floors:draft.floors}):''].filter(Boolean).join(' · ');
+ const sizeLine=[!venue&&t(forms(draft.rooms,'{n} комната','{n} комнаты','{n} комнат'),{n:draft.rooms}),!car&&t(forms(draft.capacity,'до {n} гостя','до {n} гостей','до {n} гостей'),{n:draft.capacity}),draft.area?t('{n} м²',{n:draft.area}):'',!bath&&draft.floor?t('{floor} этаж из {floors}',{floor:draft.floor,floors:draft.floors}):''].filter(Boolean).join(' · ');
  const addressLine=[draft.address,draft.district,draft.city].map(v=>String(v||'').trim()).filter(Boolean).join(' · ');
  const amenityLine=draft.amenities.map(id=>amenities[id]).filter(Boolean).join(', ');
  const rules=RULES.filter(([key])=>!venue||key==='smoking');
@@ -185,7 +186,7 @@ export function PropertyQuick({city,onSave,onGuestMode,onPlace,onReview,onClose,
     {row('kind',t('Тип'),[propertyTypes[draft.type as keyof typeof propertyTypes],draft.ownStaff?t('свой персонал'):''].filter(Boolean).join(' · '),guessed('type'),<KindPicker inline kind={draft.type} ownStaff={draft.ownStaff} onChange={v=>{patch(v);if(v.type)setOpen("");}}/>)}
     {!!stayClass&&row('class',t('Класс'),classLabel(stayClass),!chosenClass,<StayClassPicker value={stayClass} guess={classGuess?.stayClass} reasons={classGuess?.reasons} onChange={v=>{setChosenClass(v);setOpen('');}}/>)}
     {row('size',venue?t('Вместимость'):t('Размер'),sizeLine,anyGuess(...(venue?['capacity']:['rooms','capacity','area','floor'])),<>
-     <View style={q.grid}>{!venue&&<View style={q.half}><Stepper label={t('Комнаты')} value={draft.rooms} text={String(draft.rooms)} min={1} max={20} onChange={v=>patch({rooms:v})}/></View>}<View style={q.half}><Stepper label={bath?t('Вмещает гостей'):t('Гостей')} value={draft.capacity} text={String(draft.capacity)} min={1} max={hall?1000:50} step={hall?10:1} onChange={v=>setDraft(d=>({...d,capacity:v,beds:Math.max(d.beds,v),known:[...new Set([...d.known,'capacity'])]}))}/></View></View>
+     <View style={q.grid}>{!venue&&<View style={q.half}><Stepper label={t('Комнаты')} value={draft.rooms} text={String(draft.rooms)} min={1} max={20} onChange={v=>patch({rooms:v})}/></View>}{!car&&<View style={q.half}><Stepper label={bath?t('Вмещает гостей'):t('Гостей')} value={draft.capacity} text={String(draft.capacity)} min={1} max={hall?1000:50} step={hall?10:1} onChange={v=>setDraft(d=>({...d,capacity:v,beds:Math.max(d.beds,v),known:[...new Set([...d.known,'capacity'])]}))}/></View>}</View>
      <View style={q.grid}>{num('area',t('Площадь, м²'),2000)}{!bath&&num('floor',t('Этаж'),100)}{!venue&&num('floors',t('Этажей в доме'),100)}</View>
     </>)}
     {row('address',t('Адрес'),addressLine,anyGuess('address','district'),<>
@@ -195,9 +196,9 @@ export function PropertyQuick({city,onSave,onGuestMode,onPlace,onReview,onClose,
     </>)}
     {row('prices',t('Цены'),[priceLine,draft.deposit?t('депозит {v}',{v:money(draft.deposit)}):''].filter(Boolean).join(' · '),false,<>
      <View style={q.grid}>{hall?<>{num('price',t('На гостя, ₸'),1000000)}{num('leastGuests',t('Минимум гостей'),1000)}</>:bath?<>{num('hourlyPrice',t('Час, ₸'))}{num('minHours',t('Минимум часов'),24)}</>:<>{num('price',t('Сутки, ₸'))}{num('hourlyPrice',t('Час, ₸ · 0 — нет'))}</>}</View>
-     {bath&&<View style={q.grid}>{num('includedGuests',t('Гостей в цене · 0 — все'),50)}{num('extraGuestPrice',t('Доплата за гостя в час, ₸'),1000000)}</View>}
+     {bath&&!car&&<View style={q.grid}>{num('includedGuests',t('Гостей в цене · 0 — все'),50)}{num('extraGuestPrice',t('Доплата за гостя в час, ₸'),1000000)}</View>}
      <View style={q.grid}>{!venue&&num('nightlyPrice',t('Ночь, ₸ · 0 — нет'))}{num('deposit',t('Депозит, ₸'))}</View>
-     {bath&&<><Stepper label={t('Подготовка перед гостями')} value={draft.prepMinutes||0} text={draft.prepMinutes?(draft.prepMinutes%60?t('{prepMinutes} мин',{prepMinutes:draft.prepMinutes}):t('{v} ч',{v:draft.prepMinutes/60})):t('не нужна')} min={0} max={360} step={30} onChange={v=>patch({prepMinutes:v})}/>
+     {heated&&<><Stepper label={t('Подготовка перед гостями')} value={draft.prepMinutes||0} text={draft.prepMinutes?(draft.prepMinutes%60?t('{prepMinutes} мин',{prepMinutes:draft.prepMinutes}):t('{v} ч',{v:draft.prepMinutes/60})):t('не нужна')} min={0} max={360} step={30} onChange={v=>patch({prepMinutes:v})}/>
       <Text style={q.hint}>{draft.prepMinutes?t('Напомню затопить вовремя и не приму бронь, если до гостей осталось меньше.'):t('Сколько нужно, чтобы затопить. Напомню вовремя и не приму бронь раньше.')}</Text></>}
     </>)}
     {row('amenities',t('Удобства'),amenityLine,false,<View style={q.chips}>{categoryAmenities[kindCategory(draft.type)].map(id=>[id,amenities[id]] as [string,string]).map(([id,label])=>{const on=draft.amenities.includes(id);return chip(id,label,on,()=>patch({amenities:on?draft.amenities.filter(a=>a!==id):[...draft.amenities,id]}));})}</View>)}

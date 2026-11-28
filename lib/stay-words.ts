@@ -3,6 +3,8 @@ import {L} from './i18n';
 // в зале проходит мероприятие. Шаги брони одни и те же (lib/guest-trips.ts, lib/owner-steps.ts), меняются только слова.
 // Списки типов повторяют категории bath и banquet из lib/listings.ts: файл остаётся без зависимостей, его читает и приложение.
 const BATH = ['banya', 'sauna'], HALL = ['banquet', 'cafe'];
+// «Досуг», «Спорт», «Авто» (lib/listings.ts categories, 2026-11-28): one comes for a few hours, as to a bath, and the place is not heated.
+const VISIT = ['loft', 'photostudio', 'meeting', 'karaoke_room', 'playroom', 'gazebo', 'quest', 'field', 'court', 'sporthall', 'billiard', 'gameclub', 'carwash', 'tires', 'carservice', 'detailing'];
 
 export type StayWords = {
   arrive: string; arriveLow: string; arriveGen: string; arriveAcc: string;
@@ -35,6 +37,16 @@ const BATH_WORDS: StayWords = L({
   ofArrive: 'о приходе', arriveOk: 'Приход подтверждён', leaveNotOk: 'Уход пока не подтверждён', notIn: 'гость ещё не пришёл', notOut: 'гость не ушёл',
   waitArrive: 'Ожидаем прихода', untilLeave: 'До ухода',
 });
+const VISIT_WORDS: StayWords = L({
+  arrive: 'Приход', arriveLow: 'приход', arriveGen: 'прихода', arriveAcc: 'приход',
+  stay: 'Время брони', leave: 'Уход', leaveLow: 'уход', leaveGen: 'ухода', ofLeave: 'об уходе', afterLeave: 'после ухода',
+  youIn: 'Вы на месте', youAre: 'Вы на месте', guestIn: 'Гость на месте', aiIn: 'ИИ отметил приход гостя', youInside: 'Время брони идёт', guestInside: 'Гость на месте',
+  leaveOk: 'Уход подтверждён', aiOut: 'ИИ подтвердил уход', guestOut: 'Гость ушёл', canIn: 'Можно приходить',
+  iAmIn: 'Я на месте', swipeIn: 'я на месте', swipeOut: 'мы ушли', swipeGuestOut: 'гость ушёл',
+  done: 'Бронь завершена', rate: 'Оцените место', rateBtn: 'Оценить место', ready: 'Место готово', readyLow: 'место убрано и готово',
+  ofArrive: 'о приходе', arriveOk: 'Приход подтверждён', leaveNotOk: 'Уход пока не подтверждён', notIn: 'гость ещё не пришёл', notOut: 'гость не ушёл',
+  waitArrive: 'Ожидаем прихода', untilLeave: 'До ухода',
+});
 const HALL_WORDS: StayWords = L({
   arrive: 'Начало', arriveLow: 'начало', arriveGen: 'начала', arriveAcc: 'начало',
   stay: 'Мероприятие', leave: 'Окончание', leaveLow: 'окончание', leaveGen: 'окончания', ofLeave: 'об окончании', afterLeave: 'после мероприятия',
@@ -46,7 +58,7 @@ const HALL_WORDS: StayWords = L({
   waitArrive: 'Ожидаем начала', untilLeave: 'До окончания',
 });
 
-export const stayWords = (type?: string | null): StayWords => HALL.includes(type || '') ? HALL_WORDS : BATH.includes(type || '') ? BATH_WORDS : HOME;
+export const stayWords = (type?: string | null): StayWords => HALL.includes(type || '') ? HALL_WORDS : BATH.includes(type || '') ? BATH_WORDS : VISIT.includes(type || '') ? VISIT_WORDS : HOME;
 // Бронь в ответе сервера несёт тип объекта в property_type.
 export const wordsOf = (b?: { property_type?: string | null } | null): StayWords => stayWords(b?.property_type);
 // Жильё говорит прежними словами, баня и зал своими: venueOr(b, 'текст для жилья', 'текст для бани и зала').

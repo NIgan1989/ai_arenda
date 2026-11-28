@@ -2,7 +2,8 @@ import {forms,t} from './i18n';
 // The page of one place for a guest, in the words of its kind. Housing is entered and left by the day,
 // a bath is taken by the hour for a company, a banquet hall is taken for a lunch or an evening at a price per guest.
 // One reading for the app (mobile/src/PropertyListing.tsx): the screen only lays the lines out.
-import {propertyTypes,checkinMethods,isBath,isBanquet} from './listings';
+import {minutesWords,servicesOf} from './venue-services';
+import {propertyTypes,checkinMethods,isBanquet,isHourlyVenue,isAuto} from './listings';
 import {clock,prepWords} from './rental-policy';
 import {venueHours,sessionLine} from './venue-hours';
 type Row=Record<string,any>;
@@ -30,16 +31,18 @@ export type PlaceWords={
 export function placeWords(p:Row):PlaceWords{
  const d=p.details||{},policy=p.policy||{},type=String(d.type||''),name=propertyTypes[type as keyof typeof propertyTypes];
  const how=checkinMethods[d.checkinMethod as keyof typeof checkinMethods],deposit=t('Депозит: {v}',{v:money(policy.deposit||0)}),smoking=d.smoking?t('Курение: разрешено'):t('Курение: запрещено'),area=d.area?t(' · {area} м²',{area:d.area}):'';
- if(isBath(type)){
-  const included=Number(policy.included_guests)||0,above=Number(policy.extra_guest_price)||0,prep=Number(policy.prep_minutes)||0,hour=Number(policy.hourly_price)||0;
-  return {kind:(name||t('Баня'))+area+'\n'+t('Целиком для вашей компании · до {guests}',{guests:guests(Number(p.capacity)||1)}),
-   terms:[t('Бронь по часам, от {v} ч',{v:(policy.min_hours||1)}),
-    ...(included&&above?[t('В цену входит {guests}, каждый следующий: {price} в час',{guests:included+' '+forms(included,'гость','гостя','гостей'),price:money(above)})]:[]),
+ if(isHourlyVenue(type)){
+  const included=Number(policy.included_guests)||0,above=Number(policy.extra_guest_price)||0,prep=Number(policy.prep_minutes)||0,hour=Number(policy.hourly_price)||0,car=isAuto(type);
+  // A car place shows its services, and its price is the cheapest of them («от 3 000 ₸»).
+  const services=servicesOf(d),least=services.length?Math.min(...services.map(s=>s.price)):0;
+  return {kind:(name||t('Баня'))+area+'\n'+(car?t('Бокс на время вашей машины'):t('Целиком для вашей компании · до {guests}',{guests:guests(Number(p.capacity)||1)})),
+   terms:[services.length?t('Услуги: {v}',{v:services.map(s=>s.name+' · '+minutesWords(s.minutes)+' · '+money(s.price)).join('; ')}):t('Бронь по часам, от {v} ч',{v:(policy.min_hours||1)}),
+    ...(included&&above&&!car?[t('В цену входит {guests}, каждый следующий: {price} в час',{guests:included+' '+forms(included,'гость','гостя','гостей'),price:money(above)})]:[]),
     ...(prep?[t('Бронируйте не позже чем за {v}: столько готовят к вашему приходу',{v:prepWords(prep)})]:[]),
     how||t('Как попасть внутрь, уточняется')],
    extra:[deposit],rulesTitle:t('Правила'),allowed:smoking,
    addressNote:t('Точный адрес доступен после подтверждения брони. Свободное время проверим на выбранные часы.'),
-   price:hour?money(hour):money(p.price),priceNote:hour?t('За час · от {v} ч',{v:(policy.min_hours||1)}):t('За сутки'),choose:t('Выбрать время')};
+   price:least?t('от {v}',{v:money(least)}):hour?money(hour):money(p.price),priceNote:least?t('За услугу'):hour?t('За час · от {v} ч',{v:(policy.min_hours||1)}):t('За сутки'),choose:least?t('Выбрать услугу'):t('Выбрать время')};
  }
  if(isBanquet(type)){
   const least=Math.max(1,Number(policy.included_guests)||1),each=Number(policy.extra_guest_price)||Math.round((Number(p.price)||0)/least);

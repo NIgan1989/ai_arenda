@@ -9,12 +9,12 @@ import {ThinkingLine} from './Thinking';
 import {C,type} from './styles';
 import {request} from './api';
 import {EditButton,EditField,EditNote,EditRow,EditSheet,editStyles} from './EditSheet';
-import {isBanquet,isBath} from '../../lib/listings';
+import {isBanquet,isBath,isHourlyVenue} from '../../lib/listings';
 type Row=Record<string,any>;
 const pretty=(v:string)=>v.replace(/^\+7(\d{3})(\d{3})(\d{2})(\d{2})$/,'+7 $1 $2 $3 $4');
 const since=(at:number)=>t('с {v}',{v:dateText(at*1000,{timeZone:'Asia/Almaty',day:'numeric',month:'long'})});
 // Who meets the guests, by the kind of the object: a home has no bath attendant.
-const whoFor=(kind:string)=>isBath(kind)?t('Администратор или банщик'):isBanquet(kind)?t('Администратор зала'):t('Тот, кто встречает гостей и отмечает «Занято»');
+const whoFor=(kind:string)=>isBath(kind)?t('Администратор или банщик'):isBanquet(kind)?t('Администратор зала'):isHourlyVenue(kind)?t('Администратор или мастер на смене'):t('Тот, кто встречает гостей и отмечает «Занято»');
 
 export function PropertyStaff({propertyId,kind,onBack,onClose,onChanged}:{propertyId:string;kind?:string;onBack:()=>void;onClose:()=>void;onChanged?:(name:string)=>void}){
  const [state,setState]=useState<Row|null>(null),[busy,setBusy]=useState(false),[error,setError]=useState(''),[note,setNote]=useState(''),[phone,setPhone]=useState('+7'),[confirm,setConfirm]=useState(false);
