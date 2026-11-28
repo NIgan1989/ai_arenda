@@ -1181,7 +1181,7 @@ export class RentalService {
   }
   async changeContext(bookingId:string,roleValue:unknown){
     const role=parseRole(roleValue);if(role==='cleaner')throw new DomainError('Изменения проживания доступны гостю и владельцу.',403);await this.requireRole(role);
-    const b=await this.one(`SELECT b.*,p.owner_id,p.price,p.cleaning_minutes,p.title,p.capacity FROM bookings b JOIN properties p ON p.id=b.property_id WHERE b.id=? AND ${role==='owner'?'p.owner_id':'b.guest_id'}=?`,bookingId,this.userId);
+    const b=await this.one(`SELECT b.*,p.owner_id,p.price,p.cleaning_minutes,p.title,p.capacity,${TYPE_SQL} FROM bookings b JOIN properties p ON p.id=b.property_id WHERE b.id=? AND ${role==='owner'?'p.owner_id':'b.guest_id'}=?`,bookingId,this.userId);
     if(!b)throw new DomainError('Бронь не найдена.',404);
     const terms=await this.one('SELECT * FROM booking_terms WHERE booking_id=?',bookingId),policy=await this.one('SELECT * FROM property_policies WHERE property_id=?',b.property_id);
     if(b.status!=='confirmed'||!terms||terms.actual_checkout||terms.checkout_reported_at)throw new DomainError('Изменение доступно только для действующего проживания до сообщения о выезде.',409);
@@ -1257,6 +1257,8 @@ export class RentalService {
     if(q.amount!==c.amount||q.baseVersion!==c.base_version||q.policyVersion!==c.policy_version)throw new DomainError('Стоимость изменилась. Нужен новый расчёт.',409);
     if(automatic&&(!q.automatic||role!=='owner'))throw new DomainError('Автоматическое изменение выходит за полномочия владельца.',403);
     const job=await this.one("SELECT * FROM cleaning_jobs WHERE booking_id=? AND status IN ('open','assigned')",bookingId),movesCleaning=b.end!==c.end;
+    // The new checkout keeps to the night rule too: a night one moves the cleaning to the morning (lib/night-hours.ts).
+    const w=job&&movesCleaning?await cleaningWindow(this.db,b.property_id,bookingId,Number(c.end),Number(c.occupied_until)-Number(c.end),isVenue(b.property_type)):{start:Number(c.end),end:Number(c.occupied_until)};
     const gate="EXISTS(SELECT 1 FROM booking_changes c JOIN booking_terms t ON t.booking_id=c.booking_id WHERE c.id=? AND c.status='accepted' AND t.version=c.base_version)";
     const statements=[
       this.query("UPDATE booking_changes SET status='accepted',decided_at=? WHERE id=? AND status='pending' AND expires_at>? AND EXISTS(SELECT 1 FROM booking_terms WHERE booking_id=? AND version=? AND actual_checkout IS NULL AND checkout_reported_at IS NULL AND paid_amount<=?) AND EXISTS(SELECT 1 FROM property_policies WHERE property_id=? AND version=? AND (?=0 OR mandate_until=0 OR mandate_until>?)) AND EXISTS(SELECT 1 FROM bookings WHERE id=? AND status='confirmed')",now(),changeId,now(),bookingId,c.base_version,c.amount,b.property_id,c.policy_version,automatic?1:0,now(),bookingId),
@@ -1268,11 +1270,11 @@ export class RentalService {
     if(c.start>b.start)statements.push(extendCleaningBefore(this.db,b,c.start,gate,changeId));
     // The assigned cleaner keeps the job at its new time unless that time clashes with the cleaner's other work;
     // the cleaner is told and can step back in the job card. A clash, or a move of more than three hours, still asks again.
-    const keeps=!!job?.assigned_to&&movesCleaning&&job.status==='assigned'&&Math.abs(c.end-job.start)<=KEEP_SHIFT&&!await this.one("SELECT id FROM cleaning_jobs WHERE id<>? AND assigned_to=? AND status IN ('assigned','in_progress','submitted') AND start<? AND end>?",job.id,job.assigned_to,c.occupied_until,c.end);
+    const keeps=!!job?.assigned_to&&movesCleaning&&job.status==='assigned'&&Math.abs(w.start-job.start)<=KEEP_SHIFT&&!await this.one("SELECT id FROM cleaning_jobs WHERE id<>? AND assigned_to=? AND status IN ('assigned','in_progress','submitted') AND start<? AND end>?",job.id,job.assigned_to,w.end,w.start);
     if(job&&movesCleaning&&keeps){
       const at=(v:number)=>new Intl.DateTimeFormat('ru-RU',{day:'numeric',month:'long',hour:'2-digit',minute:'2-digit',timeZone:'Asia/Almaty'}).format(new Date(v*1000));
-      statements.push(this.query(`UPDATE cleaning_jobs SET start=?,end=? WHERE id=? AND status='assigned' AND assigned_to=? AND ${gate}`,c.end,c.occupied_until,job.id,job.assigned_to,changeId),
-        this.query(`INSERT OR IGNORE INTO notifications SELECT ?,?,?,?,?,? WHERE ${gate}`,id(),job.assigned_to,'Гость изменил даты: уборка «'+(b.title||'жильё')+'» теперь с '+at(c.end)+' до '+at(c.occupied_until)+'. Вы остаётесь назначены. Если время не подходит, откажитесь в карточке задания.','cleaner:reschedule:'+changeId,0,now(),changeId));
+      statements.push(this.query(`UPDATE cleaning_jobs SET start=?,end=? WHERE id=? AND status='assigned' AND assigned_to=? AND ${gate}`,w.start,w.end,job.id,job.assigned_to,changeId),
+        this.query(`INSERT OR IGNORE INTO notifications SELECT ?,?,?,?,?,? WHERE ${gate}`,id(),job.assigned_to,'Гость изменил даты: уборка «'+(b.title||'жильё')+'» теперь с '+at(w.start)+' до '+at(w.end)+'. Вы остаётесь назначены. Если время не подходит, откажитесь в карточке задания.','cleaner:reschedule:'+changeId,0,now(),changeId));
     }else if(job&&movesCleaning){
       statements.push(this.query(`UPDATE cleaning_jobs SET start=?,end=?,assigned_to=NULL,status='open' WHERE id=? AND status IN ('open','assigned') AND ${gate}`,c.end,c.occupied_until,job.id,changeId),this.query(`UPDATE applications SET status='rejected' WHERE job_id=? AND ${gate}`,job.id,changeId));
       if(job.assigned_to)statements.push(this.query(`INSERT OR IGNORE INTO notifications SELECT ?,?,?,?,?,? WHERE ${gate}`,id(),job.assigned_to,'Время уборки изменилось и совпало с другой вашей уборкой. Назначение снято: проверьте новое время и откликнитесь повторно.','cleaner:reschedule:'+changeId,0,now(),changeId));

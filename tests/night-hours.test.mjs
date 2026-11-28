@@ -71,3 +71,14 @@ test('the place stays closed between a night checkout and the morning cleaning',
   assert.ok(await f.guest.bookingQuote({propertyId:f.property,start:iso(day+12*3600),end:iso(day+14*3600),guests:1,billingMode:'hourly'}));
  }finally{f.db.close();}
 });
+
+test('the map strip sees a morning cleaning holding the place from the night checkout',async()=>{
+ const {busyAround}=await load('arrival-ready');
+ const f=await fixture();try{
+  const day=Math.floor(Date.now()/1000/86400+3)*86400-18000,out=day+2*3600+1800;
+  f.db.raw.prepare('UPDATE bookings SET start=?,end=?,occupied_until=? WHERE id=?').run(out-7200,out,out+5400,f.booking);
+  f.db.raw.prepare('UPDATE cleaning_jobs SET start=?,end=? WHERE id=?').run(day+9*3600,day+9*3600+5400,f.job.id);
+  const job=(await busyAround(f.db,day+5*3600,day+7*3600,Math.floor(Date.now()/1000))).find(x=>x.kind==='job');
+  assert.equal(job.start,out);
+ }finally{f.db.close();}
+});
