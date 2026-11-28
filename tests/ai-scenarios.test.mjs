@@ -32,3 +32,8 @@ test('the chat knows what the service has and does not search the catalog for un
   assert.equal(payload.reasoning.effort,'low');
  }finally{globalThis.fetch=original;}
 });
+test('the catalog tool is not offered for a message that names nothing about a stay',async()=>{
+ const {mayNeedCatalog}=await load('administrator-search');
+ for(const t of ['Хочу помыть машину','Hochu pomyt mashinu','Вызови такси','Привет'])assert.equal(mayNeedCatalog(t),false,t);
+ for(const t of ['Найди жильё в Павлодаре','а подешевле?','на завтра','на троих','баня на вечер','Сколько стоит?','Есть свободное?','Naidi zhilyo v Pavlodare na sutki','Түнге пәтер керек'])assert.equal(mayNeedCatalog(t),true,t);
+});

@@ -15,6 +15,10 @@ export function isPropertySearch(text: string) {
   if (!SEARCH_SUBJECT.test(text) || NOT_A_SEARCH.test(text)) return false;
   return SEARCH_VERB.test(text) || SEARCH_NEED.test(text) && !HOW_QUESTION.test(text);
 }
+// The catalog tool is offered to the model only when the message can be about a stay or a venue at all.
+// "Хочу помыть машину" names nothing of that: the model then has to answer in words, it cannot fall back to a list.
+const STAY_WORDS=/(?:квартир|жиль|жил[её]|студи|апарт|хостел|гостиниц|отел|(?:^|[^а-яё])дом|комнат|номер|бан[яиюеь]|саун|зал|банкет|кафе|мероприят|праздн|свадьб|юбиле|(?:^|[^а-яё])той|ноч|сутк|суточ|(?:^|[^а-яё])час|почасов|завтра|сегодня|выходн|январ|феврал|март|апрел|(?:^|[^а-яё])ма[йя]|июн|июл|август|сентябр|октябр|ноябр|декабр|числ|дешев|дорож|цен[аеуы]|стоим|стоит|сколько|вариант|подход|есть\s+(?:что|ли)|бюджет|тенге|₸|гост|район|рядом|центр|найд|найт|подбер|подбор|покаж|ищ[уи]|свобод|сним|снят|брон|двоих|троих|четверых|\d|пәтер|(?:^|[^а-яәіңғүұқөһ])үй|монша|тәулік|қонақ|kvartir|zhil|sutk|nomer|hotel|hostel|flat|apartment|room|stay|house|sauna|bany|banquet|hall|naid|nayd|snyat|book|night|tomorrow|today|cheap|price)/iu;
+export function mayNeedCatalog(text:string){return STAY_WORDS.test(text);}
 export function isSearchRefinement(text:string){
  return /(?:дешевле|подешевле|дороже|завтра|сегодня|до\s+\d|[1-9]\s*[-–]?\s*комнат|однокомнат|двухкомнат|трехкомнат|для\s+\d|на\s+\d+\s*(?:сут|час|дн))/iu.test(text)&&!/(?:отмен|оплат|продл|заброни|оформи|уборк|чек|проблем|жалоб)/iu.test(text);
 }

@@ -37,7 +37,7 @@ import {publicPoint} from './map-workspace';
 import {streetAddress} from './job-place';
 import {createAIBudgetLifecycle} from './ai-budget';
 import {aiDataPermission} from './ai-data-permission';
-import {administratorSearch,isPropertySearch,isSearchRefinement,previousAdministratorSearch} from './administrator-search';
+import {administratorSearch,isPropertySearch,isSearchRefinement,mayNeedCatalog,previousAdministratorSearch} from './administrator-search';
 import {readAdministratorProcesses,processReadIntent} from './administrator-process-read';
 import {accrueCommission,accrueAiBookingFee,recalcCommission} from './platform-billing';
 import {offerPriceAdvice,ownerPriceSuggestions,decidePriceSuggestion} from './price-advice';
@@ -1583,7 +1583,7 @@ export class RentalService {
       const history=await this.all('SELECT sender,body FROM (SELECT sender,body,created_at FROM messages WHERE user_id=? AND scope=? ORDER BY created_at DESC LIMIT 8) ORDER BY created_at',this.userId,role);
       const context=assistantContext(await this.roleState(role),role);
       const budget=createAIBudgetLifecycle(this.db,this.userId,config);
-      const generated=await generateAnswer(config,text,role,history as {sender:string;body:string}[],reply.text,context,toolExecutor,{...budget,beforeRequest:async body=>{if(!(await aiDataPermission(this)).allowed)throw new DomainError('Передача данных отозвана. Поиск и формы доступны.');await budget.beforeRequest(body);}},role==='guest'?readSearch:undefined,()=>readAdministratorProcesses(this,role),await languageOf(this.db,this.userId));
+      const generated=await generateAnswer(config,text,role,history as {sender:string;body:string}[],reply.text,context,toolExecutor,{...budget,beforeRequest:async body=>{if(!(await aiDataPermission(this)).allowed)throw new DomainError('Передача данных отозвана. Поиск и формы доступны.');await budget.beforeRequest(body);}},role==='guest'&&(mayNeedCatalog(text)||!!Object.keys(current).length)?readSearch:undefined,()=>readAdministratorProcesses(this,role),await languageOf(this.db,this.userId));
       reply.text=generated.text;
       mode=generated.mode;errorCode=generated.errorCode;commands=generated.commands||[];
       if(generated.search){search=generated.search;reply.action='properties';}
