@@ -12,18 +12,19 @@ import {money,type Row} from './model';
 import {EditSheet,EditButton,EditRow,EditSwitch,EditCount,EditChips,EditHeading,EditNote,editDot,editStyles as e,type EditMenuItem} from './EditSheet';
 import {type MenuIcon} from './AccountRows';
 import {SwipeConfirm} from './SwipeConfirm';
+import {VenueHoursRows,venueForm,venueRequest,type VenueForm} from './VenueHours';
 const R=T.radius;
 const clock=(v:number)=>String(Math.floor(v/60)).padStart(2,'0')+':'+String(v%60).padStart(2,'0');
 export const readinessLabels:Row=L({ready:'Готово к заселению',inspection:'Ожидает проверки',occupied:'Гость проживает',awaiting_cleaning:'Ожидает уборки',cleaning:'Идёт уборка',maintenance:'На ремонте',blocked:'Заезды закрыты'});
 // The note goes to the server as it is; the title is shown in the language of the app.
 const CLOSE:[string,string,string][]=[['maintenance','На ремонте','Владелец закрыл жильё на ремонт.'],['blocked','Закрыть заезды','Владелец временно закрыл заезды.']];
-type Values={dailyPrice:number;hourlyPrice:number;minHours:number;nightlyPrice:number;deposit:number;cleaningFee:number;maxDiscountPercent:number;minimumRate:number;maxExtensionHours:number;autoConfirm:boolean;autoExtension:boolean};
-export function controlValues(property:Row):Values{const p=property.policy||{};return {dailyPrice:Number(property.price)||0,hourlyPrice:p.hourly_price||0,minHours:p.min_hours||2,nightlyPrice:p.nightly_price||0,deposit:p.deposit||0,cleaningFee:p.cleaning_fee||0,maxDiscountPercent:p.max_discount_percent||0,minimumRate:p.minimum_rate||0,maxExtensionHours:p.max_extension_hours||0,autoConfirm:!!p.auto_confirm,autoExtension:!!p.auto_extension};}
+type Values={dailyPrice:number;hourlyPrice:number;minHours:number;nightlyPrice:number;deposit:number;cleaningFee:number;maxDiscountPercent:number;minimumRate:number;maxExtensionHours:number;autoConfirm:boolean;autoExtension:boolean;venue:VenueForm|null};
+export function controlValues(property:Row):Values{const p=property.policy||{};return {dailyPrice:Number(property.price)||0,hourlyPrice:p.hourly_price||0,minHours:p.min_hours||2,nightlyPrice:p.nightly_price||0,deposit:p.deposit||0,cleaningFee:p.cleaning_fee||0,maxDiscountPercent:p.max_discount_percent||0,minimumRate:p.minimum_rate||0,maxExtensionHours:p.max_extension_hours||0,autoConfirm:!!p.auto_confirm,autoExtension:!!p.auto_extension,venue:venueForm(String(property.details?.type||property.type||''),p.venue_hours)};}
 // What goes to the server: the visible values plus everything this screen does not show, unchanged.
 export function controlRequest(property:Row,v:Values):Row{const p=property.policy||{};
  return {dailyPrice:v.dailyPrice,hourlyPrice:v.hourlyPrice,minHours:v.minHours,nightlyPrice:v.nightlyPrice,deposit:v.deposit,cleaningFee:v.cleaningFee,cleaningBudget:Math.max(p.cleaning_budget||0,v.cleaningFee),
   checkinTime:clock(p.checkin_minutes??840),checkoutTime:clock(p.checkout_minutes??720),houseRules:p.house_rules||property.description||tr('Правила уточняются.'),
-  maxDiscountPercent:v.maxDiscountPercent,minimumRate:v.minimumRate,autoConfirm:v.autoConfirm,autoExtension:v.autoExtension,maxExtensionHours:v.autoExtension?Math.max(1,v.maxExtensionHours):v.maxExtensionHours,expectedVersion:p.version||0};}
+  maxDiscountPercent:v.maxDiscountPercent,minimumRate:v.minimumRate,autoConfirm:v.autoConfirm,autoExtension:v.autoExtension,maxExtensionHours:v.autoExtension?Math.max(1,v.maxExtensionHours):v.maxExtensionHours,...venueRequest(v.venue),expectedVersion:p.version||0};}
 export const pricesLine=(v:Values)=>[tr('{v} / сутки',{v:money(v.dailyPrice)}),v.hourlyPrice>0&&tr('{v} / час',{v:money(v.hourlyPrice)}),v.nightlyPrice>0&&tr('{v} / ночь',{v:money(v.nightlyPrice)}),v.deposit>0&&tr('депозит {v}',{v:money(v.deposit)})].filter(Boolean).join(' · ');
 export const aiLine=(v:Values)=>[v.autoConfirm?tr('подтверждает брони'):tr('брони подтверждаете вы'),v.autoExtension&&tr('продлевает до {v} ч',{v:Math.max(1,v.maxExtensionHours)}),v.maxDiscountPercent>0&&tr('скидка до {maxDiscountPercent}%',{maxDiscountPercent:v.maxDiscountPercent})].filter(Boolean).join(' · ');
 
@@ -86,6 +87,7 @@ export function PropertyControl({property,busy,onSave,onReadiness,upcoming,note,
    {!staff&&field('cleaningFee',tr('Уборка'),cost(v.cleaningFee),{max:1000000,hint:tr('Столько получит исполнитель'),last:true})}
   </View>
   {priced&&<EditNote text={tr('Новые цены действуют для новых заявок.')}/>}
+  {v.venue&&<VenueHoursRows kind={String(property.details?.type||property.type||'')} value={v.venue} busy={busy} cleaningMinutes={Number(property.cleaning_minutes)||0} onChange={venue=>set({venue})}/>}
   <EditHeading title={tr('Решает автопилот')}/>
   <View>
    <EditSwitch icon="bookings" title={tr('Подтверждать брони')} line={staff?tr('Принимает заявки гостей без вас'):tr('Принимает заявки и заказывает уборку')} value={v.autoConfirm} disabled={busy} onChange={x=>set({autoConfirm:x})}/>

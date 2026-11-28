@@ -17,6 +17,7 @@ import {placeNow} from './own-place';
 import {BusyMark,busyNow,hhmm} from './BusyMark';
 import {isHome} from '../../lib/home-cleaning';
 import {KindIcon} from './KindIcon';
+import {venueSummary} from '../../lib/venue-hours';
 
 const tones:Record<string,[string,string]>={success:[C.successSoft,C.success],warning:[C.warningSoft,C.warning],active:[C.accentSoft,C.accentPressed],neutral:[C.surfaceAlt,C.muted],danger:[C.dangerSoft,C.danger]};
 
@@ -100,7 +101,7 @@ function PropertyCard({property:p,first,bookings,busy,open,onToggle,onEdit,onSet
     [t('Адрес'),[p.city,p.district,p.address].filter(Boolean).join(', ')],
     [t('Гостей'),[bath||hall?t('до {n}',{n:p.capacity||1}):t('{n} · {rooms} комн.',{n:p.capacity||1,rooms:p.rooms||1}),d.area?t('{area} м²',{area:d.area}):''].filter(Boolean).join(' · ')],
     [t('Цена'),hall?(perGuest?t('{v} за гостя · от {least} гост.',{v:money(perGuest),least}):t('не задана')):bath&&policy.hourly_price?[t('{v} / ч',{v:money(policy.hourly_price)}),policy.min_hours?t('от {minHours} ч',{minHours:policy.min_hours}):''].filter(Boolean).join(' · '):[t('{v} / сутки',{v:money(p.price)}),policy.hourly_price?t('{v} / ч',{v:money(policy.hourly_price)}):''].filter(Boolean).join(' · ')],
-    hall&&[t('Время'),t('обед 12:00–17:00 · вечер 18:00–00:00')],
+    (hall||bath)&&[t('Время'),venueSummary(d.type,policy.venue_hours)],
     !bath&&!hall&&[t('Заезд'),t('{v} · выезд {v2}',{v:clock(policy.checkin_minutes??840),v2:clock(policy.checkout_minutes??720)})],
     [t('Фото'),p.photos?.length?String(p.photos.length):t('нет, добавьте, чтобы показать гостям')],
     p.rating?.count>0&&[t('Оценка'),'★ '+String(p.rating.average).replace('.',',')+' ('+p.rating.count+')'],

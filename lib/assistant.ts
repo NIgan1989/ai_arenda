@@ -1,9 +1,11 @@
 import {DomainError,number,type Role} from './domain';
 import {stayWords} from './stay-words';
+import {nightRule} from './night-hours';
 type Row=Record<string,any>;
 // Housing is entered and left; a bath and a hall are booked for hours, so their hints speak of the booking.
 const home=(b:Row)=>stayWords(b.property_type).arrive==='Заезд';
-export const defaultAssistantSettings=Object.freeze({mode:'proactive',leadMinutes:60,repeatMinutes:60,quietEnabled:false,quietStart:'22:00',quietEnd:'08:00',urgentInQuiet:true,version:0});
+// Quiet hours are on by default, 23:00–08:00 like the autopilot's own night (lib/night-hours.ts); each person can turn them off.
+export const defaultAssistantSettings=Object.freeze({mode:'proactive',leadMinutes:60,repeatMinutes:60,get quietEnabled(){return nightRule.on;},quietStart:'23:00',quietEnd:'08:00',urgentInQuiet:true,version:0});
 function minute(value:unknown){if(typeof value!=='string'||!/^([01]\d|2[0-3]):[0-5]\d$/.test(value))throw new DomainError('Укажите время в формате ЧЧ:ММ.');const [h,m]=value.split(':').map(Number);return h*60+m;}
 export function assistantSettingsInput(body:Row){
   if(!['reactive','important','proactive'].includes(body.mode))throw new DomainError('Выберите режим инициативности.');

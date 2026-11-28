@@ -10,9 +10,10 @@ export function recordSpan(start:number,end?:number){
  return day(start)===day(end)?day(start)+', '+time(start)+'–'+time(end):day(start)+', '+time(start)+' → '+day(end)+', '+time(end);
 }
 
-// A hall's request said in one line beside its sum (audit of 2026-11-22): «Обед · 80 гостей · Свадьба, той».
+// A hall's request said in one line beside its sum (audit of 2026-11-22): «15:00–24:00 · 80 гостей · Свадьба, той»;
+// each hall has its own times of events (lib/venue-hours.ts), so the time is said by the clock.
 export function hallLine(item:Record<string,any>){
  if(!isBanquet(item.property_type))return '';
- const evening=((Number(item.start)+18000)%86400)===18*3600,occasion=item.terms?.occasion;
- return [evening?t('Вечер'):t('Обед'),item.guests?t('{n} гостей',{n:item.guests}):'',occasion?(occasion==='other'?t('Банкет'):occasionLabel(occasion)):''].filter(Boolean).join(' · ');
+ const clock=(v:number)=>{const m=Math.round(((v+18000)%86400)/60);return String(Math.floor(m/60)).padStart(2,'0')+':'+String(m%60).padStart(2,'0');},end=clock(Number(item.end)),occasion=item.terms?.occasion;
+ return [clock(Number(item.start))+(item.end?'–'+(end==='00:00'?'24:00':end):''),item.guests?t('{n} гостей',{n:item.guests}):'',occasion?(occasion==='other'?t('Банкет'):occasionLabel(occasion)):''].filter(Boolean).join(' · ');
 }

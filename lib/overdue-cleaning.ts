@@ -2,6 +2,7 @@ import {epoch,uuid,q,rows,type OperationConfig} from './operation-core';
 import {OVERDUE_ESCALATE} from './overdue-text';
 import {ruleFor,minutesLabel,DECISION_RULES} from './decision-rules';
 import {shortWindowNote} from './arrival-shift';
+import {isQuiet,morningAfter} from './night-hours';
 // The shortest wait an owner can choose: the sweep picks the job up then and checks the owner's own time.
 const SILENT_MIN=Math.min(...DECISION_RULES.find(r=>r.key==='overdue_job')!.options)*60;
 type Row=Record<string,any>;
@@ -21,6 +22,8 @@ export async function releaseWindow(db:D1Database,job:Row,at:number){
  const outside=await q(db,'SELECT MIN(x.start) start FROM external_blocks x JOIN calendar_sources c ON c.id=x.source_id WHERE x.property_id=? AND c.enabled=1 AND x.end>?',job.property_id,at).first<Row>();
  if(outside?.start&&Number(outside.start)<=at)return null;
  const limits=[next?.start,outside?.start].filter(v=>v!=null&&v!==undefined).map(Number);
+ // At night nobody comes: the new window opens in the morning when the next guest leaves room for it (lib/night-hours.ts).
+ if(isQuiet(at)){const morning=morningAfter(at),late=limits.length?Math.min(morning+length,...limits):morning+length;if(late-morning>=Math.min(length,3600))return {start:morning,end:late};}
  const end=limits.length?Math.min(at+length,...limits):at+length;
  return end-at>=1800?{start:at,end}:null;
 }
@@ -48,7 +51,7 @@ async function sweepUnclaimed(db:D1Database,at:number,result:Row){
     q(db,"UPDATE cleaning_jobs SET start=?,end=?,overdue_step=1 WHERE id=? AND version=? AND status='open' AND assigned_to IS NULL AND overdue_step=0",window.start,window.end,j.id,j.version),
     // Answers to the old time do not count for the new one: cleaners answer again.
     q(db,"UPDATE applications SET status='rejected' WHERE job_id=? AND status='pending' AND EXISTS(SELECT 1 FROM cleaning_jobs WHERE id=? AND overdue_step=1 AND end=?)",j.id,j.id,window.end),
-    q(db,"INSERT OR IGNORE INTO notifications SELECT ?,?,?,?,0,? WHERE EXISTS(SELECT 1 FROM cleaning_jobs WHERE id=? AND overdue_step=1 AND end=?)",uuid(),j.owner_id,'ИИ-администратор: никто не взял уборку «'+title+'» вовремя. Я продлил поиск до '+until+'.'+why,'owner:unclaimed-reposted:'+j.id+':'+j.end,at,j.id,window.end),
+    q(db,"INSERT OR IGNORE INTO notifications SELECT ?,?,?,?,0,? WHERE EXISTS(SELECT 1 FROM cleaning_jobs WHERE id=? AND overdue_step=1 AND end=?)",uuid(),j.owner_id,(window.start>at+600?'ИИ-администратор: ночью уборку «'+title+'» никто не взял. Утром ищу исполнителя снова, уборка с '+new Intl.DateTimeFormat('ru-RU',{hour:'2-digit',minute:'2-digit',timeZone:'Asia/Almaty'}).format(new Date(window.start*1000))+' до '+until+'.':'ИИ-администратор: никто не взял уборку «'+title+'» вовремя. Я продлил поиск до '+until+'.')+why,'owner:unclaimed-reposted:'+j.id+':'+j.end,at,j.id,window.end),
     q(db,"INSERT INTO audit_events SELECT ?,'ai-administrator',?,'job.unclaimed_reposted',? WHERE EXISTS(SELECT 1 FROM cleaning_jobs WHERE id=? AND overdue_step=1 AND end=?)",uuid(),j.id,at,j.id,window.end)]);
    if(r[0].meta.changes)result.reposted++;continue;
   }

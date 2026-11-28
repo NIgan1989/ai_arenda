@@ -62,7 +62,7 @@ const BATH_LINE = L({ placeholder: 'Баня на 6 человек сегодн�
 const GUEST_BANQUET: HeadChip[] = L([
   { id: 'toi', title: 'Той', hint: 'Той или свадьба: зал на вечер субботы', action: 'toi' },
   { id: 'party', title: 'Юбилей', hint: 'Юбилей или праздник: зал на вечер субботы', action: 'party' },
-  { id: 'memorial', title: 'Поминки', hint: 'Поминки, ас: зал на завтра, на обед', action: 'memorial' }
+  { id: 'memorial', title: 'Поминки', hint: 'Поминки, ас: зал на завтра, днём', action: 'memorial' }
 ]);
 const BANQUET_LINE = L({ placeholder: 'Той на 150 человек 5 декабря', shortPlaceholder: 'Той на 150, 5 декабря' });
 /** Evening and night in Kazakhstan: from 18:00 to 06:00. */

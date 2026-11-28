@@ -24,7 +24,7 @@ export const isVenue=(type?:string)=>kindCategory(type)!=='stay';
 // The largest party: fifty in a home or a bath, a thousand in a banquet hall.
 export const maxGuests=(type?:string)=>isBanquet(type)?1000:50;
 // The two slots of a banquet day, Kazakhstan time; the evening ends at midnight.
-export const banquetSlots:Record<string,{label:string;from:string;to:string}>=L({lunch:{label:'Обед',from:'12:00',to:'17:00'},evening:{label:'Вечер',from:'18:00',to:'00:00'}});
+export const banquetSlots:Record<string,{label:string;from:string;to:string}>=L({lunch:{label:'Днём',from:'12:00',to:'17:00'},evening:{label:'Вечер',from:'18:00',to:'00:00'}});
 // What the hall is taken for. A memorial meal is spoken of quietly everywhere: no festive words, no celebration.
 // Every kind of event a hall in Kazakhstan is taken for (2026-11-22): the family тои, the holidays, work events and
 // the memorial meals. 'toi', 'party' and 'memorial' are the old ids and stay.

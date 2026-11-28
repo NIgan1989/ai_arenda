@@ -44,12 +44,13 @@ export function arrivalCodes(p:Row,busy:Busy[],steps:number[],length:number,now:
  return steps.map(t=>!fitsAt(p,busy,t,length,now,ready)?'-':readyAt(p,busy,t,now)?'r':'c').join('');
 }
 // What the search fetches once for the whole strip: stays (a booking keeps its home till its end plus the cleaning),
-// cleanings and the blocks of other sites, from now to the end of the last step's stay.
+// cleanings and the blocks of other sites, from now to the end of the last step's stay. A cleaning not done yet holds
+// the home from the checkout before it: after a night checkout it waits for the morning (lib/night-hours.ts).
 export async function busyAround(db:D1Database,from:number,to:number,now:number):Promise<Busy[]>{
  const all=async(sql:string,...v:unknown[])=>((await db.prepare(sql).bind(...v).all()).results||[]) as Row[];
  const [stays,jobs,external]=await Promise.all([
   all("SELECT b.property_id,b.start,b.end,b.occupied_until until FROM bookings b JOIN properties p ON p.id=b.property_id WHERE (b.status='confirmed' OR (b.status='requested' AND b.expires_at>?)) AND b.start<?+p.cleaning_minutes*60 AND b.occupied_until>?",now,to,Math.min(from,now)),
-  all("SELECT j.property_id,j.start,j.end,j.status FROM cleaning_jobs j JOIN properties p ON p.id=j.property_id WHERE j.status IN ('open','assigned','in_progress','submitted','completed') AND j.start<?+p.cleaning_minutes*60 AND j.end>?",to,Math.min(from,now)-6*3600),
+  all("SELECT j.property_id,CASE WHEN j.status IN ('open','assigned') THEN MIN(j.start,COALESCE((SELECT end FROM bookings WHERE id=j.booking_id),j.start)) ELSE j.start END start,j.end,j.status FROM cleaning_jobs j JOIN properties p ON p.id=j.property_id WHERE j.status IN ('open','assigned','in_progress','submitted','completed') AND CASE WHEN j.status IN ('open','assigned') THEN MIN(j.start,COALESCE((SELECT end FROM bookings WHERE id=j.booking_id),j.start)) ELSE j.start END<?+p.cleaning_minutes*60 AND j.end>?",to,Math.min(from,now)-6*3600),
   all('SELECT x.property_id,x.start,x.end FROM external_blocks x JOIN calendar_sources s ON s.id=x.source_id JOIN properties p ON p.id=x.property_id WHERE s.enabled=1 AND x.start<?+p.cleaning_minutes*60 AND x.end>?',to,Math.min(from,now)),
  ]);
  // A finished cleaning no longer holds the home; it only says the home was made ready.

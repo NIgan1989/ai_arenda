@@ -14,6 +14,7 @@ import {recordSpan} from '../../lib/record-span';
 import {homeKinds,homeMinutes,homeAdvice,homeRooms,HOME_MAX_ROOMS,HOME_MAX_WINDOWS,HOME_MIN_FEE,HOME_FEE_STEP,type HomeKind,type HomeDeal} from '../../lib/home-cleaning';
 import {SwipeConfirm} from './SwipeConfirm';
 import {isBanquet,isBath} from '../../lib/listings';
+import {venueHours,sessionLine,hhmm,type Session} from '../../lib/venue-hours';
 import {OCCASIONS,occasionTitle} from './ai-request';
 import {AddressField} from './AddressSuggest';
 import {LineRow,PopSheet,SheetPane,useInSheet} from './PopSheet';
@@ -74,17 +75,21 @@ export function GuestsRow({value,max,step=1,disabled,onChange}:{value:number;max
 }
 // The stay a request opens with: from the search the place was found by, or from a booking check being changed.
 export type StayStart={mode?:StayMode;start?:number;end?:number;guests?:number;occasion?:string};
-type Slot='lunch'|'evening';
-const SLOT:Record<Slot,{from:number;hours:number}>={lunch:{from:12*60,hours:5},evening:{from:18*60,hours:6}};
-const slotTitle=(slot:Slot)=>slot==='lunch'?tr('Обед')+' 12:00–17:00':tr('Вечер')+' 18:00–00:00';
-// A slot of a hall still ahead: lunch today is gone at noon, the evening at six, then the next day's lunch.
-function settleSlot(day:number,slot:Slot,now:number):{day:number;slot:Slot}{
- if(day+SLOT[slot].from*60>now)return {day,slot};
- if(slot==='lunch'&&day+SLOT.evening.from*60>now)return {day,slot:'evening'};
- return {day:stayDay(now)+86400>day?stayDay(now)+86400:day+86400,slot:'lunch'};
+// A hall's own times of events (lib/venue-hours.ts): «Той 15:00–24:00», «Поминки, 1-й заход 12:00–13:30»…
+// The first still ahead: a time that has begun today gives way to the next one, then to the next day's first.
+function settleSession(day:number,idx:number,now:number,sessions:Session[]):{day:number;idx:number}{
+ const ahead=(d:number,i:number)=>d+sessions[i].from*60>now;
+ if(!sessions.length)return {day,idx:0};
+ if(sessions[idx]&&ahead(day,idx))return {day,idx};
+ const later=sessions.findIndex((_,i)=>ahead(day,i));if(later>=0)return {day,idx:later};
+ return {day:Math.max(day+86400,stayDay(now)+86400),idx:0};
+}
+// A list of the hall's times, one per row: there can be more of them than fit a segmented row.
+export function HallTimes({label,value,sessions,day,now,disabled,onChange}:{label:string;value:number;sessions:Session[];day:number;now:number;disabled:boolean;onChange:(i:number)=>void}){
+ return <View accessibilityRole="radiogroup" accessibilityLabel={label} style={p.hallTimes}>{sessions.map((s,i)=>{const on=i===value,gone=day+s.from*60<=now;return <Pressable key={i} accessibilityRole="radio" accessibilityLabel={sessionLine(s)} accessibilityState={{selected:on,disabled:disabled||gone}} disabled={disabled||gone} onPress={()=>onChange(i)} style={[p.hallTime,on&&p.hallTimeOn,gone&&p.hallTimeGone]}><Text style={[p.hallTimeTitle,on&&p.hallTimeTitleOn]}>{tr(s.label)}</Text><Text style={[p.hallTimeNote,on&&p.hallTimeTitleOn]}>{hhmm(s.from)+'–'+hhmm(s.to)}</Text></Pressable>;})}</View>;
 }
 // A request without the chat (2026-11-27): a home by the tariff, days, times and guests; a bath by the hour; a hall or
-// a cafe by the lunch or the evening of one day, with what it is taken for and how many come (server lib/service.ts kindMode).
+// a cafe by one of its own times of events, with what it is taken for and how many come (server lib/service.ts kindMode).
 export function StayRequest({property,initial,busy,done,result,onQuote,onConfirm}:{property:Row;initial?:StayStart;busy:boolean;done?:boolean;result?:string;onQuote:(body:Row)=>Promise<Row>;onConfirm:(body:Row)=>void}){
  const policy=property.policy||{},type=String(property.details?.type||property.type||''),hall=isBanquet(type),bath=isBath(type);
  const modes=useMemo<StayMode[]>(()=>bath?['hourly']:hall?['daily']:stayModes(property),[bath,hall,property.price,policy.hourly_price,policy.nightly_price]);
@@ -98,18 +103,21 @@ export function StayRequest({property,initial,busy,done,result,onQuote,onConfirm
  // The stay of the search or of the booking being changed is kept as it was (a late arrival on a night too) until
  // the guest changes it: a choice of tariff, day and time cannot always say it (Codex, PR #284).
  const [kept,setKept]=useState<{start:number;end:number}|null>(()=>!hall&&initial?.start&&initial?.end&&initial.start>opened&&initial.end>initial.start?{start:initial.start,end:initial.end}:null);
- const [when,setWhen]=useState(()=>{const start=initial?.start&&initial.start>opened?initial.start:0,day=start?stayDay(start):stayDay(opened)+86400,slot:Slot=start&&(start-day)/60<SLOT.evening.from-60?'lunch':'evening';return settleSlot(day,slot,opened);});
+ const sessions=useMemo(()=>hall?venueHours(type,policy.venue_hours)?.sessions||[]:[],[hall,type,policy.venue_hours]);
+ // The search's time picks the hall's time that starts closest to it (a memorial meal at noon, a той in the evening).
+ const [when,setWhen]=useState(()=>{const start=initial?.start&&initial.start>opened?initial.start:0,day=start?stayDay(start):stayDay(opened)+86400,minute=start?(start-day)/60:18*60;
+  const idx=sessions.reduce((best,x,i)=>Math.abs(x.from-minute)<Math.abs((sessions[best]?.from??1e9)-minute)?i:best,0);return settleSession(day,idx,opened,sessions);});
  const [occasion,setOccasion]=useState(()=>OCCASIONS.some(([id])=>id===initial?.occasion)?String(initial!.occasion):'');
  const [guests,setGuests]=useState(()=>Math.min(cap,Math.max(1,Number(initial?.guests)||(hall?Math.min(cap,least||20):1))));
  const [quote,setQuote]=useState<Row|null>(null),[checking,setChecking]=useState(false),[error,setError]=useState(''),[sheet,setSheet]=useState<''|'price'|'risk'|'when'|'occasion'>('');
- const span=hall?{start:when.day+SLOT[when.slot].from*60,end:when.day+(SLOT[when.slot].from+SLOT[when.slot].hours*60)*60}:kept||stayInterval(choice,policy);
+ const picked=sessions[when.idx],span=hall&&picked?{start:when.day+picked.from*60,end:when.day+picked.to*60}:kept||stayInterval(choice,policy);
  const round=useRef(0),body=()=>({propertyId:property.id,start:stayStamp(span.start),end:stayStamp(span.end),guests,billingMode:hall?'daily':choice.mode,...(hall?{occasion:occasion||'other'}:{})});
  const change=(next:Partial<StayChoice>)=>{setKept(null);const mode=next.mode||choice.mode,first=defaultStay(mode,policy,now);setChoice(settleStay(next.mode&&next.mode!==choice.mode?{...first,day:choice.day,...(mode==='hourly'&&choice.day!==first.day?{time:policy.checkin_minutes??840}:{})}:{...choice,...next},policy,now));};
  useEffect(()=>{
   if(done)return;const id=++round.current;setChecking(true);
   const timer=setTimeout(()=>{onQuote(body()).then(value=>{if(id===round.current){setQuote(value);setError('');}}).catch(e=>{if(id===round.current){setQuote(null);setError(e?.message||tr('Не удалось проверить это время.'));}}).finally(()=>{if(id===round.current)setChecking(false);});},350);
   return()=>clearTimeout(timer);
- },[choice.mode,choice.day,choice.time,choice.count,when.day,when.slot,occasion,guests,done,kept]);
+ },[choice.mode,choice.day,choice.time,choice.count,when.day,when.idx,occasion,guests,done,kept]);
  if(done)return <Closed text={result||tr('Заявка отправлена')} note={tr('Заявка и её статус доступны в «Мои брони».')}/>;
  const ready=!!quote&&!checking&&!busy,risky=!property.verified&&!property.demo_owner;
  // The price in one line, as Airbnb: «10 000 ₸ + депозит 5 000 ₸ ›»; what it is made of opens by a tap.
@@ -121,7 +129,7 @@ export function StayRequest({property,initial,busy,done,result,onQuote,onConfirm
   <View style={p.head}><Text accessibilityRole="header" style={p.title}>{property.title}</Text><Text style={p.note}>{[property.city,property.district].filter(Boolean).join(', ')}{property.capacity?' · '+tr('до {guests}',{guests:guestsWord(property.capacity)}):''}</Text></View>
   {risky&&<LineRow dot={C.warning} title={tr('Жильё не проверено')} onPress={()=>setSheet('risk')}/>}
   {hall?<>
-   <LineRow title={tr('Когда')} value={dayWord(when.day)+', '+slotTitle(when.slot).toLocaleLowerCase()} disabled={busy} onPress={()=>setSheet('when')}/>
+   <LineRow title={tr('Когда')} value={dayWord(when.day)+(picked?', '+sessionLine(picked):'')} disabled={busy} onPress={()=>setSheet('when')}/>
    <LineRow title={tr('Повод')} value={occasion?occasionTitle(occasion):tr('Выбрать')} disabled={busy} onPress={()=>setSheet('occasion')}/>
   </>:<StayWhen choice={choice} modes={modes} policy={policy} now={now} disabled={busy} onChange={change} rate={mode=>stayRate(property,mode)} shown={kept||undefined}/>}
   {cap>1&&<GuestsRow value={guests} max={cap} step={guestStep} disabled={busy} onChange={setGuests}/>}
@@ -133,8 +141,8 @@ export function StayRequest({property,initial,busy,done,result,onQuote,onConfirm
   <Text style={p.note}>{tr('Проводя, вы соглашаетесь с временем, ценой, оплатой, депозитом и правилами проживания. Деньги сейчас не списываются.')}</Text>
   <SwipeConfirm label={tr('Проведите: отправить заявку')} disabled={!ready} onConfirm={()=>{if(quote)onConfirm({...body(),expectedAmount:quote.amount,expectedPolicyVersion:quote.policy.version,acceptTerms:true});}}/>
   <PopSheet visible={sheet==='when'} title={tr('Когда')} onClose={()=>setSheet('')} footer={<Send title={tr('Готово')} disabled={false} busy={false} onPress={()=>setSheet('')}/>}>
-   <Days label={tr('Дата')} value={when.day} now={now} disabled={busy} onChange={day=>setWhen(settleSlot(day,when.slot,now))}/>
-   <Segments label={tr('Время')} value={when.slot} disabled={busy} onChange={slot=>setWhen(settleSlot(when.day,slot,now))} options={(['lunch','evening'] as Slot[]).filter(slot=>when.day+SLOT[slot].from*60>now).map(slot=>({id:slot,title:slot==='lunch'?tr('Обед'):tr('Вечер'),note:slot==='lunch'?'12:00–17:00':'18:00–00:00'}))}/>
+   <Days label={tr('Дата')} value={when.day} now={now} disabled={busy} onChange={day=>setWhen(settleSession(day,when.idx,now,sessions))}/>
+   <HallTimes label={tr("Время")} value={when.idx} sessions={sessions} day={when.day} now={now} disabled={busy} onChange={idx=>setWhen(settleSession(when.day,idx,now,sessions))}/>
    <Text style={p.note}>{tr('Время Казахстана.')}</Text>
   </PopSheet>
   <PopSheet visible={sheet==='occasion'} title={tr('Повод')} onClose={()=>setSheet('')}>
@@ -196,6 +204,7 @@ const p=StyleSheet.create({
  time:{minWidth:72,minHeight:H.touch,paddingHorizontal:12,alignItems:'center',justifyContent:'center',borderWidth:1,borderColor:C.line,borderRadius:R.md,backgroundColor:C.surface},timeText:{...type.body,color:C.ink,fontWeight:'600'},
  row:{flexDirection:'row',gap:12},half:{flex:1},
  stepper:{flexDirection:'row',alignItems:'center',gap:4,height:H.field,paddingHorizontal:4,borderWidth:1,borderColor:C.line,borderRadius:R.md,backgroundColor:C.surface},stepButton:{width:40,height:40,borderRadius:R.sm,backgroundColor:C.surfaceAlt,alignItems:'center',justifyContent:'center'},stepSign:{...type.title,color:C.ink},stepValue:{...type.label,flex:1,textAlign:'center',color:C.ink,fontWeight:'600'},
+ hallTimes:{gap:8},hallTime:{flexDirection:'row',alignItems:'center',justifyContent:'space-between',minHeight:H.primary,paddingHorizontal:12,borderRadius:R.md,backgroundColor:C.surfaceAlt},hallTimeOn:{backgroundColor:C.ink},hallTimeGone:{opacity:0.4},hallTimeTitle:{...type.body,color:C.ink},hallTimeTitleOn:{color:C.surface},hallTimeNote:{...type.caption,color:C.muted},
  segments:{flexDirection:'row',gap:4,padding:4,borderRadius:R.lg,backgroundColor:C.surfaceAlt},segment:{flex:1,minHeight:H.primary,paddingHorizontal:4,borderRadius:R.md,alignItems:'center',justifyContent:'center'},segmentOn:{backgroundColor:C.surface},segmentTitle:{...type.label,color:C.inkSoft,fontWeight:'600'},segmentNote:{...type.caption,color:C.muted},
  fixed:{...type.label,color:C.inkSoft},
  total:{gap:8,padding:16,borderRadius:R.lg,backgroundColor:C.accentSoft},span:{...type.label,color:C.ink,fontWeight:'600'},sum:{flexDirection:'row',flexWrap:'wrap',alignItems:'baseline',columnGap:12,rowGap:4},amount:{...type.heading,color:C.ink,fontWeight:'600',letterSpacing:-.5},sumNote:{...type.caption,color:C.inkSoft},fact:{...type.label,color:C.inkSoft},error:{...type.label,color:C.danger},wait:{flexDirection:'row',alignItems:'center',gap:8},
