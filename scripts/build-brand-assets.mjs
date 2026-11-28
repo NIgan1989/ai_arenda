@@ -14,7 +14,7 @@ import ts from 'typescript';
 import sharp from 'sharp';
 
 const root=new URL('../',import.meta.url),at=p=>fileURLToPath(new URL(p,root));
-const c=JSON.parse(readFileSync(at('design/tokens.json'),'utf8')).color;
+const tokens=JSON.parse(readFileSync(at('design/tokens.json'),'utf8')),c=tokens.color,a=tokens.appColor;
 const compiled=join(mkdtempSync(join(tmpdir(),'brand-')),'brand.mjs');
 writeFileSync(compiled,ts.transpileModule(readFileSync(at('lib/brand.ts'),'utf8'),{compilerOptions:{module:ts.ModuleKind.ES2022,target:ts.ScriptTarget.ES2022}}).outputText);
 const b=await import(pathToFileURL(compiled).href);
@@ -43,13 +43,13 @@ await png('public/icon-maskable-512.png',b.badgeSvg(c,{size:512,round:0,scale:.6
 await png('public/apple-touch-icon.png',b.badgeSvg(c,{size:180,detail:'compact',round:0}),{opaque:true});
 
 // ── The app icon ─────────────────────────────────────────────────────────────────────────────────────────────
-// Monochrome since 2026-11-26, like the entry splash: a white plate and the whole sign, rays too, in ink. The person taps
-// the icon and the splash draws the same sign on the same white.
-const inkSign=(color,k)=>`<g transform="translate(50 50) scale(${k}) translate(-50 -50)">${b.domeMarkup({stroke:color,gold:color})}</g>`;
-await png('mobile/assets/brand/icon.png',svg(1024,1024,'0 0 100 100',`<rect width="100" height="100" fill="${c.surface}"/>`+inkSign(c.ink,.7)),{opaque:true});
+// «Алтын шаңырақ» since 2026-11-28 (palette «Киіз үй», design/tokens.json → appColor): a white plate, the crown in ink
+// and its rays in the gold of the swipe. The person taps the icon and the splash draws the same sign on the same white.
+const inkSign=(color,k,gold=color)=>`<g transform="translate(50 50) scale(${k}) translate(-50 -50)">${b.domeMarkup({stroke:color,gold})}</g>`;
+await png('mobile/assets/brand/icon.png',svg(1024,1024,'0 0 100 100',`<rect width="100" height="100" fill="${a.surface}"/>`+inkSign(a.ink,.7,a.gold)),{opaque:true});
 // Android cuts its icon from two layers and shows only the middle two thirds of them.
 await png('mobile/assets/brand/adaptive-background.png',svg(1024,1024,'0 0 100 100',`<rect width="100" height="100" fill="${c.surface}"/>`),{opaque:true});
-await png('mobile/assets/brand/adaptive-foreground.png',svg(1024,1024,'0 0 100 100',inkSign(c.ink,.5)));
+await png('mobile/assets/brand/adaptive-foreground.png',svg(1024,1024,'0 0 100 100',inkSign(a.ink,.5,a.gold)));
 await png('mobile/assets/brand/adaptive-monochrome.png',svg(1024,1024,'0 0 100 100',inkSign('#fff',.5)));
 // The screen the system shows before the app starts is the night colour alone; the splash then draws the sign on it.
 await png('mobile/assets/brand/launch-blank.png',svg(8,8,'0 0 8 8',''));
@@ -71,7 +71,8 @@ const name=(w,h,{ai,rest,glow})=>svg(w,h,'0 0 240 64',
   +`<filter id="glow" x="-50%" y="-100%" width="200%" height="300%"><feGaussianBlur stdDeviation="${Math.round(5/k)}"/></filter></defs>`
   +`<g transform="translate(20 ${(64-bh*k)/2}) scale(${k}) translate(${-bx} ${-by})">${glow?`<path d="${b.WORDMARK_AI}" fill="${ai[1]}" opacity=".55" filter="url(#glow)"/>`:''}<path d="${b.WORDMARK_AI}" fill="url(#ai)"/><path d="${b.WORDMARK_QONAQ}" fill="${rest}"/></g>`);
 await densities('wordmark-night',240,64,(w,h)=>name(w,h,{ai:[c.domeFrom,c.domeTo],rest:'#fff',glow:true}));
-await densities('wordmark',240,64,(w,h)=>name(w,h,{ai:[c.accent,c.aiTo],rest:c.ink,glow:false}));
+// The app's name: «Ai» in the brown of the main buttons, «Qonaq» in ink.
+await densities('wordmark',240,64,(w,h)=>name(w,h,{ai:[a.action,a.action],rest:a.ink,glow:false}));
 
 // ── The small signs, white so that the app paints them in any colour ─────────────────────────────────────────
 await densities('dome-glyph',24,24,(w,h)=>svg(w,h,'0 0 100 100',b.glyphMarkup('#fff')));
