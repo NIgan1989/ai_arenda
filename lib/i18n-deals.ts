@@ -645,6 +645,7 @@ export const DEALS:Words={
  'Заявка ждёт вашего ответа':['Өтінім жауабыңызды күтуде','The request is waiting for your answer'],
  'Оплата подтверждена':['Төлем расталды','Payment confirmed'],
  'Гость сообщил о переводе · проверьте банк и подтвердите':['Қонақ аударым туралы хабарлады · банкті тексеріп, растаңыз','The guest reported the transfer · check the bank and confirm'],
+ 'Ждём от гостя оплату и депозит {sum}':['Қонақтан төлем мен {sum} депозитті күтудеміз','Waiting for the guest\'s payment and the {sum} deposit'],
  'Ждём перевод от гостя на ваши реквизиты':['Қонақтан деректемелеріңізге аударым күтудеміз','Waiting for the guest\'s transfer to your details'],
  'Гость сообщил {ofLeave} · подтвердите':['Қонақ {ofLeave} хабарлады · растаңыз','The guest reported {ofLeave} · confirm'],
  'Время {leaveGen} прошло · подтвердите {leaveLow}':['{leaveGen:cap} уақыты өтті · {leaveLow:acc} растаңыз','Time for {leaveGen} has passed · confirm {leaveLow}'],

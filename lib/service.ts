@@ -1151,7 +1151,7 @@ export class RentalService {
       if(window?.moved) statements.push(this.query("INSERT OR IGNORE INTO notifications SELECT ?,?,?,?,0,? WHERE EXISTS(SELECT 1 FROM cleaning_jobs WHERE id=?)",id(),b.owner_id,movedNote(b.title,window.start),'owner:night-moved:'+jobId,now(),jobId));
       const results=await this.db.batch(statements);
       if(!results[0].meta.changes) throw new DomainError('Срок заявки истёк или статус уже изменился.',409);
-      if(depositAsked)return {message:'Бронь подтверждена с депозитом '+new Intl.NumberFormat('ru-RU').format(depositAsked)+' ₸. Гость получил уведомление.'+(fee>0?' Задание на уборку опубликовано.':'')};
+      if(depositAsked)return {message:'Бронь подтверждена. Попросили у гостя депозит '+new Intl.NumberFormat('ru-RU').format(depositAsked)+' ₸.'+(fee>0?' Задание на уборку опубликовано.':'')};
       return {message:fee>0?'Бронь подтверждена, задание на уборку опубликовано.':'Бронь подтверждена.'};
     }
     if(body.action==='reject'){

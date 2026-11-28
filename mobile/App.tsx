@@ -344,7 +344,11 @@ function Chat(){
   useEffect(()=>{if(pageId!=='overview')setDeal(null);},[pageId]);
   useEffect(()=>{dealRef.current=deal&&pageId==='overview'?deal.kind:'';},[deal,pageId]);
   const dealFrom=useRef('');
-  const say=(text:string,block?:string,payload?:Row,screen?:boolean)=>{const id=uid();scrollMessage.current=id;setMessages(prev=>[...prev,{id,sender:'assistant' as const,text,block,payload,...(screen?{screen:true}:{})}].slice(-120));};
+  // A card's own sheet (a booking, a cleaning, a request) and a list page are not a chat (2026-11-28): what the service
+  // answers there is a short line over the screen for a moment, never a message of «AiQonaq» under the card. The card
+  // shows the new state itself. A form being filled (flow) and the forms of a place keep their messages.
+  const notChat=()=>!flow&&(!!dealRef.current||!['overview','properties','chats'].includes(pageId));
+  const say=(text:string,block?:string,payload?:Row,screen?:boolean)=>{if(!block&&notChat()){if(text)flashSay(text);return;}const id=uid();scrollMessage.current=id;setMessages(prev=>[...prev,{id,sender:'assistant' as const,text,block,payload,...(screen?{screen:true}:{})}].slice(-120));};
   const processLinks=useProcessLinks({apiUrl:API_URL,ready,accountId:userId||null,blocked:busy||!!flow||chatsActive,onError:message=>setLinkError(message),onOpen:async(link,guard)=>{
     if(locked.current||!session.current||!guard.isCurrent())return;
     setLinkError('');locked.current=true;setBusy(true);
@@ -450,7 +454,7 @@ function Chat(){
     if(error instanceof StaleSessionError)return;
     if(error instanceof ApiError&&error.status===401&&session.current){
       try{await signedOut();}catch{}setLinkError(tr('Сессия закончилась. Войдите снова.'));
-    }else {setOnline(error instanceof ApiError);if(!isOffline(error))say(error.message);}
+    }else {setOnline(error instanceof ApiError);if(!isOffline(error)){if(notChat())flashSay(error.message||tr('Не получилось. Попробуйте ещё раз.'),true);else say(error.message);}}
   }
   // The offline line's «Повторить»: one more attempt to reach the server; the line stays until an answer arrives.
   async function retry(){if(retrying||locked.current)return;setRetrying(true);try{await load();}catch(error){if(error instanceof ApiError&&error.status===401)await handleError(error);}finally{setRetrying(false);}}
@@ -984,7 +988,10 @@ function Chat(){
   pageMark.current.last=messages[messages.length-1]?.id||'';
   // A form being filled keeps all it said; otherwise a page shows what was said since it opened, and «Сводка» folds the rest into «История».
   const pageStart=messages.some(m=>m.id===pageMark.current.start)?pageMark.current.start:flow?'':historyEnd.current,pageSaid=splitAt(messages,pageStart);
-  const said=ownPage?ownSaid:reviewAt>=0?messages.slice(reviewAt):dealOpen&&deal!.after?messages.slice(messages.findIndex(m=>m.id===deal!.after)+1):pageSaid.after;
+  // A card's sheet and a list page show no lines of talk (only the cards and forms themselves): see notChat above.
+  const talk=(m:Message)=>!m.block,cardOnly=!flow&&(dealOpen||!['overview','properties'].includes(pageId));
+  const saidAll=ownPage?ownSaid:reviewAt>=0?messages.slice(reviewAt):dealOpen&&deal!.after?messages.slice(messages.findIndex(m=>m.id===deal!.after)+1):pageSaid.after;
+  const said=cardOnly?saidAll.filter(m=>!talk(m)):saidAll;
   // A place opened from the map (its pin, a card of the results) is a page of its own, as in Airbnb: its name in the head,
   // nothing of the talk above or under it, the price and «Забронировать» fixed at the bottom of the sheet.
   const lastSaid=said[said.length-1],placeMsg=pageId==='overview'&&!dealOpen&&!flow&&lastSaid?.block==='properties'&&!!lastSaid.payload?.back&&lastSaid.payload?.mode==='guest'?lastSaid:null;

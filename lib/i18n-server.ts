@@ -705,7 +705,7 @@ export const SERVER:Words={
  'Подтвердить может только владелец.':['Тек иесі растай алады.','Only the owner can confirm.'],
  'Срок заявки истёк или статус уже изменился.':['Өтінім мерзімі өтті немесе күйі өзгеріп қойған.','The request has expired or its status has already changed.'],
  'Для этой заявки депозит уже предусмотрен или не нужен.':['Бұл өтінім үшін депозит қарастырылған немесе керек емес.','A deposit is already set or not needed for this request.'],
- 'Бронь подтверждена с депозитом {v} ₸. Гость получил уведомление.{v2}':['Бронь {v} ₸ депозитпен расталды. Қонақ хабарлама алды.{v2}','The booking is confirmed with a deposit of {v} ₸. The guest was notified.{v2}'],
+ 'Бронь подтверждена. Попросили у гостя депозит {v} ₸.{v2}':['Бронь расталды. Қонақтан {v} ₸ депозит сұралды.{v2}','The booking is confirmed. The guest was asked for a {v} ₸ deposit.{v2}'],
  'Бронь подтверждена, задание на уборку опубликовано.':['Бронь расталды, тазалау тапсырмасы жарияланды.','The booking is confirmed, the cleaning job is published.'],
  'Бронь подтверждена.':['Бронь расталды.','The booking is confirmed.'],
  'Заявку рассматривает владелец.':['Өтінімді иесі қарайды.','The owner reviews the request.'],

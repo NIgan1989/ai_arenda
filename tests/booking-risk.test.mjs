@@ -35,7 +35,7 @@ test('the owner sees the risk on the request and can confirm it with the advised
   const guestCard=(await f.guest.roleState('guest')).approvals.find(c=>c.id==='booking:'+id);
   assert.equal(guestCard.risk,undefined,'the guest never sees their own risk');
   const r=await f.owner.decideApproval('owner',{id:card.id,revision:card.revision,action:'deposit',cleaningFee:0});
-  assert.match(r.message,/с депозитом 5\s000\s₸/);
+  assert.match(r.message,/депозит 5\s000\s₸/);
   const terms=f.db.raw.prepare('SELECT deposit,deposit_status FROM booking_terms WHERE booking_id=?').get(id);
   assert.deepEqual([terms.deposit,terms.deposit_status],[5000,'pending']);
   assert.equal(f.db.raw.prepare('SELECT status FROM bookings WHERE id=?').get(id).status,'confirmed');

@@ -114,7 +114,7 @@ export function bookingThread(b: Row, data: Row, now: number): ProcessThread {
   const steps: Omit<ThreadStep, 'state'>[] = [
     { key: 'request', label: tr('Заявка'), by: confirmed ? (did('ИИ подтвердил бронь') ? 'ai' : 'owner') : auto ? 'ai' : 'you', at: b.created_at,
       note: confirmed ? (did('ИИ подтвердил бронь') ? tr('ИИ подтвердил бронь') : tr('Бронь подтверждена')) : auto ? tr('ИИ проверяет заявку') : tr('Заявка ждёт вашего ответа') },
-    { key: 'pay', label: tr('Оплата'), by: paid || !told ? 'guest' : 'you', note: paid ? tr('Оплата подтверждена') : told ? tr('Гость сообщил о переводе · проверьте банк и подтвердите') : tr('Ждём перевод от гостя на ваши реквизиты') },
+    { key: 'pay', label: tr('Оплата'), by: paid || !told ? 'guest' : 'you', note: paid ? tr('Оплата подтверждена') : told ? tr('Гость сообщил о переводе · проверьте банк и подтвердите') : Number(terms.deposit) > 0 && terms.deposit_status === 'pending' ? tr('Ждём от гостя оплату и депозит {sum}',{sum:tenge(Number(terms.deposit))}) : tr('Ждём перевод от гостя на ваши реквизиты') },
     { key: 'checkin', label: w.arrive, by: did('ИИ заселил гостя') ? 'ai' : 'guest', at: b.start,
       note: inside ? (did('ИИ заселил гостя') ? w.aiIn : w.guestIn) : tr('{label} в {when}',{label:w.arrive,when:threadWhen(b.start, now)}) },
     { key: 'stay', label: w.stay, by: 'guest', at: b.start, progress: inside && !out ? part(b.start, b.end, now) : undefined,
