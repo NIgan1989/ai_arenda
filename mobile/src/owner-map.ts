@@ -2,8 +2,7 @@ import {t} from '../../lib/i18n';
 // What the owner's live map says about each of his objects, in one short label on its pin.
 // Pure functions, covered by mobile/tests/owner-map.test.mjs. Times are Kazakhstan time (UTC+5).
 import type {PinTone} from './map-motion';
-import {ownerPrice} from '../../lib/place-words';
-import {isVenue} from '../../lib/listings';
+import {isHome,isHourlyKind} from '../../lib/stay-words';
 
 type Row=Record<string,any>;
 export type OwnerPin={label:string;tone:PinTone;best?:boolean;progress?:number};
@@ -20,7 +19,7 @@ export function priceChange(from:number,to:number){return from>=10000&&to>=10000
 // an arrival or a cleaning within a day; otherwise its price, or the AI's price advice with the AI ring.
 export function ownerPin(property:Row,processes:Row[],now:number,advice?:{from:number;to:number}|null):OwnerPin{
  // A bath, a loft or a car wash is not moved into: its pin says «Бронь», not «Заезд».
- const venue=isVenue((property.details||{}).type);
+ const venue=!!(property.details||{}).type&&!isHome({property_type:(property.details||{}).type});
  const mine=processes.filter(p=>p.propertyId===property.id),of=(kind:string,...status:string[])=>mine.filter(p=>p.kind===kind&&status.includes(p.status)).sort((a,b)=>Number(a.start)-Number(b.start));
  // Trouble first, in red: a cleaning past its deadline, then an arrival within the hour (or already due) while a cleaning that began before it is not accepted.
  // The same rules the AI administrator uses for its reminders (lib/administrator.ts).
@@ -39,7 +38,10 @@ export function ownerPin(property:Row,processes:Row[],now:number,advice?:{from:n
  const arrival=of('booking','confirmed').find(b=>Number(b.start)>now&&soon(Number(b.start),now));if(arrival)return {label:venue?t('Бронь {when}',{when:soon(Number(arrival.start),now)}):t('Заезд {when}',{when:soon(Number(arrival.start),now)}),tone:'booking'};
  const cleaning=of('job','open','assigned').find(j=>soon(Number(j.start),now));if(cleaning)return {label:t('Уборка {when}',{when:soon(Number(cleaning.start),now)}),tone:'job'};
  // A place taken by the hour shows its hour or its cheapest service, never the technical day price (simulation of 2026-11-28).
- const price=ownerPrice(property).amount;
+ // What a guest pays (as lib/place-words.ts ownerPrice): the cheapest service of a car place, the hour of an hourly place,
+ // never the hidden day price of twelve hours.
+ const d=property.details||{},services:Row[]=Array.isArray(d.services)?d.services:[],hour=Number(property.policy?.hourly_price)||0;
+ const price=services.length?Math.min(...services.map(s=>Number(s.price)||0)):isHourlyKind(d.type)&&hour?hour:Number(property.price)||0;
  if(advice&&advice.from>0&&advice.to>0&&advice.from!==advice.to)return {label:priceChange(advice.from,advice.to),tone:'home',best:true};
  return {label:price>0?thousands(price):t('Объект'),tone:'home'};
 }
