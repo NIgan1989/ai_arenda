@@ -543,7 +543,7 @@ export class RentalService {
         WHERE (j.owner_id=? OR j.assigned_to=? OR (j.status='open' AND j.end>?)) AND (p.demo_owner IS NULL OR p.demo_owner=?) ORDER BY j.start`, this.userId,this.userId,this.userId,this.userId,this.userId,this.userId,this.userId,this.userId,this.userId,this.userId,now(),this.userId),
       this.all(`SELECT a.*,p.name,p.experience,p.availability,p.districts,(SELECT pr.demo_owner FROM properties pr WHERE pr.id=j.property_id) job_demo FROM applications a JOIN cleaning_jobs j ON j.id=a.job_id JOIN profiles p ON p.id=a.user_id WHERE a.user_id=? OR j.owner_id=?`, this.userId,this.userId),
       this.all('SELECT * FROM notifications WHERE user_id=? ORDER BY created_at DESC LIMIT 40', this.userId),
-      this.all('SELECT * FROM (SELECT * FROM messages WHERE user_id=? ORDER BY created_at DESC,rowid DESC LIMIT 100) ORDER BY created_at', this.userId).then(rows=>rows.map(m=>({...m,...splitScreen(m.body)}))),
+      this.all('SELECT * FROM (SELECT * FROM messages WHERE user_id=? ORDER BY created_at DESC,rowid DESC LIMIT 100) ORDER BY created_at', this.userId).then(rows=>rows.map(m=>({...m,...splitScreen(m.body)}) as Row)),
     ]);
     const serverTime=now();
     // Only the rules of the places this person sees: the whole table would be read on every refresh of the app.
