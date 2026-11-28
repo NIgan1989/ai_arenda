@@ -1,6 +1,7 @@
 import {L,t as tr} from './i18n';
 import {DomainError,number,required} from './domain';
 import {servicesInput} from './venue-services';
+import {bayInput} from './bay-plan';
 type Row=Record<string,any>;
 // Kinds of housing. The service is not only about flats: a hostel, a hotel or an apart-hotel has its own staff,
 // so for them the AI administrator does not look for executors (own_staff, see staffedTypes).
@@ -93,7 +94,9 @@ export function listingInput(b:Row){
   // The menu of a banquet hall, as the owner writes it; other kinds keep none.
   ...(isBanquet(details.type)&&typeof details.menu==='string'&&details.menu.trim()?{menu:details.menu.trim().slice(0,1500)}:{}),
   // «Авто»: the services the place sells, each with its own minutes and price (lib/venue-services.ts).
-  ...(isAuto(details.type)&&details.services!==undefined?{services:servicesInput(details.type,details.services)}:{})};
+  ...(isAuto(details.type)&&details.services!==undefined?{services:servicesInput(details.type,details.services)}:{}),
+  // «Запись и живая очередь» (lib/bay-plan.ts): the boxes that take bookings, the wait for a late car, self-service.
+  ...(isAuto(details.type)?bayInput(details):{})};
  if(d.floor>d.floors)throw new DomainError('Этаж не может быть выше этажности дома.');
  // A bath has no beds: its guests come for a few hours, so the beds follow the guests there.
  if(isVenue(d.type))d.beds=Math.max(d.beds,p.capacity);

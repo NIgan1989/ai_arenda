@@ -45,6 +45,8 @@ import {offerPriceAdvice,ownerPriceSuggestions,decidePriceSuggestion} from './pr
 import {guestStayOffers,decideStayOffer} from './stay-offers';
 import {guestFavorites} from './favorites';
 import {staffPlaces} from './staff';
+import {baysFor,bookingStarts,cardOf} from './bays';
+import {bayPlan} from './bay-plan';
 import {cleanerOffers} from './dispatch';
 import {ownerClosedDays} from './closed-days';
 import {homePlaces,homeDeals} from './home-order';
@@ -75,7 +77,13 @@ const now = () => Math.floor(Date.now() / 1000);
 const id = () => crypto.randomUUID();
 const clockLabel=(at:number)=>new Intl.DateTimeFormat('ru-RU',{hour:'2-digit',minute:'2-digit',timeZone:'Asia/Almaty'}).format(new Date(at*1000));
 const HISTORY_TABLES=['bookings','cleaning_jobs','finance_entries','platform_commissions','access_receipts','administrator_issues','administrator_tasks','matching_offers','review_property_bindings'];
-const SETTINGS_TABLES=['property_details','property_locations','property_operations','property_policies','operation_rules','matching_preferences','property_access','calendar_exports','property_import_links','guest_favorites','property_staff','venue_halls','room_units'];
+// How a car place is run (lib/bay-plan.ts), from its card; null for any other place.
+async function autoPlan(db:D1Database,propertyId:string){
+  const lead=await leadOf(db,propertyId),row=await db.prepare('SELECT details FROM property_details WHERE property_id=?').bind(lead).first<Row>();
+  let details:Row={};try{details=JSON.parse(String(row?.details||'{}'))||{};}catch{/* no details */}
+  return isAuto(details.type)?bayPlan(details,(await roomsOf(db,lead)).length):null;
+}
+const SETTINGS_TABLES=['property_details','property_locations','property_operations','property_policies','operation_rules','matching_preferences','property_access','calendar_exports','property_import_links','guest_favorites','property_staff','venue_halls','room_units','bay_live'];
 // How far a stay may move its cleaning while the assigned cleaner keeps it: a late checkout or a few extra hours, not another day.
 const KEEP_SHIFT=3*3600;
 // The owner's Kaspi number is the owner's phone as a rule. Before the phone opens (a day before the check-in) a guest
@@ -298,7 +306,9 @@ export class RentalService {
     const refused=owner?new Map((await this.all("SELECT r.property_id,r.notes FROM participant_reviews r WHERE r.role='owner' AND r.status='rejected' AND r.property_id IN (SELECT value FROM json_each(?)) AND r.property_revision=COALESCE((SELECT revision FROM review_property_bindings b WHERE b.property_id=r.property_id),0) AND NOT EXISTS(SELECT 1 FROM participant_reviews x WHERE x.property_id=r.property_id AND x.role='owner' AND x.rowid>r.rowid AND x.property_revision=r.property_revision)",JSON.stringify(items.slice(0,500).map(p=>p.id)))).map(r=>[r.property_id,r.notes||''])):new Map();
     // «Заведение»: the halls of one place carry its name, for the guest and for the owner (lib/venue.ts).
     const venues=await venuesFor(this.db);
-    return items.map(p=>{const d=details.find(d=>d.property_id===p.id),op=operations.find(o=>o.property_id===p.id);return {...p,...(venues.has(p.id)?{venue:venues.get(p.id)}:{}),...(owner?{address_check:Number(p.published)===1&&!p.demo_owner&&unchecked.some(u=>u.id===p.id),mapped:pins.some(l=>l.property_id===p.id&&l.address_fingerprint===[p.city,p.district,p.address].join('|')),access_version:access.find(a=>a.property_id===p.id)?.version||0,approved:approvedIds.has(p.id),review_refused:refused.get(p.id)??null}:{host:hostOf(p.id)||null}),details:d?JSON.parse(d.details):{},photos:d?JSON.parse(d.photos):[],listing_version:d?.version||0,rating:ratings.get(p.id)||null,verified:!!d?.verified,display_status:propertyStatus(p,op,busy.some(b=>b.property_id===p.id)),...(owner?{}:{published:undefined})};});
+    // The load of a car place now (lib/bays.ts): what is free, the queue, the next booking.
+    const bays=await baysFor(this.db,items.map(p=>{const d=details.find(d=>d.property_id===p.id);return {id:p.id,details:d?JSON.parse(d.details):{}};}));
+    return items.map(p=>{const d=details.find(d=>d.property_id===p.id),op=operations.find(o=>o.property_id===p.id);return {...p,...(bays.has(p.id)?{bays:bays.get(p.id)}:{}),...(venues.has(p.id)?{venue:venues.get(p.id)}:{}),...(owner?{address_check:Number(p.published)===1&&!p.demo_owner&&unchecked.some(u=>u.id===p.id),mapped:pins.some(l=>l.property_id===p.id&&l.address_fingerprint===[p.city,p.district,p.address].join('|')),access_version:access.find(a=>a.property_id===p.id)?.version||0,approved:approvedIds.has(p.id),review_refused:refused.get(p.id)??null}:{host:hostOf(p.id)||null}),details:d?JSON.parse(d.details):{},photos:d?JSON.parse(d.photos):[],listing_version:d?.version||0,rating:ratings.get(p.id)||null,verified:!!d?.verified,display_status:propertyStatus(p,op,busy.some(b=>b.property_id===p.id)),...(owner?{}:{published:undefined})};});
   }
   async workerCard(userId:string){
     const p=await this.one('SELECT p.name,p.city,p.districts,p.experience,p.availability,d.avatar_id,d.work_status FROM profiles p LEFT JOIN profile_details d ON d.user_id=p.id WHERE p.id=?',userId);
@@ -514,7 +524,7 @@ export class RentalService {
     const [profile, properties, ownProperties, bookings, jobs, applications, notifications, messages] = await Promise.all([
       this.profile(),
       includeCatalog?this.all('SELECT id,title,city,district,description,price,rooms,capacity,cleaning_minutes,stay_class,demo_owner,published FROM properties p WHERE published=1 AND (demo_owner IS NULL OR demo_owner=?) AND '+pilotPropertyVisibleSql('p')+' AND NOT EXISTS(SELECT 1 FROM room_units u WHERE u.property_id=p.id) ORDER BY created_at DESC', this.userId):Promise.resolve([]),
-      this.all('SELECT p.*,(SELECT c.name FROM regular_cleaners r JOIN profiles c ON c.id=r.cleaner_id WHERE r.property_id=p.id) regular_cleaner_name,(SELECT a.name FROM property_staff x JOIN auth_accounts a ON a.id=x.staff_id WHERE x.property_id=p.id) staff_name,(SELECT MAX(x.end) FROM external_blocks x JOIN calendar_sources c ON c.id=x.source_id WHERE x.property_id=p.id AND c.external_property_id IN (\'aiqonaq:busy\',\'aiqonaq:busy:\'||p.id) AND x.start<=unixepoch() AND x.end>unixepoch()) busy_until,(SELECT COALESCE(SUM(v.shown),0) FROM property_views v WHERE v.property_id=p.id AND v.day>CAST((unixepoch()+18000)/86400 AS INTEGER)-7) views_week FROM properties p WHERE p.owner_id=? AND p.archived_at IS NULL AND NOT EXISTS(SELECT 1 FROM room_units u WHERE u.property_id=p.id) ORDER BY p.created_at DESC', this.userId),
+      this.all('SELECT p.*,(SELECT c.name FROM regular_cleaners r JOIN profiles c ON c.id=r.cleaner_id WHERE r.property_id=p.id) regular_cleaner_name,(SELECT group_concat(a.name,\', \') FROM property_staff x JOIN auth_accounts a ON a.id=x.staff_id WHERE x.property_id=p.id) staff_name,(SELECT MAX(x.end) FROM external_blocks x JOIN calendar_sources c ON c.id=x.source_id WHERE x.property_id=p.id AND c.external_property_id IN (\'aiqonaq:busy\',\'aiqonaq:busy:\'||p.id) AND x.start<=unixepoch() AND x.end>unixepoch()) busy_until,(SELECT COALESCE(SUM(v.shown),0) FROM property_views v WHERE v.property_id=p.id AND v.day>CAST((unixepoch()+18000)/86400 AS INTEGER)-7) views_week FROM properties p WHERE p.owner_id=? AND p.archived_at IS NULL AND NOT EXISTS(SELECT 1 FROM room_units u WHERE u.property_id=p.id) ORDER BY p.created_at DESC', this.userId),
       this.all(`SELECT b.*,p.title,(SELECT json_extract(details,'$.type') FROM property_details WHERE property_id=p.id) property_type,p.owner_id,p.city,p.district,p.demo_owner,(SELECT photos FROM property_details WHERE property_id=p.id) property_photos,
         CASE WHEN p.owner_id=? OR (b.guest_id=? AND b.status='confirmed') THEN p.address ELSE NULL END address,
         (SELECT json_object('state',a.state,'city',a.city,'district',a.district,'address',a.address) FROM booking_addresses a WHERE a.booking_id=b.id) agreed_row,
@@ -632,6 +642,8 @@ export class RentalService {
     if(sort!=='recommended')items.sort((a,b)=>(sort==='price-asc'?1:-1)*(rate(a)-rate(b))||String(a.id).localeCompare(String(b.id)));
     // «Номера одного типа»: one card per type of room, saying how many of its rooms are free at the asked time.
     {const leads=new Map<string,string>(catalog.properties.filter(p=>p.room_lead).map(p=>[String(p.id),String(p.room_lead)]));if(leads.size){const counts=new Map<string,number>();for(const lead of leads.values())counts.set(lead,(counts.get(lead)||1)+1);items=collapseRooms(items,leads,counts,!!range);later=collapseRooms(later,leads,counts,!!range);}}
+    // A car place whose load nobody marks goes after those that do (lib/bay-plan.ts «Загрузка не обновлялась»).
+    if(sort==='recommended'&&items.some(p=>p.bays?.stale))items=[...items.filter(p=>!p.bays?.stale),...items.filter(p=>p.bays?.stale)];
     const total=items.length,totalPages=Math.max(1,Math.ceil(total/limit)),page=Math.min(pageInput,totalPages);
     let pageItems:Row[]=options.matching?items:items.slice((page-1)*limit,page*limit);
     // The strip: each found home carries its codes; the others free later are kept apart, off the found list.
@@ -711,29 +723,22 @@ export class RentalService {
   // «Очередь» of a car place (2026-11-28): the free starts of one day for one service, every 15 minutes, any free box of
   // the card counted (lib/room-units.ts). The guest sees only these; a busy time is never offered.
   async serviceSlots(body:Row){
-    const asked=required(body.propertyId,'Жильё',100),p=await this.one('SELECT p.id,p.cleaning_minutes FROM properties p WHERE p.id=? AND p.published=1 AND (p.demo_owner IS NULL OR p.demo_owner=?)',asked,this.userId);
+    const asked=required(body.propertyId,'Жильё',100),p=await this.one('SELECT p.id FROM properties p WHERE p.id=? AND p.published=1 AND (p.demo_owner IS NULL OR p.demo_owner=?)',asked,this.userId);
     if(!p)throw new DomainError('Жильё недоступно.',404);
-    const row=await this.one('SELECT details FROM property_details WHERE property_id=?',p.id);let details:Row={};try{details=JSON.parse(String(row?.details||'{}'))||{};}catch{/* no details */}
-    const kind=String(details.type||''),service=isAuto(kind)?serviceNamed(details,body.service):null;
+    const c=await cardOf(this.db,p.id),kind=String(c.details.type||''),service=isAuto(kind)?serviceNamed(c.details,body.service):null;
     if(!service)throw new DomainError('Такой услуги здесь нет. Выберите услугу из списка.',409);
     const day=Math.floor((Number(body.day)+18000)/86400)*86400-18000;if(!Number.isFinite(day))throw new DomainError('Выберите день.');
-    const policy={...defaultPolicy,...await this.one('SELECT * FROM property_policies WHERE property_id=?',p.id)},hours=venueHours(kind,policy.venue_hours);
-    const rooms=await roomsOf(this.db,await leadOf(this.db,p.id)),ids=rooms.length?rooms:[p.id],t=now(),earliest=Math.max(t,t+prepSeconds(policy));
-    const busyOf=async(id:string):Promise<[number,number][]>=>[...await this.all("SELECT start,occupied_until e FROM bookings WHERE property_id=? AND (status='confirmed' OR (status='requested' AND expires_at>?)) AND start<? AND occupied_until>?",id,t,day+2*86400,day),
-      ...await this.all("SELECT start,end e FROM cleaning_jobs WHERE property_id=? AND status IN ('open','assigned','in_progress','submitted') AND start<? AND end>?",id,day+2*86400,day),
-      ...await this.all('SELECT x.start,x.end e FROM external_blocks x JOIN calendar_sources s ON s.id=x.source_id WHERE x.property_id=? AND s.enabled=1 AND x.start<? AND x.end>?',id,day+2*86400,day)].map((r:Row)=>[Number(r.start),Number(r.e)] as [number,number]);
-    const free=new Set<number>();
-    // A box under repair or closed takes no cars; one not marked ready takes none in the next minute (as bookingQuote, Codex PR #292).
-    const states=new Map((await this.all('SELECT property_id,readiness FROM property_operations WHERE property_id IN (SELECT value FROM json_each(?))',JSON.stringify(ids))).map((r:Row)=>[String(r.property_id),String(r.readiness)]));
-    for(const id of ids){const state=states.get(id);if(state==='maintenance'||state==='blocked')continue;
-      const from=state&&state!=='ready'?Math.max(earliest,t+61):earliest;
-      for(const start of freeStarts({day,minutes:service.minutes,cleanMinutes:Number(p.cleaning_minutes)||0,busy:await busyOf(id),earliest:from,fits:(a,b)=>!hours||fitsHours(hours,a,b)}))free.add(start);}
-    return {service:service.name,minutes:service.minutes,day,starts:[...free].sort((a,b)=>a-b)};
+    // Only the boxes that take bookings (lib/bay-plan.ts): the rest are the live queue. A box under repair offers nothing,
+    // one not marked ready nothing in the next minute (as bookingQuote, Codex PR #292).
+    return {service:service.name,minutes:service.minutes,day,starts:await bookingStarts(this.db,c,service.minutes,day,now())};
   }
   async bookingQuote(body:Row,options:{ownerReady?:boolean}={}) {
     // «Номера одного типа» (lib/room-units.ts): a card of many rooms books its first free room.
     const asked=required(body.propertyId,'Жильё',100),card=await this.one('SELECT cleaning_minutes FROM properties WHERE id=?',asked);
-    const span=card?interval(body.start,body.end):null,room=span?await pickRoom(this.db,asked,span.start,span.end+(Number(card!.cleaning_minutes)||0)*60):asked;
+    // A car place takes bookings only into its boxes «по записи» (lib/bay-plan.ts); a place without them is the live queue.
+    const plan=card?await autoPlan(this.db,asked):null;
+    if(plan&&plan.booked===0)throw new DomainError(plan.selfService?'Это мойка самообслуживания: записи нет, приезжайте в часы работы.':'Здесь только живая очередь: записи нет, приезжайте в часы работы.',409);
+    const span=card?interval(body.start,body.end):null,room=span?await pickRoom(this.db,asked,span.start,span.end+(Number(card!.cleaning_minutes)||0)*60,plan?.booked):asked;
     const p=await this.one('SELECT p.*,EXISTS(SELECT 1 FROM account_restrictions r WHERE r.user_id=p.owner_id) restricted FROM properties p WHERE p.id=? AND p.published=1 AND (p.demo_owner IS NULL OR p.demo_owner=?)',room,this.userId);
     if(!p) throw new DomainError('Жильё недоступно.',404);
     await assertPilotAllowed(this,'booking',p.id);
@@ -812,7 +817,9 @@ export class RentalService {
     // `replacing`: the booking the guest was not let in to (lib/checkin-guarantee.ts); it is cancelled right after this one.
     const held=await this.one("SELECT p.title FROM bookings b JOIN properties p ON p.id=b.property_id WHERE b.guest_id=? AND b.property_id<>? AND b.id<>? AND b.start<? AND b.end>? AND ((b.status='requested' AND b.expires_at>?) OR (b.status='confirmed' AND b.payment_status<>'owner_verified')) LIMIT 1",this.userId,p.id,options.replacing||'',end,start,now());
     if(held)throw new DomainError('На это время у вас уже есть неоплаченная бронь: «'+held.title+'». Оплатите или отмените её, затем бронируйте другое жильё.',409);
-    const policyNow=await this.one('SELECT * FROM property_policies WHERE property_id=?',p.id),autoConfirm=!!policyNow?.auto_confirm&&mandateActive(policyNow)&&policyNow.version===checked.policy.version;
+    const policyNow=await this.one('SELECT * FROM property_policies WHERE property_id=?',p.id),mandated=!!policyNow?.auto_confirm&&mandateActive(policyNow)&&policyNow.version===checked.policy.version;
+    // «Подтверждать запись сразу» of a car place (lib/bay-plan.ts): only free times are offered, so a booking needs no answer.
+    const instant=isAuto(checked.kind)&&!mandated&&!!(await autoPlan(this.db,p.id))?.instant,autoConfirm=mandated||instant;
     // The owner's own time to answer a request («Автопилот: решения и сроки»).
     const answer=(await ruleFor(this.db,owner!.owner_id,'request')).minutes;
     const signals=await riskSignals(this.db,this.userId,{start,end,billingMode:checked.billingMode,price:Number(owner!.price||0),deposit:checked.policy.deposit});
@@ -838,7 +845,7 @@ export class RentalService {
     const policy=policyNow!;
     if(autoConfirm&&!risk.held&&!unready){
       // The owner was told the AI accepted it; if the confirmation fails after all, the owner decides and is told so.
-      try{await new RentalService(this.db,owner!.owner_id,{propertyId:p.id,policyVersion:policy.version}).bookingAction(bookingId,{action:'confirm',cleaningFee:policy.cleaning_fee});
+      try{await (instant?new RentalService(this.db,owner!.owner_id):new RentalService(this.db,owner!.owner_id,{propertyId:p.id,policyVersion:policy.version})).bookingAction(bookingId,{action:'confirm',cleaningFee:policy.cleaning_fee});
         await this.notify(owner!.owner_id,`ИИ-администратор принял бронь на «${checked.title}» по вашим правилам.${event} ${riskLabel[risk.level]}.`,`booking:${bookingId}`,'owner').run();}
       catch(error){if(!(error instanceof DomainError))throw error;await this.notify(owner!.owner_id,`ИИ-администратор не смог подтвердить заявку на «${checked.title}» сам: ${error.message} Решите в течение ${minutesLabel(answer)}.`,`booking-held:${bookingId}`,'owner').run();return {id:bookingId,amount,message:'Заявка отправлена. Интервал зарезервирован на '+minutesLabel(answer)+' до решения владельца.'};}
       return {id:bookingId,amount,message:'Бронь подтверждена автоматически по правилам владельца. Оплата и депозит учитываются отдельно.'};}

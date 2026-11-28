@@ -4,10 +4,11 @@ import {L,t} from './i18n';
 import {amenities,checkinMethods,isAuto,isBath,isBanquet,isHourlyVenue,isVenue,kindLabel,propertyTypes} from './listings';
 import {clock} from './rental-policy';
 import {servicesOf,type VenueService} from './venue-services';
+import {bayInput} from './bay-plan';
 type Row=Record<string,any>;
 
 export type EditBody={title:string;city:string;district:string;address:string;description:string;price:number;rooms:number;capacity:number;cleaningMinutes:number;ownStaff:boolean;photos:string[];published:boolean;
- details:{type:string;area:number;beds:number;bathrooms:number;floor:number;floors:number;checkinMethod:string;amenities:string[];pets:boolean;smoking:boolean;parties:boolean;menu?:string;services?:VenueService[]};
+ details:{type:string;area:number;beds:number;bathrooms:number;floor:number;floors:number;checkinMethod:string;amenities:string[];pets:boolean;smoking:boolean;parties:boolean;menu?:string;services?:VenueService[];selfService?:boolean;bookedBays?:number;lateMinutes?:number;instantConfirm?:boolean;showLoad?:boolean};
  rental:{hourlyPrice:number;minHours:number;nightlyPrice:number;deposit:number;checkinTime:string;checkoutTime:string;houseRules:string;includedGuests:number;extraGuestPrice:number;prepMinutes:number;prepayPercent:number;repeatDiscount:number}};
 export type EditStep='photos'|'flat'|'place'|'text'|'amenities'|'prices'|'checkin'|'rules';
 export const EDIT_STEPS:{key:EditStep;title:string}[]=L([
@@ -17,7 +18,7 @@ export const EDIT_STEPS:{key:EditStep;title:string}[]=L([
 export function editBody(p:Row):EditBody{
  const d=p.details||{},r=p.policy||{};
  return {title:p.title||'',city:p.city||'',district:p.district||'',address:p.address||'',description:p.description||'',price:Number(p.price)||0,rooms:Number(p.rooms)||1,capacity:Number(p.capacity)||1,cleaningMinutes:Number(p.cleaning_minutes)||90,ownStaff:!!Number(p.own_staff),photos:[...(p.photos||[])],published:!!p.published,
-  details:{type:propertyTypes[d.type]?d.type:'apartment',area:Number(d.area)||35,beds:Number(d.beds)||Number(p.capacity)||1,bathrooms:Number(d.bathrooms)||1,floor:Number(d.floor??1),floors:Number(d.floors)||5,checkinMethod:checkinMethods[d.checkinMethod]?d.checkinMethod:'meet',amenities:(d.amenities||[]).filter((a:string)=>amenities[a]),pets:!!d.pets,smoking:!!d.smoking,parties:!!d.parties,...(typeof d.menu==='string'&&d.menu?{menu:d.menu}:{}),...(isAuto(d.type)?{services:servicesOf(d)}:{})},
+  details:{type:propertyTypes[d.type]?d.type:'apartment',area:Number(d.area)||35,beds:Number(d.beds)||Number(p.capacity)||1,bathrooms:Number(d.bathrooms)||1,floor:Number(d.floor??1),floors:Number(d.floors)||5,checkinMethod:checkinMethods[d.checkinMethod]?d.checkinMethod:'meet',amenities:(d.amenities||[]).filter((a:string)=>amenities[a]),pets:!!d.pets,smoking:!!d.smoking,parties:!!d.parties,...(typeof d.menu==='string'&&d.menu?{menu:d.menu}:{}),...(isAuto(d.type)?{services:servicesOf(d),...bayInput(d)}:{})},
   rental:{hourlyPrice:Number(r.hourly_price)||0,minHours:Number(r.min_hours)||2,nightlyPrice:Number(r.nightly_price)||0,deposit:Number(r.deposit)||0,checkinTime:clock(r.checkin_minutes??840),checkoutTime:clock(r.checkout_minutes??720),houseRules:r.house_rules||'',includedGuests:Number(r.included_guests)||0,extraGuestPrice:Number(r.extra_guest_price)||0,prepMinutes:Number(r.prep_minutes)||0,prepayPercent:Number(r.prepay_percent)||0,repeatDiscount:Number(r.repeat_discount)||0}};
 }
 // What goes to the server: the whole listing with the versions the owner started from.
