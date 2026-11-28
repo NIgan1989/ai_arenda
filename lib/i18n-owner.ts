@@ -300,6 +300,7 @@ export const OWNER:Words={
  'Убрали сами, закрыть':['Өзіміз тазаладық, жабу','We cleaned ourselves, close'],
  'Да, убрали сами':['Иә, өзіміз тазаладық','Yes, we cleaned ourselves'],
  'Закрыть уборку без исполнителя? Жильё будет отмечено готовым, платить никому не нужно.':['Тазалауды орындаушысыз жабу керек пе? Баспана дайын деп белгіленеді, ешкімге төлеудің қажеті жоқ.','Close the cleaning without a cleaner? The place will be marked ready, nobody needs to be paid.'],
+ 'После выезда гостя убирать будет некому. Уберите сами или своим персоналом и нажмите «Жильё готово», иначе следующего гостя не заселить.':['Қонақ шыққаннан кейін тазалайтын ешкім болмайды. Өзіңіз немесе өз қызметкерлеріңізбен тазалап, «Баспана дайын» түймесін басыңыз, әйтпесе келесі қонақты орналастыру мүмкін емес.','Nobody will clean after the guest checks out. Clean it yourself or with your own staff and tap “The place is ready”, otherwise the next guest cannot check in.'],
  'Отменить уборку совсем? Готовность жилья нужно будет отметить отдельно.':['Тазалаудан мүлдем бас тарту керек пе? Баспананың дайындығын бөлек белгілеу керек болады.','Cancel the cleaning altogether? You will need to mark the place ready separately.'],
  'ПРОДЛИТЬ СРОК':['МЕРЗІМДІ ҰЗАРТУ','EXTEND THE DEADLINE'],
  'НУЖНО ЕЩЁ ВРЕМЯ':['ТАҒЫ УАҚЫТ КЕРЕК','MORE TIME NEEDED'],
