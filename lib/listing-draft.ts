@@ -71,7 +71,10 @@ export function readListingText(text:string,base:ListingDraft):{draft:ListingDra
 
   // «дом с баней», «коттедж с сауной» is housing with a bath in it, not a bath.
  const withBath=/(?<![а-я])с\s+(?:сауной|баней|банькой)/.test(t);
- const car=venueKind(t,'car'),place=venueKind(t,'place');
+ // «Квартира с караоке», «дом с бильярдом», «база отдыха с беседкой»: housing with a place of rest in it stays housing,
+ // as the guest's words do (lib/map-search-request.ts statedKinds); a loft, a photo studio or a meeting room is named on its own.
+ const home=/квартир|однушк|двушк|трешк|коттедж|(?<![а-я])дом(?![а-я])|гостиниц|(?<![а-я])(?:мини-?)?отел|хостел|апарт|баз[а-я]* отдых|пансионат/.test(t);
+ const car=venueKind(t,'car'),found0=venueKind(t,'place'),place=home&&!['loft','photostudio','meeting'].includes(found0)?'':found0;
  if(car)set('type',car);else if(/банкет|тойхан|зал[а-я]* (?:торжеств|для торжеств)|ресторан/.test(t))set('type','banquet');else if(/(?<![а-я])кафе(?![а-я])/.test(t))set('type','cafe');else if(!withBath&&/саун/.test(t))set('type','sauna');else if(!withBath&&/(?<![а-я])бан(?:я|ю|е|и|ька|ьку)(?![а-я])/.test(t))set('type','banya');else if(place)set('type',place);else if(/хостел/.test(t))set('type','hostel');else if(/апарт-?отел|апарт-?гостиниц/.test(t))set('type','aparthotel');else if(/гостиниц|(?<![а-я])(?:мини-?)?отел/.test(t))set('type','hotel');
  else if(/гостев[а-я]* дом/.test(t))set('type','guesthouse');else if(/студи/.test(t))set('type','studio');else if(/апарт/.test(t))set('type','aparthotel');else if(/баз[а-я]* отдых|дом[а-я]* отдых|курорт|пансионат/.test(t))set('type','resort');else if(/(?<![а-я])(?:дом|коттедж)(?![а-я])/.test(t))set('type','house');
  else if(/(?<![а-я])комнат[ау](?![а-я])/.test(t)&&!/квартир|комнатн/.test(t))set('type','room');
@@ -234,7 +237,7 @@ export function draftDescription(d:ListingDraft){
  if(isHourlyVenue(d.type)){
   parts.push(isAuto(d.type)?'Бокс на время вашей машины.':'Целиком для вашей компании, до '+d.capacity+' '+plural(d.capacity,'гостя','гостей','гостей')+'.');
   if(d.amenities.length)parts.push('Есть: '+d.amenities.map(a=>amenities[a]).filter(Boolean).map((v,i)=>i&&v!=='Wi-Fi'?v.toLocaleLowerCase('ru'):v).join(', ')+'.');
-  parts.push('Бронь по часам, от '+d.minHours+' '+plural(d.minHours,'часа','часов','часов')+'.');
+  parts.push(isAuto(d.type)?'Выберите услугу: время и цена указаны у каждой.':'Бронь по часам, от '+d.minHours+' '+plural(d.minHours,'часа','часов','часов')+'.');
   if(d.includedGuests&&d.extraGuestPrice)parts.push('В цену входит '+d.includedGuests+' '+plural(d.includedGuests,'гость','гостя','гостей')+', каждый следующий: '+fmt(d.extraGuestPrice)+' в час.');
   parts.push('Точный адрес гость получит после подтверждения брони.');
   return parts.join(' ').slice(0,2500);
@@ -269,7 +272,7 @@ export function draftListingBody(d:ListingDraft,photos:string[],published:boolea
  if(isHourlyVenue(type))return {title:draftTitle(d),city:d.city.trim(),district:d.district.trim(),address:d.address.trim(),description:draftDescription(d),price:d.price>=100?d.price:Math.max(100,d.hourlyPrice*12),rooms:d.rooms,capacity:d.capacity,cleaningMinutes:d.cleaningMinutes,ownStaff:!!d.ownStaff,
   photos,published,expectedVersion:0,policyVersion:0,
   details:{type,area:d.area,beds:d.capacity,bathrooms:d.bathrooms,floor:d.floor,floors:Math.max(d.floors,d.floor,1),checkinMethod:method,amenities:d.amenities.filter(a=>amenities[a]&&categoryAmenities[kindCategory(type)].includes(a)),pets:false,smoking:d.smoking,parties:true,...(SERVICE_STARTERS[type]?{services:SERVICE_STARTERS[type]}:{})},
-  rental:{hourlyPrice:d.hourlyPrice,minHours:Math.max(1,d.minHours),nightlyPrice:0,checkinTime:d.checkinTime,checkoutTime:d.checkoutTime,deposit:d.deposit,houseRules:draftRules(d),includedGuests:d.extraGuestPrice?Math.min(d.capacity,d.includedGuests||0):0,extraGuestPrice:d.includedGuests?d.extraGuestPrice||0:0,prepMinutes:d.prepMinutes||0}};
+  rental:{hourlyPrice:d.hourlyPrice,minHours:isAuto(type)?1:Math.max(1,d.minHours),nightlyPrice:0,checkinTime:d.checkinTime,checkoutTime:d.checkoutTime,deposit:d.deposit,houseRules:draftRules(d),includedGuests:d.extraGuestPrice?Math.min(d.capacity,d.includedGuests||0):0,extraGuestPrice:d.includedGuests?d.extraGuestPrice||0:0,prepMinutes:d.prepMinutes||0}};
  return {title:draftTitle(d),city:d.city.trim(),district:d.district.trim(),address:d.address.trim(),description:draftDescription(d),price:d.price,rooms:d.rooms,capacity:d.capacity,cleaningMinutes:d.cleaningMinutes,ownStaff:!!d.ownStaff,
   photos,published,expectedVersion:0,policyVersion:0,
   details:{type,area:d.area,beds:Math.max(d.beds,d.capacity),bathrooms:d.bathrooms,floor:d.floor,floors:Math.max(d.floors,d.floor,1),checkinMethod:method,amenities:d.amenities.filter(a=>amenities[a]),pets:d.pets,smoking:d.smoking,parties:d.parties},

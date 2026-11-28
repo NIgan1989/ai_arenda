@@ -94,6 +94,13 @@ test('a car wash sells its services: the box is held for the service\'s minutes 
   const made=await f.guest.createBooking({...ask('Комплекс',60),requestKey:'wash',acceptTerms:true,expectedAmount:6000});
   const row=f.db.raw.prepare('SELECT b.amount,t.service,t.min_hours FROM bookings b JOIN booking_terms t ON t.booking_id=b.id WHERE b.id=?').get(made.id);
   assert.equal(row.amount,6000);assert.equal(row.service,'Комплекс · Toyota Camry, 123 ABC 14');assert.equal(row.min_hours,1);
+  // The car place is found by the hour: its least is one hour, whatever the owner's form said.
+  assert.equal(f.db.raw.prepare('SELECT min_hours FROM property_policies WHERE property_id=?').get(wash).min_hours,1);
+  // A service moves whole: the same minutes at its own price; another length is refused.
+  f.db.raw.prepare("UPDATE bookings SET status='confirmed' WHERE id=?").run(made.id);
+  const moved=await f.guest.bookingChangeQuote(made.id,'guest',{start:iso(start+3600),end:iso(start+7200)});
+  assert.equal(moved.amount,6000);
+  await assert.rejects(f.guest.bookingChangeQuote(made.id,'guest',{start:iso(start+3600),end:iso(start+3*3600)}),/только перенести/);
   // The owner's list is checked; another kind keeps none.
   assert.throws(()=>servicesInput('carwash',[{name:'Кузов',minutes:20,price:3000}]),/шагом 15 минут/);
   assert.throws(()=>servicesInput('carwash',[{name:'Кузов',minutes:30,price:3000},{name:'кузов',minutes:45,price:4000}]),/уже есть/);

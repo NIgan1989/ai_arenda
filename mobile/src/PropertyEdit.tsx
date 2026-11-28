@@ -158,7 +158,7 @@ export function PropertyEdit({property,onSave,onReview,onRemove,onClose,onOpenHa
    {open==='prices'&&isHourlyVenue(d.type)&&<View>
     {/* A bath is taken by the hour. The day price the service needs is twelve hours, kept in step with the hour. */}
     <EditNumber title={t('Час')} unit="₸" value={r.hourlyPrice} onChange={n=>setDraft(o=>({...o,price:Math.max(100,n*12),rental:{...o.rental,hourlyPrice:n}}))}/>
-    <EditCount title={t('Минимум часов')} value={r.minHours} min={1} max={24} onChange={n=>setR({minHours:n})}/>
+    {!isAuto(d.type)&&<EditCount title={t('Минимум часов')} value={r.minHours} min={1} max={24} onChange={n=>setR({minHours:n})}/>}
     {!isAuto(d.type)&&<><EditNumber title={t('Гостей в цене')} line={t('0 — цена не зависит')} value={r.includedGuests} max={50} onChange={n=>setR({includedGuests:n})}/>
     <EditNumber title={t('Доплата за гостя в час')} unit="₸" value={r.extraGuestPrice} max={1000000} onChange={n=>setR({extraGuestPrice:n})}/></>}
     <EditCount title={t('Подготовка перед гостями')} line={isBath(d.type)?t('Напомню затопить и не приму бронь раньше'):t('Напомню подготовить и не приму бронь раньше')} value={r.prepMinutes} text={r.prepMinutes?(r.prepMinutes%60?t('{prepMinutes} мин',{prepMinutes:r.prepMinutes}):t('{v} ч',{v:r.prepMinutes/60})):t('нет')} min={0} max={360} step={30} onChange={n=>setR({prepMinutes:n})}/>

@@ -51,7 +51,7 @@ import {homeOrderOf,homeCancel,tenge,HOME_DAMAGE_WINDOW} from './home-cleaning';
 import {reportNamesFit} from './cleaning-report';
 import {venuesFor} from './venue';
 import {pickRoom,roomCounts,roomState,roomsOf} from './room-units';
-import {carInput,serviceLine,serviceNamed,serviceQuote} from './venue-services';
+import {carInput,minutesWords,serviceLine,serviceNamed,serviceQuote} from './venue-services';
 import {showWaiting} from './show-waiting';
 import {ownerForecasts,decideForecast} from './load-forecast';
 import {ownerListingTips,decideListingTip} from './listing-quality';
@@ -212,7 +212,8 @@ export class RentalService {
     const staffOff=!p.ownStaff&&!!Number(current?.own_staff)&&!(Number(currentPolicy?.cleaning_fee)>0);
     if(staffOn&&current&&await this.one("SELECT id FROM cleaning_jobs WHERE property_id=? AND status IN ('in_progress','submitted')",propertyId))throw new DomainError('Сейчас идёт уборка исполнителем. Включите «Свой персонал» после её приёмки.',409);
     if(staffOn&&current&&await this.one('SELECT 1 FROM regular_cleaners WHERE property_id=?',propertyId))throw new DomainError('Сначала открепите постоянного исполнителя, потом включите «Свой персонал».',409);
-    const rental=body.rental||{},policy=policyInput({...rental,dailyPrice:p.price,autoConfirm:!staffOff&&!!currentPolicy?.auto_confirm,autoAssign:!staffOff&&!!currentPolicy?.auto_assign,cleaningFee:p.ownStaff?0:currentPolicy?.cleaning_fee||0,cleaningBudget:currentPolicy?.cleaning_budget||0,maxDiscountPercent:currentPolicy?.max_discount_percent||0,minimumRate:currentPolicy?.minimum_rate||0,repairBudget:currentPolicy?.repair_budget||0,autoExtension:!!currentPolicy?.auto_extension,maxExtensionHours:currentPolicy?.max_extension_hours||0,mandateUntil:currentPolicy?.mandate_until?new Date(currentPolicy.mandate_until*1000).toISOString():'',escalationContact:currentPolicy?.escalation_contact||''});
+    // A car place is found by the hour and booked by its services of 15 minutes and more: its least is one hour (Codex, PR #290).
+    const rental={...(body.rental||{}),...(isAuto((details as Row).type)?{minHours:1}:{})},policy=policyInput({...rental,dailyPrice:p.price,autoConfirm:!staffOff&&!!currentPolicy?.auto_confirm,autoAssign:!staffOff&&!!currentPolicy?.auto_assign,cleaningFee:p.ownStaff?0:currentPolicy?.cleaning_fee||0,cleaningBudget:currentPolicy?.cleaning_budget||0,maxDiscountPercent:currentPolicy?.max_discount_percent||0,minimumRate:currentPolicy?.minimum_rate||0,repairBudget:currentPolicy?.repair_budget||0,autoExtension:!!currentPolicy?.auto_extension,maxExtensionHours:currentPolicy?.max_extension_hours||0,mandateUntil:currentPolicy?.mandate_until?new Date(currentPolicy.mandate_until*1000).toISOString():'',escalationContact:currentPolicy?.escalation_contact||''});
     const key=propertyId||id(),revision=id(),gate='EXISTS(SELECT 1 FROM property_details WHERE property_id=? AND revision=?)';
     const statements=[];
     if(!propertyId)statements.push(this.query('INSERT INTO properties(id,owner_id,demo_owner,title,city,district,address,description,price,rooms,capacity,cleaning_minutes,published,created_at,own_staff) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',key,this.userId,null,p.title,p.city,p.district,p.address,p.description,p.price,p.rooms,p.capacity,p.cleaningMinutes,published,now(),p.ownStaff),this.query('INSERT INTO property_operations(property_id,updated_at) VALUES (?,?)',key,now()));
@@ -1211,7 +1212,11 @@ export class RentalService {
     const kind=(await this.one("SELECT json_extract(details,'$.type') type FROM property_details WHERE property_id=?",b.property_id))?.type||'apartment';
     // A new number of guests is agreed in the same change: checked against the capacity and priced like at the booking.
     const guests=body.guests===undefined||body.guests===null||body.guests===''?Number(b.guests):number(body.guests,'Гости',1,Math.max(1,Number(b.capacity)||1));
-    const mode=kindMode(kind,body.billingMode||terms.billing_mode,start,end,policy.venue_hours),pricing=withGuests(changeRentalPrice(b.price,policy,start,end,mode),policy,guests);
+    const mode=kindMode(kind,body.billingMode||terms.billing_mode,start,end,policy.venue_hours);
+    // A car place's service (lib/venue-services.ts) moves whole: the same minutes at the agreed price of the service (Codex, PR #290).
+    const served=isAuto(kind)&&!!terms.service,held=Number(b.end)-Number(b.start);
+    if(served&&end-start!==held)throw new DomainError('Услугу можно только перенести: она занимает '+minutesWords(Math.round(held/60))+'. Выберите новое время начала.');
+    const pricing=served?{billingMode:'hourly',periods:1,price:Number(terms.rate),amount:Number(terms.rate)*Math.max(1,Number(terms.units)||1),unitLabel:String(terms.service).split(' · ')[0],extraHours:0,extraRate:0}:withGuests(changeRentalPrice(b.price,policy,start,end,mode),policy,guests);
     const discount=number(body.discountPercent??terms.discount_percent??0,'Скидка, %',0,50);
     if(role==='guest'&&discount!==(terms.discount_percent||0))throw new DomainError('Скидку предлагает владелец.',403);
     // The discount already in the terms (a regular guest's, lib/rental-policy.ts) stays with the booking whatever the owner's limit.
