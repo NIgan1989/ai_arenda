@@ -2,6 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { ownerThreads, threadClock, type ProcessThread } from '../../lib/process-threads';
 import { t as tr } from '../../lib/i18n';
+import { isHome } from '../../lib/stay-words';
 import { TimeRow } from './MainParts';
 import type { FeedNeed } from './AutopilotThreads';
 import { C, type } from './styles';
@@ -17,6 +18,13 @@ const dayOf = (at: number) => Math.floor((at + ZONE) / DAY);
 const FOLDED = 5;
 
 // «2 заезда», «1 уборка»: Russian has three forms, the other languages take the row of i18n.
+// Today's arrivals: «2 заезда» for homes, «3 брони» for a loft, a bath or a car bay (lib/stay-words.ts).
+function arrivalWords(data: Row, live: ProcessThread[], today: number) {
+  const homes = new Map<string, boolean>((data?.bookings || []).map((b: Row) => ['booking:' + b.id, isHome(b)]));
+  const due = live.filter(t => t.kind === 'booking' && t.tag === 'Бронь' && dayOf(t.at) === today);
+  const stays = due.filter(t => homes.get(t.id) !== false).length, visits = due.length - stays;
+  return [stays ? count(stays, 'заезд', 'заезда', 'заездов') : '', visits ? count(visits, 'бронь', 'брони', 'броней') : ''];
+}
 function count(n: number, one: string, few: string, many: string) {
   const ten = n % 10, hundred = n % 100;
   const word = ten === 1 && hundred !== 11 ? one : ten >= 2 && ten <= 4 && (hundred < 12 || hundred > 14) ? few : many;
@@ -39,9 +47,8 @@ export function timeLabel(at: number, now: number) {
 // What the owner's day holds, for the one line under the «Сейчас» card: «2 заезда · 1 уборка», and how many things wait.
 export function ownerDay(data: Row, now: number) {
   const threads = ownerThreads(data, now, 8 * DAY), today = dayOf(now), live = threads.filter(t => !t.finished);
-  const arrivals = live.filter(t => t.kind === 'booking' && t.tag === 'Бронь' && dayOf(t.at) === today).length;
   const cleanings = live.filter(t => t.kind === 'job' && dayOf(t.at) === today).length;
-  const parts = [arrivals ? count(arrivals, 'заезд', 'заезда', 'заездов') : '', cleanings ? count(cleanings, 'уборка', 'уборки', 'уборок') : ''].filter(Boolean);
+  const parts = [...arrivalWords(data, live, today), cleanings ? count(cleanings, 'уборка', 'уборки', 'уборок') : ''].filter(Boolean);
   return { line: parts.join(' · ') || tr('спокойно'), yours: threads.filter(t => t.yours), cleanings: live.filter(t => t.kind === 'job').length };
 }
 
@@ -56,7 +63,6 @@ export function OwnerToday({ data, now, needs = [], view, onOpen }: Props) {
   const threads = useMemo(() => ownerThreads(data, now, 8 * DAY), [data, now]);
   const today = dayOf(now);
   const live = threads.filter(t => !t.finished);
-  const arrivals = live.filter(t => t.kind === 'booking' && t.tag === 'Бронь' && dayOf(t.at) === today).length;
   const cleanings = live.filter(t => t.kind === 'job' && dayOf(t.at) === today).length;
   // In the outer «Скоро» what waits for the owner now stays in «Сегодня», where it is answered.
   const yours = view === 'soon' ? [] : threads.filter(t => t.yours);
@@ -67,7 +73,7 @@ export function OwnerToday({ data, now, needs = [], view, onOpen }: Props) {
   const inTab = (t: ProcessThread) => tab === 'all' || dayIn(t, tab);
   const shown = calm.filter(inTab);
   const rows = all ? shown : shown.slice(0, FOLDED);
-  const parts = [arrivals ? count(arrivals, 'заезд', 'заезда', 'заездов') : '', cleanings ? count(cleanings, 'уборка', 'уборки', 'уборок') : ''].filter(Boolean);
+  const parts = [...arrivalWords(data, live, today), cleanings ? count(cleanings, 'уборка', 'уборки', 'уборок') : ''].filter(Boolean);
   const todayCount = calm.filter(t => dayIn(t, 'today')).length + asks, soonCount = calm.filter(t => dayIn(t, 'soon')).length;
   const total = needs.length + yours.length + rows.length;
   const tabButton = (id: Tab, title: string, n?: number) => (

@@ -122,7 +122,7 @@ export function PropertyQuick({city,onSave,onGuestMode,onPlace,onReview,onClose,
   {on&&<View style={q.rowBody}>{content}</View>}
  </View>;};
  const anyGuess=(...keys:string[])=>keys.some(guessed);
- const sizeLine=[!venue&&t(forms(draft.rooms,'{n} комната','{n} комнаты','{n} комнат'),{n:draft.rooms}),!car&&t(forms(draft.capacity,'до {n} гостя','до {n} гостей','до {n} гостей'),{n:draft.capacity}),draft.area?t('{n} м²',{n:draft.area}):'',!bath&&draft.floor?t('{floor} этаж из {floors}',{floor:draft.floor,floors:draft.floors}):''].filter(Boolean).join(' · ');
+ const sizeLine=[!venue&&t(forms(draft.rooms,'{n} комната','{n} комнаты','{n} комнат'),{n:draft.rooms}),!car&&t(forms(draft.capacity,'до {n} гостя','до {n} гостей','до {n} гостей'),{n:draft.capacity}),draft.area&&(!venue||draft.known.includes('area'))?t('{n} м²',{n:draft.area}):'',!bath&&draft.floor?t('{floor} этаж из {floors}',{floor:draft.floor,floors:draft.floors}):''].filter(Boolean).join(' · ');
  const addressLine=[draft.address,draft.district,draft.city].map(v=>String(v||'').trim()).filter(Boolean).join(' · ');
  const amenityLine=draft.amenities.map(id=>amenities[id]).filter(Boolean).join(', ');
  const rules=RULES.filter(([key])=>!venue||key==='smoking');
