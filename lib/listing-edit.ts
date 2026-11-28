@@ -40,11 +40,12 @@ export function stepLine(b:EditBody,key:EditStep):string{
  const d=b.details,r=b.rental;
  switch(key){
   case 'photos':return b.photos.length?t('{length} из 8',{length:b.photos.length}):t('Нет фото');
-  case 'flat':return [kindLabel(d.type),b.ownStaff?t('свой персонал'):'',isVenue(d.type)?'':t('{rooms} комн.',{rooms:b.rooms}),isBanquet(d.type)?t('до {n} гост.',{n:b.capacity}):t('{n} гост.',{n:b.capacity})].filter(Boolean).join(' · ');
+  case 'flat':return [kindLabel(d.type),b.ownStaff?t('свой персонал'):'',isVenue(d.type)?'':t('{rooms} комн.',{rooms:b.rooms}),isAuto(d.type)?'':isBanquet(d.type)?t('до {n} гост.',{n:b.capacity}):t('{n} гост.',{n:b.capacity})].filter(Boolean).join(' · ');
   case 'place':return b.address||[b.city,b.district].filter(Boolean).join(', ')||t('Не указан');
   case 'text':return t('{length} знаков',{length:b.description.trim().length});
   case 'amenities':return d.amenities.length?t('{length} отмечено',{length:d.amenities.length}):t('Не отмечены');
   case 'prices':if(isBanquet(d.type)){const q=banquetPrice(b);return [q.perGuest?t('{v} за гостя',{v:money(q.perGuest)}):t('Цена на гостя не задана'),t('от {least} гост.',{least:q.least}),d.menu?t('меню есть'):t('меню нет')].join(' · ');}
+   if(isAuto(d.type)&&d.services?.length)return [t('Услуги: {n}',{n:d.services.length}),t('от {v}',{v:money(Math.min(...d.services.map(x=>x.price)))}),r.hourlyPrice?t('{v}/ч без услуги',{v:money(r.hourlyPrice)}):''].filter(Boolean).join(' · ');
    return isHourlyVenue(d.type)?[r.hourlyPrice?t('{v}/ч',{v:money(r.hourlyPrice)}):t('Цена за час не задана'),r.hourlyPrice?t('от {minHours} ч',{minHours:r.minHours}):'',r.includedGuests&&r.extraGuestPrice?t('+{v} за гостя сверх {includedGuests}',{v:money(r.extraGuestPrice),includedGuests:r.includedGuests}):''].filter(Boolean).join(' · ')
    :[money(b.price),r.hourlyPrice?t('{v}/ч',{v:money(r.hourlyPrice)}):'',r.repeatDiscount?t('постоянным −{n}%',{n:r.repeatDiscount}):''].filter(Boolean).join(' · ');
   case 'checkin':return isVenue(d.type)?t('{v} · уборка {cleaningMinutes} мин',{v:(checkinMethods[d.checkinMethod]||t('Не выбрано')),cleaningMinutes:b.cleaningMinutes}):r.checkinTime+'–'+r.checkoutTime;

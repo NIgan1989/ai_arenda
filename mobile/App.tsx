@@ -19,7 +19,8 @@ import {BrandEmpty,BrandMoment,celebrate} from './src/BrandMoments';
 import {recordSpan} from '../lib/record-span';
 import {checkinOpen,checkinOpensLabel} from '../lib/checkin-window';
 import {CheckinGuarantee,OwnerGuarantee,guaranteeChoices} from './src/CheckinGuarantee';
-import {isHourlyVenue,kindCategory,kindLabel} from '../lib/listings';
+import {isAuto,isHourlyVenue,kindCategory,kindLabel} from '../lib/listings';
+import {servicesOf} from '../lib/venue-services';
 import {lateOpen,lateNote,lateLabel} from '../lib/late-arrival';
 // How often the background refresh of the app also brings the catalogue of places (see load).
 const CATALOG_EVERY=5*60*1000;
@@ -763,6 +764,8 @@ function Chat(){
     const property=data.properties.find((p:Row)=>p.id===found.id)||found;
     // A stay kept from an earlier visit may already be behind: the dates are asked again instead of sending the past.
     if(Date.parse(stayISO(stay).start)<Date.now()){run('book:'+property.id);return;}
+    // A car place with services (2026-11-28): the guest picks the service first, and its minutes give the end.
+    if(isAuto(property.details?.type)&&servicesOf(property.details).length){const at=(v:string)=>Math.floor(Date.parse(v)/1000),when=stayISO(stay);setDeal(null);say('','stay-form',{propertyId:property.id,requestKey:uid(),initial:{mode:'hourly',start:at(when.start),end:at(when.end),guests:1}});return;}
     const next:Flow={kind:'booking',questions:[],index:0,answers:{billingMode:stay.mode,...stayISO(stay),guests:stay.guests,...(stay.occasion?{occasion:stay.occasion}:{})},endpoint:'bookings',after:'bookings',role:'guest',extra:{propertyId:property.id,requestKey:uid()}};
     // The check of the booking is a sheet of its own: one card, the map behind it, nothing of the earlier talk.
     setDealCover(0);setDeal({kind:'review',id:property.id,after:messages.length?messages[messages.length-1].id:''});

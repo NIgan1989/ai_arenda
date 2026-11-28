@@ -132,7 +132,7 @@ export function StayRequest({property,initial,busy,done,result,onQuote,onConfirm
  const dayWord=(day:number)=>day===stayDay(now)?tr('сегодня'):day===stayDay(now)+86400?tr('завтра'):words(day,{day:'numeric',month:'long'});
  return <View style={p.card}>
   <View style={p.head}><Text accessibilityRole="header" style={p.title}>{property.title}</Text><Text style={p.note}>{[property.city,property.district].filter(Boolean).join(', ')}{property.capacity&&!isAuto(type)?' · '+tr('до {guests}',{guests:guestsWord(property.capacity)}):''}</Text></View>
-  {risky&&<LineRow dot={C.warning} title={tr('Жильё не проверено')} onPress={()=>setSheet('risk')}/>}
+  {risky&&<LineRow dot={C.warning} title={bath?tr('Место не проверено'):tr('Жильё не проверено')} onPress={()=>setSheet('risk')}/>}
   {hall?<>
    <LineRow title={tr('Когда')} value={dayWord(when.day)+(picked?', '+sessionLine(picked):'')} disabled={busy} onPress={()=>setSheet('when')}/>
    <LineRow title={tr('Повод')} value={occasion?occasionTitle(occasion):tr('Выбрать')} disabled={busy} onPress={()=>setSheet('occasion')}/>
@@ -147,7 +147,7 @@ export function StayRequest({property,initial,busy,done,result,onQuote,onConfirm
    :<View style={p.wait}><Thinking size="sm"/><Text style={p.fact}>{tr('Проверяем свободное время и цену…')}</Text></View>}
   {!!perk&&<Text style={p.note}>{perk}</Text>}
   {hall&&guests<least&&<Text style={p.note}>{tr('Наименьший заказ зала: {least} гостей.',{least})}</Text>}
-  <Text style={p.note}>{tr('Проводя, вы соглашаетесь с временем, ценой, оплатой, депозитом и правилами проживания. Деньги сейчас не списываются.')}</Text>
+  <Text style={p.note}>{(bath?tr('Проводя, вы соглашаетесь с временем, ценой, оплатой, депозитом и правилами места. Деньги сейчас не списываются.'):tr('Проводя, вы соглашаетесь с временем, ценой, оплатой, депозитом и правилами проживания. Деньги сейчас не списываются.'))}</Text>
   <SwipeConfirm label={tr('Проведите: отправить заявку')} disabled={!ready} onConfirm={()=>{if(quote)onConfirm({...body(),expectedAmount:quote.amount,expectedPolicyVersion:quote.policy.version,acceptTerms:true});}}/>
   <PopSheet visible={sheet==='when'} title={tr('Когда')} onClose={()=>setSheet('')} footer={<Send title={tr('Готово')} disabled={false} busy={false} onPress={()=>setSheet('')}/>}>
    <Days label={tr('Дата')} value={when.day} now={now} disabled={busy} onChange={day=>setWhen(settleSession(day,when.idx,now,sessions))}/>
@@ -165,7 +165,7 @@ export function StayRequest({property,initial,busy,done,result,onQuote,onConfirm
   <PopSheet visible={sheet==='occasion'} title={tr('Повод')} onClose={()=>setSheet('')}>
    <View style={p.tasks}>{OCCASIONS.map(([id,title])=>{const on=id===occasion;return <Pressable key={id} accessibilityRole="radio" accessibilityState={{selected:on}} onPress={()=>{setOccasion(id);setSheet('');}} style={[p.task,on&&p.on]}><Text style={[p.taskText,on&&p.onText]}>{title}</Text></Pressable>;})}</View>
   </PopSheet>
-  <PopSheet visible={sheet==='risk'} title={tr('Жильё не проверено')} onClose={()=>setSheet('')}><Text style={p.fact}>{tr('Сервис не сверял документ о праве владельца сдавать это жильё. Бронируя, вы принимаете этот риск.')}</Text><Text style={p.fact}>{tr('Платите только по реквизитам в карточке брони.')}</Text></PopSheet>
+  <PopSheet visible={sheet==='risk'} title={bath?tr('Место не проверено'):tr('Жильё не проверено')} onClose={()=>setSheet('')}><Text style={p.fact}>{tr('Сервис не сверял документ о праве владельца сдавать это жильё. Бронируя, вы принимаете этот риск.')}</Text><Text style={p.fact}>{tr('Платите только по реквизитам в карточке брони.')}</Text></PopSheet>
   <PopSheet visible={sheet==='price'&&!!quote} title={tr('Цена')} onClose={()=>setSheet('')}>{!!quote&&<>
    <Text style={p.span}>{recordSpan(span.start,span.end)}</Text>
    <View style={p.sum}><Text style={p.amount}>{money(quote.amount)}</Text>{hall?(perGuest>0&&<Text style={p.sumNote}>{tr('{price} за гостя × {n}.',{price:money(perGuest),n:Math.max(guests,least)})}</Text>):<Text style={p.sumNote}>{quote.periods} × {money(quote.price)} · {tr(quote.unitLabel)}</Text>}</View>
