@@ -1,5 +1,5 @@
 import {t} from '../../lib/i18n';
-import React,{useEffect,useRef,useState} from 'react';
+import React,{useEffect,useMemo,useRef,useState} from 'react';
 import {View,Text,Pressable,StyleSheet} from 'react-native';
 import {s,C,type} from './styles';
 import {date,money,uid,type Row} from './model';
@@ -7,13 +7,13 @@ import {isBath,isBanquet} from '../../lib/listings';
 import {recordSpan} from '../../lib/record-span';
 import {settleStay,stayFromInterval,stayInterval,stayLimits,stayStamp,type StayChoice,type StayMode} from '../../lib/stay-choice';
 import {useActivityClock} from './ActivityTimer';
-import {Days,GuestsRow,Segments,Stepper,StayWhen} from './StayRequest';
+import {Days,GuestsRow,HallTimes,Stepper,StayWhen} from './StayRequest';
+import {venueHours} from '../../lib/venue-hours';
 import {PopSheet} from './PopSheet';
 import {SwipeConfirm} from './SwipeConfirm';
 import {Thinking} from './Thinking';
 // The kind decides what may change (audit of 2026-11-22, lib/service.ts kindMode): a bath stays by the hour, a hall
-// moves only to the lunch (12:00–17:00) or the evening (18:00–00:00) of another day.
-const SLOTS={lunch:[12,5],evening:[18,6]} as const;
+// moves only to another of its own times of events (lib/venue-hours.ts) on another day.
 const minutesOf=(at:number)=>Math.round(((at+18000)%86400)/60);
 // «Изменить бронь» on its own sheet (board «Экраны старой версии», 2026-11-26, as the change of a trip in Airbnb): the same
 // choice of days and hours as in the request, the guests, the new price in one line, and «Проведите» at the bottom.
@@ -26,7 +26,10 @@ export function BookingChanges({booking:b,capacity=0,role,busy,editing,onEditing
  const clock=useActivityClock(),now=clock||Math.floor(Date.now()/1000);
  const first=()=>stayFromInterval(mode,b.start,b.end,policy),base=first();
  const [choice,setChoice]=useState<StayChoice>(first),[guests,setGuests]=useState(Number(b.guests)||1),[discount,setDiscount]=useState(Number(b.terms?.discount_percent)||0);
- const [slot,setSlot]=useState<'lunch'|'evening'>(((b.start+18000)%86400)===18*3600?'evening':'lunch');
+ // A hall moves to another of its own times (lib/venue-hours.ts); the booked time is always one of the choices.
+ const sessions=useMemo(()=>{if(!hall)return [];const list=venueHours(b.property_type,b.policy?.venue_hours??b.venue_hours)?.sessions||[],from=Math.floor(((b.start+18000)%86400)/60),to=from+Math.round((b.end-b.start)/60);
+  return list.some(x=>x.from===from&&x.to===to)?list:[{label:t('Как сейчас'),from,to},...list];},[hall,b.start,b.end,b.property_type]);
+ const [slot,setSlot]=useState(()=>{const from=Math.floor(((b.start+18000)%86400)/60);return Math.max(0,sessions.findIndex(x=>x.from===from&&x.to-x.from===Math.round((b.end-b.start)/60)));});
  const [q,setQuote]=useState<Row|null>(null),[error,setError]=useState(''),[checking,setChecking]=useState(false),[key,setKey]=useState(uid),[touched,setTouched]=useState(false),[late,setLate]=useState(0),round=useRef(0);
  useEffect(()=>{if(editing){setChoice(first());setTouched(false);setLate(0);setGuests(Number(b.guests)||1);setQuote(null);setError('');setKey(uid());}},[editing]);
  const change=(next:Partial<StayChoice>)=>{
@@ -37,7 +40,7 @@ export function BookingChanges({booking:b,capacity=0,role,busy,editing,onEditing
  // Until the guest moves something, the booking keeps its own minutes (the strip of times goes by half-hours).
  const span=()=>{
   if(!touched)return {start:b.start,end:b.end};
-  if(hall){const [hour,length]=SLOTS[slot],start=choice.day+hour*3600;return {start,end:start+length*3600};}
+  if(hall){const x=sessions[slot]||sessions[0];return {start:choice.day+x.from*60,end:choice.day+x.to*60};}
   // A night moves from the booking's own dates: an arrival after midnight belongs to the night before (lib/rental-policy.ts
   // nightOf), so the nights are counted from the booked checkout, and a late checkout adds hours priced as extra hours.
   if(mode==='nightly'){const shift=inside?0:choice.day-base.day,more=(choice.count-base.count)*86400+late*3600;return {start:b.start+shift,end:b.end+shift+more};}
@@ -64,7 +67,7 @@ export function BookingChanges({booking:b,capacity=0,role,busy,editing,onEditing
    <Text style={c.note}>{q?.automatic?t('Продление примут сразу, по разрешению владельца.'):t('Вторая сторона ответит в течение 15 минут. Деньги не списываются.')}</Text>
   </>}>
    <Text style={c.now}>{t('Сейчас: {v}',{v:recordSpan(b.start,b.end)})}</Text>
-   {hall?<><Days label={t('День мероприятия')} value={choice.day} now={now} disabled={busy} onChange={day=>{setTouched(true);setChoice({...choice,day});}}/><Segments label={t('Время')} value={slot} disabled={busy} onChange={v=>{setTouched(true);setSlot(v);}} options={[{id:'lunch',title:t('Обед'),note:'12:00–17:00'},{id:'evening',title:t('Вечер'),note:'18:00–00:00'}]}/></>
+   {hall?<><Days label={t('День мероприятия')} value={choice.day} now={now} disabled={busy} onChange={day=>{setTouched(true);setChoice({...choice,day});}}/><HallTimes label={t('Время')} value={slot} sessions={sessions} day={choice.day} now={now} disabled={busy} onChange={v=>{setTouched(true);setSlot(v);}}/></>
     :<StayWhen title={inside?t('Выезд'):t('Когда')} choice={choice} modes={[mode]} policy={policy} now={now} disabled={busy} fixedStart={inside} shown={{start,end}} onChange={change}/>}
    <GuestsRow value={guests} max={Math.max(guests,capacity||20)} disabled={busy} onChange={setGuests}/>
    {mode==='nightly'&&<Stepper label={t('Поздний выезд')} value={late} min={0} max={12} disabled={busy} format={n=>n?t('+{n} ч',{n}):t('нет')} onChange={n=>{setTouched(true);setLate(n);}}/>}

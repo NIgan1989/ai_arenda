@@ -159,9 +159,10 @@ export const BATH_KINDS = ['banya', 'sauna'];
 /** The types of the category «Банкет» (lib/listings.ts categories.banquet): a hall taken whole, priced per guest. */
 export const BANQUET_KINDS = ['banquet', 'cafe'];
 export const MAX_BANQUET_GUESTS = 1000;
-/** The two slots of a banquet day (lib/listings.ts banquetSlots); the evening ends at midnight. */
+/** The two parts of a banquet day the search looks in; the evening ends at midnight. Each hall books its own times
+ *  of events inside them (lib/venue-hours.ts), the guest picks one on the hall's page. */
 export const BANQUET_SLOTS: Record<'lunch' | 'evening', { title: string; from: string; to: string }> = {
-  lunch: { title: 'Обед', from: '12:00', to: '17:00' },
+  lunch: { title: 'Днём', from: '12:00', to: '17:00' },
   evening: { title: 'Вечер', from: '18:00', to: '00:00' },
 };
 export type BanquetSlot = keyof typeof BANQUET_SLOTS;
@@ -865,7 +866,7 @@ export function guestSearchRequest(text: string, current: Row, cities: string[],
     if (!past) {
       if (dates || said) stated.when = true;
       if (day === today && localTime(banquetStay(day, slot).start) < soon) {
-        if (slot === 'lunch' && localTime(banquetStay(day, 'evening').start) >= soon) { slot = 'evening'; remarks.push(tr('Обед сегодня уже начался, ищу на вечер.')); }
+        if (slot === 'lunch' && localTime(banquetStay(day, 'evening').start) >= soon) { slot = 'evening'; remarks.push(tr('Дневное время сегодня уже прошло, ищу на вечер.')); }
         else past = 'time';
       }
     }

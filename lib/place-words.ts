@@ -4,6 +4,7 @@ import {forms,t} from './i18n';
 // One reading for the app (mobile/src/PropertyListing.tsx): the screen only lays the lines out.
 import {propertyTypes,checkinMethods,isBath,isBanquet} from './listings';
 import {clock,prepWords} from './rental-policy';
+import {venueHours,sessionLine} from './venue-hours';
 type Row=Record<string,any>;
 const money=(n:number)=>new Intl.NumberFormat('ru-RU').format(Math.round(n||0))+' ₸';
 // «до 6 гостей», «от 20 гостей»: the number with the word in the form that follows «до» and «от».
@@ -43,7 +44,7 @@ export function placeWords(p:Row):PlaceWords{
  if(isBanquet(type)){
   const least=Math.max(1,Number(policy.included_guests)||1),each=Number(policy.extra_guest_price)||Math.round((Number(p.price)||0)/least);
   return {kind:(name||t('Зал'))+area+'\n'+t('Зал целиком · до {guests}',{guests:guests(Number(p.capacity)||1)}),
-   terms:[t('Обед с 12:00 до 17:00, вечер с 18:00 до полуночи'),t('Цена считается на гостя, от {v}',{v:guests(least)}),...(typeof d.menu==='string'&&d.menu.trim()?[t('Меню: {v}',{v:d.menu.trim()})]:[]),how||t('Как попасть внутрь, уточняется')],
+   terms:[venueHours(type,policy.venue_hours)!.sessions.map(sessionLine).join(', '),t('Цена считается на гостя, от {v}',{v:guests(least)}),...(typeof d.menu==='string'&&d.menu.trim()?[t('Меню: {v}',{v:d.menu.trim()})]:[]),how||t('Как попасть внутрь, уточняется')],
    extra:[deposit],rulesTitle:t('Правила'),allowed:smoking,
    addressNote:t('Точный адрес доступен после подтверждения брони. Свободен ли зал, проверим на выбранный день.'),
    price:money(each),priceNote:t('За гостя · от {v}',{v:guests(least)}),choose:t('Выбрать день')};

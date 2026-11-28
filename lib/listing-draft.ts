@@ -211,7 +211,7 @@ export function draftDescription(d:ListingDraft){
  if(isBanquet(d.type)){
   parts.push('Зал целиком до '+d.capacity+' '+plural(d.capacity,'гостя','гостей','гостей')+': той, свадьба, юбилей, поминальный обед.');
   if(d.amenities.length)parts.push('Есть: '+d.amenities.map(a=>amenities[a]).filter(Boolean).map((v,i)=>i&&v!=='Wi-Fi'?v.toLocaleLowerCase('ru'):v).join(', ')+'.');
-  parts.push('Обед с 12:00 до 17:00, вечер с 18:00 до полуночи. Цена считается на гостя, меню обсуждается после брони.');
+  parts.push('Время мероприятий зал задаёт сам. Цена считается на гостя, меню обсуждается после брони.');
   parts.push('Точный адрес гость получит после подтверждения брони.');
   return parts.join(' ').slice(0,2500);
  }

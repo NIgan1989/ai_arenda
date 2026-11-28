@@ -66,6 +66,7 @@ import {ruleFor,minutesLabel} from './decision-rules';
 import {ownerWindows,decideCalendarWindow,openWindowFor,openWindowsFor,openWindowsIn,windowAt,windowQuote} from './calendar-windows';
 import {languageOf} from './user-language';
 import {cleaningWindow,movedNote} from './night-hours';
+import {venueHours,venueHoursInput,sessionAt,fitsHours,hallTimesText,bathHoursText} from './venue-hours';
 
 type Row = Record<string, any>;
 const now = () => Math.floor(Date.now() / 1000);
@@ -97,14 +98,17 @@ export function collapseRooms(items:Row[],leads:Map<string,string>,counts:Map<st
 }
 /** The guest said «Я оплатил» and the owner has not answered yet: the transfer is «на проверке». */
 export const onReview=(terms:Row|null|undefined)=>!!(terms?.payment_reported_at||terms?.deposit_reported_at);
-export function kindMode(kind:string,mode:unknown,start:number,end:number){
+// `stored`: the place's own «Время работы» (property_policies.venue_hours, lib/venue-hours.ts).
+export function kindMode(kind:string,mode:unknown,start:number,end:number,stored?:unknown){
   if(isBath(kind)){
     if(mode!==undefined&&mode!==null&&mode!==''&&mode!=='hourly')throw new DomainError('Баню и сауну бронируют по часам.');
+    const hours=venueHours(kind,stored);if(hours&&!fitsHours(hours,start,end))throw new DomainError(bathHoursText(hours));
     return 'hourly';
   }
   if(isBanquet(kind)){
-    const slotStart=(start+18000)%86400,slot=slotStart===12*3600?5:slotStart===18*3600?6:0;
-    if((mode!==undefined&&mode!==null&&mode!==''&&mode!=='daily')||!slot||end-start!==slot*3600)throw new DomainError('Банкетный зал бронируют на обед или на вечер одного дня: 12:00–17:00 или 18:00–00:00.');
+    // A hall is taken for one of its own times of events: «Той 15:00–24:00», «Поминки, 1-й заход 12:00–13:30»…
+    const hours=venueHours(kind,stored)!;
+    if((mode!==undefined&&mode!==null&&mode!==''&&mode!=='daily')||!sessionAt(hours,start,end))throw new DomainError(hallTimesText(hours));
     return 'daily';
   }
   return mode||'daily';
@@ -656,7 +660,10 @@ export class RentalService {
     const current=await this.one('SELECT * FROM property_policies WHERE property_id=?',propertyId),expected=number(body.expectedVersion,'Версия правил',0,1000000);
     if((current?.version||0)!==expected)throw new DomainError('Правила уже изменились. Обновите карточку.',409);
     // Own staff cleans: no cleaning fee for executors, whatever the form sends.
-    const policy=policyInput({...body,...(Number(p.own_staff)?{cleaningFee:0}:{}),autoAssign:body.autoAssign??!!current?.auto_assign,maxDiscountPercent:body.maxDiscountPercent??current?.max_discount_percent??0,minimumRate:body.minimumRate??current?.minimum_rate??0,repairBudget:body.repairBudget??current?.repair_budget??0,autoExtension:body.autoExtension??!!current?.auto_extension,maxExtensionHours:body.maxExtensionHours??current?.max_extension_hours??0,mandateUntil:body.mandateUntil??(current?.mandate_until?new Date(current.mandate_until*1000).toISOString():''),escalationContact:body.escalationContact??current?.escalation_contact??''}),price=number(body.dailyPrice,'Цена за сутки',100,10000000),revision=id(),keys=Object.keys(policy);
+    const policy=policyInput({...body,...(Number(p.own_staff)?{cleaningFee:0}:{}),autoAssign:body.autoAssign??!!current?.auto_assign,maxDiscountPercent:body.maxDiscountPercent??current?.max_discount_percent??0,minimumRate:body.minimumRate??current?.minimum_rate??0,repairBudget:body.repairBudget??current?.repair_budget??0,autoExtension:body.autoExtension??!!current?.auto_extension,maxExtensionHours:body.maxExtensionHours??current?.max_extension_hours??0,mandateUntil:body.mandateUntil??(current?.mandate_until?new Date(current.mandate_until*1000).toISOString():''),escalationContact:body.escalationContact??current?.escalation_contact??''}) as Row;
+    // «Время работы» of a hall, cafe, bath or sauna (lib/venue-hours.ts); an older app sends none and keeps what is stored.
+    if(body.venueHours!==undefined)policy.venue_hours=venueHoursInput((await this.one("SELECT json_extract(details,'$.type') type FROM property_details WHERE property_id=?",propertyId))?.type,body.venueHours);
+    const price=number(body.dailyPrice,'Цена за сутки',100,10000000),revision=id(),keys=Object.keys(policy);
     const result=await this.db.batch([
       this.query(`INSERT INTO property_policies(property_id,${keys.join(',')},version,revision,updated_at) VALUES (?,${keys.map(()=>'?').join(',')},?,?,?) ON CONFLICT(property_id) DO UPDATE SET ${keys.map(k=>`${k}=excluded.${k}`).join(',')},version=excluded.version,revision=excluded.revision,updated_at=excluded.updated_at WHERE property_policies.version=?`,propertyId,...Object.values(policy),expected+1,revision,now(),expected),
       this.query('UPDATE properties SET price=? WHERE id=? AND owner_id=? AND EXISTS(SELECT 1 FROM property_policies WHERE property_id=? AND revision=?)',price,propertyId,this.userId,propertyId,revision),
@@ -713,7 +720,7 @@ export class RentalService {
     // The owner needs time to get the place ready (to heat a bath): nothing starts sooner, unless the owner says it is ready.
     if(!options.ownerReady&&tooSoon(policy,start,now()))throw new DomainError('Это место готовят к приходу гостей '+prepWords(Number(policy.prep_minutes))+'. Ближайшее начало — '+clockLabel(Math.ceil((now()+prepSeconds(policy))/1800)*1800)+'.',409);
     const kind=(await this.one("SELECT json_extract(details,'$.type') type FROM property_details WHERE property_id=?",p.id))?.type||'apartment';
-    const base=rentalPrice(p.price,policy,start,end,kindMode(kind,body.billingMode,start,end)),guestPricing=withGuests(windowQuote(base,policy.hourly_price,base.billingMode==='hourly'?await openWindowFor(this.db,p.id,start,end):null),policy,guests);
+    const base=rentalPrice(p.price,policy,start,end,kindMode(kind,body.billingMode,start,end,policy.venue_hours)),guestPricing=withGuests(windowQuote(base,policy.hourly_price,base.billingMode==='hourly'?await openWindowFor(this.db,p.id,start,end):null),policy,guests);
     // «Скидка постоянного гостя»: the guest already stayed with this owner through the service (lib/rental-policy.ts).
     const regular=Number(policy.repeat_discount)>0&&!!this.userId&&this.userId!==p.owner_id&&!!await this.one("SELECT b.id FROM bookings b JOIN properties x ON x.id=b.property_id WHERE b.guest_id=? AND x.owner_id=? AND b.status='completed' LIMIT 1",this.userId,p.owner_id);
     const pricing=regular?withRepeatDiscount(guestPricing,policy.repeat_discount):guestPricing;
@@ -1194,11 +1201,11 @@ export class RentalService {
     if(!Number.isFinite(start)||!Number.isFinite(end)||end<=start||end<=t||end-start>90*86400)throw new DomainError('Проверьте даты проживания: выезд должен быть в будущем, срок — до 90 дней.');
     if(terms.actual_checkin&&start!==b.start)throw new DomainError('После заселения время заезда изменить нельзя.');
     if(!terms.actual_checkin&&start<t-60&&start!==b.start)throw new DomainError('Новый заезд должен быть в будущем.');
-    // The same rule as at the booking: a bath stays by the hour, a hall moves only to another lunch or evening (kindMode).
+    // The same rule as at the booking: a bath stays by the hour, a hall moves only to another of its own times of events (kindMode).
     const kind=(await this.one("SELECT json_extract(details,'$.type') type FROM property_details WHERE property_id=?",b.property_id))?.type||'apartment';
     // A new number of guests is agreed in the same change: checked against the capacity and priced like at the booking.
     const guests=body.guests===undefined||body.guests===null||body.guests===''?Number(b.guests):number(body.guests,'Гости',1,Math.max(1,Number(b.capacity)||1));
-    const mode=kindMode(kind,body.billingMode||terms.billing_mode,start,end),pricing=withGuests(changeRentalPrice(b.price,policy,start,end,mode),policy,guests);
+    const mode=kindMode(kind,body.billingMode||terms.billing_mode,start,end,policy.venue_hours),pricing=withGuests(changeRentalPrice(b.price,policy,start,end,mode),policy,guests);
     const discount=number(body.discountPercent??terms.discount_percent??0,'Скидка, %',0,50);
     if(role==='guest'&&discount!==(terms.discount_percent||0))throw new DomainError('Скидку предлагает владелец.',403);
     // The discount already in the terms (a regular guest's, lib/rental-policy.ts) stays with the booking whatever the owner's limit.
