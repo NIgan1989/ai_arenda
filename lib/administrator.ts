@@ -45,15 +45,17 @@ export function planAdministrator(data:Row,t:number):AdministratorTask[]{
    continue;
   }
   if(b.status!=='confirmed')continue;
-  if(b.payment_status!=='owner_verified')bookingTask(b,'payment','Проверить оплату проживания',subject+' · поступление не подтверждено владельцем',b.start);
+  // The owner's words follow the place too: a loft or a car bay has a visit, not a stay.
+  const w=wordsOf(b),home=(text:string,venue:string)=>venueOr(b,text,venue);
+  if(b.payment_status!=='owner_verified')bookingTask(b,'payment',home('Проверить оплату проживания','Проверить оплату брони'),subject+' · поступление не подтверждено владельцем',b.start);
   if(terms.deposit_status==='pending')bookingTask(b,'deposit','Проверить депозит',subject+' · депозит предусмотрен согласованными условиями',b.start);
   if(!terms.actual_checkin&&!terms.actual_checkout){
-   if(p?.readiness!=='ready')bookingTask(b,'readiness','Подготовить жильё к заезду',subject+' · готовность жилья не подтверждена',b.start,['owner']);
-   bookingTask(b,'checkin','Проверить заселение',subject+' · фактический заезд ещё не подтверждён; сначала нужны готовность, оплата и депозит',b.start);
+   if(p?.readiness!=='ready')bookingTask(b,'readiness',home('Подготовить жильё к заезду','Подготовить место'),home(subject+' · готовность жилья не подтверждена',subject+' · готовность места не подтверждена'),b.start,['owner']);
+   bookingTask(b,'checkin',home('Проверить заселение','Проверить '+w.arriveAcc),home(subject+' · фактический заезд ещё не подтверждён; сначала нужны готовность, оплата и депозит',subject+' · отметки «'+w.iAmIn+'» ещё нет; сначала нужны готовность, оплата и депозит'),b.start);
   }
   if(!terms.actual_checkout){
-   if(terms.checkout_reported_at)add(b,'booking','checkout-reported',owner,'owner','Проверить сообщение о выезде',subject+' · гость сообщил о выезде; подтвердите освобождение после проверки',terms.checkout_reported_at+900,t>=terms.checkout_reported_at+900?3:2);
-   bookingTask(b,'checkout',b.end<=t?'Просрочен выезд':'Подготовиться к выезду',subject+' · освобождение жилья подтверждается отдельно',b.end,undefined,b.end<=t);
+   if(terms.checkout_reported_at)add(b,'booking','checkout-reported',owner,'owner',home('Проверить сообщение о выезде','Проверить сообщение '+w.ofLeave),home(subject+' · гость сообщил о выезде; подтвердите освобождение после проверки',subject+' · гость сообщил '+w.ofLeave+'; подтвердите после проверки'),terms.checkout_reported_at+900,t>=terms.checkout_reported_at+900?3:2);
+   bookingTask(b,'checkout',home(b.end<=t?'Просрочен выезд':'Подготовиться к выезду',b.end<=t?'Время брони вышло':'Скоро '+w.leaveLow),home(subject+' · освобождение жилья подтверждается отдельно',subject+' · '+w.leaveLow+' подтверждается отдельно'),b.end,undefined,b.end<=t);
   }
   // Own staff cleans this property: no cleaning task for executors is expected.
   if(!Number(p?.own_staff)&&!data.jobs.some((j:Row)=>j.booking_id===b.id&&j.status!=='cancelled'))add(b,'booking','missing-cleaning',owner,'owner','Запланировать уборку после выезда',subject+' · связанного задания нет; проверьте стоимость и создайте уборку',b.end,2);

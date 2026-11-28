@@ -58,7 +58,7 @@ import {GuestMode} from './GuestMode';
 import {ArrivalStrip} from './ArrivalStrip';
 import {arrivalOf,cardWords,countsAt,homeAt,pinWords,shiftDraft} from './arrival';
 import {PriceTip,isAdviceTip,isRequestTip} from './PriceTip';
-import {kindCategory,kindLabel} from '../../lib/listings';
+import {isVenue,kindCategory,kindLabel} from '../../lib/listings';
 import {guestPin,guestTrips} from '../../lib/guest-trips';
 import type {HubTab} from '../../lib/property-hub';
 import {cleanerLine,cleanerStep} from '../../lib/job-steps';
@@ -1038,7 +1038,7 @@ export function MapHome({ role, accountId, data, menu, account, chats, onChanged
   const plate = !account || floating ? null : role === 'owner' ? (
     <RolePlate {...account} width={plateWidth} caret={ownFlats.length > 1} expanded={placesOpen}
       title={chosenFlat ? chosenFlat.title : ownFlats.length === 1 ? ownFlats[0].title : ownFlats.length ? tr('Все объекты') : tr('Мои объекты')}
-      line={chosenFlat ? flatState(chosenFlat) : !ownFlats.length ? tr('Добавьте первое объявление') : [ownFlats.length === 1 ? (living ? tr('гости в доме') : tr('свободно')) : tr('{a} из {b} заняты', { a: living, b: ownFlats.length }), ownerLine === tr('спокойно') ? '' : ownerLine].filter(Boolean).join(' · ')}
+      line={chosenFlat ? flatState(chosenFlat) : !ownFlats.length ? tr('Добавьте первое объявление') : [ownFlats.length === 1 ? (living ? (isVenue(ownFlats[0]?.details?.type) ? tr('Гости на месте').toLowerCase() : tr('гости в доме')) : tr('свободно')) : tr('{a} из {b} заняты', { a: living, b: ownFlats.length }), ownerLine === tr('спокойно') ? '' : ownerLine].filter(Boolean).join(' · ')}
       dot={chosenFlat ? flatDot(chosenFlat) : undefined}
       onPress={() => { if (!ownFlats.length) { onOpenPage('properties'); return; } if (ownFlats.length === 1) { pickPlace('property:' + ownFlats[0].id); return; } setPlacesOpen(true); }} />
   ) : role === 'cleaner' ? (

@@ -54,3 +54,15 @@ test('a finished visit to a loft with its own staff keeps its break, a finished 
   assert.equal((await f.guest.bookingQuote({propertyId:loft,start:iso(start),end:iso(start+3600),guests:1,billingMode:'hourly'})).amount,5000);
  }finally{f.db.close();}
 });
+
+test('a loft has no made-up area, and the owner\'s tasks speak of a visit',async()=>{
+ const {readListingText,emptyDraft,draftListingBody}=await load('listing-draft');
+ const loft=draftListingBody({...readListingText('Лофт на Ломова 5, 8 000 в час',emptyDraft('Павлодар')).draft,address:'Ломова 5',district:'Центр'},[],false);
+ assert.equal(loft.details.area,0);
+ const {planAdministrator}=await load('administrator'),t=1800000000;
+ const data={ownerId:'o',properties:[{id:'p',title:'Лофт «Кирпич»',readiness:'ready',own_staff:1}],jobs:[],settings:{},
+  bookings:[{id:'b',property_id:'p',owner_id:'o',guest_id:'g',title:'Лофт «Кирпич»',property_type:'loft',status:'confirmed',payment_status:'owner_verified',start:t-600,end:t+3600,terms:{}}]};
+ const titles=planAdministrator(data,t).filter(x=>x.role==='owner').map(x=>x.title+' · '+x.reason).join('\n');
+ assert.doesNotMatch(titles,/заселен|заезд|выезд|жиль/i,titles);
+ assert.match(titles,/Проверить приход/);
+});
