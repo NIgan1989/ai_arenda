@@ -65,11 +65,28 @@ const GUEST_BANQUET: HeadChip[] = L([
   { id: 'memorial', title: 'Поминки', hint: 'Поминки, ас: зал на завтра, днём', action: 'memorial' }
 ]);
 const BANQUET_LINE = L({ placeholder: 'Той на 150 человек 5 декабря', shortPlaceholder: 'Той на 150, 5 декабря' });
+// «Досуг» and «Спорт» (2026-11-28): a place for a few hours, mostly in the evening, as a bath.
+const GUEST_PLACE: HeadChip[] = L([
+  { id: 'now', title: 'Сейчас', hint: 'Сейчас: свободное место рядом с мгновенным подтверждением', action: 'now' },
+  { id: 'evening', title: 'Вечером', hint: 'Вечером: три часа с 19:00', action: 'evening' },
+  { id: 'tomorrow', title: 'Завтра', hint: 'Завтра вечером: три часа с 19:00', action: 'tomorrow' }
+]);
+// «Авто»: a car is brought for an hour, today or tomorrow morning.
+const GUEST_AUTO: HeadChip[] = L([
+  { id: 'now', title: 'Сейчас', hint: 'Сейчас: ближайший свободный бокс на час', action: 'now' },
+  { id: 'tomorrow', title: 'Завтра', hint: 'Завтра утром: час с 10:00', action: 'tomorrow' }
+]);
+const PLACE_LINES = L({
+  leisure: { placeholder: 'Лофт на 10 человек в субботу в 18:00', shortPlaceholder: 'Лофт на 10 в 18:00', label: 'Какое место найти' },
+  sport: { placeholder: 'Мини-футбол на 10 человек сегодня в 20:00', shortPlaceholder: 'Футбол сегодня в 20:00', label: 'Какое место найти' },
+  auto: { placeholder: 'Мойка завтра в 10:00', shortPlaceholder: 'Мойка в 10:00', label: 'Какой сервис найти' }
+});
 /** Evening and night in Kazakhstan: from 18:00 to 06:00. */
 export const isEvening = (now = Date.now()) => { const hour = new Date(now + 5 * 3600000).getUTCHours(); return hour >= 18 || hour < 6; };
 
-export function headLine(role: HeadRole, now = Date.now(), category: 'stay' | 'bath' | 'banquet' = 'stay'): HeadLine {
+export function headLine(role: HeadRole, now = Date.now(), category: 'stay' | 'bath' | 'banquet' | 'leisure' | 'sport' | 'auto' = 'stay'): HeadLine {
   const line = roleAiLine(role);
+  if (role === 'guest' && (category === 'leisure' || category === 'sport' || category === 'auto')) return { ...PLACE_LINES[category], chips: category === 'auto' ? GUEST_AUTO : GUEST_PLACE };
   if (role === 'guest' && category === 'banquet') return { ...BANQUET_LINE, label: t('Какой зал найти'), chips: GUEST_BANQUET };
   if (role === 'guest' && category === 'bath') return { ...BATH_LINE, label: line.label, chips: GUEST_BATH };
   if (role === 'guest') return { placeholder: line.placeholder, shortPlaceholder: line.shortPlaceholder, label: line.label, chips: isEvening(now) ? GUEST_NIGHT : GUEST_DAY };

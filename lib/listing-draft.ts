@@ -1,3 +1,4 @@
+import {SERVICE_STARTERS} from './venue-services';
 // The owner describes a flat in one message, the way he would tell a friend; this file turns that
 // message into a listing draft without a model call: instant, free and the same on the site and in the app.
 // Everything the text does not say gets a safe default and is marked as guessed, so the check screen
@@ -5,7 +6,7 @@
 // housing, the hour for a bath, the guest for a banquet hall.
 import {formatTitle} from './listing-title';
 import {t as tr} from './i18n';
-import {isBanquet,isBath,propertyTypes,amenities,categoryAmenities,kindCategory,checkinMethods,defaultOwnStaff,maxGuests} from './listings';
+import {isBanquet,isBath,isHourlyVenue,isAuto,propertyTypes,amenities,categoryAmenities,kindCategory,checkinMethods,defaultOwnStaff,maxGuests} from './listings';
 type Row=Record<string,any>;
 
 export type ListingDraft={
@@ -51,8 +52,17 @@ const AMENITY_WORDS:[string,RegExp][]=[
  ['hairdryer',/(?<![а-я])фен(?![а-я])/],['iron',/утюг/],['crib',/кроватк|детск[а-я]* кроват/],
  // A bath and a hall have their own lists (lib/listings.ts categoryAmenities).
  ['steam',/парилк|парн(?:ая|ую|ой)(?![а-я])/],['pool',/бассейн/],['plunge',/купел/],['jacuzzi',/джакузи|гидромассаж/],['brooms',/веник/],['karaoke',/караоке/],['billiards',/бильярд/],['grill',/мангал|барбекю/],
- ['stage',/(?<![а-я])сцен[аыу](?![а-я])/],['sound',/микрофон|аппаратур|звук/],['dancefloor',/танцпол/],['prayer',/намаз/],['halal',/халял/],['ownfood',/сво[ияю] (?:продукт|еду|еда)/],['kidsroom',/детск[а-я]* комнат/]
+ ['stage',/(?<![а-я])сцен[аыу](?![а-я])/],['sound',/микрофон|аппаратур|звук/],['dancefloor',/танцпол/],['prayer',/намаз/],['halal',/халял/],['ownfood',/сво[ияю] (?:продукт|еду|еда)/],['kidsroom',/детск[а-я]* комнат/],
+ // «Досуг», «Спорт», «Авто» (2026-11-28).
+ ['projector',/проектор/],['studiolight',/студийн[а-я]* свет|(?<![а-я])свет для съ[её]м/],['lockers',/раздевалк/],['shower',/(?<![а-я])душ(?![а-я])|(?<![а-я])душев/],['indoor',/(?<![а-я])крыт[а-я]*|отаплива/],['inventory',/инвентар/],['lighting',/освещени|прожектор/],
+ ['waitroom',/зон[а-я]* ожидани|комнат[а-я]* ожидани/],['coffee',/кофе/],['lift',/подъемник/],['warmbox',/тепл[а-я]* бокс/],['bigcars',/грузов|газел|микроавтобус|больш[а-я]* машин/]
 ];
+// «Досуг», «Спорт», «Авто» (2026-11-28): the words that name such a place. The car places go first: «автомойка, есть кафе» is a car wash.
+const CAR_KINDS:[RegExp,string][]=[[/детейлинг|детейл|полировк[а-я]* (?:кузов|авто|машин)|химчистк[а-я]* салон|керамик[а-я]* (?:на|для) авто/,'detailing'],[/шиномонтаж|переобу[вт]|шиномонт/,'tires'],[/автосервис|автомастерск|(?<![а-я])(?<!(?:на|до|от) )сто(?![а-я])(?!\s*(?:гост|человек|чел|мест|тысяч|метр))|ремонт[а-я]* (?:авто|машин)|автоэлектрик|развал[а-я]*[- ]схожд/,'carservice'],[/автомойк|(?<![а-я])мойк[аи](?![а-я])|мойк[а-я]* (?:машин|авто)|самомойк|мойка самообслуж/,'carwash']];
+const PLACE_KINDS:[RegExp,string][]=[[/фото-?студи|студи[а-я]* (?:для )?(?:фото|съ[её]м)/,'photostudio'],[/лофт/,'loft'],[/конференц|переговорн|коворкинг/,'meeting'],[/караоке-?(?:кабин|комнат|зал|бокс)|(?<![а-я])караоке(?![а-я])/,'karaoke_room'],[/(?:детск[а-я]*|игров[а-я]*) (?:игров[а-я]* )?комнат|детск[а-я]* (?:игров|праздн)/,'playroom'],[/беседк|тапчан|(?<![а-я])юрт[аыу]?(?![а-я])/,'gazebo'],[/квест/,'quest'],
+ [/футбол|мини-?пол[ея]|(?<![а-я])манеж/,'field'],[/(?<![а-я])корт|теннис|падел|бадминтон/,'court'],[/спортзал|спортивн[а-я]* зал|волейбол|баскетбол/,'sporthall'],[/бильярд/,'billiard'],[/игров[а-я]* клуб|компьютерн[а-я]* клуб|киберклуб|плейстейшн|playstation|(?<![а-яa-z])ps ?[345]?(?![а-яa-z])/,'gameclub']];
+/** The kind of «Досуг», «Спорт», «Авто» the text names, or ''. A bath, a hall or a cafe is read before the places of rest. */
+export function venueKind(text:string,where:'car'|'place'){const list=where==='car'?CAR_KINDS:PLACE_KINDS;return list.find(([re])=>re.test(text))?.[1]||'';}
 const STREET='(?:ул(?:ица|\\.)?|пр(?:оспект|-т|-кт|\\.)?|мкр(?:н|\\.)?|микрорайон|бул(?:ьвар|\\.)?|пер(?:еулок|\\.)?|шоссе|ш\\.)';
 
 export function readListingText(text:string,base:ListingDraft):{draft:ListingDraft;found:string[]}{
@@ -61,7 +71,8 @@ export function readListingText(text:string,base:ListingDraft):{draft:ListingDra
 
   // «дом с баней», «коттедж с сауной» is housing with a bath in it, not a bath.
  const withBath=/(?<![а-я])с\s+(?:сауной|баней|банькой)/.test(t);
- if(/банкет|тойхан|зал[а-я]* (?:торжеств|для торжеств)|ресторан/.test(t))set('type','banquet');else if(/(?<![а-я])кафе(?![а-я])/.test(t))set('type','cafe');else if(!withBath&&/саун/.test(t))set('type','sauna');else if(!withBath&&/(?<![а-я])бан(?:я|ю|е|и|ька|ьку)(?![а-я])/.test(t))set('type','banya');else if(/хостел/.test(t))set('type','hostel');else if(/апарт-?отел|апарт-?гостиниц/.test(t))set('type','aparthotel');else if(/гостиниц|(?<![а-я])(?:мини-?)?отел/.test(t))set('type','hotel');
+ const car=venueKind(t,'car'),place=venueKind(t,'place');
+ if(car)set('type',car);else if(/банкет|тойхан|зал[а-я]* (?:торжеств|для торжеств)|ресторан/.test(t))set('type','banquet');else if(/(?<![а-я])кафе(?![а-я])/.test(t))set('type','cafe');else if(!withBath&&/саун/.test(t))set('type','sauna');else if(!withBath&&/(?<![а-я])бан(?:я|ю|е|и|ька|ьку)(?![а-я])/.test(t))set('type','banya');else if(place)set('type',place);else if(/хостел/.test(t))set('type','hostel');else if(/апарт-?отел|апарт-?гостиниц/.test(t))set('type','aparthotel');else if(/гостиниц|(?<![а-я])(?:мини-?)?отел/.test(t))set('type','hotel');
  else if(/гостев[а-я]* дом/.test(t))set('type','guesthouse');else if(/студи/.test(t))set('type','studio');else if(/апарт/.test(t))set('type','aparthotel');else if(/баз[а-я]* отдых|дом[а-я]* отдых|курорт|пансионат/.test(t))set('type','resort');else if(/(?<![а-я])(?:дом|коттедж)(?![а-я])/.test(t))set('type','house');
  else if(/(?<![а-я])комнат[ау](?![а-я])/.test(t)&&!/квартир|комнатн/.test(t))set('type','room');
  else if(/квартир|однушк|двушк|трешк|комнатн/.test(t))set('type','apartment');
@@ -104,24 +115,27 @@ export function readListingText(text:string,base:ListingDraft):{draft:ListingDra
   if(!d.known.includes('parties'))d.parties=true;
  }
  // «баня „Берёзка“», «зал «Сарыарка»»: a place guests know by its name keeps it in the title.
- if(bath||hall){const name=/[«"„“]([^«»"„“”\n]{2,40})[»"“”]/u.exec(text);if(name&&!d.known.includes('title'))set('title',(draftKind(d)+' «'+name[1].trim()+'»').slice(0,120));}
- const guests=hall?null:rest.match(/(?:до|на|для)\s*(\d{1,2})\s*(?:-?х\s*)?(?:гост|человек|чел(?![а-я])|персон)/)||rest.match(/(\d{1,2})\s*(?:гост|человек|чел(?![а-я]))/)||rest.match(/(?:вместимость|спит|размест[а-я]*)\s*(?:до\s*)?(\d{1,2})/);
+ const timed=isHourlyVenue(d.type);
+ if(timed||hall){const name=/[«"„“]([^«»"„“”\n]{2,40})[»"“”]/u.exec(text);if(name&&!d.known.includes('title'))set('title',(draftKind(d)+' «'+name[1].trim()+'»').slice(0,120));}
+ const guests=hall||isAuto(d.type)?null:rest.match(/(?:до|на|для)\s*(\d{1,2})\s*(?:-?х\s*)?(?:гост|человек|чел(?![а-я])|персон)/)||rest.match(/(\d{1,2})\s*(?:гост|человек|чел(?![а-я]))/)||rest.match(/(?:вместимость|спит|размест[а-я]*)\s*(?:до\s*)?(\d{1,2})/);
  if(guests&&+guests[1]>0&&+guests[1]<=50)set('capacity',Number(guests[1]));
  const beds=t.match(/(\d{1,2})\s*спальн[а-я]*\s*мест/);if(beds&&+beds[1]>0)set('beds',Number(beds[1]));
  if(!found.includes('capacity')&&found.includes('beds'))set('capacity',d.beds);
  if(!found.includes('capacity')&&found.includes('rooms')&&!d.known.includes('capacity'))d.capacity=d.type==='studio'?2:Math.min(50,d.rooms*2);
  if(bath&&!found.includes('capacity')&&!d.known.includes('capacity'))d.capacity=Math.max(d.includedGuests||0,6);
+ // A place of «Досуг» or «Спорт» takes a company or a team; «Авто» takes one car.
+ if(timed&&!bath&&!found.includes('capacity')&&!d.known.includes('capacity'))d.capacity=isAuto(d.type)?1:kindCategory(d.type)==='sport'?14:10;
  if(d.beds<d.capacity)d.beds=d.capacity;
 
  const daily=hall?0:priceNear(t,'(?:сут(?:ки|ок)?|день|дня|в день|посуточн)');if(daily>=100)set('price',daily);
  const hourly=priceNear(rest,'(?:час(?!т)|почасов)');if(hourly>=100)set('hourlyPrice',hourly);
  const nightly=priceNear(t,'(?:ноч[ьи])');if(nightly>=100)set('nightlyPrice',nightly);
- if(!found.includes('price')&&!hall&&!(bath&&found.includes('hourlyPrice'))){const bare=new RegExp('(?:цена|стоимость|стоит)?\\s*'+NUM+'\\s*(?:₸|тг|тенге)','u').exec(rest);if(bare){const v=amount(bare[1],bare[2]);if(v>=100&&v!==d.hourlyPrice&&v!==d.nightlyPrice)set(bath?'hourlyPrice':'price',v);}}
+ if(!found.includes('price')&&!hall&&!(timed&&found.includes('hourlyPrice'))){const bare=new RegExp('(?:цена|стоимость|стоит)?\\s*'+NUM+'\\s*(?:₸|тг|тенге)','u').exec(rest);if(bare){const v=amount(bare[1],bare[2]);if(v>=100&&v!==d.hourlyPrice&&v!==d.nightlyPrice)set(timed?'hourlyPrice':'price',v);}}
  const minHours=t.match(/(?:от|минимум|мин\.?)\s*(\d{1,2})\s*час/);if(minHours&&+minHours[1]>=1&&+minHours[1]<=24)set('minHours',Number(minHours[1]));
  if(/без (?:депозит|залог)/.test(t))set('deposit',0);else{const deposit=new RegExp('(?:депозит|залог)[а-я]*\\s*(?:[:—–-]|в)?\\s*'+NUM,'u').exec(t);if(deposit)set('deposit',amount(deposit[1],deposit[2]));}
  const fee=new RegExp('уборк[а-я]*\\s*(?:[:—–-]|стоит|за)?\\s*'+NUM,'u').exec(t);if(fee){const v=amount(fee[1],fee[2]);if(v>=100)set('cleaningFee',v);}
  // «Однушка, Торайгырова 64, 12000»: a part of the message that is a bare sum is the price (a bath's is for an hour).
- if(!hall&&!found.includes('price')&&!found.includes('hourlyPrice')){const sums=t.split(/[,;\n]/).map(x=>x.trim()).filter(x=>new RegExp('^'+NUM+'\\s*(?:₸|тг|тенге)?$','u').test(x));if(sums.length===1){const m=new RegExp(NUM,'u').exec(sums[0])!;const v=amount(m[1],m[2]);if(v>=1000&&v!==d.cleaningFee)set(bath?'hourlyPrice':'price',v);}}
+ if(!hall&&!found.includes('price')&&!found.includes('hourlyPrice')){const sums=t.split(/[,;\n]/).map(x=>x.trim()).filter(x=>new RegExp('^'+NUM+'\\s*(?:₸|тг|тенге)?$','u').test(x));if(sums.length===1){const m=new RegExp(NUM,'u').exec(sums[0])!;const v=amount(m[1],m[2]);if(v>=1000&&v!==d.cleaningFee)set(timed?'hourlyPrice':'price',v);}}
 
  // «без лифта», «нет кондиционера» name what the flat lacks, so a negated mention removes the amenity.
  const negated=(at:number)=>/(?:^|[^а-я])(?:без|нет|не)\s+(?:[а-я-]+\s+)?$/.test(t.slice(Math.max(0,at-24),at));
@@ -168,7 +182,7 @@ export function answerDraft(draft:ListingDraft,key:DraftQuestion['key'],answer:s
  let value:string|number;
  if(key==='price'){value=moneyAnswer(text);if(!(value>=100))return draft;
   // A bath is priced by the hour, so the answer to «Сколько стоит час?» is its hourly price.
-  if(isBath(draft.type))return {...draft,hourlyPrice:value,known:[...new Set([...draft.known,'hourlyPrice'])]};}
+  if(isHourlyVenue(draft.type))return {...draft,hourlyPrice:value,known:[...new Set([...draft.known,'hourlyPrice'])]};}
  else{const {draft:read}=readListingText(text,draft);value=read.known.includes(key)&&read[key]!==draft[key]?read[key]:text.slice(0,key==='address'?300:120);}
  return {...draft,[key]:value,known:[...new Set([...draft.known,key])]};
 }
@@ -176,14 +190,16 @@ export function answerDraft(draft:ListingDraft,key:DraftQuestion['key'],answer:s
 export function draftQuestions(d:ListingDraft):DraftQuestion[]{
  const q:DraftQuestion[]=[];
  if(!d.address.trim())q.push({key:'address',label:tr('Адрес'),question:tr('Какой точный адрес? Гости увидят его только после брони.'),placeholder:tr('Улица, дом, номер')});
- if(!d.district.trim())q.push({key:'district',label:tr('Район'),question:isBanquet(d.type)?tr('В каком районе зал? Его гости видят на карте.'):isBath(d.type)?(d.type==='sauna'?tr('В каком районе сауна? Его гости видят на карте.'):tr('В каком районе баня? Его гости видят на карте.')):tr('В каком районе жильё? Его гости видят на карте.'),placeholder:tr('Например, Центр')});
- if(isBath(d.type)){if(!(d.hourlyPrice>=100))q.push({key:'price',label:tr('Цена за час'),question:tr('Сколько стоит час?'),placeholder:tr('Например, 5 000')});}
+ if(!d.district.trim())q.push({key:'district',label:tr('Район'),question:isBanquet(d.type)?tr('В каком районе зал? Его гости видят на карте.'):isBath(d.type)?(d.type==='sauna'?tr('В каком районе сауна? Его гости видят на карте.'):tr('В каком районе баня? Его гости видят на карте.')):isHourlyVenue(d.type)?tr('В каком районе это место? Его гости видят на карте.'):tr('В каком районе жильё? Его гости видят на карте.'),placeholder:tr('Например, Центр')});
+ if(isHourlyVenue(d.type)){if(!(d.hourlyPrice>=100))q.push({key:'price',label:tr('Цена за час'),question:tr('Сколько стоит час?'),placeholder:tr('Например, 5 000')});}
  else if(!(d.price>=100))q.push(isBanquet(d.type)?{key:'price',label:tr('Цена на гостя'),question:tr('Сколько стоит банкет на одного гостя?'),placeholder:tr('Например, 8 000')}:{key:'price',label:tr('Цена за сутки'),question:tr('Сколько стоят сутки?'),placeholder:tr('Например, 15 000')});
  return q;
 }
 
 const fmt=(n:number)=>new Intl.NumberFormat('ru-RU').format(n)+' ₸';
 const plural=(n:number,one:string,few:string,many:string)=>{const a=Math.abs(n)%100,b=a%10;return a>10&&a<20?many:b>1&&b<5?few:b===1?one:many;};
+// The names of «Досуг», «Спорт», «Авто» in the owner's description, in Russian as the rest of it (lib/listings.ts propertyTypes).
+const VENUE_NAMES:Record<string,string>={loft:'Лофт',photostudio:'Фотостудия',meeting:'Конференц-зал',karaoke_room:'Караоке-кабинка',playroom:'Детская комната',gazebo:'Беседка, юрта',quest:'Квест',field:'Футбольное поле',court:'Корт',sporthall:'Спортзал',billiard:'Бильярд',gameclub:'Игровой клуб',carwash:'Автомойка',tires:'Шиномонтаж',carservice:'Автосервис',detailing:'Детейлинг'};
 export function draftKind(d:ListingDraft){
  switch(d.type){
   case 'apartment':return d.rooms+'-комнатная квартира';
@@ -197,7 +213,7 @@ export function draftKind(d:ListingDraft){
   case 'banya':return 'Баня';
   case 'sauna':return 'Сауна';
   case 'hotel':return 'Гостиница';
-  default:return d.rooms>1?'Апарт-отель, '+d.rooms+' комн.':'Апарт-отель';
+  default:if(VENUE_NAMES[d.type])return VENUE_NAMES[d.type];return d.rooms>1?'Апарт-отель, '+d.rooms+' комн.':'Апарт-отель';
  }
 }
 // The title in the one format (lib/listing-title.ts): the start from the type and the rooms, then what the owner wrote.
@@ -215,8 +231,8 @@ export function draftDescription(d:ListingDraft){
   parts.push('Точный адрес гость получит после подтверждения брони.');
   return parts.join(' ').slice(0,2500);
  }
- if(isBath(d.type)){
-  parts.push('Целиком для вашей компании, до '+d.capacity+' '+plural(d.capacity,'гостя','гостей','гостей')+'.');
+ if(isHourlyVenue(d.type)){
+  parts.push(isAuto(d.type)?'Бокс на время вашей машины.':'Целиком для вашей компании, до '+d.capacity+' '+plural(d.capacity,'гостя','гостей','гостей')+'.');
   if(d.amenities.length)parts.push('Есть: '+d.amenities.map(a=>amenities[a]).filter(Boolean).map((v,i)=>i&&v!=='Wi-Fi'?v.toLocaleLowerCase('ru'):v).join(', ')+'.');
   parts.push('Бронь по часам, от '+d.minHours+' '+plural(d.minHours,'часа','часов','часов')+'.');
   if(d.includedGuests&&d.extraGuestPrice)parts.push('В цену входит '+d.includedGuests+' '+plural(d.includedGuests,'гость','гостя','гостей')+', каждый следующий: '+fmt(d.extraGuestPrice)+' в час.');
@@ -233,6 +249,8 @@ export function draftDescription(d:ListingDraft){
 export function draftRules(d:ListingDraft){
  if(d.houseRules.trim())return d.houseRules.trim().slice(0,2500);
  if(isBanquet(d.type))return ['Число гостей уточняется не позже чем за три дня.','Свои продукты и напитки по согласованию.',d.smoking?'Курение разрешено.':'Курение в зале запрещено.',d.deposit>0?'Депозит '+fmt(d.deposit)+' возвращается после мероприятия, если всё в порядке.':'Депозит не берётся.'].join(' ');
+ if(isAuto(d.type))return ['Приезжайте ко времени брони: после вас ждут другие машины.','Опоздание больше 15 минут может сдвинуть или отменить запись.',d.deposit>0?'Депозит '+fmt(d.deposit)+' возвращается после работы, если всё в порядке.':'Депозит не берётся.'].join(' ');
+ if(isHourlyVenue(d.type)&&!isBath(d.type))return ['Приходите ко времени брони и освобождайте вовремя: после вас ждут другие гости.',d.smoking?'Курение разрешено.':'Курение в помещении запрещено.',d.deposit>0?'Депозит '+fmt(d.deposit)+' возвращается после ухода гостей, если всё в порядке.':'Депозит не берётся.'].join(' ');
  if(isBath(d.type))return ['Приходите ко времени брони и освобождайте вовремя: после вас ждут другие гости.','Свои продукты и напитки можно.',d.smoking?'Курение разрешено.':'Курение в помещении запрещено.',d.deposit>0?'Депозит '+fmt(d.deposit)+' возвращается после ухода гостей, если всё в порядке.':'Депозит не берётся.'].join(' ');
  return ['Тишина с 23:00 до 08:00.',d.smoking?'Курение разрешено.':'Курение в помещении запрещено.',d.parties?'Вечеринки по согласованию.':'Без вечеринок.',d.pets?'Можно с питомцами.':'Без питомцев.',
   d.deposit>0?'Депозит '+fmt(d.deposit)+' возвращается после выезда, если всё в порядке.':'Депозит не берётся.'].join(' ');
@@ -248,9 +266,9 @@ export function draftListingBody(d:ListingDraft,photos:string[],published:boolea
   details:{type,area:d.area,beds:d.capacity,bathrooms:d.bathrooms,floor:d.floor,floors:Math.max(d.floors,d.floor,1),checkinMethod:method,amenities:d.amenities.filter(a=>amenities[a]),pets:false,smoking:d.smoking,parties:true},
   rental:{hourlyPrice:0,minHours:d.minHours,nightlyPrice:0,checkinTime:'12:00',checkoutTime:'00:00',deposit:d.deposit,houseRules:draftRules(d),includedGuests:least,extraGuestPrice:d.price}};
  // A bath is taken by the hour. The day price the service needs is twelve hours, as in the editor (PropertyEdit).
- if(isBath(type))return {title:draftTitle(d),city:d.city.trim(),district:d.district.trim(),address:d.address.trim(),description:draftDescription(d),price:d.price>=100?d.price:Math.max(100,d.hourlyPrice*12),rooms:d.rooms,capacity:d.capacity,cleaningMinutes:d.cleaningMinutes,ownStaff:!!d.ownStaff,
+ if(isHourlyVenue(type))return {title:draftTitle(d),city:d.city.trim(),district:d.district.trim(),address:d.address.trim(),description:draftDescription(d),price:d.price>=100?d.price:Math.max(100,d.hourlyPrice*12),rooms:d.rooms,capacity:d.capacity,cleaningMinutes:d.cleaningMinutes,ownStaff:!!d.ownStaff,
   photos,published,expectedVersion:0,policyVersion:0,
-  details:{type,area:d.area,beds:d.capacity,bathrooms:d.bathrooms,floor:d.floor,floors:Math.max(d.floors,d.floor,1),checkinMethod:method,amenities:d.amenities.filter(a=>amenities[a]&&categoryAmenities.bath.includes(a)),pets:false,smoking:d.smoking,parties:true},
+  details:{type,area:d.area,beds:d.capacity,bathrooms:d.bathrooms,floor:d.floor,floors:Math.max(d.floors,d.floor,1),checkinMethod:method,amenities:d.amenities.filter(a=>amenities[a]&&categoryAmenities[kindCategory(type)].includes(a)),pets:false,smoking:d.smoking,parties:true,...(SERVICE_STARTERS[type]?{services:SERVICE_STARTERS[type]}:{})},
   rental:{hourlyPrice:d.hourlyPrice,minHours:Math.max(1,d.minHours),nightlyPrice:0,checkinTime:d.checkinTime,checkoutTime:d.checkoutTime,deposit:d.deposit,houseRules:draftRules(d),includedGuests:d.extraGuestPrice?Math.min(d.capacity,d.includedGuests||0):0,extraGuestPrice:d.includedGuests?d.extraGuestPrice||0:0,prepMinutes:d.prepMinutes||0}};
  return {title:draftTitle(d),city:d.city.trim(),district:d.district.trim(),address:d.address.trim(),description:draftDescription(d),price:d.price,rooms:d.rooms,capacity:d.capacity,cleaningMinutes:d.cleaningMinutes,ownStaff:!!d.ownStaff,
   photos,published,expectedVersion:0,policyVersion:0,
@@ -290,10 +308,10 @@ export function mergeModelDraft(draft:ListingDraft,found:string[],raw:unknown):{
  if(m.type&&free('type')){take('type',m.type);if(m.ownStaff===undefined&&free('ownStaff'))d.ownStaff=defaultOwnStaff(m.type);}
  for(const key of MODEL_LISTING_KEYS){if(key==='type'||key==='name'||key==='amenities')continue;const v=(m as Row)[key];if(v!==undefined&&free(key))take(key,v);}
  if(m.amenities){const fits=categoryAmenities[kindCategory(d.type)];const all=[...new Set([...d.amenities,...m.amenities])].filter(a=>fits.includes(a));if(all.length!==d.amenities.length)take('amenities',all);}
- if(m.name&&free('title')&&(isBath(d.type)||isBanquet(d.type)))take('title',(draftKind(d)+' «'+m.name.replace(/[«»"„“”]/g,'')+'»').slice(0,120));
+ if(m.name&&free('title')&&(isHourlyVenue(d.type)||isBanquet(d.type)))take('title',(draftKind(d)+' «'+m.name.replace(/[«»"„“”]/g,'')+'»').slice(0,120));
  // What the counts say together: guests from the rooms when no one said how many, no more guests than the kind takes
  // (the same limit the save checks, lib/listings.ts), a bed for every guest, a floor not above the last one.
- if(!took.includes('capacity')&&took.includes('rooms')&&!draft.known.includes('capacity')&&!isBanquet(d.type)&&!isBath(d.type))d.capacity=d.type==='studio'?2:Math.min(50,d.rooms*2);
+ if(!took.includes('capacity')&&took.includes('rooms')&&!draft.known.includes('capacity')&&!isBanquet(d.type)&&!isHourlyVenue(d.type))d.capacity=d.type==='studio'?2:Math.min(50,d.rooms*2);
  d.capacity=Math.min(d.capacity,maxGuests(d.type));d.beds=Math.min(Math.max(d.beds,d.capacity),maxGuests(d.type));
  if(d.floor>d.floors)d.floors=d.floor;
  d.known=[...new Set([...d.known,...took])];

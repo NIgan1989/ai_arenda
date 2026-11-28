@@ -71,7 +71,7 @@ export function GuestForm({ draft, only = 'all', onChange, onPickPoint, onNearMe
   const hourly = draft.mode === 'hourly';
   const startMinutes = Number(draft.start.slice(11, 13)) * 60 + Number(draft.start.slice(14, 16));
   const units = draftUnits(draft);
-  const category = categoryOf(draft), bath = category === 'bath', hall = category === 'banquet', venue = category !== 'stay';
+  const category = categoryOf(draft), bath = category === 'bath', hall = category === 'banquet', venue = category !== 'stay', car = category === 'auto';
   // «Баня» never loses its last type: an empty list would mean «Жильё».
   const toggleKind = (id: string) => {
     const kinds = draft.kinds.includes(id) ? draft.kinds.filter(v => v !== id) : [...draft.kinds, id];
@@ -196,10 +196,10 @@ export function GuestForm({ draft, only = 'all', onChange, onPickPoint, onNearMe
   };
   const titles = Object.fromEntries(SECTION_TITLES(draft)) as Record<Section, string>;
   const typed = venue ? draft.kinds.length < allKinds(category).length : draft.kinds.length > 0;
-  const partTitle = (id: Part) => id === 'kind' ? (hall ? t('Зал или кафе') : bath ? t('Баня или сауна') : t('Тип жилья')) : id === 'class' ? t('Класс жилья') : id === 'rooms' ? t('Комнаты') : titles[id];
-  const partWords = (id: Part) => id === 'kind' ? (typed ? cap(homeWords({ kinds: draft.kinds, rooms: '' })) : bath ? t('Любая') : t('Любой'))
+  const partTitle = (id: Part) => id === 'kind' ? (hall ? t('Зал или кафе') : bath ? t('Баня или сауна') : car ? t('Какой сервис') : venue ? t('Какое место') : t('Тип жилья')) : id === 'class' ? t('Класс жилья') : id === 'rooms' ? t('Комнаты') : titles[id];
+  const partWords = (id: Part) => id === 'kind' ? (typed ? cap(homeWords({ kinds: draft.kinds, rooms: '' })) : bath ? t('Любая') : venue && !hall && !car ? t('Любое') : t('Любой'))
     : id === 'class' ? classWords(draft.classes) || t('Любой') : id === 'rooms' ? roomOptions[roomAt][1] : sectionWords(draft, id);
-  const partsOf = (section: Section) => PARTS[section].filter(id => !venue || (id !== 'class' && id !== 'rooms'));
+  const partsOf = (section: Section) => PARTS[section].filter(id => (!venue || (id !== 'class' && id !== 'rooms')) && !(car && id === 'guests'));
   // «Комнаты» is one line with its counter: there is nothing to fold.
   const rooms = <View style={f.roomsRow}><Text style={f.title}>{t('Комнаты')}</Text><View style={f.counter}>
     <Pressable accessibilityRole="button" accessibilityLabel={t('{label}: меньше', { label: t('Комнаты') })} disabled={busy || roomAt === 0} onPress={() => onChange({ ...draft, rooms: roomOptions[roomAt - 1][0] })} style={[f.round, (busy || roomAt === 0) && f.roundOff]}><Text style={[f.roundText, roomAt === 0 && f.roundTextOff]}>−</Text></Pressable>

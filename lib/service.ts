@@ -19,7 +19,7 @@ import {defaultAccountSettings,accountSettingsInput,userSearchInput} from './acc
 import {approvalCards} from './approvals';
 import {hasContacts,hasContactWays,MIN_PHOTOS} from './listing-rules';
 import {phoneOpens} from './chat-guard';
-import {listingInput,jpegInput,propertyStatus,cleanerStatus,categories,kindCategory,isBanquet,isBath,isVenue,occasions,occasionLabel,searchCategory} from './listings';
+import {listingInput,jpegInput,propertyStatus,cleanerStatus,categories,kindCategory,isAuto,isBanquet,isBath,isHourlyVenue,isVenue,occasions,occasionLabel,searchCategory} from './listings';
 import {mediaKey,dataUrlBytes,mediaData} from './media-store';
 import {CANCELLED_AFTER_ARRIVAL,NOT_LET_IN} from './stay-result';
 import {readAdministratorState} from './administrator';
@@ -51,6 +51,7 @@ import {homeOrderOf,homeCancel,tenge,HOME_DAMAGE_WINDOW} from './home-cleaning';
 import {reportNamesFit} from './cleaning-report';
 import {venuesFor} from './venue';
 import {pickRoom,roomCounts,roomState,roomsOf} from './room-units';
+import {carInput,serviceLine,serviceNamed,serviceQuote} from './venue-services';
 import {showWaiting} from './show-waiting';
 import {ownerForecasts,decideForecast} from './load-forecast';
 import {ownerListingTips,decideListingTip} from './listing-quality';
@@ -100,8 +101,8 @@ export function collapseRooms(items:Row[],leads:Map<string,string>,counts:Map<st
 export const onReview=(terms:Row|null|undefined)=>!!(terms?.payment_reported_at||terms?.deposit_reported_at);
 // `stored`: the place's own «Время работы» (property_policies.venue_hours, lib/venue-hours.ts).
 export function kindMode(kind:string,mode:unknown,start:number,end:number,stored?:unknown){
-  if(isBath(kind)){
-    if(mode!==undefined&&mode!==null&&mode!==''&&mode!=='hourly')throw new DomainError('Баню и сауну бронируют по часам.');
+  if(isHourlyVenue(kind)){
+    if(mode!==undefined&&mode!==null&&mode!==''&&mode!=='hourly')throw new DomainError(isBath(kind)?'Баню и сауну бронируют по часам.':'Это место бронируют по часам.');
     const hours=venueHours(kind,stored);if(hours&&!fitsHours(hours,start,end))throw new DomainError(bathHoursText(hours));
     return 'hourly';
   }
@@ -719,8 +720,13 @@ export class RentalService {
     if(op&&(['maintenance','blocked'].includes(op.readiness)||(start<=now()+60&&op.readiness!=='ready')))throw new DomainError('Жильё сейчас не готово к новым заездам.',409);
     // The owner needs time to get the place ready (to heat a bath): nothing starts sooner, unless the owner says it is ready.
     if(!options.ownerReady&&tooSoon(policy,start,now()))throw new DomainError('Это место готовят к приходу гостей '+prepWords(Number(policy.prep_minutes))+'. Ближайшее начало — '+clockLabel(Math.ceil((now()+prepSeconds(policy))/1800)*1800)+'.',409);
-    const kind=(await this.one("SELECT json_extract(details,'$.type') type FROM property_details WHERE property_id=?",p.id))?.type||'apartment';
-    const base=rentalPrice(p.price,policy,start,end,kindMode(kind,body.billingMode,start,end,policy.venue_hours)),guestPricing=withGuests(windowQuote(base,policy.hourly_price,base.billingMode==='hourly'?await openWindowFor(this.db,p.id,start,end):null),policy,guests);
+    const detailsRow=await this.one("SELECT details FROM property_details WHERE property_id=?",p.id);let details:Row={};try{details=JSON.parse(String(detailsRow?.details||'{}'))||{};}catch{/* no details */}
+    const kind=String(details.type||'apartment'),mode=kindMode(kind,body.billingMode,start,end,policy.venue_hours);
+    // «Авто»: a booking for one of the place's services costs that service and holds the box for its minutes (lib/venue-services.ts).
+    const service=isAuto(kind)&&body.service?serviceNamed(details,body.service):null;
+    if(isAuto(kind)&&body.service&&!service)throw new DomainError('Такой услуги здесь нет. Выберите услугу из списка.',409);
+    const car=service?carInput(body.car):'';
+    const base=service?serviceQuote(service,start,end):rentalPrice(p.price,policy,start,end,mode),guestPricing=service?base:withGuests(windowQuote(base,policy.hourly_price,base.billingMode==='hourly'?await openWindowFor(this.db,p.id,start,end):null),policy,guests);
     // «Скидка постоянного гостя»: the guest already stayed with this owner through the service (lib/rental-policy.ts).
     const regular=Number(policy.repeat_discount)>0&&!!this.userId&&this.userId!==p.owner_id&&!!await this.one("SELECT b.id FROM bookings b JOIN properties x ON x.id=b.property_id WHERE b.guest_id=? AND x.owner_id=? AND b.status='completed' LIMIT 1",this.userId,p.owner_id);
     const pricing=regular?withRepeatDiscount(guestPricing,policy.repeat_discount):guestPricing;
@@ -731,7 +737,7 @@ export class RentalService {
     if(occupied||cleaning) throw new DomainError('Этот интервал уже занят, включая время уборки. Выберите другое время.',409);
     // How this guest pays the owner (lib/prepay.ts): the owner's share, or at the arrival while the place is new.
     const prepay=await placePrepay(this.db,p.id,policy.prepay_percent),payment={prepayPercent:prepay.percent,prepay:prepaySum(pricing.amount,prepay.percent),label:prepayLabel(prepay.percent),newPlace:prepay.left>0};
-    return {propertyId:p.id,title:p.title,kind,start,end,guests,...pricing,cleaningMinutes:p.cleaning_minutes,occupiedUntil,currency:'KZT',quotedAt:now(),policy:publicPolicy(policy),payment};
+    return {propertyId:p.id,title:p.title,kind,start,end,guests,...pricing,...(service?{service:service.name,serviceLine:serviceLine(service,car),...(car?{car}:{})}:{}),cleaningMinutes:p.cleaning_minutes,occupiedUntil,currency:'KZT',quotedAt:now(),policy:publicPolicy(policy),payment};
   }
   async saveProfile(body: Row) {
     const name=required(body.name,'Имя',100), contact=required(body.contact,'Контакт',120), city=required(body.city,'Город',80);
@@ -795,12 +801,12 @@ export class RentalService {
     // A home not ready with the arrival close: the owner is told in the request, the autopilot leaves the decision to them.
     const unready=unreadyNote((await this.one('SELECT readiness FROM property_operations WHERE property_id=?',p.id))?.readiness,start,now());
     // A banquet always has an occasion: it marks the booking as a banquet and tells the owner what to get ready for.
-    const occasion=isBanquet(checked.kind)?(Object.hasOwn(occasions,String(body.occasion))?String(body.occasion):'other'):'',event=occasion?' '+(occasion==='other'?'Банкет':occasionLabel(occasion))+', гостей: '+guests+'.':'';
+    const occasion=isBanquet(checked.kind)?(Object.hasOwn(occasions,String(body.occasion))?String(body.occasion):'other'):'',served=String((checked as Row).serviceLine||''),event=occasion?' '+(occasion==='other'?'Банкет':occasionLabel(occasion))+', гостей: '+guests+'.':served?' Услуга: '+served+'.':'';
     // «Принял бронь» is said only once the confirmation is written: the autopilot may be switched off in between (audit 2026-11-22).
     const accepting=autoConfirm&&!risk.held&&!unready;
     await this.db.batch([
       this.query('INSERT INTO bookings(id,property_id,guest_id,start,end,occupied_until,guests,amount,status,expires_at,payment_status,request_key,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)',bookingId,p.id,this.userId,start,end,end+p.cleaning_minutes*60,guests,amount,'requested',now()+answer*60,'unpaid',key,now()),
-      this.query('INSERT INTO booking_terms(booking_id,billing_mode,rate,units,amount,deposit,deposit_status,house_rules,policy_version,original_end,min_hours,occasion,prepay_percent,discount_percent) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)',bookingId,checked.billingMode,checked.price,checked.periods,amount,checked.policy.deposit,checked.policy.deposit?'pending':'not_required',checked.policy.house_rules,checked.policy.version,end,Math.max(1,Number(checked.policy.min_hours)||1),occasion,checked.payment.prepayPercent,Number((checked as Row).repeat?.percent)||0),
+      this.query('INSERT INTO booking_terms(booking_id,billing_mode,rate,units,amount,deposit,deposit_status,house_rules,policy_version,original_end,min_hours,occasion,prepay_percent,discount_percent,service) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',bookingId,checked.billingMode,checked.price,checked.periods,amount,checked.policy.deposit,checked.policy.deposit?'pending':'not_required',checked.policy.house_rules,checked.policy.version,end,served?1:Math.max(1,Number(checked.policy.min_hours)||1),occasion,checked.payment.prepayPercent,Number((checked as Row).repeat?.percent)||0,served),
       ...(accepting?[]:[this.notify(owner!.owner_id,risk.held?`ИИ-администратор не подтвердил заявку на «${checked.title}» сам: ${riskLabel.high.toLowerCase()} (${risk.reasons.slice(0,2).join(', ')}).${unready?' '+unready+'.':''} Решите в течение ${minutesLabel(answer)}.`:autoConfirm&&unready?`ИИ-администратор не подтвердил заявку на «${checked.title}» сам: ${unready[0].toLowerCase()+unready.slice(1)}. Отметьте «Жильё готово», если успеете, или решите сами в течение ${minutesLabel(answer)}.`:autoConfirm?`ИИ-администратор принял бронь на «${checked.title}» по вашим правилам.${event} ${riskLabel[risk.level]}.`:`Новая заявка на «${checked.title}».${event} ${riskLabel[risk.level]}.${unready?' '+unready+'.':''} Подтвердите её в течение ${minutesLabel(answer)}.`,`booking:${bookingId}`,'owner')]),this.audit(bookingId,'booking.requested'),
       saveRiskSql(this.db,bookingId,p.id,this.userId,owner!.owner_id,risk),
       ...(!risk.phone&&risk.level!=='low'&&!(autoConfirm&&!risk.held&&!unready)?[this.notify(this.userId,'Подтвердите телефон в профиле: владельцу так спокойнее, и заявку на «'+checked.title+'» подтвердят быстрее.','phone-ask:'+bookingId,'guest')]:[])

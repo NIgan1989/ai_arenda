@@ -19,7 +19,7 @@ import {BrandEmpty,BrandMoment,celebrate} from './src/BrandMoments';
 import {recordSpan} from '../lib/record-span';
 import {checkinOpen,checkinOpensLabel} from '../lib/checkin-window';
 import {CheckinGuarantee,OwnerGuarantee,guaranteeChoices} from './src/CheckinGuarantee';
-import {kindCategory} from '../lib/listings';
+import {isHourlyVenue,kindCategory,kindLabel} from '../lib/listings';
 import {lateOpen,lateNote,lateLabel} from '../lib/late-arrival';
 // How often the background refresh of the app also brings the catalogue of places (see load).
 const CATALOG_EVERY=5*60*1000;
@@ -67,8 +67,8 @@ import {OwnProperties} from './src/OwnProperties';
 import {PropertyListing,PlaceBar} from './src/PropertyListing';
 // The line above a place opened from the map, in the words of its kind.
 // The head of a place's own page: what it is, as the guest calls it.
-const placeName=(type?:string)=>type==='banya'?tr('Баня'):type==='sauna'?tr('Сауна'):type==='banquet'?tr('Зал'):type==='cafe'?tr('Кафе'):tr('Жильё');
-const placeSaid=(type?:string)=>type==='banya'?tr('Баня, выбранная на карте.'):type==='sauna'?tr('Сауна, выбранная на карте.'):type==='banquet'?tr('Зал, выбранный на карте.'):type==='cafe'?tr('Кафе, выбранное на карте.'):tr('Жильё, выбранное на карте.');
+const placeName=(type?:string)=>type==='banya'?tr('Баня'):type==='sauna'?tr('Сауна'):type==='banquet'?tr('Зал'):type==='cafe'?tr('Кафе'):kindCategory(type)!=='stay'?kindLabel(type):tr('Жильё');
+const placeSaid=(type?:string)=>type==='banya'?tr('Баня, выбранная на карте.'):type==='sauna'?tr('Сауна, выбранная на карте.'):type==='banquet'?tr('Зал, выбранный на карте.'):type==='cafe'?tr('Кафе, выбранное на карте.'):kindCategory(type)!=='stay'?tr('{v}: место, выбранное на карте.',{v:kindLabel(type)}):tr('Жильё, выбранное на карте.');
 import {PropertyEdit} from './src/PropertyEdit';
 import {PropertyQuick} from './src/PropertyQuick';
 import {AddressField} from './src/AddressSuggest';
@@ -137,7 +137,7 @@ function BookingReview({flow,photo,busy,done,result,onConfirm,onEdit}:{flow:Flow
   // The final action confirms the dates, price, deposit and house rules shown in the review.
   // A home that confirms by itself still leaves a risky request to its owner (lib/service.ts risk.held), so «сразу» is not promised.
   const guests=Number(quote?.guests)||1,auto=!!quote?.policy?.auto_confirm,deposit=Number(quote?.policy?.deposit)||0;
-  const hall=['banquet','cafe'].includes(quote?.kind),bath=hall||['banya','sauna'].includes(quote?.kind),extra=Number(quote?.extraGuests)||0;
+  const hall=['banquet','cafe'].includes(quote?.kind),bath=hall||isHourlyVenue(quote?.kind),extra=Number(quote?.extraGuests)||0;
   // A banquet hall: the slot of the day, what it is for, the price per guest and the least order.
   const perGuest=Number(quote?.policy?.extra_guest_price)||0,least=Number(quote?.policy?.included_guests)||0,occasion=hall?occasionTitle(String(flow.answers.occasion||'')):'';
   const guestsText=guests+' '+forms(guests,'гость','гостя','гостей'),depositSum=money(deposit),minutes=quote?.cleaningMinutes;

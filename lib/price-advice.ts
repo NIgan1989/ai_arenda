@@ -2,6 +2,7 @@ import {DomainError,required} from './domain';
 import type {RentalService} from './service';
 import {epoch,uuid,q,one,rows,type Row} from './operation-core';
 import {classOfRow,isStayClass} from './stay-class';
+import {isVenue} from './listings';
 
 // The AI administrator's price advice for the next guest.
 // The moment is chosen so that the advice is useful and not annoying: right after the owner accepts
@@ -113,7 +114,7 @@ export async function offerPriceAdvice(db:D1Database,propertyId:string,t=epoch()
  const property=await one(db,'SELECT * FROM properties WHERE id=? AND published=1 AND archived_at IS NULL AND demo_owner IS NULL',propertyId);
  if(!property)return null;
  // A banquet hall is priced per guest and a bath by the hour: the advice about the price of a day is not for them.
- if(['banquet','cafe','banya','sauna'].includes((await one(db,"SELECT json_extract(details,'$.type') type FROM property_details WHERE property_id=?",propertyId))?.type))return null;
+ if(isVenue((await one(db,"SELECT json_extract(details,'$.type') type FROM property_details WHERE property_id=?",propertyId))?.type))return null;
  const policy=await one(db,'SELECT * FROM property_policies WHERE property_id=?',propertyId);
  if(!policy)return null;
  // One question at a time and not more often than once in three days for a flat.

@@ -141,6 +141,8 @@ export function DealCard({kind,item,role,userId,application,thread,line:own,acti
    </Pressable>
    <View style={r.askRow}><Text style={r.askKey}>{t('Когда')}</Text><Text style={r.askValue}>{recordSpan(item.start,item.end)}</Text></View>
    <View style={r.askRow}><Text style={r.askKey}>{t('Жильё')}</Text><Text numberOfLines={2} style={r.askValue}>{item.title}</Text></View>
+   {/* A car place: the service and the car the guest brings («Комплекс · Toyota Camry, 123 ABC 14»). */}
+   {!!item.terms?.service&&<View style={r.askRow}><Text style={r.askKey}>{t('Услуга')}</Text><Text numberOfLines={2} style={r.askValue}>{item.terms.service}</Text></View>}
    <View style={r.askMoney}>
     <View style={r.askLine}><Text style={r.askKey}>{t('Гость платит')}</Text><Text style={r.askValue}>{money(item.amount)}</Text></View>
     {!!ownerFee&&<View style={r.askLine}><Text style={r.askKey}>{feeOf(Number(item.amount)||0,ownerFee,clock)?t('Комиссия сервиса {n}%',{n:String(ownerFee.rate/100).replace('.',',')}):t('Комиссия сервиса · бесплатный старт')}</Text><Text style={r.askValue}>{'−'+money(feeOf(Number(item.amount)||0,ownerFee,clock))}</Text></View>}

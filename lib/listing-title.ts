@@ -7,9 +7,11 @@
 // listings saved before (scripts/listing-titles.mjs), so the guest's list reads in one format.
 type Place={district?:string;city?:string};
 // The start of the title, in Russian like the rest of what owners write.
-const HEADS:Record<string,string>={studio:'Студия',room:'Комната',house:'Дом',guesthouse:'Гостевой дом',hostel:'Хостел',hotel:'Гостиница',aparthotel:'Апарт-отель',resort:'База отдыха',banya:'Баня',sauna:'Сауна',banquet:'Банкетный зал',cafe:'Кафе'};
+const HEADS:Record<string,string>={studio:'Студия',room:'Комната',house:'Дом',guesthouse:'Гостевой дом',hostel:'Хостел',hotel:'Гостиница',aparthotel:'Апарт-отель',resort:'База отдыха',banya:'Баня',sauna:'Сауна',banquet:'Банкетный зал',cafe:'Кафе',
+ loft:'Лофт',photostudio:'Фотостудия',meeting:'Конференц-зал',karaoke_room:'Караоке',playroom:'Детская комната',gazebo:'Беседка',quest:'Квест',field:'Футбольное поле',court:'Корт',sporthall:'Спортзал',billiard:'Бильярд',gameclub:'Игровой клуб',carwash:'Автомойка',tires:'Шиномонтаж',carservice:'Автосервис',detailing:'Детейлинг'};
 // The kinds a guest knows by their name.
-export const NAMED_KINDS=['guesthouse','hostel','hotel','aparthotel','resort','banya','sauna','banquet','cafe'];
+// «Досуг», «Спорт», «Авто» (2026-11-28) are known by their names too: «Автомойка «Жылдам»».
+export const NAMED_KINDS=['guesthouse','hostel','hotel','aparthotel','resort','banya','sauna','banquet','cafe','loft','photostudio','meeting','karaoke_room','playroom','gazebo','quest','field','court','sporthall','billiard','gameclub','carwash','tires','carservice','detailing'];
 export const isNamedKind=(type?:string)=>NAMED_KINDS.includes(type||'');
 // How long the owner's part may be: what fits the list next to the price.
 export const TITLE_TAIL_MAX=28;
@@ -19,7 +21,8 @@ export function titleHead(type?:string,rooms?:number){
 }
 // A flat said again, in any of the ways owners say it; the type's own word; the words that only shout.
 const FLAT=/\d+\s*-?\s*(?:х\s*)?-?\s*комн\.?(?:атн\p{L}*)?|(?:одно|одна|двух|двух-|трёх|трех|четырёх|четырех|пяти|много)\s*-?\s*комнатн\p{L}*|однушк\p{L}*|двушк\p{L}*|тр[её]шк\p{L}*|квартир\p{L}*|кв\.|апартамент\p{L}*|гостев\p{L}*\s+дом\p{L}*|банкетн\p{L}*\s+зал\p{L}*|апарт\s*-?\s*отел\p{L}*|баз\p{L}*\s+отдыха/giu;
-const OWN:Record<string,RegExp>={studio:/студи\p{L}*/giu,room:/(?<!\p{L})комнат[аыуе]?(?!\p{L})/giu,house:/(?<!\p{L})дом(?:ик)?(?!\p{L})/giu,hostel:/хостел\p{L}*/giu,hotel:/гостиниц\p{L}*|(?<!\p{L})отел\p{L}*/giu,banya:/(?<!\p{L})бан(?:я|и|ю|е|ька|ьку)(?!\p{L})/giu,sauna:/саун\p{L}*/giu,banquet:/(?<!\p{L})зал(?!\p{L})/giu,cafe:/(?<!\p{L})кафе(?!\p{L})/giu};
+const OWN:Record<string,RegExp>={studio:/студи\p{L}*/giu,room:/(?<!\p{L})комнат[аыуе]?(?!\p{L})/giu,house:/(?<!\p{L})дом(?:ик)?(?!\p{L})/giu,hostel:/хостел\p{L}*/giu,hotel:/гостиниц\p{L}*|(?<!\p{L})отел\p{L}*/giu,banya:/(?<!\p{L})бан(?:я|и|ю|е|ька|ьку)(?!\p{L})/giu,sauna:/саун\p{L}*/giu,banquet:/(?<!\p{L})зал(?!\p{L})/giu,cafe:/(?<!\p{L})кафе(?!\p{L})/giu,
+ loft:/лофт\p{L}*/giu,photostudio:/фото\s*-?студи\p{L}*/giu,karaoke_room:/караоке/giu,quest:/квест\p{L}*/giu,billiard:/бильярд\p{L}*/giu,carwash:/автомойк\p{L}*|(?<!\p{L})мойк\p{L}*/giu,tires:/шиномонтаж\p{L}*/giu,carservice:/автосервис\p{L}*|(?<!\p{L})сто(?!\p{L})/giu,detailing:/детейлинг\p{L}*/giu};
 const HYPE=/(?<!\p{L})(?:супер|шикарн\p{L}*|топ|лучш\p{L}*|недорого|дёшево|дешево|срочно|акция|скидк\p{L}*)(?!\p{L})/giu;
 const CONTACTS=/https?:\/\/\S*|www\.\S*|\S+\.(?:kz|ru|com)\S*|t\.me\/\S*|wa\.me\/\S*|@[\p{L}\d_.]{3,}|\+?\d[\d\s\-().]{6,}\d/giu;
 const EMOJI=/[\p{Extended_Pictographic}\u{1F1E6}-\u{1F1FF}️‍⃣]/gu;

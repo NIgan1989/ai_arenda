@@ -46,7 +46,8 @@ export function guestTokens(draft: GuestDraft, now = Date.now()): GuestToken[] {
   const mine = draft.now && !!draft.near && !draft.near.label;
   if (draft.now) tokens.push({ id: 'now', title: mine ? tr('Сейчас, рядом с вами') : tr('Готово сейчас'), section: 'when', clear: { now: false, ...(mine ? { near: null, priority: 'balanced' as const } : {}) } });
   tokens.push({ id: 'when', title: whenWords(draft, now), section: 'when' });
-  tokens.push({ id: 'guests', title: guestsWords(draft), section: 'guests' });
+  // «Авто» brings a car, not guests: no count is shown.
+  if (category !== 'auto') tokens.push({ id: 'guests', title: guestsWords(draft), section: 'guests' });
   const budget = budgetWords(draft);
   if (budget) tokens.push({ id: 'price', title: budget, section: 'price', clear: { maxPrice: '', perUnit: true } });
   tokens.push({ id: 'city', title: draft.city, section: 'where' });
@@ -96,7 +97,7 @@ export function sectionWords(draft: GuestDraft, section: Section, now = Date.now
   if (section === 'where') return [draft.city, draft.district.trim(), draft.near ? nearWords(draft) : ''].filter(Boolean).join(' · ');
   if (section === 'home') {
     const typed = venue ? draft.kinds.length < allKinds(category).length : draft.kinds.length > 0;
-    return cap([homeWords(typed ? draft : { kinds: [], rooms: draft.rooms }), category === 'stay' ? classWords(draft.classes) : ''].filter(Boolean).join(', ')) || (category === 'bath' ? tr('Любая') : category === 'banquet' ? tr('Любой') : tr('Любое'));
+    return cap([homeWords(typed ? draft : { kinds: [], rooms: draft.rooms }), category === 'stay' ? classWords(draft.classes) : ''].filter(Boolean).join(', ')) || (category === 'bath' ? tr('Любая') : category === 'banquet' || category === 'auto' ? tr('Любой') : tr('Любое'));
   }
   if (section === 'wishes') return draft.features.map(id => wishTitle(id, draft)).filter(Boolean).join(', ') || tr('Не важно');
   return PRIORITY[draft.priority] || PRIORITY.balanced;
@@ -108,7 +109,7 @@ export const SECTION_TITLES = (draft: GuestDraft): [Section, string][] => {
     ['guests', tr('Гости')],
     ['price', category === 'banquet' ? tr('Цена на гостя') : tr('Цена')],
     ['where', tr('Где')],
-    ['home', category === 'banquet' ? tr('Зал или кафе') : category === 'bath' ? tr('Баня или сауна') : tr('Тип, класс, комнаты')],
+    ['home', category === 'banquet' ? tr('Зал или кафе') : category === 'bath' ? tr('Баня или сауна') : category === 'auto' ? tr('Какой сервис') : category !== 'stay' ? tr('Какое место') : tr('Тип, класс, комнаты')],
     ['wishes', category === 'stay' ? tr('Удобства и правила') : tr('Обязательно')],
     ['priority', tr('Что важнее')]
   ];

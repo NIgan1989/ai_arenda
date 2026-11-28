@@ -1,4 +1,5 @@
-import {t} from '../../lib/i18n';
+import {forms,t} from '../../lib/i18n';
+import {unitWords} from '../../lib/listings';
 import React, { useEffect, useRef, useState } from 'react';
 import { AccessibilityInfo, Animated, Easing, Image, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { banquetWhen, plural, stayWhen } from '../../lib/map-search-request';
@@ -10,7 +11,7 @@ import { C, type } from './styles';
 import { T } from './tokens';
 import { ReliabilityBadge } from './Reliability';
 import { titleSaysKind, titleSaysRooms } from '../../lib/listing-title';
-import { HOME_KINDS, WISHES, BANQUET_WISHES, BANQUET_TYPES, BATH_TYPES, askFirst, categoryOf, classWords, draftUnits, homeWords, kindCategoryOf, shownReasons, withMode, withUnits, type GuestDraft } from './ai-request';
+import { allKinds, isHourly, HOME_KINDS, WISHES, BANQUET_WISHES, BANQUET_TYPES, BATH_TYPES, askFirst, categoryOf, classWords, draftUnits, homeWords, kindCategoryOf, shownReasons, withMode, withUnits, type GuestDraft } from './ai-request';
 import { carouselIndex } from './map-motion';
 import { Heart } from './Favorites';
 import { markLabel, markOf, savedList, type Mine } from './favorites';
@@ -160,6 +161,7 @@ export function emptyAnswer(empty: Row | undefined, draft: GuestDraft, narrowed:
     }
     // One condition empties the answer on its own: it is named, with one tap to search without it.
     const free = t('Без этого условия свободно: {count}.',{count});
+    if (count && empty.blocker === 'kinds' && isHourly(categoryOf(draft)) && categoryOf(draft) !== 'bath') return { title: t('Свободного нет: {v}',{v:homeWords({ kinds: draft.kinds, rooms: '' })}), note: t('Других мест этого раздела на это время свободно: {count}.',{count}), action: { title: t('Показать любое место'), patch: { kinds: allKinds(categoryOf(draft)) } } };
     if (count && empty.blocker === 'kinds' && categoryOf(draft) === 'bath') return { title: t('Свободной нет: {v}',{v:homeWords({ kinds: draft.kinds, rooms: '' })}), note: t('Других бань и саун на это время свободно: {count}.',{count}), action: { title: t('Показать любую баню'), patch: { kinds: [...BATH_TYPES] } } };
     if (count && empty.blocker === 'kinds') return { title: t('Нет свободного жилья такого типа: {v}',{v:homeWords({ kinds: draft.kinds, rooms: '' })}), note: t('Другого жилья на это время свободно: {count}.',{count}), action: { title: t('Показать любое жильё'), patch: { kinds: [] } } };
     if (count && empty.blocker === 'classes') return { title: t('Свободного жилья класса «{v}» нет',{v:classWords(draft.classes)}), note: t('Другого класса свободно: {count}.',{count}), action: { title: t('Показать любой класс'), patch: { classes: [] } } };
@@ -180,7 +182,7 @@ export function homeLine(flat: Row) {
   const kind = titleSaysKind(flat.title) ? '' : HOME_KINDS[flat.details?.type] || '', rooms = titleSaysRooms(flat.title) ? 0 : Number(flat.rooms), capacity = Number(flat.capacity);
   // The class (lib/stay-class.ts) right after the type: «Квартира · Комфорт · 2 комн. · до 4 гостей».
   const level = kindCategoryOf(flat.details?.type) === 'stay' ? classWords(flat.stay_class ? [flat.stay_class] : []) : '';
-  return [kind, level, rooms > 0 && flat.details?.type !== 'studio' && kindCategoryOf(flat.details?.type) === 'stay' ? t('{rooms} комн.',{rooms}) : '', capacity > 0 ? t('до {guests}',{guests:capacity + ' ' + plural(capacity, 'гостя', 'гостей', 'гостей')}) : ''].filter(Boolean).join(' · ');
+  return [kind, level, rooms > 0 && flat.details?.type !== 'studio' && kindCategoryOf(flat.details?.type) === 'stay' ? t('{rooms} комн.',{rooms}) : '', capacity > 0 && kindCategoryOf(flat.details?.type) !== 'auto' ? t('до {guests}',{guests:capacity + ' ' + plural(capacity, 'гостя', 'гостей', 'гостей')}) : ''].filter(Boolean).join(' · ');
 }
 
 export function GuestResults({ preview, draft, mine, onFavorite, selected, onSelect, onFocus, onBook, onOpen, onRefine, onWiden, onTry, onBookEdge, busy, steps = [], tried = [], from = null, onStep, onBack, anchor = '', full = false, readiness, float = false, onChips, onMap, catalog = [] }: Props) {
@@ -261,16 +263,17 @@ export function GuestResults({ preview, draft, mine, onFavorite, selected, onSel
     }, 160);
   };
   // «Сейчас»: the time on the way comes first, it is what the guest decides by.
-  const mark = (flat: Row) => (mine ? markLabel(markOf(flat.id, mine), ['banya', 'sauna', 'banquet', 'cafe'].includes(flat.details?.type)) : '');
+  const mark = (flat: Row) => (mine ? markLabel(markOf(flat.id, mine), kindCategoryOf(flat.details?.type) !== 'stay') : '');
   // «Заведение»: a hall says which venue it belongs to, when the venue has more than one hall and another name.
   const venueName = (flat: Row) => (flat.venue && Number(flat.venue.halls) > 1 && flat.venue.title !== flat.title ? String(flat.venue.title) : '');
   // The other free halls of the chosen one's venue: the guest switches between them without going back to the list.
   const otherHalls = (flat: Row) => (flat.venue ? flats.filter(x => x.id !== flat.id && x.venue?.id === flat.venue.id) : []);
   const quiet = draft.occasion === 'memorial';
   // A bath or a sauna: the total with its hours and the guests' surcharge beside it (audit of 2026-11-22).
-  const bathSum = (flat: Row) => { const e = flat.estimate || {}, n = Number(e.periods) || 0, add = Number(e.surcharge) || 0; if (kindCategoryOf(flat.details?.type) !== 'bath' || e.billingMode !== 'hourly' || !n) return ''; return t('{n} ч × {rate}',{n,rate:money((Number(e.rate) || 0) - add)}) + (add ? ' + ' + t('{v} за гостей',{v:money(add * n)}) : ''); };
+  const bathSum = (flat: Row) => { const e = flat.estimate || {}, n = Number(e.periods) || 0, add = Number(e.surcharge) || 0; if (!isHourly(kindCategoryOf(flat.details?.type)) || e.billingMode !== 'hourly' || !n) return ''; return t('{n} ч × {rate}',{n,rate:money((Number(e.rate) || 0) - add)}) + (add ? ' + ' + t('{v} за гостей',{v:money(add * n)}) : ''); };
   // «Номера одного типа»: one card for many rooms alike, with how many of them are free at the asked time.
-  const roomsLeft = (flat: Row) => (flat.units && Number(flat.units.total) > 1 ? (flat.units.free !== undefined ? t('Свободно номеров: {free} из {total}',{free:flat.units.free,total:flat.units.total}) : t('Номеров: {total}',{total:flat.units.total})) : '');
+  // Rooms of a hotel, fields, tables or bays of one card (lib/listings.ts unitWords).
+  const roomsLeft = (flat: Row) => { if (!flat.units || Number(flat.units.total) <= 1) return ''; const w = unitWords(flat.details?.type), hotel = w.title === 'Номера'; return flat.units.free !== undefined ? t(w.free,{free:flat.units.free,total:flat.units.total}) : hotel ? t('Номеров: {total}',{total:flat.units.total}) : t(forms(Number(flat.units.total), ...w.forms),{n:flat.units.total}); };
   const perGuest = (flat: Row) => (kindCategoryOf(flat.details?.type) === 'banquet' ? Number(flat.policy?.extra_guest_price) || 0 : 0);
   const least = (flat: Row) => Number(flat.policy?.included_guests) || 0;
   // With the arrival line the card says readiness itself, for the asked time; the general «готово» would repeat it.
